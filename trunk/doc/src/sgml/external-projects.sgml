@@ -1,0 +1,169 @@
+<!-- $PostgreSQL: pgsql/doc/src/sgml/external-projects.sgml,v 1.13 2006/09/16 00:30:13 momjian Exp $ -->
+
+ <appendix id="external-projects">
+  <title>PgFoundry and External Projects</title>
+
+  <para>
+   <productname>PostgreSQL</productname> is a complex software project,
+   and managing the project is difficult. We have found that many
+   enhancements to <productname>PostgreSQL</productname> can be more
+   efficiently developed separately from the core project. 
+  </para>
+  
+  <para>
+   To help our community with the development of their external projects,
+   we have created the <ulink url="http://www.pgfoundry.org/">PgFoundry</ulink>.
+   <ulink url="http://www.pgfoundry.org/">PgFoundry</ulink> is built using the
+   GForge software project and is similar to SourceForge in its feature set. If
+   you have a PostgreSQL related Open Source project that you would like to 
+   develop and need project management resources such as mailing lists, forums,
+   bug tracking, and CVS, please feel free to create a new project.   
+  </para>
+
+  <para>
+   Secondly, many <productname>PostgreSQL</productname>-related projects are
+   still hosted at <ulink url="http://gborg.postgresql.org/"><productname>GBorg</></ulink>. 
+   GBorg is the original external community developer site, and while it is 
+   currently closed to new projects in favor of PgFoundry, it still contains 
+   many active and relevant projects. There are other popular <productname>PostgreSQL</productname> 
+   related projects that are hosted independently as well at other community 
+   sites such as <ulink url="http://www.sf.net/">SourceForge</ulink>. You should 
+   search the web if you don't find the project you are looking for.
+  </para>
+
+ <sect1 id="external-interfaces">
+  <title>Externally Developed Interfaces</title>
+
+  <indexterm>
+   <primary>interfaces</primary>
+  </indexterm>
+
+  <para>
+   <productname>PostgreSQL</productname> includes very few interfaces
+   with the base distribution. <application>libpq</> is packaged because
+   it is the primary <application>C</> interface and many other interfaces
+   are build on top of it.  <application>ecpg</> is also packaged because it is
+   tied to the server-side grammar so is very dependent on the database
+   version. All the other interfaces, such as ODBC, Java, Perl, Python, and
+   others, are external projects and must be installed separately.
+  </para>
+
+  <para>
+   Some of the more popular interfaces are:
+
+   <variablelist>
+    <varlistentry>
+     <term>psqlODBC</term>
+     <listitem>
+      <para>
+       This is the most common interface for <application>Windows</>
+       applications. <ulink url="http://odbc.postgresql.org/">Website.</ulink>
+      </para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term>ODBCng</term>
+     <listitem>
+      <para>
+       Another ODBC driver for PostgreSQL. 
+       <ulink url="http://projects.commandprompt.com/public/odbcng/">Website.</ulink>
+      </para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term>PostgreSQL JDBC Driver</term>
+     <listitem>
+      <para>
+       A <application>JDBC</> interface.
+       <ulink url="http://jdbc.postgresql.org/">Website.</ulink>
+      </para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term>Npgsql</term>
+     <listitem>
+      <para>
+       <application>.Net</> data provider for <application>C#</> applications.
+       <ulink url="http://pgfoundry.org/projects/npgsql/">Website.</ulink>
+      </para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term>libpqxx</term>
+     <listitem>
+      <para>
+       A <application>C++</> interface.
+       <ulink url="http://thaiopensource.org/development/libpqxx/">Website.</ulink>
+      </para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term>DBD::Pg</term>
+     <listitem>
+      <para>
+       A <application>Perl</> DBI driver for PostgreSQL.
+       <ulink url="http://search.cpan.org/dist/DBD-Pg/">Website.</ulink>
+      </para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term>pgtclng</term>
+     <listitem>
+      <para>
+       A <application>Tcl</> interface.
+       <ulink url="http://gborg.postgresql.org/project/pgtclng/projdisplay.php">Website.</ulink>
+      </para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term>pyscopg</term>
+     <listitem>
+      <para>
+       A <application>Python</> interface library that is DB API 2.0 compliant.
+       <ulink url="http://www.initd.org/">Website.</ulink>
+      </para>
+     </listitem>
+    </varlistentry>
+   </variablelist>
+   </para>
+
+ </sect1>
+ 
+ <sect1 id="external-extensions">
+ <title>Extensions</title>
+
+  <indexterm>
+   <primary>extensions</primary>
+  </indexterm>
+
+  <para>
+   <productname>PostgreSQL</> was designed from the start to be
+   extensible. For this reason, extensions loaded into the database can
+   function just like features that are packaged with the database. The
+   <filename>contrib/</> directory shipped with the source code
+   contains a large number of extensions. The <filename>README</> file
+   in that directory contains a summary. They include conversion tools,
+   full-text indexing, <acronym>XML</> tools, and additional data types
+   and indexing methods. Other extensions are developed independently,
+   like <application>PostGIS</>. Even <application>PostgreSQL</>
+   replication solutions are developed externally. For example,
+   <application>Slony-I</> is a popular master/slave replication solution
+   that is developed independently from the core project.
+  </para>
+
+  <para>
+   There are several administration tools available for
+   <productname>PostgreSQL</>. The most popular is
+   <application><ulink url="http://www.pgadmin.org/">pgAdmin III</ulink></>, 
+   and there are several commercially available ones as well.
+  </para> 
+
+ </sect1>
+</appendix>
