@@ -75,7 +75,7 @@ void selinuxInitialize()
 	}
 }
 
-Query *selinuxProxy(Qeury *query)
+Query *selinuxProxy(Query *query)
 {
 	Node *stmt;
 
