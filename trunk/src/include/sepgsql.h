@@ -19,19 +19,20 @@
 #define selnotice(fmt, ...)		\
 	ereport(NOTICE, (errcode(ERRCODE_SELINUX_INTERNAL), errmsg(fmt, ##__VA_ARGS__)))
 
-static inline void selinux_audit(int result, char *message) {
-	if (message != NULL) {
-		if (result != 0) {
-			ereport(ERROR, (errcode(ERRCODE_SELINUX_DENIED),
-							errmsg("SELinux: %s", message)));
+static inline void selinux_audit(int result, char *message, char *objname) {
+	int errlv = (result ? ERROR : NOTICE);
+
+	if (message) {
+		if (objname) {
+			ereport(errlv, (errcode(ERRCODE_SELINUX_DENIED),
+							errmsg("SELinux: %s name=%s", message, objname)));
 		} else {
-			ereport(NOTICE, (errcode(ERRCODE_SELINUX_INTERNAL),
-							 errmsg("SELinux: %s", message)));
+			ereport(errlv, (errcode(ERRCODE_SELINUX_DENIED),
+							errmsg("SELinux: %s", message)));
 		}
-	} else if (result != 0) {
+	} else if (result != 0)
 		ereport(ERROR, (errcode(ERRCODE_SELINUX_DENIED),
 						"SELinux access denied without any audit messages."));
-	}
 }
 
 #ifdef HAVE_SELINUX
@@ -44,7 +45,9 @@ extern Query *selinuxProxy(Query *query);
 
 /* SELECT statement related */
 extern Query *selinuxProxySelect(Query *query);
-
+extern void selinuxCheckRteRelation(Query *query, RangeTblEntry *rte,
+									int index, uint32 perm);
+extern void selinuxCheckExpr(Query *query, Expr *expr);
 /* UPDATE statement related */
 extern Query *selinuxProxyUpdate(Query *query);
 

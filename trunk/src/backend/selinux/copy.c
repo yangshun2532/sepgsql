@@ -7,6 +7,8 @@
 #include "postgres.h"
 
 #include "access/heapam.h"
+#include "catalog/pg_class.h"
+#include "catalog/pg_attribute.h"
 #include "sepgsql.h"
 
 #include <selinux/flask.h>
@@ -28,16 +30,17 @@ void selinuxHookDoCopy(Relation rel, List *attnumlist, bool is_from)
 	perm = (is_from == true) ? TABLE__INSERT : TABLE__SELECT;
 	tsid = RelationGetForm(rel)->relselcon;
 	rc = libselinux_avc_permission(ssid, tsid, SECCLASS_TABLE, perm, &audit);
-	selinux_audit(rc, audit);
+	selinux_audit(rc, audit, NameStr(RelationGetForm(rel)->relname));
 
 	/* 2. checl column:select/insert for each column */
 	perm = (is_from == true) ? COLUMN__INSERT : COLUMN__SELECT;
 	foreach(cur, attnumlist) {
 		int attnum = lfirst_int(cur) - 1;
+		Form_pg_attribute attr = RelationGetDescr(rel)->attrs[attnum];
 
-		tsid = RelationGetDescr(rel)->attrs[attnum]->attselcon;
+		tsid = attr->attselcon;
 		rc = libselinux_avc_permission(ssid, tsid, SECCLASS_COLUMN, perm, &audit);
-		selinux_audit(rc, audit);
+		selinux_audit(rc, audit, NameStr(attr->attname));
 	}
 }
 
@@ -66,13 +69,13 @@ void selinuxHookCopyFrom(Relation rel, Datum *values, char *nulls)
 										   SECCLASS_TUPLE,
 										   TUPLE__RELABELTO,
 										   &audit);
-			selinux_audit(rc, audit);
+			selinux_audit(rc, audit, NULL);
 		}
 		break;
 	}
 	rc = libselinux_avc_permission(selinuxGetClientPsid(), tup_psid,
 								   SECCLASS_TUPLE, perm, &audit);
-	selinux_audit(rc, audit);
+	selinux_audit(rc, audit, NULL);
 }
 
 bool selinuxHookCopyTo(Relation rel, HeapTuple tuple)

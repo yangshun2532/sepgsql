@@ -195,12 +195,12 @@ selinux_check_context_insert(PG_FUNCTION_ARGS)
 	}
 
 	rc = libselinux_avc_permission(ssid, isid, tclass, perms, &audit);
-	selinux_audit(rc, audit);
+	selinux_audit(rc, audit, NULL);
 
 	if (isid != esid) {
 		perms = (tclass == SECCLASS_TUPLE) ? TUPLE__RELABELTO : COMMON_DATABASE__RELABELTO;
 		rc = libselinux_avc_permission(ssid, esid, tclass, perms, &audit);
-		selinux_audit(rc, audit);
+		selinux_audit(rc, audit, NULL);
 	}
 	PG_RETURN_OID(esid);
 }
@@ -235,12 +235,12 @@ selinux_check_context_update(PG_FUNCTION_ARGS)
 	}
 	
 	rc = libselinux_avc_permission(ssid, osid, tclass, perms, &audit);
-	selinux_audit(rc, audit);
+	selinux_audit(rc, audit, NULL);
 	
 	if (osid != nsid) {
 		perms = (tclass == SECCLASS_TUPLE) ? TUPLE__RELABELTO : COMMON_DATABASE__RELABELTO;
 		rc = libselinux_avc_permission(ssid, nsid, tclass, perms, &audit);
-		selinux_audit(rc, audit);
+		selinux_audit(rc, audit, NULL);
 	}
 	PG_RETURN_OID(nsid);
 }
