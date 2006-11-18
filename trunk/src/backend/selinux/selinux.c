@@ -38,6 +38,15 @@ void selinuxInitialize()
 {
 	libselinux_avc_reset();
 
+	if (IsBootstrapProcessingMode()) {
+		selinuxServerPsid = libselinux_getcon();
+		selinuxClientPsid = libselinux_getcon();
+		selinuxDatabasePsid = libselinux_avc_createcon(selinuxClientPsid,
+													   selinuxServerPsid,
+													   SECCLASS_DATABASE);
+		return;
+	}
+
 	/* obtain security context of server process */
 	selinuxServerPsid = libselinux_getcon();
 
@@ -49,7 +58,7 @@ void selinuxInitialize()
 	}
 
 	/* obtain security context of database */
-	if (MyDatabaseId == InvalidOid) {
+	if (MyDatabaseId == TemplateDbOid) {
 		selinuxDatabasePsid = libselinux_avc_createcon(selinuxClientPsid,
 													   selinuxServerPsid,
 													   SECCLASS_DATABASE);
