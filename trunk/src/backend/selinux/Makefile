@@ -8,7 +8,7 @@ ubdir = src/backend/security
 top_builddir = ../../..
 include $(top_builddir)/src/Makefile.global
 
-OBJS := psid.o
+OBJS := psid.o libselinux.o
 
 all: SUBSYS.o
 
