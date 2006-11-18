@@ -392,4 +392,12 @@ DATA(insert ( 1560 1560 1685 i ));
 DATA(insert ( 1562 1562 1687 i ));
 DATA(insert ( 1700 1700 1703 i ));
 
+#ifdef HAVE_SELINUX
+/*
+ * Security Context functions
+ */
+DATA(insert (25 3401 3406 i));
+DATA(insert (3401 25 3407 i));
+#endif
+
 #endif   /* PG_CAST_H */
