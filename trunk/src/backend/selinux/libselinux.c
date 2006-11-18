@@ -7,12 +7,14 @@
 #include "postgres.h"
 
 #include "access/heapam.h"
+#include "access/genam.h"
 #include "access/tupdesc.h"
 #include "catalog/indexing.h"
 #include "catalog/pg_selinux.h"
 #include "miscadmin.h"
 #include "sepgsql.h"
 #include "utils/builtins.h"
+#include "utils/fmgroids.h"
 #include "utils/rel.h"
 #include "utils/syscache.h"
 
@@ -405,6 +407,9 @@ psid libselinux_context_to_psid(char *context)
 
 		CatalogCloseIndexes(indstate);
 		heap_close(pg_selinux, NoLock);
+
+		CommandCounterIncrement();
+		CatalogCacheFlushRelation(SelinuxRelationId);
 	}
 	return sid;
 }
