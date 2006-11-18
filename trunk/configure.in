@@ -539,6 +539,19 @@ PGAC_ARG_BOOL(with, zlib, yes,
 AC_SUBST(with_zlib)
 
 #
+# NSA SELinux support
+#
+PGAC_ARG_BOOL(enable, selinux, no,
+              [  --enable-selinux        build with NSA SELinux support])
+if test "$enable_selinux" = yes; then
+    AC_CHECK_LIB(selinux, getpeercon,
+                 AC_DEFINE_UNQUOTED(HAVE_SELINUX, 1,
+                                    [Define 1 to build with NSA SELinux support])
+                 AC_SUBST(enable_selinux),
+                 AC_MSG_ERROR("libselinux didn't found."))
+fi
+
+#
 # Elf
 #
 
