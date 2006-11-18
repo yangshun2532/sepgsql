@@ -13,5 +13,16 @@
 
 Query *selinuxProxyDelete(Query *query)
 {
+	RangeTblEntry *rte;
+	int index;
+
+	/* 1. permission check on relation */
+	index = query->resultRelation;
+	rte = list_nth(query->rtable, index - 1);
+	selinuxCheckRteRelation(query, rte, index, TABLE__DELETE);
+
+	/* 2. check where clause */
+	selinuxCheckExpr(query, (Expr *)query->jointree->quals);
+
 	return query;
 }
