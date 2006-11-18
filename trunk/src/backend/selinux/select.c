@@ -277,6 +277,7 @@ static void selinuxCheckRteSubquery(Query *query, RangeTblEntry *rte)
 
 /* -------- selinuxCheckExpr() related helper functions -------- */
 static void selinuxCheckVar(Query *query, Var *v);
+static void checkExprOpExpr(Query *query, OpExpr *x);
 
 /* selinuxCheckExpr() -- check SELECT permission for each Expr.
  * It should be called on the target of SELECT, where clause
@@ -295,6 +296,9 @@ void selinuxCheckExpr(Query *query, Expr *expr)
 		break;
 	case T_Var:
 		selinuxCheckVar(query, (Var *)expr);
+		break;
+	case T_OpExpr:
+		checkExprOpExpr(query, (OpExpr *)expr);
 		break;
 	default:
 		seldebug("now, we have no checking on the expr (tag = %u)", nodeTag(expr));
@@ -360,6 +364,15 @@ static void selinuxCheckVar(Query *query, Var *v)
 		Var *join_var = list_nth(rte->joinaliasvars, v->varattno - 1);
 		selinuxCheckVar(query, join_var);
 	} else {
-		seldebug("rtekind = %s is ignored", rte->rtekind);
+		seldebug("rtekind = %u is ignored", rte->rtekind);
 	}
+}
+
+static void checkExprOpExpr(Query *query, OpExpr *x)
+{
+	ListCell *l;
+
+	seldebug("checking OpExpr(opno=%u)", x->opno);
+	foreach(l, x->args)
+		selinuxCheckExpr(query, (Expr *)lfirst(l));
 }
