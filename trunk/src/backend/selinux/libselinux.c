@@ -10,6 +10,7 @@
 #include "access/tupdesc.h"
 #include "catalog/indexing.h"
 #include "catalog/pg_selinux.h"
+#include "miscadmin.h"
 #include "sepgsql.h"
 #include "utils/builtins.h"
 #include "utils/rel.h"
@@ -95,8 +96,8 @@ static struct {
 struct avc_datum {
 	struct avc_datum *next;
 
-	Psid ssid;				/* subject context */
-	Psid tsid;				/* object context */
+	psid ssid;				/* subject context */
+	psid tsid;				/* object context */
 	uint16 tclass;			/* object class */
 
 	uint32 allowed;
@@ -104,13 +105,13 @@ struct avc_datum {
 	uint32 auditallow;
 	uint32 auditdeny;
 
-	Psid create;			/* newly created context */
+	psid create;			/* newly created context */
 	bool is_hot;
 	bool has_perm;
 	bool has_create;
 };
 
-static void libselinux_compute_av(Psid ssid, Psid tsid, uint16 tclass, struct avc_datum *avd)
+static void libselinux_compute_av(psid ssid, psid tsid, uint16 tclass, struct avc_datum *avd)
 {
 	security_context_t scon, tcon;
 	struct av_decision x;
@@ -130,10 +131,10 @@ static void libselinux_compute_av(Psid ssid, Psid tsid, uint16 tclass, struct av
 	avd->auditdeny = x.auditdeny;
 }
 
-static Psid libselinux_compute_create(Psid ssid, Psid tsid, uint16 tclass)
+static psid libselinux_compute_create(psid ssid, psid tsid, uint16 tclass)
 {
 	security_context_t scon, tcon, ncon;
-	Psid nsid;
+	psid nsid;
 
 	scon = libselinux_psid_to_context(ssid);
 	tcon = libselinux_psid_to_context(tsid);
@@ -159,10 +160,10 @@ static Psid libselinux_compute_create(Psid ssid, Psid tsid, uint16 tclass)
 	return nsid;
 }
 
-static Psid libselinux_compute_relabel(Psid ssid, Psid tsid, uint16 tclass)
+static psid libselinux_compute_relabel(psid ssid, psid tsid, uint16 tclass)
 {
 	security_context_t scon, tcon, ncon;
-	Psid nsid;
+	psid nsid;
 
 	scon = libselinux_psid_to_context(ssid);
 	tcon = libselinux_psid_to_context(tsid);
@@ -215,7 +216,7 @@ void libselinux_avc_reset()
 	Assert(selinux_enforcing==0 || selinux_enforcing==1);
 }
 
-static char *libselinux_avc_audit(Psid ssid, Psid tsid, uint16 tclass, uint32 perms, struct avc_datum *avd)
+static char *libselinux_avc_audit(psid ssid, psid tsid, uint16 tclass, uint32 perms, struct avc_datum *avd)
 {
 	uint32 denied, audited;
 	char buffer[4096];
@@ -257,12 +258,12 @@ static char *libselinux_avc_audit(Psid ssid, Psid tsid, uint16 tclass, uint32 pe
 	return strdup(buffer);
 }
 
-static inline int libselinux_avc_hash(Psid ssid, Psid tsid, uint16 tclass)
+static inline int libselinux_avc_hash(psid ssid, psid tsid, uint16 tclass)
 {
 	return ((uint32)ssid ^ ((uint32)tsid << 2) ^ tclass) % AVC_DATUM_CACHE_SLOTS;
 }
 
-static struct avc_datum *libselinux_avc_lookup(Psid ssid, Psid tsid, uint16 tclass, uint32 perms)
+static struct avc_datum *libselinux_avc_lookup(psid ssid, psid tsid, uint16 tclass, uint32 perms)
 {
 	struct avc_datum *avd, **prev;
 	int hashkey = libselinux_avc_hash(ssid, tsid, tclass);
@@ -283,7 +284,7 @@ retry:
 	return NULL;
 }
 
-static struct avc_datum *libselinux_avc_insert(Psid ssid, Psid tsid, uint16 tclass)
+static struct avc_datum *libselinux_avc_insert(psid ssid, psid tsid, uint16 tclass)
 {
 	struct avc_datum *avd = avc_cache.freelist;
 	int hashkey = libselinux_avc_hash(ssid, tsid, tclass);
@@ -324,7 +325,7 @@ static void libselinux_avc_reclaim() {
 	}
 }
 
-int libselinux_avc_permission(Psid ssid, Psid tsid, uint16 tclass, uint32 perms, char **audit)
+int libselinux_avc_permission(psid ssid, psid tsid, uint16 tclass, uint32 perms, char **audit)
 {
 	struct avc_datum *avd;
 	uint32 denied;
@@ -349,35 +350,41 @@ int libselinux_avc_permission(Psid ssid, Psid tsid, uint16 tclass, uint32 perms,
 	return rc;
 }
 
-Psid libselinux_avc_createcon(Psid ssid, Psid tsid, uint16 tclass)
+psid libselinux_avc_createcon(psid ssid, psid tsid, uint16 tclass)
 {
 	struct avc_datum *avd;
 
 	avd = libselinux_avc_lookup(ssid, tsid, tclass, 0);
-	if (!avd) {
-		if (!avc_cache.freelist)
+	if (avd == NULL) {
+		if (avc_cache.freelist == NULL)
 			libselinux_avc_reclaim();
 		avd = libselinux_avc_insert(ssid, tsid, tclass);
 	}
 	return avd->create;
 }
 
-Psid libselinux_avc_relabelcon(Psid ssid, Psid tsid, uint16 tclass)
+psid libselinux_avc_relabelcon(psid ssid, psid tsid, uint16 tclass)
 {
 	/* currently no avc support on relabeling */
 	return libselinux_compute_relabel(ssid, tsid, tclass);
 }
 
-Psid libselinux_context_to_psid(char *context)
+extern psid selinuxBootstrap_context_to_psid(char *context);
+extern char *selinuxBootstrap_psid_to_context(psid psid);
+
+psid libselinux_context_to_psid(char *context)
 {
 	HeapTuple tuple;
 	Datum tcon;
-	Psid psid;
+	psid sid;
+
+	if (IsBootstrapProcessingMode())
+		return selinuxBootstrap_context_to_psid(context);
 
 	tcon = DirectFunctionCall1(textin, CStringGetDatum(context));
 	tuple = SearchSysCache(SELINUXCONTEXT, tcon, 0, 0, 0);
 	if (HeapTupleIsValid(tuple)) {
-		psid = HeapTupleGetOid(tuple);
+		sid = HeapTupleGetOid(tuple);
 		ReleaseSysCache(tuple);
 	} else {
 		/* insert a new security context into pg_selinux and index */
@@ -393,16 +400,16 @@ Psid libselinux_context_to_psid(char *context)
 		indstate = CatalogOpenIndexes(pg_selinux);
 
 		tuple = heap_formtuple(RelationGetDescr(pg_selinux), values, nulls);
-		psid = simple_heap_insert(pg_selinux, tuple);
+		sid = simple_heap_insert(pg_selinux, tuple);
 		CatalogIndexInsert(indstate, tuple);
 
 		CatalogCloseIndexes(indstate);
 		heap_close(pg_selinux, NoLock);
 	}
-	return psid;
+	return sid;
 }
 
-char *libselinux_psid_to_context(Psid psid)
+char *libselinux_psid_to_context(psid sid)
 {
 	Relation pg_selinux;
 	HeapTuple tuple;
@@ -410,11 +417,14 @@ char *libselinux_psid_to_context(Psid psid)
 	char *context;
 	bool isnull;
 
+	if (IsBootstrapProcessingMode())
+		return selinuxBootstrap_psid_to_context(sid);
+
 	pg_selinux = heap_open(SelinuxRelationId, AccessShareLock);
 
-	tuple = SearchSysCache(SELINUXOID, ObjectIdGetDatum(psid), 0, 0, 0);
+	tuple = SearchSysCache(SELINUXOID, ObjectIdGetDatum(sid), 0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
-		selerror("No string expression for psid=%u", psid);
+		selerror("No string expression for psid=%u", sid);
 
 	tcon = heap_getattr(tuple, Anum_pg_selinux_selcontext,
 						RelationGetDescr(pg_selinux), &isnull);
@@ -431,10 +441,10 @@ bool libselinux_check_context(char *context)
 	return (security_check_context(context) == 0 ? true : false);
 }
 
-Psid libselinux_getcon()
+psid libselinux_getcon()
 {
 	security_context_t context;
-	Psid ssid;
+	psid ssid;
 
 	if (getcon(&context) != 0)
 		selerror("could not obtain security context of server process");
@@ -453,10 +463,10 @@ Psid libselinux_getcon()
 	return ssid;
 }
 
-Psid libselinux_getpeercon(int sockfd)
+psid libselinux_getpeercon(int sockfd)
 {
 	security_context_t context;
-	Psid ssid;
+	psid ssid;
 
 	if (getpeercon(sockfd, &context) != 0)
 		selerror("could not obtain security context of client process");

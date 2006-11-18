@@ -42,6 +42,7 @@
 #include "nodes/pg_list.h"
 #include "nodes/primnodes.h"
 #include "rewrite/prs2lock.h"
+#include "sepgsql.h"
 #include "storage/block.h"
 #include "storage/fd.h"
 #include "storage/ipc.h"
@@ -214,6 +215,8 @@ Boot_CreateStmt:
 													  (Datum) 0,
 													  true);
 						elog(DEBUG4, "relation created with oid %u", id);
+
+						selinuxBootstrapPostCreateRelation(id);
 					}
 					do_end();
 				}
@@ -362,11 +365,14 @@ boot_tuplelist:
 
 boot_tuple:
 		  boot_ident
-			{ InsertOneValue(LexIDStr($1), num_columns_read++); }
+			{ num_columns_read += selinuxBootstrapInsertOneValue(num_columns_read);
+			  InsertOneValue(LexIDStr($1), num_columns_read++); }
 		| boot_const
-			{ InsertOneValue(LexIDStr($1), num_columns_read++); }
+			{ num_columns_read += selinuxBootstrapInsertOneValue(num_columns_read);
+			  InsertOneValue(LexIDStr($1), num_columns_read++); }
 		| NULLVAL
-			{ InsertOneNull(num_columns_read++); }
+			{ num_columns_read += selinuxBootstrapInsertOneValue(num_columns_read);
+			  InsertOneNull(num_columns_read++); }
 		;
 
 boot_const :

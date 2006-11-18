@@ -52,6 +52,7 @@
 #include "optimizer/planmain.h"
 #include "optimizer/prep.h"
 #include "rewrite/rewriteDefine.h"
+#include "sepgsql.h"
 #include "storage/fd.h"
 #include "storage/smgr.h"
 #include "utils/builtins.h"
@@ -1368,6 +1369,8 @@ formrdesc(const char *relationName, Oid relationReltype,
 	 */
 	RelationGetRelid(relation) = relation->rd_att->attrs[0]->attrelid;
 	relation->rd_rel->relfilenode = RelationGetRelid(relation);
+
+	selinuxBootstrapFormrdesc(relation);
 
 	/*
 	 * initialize the relation lock manager information

@@ -50,6 +50,9 @@ CATALOG(pg_proc,1255) BKI_BOOTSTRAP
 	char		provolatile;	/* see PROVOLATILE_ categories below */
 	int2		pronargs;		/* number of arguments */
 	Oid			prorettype;		/* OID of result type */
+#ifdef HAVE_SELINUX
+	psid		proselcon;		/* security context of the procedure */
+#endif
 
 	/* VARIABLE LENGTH FIELDS: */
 	oidvector	proargtypes;	/* parameter types (excludes OUT params) */
@@ -72,7 +75,11 @@ typedef FormData_pg_proc *Form_pg_proc;
  *		compiler constants for pg_proc
  * ----------------
  */
+#ifdef HAVE_SELINUX
+#define Natts_pg_proc					19
+#else
 #define Natts_pg_proc					18
+#endif
 #define Anum_pg_proc_proname			1
 #define Anum_pg_proc_pronamespace		2
 #define Anum_pg_proc_proowner			3
@@ -84,6 +91,16 @@ typedef FormData_pg_proc *Form_pg_proc;
 #define Anum_pg_proc_provolatile		9
 #define Anum_pg_proc_pronargs			10
 #define Anum_pg_proc_prorettype			11
+#ifdef HAVE_SELINUX
+#define Anum_pg_proc_proselcon			12
+#define Anum_pg_proc_proargtypes		13
+#define Anum_pg_proc_proallargtypes		14
+#define Anum_pg_proc_proargmodes		15
+#define Anum_pg_proc_proargnames		16
+#define Anum_pg_proc_prosrc				17
+#define Anum_pg_proc_probin				18
+#define Anum_pg_proc_proacl				19
+#else
 #define Anum_pg_proc_proargtypes		12
 #define Anum_pg_proc_proallargtypes		13
 #define Anum_pg_proc_proargmodes		14
@@ -91,6 +108,7 @@ typedef FormData_pg_proc *Form_pg_proc;
 #define Anum_pg_proc_prosrc				16
 #define Anum_pg_proc_probin				17
 #define Anum_pg_proc_proacl				18
+#endif
 
 /* ----------------
  *		initial contents of pg_proc

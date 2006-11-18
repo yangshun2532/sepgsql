@@ -45,6 +45,9 @@ CATALOG(pg_database,1262) BKI_SHARED_RELATION
 	TransactionId datvacuumxid; /* all XIDs before this are vacuumed */
 	TransactionId datminxid;	/* minimum XID present anywhere in the DB */
 	Oid			dattablespace;	/* default table space for this DB */
+#ifdef HAVE_SELINUX
+	psid		datselcon;
+#endif
 	text		datconfig[1];	/* database-specific GUC (VAR LENGTH) */
 	aclitem		datacl[1];		/* access permissions (VAR LENGTH) */
 } FormData_pg_database;
@@ -60,7 +63,11 @@ typedef FormData_pg_database *Form_pg_database;
  *		compiler constants for pg_database
  * ----------------
  */
+#ifdef HAVE_SELINUX
+#define Natts_pg_database				13
+#else
 #define Natts_pg_database				12
+#endif
 #define Anum_pg_database_datname		1
 #define Anum_pg_database_datdba			2
 #define Anum_pg_database_encoding		3
@@ -71,8 +78,14 @@ typedef FormData_pg_database *Form_pg_database;
 #define Anum_pg_database_datvacuumxid	8
 #define Anum_pg_database_datminxid		9
 #define Anum_pg_database_dattablespace	10
+#ifdef HAVE_SELINUX
+#define Anum_pg_database_datselcon		11
+#define Anum_pg_database_datconfig		12
+#define Anum_pg_database_datacl			13
+#else
 #define Anum_pg_database_datconfig		11
 #define Anum_pg_database_datacl			12
+#endif
 
 DATA(insert OID = 1 (  template1 PGUID ENCODING t t -1 0 0 0 1663 _null_ _null_ ));
 SHDESCR("Default template database");

@@ -65,6 +65,9 @@ CATALOG(pg_class,1259) BKI_BOOTSTRAP
 	bool		relhaspkey;		/* has PRIMARY KEY index */
 	bool		relhasrules;	/* has associated rules */
 	bool		relhassubclass; /* has derived classes */
+#ifdef HAVE_SELINUX
+	psid		relselcon;		/* security context of the relation */
+#endif
 	TransactionId relminxid;	/* minimum Xid present in table */
 	TransactionId relvacuumxid; /* Xid used as last vacuum OldestXmin */
 
@@ -94,7 +97,11 @@ typedef FormData_pg_class *Form_pg_class;
  * ----------------
  */
 
+#ifdef HAVE_SELINUX
+#define Natts_pg_class					29
+#else
 #define Natts_pg_class					28
+#endif
 #define Anum_pg_class_relname			1
 #define Anum_pg_class_relnamespace		2
 #define Anum_pg_class_reltype			3
@@ -119,10 +126,18 @@ typedef FormData_pg_class *Form_pg_class;
 #define Anum_pg_class_relhaspkey		22
 #define Anum_pg_class_relhasrules		23
 #define Anum_pg_class_relhassubclass	24
+#ifdef HAVE_SELINUX
+#define Anum_pg_class_relselcon			25
+#define Anum_pg_class_relminxid			26
+#define Anum_pg_class_relvacuumxid		27
+#define Anum_pg_class_relacl			28
+#define Anum_pg_class_reloptions		29
+#else
 #define Anum_pg_class_relminxid			25
 #define Anum_pg_class_relvacuumxid		26
 #define Anum_pg_class_relacl			27
 #define Anum_pg_class_reloptions		28
+#endif
 
 /* ----------------
  *		initial contents of pg_class
@@ -135,12 +150,21 @@ typedef FormData_pg_class *Form_pg_class;
 /* Note: the "3" here stands for FirstNormalTransactionId */
 DATA(insert OID = 1247 (  pg_type		PGNSP 71 PGUID 0 1247 0 0 0 0 0 f f r 23 0 0 0 0 0 t f f f 3 3 _null_ _null_ ));
 DESCR("");
+#ifdef HAVE_SELINUX
+DATA(insert OID = 1249 (  pg_attribute	PGNSP 75 PGUID 0 1249 0 0 0 0 0 f f r 19 0 0 0 0 0 f f f f 3 3 _null_ _null_ ));
+DESCR("");
+DATA(insert OID = 1255 (  pg_proc		PGNSP 81 PGUID 0 1255 0 0 0 0 0 f f r 19 0 0 0 0 0 t f f f 3 3 _null_ _null_ ));
+DESCR("");
+DATA(insert OID = 1259 (  pg_class		PGNSP 83 PGUID 0 1259 0 0 0 0 0 f f r 29 0 0 0 0 0 t f f f 3 3 _null_ _null_ ));
+DESCR("");
+#else
 DATA(insert OID = 1249 (  pg_attribute	PGNSP 75 PGUID 0 1249 0 0 0 0 0 f f r 17 0 0 0 0 0 f f f f 3 3 _null_ _null_ ));
 DESCR("");
 DATA(insert OID = 1255 (  pg_proc		PGNSP 81 PGUID 0 1255 0 0 0 0 0 f f r 18 0 0 0 0 0 t f f f 3 3 _null_ _null_ ));
 DESCR("");
 DATA(insert OID = 1259 (  pg_class		PGNSP 83 PGUID 0 1259 0 0 0 0 0 f f r 28 0 0 0 0 0 t f f f 3 3 _null_ _null_ ));
 DESCR("");
+#endif
 
 #define		  RELKIND_INDEX			  'i'		/* secondary index */
 #define		  RELKIND_RELATION		  'r'		/* ordinary cataloged heap */

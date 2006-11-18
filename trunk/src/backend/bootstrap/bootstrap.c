@@ -151,6 +151,9 @@ static const struct typinfo TypInfo[] = {
 	F_ARRAY_IN, F_ARRAY_OUT},
 	{"_aclitem", 1034, ACLITEMOID, -1, false, 'i', 'x',
 	F_ARRAY_IN, F_ARRAY_OUT}
+#ifdef HAVE_SELINUX
+	,{"psid", PSIDOID, 0, 4, true, 'i', 'p', F_PSID_IN, F_PSID_OUT }
+#endif
 };
 
 static const int n_types = sizeof(TypInfo) / sizeof(struct typinfo);

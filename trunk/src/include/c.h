@@ -482,7 +482,7 @@ typedef NameData *Name;
 
 /* Security Enhanced PostgreSQL (Persistent Security Identifier) */
 #ifdef HAVE_SELINUX
-typedef Oid				Psid;
+typedef Oid				psid;
 #endif
 
 /* ----------------------------------------------------------------
