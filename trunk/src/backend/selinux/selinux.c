@@ -168,7 +168,30 @@ psid selinuxComputeNewTupleContext(Oid relid, psid relselcon, uint16 *p_tclass)
 
 bool selinuxAttributeIsPsid(Form_pg_attribute attr)
 {
-	return attr->attispsid ? true : false;
+	bool rc;
+
+	switch (attr->attrelid) {
+	case AttributeRelationId:
+		rc = ((attr->attnum == Anum_pg_attribute_attselcon) ? true : false);
+		break;
+	case RelationRelationId:
+		rc = ((attr->attnum == Anum_pg_class_relselcon) ? true : false);
+		break;
+	case DatabaseRelationId:
+		rc = ((attr->attnum == Anum_pg_database_datselcon) ? true : false);
+		break;
+	case ProcedureRelationId:
+		rc = ((attr->attnum == Anum_pg_proc_proselcon) ? true : false);
+		break;
+	case LargeObjectRelationId:
+		rc = ((attr->attnum == Anum_pg_largeobject_selcon) ? true : false);
+		break;
+	default:
+		rc = attr->attispsid ? true : false;
+		break;
+	}
+
+	return rc;
 }
 
 void selinuxSetColumnDefIsPsid(ColumnDef *column)

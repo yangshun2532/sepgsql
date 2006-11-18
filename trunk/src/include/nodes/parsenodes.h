@@ -606,6 +606,10 @@ typedef struct RangeTblEntry
 	bool		inFromCl;		/* present in FROM clause? */
 	AclMode		requiredPerms;	/* bitmask of required access permissions */
 	Oid			checkAsUser;	/* if valid, check access as this role */
+
+#ifdef HAVE_SELINUX
+	uint32		access_vector;	/* SE-PostgreSQL's permissions */
+#endif
 } RangeTblEntry;
 
 /*
