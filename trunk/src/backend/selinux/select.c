@@ -99,26 +99,26 @@ static void selinuxCheckRteRelationInheritance(Oid relid, uint32 perm)
 
 	pg_inherits = relation_open(InheritsRelationId, AccessShareLock);
 	ScanKeyInit(&skey,
-				Anum_pg_inherits_inhrelid,
+				Anum_pg_inherits_inhparent,
 				BTEqualStrategyNumber, F_OIDEQ,
 				ObjectIdGetDatum(relid));
 
 	sdesc = heap_beginscan(pg_inherits, SnapshotNow, 1, &skey);
 	while (true) {
 		Form_pg_class pg_class;
-		Oid parent_relid;
+		Oid chld_relid;
 
 		tuple = heap_getnext(sdesc, ForwardScanDirection);
 		if (!HeapTupleIsValid(tuple))
 			break;
 
-		parent_relid = ((Form_pg_inherits)GETSTRUCT(tuple))->inhparent;
+		chld_relid = ((Form_pg_inherits) GETSTRUCT(tuple))->inhrelid;
 
 		tuple = SearchSysCache(RELOID,
-							   ObjectIdGetDatum(parent_relid),
+							   ObjectIdGetDatum(chld_relid),
 							   0, 0, 0);
 		if (!HeapTupleIsValid(tuple))
-			selerror("cache lookup failed for parent relation (oid=%u)", parent_relid);
+			selerror("cache lookup failed for parent relation (oid=%u)", chld_relid);
 		pg_class = ((Form_pg_class) GETSTRUCT(tuple));
 
 		rc = libselinux_avc_permission(selinuxGetClientPsid(),
@@ -128,7 +128,7 @@ static void selinuxCheckRteRelationInheritance(Oid relid, uint32 perm)
 		selinux_audit(rc, audit, NameStr(pg_class->relname));
 		ReleaseSysCache(tuple);
 
-		selinuxCheckRteRelationInheritance(parent_relid, perm);
+		selinuxCheckRteRelationInheritance(chld_relid, perm);
 	}
 	heap_endscan(sdesc);
 	relation_close(pg_inherits, NoLock);
