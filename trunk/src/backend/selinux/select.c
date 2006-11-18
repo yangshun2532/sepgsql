@@ -276,7 +276,7 @@ static void selinuxCheckRteSubquery(Query *query, RangeTblEntry *rte)
 }
 
 /* -------- selinuxCheckExpr() related helper functions -------- */
-
+static void selinuxCheckVar(Query *query, Var *v);
 
 /* selinuxCheckExpr() -- check SELECT permission for each Expr.
  * It should be called on the target of SELECT, where clause
@@ -293,9 +293,73 @@ void selinuxCheckExpr(Query *query, Expr *expr)
 	case T_Const:
 		/* do nothing */
 		break;
+	case T_Var:
+		selinuxCheckVar(query, (Var *)expr);
+		break;
 	default:
 		seldebug("now, we have no checking on the expr (tag = %u)", nodeTag(expr));
 		break;
 	}
 }
 
+static void selinuxCheckVar(Query *query, Var *v)
+{
+	RangeTblEntry *rte;
+	char *audit;
+	int rc;
+
+	Assert(IsA(v, Var));
+
+	rte = (RangeTblEntry *)list_nth(query->rtable, v->varno - 1);
+	Assert(IsA(rte, RangeTblEntry));
+
+	if (rte->rtekind == RTE_RELATION) {
+		Form_pg_class pg_class;
+		Form_pg_attribute pg_attr;
+		HeapTuple tup;
+		
+		/* 1. check table:select permission */
+		tup = SearchSysCache(RELOID,
+							 ObjectIdGetDatum(rte->relid),
+							 0, 0, 0);
+		if (!HeapTupleIsValid(tup))
+			selerror("cache lookup failed for pg_class %u", rte->relid);
+
+		pg_class = (Form_pg_class) GETSTRUCT(tup);
+		seldebug("checking table:select on '%s'",
+				 NameStr(pg_class->relname));
+		rc = libselinux_avc_permission(selinuxGetClientPsid(),
+									   pg_class->relselcon,
+									   SECCLASS_TABLE,
+									   TABLE__SELECT,
+									   &audit);
+		selinux_audit(rc, audit, NameStr(pg_class->relname));
+		ReleaseSysCache(tup);
+
+		/* 2. check column:select permission */
+		tup = SearchSysCache(ATTNUM,
+							 ObjectIdGetDatum(rte->relid),
+							 Int16GetDatum(v->varattno),
+							 0, 0);
+		if (!HeapTupleIsValid(tup))
+			selerror("cache lookup failed for pg_attribute (relid=%u, attnum=%d)",
+					 rte->relid, v->varattno);
+
+		pg_attr = (Form_pg_attribute) GETSTRUCT(tup);
+		seldebug("checking column:select on '%s.%s'",
+				 NameStr(pg_class->relname),
+				 NameStr(pg_attr->attname));
+		rc = libselinux_avc_permission(selinuxGetClientPsid(),
+									   pg_attr->attselcon,
+									   SECCLASS_COLUMN,
+									   COLUMN__SELECT,
+									   &audit);
+		selinux_audit(rc, audit, NameStr(pg_attr->attname));
+		ReleaseSysCache(tup);
+	} else if (rte->rtekind == RTE_JOIN) {
+		Var *join_var = list_nth(rte->joinaliasvars, v->varattno - 1);
+		selinuxCheckVar(query, join_var);
+	} else {
+		seldebug("rtekind = %s is ignored", rte->rtekind);
+	}
+}
