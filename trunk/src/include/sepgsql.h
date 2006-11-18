@@ -18,6 +18,9 @@
 	ereport(ERROR, (errcode(ERRCODE_SELINUX_DENIED), errmsg(fmt, ##__VA_ARGS__)))
 #define selnotice(fmt, ...)		\
 	ereport(NOTICE, (errcode(ERRCODE_SELINUX_INTERNAL), errmsg(fmt, ##__VA_ARGS__)))
+#define seldebug(fmt, ...)		\
+	ereport(DEBUG1, (errcode(ERRCODE_SELINUX_INTERNAL),		\
+					 errmsg("%s(%d): " fmt, __FUNCTION__, __LINE__, ##__VA_ARGS__)))
 
 static inline void selinux_audit(int result, char *message, char *objname) {
 	int errlv = (result ? ERROR : NOTICE);

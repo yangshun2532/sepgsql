@@ -254,20 +254,24 @@ void selinuxCheckRteRelation(Query *query, RangeTblEntry *rte, int index, uint32
 	} else {
 		query->jointree->quals = (Node *)func;
 	}
+	seldebug("append selinux_permission('%s', '%s.%s', %u, 0x%08x)",
+			 libselinux_psid_to_context(selinuxGetClientPsid()),
+			 NameStr(pg_class->relname), NameStr(pg_attr->attname),
+			 cls, perm);
 skip:
 	relation_close(rel, NoLock);
 }
 
 static void selinuxCheckRteJoin(Query *query, JoinExpr *j)
 {
-	selnotice("%s was called", __FUNCTION__);
+	seldebug("join left/right checking");
 	selinuxCheckFromItem(query, j->larg);
 	selinuxCheckFromItem(query, j->rarg);
 }
 
 static void selinuxCheckRteSubquery(Query *query, RangeTblEntry *rte)
 {
-	selnotice("%s was called", __FUNCTION__);
+	seldebug("subquery checking -- recursive");
 	rte->subquery = selinuxProxy(rte->subquery);
 }
 
@@ -290,7 +294,7 @@ void selinuxCheckExpr(Query *query, Expr *expr)
 		/* do nothing */
 		break;
 	default:
-		selnotice("now, we have no checking on the expr (tag = %u)", nodeTag(expr));
+		seldebug("now, we have no checking on the expr (tag = %u)", nodeTag(expr));
 		break;
 	}
 }
