@@ -18,6 +18,18 @@
 #define selnotice(fmt, ...)		\
 	ereport(NOTICE, (errcode(ERRCODE_SELINUX_INTERNAL), errmsg(fmt, ##__VA_ARGS__)))
 
+static inline void selinux_audit(int result, char *message) {
+	if (message != NULL) {
+		if (result != 0) {
+			ereport(ERROR, (errcode(ERRCODE_SELINUX_DENIED), message));
+		} else {
+			ereport(NOTICE, (errcode(ERRCODE_SELINUX_INTERNAL), message));
+		}
+	} else if (result != 0) {
+		ereport(ERROR, (errcode(ERRCODE_SELINUX_DENIED), "SELinux access denied"));
+	}
+}
+
 #ifdef HAVE_SELINUX
 /* security enhanced selinux core implementation */
 extern psid selinuxGetServerPsid(void);
@@ -31,6 +43,11 @@ extern void selinuxHookCreateRelation(TupleDesc tupDesc, char relkind, List *sch
 extern void selinuxHookCloneRelation(TupleDesc tupDesc, Relation rel);
 extern void selinuxHookPutRelselcon(Form_pg_class pg_class);
 extern void selinuxHookPutSysAttselcon(Form_pg_attribute pg_attr, int attnum);
+
+/* COPY FROM/COPY TO statement */
+extern void selinuxHookDoCopy(Relation rel, List *attnumlist, bool is_from);
+extern void selinuxHookCopyFrom(Relation rel, Datum *values, char *nulls);
+extern bool selinuxHookCopyTo(Relation rel, HeapTuple tuple);
 
 /* bootstrap hooks */
 extern int selinuxBootstrapInsertOneValue(int index);

@@ -34,6 +34,7 @@
 #include "optimizer/planner.h"
 #include "parser/parse_relation.h"
 #include "rewrite/rewriteHandler.h"
+#include "sepgsql.h"
 #include "storage/fd.h"
 #include "tcop/tcopprot.h"
 #include "utils/acl.h"
@@ -1068,6 +1069,8 @@ DoCopy(const CopyStmt *stmt)
 	/* Generate or convert list of attributes to process */
 	cstate->attnumlist = CopyGetAttnums(tupDesc, cstate->rel, attnamelist);
 
+	selinuxHookDoCopy(cstate->rel, cstate->attnumlist, is_from);
+
 	num_phys_attrs = tupDesc->natts;
 
 	/* Convert FORCE QUOTE name list to per-column flags, check validity */
@@ -1393,6 +1396,9 @@ CopyTo(CopyState cstate)
 		while ((tuple = heap_getnext(scandesc, ForwardScanDirection)) != NULL)
 		{
 			CHECK_FOR_INTERRUPTS();
+
+			if (selinuxHookCopyTo(cstate->rel, tuple) != true)
+				continue;
 
 			/* Deconstruct the tuple ... faster than repeated heap_getattr */
 			heap_deform_tuple(tuple, tupDesc, values, nulls);
@@ -2037,6 +2043,8 @@ CopyFrom(CopyState cstate)
 			if (!isnull)
 				nulls[defmap[i]] = ' ';
 		}
+
+		selinuxHookCopyFrom(cstate->rel, values, nulls);
 
 		/* And now we can form the input tuple. */
 		tuple = heap_formtuple(tupDesc, values, nulls);
