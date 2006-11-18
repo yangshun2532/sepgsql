@@ -107,6 +107,7 @@
 #include "postmaster/pgarch.h"
 #include "postmaster/postmaster.h"
 #include "postmaster/syslogger.h"
+#include "sepgsql.h"
 #include "storage/fd.h"
 #include "storage/ipc.h"
 #include "storage/pg_shmem.h"
@@ -948,7 +949,13 @@ PostmasterMain(int argc, char *argv[])
 	 */
 	StartupPID = StartupDataBase();
 
+	/* generate policy state change monitoring thread. */
+	if (selinuxInitializePostmaster())
+		ExitPostmaster(1);
+
 	status = ServerLoop();
+
+	selinuxFinalizePostmaster();
 
 	/*
 	 * ServerLoop probably shouldn't ever return, but if it does, close down.

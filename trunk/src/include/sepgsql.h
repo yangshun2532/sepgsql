@@ -44,6 +44,9 @@ extern psid selinuxGetServerPsid(void);
 extern psid selinuxGetClientPsid(void);
 extern psid selinuxGetDatabasePsid(void);
 extern void selinuxInitialize(void);
+extern int selinuxInitializePostmaster(void);
+extern void selinuxFinalizePostmaster(void);
+extern void selinuxHookPolicyStateChanged(void);
 extern Query *selinuxProxy(Query *query);
 
 /* SELECT statement related */
@@ -116,6 +119,9 @@ extern void selinuxSetColumnDefIsPsid(ColumnDef *column);
 #else
 /* dummy enhanced selinux core implementation */
 static inline void selinuxInitialize(void) {}
+static inline int selinuxInitializePostmaster(void) { return 0; }
+static inline void selinuxFinalizePostmaster(void) {}
+static inline void selinuxHookPolicyStateChanged(void) {}
 static inline Query *selinuxProxy(Query *query) { return query; }
 
 /* dummy CREATE DATABASE statement */

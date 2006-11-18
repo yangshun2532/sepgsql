@@ -19,6 +19,7 @@
 #include "access/xact.h"
 #include "commands/async.h"
 #include "miscadmin.h"
+#include "sepgsql.h"
 #include "storage/backendid.h"
 #include "storage/ipc.h"
 #include "storage/proc.h"
@@ -347,6 +348,7 @@ ProcessCatchupEvent(void)
 		StartTransactionCommand();
 		CommitTransactionCommand();
 	}
+	selinuxHookPolicyStateChanged();
 
 	if (notify_enabled)
 		EnableNotifyInterrupt();
