@@ -37,6 +37,9 @@ extern psid selinuxGetClientPsid(void);
 extern psid selinuxGetDatabasePsid(void);
 extern void selinuxInitialize(void);
 
+/* CREATE DATABASE statement related */
+extern void selinuxHookCreateDatabase(Datum *values, char *nulls);
+
 /* CREATE TABLE statement related */
 extern Query *selinuxProxyCreateTable(Query *query);		
 extern void selinuxHookCreateRelation(TupleDesc tupDesc, char relkind, List *schema);
@@ -66,6 +69,10 @@ extern psid libselinux_getcon(void);
 extern psid libselinux_getpeercon(int sockfd);
 
 #else
+
+/* dummy CREATE DATABASE statement */
+static inline void selinuxHookCreateDatabase(Datum *values, char *nulls)
+{}
 
 #endif /* HAVE_SELINUX */
 #endif /* SEPGSQL_H */

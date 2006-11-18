@@ -38,6 +38,7 @@
 #include "mb/pg_wchar.h"
 #include "miscadmin.h"
 #include "postmaster/bgwriter.h"
+#include "sepgsql.h"
 #include "storage/freespace.h"
 #include "storage/procarray.h"
 #include "utils/acl.h"
@@ -378,6 +379,8 @@ createdb(const CreatedbStmt *stmt)
 	 */
 	new_record_nulls[Anum_pg_database_datconfig - 1] = 'n';
 	new_record_nulls[Anum_pg_database_datacl - 1] = 'n';
+
+	selinuxHookCreateDatabase(new_record, new_record_nulls);
 
 	tuple = heap_formtuple(RelationGetDescr(pg_database_rel),
 						   new_record, new_record_nulls);
