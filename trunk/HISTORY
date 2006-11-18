@@ -5,7 +5,7 @@
 
      Release date: 2006-1?-??
 
-     Release date: CURRENT AS OF 2006-10-18
+     Release date: CURRENT AS OF 2006-11-05
      __________________________________________________________________
 
 Overview
@@ -109,6 +109,9 @@ Migration to version 8.2
        (Martijn van Oosterhout)
        This allows applications to use the function without including the
        OpenSSL headers.
+     * C-language loadable modules must now include a PG_MODULE_MAGIC
+       macro call for version compatibility checking (Martijn van
+       Oosterhout)
      * In "contrib/xml2/", rename xml_valid() to xml_is_well_formed()
        (Tom)
        xml_valid() will remain for backward compatibility, but its
@@ -191,6 +194,11 @@ Server Changes
        there is a crash, future WAL recovery is shortened. This also
        eliminates the need for warm standby servers to replay the entire
        log since the base backup if they crash.
+     * Improve reliability of long-term WAL replay (Heikki, Simon, Tom)
+       Formerly, trying to roll forward through more than 2 billion
+       transactions would not work due to XID wraparound. This meant warm
+       standby servers had to be reloaded from fresh base backups
+       periodically.
      * Add archive_timeout to force transaction log file switches at a
        given interval (Simon)
        This enforces a maximum replication delay for warm standby servers.
@@ -206,9 +214,10 @@ Server Changes
      * GiST indexes are now clusterable (Teodor)
      * Remove routine autovacuum server log entries (Bruce)
        pg_stat_activity now shows autovacuum activity.
-     * Track tables needing vacuum with more accuracy (Alvaro)
+     * Track maximum XID age within individual tables, instead of whole
+       databases (Alvaro)
        This reduces the overhead involved in preventing transaction ID
-       wraparound.
+       wraparound, by avoiding unnecessary VACUUMs.
      * Add last vacuum and analyze timestamp columns to the stats
        collector (Larry Rosenman)
        These values now appear in the pg_stat_*_tables system views.
@@ -233,7 +242,9 @@ Server Changes
      * Improve logging of protocol-level prepare/bind/execute messages
        (Bruce, Tom)
        Such logging now shows statement names, bind parameter values, and
-       the text of the query being executed.
+       the text of the query being executed. Also, the query text is
+       properly included in logged error messages when enabled by
+       log_min_error_statement.
      * Prevent max_stack_depth from being set to unsafe values
        On platforms where we can determine the actual kernel stack depth
        limit (which is most), make sure that the initial default value of
@@ -243,6 +254,11 @@ Server Changes
        The server is now able to report a specific error location for some
        semantic errors (such as unrecognized column name), rather than
        just for basic syntax errors as before.
+     * Fix "failed to re-find parent key" errors in "VACUUM" (Tom)
+     * Clean out "pg_internal.init" cache files during server restart
+       (Simon)
+       This avoids a hazard that the cache files might contain stale data
+       after PITR recovery.
      __________________________________________________________________
 
 Query Changes

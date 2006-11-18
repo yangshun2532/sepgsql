@@ -23,7 +23,7 @@
  * Portions Copyright (c) 1996-2006, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/backend/utils/init/flatfiles.c,v 1.21 2006/07/14 14:52:25 momjian Exp $
+ * $PostgreSQL: pgsql/src/backend/utils/init/flatfiles.c,v 1.23 2006/11/05 23:40:31 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -36,6 +36,7 @@
 #include "access/transam.h"
 #include "access/twophase_rmgr.h"
 #include "access/xact.h"
+#include "catalog/catalog.h"
 #include "catalog/pg_auth_members.h"
 #include "catalog/pg_authid.h"
 #include "catalog/pg_database.h"
@@ -47,6 +48,7 @@
 #include "storage/pmsignal.h"
 #include "utils/builtins.h"
 #include "utils/flatfiles.h"
+#include "utils/relcache.h"
 #include "utils/resowner.h"
 
 
@@ -163,11 +165,16 @@ name_okay(const char *str)
 /*
  * write_database_file: update the flat database file
  *
- * A side effect is to determine the oldest database's datminxid
+ * A side effect is to determine the oldest database's datfrozenxid
  * so we can set or update the XID wrap limit.
+ *
+ * Also, if "startup" is true, we tell relcache.c to clear out the relcache
+ * init file in each database.  That's a bit nonmodular, but scanning
+ * pg_database twice during system startup seems too high a price for keeping
+ * things better separated.
  */
 static void
-write_database_file(Relation drel)
+write_database_file(Relation drel, bool startup)
 {
 	char	   *filename,
 			   *tempname;
@@ -177,7 +184,7 @@ write_database_file(Relation drel)
 	HeapScanDesc scan;
 	HeapTuple	tuple;
 	NameData	oldest_datname;
-	TransactionId oldest_datminxid = InvalidTransactionId;
+	TransactionId oldest_datfrozenxid = InvalidTransactionId;
 
 	/*
 	 * Create a temporary filename to be renamed later.  This prevents the
@@ -208,27 +215,23 @@ write_database_file(Relation drel)
 		char	   *datname;
 		Oid			datoid;
 		Oid			dattablespace;
-		TransactionId datminxid,
-					datvacuumxid;
+		TransactionId datfrozenxid;
 
 		datname = NameStr(dbform->datname);
 		datoid = HeapTupleGetOid(tuple);
 		dattablespace = dbform->dattablespace;
-		datminxid = dbform->datminxid;
-		datvacuumxid = dbform->datvacuumxid;
+		datfrozenxid = dbform->datfrozenxid;
 
 		/*
-		 * Identify the oldest datminxid, ignoring databases that are not
-		 * connectable (we assume they are safely frozen).	This must match
+		 * Identify the oldest datfrozenxid.  This must match
 		 * the logic in vac_truncate_clog() in vacuum.c.
 		 */
-		if (dbform->datallowconn &&
-			TransactionIdIsNormal(datminxid))
+		if (TransactionIdIsNormal(datfrozenxid))
 		{
-			if (oldest_datminxid == InvalidTransactionId ||
-				TransactionIdPrecedes(datminxid, oldest_datminxid))
+			if (oldest_datfrozenxid == InvalidTransactionId ||
+				TransactionIdPrecedes(datfrozenxid, oldest_datfrozenxid))
 			{
-				oldest_datminxid = datminxid;
+				oldest_datfrozenxid = datfrozenxid;
 				namestrcpy(&oldest_datname, datname);
 			}
 		}
@@ -244,14 +247,25 @@ write_database_file(Relation drel)
 		}
 
 		/*
-		 * The file format is: "dbname" oid tablespace minxid vacuumxid
+		 * The file format is: "dbname" oid tablespace frozenxid
 		 *
 		 * The xids are not needed for backend startup, but are of use to
 		 * autovacuum, and might also be helpful for forensic purposes.
 		 */
 		fputs_quote(datname, fp);
-		fprintf(fp, " %u %u %u %u\n",
-				datoid, dattablespace, datminxid, datvacuumxid);
+		fprintf(fp, " %u %u %u\n",
+				datoid, dattablespace, datfrozenxid);
+
+		/*
+		 * Also clear relcache init file for each DB if starting up.
+		 */
+		if (startup)
+		{
+			char *dbpath = GetDatabasePath(datoid, dattablespace);
+
+			RelationCacheInitFileRemove(dbpath);
+			pfree(dbpath);
+		}
 	}
 	heap_endscan(scan);
 
@@ -272,10 +286,10 @@ write_database_file(Relation drel)
 						tempname, filename)));
 
 	/*
-	 * Set the transaction ID wrap limit using the oldest datminxid
+	 * Set the transaction ID wrap limit using the oldest datfrozenxid
 	 */
-	if (oldest_datminxid != InvalidTransactionId)
-		SetTransactionIdLimit(oldest_datminxid, &oldest_datname);
+	if (oldest_datfrozenxid != InvalidTransactionId)
+		SetTransactionIdLimit(oldest_datfrozenxid, &oldest_datname);
 }
 
 
@@ -673,6 +687,9 @@ write_auth_file(Relation rel_authid, Relation rel_authmem)
  * policy means we need not force initdb to change the format of the
  * flat files.
  *
+ * We also cause relcache init files to be flushed, for largely the same
+ * reasons.
+ *
  * In a standalone backend we pass database_only = true to skip processing
  * the auth file.  We won't need it, and building it could fail if there's
  * something corrupt in the authid/authmem catalogs.
@@ -703,7 +720,7 @@ BuildFlatFiles(bool database_only)
 
 	/* No locking is needed because no one else is alive yet */
 	rel_db = XLogOpenRelation(rnode);
-	write_database_file(rel_db);
+	write_database_file(rel_db, true);
 
 	if (!database_only)
 	{
@@ -815,7 +832,7 @@ AtEOXact_UpdateFlatFiles(bool isCommit)
 	if (database_file_update_subid != InvalidSubTransactionId)
 	{
 		database_file_update_subid = InvalidSubTransactionId;
-		write_database_file(drel);
+		write_database_file(drel, false);
 		heap_close(drel, NoLock);
 	}
 

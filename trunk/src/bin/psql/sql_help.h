@@ -463,7 +463,7 @@ static struct _helpStruct QL_HELP[] = {
 
     { "VACUUM",
       N_("garbage-collect and optionally analyze a database"),
-      N_("VACUUM [ FULL | FREEZE ] [ VERBOSE ] [ table ]\nVACUUM [ FULL | FREEZE ] [ VERBOSE ] ANALYZE [ table [ (column [, ...] ) ] ]") },
+      N_("VACUUM [ FULL ] [ FREEZE ] [ VERBOSE ] [ table ]\nVACUUM [ FULL ] [ FREEZE ] [ VERBOSE ] ANALYZE [ table [ (column [, ...] ) ] ]") },
 
     { "VALUES",
       N_("compute a set of rows"),
