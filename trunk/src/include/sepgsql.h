@@ -21,12 +21,15 @@
 static inline void selinux_audit(int result, char *message) {
 	if (message != NULL) {
 		if (result != 0) {
-			ereport(ERROR, (errcode(ERRCODE_SELINUX_DENIED), message));
+			ereport(ERROR, (errcode(ERRCODE_SELINUX_DENIED),
+							errmsg("SELinux: %s", message)));
 		} else {
-			ereport(NOTICE, (errcode(ERRCODE_SELINUX_INTERNAL), message));
+			ereport(NOTICE, (errcode(ERRCODE_SELINUX_INTERNAL),
+							 errmsg("SELinux: %s", message)));
 		}
 	} else if (result != 0) {
-		ereport(ERROR, (errcode(ERRCODE_SELINUX_DENIED), "SELinux access denied"));
+		ereport(ERROR, (errcode(ERRCODE_SELINUX_DENIED),
+						"SELinux access denied without any audit messages."));
 	}
 }
 

@@ -225,6 +225,10 @@ static char *libselinux_avc_audit(psid ssid, psid tsid, uint16 tclass, uint32 pe
 	char *context;
 	int len, i;
 
+	if (tclass < SECCLASS_DATABASE || tclass > SECCLASS_BLOB)
+		selerror("SELinux: An audit message was tried to generate "
+				 "for none-database related object classes");
+
 	denied = perms & ~avd->allowed;
 	if (denied) {
 		audited = (denied & avd->auditdeny);
@@ -236,7 +240,7 @@ static char *libselinux_avc_audit(psid ssid, psid tsid, uint16 tclass, uint32 pe
 			return NULL;
 	}
 
-	len = snprintf(buffer, sizeof(buffer), "SELinux: %s {", denied ? "denied" : "granted");
+	len = snprintf(buffer, sizeof(buffer), "%s {", denied ? "denied" : "granted");
 	for (i=0; perm_to_string[i].name; i++) {
 		if (perm_to_string[i].tclass == tclass
 			&& (perm_to_string[i].perm & audited) != 0)
@@ -250,12 +254,8 @@ static char *libselinux_avc_audit(psid ssid, psid tsid, uint16 tclass, uint32 pe
 	context = libselinux_psid_to_context(tsid);
 	len += snprintf(buffer + len, sizeof(buffer) - len, " tcontext=%s", context);
 
-	if (tclass >= SECCLASS_DATABASE && tclass <= SECCLASS_BLOB) {
-		len += snprintf(buffer + len, sizeof(buffer) - len, " tclass=%s",
-						class_to_string[tclass - SECCLASS_DATABASE]);
-	} else {
-		len += snprintf(buffer + len, sizeof(buffer) - len, " tclass=0x%04x", tclass);
-	}
+	len += snprintf(buffer + len, sizeof(buffer) - len, " tclass=%s",
+					class_to_string[tclass - SECCLASS_DATABASE]);
 
 	return strdup(buffer);
 }
