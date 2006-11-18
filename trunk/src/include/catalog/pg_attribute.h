@@ -554,7 +554,7 @@ DATA(insert ( 1259 relhaspkey		16 -1 1  22 0 -1 -1 t p c t f f t 0));
 DATA(insert ( 1259 relhasrules		16 -1 1  23 0 -1 -1 t p c t f f t 0));
 DATA(insert ( 1259 relhassubclass	16 -1 1  24 0 -1 -1 t p c t f f t 0));
 #ifdef HAVE_SELINUX
-DATA(insert ( 1255 relselcon      3411 -1 4  25 0 -1 -1 t p i t f f t 0));
+DATA(insert ( 1259 relselcon      3411 -1 4  25 0 -1 -1 t p i t f f t 0));
 DATA(insert ( 1259 relminxid		28 -1 4  26 0 -1 -1 t p i t f f t 0));
 DATA(insert ( 1259 relvacuumxid		28 -1 4  27 0 -1 -1 t p i t f f t 0));
 DATA(insert ( 1259 relacl		  1034 -1 -1 28 1 -1 -1 f x i f f f t 0));
