@@ -8,6 +8,7 @@
 #define SEPGSQL_H
 #include "access/htup.h"
 #include "access/tupdesc.h"
+#include "catalog/pg_attribute.h"
 #include "nodes/parsenodes.h"
 #include "utils/rel.h"
 
@@ -100,6 +101,12 @@ extern bool libselinux_check_context(char *context);
 extern psid libselinux_getcon(void);
 extern psid libselinux_getpeercon(int sockfd);
 
+/* utility functions */
+static inline bool selinuxAttributeIsPsid(Form_pg_attribute attr)
+{
+	return attr->attispsid ? true : false;
+}
+
 #else
 /* dummy enhanced selinux core implementation */
 static inline void selinuxInitialize(void) {}
@@ -107,6 +114,9 @@ static inline Query *selinuxProxy(Query *query) { return query; }
 
 /* dummy CREATE DATABASE statement */
 static inline void selinuxHookCreateDatabase(Datum *values, char *nulls) {}
+
+/* dummy utility functions */
+static inline bool selinuxAttributeIsPsid(Form_pg_attribute attr) { return false; }
 
 #endif /* HAVE_SELINUX */
 #endif /* SEPGSQL_H */
