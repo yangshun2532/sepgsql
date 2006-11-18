@@ -57,6 +57,22 @@ extern int selinuxBootstrapInsertOneValue(int index);
 extern void selinuxBootstrapFormrdesc(Relation rel);
 extern void selinuxBootstrapPostCreateRelation(Oid relid);
 
+/* SQL functions */
+extern Datum psid_in(PG_FUNCTION_ARGS);
+extern Datum psid_out(PG_FUNCTION_ARGS);
+extern Datum psid_recv(PG_FUNCTION_ARGS);
+extern Datum psid_send(PG_FUNCTION_ARGS);
+extern Datum text_to_psid(PG_FUNCTION_ARGS);
+extern Datum psid_to_text(PG_FUNCTION_ARGS);
+extern Datum psid_to_bpchar(PG_FUNCTION_ARGS);
+extern Datum bpchar_to_psid(PG_FUNCTION_ARGS);
+
+extern Datum selinux_getcon(PG_FUNCTION_ARGS);
+extern Datum selinux_permission(PG_FUNCTION_ARGS);
+extern Datum selinux_permission_noaudit(PG_FUNCTION_ARGS);
+extern Datum selinux_check_context_insert(PG_FUNCTION_ARGS);
+extern Datum selinux_check_context_update(PG_FUNCTION_ARGS);
+
 /* libselinux wrapper functions */
 extern void libselinux_avc_reset(void);
 extern int libselinux_avc_permission(psid ssid, psid tsid, uint16 tclass, uint32 perms, char **audit);
