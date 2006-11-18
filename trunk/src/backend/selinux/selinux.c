@@ -7,7 +7,12 @@
 #include "postgres.h"
 
 #include "access/htup.h"
+#include "catalog/pg_attribute.h"
+#include "catalog/pg_class.h"
 #include "catalog/pg_database.h"
+#include "catalog/pg_largeobject.h"
+#include "catalog/pg_proc.h"
+#include "catalog/pg_type.h"
 #include "libpq/libpq-be.h"
 #include "miscadmin.h"
 #include "sepgsql.h"
@@ -112,6 +117,63 @@ Query *selinuxProxy(Query *query)
 	}
 
 	return query;
+}
+
+/* ------------------------------------------------
+ * None categolized utility functions
+ * ------------------------------------------------ */
+
+/* selinuxComputeNewTupleContext() -- returns security context
+ * of new tuple.
+ * @relid : Oid of relation which is tried to insert.
+ * @relselcon : psid of relation which is tried to insert.
+ */
+psid selinuxComputeNewTupleContext(Oid relid, psid relselcon, uint16 *p_tclass)
+{
+	psid tsid;
+	uint16 tclass;
+	
+    switch (relid) {
+    case AttributeRelationId:
+        tclass = SECCLASS_COLUMN;
+        tsid = relselcon;
+        break;
+    case RelationRelationId:
+        tclass = SECCLASS_TABLE;
+        tsid = selinuxGetDatabasePsid();
+        break;
+    case DatabaseRelationId:
+        tclass = SECCLASS_DATABASE;
+        tsid = selinuxGetServerPsid();
+        break;
+    case ProcedureRelationId:
+        tclass = SECCLASS_PROCEDURE;
+        tsid = selinuxGetDatabasePsid();
+        break;
+    case LargeObjectRelationId:
+		tclass = SECCLASS_BLOB;
+		tsid = selinuxGetDatabasePsid();
+		break;
+    default:
+        tclass = SECCLASS_TUPLE;
+        tsid = relselcon;
+        break;
+    }
+
+	if (p_tclass)
+		*p_tclass = tclass;
+
+	return libselinux_avc_createcon(selinuxGetClientPsid(), tsid, tclass);
+}
+
+bool selinuxAttributeIsPsid(Form_pg_attribute attr)
+{
+	return attr->attispsid ? true : false;
+}
+
+void selinuxSetColumnDefIsPsid(ColumnDef *column)
+{
+	column->is_selcon = true;
 }
 
 /* ------------------------------------------------

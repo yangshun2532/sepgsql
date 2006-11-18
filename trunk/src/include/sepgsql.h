@@ -73,6 +73,7 @@ extern void selinuxHookPutSysAttselcon(Form_pg_attribute pg_attr, int attnum);
 /* COPY FROM/COPY TO statement */
 extern void selinuxHookDoCopy(Relation rel, List *attnumlist, bool is_from);
 extern void selinuxHookCopyFrom(Relation rel, Datum *values, char *nulls);
+extern Node *selinuxHookCopyFromNewContext(Relation rel);
 extern bool selinuxHookCopyTo(Relation rel, HeapTuple tuple);
 
 /* bootstrap hooks */
@@ -108,15 +109,9 @@ extern psid libselinux_getcon(void);
 extern psid libselinux_getpeercon(int sockfd);
 
 /* utility functions */
-static inline bool selinuxAttributeIsPsid(Form_pg_attribute attr)
-{
-	return attr->attispsid ? true : false;
-}
-
-static inline void selinuxSetColumnDefIsPsid(ColumnDef *column)
-{
-	column->is_selcon = true;
-}
+extern psid selinuxComputeNewTupleContext(Oid relid, psid relselcon, uint16 *tclass);
+extern bool selinuxAttributeIsPsid(Form_pg_attribute attr);
+extern void selinuxSetColumnDefIsPsid(ColumnDef *column);
 
 #else
 /* dummy enhanced selinux core implementation */
@@ -125,6 +120,12 @@ static inline Query *selinuxProxy(Query *query) { return query; }
 
 /* dummy CREATE DATABASE statement */
 static inline void selinuxHookCreateDatabase(Datum *values, char *nulls) {}
+
+/* dummy COPY FROM/COPY TO statement */
+static inline void selinuxHookDoCopy(Relation rel, List *attnumlist, bool is_from) {}
+static inline void selinuxHookCopyFrom(Relation rel, Datum *values, char *nulls) {}
+static inline Node *selinuxHookCopyFromNewContext(Relation rel) { return NULL; }
+static inline bool selinuxHookCopyTo(Relation rel, HeapTuple tuple) { return true; }
 
 /* dummy utility functions */
 static inline bool selinuxAttributeIsPsid(Form_pg_attribute attr) { return false; }

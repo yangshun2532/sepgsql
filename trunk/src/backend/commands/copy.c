@@ -1771,7 +1771,13 @@ CopyFrom(CopyState cstate)
 		{
 			/* attribute is NOT to be copied from input */
 			/* use default value if one exists */
-			Node	   *defexpr = build_column_default(cstate->rel, attnum);
+			Node	*defexpr;
+
+			if (selinuxAttributeIsPsid(attr[attnum - 1])) {
+				defexpr = selinuxHookCopyFromNewContext(cstate->rel);
+			} else {
+				defexpr = build_column_default(cstate->rel, attnum);
+			}
 
 			if (defexpr != NULL)
 			{
@@ -3231,6 +3237,8 @@ CopyGetAttnums(TupleDesc tupDesc, Relation rel, List *attnamelist)
 		for (i = 0; i < attr_count; i++)
 		{
 			if (attr[i]->attisdropped)
+				continue;
+			if (selinuxAttributeIsPsid(attr[i]))
 				continue;
 			attnums = lappend_int(attnums, i + 1);
 		}

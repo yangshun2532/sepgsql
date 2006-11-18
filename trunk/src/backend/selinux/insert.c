@@ -38,31 +38,7 @@ static Expr *selinuxInsertTupleContext(Expr *esid, Oid relid, psid relselcon)
 	args = list_make1(cons);
 
 	/* 2nd arg : security context of object implicitly calculated */
-	switch (relid) {
-	case AttributeRelationId:
-		tclass = SECCLASS_COLUMN;
-		tsid = relselcon;
-		break;
-	case RelationRelationId:
-		tclass = SECCLASS_TABLE;
-		tsid = selinuxGetDatabasePsid();
-		break;
-	case DatabaseRelationId:
-		tclass = SECCLASS_DATABASE;
-		tsid = selinuxGetServerPsid();
-		break;
-	case ProcedureRelationId:
-		tclass = SECCLASS_PROCEDURE;
-		tsid = selinuxGetDatabasePsid();
-		break;
-	case LargeObjectRelationId: /* FIXME: not supported yet */
-	default:
-		tclass = SECCLASS_TUPLE;
-		tsid = relselcon;
-		break;
-	}
-	isid = libselinux_avc_createcon(selinuxGetClientPsid(),
-									tsid, tclass);
+	isid = selinuxComputeNewTupleContext(relid, relselcon, &tclass);
 	cons = makeConst(PSIDOID, sizeof(psid),
 					 ObjectIdGetDatum(isid),
 					 false, true);

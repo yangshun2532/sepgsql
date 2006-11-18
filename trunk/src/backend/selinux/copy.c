@@ -7,8 +7,10 @@
 #include "postgres.h"
 
 #include "access/heapam.h"
-#include "catalog/pg_class.h"
 #include "catalog/pg_attribute.h"
+#include "catalog/pg_class.h"
+#include "catalog/pg_type.h"
+#include "nodes/makefuncs.h"
 #include "sepgsql.h"
 
 #include <selinux/flask.h>
@@ -46,36 +48,57 @@ void selinuxHookDoCopy(Relation rel, List *attnumlist, bool is_from)
 
 void selinuxHookCopyFrom(Relation rel, Datum *values, char *nulls)
 {
-	TupleDesc tupDesc = RelationGetDescr(rel);
-	uint32 perm = TUPLE__INSERT;
-	psid tbl_psid, tup_psid;
+	psid isid, esid;
 	char *audit;
-	int i, rc = 0;
+	int i, rc;
 
-	tbl_psid = RelationGetForm(rel)->relselcon;
-	tup_psid = libselinux_avc_createcon(selinuxGetClientPsid(),
-										tbl_psid,
-										SECCLASS_TUPLE);
+	isid = selinuxComputeNewTupleContext(RelationGetRelid(rel),
+										 RelationGetForm(rel)->relselcon,
+										 NULL);
+
 	for (i=0; i < RelationGetNumberOfAttributes(rel); i++) {
-		if (!tupDesc->attrs[i]->attispsid)
+		Form_pg_attribute attr = RelationGetDescr(rel)->attrs[i];
+		if (!selinuxAttributeIsPsid(attr))
 			continue;
-		if (nulls[i] == 'n') {
-			nulls[i] = ' ';
-			values[i] = ObjectIdGetDatum(tup_psid);
-		} else {
-			perm |= TUPLE__RELABELFROM;
+		if (nulls[i] == 'n')
+			selerror("NULL was set at 'security_context'");
+
+		esid = DatumGetObjectId(values[i]);
+		if (isid == esid) {
 			rc = libselinux_avc_permission(selinuxGetClientPsid(),
-										   DatumGetObjectId(values[i]),
+										   DatumGetObjectId(isid),
+										   SECCLASS_TUPLE,
+										   TUPLE__INSERT,
+										   &audit);
+			selinux_audit(rc, audit, NULL);
+		} else {
+			rc = libselinux_avc_permission(selinuxGetClientPsid(),
+										   DatumGetObjectId(isid),
+										   SECCLASS_TUPLE,
+										   TUPLE__INSERT | TUPLE__RELABELFROM,
+										   &audit);
+			selinux_audit(rc, audit, NULL);
+
+			rc = libselinux_avc_permission(selinuxGetClientPsid(),
+										   DatumGetObjectId(esid),
 										   SECCLASS_TUPLE,
 										   TUPLE__RELABELTO,
 										   &audit);
 			selinux_audit(rc, audit, NULL);
 		}
-		break;
 	}
-	rc = libselinux_avc_permission(selinuxGetClientPsid(), tup_psid,
-								   SECCLASS_TUPLE, perm, &audit);
-	selinux_audit(rc, audit, NULL);
+}
+
+Node *selinuxHookCopyFromNewContext(Relation rel)
+{
+	psid new_sid;
+
+	new_sid = libselinux_avc_createcon(selinuxGetClientPsid(),
+									   RelationGetForm(rel)->relselcon,
+									   SECCLASS_TUPLE);
+	return (Node *)makeConst(PSIDOID, sizeof(psid),
+							 ObjectIdGetDatum(new_sid),
+							 false, false);
 }
 
 bool selinuxHookCopyTo(Relation rel, HeapTuple tuple)
