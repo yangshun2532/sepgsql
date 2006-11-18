@@ -75,6 +75,45 @@ void selinuxInitialize()
 	}
 }
 
+Query *selinuxProxy(Qeury *query)
+{
+	Node *stmt;
+
+	switch (query->commandType) {
+	case CMD_SELECT:
+		query = selinuxProxySelect(query);
+		break;
+	case CMD_UPDATE:
+		query = selinuxProxyUpdate(query);
+		break;
+	case CMD_INSERT:
+		query = selinuxProxyInsert(query);
+		break;
+	case CMD_DELETE:
+		query = selinuxProxyDelete(query);
+		break;
+	case CMD_UTILITY:
+		stmt = query->utilityStmt;
+		switch (nodeTag(stmt)) {
+		case T_CreateStmt:
+			query = selinuxProxyCreateTable(query);
+			break;
+		default:
+			/* do nothing */
+			break;
+		}
+		break;
+	case CMD_NOTHING:
+		/* do nothing */
+		break;
+	default:
+		selerror("SELinux: unknown command type (%d) found", query->commandType);
+		break;
+	}
+
+	return query;
+}
+
 /* ------------------------------------------------
  * SQL functions in Security Enhanced PostgreSQL
  * ------------------------------------------------ */

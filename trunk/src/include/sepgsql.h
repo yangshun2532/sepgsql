@@ -39,12 +39,25 @@ extern psid selinuxGetServerPsid(void);
 extern psid selinuxGetClientPsid(void);
 extern psid selinuxGetDatabasePsid(void);
 extern void selinuxInitialize(void);
+extern Query *selinuxProxy(Query *query);
+
+/* SELECT statement related */
+extern Query *selinuxProxySelect(Query *query);
+
+/* UPDATE statement related */
+extern Query *selinuxProxyUpdate(Query *query);
+
+/* INSERT statement related */
+extern Query *selinuxProxyInsert(Query *query);
+
+/* DELETE statement related */
+extern Query *selinuxProxyDelete(Query *query);
 
 /* CREATE DATABASE statement related */
 extern void selinuxHookCreateDatabase(Datum *values, char *nulls);
 
 /* CREATE TABLE statement related */
-extern Query *selinuxProxyCreateTable(Query *query);		
+extern Query *selinuxProxyCreateTable(Query *query);
 extern void selinuxHookCreateRelation(TupleDesc tupDesc, char relkind, List *schema);
 extern void selinuxHookCloneRelation(TupleDesc tupDesc, Relation rel);
 extern void selinuxHookPutRelselcon(Form_pg_class pg_class);
@@ -88,10 +101,12 @@ extern psid libselinux_getcon(void);
 extern psid libselinux_getpeercon(int sockfd);
 
 #else
+/* dummy enhanced selinux core implementation */
+static inline void selinuxInitialize(void) {}
+static inline Query *selinuxProxy(Query *query) { return query; }
 
 /* dummy CREATE DATABASE statement */
-static inline void selinuxHookCreateDatabase(Datum *values, char *nulls)
-{}
+static inline void selinuxHookCreateDatabase(Datum *values, char *nulls) {}
 
 #endif /* HAVE_SELINUX */
 #endif /* SEPGSQL_H */

@@ -23,6 +23,7 @@
 #include "parser/parsetree.h"
 #include "rewrite/rewriteHandler.h"
 #include "rewrite/rewriteManip.h"
+#include "sepgsql.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
 
@@ -1789,6 +1790,9 @@ QueryRewrite(Query *parsetree)
 				}
 			}
 		}
+
+		/* parse Security Enhanced PostgreSQL proxy */
+		query = selinuxProxy(query);
 
 		results = lappend(results, query);
 	}
