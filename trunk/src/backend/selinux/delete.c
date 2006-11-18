@@ -13,39 +13,39 @@
 
 Query *selinuxProxyDelete(Query *query)
 {
+	ListCell *x;
 	RangeTblEntry *rte;
 	uint32 perm;
 	int index;
 
-	/* 1. permission check on relation */
+	/* 1. permission mark on target relation */
 	index = query->resultRelation;
 	rte = list_nth(query->rtable, index - 1);
-	perm = TABLE__DELETE;
-	if (query->returningList)
-		perm |= TABLE__SELECT;
-	selinuxCheckRteRelation(query, rte, index, perm);
+	rte->access_vector |= TABLE__DELETE;
 
-	/* 2. permission check on using clause */
-	if (query->jointree->fromlist) {
-		ListCell *x;
-		foreach(x, query->jointree->fromlist) {
-			RangeTblEntry *rte;
-			Node *n = lfirst(x);
-			Assert(IsA(n, RangeTblRef));
-			
-			index = ((RangeTblRef *)n)->rtindex;
-			rte = list_nth(query->rtable, index - 1);
-			Assert(IsA(rte, RangeTblEntry));
-			
-			selinuxCheckRteRelation(query, rte, index, TABLE__SELECT);
-		}
+	/* 2. permission mark on using clause */
+	foreach(x, query->jointree->fromlist) {
+		Node *n = lfirst(x);
+		Assert(IsA(n, RangeTblRef));
+		index = ((RangeTblRef *)n)->rtindex;
+		rte = list_nth(query->rtable, index - 1);
+		rte->access_vector |= TABLE__SELECT;
 	}
 
-	/* 3. check where clause */
+	/* 3. permission mark on returning clause, if necessary */
+	selinuxCheckTargetList(query, query->returningList);
+
+	/* 4. permission mark on where clause */
 	selinuxCheckExpr(query, (Expr *)query->jointree->quals);
 
-	/* 4. check returning clause, if necessary*/
-	selinuxCheckTargetList(query, query->returningList);
+	/* 5. permission checking */
+	index = 1;
+	foreach (x, query->rtable) {
+		rte = (RangeTblEntry *) lfirst(x);
+		if (rte->rtekind == RTE_RELATION)
+			selinuxCheckRteRelation(query, rte, index);
+		index++;
+	}
 
 	return query;
 }

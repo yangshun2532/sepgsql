@@ -129,8 +129,8 @@ Query *selinuxProxyUpdate(Query *query)
 	rindex = 1;
 	foreach (x, query->rtable) {
 		rte = (RangeTblEntry *) lfirst(x);
-		if (rte->access_vector)
-			selinuxCheckRteRelation(query, rte, rindex, rte->access_vector);
+		if (rte->rtekind == RTE_RELATION)
+			selinuxCheckRteRelation(query, rte, rindex);
 		rindex++;
 	}
 

@@ -33,18 +33,16 @@ Query *selinuxProxySelect(Query *query)
 {
 	ListCell *x;
 
-	/* (1) permission check on fromlist */
-	foreach(x, query->jointree->fromlist) {
-		Node *n = lfirst(x);
-		selinuxCheckFromItem(query, n);
-	}
-
-	/* (2) permission check on each column */
-	foreach(x, query->targetList) {
-		TargetEntry *tle = (TargetEntry *)lfirst(x);
+	/* 1. permission checking on fromlist */
+	foreach (x, query->targetList) {
+		TargetEntry *tle = (TargetEntry *) lfirst(x);
 		Assert(IsA(tle, TargetEntry));
 		selinuxCheckExpr(query, tle->expr);
 	}
+
+	/* 2. permission checking on each column */
+	foreach(x, query->jointree->fromlist)
+		selinuxCheckFromItem(query, lfirst(x));
 
 	return query;
 }
@@ -64,7 +62,8 @@ static void selinuxCheckFromItem(Query *query, Node *n)
 		
 		switch (rte->rtekind) {
 		case RTE_RELATION:
-			selinuxCheckRteRelation(query, rte, index, TABLE__SELECT);
+			rte->access_vector = TABLE__SELECT;
+			selinuxCheckRteRelation(query, rte, index);
 			break;
 		case RTE_SUBQUERY:
 			selinuxCheckRteSubquery(query, rte);
@@ -134,21 +133,19 @@ static void selinuxCheckRteRelationInheritance(Oid relid, uint32 perm)
 	relation_close(pg_inherits, NoLock);
 }
 
-void selinuxCheckRteRelation(Query *query, RangeTblEntry *rte, int index, uint32 perm)
+void selinuxCheckRteRelation(Query *query, RangeTblEntry *rte, int index)
 {
 	Relation rel;
 	FuncExpr *func;
-	List *args;
-	Var *var;
-	Const *cons;
 	Form_pg_attribute pg_attr;
 	Form_pg_class pg_class;
-	char *audit;
-	uint32 tperm = 0;
+	List *args = NIL;
+	uint32 tperm = 0, perm = rte->access_vector;
 	int cls, attno, rc;
+	char *audit;
 	
 	Assert(rte->relkind == RTE_RELATION);
-	Assert((perm & (TABLE__SELECT | TABLE__UPDATE | TABLE__DELETE)) != perm);
+	Assert(perm == perm & (TABLE__SELECT | TABLE__UPDATE | TABLE__DELETE));
 
 	rel = relation_open(rte->relid, AccessShareLock);
 	pg_class = RelationGetForm(rel);
@@ -156,26 +153,33 @@ void selinuxCheckRteRelation(Query *query, RangeTblEntry *rte, int index, uint32
 	/* (1) check table permission of this relation and
 	 * super relation if necessary
 	 */
+	seldebug("avc_permission(%u, %u, %d, %#08x)",
+			 selinuxGetClientPsid(), pg_class->relselcon,
+			 SECCLASS_TABLE, rte->access_vector);
 	rc = libselinux_avc_permission(selinuxGetClientPsid(),
 								   pg_class->relselcon,
 								   SECCLASS_TABLE,
-								   perm, &audit);
+								   rte->access_vector,
+								   &audit);
 	selinux_audit(rc, audit, NameStr(pg_class->relname));
 	if (rte->inh)
-		selinuxCheckRteRelationInheritance(rte->relid, perm);
+		selinuxCheckRteRelationInheritance(rte->relid, rte->access_vector);
 
 	/* (2) append a additional condition into where clause
 	 * to narrow down the result set
 	 */
-	if (IsSystemClass(pg_class)) {
+	if (RelationGetRelid(rel) == AttributeRelationId
+		|| RelationGetRelid(rel) == RelationRelationId
+		|| RelationGetRelid(rel) == DatabaseRelationId
+		|| RelationGetRelid(rel) == ProcedureRelationId
+		|| RelationGetRelid(rel) == LargeObjectRelationId) {
 		switch (RelationGetRelid(rel)) {
 		case AttributeRelationId:
 			attno = Anum_pg_attribute_attselcon - 1;
 			cls = SECCLASS_COLUMN;
 			break;
 		case RelationRelationId:
-			if (pg_class->relkind != RELKIND_RELATION)
-				goto skip;
+			Assert(pg_class == RELKIND_RELATION);
 			attno = Anum_pg_class_relselcon - 1;
 			cls = SECCLASS_TABLE;
 			break;
@@ -187,16 +191,17 @@ void selinuxCheckRteRelation(Query *query, RangeTblEntry *rte, int index, uint32
 			attno = Anum_pg_proc_proselcon - 1;
 			cls = SECCLASS_PROCEDURE;
 			break;
-		case LargeObjectRelationId: /* not supported yet */
+		case LargeObjectRelationId:
+			/* not supported yet */
 		default:
 			goto skip;
 			break;
 		}
-		if ((perm & TABLE__SELECT) != 0)
+		if ((rte->access_vector & TABLE__SELECT) != 0)
 			tperm |= COMMON_DATABASE__GETATTR;
-		if ((perm & TABLE__UPDATE) != 0)
+		if ((rte->access_vector & TABLE__UPDATE) != 0)
 			tperm |= COMMON_DATABASE__SETATTR;
-		if ((perm & TABLE__DELETE) != 0)
+		if ((rte->access_vector & TABLE__DELETE) != 0)
 			tperm |= COMMON_DATABASE__DROP;
 	} else {
 		for (attno=0; attno < RelationGetDescr(rel)->natts; attno++) {
@@ -208,7 +213,7 @@ void selinuxCheckRteRelation(Query *query, RangeTblEntry *rte, int index, uint32
 				break;
 			}
 		}
-		if (attno >= RelationGetDescr(rel)->natts)
+		if (attno >= RelationGetNumberOfAttributes(rel))
 			goto skip;
 		cls = SECCLASS_TUPLE;
 		if ((perm & TABLE__SELECT) != 0)
@@ -219,24 +224,23 @@ void selinuxCheckRteRelation(Query *query, RangeTblEntry *rte, int index, uint32
 			tperm |= TUPLE__DELETE;
 	}
 	/* 1st arg : security context of subject */
-	cons = makeConst(PSIDOID, sizeof(psid),
-					 ObjectIdGetDatum(selinuxGetClientPsid()),
-					 false, true);
-	args = list_make1(cons);
+	args = lappend(args, makeConst(PSIDOID, sizeof(psid),
+								   ObjectIdGetDatum(selinuxGetClientPsid()),
+								   false, true));
 
 	/* 2nd arg : security context of object */
 	pg_attr = RelationGetDescr(rel)->attrs[attno];
-	var = makeVar(index, pg_attr->attnum, pg_attr->atttypid, pg_attr->atttypmod, 0);
-	args = lappend(args, var);
+	args = lappend(args, makeVar(index, pg_attr->attnum, pg_attr->atttypid,
+								 pg_attr->atttypmod, 0));
 
 	/* 3rd arg : object class */
-	cons = makeConst(INT4OID, sizeof(int32), Int32GetDatum(cls), false, true);
-	args = lappend(args, cons);
+	args = lappend(args, makeConst(INT4OID, sizeof(int32),
+								   Int32GetDatum(cls), false, true));
 
 	/* 4th arg : access vector */
-	cons = makeConst(INT4OID, sizeof(int32), Int32GetDatum(tperm), false, true);
-	args = lappend(args, cons);
-	
+	args = lappend(args, makeConst(INT4OID, sizeof(int32),
+								   Int32GetDatum(tperm), false, true));
+
 	func = makeFuncExpr(F_SELINUX_PERMISSION, BOOLOID, args, COERCE_DONTCARE);
 	if (query->jointree->quals != NULL) {
 		query->jointree->quals =
@@ -326,48 +330,32 @@ static void selinuxCheckVar(Query *query, Var *v)
 	Assert(IsA(rte, RangeTblEntry));
 
 	if (rte->rtekind == RTE_RELATION) {
-		Form_pg_class pg_class;
-		Form_pg_attribute pg_attr;
-		HeapTuple tup;
-		
-		/* 1. check table:select permission */
-		tup = SearchSysCache(RELOID,
-							 ObjectIdGetDatum(rte->relid),
-							 0, 0, 0);
-		if (!HeapTupleIsValid(tup))
-			selerror("cache lookup failed for pg_class %u", rte->relid);
+		Form_pg_attribute attr;
+		HeapTuple tuple;
 
-		pg_class = (Form_pg_class) GETSTRUCT(tup);
-		seldebug("checking table:select on '%s'",
-				 NameStr(pg_class->relname));
-		rc = libselinux_avc_permission(selinuxGetClientPsid(),
-									   pg_class->relselcon,
-									   SECCLASS_TABLE,
-									   TABLE__SELECT,
-									   &audit);
-		selinux_audit(rc, audit, NameStr(pg_class->relname));
-		ReleaseSysCache(tup);
+		/* 1. mark table:select permission */
+		/* NOTION: The actual permission checking is done later
+		   by selinuxCheckRteRelation(). */
+		rte->access_vector |= TABLE__SELECT;
 
 		/* 2. check column:select permission */
-		tup = SearchSysCache(ATTNUM,
-							 ObjectIdGetDatum(rte->relid),
-							 Int16GetDatum(v->varattno),
-							 0, 0);
-		if (!HeapTupleIsValid(tup))
+		tuple = SearchSysCache(ATTNUM,
+							   ObjectIdGetDatum(rte->relid),
+							   Int16GetDatum(v->varattno),
+							   0, 0);
+		if (!HeapTupleIsValid(tuple))
 			selerror("cache lookup failed for pg_attribute (relid=%u, attnum=%d)",
 					 rte->relid, v->varattno);
 
-		pg_attr = (Form_pg_attribute) GETSTRUCT(tup);
-		seldebug("checking column:select on '%s.%s'",
-				 NameStr(pg_class->relname),
-				 NameStr(pg_attr->attname));
+		attr = (Form_pg_attribute) GETSTRUCT(tuple);
+		seldebug("checking column:select on '%s'", NameStr(attr->attname));
 		rc = libselinux_avc_permission(selinuxGetClientPsid(),
-									   pg_attr->attselcon,
+									   attr->attselcon,
 									   SECCLASS_COLUMN,
 									   COLUMN__SELECT,
 									   &audit);
-		selinux_audit(rc, audit, NameStr(pg_attr->attname));
-		ReleaseSysCache(tup);
+		selinux_audit(rc, audit, NameStr(attr->attname));
+		ReleaseSysCache(tuple);
 	} else if (rte->rtekind == RTE_JOIN) {
 		Var *join_var = list_nth(rte->joinaliasvars, v->varattno - 1);
 		selinuxCheckVar(query, join_var);

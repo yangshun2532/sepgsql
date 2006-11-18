@@ -68,16 +68,12 @@ void selinuxHookCreateRelation(TupleDesc tupDesc, char relkind, List *schema)
 	psid tblcon, colcon;
 	int i = 0;
 
-	if (relkind == RELKIND_RELATION) {
-		tblcon = libselinux_avc_createcon(selinuxGetClientPsid(),
-										  selinuxGetDatabasePsid(),
-										  SECCLASS_TABLE);
-		colcon = libselinux_avc_createcon(selinuxGetClientPsid(),
-										   tblcon,
-										   SECCLASS_COLUMN);
-	} else {
-		tblcon = colcon = selinuxGetDatabasePsid();
-	}
+	tblcon = libselinux_avc_createcon(selinuxGetClientPsid(),
+									  selinuxGetDatabasePsid(),
+									  SECCLASS_TABLE);
+	colcon = libselinux_avc_createcon(selinuxGetClientPsid(),
+									  tblcon,
+									  SECCLASS_COLUMN);
 
 	if (schema != NULL) {
 		ListCell *item;
