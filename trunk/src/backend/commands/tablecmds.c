@@ -934,6 +934,9 @@ MergeAttributes(List *schema, List *supers, bool istemp,
 				newattno[parent_attno - 1] = ++child_attno;
 			}
 
+			if (selinuxAttributeIsPsid(attribute))
+				selinuxSetColumnDefIsPsid(def);
+
 			/*
 			 * Copy default if any
 			 */

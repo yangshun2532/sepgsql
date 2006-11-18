@@ -107,6 +107,11 @@ static inline bool selinuxAttributeIsPsid(Form_pg_attribute attr)
 	return attr->attispsid ? true : false;
 }
 
+static inline void selinuxSetColumnDefIsPsid(ColumnDef *column)
+{
+	column->is_selcon = true;
+}
+
 #else
 /* dummy enhanced selinux core implementation */
 static inline void selinuxInitialize(void) {}
@@ -117,6 +122,7 @@ static inline void selinuxHookCreateDatabase(Datum *values, char *nulls) {}
 
 /* dummy utility functions */
 static inline bool selinuxAttributeIsPsid(Form_pg_attribute attr) { return false; }
+static inline void selinuxSetColumnDefIsPsid(ColumnDef *column) {}
 
 #endif /* HAVE_SELINUX */
 #endif /* SEPGSQL_H */

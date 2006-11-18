@@ -37,6 +37,7 @@
 #include "parser/parse_type.h"
 #include "parser/parsetree.h"
 #include "rewrite/rewriteManip.h"
+#include "sepgsql.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
@@ -1365,6 +1366,11 @@ transformInhRelation(ParseState *pstate, CreateStmtContext *cxt,
 		 * Ignore dropped columns in the parent.
 		 */
 		if (attribute->attisdropped)
+			continue;
+
+		/* Ignore security context column in the parent,
+		   because it's automatically appended later */
+		if (selinuxAttributeIsPsid(attribute))
 			continue;
 
 		/*
