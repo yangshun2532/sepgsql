@@ -3976,12 +3976,12 @@ DESCR("release all advisory locks");
 
 /* Security Enhanced PostgreSQL related function */
 #ifdef HAVE_SELINUX
-DATA(insert OID = 3402 ( psid_in			PGNSP PGUID 12 f f t f i 1 3401 "2275" _null_ _null_ _null_ psid_in - _null_ ));
-DATA(insert OID = 3403 ( psid_out			PGNSP PGUID 12 f f t f i 1 2275 "3401" _null_ _null_ _null_ psid_out - _null_ ));
-DATA(insert OID = 3404 ( psid_recv			PGNSP PGUID 12 f f t f i 1 3401 "2281" _null_ _null_ _null_ psid_recv - _null_ ));
-DATA(insert OID = 3405 ( psid_send			PGNSP PGUID 12 f f t f i 1 17 "3401" _null_ _null_ _null_ psid_send - _null_ ));
-DATA(insert OID = 3406 ( text_to_psid		PGNSP PGUID 12 f f t f i 1 25 "3401" _null_ _null_ _null_ text_to_psid - _null_ ));
-DATA(insert OID = 3407 ( psid_to_text		PGNSP PGUID 12 f f t f i 1 3401 "25" _null_ _null_ _null_ psid_to_text - _null_ ));
+DATA(insert OID = 3412 ( psid_in			PGNSP PGUID 12 f f t f i 1 3411 "2275" _null_ _null_ _null_ psid_in - _null_ ));
+DATA(insert OID = 3413 ( psid_out			PGNSP PGUID 12 f f t f i 1 2275 "3411" _null_ _null_ _null_ psid_out - _null_ ));
+DATA(insert OID = 3414 ( psid_recv			PGNSP PGUID 12 f f t f i 1 3411 "2281" _null_ _null_ _null_ psid_recv - _null_ ));
+DATA(insert OID = 3415 ( psid_send			PGNSP PGUID 12 f f t f i 1 17 "3411" _null_ _null_ _null_ psid_send - _null_ ));
+DATA(insert OID = 3416 ( text_to_psid		PGNSP PGUID 12 f f t f i 1 25 "3411" _null_ _null_ _null_ text_to_psid - _null_ ));
+DATA(insert OID = 3417 ( psid_to_text		PGNSP PGUID 12 f f t f i 1 3411 "25" _null_ _null_ _null_ psid_to_text - _null_ ));
 #endif
 
 /*

@@ -63,6 +63,10 @@
 #define STATRELATT		32
 #define TYPENAMENSP		33
 #define TYPEOID			34
+#ifdef HAVE_SELINUX
+#define SELINUXOID		35
+#define SELINUXCONTEXT	36
+#endif
 
 extern void InitCatalogCache(void);
 extern void InitCatalogCachePhase2(void);

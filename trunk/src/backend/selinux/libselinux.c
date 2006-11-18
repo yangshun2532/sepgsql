@@ -5,7 +5,15 @@
  * Copyright (c) 2006 - 2007 KaiGai Kohei <kaigai@kaigai.gr.jp>
  */
 #include "postgres.h"
+
+#include "access/heapam.h"
+#include "access/tupdesc.h"
+#include "catalog/indexing.h"
+#include "catalog/pg_selinux.h"
 #include "sepgsql.h"
+#include "utils/builtins.h"
+#include "utils/rel.h"
+#include "utils/syscache.h"
 
 #include <selinux/selinux.h>
 #include <selinux/flask.h>
@@ -362,12 +370,60 @@ Psid libselinux_avc_relabelcon(Psid ssid, Psid tsid, uint16 tclass)
 
 Psid libselinux_context_to_psid(char *context)
 {
-	return InvalidOid;
+	HeapTuple tuple;
+	Datum tcon;
+	Psid psid;
+
+	tcon = DirectFunctionCall1(textin, CStringGetDatum(context));
+	tuple = SearchSysCache(SELINUXCONTEXT, tcon, 0, 0, 0);
+	if (HeapTupleIsValid(tuple)) {
+		psid = HeapTupleGetOid(tuple);
+		ReleaseSysCache(tuple);
+	} else {
+		/* insert a new security context into pg_selinux and index */
+		Relation pg_selinux;
+		CatalogIndexState indstate;
+		Datum values[1] = { tcon };
+		char nulls[1] = {' '};
+
+		if (libselinux_check_context(context) != true)
+			selerror("'%s' is an invalid security context", context);
+
+		pg_selinux = heap_open(SelinuxRelationId, RowExclusiveLock);
+		indstate = CatalogOpenIndexes(pg_selinux);
+
+		tuple = heap_formtuple(RelationGetDescr(pg_selinux), values, nulls);
+		psid = simple_heap_insert(pg_selinux, tuple);
+		CatalogIndexInsert(indstate, tuple);
+
+		CatalogCloseIndexes(indstate);
+		heap_close(pg_selinux, NoLock);
+	}
+	return psid;
 }
 
 char *libselinux_psid_to_context(Psid psid)
 {
-	return pstrdup("invalid context");
+	Relation pg_selinux;
+	HeapTuple tuple;
+	Datum tcon;
+	char *context;
+	bool isnull;
+
+	pg_selinux = heap_open(SelinuxRelationId, AccessShareLock);
+
+	tuple = SearchSysCache(SELINUXOID, ObjectIdGetDatum(psid), 0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		selerror("No string expression for psid=%u", psid);
+
+	tcon = heap_getattr(tuple, Anum_pg_selinux_selcontext,
+						RelationGetDescr(pg_selinux), &isnull);
+	context = DatumGetCString(DirectFunctionCall1(textout, PointerGetDatum(tcon)));
+
+	ReleaseSysCache(tuple);
+	heap_close(pg_selinux, NoLock);
+
+	return context;
 }
 
 bool libselinux_check_context(char *context)

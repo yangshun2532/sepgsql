@@ -37,6 +37,7 @@
 #include "catalog/pg_operator.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_rewrite.h"
+#include "catalog/pg_selinux.h"
 #include "catalog/pg_statistic.h"
 #include "catalog/pg_type.h"
 #include "utils/syscache.h"
@@ -514,6 +515,32 @@ static const struct cachedesc cacheinfo[] = {
 		},
 		1024
 	}
+#ifdef HAVE_SELINUX
+	,{SelinuxRelationId,			/* SELINUXOID */
+		SelinuxOidIndexId,
+		0,
+		1,
+		{
+			ObjectIdAttributeNumber,
+			0,
+			0,
+			0
+		},
+		128
+	},
+	{SelinuxRelationId,				/* SELINUXCONTEXT */
+		SelinuxSelcontextIndexId,
+		0,
+		1,
+		{
+			Anum_pg_selinux_selcontext,
+			0,
+			0,
+			0
+		},
+		128
+	}
+#endif
 };
 
 static CatCache *SysCache[
