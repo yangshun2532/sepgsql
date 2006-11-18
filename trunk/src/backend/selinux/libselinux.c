@@ -9,6 +9,7 @@
 #include "access/heapam.h"
 #include "access/genam.h"
 #include "access/tupdesc.h"
+#include "access/xact.h"
 #include "catalog/indexing.h"
 #include "catalog/pg_selinux.h"
 #include "miscadmin.h"
