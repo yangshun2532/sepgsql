@@ -6,6 +6,9 @@
  */
 #ifndef SEPGSQL_H
 #define SEPGSQL_H
+#include "access/htup.h"
+#include "access/tupdesc.h"
+#include "nodes/parsenodes.h"
 #include "utils/rel.h"
 
 #define selerror(fmt, ...)		\
@@ -21,6 +24,13 @@ extern psid selinuxGetServerPsid(void);
 extern psid selinuxGetClientPsid(void);
 extern psid selinuxGetDatabasePsid(void);
 extern void selinuxInitialize(void);
+
+/* CREATE TABLE statement related */
+extern Query *selinuxProxyCreateTable(Query *query);		
+extern void selinuxHookCreateRelation(TupleDesc tupDesc, char relkind, List *schema);
+extern void selinuxHookCloneRelation(TupleDesc tupDesc, Relation rel);
+extern void selinuxHookPutRelselcon(Form_pg_class pg_class);
+extern void selinuxHookPutSysAttselcon(Form_pg_attribute pg_attr, int attnum);
 
 /* bootstrap hooks */
 extern int selinuxBootstrapInsertOneValue(int index);

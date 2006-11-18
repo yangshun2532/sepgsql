@@ -29,6 +29,7 @@
 #include "catalog/toasting.h"
 #include "commands/cluster.h"
 #include "miscadmin.h"
+#include "sepgsql.h"
 #include "utils/acl.h"
 #include "utils/fmgroids.h"
 #include "utils/inval.h"
@@ -589,6 +590,8 @@ make_new_heap(Oid OIDOldHeap, const char *NewName, Oid NewTableSpace)
 	 * heap_create_with_catalog modifies it.
 	 */
 	tupdesc = CreateTupleDescCopyConstr(OldHeapDesc);
+
+	selinuxHookCloneRelation(tupdesc, OldHeap);
 
 	/*
 	 * Use options of the old heap for new heap.

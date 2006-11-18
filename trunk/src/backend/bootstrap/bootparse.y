@@ -178,6 +178,7 @@ Boot_CreateStmt:
 					do_start();
 
 					tupdesc = CreateTupleDesc(numattr, !($4), attrtypes);
+					selinuxHookCreateRelation(tupdesc, RELKIND_RELATION, NULL);
 
 					if ($2)
 					{
@@ -195,6 +196,7 @@ Boot_CreateStmt:
 												   RELKIND_RELATION,
 												   $3,
 												   true);
+						selinuxHookPutRelselcon(boot_reldesc->rd_rel);
 						elog(DEBUG4, "bootstrap relation created");
 					}
 					else

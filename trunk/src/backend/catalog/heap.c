@@ -51,6 +51,7 @@
 #include "parser/parse_coerce.h"
 #include "parser/parse_expr.h"
 #include "parser/parse_relation.h"
+#include "sepgsql.h"
 #include "storage/smgr.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
@@ -526,6 +527,8 @@ AddNewAttributeTuples(Oid new_rel_oid,
 				/* attStruct->attstattarget = 0; */
 				/* attStruct->attcacheoff = -1; */
 
+				selinuxHookPutSysAttselcon(attStruct, attStruct->attnum);
+
 				simple_heap_insert(rel, tup);
 
 				CatalogIndexInsert(indstate, tup);
@@ -595,6 +598,9 @@ InsertPgClassTuple(Relation pg_class_desc,
 	values[Anum_pg_class_relhaspkey - 1] = BoolGetDatum(rd_rel->relhaspkey);
 	values[Anum_pg_class_relhasrules - 1] = BoolGetDatum(rd_rel->relhasrules);
 	values[Anum_pg_class_relhassubclass - 1] = BoolGetDatum(rd_rel->relhassubclass);
+#ifdef HAVE_SELINUX
+	values[Anum_pg_class_relselcon - 1] = ObjectIdGetDatum(rd_rel->relselcon);
+#endif
 	values[Anum_pg_class_relminxid - 1] = TransactionIdGetDatum(rd_rel->relminxid);
 	values[Anum_pg_class_relvacuumxid - 1] = TransactionIdGetDatum(rd_rel->relvacuumxid);
 	/* start out with empty permissions */
@@ -826,6 +832,7 @@ heap_create_with_catalog(const char *relname,
 	 * creating the same relation name in parallel but hadn't committed yet
 	 * when we checked for a duplicate name above.
 	 */
+	selinuxHookPutRelselcon(new_rel_desc->rd_rel);
 	AddNewRelationTuple(pg_class_desc,
 						new_rel_desc,
 						relid,

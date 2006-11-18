@@ -27,6 +27,7 @@
 #include "catalog/toasting.h"
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
+#include "sepgsql.h"
 #include "utils/builtins.h"
 #include "utils/syscache.h"
 
@@ -170,6 +171,8 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid)
 	tupdesc->attrs[0]->attstorage = 'p';
 	tupdesc->attrs[1]->attstorage = 'p';
 	tupdesc->attrs[2]->attstorage = 'p';
+
+	selinuxHookCreateRelation(tupdesc, RELKIND_TOASTVALUE, NULL);
 
 	/*
 	 * Note: the toast relation is placed in the regular pg_toast namespace
