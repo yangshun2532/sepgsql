@@ -25,14 +25,19 @@
 #include <selinux/flask.h>
 #include <selinux/av_permissions.h>
 
-static void selinuxCheckFromlist(Query *query);
+static void selinuxCheckFromItem(Query *query, Node *n);
+static void selinuxCheckRteJoin(Query *query, JoinExpr *j);
+static void selinuxCheckRteSubquery(Query *query, RangeTblEntry *rte);
 
 Query *selinuxProxySelect(Query *query)
 {
 	ListCell *x;
 
 	/* (1) permission check on fromlist */
-	selinuxCheckFromlist(query);
+	foreach(x, query->jointree->fromlist) {
+		Node *n = lfirst(x);
+		selinuxCheckFromItem(query, n);
+	}
 
 	/* (2) permission check on each column */
 	foreach(x, query->targetList) {
@@ -44,39 +49,34 @@ Query *selinuxProxySelect(Query *query)
 	return query;
 }
 
-static void selinuxCheckFromlist(Query *query)
+static void selinuxCheckFromItem(Query *query, Node *n)
 {
-	ListCell *x;
+	if (IsA(n, JoinExpr)) {
+		JoinExpr *j = (JoinExpr *)n;
 
-	foreach(x, query->jointree->fromlist) {
-		Node *n = lfirst(x);
+		selinuxCheckRteJoin(query, j);
+	} else if (IsA(n, RangeTblRef)) {
+		RangeTblEntry *rte;
+		int index = ((RangeTblRef *)n)->rtindex;
 		
-		if (IsA(n, JoinExpr)) {
-			JoinExpr *j = (JoinExpr *)n;
-			selnotice("JoinExpr in fromlist is not supported yet");
-		} else if (IsA(n, RangeTblRef)) {
-			RangeTblEntry *rte;
-			int index = ((RangeTblRef *)n)->rtindex;
-
-			rte = list_nth(query->rtable, index - 1);
-			Assert(rte->type == T_RangeTblEntry);
-
-			switch (rte->rtekind) {
-			case RTE_RELATION:
-				selinuxCheckRteRelation(query, rte, index, TABLE__SELECT);
-				break;
-			case RTE_SUBQUERY:
-				selnotice("RTE_SUBQUERY in fromlist is not supported yet");
-				break;
-			case RTE_FUNCTION:
-				selnotice("RTE_FUNCTION in fromlist is not supported yet");
-				break;
-			default:
-				selerror("unknown relkind (%u) in fromlist", rte->rtekind);
-			}
-		} else {
-			selerror("unknown node (%u) in fromlist", n->type);
+		rte = list_nth(query->rtable, index - 1);
+		Assert(rte->type == T_RangeTblEntry);
+		
+		switch (rte->rtekind) {
+		case RTE_RELATION:
+			selinuxCheckRteRelation(query, rte, index, TABLE__SELECT);
+			break;
+		case RTE_SUBQUERY:
+			selinuxCheckRteSubquery(query, rte);
+			break;
+		case RTE_FUNCTION:
+			selnotice("RTE_FUNCTION in fromlist is not supported yet");
+			break;
+		default:
+			selerror("unknown relkind (%u) in fromlist", rte->rtekind);
 		}
+	} else {
+		selerror("unknown node (%u) in fromlist", n->type);
 	}
 }
 
@@ -256,6 +256,19 @@ void selinuxCheckRteRelation(Query *query, RangeTblEntry *rte, int index, uint32
 	}
 skip:
 	relation_close(rel, NoLock);
+}
+
+static void selinuxCheckRteJoin(Query *query, JoinExpr *j)
+{
+	selnotice("%s was called", __FUNCTION__);
+	selinuxCheckFromItem(query, j->larg);
+	selinuxCheckFromItem(query, j->rarg);
+}
+
+static void selinuxCheckRteSubquery(Query *query, RangeTblEntry *rte)
+{
+	selnotice("%s was called", __FUNCTION__);
+	rte->subquery = selinuxProxy(rte->subquery);
 }
 
 /* -------- selinuxCheckExpr() related helper functions -------- */
