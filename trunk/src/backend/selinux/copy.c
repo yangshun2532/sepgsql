@@ -109,10 +109,13 @@ bool selinuxHookCopyTo(Relation rel, HeapTuple tuple)
 	int i, rc;
 
 	for (i=0; i < RelationGetNumberOfAttributes(rel); i++) {
-		if (!tupDesc->attrs[i]->attispsid)
+		if (!selinuxAttributeIsPsid(tupDesc->attrs[i]))
 			continue;
 
-		tup_psid = heap_getattr(tuple, i, tupDesc, &isnull);
+		tup_psid = heap_getattr(tuple, i+1, tupDesc, &isnull);
+		if (isnull)
+			selerror("'security_context' is NULL at '%s'",
+					 RelationGetRelationName(rel));
 		rc = libselinux_avc_permission(selinuxGetClientPsid(),
 									   DatumGetObjectId(tup_psid),
 									   SECCLASS_TUPLE,
