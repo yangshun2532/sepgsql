@@ -50,6 +50,7 @@ extern Query *selinuxProxy(Query *query);
 extern Query *selinuxProxySelect(Query *query);
 extern void selinuxCheckRteRelation(Query *query, RangeTblEntry *rte,
 									int index, uint32 perm);
+extern void selinuxCheckTargetList(Query *query, List *targetList);
 extern void selinuxCheckExpr(Query *query, Expr *expr);
 /* UPDATE statement related */
 extern Query *selinuxProxyUpdate(Query *query);

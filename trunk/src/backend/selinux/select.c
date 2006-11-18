@@ -144,10 +144,11 @@ void selinuxCheckRteRelation(Query *query, RangeTblEntry *rte, int index, uint32
 	Form_pg_attribute pg_attr;
 	Form_pg_class pg_class;
 	char *audit;
+	uint32 tperm = 0;
 	int cls, attno, rc;
 	
 	Assert(rte->relkind == RTE_RELATION);
-	Assert(perm==TABLE__SELECT || perm==TABLE__UPDATE || perm==TABLE__DELETE);
+	Assert((perm & (TABLE__SELECT | TABLE__UPDATE | TABLE__DELETE)) != perm);
 
 	rel = relation_open(rte->relid, AccessShareLock);
 	pg_class = RelationGetForm(rel);
@@ -191,17 +192,12 @@ void selinuxCheckRteRelation(Query *query, RangeTblEntry *rte, int index, uint32
 			goto skip;
 			break;
 		}
-		switch (perm) {
-		case TABLE__SELECT:
-			perm = COMMON_DATABASE__GETATTR;
-			break;
-		case TABLE__UPDATE:
-			perm = COMMON_DATABASE__SETATTR;
-			break;
-		case TABLE__DELETE:
-			perm = COMMON_DATABASE__DROP;
-			break;
-		}
+		if ((perm & TABLE__SELECT) != 0)
+			tperm |= COMMON_DATABASE__GETATTR;
+		if ((perm & TABLE__UPDATE) != 0)
+			tperm |= COMMON_DATABASE__SETATTR;
+		if ((perm & TABLE__DELETE) != 0)
+			tperm |= COMMON_DATABASE__DROP;
 	} else {
 		for (attno=0; attno < RelationGetDescr(rel)->natts; attno++) {
 			pg_attr = RelationGetDescr(rel)->attrs[attno];
@@ -215,17 +211,12 @@ void selinuxCheckRteRelation(Query *query, RangeTblEntry *rte, int index, uint32
 		if (attno >= RelationGetDescr(rel)->natts)
 			goto skip;
 		cls = SECCLASS_TUPLE;
-		switch (perm) {
-		case TABLE__SELECT:
-			perm = TUPLE__SELECT;
-			break;
-		case TABLE__UPDATE:
-			perm = TUPLE__UPDATE;
-			break;
-		case TABLE__DELETE:
-			perm = TUPLE__DELETE;
-			break;
-		}
+		if ((perm & TABLE__SELECT) != 0)
+			tperm |= TUPLE__SELECT;
+		if ((perm & TABLE__UPDATE) != 0)
+			tperm |= TUPLE__UPDATE;
+		if ((perm & TABLE__DELETE) != 0)
+			tperm |= TUPLE__DELETE;
 	}
 	/* 1st arg : security context of subject */
 	cons = makeConst(PSIDOID, sizeof(psid),
@@ -243,9 +234,9 @@ void selinuxCheckRteRelation(Query *query, RangeTblEntry *rte, int index, uint32
 	args = lappend(args, cons);
 
 	/* 4th arg : access vector */
-	cons = makeConst(INT4OID, sizeof(int32), Int32GetDatum(perm), false, true);
+	cons = makeConst(INT4OID, sizeof(int32), Int32GetDatum(tperm), false, true);
 	args = lappend(args, cons);
-
+	
 	func = makeFuncExpr(F_SELINUX_PERMISSION, BOOLOID, args, COERCE_DONTCARE);
 	if (query->jointree->quals != NULL) {
 		query->jointree->quals =
@@ -278,6 +269,23 @@ static void selinuxCheckRteSubquery(Query *query, RangeTblEntry *rte)
 /* -------- selinuxCheckExpr() related helper functions -------- */
 static void selinuxCheckVar(Query *query, Var *v);
 static void checkExprOpExpr(Query *query, OpExpr *x);
+
+/* selinuxCheckExpr() -- check SELECT permission for targetList
+ * of SELECT ot returningList of UPDATE/INSERT/DELETE statement.
+ */
+void selinuxCheckTargetList(Query *query, List *targetList)
+{
+	ListCell *x;
+	
+	if (!targetList)
+		return;
+
+	foreach(x, targetList) {
+		TargetEntry *tle = (TargetEntry *)lfirst(x);
+		Assert(IsA(tle, TargetEntry));
+		selinuxCheckExpr(query, tle->expr);
+	}
+}
 
 /* selinuxCheckExpr() -- check SELECT permission for each Expr.
  * It should be called on the target of SELECT, where clause
