@@ -9,6 +9,9 @@
 #include "access/heapam.h"
 #include "catalog/pg_attribute.h"
 #include "catalog/pg_class.h"
+#include "catalog/pg_database.h"
+#include "catalog/pg_proc.h"
+#include "catalog/pg_largeobject.h"
 #include "catalog/pg_type.h"
 #include "nodes/makefuncs.h"
 #include "sepgsql.h"
@@ -93,9 +96,9 @@ Node *selinuxHookCopyFromNewContext(Relation rel)
 {
 	psid new_sid;
 
-	new_sid = libselinux_avc_createcon(selinuxGetClientPsid(),
-									   RelationGetForm(rel)->relselcon,
-									   SECCLASS_TUPLE);
+	new_sid = selinuxComputeNewTupleContext(RelationGetRelid(rel),
+											RelationGetForm(rel)->relselcon,
+											NULL);
 	return (Node *)makeConst(PSIDOID, sizeof(psid),
 							 ObjectIdGetDatum(new_sid),
 							 false, false);
@@ -104,8 +107,12 @@ Node *selinuxHookCopyFromNewContext(Relation rel)
 bool selinuxHookCopyTo(Relation rel, HeapTuple tuple)
 {
 	TupleDesc tupDesc = RelationGetDescr(rel);
+	Oid relid = RelationGetRelid(rel);
+	uint16 tclass;
+	uint32 perm;
 	Datum tup_psid;
 	bool isnull;
+	char relkind;
 	int i, rc;
 
 	for (i=0; i < RelationGetNumberOfAttributes(rel); i++) {
@@ -116,11 +123,44 @@ bool selinuxHookCopyTo(Relation rel, HeapTuple tuple)
 		if (isnull)
 			selerror("'security_context' is NULL at '%s'",
 					 RelationGetRelationName(rel));
+
+		switch (relid) {
+		case AttributeRelationId:
+			tclass = SECCLASS_COLUMN;
+			perm = COLUMN__GETATTR;
+			break;
+		case RelationRelationId:
+			relkind = heap_getattr(tuple, Anum_pg_class_relkind, tupDesc, &isnull);
+			if (isnull)
+				selerror("'relkind' is NULL at '%s'",
+						 RelationGetRelationName(rel));
+			if (relkind == RELKIND_RELATION) {
+				tclass = SECCLASS_TABLE;
+				perm = TABLE__GETATTR;
+			} else {
+				tclass = SECCLASS_TUPLE;
+				perm = TUPLE__SELECT;
+			}
+			break;
+		case DatabaseRelationId:
+			tclass = SECCLASS_DATABASE;
+			perm = DATABASE__GETATTR;
+			break;
+		case ProcedureRelationId:
+			tclass = SECCLASS_PROCEDURE;
+			perm = PROCEDURE__GETATTR;
+			break;
+		case LargeObjectRelationId:
+			tclass = SECCLASS_BLOB;
+			perm = BLOB__GETATTR;
+			break;
+		default:
+			tclass = SECCLASS_TUPLE;
+			perm = TUPLE__SELECT;
+		}
 		rc = libselinux_avc_permission(selinuxGetClientPsid(),
 									   DatumGetObjectId(tup_psid),
-									   SECCLASS_TUPLE,
-									   TUPLE__SELECT,
-									   NULL);
+									   tclass, perm, NULL);
 		if (rc != 0)
 			return false;
 		break;
