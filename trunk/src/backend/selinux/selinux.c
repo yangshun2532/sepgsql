@@ -240,6 +240,9 @@ Query *selinuxProxy(Query *query)
 		case T_CreateStmt:
 			query = selinuxProxyCreateTable(query);
 			break;
+		case T_CreateFunctionStmt:
+			query = selinuxProxyCreateProcedure(query);
+			break;
 		default:
 			/* do nothing */
 			break;

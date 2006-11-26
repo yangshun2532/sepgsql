@@ -10,7 +10,7 @@ include $(top_builddir)/src/Makefile.global
 
 OBJS := selinux.o bootstrap.o psid.o libselinux.o \
 	select.o update.o insert.o delete.o \
-	create_database.o create_relation.o copy.o
+	create_database.o create_relation.o procedure.o copy.o
 
 all: SUBSYS.o
 

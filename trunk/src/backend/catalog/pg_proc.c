@@ -27,6 +27,7 @@
 #include "mb/pg_wchar.h"
 #include "miscadmin.h"
 #include "parser/parse_type.h"
+#include "sepgsql.h"
 #include "tcop/pquery.h"
 #include "tcop/tcopprot.h"
 #include "utils/acl.h"
@@ -245,6 +246,8 @@ ProcedureCreate(const char *procedureName,
 													CStringGetDatum(probin));
 	/* start out with empty permissions */
 	nulls[Anum_pg_proc_proacl - 1] = 'n';
+
+	selinuxHookCreateProcedure(values, nulls);
 
 	rel = heap_open(ProcedureRelationId, RowExclusiveLock);
 	tupDesc = RelationGetDescr(rel);

@@ -73,6 +73,10 @@ extern void selinuxHookCloneRelation(TupleDesc tupDesc, Relation rel);
 extern void selinuxHookPutRelselcon(Form_pg_class pg_class);
 extern void selinuxHookPutSysAttselcon(Form_pg_attribute pg_attr, int attnum);
 
+/* CREATE PROCEDURE statement related */
+extern Query *selinuxProxyCreateProcedure(Query *query);
+extern void selinuxHookCreateProcedure(Datum *values, char *nulls);
+
 /* COPY FROM/COPY TO statement */
 extern void selinuxHookDoCopy(Relation rel, List *attnumlist, bool is_from);
 extern void selinuxHookCopyFrom(Relation rel, Datum *values, char *nulls);
@@ -126,6 +130,9 @@ static inline Query *selinuxProxy(Query *query) { return query; }
 
 /* dummy CREATE DATABASE statement */
 static inline void selinuxHookCreateDatabase(Datum *values, char *nulls) {}
+
+/* dummy CREATE PROCEDURE statement */
+static inline void selinuxHookCreateProcedure(Datum *values, char *nulls) {}
 
 /* dummy COPY FROM/COPY TO statement */
 static inline void selinuxHookDoCopy(Relation rel, List *attnumlist, bool is_from) {}
