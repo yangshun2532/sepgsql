@@ -40,7 +40,10 @@ Query *selinuxProxySelect(Query *query)
 		selinuxCheckExpr(query, tle->expr);
 	}
 
-	/* 2. permission checking on each column */
+	/* 2. permission checking on where clause */
+	selinuxCheckExpr(query, (Expr *)query->jointree->quals);
+
+	/* 3. permission checking on each column */
 	foreach(x, query->jointree->fromlist)
 		selinuxCheckFromItem(query, lfirst(x));
 
@@ -380,7 +383,7 @@ static void checkExprFuncExpr(Query *query, FuncExpr *func)
 
 	Assert(IsA(v, FuncExpr));
 
-	selnotice("checking FuncExpr(funcid=%u)", func->funcid);
+	seldebug("checking FuncExpr(funcid=%u)", func->funcid);
 	/* 1. check arguments */
 	foreach(l, func->args)
 		selinuxCheckExpr(query, (Expr *)lfirst(l));
