@@ -50,3 +50,28 @@ void selinuxHookCreateProcedure(Datum *values, char *nulls)
 	values[Anum_pg_proc_proselcon - 1] = ObjectIdGetDatum(ppsid);
 	nulls[Anum_pg_proc_proselcon - 1] = ' ';
 }
+
+psid selinuxHookPrepareProcedure(Oid funcid)
+{
+	HeapTuple tuple;
+	Form_pg_proc pg_proc;
+	psid orig_psid, new_psid;
+
+   	tuple = SearchSysCache(PROCOID, ObjectIdGetDatum(funcid), 0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		selerror("could not lookup the procedure (funcid=%u)", funcid);
+	new_psid = libselinux_avc_createcon(selinuxGetClientPsid(),
+										((Form_pg_proc) GETSTRUCT(tuple))->proselcon,
+										SECCLASS_PROCESS);
+	ReleaseSysCache(tuple);
+
+	orig_psid = selinuxGetClientPsid();
+	selinuxSetClientPsid(new_psid);
+
+	return orig_psid;
+}
+
+void selinuxHookRestoreProcedure(psid orig_psid)
+{
+	selinuxSetClientPsid(orig_psid);
+}

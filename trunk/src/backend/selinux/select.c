@@ -273,6 +273,7 @@ static void selinuxCheckRteSubquery(Query *query, RangeTblEntry *rte)
 /* -------- selinuxCheckExpr() related helper functions -------- */
 static void selinuxCheckVar(Query *query, Var *v);
 static void checkExprOpExpr(Query *query, OpExpr *x);
+static void checkExprFuncExpr(Query *query, FuncExpr *func);
 
 /* selinuxCheckExpr() -- check SELECT permission for targetList
  * of SELECT ot returningList of UPDATE/INSERT/DELETE statement.
@@ -308,6 +309,9 @@ void selinuxCheckExpr(Query *query, Expr *expr)
 		break;
 	case T_Var:
 		selinuxCheckVar(query, (Var *)expr);
+		break;
+	case T_FuncExpr:
+		checkExprFuncExpr(query, (FuncExpr *)expr);
 		break;
 	case T_OpExpr:
 		checkExprOpExpr(query, (OpExpr *)expr);
@@ -362,6 +366,48 @@ static void selinuxCheckVar(Query *query, Var *v)
 	} else {
 		seldebug("rtekind = %u is ignored", rte->rtekind);
 	}
+}
+
+static void checkExprFuncExpr(Query *query, FuncExpr *func)
+{
+	psid new_psid;
+	ListCell *l;
+	HeapTuple tuple;
+	Form_pg_proc pg_proc;
+	uint32 perms;
+	char *audit;
+	int rc;
+
+	Assert(IsA(v, FuncExpr));
+
+	selnotice("checking FuncExpr(funcid=%u)", func->funcid);
+	/* 1. check arguments */
+	foreach(l, func->args)
+		selinuxCheckExpr(query, (Expr *)lfirst(l));
+
+	/* 2. obtain the context of procedure */
+	tuple = SearchSysCache(PROCOID,
+						   ObjectIdGetDatum(func->funcid),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		selerror("could not lookup the procedure (funcid=%u)", func->funcid);
+	pg_proc = (Form_pg_proc) GETSTRUCT(tuple);
+
+	/* 2. compute the context to execute procedure */
+	new_psid = libselinux_avc_createcon(selinuxGetClientPsid(),
+										pg_proc->proselcon,
+										SECCLASS_PROCEDURE);
+
+	/* 3. check permission procedure:{execute entrypoint} */
+	perms = PROCEDURE__EXECUTE;
+	if (selinuxGetClientPsid() != new_psid)
+		perms |= PROCEDURE__ENTRYPOINT;
+	rc = libselinux_avc_permission(selinuxGetClientPsid(),
+								   pg_proc->proselcon,
+								   SECCLASS_PROCEDURE,
+								   perms, &audit);
+	selinux_audit(rc, audit, NameStr(pg_proc->proname));
+	ReleaseSysCache(tuple);
 }
 
 static void checkExprOpExpr(Query *query, OpExpr *x)

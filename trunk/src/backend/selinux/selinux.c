@@ -40,6 +40,11 @@ psid selinuxGetClientPsid()
 	return selinuxClientPsid;
 }
 
+void selinuxSetClientPsid(psid new_ctx)
+{
+	selinuxClientPsid = new_ctx;
+}
+
 psid selinuxGetDatabasePsid()
 {
 	return selinuxDatabasePsid;

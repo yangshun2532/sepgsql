@@ -42,6 +42,7 @@ static inline void selinux_audit(int result, char *message, char *objname) {
 /* security enhanced selinux core implementation */
 extern psid selinuxGetServerPsid(void);
 extern psid selinuxGetClientPsid(void);
+extern void selinuxSetClientPsid(psid new_ctx);
 extern psid selinuxGetDatabasePsid(void);
 extern void selinuxInitialize(void);
 extern int selinuxInitializePostmaster(void);
@@ -76,6 +77,23 @@ extern void selinuxHookPutSysAttselcon(Form_pg_attribute pg_attr, int attnum);
 /* CREATE PROCEDURE statement related */
 extern Query *selinuxProxyCreateProcedure(Query *query);
 extern void selinuxHookCreateProcedure(Datum *values, char *nulls);
+extern psid selinuxHookPrepareProcedure(Oid funcid);
+extern void selinuxHookRestoreProcedure(psid orig_psid);
+#define selinuxPrepareExecProcedure(funcid)					   \
+	do {													   \
+		psid __selinux_ctx_backup =							   \
+			selinuxHookPrepareProcedure(funcid);			   \
+		PG_TRY()
+
+#define selinuxRestoreExecProcedure()						   \
+		PG_CATCH();											   \
+		{													   \
+			selinuxHookRestoreProcedure(__selinux_ctx_backup); \
+			PG_RE_THROW();									   \
+		}													   \
+		PG_END_TRY();										   \
+		selinuxHookRestoreProcedure(__selinux_ctx_backup);	   \
+	} while(0)
 
 /* COPY FROM/COPY TO statement */
 extern void selinuxHookDoCopy(Relation rel, List *attnumlist, bool is_from);
@@ -133,6 +151,8 @@ static inline void selinuxHookCreateDatabase(Datum *values, char *nulls) {}
 
 /* dummy CREATE PROCEDURE statement */
 static inline void selinuxHookCreateProcedure(Datum *values, char *nulls) {}
+#define selinuxPrepareExecProcedure(func)
+#define selinuxRestoreExecProcedure
 
 /* dummy COPY FROM/COPY TO statement */
 static inline void selinuxHookDoCopy(Relation rel, List *attnumlist, bool is_from) {}

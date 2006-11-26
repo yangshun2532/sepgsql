@@ -47,6 +47,7 @@
 #include "nodes/makefuncs.h"
 #include "optimizer/planmain.h"
 #include "parser/parse_expr.h"
+#include "sepgsql.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
@@ -1544,6 +1545,7 @@ ExecEvalFunc(FuncExprState *fcache,
 {
 	/* This is called only the first time through */
 	FuncExpr   *func = (FuncExpr *) fcache->xprstate.expr;
+	Datum result;
 
 	/* Initialize function lookup info */
 	init_fcache(func->funcid, fcache, econtext->ecxt_per_query_memory);
@@ -1551,7 +1553,13 @@ ExecEvalFunc(FuncExprState *fcache,
 	/* Go directly to ExecMakeFunctionResult on subsequent uses */
 	fcache->xprstate.evalfunc = (ExprStateEvalFunc) ExecMakeFunctionResult;
 
-	return ExecMakeFunctionResult(fcache, econtext, isNull, isDone);
+	selinuxPrepareExecProcedure(func->funcid);
+
+	result = ExecMakeFunctionResult(fcache, econtext, isNull, isDone);
+
+	selinuxRestoreExecProcedure();
+
+	return result;
 }
 
 /* ----------------------------------------------------------------
