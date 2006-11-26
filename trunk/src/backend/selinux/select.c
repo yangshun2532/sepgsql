@@ -277,6 +277,8 @@ static void selinuxCheckRteSubquery(Query *query, RangeTblEntry *rte)
 static void selinuxCheckVar(Query *query, Var *v);
 static void checkExprOpExpr(Query *query, OpExpr *x);
 static void checkExprFuncExpr(Query *query, FuncExpr *func);
+static void checkExprBoolExpr(Query *query, BoolExpr *be);
+static void checkExprRelabelType(Query *query, RelabelType *rt);
 
 /* selinuxCheckExpr() -- check SELECT permission for targetList
  * of SELECT ot returningList of UPDATE/INSERT/DELETE statement.
@@ -318,6 +320,12 @@ void selinuxCheckExpr(Query *query, Expr *expr)
 		break;
 	case T_OpExpr:
 		checkExprOpExpr(query, (OpExpr *)expr);
+		break;
+	case T_BoolExpr:
+		checkExprBoolExpr(query, (BoolExpr *)expr);
+		break;
+	case T_RelabelType:
+		checkExprRelabelType(query, (RelabelType *)expr);
 		break;
 	default:
 		seldebug("now, we have no checking on the expr (tag = %u)", nodeTag(expr));
@@ -420,4 +428,21 @@ static void checkExprOpExpr(Query *query, OpExpr *x)
 	seldebug("checking OpExpr(opno=%u)", x->opno);
 	foreach(l, x->args)
 		selinuxCheckExpr(query, (Expr *)lfirst(l));
+}
+
+static void checkExprBoolExpr(Query *query, BoolExpr *be)
+{
+	ListCell *l;
+
+	Assert(IsA(be, BoolExpr));
+
+	foreach(l, be->args)
+		selinuxCheckExpr(query, lfirst(l));
+}
+
+static void checkExprRelabelType(Query *query, RelabelType *rt)
+{
+	Assert(IsA(rt, RelabelType));
+
+	selinuxCheckExpr(query, rt->arg);
 }
