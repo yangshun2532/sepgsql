@@ -55,6 +55,7 @@ sub GenerateFiles {
 				confess "Bad format of version: $self->{strver}\n"
 			}
 			$self->{numver} = sprintf("%d%02d%02d", $1, $2, $3?$3:0);
+			$self->{majorver} = sprintf("%d.%d", $1, $2);
 		}
 	}
 	close(C);
@@ -83,7 +84,7 @@ sub GenerateFiles {
 		print O "#define USE_SSL 1\n" if ($self->{options}->{openssl});
 		print O "#define ENABLE_NLS 1\n" if ($self->{options}->{nls});
 		print O "#define LOCALEDIR \"/usr/local/pgsql/share/locale\"\n" if ($self->{options}->{nls});
-		if ($self->{options}->{nls}) {
+		if ($self->{options}->{krb5}) {
 			print O "#define KRB5 1\n";
 			print O "#define HAVE_KRB5_ERROR_TEXT_DATA 1\n";
 			print O "#define HAVE_KRB5_TICKET_ENC_PART2 1\n";
@@ -206,6 +207,19 @@ EOF
 EOF
 		close(O);
 	}
+
+	my $mf = Project::read_file('src\backend\catalog\Makefile');
+	$mf =~ s{\\s*[\r\n]+}{}mg;
+	$mf =~ /^POSTGRES_BKI_SRCS\s*:=[^,]+,(.*)\)$/gm || croak "Could not find POSTGRES_BKI_SRCS in Makefile\n";
+	my @allbki = split /\s+/, $1;
+    foreach my $bki (@allbki) {
+		next if $bki eq "";
+		if (IsNewer('src/backend/catalog/postgres.bki', "src/include/catalog/$bki")) {
+ 		   print "Generating postgres.bki...\n";
+ 		   system("perl src/tools/msvc/genbki.pl $self->{majorver} src/backend/catalog/postgres " . join(' src/include/catalog/',@allbki));
+ 		   last;
+        }
+  	}
 }
 
 sub AddProject {
@@ -220,8 +234,8 @@ sub AddProject {
 	}
 	if ($self->{options}->{openssl}) {
 		$proj->AddIncludeDir($self->{options}->{openssl} . '\include');
-		$proj->AddLibrary($self->{options}->{openssl} . '\lib\VC\ssleay32.lib');
-		$proj->AddLibrary($self->{options}->{openssl} . '\lib\VC\libeay32.lib');
+		$proj->AddLibrary($self->{options}->{openssl} . '\lib\VC\ssleay32.lib', 1);
+		$proj->AddLibrary($self->{options}->{openssl} . '\lib\VC\libeay32.lib', 1);
 	}
 	if ($self->{options}->{nls}) {
 		$proj->AddIncludeDir($self->{options}->{nls} . '\include');

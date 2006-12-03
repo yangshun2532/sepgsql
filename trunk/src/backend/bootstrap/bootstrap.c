@@ -8,7 +8,7 @@
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/bootstrap/bootstrap.c,v 1.225 2006/10/04 00:29:49 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/backend/bootstrap/bootstrap.c,v 1.227 2006/11/21 20:59:52 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -424,15 +424,8 @@ BootstrapMain(int argc, char *argv[])
 		case BS_XLOG_STARTUP:
 			bootstrap_signals();
 			StartupXLOG();
-
-			/*
-			 * These next two functions don't consider themselves critical,
-			 * but we'd best PANIC anyway if they fail.
-			 */
-			START_CRIT_SECTION();
 			LoadFreeSpaceMap();
 			BuildFlatFiles(false);
-			END_CRIT_SECTION();
 			proc_exit(0);		/* startup done */
 
 		case BS_XLOG_BGWRITER:
@@ -510,6 +503,15 @@ bootstrap_signals(void)
 {
 	if (IsUnderPostmaster)
 	{
+		/*
+		 * If possible, make this process a group leader, so that the
+		 * postmaster can signal any child processes too.
+		 */
+#ifdef HAVE_SETSID
+		if (setsid() < 0)
+			elog(FATAL, "setsid() failed: %m");
+#endif
+
 		/*
 		 * Properly accept or ignore signals the postmaster might send us
 		 */

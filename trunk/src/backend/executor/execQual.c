@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/executor/execQual.c,v 1.197 2006/11/06 18:21:31 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/executor/execQual.c,v 1.199 2006/11/17 16:46:27 petere Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -303,7 +303,7 @@ ExecEvalArrayRef(ArrayRefExprState *astate,
 				if (isAssignment)
 					ereport(ERROR,
 							(errcode(ERRCODE_NULL_VALUE_NOT_ALLOWED),
-							 errmsg("array subscript in assignment must not be NULL")));
+							 errmsg("array subscript in assignment must not be null")));
 				*isNull = true;
 				return (Datum) NULL;
 			}
@@ -596,11 +596,6 @@ ExecEvalConst(ExprState *exprstate, ExprContext *econtext,
  *		something like ($.name) and the expression context contains
  *		the current parameter bindings (name = "sam") (age = 34)...
  *		so our job is to find and return the appropriate datum ("sam").
- *
- *		Q: if we have a parameter ($.foo) without a binding, i.e.
- *		   there is no (foo = xxx) in the parameter list info,
- *		   is this a fatal error or should this be a "not available"
- *		   (in which case we could return NULL)?	-cim 10/13/89
  * ----------------------------------------------------------------
  */
 static Datum

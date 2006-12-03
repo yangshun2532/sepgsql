@@ -8,7 +8,7 @@
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
- *			$PostgreSQL: pgsql/src/backend/access/gin/ginvacuum.c,v 1.7 2006/10/04 00:29:48 momjian Exp $
+ *			$PostgreSQL: pgsql/src/backend/access/gin/ginvacuum.c,v 1.9 2006/11/30 16:22:32 teodor Exp $
  *-------------------------------------------------------------------------
  */
 
@@ -34,9 +34,9 @@ typedef struct
 /*
  * Cleans array of ItemPointer (removes dead pointers)
  * Results are always stored in *cleaned, which will be allocated
- * if its needed. In case of *cleaned!=NULL caller is resposible to
+ * if its needed. In case of *cleaned!=NULL caller is responsible to
  * enough space. *cleaned and items may point to the same
- * memory addres.
+ * memory address.
  */
 
 static uint32
@@ -195,7 +195,7 @@ ginVacuumPostingTreeLeaves(GinVacuumState *gvs, BlockNumber blkno, bool isRoot, 
 			MarkBufferDirty(buffer);
 			END_CRIT_SECTION();
 
-			/* if root is a leaf page, we don't desire futher processing */
+			/* if root is a leaf page, we don't desire further processing */
 			if (!isRoot && GinPageGetOpaque(page)->maxoff < FirstOffsetNumber)
 				hasVoidPage = TRUE;
 		}
@@ -265,6 +265,12 @@ ginDeletePage(GinVacuumState *gvs, BlockNumber deleteBlkno, BlockNumber leftBlkn
 	}
 
 	parentPage = BufferGetPage(pBuffer);
+#ifdef USE_ASSERT_CHECKING
+	do {
+		PostingItem *tod=(PostingItem *) GinDataPageGetItem(parentPage, myoff);
+		Assert( PostingItemGetBlockNumber(tod) == deleteBlkno );
+	} while(0);
+#endif
 	PageDeletePostingItem(parentPage, myoff);
 
 	page = BufferGetPage(dBuffer);
@@ -351,7 +357,8 @@ typedef struct DataPageDeleteStack
 	struct DataPageDeleteStack *child;
 	struct DataPageDeleteStack *parent;
 
-	BlockNumber blkno;
+	BlockNumber blkno; /* current block number */
+	BlockNumber leftBlkno; /* rightest non-deleted page on left */
 	bool		isRoot;
 } DataPageDeleteStack;
 
@@ -377,7 +384,7 @@ ginScanToDelete(GinVacuumState *gvs, BlockNumber blkno, bool isRoot, DataPageDel
 			me = (DataPageDeleteStack *) palloc0(sizeof(DataPageDeleteStack));
 			me->parent = parent;
 			parent->child = me;
-			me->blkno = InvalidBlockNumber;
+			me->leftBlkno = InvalidBlockNumber;
 		}
 		else
 			me = parent->child;
@@ -392,6 +399,7 @@ ginScanToDelete(GinVacuumState *gvs, BlockNumber blkno, bool isRoot, DataPageDel
 	{
 		OffsetNumber i;
 
+		me->blkno = blkno;
 		for (i = FirstOffsetNumber; i <= GinPageGetOpaque(page)->maxoff; i++)
 		{
 			PostingItem *pitem = (PostingItem *) GinDataPageGetItem(page, i);
@@ -403,13 +411,13 @@ ginScanToDelete(GinVacuumState *gvs, BlockNumber blkno, bool isRoot, DataPageDel
 
 	if (GinPageGetOpaque(page)->maxoff < FirstOffsetNumber)
 	{
-		if (!(me->blkno == InvalidBlockNumber && GinPageRightMost(page)))
+		if (!(me->leftBlkno == InvalidBlockNumber && GinPageRightMost(page)))
 		{
 			/* we never delete right most branch */
 			Assert(!isRoot);
 			if (GinPageGetOpaque(page)->maxoff < FirstOffsetNumber)
 			{
-				ginDeletePage(gvs, blkno, me->blkno, me->parent->blkno, myoff, me->parent->isRoot);
+				ginDeletePage(gvs, blkno, me->leftBlkno, me->parent->blkno, myoff, me->parent->isRoot);
 				meDelete = TRUE;
 			}
 		}
@@ -418,7 +426,7 @@ ginScanToDelete(GinVacuumState *gvs, BlockNumber blkno, bool isRoot, DataPageDel
 	ReleaseBuffer(buffer);
 
 	if (!meDelete)
-		me->blkno = blkno;
+		me->leftBlkno = blkno;
 
 	return meDelete;
 }
@@ -438,7 +446,7 @@ ginVacuumPostingTree(GinVacuumState *gvs, BlockNumber rootBlkno)
 	}
 
 	memset(&root, 0, sizeof(DataPageDeleteStack));
-	root.blkno = rootBlkno;
+	root.leftBlkno = InvalidBlockNumber;
 	root.isRoot = TRUE;
 
 	vacuum_delay_point();
@@ -459,7 +467,7 @@ ginVacuumPostingTree(GinVacuumState *gvs, BlockNumber rootBlkno)
 /*
  * returns modified page or NULL if page isn't modified.
  * Function works with original page until first change is occured,
- * then page is copied into temprorary one.
+ * then page is copied into temporary one.
  */
 static Page
 ginVacuumEntryPage(GinVacuumState *gvs, Buffer buffer, BlockNumber *roots, uint32 *nroot)
@@ -489,7 +497,7 @@ ginVacuumEntryPage(GinVacuumState *gvs, Buffer buffer, BlockNumber *roots, uint3
 		else if (GinGetNPosting(itup) > 0)
 		{
 			/*
-			 * if we already create temrorary page, we will make changes in
+			 * if we already create temporary page, we will make changes in
 			 * place
 			 */
 			ItemPointerData *cleaned = (tmppage == origpage) ? NULL : GinGetPosting(itup);
@@ -508,7 +516,7 @@ ginVacuumEntryPage(GinVacuumState *gvs, Buffer buffer, BlockNumber *roots, uint3
 				if (tmppage == origpage)
 				{
 					/*
-					 * On first difference we create temprorary page in memory
+					 * On first difference we create temporary page in memory
 					 * and copies content in to it.
 					 */
 					tmppage = GinPageGetCopyPage(origpage);

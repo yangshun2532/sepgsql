@@ -1,4 +1,4 @@
-<!-- $PostgreSQL: pgsql/doc/src/sgml/storage.sgml,v 1.11 2006/06/18 15:38:36 petere Exp $ -->
+<!-- $PostgreSQL: pgsql/doc/src/sgml/storage.sgml,v 1.13 2006/11/25 22:55:59 petere Exp $ -->
 
 <chapter id="storage">
 
@@ -138,7 +138,7 @@ Avoid assuming that filenode and table OID are the same.
 </caution>
 
 <para>
-When a table or index exceeds 1Gb, it is divided into gigabyte-sized
+When a table or index exceeds 1 GB, it is divided into gigabyte-sized
 <firstterm>segments</>.  The first segment's file name is the same as the
 filenode; subsequent segments are named filenode.1, filenode.2, etc.
 This arrangement avoids problems on platforms that have file size limitations.
@@ -188,7 +188,7 @@ Oversized-Attribute Storage Technique).
 
 <para>
 <productname>PostgreSQL</productname> uses a fixed page size (commonly
-8Kb), and does not allow tuples to span multiple pages.  Therefore,  it is
+8 kB), and does not allow tuples to span multiple pages.  Therefore,  it is
 not possible to store very large field values directly.  To overcome 
 this limitation, large  field values are compressed and/or broken up into
 multiple physical rows. This happens transparently to the user, with only
@@ -212,7 +212,7 @@ value, but in some cases more efficient approaches are possible.)
 <para>
 <acronym>TOAST</> usurps the high-order two bits of the varlena length word,
 thereby limiting the logical size of any value of a <acronym>TOAST</>-able
-data type to 1Gb (2<superscript>30</> - 1 bytes).  When both bits are zero,
+data type to 1 GB (2<superscript>30</> - 1 bytes).  When both bits are zero,
 the value is an ordinary un-<acronym>TOAST</>ed value of the data type.  One
 of these bits, if set, indicates that the value has been compressed and must
 be decompressed before use.  The other bit, if set, indicates that the value
@@ -261,7 +261,7 @@ regardless of the actual size of the represented value.
 <para>
 The <acronym>TOAST</> code is triggered only
 when a row value to be stored in a table is wider than <literal>BLCKSZ/4</>
-bytes (normally 2Kb).  The <acronym>TOAST</> code will compress and/or move
+bytes (normally 2 kB).  The <acronym>TOAST</> code will compress and/or move
 field values out-of-line until the row value is shorter than
 <literal>BLCKSZ/4</> bytes or no more gains can be had.  During an UPDATE
 operation, values of unchanged fields are normally preserved as-is; so an
@@ -328,7 +328,7 @@ containing typical HTML pages and their URLs was stored in about half of the
 raw data size including the <acronym>TOAST</> table, and that the main table
 contained only about 10% of the entire data (the URLs and some small HTML
 pages). There was no run time difference compared to an un-<acronym>TOAST</>ed
-comparison table, in which all the HTML pages were cut down to 7Kb to fit.
+comparison table, in which all the HTML pages were cut down to 7 kB to fit.
 </para>
 
 </sect1>
@@ -361,7 +361,7 @@ an item is a row; in an index, an item is an index entry.
 
 <para>
 Every table and index is stored as an array of <firstterm>pages</> of a
-fixed size (usually 8Kb, although a different page size can be selected
+fixed size (usually 8 kB, although a different page size can be selected
 when compiling the server).  In a table, all the pages are logically
 equivalent, so a particular item (row) can be stored in any page.  In
 indexes, the first page is generally reserved as a <firstterm>metapage</>

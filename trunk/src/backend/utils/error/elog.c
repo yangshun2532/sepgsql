@@ -42,7 +42,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/error/elog.c,v 1.175 2006/10/01 22:08:18 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/utils/error/elog.c,v 1.178 2006/11/28 12:54:42 petere Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -421,25 +421,23 @@ errfinish(int dummy,...)
 		 * fflush here is just to improve the odds that we get to see the
 		 * error message, in case things are so hosed that proc_exit crashes.
 		 * Any other code you might be tempted to add here should probably be
-		 * in an on_proc_exit callback instead.
+		 * in an on_proc_exit or on_shmem_exit callback instead.
 		 */
 		fflush(stdout);
 		fflush(stderr);
 
 		/*
-		 * If proc_exit is already running, we exit with nonzero exit code to
-		 * indicate that something's pretty wrong.  We also want to exit with
-		 * nonzero exit code if not running under the postmaster (for example,
-		 * if we are being run from the initdb script, we'd better return an
-		 * error status).
+		 * Do normal process-exit cleanup, then return exit code 1 to indicate
+		 * FATAL termination.  The postmaster may or may not consider this
+		 * worthy of panic, depending on which subprocess returns it.
 		 */
-		proc_exit(proc_exit_inprogress || !IsUnderPostmaster);
+		proc_exit(1);
 	}
 
 	if (elevel >= PANIC)
 	{
 		/*
-		 * Serious crash time. Postmaster will observe nonzero process exit
+		 * Serious crash time. Postmaster will observe SIGABRT process exit
 		 * status and kill the other backends too.
 		 *
 		 * XXX: what if we are *in* the postmaster?  abort() won't kill our
@@ -1473,7 +1471,7 @@ log_line_prefix(StringInfo buf)
 					char		strfbuf[128];
 
 					strftime(strfbuf, sizeof(strfbuf),
-					/* Win32 timezone names are too long so don't print them. */
+					/* Win32 timezone names are too long so don't print them */
 #ifndef WIN32
 							 "%Y-%m-%d %H:%M:%S %Z",
 #else
@@ -1489,7 +1487,12 @@ log_line_prefix(StringInfo buf)
 					char		strfbuf[128];
 
 					strftime(strfbuf, sizeof(strfbuf),
+					/* Win32 timezone names are too long so don't print them */
+#ifndef WIN32
 							 "%Y-%m-%d %H:%M:%S %Z",
+#else
+							 "%Y-%m-%d %H:%M:%S",
+#endif
 							 localtime(&MyProcPort->session_start));
 					appendStringInfoString(buf, strfbuf);
 				}
@@ -1954,11 +1957,10 @@ useful_strerror(int errnum)
 	 */
 	if (str == NULL || *str == '\0')
 	{
-		/*
-		 * translator: This string will be truncated at 47 characters
-		 * expanded.
-		 */
 		snprintf(errorstr_buf, sizeof(errorstr_buf),
+				 /*------
+				   translator: This string will be truncated at 47
+				   characters expanded. */
 				 _("operating system error %d"), errnum);
 		str = errorstr_buf;
 	}

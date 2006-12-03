@@ -10,7 +10,7 @@
   alink="#0000ff">
     <H1>Frequently Asked Questions (FAQ) for PostgreSQL</H1>
 
-    <P>Last updated: Sat Oct 14 19:08:19 EDT 2006</P>
+    <P>Last updated: Fri Dec  1 23:11:53 EST 2006</P>
 
     <P>Current maintainer: Bruce Momjian (<A href=
     "mailto:bruce@momjian.us">bruce@momjian.us</A>)
@@ -117,7 +117,7 @@
     functions?<BR>
      <A href="#item4.20">4.20</A>) What replication solutions are available?<BR>
      <A href="#item4.21">4.21</A>) Why are my table and column names not
-    recognized in my query?<BR>
+    recognized in my query?  Why is capitalization not preserved?<BR>
 
 
     <HR>
@@ -219,7 +219,7 @@
 
     <H3 id="item1.6">1.6) What is the most recent release?</H3>
 
-    <P>The latest release of PostgreSQL is version 8.1.5.</P>
+    <P>The latest release of PostgreSQL is version 8.2.</P>
 
     <P>We plan to have a major release every year, with minor releases
     every few months.</P>
@@ -956,13 +956,13 @@ length</TD></TR>
     <H3 id="item4.12">4.12) What is an <SMALL>OID</SMALL>? What is
     a <SMALL>CTID</SMALL>?</H3>
 
-    <P>Every row that is created in PostgreSQL gets a unique
-    <SMALL>OID</SMALL> unless created <SMALL>WITHOUT OIDS</SMALL>.
-    O<SMALL>ID</SMALL>s are automatically assigned unique 4-byte
-    integers that are unique across the entire installation.  However,
-    they overflow at 4 billion, and then the O<SMALL>ID</SMALL>s start
-    being duplicated. PostgreSQL uses <SMALL>OID</SMALL>s to link its
-    internal system tables together.</P>
+    <P>If a table is created <SMALL>WITH OIDS</SMALL>, each row
+    gets a unique a <SMALL>OID</SMALL>.  O<SMALL>ID</SMALL>s are
+    automatically assigned unique 4-byte integers that are unique
+    across the entire installation.  However, they overflow at 4
+    billion, and then the O<SMALL>ID</SMALL>s start being duplicated.
+    PostgreSQL uses <SMALL>OID</SMALL>s to link its internal system
+    tables together.</P>
 
     <P>To uniquely number rows in user tables, it is best to use
     <SMALL>SERIAL</SMALL> rather than O<SMALL>ID</SMALL>s because
@@ -1085,16 +1085,17 @@ length</TD></TR>
     available supporting a variety of replication models.</P>
 
     <H3 id="item4.21">4.21) Why are my table and column names not
-    recognized in my query?</H3>
+    recognized in my query?  Why is capitalization not preserved?</H3>
 
-    <P>The most common cause is the use of double-quotes around table or
-    column names during table creation. When double-quotes are used,
-    table and column names (called identifiers) are stored <a
-    href="http://www.postgresql.org/docs/8.0/static/sql-syntax.html#SQL-SYNTAX-IDENTIFIERS"> 
+    <P>The most common cause of recognized names is the use of
+    double-quotes around table or column names during table creation.
+    When double-quotes are used, table and column names (called
+    identifiers) are stored <a
+    href="http://www.postgresql.org/docs/8.2/static/sql-syntax.html#SQL-SYNTAX-IDENTIFIERS">
     case-sensitive</a>, meaning you must use double-quotes when
-    referencing the names in a query. Some interfaces, like pgAdmin,
-    automatically double-quote identifiers during table creation. So,
-    for identifiers to be recognized, you must either:
+    referencing the names in a query.  Some interfaces, like pgAdmin,
+    automatically double-quote identifiers during table creation.
+    So, for identifiers to be recognized, you must either:
     <UL>
     <LI>Avoid double-quoting identifiers when creating tables</LI>
     <LI>Use only lowercase characters in identifiers</LI>

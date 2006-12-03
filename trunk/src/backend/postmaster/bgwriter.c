@@ -37,7 +37,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/postmaster/bgwriter.c,v 1.29 2006/10/06 17:13:59 petere Exp $
+ *	  $PostgreSQL: pgsql/src/backend/postmaster/bgwriter.c,v 1.33 2006/12/01 19:55:28 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -45,6 +45,7 @@
 
 #include <signal.h>
 #include <time.h>
+#include <unistd.h>
 
 #include "access/xlog_internal.h"
 #include "libpq/pqsignal.h"
@@ -171,6 +172,17 @@ BackgroundWriterMain(void)
 	am_bg_writer = true;
 
 	/*
+	 * If possible, make this process a group leader, so that the postmaster
+	 * can signal any child processes too.  (bgwriter probably never has
+	 * any child processes, but for consistency we make all postmaster
+	 * child processes do this.)
+	 */
+#ifdef HAVE_SETSID
+	if (setsid() < 0)
+		elog(FATAL, "setsid() failed: %m");
+#endif
+
+	/*
 	 * Properly accept or ignore signals the postmaster might send us
 	 *
 	 * Note: we deliberately ignore SIGTERM, because during a standard Unix
@@ -292,6 +304,13 @@ BackgroundWriterMain(void)
 		 * fast as we can.
 		 */
 		pg_usleep(1000000L);
+
+		/*
+		 * Close all open files after any error.  This is helpful on Windows,
+		 * where holding deleted files open causes various strange errors.
+		 * It's not clear we need it elsewhere, but shouldn't hurt.
+		 */
+		smgrcloseall();
 	}
 
 	/* We can now handle ereport(ERROR) */
@@ -338,6 +357,12 @@ BackgroundWriterMain(void)
 		}
 		if (shutdown_requested)
 		{
+			/*
+			 * From here on, elog(ERROR) should end with exit(1), not send
+			 * control back to the sigsetjmp block above
+			 */
+			ExitOnAnyError = true;
+			/* Close down the database */
 			ShutdownXLOG(0, 0);
 			DumpFreeSpaceMap(0, 0);
 			/* Normal exit from the bgwriter is here */
@@ -503,12 +528,12 @@ bg_quickdie(SIGNAL_ARGS)
 	 * corrupted, so we don't want to try to clean up our transaction. Just
 	 * nail the windows shut and get out of town.
 	 *
-	 * Note we do exit(1) not exit(0).	This is to force the postmaster into a
+	 * Note we do exit(2) not exit(0).	This is to force the postmaster into a
 	 * system reset cycle if some idiot DBA sends a manual SIGQUIT to a random
 	 * backend.  This is necessary precisely because we don't clean up our
 	 * shared memory state.
 	 */
-	exit(1);
+	exit(2);
 }
 
 /* SIGHUP: set flag to re-read config file at next convenient time */

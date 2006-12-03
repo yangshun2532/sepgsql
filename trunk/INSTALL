@@ -173,7 +173,7 @@ pg_dumpall > outputfile
        keys), then use the "-o" option when running pg_dumpall.
        To make the backup, you can use the pg_dumpall command from the
        version you are currently running. For best results, however, try
-       to use the pg_dumpall command from PostgreSQL 8.2beta3, since this
+       to use the pg_dumpall command from PostgreSQL 8.2.0, since this
        version contains bug fixes and improvements over older versions.
        While this advice might seem idiosyncratic since you haven't
        installed the new version yet, it is advisable to follow it if you
@@ -195,7 +195,7 @@ pg_ctl stop
        this:
 mv /usr/local/pgsql /usr/local/pgsql.old
 
-   After you have installed PostgreSQL 8.2beta3, create a new database
+   After you have installed PostgreSQL 8.2.0, create a new database
    directory and start the new server. Remember that you must execute
    these commands while logged in to the special database user account
    (which you already have if you are upgrading).
@@ -803,60 +803,62 @@ psql testdb
      <pgsql-ports@postgresql.org>, not to the people listed here.
 
    OS Processor Version Reported Remarks
-   AIX PowerPC 8.1.0 Build farm kookaburra (5.2, cc 6.0); asp (5.2, gcc
-   3.3.2) see doc/FAQ_AIX, particularly if using AIX 5.3 ML3
+   AIX PowerPC 8.2.0 Build farm grebe (5.3, gcc 4.0.1); kookaburra (5.2,
+   cc 6.0); asp (5.2, gcc 3.3.2) see doc/FAQ_AIX, particularly if using
+   AIX 5.3 ML3
    AIX RS6000 8.0.0 Hans-Jürgen Schönig (<hs@cybertec.at>), 2004-12-06 see
    doc/FAQ_AIX
    BSD/OS x86 8.1.0 Bruce Momjian (<pgman@candle.pha.pa.us>), 2005-10-26
    4.3.1
-   Debian GNU/Linux Alpha 8.1.0 Build farm hare (3.1, gcc 3.3.4)
-   Debian GNU/Linux AMD64 8.1.0 Build farm panda (sid, gcc 3.3.5)
-   Debian GNU/Linux ARM 8.1.0 Build farm penguin (3.1, gcc 3.3.4)
-   Debian GNU/Linux Athlon XP 8.1.0 Build farm rook (3.1, gcc 3.3.5)
-   Debian GNU/Linux IA64 7.4 Noèl Köthe (<noel@debian.org>), 2003-10-25
+   Debian GNU/Linux Alpha 8.2.0 Build farm hare (3.1, gcc 3.3.4)
+   Debian GNU/Linux AMD64 8.2.0 Build farm shad (4.0, gcc 4.1.2); kite
+   (3.1, gcc 4.0); panda (sid, gcc 3.3.5)
+   Debian GNU/Linux ARM 8.2.0 Build farm penguin (3.1, gcc 3.3.4)
+   Debian GNU/Linux Athlon XP 8.2.0 Build farm rook (3.1, gcc 3.3.5)
+   Debian GNU/Linux IA64 8.2.0 Build farm dugong (unstable, icc 9.1.045)
    Debian GNU/Linux m68k 8.0.0 Noèl Köthe (<noel@debian.org>), 2004-12-09
    sid
-   Debian GNU/Linux MIPS 8.1.0 Build farm otter (3.1, gcc 3.3.4)
-   Debian GNU/Linux MIPSEL 8.1.0 Build farm lionfish (3.1, gcc 3.3.4);
+   Debian GNU/Linux MIPS 8.2.0 Build farm otter (3.1, gcc 3.3.4)
+   Debian GNU/Linux MIPSEL 8.2.0 Build farm lionfish (3.1, gcc 3.3.4);
    corgi (3.1, gcc 3.3.4)
-   Debian GNU/Linux PA-RISC 8.1.0 Build farm kingfisher (3.1, gcc 3.3.5)
+   Debian GNU/Linux PA-RISC 8.2.0 Build farm manatee (3.1, gcc 4.0.1);
+   kingfisher (3.1, gcc 3.3.5)
    Debian GNU/Linux PowerPC 8.0.0 Noèl Köthe (<noel@debian.org>),
    2004-12-15 sid
-   Debian GNU/Linux S/390 7.4 Noèl Köthe (<noel@debian.org>), 2003-10-25
    Debian GNU/Linux Sparc 8.1.0 Build farm dormouse (3.1, gcc 3.2.5;
    64-bit)
-   Debian GNU/Linux x86 8.0.0 Peter Eisentraut (<peter_e@gmx.net>),
-   2004-12-06 3.1 (sarge), kernel 2.6
-   Fedora AMD64 8.1.0 Build farm viper (FC3, gcc 3.4.2)
-   Fedora x86 8.1.0 Build farm thrush (FC1, gcc 3.3.2)
-   FreeBSD Alpha 7.4 Peter Eisentraut (<peter_e@gmx.net>), 2003-10-25 4.8
-   FreeBSD AMD64 8.1.0 Build farm platypus (5.2.1, gcc 3.3.3); dove (5.4,
-   gcc 3.4.2)
-   FreeBSD x86 8.1.0 Build farm octopus (4.11, gcc 2.95.4); flatworm (5.3,
-   gcc 3.4.2); echidna (6, gcc 3.4.2); herring (6, Intel cc 7.1)
+   Debian GNU/Linux x86 8.2.0 Build farm wildebeest (3.1, gcc 3.3.5)
+   Fedora Linux AMD64 8.2.0 Build farm impala (FC6, gcc 4.1.1); bustard
+   (FC5, gcc 4.1.0); wasp (FC5, gcc 4.1.0); viper (FC3, gcc 3.4.4)
+   Fedora Linux PowerPC 8.2.0 Build farm sponge (FC5, gcc 4.1.0)
+   Fedora Linux x86 8.2.0 Build farm agouti (FC5, gcc 4.1.1); thrush (FC1,
+   gcc 3.3.2)
+   FreeBSD AMD64 8.2.0 Build farm platypus (6, gcc 3.4.4); dove (6.1, gcc
+   3.4.4); ermine (6.1, gcc 3.4.4)
+   FreeBSD x86 8.2.0 Build farm minnow (6.1, gcc 3.4.4); echidna (6, gcc
+   3.4.2); herring (6, Intel cc 7.1)
    Gentoo Linux AMD64 8.1.0 Build farm caribou (2.6.9, gcc 3.3.5)
-   Gentoo Linux IA64 8.1.0 Build farm stoat (2.6, gcc 3.3)
-   Gentoo Linux PowerPC 64 8.1.0 Build farm cobra (1.4.16, gcc 3.4.3)
-   Gentoo Linux x86 8.0.0 Paul Bort (<pbort@tmwsystems.com>), 2004-12-07
-   HP-UX IA64 8.1.0 Tom Lane (<tgl@sss.pgh.pa.us>), 2005-10-15 11.23, gcc
+   Gentoo Linux IA64 8.2.0 Build farm stoat (2.6, gcc 3.3)
+   Gentoo Linux PowerPC 64 8.2.0 Build farm cobra (1.4.16, gcc 3.4.3)
+   Gentoo Linux x86 8.2.0 Build farm mongoose (1.6.14, icc 9.0.032)
+   HP-UX IA64 8.2.0 Tom Lane (<tgl@sss.pgh.pa.us>), 2006-10-23 11.23, gcc
    and cc; see doc/FAQ_HPUX
-   HP-UX PA-RISC 8.1.0 Tom Lane (<tgl@sss.pgh.pa.us>), 2005-10-15 10.20
+   HP-UX PA-RISC 8.2.0 Tom Lane (<tgl@sss.pgh.pa.us>), 2006-10-23 10.20
    and 11.23, gcc and cc; see doc/FAQ_HPUX
    IRIX MIPS 8.1.0 Kenneth Marshall (<ktm@is.rice.edu>), 2005-11-04 6.5,
    cc only
-   Mac OS X PowerPC 8.1.0 Build farm tuna (10.4.2, gcc 4.0); cuckoo
-   (10.3.9, gcc 3.3); wallaroo (10.3.8, gcc 3.3)
-   Mandrake Linux x86 8.1.0 Build farm shrew (10.0, gcc 3.3.2)
-   NetBSD arm32 7.4 Patrick Welche (<prlw1@newn.cam.ac.uk>), 2003-11-12
-   1.6ZE/acorn32
-   NetBSD m68k 8.1.0 Build farm osprey (2.0, gcc 3.3.3)
-   NetBSD Sparc 7.4.1 Peter Eisentraut (<peter_e@gmx.net>), 2003-11-26
-   1.6.1, 32-bit
-   NetBSD x86 8.0.0 Build farm canary, snapshot 2004-12-06 03:30:00 1.6
+   Kubuntu Linux AMD64 8.2.0 Build farm rosella (5.10 "Breezy", gcc 4.0)
+   Mac OS X PowerPC 8.2.0 Build farm tuna (10.4.2, gcc 4.0)
+   Mac OS X x86 8.2.0 Build farm jackal (10.4.8, gcc 4.0.1)
+   Mandriva Linux x86 8.2.0 Build farm gopher (Mandriva 2006, gcc 4.0.1)
+   NetBSD m68k 8.2.0 Build farm osprey (2.0, gcc 3.3.3)
+   NetBSD x86 8.2.0 Build farm gazelle (3.0, gcc 3.3.3); canary (1.6, gcc
+   2.95.3)
+   OpenBSD AMD64 8.2.0 Build farm zebra (4.0, gcc 3.3.5)
    OpenBSD Sparc 8.0.0 Chris Mair (<list@1006.org>), 2005-01-10 3.3
-   OpenBSD Sparc64 8.1.0 Build farm spoonbill (3.6, gcc 3.3.2) compiler
-   bug affects contrib/seg
-   OpenBSD x86 8.0.0 Build farm emu, snapshot 2004-12-06 11:35:03 3.6
+   OpenBSD Sparc64 8.2.0 Build farm spoonbill (3.9, gcc 3.3.5)
+   OpenBSD x86 8.2.0 Build farm emu (4.0, gcc 3.3.5); guppy (3.8, gcc
+   3.3.5) minor ecpg test failure on 3.8
    Red Hat Linux AMD64 8.1.0 Tom Lane (<tgl@sss.pgh.pa.us>), 2005-10-23
    RHEL 4
    Red Hat Linux IA64 8.1.0 Tom Lane (<tgl@sss.pgh.pa.us>), 2005-10-23
@@ -873,12 +875,10 @@ psql testdb
    4
    Slackware Linux x86 8.1.0 Sergey Koposov (<math@sai.msu.ru>),
    2005-10-24 10.0
-   Solaris Sparc 8.1.0 Build farm buzzard (Solaris 10, gcc 3.3.2); Robert
-   Lor (<Robert.Lor@sun.com>), 2005-11-04 (Solaris 9); Kenneth Marshall
-   (<ktm@is.rice.edu>), 2005-10-28 (Solaris 8, gcc 3.4.3) see
+   Solaris Sparc 8.2.0 Build farm hyena (Solaris 10, gcc 3.4.3) see
    doc/FAQ_Solaris
-   Solaris x86 8.1.0 Robert Lor (<Robert.Lor@sun.com>), 2005-11-04
-   (Solaris 10) see doc/FAQ_Solaris
+   Solaris x86 8.2.0 Build farm dragonfly (Solaris 9, gcc 3.2.3); kudu
+   (Solaris 9, cc 5.3) see doc/FAQ_Solaris
    SUSE Linux AMD64 8.1.0 Josh Berkus (<josh@agliodbs.com>), 2005-10-23
    SLES 9.3
    SUSE Linux IA64 8.0.0 Reinhard Max (<max@suse.de>), 2005-01-03 SLES 9
@@ -892,25 +892,32 @@ psql testdb
    9.2, SLES 9
    Tru64 UNIX Alpha 8.1.0 Honda Shigehiro (<fwif0083@mb.infoweb.ne.jp>),
    2005-11-01 5.0, cc 6.1-011
-   UnixWare x86 8.1.0 Build farm firefly (7.1.4, cc 4.2) see doc/FAQ_SCO
-   Windows x86 8.1.0 Build farm loris (XP Pro, gcc 3.2.3); snake (Windows
-   Server 2003, gcc 3.4.2) see doc/FAQ_MINGW
-   Windows with Cygwin x86 8.1.0 Build farm ferret (XP Pro, gcc 3.3.3) see
-   doc/FAQ_CYGWIN
+   Ubuntu Linux x86 8.2.0 Build farm caracara (6.06, gcc 4.0.3)
+   UnixWare x86 8.2.0 Build farm warthog (7.1.4, cc 4.2) see doc/FAQ_SCO
+   Windows x86 8.2.0 Build farm yak (XP SP2, gcc 3.4.2); bandicoot
+   (Windows 2000 Pro, gcc 3.4.2); snake (Windows Server 2003 SP1, gcc
+   3.4.2); trout (Windows Server 2000 SP4, gcc 3.4.2) see doc/FAQ_MINGW
+   Windows with Cygwin x86 8.2.0 Build farm eel (W2K Server SP4, gcc
+   3.4.4) see doc/FAQ_CYGWIN
    Yellow Dog Linux PowerPC 8.1.0 Build farm carp (4.0, gcc 3.3.3)
 
-   Unsupported Platforms: The following platforms are either known not to
-   work, or they used to work in a fairly distant previous release. We
-   include these here to let you know that these platforms *could* be
-   supported if given some attention.
+   Unsupported Platforms: The following platforms used to work but have
+   not been tested recently. We include these here to let you know that
+   these platforms *could* be supported if given some attention.
 
    OS Processor Version Reported Remarks
+   Debian GNU/Linux S/390 7.4 Noèl Köthe (<noel@debian.org>), 2003-10-25
+   FreeBSD Alpha 7.4 Peter Eisentraut (<peter_e@gmx.net>), 2003-10-25 4.8
    Linux PlayStation 2 8.0.0 Chris Mair (<list@1006.org>), 2005-01-09
-   requires --disable-spinlocks (works, but slow)
+   requires --disable-spinlocks (works, but very slow)
    NetBSD Alpha 7.2 Thomas Thai (<tom@minnesota.com>), 2001-11-20 1.5W
+   NetBSD arm32 7.4 Patrick Welche (<prlw1@newn.cam.ac.uk>), 2003-11-12
+   1.6ZE/acorn32
    NetBSD MIPS 7.2.1 Warwick Hunter (<whunter@agile.tv>), 2002-06-13 1.5.3
    NetBSD PowerPC 7.2 Bill Studenmund (<wrstuden@netbsd.org>), 2001-11-28
    1.5
+   NetBSD Sparc 7.4.1 Peter Eisentraut (<peter_e@gmx.net>), 2003-11-26
+   1.6.1, 32-bit
    NetBSD VAX 7.1 Tom I. Helbekkmo (<tih@kpnQwest.no>), 2001-03-30 1.5
    SCO OpenServer x86 7.3.1 Shibashish Satpathy (<shib@postmark.net>),
    2002-12-11 5.0.4, gcc; see also doc/FAQ_SCO
