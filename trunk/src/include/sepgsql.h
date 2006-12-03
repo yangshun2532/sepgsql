@@ -39,6 +39,73 @@ static inline void selinux_audit(int result, char *message, char *objname) {
 }
 
 #ifdef HAVE_SELINUX
+/* object classes and access vectors are not included, in default */
+#include <selinux/flask.h>
+#define SECCLASS_DATABASE			(60)	/* next to SECCLASS_CONTEXT */
+#define SECCLASS_TABLE				(SECCLASS_DATABASE + 1)
+#define SECCLASS_PROCEDURE			(SECCLASS_DATABASE + 2)
+#define SECCLASS_COLUMN				(SECCLASS_DATABASE + 3)
+#define SECCLASS_TUPLE				(SECCLASS_DATABASE + 4)
+#define SECCLASS_BLOB				(SECCLASS_DATABASE + 5)
+
+#define COMMON_DATABASE__CREATE                   0x00000001UL
+#define COMMON_DATABASE__DROP                     0x00000002UL
+#define COMMON_DATABASE__GETATTR                  0x00000004UL
+#define COMMON_DATABASE__SETATTR                  0x00000008UL
+#define COMMON_DATABASE__RELABELFROM              0x00000010UL
+#define COMMON_DATABASE__RELABELTO                0x00000020UL
+
+#define DATABASE__CREATE                          0x00000001UL
+#define DATABASE__DROP                            0x00000002UL
+#define DATABASE__GETATTR                         0x00000004UL
+#define DATABASE__SETATTR                         0x00000008UL
+#define DATABASE__RELABELFROM                     0x00000010UL
+#define DATABASE__RELABELTO                       0x00000020UL
+#define DATABASE__ACCESS                          0x00000040UL
+#define DATABASE__CREATE_OBJ                      0x00000080UL
+#define DATABASE__DROP_OBJ                        0x00000100UL
+#define TABLE__CREATE                             0x00000001UL
+#define TABLE__DROP                               0x00000002UL
+#define TABLE__GETATTR                            0x00000004UL
+#define TABLE__SETATTR                            0x00000008UL
+#define TABLE__RELABELFROM                        0x00000010UL
+#define TABLE__RELABELTO                          0x00000020UL
+#define TABLE__SELECT                             0x00000040UL
+#define TABLE__UPDATE                             0x00000080UL
+#define TABLE__INSERT                             0x00000100UL
+#define TABLE__DELETE                             0x00000200UL
+#define PROCEDURE__CREATE                         0x00000001UL
+#define PROCEDURE__DROP                           0x00000002UL
+#define PROCEDURE__GETATTR                        0x00000004UL
+#define PROCEDURE__SETATTR                        0x00000008UL
+#define PROCEDURE__RELABELFROM                    0x00000010UL
+#define PROCEDURE__RELABELTO                      0x00000020UL
+#define PROCEDURE__EXECUTE                        0x00000040UL
+#define PROCEDURE__ENTRYPOINT                     0x00000080UL
+#define COLUMN__CREATE                            0x00000001UL
+#define COLUMN__DROP                              0x00000002UL
+#define COLUMN__GETATTR                           0x00000004UL
+#define COLUMN__SETATTR                           0x00000008UL
+#define COLUMN__RELABELFROM                       0x00000010UL
+#define COLUMN__RELABELTO                         0x00000020UL
+#define COLUMN__SELECT                            0x00000040UL
+#define COLUMN__UPDATE                            0x00000080UL
+#define COLUMN__INSERT                            0x00000100UL
+#define TUPLE__RELABELFROM                        0x00000001UL
+#define TUPLE__RELABELTO                          0x00000002UL
+#define TUPLE__SELECT                             0x00000004UL
+#define TUPLE__UPDATE                             0x00000008UL
+#define TUPLE__INSERT                             0x00000010UL
+#define TUPLE__DELETE                             0x00000020UL
+#define BLOB__CREATE                              0x00000001UL
+#define BLOB__DROP                                0x00000002UL
+#define BLOB__GETATTR                             0x00000004UL
+#define BLOB__SETATTR                             0x00000008UL
+#define BLOB__RELABELFROM                         0x00000010UL
+#define BLOB__RELABELTO                           0x00000020UL
+#define BLOB__READ                                0x00000040UL
+#define BLOB__WRITE                               0x00000080UL
+
 /* security enhanced selinux core implementation */
 extern psid selinuxGetServerPsid(void);
 extern psid selinuxGetClientPsid(void);
