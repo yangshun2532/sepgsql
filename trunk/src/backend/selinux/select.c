@@ -147,8 +147,8 @@ void selinuxCheckRteRelation(Query *query, RangeTblEntry *rte, int index)
 	int cls, attno, rc;
 	char *audit;
 	
-	Assert(rte->relkind == RTE_RELATION);
-	Assert(perm == perm & (TABLE__SELECT | TABLE__UPDATE | TABLE__DELETE));
+	Assert(rte->rtekind == RTE_RELATION);
+	Assert(perm == (perm & (TABLE__SELECT | TABLE__UPDATE | TABLE__DELETE)));
 
 	rel = relation_open(rte->relid, AccessShareLock);
 	pg_class = RelationGetForm(rel);
@@ -182,7 +182,7 @@ void selinuxCheckRteRelation(Query *query, RangeTblEntry *rte, int index)
 			cls = SECCLASS_COLUMN;
 			break;
 		case RelationRelationId:
-			Assert(pg_class == RELKIND_RELATION);
+			Assert(pg_class->relkind == RELKIND_RELATION);
 			attno = Anum_pg_class_relselcon - 1;
 			cls = SECCLASS_TABLE;
 			break;
@@ -389,7 +389,7 @@ static void checkExprFuncExpr(Query *query, FuncExpr *func)
 	char *audit;
 	int rc;
 
-	Assert(IsA(v, FuncExpr));
+	Assert(IsA(func, FuncExpr));
 
 	seldebug("checking FuncExpr(funcid=%u)", func->funcid);
 	/* 1. check arguments */

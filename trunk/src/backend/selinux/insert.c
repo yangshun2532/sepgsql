@@ -29,7 +29,7 @@ static Expr *selinuxInsertTupleContext(Expr *esid, Oid relid, psid relselcon)
 	Const *cons;
 	List *args;
 	uint16 tclass;
-	psid tsid, isid;
+	psid isid;
 
 	/* 1st arg : security context of subject */
 	cons = makeConst(PSIDOID, sizeof(psid),
@@ -53,7 +53,7 @@ static Expr *selinuxInsertTupleContext(Expr *esid, Oid relid, psid relselcon)
 	} else {
 		if (exprType((Node *)esid) != PSIDOID)
 			selerror("The type of security context (%u) is invalid", exprType((Node *)esid));
-		Assert(exprType(esid) == PSIDOID);
+		Assert(exprType((Node *)esid) == PSIDOID);
 		args = lappend(args, esid);
 	}
 	

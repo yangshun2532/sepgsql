@@ -15,7 +15,6 @@ Query *selinuxProxyDelete(Query *query)
 {
 	ListCell *x;
 	RangeTblEntry *rte;
-	uint32 perm;
 	int index;
 
 	/* 1. permission mark on target relation */

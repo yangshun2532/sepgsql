@@ -12,6 +12,7 @@
 #include "catalog/pg_database.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_selinux.h"
+#include "miscadmin.h"
 #include "sepgsql.h"
 #include "utils/builtins.h"
 
@@ -38,7 +39,6 @@ static psid init_context_psid = SelinuxRelationId - 1;
 static void setup_init_context()
 {
 	int i, j;
-	Assert(IsBootstrapProcessingMode());
 
 	libselinux_avc_reset();
 
@@ -215,6 +215,9 @@ void selinuxBootstrapFormrdesc(Relation rel)
 {
 	TupleDesc tupDesc = rel->rd_att;
 	int i;
+
+	if (!IsBootstrapProcessingMode())
+		return;
 
 	if (!init_context_available)
 		setup_init_context();
