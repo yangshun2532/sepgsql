@@ -11,7 +11,7 @@
 
 #define SelinuxRelationId	3400
 
-CATALOG(pg_selinux,3400)
+CATALOG(pg_selinux,3400) BKI_SHARED_RELATION
 {
 	text	selcontext;		/* string expression of security context */
 } FormData_pg_selinux;
