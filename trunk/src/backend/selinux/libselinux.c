@@ -14,6 +14,7 @@
 #include "catalog/pg_selinux.h"
 #include "miscadmin.h"
 #include "sepgsql.h"
+#include "storage/lwlock.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
 #include "utils/rel.h"
@@ -23,81 +24,102 @@
 #include <selinux/flask.h>
 #include <selinux/av_permissions.h>
 
-static char *class_to_string[] = {
-	"database",
-	"table",
-	"procedure",
-	"column",
-	"tuple",
-	"blob",
-};
+/* security_class_to_string() and security_av_perm_to_string() will be
+ * provided by new version of libselinux. The followings are provisional
+ * works
+ */
+static const char *security_class_to_string(uint16 tclass)
+{
+	static char *class_to_string[] = {
+		"database",
+		"table",
+		"procedure",
+		"column",
+		"tuple",
+		"blob",
+	};
 
-static struct {
-	uint16 tclass;
-	uint32 perm;
-	char *name;
-} perm_to_string[] = {
-	/* databases */
-	{ SECCLASS_DATABASE,	DATABASE__CREATE,		"create" },
-	{ SECCLASS_DATABASE,	DATABASE__DROP,			"drop" },
-	{ SECCLASS_DATABASE,	DATABASE__GETATTR,		"getattr" },
-	{ SECCLASS_DATABASE,	DATABASE__SETATTR,		"setattr" },
-	{ SECCLASS_DATABASE,	DATABASE__RELABELFROM,	"relabelfrom" },
-	{ SECCLASS_DATABASE,	DATABASE__RELABELTO,	"relabelto" },
-	{ SECCLASS_DATABASE,	DATABASE__ACCESS,		"access" },
-	{ SECCLASS_DATABASE,	DATABASE__CREATE_OBJ,	"create_obj" },
-	{ SECCLASS_DATABASE,	DATABASE__DROP_OBJ,		"drop_obj" },
-	/* table */
-	{ SECCLASS_TABLE,		TABLE__CREATE,			"create" },
-	{ SECCLASS_TABLE,		TABLE__DROP,			"drop" },
-	{ SECCLASS_TABLE,		TABLE__GETATTR,			"getattr" },
-	{ SECCLASS_TABLE,		TABLE__SETATTR,			"setattr" },
-	{ SECCLASS_TABLE,		TABLE__RELABELFROM,		"relabelfrom" },
-	{ SECCLASS_TABLE,		TABLE__RELABELTO,		"relabelto" },
-	{ SECCLASS_TABLE,		TABLE__SELECT,			"select" },
-	{ SECCLASS_TABLE,		TABLE__UPDATE,			"update" },
-	{ SECCLASS_TABLE,		TABLE__INSERT,			"insert" },
-	{ SECCLASS_TABLE,		TABLE__DELETE,			"delete" },
-	/* procedrue */
-	{ SECCLASS_PROCEDURE,	PROCEDURE__CREATE,		"create" },
-	{ SECCLASS_PROCEDURE,	PROCEDURE__DROP,		"drop" },
-	{ SECCLASS_PROCEDURE,	PROCEDURE__GETATTR,		"getattr" },
-	{ SECCLASS_PROCEDURE,	PROCEDURE__SETATTR,		"setattr" },
-	{ SECCLASS_PROCEDURE,	PROCEDURE__RELABELFROM,	"relabelfrom" },
-	{ SECCLASS_PROCEDURE,	PROCEDURE__RELABELTO,	"relabelto" },
-	{ SECCLASS_PROCEDURE,	PROCEDURE__EXECUTE,		"execute" },
-	{ SECCLASS_PROCEDURE,	PROCEDURE__ENTRYPOINT,	"entrypoint" },
-	/* column */
-	{ SECCLASS_COLUMN,		COLUMN__CREATE,			"create" },
-	{ SECCLASS_COLUMN,		COLUMN__DROP,			"drop" },
-	{ SECCLASS_COLUMN,		COLUMN__GETATTR,		"getattr" },
-	{ SECCLASS_COLUMN,		COLUMN__SETATTR,		"setattr" },
-	{ SECCLASS_COLUMN,		COLUMN__RELABELFROM,	"relabelfrom" },
-	{ SECCLASS_COLUMN,		COLUMN__RELABELTO,		"relabelto" },
-	{ SECCLASS_COLUMN,		COLUMN__SELECT,			"select" },
-	{ SECCLASS_COLUMN,		COLUMN__UPDATE,			"update" },
-	{ SECCLASS_COLUMN,		COLUMN__INSERT,			"insert" },
-	/* tuple */
-	{ SECCLASS_TUPLE,		TUPLE__RELABELFROM,		"relabelfrom" },
-	{ SECCLASS_TUPLE,		TUPLE__RELABELTO,		"relabelto" },
-	{ SECCLASS_TUPLE,		TUPLE__SELECT,			"select" },
-	{ SECCLASS_TUPLE,		TUPLE__UPDATE,			"update" },
-	{ SECCLASS_TUPLE,		TUPLE__INSERT,			"insert" },
-	{ SECCLASS_TUPLE,		TUPLE__DELETE,			"delete" },
-	/* blob */
-	{ SECCLASS_BLOB,		BLOB__CREATE,			"create" },
-	{ SECCLASS_BLOB,		BLOB__DROP,				"drop" },
-	{ SECCLASS_BLOB,		BLOB__GETATTR,			"getattr" },
-	{ SECCLASS_BLOB,		BLOB__SETATTR,			"setattr" },
-	{ SECCLASS_BLOB,		BLOB__RELABELFROM,		"relabelfrom" },
-	{ SECCLASS_BLOB,		BLOB__RELABELTO,		"relabelto" },
-	{ SECCLASS_BLOB,		BLOB__READ,				"read" },
-	{ SECCLASS_BLOB,		BLOB__WRITE,			"write" },
-	{ 0, 0, NULL }
-};
+	if (tclass >= SECCLASS_DATABASE && tclass <= SECCLASS_BLOB)
+		return class_to_string[tclass - SECCLASS_DATABASE];
+	return "unknown";
+}
+
+static const char *security_av_perm_to_string(uint16 tclass, uint32 perm)
+{
+	static struct {
+		uint16 tclass;
+		uint32 perm;
+		char *name;
+	} perm_to_string[] = {
+		/* databases */
+		{ SECCLASS_DATABASE,	DATABASE__CREATE,		"create" },
+		{ SECCLASS_DATABASE,	DATABASE__DROP,			"drop" },
+		{ SECCLASS_DATABASE,	DATABASE__GETATTR,		"getattr" },
+		{ SECCLASS_DATABASE,	DATABASE__SETATTR,		"setattr" },
+		{ SECCLASS_DATABASE,	DATABASE__RELABELFROM,	"relabelfrom" },
+		{ SECCLASS_DATABASE,	DATABASE__RELABELTO,	"relabelto" },
+		{ SECCLASS_DATABASE,	DATABASE__ACCESS,		"access" },
+		{ SECCLASS_DATABASE,	DATABASE__CREATE_OBJ,	"create_obj" },
+		{ SECCLASS_DATABASE,	DATABASE__DROP_OBJ,		"drop_obj" },
+		/* table */
+		{ SECCLASS_TABLE,		TABLE__CREATE,			"create" },
+		{ SECCLASS_TABLE,		TABLE__DROP,			"drop" },
+		{ SECCLASS_TABLE,		TABLE__GETATTR,			"getattr" },
+		{ SECCLASS_TABLE,		TABLE__SETATTR,			"setattr" },
+		{ SECCLASS_TABLE,		TABLE__RELABELFROM,		"relabelfrom" },
+		{ SECCLASS_TABLE,		TABLE__RELABELTO,		"relabelto" },
+		{ SECCLASS_TABLE,		TABLE__SELECT,			"select" },
+		{ SECCLASS_TABLE,		TABLE__UPDATE,			"update" },
+		{ SECCLASS_TABLE,		TABLE__INSERT,			"insert" },
+		{ SECCLASS_TABLE,		TABLE__DELETE,			"delete" },
+		/* procedrue */
+		{ SECCLASS_PROCEDURE,	PROCEDURE__CREATE,		"create" },
+		{ SECCLASS_PROCEDURE,	PROCEDURE__DROP,		"drop" },
+		{ SECCLASS_PROCEDURE,	PROCEDURE__GETATTR,		"getattr" },
+		{ SECCLASS_PROCEDURE,	PROCEDURE__SETATTR,		"setattr" },
+		{ SECCLASS_PROCEDURE,	PROCEDURE__RELABELFROM,	"relabelfrom" },
+		{ SECCLASS_PROCEDURE,	PROCEDURE__RELABELTO,	"relabelto" },
+		{ SECCLASS_PROCEDURE,	PROCEDURE__EXECUTE,		"execute" },
+		{ SECCLASS_PROCEDURE,	PROCEDURE__ENTRYPOINT,	"entrypoint" },
+		/* column */
+		{ SECCLASS_COLUMN,		COLUMN__CREATE,			"create" },
+		{ SECCLASS_COLUMN,		COLUMN__DROP,			"drop" },
+		{ SECCLASS_COLUMN,		COLUMN__GETATTR,		"getattr" },
+		{ SECCLASS_COLUMN,		COLUMN__SETATTR,		"setattr" },
+		{ SECCLASS_COLUMN,		COLUMN__RELABELFROM,	"relabelfrom" },
+		{ SECCLASS_COLUMN,		COLUMN__RELABELTO,		"relabelto" },
+		{ SECCLASS_COLUMN,		COLUMN__SELECT,			"select" },
+		{ SECCLASS_COLUMN,		COLUMN__UPDATE,			"update" },
+		{ SECCLASS_COLUMN,		COLUMN__INSERT,			"insert" },
+		/* tuple */
+		{ SECCLASS_TUPLE,		TUPLE__RELABELFROM,		"relabelfrom" },
+		{ SECCLASS_TUPLE,		TUPLE__RELABELTO,		"relabelto" },
+		{ SECCLASS_TUPLE,		TUPLE__SELECT,			"select" },
+		{ SECCLASS_TUPLE,		TUPLE__UPDATE,			"update" },
+		{ SECCLASS_TUPLE,		TUPLE__INSERT,			"insert" },
+		{ SECCLASS_TUPLE,		TUPLE__DELETE,			"delete" },
+		/* blob */
+		{ SECCLASS_BLOB,		BLOB__CREATE,			"create" },
+		{ SECCLASS_BLOB,		BLOB__DROP,				"drop" },
+		{ SECCLASS_BLOB,		BLOB__GETATTR,			"getattr" },
+		{ SECCLASS_BLOB,		BLOB__SETATTR,			"setattr" },
+		{ SECCLASS_BLOB,		BLOB__RELABELFROM,		"relabelfrom" },
+		{ SECCLASS_BLOB,		BLOB__RELABELTO,		"relabelto" },
+		{ SECCLASS_BLOB,		BLOB__READ,				"read" },
+		{ SECCLASS_BLOB,		BLOB__WRITE,			"write" },
+		{ 0, 0, NULL }
+	};
+	int i;
+
+	for (i=0; perm_to_string[i].name; i++) {
+		if (tclass == perm_to_string[i].tclass && perm == perm_to_string[i].perm)
+			return perm_to_string[i].name;
+	}
+	return "unknown";
+}
 
 struct avc_datum {
-	struct avc_datum *next;
+	SHMEM_OFFSET next;
 
 	psid ssid;				/* subject context */
 	psid tsid;				/* object context */
@@ -110,12 +132,42 @@ struct avc_datum {
 
 	psid create;			/* newly created context */
 	bool is_hot;
-	bool has_perm;
-	bool has_create;
 };
+
+#define AVC_DATUM_CACHE_SLOTS    512
+#define AVC_DATUM_CACHE_MAXNODES 800
+static struct {
+	LWLockId lock;
+	SHMEM_OFFSET slot[AVC_DATUM_CACHE_SLOTS];
+	SHMEM_OFFSET freelist;
+	int lru_hint;
+	int enforcing;
+	struct avc_datum entry[AVC_DATUM_CACHE_MAXNODES];
+} *avc_shmem = NULL;
+
+Size libselinux_shmem_size()
+{
+	return sizeof(*avc_shmem);
+}
+
+void libselinux_initialize()
+{
+	bool found_avc;
+
+	avc_shmem = ShmemInitStruct("SELinux userspace AVC",
+								libselinux_shmem_size(), &found_avc);
+	if (!found_avc) {
+		avc_shmem->lock = LWLockAssign();
+		libselinux_avc_reset();
+		selnotice("AVC Shmem segment created");
+	} else {
+		selnotice("AVC Shmem segment attached");
+	}
+}
 
 static void libselinux_compute_av(psid ssid, psid tsid, uint16 tclass, struct avc_datum *avd)
 {
+	/* we have to hold LW_EXCLUSIVE lock */
 	security_context_t scon, tcon;
 	struct av_decision x;
 	
@@ -134,10 +186,10 @@ static void libselinux_compute_av(psid ssid, psid tsid, uint16 tclass, struct av
 	avd->auditdeny = x.auditdeny;
 }
 
-static psid libselinux_compute_create(psid ssid, psid tsid, uint16 tclass)
+static void libselinux_compute_create(psid ssid, psid tsid, uint16 tclass, struct avc_datum *avd)
 {
+	/* we have to hold LW_EXCLUSIVE lock */
 	security_context_t scon, tcon, ncon;
-	psid nsid;
 
 	scon = libselinux_psid_to_context(ssid);
 	tcon = libselinux_psid_to_context(tsid);
@@ -147,7 +199,7 @@ static psid libselinux_compute_create(psid ssid, psid tsid, uint16 tclass)
 				 "scon='%s' tcon='%s' tclass=%u", scon, tcon, tclass);
 	PG_TRY();
 	{
-		nsid = libselinux_context_to_psid(ncon);
+		avd->create = libselinux_context_to_psid(ncon);
 	}
 	PG_CATCH();
 	{
@@ -159,8 +211,6 @@ static psid libselinux_compute_create(psid ssid, psid tsid, uint16 tclass)
 	pfree(scon);
 	pfree(tcon);
 	freecon(ncon);
-
-	return nsid;
 }
 
 static psid libselinux_compute_relabel(psid ssid, psid tsid, uint16 tclass)
@@ -193,72 +243,62 @@ static psid libselinux_compute_relabel(psid ssid, psid tsid, uint16 tclass)
 	return nsid;
 }
 
-#define AVC_DATUM_CACHE_SLOTS    512
-#define AVC_DATUM_CACHE_MAXNODES 800
-static struct {
-	struct avc_datum *slot[AVC_DATUM_CACHE_SLOTS];
-	struct avc_datum *freelist;
-	int lru_hint;
-	struct avc_datum entry[AVC_DATUM_CACHE_MAXNODES];
-} avc_cache;
-
-static int selinux_enforcing;
-
 void libselinux_avc_reset()
 {
 	int i;
 
-	memset(&avc_cache, 0, sizeof(avc_cache));
+	LWLockAcquire(avc_shmem->lock, LW_EXCLUSIVE);
+
+	for (i=0; i < AVC_DATUM_CACHE_SLOTS; i++)
+		avc_shmem->slot[i] = INVALID_OFFSET;
+	avc_shmem->freelist = INVALID_OFFSET;
 	for (i=0; i < AVC_DATUM_CACHE_MAXNODES; i++) {
-		struct avc_datum *avd = &avc_cache.entry[i];
-		
-		avd->next = avc_cache.freelist;
-		avc_cache.freelist = avd;
+		struct avc_datum *avd = avc_shmem->entry + i;
+
+		memset(avd, 0, sizeof(struct avc_datum));
+		avd->next = avc_shmem->freelist;
+		avc_shmem->freelist = MAKE_OFFSET(avd);
 	}
-	selinux_enforcing = security_getenforce();
-	Assert(selinux_enforcing==0 || selinux_enforcing==1);
+	avc_shmem->enforcing = security_getenforce();
+	Assert(avc_shmem->enforcing==0 || avc_shmem->enforcing==1);
+
+	LWLockRelease(avc_shmem->lock);
 }
 
-static char *libselinux_avc_audit(psid ssid, psid tsid, uint16 tclass, uint32 perms, struct avc_datum *avd)
+static char *libselinux_avc_audit(uint32 perms, struct avc_datum *avd)
 {
-	uint32 denied, audited;
+	/* we have to hold LW_SHARED lock at least */
+	uint32 denied, audited, mask;
 	char buffer[4096];
 	char *context;
-	int len, i;
-
-	if (tclass < SECCLASS_DATABASE || tclass > SECCLASS_BLOB)
-		selerror("SELinux: An audit message was tried to generate "
-				 "for none-database related object classes");
+	int len;
 
 	denied = perms & ~avd->allowed;
-	if (denied) {
-		audited = (denied & avd->auditdeny);
-		if (!audited)
-			return NULL;
-	} else {
-		audited = (perms & avd->auditallow);
-		if (!audited)
-			return NULL;
-	}
+	audited = denied ? (denied & avd->auditdeny) : (perms & avd->auditallow);
+	if (!audited)
+		return NULL;
 
 	len = snprintf(buffer, sizeof(buffer), "%s {", denied ? "denied" : "granted");
-	for (i=0; perm_to_string[i].name; i++) {
-		if (perm_to_string[i].tclass == tclass
-			&& (perm_to_string[i].perm & audited) != 0)
-			len += snprintf(buffer + len, sizeof(buffer) - len, " %s", perm_to_string[i].name);
+	for (mask=1; mask; mask <<= 1) {
+		if (audited & mask) {
+			len += snprintf(buffer + len, sizeof(buffer) - len, " %s",
+							security_av_perm_to_string(avd->tclass, mask));
+		}
 	}
 	len += snprintf(buffer + len, sizeof(buffer) - len, " }");
 
-	context = libselinux_psid_to_context(ssid);
+	context = libselinux_psid_to_context(avd->ssid);
 	len += snprintf(buffer + len, sizeof(buffer) - len, " scontext=%s", context);
+	pfree(context);
 
-	context = libselinux_psid_to_context(tsid);
+	context = libselinux_psid_to_context(avd->tsid);
 	len += snprintf(buffer + len, sizeof(buffer) - len, " tcontext=%s", context);
+	pfree(context);
 
 	len += snprintf(buffer + len, sizeof(buffer) - len, " tclass=%s",
-					class_to_string[tclass - SECCLASS_DATABASE]);
+					security_class_to_string(avd->tclass));
 
-	return strdup(buffer);
+	return pstrdup(buffer);
 }
 
 static inline int libselinux_avc_hash(psid ssid, psid tsid, uint16 tclass)
@@ -268,63 +308,67 @@ static inline int libselinux_avc_hash(psid ssid, psid tsid, uint16 tclass)
 
 static struct avc_datum *libselinux_avc_lookup(psid ssid, psid tsid, uint16 tclass, uint32 perms)
 {
-	struct avc_datum *avd, **prev;
+	/* we have to hold LW_SHARED lock at least */
+	struct avc_datum *avd;
+	SHMEM_OFFSET curr;
 	int hashkey = libselinux_avc_hash(ssid, tsid, tclass);
-	
-retry:
-	for (prev = &avc_cache.slot[hashkey], avd = *prev;
-		 avd;
-		 prev = &avd->next, avd = *prev) {
-		if (avd->ssid == ssid && avd->tsid == tsid && avd->tclass == tclass) {
-			if ((perms & avd->decided) == perms)
-				return avd;
-			*prev = avd->next;
-			avd->next = avc_cache.freelist;
-			avc_cache.freelist = avd;
-			goto retry;
-		}
+
+	for (curr = avc_shmem->slot[hashkey];
+		 SHM_OFFSET_VALID(curr);
+		 curr = avd->next) {
+		avd = (void *)MAKE_PTR(curr);
+		if (avd->ssid==ssid && avd->tsid==tsid && avd->tclass==tclass
+			&& (perms & avd->decided)==perms)
+			return avd;
 	}
 	return NULL;
 }
 
 static struct avc_datum *libselinux_avc_insert(psid ssid, psid tsid, uint16 tclass)
 {
-	struct avc_datum *avd = avc_cache.freelist;
+	/* we have to hold LW_EXCLUSIVE lock */
+	struct avc_datum *avd;
 	int hashkey = libselinux_avc_hash(ssid, tsid, tclass);
 
-	Assert(avd != NULL);
+	Assert(SHM_OFFSET_VALID(avc_shmem->freelist));
 
+	avd = (void *)MAKE_PTR(avc_shmem->freelist);
 	avd->ssid = ssid;
 	avd->tsid = tsid;
 	avd->tclass = tclass;
 	avd->is_hot = true;
 
 	libselinux_compute_av(ssid, tsid, tclass, avd);
-	avd->create = libselinux_compute_create(ssid, tsid, tclass);
+	libselinux_compute_create(ssid, tsid, tclass, avd);
 
-	avc_cache.freelist = avd->next;
-	avd->next = avc_cache.slot[hashkey];
-	avc_cache.slot[hashkey] = avd;
+	avc_shmem->freelist = avd->next;
+	avd->next = avc_shmem->slot[hashkey];
+	avc_shmem->slot[hashkey] = MAKE_OFFSET(avd);
 
 	return avd;
 }
 
 static void libselinux_avc_reclaim() {
-	struct avc_datum *avd, **prev;
+	/* we have to hold LW_EXCLUSIVE lock */
+	SHMEM_OFFSET *prev, next;
+	struct avc_datum *avd;
 
-	while (!avc_cache.freelist) {
-		for (prev = avc_cache.slot + avc_cache.lru_hint, avd = *prev;
-			 avd;
-			 prev = &avd->next, avd = *prev) {
-			if (avd->is_hot == true) {
+	while (!SHM_OFFSET_VALID(avc_shmem->freelist)) {
+		prev = avc_shmem->slot + avc_shmem->lru_hint;
+		next = *prev;
+		while (!SHM_OFFSET_VALID(next)) {
+			avd = (void *)MAKE_PTR(next);
+			next = avd->next;
+			if (avd->is_hot) {
 				avd->is_hot = false;
 			} else {
 				*prev = avd->next;
-				avd->next = avc_cache.freelist;
-				avc_cache.freelist = avd;
+				avd->next = avc_shmem->freelist;
+				avc_shmem->freelist = MAKE_OFFSET(avd);
 			}
+			avd = (void *)MAKE_PTR(next);
 		}
-		avc_cache.lru_hint = (avc_cache.lru_hint + 1) % AVC_DATUM_CACHE_SLOTS;
+		avc_shmem->lru_hint = (avc_shmem->lru_hint + 1) % AVC_DATUM_CACHE_SLOTS;
 	}
 }
 
@@ -332,38 +376,78 @@ int libselinux_avc_permission(psid ssid, psid tsid, uint16 tclass, uint32 perms,
 {
 	struct avc_datum *avd;
 	uint32 denied;
-	int rc = 0;
+	int rc = 0, retry = 0;
 
-	avd = libselinux_avc_lookup(ssid, tsid, tclass, perms);
-	if (!avd) {
-		if (!avc_cache.freelist)
-			libselinux_avc_reclaim();
-		avd = libselinux_avc_insert(ssid, tsid, tclass);
+	LWLockAcquire(avc_shmem->lock, LW_SHARED);
+	PG_TRY();
+	{
+	retry:
+		avd = libselinux_avc_lookup(ssid, tsid, tclass, perms);
+		if (!avd) {
+			if (!retry) {
+				LWLockRelease(avc_shmem->lock);
+				LWLockAcquire(avc_shmem->lock, LW_EXCLUSIVE);
+				retry = 1;
+				goto retry;
+			}
+			/* check permission */
+			if (!SHM_OFFSET_VALID(avc_shmem->freelist))
+				libselinux_avc_reclaim();
+			avd = libselinux_avc_insert(ssid, tsid, tclass);
+		}
+		denied = perms & ~(avd->allowed);
+		if ((!perms || denied) && avc_shmem->enforcing) {
+			errno = EACCES;
+			rc = -1;
+		}
+		if (audit)
+			*audit = libselinux_avc_audit(perms, avd);
 	}
-
-	/* check permission */
-	denied = perms & ~(avd->allowed);
-	if ((!perms || denied) && selinux_enforcing) {
-		errno = EACCES;
-		rc = -1;
+	PG_CATCH();
+	{
+		LWLockRelease(avc_shmem->lock);
+		PG_RE_THROW();
 	}
+	PG_END_TRY();
+	LWLockRelease(avc_shmem->lock);
 
-	if (audit)
-		*audit = libselinux_avc_audit(ssid, tsid, tclass, perms, avd);
 	return rc;
 }
 
 psid libselinux_avc_createcon(psid ssid, psid tsid, uint16 tclass)
 {
 	struct avc_datum *avd;
+	psid nsid;
+	int retry = 0;
 
-	avd = libselinux_avc_lookup(ssid, tsid, tclass, 0);
-	if (avd == NULL) {
-		if (avc_cache.freelist == NULL)
-			libselinux_avc_reclaim();
-		avd = libselinux_avc_insert(ssid, tsid, tclass);
+	LWLockAcquire(avc_shmem->lock, LW_SHARED);
+	PG_TRY();
+	{
+	retry:
+		avd = libselinux_avc_lookup(ssid, tsid, tclass, 0);
+		if (!avd) {
+			if (!retry) {
+				LWLockRelease(avc_shmem->lock);
+				LWLockAcquire(avc_shmem->lock, LW_EXCLUSIVE);
+				retry = 1;
+				goto retry;
+			}
+			/* check permission */
+			if (!SHM_OFFSET_VALID(avc_shmem->freelist))
+				libselinux_avc_reclaim();
+			avd = libselinux_avc_insert(ssid, tsid, tclass);
+		}
+		nsid = avd->create;
 	}
-	return avd->create;
+	PG_CATCH();
+	{
+		LWLockRelease(avc_shmem->lock);
+		PG_RE_THROW();
+	}
+	PG_END_TRY();
+	LWLockRelease(avc_shmem->lock);
+
+	return nsid;
 }
 
 psid libselinux_avc_relabelcon(psid ssid, psid tsid, uint16 tclass)

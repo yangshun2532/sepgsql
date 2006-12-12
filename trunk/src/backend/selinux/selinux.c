@@ -14,6 +14,7 @@
 #include "catalog/pg_proc.h"
 #include "catalog/pg_type.h"
 #include "libpq/libpq-be.h"
+#include "libpq/pqsignal.h"
 #include "miscadmin.h"
 #include "sepgsql.h"
 #include "utils/syscache.h"
@@ -55,7 +56,7 @@ void selinuxInitialize()
 	if (selinuxNlSockFd >= 0)
 		close(selinuxNlSockFd);
 
-	libselinux_avc_reset();
+	libselinux_initialize();
 
 	if (IsBootstrapProcessingMode()) {
 		selinuxServerPsid = libselinux_getcon();
@@ -99,38 +100,69 @@ void selinuxInitialize()
  * thread receive a notification via netlink socket. The notification is
  * delivered into any PostgreSQL instance by sending SIGUSR1 signal.
  */
-static int selinuxMonitoringPolicyState(void *dummy)
+static int selinuxMonitoringPolicyState()
 {
-	struct sockaddr_nl nladdr;
-	socklen_t nladdrlen;
+	char buffer[2048];
+	struct sockaddr_nl addr;
+	socklen_t addrlen;
 	struct nlmsghdr *nlh;
-	char buffer[1024];
-	int rc;
+	int rc, nl_sockfd;
 
+	/* close listen port */
+	// FIXME: to be implemented
+
+	/* setup the signal handler */
+	pqsignal(SIGHUP, SIG_DFL);
+	pqsignal(SIGINT, SIG_DFL);
+	pqsignal(SIGTERM, SIG_DFL);
+	pqsignal(SIGQUIT, SIG_DFL);
+	pqsignal(SIGALRM, SIG_DFL);
+	pqsignal(SIGPIPE, SIG_DFL);
+	pqsignal(SIGUSR1, SIG_DFL);
+	pqsignal(SIGUSR2, SIG_DFL);
+	pqsignal(SIGFPE, SIG_DFL);
+
+	/* open netlink socket */
+	nl_sockfd = socket(PF_NETLINK, SOCK_RAW, NETLINK_SELINUX);
+	if (nl_sockfd < 0) {
+		selnotice("could not create netlink socket");
+		return 1;
+	}
+
+	memset(&addr, 0, sizeof(addr));
+	addr.nl_family = AF_NETLINK;
+	addr.nl_groups = SELNL_GRP_AVC;
+	if (bind(nl_sockfd, (struct sockaddr *)&addr, sizeof(addr))) {
+		selnotice("could not bind netlink socket");
+		return 1;
+	}
+
+	/* waiting loop */
 	while (true) {
-		rc = recvfrom(selinuxNlSockFd, buffer, sizeof(buffer), 0,
-					  (struct sockaddr *)&nladdr, &nladdrlen);
+		addrlen = sizeof(addr);
+		rc = recvfrom(nl_sockfd, buffer, sizeof(buffer), 0,
+					  (struct sockaddr *)&addr, &addrlen);
 		if (rc < 0) {
 			if (errno == EINTR)
 				continue;
 			selnotice("selinux netlink: recvfrom() error=%d, %s",
 					  errno, strerror(errno));
-			goto out;
+			return 1;
 		}
 
-		if (nladdrlen != sizeof(nladdr)) {
-			selnotice("selinux netlink: netlink address truncated (len = %d)", nladdrlen);
-			goto out;
+		if (addrlen != sizeof(addr)) {
+			selnotice("selinux netlink: netlink address truncated (len = %d)", addrlen);
+			return 1;
 		}
 
-		if (nladdr.nl_pid) {
-			selnotice("selinux netlink: received spoofed packet from: %u", nladdr.nl_pid);
+		if (addr.nl_pid) {
+			selnotice("selinux netlink: received spoofed packet from: %u", addr.nl_pid);
 			continue;
 		}
 
 		if (rc == 0) {
 			selnotice("selinux netlink: received EOF on socket");
-			goto out;
+			return 1;
 		}
 
 		nlh = (struct nlmsghdr *)buffer;
@@ -138,7 +170,7 @@ static int selinuxMonitoringPolicyState(void *dummy)
 		if (nlh->nlmsg_flags & MSG_TRUNC
 			|| nlh->nlmsg_len > (unsigned int)rc) {
 			selnotice("selinux netlink: incomplete netlink message");
-			goto out;
+			return 1;
 		}
 
 		switch (nlh->nlmsg_type) {
@@ -147,74 +179,48 @@ static int selinuxMonitoringPolicyState(void *dummy)
 			if (err->error == 0)
 				break;
 			selnotice("selinux netlink: error message %d", -err->error);
-			goto out;
+			return 1;
 		}
 		case SELNL_MSG_SETENFORCE: {
 			struct selnl_msg_setenforce *msg = NLMSG_DATA(nlh);
 			selnotice("selinux netlink: received setenforce notice (enforcing=%d)", msg->val);
-			kill(PostmasterPid, SIGUSR1);
+			libselinux_avc_reset();
 			break;
 		}
 		case SELNL_MSG_POLICYLOAD: {
 			struct selnl_msg_policyload *msg = NLMSG_DATA(nlh);
 			selnotice("selinux netlink: received policyload notice (seqno=%d)", msg->seqno);
-			kill(PostmasterPid, SIGUSR1);
+			libselinux_avc_reset();
 			break;
 		}
 		default:
 			selnotice("selinux netlink: unknown message type (%d)", nlh->nlmsg_type);
-			goto out;
-			break;
+			return 1;
 		}
 	}
-out:
 	return 0;
 }
 
+static pid_t MonitoringPolicyStatePid = -1;
+
 int selinuxInitializePostmaster()
 {
-	struct sockaddr_nl addr;
-	char *worker_stack;
-	int worker_pid;
+	libselinux_initialize();
 
-	worker_stack = malloc(4096);
-	if (!worker_stack)
-		goto error0;
-
-	selinuxNlSockFd = socket(PF_NETLINK, SOCK_RAW, NETLINK_SELINUX);
-	if (selinuxNlSockFd < 0)
-		goto error1;
-
-	memset(&addr, 0, sizeof(addr));
-	addr.nl_family = AF_NETLINK;
-	addr.nl_groups = SELNL_GRP_AVC;
-	if (bind(selinuxNlSockFd, (struct sockaddr *)&addr, sizeof(addr)) != 0)
-		goto error2;
-
-	worker_pid = clone(selinuxMonitoringPolicyState,
-					   worker_stack,
-					   CLONE_PARENT | CLONE_FS | CLONE_FILES | CLONE_SIGHAND
-					   | CLONE_VM | CLONE_THREAD | CLONE_SYSVSEM,
-					   NULL);
-	if (worker_pid < 0)
-		goto error2;
+	MonitoringPolicyStatePid = fork();
+	if (MonitoringPolicyStatePid == 0) {
+		exit(selinuxMonitoringPolicyState());
+	} else if (MonitoringPolicyStatePid < 0) {
+		selnotice("could not create a child process to monitor the policy state");
+		return 1;
+	}
 	return 0;
-
-error2:
-	close(selinuxNlSockFd);
-error1:
-	free(worker_stack);
-error0:
-	selinuxNlSockFd = -1;
-	selerror("could not generate policy state monitoring thread (errno=%d,%s)",
-			 errno, strerror(errno));
-	return -1;
 }
 
 void selinuxFinalizePostmaster()
 {
-	if (selinuxNlSockFd > 0)
-		close(selinuxNlSockFd);
+	if (MonitoringPolicyStatePid > 0)
+		kill(MonitoringPolicyStatePid, SIGTERM);
 }
 
 void selinuxHookPolicyStateChanged(void)

@@ -190,6 +190,8 @@ extern Datum selinux_check_context_insert(PG_FUNCTION_ARGS);
 extern Datum selinux_check_context_update(PG_FUNCTION_ARGS);
 
 /* libselinux wrapper functions */
+extern Size libselinux_shmem_size(void);
+extern void libselinux_initialize(void);
 extern void libselinux_avc_reset(void);
 extern int libselinux_avc_permission(psid ssid, psid tsid, uint16 tclass, uint32 perms, char **audit);
 extern psid libselinux_avc_createcon(psid ssid, psid tsid, uint16 tclass);
@@ -226,6 +228,9 @@ static inline void selinuxHookDoCopy(Relation rel, List *attnumlist, bool is_fro
 static inline void selinuxHookCopyFrom(Relation rel, Datum *values, char *nulls) {}
 static inline Node *selinuxHookCopyFromNewContext(Relation rel) { return NULL; }
 static inline bool selinuxHookCopyTo(Relation rel, HeapTuple tuple) { return true; }
+
+/* dummy libselinux wrapper functions */
+static inline Size libselinux_shmem_size(void) { return 0; }
 
 /* dummy utility functions */
 static inline bool selinuxAttributeIsPsid(Form_pg_attribute attr) { return false; }
