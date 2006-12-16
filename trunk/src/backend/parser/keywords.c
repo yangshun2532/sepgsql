@@ -89,6 +89,7 @@ static const ScanKeyword ScanKeywords[] = {
 	{"connection", CONNECTION},
 	{"constraint", CONSTRAINT},
 	{"constraints", CONSTRAINTS},
+	{"context", CONTEXT},
 	{"conversion", CONVERSION_P},
 	{"convert", CONVERT},
 	{"copy", COPY},

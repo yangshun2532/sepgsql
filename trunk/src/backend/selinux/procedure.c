@@ -6,14 +6,15 @@
 #include "postgres.h"
 
 #include "catalog/pg_database.h"
+#include "catalog/pg_proc.h"
+#include "fmgr.h"
+#include "miscadmin.h"
+#include "nodes/parsenodes.h"
 #include "sepgsql.h"
+#include "utils/syscache.h"
 
-#include <catalog/pg_proc.h>
-#include <fmgr.h>
-#include <miscadmin.h>
 #include <selinux/flask.h>
 #include <selinux/av_permissions.h>
-#include <utils/syscache.h>
 
 Query *selinuxProxyCreateProcedure(Query *query)
 {
@@ -51,10 +52,47 @@ void selinuxHookCreateProcedure(Datum *values, char *nulls)
 	nulls[Anum_pg_proc_proselcon - 1] = ' ';
 }
 
+void selinuxHookAlterProcedure(Form_pg_proc pg_proc, AlterFunctionStmt *stmt)
+{
+	ListCell *l;
+	psid nsid = InvalidOid;
+	uint32 perms = PROCEDURE__SETATTR;
+	char *audit;
+	int rc;
+
+	/* 1. check whether 'ALTER FUNCTION' contains context = '...' */
+retry:
+	foreach(l, stmt->actions) {
+		DefElem *defel = (DefElem *) lfirst(l);
+
+		if (strcmp(defel->defname, "context") == 0) {
+			perms |= PROCEDURE__RELABELFROM;
+			nsid = libselinux_context_to_psid(strVal(defel->arg));
+			stmt->actions = list_delete(stmt->actions, defel);
+			goto retry;
+		}
+	}
+
+	/* 2. check procedure:{setattr relabelfrom} */
+	rc = libselinux_avc_permission(selinuxGetClientPsid(),
+								   pg_proc->proselcon,
+								   SECCLASS_PROCEDURE,
+								   perms, &audit);
+	selinux_audit(rc, audit, NameStr(pg_proc->proname));
+
+	/* 3. check procedure:relabelto, if necessary */
+	if (nsid != InvalidOid) {
+		rc = libselinux_avc_permission(selinuxGetClientPsid(), nsid,
+									   SECCLASS_PROCEDURE,
+									   PROCEDURE__RELABELTO, &audit);
+		selinux_audit(rc, audit, NameStr(pg_proc->proname));
+		pg_proc->proselcon = nsid;
+	}
+}
+
 psid selinuxHookPrepareProcedure(Oid funcid)
 {
 	HeapTuple tuple;
-	Form_pg_proc pg_proc;
 	psid orig_psid, new_psid;
 
    	tuple = SearchSysCache(PROCOID, ObjectIdGetDatum(funcid), 0, 0, 0);

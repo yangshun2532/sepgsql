@@ -9,6 +9,7 @@
 #include "access/htup.h"
 #include "access/tupdesc.h"
 #include "catalog/pg_attribute.h"
+#include "catalog/pg_proc.h"
 #include "nodes/parsenodes.h"
 #include "utils/rel.h"
 
@@ -141,9 +142,10 @@ extern void selinuxHookCloneRelation(TupleDesc tupDesc, Relation rel);
 extern void selinuxHookPutRelselcon(Form_pg_class pg_class);
 extern void selinuxHookPutSysAttselcon(Form_pg_attribute pg_attr, int attnum);
 
-/* CREATE PROCEDURE statement related */
+/* CREATE/ALTER/DROP FUNCTION statement related */
 extern Query *selinuxProxyCreateProcedure(Query *query);
 extern void selinuxHookCreateProcedure(Datum *values, char *nulls);
+extern void selinuxHookAlterProcedure(Form_pg_proc pg_proc, AlterFunctionStmt *stmt);
 extern psid selinuxHookPrepareProcedure(Oid funcid);
 extern void selinuxHookRestoreProcedure(psid orig_psid);
 #define selinuxPrepareExecProcedure(funcid)					   \
@@ -220,6 +222,8 @@ static inline void selinuxHookCreateDatabase(Datum *values, char *nulls) {}
 
 /* dummy CREATE PROCEDURE statement */
 static inline void selinuxHookCreateProcedure(Datum *values, char *nulls) {}
+static inline void selinuxHookAlterProcedure(Form_pg_proc *pg_proc, AlterFunctionStmt *stmt) {}
+
 #define selinuxPrepareExecProcedure(func)
 #define selinuxRestoreExecProcedure
 

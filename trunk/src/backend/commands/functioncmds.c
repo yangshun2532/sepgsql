@@ -47,6 +47,7 @@
 #include "miscadmin.h"
 #include "parser/parse_func.h"
 #include "parser/parse_type.h"
+#include "sepgsql.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
@@ -1038,6 +1039,7 @@ AlterFunction(AlterFunctionStmt *stmt)
 				 errmsg("\"%s\" is an aggregate function",
 						NameListToString(stmt->func->funcname))));
 
+	selinuxHookAlterProcedure(procForm, stmt);
 	/* Examine requested actions. */
 	foreach(l, stmt->actions)
 	{
