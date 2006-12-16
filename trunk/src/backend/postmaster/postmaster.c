@@ -962,8 +962,6 @@ PostmasterMain(int argc, char *argv[])
 
 	status = ServerLoop();
 
-	selinuxFinalizePostmaster();
-
 	/*
 	 * ServerLoop probably shouldn't ever return, but if it does, close down.
 	 */
@@ -1984,9 +1982,11 @@ pmdie(SIGNAL_ARGS)
 				signal_child(PgStatPID, SIGQUIT);
 			if (DLGetHead(BackendList))
 				SignalChildren(SIGQUIT);
+			selinuxFinalizePostmaster();
 			ExitPostmaster(0);
 			break;
 	}
+	selinuxFinalizePostmaster();
 
 	PG_SETMASK(&UnBlockSig);
 

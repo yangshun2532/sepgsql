@@ -100,27 +100,34 @@ void selinuxInitialize()
  * thread receive a notification via netlink socket. The notification is
  * delivered into any PostgreSQL instance by sending SIGUSR1 signal.
  */
+static void selinuxMonitoringPolicyState_SIGHUP(int signum)
+{
+	selnotice("selinux userspace AVC reset, by receiving SIGHUP");
+	libselinux_avc_reset();
+}
+
 static int selinuxMonitoringPolicyState()
 {
 	char buffer[2048];
 	struct sockaddr_nl addr;
 	socklen_t addrlen;
 	struct nlmsghdr *nlh;
-	int rc, nl_sockfd;
+	int i, rc, nl_sockfd;
 
+	seldebug("selinuxMonitoringPolicyState pid=%u", getpid());
 	/* close listen port */
-	// FIXME: to be implemented
+	for (i=3; !close(i); i++);
 
 	/* setup the signal handler */
-	pqsignal(SIGHUP, SIG_DFL);
-	pqsignal(SIGINT, SIG_DFL);
-	pqsignal(SIGTERM, SIG_DFL);
+	pqinitmask();
+	pqsignal(SIGHUP,  selinuxMonitoringPolicyState_SIGHUP);
+	pqsignal(SIGINT,  SIG_DFL);
 	pqsignal(SIGQUIT, SIG_DFL);
-	pqsignal(SIGALRM, SIG_DFL);
-	pqsignal(SIGPIPE, SIG_DFL);
+	pqsignal(SIGTERM, SIG_DFL);
 	pqsignal(SIGUSR1, SIG_DFL);
 	pqsignal(SIGUSR2, SIG_DFL);
-	pqsignal(SIGFPE, SIG_DFL);
+	pqsignal(SIGCHLD, SIG_DFL);
+	PG_SETMASK(&UnBlockSig);
 
 	/* open netlink socket */
 	nl_sockfd = socket(PF_NETLINK, SOCK_RAW, NETLINK_SELINUX);
@@ -219,8 +226,16 @@ int selinuxInitializePostmaster()
 
 void selinuxFinalizePostmaster()
 {
-	if (MonitoringPolicyStatePid > 0)
-		kill(MonitoringPolicyStatePid, SIGTERM);
+	int rc, status;
+
+	if (MonitoringPolicyStatePid > 0) {
+		if (kill(MonitoringPolicyStatePid, SIGTERM) < 0) {
+			selnotice("could not kill(%u, SIGTERM), errno=%d (%s)",
+					  MonitoringPolicyStatePid, errno, strerror(errno));
+			return;
+		}
+		waitpid(MonitoringPolicyStatePid, &status, 0);
+	}
 }
 
 void selinuxHookPolicyStateChanged(void)
