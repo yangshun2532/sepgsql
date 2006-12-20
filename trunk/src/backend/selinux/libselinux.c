@@ -174,7 +174,7 @@ static void libselinux_compute_av(psid ssid, psid tsid, uint16 tclass, struct av
 	scon = libselinux_psid_to_context(ssid);
 	tcon = libselinux_psid_to_context(tsid);
 
-	if (security_compute_av(scon, tcon, tclass, 0, &x))
+	if (security_compute_av_raw(scon, tcon, tclass, 0, &x))
 		selerror("could not obtain access vector decision "
 				 " scon='%s' tcon='%s' tclass=%u", scon, tcon, tclass);
 	pfree(scon);
@@ -194,7 +194,7 @@ static void libselinux_compute_create(psid ssid, psid tsid, uint16 tclass, struc
 	scon = libselinux_psid_to_context(ssid);
 	tcon = libselinux_psid_to_context(tsid);
 
-	if (security_compute_create(scon, tcon, tclass, &ncon) != 0)
+	if (security_compute_create_raw(scon, tcon, tclass, &ncon) != 0)
 		selerror("could not obtain a newly created security context "
 				 "scon='%s' tcon='%s' tclass=%u", scon, tcon, tclass);
 	PG_TRY();
@@ -221,7 +221,7 @@ static psid libselinux_compute_relabel(psid ssid, psid tsid, uint16 tclass)
 	scon = libselinux_psid_to_context(ssid);
 	tcon = libselinux_psid_to_context(tsid);
 
-	if (security_compute_relabel(scon, tcon, tclass, &ncon) != 0)
+	if (security_compute_relabel_raw(scon, tcon, tclass, &ncon) != 0)
 		selerror("could not obtain a newly relabeled security context "
 				 "scon='%s' tcon='%s' tclass=%u", scon, tcon, tclass);
 
@@ -270,7 +270,8 @@ static char *libselinux_avc_audit(uint32 perms, struct avc_datum *avd)
 	/* we have to hold LW_SHARED lock at least */
 	uint32 denied, audited, mask;
 	char buffer[4096];
-	char *context;
+	security_context_t context;
+	char *raw_context;
 	int len;
 
 	denied = perms & ~avd->allowed;
@@ -287,13 +288,23 @@ static char *libselinux_avc_audit(uint32 perms, struct avc_datum *avd)
 	}
 	len += snprintf(buffer + len, sizeof(buffer) - len, " }");
 
-	context = libselinux_psid_to_context(avd->ssid);
-	len += snprintf(buffer + len, sizeof(buffer) - len, " scontext=%s", context);
-	pfree(context);
+	raw_context = libselinux_psid_to_context(avd->ssid);
+	if (!selinux_raw_to_trans_context(raw_context, &context)) {
+		len += snprintf(buffer + len, sizeof(buffer) - len, " scontext=%s", context);
+		freecon(context);
+	} else {
+		len += snprintf(buffer + len, sizeof(buffer) - len, " scontext=%s", raw_context);
+	}
+	pfree(raw_context);
 
-	context = libselinux_psid_to_context(avd->tsid);
-	len += snprintf(buffer + len, sizeof(buffer) - len, " tcontext=%s", context);
-	pfree(context);
+	raw_context = libselinux_psid_to_context(avd->tsid);
+	if (!selinux_raw_to_trans_context(raw_context, &context)) {
+		len += snprintf(buffer + len, sizeof(buffer) - len, " tcontext=%s", context);
+		freecon(context);
+	} else {
+		len += snprintf(buffer + len, sizeof(buffer) - len, " tcontext=%s", raw_context);
+	}
+	pfree(raw_context);
 
 	len += snprintf(buffer + len, sizeof(buffer) - len, " tclass=%s",
 					security_class_to_string(avd->tclass));
@@ -459,6 +470,9 @@ psid libselinux_avc_relabelcon(psid ssid, psid tsid, uint16 tclass)
 extern psid selinuxBootstrap_context_to_psid(char *context);
 extern char *selinuxBootstrap_psid_to_context(psid psid);
 
+/* libselinux_context_to_psid() returns psid corresponding to
+ * the context. This context have to be writen in the raw format.
+ */
 psid libselinux_context_to_psid(char *context)
 {
 	HeapTuple tuple;
@@ -481,7 +495,7 @@ psid libselinux_context_to_psid(char *context)
 		char nulls[1] = {' '};
 
 		if (libselinux_check_context(context) != true)
-			selerror("'%s' is an invalid security context", context);
+			selerror("'%s' is not valid security context", context);
 
 		pg_selinux = heap_open(SelinuxRelationId, RowExclusiveLock);
 		indstate = CatalogOpenIndexes(pg_selinux);
@@ -499,6 +513,9 @@ psid libselinux_context_to_psid(char *context)
 	return sid;
 }
 
+/* libselinux_psid_to_context() returns the security context
+ * in raw format corresponding to the psid.
+ */
 char *libselinux_psid_to_context(psid sid)
 {
 	Relation pg_selinux;
@@ -528,7 +545,7 @@ char *libselinux_psid_to_context(psid sid)
 
 bool libselinux_check_context(char *context)
 {
-	return (security_check_context(context) == 0 ? true : false);
+	return (security_check_context_raw(context) == 0 ? true : false);
 }
 
 psid libselinux_getcon()
@@ -536,7 +553,7 @@ psid libselinux_getcon()
 	security_context_t context;
 	psid ssid;
 
-	if (getcon(&context) != 0)
+	if (getcon_raw(&context) != 0)
 		selerror("could not obtain security context of server process");
 
 	PG_TRY();
@@ -558,7 +575,7 @@ psid libselinux_getpeercon(int sockfd)
 	security_context_t context;
 	psid ssid;
 
-	if (getpeercon(sockfd, &context) != 0)
+	if (getpeercon_raw(sockfd, &context) != 0)
 		selerror("could not obtain security context of client process");
 
 	PG_TRY();
