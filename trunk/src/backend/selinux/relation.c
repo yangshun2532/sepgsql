@@ -251,7 +251,6 @@ void selinuxHookAlterTableSetTableContext(Relation rel, Value *context)
 	Relation pgclass;
 	HeapTuple tup;
 	psid old_psid, new_psid;
-	Datum tmp;
 	char *audit;
 	int rc;
 
