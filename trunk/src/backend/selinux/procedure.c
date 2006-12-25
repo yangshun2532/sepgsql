@@ -67,7 +67,8 @@ retry:
 
 		if (strcmp(defel->defname, "context") == 0) {
 			perms |= PROCEDURE__RELABELFROM;
-			nsid = libselinux_context_to_psid(strVal(defel->arg));
+			nsid = DatumGetObjectId(DirectFunctionCall1(psid_in,
+														CStringGetDatum(strVal(defel->arg))));
 			stmt->actions = list_delete(stmt->actions, defel);
 			goto retry;
 		}
