@@ -135,12 +135,16 @@ extern Query *selinuxProxyDelete(Query *query);
 /* CREATE DATABASE statement related */
 extern void selinuxHookCreateDatabase(Datum *values, char *nulls);
 
-/* CREATE TABLE statement related */
+/* CREATE/ALTER/DROP TABLE statement related */
 extern Query *selinuxProxyCreateTable(Query *query);
 extern void selinuxHookCreateRelation(TupleDesc tupDesc, char relkind, List *schema);
 extern void selinuxHookCloneRelation(TupleDesc tupDesc, Relation rel);
 extern void selinuxHookPutRelselcon(Form_pg_class pg_class);
 extern void selinuxHookPutSysAttselcon(Form_pg_attribute pg_attr, int attnum);
+extern void selinuxHookAlterTable(Oid relid, char relkind, TupleDesc tdesc, AlterTableCmd *cmd);
+extern void selinuxHookAlterTableAddColumn(Relation rel, Form_pg_attribute pg_attr);
+extern void selinuxHookAlterTableSetTableContext(Relation rel, Value *newcon);
+extern void selinuxHookAlterTableSetColumnContext(Relation rel, char *name, Value *newcon);
 
 /* CREATE/ALTER/DROP FUNCTION statement related */
 extern Query *selinuxProxyCreateProcedure(Query *query);
@@ -219,6 +223,10 @@ static inline Query *selinuxProxy(Query *query) { return query; }
 
 /* dummy CREATE DATABASE statement */
 static inline void selinuxHookCreateDatabase(Datum *values, char *nulls) {}
+
+/* dummy CREATE/ALTER/DROP TABLE statement related */
+static inline void selinuxHookAlterTable(Oid relid, char relkind, TupleDesc tdesc, AlterTableCmd *cmd) {}
+static inline void selinuxHookAlterTableAddColumn(Relation rel, Form_pg_attribute pg_attr) {}
 
 /* dummy CREATE PROCEDURE statement */
 static inline void selinuxHookCreateProcedure(Datum *values, char *nulls) {}

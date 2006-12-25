@@ -913,7 +913,9 @@ typedef enum AlterTableType
 	AT_EnableTrigUser,			/* ENABLE TRIGGER USER */
 	AT_DisableTrigUser,			/* DISABLE TRIGGER USER */
 	AT_AddInherit,				/* INHERIT parent */
-	AT_DropInherit				/* NO INHERIT parent */
+	AT_DropInherit,				/* NO INHERIT parent */
+	AT_SetTableContext,			/* alter table context */
+	AT_SetColumnContext,			/* alter column context */
 } AlterTableType;
 
 typedef struct AlterTableCmd	/* one subcommand of an ALTER TABLE */

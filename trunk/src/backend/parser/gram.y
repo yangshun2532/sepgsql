@@ -1523,6 +1523,23 @@ alter_table_cmd:
 					n->def = (Node *) $3;
 					$$ = (Node *)n;
 				}
+			/* ALTER TABLE <relation> SET CONTEXT = '...' */
+			| SET CONTEXT '=' Sconst
+				{
+					AlterTableCmd *n = makeNode(AlterTableCmd);
+					n->subtype = AT_SetTableContext;
+					n->def = (Node *)makeString($4);
+					$$ = (Node *)n;
+				}
+			/* ALTER TABLE <relation> ALTER [COLUMN] <colname> CONTEXT = '...' */
+			| ALTER opt_column ColId SET CONTEXT '=' Sconst
+				{
+					AlterTableCmd *n = makeNode(AlterTableCmd);
+					n->subtype = AT_SetColumnContext;
+					n->name = $3;
+					n->def = (Node *)makeString($7);
+					$$ = (Node *)n;
+				}
 			| alter_rel_cmd
 				{
 					$$ = $1;

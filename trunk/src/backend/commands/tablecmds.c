@@ -2167,6 +2167,10 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 		case AT_DisableTrigUser:
 		case AT_AddInherit:		/* INHERIT / NO INHERIT */
 		case AT_DropInherit:
+#ifdef HAVE_SELINUX
+		case AT_SetTableContext:
+		case AT_SetColumnContext:
+#endif
 			ATSimplePermissions(rel, false);
 			/* These commands never recurse */
 			/* No command-specific prep needed */
@@ -2258,6 +2262,8 @@ ATRewriteCatalogs(List **wqueue)
 static void
 ATExecCmd(AlteredTableInfo *tab, Relation rel, AlterTableCmd *cmd)
 {
+	selinuxHookAlterTable(tab->relid, tab->relid, tab->oldDesc, cmd);
+
 	switch (cmd->subtype)
 	{
 		case AT_AddColumn:		/* ADD COLUMN */
@@ -2356,6 +2362,14 @@ ATExecCmd(AlteredTableInfo *tab, Relation rel, AlterTableCmd *cmd)
 		case AT_DropInherit:
 			ATExecDropInherit(rel, (RangeVar *) cmd->def);
 			break;
+#ifdef HAVE_SELINUX
+		case AT_SetTableContext:
+			selinuxHookAlterTableSetTableContext(rel, (Value *)cmd->def);
+			break;
+		case AT_SetColumnContext:
+			selinuxHookAlterTableSetColumnContext(rel, cmd->name, (Value *)cmd->def);
+			break;
+#endif
 		default:				/* oops */
 			elog(ERROR, "unrecognized alter table type: %d",
 				 (int) cmd->subtype);
@@ -3203,6 +3217,7 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 	attribute->attisdropped = false;
 	attribute->attislocal = colDef->is_local;
 	attribute->attinhcount = colDef->inhcount;
+	selinuxHookAlterTableAddColumn(rel, attribute);
 
 	ReleaseSysCache(typeTuple);
 
