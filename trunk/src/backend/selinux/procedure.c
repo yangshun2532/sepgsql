@@ -65,7 +65,7 @@ retry:
 	foreach(l, stmt->actions) {
 		DefElem *defel = (DefElem *) lfirst(l);
 
-		if (strcmp(defel->defname, "security_context") == 0) {
+		if (strcmp(defel->defname, "context") == 0) {
 			perms |= PROCEDURE__RELABELFROM;
 			nsid = DatumGetObjectId(DirectFunctionCall1(psid_in,
 														CStringGetDatum(strVal(defel->arg))));

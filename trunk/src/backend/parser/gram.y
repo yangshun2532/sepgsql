@@ -3979,7 +3979,7 @@ common_func_opt_item:
 				{
 					if (strcmp($1, "context") != 0)
 						yyerror("syntax error3");
-					$$ = makeDefElem("security_context", (Node *)makeString($3));
+					$$ = makeDefElem("context", (Node *)makeString($3));
 				}
 		;
 
