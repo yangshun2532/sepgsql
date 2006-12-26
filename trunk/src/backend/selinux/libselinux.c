@@ -245,7 +245,10 @@ static psid libselinux_compute_relabel(psid ssid, psid tsid, uint16 tclass)
 
 void libselinux_avc_reset()
 {
-	int i;
+	int i, enforcing;
+
+	enforcing = security_getenforce();
+	Assert(enforcing==0 || enforcing==1);
 
 	LWLockAcquire(avc_shmem->lock, LW_EXCLUSIVE);
 
@@ -259,8 +262,7 @@ void libselinux_avc_reset()
 		avd->next = avc_shmem->freelist;
 		avc_shmem->freelist = MAKE_OFFSET(avd);
 	}
-	avc_shmem->enforcing = security_getenforce();
-	Assert(avc_shmem->enforcing==0 || avc_shmem->enforcing==1);
+	avc_shmem->enforcing = enforcing;
 
 	LWLockRelease(avc_shmem->lock);
 }
@@ -335,30 +337,6 @@ static struct avc_datum *libselinux_avc_lookup(psid ssid, psid tsid, uint16 tcla
 	return NULL;
 }
 
-static struct avc_datum *libselinux_avc_insert(psid ssid, psid tsid, uint16 tclass)
-{
-	/* we have to hold LW_EXCLUSIVE lock */
-	struct avc_datum *avd;
-	int hashkey = libselinux_avc_hash(ssid, tsid, tclass);
-
-	Assert(SHM_OFFSET_VALID(avc_shmem->freelist));
-
-	avd = (void *)MAKE_PTR(avc_shmem->freelist);
-	avd->ssid = ssid;
-	avd->tsid = tsid;
-	avd->tclass = tclass;
-	avd->is_hot = true;
-
-	libselinux_compute_av(ssid, tsid, tclass, avd);
-	libselinux_compute_create(ssid, tsid, tclass, avd);
-
-	avc_shmem->freelist = avd->next;
-	avd->next = avc_shmem->slot[hashkey];
-	avc_shmem->slot[hashkey] = MAKE_OFFSET(avd);
-
-	return avd;
-}
-
 static void libselinux_avc_reclaim() {
 	/* we have to hold LW_EXCLUSIVE lock */
 	SHMEM_OFFSET *prev, next;
@@ -383,79 +361,87 @@ static void libselinux_avc_reclaim() {
 	}
 }
 
+static void libselinux_avc_insert(struct avc_datum *tmp)
+{
+	/* we have to hold LW_EXCLUSIVE lock */
+	struct avc_datum *avd;
+	int hashkey;
+
+	avd = libselinux_avc_lookup(tmp->ssid, tmp->tsid, tmp->tclass, tmp->decided);
+	if (avd)
+		return;
+
+	if (!SHM_OFFSET_VALID(avc_shmem->freelist))
+		libselinux_avc_reclaim();
+	Assert(SHM_OFFSET_VALID(avc_shmem->freelist));
+
+	avd = (void *)MAKE_PTR(avc_shmem->freelist);
+	avc_shmem->freelist = avd->next;
+
+	memcpy(avd, tmp, sizeof(struct avc_datum));
+	avd->is_hot = true;
+
+	hashkey = libselinux_avc_hash(avd->ssid, avd->tsid, avd->tclass);
+	avd->next = avc_shmem->slot[hashkey];
+	avc_shmem->slot[hashkey] = MAKE_OFFSET(avd);
+
+	return;
+}
+
 int libselinux_avc_permission(psid ssid, psid tsid, uint16 tclass, uint32 perms, char **audit)
 {
-	struct avc_datum *avd;
+	struct avc_datum *avd, lavd;
 	uint32 denied;
-	int rc = 0, retry = 0;
+	int rc = 0;
 
 	LWLockAcquire(avc_shmem->lock, LW_SHARED);
-	PG_TRY();
-	{
-	retry:
-		avd = libselinux_avc_lookup(ssid, tsid, tclass, perms);
-		if (!avd) {
-			if (!retry) {
-				LWLockRelease(avc_shmem->lock);
-				LWLockAcquire(avc_shmem->lock, LW_EXCLUSIVE);
-				retry = 1;
-				goto retry;
-			}
-			/* check permission */
-			if (!SHM_OFFSET_VALID(avc_shmem->freelist))
-				libselinux_avc_reclaim();
-			avd = libselinux_avc_insert(ssid, tsid, tclass);
-		}
-		denied = perms & ~(avd->allowed);
-		if ((!perms || denied) && avc_shmem->enforcing) {
-			errno = EACCES;
-			rc = -1;
-		}
-		if (audit)
-			*audit = libselinux_avc_audit(perms, avd);
-	}
-	PG_CATCH();
-	{
+	avd = libselinux_avc_lookup(ssid, tsid, tclass, perms);
+	if (!avd) {
 		LWLockRelease(avc_shmem->lock);
-		PG_RE_THROW();
+
+		/* compute a new avc_datum */
+		memset(&lavd, 0, sizeof(struct avc_datum));
+		libselinux_compute_av(ssid, tsid, tclass, &lavd);
+		libselinux_compute_create(ssid, tsid, tclass, &lavd);
+
+		LWLockAcquire(avc_shmem->lock, LW_EXCLUSIVE);
+		libselinux_avc_insert(&lavd);
+	} else {
+		memcpy(&lavd, avd, sizeof(struct avc_datum));
 	}
-	PG_END_TRY();
+	denied = perms & ~lavd.allowed;
+	if ((!perms || denied) && avc_shmem->enforcing) {
+		errno = EACCES;
+		rc = -1;
+	}
 	LWLockRelease(avc_shmem->lock);
+	if (audit)
+		*audit = libselinux_avc_audit(perms, &lavd);
 
 	return rc;
 }
 
 psid libselinux_avc_createcon(psid ssid, psid tsid, uint16 tclass)
 {
-	struct avc_datum *avd;
+	struct avc_datum *avd, lavd;
 	psid nsid;
-	int retry = 0;
 
 	LWLockAcquire(avc_shmem->lock, LW_SHARED);
-	PG_TRY();
-	{
-	retry:
-		avd = libselinux_avc_lookup(ssid, tsid, tclass, 0);
-		if (!avd) {
-			if (!retry) {
-				LWLockRelease(avc_shmem->lock);
-				LWLockAcquire(avc_shmem->lock, LW_EXCLUSIVE);
-				retry = 1;
-				goto retry;
-			}
-			/* check permission */
-			if (!SHM_OFFSET_VALID(avc_shmem->freelist))
-				libselinux_avc_reclaim();
-			avd = libselinux_avc_insert(ssid, tsid, tclass);
-		}
+	avd = libselinux_avc_lookup(ssid, tsid, tclass, 0);
+	if (!avd) {
+		LWLockRelease(avc_shmem->lock);
+
+		/* compute a new avc_datum */
+		memset(&lavd, 0, sizeof(struct avc_datum));
+		libselinux_compute_av(ssid, tsid, tclass, &lavd);
+		libselinux_compute_create(ssid, tsid, tclass, &lavd);
+
+		LWLockAcquire(avc_shmem->lock, LW_EXCLUSIVE);
+		libselinux_avc_insert(&lavd);
+		nsid = lavd.create;
+	} else {
 		nsid = avd->create;
 	}
-	PG_CATCH();
-	{
-		LWLockRelease(avc_shmem->lock);
-		PG_RE_THROW();
-	}
-	PG_END_TRY();
 	LWLockRelease(avc_shmem->lock);
 
 	return nsid;
