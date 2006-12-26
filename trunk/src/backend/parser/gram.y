@@ -365,7 +365,6 @@ static void doNegateFloat(Value *v);
 	CHARACTER CHARACTERISTICS CHECK CHECKPOINT CLASS CLOSE
 	CLUSTER COALESCE COLLATE COLUMN COMMENT COMMIT
 	COMMITTED CONCURRENTLY CONNECTION CONSTRAINT CONSTRAINTS
-	CONTEXT
 	CONVERSION_P CONVERT COPY CREATE CREATEDB
 	CREATEROLE CREATEUSER CROSS CSV CURRENT_DATE CURRENT_ROLE CURRENT_TIME
 	CURRENT_TIMESTAMP CURRENT_USER CURSOR CYCLE
@@ -416,7 +415,7 @@ static void doNegateFloat(Value *v);
 	REPEATABLE REPLACE RESET RESTART RESTRICT RETURNING RETURNS REVOKE RIGHT
 	ROLE ROLLBACK ROW ROWS RULE
 
-	SAVEPOINT SCHEMA SCROLL SECOND_P SECURITY SELECT SEQUENCE
+	SAVEPOINT SCHEMA SCROLL SECOND_P SECURITY SECURITY_CONTEXT SELECT SEQUENCE
 	SERIALIZABLE SESSION SESSION_USER SET SETOF SHARE
 	SHOW SIMILAR SIMPLE SMALLINT SOME STABLE START STATEMENT
 	STATISTICS STDIN STDOUT STORAGE STRICT_P SUBSTRING SUPERUSER_P SYMMETRIC
@@ -1523,19 +1522,19 @@ alter_table_cmd:
 					n->def = (Node *) $3;
 					$$ = (Node *)n;
 				}
-			/* ALTER TABLE <relation> SET CONTEXT = '...' */
-			| SET CONTEXT '=' Sconst
+			/* ALTER TABLE <relation> SET SECURITY_CONTEXT = '...' */
+			| SET SECURITY_CONTEXT '=' Sconst
 				{
 					AlterTableCmd *n = makeNode(AlterTableCmd);
-					n->subtype = AT_SetTableContext;
+					n->subtype = AT_SetTableSecurityContext;
 					n->def = (Node *)makeString($4);
 					$$ = (Node *)n;
 				}
-			/* ALTER TABLE <relation> ALTER [COLUMN] <colname> CONTEXT = '...' */
-			| ALTER opt_column ColId SET CONTEXT '=' Sconst
+			/* ALTER TABLE <relation> ALTER [COLUMN] <colname> SECURITY_CONTEXT = '...' */
+			| ALTER opt_column ColId SET SECURITY_CONTEXT '=' Sconst
 				{
 					AlterTableCmd *n = makeNode(AlterTableCmd);
-					n->subtype = AT_SetColumnContext;
+					n->subtype = AT_SetColumnSecurityContext;
 					n->name = $3;
 					n->def = (Node *)makeString($7);
 					$$ = (Node *)n;
@@ -3968,9 +3967,9 @@ common_func_opt_item:
 				{
 					$$ = makeDefElem("security", (Node *)makeInteger(FALSE));
 				}
-			| CONTEXT '=' Sconst
+			| SECURITY_CONTEXT '=' Sconst
 				{
-					$$ = makeDefElem("context", (Node *)makeString($3));
+					$$ = makeDefElem("security_context", (Node *)makeString($3));
 				}
 		;
 

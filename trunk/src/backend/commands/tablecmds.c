@@ -2168,8 +2168,8 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 		case AT_AddInherit:		/* INHERIT / NO INHERIT */
 		case AT_DropInherit:
 #ifdef HAVE_SELINUX
-		case AT_SetTableContext:
-		case AT_SetColumnContext:
+		case AT_SetTableSecurityContext:
+		case AT_SetColumnSecurityContext:
 #endif
 			ATSimplePermissions(rel, false);
 			/* These commands never recurse */
@@ -2363,10 +2363,10 @@ ATExecCmd(AlteredTableInfo *tab, Relation rel, AlterTableCmd *cmd)
 			ATExecDropInherit(rel, (RangeVar *) cmd->def);
 			break;
 #ifdef HAVE_SELINUX
-		case AT_SetTableContext:
+		case AT_SetTableSecurityContext:
 			selinuxHookAlterTableSetTableContext(rel, (Value *)cmd->def);
 			break;
-		case AT_SetColumnContext:
+		case AT_SetColumnSecurityContext:
 			selinuxHookAlterTableSetColumnContext(rel, cmd->name, (Value *)cmd->def);
 			break;
 #endif
