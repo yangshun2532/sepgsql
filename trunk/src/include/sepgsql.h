@@ -13,7 +13,7 @@
 #include "nodes/parsenodes.h"
 #include "utils/rel.h"
 
-#define selerror(fmt, ...)		\
+#define selerror(fmt, ...)											\
 	ereport(ERROR, (errcode(ERRCODE_SELINUX_INTERNAL), errmsg(fmt, ##__VA_ARGS__)))
 #define seldenied(fmt, ...)		\
 	ereport(ERROR, (errcode(ERRCODE_SELINUX_DENIED), errmsg(fmt, ##__VA_ARGS__)))

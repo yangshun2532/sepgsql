@@ -40,59 +40,57 @@ static void setup_init_context()
 {
 	int i, j;
 
-	libselinux_avc_reset();
-
 	for (i=0; i < lengthof(init_context); i++) {
 
 		switch (i) {
 		case 0:
-			if (getcon(&initcon_server.context) != 0)
+			if (getcon_raw(&initcon_server.context) != 0)
 				selerror("could not obtain the initial server context");
 			break;
 		case 1:
-			if (getcon(&initcon_client.context) != 0)
+			if (getcon_raw(&initcon_client.context) != 0)
 				selerror("could not obtain the initial client context");
 			break;
 		case 2:
-			if (security_compute_create(initcon_client.context,
-										initcon_server.context,
-										SECCLASS_DATABASE,
-										&initcon_database.context))
+			if (security_compute_create_raw(initcon_client.context,
+											initcon_server.context,
+											SECCLASS_DATABASE,
+											&initcon_database.context))
 				selerror("could not obtain the initial database context");
 			break;
 		case 3:
-			if (security_compute_create(initcon_client.context,
-										initcon_database.context,
-										SECCLASS_TABLE,
-										&initcon_table.context)!=0)
+			if (security_compute_create_raw(initcon_client.context,
+											initcon_database.context,
+											SECCLASS_TABLE,
+											&initcon_table.context)!=0)
 				selerror("could not obtain the initial table context");
 			break;
 		case 4:
-			if (security_compute_create(initcon_client.context,
-										initcon_database.context,
-										SECCLASS_PROCEDURE,
-										&initcon_procedure.context) != 0)
+			if (security_compute_create_raw(initcon_client.context,
+											initcon_database.context,
+											SECCLASS_PROCEDURE,
+											&initcon_procedure.context) != 0)
 				selerror("could not obtain the initial procedure context");
 			break;
 		case 5:
-			if (security_compute_create(initcon_client.context,
-										initcon_table.context,
-										SECCLASS_COLUMN,
-										&initcon_column.context) != 0)
+			if (security_compute_create_raw(initcon_client.context,
+											initcon_table.context,
+											SECCLASS_COLUMN,
+											&initcon_column.context) != 0)
 				selerror("could not obtain the initial column context");
 			break;
 		case 6:
-			if (security_compute_create(initcon_client.context,
-										initcon_table.context,
-										SECCLASS_TUPLE,
-										&initcon_tuple.context) != 0)
+			if (security_compute_create_raw(initcon_client.context,
+											initcon_table.context,
+											SECCLASS_TUPLE,
+											&initcon_tuple.context) != 0)
 				selerror("could not obtain the initial tuple context");
 			break;
 		case 7:
-			if (security_compute_create(initcon_client.context,
-										initcon_database.context,
-										SECCLASS_BLOB,
-										&initcon_blob.context) != 0)
+			if (security_compute_create_raw(initcon_client.context,
+											initcon_database.context,
+											SECCLASS_BLOB,
+											&initcon_blob.context) != 0)
 				selerror("could not obtain the initial blob context");
 			break;
 		default:
@@ -172,7 +170,6 @@ void selinuxBootstrapPostCreateRelation(Oid relid)
 
 int selinuxBootstrapInsertOneValue(int index)
 {
-	Oid relid;
 	int rc = 0;
 
 	if (!init_context_available)
