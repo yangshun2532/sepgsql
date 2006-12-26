@@ -300,7 +300,6 @@ static const ScanKeyword ScanKeywords[] = {
 	{"scroll", SCROLL},
 	{"second", SECOND_P},
 	{"security", SECURITY},
-	{"security_context", SECURITY_CONTEXT},
 	{"select", SELECT},
 	{"sequence", SEQUENCE},
 	{"serializable", SERIALIZABLE},

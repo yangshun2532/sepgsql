@@ -415,7 +415,7 @@ static void doNegateFloat(Value *v);
 	REPEATABLE REPLACE RESET RESTART RESTRICT RETURNING RETURNS REVOKE RIGHT
 	ROLE ROLLBACK ROW ROWS RULE
 
-	SAVEPOINT SCHEMA SCROLL SECOND_P SECURITY SECURITY_CONTEXT SELECT SEQUENCE
+	SAVEPOINT SCHEMA SCROLL SECOND_P SECURITY SELECT SEQUENCE
 	SERIALIZABLE SESSION SESSION_USER SET SETOF SHARE
 	SHOW SIMILAR SIMPLE SMALLINT SOME STABLE START STATEMENT
 	STATISTICS STDIN STDOUT STORAGE STRICT_P SUBSTRING SUPERUSER_P SYMMETRIC
@@ -1522,18 +1522,26 @@ alter_table_cmd:
 					n->def = (Node *) $3;
 					$$ = (Node *)n;
 				}
-			/* ALTER TABLE <relation> SET SECURITY_CONTEXT = '...' */
-			| SET SECURITY_CONTEXT '=' Sconst
+			/* ALTER TABLE <relation> SET CONTEXT = '...' */
+			| SET IDENT '=' Sconst
 				{
-					AlterTableCmd *n = makeNode(AlterTableCmd);
+					AlterTableCmd *n;
+					if (strcmp($2, "context") != 0)
+						yyerror("syntax error1");
+
+					n = makeNode(AlterTableCmd);
 					n->subtype = AT_SetTableSecurityContext;
 					n->def = (Node *)makeString($4);
 					$$ = (Node *)n;
 				}
-			/* ALTER TABLE <relation> ALTER [COLUMN] <colname> SECURITY_CONTEXT = '...' */
-			| ALTER opt_column ColId SET SECURITY_CONTEXT '=' Sconst
+			/* ALTER TABLE <relation> ALTER [COLUMN] <colname> CONTEXT = '...' */
+			| ALTER opt_column ColId SET IDENT '=' Sconst
 				{
-					AlterTableCmd *n = makeNode(AlterTableCmd);
+					AlterTableCmd *n;
+					if (strcmp($5, "context") != 0)
+						yyerror("syntax error2");
+
+					n = makeNode(AlterTableCmd);
 					n->subtype = AT_SetColumnSecurityContext;
 					n->name = $3;
 					n->def = (Node *)makeString($7);
@@ -3967,8 +3975,10 @@ common_func_opt_item:
 				{
 					$$ = makeDefElem("security", (Node *)makeInteger(FALSE));
 				}
-			| SECURITY_CONTEXT '=' Sconst
+			| IDENT '=' Sconst
 				{
+					if (strcmp($1, "context") != 0)
+						yyerror("syntax error3");
 					$$ = makeDefElem("security_context", (Node *)makeString($3));
 				}
 		;
