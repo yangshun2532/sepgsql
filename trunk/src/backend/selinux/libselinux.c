@@ -159,9 +159,9 @@ void libselinux_initialize()
 	if (!found_avc) {
 		avc_shmem->lock = LWLockAssign();
 		libselinux_avc_reset();
-		selnotice("AVC Shmem segment created");
+		seldebug("AVC Shmem segment created");
 	} else {
-		selnotice("AVC Shmem segment attached");
+		seldebug("AVC Shmem segment attached");
 	}
 }
 
