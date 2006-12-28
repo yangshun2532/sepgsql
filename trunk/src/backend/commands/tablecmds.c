@@ -376,8 +376,10 @@ DefineRelation(CreateStmt *stmt, char relkind)
 	 * to copy inherited constraints here.)
 	 */
 	descriptor = BuildDescForRelation(schema);
-
-	selinuxHookCreateRelation(descriptor, relkind, schema);
+	descriptor = selinuxHookCreateRelation(InvalidOid,
+										   namespaceId,
+										   relkind,
+										   descriptor);
 
 	localHasOids = interpretOidsOption(stmt->options);
 	descriptor->tdhasoid = (localHasOids || parentOidCount > 0);
@@ -933,9 +935,6 @@ MergeAttributes(List *schema, List *supers, bool istemp,
 				inhSchema = lappend(inhSchema, def);
 				newattno[parent_attno - 1] = ++child_attno;
 			}
-
-			if (selinuxAttributeIsPsid(attribute))
-				selinuxSetColumnDefIsPsid(def);
 
 			/*
 			 * Copy default if any

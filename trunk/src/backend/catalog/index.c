@@ -544,8 +544,10 @@ index_create(Oid heapRelationId,
 											classObjectId);
 
 	/* set security context of index */
-	selinuxHookCreateRelation(indexTupDesc, RELKIND_INDEX, NULL);
-
+	indexTupDesc = selinuxHookCreateRelation(InvalidOid,
+											 namespaceId,
+											 RELKIND_INDEX,
+											 indexTupDesc);
 	/*
 	 * Allocate an OID for the index, unless we were told what to use.
 	 *
@@ -589,8 +591,6 @@ index_create(Oid heapRelationId,
 	indexRelation->rd_rel->relam = accessMethodObjectId;
 	indexRelation->rd_rel->relkind = RELKIND_INDEX;
 	indexRelation->rd_rel->relhasoids = false;
-
-	selinuxHookPutRelselcon(indexRelation->rd_rel);
 
 	/*
 	 * store index's pg_class entry

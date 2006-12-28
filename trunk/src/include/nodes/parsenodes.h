@@ -405,9 +405,6 @@ typedef struct ColumnDef
 	Node	   *raw_default;	/* default value (untransformed parse tree) */
 	char	   *cooked_default; /* nodeToString representation */
 	List	   *constraints;	/* other constraints on column */
-#ifdef HAVE_SELINUX
-	bool		is_selcon;		/* hold a security context */
-#endif
 } ColumnDef;
 
 /*

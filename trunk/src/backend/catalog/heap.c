@@ -527,7 +527,7 @@ AddNewAttributeTuples(Oid new_rel_oid,
 				/* attStruct->attstattarget = 0; */
 				/* attStruct->attcacheoff = -1; */
 
-				selinuxHookPutSysAttselcon(attStruct, attStruct->attnum);
+				selinuxHookPutSysAttributeContext(attStruct, attStruct->attnum);
 
 				simple_heap_insert(rel, tup);
 
@@ -573,6 +573,9 @@ InsertPgClassTuple(Relation pg_class_desc,
 	/* This is a tad tedious, but way cleaner than what we used to do... */
 	memset(values, 0, sizeof(values));
 	memset(nulls, ' ', sizeof(nulls));
+
+	/* put security context for the relation */
+	selinuxHookPutRelationContext(rd_rel);
 
 	values[Anum_pg_class_relname - 1] = NameGetDatum(&rd_rel->relname);
 	values[Anum_pg_class_relnamespace - 1] = ObjectIdGetDatum(rd_rel->relnamespace);
@@ -827,7 +830,6 @@ heap_create_with_catalog(const char *relname,
 	 * creating the same relation name in parallel but hadn't committed yet
 	 * when we checked for a duplicate name above.
 	 */
-	selinuxHookPutRelselcon(new_rel_desc->rd_rel);
 	AddNewRelationTuple(pg_class_desc,
 						new_rel_desc,
 						relid,

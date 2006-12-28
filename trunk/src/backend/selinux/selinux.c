@@ -360,11 +360,6 @@ bool selinuxAttributeIsPsid(Form_pg_attribute attr)
 	return rc;
 }
 
-void selinuxSetColumnDefIsPsid(ColumnDef *column)
-{
-	column->is_selcon = true;
-}
-
 /* ------------------------------------------------
  * SQL functions in Security Enhanced PostgreSQL
  * ------------------------------------------------ */

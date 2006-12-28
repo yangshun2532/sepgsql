@@ -7,11 +7,13 @@
 
 #include "access/heapam.h"
 #include "access/htup.h"
+#include "catalog/catalog.h"
 #include "catalog/indexing.h"
 #include "catalog/namespace.h"
 #include "catalog/pg_attribute.h"
 #include "catalog/pg_class.h"
 #include "catalog/pg_namespace.h"
+#include "catalog/pg_type.h"
 #include "nodes/makefuncs.h"
 #include "sepgsql.h"
 #include "utils/lsyscache.h"
@@ -20,106 +22,147 @@
 #include <selinux/flask.h>
 #include <selinux/av_permissions.h>
 
-Query *selinuxProxyCreateTable(Query *query)
+static psid gentbl_psid = InvalidOid;
+static psid gensysatt_psid[-FirstLowInvalidHeapAttributeNumber];
+
+extern Query *selinuxProxyCreateTable(Query *query)
 {
-	CreateStmt *stmt = (CreateStmt *)query->utilityStmt;
-	ColumnDef *column;
-	Oid nsid;
-
-	/* no additional column on system catalog */
-	nsid = RangeVarGetCreationNamespace(stmt->relation);
-	if (nsid == PG_CATALOG_NAMESPACE)
-		return query;
-
-	/* add security context column */
-	column = makeNode(ColumnDef);
-	column->colname = pstrdup("security_context");
-	column->typename = makeTypeName("psid");
-	column->constraints = NIL;
-	column->is_local = true;
-	column->is_not_null = true;
-	column->is_selcon = true;
-	
-	stmt->tableElts = lappend(stmt->tableElts, column);
-	
 	return query;
 }
 
-/* we have to full up those values before heap_create_with_catalog */
-static psid next_table_psid = InvalidOid;
-static psid next_sysatt_psid[-FirstLowInvalidHeapAttributeNumber];
-
-void selinuxHookPutRelselcon(Form_pg_class pg_class)
+TupleDesc selinuxHookCreateRelation(Oid relid, Oid relns, char relkind, TupleDesc tdesc)
 {
-	Assert(next_table_psid != InvalidOid);
+	Form_pg_attribute pg_attr;
+	TupleDesc new_desc;
+	AttrNumber attnum, psidnum = FirstLowInvalidHeapAttributeNumber;
 
-	pg_class->relselcon = next_table_psid;
-	next_table_psid = InvalidOid;
-}
+	gentbl_psid = libselinux_avc_createcon(selinuxGetClientPsid(),
+										   selinuxGetDatabasePsid(),
+										   SECCLASS_TABLE);
 
-void selinuxHookPutSysAttselcon(Form_pg_attribute pg_attr, int attnum)
-{
-	Assert(attnum < 0 && attnum > FirstLowInvalidHeapAttributeNumber);
-	Assert(next_sysatt_psid[-attnum] != InvalidOid);
+	if (relkind != RELKIND_RELATION)
+		goto found;
+	if (IsSystemNamespace(relns) || IsToastNamespace(relns))
+		goto found;
 
-	pg_attr->attselcon = next_sysatt_psid[-attnum];
-	next_sysatt_psid[-attnum] = InvalidOid;
-}
-
-void selinuxHookCreateRelation(TupleDesc tupDesc, char relkind, List *schema)
-{
-	psid tblcon, colcon;
-	int i = 0;
-
-	tblcon = libselinux_avc_createcon(selinuxGetClientPsid(),
-									  selinuxGetDatabasePsid(),
-									  SECCLASS_TABLE);
-	colcon = libselinux_avc_createcon(selinuxGetClientPsid(),
-									  tblcon,
-									  SECCLASS_COLUMN);
-
-	if (schema != NULL) {
-		ListCell *item;
-
-		foreach(item, schema) {
-			ColumnDef *column = lfirst(item);
-
-			tupDesc->attrs[i]->attispsid = column->is_selcon;
-			tupDesc->attrs[i]->attselcon = colcon;
-			i++;
-		}
-	} else {
-		for (i=0; i < tupDesc->natts; i++) {
-			tupDesc->attrs[i]->attispsid = false;
-			tupDesc->attrs[i]->attselcon = colcon;
+	/* add 'security_context' column, if necessary */
+	for (attnum=0; attnum < tdesc->natts; attnum++) {
+		pg_attr = tdesc->attrs[attnum];
+		if (strcmp(NameStr(pg_attr->attname), "security_context") == 0) {
+			if (pg_attr->atttypid != PSIDOID)
+				selerror("type of attribute '%s' is not psid", NameStr(pg_attr->attname));
+			if (!pg_attr->attispsid)
+				selerror("attribute '%s' is not security context", NameStr(pg_attr->attname));
+			goto found;
 		}
 	}
 
-	next_table_psid = tblcon;
-	for (i=0; i < lengthof(next_sysatt_psid); i++)
-		next_sysatt_psid[i] = colcon;
-}
+	/* add 'security_context' column */
+	new_desc = CreateTemplateTupleDesc(tdesc->natts + 1, tdesc->tdhasoid);
+	psidnum = new_desc->natts;
+	new_desc->tdtypeid = tdesc->tdtypeid;
+	new_desc->tdtypmod = tdesc->tdtypmod;
+	new_desc->tdrefcount = tdesc->tdrefcount;
+	for (attnum=0; attnum < psidnum - 1; attnum++)
+		memcpy(new_desc->attrs[attnum], tdesc->attrs[attnum], ATTRIBUTE_TUPLE_SIZE);
+	TupleDescInitEntry(new_desc, psidnum, "security_context", PSIDOID, -1, 0);
+	pg_attr = new_desc->attrs[psidnum - 1];
+	pg_attr->attispsid = true;
+	pg_attr->attnotnull = true;
+	FreeTupleDesc(tdesc);  /* release old one */
+	tdesc = new_desc;
 
-void selinuxHookCloneRelation(TupleDesc tupDesc, Relation relOrig)
-{
-	HeapTuple tuple;
-	int i;
+	/* prepare system attributes' context */
+	for (attnum = 1; attnum < -FirstLowInvalidHeapAttributeNumber; attnum++) {
+		gensysatt_psid[attnum] = libselinux_avc_createcon(selinuxGetClientPsid(),
+														  gentbl_psid,
+														  SECCLASS_COLUMN);
+	}
 
-	next_table_psid = relOrig->rd_rel->relselcon;
+found:
+	for (attnum = 1 + FirstLowInvalidHeapAttributeNumber; attnum <= tdesc->natts; attnum++) {
+		psid col_psid;
 
-	for (i=-1; i > FirstLowInvalidHeapAttributeNumber; i--) {
-		Form_pg_attribute att_tup;
-
-		tuple = SearchSysCache(ATTNUM,
-							   ObjectIdGetDatum(relOrig->rd_id),
-							   Int16GetDatum(i), 0, 0);
-		if (!HeapTupleIsValid(tuple))
+		if (attnum == 0)
 			continue;
 
-		att_tup = (Form_pg_attribute) GETSTRUCT(tuple);
-		next_sysatt_psid[-i] = att_tup->attselcon;
-		ReleaseSysCache(tuple);
+		col_psid = libselinux_avc_createcon(selinuxGetClientPsid(),
+											gentbl_psid,
+											SECCLASS_COLUMN);
+		if (attnum < 0) {
+			/* system attributes */
+			gensysatt_psid[-attnum] = col_psid;
+		} else {
+			/* general attributes */
+			tdesc->attrs[attnum - 1]->attselcon = col_psid;
+			tdesc->attrs[attnum - 1]->attispsid = (attnum == psidnum ? true : false);
+		}
 	}
+	return tdesc;
+}
+
+TupleDesc selinuxHookCloneRelation(Oid relid, Oid relns, char relkind, TupleDesc tdesc)
+{
+	Form_pg_class pg_class;
+	Form_pg_attribute pg_attr;
+	AttrNumber attnum, natts;
+	bool hasoids;
+	HeapTuple tup;
+
+	/* clone pg_class->relselcon */
+	tup = SearchSysCache(RELOID,
+						 ObjectIdGetDatum(relid),
+						 0, 0, 0);
+	if (!HeapTupleIsValid(tup))
+		selerror("cache lookup failed for relation %d", relid);
+	pg_class = (Form_pg_class) GETSTRUCT(tup);
+	gentbl_psid = pg_class->relselcon;
+	natts = pg_class->relnatts;
+	hasoids = pg_class->relhasoids;
+	ReleaseSysCache(tup);
+
+	/* clone attributes */
+	for (attnum = 1 + FirstLowInvalidHeapAttributeNumber; attnum <= natts; attnum++) {
+		if (attnum==0)
+			continue;
+		if (!hasoids && attnum==ObjectIdAttributeNumber)
+			continue;
+
+		tup = SearchSysCacheCopy(ATTNUM,
+								 ObjectIdGetDatum(relid),
+								 Int16GetDatum(attnum),
+								 0, 0);
+		if (!HeapTupleIsValid(tup))
+			selerror("cache lookup failed for attribute %d of relation %u", attnum, relid);
+		pg_attr = (Form_pg_attribute) GETSTRUCT(tup);
+		if (attnum < 0) {
+			/* system attributes */
+			gensysatt_psid[-attnum] = pg_attr->attselcon;
+		} else {
+			/* general attributes */
+			tdesc->attrs[attnum - 1]->attselcon = pg_attr->attselcon;
+			tdesc->attrs[attnum - 1]->attispsid = pg_attr->attispsid;
+		}
+		ReleaseSysCache(tup);
+	}
+	return tdesc;
+}
+
+void selinuxHookPutRelationContext(Form_pg_class pg_class)
+{
+	Assert(gentbl_psid != InvalidOid);
+
+	pg_class->relselcon = gentbl_psid;
+	gentbl_psid = InvalidOid;
+}
+
+void selinuxHookPutSysAttributeContext(Form_pg_attribute pg_attr, AttrNumber attnum)
+{
+	Assert(attnum < 0 && attnum > FirstLowInvalidHeapAttributeNumber);
+	Assert(gensysatt_psid[-attnum] != InvalidOid);
+
+	pg_attr->attselcon = gensysatt_psid[-attnum];
+	gensysatt_psid[-attnum] = InvalidOid;
 }
 
 static void checkAlterTableRelation(Oid relid, uint32 perms)
