@@ -53,6 +53,7 @@ TupleDesc selinuxHookCreateRelation(Oid relid, Oid relns, char relkind, TupleDes
 				selerror("type of attribute '%s' is not psid", NameStr(pg_attr->attname));
 			if (!pg_attr->attispsid)
 				selerror("attribute '%s' is not security context", NameStr(pg_attr->attname));
+			psidnum = pg_attr->attnum;
 			goto found;
 		}
 	}
