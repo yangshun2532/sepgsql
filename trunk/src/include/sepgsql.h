@@ -214,11 +214,10 @@ extern bool sepgsqlAttributeIsPsid(Form_pg_attribute attr);
 
 #else
 /* dummy enhanced selinux core implementation */
-static inline void selinuxInitialize(void) {}
-static inline int selinuxInitializePostmaster(void) { return 0; }
-static inline void selinuxFinalizePostmaster(void) {}
-static inline void selinuxHookPolicyStateChanged(void) {}
-static inline Query *selinuxProxy(Query *query) { return query; }
+static inline void sepgsqlInitialize(void) {}
+static inline int  sepgsqlInitializePostmaster(void) { return 0; }
+static inline void sepgsqlFinalizePostmaster(void) {}
+static inline Query *sepgsqlProxy(Query *query) { return query; }
 
 /* dummy CREATE DATABASE statement */
 static inline void selinuxHookCreateDatabase(Datum *values, char *nulls) {}
