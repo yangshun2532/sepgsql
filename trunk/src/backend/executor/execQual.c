@@ -1548,11 +1548,11 @@ ExecEvalFunc(FuncExprState *fcache,
 	/* Go directly to ExecMakeFunctionResult on subsequent uses */
 	fcache->xprstate.evalfunc = (ExprStateEvalFunc) ExecMakeFunctionResult;
 
-	selinuxPrepareExecProcedure(func->funcid);
+	sepgsqlPrepareExecProcedure(func->funcid);
 
 	result = ExecMakeFunctionResult(fcache, econtext, isNull, isDone);
 
-	selinuxRestoreExecProcedure();
+	sepgsqlRestoreExecProcedure();
 
 	return result;
 }

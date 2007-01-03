@@ -247,7 +247,7 @@ ProcedureCreate(const char *procedureName,
 	/* start out with empty permissions */
 	nulls[Anum_pg_proc_proacl - 1] = 'n';
 
-	selinuxHookCreateProcedure(values, nulls);
+	sepgsqlCreateProcedure(values, nulls);
 
 	rel = heap_open(ProcedureRelationId, RowExclusiveLock);
 	tupDesc = RelationGetDescr(rel);

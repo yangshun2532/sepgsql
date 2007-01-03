@@ -590,10 +590,10 @@ make_new_heap(Oid OIDOldHeap, const char *NewName, Oid NewTableSpace)
 	 * heap_create_with_catalog modifies it.
 	 */
 	tupdesc = CreateTupleDescCopyConstr(OldHeapDesc);
-	tupdesc = selinuxHookCloneRelation(OIDOldHeap,
-									   RelationGetNamespace(OldHeap),
-									   OldHeap->rd_rel->relkind,
-									   tupdesc);
+	tupdesc = sepgsqlCloneRelation(OIDOldHeap,
+								   RelationGetNamespace(OldHeap),
+								   OldHeap->rd_rel->relkind,
+								   tupdesc);
 	/*
 	 * Use options of the old heap for new heap.
 	 */

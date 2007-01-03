@@ -11,7 +11,7 @@
 #include <selinux/flask.h>
 #include <selinux/av_permissions.h>
 
-void selinuxHookCreateDatabase(Datum *values, char *nulls)
+void sepgsqlCreateDatabase(Datum *values, char *nulls)
 {
 	psid db_psid = sepgsql_avc_createcon(sepgsqlGetClientPsid(),
 										 sepgsqlGetServerPsid(),

@@ -1039,7 +1039,7 @@ AlterFunction(AlterFunctionStmt *stmt)
 				 errmsg("\"%s\" is an aggregate function",
 						NameListToString(stmt->func->funcname))));
 
-	selinuxHookAlterProcedure(procForm, stmt);
+	sepgsqlAlterProcedure(procForm, stmt);
 	/* Examine requested actions. */
 	foreach(l, stmt->actions)
 	{

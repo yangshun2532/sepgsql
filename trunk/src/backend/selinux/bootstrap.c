@@ -109,7 +109,7 @@ static void setup_init_context()
 	init_context_available = true;
 }
 
-psid selinuxBootstrap_context_to_psid(char *context)
+psid sepgsqlBootstrap_context_to_psid(char *context)
 {
 	int i;
 
@@ -124,7 +124,7 @@ psid selinuxBootstrap_context_to_psid(char *context)
 	return InvalidOid; /* compiler kindness */
 }
 
-char *selinuxBootstrap_psid_to_context(psid sid)
+char *sepgsqlBootstrap_psid_to_context(psid sid)
 {
 	int i;
 
@@ -139,7 +139,7 @@ char *selinuxBootstrap_psid_to_context(psid sid)
 	return NULL; /* compiler kindness */
 }
 
-void selinuxBootstrapPostCreateRelation(Oid relid)
+void sepgsqlBootstrapPostCreateRelation(Oid relid)
 {
 	Relation rel;
 	HeapTuple tuple;
@@ -168,7 +168,7 @@ void selinuxBootstrapPostCreateRelation(Oid relid)
 	relation_close(rel, NoLock);
 }
 
-int selinuxBootstrapInsertOneValue(int index)
+int sepgsqlBootstrapInsertOneValue(int index)
 {
 	int rc = 0;
 
@@ -208,7 +208,7 @@ int selinuxBootstrapInsertOneValue(int index)
 	return rc;
 }
 
-void selinuxBootstrapFormrdesc(Relation rel)
+void sepgsqlBootstrapFormrdesc(Relation rel)
 {
 	TupleDesc tupDesc = rel->rd_att;
 	int i;

@@ -23,7 +23,7 @@
 #include <selinux/flask.h>
 #include <selinux/av_permissions.h>
 
-static Expr *selinuxInsertTupleContext(Expr *esid, Oid relid, psid relselcon)
+static Expr *sepgsqlInsertTupleContext(Expr *esid, Oid relid, psid relselcon)
 {
 	FuncExpr *func;
 	Const *cons;
@@ -66,7 +66,7 @@ static Expr *selinuxInsertTupleContext(Expr *esid, Oid relid, psid relselcon)
 	return (Expr *)func;
 }
 
-Query *selinuxProxyInsert(Query *query)
+Query *sepgsqlProxyInsert(Query *query)
 {
 	RangeTblEntry *rte;
 	HeapTuple tup;
@@ -120,7 +120,7 @@ Query *selinuxProxyInsert(Query *query)
 
 		if (sepgsqlAttributeIsPsid(pg_attr)) {
 			/* check relabelfrom/relabelto condition */
-			tle->expr = selinuxInsertTupleContext(tle->expr, rte->relid, relselcon);
+			tle->expr = sepgsqlInsertTupleContext(tle->expr, rte->relid, relselcon);
 			security_context_checked = true;
 		}
 		ReleaseSysCache(tup);
@@ -134,7 +134,7 @@ Query *selinuxProxyInsert(Query *query)
 		for (index=0; index < RelationGetNumberOfAttributes(rel); index++) {
 			pg_attr = RelationGetDescr(rel)->attrs[index];
 			if (sepgsqlAttributeIsPsid(pg_attr)) {
-				Expr *e = selinuxInsertTupleContext(NULL, rte->relid, relselcon);
+				Expr *e = sepgsqlInsertTupleContext(NULL, rte->relid, relselcon);
 				tle = makeTargetEntry(e, index + 1,
 									  pstrdup(NameStr(pg_attr->attname)),
 									  false);

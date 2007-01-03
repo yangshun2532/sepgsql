@@ -1370,7 +1370,7 @@ formrdesc(const char *relationName, Oid relationReltype,
 	RelationGetRelid(relation) = relation->rd_att->attrs[0]->attrelid;
 	relation->rd_rel->relfilenode = RelationGetRelid(relation);
 
-	selinuxBootstrapFormrdesc(relation);
+	sepgsqlBootstrapFormrdesc(relation);
 
 	/*
 	 * initialize the relation lock manager information

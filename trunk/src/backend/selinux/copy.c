@@ -19,7 +19,7 @@
 #include <selinux/flask.h>
 #include <selinux/av_permissions.h>
 
-void selinuxHookDoCopy(Relation rel, List *attnumlist, bool is_from)
+void sepgsqlDoCopy(Relation rel, List *attnumlist, bool is_from)
 {
 	psid tsid, ssid = sepgsqlGetClientPsid();
 	uint32 perm;
@@ -49,7 +49,7 @@ void selinuxHookDoCopy(Relation rel, List *attnumlist, bool is_from)
 	}
 }
 
-void selinuxHookCopyFrom(Relation rel, Datum *values, char *nulls)
+void sepgsqlCopyFrom(Relation rel, Datum *values, char *nulls)
 {
 	psid isid, esid;
 	char *audit;
@@ -92,7 +92,7 @@ void selinuxHookCopyFrom(Relation rel, Datum *values, char *nulls)
 	}
 }
 
-Node *selinuxHookCopyFromNewContext(Relation rel)
+Node *sepgsqlCopyFromNewContext(Relation rel)
 {
 	psid new_sid;
 
@@ -104,7 +104,7 @@ Node *selinuxHookCopyFromNewContext(Relation rel)
 							 false, false);
 }
 
-bool selinuxHookCopyTo(Relation rel, HeapTuple tuple)
+bool sepgsqlCopyTo(Relation rel, HeapTuple tuple)
 {
 	TupleDesc tupDesc = RelationGetDescr(rel);
 	Oid relid = RelationGetRelid(rel);

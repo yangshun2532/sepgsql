@@ -2411,10 +2411,10 @@ OpenIntoRel(QueryDesc *queryDesc)
 	/* have to copy the actual tupdesc to get rid of any constraints */
 	tupdesc = CreateTupleDescCopy(queryDesc->tupDesc);
 	/* set security context of newly created table */
-	tupdesc = selinuxHookCreateRelation(InvalidOid,
-										namespaceId,
-										RELKIND_RELATION,
-										tupdesc);
+	tupdesc = sepgsqlCreateRelation(InvalidOid,
+									namespaceId,
+									RELKIND_RELATION,
+									tupdesc);
 
 	/* Now we can actually create the new relation */
 	intoRelationId = heap_create_with_catalog(intoName,

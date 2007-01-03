@@ -527,7 +527,7 @@ AddNewAttributeTuples(Oid new_rel_oid,
 				/* attStruct->attstattarget = 0; */
 				/* attStruct->attcacheoff = -1; */
 
-				selinuxHookPutSysAttributeContext(attStruct, attStruct->attnum);
+				sepgsqlPutSysAttributeContext(attStruct, attStruct->attnum);
 
 				simple_heap_insert(rel, tup);
 
@@ -575,7 +575,7 @@ InsertPgClassTuple(Relation pg_class_desc,
 	memset(nulls, ' ', sizeof(nulls));
 
 	/* put security context for the relation */
-	selinuxHookPutRelationContext(rd_rel);
+	sepgsqlPutRelationContext(rd_rel);
 
 	values[Anum_pg_class_relname - 1] = NameGetDatum(&rd_rel->relname);
 	values[Anum_pg_class_relnamespace - 1] = ObjectIdGetDatum(rd_rel->relnamespace);

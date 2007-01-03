@@ -50,7 +50,7 @@ static void checkUpdateTarget(Query *query, RangeTblEntry *rte, int rindex, Targ
 	selinux_audit(rc, audit, NameStr(attr->attname));
 
 	/* 2. checking column:select on expr */
-	selinuxCheckExpr(query, tle->expr);
+	sepgsqlCheckExpr(query, tle->expr);
 
 	/* 3. checking relabelfrom/relabelto, if necessary */
 	if (sepgsqlAttributeIsPsid(attr)) {
@@ -103,7 +103,7 @@ static void checkUpdateTarget(Query *query, RangeTblEntry *rte, int rindex, Targ
 	ReleaseSysCache(tuple);
 }
 
-Query *selinuxProxyUpdate(Query *query)
+Query *sepgsqlProxyUpdate(Query *query)
 {
 	RangeTblEntry *rte;
 	ListCell *x;
@@ -120,17 +120,17 @@ Query *selinuxProxyUpdate(Query *query)
 	}
 
 	/* 3. check where clause */
-	selinuxCheckExpr(query, (Expr *)query->jointree->quals);
+	sepgsqlCheckExpr(query, (Expr *)query->jointree->quals);
 
 	/* 4. check returning clause, if necessary */
-	selinuxCheckTargetList(query, query->returningList);
+	sepgsqlCheckTargetList(query, query->returningList);
 
 	/* 5. check any relations */
 	rindex = 1;
 	foreach (x, query->rtable) {
 		rte = (RangeTblEntry *) lfirst(x);
 		if (rte->rtekind == RTE_RELATION)
-			selinuxCheckRteRelation(query, rte, rindex);
+			sepgsqlCheckRteRelation(query, rte, rindex);
 		rindex++;
 	}
 

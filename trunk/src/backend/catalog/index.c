@@ -544,10 +544,10 @@ index_create(Oid heapRelationId,
 											classObjectId);
 
 	/* set security context of index */
-	indexTupDesc = selinuxHookCreateRelation(InvalidOid,
-											 namespaceId,
-											 RELKIND_INDEX,
-											 indexTupDesc);
+	indexTupDesc = sepgsqlCreateRelation(InvalidOid,
+										 namespaceId,
+										 RELKIND_INDEX,
+										 indexTupDesc);
 	/*
 	 * Allocate an OID for the index, unless we were told what to use.
 	 *

@@ -1069,7 +1069,7 @@ DoCopy(const CopyStmt *stmt)
 	/* Generate or convert list of attributes to process */
 	cstate->attnumlist = CopyGetAttnums(tupDesc, cstate->rel, attnamelist);
 
-	selinuxHookDoCopy(cstate->rel, cstate->attnumlist, is_from);
+	sepgsqlDoCopy(cstate->rel, cstate->attnumlist, is_from);
 
 	num_phys_attrs = tupDesc->natts;
 
@@ -1397,7 +1397,7 @@ CopyTo(CopyState cstate)
 		{
 			CHECK_FOR_INTERRUPTS();
 
-			if (selinuxHookCopyTo(cstate->rel, tuple) != true)
+			if (sepgsqlCopyTo(cstate->rel, tuple) != true)
 				continue;
 
 			/* Deconstruct the tuple ... faster than repeated heap_getattr */
@@ -1774,7 +1774,7 @@ CopyFrom(CopyState cstate)
 			Node	*defexpr;
 
 			if (sepgsqlAttributeIsPsid(attr[attnum - 1])) {
-				defexpr = selinuxHookCopyFromNewContext(cstate->rel);
+				defexpr = sepgsqlCopyFromNewContext(cstate->rel);
 			} else {
 				defexpr = build_column_default(cstate->rel, attnum);
 			}
@@ -2050,7 +2050,7 @@ CopyFrom(CopyState cstate)
 				nulls[defmap[i]] = ' ';
 		}
 
-		selinuxHookCopyFrom(cstate->rel, values, nulls);
+		sepgsqlCopyFrom(cstate->rel, values, nulls);
 
 		/* And now we can form the input tuple. */
 		tuple = heap_formtuple(tupDesc, values, nulls);

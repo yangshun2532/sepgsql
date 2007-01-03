@@ -16,7 +16,7 @@
 #include <selinux/flask.h>
 #include <selinux/av_permissions.h>
 
-Query *selinuxProxyCreateProcedure(Query *query)
+Query *sepgsqlProxyCreateProcedure(Query *query)
 {
 	psid ppsid;
 	int rc;
@@ -43,7 +43,7 @@ Query *selinuxProxyCreateProcedure(Query *query)
 	return query;
 }
 
-void selinuxHookCreateProcedure(Datum *values, char *nulls)
+void sepgsqlCreateProcedure(Datum *values, char *nulls)
 {
 	psid ppsid = sepgsql_avc_createcon(sepgsqlGetClientPsid(),
 									   sepgsqlGetDatabasePsid(),
@@ -52,7 +52,7 @@ void selinuxHookCreateProcedure(Datum *values, char *nulls)
 	nulls[Anum_pg_proc_proselcon - 1] = ' ';
 }
 
-void selinuxHookAlterProcedure(Form_pg_proc pg_proc, AlterFunctionStmt *stmt)
+void sepgsqlAlterProcedure(Form_pg_proc pg_proc, AlterFunctionStmt *stmt)
 {
 	ListCell *l;
 	psid nsid = InvalidOid;
@@ -91,7 +91,7 @@ retry:
 	}
 }
 
-psid selinuxHookPrepareProcedure(Oid funcid)
+psid sepgsqlPrepareProcedure(Oid funcid)
 {
 	HeapTuple tuple;
 	psid orig_psid, new_psid;
@@ -110,7 +110,7 @@ psid selinuxHookPrepareProcedure(Oid funcid)
 	return orig_psid;
 }
 
-void selinuxHookRestoreProcedure(psid orig_psid)
+void sepgsqlRestoreProcedure(psid orig_psid)
 {
 	sepgsqlSetClientPsid(orig_psid);
 }

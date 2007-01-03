@@ -25,12 +25,12 @@
 static psid gentbl_psid = InvalidOid;
 static psid gensysatt_psid[-FirstLowInvalidHeapAttributeNumber];
 
-extern Query *selinuxProxyCreateTable(Query *query)
+extern Query *sepgsqlProxyCreateTable(Query *query)
 {
 	return query;
 }
 
-TupleDesc selinuxHookCreateRelation(Oid relid, Oid relns, char relkind, TupleDesc tdesc)
+TupleDesc sepgsqlCreateRelation(Oid relid, Oid relns, char relkind, TupleDesc tdesc)
 {
 	Form_pg_attribute pg_attr;
 	TupleDesc new_desc;
@@ -102,7 +102,7 @@ found:
 	return tdesc;
 }
 
-TupleDesc selinuxHookCloneRelation(Oid relid, Oid relns, char relkind, TupleDesc tdesc)
+TupleDesc sepgsqlCloneRelation(Oid relid, Oid relns, char relkind, TupleDesc tdesc)
 {
 	Form_pg_class pg_class;
 	Form_pg_attribute pg_attr;
@@ -149,7 +149,7 @@ TupleDesc selinuxHookCloneRelation(Oid relid, Oid relns, char relkind, TupleDesc
 	return tdesc;
 }
 
-void selinuxHookPutRelationContext(Form_pg_class pg_class)
+void sepgsqlPutRelationContext(Form_pg_class pg_class)
 {
 	Assert(gentbl_psid != InvalidOid);
 
@@ -157,7 +157,7 @@ void selinuxHookPutRelationContext(Form_pg_class pg_class)
 	gentbl_psid = InvalidOid;
 }
 
-void selinuxHookPutSysAttributeContext(Form_pg_attribute pg_attr, AttrNumber attnum)
+void sepgsqlPutSysAttributeContext(Form_pg_attribute pg_attr, AttrNumber attnum)
 {
 	Assert(attnum < 0 && attnum > FirstLowInvalidHeapAttributeNumber);
 	Assert(gensysatt_psid[-attnum] != InvalidOid);
@@ -214,7 +214,7 @@ static void checkAlterTableColumn(Oid relid, char *colname, uint32 perms)
 	ReleaseSysCache(tup);
 }
 
-void selinuxHookAlterTable(Oid relid, char relkind, TupleDesc tdesc, AlterTableCmd *cmd)
+void sepgsqlAlterTable(Oid relid, char relkind, TupleDesc tdesc, AlterTableCmd *cmd)
 {
 	if (relkind != RELKIND_RELATION)
 		return;
@@ -223,7 +223,7 @@ void selinuxHookAlterTable(Oid relid, char relkind, TupleDesc tdesc, AlterTableC
 	{
 	case AT_AddColumn:
 		/* table:setattr and column:create are evaluated
-		   at selinuxHookAlterTableAddColumn() */
+		   at sepgsqlAlterTableAddColumn() */
 		break;
 
 	case AT_ColumnDefault:
@@ -267,7 +267,7 @@ void selinuxHookAlterTable(Oid relid, char relkind, TupleDesc tdesc, AlterTableC
 	}
 }
 
-void selinuxHookAlterTableAddColumn(Relation rel, Form_pg_attribute pg_attr)
+void sepgsqlAlterTableAddColumn(Relation rel, Form_pg_attribute pg_attr)
 {
 	psid new_psid;
 	char *audit;
@@ -290,7 +290,7 @@ void selinuxHookAlterTableAddColumn(Relation rel, Form_pg_attribute pg_attr)
 	pg_attr->attselcon = new_psid;
 }
 
-void selinuxHookAlterTableSetTableContext(Relation rel, Value *context)
+void sepgsqlAlterTableSetTableContext(Relation rel, Value *context)
 {
 	Relation pgclass;
 	HeapTuple tup;
@@ -332,7 +332,7 @@ void selinuxHookAlterTableSetTableContext(Relation rel, Value *context)
 	heap_close(pgclass, RowExclusiveLock);
 }
 
-void selinuxHookAlterTableSetColumnContext(Relation rel, char *colname, Value *context)
+void sepgsqlAlterTableSetColumnContext(Relation rel, char *colname, Value *context)
 {
 	HeapTuple tup;
 	AttrNumber attnum;

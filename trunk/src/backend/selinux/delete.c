@@ -11,7 +11,7 @@
 #include <selinux/flask.h>
 #include <selinux/av_permissions.h>
 
-Query *selinuxProxyDelete(Query *query)
+Query *sepgsqlProxyDelete(Query *query)
 {
 	ListCell *x;
 	RangeTblEntry *rte;
@@ -32,17 +32,17 @@ Query *selinuxProxyDelete(Query *query)
 	}
 
 	/* 3. permission mark on returning clause, if necessary */
-	selinuxCheckTargetList(query, query->returningList);
+	sepgsqlCheckTargetList(query, query->returningList);
 
 	/* 4. permission mark on where clause */
-	selinuxCheckExpr(query, (Expr *)query->jointree->quals);
+	sepgsqlCheckExpr(query, (Expr *)query->jointree->quals);
 
 	/* 5. permission checking */
 	index = 1;
 	foreach (x, query->rtable) {
 		rte = (RangeTblEntry *) lfirst(x);
 		if (rte->rtekind == RTE_RELATION)
-			selinuxCheckRteRelation(query, rte, index);
+			sepgsqlCheckRteRelation(query, rte, index);
 		index++;
 	}
 

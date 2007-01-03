@@ -178,10 +178,10 @@ Boot_CreateStmt:
 					do_start();
 
 					tupdesc = CreateTupleDesc(numattr, !($4), attrtypes);
-					tupdesc = selinuxHookCreateRelation($6,
-														PG_CATALOG_NAMESPACE,
-														RELKIND_RELATION,
-														tupdesc);
+					tupdesc = sepgsqlCreateRelation($6,
+													PG_CATALOG_NAMESPACE,
+													RELKIND_RELATION,
+													tupdesc);
 					if ($2)
 					{
 						if (boot_reldesc)
@@ -198,7 +198,7 @@ Boot_CreateStmt:
 												   RELKIND_RELATION,
 												   $3,
 												   true);
-						selinuxHookPutRelationContext(boot_reldesc->rd_rel);
+						sepgsqlPutRelationContext(boot_reldesc->rd_rel);
 						elog(DEBUG4, "bootstrap relation created");
 					}
 					else
@@ -220,7 +220,7 @@ Boot_CreateStmt:
 													  true);
 						elog(DEBUG4, "relation created with oid %u", id);
 
-						selinuxBootstrapPostCreateRelation(id);
+						sepgsqlBootstrapPostCreateRelation(id);
 					}
 					do_end();
 				}
@@ -369,13 +369,13 @@ boot_tuplelist:
 
 boot_tuple:
 		  boot_ident
-			{ num_columns_read += selinuxBootstrapInsertOneValue(num_columns_read);
+			{ num_columns_read += sepgsqlBootstrapInsertOneValue(num_columns_read);
 			  InsertOneValue(LexIDStr($1), num_columns_read++); }
 		| boot_const
-			{ num_columns_read += selinuxBootstrapInsertOneValue(num_columns_read);
+			{ num_columns_read += sepgsqlBootstrapInsertOneValue(num_columns_read);
 			  InsertOneValue(LexIDStr($1), num_columns_read++); }
 		| NULLVAL
-			{ num_columns_read += selinuxBootstrapInsertOneValue(num_columns_read);
+			{ num_columns_read += sepgsqlBootstrapInsertOneValue(num_columns_read);
 			  InsertOneNull(num_columns_read++); }
 		;
 

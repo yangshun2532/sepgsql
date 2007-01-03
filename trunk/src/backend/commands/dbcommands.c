@@ -377,7 +377,7 @@ createdb(const CreatedbStmt *stmt)
 	new_record_nulls[Anum_pg_database_datconfig - 1] = 'n';
 	new_record_nulls[Anum_pg_database_datacl - 1] = 'n';
 
-	selinuxHookCreateDatabase(new_record, new_record_nulls);
+	sepgsqlCreateDatabase(new_record, new_record_nulls);
 
 	tuple = heap_formtuple(RelationGetDescr(pg_database_rel),
 						   new_record, new_record_nulls);

@@ -239,25 +239,25 @@ Query *sepgsqlProxy(Query *query)
 
 	switch (query->commandType) {
 	case CMD_SELECT:
-		query = selinuxProxySelect(query);
+		query = sepgsqlProxySelect(query);
 		break;
 	case CMD_UPDATE:
-		query = selinuxProxyUpdate(query);
+		query = sepgsqlProxyUpdate(query);
 		break;
 	case CMD_INSERT:
-		query = selinuxProxyInsert(query);
+		query = sepgsqlProxyInsert(query);
 		break;
 	case CMD_DELETE:
-		query = selinuxProxyDelete(query);
+		query = sepgsqlProxyDelete(query);
 		break;
 	case CMD_UTILITY:
 		stmt = query->utilityStmt;
 		switch (nodeTag(stmt)) {
 		case T_CreateStmt:
-			query = selinuxProxyCreateTable(query);
+			query = sepgsqlProxyCreateTable(query);
 			break;
 		case T_CreateFunctionStmt:
-			query = selinuxProxyCreateProcedure(query);
+			query = sepgsqlProxyCreateProcedure(query);
 			break;
 		default:
 			/* do nothing */

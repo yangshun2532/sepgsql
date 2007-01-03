@@ -118,66 +118,66 @@ extern void sepgsqlFinalizePostmaster(void);
 extern Query *sepgsqlProxy(Query *query);
 
 /* SELECT statement related */
-extern Query *selinuxProxySelect(Query *query);
-extern void selinuxCheckRteRelation(Query *query, RangeTblEntry *rte, int index);
-extern void selinuxCheckTargetList(Query *query, List *targetList);
-extern void selinuxCheckExpr(Query *query, Expr *expr);
+extern Query *sepgsqlProxySelect(Query *query);
+extern void sepgsqlCheckRteRelation(Query *query, RangeTblEntry *rte, int index);
+extern void sepgsqlCheckTargetList(Query *query, List *targetList);
+extern void sepgsqlCheckExpr(Query *query, Expr *expr);
 /* UPDATE statement related */
-extern Query *selinuxProxyUpdate(Query *query);
+extern Query *sepgsqlProxyUpdate(Query *query);
 
 /* INSERT statement related */
-extern Query *selinuxProxyInsert(Query *query);
+extern Query *sepgsqlProxyInsert(Query *query);
 
 /* DELETE statement related */
-extern Query *selinuxProxyDelete(Query *query);
+extern Query *sepgsqlProxyDelete(Query *query);
 
 /* CREATE DATABASE statement related */
-extern void selinuxHookCreateDatabase(Datum *values, char *nulls);
+extern void sepgsqlCreateDatabase(Datum *values, char *nulls);
 
 /* CREATE/ALTER/DROP TABLE statement related */
-extern Query *selinuxProxyCreateTable(Query *query);
-extern TupleDesc selinuxHookCreateRelation(Oid relid, Oid relns, char relkind, TupleDesc tdesc);
-extern TupleDesc selinuxHookCloneRelation(Oid relid, Oid relns, char relkind, TupleDesc tdesc);
-extern void selinuxHookPutRelationContext(Form_pg_class pg_class);
-extern void selinuxHookPutSysAttributeContext(Form_pg_attribute pg_attr, AttrNumber attnum);
+extern Query *sepgsqlProxyCreateTable(Query *query);
+extern TupleDesc sepgsqlCreateRelation(Oid relid, Oid relns, char relkind, TupleDesc tdesc);
+extern TupleDesc sepgsqlCloneRelation(Oid relid, Oid relns, char relkind, TupleDesc tdesc);
+extern void sepgsqlPutRelationContext(Form_pg_class pg_class);
+extern void sepgsqlPutSysAttributeContext(Form_pg_attribute pg_attr, AttrNumber attnum);
 
-extern void selinuxHookAlterTable(Oid relid, char relkind, TupleDesc tdesc, AlterTableCmd *cmd);
-extern void selinuxHookAlterTableAddColumn(Relation rel, Form_pg_attribute pg_attr);
-extern void selinuxHookAlterTableSetTableContext(Relation rel, Value *newcon);
-extern void selinuxHookAlterTableSetColumnContext(Relation rel, char *name, Value *newcon);
+extern void sepgsqlAlterTable(Oid relid, char relkind, TupleDesc tdesc, AlterTableCmd *cmd);
+extern void sepgsqlAlterTableAddColumn(Relation rel, Form_pg_attribute pg_attr);
+extern void sepgsqlAlterTableSetTableContext(Relation rel, Value *newcon);
+extern void sepgsqlAlterTableSetColumnContext(Relation rel, char *name, Value *newcon);
 
 /* CREATE/ALTER/DROP FUNCTION statement related */
-extern Query *selinuxProxyCreateProcedure(Query *query);
-extern void selinuxHookCreateProcedure(Datum *values, char *nulls);
-extern void selinuxHookAlterProcedure(Form_pg_proc pg_proc, AlterFunctionStmt *stmt);
-extern psid selinuxHookPrepareProcedure(Oid funcid);
-extern void selinuxHookRestoreProcedure(psid orig_psid);
-#define selinuxPrepareExecProcedure(funcid)					   \
+extern Query *sepgsqlProxyCreateProcedure(Query *query);
+extern void sepgsqlCreateProcedure(Datum *values, char *nulls);
+extern void sepgsqlAlterProcedure(Form_pg_proc pg_proc, AlterFunctionStmt *stmt);
+extern psid sepgsqlPrepareProcedure(Oid funcid);
+extern void sepgsqlRestoreProcedure(psid orig_psid);
+#define sepgsqlPrepareExecProcedure(funcid)					   \
 	do {													   \
-		psid __selinux_ctx_backup =							   \
-			selinuxHookPrepareProcedure(funcid);			   \
+		psid __sepgsql_ctx_backup =							   \
+			sepgsqlPrepareProcedure(funcid);				   \
 		PG_TRY()
 
-#define selinuxRestoreExecProcedure()						   \
+#define sepgsqlRestoreExecProcedure()						   \
 		PG_CATCH();											   \
 		{													   \
-			selinuxHookRestoreProcedure(__selinux_ctx_backup); \
+			sepgsqlRestoreProcedure(__sepgsql_ctx_backup);	   \
 			PG_RE_THROW();									   \
 		}													   \
 		PG_END_TRY();										   \
-		selinuxHookRestoreProcedure(__selinux_ctx_backup);	   \
+		sepgsqlRestoreProcedure(__sepgsql_ctx_backup);		   \
 	} while(0)
 
 /* COPY FROM/COPY TO statement */
-extern void selinuxHookDoCopy(Relation rel, List *attnumlist, bool is_from);
-extern void selinuxHookCopyFrom(Relation rel, Datum *values, char *nulls);
-extern Node *selinuxHookCopyFromNewContext(Relation rel);
-extern bool selinuxHookCopyTo(Relation rel, HeapTuple tuple);
+extern void sepgsqlDoCopy(Relation rel, List *attnumlist, bool is_from);
+extern void sepgsqlCopyFrom(Relation rel, Datum *values, char *nulls);
+extern Node *sepgsqlCopyFromNewContext(Relation rel);
+extern bool sepgsqlCopyTo(Relation rel, HeapTuple tuple);
 
 /* bootstrap hooks */
-extern int selinuxBootstrapInsertOneValue(int index);
-extern void selinuxBootstrapFormrdesc(Relation rel);
-extern void selinuxBootstrapPostCreateRelation(Oid relid);
+extern int sepgsqlBootstrapInsertOneValue(int index);
+extern void sepgsqlBootstrapFormrdesc(Relation rel);
+extern void sepgsqlBootstrapPostCreateRelation(Oid relid);
 
 /* SQL functions */
 extern Datum psid_in(PG_FUNCTION_ARGS);

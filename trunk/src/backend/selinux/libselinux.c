@@ -453,8 +453,8 @@ psid sepgsql_avc_relabelcon(psid ssid, psid tsid, uint16 tclass)
 	return sepgsql_compute_relabel(ssid, tsid, tclass);
 }
 
-extern psid selinuxBootstrap_context_to_psid(char *context);
-extern char *selinuxBootstrap_psid_to_context(psid psid);
+extern psid sepgsqlBootstrap_context_to_psid(char *context);
+extern char *sepgsqlBootstrap_psid_to_context(psid psid);
 
 /* sepgsql_context_to_psid() returns psid corresponding to
  * the context. This context have to be writen in the raw format.
@@ -466,7 +466,7 @@ psid sepgsql_context_to_psid(char *context)
 	psid sid;
 
 	if (IsBootstrapProcessingMode())
-		return selinuxBootstrap_context_to_psid(context);
+		return sepgsqlBootstrap_context_to_psid(context);
 
 	tcon = DirectFunctionCall1(textin, CStringGetDatum(context));
 	tuple = SearchSysCache(SELINUXCONTEXT, tcon, 0, 0, 0);
@@ -511,7 +511,7 @@ char *sepgsql_psid_to_context(psid sid)
 	bool isnull;
 
 	if (IsBootstrapProcessingMode())
-		return selinuxBootstrap_psid_to_context(sid);
+		return sepgsqlBootstrap_psid_to_context(sid);
 
 	pg_selinux = heap_open(SelinuxRelationId, AccessShareLock);
 

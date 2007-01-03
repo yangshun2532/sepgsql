@@ -172,10 +172,10 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid)
 	tupdesc->attrs[1]->attstorage = 'p';
 	tupdesc->attrs[2]->attstorage = 'p';
 
-	tupdesc = selinuxHookCreateRelation(toastOid,
-										PG_TOAST_NAMESPACE,
-										RELKIND_TOASTVALUE,
-										tupdesc);
+	tupdesc = sepgsqlCreateRelation(toastOid,
+									PG_TOAST_NAMESPACE,
+									RELKIND_TOASTVALUE,
+									tupdesc);
 	/*
 	 * Note: the toast relation is placed in the regular pg_toast namespace
 	 * even if its master relation is a temp table.  There cannot be any

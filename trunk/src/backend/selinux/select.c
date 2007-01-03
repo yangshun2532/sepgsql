@@ -25,11 +25,11 @@
 #include <selinux/flask.h>
 #include <selinux/av_permissions.h>
 
-static void selinuxCheckFromItem(Query *query, Node *n);
-static void selinuxCheckRteJoin(Query *query, JoinExpr *j);
-static void selinuxCheckRteSubquery(Query *query, RangeTblEntry *rte);
+static void sepgsqlCheckFromItem(Query *query, Node *n);
+static void sepgsqlCheckRteJoin(Query *query, JoinExpr *j);
+static void sepgsqlCheckRteSubquery(Query *query, RangeTblEntry *rte);
 
-Query *selinuxProxySelect(Query *query)
+Query *sepgsqlProxySelect(Query *query)
 {
 	ListCell *x;
 
@@ -37,25 +37,25 @@ Query *selinuxProxySelect(Query *query)
 	foreach (x, query->targetList) {
 		TargetEntry *tle = (TargetEntry *) lfirst(x);
 		Assert(IsA(tle, TargetEntry));
-		selinuxCheckExpr(query, tle->expr);
+		sepgsqlCheckExpr(query, tle->expr);
 	}
 
 	/* 2. permission checking on where clause */
-	selinuxCheckExpr(query, (Expr *)query->jointree->quals);
+	sepgsqlCheckExpr(query, (Expr *)query->jointree->quals);
 
 	/* 3. permission checking on each column */
 	foreach(x, query->jointree->fromlist)
-		selinuxCheckFromItem(query, lfirst(x));
+		sepgsqlCheckFromItem(query, lfirst(x));
 
 	return query;
 }
 
-static void selinuxCheckFromItem(Query *query, Node *n)
+static void sepgsqlCheckFromItem(Query *query, Node *n)
 {
 	if (IsA(n, JoinExpr)) {
 		JoinExpr *j = (JoinExpr *)n;
 
-		selinuxCheckRteJoin(query, j);
+		sepgsqlCheckRteJoin(query, j);
 	} else if (IsA(n, RangeTblRef)) {
 		RangeTblEntry *rte;
 		int index = ((RangeTblRef *)n)->rtindex;
@@ -66,10 +66,10 @@ static void selinuxCheckFromItem(Query *query, Node *n)
 		switch (rte->rtekind) {
 		case RTE_RELATION:
 			rte->access_vector = TABLE__SELECT;
-			selinuxCheckRteRelation(query, rte, index);
+			sepgsqlCheckRteRelation(query, rte, index);
 			break;
 		case RTE_SUBQUERY:
-			selinuxCheckRteSubquery(query, rte);
+			sepgsqlCheckRteSubquery(query, rte);
 			break;
 		case RTE_FUNCTION:
 			selnotice("RTE_FUNCTION in fromlist is not supported yet");
@@ -82,7 +82,7 @@ static void selinuxCheckFromItem(Query *query, Node *n)
 	}
 }
 
-/* selinuxCheckRteRelation() -- checks permission on Relation
+/* sepgsqlCheckRteRelation() -- checks permission on Relation
  * and append an additional condition into where clause to
  * restrict its result set.
  * @query : the Quert structure of this statement.
@@ -90,7 +90,7 @@ static void selinuxCheckFromItem(Query *query, Node *n)
  * @index : index number of RangeTblEntry
  * @perm : access vector to evaluate
  */
-static void selinuxCheckRteRelationInheritance(Oid relid, uint32 perm)
+static void sepgsqlCheckRteRelationInheritance(Oid relid, uint32 perm)
 {
 	Relation pg_inherits;
 	HeapScanDesc sdesc;
@@ -130,13 +130,13 @@ static void selinuxCheckRteRelationInheritance(Oid relid, uint32 perm)
 		selinux_audit(rc, audit, NameStr(pg_class->relname));
 		ReleaseSysCache(tuple);
 
-		selinuxCheckRteRelationInheritance(chld_relid, perm);
+		sepgsqlCheckRteRelationInheritance(chld_relid, perm);
 	}
 	heap_endscan(sdesc);
 	relation_close(pg_inherits, NoLock);
 }
 
-void selinuxCheckRteRelation(Query *query, RangeTblEntry *rte, int index)
+void sepgsqlCheckRteRelation(Query *query, RangeTblEntry *rte, int index)
 {
 	Relation rel;
 	FuncExpr *func;
@@ -166,7 +166,7 @@ void selinuxCheckRteRelation(Query *query, RangeTblEntry *rte, int index)
 								&audit);
 	selinux_audit(rc, audit, NameStr(pg_class->relname));
 	if (rte->inh)
-		selinuxCheckRteRelationInheritance(rte->relid, rte->access_vector);
+		sepgsqlCheckRteRelationInheritance(rte->relid, rte->access_vector);
 
 	/* (2) append a additional condition into where clause
 	 * to narrow down the result set
@@ -260,30 +260,30 @@ skip:
 	relation_close(rel, NoLock);
 }
 
-static void selinuxCheckRteJoin(Query *query, JoinExpr *j)
+static void sepgsqlCheckRteJoin(Query *query, JoinExpr *j)
 {
 	seldebug("join left/right checking");
-	selinuxCheckFromItem(query, j->larg);
-	selinuxCheckFromItem(query, j->rarg);
+	sepgsqlCheckFromItem(query, j->larg);
+	sepgsqlCheckFromItem(query, j->rarg);
 }
 
-static void selinuxCheckRteSubquery(Query *query, RangeTblEntry *rte)
+static void sepgsqlCheckRteSubquery(Query *query, RangeTblEntry *rte)
 {
 	seldebug("subquery checking -- recursive");
 	rte->subquery = sepgsqlProxy(rte->subquery);
 }
 
-/* -------- selinuxCheckExpr() related helper functions -------- */
-static void selinuxCheckVar(Query *query, Var *v);
+/* -------- sepgsqlCheckExpr() related helper functions -------- */
+static void checkExprVar(Query *query, Var *v);
 static void checkExprOpExpr(Query *query, OpExpr *x);
 static void checkExprFuncExpr(Query *query, FuncExpr *func);
 static void checkExprBoolExpr(Query *query, BoolExpr *be);
 static void checkExprRelabelType(Query *query, RelabelType *rt);
 
-/* selinuxCheckExpr() -- check SELECT permission for targetList
+/* sepgsqlCheckExpr() -- check SELECT permission for targetList
  * of SELECT ot returningList of UPDATE/INSERT/DELETE statement.
  */
-void selinuxCheckTargetList(Query *query, List *targetList)
+void sepgsqlCheckTargetList(Query *query, List *targetList)
 {
 	ListCell *x;
 	
@@ -293,17 +293,17 @@ void selinuxCheckTargetList(Query *query, List *targetList)
 	foreach(x, targetList) {
 		TargetEntry *tle = (TargetEntry *)lfirst(x);
 		Assert(IsA(tle, TargetEntry));
-		selinuxCheckExpr(query, tle->expr);
+		sepgsqlCheckExpr(query, tle->expr);
 	}
 }
 
-/* selinuxCheckExpr() -- check SELECT permission for each Expr.
+/* sepgsqlCheckExpr() -- check SELECT permission for each Expr.
  * It should be called on the target of SELECT, where clause
  * and RETURN expansion.
  * @query : target query
  * @expr  : target expr object
  */
-void selinuxCheckExpr(Query *query, Expr *expr)
+void sepgsqlCheckExpr(Query *query, Expr *expr)
 {
 	if (expr == NULL)
 		return;
@@ -313,7 +313,7 @@ void selinuxCheckExpr(Query *query, Expr *expr)
 		/* do nothing */
 		break;
 	case T_Var:
-		selinuxCheckVar(query, (Var *)expr);
+		checkExprVar(query, (Var *)expr);
 		break;
 	case T_FuncExpr:
 		checkExprFuncExpr(query, (FuncExpr *)expr);
@@ -333,7 +333,7 @@ void selinuxCheckExpr(Query *query, Expr *expr)
 	}
 }
 
-static void selinuxCheckVar(Query *query, Var *v)
+static void checkExprVar(Query *query, Var *v)
 {
 	RangeTblEntry *rte;
 	char *audit;
@@ -373,7 +373,7 @@ static void selinuxCheckVar(Query *query, Var *v)
 		ReleaseSysCache(tuple);
 	} else if (rte->rtekind == RTE_JOIN) {
 		Var *join_var = list_nth(rte->joinaliasvars, v->varattno - 1);
-		selinuxCheckVar(query, join_var);
+		checkExprVar(query, join_var);
 	} else {
 		seldebug("rtekind = %u is ignored", rte->rtekind);
 	}
@@ -394,7 +394,7 @@ static void checkExprFuncExpr(Query *query, FuncExpr *func)
 	seldebug("checking FuncExpr(funcid=%u)", func->funcid);
 	/* 1. check arguments */
 	foreach(l, func->args)
-		selinuxCheckExpr(query, (Expr *)lfirst(l));
+		sepgsqlCheckExpr(query, (Expr *)lfirst(l));
 
 	/* 2. obtain the context of procedure */
 	tuple = SearchSysCache(PROCOID,
@@ -427,7 +427,7 @@ static void checkExprOpExpr(Query *query, OpExpr *x)
 
 	seldebug("checking OpExpr(opno=%u)", x->opno);
 	foreach(l, x->args)
-		selinuxCheckExpr(query, (Expr *)lfirst(l));
+		sepgsqlCheckExpr(query, (Expr *)lfirst(l));
 }
 
 static void checkExprBoolExpr(Query *query, BoolExpr *be)
@@ -437,12 +437,12 @@ static void checkExprBoolExpr(Query *query, BoolExpr *be)
 	Assert(IsA(be, BoolExpr));
 
 	foreach(l, be->args)
-		selinuxCheckExpr(query, lfirst(l));
+		sepgsqlCheckExpr(query, lfirst(l));
 }
 
 static void checkExprRelabelType(Query *query, RelabelType *rt)
 {
 	Assert(IsA(rt, RelabelType));
 
-	selinuxCheckExpr(query, rt->arg);
+	sepgsqlCheckExpr(query, rt->arg);
 }

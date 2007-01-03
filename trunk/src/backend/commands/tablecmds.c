@@ -376,10 +376,10 @@ DefineRelation(CreateStmt *stmt, char relkind)
 	 * to copy inherited constraints here.)
 	 */
 	descriptor = BuildDescForRelation(schema);
-	descriptor = selinuxHookCreateRelation(InvalidOid,
-										   namespaceId,
-										   relkind,
-										   descriptor);
+	descriptor = sepgsqlCreateRelation(InvalidOid,
+									   namespaceId,
+									   relkind,
+									   descriptor);
 
 	localHasOids = interpretOidsOption(stmt->options);
 	descriptor->tdhasoid = (localHasOids || parentOidCount > 0);
@@ -2261,7 +2261,7 @@ ATRewriteCatalogs(List **wqueue)
 static void
 ATExecCmd(AlteredTableInfo *tab, Relation rel, AlterTableCmd *cmd)
 {
-	selinuxHookAlterTable(tab->relid, tab->relid, tab->oldDesc, cmd);
+	sepgsqlAlterTable(tab->relid, tab->relid, tab->oldDesc, cmd);
 
 	switch (cmd->subtype)
 	{
@@ -2363,10 +2363,10 @@ ATExecCmd(AlteredTableInfo *tab, Relation rel, AlterTableCmd *cmd)
 			break;
 #ifdef HAVE_SELINUX
 		case AT_SetTableSecurityContext:
-			selinuxHookAlterTableSetTableContext(rel, (Value *)cmd->def);
+			sepgsqlAlterTableSetTableContext(rel, (Value *)cmd->def);
 			break;
 		case AT_SetColumnSecurityContext:
-			selinuxHookAlterTableSetColumnContext(rel, cmd->name, (Value *)cmd->def);
+			sepgsqlAlterTableSetColumnContext(rel, cmd->name, (Value *)cmd->def);
 			break;
 #endif
 		default:				/* oops */
@@ -3216,7 +3216,7 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 	attribute->attisdropped = false;
 	attribute->attislocal = colDef->is_local;
 	attribute->attinhcount = colDef->inhcount;
-	selinuxHookAlterTableAddColumn(rel, attribute);
+	sepgsqlAlterTableAddColumn(rel, attribute);
 
 	ReleaseSysCache(typeTuple);
 
