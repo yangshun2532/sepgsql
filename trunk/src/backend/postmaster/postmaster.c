@@ -957,7 +957,7 @@ PostmasterMain(int argc, char *argv[])
 	StartupPID = StartupDataBase();
 
 	/* generate policy state change monitoring thread. */
-	if (selinuxInitializePostmaster())
+	if (sepgsqlInitializePostmaster())
 		ExitPostmaster(1);
 
 	status = ServerLoop();
@@ -1982,11 +1982,11 @@ pmdie(SIGNAL_ARGS)
 				signal_child(PgStatPID, SIGQUIT);
 			if (DLGetHead(BackendList))
 				SignalChildren(SIGQUIT);
-			selinuxFinalizePostmaster();
+			sepgsqlFinalizePostmaster();
 			ExitPostmaster(0);
 			break;
 	}
-	selinuxFinalizePostmaster();
+	sepgsqlFinalizePostmaster();
 
 	PG_SETMASK(&UnBlockSig);
 

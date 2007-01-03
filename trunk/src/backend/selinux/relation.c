@@ -36,8 +36,8 @@ TupleDesc selinuxHookCreateRelation(Oid relid, Oid relns, char relkind, TupleDes
 	TupleDesc new_desc;
 	AttrNumber attnum, psidnum = FirstLowInvalidHeapAttributeNumber;
 
-	gentbl_psid = sepgsql_avc_createcon(selinuxGetClientPsid(),
-										selinuxGetDatabasePsid(),
+	gentbl_psid = sepgsql_avc_createcon(sepgsqlGetClientPsid(),
+										sepgsqlGetDatabasePsid(),
 										SECCLASS_TABLE);
 
 	if (relkind != RELKIND_RELATION)
@@ -75,7 +75,7 @@ TupleDesc selinuxHookCreateRelation(Oid relid, Oid relns, char relkind, TupleDes
 
 	/* prepare system attributes' context */
 	for (attnum = 1; attnum < -FirstLowInvalidHeapAttributeNumber; attnum++) {
-		gensysatt_psid[attnum] = sepgsql_avc_createcon(selinuxGetClientPsid(),
+		gensysatt_psid[attnum] = sepgsql_avc_createcon(sepgsqlGetClientPsid(),
 													   gentbl_psid,
 													   SECCLASS_COLUMN);
 	}
@@ -87,7 +87,7 @@ found:
 		if (attnum == 0)
 			continue;
 
-		col_psid = sepgsql_avc_createcon(selinuxGetClientPsid(),
+		col_psid = sepgsql_avc_createcon(sepgsqlGetClientPsid(),
 										 gentbl_psid,
 										 SECCLASS_COLUMN);
 		if (attnum < 0) {
@@ -180,7 +180,7 @@ static void checkAlterTableRelation(Oid relid, uint32 perms)
 		selerror("cache lookup failed for relation %u", relid);
 	cls = (Form_pg_class) GETSTRUCT(tup);
 
-	rc = sepgsql_avc_permission(selinuxGetClientPsid(), cls->relselcon,
+	rc = sepgsql_avc_permission(sepgsqlGetClientPsid(), cls->relselcon,
 								SECCLASS_TABLE, perms, &audit);
 	selinux_audit(rc, audit, NameStr(cls->relname));
 	ReleaseSysCache(tup);
@@ -208,7 +208,7 @@ static void checkAlterTableColumn(Oid relid, char *colname, uint32 perms)
 				 attnum, relid);
 	attr = (Form_pg_attribute) GETSTRUCT(tup);
 
-	rc = sepgsql_avc_permission(selinuxGetClientPsid(), attr->attselcon,
+	rc = sepgsql_avc_permission(sepgsqlGetClientPsid(), attr->attselcon,
 								SECCLASS_COLUMN, perms, &audit);
 	selinux_audit(rc, audit, colname);
 	ReleaseSysCache(tup);
@@ -274,11 +274,11 @@ void selinuxHookAlterTableAddColumn(Relation rel, Form_pg_attribute pg_attr)
 	int rc;
 
 	checkAlterTableRelation(RelationGetRelid(rel), TABLE__SETATTR);
-	new_psid = sepgsql_avc_createcon(selinuxGetClientPsid(),
+	new_psid = sepgsql_avc_createcon(sepgsqlGetClientPsid(),
 									 RelationGetForm(rel)->relselcon,
 									 SECCLASS_TABLE);
 
-	rc = sepgsql_avc_permission(selinuxGetClientPsid(),
+	rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
 								new_psid,
 								SECCLASS_COLUMN,
 								COLUMN__CREATE,
@@ -305,14 +305,14 @@ void selinuxHookAlterTableSetTableContext(Relation rel, Value *context)
 													CStringGetDatum(strVal(context))));
 
 	/* 1. check table:{setattr relabelfrom} */
-	rc = sepgsql_avc_permission(selinuxGetClientPsid(), old_psid,
+	rc = sepgsql_avc_permission(sepgsqlGetClientPsid(), old_psid,
 								SECCLASS_TABLE,
 								TABLE__SETATTR | TABLE__RELABELFROM,
 								&audit);
 	selinux_audit(rc, audit, RelationGetRelationName(rel));
 
 	/* 2. check table:{relabelto} */
-	rc = sepgsql_avc_permission(selinuxGetClientPsid(), new_psid,
+	rc = sepgsql_avc_permission(sepgsqlGetClientPsid(), new_psid,
 								SECCLASS_TABLE,
 								TABLE__RELABELTO,
 								&audit);
@@ -356,7 +356,7 @@ void selinuxHookAlterTableSetColumnContext(Relation rel, char *colname, Value *c
 													CStringGetDatum(strVal(context))));
 
 	/* 1. check column:{setattr relabelfrom} */
-	rc = sepgsql_avc_permission(selinuxGetClientPsid(),
+	rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
 								old_psid,
 								SECCLASS_COLUMN,
 								COLUMN__SETATTR | COLUMN__RELABELFROM,
@@ -364,7 +364,7 @@ void selinuxHookAlterTableSetColumnContext(Relation rel, char *colname, Value *c
 	selinux_audit(rc, audit, colname);
 
 	/* 2. check column:{relabelto} */
-	rc = sepgsql_avc_permission(selinuxGetClientPsid(),
+	rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
 								new_psid,
 								SECCLASS_COLUMN,
 								COLUMN__RELABELTO,

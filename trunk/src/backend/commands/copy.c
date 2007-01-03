@@ -1773,7 +1773,7 @@ CopyFrom(CopyState cstate)
 			/* use default value if one exists */
 			Node	*defexpr;
 
-			if (selinuxAttributeIsPsid(attr[attnum - 1])) {
+			if (sepgsqlAttributeIsPsid(attr[attnum - 1])) {
 				defexpr = selinuxHookCopyFromNewContext(cstate->rel);
 			} else {
 				defexpr = build_column_default(cstate->rel, attnum);
@@ -3238,7 +3238,7 @@ CopyGetAttnums(TupleDesc tupDesc, Relation rel, List *attnamelist)
 		{
 			if (attr[i]->attisdropped)
 				continue;
-			if (selinuxAttributeIsPsid(attr[i]))
+			if (sepgsqlAttributeIsPsid(attr[i]))
 				continue;
 			attnums = lappend_int(attnums, i + 1);
 		}

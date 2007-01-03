@@ -1454,7 +1454,7 @@ expandTupleDesc(TupleDesc tupdesc, Alias *eref,
 			}
 			continue;
 		}
-		if (selinuxAttributeIsPsid(attr))
+		if (sepgsqlAttributeIsPsid(attr))
 			continue;
 
 		if (colnames)

@@ -108,15 +108,14 @@ static inline void selinux_audit(int result, char *message, char *objname) {
 #define BLOB__WRITE                               0x00000080UL
 
 /* security enhanced selinux core implementation */
-extern psid selinuxGetServerPsid(void);
-extern psid selinuxGetClientPsid(void);
-extern void selinuxSetClientPsid(psid new_ctx);
-extern psid selinuxGetDatabasePsid(void);
-extern void selinuxInitialize(void);
-extern int selinuxInitializePostmaster(void);
-extern void selinuxFinalizePostmaster(void);
-extern void selinuxHookPolicyStateChanged(void);
-extern Query *selinuxProxy(Query *query);
+extern psid sepgsqlGetServerPsid(void);
+extern psid sepgsqlGetClientPsid(void);
+extern void sepgsqlSetClientPsid(psid new_ctx);
+extern psid sepgsqlGetDatabasePsid(void);
+extern void sepgsqlInitialize(void);
+extern int sepgsqlInitializePostmaster(void);
+extern void sepgsqlFinalizePostmaster(void);
+extern Query *sepgsqlProxy(Query *query);
 
 /* SELECT statement related */
 extern Query *selinuxProxySelect(Query *query);
@@ -210,8 +209,8 @@ extern psid sepgsql_getcon(void);
 extern psid sepgsql_getpeercon(int sockfd);
 
 /* utility functions */
-extern psid selinuxComputeNewTupleContext(Oid relid, psid relselcon, uint16 *tclass);
-extern bool selinuxAttributeIsPsid(Form_pg_attribute attr);
+extern psid sepgsqlComputeImplicitContext(Oid relid, psid relselcon, uint16 *tclass);
+extern bool sepgsqlAttributeIsPsid(Form_pg_attribute attr);
 
 #else
 /* dummy enhanced selinux core implementation */

@@ -33,12 +33,12 @@ static Expr *selinuxInsertTupleContext(Expr *esid, Oid relid, psid relselcon)
 
 	/* 1st arg : security context of subject */
 	cons = makeConst(PSIDOID, sizeof(psid),
-					 ObjectIdGetDatum(selinuxGetClientPsid()),
+					 ObjectIdGetDatum(sepgsqlGetClientPsid()),
 					 false, true);
 	args = list_make1(cons);
 
 	/* 2nd arg : security context of object implicitly calculated */
-	isid = selinuxComputeNewTupleContext(relid, relselcon, &tclass);
+	isid = sepgsqlComputeImplicitContext(relid, relselcon, &tclass);
 	cons = makeConst(PSIDOID, sizeof(psid),
 					 ObjectIdGetDatum(isid),
 					 false, true);
@@ -90,7 +90,7 @@ Query *selinuxProxyInsert(Query *query)
 		selerror("cache lookup failed for pg_class %u", rte->relid);
 	
 	pg_class = (Form_pg_class) GETSTRUCT(tup);
-	rc = sepgsql_avc_permission(selinuxGetClientPsid(),
+	rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
 								pg_class->relselcon,
 								SECCLASS_TABLE,
 								TABLE__INSERT,
@@ -111,14 +111,14 @@ Query *selinuxProxyInsert(Query *query)
                      rte->relid, tle->resno);
 
 		pg_attr = (Form_pg_attribute) GETSTRUCT(tup);
-		rc = sepgsql_avc_permission(selinuxGetClientPsid(),
+		rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
 									pg_attr->attselcon,
 									SECCLASS_COLUMN,
 									COLUMN__INSERT,
 									&audit);
 		selinux_audit(rc, audit, NameStr(pg_attr->attname));
 
-		if (selinuxAttributeIsPsid(pg_attr)) {
+		if (sepgsqlAttributeIsPsid(pg_attr)) {
 			/* check relabelfrom/relabelto condition */
 			tle->expr = selinuxInsertTupleContext(tle->expr, rte->relid, relselcon);
 			security_context_checked = true;
@@ -133,7 +133,7 @@ Query *selinuxProxyInsert(Query *query)
 		Relation rel = relation_open(rte->relid, AccessShareLock);
 		for (index=0; index < RelationGetNumberOfAttributes(rel); index++) {
 			pg_attr = RelationGetDescr(rel)->attrs[index];
-			if (selinuxAttributeIsPsid(pg_attr)) {
+			if (sepgsqlAttributeIsPsid(pg_attr)) {
 				Expr *e = selinuxInsertTupleContext(NULL, rte->relid, relselcon);
 				tle = makeTargetEntry(e, index + 1,
 									  pstrdup(NameStr(pg_attr->attname)),

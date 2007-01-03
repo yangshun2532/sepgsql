@@ -1370,7 +1370,7 @@ transformInhRelation(ParseState *pstate, CreateStmtContext *cxt,
 
 		/* Ignore security context column in the parent,
 		   because it's automatically appended later */
-		if (selinuxAttributeIsPsid(attribute))
+		if (sepgsqlAttributeIsPsid(attribute))
 			continue;
 
 		/*

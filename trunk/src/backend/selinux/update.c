@@ -42,7 +42,7 @@ static void checkUpdateTarget(Query *query, RangeTblEntry *rte, int rindex, Targ
 	rte->access_vector |= TABLE__UPDATE;
 
 	/* 2. checking column:update */
-	rc = sepgsql_avc_permission(selinuxGetClientPsid(),
+	rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
 								attr->attselcon,
 								SECCLASS_COLUMN,
 								COLUMN__UPDATE,
@@ -53,7 +53,7 @@ static void checkUpdateTarget(Query *query, RangeTblEntry *rte, int rindex, Targ
 	selinuxCheckExpr(query, tle->expr);
 
 	/* 3. checking relabelfrom/relabelto, if necessary */
-	if (selinuxAttributeIsPsid(attr)) {
+	if (sepgsqlAttributeIsPsid(attr)) {
 		FuncExpr *func;
 		List *args;
 		uint16 tclass;
@@ -81,7 +81,7 @@ static void checkUpdateTarget(Query *query, RangeTblEntry *rte, int rindex, Targ
 
 		/* 3.1. 1st arg : security context of sujbect */
 		args = list_make1(makeConst(PSIDOID, sizeof(psid),
-									ObjectIdGetDatum(selinuxGetClientPsid()),
+									ObjectIdGetDatum(sepgsqlGetClientPsid()),
 									false, true));
 		
 		/* 3.2. 2nd arg : old security context */

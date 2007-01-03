@@ -526,7 +526,7 @@ InitPostgres(const char *dbname, const char *username)
 		pgstat_bestart();
 
 	/* initialize security enhanced PostgreSQL facilities */
-	selinuxInitialize();
+	sepgsqlInitialize();
 
 	/* close the transaction we started above */
 	if (!bootstrap)

@@ -13,8 +13,8 @@
 
 void selinuxHookCreateDatabase(Datum *values, char *nulls)
 {
-	psid db_psid = sepgsql_avc_createcon(selinuxGetClientPsid(),
-										 selinuxGetServerPsid(),
+	psid db_psid = sepgsql_avc_createcon(sepgsqlGetClientPsid(),
+										 sepgsqlGetServerPsid(),
 										 SECCLASS_DATABASE);
 	values[Anum_pg_database_datselcon - 1] = ObjectIdGetDatum(db_psid);
 	nulls[Anum_pg_database_datselcon - 1] = ' ';

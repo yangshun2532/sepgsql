@@ -21,7 +21,7 @@
 
 void selinuxHookDoCopy(Relation rel, List *attnumlist, bool is_from)
 {
-	psid tsid, ssid = selinuxGetClientPsid();
+	psid tsid, ssid = sepgsqlGetClientPsid();
 	uint32 perm;
 	char *audit;
 	int rc;
@@ -55,34 +55,34 @@ void selinuxHookCopyFrom(Relation rel, Datum *values, char *nulls)
 	char *audit;
 	int i, rc;
 
-	isid = selinuxComputeNewTupleContext(RelationGetRelid(rel),
+	isid = sepgsqlComputeImplicitContext(RelationGetRelid(rel),
 										 RelationGetForm(rel)->relselcon,
 										 NULL);
 
 	for (i=0; i < RelationGetNumberOfAttributes(rel); i++) {
 		Form_pg_attribute attr = RelationGetDescr(rel)->attrs[i];
-		if (!selinuxAttributeIsPsid(attr))
+		if (!sepgsqlAttributeIsPsid(attr))
 			continue;
 		if (nulls[i] == 'n')
 			selerror("NULL was set at 'security_context'");
 
 		esid = DatumGetObjectId(values[i]);
 		if (isid == esid) {
-			rc = sepgsql_avc_permission(selinuxGetClientPsid(),
+			rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
 										DatumGetObjectId(isid),
 										SECCLASS_TUPLE,
 										TUPLE__INSERT,
 										&audit);
 			selinux_audit(rc, audit, NULL);
 		} else {
-			rc = sepgsql_avc_permission(selinuxGetClientPsid(),
+			rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
 										DatumGetObjectId(isid),
 										SECCLASS_TUPLE,
 										TUPLE__INSERT | TUPLE__RELABELFROM,
 										&audit);
 			selinux_audit(rc, audit, NULL);
 
-			rc = sepgsql_avc_permission(selinuxGetClientPsid(),
+			rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
 										DatumGetObjectId(esid),
 										SECCLASS_TUPLE,
 										TUPLE__RELABELTO,
@@ -96,7 +96,7 @@ Node *selinuxHookCopyFromNewContext(Relation rel)
 {
 	psid new_sid;
 
-	new_sid = selinuxComputeNewTupleContext(RelationGetRelid(rel),
+	new_sid = sepgsqlComputeImplicitContext(RelationGetRelid(rel),
 											RelationGetForm(rel)->relselcon,
 											NULL);
 	return (Node *)makeConst(PSIDOID, sizeof(psid),
@@ -116,7 +116,7 @@ bool selinuxHookCopyTo(Relation rel, HeapTuple tuple)
 	int i, rc;
 
 	for (i=0; i < RelationGetNumberOfAttributes(rel); i++) {
-		if (!selinuxAttributeIsPsid(tupDesc->attrs[i]))
+		if (!sepgsqlAttributeIsPsid(tupDesc->attrs[i]))
 			continue;
 
 		tup_psid = heap_getattr(tuple, i+1, tupDesc, &isnull);
@@ -158,7 +158,7 @@ bool selinuxHookCopyTo(Relation rel, HeapTuple tuple)
 			tclass = SECCLASS_TUPLE;
 			perm = TUPLE__SELECT;
 		}
-		rc = sepgsql_avc_permission(selinuxGetClientPsid(),
+		rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
 									DatumGetObjectId(tup_psid),
 									tclass, perm, NULL);
 		if (rc != 0)
