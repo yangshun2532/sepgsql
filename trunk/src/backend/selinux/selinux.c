@@ -21,6 +21,7 @@
 #include <unistd.h>
 #include <signal.h>
 #include <sched.h>
+#include <sys/wait.h>
 #include <linux/netlink.h>
 #include <linux/selinux_netlink.h>
 #include <selinux/flask.h>
@@ -56,32 +57,32 @@ void selinuxInitialize()
 	if (selinuxNlSockFd >= 0)
 		close(selinuxNlSockFd);
 
-	libselinux_initialize();
+	sepgsql_init_libselinux();
 
 	if (IsBootstrapProcessingMode()) {
-		selinuxServerPsid = libselinux_getcon();
-		selinuxClientPsid = libselinux_getcon();
-		selinuxDatabasePsid = libselinux_avc_createcon(selinuxClientPsid,
-													   selinuxServerPsid,
-													   SECCLASS_DATABASE);
+		selinuxServerPsid = sepgsql_getcon();
+		selinuxClientPsid = sepgsql_getcon();
+		selinuxDatabasePsid = sepgsql_avc_createcon(selinuxClientPsid,
+													selinuxServerPsid,
+													SECCLASS_DATABASE);
 		return;
 	}
 
 	/* obtain security context of server process */
-	selinuxServerPsid = libselinux_getcon();
+	selinuxServerPsid = sepgsql_getcon();
 
 	/* obtain security context of client process */
 	if (MyProcPort != NULL) {
-		selinuxClientPsid = libselinux_getpeercon(MyProcPort->sock);
+		selinuxClientPsid = sepgsql_getpeercon(MyProcPort->sock);
 	} else {
-		selinuxClientPsid = libselinux_getcon();
+		selinuxClientPsid = sepgsql_getcon();
 	}
 
 	/* obtain security context of database */
 	if (MyDatabaseId == TemplateDbOid) {
-		selinuxDatabasePsid = libselinux_avc_createcon(selinuxClientPsid,
-													   selinuxServerPsid,
-													   SECCLASS_DATABASE);
+		selinuxDatabasePsid = sepgsql_avc_createcon(selinuxClientPsid,
+													selinuxServerPsid,
+													SECCLASS_DATABASE);
 	} else {
 		HeapTuple tuple;
 		Form_pg_database pg_database;
@@ -103,7 +104,7 @@ void selinuxInitialize()
 static void selinuxMonitoringPolicyState_SIGHUP(int signum)
 {
 	selnotice("selinux userspace AVC reset, by receiving SIGHUP");
-	libselinux_avc_reset();
+	sepgsql_avc_reset();
 }
 
 static int selinuxMonitoringPolicyState()
@@ -191,13 +192,13 @@ static int selinuxMonitoringPolicyState()
 		case SELNL_MSG_SETENFORCE: {
 			struct selnl_msg_setenforce *msg = NLMSG_DATA(nlh);
 			selnotice("selinux netlink: received setenforce notice (enforcing=%d)", msg->val);
-			libselinux_avc_reset();
+			sepgsql_avc_reset();
 			break;
 		}
 		case SELNL_MSG_POLICYLOAD: {
 			struct selnl_msg_policyload *msg = NLMSG_DATA(nlh);
 			selnotice("selinux netlink: received policyload notice (seqno=%d)", msg->seqno);
-			libselinux_avc_reset();
+			sepgsql_avc_reset();
 			break;
 		}
 		default:
@@ -212,7 +213,7 @@ static pid_t MonitoringPolicyStatePid = -1;
 
 int selinuxInitializePostmaster()
 {
-	libselinux_initialize();
+	sepgsql_init_libselinux();
 
 	MonitoringPolicyStatePid = fork();
 	if (MonitoringPolicyStatePid == 0) {
@@ -226,7 +227,7 @@ int selinuxInitializePostmaster()
 
 void selinuxFinalizePostmaster()
 {
-	int rc, status;
+	int status;
 
 	if (MonitoringPolicyStatePid > 0) {
 		if (kill(MonitoringPolicyStatePid, SIGTERM) < 0) {
@@ -240,7 +241,7 @@ void selinuxFinalizePostmaster()
 
 void selinuxHookPolicyStateChanged(void)
 {
-	libselinux_avc_reset();
+	sepgsql_avc_reset();
 }
 
 Query *selinuxProxy(Query *query)
@@ -329,7 +330,7 @@ psid selinuxComputeNewTupleContext(Oid relid, psid relselcon, uint16 *p_tclass)
 	if (p_tclass)
 		*p_tclass = tclass;
 
-	return libselinux_avc_createcon(selinuxGetClientPsid(), tsid, tclass);
+	return sepgsql_avc_createcon(selinuxGetClientPsid(), tsid, tclass);
 }
 
 bool selinuxAttributeIsPsid(Form_pg_attribute attr)
@@ -392,7 +393,7 @@ selinux_permission(PG_FUNCTION_ARGS)
 	int rc;
 	char *audit;
 
-	rc = libselinux_avc_permission(ssid, tsid, tclass, perms, &audit);
+	rc = sepgsql_avc_permission(ssid, tsid, tclass, perms, &audit);
 	if (audit)
 		selnotice(audit);
 	PG_RETURN_BOOL(rc == 0);
@@ -407,7 +408,7 @@ selinux_permission_noaudit(PG_FUNCTION_ARGS)
 	uint32 perms = PG_GETARG_UINT32(3);
 	int rc;
 
-	rc = libselinux_avc_permission(ssid, tsid, tclass, perms, NULL);
+	rc = sepgsql_avc_permission(ssid, tsid, tclass, perms, NULL);
 	PG_RETURN_BOOL(rc == 0);
 }
 
@@ -440,12 +441,12 @@ selinux_check_context_insert(PG_FUNCTION_ARGS)
 			perms |= COMMON_DATABASE__RELABELFROM;
 	}
 
-	rc = libselinux_avc_permission(ssid, isid, tclass, perms, &audit);
+	rc = sepgsql_avc_permission(ssid, isid, tclass, perms, &audit);
 	selinux_audit(rc, audit, NULL);
 
 	if (isid != esid) {
 		perms = (tclass == SECCLASS_TUPLE) ? TUPLE__RELABELTO : COMMON_DATABASE__RELABELTO;
-		rc = libselinux_avc_permission(ssid, esid, tclass, perms, &audit);
+		rc = sepgsql_avc_permission(ssid, esid, tclass, perms, &audit);
 		selinux_audit(rc, audit, NULL);
 	}
 	PG_RETURN_OID(esid);
@@ -480,12 +481,12 @@ selinux_check_context_update(PG_FUNCTION_ARGS)
 			perms |= COMMON_DATABASE__RELABELFROM;
 	}
 	
-	rc = libselinux_avc_permission(ssid, osid, tclass, perms, &audit);
+	rc = sepgsql_avc_permission(ssid, osid, tclass, perms, &audit);
 	selinux_audit(rc, audit, NULL);
 	
 	if (osid != nsid) {
 		perms = (tclass == SECCLASS_TUPLE) ? TUPLE__RELABELTO : COMMON_DATABASE__RELABELTO;
-		rc = libselinux_avc_permission(ssid, nsid, tclass, perms, &audit);
+		rc = sepgsql_avc_permission(ssid, nsid, tclass, perms, &audit);
 		selinux_audit(rc, audit, NULL);
 	}
 	PG_RETURN_OID(nsid);

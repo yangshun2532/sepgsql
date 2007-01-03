@@ -42,11 +42,11 @@ static void checkUpdateTarget(Query *query, RangeTblEntry *rte, int rindex, Targ
 	rte->access_vector |= TABLE__UPDATE;
 
 	/* 2. checking column:update */
-	rc = libselinux_avc_permission(selinuxGetClientPsid(),
-								   attr->attselcon,
-								   SECCLASS_COLUMN,
-								   COLUMN__UPDATE,
-								   &audit);
+	rc = sepgsql_avc_permission(selinuxGetClientPsid(),
+								attr->attselcon,
+								SECCLASS_COLUMN,
+								COLUMN__UPDATE,
+								&audit);
 	selinux_audit(rc, audit, NameStr(attr->attname));
 
 	/* 2. checking column:select on expr */

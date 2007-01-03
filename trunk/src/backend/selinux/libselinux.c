@@ -145,34 +145,34 @@ static struct {
 	struct avc_datum entry[AVC_DATUM_CACHE_MAXNODES];
 } *avc_shmem = NULL;
 
-Size libselinux_shmem_size()
+Size sepgsql_shmem_size()
 {
 	return sizeof(*avc_shmem);
 }
 
-void libselinux_initialize()
+void sepgsql_init_libselinux()
 {
 	bool found_avc;
 
 	avc_shmem = ShmemInitStruct("SELinux userspace AVC",
-								libselinux_shmem_size(), &found_avc);
+								sepgsql_shmem_size(), &found_avc);
 	if (!found_avc) {
 		avc_shmem->lock = LWLockAssign();
-		libselinux_avc_reset();
+		sepgsql_avc_reset();
 		seldebug("AVC Shmem segment created");
 	} else {
 		seldebug("AVC Shmem segment attached");
 	}
 }
 
-static void libselinux_compute_av(psid ssid, psid tsid, uint16 tclass, struct avc_datum *avd)
+static void sepgsql_compute_av(psid ssid, psid tsid, uint16 tclass, struct avc_datum *avd)
 {
 	/* we have to hold LW_EXCLUSIVE lock */
 	security_context_t scon, tcon;
 	struct av_decision x;
 	
-	scon = libselinux_psid_to_context(ssid);
-	tcon = libselinux_psid_to_context(tsid);
+	scon = sepgsql_psid_to_context(ssid);
+	tcon = sepgsql_psid_to_context(tsid);
 
 	if (security_compute_av_raw(scon, tcon, tclass, 0, &x))
 		selerror("could not obtain access vector decision "
@@ -186,20 +186,20 @@ static void libselinux_compute_av(psid ssid, psid tsid, uint16 tclass, struct av
 	avd->auditdeny = x.auditdeny;
 }
 
-static void libselinux_compute_create(psid ssid, psid tsid, uint16 tclass, struct avc_datum *avd)
+static void sepgsql_compute_create(psid ssid, psid tsid, uint16 tclass, struct avc_datum *avd)
 {
 	/* we have to hold LW_EXCLUSIVE lock */
 	security_context_t scon, tcon, ncon;
 
-	scon = libselinux_psid_to_context(ssid);
-	tcon = libselinux_psid_to_context(tsid);
+	scon = sepgsql_psid_to_context(ssid);
+	tcon = sepgsql_psid_to_context(tsid);
 
 	if (security_compute_create_raw(scon, tcon, tclass, &ncon) != 0)
 		selerror("could not obtain a newly created security context "
 				 "scon='%s' tcon='%s' tclass=%u", scon, tcon, tclass);
 	PG_TRY();
 	{
-		avd->create = libselinux_context_to_psid(ncon);
+		avd->create = sepgsql_context_to_psid(ncon);
 	}
 	PG_CATCH();
 	{
@@ -213,13 +213,13 @@ static void libselinux_compute_create(psid ssid, psid tsid, uint16 tclass, struc
 	freecon(ncon);
 }
 
-static psid libselinux_compute_relabel(psid ssid, psid tsid, uint16 tclass)
+static psid sepgsql_compute_relabel(psid ssid, psid tsid, uint16 tclass)
 {
 	security_context_t scon, tcon, ncon;
 	psid nsid;
 
-	scon = libselinux_psid_to_context(ssid);
-	tcon = libselinux_psid_to_context(tsid);
+	scon = sepgsql_psid_to_context(ssid);
+	tcon = sepgsql_psid_to_context(tsid);
 
 	if (security_compute_relabel_raw(scon, tcon, tclass, &ncon) != 0)
 		selerror("could not obtain a newly relabeled security context "
@@ -227,7 +227,7 @@ static psid libselinux_compute_relabel(psid ssid, psid tsid, uint16 tclass)
 
 	PG_TRY();
 	{
-		nsid = libselinux_context_to_psid(ncon);
+		nsid = sepgsql_context_to_psid(ncon);
 	}
 	PG_CATCH();
 	{
@@ -243,7 +243,7 @@ static psid libselinux_compute_relabel(psid ssid, psid tsid, uint16 tclass)
 	return nsid;
 }
 
-void libselinux_avc_reset()
+void sepgsql_avc_reset()
 {
 	int i, enforcing;
 
@@ -267,7 +267,7 @@ void libselinux_avc_reset()
 	LWLockRelease(avc_shmem->lock);
 }
 
-static char *libselinux_avc_audit(uint32 perms, struct avc_datum *avd)
+static char *sepgsql_avc_audit(uint32 perms, struct avc_datum *avd)
 {
 	/* we have to hold LW_SHARED lock at least */
 	uint32 denied, audited, mask;
@@ -290,7 +290,7 @@ static char *libselinux_avc_audit(uint32 perms, struct avc_datum *avd)
 	}
 	len += snprintf(buffer + len, sizeof(buffer) - len, " }");
 
-	raw_context = libselinux_psid_to_context(avd->ssid);
+	raw_context = sepgsql_psid_to_context(avd->ssid);
 	if (!selinux_raw_to_trans_context(raw_context, &context)) {
 		len += snprintf(buffer + len, sizeof(buffer) - len, " scontext=%s", context);
 		freecon(context);
@@ -299,7 +299,7 @@ static char *libselinux_avc_audit(uint32 perms, struct avc_datum *avd)
 	}
 	pfree(raw_context);
 
-	raw_context = libselinux_psid_to_context(avd->tsid);
+	raw_context = sepgsql_psid_to_context(avd->tsid);
 	if (!selinux_raw_to_trans_context(raw_context, &context)) {
 		len += snprintf(buffer + len, sizeof(buffer) - len, " tcontext=%s", context);
 		freecon(context);
@@ -314,17 +314,17 @@ static char *libselinux_avc_audit(uint32 perms, struct avc_datum *avd)
 	return pstrdup(buffer);
 }
 
-static inline int libselinux_avc_hash(psid ssid, psid tsid, uint16 tclass)
+static inline int sepgsql_avc_hash(psid ssid, psid tsid, uint16 tclass)
 {
 	return ((uint32)ssid ^ ((uint32)tsid << 2) ^ tclass) % AVC_DATUM_CACHE_SLOTS;
 }
 
-static struct avc_datum *libselinux_avc_lookup(psid ssid, psid tsid, uint16 tclass, uint32 perms)
+static struct avc_datum *sepgsql_avc_lookup(psid ssid, psid tsid, uint16 tclass, uint32 perms)
 {
 	/* we have to hold LW_SHARED lock at least */
 	struct avc_datum *avd;
 	SHMEM_OFFSET curr;
-	int hashkey = libselinux_avc_hash(ssid, tsid, tclass);
+	int hashkey = sepgsql_avc_hash(ssid, tsid, tclass);
 
 	for (curr = avc_shmem->slot[hashkey];
 		 SHM_OFFSET_VALID(curr);
@@ -337,7 +337,7 @@ static struct avc_datum *libselinux_avc_lookup(psid ssid, psid tsid, uint16 tcla
 	return NULL;
 }
 
-static void libselinux_avc_reclaim() {
+static void sepgsql_avc_reclaim() {
 	/* we have to hold LW_EXCLUSIVE lock */
 	SHMEM_OFFSET *prev, next;
 	struct avc_datum *avd;
@@ -361,18 +361,18 @@ static void libselinux_avc_reclaim() {
 	}
 }
 
-static void libselinux_avc_insert(struct avc_datum *tmp)
+static void sepgsql_avc_insert(struct avc_datum *tmp)
 {
 	/* we have to hold LW_EXCLUSIVE lock */
 	struct avc_datum *avd;
 	int hashkey;
 
-	avd = libselinux_avc_lookup(tmp->ssid, tmp->tsid, tmp->tclass, tmp->decided);
+	avd = sepgsql_avc_lookup(tmp->ssid, tmp->tsid, tmp->tclass, tmp->decided);
 	if (avd)
 		return;
 
 	if (!SHM_OFFSET_VALID(avc_shmem->freelist))
-		libselinux_avc_reclaim();
+		sepgsql_avc_reclaim();
 	Assert(SHM_OFFSET_VALID(avc_shmem->freelist));
 
 	avd = (void *)MAKE_PTR(avc_shmem->freelist);
@@ -381,31 +381,31 @@ static void libselinux_avc_insert(struct avc_datum *tmp)
 	memcpy(avd, tmp, sizeof(struct avc_datum));
 	avd->is_hot = true;
 
-	hashkey = libselinux_avc_hash(avd->ssid, avd->tsid, avd->tclass);
+	hashkey = sepgsql_avc_hash(avd->ssid, avd->tsid, avd->tclass);
 	avd->next = avc_shmem->slot[hashkey];
 	avc_shmem->slot[hashkey] = MAKE_OFFSET(avd);
 
 	return;
 }
 
-int libselinux_avc_permission(psid ssid, psid tsid, uint16 tclass, uint32 perms, char **audit)
+int sepgsql_avc_permission(psid ssid, psid tsid, uint16 tclass, uint32 perms, char **audit)
 {
 	struct avc_datum *avd, lavd;
 	uint32 denied;
 	int rc = 0;
 
 	LWLockAcquire(avc_shmem->lock, LW_SHARED);
-	avd = libselinux_avc_lookup(ssid, tsid, tclass, perms);
+	avd = sepgsql_avc_lookup(ssid, tsid, tclass, perms);
 	if (!avd) {
 		LWLockRelease(avc_shmem->lock);
 
 		/* compute a new avc_datum */
 		memset(&lavd, 0, sizeof(struct avc_datum));
-		libselinux_compute_av(ssid, tsid, tclass, &lavd);
-		libselinux_compute_create(ssid, tsid, tclass, &lavd);
+		sepgsql_compute_av(ssid, tsid, tclass, &lavd);
+		sepgsql_compute_create(ssid, tsid, tclass, &lavd);
 
 		LWLockAcquire(avc_shmem->lock, LW_EXCLUSIVE);
-		libselinux_avc_insert(&lavd);
+		sepgsql_avc_insert(&lavd);
 	} else {
 		memcpy(&lavd, avd, sizeof(struct avc_datum));
 	}
@@ -416,28 +416,28 @@ int libselinux_avc_permission(psid ssid, psid tsid, uint16 tclass, uint32 perms,
 	}
 	LWLockRelease(avc_shmem->lock);
 	if (audit)
-		*audit = libselinux_avc_audit(perms, &lavd);
+		*audit = sepgsql_avc_audit(perms, &lavd);
 
 	return rc;
 }
 
-psid libselinux_avc_createcon(psid ssid, psid tsid, uint16 tclass)
+psid sepgsql_avc_createcon(psid ssid, psid tsid, uint16 tclass)
 {
 	struct avc_datum *avd, lavd;
 	psid nsid;
 
 	LWLockAcquire(avc_shmem->lock, LW_SHARED);
-	avd = libselinux_avc_lookup(ssid, tsid, tclass, 0);
+	avd = sepgsql_avc_lookup(ssid, tsid, tclass, 0);
 	if (!avd) {
 		LWLockRelease(avc_shmem->lock);
 
 		/* compute a new avc_datum */
 		memset(&lavd, 0, sizeof(struct avc_datum));
-		libselinux_compute_av(ssid, tsid, tclass, &lavd);
-		libselinux_compute_create(ssid, tsid, tclass, &lavd);
+		sepgsql_compute_av(ssid, tsid, tclass, &lavd);
+		sepgsql_compute_create(ssid, tsid, tclass, &lavd);
 
 		LWLockAcquire(avc_shmem->lock, LW_EXCLUSIVE);
-		libselinux_avc_insert(&lavd);
+		sepgsql_avc_insert(&lavd);
 		nsid = lavd.create;
 	} else {
 		nsid = avd->create;
@@ -447,19 +447,19 @@ psid libselinux_avc_createcon(psid ssid, psid tsid, uint16 tclass)
 	return nsid;
 }
 
-psid libselinux_avc_relabelcon(psid ssid, psid tsid, uint16 tclass)
+psid sepgsql_avc_relabelcon(psid ssid, psid tsid, uint16 tclass)
 {
 	/* currently no avc support on relabeling */
-	return libselinux_compute_relabel(ssid, tsid, tclass);
+	return sepgsql_compute_relabel(ssid, tsid, tclass);
 }
 
 extern psid selinuxBootstrap_context_to_psid(char *context);
 extern char *selinuxBootstrap_psid_to_context(psid psid);
 
-/* libselinux_context_to_psid() returns psid corresponding to
+/* sepgsql_context_to_psid() returns psid corresponding to
  * the context. This context have to be writen in the raw format.
  */
-psid libselinux_context_to_psid(char *context)
+psid sepgsql_context_to_psid(char *context)
 {
 	HeapTuple tuple;
 	Datum tcon;
@@ -480,7 +480,7 @@ psid libselinux_context_to_psid(char *context)
 		Datum values[1] = { tcon };
 		char nulls[1] = {' '};
 
-		if (libselinux_check_context(context) != true)
+		if (sepgsql_check_context(context) != true)
 			selerror("'%s' is not valid security context", context);
 
 		pg_selinux = heap_open(SelinuxRelationId, RowExclusiveLock);
@@ -499,10 +499,10 @@ psid libselinux_context_to_psid(char *context)
 	return sid;
 }
 
-/* libselinux_psid_to_context() returns the security context
+/* sepgsql_psid_to_context() returns the security context
  * in raw format corresponding to the psid.
  */
-char *libselinux_psid_to_context(psid sid)
+char *sepgsql_psid_to_context(psid sid)
 {
 	Relation pg_selinux;
 	HeapTuple tuple;
@@ -529,12 +529,12 @@ char *libselinux_psid_to_context(psid sid)
 	return context;
 }
 
-bool libselinux_check_context(char *context)
+bool sepgsql_check_context(char *context)
 {
 	return (security_check_context_raw(context) == 0 ? true : false);
 }
 
-psid libselinux_getcon()
+psid sepgsql_getcon()
 {
 	security_context_t context;
 	psid ssid;
@@ -544,7 +544,7 @@ psid libselinux_getcon()
 
 	PG_TRY();
 	{
-		ssid = libselinux_context_to_psid(context);
+		ssid = sepgsql_context_to_psid(context);
 	}
 	PG_CATCH();
 	{
@@ -556,7 +556,7 @@ psid libselinux_getcon()
 	return ssid;
 }
 
-psid libselinux_getpeercon(int sockfd)
+psid sepgsql_getpeercon(int sockfd)
 {
 	security_context_t context;
 	psid ssid;
@@ -566,7 +566,7 @@ psid libselinux_getpeercon(int sockfd)
 
 	PG_TRY();
 	{
-		ssid = libselinux_context_to_psid(context);
+		ssid = sepgsql_context_to_psid(context);
 	}
 	PG_CATCH();
 	{

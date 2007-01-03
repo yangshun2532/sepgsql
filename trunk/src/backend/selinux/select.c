@@ -123,10 +123,10 @@ static void selinuxCheckRteRelationInheritance(Oid relid, uint32 perm)
 			selerror("cache lookup failed for parent relation (oid=%u)", chld_relid);
 		pg_class = ((Form_pg_class) GETSTRUCT(tuple));
 
-		rc = libselinux_avc_permission(selinuxGetClientPsid(),
-									   pg_class->relselcon,
-									   SECCLASS_TABLE,
-									   perm, &audit);
+		rc = sepgsql_avc_permission(selinuxGetClientPsid(),
+									pg_class->relselcon,
+									SECCLASS_TABLE,
+									perm, &audit);
 		selinux_audit(rc, audit, NameStr(pg_class->relname));
 		ReleaseSysCache(tuple);
 
@@ -159,11 +159,11 @@ void selinuxCheckRteRelation(Query *query, RangeTblEntry *rte, int index)
 	seldebug("avc_permission(%u, %u, %d, %#08x)",
 			 selinuxGetClientPsid(), pg_class->relselcon,
 			 SECCLASS_TABLE, rte->access_vector);
-	rc = libselinux_avc_permission(selinuxGetClientPsid(),
-								   pg_class->relselcon,
-								   SECCLASS_TABLE,
-								   rte->access_vector,
-								   &audit);
+	rc = sepgsql_avc_permission(selinuxGetClientPsid(),
+								pg_class->relselcon,
+								SECCLASS_TABLE,
+								rte->access_vector,
+								&audit);
 	selinux_audit(rc, audit, NameStr(pg_class->relname));
 	if (rte->inh)
 		selinuxCheckRteRelationInheritance(rte->relid, rte->access_vector);
@@ -253,7 +253,7 @@ void selinuxCheckRteRelation(Query *query, RangeTblEntry *rte, int index)
 		query->jointree->quals = (Node *)func;
 	}
 	seldebug("append selinux_permission('%s', '%s.%s', %u, 0x%08x)",
-			 libselinux_psid_to_context(selinuxGetClientPsid()),
+			 sepgsql_psid_to_context(selinuxGetClientPsid()),
 			 NameStr(pg_class->relname), NameStr(pg_attr->attname),
 			 cls, perm);
 skip:
@@ -364,11 +364,11 @@ static void selinuxCheckVar(Query *query, Var *v)
 
 		attr = (Form_pg_attribute) GETSTRUCT(tuple);
 		seldebug("checking column:select on '%s'", NameStr(attr->attname));
-		rc = libselinux_avc_permission(selinuxGetClientPsid(),
-									   attr->attselcon,
-									   SECCLASS_COLUMN,
-									   COLUMN__SELECT,
-									   &audit);
+		rc = sepgsql_avc_permission(selinuxGetClientPsid(),
+									attr->attselcon,
+									SECCLASS_COLUMN,
+									COLUMN__SELECT,
+									&audit);
 		selinux_audit(rc, audit, NameStr(attr->attname));
 		ReleaseSysCache(tuple);
 	} else if (rte->rtekind == RTE_JOIN) {
@@ -405,18 +405,18 @@ static void checkExprFuncExpr(Query *query, FuncExpr *func)
 	pg_proc = (Form_pg_proc) GETSTRUCT(tuple);
 
 	/* 2. compute the context to execute procedure */
-	new_psid = libselinux_avc_createcon(selinuxGetClientPsid(),
-										pg_proc->proselcon,
-										SECCLASS_PROCEDURE);
+	new_psid = sepgsql_avc_createcon(selinuxGetClientPsid(),
+									 pg_proc->proselcon,
+									 SECCLASS_PROCEDURE);
 
 	/* 3. check permission procedure:{execute entrypoint} */
 	perms = PROCEDURE__EXECUTE;
 	if (selinuxGetClientPsid() != new_psid)
 		perms |= PROCEDURE__ENTRYPOINT;
-	rc = libselinux_avc_permission(selinuxGetClientPsid(),
-								   pg_proc->proselcon,
-								   SECCLASS_PROCEDURE,
-								   perms, &audit);
+	rc = sepgsql_avc_permission(selinuxGetClientPsid(),
+								pg_proc->proselcon,
+								SECCLASS_PROCEDURE,
+								perms, &audit);
 	selinux_audit(rc, audit, NameStr(pg_proc->proname));
 	ReleaseSysCache(tuple);
 }

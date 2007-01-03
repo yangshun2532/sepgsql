@@ -34,7 +34,7 @@ void selinuxHookDoCopy(Relation rel, List *attnumlist, bool is_from)
 	/* 1. check table:select/insert permission */
 	perm = (is_from == true) ? TABLE__INSERT : TABLE__SELECT;
 	tsid = RelationGetForm(rel)->relselcon;
-	rc = libselinux_avc_permission(ssid, tsid, SECCLASS_TABLE, perm, &audit);
+	rc = sepgsql_avc_permission(ssid, tsid, SECCLASS_TABLE, perm, &audit);
 	selinux_audit(rc, audit, NameStr(RelationGetForm(rel)->relname));
 
 	/* 2. checl column:select/insert for each column */
@@ -44,7 +44,7 @@ void selinuxHookDoCopy(Relation rel, List *attnumlist, bool is_from)
 		Form_pg_attribute attr = RelationGetDescr(rel)->attrs[attnum];
 
 		tsid = attr->attselcon;
-		rc = libselinux_avc_permission(ssid, tsid, SECCLASS_COLUMN, perm, &audit);
+		rc = sepgsql_avc_permission(ssid, tsid, SECCLASS_COLUMN, perm, &audit);
 		selinux_audit(rc, audit, NameStr(attr->attname));
 	}
 }
@@ -68,25 +68,25 @@ void selinuxHookCopyFrom(Relation rel, Datum *values, char *nulls)
 
 		esid = DatumGetObjectId(values[i]);
 		if (isid == esid) {
-			rc = libselinux_avc_permission(selinuxGetClientPsid(),
-										   DatumGetObjectId(isid),
-										   SECCLASS_TUPLE,
-										   TUPLE__INSERT,
-										   &audit);
+			rc = sepgsql_avc_permission(selinuxGetClientPsid(),
+										DatumGetObjectId(isid),
+										SECCLASS_TUPLE,
+										TUPLE__INSERT,
+										&audit);
 			selinux_audit(rc, audit, NULL);
 		} else {
-			rc = libselinux_avc_permission(selinuxGetClientPsid(),
-										   DatumGetObjectId(isid),
-										   SECCLASS_TUPLE,
-										   TUPLE__INSERT | TUPLE__RELABELFROM,
-										   &audit);
+			rc = sepgsql_avc_permission(selinuxGetClientPsid(),
+										DatumGetObjectId(isid),
+										SECCLASS_TUPLE,
+										TUPLE__INSERT | TUPLE__RELABELFROM,
+										&audit);
 			selinux_audit(rc, audit, NULL);
 
-			rc = libselinux_avc_permission(selinuxGetClientPsid(),
-										   DatumGetObjectId(esid),
-										   SECCLASS_TUPLE,
-										   TUPLE__RELABELTO,
-										   &audit);
+			rc = sepgsql_avc_permission(selinuxGetClientPsid(),
+										DatumGetObjectId(esid),
+										SECCLASS_TUPLE,
+										TUPLE__RELABELTO,
+										&audit);
 			selinux_audit(rc, audit, NULL);
 		}
 	}
@@ -158,9 +158,9 @@ bool selinuxHookCopyTo(Relation rel, HeapTuple tuple)
 			tclass = SECCLASS_TUPLE;
 			perm = TUPLE__SELECT;
 		}
-		rc = libselinux_avc_permission(selinuxGetClientPsid(),
-									   DatumGetObjectId(tup_psid),
-									   tclass, perm, NULL);
+		rc = sepgsql_avc_permission(selinuxGetClientPsid(),
+									DatumGetObjectId(tup_psid),
+									tclass, perm, NULL);
 		if (rc != 0)
 			return false;
 		break;

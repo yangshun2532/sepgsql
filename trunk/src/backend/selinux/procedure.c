@@ -23,21 +23,21 @@ Query *selinuxProxyCreateProcedure(Query *query)
 	char *audit;
 
 	/* compute the context of newly created procedure */
-	ppsid = libselinux_avc_createcon(selinuxGetClientPsid(),
-									 selinuxGetDatabasePsid(),
-									 SECCLASS_PROCEDURE);
+	ppsid = sepgsql_avc_createcon(selinuxGetClientPsid(),
+								  selinuxGetDatabasePsid(),
+								  SECCLASS_PROCEDURE);
 
 	/* 1. check database:create_obj permission */
-	rc = libselinux_avc_permission(selinuxGetClientPsid(),
-								   selinuxGetDatabasePsid(),
-								   SECCLASS_DATABASE,
-								   DATABASE__CREATE_OBJ, &audit);
+	rc = sepgsql_avc_permission(selinuxGetClientPsid(),
+								selinuxGetDatabasePsid(),
+								SECCLASS_DATABASE,
+								DATABASE__CREATE_OBJ, &audit);
 	selinux_audit(rc, audit, NULL);
 
 	/* 2. check procedure:create permission */
-	rc = libselinux_avc_permission(selinuxGetClientPsid(),
-								   ppsid, SECCLASS_PROCEDURE,
-								   PROCEDURE__CREATE, &audit);
+	rc = sepgsql_avc_permission(selinuxGetClientPsid(),
+								ppsid, SECCLASS_PROCEDURE,
+								PROCEDURE__CREATE, &audit);
 	selinux_audit(rc, audit, NULL);
 
 	return query;
@@ -45,9 +45,9 @@ Query *selinuxProxyCreateProcedure(Query *query)
 
 void selinuxHookCreateProcedure(Datum *values, char *nulls)
 {
-	psid ppsid = libselinux_avc_createcon(selinuxGetClientPsid(),
-										  selinuxGetDatabasePsid(),
-										  SECCLASS_PROCEDURE);
+	psid ppsid = sepgsql_avc_createcon(selinuxGetClientPsid(),
+									   selinuxGetDatabasePsid(),
+									   SECCLASS_PROCEDURE);
 	values[Anum_pg_proc_proselcon - 1] = ObjectIdGetDatum(ppsid);
 	nulls[Anum_pg_proc_proselcon - 1] = ' ';
 }
@@ -75,17 +75,17 @@ retry:
 	}
 
 	/* 2. check procedure:{setattr relabelfrom} */
-	rc = libselinux_avc_permission(selinuxGetClientPsid(),
-								   pg_proc->proselcon,
-								   SECCLASS_PROCEDURE,
-								   perms, &audit);
+	rc = sepgsql_avc_permission(selinuxGetClientPsid(),
+								pg_proc->proselcon,
+								SECCLASS_PROCEDURE,
+								perms, &audit);
 	selinux_audit(rc, audit, NameStr(pg_proc->proname));
 
 	/* 3. check procedure:relabelto, if necessary */
 	if (nsid != InvalidOid) {
-		rc = libselinux_avc_permission(selinuxGetClientPsid(), nsid,
-									   SECCLASS_PROCEDURE,
-									   PROCEDURE__RELABELTO, &audit);
+		rc = sepgsql_avc_permission(selinuxGetClientPsid(), nsid,
+									SECCLASS_PROCEDURE,
+									PROCEDURE__RELABELTO, &audit);
 		selinux_audit(rc, audit, NameStr(pg_proc->proname));
 		pg_proc->proselcon = nsid;
 	}
@@ -99,9 +99,9 @@ psid selinuxHookPrepareProcedure(Oid funcid)
    	tuple = SearchSysCache(PROCOID, ObjectIdGetDatum(funcid), 0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
 		selerror("could not lookup the procedure (funcid=%u)", funcid);
-	new_psid = libselinux_avc_createcon(selinuxGetClientPsid(),
-										((Form_pg_proc) GETSTRUCT(tuple))->proselcon,
-										SECCLASS_PROCESS);
+	new_psid = sepgsql_avc_createcon(selinuxGetClientPsid(),
+									 ((Form_pg_proc) GETSTRUCT(tuple))->proselcon,
+									 SECCLASS_PROCESS);
 	ReleaseSysCache(tuple);
 
 	orig_psid = selinuxGetClientPsid();

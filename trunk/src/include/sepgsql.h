@@ -197,17 +197,17 @@ extern Datum selinux_check_context_insert(PG_FUNCTION_ARGS);
 extern Datum selinux_check_context_update(PG_FUNCTION_ARGS);
 
 /* libselinux wrapper functions */
-extern Size libselinux_shmem_size(void);
-extern void libselinux_initialize(void);
-extern void libselinux_avc_reset(void);
-extern int libselinux_avc_permission(psid ssid, psid tsid, uint16 tclass, uint32 perms, char **audit);
-extern psid libselinux_avc_createcon(psid ssid, psid tsid, uint16 tclass);
-extern psid libselinux_avc_relabelcon(psid ssid, psid tsid, uint16 tclass);
-extern psid libselinux_context_to_psid(char *context);
-extern char *libselinux_psid_to_context(psid sid);
-extern bool libselinux_check_context(char *context);
-extern psid libselinux_getcon(void);
-extern psid libselinux_getpeercon(int sockfd);
+extern Size sepgsql_shmem_size(void);
+extern void sepgsql_init_libselinux(void);
+extern void sepgsql_avc_reset(void);
+extern int sepgsql_avc_permission(psid ssid, psid tsid, uint16 tclass, uint32 perms, char **audit);
+extern psid sepgsql_avc_createcon(psid ssid, psid tsid, uint16 tclass);
+extern psid sepgsql_avc_relabelcon(psid ssid, psid tsid, uint16 tclass);
+extern psid sepgsql_context_to_psid(char *context);
+extern char *sepgsql_psid_to_context(psid sid);
+extern bool sepgsql_check_context(char *context);
+extern psid sepgsql_getcon(void);
+extern psid sepgsql_getpeercon(int sockfd);
 
 /* utility functions */
 extern psid selinuxComputeNewTupleContext(Oid relid, psid relselcon, uint16 *tclass);
@@ -242,7 +242,7 @@ static inline Node *selinuxHookCopyFromNewContext(Relation rel) { return NULL; }
 static inline bool selinuxHookCopyTo(Relation rel, HeapTuple tuple) { return true; }
 
 /* dummy libselinux wrapper functions */
-static inline Size libselinux_shmem_size(void) { return 0; }
+static inline Size sepgsql_shmem_size(void) { return 0; }
 
 /* dummy utility functions */
 static inline bool selinuxAttributeIsPsid(Form_pg_attribute attr) { return false; }

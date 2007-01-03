@@ -90,11 +90,11 @@ Query *selinuxProxyInsert(Query *query)
 		selerror("cache lookup failed for pg_class %u", rte->relid);
 	
 	pg_class = (Form_pg_class) GETSTRUCT(tup);
-	rc = libselinux_avc_permission(selinuxGetClientPsid(),
-								   pg_class->relselcon,
-								   SECCLASS_TABLE,
-								   TABLE__INSERT,
-								   &audit);
+	rc = sepgsql_avc_permission(selinuxGetClientPsid(),
+								pg_class->relselcon,
+								SECCLASS_TABLE,
+								TABLE__INSERT,
+								&audit);
 	selinux_audit(rc, audit, NameStr(pg_class->relname));
 	relselcon = pg_class->relselcon;
 	ReleaseSysCache(tup);
@@ -111,11 +111,11 @@ Query *selinuxProxyInsert(Query *query)
                      rte->relid, tle->resno);
 
 		pg_attr = (Form_pg_attribute) GETSTRUCT(tup);
-		rc = libselinux_avc_permission(selinuxGetClientPsid(),
-									   pg_attr->attselcon,
-									   SECCLASS_COLUMN,
-									   COLUMN__INSERT,
-									   &audit);
+		rc = sepgsql_avc_permission(selinuxGetClientPsid(),
+									pg_attr->attselcon,
+									SECCLASS_COLUMN,
+									COLUMN__INSERT,
+									&audit);
 		selinux_audit(rc, audit, NameStr(pg_attr->attname));
 
 		if (selinuxAttributeIsPsid(pg_attr)) {

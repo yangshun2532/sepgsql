@@ -66,7 +66,7 @@ psid_in(PG_FUNCTION_ARGS)
 	psid sid;
 
 	context = __psid_trans_to_raw_context(context);
-	sid = libselinux_context_to_psid(context);
+	sid = sepgsql_context_to_psid(context);
 
 	PG_RETURN_OID(sid);
 }
@@ -77,7 +77,7 @@ psid_out(PG_FUNCTION_ARGS)
 	psid sid = PG_GETARG_OID(0);
 	char *context;
 
-	context = libselinux_psid_to_context(sid);
+	context = sepgsql_psid_to_context(sid);
 	context = __psid_raw_to_trans_context(context);
 
 	PG_RETURN_CSTRING(context);
@@ -91,7 +91,7 @@ psid_recv(PG_FUNCTION_ARGS)
 	psid sid;
 
 	context = __psid_trans_to_raw_context(context);
-	sid = libselinux_context_to_psid(context);
+	sid = sepgsql_context_to_psid(context);
 
 	PG_RETURN_OID(sid);
 }
@@ -102,7 +102,7 @@ psid_send(PG_FUNCTION_ARGS)
 	psid sid = PG_GETARG_OID(0);
 	char *context;
 
-	context = libselinux_psid_to_context(sid);
+	context = sepgsql_psid_to_context(sid);
 	context = __psid_raw_to_trans_context(context);
 
 	PG_RETURN_CSTRING(context);
@@ -117,7 +117,7 @@ text_to_psid(PG_FUNCTION_ARGS)
 
 	context = VARDATA(tmp);
 	context = __psid_trans_to_raw_context(context);
-	sid = libselinux_context_to_psid(context);
+	sid = sepgsql_context_to_psid(context);
 
 	PG_RETURN_OID(sid);
 }
@@ -129,7 +129,7 @@ psid_to_text(PG_FUNCTION_ARGS)
 	char *context;
 	text *result;
 
-	context = libselinux_psid_to_context(sid);
+	context = sepgsql_psid_to_context(sid);
 	context = __psid_raw_to_trans_context(context);
 
 	result = palloc(VARHDRSZ + strlen(context));
