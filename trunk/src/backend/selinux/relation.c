@@ -182,7 +182,7 @@ static void checkAlterTableRelation(Oid relid, uint32 perms)
 
 	rc = sepgsql_avc_permission(sepgsqlGetClientPsid(), cls->relselcon,
 								SECCLASS_TABLE, perms, &audit);
-	selinux_audit(rc, audit, NameStr(cls->relname));
+	sepgsql_audit(rc, audit, NameStr(cls->relname));
 	ReleaseSysCache(tup);
 }
 
@@ -210,7 +210,7 @@ static void checkAlterTableColumn(Oid relid, char *colname, uint32 perms)
 
 	rc = sepgsql_avc_permission(sepgsqlGetClientPsid(), attr->attselcon,
 								SECCLASS_COLUMN, perms, &audit);
-	selinux_audit(rc, audit, colname);
+	sepgsql_audit(rc, audit, colname);
 	ReleaseSysCache(tup);
 }
 
@@ -283,7 +283,7 @@ void sepgsqlAlterTableAddColumn(Relation rel, Form_pg_attribute pg_attr)
 								SECCLASS_COLUMN,
 								COLUMN__CREATE,
 								&audit);
-	selinux_audit(rc, audit, NameStr(pg_attr->attname));
+	sepgsql_audit(rc, audit, NameStr(pg_attr->attname));
 	
 	/* initialize the attribute */
 	pg_attr->attispsid = false;
@@ -309,14 +309,14 @@ void sepgsqlAlterTableSetTableContext(Relation rel, Value *context)
 								SECCLASS_TABLE,
 								TABLE__SETATTR | TABLE__RELABELFROM,
 								&audit);
-	selinux_audit(rc, audit, RelationGetRelationName(rel));
+	sepgsql_audit(rc, audit, RelationGetRelationName(rel));
 
 	/* 2. check table:{relabelto} */
 	rc = sepgsql_avc_permission(sepgsqlGetClientPsid(), new_psid,
 								SECCLASS_TABLE,
 								TABLE__RELABELTO,
 								&audit);
-	selinux_audit(rc, audit, RelationGetRelationName(rel));
+	sepgsql_audit(rc, audit, RelationGetRelationName(rel));
 
 	/* 3. update pg_class */
 	pgclass = heap_open(RelationRelationId, RowExclusiveLock);
@@ -361,7 +361,7 @@ void sepgsqlAlterTableSetColumnContext(Relation rel, char *colname, Value *conte
 								SECCLASS_COLUMN,
 								COLUMN__SETATTR | COLUMN__RELABELFROM,
 								&audit);
-	selinux_audit(rc, audit, colname);
+	sepgsql_audit(rc, audit, colname);
 
 	/* 2. check column:{relabelto} */
 	rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
@@ -369,7 +369,7 @@ void sepgsqlAlterTableSetColumnContext(Relation rel, char *colname, Value *conte
 								SECCLASS_COLUMN,
 								COLUMN__RELABELTO,
 								&audit);
-	selinux_audit(rc, audit, colname);
+	sepgsql_audit(rc, audit, colname);
 
 	/* 3. update pg_attribute->attselcon */
 	((Form_pg_attribute) GETSTRUCT(tup))->attselcon = new_psid;

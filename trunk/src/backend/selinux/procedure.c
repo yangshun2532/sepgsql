@@ -32,13 +32,13 @@ Query *sepgsqlProxyCreateProcedure(Query *query)
 								sepgsqlGetDatabasePsid(),
 								SECCLASS_DATABASE,
 								DATABASE__CREATE_OBJ, &audit);
-	selinux_audit(rc, audit, NULL);
+	sepgsql_audit(rc, audit, NULL);
 
 	/* 2. check procedure:create permission */
 	rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
 								ppsid, SECCLASS_PROCEDURE,
 								PROCEDURE__CREATE, &audit);
-	selinux_audit(rc, audit, NULL);
+	sepgsql_audit(rc, audit, NULL);
 
 	return query;
 }
@@ -79,14 +79,14 @@ retry:
 								pg_proc->proselcon,
 								SECCLASS_PROCEDURE,
 								perms, &audit);
-	selinux_audit(rc, audit, NameStr(pg_proc->proname));
+	sepgsql_audit(rc, audit, NameStr(pg_proc->proname));
 
 	/* 3. check procedure:relabelto, if necessary */
 	if (nsid != InvalidOid) {
 		rc = sepgsql_avc_permission(sepgsqlGetClientPsid(), nsid,
 									SECCLASS_PROCEDURE,
 									PROCEDURE__RELABELTO, &audit);
-		selinux_audit(rc, audit, NameStr(pg_proc->proname));
+		sepgsql_audit(rc, audit, NameStr(pg_proc->proname));
 		pg_proc->proselcon = nsid;
 	}
 }

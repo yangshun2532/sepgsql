@@ -384,7 +384,7 @@ selinux_permission(PG_FUNCTION_ARGS)
 
 	rc = sepgsql_avc_permission(ssid, tsid, tclass, perms, &audit);
 	if (audit)
-		selnotice(audit);
+		selnotice("%s", audit);
 	PG_RETURN_BOOL(rc == 0);
 }
 
@@ -431,12 +431,12 @@ selinux_check_context_insert(PG_FUNCTION_ARGS)
 	}
 
 	rc = sepgsql_avc_permission(ssid, isid, tclass, perms, &audit);
-	selinux_audit(rc, audit, NULL);
+	sepgsql_audit(rc, audit, NULL);
 
 	if (isid != esid) {
 		perms = (tclass == SECCLASS_TUPLE) ? TUPLE__RELABELTO : COMMON_DATABASE__RELABELTO;
 		rc = sepgsql_avc_permission(ssid, esid, tclass, perms, &audit);
-		selinux_audit(rc, audit, NULL);
+		sepgsql_audit(rc, audit, NULL);
 	}
 	PG_RETURN_OID(esid);
 }
@@ -471,12 +471,12 @@ selinux_check_context_update(PG_FUNCTION_ARGS)
 	}
 	
 	rc = sepgsql_avc_permission(ssid, osid, tclass, perms, &audit);
-	selinux_audit(rc, audit, NULL);
+	sepgsql_audit(rc, audit, NULL);
 	
 	if (osid != nsid) {
 		perms = (tclass == SECCLASS_TUPLE) ? TUPLE__RELABELTO : COMMON_DATABASE__RELABELTO;
 		rc = sepgsql_avc_permission(ssid, nsid, tclass, perms, &audit);
-		selinux_audit(rc, audit, NULL);
+		sepgsql_audit(rc, audit, NULL);
 	}
 	PG_RETURN_OID(nsid);
 }

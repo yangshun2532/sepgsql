@@ -95,7 +95,7 @@ Query *sepgsqlProxyInsert(Query *query)
 								SECCLASS_TABLE,
 								TABLE__INSERT,
 								&audit);
-	selinux_audit(rc, audit, NameStr(pg_class->relname));
+	sepgsql_audit(rc, audit, NameStr(pg_class->relname));
 	relselcon = pg_class->relselcon;
 	ReleaseSysCache(tup);
 	
@@ -116,7 +116,7 @@ Query *sepgsqlProxyInsert(Query *query)
 									SECCLASS_COLUMN,
 									COLUMN__INSERT,
 									&audit);
-		selinux_audit(rc, audit, NameStr(pg_attr->attname));
+		sepgsql_audit(rc, audit, NameStr(pg_attr->attname));
 
 		if (sepgsqlAttributeIsPsid(pg_attr)) {
 			/* check relabelfrom/relabelto condition */

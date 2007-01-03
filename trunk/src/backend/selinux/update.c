@@ -47,7 +47,7 @@ static void checkUpdateTarget(Query *query, RangeTblEntry *rte, int rindex, Targ
 								SECCLASS_COLUMN,
 								COLUMN__UPDATE,
 								&audit);
-	selinux_audit(rc, audit, NameStr(attr->attname));
+	sepgsql_audit(rc, audit, NameStr(attr->attname));
 
 	/* 2. checking column:select on expr */
 	sepgsqlCheckExpr(query, tle->expr);

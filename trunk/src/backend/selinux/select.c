@@ -127,7 +127,7 @@ static void sepgsqlCheckRteRelationInheritance(Oid relid, uint32 perm)
 									pg_class->relselcon,
 									SECCLASS_TABLE,
 									perm, &audit);
-		selinux_audit(rc, audit, NameStr(pg_class->relname));
+		sepgsql_audit(rc, audit, NameStr(pg_class->relname));
 		ReleaseSysCache(tuple);
 
 		sepgsqlCheckRteRelationInheritance(chld_relid, perm);
@@ -164,7 +164,7 @@ void sepgsqlCheckRteRelation(Query *query, RangeTblEntry *rte, int index)
 								SECCLASS_TABLE,
 								rte->access_vector,
 								&audit);
-	selinux_audit(rc, audit, NameStr(pg_class->relname));
+	sepgsql_audit(rc, audit, NameStr(pg_class->relname));
 	if (rte->inh)
 		sepgsqlCheckRteRelationInheritance(rte->relid, rte->access_vector);
 
@@ -369,7 +369,7 @@ static void checkExprVar(Query *query, Var *v)
 									SECCLASS_COLUMN,
 									COLUMN__SELECT,
 									&audit);
-		selinux_audit(rc, audit, NameStr(attr->attname));
+		sepgsql_audit(rc, audit, NameStr(attr->attname));
 		ReleaseSysCache(tuple);
 	} else if (rte->rtekind == RTE_JOIN) {
 		Var *join_var = list_nth(rte->joinaliasvars, v->varattno - 1);
@@ -417,7 +417,7 @@ static void checkExprFuncExpr(Query *query, FuncExpr *func)
 								pg_proc->proselcon,
 								SECCLASS_PROCEDURE,
 								perms, &audit);
-	selinux_audit(rc, audit, NameStr(pg_proc->proname));
+	sepgsql_audit(rc, audit, NameStr(pg_proc->proname));
 	ReleaseSysCache(tuple);
 }
 

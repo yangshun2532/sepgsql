@@ -35,7 +35,7 @@ void sepgsqlDoCopy(Relation rel, List *attnumlist, bool is_from)
 	perm = (is_from == true) ? TABLE__INSERT : TABLE__SELECT;
 	tsid = RelationGetForm(rel)->relselcon;
 	rc = sepgsql_avc_permission(ssid, tsid, SECCLASS_TABLE, perm, &audit);
-	selinux_audit(rc, audit, NameStr(RelationGetForm(rel)->relname));
+	sepgsql_audit(rc, audit, NameStr(RelationGetForm(rel)->relname));
 
 	/* 2. checl column:select/insert for each column */
 	perm = (is_from == true) ? COLUMN__INSERT : COLUMN__SELECT;
@@ -45,7 +45,7 @@ void sepgsqlDoCopy(Relation rel, List *attnumlist, bool is_from)
 
 		tsid = attr->attselcon;
 		rc = sepgsql_avc_permission(ssid, tsid, SECCLASS_COLUMN, perm, &audit);
-		selinux_audit(rc, audit, NameStr(attr->attname));
+		sepgsql_audit(rc, audit, NameStr(attr->attname));
 	}
 }
 
@@ -73,21 +73,21 @@ void sepgsqlCopyFrom(Relation rel, Datum *values, char *nulls)
 										SECCLASS_TUPLE,
 										TUPLE__INSERT,
 										&audit);
-			selinux_audit(rc, audit, NULL);
+			sepgsql_audit(rc, audit, NULL);
 		} else {
 			rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
 										DatumGetObjectId(isid),
 										SECCLASS_TUPLE,
 										TUPLE__INSERT | TUPLE__RELABELFROM,
 										&audit);
-			selinux_audit(rc, audit, NULL);
+			sepgsql_audit(rc, audit, NULL);
 
 			rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
 										DatumGetObjectId(esid),
 										SECCLASS_TUPLE,
 										TUPLE__RELABELTO,
 										&audit);
-			selinux_audit(rc, audit, NULL);
+			sepgsql_audit(rc, audit, NULL);
 		}
 	}
 }
