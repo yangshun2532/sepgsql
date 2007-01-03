@@ -244,8 +244,8 @@ static inline bool selinuxHookCopyTo(Relation rel, HeapTuple tuple) { return tru
 static inline Size sepgsql_shmem_size(void) { return 0; }
 
 /* dummy utility functions */
-static inline bool selinuxAttributeIsPsid(Form_pg_attribute attr) { return false; }
-static inline void selinuxSetColumnDefIsPsid(ColumnDef *column) {}
+static inline psid sepgsqlComputeImplicitContext(Oid relid, psid relselcon, uint16 *tclass) { return InvalidOid; }
+static inline bool sepgsqlAttributeIsPsid(Form_pg_attribute attr) { return false; }
 
 #endif /* HAVE_SELINUX */
 #endif /* SEPGSQL_H */
