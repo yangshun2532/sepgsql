@@ -22,6 +22,7 @@
 #define seldebug(fmt, ...)												\
 	ereport(NOTICE, (errcode(ERRCODE_WARNING),							\
 					 errmsg("%s(%d): " fmt, __FUNCTION__, __LINE__, ##__VA_ARGS__)))
+#define selbugon(x)	do { if (x)((char *)NULL)[0] = 'a'; }while(0)
 
 static inline void sepgsql_audit(int result, char *message, char *objname) {
 	int errlv = (result ? ERROR : NOTICE);

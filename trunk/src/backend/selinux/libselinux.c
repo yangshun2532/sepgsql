@@ -165,38 +165,32 @@ void sepgsql_init_libselinux()
 	}
 }
 
-static void sepgsql_compute_av(psid ssid, psid tsid, uint16 tclass, struct avc_datum *avd)
+static void sepgsql_compute_avc_datum(psid ssid, psid tsid, uint16 tclass, struct avc_datum *avd)
 {
-	/* we have to hold LW_EXCLUSIVE lock */
-	security_context_t scon, tcon;
+	security_context_t scon, tcon, ncon;
 	struct av_decision x;
-	
+
+	memset(avd, 0, sizeof(struct avc_datum));
+
 	scon = sepgsql_psid_to_context(ssid);
 	tcon = sepgsql_psid_to_context(tsid);
 
 	if (security_compute_av_raw(scon, tcon, tclass, 0, &x))
 		selerror("could not obtain access vector decision "
 				 " scon='%s' tcon='%s' tclass=%u", scon, tcon, tclass);
-	pfree(scon);
-	pfree(tcon);
+	if (security_compute_create_raw(scon, tcon, tclass, &ncon) != 0)
+		selerror("could not obtain a newly created security context "
+				 "scon='%s' tcon='%s' tclass=%u", scon, tcon, tclass);
+
+	avd->ssid = ssid;
+	avd->tsid = tsid;
+	avd->tclass = tclass;
 
 	avd->allowed = x.allowed;
 	avd->decided = x.decided;
 	avd->auditallow = x.auditallow;
 	avd->auditdeny = x.auditdeny;
-}
 
-static void sepgsql_compute_create(psid ssid, psid tsid, uint16 tclass, struct avc_datum *avd)
-{
-	/* we have to hold LW_EXCLUSIVE lock */
-	security_context_t scon, tcon, ncon;
-
-	scon = sepgsql_psid_to_context(ssid);
-	tcon = sepgsql_psid_to_context(tsid);
-
-	if (security_compute_create_raw(scon, tcon, tclass, &ncon) != 0)
-		selerror("could not obtain a newly created security context "
-				 "scon='%s' tcon='%s' tclass=%u", scon, tcon, tclass);
 	PG_TRY();
 	{
 		avd->create = sepgsql_context_to_psid(ncon);
@@ -399,13 +393,11 @@ int sepgsql_avc_permission(psid ssid, psid tsid, uint16 tclass, uint32 perms, ch
 	if (!avd) {
 		LWLockRelease(avc_shmem->lock);
 
-		/* compute a new avc_datum */
-		memset(&lavd, 0, sizeof(struct avc_datum));
-		sepgsql_compute_av(ssid, tsid, tclass, &lavd);
-		sepgsql_compute_create(ssid, tsid, tclass, &lavd);
+		sepgsql_compute_avc_datum(ssid, tsid, tclass, &lavd);
 
 		LWLockAcquire(avc_shmem->lock, LW_EXCLUSIVE);
 		sepgsql_avc_insert(&lavd);
+		fprintf(stderr, "ssid=%u tsid=%u tclass=%d create=%u\n", lavd.ssid, lavd.tsid, lavd.tclass, lavd.create);
 	} else {
 		memcpy(&lavd, avd, sizeof(struct avc_datum));
 	}
@@ -431,10 +423,7 @@ psid sepgsql_avc_createcon(psid ssid, psid tsid, uint16 tclass)
 	if (!avd) {
 		LWLockRelease(avc_shmem->lock);
 
-		/* compute a new avc_datum */
-		memset(&lavd, 0, sizeof(struct avc_datum));
-		sepgsql_compute_av(ssid, tsid, tclass, &lavd);
-		sepgsql_compute_create(ssid, tsid, tclass, &lavd);
+		sepgsql_compute_avc_datum(ssid, tsid, tclass, &lavd);
 
 		LWLockAcquire(avc_shmem->lock, LW_EXCLUSIVE);
 		sepgsql_avc_insert(&lavd);
@@ -516,8 +505,10 @@ char *sepgsql_psid_to_context(psid sid)
 	pg_selinux = heap_open(SelinuxRelationId, AccessShareLock);
 
 	tuple = SearchSysCache(SELINUXOID, ObjectIdGetDatum(sid), 0, 0, 0);
-	if (!HeapTupleIsValid(tuple))
+	if (!HeapTupleIsValid(tuple)) {
+		selbugon(sid==0);
 		selerror("No string expression for psid=%u", sid);
+	}
 
 	tcon = heap_getattr(tuple, Anum_pg_selinux_selcontext,
 						RelationGetDescr(pg_selinux), &isnull);
