@@ -118,6 +118,51 @@ psid_to_text(PG_FUNCTION_ARGS)
 	PG_RETURN_TEXT_P(result);
 }
 
+#if 0
+/* sepgsql_getcon() -- returns a security context of client */
+Datum
+sepgsql_getcon(PG_FUNCTION_ARGS)
+{
+	PG_RETURN_OID(sepgsqlGetClientPsid());
+}
+#endif
+
+/* sepgsql_permission(objcon, tclass, perms)
+ * sepgsql_permission_noaudit(objcon, tclass, perms)
+ *   checks permission based on security context.
+ * @objcon : security context of object
+ * @tclass : security class
+ * @perms  : permission set
+ */
+Datum
+sepgsql_permission(PG_FUNCTION_ARGS)
+{
+	psid objcon = PG_GETARG_OID(0);
+	uint16 tclass = PG_GETARG_UINT32(1);
+	uint32 perms = PG_GETARG_UINT32(2);
+	int rc;
+	char *audit;
+
+	rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
+								objcon, tclass, perms, &audit);
+	if (audit)
+		selnotice("%s", audit);
+	PG_RETURN_BOOL(rc == 0);
+}
+
+Datum
+sepgsql_permission_noaudit(PG_FUNCTION_ARGS)
+{
+	psid objcon = PG_GETARG_OID(0);
+	uint16 tclass = PG_GETARG_UINT32(1);
+	uint32 perms = PG_GETARG_UINT32(2);
+	int rc;
+
+	rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
+								objcon, tclass, perms, NULL);
+	PG_RETURN_BOOL(rc == 0);
+}
+
 /* sepgsql_check_insert() -- abort current transaction
  * if specified context is not allowed.
  * @newcon : new security context of the tuple

@@ -125,6 +125,9 @@ extern Query *sepgsqlProxy(Query *query);
 /* Secure Query rewriting functions */
 extern void sepgsqlExecuteQuery(Query *query, Plan *plan);
 
+/* SE-PostgreSQL Query checking functions */
+extern void sepgsqlProxyPortal(Portal *portal);
+
 /* SELECT statement related */
 extern Query *sepgsqlProxySelect(Query *query);
 extern void sepgsqlCheckRteRelation(Query *query, RangeTblEntry *rte, int index);
@@ -194,6 +197,8 @@ extern Datum psid_recv(PG_FUNCTION_ARGS);
 extern Datum psid_send(PG_FUNCTION_ARGS);
 extern Datum text_to_psid(PG_FUNCTION_ARGS);
 extern Datum psid_to_text(PG_FUNCTION_ARGS);
+extern Datum sepgsql_permission(PG_FUNCTION_ARGS);
+extern Datum sepgsql_permission_noaudit(PG_FUNCTION_ARGS);
 extern Datum sepgsql_check_insert(PG_FUNCTION_ARGS);
 extern Datum sepgsql_check_update(PG_FUNCTION_ARGS);
 
