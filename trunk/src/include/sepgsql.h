@@ -11,6 +11,7 @@
 #include "catalog/pg_attribute.h"
 #include "catalog/pg_proc.h"
 #include "nodes/parsenodes.h"
+#include "tcop/dest.h"
 #include "utils/rel.h"
 
 #define selerror(fmt, ...)												\
@@ -39,6 +40,8 @@ static inline void sepgsql_audit(int result, char *message, char *objname) {
 		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
 						"SELinux access denied without any audit messages."));
 }
+
+#define TUPLE_SELCON	"security_context"
 
 #ifdef HAVE_SELINUX
 /* object classes and access vectors are not included, in default */
@@ -118,6 +121,9 @@ extern int sepgsqlInitializePostmaster(void);
 extern void sepgsqlFinalizePostmaster(void);
 extern Query *sepgsqlProxy(Query *query);
 
+/* Secure Query rewriting functions */
+extern void sepgsqlExecuteQuery(Query *query, Plan *plan);
+
 /* SELECT statement related */
 extern Query *sepgsqlProxySelect(Query *query);
 extern void sepgsqlCheckRteRelation(Query *query, RangeTblEntry *rte, int index);
@@ -187,8 +193,8 @@ extern Datum psid_recv(PG_FUNCTION_ARGS);
 extern Datum psid_send(PG_FUNCTION_ARGS);
 extern Datum text_to_psid(PG_FUNCTION_ARGS);
 extern Datum psid_to_text(PG_FUNCTION_ARGS);
-extern Datum psid_to_bpchar(PG_FUNCTION_ARGS);
-extern Datum bpchar_to_psid(PG_FUNCTION_ARGS);
+extern Datum sepgsql_check_insert(PG_FUNCTION_ARGS);
+extern Datum sepgsql_check_update(PG_FUNCTION_ARGS);
 
 extern Datum selinux_getcon(PG_FUNCTION_ARGS);
 extern Datum selinux_permission(PG_FUNCTION_ARGS);

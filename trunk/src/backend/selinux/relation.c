@@ -51,8 +51,7 @@ TupleDesc sepgsqlCreateRelation(Oid relid, Oid relns, char relkind, TupleDesc td
 		if (strcmp(NameStr(pg_attr->attname), "security_context") == 0) {
 			if (pg_attr->atttypid != PSIDOID)
 				selerror("type of attribute '%s' is not psid", NameStr(pg_attr->attname));
-			if (!pg_attr->attispsid)
-				selerror("attribute '%s' is not security context", NameStr(pg_attr->attname));
+			pg_attr->attispsid = true;
 			psidnum = pg_attr->attnum;
 			goto found;
 		}
