@@ -11,6 +11,7 @@
 #include "catalog/pg_attribute.h"
 #include "catalog/pg_proc.h"
 #include "nodes/parsenodes.h"
+#include "nodes/plannodes.h"
 #include "tcop/dest.h"
 #include "utils/rel.h"
 

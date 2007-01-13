@@ -396,8 +396,8 @@ DATA(insert ( 1700 1700 1703 i ));
 /*
  * Security Context functions
  */
-DATA(insert (25 3411 3416 i));
-DATA(insert (3411 25 3417 i));
+DATA(insert (25 3403 3406 i));
+DATA(insert (3403 25 3407 i));
 #endif
 
 #endif   /* PG_CAST_H */

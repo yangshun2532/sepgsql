@@ -318,7 +318,7 @@ DATA(insert ( 1247 tableoid			26 0  4  -7 0 -1 -1 t p i t f f t 0));
 { 1255, {"provolatile"},		18, -1, 1,	9, 0, -1, -1, true, 'p', 'c', true, false, false, true, INITATT_SELINUX 0 }, \
 { 1255, {"pronargs"},			21, -1, 2, 10, 0, -1, -1, true, 'p', 's', true, false, false, true, INITATT_SELINUX 0 }, \
 { 1255, {"prorettype"},			26, -1, 4, 11, 0, -1, -1, true, 'p', 'i', true, false, false, true, INITATT_SELINUX 0 }, \
-{ 1255, {"proselcon"},        3411, -1, 4, 12, 0, -1, -1, true, 'p', 'i', true, false, false, true, INITATT_SELINUX 0 }, \
+{ 1255, {"proselcon"},        3403, -1, 4, 12, 0, -1, -1, true, 'p', 'i', true, false, false, true, INITATT_SELINUX 0 }, \
 { 1255, {"proargtypes"},		30, -1, -1, 13, 1, -1, -1, false, 'p', 'i', true, false, false, true, INITATT_SELINUX 0 }, \
 { 1255, {"proallargtypes"},   1028, -1, -1, 14, 1, -1, -1, false, 'x', 'i', false, false, false, true, INITATT_SELINUX 0 }, \
 { 1255, {"proargmodes"},	  1002, -1, -1, 15, 1, -1, -1, false, 'x', 'i', false, false, false, true, INITATT_SELINUX 0 }, \
@@ -360,7 +360,7 @@ DATA(insert ( 1255 provolatile		18 -1 1   9 0 -1 -1 t p c t f f t 0));
 DATA(insert ( 1255 pronargs			21 -1 2  10 0 -1 -1 t p s t f f t 0));
 DATA(insert ( 1255 prorettype		26 -1 4  11 0 -1 -1 t p i t f f t 0));
 #ifdef HAVE_SELINUX
-DATA(insert ( 1255 proselcon      3411 -1  4 12 0 -1 -1 t p i t f f t 0));
+DATA(insert ( 1255 proselcon      3403 -1  4 12 0 -1 -1 t p i t f f t 0));
 DATA(insert ( 1255 proargtypes		30 -1 -1 13 1 -1 -1 f p i t f f t 0));
 DATA(insert ( 1255 proallargtypes 1028 -1 -1 14 1 -1 -1 f x i f f f t 0));
 DATA(insert ( 1255 proargmodes	  1002 -1 -1 15 1 -1 -1 f x i f f f t 0));
@@ -408,7 +408,7 @@ DATA(insert ( 1255 tableoid			26 0  4  -7 0 -1 -1 t p i t f f t 0));
 { 1249, {"attisdropped"}, 16, -1,	1, 15, 0, -1, -1, true, 'p', 'c', true, false, false, true, INITATT_SELINUX 0 }, \
 { 1249, {"attislocal"},   16, -1,	1, 16, 0, -1, -1, true, 'p', 'c', true, false, false, true, INITATT_SELINUX 0 }, \
 { 1249, {"attispsid"},    16, -1,   1, 17, 0, -1, -1, true, 'p', 'c', true, false, false, true, INITATT_SELINUX 0 }, \
-{ 1249, {"attselcon"},  3411, -1,   4, 18, 0, -1, -1, true, 'p', 'i', true, false, false, true, INITATT_SELINUX 0 }, \
+{ 1249, {"attselcon"},  3403, -1,   4, 18, 0, -1, -1, true, 'p', 'i', true, false, false, true, INITATT_SELINUX 0 }, \
 { 1249, {"attinhcount"},  23, -1,	4, 19, 0, -1, -1, true, 'p', 'i', true, false, false, true, INITATT_SELINUX 0 }
 #else
 #define Schema_pg_attribute \
@@ -449,7 +449,7 @@ DATA(insert ( 1249 attisdropped		16 -1  1  15 0 -1 -1 t p c t f f t 0));
 DATA(insert ( 1249 attislocal		16 -1  1  16 0 -1 -1 t p c t f f t 0));
 #ifdef HAVE_SELINUX
 DATA(insert ( 1249 attispsid        16 -1  1  17 0 -1 -1 t p c t f f t 0));
-DATA(insert ( 1249 attselcon      3411 -1  4  18 0 -1 -1 t p i t f f t 0));
+DATA(insert ( 1249 attselcon      3403 -1  4  18 0 -1 -1 t p i t f f t 0));
 DATA(insert ( 1249 attinhcount		23 -1  4  19 0 -1 -1 t p i t f f t 0));
 #else
 DATA(insert ( 1249 attinhcount		23 -1  4  17 0 -1 -1 t p i t f f t 0));
@@ -492,7 +492,7 @@ DATA(insert ( 1249 tableoid			26 0  4  -7 0 -1 -1 t p i t f f t 0));
 { 1259, {"relhaspkey"},    16, -1,	1, 22, 0, -1, -1, true, 'p', 'c', true, false, false, true, INITATT_SELINUX 0 }, \
 { 1259, {"relhasrules"},   16, -1,	1, 23, 0, -1, -1, true, 'p', 'c', true, false, false, true, INITATT_SELINUX 0 }, \
 { 1259, {"relhassubclass"},16, -1,	1, 24, 0, -1, -1, true, 'p', 'c', true, false, false, true, INITATT_SELINUX 0 }, \
-{ 1259, {"relselcon"},   3411, -1,  4, 25, 0, -1, -1, true, 'p', 'i', true, false, false, true, INITATT_SELINUX 0 }, \
+{ 1259, {"relselcon"},   3403, -1,  4, 25, 0, -1, -1, true, 'p', 'i', true, false, false, true, INITATT_SELINUX 0 }, \
 { 1259, {"relfrozenxid"},  28, -1,  4, 26, 0, -1, -1, true, 'p', 'i', true, false, false, true, INITATT_SELINUX 0 }, \
 { 1259, {"relacl"},      1034, -1, -1, 27, 1, -1, -1, false, 'x', 'i', false, false, false, true, INITATT_SELINUX 0 }, \
 { 1259, {"reloptions"},  1009, -1, -1, 28, 1, -1, -1, false, 'x', 'i', false, false, false, true, INITATT_SELINUX 0 }
@@ -552,7 +552,7 @@ DATA(insert ( 1259 relhaspkey		16 -1 1  22 0 -1 -1 t p c t f f t 0));
 DATA(insert ( 1259 relhasrules		16 -1 1  23 0 -1 -1 t p c t f f t 0));
 DATA(insert ( 1259 relhassubclass	16 -1 1  24 0 -1 -1 t p c t f f t 0));
 #ifdef HAVE_SELINUX
-DATA(insert ( 1259 relselcon      3411 -1 4  25 0 -1 -1 t p i t f f t 0));
+DATA(insert ( 1259 relselcon      3403 -1 4  25 0 -1 -1 t p i t f f t 0));
 DATA(insert ( 1259 relfrozenxid     28 -1 4  26 0 -1 -1 t p i t f f t 0));
 DATA(insert ( 1259 relacl         1034 -1 -1 27 1 -1 -1 f x i f f f t 0));
 DATA(insert ( 1259 reloptions     1009 -1 -1 28 1 -1 -1 f x i f f f t 0));
