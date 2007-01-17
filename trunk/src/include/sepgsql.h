@@ -10,6 +10,7 @@
 #include "access/tupdesc.h"
 #include "catalog/pg_attribute.h"
 #include "catalog/pg_proc.h"
+#include "nodes/execnodes.h"
 #include "nodes/parsenodes.h"
 #include "nodes/plannodes.h"
 #include "tcop/dest.h"
@@ -123,10 +124,16 @@ extern void sepgsqlFinalizePostmaster(void);
 extern Query *sepgsqlProxy(Query *query);
 
 /* Secure Query rewriting functions */
+extern void sepgsqlSecureRewrite(Query *query);
 extern void sepgsqlExecuteQuery(Query *query, Plan *plan);
+extern void sepgsqlWalkExpr(Query *query, bool do_check, Expr *expr);
 
 /* SE-PostgreSQL Query checking functions */
-extern void sepgsqlProxyPortal(Portal *portal);
+extern void sepgsqlProxyPortal(Portal portal);
+
+/* implicit labeling support */
+extern HeapTuple sepgsqlExecInsert(EState *estate, ResultRelInfo *resRelInfo, HeapTuple tup);
+extern HeapTuple sepgsqlExecUpdate(EState *estate, ResultRelInfo *resRelInfo, HeapTuple tup);
 
 /* SELECT statement related */
 extern Query *sepgsqlProxySelect(Query *query);

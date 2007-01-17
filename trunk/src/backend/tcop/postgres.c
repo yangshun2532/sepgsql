@@ -899,6 +899,7 @@ exec_simple_query(const char *query_string)
 						  plantree_list,
 						  MessageContext);
 
+		sepgsqlProxyPortal(portal);
 		/*
 		 * Start the portal.  No parameters here.
 		 */

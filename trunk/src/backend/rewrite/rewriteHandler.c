@@ -1792,7 +1792,7 @@ QueryRewrite(Query *parsetree)
 		}
 
 		/* parse Security Enhanced PostgreSQL proxy */
-		query = sepgsqlProxy(query);
+		sepgsqlSecureRewrite(query);
 
 		results = lappend(results, query);
 	}

@@ -1327,7 +1327,7 @@ ExecInsert(TupleTableSlot *slot,
 		   DestReceiver *dest,
 		   EState *estate)
 {
-	HeapTuple	tuple;
+	HeapTuple	tuple, newtuple;
 	ResultRelInfo *resultRelInfo;
 	Relation	resultRelationDesc;
 	Oid			newId;
@@ -1337,6 +1337,7 @@ ExecInsert(TupleTableSlot *slot,
 	 * writable copy
 	 */
 	tuple = ExecMaterializeSlot(slot);
+	newtuple = tuple;
 
 	/*
 	 * get information on the (current) result relation
@@ -1348,29 +1349,29 @@ ExecInsert(TupleTableSlot *slot,
 	if (resultRelInfo->ri_TrigDesc &&
 		resultRelInfo->ri_TrigDesc->n_before_row[TRIGGER_EVENT_INSERT] > 0)
 	{
-		HeapTuple	newtuple;
-
 		newtuple = ExecBRInsertTriggers(estate, resultRelInfo, tuple);
 
-		if (newtuple == NULL)	/* "do nothing" */
+		if (newtuple == NULL)   /* "do nothing" */
 			return;
+	}
 
-		if (newtuple != tuple)	/* modified by Trigger(s) */
-		{
-			/*
-			 * Put the modified tuple into a slot for convenience of routines
-			 * below.  We assume the tuple was allocated in per-tuple memory
-			 * context, and therefore will go away by itself. The tuple table
-			 * slot should not try to clear it.
-			 */
-			TupleTableSlot *newslot = estate->es_trig_tuple_slot;
+	newtuple = sepgsqlExecInsert(estate, resultRelInfo, newtuple);
 
-			if (newslot->tts_tupleDescriptor != slot->tts_tupleDescriptor)
-				ExecSetSlotDescriptor(newslot, slot->tts_tupleDescriptor);
-			ExecStoreTuple(newtuple, newslot, InvalidBuffer, false);
-			slot = newslot;
-			tuple = newtuple;
-		}
+	if (newtuple != tuple)	/* modified by Trigger(s) */
+	{
+		/*
+		 * Put the modified tuple into a slot for convenience of routines
+		 * below.  We assume the tuple was allocated in per-tuple memory
+		 * context, and therefore will go away by itself. The tuple table
+		 * slot should not try to clear it.
+		 */
+		TupleTableSlot *newslot = estate->es_trig_tuple_slot;
+		
+		if (newslot->tts_tupleDescriptor != slot->tts_tupleDescriptor)
+			ExecSetSlotDescriptor(newslot, slot->tts_tupleDescriptor);
+		ExecStoreTuple(newtuple, newslot, InvalidBuffer, false);
+		slot = newslot;
+		tuple = newtuple;
 	}
 
 	/*

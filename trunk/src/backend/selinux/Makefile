@@ -8,8 +8,8 @@ ubdir = src/backend/security
 top_builddir = ../../..
 include $(top_builddir)/src/Makefile.global
 
-OBJS := selinux.o bootstrap.o libselinux.o \
-	rewrite.o sqlfunc.o \
+OBJS := selinux.o bootstrap.o libselinux.o labeling.o \
+	rewrite.o proxy.o sqlfunc.o expr.o \
 	select.o update.o insert.o delete.o \
 	create_database.o relation.o procedure.o copy.o
 
