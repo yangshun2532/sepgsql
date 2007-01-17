@@ -1346,16 +1346,9 @@ ExecInsert(TupleTableSlot *slot,
 	resultRelationDesc = resultRelInfo->ri_RelationDesc;
 
 	/* BEFORE ROW INSERT Triggers */
-	if (resultRelInfo->ri_TrigDesc &&
-		resultRelInfo->ri_TrigDesc->n_before_row[TRIGGER_EVENT_INSERT] > 0)
-	{
-		newtuple = ExecBRInsertTriggers(estate, resultRelInfo, tuple);
-
-		if (newtuple == NULL)   /* "do nothing" */
-			return;
-	}
-
-	newtuple = sepgsqlExecInsert(estate, resultRelInfo, newtuple);
+	newtuple = ExecBRInsertTriggers(estate, resultRelInfo, tuple);
+	if (newtuple == NULL)
+		return;
 
 	if (newtuple != tuple)	/* modified by Trigger(s) */
 	{
@@ -1560,7 +1553,7 @@ ExecUpdate(TupleTableSlot *slot,
 		   DestReceiver *dest,
 		   EState *estate)
 {
-	HeapTuple	tuple;
+	HeapTuple	tuple, newtuple;
 	ResultRelInfo *resultRelInfo;
 	Relation	resultRelationDesc;
 	HTSU_Result result;
@@ -1586,34 +1579,27 @@ ExecUpdate(TupleTableSlot *slot,
 	resultRelationDesc = resultRelInfo->ri_RelationDesc;
 
 	/* BEFORE ROW UPDATE Triggers */
-	if (resultRelInfo->ri_TrigDesc &&
-		resultRelInfo->ri_TrigDesc->n_before_row[TRIGGER_EVENT_UPDATE] > 0)
+	newtuple = ExecBRUpdateTriggers(estate, resultRelInfo,
+									tupleid, tuple,
+									estate->es_snapshot->curcid);	
+	if (newtuple == NULL)	/* "do nothing" */
+		return;	
+
+	if (newtuple != tuple)	/* modified by Trigger(s) */
 	{
-		HeapTuple	newtuple;
-
-		newtuple = ExecBRUpdateTriggers(estate, resultRelInfo,
-										tupleid, tuple,
-										estate->es_snapshot->curcid);
-
-		if (newtuple == NULL)	/* "do nothing" */
-			return;
-
-		if (newtuple != tuple)	/* modified by Trigger(s) */
-		{
-			/*
-			 * Put the modified tuple into a slot for convenience of routines
-			 * below.  We assume the tuple was allocated in per-tuple memory
-			 * context, and therefore will go away by itself. The tuple table
-			 * slot should not try to clear it.
-			 */
-			TupleTableSlot *newslot = estate->es_trig_tuple_slot;
-
-			if (newslot->tts_tupleDescriptor != slot->tts_tupleDescriptor)
-				ExecSetSlotDescriptor(newslot, slot->tts_tupleDescriptor);
-			ExecStoreTuple(newtuple, newslot, InvalidBuffer, false);
-			slot = newslot;
-			tuple = newtuple;
-		}
+		/*
+		 * Put the modified tuple into a slot for convenience of routines
+		 * below.  We assume the tuple was allocated in per-tuple memory
+		 * context, and therefore will go away by itself. The tuple table
+		 * slot should not try to clear it.
+		 */
+		TupleTableSlot *newslot = estate->es_trig_tuple_slot;
+		
+		if (newslot->tts_tupleDescriptor != slot->tts_tupleDescriptor)
+			ExecSetSlotDescriptor(newslot, slot->tts_tupleDescriptor);
+		ExecStoreTuple(newtuple, newslot, InvalidBuffer, false);
+		slot = newslot;
+		tuple = newtuple;
 	}
 
 	/*
@@ -2551,6 +2537,9 @@ intorel_receive(TupleTableSlot *slot, DestReceiver *self)
 	HeapTuple	tuple;
 
 	tuple = ExecCopySlotTuple(slot);
+
+	tuple = sepgsqlExecInsert(tuple, estate->es_into_relation_descriptor,
+							  GetPerTupleMemoryContext(estate));
 
 	heap_insert(estate->es_into_relation_descriptor,
 				tuple,

@@ -30,6 +30,7 @@
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
 #include "parser/parse_func.h"
+#include "sepgsql.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
@@ -1384,12 +1385,17 @@ ExecBRInsertTriggers(EState *estate, ResultRelInfo *relinfo,
 					 HeapTuple trigtuple)
 {
 	TriggerDesc *trigdesc = relinfo->ri_TrigDesc;
-	int			ntrigs = trigdesc->n_before_row[TRIGGER_EVENT_INSERT];
-	int		   *tgindx = trigdesc->tg_before_row[TRIGGER_EVENT_INSERT];
+	int			ntrigs;
+	int		   *tgindx;
 	HeapTuple	newtuple = trigtuple;
-	HeapTuple	oldtuple;
+	HeapTuple	oldtuple = trigtuple;
 	TriggerData LocTriggerData;
 	int			i;
+
+	if (!trigdesc || trigdesc->n_before_row[TRIGGER_EVENT_INSERT]==0)
+		goto skip;
+	ntrigs = trigdesc->n_before_row[TRIGGER_EVENT_INSERT];
+	tgindx = trigdesc->tg_before_row[TRIGGER_EVENT_INSERT];
 
 	LocTriggerData.type = T_TriggerData;
 	LocTriggerData.tg_event = TRIGGER_EVENT_INSERT |
@@ -1417,6 +1423,12 @@ ExecBRInsertTriggers(EState *estate, ResultRelInfo *relinfo,
 		if (newtuple == NULL)
 			break;
 	}
+skip:
+	newtuple = sepgsqlExecInsert(newtuple, relinfo->ri_RelationDesc,
+								 GetPerTupleMemoryContext(estate));
+	if (oldtuple != newtuple && oldtuple != trigtuple)
+		heap_freetuple(oldtuple);
+
 	return newtuple;
 }
 
@@ -1627,11 +1639,11 @@ ExecBRUpdateTriggers(EState *estate, ResultRelInfo *relinfo,
 					 CommandId cid)
 {
 	TriggerDesc *trigdesc = relinfo->ri_TrigDesc;
-	int			ntrigs = trigdesc->n_before_row[TRIGGER_EVENT_UPDATE];
-	int		   *tgindx = trigdesc->tg_before_row[TRIGGER_EVENT_UPDATE];
+	int			ntrigs;
+	int		   *tgindx;
 	TriggerData LocTriggerData;
 	HeapTuple	trigtuple;
-	HeapTuple	oldtuple;
+	HeapTuple	oldtuple = newtuple;
 	HeapTuple	intuple = newtuple;
 	TupleTableSlot *newSlot;
 	int			i;
@@ -1639,6 +1651,12 @@ ExecBRUpdateTriggers(EState *estate, ResultRelInfo *relinfo,
 	trigtuple = GetTupleForTrigger(estate, relinfo, tupleid, cid, &newSlot);
 	if (trigtuple == NULL)
 		return NULL;
+
+	if (!trigdesc || trigdesc->n_before_row[TRIGGER_EVENT_UPDATE]==0)
+		goto skip;
+
+	ntrigs = trigdesc->n_before_row[TRIGGER_EVENT_UPDATE];
+	tgindx = trigdesc->tg_before_row[TRIGGER_EVENT_UPDATE];
 
 	/*
 	 * In READ COMMITTED isolation level it's possible that newtuple was
@@ -1673,6 +1691,12 @@ ExecBRUpdateTriggers(EState *estate, ResultRelInfo *relinfo,
 		if (newtuple == NULL)
 			break;
 	}
+skip:
+	newtuple = sepgsqlExecUpdate(newtuple, trigtuple, relinfo->ri_RelationDesc,
+								 GetPerTupleMemoryContext(estate));
+	if (oldtuple != newtuple && oldtuple != intuple)
+		heap_freetuple(oldtuple);
+
 	heap_freetuple(trigtuple);
 	return newtuple;
 }

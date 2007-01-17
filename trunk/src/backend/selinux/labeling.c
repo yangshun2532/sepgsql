@@ -75,9 +75,8 @@ static psid getImplicitContext(HeapTuple tuple, Relation rel, uint16 *p_tclass, 
 	return sepgsql_avc_createcon(sepgsqlGetClientPsid(), tsid, tclass);
 }
 
-HeapTuple sepgsqlExecInsert(EState *estate, ResultRelInfo *resRelInfo, HeapTuple tuple)
+HeapTuple sepgsqlExecInsert(HeapTuple tuple, Relation rel, MemoryContext mcontext)
 {
-	Relation rel = resRelInfo->ri_RelationDesc;
 	TupleDesc tdesc = RelationGetDescr(rel);
 	HeapTuple newtuple = tuple;
 	MemoryContext oldContext;
@@ -87,8 +86,7 @@ HeapTuple sepgsqlExecInsert(EState *estate, ResultRelInfo *resRelInfo, HeapTuple
 	char *audit;
 	int rc;
 
-	oldContext = GetPerTupleMemoryContext(estate);
-	oldContext = MemoryContextSwitchTo(oldContext);
+	oldContext = MemoryContextSwitchTo(mcontext);
 
 	for (attno=0; attno < RelationGetNumberOfAttributes(rel); attno++) {
 		Form_pg_attribute attr = tdesc->attrs[attno];
@@ -146,8 +144,55 @@ HeapTuple sepgsqlExecInsert(EState *estate, ResultRelInfo *resRelInfo, HeapTuple
 	return newtuple;
 }
 
-HeapTuple sepgsqlExecUpdate(EState *estate, ResultRelInfo *resRelInfo, HeapTuple tuple)
+HeapTuple sepgsqlExecUpdate(HeapTuple newtup, HeapTuple oldtup, Relation rel, MemoryContext mcontext)
 {
-	return tuple;
-}
+	TupleDesc tdesc = RelationGetDescr(rel);
+	AttrNumber attno;
+	uint16 tclass;
+	uint32 from_perm = COMMON_DATABASE__RELABELFROM;
+	uint32 to_perm = COMMON_DATABASE__RELABELTO;
+	char *audit;
+	int rc;
 
+	switch (RelationGetRelid(rel)) {
+	case AttributeRelationId:   tclass = SECCLASS_COLUMN;    break;
+	case RelationRelationId:    tclass = SECCLASS_TABLE;     break;
+	case DatabaseRelationId:    tclass = DATABASE__CREATE;   break;
+	case ProcedureRelationId:   tclass = SECCLASS_PROCEDURE; break;
+	case LargeObjectRelationId: tclass = SECCLASS_BLOB;      break;
+	default:
+		tclass = SECCLASS_TUPLE;
+		from_perm = TUPLE__RELABELFROM;
+		to_perm = TUPLE__RELABELTO;
+		break;
+	}
+
+	for (attno=0; attno < RelationGetNumberOfAttributes(rel); attno++) {
+		Form_pg_attribute attr = tdesc->attrs[attno];
+
+		if (sepgsqlAttributeIsPsid(attr)) {
+			psid oldcon, newcon;
+			bool isnull;
+
+			oldcon = DatumGetObjectId(heap_getattr(oldtup, attr->attnum, tdesc, &isnull));
+			if (isnull)
+				selerror("%s.%s cannot contain NULL",
+						 RelationGetRelationName(rel),
+						 NameStr(attr->attname));
+			newcon = DatumGetObjectId(heap_getattr(newtup, attr->attnum, tdesc, &isnull));
+			if (isnull)
+				selerror("%s.%s cannot contain NULL",
+						 RelationGetRelationName(rel),
+						 NameStr(attr->attname));
+			if (oldcon != newcon) {
+				rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
+											oldcon, tclass, from_perm, &audit);
+				sepgsql_audit(rc, audit, NameStr(attr->attname));
+				rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
+											newcon, tclass, to_perm, &audit);
+				sepgsql_audit(rc, audit, NameStr(attr->attname));
+			}
+		}
+	}
+	return newtup;
+}

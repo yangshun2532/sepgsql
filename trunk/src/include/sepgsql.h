@@ -132,8 +132,8 @@ extern void sepgsqlWalkExpr(Query *query, bool do_check, Expr *expr);
 extern void sepgsqlProxyPortal(Portal portal);
 
 /* implicit labeling support */
-extern HeapTuple sepgsqlExecInsert(EState *estate, ResultRelInfo *resRelInfo, HeapTuple tup);
-extern HeapTuple sepgsqlExecUpdate(EState *estate, ResultRelInfo *resRelInfo, HeapTuple tup);
+extern HeapTuple sepgsqlExecInsert(HeapTuple newtup, Relation rel, MemoryContext mcontext);
+extern HeapTuple sepgsqlExecUpdate(HeapTuple newtup, HeapTuple oldtup, Relation rel, MemoryContext mcontext);
 
 /* SELECT statement related */
 extern Query *sepgsqlProxySelect(Query *query);
