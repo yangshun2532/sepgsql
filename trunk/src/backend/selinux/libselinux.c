@@ -397,7 +397,6 @@ int sepgsql_avc_permission(psid ssid, psid tsid, uint16 tclass, uint32 perms, ch
 
 		LWLockAcquire(avc_shmem->lock, LW_EXCLUSIVE);
 		sepgsql_avc_insert(&lavd);
-		fprintf(stderr, "ssid=%u tsid=%u tclass=%d create=%u\n", lavd.ssid, lavd.tsid, lavd.tclass, lavd.create);
 	} else {
 		memcpy(&lavd, avd, sizeof(struct avc_datum));
 	}
