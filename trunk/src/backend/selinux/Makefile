@@ -9,7 +9,7 @@ top_builddir = ../../..
 include $(top_builddir)/src/Makefile.global
 
 OBJS := sepgsql.o bootstrap.o rewrite.o proxy.o expr.o labeling.o sqlfunc.o \
-	create_database.o relation.o procedure.o copy.o
+	database.o relation.o procedure.o copy.o
 
 all: SUBSYS.o
 

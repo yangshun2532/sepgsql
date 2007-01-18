@@ -5023,6 +5023,12 @@ alterdb_opt_item:
 				{
 					$$ = makeDefElem("connectionlimit", (Node *)makeInteger($4));
 				}
+			| IDENT '=' Sconst
+				{
+					if (strcmp($1, "context") != 0)
+						yyerror("syntax error");
+					$$ = makeDefElem("context", (Node *)makeString($3));
+				}
 		;
 
 

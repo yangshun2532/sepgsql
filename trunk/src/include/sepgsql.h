@@ -9,6 +9,7 @@
 #include "access/htup.h"
 #include "access/tupdesc.h"
 #include "catalog/pg_attribute.h"
+#include "catalog/pg_database.h"
 #include "catalog/pg_proc.h"
 #include "nodes/execnodes.h"
 #include "nodes/parsenodes.h"
@@ -144,8 +145,11 @@ extern void sepgsqlWalkExpr(Query *query, bool do_check, Expr *expr);
 extern HeapTuple sepgsqlExecInsert(HeapTuple newtup, Relation rel, MemoryContext mcontext);
 extern HeapTuple sepgsqlExecUpdate(HeapTuple newtup, HeapTuple oldtup, Relation rel);
 
-/* CREATE DATABASE statement related */
+/* CREATE/ALTER/DROP DATABASE statement related */
 extern void sepgsqlCreateDatabase(Datum *values, char *nulls);
+extern void sepgsqlDropDatabase(Form_pg_database pgdat);
+extern void sepgsqlAlterDatabase(Form_pg_database pgdat);
+extern psid sepgsqlAlterDatabaseContext(Form_pg_database pgdat, char *newcon);
 
 /* CREATE/ALTER/DROP TABLE statement related */
 extern Query *sepgsqlProxyCreateTable(Query *query);

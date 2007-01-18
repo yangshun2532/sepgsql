@@ -615,6 +615,9 @@ psid sepgsqlGetDatabasePsid()
 
 void sepgsqlInitialize()
 {
+	char *audit;
+	int rc;
+
 	sepgsql_avc_init();
 
 	if (IsBootstrapProcessingMode()) {
@@ -623,6 +626,12 @@ void sepgsqlInitialize()
 		sepgsqlDatabasePsid = sepgsql_avc_createcon(sepgsqlGetClientPsid(),
 													sepgsqlGetServerPsid(),
 													SECCLASS_DATABASE);
+		rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
+									sepgsqlGetDatabasePsid(),
+									SECCLASS_DATABASE,
+									DATABASE__ACCESS,
+									&audit);
+		sepgsql_audit(rc, audit, NULL);
 		return;
 	}
 
@@ -650,6 +659,13 @@ void sepgsqlInitialize()
 		sepgsqlDatabasePsid = ((Form_pg_database) GETSTRUCT(tuple))->datselcon;
 		ReleaseSysCache(tuple);
 	}
+
+	rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
+								sepgsqlGetDatabasePsid(),
+								SECCLASS_DATABASE,
+								DATABASE__ACCESS,
+								&audit);
+	sepgsql_audit(rc, audit, NULL);
 }
 
 /* sepgsqlMonitoringPolicyState() is worker process to monitor

@@ -620,6 +620,8 @@ dropdb(const char *dbname, bool missing_ok)
 	if (!HeapTupleIsValid(tup))
 		elog(ERROR, "cache lookup failed for database %u", db_id);
 
+	sepgsqlDropDatabase((Form_pg_database) GETSTRUCT(tup));
+
 	simple_heap_delete(pgdbrel, &tup->t_self);
 
 	ReleaseSysCache(tup);
@@ -769,6 +771,7 @@ AlterDatabase(AlterDatabaseStmt *stmt)
 	ListCell   *option;
 	int			connlimit = -1;
 	DefElem    *dconnlimit = NULL;
+	DefElem    *dselcon = NULL;
 	Datum		new_record[Natts_pg_database];
 	char		new_record_nulls[Natts_pg_database];
 	char		new_record_repl[Natts_pg_database];
@@ -786,6 +789,16 @@ AlterDatabase(AlterDatabaseStmt *stmt)
 						 errmsg("conflicting or redundant options")));
 			dconnlimit = defel;
 		}
+#ifdef HAVE_SELINUX
+		else if (strcmp(defel->defname, "context") == 0)
+		{
+			if (dselcon)
+				ereport(ERROR,
+						(errcode(ERRCODE_SYNTAX_ERROR),
+						 errmsg("conflicting or redundant options")));
+			dselcon = defel;
+		}
+#endif
 		else
 			elog(ERROR, "option \"%s\" not recognized",
 				 defel->defname);
@@ -816,6 +829,8 @@ AlterDatabase(AlterDatabaseStmt *stmt)
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_DATABASE,
 					   stmt->dbname);
 
+	sepgsqlAlterDatabase((Form_pg_database) GETSTRUCT(tuple));
+
 	/*
 	 * Build an updated tuple, perusing the information just obtained
 	 */
@@ -828,6 +843,15 @@ AlterDatabase(AlterDatabaseStmt *stmt)
 		new_record[Anum_pg_database_datconnlimit - 1] = Int32GetDatum(connlimit);
 		new_record_repl[Anum_pg_database_datconnlimit - 1] = 'r';
 	}
+#ifdef HAVE_SELINUX
+	if (dselcon)
+	{
+		psid newcon = sepgsqlAlterDatabaseContext((Form_pg_database) GETSTRUCT(tuple),
+												  strVal(dselcon->arg));
+		new_record[Anum_pg_database_datselcon - 1] = ObjectIdGetDatum(newcon);
+		new_record_repl[Anum_pg_database_datselcon - 1] = 'r';
+	}
+#endif
 
 	newtuple = heap_modifytuple(tuple, RelationGetDescr(rel), new_record,
 								new_record_nulls, new_record_repl);
@@ -887,6 +911,8 @@ AlterDatabaseSet(AlterDatabaseSetStmt *stmt)
 	if (!pg_database_ownercheck(HeapTupleGetOid(tuple), GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_DATABASE,
 					   stmt->dbname);
+
+	sepgsqlAlterDatabase((Form_pg_database) GETSTRUCT(tuple));
 
 	MemSet(repl_repl, ' ', sizeof(repl_repl));
 	repl_repl[Anum_pg_database_datconfig - 1] = 'r';
