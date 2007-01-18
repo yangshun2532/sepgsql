@@ -114,14 +114,23 @@ static inline void sepgsql_audit(int result, char *message, char *objname) {
 #define BLOB__WRITE                               0x00000080UL
 
 /* security enhanced selinux core implementation */
+extern Size  sepgsql_shmem_size(void);
+extern int   sepgsql_avc_permission(psid ssid, psid tsid, uint16 tclass, uint32 perms, char **audit);
+extern psid  sepgsql_avc_createcon(psid ssid, psid tsid, uint16 tclass);
+extern psid  sepgsql_avc_relabelcon(psid ssid, psid tsid, uint16 tclass);
+extern psid  sepgsql_context_to_psid(char *context);
+extern char *sepgsql_psid_to_context(psid sid);
+extern bool  sepgsql_check_context(char *context);
+extern void  sepgsqlInitialize(void);
+extern int   sepgsqlInitializePostmaster(void);
+extern void  sepgsqlFinalizePostmaster(void);
+
+/* utility functions */
 extern psid sepgsqlGetServerPsid(void);
 extern psid sepgsqlGetClientPsid(void);
 extern void sepgsqlSetClientPsid(psid new_ctx);
 extern psid sepgsqlGetDatabasePsid(void);
-extern void sepgsqlInitialize(void);
-extern int sepgsqlInitializePostmaster(void);
-extern void sepgsqlFinalizePostmaster(void);
-extern Query *sepgsqlProxy(Query *query);
+extern bool sepgsqlAttributeIsPsid(Form_pg_attribute attr);
 
 /* Secure Query rewriting functions */
 extern void sepgsqlSecureRewrite(Query *query);
@@ -209,28 +218,7 @@ extern Datum sepgsql_permission_noaudit(PG_FUNCTION_ARGS);
 extern Datum sepgsql_check_insert(PG_FUNCTION_ARGS);
 extern Datum sepgsql_check_update(PG_FUNCTION_ARGS);
 
-extern Datum selinux_getcon(PG_FUNCTION_ARGS);
-extern Datum selinux_permission(PG_FUNCTION_ARGS);
-extern Datum selinux_permission_noaudit(PG_FUNCTION_ARGS);
-extern Datum selinux_check_context_insert(PG_FUNCTION_ARGS);
-extern Datum selinux_check_context_update(PG_FUNCTION_ARGS);
 
-/* libselinux wrapper functions */
-extern Size sepgsql_shmem_size(void);
-extern void sepgsql_init_libselinux(void);
-extern void sepgsql_avc_reset(void);
-extern int sepgsql_avc_permission(psid ssid, psid tsid, uint16 tclass, uint32 perms, char **audit);
-extern psid sepgsql_avc_createcon(psid ssid, psid tsid, uint16 tclass);
-extern psid sepgsql_avc_relabelcon(psid ssid, psid tsid, uint16 tclass);
-extern psid sepgsql_context_to_psid(char *context);
-extern char *sepgsql_psid_to_context(psid sid);
-extern bool sepgsql_check_context(char *context);
-extern psid sepgsql_getcon(void);
-extern psid sepgsql_getpeercon(int sockfd);
-
-/* utility functions */
-extern psid sepgsqlComputeImplicitContext(Oid relid, psid relselcon, uint16 *tclass);
-extern bool sepgsqlAttributeIsPsid(Form_pg_attribute attr);
 
 #else
 /* dummy enhanced selinux core implementation */

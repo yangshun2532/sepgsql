@@ -49,61 +49,6 @@ void sepgsqlDoCopy(Relation rel, List *attnumlist, bool is_from)
 	}
 }
 
-void sepgsqlCopyFrom(Relation rel, Datum *values, char *nulls)
-{
-	psid isid, esid;
-	char *audit;
-	int i, rc;
-
-	isid = sepgsqlComputeImplicitContext(RelationGetRelid(rel),
-										 RelationGetForm(rel)->relselcon,
-										 NULL);
-
-	for (i=0; i < RelationGetNumberOfAttributes(rel); i++) {
-		Form_pg_attribute attr = RelationGetDescr(rel)->attrs[i];
-		if (!sepgsqlAttributeIsPsid(attr))
-			continue;
-		if (nulls[i] == 'n')
-			selerror("NULL was set at 'security_context'");
-
-		esid = DatumGetObjectId(values[i]);
-		if (isid == esid) {
-			rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
-										DatumGetObjectId(isid),
-										SECCLASS_TUPLE,
-										TUPLE__INSERT,
-										&audit);
-			sepgsql_audit(rc, audit, NULL);
-		} else {
-			rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
-										DatumGetObjectId(isid),
-										SECCLASS_TUPLE,
-										TUPLE__INSERT | TUPLE__RELABELFROM,
-										&audit);
-			sepgsql_audit(rc, audit, NULL);
-
-			rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
-										DatumGetObjectId(esid),
-										SECCLASS_TUPLE,
-										TUPLE__RELABELTO,
-										&audit);
-			sepgsql_audit(rc, audit, NULL);
-		}
-	}
-}
-
-Node *sepgsqlCopyFromNewContext(Relation rel)
-{
-	psid new_sid;
-
-	new_sid = sepgsqlComputeImplicitContext(RelationGetRelid(rel),
-											RelationGetForm(rel)->relselcon,
-											NULL);
-	return (Node *)makeConst(PSIDOID, sizeof(psid),
-							 ObjectIdGetDatum(new_sid),
-							 false, false);
-}
-
 bool sepgsqlCopyTo(Relation rel, HeapTuple tuple)
 {
 	TupleDesc tupDesc = RelationGetDescr(rel);
@@ -112,17 +57,17 @@ bool sepgsqlCopyTo(Relation rel, HeapTuple tuple)
 	uint32 perm;
 	Datum tup_psid;
 	bool isnull;
-	char relkind;
 	int i, rc;
 
 	for (i=0; i < RelationGetNumberOfAttributes(rel); i++) {
-		if (!sepgsqlAttributeIsPsid(tupDesc->attrs[i]))
+		Form_pg_attribute attr = tupDesc->attrs[i];
+
+		if (!sepgsqlAttributeIsPsid(attr))
 			continue;
 
 		tup_psid = heap_getattr(tuple, i+1, tupDesc, &isnull);
 		if (isnull)
-			selerror("'security_context' is NULL at '%s'",
-					 RelationGetRelationName(rel));
+			selerror("'%s.%s' is NUll", RelationGetRelationName(rel), NameStr(attr->attname));
 
 		switch (relid) {
 		case AttributeRelationId:
@@ -130,17 +75,8 @@ bool sepgsqlCopyTo(Relation rel, HeapTuple tuple)
 			perm = COLUMN__GETATTR;
 			break;
 		case RelationRelationId:
-			relkind = heap_getattr(tuple, Anum_pg_class_relkind, tupDesc, &isnull);
-			if (isnull)
-				selerror("'relkind' is NULL at '%s'",
-						 RelationGetRelationName(rel));
-			if (relkind == RELKIND_RELATION) {
-				tclass = SECCLASS_TABLE;
-				perm = TABLE__GETATTR;
-			} else {
-				tclass = SECCLASS_TUPLE;
-				perm = TUPLE__SELECT;
-			}
+			tclass = SECCLASS_TABLE;
+			perm = TABLE__GETATTR;
 			break;
 		case DatabaseRelationId:
 			tclass = SECCLASS_DATABASE;

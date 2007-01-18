@@ -4002,11 +4002,6 @@ DATA(insert OID = 3409 ( sepgsql_permission				PGNSP PGUID 12 f f t f v 3 16 "34
 DATA(insert OID = 3410 ( sepgsql_permission_noaudit		PGNSP PGUID 12 f f t f v 3 16 "3403 23 23" _null_ _null_ _null_ sepgsql_permission_noaudit - _null_));
 DATA(insert OID = 3418 ( sepgsql_check_insert	PGNSP PGUID 12 f f t f v 3 3403 "3403 3403 23" _null_ _null_ _null_ sepgsql_check_insert - _null_));
 DATA(insert OID = 3419 ( sepgsql_check_update	PGNSP PGUID 12 f f t f v 3 3403 "3403 3403 23" _null_ _null_ _null_ sepgsql_check_update - _null_));
-DATA(insert OID = 3422 ( selinux_getcon					PGNSP PGUID 12 f f t f s 0 3403 "" _null_ _null_ _null_ selinux_getcon - _null_));
-DATA(insert OID = 3423 ( selinux_permission				PGNSP PGUID 12 f f t f s 4 16 "3403 3403 23 23" _null_ _null_ _null_ selinux_permission - _null_));
-DATA(insert OID = 3424 ( selinux_permission_noaudit		PGNSP PGUID 12 f f t f s 4 16 "3403 3403 23 23" _null_ _null_ _null_ selinux_permission_noaudit - _null_));
-DATA(insert OID = 3425 ( selinux_check_context_insert	PGNSP PGUID 12 f f t f s 4 3403 "3403 3403 3403 23" _null_ _null_ _null_ selinux_check_context_insert - _null_));
-DATA(insert OID = 3426 ( selinux_check_context_update	PGNSP PGUID 12 f f t f s 4 3403 "3403 3403 3403 23" _null_ _null_ _null_ selinux_check_context_update -  _null_));
 #endif
 
 /*

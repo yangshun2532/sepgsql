@@ -608,7 +608,7 @@ pg_rewrite_queries(List *querytree_list)
 
 		if (querytree->commandType == CMD_UTILITY)
 		{
-			querytree = sepgsqlProxy(querytree);
+			sepgsqlSecureRewrite(querytree);
 
 			/* don't rewrite utilities, just dump 'em into new_list */
 			new_list = lappend(new_list, querytree);

@@ -1630,7 +1630,7 @@ static void
 CopyFrom(CopyState cstate)
 {
 	bool		pipe = (cstate->filename == NULL);
-	HeapTuple	tuple;
+	HeapTuple	tuple, newtuple;
 	TupleDesc	tupDesc;
 	Form_pg_attribute *attr;
 	AttrNumber	num_phys_attrs,
@@ -1771,13 +1771,7 @@ CopyFrom(CopyState cstate)
 		{
 			/* attribute is NOT to be copied from input */
 			/* use default value if one exists */
-			Node	*defexpr;
-
-			if (sepgsqlAttributeIsPsid(attr[attnum - 1])) {
-				defexpr = sepgsqlCopyFromNewContext(cstate->rel);
-			} else {
-				defexpr = build_column_default(cstate->rel, attnum);
-			}
+			Node	   *defexpr = build_column_default(cstate->rel, attnum);
 
 			if (defexpr != NULL)
 			{
@@ -2050,8 +2044,6 @@ CopyFrom(CopyState cstate)
 				nulls[defmap[i]] = ' ';
 		}
 
-		sepgsqlCopyFrom(cstate->rel, values, nulls);
-
 		/* And now we can form the input tuple. */
 		tuple = heap_formtuple(tupDesc, values, nulls);
 
@@ -2064,20 +2056,13 @@ CopyFrom(CopyState cstate)
 		skip_tuple = false;
 
 		/* BEFORE ROW INSERT Triggers */
-		if (resultRelInfo->ri_TrigDesc &&
-		  resultRelInfo->ri_TrigDesc->n_before_row[TRIGGER_EVENT_INSERT] > 0)
+		newtuple = ExecBRInsertTriggers(estate, resultRelInfo, tuple);
+		if (newtuple == NULL)       /* "do nothing" */
+			skip_tuple = true;
+		else if (newtuple != tuple) /* modified by Trigger(s) */
 		{
-			HeapTuple	newtuple;
-
-			newtuple = ExecBRInsertTriggers(estate, resultRelInfo, tuple);
-
-			if (newtuple == NULL)		/* "do nothing" */
-				skip_tuple = true;
-			else if (newtuple != tuple) /* modified by Trigger(s) */
-			{
-				heap_freetuple(tuple);
-				tuple = newtuple;
-			}
+			heap_freetuple(tuple);
+			tuple = newtuple;
 		}
 
 		if (!skip_tuple)
