@@ -23,7 +23,6 @@
 #include "commands/prepare.h"
 #include "funcapi.h"
 #include "rewrite/rewriteHandler.h"
-#include "sepgsql.h"
 #include "tcop/pquery.h"
 #include "tcop/tcopprot.h"
 #include "tcop/utility.h"
@@ -197,9 +196,6 @@ ExecuteQuery(ExecuteStmt *stmt, ParamListInfo params,
 		query->intoOnCommit = stmt->into_on_commit;
 		if (stmt->into_tbl_space)
 			query->intoTableSpaceName = pstrdup(stmt->into_tbl_space);
-
-		/* Query rewriting is necessary for INTO <tblname> support */
-		sepgsqlExecuteQuery(query, (Plan *)linitial(plan_list));
 
 		MemoryContextSwitchTo(oldContext);
 	}

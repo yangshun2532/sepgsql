@@ -115,7 +115,8 @@ static inline void sepgsql_audit(int result, char *message, char *objname) {
 
 /* security enhanced selinux core implementation */
 extern Size  sepgsql_shmem_size(void);
-extern int   sepgsql_avc_permission(psid ssid, psid tsid, uint16 tclass, uint32 perms, char **audit);
+extern int   sepgsql_avc_permission(psid ssid, psid tsid, uint16 tclass,
+									uint32 perms, char **audit);
 extern psid  sepgsql_avc_createcon(psid ssid, psid tsid, uint16 tclass);
 extern psid  sepgsql_avc_relabelcon(psid ssid, psid tsid, uint16 tclass);
 extern psid  sepgsql_context_to_psid(char *context);
@@ -132,31 +133,16 @@ extern void sepgsqlSetClientPsid(psid new_ctx);
 extern psid sepgsqlGetDatabasePsid(void);
 extern bool sepgsqlAttributeIsPsid(Form_pg_attribute attr);
 
-/* Secure Query rewriting functions */
+/* SE-PostgreSQL core Security Functions */
 extern void sepgsqlSecureRewrite(Query *query);
-extern void sepgsqlExecuteQuery(Query *query, Plan *plan);
+extern void sepgsqlProxyPortal(Portal portal);
 extern void sepgsqlWalkExpr(Query *query, bool do_check, Expr *expr);
 
 /* SE-PostgreSQL Query checking functions */
-extern void sepgsqlProxyPortal(Portal portal);
 
 /* implicit labeling support */
 extern HeapTuple sepgsqlExecInsert(HeapTuple newtup, Relation rel, MemoryContext mcontext);
-extern HeapTuple sepgsqlExecUpdate(HeapTuple newtup, HeapTuple oldtup, Relation rel, MemoryContext mcontext);
-
-/* SELECT statement related */
-extern Query *sepgsqlProxySelect(Query *query);
-extern void sepgsqlCheckRteRelation(Query *query, RangeTblEntry *rte, int index);
-extern void sepgsqlCheckTargetList(Query *query, List *targetList);
-extern void sepgsqlCheckExpr(Query *query, Expr *expr);
-/* UPDATE statement related */
-extern Query *sepgsqlProxyUpdate(Query *query);
-
-/* INSERT statement related */
-extern Query *sepgsqlProxyInsert(Query *query);
-
-/* DELETE statement related */
-extern Query *sepgsqlProxyDelete(Query *query);
+extern HeapTuple sepgsqlExecUpdate(HeapTuple newtup, HeapTuple oldtup, Relation rel);
 
 /* CREATE DATABASE statement related */
 extern void sepgsqlCreateDatabase(Datum *values, char *nulls);
@@ -197,8 +183,6 @@ extern void sepgsqlRestoreProcedure(psid orig_psid);
 
 /* COPY FROM/COPY TO statement */
 extern void sepgsqlDoCopy(Relation rel, List *attnumlist, bool is_from);
-extern void sepgsqlCopyFrom(Relation rel, Datum *values, char *nulls);
-extern Node *sepgsqlCopyFromNewContext(Relation rel);
 extern bool sepgsqlCopyTo(Relation rel, HeapTuple tuple);
 
 /* bootstrap hooks */
@@ -209,16 +193,10 @@ extern void sepgsqlBootstrapPostCreateRelation(Oid relid);
 /* SQL functions */
 extern Datum psid_in(PG_FUNCTION_ARGS);
 extern Datum psid_out(PG_FUNCTION_ARGS);
-extern Datum psid_recv(PG_FUNCTION_ARGS);
-extern Datum psid_send(PG_FUNCTION_ARGS);
 extern Datum text_to_psid(PG_FUNCTION_ARGS);
 extern Datum psid_to_text(PG_FUNCTION_ARGS);
 extern Datum sepgsql_permission(PG_FUNCTION_ARGS);
 extern Datum sepgsql_permission_noaudit(PG_FUNCTION_ARGS);
-extern Datum sepgsql_check_insert(PG_FUNCTION_ARGS);
-extern Datum sepgsql_check_update(PG_FUNCTION_ARGS);
-
-
 
 #else
 /* dummy enhanced selinux core implementation */

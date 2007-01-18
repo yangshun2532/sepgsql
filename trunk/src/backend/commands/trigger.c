@@ -1692,8 +1692,7 @@ ExecBRUpdateTriggers(EState *estate, ResultRelInfo *relinfo,
 			break;
 	}
 skip:
-	newtuple = sepgsqlExecUpdate(newtuple, trigtuple, relinfo->ri_RelationDesc,
-								 GetPerTupleMemoryContext(estate));
+	newtuple = sepgsqlExecUpdate(newtuple, trigtuple, relinfo->ri_RelationDesc);
 	if (oldtuple != newtuple && oldtuple != intuple)
 		heap_freetuple(oldtuple);
 

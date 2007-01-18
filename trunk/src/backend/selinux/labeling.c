@@ -144,7 +144,7 @@ HeapTuple sepgsqlExecInsert(HeapTuple tuple, Relation rel, MemoryContext mcontex
 	return newtuple;
 }
 
-HeapTuple sepgsqlExecUpdate(HeapTuple newtup, HeapTuple oldtup, Relation rel, MemoryContext mcontext)
+HeapTuple sepgsqlExecUpdate(HeapTuple newtup, HeapTuple oldtup, Relation rel)
 {
 	TupleDesc tdesc = RelationGetDescr(rel);
 	AttrNumber attno;
