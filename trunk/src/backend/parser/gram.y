@@ -1522,29 +1522,29 @@ alter_table_cmd:
 					n->def = (Node *) $3;
 					$$ = (Node *)n;
 				}
-			/* ALTER TABLE <relation> SET CONTEXT = '...' */
-			| SET IDENT '=' Sconst
+			/* ALTER TABLE <relation> CONTEXT = '...' */
+			| IDENT '=' Sconst
 				{
 					AlterTableCmd *n;
-					if (strcmp($2, "context") != 0)
+					if (strcmp($1, "context") != 0)
 						yyerror("syntax error1");
 
 					n = makeNode(AlterTableCmd);
 					n->subtype = AT_SetTableSecurityContext;
-					n->def = (Node *)makeString($4);
+					n->def = (Node *)makeString($3);
 					$$ = (Node *)n;
 				}
 			/* ALTER TABLE <relation> ALTER [COLUMN] <colname> CONTEXT = '...' */
-			| ALTER opt_column ColId SET IDENT '=' Sconst
+			| ALTER opt_column ColId IDENT '=' Sconst
 				{
 					AlterTableCmd *n;
-					if (strcmp($5, "context") != 0)
+					if (strcmp($4, "context") != 0)
 						yyerror("syntax error2");
 
 					n = makeNode(AlterTableCmd);
 					n->subtype = AT_SetColumnSecurityContext;
 					n->name = $3;
-					n->def = (Node *)makeString($7);
+					n->def = (Node *)makeString($6);
 					$$ = (Node *)n;
 				}
 			| alter_rel_cmd
