@@ -8,217 +8,242 @@
 
 #include "access/heapam.h"
 #include "access/htup.h"
+#include "access/xact.h"
 #include "bootstrap/bootstrap.h"
+#include "catalog/indexing.h"
 #include "catalog/pg_database.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_selinux.h"
 #include "miscadmin.h"
 #include "sepgsql.h"
 #include "utils/builtins.h"
+#include "utils/syscache.h"
 
+#include <unistd.h>
 #include <selinux/flask.h>
 #include <selinux/av_permissions.h>
 #include <selinux/selinux.h>
+#include <sys/file.h>
 
-/* ---- initial security context ---- */
-static struct {
-	psid sid;
-	security_context_t context;
-} init_context[7];
-#define initcon_server			(init_context[0])
-#define initcon_client			(init_context[1])
-#define initcon_database		(init_context[2])
-#define initcon_table			(init_context[3])
-#define initcon_procedure		(init_context[4])
-#define initcon_column			(init_context[5])
-#define initcon_tuple			(init_context[6])
-#define initcon_blob			(init_context[7])
-static bool init_context_available = false;
-static psid init_context_psid = SelinuxRelationId - 1;
+#define EARLY_PG_SELINUX  "global/pg_selinux.bootstrap"
 
-static void setup_init_context()
+bool sepgsqlBootstrapPgSelinuxAvailable()
 {
-	int i, j;
+	static bool pg_selinux_available = false;
+	char fname[MAXPGPATH];
+	FILE *filp;
 
-	for (i=0; i < lengthof(init_context); i++) {
+	if (IsBootstrapProcessingMode())
+		return false;
 
-		switch (i) {
-		case 0:
-			if (getcon_raw(&initcon_server.context) != 0)
-				selerror("could not obtain the initial server context");
-			break;
-		case 1:
-			if (getcon_raw(&initcon_client.context) != 0)
-				selerror("could not obtain the initial client context");
-			break;
-		case 2:
-			if (security_compute_create_raw(initcon_client.context,
-											initcon_server.context,
-											SECCLASS_DATABASE,
-											&initcon_database.context))
-				selerror("could not obtain the initial database context");
-			break;
-		case 3:
-			if (security_compute_create_raw(initcon_client.context,
-											initcon_database.context,
-											SECCLASS_TABLE,
-											&initcon_table.context)!=0)
-				selerror("could not obtain the initial table context");
-			break;
-		case 4:
-			if (security_compute_create_raw(initcon_client.context,
-											initcon_database.context,
-											SECCLASS_PROCEDURE,
-											&initcon_procedure.context) != 0)
-				selerror("could not obtain the initial procedure context");
-			break;
-		case 5:
-			if (security_compute_create_raw(initcon_client.context,
-											initcon_table.context,
-											SECCLASS_COLUMN,
-											&initcon_column.context) != 0)
-				selerror("could not obtain the initial column context");
-			break;
-		case 6:
-			if (security_compute_create_raw(initcon_client.context,
-											initcon_table.context,
-											SECCLASS_TUPLE,
-											&initcon_tuple.context) != 0)
-				selerror("could not obtain the initial tuple context");
-			break;
-		case 7:
-			if (security_compute_create_raw(initcon_client.context,
-											initcon_database.context,
-											SECCLASS_BLOB,
-											&initcon_blob.context) != 0)
-				selerror("could not obtain the initial blob context");
-			break;
-		default:
-			selerror("overbounds of initial security contexts");
-		}
+	if (pg_selinux_available)
+		return true;
 
-		for (j=0; j < i; j++) {
-			if (!strcmp(init_context[i].context, init_context[j].context)) {
-				init_context[i].sid = init_context[j].sid;
-				break;
+	snprintf(fname, sizeof(fname), "%s/%s", DataDir, EARLY_PG_SELINUX);
+	filp = fopen(fname, "rb");
+	if (filp) {
+		Relation rel;
+		CatalogIndexState index;
+		HeapTuple tup;
+		Datum value;
+		char isnull;
+
+		PG_TRY();
+		{
+			char buffer[1024];
+			psid sid;
+
+			rel = heap_open(SelinuxRelationId, RowExclusiveLock);
+			index = CatalogOpenIndexes(rel);
+			while (fscanf(filp, "%u %s", &sid, buffer) == 2) {
+				value = DirectFunctionCall1(textin, CStringGetDatum(buffer));
+				isnull = ' ';
+				tup = heap_formtuple(RelationGetDescr(rel), &value, &isnull);
+				HeapTupleSetOid(tup, sid);
+				simple_heap_insert(rel, tup);
+				CatalogIndexInsert(index, tup);
+
+				heap_freetuple(tup);
 			}
+			CatalogCloseIndexes(index);
+			heap_close(rel, NoLock);
+
+			CommandCounterIncrement();
+			CatalogCacheFlushRelation(SelinuxRelationId);
 		}
-		if (j == i)
-			init_context[i].sid = init_context_psid--;
+		PG_CATCH();
+		{
+			fclose(filp);
+			PG_RE_THROW();
+		}
+		PG_END_TRY();
+		fclose(filp);
+		unlink(fname);
 	}
-	init_context_available = true;
+	pg_selinux_available = true;
+	return true;
 }
 
-psid sepgsqlBootstrap_context_to_psid(char *context)
+psid sepgsqlBootstrapContextToPsid(char *context)
 {
-	int i;
+	char fname[MAXPGPATH], buffer[1024];
+	psid sid, minsid = SelinuxRelationId;
+	FILE *filp;
 
-	if (!init_context_available)
-		setup_init_context();
-
-	for (i=0; i < lengthof(init_context); i++) {
-		if (!strcmp(init_context[i].context, context))
-			return init_context[i].sid;
+	snprintf(fname, sizeof(fname), "%s/%s", DataDir, EARLY_PG_SELINUX);
+	filp = fopen(fname, "a+b");
+	if (!filp)
+		selerror("could not open '%s'", fname);
+	flock(fileno(filp), LOCK_EX);
+	while (fscanf(filp, "%u %s", &sid, buffer) == 2) {
+		if (!strcmp(context, buffer)) {
+			fclose(filp);
+			return sid;
+		}
+		if (sid < minsid)
+			minsid = sid;
 	}
-	selerror("could find psid in initial security contexts (for context='%s')", context);
-	return InvalidOid; /* compiler kindness */
+	if (!sepgsql_check_context(context))
+		selerror("'%s' is not valid security context", ((char *)2UL));
+
+	sid = minsid - 1;
+	fprintf(filp, "%u %s\n", sid, context);
+	fclose(filp);
+
+	return sid;
 }
 
-char *sepgsqlBootstrap_psid_to_context(psid sid)
+char *sepgsqlBootstrapPsidToContext(psid sid)
 {
-	int i;
+	char fname[MAXPGPATH], buffer[1024];
+	FILE *filp;
+	psid cursid;
 
-	if (!init_context_available)
-		setup_init_context();
-
-	for (i=0; i < lengthof(init_context); i++) {
-		if (init_context[i].sid == sid)
-			return pstrdup(init_context[i].context);
+	snprintf(fname, sizeof(fname), "%s/%s", DataDir, EARLY_PG_SELINUX);
+	filp = fopen(fname, "rb");
+	if (!filp)
+		goto not_found;
+	flock(fileno(filp), LOCK_SH);
+	while (fscanf(filp, "%u %s", &cursid, buffer) == 2) {
+		if (cursid == sid) {
+			fclose(filp);
+			return pstrdup(buffer);
+		}
 	}
-	selerror("could find context in initial security contexts (for psid=%u)", sid);
-	return NULL; /* compiler kindness */
+	fclose(filp);
+
+not_found:
+	selerror("No string expression for psid=%u", sid);
+	return NULL;
 }
 
 void sepgsqlBootstrapPostCreateRelation(Oid relid)
 {
-	Relation rel;
-	HeapTuple tuple;
-	psid recent;
-	char isnulls[1] = {' '};
-	Datum values[1];
-	int i;
+#if 0
+	char fname[MAXPGPATH], buffer[1024];
+	FILE *filp;
+	psid sid;
 
 	if (relid != SelinuxRelationId)
 		return;
 
-	rel = relation_open(relid, AccessExclusiveLock);
-
-	for (i=0, recent=SelinuxRelationId; i < lengthof(init_context); i++) {
-		if (init_context[i].sid >= recent)
-			continue;
-		values[0] = DirectFunctionCall1(textin, CStringGetDatum(init_context[i].context));
-		tuple = heap_formtuple(RelationGetDescr(rel), values, isnulls);
-		HeapTupleSetOid(tuple, init_context[i].sid);
-		simple_heap_insert(rel, tuple);
-		heap_freetuple(tuple);
-
-		recent = init_context[i].sid;
+	snprintf(fname, sizeof(fname), "%s/%s", DataDir, EARLY_PG_SELINUX);
+	filp = fopen(fname, "rb");
+	if (!filp) {
+		selnotice("could not found '%s'", fname);
+		return;
 	}
 
-	relation_close(rel, NoLock);
+	PG_TRY();
+	{
+		Relation rel;
+		HeapTuple tup;
+		Datum value;
+		char isnull;
+
+		rel = relation_open(SelinuxRelationId, AccessExclusiveLock);
+		while (fscanf(filp, "%u %s", &sid, buffer) == 2) {
+			value = DirectFunctionCall1(textin, CStringGetDatum(buffer));
+			isnull = ' ';
+			tup = heap_formtuple(RelationGetDescr(rel), &value, &isnull);
+			HeapTupleSetOid(tup, sid);
+			simple_heap_insert(rel, tup);
+			heap_freetuple(tup);
+			selnotice("INSERT INTO pg_selinux ('%s')", buffer);
+		}
+		relation_close(rel, NoLock);
+	}
+	PG_CATCH();
+	{
+		fclose(filp);
+		PG_RE_THROW();
+	}
+	PG_END_TRY();
+	fclose(filp);
+
+	unlink(fname);
+#endif
 }
 
 int sepgsqlBootstrapInsertOneValue(int index)
 {
+	psid newcon;
+	char *context;
 	int rc = 0;
-
-	if (!init_context_available)
-		setup_init_context();
 
 	if (boot_reldesc == NULL)
 		selerror("no open relation to assign a security context");
 
-	switch (boot_reldesc->rd_id) {
+	switch (RelationGetRelid(boot_reldesc)) {
 	case DatabaseRelationId:
 		if (index == Anum_pg_database_datselcon - 1) {
-			InsertOneValue(initcon_database.context, index);
+			newcon = sepgsql_avc_createcon(sepgsqlGetClientPsid(),
+										   sepgsqlGetServerPsid(),
+										   SECCLASS_DATABASE);
+			context = sepgsql_psid_to_context(newcon);
+			InsertOneValue(context, index);
+			pfree(context);
 			rc = 1;
 		}
 		break;
 	case RelationRelationId:
 		if (index == Anum_pg_class_relselcon - 1) {
-			InsertOneValue(initcon_table.context, index);
+			newcon = sepgsql_avc_createcon(sepgsqlGetClientPsid(),
+										   sepgsqlGetDatabasePsid(),
+										   SECCLASS_DATABASE);
+			context = sepgsql_psid_to_context(newcon);
+			InsertOneValue(context, index);
+			pfree(context);
 			rc = 1;
 		}
 		break;
 	case ProcedureRelationId:
 		if (index == Anum_pg_proc_proselcon - 1) {
-			InsertOneValue(initcon_procedure.context, index);
+			newcon = sepgsql_avc_createcon(sepgsqlGetClientPsid(),
+										   sepgsqlGetDatabasePsid(),
+										   SECCLASS_PROCEDURE);
+			context = sepgsql_psid_to_context(newcon);
+			InsertOneValue(context, index);
+			pfree(context);
 			rc = 1;
 		}
 		break;
 	case AttributeRelationId:
 		if (index == Anum_pg_attribute_attispsid - 1) {
-			InsertOneValue("f", index);
-			InsertOneValue(initcon_column.context, index + 1);
+			TupleDesc tdesc = RelationGetDescr(boot_reldesc);
+			Form_pg_attribute attr = tdesc->attrs[Anum_pg_attribute_attselcon - 1];
+			psid tblcon = attr->attselcon;
+
+			InsertOneValue("f", index++);
+			newcon = sepgsql_avc_createcon(sepgsqlGetClientPsid(),
+										   tblcon,
+										   SECCLASS_COLUMN);
+			context = sepgsql_psid_to_context(newcon);
+			InsertOneValue(context, index);
+			pfree(context);
 			rc = 2;
 		}
 		break;
 	}
 	return rc;
-}
-
-void sepgsqlBootstrapFormrdesc(Relation rel)
-{
-	TupleDesc tupDesc = rel->rd_att;
-	int i;
-
-	if (!IsBootstrapProcessingMode())
-		return;
-
-	if (!init_context_available)
-		setup_init_context();
-
-	for (i=0; i < tupDesc->natts; i++)
-		tupDesc->attrs[i]->attselcon = initcon_column.sid;;
 }

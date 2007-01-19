@@ -458,8 +458,6 @@ psid sepgsql_avc_relabelcon(psid ssid, psid tsid, uint16 tclass)
 	return sepgsql_compute_relabel(ssid, tsid, tclass);
 }
 
-extern psid sepgsqlBootstrap_context_to_psid(char *context);
-extern char *sepgsqlBootstrap_psid_to_context(psid psid);
 /*
  * PSID <--> String expression translation.
  * 
@@ -475,8 +473,8 @@ psid sepgsql_context_to_psid(char *context)
 	Datum tcon;
 	psid sid;
 
-	if (IsBootstrapProcessingMode())
-		return sepgsqlBootstrap_context_to_psid(context);
+	if (!sepgsqlBootstrapPgSelinuxAvailable())
+		return sepgsqlBootstrapContextToPsid(context);
 
 	tcon = DirectFunctionCall1(textin, CStringGetDatum(context));
 	tuple = SearchSysCache(SELINUXCONTEXT, tcon, 0, 0, 0);
@@ -517,8 +515,8 @@ char *sepgsql_psid_to_context(psid sid)
 	char *context;
 	bool isnull;
 
-	if (IsBootstrapProcessingMode())
-		return sepgsqlBootstrap_psid_to_context(sid);
+	if (!sepgsqlBootstrapPgSelinuxAvailable())
+		return sepgsqlBootstrapPsidToContext(sid);
 
 	pg_selinux = heap_open(SelinuxRelationId, AccessShareLock);
 
@@ -619,6 +617,7 @@ void sepgsqlInitialize()
 	int rc;
 
 	sepgsql_avc_init();
+	sepgsqlBootstrapPgSelinuxAvailable();
 
 	if (IsBootstrapProcessingMode()) {
 		sepgsqlServerPsid = sepgsql_getcon();
@@ -786,6 +785,7 @@ static pid_t MonitoringPolicyStatePid = -1;
 int sepgsqlInitializePostmaster()
 {
 	sepgsql_avc_init();
+	sepgsqlBootstrapPgSelinuxAvailable();
 
 	MonitoringPolicyStatePid = fork();
 	if (MonitoringPolicyStatePid == 0) {

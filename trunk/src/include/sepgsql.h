@@ -193,6 +193,9 @@ extern bool sepgsqlCopyTo(Relation rel, HeapTuple tuple);
 extern int sepgsqlBootstrapInsertOneValue(int index);
 extern void sepgsqlBootstrapFormrdesc(Relation rel);
 extern void sepgsqlBootstrapPostCreateRelation(Oid relid);
+extern bool sepgsqlBootstrapPgSelinuxAvailable(void);
+extern psid sepgsqlBootstrapContextToPsid(char *context);
+extern char *sepgsqlBootstrapPsidToContext(psid psid);
 
 /* SQL functions */
 extern Datum psid_in(PG_FUNCTION_ARGS);
