@@ -1,6 +1,45 @@
 
                                 Release Notes
 
+                                Release 8.2.1
+
+     Release date: 2007-01-08
+
+   This release contains a variety of fixes from 8.2.
+     __________________________________________________________________
+
+Migration to version 8.2.1
+
+   A dump/restore is not required for those running 8.2.
+     __________________________________________________________________
+
+Changes
+
+     * Fix crash with SELECT ... LIMIT ALL (also LIMIT NULL) (Tom)
+     * "Several /contrib/tsearch2" fixes (Teodor)
+     * On Windows, make log messages coming from the operating system use
+       ASCII encoding (Hiroshi Saito)
+       This fixes a conversion problem when there is a mismatch between
+       the encoding of the operating system and database server.
+     * Fix Windows linking of pg_dump using "win32.mak" (Hiroshi Saito)
+     * Fix planner mistakes for outer join queries (Tom)
+     * Fix several problems in queries involving sub-SELECTs (Tom)
+     * Fix potential crash in SPI during subtransaction abort (Tom)
+       This affects all PL functions since they all use SPI.
+     * Improve build speed of PDF documentation (Peter)
+     * Re-add JST (Japan) timezone abbreviation (Tom)
+     * Improve optimization decisions related to index scans (Tom)
+     * Have psql print multi-byte combining characters as before, rather
+       than output as \u (Tom)
+     * Improve index usage of regular expressions that use parentheses
+       (Tom)
+       This improves psql \d performance also.
+     * Make pg_dumpall assume that databases have public CONNECT
+       privilege, when dumping from a pre-8.2 server (Tom)
+       This preserves the previous behavior that anyone can connect to a
+       database if allowed by "pg_hba.conf".
+     __________________________________________________________________
+
                                  Release 8.2
 
      Release date: 2006-12-05
@@ -79,7 +118,9 @@ Migration to version 8.2
      * Make command-line options of postmaster and postgres identical
        (Peter)
        This allows the postmaster to pass arguments to each backend
-       without using -o.
+       without using -o. Note that some options are now only available as
+       long-form options, because there were conflicting single-letter
+       options.
      * Deprecate use of postmaster symbolic link (Peter)
        postmaster and postgres commands now act identically, with the
        behavior determined by command-line options. The postmaster
@@ -726,6 +767,53 @@ Contrib Changes
        (The old names remain available, but are deprecated.)
      * Add uninstall scripts for all contrib packages that have install
        scripts (David, Josh Drake)
+     __________________________________________________________________
+
+                                Release 8.1.6
+
+     Release date: 2007-01-08
+
+   This release contains a variety of fixes from 8.1.5.
+     __________________________________________________________________
+
+Migration to version 8.1.6
+
+   A dump/restore is not required for those running 8.1.X. However, if you
+   are upgrading from a version earlier than 8.1.2, see the release notes
+   for 8.1.2.
+     __________________________________________________________________
+
+Changes
+
+     * Improve handling of getaddrinfo() on AIX (Tom)
+       This fixes a problem with starting the statistics collector, among
+       other things.
+     * Fix pg_restore to handle a tar-format backup that contains large
+       objects (blobs) with comments (Tom)
+     * Fix "failed to re-find parent key" errors in "VACUUM" (Tom)
+     * Clean out "pg_internal.init" cache files during server restart
+       (Simon)
+       This avoids a hazard that the cache files might contain stale data
+       after PITR recovery.
+     * Fix race condition for truncation of a large relation across a
+       gigabyte boundary by "VACUUM" (Tom)
+     * Fix bug causing needless deadlock errors on row-level locks (Tom)
+     * Fix bugs affecting multi-gigabyte hash indexes (Tom)
+     * Fix possible deadlock in Windows signal handling (Teodor)
+     * Fix error when constructing an ARRAY[] made up of multiple empty
+       elements (Tom)
+     * Fix ecpg memory leak during connection (Michael)
+     * Fix for Darwin (OS X) compilation (Tom)
+     * to_number() and to_char(numeric) are now STABLE, not IMMUTABLE, for
+       new initdb installs (Tom)
+       This is because lc_numeric can potentially change the output of
+       these functions.
+     * Improve index usage of regular expressions that use parentheses
+       (Tom)
+       This improves psql \d performance also.
+     * Update timezone database
+       This affects Australian and Canadian daylight-savings rules in
+       particular.
      __________________________________________________________________
 
                                 Release 8.1.5
@@ -1815,6 +1903,45 @@ Contrib Changes
           + Take build parameters (OpenSSL, zlib) from "configure" result
             There is no need to edit the "Makefile" anymore.
           + Remove support for "libmhash" and "libmcrypt"
+     __________________________________________________________________
+
+                               Release 8.0.10
+
+     Release date: 2007-01-08
+
+   This release contains a variety of fixes from 8.0.9.
+     __________________________________________________________________
+
+Migration to version 8.0.10
+
+   A dump/restore is not required for those running 8.0.X. However, if you
+   are upgrading from a version earlier than 8.0.6, see the release notes
+   for 8.0.6.
+     __________________________________________________________________
+
+Changes
+
+     * Improve handling of getaddrinfo() on AIX (Tom)
+       This fixes a problem with starting the statistics collector, among
+       other things.
+     * Fix "failed to re-find parent key" errors in "VACUUM" (Tom)
+     * Fix race condition for truncation of a large relation across a
+       gigabyte boundary by "VACUUM" (Tom)
+     * Fix bugs affecting multi-gigabyte hash indexes (Tom)
+     * Fix possible deadlock in Windows signal handling (Teodor)
+     * Fix error when constructing an ARRAY[] made up of multiple empty
+       elements (Tom)
+     * Fix ecpg memory leak during connection (Michael)
+     * to_number() and to_char(numeric) are now STABLE, not IMMUTABLE, for
+       new initdb installs (Tom)
+       This is because lc_numeric can potentially change the output of
+       these functions.
+     * Improve index usage of regular expressions that use parentheses
+       (Tom)
+       This improves psql \d performance also.
+     * Update timezone database
+       This affects Australian and Canadian daylight-savings rules in
+       particular.
      __________________________________________________________________
 
                                 Release 8.0.9
@@ -3181,6 +3308,38 @@ Contrib Changes
      * Removed "contrib/pg_logger": obsoleted by integrated logging
        subprocess
      * Removed "contrib/rserv": obsoleted by various separate projects
+     __________________________________________________________________
+
+                               Release 7.4.15
+
+     Release date: 2007-01-08
+
+   This release contains a variety of fixes from 7.4.14.
+     __________________________________________________________________
+
+Migration to version 7.4.15
+
+   A dump/restore is not required for those running 7.4.X. However, if you
+   are upgrading from a version earlier than 7.4.11, see the release notes
+   for 7.4.11.
+     __________________________________________________________________
+
+Changes
+
+     * Improve handling of getaddrinfo() on AIX (Tom)
+       This fixes a problem with starting the statistics collector, among
+       other things.
+     * Fix "failed to re-find parent key" errors in "VACUUM" (Tom)
+     * Fix bugs affecting multi-gigabyte hash indexes (Tom)
+     * Fix error when constructing an ARRAY[] made up of multiple empty
+       elements (Tom)
+     * to_number() and to_char(numeric) are now STABLE, not IMMUTABLE, for
+       new initdb installs (Tom)
+       This is because lc_numeric can potentially change the output of
+       these functions.
+     * Improve index usage of regular expressions that use parentheses
+       (Tom)
+       This improves psql \d performance also.
      __________________________________________________________________
 
                                Release 7.4.14
@@ -4688,6 +4847,31 @@ Contrib Changes
      * Fix dbase "-s" option and improve non-ASCII handling (Thomas Behr,
        Márcio Smiderle)
      * Remove array module because features now included by default (Joe)
+     __________________________________________________________________
+
+                               Release 7.3.17
+
+     Release date: 2007-01-08
+
+   This release contains a variety of fixes from 7.3.16.
+     __________________________________________________________________
+
+Migration to version 7.3.17
+
+   A dump/restore is not required for those running 7.3.X. However, if you
+   are upgrading from a version earlier than 7.3.13, see the release notes
+   for 7.3.13.
+     __________________________________________________________________
+
+Changes
+
+     * to_number() and to_char(numeric) are now STABLE, not IMMUTABLE, for
+       new initdb installs (Tom)
+       This is because lc_numeric can potentially change the output of
+       these functions.
+     * Improve index usage of regular expressions that use parentheses
+       (Tom)
+       This improves psql \d performance also.
      __________________________________________________________________
 
                                Release 7.3.16

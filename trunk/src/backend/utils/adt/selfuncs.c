@@ -15,7 +15,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/adt/selfuncs.c,v 1.214 2006/10/04 00:29:59 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/backend/utils/adt/selfuncs.c,v 1.214.2.2 2007/01/03 22:39:35 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -3788,7 +3788,10 @@ get_variable_maximum(PlannerInfo *root, VariableStatData *vardata,
  * These routines support analysis of LIKE and regular-expression patterns
  * by the planner/optimizer.  It's important that they agree with the
  * regular-expression code in backend/regex/ and the LIKE code in
- * backend/utils/adt/like.c.
+ * backend/utils/adt/like.c.  Also, the computation of the fixed prefix
+ * must be conservative: if we report a string longer than the true fixed
+ * prefix, the query may produce actually wrong answers, rather than just
+ * getting a bad selectivity estimate!
  *
  * Note that the prefix-analysis functions are called from
  * backend/optimizer/path/indxpath.c as well as from routines in this file.
@@ -3820,6 +3823,7 @@ like_fixed_prefix(Const *patt_const, bool case_insensitive,
 	Oid			typeid = patt_const->consttype;
 	int			pos,
 				match_pos;
+	bool		is_multibyte = (pg_database_encoding_max_length() > 1);
 
 	/* the right-hand const is type text or bytea */
 	Assert(typeid == BYTEAOID || typeid == TEXTOID);
@@ -3863,11 +3867,16 @@ like_fixed_prefix(Const *patt_const, bool case_insensitive,
 		}
 
 		/*
-		 * XXX I suspect isalpha() is not an adequately locale-sensitive test
-		 * for characters that can vary under case folding?
+		 * XXX In multibyte character sets, we can't trust isalpha, so assume
+		 * any multibyte char is potentially case-varying.
 		 */
-		if (case_insensitive && isalpha((unsigned char) patt[pos]))
-			break;
+		if (case_insensitive)
+		{
+			if (is_multibyte && (unsigned char) patt[pos] >= 0x80)
+				break;
+			if (isalpha((unsigned char) patt[pos]))
+				break;
+		}
 
 		/*
 		 * NOTE: this code used to think that %% meant a literal %, but
@@ -3912,11 +3921,13 @@ regex_fixed_prefix(Const *patt_const, bool case_insensitive,
 	int			pos,
 				match_pos,
 				prev_pos,
-				prev_match_pos,
-				paren_depth;
+				prev_match_pos;
+	bool		have_leading_paren;
 	char	   *patt;
 	char	   *rest;
 	Oid			typeid = patt_const->consttype;
+	bool		is_basic = regex_flavor_is_basic();
+	bool		is_multibyte = (pg_database_encoding_max_length() > 1);
 
 	/*
 	 * Should be unnecessary, there are no bytea regex operators defined. As
@@ -3931,8 +3942,36 @@ regex_fixed_prefix(Const *patt_const, bool case_insensitive,
 	/* the right-hand const is type text for all of these */
 	patt = DatumGetCString(DirectFunctionCall1(textout, patt_const->constvalue));
 
+	/*
+	 * Check for ARE director prefix.  It's worth our trouble to recognize
+	 * this because similar_escape() uses it.
+	 */
+	pos = 0;
+	if (strncmp(patt, "***:", 4) == 0)
+	{
+		pos = 4;
+		is_basic = false;
+	}
+
 	/* Pattern must be anchored left */
-	if (patt[0] != '^')
+	if (patt[pos] != '^')
+	{
+		rest = patt;
+
+		*prefix_const = NULL;
+		*rest_const = string_to_const(rest, typeid);
+
+		return Pattern_Prefix_None;
+	}
+	pos++;
+
+	/*
+	 * If '|' is present in pattern, then there may be multiple alternatives
+	 * for the start of the string.  (There are cases where this isn't so,
+	 * for instance if the '|' is inside parens, but detecting that reliably
+	 * is too hard.)
+	 */
+	if (strchr(patt + pos, '|') != NULL)
 	{
 		rest = patt;
 
@@ -3942,71 +3981,68 @@ regex_fixed_prefix(Const *patt_const, bool case_insensitive,
 		return Pattern_Prefix_None;
 	}
 
-	/*
-	 * If unquoted | is present at paren level 0 in pattern, then there are
-	 * multiple alternatives for the start of the string.
-	 */
-	paren_depth = 0;
-	for (pos = 1; patt[pos]; pos++)
-	{
-		if (patt[pos] == '|' && paren_depth == 0)
-		{
-			rest = patt;
-
-			*prefix_const = NULL;
-			*rest_const = string_to_const(rest, typeid);
-
-			return Pattern_Prefix_None;
-		}
-		else if (patt[pos] == '(')
-			paren_depth++;
-		else if (patt[pos] == ')' && paren_depth > 0)
-			paren_depth--;
-		else if (patt[pos] == '\\')
-		{
-			/* backslash quotes the next character */
-			pos++;
-			if (patt[pos] == '\0')
-				break;
-		}
-	}
-
 	/* OK, allocate space for pattern */
 	match = palloc(strlen(patt) + 1);
 	prev_match_pos = match_pos = 0;
 
-	/* note start at pos 1 to skip leading ^ */
-	for (prev_pos = pos = 1; patt[pos];)
+	/*
+	 * We special-case the syntax '^(...)$' because psql uses it.  But beware:
+	 * in BRE mode these parentheses are just ordinary characters.  Also,
+	 * sequences beginning "(?" are not what they seem, unless they're "(?:".
+	 * (We should recognize that, too, because of similar_escape().)
+	 *
+	 * Note: it's a bit bogus to be depending on the current regex_flavor
+	 * setting here, because the setting could change before the pattern is
+	 * used.  We minimize the risk by trusting the flavor as little as we can,
+	 * but perhaps it would be a good idea to get rid of the "basic" setting.
+	 */
+	have_leading_paren = false;
+	if (patt[pos] == '(' && !is_basic &&
+		(patt[pos + 1] != '?' || patt[pos + 2] == ':'))
+	{
+		have_leading_paren = true;
+		pos += (patt[pos + 1] != '?' ? 1 : 3);
+	}
+
+	/* Scan remainder of pattern */
+	prev_pos = pos;
+	while (patt[pos])
 	{
 		int			len;
 
 		/*
 		 * Check for characters that indicate multiple possible matches here.
-		 * XXX I suspect isalpha() is not an adequately locale-sensitive test
-		 * for characters that can vary under case folding?
+		 * Also, drop out at ')' or '$' so the termination test works right.
 		 */
 		if (patt[pos] == '.' ||
 			patt[pos] == '(' ||
+			patt[pos] == ')' ||
 			patt[pos] == '[' ||
-			patt[pos] == '$' ||
-			(case_insensitive && isalpha((unsigned char) patt[pos])))
+			patt[pos] == '^' ||
+			patt[pos] == '$')
 			break;
 
 		/*
-		 * In AREs, backslash followed by alphanumeric is an escape, not a
-		 * quoted character.  Must treat it as having multiple possible
-		 * matches.
+		 * XXX In multibyte character sets, we can't trust isalpha, so assume
+		 * any multibyte char is potentially case-varying.
 		 */
-		if (patt[pos] == '\\' && isalnum((unsigned char) patt[pos + 1]))
-			break;
+		if (case_insensitive)
+		{
+			if (is_multibyte && (unsigned char) patt[pos] >= 0x80)
+				break;
+			if (isalpha((unsigned char) patt[pos]))
+				break;
+		}
 
 		/*
 		 * Check for quantifiers.  Except for +, this means the preceding
 		 * character is optional, so we must remove it from the prefix too!
+		 * Note: in BREs, \{ is a quantifier.
 		 */
 		if (patt[pos] == '*' ||
 			patt[pos] == '?' ||
-			patt[pos] == '{')
+			patt[pos] == '{' ||
+			(patt[pos] == '\\' && patt[pos + 1] == '{'))
 		{
 			match_pos = prev_match_pos;
 			pos = prev_pos;
@@ -4017,9 +4053,19 @@ regex_fixed_prefix(Const *patt_const, bool case_insensitive,
 			pos = prev_pos;
 			break;
 		}
+
+		/*
+		 * Normally, backslash quotes the next character.  But in AREs,
+		 * backslash followed by alphanumeric is an escape, not a quoted
+		 * character.  Must treat it as having multiple possible matches.
+		 * In BREs, \( is a parenthesis, so don't trust that either.
+		 * Note: since only ASCII alphanumerics are escapes, we don't have
+		 * to be paranoid about multibyte here.
+		 */
 		if (patt[pos] == '\\')
 		{
-			/* backslash quotes the next character */
+			if (isalnum((unsigned char) patt[pos + 1]) || patt[pos + 1] == '(')
+				break;
 			pos++;
 			if (patt[pos] == '\0')
 				break;
@@ -4036,6 +4082,9 @@ regex_fixed_prefix(Const *patt_const, bool case_insensitive,
 
 	match[match_pos] = '\0';
 	rest = &patt[pos];
+
+	if (have_leading_paren && patt[pos] == ')')
+		pos++;
 
 	if (patt[pos] == '$' && patt[pos + 1] == '\0')
 	{
@@ -4673,14 +4722,18 @@ genericcostestimate(PlannerInfo *root,
 	 * way in order to get the right answer for partial indexes.
 	 */
 	if (numIndexTuples <= 0.0)
+	{
 		numIndexTuples = *indexSelectivity * index->rel->tuples;
 
-	/*
-	 * The estimate obtained so far counts all the tuples returned by all
-	 * scans of ScalarArrayOpExpr calls.  We want to consider the per-scan
-	 * number, so adjust.  This is a handy place to round to integer, too.
-	 */
-	numIndexTuples = rint(numIndexTuples / num_sa_scans);
+		/*
+		 * The above calculation counts all the tuples visited across all
+		 * scans induced by ScalarArrayOpExpr nodes.  We want to consider the
+		 * average per-indexscan number, so adjust.  This is a handy place to
+		 * round to integer, too.  (If caller supplied tuple estimate, it's
+		 * responsible for handling these considerations.)
+		 */
+		numIndexTuples = rint(numIndexTuples / num_sa_scans);
+	}
 
 	/*
 	 * We can bound the number of tuples by the index size in any case. Also,
@@ -4786,7 +4839,9 @@ genericcostestimate(PlannerInfo *root,
 	 * evaluated once at the start of the scan to reduce them to runtime keys
 	 * to pass to the index AM (see nodeIndexscan.c).  We model the per-tuple
 	 * CPU costs as cpu_index_tuple_cost plus one cpu_operator_cost per
-	 * indexqual operator.
+	 * indexqual operator.  Because we have numIndexTuples as a per-scan
+	 * number, we have to multiply by num_sa_scans to get the correct result
+	 * for ScalarArrayOpExpr cases.
 	 *
 	 * Note: this neglects the possible costs of rechecking lossy operators
 	 * and OR-clause expressions.  Detecting that that might be needed seems
@@ -4801,7 +4856,22 @@ genericcostestimate(PlannerInfo *root,
 		qual_arg_cost = 0;
 	*indexStartupCost = qual_arg_cost;
 	*indexTotalCost += qual_arg_cost;
-	*indexTotalCost += numIndexTuples * (cpu_index_tuple_cost + qual_op_cost);
+	*indexTotalCost += numIndexTuples * num_sa_scans * (cpu_index_tuple_cost + qual_op_cost);
+
+	/*
+	 * We also add a CPU-cost component to represent the general costs of 
+	 * starting an indexscan, such as analysis of btree index keys and
+	 * initial tree descent.  This is estimated at 100x cpu_operator_cost,
+	 * which is a bit arbitrary but seems the right order of magnitude.
+	 * (As noted above, we don't charge any I/O for touching upper tree
+	 * levels, but charging nothing at all has been found too optimistic.)
+	 *
+	 * Although this is startup cost with respect to any one scan, we add
+	 * it to the "total" cost component because it's only very interesting
+	 * in the many-ScalarArrayOpExpr-scan case, and there it will be paid
+	 * over the life of the scan node.
+	 */
+	*indexTotalCost += num_sa_scans * 100.0 * cpu_operator_cost;
 
 	/*
 	 * Generic assumption about index correlation: there isn't any.
@@ -4829,6 +4899,7 @@ btcostestimate(PG_FUNCTION_ARGS)
 	int			indexcol;
 	bool		eqQualHere;
 	bool		found_saop;
+	double		num_sa_scans;
 	ListCell   *l;
 
 	/*
@@ -4852,6 +4923,7 @@ btcostestimate(PG_FUNCTION_ARGS)
 	indexcol = 0;
 	eqQualHere = false;
 	found_saop = false;
+	num_sa_scans = 1;
 	foreach(l, indexQuals)
 	{
 		RestrictInfo *rinfo = (RestrictInfo *) lfirst(l);
@@ -4928,6 +5000,15 @@ btcostestimate(PG_FUNCTION_ARGS)
 		Assert(op_strategy != 0);		/* not a member of opclass?? */
 		if (op_strategy == BTEqualStrategyNumber)
 			eqQualHere = true;
+		/* count up number of SA scans induced by indexBoundQuals only */
+		if (IsA(clause, ScalarArrayOpExpr))
+		{
+			ScalarArrayOpExpr *saop = (ScalarArrayOpExpr *) clause;
+			int			alength = estimate_array_length(lsecond(saop->args));
+
+			if (alength > 1)
+				num_sa_scans *= alength;
+		}
 		indexBoundQuals = lappend(indexBoundQuals, rinfo);
 	}
 
@@ -4949,6 +5030,12 @@ btcostestimate(PG_FUNCTION_ARGS)
 												  index->rel->relid,
 												  JOIN_INNER);
 		numIndexTuples = btreeSelectivity * index->rel->tuples;
+		/*
+		 * As in genericcostestimate(), we have to adjust for any
+		 * ScalarArrayOpExpr quals included in indexBoundQuals, and then
+		 * round to integer.
+		 */
+		numIndexTuples = rint(numIndexTuples / num_sa_scans);
 	}
 
 	genericcostestimate(root, index, indexQuals, outer_rel, numIndexTuples,

@@ -173,7 +173,7 @@ pg_dumpall > outputfile
        keys), then use the "-o" option when running pg_dumpall.
        To make the backup, you can use the pg_dumpall command from the
        version you are currently running. For best results, however, try
-       to use the pg_dumpall command from PostgreSQL 8.2.0, since this
+       to use the pg_dumpall command from PostgreSQL 8.2.1, since this
        version contains bug fixes and improvements over older versions.
        While this advice might seem idiosyncratic since you haven't
        installed the new version yet, it is advisable to follow it if you
@@ -195,7 +195,7 @@ pg_ctl stop
        this:
 mv /usr/local/pgsql /usr/local/pgsql.old
 
-   After you have installed PostgreSQL 8.2.0, create a new database
+   After you have installed PostgreSQL 8.2.1, create a new database
    directory and start the new server. Remember that you must execute
    these commands while logged in to the special database user account
    (which you already have if you are upgrading).
@@ -499,6 +499,17 @@ mv /usr/local/pgsql /usr/local/pgsql.old
                 might not be in the path. Additional command-line options
                 for the "dtrace" program can be specified in the
                 environment variable DTRACEFLAGS.
+
+                To include DTrace support in a 64-bit binary, specify
+                DTRACEFLAGS="-64" to configure. For example, using the GCC
+                compiler:
+
+./configure CC='gcc -m64' --enable-dtrace DTRACEFLAGS='-64' ...
+
+                Using Sun's compiler:
+
+./configure CC='/opt/SUNWspro/bin/cc -xtarget=native64' --enable-dtrace DTRACEFL
+AGS='-64' ...
 
        If you prefer a C compiler different from the one "configure"
        picks, you can set the environment variable CC to the program of
