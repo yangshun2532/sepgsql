@@ -137,54 +137,6 @@ not_found:
 	return NULL;
 }
 
-void sepgsqlBootstrapPostCreateRelation(Oid relid)
-{
-#if 0
-	char fname[MAXPGPATH], buffer[1024];
-	FILE *filp;
-	psid sid;
-
-	if (relid != SelinuxRelationId)
-		return;
-
-	snprintf(fname, sizeof(fname), "%s/%s", DataDir, EARLY_PG_SELINUX);
-	filp = fopen(fname, "rb");
-	if (!filp) {
-		selnotice("could not found '%s'", fname);
-		return;
-	}
-
-	PG_TRY();
-	{
-		Relation rel;
-		HeapTuple tup;
-		Datum value;
-		char isnull;
-
-		rel = relation_open(SelinuxRelationId, AccessExclusiveLock);
-		while (fscanf(filp, "%u %s", &sid, buffer) == 2) {
-			value = DirectFunctionCall1(textin, CStringGetDatum(buffer));
-			isnull = ' ';
-			tup = heap_formtuple(RelationGetDescr(rel), &value, &isnull);
-			HeapTupleSetOid(tup, sid);
-			simple_heap_insert(rel, tup);
-			heap_freetuple(tup);
-			selnotice("INSERT INTO pg_selinux ('%s')", buffer);
-		}
-		relation_close(rel, NoLock);
-	}
-	PG_CATCH();
-	{
-		fclose(filp);
-		PG_RE_THROW();
-	}
-	PG_END_TRY();
-	fclose(filp);
-
-	unlink(fname);
-#endif
-}
-
 int sepgsqlBootstrapInsertOneValue(int index)
 {
 	psid newcon;
@@ -210,7 +162,7 @@ int sepgsqlBootstrapInsertOneValue(int index)
 		if (index == Anum_pg_class_relselcon - 1) {
 			newcon = sepgsql_avc_createcon(sepgsqlGetClientPsid(),
 										   sepgsqlGetDatabasePsid(),
-										   SECCLASS_DATABASE);
+										   SECCLASS_TABLE);
 			context = sepgsql_psid_to_context(newcon);
 			InsertOneValue(context, index);
 			pfree(context);

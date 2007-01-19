@@ -219,8 +219,6 @@ Boot_CreateStmt:
 													  (Datum) 0,
 													  true);
 						elog(DEBUG4, "relation created with oid %u", id);
-
-						sepgsqlBootstrapPostCreateRelation(id);
 					}
 					do_end();
 				}
