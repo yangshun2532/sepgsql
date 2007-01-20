@@ -82,9 +82,15 @@ static void walkFuncExpr(Query *query, bool do_check, FuncExpr *func)
 									   proc->proselcon,
 									   SECCLASS_PROCESS);
 		perms = PROCEDURE__EXECUTE;
-		if (sepgsqlGetClientPsid() != newcon) {
+		if (sepgsqlGetClientPsid() != newcon)
 			perms |= PROCEDURE__ENTRYPOINT;
+		rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
+									proc->proselcon,
+									SECCLASS_PROCEDURE,
+									perms,
+									&audit);
 
+		if (sepgsqlGetClientPsid() != newcon) {
 			rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
 										newcon,
 										SECCLASS_PROCESS,
@@ -92,11 +98,7 @@ static void walkFuncExpr(Query *query, bool do_check, FuncExpr *func)
 										&audit);
 			sepgsql_audit(rc, audit, NULL);
 		}
-		rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
-									proc->proselcon,
-									SECCLASS_PROCEDURE,
-									perms,
-									&audit);
+
 		sepgsql_audit(rc, audit, NameStr(proc->proname));
 		ReleaseSysCache(tup);
 	}

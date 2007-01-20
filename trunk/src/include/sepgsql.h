@@ -167,23 +167,7 @@ extern void sepgsqlAlterTableSetColumnContext(Relation rel, char *name, Value *n
 extern Query *sepgsqlProxyCreateProcedure(Query *query);
 extern void sepgsqlCreateProcedure(Datum *values, char *nulls);
 extern void sepgsqlAlterProcedure(Form_pg_proc pg_proc, AlterFunctionStmt *stmt);
-extern psid sepgsqlPrepareProcedure(Oid funcid);
-extern void sepgsqlRestoreProcedure(psid orig_psid);
-#define sepgsqlPrepareExecProcedure(funcid)					   \
-	do {													   \
-		psid __sepgsql_ctx_backup =							   \
-			sepgsqlPrepareProcedure(funcid);				   \
-		PG_TRY()
-
-#define sepgsqlRestoreExecProcedure()						   \
-		PG_CATCH();											   \
-		{													   \
-			sepgsqlRestoreProcedure(__sepgsql_ctx_backup);	   \
-			PG_RE_THROW();									   \
-		}													   \
-		PG_END_TRY();										   \
-		sepgsqlRestoreProcedure(__sepgsql_ctx_backup);		   \
-	} while(0)
+extern void sepgsqlExecInitExpr(ExprState *state, PlanState *parent);
 
 /* COPY FROM/COPY TO statement */
 extern void sepgsqlDoCopy(Relation rel, List *attnumlist, bool is_from);

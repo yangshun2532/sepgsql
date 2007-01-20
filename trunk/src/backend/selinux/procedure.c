@@ -9,6 +9,7 @@
 #include "catalog/pg_proc.h"
 #include "fmgr.h"
 #include "miscadmin.h"
+#include "nodes/execnodes.h"
 #include "nodes/parsenodes.h"
 #include "sepgsql.h"
 #include "utils/syscache.h"
@@ -91,26 +92,63 @@ retry:
 	}
 }
 
-psid sepgsqlPrepareProcedure(Oid funcid)
+static Datum sepgsqlExprStateEvalFunc(ExprState *expression,
+									  ExprContext *econtext,
+									  bool *isNull,
+									  ExprDoneCond *isDone)
 {
-	HeapTuple tuple;
-	psid orig_psid, new_psid;
+	Datum retval;
+	psid saved_clientcon;
 
-   	tuple = SearchSysCache(PROCOID, ObjectIdGetDatum(funcid), 0, 0, 0);
-	if (!HeapTupleIsValid(tuple))
-		selerror("could not lookup the procedure (funcid=%u)", funcid);
-	new_psid = sepgsql_avc_createcon(sepgsqlGetClientPsid(),
-									 ((Form_pg_proc) GETSTRUCT(tuple))->proselcon,
-									 SECCLASS_PROCESS);
-	ReleaseSysCache(tuple);
+	/* save security context */
+	saved_clientcon = sepgsqlGetClientPsid();
+	sepgsqlSetClientPsid(expression->execContext);
+	PG_TRY();
+	{
+		retval = expression->origEvalFunc(expression, econtext, isNull, isDone);
+	}
+	PG_CATCH();
+	{
+		sepgsqlSetClientPsid(saved_clientcon);
+		PG_RE_THROW();
+	}
+	PG_END_TRY();
 
-	orig_psid = sepgsqlGetClientPsid();
-	sepgsqlSetClientPsid(new_psid);
+	/* restore context */
+	sepgsqlSetClientPsid(saved_clientcon);
 
-	return orig_psid;
+	return retval;
 }
 
-void sepgsqlRestoreProcedure(psid orig_psid)
+void sepgsqlExecInitExpr(ExprState *state, PlanState *parent)
 {
-	sepgsqlSetClientPsid(orig_psid);
+	switch (nodeTag(state->expr)) {
+	case T_FuncExpr:
+		{
+			FuncExpr *func = (FuncExpr *) state->expr;
+			Form_pg_proc pg_proc;
+			HeapTuple tuple;
+			psid execon;
+
+			tuple = SearchSysCache(PROCOID, ObjectIdGetDatum(func->funcid), 0, 0, 0);
+			if (!HeapTupleIsValid(tuple))
+				selerror("RELOID cache lookup failed (pg_proc.oid=%u)", func->funcid);
+			pg_proc = (Form_pg_proc) GETSTRUCT(tuple);
+			execon = sepgsql_avc_createcon(sepgsqlGetClientPsid(),
+										   pg_proc->proselcon,
+										   SECCLASS_PROCESS);
+			if (sepgsqlGetClientPsid() != execon) {
+				/* do domain transition */
+				state->execContext = execon;
+				state->origEvalFunc = state->evalfunc;
+				state->evalfunc = sepgsqlExprStateEvalFunc;
+				strcpy(NameStr(state->proname), NameStr(pg_proc->proname));
+			}
+			ReleaseSysCache(tuple);
+		}
+		break;
+	default:
+		/* do nothing */
+		break;
+	}
 }

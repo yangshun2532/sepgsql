@@ -1548,11 +1548,7 @@ ExecEvalFunc(FuncExprState *fcache,
 	/* Go directly to ExecMakeFunctionResult on subsequent uses */
 	fcache->xprstate.evalfunc = (ExprStateEvalFunc) ExecMakeFunctionResult;
 
-	sepgsqlPrepareExecProcedure(func->funcid);
-
 	result = ExecMakeFunctionResult(fcache, econtext, isNull, isDone);
-
-	sepgsqlRestoreExecProcedure();
 
 	return result;
 }
@@ -3754,6 +3750,9 @@ ExecInitExpr(Expr *node, PlanState *parent)
 
 	/* Common code for all state-node types */
 	state->expr = node;
+
+	/* Prepare to execute SE-PostgreSQL trusted procedure */
+	sepgsqlExecInitExpr(state, parent);
 
 	return state;
 }

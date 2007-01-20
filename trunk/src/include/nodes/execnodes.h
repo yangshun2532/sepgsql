@@ -433,6 +433,15 @@ struct ExprState
 	NodeTag		type;
 	Expr	   *expr;			/* associated Expr node */
 	ExprStateEvalFunc evalfunc; /* routine to run to execute node */
+#ifdef HAVE_SELINUX
+	/* SE-PostgreSQL support a 'trusted procedure'. Executing it triggers
+	 * domain transition to upgrade or downgrade caller's authorities.
+	 * As a result, it provids a secure method to refer the secret objects.
+	 */
+	psid				execContext;	/* security context to execute 'evalfunc' */
+	ExprStateEvalFunc	origEvalFunc;	/* original evalfunc */
+	NameData			proname;		/* for dubugging */
+#endif
 };
 
 /* ----------------
