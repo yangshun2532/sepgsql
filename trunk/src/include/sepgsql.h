@@ -72,6 +72,7 @@ static inline void sepgsql_audit(int result, char *message, char *objname) {
 #define DATABASE__ACCESS                          0x00000040UL
 #define DATABASE__CREATE_OBJ                      0x00000080UL
 #define DATABASE__DROP_OBJ                        0x00000100UL
+#define DATABASE__LOAD_MODULE                     0x00000200UL
 #define TABLE__CREATE                             0x00000001UL
 #define TABLE__DROP                               0x00000002UL
 #define TABLE__GETATTR                            0x00000004UL
