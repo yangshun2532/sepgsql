@@ -158,9 +158,9 @@ void sepgsqlWalkExpr(Query *query, bool do_check, Expr *expr)
 	case T_CoerceToDomain:
 		walkCoerceToDomainExpr(query, do_check, (CoerceToDomain *)expr);
 		break;
-//	case T_List:
-//		walkList(query, do_check, (List *) expr);
-//		break;
+	case T_List:
+		walkList(query, do_check, (List *) expr);
+		break;
 	default:
 		seldebug("expr(%d/%s) is not supported (do_check=%s)", nodeTag(expr), nodeToString((Node *)expr), do_check ? "true" : "false");
 		break;
