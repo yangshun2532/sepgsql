@@ -187,6 +187,7 @@ extern Datum psid_in(PG_FUNCTION_ARGS);
 extern Datum psid_out(PG_FUNCTION_ARGS);
 extern Datum text_to_psid(PG_FUNCTION_ARGS);
 extern Datum psid_to_text(PG_FUNCTION_ARGS);
+extern Datum sepgsql_getcon(PG_FUNCTION_ARGS);
 extern Datum sepgsql_permission(PG_FUNCTION_ARGS);
 extern Datum sepgsql_permission_noaudit(PG_FUNCTION_ARGS);
 
