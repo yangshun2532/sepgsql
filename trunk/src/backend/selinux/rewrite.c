@@ -153,39 +153,35 @@ static void secureRewriteSelect(Query *query)
 	foreach (l, query->targetList) {
 		TargetEntry *te = lfirst(l);
 		Assert(IsA(te, TargetEntry));
-		sepgsqlWalkExpr(query, false, te->expr);
+		sepgsqlWalkExpr(query, false, (Node *) te->expr);
 	}
 	/* permission mark on the WHERE clause */
-	sepgsqlWalkExpr(query, false, (Expr *) query->jointree->quals);
+	sepgsqlWalkExpr(query, false, query->jointree->quals);
 
 	/* permission mark on the ORDER BY clause */
-	foreach(l, query->sortClause)
-		sepgsqlWalkExpr(query, false, (Expr *) lfirst(l));
+	sepgsqlWalkExpr(query, false, (Node *) query->sortClause);
 
 	/* FIXME: HAVING, ORDER BY, GROUP BY, LIMIT */
 
 	/* permission mark on the fromList */
-	secureRewriteJoinTree(query, (Node *)query->jointree, &query->jointree->quals);
+	secureRewriteJoinTree(query, (Node *)query->jointree,
+						  &query->jointree->quals);
 }
 
 static void secureRewriteUpdate(Query *query)
 {
 	RangeTblEntry *rte;
-	ListCell *l;
 	int rindex;
 
 	/* permission mark on RETURNING clause, if necessary */
-	foreach(l, query->returningList) {
-		TargetEntry *te = (TargetEntry *) lfirst(l);
-		Assert(IsA(te, TargetEntry));
-		sepgsqlWalkExpr(query, false, te->expr);
-	}
+	sepgsqlWalkExpr(query, false, (Node *) query->returningList);
 
 	/* permission mark on WHERE clause, if necessary */
-	sepgsqlWalkExpr(query, false, (Expr *) query->jointree->quals);
+	sepgsqlWalkExpr(query, false, query->jointree->quals);
 
 	/* append sepgsql_permission() on the USING clause */
-	secureRewriteJoinTree(query, (Node *)query->jointree, &query->jointree->quals);
+	secureRewriteJoinTree(query, (Node *)query->jointree,
+						  &query->jointree->quals);
 
 	/* append sepgsql_permission() on the target Relation */
 	rindex = query->resultRelation;
@@ -197,36 +193,28 @@ static void secureRewriteUpdate(Query *query)
 
 static void secureRewriteInsert(Query *query)
 {
-	ListCell *l;
-
 	/* permission mark on RETURNING clause, if necessary */
-	foreach(l, query->returningList) {
-		TargetEntry *te = (TargetEntry *) lfirst(l);
-		Assert(IsA(te, TargetEntry));
-		sepgsqlWalkExpr(query, false, te->expr);
-	}
+	sepgsqlWalkExpr(query, false, (Node *) query->returningList);
 
 	/* append sepgsql_permission() on the USING clause */
-	secureRewriteJoinTree(query, (Node *)query->jointree, &query->jointree->quals);
+	secureRewriteJoinTree(query, (Node *) query->jointree,
+						  &query->jointree->quals);
 }
 
 static void secureRewriteDelete(Query *query)
 {
-	ListCell *l;
 	RangeTblEntry *rte;
 	int rindex;
 
 	/* permission mark on RETURNING clause, if necessary */
-	foreach(l, query->returningList) {
-		TargetEntry *te = (TargetEntry *) lfirst(l);
-		Assert(IsA(te, TargetEntry));
-		sepgsqlWalkExpr(query, false, te->expr);
-	}
+	sepgsqlWalkExpr(query, false, (Node *) query->returningList);
+
 	/* permission mark on WHERE clause, if necessary */
-	sepgsqlWalkExpr(query, false, (Expr *) query->jointree->quals);
+	sepgsqlWalkExpr(query, false, query->jointree->quals);
 
 	/* append sepgsql_permission() on the USING clause */
-	secureRewriteJoinTree(query, (Node *)query->jointree, &query->jointree->quals);
+	secureRewriteJoinTree(query, (Node *) query->jointree,
+						  &query->jointree->quals);
 
 	/* append sepgsql_permission() on the target Relation */
 	rindex = query->resultRelation;

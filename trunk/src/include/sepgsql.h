@@ -138,7 +138,7 @@ extern bool sepgsqlAttributeIsPsid(Form_pg_attribute attr);
 /* SE-PostgreSQL core Security Functions */
 extern void sepgsqlSecureRewrite(Query *query);
 extern void sepgsqlProxyPortal(Portal portal);
-extern void sepgsqlWalkExpr(Query *query, bool do_check, Expr *expr);
+extern void sepgsqlWalkExpr(Query *query, bool do_check, Node *n);
 
 /* SE-PostgreSQL Query checking functions */
 

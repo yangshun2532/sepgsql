@@ -50,7 +50,7 @@ static void walkVar(Query *query, bool do_check, Var *var)
 		break;
 	case RTE_JOIN:
 		var = list_nth(rte->joinaliasvars, var->varattno - 1);
-		sepgsqlWalkExpr(query, do_check, (Expr *)var);
+		sepgsqlWalkExpr(query, do_check, (Node *) var);
 		break;
 	default:
 		seldebug("rtekind = %u is ignored", rte->rtekind);
@@ -60,11 +60,9 @@ static void walkVar(Query *query, bool do_check, Var *var)
 
 static void walkFuncExpr(Query *query, bool do_check, FuncExpr *func)
 {
-	ListCell *l;
 	Assert(IsA(func, FuncExpr));
 
-	foreach(l, func->args)
-		sepgsqlWalkExpr(query, do_check, (Expr *) lfirst(l));
+	sepgsqlWalkExpr(query, do_check, (Node *) func->args);
 
 	if (do_check) {
 		Form_pg_proc proc;
@@ -108,24 +106,20 @@ static void walkFuncExpr(Query *query, bool do_check, FuncExpr *func)
 
 static void walkOpExpr(Query *query, bool do_check, OpExpr *expr)
 {
-	ListCell *l;
 	Assert(IsA(expr, OpExpr));
-	foreach(l, expr->args)
-		sepgsqlWalkExpr(query, do_check, (Expr *) lfirst(l));
+	sepgsqlWalkExpr(query, do_check, (Node *) expr->args);
 }
 
 static void walkBoolExpr(Query *query, bool do_check, BoolExpr *expr)
 {
-	ListCell *l;
 	Assert(IsA(expr, BoolExpr));
-	foreach(l, expr->args)
-		sepgsqlWalkExpr(query, do_check, (Expr *) lfirst(l));
+	sepgsqlWalkExpr(query, do_check, (Node *) expr->args);
 }
 
 static void walkCoerceToDomainExpr(Query *query, bool do_check, CoerceToDomain *expr)
 {
 	Assert(IsA(expr, CoerceToDomain));
-	sepgsqlWalkExpr(query, do_check, expr->arg);
+	sepgsqlWalkExpr(query, do_check, (Node *) expr->arg);
 }
 
 static void walkList(Query *query, bool do_check, List *expr)
@@ -133,7 +127,7 @@ static void walkList(Query *query, bool do_check, List *expr)
 	ListCell *l;
 	Assert(IsA(expr, List));
 	foreach(l, expr)
-		sepgsqlWalkExpr(query, do_check, (Expr *) lfirst(l));
+		sepgsqlWalkExpr(query, do_check, (Node *) lfirst(l));
 }
 
 static void walkSortClause(Query *query, bool do_check, SortClause *sortcl)
@@ -141,50 +135,49 @@ static void walkSortClause(Query *query, bool do_check, SortClause *sortcl)
 	ListCell *l;
 
 	Assert(IsA(sortcl, SortClause));
-	selnotice("hogehoge");
 	foreach(l, query->targetList) {
 		TargetEntry *te = (TargetEntry *) lfirst(l);
 		Assert(IsA(te, TargetEntry));
 		if (te->ressortgroupref == sortcl->tleSortGroupRef) {
-			sepgsqlWalkExpr(query, do_check, (Expr *) te->expr);
+			sepgsqlWalkExpr(query, do_check, (Node *) te->expr);
 			break;
 		}
 	}
-	selnotice("monumonu");
 }
 
-void sepgsqlWalkExpr(Query *query, bool do_check, Expr *expr)
+void sepgsqlWalkExpr(Query *query, bool do_check, Node *n)
 {
-	if (expr == NULL)
+	if (n == NULL)
 		return;
 
-	switch (nodeTag(expr)) {
+	switch (nodeTag(n)) {
 	case T_Const:
 		/* do nothing */
 		break;
 	case T_Var:
-		walkVar(query, do_check, (Var *)expr);
+		walkVar(query, do_check, (Var *) n);
 		break;
 	case T_FuncExpr:
-		walkFuncExpr(query, do_check, (FuncExpr *)expr);
+		walkFuncExpr(query, do_check, (FuncExpr *) n);
 		break;
 	case T_OpExpr:
-		walkOpExpr(query, do_check, (OpExpr *)expr);
+		walkOpExpr(query, do_check, (OpExpr *) n);
 		break;
 	case T_BoolExpr:
-		walkBoolExpr(query, do_check, (BoolExpr *)expr);
+		walkBoolExpr(query, do_check, (BoolExpr *) n);
 		break;
 	case T_CoerceToDomain:
-		walkCoerceToDomainExpr(query, do_check, (CoerceToDomain *)expr);
+		walkCoerceToDomainExpr(query, do_check, (CoerceToDomain *) n);
 		break;
 	case T_List:
-		walkList(query, do_check, (List *) expr);
+		walkList(query, do_check, (List *) n);
 		break;
 	case T_SortClause:
-		walkSortClause(query, do_check, (SortClause *) expr);
+		walkSortClause(query, do_check, (SortClause *) n);
 		break;
 	default:
-		seldebug("expr(%d/%s) is not supported (do_check=%s)", nodeTag(expr), nodeToString((Node *)expr), do_check ? "true" : "false");
+		seldebug("expr(%d/%s) is not supported (do_check=%s)",
+				 nodeTag(n), nodeToString(n), do_check ? "true" : "false");
 		break;
 	}
 }
