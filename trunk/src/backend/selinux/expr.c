@@ -136,6 +136,23 @@ static void walkList(Query *query, bool do_check, List *expr)
 		sepgsqlWalkExpr(query, do_check, (Expr *) lfirst(l));
 }
 
+static void walkSortClause(Query *query, bool do_check, SortClause *sortcl)
+{
+	ListCell *l;
+
+	Assert(IsA(sortcl, SortClause));
+	selnotice("hogehoge");
+	foreach(l, query->targetList) {
+		TargetEntry *te = (TargetEntry *) lfirst(l);
+		Assert(IsA(te, TargetEntry));
+		if (te->ressortgroupref == sortcl->tleSortGroupRef) {
+			sepgsqlWalkExpr(query, do_check, (Expr *) te->expr);
+			break;
+		}
+	}
+	selnotice("monumonu");
+}
+
 void sepgsqlWalkExpr(Query *query, bool do_check, Expr *expr)
 {
 	if (expr == NULL)
@@ -162,6 +179,9 @@ void sepgsqlWalkExpr(Query *query, bool do_check, Expr *expr)
 		break;
 	case T_List:
 		walkList(query, do_check, (List *) expr);
+		break;
+	case T_SortClause:
+		walkSortClause(query, do_check, (SortClause *) expr);
 		break;
 	default:
 		seldebug("expr(%d/%s) is not supported (do_check=%s)", nodeTag(expr), nodeToString((Node *)expr), do_check ? "true" : "false");

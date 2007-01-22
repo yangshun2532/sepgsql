@@ -184,6 +184,10 @@ static void selectProxy(Query *query)
 	/* check WHERE clause */
 	sepgsqlWalkExpr(query, true, (Expr *)query->jointree->quals);
 
+	/* check ORDER BY clause */
+	foreach(l, query->sortClause)
+		sepgsqlWalkExpr(query, true, (Expr *) lfirst(l));
+
 	/* FIXME: HAVING, GROUP BY, ... */
 
 	/* permission mark on the fromList */

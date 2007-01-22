@@ -158,6 +158,10 @@ static void secureRewriteSelect(Query *query)
 	/* permission mark on the WHERE clause */
 	sepgsqlWalkExpr(query, false, (Expr *) query->jointree->quals);
 
+	/* permission mark on the ORDER BY clause */
+	foreach(l, query->sortClause)
+		sepgsqlWalkExpr(query, false, (Expr *) lfirst(l));
+
 	/* FIXME: HAVING, ORDER BY, GROUP BY, LIMIT */
 
 	/* permission mark on the fromList */
