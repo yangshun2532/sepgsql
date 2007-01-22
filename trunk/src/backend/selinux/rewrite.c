@@ -7,6 +7,7 @@
 #include "postgres.h"
 
 #include "access/heapam.h"
+#include "catalog/heap.h"
 #include "catalog/pg_attribute.h"
 #include "catalog/pg_class.h"
 #include "catalog/pg_database.h"
@@ -16,10 +17,13 @@
 #include "nodes/plannodes.h"
 #include "parser/parse_expr.h"
 #include "parser/parse_coerce.h"
+#include "parser/parse_relation.h"
 #include "sepgsql.h"
 #include "utils/portal.h"
 #include "utils/fmgroids.h"
 #include "utils/syscache.h"
+
+static void secureRewriteQuery(Query *query);
 
 static void secureRewriteRelation(Query *query, RangeTblEntry *rte, int rtindex, Node **quals)
 {
@@ -119,7 +123,7 @@ static void secureRewriteJoinTree(Query *query, Node *n, Node **quals)
 			secureRewriteRelation(query, rte, rtr->rtindex, quals);
 			break;
 		case RTE_SUBQUERY:
-			sepgsqlSecureRewrite(rte->subquery);
+			secureRewriteQuery(rte->subquery);
 			break;
 		case RTE_FUNCTION:
 		case RTE_VALUES:
@@ -145,6 +149,7 @@ static void secureRewriteJoinTree(Query *query, Node *n, Node **quals)
 	}
 }
 
+#if 0
 static void secureRewriteSelect(Query *query)
 {
 	ListCell *l;
@@ -226,32 +231,142 @@ static void secureRewriteDelete(Query *query)
 	rte->access_vector |= TABLE__DELETE;
 	secureRewriteRelation(query, rte, rindex, &query->jointree->quals);
 }
+#endif
 
-void sepgsqlSecureRewrite(Query *query)
+static void secureRewriteQuery(Query *query)
 {
+	RangeTblEntry *rte;
 	ListCell *l;
 
-	switch (query->commandType) {
-	case CMD_SELECT:
-		secureRewriteSelect(query);
-		break;
-	case CMD_UPDATE:
-		secureRewriteUpdate(query);
-		break;
-	case CMD_INSERT:
-		secureRewriteInsert(query);
-		break;
-	case CMD_DELETE:
-		secureRewriteDelete(query);
-		break;
-	default:
-		/* do nothing */
-		break;
+	/* permission mark on the target columns */
+	if (query->commandType == CMD_SELECT) {
+		foreach (l, query->targetList) {
+			TargetEntry *te = lfirst(l);
+			Assert(IsA(te, TargetEntry));
+			sepgsqlWalkExpr(query, false, (Node *) te->expr);
+		}
 	}
 
-	/* clean-up any rte->access_vector */
-	foreach (l, query->rtable) {
-		RangeTblEntry *rte = (RangeTblEntry *) lfirst(l);
-		rte->access_vector = 0;
+	/* permission mark on RETURNING clause, if necessary */
+	sepgsqlWalkExpr(query, false, (Node *) query->returningList);
+
+	/* permission mark on the WHERE clause */
+	sepgsqlWalkExpr(query, false, query->jointree->quals);
+
+	/* permission mark on the ORDER BY clause */
+	sepgsqlWalkExpr(query, false, (Node *) query->sortClause);
+
+	/* permission mark on the GROUP BY/HAVING clause */
+	sepgsqlWalkExpr(query, false, (Node *) query->groupClause);
+	sepgsqlWalkExpr(query, false, query->havingQual);
+
+	/* append sepgsql_permission() on the FROM clause/USING clause */
+	secureRewriteJoinTree(query, (Node *)query->jointree,
+						  &query->jointree->quals);
+
+	/* append sepgsql_permission() on the target Relation */
+	if (query->commandType == CMD_UPDATE || query->commandType == CMD_DELETE) {
+		rte = (RangeTblEntry *) list_nth(query->rtable, query->resultRelation - 1);
+		Assert(IsA(rte, RangeTblEntry));
+		Assert(rte->rtekind == RTE_RELATION);
+		rte->access_vector |= ((query->commandType == CMD_UPDATE)
+							   ? TABLE__UPDATE : TABLE__DELETE);
+		secureRewriteRelation(query, rte, query->resultRelation,
+							  &query->jointree->quals);
 	}
+}
+
+static Query *TruncateSubQuery(Relation rel)
+{
+	Query *query = makeNode(Query);
+	RangeTblEntry *rte;
+	RangeTblRef *rtr;
+
+	rte = addRangeTableEntryForRelation(NULL, rel, NULL, false, false);
+	rte->requiredPerms = ACL_DELETE;
+	rtr = makeNode(RangeTblRef);
+	rtr->rtindex = 1;
+
+	query->commandType = CMD_DELETE;
+	query->rtable = list_make1(rte);
+	query->jointree = makeNode(FromExpr);
+	query->jointree->fromlist = list_make1(rtr);
+	query->jointree->quals = NULL;
+	query->resultRelation = rtr->rtindex;
+	query->hasSubLinks = false;
+	query->hasAggs = false;
+
+	secureRewriteQuery(query);
+
+	return query;
+}
+
+static List *secureRewriteTruncate(Query *query)
+{
+	TruncateStmt *stmt = (TruncateStmt *) query->utilityStmt;
+	Relation rel;
+	Query *subqry;
+	ListCell *l;
+	List *subquery_list = NIL, *subquery_lids = NIL;
+
+	/* resolve the relation names */
+	foreach (l, stmt->relations) {
+		RangeVar *rv = lfirst(l);
+
+		rel = heap_openrv(rv, AccessShareLock);
+		subqry = TruncateSubQuery(rel);
+		subquery_list = lappend(subquery_list, subqry);
+		subquery_lids = lappend_oid(subquery_lids, RelationGetRelid(rel));
+		heap_close(rel, NoLock);
+
+		selnotice("virtual TRUNCATE %s", RelationGetRelationName(rel));
+	}
+
+	if (stmt->behavior == DROP_CASCADE) {
+		subquery_lids = heap_truncate_find_FKs(subquery_lids);
+		foreach (l, subquery_lids) {
+			Oid relid = lfirst_oid(l);
+
+			rel = heap_open(relid, AccessShareLock);
+			subqry = TruncateSubQuery(rel);
+			subquery_list = lappend(subquery_list, subqry);
+			heap_close(rel, NoLock);
+		}
+	}
+	return subquery_list;
+}
+
+List *sepgsqlSecureRewrite(List *queryList)
+{
+	ListCell *l;
+	List *result = NIL;
+
+	foreach(l, queryList) {
+		Query *query = (Query *) lfirst(l);
+		List *new_list = NIL;
+
+		switch (query->commandType) {
+		case CMD_SELECT:
+		case CMD_UPDATE:
+		case CMD_INSERT:
+		case CMD_DELETE:
+			secureRewriteQuery(query);
+			new_list = list_make1(query);
+			break;
+		case CMD_UTILITY:
+			switch (nodeTag(query->utilityStmt)) {
+			case T_TruncateStmt:
+				new_list = secureRewriteTruncate(query);
+				break;
+			default:
+				new_list = list_make1(query);
+			}
+			break;
+		default:
+			selerror("unknown command type (=%d) found", query->commandType);
+			break;
+		}
+		result = list_concat(result, new_list);
+	}
+	return result;
 }

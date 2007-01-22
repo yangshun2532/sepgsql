@@ -608,8 +608,6 @@ pg_rewrite_queries(List *querytree_list)
 
 		if (querytree->commandType == CMD_UTILITY)
 		{
-			sepgsqlSecureRewrite(querytree);
-
 			/* don't rewrite utilities, just dump 'em into new_list */
 			new_list = lappend(new_list, querytree);
 		}
@@ -643,6 +641,8 @@ pg_rewrite_queries(List *querytree_list)
 	if (Debug_print_rewritten)
 		elog_node_display(DEBUG1, "rewritten parse tree", querytree_list,
 						  Debug_pretty_print);
+
+	querytree_list = sepgsqlSecureRewrite(querytree_list);
 
 	return querytree_list;
 }

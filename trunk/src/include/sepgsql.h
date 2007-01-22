@@ -136,7 +136,7 @@ extern psid sepgsqlGetDatabasePsid(void);
 extern bool sepgsqlAttributeIsPsid(Form_pg_attribute attr);
 
 /* SE-PostgreSQL core Security Functions */
-extern void sepgsqlSecureRewrite(Query *query);
+extern List *sepgsqlSecureRewrite(List *queryList);
 extern void sepgsqlProxyPortal(Portal portal);
 extern void sepgsqlWalkExpr(Query *query, bool do_check, Node *n);
 

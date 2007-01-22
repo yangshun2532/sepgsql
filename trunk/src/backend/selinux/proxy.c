@@ -227,7 +227,7 @@ static void updateProxy(Query *query)
 
     /* check permission on the USING clause, and target Relation */
 	verfityJoinTree(query, (Node *) query->jointree);
-	verifyRteRelation(query, rte);
+	//verifyRteRelation(query, rte);
 }
 
 /* insertProxy() -- check INSERT statement */
@@ -262,7 +262,7 @@ static void insertProxy(Query *query)
 
     /* check permission on the USING clause, and target Relation */
 	verfityJoinTree(query, (Node *) query->jointree);
-	verifyRteRelation(query, rte);
+	//verifyRteRelation(query, rte);
 }
 
 /* deleteProxy() -- check DELETE statement */
@@ -286,11 +286,10 @@ static void deleteProxy(Query *query)
 	}
 
 	/* permission mark on WHERE clause, if necessary */
-	sepgsqlWalkExpr(query, false, query->jointree->quals);
+	sepgsqlWalkExpr(query, true, query->jointree->quals);
 
 	/* check permission on the USING clause */
 	verfityJoinTree(query, (Node *) query->jointree);
-	verifyRteRelation(query, rte);
 }
 
 static void sepgsqlProxyQuery(Query *query)
