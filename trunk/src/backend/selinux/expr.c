@@ -15,6 +15,11 @@
 static void walkVar(Query *query, bool do_check, Var *var)
 {
 	RangeTblEntry *rte;
+	HeapTuple tup;
+	Form_pg_attribute attr;
+	char *audit;
+	int rc;
+
 	Assert(IsA(var, Var));
 
 	rte = (RangeTblEntry *) list_nth(query->rtable, var->varno - 1);
@@ -22,29 +27,26 @@ static void walkVar(Query *query, bool do_check, Var *var)
 
 	switch (rte->rtekind) {
 	case RTE_RELATION:
-		rte->access_vector |= TABLE__SELECT;
-		if (do_check) {
-			Form_pg_attribute attr;
-			HeapTuple tup;
-			char *audit;
-			int rc;
-
-			tup = SearchSysCache(ATTNUM,
-								 ObjectIdGetDatum(rte->relid),
-								 Int16GetDatum(var->varattno),
-								 0, 0);
-			if (!HeapTupleIsValid(tup))
-				selerror("cache lookup failed (relid=%u, attno=%d)",
-						 rte->relid, var->varattno);
-			attr = (Form_pg_attribute) GETSTRUCT(tup);
-			rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
-										attr->attselcon,
-										SECCLASS_COLUMN,
-										COLUMN__SELECT,
-										&audit);
-			sepgsql_audit(rc, audit, NameStr(attr->attname));
-			ReleaseSysCache(tup);
+		tup = SearchSysCache(ATTNUM,
+							 ObjectIdGetDatum(rte->relid),
+							 Int16GetDatum(var->varattno),
+							 0, 0);
+		if (!HeapTupleIsValid(tup))
+			selerror("cache lookup failed (relid=%u, attno=%d)",
+					 rte->relid, var->varattno);
+		attr = (Form_pg_attribute) GETSTRUCT(tup);
+		if (!sepgsqlAttributeIsPsid(attr)) {
+			rte->access_vector |= TABLE__SELECT;
+			if (do_check) {
+				rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
+											attr->attselcon,
+											SECCLASS_COLUMN,
+											COLUMN__SELECT,
+											&audit);
+				sepgsql_audit(rc, audit, NameStr(attr->attname));
+			}
 		}
+		ReleaseSysCache(tup);
 		break;
 	case RTE_JOIN:
 		var = list_nth(rte->joinaliasvars, var->varattno - 1);

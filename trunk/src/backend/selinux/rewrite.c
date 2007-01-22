@@ -193,9 +193,7 @@ static void secureRewriteUpdate(Query *query)
 
 static void secureRewriteInsert(Query *query)
 {
-	RangeTblEntry *rte;
 	ListCell *l;
-	int rindex;
 
 	/* permission mark on RETURNING clause, if necessary */
 	foreach(l, query->returningList) {

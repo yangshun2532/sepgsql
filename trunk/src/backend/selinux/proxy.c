@@ -19,6 +19,8 @@
 #include "utils/fmgroids.h"
 #include "utils/syscache.h"
 
+static void sepgsqlProxyQuery(Query *query);
+
 /* ---- local declaration of proxy functions ---- */
 static void verifyRelationPerm(Oid relid, uint32 perms)
 {
@@ -120,8 +122,11 @@ static void verifyRteValues(Query *query, List *valuesList)
 	}
 }
 
-static void verifyFromItem(Query *query, Node *n)
+static void verfityJoinTree(Query *query, Node *n)
 {
+	if (n == NULL)
+		return;
+
 	if (IsA(n, RangeTblRef)) {
 		RangeTblRef *rtr = (RangeTblRef *)n;
 		RangeTblEntry *rte = list_nth(query->rtable, rtr->rtindex - 1);
@@ -134,7 +139,7 @@ static void verifyFromItem(Query *query, Node *n)
 			verifyRteRelation(query, rte);
 			break;
 		case RTE_SUBQUERY:
-			sepgsqlSecureRewrite(rte->subquery);
+			sepgsqlProxyQuery(rte->subquery);
 			break;
 		case RTE_FUNCTION:
 			verifyRteFunction(query, (FuncExpr *) rte->funcexpr);
@@ -148,23 +153,19 @@ static void verifyFromItem(Query *query, Node *n)
 			selerror("rtekind = %d should not be found on fromList", rte->rtekind);
 			break;
 		}
+	} else if (IsA(n, FromExpr)) {
+		FromExpr *f = (FromExpr *)n;
+		ListCell *l;
+
+		foreach(l, f->fromlist)
+			verfityJoinTree(query, (Node *) lfirst(l));
 	} else if (IsA(n, JoinExpr)) {
-		JoinExpr *j = (JoinExpr *) n;
-		verifyFromItem(query, j->larg);
-		verifyFromItem(query, j->rarg);
-	}
-}
+		JoinExpr *j = (JoinExpr *)n;
 
-static void verifyFromList(Query *query)
-{
-	ListCell *l;
-
-	foreach (l, query->jointree->fromlist)
-		verifyFromItem(query, (Node *) lfirst(l));
-	if (query->commandType != CMD_SELECT) {
-		RangeTblEntry *rte = list_nth(query->rtable, query->resultRelation - 1);
-		Assert(rte->rtekind == RTE_RELATION);
-		verifyRteRelation(query, rte);
+		verfityJoinTree(query, j->larg);
+		verfityJoinTree(query, j->rarg);
+	} else {
+		selerror("unrecognized node type (%d) in query->jointree", nodeTag(n));
 	}
 }
 
@@ -186,21 +187,21 @@ static void selectProxy(Query *query)
 	/* FIXME: HAVING, GROUP BY, ... */
 
 	/* permission mark on the fromList */
-    verifyFromList(query);
+	verfityJoinTree(query, (Node *) query->jointree);
 }
 
 /* updateProxy() -- check UPDATE statement */
 static void updateProxy(Query *query)
 {
-	ListCell *l;
 	RangeTblEntry *rte;
+	ListCell *l;
 
-	/* check table:update on the target relation */
+	/* mark table:update on the target Relation */
 	rte = (RangeTblEntry *) list_nth(query->rtable, query->resultRelation - 1);
 	Assert(IsA(rte, RangeTblEntry) && rte->rtekind == RTE_RELATION);
 	rte->access_vector |= TABLE__UPDATE;
 
-	/* check column:update on the target columns */
+	/* check column:update on the target Columns */
 	foreach(l, query->targetList) {
 		TargetEntry *te = (TargetEntry *) lfirst(l);
 		verifyColumnPerm(rte->relid, te->resno, COLUMN__UPDATE);
@@ -217,22 +218,23 @@ static void updateProxy(Query *query)
 		sepgsqlWalkExpr(query, true, te->expr);
 	}
 
-    /* permission mark on the USING clause, and targetRelation */
-    verifyFromList(query);
+    /* check permission on the USING clause, and target Relation */
+	verfityJoinTree(query, (Node *) query->jointree);
+	verifyRteRelation(query, rte);
 }
 
 /* insertProxy() -- check INSERT statement */
 static void insertProxy(Query *query)
 {
-	ListCell *l;
 	RangeTblEntry *rte;
+	ListCell *l;
 
-	/* 1. check table:insert on the target relation */
+	/* mark table:insert on the target Relation */
 	rte = (RangeTblEntry *) list_nth(query->rtable, query->resultRelation - 1);
 	Assert(IsA(rte, RangeTblEntry) && rte->rtekind == RTE_RELATION);
 	rte->access_vector |= TABLE__INSERT;
 
-	/* permission check on any column */
+	/* check column:update on the target Columns */
 	foreach(l, query->targetList) {
 		TargetEntry *te = (TargetEntry *) lfirst(l);
 		verifyColumnPerm(rte->relid, te->resno, COLUMN__INSERT);
@@ -246,8 +248,9 @@ static void insertProxy(Query *query)
 		sepgsqlWalkExpr(query, true, te->expr);
 	}
 
-	/* check target relation's permission */
-	verifyFromList(query);
+    /* check permission on the USING clause, and target Relation */
+	verfityJoinTree(query, (Node *) query->jointree);
+	verifyRteRelation(query, rte);
 }
 
 /* deleteProxy() -- check DELETE statement */
@@ -267,11 +270,46 @@ static void deleteProxy(Query *query)
 		Assert(IsA(te, TargetEntry));
 		sepgsqlWalkExpr(query, false, te->expr);
 	}
+
 	/* permission mark on WHERE clause, if necessary */
 	sepgsqlWalkExpr(query, false, (Expr *) query->jointree->quals);
 
-	/* permission mark on the USING clause, and targetRelation */
-	verifyFromList(query);
+	/* check permission on the USING clause */
+	verfityJoinTree(query, (Node *) query->jointree);
+	verifyRteRelation(query, rte);
+}
+
+static void sepgsqlProxyQuery(Query *query)
+{
+	ListCell *l;
+
+	/* cleanup rte->access_vector */
+	foreach (l, query->rtable) {
+		RangeTblEntry *rte = (RangeTblEntry *) lfirst(l);
+		Assert(IsA(rte, RangeTblEntry));
+		rte->access_vector = 0;
+	}
+
+	switch (query->commandType) {
+	case CMD_SELECT:
+		selectProxy(query);
+		break;
+	case CMD_UPDATE:
+		updateProxy(query);
+		break;
+	case CMD_INSERT:
+		insertProxy(query);
+		break;
+	case CMD_DELETE:
+		deleteProxy(query);
+		break;
+	case CMD_UTILITY:
+		/* do nothting */
+		break;
+	default:
+		selnotice("Query->commandType = %u is not proxied", query->commandType);
+		break;
+	}
 }
 
 /* sepgsqlProxyPortal() -- abort current transaction,
@@ -283,35 +321,6 @@ void sepgsqlProxyPortal(Portal portal)
 {
 	ListCell *query_item;
 
-	foreach (query_item, portal->parseTrees) {
-		ListCell *l;
-		Query *query = (Query *) lfirst(query_item);
-
-		/* clean up access_vector */
-		foreach (l, query->rtable) {
-			RangeTblEntry *rte = (RangeTblEntry *) lfirst(l);
-			Assert(IsA(rte, RangeTblEntry));
-			rte->access_vector = 0;
-		}
-		switch (query->commandType) {
-		case CMD_SELECT:
-			selectProxy(query);
-			break;
-		case CMD_UPDATE:
-			updateProxy(query);
-			break;
-		case CMD_INSERT:
-			insertProxy(query);
-			break;
-		case CMD_DELETE:
-			deleteProxy(query);
-			break;
-		case CMD_UTILITY:
-			/* do nothting */
-			break;
-		default:
-			selnotice("Query->commandType = %u is not proxied", query->commandType);
-			break;
-		}
-	}
+	foreach (query_item, portal->parseTrees)
+		sepgsqlProxyQuery((Query *) lfirst(query_item));
 }
