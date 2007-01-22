@@ -145,6 +145,21 @@ static void walkSortClause(Query *query, bool do_check, SortClause *sortcl)
 	}
 }
 
+static void walkGroupClause(Query *query, bool do_check, GroupClause *gc)
+{
+	ListCell *l;
+
+	Assert(IsA(gc, GroupClause));
+	foreach(l, query->targetList) {
+		TargetEntry *te = (TargetEntry *) lfirst(l);
+		Assert(IsA(te, TargetEntry));
+		if (te->ressortgroupref == gc->tleSortGroupRef) {
+			sepgsqlWalkExpr(query, do_check, (Node *) te->expr);
+			break;
+		}
+	}
+}
+
 void sepgsqlWalkExpr(Query *query, bool do_check, Node *n)
 {
 	if (n == NULL)
@@ -174,6 +189,9 @@ void sepgsqlWalkExpr(Query *query, bool do_check, Node *n)
 		break;
 	case T_SortClause:
 		walkSortClause(query, do_check, (SortClause *) n);
+		break;
+	case T_GroupClause:
+		walkGroupClause(query, do_check, (GroupClause *) n);
 		break;
 	default:
 		seldebug("expr(%d/%s) is not supported (do_check=%s)",

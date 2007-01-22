@@ -108,18 +108,13 @@ static void verifyRteRelation(Query *query, RangeTblEntry *rte)
 static void verifyRteFunction(Query *query, FuncExpr *func)
 {
 	Assert(IsA(func, FuncExpr));
-	sepgsqlWalkExpr(query, true, (Expr *) func);
+	sepgsqlWalkExpr(query, true, (Node *) func);
 }
 
 static void verifyRteValues(Query *query, List *valuesList)
 {
-	ListCell *l1, *l2;
-
-	foreach(l1, valuesList) {
-		List *sublist = (List *) lfirst(l1);
-		foreach(l2, sublist)
-			sepgsqlWalkExpr(query, true, (Expr *) lfirst(l2));
-	}
+	Assert(IsA(valuesList, List));
+	sepgsqlWalkExpr(query, true, (Node *) valuesList);
 }
 
 static void verfityJoinTree(Query *query, Node *n)
@@ -178,17 +173,20 @@ static void selectProxy(Query *query)
 	foreach (l, query->targetList) {
 		TargetEntry *te = (TargetEntry *) lfirst(l);
 		Assert(IsA(te, TargetEntry));
-		sepgsqlWalkExpr(query, true, te->expr);
+		if (te->resjunk)
+			continue;
+		sepgsqlWalkExpr(query, true, (Node *) te->expr);
 	}
 
 	/* check WHERE clause */
-	sepgsqlWalkExpr(query, true, (Expr *)query->jointree->quals);
+	sepgsqlWalkExpr(query, true, query->jointree->quals);
 
 	/* check ORDER BY clause */
-	foreach(l, query->sortClause)
-		sepgsqlWalkExpr(query, true, (Expr *) lfirst(l));
+	sepgsqlWalkExpr(query, true, (Node *) query->sortClause);
 
-	/* FIXME: HAVING, GROUP BY, ... */
+	/* check GROUP BY/HAVING clause */
+	sepgsqlWalkExpr(query, true, (Node *) query->groupClause);
+	sepgsqlWalkExpr(query, true, query->havingQual);
 
 	/* permission mark on the fromList */
 	verfityJoinTree(query, (Node *) query->jointree);
@@ -208,18 +206,23 @@ static void updateProxy(Query *query)
 	/* check column:update on the target Columns */
 	foreach(l, query->targetList) {
 		TargetEntry *te = (TargetEntry *) lfirst(l);
+		Assert(IsA(te, TargetEntry));
+		if (te->resjunk)
+			continue;
 		verifyColumnPerm(rte->relid, te->resno, COLUMN__UPDATE);
-		sepgsqlWalkExpr(query, true, te->expr);
+		sepgsqlWalkExpr(query, true, (Node *) te->expr);
 	}
 
 	/* check WHERE clause */
-	sepgsqlWalkExpr(query, true, (Expr *)query->jointree->quals);
+	sepgsqlWalkExpr(query, true, query->jointree->quals);
 
 	/* check RETURNING clause */
 	foreach(l, query->returningList) {
 		TargetEntry *te = (TargetEntry *) lfirst(l);
 		Assert(IsA(te, TargetEntry));
-		sepgsqlWalkExpr(query, true, te->expr);
+		if (te->resjunk)
+			continue;
+		sepgsqlWalkExpr(query, true, (Node *) te->expr);
 	}
 
     /* check permission on the USING clause, and target Relation */
@@ -241,15 +244,20 @@ static void insertProxy(Query *query)
 	/* check column:update on the target Columns */
 	foreach(l, query->targetList) {
 		TargetEntry *te = (TargetEntry *) lfirst(l);
+		Assert(IsA(te, TargetEntry));
+		if (te->resjunk)
+			continue;
 		verifyColumnPerm(rte->relid, te->resno, COLUMN__INSERT);
-		sepgsqlWalkExpr(query, true, te->expr);
+		sepgsqlWalkExpr(query, true, (Node *) te->expr);
 	}
 
 	/* permission mark on RETURNING clause, if necessary. */
 	foreach(l, query->returningList) {
 		TargetEntry *te = (TargetEntry *) lfirst(l);
 		Assert(IsA(te, TargetEntry));
-		sepgsqlWalkExpr(query, true, te->expr);
+		if (te->resjunk)
+			continue;
+		sepgsqlWalkExpr(query, true, (Node *) te->expr);
 	}
 
     /* check permission on the USING clause, and target Relation */
@@ -272,11 +280,13 @@ static void deleteProxy(Query *query)
 	foreach(l, query->returningList) {
 		TargetEntry *te = (TargetEntry *) lfirst(l);
 		Assert(IsA(te, TargetEntry));
-		sepgsqlWalkExpr(query, false, te->expr);
+		if (te->resjunk)
+			continue;
+		sepgsqlWalkExpr(query, true, (Node *) te->expr);
 	}
 
 	/* permission mark on WHERE clause, if necessary */
-	sepgsqlWalkExpr(query, false, (Expr *) query->jointree->quals);
+	sepgsqlWalkExpr(query, false, query->jointree->quals);
 
 	/* check permission on the USING clause */
 	verfityJoinTree(query, (Node *) query->jointree);

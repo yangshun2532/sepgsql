@@ -161,7 +161,10 @@ static void secureRewriteSelect(Query *query)
 	/* permission mark on the ORDER BY clause */
 	sepgsqlWalkExpr(query, false, (Node *) query->sortClause);
 
-	/* FIXME: HAVING, ORDER BY, GROUP BY, LIMIT */
+	/* permission mark on the GROUP BY clause */
+	sepgsqlWalkExpr(query, false, (Node *) query->groupClause);
+
+	/* FIXME: HAVING, LIMIT */
 
 	/* permission mark on the fromList */
 	secureRewriteJoinTree(query, (Node *)query->jointree,
