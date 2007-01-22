@@ -541,8 +541,8 @@ bool sepgsql_check_context(char *context)
 	return (security_check_context_raw(context) == 0 ? true : false);
 }
 
-/* sepgsql_getcon() -- obtain the server's context in psid */
-static psid sepgsql_getcon()
+/* sepgsql_system_getcon() -- obtain the server's context in psid */
+static psid sepgsql_system_getcon()
 {
 	security_context_t context;
 	psid ssid;
@@ -564,8 +564,8 @@ static psid sepgsql_getcon()
 	return ssid;
 }
 
-/* sepgsql_getpeercon() -- obtain the client's context in psid */
-static psid sepgsql_getpeercon(int sockfd)
+/* sepgsql_system_getpeercon() -- obtain the client's context in psid */
+static psid sepgsql_system_getpeercon(int sockfd)
 {
 	security_context_t context;
 	psid ssid;
@@ -620,8 +620,8 @@ void sepgsqlInitialize()
 	sepgsqlBootstrapPgSelinuxAvailable();
 
 	if (IsBootstrapProcessingMode()) {
-		sepgsqlServerPsid = sepgsql_getcon();
-		sepgsqlClientPsid = sepgsql_getcon();
+		sepgsqlServerPsid = sepgsql_system_getcon();
+		sepgsqlClientPsid = sepgsql_system_getcon();
 		sepgsqlDatabasePsid = sepgsql_avc_createcon(sepgsqlGetClientPsid(),
 													sepgsqlGetServerPsid(),
 													SECCLASS_DATABASE);
@@ -635,13 +635,13 @@ void sepgsqlInitialize()
 	}
 
 	/* obtain security context of server process */
-	sepgsqlServerPsid = sepgsql_getcon();
+	sepgsqlServerPsid = sepgsql_system_getcon();
 
 	/* obtain security context of client process */
 	if (MyProcPort != NULL) {
-		sepgsqlClientPsid = sepgsql_getpeercon(MyProcPort->sock);
+		sepgsqlClientPsid = sepgsql_system_getpeercon(MyProcPort->sock);
 	} else {
-		sepgsqlClientPsid = sepgsql_getcon();
+		sepgsqlClientPsid = sepgsql_system_getcon();
 	}
 
 	/* obtain security context of database */
