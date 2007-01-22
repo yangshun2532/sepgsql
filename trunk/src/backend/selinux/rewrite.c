@@ -102,8 +102,11 @@ skip:
 	relation_close(rel, NoLock);
 }
 
-static void secureRewriteFromItem(Query *query, Node *n, Node **quals)
+static void secureRewriteJoinTree(Query *query, Node *n, Node **quals)
 {
+	if (n == NULL)
+		return;
+
 	if (IsA(n, RangeTblRef)) {
 		RangeTblRef *rtr = (RangeTblRef *)n;
 		RangeTblEntry *rte = list_nth(query->rtable, rtr->rtindex - 1);
@@ -118,40 +121,27 @@ static void secureRewriteFromItem(Query *query, Node *n, Node **quals)
 		case RTE_SUBQUERY:
 			sepgsqlSecureRewrite(rte->subquery);
 			break;
-		case RTE_JOIN:
-			selerror("rtekind = RTE_JOIN should be found in fromList");
-			break;
-		case RTE_SPECIAL:
-			selerror("rtekind = RTE_SPECIAL should be found in fromList");
-			break;
 		case RTE_FUNCTION:
-			/* do nothing */
-			break;
 		case RTE_VALUES:
-			/* do nothing */
+			/* do nothing here */
 			break;
 		default:
-			selerror("unknown rtekind = %d found", rte->rtekind);
+			selerror("rtekind = %d should not be found fromList", rte->rtekind);
 			break;
 		}
+	} else if (IsA(n, FromExpr)) {
+		FromExpr *f = (FromExpr *)n;
+		ListCell *l;
+
+		foreach(l, f->fromlist)
+			secureRewriteJoinTree(query, (Node *) lfirst(l), quals);
 	} else if (IsA(n, JoinExpr)) {
-		JoinExpr *j = (JoinExpr *) n;
-		secureRewriteFromItem(query, j->larg, &j->quals);
-		secureRewriteFromItem(query, j->rarg, &j->quals);
-	}
-}
+		JoinExpr *j = (JoinExpr *)n;
 
-static void secureRewriteFromList(Query *query)
-{
-	FromExpr *jtree = query->jointree;
-	ListCell *l;
-
-	foreach (l, jtree->fromlist)
-		secureRewriteFromItem(query, (Node *) lfirst(l), &jtree->quals);
-	if (query->commandType != CMD_SELECT) {
-		RangeTblEntry *rte = list_nth(query->rtable, query->resultRelation - 1);
-		Assert(rte->rtekind == RTE_RELATION);
-		secureRewriteRelation(query, rte, query->resultRelation, &jtree->quals);
+		secureRewriteJoinTree(query, j->larg, &j->quals);
+		secureRewriteJoinTree(query, j->rarg, &j->quals);
+	} else {
+		selerror("unrecognized node type (%d) in query->jointree", nodeTag(n));
 	}
 }
 
@@ -171,20 +161,14 @@ static void secureRewriteSelect(Query *query)
 	/* FIXME: HAVING, ORDER BY, GROUP BY, LIMIT */
 
 	/* permission mark on the fromList */
-	secureRewriteFromList(query);
+	secureRewriteJoinTree(query, (Node *)query->jointree, &query->jointree->quals);
 }
 
 static void secureRewriteUpdate(Query *query)
 {
 	RangeTblEntry *rte;
 	ListCell *l;
-
-	/* permission mark on the target relation */
-	rte = (RangeTblEntry *) list_nth(query->rtable, query->resultRelation - 1);
-	Assert(IsA(rte, RangeTblEntry));
-	rte->access_vector |= TABLE__UPDATE;
-
-	/* permission mark on the targetList */
+	int rindex;
 
 	/* permission mark on RETURNING clause, if necessary */
 	foreach(l, query->returningList) {
@@ -196,91 +180,46 @@ static void secureRewriteUpdate(Query *query)
 	/* permission mark on WHERE clause, if necessary */
 	sepgsqlWalkExpr(query, false, (Expr *) query->jointree->quals);
 
-	/* permission mark on the USING clause, and targetRelation */
-    secureRewriteFromList(query);
+	/* append sepgsql_permission() on the USING clause */
+	secureRewriteJoinTree(query, (Node *)query->jointree, &query->jointree->quals);
+
+	/* append sepgsql_permission() on the target Relation */
+	rindex = query->resultRelation;
+	rte = (RangeTblEntry *) list_nth(query->rtable, rindex - 1);
+	Assert(IsA(rte, RangeTblEntry));
+	rte->access_vector |= TABLE__UPDATE;
+	secureRewriteRelation(query, rte, rindex, &query->jointree->quals);
 }
 
-#if 0
 static void secureRewriteInsert(Query *query)
 {
-	Form_pg_class pg_class;
-	Form_pg_attribute attr;
-	HeapTuple rtup, atup;
 	RangeTblEntry *rte;
 	ListCell *l;
 	int rindex;
-	bool has_explicit_labeling = false;
 
-	/* 2. call sepgsql_check_insert(), if necessary */
-	rtup = SearchSysCache(RELOID,
-						  ObjectIdGetDatum(rte->relid),
-						  0, 0, 0);
-	if (!HeapTupleIsValid(rtup))
-		selerror("cache lookup failed (relid=%u)", rte->relid);
-	pg_class = (Form_pg_class) GETSTRUCT(rtup);
-
-	foreach (l, query->targetList) {
+	/* permission mark on RETURNING clause, if necessary */
+	foreach(l, query->returningList) {
 		TargetEntry *te = (TargetEntry *) lfirst(l);
-		atup = SearchSysCache(ATTNUM,
-							  ObjectIdGetDatum(rte->relid),
-							  Int16GetDatum(te->resno),
-							  0, 0);
-		if (!HeapTupleIsValid(atup))
-			selerror("cache lookup failed (relid=%u, attnum=%d)",
-					 rte->relid, te->resno);
-		attr = (Form_pg_attribute) GETSTRUCT(atup);
-		if (sepgsqlAttributeIsPsid(attr)) {
-			uint16 tclass = __get_tclass_by_relid(attr->attrelid);
-			te->expr = call_sepgsql_check_insert(te->expr, pg_class->relselcon, tclass);
-			has_explicit_labeling = true;
-		}
-		ReleaseSysCache(atup);
-
-		sepgsqlWalkExpr(query, true, te->expr, rperms);
+		Assert(IsA(te, TargetEntry));
+		sepgsqlWalkExpr(query, false, te->expr);
 	}
-	ReleaseSysCache(rtup);
 
-	/* 3. add implicit labeling, if necessary */
-	if (!has_explicit_labeling) {
-		int i;
-		Relation rel = relation_open(rte->relid, AccessShareLock);
-		for (i=0; i < RelationGetNumberOfAttributes(rel); i++) {
-			attr = RelationGetDescr(rel)->attrs[i];
-			if (sepgsqlAttributeIsPsid(attr)) {
-				TargetEntry *te;
-				Const *cons;
-				psid tupcon;
+	/* append sepgsql_permission() on the USING clause */
+	secureRewriteJoinTree(query, (Node *)query->jointree, &query->jointree->quals);
 
-				tupcon = sepgsql_avc_createcon(sepgsqlGetClientPsid(),
-											   pg_class->relselcon,
-											   SECCLASS_TUPLE);
-				cons = makeConst(PSIDOID, sizeof(psid),
-								 ObjectIdGetDatum(tupcon),
-								 false, true);
-				te = makeTargetEntry((Expr *)cons, i + 1,
-									 pstrdup(NameStr(attr->attname)),
-									 false);
-				query->targetList = lappend(query->targetList, te);
-				goto out;
-			}
-		}
-		seldebug("relation '%s' did not have '%s' column",
-				 RelationGetRelationName(rel), TUPLE_SELCON);
-	out:
-		relation_close(rel, NoLock);
-	}
+	/* append sepgsql_permission() on the target Relation */
+	rindex = query->resultRelation;
+	rte = (RangeTblEntry *) list_nth(query->rtable, rindex - 1);
+	Assert(IsA(rte, RangeTblEntry));
+	rte->access_vector |= TABLE__INSERT;
+	secureRewriteRelation(query, rte, rindex, &query->jointree->quals);
 }
-#endif
 
 static void secureRewriteDelete(Query *query)
 {
 	ListCell *l;
 	RangeTblEntry *rte;
-
-	/* permission mark on the target relation */
-	rte = (RangeTblEntry *) list_nth(query->rtable, query->resultRelation - 1);
-	Assert(IsA(rte, RangeTblEntry));
-	rte->access_vector |= TABLE__DELETE;
+	int rindex;
 
 	/* permission mark on RETURNING clause, if necessary */
 	foreach(l, query->returningList) {
@@ -291,8 +230,15 @@ static void secureRewriteDelete(Query *query)
 	/* permission mark on WHERE clause, if necessary */
 	sepgsqlWalkExpr(query, false, (Expr *) query->jointree->quals);
 
-	/* permission mark on the USING clause, and targetRelation */
-	secureRewriteFromList(query);
+	/* append sepgsql_permission() on the USING clause */
+	secureRewriteJoinTree(query, (Node *)query->jointree, &query->jointree->quals);
+
+	/* append sepgsql_permission() on the target Relation */
+	rindex = query->resultRelation;
+	rte = (RangeTblEntry *) list_nth(query->rtable, rindex - 1);
+	Assert(IsA(rte, RangeTblEntry));
+	rte->access_vector |= TABLE__DELETE;
+	secureRewriteRelation(query, rte, rindex, &query->jointree->quals);
 }
 
 void sepgsqlSecureRewrite(Query *query)
@@ -307,7 +253,7 @@ void sepgsqlSecureRewrite(Query *query)
 		secureRewriteUpdate(query);
 		break;
 	case CMD_INSERT:
-		/* no nothing */
+		secureRewriteInsert(query);
 		break;
 	case CMD_DELETE:
 		secureRewriteDelete(query);
@@ -322,53 +268,4 @@ void sepgsqlSecureRewrite(Query *query)
 		RangeTblEntry *rte = (RangeTblEntry *) lfirst(l);
 		rte->access_vector = 0;
 	}
-}
-
-/* sepgsqlExecuteQuery() -- add implicit labeling and relabel from/to
- * permission checking, when CREATE TABLE ... AS EXECUTE <prep>;
- * The arguments are copied object, so we can modify it to append
- * an additional conditions.
- */
-void sepgsqlExecuteQuery(Query *query, Plan *plan)
-{
-#if 0
-	ListCell *l;
-	TargetEntry *te;
-	psid tblcon, tupcon;
-
-	Assert(query->commandType == CMD_SELECT);
-	Assert(query->into != NULL);
-
-	/* compute implicit labeling */
-	tblcon = sepgsql_avc_createcon(sepgsqlGetClientPsid(),
-								   sepgsqlGetDatabasePsid(),
-								   SECCLASS_TABLE);
-	tupcon = sepgsql_avc_createcon(sepgsqlGetClientPsid(),
-								   tblcon,
-								   SECCLASS_TUPLE);
-
-	/* check explicit labeling */
-	foreach(l, plan->targetlist) {
-		bool has_explicit = false;
-		te = (TargetEntry *) lfirst(l);
-
-		if (!strcmp(te->resname, TUPLE_SELCON)) {
-			te->expr = call_sepgsql_check_insert(te->expr, tblcon,
-												 SECCLASS_TABLE);
-			has_explicit = true;
-		}
-
-		if (!has_explicit) {
-			/* add implicit labeling */
-			AttrNumber resno = list_length(plan->targetlist) + 1;
-			Const *con = makeConst(PSIDOID, sizeof(psid),
-								   ObjectIdGetDatum(tupcon),
-								   false, true);
-			Expr *expr = call_sepgsql_check_insert((Expr *)con, tblcon,
-												   SECCLASS_TABLE);
-			te = makeTargetEntry(expr, resno, TUPLE_SELCON, false);
-			plan->targetlist = lappend(plan->targetlist, te);
-		}
-	}
-#endif
 }
