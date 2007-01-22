@@ -164,6 +164,7 @@ static void verfityJoinTree(Query *query, Node *n)
 	}
 }
 
+#if 0
 /* selectProxy() -- check SELECT statement */
 static void selectProxy(Query *query)
 {
@@ -291,10 +292,23 @@ static void deleteProxy(Query *query)
 	/* check permission on the USING clause */
 	verfityJoinTree(query, (Node *) query->jointree);
 }
+#endif
 
 static void sepgsqlProxyQuery(Query *query)
 {
+	RangeTblEntry *rte = NULL;
 	ListCell *l;
+
+	switch (query->commandType) {
+	case CMD_SELECT:
+	case CMD_UPDATE:
+	case CMD_INSERT:
+	case CMD_DELETE:
+		break;
+	default:
+		return;		/* do nothing */
+		break;
+	}
 
 	/* cleanup rte->access_vector */
 	foreach (l, query->rtable) {
@@ -303,26 +317,55 @@ static void sepgsqlProxyQuery(Query *query)
 		rte->access_vector = 0;
 	}
 
-	switch (query->commandType) {
-	case CMD_SELECT:
-		selectProxy(query);
-		break;
-	case CMD_UPDATE:
-		updateProxy(query);
-		break;
-	case CMD_INSERT:
-		insertProxy(query);
-		break;
-	case CMD_DELETE:
-		deleteProxy(query);
-		break;
-	case CMD_UTILITY:
-		/* do nothting */
-		break;
-	default:
-		selnotice("Query->commandType = %u is not proxied", query->commandType);
-		break;
+	/* mark table:xxxx on the target Relation */
+	if (query->commandType != CMD_SELECT) {
+		rte = (RangeTblEntry *) list_nth(query->rtable, query->resultRelation - 1);
+		Assert(IsA(rte, RangeTblEntry) && rte->rtekind == RTE_RELATION);
+		switch (query->commandType) {
+		case CMD_UPDATE:  rte->access_vector |= TABLE__UPDATE; break;
+		case CMD_INSERT:  rte->access_vector |= TABLE__INSERT; break;
+		case CMD_DELETE:  rte->access_vector |= TABLE__DELETE; break;
+		default:
+			selerror("could not handle this commandType (%d)", query->commandType);
+		}
 	}
+
+	/* check column:xxxx on the target column */
+	if (query->commandType != CMD_DELETE) {
+		foreach (l, query->targetList) {
+			TargetEntry *te = (TargetEntry *) lfirst(l);
+			Assert(IsA(te, TargetEntry));
+			if (te->resjunk)
+				continue;
+			if (query->commandType != CMD_SELECT)
+				verifyColumnPerm(rte->relid, te->resno,
+								 query->commandType == CMD_UPDATE
+								 ? COLUMN__UPDATE : COLUMN__INSERT);
+			sepgsqlWalkExpr(query, true, (Node *) te->expr);
+		}
+	}
+
+    /* permission check on WHERE clause, if necessary */
+    sepgsqlWalkExpr(query, true, query->jointree->quals);
+	
+	/* permission check on RETURNING clause, if necessary. */
+	foreach(l, query->returningList) {
+		TargetEntry *te = (TargetEntry *) lfirst(l);
+		Assert(IsA(te, TargetEntry));
+		if (te->resjunk)
+			continue;
+		sepgsqlWalkExpr(query, true, (Node *) te->expr);
+	}
+
+	/* check ORDER BY clause */
+	sepgsqlWalkExpr(query, true, (Node *) query->sortClause);
+
+	/* check GROUP BY/HAVING clause */
+	sepgsqlWalkExpr(query, true, (Node *) query->groupClause);
+	sepgsqlWalkExpr(query, true, query->havingQual);
+
+	/* check permission on the USING clause, and target Relation */
+	verfityJoinTree(query, (Node *) query->jointree);
 }
 
 /* sepgsqlProxyPortal() -- abort current transaction,
