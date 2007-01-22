@@ -143,8 +143,10 @@ sepgsql_permission(PG_FUNCTION_ARGS)
 
 	rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
 								objcon, tclass, perms, &audit);
-	if (audit)
-		selnotice("%s", audit);
+	if (audit) {
+		ereport(NOTICE, (errcode(ERRCODE_INTERNAL_ERROR),
+						 errmsg("SELinux: %s", audit)));
+	}
 	PG_RETURN_BOOL(rc == 0);
 }
 
