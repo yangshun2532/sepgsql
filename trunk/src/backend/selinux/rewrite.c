@@ -206,13 +206,6 @@ static void secureRewriteInsert(Query *query)
 
 	/* append sepgsql_permission() on the USING clause */
 	secureRewriteJoinTree(query, (Node *)query->jointree, &query->jointree->quals);
-
-	/* append sepgsql_permission() on the target Relation */
-	rindex = query->resultRelation;
-	rte = (RangeTblEntry *) list_nth(query->rtable, rindex - 1);
-	Assert(IsA(rte, RangeTblEntry));
-	rte->access_vector |= TABLE__INSERT;
-	secureRewriteRelation(query, rte, rindex, &query->jointree->quals);
 }
 
 static void secureRewriteDelete(Query *query)
