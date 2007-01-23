@@ -149,97 +149,34 @@ static void secureRewriteJoinTree(Query *query, Node *n, Node **quals)
 	}
 }
 
-#if 0
-static void secureRewriteSelect(Query *query)
-{
-	ListCell *l;
-
-	/* permission mark on the target columns */
-	foreach (l, query->targetList) {
-		TargetEntry *te = lfirst(l);
-		Assert(IsA(te, TargetEntry));
-		sepgsqlWalkExpr(query, false, (Node *) te->expr);
-	}
-	/* permission mark on the WHERE clause */
-	sepgsqlWalkExpr(query, false, query->jointree->quals);
-
-	/* permission mark on the ORDER BY clause */
-	sepgsqlWalkExpr(query, false, (Node *) query->sortClause);
-
-	/* permission mark on the GROUP BY clause */
-	sepgsqlWalkExpr(query, false, (Node *) query->groupClause);
-
-	/* FIXME: HAVING, LIMIT */
-
-	/* permission mark on the fromList */
-	secureRewriteJoinTree(query, (Node *)query->jointree,
-						  &query->jointree->quals);
-}
-
-static void secureRewriteUpdate(Query *query)
-{
-	RangeTblEntry *rte;
-	int rindex;
-
-	/* permission mark on RETURNING clause, if necessary */
-	sepgsqlWalkExpr(query, false, (Node *) query->returningList);
-
-	/* permission mark on WHERE clause, if necessary */
-	sepgsqlWalkExpr(query, false, query->jointree->quals);
-
-	/* append sepgsql_permission() on the USING clause */
-	secureRewriteJoinTree(query, (Node *)query->jointree,
-						  &query->jointree->quals);
-
-	/* append sepgsql_permission() on the target Relation */
-	rindex = query->resultRelation;
-	rte = (RangeTblEntry *) list_nth(query->rtable, rindex - 1);
-	Assert(IsA(rte, RangeTblEntry));
-	rte->access_vector |= TABLE__UPDATE;
-	secureRewriteRelation(query, rte, rindex, &query->jointree->quals);
-}
-
-static void secureRewriteInsert(Query *query)
-{
-	/* permission mark on RETURNING clause, if necessary */
-	sepgsqlWalkExpr(query, false, (Node *) query->returningList);
-
-	/* append sepgsql_permission() on the USING clause */
-	secureRewriteJoinTree(query, (Node *) query->jointree,
-						  &query->jointree->quals);
-}
-
-static void secureRewriteDelete(Query *query)
-{
-	RangeTblEntry *rte;
-	int rindex;
-
-	/* permission mark on RETURNING clause, if necessary */
-	sepgsqlWalkExpr(query, false, (Node *) query->returningList);
-
-	/* permission mark on WHERE clause, if necessary */
-	sepgsqlWalkExpr(query, false, query->jointree->quals);
-
-	/* append sepgsql_permission() on the USING clause */
-	secureRewriteJoinTree(query, (Node *) query->jointree,
-						  &query->jointree->quals);
-
-	/* append sepgsql_permission() on the target Relation */
-	rindex = query->resultRelation;
-	rte = (RangeTblEntry *) list_nth(query->rtable, rindex - 1);
-	Assert(IsA(rte, RangeTblEntry));
-	rte->access_vector |= TABLE__DELETE;
-	secureRewriteRelation(query, rte, rindex, &query->jointree->quals);
-}
-#endif
-
 static void secureRewriteQuery(Query *query)
 {
-	RangeTblEntry *rte;
+	CmdType cmdType = query->commandType;
+	RangeTblEntry *rte = NULL;
 	ListCell *l;
 
+	if (cmdType != CMD_SELECT) {
+		rte = list_nth(query->rtable, query->resultRelation - 1);
+		Assert(IsA(rte, RangeTblEntry));
+		Assert(rte->rtekind == RTE_RELATION);
+		switch (cmdType) {
+		case CMD_INSERT:
+			rte->access_vector |= TABLE__INSERT;
+			break;
+		case CMD_UPDATE:
+			rte->access_vector |= TABLE__UPDATE;
+			break;
+		case CMD_DELETE:
+			rte->access_vector |= TABLE__DELETE;
+			break;
+		default:
+			selerror("commandType = %d should not be found here", cmdType);
+			break;
+		}
+	}
+
 	/* permission mark on the target columns */
-	if (query->commandType == CMD_SELECT) {
+	if (cmdType != CMD_DELETE) {
 		foreach (l, query->targetList) {
 			TargetEntry *te = lfirst(l);
 			Assert(IsA(te, TargetEntry));
@@ -250,33 +187,25 @@ static void secureRewriteQuery(Query *query)
 	/* permission mark on RETURNING clause, if necessary */
 	sepgsqlWalkExpr(query, false, (Node *) query->returningList);
 
-	/* permission mark on the WHERE clause */
+	/* permission mark on the WHERE/HAVING clause */
 	sepgsqlWalkExpr(query, false, query->jointree->quals);
-
-	/* permission mark on the ORDER BY clause */
-	sepgsqlWalkExpr(query, false, (Node *) query->sortClause);
-
-	/* permission mark on the GROUP BY/HAVING clause */
-	sepgsqlWalkExpr(query, false, (Node *) query->groupClause);
 	sepgsqlWalkExpr(query, false, query->havingQual);
 
-	/* append sepgsql_permission() on the FROM clause/USING clause */
+	/* permission mark on the ORDER BY clause */
+	//sepgsqlWalkExpr(query, false, (Node *) query->sortClause);
+
+	/* permission mark on the GROUP BY/HAVING clause */
+	//sepgsqlWalkExpr(query, false, (Node *) query->groupClause);
+
+	/* append sepgsql_permission() on the FROM clause/USING clause
+	 * for SELECT/UPDATE/DELETE statement.
+	 * The target Relation of INSERT is noe necessary to append it
+	 */
 	secureRewriteJoinTree(query, (Node *)query->jointree,
 						  &query->jointree->quals);
-
-	/* append sepgsql_permission() on the target Relation */
-	if (query->commandType == CMD_UPDATE || query->commandType == CMD_DELETE) {
-		rte = (RangeTblEntry *) list_nth(query->rtable, query->resultRelation - 1);
-		Assert(IsA(rte, RangeTblEntry));
-		Assert(rte->rtekind == RTE_RELATION);
-		rte->access_vector |= ((query->commandType == CMD_UPDATE)
-							   ? TABLE__UPDATE : TABLE__DELETE);
-		secureRewriteRelation(query, rte, query->resultRelation,
-							  &query->jointree->quals);
-	}
 }
 
-static Query *TruncateSubQuery(Relation rel)
+static Query *convertTruncateToDelete(Relation rel)
 {
 	Query *query = makeNode(Query);
 	RangeTblEntry *rte;
@@ -314,7 +243,7 @@ static List *secureRewriteTruncate(Query *query)
 		RangeVar *rv = lfirst(l);
 
 		rel = heap_openrv(rv, AccessShareLock);
-		subqry = TruncateSubQuery(rel);
+		subqry = convertTruncateToDelete(rel);
 		subquery_list = lappend(subquery_list, subqry);
 		subquery_lids = lappend_oid(subquery_lids, RelationGetRelid(rel));
 		heap_close(rel, NoLock);
@@ -328,7 +257,7 @@ static List *secureRewriteTruncate(Query *query)
 			Oid relid = lfirst_oid(l);
 
 			rel = heap_open(relid, AccessShareLock);
-			subqry = TruncateSubQuery(rel);
+			subqry = convertTruncateToDelete(rel);
 			subquery_list = lappend(subquery_list, subqry);
 			heap_close(rel, NoLock);
 		}

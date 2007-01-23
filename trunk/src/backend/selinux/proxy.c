@@ -164,142 +164,13 @@ static void verfityJoinTree(Query *query, Node *n)
 	}
 }
 
-#if 0
-/* selectProxy() -- check SELECT statement */
-static void selectProxy(Query *query)
-{
-	ListCell *l;
-
-	/* check column:select on the target column */
-	foreach (l, query->targetList) {
-		TargetEntry *te = (TargetEntry *) lfirst(l);
-		Assert(IsA(te, TargetEntry));
-		if (te->resjunk)
-			continue;
-		sepgsqlWalkExpr(query, true, (Node *) te->expr);
-	}
-
-	/* check WHERE clause */
-	sepgsqlWalkExpr(query, true, query->jointree->quals);
-
-	/* check ORDER BY clause */
-	sepgsqlWalkExpr(query, true, (Node *) query->sortClause);
-
-	/* check GROUP BY/HAVING clause */
-	sepgsqlWalkExpr(query, true, (Node *) query->groupClause);
-	sepgsqlWalkExpr(query, true, query->havingQual);
-
-	/* permission mark on the fromList */
-	verfityJoinTree(query, (Node *) query->jointree);
-}
-
-/* updateProxy() -- check UPDATE statement */
-static void updateProxy(Query *query)
-{
-	RangeTblEntry *rte;
-	ListCell *l;
-
-	/* mark table:update on the target Relation */
-	rte = (RangeTblEntry *) list_nth(query->rtable, query->resultRelation - 1);
-	Assert(IsA(rte, RangeTblEntry) && rte->rtekind == RTE_RELATION);
-	rte->access_vector |= TABLE__UPDATE;
-
-	/* check column:update on the target Columns */
-	foreach(l, query->targetList) {
-		TargetEntry *te = (TargetEntry *) lfirst(l);
-		Assert(IsA(te, TargetEntry));
-		if (te->resjunk)
-			continue;
-		verifyColumnPerm(rte->relid, te->resno, COLUMN__UPDATE);
-		sepgsqlWalkExpr(query, true, (Node *) te->expr);
-	}
-
-	/* check WHERE clause */
-	sepgsqlWalkExpr(query, true, query->jointree->quals);
-
-	/* check RETURNING clause */
-	foreach(l, query->returningList) {
-		TargetEntry *te = (TargetEntry *) lfirst(l);
-		Assert(IsA(te, TargetEntry));
-		if (te->resjunk)
-			continue;
-		sepgsqlWalkExpr(query, true, (Node *) te->expr);
-	}
-
-    /* check permission on the USING clause, and target Relation */
-	verfityJoinTree(query, (Node *) query->jointree);
-	//verifyRteRelation(query, rte);
-}
-
-/* insertProxy() -- check INSERT statement */
-static void insertProxy(Query *query)
-{
-	RangeTblEntry *rte;
-	ListCell *l;
-
-	/* mark table:insert on the target Relation */
-	rte = (RangeTblEntry *) list_nth(query->rtable, query->resultRelation - 1);
-	Assert(IsA(rte, RangeTblEntry) && rte->rtekind == RTE_RELATION);
-	rte->access_vector |= TABLE__INSERT;
-
-	/* check column:update on the target Columns */
-	foreach(l, query->targetList) {
-		TargetEntry *te = (TargetEntry *) lfirst(l);
-		Assert(IsA(te, TargetEntry));
-		if (te->resjunk)
-			continue;
-		verifyColumnPerm(rte->relid, te->resno, COLUMN__INSERT);
-		sepgsqlWalkExpr(query, true, (Node *) te->expr);
-	}
-
-	/* permission mark on RETURNING clause, if necessary. */
-	foreach(l, query->returningList) {
-		TargetEntry *te = (TargetEntry *) lfirst(l);
-		Assert(IsA(te, TargetEntry));
-		if (te->resjunk)
-			continue;
-		sepgsqlWalkExpr(query, true, (Node *) te->expr);
-	}
-
-    /* check permission on the USING clause, and target Relation */
-	verfityJoinTree(query, (Node *) query->jointree);
-	//verifyRteRelation(query, rte);
-}
-
-/* deleteProxy() -- check DELETE statement */
-static void deleteProxy(Query *query)
-{
-	RangeTblEntry *rte;
-	ListCell *l;
-
-	/* permission mark on the target relation */
-	rte = (RangeTblEntry *) list_nth(query->rtable, query->resultRelation - 1);
-	Assert(IsA(rte, RangeTblEntry) && rte->rtekind == RTE_RELATION);
-	rte->access_vector |= TABLE__DELETE;
-
-	/* permission mark on RETURNING clause, if necessary */
-	foreach(l, query->returningList) {
-		TargetEntry *te = (TargetEntry *) lfirst(l);
-		Assert(IsA(te, TargetEntry));
-		if (te->resjunk)
-			continue;
-		sepgsqlWalkExpr(query, true, (Node *) te->expr);
-	}
-
-	/* permission mark on WHERE clause, if necessary */
-	sepgsqlWalkExpr(query, true, query->jointree->quals);
-
-	/* check permission on the USING clause */
-	verfityJoinTree(query, (Node *) query->jointree);
-}
-#endif
-
 static void sepgsqlProxyQuery(Query *query)
 {
+	CmdType cmdType = query->commandType;
 	RangeTblEntry *rte = NULL;
 	ListCell *l;
 
-	switch (query->commandType) {
+	switch (cmdType) {
 	case CMD_SELECT:
 	case CMD_UPDATE:
 	case CMD_INSERT:
@@ -321,34 +192,51 @@ static void sepgsqlProxyQuery(Query *query)
 	if (query->commandType != CMD_SELECT) {
 		rte = (RangeTblEntry *) list_nth(query->rtable, query->resultRelation - 1);
 		Assert(IsA(rte, RangeTblEntry) && rte->rtekind == RTE_RELATION);
-		switch (query->commandType) {
-		case CMD_UPDATE:  rte->access_vector |= TABLE__UPDATE; break;
-		case CMD_INSERT:  rte->access_vector |= TABLE__INSERT; break;
-		case CMD_DELETE:  rte->access_vector |= TABLE__DELETE; break;
+		switch (cmdType) {
+		case CMD_UPDATE:
+			rte->access_vector |= TABLE__UPDATE;
+			break;
+		case CMD_INSERT:
+			rte->access_vector |= TABLE__INSERT;
+			break;
+		case CMD_DELETE:
+			rte->access_vector |= TABLE__DELETE;
+			break;
 		default:
-			selerror("could not handle this commandType (%d)", query->commandType);
+			selerror("could not handle this commandType (%d)", cmdType);
 		}
 	}
 
-	/* check column:xxxx on the target column */
-	if (query->commandType != CMD_DELETE) {
+	/* check column:xxxx on the target column, except DELETE statement.
+	 *
+	 * ORDER BY/GROUP BY clause may use targetList,
+	 * so we have to verify a junk column.
+	 */
+	if (cmdType != CMD_DELETE) {
+		seldebug("verify targetList");
 		foreach (l, query->targetList) {
 			TargetEntry *te = (TargetEntry *) lfirst(l);
 			Assert(IsA(te, TargetEntry));
-			if (te->resjunk)
-				continue;
-			if (query->commandType != CMD_SELECT)
-				verifyColumnPerm(rte->relid, te->resno,
-								 query->commandType == CMD_UPDATE
-								 ? COLUMN__UPDATE : COLUMN__INSERT);
+
 			sepgsqlWalkExpr(query, true, (Node *) te->expr);
+			if (cmdType == CMD_SELECT)
+				continue;
+			/* cmdType == CMD_UPDATE or CMD_INSERT */
+			verifyColumnPerm(rte->relid, te->resno,
+							 cmdType==CMD_UPDATE
+							 ? COLUMN__UPDATE
+							 : COLUMN__INSERT);
 		}
 	}
 
-    /* permission check on WHERE clause, if necessary */
+    /* permission check on WHERE/HAVING clause, if necessary */
+	seldebug("verify WHERE clause");
     sepgsqlWalkExpr(query, true, query->jointree->quals);
-	
+	seldebug("verify HAVING clause");
+	sepgsqlWalkExpr(query, true, query->havingQual);
+
 	/* permission check on RETURNING clause, if necessary. */
+	seldebug("verify RETURNING clause");
 	foreach(l, query->returningList) {
 		TargetEntry *te = (TargetEntry *) lfirst(l);
 		Assert(IsA(te, TargetEntry));
@@ -358,14 +246,16 @@ static void sepgsqlProxyQuery(Query *query)
 	}
 
 	/* check ORDER BY clause */
-	sepgsqlWalkExpr(query, true, (Node *) query->sortClause);
+	//sepgsqlWalkExpr(query, true, (Node *) query->sortClause);
 
 	/* check GROUP BY/HAVING clause */
-	sepgsqlWalkExpr(query, true, (Node *) query->groupClause);
-	sepgsqlWalkExpr(query, true, query->havingQual);
+	//sepgsqlWalkExpr(query, true, (Node *) query->groupClause);
 
 	/* check permission on the USING clause, and target Relation */
+	seldebug("verify FROM/USING clause, and target Relation");
 	verfityJoinTree(query, (Node *) query->jointree);
+	if (cmdType == CMD_INSERT)
+		verifyRteRelation(query, rte);
 }
 
 /* sepgsqlProxyPortal() -- abort current transaction,
