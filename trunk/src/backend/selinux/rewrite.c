@@ -149,6 +149,30 @@ static void secureRewriteJoinTree(Query *query, Node *n, Node **quals)
 	}
 }
 
+static void secureRewriteSetOperations(Query *query, Node *n)
+{
+	if (n == NULL)
+		return;
+
+	if (IsA(n, RangeTblRef)) {
+		RangeTblRef *rtr = (RangeTblRef *) n;
+		RangeTblEntry *rte = list_nth(query->rtable, rtr->rtindex - 1);
+
+		Assert(IsA(rte, RangeTblEntry));
+		Assert(rte->rtekind == RTE_SUBQUERY);
+
+		secureRewriteQuery(rte->subquery);
+	} else if (IsA(n, SetOperationStmt)) {
+		SetOperationStmt *op = (SetOperationStmt *) n;
+
+		secureRewriteSetOperations(query, op->larg);
+		secureRewriteSetOperations(query, op->rarg);
+	} else {
+		selerror("The following node was found at setOperationsTree: %s",
+				 nodeToString(n));
+	}
+}
+
 static void secureRewriteQuery(Query *query)
 {
 	CmdType cmdType = query->commandType;
@@ -203,6 +227,9 @@ static void secureRewriteQuery(Query *query)
 	 */
 	secureRewriteJoinTree(query, (Node *)query->jointree,
 						  &query->jointree->quals);
+
+	/* permission mark on the UNION/INTERSECT/EXCEPT */
+	secureRewriteSetOperations(query, query->setOperations);
 }
 
 static Query *convertTruncateToDelete(Relation rel)

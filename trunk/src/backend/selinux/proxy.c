@@ -164,6 +164,30 @@ static void verfityJoinTree(Query *query, Node *n)
 	}
 }
 
+static void verfitySetOperationsTree(Query *query, Node *n)
+{
+	if (n == NULL)
+		return;
+
+	if (IsA(n, RangeTblRef)) {
+		RangeTblRef *rtr = (RangeTblRef *) n;
+		RangeTblEntry *rte = list_nth(query->rtable, rtr->rtindex - 1);
+
+		Assert(IsA(rte, RangeTblEntry));
+		Assert(rte->rtekind == RTE_SUBQUERY);
+
+		sepgsqlProxyQuery(rte->subquery);
+	} else if (IsA(n, SetOperationStmt)) {
+		SetOperationStmt *op = (SetOperationStmt *) n;
+
+		verfitySetOperationsTree(query, op->larg);
+		verfitySetOperationsTree(query, op->rarg);
+	} else {
+		selerror("The following node was found at setOperationsTree: %s",
+				 nodeToString(n));
+	}
+}
+
 static void sepgsqlProxyQuery(Query *query)
 {
 	CmdType cmdType = query->commandType;
@@ -256,6 +280,13 @@ static void sepgsqlProxyQuery(Query *query)
 	verfityJoinTree(query, (Node *) query->jointree);
 	if (cmdType == CMD_INSERT)
 		verifyRteRelation(query, rte);
+
+	/* check permission on the SetOperationsTree.
+	 * It includes UNION/INTERSECT/EXCEPT Subquery
+	 */
+	seldebug("verify SetOperationsTree");
+	verfitySetOperationsTree(query, query->setOperations);
+	seldebug("End verifying a Query");
 }
 
 /* sepgsqlProxyPortal() -- abort current transaction,
