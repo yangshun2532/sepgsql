@@ -58,50 +58,62 @@ static void walkVar(Query *query, bool do_check, Var *var)
 	}
 }
 
+static void checkFunctionPerm(Oid funcid)
+{
+	Form_pg_proc proc;
+	HeapTuple tup;
+	psid newcon;
+	uint32 perms;
+	char *audit;
+	int rc;
+
+	tup = SearchSysCache(PROCOID,
+						 ObjectIdGetDatum(funcid),
+						 0, 0, 0);
+	if (!HeapTupleIsValid(tup))
+		selerror("cache lookup failed (procid=%u)", funcid);
+	proc = (Form_pg_proc) GETSTRUCT(tup);
+	newcon = sepgsql_avc_createcon(sepgsqlGetClientPsid(),
+								   proc->proselcon,
+								   SECCLASS_PROCESS);
+	perms = PROCEDURE__EXECUTE;
+	if (sepgsqlGetClientPsid() != newcon)
+		perms |= PROCEDURE__ENTRYPOINT;
+	rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
+								proc->proselcon,
+								SECCLASS_PROCEDURE,
+								perms,
+								&audit);
+
+	if (sepgsqlGetClientPsid() != newcon) {
+		rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
+									newcon,
+									SECCLASS_PROCESS,
+									PROCESS__TRANSITION,
+									&audit);
+		sepgsql_audit(rc, audit, NULL);
+	}
+
+	sepgsql_audit(rc, audit, NameStr(proc->proname));
+	ReleaseSysCache(tup);
+}
+
 static void walkFuncExpr(Query *query, bool do_check, FuncExpr *func)
 {
 	Assert(IsA(func, FuncExpr));
 
 	sepgsqlWalkExpr(query, do_check, (Node *) func->args);
+	if (do_check)
+		checkFunctionPerm(func->funcid);
+}
 
-	if (do_check) {
-		Form_pg_proc proc;
-		HeapTuple tup;
-		psid newcon;
-		uint32 perms;
-		char *audit;
-		int rc;
+static void walkAggref(Query *query, bool do_check, Aggref *aggref)
+{
+	Assert(IsA(aggref, Aggref));
 
-		tup = SearchSysCache(PROCOID,
-							 ObjectIdGetDatum(func->funcid),
-							 0, 0, 0);
-		if (!HeapTupleIsValid(tup))
-			selerror("cache lookup failed (procid=%u)", func->funcid);
-		proc = (Form_pg_proc) GETSTRUCT(tup);
-		newcon = sepgsql_avc_createcon(sepgsqlGetClientPsid(),
-									   proc->proselcon,
-									   SECCLASS_PROCESS);
-		perms = PROCEDURE__EXECUTE;
-		if (sepgsqlGetClientPsid() != newcon)
-			perms |= PROCEDURE__ENTRYPOINT;
-		rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
-									proc->proselcon,
-									SECCLASS_PROCEDURE,
-									perms,
-									&audit);
-
-		if (sepgsqlGetClientPsid() != newcon) {
-			rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
-										newcon,
-										SECCLASS_PROCESS,
-										PROCESS__TRANSITION,
-										&audit);
-			sepgsql_audit(rc, audit, NULL);
-		}
-
-		sepgsql_audit(rc, audit, NameStr(proc->proname));
-		ReleaseSysCache(tup);
-	}
+	sepgsqlWalkExpr(query, do_check, (Node *) aggref->args);
+	if (do_check)
+		checkFunctionPerm(aggref->aggfnoid);
 }
 
 static void walkOpExpr(Query *query, bool do_check, OpExpr *expr)
@@ -174,6 +186,9 @@ void sepgsqlWalkExpr(Query *query, bool do_check, Node *n)
 		break;
 	case T_FuncExpr:
 		walkFuncExpr(query, do_check, (FuncExpr *) n);
+		break;
+	case T_Aggref:
+		walkAggref(query, do_check, (Aggref *) n);
 		break;
 	case T_OpExpr:
 		walkOpExpr(query, do_check, (OpExpr *) n);
