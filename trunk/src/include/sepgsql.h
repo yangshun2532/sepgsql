@@ -134,15 +134,14 @@ extern psid sepgsqlGetClientPsid(void);
 extern void sepgsqlSetClientPsid(psid new_ctx);
 extern psid sepgsqlGetDatabasePsid(void);
 extern bool sepgsqlAttributeIsPsid(Form_pg_attribute attr);
+extern bool sepgsqlIsEnabled();
 
 /* SE-PostgreSQL core Security Functions */
 extern List *sepgsqlSecureRewrite(List *queryList);
 extern void sepgsqlProxyPortal(Portal portal);
 extern void sepgsqlWalkExpr(Query *query, bool do_check, Node *n);
 
-/* SE-PostgreSQL Query checking functions */
-
-/* implicit labeling support */
+/* SE-PostgreSQL hard-coded trigger functions */
 extern HeapTuple sepgsqlExecInsert(HeapTuple newtup, Relation rel, MemoryContext mcontext);
 extern HeapTuple sepgsqlExecUpdate(HeapTuple newtup, HeapTuple oldtup, Relation rel);
 

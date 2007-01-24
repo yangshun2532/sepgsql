@@ -838,3 +838,8 @@ bool sepgsqlAttributeIsPsid(Form_pg_attribute attr)
 
 	return rc;
 }
+
+bool sepgsqlIsEnabled()
+{
+	return (is_selinux_enabled() > 0 ? true : false);
+}
