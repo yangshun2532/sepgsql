@@ -209,7 +209,11 @@ static void secureRewriteQuery(Query *query)
 	}
 
 	/* permission mark on RETURNING clause, if necessary */
-	sepgsqlWalkExpr(query, false, (Node *) query->returningList);
+	foreach (l, query->returningList) {
+		TargetEntry *te = lfirst(l);
+		Assert(IsA(te, TargetEntry));
+		sepgsqlWalkExpr(query, false, (Node *) te->expr);
+	}
 
 	/* permission mark on the WHERE/HAVING clause */
 	sepgsqlWalkExpr(query, false, query->jointree->quals);
