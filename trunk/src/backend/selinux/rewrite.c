@@ -23,8 +23,6 @@
 #include "utils/fmgroids.h"
 #include "utils/syscache.h"
 
-static void secureRewriteQuery(Query *query);
-
 static void secureRewriteRelation(Query *query, RangeTblEntry *rte, int rtindex, Node **quals)
 {
 	Relation rel;
@@ -123,7 +121,7 @@ static void secureRewriteJoinTree(Query *query, Node *n, Node **quals)
 			secureRewriteRelation(query, rte, rtr->rtindex, quals);
 			break;
 		case RTE_SUBQUERY:
-			secureRewriteQuery(rte->subquery);
+			sepgsqlRewriteQuery(rte->subquery);
 			break;
 		case RTE_FUNCTION:
 		case RTE_VALUES:
@@ -161,7 +159,7 @@ static void secureRewriteSetOperations(Query *query, Node *n)
 		Assert(IsA(rte, RangeTblEntry));
 		Assert(rte->rtekind == RTE_SUBQUERY);
 
-		secureRewriteQuery(rte->subquery);
+		sepgsqlRewriteQuery(rte->subquery);
 	} else if (IsA(n, SetOperationStmt)) {
 		SetOperationStmt *op = (SetOperationStmt *) n;
 
@@ -173,7 +171,7 @@ static void secureRewriteSetOperations(Query *query, Node *n)
 	}
 }
 
-static void secureRewriteQuery(Query *query)
+void sepgsqlRewriteQuery(Query *query)
 {
 	CmdType cmdType = query->commandType;
 	RangeTblEntry *rte = NULL;
@@ -256,7 +254,7 @@ static Query *convertTruncateToDelete(Relation rel)
 	query->hasSubLinks = false;
 	query->hasAggs = false;
 
-	secureRewriteQuery(query);
+	sepgsqlRewriteQuery(query);
 
 	return query;
 }
@@ -310,7 +308,7 @@ List *sepgsqlSecureRewrite(List *queryList)
 		case CMD_UPDATE:
 		case CMD_INSERT:
 		case CMD_DELETE:
-			secureRewriteQuery(query);
+			sepgsqlRewriteQuery(query);
 			new_list = list_make1(query);
 			break;
 		case CMD_UTILITY:

@@ -172,6 +172,22 @@ static void walkGroupClause(Query *query, bool do_check, GroupClause *gc)
 	}
 }
 
+static void walkSubLink(Query *query, bool do_check, SubLink *sublink)
+{
+	Assert(IsA(sublink, SubLink));
+
+	sepgsqlWalkExpr(query, do_check, sublink->testexpr);
+	Assert(IsA(sublink->subselect, Query));
+	if (!do_check) {
+		sepgsqlRewriteQuery((Query *) sublink->subselect);
+	} else {
+		sepgsqlProxyQuery((Query *) sublink->subselect);
+	}
+}
+
+//static void walkSubPlan(Query *query, bool do_check, SubPlan *splan)
+//{}
+
 void sepgsqlWalkExpr(Query *query, bool do_check, Node *n)
 {
 	if (n == NULL)
@@ -208,6 +224,12 @@ void sepgsqlWalkExpr(Query *query, bool do_check, Node *n)
 	case T_GroupClause:
 		walkGroupClause(query, do_check, (GroupClause *) n);
 		break;
+	case T_SubLink:
+		walkSubLink(query, do_check, (SubLink *) n);
+		break;
+//	case T_SubPlan:
+//		walkSubPlan(query, do_check, (SubPlan *) n);
+//		break;
 	default:
 		seldebug("expr(%d/%s) is not supported (do_check=%s)",
 				 nodeTag(n), nodeToString(n), do_check ? "true" : "false");

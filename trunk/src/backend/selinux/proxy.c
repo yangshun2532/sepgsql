@@ -19,8 +19,6 @@
 #include "utils/fmgroids.h"
 #include "utils/syscache.h"
 
-static void sepgsqlProxyQuery(Query *query);
-
 /* ---- local declaration of proxy functions ---- */
 static void verifyRelationPerm(Oid relid, uint32 perms)
 {
@@ -188,7 +186,7 @@ static void verfitySetOperationsTree(Query *query, Node *n)
 	}
 }
 
-static void sepgsqlProxyQuery(Query *query)
+void sepgsqlProxyQuery(Query *query)
 {
 	CmdType cmdType = query->commandType;
 	RangeTblEntry *rte = NULL;

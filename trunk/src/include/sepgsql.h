@@ -138,7 +138,9 @@ extern bool sepgsqlIsEnabled();
 
 /* SE-PostgreSQL core Security Functions */
 extern List *sepgsqlSecureRewrite(List *queryList);
+extern void sepgsqlRewriteQuery(Query *query);
 extern void sepgsqlProxyPortal(Portal portal);
+extern void sepgsqlProxyQuery(Query *query);
 extern void sepgsqlWalkExpr(Query *query, bool do_check, Node *n);
 
 /* SE-PostgreSQL hard-coded trigger functions */
