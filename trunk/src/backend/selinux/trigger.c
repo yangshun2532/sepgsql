@@ -1,6 +1,6 @@
 /*
- * src/backend/selinux/selinux.c
- *    SE-PgSQL bootstrap hook functions.
+ * src/backend/selinux/trigger.c
+ *    SE-PgSQL hard coded trigger functions.
  *
  * Copyright (c) 2006 - 2007 KaiGai Kohei <kaigai@kaigai.gr.jp>
  */
