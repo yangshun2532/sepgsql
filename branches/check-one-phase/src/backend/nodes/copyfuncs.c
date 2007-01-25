@@ -24,6 +24,7 @@
 
 #include "nodes/plannodes.h"
 #include "nodes/relation.h"
+#include "sepgsql.h"
 #include "utils/datum.h"
 
 
