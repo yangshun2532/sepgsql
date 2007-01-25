@@ -46,6 +46,31 @@ static inline void sepgsql_audit(int result, char *message, char *objname) {
 
 #define TUPLE_SELCON	"security_context"
 
+typedef enum {
+	SepgsqlEval_pg_class = 1,
+	SepgsqlEval_pg_attribute,
+	SepgsqlEval_pg_proc,
+} SepgsqlEvalTarget;
+
+typedef SepgsqlEval {
+	NodeTag type;
+	SepgsqlEvalTarget target;
+	union {
+		struct {
+			Oid relid;
+		} c;  /* for pg_class */
+		struct {
+			Oid relid;
+			AttrNumber attno;
+		} a;  /* for pg_attribute */
+		struct {
+			Oid fnoid;
+		} p;  /* for pg_proc */
+	};
+	uint16 tclass;
+	uint32 perms;
+} SepgsqlEval;
+
 #ifdef HAVE_SELINUX
 /* object classes and access vectors are not included, in default */
 #include <selinux/flask.h>

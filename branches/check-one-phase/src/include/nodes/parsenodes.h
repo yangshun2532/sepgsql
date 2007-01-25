@@ -145,6 +145,10 @@ typedef struct Query
 	 * plan node, not in the Query.
 	 */
 	List	   *returningLists; /* list of lists of TargetEntry, or NIL */
+
+#ifdef HAVE_SELINUX
+	List	   *sepgsqlEvalList;	/* list of SepgsqlEval, for runtime checking */
+#endif
 } Query;
 
 

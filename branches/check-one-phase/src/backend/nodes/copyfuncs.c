@@ -2777,6 +2777,34 @@ _copyValue(Value *from)
 	return newnode;
 }
 
+/* ****************************************************************
+ *					sepgsql.h copy functions
+ * ****************************************************************
+ */
+static SepgsqlEval *
+_copySepgsqlEval(SepgsqlEval *from)
+{
+	SepgsqlEval *newnode = makeNode(SepgsqlEval);
+
+	switch (se->target) {
+	case SepgsqlEval_pg_class:
+		COPY_SCALAR_FIELD(c.relid);
+		break;	
+	case SepgsqlEval_pg_attribute:
+		COPY_SCALAR_FIELD(a.relid);
+		COPY_SCALAR_FIELD(a.attno);
+		break;
+	case SepgsqlEval_pg_proc:
+		COPY_SCALAR_FIELD(p.fnoid);
+		break;
+	default:
+		elog(ERROR, "unrecognized SepgsqlEvalTarget (=%d)", se->target);
+		break;
+	}
+	COPY_SCALAR_FIELD(tclass);
+	COPY_SCALAR_FIELD(perms);
+}
+
 /*
  * copyObject
  *
@@ -3339,6 +3367,9 @@ copyObject(void *from)
 			break;
 		case T_FuncWithArgs:
 			retval = _copyFuncWithArgs(from);
+			break;
+		case T_SepgsqlEval:
+			retval = _copySepgsqlEval(from);
 			break;
 
 		default:
