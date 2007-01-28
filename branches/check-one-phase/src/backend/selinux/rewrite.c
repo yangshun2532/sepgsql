@@ -12,29 +12,234 @@
 #include "catalog/pg_class.h"
 #include "catalog/pg_database.h"
 #include "catalog/pg_largeobject.h"
+#include "catalog/pg_operator.h"
+#include "catalog/pg_proc.h"
 #include "catalog/pg_type.h"
 #include "nodes/makefuncs.h"
-#include "nodes/plannodes.h"
-#include "parser/parse_expr.h"
-#include "parser/parse_coerce.h"
 #include "parser/parse_relation.h"
 #include "sepgsql.h"
-#include "utils/portal.h"
+#include "storage/lock.h"
 #include "utils/fmgroids.h"
 #include "utils/syscache.h"
 
-static void secureRewriteRelation(Query *query, RangeTblEntry *rte, int rtindex, Node **quals)
+#define RTEMARK_SELECT  (1<<(N_ACL_RIGHTS))
+#define RTEMARK_INSERT  (1<<(N_ACL_RIGHTS + 1))
+#define RTEMARK_UPDATE  (1<<(N_ACL_RIGHTS + 2))
+#define RTEMARK_DELETE  (1<<(N_ACL_RIGHTS + 3))
+#define RTEMARK_MASK    (RTEMARK_SELECT | RTEMARK_INSERT | RTEMARK_UPDATE | RTEMARK_DELETE)
+
+/* local definitions of static functions. */
+static List *rewriteRteRelation(List *selist, Query *query, int rtindex, Node **quals);
+static List *rewriteRteSubQuery(List *selist, Query *query);
+static List *rewriteJoinTree(List *selist, Query *query, Node *n, Node **quals);
+static List *rewriteSetOperations(List *selist, Query *query, Node *n);
+
+/* -----------------------------------------------------------
+ * 
+ * 
+ * 
+ * 
+ * -----------------------------------------------------------
+ */
+static List *addEvalPgClass(List *selist, Oid relid, bool inh, uint32 perms)
 {
-	Relation rel;
-	TupleDesc tdesc;
-	AttrNumber attno;
-	uint32 perms = 0;
+	ListCell *l;
+	SEvalItem *se;
+
+	foreach (l, selist) {
+		se = (SEvalItem *) lfirst(l);
+		if (se->tclass == SECCLASS_TABLE
+			&& se->c.relid == relid
+			&& se->c.inh == inh) {
+			se->perms |= perms;
+			return selist;
+		}
+	}
+	se = makeNode(SEvalItem);
+	se->tclass = SECCLASS_TABLE;
+	se->perms = perms;
+	se->c.relid = relid;
+	se->c.inh = inh;
+	return lappend(selist, se);
+}
+
+static List *addEvalPgAttribtue(List *selist, Oid relid, bool inh, AttrNumber attno, uint32 perms)
+{
+	ListCell *l;
+	SEvalItem *se;
+
+	foreach (l, selist) {
+        se = (SEvalItem *) lfirst(l);
+        if (se->tclass == SECCLASS_COLUMN
+            && se->a.relid == relid
+			&& se->a.inh == attno
+			&& se->a.attno == attno) {
+            se->perms |= perms;
+            return selist;
+        }
+    }
+
+    se = makeNode(SEvalItem);
+    se->tclass = SECCLASS_COLUMN;
+    se->perms = perms;
+    se->a.relid = relid;
+    se->a.inh = inh;
+    se->a.attno = attno;
+
+    return lappend(selist, se);
+}
+
+static List *addEvalPgProc(List *selist, Oid funcid, uint32 perms)
+{
+	ListCell *l;
+	SEvalItem *se;
+
+	foreach (l, selist) {
+		se = (SEvalItem *) lfirst(l);
+		if (se->tclass == SECCLASS_PROCEDURE
+			&& se->p.funcid == funcid) {
+			se->p.funcid |= perms;
+			return selist;
+		}
+	}
+	se = makeNode(SEvalItem);
+	se->tclass = SECCLASS_PROCEDURE;
+	se->perms = perms;
+	se->p.funcid = funcid;
+
+	return lappend(selist, se);
+}
+
+static List *walkVar(List *selist, Query *query, Var *var)
+{
+	RangeTblEntry *rte;
+	Node *n;
+
+	Assert(IsA(var, Var));
+	if (!query)
+		selerror("we could not use Var node in parameter list");
+
+	rte = list_nth(query->rtable, var->varno - 1);
+	Assert(IsA(rte, RangeTblEntry));
+	switch (rte->rtekind) {
+	case RTE_RELATION:
+		rte->requiredPerms |= RTEMARK_SELECT;
+		/* table:{select} */
+		selist = addEvalPgClass(selist, rte->relid, rte->inh, TABLE__SELECT);
+		/* column:{select} */
+		selist = addEvalPgAttribtue(selist, rte->relid, rte->inh, var->varattno, COLUMN__SELECT);
+		break;
+	case RTE_JOIN:
+		n = list_nth(rte->joinaliasvars, var->varattno - 1);
+        selist = sepgsqlWalkExpr(selist, query, n);
+        break;
+	default:
+		selnotice("rtekind = %d is ignored", rte->rtekind);
+		break;
+	}
+	return selist;
+}
+
+static List *walkFuncExpr(List *selist, Query *query, FuncExpr *func)
+{
+	Assert(IsA(func, FuncExpr));
+
+	selist = addEvalPgProc(selist, func->funcid, PROCEDURE__EXECUTE);
+	selist = sepgsqlWalkExpr(selist, query, (Node *) func->args);
+
+	return selist;
+}
+
+static List *walkOpExpr(List *selist, Query *query, OpExpr *n)
+{
+	HeapTuple tuple;
+	Form_pg_operator opr;
+
+	Assert(IsA(n, OpExpr));
+
+	tuple = SearchSysCache(OPEROID,
+						   ObjectIdGetDatum(n->opno),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		selerror("OPEROID cache lookup failed (opno=%u)", n->opno);
+	opr = (Form_pg_operator) GETSTRUCT(tuple);
+
+	selist = addEvalPgProc(selist, opr->oprcode, PROCEDURE__EXECUTE);
+	/* NOTE: opr->oprrest and opr->oprjoin are internal use only
+	 * and have no effect onto the data references, so we don't
+	 * apply any checkings for them.
+	 */
+	ReleaseSysCache(tuple);
+
+	selist = sepgsqlWalkExpr(selist, query, (Node *) n->args);
+
+	return selist;
+}
+
+static List *walkSubLink(List *selist, Query *query, SubLink *slink)
+{
+	Assert(IsA(slink, SubLink));
+	Assert(IsA(slink->subselect, Query));
+
+	selist = rewriteRteSubQuery(selist, (Query *) slink->subselect);
+
+	return selist;
+}
+
+static List *walkList(List *selist, Query *query, List *list)
+{
+	ListCell *l;
+
+	Assert(IsA(list, List));
+	foreach (l, list)
+		selist = sepgsqlWalkExpr(selist, query, lfirst(l));
+
+	return selist;
+}
+
+List *sepgsqlWalkExpr(List *selist, Query *query, Node *n)
+{
+	if (n == NULL)
+		return selist;
+
+	switch (nodeTag(n)) {
+	case T_Const:
+		/* do nothing */
+		break;
+	case T_Var:
+		selist = walkVar(selist, query, (Var *) n);
+		break;
+	case T_FuncExpr:
+		selist = walkFuncExpr(selist, query, (FuncExpr *) n);
+		break;
+	case T_OpExpr:
+		selist = walkOpExpr(selist, query, (OpExpr *) n);
+		break;
+	case T_SubLink:
+		selist = walkSubLink(selist, query, (SubLink *) n);
+		break;
+	case T_List:
+		selist = walkList(selist, query, (List *) n);
+		break;
+	default:
+		selnotice("Node(%d) is ignored => %s", nodeTag(n), nodeToString(n));
+		break;
+	}
+	return selist;
+}
+
+/* -----------------------------------------------------------
+ * 
+ *
+ *
+ */
+
+static void formalize_access_vector(Oid relid, uint16 *p_tclass, uint32 *p_perms)
+{
 	uint16 tclass;
+	uint32 perms = *p_perms;
 
-	rel = relation_open(rte->relid, AccessShareLock);
-	tdesc = RelationGetDescr(rel);
-
-	switch (RelationGetRelid(rel)) {
+	switch (relid) {
 	case AttributeRelationId:
 		tclass = SECCLASS_COLUMN;
 		break;
@@ -54,16 +259,44 @@ static void secureRewriteRelation(Query *query, RangeTblEntry *rte, int rtindex,
 		tclass = SECCLASS_TUPLE;
 		break;
 	}
-	if (rte->access_vector & TABLE__SELECT)
-		perms |= (tclass==SECCLASS_TUPLE) ? TUPLE__SELECT : COMMON_DATABASE__GETATTR;
-	if (rte->access_vector & TABLE__UPDATE)
-		perms |= (tclass==SECCLASS_TUPLE) ? TUPLE__UPDATE : COMMON_DATABASE__SETATTR;
-	if (rte->access_vector & TABLE__INSERT)
-		perms |= (tclass==SECCLASS_TUPLE) ? TUPLE__INSERT : COMMON_DATABASE__CREATE;
-	if (rte->access_vector & TABLE__DELETE)
-		perms |= (tclass==SECCLASS_TUPLE) ? TUPLE__DELETE : COMMON_DATABASE__DROP;
+	if (tclass != SECCLASS_TUPLE) {
+		uint32 __perms = 0;
+		__perms |= ((perms & TUPLE__SELECT) ? COMMON_DATABASE__GETATTR : 0);
+		__perms |= ((perms & TUPLE__UPDATE) ? COMMON_DATABASE__SETATTR : 0);
+		__perms |= ((perms & TUPLE__INSERT) ? COMMON_DATABASE__CREATE  : 0);
+		__perms |= ((perms & TUPLE__DELETE) ? COMMON_DATABASE__DROP    : 0);
+		perms = __perms;
+	}
+	*p_tclass = tclass;
+	*p_perms = perms;
+}
+
+static List *rewriteRteRelation(List *selist, Query *query, int rtindex, Node **quals)
+{
+	RangeTblEntry *rte;
+	Relation rel;
+	TupleDesc tdesc;
+	AttrNumber attno;
+	uint16 tclass = SECCLASS_TUPLE;
+	uint32 perms = 0;
+
+	rte = list_nth(query->rtable, rtindex - 1);
+	rel = relation_open(rte->relid, AccessShareLock);
+	tdesc = RelationGetDescr(rel);
+
+	/* setup tclass and access vector */
+	perms = 0;
+	if (rte->requiredPerms & RTEMARK_SELECT)
+		perms |= TUPLE__SELECT;
+	if (rte->requiredPerms & RTEMARK_INSERT)
+		perms |= TUPLE__INSERT;
+	if (rte->requiredPerms & RTEMARK_UPDATE)
+		perms |= TUPLE__UPDATE;
+	if (rte->requiredPerms & RTEMARK_UPDATE)
+		perms |= TUPLE__DELETE;
+	formalize_access_vector(rte->relid, &tclass, &perms);
 	if (!perms)
-		goto skip;
+		goto out;
 
 	/* append sepgsql_permission(*.security_context, tclass, perms) */
 	for (attno=0; attno < RelationGetNumberOfAttributes(rel); attno++) {
@@ -89,89 +322,24 @@ static void secureRewriteRelation(Query *query, RangeTblEntry *rte, int rtindex,
 						   false, true);
 
 			func = makeFuncExpr(F_SEPGSQL_PERMISSION, BOOLOID,
-								list_make3(v1, c2, c3), COERCE_DONTCARE);
+                                list_make3(v1, c2, c3), COERCE_DONTCARE);
 			if (*quals == NULL) {
 				*quals = (Node *) func;
-			} else {
+            } else {
 				*quals = (Node *) makeBoolExpr(AND_EXPR, list_make2(func, *quals));
-			}
-			seldebug("append sepgsql_permission(%s.%s, %d, 0x%08x)",
-					 RelationGetRelationName(rel),
-					 NameStr(attr->attname), tclass, perms);
+            }
+			selnotice("append sepgsql_permission(%s.%s, %d, 0x%08x)",
+					  RelationGetRelationName(rel),
+					  NameStr(attr->attname), tclass, perms);
 		}
 	}
-skip:
+out:
 	relation_close(rel, NoLock);
+
+	return selist;
 }
 
-static void secureRewriteJoinTree(Query *query, Node *n, Node **quals)
-{
-	if (n == NULL)
-		return;
-
-	if (IsA(n, RangeTblRef)) {
-		RangeTblRef *rtr = (RangeTblRef *)n;
-		RangeTblEntry *rte = list_nth(query->rtable, rtr->rtindex - 1);
-		Assert(IsA(rte, RangeTblEntry));
-
-		switch (rte->rtekind) {
-		case RTE_RELATION:
-			if (query->commandType == CMD_SELECT)
-				rte->access_vector |= TABLE__SELECT;
-			secureRewriteRelation(query, rte, rtr->rtindex, quals);
-			break;
-		case RTE_SUBQUERY:
-			sepgsqlRewriteQuery(rte->subquery);
-			break;
-		case RTE_FUNCTION:
-		case RTE_VALUES:
-			/* do nothing here */
-			break;
-		default:
-			selerror("rtekind = %d should not be found fromList", rte->rtekind);
-			break;
-		}
-	} else if (IsA(n, FromExpr)) {
-		FromExpr *f = (FromExpr *)n;
-		ListCell *l;
-
-		foreach(l, f->fromlist)
-			secureRewriteJoinTree(query, (Node *) lfirst(l), quals);
-	} else if (IsA(n, JoinExpr)) {
-		JoinExpr *j = (JoinExpr *)n;
-
-		secureRewriteJoinTree(query, j->larg, &j->quals);
-		secureRewriteJoinTree(query, j->rarg, &j->quals);
-	} else {
-		selerror("unrecognized node type (%d) in query->jointree", nodeTag(n));
-	}
-}
-
-static void secureRewriteSetOperations(Query *query, Node *n)
-{
-	if (n == NULL)
-		return;
-
-	if (IsA(n, RangeTblRef)) {
-		RangeTblRef *rtr = (RangeTblRef *) n;
-		RangeTblEntry *rte = list_nth(query->rtable, rtr->rtindex - 1);
-
-		Assert(IsA(rte, RangeTblEntry));
-		Assert(rte->rtekind == RTE_SUBQUERY);
-
-		sepgsqlRewriteQuery(rte->subquery);
-	} else if (IsA(n, SetOperationStmt)) {
-		SetOperationStmt *op = (SetOperationStmt *) n;
-
-		secureRewriteSetOperations(query, op->larg);
-		secureRewriteSetOperations(query, op->rarg);
-	} else {
-		selerror("The following node was found at setOperationsTree: %s",
-				 nodeToString(n));
-	}
-}
-
-void sepgsqlRewriteQuery(Query *query)
+static List *rewriteRteSubQuery(List *selist, Query *query)
 {
 	CmdType cmdType = query->commandType;
 	RangeTblEntry *rte = NULL;
@@ -179,17 +347,19 @@ void sepgsqlRewriteQuery(Query *query)
 
 	if (cmdType != CMD_SELECT) {
 		rte = list_nth(query->rtable, query->resultRelation - 1);
-		Assert(IsA(rte, RangeTblEntry));
-		Assert(rte->rtekind == RTE_RELATION);
+		Assert(IsA(rte, RangeTblEntry) && rte->rtekind==RTE_RELATION);
 		switch (cmdType) {
 		case CMD_INSERT:
-			rte->access_vector |= TABLE__INSERT;
+			rte->requiredPerms |= RTEMARK_INSERT;
+			selist = addEvalPgClass(selist, rte->relid, rte->inh, TABLE__INSERT);
 			break;
 		case CMD_UPDATE:
-			rte->access_vector |= TABLE__UPDATE;
+			rte->requiredPerms |= RTEMARK_UPDATE;
+			selist = addEvalPgClass(selist, rte->relid, rte->inh, TABLE__UPDATE);
 			break;
 		case CMD_DELETE:
-			rte->access_vector |= TABLE__DELETE;
+			rte->requiredPerms |= RTEMARK_DELETE;
+			selist = addEvalPgClass(selist, rte->relid, rte->inh, TABLE__DELETE);
 			break;
 		default:
 			selerror("commandType = %d should not be found here", cmdType);
@@ -202,7 +372,7 @@ void sepgsqlRewriteQuery(Query *query)
 		foreach (l, query->targetList) {
 			TargetEntry *te = lfirst(l);
 			Assert(IsA(te, TargetEntry));
-			sepgsqlWalkExpr(query, false, (Node *) te->expr);
+			selist = sepgsqlWalkExpr(selist, query, (Node *) te->expr);
 		}
 	}
 
@@ -210,28 +380,112 @@ void sepgsqlRewriteQuery(Query *query)
 	foreach (l, query->returningList) {
 		TargetEntry *te = lfirst(l);
 		Assert(IsA(te, TargetEntry));
-		sepgsqlWalkExpr(query, false, (Node *) te->expr);
+		selist = sepgsqlWalkExpr(selist, query, (Node *) te->expr);
 	}
 
 	/* permission mark on the WHERE/HAVING clause */
-	sepgsqlWalkExpr(query, false, query->jointree->quals);
-	sepgsqlWalkExpr(query, false, query->havingQual);
+	selist = sepgsqlWalkExpr(selist, query, query->jointree->quals);
+	selist = sepgsqlWalkExpr(selist, query, query->havingQual);
 
 	/* permission mark on the ORDER BY clause */
-	//sepgsqlWalkExpr(query, false, (Node *) query->sortClause);
+	// selist = sepgsqlWalkExpr(selist, query, (Node *) query->sortClause);
 
 	/* permission mark on the GROUP BY/HAVING clause */
-	//sepgsqlWalkExpr(query, false, (Node *) query->groupClause);
+	// selist = sepgsqlWalkExpr(selist, query, (Node *) query->groupClause);
 
 	/* append sepgsql_permission() on the FROM clause/USING clause
 	 * for SELECT/UPDATE/DELETE statement.
 	 * The target Relation of INSERT is noe necessary to append it
 	 */
-	secureRewriteJoinTree(query, (Node *)query->jointree,
-						  &query->jointree->quals);
+	selist = rewriteJoinTree(selist, query, (Node *) query->jointree,
+							 &query->jointree->quals);
 
 	/* permission mark on the UNION/INTERSECT/EXCEPT */
-	secureRewriteSetOperations(query, query->setOperations);
+	selist = rewriteSetOperations(selist, query, query->setOperations);
+
+	return selist;
+}
+
+static List *rewriteJoinTree(List *selist, Query *query, Node *n, Node **quals)
+{
+	if (n == NULL)
+		return selist;
+
+	if (IsA(n, RangeTblRef)) {
+		RangeTblRef *rtr = (RangeTblRef *) n;
+		RangeTblEntry *rte = list_nth(query->rtable, rtr->rtindex - 1);
+		Assert(IsA(rte, RangeTblEntry));
+
+		switch (rte->rtekind) {
+		case RTE_RELATION:
+			selist = rewriteRteRelation(selist, query, rtr->rtindex, quals);
+			break;
+		case RTE_SUBQUERY:
+			selist = rewriteRteSubQuery(selist, rte->subquery);
+			break;
+		case RTE_FUNCTION: {
+			FuncExpr *f = (FuncExpr *) rte->funcexpr;
+
+			selist = sepgsqlWalkExpr(selist, query, (Node *) f);
+			selist = sepgsqlWalkExpr(selist, query, (Node *) f->args);
+			break;
+		}
+		case RTE_VALUES:
+			selist = sepgsqlWalkExpr(selist, query, (Node *) rte->values_lists);
+			break;
+		default:
+			selerror("rtekind = %d should not be found fromList", rte->rtekind);
+			break;
+		}
+	} else if (IsA(n, FromExpr)) {
+		FromExpr *f = (FromExpr *)n;
+		ListCell *l;
+
+		foreach (l, f->fromlist)
+			selist = rewriteJoinTree(selist, query, lfirst(l), quals);
+	} else if (IsA(n, JoinExpr)) {
+		JoinExpr *j = (JoinExpr *) n;
+
+		selist = rewriteJoinTree(selist, query, j->larg, &j->quals);
+		selist = rewriteJoinTree(selist, query, j->rarg, &j->quals);
+	} else {
+		selerror("unrecognized node type (%d) in query->jointree", nodeTag(n));
+	}
+	return selist;
+}
+
+static List *rewriteSetOperations(List *selist, Query *query, Node *n)
+{
+	if (n == NULL)
+		return selist;
+
+	if (IsA(n, RangeTblRef)) {
+		RangeTblRef *rtr = (RangeTblRef *) n;
+		RangeTblEntry *rte = list_nth(query->rtable, rtr->rtindex - 1);
+
+		Assert(IsA(rte, RangeTblEntry) && rte->rtekind == RTE_SUBQUERY);
+
+		selist = rewriteRteSubQuery(selist, query);
+    } else if (IsA(n, SetOperationStmt)) {
+		SetOperationStmt *op = (SetOperationStmt *) n;
+
+		selist = rewriteSetOperations(selist, query, (Node *) op->larg);
+		selist = rewriteSetOperations(selist, query, (Node *) op->rarg);
+    } else {
+		selerror("setOperationsTree contains => %s", nodeToString(n));
+    }
+
+	return selist;
+}
+
+static List *rewriteQueryDML(Query *query)
+{
+	List *selist = NIL;
+
+	selist = rewriteRteSubQuery(selist, query);
+	query->SEvalItemList = selist;
+
+	return list_make1(query);
 }
 
 static Query *convertTruncateToDelete(Relation rel)
@@ -259,7 +513,7 @@ static Query *convertTruncateToDelete(Relation rel)
 	return query;
 }
 
-static List *secureRewriteTruncate(Query *query)
+static List *rewriteTruncateStmt(Query *query)
 {
 	TruncateStmt *stmt = (TruncateStmt *) query->utilityStmt;
 	Relation rel;
@@ -294,37 +548,45 @@ static List *secureRewriteTruncate(Query *query)
 	return subquery_list;
 }
 
-List *sepgsqlSecureRewrite(List *queryList)
+List *sepgsqlRewriteQuery(Query *query)
 {
-	ListCell *l;
-	List *result = NIL;
+	List *new_list = NIL;
 
-	foreach(l, queryList) {
-		Query *query = (Query *) lfirst(l);
-		List *new_list = NIL;
-
-		switch (query->commandType) {
-		case CMD_SELECT:
-		case CMD_UPDATE:
-		case CMD_INSERT:
-		case CMD_DELETE:
-			sepgsqlRewriteQuery(query);
-			new_list = list_make1(query);
-			break;
-		case CMD_UTILITY:
-			switch (nodeTag(query->utilityStmt)) {
-			case T_TruncateStmt:
-				new_list = secureRewriteTruncate(query);
-				break;
-			default:
-				new_list = list_make1(query);
-			}
+	switch (query->commandType) {
+	case CMD_SELECT:
+	case CMD_UPDATE:
+	case CMD_INSERT:
+	case CMD_DELETE:
+		new_list = rewriteQueryDML(query);
+		break;
+	case CMD_UTILITY:
+		switch (nodeTag(query->utilityStmt)) {
+		case T_TruncateStmt:
+			new_list = rewriteTruncateStmt(query);
 			break;
 		default:
-			selerror("unknown command type (=%d) found", query->commandType);
+			/* do nothing now */
 			break;
 		}
-		result = list_concat(result, new_list);
+		break;
+	default:
+		selerror("unknown command type (=%d) found",
+				 query->commandType);
+		break;
 	}
-	return result;
+	return new_list;
+}
+
+List *sepgsqlRewriteQueryList(List *queryList)
+{
+	ListCell *l;
+	List *new_list = NIL;
+
+	foreach (l, queryList) {
+		Query *query = lfirst(l);
+
+		new_list = list_concat(new_list,
+							   sepgsqlRewriteQuery(query));
+	}
+	return new_list;
 }

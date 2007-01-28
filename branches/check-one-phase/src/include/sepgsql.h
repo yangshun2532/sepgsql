@@ -46,30 +46,25 @@ static inline void sepgsql_audit(int result, char *message, char *objname) {
 
 #define TUPLE_SELCON	"security_context"
 
-typedef enum {
-	SepgsqlEval_pg_class = 1,
-	SepgsqlEval_pg_attribute,
-	SepgsqlEval_pg_proc,
-} SepgsqlEvalTarget;
-
-typedef SepgsqlEval {
+typedef struct SEvalItem {
 	NodeTag type;
-	SepgsqlEvalTarget target;
+	uint16 tclass;
+	uint32 perms;
 	union {
 		struct {
 			Oid relid;
+			bool inh;
 		} c;  /* for pg_class */
 		struct {
 			Oid relid;
+			bool inh;
 			AttrNumber attno;
 		} a;  /* for pg_attribute */
 		struct {
-			Oid fnoid;
+			Oid funcid;
 		} p;  /* for pg_proc */
 	};
-	uint16 tclass;
-	uint32 perms;
-} SepgsqlEval;
+} SEvalItem;
 
 #ifdef HAVE_SELINUX
 /* object classes and access vectors are not included, in default */
@@ -159,14 +154,14 @@ extern psid sepgsqlGetClientPsid(void);
 extern void sepgsqlSetClientPsid(psid new_ctx);
 extern psid sepgsqlGetDatabasePsid(void);
 extern bool sepgsqlAttributeIsPsid(Form_pg_attribute attr);
-extern bool sepgsqlIsEnabled();
+extern bool sepgsqlIsEnabled(void);
 
 /* SE-PostgreSQL core Security Functions */
-extern List *sepgsqlSecureRewrite(List *queryList);
-extern void sepgsqlRewriteQuery(Query *query);
-extern void sepgsqlProxyPortal(Portal portal);
-extern void sepgsqlProxyQuery(Query *query);
-extern void sepgsqlWalkExpr(Query *query, bool do_check, Node *n);
+extern List *sepgsqlWalkExpr(List *selist, Query *query, Node *);
+extern List *sepgsqlRewriteQuery(Query *query);
+extern List *sepgsqlRewriteQueryList(List *queryList);
+extern void sepgsqlVerifyQuery(Query *query);
+extern void sepgsqlVerifyQueryList(List *queryList);
 
 /* SE-PostgreSQL hard-coded trigger functions */
 extern HeapTuple sepgsqlExecInsert(HeapTuple newtup, Relation rel, MemoryContext mcontext);

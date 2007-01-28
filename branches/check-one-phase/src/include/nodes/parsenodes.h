@@ -147,7 +147,8 @@ typedef struct Query
 	List	   *returningLists; /* list of lists of TargetEntry, or NIL */
 
 #ifdef HAVE_SELINUX
-	List	   *sepgsqlEvalList;	/* list of SepgsqlEval, for runtime checking */
+	/* SE-PostgreSQL EvaliationItemList */
+	List	   *SEvalItemList;
 #endif
 } Query;
 

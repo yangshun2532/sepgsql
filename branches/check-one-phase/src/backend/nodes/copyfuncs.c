@@ -1715,6 +1715,9 @@ _copyQuery(Query *from)
 	COPY_NODE_FIELD(setOperations);
 	COPY_NODE_FIELD(resultRelations);
 	COPY_NODE_FIELD(returningLists);
+#ifdef HAVE_SELINUX
+	COPY_NODE_FIELD(SEvalItemList);
+#endif
 
 	return newnode;
 }
@@ -2778,33 +2781,38 @@ _copyValue(Value *from)
 	return newnode;
 }
 
+#ifdef HAVE_SELINUX
 /* ****************************************************************
  *					sepgsql.h copy functions
  * ****************************************************************
  */
-static SepgsqlEval *
-_copySepgsqlEval(SepgsqlEval *from)
+static SEvalItem *
+_copySEvalItem(SEvalItem *from)
 {
-	SepgsqlEval *newnode = makeNode(SepgsqlEval);
-
-	switch (se->target) {
-	case SepgsqlEval_pg_class:
-		COPY_SCALAR_FIELD(c.relid);
-		break;	
-	case SepgsqlEval_pg_attribute:
-		COPY_SCALAR_FIELD(a.relid);
-		COPY_SCALAR_FIELD(a.attno);
-		break;
-	case SepgsqlEval_pg_proc:
-		COPY_SCALAR_FIELD(p.fnoid);
-		break;
-	default:
-		elog(ERROR, "unrecognized SepgsqlEvalTarget (=%d)", se->target);
-		break;
-	}
+	SEvalItem *newnode = makeNode(SEvalItem);
 	COPY_SCALAR_FIELD(tclass);
 	COPY_SCALAR_FIELD(perms);
+	switch (from->tclass) {
+	case SECCLASS_TABLE:
+		COPY_SCALAR_FIELD(c.relid);
+		COPY_SCALAR_FIELD(c.inh);
+		break;
+	case SECCLASS_COLUMN:
+		COPY_SCALAR_FIELD(a.relid);
+		COPY_SCALAR_FIELD(a.attno);
+		COPY_SCALAR_FIELD(a.inh);
+		break;
+	case SECCLASS_PROCEDURE:
+		COPY_SCALAR_FIELD(p.funcid);
+		break;
+	default:
+		elog(ERROR, "unrecognized SEvalItem node (tclass: %d)", from->tclass);
+		break;
+	}
+
+	return newnode;
 }
+#endif
 
 /*
  * copyObject
@@ -3369,10 +3377,11 @@ copyObject(void *from)
 		case T_FuncWithArgs:
 			retval = _copyFuncWithArgs(from);
 			break;
-		case T_SepgsqlEval:
-			retval = _copySepgsqlEval(from);
+#ifdef HAVE_SELINUX
+		case T_SEvalItem:
+			retval = _copySEvalItem(from);
 			break;
-
+#endif
 		default:
 			elog(ERROR, "unrecognized node type: %d", (int) nodeTag(from));
 			retval = from;		/* keep compiler quiet */

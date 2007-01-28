@@ -336,7 +336,7 @@ typedef enum NodeTag
 	T_TriggerData = 900,		/* in commands/trigger.h */
 	T_ReturnSetInfo,			/* in nodes/execnodes.h */
 	T_TIDBitmap,				/* in nodes/tidbitmap.h */
-	T_SepgsqlEval,				/* in sepgsql.h */
+	T_SEvalItem,				/* in sepgsql.h */
 } NodeTag;
 
 /*
