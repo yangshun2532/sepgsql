@@ -26,6 +26,7 @@
 #include "parser/parse_relation.h"
 #include "parser/parse_target.h"
 #include "parser/parse_type.h"
+#include "sepgsql.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
 #include "utils/typcache.h"
@@ -730,6 +731,8 @@ checkInsertTargets(ParseState *pstate, List *cols, List **attrnos)
 			ResTarget  *col;
 
 			if (attr[i]->attisdropped)
+				continue;
+			if (sepgsqlAttributeIsPsid(attr[i]))
 				continue;
 
 			col = makeNode(ResTarget);
