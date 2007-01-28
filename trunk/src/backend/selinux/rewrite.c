@@ -371,7 +371,16 @@ static List *rewriteRteSubQuery(List *selist, Query *query)
 		foreach (l, query->targetList) {
 			TargetEntry *te = lfirst(l);
 			Assert(IsA(te, TargetEntry));
+
 			selist = sepgsqlWalkExpr(selist, query, (Node *) te->expr);
+
+			/* mark insert/update target */
+			if (cmdType==CMD_UPDATE || cmdType==CMD_INSERT) {
+				uint32 perm = (cmdType == CMD_UPDATE
+							   ? COLUMN__UPDATE : COLUMN__INSERT);
+				selist = addEvalPgAttribtue(selist, rte->relid, rte->inh,
+											te->resno, perm);
+			}
 		}
 	}
 
