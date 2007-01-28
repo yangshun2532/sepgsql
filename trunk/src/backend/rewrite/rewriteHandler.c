@@ -1791,9 +1791,6 @@ QueryRewrite(Query *parsetree)
 			}
 		}
 
-		/* parse Security Enhanced PostgreSQL proxy */
-		sepgsqlSecureRewrite(query);
-
 		results = lappend(results, query);
 	}
 
@@ -1842,6 +1839,9 @@ QueryRewrite(Query *parsetree)
 
 	if (!foundOriginalQuery && lastInstead != NULL)
 		lastInstead->canSetTag = true;
+
+	/* SE-PostgreSQL Query rewrite handler */
+	results = sepgsqlRewriteQueryList(results);
 
 	return results;
 }

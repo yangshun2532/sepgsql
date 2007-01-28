@@ -125,40 +125,55 @@ sepgsql_getcon(PG_FUNCTION_ARGS)
 	PG_RETURN_OID(sepgsqlGetClientPsid());
 }
 
-/* sepgsql_permission(objcon, tclass, perms)
- * sepgsql_permission_noaudit(objcon, tclass, perms)
- *   checks permission based on security context.
- * @objcon : security context of object
- * @tclass : security class
- * @perms  : permission set
+/*
+ * sepgsql_tuple_perm(relid, objcon, perms)
+ *   fileter access permission of SECCLASS_TUPLE bases on security context.
  */
 Datum
-sepgsql_permission(PG_FUNCTION_ARGS)
+sepgsql_tuple_perm(PG_FUNCTION_ARGS)
 {
-	psid objcon = PG_GETARG_OID(0);
-	uint16 tclass = PG_GETARG_UINT32(1);
+	Oid relid = PG_GETARG_OID(0);
+	psid tupcon = PG_GETARG_OID(1);
 	uint32 perms = PG_GETARG_UINT32(2);
-	int rc;
+	uint16 tclass = SECCLASS_TUPLE;
 	char *audit;
+	int rc;
+
+	/* formalize tclass and perms */
+	switch (relid) {
+	case AttributeRelationId:
+		tclass = SECCLASS_COLUMN;
+		break;
+	case RelationRelationId:
+		tclass = SECCLASS_TABLE;
+		break;
+	case DatabaseRelationId:
+		tclass = SECCLASS_DATABASE;
+		break;
+	case ProcedureRelationId:
+		tclass = SECCLASS_PROCEDURE;
+		break;
+	case LargeObjectRelationId:
+		tclass = SECCLASS_BLOB;
+		break;
+	default:
+		/* do nothing */
+		break;
+	}
+
+	if (tclass != SECCLASS_TUPLE) {
+		uint32 __perms = 0;
+		__perms |= ((perms & TUPLE__SELECT) ? COMMON_DATABASE__GETATTR : 0);
+		__perms |= ((perms & TUPLE__UPDATE) ? COMMON_DATABASE__SETATTR : 0);
+		__perms |= ((perms & TUPLE__INSERT) ? COMMON_DATABASE__CREATE  : 0);
+		__perms |= ((perms & TUPLE__DELETE) ? COMMON_DATABASE__DROP    : 0);
+		perms = __perms;
+	}
 
 	rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
-								objcon, tclass, perms, &audit);
-	if (audit) {
+								tupcon, tclass, perms, &audit);
+	if (audit)
 		ereport(NOTICE, (errcode(ERRCODE_INTERNAL_ERROR),
 						 errmsg("SELinux: %s", audit)));
-	}
-	PG_RETURN_BOOL(rc == 0);
-}
-
-Datum
-sepgsql_permission_noaudit(PG_FUNCTION_ARGS)
-{
-	psid objcon = PG_GETARG_OID(0);
-	uint16 tclass = PG_GETARG_UINT32(1);
-	uint32 perms = PG_GETARG_UINT32(2);
-	int rc;
-
-	rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
-								objcon, tclass, perms, NULL);
 	PG_RETURN_BOOL(rc == 0);
 }

@@ -642,8 +642,6 @@ pg_rewrite_queries(List *querytree_list)
 		elog_node_display(DEBUG1, "rewritten parse tree", querytree_list,
 						  Debug_pretty_print);
 
-	querytree_list = sepgsqlSecureRewrite(querytree_list);
-
 	return querytree_list;
 }
 
@@ -899,7 +897,9 @@ exec_simple_query(const char *query_string)
 						  plantree_list,
 						  MessageContext);
 
-		sepgsqlProxyPortal(portal);
+		/* verifying queries via SE-PostgreSQL */
+		sepgsqlVerifyQueryList(portal->parseTrees);
+
 		/*
 		 * Start the portal.  No parameters here.
 		 */

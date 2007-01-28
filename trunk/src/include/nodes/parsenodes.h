@@ -145,6 +145,11 @@ typedef struct Query
 	 * plan node, not in the Query.
 	 */
 	List	   *returningLists; /* list of lists of TargetEntry, or NIL */
+
+#ifdef HAVE_SELINUX
+	/* SE-PostgreSQL EvaliationItemList */
+	List	   *SEvalItemList;
+#endif
 } Query;
 
 

@@ -3999,8 +3999,7 @@ DATA(insert OID = 3405 ( psid_out			PGNSP PGUID 12 f f t f i 1 2275 "3403" _null
 DATA(insert OID = 3406 ( text_to_psid		PGNSP PGUID 12 f f t f i 1 25 "3403" _null_ _null_ _null_ text_to_psid - _null_ ));
 DATA(insert OID = 3407 ( psid_to_text		PGNSP PGUID 12 f f t f i 1 3403 "25" _null_ _null_ _null_ psid_to_text - _null_ ));
 DATA(insert OID = 3408 ( sepgsql_getcon		PGNSP PGUID 12 f f t f v 0 3403 "" _null_ _null_ _null_ sepgsql_getcon - _null_ ));
-DATA(insert OID = 3409 ( sepgsql_permission				PGNSP PGUID 12 f f t f v 3 16 "3403 23 23" _null_ _null_ _null_ sepgsql_permission - _null_));
-DATA(insert OID = 3410 ( sepgsql_permission_noaudit		PGNSP PGUID 12 f f t f v 3 16 "3403 23 23" _null_ _null_ _null_ sepgsql_permission_noaudit - _null_));
+DATA(insert OID = 3409 ( sepgsql_tuple_perm	PGNSP PGUID 12 f f t f v 3 16 "26 3403 23" _null_ _null_ _null_ sepgsql_tuple_perm - _null_ ));
 #endif
 
 /*

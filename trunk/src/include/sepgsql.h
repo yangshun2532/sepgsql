@@ -9,8 +9,12 @@
 #include "access/htup.h"
 #include "access/tupdesc.h"
 #include "catalog/pg_attribute.h"
+#include "catalog/pg_class.h"
 #include "catalog/pg_database.h"
+#include "catalog/pg_largeobject.h"
+#include "catalog/pg_operator.h"
 #include "catalog/pg_proc.h"
+#include "catalog/pg_type.h"
 #include "nodes/execnodes.h"
 #include "nodes/parsenodes.h"
 #include "nodes/plannodes.h"
@@ -45,6 +49,26 @@ static inline void sepgsql_audit(int result, char *message, char *objname) {
 }
 
 #define TUPLE_SELCON	"security_context"
+
+typedef struct SEvalItem {
+	NodeTag type;
+	uint16 tclass;
+	uint32 perms;
+	union {
+		struct {
+			Oid relid;
+			bool inh;
+		} c;  /* for pg_class */
+		struct {
+			Oid relid;
+			bool inh;
+			AttrNumber attno;
+		} a;  /* for pg_attribute */
+		struct {
+			Oid funcid;
+		} p;  /* for pg_proc */
+	};
+} SEvalItem;
 
 #ifdef HAVE_SELINUX
 /* object classes and access vectors are not included, in default */
@@ -134,14 +158,14 @@ extern psid sepgsqlGetClientPsid(void);
 extern void sepgsqlSetClientPsid(psid new_ctx);
 extern psid sepgsqlGetDatabasePsid(void);
 extern bool sepgsqlAttributeIsPsid(Form_pg_attribute attr);
-extern bool sepgsqlIsEnabled();
+extern bool sepgsqlIsEnabled(void);
 
 /* SE-PostgreSQL core Security Functions */
-extern List *sepgsqlSecureRewrite(List *queryList);
-extern void sepgsqlRewriteQuery(Query *query);
-extern void sepgsqlProxyPortal(Portal portal);
-extern void sepgsqlProxyQuery(Query *query);
-extern void sepgsqlWalkExpr(Query *query, bool do_check, Node *n);
+extern List *sepgsqlWalkExpr(List *selist, Query *query, Node *);
+extern List *sepgsqlRewriteQuery(Query *query);
+extern List *sepgsqlRewriteQueryList(List *queryList);
+extern void sepgsqlVerifyQuery(Query *query);
+extern void sepgsqlVerifyQueryList(List *queryList);
 
 /* SE-PostgreSQL hard-coded trigger functions */
 extern HeapTuple sepgsqlExecInsert(HeapTuple newtup, Relation rel, MemoryContext mcontext);
@@ -189,8 +213,7 @@ extern Datum psid_out(PG_FUNCTION_ARGS);
 extern Datum text_to_psid(PG_FUNCTION_ARGS);
 extern Datum psid_to_text(PG_FUNCTION_ARGS);
 extern Datum sepgsql_getcon(PG_FUNCTION_ARGS);
-extern Datum sepgsql_permission(PG_FUNCTION_ARGS);
-extern Datum sepgsql_permission_noaudit(PG_FUNCTION_ARGS);
+extern Datum sepgsql_tuple_perm(PG_FUNCTION_ARGS);
 
 #else
 /* dummy enhanced selinux core implementation */
