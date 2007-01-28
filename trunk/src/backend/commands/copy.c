@@ -1397,7 +1397,7 @@ CopyTo(CopyState cstate)
 		{
 			CHECK_FOR_INTERRUPTS();
 
-			if (sepgsqlCopyTo(cstate->rel, tuple) != true)
+			if (!sepgsqlCopyTo(cstate->rel, tuple))
 				continue;
 
 			/* Deconstruct the tuple ... faster than repeated heap_getattr */

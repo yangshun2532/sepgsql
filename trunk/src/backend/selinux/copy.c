@@ -52,54 +52,31 @@ void sepgsqlDoCopy(Relation rel, List *attnumlist, bool is_from)
 bool sepgsqlCopyTo(Relation rel, HeapTuple tuple)
 {
 	TupleDesc tupDesc = RelationGetDescr(rel);
-	Oid relid = RelationGetRelid(rel);
-	uint16 tclass;
-	uint32 perm;
-	Datum tup_psid;
-	bool isnull;
-	int i, rc;
+	int i;
 
 	for (i=0; i < RelationGetNumberOfAttributes(rel); i++) {
 		Form_pg_attribute attr = tupDesc->attrs[i];
+		Datum relid, tupcon, perms, result;
+		bool isnull;
 
 		if (!sepgsqlAttributeIsPsid(attr))
 			continue;
 
-		tup_psid = heap_getattr(tuple, i+1, tupDesc, &isnull);
+		/* 1st argument: <table>.tableoid */
+		relid = heap_getattr(tuple, TableOidAttributeNumber, tupDesc, &isnull);
+		if (isnull)
+			selerror("'%s.%s' is NULL", RelationGetRelationName(rel), "tableoid");
+		/* 2nd argument: <table>.security_context */
+		tupcon = heap_getattr(tuple, i+1, tupDesc, &isnull);
 		if (isnull)
 			selerror("'%s.%s' is NUll", RelationGetRelationName(rel), NameStr(attr->attname));
+		/* 3rd argument: required permission for tuple */
+		perms = UInt32GetDatum(TUPLE__SELECT);
 
-		switch (relid) {
-		case AttributeRelationId:
-			tclass = SECCLASS_COLUMN;
-			perm = COLUMN__GETATTR;
-			break;
-		case RelationRelationId:
-			tclass = SECCLASS_TABLE;
-			perm = TABLE__GETATTR;
-			break;
-		case DatabaseRelationId:
-			tclass = SECCLASS_DATABASE;
-			perm = DATABASE__GETATTR;
-			break;
-		case ProcedureRelationId:
-			tclass = SECCLASS_PROCEDURE;
-			perm = PROCEDURE__GETATTR;
-			break;
-		case LargeObjectRelationId:
-			tclass = SECCLASS_BLOB;
-			perm = BLOB__GETATTR;
-			break;
-		default:
-			tclass = SECCLASS_TUPLE;
-			perm = TUPLE__SELECT;
-		}
-		rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
-									DatumGetObjectId(tup_psid),
-									tclass, perm, NULL);
-		if (rc != 0)
+		result = DirectFunctionCall3(sepgsql_tuple_perm,
+									 relid, tupcon, perms);
+		if (!DatumGetBool(result))
 			return false;
-		break;
 	}
 	return true;
 }
