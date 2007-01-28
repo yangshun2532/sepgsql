@@ -150,6 +150,12 @@ static List *walkFuncExpr(List *selist, Query *query, FuncExpr *func)
 	return selist;
 }
 
+static List *walkBoolExpr(List *selist, Query *query, BoolExpr *expr)
+{
+	Assert(IsA(expr, BoolExpr));
+	return sepgsqlWalkExpr(selist, query, (Node *) expr->args);
+}
+
 static List *walkOpExpr(List *selist, Query *query, OpExpr *n)
 {
 	HeapTuple tuple;
@@ -176,6 +182,14 @@ static List *walkOpExpr(List *selist, Query *query, OpExpr *n)
 	return selist;
 }
 
+static List *walkAggref(List *selist, Query *query, Aggref *aggref)
+{
+	Assert(IsA(aggref, Aggref));
+	selist = addEvalPgProc(selist, aggref->aggfnoid, PROCEDURE__EXECUTE);
+	selist = sepgsqlWalkExpr(selist, query, (Node *) aggref->args);
+	return selist;
+}
+
 static List *walkSubLink(List *selist, Query *query, SubLink *slink)
 {
 	Assert(IsA(slink, SubLink));
@@ -197,6 +211,22 @@ static List *walkList(List *selist, Query *query, List *list)
 	return selist;
 }
 
+static List *walkSortClause(List *selist, Query *query, SortClause *sortcl)
+{
+	ListCell *l;
+
+	Assert(IsA(sortcl, SortClause) || IsA(sortcl, GroupClause));
+	foreach (l, query->targetList) {
+		TargetEntry *te = (TargetEntry *) lfirst(l);
+		Assert(IsA(te, TargetEntry));
+		if (te->ressortgroupref == sortcl->tleSortGroupRef) {
+			selist = sepgsqlWalkExpr(selist, query, (Node *) te->expr);
+			break;
+		}
+	}
+	return selist;
+}
+
 List *sepgsqlWalkExpr(List *selist, Query *query, Node *n)
 {
 	if (n == NULL)
@@ -212,11 +242,21 @@ List *sepgsqlWalkExpr(List *selist, Query *query, Node *n)
 	case T_FuncExpr:
 		selist = walkFuncExpr(selist, query, (FuncExpr *) n);
 		break;
+	case T_BoolExpr:
+		selist = walkBoolExpr(selist, query, (BoolExpr *) n);
+		break;
 	case T_OpExpr:
 		selist = walkOpExpr(selist, query, (OpExpr *) n);
 		break;
+	case T_Aggref:
+		selist = walkAggref(selist, query, (Aggref *) n);
+		break;
 	case T_SubLink:
 		selist = walkSubLink(selist, query, (SubLink *) n);
+		break;
+	case T_SortClause:
+	case T_GroupClause:  /* GroupClause is typedef'ed by SortClause */
+		selist = walkSortClause(selist, query, (SortClause *) n);
 		break;
 	case T_List:
 		selist = walkList(selist, query, (List *) n);
