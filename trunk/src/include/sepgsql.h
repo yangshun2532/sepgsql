@@ -214,6 +214,7 @@ extern Datum text_to_psid(PG_FUNCTION_ARGS);
 extern Datum psid_to_text(PG_FUNCTION_ARGS);
 extern Datum sepgsql_getcon(PG_FUNCTION_ARGS);
 extern Datum sepgsql_tuple_perm(PG_FUNCTION_ARGS);
+extern Datum sepgsql_tuple_perm_abort(PG_FUNCTION_ARGS);
 
 #else
 /* dummy enhanced selinux core implementation */

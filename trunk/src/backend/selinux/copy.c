@@ -51,32 +51,22 @@ void sepgsqlDoCopy(Relation rel, List *attnumlist, bool is_from)
 
 bool sepgsqlCopyTo(Relation rel, HeapTuple tuple)
 {
-	TupleDesc tupDesc = RelationGetDescr(rel);
-	int i;
+	TupleDesc tupDesc;
+	Datum relid, rec, perms, result;
+	bool isnull;
 
-	for (i=0; i < RelationGetNumberOfAttributes(rel); i++) {
-		Form_pg_attribute attr = tupDesc->attrs[i];
-		Datum relid, tupcon, perms, result;
-		bool isnull;
+	tupDesc = RelationGetDescr(rel);
 
-		if (!sepgsqlAttributeIsPsid(attr))
-			continue;
+	/* 1st argument: <table>.tableoid */
+	relid = heap_getattr(tuple, TableOidAttributeNumber,
+						 tupDesc, &isnull);
+	/* 2nd argument: HeapTupleHeader */
+	rec = PointerGetDatum(&tuple->t_data);
+	/* 3rd argument: required permission for tuple */
+	perms = UInt32GetDatum(TUPLE__SELECT);
 
-		/* 1st argument: <table>.tableoid */
-		relid = heap_getattr(tuple, TableOidAttributeNumber, tupDesc, &isnull);
-		if (isnull)
-			selerror("'%s.%s' is NULL", RelationGetRelationName(rel), "tableoid");
-		/* 2nd argument: <table>.security_context */
-		tupcon = heap_getattr(tuple, i+1, tupDesc, &isnull);
-		if (isnull)
-			selerror("'%s.%s' is NUll", RelationGetRelationName(rel), NameStr(attr->attname));
-		/* 3rd argument: required permission for tuple */
-		perms = UInt32GetDatum(TUPLE__SELECT);
+	result = DirectFunctionCall3(sepgsql_tuple_perm,
+								 relid, rec, perms);
 
-		result = DirectFunctionCall3(sepgsql_tuple_perm,
-									 relid, tupcon, perms);
-		if (!DatumGetBool(result))
-			return false;
-	}
-	return true;
+	return DatumGetBool(result) ? true : false;
 }

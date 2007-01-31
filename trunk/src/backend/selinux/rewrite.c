@@ -279,8 +279,6 @@ static List *rewriteRteRelation(List *selist, Query *query, int rtindex, Node **
 	RangeTblEntry *rte;
 	Relation rel;
 	TupleDesc tdesc;
-	AttrNumber attno;
-	uint16 tclass = SECCLASS_TUPLE;
 	uint32 perms = 0;
 
 	rte = list_nth(query->rtable, rtindex - 1);
@@ -297,44 +295,35 @@ static List *rewriteRteRelation(List *selist, Query *query, int rtindex, Node **
 		perms |= TUPLE__UPDATE;
 	if (rte->requiredPerms & RTEMARK_UPDATE)
 		perms |= TUPLE__DELETE;
-	if (!perms)
-		goto out;
 
-	/* append sepgsql_permission(*.security_context, tclass, perms) */
-	for (attno=0; attno < RelationGetNumberOfAttributes(rel); attno++) {
-		Form_pg_attribute attr = tdesc->attrs[attno];
-		if (sepgsqlAttributeIsPsid(attr)) {
-			Var *v1, *v2;
-			Const *c3;
-			FuncExpr *func;
+	/* append sepgsql_tuple_perm(relid, record, perms) */
+	if (perms) {
+		Var *v1, *v2;
+		Const *c3;
+		FuncExpr *func;
 
-			if (attr->atttypid != PSIDOID)
-				selerror("%s.%s must be PSID", RelationGetRelationName(rel), NameStr(attr->attname));
+		/* 1st arg : Oid of the target relation */
+		v1 = makeVar(rtindex, TableOidAttributeNumber, OIDOID, -1, 0);
+		
+		/* 2nd arg : RECORD of the target relation */
+		v2 = makeVar(rtindex, 0, RECORDOID, -1, 0);
 
-			/* 1st arg : Oid of the target relation */
-			v1 = makeVar(rtindex, TableOidAttributeNumber,
-						 OIDOID, -1, 0);
-			/* 2nd arg : security context of tuple */
-			v2 = makeVar(rtindex, attr->attnum, attr->atttypid, attr->atttypmod, 0);
+		/* 3rd arg : permission set */
+		c3 = makeConst(INT4OID, sizeof(int32), Int32GetDatum(perms), false, true);
 
-			/* 3rd arg : permission set */
-			c3 = makeConst(INT4OID, sizeof(int32), Int32GetDatum(perms), false, true);
-
-			func = makeFuncExpr(F_SEPGSQL_TUPLE_PERM, BOOLOID,
-                                list_make3(v1, v2, c3), COERCE_DONTCARE);
-			if (*quals == NULL) {
-				*quals = (Node *) func;
-            } else {
-				*quals = (Node *) makeBoolExpr(AND_EXPR, list_make2(func, *quals));
-            }
-			selnotice("append sepgsql_permission(%s.%s, %d, 0x%08x)",
-					  RelationGetRelationName(rel),
-					  NameStr(attr->attname), tclass, perms);
+		/* append sepgsql_tuple_perm */
+		func = makeFuncExpr(F_SEPGSQL_TUPLE_PERM, BOOLOID,
+							list_make3(v1, v2, c3), COERCE_DONTCARE);
+		if (*quals == NULL) {
+			*quals = (Node *) func;
+		} else {
+			*quals = (Node *) makeBoolExpr(AND_EXPR, list_make2(func, *quals));
 		}
+		selnotice("append sepgsql_permission(tableoid, %s, 0x%08x)",
+				  RelationGetRelationName(rel), perms);
 	}
-out:
 	relation_close(rel, NoLock);
-
+	
 	return selist;
 }
 

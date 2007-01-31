@@ -6,10 +6,12 @@
  */
 #include "postgres.h"
 
+#include "access/heapam.h"
 #include "fmgr.h"
 #include "lib/stringinfo.h"
 #include "libpq/pqformat.h"
 #include "sepgsql.h"
+#include "utils/typcache.h"
 
 #include <selinux/selinux.h>
 
@@ -126,20 +128,55 @@ sepgsql_getcon(PG_FUNCTION_ARGS)
 }
 
 /*
- * sepgsql_tuple_perm(relid, objcon, perms)
- *   fileter access permission of SECCLASS_TUPLE bases on security context.
+ * sepgsql_tuple_perm(relid, record, perms)
+ *   filter tuples on which the client cannot access.
+ * sepgsql_tuple_perm_abort(relid, record, perms)
+ *   abort transaction, if the client cannot have permission.
  */
-Datum
-sepgsql_tuple_perm(PG_FUNCTION_ARGS)
+static int __sepgsql_tuple_perm(Oid relid, HeapTupleHeader rec, uint32 perms, char **p_audit)
 {
-	Oid relid = PG_GETARG_OID(0);
-	psid tupcon = PG_GETARG_OID(1);
-	uint32 perms = PG_GETARG_UINT32(2);
-	uint16 tclass = SECCLASS_TUPLE;
-	char *audit;
-	int rc;
+	static AttrNumber attno = 0;
+	Oid tupType;
+	int32 tupTypmod;
+	TupleDesc tupDesc;
+	HeapTupleData tuple;
+	bool isnull;
+	psid tupCon;
+	uint16 tclass;
 
-	/* formalize tclass and perms */
+	/* obtain tuple descriptor */
+	tupType   = HeapTupleHeaderGetTypeId(rec);
+	tupTypmod = HeapTupleHeaderGetTypMod(rec);
+	tupDesc   = lookup_rowtype_tupdesc(tupType, tupTypmod);
+
+	/* build a temporary tuple */
+	tuple.t_len = HeapTupleHeaderGetDatumLength(rec);
+    ItemPointerSetInvalid(&(tuple.t_self));
+    tuple.t_tableOid = relid;
+    tuple.t_data = rec;
+
+	/* lookup 'security_context' */
+	if (attno < 1 || attno > tupDesc->natts
+		|| !sepgsqlAttributeIsPsid(tupDesc->attrs[attno - 1])) {
+		for (attno = 1; attno <= tupDesc->natts; attno++) {
+			if (sepgsqlAttributeIsPsid(tupDesc->attrs[attno - 1]))
+				goto found;
+		}
+
+		/* no security context ralation */
+		ReleaseTupleDesc(tupDesc);
+		return 0;      /* success */
+	}
+
+found:
+	/* obtain security context */
+	tupCon = DatumGetObjectId(heap_getattr(&tuple, attno, tupDesc, &isnull));
+	ReleaseTupleDesc(tupDesc);
+
+	if (isnull)
+		selerror("security context was NULL");
+
+	/* ---- formalize tclass ---- */
 	switch (relid) {
 	case AttributeRelationId:
 		tclass = SECCLASS_COLUMN;
@@ -157,10 +194,11 @@ sepgsql_tuple_perm(PG_FUNCTION_ARGS)
 		tclass = SECCLASS_BLOB;
 		break;
 	default:
-		/* do nothing */
+		tclass = SECCLASS_TUPLE;
 		break;
 	}
 
+	/* ---- formalize access vector ---- */
 	if (tclass != SECCLASS_TUPLE) {
 		uint32 __perms = 0;
 		__perms |= ((perms & TUPLE__SELECT) ? COMMON_DATABASE__GETATTR : 0);
@@ -170,10 +208,49 @@ sepgsql_tuple_perm(PG_FUNCTION_ARGS)
 		perms = __perms;
 	}
 
-	rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
-								tupcon, tclass, perms, &audit);
+	return sepgsql_avc_permission(sepgsqlGetClientPsid(),
+								  tupCon, tclass, perms, p_audit);
+}
+
+Datum
+sepgsql_tuple_perm(PG_FUNCTION_ARGS)
+{
+	Oid relid = PG_GETARG_OID(0);
+	HeapTupleHeader rec = PG_GETARG_HEAPTUPLEHEADER(1);
+	uint32 perms = PG_GETARG_UINT32(2);
+	char *audit = NULL;
+	int rc;
+
+	rc = __sepgsql_tuple_perm(relid, rec, perms, &audit);
 	if (audit)
 		ereport(NOTICE, (errcode(ERRCODE_INTERNAL_ERROR),
 						 errmsg("SELinux: %s", audit)));
 	PG_RETURN_BOOL(rc == 0);
+}
+
+/*
+ * sepgsql_tuple_perm_abort(relid, objcon, perms)
+ *   abort current transaction, if required permission is denied.
+ */
+Datum
+sepgsql_tuple_perm_abort(PG_FUNCTION_ARGS)
+{
+	Oid relid = PG_GETARG_OID(0);
+	HeapTupleHeader rec = PG_GETARG_HEAPTUPLEHEADER(1);
+	uint32 perms = PG_GETARG_UINT32(2);
+	char *audit = NULL;
+	int rc;
+
+	rc = __sepgsql_tuple_perm(relid, rec, perms, &audit);
+	if (audit) {
+		ereport(rc ? ERROR : NOTICE,
+				(errcode(ERRCODE_INTERNAL_ERROR),
+				 errmsg("SELinux: %s", audit)));
+	} else if (rc) {
+		ereport(ERROR,
+				(errcode(ERRCODE_INTERNAL_ERROR),
+				 errmsg("SELinux: Transaction abort")));
+	}
+
+	PG_RETURN_BOOL(true);
 }
