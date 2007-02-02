@@ -1436,8 +1436,9 @@ ExecDelete(ItemPointer tupleid,
 	resultRelationDesc = resultRelInfo->ri_RelationDesc;
 
 	/* BEFORE ROW DELETE Triggers */
-	if (resultRelInfo->ri_TrigDesc &&
-		resultRelInfo->ri_TrigDesc->n_before_row[TRIGGER_EVENT_DELETE] > 0)
+	if (sepgsqlIsEnabled() ||
+		(resultRelInfo->ri_TrigDesc &&
+		 resultRelInfo->ri_TrigDesc->n_before_row[TRIGGER_EVENT_DELETE] > 0))
 	{
 		bool		dodelete;
 
@@ -2557,8 +2558,10 @@ intorel_receive(TupleTableSlot *slot, DestReceiver *self)
 
 	tuple = ExecCopySlotTuple(slot);
 
-	tuple = sepgsqlExecInsert(tuple, estate->es_into_relation_descriptor,
-							  GetPerTupleMemoryContext(estate));
+	tuple = sepgsqlExecInsert(tuple,
+							  GetPerTupleMemoryContext(estate),
+							  estate->es_into_relation_descriptor,
+							  NULL /* no RETURNING */);
 
 	heap_insert(estate->es_into_relation_descriptor,
 				tuple,

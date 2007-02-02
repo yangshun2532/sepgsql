@@ -522,7 +522,6 @@ char *sepgsql_psid_to_context(psid sid)
 
 	tuple = SearchSysCache(SELINUXOID, ObjectIdGetDatum(sid), 0, 0, 0);
 	if (!HeapTupleIsValid(tuple)) {
-		selbugon(sid==0);
 		selerror("No string expression for psid=%u", sid);
 	}
 

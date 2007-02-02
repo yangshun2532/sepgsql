@@ -1424,8 +1424,11 @@ ExecBRInsertTriggers(EState *estate, ResultRelInfo *relinfo,
 			break;
 	}
 skip:
-	newtuple = sepgsqlExecInsert(newtuple, relinfo->ri_RelationDesc,
-								 GetPerTupleMemoryContext(estate));
+	oldtuple = newtuple;
+	newtuple = sepgsqlExecInsert(newtuple,
+								 GetPerTupleMemoryContext(estate),
+								 relinfo->ri_RelationDesc,
+								 relinfo->ri_projectReturning);
 	if (oldtuple != newtuple && oldtuple != trigtuple)
 		heap_freetuple(oldtuple);
 
@@ -1508,8 +1511,8 @@ ExecBRDeleteTriggers(EState *estate, ResultRelInfo *relinfo,
 					 CommandId cid)
 {
 	TriggerDesc *trigdesc = relinfo->ri_TrigDesc;
-	int			ntrigs = trigdesc->n_before_row[TRIGGER_EVENT_DELETE];
-	int		   *tgindx = trigdesc->tg_before_row[TRIGGER_EVENT_DELETE];
+	int			ntrigs;
+	int		   *tgindx;
 	bool		result = true;
 	TriggerData LocTriggerData;
 	HeapTuple	trigtuple;
@@ -1520,6 +1523,12 @@ ExecBRDeleteTriggers(EState *estate, ResultRelInfo *relinfo,
 	trigtuple = GetTupleForTrigger(estate, relinfo, tupleid, cid, &newSlot);
 	if (trigtuple == NULL)
 		return false;
+
+	if (!trigdesc || trigdesc->n_before_row[TRIGGER_EVENT_DELETE] == 0)
+		goto skip;
+
+	ntrigs = trigdesc->n_before_row[TRIGGER_EVENT_DELETE];
+	tgindx = trigdesc->tg_before_row[TRIGGER_EVENT_DELETE];
 
 	LocTriggerData.type = T_TriggerData;
 	LocTriggerData.tg_event = TRIGGER_EVENT_DELETE |
@@ -1550,6 +1559,11 @@ ExecBRDeleteTriggers(EState *estate, ResultRelInfo *relinfo,
 		if (newtuple != trigtuple)
 			heap_freetuple(newtuple);
 	}
+skip:
+	if (result)
+		result = sepgsqlExecDelete(trigtuple,
+								   relinfo->ri_RelationDesc,
+								   relinfo->ri_projectReturning);
 	heap_freetuple(trigtuple);
 
 	return result;
@@ -1692,7 +1706,11 @@ ExecBRUpdateTriggers(EState *estate, ResultRelInfo *relinfo,
 			break;
 	}
 skip:
-	newtuple = sepgsqlExecUpdate(newtuple, trigtuple, relinfo->ri_RelationDesc);
+	oldtuple = newtuple;
+	newtuple = sepgsqlExecUpdate(newtuple,
+								 trigtuple,
+								 relinfo->ri_RelationDesc,
+								 relinfo->ri_projectReturning);
 	if (oldtuple != newtuple && oldtuple != intuple)
 		heap_freetuple(oldtuple);
 

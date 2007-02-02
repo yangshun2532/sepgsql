@@ -168,8 +168,12 @@ extern void sepgsqlVerifyQuery(Query *query);
 extern void sepgsqlVerifyQueryList(List *queryList);
 
 /* SE-PostgreSQL hard-coded trigger functions */
-extern HeapTuple sepgsqlExecInsert(HeapTuple newtup, Relation rel, MemoryContext mcontext);
-extern HeapTuple sepgsqlExecUpdate(HeapTuple newtup, HeapTuple oldtup, Relation rel);
+extern HeapTuple sepgsqlExecInsert(HeapTuple newtup, MemoryContext mcontext,
+								   Relation rel, ProjectionInfo *retProj);
+extern HeapTuple sepgsqlExecUpdate(HeapTuple newtup, HeapTuple oldtup,
+								   Relation rel, ProjectionInfo *retProj);
+extern bool sepgsqlExecDelete(HeapTuple newtup,
+							  Relation rel, ProjectionInfo *retProj);
 
 /* CREATE/ALTER/DROP DATABASE statement related */
 extern void sepgsqlCreateDatabase(Datum *values, char *nulls);
