@@ -6,9 +6,30 @@
  */
 #include "postgres.h"
 #include "access/heapam.h"
+#include "catalog/pg_aggregate.h"
 #include "sepgsql.h"
 #include "utils/syscache.h"
 #include "utils/typcache.h"
+
+static psid __getDatabaseContext(Datum dbid, Name dbname)
+{
+	Form_pg_database pgdatabase;
+	HeapTuple tuple;
+	psid datcon;
+
+	tuple = SearchSysCache(DATABASEOID, dbid, 0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		selerror("cache lookup failed for DATABASEOID (=%u)", DatumGetObjectId(dbid));
+
+	pgdatabase = (Form_pg_database) GETSTRUCT(tuple);
+	datcon = pgdatabase->datselcon;
+	if (dbname)
+		strcpy(dbname->data, NameStr(pgdatabase->datname));
+
+	ReleaseSysCache(tuple);
+
+	return datcon;
+}
 
 static psid __getRelationContext(Datum relid, Name relname)
 {
@@ -61,6 +82,18 @@ static AttrNumber __getTupleContext(Oid tableoid, TupleDesc tdesc, HeapTuple tup
     Oid pro_oid = InvalidOid;
 
 	switch (tableoid) {
+	case AggregateRelationId: {
+		bool isnull;
+
+		pro_oid = DatumGetObjectId(heap_getattr(tuple,
+												Anum_pg_aggregate_aggfnoid,
+												tdesc,
+												&isnull));
+		if (isnull)
+			selerror("pg_aggregate.aggfnoid");
+		tclass = SECCLASS_PROCEDURE;
+		break;
+	}
 	case DatabaseRelationId: {
 		/* pg_database */
 		attno = DatabaseRelationId;
@@ -169,7 +202,7 @@ static int __sepgsql_tuple_perm(Oid relid, HeapTupleHeader rec, uint32 perms, bo
 
 	if (db_oid != InvalidOid) {
 		NameData db_name;
-		psid db_con = __getRelationContext(db_oid, &db_name);
+		psid db_con = __getDatabaseContext(db_oid, &db_name);
 
 		rc += sepgsql_avc_permission(sepgsqlGetClientPsid(), db_con,
 									 SECCLASS_DATABASE, attr_perms, &audit);
@@ -186,9 +219,9 @@ static int __sepgsql_tuple_perm(Oid relid, HeapTupleHeader rec, uint32 perms, bo
 
 	if (pro_oid != InvalidOid) {
 		NameData pro_name;
-		psid pro_con = __getRelationContext(pro_oid, &pro_name);
+		psid pro_con = __getProcedureContext(pro_oid, &pro_name);
 		rc += sepgsql_avc_permission(sepgsqlGetClientPsid(), pro_con,
-									 SECCLASS_TABLE, attr_perms, &audit);
+									 SECCLASS_PROCEDURE, attr_perms, &audit);
 		__sepgsql_tuple_perm_audit(rc, audit, NameStr(pro_name), is_abort);
 	}
 
@@ -264,7 +297,7 @@ HeapTuple sepgsqlExecInsert(HeapTuple newtup, MemoryContext mcontext,
 	if (db_oid != InvalidOid) {
 		NameData db_name;
 		rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
-									__getRelationContext(db_oid, &db_name),
+									__getDatabaseContext(db_oid, &db_name),
 									SECCLASS_DATABASE,
 									DATABASE__SETATTR,
 									&audit);
@@ -284,7 +317,7 @@ HeapTuple sepgsqlExecInsert(HeapTuple newtup, MemoryContext mcontext,
 	if (pro_oid != InvalidOid) {
 		NameData pro_name;
 		rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
-									__getRelationContext(pro_oid, &pro_name),
+									__getProcedureContext(pro_oid, &pro_name),
 									SECCLASS_PROCEDURE,
 									PROCEDURE__SETATTR,
 									&audit);
@@ -433,7 +466,7 @@ void sepgsqlExecUpdate(HeapTuple newtup, HeapTuple oldtup,
 		NameData db_name;
 		Assert(old_db_oid != InvalidOid && new_db_oid != InvalidOid);
 		rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
-									__getRelationContext(old_db_oid, &db_name),
+									__getDatabaseContext(old_db_oid, &db_name),
 									SECCLASS_DATABASE,
 									DATABASE__SETATTR,
 									&audit);
@@ -441,7 +474,7 @@ void sepgsqlExecUpdate(HeapTuple newtup, HeapTuple oldtup,
 
 		if (old_db_oid != new_db_oid) {
 			rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
-										__getRelationContext(new_db_oid, &db_name),
+										__getDatabaseContext(new_db_oid, &db_name),
 										SECCLASS_DATABASE,
 										DATABASE__SETATTR,
 										&audit);
@@ -473,7 +506,7 @@ void sepgsqlExecUpdate(HeapTuple newtup, HeapTuple oldtup,
 		NameData pro_name;
 		Assert(old_pro_oid != InvalidOid && new_pro_oid != InvalidOid);
 		rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
-									__getRelationContext(old_pro_oid, &pro_name),
+									__getProcedureContext(old_pro_oid, &pro_name),
 									SECCLASS_PROCEDURE,
 									PROCEDURE__SETATTR,
 									&audit);
@@ -481,7 +514,7 @@ void sepgsqlExecUpdate(HeapTuple newtup, HeapTuple oldtup,
 
 		if (old_pro_oid != new_pro_oid) {
 			rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
-										__getRelationContext(new_pro_oid, &pro_name),
+										__getProcedureContext(new_pro_oid, &pro_name),
 										SECCLASS_PROCEDURE,
 										PROCEDURE__SETATTR,
 										&audit);
