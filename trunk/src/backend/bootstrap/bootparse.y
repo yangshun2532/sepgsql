@@ -367,14 +367,11 @@ boot_tuplelist:
 
 boot_tuple:
 		  boot_ident
-			{ num_columns_read += sepgsqlBootstrapInsertOneValue(num_columns_read);
-			  InsertOneValue(LexIDStr($1), num_columns_read++); }
+			{ InsertOneValue(LexIDStr($1), num_columns_read++); }
 		| boot_const
-			{ num_columns_read += sepgsqlBootstrapInsertOneValue(num_columns_read);
-			  InsertOneValue(LexIDStr($1), num_columns_read++); }
+			{ InsertOneValue(LexIDStr($1), num_columns_read++); }
 		| NULLVAL
-			{ num_columns_read += sepgsqlBootstrapInsertOneValue(num_columns_read);
-			  InsertOneNull(num_columns_read++); }
+			{ InsertOneNull(num_columns_read++); }
 		;
 
 boot_const :

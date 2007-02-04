@@ -205,9 +205,7 @@ extern void sepgsqlDoCopy(Relation rel, List *attnumlist, bool is_from);
 extern bool sepgsqlCopyTo(Relation rel, HeapTuple tuple);
 
 /* bootstrap hooks */
-extern int sepgsqlBootstrapInsertOneValue(int index);
-extern void sepgsqlBootstrapFormrdesc(Relation rel);
-extern void sepgsqlBootstrapPostCreateRelation(Oid relid);
+extern HeapTuple sepgsqlInsertOneTuple(HeapTuple tuple, Relation rel);
 extern bool sepgsqlBootstrapPgSelinuxAvailable(void);
 extern psid sepgsqlBootstrapContextToPsid(char *context);
 extern char *sepgsqlBootstrapPsidToContext(psid psid);

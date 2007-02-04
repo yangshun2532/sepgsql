@@ -32,6 +32,7 @@
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
 #include "postmaster/bgwriter.h"
+#include "sepgsql.h"
 #include "storage/freespace.h"
 #include "storage/ipc.h"
 #include "storage/proc.h"
@@ -792,6 +793,8 @@ InsertOneTuple(Oid objectid)
 	tuple = heap_formtuple(tupDesc, values, Blanks);
 	if (objectid != (Oid) 0)
 		HeapTupleSetOid(tuple, objectid);
+	/* add implicit labeling */
+	tuple = sepgsqlInsertOneTuple(tuple, boot_reldesc);
 	pfree(tupDesc);				/* just free's tupDesc, not the attrtypes */
 
 	simple_heap_insert(boot_reldesc, tuple);

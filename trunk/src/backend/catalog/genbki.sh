@@ -138,6 +138,41 @@ for dir in $INCLUDE_DIRS; do
     fi
 done
 
+# Add 'pg_proc.proselcon' and 'pg_attribute.{attselcon, attispsid}'
+ADD_SELCON='BEGIN { phase = 0 }
+/^create .* pg_proc/ { phase = 1; print; next }
+/^create .* pg_attribute/ { phase = 2; print; next }
+/^close/ { phase = 0; print; next }
+/^insert/ {
+  if (phase == 1) {
+    /* pg_proc */
+    for (i=1; i<=NF; i++) {
+      if (i>1) { printf(" ") }
+      if (i==17) { printf("_null_ ") }
+      printf("%s", $i)
+    }
+    printf("\n")
+  } else if (phase == 2) {
+    /* pg_attribute */        
+    for (i=1; i<=NF; i++) {
+      if (i>1) { printf(" ") }
+      if (i==19) {
+        if ($4=="proselcon" || $4=="attselcon" || $4=="relselcon") {
+          printf("t _null_ ")
+        } else {
+          printf("f _null_ ")
+        }
+      }
+      printf("%s", $i)
+    }
+    printf("\n")
+  } else {
+    print
+  }
+  next
+}
+{ print }'
+
 # Parse #ifdef ... #else ... #endif
 PARSE_IFDEF="BEGIN {"
 for dir in $INCLUDE_DIRS; do
@@ -443,7 +478,7 @@ END {
 		reln_open = 0;
 	}
 }
-' "descriptionfile=${OUTPUT_PREFIX}.description.$$" "shdescriptionfile=${OUTPUT_PREFIX}.shdescription.$$" > $TMPFILE || exit
+' "descriptionfile=${OUTPUT_PREFIX}.description.$$" "shdescriptionfile=${OUTPUT_PREFIX}.shdescription.$$" | awk "${ADD_SELCON}" > $TMPFILE || exit
 
 echo "# PostgreSQL $major_version" >${OUTPUT_PREFIX}.bki.$$
 

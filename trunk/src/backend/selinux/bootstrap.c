@@ -137,65 +137,110 @@ not_found:
 	return NULL;
 }
 
-int sepgsqlBootstrapInsertOneValue(int index)
+HeapTuple sepgsqlInsertOneTuple(HeapTuple tuple, Relation rel)
 {
-	psid newcon;
-	char *context;
-	int rc = 0;
+	TupleDesc tdesc;
+	psid icon, econ, tcon;
+	AttrNumber attno = 0;
+	uint16 tclass;
+	uint32 perms;
+	bool isnull;
+	char *audit;
+	int rc;
 
-	if (boot_reldesc == NULL)
+	if (!rel)
 		selerror("no open relation to assign a security context");
 
-	switch (RelationGetRelid(boot_reldesc)) {
+	tdesc = RelationGetDescr(rel);
+
+	switch (RelationGetRelid(rel)) {
 	case DatabaseRelationId:
-		if (index == Anum_pg_database_datselcon - 1) {
-			newcon = sepgsql_avc_createcon(sepgsqlGetClientPsid(),
-										   sepgsqlGetServerPsid(),
-										   SECCLASS_DATABASE);
-			context = sepgsql_psid_to_context(newcon);
-			InsertOneValue(context, index);
-			pfree(context);
-			rc = 1;
-		}
+		attno = Anum_pg_database_datselcon;
+		tclass = SECCLASS_DATABASE;
+		tcon = sepgsqlGetServerPsid();
 		break;
 	case RelationRelationId:
-		if (index == Anum_pg_class_relselcon - 1) {
-			newcon = sepgsql_avc_createcon(sepgsqlGetClientPsid(),
-										   sepgsqlGetDatabasePsid(),
-										   SECCLASS_TABLE);
-			context = sepgsql_psid_to_context(newcon);
-			InsertOneValue(context, index);
-			pfree(context);
-			rc = 1;
-		}
+		attno = Anum_pg_class_relselcon;
+		tclass = SECCLASS_TABLE;
+		tcon = sepgsqlGetDatabasePsid();
 		break;
 	case ProcedureRelationId:
-		if (index == Anum_pg_proc_proselcon - 1) {
-			newcon = sepgsql_avc_createcon(sepgsqlGetClientPsid(),
-										   sepgsqlGetDatabasePsid(),
-										   SECCLASS_PROCEDURE);
-			context = sepgsql_psid_to_context(newcon);
-			InsertOneValue(context, index);
-			pfree(context);
-			rc = 1;
-		}
+		attno = Anum_pg_proc_proselcon;
+		tclass = SECCLASS_PROCEDURE;
+		tcon = sepgsqlGetDatabasePsid();
 		break;
 	case AttributeRelationId:
-		if (index == Anum_pg_attribute_attispsid - 1) {
-			TupleDesc tdesc = RelationGetDescr(boot_reldesc);
-			Form_pg_attribute attr = tdesc->attrs[Anum_pg_attribute_attselcon - 1];
-			psid tblcon = attr->attselcon;
-
-			InsertOneValue("f", index++);
-			newcon = sepgsql_avc_createcon(sepgsqlGetClientPsid(),
-										   tblcon,
-										   SECCLASS_COLUMN);
-			context = sepgsql_psid_to_context(newcon);
-			InsertOneValue(context, index);
-			pfree(context);
-			rc = 2;
+		attno = Anum_pg_attribute_attselcon;
+		tclass = SECCLASS_COLUMN;
+		tcon = sepgsql_avc_createcon(sepgsqlGetClientPsid(),
+									 sepgsqlGetDatabasePsid(),
+									 SECCLASS_TABLE);
+		break;
+	default:
+		for (attno = 1; attno <= tdesc->natts; attno++) {
+			if (sepgsqlAttributeIsPsid(tdesc->attrs[attno - 1]))
+				break;
 		}
+		tclass = SECCLASS_TUPLE;
+		tcon = RelationGetForm(rel)->relselcon;
 		break;
 	}
-	return rc;
+	if (attno < 1 || attno > tdesc->natts)
+		return tuple;
+
+	icon = sepgsql_avc_createcon(sepgsqlGetClientPsid(),
+								 tcon,
+								 tclass);
+	econ = ObjectIdGetDatum(heap_getattr(tuple,
+										 attno,
+										 RelationGetDescr(rel),
+										 &isnull));
+	if (isnull) {
+		HeapTuple newtup;
+		Datum *values;
+		bool *nulls, *repls;
+
+		/* implicit labeling */
+		perms = ((tclass == SECCLASS_TUPLE)
+				 ? TUPLE__INSERT : COMMON_DATABASE__SETATTR);
+		rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
+									icon, tclass, perms, &audit);
+		sepgsql_audit(rc, audit, NULL);
+
+		values = palloc0(sizeof(Datum) * RelationGetNumberOfAttributes(rel));
+		nulls  = palloc0(sizeof(bool)  * RelationGetNumberOfAttributes(rel));
+		repls  = palloc0(sizeof(bool)  * RelationGetNumberOfAttributes(rel));
+
+		values[attno - 1] = ObjectIdGetDatum(icon);
+		nulls[attno - 1] = false;
+		repls[attno - 1] = true;
+
+		newtup = heap_modify_tuple(tuple, RelationGetDescr(rel),
+								   values, nulls, repls);
+		heap_freetuple(tuple);
+		tuple = newtup;
+
+		pfree(values);
+		pfree(nulls);
+		pfree(repls);
+	} else {
+		/* explicit labeling  */
+		perms = ((tclass == SECCLASS_TUPLE)
+				 ? TUPLE__INSERT : COMMON_DATABASE__SETATTR);
+		if (icon != econ)
+			perms |= ((tclass == SECCLASS_TUPLE)
+					  ? TUPLE__RELABELFROM : COMMON_DATABASE__RELABELFROM);
+		rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
+									icon, tclass, perms, &audit);
+		sepgsql_audit(rc, audit, NULL);
+
+		if (icon != econ) {
+			perms = ((tclass == SECCLASS_TUPLE)
+					 ? TUPLE__RELABELTO : COMMON_DATABASE__RELABELTO);
+			rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
+										econ, tclass, perms, &audit);
+			sepgsql_audit(rc, audit, NULL);
+		}
+	}
+	return tuple;
 }

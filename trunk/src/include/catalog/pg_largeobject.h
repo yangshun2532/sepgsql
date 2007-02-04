@@ -37,9 +37,7 @@ CATALOG(pg_largeobject,2613) BKI_WITHOUT_OIDS
 {
 	Oid			loid;			/* Identifier of large object */
 	int4		pageno;			/* Page number (starting from 0) */
-#ifdef HAVE_SELINUX
 	psid		selcon;			/* security context */
-#endif
 	bytea		data;			/* Data for page (may be zero-length) */
 } FormData_pg_largeobject;
 
@@ -54,19 +52,11 @@ typedef FormData_pg_largeobject *Form_pg_largeobject;
  *		compiler constants for pg_largeobject
  * ----------------
  */
-#ifdef HAVE_SELINUX
 #define Natts_pg_largeobject			4
-#else
-#define Natts_pg_largeobject			3
-#endif
 #define Anum_pg_largeobject_loid		1
 #define Anum_pg_largeobject_pageno		2
-#ifdef HAVE_SELINUX
 #define Anum_pg_largeobject_selcon		3
 #define Anum_pg_largeobject_data		4
-#else
-#define Anum_pg_largeobject_data		3
-#endif
 
 extern void LargeObjectCreate(Oid loid);
 extern void LargeObjectDrop(Oid loid);
