@@ -15,6 +15,7 @@
 #include "catalog/pg_operator.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_type.h"
+#include "executor/spi.h"
 #include "nodes/makefuncs.h"
 #include "parser/parse_relation.h"
 #include "sepgsql.h"
@@ -273,6 +274,7 @@ List *sepgsqlWalkExpr(List *selist, Query *query, Node *n)
  *
  *
  */
+static Oid funcoid_sepgsql_tuple_perm = F_SEPGSQL_TUPLE_PERM;
 
 static List *rewriteRteRelation(List *selist, Query *query, int rtindex, Node **quals)
 {
@@ -312,7 +314,7 @@ static List *rewriteRteRelation(List *selist, Query *query, int rtindex, Node **
 		c3 = makeConst(INT4OID, sizeof(int32), Int32GetDatum(perms), false, true);
 
 		/* append sepgsql_tuple_perm */
-		func = makeFuncExpr(F_SEPGSQL_TUPLE_PERM, BOOLOID,
+		func = makeFuncExpr(funcoid_sepgsql_tuple_perm, BOOLOID,
 							list_make3(v1, v2, c3), COERCE_DONTCARE);
 		if (*quals == NULL) {
 			*quals = (Node *) func;
@@ -587,3 +589,26 @@ List *sepgsqlRewriteQueryList(List *queryList)
 	}
 	return new_list;
 }
+
+/* special cases when Foreign Key processing */
+void *sepgsqlForeignKeyPrepare(const char *querystr, int nargs, Oid *argtypes)
+{
+	Oid saved_funcoid = funcoid_sepgsql_tuple_perm;
+	void *qplan;
+
+	funcoid_sepgsql_tuple_perm = F_SEPGSQL_TUPLE_PERM_ABORT;
+	PG_TRY();
+	{
+		qplan = SPI_prepare(querystr, nargs, argtypes);
+	}
+	PG_CATCH();
+	{
+		funcoid_sepgsql_tuple_perm = saved_funcoid;
+		PG_RE_THROW();
+	}
+	PG_END_TRY();
+	funcoid_sepgsql_tuple_perm = saved_funcoid;
+
+	return qplan;
+}
+

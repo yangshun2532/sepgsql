@@ -166,6 +166,7 @@ extern List *sepgsqlRewriteQuery(Query *query);
 extern List *sepgsqlRewriteQueryList(List *queryList);
 extern void sepgsqlVerifyQuery(Query *query);
 extern void sepgsqlVerifyQueryList(List *queryList);
+extern void *sepgsqlForeignKeyPrepare(const char *querystr, int nargs, Oid *argtypes);
 
 /* SE-PostgreSQL hard-coded trigger functions */
 extern HeapTuple sepgsqlExecInsert(HeapTuple newtup, MemoryContext mcontext,

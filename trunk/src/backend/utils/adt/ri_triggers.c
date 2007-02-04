@@ -34,6 +34,7 @@
 
 #include "commands/trigger.h"
 #include "executor/spi_priv.h"
+#include "sepgsql.h"
 #include "utils/acl.h"
 #include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
@@ -3026,7 +3027,8 @@ ri_PlanCheck(const char *querystr, int nargs, Oid *argtypes,
 	SetUserId(RelationGetForm(query_rel)->relowner);
 
 	/* Create the plan */
-	qplan = SPI_prepare(querystr, nargs, argtypes);
+	qplan = sepgsqlForeignKeyPrepare(querystr, nargs, argtypes);
+	//qplan = SPI_prepare(querystr, nargs, argtypes);
 
 	if (qplan == NULL)
 		elog(ERROR, "SPI_prepare returned %d for %s", SPI_result, querystr);
