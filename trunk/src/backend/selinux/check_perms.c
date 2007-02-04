@@ -19,7 +19,8 @@ static psid __getDatabaseContext(Datum dbid, Name dbname)
 
 	tuple = SearchSysCache(DATABASEOID, dbid, 0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
-		selerror("cache lookup failed for DATABASEOID (=%u)", DatumGetObjectId(dbid));
+		selerror("cache lookup failed for DATABASEOID (=%u)",
+				 DatumGetObjectId(dbid));
 
 	pgdatabase = (Form_pg_database) GETSTRUCT(tuple);
 	datcon = pgdatabase->datselcon;
@@ -39,7 +40,8 @@ static psid __getRelationContext(Datum relid, Name relname)
 
 	tuple = SearchSysCache(RELOID, relid, 0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
-		selerror("cache lookup failed for RELOID (=%u)", DatumGetObjectId(relid));
+		selerror("cache lookup failed for RELOID (=%u)",
+				 DatumGetObjectId(relid));
 
 	pgclass = (Form_pg_class) GETSTRUCT(tuple);
 	relcon = pgclass->relselcon;
@@ -59,7 +61,8 @@ static psid __getProcedureContext(Datum procid, Name proname)
 
 	tuple = SearchSysCache(PROCOID, procid, 0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
-        selerror("cache lookup failed for PROCOID (=%u)", DatumGetObjectId(procid));
+        selerror("cache lookup failed for PROCOID (=%u)",
+				 DatumGetObjectId(procid));
 
 	pgproc = (Form_pg_proc) GETSTRUCT(tuple);
 	procon = pgproc->proselcon;
@@ -72,7 +75,8 @@ static psid __getProcedureContext(Datum procid, Name proname)
 }
 
 #define OIDS_ARRAY_MAX  (16)
-static inline Oid __heap_getoid(HeapTuple tuple, AttrNumber attno, TupleDesc tdesc, bool *isnull)
+static inline Oid __heap_getoid(HeapTuple tuple, AttrNumber attno,
+								TupleDesc tdesc, bool *isnull)
 {
 	return DatumGetObjectId(heap_getattr(tuple, attno, tdesc, isnull));
 }
@@ -95,7 +99,8 @@ static AttrNumber __getTupleContext(Oid tableoid,
 	switch (tableoid) {
 	case AggregateRelationId: {
 		/* pg_aggregate */
-		pro_oids[pro_index++] = __heap_getoid(tuple, Anum_pg_aggregate_aggfnoid, tdesc, &isnull);
+		pro_oids[pro_index++] =
+			__heap_getoid(tuple, Anum_pg_aggregate_aggfnoid, tdesc, &isnull);
 		if (isnull)
 			selerror("pg_aggregate.aggfnoid");
 		tclass = SECCLASS_PROCEDURE;
@@ -115,7 +120,8 @@ static AttrNumber __getTupleContext(Oid tableoid,
 	}
 	case AttributeRelationId: {
 		/* pg_attribute */
-		tbl_oids[tbl_index++] = __heap_getoid(tuple, Anum_pg_attribute_attrelid, tdesc, &isnull);
+		tbl_oids[tbl_index++] =
+			__heap_getoid(tuple, Anum_pg_attribute_attrelid, tdesc, &isnull);
 		if (isnull)
 			selerror("pg_attribute.attrelid is NULL");
 
