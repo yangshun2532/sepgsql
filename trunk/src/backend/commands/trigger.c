@@ -1561,9 +1561,9 @@ ExecBRDeleteTriggers(EState *estate, ResultRelInfo *relinfo,
 	}
 skip:
 	if (result)
-		result = sepgsqlExecDelete(trigtuple,
-								   relinfo->ri_RelationDesc,
-								   relinfo->ri_projectReturning);
+		sepgsqlExecDelete(trigtuple,
+						  relinfo->ri_RelationDesc,
+						  relinfo->ri_projectReturning);
 	heap_freetuple(trigtuple);
 
 	return result;
@@ -1706,13 +1706,11 @@ ExecBRUpdateTriggers(EState *estate, ResultRelInfo *relinfo,
 			break;
 	}
 skip:
-	oldtuple = newtuple;
-	newtuple = sepgsqlExecUpdate(newtuple,
-								 trigtuple,
-								 relinfo->ri_RelationDesc,
-								 relinfo->ri_projectReturning);
-	if (oldtuple != newtuple && oldtuple != intuple)
-		heap_freetuple(oldtuple);
+	if (newtuple)
+		sepgsqlExecUpdate(newtuple,
+						  trigtuple,
+						  relinfo->ri_RelationDesc,
+						  relinfo->ri_projectReturning);
 
 	heap_freetuple(trigtuple);
 	return newtuple;

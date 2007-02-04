@@ -8,7 +8,7 @@ ubdir = src/backend/security
 top_builddir = ../../..
 include $(top_builddir)/src/Makefile.global
 
-OBJS := sepgsql.o bootstrap.o rewrite.o verify.o trigger.o sqlfunc.o \
+OBJS := sepgsql.o bootstrap.o rewrite.o verify.o check_perms.o \
 	database.o relation.o procedure.o copy.o
 
 all: SUBSYS.o

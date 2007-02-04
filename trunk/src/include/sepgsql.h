@@ -170,9 +170,9 @@ extern void sepgsqlVerifyQueryList(List *queryList);
 /* SE-PostgreSQL hard-coded trigger functions */
 extern HeapTuple sepgsqlExecInsert(HeapTuple newtup, MemoryContext mcontext,
 								   Relation rel, ProjectionInfo *retProj);
-extern HeapTuple sepgsqlExecUpdate(HeapTuple newtup, HeapTuple oldtup,
-								   Relation rel, ProjectionInfo *retProj);
-extern bool sepgsqlExecDelete(HeapTuple newtup,
+extern void sepgsqlExecUpdate(HeapTuple newtup, HeapTuple oldtup,
+							  Relation rel, ProjectionInfo *retProj);
+extern void sepgsqlExecDelete(HeapTuple newtup,
 							  Relation rel, ProjectionInfo *retProj);
 
 /* CREATE/ALTER/DROP DATABASE statement related */

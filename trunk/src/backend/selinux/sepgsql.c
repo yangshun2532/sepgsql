@@ -420,7 +420,7 @@ int sepgsql_avc_permission(psid ssid, psid tsid, uint16 tclass, uint32 perms, ch
 	denied = perms & ~lavd.allowed;
 	if ((!perms || denied) && avc_shmem->enforcing) {
 		errno = EACCES;
-		rc = -1;
+		rc = 1;
 	}
 	LWLockRelease(avc_shmem->lock);
 	if (audit)
@@ -466,6 +466,12 @@ psid sepgsql_avc_relabelcon(psid ssid, psid tsid, uint16 tclass)
  *
  * sepgsql_psid_to_context() returns a security context related to the psid.
  *   The returned string should be release by pfree().
+ *
+ * psid_in()
+ * psid_out()
+ * text_to_psid()
+ * psid_to_text()
+ *
  */
 psid sepgsql_context_to_psid(char *context)
 {
@@ -540,6 +546,118 @@ bool sepgsql_check_context(char *context)
 	return (security_check_context_raw(context) == 0 ? true : false);
 }
 
+/* translate a raw formatted context into mcstrans'ed one */
+static char *__psid_raw_to_trans_context(char *raw_context)
+{
+	security_context_t context;
+	char *result;
+
+	if (selinux_raw_to_trans_context(raw_context, &context))
+		selerror("could not translate MLS label");
+	PG_TRY();
+	{
+		result = pstrdup(context);
+	}
+	PG_CATCH();
+	{
+		freecon(context);
+		PG_RE_THROW();
+	}
+	PG_END_TRY();
+	freecon(context);
+
+	return result;
+}
+
+/* translate a mcstrans'ed context into raw formatted one */
+static char *__psid_trans_to_raw_context(char *context)
+{
+	security_context_t raw_context;
+	char *result;
+
+	if (selinux_trans_to_raw_context(context, &raw_context))
+		selerror("could not translate MLS label");
+	PG_TRY();
+	{
+		result = pstrdup(raw_context);
+	}
+	PG_CATCH();
+	{
+		freecon(raw_context);
+		PG_RE_THROW();
+	}
+	PG_END_TRY();
+	freecon(raw_context);
+
+	return result;
+}
+
+/* psid_in() -- PSID input function */
+Datum
+psid_in(PG_FUNCTION_ARGS)
+{
+	char *context = PG_GETARG_CSTRING(0);
+	psid sid;
+
+	context = __psid_trans_to_raw_context(context);
+	sid = sepgsql_context_to_psid(context);
+
+	PG_RETURN_OID(sid);
+}
+
+/* psid_out() -- PSID output function */
+Datum
+psid_out(PG_FUNCTION_ARGS)
+{
+	psid sid = PG_GETARG_OID(0);
+	char *context;
+
+	context = sepgsql_psid_to_context(sid);
+	context = __psid_raw_to_trans_context(context);
+
+	PG_RETURN_CSTRING(context);
+}
+
+/* text_to_psid() -- PSID cast function */
+Datum
+text_to_psid(PG_FUNCTION_ARGS)
+{
+	text *tmp = PG_GETARG_TEXT_P(0);
+	char *context;
+	psid sid;
+
+	context = VARDATA(tmp);
+	context = __psid_trans_to_raw_context(context);
+	sid = sepgsql_context_to_psid(context);
+
+	PG_RETURN_OID(sid);
+}
+
+/* psid_to_text() -- PSID cast function */
+Datum
+psid_to_text(PG_FUNCTION_ARGS)
+{
+	psid sid = PG_GETARG_OID(0);
+	char *context;
+	text *result;
+
+	context = sepgsql_psid_to_context(sid);
+	context = __psid_raw_to_trans_context(context);
+
+	result = palloc(VARHDRSZ + strlen(context));
+	VARATT_SIZEP(result) = VARHDRSZ + strlen(context);
+	memcpy(VARDATA(result), context, strlen(context));
+
+	PG_RETURN_TEXT_P(result);
+}
+
+/* sepgsql_getcon() -- returns a security context of client */
+Datum
+sepgsql_getcon(PG_FUNCTION_ARGS)
+{
+	PG_RETURN_OID(sepgsqlGetClientPsid());
+}
+
 /* sepgsql_system_getcon() -- obtain the server's context in psid */
 static psid sepgsql_system_getcon()
 {
@@ -586,6 +704,20 @@ static psid sepgsql_system_getpeercon(int sockfd)
 	return ssid;
 }
 
+/*
+ * SE-PostgreSQL core functions
+ *
+ * sepgsqlGetServerPsid() -- obtains server's context
+ * sepgsqlGetClientPsid() -- obtains client's context via getpeercon()
+ * sepgsqlSetClientPsid() -- changes client's context for trusted procedure
+ * sepgsqlInitialize() -- called when initializing 'postgres' includes bootstraping
+ * sepgsqlInitializePostmaster() -- called when initializing 'postmaster'
+ * sepgsqlFinalizePostmaster() -- called when finalizing 'postmaster' to kill
+ *                                policy state monitoring process.
+ * sepgsqlMonitoringPolicyState() -- is implementation of policy state monitoring
+ *                                   process.
+ * 
+ */
 static psid sepgsqlServerPsid = InvalidOid;
 static psid sepgsqlClientPsid = InvalidOid;
 static psid sepgsqlDatabasePsid = InvalidOid;
