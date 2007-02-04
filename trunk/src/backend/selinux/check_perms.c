@@ -71,24 +71,31 @@ static psid __getProcedureContext(Datum procid, Name proname)
 	return procon;
 }
 
-static AttrNumber __getTupleContext(Oid tableoid, TupleDesc tdesc, HeapTuple tuple,
+#define OIDS_ARRAY_MAX  (16)
+static inline Oid __heap_getoid(HeapTuple tuple, AttrNumber attno, TupleDesc tdesc, bool *isnull)
+{
+	return DatumGetObjectId(heap_getattr(tuple, attno, tdesc, isnull));
+}
+
+static AttrNumber __getTupleContext(Oid tableoid,
+									TupleDesc tdesc,
+									HeapTuple tuple,
 									uint16 *p_tclass,
-									Oid *p_db_oid, Oid *p_tbl_oid, Oid *p_pro_oid)
+									Oid *db_oids,
+									Oid *tbl_oids,
+									Oid *pro_oids)
 {
 	AttrNumber attno = 0;
 	uint16 tclass = 0;
-	Oid db_oid = InvalidOid;
-	Oid tbl_oid = InvalidOid;
-    Oid pro_oid = InvalidOid;
+	int db_index = 0;
+	int tbl_index=0;
+	int pro_index = 0;
+	bool isnull;
 
 	switch (tableoid) {
 	case AggregateRelationId: {
-		bool isnull;
-
-		pro_oid = DatumGetObjectId(heap_getattr(tuple,
-												Anum_pg_aggregate_aggfnoid,
-												tdesc,
-												&isnull));
+		/* pg_aggregate */
+		pro_oids[pro_index++] = __heap_getoid(tuple, Anum_pg_aggregate_aggfnoid, tdesc, &isnull);
 		if (isnull)
 			selerror("pg_aggregate.aggfnoid");
 		tclass = SECCLASS_PROCEDURE;
@@ -108,13 +115,9 @@ static AttrNumber __getTupleContext(Oid tableoid, TupleDesc tdesc, HeapTuple tup
 	}
 	case AttributeRelationId: {
 		/* pg_attribute */
-		Datum relid;
-		bool isnull;
-
-		relid = heap_getattr(tuple, Anum_pg_attribute_attrelid, tdesc, &isnull);
+		tbl_oids[tbl_index++] = __heap_getoid(tuple, Anum_pg_attribute_attrelid, tdesc, &isnull);
 		if (isnull)
 			selerror("pg_attribute.attrelid is NULL");
-		tbl_oid = DatumGetObjectId(relid);
 
 		attno = Anum_pg_attribute_attselcon;
 		tclass = SECCLASS_COLUMN;
@@ -139,20 +142,20 @@ static AttrNumber __getTupleContext(Oid tableoid, TupleDesc tdesc, HeapTuple tup
 			if (sepgsqlAttributeIsPsid(tdesc->attrs[attno - 1]))
 				break;
 		}
+		if (attno < 1 || attno > tdesc->natts)
+			attno = 0;
 		break;
 	}
 
 	if (p_tclass)
 		*p_tclass = tclass;
-	if (p_db_oid)
-		*p_db_oid = db_oid;
-	if (p_tbl_oid)
-		*p_tbl_oid = tbl_oid;
-	if (p_pro_oid)
-		*p_pro_oid = pro_oid;
+	if (db_oids)
+		db_oids[db_index] = InvalidOid;
+	if (tbl_oids)
+		tbl_oids[tbl_index] = InvalidOid;
+	if (pro_oids)
+		pro_oids[pro_index] = InvalidOid;
 
-	if (attno < 1 || attno > tdesc->natts)
-		attno = 0;
 	return attno;
 }
 
@@ -175,12 +178,14 @@ static int __sepgsql_tuple_perm(Oid relid, HeapTupleHeader rec, uint32 perms, bo
 {
 	TupleDesc tdesc;
 	HeapTupleData tuple;
-	psid db_oid, tbl_oid, pro_oid;
+	Oid db_oids[OIDS_ARRAY_MAX];
+	Oid tbl_oids[OIDS_ARRAY_MAX];
+	Oid pro_oids[OIDS_ARRAY_MAX];
 	uint32 attr_perms;
 	AttrNumber attno;
 	uint16 tclass;
 	char *audit;
-	int rc = 0;
+	int i, rc = 0;
 
 	/* build a temporary tuple */
 	tdesc = lookup_rowtype_tupdesc(HeapTupleHeaderGetTypeId(rec),
@@ -191,8 +196,8 @@ static int __sepgsql_tuple_perm(Oid relid, HeapTupleHeader rec, uint32 perms, bo
 	tuple.t_data = rec;
 
 	/* obtain tclass and additional meta info */
-	attno = __getTupleContext(relid, tdesc, &tuple,
-							  &tclass, &db_oid, &tbl_oid, &pro_oid);
+	attno = __getTupleContext(relid, tdesc, &tuple, &tclass,
+							  db_oids, tbl_oids, pro_oids);
 
 	attr_perms = 0;
 	if (perms & TUPLE__SELECT)
@@ -200,31 +205,40 @@ static int __sepgsql_tuple_perm(Oid relid, HeapTupleHeader rec, uint32 perms, bo
 	if (perms & (TUPLE__UPDATE | TUPLE__INSERT | TUPLE__DELETE))
 		attr_perms |= COMMON_DATABASE__SETATTR;
 
-	if (db_oid != InvalidOid) {
+	/* check database:{getattr setattr}, if necessary */
+	for (i=0; db_oids[i] != InvalidOid; i++) {
 		NameData db_name;
-		psid db_con = __getDatabaseContext(db_oid, &db_name);
-
-		rc += sepgsql_avc_permission(sepgsqlGetClientPsid(), db_con,
-									 SECCLASS_DATABASE, attr_perms, &audit);
+		rc += sepgsql_avc_permission(sepgsqlGetClientPsid(),
+									 __getDatabaseContext(db_oids[i], &db_name),
+									 SECCLASS_DATABASE,
+									 attr_perms,
+									 &audit);
 		__sepgsql_tuple_perm_audit(rc, audit, NameStr(db_name), is_abort);
 	}
 
-	if (tbl_oid != InvalidOid) {
+	/* check table:{getattr setattr}, if necessary */
+	for (i=0; tbl_oids[i] != InvalidOid; i++) {
 		NameData tbl_name;
-		psid tbl_con = __getRelationContext(tbl_oid, &tbl_name);
-		rc += sepgsql_avc_permission(sepgsqlGetClientPsid(), tbl_con,
-									 SECCLASS_TABLE, attr_perms, &audit);
+		rc += sepgsql_avc_permission(sepgsqlGetClientPsid(),
+									 __getRelationContext(tbl_oids[i], &tbl_name),
+									 SECCLASS_TABLE,
+									 attr_perms,
+									 &audit);
 		__sepgsql_tuple_perm_audit(rc, audit, NameStr(tbl_name), is_abort);
 	}
 
-	if (pro_oid != InvalidOid) {
+	/* check procedure:{getattr setattr}, if necessary */
+	for (i=0; pro_oids[i] != InvalidOid; i++) {
 		NameData pro_name;
-		psid pro_con = __getProcedureContext(pro_oid, &pro_name);
-		rc += sepgsql_avc_permission(sepgsqlGetClientPsid(), pro_con,
-									 SECCLASS_PROCEDURE, attr_perms, &audit);
+		rc += sepgsql_avc_permission(sepgsqlGetClientPsid(),
+									 __getProcedureContext(pro_oids[i], &pro_name),
+									 SECCLASS_PROCEDURE,
+									 attr_perms,
+									 &audit);
 		__sepgsql_tuple_perm_audit(rc, audit, NameStr(pro_name), is_abort);
 	}
 
+	/* check tuple:{...}, if necessary */
 	if (attno > 0 && attno <= tdesc->natts) {
 		psid tuple_con;
 		bool isnull;
@@ -281,43 +295,50 @@ sepgsql_tuple_perm_abort(PG_FUNCTION_ARGS)
 HeapTuple sepgsqlExecInsert(HeapTuple newtup, MemoryContext mcontext,
 							Relation rel, ProjectionInfo *retProj)
 {
-	psid db_oid, tbl_oid, pro_oid;
+	Oid db_oids[OIDS_ARRAY_MAX];
+	Oid tbl_oids[OIDS_ARRAY_MAX];
+	Oid pro_oids[OIDS_ARRAY_MAX];
 	uint16 tclass;
 	uint32 perms;
 	AttrNumber attno;
 	char *audit;
-	int rc;
+	int i, rc;
 
 	attno = __getTupleContext(RelationGetRelid(rel),
 							  RelationGetDescr(rel),
 							  newtup,
 							  &tclass,
-							  &db_oid, &tbl_oid, &pro_oid);
+							  db_oids,
+							  tbl_oids,
+							  pro_oids);
 
-	if (db_oid != InvalidOid) {
+	/* check database:{setattr}, if necessary */
+	for (i=0; db_oids[i] != InvalidOid; i++) {
 		NameData db_name;
 		rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
-									__getDatabaseContext(db_oid, &db_name),
+									__getDatabaseContext(db_oids[i], &db_name),
 									SECCLASS_DATABASE,
 									DATABASE__SETATTR,
 									&audit);
 		sepgsql_audit(rc, audit, NameStr(db_name));
 	}
 
-	if (tbl_oid != InvalidOid) {
+	/* check table:{setattr}, if necessary */
+	for (i=0; tbl_oids[i] != InvalidOid; i++) {
 		NameData tbl_name;
 		rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
-									__getRelationContext(tbl_oid, &tbl_name),
+									__getRelationContext(tbl_oids[i], &tbl_name),
 									SECCLASS_TABLE,
 									TABLE__SETATTR,
 									&audit);
 		sepgsql_audit(rc, audit, NameStr(tbl_name));
 	}
 
-	if (pro_oid != InvalidOid) {
+	/* check procedure:{setattr}, if necessary */
+	for (i=0; pro_oids[i] != InvalidOid; i++) {
 		NameData pro_name;
 		rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
-									__getProcedureContext(pro_oid, &pro_name),
+									__getProcedureContext(pro_oids[i], &pro_name),
 									SECCLASS_PROCEDURE,
 									PROCEDURE__SETATTR,
 									&audit);
@@ -441,40 +462,38 @@ HeapTuple sepgsqlExecInsert(HeapTuple newtup, MemoryContext mcontext,
 void sepgsqlExecUpdate(HeapTuple newtup, HeapTuple oldtup,
 					   Relation rel, ProjectionInfo *retProj)
 {
-	psid new_db_oid, new_tbl_oid, new_pro_oid;
-	psid old_db_oid, old_tbl_oid, old_pro_oid;
+	Oid new_db_oids[OIDS_ARRAY_MAX],  old_db_oids[OIDS_ARRAY_MAX];
+	Oid new_tbl_oids[OIDS_ARRAY_MAX], old_tbl_oids[OIDS_ARRAY_MAX];
+	Oid new_pro_oids[OIDS_ARRAY_MAX], old_pro_oids[OIDS_ARRAY_MAX];
     uint16 tclass, _tclass;
 	AttrNumber attno, _attno;
     uint32 perms;
 	char *audit;
-	int rc;
+	int i, rc;
 
 	attno = __getTupleContext(RelationGetRelid(rel),
                               RelationGetDescr(rel),
                               newtup,
                               &tclass,
-							  &new_db_oid, &new_tbl_oid, &new_pro_oid);
+							  new_db_oids,
+							  new_tbl_oids,
+							  new_pro_oids);
 
 	_attno = __getTupleContext(RelationGetRelid(rel),
 							   RelationGetDescr(rel),
 							   oldtup,
 							   &_tclass,
-							   &old_db_oid, &old_tbl_oid, &old_pro_oid);
+							   old_db_oids,
+							   old_tbl_oids,
+							   old_pro_oids);
 	Assert(tclass == _tclass && attno == _attno);
 
-	if (old_db_oid != InvalidOid) {
-		NameData db_name;
-		Assert(old_db_oid != InvalidOid && new_db_oid != InvalidOid);
-		rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
-									__getDatabaseContext(old_db_oid, &db_name),
-									SECCLASS_DATABASE,
-									DATABASE__SETATTR,
-									&audit);
-		sepgsql_audit(rc, audit, NameStr(db_name));
-
-		if (old_db_oid != new_db_oid) {
+	for (i=0; new_db_oids[i] != InvalidOid; i++) {
+		Assert(old_db_oids[i] != InvalidOid);
+		if (new_db_oids[i] != old_db_oids[i]) {
+			NameData db_name;
 			rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
-										__getDatabaseContext(new_db_oid, &db_name),
+										__getDatabaseContext(new_db_oids[i], &db_name),
 										SECCLASS_DATABASE,
 										DATABASE__SETATTR,
 										&audit);
@@ -482,19 +501,12 @@ void sepgsqlExecUpdate(HeapTuple newtup, HeapTuple oldtup,
 		}
 	}
 
-	if (old_tbl_oid != InvalidOid) {
-		NameData tbl_name;
-		Assert(old_tbl_oid != InvalidOid && new_tbl_oid != InvalidOid);
-		rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
-									__getRelationContext(old_tbl_oid, &tbl_name),
-									SECCLASS_TABLE,
-									TABLE__SETATTR,
-									&audit);
-		sepgsql_audit(rc, audit, NameStr(tbl_name));
-
-		if (old_tbl_oid != new_tbl_oid) {
+	for (i=0; new_tbl_oids[i] != InvalidOid; i++) {
+		Assert(old_tbl_oids[i] != InvalidOid);
+		if (new_tbl_oids[i] != old_tbl_oids[i]) {
+			NameData tbl_name;
 			rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
-										__getRelationContext(new_tbl_oid, &tbl_name),
+										__getRelationContext(new_tbl_oids[i], &tbl_name),
 										SECCLASS_TABLE,
 										TABLE__SETATTR,
 										&audit);
@@ -502,19 +514,12 @@ void sepgsqlExecUpdate(HeapTuple newtup, HeapTuple oldtup,
 		}
 	}
 
-	if (old_pro_oid != InvalidOid) {
-		NameData pro_name;
-		Assert(old_pro_oid != InvalidOid && new_pro_oid != InvalidOid);
-		rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
-									__getProcedureContext(old_pro_oid, &pro_name),
-									SECCLASS_PROCEDURE,
-									PROCEDURE__SETATTR,
-									&audit);
-		sepgsql_audit(rc, audit, NameStr(pro_name));
-
-		if (old_pro_oid != new_pro_oid) {
+	for (i=0; new_pro_oids[i] != InvalidOid; i++) {
+		Assert(old_pro_oids[i] != InvalidOid);
+		if (new_pro_oids[i] != old_pro_oids[i]) {
+			NameData pro_name;
 			rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
-										__getProcedureContext(new_pro_oid, &pro_name),
+										__getProcedureContext(new_pro_oids[i], &pro_name),
 										SECCLASS_PROCEDURE,
 										PROCEDURE__SETATTR,
 										&audit);
