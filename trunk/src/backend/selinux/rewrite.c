@@ -69,15 +69,15 @@ static List *addEvalPgAttribtue(List *selist, Oid relid, bool inh, AttrNumber at
 	SEvalItem *se;
 
 	foreach (l, selist) {
-        se = (SEvalItem *) lfirst(l);
-        if (se->tclass == SECCLASS_COLUMN
-            && se->a.relid == relid
-			&& se->a.inh == attno
+		se = (SEvalItem *) lfirst(l);
+		if (se->tclass == SECCLASS_COLUMN
+			&& se->a.relid == relid
+			&& se->a.inh == inh
 			&& se->a.attno == attno) {
             se->perms |= perms;
-            return selist;
-        }
-    }
+			return selist;
+		}
+	}
 
     se = makeNode(SEvalItem);
     se->tclass = SECCLASS_COLUMN;
@@ -293,7 +293,7 @@ static List *rewriteRteRelation(List *selist, Query *query, int rtindex, Node **
 		perms |= TUPLE__INSERT;
 	if (rte->requiredPerms & RTEMARK_UPDATE)
 		perms |= TUPLE__UPDATE;
-	if (rte->requiredPerms & RTEMARK_UPDATE)
+	if (rte->requiredPerms & RTEMARK_DELETE)
 		perms |= TUPLE__DELETE;
 
 	/* append sepgsql_tuple_perm(relid, record, perms) */
