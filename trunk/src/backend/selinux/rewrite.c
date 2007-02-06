@@ -308,7 +308,7 @@ static List *rewriteRteRelation(List *selist, Query *query, int rtindex, Node **
 		v1 = makeVar(rtindex, TableOidAttributeNumber, OIDOID, -1, 0);
 		
 		/* 2nd arg : RECORD of the target relation */
-		v2 = makeVar(rtindex, 0, RECORDOID, -1, 0);
+		v2 = makeVar(rtindex, 0, RelationGetForm(rel)->reltype, -1, 0);
 
 		/* 3rd arg : permission set */
 		c3 = makeConst(INT4OID, sizeof(int32), Int32GetDatum(perms), false, true);
