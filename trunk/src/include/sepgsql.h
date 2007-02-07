@@ -218,6 +218,7 @@ extern Datum psid_to_text(PG_FUNCTION_ARGS);
 extern Datum sepgsql_getcon(PG_FUNCTION_ARGS);
 extern Datum sepgsql_tuple_perm(PG_FUNCTION_ARGS);
 extern Datum sepgsql_tuple_perm_abort(PG_FUNCTION_ARGS);
+extern bool sepgsql_tuple_perm_copyto(Relation rel, HeapTuple tuple, uint32 perms);
 
 #else
 /* dummy enhanced selinux core implementation */

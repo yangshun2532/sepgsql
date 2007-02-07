@@ -75,12 +75,6 @@ static psid __getProcedureContext(Datum procid, Name proname)
 }
 
 #define OIDS_ARRAY_MAX  (16)
-static inline Oid __heap_getoid(HeapTuple tuple, AttrNumber attno,
-								TupleDesc tdesc, bool *isnull)
-{
-	return DatumGetObjectId(heap_getattr(tuple, attno, tdesc, isnull));
-}
-
 static AttrNumber __getTupleContext(Oid tableoid,
 									TupleDesc tdesc,
 									HeapTuple tuple,
@@ -100,7 +94,7 @@ static AttrNumber __getTupleContext(Oid tableoid,
 	case AggregateRelationId: {
 		/* pg_aggregate */
 		pro_oids[pro_index++] =
-			__heap_getoid(tuple, Anum_pg_aggregate_aggfnoid, tdesc, &isnull);
+			DatumGetObjectId(heap_getattr(tuple, Anum_pg_aggregate_aggfnoid, tdesc, &isnull));
 		if (isnull)
 			selerror("pg_aggregate.aggfnoid");
 		tclass = SECCLASS_PROCEDURE;
@@ -121,7 +115,7 @@ static AttrNumber __getTupleContext(Oid tableoid,
 	case AttributeRelationId: {
 		/* pg_attribute */
 		tbl_oids[tbl_index++] =
-			__heap_getoid(tuple, Anum_pg_attribute_attrelid, tdesc, &isnull);
+			DatumGetObjectId(heap_getattr(tuple, Anum_pg_attribute_attrelid, tdesc, &isnull));
 		if (isnull)
 			selerror("pg_attribute.attrelid is NULL");
 
@@ -180,10 +174,8 @@ static void __sepgsql_tuple_perm_audit(int rc, char *audit, char *objname, bool 
 	}
 }
 
-static int __sepgsql_tuple_perm(Oid relid, HeapTupleHeader rec, uint32 perms, bool is_abort)
+static int ____sepgsql_tuple_perm(TupleDesc tdesc, HeapTuple tuple, uint32 perms, bool is_abort)
 {
-	TupleDesc tdesc;
-	HeapTupleData tuple;
 	Oid db_oids[OIDS_ARRAY_MAX];
 	Oid tbl_oids[OIDS_ARRAY_MAX];
 	Oid pro_oids[OIDS_ARRAY_MAX];
@@ -193,17 +185,9 @@ static int __sepgsql_tuple_perm(Oid relid, HeapTupleHeader rec, uint32 perms, bo
 	char *audit;
 	int i, rc = 0;
 
-	/* build a temporary tuple */
-	tdesc = lookup_rowtype_tupdesc(HeapTupleHeaderGetTypeId(rec),
-								   HeapTupleHeaderGetTypMod(rec));
-	tuple.t_len = HeapTupleHeaderGetDatumLength(rec);
-	ItemPointerSetInvalid(&(tuple.t_self));
-	tuple.t_tableOid = relid;
-	tuple.t_data = rec;
-
 	/* obtain tclass and additional meta info */
-	attno = __getTupleContext(relid, tdesc, &tuple, &tclass,
-							  db_oids, tbl_oids, pro_oids);
+	attno = __getTupleContext(tuple->t_tableOid, tdesc, tuple,
+							  &tclass, db_oids, tbl_oids, pro_oids);
 
 	attr_perms = 0;
 	if (perms & TUPLE__SELECT)
@@ -259,7 +243,7 @@ static int __sepgsql_tuple_perm(Oid relid, HeapTupleHeader rec, uint32 perms, bo
 
 			perms = __perms;
 		}
-		tuple_con = DatumGetObjectId(heap_getattr(&tuple, attno, tdesc, &isnull));
+		tuple_con = DatumGetObjectId(heap_getattr(tuple, attno, tdesc, &isnull));
 		if (isnull)
 			selerror("'%s' is NULL", NameStr(tdesc->attrs[attno - 1]->attname));
 
@@ -267,6 +251,26 @@ static int __sepgsql_tuple_perm(Oid relid, HeapTupleHeader rec, uint32 perms, bo
 									 tuple_con, tclass, perms, &audit);
 		__sepgsql_tuple_perm_audit(rc, audit, NULL, is_abort);
 	}
+
+	return rc;
+}
+
+static int __sepgsql_tuple_perm(Oid relid, HeapTupleHeader rec, uint32 perms, bool is_abort)
+{
+	HeapTupleData tuple;
+	TupleDesc tdesc;
+	int rc;
+
+	/* build a temporary tuple */
+	tdesc = lookup_rowtype_tupdesc(HeapTupleHeaderGetTypeId(rec),
+								   HeapTupleHeaderGetTypMod(rec));
+	tuple.t_len = HeapTupleHeaderGetDatumLength(rec);
+	ItemPointerSetInvalid(&(tuple.t_self));
+	tuple.t_tableOid = relid;
+	tuple.t_data = rec;
+
+	rc = ____sepgsql_tuple_perm(tdesc, &tuple, perms, is_abort);
+
 	ReleaseTupleDesc(tdesc);
 
 	return rc;
@@ -275,9 +279,9 @@ static int __sepgsql_tuple_perm(Oid relid, HeapTupleHeader rec, uint32 perms, bo
 Datum
 sepgsql_tuple_perm(PG_FUNCTION_ARGS)
 {
-    Oid relid = PG_GETARG_OID(0);
-    HeapTupleHeader rec = PG_GETARG_HEAPTUPLEHEADER(1);
-    uint32 perms = PG_GETARG_UINT32(2);
+	Oid relid = PG_GETARG_OID(0);
+	HeapTupleHeader rec = PG_GETARG_HEAPTUPLEHEADER(1);
+	uint32 perms = PG_GETARG_UINT32(2);
     int rc;
 
 	rc = __sepgsql_tuple_perm(relid, rec, perms, false);
@@ -296,6 +300,14 @@ sepgsql_tuple_perm_abort(PG_FUNCTION_ARGS)
 	rc = __sepgsql_tuple_perm(relid, rec, perms, true);
 
 	PG_RETURN_BOOL(rc == 0);
+}
+
+bool
+sepgsql_tuple_perm_copyto(Relation rel, HeapTuple tuple, uint32 perms)
+{
+	int rc = ____sepgsql_tuple_perm(RelationGetDescr(rel), tuple, perms, false);
+
+	return (rc == 0 ? true : false);
 }
 
 HeapTuple sepgsqlExecInsert(HeapTuple newtup, MemoryContext mcontext,

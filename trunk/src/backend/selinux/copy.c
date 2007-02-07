@@ -51,22 +51,5 @@ void sepgsqlDoCopy(Relation rel, List *attnumlist, bool is_from)
 
 bool sepgsqlCopyTo(Relation rel, HeapTuple tuple)
 {
-	TupleDesc tupDesc;
-	Datum relid, rec, perms, result;
-	bool isnull;
-
-	tupDesc = RelationGetDescr(rel);
-
-	/* 1st argument: <table>.tableoid */
-	relid = heap_getattr(tuple, TableOidAttributeNumber,
-						 tupDesc, &isnull);
-	/* 2nd argument: HeapTupleHeader */
-	rec = PointerGetDatum(&tuple->t_data);
-	/* 3rd argument: required permission for tuple */
-	perms = UInt32GetDatum(TUPLE__SELECT);
-
-	result = DirectFunctionCall3(sepgsql_tuple_perm,
-								 relid, rec, perms);
-
-	return DatumGetBool(result) ? true : false;
+	return sepgsql_tuple_perm_copyto(rel, tuple, TUPLE__SELECT);
 }
