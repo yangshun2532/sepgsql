@@ -14,6 +14,7 @@
 #-------------------------------------------------------------------------
 
 CMDNAME=`basename $0`
+PG_CONFIG="`dirname $0`/../../include/pg_config.h"
 
 : ${AWK='awk'}
 
@@ -68,14 +69,13 @@ TABLEFILE=fmgrtab.c
 
 trap 'echo "Caught signal." ; cleanup ; exit 1' 1 2 15
 
-
 #
 # Generate the file containing raw pg_proc tuple data
 # (but only for "internal" language procedures...).
 #
 # Note assumption here that prolang == $5 and INTERNALlanguageId == 12.
 #
-egrep '^DATA' $INFILE | \
+cat $PG_CONFIG $INFILE | cpp | egrep '^DATA' | \
 sed 	-e 's/^.*OID[^=]*=[^0-9]*//' \
 	-e 's/(//g' \
 	-e 's/[ 	]*).*$//' | \

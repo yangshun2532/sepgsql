@@ -56,6 +56,7 @@
 #include "commands/defrem.h"
 #include "nodes/makefuncs.h"
 #include "parser/gramparse.h"
+#include "sepgsql.h"
 #include "storage/lmgr.h"
 #include "utils/date.h"
 #include "utils/datetime.h"
@@ -1526,7 +1527,7 @@ alter_table_cmd:
 			| IDENT '=' Sconst
 				{
 					AlterTableCmd *n;
-					if (strcmp($1, "context") != 0)
+					if (strcmp($1, "context") != 0 || sepgsqlIsEnabled())
 						yyerror("syntax error1");
 
 					n = makeNode(AlterTableCmd);
@@ -1538,7 +1539,7 @@ alter_table_cmd:
 			| ALTER opt_column ColId IDENT '=' Sconst
 				{
 					AlterTableCmd *n;
-					if (strcmp($4, "context") != 0)
+					if (strcmp($4, "context") != 0 || sepgsqlIsEnabled())
 						yyerror("syntax error2");
 
 					n = makeNode(AlterTableCmd);
