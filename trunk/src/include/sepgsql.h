@@ -183,7 +183,6 @@ extern void sepgsqlAlterDatabase(Form_pg_database pgdat);
 extern psid sepgsqlAlterDatabaseContext(Form_pg_database pgdat, char *newcon);
 
 /* CREATE/ALTER/DROP TABLE statement related */
-extern Query *sepgsqlProxyCreateTable(Query *query);
 extern TupleDesc sepgsqlCreateRelation(Oid relid, Oid relns, char relkind, TupleDesc tdesc);
 extern TupleDesc sepgsqlCloneRelation(Oid relid, Oid relns, char relkind, TupleDesc tdesc);
 extern void sepgsqlPutRelationContext(Form_pg_class pg_class);

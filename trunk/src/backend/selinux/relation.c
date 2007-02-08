@@ -25,11 +25,6 @@
 static psid gentbl_psid = InvalidOid;
 static psid gensysatt_psid[-FirstLowInvalidHeapAttributeNumber];
 
-extern Query *sepgsqlProxyCreateTable(Query *query)
-{
-	return query;
-}
-
 TupleDesc sepgsqlCreateRelation(Oid relid, Oid relns, char relkind, TupleDesc tdesc)
 {
 	Form_pg_attribute pg_attr;
