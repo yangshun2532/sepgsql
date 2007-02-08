@@ -17,33 +17,6 @@
 #include <selinux/flask.h>
 #include <selinux/av_permissions.h>
 
-Query *sepgsqlProxyCreateProcedure(Query *query)
-{
-	psid ppsid;
-	int rc;
-	char *audit;
-
-	/* compute the context of newly created procedure */
-	ppsid = sepgsql_avc_createcon(sepgsqlGetClientPsid(),
-								  sepgsqlGetDatabasePsid(),
-								  SECCLASS_PROCEDURE);
-
-	/* 1. check database:create_obj permission */
-	rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
-								sepgsqlGetDatabasePsid(),
-								SECCLASS_DATABASE,
-								DATABASE__CREATE_OBJ, &audit);
-	sepgsql_audit(rc, audit, NULL);
-
-	/* 2. check procedure:create permission */
-	rc = sepgsql_avc_permission(sepgsqlGetClientPsid(),
-								ppsid, SECCLASS_PROCEDURE,
-								PROCEDURE__CREATE, &audit);
-	sepgsql_audit(rc, audit, NULL);
-
-	return query;
-}
-
 void sepgsqlCreateProcedure(Datum *values, char *nulls)
 {
 	psid ppsid = sepgsql_avc_createcon(sepgsqlGetClientPsid(),
