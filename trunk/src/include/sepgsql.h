@@ -298,7 +298,7 @@ extern void sepgsqlAlterTableSetColumnContext(Relation rel, char *name, Value *n
  */
 static inline void sepgsqlCreateDatabase(Datum *values, char *nulls) {
 	values[Anum_pg_database_datselcon - 1] = InvalidOid;
-	nulls[Anum_pg_database_datselcon - 1] = 'n';
+	nulls[Anum_pg_database_datselcon - 1] = ' ';
 }
 #define sepgsqlDropDatabase(a)
 #define sepgsqlAlterDatabase(a)
@@ -309,7 +309,7 @@ static inline void sepgsqlCreateDatabase(Datum *values, char *nulls) {
  */
 static inline void sepgsqlCreateProcedure(Datum *values, char *nulls) {
 	values[Anum_pg_proc_proselcon - 1] = InvalidOid;
-	nulls[Anum_pg_proc_proselcon - 1] = 'n';
+	nulls[Anum_pg_proc_proselcon - 1] = ' ';
 }
 #define sepgsqlAlterProcedure(a,b)
 #define sepgsqlExecInitExpr(a,b)

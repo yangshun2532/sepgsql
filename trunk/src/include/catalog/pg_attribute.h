@@ -301,7 +301,7 @@ DATA(insert ( 1247 tableoid			26 0  4  -7 0 -1 -1 t p i t f f t 0));
 { 1255, {"provolatile"},		18, -1, 1,	9, 0, -1, -1, true, 'p', 'c', true, false, false, true, 0 }, \
 { 1255, {"pronargs"},			21, -1, 2, 10, 0, -1, -1, true, 'p', 's', true, false, false, true, 0 }, \
 { 1255, {"prorettype"},			26, -1, 4, 11, 0, -1, -1, true, 'p', 'i', true, false, false, true, 0 }, \
-{ 1255, {"proselcon"},		  3406, -1, 4, 12, 0, -1, -1, true, 'p', 'i', true, false, false, true, 0 }, \
+{ 1255, {"proselcon"},		  3403, -1, 4, 12, 0, -1, -1, true, 'p', 'i', true, false, false, true, 0 }, \
 { 1255, {"proargtypes"},		30, -1, -1, 12, 1, -1, -1, false, 'p', 'i', true, false, false, true, 0 }, \
 { 1255, {"proallargtypes"},   1028, -1, -1, 13, 1, -1, -1, false, 'x', 'i', false, false, false, true, 0 }, \
 { 1255, {"proargmodes"},	  1002, -1, -1, 14, 1, -1, -1, false, 'x', 'i', false, false, false, true, 0 }, \
