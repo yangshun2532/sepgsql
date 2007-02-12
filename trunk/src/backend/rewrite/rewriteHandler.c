@@ -23,7 +23,7 @@
 #include "parser/parsetree.h"
 #include "rewrite/rewriteHandler.h"
 #include "rewrite/rewriteManip.h"
-#include "sepgsql.h"
+#include "security/sepgsql.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
 
@@ -1841,7 +1841,7 @@ QueryRewrite(Query *parsetree)
 		lastInstead->canSetTag = true;
 
 	/* SE-PostgreSQL Query rewrite handler */
-	results = sepgsqlRewriteQueryList(results);
+	results = sepgsqlProxyQueryList(results);
 
 	return results;
 }

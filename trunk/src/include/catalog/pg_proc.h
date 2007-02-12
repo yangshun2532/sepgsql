@@ -50,7 +50,6 @@ CATALOG(pg_proc,1255) BKI_BOOTSTRAP
 	char		provolatile;	/* see PROVOLATILE_ categories below */
 	int2		pronargs;		/* number of arguments */
 	Oid			prorettype;		/* OID of result type */
-	psid		proselcon;		/* security context of the procedure */
 
 	/* VARIABLE LENGTH FIELDS: */
 	oidvector	proargtypes;	/* parameter types (excludes OUT params) */
@@ -73,7 +72,7 @@ typedef FormData_pg_proc *Form_pg_proc;
  *		compiler constants for pg_proc
  * ----------------
  */
-#define Natts_pg_proc					19
+#define Natts_pg_proc					18
 #define Anum_pg_proc_proname			1
 #define Anum_pg_proc_pronamespace		2
 #define Anum_pg_proc_proowner			3
@@ -85,14 +84,13 @@ typedef FormData_pg_proc *Form_pg_proc;
 #define Anum_pg_proc_provolatile		9
 #define Anum_pg_proc_pronargs			10
 #define Anum_pg_proc_prorettype			11
-#define Anum_pg_proc_proselcon			12
-#define Anum_pg_proc_proargtypes		13
-#define Anum_pg_proc_proallargtypes		14
-#define Anum_pg_proc_proargmodes		15
-#define Anum_pg_proc_proargnames		16
-#define Anum_pg_proc_prosrc				17
-#define Anum_pg_proc_probin				18
-#define Anum_pg_proc_proacl				19
+#define Anum_pg_proc_proargtypes		12
+#define Anum_pg_proc_proallargtypes		13
+#define Anum_pg_proc_proargmodes		14
+#define Anum_pg_proc_proargnames		15
+#define Anum_pg_proc_prosrc				16
+#define Anum_pg_proc_probin				17
+#define Anum_pg_proc_proacl				18
 
 /* ----------------
  *		initial contents of pg_proc
@@ -3977,15 +3975,13 @@ DATA(insert OID = 2892 (  pg_advisory_unlock_all		PGNSP PGUID 12 f f t f v 0 227
 DESCR("release all advisory locks");
 
 /* Security Enhanced PostgreSQL related function */
-#ifdef HAVE_SELINUX
-DATA(insert OID = 3404 ( psid_in			PGNSP PGUID 12 f f t f i 1 3403 "2275" _null_ _null_ _null_ psid_in - _null_ ));
-DATA(insert OID = 3405 ( psid_out			PGNSP PGUID 12 f f t f i 1 2275 "3403" _null_ _null_ _null_ psid_out - _null_ ));
-DATA(insert OID = 3406 ( text_to_psid		PGNSP PGUID 12 f f t f i 1 25 "3403" _null_ _null_ _null_ text_to_psid - _null_ ));
-DATA(insert OID = 3407 ( psid_to_text		PGNSP PGUID 12 f f t f i 1 3403 "25" _null_ _null_ _null_ psid_to_text - _null_ ));
-DATA(insert OID = 3408 ( sepgsql_getcon		PGNSP PGUID 12 f f t f v 0 3403 "" _null_ _null_ _null_ sepgsql_getcon - _null_ ));
-DATA(insert OID = 3409 ( sepgsql_tuple_perm	PGNSP PGUID 12 f f t f v 3 16 "26 2249 23" _null_ _null_ _null_ sepgsql_tuple_perm - _null_ ));
-DATA(insert OID = 3410 ( sepgsql_tuple_perm_abort	PGNSP PGUID 12 f f t f v 3 16 "26 2249 23" _null_ _null_ _null_ sepgsql_tuple_perm_abort - _null_ ));
-#endif
+DATA(insert OID = 3404 ( psid_in						 PGNSP PGUID 12 f f t f i 1 3403 "2275" _null_ _null_ _null_ psid_in - _null_ ));
+DATA(insert OID = 3405 ( psid_out						 PGNSP PGUID 12 f f t f i 1 2275 "3403" _null_ _null_ _null_ psid_out - _null_ ));
+DATA(insert OID = 3406 ( text_to_psid					 PGNSP PGUID 12 f f t f i 1 25 "3403" _null_ _null_ _null_ text_to_psid - _null_ ));
+DATA(insert OID = 3407 ( psid_to_text					 PGNSP PGUID 12 f f t f i 1 3403 "25" _null_ _null_ _null_ psid_to_text - _null_ ));
+DATA(insert OID = 3408 ( sepgsql_getcon					 PGNSP PGUID 12 f f t f v 0 3403 "" _null_ _null_ _null_ sepgsql_getcon - _null_ ));
+DATA(insert OID = 3409 ( sepgsql_tuple_perms			 PGNSP PGUID 12 f f t f v 3 16 "26 2249 23" _null_ _null_ _null_ sepgsql_tuple_perms - _null_ ));
+DATA(insert OID = 3410 ( sepgsql_tuple_perms_abort		 PGNSP PGUID 12 f f t f v 3 16 "26 2249 23" _null_ _null_ _null_ sepgsql_tuple_perms_abort - _null_ ));
 
 /*
  * Symbolic values for provolatile column: these indicate whether the result

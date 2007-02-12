@@ -38,7 +38,7 @@
 #include "mb/pg_wchar.h"
 #include "miscadmin.h"
 #include "postmaster/bgwriter.h"
-#include "sepgsql.h"
+#include "security/sepgsql.h"
 #include "storage/freespace.h"
 #include "storage/procarray.h"
 #include "utils/acl.h"
@@ -377,12 +377,12 @@ createdb(const CreatedbStmt *stmt)
 	new_record_nulls[Anum_pg_database_datconfig - 1] = 'n';
 	new_record_nulls[Anum_pg_database_datacl - 1] = 'n';
 
-	sepgsqlCreateDatabase(new_record, new_record_nulls);
-
 	tuple = heap_formtuple(RelationGetDescr(pg_database_rel),
 						   new_record, new_record_nulls);
 
 	HeapTupleSetOid(tuple, dboid);
+
+	sepgsqlCreateDatabase(tuple);
 
 	simple_heap_insert(pg_database_rel, tuple);
 
@@ -620,7 +620,7 @@ dropdb(const char *dbname, bool missing_ok)
 	if (!HeapTupleIsValid(tup))
 		elog(ERROR, "cache lookup failed for database %u", db_id);
 
-	sepgsqlDropDatabase((Form_pg_database) GETSTRUCT(tup));
+	sepgsqlDropDatabase(tup);
 
 	simple_heap_delete(pgdbrel, &tup->t_self);
 
@@ -829,8 +829,6 @@ AlterDatabase(AlterDatabaseStmt *stmt)
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_DATABASE,
 					   stmt->dbname);
 
-	sepgsqlAlterDatabase((Form_pg_database) GETSTRUCT(tuple));
-
 	/*
 	 * Build an updated tuple, perusing the information just obtained
 	 */
@@ -843,16 +841,8 @@ AlterDatabase(AlterDatabaseStmt *stmt)
 		new_record[Anum_pg_database_datconnlimit - 1] = Int32GetDatum(connlimit);
 		new_record_repl[Anum_pg_database_datconnlimit - 1] = 'r';
 	}
-#ifdef HAVE_SELINUX
-	if (dselcon)
-	{
-		psid newcon = sepgsqlAlterDatabaseContext((Form_pg_database) GETSTRUCT(tuple),
-												  strVal(dselcon->arg));
-		new_record[Anum_pg_database_datselcon - 1] = ObjectIdGetDatum(newcon);
-		new_record_repl[Anum_pg_database_datselcon - 1] = 'r';
-	}
-#endif
 
+	sepgsqlAlterDatabase(tuple, dselcon ? strVal(dselcon->arg) : NULL);
 	newtuple = heap_modifytuple(tuple, RelationGetDescr(rel), new_record,
 								new_record_nulls, new_record_repl);
 	simple_heap_update(rel, &tuple->t_self, newtuple);
@@ -912,8 +902,6 @@ AlterDatabaseSet(AlterDatabaseSetStmt *stmt)
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_DATABASE,
 					   stmt->dbname);
 
-	sepgsqlAlterDatabase((Form_pg_database) GETSTRUCT(tuple));
-
 	MemSet(repl_repl, ' ', sizeof(repl_repl));
 	repl_repl[Anum_pg_database_datconfig - 1] = 'r';
 
@@ -948,6 +936,9 @@ AlterDatabaseSet(AlterDatabaseSetStmt *stmt)
 	}
 
 	newtuple = heap_modifytuple(tuple, RelationGetDescr(rel), repl_val, repl_null, repl_repl);
+
+	sepgsqlAlterDatabase(newtuple, NULL);
+
 	simple_heap_update(rel, &tuple->t_self, newtuple);
 
 	/* Update indexes */

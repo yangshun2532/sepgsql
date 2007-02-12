@@ -440,7 +440,6 @@ struct ExprState
 	 */
 	psid				execContext;	/* security context to execute 'evalfunc' */
 	ExprStateEvalFunc	origEvalFunc;	/* original evalfunc */
-	NameData			proname;		/* for dubugging */
 #endif
 };
 

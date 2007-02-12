@@ -52,7 +52,7 @@
 #include "parser/analyze.h"
 #include "parser/parser.h"
 #include "rewrite/rewriteHandler.h"
-#include "sepgsql.h"
+#include "security/sepgsql.h"
 #include "storage/freespace.h"
 #include "storage/ipc.h"
 #include "storage/proc.h"

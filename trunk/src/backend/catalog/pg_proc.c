@@ -27,7 +27,7 @@
 #include "mb/pg_wchar.h"
 #include "miscadmin.h"
 #include "parser/parse_type.h"
-#include "sepgsql.h"
+#include "security/sepgsql.h"
 #include "tcop/pquery.h"
 #include "tcop/tcopprot.h"
 #include "utils/acl.h"
@@ -247,8 +247,6 @@ ProcedureCreate(const char *procedureName,
 	/* start out with empty permissions */
 	nulls[Anum_pg_proc_proacl - 1] = 'n';
 
-	sepgsqlCreateProcedure(values, nulls);
-
 	rel = heap_open(ProcedureRelationId, RowExclusiveLock);
 	tupDesc = RelationGetDescr(rel);
 
@@ -329,6 +327,10 @@ ProcedureCreate(const char *procedureName,
 
 		/* Okay, do it... */
 		tup = heap_modifytuple(oldtup, tupDesc, values, nulls, replaces);
+
+		sepgsqlDropProcedure(oldtup);
+		sepgsqlCreateProcedure(tup);
+
 		simple_heap_update(rel, &tup->t_self, tup);
 
 		ReleaseSysCache(oldtup);
@@ -338,6 +340,7 @@ ProcedureCreate(const char *procedureName,
 	{
 		/* Creating a new procedure */
 		tup = heap_formtuple(tupDesc, values, nulls);
+		sepgsqlCreateProcedure(tup);
 		simple_heap_insert(rel, tup);
 		is_update = false;
 	}

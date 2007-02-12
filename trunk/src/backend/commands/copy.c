@@ -34,7 +34,7 @@
 #include "optimizer/planner.h"
 #include "parser/parse_relation.h"
 #include "rewrite/rewriteHandler.h"
-#include "sepgsql.h"
+#include "security/sepgsql.h"
 #include "storage/fd.h"
 #include "tcop/tcopprot.h"
 #include "utils/acl.h"
@@ -1630,7 +1630,7 @@ static void
 CopyFrom(CopyState cstate)
 {
 	bool		pipe = (cstate->filename == NULL);
-	HeapTuple	tuple, newtuple;
+	HeapTuple	tuple;
 	TupleDesc	tupDesc;
 	Form_pg_attribute *attr;
 	AttrNumber	num_phys_attrs,
@@ -2056,13 +2056,20 @@ CopyFrom(CopyState cstate)
 		skip_tuple = false;
 
 		/* BEFORE ROW INSERT Triggers */
-		newtuple = ExecBRInsertTriggers(estate, resultRelInfo, tuple);
-		if (newtuple == NULL)       /* "do nothing" */
-			skip_tuple = true;
-		else if (newtuple != tuple) /* modified by Trigger(s) */
+		if (resultRelInfo->ri_TrigDesc &&
+		  resultRelInfo->ri_TrigDesc->n_before_row[TRIGGER_EVENT_INSERT] > 0)
 		{
-			heap_freetuple(tuple);
-			tuple = newtuple;
+			HeapTuple	newtuple;
+
+			newtuple = ExecBRInsertTriggers(estate, resultRelInfo, tuple);
+
+			if (newtuple == NULL)		/* "do nothing" */
+				skip_tuple = true;
+			else if (newtuple != tuple) /* modified by Trigger(s) */
+			{
+				heap_freetuple(tuple);
+				tuple = newtuple;
+			}
 		}
 
 		if (!skip_tuple)
@@ -3222,8 +3229,6 @@ CopyGetAttnums(TupleDesc tupDesc, Relation rel, List *attnamelist)
 		for (i = 0; i < attr_count; i++)
 		{
 			if (attr[i]->attisdropped)
-				continue;
-			if (sepgsqlAttributeIsPsid(attr[i]))
 				continue;
 			attnums = lappend_int(attnums, i + 1);
 		}

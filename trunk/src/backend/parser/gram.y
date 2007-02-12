@@ -56,7 +56,7 @@
 #include "commands/defrem.h"
 #include "nodes/makefuncs.h"
 #include "parser/gramparse.h"
-#include "sepgsql.h"
+#include "security/sepgsql.h"
 #include "storage/lmgr.h"
 #include "utils/date.h"
 #include "utils/datetime.h"
@@ -1528,7 +1528,7 @@ alter_table_cmd:
 				{
 					AlterTableCmd *n;
 					if (strcmp($1, "context") != 0 || sepgsqlIsEnabled())
-						yyerror("syntax error1");
+						yyerror("syntax error");
 
 					n = makeNode(AlterTableCmd);
 					n->subtype = AT_SetTableSecurityContext;
@@ -1540,7 +1540,7 @@ alter_table_cmd:
 				{
 					AlterTableCmd *n;
 					if (strcmp($4, "context") != 0 || sepgsqlIsEnabled())
-						yyerror("syntax error2");
+						yyerror("syntax error");
 
 					n = makeNode(AlterTableCmd);
 					n->subtype = AT_SetColumnSecurityContext;
@@ -3978,8 +3978,8 @@ common_func_opt_item:
 				}
 			| IDENT '=' Sconst
 				{
-					if (strcmp($1, "context") != 0)
-						yyerror("syntax error3");
+					if (strcmp($1, "context") != 0 || sepgsqlIsEnabled())
+						yyerror("syntax error");
 					$$ = makeDefElem("context", (Node *)makeString($3));
 				}
 		;
@@ -5026,7 +5026,7 @@ alterdb_opt_item:
 				}
 			| IDENT '=' Sconst
 				{
-					if (strcmp($1, "context") != 0)
+					if (strcmp($1, "context") != 0 || sepgsqlIsEnabled())
 						yyerror("syntax error");
 					$$ = makeDefElem("context", (Node *)makeString($3));
 				}

@@ -218,12 +218,10 @@ DECLARE_UNIQUE_INDEX(pg_type_oid_index, 2703, on pg_type using btree(oid oid_ops
 DECLARE_UNIQUE_INDEX(pg_type_typname_nsp_index, 2704, on pg_type using btree(typname name_ops, typnamespace oid_ops));
 #define TypeNameNspIndexId	2704
 
-#ifdef HAVE_SELINUX
 DECLARE_UNIQUE_INDEX(pg_selinux_oid_index, 3401, on pg_selinux using btree(oid oid_ops));
 #define SelinuxOidIndexId			3401
 DECLARE_UNIQUE_INDEX(pg_selinux_selcontext_index, 3402, on pg_selinux using btree(selcontext text_ops));
 #define SelinuxSelcontextIndexId	3402
-#endif
 
 /* last step of initialization script: build the indexes declared above */
 BUILD_INDICES

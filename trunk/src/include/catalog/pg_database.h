@@ -44,7 +44,6 @@ CATALOG(pg_database,1262) BKI_SHARED_RELATION
 	Oid			datlastsysoid;	/* highest OID to consider a system OID */
 	TransactionId datfrozenxid;	/* all Xids < this are frozen in this DB */
 	Oid			dattablespace;	/* default table space for this DB */
-	psid		datselcon;
 	text		datconfig[1];	/* database-specific GUC (VAR LENGTH) */
 	aclitem		datacl[1];		/* access permissions (VAR LENGTH) */
 } FormData_pg_database;
@@ -60,7 +59,7 @@ typedef FormData_pg_database *Form_pg_database;
  *		compiler constants for pg_database
  * ----------------
  */
-#define Natts_pg_database				12
+#define Natts_pg_database				11
 #define Anum_pg_database_datname		1
 #define Anum_pg_database_datdba			2
 #define Anum_pg_database_encoding		3
@@ -70,11 +69,10 @@ typedef FormData_pg_database *Form_pg_database;
 #define Anum_pg_database_datlastsysoid	7
 #define Anum_pg_database_datfrozenxid	8
 #define Anum_pg_database_dattablespace	9
-#define Anum_pg_database_datselcon		10
-#define Anum_pg_database_datconfig		11
-#define Anum_pg_database_datacl			12
+#define Anum_pg_database_datconfig		10
+#define Anum_pg_database_datacl			11
 
-DATA(insert OID = 1 (  template1 PGUID ENCODING t t -1 0 0 1663 _null_ _null_ _null_ ));
+DATA(insert OID = 1 (  template1 PGUID ENCODING t t -1 0 0 1663 _null_ _null_ ));
 SHDESCR("Default template database");
 #define TemplateDbOid			1
 

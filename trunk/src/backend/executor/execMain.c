@@ -48,7 +48,7 @@
 #include "optimizer/clauses.h"
 #include "parser/parse_clause.h"
 #include "parser/parsetree.h"
-#include "sepgsql.h"
+#include "security/sepgsql.h"
 #include "storage/smgr.h"
 #include "utils/acl.h"
 #include "utils/lsyscache.h"
@@ -1028,6 +1028,9 @@ ExecutePlan(EState *estate,
 	ItemPointerData tuple_ctid;
 	long		current_tuple_count;
 	TupleTableSlot *result;
+#ifdef HAVE_SELINUX
+	psid		tuple_selcon = InvalidOid;
+#endif
 
 	/*
 	 * initialize local variables
@@ -1216,6 +1219,14 @@ lnext:	;
 				}
 			}
 
+#ifdef HAVE_SELINUX
+			if (ExecGetJunkAttribute(junkfilter,
+									 slot,
+									 SECURITY_ATTR,
+									 &datum,
+									 &isNull) && !isNull)
+				tuple_selcon = DatumGetObjectId(datum);
+#endif
 			/*
 			 * Create a new "clean" tuple with all junk attributes removed. We
 			 * don't need to do this for DELETE, however (there will in fact
@@ -1225,6 +1236,9 @@ lnext:	;
 				slot = ExecFilterJunk(junkfilter, slot);
 		}
 
+#ifdef HAVE_SELINUX
+		slot->tuple_selcon = tuple_selcon;
+#endif
 		/*
 		 * now that we have a tuple, do the appropriate thing with it.. either
 		 * return it to the user, add it to a relation someplace, delete it
@@ -1344,10 +1358,12 @@ ExecInsert(TupleTableSlot *slot,
 	resultRelInfo = estate->es_result_relation_info;
 	resultRelationDesc = resultRelInfo->ri_RelationDesc;
 
+#ifdef HAVE_SELINUX
+	HeapTupleSetSecurity(tuple, slot->tuple_selcon);
+#endif
 	/* BEFORE ROW INSERT Triggers */
-	if (sepgsqlIsEnabled() ||
-		(resultRelInfo->ri_TrigDesc &&
-		 resultRelInfo->ri_TrigDesc->n_before_row[TRIGGER_EVENT_INSERT] > 0))
+	if (resultRelInfo->ri_TrigDesc &&
+		resultRelInfo->ri_TrigDesc->n_before_row[TRIGGER_EVENT_INSERT] > 0)
 	{
 		HeapTuple	newtuple;
 
@@ -1379,6 +1395,11 @@ ExecInsert(TupleTableSlot *slot,
 	 */
 	if (resultRelationDesc->rd_att->constr)
 		ExecConstraints(resultRelInfo, slot, estate);
+
+	/*
+	 * Check the explicit labeling, if configured
+	 */
+	sepgsqlExecInsert(resultRelationDesc, tuple, !!resultRelInfo->ri_projectReturning);
 
 	/*
 	 * insert the tuple
@@ -1436,9 +1457,8 @@ ExecDelete(ItemPointer tupleid,
 	resultRelationDesc = resultRelInfo->ri_RelationDesc;
 
 	/* BEFORE ROW DELETE Triggers */
-	if (sepgsqlIsEnabled() ||
-		(resultRelInfo->ri_TrigDesc &&
-		 resultRelInfo->ri_TrigDesc->n_before_row[TRIGGER_EVENT_DELETE] > 0))
+	if (resultRelInfo->ri_TrigDesc &&
+		resultRelInfo->ri_TrigDesc->n_before_row[TRIGGER_EVENT_DELETE] > 0)
 	{
 		bool		dodelete;
 
@@ -1586,10 +1606,12 @@ ExecUpdate(TupleTableSlot *slot,
 	resultRelInfo = estate->es_result_relation_info;
 	resultRelationDesc = resultRelInfo->ri_RelationDesc;
 
+#ifdef HAVE_SELINUX
+	HeapTupleSetSecurity(tuple, slot->tuple_selcon);
+#endif
 	/* BEFORE ROW UPDATE Triggers */
-	if (sepgsqlIsEnabled() ||
-		(resultRelInfo->ri_TrigDesc &&
-		 resultRelInfo->ri_TrigDesc->n_before_row[TRIGGER_EVENT_UPDATE] > 0))
+	if (resultRelInfo->ri_TrigDesc &&
+		resultRelInfo->ri_TrigDesc->n_before_row[TRIGGER_EVENT_UPDATE] > 0)
 	{
 		HeapTuple	newtuple;
 
@@ -2417,11 +2439,6 @@ OpenIntoRel(QueryDesc *queryDesc)
 
 	/* have to copy the actual tupdesc to get rid of any constraints */
 	tupdesc = CreateTupleDescCopy(queryDesc->tupDesc);
-	/* set security context of newly created table */
-	tupdesc = sepgsqlCreateRelation(InvalidOid,
-									namespaceId,
-									RELKIND_RELATION,
-									tupdesc);
 
 	/* Now we can actually create the new relation */
 	intoRelationId = heap_create_with_catalog(intoName,
@@ -2557,11 +2574,6 @@ intorel_receive(TupleTableSlot *slot, DestReceiver *self)
 	HeapTuple	tuple;
 
 	tuple = ExecCopySlotTuple(slot);
-
-	tuple = sepgsqlExecInsert(tuple,
-							  GetPerTupleMemoryContext(estate),
-							  estate->es_into_relation_descriptor,
-							  NULL /* no RETURNING */);
 
 	heap_insert(estate->es_into_relation_descriptor,
 				tuple,

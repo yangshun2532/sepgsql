@@ -41,7 +41,6 @@
 #include "miscadmin.h"
 #include "optimizer/clauses.h"
 #include "parser/parse_expr.h"
-#include "sepgsql.h"
 #include "storage/procarray.h"
 #include "storage/smgr.h"
 #include "utils/builtins.h"
@@ -543,11 +542,6 @@ index_create(Oid heapRelationId,
 											indexInfo,
 											classObjectId);
 
-	/* set security context of index */
-	indexTupDesc = sepgsqlCreateRelation(InvalidOid,
-										 namespaceId,
-										 RELKIND_INDEX,
-										 indexTupDesc);
 	/*
 	 * Allocate an OID for the index, unless we were told what to use.
 	 *

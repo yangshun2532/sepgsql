@@ -32,7 +32,6 @@
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
 #include "postmaster/bgwriter.h"
-#include "sepgsql.h"
 #include "storage/freespace.h"
 #include "storage/ipc.h"
 #include "storage/proc.h"
@@ -151,10 +150,9 @@ static const struct typinfo TypInfo[] = {
 	{"_char", 1002, CHAROID, -1, false, 'i', 'x',
 	F_ARRAY_IN, F_ARRAY_OUT},
 	{"_aclitem", 1034, ACLITEMOID, -1, false, 'i', 'x',
-	F_ARRAY_IN, F_ARRAY_OUT}
-#ifdef HAVE_SELINUX
-	,{"psid", PSIDOID, 0, 4, true, 'i', 'p', F_PSID_IN, F_PSID_OUT }
-#endif
+	F_ARRAY_IN, F_ARRAY_OUT},
+	{"psid", PSIDOID, 0, 4, true, 'i', 'p',
+	F_PSID_IN, F_PSID_OUT },
 };
 
 static const int n_types = sizeof(TypInfo) / sizeof(struct typinfo);
@@ -793,8 +791,6 @@ InsertOneTuple(Oid objectid)
 	tuple = heap_formtuple(tupDesc, values, Blanks);
 	if (objectid != (Oid) 0)
 		HeapTupleSetOid(tuple, objectid);
-	/* add implicit labeling */
-	tuple = sepgsqlInsertOneTuple(tuple, boot_reldesc);
 	pfree(tupDesc);				/* just free's tupDesc, not the attrtypes */
 
 	simple_heap_insert(boot_reldesc, tuple);

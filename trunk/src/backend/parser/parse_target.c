@@ -26,7 +26,6 @@
 #include "parser/parse_relation.h"
 #include "parser/parse_target.h"
 #include "parser/parse_type.h"
-#include "sepgsql.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
 #include "utils/typcache.h"
@@ -336,14 +335,22 @@ transformAssignedExpr(ParseState *pstate,
 	Relation	rd = pstate->p_target_relation;
 
 	Assert(rd != NULL);
-	if (attrno <= 0)
-		ereport(ERROR,
-				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("cannot assign to system column \"%s\"",
-						colname),
-				 parser_errposition(pstate, location)));
-	attrtype = attnumTypeId(rd, attrno);
-	attrtypmod = rd->rd_att->attrs[attrno - 1]->atttypmod;
+	if (attrno > 0) {
+		attrtype = attnumTypeId(rd, attrno);
+		attrtypmod = rd->rd_att->attrs[attrno - 1]->atttypmod;
+#ifdef HAVE_SELINUX
+	} else if (attrno == SecurityAttributeNumber) {
+		attrtype = PSIDOID;
+		attrtypmod = -1;
+#endif
+	} else {
+		if (attrno <= 0)
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("cannot assign to system column \"%s\"", colname),
+					 parser_errposition(pstate, location)));
+		return NULL; /* to compiler kindness */
+	}
 
 	/*
 	 * If the expression is a DEFAULT placeholder, insert the attribute's
@@ -484,6 +491,10 @@ updateTargetListEntry(ParseState *pstate,
 	 */
 	tle->resno = (AttrNumber) attrno;
 	tle->resname = colname;
+#ifdef HAVE_SELINUX
+	if (attrno < 0)
+		tle->resjunk = true;
+#endif
 }
 
 
@@ -732,8 +743,6 @@ checkInsertTargets(ParseState *pstate, List *cols, List **attrnos)
 
 			if (attr[i]->attisdropped)
 				continue;
-			if (sepgsqlAttributeIsPsid(attr[i]))
-				continue;
 
 			col = makeNode(ResTarget);
 			col->name = pstrdup(NameStr(attr[i]->attname));
@@ -752,6 +761,9 @@ checkInsertTargets(ParseState *pstate, List *cols, List **attrnos)
 		Bitmapset  *wholecols = NULL;
 		Bitmapset  *partialcols = NULL;
 		ListCell   *tl;
+#ifdef HAVE_SELINUX
+		bool		security_attr = false;		
+#endif
 
 		foreach(tl, cols)
 		{
@@ -760,14 +772,31 @@ checkInsertTargets(ParseState *pstate, List *cols, List **attrnos)
 			int			attrno;
 
 			/* Lookup column name, ereport on failure */
-			attrno = attnameAttNum(pstate->p_target_relation, name, false);
-			if (attrno == InvalidAttrNumber)
+			attrno = attnameAttNum(pstate->p_target_relation, name, true);
+			if (attrno == InvalidAttrNumber) {
 				ereport(ERROR,
 						(errcode(ERRCODE_UNDEFINED_COLUMN),
-					errmsg("column \"%s\" of relation \"%s\" does not exist",
-						   name,
-						 RelationGetRelationName(pstate->p_target_relation)),
+						 errmsg("column \"%s\" of relation \"%s\" does not exist",
+								name, RelationGetRelationName(pstate->p_target_relation)),
 						 parser_errposition(pstate, col->location)));
+#ifdef HAVE_SELINUX
+			} else if (attrno == SecurityAttributeNumber) {
+				if (security_attr)
+					ereport(ERROR,
+							(errcode(ERRCODE_DUPLICATE_COLUMN),
+							 errmsg("column \"%s\" specified more than once", name),
+							 parser_errposition(pstate, col->location)));
+				security_attr = true;
+				*attrnos = lappend_int(*attrnos, attrno);
+				continue;
+#endif
+			} else if (attrno < 0) {
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_COLUMN_REFERENCE),
+						 errmsg("column \"%s\" of relation \"%s\" is system column",
+								name, RelationGetRelationName(pstate->p_target_relation)),
+						 parser_errposition(pstate, col->location)));
+			}
 
 			/*
 			 * Check for duplicates, but only of whole columns --- we allow

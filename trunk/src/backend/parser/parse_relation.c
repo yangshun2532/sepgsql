@@ -26,7 +26,6 @@
 #include "parser/parse_expr.h"
 #include "parser/parse_relation.h"
 #include "parser/parse_type.h"
-#include "sepgsql.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
 #include "utils/syscache.h"
@@ -1454,8 +1453,6 @@ expandTupleDesc(TupleDesc tupdesc, Alias *eref,
 			}
 			continue;
 		}
-		if (sepgsqlAttributeIsPsid(attr))
-			continue;
 
 		if (colnames)
 		{

@@ -33,23 +33,7 @@
 					 errmsg("%s(%d): " fmt, __FUNCTION__, __LINE__, ##__VA_ARGS__)))
 #define selbugon(x)	do { if (x)((char *)NULL)[0] = 'a'; }while(0)
 
-static inline void sepgsql_audit(int result, char *message, char *objname) {
-	int errlv = (result ? ERROR : NOTICE);
-
-	if (message) {
-		if (objname) {
-			ereport(errlv, (errcode(ERRCODE_INTERNAL_ERROR),
-							errmsg("SELinux: %s name=%s", message, objname)));
-		} else {
-			ereport(errlv, (errcode(ERRCODE_INTERNAL_ERROR),
-							errmsg("SELinux: %s", message)));
-		}
-	} else if (result != 0)
-		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
-						"SELinux access denied without any audit messages."));
-}
-
-#define TUPLE_SELCON	"security_context"
+#define SECURITY_ATTR	"security_context"
 
 typedef struct SEvalItem {
 	NodeTag type;
@@ -139,196 +123,149 @@ typedef struct SEvalItem {
 #define BLOB__RELABELTO                           0x00000020UL
 #define BLOB__READ                                0x00000040UL
 #define BLOB__WRITE                               0x00000080UL
+#endif /* HAVE_SELINUX */
 
 /*
- * SE-PostgreSQL core implementation
- *   src/backend/selinux/sepgsql.c
+ * SE-PostgreSQL core functions
  */
+#ifdef HAVE_SELINUX
 extern Size  sepgsql_shmem_size(void);
-extern int   sepgsql_avc_permission(psid ssid, psid tsid, uint16 tclass,
-									uint32 perms, char **audit);
+extern int   sepgsql_avc_permission_noaudit(psid ssid,
+											psid tsid,
+											uint16 tclass,
+											uint32 perms,
+											char **audit,
+											char *objname);
+extern void  sepgsql_avc_permission(psid ssid,
+									psid tsid,
+									uint16 tclass,
+									uint32 perms,
+									char *objname);
+extern void  sepgsql_audit(int result, char *message);
 extern psid  sepgsql_avc_createcon(psid ssid, psid tsid, uint16 tclass);
 extern psid  sepgsql_avc_relabelcon(psid ssid, psid tsid, uint16 tclass);
 extern psid  sepgsql_context_to_psid(char *context);
 extern char *sepgsql_psid_to_context(psid sid);
 extern bool  sepgsql_check_context(char *context);
 
-extern Datum psid_in(PG_FUNCTION_ARGS);
-extern Datum psid_out(PG_FUNCTION_ARGS);
-extern Datum text_to_psid(PG_FUNCTION_ARGS);
-extern Datum psid_to_text(PG_FUNCTION_ARGS);
-extern Datum sepgsql_getcon(PG_FUNCTION_ARGS);
-
 extern void  sepgsqlInitialize(void);
 extern int   sepgsqlInitializePostmaster(void);
 extern void  sepgsqlFinalizePostmaster(void);
+extern bool  sepgsqlIsEnabled(void);
 
 extern psid  sepgsqlGetServerPsid(void);
 extern psid  sepgsqlGetClientPsid(void);
 extern void  sepgsqlSetClientPsid(psid new_ctx);
 extern psid  sepgsqlGetDatabasePsid(void);
-extern bool  sepgsqlAttributeIsPsid(Form_pg_attribute attr);
-extern bool  sepgsqlIsEnabled(void);
+#else
+#define sepgsql_shmem_size()			0
+#define sepgsqlInitialize()
+#define sepgsqlInitializePostmaster()	0
+#define sepgsqlFinalizePostmaster()
+#define sepgsqlIsEnabled()				(false)
+#endif
 
 /*
- * SE-PostgreSQL Bootstraping Hooks
- *   src/backend/selinux/bootstrap.c
+ * SE-PostgreSQL proxy facilities
  */
-extern bool  sepgsqlBootstrapPgSelinuxAvailable(void);
-extern psid  sepgsqlBootstrapContextToPsid(char *context);
-extern char *sepgsqlBootstrapPsidToContext(psid psid);
-extern HeapTuple sepgsqlInsertOneTuple(HeapTuple tuple, Relation rel);
-
-/*
- * Query rewriting proxy functions
- *   src/backend/selinux/rewrite.c
- */
+#ifdef HAVE_SELINUX
 extern List *sepgsqlWalkExpr(List *selist, Query *query, Node *);
-extern List *sepgsqlRewriteQuery(Query *query);
-extern List *sepgsqlRewriteQueryList(List *queryList);
+extern List *sepgsqlProxyQuery(Query *query);
+extern List *sepgsqlProxyQueryList(List *queryList);
 extern void *sepgsqlForeignKeyPrepare(const char *querystr, int nargs, Oid *argtypes);
+extern void sepgsqlVerifyQuery(Query *query);
+extern void sepgsqlVerifyQueryList(List *queryList);
+#else
+#define sepgsqlProxyQueryList(x)		(x)
+#define sepgsqlVerifyQueryList(x)
+#endif
 
 /*
- * Query checking functions
- *   src/backend/selinux/check_perms.c
+ * SE-PostgreSQL heap input/output functions
  */
-extern void  sepgsqlVerifyQuery(Query *query);
-extern void  sepgsqlVerifyQueryList(List *queryList);
-extern Datum sepgsql_tuple_perm(PG_FUNCTION_ARGS);
-extern Datum sepgsql_tuple_perm_abort(PG_FUNCTION_ARGS);
-extern bool  sepgsql_tuple_perm_copyto(Relation rel,
-									   HeapTuple tuple,
-									   uint32 perms);
-extern HeapTuple sepgsqlExecInsert(HeapTuple newtup,
-								   MemoryContext mcontext,
-								   Relation rel,
-								   ProjectionInfo *retProj);
-extern void sepgsqlExecUpdate(HeapTuple newtup,
-							  HeapTuple oldtup,
-							  Relation rel,
-							  ProjectionInfo *retProj);
-extern void  sepgsqlExecDelete(HeapTuple newtup,
-							   Relation rel,
-							   ProjectionInfo *retProj);
+#ifdef HAVE_SELINUX
+extern void  sepgsqlExecInsert(Relation rel, HeapTuple tuple, bool has_returing);
+extern void  sepgsqlHeapInsert(Relation rel, HeapTuple tuple);
+extern void  sepgsqlHeapUpdate(Relation rel, HeapTuple newtup, HeapTuple oldtup);
+#else
+#define sepgsqlExecInsert(a,b,c)
+#define sepgsqlHeapInsert(a,b)
+#define sepgsqlHeapUpdate(a,b,c)
+#endif
 
-/*
- * COPY TO/COPY FROM statement related hooks
- *   src/backend/selinux/copy.c
- */
-extern void  sepgsqlDoCopy(Relation rel, List *attnumlist, bool is_from);
-extern bool  sepgsqlCopyTo(Relation rel, HeapTuple tuple);
+/*  DATABASE statement related hooks  */
+#ifdef HAVE_SELINUX
+extern void sepgsqlCreateDatabase(HeapTuple tuple);
+extern void sepgsqlAlterDatabase(HeapTuple tuple, char *dselcon);
+extern void sepgsqlDropDatabase(HeapTuple tuple);
+#else
+#define sepgsqlCreateDatabase(a)
+#define sepgsqlAlterDatabase(a,b)
+#define sepgsqlDropDatabase(a)
+#endif
 
-/*
- * DATABASE statement related hooks
- *   src/backend/selinux/database.c
- */
-extern void  sepgsqlCreateDatabase(Datum *values, char *nulls);
-extern void  sepgsqlDropDatabase(Form_pg_database pgdat);
-extern void  sepgsqlAlterDatabase(Form_pg_database pgdat);
-extern psid  sepgsqlAlterDatabaseContext(Form_pg_database pgdat, char *newcon);
-
-/*
- * PROCEDURE statement related hooks
- *   src/backend/selinux/procedure.c
- */
-extern void  sepgsqlCreateProcedure(Datum *values, char *nulls);
-extern void  sepgsqlAlterProcedure(Form_pg_proc pg_proc, AlterFunctionStmt *stmt);
-extern void  sepgsqlExecInitExpr(ExprState *state, PlanState *parent);
-
-/*
- * TABLE statement related hooks
- *   src/backend/selinux/relation.c
- */
-extern TupleDesc sepgsqlCreateRelation(Oid relid, Oid relns, char relkind, TupleDesc tdesc);
-extern TupleDesc sepgsqlCloneRelation(Oid relid, Oid relns, char relkind, TupleDesc tdesc);
-extern void sepgsqlPutRelationContext(Form_pg_class pg_class);
-extern void sepgsqlPutSysAttributeContext(Form_pg_attribute pg_attr, AttrNumber attnum);
-
+/*  TABLE statement related hooks  */
+#ifdef HAVE_SELINUX
+extern void sepgsqlCreateTable();
 extern void sepgsqlAlterTable(Oid relid, char relkind, TupleDesc tdesc, AlterTableCmd *cmd);
-extern void sepgsqlAlterTableAddColumn(Relation rel, Form_pg_attribute pg_attr);
 extern void sepgsqlAlterTableSetTableContext(Relation rel, Value *newcon);
 extern void sepgsqlAlterTableSetColumnContext(Relation rel, char *name, Value *newcon);
-
-#else  /* HAVE_SELINUX */
-
-/*
- * SE-PostgreSQL core implementation
- *   src/backend/selinux/sepgsql.c
- */
-#define sepgsql_shmem_size()					0
-#define sepgsqlInitialize()
-#define sepgsqlInitializePostmaster()			0
-#define sepgsqlFinalizePostmaster()
-#define sepgsqlAttributeIsPsid(x)				(false)
-#define sepgsqlIsEnabled()						(false)
-
-/*
- * SE-PostgreSQL Bootstraping Hooks
- *   src/backend/selinux/bootstrap.c
- */
-#define sepgsqlInsertOneTuple(a, b)				(a)
-
-/*
- * Query rewriting proxy functions
- *   src/backend/selinux/rewrite.c
- */
-#define sepgsqlRewriteQueryList(a)				(a)
-#define sepgsqlForeignKeyPrepare(a,b,c)			(SPI_prepare((a),(b),(c)))
-
-/*
- * Query checking functions
- *   src/backend/selinux/check_perms.c
- */
-#define sepgsqlVerifyQueryList(a)
-#define sepgsql_tuple_perm_copyto(a,b,c)		(true)
-#define sepgsqlExecInsert(a,b,c,d)				(a)
-#define sepgsqlExecUpdate(a,b,c,d)
-#define sepgsqlExecDelete(a,b,c)
-
-/*
- * COPY TO/COPY FROM statement related hooks
- *   src/backend/selinux/copy.c
- */
-#define sepgsqlDoCopy(a,b,c)
-#define sepgsqlCopyTo(a,b)						(true)
-
-/*
- * DATABASE statement related hooks
- *   src/backend/selinux/database.c
- */
-static inline void sepgsqlCreateDatabase(Datum *values, char *nulls) {
-	values[Anum_pg_database_datselcon - 1] = InvalidOid;
-	nulls[Anum_pg_database_datselcon - 1] = ' ';
-}
-#define sepgsqlDropDatabase(a)
-#define sepgsqlAlterDatabase(a)
-
-/*
- * PROCEDURE statement related hooks
- *   src/backend/selinux/procedure.c
- */
-static inline void sepgsqlCreateProcedure(Datum *values, char *nulls) {
-	values[Anum_pg_proc_proselcon - 1] = InvalidOid;
-	nulls[Anum_pg_proc_proselcon - 1] = ' ';
-}
-#define sepgsqlAlterProcedure(a,b)
-#define sepgsqlExecInitExpr(a,b)
-
-/*
- * TABLE statement related hooks
- *   src/backend/selinux/relation.c
- */
-#define sepgsqlCreateRelation(a,b,c,d)			(d)
-#define sepgsqlCloneRelation(a,b,c,d)			(d)
-static inline void sepgsqlPutRelationContext(Form_pg_class pgclass) {
-	pgclass->relselcon = InvalidOid;
-}
-static inline void sepgsqlPutSysAttributeContext(Form_pg_attribute attr,
-												 AttrNumber attnum) {
-	attr->attselcon = InvalidOid;
-}
+//extern void sepgsqlDropTable();
+#else
+#define sepgsqlCreateTable()
 #define sepgsqlAlterTable(a,b,c,d)
-#define sepgsqlAlterTableAddColumn(a,b)
+//#define sepgsqlDropTable()
+#endif
 
-#endif /* HAVE_SELINUX */
+/*  FUNCTION statement related hooks  */
+#ifdef HAVE_SELINUX
+extern void sepgsqlCreateProcedure(HeapTuple tuple);
+extern void sepgsqlAlterProcedure(HeapTuple tuple, char *proselcon);
+extern void sepgsqlDropProcedure(HeapTuple);
+#else
+#define sepgsqlCreateProcedure(a)
+#define sepgsqlAlterProcedure(a,b)
+#define sepgsqlDropProcedure(a)
+#endif
+
+/*  Trusted Procedure support */
+#ifdef HAVE_SELINUX
+extern void sepgsqlExecInitExpr(ExprState *state, PlanState *parent);
+#else
+#defien sepgsqlExecInitExpr(a,b)
+#endif
+
+/*  COPY TO/COPY FROM statement support */
+extern void sepgsqlDoCopy(Relation rel, List *attnumlist, bool is_from);
+extern bool sepgsqlCopyTo(Relation rel, HeapTuple tuple);
+
+/* SE-PostgreSQL SQL function */
+extern Datum psid_in(PG_FUNCTION_ARGS);
+extern Datum psid_out(PG_FUNCTION_ARGS);
+extern Datum text_to_psid(PG_FUNCTION_ARGS);
+extern Datum psid_to_text(PG_FUNCTION_ARGS);
+extern Datum sepgsql_getcon(PG_FUNCTION_ARGS);
+extern Datum sepgsql_tuple_perms(PG_FUNCTION_ARGS);
+extern Datum sepgsql_tuple_perms_abort(PG_FUNCTION_ARGS);
+
+/*
+ * Internal utilities
+ */
+static inline char *HeapTupleGetRelationName(HeapTuple tuple) {
+	Form_pg_class pgclass = (Form_pg_class) GETSTRUCT(tuple);
+	return NameStr(pgclass->relname);
+}
+static inline char *HeapTupleGetAttributeName(HeapTuple tuple) {
+	Form_pg_attribute pgattr = (Form_pg_attribute) GETSTRUCT(tuple);
+	return NameStr(pgattr->attname);
+}
+static inline char *HeapTupleGetProcedureName(HeapTuple tuple) {
+	Form_pg_proc pgproc = (Form_pg_proc) GETSTRUCT(tuple);
+	return NameStr(pgproc->proname);
+}
+static inline char *HeapTupleGetDatabaseName(HeapTuple tuple) {
+	Form_pg_database pgdat = (Form_pg_database) GETSTRUCT(tuple);
+	return NameStr(pgdat->datname);
+}
+
 #endif /* SEPGSQL_H */

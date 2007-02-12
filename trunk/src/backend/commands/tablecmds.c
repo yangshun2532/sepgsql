@@ -53,7 +53,7 @@
 #include "parser/parse_type.h"
 #include "parser/parser.h"
 #include "rewrite/rewriteHandler.h"
-#include "sepgsql.h"
+#include "security/sepgsql.h"
 #include "storage/smgr.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
@@ -376,10 +376,6 @@ DefineRelation(CreateStmt *stmt, char relkind)
 	 * to copy inherited constraints here.)
 	 */
 	descriptor = BuildDescForRelation(schema);
-	descriptor = sepgsqlCreateRelation(InvalidOid,
-									   namespaceId,
-									   relkind,
-									   descriptor);
 
 	localHasOids = interpretOidsOption(stmt->options);
 	descriptor->tdhasoid = (localHasOids || parentOidCount > 0);
@@ -2261,7 +2257,7 @@ ATRewriteCatalogs(List **wqueue)
 static void
 ATExecCmd(AlteredTableInfo *tab, Relation rel, AlterTableCmd *cmd)
 {
-	sepgsqlAlterTable(tab->relid, tab->relid, tab->oldDesc, cmd);
+	sepgsqlAlterTable(tab->relid, tab->relkind, tab->oldDesc, cmd);
 
 	switch (cmd->subtype)
 	{
@@ -3216,7 +3212,6 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 	attribute->attisdropped = false;
 	attribute->attislocal = colDef->is_local;
 	attribute->attinhcount = colDef->inhcount;
-	sepgsqlAlterTableAddColumn(rel, attribute);
 
 	ReleaseSysCache(typeTuple);
 

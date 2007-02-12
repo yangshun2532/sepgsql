@@ -47,7 +47,7 @@
 #include "miscadmin.h"
 #include "parser/parse_func.h"
 #include "parser/parse_type.h"
-#include "sepgsql.h"
+#include "security/sepgsql.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
@@ -1013,6 +1013,9 @@ AlterFunction(AlterFunctionStmt *stmt)
 	DefElem    *volatility_item = NULL;
 	DefElem    *strict_item = NULL;
 	DefElem    *security_def_item = NULL;
+#ifdef HAVE_SELINUX
+	char       *proselcon = NULL;
+#endif
 
 	rel = heap_open(ProcedureRelationId, RowExclusiveLock);
 
@@ -1039,12 +1042,21 @@ AlterFunction(AlterFunctionStmt *stmt)
 				 errmsg("\"%s\" is an aggregate function",
 						NameListToString(stmt->func->funcname))));
 
-	sepgsqlAlterProcedure(procForm, stmt);
 	/* Examine requested actions. */
 	foreach(l, stmt->actions)
 	{
 		DefElem    *defel = (DefElem *) lfirst(l);
 
+#ifdef HAVE_SELINUX
+		if (strcmp(defel->defname, "context") == 0) {
+			if (proselcon)
+				ereport(ERROR,
+						(errcode(ERRCODE_SYNTAX_ERROR),
+						 errmsg("conflicting or redundant options")));
+			proselcon = strVal(defel->arg);
+			continue;
+		}
+#endif
 		if (compute_common_attribute(defel,
 									 &volatility_item,
 									 &strict_item,
@@ -1058,6 +1070,8 @@ AlterFunction(AlterFunctionStmt *stmt)
 		procForm->proisstrict = intVal(strict_item->arg);
 	if (security_def_item)
 		procForm->prosecdef = intVal(security_def_item->arg);
+
+	sepgsqlAlterProcedure(tup, proselcon);
 
 	/* Do the update */
 	simple_heap_update(rel, &tup->t_self, tup);

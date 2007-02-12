@@ -1,22 +1,19 @@
 #
-# src/backend/selinux/Makefile
-#     Makefile for Security Enhanced PostgreSQL
+# src/backend/security/Makefile
+#   Makefile for Security Enhanced PostgreSQL
 #
 # Copyright (c) 2006 - 2007 KaiGai Kohei <kaigai@kaigai.gr.jp>
-#
+# 
 ubdir = src/backend/security
 top_builddir = ../../..
 include $(top_builddir)/src/Makefile.global
 
 ifeq ($(enable_selinux), yes)
-#OBJS := sepgsql.o bootstrap.o rewrite.o verify.o check_perms.o \
-#	database.o relation.o procedure.o copy.o
-OBJS := sepgsql.o
+OBJS := sepgsqlCore.o sepgsqlPsid.o sepgsqlProxy.o sepgsqlHeap.o \
+	sepgsqlHooks.o sepgsqlVerify.o
 else
-DIRS := dummy.o
+OBJS := sepgsqlDummy.o
 endif
-
-
 
 all: SUBSYS.o
 

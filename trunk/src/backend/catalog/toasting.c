@@ -27,7 +27,6 @@
 #include "catalog/toasting.h"
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
-#include "sepgsql.h"
 #include "utils/builtins.h"
 #include "utils/syscache.h"
 
@@ -172,10 +171,6 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid)
 	tupdesc->attrs[1]->attstorage = 'p';
 	tupdesc->attrs[2]->attstorage = 'p';
 
-	tupdesc = sepgsqlCreateRelation(toastOid,
-									PG_TOAST_NAMESPACE,
-									RELKIND_TOASTVALUE,
-									tupdesc);
 	/*
 	 * Note: the toast relation is placed in the regular pg_toast namespace
 	 * even if its master relation is a temp table.  There cannot be any

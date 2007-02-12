@@ -37,7 +37,7 @@
 #include "parser/parse_type.h"
 #include "parser/parsetree.h"
 #include "rewrite/rewriteManip.h"
-#include "sepgsql.h"
+#include "security/sepgsql.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
@@ -822,14 +822,15 @@ transformInsertStmt(ParseState *pstate, InsertStmt *stmt,
 		Expr	   *expr = (Expr *) lfirst(lc);
 		ResTarget  *col;
 		TargetEntry *tle;
+		AttrNumber attrno = (AttrNumber) lfirst_int(attnos);
 
 		col = (ResTarget *) lfirst(icols);
 		Assert(IsA(col, ResTarget));
 
 		tle = makeTargetEntry(expr,
-							  (AttrNumber) lfirst_int(attnos),
+							  attrno,
 							  col->name,
-							  false);
+							  attrno < 0 ? true : false);
 		qry->targetList = lappend(qry->targetList, tle);
 
 		icols = lnext(icols);
@@ -1366,11 +1367,6 @@ transformInhRelation(ParseState *pstate, CreateStmtContext *cxt,
 		 * Ignore dropped columns in the parent.
 		 */
 		if (attribute->attisdropped)
-			continue;
-
-		/* Ignore security context column in the parent,
-		   because it's automatically appended later */
-		if (sepgsqlAttributeIsPsid(attribute))
 			continue;
 
 		/*
@@ -2932,7 +2928,6 @@ transformUpdateStmt(ParseState *pstate, UpdateStmt *stmt)
 							origTarget->name,
 						 RelationGetRelationName(pstate->p_target_relation)),
 					 parser_errposition(pstate, origTarget->location)));
-
 		updateTargetListEntry(pstate, tle, origTarget->name,
 							  attrno,
 							  origTarget->indirection,

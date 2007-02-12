@@ -49,6 +49,7 @@
 #include "catalog/namespace.h"
 #include "miscadmin.h"
 #include "pgstat.h"
+#include "security/sepgsql.h"
 #include "storage/procarray.h"
 #include "utils/inval.h"
 #include "utils/lsyscache.h"
@@ -1408,6 +1409,7 @@ heap_insert(Relation relation, HeapTuple tup, CommandId cid,
 	HeapTupleHeaderSetXmax(tup->t_data, 0);		/* zero out Datum fields */
 	HeapTupleHeaderSetCmax(tup->t_data, 0);		/* for cleanliness */
 	tup->t_tableOid = RelationGetRelid(relation);
+	sepgsqlHeapInsert(relation, tup);
 
 	/*
 	 * If the new tuple is too big for storage or contains already toasted
@@ -2047,6 +2049,7 @@ l2:
 	HeapTupleHeaderSetCmin(newtup->t_data, cid);
 	HeapTupleHeaderSetXmax(newtup->t_data, 0);	/* zero out Datum fields */
 	HeapTupleHeaderSetCmax(newtup->t_data, 0);	/* for cleanliness */
+	sepgsqlHeapUpdate(relation, newtup, &oldtup);
 
 	/*
 	 * If the toaster needs to be activated, OR if the new tuple will not fit

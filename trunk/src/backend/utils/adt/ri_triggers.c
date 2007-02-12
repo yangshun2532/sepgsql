@@ -34,7 +34,7 @@
 
 #include "commands/trigger.h"
 #include "executor/spi_priv.h"
-#include "sepgsql.h"
+#include "security/sepgsql.h"
 #include "utils/acl.h"
 #include "utils/fmgroids.h"
 #include "utils/lsyscache.h"

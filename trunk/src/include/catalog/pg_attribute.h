@@ -147,12 +147,6 @@ CATALOG(pg_attribute,1249) BKI_BOOTSTRAP BKI_WITHOUT_OIDS
 	/* Has a local definition (hence, do not drop when attinhcount is 0) */
 	bool		attislocal;
 
-	/* Is a psid column automatically generated */
-	bool		attispsid;
-
-	/* security context of the column */
-	psid		attselcon;
-
 	/* Number of times inherited from direct parent relation(s) */
 	int4		attinhcount;
 } FormData_pg_attribute;
@@ -177,7 +171,7 @@ typedef FormData_pg_attribute *Form_pg_attribute;
  * ----------------
  */
 
-#define Natts_pg_attribute				19
+#define Natts_pg_attribute				17
 #define Anum_pg_attribute_attrelid		1
 #define Anum_pg_attribute_attname		2
 #define Anum_pg_attribute_atttypid		3
@@ -194,9 +188,7 @@ typedef FormData_pg_attribute *Form_pg_attribute;
 #define Anum_pg_attribute_atthasdef		14
 #define Anum_pg_attribute_attisdropped	15
 #define Anum_pg_attribute_attislocal	16
-#define Anum_pg_attribute_attispsid		17
-#define Anum_pg_attribute_attselcon		18
-#define Anum_pg_attribute_attinhcount	19
+#define Anum_pg_attribute_attinhcount	17
 
 
 
@@ -284,6 +276,9 @@ DATA(insert ( 1247 cmin				29 0  4  -4 0 -1 -1 t p i t f f t 0));
 DATA(insert ( 1247 xmax				28 0  4  -5 0 -1 -1 t p i t f f t 0));
 DATA(insert ( 1247 cmax				29 0  4  -6 0 -1 -1 t p i t f f t 0));
 DATA(insert ( 1247 tableoid			26 0  4  -7 0 -1 -1 t p i t f f t 0));
+#ifdef HAVE_SELINUX
+DATA(insert ( 1247 security_context	3403 0 4 -8 0 -1 -1 t p i t f f t 0));
+#endif
 
 /* ----------------
  *		pg_proc
@@ -301,7 +296,6 @@ DATA(insert ( 1247 tableoid			26 0  4  -7 0 -1 -1 t p i t f f t 0));
 { 1255, {"provolatile"},		18, -1, 1,	9, 0, -1, -1, true, 'p', 'c', true, false, false, true, 0 }, \
 { 1255, {"pronargs"},			21, -1, 2, 10, 0, -1, -1, true, 'p', 's', true, false, false, true, 0 }, \
 { 1255, {"prorettype"},			26, -1, 4, 11, 0, -1, -1, true, 'p', 'i', true, false, false, true, 0 }, \
-{ 1255, {"proselcon"},		  3403, -1, 4, 12, 0, -1, -1, true, 'p', 'i', true, false, false, true, 0 }, \
 { 1255, {"proargtypes"},		30, -1, -1, 12, 1, -1, -1, false, 'p', 'i', true, false, false, true, 0 }, \
 { 1255, {"proallargtypes"},   1028, -1, -1, 13, 1, -1, -1, false, 'x', 'i', false, false, false, true, 0 }, \
 { 1255, {"proargmodes"},	  1002, -1, -1, 14, 1, -1, -1, false, 'x', 'i', false, false, false, true, 0 }, \
@@ -321,14 +315,13 @@ DATA(insert ( 1255 proretset		16 -1 1   8 0 -1 -1 t p c t f f t 0));
 DATA(insert ( 1255 provolatile		18 -1 1   9 0 -1 -1 t p c t f f t 0));
 DATA(insert ( 1255 pronargs			21 -1 2  10 0 -1 -1 t p s t f f t 0));
 DATA(insert ( 1255 prorettype		26 -1 4  11 0 -1 -1 t p i t f f t 0));
-DATA(insert ( 1255 proselcon      3403 -1  4 12 0 -1 -1 t p i t f f t 0));
-DATA(insert ( 1255 proargtypes		30 -1 -1 13 1 -1 -1 f p i t f f t 0));
-DATA(insert ( 1255 proallargtypes 1028 -1 -1 14 1 -1 -1 f x i f f f t 0));
-DATA(insert ( 1255 proargmodes	  1002 -1 -1 15 1 -1 -1 f x i f f f t 0));
-DATA(insert ( 1255 proargnames	  1009 -1 -1 16 1 -1 -1 f x i f f f t 0));
-DATA(insert ( 1255 prosrc			25 -1 -1 17 0 -1 -1 f x i f f f t 0));
-DATA(insert ( 1255 probin			17 -1 -1 18 0 -1 -1 f x i f f f t 0));
-DATA(insert ( 1255 proacl		  1034 -1 -1 19 1 -1 -1 f x i f f f t 0));
+DATA(insert ( 1255 proargtypes		30 -1 -1 12 1 -1 -1 f p i t f f t 0));
+DATA(insert ( 1255 proallargtypes 1028 -1 -1 13 1 -1 -1 f x i f f f t 0));
+DATA(insert ( 1255 proargmodes	  1002 -1 -1 14 1 -1 -1 f x i f f f t 0));
+DATA(insert ( 1255 proargnames	  1009 -1 -1 15 1 -1 -1 f x i f f f t 0));
+DATA(insert ( 1255 prosrc			25 -1 -1 16 0 -1 -1 f x i f f f t 0));
+DATA(insert ( 1255 probin			17 -1 -1 17 0 -1 -1 f x i f f f t 0));
+DATA(insert ( 1255 proacl		  1034 -1 -1 18 1 -1 -1 f x i f f f t 0));
 DATA(insert ( 1255 ctid				27 0  6  -1 0 -1 -1 f p s t f f t 0));
 DATA(insert ( 1255 oid				26 0  4  -2 0 -1 -1 t p i t f f t 0));
 DATA(insert ( 1255 xmin				28 0  4  -3 0 -1 -1 t p i t f f t 0));
@@ -336,6 +329,9 @@ DATA(insert ( 1255 cmin				29 0  4  -4 0 -1 -1 t p i t f f t 0));
 DATA(insert ( 1255 xmax				28 0  4  -5 0 -1 -1 t p i t f f t 0));
 DATA(insert ( 1255 cmax				29 0  4  -6 0 -1 -1 t p i t f f t 0));
 DATA(insert ( 1255 tableoid			26 0  4  -7 0 -1 -1 t p i t f f t 0));
+#ifdef HAVE_SELINUX
+DATA(insert ( 1255 security_context	3403 0 4 -8 0 -1 -1 t p i t f f t 0));
+#endif
 
 /* ----------------
  *		pg_attribute
@@ -358,9 +354,7 @@ DATA(insert ( 1255 tableoid			26 0  4  -7 0 -1 -1 t p i t f f t 0));
 { 1249, {"atthasdef"},	  16, -1,	1, 14, 0, -1, -1, true, 'p', 'c', true, false, false, true, 0 }, \
 { 1249, {"attisdropped"}, 16, -1,	1, 15, 0, -1, -1, true, 'p', 'c', true, false, false, true, 0 }, \
 { 1249, {"attislocal"},   16, -1,	1, 16, 0, -1, -1, true, 'p', 'c', true, false, false, true, 0 }, \
-{ 1249, {"attispsid"},    16, -1,   1, 17, 0, -1, -1, true, 'p', 'c', true, false, false, true, 0 }, \
-{ 1249, {"attselcon"},  3403, -1,   4, 18, 0, -1, -1, true, 'p', 'i', true, false, false, true, 0 }, \
-{ 1249, {"attinhcount"},  23, -1,	4, 19, 0, -1, -1, true, 'p', 'i', true, false, false, true, 0 }
+{ 1249, {"attinhcount"},  23, -1,	4, 17, 0, -1, -1, true, 'p', 'i', true, false, false, true, 0 }
 
 DATA(insert ( 1249 attrelid			26 -1  4   1 0 -1 -1 t p i t f f t 0));
 DATA(insert ( 1249 attname			19 -1 NAMEDATALEN  2 0 -1 -1 f p i t f f t 0));
@@ -378,9 +372,7 @@ DATA(insert ( 1249 attnotnull		16 -1  1  13 0 -1 -1 t p c t f f t 0));
 DATA(insert ( 1249 atthasdef		16 -1  1  14 0 -1 -1 t p c t f f t 0));
 DATA(insert ( 1249 attisdropped		16 -1  1  15 0 -1 -1 t p c t f f t 0));
 DATA(insert ( 1249 attislocal		16 -1  1  16 0 -1 -1 t p c t f f t 0));
-DATA(insert ( 1249 attispsid        16 -1  1  17 0 -1 -1 t p c t f f t 0));
-DATA(insert ( 1249 attselcon      3403 -1  4  18 0 -1 -1 t p i t f f t 0));
-DATA(insert ( 1249 attinhcount		23 -1  4  19 0 -1 -1 t p i t f f t 0));
+DATA(insert ( 1249 attinhcount		23 -1  4  17 0 -1 -1 t p i t f f t 0));
 DATA(insert ( 1249 ctid				27 0  6  -1 0 -1 -1 f p s t f f t 0));
 /* no OIDs in pg_attribute */
 DATA(insert ( 1249 xmin				28 0  4  -3 0 -1 -1 t p i t f f t 0));
@@ -388,6 +380,9 @@ DATA(insert ( 1249 cmin				29 0  4  -4 0 -1 -1 t p i t f f t 0));
 DATA(insert ( 1249 xmax				28 0  4  -5 0 -1 -1 t p i t f f t 0));
 DATA(insert ( 1249 cmax				29 0  4  -6 0 -1 -1 t p i t f f t 0));
 DATA(insert ( 1249 tableoid			26 0  4  -7 0 -1 -1 t p i t f f t 0));
+#ifdef HAVE_SELINUX
+DATA(insert ( 1249 security_context	3403 0 4 -8 0 -1 -1 t p i t f f t 0));
+#endif
 
 /* ----------------
  *		pg_class
@@ -418,10 +413,9 @@ DATA(insert ( 1249 tableoid			26 0  4  -7 0 -1 -1 t p i t f f t 0));
 { 1259, {"relhaspkey"},    16, -1,	1, 22, 0, -1, -1, true, 'p', 'c', true, false, false, true, 0 }, \
 { 1259, {"relhasrules"},   16, -1,	1, 23, 0, -1, -1, true, 'p', 'c', true, false, false, true, 0 }, \
 { 1259, {"relhassubclass"},16, -1,	1, 24, 0, -1, -1, true, 'p', 'c', true, false, false, true, 0 }, \
-{ 1259, {"relselcon"},   3403, -1,  4, 25, 0, -1, -1, true, 'p', 'i', true, false, false, true, 0 }, \
-{ 1259, {"relfrozenxid"},  28, -1,	4, 26, 0, -1, -1, true, 'p', 'i', true, false, false, true, 0 }, \
-{ 1259, {"relacl"},		 1034, -1, -1, 27, 1, -1, -1, false, 'x', 'i', false, false, false, true, 0 }, \
-{ 1259, {"reloptions"},  1009, -1, -1, 28, 1, -1, -1, false, 'x', 'i', false, false, false, true, 0 }
+{ 1259, {"relfrozenxid"},  28, -1,	4, 25, 0, -1, -1, true, 'p', 'i', true, false, false, true, 0 }, \
+{ 1259, {"relacl"},		 1034, -1, -1, 26, 1, -1, -1, false, 'x', 'i', false, false, false, true, 0 }, \
+{ 1259, {"reloptions"},  1009, -1, -1, 27, 1, -1, -1, false, 'x', 'i', false, false, false, true, 0 }
 
 DATA(insert ( 1259 relname			19 -1 NAMEDATALEN	1 0 -1 -1 f p i t f f t 0));
 DATA(insert ( 1259 relnamespace		26 -1 4   2 0 -1 -1 t p i t f f t 0));
@@ -447,10 +441,9 @@ DATA(insert ( 1259 relhasoids		16 -1 1  21 0 -1 -1 t p c t f f t 0));
 DATA(insert ( 1259 relhaspkey		16 -1 1  22 0 -1 -1 t p c t f f t 0));
 DATA(insert ( 1259 relhasrules		16 -1 1  23 0 -1 -1 t p c t f f t 0));
 DATA(insert ( 1259 relhassubclass	16 -1 1  24 0 -1 -1 t p c t f f t 0));
-DATA(insert ( 1259 relselcon      3403 -1 4  25 0 -1 -1 t p i t f f t 0));
-DATA(insert ( 1259 relfrozenxid		28 -1 4  26 0 -1 -1 t p i t f f t 0));
-DATA(insert ( 1259 relacl		  1034 -1 -1 27 1 -1 -1 f x i f f f t 0));
-DATA(insert ( 1259 reloptions	  1009 -1 -1 28 1 -1 -1 f x i f f f t 0));
+DATA(insert ( 1259 relfrozenxid		28 -1 4  25 0 -1 -1 t p i t f f t 0));
+DATA(insert ( 1259 relacl		  1034 -1 -1 26 1 -1 -1 f x i f f f t 0));
+DATA(insert ( 1259 reloptions	  1009 -1 -1 27 1 -1 -1 f x i f f f t 0));
 DATA(insert ( 1259 ctid				27 0  6  -1 0 -1 -1 f p s t f f t 0));
 DATA(insert ( 1259 oid				26 0  4  -2 0 -1 -1 t p i t f f t 0));
 DATA(insert ( 1259 xmin				28 0  4  -3 0 -1 -1 t p i t f f t 0));
@@ -458,6 +451,9 @@ DATA(insert ( 1259 cmin				29 0  4  -4 0 -1 -1 t p i t f f t 0));
 DATA(insert ( 1259 xmax				28 0  4  -5 0 -1 -1 t p i t f f t 0));
 DATA(insert ( 1259 cmax				29 0  4  -6 0 -1 -1 t p i t f f t 0));
 DATA(insert ( 1259 tableoid			26 0  4  -7 0 -1 -1 t p i t f f t 0));
+#ifdef HAVE_SELINUX
+DATA(insert ( 1259 security_context	3403 0 4 -8 0 -1 -1 t p i t f f t 0));
+#endif
 
 /* ----------------
  *		pg_index

@@ -42,7 +42,6 @@
 #include "nodes/pg_list.h"
 #include "nodes/primnodes.h"
 #include "rewrite/prs2lock.h"
-#include "sepgsql.h"
 #include "storage/block.h"
 #include "storage/fd.h"
 #include "storage/ipc.h"
@@ -178,10 +177,7 @@ Boot_CreateStmt:
 					do_start();
 
 					tupdesc = CreateTupleDesc(numattr, !($4), attrtypes);
-					tupdesc = sepgsqlCreateRelation($6,
-													PG_CATALOG_NAMESPACE,
-													RELKIND_RELATION,
-													tupdesc);
+
 					if ($2)
 					{
 						if (boot_reldesc)
@@ -198,7 +194,6 @@ Boot_CreateStmt:
 												   RELKIND_RELATION,
 												   $3,
 												   true);
-						sepgsqlPutRelationContext(boot_reldesc->rd_rel);
 						elog(DEBUG4, "bootstrap relation created");
 					}
 					else
