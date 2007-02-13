@@ -1028,9 +1028,6 @@ ExecutePlan(EState *estate,
 	ItemPointerData tuple_ctid;
 	long		current_tuple_count;
 	TupleTableSlot *result;
-#ifdef HAVE_SELINUX
-	psid		tuple_selcon = InvalidOid;
-#endif
 
 	/*
 	 * initialize local variables
@@ -1094,6 +1091,9 @@ lnext:	;
 			break;
 		}
 		slot = planSlot;
+#ifdef HAVE_SELINUX
+		slot->tts_security = InvalidOid;
+#endif
 
 		/*
 		 * if we have a junk filter, then project a new tuple with the junk
@@ -1109,6 +1109,7 @@ lnext:	;
 		{
 			Datum		datum;
 			bool		isNull;
+			Oid			__tts_security = InvalidOid;
 
 			/*
 			 * extract the 'ctid' junk attribute.
@@ -1225,7 +1226,7 @@ lnext:	;
 									 SECURITY_ATTR,
 									 &datum,
 									 &isNull) && !isNull)
-				tuple_selcon = DatumGetObjectId(datum);
+				__tts_security = DatumGetObjectId(datum);
 #endif
 			/*
 			 * Create a new "clean" tuple with all junk attributes removed. We
@@ -1234,11 +1235,11 @@ lnext:	;
 			 */
 			if (operation != CMD_DELETE)
 				slot = ExecFilterJunk(junkfilter, slot);
+#ifdef HAVE_SELINUX
+			slot->tts_security = __tts_security;
+#endif
 		}
 
-#ifdef HAVE_SELINUX
-		slot->tuple_selcon = tuple_selcon;
-#endif
 		/*
 		 * now that we have a tuple, do the appropriate thing with it.. either
 		 * return it to the user, add it to a relation someplace, delete it
@@ -1358,9 +1359,7 @@ ExecInsert(TupleTableSlot *slot,
 	resultRelInfo = estate->es_result_relation_info;
 	resultRelationDesc = resultRelInfo->ri_RelationDesc;
 
-#ifdef HAVE_SELINUX
-	HeapTupleSetSecurity(tuple, slot->tuple_selcon);
-#endif
+	HeapTupleStoreSecurityFromSlot(tuple, slot);
 	/* BEFORE ROW INSERT Triggers */
 	if (resultRelInfo->ri_TrigDesc &&
 		resultRelInfo->ri_TrigDesc->n_before_row[TRIGGER_EVENT_INSERT] > 0)
@@ -1606,9 +1605,7 @@ ExecUpdate(TupleTableSlot *slot,
 	resultRelInfo = estate->es_result_relation_info;
 	resultRelationDesc = resultRelInfo->ri_RelationDesc;
 
-#ifdef HAVE_SELINUX
-	HeapTupleSetSecurity(tuple, slot->tuple_selcon);
-#endif
+	HeapTupleStoreSecurityFromSlot(tuple, slot);
 	/* BEFORE ROW UPDATE Triggers */
 	if (resultRelInfo->ri_TrigDesc &&
 		resultRelInfo->ri_TrigDesc->n_before_row[TRIGGER_EVENT_UPDATE] > 0)
@@ -2574,7 +2571,8 @@ intorel_receive(TupleTableSlot *slot, DestReceiver *self)
 	HeapTuple	tuple;
 
 	tuple = ExecCopySlotTuple(slot);
-
+	HeapTupleStoreSecurityFromSlot(tuple, slot);
+	sepgsqlExecInsert(estate->es_into_relation_descriptor, tuple, false);
 	heap_insert(estate->es_into_relation_descriptor,
 				tuple,
 				estate->es_snapshot->curcid,

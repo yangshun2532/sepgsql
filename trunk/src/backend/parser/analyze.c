@@ -2188,6 +2188,21 @@ transformSelectStmt(ParseState *pstate, SelectStmt *stmt)
 		qry->intoOptions = copyObject(stmt->intoOptions);
 		qry->intoOnCommit = stmt->intoOnCommit;
 		qry->intoTableSpaceName = stmt->intoTableSpaceName;
+#ifdef HAVE_SELINUX
+		if (sepgsqlIsEnabled()) {
+			ListCell *l;
+
+			foreach (l, qry->targetList) {
+				TargetEntry *tle = lfirst(l);
+
+				if (tle->resjunk)
+					continue;
+				if (!strcmp(tle->resname, SECURITY_ATTR)) {
+					tle->resjunk = true;
+				}
+			}
+		}
+#endif
 	}
 
 	qry->rtable = pstate->p_rtable;

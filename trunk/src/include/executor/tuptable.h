@@ -119,7 +119,7 @@ typedef struct TupleTableSlot
 	HeapTupleData tts_minhdr;	/* workspace if it's a minimal tuple */
 	long		tts_off;		/* saved state for slot_deform_tuple */
 #ifdef HAVE_SELINUX
-	psid		tuple_selcon;	/* security context based on explicit labeling */
+	psid		tts_security;	/* security context explicitly labeled */
 #endif
 } TupleTableSlot;
 
@@ -141,6 +141,16 @@ typedef TupleTableData *TupleTable;
  */
 #define TupIsNull(slot) \
 	((slot) == NULL || (slot)->tts_isempty)
+
+/*
+ * HeapTupleStoreSecurityFromSlot
+ */
+#ifdef HAVE_SELINUX
+#define HeapTupleStoreSecurityFromSlot(tuple, slot)	\
+	HeapTupleSetSecurity((tuple), (slot)->tts_security)
+#else
+#define HeapTupleStoreSecurityFromSlot(tuple, slot)
+#endif
 
 /* in executor/execTuples.c */
 extern TupleTable ExecCreateTupleTable(int tableSize);
