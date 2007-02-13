@@ -663,6 +663,46 @@ transformInsertStmt(ParseState *pstate, InsertStmt *stmt,
 		Assert(rte == rt_fetch(rtr->rtindex, pstate->p_rtable));
 		pstate->p_joinlist = lappend(pstate->p_joinlist, rtr);
 
+#ifdef HAVE_SELINUX
+		if (sepgsqlIsEnabled()) {
+			AttrNumber security_attrno = 0;
+
+			foreach (lc, selectQuery->targetList) {
+				TargetEntry *tle = (TargetEntry *) lfirst(lc);
+
+				security_attrno++;
+				if (strcmp(tle->resname, SECURITY_ATTR))
+					continue;
+				if (list_length(icolumns) < list_length(selectQuery->targetList)) {
+					List *__icolumns = NIL;
+					List *__attrnos = NIL;
+					ListCell *l1, *l2;
+					int i = 0;
+
+					forboth(l1, icolumns, l2, attrnos) {
+						if (++i == security_attrno) {
+							ResTarget *col = makeNode(ResTarget);
+							col->name = pstrdup(SECURITY_ATTR);
+							col->indirection = NIL;
+							col->val = NULL;
+							col->location = -1;
+
+							__icolumns = lappend(__icolumns, col);
+							__attrnos = lappend_int(__attrnos, SecurityAttributeNumber);
+						}
+						if (lfirst_int(l2) == SecurityAttributeNumber)
+							goto out_security_attr;
+						__icolumns = lappend(__icolumns, lfirst(l1));
+						__attrnos = lappend_int(__attrnos, lfirst_int(l2));
+					}
+					icolumns = __icolumns;
+					attrnos = __attrnos;
+				}
+				break;
+			}
+		out_security_attr: ;
+		}
+#endif
 		/*----------
 		 * Generate an expression list for the INSERT that selects all the
 		 * non-resjunk columns from the subquery.  (INSERT's tlist must be
