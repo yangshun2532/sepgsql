@@ -72,54 +72,45 @@ not_found:
 	return NULL;
 }
 
-static psid __get_pg_selinux_tuple_context()
+static psid __get_pg_selinux_tuple_context(bool early_mode)
 {
+	HeapTuple tuple;
 	security_context_t scon, tcon, ncon;
 	psid tupcon;
 	int rc;
 
-	/* obtain server's context */
-	if (MyProcPort) {
-		rc = getpeercon_raw(MyProcPort->sock, &scon);
-	} else {
-		rc = getcon_raw(&scon);
-	}
-	if (rc)
-		selerror("could not obtain client's context");
-
-	/* obtain pg_selinux's table context */
-	PG_TRY();
-	{
-		HeapTuple tuple;
-		tuple = SearchSysCache(RELOID,
-							   ObjectIdGetDatum(SelinuxRelationId),
-							   0, 0, 0);
-		if (!HeapTupleIsValid(tuple))
-			selerror("cache lookup failed relation = %u", SelinuxRelationId);
+	/* obtain pg_selinux's implicit context */
+	tuple = SearchSysCache(RELOID,
+						   ObjectIdGetDatum(SelinuxRelationId),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		selerror("cache lookup failed for relation = %u", SelinuxRelationId);
+	if (early_mode) {
 		tcon = early_psid_to_context(HeapTupleGetSecurity(tuple));
-		ReleaseSysCache(tuple);
+	} else {
+		tcon = sepgsql_psid_to_context(HeapTupleGetSecurity(tuple));
 	}
-	PG_CATCH();
-	{
-		freecon(scon);
-		PG_RE_THROW();
-	}
-	PG_END_TRY();
+
+	/* obtain server's context */
+	rc = getcon_raw(&scon);
+	if (rc)
+		selerror("could not obtain server's context");
 
 	/* compute pg_selinux tuple context */
-	if (security_compute_create_raw(scon, tcon, SECCLASS_TUPLE, &ncon)) {
-		freecon(scon);
-		pfree(tcon);
-		selerror("could not obtain a newly created security context"
-				 " scon=%s, tcon=%s tclass=%u", scon, tcon, SECCLASS_TUPLE);
-	}
-	freecon(scon);
+	rc = security_compute_create_raw(scon, tcon, SECCLASS_TUPLE, &ncon);
 	pfree(tcon);
+	freecon(scon);
+	if (rc)
+		selerror("could not compute a newly created security context");
 
-	/* obtain tuple's psid */
+	/* obtain tuple's context */
 	PG_TRY();
 	{
-		tupcon = early_context_to_psid(ncon);	
+		if (early_mode) {
+			tupcon = early_context_to_psid(ncon);
+		} else {
+			tupcon = sepgsql_context_to_psid(ncon);
+		}
 	}
 	PG_CATCH();
 	{
@@ -156,7 +147,7 @@ static bool pg_selinux_is_available()
 		Relation rel;
 		CatalogIndexState index;
 		HeapTuple tuple;
-		psid tupcon = __get_pg_selinux_tuple_context();
+		psid tupcon = __get_pg_selinux_tuple_context(true);
 
 		PG_TRY();
 		{
@@ -203,7 +194,7 @@ psid sepgsql_context_to_psid(char *context)
 {
 	HeapTuple tuple;
 	Datum tcon;
-	psid selcon;
+	psid selcon, tupcon;
 
 	if (!pg_selinux_is_available())
 		return early_context_to_psid(context);
@@ -223,10 +214,13 @@ psid sepgsql_context_to_psid(char *context)
 		if (sepgsql_check_context(context) != true)
 			selerror("'%s' is not valid security context", context);
 
+		tupcon = __get_pg_selinux_tuple_context(false);
+
 		pgselinux = heap_open(SelinuxRelationId, RowExclusiveLock);
 		indstate = CatalogOpenIndexes(pgselinux);
 
 		tuple = heap_formtuple(RelationGetDescr(pgselinux), values, nulls);
+		HeapTupleSetSecurity(tuple, tupcon);
 		selcon = simple_heap_insert(pgselinux, tuple);
 		CatalogIndexInsert(indstate, tuple);
 
