@@ -90,6 +90,7 @@ static psid __get_pg_selinux_tuple_context(bool early_mode)
 	} else {
 		tcon = sepgsql_psid_to_context(HeapTupleGetSecurity(tuple));
 	}
+	ReleaseSysCache(tuple);
 
 	/* obtain server's context */
 	rc = getcon_raw(&scon);
