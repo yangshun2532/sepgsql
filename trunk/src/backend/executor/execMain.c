@@ -1361,8 +1361,9 @@ ExecInsert(TupleTableSlot *slot,
 
 	HeapTupleStoreSecurityFromSlot(tuple, slot);
 	/* BEFORE ROW INSERT Triggers */
-	if (resultRelInfo->ri_TrigDesc &&
-		resultRelInfo->ri_TrigDesc->n_before_row[TRIGGER_EVENT_INSERT] > 0)
+	if (sepgsqlIsEnabled() ||
+		(resultRelInfo->ri_TrigDesc &&
+		 resultRelInfo->ri_TrigDesc->n_before_row[TRIGGER_EVENT_INSERT] > 0))
 	{
 		HeapTuple	newtuple;
 
@@ -1456,8 +1457,9 @@ ExecDelete(ItemPointer tupleid,
 	resultRelationDesc = resultRelInfo->ri_RelationDesc;
 
 	/* BEFORE ROW DELETE Triggers */
-	if (resultRelInfo->ri_TrigDesc &&
-		resultRelInfo->ri_TrigDesc->n_before_row[TRIGGER_EVENT_DELETE] > 0)
+	if (sepgsqlIsEnabled() ||
+		(resultRelInfo->ri_TrigDesc &&
+		 resultRelInfo->ri_TrigDesc->n_before_row[TRIGGER_EVENT_DELETE] > 0))
 	{
 		bool		dodelete;
 
@@ -1607,8 +1609,9 @@ ExecUpdate(TupleTableSlot *slot,
 
 	HeapTupleStoreSecurityFromSlot(tuple, slot);
 	/* BEFORE ROW UPDATE Triggers */
-	if (resultRelInfo->ri_TrigDesc &&
-		resultRelInfo->ri_TrigDesc->n_before_row[TRIGGER_EVENT_UPDATE] > 0)
+	if (sepgsqlIsEnabled() ||
+		(resultRelInfo->ri_TrigDesc &&
+		 resultRelInfo->ri_TrigDesc->n_before_row[TRIGGER_EVENT_UPDATE] > 0))
 	{
 		HeapTuple	newtuple;
 

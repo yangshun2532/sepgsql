@@ -24,11 +24,12 @@
 #include "utils/fmgroids.h"
 #include "utils/syscache.h"
 
-#define RTEMARK_SELECT  (1<<(N_ACL_RIGHTS))
-#define RTEMARK_INSERT  (1<<(N_ACL_RIGHTS + 1))
-#define RTEMARK_UPDATE  (1<<(N_ACL_RIGHTS + 2))
-#define RTEMARK_DELETE  (1<<(N_ACL_RIGHTS + 3))
-#define RTEMARK_MASK    (RTEMARK_SELECT | RTEMARK_INSERT | RTEMARK_UPDATE | RTEMARK_DELETE)
+#define RTEMARK_SELECT        (1<<(N_ACL_RIGHTS))
+#define RTEMARK_INSERT        (1<<(N_ACL_RIGHTS + 1))
+#define RTEMARK_UPDATE        (1<<(N_ACL_RIGHTS + 2))
+#define RTEMARK_DELETE        (1<<(N_ACL_RIGHTS + 3))
+#define RTEMARK_RELABELFROM   (1<<(N_ACL_RIGHTS + 4))
+#define RTEMARK_RELABELTO     (1<<(N_ACL_RIGHTS + 5))
 
 /* local definitions of static functions. */
 static List *proxyRteRelation(List *selist, Query *query, int rtindex, Node **quals);
@@ -298,6 +299,10 @@ static List *proxyRteRelation(List *selist, Query *query, int rtindex, Node **qu
 		perms |= TUPLE__UPDATE;
 	if (rte->requiredPerms & RTEMARK_DELETE)
 		perms |= TUPLE__DELETE;
+	if (rte->requiredPerms & RTEMARK_RELABELFROM)
+		perms |= TUPLE__RELABELFROM;
+	if (rte->requiredPerms & RTEMARK_RELABELTO)
+		perms |= TUPLE__RELABELTO;
 
 	/* append sepgsql_tuple_perm(relid, record, perms) */
 	if (perms) {
@@ -360,6 +365,12 @@ static List *proxyRteSubQuery(List *selist, Query *query)
 
 	/* permission mark on the target columns */
 	if (cmdType != CMD_DELETE) {
+		uint32 perms = 0;
+		if (cmdType == CMD_INSERT)
+			perms |= COLUMN__INSERT;
+		if (cmdType == CMD_UPDATE)
+			perms |= COLUMN__UPDATE;
+
 		foreach (l, query->targetList) {
 			TargetEntry *te = lfirst(l);
 			Assert(IsA(te, TargetEntry));
@@ -367,13 +378,17 @@ static List *proxyRteSubQuery(List *selist, Query *query)
 			selist = sepgsqlWalkExpr(selist, query, (Node *) te->expr);
 
 			/* mark insert/update target */
-			if (te->resjunk)
+			if (te->resjunk) {
+				if (!strcmp(te->resname, SECURITY_ATTR)) {
+					selist = addEvalPgAttribtue(selist, rte->relid, rte->inh,
+												SecurityAttributeNumber, perms);
+					rte->requiredPerms |= RTEMARK_RELABELFROM;
+				}
 				continue;
+			}
 			if (cmdType==CMD_UPDATE || cmdType==CMD_INSERT) {
-				uint32 perm = (cmdType == CMD_UPDATE
-							   ? COLUMN__UPDATE : COLUMN__INSERT);
 				selist = addEvalPgAttribtue(selist, rte->relid, rte->inh,
-											te->resno, perm);
+											te->resno, perms);
 			}
 		}
 	}

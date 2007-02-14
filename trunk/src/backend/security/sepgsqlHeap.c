@@ -11,6 +11,7 @@
 #include "catalog/pg_class.h"
 #include "catalog/pg_database.h"
 #include "catalog/pg_proc.h"
+#include "catalog/pg_selinux.h"
 #include "miscadmin.h"
 #include "security/sepgsql.h"
 #include "utils/typcache.h"
@@ -305,6 +306,9 @@ void sepgsqlExecInsert(Relation rel, HeapTuple tuple, bool has_returning)
 	char *audit;
 	int rc;
 
+	if (RelationGetRelid(rel) == SelinuxRelationId)
+		selerror("modifying pg_selinux is never allowed");
+
 	icon = __getImplicitContext(rel, tuple);
 	econ = HeapTupleGetSecurity(tuple);
 	perms = TUPLE__INSERT;
@@ -333,6 +337,39 @@ void sepgsqlExecInsert(Relation rel, HeapTuple tuple, bool has_returning)
 								 &audit);
 		sepgsql_audit(rc, audit);
 	}
+}
+
+void sepgsqlExecUpdate(Relation rel, HeapTuple newtup, HeapTuple oldtup, bool has_returning)
+{
+	psid ocon, ncon;
+	uint32 perms;
+	char *audit;
+	int rc;
+
+	if (RelationGetRelid(rel) == SelinuxRelationId)
+		selerror("modifying pg_selinux is never allowed");
+
+	ocon = HeapTupleGetSecurity(oldtup);
+	ncon = HeapTupleGetSecurity(newtup);
+
+	if (ocon != ncon) {
+		/* relabeling happen */
+		perms = TUPLE__RELABELTO;
+		if (has_returning)
+			perms |= TUPLE__SELECT;
+		rc = __check_tuple_perms(RelationGetRelid(rel),
+								 RelationGetDescr(rel),
+								 newtup,
+								 perms,
+								 &audit);
+		sepgsql_audit(rc, audit);
+	}
+}
+
+void sepgsqlExecDelete(Relation rel, HeapTuple tuple)
+{
+	if (RelationGetRelid(rel) == SelinuxRelationId)
+		selerror("modifying pg_selinux is never allowed");
 }
 
 void sepgsqlHeapInsert(Relation rel, HeapTuple tuple)

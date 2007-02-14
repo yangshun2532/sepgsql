@@ -184,9 +184,11 @@ extern void sepgsqlVerifyQueryList(List *queryList);
  * SE-PostgreSQL heap input/output functions
  */
 #ifdef HAVE_SELINUX
-extern void  sepgsqlExecInsert(Relation rel, HeapTuple tuple, bool has_returing);
-extern void  sepgsqlHeapInsert(Relation rel, HeapTuple tuple);
-extern void  sepgsqlHeapUpdate(Relation rel, HeapTuple newtup, HeapTuple oldtup);
+extern void sepgsqlExecInsert(Relation rel, HeapTuple tuple, bool has_returing);
+extern void sepgsqlHeapInsert(Relation rel, HeapTuple tuple);
+extern void sepgsqlExecUpdate(Relation rel, HeapTuple newtup, HeapTuple oldtup, bool has_returning);
+extern void sepgsqlHeapUpdate(Relation rel, HeapTuple newtup, HeapTuple oldtup);
+extern void sepgsqlExecDelete(Relation rel, HeapTuple tuple);
 #else
 #define sepgsqlExecInsert(a,b,c)
 #define sepgsqlHeapInsert(a,b)
