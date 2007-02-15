@@ -1527,7 +1527,7 @@ alter_table_cmd:
 			| IDENT '=' Sconst
 				{
 					AlterTableCmd *n;
-					if (strcmp($1, "context") != 0 || sepgsqlIsEnabled())
+					if (strcmp($1, "context") != 0 || !sepgsqlIsEnabled())
 						yyerror("syntax error");
 
 					n = makeNode(AlterTableCmd);
@@ -1539,7 +1539,7 @@ alter_table_cmd:
 			| ALTER opt_column ColId IDENT '=' Sconst
 				{
 					AlterTableCmd *n;
-					if (strcmp($4, "context") != 0 || sepgsqlIsEnabled())
+					if (strcmp($4, "context") != 0 || !sepgsqlIsEnabled())
 						yyerror("syntax error");
 
 					n = makeNode(AlterTableCmd);
@@ -3978,7 +3978,7 @@ common_func_opt_item:
 				}
 			| IDENT '=' Sconst
 				{
-					if (strcmp($1, "context") != 0 || sepgsqlIsEnabled())
+					if (strcmp($1, "context") != 0 || !sepgsqlIsEnabled())
 						yyerror("syntax error");
 					$$ = makeDefElem("context", (Node *)makeString($3));
 				}
@@ -5026,7 +5026,7 @@ alterdb_opt_item:
 				}
 			| IDENT '=' Sconst
 				{
-					if (strcmp($1, "context") != 0 || sepgsqlIsEnabled())
+					if (strcmp($1, "context") != 0 || !sepgsqlIsEnabled())
 						yyerror("syntax error");
 					$$ = makeDefElem("context", (Node *)makeString($3));
 				}
