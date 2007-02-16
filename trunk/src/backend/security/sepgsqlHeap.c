@@ -351,6 +351,11 @@ void sepgsqlExecUpdate(Relation rel, HeapTuple newtup, HeapTuple oldtup, bool ha
 
 	ocon = HeapTupleGetSecurity(oldtup);
 	ncon = HeapTupleGetSecurity(newtup);
+	if (ncon == InvalidOid) {
+		/* no explicit updating on security_context */
+		ncon = ocon;
+		HeapTupleSetSecurity(newtup, ocon);
+	}
 
 	if (ocon != ncon) {
 		/* relabeling happen */
