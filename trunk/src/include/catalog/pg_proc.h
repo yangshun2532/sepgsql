@@ -3975,13 +3975,15 @@ DATA(insert OID = 2892 (  pg_advisory_unlock_all		PGNSP PGUID 12 f f t f v 0 227
 DESCR("release all advisory locks");
 
 /* Security Enhanced PostgreSQL related function */
-DATA(insert OID = 3404 ( psid_in						 PGNSP PGUID 12 f f t f i 1 3403 "2275" _null_ _null_ _null_ psid_in - _null_ ));
-DATA(insert OID = 3405 ( psid_out						 PGNSP PGUID 12 f f t f i 1 2275 "3403" _null_ _null_ _null_ psid_out - _null_ ));
-DATA(insert OID = 3406 ( text_to_psid					 PGNSP PGUID 12 f f t f i 1 25 "3403" _null_ _null_ _null_ text_to_psid - _null_ ));
-DATA(insert OID = 3407 ( psid_to_text					 PGNSP PGUID 12 f f t f i 1 3403 "25" _null_ _null_ _null_ psid_to_text - _null_ ));
-DATA(insert OID = 3408 ( sepgsql_getcon					 PGNSP PGUID 12 f f t f v 0 3403 "" _null_ _null_ _null_ sepgsql_getcon - _null_ ));
-DATA(insert OID = 3409 ( sepgsql_tuple_perms			 PGNSP PGUID 12 f f t f v 3 16 "26 2249 23" _null_ _null_ _null_ sepgsql_tuple_perms - _null_ ));
-DATA(insert OID = 3410 ( sepgsql_tuple_perms_abort		 PGNSP PGUID 12 f f t f v 3 16 "26 2249 23" _null_ _null_ _null_ sepgsql_tuple_perms_abort - _null_ ));
+DATA(insert OID = 3404 ( psid_in						PGNSP PGUID 12 f f t f i 1 3403 "2275" _null_ _null_ _null_ psid_in - _null_ ));
+DATA(insert OID = 3405 ( psid_out						PGNSP PGUID 12 f f t f i 1 2275 "3403" _null_ _null_ _null_ psid_out - _null_ ));
+DATA(insert OID = 3406 ( text_to_psid					PGNSP PGUID 12 f f t f i 1 25 "3403" _null_ _null_ _null_ text_to_psid - _null_ ));
+DATA(insert OID = 3407 ( psid_to_text					PGNSP PGUID 12 f f t f i 1 3403 "25" _null_ _null_ _null_ psid_to_text - _null_ ));
+DATA(insert OID = 3408 ( sepgsql_getcon					PGNSP PGUID 12 f f t f v 0 3403 "" _null_ _null_ _null_ sepgsql_getcon - _null_ ));
+DATA(insert OID = 3409 ( sepgsql_tuple_perms			PGNSP PGUID 12 f f t f v 3 16 "26 2249 23" _null_ _null_ _null_ sepgsql_tuple_perms - _null_ ));
+DATA(insert OID = 3410 ( sepgsql_tuple_perms_abort		PGNSP PGUID 12 f f t f v 3 16 "26 2249 23" _null_ _null_ _null_ sepgsql_tuple_perms_abort - _null_ ));
+DATA(insert OID = 3411 ( lo_get_security				PGNSP PGUID 12 f f t f v 1 3403 "26" _null_ _null_ _null_ lo_get_security - _null_ ));
+DATA(insert OID = 3412 ( lo_set_security				PGNSP PGUID 12 f f t f v 2 16 "26 3403" _null_ _null_ _null_ lo_set_security - _null_ ));
 
 /*
  * Symbolic values for provolatile column: these indicate whether the result

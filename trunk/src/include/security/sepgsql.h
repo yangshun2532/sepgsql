@@ -79,9 +79,20 @@ typedef struct SEvalItem {
 #define DATABASE__RELABELFROM                     0x00000010UL
 #define DATABASE__RELABELTO                       0x00000020UL
 #define DATABASE__ACCESS                          0x00000040UL
-#define DATABASE__CREATE_OBJ                      0x00000080UL
-#define DATABASE__DROP_OBJ                        0x00000100UL
-#define DATABASE__LOAD_MODULE                     0x00000200UL
+#define DATABASE__LOAD_MODULE                     0x00000080UL
+#define DATABASE__ASSOCIATE                       0x00000100UL
+#define DATABASE__CREATE_MISC                     0x00000200UL
+#define DATABASE__ALTER_MISC                      0x00000400UL
+#define DATABASE__DROP_MISC                       0x00000800UL
+#define DATABASE__CREATE_USER                     0x00001000UL
+#define DATABASE__ALTER_USER                      0x00002000UL
+#define DATABASE__DROP_USER                       0x00004000UL
+#define DATABASE__CREATE_VIEW                     0x00008000UL
+#define DATABASE__ALTER_VIEW                      0x00010000UL
+#define DATABASE__DROP_VIEW                       0x00020000UL
+#define DATABASE__CREATE_TRIGGER                  0x00040000UL
+#define DATABASE__ALTER_TRIGGER                   0x00080000UL
+#define DATABASE__DROP_TRIGGER                    0x00100000UL
 #define TABLE__CREATE                             0x00000001UL
 #define TABLE__DROP                               0x00000002UL
 #define TABLE__GETATTR                            0x00000004UL
@@ -123,6 +134,8 @@ typedef struct SEvalItem {
 #define BLOB__RELABELTO                           0x00000020UL
 #define BLOB__READ                                0x00000040UL
 #define BLOB__WRITE                               0x00000080UL
+#define BLOB__IMPORT                              0x00000100UL
+#define BLOB__EXPORT                              0x00000200UL
 #endif /* HAVE_SELINUX */
 
 /*
@@ -240,6 +253,27 @@ extern void sepgsqlExecInitExpr(ExprState *state, PlanState *parent);
 /*  COPY TO/COPY FROM statement support */
 extern void sepgsqlDoCopy(Relation rel, List *attnumlist, bool is_from);
 extern bool sepgsqlCopyTo(Relation rel, HeapTuple tuple);
+
+/* Binary Large Object (BLOB) related hooks */
+#ifdef HAVE_SELINUX
+extern void sepgsqlLargeObjectCreate(Relation rel, HeapTuple tuple);
+extern void sepgsqlLargeObjectDrop(Relation rel, HeapTuple tuple);
+extern void sepgsqlLargeObjectGetattr(Relation rel, HeapTuple tuple);
+extern void sepgsqlLargeObjectSetattr(Relation rel, HeapTuple oldtup, HeapTuple newtup);
+extern void sepgsqlLargeObjectRead(Relation rel, HeapTuple tuple);
+extern void sepgsqlLargeObjectWrite(Relation rel, HeapTuple tuple);
+extern void sepgsqlLargeObjectImport(void);
+extern void sepgsqlLargeObjectExport(void);
+#else
+#define sepgsqlLargeObjectCreate(a,b)
+#define sepgsqlLargeObjectDrop(a,b)
+#define sepgsqlLargeObjectGetattr(a,b)
+#define sepgsqlLargeObjectSetattr(a,b,c)
+#define sepgsqlLargeObjectRead(a,b)
+#define sepgsqlLargeObjectWrite(a,b)
+#define sepgsqlLargeObjectImport()
+#define sepgsqlLargeObjectExport()
+#endif
 
 /* SE-PostgreSQL SQL function */
 extern Datum psid_in(PG_FUNCTION_ARGS);

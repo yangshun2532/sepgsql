@@ -44,6 +44,9 @@ typedef struct LargeObjectDesc
 #define IFS_RDLOCK		(1 << 0)
 #define IFS_WRLOCK		(1 << 1)
 
+#ifdef HAVE_SELINUX
+	psid		blob_security;	/* security context of blob */
+#endif
 } LargeObjectDesc;
 
 

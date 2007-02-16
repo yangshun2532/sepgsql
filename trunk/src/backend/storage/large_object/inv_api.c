@@ -32,6 +32,7 @@
 #include "catalog/pg_largeobject.h"
 #include "commands/comment.h"
 #include "libpq/libpq-fs.h"
+#include "security/sepgsql.h"
 #include "storage/large_object.h"
 #include "utils/fmgroids.h"
 #include "utils/resowner.h"
@@ -127,10 +128,11 @@ close_lo_relation(bool isCommit)
  * read with can be specified.
  */
 static bool
-myLargeObjectExists(Oid loid, Snapshot snapshot)
+myLargeObjectExists(LargeObjectDesc *lobj)
 {
 	bool		retval = false;
 	Relation	pg_largeobject;
+	HeapTuple	tuple;
 	ScanKeyData skey[1];
 	SysScanDesc sd;
 
@@ -140,15 +142,20 @@ myLargeObjectExists(Oid loid, Snapshot snapshot)
 	ScanKeyInit(&skey[0],
 				Anum_pg_largeobject_loid,
 				BTEqualStrategyNumber, F_OIDEQ,
-				ObjectIdGetDatum(loid));
+				ObjectIdGetDatum(lobj->id));
 
 	pg_largeobject = heap_open(LargeObjectRelationId, AccessShareLock);
 
 	sd = systable_beginscan(pg_largeobject, LargeObjectLOidPNIndexId, true,
-							snapshot, 1, skey);
+							lobj->snapshot, 1, skey);
 
-	if (systable_getnext(sd) != NULL)
+	tuple = systable_getnext(sd);
+	if (HeapTupleIsValid(tuple)) {
+#ifdef HAVE_SELINUX
+		lobj->blob_security = HeapTupleGetSecurity(tuple);
+#endif
 		retval = true;
+	}
 
 	systable_endscan(sd);
 
@@ -247,7 +254,7 @@ inv_open(Oid lobjId, int flags, MemoryContext mcxt)
 		elog(ERROR, "invalid flags: %d", flags);
 
 	/* Can't use LargeObjectExists here because it always uses SnapshotNow */
-	if (!myLargeObjectExists(lobjId, retval->snapshot))
+	if (!myLargeObjectExists(retval))
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("large object %u does not exist", lobjId)));
@@ -434,6 +441,8 @@ inv_read(LargeObjectDesc *obj_desc, char *buf, int nbytes)
 		bytea	   *datafield;
 		bool		pfreeit;
 
+		sepgsqlLargeObjectRead(lo_heap_r, tuple);
+
 		data = (Form_pg_largeobject) GETSTRUCT(tuple);
 
 		/*
@@ -619,6 +628,10 @@ inv_write(LargeObjectDesc *obj_desc, const char *buf, int nbytes)
 			replace[Anum_pg_largeobject_data - 1] = 'r';
 			newtup = heap_modifytuple(oldtuple, RelationGetDescr(lo_heap_r),
 									  values, nulls, replace);
+#ifdef HAVE_SELINUX
+			HeapTupleSetSecurity(newtup, obj_desc->blob_security);
+#endif
+			sepgsqlLargeObjectWrite(lo_heap_r, newtup);
 			simple_heap_update(lo_heap_r, &newtup->t_self, newtup);
 			CatalogIndexInsert(indstate, newtup);
 			heap_freetuple(newtup);
@@ -662,6 +675,10 @@ inv_write(LargeObjectDesc *obj_desc, const char *buf, int nbytes)
 			values[Anum_pg_largeobject_pageno - 1] = Int32GetDatum(pageno);
 			values[Anum_pg_largeobject_data - 1] = PointerGetDatum(&workbuf);
 			newtup = heap_formtuple(lo_heap_r->rd_att, values, nulls);
+#ifdef HAVE_SELINUX
+			HeapTupleSetSecurity(newtup, obj_desc->blob_security);
+#endif
+			sepgsqlLargeObjectWrite(lo_heap_r, newtup);
 			simple_heap_insert(lo_heap_r, newtup);
 			CatalogIndexInsert(indstate, newtup);
 			heap_freetuple(newtup);

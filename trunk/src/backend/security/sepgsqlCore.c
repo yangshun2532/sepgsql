@@ -133,6 +133,8 @@ static const char *security_av_perm_to_string(uint16 tclass, uint32 perm)
 		{ SECCLASS_BLOB,		BLOB__RELABELTO,		"relabelto" },
 		{ SECCLASS_BLOB,		BLOB__READ,				"read" },
 		{ SECCLASS_BLOB,		BLOB__WRITE,			"write" },
+		{ SECCLASS_BLOB,		BLOB__IMPORT,			"import" },
+		{ SECCLASS_BLOB,		BLOB__EXPORT,			"export" },
 		{ 0, 0, NULL }
 	};
 	int i;
