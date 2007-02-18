@@ -104,7 +104,7 @@ void sepgsqlAlterProcedure(HeapTuple tuple, char *proselcon)
 						   ocon,
 						   SECCLASS_PROCEDURE,
 						   perms,
-						   HeapTupleGetDatabaseName(tuple));
+						   HeapTupleGetProcedureName(tuple));
 	if (ocon != ncon) {
 		sepgsql_avc_permission(sepgsqlGetClientPsid(),
 							   ncon,
