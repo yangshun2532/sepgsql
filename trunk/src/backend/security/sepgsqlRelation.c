@@ -113,6 +113,7 @@ void sepgsqlAlterTable(Oid relid, char relkind, TupleDesc tdesc, AlterTableCmd *
 		selnotice("cmd->subtype=%d, was not evaluated at SE-PgSQL", cmd->subtype);
 		break;
 	}
+	ReleaseSysCache(reltup);
 }
 
 void sepgsqlAlterTableSetTableContext(Relation rel, Value *context)
