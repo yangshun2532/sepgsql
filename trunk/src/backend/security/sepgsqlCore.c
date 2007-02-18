@@ -73,6 +73,7 @@ static const char *security_av_perm_to_string(uint16 tclass, uint32 perm)
 		{ SECCLASS_DATABASE,	DATABASE__SETATTR,		"setattr" },
 		{ SECCLASS_DATABASE,	DATABASE__RELABELFROM,	"relabelfrom" },
 		{ SECCLASS_DATABASE,	DATABASE__RELABELTO,	"relabelto" },
+		{ SECCLASS_DATABASE,	DATABASE__ACCESS,		"access" },
 		{ SECCLASS_DATABASE,	DATABASE__LOAD_MODULE,	"load_module" },
 		{ SECCLASS_DATABASE,	DATABASE__ASSOCIATE,	"associate" },
 		{ SECCLASS_DATABASE,	DATABASE__CREATE_MISC,	"create_misc" },

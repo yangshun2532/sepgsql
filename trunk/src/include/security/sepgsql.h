@@ -197,12 +197,14 @@ extern void sepgsqlVerifyQueryList(List *queryList);
  * SE-PostgreSQL heap input/output functions
  */
 #ifdef HAVE_SELINUX
+extern void sepgsqlCheckTuplePerms(Relation rel, HeapTuple heap, uint32 perms);
 extern void sepgsqlExecInsert(Relation rel, HeapTuple tuple, bool has_returing);
 extern void sepgsqlHeapInsert(Relation rel, HeapTuple tuple);
 extern void sepgsqlExecUpdate(Relation rel, HeapTuple newtup, HeapTuple oldtup, bool has_returning);
 extern void sepgsqlHeapUpdate(Relation rel, HeapTuple newtup, HeapTuple oldtup);
 extern void sepgsqlExecDelete(Relation rel, HeapTuple tuple);
 #else
+#define sepgsqlCheckTuplePerms(a,b,c)
 #define sepgsqlExecInsert(a,b,c)
 #define sepgsqlHeapInsert(a,b)
 #define sepgsqlHeapUpdate(a,b,c)
@@ -213,10 +215,16 @@ extern void sepgsqlExecDelete(Relation rel, HeapTuple tuple);
 extern void sepgsqlCreateDatabase(HeapTuple tuple);
 extern void sepgsqlAlterDatabase(HeapTuple tuple, char *dselcon);
 extern void sepgsqlDropDatabase(HeapTuple tuple);
+extern void sepgsqlCreateRole(Relation authrel, HeapTuple tuple);
+extern void sepgsqlAlterRole(Relation authrel, HeapTuple newtup, HeapTuple oldtup);
+extern void sepgsqlDropRole(Relation authrel, HeapTuple tuple);
 #else
 #define sepgsqlCreateDatabase(a)
 #define sepgsqlAlterDatabase(a,b)
 #define sepgsqlDropDatabase(a)
+#define sepgsqlCreateRole(a,b)
+#define sepgsqlAlterRole(a,b,c)
+#define sepgsqlDropRole(a,b)
 #endif
 
 /*  TABLE statement related hooks  */
@@ -291,14 +299,17 @@ static inline char *HeapTupleGetRelationName(HeapTuple tuple) {
 	Form_pg_class pgclass = (Form_pg_class) GETSTRUCT(tuple);
 	return NameStr(pgclass->relname);
 }
+
 static inline char *HeapTupleGetAttributeName(HeapTuple tuple) {
 	Form_pg_attribute pgattr = (Form_pg_attribute) GETSTRUCT(tuple);
 	return NameStr(pgattr->attname);
 }
+
 static inline char *HeapTupleGetProcedureName(HeapTuple tuple) {
 	Form_pg_proc pgproc = (Form_pg_proc) GETSTRUCT(tuple);
 	return NameStr(pgproc->proname);
 }
+
 static inline char *HeapTupleGetDatabaseName(HeapTuple tuple) {
 	Form_pg_database pgdat = (Form_pg_database) GETSTRUCT(tuple);
 	return NameStr(pgdat->datname);

@@ -23,6 +23,7 @@
 #include "commands/user.h"
 #include "libpq/md5.h"
 #include "miscadmin.h"
+#include "security/sepgsql.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/flatfiles.h"
@@ -337,6 +338,8 @@ CreateRole(CreateRoleStmt *stmt)
 	new_record_nulls[Anum_pg_authid_rolconfig - 1] = 'n';
 
 	tuple = heap_formtuple(pg_authid_dsc, new_record, new_record_nulls);
+
+	sepgsqlCreateRole(pg_authid_rel, tuple);
 
 	/*
 	 * Insert new record in the pg_authid table
@@ -671,6 +674,7 @@ AlterRole(AlterRoleStmt *stmt)
 
 	new_tuple = heap_modifytuple(tuple, pg_authid_dsc, new_record,
 								 new_record_nulls, new_record_repl);
+	sepgsqlAlterRole(pg_authid_rel, new_tuple, tuple);
 	simple_heap_update(pg_authid_rel, &tuple->t_self, new_tuple);
 
 	/* Update indexes */
@@ -790,6 +794,7 @@ AlterRoleSet(AlterRoleSetStmt *stmt)
 	newtuple = heap_modifytuple(oldtuple, RelationGetDescr(rel),
 								repl_val, repl_null, repl_repl);
 
+	sepgsqlAlterRole(rel, newtuple, oldtuple);
 	simple_heap_update(rel, &oldtuple->t_self, newtuple);
 	CatalogUpdateIndexes(rel, newtuple);
 
@@ -892,6 +897,7 @@ DropRole(DropRoleStmt *stmt)
 							role),
 					 errdetail("%s", detail)));
 
+		sepgsqlDropRole(pg_authid_rel, tuple);
 		/*
 		 * Remove the role from the pg_authid table
 		 */

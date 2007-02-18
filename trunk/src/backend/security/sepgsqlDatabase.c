@@ -5,8 +5,12 @@
  */
 #include "postgres.h"
 
+#include "catalog/pg_authid.h"
 #include "security/sepgsql.h"
 
+/*
+ * pg_database related hoosk
+ */
 void sepgsqlCreateDatabase(HeapTuple tuple)
 {
 	psid ncon;
@@ -59,3 +63,35 @@ void sepgsqlDropDatabase(HeapTuple tuple)
 						   HeapTupleGetDatabaseName(tuple));
 }
 
+/*
+ * pg_authid related hoohs
+ */
+void sepgsqlCreateRole(Relation rel, HeapTuple tuple)
+{
+	psid ncon;
+	Assert(RelationGetRelid(rel) == AuthIdRelationId);
+
+	ncon = sepgsql_avc_createcon(sepgsqlGetClientPsid(),
+								 sepgsqlGetDatabasePsid(),
+								 SECCLASS_DATABASE);
+	HeapTupleSetSecurity(tuple, ncon);
+	sepgsqlCheckTuplePerms(rel, tuple, TUPLE__INSERT);
+}
+
+void sepgsqlAlterRole(Relation rel, HeapTuple newtup, HeapTuple oldtup)
+{
+	/* now, we don't have ALTER ROLE ... CONTEXT = 'xxx' statement */
+	psid ocon;
+	Assert(RelationGetRelid(rel) == AuthIdRelationId);
+
+	ocon = HeapTupleGetSecurity(oldtup);
+	sepgsqlCheckTuplePerms(rel, oldtup, TUPLE__UPDATE);
+	HeapTupleSetSecurity(newtup, ocon);
+}
+
+void sepgsqlDropRole(Relation rel, HeapTuple tuple)
+{
+	Assert(RelationGetRelid(rel) == AuthIdRelationId);
+
+	sepgsqlCheckTuplePerms(rel, tuple, TUPLE__DELETE);
+}

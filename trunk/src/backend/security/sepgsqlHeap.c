@@ -8,6 +8,8 @@
 
 #include "catalog/pg_aggregate.h"
 #include "catalog/pg_attribute.h"
+#include "catalog/pg_auth_members.h"
+#include "catalog/pg_authid.h"
 #include "catalog/pg_class.h"
 #include "catalog/pg_database.h"
 #include "catalog/pg_proc.h"
@@ -40,6 +42,27 @@ static uint32 __tuple_perms_to_common_perms(uint32 perms) {
 	return __perms;
 }
 
+/*
+ * special cases for operations on system catalogs
+ */
+static void __check_pg_authid(TupleDesc tdesc, HeapTuple tuple, uint32 perms, char **audit,
+							  uint16 *p_tclass, uint32 *p_perms, char **p_objname)
+{
+	Form_pg_authid pgauthid = (Form_pg_authid) GETSTRUCT(tuple);
+	uint32 __perms = 0;
+
+	__perms |= (*p_perms & TUPLE__SELECT ? DATABASE__GETATTR : 0);
+	__perms |= (*p_perms & TUPLE__INSERT ? DATABASE__CREATE_USER : 0);
+	__perms |= (*p_perms & TUPLE__UPDATE ? DATABASE__ALTER_USER : 0);
+	__perms |= (*p_perms & TUPLE__DELETE ? DATABASE__DROP_USER : 0);
+	__perms |= (*p_perms & TUPLE__RELABELFROM ? DATABASE__RELABELFROM : 0);
+	__perms |= (*p_perms & TUPLE__RELABELTO ? DATABASE__RELABELTO : 0);
+
+	*p_objname = NameStr(pgauthid->rolname);
+	*p_tclass = SECCLASS_DATABASE;
+	*p_perms = __perms;
+}
+
 static int __check_tuple_perms(Oid tableoid, TupleDesc tdesc, HeapTuple tuple,
 							   uint32 perms, char **audit)
 {
@@ -65,6 +88,10 @@ static int __check_tuple_perms(Oid tableoid, TupleDesc tdesc, HeapTuple tuple,
 		ReleaseSysCache(exttup);
 		break;
 	}
+	case AuthIdRelationId:
+		__check_pg_authid(tdesc, tuple, perms, audit, &tclass, &perms, &objname);
+		break;
+
 	case DatabaseRelationId: {
 		/* pg_database */
 		tclass = SECCLASS_DATABASE;
@@ -206,6 +233,19 @@ Datum sepgsql_tuple_perms_abort(PG_FUNCTION_ARGS)
 	PG_RETURN_BOOL(rc == 0);
 }
 
+void sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, uint32 perms)
+{
+	char *audit;
+	int rc;
+
+	rc = __check_tuple_perms(RelationGetRelid(rel),
+							 RelationGetDescr(rel),
+							 tuple,
+							 perms,
+							 &audit);
+	sepgsql_audit(rc, audit);
+}
+
 static psid __getImplicitContext(Relation rel, HeapTuple tuple) {
 	static psid recent_relation_relid = InvalidOid;
 	static psid recent_relation_relcon = InvalidOid;
@@ -254,6 +294,10 @@ static psid __getImplicitContext(Relation rel, HeapTuple tuple) {
 		ReleaseSysCache(exttup);
 		break;
 	}
+	case AuthIdRelationId:
+		tclass = SECCLASS_DATABASE;
+		tcon = sepgsqlGetDatabasePsid();
+		break;
 
 	case ProcedureRelationId:
 		tclass = SECCLASS_PROCEDURE;
@@ -303,8 +347,6 @@ void sepgsqlExecInsert(Relation rel, HeapTuple tuple, bool has_returning)
 {
 	psid icon, econ;
 	uint32 perms;
-	char *audit;
-	int rc;
 
 	if (RelationGetRelid(rel) == SelinuxRelationId)
 		selerror("modifying pg_selinux is never allowed");
@@ -319,23 +361,12 @@ void sepgsqlExecInsert(Relation rel, HeapTuple tuple, bool has_returning)
 
 	/* 1. implicit labeling */
 	HeapTupleSetSecurity(tuple, icon);
-
-	rc = __check_tuple_perms(RelationGetRelid(rel),
-							 RelationGetDescr(rel),
-							 tuple,
-							 perms,
-							 &audit);
-	sepgsql_audit(rc, audit);
+	sepgsqlCheckTuplePerms(rel, tuple, perms);
 
 	/* 2. explicit labeling, if necessary */
 	if (econ != InvalidOid && icon != econ) {
 		HeapTupleSetSecurity(tuple, econ);
-		rc = __check_tuple_perms(RelationGetRelid(rel),
-								 RelationGetDescr(rel),
-								 tuple,
-								 TUPLE__RELABELTO,
-								 &audit);
-		sepgsql_audit(rc, audit);
+		sepgsqlCheckTuplePerms(rel, tuple, TUPLE__RELABELTO);
 	}
 }
 
@@ -343,8 +374,6 @@ void sepgsqlExecUpdate(Relation rel, HeapTuple newtup, HeapTuple oldtup, bool ha
 {
 	psid ocon, ncon;
 	uint32 perms;
-	char *audit;
-	int rc;
 
 	if (RelationGetRelid(rel) == SelinuxRelationId)
 		selerror("modifying pg_selinux is never allowed");
@@ -362,12 +391,7 @@ void sepgsqlExecUpdate(Relation rel, HeapTuple newtup, HeapTuple oldtup, bool ha
 		perms = TUPLE__RELABELTO;
 		if (has_returning)
 			perms |= TUPLE__SELECT;
-		rc = __check_tuple_perms(RelationGetRelid(rel),
-								 RelationGetDescr(rel),
-								 newtup,
-								 perms,
-								 &audit);
-		sepgsql_audit(rc, audit);
+		sepgsqlCheckTuplePerms(rel, newtup, perms);
 	}
 }
 
