@@ -136,18 +136,9 @@ static void __check_pg_authid(TupleDesc tdesc, HeapTuple tuple, uint32 perms,
 							  uint16 *p_tclass, uint32 *p_perms, char **p_objname)
 {
 	Form_pg_authid pgauthid = (Form_pg_authid) GETSTRUCT(tuple);
-	uint32 __perms = 0;
 
-	__perms |= (perms & TUPLE__INSERT ? DATABASE__CREATE_USER : 0);
-	__perms |= (perms & TUPLE__UPDATE ? DATABASE__ALTER_USER : 0);
-	__perms |= (perms & TUPLE__DELETE ? DATABASE__DROP_USER : 0);
-	if (__perms) {
-		sepgsql_avc_permission(sepgsqlGetClientPsid(),
-							   sepgsqlGetDatabasePsid(),
-							   SECCLASS_DATABASE,
-							   __perms,
-							   sepgsqlGetDatabaseName());
-	}
+	*p_tclass = SECCLASS_DATABASE;
+	*p_perms = __tuple_perms_to_common_perms(perms);
 	*p_objname = NameStr(pgauthid->rolname);
 }
 
@@ -313,6 +304,11 @@ psid sepgsqlComputeImplicitContext(Relation rel, HeapTuple tuple) {
 	switch (RelationGetRelid(rel)) {
 	case DatabaseRelationId:
 		tcon = sepgsqlGetServerPsid();
+		tclass = SECCLASS_DATABASE;
+		break;
+
+	case AuthIdRelationId:
+		tcon = sepgsqlGetDatabasePsid();
 		tclass = SECCLASS_DATABASE;
 		break;
 
