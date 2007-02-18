@@ -71,9 +71,7 @@ void sepgsqlCreateRole(Relation rel, HeapTuple tuple)
 	psid ncon;
 	Assert(RelationGetRelid(rel) == AuthIdRelationId);
 
-	ncon = sepgsql_avc_createcon(sepgsqlGetClientPsid(),
-								 sepgsqlGetDatabasePsid(),
-								 SECCLASS_DATABASE);
+	ncon = sepgsqlComputeImplicitContext(rel, tuple);
 	HeapTupleSetSecurity(tuple, ncon);
 	sepgsqlCheckTuplePerms(rel, tuple, TUPLE__INSERT);
 }

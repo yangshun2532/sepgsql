@@ -45,132 +45,187 @@ static uint32 __tuple_perms_to_common_perms(uint32 perms) {
 /*
  * special cases for operations on system catalogs
  */
-static void __check_pg_authid(TupleDesc tdesc, HeapTuple tuple, uint32 perms, char **audit,
+static void __check_pg_aggregate(TupleDesc tdesc, HeapTuple tuple, uint32 perms,
+								 uint16 *p_tclass, uint32 *p_perms, char **p_objname)
+{
+	HeapTuple exttup;
+	Datum proid;
+	bool isnull;
+
+	proid = heap_getattr(tuple, Anum_pg_aggregate_aggfnoid, tdesc, &isnull);
+	if (isnull)
+		selerror("pg_aggregate.aggfnoid contains NULL");
+
+	exttup = SearchSysCache(PROCOID, proid, 0, 0, 0);
+	if (!HeapTupleIsValid(exttup))
+		selerror("cache lookup failed for procedure %u", DatumGetObjectId(proid));
+	sepgsql_avc_permission(sepgsqlGetClientPsid(),
+						   sepgsqlGetDatabasePsid(),
+						   SECCLASS_PROCEDURE,
+						   __tuple_perms_to_reference_perms(perms),
+						   HeapTupleGetProcedureName(exttup));
+	ReleaseSysCache(exttup);
+}
+
+static void __check_pg_attribute(TupleDesc tdesc, HeapTuple tuple, uint32 perms,
+								 uint16 *p_tclass, uint32 *p_perms, char **p_objname)
+{
+	Form_pg_attribute attr = (Form_pg_attribute) GETSTRUCT(tuple);
+
+	*p_objname = NameStr(attr->attname);
+
+	/* special case in bootstraping mode */
+	if (IsBootstrapProcessingMode()
+		&& (attr->attrelid == TypeRelationId ||
+			attr->attrelid == ProcedureRelationId ||
+			attr->attrelid == AttributeRelationId ||
+			attr->attrelid == ProcedureRelationId)) {
+		psid tcon = sepgsql_avc_createcon(sepgsqlGetClientPsid(),
+										  sepgsqlGetDatabasePsid(),
+										  SECCLASS_TABLE);
+		sepgsql_avc_permission(sepgsqlGetClientPsid(),
+							   tcon,
+							   SECCLASS_TABLE,
+							   __tuple_perms_to_reference_perms(perms),
+							   "hogehoge");
+		*p_tclass = SECCLASS_COLUMN;
+		*p_perms = __tuple_perms_to_common_perms(perms);
+	} else {
+		HeapTuple exttup;
+		Form_pg_class pgclass;
+
+		exttup = SearchSysCache(RELOID, ObjectIdGetDatum(attr->attrelid), 0, 0, 0);
+		if (!HeapTupleIsValid(exttup))
+			selerror("cache lookup failed for relation %u", attr->attrelid);
+		pgclass = (Form_pg_class) GETSTRUCT(exttup);
+
+		if (pgclass->relkind == RELKIND_RELATION) {
+			sepgsql_avc_permission(sepgsqlGetClientPsid(),
+								   HeapTupleGetSecurity(exttup),
+								   SECCLASS_TABLE,
+								   __tuple_perms_to_reference_perms(perms),
+								   NameStr(pgclass->relname));
+		} else {
+			uint32 __perms = 0;
+
+			if (pgclass->relkind == RELKIND_VIEW) {
+				__perms |= (perms & TUPLE__INSERT ? DATABASE__CREATE_VIEW : 0);
+				__perms |= (perms & TUPLE__UPDATE ? DATABASE__ALTER_VIEW : 0);
+				__perms |= (perms & TUPLE__DELETE ? DATABASE__DROP_VIEW : 0);
+			} else {
+				__perms |= (perms & TUPLE__INSERT ? DATABASE__CREATE_MISC : 0);
+				__perms |= (perms & TUPLE__UPDATE ? DATABASE__ALTER_MISC : 0);
+				__perms |= (perms & TUPLE__DELETE ? DATABASE__DROP_VIEW : 0);
+			}
+			if (__perms) {
+				sepgsql_avc_permission(sepgsqlGetClientPsid(),
+									   sepgsqlGetDatabasePsid(),
+									   SECCLASS_DATABASE,
+									   __perms,
+									   NameStr(pgclass->relname));
+			}
+		}
+		ReleaseSysCache(exttup);
+
+		*p_tclass = SECCLASS_COLUMN;
+		*p_perms = __tuple_perms_to_common_perms(perms);
+	}
+}
+
+static void __check_pg_authid(TupleDesc tdesc, HeapTuple tuple, uint32 perms,
 							  uint16 *p_tclass, uint32 *p_perms, char **p_objname)
 {
 	Form_pg_authid pgauthid = (Form_pg_authid) GETSTRUCT(tuple);
 	uint32 __perms = 0;
 
-	__perms |= (*p_perms & TUPLE__SELECT ? DATABASE__GETATTR : 0);
-	__perms |= (*p_perms & TUPLE__INSERT ? DATABASE__CREATE_USER : 0);
-	__perms |= (*p_perms & TUPLE__UPDATE ? DATABASE__ALTER_USER : 0);
-	__perms |= (*p_perms & TUPLE__DELETE ? DATABASE__DROP_USER : 0);
-	__perms |= (*p_perms & TUPLE__RELABELFROM ? DATABASE__RELABELFROM : 0);
-	__perms |= (*p_perms & TUPLE__RELABELTO ? DATABASE__RELABELTO : 0);
-
+	__perms |= (perms & TUPLE__INSERT ? DATABASE__CREATE_USER : 0);
+	__perms |= (perms & TUPLE__UPDATE ? DATABASE__ALTER_USER : 0);
+	__perms |= (perms & TUPLE__DELETE ? DATABASE__DROP_USER : 0);
+	if (__perms) {
+		sepgsql_avc_permission(sepgsqlGetClientPsid(),
+							   sepgsqlGetDatabasePsid(),
+							   SECCLASS_DATABASE,
+							   __perms,
+							   sepgsqlGetDatabaseName());
+	}
 	*p_objname = NameStr(pgauthid->rolname);
+}
+
+static void __check_pg_database(TupleDesc tdesc, HeapTuple tuple, uint32 perms,
+								uint16 *p_tclass, uint32 *p_perms, char **p_objname)
+{
+	Form_pg_database pgdatabase = (Form_pg_database) GETSTRUCT(tuple);
+
 	*p_tclass = SECCLASS_DATABASE;
-	*p_perms = __perms;
+	*p_perms = __tuple_perms_to_common_perms(perms);
+	*p_objname = NameStr(pgdatabase->datname);
+}
+
+static void __check_pg_largeobject(TupleDesc tdesc, HeapTuple tuple, uint32 perms,
+								   uint16 *p_tclass, uint32 *p_perms, char **p_objname)
+{
+	char buffer[64];
+
+	snprintf(buffer, sizeof(buffer), "blob:%u",
+			 ((Form_pg_largeobject) GETSTRUCT(tuple))->loid);
+	*p_tclass = SECCLASS_BLOB;
+	*p_perms = __tuple_perms_to_common_perms(perms);
+	*p_objname = pstrdup(buffer);
+}
+
+static void __check_pg_proc(TupleDesc tdesc, HeapTuple tuple, uint32 perms,
+							uint16 *p_tclass, uint32 *p_perms, char **p_objname)
+{
+	Form_pg_proc pgproc = (Form_pg_proc) GETSTRUCT(tuple);
+
+	*p_tclass = SECCLASS_PROCEDURE;
+	*p_perms = __tuple_perms_to_common_perms(perms);
+	*p_objname = NameStr(pgproc->proname);
+}
+
+static void __check_pg_relation(TupleDesc tdesc, HeapTuple tuple, uint32 perms,
+								uint16 *p_tclass, uint32 *p_perms, char **p_objname)
+{
+	Form_pg_class pgclass = (Form_pg_class) GETSTRUCT(tuple);
+
+	if (pgclass->relkind == RELKIND_RELATION) {
+		*p_objname = NameStr(pgclass->relname);
+		*p_tclass = SECCLASS_TABLE;
+		*p_perms = __tuple_perms_to_common_perms(perms);
+	} else {
+		*p_objname = NameStr(pgclass->relname);
+	}
 }
 
 static int __check_tuple_perms(Oid tableoid, TupleDesc tdesc, HeapTuple tuple,
 							   uint32 perms, char **audit)
 {
-	HeapTuple exttup;
 	uint16 tclass = SECCLASS_TUPLE;
 	char *objname = NULL;
-	Datum _objname;
-	bool isnull;
 	int rc;
 
 	switch (tableoid) {
-	case AggregateRelationId: {
-		/* pg_aggregate */
-		Datum proid = heap_getattr(tuple, Anum_pg_aggregate_aggfnoid, tdesc, &isnull);
-		if (isnull)
-			selerror("pg_aggregate.aggfnoid contains NULL");
-		exttup = SearchSysCache(PROCOID, proid, 0, 0, 0);
-		sepgsql_avc_permission(sepgsqlGetClientPsid(),
-							   HeapTupleGetSecurity(exttup),
-							   SECCLASS_PROCEDURE,
-							   __tuple_perms_to_reference_perms(perms),
-							   HeapTupleGetProcedureName(exttup));
-		ReleaseSysCache(exttup);
+	case AggregateRelationId:		/* pg_aggregate */
+		__check_pg_aggregate(tdesc, tuple, perms, &tclass, &perms, &objname);
 		break;
-	}
-	case AuthIdRelationId:
-		__check_pg_authid(tdesc, tuple, perms, audit, &tclass, &perms, &objname);
+	case AuthIdRelationId:			/* pg_authid */
+		__check_pg_authid(tdesc, tuple, perms, &tclass, &perms, &objname);
 		break;
-
-	case DatabaseRelationId: {
-		/* pg_database */
-		tclass = SECCLASS_DATABASE;
-		perms = __tuple_perms_to_common_perms(perms);
-
-		_objname = heap_getattr(tuple, Anum_pg_database_datname, tdesc, &isnull);
-		if (isnull)
-			selerror("pg_database.datname contains NULL");
-		objname = NameStr(*DatumGetName(_objname));
+	case DatabaseRelationId:		/* pg_database */
+		__check_pg_database(tdesc, tuple, perms, &tclass, &perms, &objname);
 		break;
-	}
-	case RelationRelationId: {
-		/* pg_class */
-		tclass = SECCLASS_TABLE;
-		perms = __tuple_perms_to_common_perms(perms);
-
-		_objname = heap_getattr(tuple, Anum_pg_class_relname, tdesc, &isnull);
-		if (isnull)
-			selerror("pg_class.relname contains NULL");
-		objname = NameStr(*DatumGetName(_objname));
+	case RelationRelationId:		/* pg_class */	
+		__check_pg_relation(tdesc, tuple, perms, &tclass, &perms, &objname);
 		break;
-	}
-	case AttributeRelationId: {
-		/* pg_attribute */
-		Datum relid;
-
-		if (IsBootstrapProcessingMode()) {
-			psid tcon;
-			tcon = sepgsql_avc_createcon(sepgsqlGetClientPsid(),
-										 sepgsqlGetDatabasePsid(),
-										 SECCLASS_TABLE);
-			sepgsql_avc_permission(sepgsqlGetClientPsid(),
-								   tcon,
-								   SECCLASS_TABLE,
-								   __tuple_perms_to_reference_perms(perms),
-								   NULL);
-			tclass = SECCLASS_COLUMN;
-			perms = __tuple_perms_to_common_perms(perms);
-			break;
-		}
-
-		relid = heap_getattr(tuple, Anum_pg_attribute_attrelid, tdesc, &isnull);
-		if (isnull)
-			selerror("pg_attribute.attrelid contains NULL");
-		exttup = SearchSysCache(RELOID, relid, 0, 0, 0);
-		if (!HeapTupleIsValid(exttup))
-			selerror("cache lookup failed for relation %u", DatumGetObjectId(relid));
-		sepgsql_avc_permission(sepgsqlGetClientPsid(),
-							   HeapTupleGetSecurity(exttup),
-							   SECCLASS_TABLE,
-							   __tuple_perms_to_reference_perms(perms),
-							   HeapTupleGetRelationName(exttup));
-		ReleaseSysCache(exttup);
-		tclass = SECCLASS_COLUMN;
-		perms = __tuple_perms_to_common_perms(perms);
-
-		_objname = heap_getattr(tuple, Anum_pg_attribute_attname, tdesc, &isnull);
-		if (isnull)
-			selerror("pg_attribute.attname contains NULL");
-		objname = NameStr(*DatumGetName(_objname));
+	case AttributeRelationId:		/* pg_attribute */
+		__check_pg_attribute(tdesc, tuple, perms, &tclass, &perms, &objname);
 		break;
-	}
-	case ProcedureRelationId: {
-		/* pg_proc */
-		tclass = SECCLASS_PROCEDURE;
-		perms = __tuple_perms_to_common_perms(perms);
-
-		_objname = heap_getattr(tuple, Anum_pg_proc_proname, tdesc, &isnull);
-		if (isnull)
-			selerror("pg_proc.proname contains NULL");
-		objname = NameStr(*DatumGetName(_objname));
+	case ProcedureRelationId:		/* pg_proc */
+		__check_pg_proc(tdesc, tuple, perms, &tclass, &perms, &objname);
 		break;
-	}
-	case LargeObjectRelationId: {
-		/* pg_largeobject */
-		tclass = SECCLASS_BLOB;
-		perms = __tuple_perms_to_common_perms(perms);
+	case LargeObjectRelationId:		/* pg_largeobject */
+		__check_pg_largeobject(tdesc, tuple, perms, &tclass, &perms, &objname);
 		break;
-	}
 	default:
 		/* do nothing */
 		break;
@@ -246,7 +301,7 @@ void sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, uint32 perms)
 	sepgsql_audit(rc, audit);
 }
 
-static psid __getImplicitContext(Relation rel, HeapTuple tuple) {
+psid sepgsqlComputeImplicitContext(Relation rel, HeapTuple tuple) {
 	static psid recent_relation_relid = InvalidOid;
 	static psid recent_relation_relcon = InvalidOid;
 	uint16 tclass;
@@ -268,7 +323,11 @@ static psid __getImplicitContext(Relation rel, HeapTuple tuple) {
 
 	case AttributeRelationId: {
 		tclass = SECCLASS_COLUMN;
-		if (IsBootstrapProcessingMode()) {
+		if (IsBootstrapProcessingMode()
+			&& (RelationGetRelid(rel) == TypeRelationId ||
+				RelationGetRelid(rel) == ProcedureRelationId ||
+				RelationGetRelid(rel) == AttributeRelationId ||
+				RelationGetRelid(rel) == ProcedureRelationId)) {
 			tcon = sepgsql_avc_createcon(sepgsqlGetClientPsid(),
 										 sepgsqlGetDatabasePsid(),
 										 SECCLASS_TABLE);
@@ -294,10 +353,6 @@ static psid __getImplicitContext(Relation rel, HeapTuple tuple) {
 		ReleaseSysCache(exttup);
 		break;
 	}
-	case AuthIdRelationId:
-		tclass = SECCLASS_DATABASE;
-		tcon = sepgsqlGetDatabasePsid();
-		break;
 
 	case ProcedureRelationId:
 		tclass = SECCLASS_PROCEDURE;
@@ -351,7 +406,7 @@ void sepgsqlExecInsert(Relation rel, HeapTuple tuple, bool has_returning)
 	if (RelationGetRelid(rel) == SelinuxRelationId)
 		selerror("modifying pg_selinux is never allowed");
 
-	icon = __getImplicitContext(rel, tuple);
+	icon = sepgsqlComputeImplicitContext(rel, tuple);
 	econ = HeapTupleGetSecurity(tuple);
 	perms = TUPLE__INSERT;
 	if (has_returning)
@@ -405,7 +460,7 @@ void sepgsqlHeapInsert(Relation rel, HeapTuple tuple)
 {
 	if (HeapTupleGetSecurity(tuple) != InvalidOid)
 		return;
-	HeapTupleSetSecurity(tuple, __getImplicitContext(rel, tuple));
+	HeapTupleSetSecurity(tuple, sepgsqlComputeImplicitContext(rel, tuple));
 }
 
 void sepgsqlHeapUpdate(Relation rel, HeapTuple newtup, HeapTuple oldtup)

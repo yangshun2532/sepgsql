@@ -170,6 +170,7 @@ extern psid  sepgsqlGetServerPsid(void);
 extern psid  sepgsqlGetClientPsid(void);
 extern void  sepgsqlSetClientPsid(psid new_ctx);
 extern psid  sepgsqlGetDatabasePsid(void);
+extern char *sepgsqlGetDatabaseName(void);
 #else
 #define sepgsql_shmem_size()			0
 #define sepgsqlInitialize()
@@ -197,7 +198,8 @@ extern void sepgsqlVerifyQueryList(List *queryList);
  * SE-PostgreSQL heap input/output functions
  */
 #ifdef HAVE_SELINUX
-extern void sepgsqlCheckTuplePerms(Relation rel, HeapTuple heap, uint32 perms);
+extern psid sepgsqlComputeImplicitContext(Relation rel, HeapTuple tuple);
+extern void sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, uint32 perms);
 extern void sepgsqlExecInsert(Relation rel, HeapTuple tuple, bool has_returing);
 extern void sepgsqlHeapInsert(Relation rel, HeapTuple tuple);
 extern void sepgsqlExecUpdate(Relation rel, HeapTuple newtup, HeapTuple oldtup, bool has_returning);

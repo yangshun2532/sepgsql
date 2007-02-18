@@ -574,6 +574,8 @@ static psid sepgsql_system_getpeercon(int sockfd)
 static psid sepgsqlServerPsid = InvalidOid;
 static psid sepgsqlClientPsid = InvalidOid;
 static psid sepgsqlDatabasePsid = InvalidOid;
+static NameData __DatabaseName;
+static char *sepgsqlDatabaseName = NULL;
 
 psid sepgsqlGetServerPsid()
 {
@@ -595,11 +597,13 @@ psid sepgsqlGetDatabasePsid()
 	return sepgsqlDatabasePsid;
 }
 
+char *sepgsqlGetDatabaseName()
+{
+	return sepgsqlDatabaseName;
+}
+
 void sepgsqlInitialize()
 {
-	char *dbname = NULL;
-	NameData _dbname;
-
 	sepgsql_avc_init();
 
 	selnotice("Now in %s mode", IsBootstrapProcessingMode() ? "bootstrap" : "normal");
@@ -633,7 +637,7 @@ void sepgsqlInitialize()
 		sepgsqlDatabasePsid = sepgsql_avc_createcon(sepgsqlGetClientPsid(),
 													sepgsqlGetServerPsid(),
 													SECCLASS_DATABASE);
-		dbname = "template1";
+		sepgsqlDatabaseName = pstrdup("template1");
 	} else {
 		Form_pg_database pgdat;
 		HeapTuple tuple;
@@ -642,10 +646,11 @@ void sepgsqlInitialize()
 		if (!HeapTupleIsValid(tuple))
 			selerror("could not obtain security context of database");
 		sepgsqlDatabasePsid = HeapTupleGetSecurity(tuple);
-		/* copy dbname */
+
 		pgdat = (Form_pg_database) GETSTRUCT(tuple);
-		strcpy(_dbname.data, NameStr(pgdat->datname));
-		dbname = _dbname.data;
+		strcpy(__DatabaseName.data, NameStr(pgdat->datname));
+		sepgsqlDatabaseName = __DatabaseName.data;
+
 		ReleaseSysCache(tuple);
 	}
 
@@ -653,7 +658,7 @@ void sepgsqlInitialize()
 						   sepgsqlGetDatabasePsid(),
 						   SECCLASS_DATABASE,
 						   DATABASE__ACCESS,
-						   dbname);
+						   sepgsqlDatabaseName);
 }
 
 /* sepgsqlMonitoringPolicyState() is worker process to monitor
