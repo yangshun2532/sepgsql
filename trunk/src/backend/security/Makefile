@@ -11,8 +11,7 @@ include $(top_builddir)/src/Makefile.global
 ifeq ($(enable_selinux), yes)
 OBJS := sepgsqlCore.o sepgsqlPsid.o sepgsqlProxy.o \
 	sepgsqlHeap.o sepgsqlVerify.o sepgsqlHooks.o \
-	sepgsqlRelation.o sepgsqlCopy.o \
-	sepgsqlProcedure.o sepgsqlLargeObject.o
+	sepgsqlRelation.o sepgsqlProcedure.o sepgsqlLargeObject.o
 else
 OBJS := dummy.o
 endif

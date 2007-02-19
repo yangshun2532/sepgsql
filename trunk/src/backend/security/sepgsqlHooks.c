@@ -11,16 +11,16 @@
 #include "security/sepgsql.h"
 
 /*
- * hooks related to CREATE/ALTER/DROP DATABASE
+ * hooks for generic DATABASE objects
  */
-static void __hookCreateDatabase(Relation rel, HeapTuple tuple)
+static void __hookCreateGenericDatabaseObject(Relation rel, HeapTuple tuple)
 {
 	psid ncon = sepgsqlComputeImplicitContext(rel, tuple);
 	HeapTupleSetSecurity(tuple, ncon);
-	sepgsqlCheckTuplePerms(rel, tuple, TUPLE__INSERT);
+	sepgsqlCheckTuplePerms(rel, tuple, TUPLE__INSERT, true);
 }
 
-static void __hookAlterDatabase(Relation rel, HeapTuple newtup, HeapTuple oldtup)
+static void __hookAlterGenericDatabaseObject(Relation rel, HeapTuple newtup, HeapTuple oldtup)
 {
 	psid ncon = HeapTupleGetSecurity(newtup);
 	psid ocon = HeapTupleGetSecurity(oldtup);
@@ -33,17 +33,20 @@ static void __hookAlterDatabase(Relation rel, HeapTuple newtup, HeapTuple oldtup
 
 	if (ncon != ocon)
 		perms |= TUPLE__RELABELFROM;
-	sepgsqlCheckTuplePerms(rel, oldtup, perms);
+	sepgsqlCheckTuplePerms(rel, oldtup, perms, true);
 
 	if (ncon != ocon)
-		sepgsqlCheckTuplePerms(rel, newtup, TUPLE__RELABELTO);
+		sepgsqlCheckTuplePerms(rel, newtup, TUPLE__RELABELTO, true);
 }
 
-static void __hookDropDatabase(Relation rel, HeapTuple tuple)
+static void __hookDropGenericDatabaseObject(Relation rel, HeapTuple tuple)
 {
-	sepgsqlCheckTuplePerms(rel, tuple, TUPLE__DELETE);
+	sepgsqlCheckTuplePerms(rel, tuple, TUPLE__DELETE, true);
 }
 
+/*
+ * for ALTER DATABASE <dbname> CONTEXT = 'security context'; statement
+ */
 void sepgsqlAlterDatabaseContext(Relation rel, HeapTuple tuple, char *new_context)
 {
 	Datum ncon;
@@ -55,40 +58,65 @@ void sepgsqlAlterDatabaseContext(Relation rel, HeapTuple tuple, char *new_contex
 	HeapTupleSetSecurity(tuple, DatumGetObjectId(ncon));
 }
 
-
 /*
- * hooks related to CREATE/ALTER/DROP ROLE
+ * for COPY TO/COPY FROM statement support
  */
-static void __hookCreateRole(Relation rel, HeapTuple tuple)
+void sepgsqlDoCopy(Relation rel, List *attnumlist, bool is_from)
 {
-	psid ncon = sepgsqlComputeImplicitContext(rel, tuple);
-	HeapTupleSetSecurity(tuple, ncon);
-	sepgsqlCheckTuplePerms(rel, tuple, TUPLE__INSERT);
-}
+	HeapTuple tuple;
+	uint32 perms;
+	ListCell *l;
 
-static void __hookAlterRole(Relation rel, HeapTuple newtup, HeapTuple oldtup)
-{
-	psid ncon = HeapTupleGetSecurity(newtup);
-	psid ocon = HeapTupleGetSecurity(oldtup);
-	uint32 perms = TUPLE__UPDATE;
+	/* on 'COPY FROM SELECT ...' cases, any checkings are done in select.c */
+	if (rel == NULL)
+		return;
 
-	if (ncon == InvalidOid) {
-		ncon = ocon;
-		HeapTupleSetSecurity(newtup, ncon);
+	/* 1. check table:select/insert permission */
+	tuple = SearchSysCache(RELOID,
+						   ObjectIdGetDatum(RelationGetRelid(rel)),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		selerror("cache lookup failed for relation %u", RelationGetRelid(rel));
+
+	perms = (is_from ? TABLE__INSERT : TABLE__SELECT);
+	sepgsql_avc_permission(sepgsqlGetClientPsid(),
+						   HeapTupleGetSecurity(tuple),
+						   SECCLASS_TABLE,
+						   perms,
+						   HeapTupleGetRelationName(tuple));
+	ReleaseSysCache(tuple);
+
+	/* 2. check column:select/insert for each column */
+	perms = (is_from ? COLUMN__INSERT : COLUMN__SELECT);
+	foreach(l, attnumlist) {
+		char objname[2 * NAMEDATALEN + 1];
+		AttrNumber attno = lfirst_int(l);
+
+		tuple = SearchSysCache(ATTNUM,
+							   ObjectIdGetDatum(RelationGetRelid(rel)),
+							   Int16GetDatum(attno),
+							   0, 0);
+		if (!HeapTupleIsValid(tuple))
+			selerror("cache lookup failed for attribute %d, relation %u",
+					 attno, RelationGetRelid(rel));
+
+		perms = (is_from ? COLUMN__INSERT : COLUMN__SELECT);
+		sepgsql_avc_permission(sepgsqlGetClientPsid(),
+							   HeapTupleGetSecurity(tuple),
+							   SECCLASS_COLUMN,
+							   perms,
+							   HeapTupleGetAttributeName(tuple));
+		ReleaseSysCache(tuple);
 	}
-
-	if (ncon != ocon)
-		perms |= TUPLE__RELABELFROM;
-	sepgsqlCheckTuplePerms(rel, oldtup, perms);
-
-	if (ncon != ocon)
-		sepgsqlCheckTuplePerms(rel, newtup, TUPLE__RELABELTO);
 }
 
-static void __hookDropRole(Relation rel, HeapTuple tuple)
+bool sepgsqlCopyTo(Relation rel, HeapTuple tuple)
 {
-	sepgsqlCheckTuplePerms(rel, tuple, TUPLE__DELETE);
+	return sepgsqlCheckTuplePerms(rel, tuple, TUPLE__SELECT, false);
 }
+
+
+
 
 /*
  * hooks for CREATE/ALTER/DROP FUNCTION
@@ -124,11 +152,9 @@ static HeapTuple __getHeapTupleFromItemPointer(Relation rel, ItemPointer tid)
 void sepgsqlSimpleHeapInsert(Relation rel, HeapTuple tuple)
 {
 	switch (RelationGetRelid(rel)) {
-	case DatabaseRelationId:
-		__hookCreateDatabase(rel, tuple);
-		break;
 	case AuthIdRelationId:
-		__hookCreateRole(rel, tuple);
+	case DatabaseRelationId:
+		__hookCreateGenericDatabaseObject(rel, tuple);
 		break;
 	default:
 		/* do nothing */
@@ -141,11 +167,9 @@ void sepgsqlSimpleHeapUpdate(Relation rel, ItemPointer tid, HeapTuple newtup)
 	HeapTuple oldtup = __getHeapTupleFromItemPointer(rel, tid);
 
 	switch (RelationGetRelid(rel)) {
-	case DatabaseRelationId:
-		__hookAlterDatabase(rel, newtup, oldtup);
-		break;
 	case AuthIdRelationId:
-		__hookAlterRole(rel, newtup, oldtup);
+	case DatabaseRelationId:
+		__hookAlterGenericDatabaseObject(rel, newtup, oldtup);
 		break;
 	default:
 		/* do nothing */
@@ -159,11 +183,9 @@ void sepgsqlSimpleHeapDelete(Relation rel, ItemPointer tid)
 	HeapTuple tuple = __getHeapTupleFromItemPointer(rel, tid);
 
 	switch (RelationGetRelid(rel)) {
-	case DatabaseRelationId:
-		__hookDropDatabase(rel, tuple);
-		break;
 	case AuthIdRelationId:
-		__hookDropRole(rel, tuple);
+	case DatabaseRelationId:
+		__hookDropGenericDatabaseObject(rel, tuple);
 		break;
 	default:
 		/* do nothing */

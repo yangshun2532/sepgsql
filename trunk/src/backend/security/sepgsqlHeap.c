@@ -335,7 +335,7 @@ Datum sepgsql_tuple_perms_abort(PG_FUNCTION_ARGS)
 	PG_RETURN_BOOL(rc == 0);
 }
 
-void sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, uint32 perms)
+bool sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, uint32 perms, bool abort)
 {
 	char *audit;
 	int rc;
@@ -345,7 +345,9 @@ void sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, uint32 perms)
 							 tuple,
 							 perms,
 							 &audit);
-	sepgsql_audit(rc, audit);
+	sepgsql_audit((abort ? rc : 0), audit);
+
+	return (rc==0 ? true : false);
 }
 
 psid sepgsqlComputeImplicitContext(Relation rel, HeapTuple tuple) {
@@ -461,12 +463,12 @@ void sepgsqlExecInsert(Relation rel, HeapTuple tuple, bool has_returning)
 
 	/* 1. implicit labeling */
 	HeapTupleSetSecurity(tuple, icon);
-	sepgsqlCheckTuplePerms(rel, tuple, perms);
+	sepgsqlCheckTuplePerms(rel, tuple, perms, true);
 
 	/* 2. explicit labeling, if necessary */
 	if (econ != InvalidOid && icon != econ) {
 		HeapTupleSetSecurity(tuple, econ);
-		sepgsqlCheckTuplePerms(rel, tuple, TUPLE__RELABELTO);
+		sepgsqlCheckTuplePerms(rel, tuple, TUPLE__RELABELTO, true);
 	}
 }
 
@@ -491,7 +493,7 @@ void sepgsqlExecUpdate(Relation rel, HeapTuple newtup, HeapTuple oldtup, bool ha
 		perms = TUPLE__RELABELTO;
 		if (has_returning)
 			perms |= TUPLE__SELECT;
-		sepgsqlCheckTuplePerms(rel, newtup, perms);
+		sepgsqlCheckTuplePerms(rel, newtup, perms, true);
 	}
 }
 

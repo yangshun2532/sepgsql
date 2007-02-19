@@ -199,7 +199,7 @@ extern void sepgsqlVerifyQueryList(List *queryList);
  */
 #ifdef HAVE_SELINUX
 extern psid sepgsqlComputeImplicitContext(Relation rel, HeapTuple tuple);
-extern void sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, uint32 perms);
+extern bool sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, uint32 perms, bool abort);
 extern void sepgsqlExecInsert(Relation rel, HeapTuple tuple, bool has_returing);
 extern void sepgsqlExecUpdate(Relation rel, HeapTuple newtup, HeapTuple oldtup, bool has_returning);
 extern void sepgsqlExecDelete(Relation rel, HeapTuple tuple);

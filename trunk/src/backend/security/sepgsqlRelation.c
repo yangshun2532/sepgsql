@@ -20,7 +20,7 @@ void sepgsqlCreateRelation(Relation rel, HeapTuple tuple)
 	Assert(RelationGetRelid(rel) == RelationRelationId);
 	ncon = sepgsqlComputeImplicitContext(rel, tuple);
 	HeapTupleSetSecurity(tuple, ncon);
-	sepgsqlCheckTuplePerms(rel, tuple, TUPLE__INSERT);
+	sepgsqlCheckTuplePerms(rel, tuple, TUPLE__INSERT, true);
 }
 
 void sepgsqlCreateAttribute(Relation rel, HeapTuple tuple)
@@ -30,7 +30,7 @@ void sepgsqlCreateAttribute(Relation rel, HeapTuple tuple)
 	Assert(RelationGetRelid(rel) == AttributeRelationId);
 	ncon = sepgsqlComputeImplicitContext(rel, tuple);
 	HeapTupleSetSecurity(tuple, ncon);
-	sepgsqlCheckTuplePerms(rel, tuple, TUPLE__INSERT);
+	sepgsqlCheckTuplePerms(rel, tuple, TUPLE__INSERT, true);
 }
 
 /*
