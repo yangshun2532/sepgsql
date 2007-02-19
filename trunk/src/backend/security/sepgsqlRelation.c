@@ -11,6 +11,42 @@
 #include "utils/lsyscache.h"
 
 /*
+ * CREATE TABLE statement related
+ */
+void sepgsqlCreateRelation(Relation rel, HeapTuple tuple)
+{
+	psid ncon;
+
+	Assert(RelationGetRelid(rel) == RelationRelationId);
+	ncon = sepgsqlComputeImplicitContext(rel, tuple);
+	HeapTupleSetSecurity(tuple, ncon);
+	sepgsqlCheckTuplePerms(rel, tuple, TUPLE__INSERT);
+}
+
+void sepgsqlCreateAttribute(Relation rel, HeapTuple tuple)
+{
+	psid ncon;
+
+	Assert(RelationGetRelid(rel) == AttributeRelationId);
+	ncon = sepgsqlComputeImplicitContext(rel, tuple);
+	HeapTupleSetSecurity(tuple, ncon);
+	sepgsqlCheckTuplePerms(rel, tuple, TUPLE__INSERT);
+}
+
+/*
+ * DROP TABLE statement related
+ */
+void sepgsqlDropRelation(Relation rel, HeapTuple tuple)
+{
+
+}
+
+
+
+
+
+
+/*
  * ALTER TABLE statement related
  */
 static psid __alterTableGetColmnContext(Oid relid, char *colname)

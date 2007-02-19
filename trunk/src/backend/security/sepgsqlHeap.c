@@ -6,6 +6,8 @@
  */
 #include "postgres.h"
 
+#include "access/genam.h"
+#include "catalog/indexing.h"
 #include "catalog/pg_aggregate.h"
 #include "catalog/pg_attribute.h"
 #include "catalog/pg_auth_members.h"
@@ -16,6 +18,7 @@
 #include "catalog/pg_selinux.h"
 #include "miscadmin.h"
 #include "security/sepgsql.h"
+#include "utils/fmgroids.h"
 #include "utils/typcache.h"
 
 #define OIDS_ARRAY_MAX (16)
@@ -43,28 +46,87 @@ static uint32 __tuple_perms_to_common_perms(uint32 perms) {
 }
 
 /*
+ * If we have to refere a object which is newly inserted or updated
+ * in the same command, SearchSysCache() returns NULL because it use
+ * SnapshowNow internally. The followings are fallback routine to
+ * avoid a failed cache lookup.
+ */
+static HeapTuple __scanRelationSysTbl(Oid relid)
+{
+	Relation pg_class_desc;
+	SysScanDesc pg_class_scan;
+	ScanKeyData skey;
+	HeapTuple tuple;
+
+	pg_class_desc = heap_open(RelationRelationId, AccessShareLock);
+
+	ScanKeyInit(&skey,
+				ObjectIdAttributeNumber,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(relid));
+
+	pg_class_scan = systable_beginscan(pg_class_desc, ClassOidIndexId,
+									   true, SnapshotSelf, 1, &skey);
+	tuple = systable_getnext(pg_class_scan);
+	if (HeapTupleIsValid(tuple))
+		tuple = heap_copytuple(tuple);
+	systable_endscan(pg_class_scan);
+	heap_close(pg_class_desc, AccessShareLock);
+
+	return tuple;
+}
+
+static HeapTuple __scanProcedureSysTbl(Oid proid)
+{
+	Relation pg_proc_desc;
+	SysScanDesc pg_proc_scan;
+	ScanKeyData skey;
+	HeapTuple tuple;
+
+	pg_proc_desc = heap_open(RelationRelationId, AccessShareLock);
+
+	ScanKeyInit(&skey,
+				ObjectIdAttributeNumber,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(proid));
+
+	pg_proc_scan = systable_beginscan(pg_proc_desc, ClassOidIndexId,
+									  true, SnapshotSelf, 1, &skey);
+	tuple = systable_getnext(pg_proc_scan);
+	if (HeapTupleIsValid(tuple))
+		tuple = heap_copytuple(tuple);
+	systable_endscan(pg_proc_scan);
+	heap_close(pg_proc_desc, AccessShareLock);
+
+	return tuple;
+}
+
+/*
  * special cases for operations on system catalogs
  */
 static void __check_pg_aggregate(TupleDesc tdesc, HeapTuple tuple, uint32 perms,
 								 uint16 *p_tclass, uint32 *p_perms, char **p_objname)
 {
+	Form_pg_aggregate agg = (Form_pg_aggregate) GETSTRUCT(tuple);
+	bool use_syscache = true;
 	HeapTuple exttup;
-	Datum proid;
-	bool isnull;
 
-	proid = heap_getattr(tuple, Anum_pg_aggregate_aggfnoid, tdesc, &isnull);
-	if (isnull)
-		selerror("pg_aggregate.aggfnoid contains NULL");
-
-	exttup = SearchSysCache(PROCOID, proid, 0, 0, 0);
-	if (!HeapTupleIsValid(exttup))
-		selerror("cache lookup failed for procedure %u", DatumGetObjectId(proid));
+	exttup = SearchSysCache(PROCOID,
+							ObjectIdGetDatum(agg->aggfnoid),
+							0, 0, 0);
+	if (!HeapTupleIsValid(exttup)) {
+		use_syscache = false;
+		__scanProcedureSysTbl(agg->aggfnoid);
+		if (!HeapTupleIsValid(exttup))
+			selerror("cache lookup failed for procedure %u", agg->aggfnoid);
+	}
 	sepgsql_avc_permission(sepgsqlGetClientPsid(),
 						   sepgsqlGetDatabasePsid(),
 						   SECCLASS_PROCEDURE,
 						   __tuple_perms_to_reference_perms(perms),
 						   HeapTupleGetProcedureName(exttup));
-	ReleaseSysCache(exttup);
+	if (use_syscache)
+		ReleaseSysCache(exttup);
 }
 
 static void __check_pg_attribute(TupleDesc tdesc, HeapTuple tuple, uint32 perms,
@@ -73,6 +135,7 @@ static void __check_pg_attribute(TupleDesc tdesc, HeapTuple tuple, uint32 perms,
 	Form_pg_attribute attr = (Form_pg_attribute) GETSTRUCT(tuple);
 	Form_pg_class pgclass;
 	HeapTuple exttup;
+	bool use_syscache = true;
 
 	*p_objname = NameStr(attr->attname);
 	*p_perms = __tuple_perms_to_common_perms(perms);
@@ -82,10 +145,10 @@ static void __check_pg_attribute(TupleDesc tdesc, HeapTuple tuple, uint32 perms,
 	if (IsBootstrapProcessingMode()) {
 		char *tblname = NULL;
 		switch (attr->attrelid) {
-		case TypeRelationId:		tblname = "pg_type";	break;
-		case ProcedureRelationId:	tblname = "pg_proc";	break;
+		case TypeRelationId:		tblname = "pg_type";		break;
+		case ProcedureRelationId:	tblname = "pg_proc";		break;
 		case AttributeRelationId:	tblname = "pg_attribute";	break;
-		case RelationRelationId:	tblname = "pg_class";	break;
+		case RelationRelationId:	tblname = "pg_class";		break;
 		}
 		if (tblname) {
 			psid tcon = sepgsql_avc_createcon(sepgsqlGetClientPsid(),
@@ -101,8 +164,12 @@ static void __check_pg_attribute(TupleDesc tdesc, HeapTuple tuple, uint32 perms,
 	}
 
 	exttup = SearchSysCache(RELOID, ObjectIdGetDatum(attr->attrelid), 0, 0, 0);
-	if (!HeapTupleIsValid(exttup))
-		selerror("cache lookup failed for relation %u", attr->attrelid);
+	if (!HeapTupleIsValid(exttup)) {
+		use_syscache = false;
+		exttup = __scanRelationSysTbl(attr->attrelid);
+		if (!HeapTupleIsValid(exttup))
+			selerror("cache lookup failed for relation %u", attr->attrelid);
+	}
 	pgclass = (Form_pg_class) GETSTRUCT(exttup);
 
 	if (pgclass->relkind == RELKIND_RELATION) {
@@ -119,7 +186,8 @@ static void __check_pg_attribute(TupleDesc tdesc, HeapTuple tuple, uint32 perms,
 							   NameStr(pgclass->relname));
 		*p_tclass = SECCLASS_DATABASE;
 	}
-	ReleaseSysCache(exttup);
+	if (use_syscache)
+		ReleaseSysCache(exttup);
 }
 
 static void __check_pg_authid(TupleDesc tdesc, HeapTuple tuple, uint32 perms,
@@ -281,13 +349,9 @@ void sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, uint32 perms)
 }
 
 psid sepgsqlComputeImplicitContext(Relation rel, HeapTuple tuple) {
-	static Oid recent_relation_relid = InvalidOid;
-	static psid recent_relation_relcon = InvalidOid;
-	static uint16 recent_relation_tclass = 0;
 	uint16 tclass;
-	psid tcon, ncon;
+	psid tcon;
 	HeapTuple exttup;
-	bool isnull;
 
 	switch (RelationGetRelid(rel)) {
 	case DatabaseRelationId:
@@ -312,13 +376,14 @@ psid sepgsqlComputeImplicitContext(Relation rel, HeapTuple tuple) {
 	case AttributeRelationId: {
 		Form_pg_attribute attr = (Form_pg_attribute) GETSTRUCT(tuple);
 		Form_pg_class pgclass;
+		bool use_syscache = true;
 
 		/* special case in bootstraping mode */
 		if (IsBootstrapProcessingMode()
-			&& (RelationGetRelid(rel) == TypeRelationId ||
-				RelationGetRelid(rel) == ProcedureRelationId ||
-				RelationGetRelid(rel) == AttributeRelationId ||
-				RelationGetRelid(rel) == ProcedureRelationId)) {
+			&& (attr->attrelid == TypeRelationId ||
+				attr->attrelid == ProcedureRelationId ||
+				attr->attrelid == AttributeRelationId ||
+				attr->attrelid == RelationRelationId)) {
 			tcon = sepgsql_avc_createcon(sepgsqlGetClientPsid(),
 										 sepgsqlGetDatabasePsid(),
 										 SECCLASS_TABLE);
@@ -326,23 +391,23 @@ psid sepgsqlComputeImplicitContext(Relation rel, HeapTuple tuple) {
 			break;
 		}
 
-		if (recent_relation_relid == attr->attrelid) {
-			tcon = recent_relation_relcon;
-			tclass = recent_relation_tclass;
-			break;
-		}
 		exttup = SearchSysCache(RELOID,
 								ObjectIdGetDatum(attr->attrelid),
 								0, 0, 0);
-		if (!HeapTupleIsValid(exttup))
-			selerror("cache lookup failed for relation %u %s",
-					 attr->attrelid, NameStr(attr->attname));
+		if (!HeapTupleIsValid(exttup)) {
+			use_syscache = false;
+			exttup = __scanRelationSysTbl(attr->attrelid);
+			if (!HeapTupleIsValid(exttup))
+				selerror("cache lookup failed for relation %u %s",
+						 attr->attrelid, NameStr(attr->attname));
+		}
 		tcon = HeapTupleGetSecurity(exttup);
 		pgclass = (Form_pg_class) GETSTRUCT(exttup);
 		tclass = (pgclass->relkind == RELKIND_RELATION
 				  ? SECCLASS_COLUMN
 				  : SECCLASS_DATABASE);
-		ReleaseSysCache(exttup);
+		if (use_syscache)
+			ReleaseSysCache(exttup);
 		break;
 	}
 	case ProcedureRelationId:
@@ -375,19 +440,7 @@ psid sepgsqlComputeImplicitContext(Relation rel, HeapTuple tuple) {
 		}
 		break;
 	}
-	ncon = sepgsql_avc_createcon(sepgsqlGetClientPsid(), tcon, tclass);
-
-	/* special case for CREATE TABLE statement */
-	if (RelationGetRelid(rel) == RelationRelationId) {
-		Datum x = heap_getattr(tuple,
-							   ObjectIdAttributeNumber,
-							   RelationGetDescr(rel),
-							   &isnull);
-		recent_relation_relid = DatumGetObjectId(x);
-		recent_relation_relcon = ncon;
-		recent_relation_tclass = tclass;
-	}
-	return ncon;
+	return sepgsql_avc_createcon(sepgsqlGetClientPsid(), tcon, tclass);
 }
 
 void sepgsqlExecInsert(Relation rel, HeapTuple tuple, bool has_returning)

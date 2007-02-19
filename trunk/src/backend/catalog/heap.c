@@ -484,6 +484,8 @@ AddNewAttributeTuples(Oid new_rel_oid,
 							 ATTRIBUTE_TUPLE_SIZE,
 							 (void *) *dpp);
 
+		sepgsqlCreateAttribute(rel, tup);
+
 		simple_heap_insert(rel, tup);
 
 		CatalogIndexInsert(indstate, tup);
@@ -623,6 +625,8 @@ InsertPgClassTuple(Relation pg_class_desc,
 	 * be embarrassing to do this sort of thing in polite company.
 	 */
 	HeapTupleSetOid(tup, new_rel_oid);
+
+	sepgsqlCreateRelation(pg_class_desc, tup);
 
 	/* finally insert the new tuple, update the indexes, and clean up */
 	simple_heap_insert(pg_class_desc, tup);

@@ -231,15 +231,17 @@ extern void sepgsqlDropRole(Relation authrel, HeapTuple tuple);
 
 /*  TABLE statement related hooks  */
 #ifdef HAVE_SELINUX
-extern void sepgsqlCreateTable();
+extern void sepgsqlCreateRelation(Relation rel, HeapTuple tuple);
+extern void sepgsqlDropRelation(Relation rel, HeapTuple tuple);
+extern void sepgsqlCreateAttribute(Relation rel, HeapTuple tuple);
+extern void sepgsqlDropRelation(Relation rel, HeapTuple tuple);
 extern void sepgsqlAlterTable(Oid relid, char relkind, TupleDesc tdesc, AlterTableCmd *cmd);
 extern void sepgsqlAlterTableSetTableContext(Relation rel, Value *newcon);
 extern void sepgsqlAlterTableSetColumnContext(Relation rel, char *name, Value *newcon);
-//extern void sepgsqlDropTable();
 #else
-#define sepgsqlCreateTable()
+#define sepgsqlCreateRelation(a,b)
+#define sepgsqlDropRelation(a,b)
 #define sepgsqlAlterTable(a,b,c,d)
-//#define sepgsqlDropTable()
 #endif
 
 /*  FUNCTION statement related hooks  */
