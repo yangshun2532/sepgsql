@@ -250,13 +250,9 @@ extern void sepgsqlAlterTableSetColumnContext(Relation rel, char *name, Value *n
 
 /*  FUNCTION statement related hooks  */
 #ifdef HAVE_SELINUX
-extern void sepgsqlCreateProcedure(HeapTuple tuple);
-extern void sepgsqlAlterProcedure(HeapTuple tuple, char *proselcon);
-extern void sepgsqlDropProcedure(HeapTuple);
+extern void sepgsqlAlterProcedureContext(Relation rel, HeapTuple tuple, char *context);
 #else
-#define sepgsqlCreateProcedure(a)
-#define sepgsqlAlterProcedure(a,b)
-#define sepgsqlDropProcedure(a)
+#define sepgsqlAlterProcedureContext(a,b,c)
 #endif
 
 /*  Trusted Procedure support */

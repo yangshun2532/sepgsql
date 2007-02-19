@@ -1013,9 +1013,7 @@ AlterFunction(AlterFunctionStmt *stmt)
 	DefElem    *volatility_item = NULL;
 	DefElem    *strict_item = NULL;
 	DefElem    *security_def_item = NULL;
-#ifdef HAVE_SELINUX
 	char       *proselcon = NULL;
-#endif
 
 	rel = heap_open(ProcedureRelationId, RowExclusiveLock);
 
@@ -1071,7 +1069,7 @@ AlterFunction(AlterFunctionStmt *stmt)
 	if (security_def_item)
 		procForm->prosecdef = intVal(security_def_item->arg);
 
-	sepgsqlAlterProcedure(tup, proselcon);
+	sepgsqlAlterProcedureContext(rel, tup, proselcon);
 
 	/* Do the update */
 	simple_heap_update(rel, &tup->t_self, tup);

@@ -8,6 +8,7 @@
 
 #include "catalog/pg_authid.h"
 #include "catalog/pg_database.h"
+#include "catalog/pg_proc.h"
 #include "security/sepgsql.h"
 
 /*
@@ -89,7 +90,6 @@ void sepgsqlDoCopy(Relation rel, List *attnumlist, bool is_from)
 	/* 2. check column:select/insert for each column */
 	perms = (is_from ? COLUMN__INSERT : COLUMN__SELECT);
 	foreach(l, attnumlist) {
-		char objname[2 * NAMEDATALEN + 1];
 		AttrNumber attno = lfirst_int(l);
 
 		tuple = SearchSysCache(ATTNUM,
@@ -115,7 +115,80 @@ bool sepgsqlCopyTo(Relation rel, HeapTuple tuple)
 	return sepgsqlCheckTuplePerms(rel, tuple, TUPLE__SELECT, false);
 }
 
+/*
+ * for Trusted Procedure support
+ *   When an trusted procedure is called, fuction pointer indicates 
+ *   sepgsqlExprStateEvalFunc() and jump to there first.
+ *   Then, it set client context and calls real function procedure.
+ */
+static Datum sepgsqlExprStateEvalFunc(ExprState *expression,
+									  ExprContext *econtext,
+									  bool *isNull,
+									  ExprDoneCond *isDone)
+{
+	Datum retval;
+	psid saved_clientcon;
 
+	/* save security context */
+	saved_clientcon = sepgsqlGetClientPsid();
+	sepgsqlSetClientPsid(expression->execContext);
+	PG_TRY();
+	{
+		retval = expression->origEvalFunc(expression, econtext, isNull, isDone);
+	}
+	PG_CATCH();
+	{
+		sepgsqlSetClientPsid(saved_clientcon);
+		PG_RE_THROW();
+	}
+	PG_END_TRY();
+
+	/* restore context */
+	sepgsqlSetClientPsid(saved_clientcon);
+
+	return retval;
+}
+
+void sepgsqlExecInitExpr(ExprState *state, PlanState *parent)
+{
+	switch (nodeTag(state->expr)) {
+	case T_FuncExpr:
+		{
+			FuncExpr *func = (FuncExpr *) state->expr;
+			HeapTuple tuple;
+			psid execon;
+
+			tuple = SearchSysCache(PROCOID, ObjectIdGetDatum(func->funcid), 0, 0, 0);
+			if (!HeapTupleIsValid(tuple))
+				selerror("RELOID cache lookup failed (pg_proc.oid=%u)", func->funcid);
+			execon = sepgsql_avc_createcon(sepgsqlGetClientPsid(),
+										   HeapTupleGetSecurity(tuple),
+										   SECCLASS_PROCESS);
+			if (sepgsqlGetClientPsid() != execon) {
+				/* do domain transition */
+				state->execContext = execon;
+				state->origEvalFunc = state->evalfunc;
+				state->evalfunc = sepgsqlExprStateEvalFunc;
+			}
+			ReleaseSysCache(tuple);
+		}
+		break;
+	default:
+		/* do nothing */
+		break;
+	}
+}
+
+void sepgsqlAlterProcedureContext(Relation rel, HeapTuple tuple, char *context)
+{
+	Datum ncon;
+
+	if (!context)
+		return;
+
+	ncon = DirectFunctionCall1(psid_in, CStringGetDatum(context));
+	HeapTupleSetSecurity(tuple, DatumGetObjectId(ncon));
+}
 
 
 /*
@@ -154,6 +227,7 @@ void sepgsqlSimpleHeapInsert(Relation rel, HeapTuple tuple)
 	switch (RelationGetRelid(rel)) {
 	case AuthIdRelationId:
 	case DatabaseRelationId:
+	case ProcedureRelationId:
 		__hookCreateGenericDatabaseObject(rel, tuple);
 		break;
 	default:
@@ -169,6 +243,7 @@ void sepgsqlSimpleHeapUpdate(Relation rel, ItemPointer tid, HeapTuple newtup)
 	switch (RelationGetRelid(rel)) {
 	case AuthIdRelationId:
 	case DatabaseRelationId:
+	case ProcedureRelationId:
 		__hookAlterGenericDatabaseObject(rel, newtup, oldtup);
 		break;
 	default:
@@ -185,6 +260,7 @@ void sepgsqlSimpleHeapDelete(Relation rel, ItemPointer tid)
 	switch (RelationGetRelid(rel)) {
 	case AuthIdRelationId:
 	case DatabaseRelationId:
+	case ProcedureRelationId:
 		__hookDropGenericDatabaseObject(rel, tuple);
 		break;
 	default:
