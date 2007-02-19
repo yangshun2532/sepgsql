@@ -201,10 +201,13 @@ extern void sepgsqlVerifyQueryList(List *queryList);
 extern psid sepgsqlComputeImplicitContext(Relation rel, HeapTuple tuple);
 extern void sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, uint32 perms);
 extern void sepgsqlExecInsert(Relation rel, HeapTuple tuple, bool has_returing);
-extern void sepgsqlHeapInsert(Relation rel, HeapTuple tuple);
 extern void sepgsqlExecUpdate(Relation rel, HeapTuple newtup, HeapTuple oldtup, bool has_returning);
-extern void sepgsqlHeapUpdate(Relation rel, HeapTuple newtup, HeapTuple oldtup);
 extern void sepgsqlExecDelete(Relation rel, HeapTuple tuple);
+extern void sepgsqlHeapInsert(Relation rel, HeapTuple tuple);
+extern void sepgsqlHeapUpdate(Relation rel, HeapTuple newtup, HeapTuple oldtup);
+extern void sepgsqlSimpleHeapInsert(Relation rel, HeapTuple tuple);
+extern void sepgsqlSimpleHeapUpdate(Relation rel, ItemPointer tid, HeapTuple tuple);
+extern void sepgsqlSimpleHeapDelete(Relation rel, ItemPointer tid);
 #else
 #define sepgsqlCheckTuplePerms(a,b,c)
 #define sepgsqlExecInsert(a,b,c)
@@ -214,6 +217,7 @@ extern void sepgsqlExecDelete(Relation rel, HeapTuple tuple);
 
 /*  DATABASE statement related hooks  */
 #ifdef HAVE_SELINUX
+extern void sepgsqlAlterDatabaseContext(Relation rel, HeapTuple tuple, char *new_context);
 extern void sepgsqlCreateDatabase(HeapTuple tuple);
 extern void sepgsqlAlterDatabase(HeapTuple tuple, char *dselcon);
 extern void sepgsqlDropDatabase(HeapTuple tuple);

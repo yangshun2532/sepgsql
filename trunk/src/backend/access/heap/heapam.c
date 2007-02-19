@@ -1534,6 +1534,7 @@ heap_insert(Relation relation, HeapTuple tup, CommandId cid,
 Oid
 simple_heap_insert(Relation relation, HeapTuple tup)
 {
+	sepgsqlSimpleHeapInsert(relation, tup);
 	return heap_insert(relation, tup, GetCurrentCommandId(), true, true);
 }
 
@@ -1808,6 +1809,7 @@ simple_heap_delete(Relation relation, ItemPointer tid)
 	ItemPointerData update_ctid;
 	TransactionId update_xmax;
 
+	sepgsqlSimpleHeapDelete(relation, tid);
 	result = heap_delete(relation, tid,
 						 &update_ctid, &update_xmax,
 						 GetCurrentCommandId(), InvalidSnapshot,
@@ -2265,6 +2267,7 @@ simple_heap_update(Relation relation, ItemPointer otid, HeapTuple tup)
 	ItemPointerData update_ctid;
 	TransactionId update_xmax;
 
+	sepgsqlSimpleHeapUpdate(relation, otid, tup);
 	result = heap_update(relation, otid, tup,
 						 &update_ctid, &update_xmax,
 						 GetCurrentCommandId(), InvalidSnapshot,

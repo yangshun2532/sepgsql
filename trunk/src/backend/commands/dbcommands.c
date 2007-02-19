@@ -382,8 +382,6 @@ createdb(const CreatedbStmt *stmt)
 
 	HeapTupleSetOid(tuple, dboid);
 
-	sepgsqlCreateDatabase(tuple);
-
 	simple_heap_insert(pg_database_rel, tuple);
 
 	/* Update indexes */
@@ -620,8 +618,6 @@ dropdb(const char *dbname, bool missing_ok)
 	if (!HeapTupleIsValid(tup))
 		elog(ERROR, "cache lookup failed for database %u", db_id);
 
-	sepgsqlDropDatabase(tup);
-
 	simple_heap_delete(pgdbrel, &tup->t_self);
 
 	ReleaseSysCache(tup);
@@ -842,7 +838,6 @@ AlterDatabase(AlterDatabaseStmt *stmt)
 		new_record_repl[Anum_pg_database_datconnlimit - 1] = 'r';
 	}
 
-	sepgsqlAlterDatabase(tuple, dselcon ? strVal(dselcon->arg) : NULL);
 	newtuple = heap_modifytuple(tuple, RelationGetDescr(rel), new_record,
 								new_record_nulls, new_record_repl);
 	simple_heap_update(rel, &tuple->t_self, newtuple);
@@ -936,9 +931,6 @@ AlterDatabaseSet(AlterDatabaseSetStmt *stmt)
 	}
 
 	newtuple = heap_modifytuple(tuple, RelationGetDescr(rel), repl_val, repl_null, repl_repl);
-
-	sepgsqlAlterDatabase(newtuple, NULL);
-
 	simple_heap_update(rel, &tuple->t_self, newtuple);
 
 	/* Update indexes */
