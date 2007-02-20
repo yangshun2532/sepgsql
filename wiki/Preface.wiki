@@ -24,3 +24,47 @@ PostgreSQL is currently distributed with BSD license, and it can be applied on S
 
 == Features of SE-PostgreSQL ==
 
+
+=== Fine grained access control ===
+SE-PostgreSQL enables fine-grained access control onto various database objects such as databases itself, tables, columns, tuples, stored procedures or binary large objects (blob). Especially, native PostgreSQL access control list does not provide any access control on columns, tuples and blob.
+These are the tiniest unit of database objects. This facility provide the maximum flexibility for your purpose.
+
+=== Mandatory access control ===
+In native PostgreSQL, privileged users (typically, it's the owner of the database) can bypass any access control, and the object owner can config its access control list discretionally by using GRANT/REVOKE statement.
+SE-PostgreSQL provides none-bypassable access control for all database users, all SQL queries, based on SELinux security policy.
+
+==== Traditional mandatory access control ====
+Traditional-MAC means multi level/category security model. Because recent version of SELinux support multi level/category security, we can say SE-PostgreSQL also support them.
+
+=== Implicit labeling ===
+In SE-PostgreSQL, various kinds of database objects are labeled either explicitly or implicitly according to default labeling rules in the security policy.
+
+
+We can label 
+
+A user cannot assign security context not to be allowed by the security policy, even if explicit labeling was tried to do.
+
+
+
+
+
+
+
+=== Client authority integrated with operating system ===
+
+
+=== Consistency in access control ===
+=== Information flow control ===
+
+
+
+
+
+
+
+
+
+
+
+
+

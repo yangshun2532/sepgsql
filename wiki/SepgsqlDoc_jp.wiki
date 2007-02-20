@@ -1,18 +1,124 @@
-= Preface =
+日本語版ドキュメント
+
+= はじめに =
+
+SE-PostgreSQLとは、
+
 
 日本語版ドキュメント
 
-= Introduction =
-
-Add your content here.
 
 
-= Details =
 
-Add your content here.  Format your content with:
-  * Text in *bold* or _italic_
-  * Headings, paragraphs, and lists
-  * Automatic links to other wiki pages
+= インストールと設定 =
 
 
+= セキュリティデザイン =
+= SE-PostgreSQLの利用 =
+= 内部情報 =
+
+= 付録 =
+== 拡張SQL ==
+
+SE-PostgreSQLではいくつかのSQL構文が拡張されており、セキュリティ機能を扱うのに有用な
+
+=== ALTER DATABSE 構文 ===
+*書式*
+
+ ALTER DATABASE _dbname_ CONTEXT = _'context'_
+
+*説明*
+ PostgreSQL の ALTER DATABASE 構文の拡張によって、データベースのセキュリティコンテキストを変更することが可能になりました。
+
+ この構文を実行すると、_dbname_ で指定されたデータベースのセキュリティコンテキストを _'context'_ に変更します。
+ クライアントはデータベースに対して *database:{setattr relabelfrom}* 権限を、そして新しく付与するセキュリティコンテキストに対して *database:{relabelto}* 権限を有していなければいけません。
+
+*例*
+{{{
+kaigai=# alter DATABASE testdb context = 'user_u:object_r:sepgsql_db_t:s0:c0';
+ALTER DATABASE
+kaigai=#
+}}}
+
+*注釈*
+ この構文を実行した結果、データベースのセキュリティコンテキストが変化しない場合、*database:{relabelfrom relabelto}* 構文は評価されません。
+
+=== ALTER TABLE 構文 ===
+*書式*
+
+ ALTER TABLE _tblname_ CONTEXT = _'context'_
+ 
+ ALTER TABLE _tblname_ ALTER _colname_ CONTEXT = _'context'_
+
+*説明*
+ PostgreSQLの ALTER TABLE 構文の拡張によって、テーブル又はカラムのセキュリティコンテキストを変更することが可能になりました。
+
+ 最初の構文を実行すると、_tblname_ で指定されたテーブルのセキュリティコンテキストを、_'context'_ に変更します。
+ クライアントはテーブルに対して *table:{setattr relabelfrom}* 権限を、そして新しく付与するセキュリティコンテキストに対して *table:{relabelto}* 権限を有していなければいけません。
+ 
+ 後ろの構文を実行すると、_tblname_ . _colname_ で指定されたカラムのセキュリティコンテキストを、 _'context'_ に変更します。クライアントはカラムに対して *column:{setattr relabelfrom}* 権限を、そして新しく付与するセキュリティコンテキストに対して *column:{relabelto}* 権限を有していなければいけません。
+
+*例*
+{{{
+kaigai=# ALTER TABLE drink CONTEXT = 'user_u:object_r:sepgsql_secret_table_t';
+ALTER TABLE
+kaigai=#
+}}}
+
+*注釈*
+ この構文を実行した結果、テーブルのセキュリティコンテキストに変化がない場合、*table:{relabelfrom relabelto}* 権限は評価されません。同様にカラムのセキュリティコンテキストに変化がない場合、*column:{relabelto}* 権限は評価されません。
+
+=== ALTER FUNCTION 構文 ===
+*書式*
+
+ ALTER FUNCTION _funcname_ CONTEXT = _'context'_
+
+*説明*
+ PostgreSQL の ALTER FUNCTION 構文の拡張によって、関数のセキュリティコンテキストを変更することが可能になりました。
+
+ この構文を実行すると、_funcname_ で指定された関数のセキュリティコンテキストを _'context'_ に変更します。
+ クライアントはデータベースに対して *procedure:{setattr relabelfrom}* 権限を、そして新しく付与するセキュリティコンテキストに対して *procedure:{relabelto}* 権限を有していなければいけません。
+
+*例*
+{{{
+kaigai=# alter function check_person_passwd(integer, text)
+      context = 'user_u:object_r:sepgsql_trusted_proc_t';
+ALTER FUNCTION
+kaigai=#
+}}}
+
+=== lo_get_security() 関数 ===
+*定義*
+
+ lo_get_security( *Oid* _loid_ ) returns *psid*
+
+*説明*
+ この関数はラージオブジェクトのセキュリティコンテキストを取得するために新たに追加されました。
+ 
+ lo_get_security()関数を実行すると、 _loid_ で指定したラージオブジェクトのセキュリティコンテキストを返却します。クライアントは、ラージオブジェクトに対して *blob:{getattr}* 権限を有していなければいけません。
+
+*例*
+
+=== lo_set_security() 関数 ===
+*定義*
+
+ lo_set_security( *Oid* _loid_, *psid* _context_ ) returns *bool*
+
+*説明*
+ この関数はラージオブジェクトのセキュリティコンテキストを変更するために新たに追加されました。
+ 
+ lo_set_security()関数を実行すると、 _loid_ で指定したラージオブジェクトのセキュリティコンテキストを_context_に変更します。クライアントは、ラージオブジェクトに対して *blob:{setattr relabelfrom}* 権限を、そして新しく付与するセキュリティコンテキストに対して *blob:{relabelto}* 権限を有していなければいけません。
+
+*例*
+
+
+
+== SELinuxについて ==
+
+=== Security Context ===
+=== Type Enforcement (TE)===
+=== Domain Transition ===
+=== Multi Level Security (MLS) ===
+=== Role Based Access Control (RBAC) ===
+=== Labeled Networking ===
 
