@@ -1830,6 +1830,7 @@ _outFkConstraint(StringInfo str, FkConstraint *node)
 }
 
 #ifdef HAVE_SELINUX
+#include "security/sepgsql_internal.h"
 static void
 _outSEvalItem(StringInfo str, SEvalItem *node)
 {

@@ -6,6 +6,7 @@
 #include "postgres.h"
 
 #include "security/sepgsql.h"
+#include "security/sepgsql_internal.h"
 
 void sepgsqlLargeObjectCreate(Relation rel, HeapTuple tuple)
 {

@@ -20,6 +20,7 @@
 #include "nodes/makefuncs.h"
 #include "parser/parse_relation.h"
 #include "security/sepgsql.h"
+#include "security/sepgsql_internal.h"
 #include "storage/lock.h"
 #include "utils/fmgroids.h"
 #include "utils/syscache.h"

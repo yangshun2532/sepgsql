@@ -8,9 +8,8 @@
 
 #include "optimizer/plancat.h"
 #include "security/sepgsql.h"
+#include "security/sepgsql_internal.h"
 #include "utils/syscache.h"
-#include <selinux/flask.h>
-#include <selinux/av_permissions.h>
 
 static void verifyPgClassPermsInheritances(Oid relid, uint32 perms);
 

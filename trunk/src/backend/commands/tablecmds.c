@@ -2257,8 +2257,6 @@ ATRewriteCatalogs(List **wqueue)
 static void
 ATExecCmd(AlteredTableInfo *tab, Relation rel, AlterTableCmd *cmd)
 {
-	sepgsqlAlterTable(tab->relid, tab->relkind, tab->oldDesc, cmd);
-
 	switch (cmd->subtype)
 	{
 		case AT_AddColumn:		/* ADD COLUMN */

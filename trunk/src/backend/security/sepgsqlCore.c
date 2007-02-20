@@ -21,18 +21,15 @@
 #include "libpq/pqsignal.h"
 #include "miscadmin.h"
 #include "security/sepgsql.h"
+#include "security/sepgsql_internal.h"
 #include "storage/lwlock.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
 #include "utils/rel.h"
 #include "utils/syscache.h"
-
 #include <linux/netlink.h>
 #include <linux/selinux_netlink.h>
 #include <sched.h>
-#include <selinux/selinux.h>
-#include <selinux/flask.h>
-#include <selinux/av_permissions.h>
 #include <signal.h>
 #include <sys/file.h>
 #include <sys/wait.h>
@@ -74,20 +71,10 @@ static const char *security_av_perm_to_string(uint16 tclass, uint32 perm)
 		{ SECCLASS_DATABASE,	DATABASE__RELABELFROM,	"relabelfrom" },
 		{ SECCLASS_DATABASE,	DATABASE__RELABELTO,	"relabelto" },
 		{ SECCLASS_DATABASE,	DATABASE__ACCESS,		"access" },
+		{ SECCLASS_DATABASE,	DATABASE__INSTALL_MODULE,	"install_module" },
 		{ SECCLASS_DATABASE,	DATABASE__LOAD_MODULE,	"load_module" },
-		{ SECCLASS_DATABASE,	DATABASE__ASSOCIATE,	"associate" },
-		{ SECCLASS_DATABASE,	DATABASE__CREATE_MISC,	"create_misc" },
-		{ SECCLASS_DATABASE,	DATABASE__ALTER_MISC,	"alter_misc" },
-		{ SECCLASS_DATABASE,	DATABASE__DROP_MISC,	"drop_misc" },
-		{ SECCLASS_DATABASE,	DATABASE__CREATE_USER,	"create_user" },
-		{ SECCLASS_DATABASE,	DATABASE__ALTER_USER,	"alter_user" },
-		{ SECCLASS_DATABASE,	DATABASE__DROP_USER,	"drop_user" },
-		{ SECCLASS_DATABASE,	DATABASE__CREATE_VIEW,	"create_view" },
-		{ SECCLASS_DATABASE,	DATABASE__ALTER_VIEW,	"alter_view" },
-		{ SECCLASS_DATABASE,	DATABASE__DROP_VIEW,	"drop_view" },
-		{ SECCLASS_DATABASE,	DATABASE__CREATE_TRIGGER,	"create_trigger" },
-		{ SECCLASS_DATABASE,	DATABASE__ALTER_TRIGGER,	"alter_trigger" },
-		{ SECCLASS_DATABASE,	DATABASE__DROP_TRIGGER,		"drop_trigger" },
+		{ SECCLASS_DATABASE,	DATABASE__GET_PARAM,	"get_param" },
+		{ SECCLASS_DATABASE,	DATABASE__SET_PARAM,	"set_param" },
 		/* table */
 		{ SECCLASS_TABLE,		TABLE__CREATE,			"create" },
 		{ SECCLASS_TABLE,		TABLE__DROP,			"drop" },

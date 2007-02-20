@@ -2782,6 +2782,7 @@ _copyValue(Value *from)
 }
 
 #ifdef HAVE_SELINUX
+#include "security/sepgsql_internal.h"
 /* ****************************************************************
  *					sepgsql.h copy functions
  * ****************************************************************

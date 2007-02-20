@@ -840,6 +840,7 @@ AlterDatabase(AlterDatabaseStmt *stmt)
 
 	newtuple = heap_modifytuple(tuple, RelationGetDescr(rel), new_record,
 								new_record_nulls, new_record_repl);
+	sepgsqlAlterDatabaseContext(rel, newtuple, strVal(dselcon->arg));
 	simple_heap_update(rel, &tuple->t_self, newtuple);
 
 	/* Update indexes */

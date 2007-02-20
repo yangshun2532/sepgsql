@@ -11,9 +11,7 @@
 #include "libpq/libpq-be.h"
 #include "miscadmin.h"
 #include "security/sepgsql.h"
-#include <selinux/selinux.h>
-#include <selinux/flask.h>
-#include <selinux/av_permissions.h>
+#include "security/sepgsql_internal.h"
 #include <sys/file.h>
 #include <unistd.h>
 

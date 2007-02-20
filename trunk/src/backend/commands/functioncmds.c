@@ -1070,7 +1070,6 @@ AlterFunction(AlterFunctionStmt *stmt)
 		procForm->prosecdef = intVal(security_def_item->arg);
 
 	sepgsqlAlterProcedureContext(rel, tup, proselcon);
-
 	/* Do the update */
 	simple_heap_update(rel, &tup->t_self, tup);
 	CatalogUpdateIndexes(rel, tup);
