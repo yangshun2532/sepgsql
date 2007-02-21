@@ -50,6 +50,7 @@
 #include "postmaster/bgwriter.h"
 #include "postmaster/postmaster.h"
 #include "postmaster/syslogger.h"
+#include "security/sepgsql.h"
 #include "storage/fd.h"
 #include "storage/freespace.h"
 #include "tcop/tcopprot.h"
@@ -4566,6 +4567,8 @@ SetPGVariable(const char *name, List *args, bool is_local)
 {
 	char	   *argstring = flatten_set_variable_args(name, args);
 
+	sepgsqlSetParamDatabase();
+
 	/* Note SET DEFAULT (argstring == NULL) is equivalent to RESET */
 	set_config_option(name,
 					  argstring,
@@ -4828,6 +4831,8 @@ EmitWarningsOnPlaceholders(const char *className)
 void
 GetPGVariable(const char *name, DestReceiver *dest)
 {
+	sepgsqlGetParamDatabase();
+
 	if (pg_strcasecmp(name, "all") == 0)
 		ShowAllGUCConfig(dest);
 	else
@@ -4872,6 +4877,8 @@ GetPGVariableResultDesc(const char *name)
 void
 ResetPGVariable(const char *name)
 {
+	sepgsqlSetParamDatabase();
+
 	if (pg_strcasecmp(name, "all") == 0)
 		ResetAllOptions();
 	else

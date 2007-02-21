@@ -12,6 +12,7 @@
 #include "catalog/pg_class.h"
 #include "catalog/pg_database.h"
 #include "catalog/pg_proc.h"
+#include "miscadmin.h"
 #include "security/sepgsql.h"
 #include "security/sepgsql_internal.h"
 
@@ -53,6 +54,40 @@ void sepgsqlAlterDatabaseContext(Relation rel, HeapTuple tuple, char *new_contex
 		Datum ncon = DirectFunctionCall1(psid_in, CStringGetDatum(new_context));
 		HeapTupleSetSecurity(tuple, DatumGetObjectId(ncon));
 	}
+}
+
+void sepgsqlGetParamDatabase()
+{
+	HeapTuple tuple;
+
+	tuple = SearchSysCache(DATABASEOID,
+						   ObjectIdGetDatum(MyDatabaseId),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		selerror("cache lookup failed for database %u", MyDatabaseId);
+	sepgsql_avc_permission(sepgsqlGetClientPsid(),
+						   HeapTupleGetSecurity(tuple),
+						   SECCLASS_DATABASE,
+						   DATABASE__GET_PARAM,
+						   HeapTupleGetDatabaseName(tuple));
+	ReleaseSysCache(tuple);
+}
+
+void sepgsqlSetParamDatabase()
+{
+	HeapTuple tuple;
+
+	tuple = SearchSysCache(DATABASEOID,
+						   ObjectIdGetDatum(MyDatabaseId),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		selerror("cache lookup failed for database %u", MyDatabaseId);
+	sepgsql_avc_permission(sepgsqlGetClientPsid(),
+						   HeapTupleGetSecurity(tuple),
+						   SECCLASS_DATABASE,
+						   DATABASE__SET_PARAM,
+						   HeapTupleGetDatabaseName(tuple));
+	ReleaseSysCache(tuple);
 }
 
 /*******************************************************************************

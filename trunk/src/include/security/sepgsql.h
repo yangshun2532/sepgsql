@@ -80,6 +80,8 @@ extern void sepgsqlHeapUpdate(Relation rel, HeapTuple newtup, HeapTuple oldtup);
  */
 /* DATABASE */
 extern void sepgsqlAlterDatabaseContext(Relation rel, HeapTuple tuple, char *new_context);
+extern void sepgsqlGetParamDatabase(void);
+extern void sepgsqlSetParamDatabase(void);
 
 /* RELATION/ATTRIBUTE */
 extern void sepgsqlAlterTableSetTableContext(Relation rel, Value *context);

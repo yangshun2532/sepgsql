@@ -2942,6 +2942,8 @@ AfterTriggerSetState(ConstraintsSetStmt *stmt)
 {
 	int			my_level = GetCurrentTransactionNestLevel();
 
+	sepgsqlSetParamDatabase();
+
 	/*
 	 * Ignore call if we aren't in a transaction.  (Shouldn't happen?)
 	 */
