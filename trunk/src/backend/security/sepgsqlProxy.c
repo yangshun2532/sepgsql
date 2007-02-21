@@ -138,7 +138,8 @@ static List *walkVar(List *selist, Query *query, Var *var)
         selist = sepgsqlWalkExpr(selist, query, n);
         break;
 	default:
-		selnotice("rtekind = %d is ignored", rte->rtekind);
+		if (rte->rtekind < RTE_RELATION || rte->rtekind > RTE_VALUES)
+			selnotice("rtekind = %d is ignored", rte->rtekind);
 		break;
 	}
 	return selist;
