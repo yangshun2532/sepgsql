@@ -86,6 +86,7 @@ static const char *security_av_perm_to_string(uint16 tclass, uint32 perm)
 		{ SECCLASS_TABLE,		TABLE__UPDATE,			"update" },
 		{ SECCLASS_TABLE,		TABLE__INSERT,			"insert" },
 		{ SECCLASS_TABLE,		TABLE__DELETE,			"delete" },
+		{ SECCLASS_TABLE,		TABLE__LOCK,  		  	"lock" },
 		/* procedrue */
 		{ SECCLASS_PROCEDURE,	PROCEDURE__CREATE,		"create" },
 		{ SECCLASS_PROCEDURE,	PROCEDURE__DROP,		"drop" },

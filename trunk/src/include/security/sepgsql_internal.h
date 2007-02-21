@@ -51,6 +51,7 @@
 #define TABLE__UPDATE                             0x00000080UL
 #define TABLE__INSERT                             0x00000100UL
 #define TABLE__DELETE                             0x00000200UL
+#define TABLE__LOCK                               0x00000400UL
 #define PROCEDURE__CREATE                         0x00000001UL
 #define PROCEDURE__DROP                           0x00000002UL
 #define PROCEDURE__GETATTR                        0x00000004UL

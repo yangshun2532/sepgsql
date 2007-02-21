@@ -84,6 +84,7 @@ extern void sepgsqlAlterDatabaseContext(Relation rel, HeapTuple tuple, char *new
 /* RELATION/ATTRIBUTE */
 extern void sepgsqlAlterTableSetTableContext(Relation rel, Value *context);
 extern void sepgsqlAlterTableSetColumnContext(Relation rel, char *colname, Value *context);
+extern void sepgsqlLockTable(Oid relid);
 
 /* PROCEDURE */
 extern void sepgsqlExecInitExpr(ExprState *state, PlanState *parent);

@@ -59,6 +59,8 @@ LockTableCommand(LockStmt *lockstmt)
 			aclcheck_error(aclresult, ACL_KIND_CLASS,
 						   get_rel_name(reloid));
 
+		sepgsqlLockTable(reloid);
+
 		if (lockstmt->nowait)
 			rel = relation_open_nowait(reloid, lockstmt->mode);
 		else

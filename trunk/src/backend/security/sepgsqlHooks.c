@@ -103,6 +103,24 @@ void sepgsqlAlterTableSetTableContext(Relation rel, Value *context)
 	heap_close(pgclass, RowExclusiveLock);
 }
 
+void sepgsqlLockTable(Oid relid)
+{
+	HeapTuple tuple;
+
+	tuple = SearchSysCache(RELOID,
+						   ObjectIdGetDatum(relid),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		selerror("cache lookup failed for relation %u", relid);
+
+    sepgsql_avc_permission(sepgsqlGetClientPsid(),
+						   HeapTupleGetSecurity(tuple),
+						   SECCLASS_TABLE,
+						   TABLE__LOCK,
+						   HeapTupleGetRelationName(tuple));
+	ReleaseSysCache(tuple);
+}
+
 /*******************************************************************************
  * ATTRIBUTE(column) related hooks
  *******************************************************************************/
