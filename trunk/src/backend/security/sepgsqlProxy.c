@@ -231,6 +231,29 @@ static List *walkSortClause(List *selist, Query *query, SortClause *sortcl)
 	return selist;
 }
 
+static List *walkCoerceToDomain(List *selist, Query *query, CoerceToDomain *cd)
+{
+	return sepgsqlWalkExpr(selist, query, (Node *) cd->arg);
+}
+
+static List *walkCaseExpr(List *selist, Query *query, CaseExpr *ce)
+{
+	ListCell *l;
+
+	selist = sepgsqlWalkExpr(selist, query, (Node *) ce->arg);
+	foreach(l, ce->args)
+		selist = sepgsqlWalkExpr(selist, query, (Node *) lfirst(l));
+	selist = sepgsqlWalkExpr(selist, query, (Node *) ce->defresult);
+	return selist;
+}
+
+static List *walkCaseWhen(List *selist, Query *query, CaseWhen *cw)
+{
+	selist = sepgsqlWalkExpr(selist, query, (Node *) cw->expr);
+	selist = sepgsqlWalkExpr(selist, query, (Node *) cw->result);
+	return selist;
+}
+
 List *sepgsqlWalkExpr(List *selist, Query *query, Node *n)
 {
 	if (n == NULL)
@@ -264,6 +287,16 @@ List *sepgsqlWalkExpr(List *selist, Query *query, Node *n)
 		break;
 	case T_List:
 		selist = walkList(selist, query, (List *) n);
+		break;
+	case T_CoerceToDomain:
+		selist = walkCoerceToDomain(selist, query, (CoerceToDomain *)n);
+		break;
+	case T_CaseExpr:
+		selist = walkCaseExpr(selist, query, (CaseExpr *)n);
+		break;
+	case T_CaseWhen:
+		selist = walkCaseWhen(selist, query, (CaseWhen *)n);
+		break;
 		break;
 	default:
 		selnotice("Node(%d) is ignored => %s", nodeTag(n), nodeToString(n));
