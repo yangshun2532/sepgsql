@@ -259,6 +259,27 @@ static List *walkRelabelType(List *selist, Query *query, RelabelType *rt)
 	return sepgsqlWalkExpr(selist, query, (Node *) rt->arg);
 }
 
+static List *walkCoalesceExpr(List *selist, Query *query, CoalesceExpr *ce)
+{
+	ListCell *l;
+	foreach (l, ce->args)
+		selist = sepgsqlWalkExpr(selist, query, (Node *) lfirst(l));
+	return selist;
+}
+
+static List *walkMinMaxExpr(List *selist, Query *query, MinMaxExpr *mme)
+{
+	ListCell *l;
+	foreach (l, mme->args)
+		selist = sepgsqlWalkExpr(selist, query, (Node *) lfirst(l));
+	return selist;
+}
+
+static List *walkNullTest(List *selist, Query *query, NullTest *nt)
+{
+	return sepgsqlWalkExpr(selist, query, (Node *) nt->arg);
+}
+
 List *sepgsqlWalkExpr(List *selist, Query *query, Node *n)
 {
 	if (n == NULL)
@@ -277,6 +298,7 @@ List *sepgsqlWalkExpr(List *selist, Query *query, Node *n)
 	case T_BoolExpr:
 		selist = walkBoolExpr(selist, query, (BoolExpr *) n);
 		break;
+	case T_NullIfExpr:
 	case T_OpExpr:
 		selist = walkOpExpr(selist, query, (OpExpr *) n);
 		break;
@@ -304,6 +326,15 @@ List *sepgsqlWalkExpr(List *selist, Query *query, Node *n)
 		break;
 	case T_RelabelType:
 		selist = walkRelabelType(selist, query, (RelabelType *)n);
+		break;
+	case T_CoalesceExpr:
+		selist = walkCoalesceExpr(selist, query, (CoalesceExpr *)n);
+		break;
+	case T_MinMaxExpr:
+		selist = walkMinMaxExpr(selist, query, (MinMaxExpr *)n);
+		break;
+	case T_NullTest:
+		selist = walkNullTest(selist, query, (NullTest *)n);
 		break;
 	default:
 		selnotice("Node(%d) is ignored => %s", nodeTag(n), nodeToString(n));
