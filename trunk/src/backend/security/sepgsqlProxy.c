@@ -254,6 +254,11 @@ static List *walkCaseWhen(List *selist, Query *query, CaseWhen *cw)
 	return selist;
 }
 
+static List *walkRelabelType(List *selist, Query *query, RelabelType *rt)
+{
+	return sepgsqlWalkExpr(selist, query, (Node *) rt->arg);
+}
+
 List *sepgsqlWalkExpr(List *selist, Query *query, Node *n)
 {
 	if (n == NULL)
@@ -297,6 +302,8 @@ List *sepgsqlWalkExpr(List *selist, Query *query, Node *n)
 	case T_CaseWhen:
 		selist = walkCaseWhen(selist, query, (CaseWhen *)n);
 		break;
+	case T_RelabelType:
+		selist = walkRelabelType(selist, query, (RelabelType *)n);
 		break;
 	default:
 		selnotice("Node(%d) is ignored => %s", nodeTag(n), nodeToString(n));
