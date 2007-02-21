@@ -161,29 +161,39 @@ static List *walkBoolExpr(List *selist, Query *query, BoolExpr *expr)
 	return sepgsqlWalkExpr(selist, query, (Node *) expr->args);
 }
 
-static List *walkOpExpr(List *selist, Query *query, OpExpr *n)
+static List *__walkOpExprHelper(List *selist, Oid opid)
 {
 	HeapTuple tuple;
-	Form_pg_operator opr;
-
-	Assert(IsA(n, OpExpr));
+	Form_pg_operator oprform;
 
 	tuple = SearchSysCache(OPEROID,
-						   ObjectIdGetDatum(n->opno),
+						   ObjectIdGetDatum(opid),
 						   0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
-		selerror("OPEROID cache lookup failed (opno=%u)", n->opno);
-	opr = (Form_pg_operator) GETSTRUCT(tuple);
+		selerror("cache lookup failed for OPEROID = %u", opid);
+	oprform = (Form_pg_operator) GETSTRUCT(tuple);
 
-	selist = addEvalPgProc(selist, opr->oprcode, PROCEDURE__EXECUTE);
+	selist = addEvalPgProc(selist, oprform->oprcode, PROCEDURE__EXECUTE);
 	/* NOTE: opr->oprrest and opr->oprjoin are internal use only
 	 * and have no effect onto the data references, so we don't
 	 * apply any checkings for them.
 	 */
 	ReleaseSysCache(tuple);
 
-	selist = sepgsqlWalkExpr(selist, query, (Node *) n->args);
+	return selist;
+}
 
+static List *walkOpExpr(List *selist, Query *query, OpExpr *n)
+{
+	selist = __walkOpExprHelper(selist, n->opno);
+	selist = sepgsqlWalkExpr(selist, query, (Node *) n->args);
+	return selist;
+}
+
+static List *walkScalarArrayOpExpr(List *selist, Query *query, ScalarArrayOpExpr *sao)
+{
+	selist = __walkOpExprHelper(selist, sao->opno);
+	selist = sepgsqlWalkExpr(selist, query, (Node *) sao->args);
 	return selist;
 }
 
@@ -308,6 +318,8 @@ List *sepgsqlWalkExpr(List *selist, Query *query, Node *n)
 
 	switch (nodeTag(n)) {
 	case T_Const:
+	case T_Param:
+	case T_CaseTestExpr:
 		/* do nothing */
 		break;
 	case T_Var:
@@ -315,6 +327,9 @@ List *sepgsqlWalkExpr(List *selist, Query *query, Node *n)
 		break;
 	case T_FuncExpr:
 		selist = walkFuncExpr(selist, query, (FuncExpr *) n);
+		break;
+	case T_ScalarArrayOpExpr:
+		selist = walkScalarArrayOpExpr(selist, query, (ScalarArrayOpExpr *) n);
 		break;
 	case T_BoolExpr:
 		selist = walkBoolExpr(selist, query, (BoolExpr *) n);
@@ -327,7 +342,7 @@ List *sepgsqlWalkExpr(List *selist, Query *query, Node *n)
 		selist = walkAggref(selist, query, (Aggref *) n);
 		break;
 	case T_ArrayRef:
-		selist = walkArrayRef(selist, query, (ArrayRef *)n);
+		selist = walkArrayRef(selist, query, (ArrayRef *) n);
 		break;
 	case T_SubLink:
 		selist = walkSubLink(selist, query, (SubLink *) n);
@@ -340,31 +355,31 @@ List *sepgsqlWalkExpr(List *selist, Query *query, Node *n)
 		selist = walkList(selist, query, (List *) n);
 		break;
 	case T_CoerceToDomain:
-		selist = walkCoerceToDomain(selist, query, (CoerceToDomain *)n);
+		selist = walkCoerceToDomain(selist, query, (CoerceToDomain *) n);
 		break;
 	case T_CaseExpr:
-		selist = walkCaseExpr(selist, query, (CaseExpr *)n);
+		selist = walkCaseExpr(selist, query, (CaseExpr *) n);
 		break;
 	case T_CaseWhen:
-		selist = walkCaseWhen(selist, query, (CaseWhen *)n);
+		selist = walkCaseWhen(selist, query, (CaseWhen *) n);
 		break;
 	case T_RelabelType:
-		selist = walkRelabelType(selist, query, (RelabelType *)n);
+		selist = walkRelabelType(selist, query, (RelabelType *) n);
 		break;
 	case T_CoalesceExpr:
-		selist = walkCoalesceExpr(selist, query, (CoalesceExpr *)n);
+		selist = walkCoalesceExpr(selist, query, (CoalesceExpr *) n);
 		break;
 	case T_MinMaxExpr:
-		selist = walkMinMaxExpr(selist, query, (MinMaxExpr *)n);
+		selist = walkMinMaxExpr(selist, query, (MinMaxExpr *) n);
 		break;
 	case T_NullTest:
-		selist = walkNullTest(selist, query, (NullTest *)n);
+		selist = walkNullTest(selist, query, (NullTest *) n);
 		break;
 	case T_FieldSelect:
-		selist = walkFieldSelect(selist, query, (FieldSelect *)n);
+		selist = walkFieldSelect(selist, query, (FieldSelect *) n);
 		break;
 	case T_FieldStore:
-		selist = walkFieldStore(selist, query, (FieldStore *)n);
+		selist = walkFieldStore(selist, query, (FieldStore *) n);
 		break;
 	case T_ArrayExpr:
 		selist = walkArrayExpr(selist, query, (ArrayExpr *)n);
