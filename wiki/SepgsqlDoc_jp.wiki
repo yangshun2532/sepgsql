@@ -14,13 +14,86 @@ SE-PostgreSQLとは、
 
 
 = セキュリティデザイン =
+
+== 概要 ==
+
+== オブジェクトクラスとアクセスベクタ ==
+SE-PostgreSQLのセキュリティデザインを記述するために、以下の表に示す6つのオブジェクトクラスと、合計55種類のアクセスベクタが追加されました。残念ながら2007年２月現在、これらのオブジェクトクラス・アクセスベクタはまだSELinuxコミュニティによってメンテナンスされている標準のセキュリティポリシーには取り込まれていません。
+
+|| *database* || *table* || *procedure* || *column* || *blob* || *tuple* ||
+|| create || create || create || create || create || relabelfrom ||
+|| drop || drop || drop || drop || drop || relabelto ||
+|| getattr || getattr || getattr || getattr || getattr || select ||
+|| setattr || setattr || setattr || setattr || setattr || update ||
+|| relabelfrom || relabelfrom || relabelfrom || relabelfrom || relabelfrom || insert ||
+|| relabelto || relabelto || relabelto || relabelto || relabelto || delete ||
+|| access || select || execute || select || read || ||
+|| install_module || update || entrypoint || update || write || ||
+|| load_module || insert || || insert || import || ||
+|| get_param || delete || || || export || ||
+|| set_param || lock || || || || ||
+
+=== databaseクラス ===
+*database* クラスはデータベース自身と、固有のオブジェクトクラスを持たないデータベースオブジェクトに対する権限セットを定義します。固有のオブジェクトクラスを持たないデータベースオブジェクトとは、例えばデータベースユーザやトリガのことです。
+
+*暗黙的ラベリング*
+ CREATE DATABASE 構文を用いて新たにデータベースを作成するとき、クライアントプロセス及びSE-PostgreSQLサーバプロセスのセキュリティコンテキストに基づいて、データベースのセキュリティコンテキストが暗黙のうちに決定されます。
+ 
+ CREATE _<hoge>_ 構文を用いて新たに固有のオブジェクトクラスを持たないデータベースオブジェクトを作成するとき、クライアントプロセス及びデータベースのセキュリティコンテキストに基づいて、データベースオブジェクトのセキュリティコンテキストが暗黙のうちに決定されます。
+
+*create*
+
+*drop*
+
+*getattr*
+
+*setattr*
+
+*relabelfrom*
+
+*relabelto*
+
+*access*
+
+*install_module*
+
+*load_module*
+
+*get_param*
+
+*set_param*
+
+=== tableクラス ===
+*table* クラスはテーブルに対する権限セットを定義します。
+
+=== procedureクラス ===
+*procedure* クラスは関数 (stored procedure) に対する権限セットを定義します。
+
+=== columnクラス ===
+*column* クラスはカラムに対する権限セットを定義します。なお、ネイティブのPostgreSQLにはカラムに対するアクセス制御は存在しません。
+
+
+=== blobクラス ===
+*blob* クラスは Binary Large Object (BLOB) に対する権限セットを定義します。なお、ネイティブのPostgreSQLにはBLOBに対するアクセス制御機能は存在しません。
+
+
+=== tupleクラス ===
+*tuple* クラスはタプルに対する権限セットを定義します。なお、ネイティブのPostgreSQLにはタプルに対するアクセス制御は存在しません。
+
+
+
+
+
+
+
 = SE-PostgreSQLの利用 =
 = 内部情報 =
 
 = 付録 =
-== 拡張SQL ==
 
-SE-PostgreSQLではいくつかのSQL構文が拡張されており、セキュリティ機能を扱うのに有用な
+== 拡張SQL構文・関数 ==
+
+SE-PostgreSQLのセキュリティ機能を活用するために、SE-PostgreSQLでは幾つかのSQL構文が拡張され、SQL関数が新しく追加されています。本章では、これらの拡張機能について解説します。
 
 === ALTER DATABSE 構文 ===
 *書式*
@@ -41,7 +114,7 @@ kaigai=#
 }}}
 
 *注釈*
- この構文を実行した結果、データベースのセキュリティコンテキストが変化しない場合、*database:{relabelfrom relabelto}* 構文は評価されません。
+ この構文を実行した結果、データベースのセキュリティコンテキストが変化しない場合、*database:{relabelfrom relabelto}* 権限は評価されません。
 
 === ALTER TABLE 構文 ===
 *書式*
@@ -87,6 +160,28 @@ ALTER FUNCTION
 kaigai=#
 }}}
 
+*注釈*
+ この構文を実行した結果、関数のセキュリティコンテキストが変化しない場合、*procedure:{relabelfrom relabelto}* 権限は評価されません。
+
+=== sepgsel_getcon() 関数 ===
+*定義*
+
+ sepgsql_getcon() returns *psid*
+
+*説明*
+ この関数はクライアントのセキュリティコンテキストを取得するために新たに追加されました。
+ 
+ sepgsql_getcon() 関数を実行すると、現在のセキュリティコンテキストを返します。Trusted Procedureの内部から呼び出された場合には、ドメイン遷移を行った先のセキュリティコンテキストを行います。
+
+*例*
+{{{
+kaigai=# select sepgsql_getcon();
+                 sepgsql_getcon
+-------------------------------------------------
+ root:system_r:unconfined_t:SystemLow-SystemHigh
+(1 row)
+}}}
+
 === lo_get_security() 関数 ===
 *定義*
 
@@ -98,6 +193,13 @@ kaigai=#
  lo_get_security()関数を実行すると、 _loid_ で指定したラージオブジェクトのセキュリティコンテキストを返却します。クライアントは、ラージオブジェクトに対して *blob:{getattr}* 権限を有していなければいけません。
 
 *例*
+{{{
+kaigai=# select lo_get_security(16410);
+        lo_get_security
+--------------------------------
+ user_u:object_r:sepgsql_blob_t
+(1 row)
+}}}
 
 === lo_set_security() 関数 ===
 *定義*
@@ -110,7 +212,13 @@ kaigai=#
  lo_set_security()関数を実行すると、 _loid_ で指定したラージオブジェクトのセキュリティコンテキストを_context_に変更します。クライアントは、ラージオブジェクトに対して *blob:{setattr relabelfrom}* 権限を、そして新しく付与するセキュリティコンテキストに対して *blob:{relabelto}* 権限を有していなければいけません。
 
 *例*
-
+{{{
+kaigai=# select lo_set_security(16410, 'user_u:object_r:sepgsql_secret_blob_t');
+ lo_set_security
+-----------------
+ t
+(1 row)
+}}}
 
 
 == SELinuxについて ==
@@ -121,4 +229,5 @@ kaigai=#
 === Multi Level Security (MLS) ===
 === Role Based Access Control (RBAC) ===
 === Labeled Networking ===
+
 
