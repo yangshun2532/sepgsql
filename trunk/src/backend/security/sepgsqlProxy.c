@@ -262,23 +262,43 @@ static List *walkRelabelType(List *selist, Query *query, RelabelType *rt)
 
 static List *walkCoalesceExpr(List *selist, Query *query, CoalesceExpr *ce)
 {
-	ListCell *l;
-	foreach (l, ce->args)
-		selist = sepgsqlWalkExpr(selist, query, (Node *) lfirst(l));
-	return selist;
+	return sepgsqlWalkExpr(selist, query, (Node *) ce->args);
 }
 
 static List *walkMinMaxExpr(List *selist, Query *query, MinMaxExpr *mme)
 {
-	ListCell *l;
-	foreach (l, mme->args)
-		selist = sepgsqlWalkExpr(selist, query, (Node *) lfirst(l));
-	return selist;
+	return sepgsqlWalkExpr(selist, query, (Node *) mme->args);
 }
 
 static List *walkNullTest(List *selist, Query *query, NullTest *nt)
 {
 	return sepgsqlWalkExpr(selist, query, (Node *) nt->arg);
+}
+
+static List *walkFieldSelect(List *selist, Query *query, FieldSelect *fselect)
+{
+	return sepgsqlWalkExpr(selist, query, (Node *) fselect->arg);
+}
+
+static List *walkFieldStore(List *selist, Query *query, FieldStore *fstore)
+{
+	selist = sepgsqlWalkExpr(selist, query, (Node *) fstore->arg);
+	selist = sepgsqlWalkExpr(selist, query, (Node *) fstore->newvals);
+	return selist;
+}
+
+static List *walkArrayExpr(List *selist, Query *query, ArrayExpr *ae)
+{
+	return sepgsqlWalkExpr(selist, query, (Node *) ae->elements);
+}
+
+static List *walkArrayRef(List *selist, Query *query, ArrayRef *aref)
+{
+	selist = sepgsqlWalkExpr(selist, query, (Node *) aref->refupperindexpr);
+	selist = sepgsqlWalkExpr(selist, query, (Node *) aref->reflowerindexpr);
+	selist = sepgsqlWalkExpr(selist, query, (Node *) aref->refexpr);
+	selist = sepgsqlWalkExpr(selist, query, (Node *) aref->refassgnexpr);
+	return selist;
 }
 
 List *sepgsqlWalkExpr(List *selist, Query *query, Node *n)
@@ -305,6 +325,9 @@ List *sepgsqlWalkExpr(List *selist, Query *query, Node *n)
 		break;
 	case T_Aggref:
 		selist = walkAggref(selist, query, (Aggref *) n);
+		break;
+	case T_ArrayRef:
+		selist = walkArrayRef(selist, query, (ArrayRef *)n);
 		break;
 	case T_SubLink:
 		selist = walkSubLink(selist, query, (SubLink *) n);
@@ -336,6 +359,15 @@ List *sepgsqlWalkExpr(List *selist, Query *query, Node *n)
 		break;
 	case T_NullTest:
 		selist = walkNullTest(selist, query, (NullTest *)n);
+		break;
+	case T_FieldSelect:
+		selist = walkFieldSelect(selist, query, (FieldSelect *)n);
+		break;
+	case T_FieldStore:
+		selist = walkFieldStore(selist, query, (FieldStore *)n);
+		break;
+	case T_ArrayExpr:
+		selist = walkArrayExpr(selist, query, (ArrayExpr *)n);
 		break;
 	default:
 		selnotice("Node(%d) is ignored => %s", nodeTag(n), nodeToString(n));
