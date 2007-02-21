@@ -203,9 +203,6 @@ static void sepgsql_avc_init()
 	if (!found_avc) {
 		avc_shmem->lock = LWLockAssign();
 		sepgsql_avc_reset();
-		seldebug("AVC Shmem segment created");
-	} else {
-		seldebug("AVC Shmem segment attached");
 	}
 }
 
@@ -592,8 +589,6 @@ char *sepgsqlGetDatabaseName()
 void sepgsqlInitialize()
 {
 	sepgsql_avc_init();
-
-	selnotice("Now in %s mode", IsBootstrapProcessingMode() ? "bootstrap" : "normal");
 
 	if (IsBootstrapProcessingMode()) {
 		sepgsqlServerPsid = sepgsql_system_getcon();
