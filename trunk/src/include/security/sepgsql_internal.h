@@ -85,6 +85,7 @@
 #define BLOB__WRITE                               0x00000080UL
 #define BLOB__IMPORT                              0x00000100UL
 #define BLOB__EXPORT                              0x00000200UL
+#define TUPLE__PERMS_MASK           ((TUPLE__DELETE << 1) - 1)
 
 extern bool sepgsql_avc_permission_noaudit(psid ssid, psid tsid, uint16 tclass,
 										   uint32 perms, char **audit, char *objname);
@@ -110,8 +111,8 @@ extern void sepgsqlVerifyQuery(Query *query);
 extern void sepgsqlVerifyQueryList(List *queryList);
 
 extern psid sepgsqlComputeImplicitContext(Relation rel, HeapTuple tuple);
-extern bool sepgsqlCheckTuplePerms(Relation rel, HeapTuple newtup, uint32 nperms,
-								   HeapTuple oldtup, uint32 operms, bool abort);
+extern bool sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, HeapTuple oldtup,
+								   uint32 perms, bool abort);
 
 /*
  * Internal utilities

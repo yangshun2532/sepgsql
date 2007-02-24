@@ -487,7 +487,7 @@ lo_get_security(PG_FUNCTION_ARGS)
 #ifdef HAVE_SELINUX
 	Oid loid = PG_GETARG_OID(0);
 
-	lo_security = sepgsqlLargeObjectGetattr(loid);
+	lo_security = sepgsqlLargeObjectGetSecurity(loid);
 #else
 	elog(ERROR, "SE-PostgreSQL was not configured");
 #endif
@@ -502,7 +502,7 @@ lo_set_security(PG_FUNCTION_ARGS)
 	Oid lo_security = PG_GETARG_OID(1);
 	int i;
 
-	sepgsqlLargeObjectSetattr(loid, lo_security);
+	sepgsqlLargeObjectSetSecurity(loid, lo_security);
 
 	for (i = 0; i < cookies_size; i++) {
 		LargeObjectDesc *loDesc = cookies[i];

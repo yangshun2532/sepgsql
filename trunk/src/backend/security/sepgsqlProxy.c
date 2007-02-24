@@ -31,6 +31,8 @@
 #define RTEMARK_DELETE        (1<<(N_ACL_RIGHTS + 3))
 #define RTEMARK_RELABELFROM   (1<<(N_ACL_RIGHTS + 4))
 #define RTEMARK_RELABELTO     (1<<(N_ACL_RIGHTS + 5))
+#define RTEMARK_BLOB_READ     (1<<(N_ACL_RIGHTS + 6))
+#define RTEMARK_BLOB_WRITE    (1<<(N_ACL_RIGHTS + 7))
 
 /* local definitions of static functions. */
 static List *proxyRteRelation(List *selist, Query *query, int rtindex, Node **quals);
@@ -45,16 +47,21 @@ static List *proxySetOperations(List *selist, Query *query, Node *n);
  * 
  * -----------------------------------------------------------
  */
-static List *addEvalPgClass(List *selist, Oid relid, bool inh, uint32 perms)
+static List *addEvalPgClass(List *selist, RangeTblEntry *rte, uint32 perms)
 {
 	ListCell *l;
 	SEvalItem *se;
 
+	rte->requiredPerms |= (perms & TABLE__SELECT ? RTEMARK_SELECT : 0);
+	rte->requiredPerms |= (perms & TABLE__INSERT ? RTEMARK_INSERT : 0);
+	rte->requiredPerms |= (perms & TABLE__UPDATE ? RTEMARK_UPDATE : 0);
+	rte->requiredPerms |= (perms & TABLE__DELETE ? RTEMARK_DELETE : 0);
+
 	foreach (l, selist) {
 		se = (SEvalItem *) lfirst(l);
 		if (se->tclass == SECCLASS_TABLE
-			&& se->c.relid == relid
-			&& se->c.inh == inh) {
+			&& se->c.relid == rte->relid
+			&& se->c.inh == rte->inh) {
 			se->perms |= perms;
 			return selist;
 		}
@@ -62,21 +69,35 @@ static List *addEvalPgClass(List *selist, Oid relid, bool inh, uint32 perms)
 	se = makeNode(SEvalItem);
 	se->tclass = SECCLASS_TABLE;
 	se->perms = perms;
-	se->c.relid = relid;
-	se->c.inh = inh;
+	se->c.relid = rte->relid;
+	se->c.inh = rte->inh;
 	return lappend(selist, se);
 }
 
-static List *addEvalPgAttribtue(List *selist, Oid relid, bool inh, AttrNumber attno, uint32 perms)
+static List *addEvalPgAttribtue(List *selist, RangeTblEntry *rte, AttrNumber attno, uint32 perms)
 {
 	ListCell *l;
 	SEvalItem *se;
 
+	/* for 'security_context' */
+	if (attno == SecurityAttributeNumber
+		&& (perms & (COLUMN__UPDATE | COLUMN__INSERT)))
+		rte->requiredPerms |= RTEMARK_RELABELFROM;
+
+	/* for 'pg_largeobject' */
+	if (rte->relid == LargeObjectRelationId
+		&& attno == Anum_pg_largeobject_data) {
+		if (perms & COLUMN__SELECT)
+			rte->requiredPerms |= RTEMARK_BLOB_READ;
+		if (perms & (COLUMN__UPDATE | COLUMN__INSERT))
+			rte->requiredPerms |= RTEMARK_BLOB_WRITE;
+	}
+
 	foreach (l, selist) {
 		se = (SEvalItem *) lfirst(l);
 		if (se->tclass == SECCLASS_COLUMN
-			&& se->a.relid == relid
-			&& se->a.inh == inh
+			&& se->a.relid == rte->relid
+			&& se->a.inh == rte->inh
 			&& se->a.attno == attno) {
             se->perms |= perms;
 			return selist;
@@ -86,8 +107,8 @@ static List *addEvalPgAttribtue(List *selist, Oid relid, bool inh, AttrNumber at
     se = makeNode(SEvalItem);
     se->tclass = SECCLASS_COLUMN;
     se->perms = perms;
-    se->a.relid = relid;
-    se->a.inh = inh;
+    se->a.relid = rte->relid;
+    se->a.inh = rte->inh;
     se->a.attno = attno;
 
     return lappend(selist, se);
@@ -127,11 +148,10 @@ static List *walkVar(List *selist, Query *query, Var *var)
 	Assert(IsA(rte, RangeTblEntry));
 	switch (rte->rtekind) {
 	case RTE_RELATION:
-		rte->requiredPerms |= RTEMARK_SELECT;
 		/* table:{select} */
-		selist = addEvalPgClass(selist, rte->relid, rte->inh, TABLE__SELECT);
+		selist = addEvalPgClass(selist, rte, TABLE__SELECT);
 		/* column:{select} */
-		selist = addEvalPgAttribtue(selist, rte->relid, rte->inh, var->varattno, COLUMN__SELECT);
+		selist = addEvalPgAttribtue(selist, rte, var->varattno, COLUMN__SELECT);
 		break;
 	case RTE_JOIN:
 		n = list_nth(rte->joinaliasvars, var->varattno - 1);
@@ -423,6 +443,10 @@ static List *proxyRteRelation(List *selist, Query *query, int rtindex, Node **qu
 		perms |= TUPLE__RELABELFROM;
 	if (rte->requiredPerms & RTEMARK_RELABELTO)
 		perms |= TUPLE__RELABELTO;
+	if (rte->requiredPerms & RTEMARK_BLOB_READ)
+		perms |= BLOB__READ;
+	if (rte->requiredPerms & RTEMARK_BLOB_WRITE)
+		perms |= BLOB__WRITE;
 
 	/* append sepgsql_tuple_perm(relid, record, perms) */
 	if (perms) {
@@ -466,16 +490,16 @@ static List *proxyRteSubQuery(List *selist, Query *query)
 		Assert(IsA(rte, RangeTblEntry) && rte->rtekind==RTE_RELATION);
 		switch (cmdType) {
 		case CMD_INSERT:
-			rte->requiredPerms |= RTEMARK_INSERT;
-			selist = addEvalPgClass(selist, rte->relid, rte->inh, TABLE__INSERT);
+			//rte->requiredPerms |= RTEMARK_INSERT;
+			selist = addEvalPgClass(selist, rte, TABLE__INSERT);
 			break;
 		case CMD_UPDATE:
-			rte->requiredPerms |= RTEMARK_UPDATE;
-			selist = addEvalPgClass(selist, rte->relid, rte->inh, TABLE__UPDATE);
+			//rte->requiredPerms |= RTEMARK_UPDATE;
+			selist = addEvalPgClass(selist, rte, TABLE__UPDATE);
 			break;
 		case CMD_DELETE:
-			rte->requiredPerms |= RTEMARK_DELETE;
-			selist = addEvalPgClass(selist, rte->relid, rte->inh, TABLE__DELETE);
+			//rte->requiredPerms |= RTEMARK_DELETE;
+			selist = addEvalPgClass(selist, rte, TABLE__DELETE);
 			break;
 		default:
 			selerror("commandType = %d should not be found here", cmdType);
@@ -486,10 +510,8 @@ static List *proxyRteSubQuery(List *selist, Query *query)
 	/* permission mark on the target columns */
 	if (cmdType != CMD_DELETE) {
 		uint32 perms = 0;
-		if (cmdType == CMD_INSERT)
-			perms |= COLUMN__INSERT;
-		if (cmdType == CMD_UPDATE)
-			perms |= COLUMN__UPDATE;
+		perms |= (cmdType == CMD_INSERT ? COLUMN__INSERT : 0);
+		perms |= (cmdType == CMD_UPDATE ? COLUMN__UPDATE : 0);
 
 		foreach (l, query->targetList) {
 			TargetEntry *te = lfirst(l);
@@ -500,16 +522,13 @@ static List *proxyRteSubQuery(List *selist, Query *query)
 			/* mark insert/update target */
 			if (te->resjunk) {
 				if (!strcmp(te->resname, SECURITY_ATTR)) {
-					selist = addEvalPgAttribtue(selist, rte->relid, rte->inh,
-												SecurityAttributeNumber, perms);
-					rte->requiredPerms |= RTEMARK_RELABELFROM;
+					selist = addEvalPgAttribtue(selist, rte, SecurityAttributeNumber, perms);
+					//rte->requiredPerms |= RTEMARK_RELABELFROM;
 				}
 				continue;
 			}
-			if (cmdType==CMD_UPDATE || cmdType==CMD_INSERT) {
-				selist = addEvalPgAttribtue(selist, rte->relid, rte->inh,
-											te->resno, perms);
-			}
+			if (cmdType==CMD_UPDATE || cmdType==CMD_INSERT)
+				selist = addEvalPgAttribtue(selist, rte, te->resno, perms);
 		}
 	}
 

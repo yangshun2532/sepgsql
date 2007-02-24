@@ -13,7 +13,10 @@
 #include "security/sepgsql_internal.h"
 #include "utils/fmgroids.h"
 
-psid sepgsqlLargeObjectGetattr(Oid loid)
+/*******************************************************************************
+ * Binary Large Object hooks
+ *******************************************************************************/
+psid sepgsqlLargeObjectGetSecurity(Oid loid)
 {
 	Relation rel;
 	ScanKeyData skey;
@@ -35,7 +38,7 @@ psid sepgsqlLargeObjectGetattr(Oid loid)
 							SnapshotNow, 1, &skey);
 
 	while ((tuple = systable_getnext(sd)) != NULL) {
-		sepgsqlCheckTuplePerms(rel, tuple, TUPLE__SELECT, NULL, 0, true);
+		sepgsqlCheckTuplePerms(rel, tuple, NULL, TUPLE__SELECT, true);
 		lo_security = HeapTupleGetSecurity(tuple);
 		break;
 	}
@@ -49,7 +52,7 @@ psid sepgsqlLargeObjectGetattr(Oid loid)
 	return lo_security;
 }
 
-void sepgsqlLargeObjectSetattr(Oid loid, psid lo_security)
+void sepgsqlLargeObjectSetSecurity(Oid loid, psid lo_security)
 {
 	Relation rel;
 	ScanKeyData skey;
@@ -90,22 +93,43 @@ void sepgsqlLargeObjectSetattr(Oid loid, psid lo_security)
 		selerror("LargeObject %u did not found", loid);
 }
 
-void sepgsqlLargeObjectRead(Relation rel, HeapTuple tuple)
+void sepgsqlLargeObjectCreate(Relation rel, HeapTuple tuple)
+{
+	psid ncon = sepgsqlComputeImplicitContext(rel, tuple);
+	HeapTupleSetSecurity(tuple, ncon);
+	sepgsql_avc_permission(sepgsqlGetClientPsid(),
+						   HeapTupleGetSecurity(tuple),
+						   SECCLASS_BLOB,
+						   BLOB__CREATE,
+						   NULL);
+}
+
+void sepgsqlLargeObjectDrop(Relation rel, HeapTuple tuple)
 {
 	sepgsql_avc_permission(sepgsqlGetClientPsid(),
 						   HeapTupleGetSecurity(tuple),
 						   SECCLASS_BLOB,
-						   BLOB__READ,
+						   BLOB__DROP,
 						   NULL);
 }
 
-void sepgsqlLargeObjectWrite(Relation rel, HeapTuple tuple)
+void sepgsqlLargeObjectOpen(Relation rel, HeapTuple tuple, LargeObjectDesc *lobj)
 {
-	sepgsql_avc_permission(sepgsqlGetClientPsid(),
-                           HeapTupleGetSecurity(tuple),
-                           SECCLASS_BLOB,
-                           BLOB__WRITE,
-                           NULL);
+	lobj->blob_security = HeapTupleGetSecurity(tuple);
+	sepgsqlCheckTuplePerms(rel, tuple, NULL, TUPLE__SELECT, true);
+}
+
+void sepgsqlLargeObjectRead(Relation rel, HeapTuple tuple, LargeObjectDesc *lobj)
+{
+	if (lobj->blob_security != HeapTupleGetSecurity(tuple))
+		selnotice("different security contexts within single BLOB");
+	sepgsqlCheckTuplePerms(rel, tuple, NULL, TUPLE__SELECT | BLOB__READ, true);
+}
+
+void sepgsqlLargeObjectWrite(Relation rel, HeapTuple tuple, LargeObjectDesc *lobj)
+{
+	HeapTupleSetSecurity(tuple, lobj->blob_security);
+	sepgsqlCheckTuplePerms(rel, tuple, NULL, TUPLE__UPDATE | BLOB__WRITE, true);
 }
 
 void sepgsqlLargeObjectImport()

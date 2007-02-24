@@ -108,6 +108,7 @@ static char *__tuple_system_object_name(Oid relid, HeapTuple tuple)
 	case LargeObjectRelationId: {
 		Form_pg_largeobject lobj = (Form_pg_largeobject) GETSTRUCT(tuple);
 		snprintf(buffer, sizeof(buffer), "loid:%u", lobj->loid);
+		oname = pstrdup(buffer);
 		break;
 	}
 	case ListenerRelationId:
@@ -145,16 +146,14 @@ static char *__tuple_system_object_name(Oid relid, HeapTuple tuple)
 }
 
 static void __check_pg_attribute(TupleDesc tdesc, HeapTuple newtup, HeapTuple oldtup,
-								 uint32 *p_nperms, uint32 *p_operms, uint16 *p_tclass)
+								 uint32 *p_perms, uint16 *p_tclass)
 {
 	Form_pg_attribute attr = (Form_pg_attribute) GETSTRUCT(newtup);
 	Form_pg_class pgclass;
 	HeapTuple exttup;
-	uint32 perms = *p_nperms;
 	bool use_syscache = true;
 
-	*p_nperms = __tuple_perms_to_common_perms(*p_nperms);
-	*p_operms = __tuple_perms_to_common_perms(*p_operms);
+	*p_perms = __tuple_perms_to_common_perms(*p_perms);
 	*p_tclass = SECCLASS_COLUMN;
 
 	if (IsBootstrapProcessingMode()) {
@@ -166,14 +165,16 @@ static void __check_pg_attribute(TupleDesc tdesc, HeapTuple newtup, HeapTuple ol
 		case RelationRelationId:	tblname = "pg_class";		break;
 		}
 		if (tblname) {
-			psid tblcon = sepgsql_avc_createcon(sepgsqlGetClientPsid(),
-												sepgsqlGetDatabasePsid(),
-												SECCLASS_TABLE);
-			sepgsql_avc_permission(sepgsqlGetClientPsid(),
-								   tblcon,
-								   SECCLASS_TABLE,
-								   TABLE__SETATTR,
-								   tblname);
+			if (*p_perms & (COLUMN__CREATE | COLUMN__DROP)) {
+				psid tblcon = sepgsql_avc_createcon(sepgsqlGetClientPsid(),
+													sepgsqlGetDatabasePsid(),
+													SECCLASS_TABLE);
+				sepgsql_avc_permission(sepgsqlGetClientPsid(),
+									   tblcon,
+									   SECCLASS_TABLE,
+									   TABLE__SETATTR,
+									   tblname);
+			}
 			return;
 		}
 	}
@@ -186,7 +187,7 @@ static void __check_pg_attribute(TupleDesc tdesc, HeapTuple newtup, HeapTuple ol
 	}
 	pgclass = (Form_pg_class) GETSTRUCT(exttup);
 	if (pgclass->relkind == RELKIND_RELATION) {
-		if (perms & (TUPLE__INSERT | TUPLE__DELETE)) {
+		if (*p_perms & (COLUMN__CREATE | COLUMN__DROP)) {
 			sepgsql_avc_permission(sepgsqlGetClientPsid(),
 								   HeapTupleGetSecurity(exttup),
 								   SECCLASS_TABLE,
@@ -200,54 +201,99 @@ static void __check_pg_attribute(TupleDesc tdesc, HeapTuple newtup, HeapTuple ol
 		ReleaseSysCache(exttup);
 }
 
-static bool __check_tuple_perms(Oid tableoid, TupleDesc tdesc,
-								HeapTuple newtup, uint32 nperms,
-								HeapTuple oldtup, uint32 operms, bool abort)
+static void __check_pg_largeobject(TupleDesc tdesc, HeapTuple tuple, HeapTuple oldtup,
+								   uint32 *p_perms, uint16 *p_tclass)
+{
+	Oid loid = ((Form_pg_largeobject) GETSTRUCT(tuple))->loid;
+	int32 pageno = ((Form_pg_largeobject) GETSTRUCT(tuple))->pageno;
+	Relation rel;
+	ScanKeyData skey;
+	SysScanDesc sd;
+	uint32 perms = 0;
+	bool found = false;
+
+	perms |= (*p_perms & TUPLE__SELECT ? BLOB__GETATTR : 0);
+	perms |= (*p_perms & TUPLE__UPDATE ? BLOB__SETATTR : 0);
+	perms |= (*p_perms & BLOB__READ    ? BLOB__READ    : 0);
+	perms |= (*p_perms & BLOB__WRITE   ? BLOB__WRITE   : 0);
+
+	if (*p_perms & TUPLE__INSERT) {
+		ScanKeyInit(&skey,
+					Anum_pg_largeobject_loid,
+					BTEqualStrategyNumber, F_OIDEQ,
+					ObjectIdGetDatum(loid));
+		rel = heap_open(LargeObjectRelationId, AccessShareLock);
+		sd = systable_beginscan(rel, LargeObjectLOidPNIndexId, true,
+								SnapshotSelf, 1, &skey);
+		if (HeapTupleIsValid(systable_getnext(sd)))
+            found = true;
+		systable_endscan(sd);
+		heap_close(rel, NoLock);
+		perms |= (found ? BLOB__WRITE : BLOB__CREATE);
+
+	} else if (*p_perms & TUPLE__DELETE) {
+		HeapTuple exttup;
+
+		ScanKeyInit(&skey,
+					Anum_pg_largeobject_loid,
+					BTEqualStrategyNumber, F_OIDEQ,
+					ObjectIdGetDatum(loid));
+		rel = heap_open(LargeObjectRelationId, AccessShareLock);
+		sd = systable_beginscan(rel, LargeObjectLOidPNIndexId, true,
+								SnapshotSelf, 1, &skey);
+		while ((exttup = systable_getnext(sd))) {
+			if (pageno != ((Form_pg_largeobject) GETSTRUCT(exttup))->pageno) {
+				found = true;
+				break;
+			}
+		}
+		systable_endscan(sd);
+		heap_close(rel, NoLock);
+		perms |= (found ? BLOB__WRITE : BLOB__DROP);
+	}
+	*p_tclass = SECCLASS_BLOB;
+	*p_perms = perms;
+}
+
+static bool __check_tuple_perms(Oid tableoid, TupleDesc tdesc, HeapTuple tuple, HeapTuple oldtup,
+								uint32 perms, bool abort)
 {
 	uint16 tclass;
-	char *object_name;
-	char *audit;
 	bool rc = true;
 
-	Assert(newtup != NULL);
+	Assert(tuple != NULL);
 
 	switch (tableoid) {
 	case AuthIdRelationId:      /* pg_authid */
 	case TypeRelationId:
-		nperms = __tuple_perms_to_common_perms(nperms);
-		operms = __tuple_perms_to_common_perms(operms);
+		perms = __tuple_perms_to_common_perms(perms);
 		tclass = SECCLASS_DATABASE;
 		break;
 
 	case DatabaseRelationId:
-		nperms = __tuple_perms_to_common_perms(nperms);
-		operms = __tuple_perms_to_common_perms(operms);
+		perms = __tuple_perms_to_common_perms(perms);
 		tclass = SECCLASS_DATABASE;
 		break;
 
 	case RelationRelationId: {
-		Form_pg_class pgclass = (Form_pg_class) GETSTRUCT(newtup);
-		nperms = __tuple_perms_to_common_perms(nperms);
-		operms = __tuple_perms_to_common_perms(operms);
+		Form_pg_class pgclass = (Form_pg_class) GETSTRUCT(tuple);
+		perms = __tuple_perms_to_common_perms(perms);
 		tclass = (pgclass->relkind == RELKIND_RELATION
 				  ? SECCLASS_TABLE
 				  : SECCLASS_DATABASE);
 		break;
 	}
 	case AttributeRelationId:		/* pg_attribute */
-		__check_pg_attribute(tdesc, newtup, oldtup, &nperms, &operms, &tclass);
+		__check_pg_attribute(tdesc, tuple, oldtup, &perms, &tclass);
 		break;
 
 	case ProcedureRelationId:
-		nperms = __tuple_perms_to_common_perms(nperms);
-		operms = __tuple_perms_to_common_perms(operms);
+		perms = __tuple_perms_to_common_perms(perms);
 		tclass = SECCLASS_PROCEDURE;
 		break;
 
 	case LargeObjectRelationId:
-		nperms = __tuple_perms_to_common_perms(nperms);
-		operms = __tuple_perms_to_common_perms(operms);
-		tclass = SECCLASS_BLOB;
+		__check_pg_largeobject(tdesc, tuple, oldtup, &perms, &tclass);
 		break;
 
 	default:
@@ -255,23 +301,13 @@ static bool __check_tuple_perms(Oid tableoid, TupleDesc tdesc,
 		break;
 	}
 
-	if (operms) {
-		Assert(oldtup != NULL);
-		object_name = __tuple_system_object_name(tableoid, oldtup);
+	if (perms) {
+		char *audit;
+		char *object_name = __tuple_system_object_name(tableoid, tuple);
 		rc = sepgsql_avc_permission_noaudit(sepgsqlGetClientPsid(),
-											HeapTupleGetSecurity(oldtup),
+											HeapTupleGetSecurity(tuple),
 											tclass,
-											operms,
-											&audit,
-											object_name);
-		sepgsql_audit(abort ? rc : true, audit);
-	}
-	if (rc && nperms) {
-		object_name = __tuple_system_object_name(tableoid, newtup);
-		rc = sepgsql_avc_permission_noaudit(sepgsqlGetClientPsid(),
-											HeapTupleGetSecurity(newtup),
-											tclass,
-											nperms,
+											perms,
 											&audit,
 											object_name);
 		sepgsql_audit(abort ? rc : true, audit);
@@ -292,7 +328,7 @@ static bool __sepgsql_tuple_perms(Oid tableoid, HeapTupleHeader rec, uint32 perm
     tuple.t_tableOid = tableoid;
     tuple.t_data = rec;
 
-	rc = __check_tuple_perms(tableoid, tdesc, &tuple, perms, NULL, 0, abort);
+	rc = __check_tuple_perms(tableoid, tdesc, &tuple, NULL, perms, abort);
 
 	ReleaseTupleDesc(tdesc);
 
@@ -320,13 +356,13 @@ Datum sepgsql_tuple_perms_abort(PG_FUNCTION_ARGS)
 	PG_RETURN_BOOL(__sepgsql_tuple_perms(tableoid, rec, perms, true));
 }
 
-bool sepgsqlCheckTuplePerms(Relation rel, HeapTuple newtup, uint32 nperms,
-							HeapTuple oldtup, uint32 operms, bool abort)
+bool sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, HeapTuple oldtup, uint32 perms, bool abort)
 {
 	return __check_tuple_perms(RelationGetRelid(rel),
 							   RelationGetDescr(rel),
-							   newtup, nperms,
-							   oldtup, operms,
+							   tuple,
+							   oldtup,
+							   perms,
 							   abort);
 }
 

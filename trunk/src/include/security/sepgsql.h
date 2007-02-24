@@ -20,6 +20,7 @@
 #include "nodes/parsenodes.h"
 #include "nodes/plannodes.h"
 #include "tcop/dest.h"
+#include "storage/large_object.h"
 #include "utils/rel.h"
 
 #define SECURITY_ATTR	"security_context"
@@ -152,17 +153,23 @@ extern bool sepgsqlCopyTo(Relation rel, HeapTuple tuple);
  *   src/backend/security/sepgsqlLargeObject.c
  */
 #ifdef HAVE_SELINUX
-extern psid sepgsqlLargeObjectGetattr(Oid loid);
-extern void sepgsqlLargeObjectSetattr(Oid loid, psid lo_security);
-extern void sepgsqlLargeObjectRead(Relation rel, HeapTuple tuple);
-extern void sepgsqlLargeObjectWrite(Relation rel, HeapTuple tuple);
+extern psid sepgsqlLargeObjectGetSecurity(Oid loid);
+extern void sepgsqlLargeObjectSetSecurity(Oid loid, psid lo_security);
+extern void sepgsqlLargeObjectCreate(Relation rel, HeapTuple tuple);
+extern void sepgsqlLargeObjectDrop(Relation rel, HeapTuple tuple);
+extern void sepgsqlLargeObjectOpen(Relation rel, HeapTuple tuple, LargeObjectDesc *lobj);
+extern void sepgsqlLargeObjectRead(Relation rel, HeapTuple tuple, LargeObjectDesc *lobj);
+extern void sepgsqlLargeObjectWrite(Relation rel, HeapTuple tuple, LargeObjectDesc *lobj);
 extern void sepgsqlLargeObjectImport(void);
 extern void sepgsqlLargeObjectExport(void);
 #else
-#define sepgsqlLargeObjectGetattr(a)
-#define sepgsqlLargeObjectSetattr(a,b)
-#define sepgsqlLargeObjectRead(a,b)
-#define sepgsqlLargeObjectWrite(a,b)
+#define sepgsqlLargeObjectGetSecurity(a)
+#define sepgsqlLargeObjectSetSecurity(a,b)
+#define sepgsqlLargeObjectCreate(a,b)
+#define sepgsqlLargeObjectDrop(a,b)
+#define sepgsqlLargeObjectOpen(a,b,c)
+#define sepgsqlLargeObjectRead(a,b,c)
+#define sepgsqlLargeObjectWrite(a,b,c)
 #define sepgsqlLargeObjectImport()
 #define sepgsqlLargeObjectExport()
 #endif
