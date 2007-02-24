@@ -144,24 +144,26 @@ static char *__tuple_system_object_name(Oid relid, HeapTuple tuple)
 	return oname;
 }
 
-static void __check_pg_attribute(TupleDesc tdesc, HeapTuple tuple, uint32 perms,
-								 uint16 *p_tclass, uint32 *p_perms)
+static void __check_pg_attribute(TupleDesc tdesc, HeapTuple newtup, HeapTuple oldtup,
+								 uint32 *p_nperms, uint32 *p_operms, uint16 *p_tclass)
 {
-	Form_pg_attribute attr = (Form_pg_attribute) GETSTRUCT(tuple);
+	Form_pg_attribute attr = (Form_pg_attribute) GETSTRUCT(newtup);
 	Form_pg_class pgclass;
 	HeapTuple exttup;
+	uint32 perms = *p_nperms;
 	bool use_syscache = true;
 
-	*p_perms = __tuple_perms_to_common_perms(perms);
+	*p_nperms = __tuple_perms_to_common_perms(*p_nperms);
+	*p_operms = __tuple_perms_to_common_perms(*p_operms);
 	*p_tclass = SECCLASS_COLUMN;
 
 	if (IsBootstrapProcessingMode()) {
 		char *tblname = NULL;
 		switch (attr->attrelid) {
-		case TypeRelationId:		tblname = "pg_type"; break;
-		case ProcedureRelationId:	tblname = "pg_proc"; break;
-		case AttributeRelationId:	tblname = "pg_attribute"; break;
-		case RelationRelationId:	tblname = "pg_class"; break;
+		case TypeRelationId:		tblname = "pg_type";		break;
+		case ProcedureRelationId:	tblname = "pg_proc";		break;
+		case AttributeRelationId:	tblname = "pg_attribute";	break;
+		case RelationRelationId:	tblname = "pg_class";		break;
 		}
 		if (tblname) {
 			psid tblcon = sepgsql_avc_createcon(sepgsqlGetClientPsid(),
@@ -184,7 +186,7 @@ static void __check_pg_attribute(TupleDesc tdesc, HeapTuple tuple, uint32 perms,
 	}
 	pgclass = (Form_pg_class) GETSTRUCT(exttup);
 	if (pgclass->relkind == RELKIND_RELATION) {
-		if (perms & ~(TUPLE__INSERT|TUPLE__DELETE)) {
+		if (perms & (TUPLE__INSERT | TUPLE__DELETE)) {
 			sepgsql_avc_permission(sepgsqlGetClientPsid(),
 								   HeapTupleGetSecurity(exttup),
 								   SECCLASS_TABLE,
@@ -198,66 +200,90 @@ static void __check_pg_attribute(TupleDesc tdesc, HeapTuple tuple, uint32 perms,
 		ReleaseSysCache(exttup);
 }
 
-static int __check_tuple_perms(Oid tableoid, TupleDesc tdesc, HeapTuple tuple,
-							   uint32 perms, char **audit)
+static bool __check_tuple_perms(Oid tableoid, TupleDesc tdesc,
+								HeapTuple newtup, uint32 nperms,
+								HeapTuple oldtup, uint32 operms, bool abort)
 {
-	uint16 tclass = SECCLASS_TUPLE;
-	char *objname = __tuple_system_object_name(tableoid, tuple);
-	int rc;
+	uint16 tclass;
+	char *object_name;
+	char *audit;
+	bool rc = true;
+
+	Assert(newtup != NULL);
 
 	switch (tableoid) {
 	case AuthIdRelationId:      /* pg_authid */
 	case TypeRelationId:
-		perms = __tuple_perms_to_common_perms(perms);
+		nperms = __tuple_perms_to_common_perms(nperms);
+		operms = __tuple_perms_to_common_perms(operms);
 		tclass = SECCLASS_DATABASE;
 		break;
 
 	case DatabaseRelationId:
-		perms = __tuple_perms_to_common_perms(perms);
+		nperms = __tuple_perms_to_common_perms(nperms);
+		operms = __tuple_perms_to_common_perms(operms);
 		tclass = SECCLASS_DATABASE;
 		break;
 
 	case RelationRelationId: {
-		Form_pg_class pgclass = (Form_pg_class) GETSTRUCT(tuple);
-		perms = __tuple_perms_to_common_perms(perms);
+		Form_pg_class pgclass = (Form_pg_class) GETSTRUCT(newtup);
+		nperms = __tuple_perms_to_common_perms(nperms);
+		operms = __tuple_perms_to_common_perms(operms);
 		tclass = (pgclass->relkind == RELKIND_RELATION
 				  ? SECCLASS_TABLE
 				  : SECCLASS_DATABASE);
 		break;
 	}
 	case AttributeRelationId:		/* pg_attribute */
-		__check_pg_attribute(tdesc, tuple, perms, &tclass, &perms);
+		__check_pg_attribute(tdesc, newtup, oldtup, &nperms, &operms, &tclass);
 		break;
 
 	case ProcedureRelationId:
-		perms = __tuple_perms_to_common_perms(perms);
+		nperms = __tuple_perms_to_common_perms(nperms);
+		operms = __tuple_perms_to_common_perms(operms);
 		tclass = SECCLASS_PROCEDURE;
 		break;
 
 	case LargeObjectRelationId:
-		perms = __tuple_perms_to_common_perms(perms);
+		nperms = __tuple_perms_to_common_perms(nperms);
+		operms = __tuple_perms_to_common_perms(operms);
 		tclass = SECCLASS_BLOB;
 		break;
 
 	default:
-		/* do nothing */
+		tclass = SECCLASS_TUPLE;
 		break;
 	}
 
-	rc = sepgsql_avc_permission_noaudit(sepgsqlGetClientPsid(),
-										HeapTupleGetSecurity(tuple),
-										tclass,
-										perms,
-										audit,
-										objname);
+	if (operms) {
+		Assert(oldtup != NULL);
+		object_name = __tuple_system_object_name(tableoid, oldtup);
+		rc = sepgsql_avc_permission_noaudit(sepgsqlGetClientPsid(),
+											HeapTupleGetSecurity(oldtup),
+											tclass,
+											operms,
+											&audit,
+											object_name);
+		sepgsql_audit(abort ? rc : true, audit);
+	}
+	if (rc && nperms) {
+		object_name = __tuple_system_object_name(tableoid, newtup);
+		rc = sepgsql_avc_permission_noaudit(sepgsqlGetClientPsid(),
+											HeapTupleGetSecurity(newtup),
+											tclass,
+											nperms,
+											&audit,
+											object_name);
+		sepgsql_audit(abort ? rc : true, audit);
+	}
 	return rc;
 }
 
-static int __sepgsql_tuple_perms(Oid tableoid, HeapTupleHeader rec, uint32 perms, char **audit)
+static bool __sepgsql_tuple_perms(Oid tableoid, HeapTupleHeader rec, uint32 perms, bool abort)
 {
 	HeapTupleData tuple;
 	TupleDesc tdesc;
-	int rc;
+	bool rc;
 
 	tdesc = lookup_rowtype_tupdesc(HeapTupleHeaderGetTypeId(rec),
 								   HeapTupleHeaderGetTypMod(rec));
@@ -266,7 +292,7 @@ static int __sepgsql_tuple_perms(Oid tableoid, HeapTupleHeader rec, uint32 perms
     tuple.t_tableOid = tableoid;
     tuple.t_data = rec;
 
-	rc = __check_tuple_perms(tableoid, tdesc, &tuple, perms, audit);
+	rc = __check_tuple_perms(tableoid, tdesc, &tuple, perms, NULL, 0, abort);
 
 	ReleaseTupleDesc(tdesc);
 
@@ -278,13 +304,11 @@ Datum sepgsql_tuple_perms(PG_FUNCTION_ARGS)
 	Oid tableoid = PG_GETARG_OID(0);
 	HeapTupleHeader rec = PG_GETARG_HEAPTUPLEHEADER(1);
 	uint32 perms = PG_GETARG_UINT32(2);
-	char *audit;
-	int rc;
+	bool rc;
 
-	rc = __sepgsql_tuple_perms(tableoid, rec, perms, &audit);
-	sepgsql_audit(0, audit);
+	rc = __sepgsql_tuple_perms(tableoid, rec, perms, false);
 
-	PG_RETURN_BOOL(rc == 0);
+	PG_RETURN_BOOL(rc);
 }
 
 Datum sepgsql_tuple_perms_abort(PG_FUNCTION_ARGS)
@@ -292,28 +316,18 @@ Datum sepgsql_tuple_perms_abort(PG_FUNCTION_ARGS)
 	Oid tableoid = PG_GETARG_OID(0);
 	HeapTupleHeader rec = PG_GETARG_HEAPTUPLEHEADER(1);
 	uint32 perms = PG_GETARG_UINT32(2);
-	char *audit;
-	int rc;
 
-	rc = __sepgsql_tuple_perms(tableoid, rec, perms, &audit);
-	sepgsql_audit(rc, audit);
-
-	PG_RETURN_BOOL(rc == 0);
+	PG_RETURN_BOOL(__sepgsql_tuple_perms(tableoid, rec, perms, true));
 }
 
-bool sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, uint32 perms, bool abort)
+bool sepgsqlCheckTuplePerms(Relation rel, HeapTuple newtup, uint32 nperms,
+							HeapTuple oldtup, uint32 operms, bool abort)
 {
-	char *audit;
-	int rc;
-
-	rc = __check_tuple_perms(RelationGetRelid(rel),
-							 RelationGetDescr(rel),
-							 tuple,
-							 perms,
-							 &audit);
-	sepgsql_audit((abort ? rc : 0), audit);
-
-	return (rc==0 ? true : false);
+	return __check_tuple_perms(RelationGetRelid(rel),
+							   RelationGetDescr(rel),
+							   newtup, nperms,
+							   oldtup, operms,
+							   abort);
 }
 
 psid sepgsqlComputeImplicitContext(Relation rel, HeapTuple tuple) {
@@ -404,79 +418,4 @@ psid sepgsqlComputeImplicitContext(Relation rel, HeapTuple tuple) {
 		break;
 	}
 	return sepgsql_avc_createcon(sepgsqlGetClientPsid(), tcon, tclass);
-}
-
-void sepgsqlExecInsert(Relation rel, HeapTuple tuple, bool has_returning)
-{
-	psid icon, econ;
-	uint32 perms = TUPLE__INSERT;
-
-	if (RelationGetRelid(rel) == SelinuxRelationId)
-		selerror("modifying pg_selinux is never allowed");
-
-	icon = sepgsqlComputeImplicitContext(rel, tuple);
-	econ = HeapTupleGetSecurity(tuple);
-	if (has_returning)
-		perms |= TUPLE__SELECT;
-	if (econ != InvalidOid && icon != econ)
-		perms |= TUPLE__RELABELFROM;
-
-	/* 1. implicit labeling */
-	HeapTupleSetSecurity(tuple, icon);
-	sepgsqlCheckTuplePerms(rel, tuple, perms, true);
-
-	/* 2. explicit labeling, if necessary */
-	if (econ != InvalidOid && icon != econ) {
-		HeapTupleSetSecurity(tuple, econ);
-		sepgsqlCheckTuplePerms(rel, tuple, TUPLE__RELABELTO, true);
-	}
-}
-
-void sepgsqlExecUpdate(Relation rel, HeapTuple newtup, HeapTuple oldtup, bool has_returning)
-{
-	psid ocon, ncon;
-	uint32 perms;
-
-	if (RelationGetRelid(rel) == SelinuxRelationId)
-		selerror("modifying pg_selinux is never allowed");
-
-	ocon = HeapTupleGetSecurity(oldtup);
-	ncon = HeapTupleGetSecurity(newtup);
-	if (ncon == InvalidOid) {
-		/* no explicit updating on security_context */
-		ncon = ocon;
-		HeapTupleSetSecurity(newtup, ocon);
-	}
-
-	if (ocon != ncon) {
-		/* relabeling happen */
-		perms = TUPLE__RELABELTO;
-		if (has_returning)
-			perms |= TUPLE__SELECT;
-		sepgsqlCheckTuplePerms(rel, newtup, perms, true);
-	}
-}
-
-void sepgsqlExecDelete(Relation rel, HeapTuple tuple)
-{
-	if (RelationGetRelid(rel) == SelinuxRelationId)
-		selerror("modifying pg_selinux is never allowed");
-}
-
-void sepgsqlHeapInsert(Relation rel, HeapTuple tuple)
-{
-	if (HeapTupleGetSecurity(tuple) != InvalidOid)
-		return;
-	HeapTupleSetSecurity(tuple, sepgsqlComputeImplicitContext(rel, tuple));
-}
-
-void sepgsqlHeapUpdate(Relation rel, HeapTuple newtup, HeapTuple oldtup)
-{
-	psid newcon, oldcon;
-
-	oldcon = HeapTupleGetSecurity(oldtup);
-	newcon = HeapTupleGetSecurity(newtup);
-
-	if (newcon == InvalidOid)
-		HeapTupleSetSecurity(newtup, oldcon);
 }

@@ -46,38 +46,62 @@ typedef struct SEvalItem {
 
 /*
  * SE-PostgreSQL core functions
+ *   src/backend/security/sepgsqlCore.c
  */
+#ifdef HAVE_SELINUX
 extern Size  sepgsql_shmem_size(void);
 extern void  sepgsqlInitialize(void);
 extern int   sepgsqlInitializePostmaster(void);
 extern void  sepgsqlFinalizePostmaster(void);
 extern bool  sepgsqlIsEnabled(void);
+#else
+#define sepgsql_shmem_size()				(0)
+#define sepgsqlInitialize()
+#define sepgsqlInitializePostmaster()		(0)
+#define sepgsqlFinalizePostmaster()
+#define sepgsqlIsEnabled()					(false)
+#endif
 
 /*
- * SE-PostgreSQL proxy facilities
+ * SE-PostgreSQL proxy functions
+ *   src/backend/security/sepgsqlProxy.c
  */
-extern List *sepgsqlWalkExpr(List *selist, Query *query, Node *);
-extern List *sepgsqlProxyQuery(Query *query);
+#ifdef HAVE_SELINUX
 extern List *sepgsqlProxyQueryList(List *queryList);
 extern void *sepgsqlForeignKeyPrepare(const char *querystr, int nargs, Oid *argtypes);
-extern void sepgsqlVerifyQuery(Query *query);
-extern void sepgsqlVerifyQueryList(List *queryList);
+#else
+#define sepgsqlProxyQueryList(a)			(a)
+#endif
 
 /*
- * SE-PostgreSQL heap input/output functions
+ * SE-PostgreSQL checking function
+ *   src/backend/security/sepgsqlVerify.c
  */
-extern void sepgsqlSimpleHeapInsert(Relation rel, HeapTuple tuple);
-extern void sepgsqlSimpleHeapUpdate(Relation rel, ItemPointer tid, HeapTuple newtup);
-extern void sepgsqlSimpleHeapDelete(Relation rel, ItemPointer tid);
-extern void sepgsqlExecInsert(Relation rel, HeapTuple tuple, bool has_returing);
-extern void sepgsqlExecUpdate(Relation rel, HeapTuple newtup, HeapTuple oldtup, bool has_returning);
-extern void sepgsqlExecDelete(Relation rel, HeapTuple tuple);
-extern void sepgsqlHeapInsert(Relation rel, HeapTuple tuple);
-extern void sepgsqlHeapUpdate(Relation rel, HeapTuple newtup, HeapTuple oldtup);
+#ifdef HAVE_SELINUX
+extern void sepgsqlVerifyQueryList(List *queryList);
+#else
+#define sepgsqlVerifyQueryList(a)
+#endif
 
 /*
  * SE-PostgreSQL hooks
+ *   src/backend/security/sepgsqlHooks.c
  */
+#ifdef HAVE_SELINUX
+/* simple_heap_xxxx hooks */
+extern void sepgsqlSimpleHeapInsert(Relation rel, HeapTuple tuple);
+extern void sepgsqlSimpleHeapUpdate(Relation rel, ItemPointer tid, HeapTuple newtup);
+extern void sepgsqlSimpleHeapDelete(Relation rel, ItemPointer tid);
+
+/* heap_xxxx hooks for implicit labeling */
+extern void sepgsqlHeapInsert(Relation rel, HeapTuple tuple);
+extern void sepgsqlHeapUpdate(Relation rel, HeapTuple newtup, HeapTuple oldtup);
+
+/* INSERT/UPDATE/DELETE statement hooks */
+extern bool sepgsqlExecInsert(Relation rel, HeapTuple tuple, bool with_returning);
+extern bool sepgsqlExecUpdate(Relation rel, HeapTuple newtup, ItemPointer tid, bool with_returning);
+extern bool sepgsqlExecDelete(Relation rel, ItemPointer tid, bool with_returning);
+
 /* DATABASE */
 extern void sepgsqlAlterDatabaseContext(Relation rel, HeapTuple tuple, char *new_context);
 extern void sepgsqlGetParamDatabase(void);
@@ -95,8 +119,57 @@ extern void sepgsqlAlterProcedureContext(Relation rel, HeapTuple tuple, char *co
 /* COPY */
 extern void sepgsqlDoCopy(Relation rel, List *attnumlist, bool is_from);
 extern bool sepgsqlCopyTo(Relation rel, HeapTuple tuple);
+#else
+/* simple_heap_xxxx hooks */
+#define sepgsqlSimpleHeapInsert(a,b)
+#define sepgsqlSimpleHeapUpdate(a,b,c)
+#define sepgsqlSimpleHeapDelete(a,b)
+/* heap_xxxx hooks for implicit labeling */
+#define sepgsqlHeapInsert(a,b)
+#define sepgsqlHeapUpdate(a,b,c)
+/* INSERT/UPDATE/DELETE statement hooks */
+#define sepgsqlExecInsert(a,b,c)					(true)
+#define sepgsqlExecUpdate(a,b,c,d)					(true)
+#define sepgsqlExecDelete(a,b,c)					(true)
+/* DATABASE */
+#define sepgsqlAlterDatabaseContext(a,b,c)
+#define sepgsqlGetParamDatabase()
+#define sepgsqlSetParamDatabase()
+/* TABLE/COLUMN */
+#define sepgsqlAlterTableSetTableContext(a,b)
+#define sepgsqlAlterTableSetColumnContext(a,b,c)
+#define sepgsqlLockTable(a)
+/* PROCEDURE */
+#define sepgsqlExecInitExpr(a,b)
+#define sepgsqlAlterProcedureContext(a,b,c)
+/* COPY TO/COPY FROM */
+#define sepgsqlDoCopy(a,b,c)
+#define sepgsqlCopyTo(a,b)								(true)
+#endif
 
-/* SE-PostgreSQL SQL function */
+/*
+ * SE-PostgreSQL Binary Large Object (BLOB) functions
+ *   src/backend/security/sepgsqlLargeObject.c
+ */
+#ifdef HAVE_SELINUX
+extern psid sepgsqlLargeObjectGetattr(Oid loid);
+extern void sepgsqlLargeObjectSetattr(Oid loid, psid lo_security);
+extern void sepgsqlLargeObjectRead(Relation rel, HeapTuple tuple);
+extern void sepgsqlLargeObjectWrite(Relation rel, HeapTuple tuple);
+extern void sepgsqlLargeObjectImport(void);
+extern void sepgsqlLargeObjectExport(void);
+#else
+#define sepgsqlLargeObjectGetattr(a)
+#define sepgsqlLargeObjectSetattr(a,b)
+#define sepgsqlLargeObjectRead(a,b)
+#define sepgsqlLargeObjectWrite(a,b)
+#define sepgsqlLargeObjectImport()
+#define sepgsqlLargeObjectExport()
+#endif
+
+/*
+ * SE-PostgreSQL SQL functions
+ */
 extern Datum psid_in(PG_FUNCTION_ARGS);
 extern Datum psid_out(PG_FUNCTION_ARGS);
 extern Datum text_to_psid(PG_FUNCTION_ARGS);
@@ -104,15 +177,5 @@ extern Datum psid_to_text(PG_FUNCTION_ARGS);
 extern Datum sepgsql_getcon(PG_FUNCTION_ARGS);
 extern Datum sepgsql_tuple_perms(PG_FUNCTION_ARGS);
 extern Datum sepgsql_tuple_perms_abort(PG_FUNCTION_ARGS);
-
-/* Binary Large Object (BLOB) related hooks */
-extern void sepgsqlLargeObjectCreate(Relation rel, HeapTuple tuple);
-extern void sepgsqlLargeObjectDrop(Relation rel, HeapTuple tuple);
-extern void sepgsqlLargeObjectGetattr(Relation rel, HeapTuple tuple);
-extern void sepgsqlLargeObjectSetattr(Relation rel, HeapTuple oldtup, HeapTuple newtup);
-extern void sepgsqlLargeObjectRead(Relation rel, HeapTuple tuple);
-extern void sepgsqlLargeObjectWrite(Relation rel, HeapTuple tuple);
-extern void sepgsqlLargeObjectImport(void);
-extern void sepgsqlLargeObjectExport(void);
 
 #endif /* SEPGSQL_H */

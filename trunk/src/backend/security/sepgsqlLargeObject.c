@@ -5,57 +5,89 @@
  */
 #include "postgres.h"
 
+#include "access/genam.h"
+#include "access/skey.h"
+#include "catalog/indexing.h"
+#include "catalog/pg_largeobject.h"
 #include "security/sepgsql.h"
 #include "security/sepgsql_internal.h"
+#include "utils/fmgroids.h"
 
-void sepgsqlLargeObjectCreate(Relation rel, HeapTuple tuple)
+psid sepgsqlLargeObjectGetattr(Oid loid)
 {
-	psid newcon;
+	Relation rel;
+	ScanKeyData skey;
+	SysScanDesc sd;
+	HeapTuple tuple;
+	psid lo_security = InvalidOid;
 
-	newcon = sepgsql_avc_createcon(sepgsqlGetClientPsid(),
-								   sepgsqlGetDatabasePsid(),
-								   SECCLASS_BLOB);
+	if (!sepgsqlIsEnabled())
+		selerror("SE-PostgreSQL was disabled");
 
-	sepgsql_avc_permission(sepgsqlGetClientPsid(),
-						   newcon,
-						   SECCLASS_BLOB,
-						   BLOB__CREATE,
-						   NULL);
-	HeapTupleSetSecurity(tuple, newcon);
+	ScanKeyInit(&skey,
+				Anum_pg_largeobject_loid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(loid));
+
+	rel = heap_open(LargeObjectRelationId, AccessShareLock);
+
+	sd = systable_beginscan(rel, LargeObjectLOidPNIndexId, true,
+							SnapshotNow, 1, &skey);
+
+	while ((tuple = systable_getnext(sd)) != NULL) {
+		sepgsqlCheckTuplePerms(rel, tuple, TUPLE__SELECT, NULL, 0, true);
+		lo_security = HeapTupleGetSecurity(tuple);
+		break;
+	}
+	systable_endscan(sd);
+
+	heap_close(rel, NoLock);
+
+	if (lo_security == InvalidOid)
+		selerror("LargeObject %u did not found", loid);
+
+	return lo_security;
 }
 
-void sepgsqlLargeObjectDrop(Relation rel, HeapTuple tuple)
+void sepgsqlLargeObjectSetattr(Oid loid, psid lo_security)
 {
-	sepgsql_avc_permission(sepgsqlGetClientPsid(),
-						   HeapTupleGetSecurity(tuple),
-						   SECCLASS_BLOB,
-						   BLOB__DROP,
-						   NULL);
-}
+	Relation rel;
+	ScanKeyData skey;
+	SysScanDesc sd;
+	HeapTuple tuple, newtup;
+	CatalogIndexState indstate;
+	bool found = false;
 
-void sepgsqlLargeObjectGetattr(Relation rel, HeapTuple tuple)
-{
-	sepgsql_avc_permission(sepgsqlGetClientPsid(),
-						   HeapTupleGetSecurity(tuple),
-						   SECCLASS_BLOB,
-						   BLOB__GETATTR,
-						   NULL);
-}
+	if (!sepgsqlIsEnabled())
+		selerror("SE-PostgreSQL was disabled");
 
-void sepgsqlLargeObjectSetattr(Relation rel, HeapTuple oldtup, HeapTuple newtup)
-{
-	if (HeapTupleGetSecurity(oldtup) == HeapTupleGetSecurity(newtup))
-		return;
-	sepgsql_avc_permission(sepgsqlGetClientPsid(),
-						   HeapTupleGetSecurity(oldtup),
-						   SECCLASS_BLOB,
-						   BLOB__SETATTR | BLOB__RELABELFROM,
-						   NULL);
-	sepgsql_avc_permission(sepgsqlGetClientPsid(),
-						   HeapTupleGetSecurity(newtup),
-						   SECCLASS_BLOB,
-						   BLOB__RELABELTO,
-						   NULL);
+	ScanKeyInit(&skey,
+				Anum_pg_largeobject_loid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(loid));
+
+	rel = heap_open(LargeObjectRelationId, RowExclusiveLock);
+
+	indstate = CatalogOpenIndexes(rel);
+
+	sd = systable_beginscan(rel, LargeObjectLOidPNIndexId, true,
+							SnapshotNow, 1, &skey);
+
+	while ((tuple = systable_getnext(sd)) != NULL) {
+		newtup = heap_copytuple(tuple);
+		HeapTupleSetSecurity(newtup, lo_security);
+		simple_heap_update(rel, &newtup->t_self, newtup);
+		CatalogUpdateIndexes(rel, newtup);
+		found = true;
+	}
+	systable_endscan(sd);
+	CatalogCloseIndexes(indstate);
+	heap_close(rel, RowExclusiveLock);
+
+	CommandCounterIncrement();
+
+	if (!found)
+		selerror("LargeObject %u did not found", loid);
 }
 
 void sepgsqlLargeObjectRead(Relation rel, HeapTuple tuple)
@@ -93,4 +125,3 @@ void sepgsqlLargeObjectExport()
 						   BLOB__EXPORT,
 						   NULL);
 }
-

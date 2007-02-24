@@ -86,11 +86,11 @@
 #define BLOB__IMPORT                              0x00000100UL
 #define BLOB__EXPORT                              0x00000200UL
 
-extern int  sepgsql_avc_permission_noaudit(psid ssid, psid tsid, uint16 tclass,
+extern bool sepgsql_avc_permission_noaudit(psid ssid, psid tsid, uint16 tclass,
 										   uint32 perms, char **audit, char *objname);
 extern void  sepgsql_avc_permission(psid ssid, psid tsid, uint16 tclass,
 									uint32 perms, char *objname);
-extern void  sepgsql_audit(int result, char *message);
+extern void  sepgsql_audit(bool result, char *message);
 extern psid  sepgsql_avc_createcon(psid ssid, psid tsid, uint16 tclass);
 extern psid  sepgsql_avc_relabelcon(psid ssid, psid tsid, uint16 tclass);
 extern psid  sepgsql_context_to_psid(char *context);
@@ -110,7 +110,8 @@ extern void sepgsqlVerifyQuery(Query *query);
 extern void sepgsqlVerifyQueryList(List *queryList);
 
 extern psid sepgsqlComputeImplicitContext(Relation rel, HeapTuple tuple);
-extern bool sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, uint32 perms, bool abort);
+extern bool sepgsqlCheckTuplePerms(Relation rel, HeapTuple newtup, uint32 nperms,
+								   HeapTuple oldtup, uint32 operms, bool abort);
 
 /*
  * Internal utilities

@@ -404,12 +404,12 @@ static void sepgsql_avc_insert(struct avc_datum *tmp)
 	return;
 }
 
-int sepgsql_avc_permission_noaudit(psid ssid, psid tsid, uint16 tclass, uint32 perms,
-								   char **audit, char *objname)
+bool sepgsql_avc_permission_noaudit(psid ssid, psid tsid, uint16 tclass, uint32 perms,
+									char **audit, char *objname)
 {
 	struct avc_datum *avd, lavd;
 	uint32 denied;
-	int rc = 0;
+	int rc = true;
 
 	LWLockAcquire(avc_shmem->lock, LW_SHARED);
 	avd = sepgsql_avc_lookup(ssid, tsid, tclass, perms);
@@ -426,7 +426,7 @@ int sepgsql_avc_permission_noaudit(psid ssid, psid tsid, uint16 tclass, uint32 p
 	denied = perms & ~lavd.allowed;
 	if ((!perms || denied) && avc_shmem->enforcing) {
 		errno = EACCES;
-		rc = 1;
+		rc = false;
 	}
 	LWLockRelease(avc_shmem->lock);
 	if (audit)
@@ -437,8 +437,8 @@ int sepgsql_avc_permission_noaudit(psid ssid, psid tsid, uint16 tclass, uint32 p
 
 void sepgsql_avc_permission(psid ssid, psid tsid, uint16 tclass, uint32 perms, char *objname)
 {
-	int rc;
 	char *audit;
+	bool rc;
 
 	rc = sepgsql_avc_permission_noaudit(ssid, tsid, tclass, perms, &audit, objname);
 	sepgsql_audit(rc, audit);
@@ -447,13 +447,13 @@ void sepgsql_avc_permission(psid ssid, psid tsid, uint16 tclass, uint32 perms, c
 		pfree(audit);
 }
 
-void sepgsql_audit(int result, char *message)
+void sepgsql_audit(bool result, char *message)
 {
 	if (message) {
-		ereport((result ? ERROR : NOTICE),
+		ereport((result ? NOTICE : ERROR),
 				(errcode(ERRCODE_INTERNAL_ERROR),
 				 errmsg("SELinux: %s", message)));
-	} else if (result) {
+	} else if (!result) {
 		ereport(ERROR,
 				(errcode(ERRCODE_INTERNAL_ERROR),
 				 "Transaction aborted due to SELinux access denied."));

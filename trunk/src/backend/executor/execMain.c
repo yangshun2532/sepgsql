@@ -1361,9 +1361,8 @@ ExecInsert(TupleTableSlot *slot,
 
 	HeapTupleStoreSecurityFromSlot(tuple, slot);
 	/* BEFORE ROW INSERT Triggers */
-	if (sepgsqlIsEnabled() ||
-		(resultRelInfo->ri_TrigDesc &&
-		 resultRelInfo->ri_TrigDesc->n_before_row[TRIGGER_EVENT_INSERT] > 0))
+	if (resultRelInfo->ri_TrigDesc &&
+		resultRelInfo->ri_TrigDesc->n_before_row[TRIGGER_EVENT_INSERT] > 0)
 	{
 		HeapTuple	newtuple;
 
@@ -1399,7 +1398,9 @@ ExecInsert(TupleTableSlot *slot,
 	/*
 	 * Check the explicit labeling, if configured
 	 */
-	sepgsqlExecInsert(resultRelationDesc, tuple, !!resultRelInfo->ri_projectReturning);
+	if (!sepgsqlExecInsert(resultRelationDesc, tuple,
+						   !!resultRelInfo->ri_projectReturning))
+		return;
 
 	/*
 	 * insert the tuple
@@ -1457,9 +1458,8 @@ ExecDelete(ItemPointer tupleid,
 	resultRelationDesc = resultRelInfo->ri_RelationDesc;
 
 	/* BEFORE ROW DELETE Triggers */
-	if (sepgsqlIsEnabled() ||
-		(resultRelInfo->ri_TrigDesc &&
-		 resultRelInfo->ri_TrigDesc->n_before_row[TRIGGER_EVENT_DELETE] > 0))
+	if (resultRelInfo->ri_TrigDesc &&
+		resultRelInfo->ri_TrigDesc->n_before_row[TRIGGER_EVENT_DELETE] > 0)
 	{
 		bool		dodelete;
 
@@ -1469,6 +1469,10 @@ ExecDelete(ItemPointer tupleid,
 		if (!dodelete)			/* "do nothing" */
 			return;
 	}
+
+	if (!sepgsqlExecDelete(resultRelationDesc, tupleid,
+						   !!resultRelInfo->ri_projectReturning))
+		return;
 
 	/*
 	 * delete the tuple
@@ -1609,9 +1613,8 @@ ExecUpdate(TupleTableSlot *slot,
 
 	HeapTupleStoreSecurityFromSlot(tuple, slot);
 	/* BEFORE ROW UPDATE Triggers */
-	if (sepgsqlIsEnabled() ||
-		(resultRelInfo->ri_TrigDesc &&
-		 resultRelInfo->ri_TrigDesc->n_before_row[TRIGGER_EVENT_UPDATE] > 0))
+	if (resultRelInfo->ri_TrigDesc &&
+		resultRelInfo->ri_TrigDesc->n_before_row[TRIGGER_EVENT_UPDATE] > 0)
 	{
 		HeapTuple	newtuple;
 
@@ -1652,6 +1655,13 @@ ExecUpdate(TupleTableSlot *slot,
 lreplace:;
 	if (resultRelationDesc->rd_att->constr)
 		ExecConstraints(resultRelInfo, slot, estate);
+
+	/*
+	 * check explicit labeling, if necessary
+	 */
+	if (!sepgsqlExecUpdate(resultRelationDesc, tuple, tupleid,
+						   !!resultRelInfo->ri_projectReturning))
+		return;
 
 	/*
 	 * replace the heap tuple
@@ -2575,7 +2585,11 @@ intorel_receive(TupleTableSlot *slot, DestReceiver *self)
 
 	tuple = ExecCopySlotTuple(slot);
 	HeapTupleStoreSecurityFromSlot(tuple, slot);
-	sepgsqlExecInsert(estate->es_into_relation_descriptor, tuple, false);
+	if (!sepgsqlExecInsert(estate->es_into_relation_descriptor, tuple, false)) {
+		heap_freetuple(tuple);
+		return;
+	}
+
 	heap_insert(estate->es_into_relation_descriptor,
 				tuple,
 				estate->es_snapshot->curcid,

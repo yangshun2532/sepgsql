@@ -12,6 +12,7 @@
 #include "catalog/pg_class.h"
 #include "catalog/pg_database.h"
 #include "catalog/pg_proc.h"
+#include "catalog/pg_selinux.h"
 #include "miscadmin.h"
 #include "security/sepgsql.h"
 #include "security/sepgsql_internal.h"
@@ -91,7 +92,7 @@ void sepgsqlSetParamDatabase()
 }
 
 /*******************************************************************************
- * RELATION object related hooks
+ * RELATION(Table)/ATTRIBTUE(column) object related hooks
  *******************************************************************************/
 
 void sepgsqlAlterTableSetTableContext(Relation rel, Value *context)
@@ -155,10 +156,6 @@ void sepgsqlLockTable(Oid relid)
 						   HeapTupleGetRelationName(tuple));
 	ReleaseSysCache(tuple);
 }
-
-/*******************************************************************************
- * ATTRIBUTE(column) related hooks
- *******************************************************************************/
 
 void sepgsqlAlterTableSetColumnContext(Relation rel, char *colname, Value *context)
 {
@@ -330,7 +327,7 @@ void sepgsqlDoCopy(Relation rel, List *attnumlist, bool is_from)
 
 bool sepgsqlCopyTo(Relation rel, HeapTuple tuple)
 {
-	return sepgsqlCheckTuplePerms(rel, tuple, TUPLE__SELECT, false);
+	return sepgsqlCheckTuplePerms(rel, tuple, TUPLE__SELECT, NULL, 0, false);
 }
 
 /*******************************************************************************
@@ -346,6 +343,7 @@ static inline bool __is_simple_system_relation(Relation rel)
 	case ProcedureRelationId:
 	case RelationRelationId:
 	case TypeRelationId:
+	case LargeObjectRelationId:
 		retval = true;
 		break;
 	}
@@ -354,41 +352,142 @@ static inline bool __is_simple_system_relation(Relation rel)
 
 void sepgsqlSimpleHeapInsert(Relation rel, HeapTuple tuple)
 {
-	if (__is_simple_system_relation(rel)) {
-		psid ncon = sepgsqlComputeImplicitContext(rel, tuple);
-        HeapTupleSetSecurity(tuple, ncon);
-        sepgsqlCheckTuplePerms(rel, tuple, TUPLE__INSERT, true);
+	psid ncon;
+
+	if (!__is_simple_system_relation(rel))
+		return;
+
+	ncon = HeapTupleGetSecurity(tuple);
+	if (ncon == InvalidOid) {
+		/* no explicit labeling */
+		ncon = sepgsqlComputeImplicitContext(rel, tuple);
+		HeapTupleSetSecurity(tuple, ncon);
 	}
+	sepgsqlCheckTuplePerms(rel, tuple, TUPLE__INSERT, NULL, 0, true);
 }
 
 void sepgsqlSimpleHeapUpdate(Relation rel, ItemPointer tid, HeapTuple newtup)
 {
-	if (__is_simple_system_relation(rel)) {
-		HeapTuple oldtup = __getHeapTupleFromItemPointer(rel, tid);
-		psid ncon = HeapTupleGetSecurity(newtup);
-		psid ocon = HeapTupleGetSecurity(oldtup);
-		uint32 perms = TUPLE__UPDATE;
+	HeapTuple oldtup;
+	psid ncon, ocon;
+	uint32 nperms = 0, operms = TUPLE__UPDATE;
 
-		if (ncon == InvalidOid) {
-			ncon = ocon;
-			HeapTupleSetSecurity(newtup, ncon);
-		}
+	if (!__is_simple_system_relation(rel))
+		return;
 
-		if (ncon != ocon)
-			perms |= TUPLE__RELABELFROM;
-		sepgsqlCheckTuplePerms(rel, oldtup, perms, true);
-
-		if (ncon != ocon)
-			sepgsqlCheckTuplePerms(rel, newtup, TUPLE__RELABELTO, true);
-		heap_freetuple(oldtup);
+	oldtup = __getHeapTupleFromItemPointer(rel, tid);
+	ncon = HeapTupleGetSecurity(newtup);
+	ocon = HeapTupleGetSecurity(oldtup);
+	if (ncon == InvalidOid) {
+		HeapTupleSetSecurity(newtup, ocon);
+		ncon = ocon;
 	}
+	if (ncon != ocon) {
+		nperms |= TUPLE__RELABELTO;
+		operms |= TUPLE__RELABELFROM;
+	}
+	sepgsqlCheckTuplePerms(rel, newtup, nperms, oldtup, operms, true);
+
+	heap_freetuple(oldtup);
 }
 
 void sepgsqlSimpleHeapDelete(Relation rel, ItemPointer tid)
 {
-	if (__is_simple_system_relation(rel)) {
-		HeapTuple oldtup = __getHeapTupleFromItemPointer(rel, tid);
-		sepgsqlCheckTuplePerms(rel, oldtup, TUPLE__DELETE, true);
-		heap_freetuple(oldtup);
+	HeapTuple oldtup;
+
+	if (!__is_simple_system_relation(rel))
+		return;
+
+	oldtup = __getHeapTupleFromItemPointer(rel, tid);
+	sepgsqlCheckTuplePerms(rel, oldtup, TUPLE__DELETE, NULL, 0, true);
+	heap_freetuple(oldtup);
+}
+
+/*******************************************************************************
+ * ExecInsert/Delete/Update hooks
+ *******************************************************************************/
+
+bool sepgsqlExecInsert(Relation rel, HeapTuple tuple, bool with_returning)
+{
+	psid ncon;
+	uint32 perms;
+
+	if (RelationGetRelid(rel) == SelinuxRelationId)
+		selerror("INSERT INTO pg_selinux ..., never allowed");
+
+	ncon = HeapTupleGetSecurity(tuple);
+	if (ncon == InvalidOid) {
+		/* no explicit labeling */
+		ncon = sepgsqlComputeImplicitContext(rel, tuple);
+		HeapTupleSetSecurity(tuple, ncon);
+	}
+	perms = TUPLE__INSERT;
+	if (with_returning)
+		perms |= TUPLE__SELECT;
+
+	return sepgsqlCheckTuplePerms(rel, tuple, perms, NULL, 0, false);
+}
+
+bool sepgsqlExecUpdate(Relation rel, HeapTuple newtup, ItemPointer tid, bool with_returning)
+{
+	HeapTuple oldtup;
+	psid ncon, ocon;
+	uint32 perms = 0;
+	bool rc;
+
+	if (RelationGetRelid(rel) == SelinuxRelationId)
+		selerror("UPDATE pg_selinux ..., never allowed");
+
+	oldtup = __getHeapTupleFromItemPointer(rel, tid);
+	ncon = HeapTupleGetSecurity(newtup);
+	ocon = HeapTupleGetSecurity(oldtup);
+	if (ncon == InvalidOid) {
+		HeapTupleSetSecurity(newtup, ocon);		/* keep old context */
+		ocon = ncon;
+	}
+	if (ncon != ocon)
+		perms |= TUPLE__RELABELTO;
+	if (with_returning)
+		perms |= TUPLE__SELECT;
+	rc = sepgsqlCheckTuplePerms(rel, newtup, 0, oldtup, perms, false);
+
+	heap_freetuple(oldtup);
+
+	return rc;
+}
+
+bool sepgsqlExecDelete(Relation rel, ItemPointer tid, bool with_returning)
+{
+	HeapTuple oldtup;
+	bool rc;
+
+	if (RelationGetRelid(rel) == SelinuxRelationId)
+		selerror("DELETE FROM pg_selinux ..., never allowed");
+
+	oldtup = __getHeapTupleFromItemPointer(rel, tid);
+
+	rc = sepgsqlCheckTuplePerms(rel, oldtup, 0, NULL, 0, false);
+
+	heap_freetuple(oldtup);
+
+	return rc;
+}
+
+/*******************************************************************************
+ * heap_insert/heap_update hooks -- the last gate of implicit labeling
+ *******************************************************************************/
+void sepgsqlHeapInsert(Relation rel, HeapTuple tuple)
+{
+	if (HeapTupleGetSecurity(tuple) == InvalidOid) {
+		psid ncon = sepgsqlComputeImplicitContext(rel, tuple);
+		HeapTupleSetSecurity(tuple, ncon);
+	}
+}
+
+void sepgsqlHeapUpdate(Relation rel, HeapTuple newtup, HeapTuple oldtup)
+{
+	if (HeapTupleGetSecurity(newtup) == InvalidOid) {
+		psid ocon = HeapTupleGetSecurity(oldtup);
+		HeapTupleSetSecurity(newtup, ocon);
 	}
 }

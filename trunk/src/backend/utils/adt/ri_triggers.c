@@ -3027,8 +3027,11 @@ ri_PlanCheck(const char *querystr, int nargs, Oid *argtypes,
 	SetUserId(RelationGetForm(query_rel)->relowner);
 
 	/* Create the plan */
+#ifdef HAVE_SELINUX
 	qplan = sepgsqlForeignKeyPrepare(querystr, nargs, argtypes);
-	//qplan = SPI_prepare(querystr, nargs, argtypes);
+#else
+	qplan = SPI_prepare(querystr, nargs, argtypes);
+#endif
 
 	if (qplan == NULL)
 		elog(ERROR, "SPI_prepare returned %d for %s", SPI_result, querystr);

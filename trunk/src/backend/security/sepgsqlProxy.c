@@ -396,7 +396,7 @@ List *sepgsqlWalkExpr(List *selist, Query *query, Node *n)
  *
  *
  */
-static Oid funcoid_sepgsql_tuple_perm = F_SEPGSQL_TUPLE_PERMS;
+static Oid fnoid_sepgsql_tuple_perm = F_SEPGSQL_TUPLE_PERMS;
 
 static List *proxyRteRelation(List *selist, Query *query, int rtindex, Node **quals)
 {
@@ -440,7 +440,7 @@ static List *proxyRteRelation(List *selist, Query *query, int rtindex, Node **qu
 		c3 = makeConst(INT4OID, sizeof(int32), Int32GetDatum(perms), false, true);
 
 		/* append sepgsql_tuple_perm */
-		func = makeFuncExpr(funcoid_sepgsql_tuple_perm, BOOLOID,
+		func = makeFuncExpr(fnoid_sepgsql_tuple_perm, BOOLOID,
 							list_make3(v1, v2, c3), COERCE_DONTCARE);
 		if (*quals == NULL) {
 			*quals = (Node *) func;
@@ -728,27 +728,23 @@ List *sepgsqlProxyQueryList(List *queryList)
 	return new_list;
 }
 
-/* special cases when Foreign Key processing */
 void *sepgsqlForeignKeyPrepare(const char *querystr, int nargs, Oid *argtypes)
 {
-	Oid saved_funcoid = funcoid_sepgsql_tuple_perm;
+	Oid saved_fnoid = fnoid_sepgsql_tuple_perm;
 	void *qplan;
 
-	funcoid_sepgsql_tuple_perm = F_SEPGSQL_TUPLE_PERMS_ABORT;
+	fnoid_sepgsql_tuple_perm = F_SEPGSQL_TUPLE_PERMS_ABORT;
 	PG_TRY();
 	{
 		qplan = SPI_prepare(querystr, nargs, argtypes);
 	}
 	PG_CATCH();
 	{
-		funcoid_sepgsql_tuple_perm = saved_funcoid;
+		fnoid_sepgsql_tuple_perm = saved_fnoid;
 		PG_RE_THROW();
 	}
 	PG_END_TRY();
-	funcoid_sepgsql_tuple_perm = saved_funcoid;
+	fnoid_sepgsql_tuple_perm = saved_fnoid;
 
 	return qplan;
 }
-
-
-

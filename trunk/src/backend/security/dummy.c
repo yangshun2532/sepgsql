@@ -37,18 +37,18 @@ Datum psid_to_text(PG_FUNCTION_ARGS)
 
 Datum sepgsql_getcon(PG_FUNCTION_ARGS)
 {
-	selerror("SE-PostgreSQL is not configured");
+	elog(ERROR, "SE-PostgreSQL was not configured");
 	PG_RETURN_OID(InvalidOid);
 }
 
-Datum sepgsql_tuple_perm(PG_FUNCTION_ARGS)
+Datum sepgsql_tuple_perms(PG_FUNCTION_ARGS)
 {
-	selerror("SE-PostgreSQL is not configured");
+	elog(ERROR, "SE-PostgreSQL was not configured");
 	PG_RETURN_BOOL(false);
 }
 
-Datum sepgsql_tuple_perm_abort(PG_FUNCTION_ARGS)
+Datum sepgsql_tuple_perms_abort(PG_FUNCTION_ARGS)
 {
-	selerror("SE-PostgreSQL is not configured");
+	elog(ERROR, "SE-PostgreSQL was not configured");
 	PG_RETURN_BOOL(false);
 }

@@ -483,111 +483,35 @@ lo_export(PG_FUNCTION_ARGS)
 Datum
 lo_get_security(PG_FUNCTION_ARGS)
 {
-	Oid loid = PG_GETARG_OID(0);
 	Oid lo_security = InvalidOid;
-	Relation pg_largeobject;
-	ScanKeyData skey;
-	SysScanDesc sd;
-	HeapTuple tuple;
-	bool found;
+#ifdef HAVE_SELINUX
+	Oid loid = PG_GETARG_OID(0);
 
-	if (!sepgsqlIsEnabled())
-		ereport(ERROR,
-				(errcode(ERRCODE_INTERNAL_ERROR),
-				 errmsg("SE-PostgreSQL was not enabled")));
-
-	ScanKeyInit(&skey,
-				Anum_pg_largeobject_loid,
-				BTEqualStrategyNumber, F_OIDEQ,
-				ObjectIdGetDatum(loid));
-
-	pg_largeobject = heap_open(LargeObjectRelationId, AccessShareLock);
-
-	sd = systable_beginscan(pg_largeobject, LargeObjectLOidPNIndexId, true,
-							SnapshotNow, 1, &skey);
-
-	found = false;
-	while ((tuple = systable_getnext(sd)) != NULL) {
-		sepgsqlLargeObjectGetattr(pg_largeobject, tuple);
-		lo_security = HeapTupleGetSecurity(tuple);
-		found = true;
-		break;
-	}
-	systable_endscan(sd);
-
-	heap_close(pg_largeobject, NoLock);
-
-	if (!found)
-		ereport(ERROR,
-				(errcode(ERRCODE_UNDEFINED_OBJECT),
-				 errmsg("large object %u does not exist", loid)));
-
+	lo_security = sepgsqlLargeObjectGetattr(loid);
+#else
+	elog(ERROR, "SE-PostgreSQL was not configured");
+#endif
 	PG_RETURN_OID(lo_security);
 }
 
 Datum
 lo_set_security(PG_FUNCTION_ARGS)
 {
+#ifdef HAVE_SELINUX
 	Oid loid = PG_GETARG_OID(0);
 	Oid lo_security = PG_GETARG_OID(1);
-	Relation pg_largeobject;
-	ScanKeyData skey;
-	SysScanDesc sd;
-	HeapTuple tuple;
-	CatalogIndexState indstate;
-	bool found;
 	int i;
 
-	if (!sepgsqlIsEnabled())
-		ereport(ERROR,
-				(errcode(ERRCODE_INTERNAL_ERROR),
-				 errmsg("SE-PostgreSQL was not enabled")));
-
-	ScanKeyInit(&skey,
-				Anum_pg_largeobject_loid,
-				BTEqualStrategyNumber, F_OIDEQ,
-				ObjectIdGetDatum(loid));
-
-	pg_largeobject = heap_open(LargeObjectRelationId, RowExclusiveLock);
-
-	indstate = CatalogOpenIndexes(pg_largeobject);
-
-	sd = systable_beginscan(pg_largeobject, LargeObjectLOidPNIndexId, true,
-							SnapshotNow, 1, &skey);
-
-	found = false;
-	while ((tuple = systable_getnext(sd)) != NULL) {
-		HeapTuple newtup = heap_copytuple(tuple);
-
-		HeapTupleSetSecurity(newtup, lo_security);
-		sepgsqlLargeObjectSetattr(pg_largeobject, tuple, newtup);
-		simple_heap_update(pg_largeobject, &newtup->t_self, newtup);
-		CatalogUpdateIndexes(pg_largeobject, newtup);
-		found = true;
-	}
-
-	systable_endscan(sd);
-
-	CatalogCloseIndexes(indstate);
-
-	heap_close(pg_largeobject, RowExclusiveLock);
-
-	CommandCounterIncrement();
-
-	if (!found)
-		ereport(ERROR,
-				(errcode(ERRCODE_UNDEFINED_OBJECT),
-				 errmsg("large object %u does not exist", loid)));
+	sepgsqlLargeObjectSetattr(loid, lo_security);
 
 	for (i = 0; i < cookies_size; i++) {
 		LargeObjectDesc *loDesc = cookies[i];
-
-		if (loDesc && loDesc->id == loid) {
-#ifdef HAVE_SELINUX
+		if (loDesc && loDesc->id == loid)
 			loDesc->blob_security = lo_security;
-#endif
-		}
 	}
+#else
+	elog(ERROR, "SE-PostgreSQL was not configured");
+#endif
 	PG_RETURN_BOOL(true);
 }
 

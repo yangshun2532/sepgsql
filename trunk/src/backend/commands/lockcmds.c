@@ -18,6 +18,7 @@
 #include "catalog/namespace.h"
 #include "commands/lockcmds.h"
 #include "miscadmin.h"
+#include "security/sepgsql.h"
 #include "utils/acl.h"
 #include "utils/lsyscache.h"
 

@@ -255,9 +255,7 @@ IsSharedRelation(Oid relationId)
 		relationId == AuthMemRelationId ||
 		relationId == DatabaseRelationId ||
 		relationId == PLTemplateRelationId ||
-#ifdef HAVE_SELINUX
 		relationId == SelinuxRelationId ||
-#endif
 		relationId == SharedDescriptionRelationId ||
 		relationId == SharedDependRelationId ||
 		relationId == TableSpaceRelationId)
@@ -270,10 +268,8 @@ IsSharedRelation(Oid relationId)
 		relationId == DatabaseNameIndexId ||
 		relationId == DatabaseOidIndexId ||
 		relationId == PLTemplateNameIndexId ||
-#ifdef HAVE_SELINUX
 		relationId == SelinuxOidIndexId ||
 		relationId == SelinuxSelcontextIndexId ||
-#endif
 		relationId == SharedDescriptionObjIndexId ||
 		relationId == SharedDependDependerIndexId ||
 		relationId == SharedDependReferenceIndexId ||
