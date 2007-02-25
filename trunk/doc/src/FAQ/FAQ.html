@@ -10,7 +10,7 @@
   alink="#0000ff">
     <H1>Frequently Asked Questions (FAQ) for PostgreSQL</H1>
 
-    <P>Last updated: Fri Jan  5 15:40:20 EST 2007</P>
+    <P>Last updated: Tue Feb  6 22:16:17 EST 2007</P>
 
     <P>Current maintainer: Bruce Momjian (<A href=
     "mailto:bruce@momjian.us">bruce@momjian.us</A>)
@@ -41,7 +41,9 @@
      <A href="#item1.12">1.12</A>) How do I submit a patch or join the
      development team?<BR>
      <A href="#item1.13">1.13</A>) How does PostgreSQL compare to other
-    <SMALL>DBMS</SMALL>s?<BR>
+     <SMALL>DBMS</SMALL>s?<BR>
+     <A href="#item1.14">1.14</A>) Will PostgreSQL handle recent daylight
+     saving time changes in various countries?<BR>
 
 
     <H2 align="center">User Client Questions</H2>
@@ -169,7 +171,7 @@
 
     <P>PostgreSQL Data Base Management System</P>
 
-    <P>Portions Copyright (c) 1996-2006, PostgreSQL Global Development Group
+    <P>Portions Copyright (c) 1996-2007, PostgreSQL Global Development Group
     Portions Copyright (c) 1994-1996 Regents of the University of California</P>
 
     <P>Permission to use, copy, modify, and distribute this software
@@ -219,7 +221,7 @@
 
     <H3 id="item1.6">1.6) What is the most recent release?</H3>
 
-    <P>The latest release of PostgreSQL is version 8.2.1.</P>
+    <P>The latest release of PostgreSQL is version 8.2.3.</P>
 
     <P>We plan to have a major release every year, with minor releases
     every few months.</P>
@@ -436,6 +438,15 @@
       <BR>
       </DD>
     </DL>
+
+    <H3 id="item1.14">1.14) Will PostgreSQL handle recent daylight
+    saving time changes in various countries?</H3>
+
+    <P>USA daylight saving time changes are included in PostgreSQL release
+    8.0.[4+], and all later major releases, e.g. 8.1.  Canada and Western
+    Australia changes are included in 8.0.[10+], 8.1.[6+], and all later
+    major releases.  PostgreSQL releases prior to 8.0 use the operating
+    system's timezone database for daylight saving information.</P>
 
     <HR>
 

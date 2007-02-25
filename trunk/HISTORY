@@ -1,6 +1,80 @@
 
                                 Release Notes
 
+                                Release 8.2.3
+
+     Release date: 2007-02-07
+
+   This release contains two fixes from 8.2.2.
+     __________________________________________________________________
+
+Migration to version 8.2.3
+
+   A dump/restore is not required for those running 8.2.X.
+     __________________________________________________________________
+
+Changes
+
+     * Remove overly-restrictive check for type length in constraints and
+       functional indexes(Tom)
+     * Fix optimization so MIN/MAX in subqueries can again use indexes
+       (Tom)
+     __________________________________________________________________
+
+                                Release 8.2.2
+
+     Release date: 2007-02-05
+
+   This release contains a variety of fixes from 8.2.1, including a
+   security fix.
+     __________________________________________________________________
+
+Migration to version 8.2.2
+
+   A dump/restore is not required for those running 8.2.X.
+     __________________________________________________________________
+
+Changes
+
+     * Remove security vulnerabilities that allowed connected users to
+       read backend memory (Tom)
+       The vulnerabilities involve suppressing the normal check that a SQL
+       function returns the data type it's declared to, and changing the
+       data type of a table column (CVE-2007-0555, CVE-2007-0556). These
+       errors can easily be exploited to cause a backend crash, and in
+       principle might be used to read database content that the user
+       should not be able to access.
+     * Fix not-so-rare-anymore bug wherein btree index page splits could
+       fail due to choosing an infeasible split point (Heikki Linnakangas)
+     * Fix Borland C compile scripts (L Bayuk)
+     * Properly handle to_char('CC') for years ending in 00 (Tom)
+       Year 2000 is in the twentieth century, not the twenty-first.
+     * "/contrib/tsearch2" localization improvements (Tatsuo, Teodor)
+     * Fix incorrect permission check in
+       information_schema.key_column_usage view (Tom)
+       The symptom is "relation with OID nnnnn does not exist" errors. To
+       get this fix without using "initdb", use "CREATE OR REPLACE VIEW"
+       to install the corrected definition found in
+       "share/information_schema.sql". Note you will need to do this in
+       each database.
+     * Improve "VACUUM" performance for databases with many tables (Tom)
+     * Fix for rare Assert() crash triggered by UNION (Tom)
+     * Fix potentially incorrect results from index searches using ROW
+       inequality conditions (Tom)
+     * Tighten security of multi-byte character processing for UTF8
+       sequences over three bytes long (Tom)
+     * Fix bogus "permission denied" failures occurring on Windows due to
+       attempts to fsync already-deleted files (Magnus, Tom)
+     * Fix bug that could cause the statistics collector to hang on
+       Windows (Magnus)
+       This would in turn lead to autovacuum not working.
+     * Fix possible crashes when an already-in-use PL/pgSQL function is
+       updated (Tom)
+     * Improve PL/pgSQL handling of domain types (Sergiy Vyshnevetskiy,
+       Tom)
+     * Fix possible errors in processing PL/pgSQL exception blocks (Tom)
+     __________________________________________________________________
+
                                 Release 8.2.1
 
      Release date: 2007-01-08
@@ -139,9 +213,12 @@ Migration to version 8.2
        This variable has been superseded by a more general facility for
        configuring timezone abbreviations.
      * Improve cost estimation for nested-loop index scans (Tom)
-       This may eliminate the need to set unrealistically small values of
-       random_page_cost. If you have been using a very small
+       This might eliminate the need to set unrealistically small values
+       of random_page_cost. If you have been using a very small
        random_page_cost, please recheck your test cases.
+     * Change behavior of "pg_dump" -n and -t options. (Greg Sabino
+       Mullane)
+       See the "pg_dump" manual page for details.
      * Change libpq PQdsplen() to return a useful value (Martijn van
        Oosterhout)
      * Declare libpq PQgetssl() as returning void *, rather than SSL *
@@ -280,9 +357,9 @@ Server Changes
        in the ps display.
      * Add configuration parameter update_process_title to control whether
        the ps display is updated for every command (Bruce)
-       On platforms where it is expensive to update the ps display, it may
-       be worthwhile to turn this off and rely solely on pg_stat_activity
-       for status information.
+       On platforms where it is expensive to update the ps display, it
+       might be worthwhile to turn this off and rely solely on
+       pg_stat_activity for status information.
      * Allow units to be specified in configuration settings (Peter)
        For example, you can now set shared_buffers to 32MB rather than
        mentally converting sizes.
@@ -366,7 +443,7 @@ Query Changes
      * Do not flatten subqueries that contain volatile functions in their
        target lists (Jaime Casanova)
        This prevents surprising behavior due to multiple evaluation of a
-       volatile function (such as random() or nextval()). It may cause
+       volatile function (such as random() or nextval()). It might cause
        performance degradation in the presence of functions that are
        unnecessarily marked as volatile.
      * Add system views pg_prepared_statements and pg_cursors to show
@@ -769,6 +846,66 @@ Contrib Changes
        scripts (David, Josh Drake)
      __________________________________________________________________
 
+                                Release 8.1.8
+
+     Release date: 2007-02-07
+
+   This release contains one fix from 8.1.7.
+     __________________________________________________________________
+
+Migration to version 8.1.8
+
+   A dump/restore is not required for those running 8.1.X. However, if you
+   are upgrading from a version earlier than 8.1.2, see the release notes
+   for 8.1.2.
+     __________________________________________________________________
+
+Changes
+
+     * Remove overly-restrictive check for type length in constraints and
+       functional indexes(Tom)
+     __________________________________________________________________
+
+                                Release 8.1.7
+
+     Release date: 2007-02-05
+
+   This release contains a variety of fixes from 8.1.6, including a
+   security fix.
+     __________________________________________________________________
+
+Migration to version 8.1.7
+
+   A dump/restore is not required for those running 8.1.X. However, if you
+   are upgrading from a version earlier than 8.1.2, see the release notes
+   for 8.1.2.
+     __________________________________________________________________
+
+Changes
+
+     * Remove security vulnerabilities that allowed connected users to
+       read backend memory (Tom)
+       The vulnerabilities involve suppressing the normal check that a SQL
+       function returns the data type it's declared to, and changing the
+       data type of a table column (CVE-2007-0555, CVE-2007-0556). These
+       errors can easily be exploited to cause a backend crash, and in
+       principle might be used to read database content that the user
+       should not be able to access.
+     * Fix rare bug wherein btree index page splits could fail due to
+       choosing an infeasible split point (Heikki Linnakangas)
+     * Improve "VACUUM" performance for databases with many tables (Tom)
+     * Fix autovacuum to avoid leaving non-permanent transaction IDs in
+       non-connectable databases (Alvaro)
+       This bug affects the 8.1 branch only.
+     * Fix for rare Assert() crash triggered by UNION (Tom)
+     * Tighten security of multi-byte character processing for UTF8
+       sequences over three bytes long (Tom)
+     * Fix bogus "permission denied" failures occurring on Windows due to
+       attempts to fsync already-deleted files (Magnus, Tom)
+     * Fix possible crashes when an already-in-use PL/pgSQL function is
+       updated (Tom)
+     __________________________________________________________________
+
                                 Release 8.1.6
 
      Release date: 2007-01-08
@@ -880,7 +1017,7 @@ Migration to version 8.1.4
    for 8.1.2.
 
    Full security against the SQL-injection attacks described in
-   CVE-2006-2313 and CVE-2006-2314 may require changes in application
+   CVE-2006-2313 and CVE-2006-2314 might require changes in application
    code. If you have applications that embed untrustworthy strings into
    SQL commands, you should examine them as soon as possible to ensure
    that they are using recommended escaping techniques. In most cases,
@@ -907,8 +1044,8 @@ Changes
        which is the scenario in which SQL injection is possible. A new
        configuration parameter backslash_quote is available to adjust this
        behavior when needed. Note that full security against CVE-2006-2314
-       may require client-side changes; the purpose of backslash_quote is
-       in part to make it obvious that insecure clients are insecure.
+       might require client-side changes; the purpose of backslash_quote
+       is in part to make it obvious that insecure clients are insecure.
      * Modify libpq's string-escaping routines to be aware of encoding
        considerations and standard_conforming_strings
        This fixes libpq-using applications for the security issues
@@ -1065,7 +1202,7 @@ Changes
        This fixes a problem that occurred if the postmaster was started
        with environment variables specifying a different locale than what
        initdb had been told. Under these conditions, any use of plperl was
-       likely to lead to corrupt indexes. You may need "REINDEX" to fix
+       likely to lead to corrupt indexes. You might need "REINDEX" to fix
        existing indexes on textual columns if this has happened to you.
      * Allow more flexible relocation of installation directories (Tom)
        Previous releases supported relocation only if all installation
@@ -1259,7 +1396,7 @@ Migration to version 8.1
        By default, we now generate an error if a table is used in a query
        without a FROM reference. The old behavior is still available, but
        the parameter must be set to 'true' to obtain it.
-       It may be necessary to set add_missing_from to true in order to
+       It might be necessary to set add_missing_from to true in order to
        load an existing dump file, if the dump contains any views or rules
        created using the implicit-FROM syntax. This should be a one-time
        annoyance, because PostgreSQL 8.1 will convert such views and rules
@@ -1374,7 +1511,7 @@ psql -t -f fixseq.sql db1 | psql -e db1
        modulus operator (%) with negative numbers.
      * Make &< and &> for polygons consistent with the box "over"
        operators (Tom)
-     * "CREATE LANGUAGE" may ignore the provided arguments in favor of
+     * "CREATE LANGUAGE" can ignore the provided arguments in favor of
        information from pg_pltemplate (Tom)
        A new system catalog pg_pltemplate has been defined to carry
        information about the preferred definitions of procedural languages
@@ -1905,6 +2042,58 @@ Contrib Changes
           + Remove support for "libmhash" and "libmcrypt"
      __________________________________________________________________
 
+                               Release 8.0.12
+
+     Release date: 2007-02-07
+
+   This release contains one fix from 8.0.11.
+     __________________________________________________________________
+
+Migration to version 8.0.12
+
+   A dump/restore is not required for those running 8.0.X. However, if you
+   are upgrading from a version earlier than 8.0.6, see the release notes
+   for 8.0.6.
+     __________________________________________________________________
+
+Changes
+
+     * Remove overly-restrictive check for type length in constraints and
+       functional indexes(Tom)
+     __________________________________________________________________
+
+                               Release 8.0.11
+
+     Release date: 2007-02-05
+
+   This release contains a variety of fixes from 8.0.10, including a
+   security fix.
+     __________________________________________________________________
+
+Migration to version 8.0.11
+
+   A dump/restore is not required for those running 8.0.X. However, if you
+   are upgrading from a version earlier than 8.0.6, see the release notes
+   for 8.0.6.
+     __________________________________________________________________
+
+Changes
+
+     * Remove security vulnerabilities that allowed connected users to
+       read backend memory (Tom)
+       The vulnerabilities involve suppressing the normal check that a SQL
+       function returns the data type it's declared to, and changing the
+       data type of a table column (CVE-2007-0555, CVE-2007-0556). These
+       errors can easily be exploited to cause a backend crash, and in
+       principle might be used to read database content that the user
+       should not be able to access.
+     * Fix rare bug wherein btree index page splits could fail due to
+       choosing an infeasible split point (Heikki Linnakangas)
+     * Fix for rare Assert() crash triggered by UNION (Tom)
+     * Tighten security of multi-byte character processing for UTF8
+       sequences over three bytes long (Tom)
+     __________________________________________________________________
+
                                Release 8.0.10
 
      Release date: 2007-01-08
@@ -1993,7 +2182,7 @@ Migration to version 8.0.8
    for 8.0.6.
 
    Full security against the SQL-injection attacks described in
-   CVE-2006-2313 and CVE-2006-2314 may require changes in application
+   CVE-2006-2313 and CVE-2006-2314 might require changes in application
    code. If you have applications that embed untrustworthy strings into
    SQL commands, you should examine them as soon as possible to ensure
    that they are using recommended escaping techniques. In most cases,
@@ -2020,8 +2209,8 @@ Changes
        which is the scenario in which SQL injection is possible. A new
        configuration parameter backslash_quote is available to adjust this
        behavior when needed. Note that full security against CVE-2006-2314
-       may require client-side changes; the purpose of backslash_quote is
-       in part to make it obvious that insecure clients are insecure.
+       might require client-side changes; the purpose of backslash_quote
+       is in part to make it obvious that insecure clients are insecure.
      * Modify libpq's string-escaping routines to be aware of encoding
        considerations and standard_conforming_strings
        This fixes libpq-using applications for the security issues
@@ -2143,7 +2332,7 @@ Changes
        This fixes a problem that occurred if the postmaster was started
        with environment variables specifying a different locale than what
        initdb had been told. Under these conditions, any use of plperl was
-       likely to lead to corrupt indexes. You may need "REINDEX" to fix
+       likely to lead to corrupt indexes. You might need "REINDEX" to fix
        existing indexes on textual columns if this has happened to you.
      * Allow more flexible relocation of installation directories (Tom)
        Previous releases supported relocation only if all installation
@@ -2303,7 +2492,7 @@ Migration to version 8.0.3
    It is strongly recommended that all installations repair these errors,
    either by initdb or by following the manual repair procedure given
    below. The errors at least allow unprivileged database users to crash
-   their server process, and may allow unprivileged users to gain the
+   their server process, and might allow unprivileged users to gain the
    privileges of a database superuser.
 
    If you wish not to do an initdb, perform the same manual repair
@@ -2655,8 +2844,8 @@ Migration to version 8.0
        supplied by the operating system. This will provide consistent
        behavior across all platforms. In most cases, there should be
        little noticeable difference in time zone behavior, except that the
-       time zone names used by "SET"/"SHOW" TimeZone may be different from
-       what your platform provides.
+       time zone names used by "SET"/"SHOW" TimeZone might be different
+       from what your platform provides.
      * Configure's threading option no longer requires users to run tests
        or edit configuration files; threading options are now detected
        automatically.
@@ -2826,7 +3015,7 @@ Server Changes
      * Some logging-related configuration parameters could formerly be
        adjusted by ordinary users, but only in the "more verbose"
        direction. They are now treated more strictly: only superusers can
-       set them. However, a superuser may use "ALTER USER" to provide
+       set them. However, a superuser can use "ALTER USER" to provide
        per-user settings of these values for non-superusers. Also, it is
        now possible for superusers to set values of superuser-only
        configuration parameters via PGOPTIONS.
@@ -3310,6 +3499,38 @@ Contrib Changes
      * Removed "contrib/rserv": obsoleted by various separate projects
      __________________________________________________________________
 
+                               Release 7.4.16
+
+     Release date: 2007-02-05
+
+   This release contains a variety of fixes from 7.4.15, including a
+   security fix.
+     __________________________________________________________________
+
+Migration to version 7.4.16
+
+   A dump/restore is not required for those running 7.4.X. However, if you
+   are upgrading from a version earlier than 7.4.11, see the release notes
+   for 7.4.11.
+     __________________________________________________________________
+
+Changes
+
+     * Remove security vulnerability that allowed connected users to read
+       backend memory (Tom)
+       The vulnerability involves suppressing the normal check that a SQL
+       function returns the data type it's declared to, or changing the
+       data type of a table column used in a SQL function (CVE-2007-0555).
+       This error can easily be exploited to cause a backend crash, and in
+       principle might be used to read database content that the user
+       should not be able to access.
+     * Fix rare bug wherein btree index page splits could fail due to
+       choosing an infeasible split point (Heikki Linnakangas)
+     * Fix for rare Assert() crash triggered by UNION (Tom)
+     * Tighten security of multi-byte character processing for UTF8
+       sequences over three bytes long (Tom)
+     __________________________________________________________________
+
                                Release 7.4.15
 
      Release date: 2007-01-08
@@ -3383,7 +3604,7 @@ Migration to version 7.4.13
    for 7.4.11.
 
    Full security against the SQL-injection attacks described in
-   CVE-2006-2313 and CVE-2006-2314 may require changes in application
+   CVE-2006-2313 and CVE-2006-2314 might require changes in application
    code. If you have applications that embed untrustworthy strings into
    SQL commands, you should examine them as soon as possible to ensure
    that they are using recommended escaping techniques. In most cases,
@@ -3410,8 +3631,8 @@ Changes
        which is the scenario in which SQL injection is possible. A new
        configuration parameter backslash_quote is available to adjust this
        behavior when needed. Note that full security against CVE-2006-2314
-       may require client-side changes; the purpose of backslash_quote is
-       in part to make it obvious that insecure clients are insecure.
+       might require client-side changes; the purpose of backslash_quote
+       is in part to make it obvious that insecure clients are insecure.
      * Modify libpq's string-escaping routines to be aware of encoding
        considerations and standard_conforming_strings
        This fixes libpq-using applications for the security issues
@@ -3500,7 +3721,7 @@ Changes
        This fixes a problem that occurred if the postmaster was started
        with environment variables specifying a different locale than what
        initdb had been told. Under these conditions, any use of plperl was
-       likely to lead to corrupt indexes. You may need "REINDEX" to fix
+       likely to lead to corrupt indexes. You might need "REINDEX" to fix
        existing indexes on textual columns if this has happened to you.
      * Fix longstanding bug in strpos() and regular expression handling in
        certain rarely used Asian multi-byte character sets (Tatsuo)
@@ -3622,7 +3843,7 @@ Migration to version 7.4.8
    It is strongly recommended that all installations repair these errors,
    either by initdb or by following the manual repair procedures given
    below. The errors at least allow unprivileged database users to crash
-   their server process, and may allow unprivileged users to gain the
+   their server process, and might allow unprivileged users to gain the
    privileges of a database superuser.
 
    If you wish not to do an initdb, perform the following procedures
@@ -3635,7 +3856,7 @@ WHERE pronamespace = 11 AND pronargs = 5
 -- if not, rollback and investigate instead of committing!
 COMMIT;
 
-   Next, if you have installed "contrib/tsearch2", do
+   Next, if you have installed "contrib/tsearch2", do:
 BEGIN;
 UPDATE pg_proc SET proargtypes[0] = 'internal'::regtype
 WHERE oid IN (
@@ -3658,11 +3879,11 @@ COMMIT;
    well. If you do not fix the template databases then any subsequently
    created databases will contain the same errors. template1 can be fixed
    in the same way as any other database, but fixing template0 requires
-   additional steps. First, from any database issue
+   additional steps. First, from any database issue:
 UPDATE pg_database SET datallowconn = true WHERE datname = 'template0';
 
    Next connect to template0 and perform the above repair procedures.
-   Finally, do
+   Finally, do:
 -- re-freeze template0:
 VACUUM FREEZE;
 -- and protect it against future alterations:
@@ -3911,8 +4132,8 @@ Changes
 
 Migration to version 7.4.2
 
-   A dump/restore is not required for those running 7.4.X. However, it may
-   be advisable as the easiest method of incorporating fixes for two
+   A dump/restore is not required for those running 7.4.X. However, it
+   might be advisable as the easiest method of incorporating fixes for two
    errors that have been found in the initial contents of 7.4.X system
    catalogs. A dump/initdb/reload sequence using 7.4.2's initdb will
    automatically correct these problems.
@@ -3959,11 +4180,11 @@ GRANT SELECT, UPDATE ON pg_settings TO PUBLIC;
    well. If you do not fix the template databases then any subsequently
    created databases will contain the same errors. template1 can be fixed
    in the same way as any other database, but fixing template0 requires
-   additional steps. First, from any database issue
+   additional steps. First, from any database issue:
 UPDATE pg_database SET datallowconn = true WHERE datname = 'template0';
 
    Next connect to template0 and perform the above repair procedures.
-   Finally, do
+   Finally, do:
 -- re-freeze template0:
 VACUUM FREEZE;
 -- and protect it against future alterations:
@@ -4210,7 +4431,7 @@ Migration to version 7.4
        consistent and user-oriented. If your applications try to detect
        different error conditions by parsing the error message, you are
        strongly encouraged to use the new error code facility instead.
-     * Inner joins using the explicit JOIN syntax may behave differently
+     * Inner joins using the explicit JOIN syntax might behave differently
        because they are now better optimized.
      * A number of server configuration parameters have been renamed for
        clarity, primarily those related to logging.
@@ -4599,7 +4820,7 @@ Data Type and Function Changes
        data type, using anyelement and anyarray (Joe)
        This allows the creation of functions that can work with any data
        type.
-     * Arrays may now be specified as ARRAY[1,2,3],
+     * Arrays can now be specified as ARRAY[1,2,3],
        ARRAY[['a','b'],['c','d']], or ARRAY[ARRAY[ARRAY[2]]] (Joe)
      * Allow proper comparisons for arrays, including ORDER BY and
        DISTINCT support (Joe)
@@ -4849,6 +5070,36 @@ Contrib Changes
      * Remove array module because features now included by default (Joe)
      __________________________________________________________________
 
+                               Release 7.3.18
+
+     Release date: 2007-02-05
+
+   This release contains a variety of fixes from 7.3.17, including a
+   security fix.
+     __________________________________________________________________
+
+Migration to version 7.3.18
+
+   A dump/restore is not required for those running 7.3.X. However, if you
+   are upgrading from a version earlier than 7.3.13, see the release notes
+   for 7.3.13.
+     __________________________________________________________________
+
+Changes
+
+     * Remove security vulnerability that allowed connected users to read
+       backend memory (Tom)
+       The vulnerability involves changing the data type of a table column
+       used in a SQL function (CVE-2007-0555). This error can easily be
+       exploited to cause a backend crash, and in principle might be used
+       to read database content that the user should not be able to
+       access.
+     * Fix rare bug wherein btree index page splits could fail due to
+       choosing an infeasible split point (Heikki Linnakangas)
+     * Tighten security of multi-byte character processing for UTF8
+       sequences over three bytes long (Tom)
+     __________________________________________________________________
+
                                Release 7.3.17
 
      Release date: 2007-01-08
@@ -4914,7 +5165,7 @@ Migration to version 7.3.15
    for 7.3.13.
 
    Full security against the SQL-injection attacks described in
-   CVE-2006-2313 and CVE-2006-2314 may require changes in application
+   CVE-2006-2313 and CVE-2006-2314 might require changes in application
    code. If you have applications that embed untrustworthy strings into
    SQL commands, you should examine them as soon as possible to ensure
    that they are using recommended escaping techniques. In most cases,
@@ -4941,8 +5192,8 @@ Changes
        which is the scenario in which SQL injection is possible. A new
        configuration parameter backslash_quote is available to adjust this
        behavior when needed. Note that full security against CVE-2006-2314
-       may require client-side changes; the purpose of backslash_quote is
-       in part to make it obvious that insecure clients are insecure.
+       might require client-side changes; the purpose of backslash_quote
+       is in part to make it obvious that insecure clients are insecure.
      * Modify libpq's string-escaping routines to be aware of encoding
        considerations
        This fixes libpq-using applications for the security issues
@@ -5020,7 +5271,7 @@ Changes
        This fixes a problem that occurred if the postmaster was started
        with environment variables specifying a different locale than what
        initdb had been told. Under these conditions, any use of plperl was
-       likely to lead to corrupt indexes. You may need "REINDEX" to fix
+       likely to lead to corrupt indexes. You might need "REINDEX" to fix
        existing indexes on textual columns if this has happened to you.
      * Fix longstanding bug in strpos() and regular expression handling in
        certain rarely used Asian multi-byte character sets (Tatsuo)
@@ -5121,7 +5372,7 @@ Migration to version 7.3.10
    recommended that all installations repair this error, either by initdb
    or by following the manual repair procedure given below. The error at
    least allows unprivileged database users to crash their server process,
-   and may allow unprivileged users to gain the privileges of a database
+   and might allow unprivileged users to gain the privileges of a database
    superuser.
 
    If you wish not to do an initdb, perform the following procedure
@@ -5139,11 +5390,11 @@ COMMIT;
    well. If you do not fix the template databases then any subsequently
    created databases will contain the same error. template1 can be fixed
    in the same way as any other database, but fixing template0 requires
-   additional steps. First, from any database issue
+   additional steps. First, from any database issue:
 UPDATE pg_database SET datallowconn = true WHERE datname = 'template0';
 
    Next connect to template0 and perform the above repair procedure.
-   Finally, do
+   Finally, do:
 -- re-freeze template0:
 VACUUM FREEZE;
 -- and protect it against future alterations:
@@ -5574,7 +5825,7 @@ Migration to version 7.3.1
 
    A dump/restore is *not* required for those running version 7.3.
    However, it should be noted that the main PostgreSQL interface library,
-   libpq, has a new major version number for this release, which may
+   libpq, has a new major version number for this release, which might
    require recompilation of client code in certain cases.
      __________________________________________________________________
 
@@ -5684,7 +5935,7 @@ Migration to version 7.3
        will not automatically be created.
      * A "SET" command inside an aborted transaction is now rolled back.
      * "COPY" no longer considers missing trailing columns to be null. All
-       columns need to be specified. (However, one may achieve a similar
+       columns need to be specified. (However, one can achieve a similar
        effect by specifying a column list in the "COPY" command.)
      * The data type timestamp is now equivalent to timestamp without time
        zone, instead of timestamp with time zone.
@@ -6444,7 +6695,7 @@ Migration to version 7.2
    Observe the following incompatibilities:
 
      * The semantics of the "VACUUM" command have changed in this release.
-       You may wish to update your maintenance procedures accordingly.
+       You might wish to update your maintenance procedures accordingly.
      * In this release, comparisons using = NULL will always return false
        (or NULL, more precisely). Previous releases automatically
        transformed this syntax to IS NULL. The old behavior can be
@@ -6939,8 +7190,8 @@ Python fixes (Darcy)
           modifications to disk before each transaction commit. With WAL,
           only one log file must be flushed to disk, greatly improving
           performance. If you have been using -F in previous releases to
-          disable disk flushes, you may want to consider discontinuing its
-          use.
+          disable disk flushes, you might want to consider discontinuing
+          its use.
 
    TOAST
           TOAST - Previous releases had a compiled-in row length limit,
@@ -6957,8 +7208,8 @@ Python fixes (Darcy)
           The previous C function manager did not handle null values
           properly, nor did it support 64-bit CPU's (Alpha). The new
           function manager does. You can continue using your old custom
-          functions, but you may want to rewrite them in the future to use
-          the new function manager call interface.
+          functions, but you might want to rewrite them in the future to
+          use the new function manager call interface.
 
    Complex Queries
           A large number of complex queries that were unsupported in
@@ -7311,7 +7562,7 @@ Migration to version 7.0
 
    A dump/restore using pg_dump is required for those wishing to migrate
    data from any previous release of PostgreSQL. For those upgrading from
-   6.5.*, you may instead use pg_upgrade to upgrade to this release;
+   6.5.*, you can instead use pg_upgrade to upgrade to this release;
    however, a full dump/reload installation is always the most robust
    method for upgrades.
 
@@ -7322,15 +7573,15 @@ Migration to version 7.0
        the SQL92-defined types timestamp and interval. Although there has
        been some effort to ease the transition by allowing PostgreSQL to
        recognize the deprecated type names and translate them to the new
-       type names, this mechanism may not be completely transparent to
-       your existing application.
+       type names, this mechanism cannot be completely transparent to your
+       existing application.
      * The optimizer has been substantially improved in the area of query
        cost estimation. In some cases, this will result in decreased query
        times as the optimizer makes a better choice for the preferred
        plan. However, in a small number of cases, usually involving
-       pathological distributions of data, your query times may go up. If
-       you are dealing with large amounts of data, you may want to check
-       your queries to verify performance.
+       pathological distributions of data, your query times might go up.
+       If you are dealing with large amounts of data, you might want to
+       check your queries to verify performance.
      * The JDBC and ODBC interfaces have been upgraded and extended.
      * The string function CHAR_LENGTH is now a native function. Previous
        versions translated this into a call to LENGTH, which could result
@@ -8220,7 +8471,7 @@ Jdbc cleanups(Peter)
 Show backend status on ps command line(only works on some platforms)(Bruce)
 Pg_hba.conf now has a sameuser option in the database field
 Make lo_unlink take oid param, not int4
-New DISABLE_COMPLEX_MACRO for compilers that can't handle our macros(Bruce)
+New DISABLE_COMPLEX_MACRO for compilers that cannot handle our macros(Bruce)
 Libpgtcl now handles NOTIFY as a Tcl event, need not send dummy queries(Tom)
 libpgtcl cleanups(Tom)
 Add -error option to libpgtcl's pg_result command(Tom)
@@ -8458,7 +8709,7 @@ Better identify tcl and tk libs and includes(Bruce)
      * Support for client-side environment variables to specify time zone
        and date style.
      * Socket interface for client/server connection. This is the default
-       now so you may need to start postmaster with the "-i" flag.
+       now so you might need to start postmaster with the "-i" flag.
      * Better password authorization mechanisms. Default table privileges
        have changed.
      * Old-style time travel has been removed. Performance has been
@@ -8476,8 +8727,8 @@ Better identify tcl and tk libs and includes(Bruce)
    Subselects are a major feature, and you should review your code for
    places where subselects provide a better solution for your queries. I
    think you will find that there are more uses for subselects than you
-   may think. Vadim has put us on the big SQL map with subselects, and
-   fully functional ones too. The only thing you can't do with subselects
+   might think. Vadim has put us on the big SQL map with subselects, and
+   fully functional ones too. The only thing you cannot do with subselects
    is to use them in the target list.
 
    Second, 6.3 uses Unix domain sockets rather than TCP/IP by default. To
@@ -8488,8 +8739,8 @@ Better identify tcl and tk libs and includes(Bruce)
    Third, char() fields will now allow faster access than varchar() or
    text. Specifically, the text and varchar() have a penalty for access to
    any columns after the first column of this type. char() used to also
-   have this access penalty, but it no longer does. This may suggest that
-   you redesign some of your tables, especially if you have short
+   have this access penalty, but it no longer does. This might suggest
+   that you redesign some of your tables, especially if you have short
    character columns that you have defined as varchar() or text. This and
    other changes make 6.3 even faster than earlier releases.
 
@@ -8949,7 +9200,7 @@ pg_dumpall now returns proper status, portability fix(Bruce)
    The interpretation of array specifiers (the curly braces around atomic
    values) appears to have changed sometime after the original regression
    tests were generated. The current "./expected/*.out" files reflect this
-   new interpretation, which may not be correct!
+   new interpretation, which might not be correct!
 
    The float8 regression test fails on at least some platforms. This is
    due to differences in implementations of pow() and exp() and the
@@ -9313,7 +9564,7 @@ Migration from version 1.0 to version 1.01
             top-level data directory (typically the value of your
             $PGDATA). "src/libpq/pg_hba" shows an example syntax.
          b. If you do not want host-based authentication, you can comment
-            out the line
+            out the line:
         HBA = 1
             in "src/Makefile.global"
             Note that host-based authentication is turned on by default,
@@ -9487,7 +9738,7 @@ Incompatible changes:
  * float literals (eg. 3.14) are now of type float4 (instead of float8 in
    previous releases); you might have to do typecasting if you depend on it
    being of type float8.  If you neglect to do the typecasting and you assign
-   a float literal to a field of type float8, you may get incorrect values
+   a float literal to a field of type float8, you might get incorrect values
    stored!
  * LIBPQ has been totally revamped so that frontend applications
    can connect to multiple backends
