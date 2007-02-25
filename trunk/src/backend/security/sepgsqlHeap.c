@@ -255,6 +255,68 @@ static void __check_pg_largeobject(TupleDesc tdesc, HeapTuple tuple, HeapTuple o
 	*p_perms = perms;
 }
 
+static void __check_pg_proc(TupleDesc tdesc, HeapTuple tuple, HeapTuple oldtup,
+							uint32 *p_perms, uint16 *p_tclass)
+{
+	uint32 perms = __tuple_perms_to_common_perms(*p_perms);
+	Form_pg_proc proc = (Form_pg_proc) GETSTRUCT(tuple);
+
+	if (proc->prolang == ClanguageId) {
+		bool verify_shlib = false;
+		Datum obin, nbin;
+		bool isnull;
+
+		nbin = heap_getattr(tuple, Anum_pg_proc_probin, tdesc, &isnull);
+		if (!isnull) {
+			if (perms & PROCEDURE__CREATE) {
+				verify_shlib = true;
+			} else if (oldtup) {
+				obin = heap_getattr(oldtup, Anum_pg_proc_probin, tdesc, &isnull);
+				if (isnull || DatumGetBool(DirectFunctionCall2(textne, obin, nbin)))
+					verify_shlib = true;
+			}
+
+			if (verify_shlib) {
+				char *filename;
+				security_context_t filecon;
+				Datum filecon_psid;
+
+				/* <client type> <-- database:module_install --> <database type> */
+				sepgsql_avc_permission(sepgsqlGetClientPsid(),
+									   sepgsqlGetDatabasePsid(),
+									   SECCLASS_DATABASE,
+									   DATABASE__INSTALL_MODULE,
+									   NULL);
+
+				/* <client type> <-- database:module_install --> <file type> */
+				filename = DatumGetCString(DirectFunctionCall1(textout, nbin));
+				filename = expand_dynamic_library_name(filename);
+				if (getfilecon(filename, &filecon) < 1)
+					selerror("could not obtain the security context of '%s'", filename);
+				PG_TRY();
+				{
+					filecon_psid = DirectFunctionCall1(psid_in, CStringGetDatum(filecon));
+				}
+				PG_CATCH();
+				{
+					freecon(filecon);
+					PG_RE_THROW();
+				}
+				PG_END_TRY();
+				freecon(filecon);
+
+				sepgsql_avc_permission(sepgsqlGetClientPsid(),
+									   DatumGetObjectId(filecon_psid),
+									   SECCLASS_DATABASE,
+									   DATABASE__INSTALL_MODULE,
+									   filename);
+			}
+		}
+	}
+	*p_perms = perms;
+	*p_tclass = SECCLASS_PROCEDURE;
+}
+
 static bool __check_tuple_perms(Oid tableoid, TupleDesc tdesc, HeapTuple tuple, HeapTuple oldtup,
 								uint32 perms, bool abort)
 {
@@ -288,8 +350,7 @@ static bool __check_tuple_perms(Oid tableoid, TupleDesc tdesc, HeapTuple tuple, 
 		break;
 
 	case ProcedureRelationId:
-		perms = __tuple_perms_to_common_perms(perms);
-		tclass = SECCLASS_PROCEDURE;
+		__check_pg_proc(tdesc, tuple, oldtup, &perms, &tclass);
 		break;
 
 	case LargeObjectRelationId:

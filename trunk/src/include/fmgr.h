@@ -491,7 +491,7 @@ extern PGFunction load_external_function(char *filename, char *funcname,
 extern PGFunction lookup_external_function(void *filehandle, char *funcname);
 extern void load_file(const char *filename, bool restricted);
 extern void **find_rendezvous_variable(const char *varName);
-
+extern char *expand_dynamic_library_name(const char *name);
 
 /*
  * !!! OLD INTERFACE !!!
