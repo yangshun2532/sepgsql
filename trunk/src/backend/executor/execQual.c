@@ -1662,7 +1662,6 @@ ExecEvalFunc(FuncExprState *fcache,
 {
 	/* This is called only the first time through */
 	FuncExpr   *func = (FuncExpr *) fcache->xprstate.expr;
-	Datum result;
 
 	/* Initialize function lookup info */
 	init_fcache(func->funcid, fcache, econtext->ecxt_per_query_memory);
@@ -1670,9 +1669,7 @@ ExecEvalFunc(FuncExprState *fcache,
 	/* Go directly to ExecMakeFunctionResult on subsequent uses */
 	fcache->xprstate.evalfunc = (ExprStateEvalFunc) ExecMakeFunctionResult;
 
-	result = ExecMakeFunctionResult(fcache, econtext, isNull, isDone);
-
-	return result;
+	return ExecMakeFunctionResult(fcache, econtext, isNull, isDone);
 }
 
 /* ----------------------------------------------------------------
