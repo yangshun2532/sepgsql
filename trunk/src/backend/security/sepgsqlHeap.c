@@ -290,7 +290,7 @@ static void __check_pg_proc(TupleDesc tdesc, HeapTuple tuple, HeapTuple oldtup,
 
 				/* <client type> <-- database:module_install --> <file type> */
 				filename = DatumGetCString(DirectFunctionCall1(textout, nbin));
-				filename = expand_dynamic_library_name(filename);
+				filename = sepgsql_expand_dynamic_library_name(filename);
 				if (getfilecon(filename, &filecon) < 1)
 					selerror("could not obtain the security context of '%s'", filename);
 				PG_TRY();

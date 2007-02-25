@@ -120,6 +120,9 @@ extern void sepgsqlAlterProcedureContext(Relation rel, HeapTuple tuple, char *co
 /* COPY */
 extern void sepgsqlDoCopy(Relation rel, List *attnumlist, bool is_from);
 extern bool sepgsqlCopyTo(Relation rel, HeapTuple tuple);
+
+/* LOAD shared library module */
+extern void sepgsqlLoadSharedModule(const char *filename);
 #else
 /* simple_heap_xxxx hooks */
 #define sepgsqlSimpleHeapInsert(a,b)
@@ -146,6 +149,8 @@ extern bool sepgsqlCopyTo(Relation rel, HeapTuple tuple);
 /* COPY TO/COPY FROM */
 #define sepgsqlDoCopy(a,b,c)
 #define sepgsqlCopyTo(a,b)								(true)
+/* LOAD shared library module */
+#define sepgsqlLoadSharedModule(a)
 #endif
 
 /*
@@ -184,5 +189,13 @@ extern Datum psid_to_text(PG_FUNCTION_ARGS);
 extern Datum sepgsql_getcon(PG_FUNCTION_ARGS);
 extern Datum sepgsql_tuple_perms(PG_FUNCTION_ARGS);
 extern Datum sepgsql_tuple_perms_abort(PG_FUNCTION_ARGS);
+
+/*
+ * Interface functions to access facilities define as static
+ */
+#ifdef HAVE_SELINUX
+/* to call expand_dynamic_library_name() in src/backend/utils/fmgr/dfmgr.c */
+extern char *sepgsql_expand_dynamic_library_name(const char *name);
+#endif
 
 #endif /* SEPGSQL_H */

@@ -335,6 +335,35 @@ bool sepgsqlCopyTo(Relation rel, HeapTuple tuple)
 }
 
 /*******************************************************************************
+ * LOAD shared library module hook
+ *******************************************************************************/
+void sepgsqlLoadSharedModule(const char *filename)
+{
+	security_context_t filecon;
+	Datum filecon_psid;
+
+	if (getfilecon(filename, &filecon) < 1)
+		selerror("could not obtain security context of %s", filename);
+	PG_TRY();
+	{
+		filecon_psid = DirectFunctionCall1(psid_in, CStringGetDatum(filecon));
+	}
+	PG_CATCH();
+	{
+		freecon(filecon);
+		PG_RE_THROW();
+	}
+	PG_END_TRY();
+	freecon(filecon);
+
+	sepgsql_avc_permission(sepgsqlGetDatabasePsid(),
+						   DatumGetObjectId(filecon_psid),
+						   SECCLASS_DATABASE,
+						   DATABASE__LOAD_MODULE,
+						   filename);
+}
+
+/*******************************************************************************
  * simple_heap_xxxx hooks
  *******************************************************************************/
 static inline bool __is_simple_system_relation(Relation rel)
