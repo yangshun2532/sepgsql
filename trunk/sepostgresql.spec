@@ -7,21 +7,26 @@
 %define _prefix	/opt/sepgsql
 %define _mandir %{_prefix}/man
 %define beta	a
+%{!?sepgversion:%define sepgversion 1}
+%{!?sepgrevision:%define sepgrevision 0}
 
 Summary: Security Enhanced PostgreSQL
 Group: Applications/Databases
 Name: sepostgresql
 Version: 8.2.3
-Release: 0.%{revision}%{beta}
+Release: %{sepgversion}.%{sepgrevision}%{beta}
 License: BSD
 Group: Applications/Databases
 Url: http://code.google.com/p/sepgsql/
 Buildroot: %{_tmppath}/%{name}-%{version}-root
 Source0: postgresql-%{version}.tar.gz
 Source1: sepostgresql.init
-Patch0: sepostgresql-%{version}-%{revision}.patch
+Source2: sepostgresql.if
+Source3: sepostgresql.te
+Source4: sepostgresql.fc
+Patch0: sepostgresql-%{version}-%{sepgrevision}.patch
 
-Buildrequires: autoconf libselinux-devel
+Buildrequires: autoconf libselinux-devel selinux-policy-devel
 
 %description
 Security Enhanced PostgreSQL is an extension of PostgreSQL
@@ -36,6 +41,14 @@ reference monitor to check any SQL query.
 %patch0 -p1
 
 %build
+# build Binary Policy Module
+mkdir -p policy
+pushd policy
+cp %{SOURCE2} %{SOURCE3} %{SOURCE4} .
+make -f /usr/share/selinux/devel/Makefile
+popd
+
+# build SE-PostgreSQL
 autoconf
 %configure	--enable-selinux \
 		--host=%{_host} --build=%{_build} \
@@ -50,8 +63,8 @@ make -j ${NCPUS}
 
 %install
 rm -rf $RPM_BUILD_ROOT
-make DESTDIR=$RPM_BUILD_ROOT/altroot install
 
+make DESTDIR=$RPM_BUILD_ROOT/altroot install
 ALTROOT="$RPM_BUILD_ROOT/altroot"
 install -d -m 755 $RPM_BUILD_ROOT%{_bindir}
 mv	${ALTROOT}%{_bindir}/initdb			\
@@ -90,6 +103,9 @@ mv	${ALTROOT}%{_libdir}/plpgsql.so			\
 	${ALTROOT}%{_libdir}/*_and_*.so			\
 	$RPM_BUILD_ROOT%{_libdir}
 
+test -e policy/sepostgresql.pp || exit 1
+install -m 644 policy/sepostgresql.pp $RPM_BUILD_ROOT/%{_datadir}
+
 install -d -m 700 $RPM_BUILD_ROOT/var/lib/sepgsql
 install -d -m 700 $RPM_BUILD_ROOT/var/lib/sepgsql/data
 install -d -m 700 $RPM_BUILD_ROOT/var/lib/sepgsql/backups
@@ -111,6 +127,7 @@ if [ $1 -eq 1 ]; then	# rpm -i cases
 	groupadd -r sepgsql >& /dev/null || :
 	useradd -g sepgsql -d /var/lib/sepgsql -s /bin/bash \
 		-r -c "SE-PostgreSQL server" sepgsql >& /dev/null || :
+	semodule -i %{_datadir}/sepostgresql.pp || :
 fi
 
 %post
@@ -122,8 +139,10 @@ chkconfig --add sepostgresql
 if [ $1 -eq 0 ]; then	# rpm -e cases
 	userdel  sepgsql >& /dev/null || :
 	groupdel sepgsql >& /dev/null || :
+	semodule -r sepostgresql
 elif [ $1 -gq 1 ]; then	# rpm -Uvh cases
 	/sbin/service sepostgresql condrestart >/dev/null 2>&1 || :
+	semodule -u %{_datadir}/sepostgresql.pp || :
 fi
 
 %files
@@ -157,6 +176,7 @@ fi
 %{_datadir}/conversion_create.sql
 %{_datadir}/information_schema.sql
 %{_datadir}/sql_features.txt
+%{_datadir}/sepostgresql.pp
 %{_libdir}
 %{_libdir}/plpgsql.so
 %{_libdir}/libpq.*

@@ -1,4 +1,4 @@
-policy_module(sepostgresql,0.176)
+policy_module(sepostgresql,%%POLICY_VERSION%%)
 
 gen_require(`
 	class database all_database_perms;
@@ -86,7 +86,19 @@ sepgsql_user_access(initrc_t)	# for testing
 
 ########################################
 #
-# SE-Postgresql audit switch
+# permissions for userspace reference monitor
+#
+allow postgresql_t self:netlink_selinux_socket create_socket_perms;
+selinux_get_fs_mount(postgresql_t)
+selinux_get_enforce_mode(postgresql_t)
+selinux_validate_context(postgresql_t)
+selinux_compute_access_vector(postgresql_t)
+selinux_compute_create_context(postgresql_t)
+selinux_compute_relabel_context(postgresql_t)
+
+########################################
+#
+# SE-PostgreSQL audit switch
 #
 tunable_policy(`sepgsql_enable_auditallow',`
 	auditallow sepgsql_client_type sepgsql_object_type : database all_database_perms;
