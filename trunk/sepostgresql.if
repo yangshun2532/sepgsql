@@ -1,0 +1,198 @@
+########################################
+## <summary>
+##     marks as a server process of SE-PostgreSQL.
+## </summary>
+## <param name="type">
+##     <summary>
+##     Type marked as a database object type.
+##     </summary>
+## </param>
+#
+interface(`sepgsql_server_domain',`
+	gen_require(`
+		attribute sepgsql_server_type;
+	')
+	typeattribute $1 sepgsql_server_type;
+')
+
+########################################
+## <summary>
+##     marks as a client process of SE-PostgreSQL.
+## </summary>
+## <param name="type">
+##     <summary>
+##     Type marked as a database object type.
+##     </summary>
+## </param>
+#
+interface(`sepgsql_client_domain',`
+	gen_require(`
+		attribute sepgsql_client_type;
+	')
+	typeattribute $1 sepgsql_client_type;
+')
+
+########################################
+## <summary>
+##     Marks as a database object type of SE-PostgreSQL.
+## </summary>
+## <param name="type">
+##     <summary>
+##     Type marked as a database object type.
+##     </summary>
+## </param>
+#
+interface(`sepgsql_database_object',`
+	gen_require(`
+		attribute sepgsql_object_type;
+	')
+	typeattribute $1 sepgsql_object_type;
+')
+
+########################################
+## <summary>
+##     Marks as a SE-PostgreSQL loadable shared library module
+## </summary>
+## <param name="type">
+##     <summary>
+##     Type marked as a database object type.
+##     </summary>
+## </param>
+#
+interface(`sepgsql_module_object',`
+	gen_require(`
+		attribute sepgsql_module_type;
+	')
+	typeattribute $1 sepgsql_module_type;
+')
+
+########################################
+## <summary>
+##     SE-PostgreSQL allows the specified domain unconfined access.
+## </summary>
+## <param name="domain">
+##     <summary>
+##     Domain allowed to access.
+##     </summary>
+## </param>
+#
+interface(`sepgsql_full_access',`
+	gen_require(`
+		class database all_database_perms;
+		class table all_table_perms;
+		class column all_column_perms;
+		class tuple all_tuple_perms;
+		class procedure all_procedure_perms;
+		class blob all_blob_perms;
+
+		type sepgsql_db_t, sepgsql_sysobj_t;
+		type sepgsql_table_t, sepgsql_secret_table_t;
+		type sepgsql_proc_t, sepgsql_trusted_proc_t;
+		type sepgsql_blob_t, sepgsql_secret_blob_t;
+
+                attribute sepgsql_server_type;
+                attribute sepgsql_client_type;
+		attribute sepgsql_module_type;
+        ')
+        typeattribute $1 sepgsql_client_type;
+
+	allow $1 sepgsql_db_t		: database all_database_perms;
+	allow $1 sepgsql_sysobj_t	: database all_database_perms;
+	allow $1 sepgsql_module_type	: database { install_module };
+	allow $1 sepgsql_secret_table_t	: table all_table_perms;
+	allow $1 sepgsql_secret_table_t	: column all_column_perms;
+	allow $1 sepgsql_secret_table_t	: tuple all_tuple_perms;
+	allow $1 sepgsql_table_t	: table all_table_perms;
+	allow $1 sepgsql_table_t	: column all_column_perms;
+	allow $1 sepgsql_table_t	: tuple all_tuple_perms;
+	allow $1 sepgsql_proc_t		: procedure all_procedure_perms;
+	allow $1 sepgsql_trusted_proc_t	: procedure all_procedure_perms;
+	allow $1 sepgsql_blob_t		: blob all_blob_perms;
+	allow $1 sepgsql_secret_blob_t	: blob all_blob_perms;
+	allow $1 sepgsql_server_type	: blob { import export };
+')
+
+########################################
+## <summary>
+##     SE-PostgreSQL allows the specified domain limited access.
+## </summary>
+## <param name="domain">
+##     <summary>
+##     Domain allowed to access.
+##     </summary>
+## </param>
+#
+interface(`sepgsql_user_access',`
+	gen_require(`
+		class database all_database_perms;
+		class table all_table_perms;
+		class column all_column_perms;
+		class tuple all_tuple_perms;
+		class procedure all_procedure_perms;
+		class blob all_blob_perms;
+
+		type sepgsql_trusted_client_t;
+		type sepgsql_db_t, sepgsql_sysobj_t;
+		type sepgsql_table_t;
+		type sepgsql_proc_t, sepgsql_trusted_proc_t;
+		type sepgsql_blob_t;
+
+                attribute sepgsql_server_type;
+                attribute sepgsql_client_type;
+		attribute sepgsql_module_type;
+        ')
+	typeattribute $1 sepgsql_client_type;
+
+	allow $1 sepgsql_db_t		: database { getattr access };
+	allow $1 sepgsql_sysobj_t	: database { getattr };
+	allow $1 sepgsql_table_t	: table { getattr select update insert delete };
+	allow $1 sepgsql_table_t	: column { getattr select update insert };
+	allow $1 sepgsql_table_t	: tuple { select update insert delete };
+	allow $1 sepgsql_proc_t		: procedure { getattr execute };
+	allow $1 sepgsql_trusted_proc_t	: procedure { getattr execute entrypoint };
+	allow $1 sepgsql_blob_t		: blob { getattr read write };
+')
+
+########################################
+## <summary>
+##     SE-PostgreSQL allows the specified domain limited access.
+## </summary>
+## <param name="domain">
+##     <summary>
+##     Domain allowed to access.
+##     </summary>
+## </param>
+#
+interface(`sepgsql_user_trusted_access',`
+        gen_require(`
+                class database all_database_perms;
+                class table all_table_perms;
+                class column all_column_perms;
+                class tuple all_tuple_perms;
+                class procedure all_procedure_perms;
+                class blob all_blob_perms;
+
+                type sepgsql_db_t, sepgsql_sysobj_t;
+                type sepgsql_table_t, sepgsql_secret_table_t;
+                type sepgsql_proc_t, sepgsql_trusted_proc_t;
+                type sepgsql_blob_t, sepgsql_secret_blob_t;
+
+                attribute sepgsql_server_type;
+                attribute sepgsql_client_type;
+                type sepgsql_trusted_client_t;
+        ')
+	typeattribute $1 sepgsql_client_type;
+
+	allow $1 sepgsql_db_t		: database { getattr access };
+	allow $1 sepgsql_sysobj_t	: database { getattr };
+	allow $1 sepgsql_secret_table_t	: table { getattr select update insert delete };
+	allow $1 sepgsql_secret_table_t	: column { getattr select update insert };
+	allow $1 sepgsql_secret_table_t	: tuple { select update insert delete };
+	allow $1 sepgsql_table_t	: table { getattr select update insert delete };
+	allow $1 sepgsql_table_t	: column { getattr select update insert };
+	allow $1 sepgsql_table_t	: tuple { select update insert delete };
+	allow $1 sepgsql_proc_t		: procedure { getattr execute };
+	allow $1 sepgsql_trusted_proc_t	: procedure { getattr execute };
+	allow $1 sepgsql_blob_t		: blob { getattr read write };
+	allow $1 sepgsql_secret_blob_t	: blob { getattr read write };
+')
