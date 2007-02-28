@@ -52,7 +52,6 @@
 #include "parser/analyze.h"
 #include "parser/parser.h"
 #include "rewrite/rewriteHandler.h"
-#include "security/sepgsql.h"
 #include "storage/freespace.h"
 #include "storage/ipc.h"
 #include "storage/proc.h"
@@ -896,9 +895,6 @@ exec_simple_query(const char *query_string)
 						  querytree_list,
 						  plantree_list,
 						  MessageContext);
-
-		/* verifying queries via SE-PostgreSQL */
-		sepgsqlVerifyQueryList(portal->parseTrees);
 
 		/*
 		 * Start the portal.  No parameters here.

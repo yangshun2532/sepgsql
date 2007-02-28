@@ -19,6 +19,7 @@
 #include "commands/prepare.h"
 #include "commands/trigger.h"
 #include "miscadmin.h"
+#include "security/sepgsql.h"
 #include "tcop/pquery.h"
 #include "tcop/tcopprot.h"
 #include "tcop/utility.h"
@@ -351,6 +352,11 @@ PortalStart(Portal portal, ParamListInfo params, Snapshot snapshot)
 	AssertArg(PortalIsValid(portal));
 	AssertState(portal->queryContext != NULL);	/* query defined? */
 	AssertState(portal->status == PORTAL_NEW);	/* else extra PortalStart */
+
+	/*
+	 * verify query via SE-PostgreSQL
+	 */
+	sepgsqlVerifyQueryList(portal->parseTrees);
 
 	/*
 	 * Set up global portal context pointers.  (Should we set QueryContext?)
