@@ -644,6 +644,19 @@ static List *proxyGeneralQuery(Query *query)
 	return list_make1(query);
 }
 
+static List *proxyExecuteStmt(Query *query)
+{
+	List *selist = NIL;
+	ExecuteStmt *estmt = (ExecuteStmt *) query->utilityStmt;
+
+	Assert(nodeTag(query->utilityStmt) == T_ExecuteStmt);
+
+	selist = sepgsqlWalkExpr(selist, query, (Node *) estmt->params);
+	query->SEvalItemList = selist;
+
+	return list_make1(query);
+}
+
 static Query *convertTruncateToDelete(Relation rel)
 {
 	Query *query = makeNode(Query);
@@ -720,7 +733,11 @@ List *sepgsqlProxyQuery(Query *query)
 		case T_TruncateStmt:
 			new_list = proxyTruncateStmt(query);
 			break;
+		case T_ExecuteStmt:
+			new_list = proxyExecuteStmt(query);
+			break;
 		default:
+			new_list = list_make1(query);
 			/* do nothing now */
 			break;
 		}

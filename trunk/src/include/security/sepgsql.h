@@ -68,9 +68,11 @@ extern bool  sepgsqlIsEnabled(void);
  *   src/backend/security/sepgsqlProxy.c
  */
 #ifdef HAVE_SELINUX
+extern List *sepgsqlProxyQuery(Query *query);
 extern List *sepgsqlProxyQueryList(List *queryList);
 extern void *sepgsqlForeignKeyPrepare(const char *querystr, int nargs, Oid *argtypes);
 #else
+#define sepgsqlProxyQuery(a)				(list_make1(a))
 #define sepgsqlProxyQueryList(a)			(a)
 #endif
 

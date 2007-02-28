@@ -52,6 +52,7 @@
 #include "parser/analyze.h"
 #include "parser/parser.h"
 #include "rewrite/rewriteHandler.h"
+#include "security/sepgsql.h"
 #include "storage/freespace.h"
 #include "storage/ipc.h"
 #include "storage/proc.h"
@@ -607,8 +608,12 @@ pg_rewrite_queries(List *querytree_list)
 
 		if (querytree->commandType == CMD_UTILITY)
 		{
+			/* SE-PostgreSQL Query rewrite handler */
+			List *tmp = sepgsqlProxyQuery(querytree);
+
 			/* don't rewrite utilities, just dump 'em into new_list */
-			new_list = lappend(new_list, querytree);
+			new_list = list_concat(new_list, tmp);
+			//new_list = lappend(new_list, querytree);
 		}
 		else
 		{
