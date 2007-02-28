@@ -33,6 +33,10 @@
 #include "utils/fmgroids.h"
 #include "utils/typcache.h"
 
+static bool __check_tuple_perms(Oid tableoid, TupleDesc tdesc,
+								HeapTuple tuple, HeapTuple oldtup,
+                                uint32 perms, bool abort);
+
 /*
  * If we have to refere a object which is newly inserted or updated
  * in the same command, SearchSysCache() returns NULL because it use
@@ -317,6 +321,37 @@ static void __check_pg_proc(TupleDesc tdesc, HeapTuple tuple, HeapTuple oldtup,
 	*p_tclass = SECCLASS_PROCEDURE;
 }
 
+static void __check_pg_relation(TupleDesc tdesc, HeapTuple tuple, HeapTuple oldtup,
+								uint32 *p_perms, uint16 *p_tclass)
+{
+	Form_pg_class pgclass = (Form_pg_class) GETSTRUCT(tuple);
+	*p_tclass = (pgclass->relkind == RELKIND_RELATION
+				 ? SECCLASS_TABLE
+				 : SECCLASS_DATABASE);
+	*p_perms = __tuple_perms_to_common_perms(*p_perms);
+
+	/*
+	 * When you drop a table, you have to have a permission to delete tuples.
+	 */
+	selnotice("hogehogehogehoge");
+	if (*p_tclass == SECCLASS_TABLE && (*p_perms & TABLE__DROP)) {
+		Oid tableoid;
+		Relation rel;
+		HeapScanDesc scan;
+		HeapTuple exttup;
+
+		tableoid = HeapTupleGetOid(tuple);
+		rel = heap_open(tableoid, AccessShareLock);
+		scan = heap_beginscan(rel, SnapshotNow, 0, NULL);
+		while ((exttup = heap_getnext(scan, ForwardScanDirection)) != NULL) {
+			__check_tuple_perms(tableoid, RelationGetDescr(rel),
+								exttup, NULL, TUPLE__DELETE, true);
+		}
+		heap_endscan(scan);
+		heap_close(rel, AccessShareLock);
+	}
+}
+
 static bool __check_tuple_perms(Oid tableoid, TupleDesc tdesc, HeapTuple tuple, HeapTuple oldtup,
 								uint32 perms, bool abort)
 {
@@ -337,14 +372,10 @@ static bool __check_tuple_perms(Oid tableoid, TupleDesc tdesc, HeapTuple tuple, 
 		tclass = SECCLASS_DATABASE;
 		break;
 
-	case RelationRelationId: {
-		Form_pg_class pgclass = (Form_pg_class) GETSTRUCT(tuple);
-		perms = __tuple_perms_to_common_perms(perms);
-		tclass = (pgclass->relkind == RELKIND_RELATION
-				  ? SECCLASS_TABLE
-				  : SECCLASS_DATABASE);
+	case RelationRelationId:
+		__check_pg_relation(tdesc, tuple, oldtup, &perms, &tclass);
 		break;
-	}
+
 	case AttributeRelationId:		/* pg_attribute */
 		__check_pg_attribute(tdesc, tuple, oldtup, &perms, &tclass);
 		break;
