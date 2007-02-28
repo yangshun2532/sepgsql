@@ -27,6 +27,7 @@ Source4: sepostgresql.fc
 Patch0: sepostgresql-%{version}-%{sepgrevision}.patch
 
 Buildrequires: autoconf libselinux-devel selinux-policy-devel
+Requires: policycoreutils selinux-policy
 
 %description
 Security Enhanced PostgreSQL is an extension of PostgreSQL
@@ -45,7 +46,10 @@ reference monitor to check any SQL query.
 mkdir -p policy
 pushd policy
 cp %{SOURCE2} %{SOURCE3} %{SOURCE4} .
-make -f /usr/share/selinux/devel/Makefile
+make -f /usr/share/selinux/devel/Makefile NAME=targeted
+mv sepostgresql.pp sepostgresql-targeted.pp
+make -f /usr/share/selinux/devel/Makefile NAME=strict
+mv sepostgresql.pp sepostgresql-strict.pp
 popd
 
 # build SE-PostgreSQL
@@ -103,8 +107,8 @@ mv	${ALTROOT}%{_libdir}/plpgsql.so			\
 	${ALTROOT}%{_libdir}/*_and_*.so			\
 	$RPM_BUILD_ROOT%{_libdir}
 
-test -e policy/sepostgresql.pp || exit 1
-install -m 644 policy/sepostgresql.pp $RPM_BUILD_ROOT/%{_datadir}
+install -d $RPM_BUILD_ROOT%{_prefix}/policy
+install -m 644 policy/sepostgresql*.pp	$RPM_BUILD_ROOT%{_prefix}/policy
 
 install -d -m 700 $RPM_BUILD_ROOT/var/lib/sepgsql
 install -d -m 700 $RPM_BUILD_ROOT/var/lib/sepgsql/data
@@ -123,31 +127,43 @@ rm -rf $ALTROOT
 rm -rf $RPM_BUILD_ROOT
 
 %pre
-if [ $1 -eq 1 ]; then	# rpm -i cases
+if [ $1 -eq 1 ]; then		# rpm -i cases
 	groupadd -r sepgsql >& /dev/null || :
 	useradd -g sepgsql -d /var/lib/sepgsql -s /bin/bash \
 		-r -c "SE-PostgreSQL server" sepgsql >& /dev/null || :
-	semodule -i %{_datadir}/sepostgresql.pp || :
 fi
 
 %post
 chkconfig --add sepostgresql
 /sbin/ldconfig
 
+SELINUXTYPE=`grep ^SELINUXTYPE /etc/selinux/config | sed 's/^.*=//g'`
+SEPGSQL_POLICY="%{_prefix}/policy/sepostgresql-${SELINUXTYPE}.pp"
+if [ -e ${SEPGSQL_POLICY} ]; then
+	SEPGSQL_PREV=`semodule -l | grep -c ^sepostgresql`
+	test ${SEPGSQL_PREV} -gt 0 && semodule -n -r sepostgresql || :
+	semodule -i ${SEPGSQL_POLICY} || :
+
+	/sbin/restorecon -R -v %{_prefix}
+	/sbin/restorecon -R -v /var/lib/sepgsql
+	/sbin/restorecon    -v /etc/rc.d/init.d/sepostgresql
+fi
+
 %postun
 /sbin/ldconfig
-if [ $1 -eq 0 ]; then	# rpm -e cases
+if [ $1 -eq 0 ]; then		# rpm -e cases
 	userdel  sepgsql >& /dev/null || :
 	groupdel sepgsql >& /dev/null || :
-	semodule -r sepostgresql
-elif [ $1 -gq 1 ]; then	# rpm -Uvh cases
+	SEPGSQL_PREV=`semodule -l | grep -c ^sepostgresql`
+	test ${SEPGSQL_PREV} -gt 0 && semodule -r sepostgresql || :
+elif [ $1 -gq 1 ]; then		# rpm -Uvh cases
 	/sbin/service sepostgresql condrestart >/dev/null 2>&1 || :
-	semodule -u %{_datadir}/sepostgresql.pp || :
 fi
 
 %files
 %defattr(-,root,root,-)
 /etc/rc.d/init.d/sepostgresql
+%dir %{_prefix}
 %dir %{_bindir}
 %{_bindir}/initdb
 %{_bindir}/ipcclean
@@ -176,12 +192,13 @@ fi
 %{_datadir}/conversion_create.sql
 %{_datadir}/information_schema.sql
 %{_datadir}/sql_features.txt
-%{_datadir}/sepostgresql.pp
-%{_libdir}
+%dir %{_libdir}
 %{_libdir}/plpgsql.so
 %{_libdir}/libpq.*
 %{_libdir}/libpgtypes.*
 %{_libdir}/*_and_*.so
+%dir %{_prefix}/policy
+%{_prefix}/policy/sepostgresql*.pp
 %attr(700,sepgsql,sepgsql) %dir /var/lib/sepgsql
 %attr(700,sepgsql,sepgsql) %dir /var/lib/sepgsql/data
 %attr(700,sepgsql,sepgsql) %dir /var/lib/sepgsql/backups

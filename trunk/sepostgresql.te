@@ -77,12 +77,16 @@ ifdef(`targeted_policy',`
 	')
 	sepgsql_server_domain(unconfined_t)
 	sepgsql_client_domain(unconfined_t)
+	sepgsql_full_access(unconfined_t)
 ')
 
 gen_require(`
 	type initrc_t;
 ')
 sepgsql_user_access(initrc_t)	# for testing
+
+# allows to load shared library module
+allow sepgsql_db_t sepgsql_module_type : database { load_module };
 
 ########################################
 #
@@ -95,6 +99,17 @@ selinux_validate_context(postgresql_t)
 selinux_compute_access_vector(postgresql_t)
 selinux_compute_create_context(postgresql_t)
 selinux_compute_relabel_context(postgresql_t)
+
+########################################
+#
+# SE-PostgreSQL Type Transition
+#
+type_transition sepgsql_client_type sepgsql_server_type : database sepgsql_db_t;
+type_transition sepgsql_client_type sepgsql_db_t : database sepgsql_sysobj_t;
+type_transition sepgsql_client_type sepgsql_db_t : table sepgsql_table_t;
+type_transition sepgsql_client_type sepgsql_db_t : procedure sepgsql_proc_t;
+type_transition sepgsql_client_type sepgsql_db_t : blob sepgsql_blob_t;
+type_transition sepgsql_client_type sepgsql_trusted_proc_t : process sepgsql_trusted_client_t;
 
 ########################################
 #
