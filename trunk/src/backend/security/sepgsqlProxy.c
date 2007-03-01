@@ -472,8 +472,6 @@ static List *proxyRteRelation(List *selist, Query *query, int rtindex, Node **qu
 		} else {
 			*quals = (Node *) makeBoolExpr(AND_EXPR, list_make2(func, *quals));
 		}
-		selnotice("append sepgsql_permission(tableoid, %s, 0x%08x)",
-				  RelationGetRelationName(rel), perms);
 	}
 	relation_close(rel, NoLock);
 	

@@ -333,7 +333,6 @@ static void __check_pg_relation(TupleDesc tdesc, HeapTuple tuple, HeapTuple oldt
 	/*
 	 * When you drop a table, you have to have a permission to delete tuples.
 	 */
-	selnotice("hogehogehogehoge");
 	if (*p_tclass == SECCLASS_TABLE && (*p_perms & TABLE__DROP)) {
 		Oid tableoid;
 		Relation rel;
