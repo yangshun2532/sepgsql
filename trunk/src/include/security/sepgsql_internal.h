@@ -104,10 +104,8 @@ extern void  sepgsqlSetClientPsid(psid new_ctx);
 extern psid  sepgsqlGetDatabasePsid(void);
 extern char *sepgsqlGetDatabaseName(void);
 
-extern List *sepgsqlWalkExpr(List *selist, Query *query, Node *);
 extern List *sepgsqlProxyQuery(Query *query);
 extern List *sepgsqlProxyQueryList(List *queryList);
-extern void sepgsqlVerifyQuery(Query *query);
 extern void sepgsqlVerifyQueryList(List *queryList);
 
 extern psid sepgsqlComputeImplicitContext(Relation rel, HeapTuple tuple);

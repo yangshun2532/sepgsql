@@ -314,12 +314,13 @@ heap_attisnull(HeapTuple tup, int attnum)
 		case MinCommandIdAttributeNumber:
 		case MaxTransactionIdAttributeNumber:
 		case MaxCommandIdAttributeNumber:
-#ifdef HAVE_SELINUX
-		case SecurityAttributeNumber:
-#endif
 			/* these are never null */
 			break;
-
+#ifdef HAVE_SELINUX
+		case SecurityAttributeNumber:
+			if (sepgsqlIsEnabled())
+				break;
+#endif
 		default:
 			elog(ERROR, "invalid attnum: %d", attnum);
 	}
@@ -598,8 +599,10 @@ heap_getsysattr(HeapTuple tup, int attnum, TupleDesc tupleDesc, bool *isnull)
 			break;
 #ifdef HAVE_SELINUX
 		case SecurityAttributeNumber:
-			result = HeapTupleGetSecurity(tup);
-			break;
+			if (sepgsqlIsEnabled()) {
+				result = HeapTupleGetSecurity(tup);
+				break;
+			}
 #endif
 		default:
 			elog(ERROR, "invalid attnum: %d", attnum);

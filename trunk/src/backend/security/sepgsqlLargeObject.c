@@ -25,7 +25,7 @@ psid sepgsqlLargeObjectGetSecurity(Oid loid)
 	psid lo_security = InvalidOid;
 
 	if (!sepgsqlIsEnabled())
-		selerror("SE-PostgreSQL was disabled");
+		selerror("SE-PostgreSQL is disabled");
 
 	ScanKeyInit(&skey,
 				Anum_pg_largeobject_loid,
@@ -62,7 +62,7 @@ void sepgsqlLargeObjectSetSecurity(Oid loid, psid lo_security)
 	bool found = false;
 
 	if (!sepgsqlIsEnabled())
-		selerror("SE-PostgreSQL was disabled");
+		selerror("SE-PostgreSQL is disabled");
 
 	ScanKeyInit(&skey,
 				Anum_pg_largeobject_loid,
@@ -95,7 +95,12 @@ void sepgsqlLargeObjectSetSecurity(Oid loid, psid lo_security)
 
 void sepgsqlLargeObjectCreate(Relation rel, HeapTuple tuple)
 {
-	psid ncon = sepgsqlComputeImplicitContext(rel, tuple);
+	psid ncon;
+
+	if (!sepgsqlIsEnabled())
+		return;
+
+	ncon = sepgsqlComputeImplicitContext(rel, tuple);
 	HeapTupleSetSecurity(tuple, ncon);
 	sepgsql_avc_permission(sepgsqlGetClientPsid(),
 						   HeapTupleGetSecurity(tuple),
@@ -106,6 +111,9 @@ void sepgsqlLargeObjectCreate(Relation rel, HeapTuple tuple)
 
 void sepgsqlLargeObjectDrop(Relation rel, HeapTuple tuple)
 {
+	if (!sepgsqlIsEnabled())
+		return;
+
 	sepgsql_avc_permission(sepgsqlGetClientPsid(),
 						   HeapTupleGetSecurity(tuple),
 						   SECCLASS_BLOB,
@@ -115,12 +123,18 @@ void sepgsqlLargeObjectDrop(Relation rel, HeapTuple tuple)
 
 void sepgsqlLargeObjectOpen(Relation rel, HeapTuple tuple, LargeObjectDesc *lobj)
 {
+	if (!sepgsqlIsEnabled())
+		return;
+
 	lobj->blob_security = HeapTupleGetSecurity(tuple);
 	sepgsqlCheckTuplePerms(rel, tuple, NULL, TUPLE__SELECT, true);
 }
 
 void sepgsqlLargeObjectRead(Relation rel, HeapTuple tuple, LargeObjectDesc *lobj)
 {
+	if (!sepgsqlIsEnabled())
+		return;
+
 	if (lobj->blob_security != HeapTupleGetSecurity(tuple))
 		selnotice("different security contexts within single BLOB");
 	sepgsqlCheckTuplePerms(rel, tuple, NULL, TUPLE__SELECT | BLOB__READ, true);
@@ -128,12 +142,18 @@ void sepgsqlLargeObjectRead(Relation rel, HeapTuple tuple, LargeObjectDesc *lobj
 
 void sepgsqlLargeObjectWrite(Relation rel, HeapTuple tuple, LargeObjectDesc *lobj)
 {
+	if (!sepgsqlIsEnabled())
+		return;
+
 	HeapTupleSetSecurity(tuple, lobj->blob_security);
 	sepgsqlCheckTuplePerms(rel, tuple, NULL, TUPLE__UPDATE | BLOB__WRITE, true);
 }
 
 void sepgsqlLargeObjectImport()
 {
+	if (!sepgsqlIsEnabled())
+		return;
+
 	sepgsql_avc_permission(sepgsqlGetClientPsid(),
 						   sepgsqlGetServerPsid(),
 						   SECCLASS_BLOB,
@@ -143,6 +163,9 @@ void sepgsqlLargeObjectImport()
 
 void sepgsqlLargeObjectExport()
 {
+	if (!sepgsqlIsEnabled())
+		return;
+
 	sepgsql_avc_permission(sepgsqlGetClientPsid(),
 						   sepgsqlGetServerPsid(),
 						   SECCLASS_BLOB,

@@ -142,7 +142,7 @@ static void verifyPgProcPerms(Oid funcid, uint32 perms)
 	ReleaseSysCache(tuple);
 }
 
-void sepgsqlVerifyQuery(Query *query)
+static void sepgsqlVerifyQuery(Query *query)
 {
 	ListCell *l;
 

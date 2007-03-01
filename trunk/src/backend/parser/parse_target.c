@@ -339,7 +339,7 @@ transformAssignedExpr(ParseState *pstate,
 		attrtype = attnumTypeId(rd, attrno);
 		attrtypmod = rd->rd_att->attrs[attrno - 1]->atttypmod;
 #ifdef HAVE_SELINUX
-	} else if (attrno == SecurityAttributeNumber) {
+	} else if (attrno == SecurityAttributeNumber && sepgsqlIsEnabled()) {
 		attrtype = PSIDOID;
 		attrtypmod = -1;
 #endif
@@ -780,7 +780,7 @@ checkInsertTargets(ParseState *pstate, List *cols, List **attrnos)
 								name, RelationGetRelationName(pstate->p_target_relation)),
 						 parser_errposition(pstate, col->location)));
 #ifdef HAVE_SELINUX
-			} else if (attrno == SecurityAttributeNumber) {
+			} else if (attrno == SecurityAttributeNumber && sepgsqlIsEnabled()) {
 				if (security_attr)
 					ereport(ERROR,
 							(errcode(ERRCODE_DUPLICATE_COLUMN),

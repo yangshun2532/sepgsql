@@ -35,6 +35,7 @@
 #define RTEMARK_BLOB_WRITE    (1<<(N_ACL_RIGHTS + 7))
 
 /* local definitions of static functions. */
+static List *sepgsqlWalkExpr(List *selist, Query *query, Node *n);
 static List *proxyRteRelation(List *selist, Query *query, int rtindex, Node **quals);
 static List *proxyRteSubQuery(List *selist, Query *query);
 static List *proxyJoinTree(List *selist, Query *query, Node *n, Node **quals);
@@ -331,7 +332,7 @@ static List *walkArrayRef(List *selist, Query *query, ArrayRef *aref)
 	return selist;
 }
 
-List *sepgsqlWalkExpr(List *selist, Query *query, Node *n)
+static List *sepgsqlWalkExpr(List *selist, Query *query, Node *n)
 {
 	if (n == NULL)
 		return selist;
@@ -721,6 +722,9 @@ List *sepgsqlProxyQuery(Query *query)
 {
 	List *new_list = NIL;
 
+	if (!sepgsqlIsEnabled())
+		return list_make1(query);
+
 	switch (query->commandType) {
 	case CMD_SELECT:
 	case CMD_UPDATE:
@@ -754,6 +758,9 @@ List *sepgsqlProxyQueryList(List *queryList)
 {
 	ListCell *l;
 	List *new_list = NIL;
+
+	if (!sepgsqlIsEnabled())
+		return queryList;
 
 	foreach (l, queryList) {
 		Query *query = lfirst(l);

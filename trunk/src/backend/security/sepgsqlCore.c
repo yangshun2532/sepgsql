@@ -168,6 +168,9 @@ static struct {
 
 Size sepgsqlShmemSize()
 {
+	if (!sepgsqlIsEnabled())
+		return 0;
+
 	return sizeof(*avc_shmem);
 }
 
@@ -589,6 +592,9 @@ char *sepgsqlGetDatabaseName()
 
 void sepgsqlInitialize()
 {
+	if (!sepgsqlIsEnabled())
+		return;
+
 	sepgsql_avc_init();
 
 	if (IsBootstrapProcessingMode()) {
@@ -761,6 +767,9 @@ static pid_t MonitoringPolicyStatePid = -1;
 
 int sepgsqlInitializePostmaster()
 {
+	if (!sepgsqlIsEnabled())
+		return 0;
+
 	sepgsql_avc_init();
 
 	MonitoringPolicyStatePid = fork();
@@ -776,6 +785,9 @@ int sepgsqlInitializePostmaster()
 void sepgsqlFinalizePostmaster()
 {
 	int status;
+
+	if (!sepgsqlIsEnabled())
+		return;
 
 	if (MonitoringPolicyStatePid > 0) {
 		if (kill(MonitoringPolicyStatePid, SIGTERM) < 0) {

@@ -2983,6 +2983,7 @@ transformUpdateStmt(ParseState *pstate, UpdateStmt *stmt)
 							origTarget->name,
 						 RelationGetRelationName(pstate->p_target_relation)),
 					 parser_errposition(pstate, origTarget->location)));
+
 		updateTargetListEntry(pstate, tle, origTarget->name,
 							  attrno,
 							  origTarget->indirection,

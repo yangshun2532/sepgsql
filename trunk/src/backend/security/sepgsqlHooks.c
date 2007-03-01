@@ -54,9 +54,14 @@ static HeapTuple __getHeapTupleFromItemPointer(Relation rel, ItemPointer tid)
 
 void sepgsqlAlterDatabaseContext(Relation rel, HeapTuple tuple, char *new_context)
 {
+	Datum ncon;
+
 	Assert(RelationGetRelid(rel) == DatabaseRelationId);
 	if (new_context) {
-		Datum ncon = DirectFunctionCall1(psid_in, CStringGetDatum(new_context));
+		if (!sepgsqlIsEnabled())
+			selerror("SE-PostgreSQL is disabled");
+
+		ncon = DirectFunctionCall1(psid_in, CStringGetDatum(new_context));
 		HeapTupleSetSecurity(tuple, DatumGetObjectId(ncon));
 	}
 }
@@ -64,6 +69,9 @@ void sepgsqlAlterDatabaseContext(Relation rel, HeapTuple tuple, char *new_contex
 void sepgsqlGetParamDatabase()
 {
 	HeapTuple tuple;
+
+	if (!sepgsqlIsEnabled())
+		return;
 
 	tuple = SearchSysCache(DATABASEOID,
 						   ObjectIdGetDatum(MyDatabaseId),
@@ -81,6 +89,9 @@ void sepgsqlGetParamDatabase()
 void sepgsqlSetParamDatabase()
 {
 	HeapTuple tuple;
+
+	if (!sepgsqlIsEnabled())
+		return;
 
 	tuple = SearchSysCache(DATABASEOID,
 						   ObjectIdGetDatum(MyDatabaseId),
@@ -105,6 +116,9 @@ void sepgsqlAlterTableSetTableContext(Relation rel, Value *context)
 	HeapTuple tuple;
 	psid newcon, oldcon;
 	Datum datum;
+
+	if (!sepgsqlIsEnabled())
+		selerror("SE-PostgreSQL is disabled");
 
 	pgclass = heap_open(RelationRelationId, RowExclusiveLock);
 
@@ -147,6 +161,9 @@ void sepgsqlLockTable(Oid relid)
 {
 	HeapTuple tuple;
 
+	if (!sepgsqlIsEnabled())
+		return;
+
 	tuple = SearchSysCache(RELOID,
 						   ObjectIdGetDatum(relid),
 						   0, 0, 0);
@@ -168,6 +185,9 @@ void sepgsqlAlterTableSetColumnContext(Relation rel, char *colname, Value *conte
 	psid newcon, oldcon;
 	Datum datum;
 	char objname[2*NAMEDATALEN + 1];
+
+	if (!sepgsqlIsEnabled())
+		selerror("SE-PostgreSQL is disabled");
 
 	snprintf(objname, sizeof(objname), "%s/%s", RelationGetRelationName(rel), colname);
 
@@ -241,6 +261,9 @@ static Datum sepgsqlExprStateEvalFunc(ExprState *expression,
 
 void sepgsqlExecInitExpr(ExprState *state, PlanState *parent)
 {
+	if (!sepgsqlIsEnabled())
+		return;
+
 	switch (nodeTag(state->expr)) {
 	case T_FuncExpr:
 		{
@@ -271,8 +294,13 @@ void sepgsqlExecInitExpr(ExprState *state, PlanState *parent)
 
 void sepgsqlAlterProcedureContext(Relation rel, HeapTuple tuple, char *context)
 {
+	Datum ncon;
+
 	if (context) {
-		Datum ncon = DirectFunctionCall1(psid_in, CStringGetDatum(context));
+		if (!sepgsqlIsEnabled())
+			selerror("SE-PostgreSQL is disabled");
+
+		ncon = DirectFunctionCall1(psid_in, CStringGetDatum(context));
 		HeapTupleSetSecurity(tuple, DatumGetObjectId(ncon));
 	}
 }
@@ -286,6 +314,9 @@ void sepgsqlDoCopy(Relation rel, List *attnumlist, bool is_from)
 	HeapTuple tuple;
 	uint32 perms;
 	ListCell *l;
+
+	if (!sepgsqlIsEnabled())
+		return;
 
 	/* on 'COPY FROM SELECT ...' cases, any checkings are done in select.c */
 	if (rel == NULL)
@@ -331,6 +362,9 @@ void sepgsqlDoCopy(Relation rel, List *attnumlist, bool is_from)
 
 bool sepgsqlCopyTo(Relation rel, HeapTuple tuple)
 {
+	if (!sepgsqlIsEnabled())
+		return true;	/* always true, if disabled */
+
 	return sepgsqlCheckTuplePerms(rel, tuple, NULL, TUPLE__SELECT, false);
 }
 
@@ -341,6 +375,9 @@ void sepgsqlLoadSharedModule(const char *filename)
 {
 	security_context_t filecon;
 	Datum filecon_psid;
+
+	if (!sepgsqlIsEnabled())
+		return;
 
 	if (getfilecon(filename, &filecon) < 1)
 		selerror("could not obtain security context of %s", filename);
@@ -386,6 +423,9 @@ void sepgsqlSimpleHeapInsert(Relation rel, HeapTuple tuple)
 {
 	psid ncon;
 
+	if (!sepgsqlIsEnabled())
+		return;
+
 	if (!__is_simple_system_relation(rel))
 		return;
 
@@ -403,6 +443,9 @@ void sepgsqlSimpleHeapUpdate(Relation rel, ItemPointer tid, HeapTuple newtup)
 	HeapTuple oldtup;
 	psid ncon, ocon;
 	uint32 perms = TUPLE__UPDATE;
+
+	if (!sepgsqlIsEnabled())
+		return;
 
 	if (!__is_simple_system_relation(rel))
 		return;
@@ -428,6 +471,9 @@ void sepgsqlSimpleHeapDelete(Relation rel, ItemPointer tid)
 {
 	HeapTuple oldtup;
 
+	if (!sepgsqlIsEnabled())
+		return;
+
 	if (!__is_simple_system_relation(rel))
 		return;
 
@@ -444,6 +490,9 @@ bool sepgsqlExecInsert(Relation rel, HeapTuple tuple, bool with_returning)
 {
 	psid ncon;
 	uint32 perms;
+
+	if (!sepgsqlIsEnabled())
+		return true;	/* always true, if disabled */
 
 	if (RelationGetRelid(rel) == SelinuxRelationId)
 		selerror("INSERT INTO pg_selinux ..., never allowed");
@@ -467,6 +516,9 @@ bool sepgsqlExecUpdate(Relation rel, HeapTuple newtup, ItemPointer tid, bool wit
 	psid ncon, ocon;
 	uint32 perms = 0;
 	bool rc;
+
+	if (!sepgsqlIsEnabled())
+		return true;	/* always true, if disabled */
 
 	if (RelationGetRelid(rel) == SelinuxRelationId)
 		selerror("UPDATE pg_selinux ..., never allowed");
@@ -495,6 +547,9 @@ bool sepgsqlExecDelete(Relation rel, ItemPointer tid, bool with_returning)
 	HeapTuple oldtup;
 	bool rc;
 
+	if (!sepgsqlIsEnabled())
+		return true;	/* always true, if disabled */
+
 	if (RelationGetRelid(rel) == SelinuxRelationId)
 		selerror("DELETE FROM pg_selinux ..., never allowed");
 
@@ -512,6 +567,11 @@ bool sepgsqlExecDelete(Relation rel, ItemPointer tid, bool with_returning)
  *******************************************************************************/
 void sepgsqlHeapInsert(Relation rel, HeapTuple tuple)
 {
+	if (!sepgsqlIsEnabled()) {
+		HeapTupleSetSecurity(tuple, InvalidOid);
+		return;
+	}
+
 	if (HeapTupleGetSecurity(tuple) == InvalidOid) {
 		psid ncon = sepgsqlComputeImplicitContext(rel, tuple);
 		HeapTupleSetSecurity(tuple, ncon);
@@ -520,6 +580,11 @@ void sepgsqlHeapInsert(Relation rel, HeapTuple tuple)
 
 void sepgsqlHeapUpdate(Relation rel, HeapTuple newtup, HeapTuple oldtup)
 {
+	if (!sepgsqlIsEnabled()) {
+		HeapTupleSetSecurity(newtup, InvalidOid);
+		return;
+	}
+
 	if (HeapTupleGetSecurity(newtup) == InvalidOid) {
 		psid ocon = HeapTupleGetSecurity(oldtup);
 		HeapTupleSetSecurity(newtup, ocon);
