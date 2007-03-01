@@ -130,50 +130,6 @@ for dir in $INCLUDE_DIRS; do
     fi
 done
 
-# Get PG_CATALOG_NAMESPACE from catalog/pg_namespace.h
-for dir in $INCLUDE_DIRS; do
-    if [ -f "$dir/catalog/pg_namespace.h" ]; then
-        PG_CATALOG_NAMESPACE=`grep '^#define[ 	]*PG_CATALOG_NAMESPACE' $dir/catalog/pg_namespace.h | $AWK '{ print $3 }'`
-        break
-    fi
-done
-
-# Parse #ifdef ... #else ... #endif
-PARSE_IFDEF="BEGIN {"
-for dir in $INCLUDE_DIRS; do
-    if [ -f "$dir/pg_config.h" ]; then
-        for x in `grep '^#define[ 	]*' $dir/pg_config.h | $AWK '{ print $2 }'`;
-        do
-            PARSE_IFDEF="${PARSE_IFDEF} symbol[\"$x\"]=1; "
-        done
-        break
-    fi
-done
-PARSE_IFDEF="${PARSE_IFDEF}
-    state=0;
-}
-/^#ifdef[ 	]*/{
-    if (\$2 in symbol) {
-        state = 0;
-    } else {
-        state = 1;
-    }
-    next;
-}
-/^#else[ 	]*/{
-    state = 1 - state;
-    next;
-}
-/^#endif/{
-    state = 0;
-    next;
-}
-{
-    if (state == 0) {
-        print;
-    }
-}"
-
 touch ${OUTPUT_PREFIX}.description.$$
 touch ${OUTPUT_PREFIX}.shdescription.$$
 
@@ -188,7 +144,6 @@ touch ${OUTPUT_PREFIX}.shdescription.$$
 # ----------------
 #
 cat $INFILES | \
-$AWK "$PARSE_IFDEF" | \
 sed -e 's;/\*.*\*/;;g' \
     -e 's;/\*;\
 /*\
