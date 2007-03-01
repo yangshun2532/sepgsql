@@ -114,7 +114,7 @@ CreateSharedMemoryAndSemaphores(bool makePrivate, int port)
 #ifdef EXEC_BACKEND
 		size = add_size(size, ShmemBackendArraySize());
 #endif
-		size = add_size(size, sepgsql_shmem_size());
+		size = add_size(size, sepgsqlShmemSize());
 
 		/* freeze the addin request size and include it */
 		addin_request_allowed = false;

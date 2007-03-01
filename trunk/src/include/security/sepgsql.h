@@ -50,13 +50,13 @@ typedef struct SEvalItem {
  *   src/backend/security/sepgsqlCore.c
  */
 #ifdef HAVE_SELINUX
-extern Size  sepgsql_shmem_size(void);
+extern Size  sepgsqlShmemSize(void);
 extern void  sepgsqlInitialize(void);
 extern int   sepgsqlInitializePostmaster(void);
 extern void  sepgsqlFinalizePostmaster(void);
 extern bool  sepgsqlIsEnabled(void);
 #else
-#define sepgsql_shmem_size()				(0)
+#define sepgsqlShmemSize()					(0)
 #define sepgsqlInitialize()
 #define sepgsqlInitializePostmaster()		(0)
 #define sepgsqlFinalizePostmaster()

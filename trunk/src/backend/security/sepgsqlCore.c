@@ -166,7 +166,7 @@ static struct {
 	struct avc_datum entry[AVC_DATUM_CACHE_MAXNODES];
 } *avc_shmem = NULL;
 
-Size sepgsql_shmem_size()
+Size sepgsqlShmemSize()
 {
 	return sizeof(*avc_shmem);
 }
@@ -200,7 +200,7 @@ static void sepgsql_avc_init()
 	bool found_avc;
 
 	avc_shmem = ShmemInitStruct("SELinux userspace AVC",
-								sepgsql_shmem_size(), &found_avc);
+								sepgsqlShmemSize(), &found_avc);
 	if (!found_avc) {
 		avc_shmem->lock = LWLockAssign();
 		sepgsql_avc_reset();
