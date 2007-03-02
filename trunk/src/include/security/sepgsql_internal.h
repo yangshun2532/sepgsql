@@ -1,5 +1,29 @@
 #ifndef SEPGSQL_INTERNAL_H
 #define SEPGSQL_INTERNAL_H
+
+/* system catalogs */
+#include "catalog/indexing.h"
+#include "catalog/pg_am.h"
+#include "catalog/pg_attribute.h"
+#include "catalog/pg_authid.h"
+#include "catalog/pg_class.h"
+#include "catalog/pg_constraint.h"
+#include "catalog/pg_conversion.h"
+#include "catalog/pg_database.h"
+#include "catalog/pg_language.h"
+#include "catalog/pg_largeobject.h"
+#include "catalog/pg_listener.h"
+#include "catalog/pg_namespace.h"
+#include "catalog/pg_opclass.h"
+#include "catalog/pg_operator.h"
+#include "catalog/pg_pltemplate.h"
+#include "catalog/pg_proc.h"
+#include "catalog/pg_rewrite.h"
+#include "catalog/pg_selinux.h"
+#include "catalog/pg_tablespace.h"
+#include "catalog/pg_trigger.h"
+#include "catalog/pg_type.h"
+
 #include <selinux/selinux.h>
 #include <selinux/flask.h>
 #include <selinux/av_permissions.h>

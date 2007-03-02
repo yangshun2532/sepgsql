@@ -7,8 +7,6 @@
 
 #include "access/genam.h"
 #include "access/skey.h"
-#include "catalog/indexing.h"
-#include "catalog/pg_largeobject.h"
 #include "security/sepgsql.h"
 #include "security/sepgsql_internal.h"
 #include "utils/fmgroids.h"

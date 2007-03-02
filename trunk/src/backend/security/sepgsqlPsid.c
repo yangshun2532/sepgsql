@@ -6,8 +6,6 @@
  */
 #include "postgres.h"
 
-#include "catalog/indexing.h"
-#include "catalog/pg_selinux.h"
 #include "libpq/libpq-be.h"
 #include "miscadmin.h"
 #include "security/sepgsql.h"
