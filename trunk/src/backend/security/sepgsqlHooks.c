@@ -404,6 +404,7 @@ static inline bool __is_simple_system_relation(Relation rel)
 	case DatabaseRelationId:
 	case ProcedureRelationId:
 	case RelationRelationId:
+	case RewriteRelationId:
 	case TableSpaceRelationId:
 	case TriggerRelationId:
 	case TypeRelationId:
