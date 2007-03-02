@@ -16,6 +16,7 @@
 #include "catalog/pg_largeobject.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_selinux.h"
+#include "catalog/pg_trigger.h"
 #include "miscadmin.h"
 #include "security/sepgsql.h"
 #include "security/sepgsql_internal.h"
@@ -397,7 +398,7 @@ void sepgsqlLoadSharedModule(const char *filename)
 						   DatumGetObjectId(filecon_psid),
 						   SECCLASS_DATABASE,
 						   DATABASE__LOAD_MODULE,
-						   filename);
+						   (char *) filename);
 }
 
 /*******************************************************************************
@@ -412,6 +413,7 @@ static inline bool __is_simple_system_relation(Relation rel)
 	case DatabaseRelationId:
 	case ProcedureRelationId:
 	case RelationRelationId:
+	case TriggerRelationId:
 	case TypeRelationId:
 		retval = true;
 		break;

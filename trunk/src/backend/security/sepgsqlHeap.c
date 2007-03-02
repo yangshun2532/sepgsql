@@ -361,7 +361,8 @@ static bool __check_tuple_perms(Oid tableoid, TupleDesc tdesc, HeapTuple tuple, 
 
 	switch (tableoid) {
 	case AuthIdRelationId:      /* pg_authid */
-	case TypeRelationId:
+	case TypeRelationId:        /* pg_type */
+	case TriggerRelationId:     /* pg_trigger */
 		perms = __tuple_perms_to_common_perms(perms);
 		tclass = SECCLASS_DATABASE;
 		break;
@@ -464,8 +465,9 @@ psid sepgsqlComputeImplicitContext(Relation rel, HeapTuple tuple) {
 
 	switch (RelationGetRelid(rel)) {
 		/* database system object */
-	case AuthIdRelationId:
-	case TypeRelationId:
+	case AuthIdRelationId:      /* pg_authid */
+	case TypeRelationId:        /* pg_type */
+	case TriggerRelationId:     /* pg_trigger */
 		tcon = sepgsqlGetDatabasePsid();
 		tclass = SECCLASS_DATABASE;
 		break;
