@@ -2,9 +2,16 @@
 
 本文書は、Security-Enhanced PostgreSQL (SE-PostgreSQL) の公式のドキュメントであり、導入や設定、管理、開発等の目的に有益な情報が含まれています。
 
+This document is the official document of Security-Enhahnced PostgraSQL (SE-PostgreSQL),
+including useful information for configuration, management, and development.
+
 = １章．はじめに =
+= Introduction ==
 
 Security Enhanced PostgreSQL (SE-PostgreSQL) は、オープンソースのリレーショナルデータベースシステム (RDBMS) である PostgreSQL に、SELinuxのアーキテクチャに基づいた追加的なアクセス制御メカニズムを提供し、エンタープライズシステムの基盤となるデータベースのセキュリティに革新的な向上をもたらします。
+
+Security Enhanced PostgreSQL (SE-PostgreSQL) provides additional access mechanism
+based on SELinux architecture for PostgreSQL, improving database security ...
 
 SE-PostgreSQLの核となるアイデアは、 *セキュアOS(SELinux)との統合* と *細粒度の強制アクセス制御* であり、これらの特徴はデータベースシステムをOSと一体化した情報フロー制御の枠組みに組み込むことを可能にし、情報資産の漏えいや改ざん、破壊といった脅威から保護します。
 
