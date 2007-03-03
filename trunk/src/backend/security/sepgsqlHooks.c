@@ -223,20 +223,17 @@ void sepgsqlAlterTableSetColumnContext(Relation rel, char *colname, Value *conte
  * PROCEDURE related hooks
  *******************************************************************************/
 
-static Datum sepgsqlExprStateEvalFunc(ExprState *expression,
-									  ExprContext *econtext,
-									  bool *isNull,
-									  ExprDoneCond *isDone)
+static Datum __callTrusterProcedure(PG_FUNCTION_ARGS)
 {
 	Datum retval;
 	psid saved_clientcon;
 
 	/* save security context */
 	saved_clientcon = sepgsqlGetClientPsid();
-	sepgsqlSetClientPsid(expression->execContext);
+	sepgsqlSetClientPsid(fcinfo->flinfo->fn_domtrans);
 	PG_TRY();
 	{
-		retval = expression->origEvalFunc(expression, econtext, isNull, isDone);
+		retval = (fcinfo)->flinfo->fn_origaddr(fcinfo);
 	}
 	PG_CATCH();
 	{
@@ -244,44 +241,68 @@ static Datum sepgsqlExprStateEvalFunc(ExprState *expression,
 		PG_RE_THROW();
 	}
 	PG_END_TRY();
-
-	/* restore context */
 	sepgsqlSetClientPsid(saved_clientcon);
 
 	return retval;
 }
 
-void sepgsqlExecInitExpr(ExprState *state, PlanState *parent)
+void sepgsqlCallProcedure(FmgrInfo *finfo)
 {
+	HeapTuple tuple;
+	psid newcon;
+
 	if (!sepgsqlIsEnabled())
 		return;
 
-	switch (nodeTag(state->expr)) {
-	case T_FuncExpr:
-		{
-			FuncExpr *func = (FuncExpr *) state->expr;
-			HeapTuple tuple;
-			psid execon;
+	selnotice("%s called!", __FUNCTION__);
 
-			tuple = SearchSysCache(PROCOID, ObjectIdGetDatum(func->funcid), 0, 0, 0);
-			if (!HeapTupleIsValid(tuple))
-				selerror("RELOID cache lookup failed (pg_proc.oid=%u)", func->funcid);
-			execon = sepgsql_avc_createcon(sepgsqlGetClientPsid(),
-										   HeapTupleGetSecurity(tuple),
-										   SECCLASS_PROCESS);
-			if (sepgsqlGetClientPsid() != execon) {
-				/* do domain transition */
-				state->execContext = execon;
-				state->origEvalFunc = state->evalfunc;
-				state->evalfunc = sepgsqlExprStateEvalFunc;
-			}
-			ReleaseSysCache(tuple);
-		}
-		break;
-	default:
-		/* do nothing */
-		break;
+	tuple = SearchSysCache(PROCOID, ObjectIdGetDatum(finfo->fn_oid), 0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		selerror("cache lookup failed for procedure %u", finfo->fn_oid);
+
+	newcon = sepgsql_avc_createcon(sepgsqlGetClientPsid(),
+								   HeapTupleGetSecurity(tuple),
+								   SECCLASS_PROCESS);
+	if (sepgsqlGetClientPsid() != newcon) {
+		finfo->fn_domtrans = newcon;
+		finfo->fn_origaddr = finfo->fn_addr;
+		finfo->fn_addr = __callTrusterProcedure;
 	}
+	ReleaseSysCache(tuple);
+}
+
+void sepgsqlCallProcedureWithPermCheck(FmgrInfo *finfo)
+{
+	HeapTuple tuple;
+	psid newcon;
+	uint32 perms = PROCEDURE__EXECUTE;
+
+	if (!sepgsqlIsEnabled())
+		return;
+
+	tuple = SearchSysCache(PROCOID, ObjectIdGetDatum(finfo->fn_oid), 0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		selerror("cache lookup failed for procedure %u", finfo->fn_oid);
+
+	/* check trusted procedure */
+	newcon = sepgsql_avc_createcon(sepgsqlGetClientPsid(),
+								   HeapTupleGetSecurity(tuple),
+								   SECCLASS_PROCESS);
+	if (sepgsqlGetClientPsid() != newcon) {
+		perms |= PROCEDURE__ENTRYPOINT;
+		finfo->fn_domtrans = newcon;
+		finfo->fn_origaddr = finfo->fn_addr;
+		finfo->fn_addr = __callTrusterProcedure;
+	}
+
+	/* check procedure:{execute entrypoint} permission */
+	sepgsql_avc_permission(sepgsqlGetClientPsid(),
+						   HeapTupleGetSecurity(tuple),
+						   SECCLASS_PROCEDURE,
+						   perms,
+						   NameStr(((Form_pg_proc) GETSTRUCT(tuple))->proname));
+
+	ReleaseSysCache(tuple);
 }
 
 void sepgsqlAlterProcedureContext(Relation rel, HeapTuple tuple, char *context)

@@ -1296,6 +1296,8 @@ ExecCallTriggerFunc(TriggerData *trigdata,
 	 */
 	InitFunctionCallInfoData(fcinfo, finfo, 0, (Node *) trigdata, NULL);
 
+	sepgsqlCallProcedureWithPermCheck(finfo);
+
 	result = FunctionCallInvoke(&fcinfo);
 
 	MemoryContextSwitchTo(oldContext);

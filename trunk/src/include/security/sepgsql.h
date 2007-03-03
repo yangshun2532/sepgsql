@@ -116,7 +116,8 @@ extern void sepgsqlAlterTableSetColumnContext(Relation rel, char *colname, Value
 extern void sepgsqlLockTable(Oid relid);
 
 /* PROCEDURE */
-extern void sepgsqlExecInitExpr(ExprState *state, PlanState *parent);
+extern void sepgsqlCallProcedure(FmgrInfo *finfo);
+extern void sepgsqlCallProcedureWithPermCheck(FmgrInfo *finfo);
 extern void sepgsqlAlterProcedureContext(Relation rel, HeapTuple tuple, char *context);
 
 /* COPY */
@@ -146,7 +147,8 @@ extern void sepgsqlLoadSharedModule(const char *filename);
 #define sepgsqlAlterTableSetColumnContext(a,b,c)
 #define sepgsqlLockTable(a)
 /* PROCEDURE */
-#define sepgsqlExecInitExpr(a,b)
+#define sepgsqlCallProcedure(a)
+#define sepgsqlCallProcedureWithPermCheck(a)
 #define sepgsqlAlterProcedureContext(a,b,c)
 /* COPY TO/COPY FROM */
 #define sepgsqlDoCopy(a,b,c)

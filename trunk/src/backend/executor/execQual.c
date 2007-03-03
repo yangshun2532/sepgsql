@@ -1670,6 +1670,8 @@ ExecEvalFunc(FuncExprState *fcache,
 	fcache->xprstate.evalfunc = (ExprStateEvalFunc) ExecMakeFunctionResult;
 
 	return ExecMakeFunctionResult(fcache, econtext, isNull, isDone);
+
+	sepgsqlCallProcedure(&fcache->func);
 }
 
 /* ----------------------------------------------------------------
@@ -3885,9 +3887,6 @@ ExecInitExpr(Expr *node, PlanState *parent)
 
 	/* Common code for all state-node types */
 	state->expr = node;
-
-	/* Prepare to execute SE-PostgreSQL trusted procedure */
-	sepgsqlExecInitExpr(state, parent);
 
 	return state;
 }

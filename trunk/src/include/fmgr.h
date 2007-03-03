@@ -52,6 +52,10 @@ typedef struct FmgrInfo
 	void	   *fn_extra;		/* extra space for use by handler */
 	MemoryContext fn_mcxt;		/* memory context to store fn_extra in */
 	fmNodePtr	fn_expr;		/* expression parse tree for call, or NULL */
+#ifdef HAVE_SELINUX
+	psid		fn_domtrans;	/* != InvalidOid, if domain transition will be happen */
+	PGFunction	fn_origaddr;	/* original fn_addr */
+#endif
 } FmgrInfo;
 
 /*
