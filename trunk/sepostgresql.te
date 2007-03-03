@@ -1,4 +1,4 @@
-policy_module(sepostgresql,%%POLICY_VERSION%%)
+policy_module(sepostgresql,0.194) #%%POLICY_VERSION%%)
 
 gen_require(`
 	class database all_database_perms;
@@ -111,12 +111,14 @@ type_transition sepgsql_client_type sepgsql_db_t : table sepgsql_table_t;
 type_transition sepgsql_client_type sepgsql_db_t : procedure sepgsql_proc_t;
 type_transition sepgsql_client_type sepgsql_db_t : blob sepgsql_blob_t;
 type_transition sepgsql_client_type sepgsql_trusted_proc_t : process sepgsql_trusted_client_t;
+allow sepgsql_client_type sepgsql_trusted_client_t : process { transition };
 
 ########################################
 #
 # SE-PostgreSQL audit switch
 #
 tunable_policy(`sepgsql_enable_auditallow',`
+	auditallow sepgsql_client_type sepgsql_trusted_client_t : process all_process_perms;
 	auditallow sepgsql_client_type sepgsql_object_type : database all_database_perms;
 	auditallow sepgsql_client_type file_type : database { install_module };
 	auditallow sepgsql_object_type file_type : database { load_module };
@@ -130,6 +132,7 @@ tunable_policy(`sepgsql_enable_audittuple && sepgsql_enable_auditallow',`
 	auditallow sepgsql_client_type sepgsql_object_type : tuple all_tuple_perms;
 ')
 tunable_policy(`! sepgsql_enable_auditdeny',`
+	dontaudit sepgsql_client_type sepgsql_trusted_client_t : process all_process_perms;
 	dontaudit sepgsql_client_type sepgsql_object_type : database all_database_perms;
 	dontaudit sepgsql_client_type file_type : database { install_module };
 	dontaudit sepgsql_object_type file_type : database { load_module };

@@ -46,7 +46,9 @@ static const char *security_class_to_string(uint16 tclass)
 
 	if (tclass >= SECCLASS_DATABASE && tclass <= SECCLASS_BLOB)
 		return class_to_string[tclass - SECCLASS_DATABASE];
-	return "unknown";
+	if (tclass == SECCLASS_PROCESS)
+		return "process";
+	return;
 }
 
 static const char *security_av_perm_to_string(uint16 tclass, uint32 perm)
@@ -56,6 +58,8 @@ static const char *security_av_perm_to_string(uint16 tclass, uint32 perm)
 		uint32 perm;
 		char *name;
 	} perm_to_string[] = {
+		/* process */
+		{ SECCLASS_PROCESS,		PROCESS__TRANSITION,	"transition" },
 		/* databases */
 		{ SECCLASS_DATABASE,	DATABASE__CREATE,		"create" },
 		{ SECCLASS_DATABASE,	DATABASE__DROP,			"drop" },
