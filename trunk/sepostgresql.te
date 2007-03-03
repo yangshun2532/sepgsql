@@ -68,6 +68,7 @@ sepgsql_module_object(lib_t)
 sepgsql_server_domain(postgresql_t)
 sepgsql_full_access(postgresql_t)
 
+domain_type(sepgsql_trusted_client_t)
 sepgsql_client_domain(sepgsql_trusted_client_t)
 sepgsql_user_trusted_access(sepgsql_trusted_client_t)
 
