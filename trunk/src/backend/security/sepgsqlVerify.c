@@ -6,9 +6,11 @@
  */
 #include "postgres.h"
 
+#include "access/genam.h"
 #include "optimizer/plancat.h"
 #include "security/sepgsql.h"
 #include "security/sepgsql_internal.h"
+#include "utils/fmgroids.h"
 #include "utils/syscache.h"
 
 static void verifyPgClassPermsInheritances(Oid relid, uint32 perms);
@@ -60,6 +62,33 @@ static void verifyPgAttributePermsInheritances(Oid parent_relid, char *attname, 
 static void verifyPgAttributePerms(Oid relid, bool inh, AttrNumber attno, uint32 perms)
 {
 	HeapTuple tuple;
+
+	if (attno == 0) {
+		/* RECORD type permission check */
+		Relation pg_attr;
+		ScanKeyData skey;
+		SysScanDesc sd;
+
+		ScanKeyInit(&skey,
+					Anum_pg_attribute_attrelid,
+					BTEqualStrategyNumber, F_OIDEQ,
+					ObjectIdGetDatum(relid));
+
+		pg_attr = heap_open(AttributeRelationId, AccessShareLock);
+		sd = systable_beginscan(pg_attr, AttributeRelidNumIndexId,
+								true, SnapshotNow, 1, &skey);
+		while ((tuple = systable_getnext(sd)) != NULL) {
+			sepgsql_avc_permission(sepgsqlGetClientPsid(),
+								   HeapTupleGetSecurity(tuple),
+								   SECCLASS_COLUMN,
+								   perms,
+								   HeapTupleGetAttributeName(tuple));
+		}
+		systable_endscan(sd);
+		heap_close(pg_attr, AccessShareLock);
+
+		return;
+	}
 
 	tuple = SearchSysCache(ATTNUM,
 						   ObjectIdGetDatum(relid),
