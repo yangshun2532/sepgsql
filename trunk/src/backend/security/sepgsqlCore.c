@@ -558,9 +558,6 @@ static psid sepgsql_system_getpeercon(int sockfd)
  */
 static psid sepgsqlServerPsid = InvalidOid;
 static psid sepgsqlClientPsid = InvalidOid;
-static psid sepgsqlDatabasePsid = InvalidOid;
-static NameData __DatabaseName;
-static char *sepgsqlDatabaseName = NULL;
 
 psid sepgsqlGetServerPsid()
 {
@@ -579,18 +576,49 @@ void sepgsqlSetClientPsid(psid new_ctx)
 
 psid sepgsqlGetDatabasePsid()
 {
-	return sepgsqlDatabasePsid;
+	HeapTuple tuple;
+	psid datcon;
+
+	if (IsBootstrapProcessingMode()) {
+		return sepgsql_avc_createcon(sepgsqlGetClientPsid(),
+									 sepgsqlGetServerPsid(),
+									 SECCLASS_DATABASE);
+	}
+
+	tuple = SearchSysCache(DATABASEOID,
+						   ObjectIdGetDatum(MyDatabaseId),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		selerror("cache lookup failed for Database %u", MyDatabaseId);
+	datcon = HeapTupleGetSecurity(tuple);
+	ReleaseSysCache(tuple);
+
+	return datcon;
 }
 
 char *sepgsqlGetDatabaseName()
 {
-	return sepgsqlDatabaseName;
+	Form_pg_database pgdat;
+	HeapTuple tuple;
+	char *datname;
+
+	if (IsBootstrapProcessingMode())
+		return NULL;
+
+	tuple = SearchSysCache(DATABASEOID,
+						   ObjectIdGetDatum(MyDatabaseId),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		selerror("cache lookup failed for Database %u", MyDatabaseId);
+	pgdat = (Form_pg_database) GETSTRUCT(tuple);
+	datname = pstrdup(NameStr(pgdat->datname));
+	ReleaseSysCache(tuple);
+
+	return datname;
 }
 
 void sepgsqlInitialize()
 {
-	HeapTuple tuple;
-
 	if (!sepgsqlIsEnabled())
 		return;
 
@@ -599,9 +627,6 @@ void sepgsqlInitialize()
 	if (IsBootstrapProcessingMode()) {
 		sepgsqlServerPsid = sepgsql_system_getcon();
 		sepgsqlClientPsid = sepgsql_system_getcon();
-		sepgsqlDatabasePsid = sepgsql_avc_createcon(sepgsqlGetClientPsid(),
-													sepgsqlGetServerPsid(),
-													SECCLASS_DATABASE);
 		sepgsql_avc_permission(sepgsqlGetClientPsid(),
 							   sepgsqlGetDatabasePsid(),
 							   SECCLASS_DATABASE,
@@ -620,19 +645,11 @@ void sepgsqlInitialize()
 		sepgsqlClientPsid = sepgsql_system_getcon();
 	}
 
-	/* obtain security context of database */
-	tuple = SearchSysCache(DATABASEOID, ObjectIdGetDatum(MyDatabaseId), 0, 0, 0);
-	if (!HeapTupleIsValid(tuple))
-		selerror("cache lookup failed for Database %u", MyDatabaseId);
-	sepgsqlDatabasePsid = HeapTupleGetSecurity(tuple);
-	sepgsqlDatabaseName = strdup(NameStr(((Form_pg_database) GETSTRUCT(tuple))->datname));
-	ReleaseSysCache(tuple);
-
 	sepgsql_avc_permission(sepgsqlGetClientPsid(),
 						   sepgsqlGetDatabasePsid(),
 						   SECCLASS_DATABASE,
 						   DATABASE__ACCESS,
-						   sepgsqlDatabaseName);
+						   sepgsqlGetDatabaseName());
 }
 
 /* sepgsqlMonitoringPolicyState() is worker process to monitor
