@@ -4,9 +4,11 @@
 /* system catalogs */
 #include "catalog/catalog.h"
 #include "catalog/indexing.h"
+#include "catalog/pg_aggregate.h"
 #include "catalog/pg_am.h"
 #include "catalog/pg_attribute.h"
 #include "catalog/pg_authid.h"
+#include "catalog/pg_cast.h"
 #include "catalog/pg_class.h"
 #include "catalog/pg_constraint.h"
 #include "catalog/pg_conversion.h"

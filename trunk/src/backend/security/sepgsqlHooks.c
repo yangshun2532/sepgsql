@@ -385,9 +385,16 @@ static inline bool __is_simple_system_relation(Relation rel)
 {
 	bool retval = false;
 	switch (RelationGetRelid(rel)) {
+	case AggregateRelationId:
 	case AttributeRelationId:
 	case AuthIdRelationId:
+	case CastRelationId:
+	case ConversionRelationId:
 	case DatabaseRelationId:
+	case LanguageRelationId:
+	case NamespaceRelationId:
+	case OperatorRelationId:
+	case OperatorClassRelationId:
 	case ProcedureRelationId:
 	case RelationRelationId:
 	case RewriteRelationId:
