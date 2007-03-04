@@ -172,51 +172,33 @@ void sepgsqlLockTable(Oid relid)
 
 void sepgsqlAlterTableSetColumnContext(Relation rel, char *colname, Value *context)
 {
-	Relation pgattribute;
+	Relation pgattr;
 	HeapTuple tuple;
-	psid newcon, oldcon;
-	Datum datum;
-	char objname[2*NAMEDATALEN + 1];
+	Datum newcon;
 
 	if (!sepgsqlIsEnabled())
 		selerror("SE-PostgreSQL is disabled");
 
-	snprintf(objname, sizeof(objname), "%s/%s", RelationGetRelationName(rel), colname);
+	pgattr = heap_open(AttributeRelationId, RowExclusiveLock);
 
-	pgattribute = heap_open(AttributeRelationId, RowExclusiveLock);
-
-	/* lookup old security context */
+	/* lookup old tuple */
 	tuple = SearchSysCacheCopyAttName(RelationGetRelid(rel), colname);
 	if (!HeapTupleIsValid(tuple))
 		selerror("cache lookup failed, column %s of relation %s",
 				 colname, RelationGetRelationName(rel));
-	oldcon = HeapTupleGetSecurity(tuple);
 
 	/* lookup new security context */
-	datum = DirectFunctionCall1(psid_in, CStringGetDatum(strVal(context)));
-	newcon = DatumGetObjectId(datum);
+	newcon = DirectFunctionCall1(psid_in, CStringGetDatum(strVal(context)));
 
-	/* 1. check column:{setattr relabelfrom} */
-	sepgsql_avc_permission(sepgsqlGetClientPsid(),
-						   oldcon,
-						   SECCLASS_COLUMN,
-						   COLUMN__SETATTR | COLUMN__RELABELFROM,
-						   objname);
+	/* set new security context */
+	HeapTupleSetSecurity(tuple, ObjectIdGetDatum(newcon));
 
-	/* 2. check column:{relabelto} */
-	sepgsql_avc_permission(sepgsqlGetClientPsid(),
-						   newcon,
-						   SECCLASS_COLUMN,
-						   COLUMN__RELABELTO,
-						   objname);
-
-	/* 3. update pg_attribute->attselcon */
-	HeapTupleSetSecurity(tuple, newcon);
-	simple_heap_update(pgattribute, &tuple->t_self, tuple);
-	CatalogUpdateIndexes(pgattribute, tuple);
+	/* all checks are done in simple_heap_update */
+	simple_heap_update(pgattr, &tuple->t_self, tuple);
+	CatalogUpdateIndexes(pgattr, tuple);
 
 	heap_freetuple(tuple);
-  	heap_close(pgattribute, RowExclusiveLock);
+  	heap_close(pgattr, RowExclusiveLock);
 }
 
 /*******************************************************************************
