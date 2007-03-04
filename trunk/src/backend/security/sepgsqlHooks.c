@@ -106,42 +106,25 @@ void sepgsqlAlterTableSetTableContext(Relation rel, Value *context)
 {
 	Relation pgclass;
 	HeapTuple tuple;
-	psid newcon, oldcon;
-	Datum datum;
+	Datum newcon;
 
 	if (!sepgsqlIsEnabled())
 		selerror("SE-PostgreSQL is disabled");
 
 	pgclass = heap_open(RelationRelationId, RowExclusiveLock);
-
-	/* lookup old security context */
 	tuple = SearchSysCacheCopy(RELOID,
 							   ObjectIdGetDatum(RelationGetRelid(rel)),
 							   0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
 		selerror("cache lookup failed for relation %u", RelationGetRelid(rel));
-	oldcon = HeapTupleGetSecurity(tuple);
 
 	/* lookup new security context */
-	datum = DirectFunctionCall1(psid_in, CStringGetDatum(strVal(context)));
-	newcon = DatumGetObjectId(datum);
+	newcon = DirectFunctionCall1(psid_in, CStringGetDatum(strVal(context)));
 
-	/* 1. check table:{setattr relabelfrom} */
-	sepgsql_avc_permission(sepgsqlGetClientPsid(),
-						   oldcon,
-						   SECCLASS_TABLE,
-						   TABLE__SETATTR | TABLE__RELABELFROM,
-						   HeapTupleGetRelationName(tuple));
+	/* set new security context */
+	HeapTupleSetSecurity(tuple, ObjectIdGetDatum(newcon));
 
-	/* 2. check table:{relabelto} */
-	sepgsql_avc_permission(sepgsqlGetClientPsid(),
-						   newcon,
-						   SECCLASS_TABLE,
-						   TABLE__RELABELTO,
-						   HeapTupleGetRelationName(tuple));
-
-	/* 3. update pg_class */
-	HeapTupleSetSecurity(tuple, newcon);
+	/* all checks are done in simple_heap_update */
 	simple_heap_update(pgclass, &tuple->t_self, tuple);
 	CatalogUpdateIndexes(pgclass, tuple);
 
@@ -181,7 +164,7 @@ void sepgsqlAlterTableSetColumnContext(Relation rel, char *colname, Value *conte
 
 	pgattr = heap_open(AttributeRelationId, RowExclusiveLock);
 
-	/* lookup old tuple */
+	/* obtain old tuple */
 	tuple = SearchSysCacheCopyAttName(RelationGetRelid(rel), colname);
 	if (!HeapTupleIsValid(tuple))
 		selerror("cache lookup failed, column %s of relation %s",
