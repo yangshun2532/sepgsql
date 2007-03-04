@@ -42,12 +42,9 @@ static List *proxyJoinTree(List *selist, Query *query, Node *n, Node **quals);
 static List *proxySetOperations(List *selist, Query *query, Node *n);
 
 /* -----------------------------------------------------------
- * 
- * 
- * 
- * 
- * -----------------------------------------------------------
- */
+ * addEvalXXXX -- add evaluation items into Query->SEvalItemList.
+ * Those are used for execution phase.
+ * ----------------------------------------------------------- */
 static List *addEvalPgClass(List *selist, RangeTblEntry *rte, uint32 perms)
 {
 	ListCell *l;
@@ -135,7 +132,10 @@ static List *addEvalPgProc(List *selist, Oid funcid, uint32 perms)
 
 	return lappend(selist, se);
 }
-
+/* -----------------------------------------------------------
+ * walkXXXX() -- walk on the Query tree recursively to check
+ * refered expr, and push EvalItem for later evaluation.
+ * ----------------------------------------------------------- */
 static List *walkVar(List *selist, Query *query, Var *var)
 {
 	RangeTblEntry *rte;
@@ -413,10 +413,9 @@ static List *sepgsqlWalkExpr(List *selist, Query *query, Node *n)
 }
 
 /* -----------------------------------------------------------
- * 
- *
- *
- */
+ * proxyRteXXXX -- check any relation type including general
+ * relation, join relation and subquery.
+ * ----------------------------------------------------------- */
 static Oid fnoid_sepgsql_tuple_perm = F_SEPGSQL_TUPLE_PERMS;
 
 static List *proxyRteRelation(List *selist, Query *query, int rtindex, Node **quals)
