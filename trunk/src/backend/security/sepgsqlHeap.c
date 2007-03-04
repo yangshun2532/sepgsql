@@ -17,6 +17,29 @@ static bool __check_tuple_perms(Oid tableoid, TupleDesc tdesc,
 								HeapTuple tuple, HeapTuple oldtup,
                                 uint32 perms, bool abort);
 
+static bool __is_system_object_relation(Oid relid)
+{
+	static Oid latest_relid = InvalidOid;
+	static Oid latest_relns = InvalidOid;
+	HeapTuple tuple;
+
+retry:
+	if (latest_relid == relid) {
+		if (IsSystemNamespace(latest_relns))
+			return true;
+		return false;
+	}
+
+	tuple = SearchSysCache(RELOID, ObjectIdGetDatum(relid), 0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		selerror("cache lookup failed for relation %u", relid);
+	latest_relid = relid;
+	latest_relns = ((Form_pg_class) GETSTRUCT(tuple))->relnamespace;
+	ReleaseSysCache(tuple);
+
+	goto retry;
+}
+
 /*
  * If we have to refere a object which is newly inserted or updated
  * in the same command, SearchSysCache() returns NULL because it use
@@ -340,16 +363,8 @@ static bool __check_tuple_perms(Oid tableoid, TupleDesc tdesc, HeapTuple tuple, 
 	Assert(tuple != NULL);
 
 	switch (tableoid) {
-	case AuthIdRelationId:      /* pg_authid */
-	case RewriteRelationId:     /* pg_rewrite */
-	case TableSpaceRelationId:  /* pg_tablespace */
+	case DatabaseRelationId:    /* pg_database */
 	case TypeRelationId:        /* pg_type */
-	case TriggerRelationId:     /* pg_trigger */
-		perms = __tuple_perms_to_common_perms(perms);
-		tclass = SECCLASS_DATABASE;
-		break;
-
-	case DatabaseRelationId:
 		perms = __tuple_perms_to_common_perms(perms);
 		tclass = SECCLASS_DATABASE;
 		break;
@@ -371,7 +386,12 @@ static bool __check_tuple_perms(Oid tableoid, TupleDesc tdesc, HeapTuple tuple, 
 		break;
 
 	default:
-		tclass = SECCLASS_TUPLE;
+		if (__is_system_object_relation(tableoid)) {
+			perms = __tuple_perms_to_common_perms(perms);
+			tclass = SECCLASS_DATABASE;
+		} else {
+			tclass = SECCLASS_TUPLE;
+		}
 		break;
 	}
 
@@ -446,17 +466,8 @@ psid sepgsqlComputeImplicitContext(Relation rel, HeapTuple tuple) {
 	HeapTuple exttup;
 
 	switch (RelationGetRelid(rel)) {
-		/* database system object */
-	case AuthIdRelationId:      /* pg_authid */
-	case RewriteRelationId:     /* pg_rewrite */
-	case TableSpaceRelationId:  /* pg_tablespace */
-	case TriggerRelationId:     /* pg_trigger */
 	case TypeRelationId:        /* pg_type */
-		tcon = sepgsqlGetDatabasePsid();
-		tclass = SECCLASS_DATABASE;
-		break;
-
-	case DatabaseRelationId:
+	case DatabaseRelationId:    /* pg_database */
 		tcon = sepgsqlGetServerPsid();
 		tclass = SECCLASS_DATABASE;
 		break;
@@ -516,7 +527,11 @@ psid sepgsqlComputeImplicitContext(Relation rel, HeapTuple tuple) {
 		tcon = sepgsqlGetDatabasePsid();
 		break;
 
-	default: {
+	default:
+		if (__is_system_object_relation(RelationGetRelid(rel))) {
+			tclass = SECCLASS_DATABASE;
+			tcon = sepgsqlGetDatabasePsid();
+		} else {
 			tclass = SECCLASS_TUPLE;
 			exttup = SearchSysCache(RELOID,
 									ObjectIdGetDatum(RelationGetRelid(rel)),

@@ -48,7 +48,7 @@ static const char *security_class_to_string(uint16 tclass)
 		return class_to_string[tclass - SECCLASS_DATABASE];
 	if (tclass == SECCLASS_PROCESS)
 		return "process";
-	return;
+	return "unknown";
 }
 
 static const char *security_av_perm_to_string(uint16 tclass, uint32 perm)
@@ -589,6 +589,8 @@ char *sepgsqlGetDatabaseName()
 
 void sepgsqlInitialize()
 {
+	HeapTuple tuple;
+
 	if (!sepgsqlIsEnabled())
 		return;
 
@@ -619,26 +621,12 @@ void sepgsqlInitialize()
 	}
 
 	/* obtain security context of database */
-	if (MyDatabaseId == TemplateDbOid) {
-		sepgsqlDatabasePsid = sepgsql_avc_createcon(sepgsqlGetClientPsid(),
-													sepgsqlGetServerPsid(),
-													SECCLASS_DATABASE);
-		sepgsqlDatabaseName = pstrdup("template1");
-	} else {
-		Form_pg_database pgdat;
-		HeapTuple tuple;
-		
-		tuple = SearchSysCache(DATABASEOID, ObjectIdGetDatum(MyDatabaseId), 0, 0, 0);
-		if (!HeapTupleIsValid(tuple))
-			selerror("could not obtain security context of database");
-		sepgsqlDatabasePsid = HeapTupleGetSecurity(tuple);
-
-		pgdat = (Form_pg_database) GETSTRUCT(tuple);
-		strcpy(__DatabaseName.data, NameStr(pgdat->datname));
-		sepgsqlDatabaseName = __DatabaseName.data;
-
-		ReleaseSysCache(tuple);
-	}
+	tuple = SearchSysCache(DATABASEOID, ObjectIdGetDatum(MyDatabaseId), 0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		selerror("cache lookup failed for Database %u", MyDatabaseId);
+	sepgsqlDatabasePsid = HeapTupleGetSecurity(tuple);
+	sepgsqlDatabaseName = strdup(NameStr(((Form_pg_database) GETSTRUCT(tuple))->datname));
+	ReleaseSysCache(tuple);
 
 	sepgsql_avc_permission(sepgsqlGetClientPsid(),
 						   sepgsqlGetDatabasePsid(),
