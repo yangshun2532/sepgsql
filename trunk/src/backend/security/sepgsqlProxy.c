@@ -34,12 +34,31 @@
 #define RTEMARK_BLOB_READ     (1<<(N_ACL_RIGHTS + 6))
 #define RTEMARK_BLOB_WRITE    (1<<(N_ACL_RIGHTS + 7))
 
+/* query stack definition for outer references */
+typedef struct queryChain {
+	struct queryChain *parent;
+	Query *tail;
+} queryChain;
+
+static inline Query *upperQueryChain(queryChain *qc, int lvup) {
+	while (lvup > 0) {
+		Assert(qc->parent);
+		qc = qc->parent;
+		lvup--;
+	}
+	return qc->tail;
+}
+
+static inline Query *tailQueryChain(queryChain *qc) {
+	return upperQueryChain(qc, 0);
+}
+
 /* local definitions of static functions. */
-static List *sepgsqlWalkExpr(List *selist, Query *query, Node *n);
-static List *proxyRteRelation(List *selist, Query *query, int rtindex, Node **quals);
-static List *proxyRteSubQuery(List *selist, Query *query);
-static List *proxyJoinTree(List *selist, Query *query, Node *n, Node **quals);
-static List *proxySetOperations(List *selist, Query *query, Node *n);
+static List *sepgsqlWalkExpr(List *selist, queryChain *qc, Node *n);
+static List *proxyRteRelation(List *selist, queryChain *qc, int rtindex, Node **quals);
+static List *proxyRteSubQuery(List *selist, queryChain *qc, Query *query);
+static List *proxyJoinTree(List *selist, queryChain *qc, Node *n, Node **quals);
+static List *proxySetOperations(List *selist, queryChain *qc, Node *n);
 
 /* -----------------------------------------------------------
  * addEvalXXXX -- add evaluation items into Query->SEvalItemList.
@@ -136,15 +155,17 @@ static List *addEvalPgProc(List *selist, Oid funcid, uint32 perms)
  * walkXXXX() -- walk on the Query tree recursively to check
  * refered expr, and push EvalItem for later evaluation.
  * ----------------------------------------------------------- */
-static List *walkVar(List *selist, Query *query, Var *var)
+static List *walkVar(List *selist, queryChain *qc, Var *var)
 {
 	RangeTblEntry *rte;
+	Query *query;
 	Node *n;
 
 	Assert(IsA(var, Var));
-	if (!query)
+	if (!qc)
 		selerror("we could not use Var node in parameter list");
 
+	query = upperQueryChain(qc, var->varlevelsup);
 	rte = list_nth(query->rtable, var->varno - 1);
 	Assert(IsA(rte, RangeTblEntry));
 	switch (rte->rtekind) {
@@ -156,7 +177,7 @@ static List *walkVar(List *selist, Query *query, Var *var)
 		break;
 	case RTE_JOIN:
 		n = list_nth(rte->joinaliasvars, var->varattno - 1);
-        selist = sepgsqlWalkExpr(selist, query, n);
+        selist = sepgsqlWalkExpr(selist, qc, n);
         break;
 	default:
 		if (rte->rtekind < RTE_RELATION || rte->rtekind > RTE_VALUES)
@@ -166,20 +187,20 @@ static List *walkVar(List *selist, Query *query, Var *var)
 	return selist;
 }
 
-static List *walkFuncExpr(List *selist, Query *query, FuncExpr *func)
+static List *walkFuncExpr(List *selist, queryChain *qc, FuncExpr *func)
 {
 	Assert(IsA(func, FuncExpr));
 
 	selist = addEvalPgProc(selist, func->funcid, PROCEDURE__EXECUTE);
-	selist = sepgsqlWalkExpr(selist, query, (Node *) func->args);
+	selist = sepgsqlWalkExpr(selist, qc, (Node *) func->args);
 
 	return selist;
 }
 
-static List *walkBoolExpr(List *selist, Query *query, BoolExpr *expr)
+static List *walkBoolExpr(List *selist, queryChain *qc, BoolExpr *expr)
 {
 	Assert(IsA(expr, BoolExpr));
-	return sepgsqlWalkExpr(selist, query, (Node *) expr->args);
+	return sepgsqlWalkExpr(selist, qc, (Node *) expr->args);
 }
 
 static List *__walkOpExprHelper(List *selist, Oid opid)
@@ -204,51 +225,52 @@ static List *__walkOpExprHelper(List *selist, Oid opid)
 	return selist;
 }
 
-static List *walkOpExpr(List *selist, Query *query, OpExpr *n)
+static List *walkOpExpr(List *selist, queryChain *qc, OpExpr *n)
 {
 	selist = __walkOpExprHelper(selist, n->opno);
-	selist = sepgsqlWalkExpr(selist, query, (Node *) n->args);
+	selist = sepgsqlWalkExpr(selist, qc, (Node *) n->args);
 	return selist;
 }
 
-static List *walkScalarArrayOpExpr(List *selist, Query *query, ScalarArrayOpExpr *sao)
+static List *walkScalarArrayOpExpr(List *selist, queryChain *qc, ScalarArrayOpExpr *sao)
 {
 	selist = __walkOpExprHelper(selist, sao->opno);
-	selist = sepgsqlWalkExpr(selist, query, (Node *) sao->args);
+	selist = sepgsqlWalkExpr(selist, qc, (Node *) sao->args);
 	return selist;
 }
 
-static List *walkAggref(List *selist, Query *query, Aggref *aggref)
+static List *walkAggref(List *selist, queryChain *qc, Aggref *aggref)
 {
 	Assert(IsA(aggref, Aggref));
 	selist = addEvalPgProc(selist, aggref->aggfnoid, PROCEDURE__EXECUTE);
-	selist = sepgsqlWalkExpr(selist, query, (Node *) aggref->args);
+	selist = sepgsqlWalkExpr(selist, qc, (Node *) aggref->args);
 	return selist;
 }
 
-static List *walkSubLink(List *selist, Query *query, SubLink *slink)
+static List *walkSubLink(List *selist, queryChain *qc, SubLink *slink)
 {
 	Assert(IsA(slink, SubLink));
 	Assert(IsA(slink->subselect, Query));
 
-	selist = proxyRteSubQuery(selist, (Query *) slink->subselect);
+	selist = proxyRteSubQuery(selist, qc, (Query *) slink->subselect);
 
 	return selist;
 }
 
-static List *walkList(List *selist, Query *query, List *list)
+static List *walkList(List *selist, queryChain *qc, List *list)
 {
 	ListCell *l;
 
 	Assert(IsA(list, List));
 	foreach (l, list)
-		selist = sepgsqlWalkExpr(selist, query, lfirst(l));
+		selist = sepgsqlWalkExpr(selist, qc, lfirst(l));
 
 	return selist;
 }
 
-static List *walkSortClause(List *selist, Query *query, SortClause *sortcl)
+static List *walkSortClause(List *selist, queryChain *qc, SortClause *sortcl)
 {
+	Query *query = tailQueryChain(qc);
 	ListCell *l;
 
 	Assert(IsA(sortcl, SortClause) || IsA(sortcl, GroupClause));
@@ -256,83 +278,83 @@ static List *walkSortClause(List *selist, Query *query, SortClause *sortcl)
 		TargetEntry *te = (TargetEntry *) lfirst(l);
 		Assert(IsA(te, TargetEntry));
 		if (te->ressortgroupref == sortcl->tleSortGroupRef) {
-			selist = sepgsqlWalkExpr(selist, query, (Node *) te->expr);
+			selist = sepgsqlWalkExpr(selist, qc, (Node *) te->expr);
 			break;
 		}
 	}
 	return selist;
 }
 
-static List *walkCoerceToDomain(List *selist, Query *query, CoerceToDomain *cd)
+static List *walkCoerceToDomain(List *selist, queryChain *qc, CoerceToDomain *cd)
 {
-	return sepgsqlWalkExpr(selist, query, (Node *) cd->arg);
+	return sepgsqlWalkExpr(selist, qc, (Node *) cd->arg);
 }
 
-static List *walkCaseExpr(List *selist, Query *query, CaseExpr *ce)
+static List *walkCaseExpr(List *selist, queryChain *qc, CaseExpr *ce)
 {
 	ListCell *l;
 
-	selist = sepgsqlWalkExpr(selist, query, (Node *) ce->arg);
+	selist = sepgsqlWalkExpr(selist, qc, (Node *) ce->arg);
 	foreach(l, ce->args)
-		selist = sepgsqlWalkExpr(selist, query, (Node *) lfirst(l));
-	selist = sepgsqlWalkExpr(selist, query, (Node *) ce->defresult);
+		selist = sepgsqlWalkExpr(selist, qc, (Node *) lfirst(l));
+	selist = sepgsqlWalkExpr(selist, qc, (Node *) ce->defresult);
 	return selist;
 }
 
-static List *walkCaseWhen(List *selist, Query *query, CaseWhen *cw)
+static List *walkCaseWhen(List *selist, queryChain *qc, CaseWhen *cw)
 {
-	selist = sepgsqlWalkExpr(selist, query, (Node *) cw->expr);
-	selist = sepgsqlWalkExpr(selist, query, (Node *) cw->result);
+	selist = sepgsqlWalkExpr(selist, qc, (Node *) cw->expr);
+	selist = sepgsqlWalkExpr(selist, qc, (Node *) cw->result);
 	return selist;
 }
 
-static List *walkRelabelType(List *selist, Query *query, RelabelType *rt)
+static List *walkRelabelType(List *selist, queryChain *qc, RelabelType *rt)
 {
-	return sepgsqlWalkExpr(selist, query, (Node *) rt->arg);
+	return sepgsqlWalkExpr(selist, qc, (Node *) rt->arg);
 }
 
-static List *walkCoalesceExpr(List *selist, Query *query, CoalesceExpr *ce)
+static List *walkCoalesceExpr(List *selist, queryChain *qc, CoalesceExpr *ce)
 {
-	return sepgsqlWalkExpr(selist, query, (Node *) ce->args);
+	return sepgsqlWalkExpr(selist, qc, (Node *) ce->args);
 }
 
-static List *walkMinMaxExpr(List *selist, Query *query, MinMaxExpr *mme)
+static List *walkMinMaxExpr(List *selist, queryChain *qc, MinMaxExpr *mme)
 {
-	return sepgsqlWalkExpr(selist, query, (Node *) mme->args);
+	return sepgsqlWalkExpr(selist, qc, (Node *) mme->args);
 }
 
-static List *walkNullTest(List *selist, Query *query, NullTest *nt)
+static List *walkNullTest(List *selist, queryChain *qc, NullTest *nt)
 {
-	return sepgsqlWalkExpr(selist, query, (Node *) nt->arg);
+	return sepgsqlWalkExpr(selist, qc, (Node *) nt->arg);
 }
 
-static List *walkFieldSelect(List *selist, Query *query, FieldSelect *fselect)
+static List *walkFieldSelect(List *selist, queryChain *qc, FieldSelect *fselect)
 {
-	return sepgsqlWalkExpr(selist, query, (Node *) fselect->arg);
+	return sepgsqlWalkExpr(selist, qc, (Node *) fselect->arg);
 }
 
-static List *walkFieldStore(List *selist, Query *query, FieldStore *fstore)
+static List *walkFieldStore(List *selist, queryChain *qc, FieldStore *fstore)
 {
-	selist = sepgsqlWalkExpr(selist, query, (Node *) fstore->arg);
-	selist = sepgsqlWalkExpr(selist, query, (Node *) fstore->newvals);
+	selist = sepgsqlWalkExpr(selist, qc, (Node *) fstore->arg);
+	selist = sepgsqlWalkExpr(selist, qc, (Node *) fstore->newvals);
 	return selist;
 }
 
-static List *walkArrayExpr(List *selist, Query *query, ArrayExpr *ae)
+static List *walkArrayExpr(List *selist, queryChain *qc, ArrayExpr *ae)
 {
-	return sepgsqlWalkExpr(selist, query, (Node *) ae->elements);
+	return sepgsqlWalkExpr(selist, qc, (Node *) ae->elements);
 }
 
-static List *walkArrayRef(List *selist, Query *query, ArrayRef *aref)
+static List *walkArrayRef(List *selist, queryChain *qc, ArrayRef *aref)
 {
-	selist = sepgsqlWalkExpr(selist, query, (Node *) aref->refupperindexpr);
-	selist = sepgsqlWalkExpr(selist, query, (Node *) aref->reflowerindexpr);
-	selist = sepgsqlWalkExpr(selist, query, (Node *) aref->refexpr);
-	selist = sepgsqlWalkExpr(selist, query, (Node *) aref->refassgnexpr);
+	selist = sepgsqlWalkExpr(selist, qc, (Node *) aref->refupperindexpr);
+	selist = sepgsqlWalkExpr(selist, qc, (Node *) aref->reflowerindexpr);
+	selist = sepgsqlWalkExpr(selist, qc, (Node *) aref->refexpr);
+	selist = sepgsqlWalkExpr(selist, qc, (Node *) aref->refassgnexpr);
 	return selist;
 }
 
-static List *sepgsqlWalkExpr(List *selist, Query *query, Node *n)
+static List *sepgsqlWalkExpr(List *selist, queryChain *qc, Node *n)
 {
 	if (n == NULL)
 		return selist;
@@ -344,66 +366,66 @@ static List *sepgsqlWalkExpr(List *selist, Query *query, Node *n)
 		/* do nothing */
 		break;
 	case T_Var:
-		selist = walkVar(selist, query, (Var *) n);
+		selist = walkVar(selist, qc, (Var *) n);
 		break;
 	case T_FuncExpr:
-		selist = walkFuncExpr(selist, query, (FuncExpr *) n);
+		selist = walkFuncExpr(selist, qc, (FuncExpr *) n);
 		break;
 	case T_ScalarArrayOpExpr:
-		selist = walkScalarArrayOpExpr(selist, query, (ScalarArrayOpExpr *) n);
+		selist = walkScalarArrayOpExpr(selist, qc, (ScalarArrayOpExpr *) n);
 		break;
 	case T_BoolExpr:
-		selist = walkBoolExpr(selist, query, (BoolExpr *) n);
+		selist = walkBoolExpr(selist, qc, (BoolExpr *) n);
 		break;
 	case T_NullIfExpr:
 	case T_OpExpr:
-		selist = walkOpExpr(selist, query, (OpExpr *) n);
+		selist = walkOpExpr(selist, qc, (OpExpr *) n);
 		break;
 	case T_Aggref:
-		selist = walkAggref(selist, query, (Aggref *) n);
+		selist = walkAggref(selist, qc, (Aggref *) n);
 		break;
 	case T_ArrayRef:
-		selist = walkArrayRef(selist, query, (ArrayRef *) n);
+		selist = walkArrayRef(selist, qc, (ArrayRef *) n);
 		break;
 	case T_SubLink:
-		selist = walkSubLink(selist, query, (SubLink *) n);
+		selist = walkSubLink(selist, qc, (SubLink *) n);
 		break;
 	case T_SortClause:
 	case T_GroupClause:  /* GroupClause is typedef'ed by SortClause */
-		selist = walkSortClause(selist, query, (SortClause *) n);
+		selist = walkSortClause(selist, qc, (SortClause *) n);
 		break;
 	case T_List:
-		selist = walkList(selist, query, (List *) n);
+		selist = walkList(selist, qc, (List *) n);
 		break;
 	case T_CoerceToDomain:
-		selist = walkCoerceToDomain(selist, query, (CoerceToDomain *) n);
+		selist = walkCoerceToDomain(selist, qc, (CoerceToDomain *) n);
 		break;
 	case T_CaseExpr:
-		selist = walkCaseExpr(selist, query, (CaseExpr *) n);
+		selist = walkCaseExpr(selist, qc, (CaseExpr *) n);
 		break;
 	case T_CaseWhen:
-		selist = walkCaseWhen(selist, query, (CaseWhen *) n);
+		selist = walkCaseWhen(selist, qc, (CaseWhen *) n);
 		break;
 	case T_RelabelType:
-		selist = walkRelabelType(selist, query, (RelabelType *) n);
+		selist = walkRelabelType(selist, qc, (RelabelType *) n);
 		break;
 	case T_CoalesceExpr:
-		selist = walkCoalesceExpr(selist, query, (CoalesceExpr *) n);
+		selist = walkCoalesceExpr(selist, qc, (CoalesceExpr *) n);
 		break;
 	case T_MinMaxExpr:
-		selist = walkMinMaxExpr(selist, query, (MinMaxExpr *) n);
+		selist = walkMinMaxExpr(selist, qc, (MinMaxExpr *) n);
 		break;
 	case T_NullTest:
-		selist = walkNullTest(selist, query, (NullTest *) n);
+		selist = walkNullTest(selist, qc, (NullTest *) n);
 		break;
 	case T_FieldSelect:
-		selist = walkFieldSelect(selist, query, (FieldSelect *) n);
+		selist = walkFieldSelect(selist, qc, (FieldSelect *) n);
 		break;
 	case T_FieldStore:
-		selist = walkFieldStore(selist, query, (FieldStore *) n);
+		selist = walkFieldStore(selist, qc, (FieldStore *) n);
 		break;
 	case T_ArrayExpr:
-		selist = walkArrayExpr(selist, query, (ArrayExpr *)n);
+		selist = walkArrayExpr(selist, qc, (ArrayExpr *)n);
 		break;
 	default:
 		selnotice("Node(%d) is ignored => %s", nodeTag(n), nodeToString(n));
@@ -418,13 +440,15 @@ static List *sepgsqlWalkExpr(List *selist, Query *query, Node *n)
  * ----------------------------------------------------------- */
 static Oid fnoid_sepgsql_tuple_perm = F_SEPGSQL_TUPLE_PERMS;
 
-static List *proxyRteRelation(List *selist, Query *query, int rtindex, Node **quals)
+static List *proxyRteRelation(List *selist, queryChain *qc, int rtindex, Node **quals)
 {
+	Query *query;
 	RangeTblEntry *rte;
 	Relation rel;
 	TupleDesc tdesc;
 	uint32 perms = 0;
 
+	query = tailQueryChain(qc);
 	rte = list_nth(query->rtable, rtindex - 1);
 	rel = relation_open(rte->relid, AccessShareLock);
 	tdesc = RelationGetDescr(rel);
@@ -477,11 +501,17 @@ static List *proxyRteRelation(List *selist, Query *query, int rtindex, Node **qu
 	return selist;
 }
 
-static List *proxyRteSubQuery(List *selist, Query *query)
+static List *proxyRteSubQuery(List *selist, queryChain *qc, Query *query)
 {
 	CmdType cmdType = query->commandType;
 	RangeTblEntry *rte = NULL;
+	queryChain qcData;
 	ListCell *l;
+
+	/* query chain setup */
+	qcData.parent = qc;
+	qcData.tail = query;
+	qc = &qcData;
 
 	if (cmdType != CMD_SELECT) {
 		rte = list_nth(query->rtable, query->resultRelation - 1);
@@ -515,7 +545,7 @@ static List *proxyRteSubQuery(List *selist, Query *query)
 			TargetEntry *te = lfirst(l);
 			Assert(IsA(te, TargetEntry));
 
-			selist = sepgsqlWalkExpr(selist, query, (Node *) te->expr);
+			selist = sepgsqlWalkExpr(selist, qc, (Node *) te->expr);
 
 			/* mark insert/update target */
 			if (te->resjunk) {
@@ -534,34 +564,36 @@ static List *proxyRteSubQuery(List *selist, Query *query)
 	foreach (l, query->returningList) {
 		TargetEntry *te = lfirst(l);
 		Assert(IsA(te, TargetEntry));
-		selist = sepgsqlWalkExpr(selist, query, (Node *) te->expr);
+		selist = sepgsqlWalkExpr(selist, qc, (Node *) te->expr);
 	}
 
 	/* permission mark on the WHERE/HAVING clause */
-	selist = sepgsqlWalkExpr(selist, query, query->jointree->quals);
-	selist = sepgsqlWalkExpr(selist, query, query->havingQual);
+	selist = sepgsqlWalkExpr(selist, qc, query->jointree->quals);
+	selist = sepgsqlWalkExpr(selist, qc, query->havingQual);
 
 	/* permission mark on the ORDER BY clause */
-	// selist = sepgsqlWalkExpr(selist, query, (Node *) query->sortClause);
+	// selist = sepgsqlWalkExpr(selist, qc, (Node *) query->sortClause);
 
 	/* permission mark on the GROUP BY/HAVING clause */
-	// selist = sepgsqlWalkExpr(selist, query, (Node *) query->groupClause);
+	// selist = sepgsqlWalkExpr(selist, qc, (Node *) query->groupClause);
 
 	/* append sepgsql_permission() on the FROM clause/USING clause
 	 * for SELECT/UPDATE/DELETE statement.
 	 * The target Relation of INSERT is noe necessary to append it
 	 */
-	selist = proxyJoinTree(selist, query, (Node *) query->jointree,
+	selist = proxyJoinTree(selist, qc, (Node *) query->jointree,
 							 &query->jointree->quals);
 
 	/* permission mark on the UNION/INTERSECT/EXCEPT */
-	selist = proxySetOperations(selist, query, query->setOperations);
+	selist = proxySetOperations(selist, qc, query->setOperations);
 
 	return selist;
 }
 
-static List *proxyJoinTree(List *selist, Query *query, Node *n, Node **quals)
+static List *proxyJoinTree(List *selist, queryChain *qc, Node *n, Node **quals)
 {
+	Query *query = tailQueryChain(qc);
+
 	if (n == NULL)
 		return selist;
 
@@ -572,20 +604,20 @@ static List *proxyJoinTree(List *selist, Query *query, Node *n, Node **quals)
 
 		switch (rte->rtekind) {
 		case RTE_RELATION:
-			selist = proxyRteRelation(selist, query, rtr->rtindex, quals);
+			selist = proxyRteRelation(selist, qc, rtr->rtindex, quals);
 			break;
 		case RTE_SUBQUERY:
-			selist = proxyRteSubQuery(selist, rte->subquery);
+			selist = proxyRteSubQuery(selist, qc, rte->subquery);
 			break;
 		case RTE_FUNCTION: {
 			FuncExpr *f = (FuncExpr *) rte->funcexpr;
 
-			selist = sepgsqlWalkExpr(selist, query, (Node *) f);
-			selist = sepgsqlWalkExpr(selist, query, (Node *) f->args);
+			selist = sepgsqlWalkExpr(selist, qc, (Node *) f);
+			selist = sepgsqlWalkExpr(selist, qc, (Node *) f->args);
 			break;
 		}
 		case RTE_VALUES:
-			selist = sepgsqlWalkExpr(selist, query, (Node *) rte->values_lists);
+			selist = sepgsqlWalkExpr(selist, qc, (Node *) rte->values_lists);
 			break;
 		default:
 			selerror("rtekind = %d should not be found fromList", rte->rtekind);
@@ -596,20 +628,22 @@ static List *proxyJoinTree(List *selist, Query *query, Node *n, Node **quals)
 		ListCell *l;
 
 		foreach (l, f->fromlist)
-			selist = proxyJoinTree(selist, query, lfirst(l), quals);
+			selist = proxyJoinTree(selist, qc, lfirst(l), quals);
 	} else if (IsA(n, JoinExpr)) {
 		JoinExpr *j = (JoinExpr *) n;
 
-		selist = proxyJoinTree(selist, query, j->larg, &j->quals);
-		selist = proxyJoinTree(selist, query, j->rarg, &j->quals);
+		selist = proxyJoinTree(selist, qc, j->larg, &j->quals);
+		selist = proxyJoinTree(selist, qc, j->rarg, &j->quals);
 	} else {
 		selerror("unrecognized node type (%d) in query->jointree", nodeTag(n));
 	}
 	return selist;
 }
 
-static List *proxySetOperations(List *selist, Query *query, Node *n)
+static List *proxySetOperations(List *selist, queryChain *qc, Node *n)
 {
+	Query *query = tailQueryChain(qc);
+
 	if (n == NULL)
 		return selist;
 
@@ -619,12 +653,12 @@ static List *proxySetOperations(List *selist, Query *query, Node *n)
 
 		Assert(IsA(rte, RangeTblEntry) && rte->rtekind == RTE_SUBQUERY);
 
-		selist = proxyRteSubQuery(selist, query);
+		selist = proxyRteSubQuery(selist, qc, query);
     } else if (IsA(n, SetOperationStmt)) {
 		SetOperationStmt *op = (SetOperationStmt *) n;
 
-		selist = proxySetOperations(selist, query, (Node *) op->larg);
-		selist = proxySetOperations(selist, query, (Node *) op->rarg);
+		selist = proxySetOperations(selist, qc, (Node *) op->larg);
+		selist = proxySetOperations(selist, qc, (Node *) op->rarg);
     } else {
 		selerror("setOperationsTree contains => %s", nodeToString(n));
     }
@@ -636,7 +670,7 @@ static List *proxyGeneralQuery(Query *query)
 {
 	List *selist = NIL;
 
-	selist = proxyRteSubQuery(selist, query);
+	selist = proxyRteSubQuery(selist, NULL, query);
 	query->SEvalItemList = selist;
 
 	return list_make1(query);
@@ -646,10 +680,13 @@ static List *proxyExecuteStmt(Query *query)
 {
 	List *selist = NIL;
 	ExecuteStmt *estmt = (ExecuteStmt *) query->utilityStmt;
+	queryChain qcData;
 
 	Assert(nodeTag(query->utilityStmt) == T_ExecuteStmt);
 
-	selist = sepgsqlWalkExpr(selist, query, (Node *) estmt->params);
+	qcData.parent = NULL;
+	qcData.tail = query;
+	selist = sepgsqlWalkExpr(selist, &qcData, (Node *) estmt->params);
 	query->SEvalItemList = selist;
 
 	return list_make1(query);
