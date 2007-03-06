@@ -27,7 +27,7 @@ Source4: sepostgresql.fc
 Patch0: sepostgresql-%{version}-%{sepgrevision}.patch
 
 Buildrequires: autoconf libselinux-devel selinux-policy-devel
-Requires: policycoreutils selinux-policy
+Requires: policycoreutils >= 1.33.12-1 selinux-policy >= 2.4.6-40
 
 %description
 Security Enhanced PostgreSQL is an extension of PostgreSQL
