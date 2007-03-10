@@ -156,7 +156,7 @@ if [ $1 -eq 0 ]; then		# rpm -e cases
 	groupdel sepgsql >& /dev/null || :
 	SEPGSQL_PREV=`semodule -l | grep -c ^sepostgresql`
 	test ${SEPGSQL_PREV} -gt 0 && semodule -r sepostgresql || :
-elif [ $1 -gq 1 ]; then		# rpm -Uvh cases
+elif [ $1 -eq 1 ]; then		# rpm -Uvh cases
 	/sbin/service sepostgresql condrestart >/dev/null 2>&1 || :
 fi
 
