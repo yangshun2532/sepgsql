@@ -205,5 +205,13 @@ fi
 /var/lib/sepgsql/.bash_profile
 
 %changelog
+* Wed, 21 Mar 2007 <kaigai@kaigai.gr.jp>
+- BUGFIX: SetOperation didn't handle its subquery correctly.
+  So, it caused server crash.
+
+* Wed, 07 Mar 2007 <kaigai@kaigai.gr.jp>
+- BUGFIX: var->varlevelsup was ignored, so outer references
+  from subqueries cause a fault.
+
 * Tue Feb 27 2007  <kaigai@kaigai.gr.jp>
 - Initial RPM build

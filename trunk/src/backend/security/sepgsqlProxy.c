@@ -577,15 +577,15 @@ static List *proxyRteSubQuery(List *selist, queryChain *qc, Query *query)
 	/* permission mark on the GROUP BY/HAVING clause */
 	// selist = sepgsqlWalkExpr(selist, qc, (Node *) query->groupClause);
 
+	/* permission mark on the UNION/INTERSECT/EXCEPT */
+	selist = proxySetOperations(selist, qc, query->setOperations);
+
 	/* append sepgsql_permission() on the FROM clause/USING clause
 	 * for SELECT/UPDATE/DELETE statement.
 	 * The target Relation of INSERT is noe necessary to append it
 	 */
 	selist = proxyJoinTree(selist, qc, (Node *) query->jointree,
 							 &query->jointree->quals);
-
-	/* permission mark on the UNION/INTERSECT/EXCEPT */
-	selist = proxySetOperations(selist, qc, query->setOperations);
 
 	return selist;
 }
@@ -653,7 +653,7 @@ static List *proxySetOperations(List *selist, queryChain *qc, Node *n)
 
 		Assert(IsA(rte, RangeTblEntry) && rte->rtekind == RTE_SUBQUERY);
 
-		selist = proxyRteSubQuery(selist, qc, query);
+		selist = proxyRteSubQuery(selist, qc, rte->subquery);
     } else if (IsA(n, SetOperationStmt)) {
 		SetOperationStmt *op = (SetOperationStmt *) n;
 
