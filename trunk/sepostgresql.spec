@@ -205,11 +205,14 @@ fi
 /var/lib/sepgsql/.bash_profile
 
 %changelog
-* Wed, 21 Mar 2007 <kaigai@kaigai.gr.jp>
+* Sat Apr 07 2007 <kaigai@kaigai.gr.jp>
+- add the first implementation of SE-PostgreSQL on PGACE framework
+
+* Wed Mar 21 2007 <kaigai@kaigai.gr.jp>
 - BUGFIX: SetOperation didn't handle its subquery correctly.
   So, it caused server crash.
 
-* Wed, 07 Mar 2007 <kaigai@kaigai.gr.jp>
+* Wed Mac 07 2007 <kaigai@kaigai.gr.jp>
 - BUGFIX: var->varlevelsup was ignored, so outer references
   from subqueries cause a fault.
 
