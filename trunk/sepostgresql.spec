@@ -212,7 +212,7 @@ fi
 - BUGFIX: SetOperation didn't handle its subquery correctly.
   So, it caused server crash.
 
-* Wed Mac 07 2007 <kaigai@kaigai.gr.jp>
+* Wed Mar 07 2007 <kaigai@kaigai.gr.jp>
 - BUGFIX: var->varlevelsup was ignored, so outer references
   from subqueries cause a fault.
 
