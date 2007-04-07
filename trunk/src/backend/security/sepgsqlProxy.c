@@ -549,7 +549,7 @@ static List *proxyRteSubQuery(List *selist, queryChain *qc, Query *query)
 
 			/* mark insert/update target */
 			if (te->resjunk) {
-				if (!strcmp(te->resname, SECURITY_ATTR)) {
+				if (!strcmp(te->resname, SECURITY_SYSATTR_NAME)) {
 					selist = addEvalPgAttribtue(selist, rte, SecurityAttributeNumber, perms);
 					//rte->requiredPerms |= RTEMARK_RELABELFROM;
 				}
@@ -671,7 +671,7 @@ static List *proxyGeneralQuery(Query *query)
 	List *selist = NIL;
 
 	selist = proxyRteSubQuery(selist, NULL, query);
-	query->SEvalItemList = selist;
+	query->pgaceList = selist;
 
 	return list_make1(query);
 }
@@ -687,7 +687,7 @@ static List *proxyExecuteStmt(Query *query)
 	qcData.parent = NULL;
 	qcData.tail = query;
 	selist = sepgsqlWalkExpr(selist, &qcData, (Node *) estmt->params);
-	query->SEvalItemList = selist;
+	query->pgaceList = selist;
 
 	return list_make1(query);
 }
@@ -805,23 +805,12 @@ List *sepgsqlProxyQueryList(List *queryList)
 	return new_list;
 }
 
-void *sepgsqlForeignKeyPrepare(const char *querystr, int nargs, Oid *argtypes)
-{
-	Oid saved_fnoid = fnoid_sepgsql_tuple_perm;
-	void *qplan;
-
+Oid sepgsqlPreparePlanCheck(Relation rel) {
+	Oid pgace_saved = fnoid_sepgsql_tuple_perm;
 	fnoid_sepgsql_tuple_perm = F_SEPGSQL_TUPLE_PERMS_ABORT;
-	PG_TRY();
-	{
-		qplan = SPI_prepare(querystr, nargs, argtypes);
-	}
-	PG_CATCH();
-	{
-		fnoid_sepgsql_tuple_perm = saved_fnoid;
-		PG_RE_THROW();
-	}
-	PG_END_TRY();
-	fnoid_sepgsql_tuple_perm = saved_fnoid;
+	return pgace_saved;
+}
 
-	return qplan;
+void sepgsqlRestorePlanCheck(Relation rel, Oid pgace_saved) {
+	fnoid_sepgsql_tuple_perm = pgace_saved;
 }

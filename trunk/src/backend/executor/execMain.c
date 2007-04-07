@@ -48,7 +48,7 @@
 #include "optimizer/clauses.h"
 #include "parser/parse_clause.h"
 #include "parser/parsetree.h"
-#include "security/sepgsql.h"
+#include "security/pgace.h"
 #include "storage/smgr.h"
 #include "utils/acl.h"
 #include "utils/lsyscache.h"
@@ -1066,6 +1066,8 @@ ExecutePlan(EState *estate,
 
 	for (;;)
 	{
+		Oid		__tts_security = InvalidOid;
+
 		/* Reset the per-output-tuple exprcontext */
 		ResetPerTupleExprContext(estate);
 
@@ -1092,9 +1094,6 @@ lnext:	;
 			break;
 		}
 		slot = planSlot;
-#ifdef HAVE_SELINUX
-		slot->tts_security = InvalidOid;
-#endif
 
 		/*
 		 * if we have a junk filter, then project a new tuple with the junk
@@ -1110,7 +1109,6 @@ lnext:	;
 		{
 			Datum		datum;
 			bool		isNull;
-			Oid			__tts_security = InvalidOid;
 
 			/*
 			 * extract the 'ctid' junk attribute.
@@ -1221,14 +1219,13 @@ lnext:	;
 				}
 			}
 
-#ifdef HAVE_SELINUX
 			if (ExecGetJunkAttribute(junkfilter,
 									 slot,
-									 SECURITY_ATTR,
+									 SECURITY_SYSATTR_NAME,
 									 &datum,
 									 &isNull) && !isNull)
 				__tts_security = DatumGetObjectId(datum);
-#endif
+
 			/*
 			 * Create a new "clean" tuple with all junk attributes removed. We
 			 * don't need to do this for DELETE, however (there will in fact
@@ -1236,10 +1233,8 @@ lnext:	;
 			 */
 			if (operation != CMD_DELETE)
 				slot = ExecFilterJunk(junkfilter, slot);
-#ifdef HAVE_SELINUX
-			slot->tts_security = __tts_security;
-#endif
 		}
+		slot->tts_security = __tts_security;
 
 		/*
 		 * now that we have a tuple, do the appropriate thing with it.. either
@@ -1399,8 +1394,8 @@ ExecInsert(TupleTableSlot *slot,
 	/*
 	 * Check the explicit labeling, if configured
 	 */
-	if (!sepgsqlExecInsert(resultRelationDesc, tuple,
-						   !!resultRelInfo->ri_projectReturning))
+	if (!pgaceExecInsert(resultRelationDesc, tuple,
+						 !!resultRelInfo->ri_projectReturning))
 		return;
 
 	/*
@@ -1471,8 +1466,8 @@ ExecDelete(ItemPointer tupleid,
 			return;
 	}
 
-	if (!sepgsqlExecDelete(resultRelationDesc, tupleid,
-						   !!resultRelInfo->ri_projectReturning))
+	if (!pgaceExecDelete(resultRelationDesc, tupleid,
+						 !!resultRelInfo->ri_projectReturning))
 		return;
 
 	/*
@@ -1660,8 +1655,8 @@ lreplace:;
 	/*
 	 * check explicit labeling, if necessary
 	 */
-	if (!sepgsqlExecUpdate(resultRelationDesc, tuple, tupleid,
-						   !!resultRelInfo->ri_projectReturning))
+	if (!pgaceExecUpdate(resultRelationDesc, tuple, tupleid,
+						 !!resultRelInfo->ri_projectReturning))
 		return;
 
 	/*
@@ -2586,7 +2581,7 @@ intorel_receive(TupleTableSlot *slot, DestReceiver *self)
 
 	tuple = ExecCopySlotTuple(slot);
 	HeapTupleStoreSecurityFromSlot(tuple, slot);
-	if (!sepgsqlExecInsert(estate->es_into_relation_descriptor, tuple, false)) {
+	if (!pgaceExecInsert(estate->es_into_relation_descriptor, tuple, false)) {
 		heap_freetuple(tuple);
 		return;
 	}

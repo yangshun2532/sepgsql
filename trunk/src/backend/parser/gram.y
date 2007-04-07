@@ -56,7 +56,7 @@
 #include "commands/defrem.h"
 #include "nodes/makefuncs.h"
 #include "parser/gramparse.h"
-#include "security/sepgsql.h"
+#include "security/pgace.h"
 #include "storage/lmgr.h"
 #include "utils/date.h"
 #include "utils/datetime.h"
@@ -1526,27 +1526,18 @@ alter_table_cmd:
 			/* ALTER TABLE <relation> CONTEXT = '...' */
 			| IDENT '=' Sconst
 				{
-					AlterTableCmd *n;
-					if (strcmp($1, "context") != 0 || !sepgsqlIsEnabled())
+					AlterTableCmd *n = pgaceGramAlterTable(NULL, $1, $3);
+					if (n == NULL)
 						yyerror("syntax error");
-
-					n = makeNode(AlterTableCmd);
-					n->subtype = AT_SetTableSecurityContext;
-					n->def = (Node *)makeString($3);
-					$$ = (Node *)n;
+					$$ = (Node *) n;
 				}
 			/* ALTER TABLE <relation> ALTER [COLUMN] <colname> CONTEXT = '...' */
 			| ALTER opt_column ColId IDENT '=' Sconst
 				{
-					AlterTableCmd *n;
-					if (strcmp($4, "context") != 0 || !sepgsqlIsEnabled())
+					AlterTableCmd *n = pgaceGramAlterTable($3, $4, $6);
+					if (n == NULL)
 						yyerror("syntax error");
-
-					n = makeNode(AlterTableCmd);
-					n->subtype = AT_SetColumnSecurityContext;
-					n->name = $3;
-					n->def = (Node *)makeString($6);
-					$$ = (Node *)n;
+					$$ = (Node *) n;
 				}
 			| alter_rel_cmd
 				{
@@ -3978,9 +3969,10 @@ common_func_opt_item:
 				}
 			| IDENT '=' Sconst
 				{
-					if (strcmp($1, "context") != 0 || !sepgsqlIsEnabled())
+					DefElem *n = pgaceGramAlterFunction($1, $3);
+					if (n == NULL)
 						yyerror("syntax error");
-					$$ = makeDefElem("context", (Node *)makeString($3));
+					$$ = n;
 				}
 		;
 
@@ -5026,9 +5018,10 @@ alterdb_opt_item:
 				}
 			| IDENT '=' Sconst
 				{
-					if (strcmp($1, "context") != 0 || !sepgsqlIsEnabled())
+					DefElem *n = pgaceGramAlterDatabase($1, $3);
+					if (n == NULL)
 						yyerror("syntax error");
-					$$ = makeDefElem("context", (Node *)makeString($3));
+					$$ = n;
 				}
 		;
 

@@ -338,11 +338,10 @@ transformAssignedExpr(ParseState *pstate,
 	if (attrno > 0) {
 		attrtype = attnumTypeId(rd, attrno);
 		attrtypmod = rd->rd_att->attrs[attrno - 1]->atttypmod;
-#ifdef HAVE_SELINUX
-	} else if (attrno == SecurityAttributeNumber && sepgsqlIsEnabled()) {
-		attrtype = PSIDOID;
+	} else if (attrno == SecurityAttributeNumber) {
+		/* PGACE: writable system column support */
+		attrtype = SECLABELOID;
 		attrtypmod = -1;
-#endif
 	} else {
 		if (attrno <= 0)
 			ereport(ERROR,
@@ -491,10 +490,9 @@ updateTargetListEntry(ParseState *pstate,
 	 */
 	tle->resno = (AttrNumber) attrno;
 	tle->resname = colname;
-#ifdef HAVE_SELINUX
+	/* PGACE: writable system column support */
 	if (attrno < 0)
 		tle->resjunk = true;
-#endif
 }
 
 
@@ -761,9 +759,7 @@ checkInsertTargets(ParseState *pstate, List *cols, List **attrnos)
 		Bitmapset  *wholecols = NULL;
 		Bitmapset  *partialcols = NULL;
 		ListCell   *tl;
-#ifdef HAVE_SELINUX
-		bool		security_attr = false;		
-#endif
+		bool		security_attr = false;
 
 		foreach(tl, cols)
 		{
@@ -779,8 +775,8 @@ checkInsertTargets(ParseState *pstate, List *cols, List **attrnos)
 						 errmsg("column \"%s\" of relation \"%s\" does not exist",
 								name, RelationGetRelationName(pstate->p_target_relation)),
 						 parser_errposition(pstate, col->location)));
-#ifdef HAVE_SELINUX
-			} else if (attrno == SecurityAttributeNumber && sepgsqlIsEnabled()) {
+			} else if (attrno == SecurityAttributeNumber) {
+				/* PGACE: writable system column support */
 				if (security_attr)
 					ereport(ERROR,
 							(errcode(ERRCODE_DUPLICATE_COLUMN),
@@ -789,7 +785,6 @@ checkInsertTargets(ParseState *pstate, List *cols, List **attrnos)
 				security_attr = true;
 				*attrnos = lappend_int(*attrnos, attrno);
 				continue;
-#endif
 			} else if (attrno < 0) {
 				ereport(ERROR,
 						(errcode(ERRCODE_INVALID_COLUMN_REFERENCE),

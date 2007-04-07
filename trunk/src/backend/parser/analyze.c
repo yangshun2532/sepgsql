@@ -37,7 +37,7 @@
 #include "parser/parse_type.h"
 #include "parser/parsetree.h"
 #include "rewrite/rewriteManip.h"
-#include "security/sepgsql.h"
+#include "security/pgace.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
@@ -663,46 +663,9 @@ transformInsertStmt(ParseState *pstate, InsertStmt *stmt,
 		Assert(rte == rt_fetch(rtr->rtindex, pstate->p_rtable));
 		pstate->p_joinlist = lappend(pstate->p_joinlist, rtr);
 
-#ifdef HAVE_SELINUX
-		if (sepgsqlIsEnabled()) {
-			AttrNumber security_attrno = 0;
+		/* writable system column support */
+		pgaceTransformInsertStmt(&icolumns, &attrnos, selectQuery->targetList);
 
-			foreach (lc, selectQuery->targetList) {
-				TargetEntry *tle = (TargetEntry *) lfirst(lc);
-
-				security_attrno++;
-				if (strcmp(tle->resname, SECURITY_ATTR))
-					continue;
-				if (list_length(icolumns) < list_length(selectQuery->targetList)) {
-					List *__icolumns = NIL;
-					List *__attrnos = NIL;
-					ListCell *l1, *l2;
-					int i = 0;
-
-					forboth(l1, icolumns, l2, attrnos) {
-						if (++i == security_attrno) {
-							ResTarget *col = makeNode(ResTarget);
-							col->name = pstrdup(SECURITY_ATTR);
-							col->indirection = NIL;
-							col->val = NULL;
-							col->location = -1;
-
-							__icolumns = lappend(__icolumns, col);
-							__attrnos = lappend_int(__attrnos, SecurityAttributeNumber);
-						}
-						if (lfirst_int(l2) == SecurityAttributeNumber)
-							goto out_security_attr;
-						__icolumns = lappend(__icolumns, lfirst(l1));
-						__attrnos = lappend_int(__attrnos, lfirst_int(l2));
-					}
-					icolumns = __icolumns;
-					attrnos = __attrnos;
-				}
-				break;
-			}
-		out_security_attr: ;
-		}
-#endif
 		/*----------
 		 * Generate an expression list for the INSERT that selects all the
 		 * non-resjunk columns from the subquery.  (INSERT's tlist must be
@@ -862,15 +825,15 @@ transformInsertStmt(ParseState *pstate, InsertStmt *stmt,
 		Expr	   *expr = (Expr *) lfirst(lc);
 		ResTarget  *col;
 		TargetEntry *tle;
-		AttrNumber attrno = (AttrNumber) lfirst_int(attnos);
+		AttrNumber anum = (AttrNumber) lfirst_int(attnos);
 
 		col = (ResTarget *) lfirst(icols);
 		Assert(IsA(col, ResTarget));
 
 		tle = makeTargetEntry(expr,
-							  attrno,
+							  anum,
 							  col->name,
-							  attrno < 0 ? true : false);
+							  anum < 0 ? true : false);
 		qry->targetList = lappend(qry->targetList, tle);
 
 		icols = lnext(icols);
@@ -2188,21 +2151,9 @@ transformSelectStmt(ParseState *pstate, SelectStmt *stmt)
 		qry->intoOptions = copyObject(stmt->intoOptions);
 		qry->intoOnCommit = stmt->intoOnCommit;
 		qry->intoTableSpaceName = stmt->intoTableSpaceName;
-#ifdef HAVE_SELINUX
-		if (sepgsqlIsEnabled()) {
-			ListCell *l;
 
-			foreach (l, qry->targetList) {
-				TargetEntry *tle = lfirst(l);
-
-				if (tle->resjunk)
-					continue;
-				if (!strcmp(tle->resname, SECURITY_ATTR)) {
-					tle->resjunk = true;
-				}
-			}
-		}
-#endif
+		/* writable system column support */
+		pgaceTransformSelectStmt(qry->targetList);
 	}
 
 	qry->rtable = pstate->p_rtable;

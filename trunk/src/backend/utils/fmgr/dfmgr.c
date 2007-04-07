@@ -22,7 +22,7 @@
 #include "port/dynloader/win32.h"
 #endif
 #include "miscadmin.h"
-#include "security/sepgsql.h"
+#include "security/pgace.h"
 #include "utils/dynamic_loader.h"
 #include "utils/hsearch.h"
 
@@ -74,7 +74,6 @@ char	   *Dynamic_library_path;
 static void *internal_load_library(const char *libname);
 static void internal_unload_library(const char *libname);
 static bool file_exists(const char *name);
-static char *expand_dynamic_library_name(const char *name);
 static void check_restricted_library_name(const char *name);
 static char *substitute_libpath_macro(const char *name);
 static char *find_in_dynamic_libpath(const char *basename);
@@ -107,8 +106,8 @@ load_external_function(char *filename, char *funcname,
 	/* Expand the possibly-abbreviated filename to an exact path name */
 	fullname = expand_dynamic_library_name(filename);
 
-	/* Check whether the module can be loaded, or not */
-	sepgsqlLoadSharedModule(fullname);
+	/* PGACE: check whether the module can be loaded, or not */
+	pgaceLoadSharedModule(fullname);
 
 	/* Load the shared library, unless we already did */
 	lib_handle = internal_load_library(fullname);
@@ -150,8 +149,8 @@ load_file(const char *filename, bool restricted)
 	/* Expand the possibly-abbreviated filename to an exact path name */
 	fullname = expand_dynamic_library_name(filename);
 
-	/* Check whether the module can be loaded, or not */
-	sepgsqlLoadSharedModule(fullname);
+	/* PGACE: check whether the module can be loaded, or not */
+	pgaceLoadSharedModule(fullname);
 
 	/* Unload the library if currently loaded */
 	internal_unload_library(fullname);
@@ -402,7 +401,7 @@ file_exists(const char *name)
  *
  * The result will always be freshly palloc'd.
  */
-static char *
+char *
 expand_dynamic_library_name(const char *name)
 {
 	bool		have_slash;
@@ -453,19 +452,6 @@ expand_dynamic_library_name(const char *name)
 	 */
 	return pstrdup(name);
 }
-
-#ifdef HAVE_SELINUX
-/*
- * SE-PostgreSQL have to obtain the full-path of shared library modules
- * to check whether it is allowed, or not.
- * Because expand_dynamic_library_name() is defined as statical one,
- * an external interface is neccessary.
- */
-char *sepgsql_expand_dynamic_library_name(const char *name)
-{
-	return expand_dynamic_library_name(name);
-}
-#endif
 
 /*
  * Check a restricted library name.  It must begin with "$libdir/plugins/"

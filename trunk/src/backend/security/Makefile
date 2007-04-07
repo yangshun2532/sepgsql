@@ -9,11 +9,11 @@ top_builddir = ../../..
 include $(top_builddir)/src/Makefile.global
 
 ifeq ($(enable_selinux), yes)
-OBJS := sepgsqlCore.o sepgsqlPsid.o sepgsqlProxy.o \
-	sepgsqlHeap.o sepgsqlVerify.o sepgsqlHooks.o \
-	sepgsqlLargeObject.o
+OBJS := pgaceCommon.o \
+	sepgsqlCore.o sepgsqlProxy.o sepgsqlHeap.o sepgsqlVerify.o \
+	sepgsqlHooks.o sepgsqlExtStmt.o
 else
-OBJS := dummy.o
+OBJS := pgaceCommon.o
 endif
 
 all: SUBSYS.o

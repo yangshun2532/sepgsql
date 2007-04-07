@@ -23,7 +23,7 @@
 #include "pgstat.h"
 #include "postmaster/bgwriter.h"
 #include "postmaster/postmaster.h"
-#include "security/sepgsql.h"
+#include "security/pgace.h"
 #include "storage/freespace.h"
 #include "storage/ipc.h"
 #include "storage/pg_shmem.h"
@@ -114,7 +114,7 @@ CreateSharedMemoryAndSemaphores(bool makePrivate, int port)
 #ifdef EXEC_BACKEND
 		size = add_size(size, ShmemBackendArraySize());
 #endif
-		size = add_size(size, sepgsqlShmemSize());
+		size = add_size(size, pgaceShmemSize());
 
 		/* freeze the addin request size and include it */
 		addin_request_allowed = false;

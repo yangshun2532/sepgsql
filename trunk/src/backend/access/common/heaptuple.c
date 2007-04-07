@@ -26,7 +26,6 @@
 #include "access/heapam.h"
 #include "access/tuptoaster.h"
 #include "executor/tuptable.h"
-#include "security/sepgsql.h"
 
 /* ----------------------------------------------------------------
  *						misc support routines
@@ -314,13 +313,9 @@ heap_attisnull(HeapTuple tup, int attnum)
 		case MinCommandIdAttributeNumber:
 		case MaxTransactionIdAttributeNumber:
 		case MaxCommandIdAttributeNumber:
+		case SecurityAttributeNumber:
 			/* these are never null */
 			break;
-#ifdef HAVE_SELINUX
-		case SecurityAttributeNumber:
-			if (sepgsqlIsEnabled())
-				break;
-#endif
 		default:
 			elog(ERROR, "invalid attnum: %d", attnum);
 	}
@@ -597,13 +592,9 @@ heap_getsysattr(HeapTuple tup, int attnum, TupleDesc tupleDesc, bool *isnull)
 		case TableOidAttributeNumber:
 			result = ObjectIdGetDatum(tup->t_tableOid);
 			break;
-#ifdef HAVE_SELINUX
 		case SecurityAttributeNumber:
-			if (sepgsqlIsEnabled()) {
-				result = HeapTupleGetSecurity(tup);
-				break;
-			}
-#endif
+			result = HeapTupleGetSecurity(tup);
+			break;
 		default:
 			elog(ERROR, "invalid attnum: %d", attnum);
 			result = 0;			/* keep compiler quiet */
@@ -635,9 +626,7 @@ heap_copytuple(HeapTuple tuple)
 	newTuple->t_tableOid = tuple->t_tableOid;
 	newTuple->t_data = (HeapTupleHeader) ((char *) newTuple + HEAPTUPLESIZE);
 	memcpy((char *) newTuple->t_data, (char *) tuple->t_data, tuple->t_len);
-#ifdef HAVE_SELINUX
 	HeapTupleSetSecurity(newTuple, HeapTupleGetSecurity(tuple));
-#endif
 	return newTuple;
 }
 
@@ -664,9 +653,7 @@ heap_copytuple_with_tuple(HeapTuple src, HeapTuple dest)
 	dest->t_tableOid = src->t_tableOid;
 	dest->t_data = (HeapTupleHeader) palloc(src->t_len);
 	memcpy((char *) dest->t_data, (char *) src->t_data, src->t_len);
-#ifdef HAVE_SELINUX
 	HeapTupleSetSecurity(dest, HeapTupleGetSecurity(src));
-#endif
 }
 
 /*
@@ -945,9 +932,7 @@ heap_modify_tuple(HeapTuple tuple,
 	newTuple->t_tableOid = tuple->t_tableOid;
 	if (tupleDesc->tdhasoid)
 		HeapTupleSetOid(newTuple, HeapTupleGetOid(tuple));
-#ifdef HAVE_SELINUX
 	HeapTupleSetSecurity(newTuple, HeapTupleGetSecurity(tuple));
-#endif
 	return newTuple;
 }
 
@@ -1019,9 +1004,7 @@ heap_modifytuple(HeapTuple tuple,
 	newTuple->t_tableOid = tuple->t_tableOid;
 	if (tupleDesc->tdhasoid)
 		HeapTupleSetOid(newTuple, HeapTupleGetOid(tuple));
-#ifdef HAVE_SELINUX
 	HeapTupleSetSecurity(newTuple, HeapTupleGetSecurity(tuple));
-#endif
 	return newTuple;
 }
 

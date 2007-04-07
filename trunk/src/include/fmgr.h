@@ -52,10 +52,11 @@ typedef struct FmgrInfo
 	void	   *fn_extra;		/* extra space for use by handler */
 	MemoryContext fn_mcxt;		/* memory context to store fn_extra in */
 	fmNodePtr	fn_expr;		/* expression parse tree for call, or NULL */
-#ifdef HAVE_SELINUX
-	psid		fn_domtrans;	/* != InvalidOid, if domain transition will be happen */
-	PGFunction	fn_origaddr;	/* original fn_addr */
-#endif
+
+	/* PGACE: fn_pgace_data => opaque field for PGACE
+	 *        fn_pgace_addr => original fn_addr, when PGACE rewrite fn_addr */
+	Datum		fn_pgace_data;	/* opaque field for PGACE */
+	PGFunction	fn_pgace_addr;	/* original fn_addr, when PGACE rewrite fn_addr */
 } FmgrInfo;
 
 /*
@@ -490,12 +491,12 @@ extern Oid	get_call_expr_argtype(fmNodePtr expr, int argnum);
  */
 extern char *Dynamic_library_path;
 
+extern char *expand_dynamic_library_name(const char *name);
 extern PGFunction load_external_function(char *filename, char *funcname,
 					   bool signalNotFound, void **filehandle);
 extern PGFunction lookup_external_function(void *filehandle, char *funcname);
 extern void load_file(const char *filename, bool restricted);
 extern void **find_rendezvous_variable(const char *varName);
-
 
 /*
  * !!! OLD INTERFACE !!!

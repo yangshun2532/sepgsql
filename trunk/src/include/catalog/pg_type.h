@@ -548,9 +548,9 @@ DATA(insert OID = 2282 ( opaque			PGNSP PGUID  4 t p t \054 0 0 opaque_in opaque
 #define OPAQUEOID		2282
 DATA(insert OID = 2283 ( anyelement		PGNSP PGUID  4 t p t \054 0 0 anyelement_in anyelement_out - - - i p f 0 -1 0 _null_ _null_ ));
 #define ANYELEMENTOID	2283
-DATA(insert OID = 3403 ( psid			PGNSP PGUID  4 t b t \054 0 0 psid_in psid_out - - - i p f 0 -1 0 _null_ _null_ ));
-DESCR("Persistent Security Identifier for SELinux");
-#define PSIDOID			3403
+DATA(insert OID = 3403 ( security_label	PGNSP PGUID  4 t b t \054 0 0 security_label_in security_label_out - - - i p f 0 -1 0 _null_ _null_ ));
+DESCR("Security Label Identifier for PGACE");
+#define SECLABELOID		3403
 
 /*
  * prototypes for functions in pg_type.c

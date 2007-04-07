@@ -50,7 +50,7 @@
 #include "postmaster/bgwriter.h"
 #include "postmaster/postmaster.h"
 #include "postmaster/syslogger.h"
-#include "security/sepgsql.h"
+#include "security/pgace.h"
 #include "storage/fd.h"
 #include "storage/freespace.h"
 #include "tcop/tcopprot.h"
@@ -4567,7 +4567,8 @@ SetPGVariable(const char *name, List *args, bool is_local)
 {
 	char	   *argstring = flatten_set_variable_args(name, args);
 
-	sepgsqlSetParamDatabase();
+	/* PGACE: check set param permission */
+	pgaceSetDatabaseParam(name, argstring);
 
 	/* Note SET DEFAULT (argstring == NULL) is equivalent to RESET */
 	set_config_option(name,
@@ -4831,7 +4832,8 @@ EmitWarningsOnPlaceholders(const char *className)
 void
 GetPGVariable(const char *name, DestReceiver *dest)
 {
-	sepgsqlGetParamDatabase();
+	/* PGACE: check get param permission */
+	pgaceGetDatabaseParam(name);
 
 	if (pg_strcasecmp(name, "all") == 0)
 		ShowAllGUCConfig(dest);
@@ -4877,7 +4879,8 @@ GetPGVariableResultDesc(const char *name)
 void
 ResetPGVariable(const char *name)
 {
-	sepgsqlSetParamDatabase();
+	/* PGACE: check set param permission */
+	pgaceSetDatabaseParam(name, NULL);
 
 	if (pg_strcasecmp(name, "all") == 0)
 		ResetAllOptions();

@@ -26,7 +26,7 @@
 #include "lib/stringinfo.h"
 #include "nodes/plannodes.h"
 #include "nodes/relation.h"
-#include "security/sepgsql.h"
+#include "security/pgace.h"
 #include "utils/datum.h"
 
 
@@ -1829,35 +1829,6 @@ _outFkConstraint(StringInfo str, FkConstraint *node)
 	WRITE_BOOL_FIELD(skip_validation);
 }
 
-#ifdef HAVE_SELINUX
-#include "security/sepgsql_internal.h"
-static void
-_outSEvalItem(StringInfo str, SEvalItem *node)
-{
-	WRITE_NODE_TYPE("SEVALITEM");
-
-	WRITE_UINT_FIELD(tclass);
-	WRITE_UINT_FIELD(perms);
-	switch (node->tclass) {
-	case SECCLASS_TABLE:
-		WRITE_UINT_FIELD(c.relid);
-		WRITE_BOOL_FIELD(c.inh);
-		break;
-	case SECCLASS_COLUMN:
-		WRITE_UINT_FIELD(a.relid);
-		WRITE_BOOL_FIELD(a.inh);
-		WRITE_UINT_FIELD(a.attno);
-		break;
-	case SECCLASS_PROCEDURE:
-		WRITE_UINT_FIELD(p.funcid);
-		break;
-	default:
-		elog(ERROR, "unrecognized SEvalItem node (tclass: %d)", node->tclass);
-		break;
-	}
-}
-#endif
-
 /*
  * _outNode -
  *	  converts a Node into ascii string and append it to 'str'
@@ -2217,13 +2188,10 @@ _outNode(StringInfo str, void *obj)
 			case T_LockingClause:
 				_outLockingClause(str, obj);
 				break;
-#ifdef HAVE_SELINUX
-			case T_SEvalItem:
-				_outSEvalItem(str, obj);
-				break;
-#endif
 
 			default:
+				if (pgaceOutObject(str, obj))
+					break;
 
 				/*
 				 * This should be an ERROR, but it's too useful to be able to

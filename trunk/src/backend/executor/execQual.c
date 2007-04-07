@@ -47,7 +47,7 @@
 #include "nodes/makefuncs.h"
 #include "optimizer/planmain.h"
 #include "parser/parse_expr.h"
-#include "security/sepgsql.h"
+#include "security/pgace.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
@@ -1669,9 +1669,9 @@ ExecEvalFunc(FuncExprState *fcache,
 	/* Go directly to ExecMakeFunctionResult on subsequent uses */
 	fcache->xprstate.evalfunc = (ExprStateEvalFunc) ExecMakeFunctionResult;
 
-	return ExecMakeFunctionResult(fcache, econtext, isNull, isDone);
+	pgaceCallFunction(&fcache->func, false);
 
-	sepgsqlCallProcedure(&fcache->func);
+	return ExecMakeFunctionResult(fcache, econtext, isNull, isDone);
 }
 
 /* ----------------------------------------------------------------

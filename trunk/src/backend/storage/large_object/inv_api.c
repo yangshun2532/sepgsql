@@ -32,7 +32,7 @@
 #include "catalog/pg_largeobject.h"
 #include "commands/comment.h"
 #include "libpq/libpq-fs.h"
-#include "security/sepgsql.h"
+#include "security/pgace.h"
 #include "storage/large_object.h"
 #include "utils/fmgroids.h"
 #include "utils/resowner.h"
@@ -151,7 +151,7 @@ myLargeObjectExists(LargeObjectDesc *lobj)
 
 	tuple = systable_getnext(sd);
 	if (HeapTupleIsValid(tuple)) {
-		sepgsqlLargeObjectOpen(pg_largeobject, tuple, lobj);
+		pgaceLargeObjectOpen(pg_largeobject, tuple, lobj);
 		retval = true;
 	}
 
@@ -439,7 +439,7 @@ inv_read(LargeObjectDesc *obj_desc, char *buf, int nbytes)
 		bytea	   *datafield;
 		bool		pfreeit;
 
-		sepgsqlLargeObjectRead(lo_heap_r, tuple, obj_desc);
+		pgaceLargeObjectRead(lo_heap_r, tuple, obj_desc);
 
 		data = (Form_pg_largeobject) GETSTRUCT(tuple);
 
@@ -627,7 +627,7 @@ inv_write(LargeObjectDesc *obj_desc, const char *buf, int nbytes)
 			newtup = heap_modifytuple(oldtuple, RelationGetDescr(lo_heap_r),
 									  values, nulls, replace);
 
-			sepgsqlLargeObjectWrite(lo_heap_r, newtup, obj_desc);
+			pgaceLargeObjectWrite(lo_heap_r, newtup, obj_desc);
 			simple_heap_update(lo_heap_r, &newtup->t_self, newtup);
 			CatalogIndexInsert(indstate, newtup);
 			heap_freetuple(newtup);
@@ -671,7 +671,7 @@ inv_write(LargeObjectDesc *obj_desc, const char *buf, int nbytes)
 			values[Anum_pg_largeobject_pageno - 1] = Int32GetDatum(pageno);
 			values[Anum_pg_largeobject_data - 1] = PointerGetDatum(&workbuf);
 			newtup = heap_formtuple(lo_heap_r->rd_att, values, nulls);
-			sepgsqlLargeObjectWrite(lo_heap_r, newtup, obj_desc);
+			pgaceLargeObjectWrite(lo_heap_r, newtup, obj_desc);
 			simple_heap_insert(lo_heap_r, newtup);
 			CatalogIndexInsert(indstate, newtup);
 			heap_freetuple(newtup);

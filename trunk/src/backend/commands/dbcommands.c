@@ -38,7 +38,7 @@
 #include "mb/pg_wchar.h"
 #include "miscadmin.h"
 #include "postmaster/bgwriter.h"
-#include "security/sepgsql.h"
+#include "security/pgace.h"
 #include "storage/freespace.h"
 #include "storage/procarray.h"
 #include "storage/smgr.h"
@@ -774,7 +774,7 @@ AlterDatabase(AlterDatabaseStmt *stmt)
 	ListCell   *option;
 	int			connlimit = -1;
 	DefElem    *dconnlimit = NULL;
-	DefElem    *dselcon = NULL;
+	DefElem    *dpgace_item = NULL;
 	Datum		new_record[Natts_pg_database];
 	char		new_record_nulls[Natts_pg_database];
 	char		new_record_repl[Natts_pg_database];
@@ -792,16 +792,13 @@ AlterDatabase(AlterDatabaseStmt *stmt)
 						 errmsg("conflicting or redundant options")));
 			dconnlimit = defel;
 		}
-#ifdef HAVE_SELINUX
-		else if (strcmp(defel->defname, "context") == 0)
-		{
-			if (dselcon)
+		else if (pgaceAlterDatabasePrepare(defel->defname)) {
+			if (dpgace_item)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
 						 errmsg("conflicting or redundant options")));
-			dselcon = defel;
+			dpgace_item = defel;
 		}
-#endif
 		else
 			elog(ERROR, "option \"%s\" not recognized",
 				 defel->defname);
@@ -847,7 +844,7 @@ AlterDatabase(AlterDatabaseStmt *stmt)
 
 	newtuple = heap_modifytuple(tuple, RelationGetDescr(rel), new_record,
 								new_record_nulls, new_record_repl);
-	sepgsqlAlterDatabaseContext(rel, newtuple, strVal(dselcon->arg));
+	pgaceAlterDatabase(rel, newtuple, dpgace_item);
 	simple_heap_update(rel, &tuple->t_self, newtuple);
 
 	/* Update indexes */

@@ -53,7 +53,7 @@
 #include "parser/parse_type.h"
 #include "parser/parser.h"
 #include "rewrite/rewriteHandler.h"
-#include "security/sepgsql.h"
+#include "security/pgace.h"
 #include "storage/smgr.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
@@ -2186,16 +2186,17 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 		case AT_DisableTrigUser:
 		case AT_AddInherit:		/* INHERIT / NO INHERIT */
 		case AT_DropInherit:
-#ifdef HAVE_SELINUX
-		case AT_SetTableSecurityContext:
-		case AT_SetColumnSecurityContext:
-#endif
 			ATSimplePermissions(rel, false);
 			/* These commands never recurse */
 			/* No command-specific prep needed */
 			pass = AT_PASS_MISC;
 			break;
 		default:				/* oops */
+			if (pgaceAlterTablePrepare(rel, cmd)) {
+				ATSimplePermissions(rel, false);
+				pass = AT_PASS_MISC;
+				break;
+			}
 			elog(ERROR, "unrecognized alter table type: %d",
 				 (int) cmd->subtype);
 			pass = 0;			/* keep compiler quiet */
@@ -2379,15 +2380,9 @@ ATExecCmd(AlteredTableInfo *tab, Relation rel, AlterTableCmd *cmd)
 		case AT_DropInherit:
 			ATExecDropInherit(rel, (RangeVar *) cmd->def);
 			break;
-#ifdef HAVE_SELINUX
-		case AT_SetTableSecurityContext:
-			sepgsqlAlterTableSetTableContext(rel, (Value *)cmd->def);
-			break;
-		case AT_SetColumnSecurityContext:
-			sepgsqlAlterTableSetColumnContext(rel, cmd->name, (Value *)cmd->def);
-			break;
-#endif
 		default:				/* oops */
+			if (pgaceAlterTable(rel, cmd))
+				break;
 			elog(ERROR, "unrecognized alter table type: %d",
 				 (int) cmd->subtype);
 			break;

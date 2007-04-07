@@ -137,9 +137,9 @@ typedef struct HeapTupleHeaderData
 
 	ItemPointerData t_ctid;		/* current TID of this or newer tuple */
 
-#ifdef HAVE_SELINUX
-	psid		t_security;		/* security context of the tuple */
-#endif
+	/* PGAVE: security attribute of the tuple */
+	Oid			t_security;
+
 	/* Fields below here must match MinimalTupleData! */
 
 	int16		t_natts;		/* number of attributes */
@@ -300,16 +300,14 @@ do { \
 	*((Oid *) ((char *)(tup) + (tup)->t_hoff - sizeof(Oid))) = (oid); \
 } while (0)
 
-#ifdef HAVE_SELINUX
-#define HeapTupleHeaderGetSecurity(htup) \
+#define HeapTupleHeaderGetSecurity(htup)		\
 	((htup)->t_security)
-#define HeapTupleHeaderSetSecurity(htup, scon) \
-	((htup)->t_security = (scon))
-#define HeapTupleGetSecurity(tuple) \
-	(HeapTupleHeaderGetSecurity(tuple->t_data))
-#define HeapTupleSetSecurity(tuple, scon) \
-	(HeapTupleHeaderSetSecurity((tuple->t_data), scon))
-#endif
+#define HeapTupleHeaderSetSecurity(htup, sid)	\
+	((htup)->t_security = (sid))
+#define HeapTupleGetSecurity(tuple)				\
+	HeapTupleHeaderGetSecurity((tuple)->t_data)
+#define HeapTupleSetSecurity(tuple, sid)		\
+	HeapTupleHeaderSetSecurity((tuple)->t_data, sid)
 
 /*
  * BITMAPLEN(NATTS) -
@@ -362,13 +360,8 @@ do { \
 #define MaxTransactionIdAttributeNumber			(-5)
 #define MaxCommandIdAttributeNumber				(-6)
 #define TableOidAttributeNumber					(-7)
-#ifdef HAVE_SELINUX
 #define SecurityAttributeNumber					(-8)
 #define FirstLowInvalidHeapAttributeNumber		(-9)
-#else
-#define FirstLowInvalidHeapAttributeNumber		(-8)
-#endif
-
 
 /*
  * MinimalTuple is an alternate representation that is used for transient

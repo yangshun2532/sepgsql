@@ -6,6 +6,7 @@
  */
 #include "postgres.h"
 
+#include "access/heapam.h"
 #include "access/genam.h"
 #include "optimizer/plancat.h"
 #include "security/sepgsql.h"
@@ -29,11 +30,11 @@ static void verifyPgClassPerms(Oid relid, bool inh, uint32 perms)
 	pgclass = (Form_pg_class) GETSTRUCT(tuple);
 
 	if (pgclass->relkind == RELKIND_RELATION) {
-		sepgsql_avc_permission(sepgsqlGetClientPsid(),
+		sepgsql_avc_permission(sepgsqlGetClientContext(),
 							   HeapTupleGetSecurity(tuple),
 							   SECCLASS_TABLE,
 							   perms,
-							   HeapTupleGetRelationName(tuple));
+							   NameStr(pgclass->relname));
 	} else {
 		selnotice("%s is not a general relation", NameStr(pgclass->relname));
 	}
@@ -62,6 +63,7 @@ static void verifyPgAttributePermsInheritances(Oid parent_relid, char *attname, 
 static void verifyPgAttributePerms(Oid relid, bool inh, AttrNumber attno, uint32 perms)
 {
 	HeapTuple tuple;
+	Form_pg_attribute pgattr;
 
 	if (attno == 0) {
 		/* RECORD type permission check */
@@ -78,11 +80,12 @@ static void verifyPgAttributePerms(Oid relid, bool inh, AttrNumber attno, uint32
 		sd = systable_beginscan(pg_attr, AttributeRelidNumIndexId,
 								true, SnapshotNow, 1, &skey);
 		while ((tuple = systable_getnext(sd)) != NULL) {
-			sepgsql_avc_permission(sepgsqlGetClientPsid(),
+			pgattr = (Form_pg_attribute) GETSTRUCT(tuple);
+			sepgsql_avc_permission(sepgsqlGetClientContext(),
 								   HeapTupleGetSecurity(tuple),
 								   SECCLASS_COLUMN,
 								   perms,
-								   HeapTupleGetAttributeName(tuple));
+								   NameStr(pgattr->attname));
 		}
 		systable_endscan(sd);
 		heap_close(pg_attr, AccessShareLock);
@@ -98,15 +101,16 @@ static void verifyPgAttributePerms(Oid relid, bool inh, AttrNumber attno, uint32
 		selerror("ATTNUM cache lookup failed (relid=%u, attno=%d)", relid, attno);
 
 	/* check column:{required permissions} */
-	sepgsql_avc_permission(sepgsqlGetClientPsid(),
+	pgattr = (Form_pg_attribute) GETSTRUCT(tuple);
+	sepgsql_avc_permission(sepgsqlGetClientContext(),
 						   HeapTupleGetSecurity(tuple),
 						   SECCLASS_COLUMN,
 						   perms,
-						   HeapTupleGetAttributeName(tuple));
+						   NameStr(pgattr->attname));
 
 	/* check child relations, if necesasry */
 	if (inh)
-		verifyPgAttributePermsInheritances(relid, HeapTupleGetAttributeName(tuple), perms);
+		verifyPgAttributePermsInheritances(relid, NameStr(pgattr->attname), perms);
 
 	ReleaseSysCache(tuple);
 }
@@ -137,7 +141,8 @@ static void verifyPgAttributePermsInheritances(Oid parent_relid, char *attname, 
 static void verifyPgProcPerms(Oid funcid, uint32 perms)
 {
 	HeapTuple tuple;
-	psid newcon;
+	Oid newcon;
+	Form_pg_proc pgproc;
 
 	tuple = SearchSysCache(PROCOID,
 						   ObjectIdGetDatum(funcid),
@@ -146,36 +151,37 @@ static void verifyPgProcPerms(Oid funcid, uint32 perms)
 		selerror("cache lookup failed for procedure %d", funcid);
 
 	/* compute domain transition */
-	newcon = sepgsql_avc_createcon(sepgsqlGetClientPsid(),
+	newcon = sepgsql_avc_createcon(sepgsqlGetClientContext(),
 								   HeapTupleGetSecurity(tuple),
 								   SECCLASS_PROCESS);
-	if (newcon != sepgsqlGetClientPsid())
+	if (newcon != sepgsqlGetClientContext())
 		perms |= PROCEDURE__ENTRYPOINT;
 
 	/* check procedure executiong permission */
-	sepgsql_avc_permission(sepgsqlGetClientPsid(),
+	pgproc = (Form_pg_proc) GETSTRUCT(tuple);
+	sepgsql_avc_permission(sepgsqlGetClientContext(),
 						   HeapTupleGetSecurity(tuple),
 						   SECCLASS_PROCEDURE,
 						   perms,
-						   HeapTupleGetProcedureName(tuple));
+						   NameStr(pgproc->proname));
 
 	/* check domain transition, if necessary */
-	if (newcon != sepgsqlGetClientPsid()) {
-		sepgsql_avc_permission(sepgsqlGetClientPsid(),
+	if (newcon != sepgsqlGetClientContext()) {
+		sepgsql_avc_permission(sepgsqlGetClientContext(),
 							   newcon,
 							   SECCLASS_PROCESS,
 							   PROCESS__TRANSITION,
-							   HeapTupleGetProcedureName(tuple));
+							   NULL);
 	}
 
 	ReleaseSysCache(tuple);
 }
 
-static void sepgsqlVerifyQuery(Query *query)
+void sepgsqlVerifyQuery(Query *query)
 {
 	ListCell *l;
 
-	foreach (l, query->SEvalItemList) {
+	foreach (l, query->pgaceList) {
 		SEvalItem *se = lfirst(l);
 
 		switch (se->tclass) {
@@ -192,19 +198,5 @@ static void sepgsqlVerifyQuery(Query *query)
 			selerror("unknown SEvalItem (tclass=%u)", se->tclass);
 			break;
 		}
-	}
-}
-
-void sepgsqlVerifyQueryList(List *queryList)
-{
-	ListCell *l;
-
-	if (!sepgsqlIsEnabled())
-		return;
-
-	foreach (l, queryList) {
-		Query *query = lfirst(l);
-
-		sepgsqlVerifyQuery(query);
 	}
 }

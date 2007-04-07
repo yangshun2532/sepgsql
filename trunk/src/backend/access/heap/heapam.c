@@ -49,7 +49,7 @@
 #include "catalog/namespace.h"
 #include "miscadmin.h"
 #include "pgstat.h"
-#include "security/sepgsql.h"
+#include "security/pgace.h"
 #include "storage/procarray.h"
 #include "utils/inval.h"
 #include "utils/lsyscache.h"
@@ -1409,7 +1409,7 @@ heap_insert(Relation relation, HeapTuple tup, CommandId cid,
 	HeapTupleHeaderSetXmax(tup->t_data, 0);		/* zero out Datum fields */
 	HeapTupleHeaderSetCmax(tup->t_data, 0);		/* for cleanliness */
 	tup->t_tableOid = RelationGetRelid(relation);
-	sepgsqlHeapInsert(relation, tup);
+	pgaceHeapInsert(relation, tup);
 
 	/*
 	 * If the new tuple is too big for storage or contains already toasted
@@ -1533,7 +1533,7 @@ heap_insert(Relation relation, HeapTuple tup, CommandId cid,
 Oid
 simple_heap_insert(Relation relation, HeapTuple tup)
 {
-	sepgsqlSimpleHeapInsert(relation, tup);
+	pgaceSimpleHeapInsert(relation, tup);
 	return heap_insert(relation, tup, GetCurrentCommandId(), true, true);
 }
 
@@ -1586,6 +1586,7 @@ heap_delete(Relation relation, ItemPointer tid,
 	tp.t_data = (HeapTupleHeader) PageGetItem(dp, lp);
 	tp.t_len = ItemIdGetLength(lp);
 	tp.t_self = *tid;
+	pgaceHeapDelete(relation, &tp);
 
 l1:
 	result = HeapTupleSatisfiesUpdate(tp.t_data, cid, buffer);
@@ -1808,7 +1809,7 @@ simple_heap_delete(Relation relation, ItemPointer tid)
 	ItemPointerData update_ctid;
 	TransactionId update_xmax;
 
-	sepgsqlSimpleHeapDelete(relation, tid);
+	pgaceSimpleHeapDelete(relation, tid);
 	result = heap_delete(relation, tid,
 						 &update_ctid, &update_xmax,
 						 GetCurrentCommandId(), InvalidSnapshot,
@@ -2050,7 +2051,7 @@ l2:
 	HeapTupleHeaderSetCmin(newtup->t_data, cid);
 	HeapTupleHeaderSetXmax(newtup->t_data, 0);	/* zero out Datum fields */
 	HeapTupleHeaderSetCmax(newtup->t_data, 0);	/* for cleanliness */
-	sepgsqlHeapUpdate(relation, newtup, &oldtup);
+	pgaceHeapUpdate(relation, newtup, &oldtup);
 
 	/*
 	 * If the toaster needs to be activated, OR if the new tuple will not fit
@@ -2266,7 +2267,7 @@ simple_heap_update(Relation relation, ItemPointer otid, HeapTuple tup)
 	ItemPointerData update_ctid;
 	TransactionId update_xmax;
 
-	sepgsqlSimpleHeapUpdate(relation, otid, tup);
+	pgaceSimpleHeapUpdate(relation, otid, tup);
 	result = heap_update(relation, otid, tup,
 						 &update_ctid, &update_xmax,
 						 GetCurrentCommandId(), InvalidSnapshot,

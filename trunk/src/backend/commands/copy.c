@@ -34,7 +34,7 @@
 #include "optimizer/planner.h"
 #include "parser/parse_relation.h"
 #include "rewrite/rewriteHandler.h"
-#include "security/sepgsql.h"
+#include "security/pgace.h"
 #include "storage/fd.h"
 #include "tcop/tcopprot.h"
 #include "utils/acl.h"
@@ -1069,7 +1069,7 @@ DoCopy(const CopyStmt *stmt)
 	/* Generate or convert list of attributes to process */
 	cstate->attnumlist = CopyGetAttnums(tupDesc, cstate->rel, attnamelist);
 
-	sepgsqlDoCopy(cstate->rel, cstate->attnumlist, is_from);
+	pgaceCopyTable(cstate->rel, cstate->attnumlist, is_from);
 
 	num_phys_attrs = tupDesc->natts;
 
@@ -1397,7 +1397,7 @@ CopyTo(CopyState cstate)
 		{
 			CHECK_FOR_INTERRUPTS();
 
-			if (!sepgsqlCopyTo(cstate->rel, tuple))
+			if (!pgaceCopyTuple(cstate->rel, tuple))
 				continue;
 
 			/* Deconstruct the tuple ... faster than repeated heap_getattr */

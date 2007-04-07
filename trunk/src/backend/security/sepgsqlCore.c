@@ -13,8 +13,7 @@
 #include "libpq/libpq-be.h"
 #include "libpq/pqsignal.h"
 #include "miscadmin.h"
-#include "security/sepgsql.h"
-#include "security/sepgsql_internal.h"
+#include "security/pgace.h"
 #include "storage/lwlock.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
@@ -139,8 +138,8 @@ static const char *security_av_perm_to_string(uint16 tclass, uint32 perm)
 struct avc_datum {
 	SHMEM_OFFSET next;
 
-	psid ssid;				/* subject context */
-	psid tsid;				/* object context */
+	Oid ssid;				/* subject context */
+	Oid tsid;				/* object context */
 	uint16 tclass;			/* object class */
 
 	uint32 allowed;
@@ -148,7 +147,7 @@ struct avc_datum {
 	uint32 auditallow;
 	uint32 auditdeny;
 
-	psid create;			/* newly created context */
+	Oid create;			/* newly created context */
 	bool is_hot;
 };
 
@@ -165,9 +164,6 @@ static struct {
 
 Size sepgsqlShmemSize()
 {
-	if (!sepgsqlIsEnabled())
-		return 0;
-
 	return sizeof(*avc_shmem);
 }
 
@@ -207,16 +203,20 @@ static void sepgsql_avc_init()
 	}
 }
 
-static void sepgsql_compute_avc_datum(psid ssid, psid tsid, uint16 tclass,
+static void sepgsql_compute_avc_datum(Oid ssid, Oid tsid, uint16 tclass,
 									  struct avc_datum *avd)
 {
 	security_context_t scon, tcon, ncon;
 	struct av_decision x;
+	Datum tmp;
 
 	memset(avd, 0, sizeof(struct avc_datum));
-
-	scon = sepgsql_psid_to_context(ssid);
-	tcon = sepgsql_psid_to_context(tsid);
+	tmp = DirectFunctionCall1(security_label_raw_out,
+							  ObjectIdGetDatum(ssid));
+	scon = DatumGetCString(tmp);
+	tmp = DirectFunctionCall1(security_label_raw_out,
+							  ObjectIdGetDatum(tsid));
+	tcon = DatumGetCString(tmp);
 
 	if (security_compute_av_raw(scon, tcon, tclass, 0, &x))
 		selerror("could not obtain access vector decision "
@@ -236,7 +236,9 @@ static void sepgsql_compute_avc_datum(psid ssid, psid tsid, uint16 tclass,
 
 	PG_TRY();
 	{
-		avd->create = sepgsql_context_to_psid(ncon);
+		tmp = DirectFunctionCall1(security_label_raw_in,
+								  CStringGetDatum(ncon));
+		avd->create = DatumGetObjectId(tmp);
 	}
 	PG_CATCH();
 	{
@@ -250,13 +252,18 @@ static void sepgsql_compute_avc_datum(psid ssid, psid tsid, uint16 tclass,
 	freecon(ncon);
 }
 
-static psid sepgsql_compute_relabel(psid ssid, psid tsid, uint16 tclass)
+static Oid sepgsql_compute_relabel(Oid ssid, Oid tsid, uint16 tclass)
 {
 	security_context_t scon, tcon, ncon;
-	psid nsid;
+	Oid nsid;
+	Datum tmp;
 
-	scon = sepgsql_psid_to_context(ssid);
-	tcon = sepgsql_psid_to_context(tsid);
+	tmp = DirectFunctionCall1(security_label_raw_out,
+							  ObjectIdGetDatum(ssid));
+	scon = DatumGetCString(tmp);
+	tmp = DirectFunctionCall1(security_label_raw_out,
+							  ObjectIdGetDatum(tsid));
+	tcon = DatumGetCString(tmp);
 
 	if (security_compute_relabel_raw(scon, tcon, tclass, &ncon) != 0)
 		selerror("could not obtain a newly relabeled security context "
@@ -264,7 +271,9 @@ static psid sepgsql_compute_relabel(psid ssid, psid tsid, uint16 tclass)
 
 	PG_TRY();
 	{
-		nsid = sepgsql_context_to_psid(ncon);
+		tmp = DirectFunctionCall1(security_label_raw_in,
+								  CStringGetDatum(ncon));
+		nsid = DatumGetObjectId(tmp);
 	}
 	PG_CATCH();
 	{
@@ -285,8 +294,7 @@ static char *sepgsql_avc_audit(uint32 perms, struct avc_datum *avd, char *objnam
 	/* we have to hold LW_SHARED lock at least */
 	uint32 denied, audited, mask;
 	char buffer[4096];
-	security_context_t context;
-	char *raw_context;
+	char *context;
 	int len;
 
 	denied = perms & ~avd->allowed;
@@ -303,23 +311,15 @@ static char *sepgsql_avc_audit(uint32 perms, struct avc_datum *avd, char *objnam
 	}
 	len += snprintf(buffer + len, sizeof(buffer) - len, " }");
 
-	raw_context = sepgsql_psid_to_context(avd->ssid);
-	if (!selinux_raw_to_trans_context(raw_context, &context)) {
-		len += snprintf(buffer + len, sizeof(buffer) - len, " scontext=%s", context);
-		freecon(context);
-	} else {
-		len += snprintf(buffer + len, sizeof(buffer) - len, " scontext=%s", raw_context);
-	}
-	pfree(raw_context);
+	context = DatumGetCString(DirectFunctionCall1(security_label_out, 
+												  ObjectIdGetDatum(avd->ssid)));
+	len += snprintf(buffer + len, sizeof(buffer) - len, " scontext=%s", context);
+	pfree(context);
 
-	raw_context = sepgsql_psid_to_context(avd->tsid);
-	if (!selinux_raw_to_trans_context(raw_context, &context)) {
-		len += snprintf(buffer + len, sizeof(buffer) - len, " tcontext=%s", context);
-		freecon(context);
-	} else {
-		len += snprintf(buffer + len, sizeof(buffer) - len, " tcontext=%s", raw_context);
-	}
-	pfree(raw_context);
+	context =  DatumGetCString(DirectFunctionCall1(security_label_out,
+												   ObjectIdGetDatum(avd->tsid)));
+	len += snprintf(buffer + len, sizeof(buffer) - len, " tcontext=%s", context);
+	pfree(context);
 
 	len += snprintf(buffer + len, sizeof(buffer) - len, " tclass=%s",
 					security_class_to_string(avd->tclass));
@@ -329,13 +329,13 @@ static char *sepgsql_avc_audit(uint32 perms, struct avc_datum *avd, char *objnam
 	return pstrdup(buffer);
 }
 
-static inline int sepgsql_avc_hash(psid ssid, psid tsid, uint16 tclass)
+static inline int sepgsql_avc_hash(Oid ssid, Oid tsid, uint16 tclass)
 {
 	return ((uint32)ssid ^ ((uint32)tsid << 2) ^ tclass) % AVC_DATUM_CACHE_SLOTS;
 }
 
 static struct avc_datum *
-sepgsql_avc_lookup(psid ssid, psid tsid, uint16 tclass, uint32 perms)
+sepgsql_avc_lookup(Oid ssid, Oid tsid, uint16 tclass, uint32 perms)
 {
 	/* we have to hold LW_SHARED lock at least */
 	struct avc_datum *avd;
@@ -404,7 +404,7 @@ static void sepgsql_avc_insert(struct avc_datum *tmp)
 	return;
 }
 
-bool sepgsql_avc_permission_noaudit(psid ssid, psid tsid, uint16 tclass, uint32 perms,
+bool sepgsql_avc_permission_noaudit(Oid ssid, Oid tsid, uint16 tclass, uint32 perms,
 									char **audit, char *objname)
 {
 	struct avc_datum *avd, lavd;
@@ -435,7 +435,7 @@ bool sepgsql_avc_permission_noaudit(psid ssid, psid tsid, uint16 tclass, uint32 
 	return rc;
 }
 
-void sepgsql_avc_permission(psid ssid, psid tsid, uint16 tclass, uint32 perms, char *objname)
+void sepgsql_avc_permission(Oid ssid, Oid tsid, uint16 tclass, uint32 perms, char *objname)
 {
 	char *audit;
 	bool rc;
@@ -460,10 +460,10 @@ void sepgsql_audit(bool result, char *message)
 	}
 }
 
-psid sepgsql_avc_createcon(psid ssid, psid tsid, uint16 tclass)
+Oid sepgsql_avc_createcon(Oid ssid, Oid tsid, uint16 tclass)
 {
 	struct avc_datum *avd, lavd;
-	psid nsid;
+	Oid nsid;
 
 	LWLockAcquire(avc_shmem->lock, LW_SHARED);
 	avd = sepgsql_avc_lookup(ssid, tsid, tclass, 0);
@@ -483,7 +483,7 @@ psid sepgsql_avc_createcon(psid ssid, psid tsid, uint16 tclass)
 	return nsid;
 }
 
-psid sepgsql_avc_relabelcon(psid ssid, psid tsid, uint16 tclass)
+Oid sepgsql_avc_relabelcon(Oid ssid, Oid tsid, uint16 tclass)
 {
 	/* currently no avc support on relabeling */
 	return sepgsql_compute_relabel(ssid, tsid, tclass);
@@ -493,21 +493,22 @@ psid sepgsql_avc_relabelcon(psid ssid, psid tsid, uint16 tclass)
 Datum
 sepgsql_getcon(PG_FUNCTION_ARGS)
 {
-	PG_RETURN_OID(sepgsqlGetClientPsid());
+	PG_RETURN_OID(sepgsqlGetClientContext());
 }
 
-/* sepgsql_system_getcon() -- obtain the server's context in psid */
-static psid sepgsql_system_getcon()
+/* sepgsql_system_getcon() -- obtain the server's context */
+static Oid sepgsql_system_getcon()
 {
 	security_context_t context;
-	psid ssid;
+	Oid ssid;
 
 	if (getcon_raw(&context) != 0)
 		selerror("could not obtain security context of server process");
 
 	PG_TRY();
 	{
-		ssid = sepgsql_context_to_psid(context);
+		ssid = DatumGetObjectId(DirectFunctionCall1(security_label_in,
+													CStringGetDatum(context)));
 	}
 	PG_CATCH();
 	{
@@ -519,18 +520,19 @@ static psid sepgsql_system_getcon()
 	return ssid;
 }
 
-/* sepgsql_system_getpeercon() -- obtain the client's context in psid */
-static psid sepgsql_system_getpeercon(int sockfd)
+/* sepgsql_system_getpeercon() -- obtain the client's context */
+static Oid sepgsql_system_getpeercon(int sockfd)
 {
 	security_context_t context;
-	psid ssid;
+	Oid ssid;
 
 	if (getpeercon_raw(sockfd, &context) != 0)
 		selerror("could not obtain security context of client process");
 
 	PG_TRY();
 	{
-		ssid = sepgsql_context_to_psid(context);
+		ssid = DatumGetObjectId(DirectFunctionCall1(security_label_in,
+													CStringGetDatum(context)));
 	}
 	PG_CATCH();
 	{
@@ -545,9 +547,9 @@ static psid sepgsql_system_getpeercon(int sockfd)
 /*
  * SE-PostgreSQL core functions
  *
- * sepgsqlGetServerPsid() -- obtains server's context
- * sepgsqlGetClientPsid() -- obtains client's context via getpeercon()
- * sepgsqlSetClientPsid() -- changes client's context for trusted procedure
+ * sepgsqlGetServerContext() -- obtains server's context
+ * sepgsqlGetClientContext() -- obtains client's context via getpeercon()
+ * sepgsqlSetClientContext() -- changes client's context for trusted procedure
  * sepgsqlInitialize() -- called when initializing 'postgres' includes bootstraping
  * sepgsqlInitializePostmaster() -- called when initializing 'postmaster'
  * sepgsqlFinalizePostmaster() -- called when finalizing 'postmaster' to kill
@@ -556,32 +558,32 @@ static psid sepgsql_system_getpeercon(int sockfd)
  *                                   process.
  * 
  */
-static psid sepgsqlServerPsid = InvalidOid;
-static psid sepgsqlClientPsid = InvalidOid;
+static Oid sepgsqlServerContext = InvalidOid;
+static Oid sepgsqlClientContext = InvalidOid;
 
-psid sepgsqlGetServerPsid()
+Oid sepgsqlGetServerContext()
 {
-	return sepgsqlServerPsid;
+	return sepgsqlServerContext;
 }
 
-psid sepgsqlGetClientPsid()
+Oid sepgsqlGetClientContext()
 {
-	return sepgsqlClientPsid;
+	return sepgsqlClientContext;
 }
 
-void sepgsqlSetClientPsid(psid new_ctx)
+void sepgsqlSetClientContext(Oid new_context)
 {
-	sepgsqlClientPsid = new_ctx;
+	sepgsqlClientContext = new_context;
 }
 
-psid sepgsqlGetDatabasePsid()
+Oid sepgsqlGetDatabaseContext()
 {
 	HeapTuple tuple;
-	psid datcon;
+	Oid datcon;
 
 	if (IsBootstrapProcessingMode()) {
-		return sepgsql_avc_createcon(sepgsqlGetClientPsid(),
-									 sepgsqlGetServerPsid(),
+		return sepgsql_avc_createcon(sepgsqlGetClientContext(),
+									 sepgsqlGetServerContext(),
 									 SECCLASS_DATABASE);
 	}
 
@@ -598,7 +600,7 @@ psid sepgsqlGetDatabasePsid()
 
 char *sepgsqlGetDatabaseName()
 {
-	Form_pg_database pgdat;
+	Form_pg_database dat_form;
 	HeapTuple tuple;
 	char *datname;
 
@@ -610,8 +612,8 @@ char *sepgsqlGetDatabaseName()
 						   0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
 		selerror("cache lookup failed for Database %u", MyDatabaseId);
-	pgdat = (Form_pg_database) GETSTRUCT(tuple);
-	datname = pstrdup(NameStr(pgdat->datname));
+	dat_form = (Form_pg_database) GETSTRUCT(tuple);
+	datname = pstrdup(NameStr(dat_form->datname));
 	ReleaseSysCache(tuple);
 
 	return datname;
@@ -619,16 +621,13 @@ char *sepgsqlGetDatabaseName()
 
 void sepgsqlInitialize()
 {
-	if (!sepgsqlIsEnabled())
-		return;
-
 	sepgsql_avc_init();
 
 	if (IsBootstrapProcessingMode()) {
-		sepgsqlServerPsid = sepgsql_system_getcon();
-		sepgsqlClientPsid = sepgsql_system_getcon();
-		sepgsql_avc_permission(sepgsqlGetClientPsid(),
-							   sepgsqlGetDatabasePsid(),
+		sepgsqlServerContext = sepgsql_system_getcon();
+		sepgsqlClientContext = sepgsql_system_getcon();
+		sepgsql_avc_permission(sepgsqlGetClientContext(),
+							   sepgsqlGetDatabaseContext(),
 							   SECCLASS_DATABASE,
 							   DATABASE__ACCESS,
 							   NULL);
@@ -636,17 +635,17 @@ void sepgsqlInitialize()
 	}
 
 	/* obtain security context of server process */
-	sepgsqlServerPsid = sepgsql_system_getcon();
+	sepgsqlServerContext = sepgsql_system_getcon();
 
 	/* obtain security context of client process */
 	if (MyProcPort != NULL) {
-		sepgsqlClientPsid = sepgsql_system_getpeercon(MyProcPort->sock);
+		sepgsqlClientContext = sepgsql_system_getpeercon(MyProcPort->sock);
 	} else {
-		sepgsqlClientPsid = sepgsql_system_getcon();
+		sepgsqlClientContext = sepgsql_system_getcon();
 	}
 
-	sepgsql_avc_permission(sepgsqlGetClientPsid(),
-						   sepgsqlGetDatabasePsid(),
+	sepgsql_avc_permission(sepgsqlGetClientContext(),
+						   sepgsqlGetDatabaseContext(),
 						   SECCLASS_DATABASE,
 						   DATABASE__ACCESS,
 						   sepgsqlGetDatabaseName());
@@ -769,9 +768,6 @@ static pid_t MonitoringPolicyStatePid = -1;
 
 int sepgsqlInitializePostmaster()
 {
-	if (!sepgsqlIsEnabled())
-		return 0;
-
 	sepgsql_avc_init();
 
 	MonitoringPolicyStatePid = fork();
@@ -779,9 +775,9 @@ int sepgsqlInitializePostmaster()
 		exit(sepgsqlMonitoringPolicyState());
 	} else if (MonitoringPolicyStatePid < 0) {
 		selnotice("could not create a child process to monitor the policy state");
-		return 1;
+		return false;
 	}
-	return 0;
+	return true;
 }
 
 void sepgsqlFinalizePostmaster()

@@ -146,10 +146,8 @@ typedef struct Query
 	 */
 	List	   *returningLists; /* list of lists of TargetEntry, or NIL */
 
-#ifdef HAVE_SELINUX
-	/* SE-PostgreSQL EvaliationItemList */
-	List	   *SEvalItemList;
-#endif
+	/* PGACE: opaque list for PGACE */
+	List	   *pgaceList;
 } Query;
 
 
@@ -608,10 +606,6 @@ typedef struct RangeTblEntry
 	bool		inFromCl;		/* present in FROM clause? */
 	AclMode		requiredPerms;	/* bitmask of required access permissions */
 	Oid			checkAsUser;	/* if valid, check access as this role */
-
-#ifdef HAVE_SELINUX
-	uint32		access_vector;	/* SE-PostgreSQL's permissions */
-#endif
 } RangeTblEntry;
 
 /*
@@ -915,9 +909,7 @@ typedef enum AlterTableType
 	AT_EnableTrigUser,			/* ENABLE TRIGGER USER */
 	AT_DisableTrigUser,			/* DISABLE TRIGGER USER */
 	AT_AddInherit,				/* INHERIT parent */
-	AT_DropInherit,				/* NO INHERIT parent */
-	AT_SetTableSecurityContext,	/* alter table context */
-	AT_SetColumnSecurityContext,/* alter column context */
+	AT_DropInherit				/* NO INHERIT parent */
 } AlterTableType;
 
 typedef struct AlterTableCmd	/* one subcommand of an ALTER TABLE */

@@ -42,12 +42,15 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "access/heapam.h"
 #include "access/genam.h"
+#include "access/xact.h"
 #include "catalog/indexing.h"
+#include "catalog/pg_largeobject.h"
 #include "libpq/be-fsstubs.h"
 #include "libpq/libpq-fs.h"
 #include "miscadmin.h"
-#include "security/sepgsql.h"
+#include "security/pgace.h"
 #include "storage/fd.h"
 #include "storage/large_object.h"
 #include "utils/fmgroids.h"
@@ -372,7 +375,7 @@ lo_import(PG_FUNCTION_ARGS)
 						fnamebuf)));
 
 	/* check whether (server) --> (client) data flow is allowed, or not. */
-	sepgsqlLargeObjectImport();
+	pgaceLargeObjectImport();
 
 	/*
 	 * create an inversion object
@@ -430,7 +433,7 @@ lo_export(PG_FUNCTION_ARGS)
 	CreateFSContext();
 
 	/* check whether (client) --> (server) data flow is allowed, or not */
-	sepgsqlLargeObjectExport();
+	pgaceLargeObjectExport();
 
 	/*
 	 * open the inversion object (no need to test for failure)
@@ -483,35 +486,92 @@ lo_export(PG_FUNCTION_ARGS)
 Datum
 lo_get_security(PG_FUNCTION_ARGS)
 {
-	Oid lo_security = InvalidOid;
-#ifdef HAVE_SELINUX
 	Oid loid = PG_GETARG_OID(0);
+	Oid lo_security = InvalidOid;
+	Relation rel;
+	ScanKeyData skey;
+	SysScanDesc sd;
+	HeapTuple tuple;
+	bool found = false;
 
-	lo_security = sepgsqlLargeObjectGetSecurity(loid);
-#else
-	elog(ERROR, "SE-PostgreSQL was not configured");
-#endif
+	ScanKeyInit(&skey,
+				Anum_pg_largeobject_loid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(loid));
+
+	rel = heap_open(LargeObjectRelationId, AccessShareLock);
+
+	sd = systable_beginscan(rel, LargeObjectLOidPNIndexId, true,
+							SnapshotNow, 1, &skey);
+
+	while ((tuple = systable_getnext(sd)) != NULL) {
+		lo_security = HeapTupleGetSecurity(tuple);
+		pgaceLargeObjectGetSecurity(loid, lo_security);
+		found = true;
+		break;
+	}
+	systable_endscan(sd);
+
+	heap_close(rel, AccessShareLock);
+
+	if (!found)
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_OBJECT),
+				 errmsg("large object %u does not exist", loid)));
+
 	PG_RETURN_OID(lo_security);
 }
 
 Datum
 lo_set_security(PG_FUNCTION_ARGS)
 {
-#ifdef HAVE_SELINUX
 	Oid loid = PG_GETARG_OID(0);
 	Oid lo_security = PG_GETARG_OID(1);
+	Relation rel;
+	ScanKeyData skey;
+	SysScanDesc sd;
+	HeapTuple tuple, newtup;
+	CatalogIndexState indstate;
+	bool found = false;
 	int i;
 
-	sepgsqlLargeObjectSetSecurity(loid, lo_security);
+	ScanKeyInit(&skey,
+				Anum_pg_largeobject_loid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(loid));
+
+	rel = heap_open(LargeObjectRelationId, RowExclusiveLock);
+
+	indstate = CatalogOpenIndexes(rel);
+
+	sd = systable_beginscan(rel, LargeObjectLOidPNIndexId, true,
+							SnapshotNow, 1, &skey);
+
+	while ((tuple = systable_getnext(sd)) != NULL) {
+		if (!found)
+			pgaceLargeObjectSetSecurity(loid, HeapTupleGetSecurity(tuple), lo_security);
+		newtup = heap_copytuple(tuple);
+		HeapTupleSetSecurity(newtup, lo_security);
+		simple_heap_update(rel, &newtup->t_self, newtup);
+		CatalogUpdateIndexes(rel, newtup);
+		found = true;
+	}
+	systable_endscan(sd);
+	CatalogCloseIndexes(indstate);
+	heap_close(rel, RowExclusiveLock);
+
+	CommandCounterIncrement();
+
+	if (!found)
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_OBJECT),
+				 errmsg("large object %u does not exist", loid)));
 
 	for (i = 0; i < cookies_size; i++) {
 		LargeObjectDesc *loDesc = cookies[i];
 		if (loDesc && loDesc->id == loid)
 			loDesc->blob_security = lo_security;
 	}
-#else
-	elog(ERROR, "SE-PostgreSQL was not configured");
-#endif
 	PG_RETURN_BOOL(true);
 }
 

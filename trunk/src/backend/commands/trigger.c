@@ -30,7 +30,7 @@
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
 #include "parser/parse_func.h"
-#include "security/sepgsql.h"
+#include "security/pgace.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
@@ -1296,7 +1296,7 @@ ExecCallTriggerFunc(TriggerData *trigdata,
 	 */
 	InitFunctionCallInfoData(fcinfo, finfo, 0, (Node *) trigdata, NULL);
 
-	sepgsqlCallProcedureWithPermCheck(finfo);
+	pgaceCallFunction(finfo, true);
 
 	result = FunctionCallInvoke(&fcinfo);
 
@@ -2920,16 +2920,11 @@ AfterTriggerSetState(ConstraintsSetStmt *stmt)
 {
 	int			my_level = GetCurrentTransactionNestLevel();
 
-	sepgsqlSetParamDatabase();
-
 	/*
 	 * Ignore call if we aren't in a transaction.  (Shouldn't happen?)
 	 */
 	if (afterTriggers == NULL)
 		return;
-
-	/* check database:{set_param} */
-	sepgsqlSetParamDatabase();
 
 	/*
 	 * If in a subtransaction, and we didn't save the current state already,

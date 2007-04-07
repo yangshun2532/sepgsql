@@ -7,10 +7,12 @@
 #include "postgres.h"
 
 #include "access/genam.h"
+#include "access/heapam.h"
 #include "miscadmin.h"
-#include "security/sepgsql.h"
-#include "security/sepgsql_internal.h"
+#include "security/pgace.h"
+#include "utils/builtins.h"
 #include "utils/fmgroids.h"
+#include "utils/syscache.h"
 #include "utils/typcache.h"
 
 static bool __check_tuple_perms(Oid tableoid, TupleDesc tdesc,
@@ -266,23 +268,24 @@ static void __check_pg_proc(TupleDesc tdesc, HeapTuple tuple, HeapTuple oldtup,
 			if (verify_shlib) {
 				char *filename;
 				security_context_t filecon;
-				Datum filecon_psid;
+				Datum filesid;
 
 				/* <client type> <-- database:module_install --> <database type> */
-				sepgsql_avc_permission(sepgsqlGetClientPsid(),
-									   sepgsqlGetDatabasePsid(),
+				sepgsql_avc_permission(sepgsqlGetClientContext(),
+									   sepgsqlGetDatabaseContext(),
 									   SECCLASS_DATABASE,
 									   DATABASE__INSTALL_MODULE,
 									   NULL);
 
 				/* <client type> <-- database:module_install --> <file type> */
 				filename = DatumGetCString(DirectFunctionCall1(textout, nbin));
-				filename = sepgsql_expand_dynamic_library_name(filename);
+				filename = expand_dynamic_library_name(filename);
 				if (getfilecon(filename, &filecon) < 1)
 					selerror("could not obtain the security context of '%s'", filename);
 				PG_TRY();
 				{
-					filecon_psid = DirectFunctionCall1(psid_in, CStringGetDatum(filecon));
+					filesid = DirectFunctionCall1(security_label_in,
+												  CStringGetDatum(filecon));
 				}
 				PG_CATCH();
 				{
@@ -292,8 +295,8 @@ static void __check_pg_proc(TupleDesc tdesc, HeapTuple tuple, HeapTuple oldtup,
 				PG_END_TRY();
 				freecon(filecon);
 
-				sepgsql_avc_permission(sepgsqlGetClientPsid(),
-									   DatumGetObjectId(filecon_psid),
+				sepgsql_avc_permission(sepgsqlGetClientContext(),
+									   DatumGetObjectId(filesid),
 									   SECCLASS_DATABASE,
 									   DATABASE__INSTALL_MODULE,
 									   filename);
@@ -378,7 +381,7 @@ static bool __check_tuple_perms(Oid tableoid, TupleDesc tdesc, HeapTuple tuple, 
 	if (perms) {
 		char *audit;
 		char *object_name = __tuple_system_object_name(tableoid, tuple);
-		rc = sepgsql_avc_permission_noaudit(sepgsqlGetClientPsid(),
+		rc = sepgsql_avc_permission_noaudit(sepgsqlGetClientContext(),
 											HeapTupleGetSecurity(tuple),
 											tclass,
 											perms,
@@ -440,20 +443,20 @@ bool sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, HeapTuple oldtup, uin
 							   abort);
 }
 
-psid sepgsqlComputeImplicitContext(Relation rel, HeapTuple tuple) {
+Oid sepgsqlComputeImplicitContext(Relation rel, HeapTuple tuple) {
 	uint16 tclass;
-	psid tcon;
+	Oid tcon;
 	HeapTuple exttup;
 
 	switch (RelationGetRelid(rel)) {
 	case DatabaseRelationId:    /* pg_database */
-		tcon = sepgsqlGetServerPsid();
+		tcon = sepgsqlGetServerContext();
 		tclass = SECCLASS_DATABASE;
 		break;
 
 	case RelationRelationId: {
 		Form_pg_class pgclass = (Form_pg_class) GETSTRUCT(tuple);
-		tcon = sepgsqlGetDatabasePsid();
+		tcon = sepgsqlGetDatabaseContext();
 		tclass = (pgclass->relkind == RELKIND_RELATION
 				  ? SECCLASS_TABLE
 				  : SECCLASS_DATABASE);
@@ -470,8 +473,8 @@ psid sepgsqlComputeImplicitContext(Relation rel, HeapTuple tuple) {
 				attr->attrelid == ProcedureRelationId ||
 				attr->attrelid == AttributeRelationId ||
 				attr->attrelid == RelationRelationId)) {
-			tcon = sepgsql_avc_createcon(sepgsqlGetClientPsid(),
-										 sepgsqlGetDatabasePsid(),
+			tcon = sepgsql_avc_createcon(sepgsqlGetClientContext(),
+										 sepgsqlGetDatabaseContext(),
 										 SECCLASS_TABLE);
 			tclass = SECCLASS_COLUMN;
 			break;
@@ -498,23 +501,23 @@ psid sepgsqlComputeImplicitContext(Relation rel, HeapTuple tuple) {
 	}
 	case ProcedureRelationId:
 		tclass = SECCLASS_PROCEDURE;
-		tcon = sepgsqlGetDatabasePsid();
+		tcon = sepgsqlGetDatabaseContext();
 		break;
 
 	case LargeObjectRelationId:
 		tclass = SECCLASS_BLOB;
-		tcon = sepgsqlGetDatabasePsid();
+		tcon = sepgsqlGetDatabaseContext();
 		break;
 
 	case TypeRelationId:        /* pg_type */
 		tclass = SECCLASS_DATABASE;
-		tcon = sepgsqlGetDatabasePsid();
+		tcon = sepgsqlGetDatabaseContext();
 		break;
 
 	default:
 		if (__is_system_object_relation(RelationGetRelid(rel))) {
 			tclass = SECCLASS_DATABASE;
-			tcon = sepgsqlGetDatabasePsid();
+			tcon = sepgsqlGetDatabaseContext();
 		} else {
 			tclass = SECCLASS_TUPLE;
 			exttup = SearchSysCache(RELOID,
@@ -529,5 +532,5 @@ psid sepgsqlComputeImplicitContext(Relation rel, HeapTuple tuple) {
 		}
 		break;
 	}
-	return sepgsql_avc_createcon(sepgsqlGetClientPsid(), tcon, tclass);
+	return sepgsql_avc_createcon(sepgsqlGetClientContext(), tcon, tclass);
 }

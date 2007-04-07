@@ -22,10 +22,13 @@
 #include "catalog/pg_pltemplate.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_rewrite.h"
-#include "catalog/pg_selinux.h"
+#include "catalog/pg_security.h"
 #include "catalog/pg_tablespace.h"
 #include "catalog/pg_trigger.h"
 #include "catalog/pg_type.h"
+#include "lib/stringinfo.h"
+#include "nodes/nodes.h"
+#include "storage/large_object.h"
 
 #include <selinux/selinux.h>
 #include <selinux/flask.h>
@@ -41,6 +44,27 @@
 	ereport(NOTICE, (errcode(ERRCODE_WARNING),							\
 					 errmsg("%s(%d): " fmt, __FUNCTION__, __LINE__, ##__VA_ARGS__)))
 #define selbugon(x)	do { if (x)((char *)NULL)[0] = 'a'; }while(0)
+
+typedef struct SEvalItem {
+	NodeTag type;
+	uint16 tclass;
+	uint32 perms;
+	union {
+		struct {
+			Oid relid;
+			bool inh;
+		} c;  /* for pg_class */
+		struct {
+			Oid relid;
+			bool inh;
+			AttrNumber attno;
+		} a;  /* for pg_attribute */
+		struct {
+			Oid funcid;
+		} p;  /* for pg_proc */
+	};
+} SEvalItem;
+#define T_SEvalItem		(T_TIDBitmap + 1)		/* must be unique identifier */
 
 /* object classes and access vectors are not included, in default */
 #define SECCLASS_DATABASE			(60)	/* next to SECCLASS_CONTEXT */
@@ -114,52 +138,134 @@
 #define BLOB__EXPORT                              0x00000200UL
 #define TUPLE__PERMS_MASK           ((TUPLE__DELETE << 1) - 1)
 
-extern bool sepgsql_avc_permission_noaudit(psid ssid, psid tsid, uint16 tclass,
-										   uint32 perms, char **audit, char *objname);
-extern void  sepgsql_avc_permission(psid ssid, psid tsid, uint16 tclass,
-									uint32 perms, char *objname);
-extern void  sepgsql_audit(bool result, char *message);
-extern psid  sepgsql_avc_createcon(psid ssid, psid tsid, uint16 tclass);
-extern psid  sepgsql_avc_relabelcon(psid ssid, psid tsid, uint16 tclass);
-extern psid  sepgsql_context_to_psid(char *context);
-extern char *sepgsql_psid_to_context(psid sid);
-extern bool  sepgsql_check_context(char *context);
+/*
+ * SE-PostgreSQL core functions
+ *   src/backend/security/sepgsqlCore.c
+ */
+extern bool  sepgsqlIsEnabled(void);
+extern Size  sepgsqlShmemSize(void);
+extern void  sepgsqlInitialize(void);
+extern int   sepgsqlInitializePostmaster(void);
+extern void  sepgsqlFinalizePostmaster(void);
 
-extern psid  sepgsqlGetServerPsid(void);
-extern psid  sepgsqlGetClientPsid(void);
-extern void  sepgsqlSetClientPsid(psid new_ctx);
-extern psid  sepgsqlGetDatabasePsid(void);
+extern Oid  sepgsqlGetServerContext(void);
+extern Oid  sepgsqlGetClientContext(void);
+extern void  sepgsqlSetClientContext(Oid new_ctx);
+extern Oid  sepgsqlGetDatabaseContext(void);
 extern char *sepgsqlGetDatabaseName(void);
 
-extern List *sepgsqlProxyQuery(Query *query);
-extern List *sepgsqlProxyQueryList(List *queryList);
-extern void sepgsqlVerifyQueryList(List *queryList);
+extern bool sepgsql_avc_permission_noaudit(Oid ssid, Oid tsid, uint16 tclass,
+										   uint32 perms, char **audit, char *objname);
+extern void  sepgsql_avc_permission(Oid ssid, Oid tsid, uint16 tclass,
+									uint32 perms, char *objname);
+extern void  sepgsql_audit(bool result, char *message);
+extern Oid   sepgsql_avc_createcon(Oid ssid, Oid tsid, uint16 tclass);
+extern Oid   sepgsql_avc_relabelcon(Oid ssid, Oid tsid, uint16 tclass);
+extern bool  sepgsql_check_context(char *context);
 
-extern psid sepgsqlComputeImplicitContext(Relation rel, HeapTuple tuple);
-extern bool sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, HeapTuple oldtup,
-								   uint32 perms, bool abort);
+extern Datum sepgsql_getcon(PG_FUNCTION_ARGS);
 
 /*
- * Internal utilities
+ * SE-PostgreSQL proxy functions
+ *   src/backend/security/sepgsqlProxy.c
  */
-static inline char *HeapTupleGetRelationName(HeapTuple tuple) {
-	Form_pg_class pgclass = (Form_pg_class) GETSTRUCT(tuple);
-	return NameStr(pgclass->relname);
-}
+extern List *sepgsqlProxyQuery(Query *query);
+extern List *sepgsqlProxyQueryList(List *queryList);
+extern Oid sepgsqlPreparePlanCheck(Relation rel);
+extern void sepgsqlRestorePlanCheck(Relation rel, Oid pgace_saved);
 
-static inline char *HeapTupleGetAttributeName(HeapTuple tuple) {
-	Form_pg_attribute pgattr = (Form_pg_attribute) GETSTRUCT(tuple);
-	return NameStr(pgattr->attname);
-}
+/*
+ * SE-PostgreSQL checking function
+ *   src/backend/security/sepgsqlVerify.c
+ */
+//extern void sepgsqlVerifyQueryList(List *queryList);
+extern void sepgsqlVerifyQuery(Query *query);
 
-static inline char *HeapTupleGetProcedureName(HeapTuple tuple) {
-	Form_pg_proc pgproc = (Form_pg_proc) GETSTRUCT(tuple);
-	return NameStr(pgproc->proname);
-}
+/*
+ * SE-PostgreSQL hooks
+ *   src/backend/security/sepgsqlHooks.c
+ */
 
-static inline char *HeapTupleGetDatabaseName(HeapTuple tuple) {
-	Form_pg_database pgdat = (Form_pg_database) GETSTRUCT(tuple);
-	return NameStr(pgdat->datname);
-}
+/* simple_heap_xxxx hooks */
+extern void sepgsqlSimpleHeapInsert(Relation rel, HeapTuple tuple);
+extern void sepgsqlSimpleHeapUpdate(Relation rel, ItemPointer tid, HeapTuple newtup);
+extern void sepgsqlSimpleHeapDelete(Relation rel, ItemPointer tid);
+
+/* heap_xxxx hooks for implicit labeling */
+extern void sepgsqlHeapInsert(Relation rel, HeapTuple tuple);
+extern void sepgsqlHeapUpdate(Relation rel, HeapTuple newtup, HeapTuple oldtup);
+
+/* INSERT/UPDATE/DELETE statement hooks */
+extern bool sepgsqlExecInsert(Relation rel, HeapTuple tuple, bool with_returning);
+extern bool sepgsqlExecUpdate(Relation rel, HeapTuple newtup, ItemPointer tid, bool with_returning);
+extern bool sepgsqlExecDelete(Relation rel, ItemPointer tid, bool with_returning);
+
+/* DATABASE */
+extern void sepgsqlAlterDatabaseContext(Relation rel, HeapTuple tuple, char *new_context);
+extern void sepgsqlSetDatabaseParam(const char *name, char *argstring);
+extern void sepgsqlGetDatabaseParam(const char *name);
+
+/* RELATION/ATTRIBUTE */
+extern void sepgsqlLockTable(Oid relid);
+
+/* FUNCTION */
+extern void sepgsqlCallFunction(FmgrInfo *finfo, bool with_perm_check);
+extern void sepgsqlAlterProcedureContext(Relation rel, HeapTuple tuple, char *context);
+
+/* COPY */
+extern void sepgsqlCopyTable(Relation rel, List *attnumlist, bool is_from);
+extern bool sepgsqlCopyTuple(Relation rel, HeapTuple tuple);
+
+/* LOAD shared library module */
+extern void sepgsqlLoadSharedModule(const char *filename);
+
+/* copy/print node object */
+extern Node *sepgsqlCopyObject(Node *node);
+extern bool sepgsqlOutObject(StringInfo str, Node *node);
+
+/* SECURITY LABEL IN/OUT */
+extern char *sepgsqlSecurityLabelIn(char *context);
+extern char *sepgsqlSecurityLabelOut(char *context);
+extern bool sepgsqlSecurityLabelIsValid(char *context);
+extern Oid sepgsqlSecurityLabelOfLabel(bool early_mode);
+
+/*
+ * SE-PostgreSQL Binary Large Object (BLOB) functions
+ *   src/backend/security/sepgsqlLargeObject.c
+ */
+extern void sepgsqlLargeObjectGetSecurity(Oid loid, Oid lo_security);
+extern void sepgsqlLargeObjectSetSecurity(Oid loid, Oid old_security, Oid new_security);
+extern void sepgsqlLargeObjectCreate(Relation rel, HeapTuple tuple);
+extern void sepgsqlLargeObjectDrop(Relation rel, HeapTuple tuple);
+extern void sepgsqlLargeObjectOpen(Relation rel, HeapTuple tuple, LargeObjectDesc *lobj);
+extern void sepgsqlLargeObjectRead(Relation rel, HeapTuple tuple, LargeObjectDesc *lobj);
+extern void sepgsqlLargeObjectWrite(Relation rel, HeapTuple tuple, LargeObjectDesc *lobj);
+extern void sepgsqlLargeObjectImport(void);
+extern void sepgsqlLargeObjectExport(void);
+
+/*
+ * SE-PostgreSQL Heap related functions
+ *   src/backend/security/sepgsqlHeap.c
+ */
+
+extern Oid sepgsqlComputeImplicitContext(Relation rel, HeapTuple tuple);
+extern bool sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, HeapTuple oldtup,
+								   uint32 perms, bool abort);
+extern Datum sepgsql_tuple_perms(PG_FUNCTION_ARGS);
+extern Datum sepgsql_tuple_perms_abort(PG_FUNCTION_ARGS);
+
+/*
+ * SE-PostgreSQL extended SQL statement
+ *   src/backend/security/sepgsqlExtStmt.c
+ */
+extern AlterTableCmd *sepgsqlGramAlterTable(char *colName, char *key, char *value);
+extern bool sepgsqlAlterTablePrepare(Relation rel, AlterTableCmd *cmd);
+extern bool sepgsqlAlterTable(Relation rel, AlterTableCmd *cmd);
+
+extern DefElem *sepgsqlGramAlterFunction(char *defname, char *value);
+extern void pgsqlAlterFunction(Relation rel, HeapTuple tuple, char *context);
+
+extern DefElem *sepgsqlGramAlterDatabase(char *defname, char *context);
+extern void pgsqlAlterDatabase(Relation rel, HeapTuple tuple, char *context);
 
 #endif /* SEPGSQL_INTERNAL_H */

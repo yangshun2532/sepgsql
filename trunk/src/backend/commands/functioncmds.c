@@ -47,7 +47,7 @@
 #include "miscadmin.h"
 #include "parser/parse_func.h"
 #include "parser/parse_type.h"
-#include "security/sepgsql.h"
+#include "security/pgace.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
@@ -1013,7 +1013,7 @@ AlterFunction(AlterFunctionStmt *stmt)
 	DefElem    *volatility_item = NULL;
 	DefElem    *strict_item = NULL;
 	DefElem    *security_def_item = NULL;
-	char       *proselcon = NULL;
+	DefElem    *pgace_def_item = NULL;
 
 	rel = heap_open(ProcedureRelationId, RowExclusiveLock);
 
@@ -1045,16 +1045,15 @@ AlterFunction(AlterFunctionStmt *stmt)
 	{
 		DefElem    *defel = (DefElem *) lfirst(l);
 
-#ifdef HAVE_SELINUX
-		if (strcmp(defel->defname, "context") == 0) {
-			if (proselcon)
+		if (pgaceAlterFunctionPrepare(defel->defname)) {
+			if (pgace_def_item)
 				ereport(ERROR,
-						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options")));
-			proselcon = strVal(defel->arg);
+                        (errcode(ERRCODE_SYNTAX_ERROR),
+                         errmsg("conflicting or redundant options")));
+			pgace_def_item = defel;
 			continue;
 		}
-#endif
+
 		if (compute_common_attribute(defel,
 									 &volatility_item,
 									 &strict_item,
@@ -1069,7 +1068,7 @@ AlterFunction(AlterFunctionStmt *stmt)
 	if (security_def_item)
 		procForm->prosecdef = intVal(security_def_item->arg);
 
-	sepgsqlAlterProcedureContext(rel, tup, proselcon);
+	pgaceAlterFunction(rel, tup, pgace_def_item);
 	/* Do the update */
 	simple_heap_update(rel, &tup->t_self, tup);
 	CatalogUpdateIndexes(rel, tup);

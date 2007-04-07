@@ -480,9 +480,6 @@ typedef NameData *Name;
 
 #define ESCAPE_STRING_SYNTAX	'E'
 
-/* Security Enhanced PostgreSQL (Persistent Security Identifier) */
-typedef Oid				psid;
-
 /* ----------------------------------------------------------------
  *				Section 4:	IsValid macros for system types
  * ----------------------------------------------------------------

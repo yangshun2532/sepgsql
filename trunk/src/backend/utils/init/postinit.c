@@ -30,7 +30,7 @@
 #include "miscadmin.h"
 #include "postmaster/autovacuum.h"
 #include "postmaster/postmaster.h"
-#include "security/sepgsql.h"
+#include "security/pgace.h"
 #include "storage/backendid.h"
 #include "storage/fd.h"
 #include "storage/ipc.h"
@@ -525,8 +525,8 @@ InitPostgres(const char *dbname, const char *username)
 	if (!bootstrap)
 		pgstat_bestart();
 
-	/* initialize security enhanced PostgreSQL facilities */
-	sepgsqlInitialize();
+	/* PGACE: initialize access control extension facility */
+	pgaceInitialize();
 
 	/* close the transaction we started above */
 	if (!bootstrap)

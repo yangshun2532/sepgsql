@@ -23,7 +23,7 @@
 #include "parser/parsetree.h"
 #include "rewrite/rewriteHandler.h"
 #include "rewrite/rewriteManip.h"
-#include "security/sepgsql.h"
+#include "security/pgace.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
 
@@ -1840,8 +1840,8 @@ QueryRewrite(Query *parsetree)
 	if (!foundOriginalQuery && lastInstead != NULL)
 		lastInstead->canSetTag = true;
 
-	/* SE-PostgreSQL Query rewrite handler */
-	results = sepgsqlProxyQueryList(results);
+	/* PGACE: general queries proxy */
+	results = pgaceProxyQuery(results);
 
 	return results;
 }

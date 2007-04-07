@@ -18,7 +18,7 @@
 #include "catalog/namespace.h"
 #include "commands/lockcmds.h"
 #include "miscadmin.h"
-#include "security/sepgsql.h"
+#include "security/pgace.h"
 #include "utils/acl.h"
 #include "utils/lsyscache.h"
 
@@ -60,7 +60,7 @@ LockTableCommand(LockStmt *lockstmt)
 			aclcheck_error(aclresult, ACL_KIND_CLASS,
 						   get_rel_name(reloid));
 
-		sepgsqlLockTable(reloid);
+		pgaceLockTable(reloid);
 
 		if (lockstmt->nowait)
 			rel = relation_open_nowait(reloid, lockstmt->mode);

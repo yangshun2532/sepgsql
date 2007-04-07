@@ -18,7 +18,7 @@
 #include "access/heapam.h"
 #include "catalog/indexing.h"
 #include "catalog/pg_largeobject.h"
-#include "security/sepgsql.h"
+#include "security/pgace.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
 
@@ -58,7 +58,7 @@ LargeObjectCreate(Oid loid)
 
 	ntup = heap_formtuple(pg_largeobject->rd_att, values, nulls);
 
-	sepgsqlLargeObjectCreate(pg_largeobject, ntup);
+	pgaceLargeObjectCreate(pg_largeobject, ntup);
 
 	/*
 	 * Insert it
@@ -95,7 +95,7 @@ LargeObjectDrop(Oid loid)
 	while ((tuple = systable_getnext(sd)) != NULL)
 	{
 		if (!found)
-			sepgsqlLargeObjectDrop(pg_largeobject, tuple);
+			pgaceLargeObjectDrop(pg_largeobject, tuple);
 		simple_heap_delete(pg_largeobject, &tuple->t_self);
 		found = true;
 	}

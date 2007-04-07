@@ -107,7 +107,7 @@
 #include "postmaster/pgarch.h"
 #include "postmaster/postmaster.h"
 #include "postmaster/syslogger.h"
-#include "security/sepgsql.h"
+#include "security/pgace.h"
 #include "storage/fd.h"
 #include "storage/ipc.h"
 #include "storage/pg_shmem.h"
@@ -961,8 +961,7 @@ PostmasterMain(int argc, char *argv[])
 	 */
 	StartupPID = StartupDataBase();
 
-	/* generate policy state change monitoring thread. */
-	if (sepgsqlInitializePostmaster())
+	if (!pgaceInitializePostmaster())
 		ExitPostmaster(1);
 
 	status = ServerLoop();
@@ -1987,11 +1986,11 @@ pmdie(SIGNAL_ARGS)
 				signal_child(PgStatPID, SIGQUIT);
 			if (DLGetHead(BackendList))
 				SignalChildren(SIGQUIT);
-			sepgsqlFinalizePostmaster();
+			pgaceFinalizePostmaster();
 			ExitPostmaster(0);
 			break;
 	}
-	sepgsqlFinalizePostmaster();
+	pgaceFinalizePostmaster();
 
 	PG_SETMASK(&UnBlockSig);
 

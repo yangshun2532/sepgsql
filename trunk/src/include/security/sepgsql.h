@@ -6,200 +6,330 @@
  */
 #ifndef SEPGSQL_H
 #define SEPGSQL_H
-#include "access/htup.h"
-#include "access/tupdesc.h"
-#include "catalog/pg_attribute.h"
-#include "catalog/pg_class.h"
-#include "catalog/pg_database.h"
-#include "catalog/pg_largeobject.h"
-#include "catalog/pg_operator.h"
-#include "catalog/pg_proc.h"
-#include "catalog/pg_type.h"
-#include "executor/spi.h"
-#include "nodes/execnodes.h"
-#include "nodes/parsenodes.h"
-#include "nodes/plannodes.h"
-#include "tcop/dest.h"
-#include "storage/large_object.h"
-#include "utils/rel.h"
+#include "security/sepgsql_internal.h"
+#include "utils/portal.h"
 
-#define SECURITY_ATTR	"security_context"
+#define SECURITY_SYSATTR_NAME		"security_context"
 
-typedef struct SEvalItem {
-	NodeTag type;
-	uint16 tclass;
-	uint32 perms;
-	union {
-		struct {
-			Oid relid;
-			bool inh;
-		} c;  /* for pg_class */
-		struct {
-			Oid relid;
-			bool inh;
-			AttrNumber attno;
-		} a;  /* for pg_attribute */
-		struct {
-			Oid funcid;
-		} p;  /* for pg_proc */
-	};
-} SEvalItem;
+/******************************************************************
+ * Initialize / Finalize related hooks
+ ******************************************************************/
 
-/*
- * SE-PostgreSQL core functions
- *   src/backend/security/sepgsqlCore.c
- */
-#ifdef HAVE_SELINUX
-extern Size  sepgsqlShmemSize(void);
-extern void  sepgsqlInitialize(void);
-extern int   sepgsqlInitializePostmaster(void);
-extern void  sepgsqlFinalizePostmaster(void);
-extern bool  sepgsqlIsEnabled(void);
-#else
-#define sepgsqlShmemSize()					(0)
-#define sepgsqlInitialize()
-#define sepgsqlInitializePostmaster()		(0)
-#define sepgsqlFinalizePostmaster()
-#define sepgsqlIsEnabled()					(false)
-#endif
+static inline Size pgaceShmemSize(void) {
+	Size retval = 0;
+	if (sepgsqlIsEnabled())
+		retval = sepgsqlShmemSize();
+	return retval;
+}
 
-/*
- * SE-PostgreSQL proxy functions
- *   src/backend/security/sepgsqlProxy.c
- */
-#ifdef HAVE_SELINUX
-extern List *sepgsqlProxyQuery(Query *query);
-extern List *sepgsqlProxyQueryList(List *queryList);
-extern void *sepgsqlForeignKeyPrepare(const char *querystr, int nargs, Oid *argtypes);
-#else
-#define sepgsqlProxyQuery(a)				(list_make1(a))
-#define sepgsqlProxyQueryList(a)			(a)
-#endif
+static inline void pgaceInitialize(void) {
+	if (sepgsqlIsEnabled())
+		sepgsqlInitialize();
+}
 
-/*
- * SE-PostgreSQL checking function
- *   src/backend/security/sepgsqlVerify.c
- */
-#ifdef HAVE_SELINUX
-extern void sepgsqlVerifyQueryList(List *queryList);
-#else
-#define sepgsqlVerifyQueryList(a)
-#endif
+static inline bool pgaceInitializePostmaster(void) {
+	if (!sepgsqlIsEnabled())
+		return true;
+	return sepgsqlInitializePostmaster();
+}
 
-/*
- * SE-PostgreSQL hooks
- *   src/backend/security/sepgsqlHooks.c
- */
-#ifdef HAVE_SELINUX
-/* simple_heap_xxxx hooks */
-extern void sepgsqlSimpleHeapInsert(Relation rel, HeapTuple tuple);
-extern void sepgsqlSimpleHeapUpdate(Relation rel, ItemPointer tid, HeapTuple newtup);
-extern void sepgsqlSimpleHeapDelete(Relation rel, ItemPointer tid);
+static inline void pgaceFinalizePostmaster(void) {
+	if (!sepgsqlIsEnabled())
+		return;
+	sepgsqlFinalizePostmaster();
+}
 
-/* heap_xxxx hooks for implicit labeling */
-extern void sepgsqlHeapInsert(Relation rel, HeapTuple tuple);
-extern void sepgsqlHeapUpdate(Relation rel, HeapTuple newtup, HeapTuple oldtup);
+/******************************************************************
+ * SQL proxy hooks
+ ******************************************************************/
 
-/* INSERT/UPDATE/DELETE statement hooks */
-extern bool sepgsqlExecInsert(Relation rel, HeapTuple tuple, bool with_returning);
-extern bool sepgsqlExecUpdate(Relation rel, HeapTuple newtup, ItemPointer tid, bool with_returning);
-extern bool sepgsqlExecDelete(Relation rel, ItemPointer tid, bool with_returning);
+static inline List *pgaceProxyQuery(List *queryList) {
+	List *newList = NIL;
+	ListCell *l;
 
-/* DATABASE */
-extern void sepgsqlAlterDatabaseContext(Relation rel, HeapTuple tuple, char *new_context);
-extern void sepgsqlGetParamDatabase(void);
-extern void sepgsqlSetParamDatabase(void);
+	if (!sepgsqlIsEnabled())
+		return queryList;
+	foreach (l, queryList) {
+		newList = list_concat(newList,
+							  sepgsqlProxyQuery((Query *) lfirst(l)));
+	}
+	return newList;
+}
 
-/* RELATION/ATTRIBUTE */
-extern void sepgsqlAlterTableSetTableContext(Relation rel, Value *context);
-extern void sepgsqlAlterTableSetColumnContext(Relation rel, char *colname, Value *context);
-extern void sepgsqlLockTable(Oid relid);
+static inline void pgacePortalStart(Portal portal) {
+	if (sepgsqlIsEnabled()) {
+		ListCell *l;
+		foreach (l, portal->parseTrees)
+			sepgsqlVerifyQuery((Query *)lfirst(l));
+	}
+}
 
-/* PROCEDURE */
-extern void sepgsqlCallProcedure(FmgrInfo *finfo);
-extern void sepgsqlCallProcedureWithPermCheck(FmgrInfo *finfo);
-extern void sepgsqlAlterProcedureContext(Relation rel, HeapTuple tuple, char *context);
+/******************************************************************
+ * HeapTuple modification hooks
+ ******************************************************************/
 
-/* COPY */
-extern void sepgsqlDoCopy(Relation rel, List *attnumlist, bool is_from);
-extern bool sepgsqlCopyTo(Relation rel, HeapTuple tuple);
+static inline bool pgaceExecInsert(Relation rel, HeapTuple tuple, bool with_returning) {
+	if (!sepgsqlIsEnabled())
+		return true;
+	return sepgsqlExecInsert(rel, tuple, with_returning);
+}
 
-/* LOAD shared library module */
-extern void sepgsqlLoadSharedModule(const char *filename);
-#else
-/* simple_heap_xxxx hooks */
-#define sepgsqlSimpleHeapInsert(a,b)
-#define sepgsqlSimpleHeapUpdate(a,b,c)
-#define sepgsqlSimpleHeapDelete(a,b)
-/* heap_xxxx hooks for implicit labeling */
-#define sepgsqlHeapInsert(a,b)
-#define sepgsqlHeapUpdate(a,b,c)
-/* INSERT/UPDATE/DELETE statement hooks */
-#define sepgsqlExecInsert(a,b,c)					(true)
-#define sepgsqlExecUpdate(a,b,c,d)					(true)
-#define sepgsqlExecDelete(a,b,c)					(true)
-/* DATABASE */
-#define sepgsqlAlterDatabaseContext(a,b,c)
-#define sepgsqlGetParamDatabase()
-#define sepgsqlSetParamDatabase()
-/* TABLE/COLUMN */
-#define sepgsqlAlterTableSetTableContext(a,b)
-#define sepgsqlAlterTableSetColumnContext(a,b,c)
-#define sepgsqlLockTable(a)
-/* PROCEDURE */
-#define sepgsqlCallProcedure(a)
-#define sepgsqlCallProcedureWithPermCheck(a)
-#define sepgsqlAlterProcedureContext(a,b,c)
-/* COPY TO/COPY FROM */
-#define sepgsqlDoCopy(a,b,c)
-#define sepgsqlCopyTo(a,b)								(true)
-/* LOAD shared library module */
-#define sepgsqlLoadSharedModule(a)
-#endif
+static inline bool pgaceExecUpdate(Relation rel, HeapTuple newtup, ItemPointer tid, bool with_returning) {
+	if (!sepgsqlIsEnabled())
+		return true;
+	return sepgsqlExecUpdate(rel, newtup, tid, with_returning);
+}
 
-/*
- * SE-PostgreSQL Binary Large Object (BLOB) functions
- *   src/backend/security/sepgsqlLargeObject.c
- */
-#ifdef HAVE_SELINUX
-extern psid sepgsqlLargeObjectGetSecurity(Oid loid);
-extern void sepgsqlLargeObjectSetSecurity(Oid loid, psid lo_security);
-extern void sepgsqlLargeObjectCreate(Relation rel, HeapTuple tuple);
-extern void sepgsqlLargeObjectDrop(Relation rel, HeapTuple tuple);
-extern void sepgsqlLargeObjectOpen(Relation rel, HeapTuple tuple, LargeObjectDesc *lobj);
-extern void sepgsqlLargeObjectRead(Relation rel, HeapTuple tuple, LargeObjectDesc *lobj);
-extern void sepgsqlLargeObjectWrite(Relation rel, HeapTuple tuple, LargeObjectDesc *lobj);
-extern void sepgsqlLargeObjectImport(void);
-extern void sepgsqlLargeObjectExport(void);
-#else
-#define sepgsqlLargeObjectGetSecurity(a)
-#define sepgsqlLargeObjectSetSecurity(a,b)
-#define sepgsqlLargeObjectCreate(a,b)
-#define sepgsqlLargeObjectDrop(a,b)
-#define sepgsqlLargeObjectOpen(a,b,c)
-#define sepgsqlLargeObjectRead(a,b,c)
-#define sepgsqlLargeObjectWrite(a,b,c)
-#define sepgsqlLargeObjectImport()
-#define sepgsqlLargeObjectExport()
-#endif
+static inline bool pgaceExecDelete(Relation rel, ItemPointer tid, bool with_returning) {
+	if (!sepgsqlIsEnabled())
+		return true;
+	return sepgsqlExecDelete(rel, tid, with_returning);
+}
 
-/*
- * SE-PostgreSQL SQL functions
- */
-extern Datum psid_in(PG_FUNCTION_ARGS);
-extern Datum psid_out(PG_FUNCTION_ARGS);
-extern Datum text_to_psid(PG_FUNCTION_ARGS);
-extern Datum psid_to_text(PG_FUNCTION_ARGS);
-extern Datum sepgsql_getcon(PG_FUNCTION_ARGS);
-extern Datum sepgsql_tuple_perms(PG_FUNCTION_ARGS);
-extern Datum sepgsql_tuple_perms_abort(PG_FUNCTION_ARGS);
+static inline void pgaceSimpleHeapInsert(Relation rel, HeapTuple tuple) {
+	if (sepgsqlIsEnabled())
+		sepgsqlSimpleHeapInsert(rel, tuple);
+}
 
-/*
- * Interface functions to access facilities define as static
- */
-#ifdef HAVE_SELINUX
-/* to call expand_dynamic_library_name() in src/backend/utils/fmgr/dfmgr.c */
-extern char *sepgsql_expand_dynamic_library_name(const char *name);
-#endif
+static inline void pgaceSimpleHeapUpdate(Relation rel, ItemPointer tid, HeapTuple tuple) {
+	if (sepgsqlIsEnabled())
+		sepgsqlSimpleHeapUpdate(rel, tid, tuple);
+}
+
+static inline void pgaceSimpleHeapDelete(Relation rel, ItemPointer tid) {
+	if (sepgsqlIsEnabled())
+		sepgsqlSimpleHeapDelete(rel, tid);
+}
+
+static inline void pgaceHeapInsert(Relation rel, HeapTuple tuple) {
+	if (sepgsqlIsEnabled())
+		sepgsqlHeapInsert(rel, tuple);
+}
+
+static inline void pgaceHeapUpdate(Relation rel, HeapTuple newtup, HeapTuple oldtup) {
+	if (sepgsqlIsEnabled())
+		sepgsqlHeapUpdate(rel, newtup, oldtup);
+}
+
+static inline void pgaceHeapDelete(Relation rel, HeapTuple oldtup) {
+	/* do nothing */
+}
+
+/******************************************************************
+ * DATABASE related hooks
+ ******************************************************************/
+
+static inline void pgaceSetDatabaseParam(const char *name, char *argstring) {
+	/* argstring == NULL means set default */
+	if (sepgsqlIsEnabled())
+		sepgsqlSetDatabaseParam(name, argstring);
+}
+
+static inline void pgaceGetDatabaseParam(const char *name) {
+	if (sepgsqlIsEnabled())
+		sepgsqlGetDatabaseParam(name);
+}
+
+static inline DefElem *pgaceGramAlterDatabase(char *defname, char *value) {
+	if (!sepgsqlIsEnabled())
+		return NULL;
+	return sepgsqlGramAlterDatabase(defname, value);
+}
+
+static inline bool pgaceAlterDatabasePrepare(char *defname) {
+	if (sepgsqlIsEnabled() && !strcmp("context", defname))
+		return true;
+	return false;
+}
+
+static inline void pgaceAlterDatabase(Relation rel, HeapTuple tuple, DefElem *pgace_elem) {
+	if (sepgsqlIsEnabled() && pgace_elem) {
+		Assert(!strcmp("context", pgace_elem->defname));
+		pgsqlAlterDatabase(rel, tuple, strVal(pgace_elem->arg));
+	}
+}
+
+/******************************************************************
+ * FUNCTION related hooks
+ ******************************************************************/
+
+static inline void pgaceCallFunction(FmgrInfo *finfo, bool as_query) {
+	if (sepgsqlIsEnabled())
+		sepgsqlCallFunction(finfo, as_query);
+}
+
+static inline Datum pgacePreparePlanCheck(Relation rel) {
+	Oid pgace_saved = InvalidOid;
+	if (sepgsqlIsEnabled())
+		pgace_saved = pgacePreparePlanCheck(rel);
+	return ObjectIdGetDatum(pgace_saved);
+}
+
+static inline void pgaceRestorePlanCheck(Relation rel, Datum pgace_saved) {
+	if (sepgsqlIsEnabled())
+		pgaceRestorePlanCheck(rel, DatumGetObjectId(pgace_saved));
+}
+
+static inline DefElem *pgaceGramAlterFunction(char *defname, char *value) {
+	if (!sepgsqlIsEnabled())
+		return NULL;
+	return sepgsqlGramAlterFunction(defname, value);
+}
+
+static inline bool pgaceAlterFunctionPrepare(char *defname) {
+	if (sepgsqlIsEnabled() && !strcmp("context", defname))
+		return true;
+	return false;
+}
+
+static inline void pgaceAlterFunction(Relation rel, HeapTuple tuple, DefElem *pgace_elem) {
+	if (sepgsqlIsEnabled() && pgace_elem) {
+		Assert(!strcmp("context", pgace_elem->defname));
+		pgsqlAlterFunction(rel, tuple, strVal(pgace_elem->arg));
+	}
+}
+
+/******************************************************************
+ * TABLE related hooks
+ ******************************************************************/
+
+static inline void pgaceLockTable(Oid relid) {
+	if (sepgsqlIsEnabled())
+		sepgsqlLockTable(relid);
+}
+
+static inline AlterTableCmd *pgaceGramAlterTable(char *colName, char *key, char *value) {
+	if (!sepgsqlIsEnabled())
+		return NULL;
+	return sepgsqlGramAlterTable(colName, key, value);
+}
+
+static inline bool pgaceAlterTablePrepare(Relation rel, AlterTableCmd *cmd) {
+	if (!sepgsqlIsEnabled())
+		return false;
+	return sepgsqlAlterTablePrepare(rel, cmd);
+}
+
+static inline bool pgaceAlterTable(Relation rel, AlterTableCmd *cmd) {
+	if (!sepgsqlIsEnabled())
+		return false;
+	return sepgsqlAlterTable(rel, cmd);
+}
+
+/******************************************************************
+ * COPY TO/COPY FROM statement hooks
+ ******************************************************************/
+
+static inline void pgaceCopyTable(Relation rel, List *attNumList, bool isFrom) {
+	if (sepgsqlIsEnabled())
+		sepgsqlCopyTable(rel, attNumList, isFrom);
+}
+
+static inline bool pgaceCopyTuple(Relation rel, HeapTuple tuple) {
+	if (!sepgsqlIsEnabled())
+		return true;
+	return sepgsqlCopyTuple(rel, tuple);
+}
+
+/******************************************************************
+ * Loadable shared library module hooks
+ ******************************************************************/
+
+static inline void pgaceLoadSharedModule(const char *filename) {
+	if (sepgsqlIsEnabled())
+		sepgsqlLoadSharedModule(filename);
+}
+
+/******************************************************************
+ * Binary Large Object (BLOB) hooks
+ ******************************************************************/
+static inline void pgaceLargeObjectGetSecurity(Oid loid, Oid lo_security) {
+	if (sepgsqlIsEnabled())
+		sepgsqlLargeObjectGetSecurity(loid, lo_security);
+}
+
+static inline void pgaceLargeObjectSetSecurity(Oid loid, Oid old_security, Oid new_security) {
+	if (sepgsqlIsEnabled())
+		sepgsqlLargeObjectSetSecurity(loid, old_security, new_security);
+}
+
+static inline void pgaceLargeObjectCreate(Relation rel, HeapTuple tuple) {
+	if (sepgsqlIsEnabled())
+		sepgsqlLargeObjectCreate(rel, tuple);
+}
+
+static inline void pgaceLargeObjectDrop(Relation rel, HeapTuple tuple) {
+	if (sepgsqlIsEnabled())
+		sepgsqlLargeObjectDrop(rel, tuple);
+}
+
+static inline void pgaceLargeObjectOpen(Relation rel, HeapTuple tuple, LargeObjectDesc *lobj) {
+	if (sepgsqlIsEnabled())
+		sepgsqlLargeObjectOpen(rel, tuple, lobj);
+}
+
+static inline void pgaceLargeObjectRead(Relation rel, HeapTuple tuple, LargeObjectDesc *lobj) {
+	if (sepgsqlIsEnabled())
+		sepgsqlLargeObjectRead(rel, tuple, lobj);
+}
+
+static inline void pgaceLargeObjectWrite(Relation rel, HeapTuple tuple, LargeObjectDesc *lobj) {
+	if (sepgsqlIsEnabled())
+		sepgsqlLargeObjectWrite(rel, tuple, lobj);
+}
+
+static inline void pgaceLargeObjectImport(void) {
+	if (sepgsqlIsEnabled())
+		sepgsqlLargeObjectImport();
+}
+
+static inline void pgaceLargeObjectExport(void) {
+	if (sepgsqlIsEnabled())
+		sepgsqlLargeObjectExport();
+}
+
+/******************************************************************
+ * Security Label hooks
+ ******************************************************************/
+
+static inline char *pgaceSecurityLabelIn(char *context) {
+	if (!sepgsqlIsEnabled())
+		return NULL;
+	return sepgsqlSecurityLabelIn(context);
+}
+
+static inline char *pgaceSecurityLabelOut(char *context) {
+	if (!sepgsqlIsEnabled())
+		return NULL;
+	return sepgsqlSecurityLabelOut(context);
+}
+
+static inline bool pgaceSecurityLabelIsValid(char *context) {
+	if (!sepgsqlIsEnabled())
+		return false;
+	return sepgsqlSecurityLabelIsValid(context);
+}
+
+static inline Oid pgaceSecurityLabelOfLabel(bool early_mode) {
+	if (!sepgsqlIsEnabled())
+		return InvalidOid;
+	return sepgsqlSecurityLabelOfLabel(early_mode);
+}
+
+/******************************************************************
+ * Extended node type hooks
+ ******************************************************************/
+
+static inline Node *pgaceCopyObject(Node *orig) {
+	if (!sepgsqlIsEnabled())
+		return NULL;
+	return sepgsqlCopyObject(orig);
+}
+
+static inline bool pgaceOutObject(StringInfo str, Node *node) {
+	if (!sepgsqlIsEnabled())
+		return false;
+	return sepgsqlOutObject(str, node);
+}
 
 #endif /* SEPGSQL_H */
