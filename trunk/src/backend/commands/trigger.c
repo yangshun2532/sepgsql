@@ -1296,7 +1296,7 @@ ExecCallTriggerFunc(TriggerData *trigdata,
 	 */
 	InitFunctionCallInfoData(fcinfo, finfo, 0, (Node *) trigdata, NULL);
 
-	pgaceCallFunction(finfo, true);
+	pgaceCallFunction(finfo, false);
 
 	result = FunctionCallInvoke(&fcinfo);
 

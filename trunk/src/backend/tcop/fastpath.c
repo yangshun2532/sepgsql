@@ -355,7 +355,7 @@ HandleFunctionRequest(StringInfo msgBuf)
 	InitFunctionCallInfoData(fcinfo, &fip->flinfo, 0, NULL, NULL);
 
 	/* PGACE: check procedure permission */
-	pgaceCallFunction(fcinfo.flinfo, true);
+	pgaceCallFunction(fcinfo.flinfo, false);
 
 	if (PG_PROTOCOL_MAJOR(FrontendProtocol) >= 3)
 		rformat = parse_fcall_arguments(msgBuf, fip, &fcinfo);
