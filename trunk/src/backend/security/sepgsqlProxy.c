@@ -537,10 +537,6 @@ static List *proxyRteSubQuery(List *selist, queryChain *qc, Query *query)
 
 	/* permission mark on the target columns */
 	if (cmdType != CMD_DELETE) {
-		uint32 perms = 0;
-		perms |= (cmdType == CMD_INSERT ? COLUMN__INSERT : 0);
-		perms |= (cmdType == CMD_UPDATE ? COLUMN__UPDATE : 0);
-
 		foreach (l, query->targetList) {
 			TargetEntry *te = lfirst(l);
 			Assert(IsA(te, TargetEntry));
@@ -548,15 +544,17 @@ static List *proxyRteSubQuery(List *selist, queryChain *qc, Query *query)
 			selist = sepgsqlWalkExpr(selist, qc, (Node *) te->expr);
 
 			/* mark insert/update target */
-			if (te->resjunk) {
-				if (!strcmp(te->resname, SECURITY_SYSATTR_NAME)) {
-					selist = addEvalPgAttribtue(selist, rte, SecurityAttributeNumber, perms);
-					//rte->requiredPerms |= RTEMARK_RELABELFROM;
+			if (cmdType==CMD_UPDATE || cmdType==CMD_INSERT) {
+				uint32 perms = (cmdType == CMD_UPDATE
+								? COLUMN__UPDATE
+								: COLUMN__INSERT);
+				if (te->resjunk) {
+					if (!strcmp(te->resname, SECURITY_SYSATTR_NAME))
+						selist = addEvalPgAttribtue(selist, rte, SecurityAttributeNumber, perms);
+					continue;
 				}
-				continue;
-			}
-			if (cmdType==CMD_UPDATE || cmdType==CMD_INSERT)
 				selist = addEvalPgAttribtue(selist, rte, te->resno, perms);
+			}
 		}
 	}
 
