@@ -567,6 +567,7 @@ typedef struct xl_heap_delete
  */
 typedef struct xl_heap_header
 {
+	Oid			t_security;
 	int16		t_natts;
 	uint16		t_infomask;
 	uint8		t_hoff;
