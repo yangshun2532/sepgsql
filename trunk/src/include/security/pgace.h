@@ -3,7 +3,11 @@
  *   headers for PostgreSQL Access Control Extensions (PGACE)
  * Copyright 2007 KaiGai Kohei <kaigai@kaigai.gr.jp>
  */
+#ifndef PGACE_H
+#define PGACE_H
+
 #include "access/htup.h"
+#include "nodes/execnodes.h"
 #include "lib/stringinfo.h"
 #include "nodes/parsenodes.h"
 #include "storage/itemptr.h"
@@ -11,18 +15,20 @@
 #include "tcop/dest.h"
 #include "utils/rel.h"
 
+/*
+ * SECURITY_SYSATTR_NAME is the name of system column name
+ * for security attribute, defined in pg_config.h
+ * If it is not defined, security attribute support is disabled
+ *
+ * see, src/include/pg_config.h
+ */
+
 #ifdef HAVE_SELINUX
 #include "security/sepgsql.h"
 // the following line will be fixed by Sun's people
 // #elif HAVE_TRUSTED_SOLARIS
 // #include "security/trusted_solaris.h"
 #else
-/*
- * SECURITY_SYSATTR_NAME is the definition of system column name for
- * security attribute. Clients can refer a security attribute via
- * this column which is defined as security_label type.
- */
-#define SECURITY_SYSATTR_NAME		"__system_security_attribute__"
 
 /******************************************************************
  * Initialize / Finalize related hooks
@@ -427,23 +433,30 @@ static inline void pgaceLoadSharedModule(const char *filename) {
 
 /*
  * pgaceLargeObjectGetSecurity() is called when lo_get_security() is executed
+ * It returns it's security attribute.
  *
- * @loid        : identifier of the large object
- * @lo_security : security attribute of the large object
+ * @tuple : a tuple which is a part of the target largeobject.
  */
-static inline void pgaceLargeObjectGetSecurity(Oid loid, Oid lo_security) {
-	/* do nothing */
+static inline Oid pgaceLargeObjectGetSecurity(HeapTuple tuple) {
+	ereport(ERROR,
+			(errcode(ERRCODE_INTERNAL_ERROR),
+			 errmsg("There is no security attribute support.")));
+	return InvalidOid;
 }
 
 /*
  * pgaceLargeObjectSetSecurity() is called when lo_set_security() is executed
  *
- * @loid         : identifier of the large object
- * @old_security : previous security attribute of the large object 
- * @new_security : new security attribute of the large object
+ * @tuple       : a tuple which is a part of the target largeobject.
+ * @lo_security : new security attribute specified
+ * @is_first    : true, if it's the first call in the largeobject.
+ *                Because a largeobject may contain some tuples, this hook
+ *                may be called several times for a single largeobject.
  */
-static inline void pgaceLargeObjectSetSecurity(Oid loid, Oid old_security, Oid new_security) {
-	/* do nothing */
+static inline void pgaceLargeObjectSetSecurity(HeapTuple tuple, Oid lo_security, bool is_first) {
+	ereport(ERROR,
+			(errcode(ERRCODE_INTERNAL_ERROR),
+			 errmsg("There is no security attribute support.")));
 }
 
 /*
@@ -593,8 +606,25 @@ static inline bool pgaceOutObject(StringInfo str, Node *node) {
 #endif
 
 /* writable system column support */
+#ifdef SECURITY_SYSATTR_NAME
+static inline bool pgaceWritableSystemColumn(int attrno) {
+	return ((attrno == SecurityAttributeNumber) ? true : false);
+}
 extern void pgaceTransformSelectStmt(List *targetList);
 extern void pgaceTransformInsertStmt(List **p_icolumns, List **p_attrnos, List *targetList);
+extern void pgaceFetchSecurityLabel(JunkFilter *junkfilter, TupleTableSlot *slot, Oid *tts_security);
+#else
+static inline bool pgaceWritableSystemColumn(int attrno) {
+	return false;
+}
+static inline void pgaceTransformSelectStmt(List *targetList) { /* do nothing */ }
+static inline void pgaceTransformInsertStmt(List **p_icolumns,
+											List **p_attrnos,
+											List *targetList) { /* do nothing */ }
+static inline void pgaceFetchSecurityLabel(JunkFilter *junkfilter,
+										   TupleTableSlot *slot,
+										   Oid *tts_security) { /* do nothing */ }
+#endif
 
 /* SQL functions related to security label */
 extern Datum security_label_in(PG_FUNCTION_ARGS);
@@ -609,3 +639,5 @@ extern Oid early_security_label_to_sid(char *context);
 extern Oid security_label_to_sid(char *context);
 extern char *early_sid_to_security_label(Oid sid);
 extern char *sid_to_security_label(Oid sid);
+
+#endif // PGACE_H

@@ -26,6 +26,7 @@
 #include "parser/parse_relation.h"
 #include "parser/parse_target.h"
 #include "parser/parse_type.h"
+#include "security/pgace.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
 #include "utils/typcache.h"
@@ -338,17 +339,15 @@ transformAssignedExpr(ParseState *pstate,
 	if (attrno > 0) {
 		attrtype = attnumTypeId(rd, attrno);
 		attrtypmod = rd->rd_att->attrs[attrno - 1]->atttypmod;
-	} else if (attrno == SecurityAttributeNumber) {
-		/* PGACE: writable system column support */
-		attrtype = SECLABELOID;
-		attrtypmod = -1;
 	} else {
-		if (attrno <= 0)
+		/* PGACE: writable system column support */
+		if (!pgaceWritableSystemColumn(attrno))
 			ereport(ERROR,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 					 errmsg("cannot assign to system column \"%s\"", colname),
 					 parser_errposition(pstate, location)));
-		return NULL; /* to compiler kindness */
+		attrtype = SECLABELOID;
+		attrtypmod = -1;
 	}
 
 	/*
@@ -491,7 +490,7 @@ updateTargetListEntry(ParseState *pstate,
 	tle->resno = (AttrNumber) attrno;
 	tle->resname = colname;
 	/* PGACE: writable system column support */
-	if (attrno < 0)
+	if (pgaceWritableSystemColumn(attrno))
 		tle->resjunk = true;
 }
 
@@ -775,17 +774,18 @@ checkInsertTargets(ParseState *pstate, List *cols, List **attrnos)
 						 errmsg("column \"%s\" of relation \"%s\" does not exist",
 								name, RelationGetRelationName(pstate->p_target_relation)),
 						 parser_errposition(pstate, col->location)));
-			} else if (attrno == SecurityAttributeNumber) {
+			} else if (attrno <= 0) {
 				/* PGACE: writable system column support */
-				if (security_attr)
-					ereport(ERROR,
-							(errcode(ERRCODE_DUPLICATE_COLUMN),
-							 errmsg("column \"%s\" specified more than once", name),
-							 parser_errposition(pstate, col->location)));
-				security_attr = true;
-				*attrnos = lappend_int(*attrnos, attrno);
-				continue;
-			} else if (attrno < 0) {
+				if (pgaceWritableSystemColumn(attrno)) {
+					if (security_attr)
+						ereport(ERROR,
+								(errcode(ERRCODE_DUPLICATE_COLUMN),
+								 errmsg("column \"%s\" specified more than once", name),
+								 parser_errposition(pstate, col->location)));
+					security_attr = true;
+					*attrnos = lappend_int(*attrnos, attrno);
+					continue;
+				}
 				ereport(ERROR,
 						(errcode(ERRCODE_INVALID_COLUMN_REFERENCE),
 						 errmsg("column \"%s\" of relation \"%s\" is system column",

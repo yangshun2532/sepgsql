@@ -505,8 +505,7 @@ lo_get_security(PG_FUNCTION_ARGS)
 							SnapshotNow, 1, &skey);
 
 	while ((tuple = systable_getnext(sd)) != NULL) {
-		lo_security = HeapTupleGetSecurity(tuple);
-		pgaceLargeObjectGetSecurity(loid, lo_security);
+		lo_security = pgaceLargeObjectGetSecurity(tuple);
 		found = true;
 		break;
 	}
@@ -548,10 +547,8 @@ lo_set_security(PG_FUNCTION_ARGS)
 							SnapshotNow, 1, &skey);
 
 	while ((tuple = systable_getnext(sd)) != NULL) {
-		if (!found)
-			pgaceLargeObjectSetSecurity(loid, HeapTupleGetSecurity(tuple), lo_security);
 		newtup = heap_copytuple(tuple);
-		HeapTupleSetSecurity(newtup, lo_security);
+		pgaceLargeObjectSetSecurity(newtup, lo_security, !found);
 		simple_heap_update(rel, &newtup->t_self, newtup);
 		CatalogUpdateIndexes(rel, newtup);
 		found = true;

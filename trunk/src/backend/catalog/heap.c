@@ -142,6 +142,7 @@ static FormData_pg_attribute a7 = {
 	true, 'p', 'i', true, false, false, true, 0
 };
 
+#ifdef SECURITY_SYSATTR_NAME
 /*
  * SECURITY_SYSATTR_NAME is defined at PGACE header file.
  * If SELinux is enabled, it is defined as "security_context"
@@ -153,6 +154,9 @@ static FormData_pg_attribute a8 = {
 };
 
 static const Form_pg_attribute SysAtt[] = {&a1, &a2, &a3, &a4, &a5, &a6, &a7, &a8};
+#else
+static const Form_pg_attribute SysAtt[] = {&a1, &a2, &a3, &a4, &a5, &a6, &a7};
+#endif
 
 /*
  * This function returns a Form_pg_attribute pointer for a system attribute.

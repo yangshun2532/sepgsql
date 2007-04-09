@@ -132,14 +132,19 @@ done
 
 # Get SECURITY_SYSATTR_NAME from security/pgace.h
 for dir in $INCLUDE_DIRS; do
-    if [ -f "$dir/security/pgace.h" -a -f "$dir/pg_config.h" ]; then
-        TMPFILE=`mktemp`
-        cat "$dir/pg_config.h" "$dir/security/pgace.h" > ${TMPFILE}
-        echo SECURITY_SYSATTR_NAME >> ${TMPFILE}
-        SECURITY_SYSATTR_NAME=`cat ${TMPFILE} | cpp -I "$dir" | tail -1 | sed 's/"//g'`
-        rm -f ${TMPFILE}
+    if [ -f "$dir/pg_config.h" ]; then
+        SECURITY_SYSATTR_NAME=`grep '#define[ 	]*SECURITY_SYSATTR_NAME' $dir/pg_config.h | $AWK '{ print $3}' | sed 's/\"//g'`
+        break
     fi
 done
+
+function SECURITY_SYSATTR_NAME_filter() {
+    if [ -z "$SECURITY_SYSATTR_NAME" ]; then
+        grep -v SECURITY_SYSATTR_NAME;
+    else
+        cat
+    fi
+}
 
 touch ${OUTPUT_PREFIX}.description.$$
 touch ${OUTPUT_PREFIX}.shdescription.$$
@@ -154,7 +159,7 @@ touch ${OUTPUT_PREFIX}.shdescription.$$
 #	Substitute values of configuration constants
 # ----------------
 #
-cat $INFILES | \
+cat $INFILES | SECURITY_SYSATTR_NAME_filter | \
 sed -e 's;/\*.*\*/;;g' \
     -e 's;/\*;\
 /*\

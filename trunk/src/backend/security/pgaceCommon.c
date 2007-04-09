@@ -9,6 +9,7 @@
 #include "access/xact.h"
 #include "catalog/indexing.h"
 #include "catalog/pg_security.h"
+#include "executor/executor.h"
 #include "miscadmin.h"
 #include "security/pgace.h"
 #include "utils/builtins.h"
@@ -19,6 +20,7 @@
 /*
  * support for writable system column
  */
+#ifdef SECURITY_SYSATTR_NAME
 void pgaceTransformSelectStmt(List *targetList) {
 	ListCell *l;
 
@@ -71,6 +73,19 @@ void pgaceTransformInsertStmt(List **p_icolumns, List **p_attrnos, List *targetL
 		break;
 	}
 }
+
+void pgaceFetchSecurityLabel(JunkFilter *junkfilter, TupleTableSlot *slot, Oid *tts_security) {
+	Datum datum;
+	bool isNull;
+
+	if (ExecGetJunkAttribute(junkfilter,
+							 slot,
+							 SECURITY_SYSATTR_NAME,
+							 &datum,
+							 &isNull) && !isNull)
+		*tts_security = DatumGetObjectId(datum);
+}
+#endif /* SECURITY_SYSATTR_NAME */
 
 #define EARLY_PG_SECURITY  "global/pg_security.bootstrap"
 

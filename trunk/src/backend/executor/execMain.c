@@ -1219,12 +1219,12 @@ lnext:	;
 				}
 			}
 
-			if (ExecGetJunkAttribute(junkfilter,
-									 slot,
-									 SECURITY_SYSATTR_NAME,
-									 &datum,
-									 &isNull) && !isNull)
-				__tts_security = DatumGetObjectId(datum);
+			/*
+			 * PGACE: writable system columnt support.
+			 * If client specified a explicit security label,
+			 * pgaceFetchSecurityLabel() fetch it from junk attribute.
+			 */
+			pgaceFetchSecurityLabel(junkfilter, slot, &__tts_security);
 
 			/*
 			 * Create a new "clean" tuple with all junk attributes removed. We

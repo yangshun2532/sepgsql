@@ -324,27 +324,32 @@ bool sepgsqlOutObject(StringInfo str, Node *node) {
 /*******************************************************************************
  * Binary Large Object hooks
  *******************************************************************************/
-void sepgsqlLargeObjectGetSecurity(Oid loid, Oid lo_security)
-{
-    sepgsql_avc_permission(sepgsqlGetClientContext(),
+Oid sepgsqlLargeObjectGetSecurity(HeapTuple tuple) {
+	Oid lo_security = HeapTupleGetSecurity(tuple);
+
+	sepgsql_avc_permission(sepgsqlGetClientContext(),
 						   lo_security,
 						   SECCLASS_BLOB,
 						   BLOB__GETATTR,
 						   NULL);
+	return lo_security;
 }
 
-void sepgsqlLargeObjectSetSecurity(Oid loid, Oid old_security, Oid new_security)
+void sepgsqlLargeObjectSetSecurity(HeapTuple tuple, Oid lo_security, bool is_first)
 {
-	sepgsql_avc_permission(sepgsqlGetClientContext(),
-						   old_security,
-						   SECCLASS_BLOB,
-						   BLOB__SETATTR | BLOB__RELABELFROM,
-						   NULL);
-	sepgsql_avc_permission(sepgsqlGetClientContext(),
-						   new_security,
-						   SECCLASS_BLOB,
-						   BLOB__RELABELTO,
-						   NULL);
+	if (is_first) {
+		sepgsql_avc_permission(sepgsqlGetClientContext(),
+							   HeapTupleGetSecurity(tuple),
+							   SECCLASS_BLOB,
+							   BLOB__SETATTR | BLOB__RELABELFROM,
+							   NULL);
+		sepgsql_avc_permission(sepgsqlGetClientContext(),
+							   lo_security,
+							   SECCLASS_BLOB,
+							   BLOB__RELABELTO,
+							   NULL);
+	}
+	HeapTupleSetSecurity(tuple, lo_security);
 }
 
 void sepgsqlLargeObjectCreate(Relation rel, HeapTuple tuple)

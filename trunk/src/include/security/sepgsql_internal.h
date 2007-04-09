@@ -233,8 +233,8 @@ extern Oid sepgsqlSecurityLabelOfLabel(bool early_mode);
  * SE-PostgreSQL Binary Large Object (BLOB) functions
  *   src/backend/security/sepgsqlLargeObject.c
  */
-extern void sepgsqlLargeObjectGetSecurity(Oid loid, Oid lo_security);
-extern void sepgsqlLargeObjectSetSecurity(Oid loid, Oid old_security, Oid new_security);
+extern Oid  sepgsqlLargeObjectGetSecurity(HeapTuple tuple);
+extern void sepgsqlLargeObjectSetSecurity(HeapTuple tuple, Oid lo_security, bool is_first);
 extern void sepgsqlLargeObjectCreate(Relation rel, HeapTuple tuple);
 extern void sepgsqlLargeObjectDrop(Relation rel, HeapTuple tuple);
 extern void sepgsqlLargeObjectOpen(Relation rel, HeapTuple tuple, LargeObjectDesc *lobj);
