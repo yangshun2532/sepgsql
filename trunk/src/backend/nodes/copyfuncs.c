@@ -3342,6 +3342,7 @@ copyObject(void *from)
 		case T_FuncWithArgs:
 			retval = _copyFuncWithArgs(from);
 			break;
+
 		default:
 			retval = pgaceCopyObject(from);
 			if (retval)

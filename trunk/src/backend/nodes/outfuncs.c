@@ -1829,6 +1829,7 @@ _outFkConstraint(StringInfo str, FkConstraint *node)
 	WRITE_BOOL_FIELD(skip_validation);
 }
 
+
 /*
  * _outNode -
  *	  converts a Node into ascii string and append it to 'str'
