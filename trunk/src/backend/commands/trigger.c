@@ -1296,7 +1296,8 @@ ExecCallTriggerFunc(TriggerData *trigdata,
 	 */
 	InitFunctionCallInfoData(fcinfo, finfo, 0, (Node *) trigdata, NULL);
 
-	pgaceCallFunction(finfo, false);
+	/* PGACE: permission check for trigegr function */
+	pgaceCallFunctionTrigger(finfo, trigdata);
 
 	result = FunctionCallInvoke(&fcinfo);
 

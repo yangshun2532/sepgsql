@@ -9,8 +9,7 @@
 #include "access/heapam.h"
 #include "access/genam.h"
 #include "optimizer/plancat.h"
-#include "security/sepgsql.h"
-#include "security/sepgsql_internal.h"
+#include "security/pgace.h"
 #include "utils/fmgroids.h"
 #include "utils/syscache.h"
 

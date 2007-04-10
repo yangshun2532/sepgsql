@@ -110,33 +110,34 @@ void sepgsqlLockTable(Oid relid)
  * PROCEDURE related hooks
  *******************************************************************************/
 
-static Datum __callTrusterProcedure(PG_FUNCTION_ARGS)
+static Datum __callTrustedProcedure(PG_FUNCTION_ARGS)
 {
+	Oid orig_client_con;
 	Datum retval;
-	Oid saved_client_con;
 
-	/* save security context */
-	saved_client_con = sepgsqlGetClientContext();
+	/* save original security context */
+	orig_client_con = sepgsqlGetClientContext();
+	/* set exec context */
 	sepgsqlSetClientContext(DatumGetObjectId(fcinfo->flinfo->fn_pgace_data));
 	PG_TRY();
 	{
-		retval = (fcinfo)->flinfo->fn_pgace_addr(fcinfo);
+		retval = fcinfo->flinfo->fn_pgace_addr(fcinfo);
 	}
 	PG_CATCH();
 	{
-		sepgsqlSetClientContext(saved_client_con);
+		sepgsqlSetClientContext(orig_client_con);
 		PG_RE_THROW();
 	}
 	PG_END_TRY();
-	sepgsqlSetClientContext(saved_client_con);
+	sepgsqlSetClientContext(orig_client_con);
 
 	return retval;
 }
 
-void sepgsqlCallFunction(FmgrInfo *finfo, bool as_query)
+void sepgsqlCallFunction(FmgrInfo *finfo, bool with_perm_check)
 {
 	HeapTuple tuple;
-	Oid newcon;
+	Oid execcon;
 	uint32 perms = PROCEDURE__EXECUTE;
 
 	tuple = SearchSysCache(PROCOID,
@@ -146,17 +147,18 @@ void sepgsqlCallFunction(FmgrInfo *finfo, bool as_query)
 		selerror("cache lookup failed for procedure %u", finfo->fn_oid);
 
 	/* check trusted procedure */
-	newcon = sepgsql_avc_createcon(sepgsqlGetClientContext(),
-								   HeapTupleGetSecurity(tuple),
-								   SECCLASS_PROCESS);
-	if (sepgsqlGetClientContext() != newcon) {
-		perms |= PROCEDURE__ENTRYPOINT;
-		finfo->fn_pgace_data = ObjectIdGetDatum(newcon);
+	execcon = sepgsql_avc_createcon(sepgsqlGetClientContext(),
+									HeapTupleGetSecurity(tuple),
+									SECCLASS_PROCESS);
+	if (sepgsqlGetClientContext() != execcon) {
 		finfo->fn_pgace_addr = finfo->fn_addr;
-		finfo->fn_addr = __callTrusterProcedure;
+		finfo->fn_pgace_data = ObjectIdGetDatum(execcon);
+		finfo->fn_addr = __callTrustedProcedure;
+
+		perms |= PROCEDURE__ENTRYPOINT;
 	}
 
-	if (!as_query) {
+	if (with_perm_check) {
 		Form_pg_proc proc_form = (Form_pg_proc) GETSTRUCT(tuple);
 
 		/* check procedure:{execute entrypoint} permission */

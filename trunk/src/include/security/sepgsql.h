@@ -153,9 +153,19 @@ static inline void pgaceAlterDatabase(Relation rel, HeapTuple tuple, DefElem *pg
  * FUNCTION related hooks
  ******************************************************************/
 
-static inline void pgaceCallFunction(FmgrInfo *finfo, bool as_query) {
+static inline void pgaceCallFunction(FmgrInfo *finfo) {
 	if (sepgsqlIsEnabled())
-		sepgsqlCallFunction(finfo, as_query);
+		sepgsqlCallFunction(finfo, false);
+}
+
+static inline void pgaceCallFunctionTrigger(FmgrInfo *finfo, TriggerData *tgdata) {
+	if (sepgsqlIsEnabled())
+		sepgsqlCallFunction(finfo, true);
+}
+
+static inline void pgaceCallFunctionFastPath(FmgrInfo *finfo) {
+	if (sepgsqlIsEnabled())
+		sepgsqlCallFunction(finfo, true);
 }
 
 static inline Datum pgacePreparePlanCheck(Relation rel) {

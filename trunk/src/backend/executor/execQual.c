@@ -1669,7 +1669,7 @@ ExecEvalFunc(FuncExprState *fcache,
 	/* Go directly to ExecMakeFunctionResult on subsequent uses */
 	fcache->xprstate.evalfunc = (ExprStateEvalFunc) ExecMakeFunctionResult;
 
-	pgaceCallFunction(&fcache->func, true);
+	pgaceCallFunction(&fcache->func);
 
 	return ExecMakeFunctionResult(fcache, econtext, isNull, isDone);
 }

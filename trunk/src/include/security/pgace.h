@@ -7,8 +7,9 @@
 #define PGACE_H
 
 #include "access/htup.h"
-#include "nodes/execnodes.h"
+#include "commands/trigger.h"
 #include "lib/stringinfo.h"
+#include "nodes/execnodes.h"
 #include "nodes/parsenodes.h"
 #include "storage/itemptr.h"
 #include "storage/large_object.h"
@@ -264,13 +265,33 @@ static inline void pgaceAlterDatabase(Relation rel, HeapTuple tuple, DefElem *pg
  ******************************************************************/
 
 /*
- * pgaceCallFunction() is called before execution of SQL function
- * explicitly required by clients.
+ * pgaceCallFunction() is called just before executing SQL function
+ * as a part of query.
  *
  * @finfo    : FmgrInfo object for the target function
- * @as_query : true, if the function is used as a part of queries
  */
-static inline void pgaceCallFunction(FmgrInfo *finfo, bool as_query) {
+static inline void pgaceCallFunction(FmgrInfo *finfo) {
+	/* do nothing */
+}
+
+/*
+ * pgaceCallFunctionTrigger() is called just before executing
+ * trigger function.
+ *
+ * @finfo  : FmgrInfo object for the target function
+ * @tgdata : TriggerData object for the current trigger invokation
+ */
+static inline void pgaceCallFunctionTrigger(FmgrInfo *finfo, TriggerData *tgdata) {
+	/* do nothing */
+}
+
+/*
+ * pgaceCallFunctionFastPath() is called just before executing
+ * SQL function in the fast path.
+ *
+ * @finfo  : FmgrInfo object for the target function
+ */
+static inline void pgaceCallFunctionFastPath(FmgrInfo *finfo) {
 	/* do nothing */
 }
 

@@ -53,10 +53,8 @@ typedef struct FmgrInfo
 	MemoryContext fn_mcxt;		/* memory context to store fn_extra in */
 	fmNodePtr	fn_expr;		/* expression parse tree for call, or NULL */
 
-	/* PGACE: fn_pgace_data => opaque field for PGACE
-	 *        fn_pgace_addr => original fn_addr, when PGACE rewrite fn_addr */
-	Datum		fn_pgace_data;	/* opaque field for PGACE */
-	PGFunction	fn_pgace_addr;	/* original fn_addr, when PGACE rewrite fn_addr */
+	PGFunction	fn_pgace_addr;	/* PGACE opaque addr field */
+	Datum		fn_pgace_data;	/* PGACE opaque data field */
 } FmgrInfo;
 
 /*
