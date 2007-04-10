@@ -5,14 +5,17 @@
  */
 #include "postgres.h"
 
+#include "access/genam.h"
 #include "access/heapam.h"
 #include "access/xact.h"
 #include "catalog/indexing.h"
+#include "catalog/pg_largeobject.h"
 #include "catalog/pg_security.h"
 #include "executor/executor.h"
 #include "miscadmin.h"
 #include "security/pgace.h"
 #include "utils/builtins.h"
+#include "utils/fmgroids.h"
 #include "utils/syscache.h"
 #include <unistd.h>
 #include <sys/file.h>
@@ -363,6 +366,93 @@ security_label_to_text(PG_FUNCTION_ARGS)
 	memcpy(VARDATA(result), context, strlen(context));
 
 	PG_RETURN_TEXT_P(result);
+}
+
+/*****************************************************************************
+ *	 Set/Get security attribute of Large Object
+ *****************************************************************************/
+Datum
+lo_get_security(PG_FUNCTION_ARGS)
+{
+	Oid loid = PG_GETARG_OID(0);
+	Oid lo_security = InvalidOid;
+	Relation rel;
+	ScanKeyData skey;
+	SysScanDesc sd;
+	HeapTuple tuple;
+	bool found = false;
+
+	ScanKeyInit(&skey,
+				Anum_pg_largeobject_loid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(loid));
+
+	rel = heap_open(LargeObjectRelationId, AccessShareLock);
+
+	sd = systable_beginscan(rel, LargeObjectLOidPNIndexId, true,
+							SnapshotNow, 1, &skey);
+
+	while ((tuple = systable_getnext(sd)) != NULL) {
+		lo_security = pgaceLargeObjectGetSecurity(tuple);
+		found = true;
+		break;
+	}
+	systable_endscan(sd);
+
+	heap_close(rel, AccessShareLock);
+
+	if (!found)
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_OBJECT),
+				 errmsg("large object %u does not exist", loid)));
+
+	PG_RETURN_OID(lo_security);
+}
+
+Datum
+lo_set_security(PG_FUNCTION_ARGS)
+{
+	Oid loid = PG_GETARG_OID(0);
+	Oid lo_security = PG_GETARG_OID(1);
+	Relation rel;
+	ScanKeyData skey;
+	SysScanDesc sd;
+	HeapTuple tuple, newtup;
+	CatalogIndexState indstate;
+	bool found = false;
+	int i;
+
+	ScanKeyInit(&skey,
+				Anum_pg_largeobject_loid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(loid));
+
+	rel = heap_open(LargeObjectRelationId, RowExclusiveLock);
+
+	indstate = CatalogOpenIndexes(rel);
+
+	sd = systable_beginscan(rel, LargeObjectLOidPNIndexId, true,
+							SnapshotNow, 1, &skey);
+
+	while ((tuple = systable_getnext(sd)) != NULL) {
+		newtup = heap_copytuple(tuple);
+		pgaceLargeObjectSetSecurity(newtup, lo_security, !found);
+		simple_heap_update(rel, &newtup->t_self, newtup);
+		CatalogUpdateIndexes(rel, newtup);
+		found = true;
+	}
+	systable_endscan(sd);
+	CatalogCloseIndexes(indstate);
+	heap_close(rel, RowExclusiveLock);
+
+	CommandCounterIncrement();
+
+	if (!found)
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_OBJECT),
+				 errmsg("large object %u does not exist", loid)));
+
+	PG_RETURN_BOOL(true);
 }
 
 #ifndef HAVE_SELINUX

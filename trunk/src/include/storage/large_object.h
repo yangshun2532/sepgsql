@@ -44,8 +44,6 @@ typedef struct LargeObjectDesc
 #define IFS_RDLOCK		(1 << 0)
 #define IFS_WRLOCK		(1 << 1)
 
-	/* PGACE: security attribute of blob */
-	Oid			blob_security;
 } LargeObjectDesc;
 
 

@@ -372,23 +372,43 @@ void sepgsqlLargeObjectDrop(Relation rel, HeapTuple tuple)
 						   NULL);
 }
 
-void sepgsqlLargeObjectOpen(Relation rel, HeapTuple tuple, LargeObjectDesc *lobj)
+void sepgsqlLargeObjectOpen(Relation rel, HeapTuple tuple, bool read_only)
 {
-	lobj->blob_security = HeapTupleGetSecurity(tuple);
 	sepgsqlCheckTuplePerms(rel, tuple, NULL, TUPLE__SELECT, true);
 }
 
-void sepgsqlLargeObjectRead(Relation rel, HeapTuple tuple, LargeObjectDesc *lobj)
+void sepgsqlLargeObjectRead(Relation rel, HeapTuple tuple)
 {
-	if (lobj->blob_security != HeapTupleGetSecurity(tuple))
-		selnotice("different security contexts within single BLOB");
 	sepgsqlCheckTuplePerms(rel, tuple, NULL, TUPLE__SELECT | BLOB__READ, true);
 }
 
-void sepgsqlLargeObjectWrite(Relation rel, HeapTuple tuple, LargeObjectDesc *lobj)
+void sepgsqlLargeObjectWrite(Relation rel, HeapTuple newtup, HeapTuple oldtup)
 {
-	HeapTupleSetSecurity(tuple, lobj->blob_security);
-	sepgsqlCheckTuplePerms(rel, tuple, NULL, TUPLE__UPDATE | BLOB__WRITE, true);
+	Oid lo_security;
+
+	if (HeapTupleIsValid(oldtup)) {
+		lo_security = HeapTupleGetSecurity(oldtup);
+	} else {
+		Form_pg_largeobject lobj_form
+			= (Form_pg_largeobject) GETSTRUCT(newtup);
+		ScanKeyData skey;
+		SysScanDesc sd;
+		HeapTuple tuple;
+
+		ScanKeyInit(&skey,
+					Anum_pg_largeobject_loid,
+					BTEqualStrategyNumber, F_OIDEQ,
+					ObjectIdGetDatum(lobj_form->loid));
+		sd = systable_beginscan(rel, LargeObjectLOidPNIndexId, true,
+								SnapshotNow, 1, &skey);
+		tuple = systable_getnext(sd);
+		if (!HeapTupleIsValid(tuple))
+			selerror("large object %u does not exist", lobj_form->loid);
+		lo_security = HeapTupleGetSecurity(tuple);
+		systable_endscan(sd);
+	}
+	HeapTupleSetSecurity(newtup, lo_security);
+	sepgsqlCheckTuplePerms(rel, newtup, NULL, TUPLE__UPDATE | BLOB__WRITE, true);
 }
 
 void sepgsqlLargeObjectImport()

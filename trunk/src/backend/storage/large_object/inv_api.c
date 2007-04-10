@@ -128,7 +128,7 @@ close_lo_relation(bool isCommit)
  * read with can be specified.
  */
 static bool
-myLargeObjectExists(LargeObjectDesc *lobj)
+myLargeObjectExists(Oid loid, Snapshot snapshot)
 {
 	bool		retval = false;
 	Relation	pg_largeobject;
@@ -142,16 +142,16 @@ myLargeObjectExists(LargeObjectDesc *lobj)
 	ScanKeyInit(&skey[0],
 				Anum_pg_largeobject_loid,
 				BTEqualStrategyNumber, F_OIDEQ,
-				ObjectIdGetDatum(lobj->id));
+				ObjectIdGetDatum(loid));
 
 	pg_largeobject = heap_open(LargeObjectRelationId, AccessShareLock);
 
 	sd = systable_beginscan(pg_largeobject, LargeObjectLOidPNIndexId, true,
-							lobj->snapshot, 1, skey);
+							snapshot, 1, skey);
 
 	tuple = systable_getnext(sd);
 	if (HeapTupleIsValid(tuple)) {
-		pgaceLargeObjectOpen(pg_largeobject, tuple, lobj);
+		pgaceLargeObjectOpen(pg_largeobject, tuple, !(snapshot == SnapshotNow));
 		retval = true;
 	}
 
@@ -252,7 +252,7 @@ inv_open(Oid lobjId, int flags, MemoryContext mcxt)
 		elog(ERROR, "invalid flags: %d", flags);
 
 	/* Can't use LargeObjectExists here because it always uses SnapshotNow */
-	if (!myLargeObjectExists(retval))
+	if (!myLargeObjectExists(lobjId, retval->snapshot))
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("large object %u does not exist", lobjId)));
@@ -439,7 +439,7 @@ inv_read(LargeObjectDesc *obj_desc, char *buf, int nbytes)
 		bytea	   *datafield;
 		bool		pfreeit;
 
-		pgaceLargeObjectRead(lo_heap_r, tuple, obj_desc);
+		pgaceLargeObjectRead(lo_heap_r, tuple);
 
 		data = (Form_pg_largeobject) GETSTRUCT(tuple);
 
@@ -627,7 +627,7 @@ inv_write(LargeObjectDesc *obj_desc, const char *buf, int nbytes)
 			newtup = heap_modifytuple(oldtuple, RelationGetDescr(lo_heap_r),
 									  values, nulls, replace);
 
-			pgaceLargeObjectWrite(lo_heap_r, newtup, obj_desc);
+			pgaceLargeObjectWrite(lo_heap_r, newtup, oldtuple);
 			simple_heap_update(lo_heap_r, &newtup->t_self, newtup);
 			CatalogIndexInsert(indstate, newtup);
 			heap_freetuple(newtup);
@@ -671,7 +671,7 @@ inv_write(LargeObjectDesc *obj_desc, const char *buf, int nbytes)
 			values[Anum_pg_largeobject_pageno - 1] = Int32GetDatum(pageno);
 			values[Anum_pg_largeobject_data - 1] = PointerGetDatum(&workbuf);
 			newtup = heap_formtuple(lo_heap_r->rd_att, values, nulls);
-			pgaceLargeObjectWrite(lo_heap_r, newtup, obj_desc);
+			pgaceLargeObjectWrite(lo_heap_r, newtup, NULL);
 			simple_heap_insert(lo_heap_r, newtup);
 			CatalogIndexInsert(indstate, newtup);
 			heap_freetuple(newtup);

@@ -483,11 +483,11 @@ static inline void pgaceLargeObjectDrop(Relation rel, HeapTuple tuple) {
 /*
  * pgaceLargeObjectOpen() is called when a large object is opened
  *
- * @rel   : pg_largeobject relation opened with RowExclusiveLock
- * @tuple : one of the tuples within the target large object
- * @lobj  : large object descriptor which has uninitialized security attribute
+ * @rel       : pg_largeobject relation opened with RowExclusiveLock
+ * @tuple     : head of the tuples within the target large object
+ * @read_only : true, if large object is opened as read only mode
  */
-static inline void pgaceLargeObjectOpen(Relation rel, HeapTuple tuple, LargeObjectDesc *lobj) {
+static inline void pgaceLargeObjectOpen(Relation rel, HeapTuple tuple, bool read_only) {
 	/* do nothing */
 }
 
@@ -496,20 +496,19 @@ static inline void pgaceLargeObjectOpen(Relation rel, HeapTuple tuple, LargeObje
  *
  * @rel   : pg_largeobject relation opened with AccessShareLock
  * @tuple : a tuple within the target large object
- * @lobj  : large object descriptor
  */
-static inline void pgaceLargeObjectRead(Relation rel, HeapTuple tuple, LargeObjectDesc *lobj) {
+static inline void pgaceLargeObjectRead(Relation rel, HeapTuple tuple) {
 	/* do nothing */
 }
 
 /*
  * pgaceLargeObjectWrite() is called when they write to a large object
  *
- * @rel   : pg_largeobject relation opened with RowExclusiveLock
- * @tuple : a tuple within the target large object
- * @lobj  : large object descriptor
+ * @rel    : pg_largeobject relation opened with RowExclusiveLock
+ * @newtup : a new tuple within the target large object
+ * @oldtup : a original tuple within the target large object, if exist
  */
-static inline void pgaceLargeObjectWrite(Relation rel, HeapTuple tuple, LargeObjectDesc *lobj) {
+static inline void pgaceLargeObjectWrite(Relation rel, HeapTuple newtup, HeapTuple oldtup) {
 	/* do nothing */
 }
 
@@ -633,6 +632,10 @@ extern Datum security_label_raw_in(PG_FUNCTION_ARGS);
 extern Datum security_label_raw_out(PG_FUNCTION_ARGS);
 extern Datum text_to_security_label(PG_FUNCTION_ARGS);
 extern Datum security_label_to_text(PG_FUNCTION_ARGS);
+
+/* SQL functions related to large object */
+extern Datum lo_get_security(PG_FUNCTION_ARGS);
+extern Datum lo_set_security(PG_FUNCTION_ARGS);
 
 /* obsolete interface */
 extern Oid early_security_label_to_sid(char *context);

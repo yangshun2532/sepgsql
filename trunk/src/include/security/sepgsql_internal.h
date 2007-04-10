@@ -237,9 +237,9 @@ extern Oid  sepgsqlLargeObjectGetSecurity(HeapTuple tuple);
 extern void sepgsqlLargeObjectSetSecurity(HeapTuple tuple, Oid lo_security, bool is_first);
 extern void sepgsqlLargeObjectCreate(Relation rel, HeapTuple tuple);
 extern void sepgsqlLargeObjectDrop(Relation rel, HeapTuple tuple);
-extern void sepgsqlLargeObjectOpen(Relation rel, HeapTuple tuple, LargeObjectDesc *lobj);
-extern void sepgsqlLargeObjectRead(Relation rel, HeapTuple tuple, LargeObjectDesc *lobj);
-extern void sepgsqlLargeObjectWrite(Relation rel, HeapTuple tuple, LargeObjectDesc *lobj);
+extern void sepgsqlLargeObjectOpen(Relation rel, HeapTuple tuple, bool read_only);
+extern void sepgsqlLargeObjectRead(Relation rel, HeapTuple tuple);
+extern void sepgsqlLargeObjectWrite(Relation rel, HeapTuple newtup, HeapTuple oldtup);
 extern void sepgsqlLargeObjectImport(void);
 extern void sepgsqlLargeObjectExport(void);
 
