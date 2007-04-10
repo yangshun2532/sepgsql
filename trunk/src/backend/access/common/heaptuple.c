@@ -320,6 +320,7 @@ heap_attisnull(HeapTuple tup, int attnum)
 #endif
 			/* these are never null */
 			break;
+
 		default:
 			elog(ERROR, "invalid attnum: %d", attnum);
 	}
@@ -939,6 +940,7 @@ heap_modify_tuple(HeapTuple tuple,
 	if (tupleDesc->tdhasoid)
 		HeapTupleSetOid(newTuple, HeapTupleGetOid(tuple));
 	HeapTupleSetSecurity(newTuple, HeapTupleGetSecurity(tuple));
+
 	return newTuple;
 }
 
@@ -1011,6 +1013,7 @@ heap_modifytuple(HeapTuple tuple,
 	if (tupleDesc->tdhasoid)
 		HeapTupleSetOid(newTuple, HeapTupleGetOid(tuple));
 	HeapTupleSetSecurity(newTuple, HeapTupleGetSecurity(tuple));
+
 	return newTuple;
 }
 
