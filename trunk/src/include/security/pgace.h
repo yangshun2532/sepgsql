@@ -27,8 +27,8 @@
 #ifdef HAVE_SELINUX
 #include "security/sepgsql.h"
 // the following line will be fixed by Sun's people
-// #elif HAVE_TRUSTED_SOLARIS
-// #include "security/trusted_solaris.h"
+// #elifdef HAVE_SOLARISTX
+// #include "security/solaristx.h"
 #else
 
 /******************************************************************
