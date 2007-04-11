@@ -559,7 +559,7 @@ static inline void pgaceLargeObjectExport(void) {
  * @seclabel : security label being input
  */
 static inline char *pgaceSecurityLabelIn(char *seclabel) {
-	return "unlabeled";
+	return seclabel;
 }
 
 /*
@@ -570,7 +570,7 @@ static inline char *pgaceSecurityLabelIn(char *seclabel) {
  * @seclabel : security label being output
  */
 static inline char *pgaceSecurityLabelOut(char *seclabel) {
-	return "unlabeled";
+	return seclabel;
 }
 
 /*

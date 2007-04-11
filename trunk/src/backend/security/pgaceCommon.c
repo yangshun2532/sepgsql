@@ -297,11 +297,11 @@ char *sid_to_security_label(Oid sid)
 Datum
 security_label_in(PG_FUNCTION_ARGS)
 {
-	char *context = PG_GETARG_CSTRING(0);
-	Oid sid = InvalidOid;
+	char *label = PG_GETARG_CSTRING(0);
+	Oid sid;
 
-	context = pgaceSecurityLabelIn(context);
-	sid = security_label_to_sid(context);
+	label = pgaceSecurityLabelIn(label);
+	sid = security_label_to_sid(label);
 
 	PG_RETURN_OID(sid);
 }
@@ -311,21 +311,21 @@ Datum
 security_label_out(PG_FUNCTION_ARGS)
 {
 	Oid sid = PG_GETARG_OID(0);
-	char *context = pstrdup("unlabeled");
+	char *label;
 
-	context = sid_to_security_label(sid);
-	context = pgaceSecurityLabelOut(context);
+	label = sid_to_security_label(sid);
+	label = pgaceSecurityLabelOut(label);
 
-	PG_RETURN_CSTRING(context);
+	PG_RETURN_CSTRING(label);
 }
 
 /* security_label_raw_in -- security_label input function in raw format */
 Datum
 security_label_raw_in(PG_FUNCTION_ARGS)
 {
-	char *context = PG_GETARG_CSTRING(0);
+	char *label = PG_GETARG_CSTRING(0);
 
-	PG_RETURN_OID(security_label_to_sid(context));
+	PG_RETURN_OID(security_label_to_sid(label));
 }
 
 /* security_label_raw_out -- security_label output function in raw format */
@@ -420,7 +420,6 @@ lo_set_security(PG_FUNCTION_ARGS)
 	HeapTuple tuple, newtup;
 	CatalogIndexState indstate;
 	bool found = false;
-	int i;
 
 	ScanKeyInit(&skey,
 				Anum_pg_largeobject_loid,
