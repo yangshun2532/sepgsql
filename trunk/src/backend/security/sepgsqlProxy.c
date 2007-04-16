@@ -139,7 +139,7 @@ static List *addEvalPgProc(List *selist, Oid funcid, uint32 perms)
 		se = (SEvalItem *) lfirst(l);
 		if (se->tclass == SECCLASS_PROCEDURE
 			&& se->p.funcid == funcid) {
-			se->p.funcid |= perms;
+			se->perms |= perms;
 			return selist;
 		}
 	}

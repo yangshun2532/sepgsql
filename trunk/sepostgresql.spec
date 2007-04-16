@@ -205,6 +205,9 @@ fi
 /var/lib/sepgsql/.bash_profile
 
 %changelog
+* Mon Apr 16 2007 <kaigai@kaigai.gr.jp>
+- BUGFIX: cases when several variables with same type in a single table
+
 * Sat Apr 07 2007 <kaigai@kaigai.gr.jp>
 - add the first implementation of SE-PostgreSQL on PGACE framework
 
