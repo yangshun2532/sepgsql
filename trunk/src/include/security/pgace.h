@@ -36,8 +36,8 @@
  ******************************************************************/
 
 /*
- * pgaceShmemSize() have to returd the size of shared memory segment
- * required by PgACE implementation. If no shared memory segment needed,
+ * pgaceShmemSize() have to return the size of shared memory segment
+ * required by PGACE implementation. If no shared memory segment needed,
  * it should return 0.
  */
 static inline Size pgaceShmemSize(void) {
@@ -46,7 +46,7 @@ static inline Size pgaceShmemSize(void) {
 
 /*
  * pgaceInitialize() is called when a new PostgreSQL instance is generated.
- * A PgACE implementation can initialize itself.
+ * A PGACE implementation can initialize itself.
  */
 static inline void pgaceInitialize(void) {
 	/* do nothing */
@@ -75,7 +75,7 @@ static inline void pgaceFinalizePostmaster(void) {
 
 /*
  * pgaceProxyQuery() is called just after query rewrite phase.
- * PgACE implementation can modify the query trees in this hook,
+ * PGACE implementation can modify the query trees in this hook,
  * if necessary.
  *
  * @queryList : a list of Query typed objects.
@@ -98,7 +98,7 @@ static inline void pgacePortalStart(Portal portal) {
  ******************************************************************/
 
 /*
- * pgaceExecInsert() is called when clients tries to insert a new tuple
+ * pgaceExecInsert() is called when a client tries to insert a new tuple
  * via explicit INSERT statement from ExecInsert() at execMain.c
  * If it returns false, insertion of the tuple will be cancelled.
  *
@@ -217,7 +217,7 @@ static inline void pgaceSetDatabaseParam(const char *name, char *argstring) {
 /*
  * pgaceGetDatabaseParam() is called when clients tries to refer GUC variables
  *
- * @name : The name of GUN variable
+ * @name : The name of GUC variable
  */
 static inline void pgaceGetDatabaseParam(const char *name) {
 	/* do nothing */
@@ -227,7 +227,7 @@ static inline void pgaceGetDatabaseParam(const char *name) {
  * pgaceGramAlterDatabase() is called when yacc/lex engine detect the following statement:
  *     ALTER DATABASE <database name> <parameter> = '<value>' ;
  * This hooks should return DefElem object, if the combination of parameter name and
- * configuration strings are available for the PgACE implementation.
+ * configuration strings are available for the PGACE implementation.
  * If it returns NULL, a syntax error will be occured.
  *
  * @defname : given <parameter> string
@@ -297,7 +297,7 @@ static inline void pgaceCallFunctionFastPath(FmgrInfo *finfo) {
 
 /*
  * pgacePreparePlanCheck() is called before foreign key/primary key constraint checks,
- * at ri_PlanCheck(). PgACE implementation can return its opaque data for any purpose.
+ * at ri_PlanCheck(). PGACE implementation can return its opaque data for any purpose.
  *
  * @rel : the target relation in which a constraint is configured
  */
@@ -307,7 +307,7 @@ static inline Datum pgacePreparePlanCheck(Relation rel) {
 
 /*
  * pgaceRestorePlanCheck() is called after foreign key/primary key constraint checks,
- * at ri_PlanCheck(). PgACE implementation can use an opaque data generated in the above
+ * at ri_PlanCheck(). PGACE implementation can use an opaque data generated in the above
  * pgacePreparePlanCheck().
  *
  * @rel         : the target relation in which a constraint is configured
@@ -321,7 +321,7 @@ static inline void pgaceRestorePlanCheck(Relation rel, Datum pgace_saved) {
  * pgaceGramAlterFunction() is called when yacc/lex engine detect the following statement:
  *     ALTER FUNCTION <function name> (<argtype> ...) <parameter> = <value> ;
  * This hooks should return DefElem object, if the combination of parameter name and
- * value strings are available for the PgACE implementation.
+ * value strings are available for the PGACE implementation.
  * If it returns NULL, a syntax error will be occured.
  *
  * @defname : given <parameter> string
@@ -371,7 +371,7 @@ static inline void pgaceLockTable(Oid relid) {
  * pgaceGramAlterTable() is called when yacc/lex engine detect the following statement:
  *     ALTER TABLE <table name> [ALTER <column name>] <parameter> = <value> ;
  * These hooks should return AlterTableCmd object, if the combination of parameter
- * and value strings are available for the PgACE implementation.
+ * and value strings are available for the PGACE implementation.
  * If it returns NULL, a syntax error will be occured.
  *
  * @colName : given column name. If NULL is given, it means [ALTER <column name>] is
@@ -396,7 +396,7 @@ static inline bool pgaceAlterTablePrepare(Relation rel, AlterTableCmd *cmd) {
 }
 
 /*
- * pgaceAlterTable() is called to modify table/column. The PgACE implementation
+ * pgaceAlterTable() is called to modify table/column. The PGACE implementation
  * have to update the target tuples within pg_class or pg_attribute.
  * If AlterTableCmd tag is unexpected one, 
  *
@@ -552,9 +552,9 @@ static inline void pgaceLargeObjectExport(void) {
  ******************************************************************/
 
 /*
- * PgACE implementation can use pgaceSecurityLabelIn() hook to translate
+ * PGACE implementation can use pgaceSecurityLabelIn() hook to translate
  * a input security label from external representation into internal one.
- * If no translation is necessary, it have to return @seclabel as is.
+ * If no translation is necessary, it has to return @seclabel as is.
  *
  * @seclabel : security label being input
  */
@@ -563,9 +563,9 @@ static inline char *pgaceSecurityLabelIn(char *seclabel) {
 }
 
 /*
- * PgACE implementation can use pgaceSecurityLabelOut() hook to translate
+ * PGACE implementation can use pgaceSecurityLabelOut() hook to translate
  * a security label in internal representation into external one.
- * If no translation is necessary, it have to return @seclabel as is.
+ * If no translation is necessary, it has to return @seclabel as is.
  *
  * @seclabel : security label being output
  */
@@ -598,11 +598,11 @@ static inline Oid pgaceSecurityLabelOfLabel(bool early_mode) {
  ******************************************************************/
 
 /*
- * If PgACE implementation requires new node type, a method to copy object.
+ * If PGACE implementation requires new node type, a method to copy object.
  * pgaceCopyObject() provides a hook to copy new node typed object.
- * If a given object (@orig) has a tag extended by PgACE implementation,
+ * If a given object (@orig) has a tag extended by PGACE implementation,
  * it have to copy and return it.
- * If it returns NULL, @orig is not available for the PgACE implementation.
+ * If it returns NULL, @orig is not available for the PGACE implementation.
  *
  * @orig : a object which to copy
  */
@@ -612,9 +612,9 @@ static inline Node *pgaceCopyObject(Node *orig) {
 
 /*
  * pgaceOutObject() provides a hook to translate a object to text representation.
- * If a given object (@node) has a tag extended by PgACE implementation, it have
+ * If a given object (@node) has a tag extended by PGACE implementation, it have
  * to put a text representation into StringInfo.
- * If it returns false, @node is not available for the PgACE implementation.
+ * If it returns false, @node is not available for the PGACE implementation.
  *
  * @str  : StringInfo which to put the text representation
  * @node : a object that text representation is required
