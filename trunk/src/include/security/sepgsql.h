@@ -171,13 +171,13 @@ static inline void pgaceCallFunctionFastPath(FmgrInfo *finfo) {
 static inline Datum pgacePreparePlanCheck(Relation rel) {
 	Oid pgace_saved = InvalidOid;
 	if (sepgsqlIsEnabled())
-		pgace_saved = pgacePreparePlanCheck(rel);
+		pgace_saved = sepgsqlPreparePlanCheck(rel);
 	return ObjectIdGetDatum(pgace_saved);
 }
 
 static inline void pgaceRestorePlanCheck(Relation rel, Datum pgace_saved) {
 	if (sepgsqlIsEnabled())
-		pgaceRestorePlanCheck(rel, DatumGetObjectId(pgace_saved));
+		sepgsqlRestorePlanCheck(rel, DatumGetObjectId(pgace_saved));
 }
 
 static inline DefElem *pgaceGramAlterFunction(char *defname, char *value) {
