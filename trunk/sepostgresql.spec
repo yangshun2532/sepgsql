@@ -205,6 +205,11 @@ fi
 /var/lib/sepgsql/.bash_profile
 
 %changelog
+* Fri Apr 27 2007 <kaigai@kaigai.gr.jp>
+- object class numbers were redefined. (SECCLASS_DATABASE got into 61)
+- is_selinux_enabled() was cached on the shared memory segment.
+- BUGFIX: server went into infinit loop on foreign key constraint.
+
 * Mon Apr 16 2007 <kaigai@kaigai.gr.jp>
 - BUGFIX: cases when several variables with same type in a single table
 
