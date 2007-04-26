@@ -67,7 +67,7 @@ typedef struct SEvalItem {
 #define T_SEvalItem		(T_TIDBitmap + 1)		/* must be unique identifier */
 
 /* object classes and access vectors are not included, in default */
-#define SECCLASS_DATABASE			(60)	/* next to SECCLASS_CONTEXT */
+#define SECCLASS_DATABASE			(61)	/* next to SECCLASS_DCCP_SOCKET */
 #define SECCLASS_TABLE				(SECCLASS_DATABASE + 1)
 #define SECCLASS_PROCEDURE			(SECCLASS_DATABASE + 2)
 #define SECCLASS_COLUMN				(SECCLASS_DATABASE + 3)
