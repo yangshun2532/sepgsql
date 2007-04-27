@@ -674,8 +674,12 @@ static int sepgsqlMonitoringPolicyState()
 	int i, rc, nl_sockfd;
 
 	seldebug("%s pid=%u", __FUNCTION__, getpid());
+
 	/* close listen port */
 	for (i=3; !close(i); i++);
+
+	/* map shared memory segment */
+	sepgsql_avc_init();
 
 	/* setup the signal handler */
 	pqinitmask();
@@ -771,8 +775,6 @@ static pid_t MonitoringPolicyStatePid = -1;
 
 int sepgsqlInitializePostmaster()
 {
-	sepgsql_avc_init();
-
 	MonitoringPolicyStatePid = fork();
 	if (MonitoringPolicyStatePid == 0) {
 		exit(sepgsqlMonitoringPolicyState());
