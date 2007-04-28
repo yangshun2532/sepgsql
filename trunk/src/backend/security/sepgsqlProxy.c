@@ -7,6 +7,7 @@
  */
 #include "postgres.h"
 
+#include "access/genam.h"
 #include "access/heapam.h"
 #include "catalog/heap.h"
 #include "catalog/pg_attribute.h"
@@ -19,6 +20,7 @@
 #include "executor/spi.h"
 #include "nodes/makefuncs.h"
 #include "parser/parse_relation.h"
+#include "parser/parse_target.h"
 #include "security/pgace.h"
 #include "storage/lock.h"
 #include "utils/fmgroids.h"
@@ -178,9 +180,16 @@ static List *walkVar(List *selist, queryChain *qc, Var *var)
 		n = list_nth(rte->joinaliasvars, var->varattno - 1);
         selist = sepgsqlWalkExpr(selist, qc, n);
         break;
+	case RTE_SUBQUERY:
+		if (var->varattno < 0)
+			selerror("subquery does not have system column");
+		break;
+	case RTE_SPECIAL:
+	case RTE_FUNCTION:
+	case RTE_VALUES:
+		break;
 	default:
-		if (rte->rtekind < RTE_RELATION || rte->rtekind > RTE_VALUES)
-			selnotice("rtekind = %d is ignored", rte->rtekind);
+		selerror("unrecognized rtekind (%d)", rte->rtekind);
 		break;
 	}
 	return selist;
@@ -439,6 +448,95 @@ static List *sepgsqlWalkExpr(List *selist, queryChain *qc, Node *n)
  * ----------------------------------------------------------- */
 static Oid fnoid_sepgsql_tuple_perm = F_SEPGSQL_TUPLE_PERMS;
 
+/*
+ * When we use LEFT OUTER JOIN, any condition defined at ON clause are not
+ * considered to filter tuples, so left-hand relation have to be re-written
+ * as a subquery to filter violated tuples.
+ */
+static void rewriteOuterJoinTree(Node *n, Query *query, bool is_outer_join)
+{
+	RangeTblRef *rtr, *srtr;
+	RangeTblEntry *rte, *srte;
+	ParseState *pstate;
+	Query *sqry;
+	FromExpr *frm;
+	ColumnRef *cref;
+	ResTarget *res;
+
+	if (IsA(n, RangeTblRef)) {
+		if (!is_outer_join)
+			return;
+
+		rtr = (RangeTblRef *) n;
+		rte = list_nth(query->rtable, rtr->rtindex - 1);
+		Assert(IsA(rte, RangeTblEntry));
+		if (rte->rtekind != RTE_RELATION)
+			return;
+
+		/* setup pstate */
+		pstate = make_parsestate(NULL);
+		pstate->p_paramtypes = NULL;
+		pstate->p_numparams = 0;
+		pstate->p_variableparams = false;
+
+		/* setup Query */
+		sqry = makeNode(Query);
+		sqry->commandType = CMD_SELECT;
+
+		/* pseudo FROM clause */
+		srte = copyObject(rte);
+		srtr = makeNode(RangeTblRef);
+		srtr->rtindex = 1;
+		pstate->p_rtable = lappend(pstate->p_rtable, srte);
+		pstate->p_joinlist = lappend(pstate->p_joinlist, srtr);
+		pstate->p_relnamespace = lappend(pstate->p_relnamespace, srte);
+		pstate->p_varnamespace = lappend(pstate->p_varnamespace, srte);
+
+		/* pseudo targetList */
+		cref = makeNode(ColumnRef);
+		cref->fields = list_make1(makeString("*"));
+		cref->location = -1;
+
+		res = makeNode(ResTarget);
+		res->name = NULL;
+		res->indirection = NIL;
+		res->val = (Node *) cref;
+		res->location = -1;
+
+		sqry->targetList = transformTargetList(pstate, list_make1(res));
+
+		/* rest of setting up */
+		sqry->rtable = pstate->p_rtable;
+		frm = makeNode(FromExpr);
+		frm->fromlist = pstate->p_joinlist;
+		frm->quals = NULL;
+		sqry->jointree = frm;
+		sqry->hasSubLinks = false;
+		sqry->hasAggs = false;
+		pfree(pstate);
+
+		/* rewrite parent RangeTblEntry */
+		rte->rtekind = RTE_SUBQUERY;
+		rte->relid = InvalidOid;
+		rte->subquery = sqry;
+	} else if (IsA(n, FromExpr)) {
+		FromExpr *f = (FromExpr *)n;
+        ListCell *l;
+
+        foreach (l, f->fromlist)
+			rewriteOuterJoinTree(lfirst(l), query, false);
+	} else if (IsA(n, JoinExpr)) {
+        JoinExpr *j = (JoinExpr *) n;
+
+		rewriteOuterJoinTree(j->larg, query,
+							 (j->jointype == JOIN_LEFT || j->jointype == JOIN_FULL));
+		rewriteOuterJoinTree(j->rarg, query,
+							 (j->jointype == JOIN_RIGHT || j->jointype == JOIN_FULL));
+	} else {
+		selerror("unrecognized node type (%d) in query->jointree", nodeTag(n));
+	}
+}
+
 static List *proxyRteRelation(List *selist, queryChain *qc, int rtindex, Node **quals)
 {
 	Query *query;
@@ -512,6 +610,9 @@ static List *proxyRteSubQuery(List *selist, queryChain *qc, Query *query)
 	qcData.tail = query;
 	qc = &qcData;
 
+	/* rewrite outer join */
+	rewriteOuterJoinTree((Node *) query->jointree, query, false);
+
 	if (cmdType != CMD_SELECT) {
 		rte = list_nth(query->rtable, query->resultRelation - 1);
 		Assert(IsA(rte, RangeTblEntry) && rte->rtekind==RTE_RELATION);
@@ -582,7 +683,7 @@ static List *proxyRteSubQuery(List *selist, queryChain *qc, Query *query)
 	 * The target Relation of INSERT is noe necessary to append it
 	 */
 	selist = proxyJoinTree(selist, qc, (Node *) query->jointree,
-							 &query->jointree->quals);
+						   &query->jointree->quals);
 
 	return selist;
 }
