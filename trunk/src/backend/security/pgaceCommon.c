@@ -378,13 +378,17 @@ security_label_raw_out(PG_FUNCTION_ARGS)
 Datum
 text_to_security_label(PG_FUNCTION_ARGS)
 {
-	text *tmp = PG_GETARG_TEXT_P(0);
-	char *context;
+	text *t = PG_GETARG_TEXT_P(0);
+	char *seclabel;
+	int len;
 	Datum sid;
 
-	context = VARDATA(tmp);
+	len = VARSIZE(t) - VARHDRSZ;
+	seclabel = palloc0(len + 1);
+	memcpy(seclabel, VARDATA(t), len);
 	sid = DirectFunctionCall1(security_label_in,
-							  CStringGetDatum(context));
+							  CStringGetDatum(seclabel));
+	pfree(seclabel);
 	PG_RETURN_DATUM(sid);
 }
 
