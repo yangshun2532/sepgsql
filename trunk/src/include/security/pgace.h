@@ -585,12 +585,13 @@ static inline bool pgaceSecurityLabelIsValid(char *seclabel) {
 
 /*
  * pgaceSecurityLabelOfLabel() returns the security attribute of a newly
- * generated tuple with in pg_security
+ * generated tuple within pg_security
  *
- * @early_mode : true, if pg_security is not generated yet (only bootstrap mode)
+ * @new_label : a text representation of security context which will be newly
+ *              inserted into pg_security.
  */
-static inline Oid pgaceSecurityLabelOfLabel(bool early_mode) {
-	return InvalidOid;
+static inline char *pgaceSecurityLabelOfLabel(char *new_label) {
+	return pstrdup("unlabeled");
 }
 
 /******************************************************************
@@ -657,11 +658,5 @@ extern Datum security_label_to_text(PG_FUNCTION_ARGS);
 /* SQL functions related to large object */
 extern Datum lo_get_security(PG_FUNCTION_ARGS);
 extern Datum lo_set_security(PG_FUNCTION_ARGS);
-
-/* obsolete interface */
-extern Oid early_security_label_to_sid(char *context);
-extern Oid security_label_to_sid(char *context);
-extern char *early_sid_to_security_label(Oid sid);
-extern char *sid_to_security_label(Oid sid);
 
 #endif // PGACE_H

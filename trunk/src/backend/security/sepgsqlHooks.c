@@ -482,19 +482,19 @@ bool sepgsqlSecurityLabelIsValid(char *context) {
 	return false;
 }
 
-Oid sepgsqlSecurityLabelOfLabel(bool early_mode) {
+char *sepgsqlSecurityLabelOfLabel(char *context) {
 	HeapTuple tuple;
-	security_context_t scon, tcon, ncon;
-	Oid tupcon;
+	security_context_t scon, tcon, ncon, _ncon;
 	int rc;
 
 	/* obtain a security context of pg_database */
-	tuple = SearchSysCache(DATABASEOID, ObjectIdGetDatum(MyDatabaseId), 0, 0, 0);
+	tuple = SearchSysCache(DATABASEOID,
+						   ObjectIdGetDatum(MyDatabaseId),
+						   0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
 		selerror("cache lookup failed for database = %u", MyDatabaseId);
-	tcon = (early_mode
-			? early_sid_to_security_label(HeapTupleGetSecurity(tuple))
-			: sid_to_security_label(HeapTupleGetSecurity(tuple)));
+	tcon = DatumGetCString(DirectFunctionCall1(security_label_raw_out,
+											   ObjectIdGetDatum(HeapTupleGetSecurity(tuple))));
 	ReleaseSysCache(tuple);
 
 	/* obtain server's context */
@@ -509,12 +509,10 @@ Oid sepgsqlSecurityLabelOfLabel(bool early_mode) {
 	if (rc)
 		selerror("could not compute a newly created security context");
 
-	/* obtain tuple's context */
+	/* copy tuple's context */
 	PG_TRY();
 	{
-		tupcon = (early_mode
-				  ? early_security_label_to_sid(ncon)
-				  : security_label_to_sid(ncon));
+		_ncon = pstrdup(ncon);
 	}
 	PG_CATCH();
 	{
@@ -525,7 +523,7 @@ Oid sepgsqlSecurityLabelOfLabel(bool early_mode) {
 
 	freecon(ncon);
 
-	return tupcon;
+	return _ncon;
 }
 
 /*******************************************************************************

@@ -227,7 +227,7 @@ extern bool sepgsqlOutObject(StringInfo str, Node *node);
 extern char *sepgsqlSecurityLabelIn(char *context);
 extern char *sepgsqlSecurityLabelOut(char *context);
 extern bool sepgsqlSecurityLabelIsValid(char *context);
-extern Oid sepgsqlSecurityLabelOfLabel(bool early_mode);
+extern char *sepgsqlSecurityLabelOfLabel(char *context);
 
 /*
  * SE-PostgreSQL Binary Large Object (BLOB) functions

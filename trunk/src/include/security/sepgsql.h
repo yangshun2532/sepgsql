@@ -321,10 +321,10 @@ static inline bool pgaceSecurityLabelIsValid(char *context) {
 	return sepgsqlSecurityLabelIsValid(context);
 }
 
-static inline Oid pgaceSecurityLabelOfLabel(bool early_mode) {
+static inline char *pgaceSecurityLabelOfLabel(char *new_label) {
 	if (!sepgsqlIsEnabled())
-		return InvalidOid;
-	return sepgsqlSecurityLabelOfLabel(early_mode);
+		return pstrdup("unlabeled");
+	return sepgsqlSecurityLabelOfLabel(new_label);
 }
 
 /******************************************************************
