@@ -1,4 +1,4 @@
-<!-- $PostgreSQL: pgsql/doc/src/sgml/config.sgml,v 1.98.2.2 2007/01/20 21:30:35 momjian Exp $ -->
+<!-- $PostgreSQL: pgsql/doc/src/sgml/config.sgml,v 1.98.2.5 2007/04/20 02:37:48 tgl Exp $ -->
 
 <chapter Id="runtime-config">
   <title>Server Configuration</title>
@@ -990,6 +990,17 @@ SET ENABLE_SEQSCAN TO OFF;
         libraries that will be used in most sessions. 
        </para>
 
+     <note>
+      <para>
+        On Windows hosts, preloading a library at server start will not reduce
+        the time required to start each new server process; each server process
+        will re-load all preload libraries.  However, <varname>shared_preload_libraries
+        </varname> is still useful on Windows hosts because some shared libraries may 
+        need to perform certain operations that only take place at postmaster start
+        (for example, a shared library may need to reserve lightweight locks
+        or shared memory and you can't do that after the postmaster has started).
+       </para>
+      </note>
        <para>
         If a specified library is not found,
         the server will fail to start.
@@ -1385,6 +1396,7 @@ SET ENABLE_SEQSCAN TO OFF;
         Not all of these choices are available on all platforms.
         The default is the first method in the above list that is supported
         by the platform.
+        The <literal>open_</>* options also use <literal>O_DIRECT</> if available.
         This parameter can only be set in the <filename>postgresql.conf</>
         file or on the server command line.
        </para>
@@ -3314,9 +3326,17 @@ SELECT * FROM parent WHERE key = 2400;
         mentioned in the path then it will be searched in the specified
         order.  If <literal>pg_catalog</> is not in the path then it will
         be searched <emphasis>before</> searching any of the path items.
-        It should also be noted that the temporary-table schema,
-        <literal>pg_temp_<replaceable>nnn</></>, is implicitly searched before any of
-        these.
+       </para>
+
+       <para>
+        Likewise, the current session's temporary-table schema,
+        <literal>pg_temp_<replaceable>nnn</></>, is always searched if it
+        exists.  It can be explicitly listed in the path by using the
+        alias <literal>pg_temp</>.  If it is not listed in the path then
+        it is searched first (before even <literal>pg_catalog</>).  However,
+        the temporary schema is only searched for relation (table, view,
+        sequence, etc) and data type names.  It will never be searched for
+        function or operator names.
        </para>
 
        <para>

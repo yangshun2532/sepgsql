@@ -1,6 +1,54 @@
 
                                 Release Notes
 
+                                Release 8.2.4
+
+     Release date: 2007-04-23
+
+   This release contains a variety of fixes from 8.2.3, including a
+   security fix.
+     __________________________________________________________________
+
+Migration to version 8.2.4
+
+   A dump/restore is not required for those running 8.2.X.
+     __________________________________________________________________
+
+Changes
+
+     * Support explicit placement of the temporary-table schema within
+       search_path, and disable searching it for functions and operators
+       (Tom)
+       This is needed to allow a security-definer function to set a truly
+       secure value of search_path. Without it, an unprivileged SQL user
+       can use temporary objects to execute code with the privileges of
+       the security-definer function (CVE-2007-2138). See "CREATE
+       FUNCTION" for more information.
+     * Fix shared_preload_libraries for Windows by forcing reload in each
+       backend (Korry Douglas)
+     * Fix to_char() so it properly upper/lower cases localized day or
+       month names (Pavel Stehule)
+     * "/contrib/tsearch2" crash fixes (Teodor)
+     * Require "COMMIT PREPARED" to be executed in the same database as
+       the transaction was prepared in (Heikki)
+     * Allow "pg_dump" to do binary backups larger than two gigabytes on
+       Windows (Magnus)
+     * New traditional (Taiwan) Chinese FAQ (Zhou Daojing)
+     * Prevent the statistics collector from writing to disk too
+       frequently (Tom)
+     * Fix potential-data-corruption bug in how "VACUUM FULL" handles
+       "UPDATE" chains (Tom, Pavan Deolasee)
+     * Fix bug in domains that use array types (Tom)
+     * Fix "pg_dump" so it can dump a serial column's sequence using "-t"
+       when not also dumping the owning table (Tom)
+     * Planner fixes, including improving outer join and bitmap scan
+       selection logic (Tom)
+     * Fix possible wrong answers or crash when a PL/pgSQL function tries
+       to RETURN from within an EXCEPTION block (Tom)
+     * Fix PANIC during enlargement of a hash index (Tom)
+     * Fix POSIX-style timezone specs to follow new USA DST rules (Tom)
+     __________________________________________________________________
+
                                 Release 8.2.3
 
      Release date: 2007-02-07
@@ -844,6 +892,43 @@ Contrib Changes
        (The old names remain available, but are deprecated.)
      * Add uninstall scripts for all contrib packages that have install
        scripts (David, Josh Drake)
+     __________________________________________________________________
+
+                                Release 8.1.9
+
+     Release date: 2007-04-23
+
+   This release contains a variety of fixes from 8.1.8, including a
+   security fix.
+     __________________________________________________________________
+
+Migration to version 8.1.9
+
+   A dump/restore is not required for those running 8.1.X. However, if you
+   are upgrading from a version earlier than 8.1.2, see the release notes
+   for 8.1.2.
+     __________________________________________________________________
+
+Changes
+
+     * Support explicit placement of the temporary-table schema within
+       search_path, and disable searching it for functions and operators
+       (Tom)
+       This is needed to allow a security-definer function to set a truly
+       secure value of search_path. Without it, an unprivileged SQL user
+       can use temporary objects to execute code with the privileges of
+       the security-definer function (CVE-2007-2138). See "CREATE
+       FUNCTION" for more information.
+     * "/contrib/tsearch2" crash fixes (Teodor)
+     * Require "COMMIT PREPARED" to be executed in the same database as
+       the transaction was prepared in (Heikki)
+     * Fix potential-data-corruption bug in how "VACUUM FULL" handles
+       "UPDATE" chains (Tom, Pavan Deolasee)
+     * Planner fixes, including improving outer join and bitmap scan
+       selection logic (Tom)
+     * Fix PANIC during enlargement of a hash index (bug introduced in
+       8.1.6) (Tom)
+     * Fix POSIX-style timezone specs to follow new USA DST rules (Tom)
      __________________________________________________________________
 
                                 Release 8.1.8
@@ -2040,6 +2125,39 @@ Contrib Changes
           + Take build parameters (OpenSSL, zlib) from "configure" result
             There is no need to edit the "Makefile" anymore.
           + Remove support for "libmhash" and "libmcrypt"
+     __________________________________________________________________
+
+                               Release 8.0.13
+
+     Release date: 2007-04-23
+
+   This release contains a variety of fixes from 8.0.12, including a
+   security fix.
+     __________________________________________________________________
+
+Migration to version 8.0.13
+
+   A dump/restore is not required for those running 8.0.X. However, if you
+   are upgrading from a version earlier than 8.0.6, see the release notes
+   for 8.0.6.
+     __________________________________________________________________
+
+Changes
+
+     * Support explicit placement of the temporary-table schema within
+       search_path, and disable searching it for functions and operators
+       (Tom)
+       This is needed to allow a security-definer function to set a truly
+       secure value of search_path. Without it, an unprivileged SQL user
+       can use temporary objects to execute code with the privileges of
+       the security-definer function (CVE-2007-2138). See "CREATE
+       FUNCTION" for more information.
+     * "/contrib/tsearch2" crash fixes (Teodor)
+     * Fix potential-data-corruption bug in how "VACUUM FULL" handles
+       "UPDATE" chains (Tom, Pavan Deolasee)
+     * Fix PANIC during enlargement of a hash index (bug introduced in
+       8.0.10) (Tom)
+     * Fix POSIX-style timezone specs to follow new USA DST rules (Tom)
      __________________________________________________________________
 
                                Release 8.0.12
@@ -3497,6 +3615,37 @@ Contrib Changes
      * Removed "contrib/pg_logger": obsoleted by integrated logging
        subprocess
      * Removed "contrib/rserv": obsoleted by various separate projects
+     __________________________________________________________________
+
+                               Release 7.4.17
+
+     Release date: 2007-04-23
+
+   This release contains fixes from 7.4.16, including a security fix.
+     __________________________________________________________________
+
+Migration to version 7.4.17
+
+   A dump/restore is not required for those running 7.4.X. However, if you
+   are upgrading from a version earlier than 7.4.11, see the release notes
+   for 7.4.11.
+     __________________________________________________________________
+
+Changes
+
+     * Support explicit placement of the temporary-table schema within
+       search_path, and disable searching it for functions and operators
+       (Tom)
+       This is needed to allow a security-definer function to set a truly
+       secure value of search_path. Without it, an unprivileged SQL user
+       can use temporary objects to execute code with the privileges of
+       the security-definer function (CVE-2007-2138). See "CREATE
+       FUNCTION" for more information.
+     * "/contrib/tsearch2" crash fixes (Teodor)
+     * Fix potential-data-corruption bug in how "VACUUM FULL" handles
+       "UPDATE" chains (Tom, Pavan Deolasee)
+     * Fix PANIC during enlargement of a hash index (bug introduced in
+       7.4.15) (Tom)
      __________________________________________________________________
 
                                Release 7.4.16
@@ -5068,6 +5217,34 @@ Contrib Changes
      * Fix dbase "-s" option and improve non-ASCII handling (Thomas Behr,
        Márcio Smiderle)
      * Remove array module because features now included by default (Joe)
+     __________________________________________________________________
+
+                               Release 7.3.19
+
+     Release date: 2007-04-23
+
+   This release contains fixes from 7.3.18, including a security fix.
+     __________________________________________________________________
+
+Migration to version 7.3.19
+
+   A dump/restore is not required for those running 7.3.X. However, if you
+   are upgrading from a version earlier than 7.3.13, see the release notes
+   for 7.3.13.
+     __________________________________________________________________
+
+Changes
+
+     * Support explicit placement of the temporary-table schema within
+       search_path, and disable searching it for functions and operators
+       (Tom)
+       This is needed to allow a security-definer function to set a truly
+       secure value of search_path. Without it, an unprivileged SQL user
+       can use temporary objects to execute code with the privileges of
+       the security-definer function (CVE-2007-2138). See "CREATE
+       FUNCTION" for more information.
+     * Fix potential-data-corruption bug in how "VACUUM FULL" handles
+       "UPDATE" chains (Tom, Pavan Deolasee)
      __________________________________________________________________
 
                                Release 7.3.18
