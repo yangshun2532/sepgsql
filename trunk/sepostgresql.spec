@@ -13,7 +13,7 @@
 Summary: Security Enhanced PostgreSQL
 Group: Applications/Databases
 Name: sepostgresql
-Version: 8.2.3
+Version: 8.2.4
 Release: %{sepgversion}.%{sepgrevision}%{beta}
 License: BSD
 Group: Applications/Databases
@@ -205,6 +205,15 @@ fi
 /var/lib/sepgsql/.bash_profile
 
 %changelog
+* Sun Apr 30 2007 <kaigai@kaigai.gr.jp>
+- update base version 8.2.3 -> 8.2.4
+- BUGFIX: unexpected expose in OUTER JOIN statement.
+          add rewrite OUTER JOIN into SUBQUERY to ensure filtering violated tuples.
+- BUGFIX: strange operation in text_to_security_label()
+- BUGFIX: infinite recursive call on security label -> oid mapping
+- BUGFIX: sepgsql_avc_init() is called in policy state monitoring process
+          to avoid nonsense initialization of avc_shmem.
+
 * Fri Apr 27 2007 <kaigai@kaigai.gr.jp>
 - object class numbers were redefined. (SECCLASS_DATABASE got into 61)
 - is_selinux_enabled() was cached on the shared memory segment.
