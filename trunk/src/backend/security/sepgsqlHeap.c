@@ -494,7 +494,7 @@ Oid sepgsqlComputeImplicitContext(Relation rel, HeapTuple tuple) {
 		tcon = HeapTupleGetSecurity(exttup);
 		tclass = (pgclass->relkind == RELKIND_RELATION
 				  ? SECCLASS_COLUMN
-				  : SECCLASS_TABLE);
+				  : SECCLASS_DATABASE);
 		if (use_syscache)
 			ReleaseSysCache(exttup);
 		break;
