@@ -459,7 +459,7 @@ void sepgsql_audit(bool result, char *message)
 	} else if (!result) {
 		ereport(ERROR,
 				(errcode(ERRCODE_INTERNAL_ERROR),
-				 "Transaction aborted due to SELinux access denied."));
+				 errmsg("Transaction aborted due to SELinux access denied.")));
 	}
 }
 
