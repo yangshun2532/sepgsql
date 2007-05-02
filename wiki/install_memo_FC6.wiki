@@ -9,8 +9,9 @@ The following packages have to be installed at least.
  * libsemanage (libsemanage-1.6.17-1 or later)
  * postgresql (postgresql-8.1.8-1.fc6 or later)
 
-(*) SE-PostgreSQL may work with older version of the above packages, but development team didn't confirm them.
-(*) postgresql package provides utilities and frontend. If you don't need them, postgresql package is not necessary.
+SE-PostgreSQL may work with older version of the above packages, but development team didn't confirm them.
+
+postgresql package provides utilities and frontend. If you don't need them, postgresql package is not necessary.
 
 == Download SE-PostgreSQL packages ==
 You can download SE-PostgreSQL related packages from the 'Downloads' on Google code repository.
