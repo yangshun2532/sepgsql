@@ -1,0 +1,71 @@
+= Installation of SE-PostgreSQL (Fedora core 6) ==
+This document describes the way to install SE-PostgreSQL onto Fedora core 6 system.
+
+== Preparation ==
+You have to set up bare Fedore core 6 system, and update them.
+The following packages have to be installed at least.
+ * kernel (kernel-2.6.20-1.2944.fc6 or later)
+ * libselinux (libselinux-1.33.4-2.fc6 or later)
+ * libsemanage (libsemanage-1.6.17-1 or later)
+ * postgresql (postgresql-8.1.8-1.fc6 or later)
+
+(*) SE-PostgreSQL may work with older version of the above packages, but development team didn't confirm them.
+(*) postgresql package provides utilities and frontend. If you don't need them, postgresql package is not necessary.
+
+== Download SE-PostgreSQL packages ==
+You can download SE-PostgreSQL related packages from the 'Downloads' on Google code repository.
+{{{
+http://code.google.com/p/sepgsql/downloads/list
+}}}
+The latest sepostgresql, selinux-policy and selinux-policy-targeted are necessary. Download them and confirm.
+
+== Applying RPM packages ==
+You have to reboot the system with SELinux disabled, because selinux-policy package for SE-PostgreSQL add some object classes and booleans and the current libsemanage cannot handle them well under working SELinux.
+
+You can apply the RPM packages with the following commands.
+{{{
+rpm -ivh sepostgresql-8.2.4-0.246a.i386.rpm \
+         selinux-policy-targeted-2.4.6-62.sepgsql.noarch.rpm \
+         selinux-policy-2.4.6-2.sepgsql.noarch.rpm
+}}}
+
+After instllation completed, you have to config /etc/selinuc/config to avoid unexpected access denied and flood of SELinux logs. Several files are not labeled correctly, so it is necessary to relabel on the next booting.
+{{{
+# This file controls the state of SELinux on the system.
+# SELINUX= can take one of these three values:
+#       enforcing - SELinux security policy is enforced.
+#       permissive - SELinux prints warnings instead of enforcing.
+#       disabled - SELinux is fully disabled.
+*SELINUX=permissive*
+#
+# SELINUXTYPE= type of policy in use. Possible values are:
+#       targeted - Only targeted network daemons are protected.
+#       strict - Full SELinux protection.
+SELINUXTYPE=targeted
+
+# SETLOCALDEFS= Check local definition changes
+SETLOCALDEFS=0
+}}}
+
+== Reboot with permissive mode ==
+While booting up, the init script detect uncorrect labeled files and wake up restorecon to label correctly. You have to wait for several minutes to complete them.
+
+After relabeling completed, you should rewrite /etc/selinux/config to enable enforcing mode and reboot the system.
+
+== Reboot with enforcing mode ==
+While the first booting up, wakeing up sepostgresql will failed.
+You don't need to pay attention them, because the database cluster of SE-PostgreSQL (/var/lib/sepgsql/data) is not initialized yet. After booted up, you can initialize using init script as follows:
+{{{
+# /etc/init.d/sepostgresql initdb
+}}}
+Then, you can start sepostgresql as follows:
+{{{
+# /etc/init.d/sepostgresql start
+}}}
+
+== Create database and account ==
+SE-PostgreSQL works with operating system user of 'sepgsql', you can create database account for DBA or users from 'sepgsql' at first.
+{{{
+# su - sepgsql
+$ createuser foo
+}}}
