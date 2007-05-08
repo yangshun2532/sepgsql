@@ -243,11 +243,18 @@ static Oid get_security_label_oid(Relation rel, CatalogIndexState ind, char *new
 		ReleaseSysCache(tuple);
 	} else {
 		/* Insert a new tuple into pg_security */
+		Oid __label_oid;
 		Datum values[1] = {meta_label};
 		char nulls[1] = {' '};
+
 		tuple = heap_formtuple(RelationGetDescr(rel), values, nulls);
-		HeapTupleSetSecurity(tuple, GetNewOid(rel));
+		__label_oid = GetNewOid(rel);
+		HeapTupleSetOid(tuple, __label_oid);
+		HeapTupleSetSecurity(tuple, __label_oid);
+
 		label_oid = simple_heap_insert(rel, tuple);
+		Assert(label_oid == __label_oid);
+
 		CatalogIndexInsert(ind, tuple);
 		CommandCounterIncrement();
 	}
