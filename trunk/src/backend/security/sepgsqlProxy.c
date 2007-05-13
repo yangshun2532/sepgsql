@@ -409,6 +409,7 @@ static List *sepgsqlWalkExpr(List *selist, queryChain *qc, Node *n)
 	case T_BoolExpr:
 		selist = walkBoolExpr(selist, qc, (BoolExpr *) n);
 		break;
+	case T_DistinctExpr:
 	case T_NullIfExpr:
 	case T_OpExpr:
 		selist = walkOpExpr(selist, qc, (OpExpr *) n);
