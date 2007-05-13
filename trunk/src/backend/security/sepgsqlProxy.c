@@ -260,6 +260,7 @@ static List *walkSubLink(List *selist, queryChain *qc, SubLink *slink)
 	Assert(IsA(slink, SubLink));
 	Assert(IsA(slink->subselect, Query));
 
+	selist = sepgsqlWalkExpr(selist, qc, (Node *) slink->testexpr);
 	selist = proxyRteSubQuery(selist, qc, (Query *) slink->subselect);
 
 	return selist;
@@ -362,6 +363,18 @@ static List *walkArrayRef(List *selist, queryChain *qc, ArrayRef *aref)
 	return selist;
 }
 
+static List *walkRowCompareExpr(List *selist, queryChain *qc, RowCompareExpr *rce)
+{
+	ListCell *l;
+
+	foreach(l, rce->opnos)
+		selist = __walkOpExprHelper(selist, lfirst_oid(l));
+	selist = sepgsqlWalkExpr(selist, qc, (Node *) rce->largs);
+	selist = sepgsqlWalkExpr(selist, qc, (Node *) rce->rargs);
+
+	return selist;
+}
+
 static List *sepgsqlWalkExpr(List *selist, queryChain *qc, Node *n)
 {
 	if (n == NULL)
@@ -434,6 +447,9 @@ static List *sepgsqlWalkExpr(List *selist, queryChain *qc, Node *n)
 		break;
 	case T_ArrayExpr:
 		selist = walkArrayExpr(selist, qc, (ArrayExpr *)n);
+		break;
+	case T_RowCompareExpr:
+		selist = walkRowCompareExpr(selist, qc, (RowCompareExpr *)n);
 		break;
 	default:
 		selnotice("Node(%d) is ignored => %s", nodeTag(n), nodeToString(n));
