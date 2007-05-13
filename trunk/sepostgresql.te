@@ -189,7 +189,6 @@ tunable_policy(`sepgsql_enable_auditallow',`
 	auditallow sepgsql_client_type sepgsql_database_object_type  : database all_database_perms;
 	auditallow sepgsql_client_type sepgsql_table_object_type     : table all_table_perms;
 	auditallow sepgsql_client_type sepgsql_table_object_type     : column all_column_perms;
-	auditallow sepgsql_client_type sepgsql_table_object_type     : tuple all_tuple_perms;
 	auditallow sepgsql_client_type sepgsql_procedure_object_type : procedure all_procedure_perms;
 	auditallow sepgsql_client_type sepgsql_blob_object_type      : blob all_blob_perms;
 	auditallow sepgsql_client_type sepgsql_module_type           : database all_database_perms;
@@ -203,12 +202,11 @@ tunable_policy(`! sepgsql_enable_auditdeny',`
 	dontaudit sepgsql_client_type sepgsql_database_object_type  : database all_database_perms;
 	dontaudit sepgsql_client_type sepgsql_table_object_type     : table all_table_perms;
 	dontaudit sepgsql_client_type sepgsql_table_object_type     : column all_column_perms;
-	dontaudit sepgsql_client_type sepgsql_table_object_type     : tuple all_tuple_perms;
 	dontaudit sepgsql_client_type sepgsql_procedure_object_type : procedure all_procedure_perms;
 	dontaudit sepgsql_client_type sepgsql_blob_object_type      : blob all_blob_perms;
 	dontaudit sepgsql_client_type sepgsql_module_type           : database all_database_perms;
 	dontaudit sepgsql_client_type sepgsql_server_type           : blob all_blob_perms;
 ')
-tunable_policy(`sepgsql_enable_audittuple && ! sepgsql_enable_auditdeny',`
+tunable_policy(`! sepgsql_enable_audittuple || ! sepgsql_enable_auditdeny',`
 	dontaudit sepgsql_client_type sepgsql_table_object_type : tuple all_tuple_perms;
 ')
