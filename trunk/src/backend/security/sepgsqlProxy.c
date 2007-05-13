@@ -363,6 +363,12 @@ static List *walkArrayRef(List *selist, queryChain *qc, ArrayRef *aref)
 	return selist;
 }
 
+static List *walkRowExpr(List *selist, queryChain *qc, RowExpr *row)
+{
+	selist = sepgsqlWalkExpr(selist, qc, (Node *) row->args);
+	return selist;
+}
+
 static List *walkRowCompareExpr(List *selist, queryChain *qc, RowCompareExpr *rce)
 {
 	ListCell *l;
@@ -447,6 +453,9 @@ static List *sepgsqlWalkExpr(List *selist, queryChain *qc, Node *n)
 		break;
 	case T_ArrayExpr:
 		selist = walkArrayExpr(selist, qc, (ArrayExpr *)n);
+		break;
+	case T_RowExpr:
+		selist = walkRowExpr(selist, qc, (RowExpr *) n);
 		break;
 	case T_RowCompareExpr:
 		selist = walkRowCompareExpr(selist, qc, (RowCompareExpr *)n);
