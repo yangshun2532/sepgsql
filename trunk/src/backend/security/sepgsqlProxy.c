@@ -337,6 +337,11 @@ static List *walkNullTest(List *selist, queryChain *qc, NullTest *nt)
 	return sepgsqlWalkExpr(selist, qc, (Node *) nt->arg);
 }
 
+static List *walkBooleanTest(List *selist, queryChain *qc, BooleanTest *bt)
+{
+	return sepgsqlWalkExpr(selist, qc, (Node *) bt->arg);
+}
+
 static List *walkFieldSelect(List *selist, queryChain *qc, FieldSelect *fselect)
 {
 	return sepgsqlWalkExpr(selist, qc, (Node *) fselect->arg);
@@ -444,6 +449,9 @@ static List *sepgsqlWalkExpr(List *selist, queryChain *qc, Node *n)
 		break;
 	case T_NullTest:
 		selist = walkNullTest(selist, qc, (NullTest *) n);
+		break;
+	case T_BooleanTest:
+		selist = walkBooleanTest(selist, qc, (BooleanTest *) n);
 		break;
 	case T_FieldSelect:
 		selist = walkFieldSelect(selist, qc, (FieldSelect *) n);
