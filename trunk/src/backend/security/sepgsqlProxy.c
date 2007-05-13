@@ -370,8 +370,7 @@ static List *walkArrayRef(List *selist, queryChain *qc, ArrayRef *aref)
 
 static List *walkRowExpr(List *selist, queryChain *qc, RowExpr *row)
 {
-	selist = sepgsqlWalkExpr(selist, qc, (Node *) row->args);
-	return selist;
+	return sepgsqlWalkExpr(selist, qc, (Node *) row->args);
 }
 
 static List *walkRowCompareExpr(List *selist, queryChain *qc, RowCompareExpr *rce)
@@ -384,6 +383,11 @@ static List *walkRowCompareExpr(List *selist, queryChain *qc, RowCompareExpr *rc
 	selist = sepgsqlWalkExpr(selist, qc, (Node *) rce->rargs);
 
 	return selist;
+}
+
+static List *walkConvertRowtypeExpr(List *selist, queryChain *qc, ConvertRowtypeExpr *cre)
+{
+	return sepgsqlWalkExpr(selist, qc, (Node *) cre->arg);
 }
 
 static List *sepgsqlWalkExpr(List *selist, queryChain *qc, Node *n)
@@ -461,13 +465,16 @@ static List *sepgsqlWalkExpr(List *selist, queryChain *qc, Node *n)
 		selist = walkFieldStore(selist, qc, (FieldStore *) n);
 		break;
 	case T_ArrayExpr:
-		selist = walkArrayExpr(selist, qc, (ArrayExpr *)n);
+		selist = walkArrayExpr(selist, qc, (ArrayExpr *) n);
 		break;
 	case T_RowExpr:
 		selist = walkRowExpr(selist, qc, (RowExpr *) n);
 		break;
 	case T_RowCompareExpr:
-		selist = walkRowCompareExpr(selist, qc, (RowCompareExpr *)n);
+		selist = walkRowCompareExpr(selist, qc, (RowCompareExpr *) n);
+		break;
+	case T_ConvertRowtypeExpr:
+		selist = walkConvertRowtypeExpr(selist, qc, (ConvertRowtypeExpr *) n);
 		break;
 	default:
 		selnotice("Node(%d) is ignored => %s", nodeTag(n), nodeToString(n));
