@@ -11,24 +11,15 @@
 #include "security/pgace.h"
 #include "utils/syscache.h"
 
+/* make context = 'xxx' node */
+DefElem *sepgsqlGramSecurityLabel(char *defname, char *context) {
+	DefElem *n = NULL;
+	if (!strcmp(defname, "context"))
+		n = makeDefElem(pstrdup(defname), (Node *) makeString(context));
+	return n;
+}
+
 /* ALTER TABLE tblname [ALTER colname] CONTEXT = 'xxx' */
-#define AT_SetTableContext			(AT_DropInherit + 1)
-
-AlterTableCmd *sepgsqlGramAlterTable(char *colName, char *key, char *value) {
-	AlterTableCmd *cmd = NULL;
-	if (!strcmp(key, "context")) {
-		cmd = makeNode(AlterTableCmd);
-		cmd->subtype = AT_SetTableContext;
-		cmd->name = colName;
-		cmd->def = (Node *) makeString(value);
-	}
-	return cmd;
-}
-
-bool sepgsqlAlterTablePrepare(Relation rel, AlterTableCmd *cmd) {
-	return (cmd->subtype == AT_SetTableContext ? true : false);
-}
-
 static bool alterTableSetTableContext(Relation rel, char *context)
 {
 	Relation pgclass;
@@ -89,21 +80,20 @@ static bool alterTableSetColumnContext(Relation rel, char *colname, char *contex
 }
 
 bool sepgsqlAlterTable(Relation rel, AlterTableCmd *cmd) {
-	if (cmd->subtype != AT_SetTableContext)
-		return false;
+	char *context;
+	DefElem *def = (DefElem *) cmd->def;
+
+	Assert(IsA(def, DefElem) && IsA(def->arg, String));
+	Assert(!strcmp("context", def->defname));
+
+	context = strVal(def->arg);
+
 	return (!cmd->name
-			? alterTableSetTableContext(rel, strVal(cmd->def))
-			: alterTableSetColumnContext(rel, cmd->name, strVal(cmd->def)));
+			? alterTableSetTableContext(rel, context)
+			: alterTableSetColumnContext(rel, cmd->name, context));
 }
 
 /* ALTER FUNCTION fnname CONTEXT = 'xxx' */
-DefElem *sepgsqlGramAlterFunction(char *defname, char *value) {
-	DefElem *n = NULL;
-	if (!strcmp(defname, "context"))
-		n = makeDefElem("context", (Node *) makeString(value));
-	return n;
-}
-
 void pgsqlAlterFunction(Relation rel, HeapTuple tuple, char *context) {
 	Datum ncon;
 
@@ -114,13 +104,6 @@ void pgsqlAlterFunction(Relation rel, HeapTuple tuple, char *context) {
 }
 
 /* ALTER DATABASE dbname CONTEXT = 'xxx' */
-DefElem *sepgsqlGramAlterDatabase(char *defname, char *context) {
-	DefElem *n = NULL;
-	if (!strcmp(defname, "context"))
-		n = makeDefElem("context", (Node *) makeString(context));
-	return n;
-}
-
 void pgsqlAlterDatabase(Relation rel, HeapTuple tuple, char *context) {
 	Datum ncon;
 

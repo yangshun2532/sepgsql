@@ -2191,12 +2191,13 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 			/* No command-specific prep needed */
 			pass = AT_PASS_MISC;
 			break;
-		default:				/* oops */
+		case AT_SetSecurityLabel:
 			if (pgaceAlterTablePrepare(rel, cmd)) {
 				ATSimplePermissions(rel, false);
 				pass = AT_PASS_MISC;
 				break;
 			}
+		default:				/* oops */
 			elog(ERROR, "unrecognized alter table type: %d",
 				 (int) cmd->subtype);
 			pass = 0;			/* keep compiler quiet */
@@ -2380,9 +2381,10 @@ ATExecCmd(AlteredTableInfo *tab, Relation rel, AlterTableCmd *cmd)
 		case AT_DropInherit:
 			ATExecDropInherit(rel, (RangeVar *) cmd->def);
 			break;
-		default:				/* oops */
+		case AT_SetSecurityLabel:
 			if (pgaceAlterTable(rel, cmd))
 				break;
+		default:				/* oops */
 			elog(ERROR, "unrecognized alter table type: %d",
 				 (int) cmd->subtype);
 			break;

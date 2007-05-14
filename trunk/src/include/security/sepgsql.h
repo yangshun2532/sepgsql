@@ -116,6 +116,15 @@ static inline void pgaceHeapDelete(Relation rel, HeapTuple oldtup) {
 }
 
 /******************************************************************
+ * Extended SQL statement hooks
+ ******************************************************************/
+static inline DefElem *pgaceGramSecurityLabel(char *defname, char *value) {
+	if (!sepgsqlIsEnabled())
+		return NULL;
+	return sepgsqlGramSecurityLabel(defname, value);
+}
+
+/******************************************************************
  * DATABASE related hooks
  ******************************************************************/
 
@@ -128,12 +137,6 @@ static inline void pgaceSetDatabaseParam(const char *name, char *argstring) {
 static inline void pgaceGetDatabaseParam(const char *name) {
 	if (sepgsqlIsEnabled())
 		sepgsqlGetDatabaseParam(name);
-}
-
-static inline DefElem *pgaceGramAlterDatabase(char *defname, char *value) {
-	if (!sepgsqlIsEnabled())
-		return NULL;
-	return sepgsqlGramAlterDatabase(defname, value);
 }
 
 static inline bool pgaceAlterDatabasePrepare(char *defname) {
@@ -180,12 +183,6 @@ static inline void pgaceRestorePlanCheck(Relation rel, Datum pgace_saved) {
 		sepgsqlRestorePlanCheck(rel, DatumGetObjectId(pgace_saved));
 }
 
-static inline DefElem *pgaceGramAlterFunction(char *defname, char *value) {
-	if (!sepgsqlIsEnabled())
-		return NULL;
-	return sepgsqlGramAlterFunction(defname, value);
-}
-
 static inline bool pgaceAlterFunctionPrepare(char *defname) {
 	if (sepgsqlIsEnabled() && !strcmp("context", defname))
 		return true;
@@ -208,16 +205,10 @@ static inline void pgaceLockTable(Oid relid) {
 		sepgsqlLockTable(relid);
 }
 
-static inline AlterTableCmd *pgaceGramAlterTable(char *colName, char *key, char *value) {
-	if (!sepgsqlIsEnabled())
-		return NULL;
-	return sepgsqlGramAlterTable(colName, key, value);
-}
-
 static inline bool pgaceAlterTablePrepare(Relation rel, AlterTableCmd *cmd) {
 	if (!sepgsqlIsEnabled())
 		return false;
-	return sepgsqlAlterTablePrepare(rel, cmd);
+	return true;
 }
 
 static inline bool pgaceAlterTable(Relation rel, AlterTableCmd *cmd) {
@@ -302,7 +293,6 @@ static inline void pgaceLargeObjectExport(void) {
 /******************************************************************
  * Security Label hooks
  ******************************************************************/
-
 static inline char *pgaceSecurityLabelIn(char *context) {
 	if (!sepgsqlIsEnabled())
 		return NULL;

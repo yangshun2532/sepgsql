@@ -200,6 +200,22 @@ static inline void pgaceHeapDelete(Relation rel, HeapTuple oldtup) {
 }
 
 /******************************************************************
+ * Extended SQL statement hooks
+ ******************************************************************/
+/*
+ * PGACE implementation can use pgaceGramSecurityLabel() hook to extend
+ * SQL statement for explicit labeling. This hook is deployed on parser/gram.y
+ * as a part of the SQL grammer. If no SQL extension is necessary, it has to
+ * return NULL to cause yyerror().
+ *
+ * @defname : given <parameter> string
+ * @value   : given <value> string
+ */
+static inline DefElem *pgaceGramSecurityLabel(char *defname, char *value) {
+	return NULL;
+}
+
+/******************************************************************
  * DATABASE related hooks
  ******************************************************************/
 
@@ -221,20 +237,6 @@ static inline void pgaceSetDatabaseParam(const char *name, char *argstring) {
  */
 static inline void pgaceGetDatabaseParam(const char *name) {
 	/* do nothing */
-}
-
-/*
- * pgaceGramAlterDatabase() is called when yacc/lex engine detect the following statement:
- *     ALTER DATABASE <database name> <parameter> = '<value>' ;
- * This hooks should return DefElem object, if the combination of parameter name and
- * configuration strings are available for the PGACE implementation.
- * If it returns NULL, a syntax error will be occured.
- *
- * @defname : given <parameter> string
- * @value   : given <value> string
- */
-static inline DefElem *pgaceGramAlterDatabase(char *defname, char *value) {
-	return NULL;
 }
 
 /*
@@ -318,20 +320,6 @@ static inline void pgaceRestorePlanCheck(Relation rel, Datum pgace_saved) {
 }
 
 /*
- * pgaceGramAlterFunction() is called when yacc/lex engine detect the following statement:
- *     ALTER FUNCTION <function name> (<argtype> ...) <parameter> = <value> ;
- * This hooks should return DefElem object, if the combination of parameter name and
- * value strings are available for the PGACE implementation.
- * If it returns NULL, a syntax error will be occured.
- *
- * @defname : given <parameter> string
- * @value   : given <value> string
- */
-static inline DefElem *pgaceGramAlterFunction(char *defname, char *value) {
-	return NULL;
-}
-
-/*
  * pgaceAlterFunctionPrepare() is called to check whether the DefElem object is generated
  * in the above pgaceGramAlterFunction(), or not. It should return true, if the given
  * defname is matched.
@@ -365,22 +353,6 @@ static inline void pgaceAlterFunction(Relation rel, HeapTuple tuple, DefElem *pg
  */
 static inline void pgaceLockTable(Oid relid) {
 	/* do nothing */
-}
-
-/*
- * pgaceGramAlterTable() is called when yacc/lex engine detect the following statement:
- *     ALTER TABLE <table name> [ALTER <column name>] <parameter> = <value> ;
- * These hooks should return AlterTableCmd object, if the combination of parameter
- * and value strings are available for the PGACE implementation.
- * If it returns NULL, a syntax error will be occured.
- *
- * @colName : given column name. If NULL is given, it means [ALTER <column name>] is
- *            omitted in the statement.
- * @key     : given <parameter> string
- * @value   : given <value> string
- */
-static inline AlterTableCmd *pgaceGramAlterTable(char *colName, char *key, char *value) {
-	return NULL;
 }
 
 /*

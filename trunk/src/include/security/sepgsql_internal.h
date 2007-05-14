@@ -258,14 +258,11 @@ extern Datum sepgsql_tuple_perms_abort(PG_FUNCTION_ARGS);
  * SE-PostgreSQL extended SQL statement
  *   src/backend/security/sepgsqlExtStmt.c
  */
-extern AlterTableCmd *sepgsqlGramAlterTable(char *colName, char *key, char *value);
+extern DefElem *sepgsqlGramSecurityLabel(char *defname, char *context);
+
 extern bool sepgsqlAlterTablePrepare(Relation rel, AlterTableCmd *cmd);
 extern bool sepgsqlAlterTable(Relation rel, AlterTableCmd *cmd);
-
-extern DefElem *sepgsqlGramAlterFunction(char *defname, char *value);
 extern void pgsqlAlterFunction(Relation rel, HeapTuple tuple, char *context);
-
-extern DefElem *sepgsqlGramAlterDatabase(char *defname, char *context);
 extern void pgsqlAlterDatabase(Relation rel, HeapTuple tuple, char *context);
 
 #endif /* SEPGSQL_INTERNAL_H */

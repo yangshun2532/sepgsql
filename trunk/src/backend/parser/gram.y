@@ -346,6 +346,7 @@ static void doNegateFloat(Value *v);
 %type <str>		OptTableSpace OptConsTableSpace OptTableSpaceOwner
 %type <list>	opt_check_option
 
+%type <defelt>	OptSecurityLabel SecurityLabelItem
 
 /*
  * If you make any token changes, update the keyword table in
@@ -1524,19 +1525,21 @@ alter_table_cmd:
 					$$ = (Node *)n;
 				}
 			/* ALTER TABLE <relation> CONTEXT = '...' */
-			| IDENT '=' Sconst
+			| SecurityLabelItem
 				{
-					AlterTableCmd *n = pgaceGramAlterTable(NULL, $1, $3);
-					if (n == NULL)
-						yyerror("syntax error");
+					AlterTableCmd *n = makeNode(AlterTableCmd);
+					n->subtype = AT_SetSecurityLabel;
+					n->name = NULL;
+					n->def = (Node *) $1;
 					$$ = (Node *) n;
 				}
 			/* ALTER TABLE <relation> ALTER [COLUMN] <colname> CONTEXT = '...' */
-			| ALTER opt_column ColId IDENT '=' Sconst
+			| ALTER opt_column ColId SecurityLabelItem
 				{
-					AlterTableCmd *n = pgaceGramAlterTable($3, $4, $6);
-					if (n == NULL)
-						yyerror("syntax error");
+					AlterTableCmd *n = makeNode(AlterTableCmd);
+					n->subtype = AT_SetSecurityLabel;
+					n->name = $3;
+					n->def = (Node *) $4;
 					$$ = (Node *) n;
 				}
 			| alter_rel_cmd
@@ -3967,12 +3970,9 @@ common_func_opt_item:
 				{
 					$$ = makeDefElem("security", (Node *)makeInteger(FALSE));
 				}
-			| IDENT '=' Sconst
+			| SecurityLabelItem
 				{
-					DefElem *n = pgaceGramAlterFunction($1, $3);
-					if (n == NULL)
-						yyerror("syntax error");
-					$$ = n;
+					$$ = $1;
 				}
 		;
 
@@ -5016,12 +5016,9 @@ alterdb_opt_item:
 				{
 					$$ = makeDefElem("connectionlimit", (Node *)makeInteger($4));
 				}
-			| IDENT '=' Sconst
+			| SecurityLabelItem
 				{
-					DefElem *n = pgaceGramAlterDatabase($1, $3);
-					if (n == NULL)
-						yyerror("syntax error");
-					$$ = n;
+					$$ = $1;
 				}
 		;
 
@@ -8302,6 +8299,26 @@ target_el:	a_expr AS ColLabel
 				}
 		;
 
+/*****************************************************************************
+ *
+ * Explicit Security Labeling
+ *
+ *****************************************************************************/
+
+OptSecurityLabel:
+			SecurityLabelItem						{ $$ = $1; }
+			| /* EMPTY */							{ $$ = NULL; }
+		;
+
+SecurityLabelItem:
+			IDENT '=' Sconst
+				{
+					DefElem *n = pgaceGramSecurityLabel($1, $3);
+					if (n == NULL)
+						yyerror("syntax error");
+					$$ = n;
+				}
+		;
 
 /*****************************************************************************
  *
