@@ -1045,7 +1045,7 @@ AlterFunction(AlterFunctionStmt *stmt)
 	{
 		DefElem    *defel = (DefElem *) lfirst(l);
 
-		if (pgaceAlterFunctionPrepare(defel->defname)) {
+		if (pgaceIsDefElemSecurityLabel(defel)) {
 			if (pgace_def_item)
 				ereport(ERROR,
                         (errcode(ERRCODE_SYNTAX_ERROR),

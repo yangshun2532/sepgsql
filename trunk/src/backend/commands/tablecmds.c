@@ -2186,17 +2186,12 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 		case AT_DisableTrigUser:
 		case AT_AddInherit:		/* INHERIT / NO INHERIT */
 		case AT_DropInherit:
+		case AT_SetSecurityLabel:
 			ATSimplePermissions(rel, false);
 			/* These commands never recurse */
 			/* No command-specific prep needed */
 			pass = AT_PASS_MISC;
 			break;
-		case AT_SetSecurityLabel:
-			if (pgaceAlterTablePrepare(rel, cmd)) {
-				ATSimplePermissions(rel, false);
-				pass = AT_PASS_MISC;
-				break;
-			}
 		default:				/* oops */
 			elog(ERROR, "unrecognized alter table type: %d",
 				 (int) cmd->subtype);

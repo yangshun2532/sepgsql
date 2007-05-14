@@ -124,6 +124,12 @@ static inline DefElem *pgaceGramSecurityLabel(char *defname, char *value) {
 	return sepgsqlGramSecurityLabel(defname, value);
 }
 
+static inline bool pgaceIsDefElemSecurityLabel(DefElem *def) {
+	if (!sepgsqlIsEnabled())
+		return false;
+	return sepgsqlIsDefElemSecurityLabel(def);
+}
+
 /******************************************************************
  * DATABASE related hooks
  ******************************************************************/
@@ -137,12 +143,6 @@ static inline void pgaceSetDatabaseParam(const char *name, char *argstring) {
 static inline void pgaceGetDatabaseParam(const char *name) {
 	if (sepgsqlIsEnabled())
 		sepgsqlGetDatabaseParam(name);
-}
-
-static inline bool pgaceAlterDatabasePrepare(char *defname) {
-	if (sepgsqlIsEnabled() && !strcmp("context", defname))
-		return true;
-	return false;
 }
 
 static inline void pgaceAlterDatabase(Relation rel, HeapTuple tuple, DefElem *pgace_elem) {
@@ -183,12 +183,6 @@ static inline void pgaceRestorePlanCheck(Relation rel, Datum pgace_saved) {
 		sepgsqlRestorePlanCheck(rel, DatumGetObjectId(pgace_saved));
 }
 
-static inline bool pgaceAlterFunctionPrepare(char *defname) {
-	if (sepgsqlIsEnabled() && !strcmp("context", defname))
-		return true;
-	return false;
-}
-
 static inline void pgaceAlterFunction(Relation rel, HeapTuple tuple, DefElem *pgace_elem) {
 	if (sepgsqlIsEnabled() && pgace_elem) {
 		Assert(!strcmp("context", pgace_elem->defname));
@@ -203,12 +197,6 @@ static inline void pgaceAlterFunction(Relation rel, HeapTuple tuple, DefElem *pg
 static inline void pgaceLockTable(Oid relid) {
 	if (sepgsqlIsEnabled())
 		sepgsqlLockTable(relid);
-}
-
-static inline bool pgaceAlterTablePrepare(Relation rel, AlterTableCmd *cmd) {
-	if (!sepgsqlIsEnabled())
-		return false;
-	return true;
 }
 
 static inline bool pgaceAlterTable(Relation rel, AlterTableCmd *cmd) {

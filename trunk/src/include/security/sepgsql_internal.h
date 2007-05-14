@@ -259,6 +259,7 @@ extern Datum sepgsql_tuple_perms_abort(PG_FUNCTION_ARGS);
  *   src/backend/security/sepgsqlExtStmt.c
  */
 extern DefElem *sepgsqlGramSecurityLabel(char *defname, char *context);
+extern bool sepgsqlIsDefElemSecurityLabel(DefElem *def);
 
 extern bool sepgsqlAlterTablePrepare(Relation rel, AlterTableCmd *cmd);
 extern bool sepgsqlAlterTable(Relation rel, AlterTableCmd *cmd);

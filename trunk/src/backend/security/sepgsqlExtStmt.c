@@ -19,6 +19,13 @@ DefElem *sepgsqlGramSecurityLabel(char *defname, char *context) {
 	return n;
 }
 
+bool sepgsqlIsDefElemSecurityLabel(DefElem *def) {
+	Assert(IsA(def, DefElem));
+	if (!strcmp(def->defname, "context"))
+		return true;
+	return false;
+}
+
 /* ALTER TABLE tblname [ALTER colname] CONTEXT = 'xxx' */
 static bool alterTableSetTableContext(Relation rel, char *context)
 {

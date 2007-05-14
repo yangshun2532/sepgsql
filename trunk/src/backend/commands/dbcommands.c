@@ -792,7 +792,7 @@ AlterDatabase(AlterDatabaseStmt *stmt)
 						 errmsg("conflicting or redundant options")));
 			dconnlimit = defel;
 		}
-		else if (pgaceAlterDatabasePrepare(defel->defname)) {
+		else if (pgaceIsDefElemSecurityLabel(defel)) {
 			if (dpgace_item)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),

@@ -215,6 +215,17 @@ static inline DefElem *pgaceGramSecurityLabel(char *defname, char *value) {
 	return NULL;
 }
 
+/*
+ * PGACE implementation has to return true, if the given DefElem is generated
+ * in the above pgaceGramSecurityLabel(). return false, if any other.
+ *
+ * @def : given DefElem
+ */
+static inline bool pgaceIsDefElemSecurityLabel(DefElem *def) {
+	return false;
+}
+
+
 /******************************************************************
  * DATABASE related hooks
  ******************************************************************/
@@ -237,17 +248,6 @@ static inline void pgaceSetDatabaseParam(const char *name, char *argstring) {
  */
 static inline void pgaceGetDatabaseParam(const char *name) {
 	/* do nothing */
-}
-
-/*
- * pgaceAlterDatabasePrepare() is called to check whether the DefElem object is generated
- * in the above pgaceGramAlterDatabase(), or not. It should return true, if the given
- * defname is available.
- *
- * @defname : <parameter name> in null terminated string
- */
-static inline bool pgaceAlterDatabasePrepare(char *defname) {
-	return false;
 }
 
 /*
@@ -320,17 +320,6 @@ static inline void pgaceRestorePlanCheck(Relation rel, Datum pgace_saved) {
 }
 
 /*
- * pgaceAlterFunctionPrepare() is called to check whether the DefElem object is generated
- * in the above pgaceGramAlterFunction(), or not. It should return true, if the given
- * defname is matched.
- *
- * @defname : <parameter name> in null terminated string
- */
-static inline bool pgaceAlterFunctionPrepare(char *defname) {
-	return false;
-}
-
-/*
  * pgaceAlterFunction() is called to modify the function meta-information alterd just
  * before updating the HeapTuple associated.
  *
@@ -353,18 +342,6 @@ static inline void pgaceAlterFunction(Relation rel, HeapTuple tuple, DefElem *pg
  */
 static inline void pgaceLockTable(Oid relid) {
 	/* do nothing */
-}
-
-/*
- * pgaceAlterTablePrepare() is called to check whether the given AlterTableCmd object
- * is generated in the above pgaceGramAlterTable(), or not.
- * It should return true, if the given AlterTableCmd is matched.
- *
- * @rel : the target relation
- * @cmd : given AlterTableCmd object
- */
-static inline bool pgaceAlterTablePrepare(Relation rel, AlterTableCmd *cmd) {
-	return false;
 }
 
 /*
