@@ -153,7 +153,7 @@ createdb(const CreatedbStmt *stmt)
 					 errmsg("LOCATION is not supported anymore"),
 					 errhint("Consider using tablespaces instead.")));
 		}
-		else if (pgaceIsDefElemSecurityLabel(defel)) {
+		else if (pgaceNodeIsSecurityLabel(defel)) {
 			if (dpgace_item)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
@@ -801,7 +801,7 @@ AlterDatabase(AlterDatabaseStmt *stmt)
 						 errmsg("conflicting or redundant options")));
 			dconnlimit = defel;
 		}
-		else if (pgaceIsDefElemSecurityLabel(defel)) {
+		else if (pgaceNodeIsSecurityLabel(defel)) {
 			if (dpgace_item)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),

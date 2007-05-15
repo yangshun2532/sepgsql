@@ -10,8 +10,7 @@ include $(top_builddir)/src/Makefile.global
 
 ifeq ($(enable_selinux), yes)
 OBJS := pgaceCommon.o \
-	sepgsqlCore.o sepgsqlProxy.o sepgsqlHeap.o sepgsqlVerify.o \
-	sepgsqlHooks.o sepgsqlExtStmt.o
+	sepgsqlCore.o sepgsqlProxy.o sepgsqlHeap.o sepgsqlVerify.o sepgsqlHooks.o
 else
 OBJS := pgaceCommon.o
 endif

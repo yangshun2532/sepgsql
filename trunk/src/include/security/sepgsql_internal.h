@@ -259,15 +259,7 @@ extern Datum sepgsql_tuple_perms_abort(PG_FUNCTION_ARGS);
  *   src/backend/security/sepgsqlExtStmt.c
  */
 extern DefElem *sepgsqlGramSecurityLabel(char *defname, char *context);
-extern bool sepgsqlIsDefElemSecurityLabel(DefElem *def);
-
-extern void sepgsqlCreateRelation(Relation rel, HeapTuple tuple, char *context);
-extern void sepgsqlAlterRelation(Relation rel, HeapTuple tuple, char *context);
-extern void sepgsqlCreateAttribute(Relation rel, HeapTuple tuple, char *context);
-extern void sepgsqlAlterAttribute(Relation rel, HeapTuple tuple, char *context);
-extern void sepgsqlCreateFunction(Relation rel, HeapTuple tuple, char *context);
-extern void sepgsqlAlterFunction(Relation rel, HeapTuple tuple, char *context);
-extern void sepgsqlCreateDatabase(Relation rel, HeapTuple tuple, char *context);
-extern void sepgsqlAlterDatabase(Relation rel, HeapTuple tuple, char *context);
+extern bool sepgsqlNodeIsSecurityLabel(DefElem *defel);
+extern void sepgsqlPutSecurityLabel(HeapTuple tuple, char *context);
 
 #endif /* SEPGSQL_INTERNAL_H */

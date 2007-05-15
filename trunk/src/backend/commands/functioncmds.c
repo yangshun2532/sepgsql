@@ -368,7 +368,7 @@ compute_attributes_sql_style(List *options,
 						 errmsg("conflicting or redundant options")));
 			language_item = defel;
 		}
-		else if (pgaceIsDefElemSecurityLabel(defel))
+		else if (pgaceNodeIsSecurityLabel(defel))
 		{
 			if (*pgace_item)
 				ereport(ERROR,
@@ -1056,7 +1056,7 @@ AlterFunction(AlterFunctionStmt *stmt)
 	{
 		DefElem    *defel = (DefElem *) lfirst(l);
 
-		if (pgaceIsDefElemSecurityLabel(defel)) {
+		if (pgaceNodeIsSecurityLabel(defel)) {
 			if (pgace_def_item)
 				ereport(ERROR,
                         (errcode(ERRCODE_SYNTAX_ERROR),

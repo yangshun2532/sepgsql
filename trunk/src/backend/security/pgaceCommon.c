@@ -204,7 +204,7 @@ void pgaceAlterRelationCommon(Relation rel, AlterTableCmd *cmd) {
 
 	Assert(IsA(defel, DefElem));
 
-	if (!sepgsqlIsDefElemSecurityLabel(defel))
+	if (!pgaceNodeIsSecurityLabel(defel))
 		elog(ERROR, "unrecognized security attribute");
 
 	if (!cmd->name) {

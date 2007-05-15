@@ -124,50 +124,50 @@ static inline DefElem *pgaceGramSecurityLabel(char *defname, char *value) {
 	return sepgsqlGramSecurityLabel(defname, value);
 }
 
-static inline bool pgaceIsDefElemSecurityLabel(DefElem *def) {
+static inline bool pgaceNodeIsSecurityLabel(DefElem *defel) {
 	if (!sepgsqlIsEnabled())
 		return false;
-	return sepgsqlIsDefElemSecurityLabel(def);
+	return sepgsqlNodeIsSecurityLabel(defel);
 }
 
 static inline void pgaceCreateRelation(Relation rel, HeapTuple tuple, DefElem *defel) {
 	if (sepgsqlIsEnabled() && defel)
-		sepgsqlCreateRelation(rel, tuple, strVal(defel->arg));
+		sepgsqlPutSecurityLabel(tuple, strVal(defel->arg));
 }
 
 static inline void pgaceAlterRelation(Relation rel, HeapTuple tuple, DefElem *defel) {
 	if (sepgsqlIsEnabled() && defel)
-		sepgsqlAlterRelation(rel, tuple, strVal(defel->arg));
+		sepgsqlPutSecurityLabel(tuple, strVal(defel->arg));
 }
 
 static inline void pgaceCreateAttribute(Relation rel, HeapTuple tuple, DefElem *defel) {
 	if (sepgsqlIsEnabled() && defel)
-		sepgsqlCreateAttribute(rel, tuple, strVal(defel->arg));
+		sepgsqlPutSecurityLabel(tuple, strVal(defel->arg));
 }
 
 static inline void pgaceAlterAttribute(Relation rel, HeapTuple tuple, DefElem *defel) {
 	if (sepgsqlIsEnabled() && defel)
-		sepgsqlAlterAttribute(rel, tuple, strVal(defel->arg));
+		sepgsqlPutSecurityLabel(tuple, strVal(defel->arg));
 }
 
 static inline void pgaceCreateDatabase(Relation rel, HeapTuple tuple, DefElem *defel) {
 	if (sepgsqlIsEnabled() && defel)
-		sepgsqlCreateDatabase(rel, tuple, strVal(defel->arg));
+		sepgsqlPutSecurityLabel(tuple, strVal(defel->arg));
 }
 
 static inline void pgaceAlterDatabase(Relation rel, HeapTuple tuple, DefElem *defel) {
 	if (sepgsqlIsEnabled() && defel)
-		sepgsqlAlterDatabase(rel, tuple, strVal(defel->arg));
+		sepgsqlPutSecurityLabel(tuple, strVal(defel->arg));
 }
 
 static inline void pgaceCreateFunction(Relation rel, HeapTuple tuple, DefElem *defel) {
 	if (sepgsqlIsEnabled() && defel)
-		sepgsqlCreateFunction(rel, tuple, strVal(defel->arg));
+		sepgsqlPutSecurityLabel(tuple, strVal(defel->arg));
 }
 
 static inline void pgaceAlterFunction(Relation rel, HeapTuple tuple, DefElem *defel) {
 	if (sepgsqlIsEnabled() && defel)
-		sepgsqlAlterFunction(rel, tuple, strVal(defel->arg));
+		sepgsqlPutSecurityLabel(tuple, strVal(defel->arg));
 }
 
 /******************************************************************

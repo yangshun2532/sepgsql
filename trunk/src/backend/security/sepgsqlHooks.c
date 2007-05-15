@@ -42,6 +42,32 @@ static HeapTuple __getHeapTupleFromItemPointer(Relation rel, ItemPointer tid)
 }
 
 /*******************************************************************************
+ * Extended SQL statement hooks
+ *******************************************************************************/
+/* make context = 'xxx' node */
+DefElem *sepgsqlGramSecurityLabel(char *defname, char *context) {
+	DefElem *n = NULL;
+	if (!strcmp(defname, "context"))
+		n = makeDefElem(pstrdup(defname), (Node *) makeString(context));
+	return n;
+}
+
+/* whether DefElem holds security context, or not */
+bool sepgsqlNodeIsSecurityLabel(DefElem *defel) {
+	Assert(IsA(defel, DefElem));
+	if (defel->defname && !strcmp(defel->defname, "context"))
+		return true;
+	return false;
+}
+
+/* put security context onto the tuple */
+void sepgsqlPutSecurityLabel(HeapTuple tuple, char *context) {
+	Datum newcon = DirectFunctionCall1(security_label_in,
+									   CStringGetDatum(context));
+	HeapTupleSetSecurity(tuple, DatumGetObjectId(newcon));
+}
+
+/*******************************************************************************
  * DATABASE object related hooks
  *******************************************************************************/
 

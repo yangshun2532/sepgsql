@@ -216,12 +216,12 @@ static inline DefElem *pgaceGramSecurityLabel(char *defname, char *value) {
 }
 
 /*
- * PGACE implementation has to return true, if the given DefElem is generated
- * in the above pgaceGramSecurityLabel(). return false, if any other.
+ * PGACE implementation has to return true, if the given DefElem holds
+ * security label generated in pgaceGramSecurityLabel(). false, if any other.
  *
- * @def : given DefElem
+ * @defel : given DefElem object
  */
-static inline bool pgaceIsDefElemSecurityLabel(DefElem *def) {
+static inline bool pgaceNodeIsSecurityLabel(DefElem *defel) {
 	return false;
 }
 
