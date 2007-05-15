@@ -249,6 +249,30 @@ static inline void pgaceAlterDatabase(Relation rel, HeapTuple tuple, DefElem *pg
 	/* do nothing */
 }
 
+/*
+ * pgaceCreateFunction() is called to create a new function with explicit specified
+ * security attribute.
+ *
+ * @rel        : pg_proc relation, opened with RowExclusiveLock
+ * @tuple      : the tuple for newly generated function
+ * @pgace_attr : security label, if specified. (may be NULL)
+ */
+static inline void pgaceCreateFunction(Relation rel, HeapTuple tuple, DefElem *pgace_elem) {
+	/* do nothing */
+}
+
+/*
+ * pgaceAlterFunction() is called to modify the function meta-information alterd just
+ * before updating the HeapTuple associated.
+ *
+ * @rel        : pg_proc relation, opened with RowExclusiveLock
+ * @tuple      : new meta information of the target function
+ * @pgace_elem : DefElem object generated in pgaceGramAlterFunction()
+ */
+static inline void pgaceAlterFunction(Relation rel, HeapTuple tuple, DefElem *pgace_elem) {
+	/* do nothing */
+}
+
 /******************************************************************
  * DATABASE related hooks
  ******************************************************************/
@@ -327,18 +351,6 @@ static inline Datum pgacePreparePlanCheck(Relation rel) {
  * @pgace_saved : an opaque data returned from pgacePreparePlanCheck()
  */
 static inline void pgaceRestorePlanCheck(Relation rel, Datum pgace_saved) {
-	/* do nothing */
-}
-
-/*
- * pgaceAlterFunction() is called to modify the function meta-information alterd just
- * before updating the HeapTuple associated.
- *
- * @rel        : pg_proc relation, opened with RowExclusiveLock
- * @tuple      : new meta information of the target function
- * @pgace_elem : DefElem object generated in pgaceGramAlterFunction()
- */
-static inline void pgaceAlterFunction(Relation rel, HeapTuple tuple, DefElem *pgace_elem) {
 	/* do nothing */
 }
 

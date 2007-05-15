@@ -4031,7 +4031,8 @@ extern Oid ProcedureCreate(const char *procedureName,
 				oidvector *parameterTypes,
 				Datum allParameterTypes,
 				Datum parameterModes,
-				Datum parameterNames);
+				Datum parameterNames,
+				void *pgace_item);
 
 extern bool function_parse_error_transpose(const char *prosrc);
 

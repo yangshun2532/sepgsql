@@ -100,32 +100,26 @@ bool sepgsqlAlterTable(Relation rel, AlterTableCmd *cmd) {
 			: alterTableSetColumnContext(rel, cmd->name, context));
 }
 
+/* CREATE FUNCTION fnname ... CONTEXT = 'xxx' */
+void sepgsqlCreateFunction(Relation rel, HeapTuple tuple, char *context) {
+	Datum newcon = DirectFunctionCall1(security_label_in,
+									   CStringGetDatum(context));
+	HeapTupleSetSecurity(tuple, DatumGetObjectId(newcon));
+}
+
 /* ALTER FUNCTION fnname CONTEXT = 'xxx' */
 void sepgsqlAlterFunction(Relation rel, HeapTuple tuple, char *context) {
-	Datum ncon;
-
-	Assert(RelationGetRelid(rel) == ProcedureRelationId);
-	ncon = DirectFunctionCall1(security_label_in,
-							   CStringGetDatum(context));
-	HeapTupleSetSecurity(tuple, DatumGetObjectId(ncon));
+	sepgsqlCreateFunction(rel, tuple, context);
 }
 
 /* CREATE DATABASE dbname CONTEXT = 'xxx' */
 void sepgsqlCreateDatabase(Relation rel, HeapTuple tuple, char *context) {
-	Datum ncon;
-
-	Assert(RelationGetRelid(rel) == DatabaseRelationId);
-	ncon = DirectFunctionCall1(security_label_in,
-							   CStringGetDatum(context));
-	HeapTupleSetSecurity(tuple, DatumGetObjectId(ncon));
+	Datum newcon = DirectFunctionCall1(security_label_in,
+									   CStringGetDatum(context));
+	HeapTupleSetSecurity(tuple, DatumGetObjectId(newcon));
 }
 
 /* ALTER DATABASE dbname CONTEXT = 'xxx' */
 void sepgsqlAlterDatabase(Relation rel, HeapTuple tuple, char *context) {
-	Datum ncon;
-
-	Assert(RelationGetRelid(rel) == DatabaseRelationId);
-	ncon = DirectFunctionCall1(security_label_in,
-							   CStringGetDatum(context));
-	HeapTupleSetSecurity(tuple, DatumGetObjectId(ncon));
+	sepgsqlCreateDatabase(rel, tuple, context);
 }

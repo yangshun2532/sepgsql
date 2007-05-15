@@ -338,7 +338,8 @@ compute_attributes_sql_style(List *options,
 							 char **language,
 							 char *volatility_p,
 							 bool *strict_p,
-							 bool *security_definer)
+							 bool *security_definer,
+							 DefElem **pgace_item)
 {
 	ListCell   *option;
 	DefElem    *as_item = NULL;
@@ -366,6 +367,14 @@ compute_attributes_sql_style(List *options,
 						(errcode(ERRCODE_SYNTAX_ERROR),
 						 errmsg("conflicting or redundant options")));
 			language_item = defel;
+		}
+		else if (pgaceIsDefElemSecurityLabel(defel))
+		{
+			if (*pgace_item)
+				ereport(ERROR,
+						(errcode(ERRCODE_SYNTAX_ERROR),
+                         errmsg("conflicting or redundant options")));
+			*pgace_item = defel;
 		}
 		else if (compute_common_attribute(defel,
 										  &volatility_item,
@@ -523,6 +532,7 @@ CreateFunction(CreateFunctionStmt *stmt)
 	HeapTuple	languageTuple;
 	Form_pg_language languageStruct;
 	List	   *as_clause;
+	DefElem	   *pgace_item = NULL;
 
 	/* Convert list of names to a name and namespace */
 	namespaceId = QualifiedNameGetCreationNamespace(stmt->funcname,
@@ -541,7 +551,7 @@ CreateFunction(CreateFunctionStmt *stmt)
 
 	/* override attributes from explicit list */
 	compute_attributes_sql_style(stmt->options,
-				   &as_clause, &language, &volatility, &isStrict, &security);
+				   &as_clause, &language, &volatility, &isStrict, &security, &pgace_item);
 
 	/* Convert language name to canonical case */
 	languageName = case_translate_language_name(language);
@@ -666,7 +676,8 @@ CreateFunction(CreateFunctionStmt *stmt)
 					parameterTypes,
 					PointerGetDatum(allParameterTypes),
 					PointerGetDatum(parameterModes),
-					PointerGetDatum(parameterNames));
+					PointerGetDatum(parameterNames),
+					pgace_item);
 }
 
 
