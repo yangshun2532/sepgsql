@@ -225,6 +225,29 @@ static inline bool pgaceIsDefElemSecurityLabel(DefElem *def) {
 	return false;
 }
 
+/*
+ * pgaceCreateDatabase() is called to create a new database with explicit specified
+ * security attribute.
+ *
+ * @rel        : pg_database relation, opened with RowExclusiveLock
+ * @tuple      : the tuple for newly generated database
+ * @pgace_elem : DefElem object, if specified. (may be NULL)
+ */
+static inline void pgaceCreateDatabase(Relation rel, HeapTuple tuple, DefElem *pgace_elem) {
+	/* do nothing */
+}
+
+/*
+ * pgaceAlterDatabase() is called to modify the database meta-information alterd just
+ * before updating the HeapTuple associated.
+ *
+ * @rel        : pg_database relation, opened with RowExclusiveLock
+ * @tuple      : new meta information of the target database
+ * @pgace_elem : DefElem object generated in pgaceGramAlterDatabase()
+ */
+static inline void pgaceAlterDatabase(Relation rel, HeapTuple tuple, DefElem *pgace_elem) {
+	/* do nothing */
+}
 
 /******************************************************************
  * DATABASE related hooks
@@ -247,18 +270,6 @@ static inline void pgaceSetDatabaseParam(const char *name, char *argstring) {
  * @name : The name of GUC variable
  */
 static inline void pgaceGetDatabaseParam(const char *name) {
-	/* do nothing */
-}
-
-/*
- * pgaceAlterDatabase() is called to modify the database meta-information alterd just
- * before updating the HeapTuple associated.
- *
- * @rel        : pg_database relation, opened with RowExclusiveLock
- * @tuple      : new meta information of the target database
- * @pgace_elem : DefElem object generated in pgaceGramAlterDatabase()
- */
-static inline void pgaceAlterDatabase(Relation rel, HeapTuple tuple, DefElem *pgace_elem) {
 	/* do nothing */
 }
 

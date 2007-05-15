@@ -130,6 +130,20 @@ static inline bool pgaceIsDefElemSecurityLabel(DefElem *def) {
 	return sepgsqlIsDefElemSecurityLabel(def);
 }
 
+static inline void pgaceCreateDatabase(Relation rel, HeapTuple tuple, DefElem *pgace_elem) {
+	if (sepgsqlIsEnabled() && pgace_elem) {
+		Assert(sepgsqlIsDefElemSecurityLabel(pgace_elem));
+		sepgsqlCreateDatabase(rel, tuple, strVal(pgace_elem->arg));
+	}
+}
+
+static inline void pgaceAlterDatabase(Relation rel, HeapTuple tuple, DefElem *pgace_elem) {
+	if (sepgsqlIsEnabled() && pgace_elem) {
+		Assert(sepgsqlIsDefElemSecurityLabel(pgace_elem));
+		sepgsqlAlterDatabase(rel, tuple, strVal(pgace_elem->arg));
+	}
+}
+
 /******************************************************************
  * DATABASE related hooks
  ******************************************************************/
@@ -143,13 +157,6 @@ static inline void pgaceSetDatabaseParam(const char *name, char *argstring) {
 static inline void pgaceGetDatabaseParam(const char *name) {
 	if (sepgsqlIsEnabled())
 		sepgsqlGetDatabaseParam(name);
-}
-
-static inline void pgaceAlterDatabase(Relation rel, HeapTuple tuple, DefElem *pgace_elem) {
-	if (sepgsqlIsEnabled() && pgace_elem) {
-		Assert(!strcmp("context", pgace_elem->defname));
-		pgsqlAlterDatabase(rel, tuple, strVal(pgace_elem->arg));
-	}
 }
 
 /******************************************************************
@@ -186,7 +193,7 @@ static inline void pgaceRestorePlanCheck(Relation rel, Datum pgace_saved) {
 static inline void pgaceAlterFunction(Relation rel, HeapTuple tuple, DefElem *pgace_elem) {
 	if (sepgsqlIsEnabled() && pgace_elem) {
 		Assert(!strcmp("context", pgace_elem->defname));
-		pgsqlAlterFunction(rel, tuple, strVal(pgace_elem->arg));
+		sepgsqlAlterFunction(rel, tuple, strVal(pgace_elem->arg));
 	}
 }
 

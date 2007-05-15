@@ -4959,6 +4959,10 @@ createdb_opt_item:
 				{
 					$$ = makeDefElem("owner", NULL);
 				}
+			| SecurityLabelItem
+				{
+					$$ = $1;
+				}
 		;
 
 /*

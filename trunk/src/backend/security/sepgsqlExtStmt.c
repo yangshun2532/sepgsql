@@ -101,7 +101,7 @@ bool sepgsqlAlterTable(Relation rel, AlterTableCmd *cmd) {
 }
 
 /* ALTER FUNCTION fnname CONTEXT = 'xxx' */
-void pgsqlAlterFunction(Relation rel, HeapTuple tuple, char *context) {
+void sepgsqlAlterFunction(Relation rel, HeapTuple tuple, char *context) {
 	Datum ncon;
 
 	Assert(RelationGetRelid(rel) == ProcedureRelationId);
@@ -110,8 +110,18 @@ void pgsqlAlterFunction(Relation rel, HeapTuple tuple, char *context) {
 	HeapTupleSetSecurity(tuple, DatumGetObjectId(ncon));
 }
 
+/* CREATE DATABASE dbname CONTEXT = 'xxx' */
+void sepgsqlCreateDatabase(Relation rel, HeapTuple tuple, char *context) {
+	Datum ncon;
+
+	Assert(RelationGetRelid(rel) == DatabaseRelationId);
+	ncon = DirectFunctionCall1(security_label_in,
+							   CStringGetDatum(context));
+	HeapTupleSetSecurity(tuple, DatumGetObjectId(ncon));
+}
+
 /* ALTER DATABASE dbname CONTEXT = 'xxx' */
-void pgsqlAlterDatabase(Relation rel, HeapTuple tuple, char *context) {
+void sepgsqlAlterDatabase(Relation rel, HeapTuple tuple, char *context) {
 	Datum ncon;
 
 	Assert(RelationGetRelid(rel) == DatabaseRelationId);

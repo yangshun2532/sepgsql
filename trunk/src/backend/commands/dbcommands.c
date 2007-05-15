@@ -91,6 +91,7 @@ createdb(const CreatedbStmt *stmt)
 	DefElem    *dtemplate = NULL;
 	DefElem    *dencoding = NULL;
 	DefElem    *dconnlimit = NULL;
+	DefElem    *dpgace_item = NULL;
 	char	   *dbname = stmt->dbname;
 	char	   *dbowner = NULL;
 	const char *dbtemplate = NULL;
@@ -151,6 +152,13 @@ createdb(const CreatedbStmt *stmt)
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 					 errmsg("LOCATION is not supported anymore"),
 					 errhint("Consider using tablespaces instead.")));
+		}
+		else if (pgaceIsDefElemSecurityLabel(defel)) {
+			if (dpgace_item)
+				ereport(ERROR,
+						(errcode(ERRCODE_SYNTAX_ERROR),
+						 errmsg("conflicting or redundant options")));
+			dpgace_item = defel;
 		}
 		else
 			elog(ERROR, "option \"%s\" not recognized",
@@ -382,6 +390,7 @@ createdb(const CreatedbStmt *stmt)
 						   new_record, new_record_nulls);
 
 	HeapTupleSetOid(tuple, dboid);
+	pgaceCreateDatabase(pg_database_rel, tuple, dpgace_item);
 
 	simple_heap_insert(pg_database_rel, tuple);
 

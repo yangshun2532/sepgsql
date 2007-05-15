@@ -263,7 +263,8 @@ extern bool sepgsqlIsDefElemSecurityLabel(DefElem *def);
 
 extern bool sepgsqlAlterTablePrepare(Relation rel, AlterTableCmd *cmd);
 extern bool sepgsqlAlterTable(Relation rel, AlterTableCmd *cmd);
-extern void pgsqlAlterFunction(Relation rel, HeapTuple tuple, char *context);
-extern void pgsqlAlterDatabase(Relation rel, HeapTuple tuple, char *context);
+extern void sepgsqlAlterFunction(Relation rel, HeapTuple tuple, char *context);
+extern void sepgsqlCreateDatabase(Relation rel, HeapTuple tuple, char *context);
+extern void sepgsqlAlterDatabase(Relation rel, HeapTuple tuple, char *context);
 
 #endif /* SEPGSQL_INTERNAL_H */
