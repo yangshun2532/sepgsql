@@ -615,7 +615,8 @@ make_new_heap(Oid OIDOldHeap, const char *NewName, Oid NewTableSpace)
 										  0,
 										  ONCOMMIT_NOOP,
 										  reloptions,
-										  allowSystemTableMods);
+										  allowSystemTableMods,
+										  NIL);
 
 	ReleaseSysCache(tuple);
 

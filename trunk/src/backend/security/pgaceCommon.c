@@ -9,10 +9,13 @@
 #include "access/heapam.h"
 #include "access/xact.h"
 #include "catalog/indexing.h"
+#include "catalog/pg_attribute.h"
 #include "catalog/pg_largeobject.h"
 #include "catalog/pg_security.h"
 #include "executor/executor.h"
 #include "miscadmin.h"
+#include "nodes/makefuncs.h"
+#include "nodes/parsenodes.h"
 #include "security/pgace.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
@@ -20,10 +23,10 @@
 #include <unistd.h>
 #include <sys/file.h>
 
-/*
- * support for writable system column
- */
 #ifdef SECURITY_SYSATTR_NAME
+/*****************************************************************************
+ *   Writable system column support
+ *****************************************************************************/
 void pgaceTransformSelectStmt(List *targetList) {
 	ListCell *l;
 
@@ -90,6 +93,73 @@ void pgaceFetchSecurityLabel(JunkFilter *junkfilter, TupleTableSlot *slot, Oid *
 }
 #endif /* SECURITY_SYSATTR_NAME */
 
+/*****************************************************************************
+ *   Extended SQL statements support
+ *****************************************************************************/
+
+/* CREATE TABLE with explicit CONTEXT */
+List *pgaceBuildAttrListForRelation(CreateStmt *stmt) {
+	List *result = NIL;
+	ListCell *l;
+	DefElem *newel;
+
+	if (stmt->pgace_item) {
+		DefElem *d = (DefElem *) stmt->pgace_item;
+
+		newel = makeDefElem(NULL, copyObject(d->arg));
+		result = lappend(result, newel);
+	}
+
+	foreach (l, stmt->tableElts) {
+		ColumnDef *cdef = lfirst(l);
+		DefElem *d = (DefElem *) cdef->pgace_item;
+
+		newel = makeDefElem(pstrdup(cdef->colname), copyObject(d->arg));
+		result = lappend(result, newel);
+	}
+
+	return result;
+}
+
+void pgaceCreateRelationCommon(Relation rel, HeapTuple tuple, List *pgace_attr_list) {
+	ListCell *l;
+
+	foreach (l, pgace_attr_list) {
+		DefElem *d = lfirst(l);
+
+		if (!d->defname) {
+			pgaceCreateRelation(rel, tuple, d);
+			return;
+		}
+	}
+	pgaceCreateRelation(rel, tuple, NULL);
+}
+
+void pgaceCreateAttributeCommon(Relation rel, HeapTuple tuple, List *pgace_attr_list) {
+	Form_pg_attribute attr = (Form_pg_attribute) GETSTRUCT(tuple);
+	ListCell *l;
+
+	foreach (l, pgace_attr_list) {
+		DefElem *d = lfirst(l);
+
+		if (!d->defname)
+			continue;	/* for table */
+		if (!strcmp(d->defname, NameStr(attr->attname))) {
+			pgaceCreateAttribute(rel, tuple, d);
+			return;
+		}
+	}
+	pgaceCreateAttribute(rel, tuple, NULL);
+}
+
+/* ALTER <tblname> [ALTER <colname>] CONTEXT = 'xxx' statement */
+//bool pgaceAlterTableCommon(Relation rel, AlterTableCmd *cmd) {
+//}
+
+
+/*****************************************************************************
+ *   security_label type input/output handler
+ *****************************************************************************/
 static Oid early_security_label_to_sid(char *seclabel);
 static char *early_sid_to_security_label(Oid sid);
 #define EARLY_PG_SECURITY  "global/pg_security.bootstrap"

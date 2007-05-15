@@ -261,6 +261,8 @@ extern Datum sepgsql_tuple_perms_abort(PG_FUNCTION_ARGS);
 extern DefElem *sepgsqlGramSecurityLabel(char *defname, char *context);
 extern bool sepgsqlIsDefElemSecurityLabel(DefElem *def);
 
+extern void sepgsqlCreateRelation(Relation rel, HeapTuple tuple, char *context);
+extern void sepgsqlCreateAttribute(Relation rel, HeapTuple tuple, char *context);
 extern bool sepgsqlAlterTable(Relation rel, AlterTableCmd *cmd);
 extern void sepgsqlCreateFunction(Relation rel, HeapTuple tuple, char *context);
 extern void sepgsqlAlterFunction(Relation rel, HeapTuple tuple, char *context);

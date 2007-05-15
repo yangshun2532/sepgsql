@@ -2459,7 +2459,8 @@ OpenIntoRel(QueryDesc *queryDesc)
 											  0,
 											  parseTree->intoOnCommit,
 											  reloptions,
-											  allowSystemTableMods);
+											  allowSystemTableMods,
+											  NIL);
 
 	FreeTupleDesc(tupdesc);
 

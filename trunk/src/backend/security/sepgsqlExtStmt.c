@@ -26,6 +26,19 @@ bool sepgsqlIsDefElemSecurityLabel(DefElem *def) {
 	return false;
 }
 
+/* CREATE TABLE tblname ( ... ) CONTEXT = 'xxx' statement */
+void sepgsqlCreateRelation(Relation rel, HeapTuple tuple, char *context) {
+	Datum newcon = DirectFunctionCall1(security_label_in,
+									   CStringGetDatum(context));
+	HeapTupleSetSecurity(tuple, DatumGetObjectId(newcon));
+}
+
+void sepgsqlCreateAttribute(Relation rel, HeapTuple tuple, char *context) {
+	Datum newcon = DirectFunctionCall1(security_label_in,
+									   CStringGetDatum(context));
+	HeapTupleSetSecurity(tuple, DatumGetObjectId(newcon));
+}
+
 /* ALTER TABLE tblname [ALTER colname] CONTEXT = 'xxx' */
 static bool alterTableSetTableContext(Relation rel, char *context)
 {

@@ -226,6 +226,30 @@ static inline bool pgaceIsDefElemSecurityLabel(DefElem *def) {
 }
 
 /*
+ * pgaceCreateRelation() is called to create a new relation with explicitly specified
+ * security attribute.
+ *
+ * @rel   : pg_class relation, opened with RowExclusiveLock
+ * @tuple : the tuple for newly generated relation
+ * @defel : DefElem object, if specified. (my be NULL)
+ */
+static inline void pgaceCreateRelation(Relation rel, HeapTuple tuple, DefElem *defel) {
+	/* do nothing */
+}
+
+/*
+ * pgaceCreateAttribute() is called to create a new column with explicitly specified
+ * security attribute.
+ *
+ * @rel   : pg_attribute relation, opened with RowExclusiveLock
+ * @tuple : the tuple for newly generated column
+ * @defel : DefElem object, if specified. (my be NULL)
+ */
+static inline void pgaceCreateAttribute(Relation rel, HeapTuple tuple, DefElem *defel) {
+	/* do nothing */
+}
+
+/*
  * pgaceCreateDatabase() is called to create a new database with explicit specified
  * security attribute.
  *
@@ -618,6 +642,11 @@ static inline void pgaceFetchSecurityLabel(JunkFilter *junkfilter,
 										   TupleTableSlot *slot,
 										   Oid *tts_security) { /* do nothing */ }
 #endif
+
+/* Extended SQL statements related */
+extern List *pgaceBuildAttrListForRelation(CreateStmt *stmt);
+extern void pgaceCreateRelationCommon(Relation rel, HeapTuple tuple, List *pgace_attr_list);
+extern void pgaceCreateAttributeCommon(Relation rel, HeapTuple tuple, List *pgace_attr_list);
 
 /* SQL functions related to security label */
 extern Datum security_label_in(PG_FUNCTION_ARGS);

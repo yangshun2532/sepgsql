@@ -130,6 +130,16 @@ static inline bool pgaceIsDefElemSecurityLabel(DefElem *def) {
 	return sepgsqlIsDefElemSecurityLabel(def);
 }
 
+static inline void pgaceCreateRelation(Relation rel, HeapTuple tuple, DefElem *defel) {
+	if (sepgsqlIsEnabled() && defel)
+		sepgsqlCreateRelation(rel, tuple, strVal(defel->arg));
+}
+
+static inline void pgaceCreateAttribute(Relation rel, HeapTuple tuple, DefElem *defel) {
+	if (sepgsqlIsEnabled() && defel)
+		sepgsqlCreateAttribute(rel, tuple, strVal(defel->arg));
+}
+
 static inline void pgaceCreateDatabase(Relation rel, HeapTuple tuple, DefElem *pgace_elem) {
 	if (sepgsqlIsEnabled() && pgace_elem) {
 		Assert(sepgsqlIsDefElemSecurityLabel(pgace_elem));
