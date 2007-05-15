@@ -262,8 +262,9 @@ extern DefElem *sepgsqlGramSecurityLabel(char *defname, char *context);
 extern bool sepgsqlIsDefElemSecurityLabel(DefElem *def);
 
 extern void sepgsqlCreateRelation(Relation rel, HeapTuple tuple, char *context);
+extern void sepgsqlAlterRelation(Relation rel, HeapTuple tuple, char *context);
 extern void sepgsqlCreateAttribute(Relation rel, HeapTuple tuple, char *context);
-extern bool sepgsqlAlterTable(Relation rel, AlterTableCmd *cmd);
+extern void sepgsqlAlterAttribute(Relation rel, HeapTuple tuple, char *context);
 extern void sepgsqlCreateFunction(Relation rel, HeapTuple tuple, char *context);
 extern void sepgsqlAlterFunction(Relation rel, HeapTuple tuple, char *context);
 extern void sepgsqlCreateDatabase(Relation rel, HeapTuple tuple, char *context);

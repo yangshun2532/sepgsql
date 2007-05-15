@@ -2378,8 +2378,8 @@ ATExecCmd(AlteredTableInfo *tab, Relation rel, AlterTableCmd *cmd)
 			ATExecDropInherit(rel, (RangeVar *) cmd->def);
 			break;
 		case AT_SetSecurityLabel:
-			if (pgaceAlterTable(rel, cmd))
-				break;
+			pgaceAlterRelationCommon(rel, cmd);
+			break;
 		default:				/* oops */
 			elog(ERROR, "unrecognized alter table type: %d",
 				 (int) cmd->subtype);

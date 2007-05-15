@@ -135,37 +135,39 @@ static inline void pgaceCreateRelation(Relation rel, HeapTuple tuple, DefElem *d
 		sepgsqlCreateRelation(rel, tuple, strVal(defel->arg));
 }
 
+static inline void pgaceAlterRelation(Relation rel, HeapTuple tuple, DefElem *defel) {
+	if (sepgsqlIsEnabled() && defel)
+		sepgsqlAlterRelation(rel, tuple, strVal(defel->arg));
+}
+
 static inline void pgaceCreateAttribute(Relation rel, HeapTuple tuple, DefElem *defel) {
 	if (sepgsqlIsEnabled() && defel)
 		sepgsqlCreateAttribute(rel, tuple, strVal(defel->arg));
 }
 
-static inline void pgaceCreateDatabase(Relation rel, HeapTuple tuple, DefElem *pgace_elem) {
-	if (sepgsqlIsEnabled() && pgace_elem) {
-		Assert(sepgsqlIsDefElemSecurityLabel(pgace_elem));
-		sepgsqlCreateDatabase(rel, tuple, strVal(pgace_elem->arg));
-	}
+static inline void pgaceAlterAttribute(Relation rel, HeapTuple tuple, DefElem *defel) {
+	if (sepgsqlIsEnabled() && defel)
+		sepgsqlAlterAttribute(rel, tuple, strVal(defel->arg));
 }
 
-static inline void pgaceAlterDatabase(Relation rel, HeapTuple tuple, DefElem *pgace_elem) {
-	if (sepgsqlIsEnabled() && pgace_elem) {
-		Assert(sepgsqlIsDefElemSecurityLabel(pgace_elem));
-		sepgsqlAlterDatabase(rel, tuple, strVal(pgace_elem->arg));
-	}
+static inline void pgaceCreateDatabase(Relation rel, HeapTuple tuple, DefElem *defel) {
+	if (sepgsqlIsEnabled() && defel)
+		sepgsqlCreateDatabase(rel, tuple, strVal(defel->arg));
 }
 
-static inline void pgaceCreateFunction(Relation rel, HeapTuple tuple, DefElem *pgace_elem) {
-	if (sepgsqlIsEnabled() && pgace_elem) {
-		Assert(sepgsqlIsDefElemSecurityLabel(pgace_elem));
-		sepgsqlCreateFunction(rel, tuple, strVal(pgace_elem->arg));
-	}
+static inline void pgaceAlterDatabase(Relation rel, HeapTuple tuple, DefElem *defel) {
+	if (sepgsqlIsEnabled() && defel)
+		sepgsqlAlterDatabase(rel, tuple, strVal(defel->arg));
 }
 
-static inline void pgaceAlterFunction(Relation rel, HeapTuple tuple, DefElem *pgace_elem) {
-	if (sepgsqlIsEnabled() && pgace_elem) {
-		Assert(sepgsqlIsDefElemSecurityLabel(pgace_elem));
-		sepgsqlAlterFunction(rel, tuple, strVal(pgace_elem->arg));
-	}
+static inline void pgaceCreateFunction(Relation rel, HeapTuple tuple, DefElem *defel) {
+	if (sepgsqlIsEnabled() && defel)
+		sepgsqlCreateFunction(rel, tuple, strVal(defel->arg));
+}
+
+static inline void pgaceAlterFunction(Relation rel, HeapTuple tuple, DefElem *defel) {
+	if (sepgsqlIsEnabled() && defel)
+		sepgsqlAlterFunction(rel, tuple, strVal(defel->arg));
 }
 
 /******************************************************************
@@ -221,12 +223,6 @@ static inline void pgaceRestorePlanCheck(Relation rel, Datum pgace_saved) {
 static inline void pgaceLockTable(Oid relid) {
 	if (sepgsqlIsEnabled())
 		sepgsqlLockTable(relid);
-}
-
-static inline bool pgaceAlterTable(Relation rel, AlterTableCmd *cmd) {
-	if (!sepgsqlIsEnabled())
-		return false;
-	return sepgsqlAlterTable(rel, cmd);
 }
 
 /******************************************************************

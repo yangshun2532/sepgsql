@@ -39,78 +39,13 @@ void sepgsqlCreateAttribute(Relation rel, HeapTuple tuple, char *context) {
 	HeapTupleSetSecurity(tuple, DatumGetObjectId(newcon));
 }
 
-/* ALTER TABLE tblname [ALTER colname] CONTEXT = 'xxx' */
-static bool alterTableSetTableContext(Relation rel, char *context)
-{
-	Relation pgclass;
-	HeapTuple tuple;
-	Datum newcon;
-
-	pgclass = heap_open(RelationRelationId, RowExclusiveLock);
-	tuple = SearchSysCacheCopy(RELOID,
-							   ObjectIdGetDatum(RelationGetRelid(rel)),
-							   0, 0, 0);
-	if (!HeapTupleIsValid(tuple))
-		selerror("cache lookup failed for relation %u", RelationGetRelid(rel));
-
-	/* lookup new security context */
-	newcon = DirectFunctionCall1(security_label_in,
-								 CStringGetDatum(context));
-	/* set new security context */
-	HeapTupleSetSecurity(tuple, ObjectIdGetDatum(newcon));
-
-	/* all checks are done in simple_heap_update */
-	simple_heap_update(pgclass, &tuple->t_self, tuple);
-	CatalogUpdateIndexes(pgclass, tuple);
-
-	heap_freetuple(tuple);
-	heap_close(pgclass, RowExclusiveLock);
-
-	return true;
+/* ALTER TABLE tblname [ALTER colname] CONTEXT = 'xxx' statement */
+void sepgsqlAlterRelation(Relation rel, HeapTuple tuple, char *context) {
+	sepgsqlCreateRelation(rel, tuple, context);
 }
 
-static bool alterTableSetColumnContext(Relation rel, char *colname, char *context)
-{
-	Relation pgattr;
-	HeapTuple tuple;
-	Datum newcon;
-
-	pgattr = heap_open(AttributeRelationId, RowExclusiveLock);
-
-	/* obtain old tuple */
-	tuple = SearchSysCacheCopyAttName(RelationGetRelid(rel), colname);
-	if (!HeapTupleIsValid(tuple))
-		selerror("cache lookup failed, column %s of relation %s",
-				 colname, RelationGetRelationName(rel));
-
-	/* lookup new security context */
-	newcon = DirectFunctionCall1(security_label_in,
-								 CStringGetDatum(context));
-	/* set new security context */
-	HeapTupleSetSecurity(tuple, ObjectIdGetDatum(newcon));
-
-	/* all checks are done in simple_heap_update */
-	simple_heap_update(pgattr, &tuple->t_self, tuple);
-	CatalogUpdateIndexes(pgattr, tuple);
-
-	heap_freetuple(tuple);
-  	heap_close(pgattr, RowExclusiveLock);
-
-	return true;
-}
-
-bool sepgsqlAlterTable(Relation rel, AlterTableCmd *cmd) {
-	char *context;
-	DefElem *def = (DefElem *) cmd->def;
-
-	Assert(IsA(def, DefElem) && IsA(def->arg, String));
-	Assert(!strcmp("context", def->defname));
-
-	context = strVal(def->arg);
-
-	return (!cmd->name
-			? alterTableSetTableContext(rel, context)
-			: alterTableSetColumnContext(rel, cmd->name, context));
+void sepgsqlAlterAttribute(Relation rel, HeapTuple tuple, char *context) {
+	sepgsqlCreateAttribute(rel, tuple, context);
 }
 
 /* CREATE FUNCTION fnname ... CONTEXT = 'xxx' */

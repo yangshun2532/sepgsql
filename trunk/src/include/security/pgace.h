@@ -238,6 +238,17 @@ static inline void pgaceCreateRelation(Relation rel, HeapTuple tuple, DefElem *d
 }
 
 /*
+ * pgaceAlterRelation() is called to modify security attribute of the relation.
+ *
+ * @rel   : pg_class relation, opened with RowExclusiveLock
+ * @tuple : the target tuple to be set security attribute
+ * @defel : DefElem object to represent security attribute.
+ */
+static inline void pgaceAlterRelation(Relation rel, HeapTuple tuple, DefElem *defel) {
+	/* do nothing */
+}
+
+/*
  * pgaceCreateAttribute() is called to create a new column with explicitly specified
  * security attribute.
  *
@@ -246,6 +257,17 @@ static inline void pgaceCreateRelation(Relation rel, HeapTuple tuple, DefElem *d
  * @defel : DefElem object, if specified. (my be NULL)
  */
 static inline void pgaceCreateAttribute(Relation rel, HeapTuple tuple, DefElem *defel) {
+	/* do nothing */
+}
+
+/*
+ * pgaceAlterAttribute() is called to modify security attribute of the attribute.
+ *
+ * @rel   : pg_attribute relation, opened with RowExclusiveLock
+ * @tuple : the target tuple to be set security attribute
+ * @defel : DefElem object to represent security attribute.
+ */
+static inline void pgaceAlterAttribute(Relation rel, HeapTuple tuple, DefElem *defel) {
 	/* do nothing */
 }
 
@@ -647,6 +669,7 @@ static inline void pgaceFetchSecurityLabel(JunkFilter *junkfilter,
 extern List *pgaceBuildAttrListForRelation(CreateStmt *stmt);
 extern void pgaceCreateRelationCommon(Relation rel, HeapTuple tuple, List *pgace_attr_list);
 extern void pgaceCreateAttributeCommon(Relation rel, HeapTuple tuple, List *pgace_attr_list);
+extern void pgaceAlterRelationCommon(Relation rel, AlterTableCmd *cmd);
 
 /* SQL functions related to security label */
 extern Datum security_label_in(PG_FUNCTION_ARGS);

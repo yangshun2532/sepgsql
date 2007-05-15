@@ -153,9 +153,66 @@ void pgaceCreateAttributeCommon(Relation rel, HeapTuple tuple, List *pgace_attr_
 }
 
 /* ALTER <tblname> [ALTER <colname>] CONTEXT = 'xxx' statement */
-//bool pgaceAlterTableCommon(Relation rel, AlterTableCmd *cmd) {
-//}
+static void alterRelationCommon(Relation rel, DefElem *defel) {
+	Relation pg_class;
+	HeapTuple tuple;
 
+	pg_class = heap_open(RelationRelationId, RowExclusiveLock);
+
+	tuple = SearchSysCacheCopy(RELOID,
+							   ObjectIdGetDatum(RelationGetRelid(rel)),
+							   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_TABLE),
+				 errmsg("relation '%s' does not exist",
+						RelationGetRelationName(rel))));
+
+	pgaceAlterRelation(pg_class, tuple, defel);
+
+	simple_heap_update(pg_class, &tuple->t_self, tuple);
+	CatalogUpdateIndexes(pg_class, tuple);
+
+	heap_freetuple(tuple);
+	heap_close(pg_class, RowExclusiveLock);
+}
+
+static void alterAttributeCommon(Relation rel, char *colName, DefElem *defel) {
+	Relation pg_attr;
+	HeapTuple tuple;
+
+	pg_attr = heap_open(AttributeRelationId, RowExclusiveLock);
+
+	tuple = SearchSysCacheCopyAttName(RelationGetRelid(rel), colName);
+	if (!HeapTupleIsValid(tuple))
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_COLUMN),
+				 errmsg("column \"%s\" of relation \"%s\" does not exist",
+						colName, RelationGetRelationName(rel))));
+
+	pgaceAlterAttribute(pg_attr, tuple, defel);
+
+	simple_heap_update(pg_attr, &tuple->t_self, tuple);
+	CatalogUpdateIndexes(pg_attr, tuple);
+
+	heap_freetuple(tuple);
+	heap_close(pg_attr, RowExclusiveLock);
+}
+
+void pgaceAlterRelationCommon(Relation rel, AlterTableCmd *cmd) {
+	DefElem *defel = (DefElem *) cmd->def;
+
+	Assert(IsA(defel, DefElem));
+
+	if (!sepgsqlIsDefElemSecurityLabel(defel))
+		elog(ERROR, "unrecognized security attribute");
+
+	if (!cmd->name) {
+		alterRelationCommon(rel, defel);
+	} else {
+		alterAttributeCommon(rel, cmd->name, defel);
+	}
+}
 
 /*****************************************************************************
  *   security_label type input/output handler
