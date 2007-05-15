@@ -205,6 +205,15 @@ fi
 /var/lib/sepgsql/.bash_profile
 
 %changelog
+* Wed May 16 2007 <kaigai@kaigai.gr.jp>
+- BUGFIX: incorrect security context of newly generated system object.
+- BUGFIX: missing error text when audit log is disabled.
+- BUGFIX: incorrect Oid of newly generated tuples within pg_security.
+- BUGFIX: sepgsql_enable_audittuple is misconditioned.
+- add checks for T_RowExpr/T_RowCompareExpr/T_BooleanTest
+                 T_DistinctExpr/T_ConvertRowtypeExpr
+- add support CONTEXT = 'xxx' for CREATE TABLE/FUNCTION/DATABASE statement
+
 * Sun Apr 30 2007 <kaigai@kaigai.gr.jp>
 - update base version 8.2.3 -> 8.2.4
 - BUGFIX: unexpected expose in OUTER JOIN statement.
