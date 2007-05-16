@@ -412,9 +412,11 @@ bool sepgsql_avc_permission_noaudit(Oid ssid, Oid tsid, uint16 tclass, uint32 pe
 {
 	struct avc_datum *avd, lavd;
 	uint32 denied;
-	int rc = true;
+	bool rc = true;
+	bool wlock = false;
 
 	LWLockAcquire(avc_shmem->lock, LW_SHARED);
+retry:
 	avd = sepgsql_avc_lookup(ssid, tsid, tclass, perms);
 	if (!avd) {
 		LWLockRelease(avc_shmem->lock);
@@ -422,14 +424,30 @@ bool sepgsql_avc_permission_noaudit(Oid ssid, Oid tsid, uint16 tclass, uint32 pe
 		sepgsql_compute_avc_datum(ssid, tsid, tclass, &lavd);
 
 		LWLockAcquire(avc_shmem->lock, LW_EXCLUSIVE);
+		wlock = true;
 		sepgsql_avc_insert(&lavd);
 	} else {
 		memcpy(&lavd, avd, sizeof(struct avc_datum));
 	}
 	denied = perms & ~lavd.allowed;
-	if ((!perms || denied) && avc_shmem->enforcing) {
-		errno = EACCES;
-		rc = false;
+	if (!perms || denied) {
+		if (avc_shmem->enforcing) {
+			errno = EACCES;
+			rc = false;
+		} else {
+			if (!wlock) {
+				/* update avd need LW_EXCLUSIVE lock onto shmem */
+				LWLockRelease(avc_shmem->lock);
+				LWLockAcquire(avc_shmem->lock, LW_EXCLUSIVE);
+				wlock = true;
+				goto retry;
+			}
+			/* grant permission to avoid flood of access denied log */
+			if (!avd)
+				avd = sepgsql_avc_lookup(ssid, tsid, tclass, perms);
+			if (avd)
+				avd->allowed |= denied;
+		}
 	}
 	LWLockRelease(avc_shmem->lock);
 	if (audit)
