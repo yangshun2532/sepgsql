@@ -112,10 +112,12 @@ List *pgaceBuildAttrListForRelation(CreateStmt *stmt) {
 
 	foreach (l, stmt->tableElts) {
 		ColumnDef *cdef = lfirst(l);
-		DefElem *d = (DefElem *) cdef->pgace_item;
+		DefElem *defel = (DefElem *) cdef->pgace_item;
 
-		newel = makeDefElem(pstrdup(cdef->colname), copyObject(d->arg));
-		result = lappend(result, newel);
+		if (defel) {
+			newel = makeDefElem(pstrdup(cdef->colname), copyObject(defel->arg));
+			result = lappend(result, newel);
+		}
 	}
 
 	return result;
@@ -140,12 +142,12 @@ void pgaceCreateAttributeCommon(Relation rel, HeapTuple tuple, List *pgace_attr_
 	ListCell *l;
 
 	foreach (l, pgace_attr_list) {
-		DefElem *d = lfirst(l);
+		DefElem *defel = lfirst(l);
 
-		if (!d->defname)
+		if (!defel->defname)
 			continue;	/* for table */
-		if (!strcmp(d->defname, NameStr(attr->attname))) {
-			pgaceCreateAttribute(rel, tuple, d);
+		if (!strcmp(defel->defname, NameStr(attr->attname))) {
+			pgaceCreateAttribute(rel, tuple, defel);
 			return;
 		}
 	}

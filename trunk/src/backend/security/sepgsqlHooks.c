@@ -10,6 +10,7 @@
 #include "access/genam.h"
 #include "access/skey.h"
 #include "miscadmin.h"
+#include "nodes/makefuncs.h"
 #include "security/pgace.h"
 #include "utils/fmgroids.h"
 #include "utils/syscache.h"
