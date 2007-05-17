@@ -260,6 +260,6 @@ extern Datum sepgsql_tuple_perms_abort(PG_FUNCTION_ARGS);
  */
 extern DefElem *sepgsqlGramSecurityLabel(char *defname, char *context);
 extern bool sepgsqlNodeIsSecurityLabel(DefElem *defel);
-extern void sepgsqlPutSecurityLabel(HeapTuple tuple, char *context);
+extern Oid sepgsqlParseSecurityLabel(DefElem *defel);
 
 #endif /* SEPGSQL_INTERNAL_H */

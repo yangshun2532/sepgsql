@@ -1079,7 +1079,7 @@ AlterFunction(AlterFunctionStmt *stmt)
 	if (security_def_item)
 		procForm->prosecdef = intVal(security_def_item->arg);
 
-	pgaceAlterFunction(rel, tup, pgace_def_item);
+	pgaceAlterFunctionCommon(tup, pgace_def_item);
 	/* Do the update */
 	simple_heap_update(rel, &tup->t_self, tup);
 	CatalogUpdateIndexes(rel, tup);

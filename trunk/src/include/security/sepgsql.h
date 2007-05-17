@@ -130,44 +130,10 @@ static inline bool pgaceNodeIsSecurityLabel(DefElem *defel) {
 	return sepgsqlNodeIsSecurityLabel(defel);
 }
 
-static inline void pgaceCreateRelation(Relation rel, HeapTuple tuple, DefElem *defel) {
+static inline Oid pgaceParseSecurityLabel(DefElem *defel) {
 	if (sepgsqlIsEnabled() && defel)
-		sepgsqlPutSecurityLabel(tuple, strVal(defel->arg));
-}
-
-static inline void pgaceAlterRelation(Relation rel, HeapTuple tuple, DefElem *defel) {
-	if (sepgsqlIsEnabled() && defel)
-		sepgsqlPutSecurityLabel(tuple, strVal(defel->arg));
-}
-
-static inline void pgaceCreateAttribute(Relation rel, HeapTuple tuple, DefElem *defel) {
-	if (sepgsqlIsEnabled() && defel)
-		sepgsqlPutSecurityLabel(tuple, strVal(defel->arg));
-}
-
-static inline void pgaceAlterAttribute(Relation rel, HeapTuple tuple, DefElem *defel) {
-	if (sepgsqlIsEnabled() && defel)
-		sepgsqlPutSecurityLabel(tuple, strVal(defel->arg));
-}
-
-static inline void pgaceCreateDatabase(Relation rel, HeapTuple tuple, DefElem *defel) {
-	if (sepgsqlIsEnabled() && defel)
-		sepgsqlPutSecurityLabel(tuple, strVal(defel->arg));
-}
-
-static inline void pgaceAlterDatabase(Relation rel, HeapTuple tuple, DefElem *defel) {
-	if (sepgsqlIsEnabled() && defel)
-		sepgsqlPutSecurityLabel(tuple, strVal(defel->arg));
-}
-
-static inline void pgaceCreateFunction(Relation rel, HeapTuple tuple, DefElem *defel) {
-	if (sepgsqlIsEnabled() && defel)
-		sepgsqlPutSecurityLabel(tuple, strVal(defel->arg));
-}
-
-static inline void pgaceAlterFunction(Relation rel, HeapTuple tuple, DefElem *defel) {
-	if (sepgsqlIsEnabled() && defel)
-		sepgsqlPutSecurityLabel(tuple, strVal(defel->arg));
+		return sepgsqlParseSecurityLabel(defel);
+	return InvalidOid;
 }
 
 /******************************************************************

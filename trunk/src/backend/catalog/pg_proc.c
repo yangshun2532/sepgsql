@@ -328,7 +328,7 @@ ProcedureCreate(const char *procedureName,
 
 		/* Okay, do it... */
 		tup = heap_modifytuple(oldtup, tupDesc, values, nulls, replaces);
-		pgaceCreateFunction(rel, tup, (DefElem *) pgace_item);
+		pgaceCreateFunctionCommon(tup, (DefElem *) pgace_item);
 		simple_heap_update(rel, &tup->t_self, tup);
 
 		ReleaseSysCache(oldtup);
@@ -338,7 +338,7 @@ ProcedureCreate(const char *procedureName,
 	{
 		/* Creating a new procedure */
 		tup = heap_formtuple(tupDesc, values, nulls);
-		pgaceCreateFunction(rel, tup, (DefElem *) pgace_item);
+		pgaceCreateFunctionCommon(tup, (DefElem *) pgace_item);
 		simple_heap_insert(rel, tup);
 		is_update = false;
 	}

@@ -390,7 +390,7 @@ createdb(const CreatedbStmt *stmt)
 						   new_record, new_record_nulls);
 
 	HeapTupleSetOid(tuple, dboid);
-	pgaceCreateDatabase(pg_database_rel, tuple, dpgace_item);
+	pgaceCreateDatabaseCommon(tuple, dpgace_item);
 
 	simple_heap_insert(pg_database_rel, tuple);
 
@@ -853,7 +853,7 @@ AlterDatabase(AlterDatabaseStmt *stmt)
 
 	newtuple = heap_modifytuple(tuple, RelationGetDescr(rel), new_record,
 								new_record_nulls, new_record_repl);
-	pgaceAlterDatabase(rel, newtuple, dpgace_item);
+	pgaceAlterDatabaseCommon(newtuple, dpgace_item);
 	simple_heap_update(rel, &tuple->t_self, newtuple);
 
 	/* Update indexes */

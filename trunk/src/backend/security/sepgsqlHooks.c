@@ -61,11 +61,14 @@ bool sepgsqlNodeIsSecurityLabel(DefElem *defel) {
 	return false;
 }
 
-/* put security context onto the tuple */
-void sepgsqlPutSecurityLabel(HeapTuple tuple, char *context) {
-	Datum newcon = DirectFunctionCall1(security_label_in,
-									   CStringGetDatum(context));
-	HeapTupleSetSecurity(tuple, DatumGetObjectId(newcon));
+/* parse explicitly specified security context */
+Oid sepgsqlParseSecurityLabel(DefElem *defel) {
+	Datum newcon;
+	Assert(IsA(defel, DefElem));
+
+	newcon = DirectFunctionCall1(security_label_in,
+								 CStringGetDatum(strVal(defel->arg)));
+	return DatumGetObjectId(newcon);
 }
 
 /*******************************************************************************

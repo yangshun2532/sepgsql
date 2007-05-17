@@ -101,21 +101,29 @@ void pgaceFetchSecurityLabel(JunkFilter *junkfilter, TupleTableSlot *slot, Oid *
 List *pgaceBuildAttrListForRelation(CreateStmt *stmt) {
 	List *result = NIL;
 	ListCell *l;
-	DefElem *newel;
+	DefElem *defel, *newel;
+	Oid t_security;
 
 	if (stmt->pgace_item) {
-		DefElem *d = (DefElem *) stmt->pgace_item;
+		defel = (DefElem *) stmt->pgace_item;
+		Assert(IsA(defel, DefElem));
+		
+		t_security = pgaceParseSecurityLabel(defel);
+		newel = makeDefElem(NULL, (Node *) makeInteger(t_security));
 
-		newel = makeDefElem(NULL, copyObject(d->arg));
 		result = lappend(result, newel);
 	}
 
 	foreach (l, stmt->tableElts) {
-		ColumnDef *cdef = lfirst(l);
-		DefElem *defel = (DefElem *) cdef->pgace_item;
+		ColumnDef *cdef = (ColumnDef *) lfirst(l);
+		defel = (DefElem *) cdef->pgace_item;
 
 		if (defel) {
-			newel = makeDefElem(pstrdup(cdef->colname), copyObject(defel->arg));
+			Assert(IsA(defel, DefElem));
+			t_security = pgaceParseSecurityLabel(defel);
+			newel = makeDefElem(pstrdup(cdef->colname),
+								(Node *) makeInteger(t_security));
+
 			result = lappend(result, newel);
 		}
 	}
@@ -127,14 +135,15 @@ void pgaceCreateRelationCommon(Relation rel, HeapTuple tuple, List *pgace_attr_l
 	ListCell *l;
 
 	foreach (l, pgace_attr_list) {
-		DefElem *d = lfirst(l);
+		DefElem *defel = (DefElem *) lfirst(l);
 
-		if (!d->defname) {
-			pgaceCreateRelation(rel, tuple, d);
-			return;
+		if (!defel->defname) {
+			Oid t_security = intVal(defel->arg);
+
+			HeapTupleSetSecurity(tuple, t_security);
+			break;
 		}
 	}
-	pgaceCreateRelation(rel, tuple, NULL);
 }
 
 void pgaceCreateAttributeCommon(Relation rel, HeapTuple tuple, List *pgace_attr_list) {
@@ -147,17 +156,19 @@ void pgaceCreateAttributeCommon(Relation rel, HeapTuple tuple, List *pgace_attr_
 		if (!defel->defname)
 			continue;	/* for table */
 		if (!strcmp(defel->defname, NameStr(attr->attname))) {
-			pgaceCreateAttribute(rel, tuple, defel);
-			return;
+			Oid t_security = intVal(defel->arg);
+
+			HeapTupleSetSecurity(tuple, t_security);
+			break;
 		}
 	}
-	pgaceCreateAttribute(rel, tuple, NULL);
 }
 
 /* ALTER <tblname> [ALTER <colname>] CONTEXT = 'xxx' statement */
 static void alterRelationCommon(Relation rel, DefElem *defel) {
 	Relation pg_class;
 	HeapTuple tuple;
+	Oid t_security;
 
 	pg_class = heap_open(RelationRelationId, RowExclusiveLock);
 
@@ -170,7 +181,8 @@ static void alterRelationCommon(Relation rel, DefElem *defel) {
 				 errmsg("relation '%s' does not exist",
 						RelationGetRelationName(rel))));
 
-	pgaceAlterRelation(pg_class, tuple, defel);
+	t_security = pgaceParseSecurityLabel(defel);
+	HeapTupleSetSecurity(tuple, t_security);
 
 	simple_heap_update(pg_class, &tuple->t_self, tuple);
 	CatalogUpdateIndexes(pg_class, tuple);
@@ -182,6 +194,7 @@ static void alterRelationCommon(Relation rel, DefElem *defel) {
 static void alterAttributeCommon(Relation rel, char *colName, DefElem *defel) {
 	Relation pg_attr;
 	HeapTuple tuple;
+	Oid t_security;
 
 	pg_attr = heap_open(AttributeRelationId, RowExclusiveLock);
 
@@ -192,7 +205,8 @@ static void alterAttributeCommon(Relation rel, char *colName, DefElem *defel) {
 				 errmsg("column \"%s\" of relation \"%s\" does not exist",
 						colName, RelationGetRelationName(rel))));
 
-	pgaceAlterAttribute(pg_attr, tuple, defel);
+	t_security = pgaceParseSecurityLabel(defel);
+	HeapTupleSetSecurity(tuple, t_security);
 
 	simple_heap_update(pg_attr, &tuple->t_self, tuple);
 	CatalogUpdateIndexes(pg_attr, tuple);
@@ -214,6 +228,34 @@ void pgaceAlterRelationCommon(Relation rel, AlterTableCmd *cmd) {
 	} else {
 		alterAttributeCommon(rel, cmd->name, defel);
 	}
+}
+
+static void pgacePutSecurityLabel(HeapTuple tuple, DefElem *defel) {
+	Oid t_security;
+
+	if (!defel)
+		return;
+
+	Assert(IsA(defel, DefElem) && IsA(defel->arg, String));
+
+	t_security = pgaceParseSecurityLabel(defel);
+	HeapTupleSetSecurity(tuple, t_security);
+}
+
+void pgaceCreateDatabaseCommon(HeapTuple tuple, DefElem *defel) {
+	pgacePutSecurityLabel(tuple, defel);
+}
+
+void pgaceAlterDatabaseCommon(HeapTuple tuple, DefElem *defel) {
+	pgacePutSecurityLabel(tuple, defel);
+}
+
+void pgaceCreateFunctionCommon(HeapTuple tuple, DefElem *defel) {
+	pgacePutSecurityLabel(tuple, defel);
+}
+
+void pgaceAlterFunctionCommon(HeapTuple tuple, DefElem *defel) {
+	pgacePutSecurityLabel(tuple, defel);
 }
 
 /*****************************************************************************
