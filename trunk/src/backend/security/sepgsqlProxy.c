@@ -181,8 +181,36 @@ static List *walkVar(List *selist, queryChain *qc, Var *var)
         selist = sepgsqlWalkExpr(selist, qc, n);
         break;
 	case RTE_SUBQUERY:
-		if (var->varattno < 0)
-			selerror("subquery does not have system column");
+		/* add system column reference */
+		if (var->varattno < 0) {
+			Query *subqry = rte->subquery;
+			ListCell *l;
+			TargetEntry *tle;
+			Var *__var;
+
+			Assert(subqry->commandType == CMD_SELECT);
+
+			foreach (l, subqry->targetList) {
+				tle = lfirst(l);
+				__var = (Var *) tle->expr;
+
+				if (!IsA(__var, Var))
+					continue;
+				if (var->varattno == __var->varattno) {
+					var->varattno = tle->resno;
+					break;
+				}
+			}
+			if (var->varattno < 0) {
+				/* append pseudo reference */
+				AttrNumber resno = list_length(subqry->targetList) + 1;
+
+				__var = makeVar(1, var->varattno, var->vartype, var->vartypmod, 0);
+				tle = makeTargetEntry((Expr *)__var, resno, NULL, false);
+				var->varattno = resno;
+				subqry->targetList = lappend(subqry->targetList, tle);
+			}
+		}
 		break;
 	case RTE_SPECIAL:
 	case RTE_FUNCTION:
