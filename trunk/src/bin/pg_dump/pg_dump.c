@@ -48,6 +48,7 @@ int			optreset;
 #include "commands/sequence.h"
 #include "libpq/libpq-fs.h"
 #include "mb/pg_wchar.h"
+#include "security/pgace.h"
 
 #include "pg_backup_archiver.h"
 #include "dumputils.h"
@@ -119,6 +120,13 @@ static int	g_numNamespaces;
 /* flag to turn on/off dollar quoting */
 static int	disable_dollar_quoting = 0;
 
+/* flag to turn on/off security attribute */
+#ifdef SECURITY_SYSATTR_NAME
+static int	enable_security_attr = 0;
+#define DUMMY_SECURITY_SYSATTR ",NULL as " SECURITY_SYSATTR_NAME " "
+#else
+#define DUMMY_SECURITY_SYSATTR
+#endif
 
 static void help(const char *progname);
 static void expand_schema_name_patterns(SimpleStringList *patterns,
@@ -261,7 +269,9 @@ main(int argc, char **argv)
 		{"disable-dollar-quoting", no_argument, &disable_dollar_quoting, 1},
 		{"disable-triggers", no_argument, &disable_triggers, 1},
 		{"use-set-session-authorization", no_argument, &use_setsessauth, 1},
-
+#ifdef SECURITY_SYSATTR_NAME
+		{"with-security", no_argument, &enable_security_attr, 1},
+#endif
 		{NULL, 0, NULL, 0}
 	};
 	int			optindex;
@@ -418,6 +428,10 @@ main(int argc, char **argv)
 					disable_triggers = 1;
 				else if (strcmp(optarg, "use-set-session-authorization") == 0)
 					use_setsessauth = 1;
+#ifdef SECURITY_SYSATTR_NAME
+				else if (strcmp(optarg, "with-security") == 0)
+					enable_security_attr = 1;
+#endif
 				else
 				{
 					fprintf(stderr,
@@ -762,6 +776,9 @@ help(const char *progname)
 	printf(_("  --use-set-session-authorization\n"
 			 "                              use SESSION AUTHORIZATION commands instead of\n"
 			 "                              ALTER OWNER commands to set ownership\n"));
+#ifdef SECURITY_SYSATTR_NAME
+	printf(_("  --with-security             dump security attribute also\n"));
+#endif
 
 	printf(_("\nConnection options:\n"));
 	printf(_("  -h, --host=HOSTNAME      database server host or socket directory\n"));
@@ -2759,6 +2776,9 @@ getTables(int *numTables)
 	int			i_owning_col;
 	int			i_reltablespace;
 	int			i_reloptions;
+#ifdef  SECURITY_SYSATTR_NAME
+	int			i_security;
+#endif
 
 	/* Make sure we are in proper schema */
 	selectSourceSchema("pg_catalog");
@@ -2799,6 +2819,9 @@ getTables(int *numTables)
 						  "d.refobjsubid as owning_col, "
 						  "(SELECT spcname FROM pg_tablespace t WHERE t.oid = c.reltablespace) AS reltablespace, "
 						  "array_to_string(c.reloptions, ', ') as reloptions "
+#ifdef SECURITY_SYSATTR_NAME
+						  ", c." SECURITY_SYSATTR_NAME " "
+#endif
 						  "from pg_class c "
 						  "left join pg_depend d on "
 						  "(c.relkind = '%c' and "
@@ -2828,6 +2851,7 @@ getTables(int *numTables)
 						  "d.refobjsubid as owning_col, "
 						  "(SELECT spcname FROM pg_tablespace t WHERE t.oid = c.reltablespace) AS reltablespace, "
 						  "NULL as reloptions "
+						  DUMMY_SECURITY_SYSATTR
 						  "from pg_class c "
 						  "left join pg_depend d on "
 						  "(c.relkind = '%c' and "
@@ -2857,6 +2881,7 @@ getTables(int *numTables)
 						  "d.refobjsubid as owning_col, "
 						  "NULL as reltablespace, "
 						  "NULL as reloptions "
+						  DUMMY_SECURITY_SYSATTR
 						  "from pg_class c "
 						  "left join pg_depend d on "
 						  "(c.relkind = '%c' and "
@@ -2882,6 +2907,7 @@ getTables(int *numTables)
 						  "NULL::int4 as owning_col, "
 						  "NULL as reltablespace, "
 						  "NULL as reloptions "
+						  DUMMY_SECURITY_SYSATTR
 						  "from pg_class "
 						  "where relkind in ('%c', '%c', '%c') "
 						  "order by oid",
@@ -2902,6 +2928,7 @@ getTables(int *numTables)
 						  "NULL::int4 as owning_col, "
 						  "NULL as reltablespace, "
 						  "NULL as reloptions "
+						  DUMMY_SECURITY_SYSATTR
 						  "from pg_class "
 						  "where relkind in ('%c', '%c', '%c') "
 						  "order by oid",
@@ -2932,6 +2959,7 @@ getTables(int *numTables)
 						  "NULL::int4 as owning_col, "
 						  "NULL as reltablespace, "
 						  "NULL as reloptions "
+						  DUMMY_SECURITY_SYSATTR
 						  "from pg_class c "
 						  "where relkind in ('%c', '%c') "
 						  "order by oid",
@@ -2974,6 +3002,9 @@ getTables(int *numTables)
 	i_owning_col = PQfnumber(res, "owning_col");
 	i_reltablespace = PQfnumber(res, "reltablespace");
 	i_reloptions = PQfnumber(res, "reloptions");
+#ifdef SECURITY_SYSATTR_NAME
+	i_security = PQfnumber(res, SECURITY_SYSATTR_NAME);
+#endif
 
 	for (i = 0; i < ntups; i++)
 	{
@@ -3005,6 +3036,9 @@ getTables(int *numTables)
 		tblinfo[i].reltablespace = strdup(PQgetvalue(res, i, i_reltablespace));
 		tblinfo[i].reloptions = strdup(PQgetvalue(res, i, i_reloptions));
 
+#ifdef SECURITY_SYSATTR_NAME
+		tblinfo[i].rel_security = strdup(PQgetvalue(res, i, i_security));
+#endif
 		/* other fields were zeroed above */
 
 		/*
@@ -4147,6 +4181,9 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 	int			i_atthasdef;
 	int			i_attisdropped;
 	int			i_attislocal;
+#ifdef SECURITY_SYSATTR_NAME
+	int			i_security;
+#endif
 	PGresult   *res;
 	int			ntups;
 	bool		hasdefaults;
@@ -4190,6 +4227,9 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 			appendPQExpBuffer(q, "SELECT a.attnum, a.attname, a.atttypmod, a.attstattarget, a.attstorage, t.typstorage, "
 				  "a.attnotnull, a.atthasdef, a.attisdropped, a.attislocal, "
 				   "pg_catalog.format_type(t.oid,a.atttypmod) as atttypname "
+#ifdef SECURITY_SYSATTR_NAME
+			 ", a." SECURITY_SYSATTR_NAME " "
+#endif
 			 "from pg_catalog.pg_attribute a left join pg_catalog.pg_type t "
 							  "on a.atttypid = t.oid "
 							  "where a.attrelid = '%u'::pg_catalog.oid "
@@ -4207,6 +4247,7 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 			appendPQExpBuffer(q, "SELECT a.attnum, a.attname, a.atttypmod, -1 as attstattarget, a.attstorage, t.typstorage, "
 							  "a.attnotnull, a.atthasdef, false as attisdropped, false as attislocal, "
 							  "format_type(t.oid,a.atttypmod) as atttypname "
+							  DUMMY_SECURITY_SYSATTR
 							  "from pg_attribute a left join pg_type t "
 							  "on a.atttypid = t.oid "
 							  "where a.attrelid = '%u'::oid "
@@ -4220,6 +4261,7 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 			appendPQExpBuffer(q, "SELECT attnum, attname, atttypmod, -1 as attstattarget, attstorage, attstorage as typstorage, "
 							  "attnotnull, atthasdef, false as attisdropped, false as attislocal, "
 							  "(select typname from pg_type where oid = atttypid) as atttypname "
+							  DUMMY_SECURITY_SYSATTR
 							  "from pg_attribute a "
 							  "where attrelid = '%u'::oid "
 							  "and attnum > 0::int2 "
@@ -4243,6 +4285,9 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 		i_atthasdef = PQfnumber(res, "atthasdef");
 		i_attisdropped = PQfnumber(res, "attisdropped");
 		i_attislocal = PQfnumber(res, "attislocal");
+#ifdef SECURITY_SYSATTR_NAME
+		i_security = PQfnumber(res, SECURITY_SYSATTR_NAME);
+#endif
 
 		tbinfo->numatts = ntups;
 		tbinfo->attnames = (char **) malloc(ntups * sizeof(char *));
@@ -4258,6 +4303,9 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 		tbinfo->inhAttrs = (bool *) malloc(ntups * sizeof(bool));
 		tbinfo->inhAttrDef = (bool *) malloc(ntups * sizeof(bool));
 		tbinfo->inhNotNull = (bool *) malloc(ntups * sizeof(bool));
+#ifdef SECURITY_SYSATTR_NAME
+		tbinfo->att_security = (char **) malloc(ntups * sizeof(char *));
+#endif
 		hasdefaults = false;
 
 		for (j = 0; j < ntups; j++)
@@ -4284,6 +4332,9 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 			tbinfo->inhAttrs[j] = false;
 			tbinfo->inhAttrDef[j] = false;
 			tbinfo->inhNotNull[j] = false;
+#ifdef SECURITY_SYSATTR_NAME
+			tbinfo->att_security[j] = strdup(PQgetvalue(res, j, i_security));
+#endif
 		}
 
 		PQclear(res);
@@ -7362,6 +7413,11 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 				if (tbinfo->notnull[j] && !tbinfo->inhNotNull[j])
 					appendPQExpBuffer(q, " NOT NULL");
 
+#ifdef SECURITY_SYSATTR_NAME
+				if (enable_security_attr && tbinfo->att_security[j])
+					appendPQExpBuffer(q, " CONTEXT = '%s'", tbinfo->att_security[j]);
+#endif
+
 				actual_atts++;
 			}
 		}
@@ -7408,6 +7464,11 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 
 		if (tbinfo->reloptions && strlen(tbinfo->reloptions) > 0)
 			appendPQExpBuffer(q, "\nWITH (%s)", tbinfo->reloptions);
+
+#ifdef SECURITY_SYSATTR_NAME
+		if (enable_security_attr && tbinfo->rel_security[j])
+			appendPQExpBuffer(q, " CONTEXT = '%s'", tbinfo->rel_security);
+#endif
 
 		appendPQExpBuffer(q, ";\n");
 
