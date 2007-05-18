@@ -15,3 +15,7 @@
  * compromise
 改ざん
  * manipulation
+行レベル
+ * row-level
+列レベル
+ * column-level
