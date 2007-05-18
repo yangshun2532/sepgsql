@@ -228,6 +228,7 @@ extern char *sepgsqlSecurityLabelIn(char *context);
 extern char *sepgsqlSecurityLabelOut(char *context);
 extern bool sepgsqlSecurityLabelIsValid(char *context);
 extern char *sepgsqlSecurityLabelOfLabel(char *context);
+extern char *sepgsqlSecurityLabelNotFound(Oid sid);
 
 /*
  * SE-PostgreSQL Binary Large Object (BLOB) functions

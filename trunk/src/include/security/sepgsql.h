@@ -291,6 +291,13 @@ static inline char *pgaceSecurityLabelOfLabel(char *new_label) {
 	return sepgsqlSecurityLabelOfLabel(new_label);
 }
 
+static inline char *pgaceSecurityLabelNotFound(Oid sid) {
+	if (!sepgsqlIsEnabled())
+		return pstrdup("unlabeled");
+
+	return sepgsqlSecurityLabelNotFound(sid);
+}
+
 /******************************************************************
  * Extended node type hooks
  ******************************************************************/

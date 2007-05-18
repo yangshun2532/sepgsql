@@ -556,6 +556,16 @@ char *sepgsqlSecurityLabelOfLabel(char *context) {
 	return _ncon;
 }
 
+char *sepgsqlSecurityLabelNotFound(Oid sid) {
+	/* FIXME: It should be obtained from /selinux/initial_contexts/ */
+	static char *unlabeled = "system_u:object_r:unlabeled_t";
+	static char *unlabeled_mls = "system_u:object_r:unlabeled_t:s0";
+
+	if (sepgsqlSecurityLabelIsValid(unlabeled))
+		return pstrdup(unlabeled);
+	return pstrdup(unlabeled_mls);
+}
+
 /*******************************************************************************
  * simple_heap_xxxx hooks
  *******************************************************************************/

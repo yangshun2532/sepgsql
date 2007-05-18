@@ -528,6 +528,17 @@ static inline char *pgaceSecurityLabelOfLabel(char *new_label) {
 	return pstrdup("unlabeled");
 }
 
+/*
+ * pgaceSecurityLabelNotFound() has to return a string representation of security
+ * attribute, when no tuple with oid equals to @sid is within pg_security system
+ * catalog.
+ *
+ * @sid : required sid, but not found on pg_security
+ */
+static inline char *pgaceSecurityLabelNotFound(Oid sid) {
+	return pstrdup("unlabeled");
+}
+
 /******************************************************************
  * Extended node type hooks
  ******************************************************************/

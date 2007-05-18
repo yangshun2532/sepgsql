@@ -388,10 +388,10 @@ static char *early_sid_to_security_label(Oid sid)
     fclose(filp);
 
 not_found:
-	ereport(ERROR,
+	ereport(DEBUG1,
 			(errcode(ERRCODE_INTERNAL_ERROR),
 			 errmsg("No text representation for sid = %u", sid)));
-	return NULL; /* for compiler kindness */
+	return pgaceSecurityLabelNotFound(sid);
 }
 
 static Oid get_security_label_oid(Relation rel, CatalogIndexState ind, char *new_label)
@@ -490,19 +490,19 @@ static char *sid_to_security_label(Oid sid)
 	rel = heap_open(SecurityRelationId, AccessShareLock);
 
 	tuple = SearchSysCache(SECURITYOID, ObjectIdGetDatum(sid), 0, 0, 0);
-	if (!HeapTupleIsValid(tuple)) {
-		char *bugon = NULL;
-		ereport(NOTICE,
+	if (HeapTupleIsValid(tuple)) {
+		tcon = heap_getattr(tuple, Anum_pg_security_seclabel,
+							RelationGetDescr(rel), &isnull);
+		tcon = DirectFunctionCall1(textout, PointerGetDatum(tcon));
+		seclabel = pstrdup(DatumGetCString(tcon));
+
+		ReleaseSysCache(tuple);
+	} else {
+		ereport(DEBUG1,
 				(errcode(ERRCODE_INTERNAL_ERROR),
 				 errmsg("No text representation for sid = %u", sid)));
-		bugon[0] = 'a';
+		seclabel = pgaceSecurityLabelNotFound(sid);
 	}
-
-	tcon = heap_getattr(tuple, Anum_pg_security_seclabel,
-						RelationGetDescr(rel), &isnull);
-	seclabel = DatumGetCString(DirectFunctionCall1(textout, PointerGetDatum(tcon)));
-	ReleaseSysCache(tuple);
-
 	heap_close(rel, AccessShareLock);
 
 	return seclabel;
