@@ -21,23 +21,26 @@ http://code.google.com/p/sepgsql/downloads/list
 The latest sepostgresql, selinux-policy and selinux-policy-targeted are necessary. Download them and confirm.
 
 == Applying RPM packages ==
-You have to reboot the system with SELinux disabled, because selinux-policy package for SE-PostgreSQL add some object classes and booleans and the current libsemanage cannot handle them well under working SELinux.
+You have to reboot the system with SELinux disabled under installation, because selinux-policy package for SE-PostgreSQL add some object classes and booleans and the current libsemanage cannot handle them well under SELinux enabled.
 
 You can apply the RPM packages with the following commands.
 {{{
-rpm -ivh sepostgresql-8.2.4-0.246a.i386.rpm \
-         selinux-policy-targeted-2.4.6-62.sepgsql.noarch.rpm \
-         selinux-policy-2.4.6-2.sepgsql.noarch.rpm
+1. UPDATE security policy
+rpm -Uvh  selinux-policy-targeted-2.4.6-62.sepgsql.noarch.rpm \
+          selinux-policy-2.4.6-2.sepgsql.noarch.rpm
+
+2. INSTALL SE-PostgreSQL
+rpm -ivh sepostgresql-8.2.4-0.246a.i386.rpm
 }}}
 
-After instllation completed, you have to config /etc/selinuc/config to avoid unexpected access denied and flood of SELinux logs. Several files are not labeled correctly, so it is necessary to relabel on the next booting.
+After instllation completed, you have to config /etc/selinuc/config to avoid unexpected access denied and flood of SELinux logs. Several files are not labeled correctly due to SELinux disabled, so it is necessary to relabel on the next booting.
 {{{
 # This file controls the state of SELinux on the system.
 # SELINUX= can take one of these three values:
 #       enforcing - SELinux security policy is enforced.
 #       permissive - SELinux prints warnings instead of enforcing.
 #       disabled - SELinux is fully disabled.
-*SELINUX=permissive*
+SELINUX=permissive
 #
 # SELINUXTYPE= type of policy in use. Possible values are:
 #       targeted - Only targeted network daemons are protected.
