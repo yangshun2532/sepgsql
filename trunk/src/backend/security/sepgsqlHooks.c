@@ -14,6 +14,10 @@
 #include "security/pgace.h"
 #include "utils/fmgroids.h"
 #include "utils/syscache.h"
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 
 static HeapTuple __getHeapTupleFromItemPointer(Relation rel, ItemPointer tid)
 {
@@ -556,14 +560,38 @@ char *sepgsqlSecurityLabelOfLabel(char *context) {
 	return _ncon;
 }
 
-char *sepgsqlSecurityLabelNotFound(Oid sid) {
-	/* FIXME: It should be obtained from /selinux/initial_contexts/ */
-	static char *unlabeled = "system_u:object_r:unlabeled_t";
-	static char *unlabeled_mls = "system_u:object_r:unlabeled_t:s0";
+extern char *selinux_mnt;
 
+char *sepgsqlSecurityLabelNotFound(Oid sid) {
+    static char *unlabeled_mls = "system_u:object_r:unlabeled_t:s0";
+	static char *unlabeled = "system_u:object_r:unlabeled_t";
+	char buffer[PATH_MAX];
+	int rc, fd;
+
+	if (selinux_mnt) {
+		snprintf(buffer, sizeof(buffer),
+				 "%s/initial_contexts/unlabeled",
+				 selinux_mnt);
+		fd = open(buffer, O_RDONLY);
+		if (fd < 0)
+			goto no_interface;
+
+		rc = read(fd, buffer, sizeof(buffer) - 1);
+		close(fd);
+
+		if (rc < 0)
+			goto no_interface;
+
+		return pstrdup(buffer);
+	}
+	/* NOTE: This fallback routine should be eliminated in the near future. *
+	 * Due to its ad-hoc assumption. */
+no_interface:
+	if (sepgsqlSecurityLabelIsValid(unlabeled_mls))
+		return pstrdup(unlabeled_mls);
 	if (sepgsqlSecurityLabelIsValid(unlabeled))
 		return pstrdup(unlabeled);
-	return pstrdup(unlabeled_mls);
+	return NULL;
 }
 
 /*******************************************************************************

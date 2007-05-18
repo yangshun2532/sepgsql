@@ -369,7 +369,7 @@ static Oid early_security_label_to_sid(char *seclabel)
 
 static char *early_sid_to_security_label(Oid sid)
 {
-	char fname[MAXPGPATH], buffer[1024];
+	char fname[MAXPGPATH], buffer[1024], *seclabel;
 	FILE *filp;
 	Oid __sid;
 
@@ -388,10 +388,11 @@ static char *early_sid_to_security_label(Oid sid)
     fclose(filp);
 
 not_found:
-	ereport(DEBUG1,
+	seclabel = pgaceSecurityLabelNotFound(sid);
+	ereport((seclabel ? DEBUG1 : ERROR),
 			(errcode(ERRCODE_INTERNAL_ERROR),
 			 errmsg("No text representation for sid = %u", sid)));
-	return pgaceSecurityLabelNotFound(sid);
+	return seclabel;
 }
 
 static Oid get_security_label_oid(Relation rel, CatalogIndexState ind, char *new_label)
@@ -498,10 +499,10 @@ static char *sid_to_security_label(Oid sid)
 
 		ReleaseSysCache(tuple);
 	} else {
-		ereport(DEBUG1,
+		seclabel = pgaceSecurityLabelNotFound(sid);
+		ereport((seclabel ? DEBUG1 : ERROR),
 				(errcode(ERRCODE_INTERNAL_ERROR),
 				 errmsg("No text representation for sid = %u", sid)));
-		seclabel = pgaceSecurityLabelNotFound(sid);
 	}
 	heap_close(rel, AccessShareLock);
 
