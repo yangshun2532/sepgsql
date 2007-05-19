@@ -121,11 +121,13 @@ static int	g_numNamespaces;
 static int	disable_dollar_quoting = 0;
 
 /* flag to turn on/off security attribute */
+static int	enable_security_attr				= 0;
 #ifdef SECURITY_SYSATTR_NAME
-static int	enable_security_attr = 0;
-#define DUMMY_SECURITY_SYSATTR ",NULL as " SECURITY_SYSATTR_NAME " "
+static const char *SecuritySysattrName			= SECURITY_SYSATTR_NAME;
+#define SECURITY_SYSATTR_DUMMY					"NULL as " SECURITY_SYSATTR_NAME ", "
 #else
-#define DUMMY_SECURITY_SYSATTR
+static const char *SecuritySysattrName			"-- <invalid column name>--";
+#define SECURITY_SYSATTR_DUMMY
 #endif
 
 static void help(const char *progname);
@@ -2776,9 +2778,7 @@ getTables(int *numTables)
 	int			i_owning_col;
 	int			i_reltablespace;
 	int			i_reloptions;
-#ifdef  SECURITY_SYSATTR_NAME
 	int			i_security;
-#endif
 
 	/* Make sure we are in proper schema */
 	selectSourceSchema("pg_catalog");
@@ -2802,15 +2802,15 @@ getTables(int *numTables)
 	 * interesting. We must fetch all tables in this phase because otherwise
 	 * we cannot correctly identify inherited columns, owned sequences, etc.
 	 */
-
-	if (g_fout->remoteVersion >= 80200)
-	{
+#ifdef SECURITY_SYSATTR_NAME
+	if (enable_security_attr && g_fout->remoteVersion >= 80204) {
 		/*
 		 * Left join to pick up dependency info linking sequences to their
 		 * owning column, if any (note this dependency is AUTO as of 8.2)
 		 */
 		appendPQExpBuffer(query,
 						  "SELECT c.tableoid, c.oid, relname, "
+						  "c." SECURITY_SYSATTR_NAME ", "
 						  "relacl, relkind, relnamespace, "
 						  "(%s relowner) as rolname, "
 						  "relchecks, reltriggers, "
@@ -2819,9 +2819,37 @@ getTables(int *numTables)
 						  "d.refobjsubid as owning_col, "
 						  "(SELECT spcname FROM pg_tablespace t WHERE t.oid = c.reltablespace) AS reltablespace, "
 						  "array_to_string(c.reloptions, ', ') as reloptions "
-#ifdef SECURITY_SYSATTR_NAME
-						  ", c." SECURITY_SYSATTR_NAME " "
+						  "from pg_class c "
+						  "left join pg_depend d on "
+						  "(c.relkind = '%c' and "
+						  "d.classid = c.tableoid and d.objid = c.oid and "
+						  "d.objsubid = 0 and "
+						  "d.refclassid = c.tableoid and d.deptype = 'a') "
+						  "where relkind in ('%c', '%c', '%c', '%c') "
+						  "order by c.oid",
+						  username_subquery,
+						  RELKIND_SEQUENCE,
+						  RELKIND_RELATION, RELKIND_SEQUENCE,
+						  RELKIND_VIEW, RELKIND_COMPOSITE_TYPE);
+	} else
 #endif
+	if (g_fout->remoteVersion >= 80200)
+	{
+		/*
+		 * Left join to pick up dependency info linking sequences to their
+		 * owning column, if any (note this dependency is AUTO as of 8.2)
+		 */
+		appendPQExpBuffer(query,
+						  "SELECT c.tableoid, c.oid, relname, "
+						  SECURITY_SYSATTR_DUMMY
+						  "relacl, relkind, relnamespace, "
+						  "(%s relowner) as rolname, "
+						  "relchecks, reltriggers, "
+						  "relhasindex, relhasrules, relhasoids, "
+						  "d.refobjid as owning_tab, "
+						  "d.refobjsubid as owning_col, "
+						  "(SELECT spcname FROM pg_tablespace t WHERE t.oid = c.reltablespace) AS reltablespace, "
+						  "array_to_string(c.reloptions, ', ') as reloptions "
 						  "from pg_class c "
 						  "left join pg_depend d on "
 						  "(c.relkind = '%c' and "
@@ -2843,6 +2871,7 @@ getTables(int *numTables)
 		 */
 		appendPQExpBuffer(query,
 						  "SELECT c.tableoid, c.oid, relname, "
+						  SECURITY_SYSATTR_DUMMY
 						  "relacl, relkind, relnamespace, "
 						  "(%s relowner) as rolname, "
 						  "relchecks, reltriggers, "
@@ -2851,7 +2880,6 @@ getTables(int *numTables)
 						  "d.refobjsubid as owning_col, "
 						  "(SELECT spcname FROM pg_tablespace t WHERE t.oid = c.reltablespace) AS reltablespace, "
 						  "NULL as reloptions "
-						  DUMMY_SECURITY_SYSATTR
 						  "from pg_class c "
 						  "left join pg_depend d on "
 						  "(c.relkind = '%c' and "
@@ -2873,6 +2901,7 @@ getTables(int *numTables)
 		 */
 		appendPQExpBuffer(query,
 						  "SELECT c.tableoid, c.oid, relname, "
+						  SECURITY_SYSATTR_DUMMY
 						  "relacl, relkind, relnamespace, "
 						  "(%s relowner) as rolname, "
 						  "relchecks, reltriggers, "
@@ -2881,7 +2910,6 @@ getTables(int *numTables)
 						  "d.refobjsubid as owning_col, "
 						  "NULL as reltablespace, "
 						  "NULL as reloptions "
-						  DUMMY_SECURITY_SYSATTR
 						  "from pg_class c "
 						  "left join pg_depend d on "
 						  "(c.relkind = '%c' and "
@@ -2899,6 +2927,7 @@ getTables(int *numTables)
 	{
 		appendPQExpBuffer(query,
 						  "SELECT tableoid, oid, relname, relacl, relkind, "
+						  SECURITY_SYSATTR_DUMMY
 						  "0::oid as relnamespace, "
 						  "(%s relowner) as rolname, "
 						  "relchecks, reltriggers, "
@@ -2907,7 +2936,6 @@ getTables(int *numTables)
 						  "NULL::int4 as owning_col, "
 						  "NULL as reltablespace, "
 						  "NULL as reloptions "
-						  DUMMY_SECURITY_SYSATTR
 						  "from pg_class "
 						  "where relkind in ('%c', '%c', '%c') "
 						  "order by oid",
@@ -2919,6 +2947,7 @@ getTables(int *numTables)
 		/* all tables have oids in 7.1 */
 		appendPQExpBuffer(query,
 						  "SELECT tableoid, oid, relname, relacl, relkind, "
+						  SECURITY_SYSATTR_DUMMY
 						  "0::oid as relnamespace, "
 						  "(%s relowner) as rolname, "
 						  "relchecks, reltriggers, "
@@ -2928,7 +2957,6 @@ getTables(int *numTables)
 						  "NULL::int4 as owning_col, "
 						  "NULL as reltablespace, "
 						  "NULL as reloptions "
-						  DUMMY_SECURITY_SYSATTR
 						  "from pg_class "
 						  "where relkind in ('%c', '%c', '%c') "
 						  "order by oid",
@@ -2945,6 +2973,7 @@ getTables(int *numTables)
 						  "SELECT "
 		"(SELECT oid FROM pg_class WHERE relname = 'pg_class') AS tableoid, "
 						  "oid, relname, relacl, "
+						  SECURITY_SYSATTR_DUMMY
 						  "CASE WHEN relhasrules and relkind = 'r' "
 					  "  and EXISTS(SELECT rulename FROM pg_rewrite r WHERE "
 					  "             r.ev_class = c.oid AND r.ev_type = '1') "
@@ -2959,7 +2988,6 @@ getTables(int *numTables)
 						  "NULL::int4 as owning_col, "
 						  "NULL as reltablespace, "
 						  "NULL as reloptions "
-						  DUMMY_SECURITY_SYSATTR
 						  "from pg_class c "
 						  "where relkind in ('%c', '%c') "
 						  "order by oid",
@@ -3002,9 +3030,7 @@ getTables(int *numTables)
 	i_owning_col = PQfnumber(res, "owning_col");
 	i_reltablespace = PQfnumber(res, "reltablespace");
 	i_reloptions = PQfnumber(res, "reloptions");
-#ifdef SECURITY_SYSATTR_NAME
-	i_security = PQfnumber(res, SECURITY_SYSATTR_NAME);
-#endif
+	i_security = PQfnumber(res, SecuritySysattrName);
 
 	for (i = 0; i < ntups; i++)
 	{
@@ -3035,10 +3061,8 @@ getTables(int *numTables)
 		}
 		tblinfo[i].reltablespace = strdup(PQgetvalue(res, i, i_reltablespace));
 		tblinfo[i].reloptions = strdup(PQgetvalue(res, i, i_reloptions));
+		tblinfo[i].rel_security = (i_security < 0 ? NULL : strdup(PQgetvalue(res, i, i_security)));
 
-#ifdef SECURITY_SYSATTR_NAME
-		tblinfo[i].rel_security = strdup(PQgetvalue(res, i, i_security));
-#endif
 		/* other fields were zeroed above */
 
 		/*
@@ -4181,9 +4205,7 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 	int			i_atthasdef;
 	int			i_attisdropped;
 	int			i_attislocal;
-#ifdef SECURITY_SYSATTR_NAME
 	int			i_security;
-#endif
 	PGresult   *res;
 	int			ntups;
 	bool		hasdefaults;
@@ -4221,15 +4243,29 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 
 		resetPQExpBuffer(q);
 
+#ifdef SECURITY_SYSATTR_NAME
+		if (enable_security_attr && g_fout->remoteVersion >= 80204) {
+			/* need left join here to not fail on dropped columns ... */
+			appendPQExpBuffer(q, "SELECT a.attnum, a.attname, a.atttypmod, "
+							  "a.attstattarget, a.attstorage, t.typstorage, "
+							  "a." SECURITY_SYSATTR_NAME ", "
+							  "a.attnotnull, a.atthasdef, a.attisdropped, a.attislocal, "
+							  "pg_catalog.format_type(t.oid,a.atttypmod) as atttypname "
+							  "from pg_catalog.pg_attribute a left join pg_catalog.pg_type t "
+							  "on a.atttypid = t.oid "
+							  "where a.attrelid = '%u'::pg_catalog.oid "
+							  "and a.attnum > 0::pg_catalog.int2 "
+							  "order by a.attrelid, a.attnum",
+							  tbinfo->dobj.catId.oid);
+		} else
+#endif
 		if (g_fout->remoteVersion >= 70300)
 		{
 			/* need left join here to not fail on dropped columns ... */
 			appendPQExpBuffer(q, "SELECT a.attnum, a.attname, a.atttypmod, a.attstattarget, a.attstorage, t.typstorage, "
+				  SECURITY_SYSATTR_DUMMY
 				  "a.attnotnull, a.atthasdef, a.attisdropped, a.attislocal, "
 				   "pg_catalog.format_type(t.oid,a.atttypmod) as atttypname "
-#ifdef SECURITY_SYSATTR_NAME
-			 ", a." SECURITY_SYSATTR_NAME " "
-#endif
 			 "from pg_catalog.pg_attribute a left join pg_catalog.pg_type t "
 							  "on a.atttypid = t.oid "
 							  "where a.attrelid = '%u'::pg_catalog.oid "
@@ -4245,9 +4281,9 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 			 * explicitly set or was just a default.
 			 */
 			appendPQExpBuffer(q, "SELECT a.attnum, a.attname, a.atttypmod, -1 as attstattarget, a.attstorage, t.typstorage, "
+							  SECURITY_SYSATTR_DUMMY
 							  "a.attnotnull, a.atthasdef, false as attisdropped, false as attislocal, "
 							  "format_type(t.oid,a.atttypmod) as atttypname "
-							  DUMMY_SECURITY_SYSATTR
 							  "from pg_attribute a left join pg_type t "
 							  "on a.atttypid = t.oid "
 							  "where a.attrelid = '%u'::oid "
@@ -4259,9 +4295,9 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 		{
 			/* format_type not available before 7.1 */
 			appendPQExpBuffer(q, "SELECT attnum, attname, atttypmod, -1 as attstattarget, attstorage, attstorage as typstorage, "
+							  SECURITY_SYSATTR_DUMMY
 							  "attnotnull, atthasdef, false as attisdropped, false as attislocal, "
 							  "(select typname from pg_type where oid = atttypid) as atttypname "
-							  DUMMY_SECURITY_SYSATTR
 							  "from pg_attribute a "
 							  "where attrelid = '%u'::oid "
 							  "and attnum > 0::int2 "
@@ -4285,9 +4321,7 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 		i_atthasdef = PQfnumber(res, "atthasdef");
 		i_attisdropped = PQfnumber(res, "attisdropped");
 		i_attislocal = PQfnumber(res, "attislocal");
-#ifdef SECURITY_SYSATTR_NAME
-		i_security = PQfnumber(res, SECURITY_SYSATTR_NAME);
-#endif
+		i_security = PQfnumber(res, SecuritySysattrName);
 
 		tbinfo->numatts = ntups;
 		tbinfo->attnames = (char **) malloc(ntups * sizeof(char *));
@@ -4303,9 +4337,7 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 		tbinfo->inhAttrs = (bool *) malloc(ntups * sizeof(bool));
 		tbinfo->inhAttrDef = (bool *) malloc(ntups * sizeof(bool));
 		tbinfo->inhNotNull = (bool *) malloc(ntups * sizeof(bool));
-#ifdef SECURITY_SYSATTR_NAME
 		tbinfo->att_security = (char **) malloc(ntups * sizeof(char *));
-#endif
 		hasdefaults = false;
 
 		for (j = 0; j < ntups; j++)
@@ -4332,9 +4364,7 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 			tbinfo->inhAttrs[j] = false;
 			tbinfo->inhAttrDef[j] = false;
 			tbinfo->inhNotNull[j] = false;
-#ifdef SECURITY_SYSATTR_NAME
-			tbinfo->att_security[j] = strdup(PQgetvalue(res, j, i_security));
-#endif
+			tbinfo->att_security[j] = (i_security < 0 ? NULL : strdup(PQgetvalue(res, j, i_security)));
 		}
 
 		PQclear(res);
@@ -5848,6 +5878,8 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 	char	   *prosecdef;
 	char	   *lanname;
 	char	   *rettypename;
+	char	   *prosecurity;
+	int			i_security;
 	int			nallargs;
 	char	  **allargtypes = NULL;
 	char	  **argmodes = NULL;
@@ -5866,10 +5898,24 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 	selectSourceSchema(finfo->dobj.namespace->dobj.name);
 
 	/* Fetch function-specific details */
+#ifdef SECURITY_SYSATTR_NAME
+	if (enable_security_attr && g_fout->remoteVersion >= 80204) {
+		appendPQExpBuffer(query,
+						  "SELECT proretset, prosrc, probin, "
+						  SECURITY_SYSATTR_NAME ", "
+						  "proallargtypes, proargmodes, proargnames, "
+						  "provolatile, proisstrict, prosecdef, "
+						  "(SELECT lanname FROM pg_catalog.pg_language WHERE oid = prolang) as lanname "
+						  "FROM pg_catalog.pg_proc "
+						  "WHERE oid = '%u'::pg_catalog.oid",
+						  finfo->dobj.catId.oid);
+	} else
+#endif
 	if (g_fout->remoteVersion >= 80100)
 	{
 		appendPQExpBuffer(query,
 						  "SELECT proretset, prosrc, probin, "
+						  SECURITY_SYSATTR_DUMMY
 						  "proallargtypes, proargmodes, proargnames, "
 						  "provolatile, proisstrict, prosecdef, "
 						  "(SELECT lanname FROM pg_catalog.pg_language WHERE oid = prolang) as lanname "
@@ -5881,6 +5927,7 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 	{
 		appendPQExpBuffer(query,
 						  "SELECT proretset, prosrc, probin, "
+						  SECURITY_SYSATTR_DUMMY
 						  "null as proallargtypes, "
 						  "null as proargmodes, "
 						  "proargnames, "
@@ -5894,6 +5941,7 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 	{
 		appendPQExpBuffer(query,
 						  "SELECT proretset, prosrc, probin, "
+						  SECURITY_SYSATTR_DUMMY
 						  "null as proallargtypes, "
 						  "null as proargmodes, "
 						  "null as proargnames, "
@@ -5907,6 +5955,7 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 	{
 		appendPQExpBuffer(query,
 						  "SELECT proretset, prosrc, probin, "
+						  SECURITY_SYSATTR_DUMMY
 						  "null as proallargtypes, "
 						  "null as proargmodes, "
 						  "null as proargnames, "
@@ -5922,6 +5971,7 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 	{
 		appendPQExpBuffer(query,
 						  "SELECT proretset, prosrc, probin, "
+						  SECURITY_SYSATTR_DUMMY
 						  "null as proallargtypes, "
 						  "null as proargmodes, "
 						  "null as proargnames, "
@@ -5956,6 +6006,8 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 	proisstrict = PQgetvalue(res, 0, PQfnumber(res, "proisstrict"));
 	prosecdef = PQgetvalue(res, 0, PQfnumber(res, "prosecdef"));
 	lanname = PQgetvalue(res, 0, PQfnumber(res, "lanname"));
+	i_security = PQfnumber(res, SecuritySysattrName);
+	prosecurity = (i_security < 0 ? NULL : PQgetvalue(res, 0, i_security));
 
 	/*
 	 * See backend/commands/define.c for details of how the 'AS' clause is
@@ -6080,6 +6132,9 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 
 	if (prosecdef[0] == 't')
 		appendPQExpBuffer(q, " SECURITY DEFINER");
+
+	if (prosecurity != NULL)
+		appendPQExpBuffer(q, " CONTEXT = '%s'", prosecurity);
 
 	appendPQExpBuffer(q, ";\n");
 
@@ -7413,10 +7468,8 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 				if (tbinfo->notnull[j] && !tbinfo->inhNotNull[j])
 					appendPQExpBuffer(q, " NOT NULL");
 
-#ifdef SECURITY_SYSATTR_NAME
-				if (enable_security_attr && tbinfo->att_security[j])
+				if (tbinfo->att_security[j])
 					appendPQExpBuffer(q, " CONTEXT = '%s'", tbinfo->att_security[j]);
-#endif
 
 				actual_atts++;
 			}
@@ -7465,10 +7518,8 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 		if (tbinfo->reloptions && strlen(tbinfo->reloptions) > 0)
 			appendPQExpBuffer(q, "\nWITH (%s)", tbinfo->reloptions);
 
-#ifdef SECURITY_SYSATTR_NAME
-		if (enable_security_attr && tbinfo->rel_security[j])
+		if (tbinfo->rel_security[j])
 			appendPQExpBuffer(q, " CONTEXT = '%s'", tbinfo->rel_security);
-#endif
 
 		appendPQExpBuffer(q, ";\n");
 
