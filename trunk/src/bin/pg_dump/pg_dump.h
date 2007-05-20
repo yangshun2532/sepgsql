@@ -227,14 +227,13 @@ typedef struct _tableInfo
 	char		relkind;
 	char	   *reltablespace;	/* relation tablespace */
 	char	   *reloptions;		/* options specified by WITH (...) */
+	char	   *relsecurity;	/* security attribute of the relation */
 	bool		hasindex;		/* does it have any indexes? */
 	bool		hasrules;		/* does it have any rules? */
 	bool		hasoids;		/* does it have OIDs? */
 	int			ncheck;			/* # of CHECK expressions */
 	int			ntrig;			/* # of triggers */
-#ifdef SECURITY_SYSATTR_NAME
-	char	   *rel_security;	/* security attribute (managed by PGACE) */
-#endif
+
 	/* these two are set only if table is a sequence owned by a column: */
 	Oid			owning_tab;		/* OID of table owning sequence */
 	int			owning_col;		/* attr # of column owning sequence */
@@ -254,9 +253,7 @@ typedef struct _tableInfo
 	char	   *typstorage;		/* type storage scheme */
 	bool	   *attisdropped;	/* true if attr is dropped; don't dump it */
 	bool	   *attislocal;		/* true if attr has local definition */
-#ifdef SECURITY_SYSATTR_NAME
-	char	  **att_security;	/* security attribute (managed by PGACE) */
-#endif
+	char	  **attsecurity;	/* security attribute of attribute (column) */
 
 	/*
 	 * Note: we need to store per-attribute notnull, default, and constraint
