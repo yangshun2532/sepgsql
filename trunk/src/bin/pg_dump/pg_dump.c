@@ -5838,11 +5838,13 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 	char	   *proisstrict;
 	char	   *prosecdef;
 	char	   *lanname;
+	char	   *prosecurity = NULL;
 	char	   *rettypename;
 	int			nallargs;
 	char	  **allargtypes = NULL;
 	char	  **argmodes = NULL;
 	char	  **argnames = NULL;
+
 
 	/* Skip if not to be dumped */
 	if (!finfo->dobj.dump || dataOnly)
@@ -5861,11 +5863,17 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 	{
 		appendPQExpBuffer(query,
 						  "SELECT proretset, prosrc, probin, "
+#ifdef SECURITY_SYSATTR_NAME
+						  "%s"
+#endif
 						  "proallargtypes, proargmodes, proargnames, "
 						  "provolatile, proisstrict, prosecdef, "
 						  "(SELECT lanname FROM pg_catalog.pg_language WHERE oid = prolang) as lanname "
 						  "FROM pg_catalog.pg_proc "
 						  "WHERE oid = '%u'::pg_catalog.oid",
+#ifdef SECURITY_SYSATTR_NAME
+						  (enable_security_attr ? SECURITY_SYSATTR_NAME ", " : ""),
+#endif
 						  finfo->dobj.catId.oid);
 	}
 	else if (g_fout->remoteVersion >= 80000)
@@ -5947,6 +5955,14 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 	proisstrict = PQgetvalue(res, 0, PQfnumber(res, "proisstrict"));
 	prosecdef = PQgetvalue(res, 0, PQfnumber(res, "prosecdef"));
 	lanname = PQgetvalue(res, 0, PQfnumber(res, "lanname"));
+#ifdef SECURITY_SYSATTR_NAME
+	if (enable_security_attr) {
+		int i_security = PQfnumber(res, SECURITY_SYSATTR_NAME);
+
+		if (i_security >= 0 && !PQgetisnull(res, 0, i_security))
+			prosecurity = PQgetvalue(res, 0, i_security);
+	}
+#endif
 
 	/*
 	 * See backend/commands/define.c for details of how the 'AS' clause is
@@ -6071,6 +6087,11 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 
 	if (prosecdef[0] == 't')
 		appendPQExpBuffer(q, " SECURITY DEFINER");
+
+#ifdef SECURITY_SYSATTR_NAME
+	if (prosecurity)
+		appendPQExpBuffer(q, " CONTEXT = '%s'", prosecurity);
+#endif
 
 	appendPQExpBuffer(q, ";\n");
 
