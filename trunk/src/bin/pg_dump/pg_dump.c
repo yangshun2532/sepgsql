@@ -484,6 +484,12 @@ main(int argc, char **argv)
 		exit(1);
 	}
 
+	/* If TableData dumped with security attribute, INSERT statement has to
+	 * use explicit column list.
+	 */
+	if (enable_security_attr)
+		attrNames = true;
+
 	/* open the output file */
 	switch (format[0])
 	{
