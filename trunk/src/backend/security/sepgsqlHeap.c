@@ -23,11 +23,13 @@ static bool __is_system_object_relation(Oid relid)
 {
 	static Oid latest_relid = InvalidOid;
 	static Oid latest_relns = InvalidOid;
+	static char latest_relkind = ' ';
+	Form_pg_class pgclass;
 	HeapTuple tuple;
 
 retry:
 	if (latest_relid == relid) {
-		if (IsSystemNamespace(latest_relns))
+		if (IsSystemNamespace(latest_relns) || latest_relkind != RELKIND_RELATION)
 			return true;
 		return false;
 	}
@@ -35,8 +37,12 @@ retry:
 	tuple = SearchSysCache(RELOID, ObjectIdGetDatum(relid), 0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
 		selerror("cache lookup failed for relation %u", relid);
+	pgclass = (Form_pg_class) GETSTRUCT(tuple);
+
 	latest_relid = relid;
-	latest_relns = ((Form_pg_class) GETSTRUCT(tuple))->relnamespace;
+	latest_relns = pgclass->relnamespace;
+	latest_relkind = pgclass->relkind;
+
 	ReleaseSysCache(tuple);
 
 	goto retry;

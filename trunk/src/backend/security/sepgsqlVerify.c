@@ -28,15 +28,17 @@ static void verifyPgClassPerms(Oid relid, bool inh, uint32 perms)
 		selerror("RELOID cache lookup failed (relid=%u)", relid);
 	pgclass = (Form_pg_class) GETSTRUCT(tuple);
 
-	if (pgclass->relkind == RELKIND_RELATION) {
-		sepgsql_avc_permission(sepgsqlGetClientContext(),
-							   HeapTupleGetSecurity(tuple),
-							   SECCLASS_TABLE,
-							   perms,
-							   NameStr(pgclass->relname));
-	} else {
-		selnotice("%s is not a general relation", NameStr(pgclass->relname));
+	if (pgclass->relkind != RELKIND_RELATION) {
+		//selnotice("%s is not a general relation", NameStr(pgclass->relname));
+		ReleaseSysCache(tuple);
+		return;
 	}
+
+	sepgsql_avc_permission(sepgsqlGetClientContext(),
+						   HeapTupleGetSecurity(tuple),
+						   SECCLASS_TABLE,
+						   perms,
+						   NameStr(pgclass->relname));
 	ReleaseSysCache(tuple);
 
 	/* check child relations, if necessary */
@@ -62,8 +64,23 @@ static void verifyPgAttributePermsInheritances(Oid parent_relid, char *attname, 
 static void verifyPgAttributePerms(Oid relid, bool inh, AttrNumber attno, uint32 perms)
 {
 	HeapTuple tuple;
+	Form_pg_class pgclass;
 	Form_pg_attribute pgattr;
 
+	tuple = SearchSysCache(RELOID,
+							ObjectIdGetDatum(relid),
+							0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		selerror("RELOID cache lookup failed (relid=%u)", relid);
+	pgclass = (Form_pg_class) GETSTRUCT(tuple);
+	if (pgclass->relkind != RELKIND_RELATION) {
+		//selnotice("'%s' is not a general relation", NameStr(pgclass->relname));
+		ReleaseSysCache(tuple);
+		return;
+	}
+	ReleaseSysCache(tuple);
+
+	/* 2. verify column perms */
 	if (attno == 0) {
 		/* RECORD type permission check */
 		Relation pg_attr;
