@@ -214,7 +214,8 @@ extern void sepgsqlAlterProcedureContext(Relation rel, HeapTuple tuple, char *co
 
 /* COPY */
 extern void sepgsqlCopyTable(Relation rel, List *attnumlist, bool is_from);
-extern bool sepgsqlCopyTuple(Relation rel, HeapTuple tuple);
+extern bool sepgsqlCopyToTuple(Relation rel, HeapTuple tuple);
+extern bool sepgsqlCopyFromTuple(Relation rel, HeapTuple tuple);
 
 /* LOAD shared library module */
 extern void sepgsqlLoadSharedModule(const char *filename);

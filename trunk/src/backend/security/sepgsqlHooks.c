@@ -261,9 +261,14 @@ void sepgsqlCopyTable(Relation rel, List *attNumList, bool isFrom)
 	}
 }
 
-bool sepgsqlCopyTuple(Relation rel, HeapTuple tuple)
+bool sepgsqlCopyToTuple(Relation rel, HeapTuple tuple)
 {
 	return sepgsqlCheckTuplePerms(rel, tuple, NULL, TUPLE__SELECT, false);
+}
+
+bool sepgsqlCopyFromTuple(Relation rel, HeapTuple tuple)
+{
+	return sepgsqlCheckTuplePerms(rel, tuple, NULL, TUPLE__INSERT, false);
 }
 
 /*******************************************************************************

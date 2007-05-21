@@ -200,10 +200,16 @@ static inline void pgaceCopyTable(Relation rel, List *attNumList, bool isFrom) {
 		sepgsqlCopyTable(rel, attNumList, isFrom);
 }
 
-static inline bool pgaceCopyTuple(Relation rel, HeapTuple tuple) {
+static inline bool pgaceCopyToTuple(Relation rel, HeapTuple tuple) {
 	if (!sepgsqlIsEnabled())
 		return true;
-	return sepgsqlCopyTuple(rel, tuple);
+	return sepgsqlCopyToTuple(rel, tuple);
+}
+
+static inline bool pgaceCopyFromTuple(Relation rel, HeapTuple tuple) {
+	if (!sepgsqlIsEnabled())
+		return true;
+	return sepgsqlCopyFromTuple(rel, tuple);
 }
 
 /******************************************************************

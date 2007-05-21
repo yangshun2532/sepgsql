@@ -357,14 +357,26 @@ static inline void pgaceCopyTable(Relation rel, List *attNumList, bool isFrom) {
 }
 
 /*
- * pgaceCopyTuple() is called to check whether the given tuple should be
+ * pgaceCopyToTuple() is called to check whether the given tuple should be
  * filtered, or not in the process of COPY TO statement.
  * If it returns false, the given tuple will be filtered from the result set
  *
  * @rel   : the target relation
  * @tuple : the target tuple
  */
-static inline bool pgaceCopyTuple(Relation rel, HeapTuple tuple) {
+static inline bool pgaceCopyToTuple(Relation rel, HeapTuple tuple) {
+	return true;
+}
+
+/*
+ * pgaceCopyFromTuple() is called to check whether the given tuple should be
+ * filtered, or not in the process of COPY FROM statement.
+ * If it returns false, the given tuple will be filtered from the result set
+ *
+ * @rel   : the target relation
+ * @tuple : the target tuple
+ */
+static inline bool pgaceCopyFromTuple(Relation rel, HeapTuple tuple) {
 	return true;
 }
 
