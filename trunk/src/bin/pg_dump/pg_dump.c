@@ -7404,7 +7404,7 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 				if (tbinfo->notnull[j] && !tbinfo->inhNotNull[j])
 					appendPQExpBuffer(q, " NOT NULL");
 
-				if (tbinfo->attsecurity[j])
+				if (enable_security_attr && tbinfo->attsecurity[j])
 					appendPQExpBuffer(q, " CONTEXT = '%s'", tbinfo->attsecurity[j]);
 
 				actual_atts++;
@@ -7454,7 +7454,7 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 		if (tbinfo->reloptions && strlen(tbinfo->reloptions) > 0)
 			appendPQExpBuffer(q, "\nWITH (%s)", tbinfo->reloptions);
 
-		if (tbinfo->relsecurity)
+		if (enable_security_attr && tbinfo->relsecurity)
 			appendPQExpBuffer(q, " CONTEXT = '%s'", tbinfo->relsecurity);
 
 		appendPQExpBuffer(q, ";\n");
