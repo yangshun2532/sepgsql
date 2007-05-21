@@ -1156,10 +1156,18 @@ dumpTableData_insert(Archive *fout, void *dcontext)
 
 	if (fout->remoteVersion >= 70100)
 	{
+#ifdef SECURITY_SYSATTR_NAME
+		appendPQExpBuffer(q, "DECLARE _pg_dump_cursor CURSOR FOR "
+						  "SELECT * %s FROM ONLY %s",
+						  enable_security_attr ? ("," SECURITY_SYSATTR_NAME) : "",
+						  fmtQualifiedId(tbinfo->dobj.namespace->dobj.name,
+										 classname));
+#else
 		appendPQExpBuffer(q, "DECLARE _pg_dump_cursor CURSOR FOR "
 						  "SELECT * FROM ONLY %s",
 						  fmtQualifiedId(tbinfo->dobj.namespace->dobj.name,
 										 classname));
+#endif
 	}
 	else
 	{
@@ -8852,6 +8860,12 @@ fmtCopyColumnList(const TableInfo *ti)
 
 	appendPQExpBuffer(q, "(");
 	needComma = false;
+#ifdef SECURITY_SYSATTR_NAME
+	if (enable_security_attr) {
+		appendPQExpBuffer(q, "%s", SECURITY_SYSATTR_NAME);
+		needComma = true;
+	}
+#endif
 	for (i = 0; i < numatts; i++)
 	{
 		if (attisdropped[i])
