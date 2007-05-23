@@ -774,6 +774,7 @@ static List *proxyJoinTree(List *selist, queryChain *qc, Node *n, Node **quals)
 		FromExpr *f = (FromExpr *)n;
 		ListCell *l;
 
+		selist = sepgsqlWalkExpr(selist, qc, f->quals);
 		foreach (l, f->fromlist)
 			selist = proxyJoinTree(selist, qc, lfirst(l), quals);
 	} else if (IsA(n, JoinExpr)) {
