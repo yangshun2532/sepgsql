@@ -534,9 +534,8 @@ static void rewriteOuterJoinTree(Node *n, Query *query, bool is_outer_join)
 {
 	RangeTblRef *rtr, *srtr;
 	RangeTblEntry *rte, *srte;
-	ParseState *pstate;
 	Query *sqry;
-	FromExpr *frm;
+	FromExpr *sfrm;
 
 	if (IsA(n, RangeTblRef)) {
 		if (!is_outer_join)
@@ -548,38 +547,25 @@ static void rewriteOuterJoinTree(Node *n, Query *query, bool is_outer_join)
 		if (rte->rtekind != RTE_RELATION)
 			return;
 
-		/* setup pstate */
-		pstate = make_parsestate(NULL);
-		pstate->p_paramtypes = NULL;
-		pstate->p_numparams = 0;
-		pstate->p_variableparams = false;
-
-		/* setup Query */
+		/* setup alternative query */
 		sqry = makeNode(Query);
 		sqry->commandType = CMD_SELECT;
-
-		/* pseudo FROM clause */
-		srte = copyObject(rte);
-		srtr = makeNode(RangeTblRef);
-		srtr->rtindex = 1;
-		pstate->p_rtable = lappend(pstate->p_rtable, srte);
-		pstate->p_joinlist = lappend(pstate->p_joinlist, srtr);
-		pstate->p_relnamespace = lappend(pstate->p_relnamespace, srte);
-		pstate->p_varnamespace = lappend(pstate->p_varnamespace, srte);
-
 		sqry->targetList = NIL;
 
-		/* rest of setting up */
-		sqry->rtable = pstate->p_rtable;
-		frm = makeNode(FromExpr);
-		frm->fromlist = pstate->p_joinlist;
-		frm->quals = NULL;
-		sqry->jointree = frm;
-		sqry->hasSubLinks = false;
-		sqry->hasAggs = false;
-		pfree(pstate);
+		srte = copyObject(rte);
+		sqry->rtable = list_make1(srte);
 
-		/* rewrite parent RangeTblEntry */
+		srtr = makeNode(RangeTblRef);
+		srtr->rtindex = 1;
+
+		sfrm = makeNode(FromExpr);
+		sfrm->fromlist = list_make1(srtr);
+		sfrm->quals = NULL;
+
+		sqry->jointree = sfrm;
+        sqry->hasSubLinks = false;
+        sqry->hasAggs = false;
+
 		rte->rtekind = RTE_SUBQUERY;
 		rte->subquery = sqry;
 	} else if (IsA(n, FromExpr)) {
