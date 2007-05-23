@@ -181,34 +181,42 @@ static List *walkVar(List *selist, queryChain *qc, Var *var)
         selist = sepgsqlWalkExpr(selist, qc, n);
         break;
 	case RTE_SUBQUERY:
-		/* add system column reference */
-		if (var->varattno < 0) {
-			Query *subqry = rte->subquery;
+		/* In normal cases, rte->relid equals zero for subquery.
+		 * If rte->relid has none-zero value, it's rewritten subquery
+		 * for outer join handling.
+		 */
+		if (rte->relid) {
+			Query *sqry = rte->subquery;
 			ListCell *l;
 			TargetEntry *tle;
-			Var *__var;
+			Var *svar;
+			bool found = false;
 
-			Assert(subqry->commandType == CMD_SELECT);
+			Assert(sqry->commandType == CMD_SELECT);
+			Assert(list_length(sqry->rtable) == 1);
+			Assert(((RangeTblEntry *) list_nth(sqry->rtable, 0))->rtekind == RTE_RELATION);
+			Assert(((RangeTblEntry *) list_nth(sqry->rtable, 0))->relid == rte->relid);
 
-			foreach (l, subqry->targetList) {
+			foreach (l, sqry->targetList) {
 				tle = lfirst(l);
-				__var = (Var *) tle->expr;
 
-				if (!IsA(__var, Var))
-					continue;
-				if (var->varattno == __var->varattno) {
+				Assert(IsA(tle->expr, Var));
+				svar = (Var *) tle->expr;
+
+				if (var->varattno == svar->varattno) {
 					var->varattno = tle->resno;
+					found = true;
 					break;
 				}
 			}
-			if (var->varattno < 0) {
-				/* append pseudo reference */
-				AttrNumber resno = list_length(subqry->targetList) + 1;
+			/* append pseudo reference */
+			if (!found) {
+				AttrNumber resno = list_length(sqry->targetList) + 1;
 
-				__var = makeVar(1, var->varattno, var->vartype, var->vartypmod, 0);
-				tle = makeTargetEntry((Expr *)__var, resno, NULL, false);
+				svar = makeVar(1, var->varattno, var->vartype, var->vartypmod, 0);
+				tle = makeTargetEntry((Expr *)svar, resno, NULL, false);
 				var->varattno = resno;
-				subqry->targetList = lappend(subqry->targetList, tle);
+				sqry->targetList = lappend(sqry->targetList, tle);
 			}
 		}
 		break;
@@ -529,8 +537,6 @@ static void rewriteOuterJoinTree(Node *n, Query *query, bool is_outer_join)
 	ParseState *pstate;
 	Query *sqry;
 	FromExpr *frm;
-	ColumnRef *cref;
-	ResTarget *res;
 
 	if (IsA(n, RangeTblRef)) {
 		if (!is_outer_join)
@@ -561,18 +567,7 @@ static void rewriteOuterJoinTree(Node *n, Query *query, bool is_outer_join)
 		pstate->p_relnamespace = lappend(pstate->p_relnamespace, srte);
 		pstate->p_varnamespace = lappend(pstate->p_varnamespace, srte);
 
-		/* pseudo targetList */
-		cref = makeNode(ColumnRef);
-		cref->fields = list_make1(makeString("*"));
-		cref->location = -1;
-
-		res = makeNode(ResTarget);
-		res->name = NULL;
-		res->indirection = NIL;
-		res->val = (Node *) cref;
-		res->location = -1;
-
-		sqry->targetList = transformTargetList(pstate, list_make1(res));
+		sqry->targetList = NIL;
 
 		/* rest of setting up */
 		sqry->rtable = pstate->p_rtable;
@@ -586,7 +581,6 @@ static void rewriteOuterJoinTree(Node *n, Query *query, bool is_outer_join)
 
 		/* rewrite parent RangeTblEntry */
 		rte->rtekind = RTE_SUBQUERY;
-		rte->relid = InvalidOid;
 		rte->subquery = sqry;
 	} else if (IsA(n, FromExpr)) {
 		FromExpr *f = (FromExpr *)n;
