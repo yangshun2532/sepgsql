@@ -41,17 +41,17 @@ typedef struct queryChain {
 	Query *tail;
 } queryChain;
 
-static inline Query *upperQueryChain(queryChain *qc, int lvup) {
+static inline queryChain *upperQueryChain(queryChain *qc, int lvup) {
 	while (lvup > 0) {
-		Assert(qc->parent);
+		Assert(!!qc->parent);
 		qc = qc->parent;
 		lvup--;
 	}
-	return qc->tail;
+	return qc;
 }
 
-static inline Query *tailQueryChain(queryChain *qc) {
-	return upperQueryChain(qc, 0);
+static inline Query *getQueryFromChain(queryChain *qc) {
+	return qc->tail;
 }
 
 /* local definitions of static functions. */
@@ -166,9 +166,11 @@ static List *walkVar(List *selist, queryChain *qc, Var *var)
 	if (!qc)
 		selerror("we could not use Var node in parameter list");
 
-	query = upperQueryChain(qc, var->varlevelsup);
+	qc = upperQueryChain(qc, var->varlevelsup);
+	query = getQueryFromChain(qc);
 	rte = list_nth(query->rtable, var->varno - 1);
 	Assert(IsA(rte, RangeTblEntry));
+
 	switch (rte->rtekind) {
 	case RTE_RELATION:
 		/* table:{select} */
@@ -178,14 +180,14 @@ static List *walkVar(List *selist, queryChain *qc, Var *var)
 		break;
 	case RTE_JOIN:
 		n = list_nth(rte->joinaliasvars, var->varattno - 1);
-        selist = sepgsqlWalkExpr(selist, qc, n);
+		selist = sepgsqlWalkExpr(selist, qc, n);
         break;
 	case RTE_SUBQUERY:
 		/* In normal cases, rte->relid equals zero for subquery.
 		 * If rte->relid has none-zero value, it's rewritten subquery
 		 * for outer join handling.
 		 */
-		if (rte->relid) {
+		if (rte->relid && var->varattno == var->varoattno) {
 			Query *sqry = rte->subquery;
 			ListCell *l;
 			TargetEntry *tle;
@@ -315,7 +317,7 @@ static List *walkList(List *selist, queryChain *qc, List *list)
 
 static List *walkSortClause(List *selist, queryChain *qc, SortClause *sortcl)
 {
-	Query *query = tailQueryChain(qc);
+	Query *query = getQueryFromChain(qc);
 	ListCell *l;
 
 	Assert(IsA(sortcl, SortClause) || IsA(sortcl, GroupClause));
@@ -594,7 +596,7 @@ static List *proxyRteRelation(List *selist, queryChain *qc, int rtindex, Node **
 	TupleDesc tdesc;
 	uint32 perms = 0;
 
-	query = tailQueryChain(qc);
+	query = getQueryFromChain(qc);
 	rte = list_nth(query->rtable, rtindex - 1);
 	rel = relation_open(rte->relid, AccessShareLock);
 	tdesc = RelationGetDescr(rel);
@@ -739,7 +741,7 @@ static List *proxyRteSubQuery(List *selist, queryChain *qc, Query *query)
 
 static List *proxyJoinTree(List *selist, queryChain *qc, Node *n, Node **quals)
 {
-	Query *query = tailQueryChain(qc);
+	Query *query = getQueryFromChain(qc);
 
 	if (n == NULL)
 		return selist;
@@ -791,7 +793,7 @@ static List *proxyJoinTree(List *selist, queryChain *qc, Node *n, Node **quals)
 
 static List *proxySetOperations(List *selist, queryChain *qc, Node *n)
 {
-	Query *query = tailQueryChain(qc);
+	Query *query = getQueryFromChain(qc);
 
 	if (n == NULL)
 		return selist;
