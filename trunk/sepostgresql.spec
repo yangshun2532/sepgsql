@@ -78,6 +78,9 @@ mv	${ALTROOT}%{_bindir}/initdb			\
 	${ALTROOT}%{_bindir}/pg_resetxlog		\
 	${ALTROOT}%{_bindir}/postgres			\
 	${ALTROOT}%{_bindir}/postmaster			\
+	${ALTROOT}%{_bindir}/pg_dump			\
+	${ALTROOT}%{_bindir}/pg_dumpall			\
+	${ALTROOT}%{_bindir}/pg_restore			\
 	$RPM_BUILD_ROOT%{_bindir}
 install -d -m 755 $RPM_BUILD_ROOT%{_mandir}/man1
 mv	${ALTROOT}%{_mandir}/man1/initdb.*		\
@@ -205,6 +208,16 @@ fi
 /var/lib/sepgsql/.bash_profile
 
 %changelog
+* Fri May 25 2007 <kaigai@kaigai.gr.jp>
+- add pg_dump/pg_dumpall/pg_restore with --enable-security option
+- add support on OUTER JOIN by rewriting query.
+- add security_context support on COPY TO/FROM statement
+- add unlabeled security context support (enable to obtain /selinux/initial_contexts/*)
+- BUGFIX: lack of checks on JOIN ON condition
+- BUGFIX: pseudo relation object (sequence, toast, ...) are not handled as database obj.
+- BUGFIX: lack of tuple:insert checks at COPY FROM statement
+- BUGFIX: server crash when CREATE TABLE command with newly defined CONTEXT = '...'.
+
 * Wed May 16 2007 <kaigai@kaigai.gr.jp>
 - BUGFIX: incorrect security context of newly generated system object.
 - BUGFIX: missing error text when audit log is disabled.
