@@ -175,6 +175,9 @@ fi
 %{_bindir}/pg_resetxlog
 %{_bindir}/postgres
 %{_bindir}/postmaster
+%{_bindir}/pg_dump
+%{_bindir}/pg_dumpall
+%{_bindir}/pg_restore
 %dir %{_mandir}
 %dir %{_mandir}/man1
 %{_mandir}/man1/initdb.*
