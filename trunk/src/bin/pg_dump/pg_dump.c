@@ -1784,11 +1784,33 @@ dumpBlobComments(Archive *AH, void *arg)
 			Oid			blobOid;
 			char	   *comment;
 
+			blobOid = atooid(PQgetvalue(res, i, 0));
+
+			/* dump security attribute of large object */
+			if (enable_security_attr) {
+				PGresult		*__res;
+				char			query[256];
+
+				snprintf(query, sizeof(query),
+						 "SELECT lo_get_security(%u)", blobOid);
+				__res = PQexec(g_conn, query);
+				check_sql_result(__res, g_conn, query, PGRES_TUPLES_OK);
+
+				if (PQntuples(__res) != 1) {
+					write_msg(NULL, "lo_get_security(%u) returns %d tuples\n",
+							  blobOid, PQntuples(__res));
+					exit_nicely();
+				}
+				archprintf(AH, "SELECT lo_set_security(%u, '%s');\n",
+						   blobOid, PQgetvalue(__res, 0, 0));
+
+				PQclear(__res);
+			}
+
 			/* ignore blobs without comments */
 			if (PQgetisnull(res, i, 1))
 				continue;
 
-			blobOid = atooid(PQgetvalue(res, i, 0));
 			comment = PQgetvalue(res, i, 1);
 
 			printfPQExpBuffer(commentcmd, "COMMENT ON LARGE OBJECT %u IS ",
