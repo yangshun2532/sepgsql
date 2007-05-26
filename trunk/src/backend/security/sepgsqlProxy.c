@@ -622,22 +622,25 @@ static List *proxyRteRelation(List *selist, queryChain *qc, int rtindex, Node **
 
 	/* append sepgsql_tuple_perm(relid, record, perms) */
 	if (perms) {
-		Var *v1, *v2;
+		Var *v1, *v2, *v4;
 		Const *c3;
 		FuncExpr *func;
 
 		/* 1st arg : Oid of the target relation */
 		v1 = makeVar(rtindex, TableOidAttributeNumber, OIDOID, -1, 0);
-		
-		/* 2nd arg : RECORD of the target relation */
-		v2 = makeVar(rtindex, 0, RelationGetForm(rel)->reltype, -1, 0);
 
+		/* 2nd arg : Security Attribute of tuple */
+		v2 = makeVar(rtindex, SecurityAttributeNumber, OIDOID, -1, 0);
+		
 		/* 3rd arg : permission set */
 		c3 = makeConst(INT4OID, sizeof(int32), Int32GetDatum(perms), false, true);
 
+		/* 4th arg : RECORD of the target relation */
+		v4 = makeVar(rtindex, 0, RelationGetForm(rel)->reltype, -1, 0);
+
 		/* append sepgsql_tuple_perm */
 		func = makeFuncExpr(fnoid_sepgsql_tuple_perm, BOOLOID,
-							list_make3(v1, v2, c3), COERCE_DONTCARE);
+							list_make4(v1, v2, c3, v4), COERCE_DONTCARE);
 		if (*quals == NULL) {
 			*quals = (Node *) func;
 		} else {

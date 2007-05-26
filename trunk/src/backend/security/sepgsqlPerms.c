@@ -1,6 +1,6 @@
 /*
- * src/backend/security/sepgsqlHeap.c
- *   SE-PostgreSQL heap modification hooks
+ * src/backend/security/sepgsqlPerms.c
+ *   SE-PostgreSQL permission checking functions
  *
  * Copyright (c) 2007 KaiGai Kohei <kaigai@kaigai.gr.jp>
  */
@@ -14,10 +14,6 @@
 #include "utils/fmgroids.h"
 #include "utils/syscache.h"
 #include "utils/typcache.h"
-
-static bool __check_tuple_perms(Oid tableoid, TupleDesc tdesc,
-								HeapTuple tuple, HeapTuple oldtup,
-                                uint32 perms, bool abort);
 
 static bool __is_system_object_relation(Oid relid)
 {
@@ -160,52 +156,54 @@ static char *__tuple_system_object_name(Oid relid, HeapTuple tuple)
 	return oname;
 }
 
-static void __check_pg_attribute(TupleDesc tdesc, HeapTuple newtup, HeapTuple oldtup,
+static void __check_pg_attribute(HeapTuple tuple, HeapTuple oldtup,
 								 uint32 *p_perms, uint16 *p_tclass)
 {
-	Form_pg_attribute attr = (Form_pg_attribute) GETSTRUCT(newtup);
-	Form_pg_class pgclass;
+	Form_pg_attribute attrForm = (Form_pg_attribute) GETSTRUCT(tuple);
+	Form_pg_class classForm;
 	HeapTuple exttup;
-	bool use_syscache = true;
+	bool use_syscache;
 
 	*p_perms = __tuple_perms_to_common_perms(*p_perms);
 	*p_tclass = SECCLASS_COLUMN;
 
-	if (IsBootstrapProcessingMode()) {
-		char *tblname = NULL;
-		switch (attr->attrelid) {
-		case TypeRelationId:		tblname = "pg_type";		break;
-		case ProcedureRelationId:	tblname = "pg_proc";		break;
-		case AttributeRelationId:	tblname = "pg_attribute";	break;
-		case RelationRelationId:	tblname = "pg_class";		break;
+	switch (attrForm->attrelid) {
+	case TypeRelationId:
+	case ProcedureRelationId:
+	case AttributeRelationId:
+	case RelationRelationId:
+		/* those are pure relation */
+		return;
+	default:
+		use_syscache = true;
+
+		exttup = SearchSysCache(RELOID,
+								ObjectIdGetDatum(attrForm->attrelid),
+								0, 0, 0);
+		if (!HeapTupleIsValid(exttup)) {
+			use_syscache = false;
+			exttup = __scanRelationSysTbl(attrForm->attrelid);
+			if (!HeapTupleIsValid(exttup))
+				selerror("cache lookup failed for relation %u", attrForm->attrelid);
 		}
-		if (tblname)
-			return;
+		classForm = (Form_pg_class) GETSTRUCT(exttup);
+		if (classForm->relkind != RELKIND_RELATION)
+			*p_tclass = SECCLASS_DATABASE;
+		if (use_syscache)
+			ReleaseSysCache(exttup);
+		break;
 	}
-	exttup = SearchSysCache(RELOID, ObjectIdGetDatum(attr->attrelid), 0, 0, 0);
-	if (!HeapTupleIsValid(exttup)) {
-		use_syscache = false;
-		exttup = __scanRelationSysTbl(attr->attrelid);
-		if (!HeapTupleIsValid(exttup))
-			selerror("cache lookup failed for relation %u", attr->attrelid);
-	}
-	pgclass = (Form_pg_class) GETSTRUCT(exttup);
-	if (pgclass->relkind != RELKIND_RELATION)
-		*p_tclass = SECCLASS_DATABASE;
-	if (use_syscache)
-		ReleaseSysCache(exttup);
 }
 
-static void __check_pg_largeobject(TupleDesc tdesc, HeapTuple tuple, HeapTuple oldtup,
+static void __check_pg_largeobject(HeapTuple tuple, HeapTuple oldtup,
 								   uint32 *p_perms, uint16 *p_tclass)
 {
-	Oid loid = ((Form_pg_largeobject) GETSTRUCT(tuple))->loid;
-	int32 pageno = ((Form_pg_largeobject) GETSTRUCT(tuple))->pageno;
+	Form_pg_largeobject blobForm
+		= (Form_pg_largeobject) GETSTRUCT(tuple);
 	Relation rel;
 	ScanKeyData skey;
 	SysScanDesc sd;
 	uint32 perms = 0;
-	bool found = false;
 
 	perms |= (*p_perms & TUPLE__SELECT ? BLOB__GETATTR : 0);
 	perms |= (*p_perms & TUPLE__UPDATE ? BLOB__SETATTR : 0);
@@ -213,65 +211,72 @@ static void __check_pg_largeobject(TupleDesc tdesc, HeapTuple tuple, HeapTuple o
 	perms |= (*p_perms & BLOB__WRITE   ? BLOB__WRITE   : 0);
 
 	if (*p_perms & TUPLE__INSERT) {
+		bool found = false;
+
 		ScanKeyInit(&skey,
 					Anum_pg_largeobject_loid,
 					BTEqualStrategyNumber, F_OIDEQ,
-					ObjectIdGetDatum(loid));
+					ObjectIdGetDatum(blobForm->loid));
 		rel = heap_open(LargeObjectRelationId, AccessShareLock);
 		sd = systable_beginscan(rel, LargeObjectLOidPNIndexId, true,
 								SnapshotSelf, 1, &skey);
 		if (HeapTupleIsValid(systable_getnext(sd)))
             found = true;
 		systable_endscan(sd);
-		heap_close(rel, NoLock);
-		perms |= (found ? BLOB__WRITE : BLOB__CREATE);
+		heap_close(rel, AccessShareLock);
+		perms |= (!found ? BLOB__CREATE : BLOB__SETATTR);
+	}
 
-	} else if (*p_perms & TUPLE__DELETE) {
+	if (*p_perms & TUPLE__DELETE) {
 		HeapTuple exttup;
+		bool found = false;
 
 		ScanKeyInit(&skey,
 					Anum_pg_largeobject_loid,
 					BTEqualStrategyNumber, F_OIDEQ,
-					ObjectIdGetDatum(loid));
+					ObjectIdGetDatum(blobForm->loid));
 		rel = heap_open(LargeObjectRelationId, AccessShareLock);
 		sd = systable_beginscan(rel, LargeObjectLOidPNIndexId, true,
 								SnapshotSelf, 1, &skey);
 		while ((exttup = systable_getnext(sd))) {
-			if (pageno != ((Form_pg_largeobject) GETSTRUCT(exttup))->pageno) {
+			int __pageno = ((Form_pg_largeobject) GETSTRUCT(exttup))->pageno;
+
+			if (blobForm->pageno != __pageno) {
 				found = true;
 				break;
 			}
 		}
 		systable_endscan(sd);
-		heap_close(rel, NoLock);
-		perms |= (found ? BLOB__WRITE : BLOB__DROP);
+		heap_close(rel, AccessShareLock);
+		perms |= (!found ? BLOB__DROP : BLOB__SETATTR);
 	}
 	*p_tclass = SECCLASS_BLOB;
 	*p_perms = perms;
 }
 
-static void __check_pg_proc(TupleDesc tdesc, HeapTuple tuple, HeapTuple oldtup,
+static void __check_pg_proc(HeapTuple tuple, HeapTuple oldtup,
 							uint32 *p_perms, uint16 *p_tclass)
 {
 	uint32 perms = __tuple_perms_to_common_perms(*p_perms);
-	Form_pg_proc proc = (Form_pg_proc) GETSTRUCT(tuple);
+	Form_pg_proc procForm = (Form_pg_proc) GETSTRUCT(tuple);
 
-	if (proc->prolang == ClanguageId) {
-		bool verify_shlib = false;
-		Datum obin, nbin;
-		bool isnull;
+	if (procForm->prolang == ClanguageId) {
+		Datum oldbin, newbin;
+		bool isnull, verify = false;
 
-		nbin = heap_getattr(tuple, Anum_pg_proc_probin, tdesc, &isnull);
+		newbin = SysCacheGetAttr(PROCOID, tuple,
+								 Anum_pg_proc_probin, &isnull);
 		if (!isnull) {
 			if (perms & PROCEDURE__CREATE) {
-				verify_shlib = true;
-			} else if (oldtup) {
-				obin = heap_getattr(oldtup, Anum_pg_proc_probin, tdesc, &isnull);
-				if (isnull || DatumGetBool(DirectFunctionCall2(textne, obin, nbin)))
-					verify_shlib = true;
+				verify = true;
+			} else if (HeapTupleIsValid(oldtup)) {
+				oldbin = SysCacheGetAttr(PROCOID, oldtup,
+										 Anum_pg_proc_probin, &isnull);
+				if (isnull || DatumGetBool(DirectFunctionCall2(textne, oldbin, newbin)))
+					verify = true;
 			}
 
-			if (verify_shlib) {
+			if (verify) {
 				char *filename;
 				security_context_t filecon;
 				Datum filesid;
@@ -284,7 +289,7 @@ static void __check_pg_proc(TupleDesc tdesc, HeapTuple tuple, HeapTuple oldtup,
 									   NULL);
 
 				/* <client type> <-- database:module_install --> <file type> */
-				filename = DatumGetCString(DirectFunctionCall1(textout, nbin));
+				filename = DatumGetCString(DirectFunctionCall1(textout, newbin));
 				filename = expand_dynamic_library_name(filename);
 				if (getfilecon(filename, &filecon) < 1)
 					selerror("could not obtain the security context of '%s'", filename);
@@ -313,38 +318,18 @@ static void __check_pg_proc(TupleDesc tdesc, HeapTuple tuple, HeapTuple oldtup,
 	*p_tclass = SECCLASS_PROCEDURE;
 }
 
-static void __check_pg_relation(TupleDesc tdesc, HeapTuple tuple, HeapTuple oldtup,
+static void __check_pg_relation(HeapTuple tuple, HeapTuple oldtup,
 								uint32 *p_perms, uint16 *p_tclass)
 {
-	Form_pg_class pgclass = (Form_pg_class) GETSTRUCT(tuple);
-	*p_tclass = (pgclass->relkind == RELKIND_RELATION
+	Form_pg_class classForm = (Form_pg_class) GETSTRUCT(tuple);
+	*p_tclass = (classForm->relkind == RELKIND_RELATION
 				 ? SECCLASS_TABLE
 				 : SECCLASS_DATABASE);
 	*p_perms = __tuple_perms_to_common_perms(*p_perms);
-
-	/*
-	 * When you drop a table, you have to have a permission to delete tuples.
-	 */
-	if (*p_tclass == SECCLASS_TABLE && (*p_perms & TABLE__DROP)) {
-		Oid tableoid;
-		Relation rel;
-		HeapScanDesc scan;
-		HeapTuple exttup;
-
-		tableoid = HeapTupleGetOid(tuple);
-		rel = heap_open(tableoid, AccessShareLock);
-		scan = heap_beginscan(rel, SnapshotNow, 0, NULL);
-		while ((exttup = heap_getnext(scan, ForwardScanDirection)) != NULL) {
-			__check_tuple_perms(tableoid, RelationGetDescr(rel),
-								exttup, NULL, TUPLE__DELETE, true);
-		}
-		heap_endscan(scan);
-		heap_close(rel, AccessShareLock);
-	}
 }
 
-static bool __check_tuple_perms(Oid tableoid, TupleDesc tdesc, HeapTuple tuple, HeapTuple oldtup,
-								uint32 perms, bool abort)
+static bool __check_tuple_perms(Oid tableoid, Oid tcontext, uint32 perms,
+								HeapTuple tuple, HeapTuple oldtup, bool abort)
 {
 	uint16 tclass;
 	bool rc = true;
@@ -352,26 +337,26 @@ static bool __check_tuple_perms(Oid tableoid, TupleDesc tdesc, HeapTuple tuple, 
 	Assert(tuple != NULL);
 
 	switch (tableoid) {
-	case DatabaseRelationId:    /* pg_database */
-	case TypeRelationId:        /* pg_type */
+	case DatabaseRelationId:		/* pg_database */
+	case TypeRelationId:			/* pg_type */
 		perms = __tuple_perms_to_common_perms(perms);
 		tclass = SECCLASS_DATABASE;
 		break;
 
 	case RelationRelationId:
-		__check_pg_relation(tdesc, tuple, oldtup, &perms, &tclass);
+		__check_pg_relation(tuple, oldtup, &perms, &tclass);
 		break;
 
 	case AttributeRelationId:		/* pg_attribute */
-		__check_pg_attribute(tdesc, tuple, oldtup, &perms, &tclass);
+		__check_pg_attribute(tuple, oldtup, &perms, &tclass);
 		break;
 
 	case ProcedureRelationId:
-		__check_pg_proc(tdesc, tuple, oldtup, &perms, &tclass);
+		__check_pg_proc(tuple, oldtup, &perms, &tclass);
 		break;
 
 	case LargeObjectRelationId:
-		__check_pg_largeobject(tdesc, tuple, oldtup, &perms, &tclass);
+		__check_pg_largeobject(tuple, oldtup, &perms, &tclass);
 		break;
 
 	default:
@@ -388,7 +373,7 @@ static bool __check_tuple_perms(Oid tableoid, TupleDesc tdesc, HeapTuple tuple, 
 		char *audit;
 		char *object_name = __tuple_system_object_name(tableoid, tuple);
 		rc = sepgsql_avc_permission_noaudit(sepgsqlGetClientContext(),
-											HeapTupleGetSecurity(tuple),
+											tcontext,
 											tclass,
 											perms,
 											&audit,
@@ -398,54 +383,49 @@ static bool __check_tuple_perms(Oid tableoid, TupleDesc tdesc, HeapTuple tuple, 
 	return rc;
 }
 
-static bool __sepgsql_tuple_perms(Oid tableoid, HeapTupleHeader rec, uint32 perms, bool abort)
-{
-	HeapTupleData tuple;
-	TupleDesc tdesc;
-	bool rc;
-
-	tdesc = lookup_rowtype_tupdesc(HeapTupleHeaderGetTypeId(rec),
-								   HeapTupleHeaderGetTypMod(rec));
-	tuple.t_len = HeapTupleHeaderGetDatumLength(rec);
-    ItemPointerSetInvalid(&(tuple.t_self));
-    tuple.t_tableOid = tableoid;
-    tuple.t_data = rec;
-
-	rc = __check_tuple_perms(tableoid, tdesc, &tuple, NULL, perms, abort);
-
-	ReleaseTupleDesc(tdesc);
-
-	return rc;
-}
-
+/*
+ * MEMO: we cannot obtain system column from RECORD datatype.
+ * If those are necesasry, they should be separately delivered. 
+ */
 Datum sepgsql_tuple_perms(PG_FUNCTION_ARGS)
 {
 	Oid tableoid = PG_GETARG_OID(0);
-	HeapTupleHeader rec = PG_GETARG_HEAPTUPLEHEADER(1);
+	Oid tcontext = PG_GETARG_OID(1);
 	uint32 perms = PG_GETARG_UINT32(2);
-	bool rc;
+	HeapTupleHeader rec = PG_GETARG_HEAPTUPLEHEADER(3);
+	HeapTupleData tuple;
 
-	rc = __sepgsql_tuple_perms(tableoid, rec, perms, false);
+	tuple.t_len = HeapTupleHeaderGetDatumLength(rec);
+	ItemPointerSetInvalid(&tuple.t_self);
+	tuple.t_tableOid = tableoid;
+	tuple.t_data = rec;
 
-	PG_RETURN_BOOL(rc);
+	PG_RETURN_BOOL(__check_tuple_perms(tableoid, tcontext, perms, &tuple, NULL, false));
 }
 
 Datum sepgsql_tuple_perms_abort(PG_FUNCTION_ARGS)
 {
 	Oid tableoid = PG_GETARG_OID(0);
-	HeapTupleHeader rec = PG_GETARG_HEAPTUPLEHEADER(1);
+	Oid tcontext = PG_GETARG_OID(1);
 	uint32 perms = PG_GETARG_UINT32(2);
+	HeapTupleHeader rec = PG_GETARG_HEAPTUPLEHEADER(3);
+	HeapTupleData tuple;
 
-	PG_RETURN_BOOL(__sepgsql_tuple_perms(tableoid, rec, perms, true));
+	tuple.t_len = HeapTupleHeaderGetDatumLength(rec);
+	ItemPointerSetInvalid(&tuple.t_self);
+	tuple.t_tableOid = tableoid;
+	tuple.t_data = rec;
+
+	PG_RETURN_BOOL(__check_tuple_perms(tableoid, tcontext, perms, &tuple, NULL, true));
 }
 
 bool sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, HeapTuple oldtup, uint32 perms, bool abort)
 {
 	return __check_tuple_perms(RelationGetRelid(rel),
-							   RelationGetDescr(rel),
+							   HeapTupleGetSecurity(tuple),
+							   perms,
 							   tuple,
 							   oldtup,
-							   perms,
 							   abort);
 }
 

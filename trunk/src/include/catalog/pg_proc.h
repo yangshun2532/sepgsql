@@ -3986,8 +3986,8 @@ DATA(insert OID = 3411 ( lo_set_security				PGNSP PGUID 12 f f t f v 2 16 "26 34
 
 /* SE-PostgreSQL related functions */
 DATA(insert OID = 3420 ( sepgsql_getcon					PGNSP PGUID 12 f f t f v 0 3403 "" _null_ _null_ _null_ sepgsql_getcon - _null_ ));
-DATA(insert OID = 3421 ( sepgsql_tuple_perms			PGNSP PGUID 12 f f t f v 3 16 "26 2249 23" _null_ _null_ _null_ sepgsql_tuple_perms - _null_ ));
-DATA(insert OID = 3422 ( sepgsql_tuple_perms_abort		PGNSP PGUID 12 f f t f v 3 16 "26 2249 23" _null_ _null_ _null_ sepgsql_tuple_perms_abort - _null_ ));
+DATA(insert OID = 3421 ( sepgsql_tuple_perms			PGNSP PGUID 12 f f t f v 4 16 "26 3403 23 2249" _null_ _null_ _null_ sepgsql_tuple_perms - _null_ ));
+DATA(insert OID = 3422 ( sepgsql_tuple_perms_abort		PGNSP PGUID 12 f f t f v 4 16 "26 3403 23 2249" _null_ _null_ _null_ sepgsql_tuple_perms_abort - _null_ ));
 
 
 /*
