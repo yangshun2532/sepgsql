@@ -28,107 +28,149 @@
 #include <unistd.h>
 #include <unistd.h>
 
-/* security_class_to_string() and security_av_perm_to_string() will be
- * provided by new version of libselinux. The followings are provisional
- * works
- */
-static const char *security_class_to_string(uint16 tclass)
-{
-	static char *class_to_string[] = {
-		"database",
-		"table",
-		"procedure",
-		"column",
-		"tuple",
-		"blob",
-	};
+static struct {
+	struct {
+		char *name;		/* name of object class */
+		uint16 inum;	/* internal identifier number */
+	} tclass;
+	struct {
+		char *name;		/* name of access vector */
+		uint32 inum;	/* internal identifier number */
+	} av_perms[sizeof(access_vector_t) * 8];
+} selinux_catalog[] = {
+	{
+		{ "database", SECCLASS_DATABASE },
+		{
+			{ "create",			DATABASE__CREATE },
+			{ "drop",			DATABASE__DROP },
+			{ "getattr",		DATABASE__GETATTR },
+			{ "setattr",		DATABASE__SETATTR },
+			{ "relabelfrom",	DATABASE__RELABELFROM },
+			{ "relabelto",		DATABASE__RELABELTO },
+			{ "access",			DATABASE__ACCESS },
+			{ "install_module",	DATABASE__INSTALL_MODULE },
+			{ "load_module",	DATABASE__LOAD_MODULE },
+			{ "get_param",		DATABASE__GET_PARAM },
+			{ "set_param",		DATABASE__SET_PARAM },
+			{ NULL,				0UL },
+		}
+	},
+	{
+		{ "table", SECCLASS_TABLE },
+		{
+			{ "create",			TABLE__CREATE },
+			{ "drop",			TABLE__DROP },
+			{ "getattr",		TABLE__GETATTR },
+			{ "setattr",		TABLE__SETATTR },
+			{ "relabelfrom",	TABLE__RELABELFROM },
+			{ "relabelto",		TABLE__RELABELTO },
+			{ "select",			TABLE__SELECT },
+			{ "update",			TABLE__UPDATE },
+			{ "insert",			TABLE__INSERT },
+			{ "delete",			TABLE__DELETE },
+			{ "lock",			TABLE__LOCK },
+			{ NULL,				0UL },
+		}
+	},
+	{
+		{ "procedure", SECCLASS_PROCEDURE },
+		{
+			{ "create",			PROCEDURE__CREATE },
+			{ "drop",			PROCEDURE__DROP },
+			{ "getattr",		PROCEDURE__GETATTR },
+			{ "setattr",		PROCEDURE__SETATTR },
+			{ "relabelfrom",	PROCEDURE__RELABELFROM },
+			{ "relabelto",		PROCEDURE__RELABELTO },
+			{ "execute",		PROCEDURE__EXECUTE },
+			{ "entrypoint",		PROCEDURE__ENTRYPOINT },
+			{ NULL,				0UL },
+		}
+	},
+	{
+		{ "column", SECCLASS_COLUMN },
+		{
+			{ "create",			COLUMN__CREATE },
+			{ "drop",			COLUMN__DROP },
+			{ "getattr",		COLUMN__GETATTR },
+			{ "setattr",		COLUMN__SETATTR },
+			{ "relabelfrom",	COLUMN__RELABELFROM },
+			{ "relabelto",		COLUMN__RELABELTO },
+			{ "select",			COLUMN__SELECT },
+			{ "update",			COLUMN__UPDATE },
+			{ "insert",			COLUMN__INSERT },
+			{ NULL,				0UL },
+		}
+	},
+	{
+		{ "tuple", SECCLASS_TUPLE },
+		{
+			{ "relabelfrom",	TUPLE__RELABELFROM },
+			{ "relabelto",		TUPLE__RELABELTO },
+			{ "select",			TUPLE__SELECT },
+			{ "update",			TUPLE__UPDATE },
+			{ "insert",			TUPLE__INSERT },
+			{ "delete",			TUPLE__DELETE },
+			{ NULL,				0UL },
+		}
+	},
+	{
+		{ "blob", SECCLASS_BLOB },
+		{
+			{ "create",			BLOB__CREATE },
+			{ "drop",			BLOB__DROP },
+			{ "getattr",		BLOB__GETATTR },
+			{ "setattr",		BLOB__SETATTR },
+			{ "relabelfrom",	BLOB__RELABELFROM },
+			{ "relabelto",		BLOB__RELABELTO },
+			{ "read",			BLOB__READ },
+			{ "write",			BLOB__WRITE },
+			{ "import",			BLOB__IMPORT },
+			{ "export",			BLOB__EXPORT },
+			{ NULL,				0UL },
+		}
+	},
+};
+#define NUM_SELINUX_CATALOG (sizeof(selinux_catalog) / sizeof(selinux_catalog[0]))
 
-	if (tclass >= SECCLASS_DATABASE && tclass <= SECCLASS_BLOB)
-		return class_to_string[tclass - SECCLASS_DATABASE];
+static const char *sepgsql_class_to_string(uint16 tclass)
+{
+	int i;
+
+	for (i=0; i < NUM_SELINUX_CATALOG; i++) {
+		if (selinux_catalog[i].tclass.inum == tclass)
+			return selinux_catalog[i].tclass.name;
+	}
+#if 0		/* 1, if libselinux support security_class_to_string() */
+	return security_class_to_string((security_class_t) tclass);
+#else
 	if (tclass == SECCLASS_PROCESS)
 		return "process";
 	return "unknown";
+#endif
 }
 
-static const char *security_av_perm_to_string(uint16 tclass, uint32 perm)
+static const char *sepgsql_av_perm_to_string(uint16 tclass, uint32 perm)
 {
-	static struct {
-		uint16 tclass;
-		uint32 perm;
-		char *name;
-	} perm_to_string[] = {
-		/* process */
-		{ SECCLASS_PROCESS,		PROCESS__TRANSITION,	"transition" },
-		/* databases */
-		{ SECCLASS_DATABASE,	DATABASE__CREATE,		"create" },
-		{ SECCLASS_DATABASE,	DATABASE__DROP,			"drop" },
-		{ SECCLASS_DATABASE,	DATABASE__GETATTR,		"getattr" },
-		{ SECCLASS_DATABASE,	DATABASE__SETATTR,		"setattr" },
-		{ SECCLASS_DATABASE,	DATABASE__RELABELFROM,	"relabelfrom" },
-		{ SECCLASS_DATABASE,	DATABASE__RELABELTO,	"relabelto" },
-		{ SECCLASS_DATABASE,	DATABASE__ACCESS,		"access" },
-		{ SECCLASS_DATABASE,	DATABASE__INSTALL_MODULE,	"install_module" },
-		{ SECCLASS_DATABASE,	DATABASE__LOAD_MODULE,	"load_module" },
-		{ SECCLASS_DATABASE,	DATABASE__GET_PARAM,	"get_param" },
-		{ SECCLASS_DATABASE,	DATABASE__SET_PARAM,	"set_param" },
-		/* table */
-		{ SECCLASS_TABLE,		TABLE__CREATE,			"create" },
-		{ SECCLASS_TABLE,		TABLE__DROP,			"drop" },
-		{ SECCLASS_TABLE,		TABLE__GETATTR,			"getattr" },
-		{ SECCLASS_TABLE,		TABLE__SETATTR,			"setattr" },
-		{ SECCLASS_TABLE,		TABLE__RELABELFROM,		"relabelfrom" },
-		{ SECCLASS_TABLE,		TABLE__RELABELTO,		"relabelto" },
-		{ SECCLASS_TABLE,		TABLE__SELECT,			"select" },
-		{ SECCLASS_TABLE,		TABLE__UPDATE,			"update" },
-		{ SECCLASS_TABLE,		TABLE__INSERT,			"insert" },
-		{ SECCLASS_TABLE,		TABLE__DELETE,			"delete" },
-		{ SECCLASS_TABLE,		TABLE__LOCK,  		  	"lock" },
-		/* procedrue */
-		{ SECCLASS_PROCEDURE,	PROCEDURE__CREATE,		"create" },
-		{ SECCLASS_PROCEDURE,	PROCEDURE__DROP,		"drop" },
-		{ SECCLASS_PROCEDURE,	PROCEDURE__GETATTR,		"getattr" },
-		{ SECCLASS_PROCEDURE,	PROCEDURE__SETATTR,		"setattr" },
-		{ SECCLASS_PROCEDURE,	PROCEDURE__RELABELFROM,	"relabelfrom" },
-		{ SECCLASS_PROCEDURE,	PROCEDURE__RELABELTO,	"relabelto" },
-		{ SECCLASS_PROCEDURE,	PROCEDURE__EXECUTE,		"execute" },
-		{ SECCLASS_PROCEDURE,	PROCEDURE__ENTRYPOINT,	"entrypoint" },
-		/* column */
-		{ SECCLASS_COLUMN,		COLUMN__CREATE,			"create" },
-		{ SECCLASS_COLUMN,		COLUMN__DROP,			"drop" },
-		{ SECCLASS_COLUMN,		COLUMN__GETATTR,		"getattr" },
-		{ SECCLASS_COLUMN,		COLUMN__SETATTR,		"setattr" },
-		{ SECCLASS_COLUMN,		COLUMN__RELABELFROM,	"relabelfrom" },
-		{ SECCLASS_COLUMN,		COLUMN__RELABELTO,		"relabelto" },
-		{ SECCLASS_COLUMN,		COLUMN__SELECT,			"select" },
-		{ SECCLASS_COLUMN,		COLUMN__UPDATE,			"update" },
-		{ SECCLASS_COLUMN,		COLUMN__INSERT,			"insert" },
-		/* tuple */
-		{ SECCLASS_TUPLE,		TUPLE__RELABELFROM,		"relabelfrom" },
-		{ SECCLASS_TUPLE,		TUPLE__RELABELTO,		"relabelto" },
-		{ SECCLASS_TUPLE,		TUPLE__SELECT,			"select" },
-		{ SECCLASS_TUPLE,		TUPLE__UPDATE,			"update" },
-		{ SECCLASS_TUPLE,		TUPLE__INSERT,			"insert" },
-		{ SECCLASS_TUPLE,		TUPLE__DELETE,			"delete" },
-		/* blob */
-		{ SECCLASS_BLOB,		BLOB__CREATE,			"create" },
-		{ SECCLASS_BLOB,		BLOB__DROP,				"drop" },
-		{ SECCLASS_BLOB,		BLOB__GETATTR,			"getattr" },
-		{ SECCLASS_BLOB,		BLOB__SETATTR,			"setattr" },
-		{ SECCLASS_BLOB,		BLOB__RELABELFROM,		"relabelfrom" },
-		{ SECCLASS_BLOB,		BLOB__RELABELTO,		"relabelto" },
-		{ SECCLASS_BLOB,		BLOB__READ,				"read" },
-		{ SECCLASS_BLOB,		BLOB__WRITE,			"write" },
-		{ SECCLASS_BLOB,		BLOB__IMPORT,			"import" },
-		{ SECCLASS_BLOB,		BLOB__EXPORT,			"export" },
-		{ 0, 0, NULL }
-	};
-	int i;
+	int i, j;
 
-	for (i=0; perm_to_string[i].name; i++) {
-		if (tclass == perm_to_string[i].tclass && perm == perm_to_string[i].perm)
-			return perm_to_string[i].name;
+	for (i=0; i < NUM_SELINUX_CATALOG; i++) {
+		if (selinux_catalog[i].tclass.inum == tclass) {
+			char *perm_name;
+
+			for (j=0; (perm_name = selinux_catalog[i].av_perms[j].name); j++) {
+				if (selinux_catalog[i].av_perms[j].inum == perm)
+					return perm_name;
+			}
+			break;
+		}
 	}
+#if 0		/* 1, if libselinux support security_av_perm_to_string() */
+	return security_av_perm_to_string((security_class_t) tclass, (access_vector_t) perm);
+#else
+	if (tclass == SECCLASS_PROCESS && perm == PROCESS__TRANSITION)
+		return "transition";
 	return "unknown";
+#endif
 }
 
 /*
@@ -161,6 +203,18 @@ static struct {
 	int enabled;
 	int enforcing;
 	struct avc_datum entry[AVC_DATUM_CACHE_MAXNODES];
+
+	/* dynamic object class/av permission mapping */
+	struct {
+		struct {
+			uint16 internal;
+			security_class_t external;
+		} tclass;
+		struct {
+			uint32 internal;
+			access_vector_t external;
+		} av_perms[sizeof(access_vector_t) * 8];
+	} catalog[NUM_SELINUX_CATALOG];
 } *avc_shmem = NULL;
 
 Size sepgsqlShmemSize()
@@ -309,7 +363,7 @@ static char *sepgsql_avc_audit(uint32 perms, struct avc_datum *avd, char *objnam
 	for (mask=1; mask; mask <<= 1) {
 		if (audited & mask) {
 			len += snprintf(buffer + len, sizeof(buffer) - len, " %s",
-							security_av_perm_to_string(avd->tclass, mask));
+							sepgsql_av_perm_to_string(avd->tclass, mask));
 		}
 	}
 	len += snprintf(buffer + len, sizeof(buffer) - len, " }");
@@ -325,7 +379,7 @@ static char *sepgsql_avc_audit(uint32 perms, struct avc_datum *avd, char *objnam
 	pfree(context);
 
 	len += snprintf(buffer + len, sizeof(buffer) - len, " tclass=%s",
-					security_class_to_string(avd->tclass));
+					sepgsql_class_to_string(avd->tclass));
 	if (objname)
 		len += snprintf(buffer + len, sizeof(buffer) - len, " name=%s", objname);
 
