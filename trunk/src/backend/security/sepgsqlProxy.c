@@ -182,7 +182,7 @@ static List *addEvalPgProc(List *selist, Oid funcid, uint32 perms)
  * a SEvalItem list related to expression node.
  * It is evaluated at later phase.
  * *******************************************************************************/
-static List *walkVar(List *selist, queryChain *qc, Var *var)
+static List *walkVarHelper(List *selist, queryChain *qc, Var *var)
 {
 	RangeTblEntry *rte;
 	Query *query;
@@ -259,23 +259,7 @@ static List *walkVar(List *selist, queryChain *qc, Var *var)
 	return selist;
 }
 
-static List *walkFuncExpr(List *selist, queryChain *qc, FuncExpr *func)
-{
-	Assert(IsA(func, FuncExpr));
-
-	selist = addEvalPgProc(selist, func->funcid, PROCEDURE__EXECUTE);
-	selist = sepgsqlWalkExpr(selist, qc, (Node *) func->args);
-
-	return selist;
-}
-
-static List *walkBoolExpr(List *selist, queryChain *qc, BoolExpr *expr)
-{
-	Assert(IsA(expr, BoolExpr));
-	return sepgsqlWalkExpr(selist, qc, (Node *) expr->args);
-}
-
-static List *__walkOpExprHelper(List *selist, Oid opid)
+static List *walkOpExprHelper(List *selist, Oid opid)
 {
 	HeapTuple tuple;
 	Form_pg_operator oprform;
@@ -297,251 +281,182 @@ static List *__walkOpExprHelper(List *selist, Oid opid)
 	return selist;
 }
 
-static List *walkOpExpr(List *selist, queryChain *qc, OpExpr *n)
+static List *sepgsqlWalkExpr(List *selist, queryChain *qc, Node *node)
 {
-	selist = __walkOpExprHelper(selist, n->opno);
-	selist = sepgsqlWalkExpr(selist, qc, (Node *) n->args);
-	return selist;
-}
-
-static List *walkScalarArrayOpExpr(List *selist, queryChain *qc, ScalarArrayOpExpr *sao)
-{
-	selist = __walkOpExprHelper(selist, sao->opno);
-	selist = sepgsqlWalkExpr(selist, qc, (Node *) sao->args);
-	return selist;
-}
-
-static List *walkAggref(List *selist, queryChain *qc, Aggref *aggref)
-{
-	Assert(IsA(aggref, Aggref));
-	selist = addEvalPgProc(selist, aggref->aggfnoid, PROCEDURE__EXECUTE);
-	selist = sepgsqlWalkExpr(selist, qc, (Node *) aggref->args);
-	return selist;
-}
-
-static List *walkSubLink(List *selist, queryChain *qc, SubLink *slink)
-{
-	Assert(IsA(slink, SubLink));
-	Assert(IsA(slink->subselect, Query));
-
-	selist = sepgsqlWalkExpr(selist, qc, (Node *) slink->testexpr);
-	selist = proxyRteSubQuery(selist, qc, (Query *) slink->subselect);
-
-	return selist;
-}
-
-static List *walkList(List *selist, queryChain *qc, List *list)
-{
-	ListCell *l;
-
-	Assert(IsA(list, List));
-	foreach (l, list)
-		selist = sepgsqlWalkExpr(selist, qc, lfirst(l));
-
-	return selist;
-}
-
-static List *walkSortClause(List *selist, queryChain *qc, SortClause *sortcl)
-{
-	Query *query = getQueryFromChain(qc);
-	ListCell *l;
-
-	Assert(IsA(sortcl, SortClause) || IsA(sortcl, GroupClause));
-	foreach (l, query->targetList) {
-		TargetEntry *te = (TargetEntry *) lfirst(l);
-		Assert(IsA(te, TargetEntry));
-		if (te->ressortgroupref == sortcl->tleSortGroupRef) {
-			selist = sepgsqlWalkExpr(selist, qc, (Node *) te->expr);
-			break;
-		}
-	}
-	return selist;
-}
-
-static List *walkCoerceToDomain(List *selist, queryChain *qc, CoerceToDomain *cd)
-{
-	return sepgsqlWalkExpr(selist, qc, (Node *) cd->arg);
-}
-
-static List *walkCaseExpr(List *selist, queryChain *qc, CaseExpr *ce)
-{
-	ListCell *l;
-
-	selist = sepgsqlWalkExpr(selist, qc, (Node *) ce->arg);
-	foreach(l, ce->args)
-		selist = sepgsqlWalkExpr(selist, qc, (Node *) lfirst(l));
-	selist = sepgsqlWalkExpr(selist, qc, (Node *) ce->defresult);
-	return selist;
-}
-
-static List *walkCaseWhen(List *selist, queryChain *qc, CaseWhen *cw)
-{
-	selist = sepgsqlWalkExpr(selist, qc, (Node *) cw->expr);
-	selist = sepgsqlWalkExpr(selist, qc, (Node *) cw->result);
-	return selist;
-}
-
-static List *walkRelabelType(List *selist, queryChain *qc, RelabelType *rt)
-{
-	return sepgsqlWalkExpr(selist, qc, (Node *) rt->arg);
-}
-
-static List *walkCoalesceExpr(List *selist, queryChain *qc, CoalesceExpr *ce)
-{
-	return sepgsqlWalkExpr(selist, qc, (Node *) ce->args);
-}
-
-static List *walkMinMaxExpr(List *selist, queryChain *qc, MinMaxExpr *mme)
-{
-	return sepgsqlWalkExpr(selist, qc, (Node *) mme->args);
-}
-
-static List *walkNullTest(List *selist, queryChain *qc, NullTest *nt)
-{
-	return sepgsqlWalkExpr(selist, qc, (Node *) nt->arg);
-}
-
-static List *walkBooleanTest(List *selist, queryChain *qc, BooleanTest *bt)
-{
-	return sepgsqlWalkExpr(selist, qc, (Node *) bt->arg);
-}
-
-static List *walkFieldSelect(List *selist, queryChain *qc, FieldSelect *fselect)
-{
-	return sepgsqlWalkExpr(selist, qc, (Node *) fselect->arg);
-}
-
-static List *walkFieldStore(List *selist, queryChain *qc, FieldStore *fstore)
-{
-	selist = sepgsqlWalkExpr(selist, qc, (Node *) fstore->arg);
-	selist = sepgsqlWalkExpr(selist, qc, (Node *) fstore->newvals);
-	return selist;
-}
-
-static List *walkArrayExpr(List *selist, queryChain *qc, ArrayExpr *ae)
-{
-	return sepgsqlWalkExpr(selist, qc, (Node *) ae->elements);
-}
-
-static List *walkArrayRef(List *selist, queryChain *qc, ArrayRef *aref)
-{
-	selist = sepgsqlWalkExpr(selist, qc, (Node *) aref->refupperindexpr);
-	selist = sepgsqlWalkExpr(selist, qc, (Node *) aref->reflowerindexpr);
-	selist = sepgsqlWalkExpr(selist, qc, (Node *) aref->refexpr);
-	selist = sepgsqlWalkExpr(selist, qc, (Node *) aref->refassgnexpr);
-	return selist;
-}
-
-static List *walkRowExpr(List *selist, queryChain *qc, RowExpr *row)
-{
-	return sepgsqlWalkExpr(selist, qc, (Node *) row->args);
-}
-
-static List *walkRowCompareExpr(List *selist, queryChain *qc, RowCompareExpr *rce)
-{
-	ListCell *l;
-
-	foreach(l, rce->opnos)
-		selist = __walkOpExprHelper(selist, lfirst_oid(l));
-	selist = sepgsqlWalkExpr(selist, qc, (Node *) rce->largs);
-	selist = sepgsqlWalkExpr(selist, qc, (Node *) rce->rargs);
-
-	return selist;
-}
-
-static List *walkConvertRowtypeExpr(List *selist, queryChain *qc, ConvertRowtypeExpr *cre)
-{
-	return sepgsqlWalkExpr(selist, qc, (Node *) cre->arg);
-}
-
-static List *sepgsqlWalkExpr(List *selist, queryChain *qc, Node *n)
-{
-	if (n == NULL)
+	if (node == NULL)
 		return selist;
 
-	switch (nodeTag(n)) {
+	switch (nodeTag(node)) {
 	case T_Const:
 	case T_Param:
 	case T_CaseTestExpr:
 		/* do nothing */
 		break;
-	case T_Var:
-		selist = walkVar(selist, qc, (Var *) n);
+	case T_List: {
+		ListCell *l;
+
+		foreach (l, (List *) node)
+			selist = sepgsqlWalkExpr(selist, qc, (Node *) lfirst(l));
 		break;
-	case T_FuncExpr:
-		selist = walkFuncExpr(selist, qc, (FuncExpr *) n);
+	}
+	case T_Var: {
+		selist = walkVarHelper(selist, qc, (Var *) node);
 		break;
-	case T_ScalarArrayOpExpr:
-		selist = walkScalarArrayOpExpr(selist, qc, (ScalarArrayOpExpr *) n);
+	}
+	case T_FuncExpr: {
+		FuncExpr *func = (FuncExpr *) node;
+
+		selist = addEvalPgProc(selist, func->funcid, PROCEDURE__EXECUTE);
+		selist = sepgsqlWalkExpr(selist, qc, (Node *) func->args);
 		break;
-	case T_BoolExpr:
-		selist = walkBoolExpr(selist, qc, (BoolExpr *) n);
+	}
+	case T_Aggref: {
+		Aggref *aggref = (Aggref *) node;
+
+		selist = addEvalPgProc(selist, aggref->aggfnoid, PROCEDURE__EXECUTE);
+		selist = sepgsqlWalkExpr(selist, qc, (Node *) aggref->args);
 		break;
-	case T_DistinctExpr:
-	case T_NullIfExpr:
+	}
 	case T_OpExpr:
-		selist = walkOpExpr(selist, qc, (OpExpr *) n);
+	case T_DistinctExpr:		/* typedef of OpExpr */
+	case T_NullIfExpr:			/* typedef of OpExpr */
+	{
+		OpExpr *op = (OpExpr *) node;
+
+		selist = walkOpExprHelper(selist, op->opno);
+		selist = sepgsqlWalkExpr(selist, qc, (Node *) op->args);
 		break;
-	case T_Aggref:
-		selist = walkAggref(selist, qc, (Aggref *) n);
+	}
+	case T_ScalarArrayOpExpr: {
+		ScalarArrayOpExpr *saop = (ScalarArrayOpExpr *) node;
+
+		selist = walkOpExprHelper(selist, saop->opno);
+		selist = sepgsqlWalkExpr(selist, qc, (Node *) saop->args);
 		break;
-	case T_ArrayRef:
-		selist = walkArrayRef(selist, qc, (ArrayRef *) n);
+	}
+	case T_BoolExpr: {
+		selist = sepgsqlWalkExpr(selist, qc,
+								 (Node *) ((BoolExpr *) node)->args);
 		break;
-	case T_SubLink:
-		selist = walkSubLink(selist, qc, (SubLink *) n);
+	}
+	case T_ArrayRef: {
+		ArrayRef *aref = (ArrayRef *) node;
+
+		selist = sepgsqlWalkExpr(selist, qc, (Node *) aref->refupperindexpr);
+		selist = sepgsqlWalkExpr(selist, qc, (Node *) aref->reflowerindexpr);
+		selist = sepgsqlWalkExpr(selist, qc, (Node *) aref->refexpr);
+		selist = sepgsqlWalkExpr(selist, qc, (Node *) aref->refassgnexpr);
 		break;
+	}
+	case T_SubLink: {
+		SubLink *slink = (SubLink *) node;
+
+		Assert(IsA(slink->subselect, Query));
+		selist = sepgsqlWalkExpr(selist, qc, (Node *) slink->testexpr);
+		selist = proxyRteSubQuery(selist, qc, (Query *) slink->subselect);
+		break;
+	}
 	case T_SortClause:
-	case T_GroupClause:  /* GroupClause is typedef'ed by SortClause */
-		selist = walkSortClause(selist, qc, (SortClause *) n);
+	case T_GroupClause:		/* typedef of SortClause */
+	{
+		SortClause *sort = (SortClause *) node;
+		Query *query = getQueryFromChain(qc);
+		ListCell *l;
+
+		foreach (l, query->targetList) {
+			TargetEntry *tle = (TargetEntry *) lfirst(l);
+			Assert(IsA(tle, TargetEntry));
+			if (tle->ressortgroupref == sort->tleSortGroupRef) {
+				selist = sepgsqlWalkExpr(selist, qc, (Node *) tle->expr);
+				break;
+			}
+		}
 		break;
-	case T_List:
-		selist = walkList(selist, qc, (List *) n);
+	}
+	case T_CoerceToDomain: {
+		selist = sepgsqlWalkExpr(selist, qc,
+								 (Node *) ((CoerceToDomain *) node)->arg);
 		break;
-	case T_CoerceToDomain:
-		selist = walkCoerceToDomain(selist, qc, (CoerceToDomain *) n);
+	}
+	case T_CaseExpr: {
+		CaseExpr *ce = (CaseExpr *) node;
+
+		selist = sepgsqlWalkExpr(selist, qc, (Node *) ce->arg);
+		selist = sepgsqlWalkExpr(selist, qc, (Node *) ce->args);
+		selist = sepgsqlWalkExpr(selist, qc, (Node *) ce->defresult);
 		break;
-	case T_CaseExpr:
-		selist = walkCaseExpr(selist, qc, (CaseExpr *) n);
+	}
+	case T_CaseWhen: {
+		CaseWhen *casewhen = (CaseWhen *) node;
+
+		selist = sepgsqlWalkExpr(selist, qc, (Node *) casewhen->expr);
+		selist = sepgsqlWalkExpr(selist, qc, (Node *) casewhen->result);
 		break;
-	case T_CaseWhen:
-		selist = walkCaseWhen(selist, qc, (CaseWhen *) n);
+	}
+	case T_RelabelType: {
+		selist = sepgsqlWalkExpr(selist, qc,
+								 (Node *) ((RelabelType *) node)->arg);
 		break;
-	case T_RelabelType:
-		selist = walkRelabelType(selist, qc, (RelabelType *) n);
+	}
+	case T_CoalesceExpr: {
+		selist = sepgsqlWalkExpr(selist, qc,
+								 (Node *) ((CoalesceExpr *) node)->args);
 		break;
-	case T_CoalesceExpr:
-		selist = walkCoalesceExpr(selist, qc, (CoalesceExpr *) n);
+	}
+	case T_MinMaxExpr: {
+		selist = sepgsqlWalkExpr(selist, qc,
+								 (Node *) ((MinMaxExpr *) node)->args);
 		break;
-	case T_MinMaxExpr:
-		selist = walkMinMaxExpr(selist, qc, (MinMaxExpr *) n);
+	}
+	case T_NullTest: {
+		selist = sepgsqlWalkExpr(selist, qc,
+								 (Node *) ((NullTest *) node)->arg);
 		break;
-	case T_NullTest:
-		selist = walkNullTest(selist, qc, (NullTest *) n);
+	}
+	case T_BooleanTest: {
+		selist = sepgsqlWalkExpr(selist, qc,
+								 (Node *) ((BooleanTest *) node)->arg);
 		break;
-	case T_BooleanTest:
-		selist = walkBooleanTest(selist, qc, (BooleanTest *) n);
+	}
+	case T_FieldSelect: {
+		selist = sepgsqlWalkExpr(selist, qc,
+								 (Node *) ((FieldSelect *) node)->arg);
 		break;
-	case T_FieldSelect:
-		selist = walkFieldSelect(selist, qc, (FieldSelect *) n);
+	}
+	case T_FieldStore: {
+		FieldStore *fstore = (FieldStore *) node;
+
+		selist = sepgsqlWalkExpr(selist, qc, (Node *) fstore->arg);
+		selist = sepgsqlWalkExpr(selist, qc, (Node *) fstore->newvals);
 		break;
-	case T_FieldStore:
-		selist = walkFieldStore(selist, qc, (FieldStore *) n);
+	}
+	case T_ArrayExpr: {
+		selist = sepgsqlWalkExpr(selist, qc,
+								 (Node *) ((ArrayExpr *) node)->elements);
 		break;
-	case T_ArrayExpr:
-		selist = walkArrayExpr(selist, qc, (ArrayExpr *) n);
+	}
+	case T_RowExpr: {
+		selist = sepgsqlWalkExpr(selist, qc,
+								 (Node *) ((RowExpr *) node)->args);
 		break;
-	case T_RowExpr:
-		selist = walkRowExpr(selist, qc, (RowExpr *) n);
+	}
+	case T_RowCompareExpr: {
+		RowCompareExpr *rce = (RowCompareExpr *) node;
+		ListCell *l;
+
+		foreach (l, rce->opnos)
+			selist = walkOpExprHelper(selist, lfirst_oid(l));
+		selist = sepgsqlWalkExpr(selist, qc, (Node *) rce->largs);
+		selist = sepgsqlWalkExpr(selist, qc, (Node *) rce->rargs);
 		break;
-	case T_RowCompareExpr:
-		selist = walkRowCompareExpr(selist, qc, (RowCompareExpr *) n);
+	}
+	case T_ConvertRowtypeExpr: {
+		selist = sepgsqlWalkExpr(selist, qc,
+								 (Node *) ((ConvertRowtypeExpr *) node)->arg);
 		break;
-	case T_ConvertRowtypeExpr:
-		selist = walkConvertRowtypeExpr(selist, qc, (ConvertRowtypeExpr *) n);
-		break;
+	}
 	default:
-		selnotice("Node(%d) is ignored => %s", nodeTag(n), nodeToString(n));
+		selnotice("node(%d) is ignored => %s", nodeTag(node), nodeToString(node));
 		break;
 	}
 	return selist;
