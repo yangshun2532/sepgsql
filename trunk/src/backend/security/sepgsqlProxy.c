@@ -19,6 +19,7 @@
 #include "catalog/pg_type.h"
 #include "executor/spi.h"
 #include "nodes/makefuncs.h"
+#include "optimizer/plancat.h"
 #include "parser/parse_relation.h"
 #include "parser/parse_target.h"
 #include "security/pgace.h"
@@ -34,6 +35,29 @@
 #define RTEMARK_RELABELTO     (1<<(N_ACL_RIGHTS + 5))
 #define RTEMARK_BLOB_READ     (1<<(N_ACL_RIGHTS + 6))
 #define RTEMARK_BLOB_WRITE    (1<<(N_ACL_RIGHTS + 7))
+
+/* SE-PostgreSQL Evaluation Item */
+#define T_SEvalItem		(T_TIDBitmap + 1)		/* must be unique identifier */
+
+typedef struct SEvalItem {
+	NodeTag type;
+	uint16 tclass;
+	uint32 perms;
+	union {
+		struct {
+			Oid relid;
+			bool inh;
+		} c;  /* for pg_class */
+		struct {
+			Oid relid;
+			bool inh;
+			AttrNumber attno;
+		} a;  /* for pg_attribute */
+		struct {
+			Oid funcid;
+		} p;  /* for pg_proc */
+	};
+} SEvalItem;
 
 /* query stack definition for outer references */
 typedef struct queryChain {
@@ -152,10 +176,12 @@ static List *addEvalPgProc(List *selist, Oid funcid, uint32 perms)
 
 	return lappend(selist, se);
 }
-/* -----------------------------------------------------------
- * walkXXXX() -- walk on the Query tree recursively to check
- * refered expr, and push EvalItem for later evaluation.
- * ----------------------------------------------------------- */
+
+/* *******************************************************************************
+ * walkExpr() -- walk on expression tree recursively to pick up and to construct
+ * a SEvalItem list related to expression node.
+ * It is evaluated at later phase.
+ * *******************************************************************************/
 static List *walkVar(List *selist, queryChain *qc, Var *var)
 {
 	RangeTblEntry *rte;
@@ -521,10 +547,15 @@ static List *sepgsqlWalkExpr(List *selist, queryChain *qc, Node *n)
 	return selist;
 }
 
-/* -----------------------------------------------------------
- * proxyRteXXXX -- check any relation type including general
- * relation, join relation and subquery.
- * ----------------------------------------------------------- */
+/* *******************************************************************************
+ * proxyRteXXXX() -- check any relation type objects in the required query,
+ * including general relation, outer|inner|cross join and subquery.
+ * 
+ * sepgsqlProxyQuery() is called just after query rewriting phase to constract
+ * a list of SEvalItems. It is attached into Query->pgaceList and evaluated by
+ * sepgsqlVerifyQuery() at later phase.
+ * *******************************************************************************/
+
 static Oid fnoid_sepgsql_tuple_perm = F_SEPGSQL_TUPLE_PERMS;
 
 /*
@@ -672,15 +703,12 @@ static List *proxyRteSubQuery(List *selist, queryChain *qc, Query *query)
 		Assert(IsA(rte, RangeTblEntry) && rte->rtekind==RTE_RELATION);
 		switch (cmdType) {
 		case CMD_INSERT:
-			//rte->requiredPerms |= RTEMARK_INSERT;
 			selist = addEvalPgClass(selist, rte, TABLE__INSERT);
 			break;
 		case CMD_UPDATE:
-			//rte->requiredPerms |= RTEMARK_UPDATE;
 			selist = addEvalPgClass(selist, rte, TABLE__UPDATE);
 			break;
 		case CMD_DELETE:
-			//rte->requiredPerms |= RTEMARK_DELETE;
 			selist = addEvalPgClass(selist, rte, TABLE__DELETE);
 			break;
 		default:
@@ -959,6 +987,287 @@ List *sepgsqlProxyQueryList(List *queryList)
 	return new_list;
 }
 
+/* *******************************************************************************
+ * verifyXXXX() -- checks any SEvalItem attached with Query->pgaceList.
+ * Those are generated in proxyXXXX() phase, and this evaluation is done
+ * just before PortalStart().
+ * The reason why the checks are delayed is to handle cases when parse
+ * and execute are separated like PREPARE/EXECUTE statement.
+ * *******************************************************************************/
+static void verifyPgClassPermsInheritances(Oid relid, uint32 perms);
+
+static void verifyPgClassPerms(Oid relid, bool inh, uint32 perms)
+{
+	Form_pg_class pgclass;
+	HeapTuple tuple;
+
+	/* check table:{required permissions} */
+	tuple = SearchSysCache(RELOID,
+						   ObjectIdGetDatum(relid),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		selerror("RELOID cache lookup failed (relid=%u)", relid);
+	pgclass = (Form_pg_class) GETSTRUCT(tuple);
+
+	if (pgclass->relkind != RELKIND_RELATION) {
+		//selnotice("%s is not a general relation", NameStr(pgclass->relname));
+		ReleaseSysCache(tuple);
+		return;
+	}
+
+	sepgsql_avc_permission(sepgsqlGetClientContext(),
+						   HeapTupleGetSecurity(tuple),
+						   SECCLASS_TABLE,
+						   perms,
+						   NameStr(pgclass->relname));
+	ReleaseSysCache(tuple);
+
+	/* check child relations, if necessary */
+	if (inh)
+		verifyPgClassPermsInheritances(relid, perms);
+}
+
+static void verifyPgClassPermsInheritances(Oid relid, uint32 perms)
+{
+	List *chld_list;
+	ListCell *l;
+
+	chld_list = find_inheritance_children(relid);
+	foreach (l, chld_list) {
+		Oid chld_oid = lfirst_oid(l);
+
+		verifyPgClassPerms(chld_oid, true, perms);
+	}
+}
+
+static void verifyPgAttributePermsInheritances(Oid parent_relid, char *attname, uint32 perms);
+
+static void verifyPgAttributePerms(Oid relid, bool inh, AttrNumber attno, uint32 perms)
+{
+	HeapTuple tuple;
+	Form_pg_class pgclass;
+	Form_pg_attribute pgattr;
+
+	tuple = SearchSysCache(RELOID,
+							ObjectIdGetDatum(relid),
+							0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		selerror("RELOID cache lookup failed (relid=%u)", relid);
+	pgclass = (Form_pg_class) GETSTRUCT(tuple);
+	if (pgclass->relkind != RELKIND_RELATION) {
+		//selnotice("'%s' is not a general relation", NameStr(pgclass->relname));
+		ReleaseSysCache(tuple);
+		return;
+	}
+	ReleaseSysCache(tuple);
+
+	/* 2. verify column perms */
+	if (attno == 0) {
+		/* RECORD type permission check */
+		Relation pg_attr;
+		ScanKeyData skey;
+		SysScanDesc sd;
+
+		ScanKeyInit(&skey,
+					Anum_pg_attribute_attrelid,
+					BTEqualStrategyNumber, F_OIDEQ,
+					ObjectIdGetDatum(relid));
+
+		pg_attr = heap_open(AttributeRelationId, AccessShareLock);
+		sd = systable_beginscan(pg_attr, AttributeRelidNumIndexId,
+								true, SnapshotNow, 1, &skey);
+		while ((tuple = systable_getnext(sd)) != NULL) {
+			pgattr = (Form_pg_attribute) GETSTRUCT(tuple);
+			sepgsql_avc_permission(sepgsqlGetClientContext(),
+								   HeapTupleGetSecurity(tuple),
+								   SECCLASS_COLUMN,
+								   perms,
+								   NameStr(pgattr->attname));
+		}
+		systable_endscan(sd);
+		heap_close(pg_attr, AccessShareLock);
+
+		return;
+	}
+
+	tuple = SearchSysCache(ATTNUM,
+						   ObjectIdGetDatum(relid),
+						   Int16GetDatum(attno),
+						   0, 0);
+	if (!HeapTupleIsValid(tuple))
+		selerror("ATTNUM cache lookup failed (relid=%u, attno=%d)", relid, attno);
+
+	/* check column:{required permissions} */
+	pgattr = (Form_pg_attribute) GETSTRUCT(tuple);
+	sepgsql_avc_permission(sepgsqlGetClientContext(),
+						   HeapTupleGetSecurity(tuple),
+						   SECCLASS_COLUMN,
+						   perms,
+						   NameStr(pgattr->attname));
+
+	/* check child relations, if necesasry */
+	if (inh)
+		verifyPgAttributePermsInheritances(relid, NameStr(pgattr->attname), perms);
+
+	ReleaseSysCache(tuple);
+}
+
+static void verifyPgAttributePermsInheritances(Oid parent_relid, char *attname, uint32 perms)
+{
+	List *chld_list;
+	ListCell *l;
+
+	chld_list = find_inheritance_children(parent_relid);
+	foreach (l, chld_list) {
+		Form_pg_attribute attr;
+		HeapTuple tuple;
+		Oid chld_oid;
+
+		chld_oid = lfirst_oid(l);
+		tuple = SearchSysCacheAttName(chld_oid, attname);
+		if (!HeapTupleIsValid(tuple)) {
+			selnotice("relation %u dose not have attribute '%s'", chld_oid, attname);
+			continue;
+		}
+		attr = (Form_pg_attribute) GETSTRUCT(tuple);
+		verifyPgAttributePerms(chld_oid, true, attr->attnum, perms);
+		ReleaseSysCache(tuple);
+	}
+}
+
+static void verifyPgProcPerms(Oid funcid, uint32 perms)
+{
+	HeapTuple tuple;
+	Oid newcon;
+	Form_pg_proc pgproc;
+
+	tuple = SearchSysCache(PROCOID,
+						   ObjectIdGetDatum(funcid),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		selerror("cache lookup failed for procedure %d", funcid);
+
+	/* compute domain transition */
+	newcon = sepgsql_avc_createcon(sepgsqlGetClientContext(),
+								   HeapTupleGetSecurity(tuple),
+								   SECCLASS_PROCESS);
+	if (newcon != sepgsqlGetClientContext())
+		perms |= PROCEDURE__ENTRYPOINT;
+
+	/* check procedure executiong permission */
+	pgproc = (Form_pg_proc) GETSTRUCT(tuple);
+	sepgsql_avc_permission(sepgsqlGetClientContext(),
+						   HeapTupleGetSecurity(tuple),
+						   SECCLASS_PROCEDURE,
+						   perms,
+						   NameStr(pgproc->proname));
+
+	/* check domain transition, if necessary */
+	if (newcon != sepgsqlGetClientContext()) {
+		sepgsql_avc_permission(sepgsqlGetClientContext(),
+							   newcon,
+							   SECCLASS_PROCESS,
+							   PROCESS__TRANSITION,
+							   NULL);
+	}
+
+	ReleaseSysCache(tuple);
+}
+
+void sepgsqlVerifyQuery(Query *query)
+{
+	ListCell *l;
+
+	foreach (l, query->pgaceList) {
+		SEvalItem *se = lfirst(l);
+
+		switch (se->tclass) {
+		case SECCLASS_TABLE:
+			verifyPgClassPerms(se->c.relid, se->c.inh, se->perms);
+			break;
+		case SECCLASS_COLUMN:
+			verifyPgAttributePerms(se->a.relid, se->a.inh, se->a.attno, se->perms);
+			break;
+		case SECCLASS_PROCEDURE:
+			verifyPgProcPerms(se->p.funcid, se->perms);
+			break;
+		default:
+			selerror("unknown SEvalItem (tclass=%u)", se->tclass);
+			break;
+		}
+	}
+}
+
+/* *******************************************************************************
+ * PGACE hooks: we cannon the following hooks in sepgsqlHooks.c because they
+ * refers static defined variables in sepgsqlProxy.c
+ * *******************************************************************************/
+
+/* ----------------------------------------------------------
+ * node copy/print hooks
+ * ---------------------------------------------------------- */
+Node *sepgsqlCopyObject(Node *__oldnode) {
+	SEvalItem *oldnode, *newnode;
+
+	if (nodeTag(__oldnode) != T_SEvalItem)
+		return NULL;
+	oldnode = (SEvalItem *) __oldnode;
+
+	newnode = makeNode(SEvalItem);
+	newnode->tclass = oldnode->tclass;
+	newnode->perms = oldnode->perms;
+	switch (oldnode->tclass) {
+	case SECCLASS_TABLE:
+		newnode->c.relid = oldnode->c.relid;
+		newnode->c.inh = oldnode->c.inh;
+		break;
+	case SECCLASS_COLUMN:
+		newnode->a.relid = oldnode->a.relid;
+		newnode->a.attno = oldnode->a.attno;
+		newnode->a.inh = oldnode->a.inh;
+		break;
+	case SECCLASS_PROCEDURE:
+		newnode->p.funcid = oldnode->p.funcid;
+		break;
+	default:
+		selerror("unrecognized SEvalItem node (tclass: %d)", oldnode->tclass);
+		break;
+	}
+	return (Node *) newnode;
+}
+
+bool sepgsqlOutObject(StringInfo str, Node *node) {
+	SEvalItem *seitem = (SEvalItem *) node;
+
+	if (nodeTag(node) != T_SEvalItem)
+		return false;
+
+	appendStringInfoString(str, "SEVALITEM");
+	appendStringInfo(str, ":tclass %u", seitem->tclass);
+	appendStringInfo(str, ":perms %u", seitem->perms);
+	switch(seitem->tclass) {
+	case SECCLASS_TABLE:
+		appendStringInfo(str, ":c.relid %u", seitem->c.relid);
+		appendStringInfo(str, ":c.inh %s", seitem->c.inh ? "true" : "false");
+		break;
+	case SECCLASS_COLUMN:
+		appendStringInfo(str, ":a.relid %u", seitem->c.relid);
+		appendStringInfo(str, ":a.inh %s", seitem->c.inh ? "true" : "false");
+		appendStringInfo(str, ":a.attno %u", seitem->c.inh);
+		break;
+	case SECCLASS_PROCEDURE:
+		appendStringInfo(str, ":p.funcid %u", seitem->p.funcid);
+		break;
+	default:
+		selerror("unrecognized SEvalItem node (tclass: %d)", seitem->tclass);
+		break;
+	}
+	return true;
+}
+
+/* ----------------------------------------------------------
+ * special cases in foreign key constraint
+ * ---------------------------------------------------------- */
 Oid sepgsqlPreparePlanCheck(Relation rel) {
 	Oid pgace_saved = fnoid_sepgsql_tuple_perm;
 	fnoid_sepgsql_tuple_perm = F_SEPGSQL_TUPLE_PERMS_ABORT;

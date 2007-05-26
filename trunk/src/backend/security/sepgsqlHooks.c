@@ -304,67 +304,6 @@ void sepgsqlLoadSharedModule(const char *filename)
 						   DATABASE__LOAD_MODULE,
 						   (char *) filename);
 }
-/*******************************************************************************
- * node copy/print hooks
- *******************************************************************************/
-Node *sepgsqlCopyObject(Node *__oldnode) {
-	SEvalItem *oldnode, *newnode;
-
-	if (nodeTag(__oldnode) != T_SEvalItem)
-		return NULL;
-	oldnode = (SEvalItem *) __oldnode;
-
-	newnode = makeNode(SEvalItem);
-	newnode->tclass = oldnode->tclass;
-	newnode->perms = oldnode->perms;
-	switch (oldnode->tclass) {
-	case SECCLASS_TABLE:
-		newnode->c.relid = oldnode->c.relid;
-		newnode->c.inh = oldnode->c.inh;
-		break;
-	case SECCLASS_COLUMN:
-		newnode->a.relid = oldnode->a.relid;
-		newnode->a.attno = oldnode->a.attno;
-		newnode->a.inh = oldnode->a.inh;
-		break;
-	case SECCLASS_PROCEDURE:
-		newnode->p.funcid = oldnode->p.funcid;
-		break;
-	default:
-		selerror("unrecognized SEvalItem node (tclass: %d)", oldnode->tclass);
-		break;
-	}
-	return (Node *) newnode;
-}
-
-bool sepgsqlOutObject(StringInfo str, Node *node) {
-	SEvalItem *seitem = (SEvalItem *) node;
-
-	if (nodeTag(node) != T_SEvalItem)
-		return false;
-
-	appendStringInfoString(str, "SEVALITEM");
-	appendStringInfo(str, ":tclass %u", seitem->tclass);
-	appendStringInfo(str, ":perms %u", seitem->perms);
-	switch(seitem->tclass) {
-	case SECCLASS_TABLE:
-		appendStringInfo(str, ":c.relid %u", seitem->c.relid);
-		appendStringInfo(str, ":c.inh %s", seitem->c.inh ? "true" : "false");
-		break;
-	case SECCLASS_COLUMN:
-		appendStringInfo(str, ":a.relid %u", seitem->c.relid);
-		appendStringInfo(str, ":a.inh %s", seitem->c.inh ? "true" : "false");
-		appendStringInfo(str, ":a.attno %u", seitem->c.inh);
-		break;
-	case SECCLASS_PROCEDURE:
-		appendStringInfo(str, ":p.funcid %u", seitem->p.funcid);
-		break;
-	default:
-		selerror("unrecognized SEvalItem node (tclass: %d)", seitem->tclass);
-		break;
-	}
-	return true;
-}
 
 /*******************************************************************************
  * Binary Large Object hooks
