@@ -268,10 +268,13 @@ bool sepgsqlCopyToTuple(Relation rel, HeapTuple tuple)
 
 bool sepgsqlCopyFromTuple(Relation rel, HeapTuple tuple)
 {
-	Oid tcontext = sepgsqlComputeImplicitContext(rel, tuple);
+	Oid tcontext = HeapTupleGetSecurity(tuple);
 
-	HeapTupleSetSecurity(tuple, tcontext);
-
+	if (tcontext == InvalidOid) {
+		/* implicit labeling */
+		tcontext = sepgsqlComputeImplicitContext(rel, tuple);
+		HeapTupleSetSecurity(tuple, tcontext);
+	}
 	return sepgsqlCheckTuplePerms(rel, tuple, NULL, TUPLE__INSERT, false);
 }
 

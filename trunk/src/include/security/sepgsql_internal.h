@@ -45,27 +45,6 @@
 					 errmsg("%s(%d): " fmt, __FUNCTION__, __LINE__, ##__VA_ARGS__)))
 #define selbugon(x)	do { if (x)((char *)NULL)[0] = 'a'; }while(0)
 
-typedef struct SEvalItem {
-	NodeTag type;
-	uint16 tclass;
-	uint32 perms;
-	union {
-		struct {
-			Oid relid;
-			bool inh;
-		} c;  /* for pg_class */
-		struct {
-			Oid relid;
-			bool inh;
-			AttrNumber attno;
-		} a;  /* for pg_attribute */
-		struct {
-			Oid funcid;
-		} p;  /* for pg_proc */
-	};
-} SEvalItem;
-#define T_SEvalItem		(T_TIDBitmap + 1)		/* must be unique identifier */
-
 /* object classes and access vectors are not included, in default */
 #define SECCLASS_DATABASE			(61)	/* next to SECCLASS_DCCP_SOCKET */
 #define SECCLASS_TABLE				(SECCLASS_DATABASE + 1)
