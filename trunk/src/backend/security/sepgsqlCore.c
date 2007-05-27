@@ -24,8 +24,8 @@
 #include <sched.h>
 #include <signal.h>
 #include <sys/file.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
-#include <unistd.h>
 #include <unistd.h>
 
 static struct {
@@ -222,6 +222,81 @@ Size sepgsqlShmemSize()
 	return sizeof(*avc_shmem);
 }
 
+static void sepgsql_load_class_av_mapping()
+{
+	extern char *selinux_mnt;
+	char buffer[PATH_MAX];
+	struct stat st_buf;
+	int i, j, fd, len;
+
+	if (!selinux_mnt)
+		goto legacy_mapping;
+
+	/* Does '/selinux/class' exist? */
+	snprintf(buffer, sizeof(buffer), "%s/class", selinux_mnt);
+	if (lstat(buffer, &st_buf) || !S_ISDIR(st_buf.st_mode))
+		goto legacy_mapping;
+
+	for (i=0; i < NUM_SELINUX_CATALOG; i++) {
+		/* obtain external object class number */
+		snprintf(buffer, sizeof(buffer), "%s/class/%s/index",
+				 selinux_mnt, selinux_catalog[i].tclass.name);
+		fd = open(buffer, O_RDONLY);
+		if (fd < 0)
+			goto legacy_mapping;
+
+		len = read(fd, buffer, sizeof(buffer));
+		close(fd);
+		if (len < 1)
+			goto legacy_mapping;
+		buffer[len] = '\0';
+
+		avc_shmem->catalog[i].tclass.internal
+			= selinux_catalog[i].tclass.inum;
+		avc_shmem->catalog[i].tclass.external
+			= atoi(buffer);
+
+		/* obtain external access vector number */
+		for (j=0; selinux_catalog[i].av_perms[j].name; j++) {
+			snprintf(buffer, sizeof(buffer), "%s/class/%s/perms/%s",
+					 selinux_mnt,
+					 selinux_catalog[i].tclass.name,
+					 selinux_catalog[i].av_perms[j].name);
+			fd = open(buffer, O_RDONLY);
+			if (fd < 0)
+				goto legacy_mapping;
+
+			len = read(fd, buffer, sizeof(buffer));
+			close(fd);
+			if (len < 1)
+				goto legacy_mapping;
+			buffer[len] = '\0';
+
+			avc_shmem->catalog[i].av_perms[j].internal
+				= selinux_catalog[i].av_perms[j].inum;
+			avc_shmem->catalog[i].av_perms[j].external
+				= (0x0001UL << (atoi(buffer) - 1));
+		}
+	}
+	return;
+
+legacy_mapping:
+	for (i=0; i < NUM_SELINUX_CATALOG; i++) {
+		uint16 tclass = selinux_catalog[i].tclass.inum;
+
+		avc_shmem->catalog[i].tclass.internal = tclass;
+		avc_shmem->catalog[i].tclass.external = tclass;
+
+		for (j=0; selinux_catalog[i].av_perms[j].name; j++) {
+			uint32 av_perm = selinux_catalog[i].av_perms[j].inum;
+
+			avc_shmem->catalog[i].av_perms[j].internal = av_perm;
+			avc_shmem->catalog[i].av_perms[j].external = av_perm;
+		}
+	}
+	return;
+}
+
 static void sepgsql_avc_reset()
 {
 	int i, enforcing, enabled;
@@ -242,6 +317,7 @@ static void sepgsql_avc_reset()
 		avd->next = avc_shmem->freelist;
 		avc_shmem->freelist = MAKE_OFFSET(avd);
 	}
+	sepgsql_load_class_av_mapping();
 	avc_shmem->enabled = enabled;
 	avc_shmem->enforcing = enforcing;
 
@@ -260,12 +336,46 @@ static void sepgsql_avc_init()
 	}
 }
 
+static uint32 sepgsql_validate_av_perms(security_class_t tclass, access_vector_t perms)
+{
+	/* we have to hold LW_SHARED lock at least */
+	int i, j;
+
+	for (i=0; i < NUM_SELINUX_CATALOG; i++) {
+		if (avc_shmem->catalog[i].tclass.external == tclass) {
+			uint32 __perms = 0;
+
+			for (j=0; j < sizeof(access_vector_t) * 8; j++) {
+				if (avc_shmem->catalog[i].av_perms[j].external & perms)
+					__perms |= avc_shmem->catalog[i].av_perms[j].internal;
+			}
+			//selnotice("tclass(ext:%d -> int:%d) av_perms(ext:%08x -> int:%08x) validated",
+			//		  tclass, avc_shmem->catalog[i].tclass.internal,
+			//		  perms, __perms);
+			return __perms;
+		}
+	}
+	//selnotice("tclass = %d is not user tclass, perms (%08x) is used as is", tclass, perms);
+
+	return (uint32) perms;
+}
+
 static void sepgsql_compute_avc_datum(Oid ssid, Oid tsid, uint16 tclass,
 									  struct avc_datum *avd)
 {
+	security_class_t tclass_external = tclass;
 	security_context_t scon, tcon, ncon;
 	struct av_decision x;
 	Datum tmp;
+	int i;
+
+	/* translate internal tclass into external one, to query the kernel */
+	for (i=0; i < NUM_SELINUX_CATALOG; i++) {
+		if (avc_shmem->catalog[i].tclass.internal == tclass) {
+			tclass_external = avc_shmem->catalog[i].tclass.external;
+			break;
+		}
+	}
 
 	memset(avd, 0, sizeof(struct avc_datum));
 	tmp = DirectFunctionCall1(security_label_raw_out,
@@ -275,10 +385,10 @@ static void sepgsql_compute_avc_datum(Oid ssid, Oid tsid, uint16 tclass,
 							  ObjectIdGetDatum(tsid));
 	tcon = DatumGetCString(tmp);
 
-	if (security_compute_av_raw(scon, tcon, tclass, 0, &x))
+	if (security_compute_av_raw(scon, tcon, tclass_external, 0, &x))
 		selerror("could not obtain access vector decision "
 				 " scon='%s' tcon='%s' tclass=%u", scon, tcon, tclass);
-	if (security_compute_create_raw(scon, tcon, tclass, &ncon) != 0)
+	if (security_compute_create_raw(scon, tcon, tclass_external, &ncon) != 0)
 		selerror("could not obtain a newly created security context "
 				 "scon='%s' tcon='%s' tclass=%u", scon, tcon, tclass);
 
@@ -286,10 +396,12 @@ static void sepgsql_compute_avc_datum(Oid ssid, Oid tsid, uint16 tclass,
 	avd->tsid = tsid;
 	avd->tclass = tclass;
 
-	avd->allowed = x.allowed;
-	avd->decided = x.decided;
-	avd->auditallow = x.auditallow;
-	avd->auditdeny = x.auditdeny;
+	LWLockAcquire(avc_shmem->lock, LW_SHARED);
+	avd->allowed = sepgsql_validate_av_perms(tclass_external, x.allowed);
+	avd->decided = sepgsql_validate_av_perms(tclass_external, x.decided);
+	avd->auditallow = sepgsql_validate_av_perms(tclass_external, x.auditallow);
+	avd->auditdeny = sepgsql_validate_av_perms(tclass_external, x.auditdeny);
+	LWLockRelease(avc_shmem->lock);
 
 	PG_TRY();
 	{
