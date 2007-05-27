@@ -10,6 +10,7 @@ gen_require(`
 
 	type postgresql_t;
 	type lib_t, shlib_t;
+	type unlabeled_t;
 
 	attribute file_type;
 
@@ -105,6 +106,12 @@ gen_require(`
 ')
 sepgsql_client_domain(initrc_t)
 
+# -- unlabeled_t (for unlabeled objects)
+typeattribute unlabeled_t sepgsql_database_object_type;
+typeattribute unlabeled_t sepgsql_table_object_type;
+typeattribute unlabeled_t sepgsql_procedure_object_type;
+typeattribute unlabeled_t sepgsql_blob_object_type;
+
 ########################################
 #
 # SE-PostgreSQL server process policy
@@ -160,6 +167,17 @@ allow sepgsql_client_type sepgsql_trusted_proc_t : procedure { getattr execute e
 
 allow sepgsql_client_type sepgsql_blob_t : blob { create drop getattr setattr read write };
 allow sepgsql_client_type sepgsql_secret_blob_t : blob { getattr };
+
+########################################
+#
+# Policy for unlabeled objects
+#
+allow sepgsql_client_type unlabeled_t : database   all_database_perms;
+allow sepgsql_client_type unlabeled_t : table      all_table_perms;
+allow sepgsql_client_type unlabeled_t : column     all_column_perms;
+allow sepgsql_client_type unlabeled_t : tuple      all_tuple_perms;
+allow sepgsql_client_type unlabeled_t : procedure  all_procedure_perms;
+allow sepgsql_client_type unlabeled_t : blob       all_blob_perms;
 
 ########################################
 #
