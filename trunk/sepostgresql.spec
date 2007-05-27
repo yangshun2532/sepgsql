@@ -211,6 +211,11 @@ fi
 /var/lib/sepgsql/.bash_profile
 
 %changelog
+* Sun May 27 2007 <kaigai@kaigai.gr.jp>
+- add support for dynamic object class/access vector mapping
+- FIXBUG: Lack of implicit labeling on COPY FROM statement for system catalogs
+- FIXBUG: Incorrect security context handling for inherited tables
+
 * Fri May 25 2007 <kaigai@kaigai.gr.jp>
 - add pg_dump/pg_dumpall/pg_restore with --enable-security option
 - add support on OUTER JOIN by rewriting query.
