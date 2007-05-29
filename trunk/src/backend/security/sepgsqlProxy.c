@@ -682,6 +682,12 @@ static List *proxyRteSubQuery(List *selist, queryChain *qc, Query *query)
 	selist = proxyJoinTree(selist, qc, (Node *) query->jointree,
 						   &query->jointree->quals);
 
+	/* clean-up polluted RangeTblEntry */
+	foreach (l, query->rtable) {
+		rte = (RangeTblEntry *) lfirst(l);
+		rte->requiredPerms &= ((1<<N_ACL_RIGHTS) - 1);
+	}
+
 	return selist;
 }
 
