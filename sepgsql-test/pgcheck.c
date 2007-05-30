@@ -8,8 +8,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <error.h>
+#include <errno.h>
 #include <unistd.h>
 #include <getopt.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 static void usage(int exitcode) {
 	fputs("pgcheck -- a support utility for SE-PostgreSQL regression test\n"
@@ -55,9 +60,58 @@ static struct option pgcheck_long_options[] = {
 	{ NULL, no_argument, NULL, 0 },
 };
 
-static int execQuery(PGconn *pgcon, const char *query_str) {
+/*
+ * Save/Print NOTICE Message
+ */
+struct messageChain {
+	struct messageChain *next, *prev;
+	char message[1];
+};
+struct messageChain notice_list = { .next = &notice_list, .prev = &notice_list };
+
+static void saveNotice(void *arg, const char *message) {
+	struct messageChain *tail, *cur, *head = &notice_list;
+	int len;
+
+	printf("%s called!\n", __FUNCTION__);
+
+	if (!opt_enable_notice)
+		return;		/* do nothing */
+
+	len = sizeof(struct messageChain) + strlen(message);
+	cur = malloc(len);
+	if (!cur) {
+		fprintf(stderr, "malloc(%u) returns NULL (%s)\n",
+				len, strerror(errno));
+		return;
+	}
+
+	strcpy(cur->message, message);
+
+	tail = head->prev;
+	cur->prev = tail;
+	tail->next = cur;
+	cur->next = head;
+	head->prev = cur;
+}
+
+static printNotice(PGconn *pgcon, PGresult *res) {
+	struct messageChain *next, *cur, *head = &notice_list;
+
+	if (opt_enable_notice) {
+		for (cur=head->next; cur != head; cur = next) {
+			next = cur->next;
+			printf("@NOTICE: %s\n", cur->message);
+			free(cur);
+		}
+	}
+	/* cleanup list */
+	notice_list.prev = notice_list.next = &notice_list;
+}
+
+static PGresult *execQuery(PGconn *pgcon, const char *query_str) {
 	printf("do: %s\n", query_str);
-	return 0;
+	return NULL;
 }
 
 int main(int argc, char *argv[]) {
@@ -109,6 +163,8 @@ int main(int argc, char *argv[]) {
 		fprintf(stderr, "no queries are specified\n");
 		usage(1);
 	}
+	close(fileno(stderr));
+	open("/dev/null", O_WRONLY);
 
 	/* connect to database */
 	buffer[offset] = '\0';
@@ -133,15 +189,15 @@ int main(int argc, char *argv[]) {
 		PQfinish(pgcon);
 		return 1;
 	}
+	/* prepare to query */
+	PQsetNoticeProcessor(pgcon, saveNotice, NULL);
 
 	/* execute queries */
 	for (i=optind; argv[i]; i++) {
-		int rc = execQuery(pgcon, argv[i]);
+		PGresult *res = execQuery(pgcon, argv[i]);
 
-		if (rc) {
-			PQfinish(pgcon);
-			return rc;
-		}
+		if (opt_enable_notice)
+			printNotice(pgcon, res);
 	}
 	
 	/* close connection */
