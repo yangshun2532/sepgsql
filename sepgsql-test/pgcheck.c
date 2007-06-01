@@ -5,23 +5,30 @@
  * ------------------------------------------------------- */
 #include <libpq-fe.h>
 
+#include <ctype.h>
+#include <error.h>
+#include <errno.h>
+#include <getopt.h>
+#include <regex.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <error.h>
-#include <errno.h>
 #include <unistd.h>
-#include <getopt.h>
-#include <ctype.h>
+#include <sys/types.h>
 
 struct templateElem {
 	struct templateElem *next;
 	char val_kind;
 	union {
-		int    val_bool;
-		long   val_integer;
-		double val_float;
-		char   val_text[1];
+		int        val_bool;
+		long       val_integer;
+		double     val_float;
+		char       val_text[1];
+		struct {
+			regex_t  regex;
+			char    *orig;
+			
+		} val_regex;
 	};
 };
 #define TEMPELEM_NULL    (0)
@@ -29,6 +36,7 @@ struct templateElem {
 #define TEMPELEM_INT     (2)
 #define TEMPELEM_FLOAT   (3)
 #define TEMPELEM_TEXT    (4)
+#define TEMPELEM_REGEX  (5)
 
 static FILE *errmsg;
 static char *opt_dbname = NULL;
@@ -37,6 +45,7 @@ static char *opt_username = NULL;
 static int   opt_portno = -1;
 static char *opt_password = NULL;
 static struct templateElem **opt_template = NULL;
+static int   opt_enable_regex = 0;
 static char *query_string = NULL;
 
 static void usage() {
@@ -50,7 +59,9 @@ static void usage() {
 			"  -p PORT       database server port \n"
 			"  -u NAME       database user name \n"
 			"  -P PASSWORD   password to connect \n"
-			"  -t TEMPLATE   template expression, if required \n");
+			"  -t TEMPLATE   template expression, if required \n"
+			"  -e            use regular expression to check template\n"
+			"  -E            use regular expression to check template (case ignore)\n");
 	exit(1);
 }
 
@@ -162,6 +173,24 @@ static struct templateElem *__parse_template_token(char *template_string, int *p
 						code = template_string[i];
 					}
 					retval->val_text[j] = code;
+				}
+				retval->val_text[j] = '\0';
+
+				if (opt_enable_regex) {
+					struct templateElem *__retval;
+
+					__retval = malloc(sizeof(struct templateElem));
+					if (!__retval)
+						return NULL;
+					memset(__retval, 0, sizeof(struct templateElem));
+
+					__retval->val_kind = TEMPELEM_REGEX;
+					if (regcomp(&__retval->val_regex.regex, retval->val_text, 
+								REG_NOSUB | (opt_enable_regex == 'E' ? REG_ICASE : 0))) {
+						fprintf(errmsg, "could not compile regexp '%s'", retval->val_text);
+					}
+					__retval->val_regex.orig = retval->val_text;
+					retval = __retval;
 				}
 				phase = 255;
 			}
@@ -305,9 +334,12 @@ syntax_error:
 	exit(1);
 }
 
-static void do_print_template (struct templateElem *tempList[]) {
+static void do_print_template(struct templateElem *tempList[]) {
 	struct templateElem *cur;
 	int i, j;
+
+	if (!tempList)
+		return;
 
 	for (i=0; tempList[i]; i++) {
 		printf("% 2d: [", i);
@@ -330,17 +362,20 @@ static void do_print_template (struct templateElem *tempList[]) {
 			case TEMPELEM_TEXT:
 				printf("'%s'", cur->val_text);
 				break;
+			case TEMPELEM_REGEX:
+				printf("\"%s\"", cur->val_regex.orig);
+				break;
 			}
 		}
 		printf("]\n");
 	}
 }
 
-static void do_parse_options (int argc, char *argv[]) {
+static void do_parse_options(int argc, char *argv[]) {
 	int c;
 
 	opterr = fileno(stderr);
-	while ((c = getopt(argc, argv, "d:h:p:u:P:t:")) > 0) {
+	while ((c = getopt(argc, argv, "d:h:p:u:P:t:eE")) > 0) {
 		switch (c) {
 		case 'd':
 			if (opt_dbname)
@@ -371,6 +406,10 @@ static void do_parse_options (int argc, char *argv[]) {
 			if (opt_template)
 				goto duplicate_option;
 			do_parse_template(optarg);
+			break;
+		case 'e':
+		case 'E':
+			opt_enable_regex = c;
 			break;
 		default:
 			usage();
@@ -471,6 +510,8 @@ int main (int argc, char *argv[]) {
 
 	/* parse options */
 	do_parse_options(argc, argv);
+
+	do_print_template(opt_template); return 0;
 
 	/* open connection */
 	pgconn = connectDatabase();
