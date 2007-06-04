@@ -36,7 +36,7 @@ struct templateElem {
 #define TEMPELEM_INT     (2)
 #define TEMPELEM_FLOAT   (3)
 #define TEMPELEM_TEXT    (4)
-#define TEMPELEM_REGEX  (5)
+#define TEMPELEM_REGEX   (5)
 
 static FILE *errmsg;
 static char *opt_dbname = NULL;
@@ -334,6 +334,111 @@ syntax_error:
 	exit(1);
 }
 
+static void do_compare_template(PGresult *res, struct templateElem *tempList[]) {
+	struct templateElem *cur;
+	int i, j, nTuples, nFields;
+
+	if (!tempList)
+		return;
+
+	if (PQresultStatus(res) != PGRES_TUPLES_OK) {
+		printf("TEMPLATE: FAIL -- Query didn't generate result set\n");
+		return;
+	}
+	nTuples = PQntuples(res);
+	nFields = PQnfields(res);
+	for (i=0; i < nTuples; i++) {
+		if (!tempList[i]) {
+			printf("TEMPLATE: FAIL -- Result set contains more tuples than template\n");
+			return;
+		}
+		for (cur = tempList[i], j=0; j < nFields; cur = cur->next, j++) {
+			if (!cur) {
+				printf("TEMPLATE: FAIL -- Result set contains more fields than template\n");
+				return;
+			}
+			switch (cur->val_kind) {
+			case TEMPELEM_NULL: {
+				if (!PQgetisnull(res, i, j)) {
+					printf("TEMPLATE: FAIL -- cell (%d, %d) is not NULL\n", i, j);
+					return;
+				}
+				break;
+			}
+			case TEMPELEM_BOOL: {
+				char *tmp = PQgetvalue(res, i, j);
+				if (!strcasecmp(tmp, "t")) {
+					if (!cur->val_bool) {
+						printf("TEMPLATE: FAIL -- cell(%d, %d) is not FALSE\n", i, j);
+						return;
+					}
+				} else if (!strcasecmp(tmp, "f")) {
+					if (cur->val_bool) {
+						if (cur->val_bool) {
+							printf("TEMPLATE: FAIL -- cell(%d, %d) is not TRUE\n", i, j);
+							return;
+						}
+					}
+				} else {
+					printf("TEMPLATE: FAIL -- cell(%d, %d) is not BOOL\n", i, j);
+					return;
+				}
+				break;
+			}
+			case TEMPELEM_INT: {
+				long val_integer = atol(PQgetvalue(res, i, j));
+				if (cur->val_integer != val_integer) {
+					printf("TEMPLATE: FAIL -- cell(%d, %d) is not %ld (%ld)\n",
+						   i, j, cur->val_integer, val_integer);
+					return;
+				}
+				break;
+			}
+			case TEMPELEM_FLOAT: {
+				double val_float = atof(PQgetvalue(res, i, j));
+				if (cur->val_float != val_float) {
+					printf("TEMPLATE: FAIL -- cell(%d, %d) is not %f (%f)\n",
+						   i, j, cur->val_float, val_float);
+					return;
+				}
+				break;
+			}
+			case TEMPELEM_TEXT: {
+				char *val_text = PQgetvalue(res, i, j);
+				if (strcmp(cur->val_text, val_text)) {
+					printf("TEMPLATE: FAIL -- cell(%d, %d) is not '%s' ('%s')\n",
+						   i, j, cur->val_text, val_text);
+					return;
+				}
+				break;
+			}
+			case TEMPELEM_REGEX: {
+				char *val_text = PQgetvalue(res, i, j);
+				if (regexec(&cur->val_regex.regex, val_text, 0, NULL, 0) != 0) {
+					printf("TEMPLATE: FAIL -- cell(%d, %d) is not match with '%s' ('%s')\n",
+						   i, j, cur->val_regex.orig, val_text);
+					return;
+				}
+				break;
+			}
+			default:
+				printf("TEMPLATE: FAIL -- BUG on parsing template\n");
+				return;
+			}
+		}
+		if (cur) {
+			printf("TEMPLATE: FAIL -- Result set contains less fields than template\n");
+			return;
+		}
+	}
+	if (tempList[i]) {
+		printf("TEMPLATE: FAIL -- Result set contains less tuples than template\n");
+		return;
+	}
+
+	printf("TEMPLATE: OK -- Result set matchs with template\n");
+}
+
 static void do_print_template(struct templateElem *tempList[]) {
 	struct templateElem *cur;
 	int i, j;
@@ -470,7 +575,7 @@ static PGresult *executeQuery(PGconn *pgconn, const char *query) {
 	Oid new_oid;
 	int i, ncols;
 
-	res = PQexec(pgconn, query_string);
+	res = PQexec(pgconn, query);
 	if (!res) {
 		fprintf(errmsg, "FATAL: PQexec('%s') returned NULL\n", query);
 		exit(1);
@@ -511,7 +616,7 @@ int main (int argc, char *argv[]) {
 	/* parse options */
 	do_parse_options(argc, argv);
 
-	do_print_template(opt_template); return 0;
+	do_print_template(opt_template);
 
 	/* open connection */
 	pgconn = connectDatabase();
@@ -519,6 +624,7 @@ int main (int argc, char *argv[]) {
 	/* exec query */
 	res = executeQuery(pgconn, query_string);
 
+	do_compare_template(res, opt_template);
 
 	/* clear result */
 	PQclear(res);
