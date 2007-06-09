@@ -1,9 +1,0 @@
-Security Enhanced PostgreSQL official documentation (English Edition)
-
-= Introduction = 
-
-This document is the official document of Security-Enhahnced PostgraSQL (SE-PostgreSQL),
-including useful information for configuration, management, and development.
-
-Security Enhanced PostgreSQL (SE-PostgreSQL) provides additional access mechanism
-based on SELinux architecture for PostgreSQL, improving database security ...
