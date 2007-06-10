@@ -64,6 +64,7 @@ static struct {
 			{ "setattr",		TABLE__SETATTR },
 			{ "relabelfrom",	TABLE__RELABELFROM },
 			{ "relabelto",		TABLE__RELABELTO },
+			{ "use",			TABLE__USE },
 			{ "select",			TABLE__SELECT },
 			{ "update",			TABLE__UPDATE },
 			{ "insert",			TABLE__INSERT },
@@ -95,6 +96,7 @@ static struct {
 			{ "setattr",		COLUMN__SETATTR },
 			{ "relabelfrom",	COLUMN__RELABELFROM },
 			{ "relabelto",		COLUMN__RELABELTO },
+			{ "use",			COLUMN__USE },
 			{ "select",			COLUMN__SELECT },
 			{ "update",			COLUMN__UPDATE },
 			{ "insert",			COLUMN__INSERT },
@@ -106,6 +108,7 @@ static struct {
 		{
 			{ "relabelfrom",	TUPLE__RELABELFROM },
 			{ "relabelto",		TUPLE__RELABELTO },
+			{ "use",			TUPLE__USE },
 			{ "select",			TUPLE__SELECT },
 			{ "update",			TUPLE__UPDATE },
 			{ "insert",			TUPLE__INSERT },

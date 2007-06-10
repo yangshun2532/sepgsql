@@ -45,6 +45,34 @@
 					 errmsg("%s(%d): " fmt, __FUNCTION__, __LINE__, ##__VA_ARGS__)))
 #define selbugon(x)	do { if (x)((char *)NULL)[0] = 'a'; }while(0)
 
+// for debugging macros
+#define seldump_pg_class(rel)											\
+	selnotice("pg_class (%p) { relname='%s', relnamespace=%u, reltype=%u, "	\
+			  "relowner=%u, relam=%u, relfilenode=%u, reltablespace=%u, " \
+			  "relpages=%d, reltuples=%f, reltoastrelid=%u, reltoastidxid=%u, " \
+			  "relhasindex=%c, relisshared=%c, relkind=%c, relnatts=%d, " \
+			  "relchecks=%d, reltriggers=%d, relukeys=%d, relfkeys=%d, " \
+			  "relrefs=%d, relhasoids=%c, relhaspkey=%c, relhasrules=%c, " \
+			  "relhassubclass=%c, ...}",								\
+			  (rel), NameStr((rel)->relname), (rel)->relnamespace, \
+			  (rel)->reltype, (rel)->relowner, (rel)->relam, (rel)->relfilenode, \
+			  (rel)->reltablespace, (rel)->relpages, (rel)->reltuples, \
+			  (rel)->reltoastrelid, (rel)->reltoastidxid, (rel)->relhasindex ? 'y' : 'n', \
+			  (rel)->relisshared ? 'y' : 'n', (rel)->relkind, (rel)->relnatts, \
+			  (rel)->relchecks,	(rel)->reltriggers, (rel)->relukeys, (rel)->relfkeys, \
+			  (rel)->relrefs, (rel)->relhasoids ? 'y' : 'n', (rel)->relhaspkey ? 'y' : 'n', \
+			  (rel)->relhasrules ? 'y' : 'n', (rel)->relhassubclass ? 'y' : 'n')
+#define seldump_pg_attribute(att)										\
+	selnotice("pg_attribute (%p) { attrelid=%u, attname='%s', atttypid=%u, " \
+			  "attstattarget=%d, attlen=%d, attnum=%d, attndims=%d, attcacheoff=%d, " \
+			  "atttypmod=%d, attbyval=%c, attstorage=%c, attalign=%d, attnotnull=%c, " \
+			  "atthasdef=%c, attisdropped=%c, attislocal=%c, attinhcount=%d }", \
+			  (att), (att)->attrelid, NameStr((att)->attname), (att)->atttypid, \
+			  (att)->attstattarget, (att)->attlen, (att)->attnum, (att)->attndims, \
+			  (att)->attcacheoff, (att)->atttypmod,	(att)->attbyval, (att)->attstorage, \
+			  (att)->attalign, (att)->attnotnull ? 'y' : 'n', (att)->atthasdef ? 'y' : 'n', \
+			  (att)->attisdropped ? 'y' : 'n', (att)->attislocal ? 'y' : 'n', (att)->attinhcount)
+
 /* object classes and access vectors are not included, in default */
 #define SECCLASS_DATABASE			(61)	/* next to SECCLASS_DCCP_SOCKET */
 #define SECCLASS_TABLE				(SECCLASS_DATABASE + 1)
@@ -77,11 +105,12 @@
 #define TABLE__SETATTR                            0x00000008UL
 #define TABLE__RELABELFROM                        0x00000010UL
 #define TABLE__RELABELTO                          0x00000020UL
-#define TABLE__SELECT                             0x00000040UL
-#define TABLE__UPDATE                             0x00000080UL
-#define TABLE__INSERT                             0x00000100UL
-#define TABLE__DELETE                             0x00000200UL
-#define TABLE__LOCK                               0x00000400UL
+#define TABLE__USE                                0x00000040UL
+#define TABLE__SELECT                             0x00000080UL
+#define TABLE__UPDATE                             0x00000100UL
+#define TABLE__INSERT                             0x00000200UL
+#define TABLE__DELETE                             0x00000400UL
+#define TABLE__LOCK                               0x00000800UL
 #define PROCEDURE__CREATE                         0x00000001UL
 #define PROCEDURE__DROP                           0x00000002UL
 #define PROCEDURE__GETATTR                        0x00000004UL
@@ -96,15 +125,17 @@
 #define COLUMN__SETATTR                           0x00000008UL
 #define COLUMN__RELABELFROM                       0x00000010UL
 #define COLUMN__RELABELTO                         0x00000020UL
-#define COLUMN__SELECT                            0x00000040UL
-#define COLUMN__UPDATE                            0x00000080UL
-#define COLUMN__INSERT                            0x00000100UL
+#define COLUMN__USE                               0x00000040UL
+#define COLUMN__SELECT                            0x00000080UL
+#define COLUMN__UPDATE                            0x00000100UL
+#define COLUMN__INSERT                            0x00000200UL
 #define TUPLE__RELABELFROM                        0x00000001UL
 #define TUPLE__RELABELTO                          0x00000002UL
-#define TUPLE__SELECT                             0x00000004UL
-#define TUPLE__UPDATE                             0x00000008UL
-#define TUPLE__INSERT                             0x00000010UL
-#define TUPLE__DELETE                             0x00000020UL
+#define TUPLE__USE                                0x00000004UL
+#define TUPLE__SELECT                             0x00000008UL
+#define TUPLE__UPDATE                             0x00000010UL
+#define TUPLE__INSERT                             0x00000020UL
+#define TUPLE__DELETE                             0x00000040UL
 #define BLOB__CREATE                              0x00000001UL
 #define BLOB__DROP                                0x00000002UL
 #define BLOB__GETATTR                             0x00000004UL
@@ -115,7 +146,6 @@
 #define BLOB__WRITE                               0x00000080UL
 #define BLOB__IMPORT                              0x00000100UL
 #define BLOB__EXPORT                              0x00000200UL
-#define TUPLE__PERMS_MASK           ((TUPLE__DELETE << 1) - 1)
 
 /*
  * SE-PostgreSQL core functions

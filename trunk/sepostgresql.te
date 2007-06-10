@@ -148,19 +148,19 @@ tunable_policy(`sepgsql_enable_unconfined',`
 allow sepgsql_client_type sepgsql_db_t : database { getattr access };
 allow sepgsql_client_type sepgsql_sysobj_t : database { create drop getattr setattr };
 
-allow sepgsql_client_type sepgsql_table_t : table { create drop getattr setattr select update insert delete };
+allow sepgsql_client_type sepgsql_table_t : table { create drop getattr setattr use select update insert delete };
 allow sepgsql_client_type sepgsql_secret_table_t : table { getattr };
-allow sepgsql_client_type sepgsql_ro_table_t : table { getattr select };
-allow sepgsql_client_type sepgsql_fixed_table_t : table { getattr select insert };
+allow sepgsql_client_type sepgsql_ro_table_t : table { getattr use select };
+allow sepgsql_client_type sepgsql_fixed_table_t : table { getattr use select insert };
 
-allow sepgsql_client_type sepgsql_table_t : column { create drop getattr setattr select update insert };
+allow sepgsql_client_type sepgsql_table_t : column { create drop getattr setattr use select update insert };
 allow sepgsql_client_type sepgsql_secret_table_t : column { getattr };
-allow sepgsql_client_type sepgsql_ro_table_t : column { getattr select };
-allow sepgsql_client_type sepgsql_fixed_table_t : column { getattr select insert };
+allow sepgsql_client_type sepgsql_ro_table_t : column { getattr use select };
+allow sepgsql_client_type sepgsql_fixed_table_t : column { getattr use select insert };
 
-allow sepgsql_client_type sepgsql_table_t : tuple { select update insert delete };
-allow sepgsql_client_type sepgsql_ro_table_t : tuple { select };
-allow sepgsql_client_type sepgsql_fixed_table_t : tuple { select insert };
+allow sepgsql_client_type sepgsql_table_t : tuple { use select update insert delete };
+allow sepgsql_client_type sepgsql_ro_table_t : tuple { use select };
+allow sepgsql_client_type sepgsql_fixed_table_t : tuple { use select insert };
 
 allow sepgsql_client_type sepgsql_proc_t : procedure { create drop getattr setattr execute };
 allow sepgsql_client_type sepgsql_trusted_proc_t : procedure { getattr execute entrypoint };
