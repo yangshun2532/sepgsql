@@ -67,6 +67,10 @@ static int	disable_dollar_quoting = 0;
 static int	disable_triggers = 0;
 static int	use_setsessauth = 0;
 static int	server_version;
+#ifdef SECURITY_SYSATTR_NAME
+/* SECURITY_SYSATTR_NAME will be set, if enabled */
+static char *security_sysattr_name = NULL;
+#endif
 
 
 int
@@ -111,6 +115,9 @@ main(int argc, char *argv[])
 		{"disable-dollar-quoting", no_argument, &disable_dollar_quoting, 1},
 		{"disable-triggers", no_argument, &disable_triggers, 1},
 		{"use-set-session-authorization", no_argument, &use_setsessauth, 1},
+#ifdef SECURITY_SYSATTR_NAME
+		{"enable-security", no_argument, NULL, 1001},
+#endif
 
 		{NULL, 0, NULL, 0}
 	};
@@ -260,6 +267,12 @@ main(int argc, char *argv[])
 					appendPQExpBuffer(pgdumpopts, " --disable-triggers");
 				else if (strcmp(optarg, "use-set-session-authorization") == 0)
 					 /* no-op, still allowed for compatibility */ ;
+#ifdef SECURITY_SYSATTR_NAME
+				else if (strcmp(optarg, "enable-security") == 0) {
+					appendPQExpBuffer(pgdumpopts, " --enable-security");
+					security_sysattr_name = SECURITY_SYSATTR_NAME;
+				}
+#endif
 				else
 				{
 					fprintf(stderr,
@@ -270,6 +283,12 @@ main(int argc, char *argv[])
 				}
 				break;
 
+#ifdef SECURITY_SYSATTR_NAME
+			case 1001:
+				appendPQExpBuffer(pgdumpopts, " --enable-security");
+				security_sysattr_name = SECURITY_SYSATTR_NAME;
+				break;
+#endif
 			case 0:
 				break;
 
@@ -393,6 +412,9 @@ help(void)
 	printf(_("  --use-set-session-authorization\n"
 			 "                           use SESSION AUTHORIZATION commands instead of\n"
 			 "                           OWNER TO commands\n"));
+#ifdef SECURITY_SYSATTR_NAME
+	printf(_("  --enable-security        enable to dump security attribute\n"));
+#endif
 
 	printf(_("\nConnection options:\n"));
 	printf(_("  -h, --host=HOSTNAME      database server host or socket directory\n"));
@@ -792,16 +814,18 @@ dumpCreateDB(PGconn *conn)
 	printf("--\n-- Database creation\n--\n\n");
 
 	if (server_version >= 80100)
-		res = executeQuery(conn,
+		appendPQExpBuffer(buf,
 						   "SELECT datname, "
 						   "coalesce(rolname, (select rolname from pg_authid where oid=(select datdba from pg_database where datname='template0'))), "
 						   "pg_encoding_to_char(d.encoding), "
 						   "datistemplate, datacl, datconnlimit, "
 						   "(SELECT spcname FROM pg_tablespace t WHERE t.oid = d.dattablespace) AS dattablespace "
+						   ",d.%s "
 			  "FROM pg_database d LEFT JOIN pg_authid u ON (datdba = u.oid) "
-						   "WHERE datallowconn ORDER BY 1");
+						   "WHERE datallowconn ORDER BY 1",
+						   security_sysattr_name ? security_sysattr_name : "tableoid AS __dummy__");
 	else if (server_version >= 80000)
-		res = executeQuery(conn,
+		appendPQExpBuffer(buf,
 						   "SELECT datname, "
 						   "coalesce(usename, (select usename from pg_shadow where usesysid=(select datdba from pg_database where datname='template0'))), "
 						   "pg_encoding_to_char(d.encoding), "
@@ -810,7 +834,7 @@ dumpCreateDB(PGconn *conn)
 		   "FROM pg_database d LEFT JOIN pg_shadow u ON (datdba = usesysid) "
 						   "WHERE datallowconn ORDER BY 1");
 	else if (server_version >= 70300)
-		res = executeQuery(conn,
+		appendPQExpBuffer(buf,
 						   "SELECT datname, "
 						   "coalesce(usename, (select usename from pg_shadow where usesysid=(select datdba from pg_database where datname='template0'))), "
 						   "pg_encoding_to_char(d.encoding), "
@@ -819,7 +843,7 @@ dumpCreateDB(PGconn *conn)
 		   "FROM pg_database d LEFT JOIN pg_shadow u ON (datdba = usesysid) "
 						   "WHERE datallowconn ORDER BY 1");
 	else if (server_version >= 70100)
-		res = executeQuery(conn,
+		appendPQExpBuffer(buf,
 						   "SELECT datname, "
 						   "coalesce("
 					"(select usename from pg_shadow where usesysid=datdba), "
@@ -835,7 +859,7 @@ dumpCreateDB(PGconn *conn)
 		 * Note: 7.0 fails to cope with sub-select in COALESCE, so just deal
 		 * with getting a NULL by not printing any OWNER clause.
 		 */
-		res = executeQuery(conn,
+		appendPQExpBuffer(buf,
 						   "SELECT datname, "
 					"(select usename from pg_shadow where usesysid=datdba), "
 						   "pg_encoding_to_char(d.encoding), "
@@ -845,6 +869,7 @@ dumpCreateDB(PGconn *conn)
 						   "FROM pg_database d "
 						   "ORDER BY 1");
 	}
+	res = executeQuery(conn, buf);
 
 	for (i = 0; i < PQntuples(res); i++)
 	{
@@ -855,6 +880,7 @@ dumpCreateDB(PGconn *conn)
 		char	   *dbacl = PQgetvalue(res, i, 4);
 		char	   *dbconnlimit = PQgetvalue(res, i, 5);
 		char	   *dbtablespace = PQgetvalue(res, i, 6);
+		char	   *dbsecurity = PQgetvalue(res, i, 7);
 		char	   *fdbname;
 
 		fdbname = strdup(fmtId(dbname));
@@ -897,6 +923,9 @@ dumpCreateDB(PGconn *conn)
 			if (strcmp(dbconnlimit, "-1") != 0)
 				appendPQExpBuffer(buf, " CONNECTION LIMIT = %s",
 								  dbconnlimit);
+
+			if (security_sysattr_name && dbsecurity)
+				appendPQExpBuffer(buf, " CONTEXT = '%s'", dbsecurity);
 
 			appendPQExpBuffer(buf, ";\n");
 
