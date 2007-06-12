@@ -513,7 +513,7 @@ static Oid fnoid_sepgsql_tuple_perm = F_SEPGSQL_TUPLE_PERMS;
  * considered to filter tuples, so left-hand relation have to be re-written
  * as a subquery to filter violated tuples.
  */
-static List *__rewriteOuterJoinTree__targetEntry(Oid relid) {
+static List *makePseudoTargetList(Oid relid) {
 	HeapTuple reltup, atttup;
 	Form_pg_class classForm;
 	Form_pg_attribute attrForm;
@@ -579,7 +579,7 @@ static void rewriteOuterJoinTree(Node *n, Query *query, bool is_outer_join)
 		/* setup alternative query */
 		sqry = makeNode(Query);
 		sqry->commandType = CMD_SELECT;
-		sqry->targetList = __rewriteOuterJoinTree__targetEntry(rte->relid);
+		sqry->targetList = makePseudoTargetList(rte->relid);
 
 		srte = copyObject(rte);
 		sqry->rtable = list_make1(srte);
