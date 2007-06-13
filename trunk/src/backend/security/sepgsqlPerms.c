@@ -165,6 +165,12 @@ static void __check_pg_attribute(HeapTuple tuple, HeapTuple oldtup,
 	bool use_syscache;
 
 	*p_perms = __tuple_perms_to_common_perms(*p_perms);
+	if (HeapTupleIsValid(oldtup)) {
+		Form_pg_attribute oldForm = (Form_pg_attribute) GETSTRUCT(oldtup);
+
+		if (oldForm->attisdropped != true && attrForm->attisdropped == true)
+			*p_perms |= COLUMN__DROP;
+	}
 	*p_tclass = SECCLASS_COLUMN;
 
 	switch (attrForm->attrelid) {
