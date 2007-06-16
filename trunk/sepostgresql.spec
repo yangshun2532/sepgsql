@@ -211,15 +211,21 @@ fi
 /var/lib/sepgsql/.bash_profile
 
 %changelog
-* Tue May 29 2007 <kaigai@kaigai.gr.jp>
+* Sat Jun 16 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.320
+- update: sepostgresql.pp security policy fot strict/mls suitable
+- BUGFIX: column:drop evaluation for ALTER TABLE tbl DROP col; statement
+- add --enable-security option for pg_dumpall command
+- add {use} permission for table/column/tuple object classes
+
+* Tue May 29 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.306
 - BUGFIX: RangeTblEntry->requiredPerms are polluted.
 
-* Sun May 27 2007 <kaigai@kaigai.gr.jp>
+* Sun May 27 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.304
 - add support for dynamic object class/access vector mapping
 - BUGFIX: Lack of implicit labeling on COPY FROM statement for system catalogs
 - BUGFIX: Incorrect security context handling for inherited tables
 
-* Fri May 25 2007 <kaigai@kaigai.gr.jp>
+* Fri May 25 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.292
 - add pg_dump/pg_dumpall/pg_restore with --enable-security option
 - add support on OUTER JOIN by rewriting query.
 - add security_context support on COPY TO/FROM statement
@@ -229,7 +235,7 @@ fi
 - BUGFIX: lack of tuple:insert checks at COPY FROM statement
 - BUGFIX: server crash when CREATE TABLE command with newly defined CONTEXT = '...'.
 
-* Wed May 16 2007 <kaigai@kaigai.gr.jp>
+* Wed May 16 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.266
 - BUGFIX: incorrect security context of newly generated system object.
 - BUGFIX: missing error text when audit log is disabled.
 - BUGFIX: incorrect Oid of newly generated tuples within pg_security.
@@ -238,7 +244,7 @@ fi
                  T_DistinctExpr/T_ConvertRowtypeExpr
 - add support CONTEXT = 'xxx' for CREATE TABLE/FUNCTION/DATABASE statement
 
-* Sun Apr 30 2007 <kaigai@kaigai.gr.jp>
+* Sun Apr 30 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.240
 - update base version 8.2.3 -> 8.2.4
 - BUGFIX: unexpected expose in OUTER JOIN statement.
           add rewrite OUTER JOIN into SUBQUERY to ensure filtering violated tuples.
@@ -247,24 +253,24 @@ fi
 - BUGFIX: sepgsql_avc_init() is called in policy state monitoring process
           to avoid nonsense initialization of avc_shmem.
 
-* Fri Apr 27 2007 <kaigai@kaigai.gr.jp>
+* Fri Apr 27 2007 <kaigai@kaigai.gr.jp> - 8.2.3-0.232
 - object class numbers were redefined. (SECCLASS_DATABASE got into 61)
 - is_selinux_enabled() was cached on the shared memory segment.
 - BUGFIX: server went into infinit loop on foreign key constraint.
 
-* Mon Apr 16 2007 <kaigai@kaigai.gr.jp>
+* Mon Apr 16 2007 <kaigai@kaigai.gr.jp> - 8.2.3-0.226
 - BUGFIX: cases when several variables with same type in a single table
 
-* Sat Apr 07 2007 <kaigai@kaigai.gr.jp>
+* Sat Apr 07 2007 <kaigai@kaigai.gr.jp> - 8.2.3-0.214
 - add the first implementation of SE-PostgreSQL on PGACE framework
 
-* Wed Mar 21 2007 <kaigai@kaigai.gr.jp>
+* Wed Mar 21 2007 <kaigai@kaigai.gr.jp> - 8.2.3-0.212
 - BUGFIX: SetOperation didn't handle its subquery correctly.
   So, it caused server crash.
 
-* Wed Mar 07 2007 <kaigai@kaigai.gr.jp>
+* Wed Mar 07 2007 <kaigai@kaigai.gr.jp> - 8.2.3-0.209
 - BUGFIX: var->varlevelsup was ignored, so outer references
   from subqueries cause a fault.
 
-* Tue Feb 27 2007  <kaigai@kaigai.gr.jp>
+* Tue Feb 27 2007 <kaigai@kaigai.gr.jp> - 8.2.3-0.178
 - Initial RPM build
