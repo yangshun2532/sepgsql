@@ -1,0 +1,56 @@
+Index: refpolicy-tresys/policy/modules/services/postgresql.te
+===================================================================
+--- refpolicy-tresys/policy/modules/services/postgresql.te	(revision 2336)
++++ refpolicy-tresys/policy/modules/services/postgresql.te	(working copy)
+@@ -175,16 +175,6 @@
+ ')
+ 
+ ifdef(`TODO',`
+-ifdef(`targeted_policy', `', `
+-bool allow_user_postgresql_connect false;
+-
+-if (allow_user_postgresql_connect) {
+-# allow any user domain to connect to the database server
+-allow userdomain postgresql_t:unix_stream_socket connectto;
+-allow userdomain postgresql_var_run_t:sock_file write;
+-allow userdomain postgresql_tmp_t:sock_file write;
+-}
+-')
+ ifdef(`distro_debian', `
+ 	init_exec_script_files(postgresql_t)
+ 	# gross hack
+Index: refpolicy-tresys/policy/modules/system/userdomain.te
+===================================================================
+--- refpolicy-tresys/policy/modules/system/userdomain.te	(revision 2336)
++++ refpolicy-tresys/policy/modules/system/userdomain.te	(working copy)
+@@ -32,6 +32,13 @@
+ 
+ ## <desc>
+ ## <p>
++## Allow users to connect to PostgreSQL
++## </p>
++## </desc>
++gen_tunable(allow_user_postgresql_connect,false)
++
++## <desc>
++## <p>
+ ## Allow regular users direct mouse access
+ ## </p>
+ ## </desc>
+Index: refpolicy-tresys/policy/modules/system/userdomain.if
+===================================================================
+--- refpolicy-tresys/policy/modules/system/userdomain.if	(revision 2336)
++++ refpolicy-tresys/policy/modules/system/userdomain.if	(working copy)
+@@ -891,6 +891,12 @@
+ 	')
+ 
+ 	optional_policy(`
++		tunable_policy(`allow_user_postgresql_connect',`
++			postgresql_stream_connect($1_t)
++		')
++	')
++
++	optional_policy(`
+ 		nscd_socket_use($1_t)
+ 	')
+ 
