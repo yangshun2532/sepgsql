@@ -1,8 +1,12 @@
 #!/bin/sh
 
 DEFAULT_REPOSITORY="http://sepgsql.googlecode.com/svn"
-POLICY_98="refpolicy-add-sepgsql-definitions.patch"
-POLICY_99="refpolicy-add-userdomain-pgsql-connect.patch"
+POLICY_97="refpolicy-add-sepgsql-definitions.patch"
+if [ "`rpm -E '%{?dist}'`" = ".fc6" ]; then
+POLICY_98="refpolicy-add-userdomain-pgsql-connect.fc6.patch"
+elif [ "`rpm -E '%{?dist}'`" = ".fc7" ]; then
+POLICY_99="refpolicy-add-userdomain-pgsql-connect.fedora7.patch"
+fi
 
 test -z "${SEPGSQL_REPOSITORY}" && SEPGSQL_REPOSITORY=${DEFAULT_REPOSITORY}
 
@@ -52,7 +56,7 @@ rm -rf ${TEMPDIR}
 # modify spec file
 _SPEC=`mktemp`
 cat ${SOURCE_DIR}/selinux-policy.spec                   \
-    sed 's/%{?dist}/.sepgsql%{?dist}/g'                 \
+    | sed 's/%{?dist}/.sepgsql%{?dist}/g'               \
     | awk "BEGIN { a = b = 0; }                         \
            /^patch[0-9]*:/ { a++; print; next; }        \
            a > 0 { a=0; ${PATCH_DEF}; print; next; }    \
