@@ -4,17 +4,23 @@
 # Copyright 2007 KaiGai Kohei <kaigai@kaigai.gr.jp>
 # -----------------------------------------------------
 
-%define _prefix	/opt/sepgsql
-%define _mandir %{_prefix}/man
-%define beta	a
-%{!?sepgversion:%define sepgversion 1}
-%{!?sepgrevision:%define sepgrevision 0}
+%{!?sepgversion:%define sepgversion %%__default_sepgversion__%%}
+%{!?sepgrevision:%define sepgrevision %%__default_sepgrevision__%%}
+%{!?sepgextension:%define sepgextension %%__default_sepgextension__%%}
+%define _policydir    /usr/share/selinux
+%define _prefix       /opt/sepgsql
+
+# definition of SELinux policy types
+%define selinux_variants mls strict targeted 
+
+# SE-PostgreSQL requires only server side files
+%define _unpackaged_files_terminate_build 0
 
 Summary: Security Enhanced PostgreSQL
 Group: Applications/Databases
 Name: sepostgresql
-Version: 8.2.4
-Release: %{sepgversion}.%{sepgrevision}%{beta}
+Version: %%__base_postgresql_version__%%
+Release: %{?sepgversion}.%{?sepgrevision}%{?sepgextension}%{?dist}
 License: BSD
 Group: Applications/Databases
 Url: http://code.google.com/p/sepgsql/
@@ -24,9 +30,9 @@ Source1: sepostgresql.init
 Source2: sepostgresql.if
 Source3: sepostgresql.te
 Source4: sepostgresql.fc
-Patch0: sepostgresql-%{version}-%{sepgrevision}.patch
+Patch0: sepostgresql-%{version}-%{release}.patch
 
-Buildrequires: autoconf libselinux-devel selinux-policy-devel
+Buildrequires: checkpolicy selinux-policy-devel libselinux-devel
 Requires: policycoreutils >= 1.33.12-1 selinux-policy >= 2.4.6-40
 
 %description
@@ -40,23 +46,25 @@ reference monitor to check any SQL query.
 %prep
 %setup -q -n postgresql-%{version}
 %patch0 -p1
+mkdir selinux-policy
+cp %{SOURCE2} %{SOURCE3} %{SOURCE4} selinux-policy
 
 %build
 # build Binary Policy Module
-mkdir -p policy
-pushd policy
-cp %{SOURCE2} %{SOURCE3} %{SOURCE4} .
-make -f /usr/share/selinux/devel/Makefile NAME=targeted
-mv sepostgresql.pp sepostgresql-targeted.pp
-make -f /usr/share/selinux/devel/Makefile NAME=strict
-mv sepostgresql.pp sepostgresql-strict.pp
+pushd selinux-policy
+for selinuxvariant in %{selinux_variants}
+do
+    make NAME=${selinuxvariant} -f /usr/share/selinux/devel/Makefile
+    mv %{name}.pp %{name}.pp.${selinuxvariant}
+    make NAME=${selinuxvariant} -f /usr/share/selinux/devel/Makefile clean
+done
 popd
 
 # build SE-PostgreSQL
 autoconf
 %configure	--enable-selinux \
 		--host=%{_host} --build=%{_build} \
-%if %{defined beta}
+%if %{defined sepgextension}
 		--enable-debug \
 		--enable-cassert \
 %endif
@@ -66,101 +74,70 @@ NCPUS=`grep -c ^processor /proc/cpuinfo`
 make -j ${NCPUS}
 
 %install
-rm -rf $RPM_BUILD_ROOT
+rm -rf %{buildroot}
 
-make DESTDIR=$RPM_BUILD_ROOT/altroot install
-ALTROOT="$RPM_BUILD_ROOT/altroot"
-install -d -m 755 $RPM_BUILD_ROOT%{_bindir}
-mv	${ALTROOT}%{_bindir}/initdb			\
-	${ALTROOT}%{_bindir}/ipcclean			\
-	${ALTROOT}%{_bindir}/pg_controldata		\
-	${ALTROOT}%{_bindir}/pg_ctl			\
-	${ALTROOT}%{_bindir}/pg_resetxlog		\
-	${ALTROOT}%{_bindir}/postgres			\
-	${ALTROOT}%{_bindir}/postmaster			\
-	${ALTROOT}%{_bindir}/pg_dump			\
-	${ALTROOT}%{_bindir}/pg_dumpall			\
-	${ALTROOT}%{_bindir}/pg_restore			\
-	$RPM_BUILD_ROOT%{_bindir}
-install -d -m 755 $RPM_BUILD_ROOT%{_mandir}/man1
-mv	${ALTROOT}%{_mandir}/man1/initdb.*		\
-	${ALTROOT}%{_mandir}/man1/ipcclean.*		\
-	${ALTROOT}%{_mandir}/man1/pg_controldata.*	\
-	${ALTROOT}%{_mandir}/man1/pg_ctl.*		\
-	${ALTROOT}%{_mandir}/man1/pg_resetxlog.*	\
-	${ALTROOT}%{_mandir}/man1/postgres.*		\
-	${ALTROOT}%{_mandir}/man1/postmaster.*		\
-	$RPM_BUILD_ROOT%{_mandir}/man1
-install -d -m 755 $RPM_BUILD_ROOT%{_datadir}
-mv	${ALTROOT}%{_datadir}/postgres.bki		\
-	${ALTROOT}%{_datadir}/postgres.description	\
-	${ALTROOT}%{_datadir}/postgres.shdescription	\
-	${ALTROOT}%{_datadir}/system_views.sql		\
-	${ALTROOT}%{_datadir}/*.sample			\
-	${ALTROOT}%{_datadir}/timezone/			\
-	${ALTROOT}%{_datadir}/timezonesets/		\
-	${ALTROOT}%{_datadir}/conversion_create.sql	\
-	${ALTROOT}%{_datadir}/information_schema.sql	\
-	${ALTROOT}%{_datadir}/sql_features.txt		\
-	$RPM_BUILD_ROOT%{_datadir}
-install -d -m 755 $RPM_BUILD_ROOT%{_libdir}
-mv	${ALTROOT}%{_libdir}/plpgsql.so			\
-	${ALTROOT}%{_libdir}/libpq.*			\
-	${ALTROOT}%{_libdir}/libpgtypes.*		\
-	${ALTROOT}%{_libdir}/*_and_*.so			\
-	$RPM_BUILD_ROOT%{_libdir}
+pushd selinux-policy
+for selinuxvariant in %{selinux_variants}
+do
+    install -d %{buildroot}%{_policydir}/${selinuxvariant}
+    install -p -m 644 %{name}.pp.${selinuxvariant} \
+        %{buildroot}%{_policydir}/${selinuxvariant}/%{name}.pp
+done
+popd
 
-install -d $RPM_BUILD_ROOT%{_prefix}/policy
-install -m 644 policy/sepostgresql*.pp	$RPM_BUILD_ROOT%{_prefix}/policy
+make DESTDIR=%{buildroot} install
 
-install -d -m 700 $RPM_BUILD_ROOT/var/lib/sepgsql
-install -d -m 700 $RPM_BUILD_ROOT/var/lib/sepgsql/data
-install -d -m 700 $RPM_BUILD_ROOT/var/lib/sepgsql/backups
+install -d -m 700 %{buildroot}/var/lib/sepgsql
+install -d -m 700 %{buildroot}/var/lib/sepgsql/data
+install -d -m 700 %{buildroot}/var/lib/sepgsql/backups
+(echo "# .bash_profile"
+ echo "if [ -f /etc/bashrc ]; then"
+ echo "    . /etc/bashrc"
+ echo "fi"
+ echo
+ echo "PGDATA=/var/lib/sepgsql/data"
+ echo "export PGDATA") > %{buildroot}/var/lib/sepgsql/.bash_profile
 
 mkdir -p $RPM_BUILD_ROOT/etc/rc.d/init.d
 install -m 755 %{SOURCE1} $RPM_BUILD_ROOT/etc/rc.d/init.d/sepostgresql
-
-(echo "[ -f /etc/profile ] && source /etc/profile"
- echo 
- echo "PGDATA=/var/lib/sepgsql/data"
- echo "export PGDATA") > $RPM_BUILD_ROOT/var/lib/sepgsql/.bash_profile
-rm -rf $ALTROOT
 
 %clean
 rm -rf $RPM_BUILD_ROOT
 
 %pre
 if [ $1 -eq 1 ]; then		# rpm -i cases
-	groupadd -r sepgsql >& /dev/null || :
-	useradd -g sepgsql -d /var/lib/sepgsql -s /bin/bash \
-		-r -c "SE-PostgreSQL server" sepgsql >& /dev/null || :
+    (id -g sepgsql || groupadd -r sepgsql || : ) &> /dev/null
+    (id -u sepgsql || useradd -g sepgsql -d /var/lib/sepgsql -s /bin/bash \
+                              -r -c "SE-PostgreSQL server" sepgsql || : ) &> /dev/null
 fi
 
 %post
-chkconfig --add sepostgresql
+/sbin/chkconfig --add sepostgresql
 /sbin/ldconfig
 
-SELINUXTYPE=`grep ^SELINUXTYPE /etc/selinux/config | sed 's/^.*=//g'`
-SEPGSQL_POLICY="%{_prefix}/policy/sepostgresql-${SELINUXTYPE}.pp"
-if [ -e ${SEPGSQL_POLICY} ]; then
-	SEPGSQL_PREV=`semodule -l | grep -c ^sepostgresql`
-	test ${SEPGSQL_PREV} -gt 0 && semodule -n -r sepostgresql || :
-	semodule -i ${SEPGSQL_POLICY} || :
-
-	/sbin/restorecon -R -v %{_prefix}
-	/sbin/restorecon -R -v /var/lib/sepgsql
-	/sbin/restorecon    -v /etc/rc.d/init.d/sepostgresql
-fi
+for selinuxvariant in %{selinux_variants}
+do
+    /usr/sbin/semodule -s ${selinuxvariant} -l | egrep -q '^%{name}' && \
+        /usr/sbin/semodule -s ${selinuxvariant} -r %{name} &> /dev/null || :
+    /usr/sbin/semodule -s ${selinuxvariant} -i \
+         %{_policydir}/${selinuxvariant}/%{name}.pp &> /dev/null || :
+done
+# Fix up non-standard file contexts
+/sbin/fixfiles -R %{name} restore || :
+/sbin/restorecon -R /var/lib/sepgsql || :
 
 %postun
 /sbin/ldconfig
 if [ $1 -eq 0 ]; then		# rpm -e cases
-	userdel  sepgsql >& /dev/null || :
-	groupdel sepgsql >& /dev/null || :
-	SEPGSQL_PREV=`semodule -l | grep -c ^sepostgresql`
-	test ${SEPGSQL_PREV} -gt 0 && semodule -r sepostgresql || :
-elif [ $1 -eq 1 ]; then		# rpm -Uvh cases
-	/sbin/service sepostgresql condrestart >/dev/null 2>&1 || :
+    userdel  sepgsql &> /dev/null || :
+    groupdel sepgsql &> /dev/null || :
+    for selinuxvariant in %{selinux_variants}
+    do
+        /usr/sbin/semodule -s ${selinuxvariant} -l | egrep -q '^%{name}' && \
+            /usr/sbin/semodule -s ${selinuxvariant} -r %{name} &> /dev/null || :
+    done
+    /sbin/fixfiles -R %{name} restore || :
+    test -d /var/lib/sepgsql && /sbin/restorecon -R /var/lib/sepgsql &> /dev/null || :
 fi
 
 %files
@@ -203,8 +180,9 @@ fi
 %{_libdir}/libpq.*
 %{_libdir}/libpgtypes.*
 %{_libdir}/*_and_*.so
-%dir %{_prefix}/policy
-%{_prefix}/policy/sepostgresql*.pp
+%{_policydir}/targeted/sepostgresql.pp
+%{_policydir}/strict/sepostgresql.pp
+%{_policydir}/mls/sepostgresql.pp
 %attr(700,sepgsql,sepgsql) %dir /var/lib/sepgsql
 %attr(700,sepgsql,sepgsql) %dir /var/lib/sepgsql/data
 %attr(700,sepgsql,sepgsql) %dir /var/lib/sepgsql/backups
