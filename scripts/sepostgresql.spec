@@ -32,8 +32,8 @@ Source3: sepostgresql.te
 Source4: sepostgresql.fc
 Patch0: sepostgresql-%{version}-%{release}.patch
 
-Buildrequires: checkpolicy selinux-policy-devel libselinux-devel
-Requires: policycoreutils >= 1.33.12-1 selinux-policy >= 2.4.6-40
+Buildrequires: checkpolicy >= 2.0.2 libselinux-devel >= 2.0.13 selinux-policy-devel >= 2.6.4-14
+Requires: libselinux >= 2.0.13 policycoreutils >= 2.0.16 selinux-policy >= 2.6.4-14
 
 %description
 Security Enhanced PostgreSQL is an extension of PostgreSQL
@@ -44,6 +44,12 @@ the operating system. SE-PostgreSQL works as a userspace
 reference monitor to check any SQL query.
 
 %prep
+# confirm the release string of selinux-policy-devel
+if ! rpm -q selinux-policy-devel | sed 's/^.*-//g' | egrep -q '.sepgsql'; then
+   echo ".sepgsql version of selinux-policy-devel is needed for build"
+   exit 1
+fi
+
 %setup -q -n postgresql-%{version}
 %patch0 -p1
 mkdir selinux-policy
@@ -62,13 +68,13 @@ popd
 
 # build SE-PostgreSQL
 autoconf
-%configure	--enable-selinux \
-		--host=%{_host} --build=%{_build} \
+%configure      --enable-selinux \
+                --host=%{_host} --build=%{_build} \
 %if %{defined sepgextension}
-		--enable-debug \
-		--enable-cassert \
+                --enable-debug \
+                --enable-cassert \
 %endif
-		--prefix=%{_prefix}
+                --prefix=%{_prefix}
 # parallel build, if possible
 NCPUS=`grep -c ^processor /proc/cpuinfo`
 make -j ${NCPUS}
@@ -105,7 +111,13 @@ install -m 755 %{SOURCE1} $RPM_BUILD_ROOT/etc/rc.d/init.d/sepostgresql
 rm -rf $RPM_BUILD_ROOT
 
 %pre
-if [ $1 -eq 1 ]; then		# rpm -i cases
+# confirm the release string of selinux-policy-devel
+if ! rpm -q selinux-policy | sed 's/^.*-//g' | egrep -q '.sepgsql'; then
+   echo ".sepgsql version of selinux-policy is needed to install"
+   exit 1
+fi
+
+if [ $1 -eq 1 ]; then           # rpm -i cases
     (id -g sepgsql || groupadd -r sepgsql || : ) &> /dev/null
     (id -u sepgsql || useradd -g sepgsql -d /var/lib/sepgsql -s /bin/bash \
                               -r -c "SE-PostgreSQL server" sepgsql || : ) &> /dev/null
@@ -128,7 +140,7 @@ done
 
 %postun
 /sbin/ldconfig
-if [ $1 -eq 0 ]; then		# rpm -e cases
+if [ $1 -eq 0 ]; then           # rpm -e cases
     userdel  sepgsql &> /dev/null || :
     groupdel sepgsql &> /dev/null || :
     for selinuxvariant in %{selinux_variants}
@@ -180,9 +192,7 @@ fi
 %{_libdir}/libpq.*
 %{_libdir}/libpgtypes.*
 %{_libdir}/*_and_*.so
-%{_policydir}/targeted/sepostgresql.pp
-%{_policydir}/strict/sepostgresql.pp
-%{_policydir}/mls/sepostgresql.pp
+%attr(644,root,root) %{_policydir}/*/sepostgresql.pp
 %attr(700,sepgsql,sepgsql) %dir /var/lib/sepgsql
 %attr(700,sepgsql,sepgsql) %dir /var/lib/sepgsql/data
 %attr(700,sepgsql,sepgsql) %dir /var/lib/sepgsql/backups

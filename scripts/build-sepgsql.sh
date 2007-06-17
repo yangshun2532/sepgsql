@@ -20,6 +20,8 @@ test -d ${RPMSOURCE} || exit 1
 #-- override default repository & tarball
 test -z "${SEPGSQL_REPOSITORY}" && SEPGSQL_REPOSITORY=${DEFAULT_REPOSITORY}
 test -z "${SEPGSQL_BASETGZ}" && SEPGSQL_BASETGZ=${DEFAULT_BASETGZ}
+echo ${SEPGSQL_REPOSITORY} | egrep -q "^http://" || \
+    { pushd ${SEPGSQL_REPOSITORY}; svn update; popd; }
 SEPGREVISION=`svn info ${SEPGSQL_REPOSITORY} | egrep '^Revision:' | awk '{print $2}'`
 SEPG_FULL_VERSION="${SEPGVERSION}.${SEPGREVISION}${SEPGEXTENSION}"
 
@@ -43,6 +45,7 @@ fi
 
 #-- create a patch file --
 echo "generating: sepostgresql-${BASEVERSION}-${SEPG_FULL_VERSION}.patch"
+cp "${SEPGSQL_BASETGZ}" ${RPMSOURCE}
 cp scripts/sepostgresql.init ${RPMSOURCE}
 cat scripts/sepostgresql.spec | \
     sed "s/%%__base_postgresql_version__%%/${BASEVERSION}/g" | \
