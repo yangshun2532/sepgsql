@@ -1,8 +1,6 @@
-Index: refpolicy-tresys/policy/modules/services/postgresql.te
-===================================================================
---- refpolicy-tresys/policy/modules/services/postgresql.te	(revision 2336)
-+++ refpolicy-tresys/policy/modules/services/postgresql.te	(working copy)
-@@ -175,16 +175,6 @@
+--- serefpolicy-2.6.4/policy/modules/services/postgresql.te	2007-05-08 03:51:01.000000000 +0900
++++ serefpolicy-2.6.4.sepgsql/policy/modules/services/postgresql.te	2007-06-17 11:54:43.000000000 +0900
+@@ -175,16 +175,6 @@ optional_policy(`
  ')
  
  ifdef(`TODO',`
@@ -19,11 +17,9 @@ Index: refpolicy-tresys/policy/modules/services/postgresql.te
  ifdef(`distro_debian', `
  	init_exec_script_files(postgresql_t)
  	# gross hack
-Index: refpolicy-tresys/policy/modules/system/userdomain.te
-===================================================================
---- refpolicy-tresys/policy/modules/system/userdomain.te	(revision 2336)
-+++ refpolicy-tresys/policy/modules/system/userdomain.te	(working copy)
-@@ -32,6 +32,13 @@
+--- serefpolicy-2.6.4/policy/modules/system/userdomain.te	2007-06-17 11:49:53.000000000 +0900
++++ serefpolicy-2.6.4.sepgsql/policy/modules/system/userdomain.te	2007-06-17 11:54:43.000000000 +0900
+@@ -31,6 +31,13 @@ gen_tunable(allow_user_mysql_connect,fal
  
  ## <desc>
  ## <p>
@@ -37,11 +33,9 @@ Index: refpolicy-tresys/policy/modules/system/userdomain.te
  ## Allow regular users direct mouse access
  ## </p>
  ## </desc>
-Index: refpolicy-tresys/policy/modules/system/userdomain.if
-===================================================================
---- refpolicy-tresys/policy/modules/system/userdomain.if	(revision 2336)
-+++ refpolicy-tresys/policy/modules/system/userdomain.if	(working copy)
-@@ -891,6 +891,12 @@
+--- serefpolicy-2.6.4/policy/modules/system/userdomain.if	2007-06-17 11:49:53.000000000 +0900
++++ serefpolicy-2.6.4.sepgsql/policy/modules/system/userdomain.if	2007-06-17 11:54:43.000000000 +0900
+@@ -909,6 +909,12 @@ template(`userdom_common_user_template',
  	')
  
  	optional_policy(`

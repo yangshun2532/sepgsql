@@ -1,25 +1,7 @@
-Index: refpolicy/policy/flask/security_classes
-===================================================================
---- refpolicy/policy/flask/security_classes	(revision 2336)
-+++ refpolicy/policy/flask/security_classes	(working copy)
-@@ -97,4 +97,12 @@
- 
- class dccp_socket
- 
-+# SE-PostgreSQL relation
-+class database			# userspace
-+class table			# userspace
-+class procedure			# userspace
-+class column			# userspace
-+class tuple			# userspace
-+class blob			# userspace
-+
- # FLASK
-Index: refpolicy/policy/flask/access_vectors
-===================================================================
---- refpolicy/policy/flask/access_vectors	(revision 2336)
-+++ refpolicy/policy/flask/access_vectors	(working copy)
-@@ -80,6 +80,20 @@
+diff -rpNU3 serefpolicy-2.6.4/policy/flask/access_vectors serefpolicy-2.6.4.sepgsql/policy/flask/access_vectors
+--- serefpolicy-2.6.4/policy/flask/access_vectors	2007-06-17 11:49:53.000000000 +0900
++++ serefpolicy-2.6.4.sepgsql/policy/flask/access_vectors	2007-06-17 11:50:53.000000000 +0900
+@@ -80,6 +80,20 @@ common ipc
  }
  
  #
@@ -40,7 +22,7 @@ Index: refpolicy/policy/flask/access_vectors
  # Define the access vectors.
  #
  # class class_name [ inherits common_name ] { permission_name ... }
-@@ -648,3 +662,61 @@
+@@ -652,3 +666,61 @@ inherits socket
  	node_bind
  	name_connect
  }
@@ -102,11 +84,26 @@ Index: refpolicy/policy/flask/access_vectors
 +	import
 +	export
 +}
-Index: refpolicy/policy/mcs
-===================================================================
---- refpolicy/policy/mcs	(revision 2336)
-+++ refpolicy/policy/mcs	(working copy)
-@@ -98,4 +98,28 @@
+diff -rpNU3 serefpolicy-2.6.4/policy/flask/security_classes serefpolicy-2.6.4.sepgsql/policy/flask/security_classes
+--- serefpolicy-2.6.4/policy/flask/security_classes	2007-05-08 03:50:57.000000000 +0900
++++ serefpolicy-2.6.4.sepgsql/policy/flask/security_classes	2007-06-17 11:50:53.000000000 +0900
+@@ -97,4 +97,12 @@ class context			# userspace
+ 
+ class dccp_socket
+ 
++# SE-PostgreSQL relation
++class database			# userspace
++class table			# userspace
++class procedure			# userspace
++class column			# userspace
++class tuple			# userspace
++class blob			# userspace
++
+ # FLASK
+diff -rpNU3 serefpolicy-2.6.4/policy/mcs serefpolicy-2.6.4.sepgsql/policy/mcs
+--- serefpolicy-2.6.4/policy/mcs	2007-05-08 03:51:05.000000000 +0900
++++ serefpolicy-2.6.4.sepgsql/policy/mcs	2007-06-17 11:50:53.000000000 +0900
+@@ -98,4 +98,28 @@ mlsconstrain process { ptrace }
  mlsconstrain process { sigkill sigstop }
  	(( h1 dom h2 ) or ( t1 == mcskillall ));
  
@@ -135,114 +132,10 @@ Index: refpolicy/policy/mcs
 +	( h1 dom h2 );
 +
  ') dnl end enable_mcs
-Index: refpolicy/policy/modules/kernel/mls.te
-===================================================================
---- refpolicy/policy/modules/kernel/mls.te	(revision 2336)
-+++ refpolicy/policy/modules/kernel/mls.te	(working copy)
-@@ -52,3 +52,11 @@
- attribute mlsfdshare;
- 
- attribute mlstranslate;
-+
-+attribute mlsdatabaseread;
-+attribute mlsdatabasereadtoclr;
-+attribute mlsdatabasewrite;
-+attribute mlsdatabasewritetoclr;
-+attribute mlsdatabasewriteinrange;
-+attribute mlsdatabaseupgrade;
-+attribute mlsdatabasedowngrade;
-Index: refpolicy/policy/modules/kernel/mls.if
-===================================================================
---- refpolicy/policy/modules/kernel/mls.if	(revision 2336)
-+++ refpolicy/policy/modules/kernel/mls.if	(working copy)
-@@ -406,6 +406,82 @@
- 
- ########################################
- ## <summary>
-+##      Make specified domain MLS trusted
-+##      for reading from databases at higher levels.
-+## </summary>
-+## <param name="domain">
-+##      <summary>
-+##      Domain allowed access.
-+##      </summary>
-+## </param>
-+#
-+interface(`mls_database_read_up',`
-+	gen_require(`
-+		attribute mlsdatabaseread;
-+	')
-+
-+	typeattribute $1 mlsdatabaseread;
-+')
-+
-+########################################
-+## <summary>
-+##       Make specified domain MLS trusted
-+##       for writing to databases at lower levels.
-+## </summary>
-+## <param name="domain">
-+##      <summary>
-+##      Domain allowed access.
-+##      </summary>
-+## </param>
-+#
-+interface(`mls_database_write_down',`
-+	gen_require(`
-+		attribute mlsdatabasewrite;
-+	')
-+
-+	typeattribute $1 mlsdatabasewrite;
-+')
-+
-+########################################
-+## <summary>
-+##      Make specified domain MLS trusted
-+##      for raising the level of databases.
-+## </summary>
-+## <param name="domain">
-+##      <summary>
-+##      Domain allowed access.
-+##      </summary>
-+## </param>
-+#
-+interface(`mls_database_upgrade',`
-+	gen_require(`
-+		attribute mlsdatabaseupgrade;
-+	')
-+
-+	typeattribute $1 mlsdatabaseupgrade;
-+')
-+
-+########################################
-+## <summary>
-+##      Make specified domain MLS trusted
-+##      for lowering the level of databases.
-+## </summary>
-+## <param name="domain">
-+##      <summary>
-+##      Domain allowed access.
-+##      </summary>
-+## </param>
-+#
-+interface(`mls_database_downgrade',`
-+	gen_require(`
-+		attribute mlsdatabasedowngrade;
-+	')
-+
-+	typeattribute $1 mlsdatabasedowngrade;
-+')
-+
-+########################################
-+## <summary>
- ##	Make specified object MLS trusted.
- ## </summary>
- ## <desc>
-Index: refpolicy/policy/mls
-===================================================================
---- refpolicy/policy/mls	(revision 2336)
-+++ refpolicy/policy/mls	(working copy)
-@@ -599,4 +599,109 @@
+diff -rpNU3 serefpolicy-2.6.4/policy/mls serefpolicy-2.6.4.sepgsql/policy/mls
+--- serefpolicy-2.6.4/policy/mls	2007-06-17 11:49:53.000000000 +0900
++++ serefpolicy-2.6.4.sepgsql/policy/mls	2007-06-17 11:50:53.000000000 +0900
+@@ -616,4 +616,109 @@ mlsconstrain context translate
  mlsconstrain context contains
  	( h1 dom h2 );
  
@@ -352,3 +245,107 @@ Index: refpolicy/policy/mls
 +	  (( t3 == mlsdatabasedowngrade ) and ( h1 incomp h2 ))));
 +
  ') dnl end enable_mls
+diff -rpNU3 serefpolicy-2.6.4/policy/modules/kernel/mls.if serefpolicy-2.6.4.sepgsql/policy/modules/kernel/mls.if
+--- serefpolicy-2.6.4/policy/modules/kernel/mls.if	2007-06-17 11:49:53.000000000 +0900
++++ serefpolicy-2.6.4.sepgsql/policy/modules/kernel/mls.if	2007-06-17 11:50:53.000000000 +0900
+@@ -426,6 +426,82 @@ interface(`mls_colormap_write_all_levels
+ 
+ ########################################
+ ## <summary>
++##      Make specified domain MLS trusted
++##      for reading from databases at higher levels.
++## </summary>
++## <param name="domain">
++##      <summary>
++##      Domain allowed access.
++##      </summary>
++## </param>
++#
++interface(`mls_database_read_up',`
++	gen_require(`
++		attribute mlsdatabaseread;
++	')
++
++	typeattribute $1 mlsdatabaseread;
++')
++
++########################################
++## <summary>
++##       Make specified domain MLS trusted
++##       for writing to databases at lower levels.
++## </summary>
++## <param name="domain">
++##      <summary>
++##      Domain allowed access.
++##      </summary>
++## </param>
++#
++interface(`mls_database_write_down',`
++	gen_require(`
++		attribute mlsdatabasewrite;
++	')
++
++	typeattribute $1 mlsdatabasewrite;
++')
++
++########################################
++## <summary>
++##      Make specified domain MLS trusted
++##      for raising the level of databases.
++## </summary>
++## <param name="domain">
++##      <summary>
++##      Domain allowed access.
++##      </summary>
++## </param>
++#
++interface(`mls_database_upgrade',`
++	gen_require(`
++		attribute mlsdatabaseupgrade;
++	')
++
++	typeattribute $1 mlsdatabaseupgrade;
++')
++
++########################################
++## <summary>
++##      Make specified domain MLS trusted
++##      for lowering the level of databases.
++## </summary>
++## <param name="domain">
++##      <summary>
++##      Domain allowed access.
++##      </summary>
++## </param>
++#
++interface(`mls_database_downgrade',`
++	gen_require(`
++		attribute mlsdatabasedowngrade;
++	')
++
++	typeattribute $1 mlsdatabasedowngrade;
++')
++
++########################################
++## <summary>
+ ##	Make specified object MLS trusted.
+ ## </summary>
+ ## <desc>
+diff -rpNU3 serefpolicy-2.6.4/policy/modules/kernel/mls.te serefpolicy-2.6.4.sepgsql/policy/modules/kernel/mls.te
+--- serefpolicy-2.6.4/policy/modules/kernel/mls.te	2007-06-17 11:49:53.000000000 +0900
++++ serefpolicy-2.6.4.sepgsql/policy/modules/kernel/mls.te	2007-06-17 11:52:39.000000000 +0900
+@@ -44,6 +44,14 @@ attribute mlsxwinreadcolormap;
+ attribute mlsxwinwritecolormap;
+ attribute mlsxwinwritexinput;
+ 
++attribute mlsdatabaseread;
++attribute mlsdatabasereadtoclr;
++attribute mlsdatabasewrite;
++attribute mlsdatabasewritetoclr;
++attribute mlsdatabasewriteinrange;
++attribute mlsdatabaseupgrade;
++attribute mlsdatabasedowngrade;
++
+ # Object attributes that allow MLS overrides for access by all subjects
+ attribute mlsrangedobject;
+ attribute mlstrustedobject;
