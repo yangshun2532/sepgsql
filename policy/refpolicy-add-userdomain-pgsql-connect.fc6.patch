@@ -1,0 +1,51 @@
+--- serefpolicy-2.4.6/policy/global_tunables	2007-06-18 01:29:05.000000000 +0900
++++ serefpolicy-2.4.6.sepgsql/policy/global_tunables	2007-06-18 01:36:21.000000000 +0900
+@@ -426,6 +426,13 @@ gen_tunable(allow_user_mysql_connect,fal
+ 
+ ## <desc>
+ ## <p>
++## Allow users to connect to PostgreSQL
++## </p>
++## </desc>
++gen_tunable(allow_user_postgresql_connect,false)
++
++## <desc>
++## <p>
+ ## Allows clients to write to the X server shared
+ ## memory segments.
+ ## </p>
+--- serefpolicy-2.4.6/policy/modules/system/userdomain.if	2007-06-18 01:29:05.000000000 +0900
++++ serefpolicy-2.4.6.sepgsql/policy/modules/system/userdomain.if	2007-06-18 01:37:26.000000000 +0900
+@@ -890,6 +890,12 @@ template(`userdom_common_user_template',
+ 	')
+ 
+ 	optional_policy(`
++		tunable_policy(`allow_user_postgresql_connect',`
++			postgresql_stream_connect($1_t)
++		')
++	')
++
++	optional_policy(`
+ 		nscd_socket_use($1_t)
+ 	')
+ 
+--- serefpolicy-2.4.6/policy/modules/services/postgresql.te	2006-11-30 02:04:51.000000000 +0900
++++ serefpolicy-2.4.6.sepgsql/policy/modules/services/postgresql.te	2007-06-18 01:34:42.000000000 +0900
+@@ -182,17 +182,6 @@ optional_policy(`
+ ')
+ 
+ ifdef(`TODO',`
+-ifdef(`targeted_policy', `', `
+-bool allow_user_postgresql_connect false;
+-
+-if (allow_user_postgresql_connect) {
+-# allow any user domain to connect to the database server
+-can_tcp_connect(userdomain, postgresql_t)
+-allow userdomain postgresql_t:unix_stream_socket connectto;
+-allow userdomain postgresql_var_run_t:sock_file write;
+-allow userdomain postgresql_tmp_t:sock_file write;
+-}
+-')
+ ifdef(`distro_debian', `
+ 	init_exec_script_files(postgresql_t)
+ 	# gross hack
