@@ -199,6 +199,10 @@ fi
 /var/lib/sepgsql/.bash_profile
 
 %changelog
+* Tue Jun 19 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.350
+- BUGFIX: sepgsql_compute_avc_datum() accessed userspace AVC without
+          holding any lock.
+- improve build scripts.
 * Sat Jun 16 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.320
 - update: sepostgresql.pp security policy fot strict/mls suitable
 - BUGFIX: column:drop evaluation for ALTER TABLE tbl DROP col; statement
