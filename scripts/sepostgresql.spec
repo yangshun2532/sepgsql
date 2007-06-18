@@ -32,8 +32,8 @@ Source3: sepostgresql.te
 Source4: sepostgresql.fc
 Patch0: sepostgresql-%{version}-%{release}.patch
 
-Buildrequires: checkpolicy >= 2.0.2 libselinux-devel >= 2.0.13 selinux-policy-devel >= 2.6.4-14
-Requires: libselinux >= 2.0.13 policycoreutils >= 2.0.16 selinux-policy >= 2.6.4-14
+Buildrequires: checkpolicy libselinux-devel >= %%__default_libselinux_version__%% selinux-policy-devel = %%__default_sepgpolversion__%%
+Requires: policycoreutils >= %%__default_policycoreutils_version__%% libselinux >= %%__default_libselinux_version__%% selinux-policy = %%__default_sepgpolversion__%%
 
 %description
 Security Enhanced PostgreSQL is an extension of PostgreSQL
@@ -77,7 +77,7 @@ autoconf
                 --prefix=%{_prefix}
 # parallel build, if possible
 NCPUS=`grep -c ^processor /proc/cpuinfo`
-make -j ${NCPUS}
+make CUSTOM_COPT='%%__default_custom_copt__%%' -j ${NCPUS}
 
 %install
 rm -rf %{buildroot}

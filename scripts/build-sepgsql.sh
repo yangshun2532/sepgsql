@@ -43,6 +43,35 @@ if echo "${SEPGSQL_BASETGZ}" | egrep -q '^(http|ftp)://'; then
     SEPGSQL_BASETGZ=`basename ${SEPGSQL_BASETGZ}`
 fi
 
+#-- check security policy dependency --
+if rpm -q --qf '%{release}' selinux-policy-devel | egrep -q '.sepgsql'; then
+    SEPGPOLVERSION=`rpm -q --qf '%{version}-%{release}' selinux-policy-devel`
+else
+    echo "selinux-policy-devel is NOT SE-PostgreSQL supported version"
+    echo "It does not contain the definition of object classes and access"
+    echo "vectors related to database objects."
+    exit 1
+fi
+
+#-- check distribution dependency --
+if [ -x /usr/lib/rpm/redhat/dist.sh ]; then
+    if [ "`/usr/lib/rpm/redhat/dist.sh`" = ".fc6" ]; then
+        LIBSELINUX_VERSION="1.33.4"
+        POLICYCOREUTILS_VERSION="1.34.1"
+        SEPGSQL_CUSTOM_COPT="-DSEPGSQL_BUILD_TARGET_FEDORACORE6"
+    elif [ "`/usr/lib/rpm/redhat/dist.sh`" = ".fc7" ]; then
+        LIBSELINUX_VERSION="2.0.13"
+        POLICYCOREUTILS_VERSION="2.0.16"
+        SEPGSQL_CUSTOM_COPT="-DSEPGSQL_BUILD_TARGET_FEDORA7"
+    else
+        echo "unknown distribution: `/usr/lib/rpm/redhat/dist.sh`"
+        exit 1
+    fi
+else
+    echo "we cannot determine the target distribution"
+    exit 1
+fi
+
 #-- create a patch file --
 echo "generating: sepostgresql-${BASEVERSION}-${SEPG_FULL_VERSION}.patch"
 cp "${SEPGSQL_BASETGZ}" ${RPMSOURCE}
@@ -51,7 +80,11 @@ cat scripts/sepostgresql.spec | \
     sed "s/%%__base_postgresql_version__%%/${BASEVERSION}/g" | \
     sed "s/%%__default_sepgversion__%%/${SEPGVERSION}/g" | \
     sed "s/%%__default_sepgrevision__%%/${SEPGREVISION}/g" | \
-    sed "s/%%__default_sepgextension__%%/${SEPGEXTENSION}/g" > ${RPMSOURCE}/sepostgresql.spec
+    sed "s/%%__default_sepgextension__%%/${SEPGEXTENSION}/g" | \
+    sed "s/%%__default_sepgpolversion__%%/${SEPGPOLVERSION}/g" | \
+    sed "s/%%__default_libselinux_version__%%/${LIBSELINUX_VERSION}/g" | \
+    sed "s/%%__default_policycoreutils_version__%%/${POLICYCOREUTILS_VERSION}/g" | \
+    sed "s/%%__default_custom_copt__%%/${SEPGSQL_CUSTOM_COPT}/g" > ${RPMSOURCE}/sepostgresql.spec
 cp policy/sepostgresql.if policy/sepostgresql.fc ${RPMSOURCE}
 cat policy/sepostgresql.te | \
     sed "s/%%POLICY_VERSION%%/${SEPGVERSION}.${SEPGREVISION}/g" > ${RPMSOURCE}/sepostgresql.te
