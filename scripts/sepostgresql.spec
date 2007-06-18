@@ -199,7 +199,7 @@ fi
 /var/lib/sepgsql/.bash_profile
 
 %changelog
-* Tue Jun 19 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.350
+* Tue Jun 19 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.351
 - BUGFIX: sepgsql_compute_avc_datum() accessed userspace AVC without
           holding any lock.
 - improve build scripts.
