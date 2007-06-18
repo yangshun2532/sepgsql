@@ -374,6 +374,7 @@ static uint32 sepgsql_validate_av_perms(security_class_t tclass, access_vector_t
 static void sepgsql_compute_avc_datum(Oid ssid, Oid tsid, uint16 tclass,
 									  struct avc_datum *avd)
 {
+	/* we have to hold LW_EXCLUSIVE lock */
 	security_class_t tclass_external = tclass;
 	security_context_t scon, tcon, ncon;
 	struct av_decision x;
@@ -407,12 +408,10 @@ static void sepgsql_compute_avc_datum(Oid ssid, Oid tsid, uint16 tclass,
 	avd->tsid = tsid;
 	avd->tclass = tclass;
 
-	LWLockAcquire(avc_shmem->lock, LW_SHARED);
 	avd->allowed = sepgsql_validate_av_perms(tclass_external, x.allowed);
 	avd->decided = sepgsql_validate_av_perms(tclass_external, x.decided);
 	avd->auditallow = sepgsql_validate_av_perms(tclass_external, x.auditallow);
 	avd->auditdeny = sepgsql_validate_av_perms(tclass_external, x.auditdeny);
-	LWLockRelease(avc_shmem->lock);
 
 	PG_TRY();
 	{
@@ -598,9 +597,8 @@ retry:
 	if (!avd) {
 		LWLockRelease(avc_shmem->lock);
 
-		sepgsql_compute_avc_datum(ssid, tsid, tclass, &lavd);
-
 		LWLockAcquire(avc_shmem->lock, LW_EXCLUSIVE);
+		sepgsql_compute_avc_datum(ssid, tsid, tclass, &lavd);
 		wlock = true;
 		sepgsql_avc_insert(&lavd);
 	} else {
@@ -668,9 +666,8 @@ Oid sepgsql_avc_createcon(Oid ssid, Oid tsid, uint16 tclass)
 	if (!avd) {
 		LWLockRelease(avc_shmem->lock);
 
-		sepgsql_compute_avc_datum(ssid, tsid, tclass, &lavd);
-
 		LWLockAcquire(avc_shmem->lock, LW_EXCLUSIVE);
+		sepgsql_compute_avc_datum(ssid, tsid, tclass, &lavd);
 		sepgsql_avc_insert(&lavd);
 		nsid = lavd.create;
 	} else {
