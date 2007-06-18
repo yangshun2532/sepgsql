@@ -2,11 +2,8 @@
 
 DEFAULT_REPOSITORY="http://sepgsql.googlecode.com/svn"
 POLICY_97="refpolicy-add-sepgsql-definitions.patch"
-if [ "`rpm -E '%{?dist}'`" = ".fc6" ]; then
-POLICY_98="refpolicy-add-userdomain-pgsql-connect.fc6.patch"
-elif [ "`rpm -E '%{?dist}'`" = ".fc7" ]; then
-POLICY_99="refpolicy-add-userdomain-pgsql-connect.fedora7.patch"
-fi
+POLICY_98="refpolicy-add-userdomain-pgsql-connect.fc6.patch"         # only for Fedora Core 6
+POLICY_99="refpolicy-add-userdomain-pgsql-connect.fedora7.patch"     # only for Fedora Core 7
 
 test -z "${SEPGSQL_REPOSITORY}" && SEPGSQL_REPOSITORY=${DEFAULT_REPOSITORY}
 
@@ -18,6 +15,17 @@ elif echo $1 | egrep -q "^(http|ftp)://"; then
     wget -O ${SRPMFILE} $1 || exit 1
 else
     SRPMFILE=$1
+fi
+
+# remove unnecessary patches
+if rpm -qp --qf "%{release}" "${SRPMFILE}" | egrep -q '\.fc6$'; then
+    # Fedore core 6
+    unset POLICY_99
+elif rpm -qp --qf "%{release}" "${SRPMFILE}" | egrep -q '\.fc7$'; then
+    # Fedora 7
+    unset POLICY_98
+else
+    echo "unknown distribution: ${SRPMFILE}"
 fi
 
 # unpack source rpm
