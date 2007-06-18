@@ -143,13 +143,16 @@ static const char *sepgsql_class_to_string(uint16 tclass)
 		if (selinux_catalog[i].tclass.inum == tclass)
 			return selinux_catalog[i].tclass.name;
 	}
-#if 0		/* 1, if libselinux support security_class_to_string() */
-	/* FIXME: tclass should be translated into external representation */
-	return security_class_to_string((security_class_t) tclass);
-#else
+#ifdef SEPGSQLOPT_LIBSELINUX_1_33
+	/* for legacy libselinux (Fedora core 6) */
+	/* This code will be replaced near future */
 	if (tclass == SECCLASS_PROCESS)
 		return "process";
 	return "unknown";
+#else
+	/* because tclass didn't match with userspace object classes,
+	 * its external representation is always same as internal one */
+	return security_class_to_string((security_class_t) tclass);
 #endif
 }
 
@@ -168,13 +171,16 @@ static const char *sepgsql_av_perm_to_string(uint16 tclass, uint32 perm)
 			return "unknown";
 		}
 	}
-#if 0		/* 1, if libselinux support security_av_perm_to_string() */
-	/* FIXME: tclass and perm should be translated into external representation */
-	return security_av_perm_to_string((security_class_t) tclass, (access_vector_t) perm);
-#else
+#ifdef SEPGSQLOPT_LIBSELINUX_1_33
+	/* for legacy libselinux (Fedora core 6) */
+	/* This code will be replaced near future */
 	if (tclass == SECCLASS_PROCESS && perm == PROCESS__TRANSITION)
 		return "transition";
 	return "unknown";
+#else
+	/* because tclass/perm didn't match with userspace object classes,
+	 * its external representation is always same as internal one */
+	return security_av_perm_to_string((security_class_t) tclass, (access_vector_t) perm);
 #endif
 }
 
