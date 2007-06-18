@@ -144,6 +144,7 @@ static const char *sepgsql_class_to_string(uint16 tclass)
 			return selinux_catalog[i].tclass.name;
 	}
 #if 0		/* 1, if libselinux support security_class_to_string() */
+	/* FIXME: tclass should be translated into external representation */
 	return security_class_to_string((security_class_t) tclass);
 #else
 	if (tclass == SECCLASS_PROCESS)
@@ -164,10 +165,11 @@ static const char *sepgsql_av_perm_to_string(uint16 tclass, uint32 perm)
 				if (selinux_catalog[i].av_perms[j].inum == perm)
 					return perm_name;
 			}
-			break;
+			return "unknown";
 		}
 	}
 #if 0		/* 1, if libselinux support security_av_perm_to_string() */
+	/* FIXME: tclass and perm should be translated into external representation */
 	return security_av_perm_to_string((security_class_t) tclass, (access_vector_t) perm);
 #else
 	if (tclass == SECCLASS_PROCESS && perm == PROCESS__TRANSITION)
