@@ -58,11 +58,11 @@ if [ -x /usr/lib/rpm/redhat/dist.sh ]; then
     if [ "`/usr/lib/rpm/redhat/dist.sh`" = ".fc6" ]; then
         LIBSELINUX_VERSION="1.33.4"
         POLICYCOREUTILS_VERSION="1.34.1"
-        SEPGSQL_CUSTOM_COPT="-DSEPGSQL_BUILD_TARGET_FEDORACORE6"
+        SEPGSQL_CUSTOM_COPT="-D SEPGSQLOPT_LIBSELINUX_1_33"
     elif [ "`/usr/lib/rpm/redhat/dist.sh`" = ".fc7" ]; then
         LIBSELINUX_VERSION="2.0.13"
         POLICYCOREUTILS_VERSION="2.0.16"
-        SEPGSQL_CUSTOM_COPT="-DSEPGSQL_BUILD_TARGET_FEDORA7"
+        SEPGSQL_CUSTOM_COPT=""
     else
         echo "unknown distribution: `/usr/lib/rpm/redhat/dist.sh`"
         exit 1
