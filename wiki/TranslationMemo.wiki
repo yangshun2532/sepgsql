@@ -19,3 +19,5 @@
  * row-level
 列レベル
  * column-level
+タプル
+ * tuple
