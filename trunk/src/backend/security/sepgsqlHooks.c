@@ -205,6 +205,13 @@ void sepgsqlCallFunction(FmgrInfo *finfo, bool with_perm_check)
 	ReleaseSysCache(tuple);
 }
 
+void sepgsqlCallFunctionTrigger(FmgrInfo *finfo, TriggerData *tgdata)
+{
+	sepgsqlCallFunction(finfo, true);
+
+	/* FIXME: requied permissions should be checked */
+}
+
 /*******************************************************************************
  * COPY TO/COPY FROM related hooks
  *******************************************************************************/
