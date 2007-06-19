@@ -521,34 +521,35 @@ char *sepgsqlSecurityLabelOfLabel(char *context) {
 extern char *selinux_mnt;
 
 char *sepgsqlSecurityLabelNotFound(Oid sid) {
-    static char *unlabeled_mls = "system_u:object_r:unlabeled_t:s0";
-	static char *unlabeled = "system_u:object_r:unlabeled_t";
-	char buffer[PATH_MAX];
-	int rc, fd;
+#ifndef SEPGSQLOPT_LIBSELINUX_1_33
+	security_context_t unlabeled_con;
 
-	if (selinux_mnt) {
-		snprintf(buffer, sizeof(buffer),
-				 "%s/initial_contexts/unlabeled",
-				 selinux_mnt);
-		fd = open(buffer, O_RDONLY);
-		if (fd < 0)
-			goto no_interface;
+	if (!security_get_initial_context_raw("unlabeled", &unlabeled_con)) {
+		char *result;
 
-		rc = read(fd, buffer, sizeof(buffer) - 1);
-		close(fd);
-
-		if (rc < 0)
-			goto no_interface;
-
-		return pstrdup(buffer);
+		PG_TRY();
+		{
+			result = pstrdup(unlabeled_con);
+		}
+		PG_CATCH();
+		{
+			freecon(unlabeled_con);
+			PG_RE_THROW();
+		}
+		PG_END_TRY();
+		freecon(unlabeled_con);
+		return result;
 	}
-	/* NOTE: This fallback routine should be eliminated in the near future. *
-	 * Due to its ad-hoc assumption. */
-no_interface:
-	if (sepgsqlSecurityLabelIsValid(unlabeled_mls))
-		return pstrdup(unlabeled_mls);
-	if (sepgsqlSecurityLabelIsValid(unlabeled))
-		return pstrdup(unlabeled);
+#endif
+	/* FIXME: This fallback code should be eliminated in the near future.
+	 * /selinux/init_contexts support will be enabled at 2.6.22 kernel.
+	 */
+	unlabeled_con = "system_u:object_r:unlabeled_t:s0";
+	if (sepgsqlSecurityLabelIsValid(unlabeled_con))
+		return pstrdup(unlabeled_con);
+	unlabeled_con = "system_u:object_r:unlabeled_t";
+	if (sepgsqlSecurityLabelIsValid(unlabeled_con))
+		return pstrdup(unlabeled_con);
 	return NULL;
 }
 
