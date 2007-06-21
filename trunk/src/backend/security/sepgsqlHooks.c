@@ -479,12 +479,12 @@ char *sepgsqlSecurityLabelOfLabel(char *context) {
 	security_context_t scon, tcon, ncon, _ncon;
 	int rc;
 
-	/* obtain a security context of pg_database */
-	tuple = SearchSysCache(DATABASEOID,
-						   ObjectIdGetDatum(MyDatabaseId),
+	/* obtain the security context of pg_security */
+	tuple = SearchSysCache(RELOID,
+						   ObjectIdGetDatum(SecurityRelationId),
 						   0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
-		selerror("cache lookup failed for database = %u", MyDatabaseId);
+		selerror("pg_security (relid=%u) not found", SecurityRelationId);
 	tcon = DatumGetCString(DirectFunctionCall1(security_label_raw_out,
 											   ObjectIdGetDatum(HeapTupleGetSecurity(tuple))));
 	ReleaseSysCache(tuple);
@@ -495,7 +495,7 @@ char *sepgsqlSecurityLabelOfLabel(char *context) {
 		selerror("could not obtain server's context");
 
 	/* compute pg_selinux tuple context */
-	rc = security_compute_create_raw(scon, tcon, SECCLASS_DATABASE, &ncon);
+	rc = security_compute_create_raw(scon, tcon, SECCLASS_TUPLE, &ncon);
 	pfree(tcon);
 	freecon(scon);
 	if (rc)
