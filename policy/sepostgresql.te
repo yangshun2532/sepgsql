@@ -22,8 +22,8 @@ gen_require(`
 #
 gen_tunable(sepgsql_enable_unconfined, true)
 gen_tunable(sepgsql_enable_auditallow, false)
-gen_tunable(sepgsql_enable_auditdeny, true)
-gen_tunable(sepgsql_enable_audittuple, true)
+gen_tunable(sepgsql_enable_auditdeny,  true)
+gen_tunable(sepgsql_enable_audittuple, false)
 
 # ---- Database object type ----
 attribute sepgsql_server_type;
@@ -38,20 +38,22 @@ attribute sepgsql_module_type;
 
 # for database class
 type sepgsql_db_t,		sepgsql_database_type;
-type sepgsql_sysobj_t,		sepgsql_database_type;
 
 # for table/column/tuple class
 type sepgsql_table_t,		sepgsql_table_type;
+type sepgsql_sysobj_t,		sepgsql_table_type;
 type sepgsql_secret_table_t,	sepgsql_table_type;
 type sepgsql_ro_table_t,	sepgsql_table_type;
 type sepgsql_fixed_table_t,	sepgsql_table_type;
 
 # for procedure class
 type sepgsql_proc_t,		sepgsql_procedure_type;
+type sepgsql_user_proc_t,	sepgsql_procedure_type;
 type sepgsql_trusted_proc_t,	sepgsql_procedure_type;
 
 # for blob class
 type sepgsql_blob_t,		sepgsql_blob_type;
+type sepgsql_ro_blob_t,		sepgsql_blob_type;
 type sepgsql_secret_blob_t,	sepgsql_blob_type;
 
 #---------------------------------------
@@ -76,13 +78,18 @@ typeattribute unlabeled_t sepgsql_blob_type;
 #
 # SE-PostgreSQL server domain's policy
 #
-sepgsql_server_domain(postgresql_t)
 optional_policy(`
 	gen_require(`
-		type unconfined_t;
+		type postgresql_t;
 	')
-	sepgsql_server_domain(unconfined_t)
+	sepgsql_server_domain(postgresql_t)
 ')
+allow sepgsql_server_type sepgsql_database_type : database { create drop getattr setattr };
+allow sepgsql_server_type sepgsql_table_type : table { create drop getattr setattr };
+allow sepgsql_server_type sepgsql_table_type : column { create drop getattr setattr };
+allow sepgsql_server_type sepgsql_table_type : tuple { insert delete select update };
+allow sepgsql_server_type sepgsql_procedure_type : procedure { create drop getattr setattr };
+allow sepgsql_server_type sepgsql_blob_type : blob { create drop getattr setattr read write };
 
 allow sepgsql_server_type self:netlink_selinux_socket create_socket_perms;
 selinux_get_fs_mount(sepgsql_server_type)
@@ -148,10 +155,9 @@ allow sepgsql_database_type sepgsql_module_type : database { load_module };
 #
 # SE-PostgreSQL Type Transition
 #
-type_transition domain sepgsql_server_type   : database sepgsql_db_t;
-type_transition domain sepgsql_database_type : database sepgsql_sysobj_t;
-type_transition domain sepgsql_database_type : table sepgsql_table_t;
-type_transition domain sepgsql_database_type : procedure sepgsql_proc_t;
+type_transition domain domain : database sepgsql_db_t;
+type_transition { domain - sepgsql_server_type } sepgsql_database_type : table sepgsql_table_t;
+type_transition sepgsql_server_type sepgsql_database_type : table sepgsql_sysobj_t;
 type_transition domain sepgsql_database_type : blob sepgsql_blob_t;
 
 ########################################

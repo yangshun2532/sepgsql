@@ -44,18 +44,36 @@ interface(`sepgsql_module_object',`
 #
 interface(`sepgsql_client_domain',`
 	gen_require(`
-		type sepgsql_db_t, sepgsql_sysobj_t;
-		type sepgsql_table_t, sepgsql_secret_table_t, sepgsql_ro_table_t, sepgsql_fixed_table_t;
-		type sepgsql_proc_t, sepgsql_trusted_proc_t;
-		type sepgsql_blob_t, sepgsql_secret_blob_t;
+		type sepgsql_db_t;
+
+		type sepgsql_table_t;
+		type sepgsql_sysobj_t;
+		type sepgsql_secret_table_t;
+		type sepgsql_ro_table_t;
+		type sepgsql_fixed_table_t;
+
+		type sepgsql_proc_t;
+		type sepgsql_trusted_proc_t;
+		type sepgsql_user_proc_t;
+
+		type sepgsql_blob_t;
+		type sepgsql_ro_blob_t;
+		type sepgsql_secret_blob_t;
+
 		type sepgsql_trusted_domain_t;
 	')
 	allow $1 sepgsql_db_t : database { getattr access };
-	allow $1 sepgsql_sysobj_t : database { create drop getattr setattr };
 
 	allow $1 sepgsql_table_t : table { create drop getattr setattr use select update insert delete };
 	allow $1 sepgsql_table_t : column { create drop getattr setattr use select update insert };
 	allow $1 sepgsql_table_t : tuple { use select update insert delete };
+
+	allow $1 sepgsql_sysobj_t : table { getattr use select update insert delete };
+	allow $1 sepgsql_sysobj_t : column { getattr use select update insert };
+	allow $1 sepgsql_sysobj_t : tuple { use select update insert delete };
+
+	allow $1 sepgsql_secret_table_t : table { getattr };
+	allow $1 sepgsql_secret_table_t : column { getattr };
 
 	allow $1 sepgsql_ro_table_t : table { getattr use select };
 	allow $1 sepgsql_ro_table_t : column { getattr use select };
@@ -65,14 +83,15 @@ interface(`sepgsql_client_domain',`
 	allow $1 sepgsql_fixed_table_t : column { getattr use select insert };
 	allow $1 sepgsql_fixed_table_t : tuple { use select insert };
 
-	allow $1 sepgsql_secret_table_t : table { getattr };
-	allow $1 sepgsql_secret_table_t : column { getattr };
-
-	allow $1 sepgsql_proc_t : procedure { create drop getattr setattr execute };
+	allow $1 sepgsql_proc_t : procedure { getattr execute };
+	allow $1 sepgsql_user_proc_t : procedure { create drop getattr setattr execute };
 	allow $1 sepgsql_trusted_proc_t : procedure { getattr execute entrypoint };
 
 	allow $1 sepgsql_blob_t : blob { create drop getattr setattr read write };
+	allow $1 sepgsql_ro_blob_t : blob { getattr read };
 	allow $1 sepgsql_secret_blob_t : blob { getattr };
+
+	type_transition $1 sepgsql_database_type : procedure sepgsql_user_proc_t;
 
 	# trusted procedure
 	type_transition $1 sepgsql_trusted_proc_t : process sepgsql_trusted_domain_t;
@@ -98,6 +117,8 @@ interface(`sepgsql_unconfined_domain',`
 		attribute sepgsql_module_type;
 		attribute sepgsql_server_type;
 
+		type sepgsql_user_proc_t;
+
 		bool sepgsql_enable_unconfined;
 	')
 	tunable_policy(`sepgsql_enable_unconfined',`
@@ -105,10 +126,14 @@ interface(`sepgsql_unconfined_domain',`
 		allow $1 sepgsql_table_type : table all_table_perms;
 		allow $1 sepgsql_table_type : column all_column_perms;
 		allow $1 sepgsql_table_type : tuple all_tuple_perms;
-		allow $1 sepgsql_procedure_type : procedure all_procedure_perms;
+		allow $1 { sepgsql_procedure_type - sepgsql_user_proc_t } : procedure all_procedure_perms;
+		allow $1 sepgsql_user_proc_t : procedure { create drop getattr setattr relabelfrom relabelto };
 		allow $1 sepgsql_blob_type : blob all_blob_perms;
 		allow $1 sepgsql_module_type : database { install_module };
 		allow $1 sepgsql_server_type : blob { import export };
+
+		type_transition $1 sepgsql_database_type : procedure sepgsql_proc_t;
+	',`
+		sepgsql_client_domain($1)
 	')
-	sepgsql_client_domain($1)
 ')
