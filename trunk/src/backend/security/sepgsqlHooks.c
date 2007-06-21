@@ -220,7 +220,7 @@ void sepgsqlCallFunctionTrigger(FmgrInfo *finfo, TriggerData *tgdata)
 void sepgsqlCopyTable(Relation rel, List *attNumList, bool isFrom)
 {
 	HeapTuple tuple;
-	Form_pg_class pgclass;
+	Form_pg_class classForm;
 	uint32 perms;
 	ListCell *l;
 
@@ -234,14 +234,20 @@ void sepgsqlCopyTable(Relation rel, List *attNumList, bool isFrom)
 						   0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
 		selerror("cache lookup failed for relation %u", RelationGetRelid(rel));
-	pgclass = (Form_pg_class) GETSTRUCT(tuple);
+	classForm = (Form_pg_class) GETSTRUCT(tuple);
+
+	if (classForm->relkind != RELKIND_RELATION) {
+		/* no need to check non-table relation */
+		ReleaseSysCache(tuple);
+		return;
+	}
 
 	perms = (isFrom ? TABLE__INSERT : TABLE__SELECT);
 	sepgsql_avc_permission(sepgsqlGetClientContext(),
 						   HeapTupleGetSecurity(tuple),
 						   SECCLASS_TABLE,
 						   perms,
-						   NameStr(pgclass->relname));
+						   NameStr(classForm->relname));
 	ReleaseSysCache(tuple);
 
 	/* 2. check column:select/insert for each column */
