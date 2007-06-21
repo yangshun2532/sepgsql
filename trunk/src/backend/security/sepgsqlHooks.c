@@ -628,9 +628,6 @@ void sepgsqlSimpleHeapDelete(Relation rel, ItemPointer tid)
 {
 	HeapTuple oldtup;
 
-	if (!sepgsqlIsEnabled())
-		return;
-
 	if (!__is_simple_system_relation(rel))
 		return;
 
