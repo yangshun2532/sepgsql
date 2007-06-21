@@ -438,8 +438,8 @@ static Oid get_security_label_oid(Relation rel, CatalogIndexState ind, char *new
 			tuple = heap_formtuple(RelationGetDescr(rel),
 								   &value, &isnull);
 			meta_oid = GetNewOid(rel);
-			HeapTupleSetOid(tuple, label_oid);
-			HeapTupleSetSecurity(tuple, label_oid);
+			HeapTupleSetOid(tuple, meta_oid);
+			HeapTupleSetSecurity(tuple, meta_oid);
 
 			label_oid = simple_heap_insert(rel, tuple);
 			Assert(label_oid == meta_oid);
