@@ -123,20 +123,21 @@ void sepgsqlSetDatabaseParam(const char *name, char *argstring)
 void sepgsqlLockTable(Oid relid)
 {
 	HeapTuple tuple;
-	Form_pg_class pgclass;
+	Form_pg_class classForm;
 
 	tuple = SearchSysCache(RELOID,
 						   ObjectIdGetDatum(relid),
 						   0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
 		selerror("cache lookup failed for relation %u", relid);
-	pgclass = (Form_pg_class) GETSTRUCT(tuple);
+	classForm = (Form_pg_class) GETSTRUCT(tuple);
 
-    sepgsql_avc_permission(sepgsqlGetClientContext(),
-						   HeapTupleGetSecurity(tuple),
-						   SECCLASS_TABLE,
-						   TABLE__LOCK,
-						   NameStr(pgclass->relname));
+	if (classForm->relkind == RELKIND_RELATION)
+		sepgsql_avc_permission(sepgsqlGetClientContext(),
+							   HeapTupleGetSecurity(tuple),
+							   SECCLASS_TABLE,
+							   TABLE__LOCK,
+							   NameStr(classForm->relname));
 	ReleaseSysCache(tuple);
 }
 
