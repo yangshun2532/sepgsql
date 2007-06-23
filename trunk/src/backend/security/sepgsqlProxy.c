@@ -93,40 +93,68 @@ static List *sepgsqlWalkExpr(List *selist, queryChain *qc, Node *n, int flags);
  * addEvalXXXX -- add evaluation items into Query->SEvalItemList.
  * Those are used for execution phase.
  * ----------------------------------------------------------- */
+static List *__addEvalPgClass(List *selist, Oid relid, bool inh, uint32 perms)
+{
+	SEvalItem *se;
+	ListCell *l;
+
+	foreach (l, selist) {
+		se = (SEvalItem *) lfirst(l);
+		if (se->tclass == SECCLASS_TABLE
+			&& se->c.relid == relid
+			&& se->c.inh == inh) {
+			se->perms |= perms;
+			return selist;
+		}
+	}
+	/* not found */
+	se = makeNode(SEvalItem);
+	se->tclass = SECCLASS_TABLE;
+	se->perms = perms;
+	se->c.relid = relid;
+	se->c.inh = inh;
+	return lappend(selist, se);
+}
+
 static List *addEvalPgClass(List *selist, RangeTblEntry *rte, uint32 perms)
 {
-	ListCell *l;
-	SEvalItem *se;
-
 	rte->requiredPerms |= (perms & TABLE__USE    ? RTEMARK_USE    : 0);
 	rte->requiredPerms |= (perms & TABLE__SELECT ? RTEMARK_SELECT : 0);
 	rte->requiredPerms |= (perms & TABLE__INSERT ? RTEMARK_INSERT : 0);
 	rte->requiredPerms |= (perms & TABLE__UPDATE ? RTEMARK_UPDATE : 0);
 	rte->requiredPerms |= (perms & TABLE__DELETE ? RTEMARK_DELETE : 0);
 
+	return __addEvalPgClass(selist, rte->relid, rte->inh, perms);
+}
+
+static List *__addEvalPgAttribute(List *selist, Oid relid, bool inh, AttrNumber attno, uint32 perms)
+{
+	ListCell *l;
+	SEvalItem *se;
+
 	foreach (l, selist) {
 		se = (SEvalItem *) lfirst(l);
-		if (se->tclass == SECCLASS_TABLE
-			&& se->c.relid == rte->relid
-			&& se->c.inh == rte->inh) {
+		if (se->tclass == SECCLASS_COLUMN
+			&& se->a.relid == relid
+			&& se->a.inh == inh
+			&& se->a.attno == attno) {
 			se->perms |= perms;
 			return selist;
 		}
 	}
-	selnotice("add SEval (table) relid=%u inh=%d", rte->relid, rte->inh);
+	/* not found */
 	se = makeNode(SEvalItem);
-	se->tclass = SECCLASS_TABLE;
+	se->tclass = SECCLASS_COLUMN;
 	se->perms = perms;
-	se->c.relid = rte->relid;
-	se->c.inh = rte->inh;
+	se->a.relid = relid;
+	se->a.inh = inh;
+	se->a.attno = attno;
+
 	return lappend(selist, se);
 }
 
 static List *addEvalPgAttribute(List *selist, RangeTblEntry *rte, AttrNumber attno, uint32 perms)
 {
-	ListCell *l;
-	SEvalItem *se;
-
 	/* for 'security_context' */
 	if (attno == SecurityAttributeNumber
 		&& (perms & (COLUMN__UPDATE | COLUMN__INSERT)))
@@ -141,25 +169,7 @@ static List *addEvalPgAttribute(List *selist, RangeTblEntry *rte, AttrNumber att
 			rte->requiredPerms |= RTEMARK_BLOB_WRITE;
 	}
 
-	foreach (l, selist) {
-		se = (SEvalItem *) lfirst(l);
-		if (se->tclass == SECCLASS_COLUMN
-			&& se->a.relid == rte->relid
-			&& se->a.inh == rte->inh
-			&& se->a.attno == attno) {
-			se->perms |= perms;
-			return selist;
-		}
-	}
-
-	se = makeNode(SEvalItem);
-	se->tclass = SECCLASS_COLUMN;
-	se->perms = perms;
-	se->a.relid = rte->relid;
-	se->a.inh = rte->inh;
-	se->a.attno = attno;
-
-	return lappend(selist, se);
+	return __addEvalPgAttribute(selist, rte->relid, rte->inh, attno, perms);
 }
 
 static List *addEvalPgProc(List *selist, Oid funcid, uint32 perms)
@@ -183,7 +193,7 @@ static List *addEvalPgProc(List *selist, Oid funcid, uint32 perms)
 	return lappend(selist, se);
 }
 
-static List *addEvalTriggerAccess(List *selist, RangeTblEntry *rte, int cmdType)
+static List *addEvalTriggerAccess(List *selist, Oid relid, bool is_inh, int cmdType)
 {
 	Relation rel;
 	SysScanDesc scan;
@@ -191,12 +201,14 @@ static List *addEvalTriggerAccess(List *selist, RangeTblEntry *rte, int cmdType)
 	HeapTuple tuple;
 	bool checked = false;
 
-	Assert(cmdType == CMD_INSERT || cmdType == CMD_UPDATE || cmdType == CMD_DELETE);
+	if (cmdType != CMD_INSERT && cmdType != CMD_UPDATE && cmdType != CMD_DELETE)
+		return selist;
+
 	rel = heap_open(TriggerRelationId, AccessShareLock);
 	ScanKeyInit(&skey,
 				Anum_pg_trigger_tgrelid,
 				BTEqualStrategyNumber, F_OIDEQ,
-				ObjectIdGetDatum(rte->relid));
+				ObjectIdGetDatum(relid));
 	scan = systable_beginscan(rel, TriggerRelidNameIndexId,
 							  true, SnapshotNow, 1, &skey);
 	while (HeapTupleIsValid((tuple = systable_getnext(scan)))) {
@@ -225,15 +237,15 @@ static List *addEvalTriggerAccess(List *selist, RangeTblEntry *rte, int cmdType)
 			AttrNumber attnum;
 
 			reltup = SearchSysCache(RELOID,
-									ObjectIdGetDatum(rte->relid),
+									ObjectIdGetDatum(relid),
 									0, 0, 0);
 			classForm = (Form_pg_class) GETSTRUCT(reltup);
 
-			selist = addEvalPgClass(selist, rte, TABLE__SELECT);
+			selist = __addEvalPgClass(selist, relid, false, TABLE__SELECT);
 			for (attnum = FirstLowInvalidHeapAttributeNumber + 1; attnum <= 0; attnum++) {
 				if (attnum == ObjectIdAttributeNumber && !classForm->relhasoids)
 					continue;
-				selist = addEvalPgAttribute(selist, rte, attnum, COLUMN__SELECT);
+				selist = __addEvalPgAttribute(selist, relid, false, attnum, COLUMN__SELECT);
 			}
 			ReleaseSysCache(reltup);
 
@@ -242,9 +254,6 @@ static List *addEvalTriggerAccess(List *selist, RangeTblEntry *rte, int cmdType)
 	}
 	systable_endscan(scan);
 	heap_close(rel, AccessShareLock);
-
-	/* clear RTE pollution */
-	rte->requiredPerms &= ((1<<N_ACL_RIGHTS) - 1);
 
 	return selist;
 }
@@ -1275,19 +1284,26 @@ static void verifyPgProcPerms(Oid funcid, uint32 perms)
 
 void sepgsqlVerifyQuery(Query *query)
 {
-	int cmdType = query->commandType;
-	List *seval_list = query->pgaceList;
+	List *selist = query->pgaceList;
 	ListCell *l;
 
 	/* add checks for access via trigger function */
-	if (cmdType == CMD_UPDATE || cmdType == CMD_INSERT || cmdType == CMD_DELETE) {
+	if (query->resultRelation > 0) {
 		RangeTblEntry *rte = (RangeTblEntry *) list_nth(query->rtable,
 														query->resultRelation - 1);
 		Assert(IsA(rte, RangeTblEntry));
-		seval_list = addEvalTriggerAccess(copyObject(query->pgaceList), rte, cmdType);
+		selist = copyObject(query->pgaceList);
+		foreach (l, selist) {
+			SEvalItem *se = lfirst(l);
+
+			if (se->tclass == SECCLASS_TABLE && se->c.relid == rte->relid) {
+				selist = addEvalTriggerAccess(selist, se->c.relid, se->c.inh, query->commandType);
+				break;
+			}
+		}
 	}
 
-	foreach (l, seval_list) {
+	foreach (l, selist) {
 		SEvalItem *se = lfirst(l);
 
 		switch (se->tclass) {
