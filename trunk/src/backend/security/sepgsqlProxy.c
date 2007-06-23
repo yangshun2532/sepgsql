@@ -201,8 +201,7 @@ static List *addEvalTriggerAccess(List *selist, Oid relid, bool is_inh, int cmdT
 	HeapTuple tuple;
 	bool checked = false;
 
-	if (cmdType != CMD_INSERT && cmdType != CMD_UPDATE && cmdType != CMD_DELETE)
-		return selist;
+	Assert(cmdType == CMD_INSERT || cmdType == CMD_UPDATE || cmdType == CMD_DELETE);
 
 	rel = heap_open(TriggerRelationId, AccessShareLock);
 	ScanKeyInit(&skey,
@@ -254,6 +253,14 @@ static List *addEvalTriggerAccess(List *selist, Oid relid, bool is_inh, int cmdT
 	}
 	systable_endscan(scan);
 	heap_close(rel, AccessShareLock);
+
+	if (is_inh) {
+		List *child_list = find_inheritance_children(relid);
+		ListCell *l;
+
+		foreach(l, child_list)
+			selist = addEvalTriggerAccess(selist, lfirst_oid(l), is_inh, cmdType);
+	}
 
 	return selist;
 }
@@ -1100,8 +1107,6 @@ List *sepgsqlProxyQueryList(List *queryList)
  * The reason why the checks are delayed is to handle cases when parse
  * and execute are separated like PREPARE/EXECUTE statement.
  * *******************************************************************************/
-static void verifyPgClassPermsInheritances(Oid relid, uint32 perms);
-
 static void verifyPgClassPerms(Oid relid, bool inh, uint32 perms)
 {
 	Form_pg_class pgclass;
@@ -1127,26 +1132,7 @@ static void verifyPgClassPerms(Oid relid, bool inh, uint32 perms)
 						   perms,
 						   NameStr(pgclass->relname));
 	ReleaseSysCache(tuple);
-
-	/* check child relations, if necessary */
-	if (inh)
-		verifyPgClassPermsInheritances(relid, perms);
 }
-
-static void verifyPgClassPermsInheritances(Oid relid, uint32 perms)
-{
-	List *chld_list;
-	ListCell *l;
-
-	chld_list = find_inheritance_children(relid);
-	foreach (l, chld_list) {
-		Oid chld_oid = lfirst_oid(l);
-
-		verifyPgClassPerms(chld_oid, true, perms);
-	}
-}
-
-static void verifyPgAttributePermsInheritances(Oid parent_relid, char *attname, uint32 perms);
 
 static void verifyPgAttributePerms(Oid relid, bool inh, AttrNumber attno, uint32 perms)
 {
@@ -1213,34 +1199,7 @@ static void verifyPgAttributePerms(Oid relid, bool inh, AttrNumber attno, uint32
 						   perms,
 						   NameStr(pgattr->attname));
 
-	/* check child relations, if necesasry */
-	if (inh)
-		verifyPgAttributePermsInheritances(relid, NameStr(pgattr->attname), perms);
-
 	ReleaseSysCache(tuple);
-}
-
-static void verifyPgAttributePermsInheritances(Oid parent_relid, char *attname, uint32 perms)
-{
-	List *chld_list;
-	ListCell *l;
-
-	chld_list = find_inheritance_children(parent_relid);
-	foreach (l, chld_list) {
-		Form_pg_attribute attr;
-		HeapTuple tuple;
-		Oid chld_oid;
-
-		chld_oid = lfirst_oid(l);
-		tuple = SearchSysCacheAttName(chld_oid, attname);
-		if (!HeapTupleIsValid(tuple)) {
-			selnotice("relation %u dose not have attribute '%s'", chld_oid, attname);
-			continue;
-		}
-		attr = (Form_pg_attribute) GETSTRUCT(tuple);
-		verifyPgAttributePerms(chld_oid, true, attr->attnum, perms);
-		ReleaseSysCache(tuple);
-	}
 }
 
 static void verifyPgProcPerms(Oid funcid, uint32 perms)
@@ -1282,25 +1241,104 @@ static void verifyPgProcPerms(Oid funcid, uint32 perms)
 	ReleaseSysCache(tuple);
 }
 
+static List *__expandPgClassInheritance(List *selist, Oid relid, uint32 perms)
+{
+	List *child_list = find_inheritance_children(relid);
+	ListCell *l;
+
+	foreach (l, child_list) {
+		selist = __addEvalPgClass(selist, lfirst_oid(l), false, perms);
+		selist = __expandPgClassInheritance(selist, lfirst_oid(l), perms);
+	}
+	return selist;
+}
+
+static List *__expandPgAttributeInheritance(List *selist, Oid relid, char *attname, uint32 perms)
+{
+	List *child_list = find_inheritance_children(relid);
+	ListCell *l;
+
+	foreach (l, child_list) {
+		Form_pg_attribute attrForm;
+		HeapTuple tuple;
+
+		tuple = SearchSysCacheAttName(lfirst_oid(l), attname);
+		if (!HeapTupleIsValid(tuple))
+			selerror("relation %u does not have attribute %s",
+                     lfirst_oid(l), attname);
+		attrForm = (Form_pg_attribute) GETSTRUCT(tuple);
+		selist = __addEvalPgAttribute(selist, lfirst_oid(l), false, attrForm->attnum, perms);
+		selist = __expandPgAttributeInheritance(selist, lfirst_oid(l), attname, perms);
+
+		ReleaseSysCache(tuple);
+	}
+
+	return selist;
+}
+
+static List *expandSEvalListInheritance(List *selist) {
+	List *result = NIL;
+	ListCell *l;
+
+	foreach (l, selist) {
+		SEvalItem *se = (SEvalItem *) lfirst(l);
+
+		result = lappend(result, se);
+		switch (se->tclass) {
+		case SECCLASS_TABLE:
+			if (se->c.inh) {
+				se->c.inh = false;
+				result = __expandPgClassInheritance(result,
+													se->c.relid,
+													se->perms);
+			}
+			break;
+		case SECCLASS_COLUMN:
+			if (se->a.inh) {
+				Form_pg_attribute attrForm;
+				HeapTuple tuple;
+
+				se->a.inh = false;
+				tuple = SearchSysCache(ATTNUM,
+									   ObjectIdGetDatum(se->a.relid),
+									   Int16GetDatum(se->a.attno),
+									   0, 0);
+				if (!HeapTupleIsValid(tuple))
+					selerror("relation %u attribute %d not found", se->a.relid, se->a.attno);
+				attrForm = (Form_pg_attribute) GETSTRUCT(tuple);
+
+				result = __expandPgAttributeInheritance(result,
+														se->a.relid,
+														NameStr(attrForm->attname),
+														se->perms);
+				ReleaseSysCache(tuple);
+			}
+			break;
+		deafault:
+			/* no inheritance expanding */
+			break;
+		}
+	}
+	return result;
+}
+
 void sepgsqlVerifyQuery(Query *query)
 {
-	List *selist = query->pgaceList;
+	List *selist = copyObject(query->pgaceList);
 	ListCell *l;
+
+	/* expand table inheritances */
+	selist = expandSEvalListInheritance(selist);
 
 	/* add checks for access via trigger function */
 	if (query->resultRelation > 0) {
 		RangeTblEntry *rte = (RangeTblEntry *) list_nth(query->rtable,
 														query->resultRelation - 1);
 		Assert(IsA(rte, RangeTblEntry));
-		selist = copyObject(query->pgaceList);
-		foreach (l, selist) {
-			SEvalItem *se = lfirst(l);
 
-			if (se->tclass == SECCLASS_TABLE && se->c.relid == rte->relid) {
-				selist = addEvalTriggerAccess(selist, se->c.relid, se->c.inh, query->commandType);
-				break;
-			}
-		}
+		selnotice("target relation rte->relid=%u rte->inh=%d", rte->relid, rte->inh);
+
+		selist = addEvalTriggerAccess(selist, rte->relid, rte->inh, query->commandType);
 	}
 
 	foreach (l, selist) {
