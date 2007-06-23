@@ -268,11 +268,11 @@ static void __check_pg_proc(HeapTuple tuple, HeapTuple oldtup,
 				/* <client type> <-- database:module_install --> <file type> */
 				filename = DatumGetCString(DirectFunctionCall1(textout, newbin));
 				filename = expand_dynamic_library_name(filename);
-				if (getfilecon(filename, &filecon) < 1)
+				if (getfilecon_raw(filename, &filecon) < 1)
 					selerror("could not obtain the security context of '%s'", filename);
 				PG_TRY();
 				{
-					filesid = DirectFunctionCall1(security_label_in,
+					filesid = DirectFunctionCall1(security_label_raw_in,
 												  CStringGetDatum(filecon));
 				}
 				PG_CATCH();

@@ -705,7 +705,7 @@ static Oid sepgsql_system_getcon()
 
 	PG_TRY();
 	{
-		ssid = DatumGetObjectId(DirectFunctionCall1(security_label_in,
+		ssid = DatumGetObjectId(DirectFunctionCall1(security_label_raw_in,
 													CStringGetDatum(context)));
 	}
 	PG_CATCH();
@@ -729,7 +729,7 @@ static Oid sepgsql_system_getpeercon(int sockfd)
 
 	PG_TRY();
 	{
-		ssid = DatumGetObjectId(DirectFunctionCall1(security_label_in,
+		ssid = DatumGetObjectId(DirectFunctionCall1(security_label_raw_in,
 													CStringGetDatum(context)));
 	}
 	PG_CATCH();
