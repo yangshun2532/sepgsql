@@ -64,6 +64,11 @@ static inline void pgacePortalStart(Portal portal) {
 	}
 }
 
+static inline void pgaceSPIexecute(Query *queryTree) {
+	if (sepgsqlIsEnabled())
+		sepgsqlVerifyQuery(queryTree);
+}
+
 /******************************************************************
  * HeapTuple modification hooks
  ******************************************************************/

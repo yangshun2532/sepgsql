@@ -93,6 +93,16 @@ static inline void pgacePortalStart(Portal portal) {
 	/* do nothing */
 }
 
+/*
+ * pgaceSPIexecute() is called just before queryTree is executed
+ * via SPI interface.
+ *
+ * @queryTree : a Query object currently executed.
+ */
+static inline void pgaceSPIexecute(Query *queryTree) {
+	/* do nothing */
+}
+
 /******************************************************************
  * HeapTuple modification hooks
  ******************************************************************/
