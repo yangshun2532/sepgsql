@@ -219,7 +219,7 @@ extern void sepgsqlLockTable(Oid relid);
 
 /* FUNCTION */
 extern void sepgsqlCallFunction(FmgrInfo *finfo, bool with_perm_check);
-extern void sepgsqlCallFunctionTrigger(FmgrInfo *finfo, TriggerData *tgdata);
+extern bool sepgsqlCallFunctionTrigger(FmgrInfo *finfo, TriggerData *tgdata);
 extern void sepgsqlAlterProcedureContext(Relation rel, HeapTuple tuple, char *context);
 
 /* COPY */

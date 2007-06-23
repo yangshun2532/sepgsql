@@ -113,6 +113,7 @@ static List *addEvalPgClass(List *selist, RangeTblEntry *rte, uint32 perms)
 			return selist;
 		}
 	}
+	selnotice("add SEval (table) relid=%u inh=%d", rte->relid, rte->inh);
 	se = makeNode(SEvalItem);
 	se->tclass = SECCLASS_TABLE;
 	se->perms = perms;
@@ -180,6 +181,72 @@ static List *addEvalPgProc(List *selist, Oid funcid, uint32 perms)
 	se->p.funcid = funcid;
 
 	return lappend(selist, se);
+}
+
+static List *addEvalTriggerAccess(List *selist, RangeTblEntry *rte, int cmdType)
+{
+	Relation rel;
+	SysScanDesc scan;
+	ScanKeyData skey;
+	HeapTuple tuple;
+	bool checked = false;
+
+	Assert(cmdType == CMD_INSERT || cmdType == CMD_UPDATE || cmdType == CMD_DELETE);
+	rel = heap_open(TriggerRelationId, AccessShareLock);
+	ScanKeyInit(&skey,
+				Anum_pg_trigger_tgrelid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(rte->relid));
+	scan = systable_beginscan(rel, TriggerRelidNameIndexId,
+							  true, SnapshotNow, 1, &skey);
+	while (HeapTupleIsValid((tuple = systable_getnext(scan)))) {
+		Form_pg_trigger trigForm = (Form_pg_trigger) GETSTRUCT(tuple);
+
+		if (!trigForm->tgenabled)
+			continue;
+
+		if ((cmdType == CMD_INSERT && !TRIGGER_FOR_INSERT(trigForm->tgtype))
+			|| (cmdType == CMD_UPDATE && !TRIGGER_FOR_UPDATE(trigForm->tgtype))
+			|| (cmdType == CMD_DELETE && !TRIGGER_FOR_DELETE(trigForm->tgtype)))
+			continue;
+
+		/* per STATEMENT trigger cannot refer whole of a tuple */
+		if (!TRIGGER_FOR_ROW(trigForm->tgtype))
+			continue;
+
+		/* BEFORE-ROW-INSERT trigger cannot refer whole of a tuple */
+		if (TRIGGER_FOR_BEFORE(trigForm->tgtype) && TRIGGER_FOR_INSERT(trigForm->tgtype))
+			continue;
+
+		selist = addEvalPgProc(selist, trigForm->tgfoid, PROCEDURE__EXECUTE);
+		if (!checked) {
+			HeapTuple reltup;
+			Form_pg_class classForm;
+			AttrNumber attnum;
+
+			reltup = SearchSysCache(RELOID,
+									ObjectIdGetDatum(rte->relid),
+									0, 0, 0);
+			classForm = (Form_pg_class) GETSTRUCT(reltup);
+
+			selist = addEvalPgClass(selist, rte, TABLE__SELECT);
+			for (attnum = FirstLowInvalidHeapAttributeNumber + 1; attnum <= 0; attnum++) {
+				if (attnum == ObjectIdAttributeNumber && !classForm->relhasoids)
+					continue;
+				selist = addEvalPgAttribute(selist, rte, attnum, COLUMN__SELECT);
+			}
+			ReleaseSysCache(reltup);
+
+			checked = true;
+		}
+	}
+	systable_endscan(scan);
+	heap_close(rel, AccessShareLock);
+
+	/* clear RTE pollution */
+	rte->requiredPerms &= ((1<<N_ACL_RIGHTS) - 1);
+
+	return selist;
 }
 
 /* *******************************************************************************
@@ -1208,9 +1275,19 @@ static void verifyPgProcPerms(Oid funcid, uint32 perms)
 
 void sepgsqlVerifyQuery(Query *query)
 {
+	int cmdType = query->commandType;
+	List *seval_list = query->pgaceList;
 	ListCell *l;
 
-	foreach (l, query->pgaceList) {
+	/* add checks for access via trigger function */
+	if (cmdType == CMD_UPDATE || cmdType == CMD_INSERT || cmdType == CMD_DELETE) {
+		RangeTblEntry *rte = (RangeTblEntry *) list_nth(query->rtable,
+														query->resultRelation - 1);
+		Assert(IsA(rte, RangeTblEntry));
+		seval_list = addEvalTriggerAccess(copyObject(query->pgaceList), rte, cmdType);
+	}
+
+	foreach (l, seval_list) {
 		SEvalItem *se = lfirst(l);
 
 		switch (se->tclass) {

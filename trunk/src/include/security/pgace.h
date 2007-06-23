@@ -275,13 +275,16 @@ static inline void pgaceCallFunction(FmgrInfo *finfo) {
 
 /*
  * pgaceCallFunctionTrigger() is called just before executing
- * trigger function.
+ * trigger function. 
+ * If it returns false, the trigger function will not be called and caller
+ * receives NULL tuple as a result. In the case when Before-Row triggers,
+ * it means the current operations on the tuple should be skipped.
  *
  * @finfo  : FmgrInfo object for the target function
  * @tgdata : TriggerData object for the current trigger invokation
  */
-static inline void pgaceCallFunctionTrigger(FmgrInfo *finfo, TriggerData *tgdata) {
-	/* do nothing */
+static inline bool pgaceCallFunctionTrigger(FmgrInfo *finfo, TriggerData *tgdata) {
+	return true;
 }
 
 /*

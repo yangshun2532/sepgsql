@@ -1297,7 +1297,10 @@ ExecCallTriggerFunc(TriggerData *trigdata,
 	InitFunctionCallInfoData(fcinfo, finfo, 0, (Node *) trigdata, NULL);
 
 	/* PGACE: permission check for trigegr function */
-	pgaceCallFunctionTrigger(finfo, trigdata);
+	if (!pgaceCallFunctionTrigger(finfo, trigdata)) {
+		MemoryContextSwitchTo(oldContext);
+		return (HeapTuple) DatumGetPointer(NULL);
+	}
 
 	result = FunctionCallInvoke(&fcinfo);
 

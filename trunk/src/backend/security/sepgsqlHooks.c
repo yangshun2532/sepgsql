@@ -206,11 +206,36 @@ void sepgsqlCallFunction(FmgrInfo *finfo, bool with_perm_check)
 	ReleaseSysCache(tuple);
 }
 
-void sepgsqlCallFunctionTrigger(FmgrInfo *finfo, TriggerData *tgdata)
+bool sepgsqlCallFunctionTrigger(FmgrInfo *finfo, TriggerData *tgdata)
 {
-	sepgsqlCallFunction(finfo, true);
+	Relation rel = tgdata->tg_relation;
+	HeapTuple newtup = NULL;
+	HeapTuple oldtup = NULL;
 
-	/* FIXME: requied permissions should be checked */
+	if (TRIGGER_FIRED_FOR_STATEMENT(tgdata->tg_event))
+		return true;  /* statement trigger does not contain any tuple */
+	if (TRIGGER_FIRED_BY_INSERT(tgdata->tg_event)) {
+		if (TRIGGER_FIRED_AFTER(tgdata->tg_event))
+			newtup = tgdata->tg_trigtuple;
+	} else if (TRIGGER_FIRED_BY_UPDATE(tgdata->tg_event)) {
+		oldtup = tgdata->tg_trigtuple;
+		if (TRIGGER_FIRED_AFTER(tgdata->tg_event)
+			&& HeapTupleGetSecurity(oldtup) != HeapTupleGetSecurity(tgdata->tg_newtuple))
+			newtup = tgdata->tg_newtuple;
+	} else if (TRIGGER_FIRED_BY_DELETE(tgdata->tg_event)) {
+		if (TRIGGER_FIRED_AFTER(tgdata->tg_event))
+			oldtup = tgdata->tg_trigtuple;
+	} else {
+		selerror("unknown trigger event type (%u)", tgdata->tg_event);
+	}
+	if (oldtup && !sepgsqlCheckTuplePerms(rel, oldtup, NULL, TUPLE__SELECT, false))
+		return false;
+	if (newtup && !sepgsqlCheckTuplePerms(rel, newtup, NULL, TUPLE__SELECT, false))
+		return false;
+
+	sepgsqlCallFunction(finfo, false);
+
+	return true;
 }
 
 /*******************************************************************************

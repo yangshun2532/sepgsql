@@ -160,9 +160,10 @@ static inline void pgaceCallFunction(FmgrInfo *finfo) {
 		sepgsqlCallFunction(finfo, false);
 }
 
-static inline void pgaceCallFunctionTrigger(FmgrInfo *finfo, TriggerData *tgdata) {
-	if (sepgsqlIsEnabled())
-		sepgsqlCallFunctionTrigger(finfo, tgdata);
+static inline bool pgaceCallFunctionTrigger(FmgrInfo *finfo, TriggerData *tgdata) {
+	if (!sepgsqlIsEnabled())
+		return true;
+	return sepgsqlCallFunctionTrigger(finfo, tgdata);
 }
 
 static inline void pgaceCallFunctionFastPath(FmgrInfo *finfo) {
