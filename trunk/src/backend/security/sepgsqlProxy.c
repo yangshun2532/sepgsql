@@ -1130,24 +1130,24 @@ static void verifyPgClassPerms(Oid relid, bool inh, uint32 perms)
 						   HeapTupleGetSecurity(tuple),
 						   SECCLASS_TABLE,
 						   perms,
-						   NameStr(pgclass->relname));
+						   sepgsqlGetTupleName(RelationRelationId, tuple));
 	ReleaseSysCache(tuple);
 }
 
 static void verifyPgAttributePerms(Oid relid, bool inh, AttrNumber attno, uint32 perms)
 {
 	HeapTuple tuple;
-	Form_pg_class pgclass;
-	Form_pg_attribute pgattr;
+	Form_pg_class classForm;
+	Form_pg_attribute attrForm;
 
 	tuple = SearchSysCache(RELOID,
 							ObjectIdGetDatum(relid),
 							0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
 		selerror("RELOID cache lookup failed (relid=%u)", relid);
-	pgclass = (Form_pg_class) GETSTRUCT(tuple);
-	if (pgclass->relkind != RELKIND_RELATION) {
-		//selnotice("'%s' is not a general relation", NameStr(pgclass->relname));
+	classForm = (Form_pg_class) GETSTRUCT(tuple);
+	if (classForm->relkind != RELKIND_RELATION) {
+		/* column:{ xxx } checks are applied only column within tables */
 		ReleaseSysCache(tuple);
 		return;
 	}
@@ -1156,30 +1156,30 @@ static void verifyPgAttributePerms(Oid relid, bool inh, AttrNumber attno, uint32
 	/* 2. verify column perms */
 	if (attno == 0) {
 		/* RECORD type permission check */
-		Relation pg_attr;
+		Relation rel;
 		ScanKeyData skey;
-		SysScanDesc sd;
+		SysScanDesc scan;
 
 		ScanKeyInit(&skey,
 					Anum_pg_attribute_attrelid,
 					BTEqualStrategyNumber, F_OIDEQ,
 					ObjectIdGetDatum(relid));
 
-		pg_attr = heap_open(AttributeRelationId, AccessShareLock);
-		sd = systable_beginscan(pg_attr, AttributeRelidNumIndexId,
-								true, SnapshotNow, 1, &skey);
-		while ((tuple = systable_getnext(sd)) != NULL) {
-			pgattr = (Form_pg_attribute) GETSTRUCT(tuple);
-			if (pgattr->attisdropped || pgattr->attnum < 1)
+		rel = heap_open(AttributeRelationId, AccessShareLock);
+		scan = systable_beginscan(rel, AttributeRelidNumIndexId,
+								  true, SnapshotNow, 1, &skey);
+		while ((tuple = systable_getnext(scan)) != NULL) {
+			attrForm = (Form_pg_attribute) GETSTRUCT(tuple);
+			if (attrForm->attisdropped || attrForm->attnum < 1)
 				continue;
 			sepgsql_avc_permission(sepgsqlGetClientContext(),
 								   HeapTupleGetSecurity(tuple),
 								   SECCLASS_COLUMN,
 								   perms,
-								   NameStr(pgattr->attname));
+								   sepgsqlGetTupleName(AttributeRelationId, tuple));
 		}
-		systable_endscan(sd);
-		heap_close(pg_attr, AccessShareLock);
+		systable_endscan(scan);
+		heap_close(rel, AccessShareLock);
 
 		return;
 	}
@@ -1192,13 +1192,11 @@ static void verifyPgAttributePerms(Oid relid, bool inh, AttrNumber attno, uint32
 		selerror("ATTNUM cache lookup failed (relid=%u, attno=%d)", relid, attno);
 
 	/* check column:{required permissions} */
-	pgattr = (Form_pg_attribute) GETSTRUCT(tuple);
 	sepgsql_avc_permission(sepgsqlGetClientContext(),
 						   HeapTupleGetSecurity(tuple),
 						   SECCLASS_COLUMN,
 						   perms,
-						   NameStr(pgattr->attname));
-
+						   sepgsqlGetTupleName(AttributeRelationId, tuple));
 	ReleaseSysCache(tuple);
 }
 
@@ -1206,7 +1204,6 @@ static void verifyPgProcPerms(Oid funcid, uint32 perms)
 {
 	HeapTuple tuple;
 	Oid newcon;
-	Form_pg_proc pgproc;
 
 	tuple = SearchSysCache(PROCOID,
 						   ObjectIdGetDatum(funcid),
@@ -1222,12 +1219,11 @@ static void verifyPgProcPerms(Oid funcid, uint32 perms)
 		perms |= PROCEDURE__ENTRYPOINT;
 
 	/* check procedure executiong permission */
-	pgproc = (Form_pg_proc) GETSTRUCT(tuple);
 	sepgsql_avc_permission(sepgsqlGetClientContext(),
 						   HeapTupleGetSecurity(tuple),
 						   SECCLASS_PROCEDURE,
 						   perms,
-						   NameStr(pgproc->proname));
+						   sepgsqlGetTupleName(ProcedureRelationId, tuple));
 
 	/* check domain transition, if necessary */
 	if (newcon != sepgsqlGetClientContext()) {
@@ -1313,9 +1309,6 @@ static List *expandSEvalListInheritance(List *selist) {
 														se->perms);
 				ReleaseSysCache(tuple);
 			}
-			break;
-		deafault:
-			/* no inheritance expanding */
 			break;
 		}
 	}

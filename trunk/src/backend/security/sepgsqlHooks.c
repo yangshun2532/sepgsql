@@ -81,7 +81,6 @@ Oid sepgsqlParseSecurityLabel(DefElem *defel) {
 
 void sepgsqlGetDatabaseParam(const char *name)
 {
-	Form_pg_database db_form;
 	HeapTuple tuple;
 
 	tuple = SearchSysCache(DATABASEOID,
@@ -89,18 +88,16 @@ void sepgsqlGetDatabaseParam(const char *name)
 						   0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
 		selerror("cache lookup failed for database %u", MyDatabaseId);
-	db_form = (Form_pg_database) GETSTRUCT(tuple);
 	sepgsql_avc_permission(sepgsqlGetClientContext(),
 						   HeapTupleGetSecurity(tuple),
 						   SECCLASS_DATABASE,
 						   DATABASE__GET_PARAM,
-						   NameStr(db_form->datname));
+						   sepgsqlGetTupleName(DatabaseRelationId, tuple));
 	ReleaseSysCache(tuple);
 }
 
 void sepgsqlSetDatabaseParam(const char *name, char *argstring)
 {
-	Form_pg_database db_form;
 	HeapTuple tuple;
 
 	tuple = SearchSysCache(DATABASEOID,
@@ -108,12 +105,11 @@ void sepgsqlSetDatabaseParam(const char *name, char *argstring)
 						   0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
 		selerror("cache lookup failed for database %u", MyDatabaseId);
-	db_form = (Form_pg_database) GETSTRUCT(tuple);
 	sepgsql_avc_permission(sepgsqlGetClientContext(),
 						   HeapTupleGetSecurity(tuple),
 						   SECCLASS_DATABASE,
 						   DATABASE__SET_PARAM,
-						   NameStr(db_form->datname));
+						   sepgsqlGetTupleName(DatabaseRelationId, tuple));
 	ReleaseSysCache(tuple);
 }
 
@@ -137,7 +133,7 @@ void sepgsqlLockTable(Oid relid)
 							   HeapTupleGetSecurity(tuple),
 							   SECCLASS_TABLE,
 							   TABLE__LOCK,
-							   NameStr(classForm->relname));
+							   sepgsqlGetTupleName(RelationRelationId, tuple));
 	ReleaseSysCache(tuple);
 }
 
@@ -194,14 +190,12 @@ void sepgsqlCallFunction(FmgrInfo *finfo, bool with_perm_check)
 	}
 
 	if (with_perm_check) {
-		Form_pg_proc proc_form = (Form_pg_proc) GETSTRUCT(tuple);
-
 		/* check procedure:{execute entrypoint} permission */
 		sepgsql_avc_permission(sepgsqlGetClientContext(),
 							   HeapTupleGetSecurity(tuple),
 							   SECCLASS_PROCEDURE,
 							   perms,
-							   NameStr(proc_form->proname));
+							   sepgsqlGetTupleName(ProcedureRelationId, tuple));
 	}
 	ReleaseSysCache(tuple);
 }
@@ -272,13 +266,12 @@ void sepgsqlCopyTable(Relation rel, List *attNumList, bool isFrom)
 						   HeapTupleGetSecurity(tuple),
 						   SECCLASS_TABLE,
 						   perms,
-						   NameStr(classForm->relname));
+						   sepgsqlGetTupleName(RelationRelationId, tuple));
 	ReleaseSysCache(tuple);
 
 	/* 2. check column:select/insert for each column */
 	perms = (isFrom ? COLUMN__INSERT : COLUMN__SELECT);
 	foreach (l, attNumList) {
-		Form_pg_attribute pgattr;
 		AttrNumber attno = lfirst_int(l);
 
 		tuple = SearchSysCache(ATTNUM,
@@ -288,14 +281,13 @@ void sepgsqlCopyTable(Relation rel, List *attNumList, bool isFrom)
 		if (!HeapTupleIsValid(tuple))
 			selerror("cache lookup failed for attribute %d, relation %u",
 					 attno, RelationGetRelid(rel));
-		pgattr = (Form_pg_attribute) GETSTRUCT(tuple);
 
 		perms = (isFrom ? COLUMN__INSERT : COLUMN__SELECT);
 		sepgsql_avc_permission(sepgsqlGetClientContext(),
 							   HeapTupleGetSecurity(tuple),
 							   SECCLASS_COLUMN,
 							   perms,
-							   NameStr(pgattr->attname));
+							   sepgsqlGetTupleName(AttributeRelationId, tuple));
 		ReleaseSysCache(tuple);
 	}
 }
@@ -357,7 +349,7 @@ Oid sepgsqlLargeObjectGetSecurity(HeapTuple tuple) {
 						   lo_security,
 						   SECCLASS_BLOB,
 						   BLOB__GETATTR,
-						   NULL);
+						   sepgsqlGetTupleName(LargeObjectRelationId, tuple));
 	return lo_security;
 }
 
@@ -368,12 +360,12 @@ void sepgsqlLargeObjectSetSecurity(HeapTuple tuple, Oid lo_security, bool is_fir
 							   HeapTupleGetSecurity(tuple),
 							   SECCLASS_BLOB,
 							   BLOB__SETATTR | BLOB__RELABELFROM,
-							   NULL);
+							   sepgsqlGetTupleName(LargeObjectRelationId, tuple));
 		sepgsql_avc_permission(sepgsqlGetClientContext(),
 							   lo_security,
 							   SECCLASS_BLOB,
 							   BLOB__RELABELTO,
-							   NULL);
+							   sepgsqlGetTupleName(LargeObjectRelationId, tuple));
 	}
 	HeapTupleSetSecurity(tuple, lo_security);
 }
@@ -385,7 +377,7 @@ void sepgsqlLargeObjectCreate(Relation rel, HeapTuple tuple)
 						   newcon,
 						   SECCLASS_BLOB,
 						   BLOB__CREATE,
-						   NULL);
+						   sepgsqlGetTupleName(LargeObjectRelationId, tuple));
 	HeapTupleSetSecurity(tuple, newcon);
 }
 
@@ -395,7 +387,7 @@ void sepgsqlLargeObjectDrop(Relation rel, HeapTuple tuple)
 						   HeapTupleGetSecurity(tuple),
 						   SECCLASS_BLOB,
 						   BLOB__DROP,
-						   NULL);
+						   sepgsqlGetTupleName(LargeObjectRelationId, tuple));
 }
 
 void sepgsqlLargeObjectOpen(Relation rel, HeapTuple tuple, bool read_only)

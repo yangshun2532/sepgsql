@@ -167,6 +167,7 @@ extern bool sepgsql_avc_permission_noaudit(Oid ssid, Oid tsid, uint16 tclass,
 										   uint32 perms, char **audit, char *objname);
 extern void  sepgsql_avc_permission(Oid ssid, Oid tsid, uint16 tclass,
 									uint32 perms, char *objname);
+extern char *sepgsqlGetTupleName(Oid relid, HeapTuple tuple);
 extern void  sepgsql_audit(bool result, char *message);
 extern Oid   sepgsql_avc_createcon(Oid ssid, Oid tsid, uint16 tclass);
 extern Oid   sepgsql_avc_relabelcon(Oid ssid, Oid tsid, uint16 tclass);
