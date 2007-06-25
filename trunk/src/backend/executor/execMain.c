@@ -135,6 +135,8 @@ ExecutorStart(QueryDesc *queryDesc, int eflags)
 	Assert(queryDesc != NULL);
 	Assert(queryDesc->estate == NULL);
 
+	pgaceExecutorStart(queryDesc, eflags);
+
 	/*
 	 * If the transaction is read-only, we need to check if any writes are
 	 * planned to non-temporary tables.  EXPLAIN is considered read-only.

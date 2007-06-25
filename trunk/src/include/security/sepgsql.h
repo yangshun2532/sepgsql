@@ -6,6 +6,7 @@
  */
 #ifndef SEPGSQL_H
 #define SEPGSQL_H
+#include "executor/executor.h"
 #include "security/sepgsql_internal.h"
 #include "utils/portal.h"
 
@@ -57,16 +58,16 @@ static inline List *pgaceProxyQuery(List *queryList) {
 }
 
 static inline void pgacePortalStart(Portal portal) {
-	if (sepgsqlIsEnabled()) {
-		ListCell *l;
-		foreach (l, portal->parseTrees)
-			sepgsqlVerifyQuery((Query *)lfirst(l));
-	}
+	/* do nothing */
 }
 
-static inline void pgaceSPIexecute(Query *queryTree) {
-	if (sepgsqlIsEnabled())
-		sepgsqlVerifyQuery(queryTree);
+static inline void pgaceExecutorStart(QueryDesc *queryDesc, int eflags) {
+	if (sepgsqlIsEnabled()) {
+		Assert(queryDesc->parsetree != NULL);
+		if (eflags & EXEC_FLAG_EXPLAIN_ONLY)
+			return;
+		sepgsqlVerifyQuery(queryDesc->parsetree);
+	}
 }
 
 /******************************************************************

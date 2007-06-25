@@ -94,12 +94,13 @@ static inline void pgacePortalStart(Portal portal) {
 }
 
 /*
- * pgaceSPIexecute() is called just before queryTree is executed
- * via SPI interface.
+ * pgaceExecutorStart() is called on the top of ExecutorStart().
  *
- * @queryTree : a Query object currently executed.
+ * @queryDesc : a QueryDesc object given to ExecutorStart().
+ * @eflags    : eflags valus given to ExecutorStart().
+ *              if EXEC_FLAG_EXPLAIN_ONLY is set, no real access will run.
  */
-static inline void pgaceSPIexecute(Query *queryTree) {
+static inline void pgaceExecutorStart(QueryDesc *queryDesc, int eflags) {
 	/* do nothing */
 }
 

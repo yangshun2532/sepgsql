@@ -18,7 +18,6 @@
 #include "catalog/heap.h"
 #include "commands/trigger.h"
 #include "executor/spi_priv.h"
-#include "security/pgace.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
 #include "utils/typcache.h"
@@ -1418,8 +1417,6 @@ _SPI_execute_plan(_SPI_plan *plan, Datum *Values, const char *Nulls,
 				Plan	   *planTree;
 				QueryDesc  *qdesc;
 				DestReceiver *dest;
-
-				pgaceSPIexecute(queryTree);
 
 				planTree = lfirst(plan_list_item);
 				plan_list_item = lnext(plan_list_item);
