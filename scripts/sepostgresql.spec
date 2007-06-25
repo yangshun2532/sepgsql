@@ -6,7 +6,7 @@
 
 %{!?sepgversion:%define sepgversion %%__default_sepgversion__%%}
 %{!?sepgrevision:%define sepgrevision %%__default_sepgrevision__%%}
-%{!?sepgextension:%define sepgextension %%__default_sepgextension__%%}
+%%__default_sepgextension__%%
 %define _policydir    /usr/share/selinux
 %define _prefix       /opt/sepgsql
 
@@ -44,12 +44,7 @@ the operating system. SE-PostgreSQL works as a userspace
 reference monitor to check any SQL query.
 
 %prep
-# confirm the release string of selinux-policy-devel
-if ! rpm -q selinux-policy-devel | sed 's/^.*-//g' | egrep -q '.sepgsql'; then
-   echo ".sepgsql version of selinux-policy-devel is needed for build"
-   exit 1
-fi
-
+echo %{release}
 %setup -q -n postgresql-%{version}
 %patch0 -p1
 mkdir selinux-policy
@@ -100,9 +95,13 @@ install -d -m 700 %{buildroot}/var/lib/sepgsql/backups
  echo "if [ -f /etc/bashrc ]; then"
  echo "    . /etc/bashrc"
  echo "fi"
- echo
- echo "PGDATA=/var/lib/sepgsql/data"
- echo "export PGDATA") > %{buildroot}/var/lib/sepgsql/.bash_profile
+ echo ""
+%if %{defined sepgextension}
+ echo "ulimit -c unlimited"
+%endif
+ echo "export PATH=%{_bindir}:\${PATH}"
+ echo "export PGDATA=/var/lib/sepgsql/data"
+) > %{buildroot}/var/lib/sepgsql/.bash_profile
 
 mkdir -p $RPM_BUILD_ROOT/etc/rc.d/init.d
 install -m 755 %{SOURCE1} $RPM_BUILD_ROOT/etc/rc.d/init.d/sepostgresql
@@ -111,12 +110,6 @@ install -m 755 %{SOURCE1} $RPM_BUILD_ROOT/etc/rc.d/init.d/sepostgresql
 rm -rf $RPM_BUILD_ROOT
 
 %pre
-# confirm the release string of selinux-policy-devel
-if ! rpm -q selinux-policy | sed 's/^.*-//g' | egrep -q '.sepgsql'; then
-   echo ".sepgsql version of selinux-policy is needed to install"
-   exit 1
-fi
-
 if [ $1 -eq 1 ]; then           # rpm -i cases
     (id -g sepgsql || groupadd -r sepgsql || : ) &> /dev/null
     (id -u sepgsql || useradd -g sepgsql -d /var/lib/sepgsql -s /bin/bash \
