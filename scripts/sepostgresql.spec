@@ -192,10 +192,23 @@ fi
 /var/lib/sepgsql/.bash_profile
 
 %changelog
+* Mon Jun 25 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.372
+- add table name prefix for column name on audit messages
+- use security_label_raw_in as an alternative for security_label_in
+- add hook for query execution path with SPI_ interface
+- add trigger function suppoer
+- BUGFIX: remove unnecessary checks for COPY TO/FROM on non-table relation
+- BUGFIX: remove unnecessary checks for LOCK on non-table relation
+- BUGFIX: incorrect object id for tuples within pg_security
+- BUGFIX: CommandCounterIncrement() might be called during heap_create_with_catalog.
+- BUGFIX: correct self-deadlock
+- update security policy: sepgsql_sysobj_t, sepgsql_user_proc_t, sepgsql_ro_blob_t
+
 * Tue Jun 19 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.351
 - BUGFIX: sepgsql_compute_avc_datum() accessed userspace AVC without
           holding any lock.
 - improve build scripts.
+
 * Sat Jun 16 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.320
 - update: sepostgresql.pp security policy fot strict/mls suitable
 - BUGFIX: column:drop evaluation for ALTER TABLE tbl DROP col; statement
