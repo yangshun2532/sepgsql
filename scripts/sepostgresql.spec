@@ -160,15 +160,6 @@ fi
 %{_bindir}/pg_dump
 %{_bindir}/pg_dumpall
 %{_bindir}/pg_restore
-%dir %{_mandir}
-%dir %{_mandir}/man1
-%{_mandir}/man1/initdb.*
-%{_mandir}/man1/ipcclean.*
-%{_mandir}/man1/pg_controldata.*
-%{_mandir}/man1/pg_ctl.*
-%{_mandir}/man1/pg_resetxlog.*
-%{_mandir}/man1/postgres.*
-%{_mandir}/man1/postmaster.*
 %dir %{_datadir}
 %{_datadir}/postgres.bki
 %{_datadir}/postgres.description
