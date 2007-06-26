@@ -1328,9 +1328,6 @@ void sepgsqlVerifyQuery(Query *query)
 		RangeTblEntry *rte = (RangeTblEntry *) list_nth(query->rtable,
 														query->resultRelation - 1);
 		Assert(IsA(rte, RangeTblEntry));
-
-		selnotice("target relation rte->relid=%u rte->inh=%d", rte->relid, rte->inh);
-
 		selist = addEvalTriggerAccess(selist, rte->relid, rte->inh, query->commandType);
 	}
 

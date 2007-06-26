@@ -183,6 +183,9 @@ fi
 /var/lib/sepgsql/.bash_profile
 
 %changelog
+* Tue Jun 26 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.376
+- add pgaceExecutorStart() to hook ExecutorStart()
+
 * Mon Jun 25 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.372
 - add table name prefix for column name on audit messages
 - use security_label_raw_in as an alternative for security_label_in

@@ -545,9 +545,9 @@ char *sepgsqlSecurityLabelOfLabel(char *context) {
 extern char *selinux_mnt;
 
 char *sepgsqlSecurityLabelNotFound(Oid sid) {
-#ifndef SEPGSQLOPT_LIBSELINUX_1_33
 	security_context_t unlabeled_con;
 
+#ifndef SEPGSQLOPT_LIBSELINUX_1_33
 	if (!security_get_initial_context_raw("unlabeled", &unlabeled_con)) {
 		char *result;
 
