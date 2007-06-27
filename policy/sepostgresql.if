@@ -34,16 +34,23 @@ interface(`sepgsql_module_object',`
 
 ########################################
 ## <summary>
-##     marks as a client process of SE-PostgreSQL.
+##     provide a basic permission set for a domain
 ## </summary>
 ## <param name="type">
 ##     <summary>
-##     Type marked as a database object type.
+##     A domain marked as a normal database client type, with no privilege.
 ##     </summary>
 ## </param>
 #
-interface(`sepgsql_client_domain',`
+interface(`__sepgsql_client_domain',`
 	gen_require(`
+		class database all_database_perms;
+		class table all_table_perms;
+		class column all_column_perms;
+		class tuple all_tuple_perms;
+		class procedure all_procedure_perms;
+		class blob all_blob_perms;
+
 		type sepgsql_db_t;
 
 		type sepgsql_table_t;
@@ -64,13 +71,13 @@ interface(`sepgsql_client_domain',`
 	')
 	allow $1 sepgsql_db_t : database { getattr access };
 
-	allow $1 sepgsql_table_t : table { create drop getattr setattr use select update insert delete };
-	allow $1 sepgsql_table_t : column { create drop getattr setattr use select update insert };
+	allow $1 sepgsql_table_t : table { getattr use select update insert delete };
+	allow $1 sepgsql_table_t : column { getattr use select update insert };
 	allow $1 sepgsql_table_t : tuple { use select update insert delete };
 
-	allow $1 sepgsql_sysobj_t : table { getattr use select update insert delete };
-	allow $1 sepgsql_sysobj_t : column { getattr use select update insert };
-	allow $1 sepgsql_sysobj_t : tuple { use select update insert delete };
+	allow $1 sepgsql_sysobj_t : table { getattr use select };
+	allow $1 sepgsql_sysobj_t : column { getattr use select };
+	allow $1 sepgsql_sysobj_t : tuple { use select };
 
 	allow $1 sepgsql_secret_table_t : table { getattr };
 	allow $1 sepgsql_secret_table_t : column { getattr };
@@ -100,11 +107,42 @@ interface(`sepgsql_client_domain',`
 
 ########################################
 ## <summary>
+##     marks as a client process of SE-PostgreSQL.
+## </summary>
+## <param name="type">
+##     <summary>
+##     A domain marked as a normal database client type, with no privilege.
+##     </summary>
+## </param>
+#
+interface(`sepgsql_client_domain',`
+	gen_require(`
+		class database all_database_perms;
+		class table all_table_perms;
+		class column all_column_perms;
+		class tuple all_tuple_perms;
+		class procedure all_procedure_perms;
+		class blob all_blob_perms;
+
+		type sepgsql_table_t;
+		type sepgsql_sysobj_t;
+	')
+
+	__sepgsql_client_domain($1)
+	tunable_policy(`sepgsql_enable_users_ddl',`
+		allow $1 sepgsql_table_t : table { create drop setattr };
+		allow $1 sepgsql_table_t : column { create drop setattr };
+		allow $1 sepgsql_sysobj_t : tuple { update insert delete };
+	')
+')
+
+########################################
+## <summary>
 ##     marks as a unconfined client process of SE-PostgreSQL.
 ## </summary>
 ## <param name="type">
 ##     <summary>
-##     Type marked as a database object type.
+##     A domain marked as an administrative type.
 ##     </summary>
 ## </param>
 #
@@ -117,10 +155,12 @@ interface(`sepgsql_unconfined_domain',`
 		attribute sepgsql_module_type;
 		attribute sepgsql_server_type;
 
+		type sepgsql_table_t, sepgsql_sysobj_t;
 		type sepgsql_user_proc_t;
 
 		bool sepgsql_enable_unconfined;
 	')
+
 	tunable_policy(`sepgsql_enable_unconfined',`
 		allow $1 sepgsql_database_type : database all_database_perms;
 		allow $1 sepgsql_table_type : table all_table_perms;
@@ -134,6 +174,11 @@ interface(`sepgsql_unconfined_domain',`
 
 		type_transition $1 sepgsql_database_type : procedure sepgsql_proc_t;
 	',`
-		sepgsql_client_domain($1)
+		__sepgsql_client_domain($1)
+	')
+	tunable_policy(`!sepgsql_enable_unconfined && sepgsql_enable_users_ddl',`
+		allow $1 sepgsql_table_t : table { create drop setattr };
+		allow $1 sepgsql_table_t : column { create drop setattr };
+		allow $1 sepgsql_sysobj_t : tuple { update insert delete };
 	')
 ')

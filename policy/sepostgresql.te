@@ -24,6 +24,7 @@ gen_tunable(sepgsql_enable_unconfined, true)
 gen_tunable(sepgsql_enable_auditallow, false)
 gen_tunable(sepgsql_enable_auditdeny,  true)
 gen_tunable(sepgsql_enable_audittuple, false)
+gen_tunable(sepgsql_enable_users_ddl,  true)
 
 # ---- Database object type ----
 attribute sepgsql_server_type;
