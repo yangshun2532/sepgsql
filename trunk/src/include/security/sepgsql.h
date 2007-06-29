@@ -51,8 +51,9 @@ static inline List *pgaceProxyQuery(List *queryList) {
 	if (!sepgsqlIsEnabled())
 		return queryList;
 	foreach (l, queryList) {
-		newList = list_concat(newList,
-							  sepgsqlProxyQuery((Query *) lfirst(l)));
+		Query *query = (Query *) lfirst(l);
+
+		newList = list_concat(newList, sepgsqlProxyQuery(query));
 	}
 	return newList;
 }
@@ -62,12 +63,11 @@ static inline void pgacePortalStart(Portal portal) {
 }
 
 static inline void pgaceExecutorStart(QueryDesc *queryDesc, int eflags) {
-	if (sepgsqlIsEnabled()) {
-		Assert(queryDesc->parsetree != NULL);
-		if (eflags & EXEC_FLAG_EXPLAIN_ONLY)
-			return;
-		sepgsqlVerifyQuery(queryDesc->parsetree);
-	}
+	if (!sepgsqlIsEnabled() || (eflags & EXEC_FLAG_EXPLAIN_ONLY))
+		return;
+
+	Assert(queryDesc->parsetree != NULL);
+	sepgsqlVerifyQuery(queryDesc->parsetree);
 }
 
 /******************************************************************

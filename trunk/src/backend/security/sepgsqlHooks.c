@@ -233,83 +233,6 @@ bool sepgsqlCallFunctionTrigger(FmgrInfo *finfo, TriggerData *tgdata)
 }
 
 /*******************************************************************************
- * COPY TO/COPY FROM related hooks
- *******************************************************************************/
-
-void sepgsqlCopyTable(Relation rel, List *attNumList, bool isFrom)
-{
-	HeapTuple tuple;
-	Form_pg_class classForm;
-	uint32 perms;
-	ListCell *l;
-
-	/* on 'COPY FROM SELECT ...' cases, any checkings are done in select.c */
-	if (rel == NULL)
-		return;
-
-	/* 1. check table:select/insert permission */
-	tuple = SearchSysCache(RELOID,
-						   ObjectIdGetDatum(RelationGetRelid(rel)),
-						   0, 0, 0);
-	if (!HeapTupleIsValid(tuple))
-		selerror("cache lookup failed for relation %u", RelationGetRelid(rel));
-	classForm = (Form_pg_class) GETSTRUCT(tuple);
-
-	if (classForm->relkind != RELKIND_RELATION) {
-		/* no need to check non-table relation */
-		ReleaseSysCache(tuple);
-		return;
-	}
-
-	perms = (isFrom ? TABLE__INSERT : TABLE__SELECT);
-	sepgsql_avc_permission(sepgsqlGetClientContext(),
-						   HeapTupleGetSecurity(tuple),
-						   SECCLASS_TABLE,
-						   perms,
-						   sepgsqlGetTupleName(RelationRelationId, tuple));
-	ReleaseSysCache(tuple);
-
-	/* 2. check column:select/insert for each column */
-	perms = (isFrom ? COLUMN__INSERT : COLUMN__SELECT);
-	foreach (l, attNumList) {
-		AttrNumber attno = lfirst_int(l);
-
-		tuple = SearchSysCache(ATTNUM,
-							   ObjectIdGetDatum(RelationGetRelid(rel)),
-							   Int16GetDatum(attno),
-							   0, 0);
-		if (!HeapTupleIsValid(tuple))
-			selerror("cache lookup failed for attribute %d, relation %u",
-					 attno, RelationGetRelid(rel));
-
-		perms = (isFrom ? COLUMN__INSERT : COLUMN__SELECT);
-		sepgsql_avc_permission(sepgsqlGetClientContext(),
-							   HeapTupleGetSecurity(tuple),
-							   SECCLASS_COLUMN,
-							   perms,
-							   sepgsqlGetTupleName(AttributeRelationId, tuple));
-		ReleaseSysCache(tuple);
-	}
-}
-
-bool sepgsqlCopyToTuple(Relation rel, HeapTuple tuple)
-{
-	return sepgsqlCheckTuplePerms(rel, tuple, NULL, TUPLE__SELECT, false);
-}
-
-bool sepgsqlCopyFromTuple(Relation rel, HeapTuple tuple)
-{
-	Oid tcontext = HeapTupleGetSecurity(tuple);
-
-	if (tcontext == InvalidOid) {
-		/* implicit labeling */
-		tcontext = sepgsqlComputeImplicitContext(rel, tuple);
-		HeapTupleSetSecurity(tuple, tcontext);
-	}
-	return sepgsqlCheckTuplePerms(rel, tuple, NULL, TUPLE__INSERT, false);
-}
-
-/*******************************************************************************
  * LOAD shared library module hook
  *******************************************************************************/
 void sepgsqlLoadSharedModule(const char *filename)
@@ -672,9 +595,6 @@ bool sepgsqlExecInsert(Relation rel, HeapTuple tuple, bool with_returning)
 	if (!sepgsqlIsEnabled())
 		return true;	/* always true, if disabled */
 
-	if (RelationGetRelid(rel) == SecurityRelationId)
-		selerror("INSERT INTO pg_selinux ..., never allowed");
-
 	newcon = HeapTupleGetSecurity(tuple);
 	if (newcon == InvalidOid) {
 		/* no explicit labeling */
@@ -694,9 +614,6 @@ bool sepgsqlExecUpdate(Relation rel, HeapTuple newtup, ItemPointer tid, bool wit
 	Oid newcon, oldcon;
 	uint32 perms = 0;
 	bool rc;
-
-	if (RelationGetRelid(rel) == SecurityRelationId)
-		selerror("UPDATE pg_selinux ..., never allowed");
 
 	oldtup = __getHeapTupleFromItemPointer(rel, tid);
 	newcon = HeapTupleGetSecurity(newtup);
@@ -721,9 +638,6 @@ bool sepgsqlExecDelete(Relation rel, ItemPointer tid, bool with_returning)
 {
 	HeapTuple oldtup;
 	bool rc;
-
-	if (RelationGetRelid(rel) == SecurityRelationId)
-		selerror("DELETE FROM pg_selinux ..., never allowed");
 
 	oldtup = __getHeapTupleFromItemPointer(rel, tid);
 

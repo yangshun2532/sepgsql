@@ -13,9 +13,11 @@
 #include "catalog/pg_attribute.h"
 #include "catalog/pg_class.h"
 #include "catalog/pg_database.h"
+#include "catalog/pg_depend.h"
 #include "catalog/pg_largeobject.h"
 #include "catalog/pg_operator.h"
 #include "catalog/pg_proc.h"
+#include "catalog/pg_shdepend.h"
 #include "catalog/pg_type.h"
 #include "executor/spi.h"
 #include "nodes/makefuncs.h"
@@ -1051,9 +1053,6 @@ List *sepgsqlProxyQuery(Query *query)
 {
 	List *new_list = NIL;
 
-	if (!sepgsqlIsEnabled())
-		return list_make1(query);
-
 	switch (query->commandType) {
 	case CMD_SELECT:
 	case CMD_UPDATE:
@@ -1083,23 +1082,6 @@ List *sepgsqlProxyQuery(Query *query)
 	return new_list;
 }
 
-List *sepgsqlProxyQueryList(List *queryList)
-{
-	ListCell *l;
-	List *new_list = NIL;
-
-	if (!sepgsqlIsEnabled())
-		return queryList;
-
-	foreach (l, queryList) {
-		Query *query = lfirst(l);
-
-		new_list = list_concat(new_list,
-							   sepgsqlProxyQuery(query));
-	}
-	return new_list;
-}
-
 /* *******************************************************************************
  * verifyXXXX() -- checks any SEvalItem attached with Query->pgaceList.
  * Those are generated in proxyXXXX() phase, and this evaluation is done
@@ -1111,6 +1093,16 @@ static void verifyPgClassPerms(Oid relid, bool inh, uint32 perms)
 {
 	Form_pg_class pgclass;
 	HeapTuple tuple;
+
+	/* check untouchable tables */
+	if (perms & (TABLE__UPDATE | TABLE__INSERT | TABLE__DELETE)) {
+		if (relid == SecurityRelationId)
+			selerror("user cannot modify pg_security directly, for security reason");
+		if (relid == DependRelationId)
+			selerror("user cannot modify pg_depend directly, for security reason");
+		if (relid == SharedDependRelationId)
+			selerror("user cannot modify pg_shdepend directly, for security reason");
+	}
 
 	/* check table:{required permissions} */
 	tuple = SearchSysCache(RELOID,
@@ -1315,21 +1307,9 @@ static List *expandSEvalListInheritance(List *selist) {
 	return result;
 }
 
-void sepgsqlVerifyQuery(Query *query)
+static void execVerifyQuery(List *selist)
 {
-	List *selist = copyObject(query->pgaceList);
 	ListCell *l;
-
-	/* expand table inheritances */
-	selist = expandSEvalListInheritance(selist);
-
-	/* add checks for access via trigger function */
-	if (query->resultRelation > 0) {
-		RangeTblEntry *rte = (RangeTblEntry *) list_nth(query->rtable,
-														query->resultRelation - 1);
-		Assert(IsA(rte, RangeTblEntry));
-		selist = addEvalTriggerAccess(selist, rte->relid, rte->inh, query->commandType);
-	}
 
 	foreach (l, selist) {
 		SEvalItem *se = lfirst(l);
@@ -1351,10 +1331,77 @@ void sepgsqlVerifyQuery(Query *query)
 	}
 }
 
+void sepgsqlVerifyQuery(Query *query)
+{
+	List *selist = copyObject(query->pgaceList);
+
+	/* expand table inheritances */
+	selist = expandSEvalListInheritance(selist);
+
+	/* add checks for access via trigger function */
+	if (query->resultRelation > 0) {
+		RangeTblEntry *rte = (RangeTblEntry *) list_nth(query->rtable,
+														query->resultRelation - 1);
+		Assert(IsA(rte, RangeTblEntry));
+		selist = addEvalTriggerAccess(selist, rte->relid, rte->inh, query->commandType);
+	}
+
+	execVerifyQuery(selist);
+}
+
 /* *******************************************************************************
  * PGACE hooks: we cannon the following hooks in sepgsqlHooks.c because they
  * refers static defined variables in sepgsqlProxy.c
  * *******************************************************************************/
+
+/* ----------------------------------------------------------
+ * COPY TO/COPY FROM statement hooks
+ * ---------------------------------------------------------- */
+void sepgsqlCopyTable(Relation rel, List *attNumList, bool isFrom)
+{
+	List *selist = NIL;
+	ListCell *l;
+
+	/* on 'COPY FROM SELECT ...' cases, any checkings are done in select.c */
+	if (rel == NULL)
+		return;
+
+	/* no need to check non-table relation */
+	if (RelationGetForm(rel)->relkind != RELKIND_RELATION)
+		return;
+
+	selist = __addEvalPgClass(selist, RelationGetRelid(rel), false,
+							  isFrom ? TABLE__INSERT : TABLE__SELECT);
+	foreach (l, attNumList) {
+		AttrNumber attnum = lfirst_int(l);
+
+		selist = __addEvalPgAttribute(selist, RelationGetRelid(rel), false, attnum,
+									  isFrom ? COLUMN__INSERT : COLUMN__SELECT);
+	}
+
+	/* check call trigger function */
+	if (isFrom)
+		selist = addEvalTriggerAccess(selist, RelationGetRelid(rel), false, CMD_INSERT);
+
+	execVerifyQuery(selist);
+}
+
+bool sepgsqlCopyToTuple(Relation rel, HeapTuple tuple)
+{
+	return sepgsqlCheckTuplePerms(rel, tuple, NULL, TUPLE__SELECT, false);
+}
+
+bool sepgsqlCopyFromTuple(Relation rel, HeapTuple tuple)
+{
+	Oid tcontext = HeapTupleGetSecurity(tuple);
+
+	if (tcontext == InvalidOid) {
+		/* implicit labeling */
+		tcontext = sepgsqlComputeImplicitContext(rel, tuple);
+		HeapTupleSetSecurity(tuple, tcontext);
+	}
+	return sepgsqlCheckTuplePerms(rel, tuple, NULL, TUPLE__INSERT, false);
+}
 
 /* ----------------------------------------------------------
  * node copy/print hooks

@@ -180,16 +180,9 @@ extern Datum sepgsql_getcon(PG_FUNCTION_ARGS);
  *   src/backend/security/sepgsqlProxy.c
  */
 extern List *sepgsqlProxyQuery(Query *query);
-extern List *sepgsqlProxyQueryList(List *queryList);
-extern Oid sepgsqlPreparePlanCheck(Relation rel);
-extern void sepgsqlRestorePlanCheck(Relation rel, Oid pgace_saved);
-
-/*
- * SE-PostgreSQL checking function
- *   src/backend/security/sepgsqlVerify.c
- */
-//extern void sepgsqlVerifyQueryList(List *queryList);
-extern void sepgsqlVerifyQuery(Query *query);
+extern void  sepgsqlVerifyQuery(Query *query);
+extern Oid   sepgsqlPreparePlanCheck(Relation rel);
+extern void  sepgsqlRestorePlanCheck(Relation rel, Oid pgace_saved);
 
 /*
  * SE-PostgreSQL hooks
