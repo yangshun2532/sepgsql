@@ -5,7 +5,7 @@
 # -----------------------------------------------------
 
 %{!?sepgversion:%define sepgversion %%__default_sepgversion__%%}
-%{!?sepgrevision:%define sepgrevision %%__default_sepgrevision__%%}
+%{!?sepgversion_minor:%define sepgversion_minor %%__default_sepgversion_minor__%%}
 %%__default_sepgextension__%%
 %define _policydir    /usr/share/selinux
 %define _prefix       /opt/sepgsql
@@ -20,7 +20,7 @@ Summary: Security Enhanced PostgreSQL
 Group: Applications/Databases
 Name: sepostgresql
 Version: %%__base_postgresql_version__%%
-Release: %{?sepgversion}.%{?sepgrevision}%{?sepgextension}%{?dist}
+Release: %{?sepgversion}.%{?sepgversion_minor}%{?sepgextension}%{?dist}
 License: BSD
 Group: Applications/Databases
 Url: http://code.google.com/p/sepgsql/
@@ -180,6 +180,12 @@ fi
 /var/lib/sepgsql/.bash_profile
 
 %changelog
+* Sun Jul  1 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.384
+- add fallback context support with $SEPGSQL_FALLBACK_CONTEXT
+- add sepgsql_enable_users_ddl boolean to restrict sepgsql_sysobj_t
+- BUGFIX: incorrect inherited attribute expanding for RECORD type (attno=0)
+- BUGFIX: trigger functions were not checked in COPY FROM statement
+
 * Tue Jun 26 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.376
 - add pgaceExecutorStart() to hook ExecutorStart()
 

@@ -9,7 +9,7 @@
 
 PGVERSION="%%__base_postgresql_version__%%"
 PGMAJORVERSION=`echo "$PGVERSION" | sed 's/^\([0-9]*\.[0-9]*\).*$/\1/'`
-SEPGVERSION="%%__default_sepgversion__%%.%%__default_sepgrevision__%%"
+SEPGVERSION="%%__default_sepgversion__%%.%%__default_sepgversion_minor__%%"
 
 # source function library
 . /etc/rc.d/init.d/functions

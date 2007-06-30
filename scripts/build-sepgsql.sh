@@ -3,6 +3,7 @@ export LANG=C
 
 BASEVERSION="8.2.4"
 SEPGVERSION="0"
+# SEPGVERSION_MINOR="0"
 SEPGEXTENSION=".alpha"
 
 # we can override DEFAULT_REPOSITORY by SEPGSQL_REPOSITORY,
@@ -28,8 +29,10 @@ test -z "${SEPGSQL_REPOSITORY}" && SEPGSQL_REPOSITORY=${DEFAULT_REPOSITORY}
 test -z "${SEPGSQL_BASETGZ}" && SEPGSQL_BASETGZ=${DEFAULT_BASETGZ}
 echo ${SEPGSQL_REPOSITORY} | egrep -q "^http://" || \
     { pushd ${SEPGSQL_REPOSITORY}; svn update; popd; }
-SEPGREVISION=`svn info ${SEPGSQL_REPOSITORY} | egrep '^Revision:' | awk '{print $2}'`
-SEPG_FULL_VERSION="${SEPGVERSION}.${SEPGREVISION}${SEPGEXTENSION}"
+if [ -z "${SEPGVERSION_MINOR}" ]; then
+    SEPGVERSION_MINOR=`svn info ${SEPGSQL_REPOSITORY} | egrep '^Revision:' | awk '{print $2}'`
+fi
+SEPG_FULL_VERSION="${SEPGVERSION}.${SEPGVERSION_MINOR}${SEPGEXTENSION}"
 
 echo "starting sepostgresql package:"
 echo "  sepostgresql-${BASEVERSION}-${SEPG_FULL_VERSION}"
@@ -85,13 +88,13 @@ cp "${SEPGSQL_BASETGZ}" ${RPMSOURCE}
 cat scripts/sepostgresql.init | \
     sed "s/%%__base_postgresql_version__%%/${BASEVERSION}/g" | \
     sed "s/%%__default_sepgversion__%%/${SEPGVERSION}/g" | \
-    sed "s/%%__default_sepgrevision__%%/${SEPGREVISION}/g" \
+    sed "s/%%__default_sepgversion_minor__%%/${SEPGVERSION_MINOR}/g" \
         > ${RPMSOURCE}/sepostgresql.init
 
 cat scripts/sepostgresql.spec | \
     sed "s/%%__base_postgresql_version__%%/${BASEVERSION}/g" | \
     sed "s/%%__default_sepgversion__%%/${SEPGVERSION}/g" | \
-    sed "s/%%__default_sepgrevision__%%/${SEPGREVISION}/g" | \
+    sed "s/%%__default_sepgversion_minor__%%/${SEPGVERSION_MINOR}/g" | \
     sed "s/%%__default_sepgextension__%%/${DEFAULT_SEPGEXTENSION}/g" | \
     sed "s/%%__default_sepgpolversion__%%/${SEPGPOLVERSION}/g" | \
     sed "s/%%__default_libselinux_version__%%/${LIBSELINUX_VERSION}/g" | \
