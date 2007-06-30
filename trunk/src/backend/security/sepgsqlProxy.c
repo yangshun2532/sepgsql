@@ -13,11 +13,9 @@
 #include "catalog/pg_attribute.h"
 #include "catalog/pg_class.h"
 #include "catalog/pg_database.h"
-#include "catalog/pg_depend.h"
 #include "catalog/pg_largeobject.h"
 #include "catalog/pg_operator.h"
 #include "catalog/pg_proc.h"
-#include "catalog/pg_shdepend.h"
 #include "catalog/pg_type.h"
 #include "executor/spi.h"
 #include "nodes/makefuncs.h"
@@ -1098,10 +1096,6 @@ static void verifyPgClassPerms(Oid relid, bool inh, uint32 perms)
 	if (perms & (TABLE__UPDATE | TABLE__INSERT | TABLE__DELETE)) {
 		if (relid == SecurityRelationId)
 			selerror("user cannot modify pg_security directly, for security reason");
-		if (relid == DependRelationId)
-			selerror("user cannot modify pg_depend directly, for security reason");
-		if (relid == SharedDependRelationId)
-			selerror("user cannot modify pg_shdepend directly, for security reason");
 	}
 
 	/* check table:{required permissions} */
@@ -1250,6 +1244,13 @@ static List *__expandPgAttributeInheritance(List *selist, Oid relid, char *attna
 		Form_pg_attribute attrForm;
 		HeapTuple tuple;
 
+		if (!attname) {
+			/* attname == NULL means RECORD reference */
+			selist = __addEvalPgAttribute(selist, lfirst_oid(l), false, 0, perms);
+			selist = __expandPgAttributeInheritance(selist, lfirst_oid(l), NULL, perms);
+			continue;
+		}
+
 		tuple = SearchSysCacheAttName(lfirst_oid(l), attname);
 		if (!HeapTupleIsValid(tuple))
 			selerror("relation %u does not have attribute %s",
@@ -1287,6 +1288,13 @@ static List *expandSEvalListInheritance(List *selist) {
 				HeapTuple tuple;
 
 				se->a.inh = false;
+				if (se->a.attno == 0) {
+					result = __expandPgAttributeInheritance(result,
+															se->a.relid,
+															NULL,
+															se->perms);
+					break;
+				}
 				tuple = SearchSysCache(ATTNUM,
 									   ObjectIdGetDatum(se->a.relid),
 									   Int16GetDatum(se->a.attno),
