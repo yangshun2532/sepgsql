@@ -721,11 +721,18 @@ static Oid sepgsql_system_getcon()
 /* sepgsql_system_getpeercon() -- obtain the client's context */
 static Oid sepgsql_system_getpeercon(int sockfd)
 {
-	security_context_t context;
+	security_context_t context, __context;
 	Oid ssid;
 
-	if (getpeercon_raw(sockfd, &context) != 0)
-		selerror("could not obtain security context of client process");
+	if (getpeercon_raw(sockfd, &context)) {
+		/* we can set finally fallbacked context */
+		__context = getenv("SEPGSQL_FALLBACK_CONTEXT");
+		if (!__context)
+			selerror("could not obtain security context of database client");
+		if (security_check_context(__context) ||
+			selinux_trans_to_raw_context(__context, &context))
+			selerror("'%s' is not a valid context", __context);
+	}
 
 	PG_TRY();
 	{
