@@ -44,7 +44,6 @@ the operating system. SE-PostgreSQL works as a userspace
 reference monitor to check any SQL query.
 
 %prep
-echo %{release}
 %setup -q -n postgresql-%{version}
 %patch0 -p1
 mkdir selinux-policy
@@ -95,12 +94,8 @@ install -d -m 700 %{buildroot}/var/lib/sepgsql/backups
  echo "if [ -f /etc/bashrc ]; then"
  echo "    . /etc/bashrc"
  echo "fi"
- echo ""
-%if %{defined sepgextension}
- echo "ulimit -c unlimited"
-%endif
+ echo
  echo "export PATH=%{_bindir}:\${PATH}"
- echo "export PGDATA=/var/lib/sepgsql/data"
 ) > %{buildroot}/var/lib/sepgsql/.bash_profile
 
 mkdir -p $RPM_BUILD_ROOT/etc/rc.d/init.d
@@ -130,6 +125,8 @@ done
 # Fix up non-standard file contexts
 /sbin/fixfiles -R %{name} restore || :
 /sbin/restorecon -R /var/lib/sepgsql || :
+
+/etc/init.d/sepostgresql condrestart || :
 
 %postun
 /sbin/ldconfig

@@ -81,7 +81,12 @@ fi
 #-- create a patch file --
 echo "generating: sepostgresql-${BASEVERSION}-${SEPG_FULL_VERSION}.patch"
 cp "${SEPGSQL_BASETGZ}" ${RPMSOURCE}
-cp scripts/sepostgresql.init ${RPMSOURCE}
+
+cat scripts/sepostgresql.init | \
+    sed "s/%%__base_postgresql_version__%%/${BASEVERSION}/g" | \
+    sed "s/%%__default_sepgversion__%%/${SEPGVERSION}/g" | \
+    sed "s/%%__default_sepgrevision__%%/${SEPGREVISION}/g" \
+        > ${RPMSOURCE}/sepostgresql.init
 
 cat scripts/sepostgresql.spec | \
     sed "s/%%__base_postgresql_version__%%/${BASEVERSION}/g" | \
@@ -91,7 +96,9 @@ cat scripts/sepostgresql.spec | \
     sed "s/%%__default_sepgpolversion__%%/${SEPGPOLVERSION}/g" | \
     sed "s/%%__default_libselinux_version__%%/${LIBSELINUX_VERSION}/g" | \
     sed "s/%%__default_policycoreutils_version__%%/${POLICYCOREUTILS_VERSION}/g" | \
-    sed "s/%%__default_custom_copt__%%/${SEPGSQL_CUSTOM_COPT}/g" > ${RPMSOURCE}/sepostgresql.spec
+    sed "s/%%__default_custom_copt__%%/${SEPGSQL_CUSTOM_COPT}/g" \
+        > ${RPMSOURCE}/sepostgresql.spec
+
 cp policy/sepostgresql.if policy/sepostgresql.fc ${RPMSOURCE}
 cat policy/sepostgresql.te | \
     sed "s/%%POLICY_VERSION%%/${SEPGVERSION}.${SEPGREVISION}/g" > ${RPMSOURCE}/sepostgresql.te
