@@ -1,4 +1,4 @@
-#labels Featured,Phase-Newsrelease
+#labels Phase-Newsrelease
 = SE-PostgreSQL 1.0 Beta version Released =
 
 SE-PostgreSQL development team released "SE-PostgreSQL 1.0 beta version" and "The security guide of Security-Enhanced PostgreSQL beta (Japanese/English)" at Jul 01 2007.
@@ -160,7 +160,6 @@ SE-PostgreSQL1.0β版は、2007年3月5日にリリースされた SE-PostgreSQL
 
 == 謝辞 ==
 - SE-PostgreSQLの開発は、IPA/未踏ソフトウェア創造事業(2006年度/下期)の支援を受けています。
-
 
 
 
