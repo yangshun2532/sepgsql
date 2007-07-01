@@ -15,6 +15,8 @@ The latest version of SE-PostgreSQL, base and targeted security policy are neces
  * selinux-policy-2.6.4-14.sepgsql.fc7.noarch.rpm
  * selinux-policy-targeted-2.6.4-14.sepgsql.fc7.noarch.rpm
 
+If you want to set up the frontend (*psql* command), postgresql-8.2.4-1.fc7 package included in Fedora 7 Project should be installed.
+
 == Applying RPM packages ==
 Apply all SE-PostgreSQL packages at once, as follows:
 {{{
@@ -68,7 +70,7 @@ CREATE ROLE
 }}}
 
 == Enjoy SE-PostgreSQL ==
-SE-PostgreSQL package does not contain a front-end program.
+SE-PostgreSQL package does not contain a front-end command.
 You can use *psql* command in postgresql package, if necessary.
 {{{
 [kaigai@masu ~]$ psql postgres
