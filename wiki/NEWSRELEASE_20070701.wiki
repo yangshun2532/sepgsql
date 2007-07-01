@@ -1,0 +1,171 @@
+#labels Featured,Phase-Newsrelease
+= SE-PostgreSQL 1.0 Beta version Released =
+
+SE-PostgreSQL development team released "SE-PostgreSQL 1.0 beta version" and "The security guide of Security-Enhanced PostgreSQL beta (Japanese/English)" at Jul 01 2007.
+
+You can get those packages from the following URL:
+
+http://code.google.com/p/sepgsql/downloads/list
+
+ * SE-PostgreSQL 1.0 beta version
+  * [http://sepgsql.googlecode.com/files/sepostgresql-8.2.4-0.391.beta.fc6.i386.rpm sepostgresql-8.2.4-0.391.beta.fc6.i386.rpm]
+  * [http://sepgsql.googlecode.com/files/sepostgresql-8.2.4-0.391.beta.fc7.i386.rpm sepostgresql-8.2.4-0.391.beta.fc7.i386.rpm]
+  * [http://sepgsql.googlecode.com/files/sepostgresql-8.2.4-0.391.beta.fc7.src.rpm sepostgresql-8.2.4-0.391.beta.fc7.src.rpm]
+  * [http://sepgsql.googlecode.com/files/sepostgresql-8.2.4-0.391.beta.fc7.patch sepostgresql-8.2.4-0.391.beta.fc7.patch]
+ * The base security policy for Fedora 7
+  * [http://sepgsql.googlecode.com/files/selinux-policy-2.6.4-14.sepgsql.fc7.noarch.rpm selinux-policy-2.6.4-14.sepgsql.fc7.noarch.rpm]
+  * [http://sepgsql.googlecode.com/files/selinux-policy-targeted-2.6.4-14.sepgsql.fc7.noarch.rpm selinux-policy-targeted-2.6.4-14.sepgsql.fc7.noarch.rpm]
+  * [http://sepgsql.googlecode.com/files/selinux-policy-devel-2.6.4-14.sepgsql.fc7.noarch.rpm selinux-policy-devel-2.6.4-14.sepgsql.fc7.noarch.rpm]
+ * The base security policy for Fedora core 6
+  * [http://sepgsql.googlecode.com/files/selinux-policy-2.4.6-74.sepgsql.fc6.noarch.rpm selinux-policy-2.4.6-74.sepgsql.fc6.noarch.rpm]
+  * [http://sepgsql.googlecode.com/files/selinux-policy-targeted-2.4.6-74.sepgsql.fc6.noarch.rpm selinux-policy-targeted-2.4.6-74.sepgsql.fc6.noarch.rpm]
+  * [http://sepgsql.googlecode.com/files/selinux-policy-devel-2.4.6-74.sepgsql.fc6.noarch.rpm selinux-policy-devel-2.4.6-74.sepgsql.fc6.noarch.rpm]
+ * "The security guide of Security-Enhanced PostgreSQL" (beta edition) as the official documentation
+  * [http://sepgsql.googlecode.com/files/sepgsql_security_guide.20070701.jp.beta.pdf sepgsql_security_guide.20070701.jp.beta.pdf]
+  * [http://sepgsql.googlecode.com/files/sepgsql_security_guide.20070701.en.beta.pdf sepgsql_security_guide.20070701.en.beta.pdf]
+
+See the following URL, for installation details.
+ * SE-PostgreSQL installation memo (Fedora 7)
+  * http://code.google.com/p/sepgsql/wiki/install_memo_Fedora7
+ * SE-PostgreSQL installation memo (Fedora core 6)
+  * http://code.google.com/p/sepgsql/wiki/install_memo_FC6
+
+== The features of SE-PostgreSQL ==
+
+Security Enhanced PostgreSQL (SE-PostgreSQL) is a security extension built in PostgreSQL.
+It enables to administrate operating system and database management system under the unified security policy by cooperation with SELinux. In addition, it also provides fine-grained access control including column and row level, and mandatory access control being non-bypassable, even if privileged database user.
+
+Those features enables to build a database management system into information flow control scheme integrated with operating system, and to protect our information asset from threats like manipulation or leaking.
+
+== The purpose of this version ==
+
+The purpose of this version is evaluation and test for the stable SE-PostgreSQL 1.0 release. Therefore, we don't reccomend to apply SE-PostgreSQL 1.0 beta except for test/evaluation purpose.
+SE-PostgreSQL development team also declares the feature freeze for the stable SE-PostgreSQL 1.0. It means that we have no plan to add any feature except for bug fixes.
+We always welcome any feedback from open source community, such as bug reporting, question for SE-PostgreSQL and documentation.
+
+== Roadmap ==
+
+SE-PostgreSQL development team have a plan to release the stable SE-PostgreSQL 1.0 after one month's evaluation.
+In the future, we continue our activity to merge PGACE/SE-PostgreSQL features into the upstreamed PostgreSQL.
+
+== Changes since SE-PostgreSQL 1.0 alpha release ==
+
+The following remarkable changes are applied from SE-PostgreSQL 1.0 alpha released at May 05 2007.
+
+*Applying PGACE framework*
+ PostgreSQL Access Control Extension (PGACE) is a framework consist of many hooks and a mechanism to associate a security attribute with database objects, to provide a common infrastructure for multiple security extensions built in PostgreSQL.
+
+*backup/restore utility*
+ '--enable-security' option was added for pg_dump and pg_dumpall commands. It enables to backup and restore database with security context.
+
+*Extended SQL statement*
+ Extensions of CREATE TABLE/FUNCTION/DATABASE and ALTER TABLE/FUNCTION/DATABASE statements enables to configure security context of database object without modifying system catalog directly.
+
+*Adding new permissions*
+ {use} permission was added for table, column and tuple object classes. It is evaluated in the case when a column is accessed without reading its contents such as use on WHERE or GROUP BY clause.
+
+*Improve security policy*
+ Two new types are defined. One is sepgsql_ro_table_t for read-only tables. The other is sepgsql_fixed_table_t for non-manipulatable tables.
+ A type of 'sepgsql_user_proc_t' is attached for user defined SQL functon. Administrative domain cannot execute a functon with this type, so we can avoid to execute untrusted functions with unconfined authorities.
+
+*Fixed many bugs*
+ We found and fixed many bugs for four months since alpha release on this March.
+
+== Acknowledgment ==
+ * The development of SE-PostgreSQL is supported by Exploratory Software Project, IPA(Information-technology Promotion Agency, Japan).
+
+
+
+
+
+
+
+
+
+
+
+
+= SE-PostgreSQL 1.0β版 リリース =
+
+2007年7月1日、SE-PostgreSQL開発チームは SE-PostgreSQL1.0β版 及び「The security guide of Security-Enhanced PostgreSQL β(日本語/英語)」をリリースしました。
+
+これらのパッケージ群は、以下のURLより取得することができます。
+
+http://code.google.com/p/sepgsql/downloads/list
+
+ * SE-PostgreSQL 1.0 β版
+  * [http://sepgsql.googlecode.com/files/sepostgresql-8.2.4-0.391.beta.fc6.i386.rpm sepostgresql-8.2.4-0.391.beta.fc6.i386.rpm]
+  * [http://sepgsql.googlecode.com/files/sepostgresql-8.2.4-0.391.beta.fc7.i386.rpm sepostgresql-8.2.4-0.391.beta.fc7.i386.rpm]
+  * [http://sepgsql.googlecode.com/files/sepostgresql-8.2.4-0.391.beta.fc7.src.rpm sepostgresql-8.2.4-0.391.beta.fc7.src.rpm]
+  * [http://sepgsql.googlecode.com/files/sepostgresql-8.2.4-0.391.beta.fc7.patch sepostgresql-8.2.4-0.391.beta.fc7.patch]
+ * Fedora 7 向け ベースセキュリティポリシー
+  * [http://sepgsql.googlecode.com/files/selinux-policy-2.6.4-14.sepgsql.fc7.noarch.rpm selinux-policy-2.6.4-14.sepgsql.fc7.noarch.rpm]
+  * [http://sepgsql.googlecode.com/files/selinux-policy-targeted-2.6.4-14.sepgsql.fc7.noarch.rpm selinux-policy-targeted-2.6.4-14.sepgsql.fc7.noarch.rpm]
+  * [http://sepgsql.googlecode.com/files/selinux-policy-devel-2.6.4-14.sepgsql.fc7.noarch.rpm selinux-policy-devel-2.6.4-14.sepgsql.fc7.noarch.rpm]
+ * Fedora core 6 向け ベースセキュリティポリシー
+  * [http://sepgsql.googlecode.com/files/selinux-policy-2.4.6-74.sepgsql.fc6.noarch.rpm selinux-policy-2.4.6-74.sepgsql.fc6.noarch.rpm]
+  * [http://sepgsql.googlecode.com/files/selinux-policy-targeted-2.4.6-74.sepgsql.fc6.noarch.rpm selinux-policy-targeted-2.4.6-74.sepgsql.fc6.noarch.rpm]
+  * [http://sepgsql.googlecode.com/files/selinux-policy-devel-2.4.6-74.sepgsql.fc6.noarch.rpm selinux-policy-devel-2.4.6-74.sepgsql.fc6.noarch.rpm]
+ * 公式のドキュメント "The security guide of Security-Enhanced PostgreSQL" β版
+  * [http://sepgsql.googlecode.com/files/sepgsql_security_guide.20070701.jp.beta.pdf sepgsql_security_guide.20070701.jp.beta.pdf]
+  * [http://sepgsql.googlecode.com/files/sepgsql_security_guide.20070701.en.beta.pdf sepgsql_security_guide.20070701.en.beta.pdf]
+
+インストールの詳細は以下のURLを参照してください。
+ * SE-PostgreSQL installation memo (Fedora 7)
+  * http://code.google.com/p/sepgsql/wiki/install_memo_Fedora7
+ * SE-PostgreSQL installation memo (Fedora core 6)
+  * http://code.google.com/p/sepgsql/wiki/install_memo_FC6
+
+== SE-PostgreSQL の特徴 ==
+
+SE-PostgreSQL (Security Enhanced PostgreSQL) は PostgreSQLにビルトインされたセキュリティ拡張機能で、SELinuxとの連携により、オペレーティングシステムとデータベース管理システムを統合されたセキュリティポリシーの下で一元的に管理することを可能にします。加えて、SE-PostgreSQLは、行レベル/列レベルを含む細粒度のアクセス制御機能と、特権DBユーザに対しても回避不可能な強制アクセス制御機能を提供しています。
+
+このような SE-PostgreSQL の特徴は、データベース管理システムをオペレーティングシステムと一体化した情報フロー制御の枠組みに組み込むことを可能にし、情報資産を漏えいや改ざんといった脅威から保護します。
+
+== 本バージョンの位置づけ ==
+
+本バージョンは、SE-PostgreSQL1.0正式版のリリースに向けたテスト及び評価を目的としています。従って、テスト/評価以外の目的で SE-PostgreSQL1.0β版 を利用することは推奨しません。
+
+SE-PostgreSQL開発チームは、SE-PostgreSQL1.0正式版のリリースに向けた機能フリーズを宣言します。これは、1.0正式版のリリースまでの期間、バグ修正を除く新規機能の追加を行わないことを意味します。
+
+バグの報告やSE-PostgreSQLの動作に関する質問、ドキュメントに対する疑問点など、SE-PostgreSQL開発チームはOSSコミュニティからの全てのフィードバックを歓迎します。
+
+== ロードマップ ==
+
+SE-PostgreSQL開発チームは、約１ヶ月のベータ評価期間の後にSE-PostgreSQL1.0正式版のリリースを予定しています。
+また、将来的にはPostgreSQL本流へのPGACE/SE-PostgreSQL機能のマージを目標としています。
+
+== SE-PostgreSQL 1.0 α版からの変更点 ==
+
+SE-PostgreSQL1.0β版は、2007年3月5日にリリースされた SE-PostgreSQL1.0α版 から以下のような修正を加えています。
+
+*PGACEフレームワークの採用*
+ PostgreSQL Access Control Extension (PGACE) は、セキュリティ拡張機能が利用できる多数のフック関数と、DBオブジェクトのセキュリティ属性の管理を軸とするフレームワークで、PostgreSQLにビルトインのセキュリティ拡張機能の共通基盤となるものです。
+
+*バックアップ/リストア*
+ pg_dump及びpg_dumpallコマンドに --enable-security オプションを追加しました。これによって、セキュリティコンテキスト付きのバックアップ/リストアを行うことが可能になりました。
+
+*SQL構文の拡張*
+ CREATE TABLE/FUNCTION/DATABASE および ALTER TABLE/FUNCTION/DATABASE の拡張により、システムカタログを直接操作することなくDBオブジェクトのセキュリティコンテキストを設定することが可能になりました。
+
+*新しいパーミッションの追加*
+ table, column, tuple の各オブジェクトクラスに対して、{use}パーミッションが追加されました。これは、WHERE条件句やGROUP BY句でカラムを参照した場合など、クライアントが直接にデータを読み出さないタイプのDBオブジェクトの参照に対して評価されます。
+
+*セキュリティポリシーの改善*
+ 新たに、テーブルに対して sepgsql_ro_table_t(読込み専用) 及び sepgsql_fixed_table_t(読込み/挿入専用) タイプを付与することが可能になりました。
+ ユーザ定義関数に対して sepgsql_user_proc_t タイプが付与されるようになりました。管理者はこのタイプの関数を実行できないため、素性の明らかでない関数を誤って高い権限で実行することを避けることができます。
+
+*多くのバグの修正*
+ αリリース以降の４ヶ月間に多くのバグが発見・除去されています。
+
+== 謝辞 ==
+- SE-PostgreSQLの開発は、IPA/未踏ソフトウェア創造事業(2006年度/下期)の支援を受けています。
+
+
+
+
+
+
+
+
+
