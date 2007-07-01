@@ -74,17 +74,6 @@ The following remarkable changes are applied from SE-PostgreSQL 1.0 alpha releas
 == Acknowledgment ==
  * The development of SE-PostgreSQL is supported by Exploratory Software Project, IPA(Information-technology Promotion Agency, Japan).
 
-
-
-
-
-
-
-
-
-
-
-
 = SE-PostgreSQL 1.0β版 リリース =
 
 2007年7月1日、SE-PostgreSQL開発チームは SE-PostgreSQL1.0β版 及び「The security guide of Security-Enhanced PostgreSQL β(日本語/英語)」をリリースしました。
@@ -159,12 +148,4 @@ SE-PostgreSQL1.0β版は、2007年3月5日にリリースされた SE-PostgreSQL
  αリリース以降の４ヶ月間に多くのバグが発見・除去されています。
 
 == 謝辞 ==
-- SE-PostgreSQLの開発は、IPA/未踏ソフトウェア創造事業(2006年度/下期)の支援を受けています。
-
-
-
-
-
-
-
-
+* SE-PostgreSQLの開発は、IPA/未踏ソフトウェア創造事業(2006年度/下期)の支援を受けています。
