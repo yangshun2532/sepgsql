@@ -180,7 +180,10 @@ fi
 /var/lib/sepgsql/.bash_profile
 
 %changelog
-* Sun Jul  1 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.384
+* Sun Jul  1 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.385
+- Mark as a beta version.
+
+* Sat Jun 30 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.384
 - add fallback context support with $SEPGSQL_FALLBACK_CONTEXT
 - add sepgsql_enable_users_ddl boolean to restrict sepgsql_sysobj_t
 - BUGFIX: incorrect inherited attribute expanding for RECORD type (attno=0)
