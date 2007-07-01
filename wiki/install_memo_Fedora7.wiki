@@ -11,7 +11,7 @@ http://code.google.com/p/sepgsql/downloads/list
 }}}
 
 The latest version of SE-PostgreSQL, base and targeted security policy are necessary to install.
- * sepostgresql-8.2.4-0.351.alpha.fc7.i386.rpm
+ * sepostgresql-8.2.4-0.385.beta.fc7.i386.rpm
  * selinux-policy-2.6.4-14.sepgsql.fc7.noarch.rpm
  * selinux-policy-targeted-2.6.4-14.sepgsql.fc7.noarch.rpm
 
@@ -22,7 +22,7 @@ Apply all SE-PostgreSQL packages at once, as follows:
 {{{
 rpm -Uvh selinux-policy-2.6.4-14.sepgsql.fc7.noarch.rpm \
          selinux-policy-targeted-2.6.4-14.sepgsql.fc7.noarch.rpm \
-         sepostgresql-8.2.4-0.351.alpha.fc7.i386.rpm
+         sepostgresql-8.2.4-0.385.beta.fc7.i386.rpm
 }}}
 If you have installed selinux-policy-devel package, you should upgrade the package in same time, bacause it depends on selinux-policy.
 
@@ -40,7 +40,7 @@ amtu    1.0.23
     <snip>
       :
 screen  1.1.0
-*sepostgresql    0.351*
+*sepostgresql    0.385*
 slocate 1.4.1
       :
     <snip>
