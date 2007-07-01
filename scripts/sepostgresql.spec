@@ -180,7 +180,7 @@ fi
 /var/lib/sepgsql/.bash_profile
 
 %changelog
-* Sun Jul  1 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.385
+* Sun Jul  1 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.391
 - Mark as a beta version.
 
 * Sat Jun 30 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.384
