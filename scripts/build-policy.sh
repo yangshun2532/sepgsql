@@ -1,9 +1,6 @@
 #!/bin/sh
 
 DEFAULT_REPOSITORY="http://sepgsql.googlecode.com/svn"
-POLICY_97="refpolicy-add-sepgsql-definitions.patch"
-POLICY_98="refpolicy-add-userdomain-pgsql-connect.fc6.patch"         # only for Fedora Core 6
-POLICY_99="refpolicy-add-userdomain-pgsql-connect.fedora7.patch"     # only for Fedora Core 7
 
 test -z "${SEPGSQL_REPOSITORY}" && SEPGSQL_REPOSITORY=${DEFAULT_REPOSITORY}
 
@@ -17,15 +14,18 @@ else
     SRPMFILE=$1
 fi
 
-# remove unnecessary patches
+# add patches
 if rpm -qp --qf "%{release}" "${SRPMFILE}" | egrep -q '\.fc6$'; then
     # Fedore core 6
-    unset POLICY_99
+    POLICY_98="refpolicy-add-sepgsql-definitions.fc6.patch"
+    POLICY_99="refpolicy-add-userdomain-pgsql-connect.fc6.patch"
 elif rpm -qp --qf "%{release}" "${SRPMFILE}" | egrep -q '\.fc7$'; then
     # Fedora 7
-    unset POLICY_98
+    POLICY_98="refpolicy-add-sepgsql-definitions.fedora7.patch"
+    POLICY_99="refpolicy-add-userdomain-pgsql-connect.fedora7.patch"
 else
     echo "unknown distribution: ${SRPMFILE}"
+    exit 1
 fi
 
 # unpack source rpm

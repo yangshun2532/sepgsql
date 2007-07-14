@@ -1,0 +1,350 @@
+diff -rNU3 serefpolicy-2.6.4/policy/flask/access_vectors serefpolicy-2.6.4.sepgsql/policy/flask/access_vectors
+--- serefpolicy-2.6.4/policy/flask/access_vectors	2007-07-15 01:11:15.000000000 +0900
++++ serefpolicy-2.6.4.sepgsql/policy/flask/access_vectors	2007-07-15 01:18:02.000000000 +0900
+@@ -80,6 +80,20 @@
+ }
+ 
+ #
++#  Define a common prefix for userspace database object access vectors.
++#
++
++common database
++{
++	create
++	drop
++	getattr
++	setattr
++	relabelfrom
++	relabelto
++}
++
++#
+ # Define the access vectors.
+ #
+ # class class_name [ inherits common_name ] { permission_name ... }
+@@ -658,3 +672,60 @@
+ 	mmap_zero
+ }
+ 
++# definition for SE-PostgreSQL
++class database
++inherits database
++{
++	access
++	install_module
++	load_module
++	get_param
++	set_param
++}
++
++class table
++inherits database
++{
++	use
++	select
++	update
++	insert
++	delete
++	lock
++}
++
++class procedure
++inherits database
++{
++	execute
++	entrypoint
++}
++
++class column
++inherits database
++{
++	use
++	select
++	update
++	insert
++}
++
++class tuple
++{
++	relabelfrom
++	relabelto
++	use
++	select
++	update
++	insert
++	delete
++}
++
++class blob
++inherits database
++{
++	read
++	write
++	import
++	export
++}
+diff -rNU3 serefpolicy-2.6.4/policy/flask/security_classes serefpolicy-2.6.4.sepgsql/policy/flask/security_classes
+--- serefpolicy-2.6.4/policy/flask/security_classes	2007-07-15 01:11:15.000000000 +0900
++++ serefpolicy-2.6.4.sepgsql/policy/flask/security_classes	2007-07-15 01:11:51.000000000 +0900
+@@ -99,4 +99,12 @@
+ 
+ class memprotect
+ 
++# SE-PostgreSQL relation
++class database			# userspace
++class table			# userspace
++class procedure			# userspace
++class column			# userspace
++class tuple			# userspace
++class blob			# userspace
++
+ # FLASK
+diff -rNU3 serefpolicy-2.6.4/policy/mcs serefpolicy-2.6.4.sepgsql/policy/mcs
+--- serefpolicy-2.6.4/policy/mcs	2007-05-08 03:51:05.000000000 +0900
++++ serefpolicy-2.6.4.sepgsql/policy/mcs	2007-07-15 01:11:51.000000000 +0900
+@@ -98,4 +98,28 @@
+ mlsconstrain process { sigkill sigstop }
+ 	(( h1 dom h2 ) or ( t1 == mcskillall ));
+ 
++# MCS policy for SE-PostgreSQL
++#-------------------------------
++
++# Any database object must be dominated by the relabeling subject
++# clearance, also the objects are single-level.
++mlsconstrain { database table procedure column blob } { create relabelto }
++	((h1 dom h2) and ( l1 domby h2 ) and ( l2 eq h2 ));
++mlsconstrain tuple { insert relabelto }
++	(( h1 dom h2 ) and ( l1 domby h2 ) and ( l2 eq h2 ));
++
++# Access control for any database objects based on MCS rules.
++mlsconstrain database { drop setattr relabelfrom access install_module load_module get_param set_param }
++	( h1 dom h2 );
++mlsconstrain table { drop setattr relabelfrom select update insert delete use }
++	( h1 dom h2 );
++mlsconstrain column { drop setattr relabelfrom select update insert use }
++	( h1 dom h2 );
++mlsconstrain tuple { relabelfrom select update delete use }
++	( h1 dom h2 );
++mlsconstrain procedure { execute }
++	( h1 dom h2 );
++mlsconstrain blob { drop setattr relabelfrom read write }
++	( h1 dom h2 );
++
+ ') dnl end enable_mcs
+diff -rNU3 serefpolicy-2.6.4/policy/mls serefpolicy-2.6.4.sepgsql/policy/mls
+--- serefpolicy-2.6.4/policy/mls	2007-07-15 01:11:15.000000000 +0900
++++ serefpolicy-2.6.4.sepgsql/policy/mls	2007-07-15 01:11:51.000000000 +0900
+@@ -616,4 +616,109 @@
+ mlsconstrain context contains
+ 	( h1 dom h2 );
+ 
++#
++# MLS policy for the database related classes
++#
++
++# make sure these database classes are "single level"
++mlsconstrain { database table procedure column blob } { create relabelto }
++	( l2 eq h2 );
++mlsconstrain { tuple } { insert relabelto }
++	( l2 eq h2 );
++
++# new file labels must be dominated by the relabeling subjects clearance
++mlsconstrain { database table procedure column tuple blob } { relabelto }
++	( h1 dom h2 );
++
++# the database "read" ops (note the check is dominance of the low level)
++mlsconstrain { database table procedure column blob } { getattr }
++	(( l1 dom l2 ) or
++	 (( t1 == mlsdatabasereadtoclr ) and ( h1 dom l2 )) or
++	 ( t1 == mlsdatabaseread ) or
++	 ( t2 == mlstrustedobject ));
++
++mlsconstrain { database } { access get_param }
++	(( l1 dom l2 ) or
++	 (( t1 == mlsdatabasereadtoclr ) and ( h1 dom l2 )) or
++	 ( t1 == mlsdatabaseread ) or
++	 ( t2 == mlstrustedobject ));
++
++mlsconstrain { table column } { use select }
++	(( l1 dom l2 ) or
++	 (( t1 == mlsdatabasereadtoclr ) and ( h1 dom l2 )) or
++	 ( t1 == mlsdatabaseread ) or
++	 ( t2 == mlstrustedobject ));
++
++mlsconstrain { procedure } { execute }
++	(( l1 dom l2 ) or
++	 (( t1 == mlsdatabasereadtoclr ) and ( h1 dom l2 )) or
++	 ( t1 == mlsdatabaseread ) or
++	 ( t2 == mlstrustedobject ));
++
++mlsconstrain { blob } { read }
++	(( l1 dom l2 ) or
++	 (( t1 == mlsdatabasereadtoclr ) and ( h1 dom l2 )) or
++	 ( t1 == mlsdatabaseread ) or
++	 ( t2 == mlstrustedobject ));
++
++mlsconstrain { tuple } { use select }
++	(( l1 dom l2 ) or
++	 (( t1 == mlsdatabasereadtoclr ) and ( h1 dom l2 )) or
++	 ( t1 == mlsdatabaseread ) or
++	 ( t2 == mlstrustedobject ));
++
++# the "single level" file "write" ops
++mlsconstrain { database table procedure column blob } { create drop setattr relabelfrom }
++	(( l1 eq l2 ) or
++	 (( t1 == mlsdatabasewritetoclr ) and ( h1 dom l2 ) and ( l1 domby l2 )) or
++	 (( t2 == mlsdatabasewriteinrange ) and ( l1 dom l2 ) and ( h1 domby h2 )) or
++	 ( t1 == mlsdatabasewrite ) or
++	 ( t2 == mlstrustedobject ));
++
++mlsconstrain { database } { install_module load_module set_param }
++	(( l1 eq l2 ) or
++	 (( t1 == mlsdatabasewritetoclr ) and ( h1 dom l2 ) and ( l1 domby l2 )) or
++	 (( t2 == mlsdatabasewriteinrange ) and ( l1 dom l2 ) and ( h1 domby h2 )) or
++	 ( t1 == mlsdatabasewrite ) or
++	 ( t2 == mlstrustedobject ));
++
++mlsconstrain { table } { update insert delete lock }
++	(( l1 eq l2 ) or
++	 (( t1 == mlsdatabasewritetoclr ) and ( h1 dom l2 ) and ( l1 domby l2 )) or
++	 (( t2 == mlsdatabasewriteinrange ) and ( l1 dom l2 ) and ( h1 domby h2 )) or
++	 ( t1 == mlsdatabasewrite ) or
++	 ( t2 == mlstrustedobject ));
++
++mlsconstrain { column } { update insert }
++	(( l1 eq l2 ) or
++	 (( t1 == mlsdatabasewritetoclr ) and ( h1 dom l2 ) and ( l1 domby l2 )) or
++	 (( t2 == mlsdatabasewriteinrange ) and ( l1 dom l2 ) and ( h1 domby h2 )) or
++	 ( t1 == mlsdatabasewrite ) or
++	 ( t2 == mlstrustedobject ));
++
++mlsconstrain { blob } { write import export }
++	(( l1 eq l2 ) or
++	 (( t1 == mlsdatabasewritetoclr ) and ( h1 dom l2 ) and ( l1 domby l2 )) or
++	 (( t2 == mlsdatabasewriteinrange ) and ( l1 dom l2 ) and ( h1 domby h2 )) or
++	 ( t1 == mlsdatabasewrite ) or
++	 ( t2 == mlstrustedobject ));
++
++mlsconstrain { tuple } { relabelfrom update insert delete }
++	(( l1 eq l2 ) or
++	 (( t1 == mlsdatabasewritetoclr ) and ( h1 dom l2 ) and ( l1 domby l2 )) or
++	 (( t2 == mlsdatabasewriteinrange ) and ( l1 dom l2 ) and ( h1 domby h2 )) or
++	 ( t1 == mlsdatabasewrite ) or
++	 ( t2 == mlstrustedobject ));
++
++# the database upgrade/downgrade rule
++mlsvalidatetrans { database table procedure column tuple blob }
++	((( l1 eq l2 ) or
++	  (( t3 == mlsdatabaseupgrade ) and ( l1 domby l2 )) or
++	  (( t3 == mlsdatabasedowngrade ) and ( l1 dom l2 )) or
++	  (( t3 == mlsdatabasedowngrade ) and ( l1 incomp l2 ))) and
++	 (( l1 eq h2 ) or
++	  (( t3 == mlsdatabaseupgrade ) and ( h1 domby h2 )) or
++	  (( t3 == mlsdatabasedowngrade ) and ( h1 dom h2 )) or
++	  (( t3 == mlsdatabasedowngrade ) and ( h1 incomp h2 ))));
++
+ ') dnl end enable_mls
+diff -rNU3 serefpolicy-2.6.4/policy/modules/kernel/mls.if serefpolicy-2.6.4.sepgsql/policy/modules/kernel/mls.if
+--- serefpolicy-2.6.4/policy/modules/kernel/mls.if	2007-07-15 01:11:15.000000000 +0900
++++ serefpolicy-2.6.4.sepgsql/policy/modules/kernel/mls.if	2007-07-15 01:11:51.000000000 +0900
+@@ -426,6 +426,82 @@
+ 
+ ########################################
+ ## <summary>
++##      Make specified domain MLS trusted
++##      for reading from databases at higher levels.
++## </summary>
++## <param name="domain">
++##      <summary>
++##      Domain allowed access.
++##      </summary>
++## </param>
++#
++interface(`mls_database_read_up',`
++	gen_require(`
++		attribute mlsdatabaseread;
++	')
++
++	typeattribute $1 mlsdatabaseread;
++')
++
++########################################
++## <summary>
++##       Make specified domain MLS trusted
++##       for writing to databases at lower levels.
++## </summary>
++## <param name="domain">
++##      <summary>
++##      Domain allowed access.
++##      </summary>
++## </param>
++#
++interface(`mls_database_write_down',`
++	gen_require(`
++		attribute mlsdatabasewrite;
++	')
++
++	typeattribute $1 mlsdatabasewrite;
++')
++
++########################################
++## <summary>
++##      Make specified domain MLS trusted
++##      for raising the level of databases.
++## </summary>
++## <param name="domain">
++##      <summary>
++##      Domain allowed access.
++##      </summary>
++## </param>
++#
++interface(`mls_database_upgrade',`
++	gen_require(`
++		attribute mlsdatabaseupgrade;
++	')
++
++	typeattribute $1 mlsdatabaseupgrade;
++')
++
++########################################
++## <summary>
++##      Make specified domain MLS trusted
++##      for lowering the level of databases.
++## </summary>
++## <param name="domain">
++##      <summary>
++##      Domain allowed access.
++##      </summary>
++## </param>
++#
++interface(`mls_database_downgrade',`
++	gen_require(`
++		attribute mlsdatabasedowngrade;
++	')
++
++	typeattribute $1 mlsdatabasedowngrade;
++')
++
++########################################
++## <summary>
+ ##	Make specified object MLS trusted.
+ ## </summary>
+ ## <desc>
+diff -rNU3 serefpolicy-2.6.4/policy/modules/kernel/mls.te serefpolicy-2.6.4.sepgsql/policy/modules/kernel/mls.te
+--- serefpolicy-2.6.4/policy/modules/kernel/mls.te	2007-07-15 01:11:15.000000000 +0900
++++ serefpolicy-2.6.4.sepgsql/policy/modules/kernel/mls.te	2007-07-15 01:11:51.000000000 +0900
+@@ -44,6 +44,14 @@
+ attribute mlsxwinwritecolormap;
+ attribute mlsxwinwritexinput;
+ 
++attribute mlsdatabaseread;
++attribute mlsdatabasereadtoclr;
++attribute mlsdatabasewrite;
++attribute mlsdatabasewritetoclr;
++attribute mlsdatabasewriteinrange;
++attribute mlsdatabaseupgrade;
++attribute mlsdatabasedowngrade;
++
+ # Object attributes that allow MLS overrides for access by all subjects
+ attribute mlsrangedobject;
+ attribute mlstrustedobject;
