@@ -70,8 +70,8 @@ autoconf
 %endif
                 --prefix=%{_prefix}
 # parallel build, if possible
-NCPUS=`grep -c ^processor /proc/cpuinfo`
-make CUSTOM_COPT='%%__default_custom_copt__%%' -j ${NCPUS}
+SECCLASS_DATABASE=`grep ^define /usr/share/selinux/devel/include/support/all_perms.spt | cat -n | grep all_database_perms | awk '{print $1}'`
+make CUSTOM_COPT="%%__default_custom_copt__%% -D SECCLASS_DATABASE=${SECCLASS_DATABASE}" %{?_smp_mflags}
 
 %install
 rm -rf %{buildroot}
@@ -112,7 +112,7 @@ if [ $1 -eq 1 ]; then           # rpm -i cases
 fi
 
 %post
-/sbin/chkconfig --add sepostgresql
+/sbin/chkconfig --add %{name}
 /sbin/ldconfig
 
 for selinuxvariant in %{selinux_variants}
@@ -128,9 +128,18 @@ done
 
 /etc/init.d/sepostgresql condrestart || :
 
+%preun
+if [ $1 -eq 0 ]; then
+    /etc/init.d/sepostgresql condstop
+    /sbin/chkconfig --del %{name}
+fi
+
 %postun
 /sbin/ldconfig
-if [ $1 -eq 0 ]; then           # rpm -e cases
+if [ $1 -ge 1 ]; then           # rpm -U case
+    /etc/init.d/sepostgresql condrestart
+fi
+if [ $1 -eq 0 ]; then           # rpm -e case
     userdel  sepgsql &> /dev/null || :
     groupdel sepgsql &> /dev/null || :
     for selinuxvariant in %{selinux_variants}
@@ -180,6 +189,9 @@ fi
 /var/lib/sepgsql/.bash_profile
 
 %changelog
+* Sun Jul  1 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.398
+- SECCLASS_DATABASE is updated (fc7->62, fc6->61)
+
 * Sun Jul  1 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.391
 - Mark as a beta version.
 

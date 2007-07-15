@@ -104,7 +104,7 @@ cat scripts/sepostgresql.spec | \
 
 cp policy/sepostgresql.if policy/sepostgresql.fc ${RPMSOURCE}
 cat policy/sepostgresql.te | \
-    sed "s/%%POLICY_VERSION%%/${SEPGVERSION}.${SEPGREVISION}/g" > ${RPMSOURCE}/sepostgresql.te
+    sed "s/%%POLICY_VERSION%%/${SEPGVERSION}.${SEPGVERSION_MINOR}/g" > ${RPMSOURCE}/sepostgresql.te
 
 tar zxf "${SEPGSQL_BASETGZ}" || exit 1
 

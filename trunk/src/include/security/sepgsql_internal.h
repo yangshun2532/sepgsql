@@ -74,7 +74,9 @@
 			  (att)->attisdropped ? 'y' : 'n', (att)->attislocal ? 'y' : 'n', (att)->attinhcount)
 
 /* object classes and access vectors are not included, in default */
+#ifndef SECCLASS_DATABASE
 #define SECCLASS_DATABASE			(61)	/* next to SECCLASS_DCCP_SOCKET */
+#endif
 #define SECCLASS_TABLE				(SECCLASS_DATABASE + 1)
 #define SECCLASS_PROCEDURE			(SECCLASS_DATABASE + 2)
 #define SECCLASS_COLUMN				(SECCLASS_DATABASE + 3)
