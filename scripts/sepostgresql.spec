@@ -33,7 +33,7 @@ Source5: sepostgresql.8
 Patch0: sepostgresql-%{version}-%{release}.patch
 Conflicts: postgresql-server
 Buildrequires: checkpolicy libselinux-devel >= %%__default_libselinux_version__%% selinux-policy-devel = %%__default_sepgpolversion__%%
-Requires: policycoreutils >= %%__default_policycoreutils_version__%% libselinux >= %%__default_libselinux_version__%% selinux-policy = %%__default_sepgpolversion__%% libpq.so
+Requires: policycoreutils >= %%__default_policycoreutils_version__%% libselinux >= %%__default_libselinux_version__%% selinux-policy = %%__default_sepgpolversion__%%
 
 %description
 Security Enhanced PostgreSQL is an extension of PostgreSQL
@@ -62,12 +62,12 @@ popd
 
 # build SE-PostgreSQL
 autoconf
-%configure      --disable-rpath     \
-                --enable-selinux    \
+%configure      --enable-selinux                \
 %if %{defined sepgextension}
-                --enable-debug      \
-                --enable-cassert    \
+                --enable-debug                  \
+                --enable-cassert                \
 %endif
+                --libdir=%{_libdir}/sepgsql     \
                 --datadir=%{_datadir}/sepgsql
 # parallel build, if possible
 SECCLASS_DATABASE=`grep ^define /usr/share/selinux/devel/include/support/all_perms.spt | cat -n | grep all_database_perms | awk '{print $1}'`
@@ -190,6 +190,7 @@ fi
 %{_datadir}/sepgsql/conversion_create.sql
 %{_datadir}/sepgsql/information_schema.sql
 %{_datadir}/sepgsql/sql_features.txt
+%{_libdir}/sepgsql/libpq.so*
 %{_libdir}/sepgsql/plpgsql.so
 %{_libdir}/sepgsql/*_and_*.so
 %attr(644,root,root) %{_policydir}/*/sepostgresql.pp
@@ -199,7 +200,7 @@ fi
 /var/lib/sepgsql/.bash_profile
 
 %changelog
-* Mon Jul 23 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.400
+* Mon Jul 23 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.401
 - add manpage of sepostgresql
 - fix specfile convention for Fedora suitable
 
