@@ -1,0 +1,92 @@
+.TH "sepostgresql" "8" "Jul 15 2007" "kaigai@kaigai.gr.jp" "Security-Enhanced PostgreSQL"
+
+.SH "NAME"
+sepostgresql \- Security-Enhances PostgreSQL
+
+.SH "DESCRIPTION"
+Security-Enhanced PostgreSQL (SE-PostgreSQL) is an enhancement of PostgreSQL, to apply fine grained mandatory access control for database objects based on the security policy of SELinux. 
+These features enable to apply flexible integrated access control policy between operating system and database management system, during all stages of the life of the information.
+.PP
+This document describes the way to customize SE-PostgreSQL on the default security policy.
+
+.SH "BOOLEANS"
+The SELinux policy is customizable via BOOLEAN variable. This variable has two states, 1 (on) or 0 (off). A part of the policy is enabled or disabled depending on related boolean variables.
+
+\fBsepgsql_enable_unconfined\fP toggles whether \fIunconfined_t\fP and \fIsysadm_t\fP domains are allowed to access database objects without any restruction on type enforcement, or not.
+When \fIsepgsql_enable_unconfined\fP is off, those domains are also restricted its operation as other domains begin applied. In the default, it is set to on.
+You can set it as follows:
+
+.EX
+setsebool -P sepgsql_enable_unconfined ( \fBon\fP | off )
+.EE
+
+\fBsepgsql_enable_users_ddl\fP toggles whether non-administrative domain is allowed to use DDL statement like CREATE TABLE and so on.
+In the default, it is set to on. You can set it as follows:
+
+.EX
+setsebool -P sepgsql_enable_users_ddl ( \fBon\fP | off )
+.EE
+
+\fBsepgsql_enable_auditallow\fP toggles output of audit messages in the case when required permission checks are allowed. In the default, it is set to off. You can set it as follows:
+
+.EX
+setsebool -P sepgsql_enable_auditallow ( on | \fBoff\fP )
+.EE
+
+\fBsepgsql_enable_auditdeny\fP toggles output of audit messages in the case when required permission checks are denied. In the default, it is set to on. You can set it as follows:
+
+.EX
+setsebool -P sepgsql_enable_auditdeny ( \fBon\fP | off )
+.EE
+
+\fBsepgsql_enable_audittuple\fP toggles output of audit messages for any tuple. Because audit messages for tuples in a large size table can cause flood of messages, we can set \fIsepgsql_enable_audittuple\fP independently from any other object classes.
+Audit messages for tuples are generated in the only case when \fIsepgsql_enable_audittuple\fP and either \fIsepgsql_enable_auditallow\fP or \fIsepgsql_enable_auditdeny\fP are enabled.
+In the default, it is set to off. You can set it as follows:
+
+.EX
+setsebool -P sepgsql_enable_audittuple ( on | \fBoff\fP )
+.EE
+
+.SH "TYPES"
+
+\fBsepgsql_db_t\fP is a only type for database itself.
+It is attched for newly created databases in the default.
+
+\fBsepgsql_table_t\fP is a type for tables, columns and tuples.
+It is attached for newly created the objects in the default.
+Non-administrative clients can do any kinds of operations except for relabeling.
+
+\fBsepgsql_secret_table_t\fP is a type for tables, columns and tuples.
+Non-administrative clients cannot access the objects with this type.
+
+\fBsepgsql_ro_table_t\fP is a type for read-only tables, columns and tuples.
+Non-administrative clients cannot modify the objects with this type.
+
+\fBsepgsql_fixed_table_t\fP is a type for non-manupulatable tables, columns and tuples.
+Non-administrative clients cannot update or delete the objects with this type.
+
+\fBsepgsql_proc_t\fP is a type for procedures.
+It is attached for newly created procedures by adminictrative domain.
+Any client can call these procedures with this type.
+
+\fBsepgsql_userproc_t\fP is a type for procedures.
+It is attached for newly created procedures by non-administrative domain.
+Administrative domains cannot call the procedure for safety. He have to relabel it into \fIfBsepgsql_proc_t\fP at first. It is a policy to avoid to execute doubtful code under administrative domain.
+
+\fBsepgsql_trusted_proc_t\fP is a type for trusted procedures.
+Calling procedures with this type invokes domain transition.
+Then the function works as an administrative domain, so database administrator can provide limited path to access protected object.
+
+\fBsepgsql_blob_t\fP is a type for binary large objects (blob).
+It is attached for newly created blob in the default.
+Non-administrative clients can read and write the blobs with this type.
+
+\fBsepgsql_ro_blob_t\fP is a type for read-only binary large objects (blob).
+Non-administrative clients cannot write the blobs with this type.
+
+.SH AUTHOR	
+This manual page was written by KaiGai Kohei <kaigai@kaigai.gr.jp>
+
+.SH "SEE ALSO"
+
+selinux(8), boolean(8)
