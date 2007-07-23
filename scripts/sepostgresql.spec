@@ -7,11 +7,10 @@
 %{!?sepgversion:%define sepgversion %%__default_sepgversion__%%}
 %{!?sepgversion_minor:%define sepgversion_minor %%__default_sepgversion_minor__%%}
 %%__default_sepgextension__%%
-%define _policydir    /usr/share/selinux
-%define _prefix       /opt/sepgsql
 
-# definition of SELinux policy types
-%define selinux_variants mls strict targeted 
+# defines for SELinux policy location
+%define _policydir    /usr/share/selinux
+%define selinux_variants mls strict targeted
 
 # SE-PostgreSQL requires only server side files
 %define _unpackaged_files_terminate_build 0
@@ -30,10 +29,11 @@ Source1: sepostgresql.init
 Source2: sepostgresql.if
 Source3: sepostgresql.te
 Source4: sepostgresql.fc
+Source5: sepostgresql.8
 Patch0: sepostgresql-%{version}-%{release}.patch
-
+Conflicts: postgresql-server
 Buildrequires: checkpolicy libselinux-devel >= %%__default_libselinux_version__%% selinux-policy-devel = %%__default_sepgpolversion__%%
-Requires: policycoreutils >= %%__default_policycoreutils_version__%% libselinux >= %%__default_libselinux_version__%% selinux-policy = %%__default_sepgpolversion__%%
+Requires: policycoreutils >= %%__default_policycoreutils_version__%% libselinux >= %%__default_libselinux_version__%% selinux-policy = %%__default_sepgpolversion__%% libpq.so
 
 %description
 Security Enhanced PostgreSQL is an extension of PostgreSQL
@@ -62,13 +62,13 @@ popd
 
 # build SE-PostgreSQL
 autoconf
-%configure      --enable-selinux \
-                --host=%{_host} --build=%{_build} \
+%configure      --disable-rpath     \
+                --enable-selinux    \
 %if %{defined sepgextension}
-                --enable-debug \
-                --enable-cassert \
+                --enable-debug      \
+                --enable-cassert    \
 %endif
-                --prefix=%{_prefix}
+                --datadir=%{_datadir}/sepgsql
 # parallel build, if possible
 SECCLASS_DATABASE=`grep ^define /usr/share/selinux/devel/include/support/all_perms.spt | cat -n | grep all_database_perms | awk '{print $1}'`
 make CUSTOM_COPT="%%__default_custom_copt__%% -D SECCLASS_DATABASE=${SECCLASS_DATABASE}" %{?_smp_mflags}
@@ -87,6 +87,10 @@ popd
 
 make DESTDIR=%{buildroot} install
 
+# to avoid conflicts with postgresql package
+mv %{buildroot}/%{_bindir}/pg_dump     %{buildroot}/%{_bindir}/sepg_dump
+mv %{buildroot}/%{_bindir}/pg_dumpall  %{buildroot}/%{_bindir}/sepg_dumpall
+
 install -d -m 700 %{buildroot}/var/lib/sepgsql
 install -d -m 700 %{buildroot}/var/lib/sepgsql/data
 install -d -m 700 %{buildroot}/var/lib/sepgsql/backups
@@ -98,18 +102,21 @@ install -d -m 700 %{buildroot}/var/lib/sepgsql/backups
  echo "export PATH=%{_bindir}:\${PATH}"
 ) > %{buildroot}/var/lib/sepgsql/.bash_profile
 
-mkdir -p $RPM_BUILD_ROOT/etc/rc.d/init.d
-install -m 755 %{SOURCE1} $RPM_BUILD_ROOT/etc/rc.d/init.d/sepostgresql
+mkdir -p %{buildroot}/etc/rc.d/init.d
+install -m 755 %{SOURCE1} %{buildroot}/etc/rc.d/init.d/sepostgresql
+
+mkdir -p %{buildroot}%{_mandir}/man8
+install -m 644 %{SOURCE5} %{buildroot}%{_mandir}/man8
 
 %clean
 rm -rf $RPM_BUILD_ROOT
 
 %pre
-if [ $1 -eq 1 ]; then           # rpm -i cases
-    (id -g sepgsql || groupadd -r sepgsql || : ) &> /dev/null
-    (id -u sepgsql || useradd -g sepgsql -d /var/lib/sepgsql -s /bin/bash \
-                              -r -c "SE-PostgreSQL server" sepgsql || : ) &> /dev/null
-fi
+id -g sepgsql >& /dev/null \
+    || groupadd -r sepgsql >& /dev/null || :
+id -u sepgsql >&/dev/null   \
+    || useradd -g sepgsql -d /var/lib/sepgsql -s /bin/bash \
+               -r -c "SE-PostgreSQL server" sepgsql >& /dev/null || :
 
 %post
 /sbin/chkconfig --add %{name}
@@ -117,16 +124,16 @@ fi
 
 for selinuxvariant in %{selinux_variants}
 do
+    /usr/sbin/semodule -s ${selinuxvariant} -l >& /dev/null || continue;
+
     /usr/sbin/semodule -s ${selinuxvariant} -l | egrep -q '^%{name}' && \
-        /usr/sbin/semodule -s ${selinuxvariant} -r %{name} &> /dev/null || :
-    /usr/sbin/semodule -s ${selinuxvariant} -i \
-         %{_policydir}/${selinuxvariant}/%{name}.pp &> /dev/null || :
+        /usr/sbin/semodule -s ${selinuxvariant} -r %{name} >& /dev/null || :
+    /usr/sbin/semodule -s ${selinuxvariant} -i %{_policydir}/${selinuxvariant}/%{name}.pp >& /dev/null || :
 done
+
 # Fix up non-standard file contexts
 /sbin/fixfiles -R %{name} restore || :
 /sbin/restorecon -R /var/lib/sepgsql || :
-
-/etc/init.d/sepostgresql condrestart || :
 
 %preun
 if [ $1 -eq 0 ]; then
@@ -140,22 +147,22 @@ if [ $1 -ge 1 ]; then           # rpm -U case
     /etc/init.d/sepostgresql condrestart
 fi
 if [ $1 -eq 0 ]; then           # rpm -e case
-    userdel  sepgsql &> /dev/null || :
-    groupdel sepgsql &> /dev/null || :
+    userdel  sepgsql >/dev/null 2>&1 || :
+    groupdel sepgsql >/dev/null 2>&1 || :
     for selinuxvariant in %{selinux_variants}
     do
+        /usr/sbin/semodule -s ${selinuxvariant} -l >& /dev/null || continue;
+
         /usr/sbin/semodule -s ${selinuxvariant} -l | egrep -q '^%{name}' && \
-            /usr/sbin/semodule -s ${selinuxvariant} -r %{name} &> /dev/null || :
+            /usr/sbin/semodule -s ${selinuxvariant} -r %{name} >& /dev/null || :
     done
     /sbin/fixfiles -R %{name} restore || :
-    test -d /var/lib/sepgsql && /sbin/restorecon -R /var/lib/sepgsql &> /dev/null || :
+    test -d /var/lib/sepgsql && /sbin/restorecon -R /var/lib/sepgsql || :
 fi
 
 %files
 %defattr(-,root,root,-)
 /etc/rc.d/init.d/sepostgresql
-%dir %{_prefix}
-%dir %{_bindir}
 %{_bindir}/initdb
 %{_bindir}/ipcclean
 %{_bindir}/pg_controldata
@@ -163,25 +170,28 @@ fi
 %{_bindir}/pg_resetxlog
 %{_bindir}/postgres
 %{_bindir}/postmaster
-%{_bindir}/pg_dump
-%{_bindir}/pg_dumpall
-%{_bindir}/pg_restore
-%dir %{_datadir}
-%{_datadir}/postgres.bki
-%{_datadir}/postgres.description
-%{_datadir}/postgres.shdescription
-%{_datadir}/system_views.sql
-%{_datadir}/*.sample
-%{_datadir}/timezone/
-%{_datadir}/timezonesets/
-%{_datadir}/conversion_create.sql
-%{_datadir}/information_schema.sql
-%{_datadir}/sql_features.txt
-%dir %{_libdir}
-%{_libdir}/plpgsql.so
-%{_libdir}/libpq.*
-%{_libdir}/libpgtypes.*
-%{_libdir}/*_and_*.so
+%{_bindir}/sepg_dump
+%{_bindir}/sepg_dumpall
+%{_mandir}/man1/initdb.*
+%{_mandir}/man1/ipcclean.*
+%{_mandir}/man1/pg_controldata.*
+%{_mandir}/man1/pg_ctl.*
+%{_mandir}/man1/pg_resetxlog.*
+%{_mandir}/man1/postgres.*
+%{_mandir}/man1/postmaster.*
+%{_mandir}/man8/sepostgresql.*
+%{_datadir}/sepgsql/postgres.bki
+%{_datadir}/sepgsql/postgres.description
+%{_datadir}/sepgsql/postgres.shdescription
+%{_datadir}/sepgsql/system_views.sql
+%{_datadir}/sepgsql/*.sample
+%{_datadir}/sepgsql/timezone/
+%{_datadir}/sepgsql/timezonesets/
+%{_datadir}/sepgsql/conversion_create.sql
+%{_datadir}/sepgsql/information_schema.sql
+%{_datadir}/sepgsql/sql_features.txt
+%{_libdir}/sepgsql/plpgsql.so
+%{_libdir}/sepgsql/*_and_*.so
 %attr(644,root,root) %{_policydir}/*/sepostgresql.pp
 %attr(700,sepgsql,sepgsql) %dir /var/lib/sepgsql
 %attr(700,sepgsql,sepgsql) %dir /var/lib/sepgsql/data
@@ -189,7 +199,11 @@ fi
 /var/lib/sepgsql/.bash_profile
 
 %changelog
-* Sun Jul  1 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.398
+* Mon Jul 23 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.400
+- add manpage of sepostgresql
+- fix specfile convention for Fedora suitable
+
+* Sun Jul 15 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.398
 - SECCLASS_DATABASE is updated (fc7->62, fc6->61)
 
 * Sun Jul  1 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.391

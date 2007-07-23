@@ -106,6 +106,8 @@ cp policy/sepostgresql.if policy/sepostgresql.fc ${RPMSOURCE}
 cat policy/sepostgresql.te | \
     sed "s/%%POLICY_VERSION%%/${SEPGVERSION}.${SEPGVERSION_MINOR}/g" > ${RPMSOURCE}/sepostgresql.te
 
+cp scripts/sepostgresql.8 ${RPMSOURCE}
+
 tar zxf "${SEPGSQL_BASETGZ}" || exit 1
 
 rm -f postgresql-${BASEVERSION}/configure

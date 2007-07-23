@@ -24,7 +24,7 @@ if [ ${NAME:0:1} = "S" -o ${NAME:0:1} = "K" ]; then
 fi
 
 # set defaults for configurable variables
-SEPGSQL_BIN="/opt/sepgsql/bin"
+SEPGSQL_BIN="/usr/bin"
 SEPGSQL_DATA="/var/lib/sepgsql/data"
 SEPGSQL_PORT=5432
 SEPGSQL_OPTS="-i"
