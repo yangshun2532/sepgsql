@@ -71,7 +71,7 @@ Any client can call these procedures with this type.
 
 \fBsepgsql_userproc_t\fP is a type for procedures.
 It is attached for newly created procedures by non-administrative domain.
-Administrative domains cannot call the procedure for safety. He have to relabel it into \fIfBsepgsql_proc_t\fP at first. It is a policy to avoid to execute doubtful code under administrative domain.
+Administrative domains cannot call the procedure for safety. He have to relabel it into \fIsepgsql_proc_t\fP at first. It is a policy to avoid to execute doubtful code under administrative domain.
 
 \fBsepgsql_trusted_proc_t\fP is a type for trusted procedures.
 Calling procedures with this type invokes domain transition.
