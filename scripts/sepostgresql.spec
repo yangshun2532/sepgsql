@@ -32,6 +32,7 @@ Source4: sepostgresql.fc
 Source5: sepostgresql.8
 Patch0: sepostgresql-%{version}-%{release}.patch
 Conflicts: postgresql-server
+AutoProv: no
 Buildrequires: checkpolicy libselinux-devel >= %%__default_libselinux_version__%% selinux-policy-devel = %%__default_sepgpolversion__%%
 Requires: policycoreutils >= %%__default_policycoreutils_version__%% libselinux >= %%__default_libselinux_version__%% selinux-policy = %%__default_sepgpolversion__%%
 
@@ -200,7 +201,7 @@ fi
 /var/lib/sepgsql/.bash_profile
 
 %changelog
-* Mon Jul 23 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.401
+* Mon Jul 23 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.402
 - add manpage of sepostgresql
 - fix specfile convention for Fedora suitable
 
