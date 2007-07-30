@@ -23,6 +23,9 @@ elif rpm -qp --qf "%{release}" "${SRPMFILE}" | egrep -q '\.fc7$'; then
     # Fedora 7
     POLICY_98="refpolicy-add-sepgsql-definitions.fedora7.patch"
     POLICY_99="refpolicy-add-userdomain-pgsql-connect.fedora7.patch"
+elif rpm -qp --qf "%{release}" "${SRPMFILE}" | egrep -q '\.fc8$'; then
+    # Fedora 8 (rawhide)
+    POLICY_98="refpolicy-add-sepgsql-definitions.fedora8.patch"
 else
     echo "unknown distribution: ${SRPMFILE}"
     exit 1
