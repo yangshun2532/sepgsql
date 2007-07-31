@@ -1,12 +1,7 @@
 policy_module(sepostgresql, %%POLICY_VERSION%%)
 
 gen_require(`
-	class database all_database_perms;
-	class table all_table_perms;
-	class column all_column_perms;
-	class tuple all_tuple_perms;
-	class procedure all_procedure_perms;
-	class blob all_blob_perms;
+	all_userspace_class_perms
 
 	type postgresql_t;
 	type lib_t, shlib_t;
@@ -20,11 +15,17 @@ gen_require(`
 #
 # Declarations
 #
+
+# ---- Booleans ----
 gen_tunable(sepgsql_enable_unconfined, true)
 gen_tunable(sepgsql_enable_auditallow, false)
 gen_tunable(sepgsql_enable_auditdeny,  true)
 gen_tunable(sepgsql_enable_audittuple, false)
 gen_tunable(sepgsql_enable_users_ddl,  true)
+
+# ---- Database client type ----
+attribute sepgsql_admin_domain;
+attribute sepgsql_users_domain;
 
 # ---- Database object type ----
 attribute sepgsql_server_type;
@@ -85,33 +86,18 @@ optional_policy(`
 	')
 	sepgsql_server_domain(postgresql_t)
 ')
-allow sepgsql_server_type sepgsql_database_type : database { create drop getattr setattr };
-allow sepgsql_server_type sepgsql_table_type : table { create drop getattr setattr };
-allow sepgsql_server_type sepgsql_table_type : column { create drop getattr setattr };
-allow sepgsql_server_type sepgsql_table_type : tuple { insert delete select update };
-allow sepgsql_server_type sepgsql_procedure_type : procedure { create drop getattr setattr };
-allow sepgsql_server_type sepgsql_blob_type : blob { create drop getattr setattr read write };
-
-allow sepgsql_server_type self:netlink_selinux_socket create_socket_perms;
-selinux_get_fs_mount(sepgsql_server_type)
-selinux_get_enforce_mode(sepgsql_server_type)
-selinux_validate_context(sepgsql_server_type)
-selinux_compute_access_vector(sepgsql_server_type)
-selinux_compute_create_context(sepgsql_server_type)
-selinux_compute_relabel_context(sepgsql_server_type)
-sepgsql_unconfined_domain(sepgsql_server_type)
 
 ########################################
 #
 # SE-PostgreSQL client domains
 #
 
-# -- unconfined_domain_type --
+# -- unconfined_t --
 optional_policy(`
 	gen_require(`
-		attribute unconfined_domain_type;
+		type unconfined_t;
 	')
-	sepgsql_unconfined_domain(unconfined_domain_type)
+	sepgsql_unconfined_domain(unconfined_t)
 ')
 
 # -- sysadm_t --
@@ -122,22 +108,39 @@ optional_policy(`
 	sepgsql_unconfined_domain(sysadm_t)
 ')
 
-# -- unpriv_userdomain (user_t, staff_t) --
+# -- user_t --
 optional_policy(`
 	gen_require(`
-		attribute unpriv_userdomain;
+		type user_t;
 	')
-	sepgsql_client_domain(unpriv_userdomain)
+	sepgsql_client_domain(user_t)
 ')
 
-# -- PHP script --
+# -- staff_t --
+optional_policy(`
+	gen_require(`
+		type staff_t;
+	')
+	sepgsql_client_domain(staff_t)
+')
+
+# -- guest_t --
+optional_policy(`
+	gen_require(`
+		type guest_t;
+	')
+	sepgsql_client_domain(guest_t)
+')
+
+# -- httpd_t (PHP script) --
 optional_policy(`
 	gen_require(`
 		type httpd_t;
 	')
 	sepgsql_client_domain(httpd_t)
 ')
-# -- CGI script --
+
+# -- httpd_sys_script_t (CGI script) --
 optional_policy(`
 	gen_require(`
 		type httpd_sys_script_t;
@@ -147,19 +150,108 @@ optional_policy(`
 
 ########################################
 #
-# SE-PostgreSQL loadable shared library policy
-#
-
-allow sepgsql_database_type sepgsql_module_type : database { load_module };
-
-########################################
-#
 # SE-PostgreSQL Type Transition
 #
 type_transition domain domain : database sepgsql_db_t;
 type_transition { domain - sepgsql_server_type } sepgsql_database_type : table sepgsql_table_t;
 type_transition sepgsql_server_type sepgsql_database_type : table sepgsql_sysobj_t;
 type_transition domain sepgsql_database_type : blob sepgsql_blob_t;
+
+########################################
+#
+# SE-PostgreSQL policy for server domain
+#
+allow sepgsql_server_type self : netlink_selinux_socket create_socket_perms;
+selinux_get_fs_mount(sepgsql_server_type)
+selinux_get_enforce_mode(sepgsql_server_type)
+selinux_validate_context(sepgsql_server_type)
+selinux_compute_access_vector(sepgsql_server_type)
+selinux_compute_create_context(sepgsql_server_type)
+selinux_compute_relabel_context(sepgsql_server_type)
+
+allow sepgsql_server_type sepgsql_database_type : database all_database_perms;
+allow sepgsql_server_type sepgsql_module_type : database { install_module };
+allow sepgsql_server_type sepgsql_table_type : table all_table_perms;
+allow sepgsql_server_type sepgsql_table_type : column all_column_perms;
+allow sepgsql_server_type sepgsql_table_type : tuple all_tuple_perms;
+allow sepgsql_server_type sepgsql_procedure_type : procedure all_procedure_perms;
+allow sepgsql_server_type sepgsql_blob_type : blob all_blob_perms;
+# type transition for procedure
+type_transition sepgsql_server_type sepgsql_database_type : procedure sepgsql_proc_t;
+
+########################################
+#
+# SE-PostgreSQL policy for administrative domain
+#
+tunable_policy(`sepgsql_enable_unconfined',`
+	allow sepgsql_admin_domain sepgsql_database_type : database all_database_perms;
+	allow sepgsql_admin_domain sepgsql_module_type : database { install_module };
+	allow sepgsql_admin_domain sepgsql_table_type : table all_table_perms;
+	allow sepgsql_admin_domain sepgsql_table_type : column all_column_perms;
+	allow sepgsql_admin_domain sepgsql_table_type : tuple all_tuple_perms;
+	allow sepgsql_admin_domain { sepgsql_procedure_type - sepgsql_user_proc_t } : procedure all_procedure_perms;
+	allow sepgsql_admin_domain sepgsql_user_proc_t : procedure { create drop getattr setattr relabelfrom relabelto };
+	allow sepgsql_admin_domain sepgsql_blob_type : blob all_blob_perms;
+	allow sepgsql_admin_domain sepgsql_server_type : blob { import export };
+	# type transition for procedure
+	type_transition sepgsql_admin_domain sepgsql_database_type : procedure sepgsql_proc_t;
+',`
+	# type transition for procedure
+	type_transition sepgsql_admin_domain sepgsql_database_type : procedure sepgsql_user_proc_t;	
+')
+
+########################################
+#
+# SE-PostgreSQL policy for generic domain
+#
+
+allow sepgsql_users_domain sepgsql_db_t : database { getattr access };
+
+allow sepgsql_users_domain sepgsql_table_t : table { getattr use select update insert delete };
+allow sepgsql_users_domain sepgsql_table_t : column { getattr use select update insert };
+allow sepgsql_users_domain sepgsql_table_t : tuple { use select update insert delete };
+
+allow sepgsql_users_domain sepgsql_sysobj_t : table { getattr use select };
+allow sepgsql_users_domain sepgsql_sysobj_t : column { getattr use select };
+allow sepgsql_users_domain sepgsql_sysobj_t : tuple { use select };
+tunable_policy(`sepgsql_enable_users_ddl',`
+	allow sepgsql_users_domain sepgsql_table_t : table { create drop setattr };
+	allow sepgsql_users_domain sepgsql_table_t : column { create drop setattr };
+	allow sepgsql_users_domain sepgsql_sysobj_t : tuple { update insert delete };
+')
+
+allow sepgsql_users_domain sepgsql_secret_table_t : table { getattr };
+allow sepgsql_users_domain sepgsql_secret_table_t : column { getattr };
+
+allow sepgsql_users_domain sepgsql_ro_table_t : table { getattr use select };
+allow sepgsql_users_domain sepgsql_ro_table_t : column { getattr use select };
+allow sepgsql_users_domain sepgsql_ro_table_t : tuple { use select };
+
+allow sepgsql_users_domain sepgsql_fixed_table_t : table { getattr use select insert };
+allow sepgsql_users_domain sepgsql_fixed_table_t : column { getattr use select insert };
+allow sepgsql_users_domain sepgsql_fixed_table_t : tuple { use select insert };
+
+allow sepgsql_users_domain sepgsql_proc_t : procedure { getattr execute };
+allow sepgsql_users_domain sepgsql_user_proc_t : procedure { create drop getattr setattr execute };
+allow sepgsql_users_domain sepgsql_trusted_proc_t : procedure { getattr execute entrypoint };
+
+allow sepgsql_users_domain sepgsql_blob_t : blob { create drop getattr setattr read write };
+allow sepgsql_users_domain sepgsql_ro_blob_t : blob { getattr read };
+allow sepgsql_users_domain sepgsql_secret_blob_t : blob { getattr };
+
+# type transition for procedure
+type_transition { sepgsql_users_domain - sepgsql_admin_domain } sepgsql_database_type : procedure sepgsql_user_proc_t;
+
+# trusted procedure
+type_transition sepgsql_users_domain sepgsql_trusted_proc_t : process sepgsql_trusted_domain_t;
+allow sepgsql_users_domain sepgsql_trusted_domain_t : process { transition };
+
+########################################
+#
+# SE-PostgreSQL loadable shared library policy
+#
+
+allow sepgsql_database_type sepgsql_module_type : database { load_module };
 
 ########################################
 #
@@ -177,7 +269,6 @@ tunable_policy(`sepgsql_enable_auditallow',`
 tunable_policy(`sepgsql_enable_audittuple && sepgsql_enable_auditallow',`
 	auditallow domain sepgsql_table_type : tuple all_tuple_perms;
 ')
-
 tunable_policy(`! sepgsql_enable_auditdeny',`
 	dontaudit domain sepgsql_database_type : database all_database_perms;
 	dontaudit domain sepgsql_table_type : table all_table_perms;
