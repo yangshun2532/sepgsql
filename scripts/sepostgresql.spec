@@ -4,27 +4,25 @@
 # Copyright 2007 KaiGai Kohei <kaigai@kaigai.gr.jp>
 # -----------------------------------------------------
 
-%{!?sepgversion:%define sepgversion %%__default_sepgversion__%%}
-%{!?sepgversion_minor:%define sepgversion_minor %%__default_sepgversion_minor__%%}
-%%__default_sepgextension__%%
-
-# defines for SELinux policy location
-%define _policydir    /usr/share/selinux
+# SELinux policy types
 %define selinux_variants mls strict targeted
 
 # SE-PostgreSQL requires only server side files
 %define _unpackaged_files_terminate_build 0
 
+# SE-PostgreSQL status extension
+%%__default_sepgextension__%%
+
 Summary: Security Enhanced PostgreSQL
 Group: Applications/Databases
 Name: sepostgresql
 Version: %%__base_postgresql_version__%%
-Release: %{?sepgversion}.%{?sepgversion_minor}%{?sepgextension}%{?dist}
+Release: %%__default_sepgversion__%%.%%__default_sepgversion_minor__%%%{?sepgextension}%{?dist}
 License: BSD
 Group: Applications/Databases
 Url: http://code.google.com/p/sepgsql/
 Buildroot: %{_tmppath}/%{name}-%{version}-root
-Source0: postgresql-%{version}.tar.gz
+Source0: ftp://ftp.postgresql.org/pub/source/v%{version}/postgresql-%{version}.tar.gz
 Source1: sepostgresql.init
 Source2: sepostgresql.if
 Source3: sepostgresql.te
@@ -51,19 +49,26 @@ mkdir selinux-policy
 cp %{SOURCE2} %{SOURCE3} %{SOURCE4} selinux-policy
 
 %build
+CFLAGS="${CFLAGS:-%optflags}" ; export CFLAGS
+CXXFLAGS="${CXXFLAGS:-%optflags}" ; export CXXFLAGS
+
+# Strip out -ffast-math from CFLAGS....
+CFLAGS=`echo $CFLAGS|xargs -n 1|grep -v ffast-math|xargs -n 100`
+
 # build Binary Policy Module
 pushd selinux-policy
 for selinuxvariant in %{selinux_variants}
 do
-    make NAME=${selinuxvariant} -f /usr/share/selinux/devel/Makefile
+    make NAME=${selinuxvariant} -f %{_datadir}/selinux/devel/Makefile
     mv %{name}.pp %{name}.pp.${selinuxvariant}
-    make NAME=${selinuxvariant} -f /usr/share/selinux/devel/Makefile clean
+    make NAME=${selinuxvariant} -f %{_datadir}/selinux/devel/Makefile clean
 done
 popd
 
 # build SE-PostgreSQL
 autoconf
-%configure      --enable-selinux                \
+%configure      --disable-rpath                 \
+                --enable-selinux                \
 %if %{defined sepgextension}
                 --enable-debug                  \
                 --enable-cassert                \
@@ -71,7 +76,7 @@ autoconf
                 --libdir=%{_libdir}/sepgsql     \
                 --datadir=%{_datadir}/sepgsql
 # parallel build, if possible
-SECCLASS_DATABASE=`grep ^define /usr/share/selinux/devel/include/support/all_perms.spt | cat -n | grep all_database_perms | awk '{print $1}'`
+SECCLASS_DATABASE=`grep ^define %{_datadir}/selinux/devel/include/support/all_perms.spt | cat -n | grep all_database_perms | awk '{print $1}'`
 make CUSTOM_COPT="%%__default_custom_copt__%% -D SECCLASS_DATABASE=${SECCLASS_DATABASE}" %{?_smp_mflags}
 
 %install
@@ -80,9 +85,9 @@ rm -rf %{buildroot}
 pushd selinux-policy
 for selinuxvariant in %{selinux_variants}
 do
-    install -d %{buildroot}%{_policydir}/${selinuxvariant}
+    install -d %{buildroot}%{_datadir}/selinux/${selinuxvariant}
     install -p -m 644 %{name}.pp.${selinuxvariant} \
-        %{buildroot}%{_policydir}/${selinuxvariant}/%{name}.pp
+        %{buildroot}%{_datadir}/selinux/${selinuxvariant}/%{name}.pp
 done
 popd
 
@@ -95,16 +100,9 @@ mv %{buildroot}/%{_bindir}/pg_dumpall  %{buildroot}/%{_bindir}/sepg_dumpall
 install -d -m 700 %{buildroot}/var/lib/sepgsql
 install -d -m 700 %{buildroot}/var/lib/sepgsql/data
 install -d -m 700 %{buildroot}/var/lib/sepgsql/backups
-(echo "# .bash_profile"
- echo "if [ -f /etc/bashrc ]; then"
- echo "    . /etc/bashrc"
- echo "fi"
- echo
- echo "export PATH=%{_bindir}:\${PATH}"
-) > %{buildroot}/var/lib/sepgsql/.bash_profile
 
-mkdir -p %{buildroot}/etc/rc.d/init.d
-install -m 755 %{SOURCE1} %{buildroot}/etc/rc.d/init.d/sepostgresql
+mkdir -p %{buildroot}%{_initrddir}
+install -m 755 %{SOURCE1} %{buildroot}%{_initrddir}/sepostgresql
 
 mkdir -p %{buildroot}%{_mandir}/man8
 install -m 644 %{SOURCE5} %{buildroot}%{_mandir}/man8
@@ -129,7 +127,7 @@ do
 
     /usr/sbin/semodule -s ${selinuxvariant} -l | egrep -q '^%{name}' && \
         /usr/sbin/semodule -s ${selinuxvariant} -r %{name} >& /dev/null || :
-    /usr/sbin/semodule -s ${selinuxvariant} -i %{_policydir}/${selinuxvariant}/%{name}.pp >& /dev/null || :
+    /usr/sbin/semodule -s ${selinuxvariant} -i %{_datadir}/selinux/${selinuxvariant}/%{name}.pp >& /dev/null || :
 done
 
 # Fix up non-standard file contexts
@@ -138,14 +136,14 @@ done
 
 %preun
 if [ $1 -eq 0 ]; then
-    /etc/init.d/sepostgresql condstop
+    %{_initrddir}/sepostgresql condstop
     /sbin/chkconfig --del %{name}
 fi
 
 %postun
 /sbin/ldconfig
 if [ $1 -ge 1 ]; then           # rpm -U case
-    /etc/init.d/sepostgresql condrestart
+    %{_initrddir}/sepostgresql condrestart
 fi
 if [ $1 -eq 0 ]; then           # rpm -e case
     userdel  sepgsql >/dev/null 2>&1 || :
@@ -163,7 +161,8 @@ fi
 
 %files
 %defattr(-,root,root,-)
-/etc/rc.d/init.d/sepostgresql
+%doc COPYRIGHT README HISTORY
+%{_initrddir}/sepostgresql
 %{_bindir}/initdb
 %{_bindir}/ipcclean
 %{_bindir}/pg_controldata
@@ -191,16 +190,18 @@ fi
 %{_datadir}/sepgsql/conversion_create.sql
 %{_datadir}/sepgsql/information_schema.sql
 %{_datadir}/sepgsql/sql_features.txt
-%{_libdir}/sepgsql/libpq.so*
 %{_libdir}/sepgsql/plpgsql.so
 %{_libdir}/sepgsql/*_and_*.so
-%attr(644,root,root) %{_policydir}/*/sepostgresql.pp
+%attr(644,root,root) %{_datadir}/selinux/*/sepostgresql.pp
 %attr(700,sepgsql,sepgsql) %dir /var/lib/sepgsql
 %attr(700,sepgsql,sepgsql) %dir /var/lib/sepgsql/data
 %attr(700,sepgsql,sepgsql) %dir /var/lib/sepgsql/backups
-/var/lib/sepgsql/.bash_profile
 
 %changelog
+* Mon Jul 30 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.407
+- fix spec file based on Fedora reviewing process
+- add rawhide support
+
 * Mon Jul 23 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.402
 - add manpage of sepostgresql
 - fix specfile convention for Fedora suitable
