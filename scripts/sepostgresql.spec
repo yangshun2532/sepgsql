@@ -14,14 +14,13 @@
 %%__default_sepgextension__%%
 
 Summary: Security Enhanced PostgreSQL
-Group: Applications/Databases
 Name: sepostgresql
 Version: %%__base_postgresql_version__%%
 Release: %%__default_sepgversion__%%.%%__default_sepgversion_minor__%%%{?sepgextension}%{?dist}
 License: BSD
 Group: Applications/Databases
 Url: http://code.google.com/p/sepgsql/
-Buildroot: %{_tmppath}/%{name}-%{version}-root
+Buildroot: %(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
 Source0: ftp://ftp.postgresql.org/pub/source/v%{version}/postgresql-%{version}.tar.gz
 Source1: sepostgresql.init
 Source2: sepostgresql.if
@@ -111,11 +110,11 @@ install -m 644 %{SOURCE5} %{buildroot}%{_mandir}/man8
 rm -rf $RPM_BUILD_ROOT
 
 %pre
-id -g sepgsql >& /dev/null \
-    || groupadd -r sepgsql >& /dev/null || :
-id -u sepgsql >&/dev/null   \
-    || useradd -g sepgsql -d /var/lib/sepgsql -s /bin/bash \
-               -r -c "SE-PostgreSQL server" sepgsql >& /dev/null || :
+getent group  sepgsql >/dev/null || groupadd -r sepgsql
+getent passwd sepgsql >/dev/null || \
+    useradd -r -g sepgsql -d /var/lib/sepgsql -s /bin/bash \
+            -c "SE-PostgreSQL server" sepgsql
+exit 0
 
 %post
 /sbin/chkconfig --add %{name}
@@ -146,8 +145,8 @@ if [ $1 -ge 1 ]; then           # rpm -U case
     %{_initrddir}/sepostgresql condrestart
 fi
 if [ $1 -eq 0 ]; then           # rpm -e case
-    userdel  sepgsql >/dev/null 2>&1 || :
-    groupdel sepgsql >/dev/null 2>&1 || :
+#    userdel  sepgsql >/dev/null || :
+#    groupdel sepgsql >/dev/null || :
     for selinuxvariant in %{selinux_variants}
     do
         /usr/sbin/semodule -s ${selinuxvariant} -l >& /dev/null || continue;
