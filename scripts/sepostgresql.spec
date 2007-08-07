@@ -27,10 +27,13 @@ Source2: sepostgresql.if
 Source3: sepostgresql.te
 Source4: sepostgresql.fc
 Source5: sepostgresql.8
-Patch0: sepostgresql-%{version}-%{release}.patch
+Patch0: sepostgresql-%%__base_postgresql_version__%%-%%__default_sepgversion__%%.%%__default_sepgversion_minor__%%.patch
 Conflicts: postgresql-server
-AutoProv: no
+BuildRequires: perl glibc-devel bison flex autoconf readline-devel zlib-devel >= 1.0.4
 Buildrequires: checkpolicy libselinux-devel >= %%__default_libselinux_version__%% selinux-policy-devel = %%__default_sepgpolversion__%%
+Requires(pre): shadow-utils
+Requires(post): /sbin/chkconfig
+Requires(preun): /sbin/chkconfig /sbin/service
 Requires: policycoreutils >= %%__default_policycoreutils_version__%% libselinux >= %%__default_libselinux_version__%% selinux-policy = %%__default_sepgpolversion__%%
 
 %description
@@ -45,14 +48,11 @@ reference monitor to check any SQL query.
 %setup -q -n postgresql-%{version}
 %patch0 -p1
 mkdir selinux-policy
-cp %{SOURCE2} %{SOURCE3} %{SOURCE4} selinux-policy
+cp -p %{SOURCE2} %{SOURCE3} %{SOURCE4} selinux-policy
 
 %build
 CFLAGS="${CFLAGS:-%optflags}" ; export CFLAGS
 CXXFLAGS="${CXXFLAGS:-%optflags}" ; export CXXFLAGS
-
-# Strip out -ffast-math from CFLAGS....
-CFLAGS=`echo $CFLAGS|xargs -n 1|grep -v ffast-math|xargs -n 100`
 
 # build Binary Policy Module
 pushd selinux-policy
@@ -93,18 +93,18 @@ popd
 make DESTDIR=%{buildroot} install
 
 # to avoid conflicts with postgresql package
-mv %{buildroot}/%{_bindir}/pg_dump     %{buildroot}/%{_bindir}/sepg_dump
-mv %{buildroot}/%{_bindir}/pg_dumpall  %{buildroot}/%{_bindir}/sepg_dumpall
+mv %{buildroot}%{_bindir}/pg_dump     %{buildroot}%{_bindir}/sepg_dump
+mv %{buildroot}%{_bindir}/pg_dumpall  %{buildroot}%{_bindir}/sepg_dumpall
 
-install -d -m 700 %{buildroot}/var/lib/sepgsql
-install -d -m 700 %{buildroot}/var/lib/sepgsql/data
-install -d -m 700 %{buildroot}/var/lib/sepgsql/backups
+install -d -m 700 %{buildroot}%{_localstatedir}/lib/sepgsql
+install -d -m 700 %{buildroot}%{_localstatedir}/lib/sepgsql/data
+install -d -m 700 %{buildroot}%{_localstatedir}/lib/sepgsql/backups
 
 mkdir -p %{buildroot}%{_initrddir}
-install -m 755 %{SOURCE1} %{buildroot}%{_initrddir}/sepostgresql
+install -p -m 755 %{SOURCE1} %{buildroot}%{_initrddir}/sepostgresql
 
 mkdir -p %{buildroot}%{_mandir}/man8
-install -m 644 %{SOURCE5} %{buildroot}%{_mandir}/man8
+install -p -m 644 %{SOURCE5} %{buildroot}%{_mandir}/man8
 
 %clean
 rm -rf $RPM_BUILD_ROOT
@@ -112,7 +112,7 @@ rm -rf $RPM_BUILD_ROOT
 %pre
 getent group  sepgsql >/dev/null || groupadd -r sepgsql
 getent passwd sepgsql >/dev/null || \
-    useradd -r -g sepgsql -d /var/lib/sepgsql -s /bin/bash \
+    useradd -r -g sepgsql -d %{_localstatedir}/lib/sepgsql -s /bin/bash \
             -c "SE-PostgreSQL server" sepgsql
 exit 0
 
@@ -122,40 +122,38 @@ exit 0
 
 for selinuxvariant in %{selinux_variants}
 do
-    /usr/sbin/semodule -s ${selinuxvariant} -l >& /dev/null || continue;
+    %{_sbindir}/semodule -s ${selinuxvariant} -l >& /dev/null || continue;
 
-    /usr/sbin/semodule -s ${selinuxvariant} -l | egrep -q '^%{name}' && \
-        /usr/sbin/semodule -s ${selinuxvariant} -r %{name} >& /dev/null || :
-    /usr/sbin/semodule -s ${selinuxvariant} -i %{_datadir}/selinux/${selinuxvariant}/%{name}.pp >& /dev/null || :
+    %{_sbindir}/semodule -s ${selinuxvariant} -l | egrep -q '^%{name}' && \
+        %{_sbindir}/semodule -s ${selinuxvariant} -r %{name} >& /dev/null || :
+    %{_sbindir}/semodule -s ${selinuxvariant} -i %{_datadir}/selinux/${selinuxvariant}/%{name}.pp >& /dev/null || :
 done
 
 # Fix up non-standard file contexts
 /sbin/fixfiles -R %{name} restore || :
-/sbin/restorecon -R /var/lib/sepgsql || :
+/sbin/restorecon -R %{_localstatedir}/lib/sepgsql || :
 
 %preun
-if [ $1 -eq 0 ]; then
-    %{_initrddir}/sepostgresql condstop
+if [ $1 -eq 0 ]; then           # rpm -e case
+    /sbin/service %{name} condstop >/dev/null 2>&1
     /sbin/chkconfig --del %{name}
 fi
 
 %postun
 /sbin/ldconfig
 if [ $1 -ge 1 ]; then           # rpm -U case
-    %{_initrddir}/sepostgresql condrestart
+    /sbin/service %{name} condrestart >/dev/null 2>&1 || :
 fi
 if [ $1 -eq 0 ]; then           # rpm -e case
-#    userdel  sepgsql >/dev/null || :
-#    groupdel sepgsql >/dev/null || :
     for selinuxvariant in %{selinux_variants}
     do
-        /usr/sbin/semodule -s ${selinuxvariant} -l >& /dev/null || continue;
+        %{_sbindir}/semodule -s ${selinuxvariant} -l >& /dev/null || continue;
 
-        /usr/sbin/semodule -s ${selinuxvariant} -l | egrep -q '^%{name}' && \
-            /usr/sbin/semodule -s ${selinuxvariant} -r %{name} >& /dev/null || :
+        %{_sbindir}/semodule -s ${selinuxvariant} -l | egrep -q '^%{name}' && \
+            %{_sbindir}/semodule -s ${selinuxvariant} -r %{name} >& /dev/null || :
     done
     /sbin/fixfiles -R %{name} restore || :
-    test -d /var/lib/sepgsql && /sbin/restorecon -R /var/lib/sepgsql || :
+    test -d %{_localstatedir}/lib/sepgsql && /sbin/restorecon -R %{_localstatedir}/lib/sepgsql || :
 fi
 
 %files
@@ -179,6 +177,7 @@ fi
 %{_mandir}/man1/postgres.*
 %{_mandir}/man1/postmaster.*
 %{_mandir}/man8/sepostgresql.*
+%dir %{_datadir}/sepgsql
 %{_datadir}/sepgsql/postgres.bki
 %{_datadir}/sepgsql/postgres.description
 %{_datadir}/sepgsql/postgres.shdescription
@@ -189,12 +188,13 @@ fi
 %{_datadir}/sepgsql/conversion_create.sql
 %{_datadir}/sepgsql/information_schema.sql
 %{_datadir}/sepgsql/sql_features.txt
+%dir %{_libdir}/sepgsql
 %{_libdir}/sepgsql/plpgsql.so
 %{_libdir}/sepgsql/*_and_*.so
 %attr(644,root,root) %{_datadir}/selinux/*/sepostgresql.pp
-%attr(700,sepgsql,sepgsql) %dir /var/lib/sepgsql
-%attr(700,sepgsql,sepgsql) %dir /var/lib/sepgsql/data
-%attr(700,sepgsql,sepgsql) %dir /var/lib/sepgsql/backups
+%attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql
+%attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/data
+%attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
 
 %changelog
 * Thu Aug 2 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.409.beta%{?dist}

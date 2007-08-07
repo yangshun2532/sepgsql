@@ -54,7 +54,7 @@ do_start() {
 	touch "${SEPGSQL_STARTUP_LOG}" || exit 1
 	chown sepgsql:sepgsql "${SEPGSQL_STARTUP_LOG}"
 	chmod 600 "${SEPGSQL_STARTUP_LOG}"
-	restorecon "${SEPGSQL_STARTUP_LOG}"
+	/sbin/restorecon "${SEPGSQL_STARTUP_LOG}"
     fi
     
     # check for the SEPGSQL_DATA structure
@@ -86,9 +86,9 @@ do_start() {
     ulimit -c unlimited
     cd ~sepgsql
 
-    runuser sepgsql -- -c "${SEPGSQL_BIN}/pg_ctl start -l ${SEPGSQL_LOG} -o '${SEPGSQL_OPTS}'" >> ${SEPGSQL_STARTUP_LOG} 2>&1 < /dev/null
+    /sbin/runuser sepgsql -- -c "${SEPGSQL_BIN}/pg_ctl start -l ${SEPGSQL_LOG} -o '${SEPGSQL_OPTS}'" >> ${SEPGSQL_STARTUP_LOG} 2>&1 < /dev/null
     sleep 1
-    if runuser sepgsql -- -c "${SEPGSQL_BIN}/pg_ctl status" >& /dev/null; then
+    if /sbin/runuser sepgsql -- -c "${SEPGSQL_BIN}/pg_ctl status" >& /dev/null; then
 	success "$PSQL_START"
     else
 	failure "$PSQL_START"
@@ -99,7 +99,7 @@ do_start() {
 
 do_stop() {
     echo -n $"Stopping ${NAME} service: "
-    runuser sepgsql -- -c "${SEPGSQL_BIN}/pg_ctl stop" >> ${SEPGSQL_STARTUP_LOG} 2>&1 < /dev/null
+    /sbin/runuser sepgsql -- -c "${SEPGSQL_BIN}/pg_ctl stop" >> ${SEPGSQL_STARTUP_LOG} 2>&1 < /dev/null
     script_result=$?
     if [ $script_result -eq 0 ]; then
 	echo_success
@@ -112,22 +112,22 @@ do_stop() {
 
 do_status() {
     (
-	runuser sepgsql -- -c "${SEPGSQL_BIN}/pg_ctl status" 2>&1 
+	/sbin/runuser sepgsql -- -c "${SEPGSQL_BIN}/pg_ctl status" 2>&1 
 	script_result=$?
     ) | head -1 | sed "s/^pg_ctl:/${NAME}:/g"
 }
 
 do_condrestart() {
-    runuser sepgsql -- -c "${SEPGSQL_BIN}/pg_ctl status" >& /dev/null && do_stop && do_start
+    /sbin/runuser sepgsql -- -c "${SEPGSQL_BIN}/pg_ctl status" >& /dev/null && do_stop && do_start
 }
 
 do_condstop() {
-    runuser sepgsql -- -c "${SEPGSQL_BIN}/pg_ctl status" >& /dev/null && do_stop
+    /sbin/runuser sepgsql -- -c "${SEPGSQL_BIN}/pg_ctl status" >& /dev/null && do_stop
 }
 
 do_reload() {
     echo -n $"Reloading ${NAME} service: "
-    runuser sepgsql -- -c "${SEPGSQL_BIN}/pg_ctl reload" >> ${SEPGSQL_STARTUP_LOG} 2>&1 < /dev/null
+    /sbin/runuser sepgsql -- -c "${SEPGSQL_BIN}/pg_ctl reload" >> ${SEPGSQL_STARTUP_LOG} 2>&1 < /dev/null
     script_result=$?
     if [ $script_result -eq 0 ]; then
 	echo_success
@@ -155,7 +155,7 @@ do_initdb() {
 	# cleanup SELinux labeling for "${SEPGSQL_DATA}"
 	test -x /sbin/restorecon && /sbin/restorecon -R "${SEPGSQL_DATA}"
 	# Initialize the database
-	runuser -- sepgsql -c "${SEPGSQL_BIN}/initdb -A 'ident sameuser'" \
+	/sbin/runuser -- sepgsql -c "${SEPGSQL_BIN}/initdb -A 'ident sameuser'" \
 	    >> "${SEPGSQL_STARTUP_LOG}" 2>&1 < /dev/null
 	if [ -f "${SEPGSQL_DATA}/PG_VERSION" ]; then
 	    echo_success

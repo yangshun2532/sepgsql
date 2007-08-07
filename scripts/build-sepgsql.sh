@@ -32,10 +32,9 @@ echo ${SEPGSQL_REPOSITORY} | egrep -q "^http://" || \
 if [ -z "${SEPGVERSION_MINOR}" ]; then
     SEPGVERSION_MINOR=`svn info ${SEPGSQL_REPOSITORY} | egrep '^Revision:' | awk '{print $2}'`
 fi
-SEPG_FULL_VERSION="${SEPGVERSION}.${SEPGVERSION_MINOR}${SEPGEXTENSION}"
 
 echo "starting sepostgresql package:"
-echo "  sepostgresql-${BASEVERSION}-${SEPG_FULL_VERSION}"
+echo "  sepostgresql-${BASEVERSION}-${SEPGVERSION}.${SEPGVERSION_MINOR}"
 echo "  working directory: ${WORKDIR}"
 echo "  repository: ${SEPGSQL_REPOSITORY}"
 echo "  base tarball: ${SEPGSQL_BASETGZ}"
@@ -82,7 +81,7 @@ else
 fi
 
 #-- create a patch file --
-echo "generating: sepostgresql-${BASEVERSION}-${SEPG_FULL_VERSION}.patch"
+echo "generating: sepostgresql-${BASEVERSION}-${SEPGVERSION}.${SEPGVERSION_MINOR}.patch"
 cp "${SEPGSQL_BASETGZ}" ${RPMSOURCE}
 
 cat scripts/sepostgresql.init | \
@@ -120,7 +119,7 @@ rm -f postgresql-${BASEVERSION}/src/backend/bootstrap/bootscanner.c
 rm -f postgresql-${BASEVERSION}/src/backend/bootstrap/bootstrap_tokens.h
 
 diff -rpNU3 postgresql-${BASEVERSION} sepostgresql-${BASEVERSION} \
-    > ${RPMSOURCE}/sepostgresql-${BASEVERSION}-${SEPG_FULL_VERSION}`rpm -E '%{?dist}'`.patch
+    > ${RPMSOURCE}/sepostgresql-${BASEVERSION}-${SEPGVERSION}.${SEPGVERSION_MINOR}.patch
 
 #-- clean up --
 cd ${RPMSOURCE}
