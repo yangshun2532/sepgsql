@@ -74,14 +74,14 @@
 			  (att)->attisdropped ? 'y' : 'n', (att)->attislocal ? 'y' : 'n', (att)->attinhcount)
 
 /* object classes and access vectors are not included, in default */
-#ifndef SECCLASS_DATABASE
-#define SECCLASS_DATABASE			(61)	/* next to SECCLASS_DCCP_SOCKET */
+#ifndef SECCLASS_DB_DATABASE
+#define SECCLASS_DB_DATABASE		(62)	/* next to SECCLASS_MEMPROTECT */
 #endif
-#define SECCLASS_TABLE				(SECCLASS_DATABASE + 1)
-#define SECCLASS_PROCEDURE			(SECCLASS_DATABASE + 2)
-#define SECCLASS_COLUMN				(SECCLASS_DATABASE + 3)
-#define SECCLASS_TUPLE				(SECCLASS_DATABASE + 4)
-#define SECCLASS_BLOB				(SECCLASS_DATABASE + 5)
+#define SECCLASS_DB_TABLE			(SECCLASS_DATABASE + 1)
+#define SECCLASS_DB_PROCEDURE		(SECCLASS_DATABASE + 2)
+#define SECCLASS_DB_COLUMN			(SECCLASS_DATABASE + 3)
+#define SECCLASS_DB_TUPLE			(SECCLASS_DATABASE + 4)
+#define SECCLASS_DB_BLOB			(SECCLASS_DATABASE + 5)
 
 #define COMMON_DATABASE__CREATE                   0x00000001UL
 #define COMMON_DATABASE__DROP                     0x00000002UL
@@ -90,64 +90,64 @@
 #define COMMON_DATABASE__RELABELFROM              0x00000010UL
 #define COMMON_DATABASE__RELABELTO                0x00000020UL
 
-#define DATABASE__CREATE                          0x00000001UL
-#define DATABASE__DROP                            0x00000002UL
-#define DATABASE__GETATTR                         0x00000004UL
-#define DATABASE__SETATTR                         0x00000008UL
-#define DATABASE__RELABELFROM                     0x00000010UL
-#define DATABASE__RELABELTO                       0x00000020UL
-#define DATABASE__ACCESS                          0x00000040UL
-#define DATABASE__INSTALL_MODULE                  0x00000080UL
-#define DATABASE__LOAD_MODULE                     0x00000100UL
-#define DATABASE__GET_PARAM                       0x00000200UL
-#define DATABASE__SET_PARAM                       0x00000400UL
-#define TABLE__CREATE                             0x00000001UL
-#define TABLE__DROP                               0x00000002UL
-#define TABLE__GETATTR                            0x00000004UL
-#define TABLE__SETATTR                            0x00000008UL
-#define TABLE__RELABELFROM                        0x00000010UL
-#define TABLE__RELABELTO                          0x00000020UL
-#define TABLE__USE                                0x00000040UL
-#define TABLE__SELECT                             0x00000080UL
-#define TABLE__UPDATE                             0x00000100UL
-#define TABLE__INSERT                             0x00000200UL
-#define TABLE__DELETE                             0x00000400UL
-#define TABLE__LOCK                               0x00000800UL
-#define PROCEDURE__CREATE                         0x00000001UL
-#define PROCEDURE__DROP                           0x00000002UL
-#define PROCEDURE__GETATTR                        0x00000004UL
-#define PROCEDURE__SETATTR                        0x00000008UL
-#define PROCEDURE__RELABELFROM                    0x00000010UL
-#define PROCEDURE__RELABELTO                      0x00000020UL
-#define PROCEDURE__EXECUTE                        0x00000040UL
-#define PROCEDURE__ENTRYPOINT                     0x00000080UL
-#define COLUMN__CREATE                            0x00000001UL
-#define COLUMN__DROP                              0x00000002UL
-#define COLUMN__GETATTR                           0x00000004UL
-#define COLUMN__SETATTR                           0x00000008UL
-#define COLUMN__RELABELFROM                       0x00000010UL
-#define COLUMN__RELABELTO                         0x00000020UL
-#define COLUMN__USE                               0x00000040UL
-#define COLUMN__SELECT                            0x00000080UL
-#define COLUMN__UPDATE                            0x00000100UL
-#define COLUMN__INSERT                            0x00000200UL
-#define TUPLE__RELABELFROM                        0x00000001UL
-#define TUPLE__RELABELTO                          0x00000002UL
-#define TUPLE__USE                                0x00000004UL
-#define TUPLE__SELECT                             0x00000008UL
-#define TUPLE__UPDATE                             0x00000010UL
-#define TUPLE__INSERT                             0x00000020UL
-#define TUPLE__DELETE                             0x00000040UL
-#define BLOB__CREATE                              0x00000001UL
-#define BLOB__DROP                                0x00000002UL
-#define BLOB__GETATTR                             0x00000004UL
-#define BLOB__SETATTR                             0x00000008UL
-#define BLOB__RELABELFROM                         0x00000010UL
-#define BLOB__RELABELTO                           0x00000020UL
-#define BLOB__READ                                0x00000040UL
-#define BLOB__WRITE                               0x00000080UL
-#define BLOB__IMPORT                              0x00000100UL
-#define BLOB__EXPORT                              0x00000200UL
+#define DB_DATABASE__CREATE                       0x00000001UL
+#define DB_DATABASE__DROP                         0x00000002UL
+#define DB_DATABASE__GETATTR                      0x00000004UL
+#define DB_DATABASE__SETATTR                      0x00000008UL
+#define DB_DATABASE__RELABELFROM                  0x00000010UL
+#define DB_DATABASE__RELABELTO                    0x00000020UL
+#define DB_DATABASE__ACCESS                       0x00000040UL
+#define DB_DATABASE__INSTALL_MODULE               0x00000080UL
+#define DB_DATABASE__LOAD_MODULE                  0x00000100UL
+#define DB_DATABASE__GET_PARAM                    0x00000200UL
+#define DB_DATABASE__SET_PARAM                    0x00000400UL
+#define DB_TABLE__CREATE                          0x00000001UL
+#define DB_TABLE__DROP                            0x00000002UL
+#define DB_TABLE__GETATTR                         0x00000004UL
+#define DB_TABLE__SETATTR                         0x00000008UL
+#define DB_TABLE__RELABELFROM                     0x00000010UL
+#define DB_TABLE__RELABELTO                       0x00000020UL
+#define DB_TABLE__USE                             0x00000040UL
+#define DB_TABLE__SELECT                          0x00000080UL
+#define DB_TABLE__UPDATE                          0x00000100UL
+#define DB_TABLE__INSERT                          0x00000200UL
+#define DB_TABLE__DELETE                          0x00000400UL
+#define DB_TABLE__LOCK                            0x00000800UL
+#define DB_PROCEDURE__CREATE                      0x00000001UL
+#define DB_PROCEDURE__DROP                        0x00000002UL
+#define DB_PROCEDURE__GETATTR                     0x00000004UL
+#define DB_PROCEDURE__SETATTR                     0x00000008UL
+#define DB_PROCEDURE__RELABELFROM                 0x00000010UL
+#define DB_PROCEDURE__RELABELTO                   0x00000020UL
+#define DB_PROCEDURE__EXECUTE                     0x00000040UL
+#define DB_PROCEDURE__ENTRYPOINT                  0x00000080UL
+#define DB_COLUMN__CREATE                         0x00000001UL
+#define DB_COLUMN__DROP                           0x00000002UL
+#define DB_COLUMN__GETATTR                        0x00000004UL
+#define DB_COLUMN__SETATTR                        0x00000008UL
+#define DB_COLUMN__RELABELFROM                    0x00000010UL
+#define DB_COLUMN__RELABELTO                      0x00000020UL
+#define DB_COLUMN__USE                            0x00000040UL
+#define DB_COLUMN__SELECT                         0x00000080UL
+#define DB_COLUMN__UPDATE                         0x00000100UL
+#define DB_COLUMN__INSERT                         0x00000200UL
+#define DB_TUPLE__RELABELFROM                     0x00000001UL
+#define DB_TUPLE__RELABELTO                       0x00000002UL
+#define DB_TUPLE__USE                             0x00000004UL
+#define DB_TUPLE__SELECT                          0x00000008UL
+#define DB_TUPLE__UPDATE                          0x00000010UL
+#define DB_TUPLE__INSERT                          0x00000020UL
+#define DB_TUPLE__DELETE                          0x00000040UL
+#define DB_BLOB__CREATE                           0x00000001UL
+#define DB_BLOB__DROP                             0x00000002UL
+#define DB_BLOB__GETATTR                          0x00000004UL
+#define DB_BLOB__SETATTR                          0x00000008UL
+#define DB_BLOB__RELABELFROM                      0x00000010UL
+#define DB_BLOB__RELABELTO                        0x00000020UL
+#define DB_BLOB__READ                             0x00000040UL
+#define DB_BLOB__WRITE                            0x00000080UL
+#define DB_BLOB__IMPORT                           0x00000100UL
+#define DB_BLOB__EXPORT                           0x00000200UL
 
 /*
  * SE-PostgreSQL core functions
