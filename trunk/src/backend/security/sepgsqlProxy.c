@@ -100,7 +100,7 @@ static List *__addEvalPgClass(List *selist, Oid relid, bool inh, uint32 perms)
 
 	foreach (l, selist) {
 		se = (SEvalItem *) lfirst(l);
-		if (se->tclass == SECCLASS_TABLE
+		if (se->tclass == SECCLASS_DB_TABLE
 			&& se->c.relid == relid
 			&& se->c.inh == inh) {
 			se->perms |= perms;
@@ -109,7 +109,7 @@ static List *__addEvalPgClass(List *selist, Oid relid, bool inh, uint32 perms)
 	}
 	/* not found */
 	se = makeNode(SEvalItem);
-	se->tclass = SECCLASS_TABLE;
+	se->tclass = SECCLASS_DB_TABLE;
 	se->perms = perms;
 	se->c.relid = relid;
 	se->c.inh = inh;
@@ -118,11 +118,11 @@ static List *__addEvalPgClass(List *selist, Oid relid, bool inh, uint32 perms)
 
 static List *addEvalPgClass(List *selist, RangeTblEntry *rte, uint32 perms)
 {
-	rte->requiredPerms |= (perms & TABLE__USE    ? RTEMARK_USE    : 0);
-	rte->requiredPerms |= (perms & TABLE__SELECT ? RTEMARK_SELECT : 0);
-	rte->requiredPerms |= (perms & TABLE__INSERT ? RTEMARK_INSERT : 0);
-	rte->requiredPerms |= (perms & TABLE__UPDATE ? RTEMARK_UPDATE : 0);
-	rte->requiredPerms |= (perms & TABLE__DELETE ? RTEMARK_DELETE : 0);
+	rte->requiredPerms |= (perms & DB_TABLE__USE    ? RTEMARK_USE    : 0);
+	rte->requiredPerms |= (perms & DB_TABLE__SELECT ? RTEMARK_SELECT : 0);
+	rte->requiredPerms |= (perms & DB_TABLE__INSERT ? RTEMARK_INSERT : 0);
+	rte->requiredPerms |= (perms & DB_TABLE__UPDATE ? RTEMARK_UPDATE : 0);
+	rte->requiredPerms |= (perms & DB_TABLE__DELETE ? RTEMARK_DELETE : 0);
 
 	return __addEvalPgClass(selist, rte->relid, rte->inh, perms);
 }
@@ -134,7 +134,7 @@ static List *__addEvalPgAttribute(List *selist, Oid relid, bool inh, AttrNumber 
 
 	foreach (l, selist) {
 		se = (SEvalItem *) lfirst(l);
-		if (se->tclass == SECCLASS_COLUMN
+		if (se->tclass == SECCLASS_DB_COLUMN
 			&& se->a.relid == relid
 			&& se->a.inh == inh
 			&& se->a.attno == attno) {
@@ -144,7 +144,7 @@ static List *__addEvalPgAttribute(List *selist, Oid relid, bool inh, AttrNumber 
 	}
 	/* not found */
 	se = makeNode(SEvalItem);
-	se->tclass = SECCLASS_COLUMN;
+	se->tclass = SECCLASS_DB_COLUMN;
 	se->perms = perms;
 	se->a.relid = relid;
 	se->a.inh = inh;
@@ -157,15 +157,15 @@ static List *addEvalPgAttribute(List *selist, RangeTblEntry *rte, AttrNumber att
 {
 	/* for 'security_context' */
 	if (attno == SecurityAttributeNumber
-		&& (perms & (COLUMN__UPDATE | COLUMN__INSERT)))
+		&& (perms & (DB_COLUMN__UPDATE | DB_COLUMN__INSERT)))
 		rte->requiredPerms |= RTEMARK_RELABELFROM;
 
 	/* for 'pg_largeobject' */
 	if (rte->relid == LargeObjectRelationId
 		&& attno == Anum_pg_largeobject_data) {
-		if (perms & COLUMN__SELECT)
+		if (perms & DB_COLUMN__SELECT)
 			rte->requiredPerms |= RTEMARK_BLOB_READ;
-		if (perms & (COLUMN__UPDATE | COLUMN__INSERT))
+		if (perms & (DB_COLUMN__UPDATE | DB_COLUMN__INSERT))
 			rte->requiredPerms |= RTEMARK_BLOB_WRITE;
 	}
 
@@ -179,14 +179,14 @@ static List *addEvalPgProc(List *selist, Oid funcid, uint32 perms)
 
 	foreach (l, selist) {
 		se = (SEvalItem *) lfirst(l);
-		if (se->tclass == SECCLASS_PROCEDURE
+		if (se->tclass == SECCLASS_DB_PROCEDURE
 			&& se->p.funcid == funcid) {
 			se->perms |= perms;
 			return selist;
 		}
 	}
 	se = makeNode(SEvalItem);
-	se->tclass = SECCLASS_PROCEDURE;
+	se->tclass = SECCLASS_DB_PROCEDURE;
 	se->perms = perms;
 	se->p.funcid = funcid;
 
@@ -229,7 +229,7 @@ static List *addEvalTriggerAccess(List *selist, Oid relid, bool is_inh, int cmdT
 		if (TRIGGER_FOR_BEFORE(trigForm->tgtype) && TRIGGER_FOR_INSERT(trigForm->tgtype))
 			continue;
 
-		selist = addEvalPgProc(selist, trigForm->tgfoid, PROCEDURE__EXECUTE);
+		selist = addEvalPgProc(selist, trigForm->tgfoid, DB_PROCEDURE__EXECUTE);
 		if (!checked) {
 			HeapTuple reltup;
 			Form_pg_class classForm;
@@ -240,11 +240,11 @@ static List *addEvalTriggerAccess(List *selist, Oid relid, bool is_inh, int cmdT
 									0, 0, 0);
 			classForm = (Form_pg_class) GETSTRUCT(reltup);
 
-			selist = __addEvalPgClass(selist, relid, false, TABLE__SELECT);
+			selist = __addEvalPgClass(selist, relid, false, DB_TABLE__SELECT);
 			for (attnum = FirstLowInvalidHeapAttributeNumber + 1; attnum <= 0; attnum++) {
 				if (attnum == ObjectIdAttributeNumber && !classForm->relhasoids)
 					continue;
-				selist = __addEvalPgAttribute(selist, relid, false, attnum, COLUMN__SELECT);
+				selist = __addEvalPgAttribute(selist, relid, false, attnum, DB_COLUMN__SELECT);
 			}
 			ReleaseSysCache(reltup);
 
@@ -290,11 +290,11 @@ static List *walkVarHelper(List *selist, queryChain *qc, Var *var, int flags)
 		/* table:{select} */
 		selist = addEvalPgClass(selist, rte,
 								(flags & WKFLAG_INTERNAL_USE)
-								? TABLE__USE : TABLE__SELECT);
+								? DB_TABLE__USE : DB_TABLE__SELECT);
 		/* column:{select} */
 		selist = addEvalPgAttribute(selist, rte, var->varattno,
 									(flags & WKFLAG_INTERNAL_USE)
-									? COLUMN__USE : COLUMN__SELECT);
+									? DB_COLUMN__USE : DB_COLUMN__SELECT);
 		break;
 	case RTE_JOIN:
 		n = list_nth(rte->joinaliasvars, var->varattno - 1);
@@ -359,11 +359,11 @@ static List *walkVarHelper(List *selist, queryChain *qc, Var *var, int flags)
 			/* table:{select} or [use} */
 			selist = addEvalPgClass(selist, srte,
 									(flags & WKFLAG_INTERNAL_USE)
-									? TABLE__USE : TABLE__SELECT);
+									? DB_TABLE__USE : DB_TABLE__SELECT);
 			/* column:{select} or {use}*/
 			selist = addEvalPgAttribute(selist, srte, svar->varattno,
 										(flags & WKFLAG_INTERNAL_USE)
-										? COLUMN__USE : COLUMN__SELECT);
+										? DB_COLUMN__USE : DB_COLUMN__SELECT);
 		}
 		break;
 	case RTE_SPECIAL:
@@ -389,7 +389,7 @@ static List *walkOpExprHelper(List *selist, Oid opid)
 		selerror("cache lookup failed for OPEROID = %u", opid);
 	oprform = (Form_pg_operator) GETSTRUCT(tuple);
 
-	selist = addEvalPgProc(selist, oprform->oprcode, PROCEDURE__EXECUTE);
+	selist = addEvalPgProc(selist, oprform->oprcode, DB_PROCEDURE__EXECUTE);
 	/* NOTE: opr->oprrest and opr->oprjoin are internal use only
 	 * and have no effect onto the data references, so we don't
 	 * apply any checkings for them.
@@ -424,14 +424,14 @@ static List *sepgsqlWalkExpr(List *selist, queryChain *qc, Node *node, int flags
 	case T_FuncExpr: {
 		FuncExpr *func = (FuncExpr *) node;
 
-		selist = addEvalPgProc(selist, func->funcid, PROCEDURE__EXECUTE);
+		selist = addEvalPgProc(selist, func->funcid, DB_PROCEDURE__EXECUTE);
 		selist = sepgsqlWalkExpr(selist, qc, (Node *) func->args, flags);
 		break;
 	}
 	case T_Aggref: {
 		Aggref *aggref = (Aggref *) node;
 
-		selist = addEvalPgProc(selist, aggref->aggfnoid, PROCEDURE__EXECUTE);
+		selist = addEvalPgProc(selist, aggref->aggfnoid, DB_PROCEDURE__EXECUTE);
 		selist = sepgsqlWalkExpr(selist, qc, (Node *) aggref->args, flags);
 		break;
 	}
@@ -714,23 +714,23 @@ static List *proxyRteRelation(List *selist, queryChain *qc, int rtindex, Node **
 	/* setup tclass and access vector */
 	perms = 0;
 	if (rte->requiredPerms & RTEMARK_USE)
-		perms |= TUPLE__USE;
+		perms |= DB_TUPLE__USE;
 	if (rte->requiredPerms & RTEMARK_SELECT)
-		perms |= TUPLE__SELECT;
+		perms |= DB_TUPLE__SELECT;
 	if (rte->requiredPerms & RTEMARK_INSERT)
-		perms |= TUPLE__INSERT;
+		perms |= DB_TUPLE__INSERT;
 	if (rte->requiredPerms & RTEMARK_UPDATE)
-		perms |= TUPLE__UPDATE;
+		perms |= DB_TUPLE__UPDATE;
 	if (rte->requiredPerms & RTEMARK_DELETE)
-		perms |= TUPLE__DELETE;
+		perms |= DB_TUPLE__DELETE;
 	if (rte->requiredPerms & RTEMARK_RELABELFROM)
-		perms |= TUPLE__RELABELFROM;
+		perms |= DB_TUPLE__RELABELFROM;
 	if (rte->requiredPerms & RTEMARK_RELABELTO)
-		perms |= TUPLE__RELABELTO;
+		perms |= DB_TUPLE__RELABELTO;
 	if (rte->requiredPerms & RTEMARK_BLOB_READ)
-		perms |= BLOB__READ;
+		perms |= DB_BLOB__READ;
 	if (rte->requiredPerms & RTEMARK_BLOB_WRITE)
-		perms |= BLOB__WRITE;
+		perms |= DB_BLOB__WRITE;
 
 	/* append sepgsql_tuple_perm(relid, record, perms) */
 	if (perms) {
@@ -804,13 +804,13 @@ static List *proxyRteSubQuery(List *selist, queryChain *qc, Query *query)
 		Assert(IsA(rte, RangeTblEntry) && rte->rtekind==RTE_RELATION);
 		switch (cmdType) {
 		case CMD_INSERT:
-			selist = addEvalPgClass(selist, rte, TABLE__INSERT);
+			selist = addEvalPgClass(selist, rte, DB_TABLE__INSERT);
 			break;
 		case CMD_UPDATE:
-			selist = addEvalPgClass(selist, rte, TABLE__UPDATE);
+			selist = addEvalPgClass(selist, rte, DB_TABLE__UPDATE);
 			break;
 		case CMD_DELETE:
-			selist = addEvalPgClass(selist, rte, TABLE__DELETE);
+			selist = addEvalPgClass(selist, rte, DB_TABLE__DELETE);
 			break;
 		default:
 			selerror("commandType = %d should not be found here", cmdType);
@@ -829,7 +829,7 @@ static List *proxyRteSubQuery(List *selist, queryChain *qc, Query *query)
 			/* mark insert/update target */
 			if (cmdType==CMD_UPDATE || cmdType==CMD_INSERT) {
 				uint32 perms = (cmdType == CMD_UPDATE
-								? COLUMN__UPDATE : COLUMN__INSERT);
+								? DB_COLUMN__UPDATE : DB_COLUMN__INSERT);
 				if (tle->resjunk) {
 					if (!strcmp(tle->resname, SECURITY_SYSATTR_NAME))
 						selist = addEvalPgAttribute(selist,
@@ -1093,7 +1093,7 @@ static void verifyPgClassPerms(Oid relid, bool inh, uint32 perms)
 	HeapTuple tuple;
 
 	/* check untouchable tables */
-	if (perms & (TABLE__UPDATE | TABLE__INSERT | TABLE__DELETE)) {
+	if (perms & (DB_TABLE__UPDATE | DB_TABLE__INSERT | DB_TABLE__DELETE)) {
 		if (relid == SecurityRelationId)
 			selerror("user cannot modify pg_security directly, for security reason");
 	}
@@ -1114,7 +1114,7 @@ static void verifyPgClassPerms(Oid relid, bool inh, uint32 perms)
 
 	sepgsql_avc_permission(sepgsqlGetClientContext(),
 						   HeapTupleGetSecurity(tuple),
-						   SECCLASS_TABLE,
+						   SECCLASS_DB_TABLE,
 						   perms,
 						   sepgsqlGetTupleName(RelationRelationId, tuple));
 	ReleaseSysCache(tuple);
@@ -1160,7 +1160,7 @@ static void verifyPgAttributePerms(Oid relid, bool inh, AttrNumber attno, uint32
 				continue;
 			sepgsql_avc_permission(sepgsqlGetClientContext(),
 								   HeapTupleGetSecurity(tuple),
-								   SECCLASS_COLUMN,
+								   SECCLASS_DB_COLUMN,
 								   perms,
 								   sepgsqlGetTupleName(AttributeRelationId, tuple));
 		}
@@ -1180,7 +1180,7 @@ static void verifyPgAttributePerms(Oid relid, bool inh, AttrNumber attno, uint32
 	/* check column:{required permissions} */
 	sepgsql_avc_permission(sepgsqlGetClientContext(),
 						   HeapTupleGetSecurity(tuple),
-						   SECCLASS_COLUMN,
+						   SECCLASS_DB_COLUMN,
 						   perms,
 						   sepgsqlGetTupleName(AttributeRelationId, tuple));
 	ReleaseSysCache(tuple);
@@ -1202,12 +1202,12 @@ static void verifyPgProcPerms(Oid funcid, uint32 perms)
 								   HeapTupleGetSecurity(tuple),
 								   SECCLASS_PROCESS);
 	if (newcon != sepgsqlGetClientContext())
-		perms |= PROCEDURE__ENTRYPOINT;
+		perms |= DB_PROCEDURE__ENTRYPOINT;
 
 	/* check procedure executiong permission */
 	sepgsql_avc_permission(sepgsqlGetClientContext(),
 						   HeapTupleGetSecurity(tuple),
-						   SECCLASS_PROCEDURE,
+						   SECCLASS_DB_PROCEDURE,
 						   perms,
 						   sepgsqlGetTupleName(ProcedureRelationId, tuple));
 
@@ -1274,7 +1274,7 @@ static List *expandSEvalListInheritance(List *selist) {
 
 		result = lappend(result, se);
 		switch (se->tclass) {
-		case SECCLASS_TABLE:
+		case SECCLASS_DB_TABLE:
 			if (se->c.inh) {
 				se->c.inh = false;
 				result = __expandPgClassInheritance(result,
@@ -1282,7 +1282,7 @@ static List *expandSEvalListInheritance(List *selist) {
 													se->perms);
 			}
 			break;
-		case SECCLASS_COLUMN:
+		case SECCLASS_DB_COLUMN:
 			if (se->a.inh) {
 				Form_pg_attribute attrForm;
 				HeapTuple tuple;
@@ -1323,13 +1323,13 @@ static void execVerifyQuery(List *selist)
 		SEvalItem *se = lfirst(l);
 
 		switch (se->tclass) {
-		case SECCLASS_TABLE:
+		case SECCLASS_DB_TABLE:
 			verifyPgClassPerms(se->c.relid, se->c.inh, se->perms);
 			break;
-		case SECCLASS_COLUMN:
+		case SECCLASS_DB_COLUMN:
 			verifyPgAttributePerms(se->a.relid, se->a.inh, se->a.attno, se->perms);
 			break;
-		case SECCLASS_PROCEDURE:
+		case SECCLASS_DB_PROCEDURE:
 			verifyPgProcPerms(se->p.funcid, se->perms);
 			break;
 		default:
@@ -1379,12 +1379,12 @@ void sepgsqlCopyTable(Relation rel, List *attNumList, bool isFrom)
 		return;
 
 	selist = __addEvalPgClass(selist, RelationGetRelid(rel), false,
-							  isFrom ? TABLE__INSERT : TABLE__SELECT);
+							  isFrom ? DB_TABLE__INSERT : DB_TABLE__SELECT);
 	foreach (l, attNumList) {
 		AttrNumber attnum = lfirst_int(l);
 
 		selist = __addEvalPgAttribute(selist, RelationGetRelid(rel), false, attnum,
-									  isFrom ? COLUMN__INSERT : COLUMN__SELECT);
+									  isFrom ? DB_COLUMN__INSERT : DB_COLUMN__SELECT);
 	}
 
 	/* check call trigger function */
@@ -1396,7 +1396,7 @@ void sepgsqlCopyTable(Relation rel, List *attNumList, bool isFrom)
 
 bool sepgsqlCopyToTuple(Relation rel, HeapTuple tuple)
 {
-	return sepgsqlCheckTuplePerms(rel, tuple, NULL, TUPLE__SELECT, false);
+	return sepgsqlCheckTuplePerms(rel, tuple, NULL, DB_TUPLE__SELECT, false);
 }
 
 bool sepgsqlCopyFromTuple(Relation rel, HeapTuple tuple)
@@ -1408,7 +1408,7 @@ bool sepgsqlCopyFromTuple(Relation rel, HeapTuple tuple)
 		tcontext = sepgsqlComputeImplicitContext(rel, tuple);
 		HeapTupleSetSecurity(tuple, tcontext);
 	}
-	return sepgsqlCheckTuplePerms(rel, tuple, NULL, TUPLE__INSERT, false);
+	return sepgsqlCheckTuplePerms(rel, tuple, NULL, DB_TUPLE__INSERT, false);
 }
 
 /* ----------------------------------------------------------
@@ -1425,16 +1425,16 @@ Node *sepgsqlCopyObject(Node *__oldnode) {
 	newnode->tclass = oldnode->tclass;
 	newnode->perms = oldnode->perms;
 	switch (oldnode->tclass) {
-	case SECCLASS_TABLE:
+	case SECCLASS_DB_TABLE:
 		newnode->c.relid = oldnode->c.relid;
 		newnode->c.inh = oldnode->c.inh;
 		break;
-	case SECCLASS_COLUMN:
+	case SECCLASS_DB_COLUMN:
 		newnode->a.relid = oldnode->a.relid;
 		newnode->a.attno = oldnode->a.attno;
 		newnode->a.inh = oldnode->a.inh;
 		break;
-	case SECCLASS_PROCEDURE:
+	case SECCLASS_DB_PROCEDURE:
 		newnode->p.funcid = oldnode->p.funcid;
 		break;
 	default:
@@ -1454,16 +1454,16 @@ bool sepgsqlOutObject(StringInfo str, Node *node) {
 	appendStringInfo(str, ":tclass %u", seitem->tclass);
 	appendStringInfo(str, ":perms %u", seitem->perms);
 	switch(seitem->tclass) {
-	case SECCLASS_TABLE:
+	case SECCLASS_DB_TABLE:
 		appendStringInfo(str, ":c.relid %u", seitem->c.relid);
 		appendStringInfo(str, ":c.inh %s", seitem->c.inh ? "true" : "false");
 		break;
-	case SECCLASS_COLUMN:
+	case SECCLASS_DB_COLUMN:
 		appendStringInfo(str, ":a.relid %u", seitem->c.relid);
 		appendStringInfo(str, ":a.inh %s", seitem->c.inh ? "true" : "false");
 		appendStringInfo(str, ":a.attno %u", seitem->c.inh);
 		break;
-	case SECCLASS_PROCEDURE:
+	case SECCLASS_DB_PROCEDURE:
 		appendStringInfo(str, ":p.funcid %u", seitem->p.funcid);
 		break;
 	default:

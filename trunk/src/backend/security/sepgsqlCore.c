@@ -39,7 +39,7 @@ static struct {
 	} av_perms[sizeof(access_vector_t) * 8];
 } selinux_catalog[] = {
 	{
-		{ "db_database", DB_SECCLASS_DATABASE },
+		{ "db_database", SECCLASS_DB_DATABASE },
 		{
 			{ "create",			DB_DATABASE__CREATE },
 			{ "drop",			DB_DATABASE__DROP },
@@ -56,7 +56,7 @@ static struct {
 		}
 	},
 	{
-		{ "db_table", DB_SECCLASS_TABLE },
+		{ "db_table", SECCLASS_DB_TABLE },
 		{
 			{ "create",			DB_TABLE__CREATE },
 			{ "drop",			DB_TABLE__DROP },
@@ -74,7 +74,7 @@ static struct {
 		}
 	},
 	{
-		{ "db_procedure", DB_SECCLASS_PROCEDURE },
+		{ "db_procedure", SECCLASS_DB_PROCEDURE },
 		{
 			{ "create",			DB_PROCEDURE__CREATE },
 			{ "drop",			DB_PROCEDURE__DROP },
@@ -88,7 +88,7 @@ static struct {
 		}
 	},
 	{
-		{ "db_column", DB_SECCLASS_COLUMN },
+		{ "db_column", SECCLASS_DB_COLUMN },
 		{
 			{ "create",			DB_COLUMN__CREATE },
 			{ "drop",			DB_COLUMN__DROP },
@@ -104,7 +104,7 @@ static struct {
 		}
 	},
 	{
-		{ "db_tuple", DB_SECCLASS_TUPLE },
+		{ "db_tuple", SECCLASS_DB_TUPLE },
 		{
 			{ "relabelfrom",	DB_TUPLE__RELABELFROM },
 			{ "relabelto",		DB_TUPLE__RELABELTO },
@@ -117,7 +117,7 @@ static struct {
 		}
 	},
 	{
-		{ "db_blob", DB_SECCLASS_BLOB },
+		{ "db_blob", SECCLASS_DB_BLOB },
 		{
 			{ "create",			DB_BLOB__CREATE },
 			{ "drop",			DB_BLOB__DROP },
@@ -789,7 +789,7 @@ Oid sepgsqlGetDatabaseContext()
 	if (IsBootstrapProcessingMode()) {
 		return sepgsql_avc_createcon(sepgsqlGetClientContext(),
 									 sepgsqlGetServerContext(),
-									 SECCLASS_DATABASE);
+									 SECCLASS_DB_DATABASE);
 	}
 
 	tuple = SearchSysCache(DATABASEOID,
@@ -833,8 +833,8 @@ void sepgsqlInitialize()
 		sepgsqlClientContext = sepgsql_system_getcon();
 		sepgsql_avc_permission(sepgsqlGetClientContext(),
 							   sepgsqlGetDatabaseContext(),
-							   SECCLASS_DATABASE,
-							   DATABASE__ACCESS,
+							   SECCLASS_DB_DATABASE,
+							   DB_DATABASE__ACCESS,
 							   NULL);
 		return;
 	}
@@ -851,8 +851,8 @@ void sepgsqlInitialize()
 
 	sepgsql_avc_permission(sepgsqlGetClientContext(),
 						   sepgsqlGetDatabaseContext(),
-						   SECCLASS_DATABASE,
-						   DATABASE__ACCESS,
+						   SECCLASS_DB_DATABASE,
+						   DB_DATABASE__ACCESS,
 						   sepgsqlGetDatabaseName());
 }
 

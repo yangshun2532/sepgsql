@@ -90,8 +90,8 @@ void sepgsqlGetDatabaseParam(const char *name)
 		selerror("cache lookup failed for database %u", MyDatabaseId);
 	sepgsql_avc_permission(sepgsqlGetClientContext(),
 						   HeapTupleGetSecurity(tuple),
-						   SECCLASS_DATABASE,
-						   DATABASE__GET_PARAM,
+						   SECCLASS_DB_DATABASE,
+						   DB_DATABASE__GET_PARAM,
 						   sepgsqlGetTupleName(DatabaseRelationId, tuple));
 	ReleaseSysCache(tuple);
 }
@@ -107,8 +107,8 @@ void sepgsqlSetDatabaseParam(const char *name, char *argstring)
 		selerror("cache lookup failed for database %u", MyDatabaseId);
 	sepgsql_avc_permission(sepgsqlGetClientContext(),
 						   HeapTupleGetSecurity(tuple),
-						   SECCLASS_DATABASE,
-						   DATABASE__SET_PARAM,
+						   SECCLASS_DB_DATABASE,
+						   DB_DATABASE__SET_PARAM,
 						   sepgsqlGetTupleName(DatabaseRelationId, tuple));
 	ReleaseSysCache(tuple);
 }
@@ -131,8 +131,8 @@ void sepgsqlLockTable(Oid relid)
 	if (classForm->relkind == RELKIND_RELATION)
 		sepgsql_avc_permission(sepgsqlGetClientContext(),
 							   HeapTupleGetSecurity(tuple),
-							   SECCLASS_TABLE,
-							   TABLE__LOCK,
+							   SECCLASS_DB_TABLE,
+							   DB_TABLE__LOCK,
 							   sepgsqlGetTupleName(RelationRelationId, tuple));
 	ReleaseSysCache(tuple);
 }
@@ -169,7 +169,7 @@ void sepgsqlCallFunction(FmgrInfo *finfo, bool with_perm_check)
 {
 	HeapTuple tuple;
 	Oid execcon;
-	uint32 perms = PROCEDURE__EXECUTE;
+	uint32 perms = DB_PROCEDURE__EXECUTE;
 
 	tuple = SearchSysCache(PROCOID,
 						   ObjectIdGetDatum(finfo->fn_oid),
@@ -186,14 +186,14 @@ void sepgsqlCallFunction(FmgrInfo *finfo, bool with_perm_check)
 		finfo->fn_pgace_data = ObjectIdGetDatum(execcon);
 		finfo->fn_addr = __callTrustedProcedure;
 
-		perms |= PROCEDURE__ENTRYPOINT;
+		perms |= DB_PROCEDURE__ENTRYPOINT;
 	}
 
 	if (with_perm_check) {
 		/* check procedure:{execute entrypoint} permission */
 		sepgsql_avc_permission(sepgsqlGetClientContext(),
 							   HeapTupleGetSecurity(tuple),
-							   SECCLASS_PROCEDURE,
+							   SECCLASS_DB_PROCEDURE,
 							   perms,
 							   sepgsqlGetTupleName(ProcedureRelationId, tuple));
 	}
@@ -222,9 +222,9 @@ bool sepgsqlCallFunctionTrigger(FmgrInfo *finfo, TriggerData *tgdata)
 	} else {
 		selerror("unknown trigger event type (%u)", tgdata->tg_event);
 	}
-	if (oldtup && !sepgsqlCheckTuplePerms(rel, oldtup, NULL, TUPLE__SELECT, false))
+	if (oldtup && !sepgsqlCheckTuplePerms(rel, oldtup, NULL, DB_TUPLE__SELECT, false))
 		return false;
-	if (newtup && !sepgsqlCheckTuplePerms(rel, newtup, NULL, TUPLE__SELECT, false))
+	if (newtup && !sepgsqlCheckTuplePerms(rel, newtup, NULL, DB_TUPLE__SELECT, false))
 		return false;
 
 	sepgsqlCallFunction(finfo, false);
@@ -257,8 +257,8 @@ void sepgsqlLoadSharedModule(const char *filename)
 
 	sepgsql_avc_permission(sepgsqlGetDatabaseContext(),
 						   DatumGetObjectId(filecon_sid),
-						   SECCLASS_DATABASE,
-						   DATABASE__LOAD_MODULE,
+						   SECCLASS_DB_DATABASE,
+						   DB_DATABASE__LOAD_MODULE,
 						   (char *) filename);
 }
 
@@ -270,8 +270,8 @@ Oid sepgsqlLargeObjectGetSecurity(HeapTuple tuple) {
 
 	sepgsql_avc_permission(sepgsqlGetClientContext(),
 						   lo_security,
-						   SECCLASS_BLOB,
-						   BLOB__GETATTR,
+						   SECCLASS_DB_BLOB,
+						   DB_BLOB__GETATTR,
 						   sepgsqlGetTupleName(LargeObjectRelationId, tuple));
 	return lo_security;
 }
@@ -281,13 +281,13 @@ void sepgsqlLargeObjectSetSecurity(HeapTuple tuple, Oid lo_security, bool is_fir
 	if (is_first) {
 		sepgsql_avc_permission(sepgsqlGetClientContext(),
 							   HeapTupleGetSecurity(tuple),
-							   SECCLASS_BLOB,
-							   BLOB__SETATTR | BLOB__RELABELFROM,
+							   SECCLASS_DB_BLOB,
+							   DB_BLOB__SETATTR | DB_BLOB__RELABELFROM,
 							   sepgsqlGetTupleName(LargeObjectRelationId, tuple));
 		sepgsql_avc_permission(sepgsqlGetClientContext(),
 							   lo_security,
-							   SECCLASS_BLOB,
-							   BLOB__RELABELTO,
+							   SECCLASS_DB_BLOB,
+							   DB_BLOB__RELABELTO,
 							   sepgsqlGetTupleName(LargeObjectRelationId, tuple));
 	}
 	HeapTupleSetSecurity(tuple, lo_security);
@@ -298,8 +298,8 @@ void sepgsqlLargeObjectCreate(Relation rel, HeapTuple tuple)
 	Oid newcon = sepgsqlComputeImplicitContext(rel, tuple);
 	sepgsql_avc_permission(sepgsqlGetClientContext(),
 						   newcon,
-						   SECCLASS_BLOB,
-						   BLOB__CREATE,
+						   SECCLASS_DB_BLOB,
+						   DB_BLOB__CREATE,
 						   sepgsqlGetTupleName(LargeObjectRelationId, tuple));
 	HeapTupleSetSecurity(tuple, newcon);
 }
@@ -308,19 +308,19 @@ void sepgsqlLargeObjectDrop(Relation rel, HeapTuple tuple)
 {
 	sepgsql_avc_permission(sepgsqlGetClientContext(),
 						   HeapTupleGetSecurity(tuple),
-						   SECCLASS_BLOB,
-						   BLOB__DROP,
+						   SECCLASS_DB_BLOB,
+						   DB_BLOB__DROP,
 						   sepgsqlGetTupleName(LargeObjectRelationId, tuple));
 }
 
 void sepgsqlLargeObjectOpen(Relation rel, HeapTuple tuple, bool read_only)
 {
-	sepgsqlCheckTuplePerms(rel, tuple, NULL, TUPLE__SELECT, true);
+	sepgsqlCheckTuplePerms(rel, tuple, NULL, DB_TUPLE__SELECT, true);
 }
 
 void sepgsqlLargeObjectRead(Relation rel, HeapTuple tuple)
 {
-	sepgsqlCheckTuplePerms(rel, tuple, NULL, TUPLE__SELECT | BLOB__READ, true);
+	sepgsqlCheckTuplePerms(rel, tuple, NULL, DB_TUPLE__SELECT | DB_BLOB__READ, true);
 }
 
 void sepgsqlLargeObjectWrite(Relation rel, HeapTuple newtup, HeapTuple oldtup)
@@ -349,15 +349,15 @@ void sepgsqlLargeObjectWrite(Relation rel, HeapTuple newtup, HeapTuple oldtup)
 		systable_endscan(sd);
 	}
 	HeapTupleSetSecurity(newtup, lo_security);
-	sepgsqlCheckTuplePerms(rel, newtup, NULL, TUPLE__UPDATE | BLOB__WRITE, true);
+	sepgsqlCheckTuplePerms(rel, newtup, NULL, DB_TUPLE__UPDATE | DB_BLOB__WRITE, true);
 }
 
 void sepgsqlLargeObjectImport()
 {
 	sepgsql_avc_permission(sepgsqlGetClientContext(),
 						   sepgsqlGetServerContext(),
-						   SECCLASS_BLOB,
-						   BLOB__IMPORT,
+						   SECCLASS_DB_BLOB,
+						   DB_BLOB__IMPORT,
 						   NULL);
 }
 
@@ -365,8 +365,8 @@ void sepgsqlLargeObjectExport()
 {
 	sepgsql_avc_permission(sepgsqlGetClientContext(),
 						   sepgsqlGetServerContext(),
-						   SECCLASS_BLOB,
-						   BLOB__EXPORT,
+						   SECCLASS_DB_BLOB,
+						   DB_BLOB__EXPORT,
 						   NULL);
 }
 
@@ -442,7 +442,7 @@ char *sepgsqlSecurityLabelOfLabel(char *context) {
 		selerror("could not obtain server's context");
 
 	/* compute pg_selinux tuple context */
-	rc = security_compute_create_raw(scon, tcon, SECCLASS_TUPLE, &ncon);
+	rc = security_compute_create_raw(scon, tcon, SECCLASS_DB_TUPLE, &ncon);
 	pfree(tcon);
 	freecon(scon);
 	if (rc)
@@ -542,14 +542,14 @@ void sepgsqlSimpleHeapInsert(Relation rel, HeapTuple tuple)
 		newcon = sepgsqlComputeImplicitContext(rel, tuple);
 		HeapTupleSetSecurity(tuple, newcon);
 	}
-	sepgsqlCheckTuplePerms(rel, tuple, NULL, TUPLE__INSERT, true);
+	sepgsqlCheckTuplePerms(rel, tuple, NULL, DB_TUPLE__INSERT, true);
 }
 
 void sepgsqlSimpleHeapUpdate(Relation rel, ItemPointer tid, HeapTuple newtup)
 {
 	HeapTuple oldtup;
 	Oid ncon, ocon;
-	uint32 perms = TUPLE__UPDATE;
+	uint32 perms = DB_TUPLE__UPDATE;
 
 	if (!__is_simple_system_relation(rel))
 		return;
@@ -562,10 +562,10 @@ void sepgsqlSimpleHeapUpdate(Relation rel, ItemPointer tid, HeapTuple newtup)
 		ncon = ocon;
 	}
 	if (ncon != ocon)
-		perms |= TUPLE__RELABELFROM;
+		perms |= DB_TUPLE__RELABELFROM;
 	sepgsqlCheckTuplePerms(rel, oldtup, NULL, perms, true);
 
-	perms = (ncon != ocon ? TUPLE__RELABELTO : 0);
+	perms = (ncon != ocon ? DB_TUPLE__RELABELTO : 0);
 	sepgsqlCheckTuplePerms(rel, newtup, oldtup, perms, true);
 
 	heap_freetuple(oldtup);
@@ -579,7 +579,7 @@ void sepgsqlSimpleHeapDelete(Relation rel, ItemPointer tid)
 		return;
 
 	oldtup = __getHeapTupleFromItemPointer(rel, tid);
-	sepgsqlCheckTuplePerms(rel, oldtup, NULL, TUPLE__DELETE, true);
+	sepgsqlCheckTuplePerms(rel, oldtup, NULL, DB_TUPLE__DELETE, true);
 	heap_freetuple(oldtup);
 }
 
@@ -601,9 +601,9 @@ bool sepgsqlExecInsert(Relation rel, HeapTuple tuple, bool with_returning)
 		newcon = sepgsqlComputeImplicitContext(rel, tuple);
 		HeapTupleSetSecurity(tuple, newcon);
 	}
-	perms = TUPLE__INSERT;
+	perms = DB_TUPLE__INSERT;
 	if (with_returning)
-		perms |= TUPLE__SELECT;
+		perms |= DB_TUPLE__SELECT;
 
 	return sepgsqlCheckTuplePerms(rel, tuple, NULL, perms, false);
 }
@@ -623,9 +623,9 @@ bool sepgsqlExecUpdate(Relation rel, HeapTuple newtup, ItemPointer tid, bool wit
 		oldcon = newcon;
 	}
 	if (newcon != oldcon) {
-		perms |= TUPLE__RELABELTO;
+		perms |= DB_TUPLE__RELABELTO;
 		if (with_returning)
-			perms |= TUPLE__SELECT;
+			perms |= DB_TUPLE__SELECT;
 	}
 	rc = sepgsqlCheckTuplePerms(rel, newtup, oldtup, perms, false);
 
