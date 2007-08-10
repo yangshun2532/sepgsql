@@ -197,7 +197,7 @@ fi
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
 
 %changelog
-* Fri Aug 10 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.415.beta%{?dist}
+* Fri Aug 10 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.418.beta%{?dist}
 - object classes are renamed with "db_" prefix
 - /etc/init.d/sepostgresql script is improved.
 
