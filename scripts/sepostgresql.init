@@ -26,8 +26,7 @@ fi
 # set defaults for configurable variables
 SEPGSQL_BIN="/usr/bin"
 SEPGSQL_DATA="/var/lib/sepgsql/data"
-SEPGSQL_PORT=5432
-SEPGSQL_OPTS="-i"
+SEPGSQL_OPTS="-i -p 5432"
 SEPGSQL_STARTUP_LOG="/var/lib/sepgsql/pgstartup.log"
 SEPGSQL_LOG="/var/log/sepostgresql.log"
 SEPGSQL_FALLBACK_CONTEXT="user_u:user_r:user_t"
@@ -36,14 +35,12 @@ SEPGSQL_FALLBACK_CONTEXT="user_u:user_r:user_t"
 test -f /etc/sysconfig/${NAME} && . /etc/sysconfig/${NAME}
 
 export SEPGSQL_FALLBACK_CONTEXT
-export PGPORT=${SEPGSQL_PORT}
-export PGDATA=${SEPGSQL_DATA}
 
 # Check that networking is up.
 test "${NETWORKING}" = "no" && exit 0
 test -f "${SEPGSQL_BIN}/postmaster" || exit 1
 
-script_result=1
+script_result=0
 
 do_start() {
     PSQL_START=$"Starting ${NAME} service: "
@@ -51,29 +48,28 @@ do_start() {
 
     # make sure startup-time log file is valid
     if [ ! -e "${SEPGSQL_STARTUP_LOG}" -a ! -h "${SEPGSQL_STARTUP_LOG}" ]; then
-	touch "${SEPGSQL_STARTUP_LOG}" || exit 1
-	chown sepgsql:sepgsql "${SEPGSQL_STARTUP_LOG}"
-	chmod 600 "${SEPGSQL_STARTUP_LOG}"
-	/sbin/restorecon "${SEPGSQL_STARTUP_LOG}"
+        touch "${SEPGSQL_STARTUP_LOG}" || exit 1
+        chown sepgsql:sepgsql "${SEPGSQL_STARTUP_LOG}"
+        chmod 600 "${SEPGSQL_STARTUP_LOG}"
+        /sbin/restorecon "${SEPGSQL_STARTUP_LOG}"
     fi
     
     # check for the SEPGSQL_DATA structure
     if [ -f "${SEPGSQL_DATA}/PG_VERSION" ] && [ -d "${SEPGSQL_DATA}/base" ]; then
-	if [ x`cat "${SEPGSQL_DATA}/PG_VERSION"` != x"${PGMAJORVERSION}" ]; then
-	    failure "$PSQL_START"
-	    echo
-	    echo "HINT: An old version of the database format was found."
-	    echo "HINT: You need to upgrade the data format before using SE-PostgreSQL."
-	    exit 1
-	fi
+        if [ x`cat "${SEPGSQL_DATA}/PG_VERSION"` != x"${PGMAJORVERSION}" ]; then
+            echo_failure
+            echo
+            echo "HINT: An old version of the database format was found."
+            echo "HINT: You need to upgrade the data format before using SE-PostgreSQL."
+            exit 1
+        fi
     else
-	failure "$PSQL_START"
-	echo
-	echo "HINT: ${SEPGSQL_DATA} is missing."
-	echo "HINT: Use '/etc/init.d/${NAME} initdb'"
-	echo "HINT:   to initialize the database cluster first."
-	script_result=1
-	exit 1
+        echo_failure
+        echo
+        echo "HINT: ${SEPGSQL_DATA} is missing."
+        echo "HINT: Use '/etc/init.d/${NAME} initdb'"
+        echo "HINT:   to initialize the database cluster first."
+        exit 1
     fi
 
     # make sure SEPGSQL_LOG
@@ -82,58 +78,71 @@ do_start() {
     chmod 600 ${SEPGSQL_LOG}
     test -x /sbin/restorecon && /sbin/restorecon ${SEPGSQL_LOG}
 
-    # to correct debugging info
-    ulimit -c unlimited
-    cd ~sepgsql
-
-    /sbin/runuser sepgsql -- -c "${SEPGSQL_BIN}/pg_ctl start -l ${SEPGSQL_LOG} -o '${SEPGSQL_OPTS}'" >> ${SEPGSQL_STARTUP_LOG} 2>&1 < /dev/null
+    cd ${SEPGSQL_BIN}
+    /sbin/runuser sepgsql -c "./pg_ctl -l ${SEPGSQL_LOG} -D ${SEPGSQL_DATA} -o '${SEPGSQL_OPTS}' start" \
+        >> ${SEPGSQL_STARTUP_LOG} 2>&1 < /dev/null
     sleep 1
-    if /sbin/runuser sepgsql -- -c "${SEPGSQL_BIN}/pg_ctl status" >& /dev/null; then
-	success "$PSQL_START"
+    PID=`/sbin/runuser sepgsql -c "./pg_ctl -D ${SEPGSQL_DATA} status 2>/dev/null \
+	| sed 's/^.*PID: //g' | sed 's/[^0-9].*$//g'"`
+    if [ ${PIPESTATUS[0]} -eq 0 ]; then
+        echo "$PID" > "/var/run/${NAME}.pid"
+        touch "/var/lock/subsys/${NAME}.lock"
+        echo_success
     else
-	failure "$PSQL_START"
-	script_result=1
+        script_result=1
+        echo_failure
     fi
     echo
 }
 
 do_stop() {
     echo -n $"Stopping ${NAME} service: "
-    /sbin/runuser sepgsql -- -c "${SEPGSQL_BIN}/pg_ctl stop" >> ${SEPGSQL_STARTUP_LOG} 2>&1 < /dev/null
-    script_result=$?
-    if [ $script_result -eq 0 ]; then
-	echo_success
+    cd ${SEPGSQL_BIN}
+    /sbin/runuser sepgsql -c "./pg_ctl -D ${SEPGSQL_DATA} stop" \
+        >> ${SEPGSQL_STARTUP_LOG} 2>&1 < /dev/null
+    ret=$?
+    if [ $ret -eq 0 ]; then
+        echo_success
     else
-	echo_failure
-	script_result=1
+        echo_failure
+        script_result=1
     fi
     echo
+    rm -f "/var/run/${NAME}.pid"
+    rm -f "/var/lock/subsys/${NAME}.lock"
 }
 
 do_status() {
-    (
-	/sbin/runuser sepgsql -- -c "${SEPGSQL_BIN}/pg_ctl status" 2>&1 
-	script_result=$?
-    ) | head -1 | sed "s/^pg_ctl:/${NAME}:/g"
+    cd ${SEPGSQL_BIN}
+    /sbin/runuser sepgsql -- -c "./pg_ctl -D ${SEPGSQL_DATA} status" 2>/dev/null \
+        | head -1 | sed "s/^pg_ctl:/${NAME}:/g"
+
+    if [ ${PIPESTATUS[0]} -ne 0 ]; then
+        script_result=3
+        test -e "/var/run/${NAME}.pid"          && script_result=1
+        test -e "/var/lock/subsys/${NAME}.lock" && script_result=2
+    fi
 }
 
 do_condrestart() {
-    /sbin/runuser sepgsql -- -c "${SEPGSQL_BIN}/pg_ctl status" >& /dev/null && do_stop && do_start
+    cd ${SEPGSQL_BIN}
+    /sbin/runuser sepgsql -- -c "./pg_ctl -D ${SEPGSQL_DATA} status" &>/dev/null && do_stop && do_start
 }
 
 do_condstop() {
-    /sbin/runuser sepgsql -- -c "${SEPGSQL_BIN}/pg_ctl status" >& /dev/null && do_stop
+    cd ${SEPGSQL_BIN}
+    /sbin/runuser sepgsql -- -c "./pg_ctl -D ${SEPGSQL_DATA} status" &>/dev/null && do_stop
 }
 
 do_reload() {
     echo -n $"Reloading ${NAME} service: "
-    /sbin/runuser sepgsql -- -c "${SEPGSQL_BIN}/pg_ctl reload" >> ${SEPGSQL_STARTUP_LOG} 2>&1 < /dev/null
-    script_result=$?
-    if [ $script_result -eq 0 ]; then
-	echo_success
+    cd ${SEPGSQL_BIN}
+    /sbin/runuser sepgsql -- -c "./pg_ctl -D ${SEPGSQL_DATA} reload" &>/dev/null < /dev/null
+    if [ $? -eq 0 ]; then
+        echo_success
     else
-	echo_failure
-	script_result=1
+        echo_failure
+        script_result=1
     fi
     echo
 }
@@ -155,7 +164,8 @@ do_initdb() {
 	# cleanup SELinux labeling for "${SEPGSQL_DATA}"
 	test -x /sbin/restorecon && /sbin/restorecon -R "${SEPGSQL_DATA}"
 	# Initialize the database
-	/sbin/runuser -- sepgsql -c "${SEPGSQL_BIN}/initdb -A 'ident sameuser'" \
+        cd ${SEPGSQL_BIN}
+	/sbin/runuser -- sepgsql -c "./initdb -A 'ident sameuser' ${SEPGSQL_DATA}" \
 	    >> "${SEPGSQL_STARTUP_LOG}" 2>&1 < /dev/null
 	if [ -f "${SEPGSQL_DATA}/PG_VERSION" ]; then
 	    echo_success
@@ -176,7 +186,7 @@ case "$1" in
         do_stop
 	;;
     status)
-        do_status
+	do_status
 	;;
     restart)
 	do_stop
@@ -200,4 +210,4 @@ case "$1" in
     ;;
 esac
 
-exit ${script_result}
+exit $script_result
