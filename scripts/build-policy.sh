@@ -53,7 +53,7 @@ if rpm -qp --qf "%{release}" "${SRPMFILE}" | egrep -q '\.fc7$'; then
                        print \"%patch99 -p1\"                                                   \
                        print; next; }                                                           \
                { print; }" > $TEMPFILE
-    diff -NU3 selinux-policy.spec $TEMPFILE | less
+    cp $TEMPFILE selinux-policy.spec && rm -f $TEMPFILE
 elif rpm -qp --qf "%{release}" "${SRPMFILE}" | egrep -q '\.fc8$'; then
     # Fedora 8 (rawhide)
     TEMPFILE=`mktemp`
@@ -71,7 +71,7 @@ elif rpm -qp --qf "%{release}" "${SRPMFILE}" | egrep -q '\.fc8$'; then
                        print \"%patch99 -p1\";                                                  \
                        print; next; }                                                           \
                { print; }" > $TEMPFILE
-    diff -NU3 selinux-policy.spec $TEMPFILE | less
+    cp $TEMPFILE selinux-policy.spec && rm -f $TEMPFILE
 else
     echo "unknown distribution: ${SRPMFILE}"
     exit 1
