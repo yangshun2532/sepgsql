@@ -49,8 +49,8 @@ if rpm -qp --qf "%{release}" "${SRPMFILE}" | egrep -q '\.fc7$'; then
                        print; next; }                                                           \
                /^%patch[0-9]*/ { b++; print; next; }                                            \
                b > 0 { b = 0;                                                                   \
-                       print \"%patch98 -p1\"                                                   \
-                       print \"%patch99 -p1\"                                                   \
+                       print \"%patch98 -p1\";                                                  \
+                       print \"%patch99 -p1\";                                                  \
                        print; next; }                                                           \
                { print; }" > $TEMPFILE
     cp $TEMPFILE selinux-policy.spec && rm -f $TEMPFILE
@@ -58,7 +58,6 @@ elif rpm -qp --qf "%{release}" "${SRPMFILE}" | egrep -q '\.fc8$'; then
     # Fedora 8 (rawhide)
     TEMPFILE=`mktemp`
     cp ${POLICY_REPO}/refpolicy-add-sepgsql-definitions.fedora8.patch ${SOURCE_DIR}
-    cp ${POLICY_REPO}/refpolicy-fixed-Makefile.devel-fedora8 ${SOURCE_DIR}/Makefile.devel
     cat selinux-policy.spec                                                                     \
         | sed 's/%{?dist}/.sepgsql%{?dist}/g'                                                   \
         | awk "BEGIN { a = b = 0; }                                                             \
