@@ -76,7 +76,7 @@ autoconf
                 --datadir=%{_datadir}/sepgsql
 # parallel build, if possible
 SECCLASS_DB_DATABASE=`grep ^define %{_datadir}/selinux/devel/include/support/all_perms.spt | cat -n | grep all_db_database_perms | awk '{print $1}'`
-make CUSTOM_COPT="%%__default_custom_copt__%% -D SECCLASS_DB_DATABASE=${SECCLASS_DATABASE}" %{?_smp_mflags}
+make CUSTOM_COPT="%%__default_custom_copt__%% -D SECCLASS_DB_DATABASE=${SECCLASS_DB_DATABASE}" %{?_smp_mflags}
 
 %install
 rm -rf %{buildroot}
@@ -197,7 +197,7 @@ fi
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
 
 %changelog
-* Fri Aug 17 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.422.beta%{?dist}
+* Fri Aug 17 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.423.beta%{?dist}
 - fix policy not to execute sepgsql_user_proc_t from administrative domain
 
 * Fri Aug 10 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.418.beta%{?dist}
