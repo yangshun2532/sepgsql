@@ -232,7 +232,7 @@ allow sepgsql_users_domain sepgsql_fixed_table_t : db_column { getattr use selec
 allow sepgsql_users_domain sepgsql_fixed_table_t : db_tuple { use select insert };
 
 allow sepgsql_users_domain sepgsql_proc_t : db_procedure { getattr execute };
-allow sepgsql_users_domain sepgsql_user_proc_t : db_procedure { create drop getattr setattr execute };
+allow { sepgsql_users_domain - sepgsql_admin_domain} sepgsql_user_proc_t : db_procedure { create drop getattr setattr execute };
 allow sepgsql_users_domain sepgsql_trusted_proc_t : db_procedure { getattr execute entrypoint };
 
 allow sepgsql_users_domain sepgsql_blob_t : db_blob { create drop getattr setattr read write };
