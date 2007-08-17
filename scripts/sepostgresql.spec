@@ -75,7 +75,7 @@ autoconf
                 --libdir=%{_libdir}/sepgsql     \
                 --datadir=%{_datadir}/sepgsql
 # parallel build, if possible
-SECCLASS_DATABASE=`grep ^define %{_datadir}/selinux/devel/include/support/all_perms.spt | cat -n | grep all_database_perms | awk '{print $1}'`
+SECCLASS_DATABASE=`grep ^define %{_datadir}/selinux/devel/include/support/all_perms.spt | cat -n | grep all_db_database_perms | awk '{print $1}'`
 make CUSTOM_COPT="%%__default_custom_copt__%% -D SECCLASS_DATABASE=${SECCLASS_DATABASE}" %{?_smp_mflags}
 
 %install
