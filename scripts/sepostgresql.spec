@@ -93,8 +93,8 @@ popd
 make DESTDIR=%{buildroot} install
 
 # to avoid conflicts with postgresql package
-mv %{buildroot}%{_bindir}/pg_dump     %{buildroot}%{_bindir}/sepg_dump
-mv %{buildroot}%{_bindir}/pg_dumpall  %{buildroot}%{_bindir}/sepg_dumpall
+mv %{buildroot}%{_bindir}/pg_dump     %{buildroot}%{_bindir}/pg_dump.sepgsql
+mv %{buildroot}%{_bindir}/pg_dumpall  %{buildroot}%{_bindir}/pg_dumpall.sepgsql
 
 install -d -m 700 %{buildroot}%{_localstatedir}/lib/sepgsql
 install -d -m 700 %{buildroot}%{_localstatedir}/lib/sepgsql/data
@@ -133,6 +133,12 @@ done
 /sbin/fixfiles -R %{name} restore || :
 /sbin/restorecon -R %{_localstatedir}/lib/sepgsql || :
 
+if ! rpm -q postgresql >& /dev/null; then
+    echo "pg_dump/pg_dumpall installed (%post) : $*"
+    ln -sf pg_dump.sepgsql    %{_bindir}/pg_dump
+    ln -sf pg_dumpall.sepgsql %{_bindir}/pg_dumpall
+fi
+
 %preun
 if [ $1 -eq 0 ]; then           # rpm -e case
     /sbin/service %{name} condstop >/dev/null 2>&1
@@ -154,7 +160,30 @@ if [ $1 -eq 0 ]; then           # rpm -e case
     done
     /sbin/fixfiles -R %{name} restore || :
     test -d %{_localstatedir}/lib/sepgsql && /sbin/restorecon -R %{_localstatedir}/lib/sepgsql || :
+
+    test -L %{_bindir}/pg_dump    && rm -f %{_bindir}/pg_dump
+    test -L %{_bindir}/pg_dumpall && rm -f %{_bindir}/pg_dumpall    
+    if rpm -q postgresql >& /dev/null; then
+        test -f %{_bindir}/pg_dump.native    && mv %{_bindir}/pg_dump.native    %{_bindir}/pg_dump
+        test -f %{_bindir}/pg_dumpall.native && mv %{_bindir}/pg_dumpall.native %{_bindir}/pg_dumpall
+    fi
 fi
+
+%triggerin -- postgresql
+if [ ! -L %{_bindir}/pg_dump ]; then
+    test -e %{_bindir}/pg_dump && mv %{_bindir}/pg_dump %{_bindir}/pg_dump.native
+    ln -sf pg_dump.sepgsql %{_bindir}/pg_dump
+fi
+if [ ! -L %{_bindir}/pg_dumpall ]; then
+    test -e %{_bindir}/pg_dumpall && mv %{_bindir}/pg_dumpall %{_bindir}/pg_dumpall.native
+    ln -sf pg_dumpall.sepgsql %{_bindir}/pg_dumpall
+fi
+
+%triggerpostun -- postgresql
+test -f %{_bindir}/pg_dump.native    && rm -f %{_bindir}/pg_dump.native
+test -f %{_bindir}/pg_dumpall.native && rm -f %{_bindir}/pg_dumpall.native
+ln -sf pg_dump.sepgsql    %{_bindir}/pg_dump
+ln -sf pg_dumpall.sepgsql %{_bindir}/pg_dumpall
 
 %files
 %defattr(-,root,root,-)
@@ -167,8 +196,8 @@ fi
 %{_bindir}/pg_resetxlog
 %{_bindir}/postgres
 %{_bindir}/postmaster
-%{_bindir}/sepg_dump
-%{_bindir}/sepg_dumpall
+%{_bindir}/pg_dump.sepgsql
+%{_bindir}/pg_dumpall.sepgsql
 %{_mandir}/man1/initdb.*
 %{_mandir}/man1/ipcclean.*
 %{_mandir}/man1/pg_controldata.*
@@ -197,6 +226,9 @@ fi
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
 
 %changelog
+* Sat Aug 18 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.426.beta%{?dist}
+- change installation path for pg_dump/pg_dumpall
+
 * Fri Aug 17 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.423.beta%{?dist}
 - fix policy not to execute sepgsql_user_proc_t from administrative domain
 
