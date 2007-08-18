@@ -1,0 +1,13 @@
+Index: trunk/src/bin/pg_dump/pg_dumpall.c
+===================================================================
+--- trunk/src/bin/pg_dump/pg_dumpall.c	(revision 426)
++++ trunk/src/bin/pg_dump/pg_dumpall.c	(working copy)
+@@ -139,7 +139,7 @@
+ 		}
+ 	}
+ 
+-	if ((ret = find_other_exec(argv[0], "pg_dump", PGDUMP_VERSIONSTR,
++	if ((ret = find_other_exec(argv[0], "sepg_dump", PGDUMP_VERSIONSTR,
+ 							   pg_dump_bin)) < 0)
+ 	{
+ 		char		full_path[MAXPGPATH];
