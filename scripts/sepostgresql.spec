@@ -31,11 +31,11 @@ Patch0: sepostgresql-%%__base_postgresql_version__%%-%%__default_sepgversion__%%
 Patch1: sepostgresql-pg_dump-renaming.patch
 Conflicts: postgresql-server
 BuildRequires: perl glibc-devel bison flex autoconf readline-devel zlib-devel >= 1.0.4
-Buildrequires: checkpolicy libselinux-devel >= %%__default_libselinux_version__%% selinux-policy-devel = %%__default_sepgpolversion__%%
+Buildrequires: checkpolicy libselinux-devel >= 2.0.13 selinux-policy-devel %%__default_sepgpolversion__%%
 Requires(pre): shadow-utils
 Requires(post): /sbin/chkconfig
 Requires(preun): /sbin/chkconfig /sbin/service
-Requires: policycoreutils >= %%__default_policycoreutils_version__%% libselinux >= %%__default_libselinux_version__%% selinux-policy = %%__default_sepgpolversion__%%
+Requires: policycoreutils >= 2.0.16 libselinux >= 2.0.13 selinux-policy %%__default_sepgpolversion__%%
 
 %description
 Security Enhanced PostgreSQL is an extension of PostgreSQL
@@ -78,7 +78,7 @@ autoconf
                 --datadir=%{_datadir}/sepgsql
 # parallel build, if possible
 SECCLASS_DB_DATABASE=`grep ^define %{_datadir}/selinux/devel/include/support/all_perms.spt | cat -n | grep all_db_database_perms | awk '{print $1}'`
-make CUSTOM_COPT="%%__default_custom_copt__%% -D SECCLASS_DB_DATABASE=${SECCLASS_DB_DATABASE}" %{?_smp_mflags}
+make CUSTOM_COPT="-D SECCLASS_DB_DATABASE=${SECCLASS_DB_DATABASE}" %{?_smp_mflags}
 
 %install
 rm -rf %{buildroot}

@@ -51,33 +51,18 @@ if echo "${SEPGSQL_BASETGZ}" | egrep -q '^(http|ftp)://'; then
     SEPGSQL_BASETGZ=`basename ${SEPGSQL_BASETGZ}`
 fi
 
-#-- check security policy dependency --
-if rpm -q --qf '%{release}' selinux-policy-devel | egrep -q '.sepgsql'; then
-    SEPGPOLVERSION=`rpm -q --qf '%{version}-%{release}' selinux-policy-devel`
-else
-    echo "selinux-policy-devel is NOT SE-PostgreSQL supported version"
-    echo "It does not contain the definition of object classes and access"
-    echo "vectors related to database objects."
-    exit 1
-fi
-
 #-- check distribution dependency --
-if [ -x /usr/lib/rpm/redhat/dist.sh ]; then
-    if [ "`/usr/lib/rpm/redhat/dist.sh`" = ".fc6" ]; then
-        LIBSELINUX_VERSION="1.33.4"
-        POLICYCOREUTILS_VERSION="1.34.1"
-        SEPGSQL_CUSTOM_COPT="-D SEPGSQLOPT_LIBSELINUX_1_33"
-    elif [ "`/usr/lib/rpm/redhat/dist.sh`" = ".fc7" ]; then
-        LIBSELINUX_VERSION="2.0.13"
-        POLICYCOREUTILS_VERSION="2.0.16"
-        SEPGSQL_CUSTOM_COPT=""
-    else
-        echo "unknown distribution: `/usr/lib/rpm/redhat/dist.sh`"
+DIST=`rpm -E '%dist'`
+if [ "${DIST}" = ".fc7" ]; then
+    SEPGPOLVERSION="= `rpm -q --qf '%{version}-%{release}' selinux-policy-devel`"
+    if ! echo "$SEPGPOLVERSION" | grep -q .sepgsql; then
+        echo "selinux-policy-devel is NOT SE-PostgreSQL supported version"
+        echo "It does not contain the definition of object classes and access"
+        echo "vectors related to database objects."
         exit 1
     fi
 else
-    echo "we cannot determine the target distribution"
-    exit 1
+    SEPGPOLVERSION=">= 3.0.6"
 fi
 
 #-- create a patch file --
@@ -95,10 +80,7 @@ cat scripts/sepostgresql.spec | \
     sed "s/%%__default_sepgversion__%%/${SEPGVERSION}/g" | \
     sed "s/%%__default_sepgversion_minor__%%/${SEPGVERSION_MINOR}/g" | \
     sed "s/%%__default_sepgextension__%%/${DEFAULT_SEPGEXTENSION}/g" | \
-    sed "s/%%__default_sepgpolversion__%%/${SEPGPOLVERSION}/g" | \
-    sed "s/%%__default_libselinux_version__%%/${LIBSELINUX_VERSION}/g" | \
-    sed "s/%%__default_policycoreutils_version__%%/${POLICYCOREUTILS_VERSION}/g" | \
-    sed "s/%%__default_custom_copt__%%/${SEPGSQL_CUSTOM_COPT}/g" \
+    sed "s/%%__default_sepgpolversion__%%/${SEPGPOLVERSION}/g" \
         > ${RPMSOURCE}/sepostgresql.spec
 
 cp policy/sepostgresql.if policy/sepostgresql.fc ${RPMSOURCE}
