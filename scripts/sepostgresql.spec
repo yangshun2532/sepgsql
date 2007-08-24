@@ -33,8 +33,9 @@ Conflicts: postgresql-server
 BuildRequires: perl glibc-devel bison flex autoconf readline-devel zlib-devel >= 1.0.4
 Buildrequires: checkpolicy libselinux-devel >= 2.0.13 selinux-policy-devel %%__default_sepgpolversion__%%
 Requires(pre): shadow-utils
-Requires(post): /sbin/chkconfig
+Requires(post): policycoreutils /sbin/chkconfig
 Requires(preun): /sbin/chkconfig /sbin/service
+Requires(postun): policycoreutils
 Requires: policycoreutils >= 2.0.16 libselinux >= 2.0.13 selinux-policy %%__default_sepgpolversion__%%
 
 %description
@@ -199,44 +200,48 @@ fi
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
 
 %changelog
-* Sat Aug 18 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.427.beta%{?dist}
+* Fri Aug 24 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.429.beta
+- add policycoreutils to Requires(post/postun)
+- upstreamed selinux-policy got SE-PostgreSQL related object classes definition.
+
+* Sat Aug 18 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.427.beta
 - sepg_dumpall uses /usr/bin/sepg_dump
 
-* Fri Aug 17 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.423.beta%{?dist}
+* Fri Aug 17 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.423.beta
 - fix policy not to execute sepgsql_user_proc_t from administrative domain
 
-* Fri Aug 10 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.418.beta%{?dist}
+* Fri Aug 10 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.418.beta
 - object classes are renamed with "db_" prefix
 - /etc/init.d/sepostgresql script is improved.
 
-* Thu Aug 2 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.409.beta%{?dist}
+* Thu Aug 2 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.409.beta
 - specfile updated based on the following comments
   https://bugzilla.redhat.com/bugzilla/show_bug.cgi?id=249522#c5
 
-* Mon Jul 30 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.407.beta%{?dist}
+* Mon Jul 30 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.407.beta
 - fix spec file based on Fedora reviewing process
 - add rawhide support
 
-* Mon Jul 23 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.402.beta%{?dist}
+* Mon Jul 23 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.402.beta
 - add manpage of sepostgresql
 - fix specfile convention for Fedora suitable
 
-* Sun Jul 15 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.398.beta%{?dist}
+* Sun Jul 15 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.398.beta
 - SECCLASS_DATABASE is updated (fc7->62, fc6->61)
 
-* Sun Jul  1 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.391.beta%{?dist}
+* Sun Jul  1 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.391.beta
 - Mark as a beta version.
 
-* Sat Jun 30 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.384.alpha%{?dist}
+* Sat Jun 30 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.384.alpha
 - add fallback context support with $SEPGSQL_FALLBACK_CONTEXT
 - add sepgsql_enable_users_ddl boolean to restrict sepgsql_sysobj_t
 - BUGFIX: incorrect inherited attribute expanding for RECORD type (attno=0)
 - BUGFIX: trigger functions were not checked in COPY FROM statement
 
-* Tue Jun 26 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.376.alpha%{?dist}
+* Tue Jun 26 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.376.alpha
 - add pgaceExecutorStart() to hook ExecutorStart()
 
-* Mon Jun 25 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.372.alpha%{?dist}
+* Mon Jun 25 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.372.alpha
 - add table name prefix for column name on audit messages
 - use security_label_raw_in as an alternative for security_label_in
 - add hook for query execution path with SPI_ interface
@@ -248,26 +253,26 @@ fi
 - BUGFIX: correct self-deadlock
 - update security policy: sepgsql_sysobj_t, sepgsql_user_proc_t, sepgsql_ro_blob_t
 
-* Tue Jun 19 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.351.alpha%{?dist}
+* Tue Jun 19 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.351.alpha
 - BUGFIX: sepgsql_compute_avc_datum() accessed userspace AVC without
           holding any lock.
 - improve build scripts.
 
-* Sat Jun 16 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.320.alpha%{?dist}
+* Sat Jun 16 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.320.alpha
 - update: sepostgresql.pp security policy fot strict/mls suitable
 - BUGFIX: column:drop evaluation for ALTER TABLE tbl DROP col; statement
 - add --enable-security option for pg_dumpall command
 - add {use} permission for table/column/tuple object classes
 
-* Tue May 29 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.306.alpha%{?dist}
+* Tue May 29 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.306.alpha
 - BUGFIX: RangeTblEntry->requiredPerms are polluted.
 
-* Sun May 27 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.304.alpha%{?dist}
+* Sun May 27 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.304.alpha
 - add support for dynamic object class/access vector mapping
 - BUGFIX: Lack of implicit labeling on COPY FROM statement for system catalogs
 - BUGFIX: Incorrect security context handling for inherited tables
 
-* Fri May 25 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.292.alpha%{?dist}
+* Fri May 25 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.292.alpha
 - add pg_dump/pg_dumpall/pg_restore with --enable-security option
 - add support on OUTER JOIN by rewriting query.
 - add security_context support on COPY TO/FROM statement
@@ -277,7 +282,7 @@ fi
 - BUGFIX: lack of tuple:insert checks at COPY FROM statement
 - BUGFIX: server crash when CREATE TABLE command with newly defined CONTEXT = '...'.
 
-* Wed May 16 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.266.alpha%{?dist}
+* Wed May 16 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.266.alpha
 - BUGFIX: incorrect security context of newly generated system object.
 - BUGFIX: missing error text when audit log is disabled.
 - BUGFIX: incorrect Oid of newly generated tuples within pg_security.
@@ -286,7 +291,7 @@ fi
                  T_DistinctExpr/T_ConvertRowtypeExpr
 - add support CONTEXT = 'xxx' for CREATE TABLE/FUNCTION/DATABASE statement
 
-* Sun Apr 30 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.240.alpha%{?dist}
+* Sun Apr 30 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.240.alpha
 - update base version 8.2.3 -> 8.2.4
 - BUGFIX: unexpected expose in OUTER JOIN statement.
           add rewrite OUTER JOIN into SUBQUERY to ensure filtering violated tuples.
@@ -295,24 +300,24 @@ fi
 - BUGFIX: sepgsql_avc_init() is called in policy state monitoring process
           to avoid nonsense initialization of avc_shmem.
 
-* Fri Apr 27 2007 <kaigai@kaigai.gr.jp> - 8.2.3-0.232.alpha%{?dist}
+* Fri Apr 27 2007 <kaigai@kaigai.gr.jp> - 8.2.3-0.232.alpha
 - object class numbers were redefined. (SECCLASS_DATABASE got into 61)
 - is_selinux_enabled() was cached on the shared memory segment.
 - BUGFIX: server went into infinit loop on foreign key constraint.
 
-* Mon Apr 16 2007 <kaigai@kaigai.gr.jp> - 8.2.3-0.226.alpha%{?dist}
+* Mon Apr 16 2007 <kaigai@kaigai.gr.jp> - 8.2.3-0.226.alpha
 - BUGFIX: cases when several variables with same type in a single table
 
-* Sat Apr 07 2007 <kaigai@kaigai.gr.jp> - 8.2.3-0.214.alpha%{?dist}
+* Sat Apr 07 2007 <kaigai@kaigai.gr.jp> - 8.2.3-0.214.alpha
 - add the first implementation of SE-PostgreSQL on PGACE framework
 
-* Wed Mar 21 2007 <kaigai@kaigai.gr.jp> - 8.2.3-0.212.alpha%{?dist}
+* Wed Mar 21 2007 <kaigai@kaigai.gr.jp> - 8.2.3-0.212.alpha
 - BUGFIX: SetOperation didn't handle its subquery correctly.
   So, it caused server crash.
 
-* Wed Mar 07 2007 <kaigai@kaigai.gr.jp> - 8.2.3-0.209.alpha%{?dist}
+* Wed Mar 07 2007 <kaigai@kaigai.gr.jp> - 8.2.3-0.209.alpha
 - BUGFIX: var->varlevelsup was ignored, so outer references
   from subqueries cause a fault.
 
-* Tue Feb 27 2007 <kaigai@kaigai.gr.jp> - 8.2.3-0.178.alpha%{?dist}
+* Tue Feb 27 2007 <kaigai@kaigai.gr.jp> - 8.2.3-0.178.alpha
 - Initial RPM build
