@@ -100,7 +100,6 @@ mv %{buildroot}%{_bindir}.orig/pg_ctl        %{buildroot}%{_bindir}/sepg_ctl
 mv %{buildroot}%{_bindir}.orig/postgres      %{buildroot}%{_bindir}/sepostgres
 mv %{buildroot}%{_bindir}.orig/pg_dump       %{buildroot}%{_bindir}/sepg_dump
 mv %{buildroot}%{_bindir}.orig/pg_dumpall    %{buildroot}%{_bindir}/sepg_dumpall
-ln -s sepostgres                             %{buildroot}%{_bindir}/sepostmaster
 
 # remove unnecessary files
 rm -rf %{buildroot}%{_bindir}.orig
@@ -180,7 +179,6 @@ fi
 %{_bindir}/initdb.sepgsql
 %{_bindir}/sepg_ctl
 %{_bindir}/sepostgres
-%{_bindir}/sepostmaster
 %{_bindir}/sepg_dump
 %{_bindir}/sepg_dumpall
 %{_mandir}/man8/sepostgresql.*
@@ -200,7 +198,7 @@ fi
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
 
 %changelog
-* Thu Aug 28 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.432.beta
+* Thu Aug 28 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.433.beta
 - add Requires: postgresql-server, instead of Conflicts: tag
   (Some sharable files are removed from sepostgresql package)
 
