@@ -84,6 +84,14 @@ Non-administrative clients can read and write the blobs with this type.
 \fBsepgsql_ro_blob_t\fP is a type for read-only binary large objects (blob).
 Non-administrative clients cannot write the blobs with this type.
 
+.SH "BACKUP and RESTORE"
+\fI--enable-selinux\fP option in \fBsepg_dump\fP and \fBsepg_dumpall\fP enable to dump database image with security context. We can restore the dumped image using the standard \fIpg_restore\fP and so on.
+
+.EX
+Example)
+$ sepg_dump -Ft -b --enable-selinux postgres | gzip -c > postgres.tgz
+.EE
+
 .SH AUTHOR	
 This manual page was written by KaiGai Kohei <kaigai@kaigai.gr.jp>
 
