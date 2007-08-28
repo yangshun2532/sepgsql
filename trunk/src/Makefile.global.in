@@ -73,14 +73,14 @@ bindir := @bindir@
 datadir := @datadir@
 ifeq "$(findstring pgsql, $(datadir))" ""
 ifeq "$(findstring postgres, $(datadir))" ""
-override datadir := $(datadir)/sepgsql
+override datadir := $(datadir)/postgresql
 endif
 endif
 
 sysconfdir := @sysconfdir@
 ifeq "$(findstring pgsql, $(sysconfdir))" ""
 ifeq "$(findstring postgres, $(sysconfdir))" ""
-override sysconfdir := $(sysconfdir)/sepgsql
+override sysconfdir := $(sysconfdir)/postgresql
 endif
 endif
 
@@ -89,7 +89,7 @@ libdir := @libdir@
 pkglibdir = $(libdir)
 ifeq "$(findstring pgsql, $(pkglibdir))" ""
 ifeq "$(findstring postgres, $(pkglibdir))" ""
-override pkglibdir := $(pkglibdir)/sepgsql
+override pkglibdir := $(pkglibdir)/postgresql
 endif
 endif
 
@@ -98,7 +98,7 @@ includedir := @includedir@
 pkgincludedir = $(includedir)
 ifeq "$(findstring pgsql, $(pkgincludedir))" ""
 ifeq "$(findstring postgres, $(pkgincludedir))" ""
-override pkgincludedir := $(pkgincludedir)/sepgsql
+override pkgincludedir := $(pkgincludedir)/postgresql
 endif
 endif
 
@@ -109,7 +109,7 @@ docdir := @docdir@
 ifneq (,$(docdir))
 ifeq "$(findstring pgsql, $(docdir))" ""
 ifeq "$(findstring postgres, $(docdir))" ""
-override docdir := $(docdir)/sepgsql
+override docdir := $(docdir)/postgresql
 endif
 endif
 endif
