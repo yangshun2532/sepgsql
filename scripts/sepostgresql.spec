@@ -7,9 +7,6 @@
 # SELinux policy types
 %define selinux_variants mls strict targeted
 
-# SE-PostgreSQL requires only server side files
-%define _unpackaged_files_terminate_build 0
-
 # SE-PostgreSQL status extension
 %%__default_sepgextension__%%
 
@@ -28,14 +25,14 @@ Source3: sepostgresql.te
 Source4: sepostgresql.fc
 Source5: sepostgresql.8
 Patch0: sepostgresql-%%__base_postgresql_version__%%-%%__default_sepgversion__%%.%%__default_sepgversion_minor__%%.patch
-Patch1: sepostgresql-pg_dump-renaming.patch
-Conflicts: postgresql-server
+Patch1: sepostgresql-fedora-prefix.patch
 BuildRequires: perl glibc-devel bison flex autoconf readline-devel zlib-devel >= 1.0.4
 Buildrequires: checkpolicy libselinux-devel >= 2.0.13 selinux-policy-devel %%__default_sepgpolversion__%%
 Requires(pre): shadow-utils
 Requires(post): policycoreutils /sbin/chkconfig
 Requires(preun): /sbin/chkconfig /sbin/service
 Requires(postun): policycoreutils
+Requires: postgresql-server = %{version}
 Requires: policycoreutils >= 2.0.16 libselinux >= 2.0.13 selinux-policy %%__default_sepgpolversion__%%
 
 %description
@@ -75,8 +72,8 @@ autoconf
                 --enable-debug                  \
                 --enable-cassert                \
 %endif
-                --libdir=%{_libdir}/sepgsql     \
-                --datadir=%{_datadir}/sepgsql
+                --datadir=%{_datadir}/sepgsql   \
+                --libdir=%{_libdir}/pgsql       # shares .so files with native postgresql
 # parallel build, if possible
 SECCLASS_DB_DATABASE=`grep ^define %{_datadir}/selinux/devel/include/support/all_perms.spt | cat -n | grep all_db_database_perms | awk '{print $1}'`
 make CUSTOM_COPT="-D SECCLASS_DB_DATABASE=${SECCLASS_DB_DATABASE}" %{?_smp_mflags}
@@ -93,24 +90,41 @@ do
 done
 popd
 
-make DESTDIR=%{buildroot} install
+make DESTDIR=%{buildroot}  install
 
-# to avoid conflicts with postgresql package
-mv %{buildroot}%{_bindir}/pg_dump     %{buildroot}%{_bindir}/sepg_dump
-mv %{buildroot}%{_bindir}/pg_dumpall  %{buildroot}%{_bindir}/sepg_dumpall
+# avoid to conflict with native postgresql package
+mv %{buildroot}%{_bindir}  %{buildroot}%{_bindir}.orig
+install -d %{buildroot}%{_bindir}
+mv %{buildroot}%{_bindir}.orig/initdb        %{buildroot}%{_bindir}/initdb.sepgsql
+mv %{buildroot}%{_bindir}.orig/pg_ctl        %{buildroot}%{_bindir}/sepg_ctl
+mv %{buildroot}%{_bindir}.orig/postgres      %{buildroot}%{_bindir}/sepostgres
+mv %{buildroot}%{_bindir}.orig/pg_dump       %{buildroot}%{_bindir}/sepg_dump
+mv %{buildroot}%{_bindir}.orig/pg_dumpall    %{buildroot}%{_bindir}/sepg_dumpall
+ln -s sepostgres                             %{buildroot}%{_bindir}/sepostmaster
 
+# remove unnecessary files
+rm -rf %{buildroot}%{_bindir}.orig
+rm -rf %{buildroot}%{_libdir}/pgsql
+rm -rf %{buildroot}%{_includedir}
+rm -rf %{buildroot}%{_usr}/doc
+rm -rf %{buildroot}%{_datadir}/sepgsql/timezone
+rm -rf %{buildroot}%{_mandir}
+
+# /var/lib/sepgsql
 install -d -m 700 %{buildroot}%{_localstatedir}/lib/sepgsql
 install -d -m 700 %{buildroot}%{_localstatedir}/lib/sepgsql/data
 install -d -m 700 %{buildroot}%{_localstatedir}/lib/sepgsql/backups
 
+# /etc/rc.d/init.d/*
 mkdir -p %{buildroot}%{_initrddir}
 install -p -m 755 %{SOURCE1} %{buildroot}%{_initrddir}/sepostgresql
 
+# /usr/share/man/*
 mkdir -p %{buildroot}%{_mandir}/man8
 install -p -m 644 %{SOURCE5} %{buildroot}%{_mandir}/man8
 
 %clean
-rm -rf $RPM_BUILD_ROOT
+rm -rf %{buildroot}
 
 %pre
 getent group  sepgsql >/dev/null || groupadd -r sepgsql
@@ -163,22 +177,12 @@ fi
 %defattr(-,root,root,-)
 %doc COPYRIGHT README HISTORY
 %{_initrddir}/sepostgresql
-%{_bindir}/initdb
-%{_bindir}/ipcclean
-%{_bindir}/pg_controldata
-%{_bindir}/pg_ctl
-%{_bindir}/pg_resetxlog
-%{_bindir}/postgres
-%{_bindir}/postmaster
+%{_bindir}/initdb.sepgsql
+%{_bindir}/sepg_ctl
+%{_bindir}/sepostgres
+%{_bindir}/sepostmaster
 %{_bindir}/sepg_dump
 %{_bindir}/sepg_dumpall
-%{_mandir}/man1/initdb.*
-%{_mandir}/man1/ipcclean.*
-%{_mandir}/man1/pg_controldata.*
-%{_mandir}/man1/pg_ctl.*
-%{_mandir}/man1/pg_resetxlog.*
-%{_mandir}/man1/postgres.*
-%{_mandir}/man1/postmaster.*
 %{_mandir}/man8/sepostgresql.*
 %dir %{_datadir}/sepgsql
 %{_datadir}/sepgsql/postgres.bki
@@ -186,20 +190,20 @@ fi
 %{_datadir}/sepgsql/postgres.shdescription
 %{_datadir}/sepgsql/system_views.sql
 %{_datadir}/sepgsql/*.sample
-%{_datadir}/sepgsql/timezone/
 %{_datadir}/sepgsql/timezonesets/
 %{_datadir}/sepgsql/conversion_create.sql
 %{_datadir}/sepgsql/information_schema.sql
 %{_datadir}/sepgsql/sql_features.txt
-%dir %{_libdir}/sepgsql
-%{_libdir}/sepgsql/plpgsql.so
-%{_libdir}/sepgsql/*_and_*.so
 %attr(644,root,root) %{_datadir}/selinux/*/sepostgresql.pp
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/data
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
 
 %changelog
+* Thu Aug 28 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.432.beta
+- add Requires: postgresql-server, instead of Conflicts: tag
+  (Some sharable files are removed from sepostgresql package)
+
 * Fri Aug 24 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.429.beta
 - add policycoreutils to Requires(post/postun)
 - upstreamed selinux-policy got SE-PostgreSQL related object classes definition.

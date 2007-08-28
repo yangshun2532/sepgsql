@@ -89,7 +89,7 @@ cat policy/sepostgresql.te | \
 
 cp scripts/sepostgresql.8 ${RPMSOURCE}
 
-cp scripts/sepostgresql-pg_dump-renaming.patch ${RPMSOURCE}
+cp scripts/sepostgresql-fedora-prefix.patch ${RPMSOURCE}
 
 tar zxf "${SEPGSQL_BASETGZ}" || exit 1
 

@@ -1,7 +1,7 @@
 #!/bin/sh
 # sepostgresql	This is the init script for starting up SE-PostgreSQL
 #
-# chkconfig: - 64 36
+# chkconfig: - 62 38
 # description: Starts and stops the SE-PostgreSQL backend daemon
 # processname: postmaster
 # pidfile: /var/run/postmaster.pid
@@ -79,10 +79,10 @@ do_start() {
     test -x /sbin/restorecon && /sbin/restorecon ${SEPGSQL_LOG}
 
     cd ${SEPGSQL_BIN}
-    /sbin/runuser sepgsql -c "./pg_ctl -l ${SEPGSQL_LOG} -D ${SEPGSQL_DATA} -o '${SEPGSQL_OPTS}' start" \
+    /sbin/runuser sepgsql -c "./sepg_ctl -l ${SEPGSQL_LOG} -D ${SEPGSQL_DATA} -o '${SEPGSQL_OPTS}' start" \
         >> ${SEPGSQL_STARTUP_LOG} 2>&1 < /dev/null
     sleep 1
-    PID=`/sbin/runuser sepgsql -c "./pg_ctl -D ${SEPGSQL_DATA} status 2>/dev/null \
+    PID=`/sbin/runuser sepgsql -c "./sepg_ctl -D ${SEPGSQL_DATA} status 2>/dev/null \
 	| sed 's/^.*PID: //g' | sed 's/[^0-9].*$//g'"`
     if [ ${PIPESTATUS[0]} -eq 0 ]; then
         echo "$PID" > "/var/run/${NAME}.pid"
@@ -98,7 +98,7 @@ do_start() {
 do_stop() {
     echo -n $"Stopping ${NAME} service: "
     cd ${SEPGSQL_BIN}
-    /sbin/runuser sepgsql -c "./pg_ctl -D ${SEPGSQL_DATA} stop" \
+    /sbin/runuser sepgsql -c "./sepg_ctl -D ${SEPGSQL_DATA} stop" \
         >> ${SEPGSQL_STARTUP_LOG} 2>&1 < /dev/null
     ret=$?
     if [ $ret -eq 0 ]; then
@@ -114,8 +114,8 @@ do_stop() {
 
 do_status() {
     cd ${SEPGSQL_BIN}
-    /sbin/runuser sepgsql -- -c "./pg_ctl -D ${SEPGSQL_DATA} status" 2>/dev/null \
-        | head -1 | sed "s/^pg_ctl:/${NAME}:/g"
+    /sbin/runuser sepgsql -- -c "./sepg_ctl -D ${SEPGSQL_DATA} status" 2>/dev/null \
+        | head -1 | sed "s/^sepg_ctl:/${NAME}:/g"
 
     if [ ${PIPESTATUS[0]} -ne 0 ]; then
         script_result=3
@@ -126,18 +126,18 @@ do_status() {
 
 do_condrestart() {
     cd ${SEPGSQL_BIN}
-    /sbin/runuser sepgsql -- -c "./pg_ctl -D ${SEPGSQL_DATA} status" &>/dev/null && do_stop && do_start
+    /sbin/runuser sepgsql -- -c "./sepg_ctl -D ${SEPGSQL_DATA} status" &>/dev/null && do_stop && do_start
 }
 
 do_condstop() {
     cd ${SEPGSQL_BIN}
-    /sbin/runuser sepgsql -- -c "./pg_ctl -D ${SEPGSQL_DATA} status" &>/dev/null && do_stop
+    /sbin/runuser sepgsql -- -c "./sepg_ctl -D ${SEPGSQL_DATA} status" &>/dev/null && do_stop
 }
 
 do_reload() {
     echo -n $"Reloading ${NAME} service: "
     cd ${SEPGSQL_BIN}
-    /sbin/runuser sepgsql -- -c "./pg_ctl -D ${SEPGSQL_DATA} reload" &>/dev/null < /dev/null
+    /sbin/runuser sepgsql -- -c "./sepg_ctl -D ${SEPGSQL_DATA} reload" &>/dev/null < /dev/null
     if [ $? -eq 0 ]; then
         echo_success
     else
@@ -165,7 +165,7 @@ do_initdb() {
 	test -x /sbin/restorecon && /sbin/restorecon -R "${SEPGSQL_DATA}"
 	# Initialize the database
         cd ${SEPGSQL_BIN}
-	/sbin/runuser -- sepgsql -c "./initdb -A 'ident sameuser' ${SEPGSQL_DATA}" \
+	/sbin/runuser -- sepgsql -c "./initdb.sepgsql -A 'ident sameuser' ${SEPGSQL_DATA}" \
 	    >> "${SEPGSQL_STARTUP_LOG}" 2>&1 < /dev/null
 	if [ -f "${SEPGSQL_DATA}/PG_VERSION" ]; then
 	    echo_success
