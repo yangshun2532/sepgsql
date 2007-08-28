@@ -72,8 +72,9 @@ autoconf
                 --enable-debug                  \
                 --enable-cassert                \
 %endif
-                --datadir=%{_datadir}/sepgsql   \
-                --libdir=%{_libdir}/pgsql       # shares .so files with native postgresql
+                --libdir=%{_libdir}/sepgsql     \
+                --datadir=%{_datadir}/sepgsql
+
 # parallel build, if possible
 SECCLASS_DB_DATABASE=`grep ^define %{_datadir}/selinux/devel/include/support/all_perms.spt | cat -n | grep all_db_database_perms | awk '{print $1}'`
 make CUSTOM_COPT="-D SECCLASS_DB_DATABASE=${SECCLASS_DB_DATABASE}" %{?_smp_mflags}
@@ -101,9 +102,15 @@ mv %{buildroot}%{_bindir}.orig/postgres      %{buildroot}%{_bindir}/sepostgres
 mv %{buildroot}%{_bindir}.orig/pg_dump       %{buildroot}%{_bindir}/sepg_dump
 mv %{buildroot}%{_bindir}.orig/pg_dumpall    %{buildroot}%{_bindir}/sepg_dumpall
 
+# /usr/lib/sepgsql
+mv %{buildroot}%{_libdir}/sepgsql  %{buildroot}%{_libdir}/sepgsql.orig
+install -d %{buildroot}%{_libdir}/sepgsql
+mv %{buildroot}%{_libdir}/sepgsql.orig/*_and_*.so  %{buildroot}%{_libdir}/sepgsql
+mv %{buildroot}%{_libdir}/sepgsql.orig/plpgsql.so  %{buildroot}%{_libdir}/sepgsql
+
 # remove unnecessary files
 rm -rf %{buildroot}%{_bindir}.orig
-rm -rf %{buildroot}%{_libdir}/pgsql
+rm -rf %{buildroot}%{_libdir}/sepgsql.orig
 rm -rf %{buildroot}%{_includedir}
 rm -rf %{buildroot}%{_usr}/doc
 rm -rf %{buildroot}%{_datadir}/sepgsql/timezone
@@ -182,6 +189,9 @@ fi
 %{_bindir}/sepg_dump
 %{_bindir}/sepg_dumpall
 %{_mandir}/man8/sepostgresql.*
+%dir %{_libdir}/sepgsql
+%{_libdir}/sepgsql/plpgsql.so
+%{_libdir}/sepgsql/*_and_*.so
 %dir %{_datadir}/sepgsql
 %{_datadir}/sepgsql/postgres.bki
 %{_datadir}/sepgsql/postgres.description
@@ -198,7 +208,7 @@ fi
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
 
 %changelog
-* Thu Aug 28 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.433.beta
+* Thu Aug 28 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.434.beta
 - add Requires: postgresql-server, instead of Conflicts: tag
   (Some sharable files are removed from sepostgresql package)
 
