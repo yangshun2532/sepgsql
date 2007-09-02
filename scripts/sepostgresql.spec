@@ -208,6 +208,9 @@ fi
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
 
 %changelog
+* Mon Sep 1 2007 <kaigai@kaigai.gr.jp> - 8.2.4-1.0
+- mark as SE-PostgreSQL 8.2.4-1.0
+
 * Thu Aug 28 2007 <kaigai@kaigai.gr.jp> - 8.2.4-0.434.beta
 - add Requires: postgresql-server, instead of Conflicts: tag
   (Some sharable files are removed from sepostgresql package)
