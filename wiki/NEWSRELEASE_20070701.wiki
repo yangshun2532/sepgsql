@@ -8,21 +8,21 @@ You can get those packages from the following URL:
 http://code.google.com/p/sepgsql/downloads/list
 
  * SE-PostgreSQL 1.0 beta version
-  * [http://sepgsql.googlecode.com/files/sepostgresql-8.2.4-0.391.beta.fc6.i386.rpm sepostgresql-8.2.4-0.391.beta.fc6.i386.rpm]
-  * [http://sepgsql.googlecode.com/files/sepostgresql-8.2.4-0.391.beta.fc7.i386.rpm sepostgresql-8.2.4-0.391.beta.fc7.i386.rpm]
-  * [http://sepgsql.googlecode.com/files/sepostgresql-8.2.4-0.391.beta.fc7.src.rpm sepostgresql-8.2.4-0.391.beta.fc7.src.rpm]
-  * [http://sepgsql.googlecode.com/files/sepostgresql-8.2.4-0.391.beta.fc7.patch sepostgresql-8.2.4-0.391.beta.fc7.patch]
+  * sepostgresql-8.2.4-0.391.beta.fc6.i386.rpm
+  * sepostgresql-8.2.4-0.391.beta.fc7.i386.rpm
+  * sepostgresql-8.2.4-0.391.beta.fc7.src.rpm
+  * sepostgresql-8.2.4-0.391.beta.fc7.patch
  * The base security policy for Fedora 7
-  * [http://sepgsql.googlecode.com/files/selinux-policy-2.6.4-14.sepgsql.fc7.noarch.rpm selinux-policy-2.6.4-14.sepgsql.fc7.noarch.rpm]
-  * [http://sepgsql.googlecode.com/files/selinux-policy-targeted-2.6.4-14.sepgsql.fc7.noarch.rpm selinux-policy-targeted-2.6.4-14.sepgsql.fc7.noarch.rpm]
-  * [http://sepgsql.googlecode.com/files/selinux-policy-devel-2.6.4-14.sepgsql.fc7.noarch.rpm selinux-policy-devel-2.6.4-14.sepgsql.fc7.noarch.rpm]
+  * selinux-policy-2.6.4-14.sepgsql.fc7.noarch.rpm
+  * selinux-policy-targeted-2.6.4-14.sepgsql.fc7.noarch.rpm
+  * selinux-policy-devel-2.6.4-14.sepgsql.fc7.noarch.rpm
  * The base security policy for Fedora core 6
-  * [http://sepgsql.googlecode.com/files/selinux-policy-2.4.6-74.sepgsql.fc6.noarch.rpm selinux-policy-2.4.6-74.sepgsql.fc6.noarch.rpm]
-  * [http://sepgsql.googlecode.com/files/selinux-policy-targeted-2.4.6-74.sepgsql.fc6.noarch.rpm selinux-policy-targeted-2.4.6-74.sepgsql.fc6.noarch.rpm]
-  * [http://sepgsql.googlecode.com/files/selinux-policy-devel-2.4.6-74.sepgsql.fc6.noarch.rpm selinux-policy-devel-2.4.6-74.sepgsql.fc6.noarch.rpm]
+  * selinux-policy-2.4.6-74.sepgsql.fc6.noarch.rpm
+  * selinux-policy-targeted-2.4.6-74.sepgsql.fc6.noarch.rpm
+  * selinux-policy-devel-2.4.6-74.sepgsql.fc6.noarch.rpm
  * "The security guide of Security-Enhanced PostgreSQL" (beta edition) as the official documentation
-  * [http://sepgsql.googlecode.com/files/sepgsql_security_guide.20070701.jp.beta.pdf sepgsql_security_guide.20070701.jp.beta.pdf]
-  * [http://sepgsql.googlecode.com/files/sepgsql_security_guide.20070701.en.beta.pdf sepgsql_security_guide.20070701.en.beta.pdf]
+  * sepgsql_security_guide.20070701.jp.beta.pdf
+  * sepgsql_security_guide.20070701.en.beta.pdf
 
 See the following URL, for installation details.
  * SE-PostgreSQL installation memo (Fedora 7)
@@ -83,21 +83,21 @@ The following remarkable changes are applied from SE-PostgreSQL 1.0 alpha releas
 http://code.google.com/p/sepgsql/downloads/list
 
  * SE-PostgreSQL 1.0 β版
-  * [http://sepgsql.googlecode.com/files/sepostgresql-8.2.4-0.391.beta.fc6.i386.rpm sepostgresql-8.2.4-0.391.beta.fc6.i386.rpm]
-  * [http://sepgsql.googlecode.com/files/sepostgresql-8.2.4-0.391.beta.fc7.i386.rpm sepostgresql-8.2.4-0.391.beta.fc7.i386.rpm]
-  * [http://sepgsql.googlecode.com/files/sepostgresql-8.2.4-0.391.beta.fc7.src.rpm sepostgresql-8.2.4-0.391.beta.fc7.src.rpm]
-  * [http://sepgsql.googlecode.com/files/sepostgresql-8.2.4-0.391.beta.fc7.patch sepostgresql-8.2.4-0.391.beta.fc7.patch]
+  * sepostgresql-8.2.4-0.391.beta.fc6.i386.rpm
+  * sepostgresql-8.2.4-0.391.beta.fc7.i386.rpm
+  * sepostgresql-8.2.4-0.391.beta.fc7.src.rpm
+  * sepostgresql-8.2.4-0.391.beta.fc7.patch
  * Fedora 7 向け ベースセキュリティポリシー
-  * [http://sepgsql.googlecode.com/files/selinux-policy-2.6.4-14.sepgsql.fc7.noarch.rpm selinux-policy-2.6.4-14.sepgsql.fc7.noarch.rpm]
-  * [http://sepgsql.googlecode.com/files/selinux-policy-targeted-2.6.4-14.sepgsql.fc7.noarch.rpm selinux-policy-targeted-2.6.4-14.sepgsql.fc7.noarch.rpm]
-  * [http://sepgsql.googlecode.com/files/selinux-policy-devel-2.6.4-14.sepgsql.fc7.noarch.rpm selinux-policy-devel-2.6.4-14.sepgsql.fc7.noarch.rpm]
+  * selinux-policy-2.6.4-14.sepgsql.fc7.noarch.rpm
+  * selinux-policy-targeted-2.6.4-14.sepgsql.fc7.noarch.rpm
+  * selinux-policy-devel-2.6.4-14.sepgsql.fc7.noarch.rpm
  * Fedora core 6 向け ベースセキュリティポリシー
-  * [http://sepgsql.googlecode.com/files/selinux-policy-2.4.6-74.sepgsql.fc6.noarch.rpm selinux-policy-2.4.6-74.sepgsql.fc6.noarch.rpm]
-  * [http://sepgsql.googlecode.com/files/selinux-policy-targeted-2.4.6-74.sepgsql.fc6.noarch.rpm selinux-policy-targeted-2.4.6-74.sepgsql.fc6.noarch.rpm]
-  * [http://sepgsql.googlecode.com/files/selinux-policy-devel-2.4.6-74.sepgsql.fc6.noarch.rpm selinux-policy-devel-2.4.6-74.sepgsql.fc6.noarch.rpm]
+  * selinux-policy-2.4.6-74.sepgsql.fc6.noarch.rpm
+  * selinux-policy-targeted-2.4.6-74.sepgsql.fc6.noarch.rpm
+  * selinux-policy-devel-2.4.6-74.sepgsql.fc6.noarch.rpm
  * 公式のドキュメント "The security guide of Security-Enhanced PostgreSQL" β版
-  * [http://sepgsql.googlecode.com/files/sepgsql_security_guide.20070701.jp.beta.pdf sepgsql_security_guide.20070701.jp.beta.pdf]
-  * [http://sepgsql.googlecode.com/files/sepgsql_security_guide.20070701.en.beta.pdf sepgsql_security_guide.20070701.en.beta.pdf]
+  * sepgsql_security_guide.20070701.jp.beta.pdf
+  * sepgsql_security_guide.20070701.en.beta.pdf
 
 インストールの詳細は以下のURLを参照してください。
  * SE-PostgreSQL installation memo (Fedora 7)
