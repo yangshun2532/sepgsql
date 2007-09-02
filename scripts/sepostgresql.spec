@@ -24,7 +24,7 @@ Source2: sepostgresql.if
 Source3: sepostgresql.te
 Source4: sepostgresql.fc
 Source5: sepostgresql.8
-Patch0: sepostgresql-%%__base_postgresql_version__%%-%%__default_sepgversion__%%.%%__default_sepgversion_minor__%%.patch
+Patch0: sepostgresql-%%__base_postgresql_version__%%-%%__default_sepgversion__%%.patch
 Patch1: sepostgresql-fedora-prefix.patch
 BuildRequires: perl glibc-devel bison flex autoconf readline-devel zlib-devel >= 1.0.4
 Buildrequires: checkpolicy libselinux-devel >= 2.0.13 selinux-policy-devel %%__default_sepgpolversion__%%
