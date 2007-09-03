@@ -1,4 +1,4 @@
-= Installation of the latest version of SE-PostgreSQL =
+= SE-PostgreSQL Instllation Memo on Fedora 7 =
 This document describes the way to install SE-PostgreSQL onto Fedora 7 system.
 
 == Preparation & Download ==
