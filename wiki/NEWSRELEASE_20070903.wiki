@@ -35,13 +35,13 @@ SE-PostgreSQL Installation Memo (Fedora 7)
 == The features of SE-PostgreSQL ==
 Security-Enhanced PostgreSQL (SE-PostgreSQL) is a security extension built in PostgreSQL.
 It enables to apply a unified security policy of SELinux to both operating system and database management system.
-In addition, it also provides fine-grained access control including column and row level, and mandatory access control being non-bypassable, even if privileged database user
+In addition, it also provides fine-grained access control including column and row level, and mandatory access control being non-bypassable, even if privileged database users.
 These features enables to build a database management system into information flow control scheme integrated with operating system, and to protect our information asset from threats like manipulation or leaking. 
 
 == The position of this version ==
 This is the first official version of SE-PostgreSQL based on PostgreSQL 8.2.4. However, it does not have enough achievement of works compared to the original PostgreSQL. Therefore, we recommend you to have enough evaluation and verification on its introduction.
 The series of SE-PostgreSQL 8.2.4-1.x got into maintenance phase after the release of this version, and we don't have any plan to release new version in this series, except for bug fixes.
-The SE-PostgreSQL development team has a plan to develope next major version of SE-PostgreSQL based on PostgreSQL 8.3, with several new features.
+The SE-PostgreSQL development team has a plan to develop next major version of SE-PostgreSQL based on PostgreSQL 8.3, with several new features.
 
 == Acknowledgment ==
 The development of SE-PostgreSQL is supported by Exploratory Software Project, IPA(Information-technology Promotion Agency, Japan). 
@@ -104,5 +104,4 @@ SE-PostgreSQLの開発を計画しています。
 == 謝辞 ==
 SE-PostgreSQLの開発は、IPA/未踏ソフトウェア創造事業(2006年度/下期)の支援を受
 けて開発が進められました。
-
 
