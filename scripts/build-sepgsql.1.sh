@@ -6,7 +6,7 @@ BASEVERSION="8.2.4"
 SEPGSQL_VERSION="1"
 SEPGSQL_MINOR_OFFSET="436"
 # SEPGSQL_EXTENSION=".beta"
-SEPGSQL_BRANCH="trunk"
+SEPGSQL_BRANCH="branches/sepostgresql-8.2.4-1.0"
 
 # ---- SE-PostgreSQL repository
 test -n "${SEPGSQL_REPOSITORY}" || \
