@@ -55,7 +55,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/postmaster/autovacuum.c,v 1.56 2007/08/02 23:39:44 adunstan Exp $
+ *	  $PostgreSQL: pgsql/src/backend/postmaster/autovacuum.c,v 1.58 2007/09/12 22:14:59 alvherre Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -472,6 +472,7 @@ AutoVacLauncherMain(int argc, char *argv[])
 		 */
 		LWLockReleaseAll();
 		AtEOXact_Files();
+		AtEOXact_HashTables(false);
 
 		/*
 		 * Now return to normal top-level context and clear ErrorContext for
@@ -1037,6 +1038,9 @@ do_start_worker(void)
 	avw_dbase  *avdb;
 	TimestampTz	current_time;
 	bool		skipit = false;
+	Oid			retval = InvalidOid;
+	MemoryContext tmpcxt,
+				  oldcxt;
 
 	/* return quickly when there are no free workers */
 	LWLockAcquire(AutovacuumLock, LW_SHARED);
@@ -1046,6 +1050,17 @@ do_start_worker(void)
 		return InvalidOid;
 	}
 	LWLockRelease(AutovacuumLock);
+
+	/*
+	 * Create and switch to a temporary context to avoid leaking the memory
+	 * allocated for the database list.
+	 */
+	tmpcxt = AllocSetContextCreate(CurrentMemoryContext,
+								   "Start worker tmp cxt",
+								   ALLOCSET_DEFAULT_MINSIZE,
+								   ALLOCSET_DEFAULT_INITSIZE,
+								   ALLOCSET_DEFAULT_MAXSIZE);
+	oldcxt = MemoryContextSwitchTo(tmpcxt);
 
 	/* use fresh stats */
 	pgstat_clear_snapshot();
@@ -1185,7 +1200,7 @@ do_start_worker(void)
 
 		SendPostmasterSignal(PMSIGNAL_START_AUTOVAC_WORKER);
 
-		return avdb->adw_datid;
+		retval = avdb->adw_datid;
 	}
 	else if (skipit)
 	{
@@ -1196,7 +1211,10 @@ do_start_worker(void)
 		rebuild_database_list(InvalidOid);
 	}
 
-	return InvalidOid;
+	MemoryContextSwitchTo(oldcxt);
+	MemoryContextDelete(tmpcxt);
+
+	return retval;
 }
 
 /*
