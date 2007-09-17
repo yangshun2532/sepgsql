@@ -36,7 +36,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/commands/vacuumlazy.c,v 1.93 2007/09/10 21:40:03 alvherre Exp $
+ *	  $PostgreSQL: pgsql/src/backend/commands/vacuumlazy.c,v 1.96 2007/09/16 02:37:46 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -642,7 +642,7 @@ lazy_vacuum_page(Relation onerel, BlockNumber blkno, Buffer buffer,
 			break;				/* past end of tuples for this block */
 		toff = ItemPointerGetOffsetNumber(&vacrelstats->dead_tuples[tupindex]);
 		itemid = PageGetItemId(page, toff);
-		itemid->lp_flags &= ~LP_USED;
+		ItemIdSetUnused(itemid);
 	}
 
 	uncnt = PageRepairFragmentation(page, unused);
@@ -784,9 +784,9 @@ lazy_truncate_heap(Relation onerel, LVRelStats *vacrelstats)
 
 	/*
 	 * Scan backwards from the end to verify that the end pages actually
-	 * contain nothing we need to keep.  This is *necessary*, not optional,
-	 * because other backends could have added tuples to these pages whilst we
-	 * were vacuuming.
+	 * contain no tuples.  This is *necessary*, not optional, because other
+	 * backends could have added tuples to these pages whilst we were
+	 * vacuuming.
 	 */
 	new_rel_pages = count_nondeletable_pages(onerel, vacrelstats);
 
@@ -846,7 +846,7 @@ lazy_truncate_heap(Relation onerel, LVRelStats *vacrelstats)
 }
 
 /*
- * Rescan end pages to verify that they are (still) empty of needed tuples.
+ * Rescan end pages to verify that they are (still) empty of tuples.
  *
  * Returns number of nondeletable pages (last nonempty page + 1).
  */
@@ -854,7 +854,6 @@ static BlockNumber
 count_nondeletable_pages(Relation onerel, LVRelStats *vacrelstats)
 {
 	BlockNumber blkno;
-	HeapTupleData tuple;
 
 	/* Strange coding of loop control is needed because blkno is unsigned */
 	blkno = vacrelstats->rel_pages;
@@ -864,14 +863,15 @@ count_nondeletable_pages(Relation onerel, LVRelStats *vacrelstats)
 		Page		page;
 		OffsetNumber offnum,
 					maxoff;
-		bool		tupgone,
-					hastup;
+		bool		hastup;
 
 		/*
 		 * We don't insert a vacuum delay point here, because we have an
 		 * exclusive lock on the table which we want to hold for as short
-		 * a time as possible.
+		 * a time as possible.  We still need to check for interrupts
+		 * however.
 		 */
+		CHECK_FOR_INTERRUPTS();
 
 		blkno--;
 
@@ -899,42 +899,13 @@ count_nondeletable_pages(Relation onerel, LVRelStats *vacrelstats)
 
 			itemid = PageGetItemId(page, offnum);
 
-			if (!ItemIdIsUsed(itemid))
-				continue;
-
-			tuple.t_data = (HeapTupleHeader) PageGetItem(page, itemid);
-			tuple.t_len = ItemIdGetLength(itemid);
-			ItemPointerSet(&(tuple.t_self), blkno, offnum);
-
-			tupgone = false;
-
-			switch (HeapTupleSatisfiesVacuum(tuple.t_data, OldestXmin, buf))
-			{
-				case HEAPTUPLE_DEAD:
-					tupgone = true;		/* we can delete the tuple */
-					break;
-				case HEAPTUPLE_LIVE:
-					/* Shouldn't be necessary to re-freeze anything */
-					break;
-				case HEAPTUPLE_RECENTLY_DEAD:
-
-					/*
-					 * If tuple is recently deleted then we must not remove it
-					 * from relation.
-					 */
-					break;
-				case HEAPTUPLE_INSERT_IN_PROGRESS:
-					/* This is an expected case during concurrent vacuum */
-					break;
-				case HEAPTUPLE_DELETE_IN_PROGRESS:
-					/* This is an expected case during concurrent vacuum */
-					break;
-				default:
-					elog(ERROR, "unexpected HeapTupleSatisfiesVacuum result");
-					break;
-			}
-
-			if (!tupgone)
+			/*
+			 * Note: any non-unused item should be taken as a reason to keep
+			 * this page.  We formerly thought that DEAD tuples could be
+			 * thrown away, but that's not so, because we'd not have cleaned
+			 * out their index entries.
+			 */
+			if (ItemIdIsUsed(itemid))
 			{
 				hastup = true;
 				break;			/* can stop scanning */
@@ -950,7 +921,7 @@ count_nondeletable_pages(Relation onerel, LVRelStats *vacrelstats)
 
 	/*
 	 * If we fall out of the loop, all the previously-thought-to-be-empty
-	 * pages really are; we need not bother to look at the last known-nonempty
+	 * pages still are; we need not bother to look at the last known-nonempty
 	 * page.
 	 */
 	return vacrelstats->nonempty_pages;

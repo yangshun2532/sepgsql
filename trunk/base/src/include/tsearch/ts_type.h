@@ -5,7 +5,7 @@
  *
  * Copyright (c) 1998-2007, PostgreSQL Global Development Group
  *
- * $PostgreSQL: pgsql/src/include/tsearch/ts_type.h,v 1.4 2007/09/07 16:03:40 teodor Exp $
+ * $PostgreSQL: pgsql/src/include/tsearch/ts_type.h,v 1.6 2007/09/11 16:01:40 teodor Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -42,6 +42,13 @@ typedef struct
  */
 
 typedef uint16 WordEntryPos;
+
+typedef struct
+{
+	uint16 npos;
+	WordEntryPos pos[1]; /* var length */
+} WordEntryPosVector;
+
 
 #define WEP_GETWEIGHT(x)	( (x) >> 14 )
 #define WEP_GETPOS(x)		( (x) & 0x3fff )
@@ -88,9 +95,9 @@ typedef TSVectorData *TSVector;
 /* returns a pointer to the beginning of lexemes */
 #define STRPTR(x)	( (char *) &(x)->entries[x->size] )
 
-#define _POSDATAPTR(x,e)	(STRPTR(x) + SHORTALIGN((e)->pos + (e)->len))
-#define POSDATALEN(x,e) ( ( ((WordEntry*)(e))->haspos ) ? (*(uint16*)_POSDATAPTR(x,e)) : 0 )
-#define POSDATAPTR(x,e) ( (WordEntryPos*)( _POSDATAPTR(x,e)+sizeof(uint16) ) )
+#define _POSVECPTR(x, e) 	((WordEntryPosVector *)(STRPTR(x) + SHORTALIGN((e)->pos + (e)->len)))
+#define POSDATALEN(x,e) ( ( (e)->haspos ) ? (_POSVECPTR(x,e)->npos) : 0 )
+#define POSDATAPTR(x,e) (_POSVECPTR(x,e)->pos)
 
 /*
  * fmgr interface macros
@@ -180,8 +187,7 @@ typedef struct
 
 	/* pointer to text value of operand, must correlate with WordEntry */
 	uint32
-				istrue:1,		/* use for ranking in Cover */
-				length:11,
+				length:12,
 				distance:20;
 } QueryOperand;
 
