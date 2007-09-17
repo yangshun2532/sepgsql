@@ -37,7 +37,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/postmaster/bgwriter.c,v 1.41 2007/07/03 14:51:24 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/postmaster/bgwriter.c,v 1.43 2007/09/16 16:33:04 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -189,7 +189,6 @@ BackgroundWriterMain(void)
 	sigjmp_buf	local_sigjmp_buf;
 	MemoryContext bgwriter_context;
 
-	Assert(BgWriterShmem != NULL);
 	BgWriterShmem->bgwriter_pid = MyProcPid;
 	am_bg_writer = true;
 
@@ -295,6 +294,7 @@ BackgroundWriterMain(void)
 		/* we needn't bother with the other ResourceOwnerRelease phases */
 		AtEOXact_Buffers(false);
 		AtEOXact_Files();
+		AtEOXact_HashTables(false);
 
 		/* Warn any waiting backends that the checkpoint failed. */
 		if (ckpt_active)
@@ -986,7 +986,6 @@ ForwardFsyncRequest(RelFileNode rnode, BlockNumber segno)
 
 	if (!IsUnderPostmaster)
 		return false;			/* probably shouldn't even get here */
-	Assert(BgWriterShmem != NULL);
 
 	LWLockAcquire(BgWriterCommLock, LW_EXCLUSIVE);
 	if (BgWriterShmem->bgwriter_pid == 0 ||
