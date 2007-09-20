@@ -118,6 +118,7 @@ typedef struct TupleTableSlot
 	MinimalTuple tts_mintuple;	/* set if it's a minimal tuple, else NULL */
 	HeapTupleData tts_minhdr;	/* workspace if it's a minimal tuple */
 	long		tts_off;		/* saved state for slot_deform_tuple */
+	Oid			tts_security;	/* PGACE: security attribute explicitly specified */
 } TupleTableSlot;
 
 /*
@@ -138,6 +139,12 @@ typedef TupleTableData *TupleTable;
  */
 #define TupIsNull(slot) \
 	((slot) == NULL || (slot)->tts_isempty)
+
+/*
+ * PGACE: HeapTupleStoreSecurityFromSlot
+ */
+#define HeapTupleStoreSecurityFromSlot(tuple, slot)		\
+	HeapTupleSetSecurity((tuple), (slot)->tts_security)
 
 /* in executor/execTuples.c */
 extern TupleTable ExecCreateTupleTable(int tableSize);

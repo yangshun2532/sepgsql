@@ -76,6 +76,8 @@
 #define TSTEMPLATEOID		45
 #define TYPENAMENSP			46
 #define TYPEOID				47
+#define SECURITYOID			48
+#define SECURITYLABEL		49
 
 extern void InitCatalogCache(void);
 extern void InitCatalogCachePhase2(void);

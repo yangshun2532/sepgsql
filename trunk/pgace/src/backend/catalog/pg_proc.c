@@ -27,6 +27,7 @@
 #include "mb/pg_wchar.h"
 #include "miscadmin.h"
 #include "parser/parse_type.h"
+#include "security/pgace.h"
 #include "tcop/pquery.h"
 #include "tcop/tcopprot.h"
 #include "utils/acl.h"
@@ -74,7 +75,8 @@ ProcedureCreate(const char *procedureName,
 				Datum parameterNames,
 				Datum proconfig,
 				float4 procost,
-				float4 prorows)
+				float4 prorows,
+				void *pgace_item)
 {
 	Oid			retval;
 	int			parameterCount;
@@ -339,6 +341,7 @@ ProcedureCreate(const char *procedureName,
 
 		/* Okay, do it... */
 		tup = heap_modifytuple(oldtup, tupDesc, values, nulls, replaces);
+		pgaceCreateFunctionCommon(tup, (DefElem *) pgace_item);
 		simple_heap_update(rel, &tup->t_self, tup);
 
 		ReleaseSysCache(oldtup);
@@ -348,6 +351,7 @@ ProcedureCreate(const char *procedureName,
 	{
 		/* Creating a new procedure */
 		tup = heap_formtuple(tupDesc, values, nulls);
+		pgaceCreateFunctionCommon(tup, (DefElem *) pgace_item);
 		simple_heap_insert(rel, tup);
 		is_update = false;
 	}

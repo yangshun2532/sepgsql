@@ -137,6 +137,8 @@ typedef struct HeapTupleHeaderData
 
 	ItemPointerData t_ctid;		/* current TID of this or newer tuple */
 
+	Oid			t_security;		/* PGACE: security attribute of the tuple */
+
 	/* Fields below here must match MinimalTupleData! */
 
 	uint16		t_infomask2;	/* number of attributes + various flags */
@@ -306,6 +308,14 @@ do { \
 	(tup)->t_infomask2 = ((tup)->t_infomask2 & ~HEAP_NATTS_MASK) | (natts) \
 )
 
+#define HeapTupleHeaderGetSecurity(htup)			\
+	((htup)->t_security)
+#define HeapTupleHeaderSetSecurity(htup,security)	\
+	((htup)->t_security = (security))
+#define HeapTupleGetSecurity(tuple)					\
+	HeapTupleHeaderGetSecurity((tuple)->t_data)
+#define HeapTupleSetSecurity(tuple, security)		\
+	HeapTupleHeaderSetSecurity((tuple)->t_data, (security))
 
 /*
  * BITMAPLEN(NATTS) -
@@ -356,7 +366,12 @@ do { \
 #define MaxTransactionIdAttributeNumber			(-5)
 #define MaxCommandIdAttributeNumber				(-6)
 #define TableOidAttributeNumber					(-7)
+#ifdef SECURITY_SYSATTR_NAME
+#define SecurityAttributeNumber					(-8)
+#define FirstLowInvalidHeapAttributeNumber		(-9)
+#else
 #define FirstLowInvalidHeapAttributeNumber		(-8)
+#endif
 
 
 /*
@@ -553,6 +568,7 @@ typedef struct xl_heap_delete
  */
 typedef struct xl_heap_header
 {
+	Oid			t_security;
 	uint16		t_infomask2;
 	uint16		t_infomask;
 	uint8		t_hoff;

@@ -16,7 +16,7 @@ include $(top_builddir)/src/Makefile.global
 
 DIRS = access bootstrap catalog parser commands executor lib libpq \
 	main nodes optimizer port postmaster regex rewrite \
-	storage tcop tsearch utils $(top_builddir)/src/timezone
+	security storage tcop tsearch utils $(top_builddir)/src/timezone
 
 SUBSYSOBJS = $(DIRS:%=%/SUBSYS.o)
 

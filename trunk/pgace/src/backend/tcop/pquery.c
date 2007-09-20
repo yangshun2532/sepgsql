@@ -19,6 +19,7 @@
 #include "commands/prepare.h"
 #include "commands/trigger.h"
 #include "miscadmin.h"
+#include "security/pgace.h"
 #include "tcop/pquery.h"
 #include "tcop/tcopprot.h"
 #include "tcop/utility.h"
@@ -454,6 +455,9 @@ PortalStart(Portal portal, ParamListInfo params, Snapshot snapshot)
 
 	AssertArg(PortalIsValid(portal));
 	AssertState(portal->status == PORTAL_DEFINED);
+
+	/* PGACE: PosrtalStart hook */
+	pgacePortalStart(portal);
 
 	/*
 	 * Set up global portal context pointers.
