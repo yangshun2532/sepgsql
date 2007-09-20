@@ -107,6 +107,7 @@
 #include "postmaster/pgarch.h"
 #include "postmaster/postmaster.h"
 #include "postmaster/syslogger.h"
+#include "security/pgace.h"
 #include "storage/fd.h"
 #include "storage/ipc.h"
 #include "storage/pg_shmem.h"
@@ -1023,6 +1024,9 @@ PostmasterMain(int argc, char *argv[])
 	StartupPID = StartupDataBase();
 	Assert(StartupPID != 0);
 	pmState = PM_STARTUP;
+
+	if (!pgaceInitializePostmaster())
+		ExitPostmaster(1);
 
 	status = ServerLoop();
 
@@ -2037,9 +2041,12 @@ pmdie(SIGNAL_ARGS)
 				signal_child(PgArchPID, SIGQUIT);
 			if (PgStatPID != 0)
 				signal_child(PgStatPID, SIGQUIT);
+			pgaceFinalizePostmaster();
 			ExitPostmaster(0);
 			break;
 	}
+	// FIXME: Is it really necessary?
+	//pgaceFinalizePostmaster();
 
 	PG_SETMASK(&UnBlockSig);
 

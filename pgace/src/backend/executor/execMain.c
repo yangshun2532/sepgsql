@@ -48,6 +48,7 @@
 #include "optimizer/clauses.h"
 #include "parser/parse_clause.h"
 #include "parser/parsetree.h"
+#include "security/pgace.h"
 #include "storage/smgr.h"
 #include "utils/acl.h"
 #include "utils/lsyscache.h"
@@ -135,6 +136,8 @@ ExecutorStart(QueryDesc *queryDesc, int eflags)
 	/* sanity checks: queryDesc must not be started already */
 	Assert(queryDesc != NULL);
 	Assert(queryDesc->estate == NULL);
+
+	pgaceExecutorStart(queryDesc, eflags);
 
 	/*
 	 * If the transaction is read-only, we need to check if any writes are
@@ -1192,6 +1195,8 @@ ExecutePlan(EState *estate,
 
 	for (;;)
 	{
+		Oid		__tts_security = InvalidOid;
+
 		/* Reset the per-output-tuple exprcontext */
 		ResetPerTupleExprContext(estate);
 
@@ -1334,6 +1339,13 @@ lnext:	;
 			}
 
 			/*
+			 * PGACE: security attribute system columnt support.
+			 * If client specified a explicit security label,
+			 * pgaceFetchSecurityLabel() fetch it via junk attribute.
+			 */
+			pgaceFetchSecurityLabel(junkfilter, slot, &__tts_security);
+
+			/*
 			 * Create a new "clean" tuple with all junk attributes removed. We
 			 * don't need to do this for DELETE, however (there will in fact
 			 * be no non-junk attributes in a DELETE!)
@@ -1341,6 +1353,7 @@ lnext:	;
 			if (operation != CMD_DELETE)
 				slot = ExecFilterJunk(junkfilter, slot);
 		}
+		slot->tts_security = __tts_security;
 
 		/*
 		 * now that we have a tuple, do the appropriate thing with it.. either
@@ -1461,6 +1474,7 @@ ExecInsert(TupleTableSlot *slot,
 	resultRelInfo = estate->es_result_relation_info;
 	resultRelationDesc = resultRelInfo->ri_RelationDesc;
 
+	HeapTupleStoreSecurityFromSlot(tuple, slot);
 	/* BEFORE ROW INSERT Triggers */
 	if (resultRelInfo->ri_TrigDesc &&
 		resultRelInfo->ri_TrigDesc->n_before_row[TRIGGER_EVENT_INSERT] > 0)
@@ -1495,6 +1509,13 @@ ExecInsert(TupleTableSlot *slot,
 	 */
 	if (resultRelationDesc->rd_att->constr)
 		ExecConstraints(resultRelInfo, slot, estate);
+
+	/*
+	 * Check the explicit labeling, if configured
+	 */
+	if (!pgaceExecInsert(resultRelationDesc, tuple,
+						 !!resultRelInfo->ri_projectReturning))
+		return;
 
 	/*
 	 * insert the tuple
@@ -1563,6 +1584,10 @@ ExecDelete(ItemPointer tupleid,
 		if (!dodelete)			/* "do nothing" */
 			return;
 	}
+
+	if (!pgaceExecDelete(resultRelationDesc, tupleid,
+						 !!resultRelInfo->ri_projectReturning))
+		return;
 
 	/*
 	 * delete the tuple
@@ -1701,6 +1726,7 @@ ExecUpdate(TupleTableSlot *slot,
 	resultRelInfo = estate->es_result_relation_info;
 	resultRelationDesc = resultRelInfo->ri_RelationDesc;
 
+	HeapTupleStoreSecurityFromSlot(tuple, slot);
 	/* BEFORE ROW UPDATE Triggers */
 	if (resultRelInfo->ri_TrigDesc &&
 		resultRelInfo->ri_TrigDesc->n_before_row[TRIGGER_EVENT_UPDATE] > 0)
@@ -1744,6 +1770,13 @@ ExecUpdate(TupleTableSlot *slot,
 lreplace:;
 	if (resultRelationDesc->rd_att->constr)
 		ExecConstraints(resultRelInfo, slot, estate);
+
+	/*
+	 * check explicit labeling, if necessary
+	 */
+	if (!pgaceExecUpdate(resultRelationDesc, tuple, tupleid,
+						 !!resultRelInfo->ri_projectReturning))
+		return;
 
 	/*
 	 * replace the heap tuple
@@ -2608,7 +2641,8 @@ OpenIntoRel(QueryDesc *queryDesc)
 											  0,
 											  into->onCommit,
 											  reloptions,
-											  allowSystemTableMods);
+											  allowSystemTableMods,
+											  NIL);
 
 	FreeTupleDesc(tupdesc);
 
@@ -2714,6 +2748,11 @@ intorel_receive(TupleTableSlot *slot, DestReceiver *self)
 
 	tuple = ExecCopySlotTuple(slot);
 
+	HeapTupleStoreSecurityFromSlot(tuple, slot);
+	if (!pgaceExecInsert(estate->es_into_relation_descriptor, tuple, false)) {
+		heap_freetuple(tuple);
+		return;
+	}
 	heap_insert(estate->es_into_relation_descriptor,
 				tuple,
 				estate->es_snapshot->curcid,

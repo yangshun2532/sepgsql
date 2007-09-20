@@ -36,6 +36,7 @@
 #include "parser/parse_relation.h"
 #include "parser/parse_target.h"
 #include "parser/parsetree.h"
+#include "security/pgace.h"
 
 
 typedef struct
@@ -404,6 +405,9 @@ transformInsertStmt(ParseState *pstate, InsertStmt *stmt)
 		Assert(rte == rt_fetch(rtr->rtindex, pstate->p_rtable));
 		pstate->p_joinlist = lappend(pstate->p_joinlist, rtr);
 
+		/* security attribute system column support */
+		pgaceTransformInsertStmt(&icolumns, &attrnos, selectQuery->targetList);
+
 		/*----------
 		 * Generate an expression list for the INSERT that selects all the
 		 * non-resjunk columns from the subquery.  (INSERT's tlist must be
@@ -563,14 +567,15 @@ transformInsertStmt(ParseState *pstate, InsertStmt *stmt)
 		Expr	   *expr = (Expr *) lfirst(lc);
 		ResTarget  *col;
 		TargetEntry *tle;
+		AttrNumber anum = (AttrNumber) lfirst_int(attnos);
 
 		col = (ResTarget *) lfirst(icols);
 		Assert(IsA(col, ResTarget));
 
 		tle = makeTargetEntry(expr,
-							  (AttrNumber) lfirst_int(attnos),
+							  anum,
 							  col->name,
-							  false);
+							  anum < 0 ? true : false);
 		qry->targetList = lappend(qry->targetList, tle);
 
 		icols = lnext(icols);
@@ -734,8 +739,11 @@ transformSelectStmt(ParseState *pstate, SelectStmt *stmt)
 	if (stmt->intoClause)
 	{
 		qry->intoClause = stmt->intoClause;
-		if (stmt->intoClause->colNames)
+		if (stmt->intoClause->colNames) {
+			/* FIXME: Does it work really in 8.3.x? */
+			pgaceTransformSelectStmt(qry->targetList);
 			applyColumnNames(qry->targetList, stmt->intoClause->colNames);
+		}
 	}
 
 	qry->rtable = pstate->p_rtable;

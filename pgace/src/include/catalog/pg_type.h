@@ -607,6 +607,9 @@ DATA(insert OID = 2283 ( anyelement		PGNSP PGUID  4 t p t \054 0 0 0 anyelement_
 #define ANYELEMENTOID	2283
 DATA(insert OID = 2776 ( anynonarray	PGNSP PGUID  4 t p t \054 0 0 0 anynonarray_in anynonarray_out - - - - - i p f 0 -1 0 _null_ _null_ ));
 #define ANYNONARRAYOID	2776
+DATA(insert OID = 3403 ( security_label PGNSP PGUID  4 t b t \054 0 0 security_label_in security_label_out - - - - - i p f 0 -1 0 _null_ _null_ ));
+DESCR("Security Label Identifier for PGACE");
+#define SECLABELOID		3403
 DATA(insert OID = 3500 ( anyenum		PGNSP PGUID  4 t p t \054 0 0 0 anyenum_in anyenum_out - - - - - i p f 0 -1 0 _null_ _null_ ));
 #define ANYENUMOID		3500
 

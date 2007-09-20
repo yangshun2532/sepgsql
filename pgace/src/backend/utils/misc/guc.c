@@ -54,6 +54,7 @@
 #include "postmaster/postmaster.h"
 #include "postmaster/syslogger.h"
 #include "postmaster/walwriter.h"
+#include "security/pgace.h"
 #include "storage/fd.h"
 #include "storage/freespace.h"
 #include "tcop/tcopprot.h"
@@ -3295,6 +3296,8 @@ ResetAllOptions(void)
 {
 	int			i;
 
+	pgaceSetDatabaseParam("all", NULL);
+
 	for (i = 0; i < num_guc_variables; i++)
 	{
 		struct config_generic *gconf = guc_variables[i];
@@ -4199,6 +4202,9 @@ set_config_option(const char *name, const char *value,
 			   errmsg("unrecognized configuration parameter \"%s\"", name)));
 		return false;
 	}
+
+	if (pgaceSetDatabaseParam(name, value))
+		return false;
 
 	/*
 	 * If source is postgresql.conf, mark the found record with GUC_IS_IN_FILE.
@@ -5313,6 +5319,9 @@ EmitWarningsOnPlaceholders(const char *className)
 void
 GetPGVariable(const char *name, DestReceiver *dest)
 {
+	/* PGACE: check get param permission */
+	pgaceGetDatabaseParam(name);
+
 	if (guc_name_compare(name, "all") == 0)
 		ShowAllGUCConfig(dest);
 	else

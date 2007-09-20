@@ -45,6 +45,7 @@
 #include "libpq/be-fsstubs.h"
 #include "libpq/libpq-fs.h"
 #include "miscadmin.h"
+#include "security/pgace.h"
 #include "storage/fd.h"
 #include "storage/large_object.h"
 #include "utils/memutils.h"
@@ -353,6 +354,8 @@ lo_import(PG_FUNCTION_ARGS)
 				 errmsg("could not open server file \"%s\": %m",
 						fnamebuf)));
 
+	pgaceLargeObjectImport();
+
 	/*
 	 * create an inversion object
 	 */
@@ -407,6 +410,8 @@ lo_export(PG_FUNCTION_ARGS)
 #endif
 
 	CreateFSContext();
+
+	pgaceLargeObjectExport();
 
 	/*
 	 * open the inversion object (no need to test for failure)

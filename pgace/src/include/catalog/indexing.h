@@ -252,6 +252,11 @@ DECLARE_UNIQUE_INDEX(pg_type_oid_index, 2703, on pg_type using btree(oid oid_ops
 DECLARE_UNIQUE_INDEX(pg_type_typname_nsp_index, 2704, on pg_type using btree(typname name_ops, typnamespace oid_ops));
 #define TypeNameNspIndexId	2704
 
+DECLARE_UNIQUE_INDEX(pg_security_oid_index, 3401, on pg_security using btree(oid oid_ops));
+#define SecurityOidIndexId	3401
+DECLARE_UNIQUE_INDEX(pg_security_seclabel_index, 3402, on pg_security using btree(seclabel text_ops));
+#define SecuritySeclabelIndexId	3402
+
 /* last step of initialization script: build the indexes declared above */
 BUILD_INDICES
 

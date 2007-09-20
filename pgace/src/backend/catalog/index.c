@@ -598,7 +598,7 @@ index_create(Oid heapRelationId,
 	 */
 	InsertPgClassTuple(pg_class, indexRelation,
 					   RelationGetRelid(indexRelation),
-					   reloptions);
+					   reloptions, NIL);
 
 	/* done with pg_class */
 	heap_close(pg_class, RowExclusiveLock);
