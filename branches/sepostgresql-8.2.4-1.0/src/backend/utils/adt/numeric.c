@@ -14,7 +14,7 @@
  * Copyright (c) 1998-2006, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/adt/numeric.c,v 1.96 2006/10/04 00:29:59 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/backend/utils/adt/numeric.c,v 1.96.2.2 2007/07/09 16:14:05 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -28,6 +28,7 @@
 
 #include "catalog/pg_type.h"
 #include "libpq/pqformat.h"
+#include "miscadmin.h"
 #include "utils/array.h"
 #include "utils/builtins.h"
 #include "utils/int8.h"
@@ -1416,6 +1417,11 @@ numeric_fac(PG_FUNCTION_ARGS)
 		res = make_result(&const_one);
 		PG_RETURN_NUMERIC(res);
 	}
+	/* Fail immediately if the result would overflow */
+	if (num > 32177)
+		ereport(ERROR,
+				(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
+				 errmsg("value overflows numeric format")));
 
 	init_var(&fact);
 	init_var(&result);
@@ -1424,6 +1430,9 @@ numeric_fac(PG_FUNCTION_ARGS)
 
 	for (num = num - 1; num > 1; num--)
 	{
+		/* this loop can take awhile, so allow it to be interrupted */
+		CHECK_FOR_INTERRUPTS();
+
 		int8_to_numericvar(num, &fact);
 
 		mul_var(&result, &fact, &result, 0);
@@ -2265,7 +2274,10 @@ numeric_stddev_internal(ArrayType *transarray,
 	}
 	else
 	{
-		mul_var(&vN, &vNminus1, &vNminus1, 0);	/* N * (N - 1) */
+		if (sample)
+			mul_var(&vN, &vNminus1, &vNminus1, 0);	/* N * (N - 1) */
+		else
+			mul_var(&vN, &vN, &vNminus1, 0);		/* N * N */
 		rscale = select_div_scale(&vsumX2, &vNminus1);
 		div_var(&vsumX2, &vNminus1, &vsumX, rscale, true);		/* variance */
 		if (!variance)

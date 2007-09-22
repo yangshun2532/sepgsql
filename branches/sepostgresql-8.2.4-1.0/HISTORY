@@ -1,5 +1,57 @@
-
                                 Release Notes
+
+                                Release 8.2.5
+
+     Release date: 2007-09-17
+
+   This release contains a variety of fixes from 8.2.4.
+     __________________________________________________________________
+
+Migration to version 8.2.5
+
+   A dump/restore is not required for those running 8.2.X.
+     __________________________________________________________________
+
+Changes
+
+     * Prevent index corruption when a transaction inserts rows and then
+       aborts close to the end of a concurrent "VACUUM" on the same table
+       (Tom)
+     * Fix ALTER DOMAIN ADD CONSTRAINT for cases involving domains over
+       domains (Tom)
+     * Make "CREATE DOMAIN ... DEFAULT NULL" work properly (Tom)
+     * Fix some planner problems with outer joins, notably poor size
+       estimation for t1 LEFT JOIN t2 WHERE t2.col IS NULL (Tom)
+     * Allow the interval data type to accept input consisting only of
+       milliseconds or microseconds (Neil)
+     * Allow timezone name to appear before the year in timestamp input
+       (Tom)
+     * Fixes for GIN indexes used by "/contrib/tsearch2" (Teodor)
+     * Speed up rtree index insertion (Teodor)
+     * Fix excessive logging of SSL error messages (Tom)
+     * Fix logging so that log messages are never interleaved when using
+       the syslogger process (Andrew)
+     * Fix crash when log_min_error_statement logging runs out of memory
+       (Tom)
+     * Fix incorrect handling of some foreign-key corner cases (Tom)
+     * Fix stddev_pop(numeric) and var_pop(numeric) (Tom)
+     * Prevent "REINDEX" and "CLUSTER" from failing due to attempting to
+       process temporary tables of other sessions (Alvaro)
+     * Update the time zone database rules, particularly New Zealand's
+       upcoming changes (Tom)
+     * Windows socket and semaphore improvements (Magnus)
+     * Make "pg_ctl -w" work properly in Windows service mode (Dave Page)
+     * Fix memory allocation bug when using MIT Kerberos on Windows
+       (Magnus)
+     * Suppress timezone name (%Z) in log timestamps on Windows because of
+       possible encoding mismatches (Tom)
+     * Require non-superusers who use "/contrib/dblink" to use only
+       password authentication, as a security measure (Joe)
+     * Restrict "/contrib/pgstattuple" functions to superusers, for
+       security reasons (Tom)
+     * Do not let "/contrib/intarray" try to make its GIN opclass the
+       default (this caused problems at dump/restore) (Tom)
+     __________________________________________________________________
 
                                 Release 8.2.4
 
@@ -378,7 +430,7 @@ Server Changes
        This enforces a maximum replication delay for warm standby servers.
      * Add native LDAP authentication (Magnus Hagander)
        This is particularly useful for platforms that do not support PAM,
-       such as Win32.
+       such as Windows.
      * Add GRANT CONNECT ON DATABASE (Gevik Babakhani)
        This gives SQL-level control over database access. It works as an
        additional filter on top of the existing "pg_hba.conf" controls.
@@ -720,7 +772,7 @@ psql Changes
      * Save multi-line statements as a single entry, rather than one line
        at a time (Sergey E. Koposov)
        This makes up-arrow recall of queries easier. (This is not
-       available on Win32, because that platform uses the native
+       available on Windows, because that platform uses the native
        command-line editing present in the operating system.)
      * Make the line counter 64-bit so it can handle files with more than
        two billion lines (David Fetter)
@@ -772,7 +824,7 @@ ecpg Changes
      * Major source code cleanups (Joachim Wieland, Michael)
      __________________________________________________________________
 
-Win32 Port
+Windows Port
 
      * Allow MSVC to compile the PostgreSQL server (Magnus, Hiroshi Saito)
      * Add MSVC support for utility commands and pg_dump (Hiroshi Saito)
@@ -892,6 +944,46 @@ Contrib Changes
        (The old names remain available, but are deprecated.)
      * Add uninstall scripts for all contrib packages that have install
        scripts (David, Josh Drake)
+     __________________________________________________________________
+
+                               Release 8.1.10
+
+     Release date: 2007-09-17
+
+   This release contains a variety of fixes from 8.1.9.
+     __________________________________________________________________
+
+Migration to version 8.1.10
+
+   A dump/restore is not required for those running 8.1.X. However, if you
+   are upgrading from a version earlier than 8.1.2, see the release notes
+   for 8.1.2.
+     __________________________________________________________________
+
+Changes
+
+     * Prevent index corruption when a transaction inserts rows and then
+       aborts close to the end of a concurrent "VACUUM" on the same table
+       (Tom)
+     * Make "CREATE DOMAIN ... DEFAULT NULL" work properly (Tom)
+     * Allow the interval data type to accept input consisting only of
+       milliseconds or microseconds (Neil)
+     * Speed up rtree index insertion (Teodor)
+     * Fix excessive logging of SSL error messages (Tom)
+     * Fix logging so that log messages are never interleaved when using
+       the syslogger process (Andrew)
+     * Fix crash when log_min_error_statement logging runs out of memory
+       (Tom)
+     * Fix incorrect handling of some foreign-key corner cases (Tom)
+     * Prevent "REINDEX" and "CLUSTER" from failing due to attempting to
+       process temporary tables of other sessions (Alvaro)
+     * Update the time zone database rules, particularly New Zealand's
+       upcoming changes (Tom)
+     * Windows socket improvements (Magnus)
+     * Suppress timezone name (%Z) in log timestamps on Windows because of
+       possible encoding mismatches (Tom)
+     * Require non-superusers who use "/contrib/dblink" to use only
+       password authentication, as a security measure (Joe)
      __________________________________________________________________
 
                                 Release 8.1.9
@@ -1078,7 +1170,7 @@ Changes
      * Fix backslash escaping in /contrib/dbmirror
      * Minor fixes in /contrib/dblink and /contrib/tsearch2
      * Efficiency improvements in hash tables and bitmap index scans (Tom)
-     * Fix instability of statistics collection on Win32 (Tom, Andrew)
+     * Fix instability of statistics collection on Windows (Tom, Andrew)
      * Fix statement_timeout to use the proper units on Win32 (Bruce)
        In previous Win32 8.1.X versions, the delay was off by a factor of
        100.
@@ -2125,6 +2217,43 @@ Contrib Changes
           + Take build parameters (OpenSSL, zlib) from "configure" result
             There is no need to edit the "Makefile" anymore.
           + Remove support for "libmhash" and "libmcrypt"
+     __________________________________________________________________
+
+                               Release 8.0.14
+
+     Release date: 2007-09-17
+
+   This release contains a variety of fixes from 8.0.13.
+     __________________________________________________________________
+
+Migration to version 8.0.14
+
+   A dump/restore is not required for those running 8.0.X. However, if you
+   are upgrading from a version earlier than 8.0.6, see the release notes
+   for 8.0.6.
+     __________________________________________________________________
+
+Changes
+
+     * Prevent index corruption when a transaction inserts rows and then
+       aborts close to the end of a concurrent "VACUUM" on the same table
+       (Tom)
+     * Make "CREATE DOMAIN ... DEFAULT NULL" work properly (Tom)
+     * Fix excessive logging of SSL error messages (Tom)
+     * Fix logging so that log messages are never interleaved when using
+       the syslogger process (Andrew)
+     * Fix crash when log_min_error_statement logging runs out of memory
+       (Tom)
+     * Fix incorrect handling of some foreign-key corner cases (Tom)
+     * Prevent "CLUSTER" from failing due to attempting to process
+       temporary tables of other sessions (Alvaro)
+     * Update the time zone database rules, particularly New Zealand's
+       upcoming changes (Tom)
+     * Windows socket improvements (Magnus)
+     * Suppress timezone name (%Z) in log timestamps on Windows because of
+       possible encoding mismatches (Tom)
+     * Require non-superusers who use "/contrib/dblink" to use only
+       password authentication, as a security measure (Joe)
      __________________________________________________________________
 
                                Release 8.0.13
@@ -3615,6 +3744,35 @@ Contrib Changes
      * Removed "contrib/pg_logger": obsoleted by integrated logging
        subprocess
      * Removed "contrib/rserv": obsoleted by various separate projects
+     __________________________________________________________________
+
+                               Release 7.4.18
+
+     Release date: 2007-09-17
+
+   This release contains fixes from 7.4.17.
+     __________________________________________________________________
+
+Migration to version 7.4.18
+
+   A dump/restore is not required for those running 7.4.X. However, if you
+   are upgrading from a version earlier than 7.4.11, see the release notes
+   for 7.4.11.
+     __________________________________________________________________
+
+Changes
+
+     * Prevent index corruption when a transaction inserts rows and then
+       aborts close to the end of a concurrent "VACUUM" on the same table
+       (Tom)
+     * Make "CREATE DOMAIN ... DEFAULT NULL" work properly (Tom)
+     * Fix excessive logging of SSL error messages (Tom)
+     * Fix crash when log_min_error_statement logging runs out of memory
+       (Tom)
+     * Prevent "CLUSTER" from failing due to attempting to process
+       temporary tables of other sessions (Alvaro)
+     * Require non-superusers who use "/contrib/dblink" to use only
+       password authentication, as a security measure (Joe)
      __________________________________________________________________
 
                                Release 7.4.17
@@ -5217,6 +5375,32 @@ Contrib Changes
      * Fix dbase "-s" option and improve non-ASCII handling (Thomas Behr,
        Márcio Smiderle)
      * Remove array module because features now included by default (Joe)
+     __________________________________________________________________
+
+                               Release 7.3.20
+
+     Release date: 2007-09-17
+
+   This release contains fixes from 7.3.19.
+     __________________________________________________________________
+
+Migration to version 7.3.20
+
+   A dump/restore is not required for those running 7.3.X. However, if you
+   are upgrading from a version earlier than 7.3.13, see the release notes
+   for 7.3.13.
+     __________________________________________________________________
+
+Changes
+
+     * Prevent index corruption when a transaction inserts rows and then
+       aborts close to the end of a concurrent "VACUUM" on the same table
+       (Tom)
+     * Make "CREATE DOMAIN ... DEFAULT NULL" work properly (Tom)
+     * Fix crash when log_min_error_statement logging runs out of memory
+       (Tom)
+     * Require non-superusers who use "/contrib/dblink" to use only
+       password authentication, as a security measure (Joe)
      __________________________________________________________________
 
                                Release 7.3.19
@@ -7978,7 +8162,7 @@ Fix for SELECT timespan('21:11:26'::time) (Tom)
 netmask('x.x.x.x/0') is 255.255.255.255 instead of 0.0.0.0 (Oleg Sharoiko)
 Add btree index on NUMERIC (Jan)
 Perl fix for large objects containing NUL characters (Douglas Thomson)
-ODBC fix for for large objects (free)
+ODBC fix for large objects (free)
 Fix indexing of cidr data type
 Fix for Ethernet MAC addresses (macaddr type) comparisons
 Fix for date/time types when overflows happened in computations (Tom)
@@ -9951,7 +10135,7 @@ more compliant to the SQL-92 standard):
 
         "WITH GRANT OPTION" is not supported.  Only class owners can change
         access control
-   - The default access control is to to grant users readonly access.
+   - The default access control is to grant users readonly access.
      You must explicitly grant insert/update access to users.  To change
      this, modify the line in
                 src/backend/utils/acl.h

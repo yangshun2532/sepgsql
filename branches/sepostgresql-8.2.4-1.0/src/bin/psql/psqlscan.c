@@ -3,7 +3,6 @@
 
 /* Scanner skeleton version:
  * $Header: /home/daffy/u0/vern/flex/RCS/flex.skl,v 2.91 96/09/10 16:58:48 vern Exp $
- * $FreeBSD: src/usr.bin/lex/flex.skl,v 1.8 2004/01/06 19:03:44 nectar Exp $
  */
 
 #define FLEX_SCANNER
@@ -2293,7 +2292,7 @@ static void emit(const char *txt, int len);
  * Note that xcstart must appear before operator, as explained above!
  *  Also whitespace (comment) must appear before operator.
  */
-#line 2297 "psqlscan.c"
+#line 2296 "psqlscan.c"
 
 /* Macros after this point can all be overridden by user definitions in
  * section 1.
@@ -2447,7 +2446,7 @@ YY_DECL
 #line 360 "psqlscan.l"
 
 
-#line 2451 "psqlscan.c"
+#line 2450 "psqlscan.c"
 
 	if ( yy_init )
 		{
@@ -3405,7 +3404,7 @@ YY_RULE_SETUP
 #line 975 "psqlscan.l"
 YY_FATAL_ERROR( "flex scanner jammed" );
 	YY_BREAK
-#line 3409 "psqlscan.c"
+#line 3408 "psqlscan.c"
 
 	case YY_END_OF_BUFFER:
 		{

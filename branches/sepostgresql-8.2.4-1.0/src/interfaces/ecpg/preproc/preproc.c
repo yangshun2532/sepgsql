@@ -1265,7 +1265,7 @@ typedef union YYSTYPE {
 	struct	fetch_desc	descriptor;
 	struct  su_symbol	struct_union;
 } YYSTYPE;
-/* Line 191 of yacc.c.  */
+/* Line 186 of yacc.c.  */
 #line 1269 "y.tab.c"
 # define yystype YYSTYPE /* obsolescent; will be withdrawn */
 # define YYSTYPE_IS_DECLARED 1

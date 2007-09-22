@@ -10,7 +10,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/access/transam/xact.c,v 1.229 2006/11/23 01:14:59 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/access/transam/xact.c,v 1.229.2.2 2007/05/30 21:01:45 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -1627,6 +1627,7 @@ CommitTransaction(void)
 	AtEOXact_Namespace(true);
 	/* smgrcommit already done */
 	AtEOXact_Files();
+	AtEOXact_HashTables(true);
 	pgstat_count_xact_commit();
 
 	CurrentResourceOwner = NULL;
@@ -1842,6 +1843,7 @@ PrepareTransaction(void)
 	AtEOXact_Namespace(true);
 	/* smgrcommit already done */
 	AtEOXact_Files();
+	AtEOXact_HashTables(true);
 
 	CurrentResourceOwner = NULL;
 	ResourceOwnerDelete(TopTransactionResourceOwner);
@@ -1993,6 +1995,7 @@ AbortTransaction(void)
 	AtEOXact_Namespace(false);
 	smgrabort();
 	AtEOXact_Files();
+	AtEOXact_HashTables(false);
 	pgstat_count_xact_rollback();
 
 	/*
@@ -3303,10 +3306,11 @@ RollbackToSavepoint(List *options)
 
 /*
  * BeginInternalSubTransaction
- *		This is the same as DefineSavepoint except it allows TBLOCK_STARTED
- *		state, and therefore it can safely be used in a function that might
- *		be called when not inside a BEGIN block.  Also, we automatically
- *		cycle through CommitTransactionCommand/StartTransactionCommand
+ *		This is the same as DefineSavepoint except it allows TBLOCK_STARTED,
+ *		TBLOCK_END, and TBLOCK_PREPARE states, and therefore it can safely be
+ *		used in functions that might be called when not inside a BEGIN block
+ *		or when running deferred triggers at COMMIT/PREPARE time.  Also, it
+ *		automatically does CommitTransactionCommand/StartTransactionCommand
  *		instead of expecting the caller to do it.
  */
 void
@@ -3318,6 +3322,8 @@ BeginInternalSubTransaction(char *name)
 	{
 		case TBLOCK_STARTED:
 		case TBLOCK_INPROGRESS:
+		case TBLOCK_END:
+		case TBLOCK_PREPARE:
 		case TBLOCK_SUBINPROGRESS:
 			/* Normal subtransaction start */
 			PushTransaction();
@@ -3335,7 +3341,6 @@ BeginInternalSubTransaction(char *name)
 		case TBLOCK_DEFAULT:
 		case TBLOCK_BEGIN:
 		case TBLOCK_SUBBEGIN:
-		case TBLOCK_END:
 		case TBLOCK_SUBEND:
 		case TBLOCK_ABORT:
 		case TBLOCK_SUBABORT:
@@ -3345,7 +3350,6 @@ BeginInternalSubTransaction(char *name)
 		case TBLOCK_SUBABORT_PENDING:
 		case TBLOCK_SUBRESTART:
 		case TBLOCK_SUBABORT_RESTART:
-		case TBLOCK_PREPARE:
 			elog(FATAL, "BeginInternalSubTransaction: unexpected state %s",
 				 BlockStateAsString(s->blockState));
 			break;
@@ -3704,6 +3708,7 @@ CommitSubTransaction(void)
 						  s->parent->subTransactionId);
 	AtEOSubXact_Files(true, s->subTransactionId,
 					  s->parent->subTransactionId);
+	AtEOSubXact_HashTables(true, s->nestingLevel);
 
 	/*
 	 * We need to restore the upper transaction's read-only state, in case the
@@ -3815,6 +3820,7 @@ AbortSubTransaction(void)
 							  s->parent->subTransactionId);
 		AtEOSubXact_Files(false, s->subTransactionId,
 						  s->parent->subTransactionId);
+		AtEOSubXact_HashTables(false, s->nestingLevel);
 	}
 
 	/*

@@ -1,4 +1,4 @@
-<!-- $PostgreSQL: pgsql/doc/src/sgml/release.sgml,v 1.488.2.10 2007/04/20 03:27:34 tgl Exp $ -->
+<!-- $PostgreSQL: pgsql/doc/src/sgml/release.sgml,v 1.488.2.15 2007/09/16 03:03:13 tgl Exp $ -->
 <!--
 
 Typical markup:
@@ -34,6 +34,181 @@ do it for earlier branch release files.
 
 <appendix id="release">
  <title>Release Notes</title>
+
+  <sect1 id="release-8-2-5">
+   <title>Release 8.2.5</title>
+
+   <note>
+   <title>Release date</title>
+   <simpara>2007-09-17</simpara>
+   </note>
+
+   <para>
+    This release contains a variety of fixes from 8.2.4.
+   </para>
+
+   <sect2>
+    <title>Migration to version 8.2.5</title>
+
+    <para>
+     A dump/restore is not required for those running 8.2.X.
+    </para>
+
+   </sect2>
+
+   <sect2>
+    <title>Changes</title>
+
+    <itemizedlist>
+
+     <listitem>
+      <para>
+       Prevent index corruption when a transaction inserts rows and
+       then aborts close to the end of a concurrent <command>VACUUM</>
+       on the same table (Tom)
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Fix <literal>ALTER DOMAIN ADD CONSTRAINT</> for cases involving
+       domains over domains (Tom)
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Make <command>CREATE DOMAIN ... DEFAULT NULL</> work properly (Tom)
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Fix some planner problems with outer joins, notably poor
+       size estimation for <literal>t1 LEFT JOIN t2 WHERE t2.col IS NULL</>
+       (Tom)
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Allow the <type>interval</> data type to accept input consisting only of
+       milliseconds or microseconds (Neil)
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Allow timezone name to appear before the year in <type>timestamp</> input (Tom)
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Fixes for <acronym>GIN</> indexes used by <filename>/contrib/tsearch2</> (Teodor)
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Speed up rtree index insertion (Teodor)
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Fix excessive logging of <acronym>SSL</> error messages (Tom)
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Fix logging so that log messages are never interleaved when using
+       the syslogger process (Andrew)
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Fix crash when <varname>log_min_error_statement</> logging runs out
+       of memory (Tom)
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Fix incorrect handling of some foreign-key corner cases (Tom)
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Fix <function>stddev_pop(numeric)</> and <function>var_pop(numeric)</> (Tom)
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Prevent <command>REINDEX</> and <command>CLUSTER</> from failing
+       due to attempting to process temporary tables of other sessions (Alvaro)
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Update the time zone database rules, particularly New Zealand's upcoming changes (Tom)
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Windows socket and semaphore improvements (Magnus)
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Make <command>pg_ctl -w</> work properly in Windows service mode (Dave Page)
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Fix memory allocation bug when using <application>MIT Kerberos</> on Windows (Magnus)
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Suppress timezone name (<literal>%Z</>) in log timestamps on Windows
+       because of possible encoding mismatches (Tom)
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Require non-superusers who use <filename>/contrib/dblink</> to use only
+       password authentication, as a security measure (Joe)
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Restrict <filename>/contrib/pgstattuple</> functions to superusers, for security reasons (Tom)
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Do not let <filename>/contrib/intarray</> try to make its GIN opclass
+       the default (this caused problems at dump/restore) (Tom)
+      </para>
+     </listitem>
+
+    </itemizedlist>
+
+   </sect2>
+  </sect1>
 
   <sect1 id="release-8-2-4">
    <title>Release 8.2.4</title>
@@ -1223,7 +1398,7 @@ do it for earlier branch release files.
 
        <para>
         This is particularly useful for platforms that do not
-        support <acronym>PAM</>, such as Win32.
+        support <acronym>PAM</>, such as Windows.
        </para>
       </listitem>
 
@@ -2425,7 +2600,7 @@ do it for earlier branch release files.
 
        <para>
         This makes up-arrow recall of queries easier.  (This is
-        not available on Win32, because that platform uses the native
+        not available on Windows, because that platform uses the native
         command-line editing present in the operating system.)
        </para>
       </listitem>
@@ -2600,7 +2775,7 @@ do it for earlier branch release files.
     </sect3>
 
     <sect3>
-     <title><application>Win32</> Port</title>
+     <title><application>Windows</> Port</title>
      <itemizedlist>
 
       <listitem>
@@ -3065,6 +3240,125 @@ do it for earlier branch release files.
    </sect2>
   </sect1>
 
+  <sect1 id="release-8-1-10">
+   <title>Release 8.1.10</title>
+
+   <note>
+   <title>Release date</title>
+   <simpara>2007-09-17</simpara>
+   </note>
+
+   <para>
+    This release contains a variety of fixes from 8.1.9.
+   </para>
+
+   <sect2>
+    <title>Migration to version 8.1.10</title>
+
+    <para>
+     A dump/restore is not required for those running 8.1.X.
+     However, if you are upgrading from a version earlier than 8.1.2,
+     see the release notes for 8.1.2.
+    </para>
+
+   </sect2>
+
+   <sect2>
+    <title>Changes</title>
+
+    <itemizedlist>
+
+     <listitem>
+      <para>
+       Prevent index corruption when a transaction inserts rows and
+       then aborts close to the end of a concurrent <command>VACUUM</>
+       on the same table (Tom)
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Make <command>CREATE DOMAIN ... DEFAULT NULL</> work properly (Tom)
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Allow the <type>interval</> data type to accept input consisting only of
+       milliseconds or microseconds (Neil)
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Speed up rtree index insertion (Teodor)
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Fix excessive logging of <acronym>SSL</> error messages (Tom)
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Fix logging so that log messages are never interleaved when using
+       the syslogger process (Andrew)
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Fix crash when <varname>log_min_error_statement</> logging runs out
+       of memory (Tom)
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Fix incorrect handling of some foreign-key corner cases (Tom)
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Prevent <command>REINDEX</> and <command>CLUSTER</> from failing
+       due to attempting to process temporary tables of other sessions (Alvaro)
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Update the time zone database rules, particularly New Zealand's upcoming changes (Tom)
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Windows socket improvements (Magnus)
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Suppress timezone name (<literal>%Z</>) in log timestamps on Windows
+       because of possible encoding mismatches (Tom)
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Require non-superusers who use <filename>/contrib/dblink</> to use only
+       password authentication, as a security measure (Joe)
+      </para>
+     </listitem>
+
+    </itemizedlist>
+
+   </sect2>
+  </sect1>
+
   <sect1 id="release-8-1-9">
    <title>Release 8.1.9</title>
 
@@ -3407,13 +3701,11 @@ do it for earlier branch release files.
       <para>
        <function>to_number()</> and <function>to_char(numeric)</>
        are now <literal>STABLE</>, not <literal>IMMUTABLE</>, for
-       new <link linkend="APP-INITDB"><application>initdb</></link>
-       installs (Tom)
+       new <application>initdb</> installs (Tom)
       </para>
 
       <para>
-       This is because <link
-       linkend="guc-lc-numeric"><varname>lc_numeric</></link> can potentially
+       This is because <varname>lc_numeric</> can potentially
        change the output of these functions.
       </para>
      </listitem>
@@ -3504,7 +3796,7 @@ Wieland)</para></listitem>
 </listitem>
 <listitem><para>Efficiency improvements in hash tables and bitmap index scans
 (Tom)</para></listitem>
-<listitem><para>Fix instability of statistics collection on Win32 (Tom, Andrew)</para></listitem>
+<listitem><para>Fix instability of statistics collection on Windows (Tom, Andrew)</para></listitem>
 <listitem><para>Fix <varname>statement_timeout</> to use the proper
 units on Win32 (Bruce)</para>
 <para>In previous Win32 8.1.X versions, the delay was off by a factor of
@@ -6104,6 +6396,112 @@ psql -t -f fixseq.sql db1 | psql -e db1
    </sect2>
   </sect1>
 
+  <sect1 id="release-8-0-14">
+   <title>Release 8.0.14</title>
+
+   <note>
+   <title>Release date</title>
+   <simpara>2007-09-17</simpara>
+   </note>
+
+   <para>
+    This release contains a variety of fixes from 8.0.13.
+   </para>
+
+   <sect2>
+    <title>Migration to version 8.0.14</title>
+
+    <para>
+     A dump/restore is not required for those running 8.0.X.  However,
+     if you are upgrading from a version earlier than 8.0.6, see the release
+     notes for 8.0.6.
+    </para>
+
+   </sect2>
+
+   <sect2>
+    <title>Changes</title>
+
+    <itemizedlist>
+
+     <listitem>
+      <para>
+       Prevent index corruption when a transaction inserts rows and
+       then aborts close to the end of a concurrent <command>VACUUM</>
+       on the same table (Tom)
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Make <command>CREATE DOMAIN ... DEFAULT NULL</> work properly (Tom)
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Fix excessive logging of <acronym>SSL</> error messages (Tom)
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Fix logging so that log messages are never interleaved when using
+       the syslogger process (Andrew)
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Fix crash when <varname>log_min_error_statement</> logging runs out
+       of memory (Tom)
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Fix incorrect handling of some foreign-key corner cases (Tom)
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Prevent <command>CLUSTER</> from failing
+       due to attempting to process temporary tables of other sessions (Alvaro)
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Update the time zone database rules, particularly New Zealand's upcoming changes (Tom)
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Windows socket improvements (Magnus)
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Suppress timezone name (<literal>%Z</>) in log timestamps on Windows
+       because of possible encoding mismatches (Tom)
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Require non-superusers who use <filename>/contrib/dblink</> to use only
+       password authentication, as a security measure (Joe)
+      </para>
+     </listitem>
+
+    </itemizedlist>
+
+   </sect2>
+  </sect1>
+
   <sect1 id="release-8-0-13">
    <title>Release 8.0.13</title>
 
@@ -6370,13 +6768,11 @@ psql -t -f fixseq.sql db1 | psql -e db1
       <para>
        <function>to_number()</> and <function>to_char(numeric)</>
        are now <literal>STABLE</>, not <literal>IMMUTABLE</>, for
-       new <link linkend="APP-INITDB"><application>initdb</></link>
-       installs (Tom)
+       new <application>initdb</> installs (Tom)
       </para>
 
       <para>
-       This is because <link
-       linkend="guc-lc-numeric"><varname>lc_numeric</></link> can potentially
+       This is because <varname>lc_numeric</> can potentially
        change the output of these functions.
       </para>
      </listitem>
@@ -9613,6 +10009,80 @@ typedefs (Michael)</para></listitem>
    </sect2>
   </sect1>
 
+  <sect1 id="release-7-4-18">
+   <title>Release 7.4.18</title>
+
+   <note>
+   <title>Release date</title>
+   <simpara>2007-09-17</simpara>
+   </note>
+
+   <para>
+    This release contains fixes from 7.4.17.
+   </para>
+
+   <sect2>
+    <title>Migration to version 7.4.18</title>
+
+    <para>
+     A dump/restore is not required for those running 7.4.X.  However,
+     if you are upgrading from a version earlier than 7.4.11, see the release
+     notes for 7.4.11.
+    </para>
+
+   </sect2>
+
+   <sect2>
+    <title>Changes</title>
+
+    <itemizedlist>
+
+     <listitem>
+      <para>
+       Prevent index corruption when a transaction inserts rows and
+       then aborts close to the end of a concurrent <command>VACUUM</>
+       on the same table (Tom)
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Make <command>CREATE DOMAIN ... DEFAULT NULL</> work properly (Tom)
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Fix excessive logging of <acronym>SSL</> error messages (Tom)
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Fix crash when <varname>log_min_error_statement</> logging runs out
+       of memory (Tom)
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Prevent <command>CLUSTER</> from failing
+       due to attempting to process temporary tables of other sessions (Alvaro)
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Require non-superusers who use <filename>/contrib/dblink</> to use only
+       password authentication, as a security measure (Joe)
+      </para>
+     </listitem>
+
+    </itemizedlist>
+
+   </sect2>
+  </sect1>
+ 
   <sect1 id="release-7-4-17">
    <title>Release 7.4.17</title>
 
@@ -9814,13 +10284,11 @@ typedefs (Michael)</para></listitem>
       <para>
        <function>to_number()</> and <function>to_char(numeric)</>
        are now <literal>STABLE</>, not <literal>IMMUTABLE</>, for
-       new <link linkend="APP-INITDB"><application>initdb</></link>
-       installs (Tom)
+       new <application>initdb</> installs (Tom)
       </para>
 
       <para>
-       This is because <link
-       linkend="guc-lc-numeric"><varname>lc_numeric</></link> can potentially
+       This is because <varname>lc_numeric</> can potentially
        change the output of these functions.
       </para>
      </listitem>
@@ -12799,6 +13267,67 @@ DROP SCHEMA information_schema CASCADE;
   </sect2>
  </sect1>
 
+  <sect1 id="release-7-3-20">
+   <title>Release 7.3.20</title>
+
+   <note>
+   <title>Release date</title>
+   <simpara>2007-09-17</simpara>
+   </note>
+
+   <para>
+    This release contains fixes from 7.3.19.
+   </para>
+
+   <sect2>
+    <title>Migration to version 7.3.20</title>
+
+    <para>
+     A dump/restore is not required for those running 7.3.X.  However,
+     if you are upgrading from a version earlier than 7.3.13, see the release
+     notes for 7.3.13.
+    </para>
+
+   </sect2>
+
+   <sect2>
+    <title>Changes</title>
+
+    <itemizedlist>
+
+     <listitem>
+      <para>
+       Prevent index corruption when a transaction inserts rows and
+       then aborts close to the end of a concurrent <command>VACUUM</>
+       on the same table (Tom)
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Make <command>CREATE DOMAIN ... DEFAULT NULL</> work properly (Tom)
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Fix crash when <varname>log_min_error_statement</> logging runs out
+       of memory (Tom)
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Require non-superusers who use <filename>/contrib/dblink</> to use only
+       password authentication, as a security measure (Joe)
+      </para>
+     </listitem>
+
+    </itemizedlist>
+
+   </sect2>
+  </sect1>
+
   <sect1 id="release-7-3-19">
    <title>Release 7.3.19</title>
 
@@ -12949,13 +13478,11 @@ DROP SCHEMA information_schema CASCADE;
       <para>
        <function>to_number()</> and <function>to_char(numeric)</>
        are now <literal>STABLE</>, not <literal>IMMUTABLE</>, for
-       new <link linkend="APP-INITDB"><application>initdb</></link>
-       installs (Tom)
+       new <application>initdb</> installs (Tom)
       </para>
 
       <para>
-       This is because <link
-       linkend="guc-lc-numeric"><varname>lc_numeric</></link> can potentially
+       This is because <varname>lc_numeric</> can potentially
        change the output of these functions.
       </para>
      </listitem>
@@ -16463,7 +16990,7 @@ Fix for SELECT timespan('21:11:26'::time) (Tom)
 netmask('x.x.x.x/0') is 255.255.255.255 instead of 0.0.0.0 (Oleg Sharoiko)
 Add btree index on NUMERIC (Jan)
 Perl fix for large objects containing NUL characters (Douglas Thomson)
-ODBC fix for for large objects (free)
+ODBC fix for large objects (free)
 Fix indexing of cidr data type
 Fix for Ethernet MAC addresses (macaddr type) comparisons
 Fix for date/time types when overflows happened in computations (Tom)
@@ -19056,7 +19583,7 @@ more compliant to the SQL-92 standard):
 
         "WITH GRANT OPTION" is not supported.  Only class owners can change
         access control
-   - The default access control is to to grant users readonly access.
+   - The default access control is to grant users readonly access.
      You must explicitly grant insert/update access to users.  To change
      this, modify the line in
                 src/backend/utils/acl.h

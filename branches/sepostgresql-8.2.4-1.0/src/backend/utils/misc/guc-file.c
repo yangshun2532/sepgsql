@@ -20,7 +20,6 @@
 
 /* Scanner skeleton version:
  * $Header: /home/daffy/u0/vern/flex/RCS/flex.skl,v 2.91 96/09/10 16:58:48 vern Exp $
- * $FreeBSD: src/usr.bin/lex/flex.skl,v 1.8 2004/01/06 19:03:44 nectar Exp $
  */
 
 #define FLEX_SCANNER
@@ -484,7 +483,7 @@ static char *GUC_scanstr(const char *s);
 
 #define YY_NEVER_INTERACTIVE 1
 #define YY_NO_UNPUT 1
-#line 488 "guc-file.c"
+#line 487 "guc-file.c"
 
 /* Macros after this point can all be overridden by user definitions in
  * section 1.
@@ -638,7 +637,7 @@ YY_DECL
 #line 87 "guc-file.l"
 
 
-#line 642 "guc-file.c"
+#line 641 "guc-file.c"
 
 	if ( yy_init )
 		{
@@ -781,7 +780,7 @@ YY_RULE_SETUP
 #line 103 "guc-file.l"
 YY_FATAL_ERROR( "flex scanner jammed" );
 	YY_BREAK
-#line 785 "guc-file.c"
+#line 784 "guc-file.c"
 case YY_STATE_EOF(INITIAL):
 	yyterminate();
 

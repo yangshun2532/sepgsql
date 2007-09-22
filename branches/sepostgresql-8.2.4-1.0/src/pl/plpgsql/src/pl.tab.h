@@ -209,7 +209,7 @@ typedef union YYSTYPE {
 		PLpgSQL_nsitem			*nsitem;
 		PLpgSQL_diag_item		*diagitem;
 } YYSTYPE;
-/* Line 1248 of yacc.c.  */
+/* Line 1204 of yacc.c.  */
 #line 213 "y.tab.h"
 # define yystype YYSTYPE /* obsolescent; will be withdrawn */
 # define YYSTYPE_IS_DECLARED 1

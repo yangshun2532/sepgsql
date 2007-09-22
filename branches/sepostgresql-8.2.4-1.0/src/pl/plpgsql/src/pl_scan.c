@@ -20,7 +20,6 @@
 
 /* Scanner skeleton version:
  * $Header: /home/daffy/u0/vern/flex/RCS/flex.skl,v 2.91 96/09/10 16:58:48 vern Exp $
- * $FreeBSD: src/usr.bin/lex/flex.skl,v 1.8 2004/01/06 19:03:44 nectar Exp $
  */
 
 #define FLEX_SCANNER
@@ -812,7 +811,7 @@ bool plpgsql_SpaceScanned = false;
 /* $foo$ style quotes ("dollar quoting")
  * copied straight from the backend SQL parser
  */
-#line 816 "pl_scan.c"
+#line 815 "pl_scan.c"
 
 /* Macros after this point can all be overridden by user definitions in
  * section 1.
@@ -998,7 +997,7 @@ YY_DECL
      * The keyword rules
      * ----------
      */
-#line 1002 "pl_scan.c"
+#line 1001 "pl_scan.c"
 
 	if ( yy_init )
 		{
@@ -1678,7 +1677,7 @@ YY_RULE_SETUP
 #line 342 "scan.l"
 YY_FATAL_ERROR( "flex scanner jammed" );
 	YY_BREAK
-#line 1682 "pl_scan.c"
+#line 1681 "pl_scan.c"
 case YY_STATE_EOF(INITIAL):
 	yyterminate();
 

@@ -208,6 +208,9 @@ fi
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
 
 %changelog
+* Sat Sep 22 2007 <kaigai@kaigai.gr.jp> - 8.2.5-1.21
+- update base PostgreSQL to 8.2.5
+
 * Mon Sep 1 2007 <kaigai@kaigai.gr.jp> - 8.2.4-1.0
 - mark as SE-PostgreSQL 8.2.4-1.0
 

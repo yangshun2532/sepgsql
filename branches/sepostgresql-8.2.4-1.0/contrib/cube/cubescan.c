@@ -20,7 +20,6 @@
 
 /* Scanner skeleton version:
  * $Header: /home/daffy/u0/vern/flex/RCS/flex.skl,v 2.91 96/09/10 16:58:48 vern Exp $
- * $FreeBSD: src/usr.bin/lex/flex.skl,v 1.8 2004/01/06 19:03:44 nectar Exp $
  */
 
 #define FLEX_SCANNER
@@ -424,7 +423,7 @@ void cube_scanner_init(const char *str);
 void cube_scanner_finish(void);
 #define YY_NEVER_INTERACTIVE 1
 #define YY_NO_UNPUT 1
-#line 428 "cubescan.c"
+#line 427 "cubescan.c"
 
 /* Macros after this point can all be overridden by user definitions in
  * section 1.
@@ -578,7 +577,7 @@ YY_DECL
 #line 42 "cubescan.l"
 
 
-#line 582 "cubescan.c"
+#line 581 "cubescan.c"
 
 	if ( yy_init )
 		{
@@ -706,7 +705,7 @@ YY_RULE_SETUP
 #line 53 "cubescan.l"
 YY_FATAL_ERROR( "flex scanner jammed" );
 	YY_BREAK
-#line 710 "cubescan.c"
+#line 709 "cubescan.c"
 case YY_STATE_EOF(INITIAL):
 	yyterminate();
 

@@ -2,7 +2,7 @@
 export LANG=C
 
 # ---- build parametors
-BASEVERSION="8.2.4"
+BASEVERSION="8.2.5"
 SEPGSQL_VERSION="1"
 SEPGSQL_MINOR_OFFSET="436"
 # SEPGSQL_EXTENSION=".beta"
