@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/adt/pgstatfuncs.c,v 1.44 2007/09/11 03:28:05 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/utils/adt/pgstatfuncs.c,v 1.46 2007/09/25 20:03:38 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -28,6 +28,7 @@ extern Datum pg_stat_get_tuples_fetched(PG_FUNCTION_ARGS);
 extern Datum pg_stat_get_tuples_inserted(PG_FUNCTION_ARGS);
 extern Datum pg_stat_get_tuples_updated(PG_FUNCTION_ARGS);
 extern Datum pg_stat_get_tuples_deleted(PG_FUNCTION_ARGS);
+extern Datum pg_stat_get_tuples_hot_updated(PG_FUNCTION_ARGS);
 extern Datum pg_stat_get_live_tuples(PG_FUNCTION_ARGS);
 extern Datum pg_stat_get_dead_tuples(PG_FUNCTION_ARGS);
 extern Datum pg_stat_get_blocks_fetched(PG_FUNCTION_ARGS);
@@ -66,6 +67,8 @@ extern Datum pg_stat_get_bgwriter_requested_checkpoints(PG_FUNCTION_ARGS);
 extern Datum pg_stat_get_bgwriter_buf_written_checkpoints(PG_FUNCTION_ARGS);
 extern Datum pg_stat_get_bgwriter_buf_written_clean(PG_FUNCTION_ARGS);
 extern Datum pg_stat_get_bgwriter_maxwritten_clean(PG_FUNCTION_ARGS);
+extern Datum pg_stat_get_buf_written_backend(PG_FUNCTION_ARGS);
+extern Datum pg_stat_get_buf_alloc(PG_FUNCTION_ARGS);
 
 extern Datum pg_stat_clear_snapshot(PG_FUNCTION_ARGS);
 extern Datum pg_stat_reset(PG_FUNCTION_ARGS);
@@ -164,6 +167,22 @@ pg_stat_get_tuples_deleted(PG_FUNCTION_ARGS)
 		result = 0;
 	else
 		result = (int64) (tabentry->tuples_deleted);
+
+	PG_RETURN_INT64(result);
+}
+
+
+Datum
+pg_stat_get_tuples_hot_updated(PG_FUNCTION_ARGS)
+{
+	Oid			relid = PG_GETARG_OID(0);
+	int64		result;
+	PgStat_StatTabEntry *tabentry;
+
+	if ((tabentry = pgstat_fetch_stat_tabentry(relid)) == NULL)
+		result = 0;
+	else
+		result = (int64) (tabentry->tuples_hot_updated);
 
 	PG_RETURN_INT64(result);
 }
@@ -794,6 +813,18 @@ Datum
 pg_stat_get_bgwriter_maxwritten_clean(PG_FUNCTION_ARGS)
 {
 	PG_RETURN_INT64(pgstat_fetch_global()->maxwritten_clean);
+}
+
+Datum
+pg_stat_get_buf_written_backend(PG_FUNCTION_ARGS)
+{
+	PG_RETURN_INT64(pgstat_fetch_global()->buf_written_backend);
+}
+
+Datum
+pg_stat_get_buf_alloc(PG_FUNCTION_ARGS)
+{
+	PG_RETURN_INT64(pgstat_fetch_global()->buf_alloc);
 }
 
 
