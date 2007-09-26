@@ -18,7 +18,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/postmaster/syslogger.c,v 1.38 2007/08/21 01:47:19 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/postmaster/syslogger.c,v 1.40 2007/09/22 18:19:18 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -352,7 +352,15 @@ SysLoggerMain(int argc, char *argv[])
 		}
 
 		if (rotation_requested)
+		{
+			/*
+			 * Force rotation when both values are zero.
+			 * It means the request was sent by pg_rotate_logfile.
+			 */
+			if (!time_based_rotation && size_rotation_for == 0)
+				size_rotation_for = LOG_DESTINATION_STDERR | LOG_DESTINATION_CSVLOG;
 			logfile_rotate(time_based_rotation, size_rotation_for);
+		}
 
 #ifndef WIN32
 
@@ -600,10 +608,8 @@ static pid_t
 syslogger_forkexec(void)
 {
 	char	   *av[10];
-	int			ac = 0,
-				bufc = 0,
-				i;
-	char		numbuf[2][32];
+	int			ac = 0;
+	char		filenobuf[32];
 
 	av[ac++] = "postgres";
 	av[ac++] = "--forklog";
@@ -612,21 +618,18 @@ syslogger_forkexec(void)
 	/* static variables (those not passed by write_backend_variables) */
 #ifndef WIN32
 	if (syslogFile != NULL)
-		snprintf(numbuf[bufc++], 32, "%d", fileno(syslogFile));
+		snprintf(filenobuf, sizeof(filenobuf), "%d",
+				 fileno(syslogFile));
 	else
-		strcpy(numbuf[bufc++], "-1");
+		strcpy(filenobuf, "-1");
 #else							/* WIN32 */
 	if (syslogFile != NULL)
-		snprintf(numbuf[bufc++], 32, "%ld",
+		snprintf(filenobuf, sizeof(filenobuf), "%ld",
 				 _get_osfhandle(_fileno(syslogFile)));
 	else
-		strcpy(numbuf[bufc++], "0");
+		strcpy(filenobuf, "0");
 #endif   /* WIN32 */
-
-	/* Add to the arg list */
-	Assert(bufc <= lengthof(numbuf));
-	for (i = 0; i < bufc; i++)
-		av[ac++] = numbuf[i];
+	av[ac++] = filenobuf;
 
 	av[ac] = NULL;
 	Assert(ac < lengthof(av));
@@ -644,7 +647,7 @@ syslogger_parseArgs(int argc, char *argv[])
 {
 	int			fd;
 
-	Assert(argc == 5);
+	Assert(argc == 4);
 	argv += 3;
 
 #ifndef WIN32
@@ -1154,7 +1157,7 @@ logfile_rotate(bool time_based_rotation, int size_rotation_for)
 		EnterCriticalSection(&sysfileSection);
 #endif
 		fclose(csvlogFile);
-		syslogFile = fh;
+		csvlogFile = fh;
 #ifdef WIN32
 		LeaveCriticalSection(&sysfileSection);
 #endif

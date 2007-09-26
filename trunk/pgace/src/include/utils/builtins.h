@@ -7,7 +7,7 @@
  * Portions Copyright (c) 1996-2007, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/utils/builtins.h,v 1.302 2007/09/04 16:41:43 adunstan Exp $
+ * $PostgreSQL: pgsql/src/include/utils/builtins.h,v 1.304 2007/09/24 01:29:30 adunstan Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -902,7 +902,9 @@ extern Datum PG_char_to_encoding(PG_FUNCTION_ARGS);
 extern Datum PG_character_set_name(PG_FUNCTION_ARGS);
 extern Datum PG_character_set_id(PG_FUNCTION_ARGS);
 extern Datum pg_convert(PG_FUNCTION_ARGS);
-extern Datum pg_convert2(PG_FUNCTION_ARGS);
+extern Datum pg_convert_to(PG_FUNCTION_ARGS);
+extern Datum pg_convert_from(PG_FUNCTION_ARGS);
+extern Datum length_in_encoding(PG_FUNCTION_ARGS);
 
 /* format_type.c */
 extern Datum format_type(PG_FUNCTION_ARGS);
@@ -938,9 +940,6 @@ extern Datum pg_advisory_unlock_all(PG_FUNCTION_ARGS);
 
 /* access/transam/twophase.c */
 extern Datum pg_prepared_xact(PG_FUNCTION_ARGS);
-
-/* catalog/pg_conversion.c */
-extern Datum pg_convert_using(PG_FUNCTION_ARGS);
 
 /* commands/prepare.c */
 extern Datum pg_prepared_statement(PG_FUNCTION_ARGS);
