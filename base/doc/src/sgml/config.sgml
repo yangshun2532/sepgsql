@@ -1,4 +1,4 @@
-<!-- $PostgreSQL: pgsql/doc/src/sgml/config.sgml,v 1.144 2007/09/10 02:01:19 tgl Exp $ -->
+<!-- $PostgreSQL: pgsql/doc/src/sgml/config.sgml,v 1.147 2007/09/25 20:03:37 tgl Exp $ -->
 
 <chapter Id="runtime-config">
   <title>Server Configuration</title>
@@ -1205,25 +1205,6 @@ SET ENABLE_SEQSCAN TO OFF;
        </listitem>
       </varlistentry>
 
-      <varlistentry id="guc-bgwriter-lru-percent" xreflabel="bgwriter_lru_percent">
-       <term><varname>bgwriter_lru_percent</varname> (<type>floating point</type>)</term>
-       <indexterm>
-        <primary><varname>bgwriter_lru_percent</> configuration parameter</primary>
-       </indexterm>
-       <listitem>
-        <para>
-         To reduce the probability that server processes will need to issue
-         their own writes, the background writer tries to write buffers that
-         are likely to be recycled soon.  In each round, it examines up to
-         <varname>bgwriter_lru_percent</> of the buffers that are nearest to
-         being recycled, and writes any that are dirty.
-         The default value is 1.0 (1% of the total number of shared buffers).
-         This parameter can only be set in the <filename>postgresql.conf</>
-         file or on the server command line.
-        </para>
-       </listitem>
-      </varlistentry>
-
       <varlistentry id="guc-bgwriter-lru-maxpages" xreflabel="bgwriter_lru_maxpages">
        <term><varname>bgwriter_lru_maxpages</varname> (<type>integer</type>)</term>
        <indexterm>
@@ -1232,8 +1213,34 @@ SET ENABLE_SEQSCAN TO OFF;
        <listitem>
         <para>
          In each round, no more than this many buffers will be written
-         as a result of scanning soon-to-be-recycled buffers.
-         The default value is five buffers.
+         by the background writer.  Setting this to zero disables
+         background writing (except for checkpoint activity).
+         The default value is 100 buffers.
+         This parameter can only be set in the <filename>postgresql.conf</>
+         file or on the server command line.
+        </para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry id="guc-bgwriter-lru-multiplier" xreflabel="bgwriter_lru_multiplier">
+       <term><varname>bgwriter_lru_multiplier</varname> (<type>floating point</type>)</term>
+       <indexterm>
+        <primary><varname>bgwriter_lru_multiplier</> configuration parameter</primary>
+       </indexterm>
+       <listitem>
+        <para>
+         Unless limited by <varname>bgwriter_lru_maxpages</>, the number
+         of dirty buffers written in each round is determined by reference
+         to the number of new buffers that have been needed by server
+         processes during recent rounds.  This number is multiplied by
+         <varname>bgwriter_lru_multiplier</> to arrive at the estimate
+         of the number of buffers that will be needed during the next round.
+         Thus, a setting of 1.0 represents a <quote>just in time</> policy
+         of writing exactly the number of buffers predicted to be needed.
+         Larger values provide some cushion against spikes in demand,
+         while smaller values intentionally leave writes to be done by
+         server processes.
+         The default is 2.0.
          This parameter can only be set in the <filename>postgresql.conf</>
          file or on the server command line.
         </para>
@@ -1242,8 +1249,8 @@ SET ENABLE_SEQSCAN TO OFF;
      </variablelist>
 
      <para>
-      Smaller values of <varname>bgwriter_lru_percent</varname> and
-      <varname>bgwriter_lru_maxpages</varname> reduce the extra I/O load
+      Smaller values of <varname>bgwriter_lru_maxpages</varname> and
+      <varname>bgwriter_lru_multiplier</varname> reduce the extra I/O load
       caused by the background writer, but make it more likely that server
       processes will have to issue writes for themselves, delaying interactive
       queries.
@@ -2262,11 +2269,13 @@ SELECT * FROM parent WHERE key = 2400;
          This parameter can only be set in the <filename>postgresql.conf</>
          file or on the server command line.
        </para>
-       <para> If <varname>log_destination</> is set to <systemitem>csvlog</systemitem>, 
-         the log is output as comma seperated values. The format is:
-         timestamp with milliseconds, username, database name, session id, host:port number,
-         process id, per process line number, command tag, session start time, transaction id, 
-         error severity, SQL state code, statement/error message. 
+       <para>
+        If <systemitem>csvlog</> is included in <varname>log_destination</>,
+        log entries are output in <quote>comma separated
+        value</> format, which is convenient for loading them into programs.
+        See <xref linkend="runtime-config-logging-csvlog"> for details.
+        <varname>logging_collector</varname> must be enabled to generate 
+        CSV-format log output.
        </para>
       </listitem>
      </varlistentry>
@@ -2279,16 +2288,13 @@ SELECT * FROM parent WHERE key = 2400;
       <listitem>
        <para>
          This parameter allows messages sent to <application>stderr</>,
-         and CSV logs, to be
+         and CSV-format log output, to be
          captured and redirected into log files.
-         This method, in combination with logging to <application>stderr</>,
-         is often more useful than
+         This approach is often more useful than
          logging to <application>syslog</>, since some types of messages
          might not appear in <application>syslog</> output (a common example
          is dynamic-linker failure messages).
          This parameter can only be set at server start.
-         <varname>logging_collector</varname> must be enabled to generate 
-         CSV logs.
        </para>
       </listitem>
      </varlistentry>
@@ -2334,12 +2340,13 @@ SELECT * FROM parent WHERE key = 2400;
         file or on the server command line.
        </para>
        <para>
-        If <varname>log_destination</> is set to <systemitem>csvlog</>,
+        If CSV-format output is enabled in <varname>log_destination</>,
         <literal>.csv</> will be appended to the timestamped 
-        <varname>log_filename</> to create the final log file name. 
-        (If log_filename ends in <literal>.log</>, the suffix is overwritten.) 
-        In the case of the example above, the 
-        file name will be <literal>server_log.1093827753.csv</literal>
+        log file name to create the file name for CSV-format output.
+        (If <varname>log_filename</> ends in <literal>.log</>, the suffix is
+        replaced instead.)
+        In the case of the example above, the CSV
+        file name will be <literal>server_log.1093827753.csv</literal>.
        </para>
       </listitem>
      </varlistentry>
@@ -2617,88 +2624,92 @@ SELECT * FROM parent WHERE key = 2400;
 
      </variablelist>
 
-       <para>
-        Here is a list of the various message severity levels used in
-        these settings:
-        <variablelist>
-         <varlistentry>
-          <term><literal>DEBUG[1-5]</literal></term>
-          <listitem>
-           <para>
-            Provides information for use by developers.
-           </para>
-          </listitem>
-         </varlistentry>
+    <para>
+     <xref linkend="runtime-config-severity-levels"> explains the message
+     severity levels used by <productname>PostgreSQL</>.  If logging output
+     is sent to <systemitem>syslog</systemitem> or Windows'
+     <systemitem>eventlog</systemitem>, the severity levels are translated
+     as shown in the table.
+    </para>
 
-         <varlistentry>
-          <term><literal>INFO</literal></term>
-          <listitem>
-           <para>
-            Provides information implicitly requested by the user,
-            e.g., during <command>VACUUM VERBOSE</>.
-           </para>
-          </listitem>
-         </varlistentry>
+    <table id="runtime-config-severity-levels">
+     <title>Message severity levels</title>
+     <tgroup cols="4">
+      <thead>
+       <row>
+        <entry>Severity</entry>
+        <entry>Usage</entry>
+        <entry><systemitem>syslog</></entry>
+        <entry><systemitem>eventlog</></entry>
+       </row>
+      </thead>
 
-         <varlistentry>
-          <term><literal>NOTICE</literal></term>
-          <listitem>
-           <para>
-            Provides information that might be helpful to users, e.g.,
-            truncation of long identifiers and the creation of indexes as part
-            of primary keys.
-           </para>
-          </listitem>
-         </varlistentry>
+      <tbody>
+       <row>
+        <entry><literal>DEBUG1..DEBUG5</></entry>
+        <entry>Provides successively-more-detailed information for use by
+         developers.</entry>
+        <entry><literal>DEBUG</></entry>
+        <entry><literal>INFORMATION</></entry>
+       </row>
 
-         <varlistentry>
-          <term><literal>WARNING</literal></term>
-          <listitem>
-           <para>
-            Provides warnings to the user, e.g., <command>COMMIT</>
-            outside a transaction block.
-           </para>
-          </listitem>
-         </varlistentry>
+       <row>
+        <entry><literal>INFO</></entry>
+        <entry>Provides information implicitly requested by the user,
+         e.g., output from <command>VACUUM VERBOSE</>.</entry>
+        <entry><literal>INFO</></entry>
+        <entry><literal>INFORMATION</></entry>
+       </row>
 
-         <varlistentry>
-          <term><literal>ERROR</literal></term>
-          <listitem>
-           <para>
-            Reports an error that caused the current command to abort.
-           </para>
-          </listitem>
-         </varlistentry>
+       <row>
+        <entry><literal>NOTICE</></entry>
+        <entry>Provides information that might be helpful to users, e.g.,
+         notice of truncation of long identifiers.</entry>
+        <entry><literal>NOTICE</></entry>
+        <entry><literal>INFORMATION</></entry>
+       </row>
 
-         <varlistentry>
-          <term><literal>LOG</literal></term>
-          <listitem>
-           <para>
-            Reports information of interest to administrators, e.g.,
-            checkpoint activity.
-           </para>
-          </listitem>
-         </varlistentry>
+       <row>
+        <entry><literal>WARNING</></entry>
+        <entry>Provides warnings of likely problems, e.g., <command>COMMIT</>
+         outside a transaction block.</entry>
+        <entry><literal>NOTICE</></entry>
+        <entry><literal>WARNING</></entry>
+       </row>
 
-         <varlistentry>
-          <term><literal>FATAL</literal></term>
-          <listitem>
-           <para>
-            Reports an error that caused the current session to abort.
-           </para>
-          </listitem>
-         </varlistentry>
+       <row>
+        <entry><literal>ERROR</></entry>
+        <entry>Reports an error that caused the current command to
+         abort.</entry>
+        <entry><literal>WARNING</></entry>
+        <entry><literal>ERROR</></entry>
+       </row>
 
-         <varlistentry>
-          <term><literal>PANIC</literal></term>
-          <listitem>
-           <para>
-            Reports an error that caused all sessions to abort.
-           </para>
-          </listitem>
-         </varlistentry>
-        </variablelist>
-       </para>
+       <row>
+        <entry><literal>LOG</></entry>
+        <entry>Reports information of interest to administrators, e.g.,
+         checkpoint activity.</entry>
+        <entry><literal>INFO</></entry>
+        <entry><literal>INFORMATION</></entry>
+       </row>
+
+       <row>
+        <entry><literal>FATAL</></entry>
+        <entry>Reports an error that caused the current session to
+         abort.</entry>
+        <entry><literal>ERR</></entry>
+        <entry><literal>ERROR</></entry>
+       </row>
+
+       <row>
+        <entry><literal>PANIC</></entry>
+        <entry>Reports an error that caused all database sessions to abort.</entry>
+        <entry><literal>CRIT</></entry>
+        <entry><literal>ERROR</></entry>
+       </row>
+      </tbody>
+     </tgroup>
+    </table>
 
     </sect2>
      <sect2 id="runtime-config-logging-what">
@@ -3082,27 +3093,32 @@ SELECT * FROM parent WHERE key = 2400;
      </variablelist>
     </sect2>
      <sect2 id="runtime-config-logging-csvlog">
-     <title>Using the csvlog</title>
+     <title>Using CSV-Format Log Output</title>
 
        <para>
         Including <literal>csvlog</> in the <varname>log_destination</> list 
         provides a convenient way to import log files into a database table. 
-        Here is a sample table definition for storing csvlog output:
+        This option emits log lines in comma-separated-value format,
+        with these columns: timestamp with milliseconds, username, database
+        name, session id, host:port number, process id, per-process line
+        number, command tag, session start time, transaction id, error
+        severity, SQL state code, statement/error message.
+        Here is a sample table definition for storing CSV-format log output:
        </para>
 
 <programlisting>
 CREATE TABLE postgres_log
 (
-  log_time timestamp,
+  log_time timestamp with time zone,
   username text,
   database_name text,
-  sessionid text not null,
+  sessionid text,
   connection_from text,
-  process_id text,
-  process_line_num int not null,
+  process_id integer,
+  process_line_num bigint,
   command_tag text,
-  session_start_time timestamp,
-  transaction_id int,
+  session_start_time timestamp with time zone,
+  transaction_id bigint,
   error_severity text,
   sql_state_code text,
   statement text,
@@ -3112,7 +3128,8 @@ CREATE TABLE postgres_log
 
 
        <para>
-       In order to import into this table, use the COPY FROM command:
+        To import a log file into this table, use the <command>COPY FROM</>
+        command:
        </para>
 
 <programlisting>
@@ -3120,18 +3137,17 @@ COPY postgres_log FROM '/full/path/to/logfile.csv' WITH csv;
 </programlisting>
 
        <para>
-       There are a few things you need to import csvlog files easily and 
-       automatically:
+       There are a few things you need to do to simplify importing CSV log
+       files easily and automatically:
 
        <orderedlist>
          <listitem>
            <para>
-            Use a consistant, predictable naming scheme for your log files 
-            with <varname>log_filename</varname>.  This lets you predict what 
-the file name will be when it is ready to be imported.
-guess what 
-            the file name will be and know when an individual log file is 
-            complete and therefore ready to be imported.
+            Set <varname>log_filename</varname> and
+            <varname>log_rotation_age</> to provide a consistent,
+            predictable naming scheme for your log files.  This lets you
+            predict what the file name will be and know when an individual log
+            file is complete and therefore ready to be imported.
          </para>
         </listitem>
 
@@ -3145,24 +3161,23 @@ guess what
 
         <listitem>
           <para>
-           Set <varname>log_truncate_on_rotate</varname> = on so that old 
-           log data isn't mixed with the new in the same file.
+           Set <varname>log_truncate_on_rotation</varname> to <literal>on</> so
+           that old log data isn't mixed with the new in the same file.
           </para>
         </listitem>
 
         <listitem>
           <para>
-           The example above includes a useful primary key on the log
-           file data, which will protect against accidentally importing
-           the same information twice.  The COPY command commits all of
-           the data it imports at one time, and any single error will
-           cause the entire import to fail.  
-           If you import a partial log file and later import the file again 
-           when it is complete, the primary key violation will cause the 
-           import to fail. Wait until the log is complete and closed before 
-           import. This will also protect against accidently importing a 
-           partial line that hasn't been completely written, which would 
-           also cause the COPY to fail.
+           The table definition above includes a primary key specification.
+           This is useful to protect against accidentally importing the same
+           information twice.  The <command>COPY</> command commits all of the
+           data it imports at one time, so any error will cause the entire
+           import to fail.  If you import a partial log file and later import
+           the file again when it is complete, the primary key violation will
+           cause the import to fail.  Wait until the log is complete and
+           closed before importing.  This procedure will also protect against
+           accidentally importing a partial line that hasn't been completely
+           written, which would also cause <command>COPY</> to fail.
           </para>
         </listitem>
         </orderedlist>
@@ -3178,30 +3193,19 @@ guess what
      <title>Query and Index Statistics Collector</title>
 
      <para>
-      These parameters control a server-wide statistics collection feature.
+      These parameters control server-wide statistics collection features.
       When statistics collection is enabled, the data that is produced can be
       accessed via the <structname>pg_stat</structname> and
       <structname>pg_statio</structname> family of system views.
       Refer to <xref linkend="monitoring"> for more information.
      </para>
 
-     <note>
-     <para>
-      As of <productname>PostgreSQL</productname> 8.2,
-      <varname>stats_command_string</varname> controls a separate data
-      collection mechanism that can be turned on or off independently
-      of whether the statistics-collection subprocess is running.
-      The subprocess is only needed to support collection of
-      block-level or row-level statistics.
-     </para>
-     </note>
-
      <variablelist>
 
-     <varlistentry id="guc-stats-command-string" xreflabel="stats_command_string">
-      <term><varname>stats_command_string</varname> (<type>boolean</type>)</term>
+     <varlistentry id="guc-track-activities" xreflabel="track_activities">
+      <term><varname>track_activities</varname> (<type>boolean</type>)</term>
       <indexterm>
-       <primary><varname>stats_command_string</> configuration parameter</primary>
+       <primary><varname>track_activities</> configuration parameter</primary>
       </indexterm>
       <listitem>
        <para>
@@ -3217,6 +3221,21 @@ guess what
       </listitem>
      </varlistentry>
 
+     <varlistentry id="guc-track-counts" xreflabel="track_counts">
+      <term><varname>track_counts</varname> (<type>boolean</type>)</term>
+      <indexterm>
+       <primary><varname>track_counts</> configuration parameter</primary>
+      </indexterm>
+      <listitem>
+       <para>
+        Enables collection of statistics on database activity.
+        This parameter is on by default, because the autovacuum
+        daemon needs the collected information.
+        Only superusers can change this setting.
+       </para>
+      </listitem>
+     </varlistentry>
+
      <varlistentry id="guc-update-process-title" xreflabel="update_process_title">
       <term><varname>update_process_title</varname> (<type>boolean</type>)</term>
       <indexterm>
@@ -3226,71 +3245,9 @@ guess what
        <para>
         Enables updating of the process title every time a new SQL command
         is received by the server.  The process title is typically viewed
-        by the <command>ps</> command or in Windows using the <application>Process
-        Explorer</>.   Only superusers can change this setting.
-       </para>
-      </listitem>
-     </varlistentry>
-
-     <varlistentry id="guc-stats-start-collector" xreflabel="stats_start_collector">
-      <term><varname>stats_start_collector</varname> (<type>boolean</type>)</term>
-      <indexterm>
-       <primary><varname>stats_start_collector</> configuration parameter</primary>
-      </indexterm>
-      <listitem>
-       <para>
-        Controls whether the server should start the
-        statistics-collection subprocess.  This is on by default, but
-        can be turned off if you know you have no interest in
-        collecting statistics or running autovacuum.
-        This parameter can only be set at server start, because the collection
-        subprocess cannot be started or stopped on-the-fly.  (However, the
-        extent to which statistics are actually gathered can be changed while
-        the server is running, so long as the subprocess exists.)
-       </para>
-      </listitem>
-     </varlistentry>
-
-     <varlistentry id="guc-stats-block-level" xreflabel="stats_block_level">
-      <term><varname>stats_block_level</varname> (<type>boolean</type>)</term>
-      <indexterm>
-       <primary><varname>stats_block_level</> configuration parameter</primary>
-      </indexterm>
-      <listitem>
-       <para>
-        Enables the collection of block-level statistics on database
-        activity. This parameter is off by default.
+        by the <command>ps</> command,
+        or in Windows by using the <application>Process Explorer</>.
         Only superusers can change this setting.
-       </para>
-      </listitem>
-     </varlistentry>
-
-     <varlistentry id="guc-stats-row-level" xreflabel="stats_row_level">
-      <term><varname>stats_row_level</varname> (<type>boolean</type>)</term>
-      <indexterm>
-       <primary><varname>stats_row_level</> configuration parameter</primary>
-      </indexterm>
-      <listitem>
-       <para>
-        Enables the collection of row-level statistics on database
-        activity. This parameter is on by default, because the autovacuum
-        daemon needs the collected information.
-        Only superusers can change this setting.
-       </para>
-      </listitem>
-     </varlistentry>
-
-     <varlistentry id="guc-stats-reset-on-server-start" xreflabel="stats_reset_on_server_start">
-      <term><varname>stats_reset_on_server_start</varname> (<type>boolean</type>)</term>
-      <indexterm>
-       <primary><varname>stats_reset_on_server_start</> configuration parameter</primary>
-      </indexterm>
-      <listitem>
-       <para>
-        If on, collected block-level and row-level statistics are zeroed out
-        whenever the server is restarted. If off, statistics are accumulated
-        across server restarts. This parameter is off by default.
-        This parameter can only be set at server start.
        </para>
       </listitem>
      </varlistentry>
@@ -3361,17 +3318,36 @@ guess what
       <listitem>
        <para>
         Controls whether the server should run the
-        autovacuum launcher daemon.  This is on by default.
-        <varname>stats_start_collector</> and <varname>stats_row_level</>
-        must also be turned on for autovacuum to work.
+        autovacuum launcher daemon.  This is on by default; however,
+        <xref linkend="guc-track-counts"> must also be turned on for
+        autovacuum to work.
         This parameter can only be set in the <filename>postgresql.conf</>
         file or on the server command line.
        </para>
        <para>
         Note that even when this parameter is disabled, the system
-        will periodically launch autovacuum processes in order to
+        will launch autovacuum processes if necessary to
         prevent transaction ID wraparound.  See <xref
         linkend="vacuum-for-wraparound"> for more information.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-log-autovacuum-min-duration" xreflabel="log_autovacuum_min_duration">
+      <term><varname>log_autovacuum_min_duration</varname> (<type>integer</type>)</term>
+      <indexterm>
+       <primary><varname>log_autovacuum_min_duration</> configuration parameter</primary>
+      </indexterm>
+      <listitem>
+       <para>
+        Causes each action executed by autovacuum to be logged if it ran for at
+        least the specified number of milliseconds.  Setting this to zero logs
+        all autovacuum actions. Minus-one (the default) disables logging
+        autovacuum actions.  For example, if you set this to
+        <literal>250ms</literal> then all automatic vacuums and analyzes that run
+        250ms or longer will be logged.  Enabling this parameter can be helpful
+        in tracking autovacuum activity.  This setting can only be set in
+        the <filename>postgresql.conf</> file or on the server command line.
        </para>
       </listitem>
      </varlistentry>
@@ -3385,26 +3361,7 @@ guess what
        <para>
         Specifies the maximum number of autovacuum processes (other than the
         autovacuum launcher) which may be running at any one time.  The default
-        is three (<literal>3</literal>).  This parameter can only be set in
-        the <filename>postgresql.conf</> file or on the server command line.
-       </para>
-      </listitem>
-     </varlistentry>
-
-     <varlistentry id="guc-log-autovacuum" xreflabel="log_autovacuum">
-      <term><varname>log_autovacuum</varname> (<type>integer</type>)</term>
-      <indexterm>
-       <primary><varname>log_autovacuum</> configuration parameter</primary>
-      </indexterm>
-      <listitem>
-       <para>
-        Causes each action executed by autovacuum to be logged if it ran for at
-        least the specified number of milliseconds.  Setting this to zero logs
-        all autovacuum actions. Minus-one (the default) disables logging
-        autovacuum actions.  For example, if you set this to
-        <literal>250ms</literal> then all vacuums and analyzes that run
-        250ms or longer will be logged.  Enabling this parameter can be helpful
-        in tracking autovacuum activity.  This setting can only be set in
+        is three.  This parameter can only be set in
         the <filename>postgresql.conf</> file or on the server command line.
        </para>
       </listitem>

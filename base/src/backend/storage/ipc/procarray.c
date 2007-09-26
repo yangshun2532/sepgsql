@@ -23,7 +23,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/storage/ipc/procarray.c,v 1.33 2007/09/08 20:31:15 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/storage/ipc/procarray.c,v 1.35 2007/09/23 18:50:38 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -60,21 +60,30 @@ static ProcArrayStruct *procArray;
 
 /* counters for XidCache measurement */
 static long xc_by_recent_xmin = 0;
+static long xc_by_my_xact = 0;
+static long xc_by_latest_xid = 0;
 static long xc_by_main_xid = 0;
 static long xc_by_child_xid = 0;
+static long xc_no_overflow = 0;
 static long xc_slow_answer = 0;
 
 #define xc_by_recent_xmin_inc()		(xc_by_recent_xmin++)
+#define xc_by_my_xact_inc()			(xc_by_my_xact++)
+#define xc_by_latest_xid_inc()		(xc_by_latest_xid++)
 #define xc_by_main_xid_inc()		(xc_by_main_xid++)
 #define xc_by_child_xid_inc()		(xc_by_child_xid++)
+#define xc_no_overflow_inc()		(xc_no_overflow++)
 #define xc_slow_answer_inc()		(xc_slow_answer++)
 
 static void DisplayXidCache(void);
 #else							/* !XIDCACHE_DEBUG */
 
 #define xc_by_recent_xmin_inc()		((void) 0)
+#define xc_by_my_xact_inc()			((void) 0)
+#define xc_by_latest_xid_inc()		((void) 0)
 #define xc_by_main_xid_inc()		((void) 0)
 #define xc_by_child_xid_inc()		((void) 0)
+#define xc_no_overflow_inc()		((void) 0)
 #define xc_slow_answer_inc()		((void) 0)
 #endif   /* XIDCACHE_DEBUG */
 
@@ -299,7 +308,8 @@ ProcArrayClearTransaction(PGPROC *proc)
 /*
  * TransactionIdIsInProgress -- is given transaction running in some backend
  *
- * There are three possibilities for finding a running transaction:
+ * Aside from some shortcuts such as checking RecentXmin and our own Xid,
+ * there are three possibilities for finding a running transaction:
  *
  * 1. the given Xid is a main transaction Id.  We will find this out cheaply
  * by looking at the PGPROC struct for each backend.
@@ -320,14 +330,12 @@ ProcArrayClearTransaction(PGPROC *proc)
 bool
 TransactionIdIsInProgress(TransactionId xid)
 {
-	bool		result = false;
+	static TransactionId *xids = NULL;
+	int			nxids = 0;
 	ProcArrayStruct *arrayP = procArray;
+	TransactionId topxid;
 	int			i,
 				j;
-	int			nxids = 0;
-	TransactionId *xids;
-	TransactionId topxid;
-	bool		locked;
 
 	/*
 	 * Don't bother checking a transaction older than RecentXmin; it could not
@@ -341,18 +349,55 @@ TransactionIdIsInProgress(TransactionId xid)
 		return false;
 	}
 
-	/* Get workspace to remember main XIDs in */
-	xids = (TransactionId *) palloc(sizeof(TransactionId) * arrayP->maxProcs);
+	/*
+	 * Also, we can handle our own transaction (and subtransactions) without
+	 * any access to shared memory.
+	 */
+	if (TransactionIdIsCurrentTransactionId(xid))
+	{
+		xc_by_my_xact_inc();
+		return true;
+	}
+
+	/*
+	 * If not first time through, get workspace to remember main XIDs in.
+	 * We malloc it permanently to avoid repeated palloc/pfree overhead.
+	 */
+	if (xids == NULL)
+	{
+		xids = (TransactionId *)
+			malloc(arrayP->maxProcs * sizeof(TransactionId));
+		if (xids == NULL)
+			ereport(ERROR,
+					(errcode(ERRCODE_OUT_OF_MEMORY),
+					 errmsg("out of memory")));
+	}
 
 	LWLockAcquire(ProcArrayLock, LW_SHARED);
-	locked = true;
 
+	/*
+	 * Now that we have the lock, we can check latestCompletedXid; if the
+	 * target Xid is after that, it's surely still running.
+	 */
+	if (TransactionIdPrecedes(ShmemVariableCache->latestCompletedXid, xid))
+	{
+		LWLockRelease(ProcArrayLock);
+		xc_by_latest_xid_inc();
+		return true;
+	}
+
+	/* No shortcuts, gotta grovel through the array */
 	for (i = 0; i < arrayP->numProcs; i++)
 	{
 		volatile PGPROC	   *proc = arrayP->procs[i];
+		TransactionId pxid;
+
+		/* Ignore my own proc --- dealt with it above */
+		if (proc == MyProc)
+			continue;
 
 		/* Fetch xid just once - see GetNewTransactionId */
-		TransactionId pxid = proc->xid;
+		pxid = proc->xid;
 
 		if (!TransactionIdIsValid(pxid))
 			continue;
@@ -362,9 +407,9 @@ TransactionIdIsInProgress(TransactionId xid)
 		 */
 		if (TransactionIdEquals(pxid, xid))
 		{
+			LWLockRelease(ProcArrayLock);
 			xc_by_main_xid_inc();
-			result = true;
-			goto result_known;
+			return true;
 		}
 
 		/*
@@ -384,9 +429,9 @@ TransactionIdIsInProgress(TransactionId xid)
 
 			if (TransactionIdEquals(cxid, xid))
 			{
+				LWLockRelease(ProcArrayLock);
 				xc_by_child_xid_inc();
-				result = true;
-				goto result_known;
+				return true;
 			}
 		}
 
@@ -402,14 +447,16 @@ TransactionIdIsInProgress(TransactionId xid)
 	}
 
 	LWLockRelease(ProcArrayLock);
-	locked = false;
 
 	/*
 	 * If none of the relevant caches overflowed, we know the Xid is not
 	 * running without looking at pg_subtrans.
 	 */
 	if (nxids == 0)
-		goto result_known;
+	{
+		xc_no_overflow_inc();
+		return false;
+	}
 
 	/*
 	 * Step 3: have to check pg_subtrans.
@@ -422,12 +469,12 @@ TransactionIdIsInProgress(TransactionId xid)
 	xc_slow_answer_inc();
 
 	if (TransactionIdDidAbort(xid))
-		goto result_known;
+		return false;
 
 	/*
 	 * It isn't aborted, so check whether the transaction tree it belongs to
-	 * is still running (or, more precisely, whether it was running when this
-	 * routine started -- note that we already released ProcArrayLock).
+	 * is still running (or, more precisely, whether it was running when
+	 * we held ProcArrayLock).
 	 */
 	topxid = SubTransGetTopmostTransaction(xid);
 	Assert(TransactionIdIsValid(topxid));
@@ -436,20 +483,11 @@ TransactionIdIsInProgress(TransactionId xid)
 		for (i = 0; i < nxids; i++)
 		{
 			if (TransactionIdEquals(xids[i], topxid))
-			{
-				result = true;
-				break;
-			}
+				return true;
 		}
 	}
 
-result_known:
-	if (locked)
-		LWLockRelease(ProcArrayLock);
-
-	pfree(xids);
-
-	return result;
+	return false;
 }
 
 /*
@@ -1284,10 +1322,13 @@ static void
 DisplayXidCache(void)
 {
 	fprintf(stderr,
-			"XidCache: xmin: %ld, mainxid: %ld, childxid: %ld, slow: %ld\n",
+			"XidCache: xmin: %ld, myxact: %ld, latest: %ld, mainxid: %ld, childxid: %ld, nooflo: %ld, slow: %ld\n",
 			xc_by_recent_xmin,
+			xc_by_my_xact,
+			xc_by_latest_xid,
 			xc_by_main_xid,
 			xc_by_child_xid,
+			xc_no_overflow,
 			xc_slow_answer);
 }
 
