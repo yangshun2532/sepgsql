@@ -3,7 +3,7 @@ package Mkvcbuild;
 #
 # Package that generates build files for msvc build
 #
-# $PostgreSQL: pgsql/src/tools/msvc/Mkvcbuild.pm,v 1.16 2007/08/21 15:10:41 mha Exp $
+# $PostgreSQL: pgsql/src/tools/msvc/Mkvcbuild.pm,v 1.21 2007/10/03 13:43:24 mha Exp $
 #
 use Carp;
 use Win32;
@@ -43,7 +43,7 @@ sub mkvcbuild
     $solution = new Solution($config);
 
     our @pgportfiles = qw(
-      crypt.c fseeko.c getrusage.c inet_aton.c random.c srandom.c
+      chklocale.c crypt.c fseeko.c getrusage.c inet_aton.c random.c srandom.c
       unsetenv.c getaddrinfo.c gettimeofday.c kill.c open.c rand.c
       snprintf.c strlcat.c strlcpy.c copydir.c dirmod.c exec.c noblock.c path.c pipe.c
       pgsleep.c pgstrcasecmp.c qsort.c qsort_arg.c sprompt.c thread.c
@@ -137,6 +137,7 @@ sub mkvcbuild
       $solution->AddProject('libpgtypes','dll','interfaces','src\interfaces\ecpg\pgtypeslib');
     $pgtypes->AddDefine('FRONTEND');
     $pgtypes->AddReference($libpgport);
+    $pgtypes->UseDef('src\interfaces\ecpg\pgtypeslib\pgtypeslib.def');
     $pgtypes->AddIncludeDir('src\interfaces\ecpg\include');
 
     my $libecpg =$solution->AddProject('libecpg','dll','interfaces','src\interfaces\ecpg\ecpglib');
@@ -144,6 +145,7 @@ sub mkvcbuild
     $libecpg->AddIncludeDir('src\interfaces\ecpg\include');
     $libecpg->AddIncludeDir('src\interfaces\libpq');
     $libecpg->AddIncludeDir('src\port');
+    $libecpg->UseDef('src\interfaces\ecpg\ecpglib\ecpglib.def');
     $libecpg->AddLibrary('wsock32.lib');
     $libecpg->AddReference($libpq,$pgtypes,$libpgport);
 
@@ -151,7 +153,8 @@ sub mkvcbuild
       $solution->AddProject('libecpg_compat','dll','interfaces','src\interfaces\ecpg\compatlib');
     $libecpgcompat->AddIncludeDir('src\interfaces\ecpg\include');
     $libecpgcompat->AddIncludeDir('src\interfaces\libpq');
-    $libecpgcompat->AddReference($pgtypes,$libecpg);
+    $libecpgcompat->UseDef('src\interfaces\ecpg\compatlib\compatlib.def');
+    $libecpgcompat->AddReference($pgtypes,$libecpg,$libpgport);
 
     my $ecpg = $solution->AddProject('ecpg','exe','interfaces','src\interfaces\ecpg\preproc');
     $ecpg->AddIncludeDir('src\interfaces\ecpg\include');
@@ -341,7 +344,6 @@ sub mkvcbuild
     $pgregress->AddFile('src\test\regress\pg_regress_main.c');
     $pgregress->AddIncludeDir('src\port');
     $pgregress->AddDefine('HOST_TUPLE="i686-pc-win32vc"');
-    $pgregress->AddDefine('FRONTEND');
     $pgregress->AddReference($libpgport);
 
     $solution->Save();
@@ -359,7 +361,6 @@ sub AddSimpleFrontend
 
     my $p = $solution->AddProject($n,'exe','bin');
     $p->AddDir('src\bin\\' . $n);
-    $p->AddDefine('FRONTEND');
     $p->AddReference($libpgport);
     if ($uselibpq)
     {

@@ -1,7 +1,7 @@
 
 # -*-perl-*- hey - emacs - this is a perl file
 
-# $PostgreSQL: pgsql/src/tools/msvc/vcregress.pl,v 1.3 2007/09/24 21:42:34 adunstan Exp $
+# $PostgreSQL: pgsql/src/tools/msvc/vcregress.pl,v 1.5 2007/10/03 11:34:11 mha Exp $
 
 use strict;
 
@@ -139,7 +139,7 @@ sub ecpgcheck
         "../../../../$Config/pg_regress_ecpg/pg_regress_ecpg",
         "--psqldir=../../../$Config/psql",
         "--dbname=regress1,connectdb",
-        "--createrole=connectuser,connectdb",
+        "--create-role=connectuser,connectdb",
         "--schedule=${schedule}_schedule",
         "--multibyte=SQL_ASCII",
         "--load-language=plpgsql",
@@ -188,6 +188,7 @@ sub contribcheck
     my $mstat = 0;
     foreach my $module (glob("*"))
     {
+		next if $module eq 'tsearch2';
         next unless -d "$module/sql" && 
 			-d "$module/expected" && 
 			(-f "$module/Makefile" || -f "$module/GNUmakefile");

@@ -7,7 +7,7 @@
  * Portions Copyright (c) 1996-2007, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/backend/access/transam/xlog.c,v 1.281 2007/09/08 20:31:14 tgl Exp $
+ * $PostgreSQL: pgsql/src/backend/access/transam/xlog.c,v 1.285 2007/09/30 17:28:56 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -48,7 +48,7 @@
 #include "storage/spin.h"
 #include "utils/builtins.h"
 #include "utils/pg_locale.h"
-
+#include "utils/ps_status.h"
 
 
 /* File path names (all relative to $PGDATA) */
@@ -62,6 +62,7 @@
 int			CheckPointSegments = 3;
 int			XLOGbuffers = 8;
 int			XLogArchiveTimeout = 0;
+bool		XLogArchiveMode = false;
 char	   *XLogArchiveCommand = NULL;
 char	   *XLOG_sync_method = NULL;
 const char	XLOG_sync_method_default[] = DEFAULT_SYNC_METHOD_STR;
@@ -120,8 +121,10 @@ static char *recoveryRestoreCommand = NULL;
 static bool recoveryTarget = false;
 static bool recoveryTargetExact = false;
 static bool recoveryTargetInclusive = true;
+static bool recoveryLogRestartpoints = false;
 static TransactionId recoveryTargetXid;
 static TimestampTz recoveryTargetTime;
+static TimestampTz recoveryLastXTime = 0;
 
 /* if recoveryStopsHere returns true, it saves actual stop xid/time here */
 static TransactionId recoveryStopXid;
@@ -2273,6 +2276,7 @@ XLogFileRead(uint32 log, uint32 seg, int emode)
 {
 	char		path[MAXPGPATH];
 	char		xlogfname[MAXFNAMELEN];
+	char		activitymsg[MAXFNAMELEN + 16];
 	ListCell   *cell;
 	int			fd;
 
@@ -2293,9 +2297,15 @@ XLogFileRead(uint32 log, uint32 seg, int emode)
 		if (tli < curFileTLI)
 			break;				/* don't bother looking at too-old TLIs */
 
+		XLogFileName(xlogfname, tli, log, seg);
+
 		if (InArchiveRecovery)
 		{
-			XLogFileName(xlogfname, tli, log, seg);
+			/* Report recovery progress in PS display */
+			snprintf(activitymsg, sizeof(activitymsg), "waiting for %s",
+					 xlogfname);
+			set_ps_display(activitymsg, false);
+
 			restoredFromArchive = RestoreArchivedFile(path, xlogfname,
 													  "RECOVERYXLOG",
 													  XLogSegSize);
@@ -2308,6 +2318,12 @@ XLogFileRead(uint32 log, uint32 seg, int emode)
 		{
 			/* Success! */
 			curFileTLI = tli;
+
+			/* Report recovery progress in PS display */
+			snprintf(activitymsg, sizeof(activitymsg), "recovering %s",
+					 xlogfname);
+			set_ps_display(activitymsg, false);
+
 			return fd;
 		}
 		if (errno != ENOENT)	/* unexpected failure? */
@@ -2388,12 +2404,15 @@ RestoreArchivedFile(char *path, const char *xlogfname,
 {
 	char		xlogpath[MAXPGPATH];
 	char		xlogRestoreCmd[MAXPGPATH];
+	char		lastRestartPointFname[MAXPGPATH];
 	char	   *dp;
 	char	   *endp;
 	const char *sp;
 	int			rc;
 	bool		signaled;
 	struct stat stat_buf;
+	uint32 		restartLog;
+	uint32 		restartSeg;
 
 	/*
 	 * When doing archive recovery, we always prefer an archived log file even
@@ -2464,6 +2483,17 @@ RestoreArchivedFile(char *path, const char *xlogfname,
 					/* %f: filename of desired file */
 					sp++;
 					StrNCpy(dp, xlogfname, endp - dp);
+					dp += strlen(dp);
+					break;
+				case 'r':
+					/* %r: filename of last restartpoint */
+					sp++;
+					XLByteToSeg(ControlFile->checkPointCopy.redo,
+								restartLog, restartSeg);
+					XLogFileName(lastRestartPointFname, 
+								 ControlFile->checkPointCopy.ThisTimeLineID, 
+								 restartLog, restartSeg);
+					StrNCpy(dp, lastRestartPointFname, endp - dp);
 					dp += strlen(dp);
 					break;
 				case '%':
@@ -4401,6 +4431,21 @@ readRecoveryCommandFile(void)
 			ereport(LOG,
 					(errmsg("recovery_target_inclusive = %s", tok2)));
 		}
+		else if (strcmp(tok1, "log_restartpoints") == 0)
+		{
+			/*
+			 * does nothing if a recovery_target is not also set
+			 */
+			if (strcmp(tok2, "true") == 0)
+				recoveryLogRestartpoints = true;
+			else
+			{
+				recoveryLogRestartpoints = false;
+				tok2 = "false";
+			}
+			ereport(LOG,
+					(errmsg("log_restartpoints = %s", tok2)));
+		}
 		else
 			ereport(FATAL,
 					(errmsg("unrecognized recovery parameter \"%s\"",
@@ -4486,7 +4531,8 @@ exitArchiveRecovery(TimeLineID endTLI, uint32 endLogId, uint32 endLogSeg)
 	 *
 	 * Note that if we are establishing a new timeline, ThisTimeLineID is
 	 * already set to the new value, and so we will create a new file instead
-	 * of overwriting any existing file.
+	 * of overwriting any existing file.  (This is, in fact, always the case
+	 * at present.)
 	 */
 	snprintf(recoveryPath, MAXPGPATH, XLOGDIR "/RECOVERYXLOG");
 	XLogFilePath(xlogpath, ThisTimeLineID, endLogId, endLogSeg);
@@ -4564,10 +4610,6 @@ recoveryStopsHere(XLogRecord *record, bool *includeThis)
 	uint8		record_info;
 	TimestampTz	recordXtime;
 
-	/* Do we have a PITR target at all? */
-	if (!recoveryTarget)
-		return false;
-
 	/* We only consider stopping at COMMIT or ABORT records */
 	if (record->xl_rmid != RM_XACT_ID)
 		return false;
@@ -4587,6 +4629,13 @@ recoveryStopsHere(XLogRecord *record, bool *includeThis)
 		recordXtime = recordXactAbortData->xact_time;
 	}
 	else
+		return false;
+
+	/* Remember the most recent COMMIT/ABORT time for logging purposes */
+	recoveryLastXTime = recordXtime;
+
+	/* Do we have a PITR target at all? */
+	if (!recoveryTarget)
 		return false;
 
 	if (recoveryTargetExact)
@@ -4665,7 +4714,7 @@ StartupXLOG(void)
 	XLogCtlInsert *Insert;
 	CheckPoint	checkPoint;
 	bool		wasShutdown;
-	bool		needNewTimeLine = false;
+	bool		reachedStopPoint = false;
 	bool		haveBackupLabel = false;
 	XLogRecPtr	RecPtr,
 				LastRec,
@@ -4975,7 +5024,7 @@ StartupXLOG(void)
 				 */
 				if (recoveryStopsHere(record, &recoveryApply))
 				{
-					needNewTimeLine = true;		/* see below */
+					reachedStopPoint = true;		/* see below */
 					recoveryContinue = false;
 					if (!recoveryApply)
 						break;
@@ -5015,6 +5064,10 @@ StartupXLOG(void)
 			ereport(LOG,
 					(errmsg("redo done at %X/%X",
 							ReadRecPtr.xlogid, ReadRecPtr.xrecoff)));
+			if (recoveryLastXTime)
+				ereport(LOG,
+						(errmsg("last completed transaction was at log time %s",
+								timestamptz_to_str(recoveryLastXTime))));
 			InRedo = false;
 		}
 		else
@@ -5039,11 +5092,10 @@ StartupXLOG(void)
 	 */
 	if (XLByteLT(EndOfLog, ControlFile->minRecoveryPoint))
 	{
-		if (needNewTimeLine)	/* stopped because of stop request */
+		if (reachedStopPoint)	/* stopped because of stop request */
 			ereport(FATAL,
 					(errmsg("requested recovery stop point is before end time of backup dump")));
-		else
-			/* ran off end of WAL */
+		else					/* ran off end of WAL */
 			ereport(FATAL,
 					(errmsg("WAL ends before end time of backup dump")));
 	}
@@ -5051,12 +5103,18 @@ StartupXLOG(void)
 	/*
 	 * Consider whether we need to assign a new timeline ID.
 	 *
-	 * If we stopped short of the end of WAL during recovery, then we are
-	 * generating a new timeline and must assign it a unique new ID.
-	 * Otherwise, we can just extend the timeline we were in when we ran out
-	 * of WAL.
+	 * If we are doing an archive recovery, we always assign a new ID.  This
+	 * handles a couple of issues.  If we stopped short of the end of WAL
+	 * during recovery, then we are clearly generating a new timeline and must
+	 * assign it a unique new ID.  Even if we ran to the end, modifying the
+	 * current last segment is problematic because it may result in trying
+	 * to overwrite an already-archived copy of that segment, and we encourage
+	 * DBAs to make their archive_commands reject that.  We can dodge the
+	 * problem by making the new active segment have a new timeline ID.
+	 *
+	 * In a normal crash recovery, we can just extend the timeline we were in.
 	 */
-	if (needNewTimeLine)
+	if (InArchiveRecovery)
 	{
 		ThisTimeLineID = findNewestTimeLine(recoveryTargetTLI) + 1;
 		ereport(LOG,
@@ -5922,9 +5980,13 @@ RecoveryRestartPoint(const CheckPoint *checkPoint)
 	ControlFile->time = time(NULL);
 	UpdateControlFile();
 
-	ereport(DEBUG2,
+	ereport((recoveryLogRestartpoints ? LOG : DEBUG2),
 			(errmsg("recovery restart point at %X/%X",
 					checkPoint->redo.xlogid, checkPoint->redo.xrecoff)));
+	if (recoveryLastXTime)
+		ereport((recoveryLogRestartpoints ? LOG : DEBUG2),
+				(errmsg("last completed transaction was at log time %s",
+						timestamptz_to_str(recoveryLastXTime))));
 }
 
 /*
@@ -6285,14 +6347,20 @@ pg_start_backup(PG_FUNCTION_ARGS)
 	if (!superuser())
 		ereport(ERROR,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 (errmsg("must be superuser to run a backup"))));
+				 errmsg("must be superuser to run a backup")));
 
 	if (!XLogArchivingActive())
 		ereport(ERROR,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 (errmsg("WAL archiving is not active"),
-				  (errhint("archive_command must be defined before "
-						   "online backups can be made safely.")))));
+				 errmsg("WAL archiving is not active"),
+				 errhint("archive_mode must be enabled at server start.")));
+
+	if (!XLogArchiveCommandSet())
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("WAL archiving is not active"),
+				 errhint("archive_command must be defined before "
+						 "online backups can be made safely.")));
 
 	backupidstr = DatumGetCString(DirectFunctionCall1(textout,
 												 PointerGetDatum(backupid)));

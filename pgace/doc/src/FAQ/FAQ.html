@@ -10,7 +10,7 @@
   alink="#0000ff">
     <H1>Frequently Asked Questions (FAQ) for PostgreSQL</H1>
 
-    <P>Last updated: Fri Sep 14 14:39:54 EDT 2007</P>
+    <P>Last updated: Mon Oct  8 23:19:46 EDT 2007</P>
 
     <P>Current maintainer: Bruce Momjian (<A href=
     "mailto:bruce@momjian.us">bruce@momjian.us</A>)
@@ -157,7 +157,7 @@
     the community of developers and users, which anyone can join.  All
     you need to do is subscribe to the mailing lists and participate in the
     discussions.   (See the <a href="http://www.postgresql.org/docs/faqs.FAQ_DEV.html">
-    Developer's FAQ</A> for information on how to get involved in PostgreSQL
+    Developer's FAQ</A> for information on how to get involved in Postgres
     development.)</P>
 
     <H3 id="item1.3">1.3) What is the copyright of
@@ -205,7 +205,7 @@
     systems like Win2000 SP4, WinXP, and Win2003.  A prepackaged installer is
     available at <a href= "http://pgfoundry.org/projects/pginstaller">
     http://pgfoundry.org/projects/pginstaller</a>.  MSDOS-based versions
-    of Windows (Win95, Win98, WinMe) can run PostgreSQL using Cygwin.</P>
+    of Windows (Win95, Win98, WinMe) can run Postgres using Cygwin.</P>
 
     <p>There is also a Novell Netware 6 port at
     <a href="http://forge.novell.com">http://forge.novell.com</a>,
@@ -217,8 +217,8 @@
 
     <P>Via web browser, use <a href="http://www.postgresql.org/ftp/">
     http://www.postgresql.org/ftp/</a>, and via ftp, use
-    <A href="ftp://ftp.PostgreSQL.org/pub/">
-    ftp://ftp.PostgreSQL.org/pub/</A>.</P>
+    <A href="ftp://ftp.postgresql.org/pub/">
+    ftp://ftp.postgresql.org/pub/</A>.</P>
 
     <H3 id="item1.6">1.6) What is the most recent release?</H3>
 
@@ -240,8 +240,8 @@
     program <CODE>irc -c '#postgresql' "$USER" irc.freenode.net</CODE>
     or use any other IRC clients.  A Spanish one also exists
     on the same network, (<I>#postgresql-es</I>), a French one,
-	(<I>#postgresqlfr</I>), and a Brazilian one, (<I>#postgresql-br</I>).
-	There is also a PostgreSQL channel on EFNet.</P>
+    (<I>#postgresqlfr</I>), and a Brazilian one, (<I>#postgresql-br</I>).
+    There is also a PostgreSQL channel on EFNet.</P>
 
     <P>A list of commercial support companies is available at <A href=
     "http://www.postgresql.org/support/professional_support">
@@ -253,8 +253,8 @@
     "http://www.postgresql.org/support/submitbug">
     http://www.postgresql.org/support/submitbug</A>.
     Also check out our ftp site <A href=
-    "ftp://ftp.PostgreSQL.org/pub/">ftp://ftp.PostgreSQL.org/pub/</A> to
-    see if there is a more recent PostgreSQL version.</P>
+    "ftp://ftp.postgresql.org/pub/">ftp://ftp.postgresql.org/pub/</A> to
+    see if there is a more recent Postgres version.</P>
 
     <P>Bugs submitted using the bug form or posted to any PostgreSQL mailing
     list typically generates one of the following replies:</P>
@@ -317,7 +317,7 @@
     list up-to-date. In practice, bugs don't last very long in the
     software, and bugs that affect a large number of users are fixed
     rapidly. The only place to find all changes, improvements, and
-    fixes in a PostgreSQL release is to read the
+    fixes in a Postgres release is to read the
     <a href="http://www.postgresql.org/developer/sourcecode/">CVS</a>
     log messages.  Even the release notes do not list every change
     made to the software.</P>
@@ -327,7 +327,7 @@
     <P>PostgreSQL includes extensive documentation, including a large
     manual, manual pages, and some test examples. See the <I>/doc</I>
     directory. You can also browse the manuals online at <A href=
-    "http://www.PostgreSQL.org/docs">http://www.PostgreSQL.org/docs</A>.
+    "http://www.postgresql.org/docs">http://www.postgresql.org/docs</A>.
     </P>
 
     <P>There are two PostgreSQL books available online at <A href=
@@ -337,10 +337,10 @@
     There are a number of PostgreSQL books available for purchase.  One
     of the most popular ones is by Korry Douglas.  A list of book reviews
     can be found at <A href=
-    "http://techdocs.postgresql.org/techdocs/bookreviews.php">http://techdocs.PostgreSQL.org/techdocs/bookreviews.php</A>.
+    "http://techdocs.postgresql.org/techdocs/bookreviews.php">http://techdocs.postgresql.org/techdocs/bookreviews.php</A>.
     There is also a collection of PostgreSQL technical articles at <A
     href=
-    "http://techdocs.PostgreSQL.org/">http://techdocs.PostgreSQL.org/</A>.</P>
+    "http://techdocs.postgresql.org/">http://techdocs.postgresql.org/</A>.</P>
 
     <P>The command line client program <I>psql</I> has some \d commands to show
     information about types, operators, functions, aggregates, etc. - use \? to 
@@ -577,11 +577,11 @@
     <H3 id="item3.5">3.5) Why do I get <I>"Sorry, too many
     clients"</I> when trying to connect?</H3>
 
-    <P>You have reached the default limit is 100 database sessions. You
-    need to increase the <I>postmaster</I>'s limit on how many
+    <P>You have reached the default limit of 100 database sessions. You
+    need to increase the server's limit on how many
     concurrent backend processes it can start by changing the
     <I>max_connections</I> value in <I>postgresql.conf</I> and
-    restarting the <I>postmaster</I>.</P>
+    restarting the server.</P>
 
     <H3 id="item3.6">3.6) What is the upgrade process for PostgreSQL?</H3>
 
@@ -711,7 +711,7 @@ table?</TD><TD>unlimited</TD></TR>
     <P>As an example, consider a file of 100,000 lines with an integer
     and text description on each line. Suppose the text string
     avergages twenty bytes in length. The flat file would be 2.8 MB.
-    The size of the PostgreSQL database file containing this data can
+    The size of the Postgres database file containing this data can
     be estimated as 5.2 MB:</P>
 <PRE>
     24 bytes: each row header (approximate)
@@ -720,7 +720,7 @@ table?</TD><TD>unlimited</TD></TR>
    ----------------------------------------
     52 bytes per row
 
-   The data page size in PostgreSQL is 8192 bytes (8 KB), so:
+   The data page size in Postgres is 8192 bytes (8 KB), so:
 
    8192 bytes per page
    -------------------   =  158 rows per database page (rounded down)
@@ -991,7 +991,7 @@ length</TD></TR>
 
     <P>You probably have run out of virtual memory on your system,
     or your kernel has a low limit for certain resources. Try this
-    before starting <I>postmaster</I>:</P>
+    before starting the server:</P>
 <PRE>
     ulimit -d 262144
     limit datasize 256m
@@ -1097,7 +1097,7 @@ length</TD></TR>
     <H3 id="item4.21">4.21) Why are my table and column names not
     recognized in my query?  Why is capitalization not preserved?</H3>
 
-    <P>The most common cause of recognized names is the use of
+    <P>The most common cause of unrecognized names is the use of
     double-quotes around table or column names during table creation.
     When double-quotes are used, table and column names (called
     identifiers) are stored <a

@@ -13,7 +13,7 @@
     <H1>Developer's Frequently Asked Questions (FAQ) for
     PostgreSQL</H1>
 
-    <P>Last updated: Sun Sep 23 14:06:36 EDT 2007</P>
+    <P>Last updated: Wed Sep 26 16:38:09 EDT 2007</P>
 
     <P>Current maintainer: Bruce Momjian (<A href=
     "mailto:bruce@momjian.us">bruce@momjian.us</A>)<BR>
@@ -190,7 +190,7 @@
     rely on surrounding lines.)</li>
 
     <li>PostgreSQL is licensed under a BSD license.  By posting a patch
-    to the public PostgreSQL mailling lists, you are giving the PostgreSQL
+    to the public Postgres mailling lists, you are giving the PostgreSQL
     Global Development Group the non-revokable right to distribute your
     patch under the BSD license.</li>
 
@@ -242,8 +242,8 @@
     <li>Contains no reliability risks</li>
     <li>Does not overly complicate the source code</li>
     <li>If performance-related, has a measureable performance benefit</li>
-    <li>Is of sufficient usefulness to the average PostgreSQL user</li>
-    <li>Follows existing PostgreSQL coding standards</li>
+    <li>Is of sufficient usefulness to the average Postgres user</li>
+    <li>Follows existing Postgres coding standards</li>
     </ul>
   
     <H3 id="item1.7">1.7) Where can I learn more about the
@@ -939,7 +939,7 @@
     (gdb) call pprint(any_pointer)
 </CODE>
 </PRE>
-    The output appears in the postmaster log file, or on your screen if
+    The output appears in the server log file, or on your screen if
     you are running a backend directly without a postmaster. 
 
     <H3 id="item2.4">2.4) I just added a field to a structure.
@@ -972,7 +972,7 @@
     parameter is an ereport level of <I>DEBUG</I> (levels 1-5),
     <I>LOG,</I> <I>INFO,</I> <I>NOTICE,</I> <I>ERROR,</I> <I>FATAL,</I>
     or <I>PANIC.</I> <I>NOTICE</I> prints on the user's terminal and
-    the postmaster logs. <I>INFO</I> prints only to the user's terminal
+    to the server logs. <I>INFO</I> prints only to the user's terminal
     and <I>LOG</I> prints only to the server logs. (These can be
     changed from <I>postgresql.conf.</I>) <I>ERROR</I> prints in both
     places, and terminates the current query, never returning from the
@@ -1004,7 +1004,7 @@
     option, many <I>assert()</I>s monitor the progress of the
     backend and halt the program when something unexpected occurs.</P>
 
-    <P>The <I>postmaster</I> has a <I>-d</I> option that allows
+    <P>The postgres server has a <I>-d</I> option that allows
     even more detailed information to be reported. The <I>-d</I>
     option takes a number that specifies the debug level. Be warned
     that high debug level values generate large log files.</P>
