@@ -1,7 +1,7 @@
 
                 Frequently Asked Questions (FAQ) for PostgreSQL
                                        
-   Last updated: Fri Sep 14 14:39:54 EDT 2007
+   Last updated: Mon Oct 8 23:19:46 EDT 2007
    
    Current maintainer: Bruce Momjian (bruce@momjian.us)
    
@@ -113,7 +113,7 @@
    community of developers and users, which anyone can join. All you need
    to do is subscribe to the mailing lists and participate in the
    discussions. (See the Developer's FAQ for information on how to get
-   involved in PostgreSQL development.)
+   involved in Postgres development.)
    
   1.3) What is the copyright of PostgreSQL?
   
@@ -158,7 +158,7 @@
    PostgreSQL also runs natively on Microsoft Windows NT-based operating
    systems like Win2000 SP4, WinXP, and Win2003. A prepackaged installer
    is available at http://pgfoundry.org/projects/pginstaller. MSDOS-based
-   versions of Windows (Win95, Win98, WinMe) can run PostgreSQL using
+   versions of Windows (Win95, Win98, WinMe) can run Postgres using
    Cygwin.
    
    There is also a Novell Netware 6 port at http://forge.novell.com, and
@@ -169,7 +169,7 @@
   1.5) Where can I get PostgreSQL?
   
    Via web browser, use http://www.postgresql.org/ftp/, and via ftp, use
-   ftp://ftp.PostgreSQL.org/pub/.
+   ftp://ftp.postgresql.org/pub/.
    
   1.6) What is the most recent release?
   
@@ -199,8 +199,8 @@
   
    Visit the PostgreSQL bug form at
    http://www.postgresql.org/support/submitbug. Also check out our ftp
-   site ftp://ftp.PostgreSQL.org/pub/ to see if there is a more recent
-   PostgreSQL version.
+   site ftp://ftp.postgresql.org/pub/ to see if there is a more recent
+   Postgres version.
    
    Bugs submitted using the bug form or posted to any PostgreSQL mailing
    list typically generates one of the following replies:
@@ -240,24 +240,24 @@
    efficient to respond directly to email and keep the TODO list
    up-to-date. In practice, bugs don't last very long in the software,
    and bugs that affect a large number of users are fixed rapidly. The
-   only place to find all changes, improvements, and fixes in a
-   PostgreSQL release is to read the CVS log messages. Even the release
-   notes do not list every change made to the software.
+   only place to find all changes, improvements, and fixes in a Postgres
+   release is to read the CVS log messages. Even the release notes do not
+   list every change made to the software.
    
   1.10) What documentation is available?
   
    PostgreSQL includes extensive documentation, including a large manual,
    manual pages, and some test examples. See the /doc directory. You can
-   also browse the manuals online at http://www.PostgreSQL.org/docs.
+   also browse the manuals online at http://www.postgresql.org/docs.
    
    There are two PostgreSQL books available online at
    http://www.postgresql.org/docs/books/awbook.html and
    http://www.commandprompt.com/ppbook/. There are a number of PostgreSQL
    books available for purchase. One of the most popular ones is by Korry
    Douglas. A list of book reviews can be found at
-   http://techdocs.PostgreSQL.org/techdocs/bookreviews.php. There is also
+   http://techdocs.postgresql.org/techdocs/bookreviews.php. There is also
    a collection of PostgreSQL technical articles at
-   http://techdocs.PostgreSQL.org/.
+   http://techdocs.postgresql.org/.
    
    The command line client program psql has some \d commands to show
    information about types, operators, functions, aggregates, etc. - use
@@ -423,10 +423,10 @@
    
   3.5) Why do I get "Sorry, too many clients" when trying to connect?
   
-   You have reached the default limit is 100 database sessions. You need
-   to increase the postmaster's limit on how many concurrent backend
+   You have reached the default limit of 100 database sessions. You need
+   to increase the server's limit on how many concurrent backend
    processes it can start by changing the max_connections value in
-   postgresql.conf and restarting the postmaster.
+   postgresql.conf and restarting the server.
    
   3.6) What is the upgrade process for PostgreSQL?
   
@@ -537,7 +537,7 @@
    As an example, consider a file of 100,000 lines with an integer and
    text description on each line. Suppose the text string avergages
    twenty bytes in length. The flat file would be 2.8 MB. The size of the
-   PostgreSQL database file containing this data can be estimated as 5.2
+   Postgres database file containing this data can be estimated as 5.2
    MB:
     24 bytes: each row header (approximate)
     24 bytes: one int field and one text field
@@ -545,7 +545,7 @@
    ----------------------------------------
     52 bytes per row
 
-   The data page size in PostgreSQL is 8192 bytes (8 KB), so:
+   The data page size in Postgres is 8192 bytes (8 KB), so:
 
    8192 bytes per page
    -------------------   =  158 rows per database page (rounded down)
@@ -753,7 +753,7 @@
   
    You probably have run out of virtual memory on your system, or your
    kernel has a low limit for certain resources. Try this before starting
-   postmaster:
+   the server:
     ulimit -d 262144
     limit datasize 256m
 
@@ -840,13 +840,13 @@
   4.21) Why are my table and column names not recognized in my query? Why is
   capitalization not preserved?
   
-   The most common cause of recognized names is the use of double-quotes
-   around table or column names during table creation. When double-quotes
-   are used, table and column names (called identifiers) are stored
-   case-sensitive, meaning you must use double-quotes when referencing
-   the names in a query. Some interfaces, like pgAdmin, automatically
-   double-quote identifiers during table creation. So, for identifiers to
-   be recognized, you must either:
+   The most common cause of unrecognized names is the use of
+   double-quotes around table or column names during table creation. When
+   double-quotes are used, table and column names (called identifiers)
+   are stored case-sensitive, meaning you must use double-quotes when
+   referencing the names in a query. Some interfaces, like pgAdmin,
+   automatically double-quote identifiers during table creation. So, for
+   identifiers to be recognized, you must either:
      * Avoid double-quoting identifiers when creating tables
      * Use only lowercase characters in identifiers
      * Double-quote identifiers when referencing them in queries

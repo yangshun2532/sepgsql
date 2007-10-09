@@ -15,7 +15,7 @@
 int
 main(void)
 {
-        printf("No threading enabled.\n");
+	printf("No threading enabled.\n");
 	return 0;
 }
 #else
@@ -121,9 +121,9 @@ struct sqlca_t *ECPGget_sqlca(void);
 
 
 #ifdef WIN32
-static unsigned STDCALL fn(void* arg)
+static unsigned __stdcall fn(void* arg)
 #else
-void* fn(void* arg)
+static void* fn(void* arg)
 #endif
 {
 	int i;
@@ -145,7 +145,7 @@ void* fn(void* arg)
 #line 42 "prep.pgc"
 
 
-	value = (int)arg;
+	value = (long)arg;
 	sprintf(name, "Connection: %d", value);
 
 	{ ECPGconnect(__LINE__, 0, "regress1" , NULL, NULL , name, 0); 
@@ -245,7 +245,7 @@ if (sqlca.sqlcode < 0) sqlprint();}
 		CloseHandle(threads[i]);
 #else
 	for (i = 0; i < THREADS; ++i)
-		pthread_create(&threads[i], NULL, fn, (void*)i);
+		pthread_create(&threads[i], NULL, fn, (void *) (long) i);
 	for (i = 0; i < THREADS; ++i)
 		pthread_join(threads[i], NULL);
 #endif
