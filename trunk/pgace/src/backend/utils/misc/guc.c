@@ -4188,9 +4188,6 @@ set_config_option(const char *name, const char *value,
 		return false;
 	}
 
-	if (pgaceSetDatabaseParam(name, value))
-		return false;
-
 	/*
 	 * If source is postgresql.conf, mark the found record with GUC_IS_IN_FILE.
 	 * This is for the convenience of ProcessConfigFile.  Note that we do it
@@ -4920,6 +4917,7 @@ ExecSetVariableStmt(VariableSetStmt *stmt)
 	{
 		case VAR_SET_VALUE:
 		case VAR_SET_CURRENT:
+			pgaceSetDatabaseParam(stmt->name, ExtractSetVariableArgs(stmt));
 			set_config_option(stmt->name,
 							  ExtractSetVariableArgs(stmt),
 							  (superuser() ? PGC_SUSET : PGC_USERSET),
@@ -4976,6 +4974,7 @@ ExecSetVariableStmt(VariableSetStmt *stmt)
 			break;
 		case VAR_SET_DEFAULT:
 		case VAR_RESET:
+			pgaceSetDatabaseParam(stmt->name, NULL);
 			set_config_option(stmt->name,
 							  NULL,
 							  (superuser() ? PGC_SUSET : PGC_USERSET),

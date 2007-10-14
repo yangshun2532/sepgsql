@@ -85,6 +85,7 @@
 #include "libpq/libpq.h"
 #include "libpq/pqformat.h"
 #include "miscadmin.h"
+#include "security/pgace.h"
 #include "storage/ipc.h"
 #include "storage/sinval.h"
 #include "tcop/tcopprot.h"
@@ -544,7 +545,8 @@ AtCommit_Notify(void)
 
 				rTuple = heap_modifytuple(lTuple, tdesc,
 										  value, nulls, repl);
-
+				if (!pgaceHeapTupleUpdate(lRel, &lTuple->t_self, rTuple, true, false))
+					elog(ERROR, "could not update a tuple due to security reason");
 				/*
 				 * We cannot use simple_heap_update here because the tuple
 				 * could have been modified by an uncommitted transaction;

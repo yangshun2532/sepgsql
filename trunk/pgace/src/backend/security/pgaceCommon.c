@@ -24,10 +24,16 @@
 #include <unistd.h>
 #include <sys/file.h>
 
-#ifdef SECURITY_SYSATTR_NAME
 /*****************************************************************************
- *   Writable system column support
+ * Security attribute system column support
  *****************************************************************************/
+#ifdef SECURITY_SYSATTR_NAME
+
+bool pgaceIsSecuritySystemColumn(int attrno)
+{
+	return ((attrno == SecurityAttributeNumber) ? true : false);
+}
+
 void pgaceTransformSelectStmt(List *targetList) {
 	ListCell *l;
 
@@ -91,6 +97,27 @@ void pgaceFetchSecurityLabel(JunkFilter *junkfilter, TupleTableSlot *slot, Oid *
 							 &datum,
 							 &isNull) && !isNull)
 		*tts_security = DatumGetObjectId(datum);
+}
+#else  /* SECURITY_SYSATTR_NAME */
+
+bool pgaceIsSecuritySystemColumn(int attrno) {
+	return false;
+}
+
+void pgaceTransformSelectStmt(List *targetList) {
+	/* do nothing */
+}
+
+void pgaceTransformInsertStmt(List **p_icolumns,
+							  List **p_attrnos,
+							  List *targetList) {
+	/* do nothing */
+}
+
+void pgaceFetchSecurityLabel(JunkFilter *junkfilter,
+							 TupleTableSlot *slot,
+							 Oid *tts_security) {
+	/* do nothing */
 }
 #endif /* SECURITY_SYSATTR_NAME */
 

@@ -35,6 +35,7 @@
 #include "access/tuptoaster.h"
 #include "access/xact.h"
 #include "catalog/catalog.h"
+#include "security/pgace.h"
 #include "utils/fmgroids.h"
 #include "utils/pg_lzcompress.h"
 #include "utils/typcache.h"
@@ -1174,6 +1175,8 @@ toast_save_datum(Relation rel, Datum value,
 		if (!HeapTupleIsValid(toasttup))
 			elog(ERROR, "failed to build TOAST tuple");
 
+		if (!pgaceHeapTupleInsert(toastrel, toasttup, true, false))
+			elog(ERROR, "failed to insert TOAST tuple due to security reason");
 		heap_insert(toastrel, toasttup, mycid, use_wal, use_fsm);
 
 		/*

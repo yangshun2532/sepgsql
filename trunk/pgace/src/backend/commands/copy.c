@@ -2195,7 +2195,7 @@ CopyFrom(CopyState cstate)
 			}
 		}
 
-		if (!skip_tuple && !pgaceCopyFromTuple(cstate->rel, tuple))
+		if (!skip_tuple && !pgaceHeapTupleInsert(cstate->rel, tuple, false, false))
 			skip_tuple = true;
 
 		if (!skip_tuple)

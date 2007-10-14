@@ -1511,10 +1511,10 @@ ExecInsert(TupleTableSlot *slot,
 		ExecConstraints(resultRelInfo, slot, estate);
 
 	/*
-	 * Check the explicit labeling, if configured
+	 * PGACE: check HeapTuple Insertion permission
 	 */
-	if (!pgaceExecInsert(resultRelationDesc, tuple,
-						 !!resultRelInfo->ri_projectReturning))
+	if (!pgaceHeapTupleInsert(resultRelationDesc, tuple,
+							  false, !!resultRelInfo->ri_projectReturning))
 		return;
 
 	/*
@@ -1585,8 +1585,8 @@ ExecDelete(ItemPointer tupleid,
 			return;
 	}
 
-	if (!pgaceExecDelete(resultRelationDesc, tupleid,
-						 !!resultRelInfo->ri_projectReturning))
+	if (!pgaceHeapTupleDelete(resultRelationDesc, tupleid,
+							  false, !!resultRelInfo->ri_projectReturning))
 		return;
 
 	/*
@@ -1771,11 +1771,9 @@ lreplace:;
 	if (resultRelationDesc->rd_att->constr)
 		ExecConstraints(resultRelInfo, slot, estate);
 
-	/*
-	 * check explicit labeling, if necessary
-	 */
-	if (!pgaceExecUpdate(resultRelationDesc, tuple, tupleid,
-						 !!resultRelInfo->ri_projectReturning))
+	/* PGACE: check HeapTuple update permission */
+	if (!pgaceHeapTupleUpdate(resultRelationDesc, tupleid, tuple,
+							  false, !!resultRelInfo->ri_projectReturning))
 		return;
 
 	/*
@@ -2750,11 +2748,13 @@ intorel_receive(TupleTableSlot *slot, DestReceiver *self)
 
 	tuple = ExecCopySlotTuple(slot);
 
+	/* PGACE: store explicit security labeling and check HeapTuple insertion permission */
 	HeapTupleStoreSecurityFromSlot(tuple, slot);
-	if (!pgaceExecInsert(estate->es_into_relation_descriptor, tuple, false)) {
+	if (!pgaceHeapTupleInsert(estate->es_into_relation_descriptor, tuple, false, false)) {
 		heap_freetuple(tuple);
 		return;
 	}
+
 	heap_insert(estate->es_into_relation_descriptor,
 				tuple,
 				estate->es_snapshot->curcid,
