@@ -10,6 +10,8 @@ include $(top_builddir)/src/Makefile.global
 
 OBJS := pgaceCommon.o
 
+OBJS += pgaceHooks.o
+
 all: SUBSYS.o
 
 SUBSYS.o: $(OBJS)
