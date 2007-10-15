@@ -208,7 +208,7 @@ fi
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
 
 %changelog
-* Mon Oct 15 2007 <kaigai@kaigai.gr.jp> - 8.2.5-1.30
+* Mon Oct 15 2007 <kaigai@kaigai.gr.jp> - 8.2.5-1.31
 - Fix bug: type definitions of security_label_to_text()
   and text_to_security_label() are mismatched.
 
