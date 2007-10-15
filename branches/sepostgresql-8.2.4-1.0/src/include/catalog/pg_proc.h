@@ -3979,8 +3979,8 @@ DATA(insert OID = 3404 ( security_label_in				PGNSP PGUID 12 f f t f i 1 3403 "2
 DATA(insert OID = 3405 ( security_label_out				PGNSP PGUID 12 f f t f i 1 2275 "3403" _null_ _null_ _null_ security_label_out - _null_ ));
 DATA(insert OID = 3406 ( security_label_raw_in			PGNSP PGUID 12 f f t f i 1 3403 "2275" _null_ _null_ _null_ security_label_raw_in - _null_ ));
 DATA(insert OID = 3407 ( security_label_raw_out			PGNSP PGUID 12 f f t f i 1 2275 "3403" _null_ _null_ _null_ security_label_raw_out - _null_ ));
-DATA(insert OID = 3408 ( text_to_security_label			PGNSP PGUID 12 f f t f i 1 25 "3403" _null_ _null_ _null_ text_to_security_label - _null_ ));
-DATA(insert OID = 3409 ( security_label_to_text			PGNSP PGUID 12 f f t f i 1 3403 "25" _null_ _null_ _null_ security_label_to_text - _null_ ));
+DATA(insert OID = 3408 ( text_to_security_label			PGNSP PGUID 12 f f t f i 1 3403 "25" _null_ _null_ _null_ text_to_security_label - _null_ ));
+DATA(insert OID = 3409 ( security_label_to_text			PGNSP PGUID 12 f f t f i 1 25 "3403" _null_ _null_ _null_ security_label_to_text - _null_ ));
 DATA(insert OID = 3410 ( lo_get_security				PGNSP PGUID 12 f f t f v 1 3403 "26" _null_ _null_ _null_ lo_get_security - _null_ ));
 DATA(insert OID = 3411 ( lo_set_security				PGNSP PGUID 12 f f t f v 2 16 "26 3403" _null_ _null_ _null_ lo_set_security - _null_ ));
 
