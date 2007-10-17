@@ -374,22 +374,30 @@ void sepgsqlLargeObjectExport()
  * security_label hooks
  *******************************************************************************/
 char *sepgsqlSecurityLabelIn(char *context) {
-	security_context_t raw_context;
+	security_context_t raw_context, canonical_context;
 	char *result;
+	int rc;
 
-	if (selinux_trans_to_raw_context(context, &raw_context))
-        selerror("could not translate MLS label");
+	rc = selinux_trans_to_raw_context(context, &raw_context);
+	if (rc)
+		selerror("could not translate MLS label");
+
+	rc = security_canonicalize_context_raw(raw_context, &canonical_context);
+	freecon(raw_context);
+	if (rc)
+		selerror("could not canonicalize the context");
+
 	PG_TRY();
 	{
-		result = pstrdup(raw_context);
+		result = pstrdup(canonical_context);
 	}
 	PG_CATCH();
 	{
-		freecon(raw_context);
+		freecon(canonical_context);
 		PG_RE_THROW();
 	}
 	PG_END_TRY();
-	freecon(raw_context);
+	freecon(canonical_context);
 
 	return result;
 }

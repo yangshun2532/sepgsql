@@ -208,6 +208,9 @@ fi
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
 
 %changelog
+* Web Oct 17 2007 <kaigai@kaigai.gr.jp> - 8.2.5-1.32
+- Fix bug: security context was not canonicalized
+  when irregular context (but interpretable) was inputed.
 * Mon Oct 15 2007 <kaigai@kaigai.gr.jp> - 8.2.5-1.31
 - Fix bug: type definitions of security_label_to_text()
   and text_to_security_label() are mismatched.
