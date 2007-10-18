@@ -192,14 +192,10 @@ Oid pgaceParseSecurityLabel(DefElem *defel)
  * @name   : The name of GUC variable
  * @argstr : The new valus of GUC variable. If argstr is NULL, it means
  *           clients tries to reset the variable.
- *
- * NOTE: In this hooks, implementation cannot cause an error.
- *       We have to generate an audit message and return false.
  */
-bool pgaceSetDatabaseParam(const char *name, char *argstring)
+void pgaceSetDatabaseParam(const char *name, char *argstring)
 {
 	/* do nothing */
-	return true;
 }
 
 /*
@@ -414,8 +410,9 @@ void pgaceLargeObjectOpen(Relation rel, HeapTuple tuple, bool read_only) {
  *
  * @rel   : pg_largeobject relation opened with AccessShareLock
  * @tuple : a tuple within the target large object
+ * @is_first : true, if it attempts to read the first block in this loop.
  */
-void pgaceLargeObjectRead(Relation rel, HeapTuple tuple) {
+void pgaceLargeObjectRead(Relation rel, HeapTuple tuple, bool is_first) {
 	/* do nothing */
 }
 
@@ -425,22 +422,38 @@ void pgaceLargeObjectRead(Relation rel, HeapTuple tuple) {
  * @rel    : pg_largeobject relation opened with RowExclusiveLock
  * @newtup : a new tuple within the target large object
  * @oldtup : a original tuple within the target large object, if exist
+ * @is_first : true, if it attempts to write the first block in this loop.
  */
-void pgaceLargeObjectWrite(Relation rel, HeapTuple newtup, HeapTuple oldtup) {
+void pgaceLargeObjectWrite(Relation rel, HeapTuple newtup, HeapTuple oldtup, bool is_first) {
+	/* do nothing */
+}
+
+/*
+ * pgaceLargeObjectTruncate() is called when they truncate a large object.
+ *
+ * @rel  : pg_largeobject relation opened with RowExclusiveLock
+ * @loid : large object identifier
+ */
+void pgaceLargeObjectTruncate(Relation rel, Oid loid) {
 	/* do nothing */
 }
 
 /*
  * pgaceLargeObjectImport() is called when lo_import() is processed
+ *
+ * @fd : file descriptor to be inported
  */
-void pgaceLargeObjectImport(void) {
+void pgaceLargeObjectImport(int fd) {
 	/* do nothing */
 }
 
 /*
  * pgaceLargeObjectExport() is called when lo_import() is processed
+ *
+ * @fd   : file descriptor to be exported
+ * @loid : large object to be exported
  */
-void pgaceLargeObjectExport(void) {
+void pgaceLargeObjectExport(int fd, Oid loid) {
 	/* do nothing */
 }
 

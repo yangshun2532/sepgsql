@@ -354,7 +354,7 @@ lo_import(PG_FUNCTION_ARGS)
 				 errmsg("could not open server file \"%s\": %m",
 						fnamebuf)));
 
-	pgaceLargeObjectImport();
+	pgaceLargeObjectImport(fd);
 
 	/*
 	 * create an inversion object
@@ -411,8 +411,6 @@ lo_export(PG_FUNCTION_ARGS)
 
 	CreateFSContext();
 
-	pgaceLargeObjectExport();
-
 	/*
 	 * open the inversion object (no need to test for failure)
 	 */
@@ -438,6 +436,8 @@ lo_export(PG_FUNCTION_ARGS)
 				(errcode_for_file_access(),
 				 errmsg("could not create server file \"%s\": %m",
 						fnamebuf)));
+
+	pgaceLargeObjectExport(fd, lobjId);
 
 	/*
 	 * read in from the inversion file and write to the filesystem

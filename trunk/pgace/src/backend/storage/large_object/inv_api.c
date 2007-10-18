@@ -420,6 +420,7 @@ inv_read(LargeObjectDesc *obj_desc, char *buf, int nbytes)
 	ScanKeyData skey[2];
 	IndexScanDesc sd;
 	HeapTuple	tuple;
+	bool		pgace_checked = false;
 
 	Assert(PointerIsValid(obj_desc));
 	Assert(buf != NULL);
@@ -448,10 +449,12 @@ inv_read(LargeObjectDesc *obj_desc, char *buf, int nbytes)
 		bytea	   *datafield;
 		bool		pfreeit;
 
-		pgaceLargeObjectRead(lo_heap_r, tuple);
-
 		if (HeapTupleHasNulls(tuple))				/* paranoia */
 			elog(ERROR, "null field found in pg_largeobject");
+
+		pgaceLargeObjectRead(lo_heap_r, tuple, !pgace_checked);
+		pgace_checked = true;
+
 		data = (Form_pg_largeobject) GETSTRUCT(tuple);
 
 		/*
@@ -531,6 +534,7 @@ inv_write(LargeObjectDesc *obj_desc, const char *buf, int nbytes)
 	char		nulls[Natts_pg_largeobject];
 	char		replace[Natts_pg_largeobject];
 	CatalogIndexState indstate;
+	bool		pgace_checked = false;
 
 	Assert(PointerIsValid(obj_desc));
 	Assert(buf != NULL);
@@ -639,7 +643,8 @@ inv_write(LargeObjectDesc *obj_desc, const char *buf, int nbytes)
 			replace[Anum_pg_largeobject_data - 1] = 'r';
 			newtup = heap_modifytuple(oldtuple, RelationGetDescr(lo_heap_r),
 									  values, nulls, replace);
-			pgaceLargeObjectWrite(lo_heap_r, newtup, oldtuple);
+			pgaceLargeObjectWrite(lo_heap_r, newtup, oldtuple, !pgace_checked);
+			pgace_checked = true;
 			simple_heap_update(lo_heap_r, &newtup->t_self, newtup);
 			CatalogIndexInsert(indstate, newtup);
 			heap_freetuple(newtup);
@@ -683,7 +688,8 @@ inv_write(LargeObjectDesc *obj_desc, const char *buf, int nbytes)
 			values[Anum_pg_largeobject_pageno - 1] = Int32GetDatum(pageno);
 			values[Anum_pg_largeobject_data - 1] = PointerGetDatum(&workbuf);
 			newtup = heap_formtuple(lo_heap_r->rd_att, values, nulls);
-			pgaceLargeObjectWrite(lo_heap_r, newtup, NULL);
+			pgaceLargeObjectWrite(lo_heap_r, newtup, NULL, !pgace_checked);
+			pgace_checked = true;
 			simple_heap_insert(lo_heap_r, newtup);
 			CatalogIndexInsert(indstate, newtup);
 			heap_freetuple(newtup);
@@ -735,6 +741,8 @@ inv_truncate(LargeObjectDesc *obj_desc, int len)
 						obj_desc->id)));
 
 	open_lo_relation();
+
+	pgaceLargeObjectTruncate(lo_heap_r, obj_desc->id);
 
 	indstate = CatalogOpenIndexes(lo_heap_r);
 
