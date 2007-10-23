@@ -42,7 +42,7 @@
  * Portions Copyright (c) 1994, Regents of the University of California
  * Portions taken from FreeBSD.
  *
- * $PostgreSQL: pgsql/src/bin/initdb/initdb.c,v 1.144 2007/09/29 00:14:40 tgl Exp $
+ * $PostgreSQL: pgsql/src/bin/initdb/initdb.c,v 1.147 2007/10/16 11:30:16 mha Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -2801,14 +2801,14 @@ main(int argc, char *argv[])
 			  pg_strcasecmp(lc_ctype, "POSIX") == 0))
 		{
 			/* Hmm, couldn't recognize the locale's codeset */
-			fprintf(stderr, _("%s: could not find suitable encoding for locale \"%s\"\n"),
+			fprintf(stderr, _("%s: could not find suitable encoding for locale %s\n"),
 					progname, lc_ctype);
 			fprintf(stderr, _("Rerun %s with the -E option.\n"), progname);
 			fprintf(stderr, _("Try \"%s --help\" for more information.\n"),
 					progname);
 			exit(1);
 		}
-		else if (!PG_VALID_BE_ENCODING(ctype_enc))
+		else if (!pg_valid_server_encoding_id(ctype_enc))
 		{
 			/* We recognized it, but it's not a legal server encoding */
 			fprintf(stderr,
@@ -2840,7 +2840,17 @@ main(int argc, char *argv[])
 		/* We allow selection of SQL_ASCII --- see notes in createdb() */
 		if (!(ctype_enc == user_enc ||
 			  ctype_enc == PG_SQL_ASCII ||
-			  user_enc == PG_SQL_ASCII))
+			  user_enc == PG_SQL_ASCII
+#ifdef WIN32			  
+			/*
+			 * On win32, if the encoding chosen is UTF8, all locales are OK 
+			 * (assuming the actual locale name passed the checks above). This
+			 * is because UTF8 is a pseudo-codepage, that we convert to UTF16
+			 * before doing any operations on, and UTF16 supports all locales.
+			 */
+			|| user_enc == PG_UTF8
+#endif
+			  ))
 		{
 			fprintf(stderr, _("%s: encoding mismatch\n"), progname);
 			fprintf(stderr,
@@ -2861,7 +2871,7 @@ main(int argc, char *argv[])
 		default_text_search_config = find_matching_ts_config(lc_ctype);
 		if (default_text_search_config == NULL)
 		{
-			printf(_("%s: could not find suitable text search configuration for locale \"%s\"\n"),
+			printf(_("%s: could not find suitable text search configuration for locale %s\n"),
 				   progname, lc_ctype);
 			default_text_search_config = "simple";
 		}
@@ -2872,12 +2882,12 @@ main(int argc, char *argv[])
 
 		if (checkmatch == NULL)
 		{
-			printf(_("%s: warning: suitable text search configuration for locale \"%s\" is unknown\n"),
+			printf(_("%s: warning: suitable text search configuration for locale %s is unknown\n"),
 				   progname, lc_ctype);
 		}
 		else if (strcmp(checkmatch, default_text_search_config) != 0)
 		{
-			printf(_("%s: warning: specified text search configuration \"%s\" might not match locale \"%s\"\n"),
+			printf(_("%s: warning: specified text search configuration \"%s\" might not match locale %s\n"),
 				   progname, default_text_search_config, lc_ctype);
 		}
 	}
@@ -2968,7 +2978,7 @@ main(int argc, char *argv[])
 	{
 		char	*linkloc;
 
-		linkloc = (char *) palloc(strlen(pg_data) + 8 + 2);
+		linkloc = (char *) pg_malloc(strlen(pg_data) + 8 + 2);
 		sprintf(linkloc, "%s/pg_xlog", pg_data);
 
 		/* check if the specified xlog directory is empty */

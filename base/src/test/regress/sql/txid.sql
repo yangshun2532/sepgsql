@@ -1,13 +1,8 @@
--- init
-\set ECHO none
-set client_min_messages = 'warning';
-\i txid.sql
-set client_min_messages = 'notice';
-\set ECHO all
+-- txid_snapshot data type and related functions
 
 -- i/o
 select '12:13:'::txid_snapshot;
-select '12:13:1,2'::txid_snapshot;
+select '12:18:14,16'::txid_snapshot;
 
 -- errors
 select '31:12:'::txid_snapshot;
@@ -16,7 +11,7 @@ select '12:13:0'::txid_snapshot;
 select '12:16:14,13'::txid_snapshot;
 select '12:16:14,14'::txid_snapshot;
 
-create table snapshot_test (
+create temp table snapshot_test (
 	nr	integer,
 	snap	txid_snapshot
 );
@@ -44,11 +39,9 @@ where nr = 4;
 -- test current values also
 select txid_current() >= txid_snapshot_xmin(txid_current_snapshot());
 
-/* due to lazy xid alloc in 8.3 those are different in 8.2 and 8.3
-select txid_current() < txid_snapshot_xmax(txid_current_snapshot());
+-- we can't assume current is always less than xmax, however
 
 select txid_visible_in_snapshot(txid_current(), txid_current_snapshot());
-*/
 
 -- test 64bitness
 
