@@ -13,7 +13,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/commands/dbcommands.c,v 1.199 2007/09/28 22:25:49 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/commands/dbcommands.c,v 1.202 2007/10/16 11:30:16 mha Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -178,12 +178,12 @@ createdb(const CreatedbStmt *stmt)
 		else if (IsA(dencoding->arg, String))
 		{
 			encoding_name = strVal(dencoding->arg);
-			if (pg_valid_server_encoding(encoding_name) < 0)
+			encoding = pg_valid_server_encoding(encoding_name);
+			if (encoding < 0)
 				ereport(ERROR,
 						(errcode(ERRCODE_UNDEFINED_OBJECT),
 						 errmsg("%s is not a valid encoding name",
 								encoding_name)));
-			encoding = pg_char_to_encoding(encoding_name);
 		}
 		else
 			elog(ERROR, "unrecognized node type: %d",
@@ -258,7 +258,7 @@ createdb(const CreatedbStmt *stmt)
 
 	/*
 	 * Check whether encoding matches server locale settings.  We allow
-	 * mismatch in two cases:
+	 * mismatch in three cases:
 	 *
 	 * 1. ctype_encoding = SQL_ASCII, which means either that the locale
 	 * is C/POSIX which works with any encoding, or that we couldn't determine
@@ -268,12 +268,19 @@ createdb(const CreatedbStmt *stmt)
 	 * This is risky but we have historically allowed it --- notably, the
 	 * regression tests require it.
 	 *
+	 * 3. selected encoding is UTF8 and platform is win32. This is because
+	 * UTF8 is a pseudo codepage that is supported in all locales since
+	 * it's converted to UTF16 before being used.
+	 *
 	 * Note: if you change this policy, fix initdb to match.
 	 */
 	ctype_encoding = pg_get_encoding_from_locale(NULL);
 
 	if (!(ctype_encoding == encoding ||
 		  ctype_encoding == PG_SQL_ASCII ||
+#ifdef WIN32
+		  encoding == PG_UTF8 ||
+#endif
 		  (encoding == PG_SQL_ASCII && superuser())))
 		ereport(ERROR,
 				(errmsg("encoding %s does not match server's locale %s",
@@ -301,6 +308,12 @@ createdb(const CreatedbStmt *stmt)
 		if (aclresult != ACLCHECK_OK)
 			aclcheck_error(aclresult, ACL_KIND_TABLESPACE,
 						   tablespacename);
+
+		/* pg_global must never be the default tablespace */
+		if (dst_deftablespace == GLOBALTABLESPACE_OID)
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg("pg_global cannot be used as default tablespace")));
 
 		/*
 		 * If we are trying to change the default tablespace of the template,

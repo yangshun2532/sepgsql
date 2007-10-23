@@ -1,4 +1,4 @@
-# $PostgreSQL: pgsql/contrib/Makefile,v 1.79 2007/10/07 23:32:19 wieck Exp $
+# $PostgreSQL: pgsql/contrib/Makefile,v 1.81 2007/10/15 21:36:49 tgl Exp $
 
 subdir = contrib
 top_builddir = ..
@@ -10,6 +10,8 @@ WANTED_DIRS = \
 		chkpass		\
 		cube		\
 		dblink		\
+		dict_int	\
+		dict_xsyn	\
 		earthdistance	\
 		fuzzystrmatch	\
 		hstore		\
@@ -30,8 +32,8 @@ WANTED_DIRS = \
 		pgstattuple	\
 		seg		\
 		spi		\
-		txid		\
 		tablefunc	\
+		test_parser	\
 		vacuumlo
 
 ifeq ($(with_openssl),yes)
