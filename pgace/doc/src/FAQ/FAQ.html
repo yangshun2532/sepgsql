@@ -10,7 +10,7 @@
   alink="#0000ff">
     <H1>Frequently Asked Questions (FAQ) for PostgreSQL</H1>
 
-    <P>Last updated: Mon Oct  8 23:19:46 EDT 2007</P>
+    <P>Last updated: Wed Oct 17 13:34:42 EDT 2007</P>
 
     <P>Current maintainer: Bruce Momjian (<A href=
     "mailto:bruce@momjian.us">bruce@momjian.us</A>)
@@ -144,8 +144,8 @@
     developers spread throughout the world and communicating via the
     Internet. It is a community project and is not controlled by any
     company. To get involved, see the developer's FAQ at <A href=
-    "http://www.postgresql.org/files/documentation/faqs/FAQ_DEV.html">
-    http://www.postgresql.org/files/documentation/faqs/FAQ_DEV.html</A>
+    "http://www.postgresql.org/docs/faqs.FAQ_DEV.html">
+    http://www.postgresql.org/docs/faqs.FAQ_DEV.html</A>
     </P>
 
     <H3 id="item1.2">1.2) Who controls PostgreSQL?<BR></H3>
@@ -337,10 +337,10 @@
     There are a number of PostgreSQL books available for purchase.  One
     of the most popular ones is by Korry Douglas.  A list of book reviews
     can be found at <A href=
-    "http://techdocs.postgresql.org/techdocs/bookreviews.php">http://techdocs.postgresql.org/techdocs/bookreviews.php</A>.
+    "http://www.postgresql.org/docs/books/">http://www.postgresql.org/docs/books/</A>.
     There is also a collection of PostgreSQL technical articles at <A
     href=
-    "http://techdocs.postgresql.org/">http://techdocs.postgresql.org/</A>.</P>
+    "http://www.postgresql.org/docs/techdocs">http://www.postgresql.org/docs/techdocs</A>.</P>
 
     <P>The command line client program <I>psql</I> has some \d commands to show
     information about types, operators, functions, aggregates, etc. - use \? to 
@@ -352,10 +352,7 @@
     <SMALL>SQL</SMALL>?</H3>
 
     <P>First, consider the PostgreSQL-specific books mentioned above.
-    Another one is "Teach Yourself SQL in 21 Days, Second Edition"
-    at <A href=
-    "http://members.tripod.com/er4ebus/sql/index.htm">http://members.tripod.com/er4ebus/sql/index.htm</A>.
-    Many of our users like <I>The Practical SQL Handbook</I>,
+    Many of our users also like <I>The Practical SQL Handbook</I>,
     Bowman, Judith S., et al., Addison-Wesley. Others like <I>The
     Complete Reference SQL</I>, Groff et al., McGraw-Hill.</P>
 
@@ -544,7 +541,7 @@
 
     <DD>A number of <I>postgresql.conf</I> settings affect performance.
     For more details, see <a href=
-    "http://www.postgresql.org/docs/current/static/runtime.html">
+    "http://www.postgresql.org/docs/current/static/runtime-config.html">
     Administration Guide/Server Run-time Environment/Run-time
     Configuration</a> for a full listing, and for commentary see <a
     href="http://www.varlena.com/varlena/GeneralBits/Tidbits/annotated_conf_e.html">
@@ -787,13 +784,10 @@ table?</TD><TD>unlimited</TD></TR>
     <i>initdb</i> because it is not possible to know the next-greatest
     character in a non-C locale.  You can create a special
     <CODE>text_pattern_ops</CODE> index for such cases that work only
-    for <SMALL>LIKE</SMALL> indexing.
+    for <SMALL>LIKE</SMALL> indexing.  It is also possible to use
+    full text indexing for word searches.
     </LI>
     </UL>
-
-    <P>In pre-8.0 releases, indexes often can not be used unless the data
-    types exactly match the index's column types.  This was particularly
-    true of int2, int8, and numeric column indexes.</P>
 
     <H3 id="item4.7">4.7) How do I see how the query optimizer is
     evaluating my query?</H3>
@@ -916,38 +910,28 @@ length</TD></TR>
     );
 </PRE>
 
-    See the <I>create_sequence</I> manual page for more information
-    about sequences.
+    <P>Automatically created sequence are named
+    &lt;<I>table</I>&gt;_&lt;<I>serialcolumn</I>&gt;_<I>seq</I>, where
+    <I>table</I> and <I>serialcolumn</I> are the names of the table and
+    <SMALL>SERIAL</SMALL> column, respectively.  See the
+    <I>create_sequence</I> manual page for more information about
+    sequences.</P>
 
     <H3 id="item4.11.2">4.11.2) How do I get the value of a
     <SMALL>SERIAL</SMALL> insert?</H3>
 
-    <P>One approach is to retrieve the next <SMALL>SERIAL</SMALL> value
-    from the sequence object with the <I>nextval()</I> function
-    <I>before</I> inserting and then insert it explicitly. Using the
-    example table in <A href="#item4.11.1">4.11.1</A>, an example in a
-    pseudo-language would look like this:</P>
+    <P>The simplest way is to retrieve the assigned <SMALL>SERIAL</SMALL>
+    value with <SMALL>RETURNING</SMALL>.  Using the example table in <A
+    href="#item4.11.1">4.11.1</A>, it would look like this:</P>
+
 <PRE>
-    new_id = execute("SELECT nextval('person_id_seq')");
-    execute("INSERT INTO person (id, name) VALUES (new_id, 'Blaise Pascal')");
+    INSERT INTO person (name) VALUES ('Blaise Pascal') RETURNING id;
 </PRE>
 
-    You would then also have the new value stored in <CODE>new_id</CODE>
-    for use in other queries (e.g., as a foreign key to the <CODE>person
-    </CODE> table). Note that the name of the automatically created
-    <SMALL>SEQUENCE</SMALL> object will be named &lt;<I>table</I>&gt;_&lt;<I>
-    serialcolumn</I>&gt;_<I>seq</I>, where <I>table</I> and <I>serialcolumn</I>
-    are the names of your table and your <SMALL>SERIAL</SMALL> column,
-    respectively.
-
-    <P>Alternatively, you could retrieve the assigned <SMALL>SERIAL</SMALL>
-    value with the <I>currval()</I> function <I>after</I> it was inserted by
-    default, e.g.,</P>
-<PRE>
-    execute("INSERT INTO person (name) VALUES ('Blaise Pascal')");
-    new_id = execute("SELECT currval('person_id_seq')");
-</PRE>
-
+    You can also call <I>nextval()</I> and use that value in the
+    <SMALL>INSERT</SMALL>, or call <I>currval()</I> <I>after</I> the
+    <SMALL>INSERT</SMALL>.
+    
     <H3 id="item4.11.3">4.11.3) Doesn't <I>currval()</I>
     lead to a race condition with other users?</H3>
 
@@ -1058,19 +1042,21 @@ length</TD></TR>
 
     <P>It is easy using set-returning functions, 
     <a href="http://www.postgresql.org/docs/techdocs.17">
-    http://www.postgresql.org/docs/techdocs.17</a></P>.
+    http://www.postgresql.org/docs/techdocs.17</a>.</P>
 
     <H3 id="item4.19">4.19) Why do I get "relation with OID #####
     does not exist" errors when accessing temporary tables in PL/PgSQL
     functions?</H3>
 
-    <P>PL/PgSQL caches function scripts, and an unfortunate side effect
-    is that if a PL/PgSQL function accesses a temporary table, and that
-    table is later dropped and recreated, and the function called again,
-    the function will fail because the cached function contents still
-    point to the old temporary table. The solution is to use
-    <SMALL>EXECUTE</SMALL> for temporary table access in PL/PgSQL. This
-    will cause the query to be reparsed every time.</P>
+    <P>In PostgreSQL versions < 8.3, PL/PgSQL caches function scripts, and
+    an unfortunate side effect is that if a PL/PgSQL function accesses a
+    temporary table, and that table is later dropped and recreated, and
+    the function called again, the function will fail because the cached
+    function contents still point to the old temporary table. The solution
+    is to use <SMALL>EXECUTE</SMALL> for temporary table access in
+    PL/PgSQL. This will cause the query to be reparsed every time.</P>
+
+    <P>This problem does not occur in PostgreSQL 8.3 and later.</P>
 
     <H3 id="item4.20">4.20) What replication solutions are available?
     </H3>
@@ -1082,7 +1068,7 @@ length</TD></TR>
     queries, while slaves can only accept read/<SMALL>SELECT</SMALL>
     queries. The most popular freely available master-slave PostgreSQL
     replication solution is <A
-    href="http://gborg.postgresql.org/project/slony1/projdisplay.php">
+    href="http://main.slony.info/">
     Slony-I</A>.</P>
 
     <P>Multi-master replication allows read/write queries to be sent to
@@ -1101,7 +1087,7 @@ length</TD></TR>
     double-quotes around table or column names during table creation.
     When double-quotes are used, table and column names (called
     identifiers) are stored <a
-    href="http://www.postgresql.org/docs/current/static/sql-syntax.html#SQL-SYNTAX-IDENTIFIERS">
+    href="http://www.postgresql.org/docs/current/static/sql-syntax-lexical.html#SQL-SYNTAX-IDENTIFIERS">
     case-sensitive</a>, meaning you must use double-quotes when
     referencing the names in a query.  Some interfaces, like pgAdmin,
     automatically double-quote identifiers during table creation.
@@ -1111,5 +1097,6 @@ length</TD></TR>
     <LI>Use only lowercase characters in identifiers</LI>
     <LI>Double-quote identifiers when referencing them in queries</LI>
     </UL>
+
   </BODY>
 </HTML>
