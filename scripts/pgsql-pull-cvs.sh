@@ -45,7 +45,7 @@ cat ${WORKDIR}/pgsql-updates.diff | patch -p1
 cat ${WORKDIR}/pgsql-filelist.diff | egrep "^\+\./" | while read ENT
 do
     ENT=`echo $ENT | sed 's/^\+//g'`
-    svn add ${ENT}
+    svn add -N ${ENT}
 done
 
 cat ${WORKDIR}/pgsql-filelist.diff | egrep "^\-\./" | while read ENT
@@ -64,6 +64,6 @@ echo "svn update"
 echo
 echo "svn merge -c `expr ${SVNREV} + 1` ./base ./pgace"
 echo "svn diff ./pgace"
-echo "svn commit -m 'update ${SVNBRANCH}/pgace' came from CVS-pull at `env LANG=C date`" ./pgace
+echo "svn commit -m 'Updates in ${SVNBRANCH}/base are merged into ${SVNBRANCH}/pgace at `env LANG=C date`'" ./pgace
 echo "svn update"
 echo "--------"
