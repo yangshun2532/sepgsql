@@ -5,7 +5,7 @@
  *
  * Copyright (c) 1998-2007, PostgreSQL Global Development Group
  *
- * $PostgreSQL: pgsql/src/include/tsearch/ts_utils.h,v 1.4 2007/09/10 12:36:41 teodor Exp $
+ * $PostgreSQL: pgsql/src/include/tsearch/ts_utils.h,v 1.6 2007/10/21 22:29:56 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -22,10 +22,12 @@
 
 /* tsvector parser support. */
 
-struct TSVectorParseStateData;
+struct TSVectorParseStateData;	/* opaque struct in tsvector_parser.c */
 typedef struct TSVectorParseStateData *TSVectorParseState;
 
-extern TSVectorParseState init_tsvector_parser(char *input, bool oprisdelim);
+extern TSVectorParseState init_tsvector_parser(char *input,
+											   bool oprisdelim,
+											   bool is_tsquery);
 extern void reset_tsvector_parser(TSVectorParseState state, char *input);
 extern bool gettoken_tsvector(TSVectorParseState state, 
 							  char **token, int *len,
@@ -222,8 +224,7 @@ extern Datum prsd_lextype(PG_FUNCTION_ARGS);
 /*
  * Dictionary interface to SQL
  */
-extern Datum ts_lexize_byid(PG_FUNCTION_ARGS);
-extern Datum ts_lexize_byname(PG_FUNCTION_ARGS);
+extern Datum ts_lexize(PG_FUNCTION_ARGS);
 
 /*
  * Simple built-in dictionary

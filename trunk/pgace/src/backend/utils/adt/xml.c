@@ -7,7 +7,7 @@
  * Portions Copyright (c) 1996-2007, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/backend/utils/adt/xml.c,v 1.47 2007/09/23 21:36:42 tgl Exp $
+ * $PostgreSQL: pgsql/src/backend/utils/adt/xml.c,v 1.49 2007/10/13 20:46:47 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -125,6 +125,24 @@ XmlOptionType xmloption;
 #define NAMESPACE_XSD "http://www.w3.org/2001/XMLSchema"
 #define NAMESPACE_XSI "http://www.w3.org/2001/XMLSchema-instance"
 #define NAMESPACE_SQLXML "http://standards.iso.org/iso/9075/2003/sqlxml"
+
+
+#ifdef USE_LIBXML
+
+static int
+xmlChar_to_encoding(xmlChar *encoding_name)
+{
+	int		encoding = pg_char_to_encoding((char *) encoding_name);
+
+	if (encoding < 0)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("invalid encoding name \"%s\"",
+						(char *) encoding_name)));
+	return encoding;
+}
+
+#endif
 
 
 Datum
@@ -263,7 +281,9 @@ xml_recv(PG_FUNCTION_ARGS)
 	/* Now that we know what we're dealing with, convert to server encoding */
 	newstr = (char *) pg_do_encoding_conversion((unsigned char *) str,
 												nbytes,
-												encoding ? pg_char_to_encoding((char *) encoding) : PG_UTF8,
+												encoding ?
+												xmlChar_to_encoding(encoding) :
+												PG_UTF8,
 												GetDatabaseEncoding());
 
 	if (newstr != str)
@@ -754,13 +774,17 @@ xmlvalidate(PG_FUNCTION_ARGS)
 #if 0
 		if (uri)
 			xmlFreeURI(uri);
+		uri = NULL;
 #endif
 		if (dtd)
 			xmlFreeDtd(dtd);
+		dtd = NULL;
 		if (doc)
 			xmlFreeDoc(doc);
+		doc = NULL;
 		if (ctxt)
 			xmlFreeParserCtxt(ctxt);
+		ctxt = NULL;
 		xmlCleanupParser();
 	}
 	PG_CATCH();
@@ -1084,9 +1108,9 @@ xml_parse(text *data, XmlOptionType xmloption_arg, bool preserve_whitespace, xml
 
 	utf8string = pg_do_encoding_conversion(string,
 										   len,
-										   encoding
-										   ? pg_char_to_encoding((char *) encoding)
-										   : GetDatabaseEncoding(),
+										   encoding ?
+										   xmlChar_to_encoding(encoding) :
+										   GetDatabaseEncoding(),
 										   PG_UTF8);
 
 	xml_init();
@@ -1143,13 +1167,13 @@ xml_parse(text *data, XmlOptionType xmloption_arg, bool preserve_whitespace, xml
 
 		if (ctxt)
 			xmlFreeParserCtxt(ctxt);
+		ctxt = NULL;
 		xmlCleanupParser();
 	}
 	PG_CATCH();
 	{
 		if (doc)
 			xmlFreeDoc(doc);
-		doc = NULL;
 		if (ctxt)
 			xmlFreeParserCtxt(ctxt);
 		xmlCleanupParser();
@@ -3183,9 +3207,11 @@ xpath(PG_FUNCTION_ARGS)
 						"invalid XPath expression"); /* TODO: show proper XPath error details */
 
 		xpathobj = xmlXPathCompiledEval(xpathcomp, xpathctx);
-		xmlXPathFreeCompExpr(xpathcomp);
 		if (xpathobj == NULL)
 			ereport(ERROR, (errmsg("could not create XPath object"))); /* TODO: reason? */
+
+		xmlXPathFreeCompExpr(xpathcomp);
+		xpathcomp = NULL;
 
 		/* return empty array in cases when nothing is found */
 		if (xpathobj->nodesetval == NULL)
@@ -3205,9 +3231,13 @@ xpath(PG_FUNCTION_ARGS)
 			}
 
 		xmlXPathFreeObject(xpathobj);
+		xpathobj = NULL;
 		xmlXPathFreeContext(xpathctx);
-		xmlFreeParserCtxt(ctxt);
+		xpathctx = NULL;
 		xmlFreeDoc(doc);
+		doc = NULL;
+		xmlFreeParserCtxt(ctxt);
+		ctxt = NULL;
 		xmlCleanupParser();
 	}
 	PG_CATCH();

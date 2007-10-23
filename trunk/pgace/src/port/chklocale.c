@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/port/chklocale.c,v 1.4 2007/10/03 17:16:39 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/port/chklocale.c,v 1.6 2007/10/17 15:24:04 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -72,26 +72,32 @@ static const struct encoding_match encoding_match_list[] = {
 
 	{PG_UTF8, "UTF-8"},
 	{PG_UTF8, "utf8"},
+	{PG_UTF8, "CP65001"},
 
 	{PG_LATIN1, "ISO-8859-1"},
 	{PG_LATIN1, "ISO8859-1"},
 	{PG_LATIN1, "iso88591"},
+	{PG_LATIN1, "CP28591"},
 
 	{PG_LATIN2, "ISO-8859-2"},
 	{PG_LATIN2, "ISO8859-2"},
 	{PG_LATIN2, "iso88592"},
+	{PG_LATIN2, "CP28592"},
 
 	{PG_LATIN3, "ISO-8859-3"},
 	{PG_LATIN3, "ISO8859-3"},
 	{PG_LATIN3, "iso88593"},
+	{PG_LATIN3, "CP28593"},
 
 	{PG_LATIN4, "ISO-8859-4"},
 	{PG_LATIN4, "ISO8859-4"},
 	{PG_LATIN4, "iso88594"},
+	{PG_LATIN4, "CP28594"},
 
 	{PG_LATIN5, "ISO-8859-9"},
 	{PG_LATIN5, "ISO8859-9"},
 	{PG_LATIN5, "iso88599"},
+	{PG_LATIN5, "CP28599"},
 
 	{PG_LATIN6, "ISO-8859-10"},
 	{PG_LATIN6, "ISO8859-10"},
@@ -108,6 +114,7 @@ static const struct encoding_match encoding_match_list[] = {
 	{PG_LATIN9, "ISO-8859-15"},
 	{PG_LATIN9, "ISO8859-15"},
 	{PG_LATIN9, "iso885915"},
+	{PG_LATIN9, "CP28605"},
 
 	{PG_LATIN10, "ISO-8859-16"},
 	{PG_LATIN10, "ISO8859-16"},
@@ -116,6 +123,10 @@ static const struct encoding_match encoding_match_list[] = {
 	{PG_KOI8R, "KOI8-R"},
 	{PG_KOI8R, "CP20866"},
 
+	{PG_WIN866, "CP866"},
+	{PG_WIN874, "CP874"},
+	{PG_WIN1250, "CP1250"},
+	{PG_WIN1251, "CP1251"},
 	{PG_WIN1252, "CP1252"},
 	{PG_WIN1253, "CP1253"},
 	{PG_WIN1254, "CP1254"},
@@ -123,27 +134,26 @@ static const struct encoding_match encoding_match_list[] = {
 	{PG_WIN1256, "CP1256"},
 	{PG_WIN1257, "CP1257"},
 	{PG_WIN1258, "CP1258"},
-#ifdef NOT_VERIFIED
-	{PG_WIN874, "???"},
-#endif
-	{PG_WIN1251, "CP1251"},
-	{PG_WIN866, "CP866"},
 
 	{PG_ISO_8859_5, "ISO-8859-5"},
 	{PG_ISO_8859_5, "ISO8859-5"},
 	{PG_ISO_8859_5, "iso88595"},
+	{PG_ISO_8859_5, "CP28595"},
 
 	{PG_ISO_8859_6, "ISO-8859-6"},
 	{PG_ISO_8859_6, "ISO8859-6"},
 	{PG_ISO_8859_6, "iso88596"},
+	{PG_ISO_8859_6, "CP28596"},
 
 	{PG_ISO_8859_7, "ISO-8859-7"},
 	{PG_ISO_8859_7, "ISO8859-7"},
 	{PG_ISO_8859_7, "iso88597"},
+	{PG_ISO_8859_7, "CP28597"},
 
 	{PG_ISO_8859_8, "ISO-8859-8"},
 	{PG_ISO_8859_8, "ISO8859-8"},
 	{PG_ISO_8859_8, "iso88598"},
+    {PG_ISO_8859_8, "CP28598"},
 
 	{PG_SJIS, "SJIS"},
 	{PG_SJIS, "PCK"},
