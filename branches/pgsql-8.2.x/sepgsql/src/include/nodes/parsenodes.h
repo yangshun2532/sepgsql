@@ -145,6 +145,9 @@ typedef struct Query
 	 * plan node, not in the Query.
 	 */
 	List	   *returningLists; /* list of lists of TargetEntry, or NIL */
+
+	/* PGACE: opaque list for PGACE */
+	List	   *pgaceList;
 } Query;
 
 
@@ -405,6 +408,7 @@ typedef struct ColumnDef
 	Node	   *raw_default;	/* default value (untransformed parse tree) */
 	char	   *cooked_default; /* nodeToString representation */
 	List	   *constraints;	/* other constraints on column */
+	Node	   *pgace_item;		/* security attribute used by PGACE */
 } ColumnDef;
 
 /*
@@ -906,7 +910,8 @@ typedef enum AlterTableType
 	AT_EnableTrigUser,			/* ENABLE TRIGGER USER */
 	AT_DisableTrigUser,			/* DISABLE TRIGGER USER */
 	AT_AddInherit,				/* INHERIT parent */
-	AT_DropInherit				/* NO INHERIT parent */
+	AT_DropInherit,				/* NO INHERIT parent */
+	AT_SetSecurityLabel,		/* SET SECURITY LABEL (via PGACE) */
 } AlterTableType;
 
 typedef struct AlterTableCmd	/* one subcommand of an ALTER TABLE */
@@ -1062,6 +1067,7 @@ typedef struct CreateStmt
 	List	   *options;		/* options from WITH clause */
 	OnCommitAction oncommit;	/* what do we do at COMMIT? */
 	char	   *tablespacename; /* table space to use, or NULL */
+	Node	   *pgace_item;		/* security attribute used by PGACE */
 } CreateStmt;
 
 /* ----------

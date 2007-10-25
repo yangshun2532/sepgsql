@@ -24,6 +24,7 @@
 
 #include "nodes/plannodes.h"
 #include "nodes/relation.h"
+#include "security/pgace.h"
 #include "utils/datum.h"
 
 
@@ -1717,6 +1718,7 @@ _copyQuery(Query *from)
 	COPY_NODE_FIELD(setOperations);
 	COPY_NODE_FIELD(resultRelations);
 	COPY_NODE_FIELD(returningLists);
+	COPY_NODE_FIELD(pgaceList);
 
 	return newnode;
 }
@@ -3345,6 +3347,10 @@ copyObject(void *from)
 			break;
 
 		default:
+			retval = pgaceCopyObject(from);
+			if (retval)
+				break;
+
 			elog(ERROR, "unrecognized node type: %d", (int) nodeTag(from));
 			retval = from;		/* keep compiler quiet */
 			break;

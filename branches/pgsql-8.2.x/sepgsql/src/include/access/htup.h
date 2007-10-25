@@ -137,6 +137,9 @@ typedef struct HeapTupleHeaderData
 
 	ItemPointerData t_ctid;		/* current TID of this or newer tuple */
 
+	/* PGAVE: security attribute of the tuple */
+	Oid			t_security;
+
 	/* Fields below here must match MinimalTupleData! */
 
 	int16		t_natts;		/* number of attributes */
@@ -297,6 +300,14 @@ do { \
 	*((Oid *) ((char *)(tup) + (tup)->t_hoff - sizeof(Oid))) = (oid); \
 } while (0)
 
+#define HeapTupleHeaderGetSecurity(htup)		\
+	((htup)->t_security)
+#define HeapTupleHeaderSetSecurity(htup, sid)	\
+	((htup)->t_security = (sid))
+#define HeapTupleGetSecurity(tuple)				\
+	HeapTupleHeaderGetSecurity((tuple)->t_data)
+#define HeapTupleSetSecurity(tuple, sid)		\
+	HeapTupleHeaderSetSecurity((tuple)->t_data, sid)
 
 /*
  * BITMAPLEN(NATTS) -
@@ -349,8 +360,12 @@ do { \
 #define MaxTransactionIdAttributeNumber			(-5)
 #define MaxCommandIdAttributeNumber				(-6)
 #define TableOidAttributeNumber					(-7)
+#ifdef SECURITY_SYSATTR_NAME
+#define SecurityAttributeNumber					(-8)
+#define FirstLowInvalidHeapAttributeNumber		(-9)
+#else
 #define FirstLowInvalidHeapAttributeNumber		(-8)
-
+#endif
 
 /*
  * MinimalTuple is an alternate representation that is used for transient
@@ -552,6 +567,7 @@ typedef struct xl_heap_delete
  */
 typedef struct xl_heap_header
 {
+	Oid			t_security;
 	int16		t_natts;
 	uint16		t_infomask;
 	uint8		t_hoff;

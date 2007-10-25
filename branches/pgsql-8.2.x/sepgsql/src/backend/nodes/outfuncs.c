@@ -26,6 +26,7 @@
 #include "lib/stringinfo.h"
 #include "nodes/plannodes.h"
 #include "nodes/relation.h"
+#include "security/pgace.h"
 #include "utils/datum.h"
 
 
@@ -2198,6 +2199,8 @@ _outNode(StringInfo str, void *obj)
 				break;
 
 			default:
+				if (pgaceOutObject(str, obj))
+					break;
 
 				/*
 				 * This should be an ERROR, but it's too useful to be able to

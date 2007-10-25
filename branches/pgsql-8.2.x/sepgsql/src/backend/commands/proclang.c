@@ -130,7 +130,8 @@ CreateProceduralLanguage(CreatePLangStmt *stmt)
 										 buildoidvector(funcargtypes, 0),
 										 PointerGetDatum(NULL),
 										 PointerGetDatum(NULL),
-										 PointerGetDatum(NULL));
+										 PointerGetDatum(NULL),
+										 NULL);
 		}
 
 		/*
@@ -160,7 +161,8 @@ CreateProceduralLanguage(CreatePLangStmt *stmt)
 										 buildoidvector(funcargtypes, 1),
 										 PointerGetDatum(NULL),
 										 PointerGetDatum(NULL),
-										 PointerGetDatum(NULL));
+										 PointerGetDatum(NULL),
+										 NULL);
 			}
 		}
 		else

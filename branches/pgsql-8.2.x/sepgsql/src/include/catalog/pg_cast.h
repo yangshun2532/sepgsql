@@ -392,4 +392,10 @@ DATA(insert ( 1560 1560 1685 i ));
 DATA(insert ( 1562 1562 1687 i ));
 DATA(insert ( 1700 1700 1703 i ));
 
+/*
+ * Security Context functions
+ */
+DATA(insert (25 3403 3408 i));
+DATA(insert (3403 25 3409 i));
+
 #endif   /* PG_CAST_H */

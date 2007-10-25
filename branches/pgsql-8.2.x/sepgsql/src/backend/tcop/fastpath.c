@@ -26,6 +26,7 @@
 #include "libpq/pqformat.h"
 #include "mb/pg_wchar.h"
 #include "miscadmin.h"
+#include "security/pgace.h"
 #include "tcop/fastpath.h"
 #include "tcop/tcopprot.h"
 #include "utils/acl.h"
@@ -352,6 +353,9 @@ HandleFunctionRequest(StringInfo msgBuf)
 	 * Prepare function call info block and insert arguments.
 	 */
 	InitFunctionCallInfoData(fcinfo, &fip->flinfo, 0, NULL, NULL);
+
+	/* PGACE: check procedure permission */
+	pgaceCallFunctionFastPath(fcinfo.flinfo);
 
 	if (PG_PROTOCOL_MAJOR(FrontendProtocol) >= 3)
 		rformat = parse_fcall_arguments(msgBuf, fip, &fcinfo);

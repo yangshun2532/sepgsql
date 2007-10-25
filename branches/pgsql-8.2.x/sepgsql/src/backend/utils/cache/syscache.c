@@ -37,6 +37,7 @@
 #include "catalog/pg_operator.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_rewrite.h"
+#include "catalog/pg_security.h"
 #include "catalog/pg_statistic.h"
 #include "catalog/pg_type.h"
 #include "utils/syscache.h"
@@ -513,7 +514,31 @@ static const struct cachedesc cacheinfo[] = {
 			0
 		},
 		1024
-	}
+	},
+	{SecurityRelationId,			/* SECURITYOID */
+		SecurityOidIndexId,
+		0,
+		1,
+		{
+			ObjectIdAttributeNumber,
+			0,
+			0,
+			0
+		},
+		128
+	},
+	{SecurityRelationId,			/* SECURITYLABEL */
+		SecuritySeclabelIndexId,
+		0,
+		1,
+		{
+			Anum_pg_security_seclabel,
+			0,
+			0,
+			0
+		},
+		128
+	},
 };
 
 static CatCache *SysCache[

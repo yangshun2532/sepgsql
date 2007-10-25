@@ -192,7 +192,8 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid)
 										   0,
 										   ONCOMMIT_NOOP,
 										   (Datum) 0,
-										   true);
+										   true,
+										   NIL);
 
 	/* make the toast relation visible, else index creation will fail */
 	CommandCounterIncrement();

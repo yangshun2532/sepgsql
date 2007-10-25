@@ -32,6 +32,7 @@
 #include "catalog/pg_largeobject.h"
 #include "commands/comment.h"
 #include "libpq/libpq-fs.h"
+#include "security/pgace.h"
 #include "storage/large_object.h"
 #include "utils/fmgroids.h"
 #include "utils/resowner.h"
@@ -131,6 +132,7 @@ myLargeObjectExists(Oid loid, Snapshot snapshot)
 {
 	bool		retval = false;
 	Relation	pg_largeobject;
+	HeapTuple	tuple;
 	ScanKeyData skey[1];
 	SysScanDesc sd;
 
@@ -147,8 +149,11 @@ myLargeObjectExists(Oid loid, Snapshot snapshot)
 	sd = systable_beginscan(pg_largeobject, LargeObjectLOidPNIndexId, true,
 							snapshot, 1, skey);
 
-	if (systable_getnext(sd) != NULL)
+	tuple = systable_getnext(sd);
+	if (HeapTupleIsValid(tuple)) {
+		pgaceLargeObjectOpen(pg_largeobject, tuple, !(snapshot == SnapshotNow));
 		retval = true;
+	}
 
 	systable_endscan(sd);
 
@@ -434,6 +439,8 @@ inv_read(LargeObjectDesc *obj_desc, char *buf, int nbytes)
 		bytea	   *datafield;
 		bool		pfreeit;
 
+		pgaceLargeObjectRead(lo_heap_r, tuple);
+
 		data = (Form_pg_largeobject) GETSTRUCT(tuple);
 
 		/*
@@ -619,6 +626,8 @@ inv_write(LargeObjectDesc *obj_desc, const char *buf, int nbytes)
 			replace[Anum_pg_largeobject_data - 1] = 'r';
 			newtup = heap_modifytuple(oldtuple, RelationGetDescr(lo_heap_r),
 									  values, nulls, replace);
+
+			pgaceLargeObjectWrite(lo_heap_r, newtup, oldtuple);
 			simple_heap_update(lo_heap_r, &newtup->t_self, newtup);
 			CatalogIndexInsert(indstate, newtup);
 			heap_freetuple(newtup);
@@ -662,6 +671,7 @@ inv_write(LargeObjectDesc *obj_desc, const char *buf, int nbytes)
 			values[Anum_pg_largeobject_pageno - 1] = Int32GetDatum(pageno);
 			values[Anum_pg_largeobject_data - 1] = PointerGetDatum(&workbuf);
 			newtup = heap_formtuple(lo_heap_r->rd_att, values, nulls);
+			pgaceLargeObjectWrite(lo_heap_r, newtup, NULL);
 			simple_heap_insert(lo_heap_r, newtup);
 			CatalogIndexInsert(indstate, newtup);
 			heap_freetuple(newtup);
