@@ -1,0 +1,69 @@
+########################################
+## <summary>
+##     marks as a server process of SE-PostgreSQL.
+## </summary>
+## <param name="type">
+##     <summary>
+##     Type marked as a database object type.
+##     </summary>
+## </param>
+#
+interface(`sepgsql_server_domain',`
+	gen_require(`
+		attribute sepgsql_server_type;
+	')
+	typeattribute $1 sepgsql_server_type;
+')
+
+########################################
+## <summary>
+##     Marks as a SE-PostgreSQL loadable shared library module
+## </summary>
+## <param name="type">
+##     <summary>
+##     Type marked as a database object type.
+##     </summary>
+## </param>
+#
+interface(`sepgsql_module_object',`
+	gen_require(`
+		attribute sepgsql_module_type;
+	')
+	typeattribute $1 sepgsql_module_type;
+')
+
+########################################
+## <summary>
+##     marks as a administrative client process of SE-PostgreSQL.
+## </summary>
+## <param name="type">
+##     <summary>
+##     A domain marked as a administrative client domain
+##     </summary>
+## </param>
+#
+interface(`sepgsql_unconfined_domain',`
+	gen_require(`
+		attribute sepgsql_admin_domain;
+		attribute sepgsql_users_domain;
+	')
+	typeattribute $1 sepgsql_admin_domain;
+	typeattribute $1 sepgsql_users_domain;
+')
+
+########################################
+## <summary>
+##     marks as a generic client process of SE-PostgreSQL.
+## </summary>
+## <param name="type">
+##     <summary>
+##     A domain marked as a generic client domain
+##     </summary>
+## </param>
+#
+interface(`sepgsql_client_domain',`
+	gen_require(`
+		attribute sepgsql_users_domain;
+	')
+	typeattribute $1 sepgsql_users_domain;
+')
