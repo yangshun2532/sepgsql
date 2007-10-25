@@ -59,17 +59,14 @@ echo "  repository: ${SEPGSQL_REPOSITORY}${SEPGSQL_BRANCH}"
 echo
 
 # -- make a SE-PostgreSQL patch
-svn export ${SEPGSQL_REPOSITORY}${SEPGSQL_BRANCH} `basename ${SEPGSQL_BRANCH}` || exit 1
-svn export "${SEPGSQL_REPOSITORY}/policy" || exit 1
-svn export "${SEPGSQL_REPOSITORY}/scripts" || exit 1
+svn export ${SEPGSQL_REPOSITORY}${SEPGSQL_BRANCH} altroot || exit 1
+cd altroot
 
 echo "GEN: sepostgresql-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch"
-cd `basename ${SEPGSQL_BRANCH}`
 diff -rpNU3 base sepgsql > ${RPMSOURCE}/sepostgresql-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch
-cd ..
 
 echo "GEN: sepostgresql.init"
-cat scripts/sepostgresql.init | \
+cat package/sepostgresql.init | \
     sed "s/%%__base_postgresql_version__%%/${BASE_VERSION}/g" | \
     sed "s/%%__sepgsql_version__%%/${SEPGSQL_VERSION}/g" \
         > ${RPMSOURCE}/sepostgresql.init
@@ -78,7 +75,7 @@ echo "GEN: sepostgresql.spec"
 __SEPGSQL_EXTENSION=""
 test -n "${SEPGSQL_EXTENSION}" && \
     __SEPGSQL_EXTENSION="%{!?sepgsql_extension:%define sepgsql_extension ${SEPGSQL_EXTENSION}}"
-cat scripts/sepostgresql.spec | \
+cat package/sepostgresql.spec | \
     sed "s/%%__base_postgresql_version__%%/${BASE_VERSION}/g" | \
     sed "s/%%__sepgsql_version__%%/${SEPGSQL_VERSION}/g" | \
     sed "s/%%__sepgsql_major_version__%%/${SEPGSQL_MAJOR_VERSION}/g" | \
@@ -87,21 +84,21 @@ cat scripts/sepostgresql.spec | \
         > ${RPMSOURCE}/sepostgresql.spec
 
 echo "CPY: sepostgresql.if"
-cp policy/sepostgresql.if ${RPMSOURCE}
+cp package/sepostgresql.if ${RPMSOURCE}
 
 echo "CPY: sepostgresql.fc"
-cp policy/sepostgresql.fc ${RPMSOURCE}
+cp package/sepostgresql.fc ${RPMSOURCE}
 
 echo "CPY: sepostgresql.te"
-cat policy/sepostgresql.te | \
+cat package/sepostgresql.te | \
     sed "s/%%POLICY_VERSION%%/${SEPGSQL_VERSION}/g" \
     > ${RPMSOURCE}/sepostgresql.te
 
 echo "CPY: sepostgresql.8"
-cp scripts/sepostgresql.8 ${RPMSOURCE}
+cp package/sepostgresql.8 ${RPMSOURCE}
 
 echo "CPY: sepostgresql-fedora-prefix.patch"
-cp scripts/sepostgresql-fedora-prefix.patch ${RPMSOURCE}
+cp package/sepostgresql-fedora-prefix.patch ${RPMSOURCE}
 
 # ---- build rpm package
 rpmbuild -ba ${RPMSOURCE}/sepostgresql.spec
