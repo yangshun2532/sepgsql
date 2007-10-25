@@ -37,6 +37,7 @@
 #include "parser/parse_type.h"
 #include "parser/parsetree.h"
 #include "rewrite/rewriteManip.h"
+#include "security/pgace.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
@@ -662,6 +663,9 @@ transformInsertStmt(ParseState *pstate, InsertStmt *stmt,
 		Assert(rte == rt_fetch(rtr->rtindex, pstate->p_rtable));
 		pstate->p_joinlist = lappend(pstate->p_joinlist, rtr);
 
+		/* writable system column support */
+		pgaceTransformInsertStmt(&icolumns, &attrnos, selectQuery->targetList);
+
 		/*----------
 		 * Generate an expression list for the INSERT that selects all the
 		 * non-resjunk columns from the subquery.  (INSERT's tlist must be
@@ -821,14 +825,15 @@ transformInsertStmt(ParseState *pstate, InsertStmt *stmt,
 		Expr	   *expr = (Expr *) lfirst(lc);
 		ResTarget  *col;
 		TargetEntry *tle;
+		AttrNumber anum = (AttrNumber) lfirst_int(attnos);
 
 		col = (ResTarget *) lfirst(icols);
 		Assert(IsA(col, ResTarget));
 
 		tle = makeTargetEntry(expr,
-							  (AttrNumber) lfirst_int(attnos),
+							  anum,
 							  col->name,
-							  false);
+							  anum < 0 ? true : false);
 		qry->targetList = lappend(qry->targetList, tle);
 
 		icols = lnext(icols);
@@ -2150,6 +2155,9 @@ transformSelectStmt(ParseState *pstate, SelectStmt *stmt)
 		qry->intoOptions = copyObject(stmt->intoOptions);
 		qry->intoOnCommit = stmt->intoOnCommit;
 		qry->intoTableSpaceName = stmt->intoTableSpaceName;
+
+		/* writable system column support */
+		pgaceTransformSelectStmt(qry->targetList);
 	}
 
 	qry->rtable = pstate->p_rtable;

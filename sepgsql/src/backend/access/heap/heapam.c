@@ -49,6 +49,7 @@
 #include "catalog/namespace.h"
 #include "miscadmin.h"
 #include "pgstat.h"
+#include "security/pgace.h"
 #include "storage/procarray.h"
 #include "utils/inval.h"
 #include "utils/lsyscache.h"
@@ -1408,6 +1409,7 @@ heap_insert(Relation relation, HeapTuple tup, CommandId cid,
 	HeapTupleHeaderSetXmax(tup->t_data, 0);		/* zero out Datum fields */
 	HeapTupleHeaderSetCmax(tup->t_data, 0);		/* for cleanliness */
 	tup->t_tableOid = RelationGetRelid(relation);
+	pgaceHeapInsert(relation, tup);
 
 	/*
 	 * If the new tuple is too big for storage or contains already toasted
@@ -1454,6 +1456,7 @@ heap_insert(Relation relation, HeapTuple tup, CommandId cid,
 		rdata[0].buffer = InvalidBuffer;
 		rdata[0].next = &(rdata[1]);
 
+		xlhdr.t_security = HeapTupleGetSecurity(heaptup);
 		xlhdr.t_natts = heaptup->t_data->t_natts;
 		xlhdr.t_infomask = heaptup->t_data->t_infomask;
 		xlhdr.t_hoff = heaptup->t_data->t_hoff;
@@ -1531,6 +1534,7 @@ heap_insert(Relation relation, HeapTuple tup, CommandId cid,
 Oid
 simple_heap_insert(Relation relation, HeapTuple tup)
 {
+	pgaceSimpleHeapInsert(relation, tup);
 	return heap_insert(relation, tup, GetCurrentCommandId(), true, true);
 }
 
@@ -1583,6 +1587,7 @@ heap_delete(Relation relation, ItemPointer tid,
 	tp.t_data = (HeapTupleHeader) PageGetItem(dp, lp);
 	tp.t_len = ItemIdGetLength(lp);
 	tp.t_self = *tid;
+	pgaceHeapDelete(relation, &tp);
 
 l1:
 	result = HeapTupleSatisfiesUpdate(tp.t_data, cid, buffer);
@@ -1805,6 +1810,7 @@ simple_heap_delete(Relation relation, ItemPointer tid)
 	ItemPointerData update_ctid;
 	TransactionId update_xmax;
 
+	pgaceSimpleHeapDelete(relation, tid);
 	result = heap_delete(relation, tid,
 						 &update_ctid, &update_xmax,
 						 GetCurrentCommandId(), InvalidSnapshot,
@@ -2046,6 +2052,7 @@ l2:
 	HeapTupleHeaderSetCmin(newtup->t_data, cid);
 	HeapTupleHeaderSetXmax(newtup->t_data, 0);	/* zero out Datum fields */
 	HeapTupleHeaderSetCmax(newtup->t_data, 0);	/* for cleanliness */
+	pgaceHeapUpdate(relation, newtup, &oldtup);
 
 	/*
 	 * If the toaster needs to be activated, OR if the new tuple will not fit
@@ -2261,6 +2268,7 @@ simple_heap_update(Relation relation, ItemPointer otid, HeapTuple tup)
 	ItemPointerData update_ctid;
 	TransactionId update_xmax;
 
+	pgaceSimpleHeapUpdate(relation, otid, tup);
 	result = heap_update(relation, otid, tup,
 						 &update_ctid, &update_xmax,
 						 GetCurrentCommandId(), InvalidSnapshot,
@@ -3206,6 +3214,7 @@ log_heap_update(Relation reln, Buffer oldbuf, ItemPointerData from,
 	xlhdr.hdr.t_natts = newtup->t_data->t_natts;
 	xlhdr.hdr.t_infomask = newtup->t_data->t_infomask;
 	xlhdr.hdr.t_hoff = newtup->t_data->t_hoff;
+	xlhdr.hdr.t_security = HeapTupleGetSecurity(newtup);
 	if (move)					/* remember xmax & xmin */
 	{
 		TransactionId xid[2];	/* xmax, xmin */
@@ -3505,6 +3514,7 @@ heap_xlog_insert(XLogRecPtr lsn, XLogRecord *record)
 	htup->t_natts = xlhdr.t_natts;
 	htup->t_infomask = xlhdr.t_infomask;
 	htup->t_hoff = xlhdr.t_hoff;
+	HeapTupleHeaderSetSecurity(htup, xlhdr.t_security);
 	HeapTupleHeaderSetXmin(htup, record->xl_xid);
 	HeapTupleHeaderSetCmin(htup, FirstCommandId);
 	htup->t_ctid = xlrec->target.tid;
@@ -3668,6 +3678,7 @@ newsame:;
 	htup->t_natts = xlhdr.t_natts;
 	htup->t_infomask = xlhdr.t_infomask;
 	htup->t_hoff = xlhdr.t_hoff;
+	HeapTupleHeaderSetSecurity(htup, xlhdr.t_security);
 
 	if (move)
 	{

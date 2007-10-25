@@ -52,6 +52,9 @@ typedef struct FmgrInfo
 	void	   *fn_extra;		/* extra space for use by handler */
 	MemoryContext fn_mcxt;		/* memory context to store fn_extra in */
 	fmNodePtr	fn_expr;		/* expression parse tree for call, or NULL */
+
+	PGFunction	fn_pgace_addr;	/* PGACE opaque addr field */
+	Datum		fn_pgace_data;	/* PGACE opaque data field */
 } FmgrInfo;
 
 /*
@@ -486,6 +489,7 @@ extern Oid	get_call_expr_argtype(fmNodePtr expr, int argnum);
  */
 extern char *Dynamic_library_path;
 
+extern char *expand_dynamic_library_name(const char *name);
 extern PGFunction load_external_function(char *filename, char *funcname,
 					   bool signalNotFound, void **filehandle);
 extern PGFunction lookup_external_function(void *filehandle, char *funcname);

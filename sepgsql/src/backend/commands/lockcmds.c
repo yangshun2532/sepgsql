@@ -18,6 +18,7 @@
 #include "catalog/namespace.h"
 #include "commands/lockcmds.h"
 #include "miscadmin.h"
+#include "security/pgace.h"
 #include "utils/acl.h"
 #include "utils/lsyscache.h"
 
@@ -58,6 +59,8 @@ LockTableCommand(LockStmt *lockstmt)
 		if (aclresult != ACLCHECK_OK)
 			aclcheck_error(aclresult, ACL_KIND_CLASS,
 						   get_rel_name(reloid));
+
+		pgaceLockTable(reloid);
 
 		if (lockstmt->nowait)
 			rel = relation_open_nowait(reloid, lockstmt->mode);

@@ -45,6 +45,7 @@
 #include "libpq/be-fsstubs.h"
 #include "libpq/libpq-fs.h"
 #include "miscadmin.h"
+#include "security/pgace.h"
 #include "storage/fd.h"
 #include "storage/large_object.h"
 #include "utils/memutils.h"
@@ -367,6 +368,9 @@ lo_import(PG_FUNCTION_ARGS)
 				 errmsg("could not open server file \"%s\": %m",
 						fnamebuf)));
 
+	/* check whether (server) --> (client) data flow is allowed, or not. */
+	pgaceLargeObjectImport();
+
 	/*
 	 * create an inversion object
 	 */
@@ -421,6 +425,9 @@ lo_export(PG_FUNCTION_ARGS)
 #endif
 
 	CreateFSContext();
+
+	/* check whether (client) --> (server) data flow is allowed, or not */
+	pgaceLargeObjectExport();
 
 	/*
 	 * open the inversion object (no need to test for failure)

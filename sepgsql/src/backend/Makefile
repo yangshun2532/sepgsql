@@ -15,7 +15,7 @@ include $(top_builddir)/src/Makefile.global
 
 DIRS := access bootstrap catalog parser commands executor lib libpq \
 	main nodes optimizer port postmaster regex rewrite \
-	storage tcop utils $(top_builddir)/src/timezone
+	security storage tcop utils $(top_builddir)/src/timezone
 
 SUBSYSOBJS := $(DIRS:%=%/SUBSYS.o)
 
@@ -30,6 +30,11 @@ LIBS := $(filter-out -lpgport, $(LIBS)) $(LDAP_LIBS_BE)
 
 # The backend doesn't need everything that's in LIBS, however
 LIBS := $(filter-out -lz -lreadline -ledit -ltermcap -lncurses -lcurses, $(LIBS))
+
+# SELinux support needs to link libselinux
+ifeq ($(enable_selinux), yes)
+LIBS += -lselinux
+endif
 
 ##########################################################################
 

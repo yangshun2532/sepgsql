@@ -34,6 +34,7 @@
 
 #include "commands/trigger.h"
 #include "executor/spi_priv.h"
+#include "security/pgace.h"
 #include "utils/acl.h"
 #include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
@@ -3009,6 +3010,7 @@ ri_PlanCheck(const char *querystr, int nargs, Oid *argtypes,
 	void	   *qplan;
 	Relation	query_rel;
 	Oid			save_uid;
+	Datum		save_pgace;
 
 	/*
 	 * The query is always run against the FK table except when this is an
@@ -3026,7 +3028,18 @@ ri_PlanCheck(const char *querystr, int nargs, Oid *argtypes,
 	SetUserId(RelationGetForm(query_rel)->relowner);
 
 	/* Create the plan */
-	qplan = SPI_prepare(querystr, nargs, argtypes);
+	save_pgace = pgacePreparePlanCheck(query_rel);
+	PG_TRY();
+	{
+		qplan = SPI_prepare(querystr, nargs, argtypes);
+	}
+	PG_CATCH();
+	{
+		pgaceRestorePlanCheck(query_rel, save_pgace);
+		PG_RE_THROW();
+	}
+	PG_END_TRY();
+	pgaceRestorePlanCheck(query_rel, save_pgace);
 
 	if (qplan == NULL)
 		elog(ERROR, "SPI_prepare returned %d for %s", SPI_result, querystr);

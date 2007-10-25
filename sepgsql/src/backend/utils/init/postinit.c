@@ -30,6 +30,7 @@
 #include "miscadmin.h"
 #include "postmaster/autovacuum.h"
 #include "postmaster/postmaster.h"
+#include "security/pgace.h"
 #include "storage/backendid.h"
 #include "storage/fd.h"
 #include "storage/ipc.h"
@@ -523,6 +524,9 @@ InitPostgres(const char *dbname, const char *username)
 	/* initialize statistics collection for this backend */
 	if (!bootstrap)
 		pgstat_bestart();
+
+	/* PGACE: initialize access control extension facility */
+	pgaceInitialize();
 
 	/* close the transaction we started above */
 	if (!bootstrap)

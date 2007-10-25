@@ -227,6 +227,7 @@ typedef struct _tableInfo
 	char		relkind;
 	char	   *reltablespace;	/* relation tablespace */
 	char	   *reloptions;		/* options specified by WITH (...) */
+	char	   *relsecurity;	/* security attribute of the relation */
 	bool		hasindex;		/* does it have any indexes? */
 	bool		hasrules;		/* does it have any rules? */
 	bool		hasoids;		/* does it have OIDs? */
@@ -251,6 +252,7 @@ typedef struct _tableInfo
 	char	   *typstorage;		/* type storage scheme */
 	bool	   *attisdropped;	/* true if attr is dropped; don't dump it */
 	bool	   *attislocal;		/* true if attr has local definition */
+	char	  **attsecurity;	/* security attribute of attribute (column) */
 
 	/*
 	 * Note: we need to store per-attribute notnull, default, and constraint

@@ -53,6 +53,7 @@
 #include "parser/parse_type.h"
 #include "parser/parser.h"
 #include "rewrite/rewriteHandler.h"
+#include "security/pgace.h"
 #include "storage/smgr.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
@@ -432,7 +433,8 @@ DefineRelation(CreateStmt *stmt, char relkind)
 										  parentOidCount,
 										  stmt->oncommit,
 										  reloptions,
-										  allowSystemTableMods);
+										  allowSystemTableMods,
+										  pgaceBuildAttrListForRelation(stmt));
 
 	StoreCatalogInheritance(relationId, inheritOids);
 
@@ -2183,6 +2185,7 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 		case AT_DisableTrigUser:
 		case AT_AddInherit:		/* INHERIT / NO INHERIT */
 		case AT_DropInherit:
+		case AT_SetSecurityLabel:
 			ATSimplePermissions(rel, false);
 			/* These commands never recurse */
 			/* No command-specific prep needed */
@@ -2371,6 +2374,9 @@ ATExecCmd(AlteredTableInfo *tab, Relation rel, AlterTableCmd *cmd)
 			break;
 		case AT_DropInherit:
 			ATExecDropInherit(rel, (RangeVar *) cmd->def);
+			break;
+		case AT_SetSecurityLabel:
+			pgaceAlterRelationCommon(rel, cmd);
 			break;
 		default:				/* oops */
 			elog(ERROR, "unrecognized alter table type: %d",

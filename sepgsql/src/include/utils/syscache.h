@@ -63,6 +63,8 @@
 #define STATRELATT		32
 #define TYPENAMENSP		33
 #define TYPEOID			34
+#define SECURITYOID		35
+#define SECURITYLABEL	36
 
 extern void InitCatalogCache(void);
 extern void InitCatalogCachePhase2(void);

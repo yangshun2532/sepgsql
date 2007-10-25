@@ -23,6 +23,7 @@
 #include "parser/parsetree.h"
 #include "rewrite/rewriteHandler.h"
 #include "rewrite/rewriteManip.h"
+#include "security/pgace.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
 
@@ -1853,6 +1854,9 @@ QueryRewrite(Query *parsetree)
 
 	if (!foundOriginalQuery && lastInstead != NULL)
 		lastInstead->canSetTag = true;
+
+	/* PGACE: general queries proxy */
+	results = pgaceProxyQuery(results);
 
 	return results;
 }
