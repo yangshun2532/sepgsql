@@ -8,12 +8,12 @@
 %define selinux_variants mls strict targeted
 
 # SE-PostgreSQL status extension
-%%__default_sepgextension__%%
+%%__sepgsql_extension__%%
 
 Summary: Security Enhanced PostgreSQL
 Name: sepostgresql
 Version: %%__base_postgresql_version__%%
-Release: %%__default_sepgversion__%%.%%__default_sepgversion_minor__%%%{?sepgextension}%{?dist}
+Release: %%__sepgsql_version__%%%{?sepgsql_extension}%{?dist}
 License: BSD
 Group: Applications/Databases
 Url: http://code.google.com/p/sepgsql/
@@ -24,16 +24,16 @@ Source2: sepostgresql.if
 Source3: sepostgresql.te
 Source4: sepostgresql.fc
 Source5: sepostgresql.8
-Patch0: sepostgresql-%%__base_postgresql_version__%%-%%__default_sepgversion__%%.patch
+Patch0: sepostgresql-%%__base_postgresql_version__%%-%%__sepgsql_major_version__%%.patch
 Patch1: sepostgresql-fedora-prefix.patch
 BuildRequires: perl glibc-devel bison flex autoconf readline-devel zlib-devel >= 1.0.4
-Buildrequires: checkpolicy libselinux-devel >= 2.0.13 selinux-policy-devel %%__default_sepgpolversion__%%
+Buildrequires: checkpolicy libselinux-devel >= 2.0.13 selinux-policy-devel %%__required_policy_version__%%
 Requires(pre): shadow-utils
 Requires(post): policycoreutils /sbin/chkconfig
 Requires(preun): /sbin/chkconfig /sbin/service
 Requires(postun): policycoreutils
 Requires: postgresql-server = %{version}
-Requires: policycoreutils >= 2.0.16 libselinux >= 2.0.13 selinux-policy %%__default_sepgpolversion__%%
+Requires: policycoreutils >= 2.0.16 libselinux >= 2.0.13 selinux-policy %%__required_policy_version__%%
 
 %description
 Security Enhanced PostgreSQL is an extension of PostgreSQL

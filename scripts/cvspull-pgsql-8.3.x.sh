@@ -5,10 +5,12 @@
 CVSTAG="HEAD"
 SVNBRANCH="/trunk"
 
-if [ -d "${SEPGSQL_REPOSITORY}" ]; then
-    svn info "${SEPGSQL_REPOSITORY}" || exit 1
-else
-    echo "could not find SVN WC"
+SEPGSQL_REPOSITORY=`(cd \`dirname $0\`/..; pwd)`
+echo $SEPGSQL_REPOSITORY
+
+if ! env LANG=C svn info $SEPGSQL_REPOSITORY \
+    | grep "^URL:" | grep -q "https://sepgsql.googlecode.com/svn"; then
+    echo "$SEPGSQL_REPOSITORY is not a SE-PostgreSQL repository"
     exit 1
 fi
 
@@ -56,7 +58,7 @@ done
 
 # ---- End ----
 echo "$0 done, check diff and following commands"
-echo "--------"
+echo
 echo "cd ${SEPGSQL_REPOSITORY}${SVNBRANCH}"
 echo "svn diff ./base"
 echo "svn commit -m 'CVS pull -r ${CVSTAG} at `env LANG=C date`' ./base"
@@ -66,4 +68,3 @@ echo "svn merge -c `expr ${SVNREV} + 1` ./base ./pgace"
 echo "svn diff ./pgace"
 echo "svn commit -m 'Updates in ${SVNBRANCH}/base are merged into ${SVNBRANCH}/pgace at `env LANG=C date`'" ./pgace
 echo "svn update"
-echo "--------"
