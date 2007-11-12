@@ -349,6 +349,44 @@ SELECT * FROM uctest;
 COMMIT;
 SELECT * FROM uctest;
 
+-- Check repeated-update and update-then-delete cases
+BEGIN;
+DECLARE c1 CURSOR FOR SELECT * FROM uctest;
+FETCH c1;
+UPDATE uctest SET f1 = f1 + 10 WHERE CURRENT OF c1;
+SELECT * FROM uctest;
+UPDATE uctest SET f1 = f1 + 10 WHERE CURRENT OF c1;
+SELECT * FROM uctest;
+-- insensitive cursor should not show effects of updates or deletes
+FETCH RELATIVE 0 FROM c1;
+DELETE FROM uctest WHERE CURRENT OF c1;
+SELECT * FROM uctest;
+DELETE FROM uctest WHERE CURRENT OF c1; -- no-op
+SELECT * FROM uctest;
+UPDATE uctest SET f1 = f1 + 10 WHERE CURRENT OF c1; -- no-op
+SELECT * FROM uctest;
+FETCH RELATIVE 0 FROM c1;
+ROLLBACK;
+SELECT * FROM uctest;
+
+BEGIN;
+DECLARE c1 CURSOR FOR SELECT * FROM uctest FOR UPDATE;
+FETCH c1;
+UPDATE uctest SET f1 = f1 + 10 WHERE CURRENT OF c1;
+SELECT * FROM uctest;
+UPDATE uctest SET f1 = f1 + 10 WHERE CURRENT OF c1;
+SELECT * FROM uctest;
+DELETE FROM uctest WHERE CURRENT OF c1;
+SELECT * FROM uctest;
+DELETE FROM uctest WHERE CURRENT OF c1; -- no-op
+SELECT * FROM uctest;
+UPDATE uctest SET f1 = f1 + 10 WHERE CURRENT OF c1; -- no-op
+SELECT * FROM uctest;
+--- sensitive cursors can't currently scroll back, so this is an error:
+FETCH RELATIVE 0 FROM c1;
+ROLLBACK;
+SELECT * FROM uctest;
+
 -- Check inheritance cases
 CREATE TEMP TABLE ucchild () inherits (uctest);
 INSERT INTO ucchild values(100, 'hundred');

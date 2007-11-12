@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/parser/parse_expr.c,v 1.221 2007/06/23 22:12:51 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/parser/parse_expr.c,v 1.223 2007/11/11 19:22:49 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -606,6 +606,21 @@ transformParamRef(ParseState *pstate, ParamRef *pref)
 	return (Node *) param;
 }
 
+/* Test whether an a_expr is a plain NULL constant or not */
+static bool
+exprIsNullConstant(Node *arg)
+{
+	if (arg && IsA(arg, A_Const))
+	{
+		A_Const *con = (A_Const *) arg;
+
+		if (con->val.type == T_Null &&
+			con->typename == NULL)
+			return true;
+	}
+	return false;
+}
+
 static Node *
 transformAExprOp(ParseState *pstate, A_Expr *a)
 {
@@ -814,7 +829,7 @@ transformAExprOf(ParseState *pstate, A_Expr *a)
 	ltype = exprType(lexpr);
 	foreach(telem, (List *) a->rexpr)
 	{
-		rtype = typenameTypeId(pstate, lfirst(telem));
+		rtype = typenameTypeId(pstate, lfirst(telem), NULL);
 		matched = (rtype == ltype);
 		if (matched)
 			break;
@@ -1535,8 +1550,7 @@ transformXmlSerialize(ParseState *pstate, XmlSerialize *xs)
 													 XMLOID,
 													 "XMLSERIALIZE"));
 
-	targetType = typenameTypeId(pstate, xs->typename);
-	targetTypmod = typenameTypeMod(pstate, xs->typename, targetType);
+	targetType = typenameTypeId(pstate, xs->typename, &targetTypmod);
 
 	xexpr->xmloption = xs->xmloption;
 	/* We actually only need these to be able to parse back the expression. */
@@ -2212,8 +2226,7 @@ typecast_expression(ParseState *pstate, Node *expr, TypeName *typename)
 	Oid			targetType;
 	int32		targetTypmod;
 
-	targetType = typenameTypeId(pstate, typename);
-	targetTypmod = typenameTypeMod(pstate, typename, targetType);
+	targetType = typenameTypeId(pstate, typename, &targetTypmod);
 
 	if (inputType == InvalidOid)
 		return expr;			/* do nothing if NULL input */
