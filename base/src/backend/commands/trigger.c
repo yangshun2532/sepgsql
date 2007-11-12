@@ -7,7 +7,7 @@
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/commands/trigger.c,v 1.219 2007/09/12 22:10:26 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/commands/trigger.c,v 1.222 2007/11/05 19:00:25 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -31,6 +31,7 @@
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
 #include "parser/parse_func.h"
+#include "tcop/utility.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
@@ -40,6 +41,12 @@
 #include "utils/syscache.h"
 
 
+/* GUC variables */
+int		SessionReplicationRole = SESSION_REPLICATION_ROLE_ORIGIN;
+
+
+/* Local function prototypes */
+static void ConvertTriggerToFK(CreateTrigStmt *stmt, Oid funcoid);
 static void InsertTrigger(TriggerDesc *trigdesc, Trigger *trigger, int indx);
 static HeapTuple GetTupleForTrigger(EState *estate,
 				   ResultRelInfo *relinfo,
@@ -54,20 +61,17 @@ static HeapTuple ExecCallTriggerFunc(TriggerData *trigdata,
 static void AfterTriggerSaveEvent(ResultRelInfo *relinfo, int event,
 					  bool row_trigger, HeapTuple oldtup, HeapTuple newtup);
 
-/*
- * SessionReplicationRole -
- *
- *	Global variable that controls the trigger firing behaviour based
- *	on pg_trigger.tgenabled. This is maintained from misc/guc.c.
- */
-int	SessionReplicationRole = SESSION_REPLICATION_ROLE_ORIGIN;
 
 /*
  * Create a trigger.  Returns the OID of the created trigger.
  *
- * constraintOid, if nonzero, says that this trigger is being created to
- * implement that constraint.  A suitable pg_depend entry will be made
- * to link the trigger to that constraint.
+ * constraintOid, if nonzero, says that this trigger is being created
+ * internally to implement that constraint.  A suitable pg_depend entry will
+ * be made to link the trigger to that constraint.  constraintOid is zero when
+ * executing a user-entered CREATE TRIGGER command.
+ *
+ * Note: can return InvalidOid if we decided to not create a trigger at all,
+ * but a foreign-key constraint.  This is a kluge for backwards compatibility.
  */
 Oid
 CreateTrigger(CreateTrigStmt *stmt, Oid constraintOid)
@@ -142,39 +146,6 @@ CreateTrigger(CreateTrigStmt *stmt, Oid constraintOid)
 						   RelationGetRelationName(rel));
 	}
 
-	/*
-	 * Generate the trigger's OID now, so that we can use it in the name if
-	 * needed.
-	 */
-	tgrel = heap_open(TriggerRelationId, RowExclusiveLock);
-
-	trigoid = GetNewOid(tgrel);
-
-	/*
-	 * If trigger is for an RI constraint, the passed-in name is the
-	 * constraint name; save that and build a unique trigger name to avoid
-	 * collisions with user-selected trigger names.
-	 */
-	if (OidIsValid(constraintOid))
-	{
-		snprintf(constrtrigname, sizeof(constrtrigname),
-				 "RI_ConstraintTrigger_%u", trigoid);
-		trigname = constrtrigname;
-		constrname = stmt->trigname;
-	}
-	else if (stmt->isconstraint)
-	{
-		/* constraint trigger: trigger name is also constraint name */
-		trigname = stmt->trigname;
-		constrname = stmt->trigname;
-	}
-	else
-	{
-		/* regular trigger: use empty constraint name */
-		trigname = stmt->trigname;
-		constrname = "";
-	}
-
 	/* Compute tgtype */
 	TRIGGER_CLEAR_TYPE(tgtype);
 	if (stmt->before)
@@ -215,6 +186,84 @@ CreateTrigger(CreateTrigStmt *stmt, Oid constraintOid)
 	}
 
 	/*
+	 * Find and validate the trigger function.
+	 */
+	funcoid = LookupFuncName(stmt->funcname, 0, fargtypes, false);
+	funcrettype = get_func_rettype(funcoid);
+	if (funcrettype != TRIGGEROID)
+	{
+		/*
+		 * We allow OPAQUE just so we can load old dump files.	When we see a
+		 * trigger function declared OPAQUE, change it to TRIGGER.
+		 */
+		if (funcrettype == OPAQUEOID)
+		{
+			ereport(WARNING,
+					(errmsg("changing return type of function %s from \"opaque\" to \"trigger\"",
+							NameListToString(stmt->funcname))));
+			SetFunctionReturnType(funcoid, TRIGGEROID);
+		}
+		else
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
+					 errmsg("function %s must return type \"trigger\"",
+							NameListToString(stmt->funcname))));
+	}
+
+	/*
+	 * If the command is a user-entered CREATE CONSTRAINT TRIGGER command
+	 * that references one of the built-in RI_FKey trigger functions, assume
+	 * it is from a dump of a pre-7.3 foreign key constraint, and take steps
+	 * to convert this legacy representation into a regular foreign key
+	 * constraint.  Ugly, but necessary for loading old dump files.
+	 */
+	if (stmt->isconstraint && !OidIsValid(constraintOid) &&
+		list_length(stmt->args) >= 6 &&
+		(list_length(stmt->args) % 2) == 0 &&
+		RI_FKey_trigger_type(funcoid) != RI_TRIGGER_NONE)
+	{
+		/* Keep lock on target rel until end of xact */
+		heap_close(rel, NoLock);
+
+		ConvertTriggerToFK(stmt, funcoid);
+
+		return InvalidOid;
+	}
+
+	/*
+	 * Generate the trigger's OID now, so that we can use it in the name if
+	 * needed.
+	 */
+	tgrel = heap_open(TriggerRelationId, RowExclusiveLock);
+
+	trigoid = GetNewOid(tgrel);
+
+	/*
+	 * If trigger is for an RI constraint, the passed-in name is the
+	 * constraint name; save that and build a unique trigger name to avoid
+	 * collisions with user-selected trigger names.
+	 */
+	if (OidIsValid(constraintOid))
+	{
+		snprintf(constrtrigname, sizeof(constrtrigname),
+				 "RI_ConstraintTrigger_%u", trigoid);
+		trigname = constrtrigname;
+		constrname = stmt->trigname;
+	}
+	else if (stmt->isconstraint)
+	{
+		/* constraint trigger: trigger name is also constraint name */
+		trigname = stmt->trigname;
+		constrname = stmt->trigname;
+	}
+	else
+	{
+		/* regular trigger: use empty constraint name */
+		trigname = stmt->trigname;
+		constrname = "";
+	}
+
+	/*
 	 * Scan pg_trigger for existing triggers on relation.  We do this mainly
 	 * because we must count them; a secondary benefit is to give a nice error
 	 * message if there's already a trigger of the same name. (The unique
@@ -241,31 +290,6 @@ CreateTrigger(CreateTrigStmt *stmt, Oid constraintOid)
 		found++;
 	}
 	systable_endscan(tgscan);
-
-	/*
-	 * Find and validate the trigger function.
-	 */
-	funcoid = LookupFuncName(stmt->funcname, 0, fargtypes, false);
-	funcrettype = get_func_rettype(funcoid);
-	if (funcrettype != TRIGGEROID)
-	{
-		/*
-		 * We allow OPAQUE just so we can load old dump files.	When we see a
-		 * trigger function declared OPAQUE, change it to TRIGGER.
-		 */
-		if (funcrettype == OPAQUEOID)
-		{
-			ereport(WARNING,
-					(errmsg("changing return type of function %s from \"opaque\" to \"trigger\"",
-							NameListToString(stmt->funcname))));
-			SetFunctionReturnType(funcoid, TRIGGEROID);
-		}
-		else
-			ereport(ERROR,
-					(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
-					 errmsg("function %s must return type \"trigger\"",
-							NameListToString(stmt->funcname))));
-	}
 
 	/*
 	 * Build the new pg_trigger tuple.
@@ -329,6 +353,7 @@ CreateTrigger(CreateTrigStmt *stmt, Oid constraintOid)
 		values[Anum_pg_trigger_tgargs - 1] = DirectFunctionCall1(byteain,
 														CStringGetDatum(""));
 	}
+
 	/* tgattr is currently always a zero-length array */
 	tgattr = buildint2vector(NULL, 0);
 	values[Anum_pg_trigger_tgattr - 1] = PointerGetDatum(tgattr);
@@ -429,6 +454,272 @@ CreateTrigger(CreateTrigStmt *stmt, Oid constraintOid)
 
 	return trigoid;
 }
+
+
+/*
+ * Convert legacy (pre-7.3) CREATE CONSTRAINT TRIGGER commands into
+ * full-fledged foreign key constraints.
+ *
+ * The conversion is complex because a pre-7.3 foreign key involved three
+ * separate triggers, which were reported separately in dumps.  While the
+ * single trigger on the referencing table adds no new information, we need
+ * to know the trigger functions of both of the triggers on the referenced
+ * table to build the constraint declaration.  Also, due to lack of proper
+ * dependency checking pre-7.3, it is possible that the source database had
+ * an incomplete set of triggers resulting in an only partially enforced
+ * FK constraint.  (This would happen if one of the tables had been dropped
+ * and re-created, but only if the DB had been affected by a 7.0 pg_dump bug
+ * that caused loss of tgconstrrelid information.)  We choose to translate to
+ * an FK constraint only when we've seen all three triggers of a set.  This is
+ * implemented by storing unmatched items in a list in TopMemoryContext.
+ * We match triggers together by comparing the trigger arguments (which
+ * include constraint name, table and column names, so should be good enough).
+ */
+typedef struct {
+	List	   *args;			/* list of (T_String) Values or NIL */
+	Oid			funcoids[3];	/* OIDs of trigger functions */
+	/* The three function OIDs are stored in the order update, delete, child */
+} OldTriggerInfo;
+
+static void
+ConvertTriggerToFK(CreateTrigStmt *stmt, Oid funcoid)
+{
+	static List *info_list = NIL;
+
+	static const char * const funcdescr[3] = {
+		gettext_noop("Found referenced table's UPDATE trigger."),
+		gettext_noop("Found referenced table's DELETE trigger."),
+		gettext_noop("Found referencing table's trigger.")
+	};
+
+	char	   *constr_name;
+	char	   *fk_table_name;
+	char	   *pk_table_name;
+	char		fk_matchtype = FKCONSTR_MATCH_UNSPECIFIED;
+	List	   *fk_attrs = NIL;
+	List	   *pk_attrs = NIL;
+	StringInfoData buf;
+	int			funcnum;
+	OldTriggerInfo *info = NULL;
+	ListCell   *l;
+	int			i;
+
+	/* Parse out the trigger arguments */
+	constr_name = strVal(linitial(stmt->args));
+	fk_table_name = strVal(lsecond(stmt->args));
+	pk_table_name = strVal(lthird(stmt->args));
+	i = 0;
+	foreach(l, stmt->args)
+	{
+		Value *arg = (Value *) lfirst(l);
+
+		i++;
+		if (i < 4)				/* skip constraint and table names */
+			continue;
+		if (i == 4)				/* handle match type */
+		{
+			if (strcmp(strVal(arg), "FULL") == 0)
+				fk_matchtype = FKCONSTR_MATCH_FULL;
+			else
+				fk_matchtype = FKCONSTR_MATCH_UNSPECIFIED;
+			continue;
+		}
+		if (i % 2)
+			fk_attrs = lappend(fk_attrs, arg);
+		else
+			pk_attrs = lappend(pk_attrs, arg);
+	}
+
+	/* Prepare description of constraint for use in messages */
+	initStringInfo(&buf);
+	appendStringInfo(&buf, "FOREIGN KEY %s(",
+					 quote_identifier(fk_table_name));
+	i = 0;
+	foreach(l, fk_attrs)
+	{
+		Value *arg = (Value *) lfirst(l);
+
+		if (i++ > 0)
+			appendStringInfoChar(&buf, ',');
+		appendStringInfoString(&buf, quote_identifier(strVal(arg)));
+	}
+	appendStringInfo(&buf, ") REFERENCES %s(",
+					 quote_identifier(pk_table_name));
+	i = 0;
+	foreach(l, pk_attrs)
+	{
+		Value *arg = (Value *) lfirst(l);
+
+		if (i++ > 0)
+			appendStringInfoChar(&buf, ',');
+		appendStringInfoString(&buf, quote_identifier(strVal(arg)));
+	}
+	appendStringInfoChar(&buf, ')');
+
+	/* Identify class of trigger --- update, delete, or referencing-table */
+	switch (funcoid)
+	{
+		case F_RI_FKEY_CASCADE_UPD:
+		case F_RI_FKEY_RESTRICT_UPD:
+		case F_RI_FKEY_SETNULL_UPD:
+		case F_RI_FKEY_SETDEFAULT_UPD:
+		case F_RI_FKEY_NOACTION_UPD:
+			funcnum = 0;
+			break;
+
+		case F_RI_FKEY_CASCADE_DEL:
+		case F_RI_FKEY_RESTRICT_DEL:
+		case F_RI_FKEY_SETNULL_DEL:
+		case F_RI_FKEY_SETDEFAULT_DEL:
+		case F_RI_FKEY_NOACTION_DEL:
+			funcnum = 1;
+			break;
+
+		default:
+			funcnum = 2;
+			break;
+	}
+
+	/* See if we have a match to this trigger */
+	foreach(l, info_list)
+	{
+		info = (OldTriggerInfo *) lfirst(l);
+		if (info->funcoids[funcnum] == InvalidOid &&
+			equal(info->args, stmt->args))
+		{
+			info->funcoids[funcnum] = funcoid;
+			break;
+		}
+	}
+
+	if (l == NULL)
+	{
+		/* First trigger of set, so create a new list entry */
+		MemoryContext oldContext;
+
+		ereport(NOTICE,
+				(errmsg("ignoring incomplete trigger group for constraint \"%s\" %s",
+						constr_name, buf.data),
+				 errdetail(funcdescr[funcnum])));
+		oldContext = MemoryContextSwitchTo(TopMemoryContext);
+		info = (OldTriggerInfo *) palloc0(sizeof(OldTriggerInfo));
+		info->args = copyObject(stmt->args);
+		info->funcoids[funcnum] = funcoid;
+		info_list = lappend(info_list, info);
+		MemoryContextSwitchTo(oldContext);
+	}
+	else if (info->funcoids[0] == InvalidOid ||
+			 info->funcoids[1] == InvalidOid ||
+			 info->funcoids[2] == InvalidOid)
+	{
+		/* Second trigger of set */
+		ereport(NOTICE,
+				(errmsg("ignoring incomplete trigger group for constraint \"%s\" %s",
+						constr_name, buf.data),
+				 errdetail(funcdescr[funcnum])));
+	}
+	else
+	{
+		/* OK, we have a set, so make the FK constraint ALTER TABLE cmd */
+		AlterTableStmt *atstmt = makeNode(AlterTableStmt);
+		AlterTableCmd *atcmd = makeNode(AlterTableCmd);
+		FkConstraint *fkcon = makeNode(FkConstraint);
+
+		ereport(NOTICE,
+				(errmsg("converting trigger group into constraint \"%s\" %s",
+						constr_name, buf.data),
+				 errdetail(funcdescr[funcnum])));
+		if (funcnum == 2)
+		{
+			/* This trigger is on the FK table */
+			atstmt->relation = stmt->relation;
+			if (stmt->constrrel)
+				fkcon->pktable = stmt->constrrel;
+			else
+			{
+				/* Work around ancient pg_dump bug that omitted constrrel */
+				fkcon->pktable = makeRangeVar(NULL, pk_table_name);
+			}
+		}
+		else
+		{
+			/* This trigger is on the PK table */
+			fkcon->pktable = stmt->relation;
+			if (stmt->constrrel)
+				atstmt->relation = stmt->constrrel;
+			else
+			{
+				/* Work around ancient pg_dump bug that omitted constrrel */
+				atstmt->relation = makeRangeVar(NULL, fk_table_name);
+			}
+		}
+		atstmt->cmds = list_make1(atcmd);
+		atstmt->relkind = OBJECT_TABLE;
+		atcmd->subtype = AT_AddConstraint;
+		atcmd->def = (Node *) fkcon;
+		if (strcmp(constr_name, "<unnamed>") == 0)
+			fkcon->constr_name = NULL;
+		else
+			fkcon->constr_name = constr_name;
+		fkcon->fk_attrs = fk_attrs;
+		fkcon->pk_attrs = pk_attrs;
+		fkcon->fk_matchtype = fk_matchtype;
+		switch (info->funcoids[0])
+		{
+			case F_RI_FKEY_NOACTION_UPD:
+				fkcon->fk_upd_action = FKCONSTR_ACTION_NOACTION;
+				break;
+			case F_RI_FKEY_CASCADE_UPD:
+				fkcon->fk_upd_action = FKCONSTR_ACTION_CASCADE;
+				break;
+			case F_RI_FKEY_RESTRICT_UPD:
+				fkcon->fk_upd_action = FKCONSTR_ACTION_RESTRICT;
+				break;
+			case F_RI_FKEY_SETNULL_UPD:
+				fkcon->fk_upd_action = FKCONSTR_ACTION_SETNULL;
+				break;
+			case F_RI_FKEY_SETDEFAULT_UPD:
+				fkcon->fk_upd_action = FKCONSTR_ACTION_SETDEFAULT;
+				break;
+			default:
+				/* can't get here because of earlier checks */
+				elog(ERROR, "confused about RI update function");
+		}
+		switch (info->funcoids[1])
+		{
+			case F_RI_FKEY_NOACTION_DEL:
+				fkcon->fk_del_action = FKCONSTR_ACTION_NOACTION;
+				break;
+			case F_RI_FKEY_CASCADE_DEL:
+				fkcon->fk_del_action = FKCONSTR_ACTION_CASCADE;
+				break;
+			case F_RI_FKEY_RESTRICT_DEL:
+				fkcon->fk_del_action = FKCONSTR_ACTION_RESTRICT;
+				break;
+			case F_RI_FKEY_SETNULL_DEL:
+				fkcon->fk_del_action = FKCONSTR_ACTION_SETNULL;
+				break;
+			case F_RI_FKEY_SETDEFAULT_DEL:
+				fkcon->fk_del_action = FKCONSTR_ACTION_SETDEFAULT;
+				break;
+			default:
+				/* can't get here because of earlier checks */
+				elog(ERROR, "confused about RI delete function");
+		}
+		fkcon->deferrable = stmt->deferrable;
+		fkcon->initdeferred = stmt->initdeferred;
+
+		/* ... and execute it */
+		ProcessUtility((Node *) atstmt,
+					   NULL, NULL, false, None_Receiver, NULL);
+
+		/* Remove the matched item from the list */
+		info_list = list_delete_ptr(info_list, info);
+		pfree(info);
+		/* We leak the copied args ... not worth worrying about */
+	}
+}
+
 
 /*
  * DropTrigger - drop an individual trigger by name

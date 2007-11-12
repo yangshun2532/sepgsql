@@ -11,7 +11,7 @@
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/optimizer/path/pathkeys.c,v 1.85 2007/05/31 16:57:34 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/optimizer/path/pathkeys.c,v 1.89 2007/11/08 21:49:47 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -46,9 +46,11 @@ static bool pathkey_is_redundant(PathKey *new_pathkey, List *pathkeys);
 static PathKey *make_pathkey_from_sortinfo(PlannerInfo *root,
 						   Expr *expr, Oid ordering_op,
 						   bool nulls_first,
+						   Index sortref,
 						   bool canonicalize);
 static Var *find_indexkey_var(PlannerInfo *root, RelOptInfo *rel,
 				  AttrNumber varattno);
+static bool right_merge_direction(PlannerInfo *root, PathKey *pathkey);
 
 
 /****************************************************************************
@@ -232,6 +234,9 @@ canonicalize_pathkeys(PlannerInfo *root, List *pathkeys)
  *	  a PathKey.  If canonicalize = true, the result is a "canonical"
  *	  PathKey, otherwise not.  (But note it might be redundant anyway.)
  *
+ * If the PathKey is being generated from a SortClause, sortref should be
+ * the SortClause's SortGroupRef; otherwise zero.
+ *
  * canonicalize should always be TRUE after EquivalenceClass merging has
  * been performed, but FALSE if we haven't done EquivalenceClass merging yet.
  */
@@ -239,6 +244,7 @@ static PathKey *
 make_pathkey_from_sortinfo(PlannerInfo *root,
 						   Expr *expr, Oid ordering_op,
 						   bool nulls_first,
+						   Index sortref,
 						   bool canonicalize)
 {
 	Oid			opfamily,
@@ -276,8 +282,34 @@ make_pathkey_from_sortinfo(PlannerInfo *root,
 		elog(ERROR, "could not find opfamilies for ordering operator %u",
 			 ordering_op);
 
+	/*
+	 * When dealing with binary-compatible opclasses, we have to ensure that
+	 * the exposed type of the expression tree matches the declared input
+	 * type of the opclass, except when that is a polymorphic type
+	 * (compare the behavior of parse_coerce.c).  This ensures that we can
+	 * correctly match the indexkey or sortclause expression to other
+	 * expressions we find in the query, because arguments of ordinary
+	 * operator expressions will be cast that way.  (We have to do this
+	 * for indexkeys because they are represented without any explicit
+	 * relabel in pg_index, and for sort clauses because the parser is
+	 * likewise cavalier about putting relabels on them.)
+	 */
+	if (exprType((Node *) expr) != opcintype &&
+		!IsPolymorphicType(opcintype))
+	{
+		/* Strip any existing RelabelType, and add a new one if needed */
+		while (expr && IsA(expr, RelabelType))
+			expr = (Expr *) ((RelabelType *) expr)->arg;
+		if (exprType((Node *) expr) != opcintype)
+			expr = (Expr *) makeRelabelType(expr,
+											opcintype,
+											-1,
+											COERCE_DONTCARE);
+	}
+
 	/* Now find or create a matching EquivalenceClass */
-	eclass = get_eclass_for_sort_expr(root, expr, opcintype, opfamilies);
+	eclass = get_eclass_for_sort_expr(root, expr, opcintype, opfamilies,
+									  sortref);
 
 	/* And finally we can find or create a PathKey node */
 	if (canonicalize)
@@ -494,32 +526,12 @@ build_index_pathkeys(PlannerInfo *root,
 			indexprs_item = lnext(indexprs_item);
 		}
 
-		/*
-		 * When dealing with binary-compatible indexes, we have to ensure that
-		 * the exposed type of the expression tree matches the declared input
-		 * type of the opclass, except when that is a polymorphic type
-		 * (compare the behavior of parse_coerce.c).  This ensures that we can
-		 * correctly match the indexkey expression to expressions we find in
-		 * the query, because arguments of operators that could match the
-		 * index will be cast likewise.
-		 */
-		if (exprType((Node *) indexkey) != index->opcintype[i] &&
-			!IsPolymorphicType(index->opcintype[i]))
-		{
-			/* Strip any existing RelabelType, and add a new one */
-			while (indexkey && IsA(indexkey, RelabelType))
-				indexkey = (Expr *) ((RelabelType *) indexkey)->arg;
-			indexkey = (Expr *) makeRelabelType(indexkey,
-												index->opcintype[i],
-												-1,
-												COERCE_DONTCARE);
-		}
-
 		/* OK, make a canonical pathkey for this sort key */
 		cpathkey = make_pathkey_from_sortinfo(root,
 											  indexkey,
 											  sortop,
 											  nulls_first,
+											  0,
 											  true);
 
 		/* Add to list unless redundant */
@@ -592,102 +604,161 @@ convert_subquery_pathkeys(PlannerInfo *root, RelOptInfo *rel,
 		PathKey	   *sub_pathkey = (PathKey *) lfirst(i);
 		EquivalenceClass *sub_eclass = sub_pathkey->pk_eclass;
 		PathKey	   *best_pathkey = NULL;
-		int			best_score = -1;
-		ListCell   *j;
 
-		/*
-		 * The sub_pathkey's EquivalenceClass could contain multiple elements
-		 * (representing knowledge that multiple items are effectively equal).
-		 * Each element might match none, one, or more of the output columns
-		 * that are visible to the outer query. This means we may have
-		 * multiple possible representations of the sub_pathkey in the context
-		 * of the outer query.  Ideally we would generate them all and put
-		 * them all into an EC of the outer query, thereby propagating
-		 * equality knowledge up to the outer query.  Right now we cannot do
-		 * so, because the outer query's EquivalenceClasses are already frozen
-		 * when this is called. Instead we prefer the one that has the highest
-		 * "score" (number of EC peers, plus one if it matches the outer
-		 * query_pathkeys). This is the most likely to be useful in the outer
-		 * query.
-		 */
-		foreach(j, sub_eclass->ec_members)
+		if (sub_eclass->ec_has_volatile)
 		{
-			EquivalenceMember *sub_member = (EquivalenceMember *) lfirst(j);
-			Expr	   *sub_expr = sub_member->em_expr;
-			Expr	   *rtarg;
-			ListCell   *k;
-
 			/*
-			 * We handle two cases: the sub_pathkey key can be either an exact
-			 * match for a targetlist entry, or a RelabelType of a targetlist
-			 * entry.  (The latter case is worth extra code because it arises
-			 * frequently in connection with varchar fields.)
+			 * If the sub_pathkey's EquivalenceClass is volatile, then it must
+			 * have come from an ORDER BY clause, and we have to match it to
+			 * that same targetlist entry.
 			 */
-			if (IsA(sub_expr, RelabelType))
-				rtarg = ((RelabelType *) sub_expr)->arg;
-			else
-				rtarg = NULL;
+			TargetEntry *tle;
 
-			foreach(k, sub_tlist)
+			if (sub_eclass->ec_sortref == 0)		/* can't happen */
+				elog(ERROR, "volatile EquivalenceClass has no sortref");
+			tle = get_sortgroupref_tle(sub_eclass->ec_sortref, sub_tlist);
+			Assert(tle);
+			/* resjunk items aren't visible to outer query */
+			if (!tle->resjunk)
 			{
-				TargetEntry *tle = (TargetEntry *) lfirst(k);
+				/* We can represent this sub_pathkey */
+				EquivalenceMember *sub_member;
 				Expr	   *outer_expr;
 				EquivalenceClass *outer_ec;
-				PathKey	   *outer_pk;
-				int			score;
 
-				/* resjunk items aren't visible to outer query */
-				if (tle->resjunk)
-					continue;
+				Assert(list_length(sub_eclass->ec_members) == 1);
+				sub_member = (EquivalenceMember *) linitial(sub_eclass->ec_members);
+				outer_expr = (Expr *)
+					makeVar(rel->relid,
+							tle->resno,
+							exprType((Node *) tle->expr),
+							exprTypmod((Node *) tle->expr),
+							0);
+				outer_ec =
+					get_eclass_for_sort_expr(root,
+											 outer_expr,
+											 sub_member->em_datatype,
+											 sub_eclass->ec_opfamilies,
+											 0);
+				best_pathkey =
+					make_canonical_pathkey(root,
+										   outer_ec,
+										   sub_pathkey->pk_opfamily,
+										   sub_pathkey->pk_strategy,
+										   sub_pathkey->pk_nulls_first);
+			}
+		}
+		else
+		{
+			/*
+			 * Otherwise, the sub_pathkey's EquivalenceClass could contain
+			 * multiple elements (representing knowledge that multiple items
+			 * are effectively equal).  Each element might match none, one, or
+			 * more of the output columns that are visible to the outer
+			 * query. This means we may have multiple possible representations
+			 * of the sub_pathkey in the context of the outer query.  Ideally
+			 * we would generate them all and put them all into an EC of the
+			 * outer query, thereby propagating equality knowledge up to the
+			 * outer query.  Right now we cannot do so, because the outer
+			 * query's EquivalenceClasses are already frozen when this is
+			 * called. Instead we prefer the one that has the highest "score"
+			 * (number of EC peers, plus one if it matches the outer
+			 * query_pathkeys). This is the most likely to be useful in the
+			 * outer query.
+			 */
+			int			best_score = -1;
+			ListCell   *j;
 
-				if (equal(tle->expr, sub_expr))
-				{
-					/* Exact match */
-					outer_expr = (Expr *)
-						makeVar(rel->relid,
-								tle->resno,
-								exprType((Node *) tle->expr),
-								exprTypmod((Node *) tle->expr),
-								0);
-				}
-				else if (rtarg && equal(tle->expr, rtarg))
-				{
-					/* Match after discarding RelabelType */
-					outer_expr = (Expr *)
-						makeVar(rel->relid,
-								tle->resno,
-								exprType((Node *) tle->expr),
-								exprTypmod((Node *) tle->expr),
-								0);
-					outer_expr = (Expr *)
-						makeRelabelType((Expr *) outer_expr,
-										((RelabelType *) sub_expr)->resulttype,
-									 ((RelabelType *) sub_expr)->resulttypmod,
-								   ((RelabelType *) sub_expr)->relabelformat);
-				}
-				else
-					continue;
+			foreach(j, sub_eclass->ec_members)
+			{
+				EquivalenceMember *sub_member = (EquivalenceMember *) lfirst(j);
+				Expr	   *sub_expr = sub_member->em_expr;
+				Expr	   *sub_stripped;
+				ListCell   *k;
 
-				/* Found a representation for this sub_pathkey */
-				outer_ec = get_eclass_for_sort_expr(root,
-													outer_expr,
-													sub_member->em_datatype,
-													sub_eclass->ec_opfamilies);
-				outer_pk = make_canonical_pathkey(root,
-												  outer_ec,
-												  sub_pathkey->pk_opfamily,
-												  sub_pathkey->pk_strategy,
-												  sub_pathkey->pk_nulls_first);
-				/* score = # of equivalence peers */
-				score = list_length(outer_ec->ec_members) - 1;
-				/* +1 if it matches the proper query_pathkeys item */
-				if (retvallen < outer_query_keys &&
-					list_nth(root->query_pathkeys, retvallen) == outer_pk)
-					score++;
-				if (score > best_score)
+				/*
+				 * We handle two cases: the sub_pathkey key can be either an
+				 * exact match for a targetlist entry, or it could match after
+				 * stripping RelabelType nodes.  (We need that case since
+				 * make_pathkey_from_sortinfo could add or remove RelabelType.)
+				 */
+				sub_stripped = sub_expr;
+				while (sub_stripped && IsA(sub_stripped, RelabelType))
+					sub_stripped = ((RelabelType *) sub_stripped)->arg;
+
+				foreach(k, sub_tlist)
 				{
-					best_pathkey = outer_pk;
-					best_score = score;
+					TargetEntry *tle = (TargetEntry *) lfirst(k);
+					Expr	   *outer_expr;
+					EquivalenceClass *outer_ec;
+					PathKey	   *outer_pk;
+					int			score;
+
+					/* resjunk items aren't visible to outer query */
+					if (tle->resjunk)
+						continue;
+
+					if (equal(tle->expr, sub_expr))
+					{
+						/* Exact match */
+						outer_expr = (Expr *)
+							makeVar(rel->relid,
+									tle->resno,
+									exprType((Node *) tle->expr),
+									exprTypmod((Node *) tle->expr),
+									0);
+					}
+					else
+					{
+						Expr	   *tle_stripped;
+
+						tle_stripped = tle->expr;
+						while (tle_stripped && IsA(tle_stripped, RelabelType))
+							tle_stripped = ((RelabelType *) tle_stripped)->arg;
+
+						if (equal(tle_stripped, sub_stripped))
+						{
+							/* Match after discarding RelabelType */
+							outer_expr = (Expr *)
+								makeVar(rel->relid,
+										tle->resno,
+										exprType((Node *) tle->expr),
+										exprTypmod((Node *) tle->expr),
+										0);
+							if (exprType((Node *) outer_expr) !=
+								exprType((Node *) sub_expr))
+								outer_expr = (Expr *)
+									makeRelabelType(outer_expr,
+													exprType((Node *) sub_expr),
+													-1,
+													COERCE_DONTCARE);
+						}
+						else
+							continue;
+					}
+
+					/* Found a representation for this sub_pathkey */
+					outer_ec = get_eclass_for_sort_expr(root,
+														outer_expr,
+														sub_member->em_datatype,
+														sub_eclass->ec_opfamilies,
+														0);
+					outer_pk = make_canonical_pathkey(root,
+													  outer_ec,
+													  sub_pathkey->pk_opfamily,
+													  sub_pathkey->pk_strategy,
+													  sub_pathkey->pk_nulls_first);
+					/* score = # of equivalence peers */
+					score = list_length(outer_ec->ec_members) - 1;
+					/* +1 if it matches the proper query_pathkeys item */
+					if (retvallen < outer_query_keys &&
+						list_nth(root->query_pathkeys, retvallen) == outer_pk)
+						score++;
+					if (score > best_score)
+					{
+						best_pathkey = outer_pk;
+						best_score = score;
+					}
 				}
 			}
 		}
@@ -790,6 +861,7 @@ make_pathkeys_for_sortclauses(PlannerInfo *root,
 											 sortkey,
 											 sortcl->sortop,
 											 sortcl->nulls_first,
+											 sortcl->tleSortGroupRef,
 											 canonicalize);
 
 		/* Canonical form eliminates redundant ordering keys */
@@ -838,12 +910,14 @@ cache_mergeclause_eclasses(PlannerInfo *root, RestrictInfo *restrictinfo)
 			get_eclass_for_sort_expr(root,
 									 (Expr *) get_leftop(clause),
 									 lefttype,
-									 restrictinfo->mergeopfamilies);
+									 restrictinfo->mergeopfamilies,
+									 0);
 		restrictinfo->right_ec =
 			get_eclass_for_sort_expr(root,
 									 (Expr *) get_rightop(clause),
 									 righttype,
-									 restrictinfo->mergeopfamilies);
+									 restrictinfo->mergeopfamilies,
+									 0);
 	}
 	else
 		Assert(restrictinfo->right_ec != NULL);
@@ -1242,6 +1316,13 @@ make_inner_pathkeys_for_merge(PlannerInfo *root,
  * overoptimistic, since joinclauses that require different other relations
  * might never be usable at the same time, but trying to be exact is likely
  * to be more trouble than it's worth.
+ *
+ * To avoid doubling the number of mergejoin paths considered, we would like
+ * to consider only one of the two scan directions (ASC or DESC) as useful
+ * for merging for any given target column.  The choice is arbitrary unless
+ * one of the directions happens to match an ORDER BY key, in which case
+ * that direction should be preferred, in hopes of avoiding a final sort step.
+ * right_merge_direction() implements this heuristic.
  */
 int
 pathkeys_useful_for_merging(PlannerInfo *root, RelOptInfo *rel, List *pathkeys)
@@ -1254,6 +1335,10 @@ pathkeys_useful_for_merging(PlannerInfo *root, RelOptInfo *rel, List *pathkeys)
 		PathKey	   *pathkey = (PathKey *) lfirst(i);
 		bool		matched = false;
 		ListCell   *j;
+
+		/* If "wrong" direction, not useful for merging */
+		if (!right_merge_direction(root, pathkey))
+			break;
 
 		/*
 		 * First look into the EquivalenceClass of the pathkey, to see if
@@ -1299,6 +1384,38 @@ pathkeys_useful_for_merging(PlannerInfo *root, RelOptInfo *rel, List *pathkeys)
 	}
 
 	return useful;
+}
+
+/*
+ * right_merge_direction
+ *		Check whether the pathkey embodies the preferred sort direction
+ *		for merging its target column.
+ */
+static bool
+right_merge_direction(PlannerInfo *root, PathKey *pathkey)
+{
+	ListCell   *l;
+
+	foreach(l, root->query_pathkeys)
+	{
+		PathKey	   *query_pathkey = (PathKey *) lfirst(l);
+
+		if (pathkey->pk_eclass == query_pathkey->pk_eclass &&
+			pathkey->pk_opfamily == query_pathkey->pk_opfamily)
+		{
+			/*
+			 * Found a matching query sort column.  Prefer this pathkey's
+			 * direction iff it matches.  Note that we ignore pk_nulls_first,
+			 * which means that a sort might be needed anyway ... but we
+			 * still want to prefer only one of the two possible directions,
+			 * and we might as well use this one.
+			 */
+			return (pathkey->pk_strategy == query_pathkey->pk_strategy);
+		}
+	}
+
+	/* If no matching ORDER BY request, prefer the ASC direction */
+	return (pathkey->pk_strategy == BTLessStrategyNumber);
 }
 
 /*
