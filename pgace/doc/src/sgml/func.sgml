@@ -1,4 +1,4 @@
-<!-- $PostgreSQL: pgsql/doc/src/sgml/func.sgml,v 1.403 2007/10/22 20:13:37 tgl Exp $ -->
+<!-- $PostgreSQL: pgsql/doc/src/sgml/func.sgml,v 1.411 2007/11/08 13:13:28 petere Exp $ -->
 
  <chapter id="functions">
   <title>Functions and Operators</title>
@@ -7861,7 +7861,7 @@ CREATE TYPE rainbow AS ENUM ('red', 'orange', 'yellow', 'green', 'blue', 'purple
         <entry><type>setof record</type></entry>
         <entry>test a configuration</entry>
         <entry><literal>ts_debug('english', 'The Brightest supernovaes')</literal></entry>
-        <entry><literal>(lword,"Latin word",The,{english_stem},english_stem,{}) ...</literal></entry>
+        <entry><literal>(asciiword,"Word, all ASCII",The,{english_stem},english_stem,{}) ...</literal></entry>
        </row>
        <row>
         <entry><literal><function>ts_lexize</function>(<replaceable class="PARAMETER">dict</replaceable> <type>regdictionary</>, <replaceable class="PARAMETER">token</replaceable> <type>text</>)</literal></entry>
@@ -7889,14 +7889,14 @@ CREATE TYPE rainbow AS ENUM ('red', 'orange', 'yellow', 'green', 'blue', 'purple
         <entry><type>setof record</type></entry>
         <entry>get token types defined by parser</entry>
         <entry><literal>ts_token_type('default')</literal></entry>
-        <entry><literal>(1,lword,"Latin word") ...</literal></entry>
+        <entry><literal>(1,asciiword,"Word, all ASCII") ...</literal></entry>
        </row>
        <row>
         <entry><literal><function>ts_token_type</function>(<replaceable class="PARAMETER">parser_oid</> <type>oid</>, OUT <replaceable class="PARAMETER">tokid</> <type>integer</>, OUT <replaceable class="PARAMETER">alias</> <type>text</>, OUT <replaceable class="PARAMETER">description</> <type>text</>)</literal></entry>
         <entry><type>setof record</type></entry>
         <entry>get token types defined by parser</entry>
         <entry><literal>ts_token_type(3722)</literal></entry>
-        <entry><literal>(1,lword,"Latin word") ...</literal></entry>
+        <entry><literal>(1,asciiword,"Word, all ASCII") ...</literal></entry>
        </row>
        <row>
         <entry><literal><function>ts_stat</function>(<replaceable class="PARAMETER">sqlquery</replaceable> <type>text</>, <optional> <replaceable class="PARAMETER">weights</replaceable> <type>text</>, </optional> OUT <replaceable class="PARAMETER">word</replaceable> <type>text</>, OUT <replaceable class="PARAMETER">ndoc</replaceable> <type>integer</>, OUT <replaceable class="PARAMETER">nentry</replaceable> <type>integer</>)</literal></entry>
@@ -7997,7 +7997,7 @@ SELECT xmlconcat('<abc/>', '<bar>foo</bar>');
     </para>
 
     <para>
-     XML declarations, if present are combined as follows.  If all
+     XML declarations, if present, are combined as follows.  If all
      argument values have the same XML version declaration, that
      version is used in the result, else no version is used.  If all
      argument values have the standalone declaration value
@@ -8295,6 +8295,7 @@ SELECT xmlroot(xmlparse(document '<?xml version="1.1"?><content>abc</content>'),
     Example:
 <screen><![CDATA[
 SELECT xpath('/my:a/text()', '<my:a xmlns:my="http://example.com">test</my:a>', ARRAY[ARRAY['my', 'http://example.com']]);
+
  xpath  
 --------
  {test}
@@ -8324,7 +8325,7 @@ cursor_to_xml(cursor refcursor, count int, nulls boolean, tableforest boolean, t
    <para>
     <function>table_to_xml</function> maps the content of the named
     table, passed as parameter <parameter>tbl</parameter>.  The
-    <type>regclass</type> accepts strings identifying tables using the
+    <type>regclass</type> type accepts strings identifying tables using the
     usual notation, including optional schema qualifications and
     double quotes.  <function>query_to_xml</function> executes the
     query whose text is passed as parameter
@@ -8733,15 +8734,20 @@ nextval('foo'::text)      <lineannotation><literal>foo</literal> is looked up at
       <listitem>
        <para>
         Reset the sequence object's counter value.  The two-parameter
-        form sets the sequence's <literal>last_value</literal> field to the specified
-        value and sets its <literal>is_called</literal> field to <literal>true</literal>,
-        meaning that the next <function>nextval</function> will advance the sequence
-        before returning a value.  In the three-parameter form,
-        <literal>is_called</literal> can be set either <literal>true</literal> or
-        <literal>false</literal>.  If it's set to <literal>false</literal>,
-        the next <function>nextval</function> will return exactly the specified
+        form sets the sequence's <literal>last_value</literal> field to the
+        specified value and sets its <literal>is_called</literal> field to
+        <literal>true</literal>, meaning that the next
+        <function>nextval</function> will advance the sequence before
+        returning a value.  The value reported by <function>currval</> is
+        also set to the specified value.  In the three-parameter form,
+        <literal>is_called</literal> can be set either <literal>true</literal>
+        or <literal>false</literal>.  <literal>true</> has the same effect as
+        the two-parameter form. If it's set to <literal>false</literal>, the
+        next <function>nextval</function> will return exactly the specified
         value, and sequence advancement commences with the following
-        <function>nextval</function>.  For example,
+        <function>nextval</function>.  Furthermore, the value reported by
+        <function>currval</> is not changed in this case (this is a change
+        from pre-8.3 behavior).  For example,
 
 <screen>
 SELECT setval('foo', 42);           <lineannotation>Next <function>nextval</> will return 43</lineannotation>
@@ -9011,7 +9017,9 @@ SELECT NULLIF(value, '(none)') ...
 
    <para>
     Note that <function>GREATEST</> and <function>LEAST</> are not in
-    the SQL standard, but are a common extension.
+    the SQL standard, but are a common extension.  Some other databases
+    make them return NULL if any argument is NULL, rather than only when
+    all are NULL.
    </para>
   </sect2>
  </sect1>
@@ -11509,7 +11517,9 @@ SELECT pg_type_is_visible('myschema.widget'::regtype);
 
    <para>
     The functions shown in <xref linkend="functions-txid-snapshot">
-    export server internal transaction info to user level.
+    export server internal transaction information to user level.  The main
+    use of these functions is to determine which transactions were committed
+    between two snapshots.
    </para>
 
    <table id="functions-txid-snapshot">
@@ -11559,16 +11569,71 @@ SELECT pg_type_is_visible('myschema.widget'::regtype);
     it wraps around every 4 billion transactions.  However, these functions
     export a 64-bit format that is extended with an <quote>epoch</> counter
     so that it will not wrap around for the life of an installation.
+    The data type used by these functions, <type>txid_snapshot</type>,
+    stores information about transaction ID
+    visibility at a particular moment in time.  Its components are
+    described in <xref linkend="functions-txid-snapshot-parts">.
+   </para>
+
+   <table id="functions-txid-snapshot-parts">
+    <title>Snapshot components</title>
+    <tgroup cols="2">
+     <thead>
+      <row>
+       <entry>Name</entry>
+       <entry>Description</entry>
+      </row>
+     </thead>
+
+     <tbody>
+
+      <row>
+       <entry><type>xmin</type></entry>
+       <entry>
+         Earliest transaction ID (txid) that is still active.  All earlier
+         transactions will either be committed and visible, or rolled
+         back and dead.
+       </entry>
+      </row>
+
+      <row>
+       <entry><type>xmax</type></entry>
+       <entry>
+        First as-yet-unassigned txid.  All txids later than this one are
+        not yet started as of the time of the snapshot, and thus invisible.
+       </entry>
+      </row>
+
+      <row>
+       <entry><type>xip_list</type></entry>
+       <entry>
+        Active txids at the time of the snapshot.  All of them are between
+        <literal>xmin</> and <literal>xmax</>.  A txid that is
+        <literal>xmin &lt;= txid &lt; xmax</literal> and not in this list was
+        already completed at the time of the snapshot, and thus either visible
+        or dead according to its commit status.
+       </entry>
+      </row>
+
+     </tbody>
+    </tgroup>
+   </table>
+
+   <para>
+    <type>txid_snapshot</>'s textual representation is
+    <literal><replaceable>xmin</>:<replaceable>xmax</>:<replaceable>xip_list</></literal>.
+    For example <literal>10:20:10,14,15</literal> means
+    <literal>xmin=10, xmax=20, xip_list=10, 14, 15</literal>.
    </para>
   </sect1>
 
- <sect1 id="functions-admin">
-  <title>System Administration Functions</title>
+  <sect1 id="functions-admin">
+   <title>System Administration Functions</title>
 
-  <para>
-   <xref linkend="functions-admin-set-table"> shows the functions
-   available to query and alter run-time configuration parameters.
-  </para>
+   <para>
+    <xref linkend="functions-admin-set-table"> shows the functions
+    available to query and alter run-time configuration parameters.
+   </para>
 
    <table id="functions-admin-set-table">
     <title>Configuration Settings Functions</title>

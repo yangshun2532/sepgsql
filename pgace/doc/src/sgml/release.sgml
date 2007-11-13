@@ -1,4 +1,4 @@
-<!-- $PostgreSQL: pgsql/doc/src/sgml/release.sgml,v 1.531 2007/10/20 23:41:23 momjian Exp $ -->
+<!-- $PostgreSQL: pgsql/doc/src/sgml/release.sgml,v 1.533 2007/11/01 22:38:36 momjian Exp $ -->
 <!--
 
 Typical markup:
@@ -41,7 +41,7 @@ do it for earlier branch release files.
   <note>
    <title>Release date</title>
    <simpara>2007-12-??</simpara>
-   <para>CURRENT AS OF 2007-10-03</>
+   <para>CURRENT AS OF 2007-10-24</>
   </note>
 
   <sect2>
@@ -447,6 +447,18 @@ do it for earlier branch release files.
       default. <function>pg_tablespace_size()</function> requires
       <literal>CREATE</> permission in the tablespace, or is allowed if
       the tablespace is the default tablespace for the database.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Internal hashing functions are now more uniformly-distributed (Tom)
+     </para>
+
+     <para>
+      If application code was calling and storing hash values using
+      internal <productname>PostgreSQL</> hashing functions, the hash
+      values must be regenerated.
      </para>
     </listitem>
 
@@ -1511,6 +1523,17 @@ do it for earlier branch release files.
       <para>
        Make <function>currtid()</function> functions require
        <literal>SELECT</literal> privileges on the target table (Tom)
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Add several <function>txid_*()</function> functions to query the
+       transaction ids used by the current session (Jan)
+      </para>
+
+      <para>
+       This is useful for various replication solutions.
       </para>
      </listitem>
 
