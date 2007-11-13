@@ -14,52 +14,21 @@
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/parser/parser.c,v 1.71 2007/01/09 02:14:14 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/interfaces/ecpg/preproc/parser.c,v 1.1 2007/10/26 14:17:53 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
 
-#include "postgres.h"
+#include "postgres_fe.h"
 
-#include "parser/gramparse.h"	/* required before parser/parse.h! */
-#include "parser/parse.h"
-#include "parser/parser.h"
+#include "extern.h"
+#include "preproc.h"
 
-
-List	   *parsetree;			/* result of parsing is left here */
 
 static bool have_lookahead;			/* is lookahead info valid? */
 static int	lookahead_token;		/* one-token lookahead */
 static YYSTYPE lookahead_yylval;	/* yylval for lookahead token */
 static YYLTYPE lookahead_yylloc;	/* yylloc for lookahead token */
-
-
-/*
- * raw_parser
- *		Given a query in string form, do lexical and grammatical analysis.
- *
- * Returns a list of raw (un-analyzed) parse trees.
- */
-List *
-raw_parser(const char *str)
-{
-	int			yyresult;
-
-	parsetree = NIL;			/* in case grammar forgets to set it */
-	have_lookahead = false;
-
-	scanner_init(str);
-	parser_init();
-
-	yyresult = base_yyparse();
-
-	scanner_finish();
-
-	if (yyresult)				/* error */
-		return NIL;
-
-	return parsetree;
-}
 
 
 /*
