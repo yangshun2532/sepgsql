@@ -55,7 +55,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/postmaster/autovacuum.c,v 1.61 2007/09/24 04:12:01 alvherre Exp $
+ *	  $PostgreSQL: pgsql/src/backend/postmaster/autovacuum.c,v 1.67 2007/10/29 22:17:41 alvherre Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -172,6 +172,7 @@ typedef struct autovac_table
 	int			at_freeze_min_age;
 	int			at_vacuum_cost_delay;
 	int			at_vacuum_cost_limit;
+	bool		at_wraparound;
 } autovac_table;
 
 /*-------------
@@ -182,7 +183,7 @@ typedef struct autovac_table
  * wi_links		entry into free list or running list
  * wi_dboid		OID of the database this worker is supposed to work on
  * wi_tableoid	OID of the table currently being vacuumed
- * wi_workerpid	PID of the running worker, 0 if not yet started
+ * wi_proc		pointer to PGPROC of the running worker, NULL if not started
  * wi_launchtime Time at which this worker was launched
  * wi_cost_*	Vacuum cost-based delay parameters current in this worker
  *
@@ -196,7 +197,7 @@ typedef struct WorkerInfoData
 	SHM_QUEUE	wi_links;
 	Oid			wi_dboid;
 	Oid			wi_tableoid;
-	int			wi_workerpid;
+	PGPROC	   *wi_proc;
 	TimestampTz	wi_launchtime;
 	int			wi_cost_delay;
 	int			wi_cost_limit;
@@ -280,7 +281,7 @@ static autovac_table *table_recheck_autovac(Oid relid);
 static void relation_needs_vacanalyze(Oid relid, Form_pg_autovacuum avForm,
 						  Form_pg_class classForm,
 						  PgStat_StatTabEntry *tabentry, bool *dovacuum,
-						  bool *doanalyze);
+						  bool *doanalyze, bool *wraparound);
 
 static void autovacuum_do_vac_analyze(Oid relid, bool dovacuum,
 						  bool doanalyze, int freeze_min_age,
@@ -394,6 +395,9 @@ AutoVacLauncherMain(int argc, char *argv[])
 
 	/* Identify myself via ps */
 	init_ps_display("autovacuum launcher process", "", "", "");
+
+	if (PostAuthDelay)
+		pg_usleep(PostAuthDelay * 1000000L);
 
 	SetProcessingMode(InitProcessing);
 
@@ -694,7 +698,7 @@ AutoVacLauncherMain(int argc, char *argv[])
 					worker = (WorkerInfo) MAKE_PTR(AutoVacuumShmem->av_startingWorker);
 					worker->wi_dboid = InvalidOid;
 					worker->wi_tableoid = InvalidOid;
-					worker->wi_workerpid = 0;
+					worker->wi_proc = NULL;
 					worker->wi_launchtime = 0;
 					worker->wi_links.next = AutoVacuumShmem->av_freeWorkers;
 					AutoVacuumShmem->av_freeWorkers = MAKE_OFFSET(worker);
@@ -1198,7 +1202,7 @@ do_start_worker(void)
 		AutoVacuumShmem->av_freeWorkers = worker->wi_links.next;
 
 		worker->wi_dboid = avdb->adw_datid;
-		worker->wi_workerpid = 0;
+		worker->wi_proc = NULL;
 		worker->wi_launchtime = GetCurrentTimestamp();
 
 		AutoVacuumShmem->av_startingWorker = sworker;
@@ -1542,7 +1546,7 @@ AutoVacWorkerMain(int argc, char *argv[])
 	{
 		MyWorkerInfo = (WorkerInfo) MAKE_PTR(AutoVacuumShmem->av_startingWorker);
 		dbid = MyWorkerInfo->wi_dboid;
-		MyWorkerInfo->wi_workerpid = MyProcPid;
+		MyWorkerInfo->wi_proc = MyProc;
 
 		/* insert into the running list */
 		SHMQueueInsertBefore(&AutoVacuumShmem->av_runningWorkers, 
@@ -1595,6 +1599,9 @@ AutoVacWorkerMain(int argc, char *argv[])
 		ereport(DEBUG1,
 				(errmsg("autovacuum: processing database \"%s\"", dbname)));
 
+		if (PostAuthDelay)
+			pg_usleep(PostAuthDelay * 1000000L);
+
 		/* And do an appropriate amount of work */
 		recentXid = ReadNewTransactionId();
 		do_autovacuum();
@@ -1637,7 +1644,7 @@ FreeWorkerInfo(int code, Datum arg)
 		MyWorkerInfo->wi_links.next = AutoVacuumShmem->av_freeWorkers;
 		MyWorkerInfo->wi_dboid = InvalidOid;
 		MyWorkerInfo->wi_tableoid = InvalidOid;
-		MyWorkerInfo->wi_workerpid = 0;
+		MyWorkerInfo->wi_proc = NULL;
 		MyWorkerInfo->wi_launchtime = 0;
 		MyWorkerInfo->wi_cost_delay = 0;
 		MyWorkerInfo->wi_cost_limit = 0;
@@ -1701,7 +1708,7 @@ autovac_balance_cost(void)
 									   offsetof(WorkerInfoData, wi_links));
 	while (worker)
 	{
-		if (worker->wi_workerpid != 0 &&
+		if (worker->wi_proc != NULL &&
 			worker->wi_cost_limit_base > 0 && worker->wi_cost_delay > 0)
 			cost_total +=
 				(double) worker->wi_cost_limit_base / worker->wi_cost_delay;
@@ -1724,7 +1731,7 @@ autovac_balance_cost(void)
 									   offsetof(WorkerInfoData, wi_links));
 	while (worker)
 	{
-		if (worker->wi_workerpid != 0 &&
+		if (worker->wi_proc != NULL &&
 			worker->wi_cost_limit_base > 0 && worker->wi_cost_delay > 0)
 		{
 			int     limit = (int)
@@ -1737,7 +1744,7 @@ autovac_balance_cost(void)
 			worker->wi_cost_limit = Max(Min(limit, worker->wi_cost_limit_base), 1);
 
 			elog(DEBUG2, "autovac_balance_cost(pid=%u db=%u, rel=%u, cost_limit=%d, cost_delay=%d)",
-				 worker->wi_workerpid, worker->wi_dboid,
+				 worker->wi_proc->pid, worker->wi_dboid,
 				 worker->wi_tableoid, worker->wi_cost_limit, worker->wi_cost_delay);
 		}
 
@@ -1987,6 +1994,9 @@ do_autovacuum(void)
 		autovac_table *tab;
 		WorkerInfo	worker;
 		bool        skipit;
+		char	   *datname,
+				   *nspname,
+				   *relname;
 
 		CHECK_FOR_INTERRUPTS();
 
@@ -2062,25 +2072,45 @@ next_worker:
 		VacuumCostDelay = tab->at_vacuum_cost_delay;
 		VacuumCostLimit = tab->at_vacuum_cost_limit;
 
-		/*
-		 * Advertise my cost delay parameters for the balancing algorithm, and
-		 * do a balance
-		 */
+		/* Last fixups before actually starting to work */
 		LWLockAcquire(AutovacuumLock, LW_EXCLUSIVE);
+
+		/* advertise my cost delay parameters for the balancing algorithm */
 		MyWorkerInfo->wi_cost_delay = tab->at_vacuum_cost_delay;
 		MyWorkerInfo->wi_cost_limit = tab->at_vacuum_cost_limit;
 		MyWorkerInfo->wi_cost_limit_base = tab->at_vacuum_cost_limit;
+
+		/* do a balance */
 		autovac_balance_cost();
+
+		/* done */
 		LWLockRelease(AutovacuumLock);
 
 		/* clean up memory before each iteration */
 		MemoryContextResetAndDeleteChildren(PortalContext);
 
+		/* set the "vacuum for wraparound" flag in PGPROC */
+		if (tab->at_wraparound)
+		{
+			LWLockAcquire(ProcArrayLock, LW_EXCLUSIVE);
+			MyProc->vacuumFlags |= PROC_VACUUM_FOR_WRAPAROUND;
+			LWLockRelease(ProcArrayLock);
+		}
+
 		/*
-		 * We will abort vacuuming the current table if we are interrupted, and
-		 * continue with the next one in schedule; but if anything else
-		 * happens, we will do our usual error handling which is to cause the
-		 * worker process to exit.
+		 * Save the relation name for a possible error message, to avoid a
+		 * catalog lookup in case of an error.  Note: they must live in a
+		 * long-lived memory context because we call vacuum and analyze in
+		 * different transactions.
+		 */
+		datname = get_database_name(MyDatabaseId);
+		nspname = get_namespace_name(get_rel_namespace(tab->at_relid));
+		relname = get_rel_name(tab->at_relid);
+
+		/*
+		 * We will abort vacuuming the current table if something errors out,
+		 * and continue with the next one in schedule; in particular, this
+		 * happens if we are interrupted with SIGINT.
 		 */
 		PG_TRY();
 		{
@@ -2091,42 +2121,53 @@ next_worker:
 									  tab->at_doanalyze,
 									  tab->at_freeze_min_age,
 									  bstrategy);
+
+			/*
+			 * Clear a possible query-cancel signal, to avoid a late reaction
+			 * to an automatically-sent signal because of vacuuming the current
+			 * table (we're done with it, so it would make no sense to cancel
+			 * at this point.)
+			 */
+			QueryCancelPending = false;
 		}
 		PG_CATCH();
 		{
-			ErrorData	   *errdata;
-
-			MemoryContextSwitchTo(TopTransactionContext);
-			errdata = CopyErrorData();
-
 			/*
-			 * If we errored out due to a cancel request, abort and restart the
-			 * transaction and go to the next table.  Otherwise rethrow the
-			 * error so that the outermost handler deals with it.
+			 * Abort the transaction, start a new one, and proceed with the
+			 * next table in our list.
 			 */
-			if (errdata->sqlerrcode == ERRCODE_QUERY_CANCELED)
-			{
-				HOLD_INTERRUPTS();
-				elog(LOG, "cancelling autovacuum of table \"%s.%s.%s\"",
-					 get_database_name(MyDatabaseId),
-					 get_namespace_name(get_rel_namespace(tab->at_relid)),
-					 get_rel_name(tab->at_relid));
-
-				AbortOutOfAnyTransaction();
-				FlushErrorState();
-				MemoryContextResetAndDeleteChildren(PortalContext);
-
-				/* restart our transaction for the following operations */
-				StartTransactionCommand();
-				RESUME_INTERRUPTS();
-			}
+			HOLD_INTERRUPTS();
+			if (tab->at_dovacuum)
+				errcontext("automatic vacuum of table \"%s.%s.%s\"",
+						   datname, nspname, relname);
 			else
-				PG_RE_THROW();
+				errcontext("automatic analyze of table \"%s.%s.%s\"",
+						   datname, nspname, relname);
+			EmitErrorReport();
+
+			/* this resets the PGPROC flags too */
+			AbortOutOfAnyTransaction();
+			FlushErrorState();
+			MemoryContextResetAndDeleteChildren(PortalContext);
+
+			/* restart our transaction for the following operations */
+			StartTransactionCommand();
+			RESUME_INTERRUPTS();
 		}
 		PG_END_TRY();
 
+		/* the PGPROC flags are reset at the next end of transaction */
+
 		/* be tidy */
 		pfree(tab);
+		pfree(datname);
+		pfree(nspname);
+		pfree(relname);
+
+		/* remove my info from shared memory */
+		LWLockAcquire(AutovacuumLock, LW_EXCLUSIVE);
+		MyWorkerInfo->wi_tableoid = InvalidOid;
+		LWLockRelease(AutovacuumLock);
 	}
 
 	/*
@@ -2214,9 +2255,10 @@ relation_check_autovac(Oid relid, Form_pg_class classForm,
 {
 	bool	dovacuum;
 	bool	doanalyze;
+	bool	dummy;
 
 	relation_needs_vacanalyze(relid, avForm, classForm, tabentry,
-							  &dovacuum, &doanalyze);
+							  &dovacuum, &doanalyze, &dummy);
 
 	if (classForm->relkind == RELKIND_TOASTVALUE)
 	{
@@ -2263,6 +2305,8 @@ table_recheck_autovac(Oid relid)
 	bool		doit = false;
 	PgStat_StatDBEntry *shared;
 	PgStat_StatDBEntry *dbentry;
+	bool		wraparound,
+				toast_wraparound = false;
 
 	/* use fresh stats */
 	autovac_refresh_stats();
@@ -2289,7 +2333,7 @@ table_recheck_autovac(Oid relid)
 										 shared, dbentry);
 
 	relation_needs_vacanalyze(relid, avForm, classForm, tabentry,
-							  &dovacuum, &doanalyze);
+							  &dovacuum, &doanalyze, &wraparound);
 
 	/* OK, it needs vacuum by itself */
 	if (dovacuum)
@@ -2307,6 +2351,7 @@ table_recheck_autovac(Oid relid)
 		{
 			bool			toast_dovacuum;
 			bool			toast_doanalyze;
+			bool			toast_wraparound;
 			Form_pg_class	toastClassForm;
 			PgStat_StatTabEntry *toasttabentry;
 
@@ -2316,9 +2361,10 @@ table_recheck_autovac(Oid relid)
 													  shared, dbentry);
 
 			/* note we use the pg_autovacuum entry for the main table */
-			relation_needs_vacanalyze(toastrelid, avForm, toastClassForm,
-									  toasttabentry, &toast_dovacuum,
-									  &toast_doanalyze);
+			relation_needs_vacanalyze(toastrelid, avForm,
+									  toastClassForm, toasttabentry,
+									  &toast_dovacuum, &toast_doanalyze,
+									  &toast_wraparound);
 			/* we only consider VACUUM for toast tables */
 			if (toast_dovacuum)
 			{
@@ -2380,6 +2426,7 @@ table_recheck_autovac(Oid relid)
 		tab->at_freeze_min_age = freeze_min_age;
 		tab->at_vacuum_cost_limit = vac_cost_limit;
 		tab->at_vacuum_cost_delay = vac_cost_delay;
+		tab->at_wraparound = wraparound || toast_wraparound;
 	}
 
 	heap_close(avRel, AccessShareLock);
@@ -2394,7 +2441,8 @@ table_recheck_autovac(Oid relid)
  * relation_needs_vacanalyze
  *
  * Check whether a relation needs to be vacuumed or analyzed; return each into
- * "dovacuum" and "doanalyze", respectively.  avForm and tabentry can be NULL,
+ * "dovacuum" and "doanalyze", respectively.  Also return whether the vacuum is
+ * being forced because of Xid wraparound.  avForm and tabentry can be NULL,
  * classForm shouldn't.
  *
  * A table needs to be vacuumed if the number of dead tuples exceeds a
@@ -2428,7 +2476,8 @@ relation_needs_vacanalyze(Oid relid,
 						  PgStat_StatTabEntry *tabentry,
 						  /* output params below */
 						  bool *dovacuum,
-						  bool *doanalyze)
+						  bool *doanalyze,
+						  bool *wraparound)
 {
 	bool		force_vacuum;
 	float4		reltuples;		/* pg_class.reltuples */
@@ -2490,6 +2539,7 @@ relation_needs_vacanalyze(Oid relid,
 	force_vacuum = (TransactionIdIsNormal(classForm->relfrozenxid) &&
 					TransactionIdPrecedes(classForm->relfrozenxid,
 										  xidForceLimit));
+	*wraparound = force_vacuum;
 
 	/* User disabled it in pg_autovacuum?  (But ignore if at risk) */
 	if (avForm && !avForm->enabled && !force_vacuum)

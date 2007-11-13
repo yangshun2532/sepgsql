@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/commands/typecmds.c,v 1.108 2007/09/29 17:18:58 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/commands/typecmds.c,v 1.110 2007/11/11 19:22:48 tgl Exp $
  *
  * DESCRIPTION
  *	  The "DefineFoo" routines take the parse tree and pick out the
@@ -211,7 +211,7 @@ DefineType(List *names, List *parameters)
 		}
 		else if (pg_strcasecmp(defel->defname, "element") == 0)
 		{
-			elemType = typenameTypeId(NULL, defGetTypeName(defel));
+			elemType = typenameTypeId(NULL, defGetTypeName(defel), NULL);
 			/* disallow arrays of pseudotypes */
 			if (get_typtype(elemType) == TYPTYPE_PSEUDO)
 				ereport(ERROR,
@@ -497,8 +497,8 @@ RemoveType(List *names, DropBehavior behavior, bool missing_ok)
 	typename = makeTypeNameFromNameList(names);
 
 	/* Use LookupTypeName here so that shell types can be removed. */
-	typeoid = LookupTypeName(NULL, typename);
-	if (!OidIsValid(typeoid))
+	tup = LookupTypeName(NULL, typename, NULL);
+	if (tup == NULL)
 	{
 		if (!missing_ok)
 		{
@@ -517,11 +517,7 @@ RemoveType(List *names, DropBehavior behavior, bool missing_ok)
 		return;
 	}
 
-	tup = SearchSysCache(TYPEOID,
-						 ObjectIdGetDatum(typeoid),
-						 0, 0, 0);
-	if (!HeapTupleIsValid(tup))
-		elog(ERROR, "cache lookup failed for type %u", typeoid);
+	typeoid = typeTypeId(tup); 
 	typ = (Form_pg_type) GETSTRUCT(tup);
 
 	/* Permission check: must own type or its namespace */
@@ -650,10 +646,9 @@ DefineDomain(CreateDomainStmt *stmt)
 	/*
 	 * Look up the base type.
 	 */
-	typeTup = typenameType(NULL, stmt->typename);
+	typeTup = typenameType(NULL, stmt->typename, &basetypeMod);
 	baseType = (Form_pg_type) GETSTRUCT(typeTup);
 	basetypeoid = HeapTupleGetOid(typeTup);
-	basetypeMod = typenameTypeMod(NULL, stmt->typename, basetypeoid);
 
 	/*
 	 * Base type must be a plain base type, another domain or an enum.
@@ -765,20 +760,40 @@ DefineDomain(CreateDomainStmt *stmt)
 											  domainName);
 
 					/*
-					 * Expression must be stored as a nodeToString result, but
-					 * we also require a valid textual representation (mainly
-					 * to make life easier for pg_dump).
+					 * If the expression is just a NULL constant, we treat
+					 * it like not having a default.
+					 *
+					 * Note that if the basetype is another domain, we'll see
+					 * a CoerceToDomain expr here and not discard the default.
+					 * This is critical because the domain default needs to be
+					 * retained to override any default that the base domain
+					 * might have.
 					 */
-					defaultValue =
-						deparse_expression(defaultExpr,
-										   deparse_context_for(domainName,
-															   InvalidOid),
-										   false, false);
-					defaultValueBin = nodeToString(defaultExpr);
+					if (defaultExpr == NULL ||
+						(IsA(defaultExpr, Const) &&
+						 ((Const *) defaultExpr)->constisnull))
+					{
+						defaultValue = NULL;
+						defaultValueBin = NULL;
+					}
+					else
+					{
+						/*
+						 * Expression must be stored as a nodeToString result,
+						 * but we also require a valid textual representation
+						 * (mainly to make life easier for pg_dump).
+						 */
+						defaultValue =
+							deparse_expression(defaultExpr,
+											   deparse_context_for(domainName,
+																   InvalidOid),
+											   false, false);
+						defaultValueBin = nodeToString(defaultExpr);
+					}
 				}
 				else
 				{
-					/* DEFAULT NULL is same as not having a default */
+					/* No default (can this still happen?) */
 					defaultValue = NULL;
 					defaultValueBin = NULL;
 				}
@@ -926,8 +941,8 @@ RemoveDomain(List *names, DropBehavior behavior, bool missing_ok)
 	typename = makeTypeNameFromNameList(names);
 
 	/* Use LookupTypeName here so that shell types can be removed. */
-	typeoid = LookupTypeName(NULL, typename);
-	if (!OidIsValid(typeoid))
+	tup = LookupTypeName(NULL, typename, NULL);
+	if (tup == NULL)
 	{
 		if (!missing_ok)
 		{
@@ -946,11 +961,7 @@ RemoveDomain(List *names, DropBehavior behavior, bool missing_ok)
 		return;
 	}
 
-	tup = SearchSysCache(TYPEOID,
-						 ObjectIdGetDatum(typeoid),
-						 0, 0, 0);
-	if (!HeapTupleIsValid(tup))
-		elog(ERROR, "cache lookup failed for type %u", typeoid);
+	typeoid = typeTypeId(tup); 
 
 	/* Permission check: must own type or its namespace */
 	if (!pg_type_ownercheck(typeoid, GetUserId()) &&
@@ -1423,7 +1434,7 @@ AlterDomainDefault(List *names, Node *defaultRaw)
 
 	/* Make a TypeName so we can use standard type lookup machinery */
 	typename = makeTypeNameFromNameList(names);
-	domainoid = typenameTypeId(NULL, typename);
+	domainoid = typenameTypeId(NULL, typename, NULL);
 
 	/* Look up the domain in the type table */
 	rel = heap_open(TypeRelationId, RowExclusiveLock);
@@ -1443,7 +1454,7 @@ AlterDomainDefault(List *names, Node *defaultRaw)
 	MemSet(new_record_nulls, ' ', sizeof(new_record_nulls));
 	MemSet(new_record_repl, ' ', sizeof(new_record_repl));
 
-	/* Store the new default, if null then skip this step */
+	/* Store the new default into the tuple */
 	if (defaultRaw)
 	{
 		/* Create a dummy ParseState for transformExpr */
@@ -1459,30 +1470,46 @@ AlterDomainDefault(List *names, Node *defaultRaw)
 								  NameStr(typTup->typname));
 
 		/*
-		 * Expression must be stored as a nodeToString result, but we also
-		 * require a valid textual representation (mainly to make life easier
-		 * for pg_dump).
+		 * If the expression is just a NULL constant, we treat the command
+		 * like ALTER ... DROP DEFAULT.  (But see note for same test in
+		 * DefineDomain.)
 		 */
-		defaultValue = deparse_expression(defaultExpr,
+		if (defaultExpr == NULL ||
+			(IsA(defaultExpr, Const) && ((Const *) defaultExpr)->constisnull))
+		{
+			/* Default is NULL, drop it */
+			new_record_nulls[Anum_pg_type_typdefaultbin - 1] = 'n';
+			new_record_repl[Anum_pg_type_typdefaultbin - 1] = 'r';
+			new_record_nulls[Anum_pg_type_typdefault - 1] = 'n';
+			new_record_repl[Anum_pg_type_typdefault - 1] = 'r';
+		}
+		else
+		{
+			/*
+			 * Expression must be stored as a nodeToString result, but we also
+			 * require a valid textual representation (mainly to make life
+			 * easier for pg_dump).
+			 */
+			defaultValue = deparse_expression(defaultExpr,
 								deparse_context_for(NameStr(typTup->typname),
 													InvalidOid),
 										  false, false);
 
-		/*
-		 * Form an updated tuple with the new default and write it back.
-		 */
-		new_record[Anum_pg_type_typdefaultbin - 1] = DirectFunctionCall1(textin,
-															 CStringGetDatum(
-												 nodeToString(defaultExpr)));
+			/*
+			 * Form an updated tuple with the new default and write it back.
+			 */
+			new_record[Anum_pg_type_typdefaultbin - 1] = DirectFunctionCall1(textin,
+								CStringGetDatum(nodeToString(defaultExpr)));
 
-		new_record_repl[Anum_pg_type_typdefaultbin - 1] = 'r';
-		new_record[Anum_pg_type_typdefault - 1] = DirectFunctionCall1(textin,
+			new_record_repl[Anum_pg_type_typdefaultbin - 1] = 'r';
+			new_record[Anum_pg_type_typdefault - 1] = DirectFunctionCall1(textin,
 											  CStringGetDatum(defaultValue));
-		new_record_repl[Anum_pg_type_typdefault - 1] = 'r';
+			new_record_repl[Anum_pg_type_typdefault - 1] = 'r';
+		}
 	}
 	else
-		/* Default is NULL, drop it */
 	{
+		/* ALTER ... DROP DEFAULT */
 		new_record_nulls[Anum_pg_type_typdefaultbin - 1] = 'n';
 		new_record_repl[Anum_pg_type_typdefaultbin - 1] = 'r';
 		new_record_nulls[Anum_pg_type_typdefault - 1] = 'n';
@@ -1537,7 +1564,7 @@ AlterDomainNotNull(List *names, bool notNull)
 
 	/* Make a TypeName so we can use standard type lookup machinery */
 	typename = makeTypeNameFromNameList(names);
-	domainoid = typenameTypeId(NULL, typename);
+	domainoid = typenameTypeId(NULL, typename, NULL);
 
 	/* Look up the domain in the type table */
 	typrel = heap_open(TypeRelationId, RowExclusiveLock);
@@ -1639,7 +1666,7 @@ AlterDomainDropConstraint(List *names, const char *constrName,
 
 	/* Make a TypeName so we can use standard type lookup machinery */
 	typename = makeTypeNameFromNameList(names);
-	domainoid = typenameTypeId(NULL, typename);
+	domainoid = typenameTypeId(NULL, typename, NULL);
 
 	/* Look up the domain in the type table */
 	rel = heap_open(TypeRelationId, RowExclusiveLock);
@@ -1714,7 +1741,7 @@ AlterDomainAddConstraint(List *names, Node *newConstraint)
 
 	/* Make a TypeName so we can use standard type lookup machinery */
 	typename = makeTypeNameFromNameList(names);
-	domainoid = typenameTypeId(NULL, typename);
+	domainoid = typenameTypeId(NULL, typename, NULL);
 
 	/* Look up the domain in the type table */
 	typrel = heap_open(TypeRelationId, RowExclusiveLock);
@@ -2322,28 +2349,28 @@ AlterTypeOwner(List *names, Oid newOwnerId)
 	Oid			typeOid;
 	Relation	rel;
 	HeapTuple	tup;
+	HeapTuple	newtup;
 	Form_pg_type typTup;
 	AclResult	aclresult;
+
+	rel = heap_open(TypeRelationId, RowExclusiveLock);
 
 	/* Make a TypeName so we can use standard type lookup machinery */
 	typename = makeTypeNameFromNameList(names);
 
 	/* Use LookupTypeName here so that shell types can be processed */
-	typeOid = LookupTypeName(NULL, typename);
-	if (!OidIsValid(typeOid))
+	tup = LookupTypeName(NULL, typename, NULL);
+	if (tup == NULL)
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("type \"%s\" does not exist",
 						TypeNameToString(typename))));
+	typeOid = typeTypeId(tup); 
 
-	/* Look up the type in the type table */
-	rel = heap_open(TypeRelationId, RowExclusiveLock);
-
-	tup = SearchSysCacheCopy(TYPEOID,
-							 ObjectIdGetDatum(typeOid),
-							 0, 0, 0);
-	if (!HeapTupleIsValid(tup))
-		elog(ERROR, "cache lookup failed for type %u", typeOid);
+	/* Copy the syscache entry so we can scribble on it below */
+	newtup = heap_copytuple(tup);
+	ReleaseSysCache(tup);
+	tup = newtup;
 	typTup = (Form_pg_type) GETSTRUCT(tup);
 
 	/*
@@ -2490,7 +2517,7 @@ AlterTypeNamespace(List *names, const char *newschema)
 
 	/* Make a TypeName so we can use standard type lookup machinery */
 	typename = makeTypeNameFromNameList(names);
-	typeOid = typenameTypeId(NULL, typename);
+	typeOid = typenameTypeId(NULL, typename, NULL);
 
 	/* check permissions on type */
 	if (!pg_type_ownercheck(typeOid, GetUserId()))

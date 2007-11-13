@@ -1,13 +1,13 @@
 /*-------------------------------------------------------------------------
  *
  * wparser_def.c
- *		Standard word parser
+ *		Default text search parser
  *
  * Portions Copyright (c) 1996-2007, PostgreSQL Global Development Group
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/tsearch/wparser_def.c,v 1.3 2007/09/07 15:09:55 teodor Exp $
+ *	  $PostgreSQL: pgsql/src/backend/tsearch/wparser_def.c,v 1.8 2007/11/09 22:37:35 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -22,80 +22,58 @@
 #include "utils/builtins.h"
 
 
-/* rememder !!!! */
-#define LASTNUM		23
+/* Define me to enable tracing of parser behavior */
+/* #define WPARSER_TRACE */
 
-#define LATWORD		1
-#define CYRWORD		2
-#define UWORD		3
-#define EMAIL		4
-#define FURL		5
-#define HOST		6
-#define SCIENTIFIC	7
+
+/* Output token categories */
+
+#define ASCIIWORD		1
+#define WORD_T			2
+#define NUMWORD			3
+#define EMAIL			4
+#define URL_T			5
+#define HOST			6
+#define SCIENTIFIC		7
 #define VERSIONNUMBER	8
-#define PARTHYPHENWORD	9
-#define CYRPARTHYPHENWORD	10
-#define LATPARTHYPHENWORD	11
-#define SPACE		12
-#define TAG			13
+#define NUMPARTHWORD	9
+#define PARTHWORD		10
+#define ASCIIPARTHWORD	11
+#define SPACE			12
+#define TAG_T			13
 #define PROTOCOL		14
-#define HYPHENWORD	15
-#define LATHYPHENWORD	16
-#define CYRHYPHENWORD	17
-#define URI		18
-#define FILEPATH	19
-#define DECIMAL		20
-#define SIGNEDINT	21
-#define UNSIGNEDINT 22
-#define HTMLENTITY	23
+#define NUMHWORD		15
+#define ASCIIHWORD		16
+#define HWORD			17
+#define URLPATH			18
+#define FILEPATH		19
+#define DECIMAL			20
+#define SIGNEDINT		21
+#define UNSIGNEDINT 	22
+#define HTMLENTITY		23
 
-static const char *lex_descr[] = {
-	"",
-	"Latin word",
-	"Non-latin word",
-	"Word",
-	"Email",
-	"URL",
-	"Host",
-	"Scientific notation",
-	"VERSION",
-	"Part of hyphenated word",
-	"Non-latin part of hyphenated word",
-	"Latin part of hyphenated word",
-	"Space symbols",
-	"HTML Tag",
-	"Protocol head",
-	"Hyphenated word",
-	"Latin hyphenated word",
-	"Non-latin hyphenated word",
-	"URI",
-	"File or path name",
-	"Decimal notation",
-	"Signed integer",
-	"Unsigned integer",
-	"HTML Entity"
-};
+#define LASTNUM			23
 
-static const char *tok_alias[] = {
+static const char * const tok_alias[] = {
 	"",
-	"lword",
-	"nlword",
+	"asciiword",
 	"word",
+	"numword",
 	"email",
 	"url",
 	"host",
 	"sfloat",
 	"version",
-	"part_hword",
-	"nlpart_hword",
-	"lpart_hword",
+	"hword_numpart",
+	"hword_part",
+	"hword_asciipart",
 	"blank",
 	"tag",
 	"protocol",
+	"numhword",
+	"asciihword",
 	"hword",
-	"lhword",
-	"nlhword",
-	"uri",
+	"url_path",
 	"file",
 	"float",
 	"int",
@@ -103,12 +81,42 @@ static const char *tok_alias[] = {
 	"entity"
 };
 
+static const char * const lex_descr[] = {
+	"",
+	"Word, all ASCII",
+	"Word, all letters",
+	"Word, letters and digits",
+	"Email address",
+	"URL",
+	"Host",
+	"Scientific notation",
+	"Version number",
+	"Hyphenated word part, letters and digits",
+	"Hyphenated word part, all letters",
+	"Hyphenated word part, all ASCII",
+	"Space symbols",
+	"HTML tag",
+	"Protocol head",
+	"Hyphenated word, letters and digits",
+	"Hyphenated word, all ASCII",
+	"Hyphenated word, all letters",
+	"URL path",
+	"File or path name",
+	"Decimal notation",
+	"Signed integer",
+	"Unsigned integer",
+	"HTML entity"
+};
+
+
+/* Parser states */
+
 typedef enum
 {
 	TPS_Base = 0,
-	TPS_InUWord,
-	TPS_InLatWord,
-	TPS_InCyrWord,
+	TPS_InNumWord,
+	TPS_InAsciiWord,
+	TPS_InWord,
 	TPS_InUnsignedInt,
 	TPS_InSignedIntFirst,
 	TPS_InSignedInt,
@@ -160,38 +168,31 @@ typedef enum
 	TPS_InPathSecond,
 	TPS_InFile,
 	TPS_InFileNext,
-	TPS_InURIFirst,
-	TPS_InURIStart,
-	TPS_InURI,
+	TPS_InURLPathFirst,
+	TPS_InURLPathStart,
+	TPS_InURLPath,
 	TPS_InFURL,
 	TPS_InProtocolFirst,
 	TPS_InProtocolSecond,
 	TPS_InProtocolEnd,
-	TPS_InHyphenLatWordFirst,
-	TPS_InHyphenLatWord,
-	TPS_InHyphenCyrWordFirst,
-	TPS_InHyphenCyrWord,
-	TPS_InHyphenUWordFirst,
-	TPS_InHyphenUWord,
-	TPS_InHyphenValueFirst,
-	TPS_InHyphenValue,
-	TPS_InHyphenValueExact,
+	TPS_InHyphenAsciiWordFirst,
+	TPS_InHyphenAsciiWord,
+	TPS_InHyphenWordFirst,
+	TPS_InHyphenWord,
+	TPS_InHyphenNumWordFirst,
+	TPS_InHyphenNumWord,
+	TPS_InHyphenDigitLookahead,
 	TPS_InParseHyphen,
 	TPS_InParseHyphenHyphen,
-	TPS_InHyphenCyrWordPart,
-	TPS_InHyphenLatWordPart,
-	TPS_InHyphenUWordPart,
+	TPS_InHyphenWordPart,
+	TPS_InHyphenAsciiWordPart,
+	TPS_InHyphenNumWordPart,
 	TPS_InHyphenUnsignedInt,
-	TPS_InHDecimalPartFirst,
-	TPS_InHDecimalPart,
-	TPS_InHVersionPartFirst,
-	TPS_InHVersionPart,
 	TPS_Null					/* last state (fake value) */
 } TParserState;
 
 /* forward declaration */
 struct TParser;
-
 
 typedef int (*TParserCharTest) (struct TParser *);		/* any p_is* functions
 														 * except p_iseq */
@@ -208,23 +209,26 @@ typedef struct
 	TParserSpecial special;
 } TParserStateActionItem;
 
-typedef struct
-{
-	TParserState state;
-	TParserStateActionItem *action;
-} TParserStateAction;
+/* Flag bits in TParserStateActionItem.flags */
+#define A_NEXT		0x0000
+#define A_BINGO		0x0001
+#define A_POP		0x0002
+#define A_PUSH		0x0004
+#define A_RERUN		0x0008
+#define A_CLEAR		0x0010
+#define A_MERGE		0x0020
+#define A_CLRALL	0x0040
 
 typedef struct TParserPosition
 {
 	int			posbyte;		/* position of parser in bytes */
-	int			poschar;		/* osition of parser in characters */
+	int			poschar;		/* position of parser in characters */
 	int			charlen;		/* length of current char */
-	int			lenbytelexeme;
-	int			lencharlexeme;
+	int			lenbytetoken;	/* length of token-so-far in bytes */
+	int			lenchartoken;	/* and in chars */
 	TParserState state;
 	struct TParserPosition *prev;
-	int			flags;
-	TParserStateActionItem *pushedAtAction;
+	const TParserStateActionItem *pushedAtAction;
 } TParserPosition;
 
 typedef struct TParser
@@ -248,12 +252,16 @@ typedef struct TParser
 	char		c;
 
 	/* out */
-	char	   *lexeme;
-	int			lenbytelexeme;
-	int			lencharlexeme;
+	char	   *token;
+	int			lenbytetoken;
+	int			lenchartoken;
 	int			type;
-
 } TParser;
+
+
+/* forward decls here */
+static bool TParserGet(TParser * prs);
+
 
 static TParserPosition *
 newTParserPosition(TParserPosition * prev)
@@ -286,12 +294,12 @@ TParserInit(char *str, int len)
 	/*
 	 * Use wide char code only when max encoding length > 1.
 	 */
-
 	if (prs->charmaxlen > 1)
 	{
 		prs->usewide = true;
 		prs->wstr = (wchar_t *) palloc(sizeof(wchar_t) * (prs->lenstr + 1));
-		prs->lenwstr = char2wchar(prs->wstr, prs->str, prs->lenstr);
+		prs->lenwstr = char2wchar(prs->wstr, prs->lenstr + 1,
+								  prs->str, prs->lenstr);
 	}
 	else
 #endif
@@ -300,10 +308,12 @@ TParserInit(char *str, int len)
 	prs->state = newTParserPosition(NULL);
 	prs->state->state = TPS_Base;
 
+#ifdef WPARSER_TRACE
+	fprintf(stderr, "parsing \"%.*s\"\n", len, str);
+#endif
+
 	return prs;
 }
-
-static bool TParserGet(TParser * prs);
 
 static void
 TParserClose(TParser * prs)
@@ -325,10 +335,10 @@ TParserClose(TParser * prs)
 }
 
 /*
- * defining support function, equvalent is* macroses, but
+ * Character-type support functions, equivalent to is* macros, but
  * working with any possible encodings and locales. Note,
  * that with multibyte encoding and C-locale isw* function may fail
- * or give wrong result. Note 2: multibyte encoding and C-local
+ * or give wrong result. Note 2: multibyte encoding and C-locale
  * often are used for Asian languages
  */
 
@@ -487,17 +497,13 @@ p_isascii(TParser * prs)
 }
 
 static int
-p_islatin(TParser * prs)
+p_isasclet(TParser * prs)
 {
-	return (p_isalpha(prs) && p_isascii(prs)) ? 1 : 0;
+	return (p_isascii(prs) && p_isalpha(prs)) ? 1 : 0;
 }
 
-static int
-p_isnonlatin(TParser * prs)
-{
-	return (p_isalpha(prs) && !p_isascii(prs)) ? 1 : 0;
-}
 
+/* deliberately suppress unused-function complaints for the above */
 void		_make_compiler_happy(void);
 void
 _make_compiler_happy(void)
@@ -529,20 +535,20 @@ _make_compiler_happy(void)
 static void
 SpecialTags(TParser * prs)
 {
-	switch (prs->state->lencharlexeme)
+	switch (prs->state->lenchartoken)
 	{
 		case 8:			/* </script */
-			if (pg_strncasecmp(prs->lexeme, "</script", 8) == 0)
+			if (pg_strncasecmp(prs->token, "</script", 8) == 0)
 				prs->ignore = false;
 			break;
 		case 7:			/* <script || </style */
-			if (pg_strncasecmp(prs->lexeme, "</style", 7) == 0)
+			if (pg_strncasecmp(prs->token, "</style", 7) == 0)
 				prs->ignore = false;
-			else if (pg_strncasecmp(prs->lexeme, "<script", 7) == 0)
+			else if (pg_strncasecmp(prs->token, "<script", 7) == 0)
 				prs->ignore = true;
 			break;
 		case 6:			/* <style */
-			if (pg_strncasecmp(prs->lexeme, "<style", 6) == 0)
+			if (pg_strncasecmp(prs->token, "<style", 6) == 0)
 				prs->ignore = true;
 			break;
 		default:
@@ -554,24 +560,24 @@ static void
 SpecialFURL(TParser * prs)
 {
 	prs->wanthost = true;
-	prs->state->posbyte -= prs->state->lenbytelexeme;
-	prs->state->poschar -= prs->state->lencharlexeme;
+	prs->state->posbyte -= prs->state->lenbytetoken;
+	prs->state->poschar -= prs->state->lenchartoken;
 }
 
 static void
 SpecialHyphen(TParser * prs)
 {
-	prs->state->posbyte -= prs->state->lenbytelexeme;
-	prs->state->poschar -= prs->state->lencharlexeme;
+	prs->state->posbyte -= prs->state->lenbytetoken;
+	prs->state->poschar -= prs->state->lenchartoken;
 }
 
 static void
 SpecialVerVersion(TParser * prs)
 {
-	prs->state->posbyte -= prs->state->lenbytelexeme;
-	prs->state->poschar -= prs->state->lencharlexeme;
-	prs->state->lenbytelexeme = 0;
-	prs->state->lencharlexeme = 0;
+	prs->state->posbyte -= prs->state->lenbytetoken;
+	prs->state->poschar -= prs->state->lenchartoken;
+	prs->state->lenbytetoken = 0;
+	prs->state->lenchartoken = 0;
 }
 
 static int
@@ -599,10 +605,10 @@ p_ishost(TParser * prs)
 
 	if (TParserGet(tmpprs) && tmpprs->type == HOST)
 	{
-		prs->state->posbyte += tmpprs->lenbytelexeme;
-		prs->state->poschar += tmpprs->lencharlexeme;
-		prs->state->lenbytelexeme += tmpprs->lenbytelexeme;
-		prs->state->lencharlexeme += tmpprs->lencharlexeme;
+		prs->state->posbyte += tmpprs->lenbytetoken;
+		prs->state->poschar += tmpprs->lenchartoken;
+		prs->state->lenbytetoken += tmpprs->lenbytetoken;
+		prs->state->lenchartoken += tmpprs->lenchartoken;
 		prs->state->charlen = tmpprs->state->charlen;
 		res = 1;
 	}
@@ -612,7 +618,7 @@ p_ishost(TParser * prs)
 }
 
 static int
-p_isURI(TParser * prs)
+p_isURLPath(TParser * prs)
 {
 	TParser    *tmpprs = TParserInit(prs->str + prs->state->posbyte, prs->lenstr - prs->state->posbyte);
 	int			res = 0;
@@ -620,12 +626,12 @@ p_isURI(TParser * prs)
 	tmpprs->state = newTParserPosition(tmpprs->state);
 	tmpprs->state->state = TPS_InFileFirst;
 
-	if (TParserGet(tmpprs) && (tmpprs->type == URI || tmpprs->type == FILEPATH))
+	if (TParserGet(tmpprs) && (tmpprs->type == URLPATH || tmpprs->type == FILEPATH))
 	{
-		prs->state->posbyte += tmpprs->lenbytelexeme;
-		prs->state->poschar += tmpprs->lencharlexeme;
-		prs->state->lenbytelexeme += tmpprs->lenbytelexeme;
-		prs->state->lencharlexeme += tmpprs->lencharlexeme;
+		prs->state->posbyte += tmpprs->lenbytetoken;
+		prs->state->poschar += tmpprs->lenchartoken;
+		prs->state->lenbytetoken += tmpprs->lenbytetoken;
+		prs->state->lenchartoken += tmpprs->lenchartoken;
 		prs->state->charlen = tmpprs->state->charlen;
 		res = 1;
 	}
@@ -638,21 +644,12 @@ p_isURI(TParser * prs)
  * Table of state/action of parser
  */
 
-#define A_NEXT		0x0000
-#define A_BINGO		0x0001
-#define A_POP		0x0002
-#define A_PUSH		0x0004
-#define A_RERUN		0x0008
-#define A_CLEAR		0x0010
-#define A_MERGE		0x0020
-#define A_CLRALL	0x0040
-
-static TParserStateActionItem actionTPS_Base[] = {
+static const TParserStateActionItem actionTPS_Base[] = {
 	{p_isEOF, 0, A_NEXT, TPS_Null, 0, NULL},
 	{p_iseqC, '<', A_PUSH, TPS_InTagFirst, 0, NULL},
 	{p_isignore, 0, A_NEXT, TPS_InSpace, 0, NULL},
-	{p_islatin, 0, A_NEXT, TPS_InLatWord, 0, NULL},
-	{p_isnonlatin, 0, A_NEXT, TPS_InCyrWord, 0, NULL},
+	{p_isasclet, 0, A_NEXT, TPS_InAsciiWord, 0, NULL},
+	{p_isalpha, 0, A_NEXT, TPS_InWord, 0, NULL},
 	{p_isdigit, 0, A_NEXT, TPS_InUnsignedInt, 0, NULL},
 	{p_iseqC, '-', A_PUSH, TPS_InSignedIntFirst, 0, NULL},
 	{p_iseqC, '+', A_PUSH, TPS_InSignedIntFirst, 0, NULL},
@@ -664,59 +661,60 @@ static TParserStateActionItem actionTPS_Base[] = {
 };
 
 
-static TParserStateActionItem actionTPS_InUWord[] = {
-	{p_isEOF, 0, A_BINGO, TPS_Base, UWORD, NULL},
-	{p_isalnum, 0, A_NEXT, TPS_InUWord, 0, NULL},
+static const TParserStateActionItem actionTPS_InNumWord[] = {
+	{p_isEOF, 0, A_BINGO, TPS_Base, NUMWORD, NULL},
+	{p_isalnum, 0, A_NEXT, TPS_InNumWord, 0, NULL},
 	{p_iseqC, '@', A_PUSH, TPS_InEmail, 0, NULL},
 	{p_iseqC, '/', A_PUSH, TPS_InFileFirst, 0, NULL},
 	{p_iseqC, '.', A_PUSH, TPS_InFileNext, 0, NULL},
-	{p_iseqC, '-', A_PUSH, TPS_InHyphenUWordFirst, 0, NULL},
-	{NULL, 0, A_BINGO, TPS_Base, UWORD, NULL}
+	{p_iseqC, '-', A_PUSH, TPS_InHyphenNumWordFirst, 0, NULL},
+	{NULL, 0, A_BINGO, TPS_Base, NUMWORD, NULL}
 };
 
-static TParserStateActionItem actionTPS_InLatWord[] = {
-	{p_isEOF, 0, A_BINGO, TPS_Base, LATWORD, NULL},
-	{p_islatin, 0, A_NEXT, TPS_Null, 0, NULL},
+static const TParserStateActionItem actionTPS_InAsciiWord[] = {
+	{p_isEOF, 0, A_BINGO, TPS_Base, ASCIIWORD, NULL},
+	{p_isasclet, 0, A_NEXT, TPS_Null, 0, NULL},
 	{p_iseqC, '.', A_PUSH, TPS_InHostFirstDomain, 0, NULL},
 	{p_iseqC, '.', A_PUSH, TPS_InFileNext, 0, NULL},
 	{p_iseqC, '-', A_PUSH, TPS_InHostFirstAN, 0, NULL},
-	{p_iseqC, '-', A_PUSH, TPS_InHyphenLatWordFirst, 0, NULL},
+	{p_iseqC, '-', A_PUSH, TPS_InHyphenAsciiWordFirst, 0, NULL},
 	{p_iseqC, '@', A_PUSH, TPS_InEmail, 0, NULL},
 	{p_iseqC, ':', A_PUSH, TPS_InProtocolFirst, 0, NULL},
 	{p_iseqC, '/', A_PUSH, TPS_InFileFirst, 0, NULL},
 	{p_isdigit, 0, A_PUSH, TPS_InHost, 0, NULL},
-	{p_isalnum, 0, A_NEXT, TPS_InUWord, 0, NULL},
-	{NULL, 0, A_BINGO, TPS_Base, LATWORD, NULL}
+	{p_isdigit, 0, A_NEXT, TPS_InNumWord, 0, NULL},
+	{p_isalpha, 0, A_NEXT, TPS_InWord, 0, NULL},
+	{NULL, 0, A_BINGO, TPS_Base, ASCIIWORD, NULL}
 };
 
-static TParserStateActionItem actionTPS_InCyrWord[] = {
-	{p_isEOF, 0, A_BINGO, TPS_Base, CYRWORD, NULL},
-	{p_isnonlatin, 0, A_NEXT, TPS_Null, 0, NULL},
-	{p_isalnum, 0, A_NEXT, TPS_InUWord, 0, NULL},
-	{p_iseqC, '-', A_PUSH, TPS_InHyphenCyrWordFirst, 0, NULL},
-	{NULL, 0, A_BINGO, TPS_Base, CYRWORD, NULL}
+static const TParserStateActionItem actionTPS_InWord[] = {
+	{p_isEOF, 0, A_BINGO, TPS_Base, WORD_T, NULL},
+	{p_isalpha, 0, A_NEXT, TPS_Null, 0, NULL},
+	{p_isdigit, 0, A_NEXT, TPS_InNumWord, 0, NULL},
+	{p_iseqC, '-', A_PUSH, TPS_InHyphenWordFirst, 0, NULL},
+	{NULL, 0, A_BINGO, TPS_Base, WORD_T, NULL}
 };
 
-static TParserStateActionItem actionTPS_InUnsignedInt[] = {
+static const TParserStateActionItem actionTPS_InUnsignedInt[] = {
 	{p_isEOF, 0, A_BINGO, TPS_Base, UNSIGNEDINT, NULL},
 	{p_isdigit, 0, A_NEXT, TPS_Null, 0, NULL},
 	{p_iseqC, '.', A_PUSH, TPS_InHostFirstDomain, 0, NULL},
 	{p_iseqC, '.', A_PUSH, TPS_InUDecimalFirst, 0, NULL},
 	{p_iseqC, 'e', A_PUSH, TPS_InMantissaFirst, 0, NULL},
 	{p_iseqC, 'E', A_PUSH, TPS_InMantissaFirst, 0, NULL},
-	{p_islatin, 0, A_PUSH, TPS_InHost, 0, NULL},
-	{p_isalpha, 0, A_NEXT, TPS_InUWord, 0, NULL},
+	{p_isasclet, 0, A_PUSH, TPS_InHost, 0, NULL},
+	{p_isalpha, 0, A_NEXT, TPS_InNumWord, 0, NULL},
 	{p_iseqC, '/', A_PUSH, TPS_InFileFirst, 0, NULL},
 	{NULL, 0, A_BINGO, TPS_Base, UNSIGNEDINT, NULL}
 };
 
-static TParserStateActionItem actionTPS_InSignedIntFirst[] = {
+static const TParserStateActionItem actionTPS_InSignedIntFirst[] = {
 	{p_isEOF, 0, A_POP, TPS_Null, 0, NULL},
 	{p_isdigit, 0, A_NEXT | A_CLEAR, TPS_InSignedInt, 0, NULL},
 	{NULL, 0, A_POP, TPS_Null, 0, NULL}
 };
 
-static TParserStateActionItem actionTPS_InSignedInt[] = {
+static const TParserStateActionItem actionTPS_InSignedInt[] = {
 	{p_isEOF, 0, A_BINGO, TPS_Base, SIGNEDINT, NULL},
 	{p_isdigit, 0, A_NEXT, TPS_Null, 0, NULL},
 	{p_iseqC, '.', A_PUSH, TPS_InDecimalFirst, 0, NULL},
@@ -725,7 +723,7 @@ static TParserStateActionItem actionTPS_InSignedInt[] = {
 	{NULL, 0, A_BINGO, TPS_Base, SIGNEDINT, NULL}
 };
 
-static TParserStateActionItem actionTPS_InSpace[] = {
+static const TParserStateActionItem actionTPS_InSpace[] = {
 	{p_isEOF, 0, A_BINGO, TPS_Base, SPACE, NULL},
 	{p_iseqC, '<', A_BINGO, TPS_Base, SPACE, NULL},
 	{p_isignore, 0, A_NEXT, TPS_Null, 0, NULL},
@@ -737,13 +735,13 @@ static TParserStateActionItem actionTPS_InSpace[] = {
 	{NULL, 0, A_BINGO, TPS_Base, SPACE, NULL}
 };
 
-static TParserStateActionItem actionTPS_InUDecimalFirst[] = {
+static const TParserStateActionItem actionTPS_InUDecimalFirst[] = {
 	{p_isEOF, 0, A_POP, TPS_Null, 0, NULL},
 	{p_isdigit, 0, A_CLEAR, TPS_InUDecimal, 0, NULL},
 	{NULL, 0, A_POP, TPS_Null, 0, NULL}
 };
 
-static TParserStateActionItem actionTPS_InUDecimal[] = {
+static const TParserStateActionItem actionTPS_InUDecimal[] = {
 	{p_isEOF, 0, A_BINGO, TPS_Base, DECIMAL, NULL},
 	{p_isdigit, 0, A_NEXT, TPS_InUDecimal, 0, NULL},
 	{p_iseqC, '.', A_PUSH, TPS_InVersionFirst, 0, NULL},
@@ -752,13 +750,13 @@ static TParserStateActionItem actionTPS_InUDecimal[] = {
 	{NULL, 0, A_BINGO, TPS_Base, DECIMAL, NULL}
 };
 
-static TParserStateActionItem actionTPS_InDecimalFirst[] = {
+static const TParserStateActionItem actionTPS_InDecimalFirst[] = {
 	{p_isEOF, 0, A_POP, TPS_Null, 0, NULL},
 	{p_isdigit, 0, A_CLEAR, TPS_InDecimal, 0, NULL},
 	{NULL, 0, A_POP, TPS_Null, 0, NULL}
 };
 
-static TParserStateActionItem actionTPS_InDecimal[] = {
+static const TParserStateActionItem actionTPS_InDecimal[] = {
 	{p_isEOF, 0, A_BINGO, TPS_Base, DECIMAL, NULL},
 	{p_isdigit, 0, A_NEXT, TPS_InDecimal, 0, NULL},
 	{p_iseqC, '.', A_PUSH, TPS_InVerVersion, 0, NULL},
@@ -767,33 +765,33 @@ static TParserStateActionItem actionTPS_InDecimal[] = {
 	{NULL, 0, A_BINGO, TPS_Base, DECIMAL, NULL}
 };
 
-static TParserStateActionItem actionTPS_InVerVersion[] = {
+static const TParserStateActionItem actionTPS_InVerVersion[] = {
 	{p_isEOF, 0, A_POP, TPS_Null, 0, NULL},
 	{p_isdigit, 0, A_RERUN, TPS_InSVerVersion, 0, SpecialVerVersion},
 	{NULL, 0, A_POP, TPS_Null, 0, NULL}
 };
 
-static TParserStateActionItem actionTPS_InSVerVersion[] = {
+static const TParserStateActionItem actionTPS_InSVerVersion[] = {
 	{p_isEOF, 0, A_POP, TPS_Null, 0, NULL},
 	{p_isdigit, 0, A_BINGO | A_CLRALL, TPS_InUnsignedInt, SPACE, NULL},
 	{NULL, 0, A_NEXT, TPS_Null, 0, NULL}
 };
 
 
-static TParserStateActionItem actionTPS_InVersionFirst[] = {
+static const TParserStateActionItem actionTPS_InVersionFirst[] = {
 	{p_isEOF, 0, A_POP, TPS_Null, 0, NULL},
 	{p_isdigit, 0, A_CLEAR, TPS_InVersion, 0, NULL},
 	{NULL, 0, A_POP, TPS_Null, 0, NULL}
 };
 
-static TParserStateActionItem actionTPS_InVersion[] = {
+static const TParserStateActionItem actionTPS_InVersion[] = {
 	{p_isEOF, 0, A_BINGO, TPS_Base, VERSIONNUMBER, NULL},
 	{p_isdigit, 0, A_NEXT, TPS_InVersion, 0, NULL},
 	{p_iseqC, '.', A_PUSH, TPS_InVersionFirst, 0, NULL},
 	{NULL, 0, A_BINGO, TPS_Base, VERSIONNUMBER, NULL}
 };
 
-static TParserStateActionItem actionTPS_InMantissaFirst[] = {
+static const TParserStateActionItem actionTPS_InMantissaFirst[] = {
 	{p_isEOF, 0, A_POP, TPS_Null, 0, NULL},
 	{p_isdigit, 0, A_CLEAR, TPS_InMantissa, 0, NULL},
 	{p_iseqC, '+', A_NEXT, TPS_InMantissaSign, 0, NULL},
@@ -801,59 +799,59 @@ static TParserStateActionItem actionTPS_InMantissaFirst[] = {
 	{NULL, 0, A_POP, TPS_Null, 0, NULL}
 };
 
-static TParserStateActionItem actionTPS_InMantissaSign[] = {
+static const TParserStateActionItem actionTPS_InMantissaSign[] = {
 	{p_isEOF, 0, A_POP, TPS_Null, 0, NULL},
 	{p_isdigit, 0, A_CLEAR, TPS_InMantissa, 0, NULL},
 	{NULL, 0, A_POP, TPS_Null, 0, NULL}
 };
 
-static TParserStateActionItem actionTPS_InMantissa[] = {
+static const TParserStateActionItem actionTPS_InMantissa[] = {
 	{p_isEOF, 0, A_BINGO, TPS_Base, SCIENTIFIC, NULL},
 	{p_isdigit, 0, A_NEXT, TPS_InMantissa, 0, NULL},
 	{NULL, 0, A_BINGO, TPS_Base, SCIENTIFIC, NULL}
 };
 
-static TParserStateActionItem actionTPS_InHTMLEntityFirst[] = {
+static const TParserStateActionItem actionTPS_InHTMLEntityFirst[] = {
 	{p_isEOF, 0, A_POP, TPS_Null, 0, NULL},
 	{p_iseqC, '#', A_NEXT, TPS_InHTMLEntityNumFirst, 0, NULL},
-	{p_islatin, 0, A_NEXT, TPS_InHTMLEntity, 0, NULL},
+	{p_isasclet, 0, A_NEXT, TPS_InHTMLEntity, 0, NULL},
 	{NULL, 0, A_POP, TPS_Null, 0, NULL}
 };
 
-static TParserStateActionItem actionTPS_InHTMLEntity[] = {
+static const TParserStateActionItem actionTPS_InHTMLEntity[] = {
 	{p_isEOF, 0, A_POP, TPS_Null, 0, NULL},
-	{p_islatin, 0, A_NEXT, TPS_InHTMLEntity, 0, NULL},
+	{p_isasclet, 0, A_NEXT, TPS_InHTMLEntity, 0, NULL},
 	{p_iseqC, ';', A_NEXT, TPS_InHTMLEntityEnd, 0, NULL},
 	{NULL, 0, A_POP, TPS_Null, 0, NULL}
 };
 
-static TParserStateActionItem actionTPS_InHTMLEntityNumFirst[] = {
+static const TParserStateActionItem actionTPS_InHTMLEntityNumFirst[] = {
 	{p_isEOF, 0, A_POP, TPS_Null, 0, NULL},
 	{p_isdigit, 0, A_NEXT, TPS_InHTMLEntityNum, 0, NULL},
 	{NULL, 0, A_POP, TPS_Null, 0, NULL}
 };
 
-static TParserStateActionItem actionTPS_InHTMLEntityNum[] = {
+static const TParserStateActionItem actionTPS_InHTMLEntityNum[] = {
 	{p_isEOF, 0, A_POP, TPS_Null, 0, NULL},
 	{p_isdigit, 0, A_NEXT, TPS_InHTMLEntityNum, 0, NULL},
 	{p_iseqC, ';', A_NEXT, TPS_InHTMLEntityEnd, 0, NULL},
 	{NULL, 0, A_POP, TPS_Null, 0, NULL}
 };
 
-static TParserStateActionItem actionTPS_InHTMLEntityEnd[] = {
+static const TParserStateActionItem actionTPS_InHTMLEntityEnd[] = {
 	{NULL, 0, A_BINGO | A_CLEAR, TPS_Base, HTMLENTITY, NULL}
 };
 
-static TParserStateActionItem actionTPS_InTagFirst[] = {
+static const TParserStateActionItem actionTPS_InTagFirst[] = {
 	{p_isEOF, 0, A_POP, TPS_Null, 0, NULL},
 	{p_iseqC, '/', A_PUSH, TPS_InTagCloseFirst, 0, NULL},
 	{p_iseqC, '!', A_PUSH, TPS_InCommentFirst, 0, NULL},
 	{p_iseqC, '?', A_PUSH, TPS_InXMLBegin, 0, NULL},
-	{p_islatin, 0, A_PUSH, TPS_InTagName, 0, NULL},
+	{p_isasclet, 0, A_PUSH, TPS_InTagName, 0, NULL},
 	{NULL, 0, A_POP, TPS_Null, 0, NULL}
 };
 
-static TParserStateActionItem actionTPS_InXMLBegin[] = {
+static const TParserStateActionItem actionTPS_InXMLBegin[] = {
 	{p_isEOF, 0, A_POP, TPS_Null, 0, NULL},
 	/* <?xml ... */
 	{p_iseqC, 'x', A_NEXT, TPS_InTag, 0, NULL},
@@ -861,34 +859,34 @@ static TParserStateActionItem actionTPS_InXMLBegin[] = {
 	{NULL, 0, A_POP, TPS_Null, 0, NULL}
 };
 
-static TParserStateActionItem actionTPS_InTagCloseFirst[] = {
+static const TParserStateActionItem actionTPS_InTagCloseFirst[] = {
 	{p_isEOF, 0, A_POP, TPS_Null, 0, NULL},
-	{p_islatin, 0, A_NEXT, TPS_InTagName, 0, NULL},
+	{p_isasclet, 0, A_NEXT, TPS_InTagName, 0, NULL},
 	{NULL, 0, A_POP, TPS_Null, 0, NULL}
 };
 
-static TParserStateActionItem actionTPS_InTagName[] = {
+static const TParserStateActionItem actionTPS_InTagName[] = {
 	{p_isEOF, 0, A_POP, TPS_Null, 0, NULL},
 	/* <br/> case */
 	{p_iseqC, '/', A_NEXT, TPS_InTagBeginEnd, 0, NULL},
 	{p_iseqC, '>', A_NEXT, TPS_InTagEnd, 0, SpecialTags},
 	{p_isspace, 0, A_NEXT, TPS_InTag, 0, SpecialTags},
-	{p_islatin, 0, A_NEXT, TPS_Null, 0, NULL},
+	{p_isasclet, 0, A_NEXT, TPS_Null, 0, NULL},
 	{NULL, 0, A_POP, TPS_Null, 0, NULL}
 };
 
-static TParserStateActionItem actionTPS_InTagBeginEnd[] = {
+static const TParserStateActionItem actionTPS_InTagBeginEnd[] = {
 	{p_isEOF, 0, A_POP, TPS_Null, 0, NULL},
 	{p_iseqC, '>', A_NEXT, TPS_InTagEnd, 0, NULL},
 	{NULL, 0, A_POP, TPS_Null, 0, NULL}
 };
 
-static TParserStateActionItem actionTPS_InTag[] = {
+static const TParserStateActionItem actionTPS_InTag[] = {
 	{p_isEOF, 0, A_POP, TPS_Null, 0, NULL},
 	{p_iseqC, '>', A_NEXT, TPS_InTagEnd, 0, SpecialTags},
 	{p_iseqC, '\'', A_NEXT, TPS_InTagEscapeK, 0, NULL},
 	{p_iseqC, '"', A_NEXT, TPS_InTagEscapeKK, 0, NULL},
-	{p_islatin, 0, A_NEXT, TPS_Null, 0, NULL},
+	{p_isasclet, 0, A_NEXT, TPS_Null, 0, NULL},
 	{p_isdigit, 0, A_NEXT, TPS_Null, 0, NULL},
 	{p_iseqC, '=', A_NEXT, TPS_Null, 0, NULL},
 	{p_iseqC, '-', A_NEXT, TPS_Null, 0, NULL},
@@ -904,30 +902,30 @@ static TParserStateActionItem actionTPS_InTag[] = {
 	{NULL, 0, A_POP, TPS_Null, 0, NULL}
 };
 
-static TParserStateActionItem actionTPS_InTagEscapeK[] = {
+static const TParserStateActionItem actionTPS_InTagEscapeK[] = {
 	{p_isEOF, 0, A_POP, TPS_Null, 0, NULL},
 	{p_iseqC, '\\', A_PUSH, TPS_InTagBackSleshed, 0, NULL},
 	{p_iseqC, '\'', A_NEXT, TPS_InTag, 0, NULL},
 	{NULL, 0, A_NEXT, TPS_InTagEscapeK, 0, NULL}
 };
 
-static TParserStateActionItem actionTPS_InTagEscapeKK[] = {
+static const TParserStateActionItem actionTPS_InTagEscapeKK[] = {
 	{p_isEOF, 0, A_POP, TPS_Null, 0, NULL},
 	{p_iseqC, '\\', A_PUSH, TPS_InTagBackSleshed, 0, NULL},
 	{p_iseqC, '"', A_NEXT, TPS_InTag, 0, NULL},
 	{NULL, 0, A_NEXT, TPS_InTagEscapeKK, 0, NULL}
 };
 
-static TParserStateActionItem actionTPS_InTagBackSleshed[] = {
+static const TParserStateActionItem actionTPS_InTagBackSleshed[] = {
 	{p_isEOF, 0, A_POP, TPS_Null, 0, NULL},
 	{NULL, 0, A_MERGE, TPS_Null, 0, NULL}
 };
 
-static TParserStateActionItem actionTPS_InTagEnd[] = {
-	{NULL, 0, A_BINGO | A_CLRALL, TPS_Base, TAG, NULL}
+static const TParserStateActionItem actionTPS_InTagEnd[] = {
+	{NULL, 0, A_BINGO | A_CLRALL, TPS_Base, TAG_T, NULL}
 };
 
-static TParserStateActionItem actionTPS_InCommentFirst[] = {
+static const TParserStateActionItem actionTPS_InCommentFirst[] = {
 	{p_isEOF, 0, A_POP, TPS_Null, 0, NULL},
 	{p_iseqC, '-', A_NEXT, TPS_InCommentLast, 0, NULL},
 	/* <!DOCTYPE ...> */
@@ -936,45 +934,45 @@ static TParserStateActionItem actionTPS_InCommentFirst[] = {
 	{NULL, 0, A_POP, TPS_Null, 0, NULL}
 };
 
-static TParserStateActionItem actionTPS_InCommentLast[] = {
+static const TParserStateActionItem actionTPS_InCommentLast[] = {
 	{p_isEOF, 0, A_POP, TPS_Null, 0, NULL},
 	{p_iseqC, '-', A_NEXT, TPS_InComment, 0, NULL},
 	{NULL, 0, A_POP, TPS_Null, 0, NULL}
 };
 
-static TParserStateActionItem actionTPS_InComment[] = {
+static const TParserStateActionItem actionTPS_InComment[] = {
 	{p_isEOF, 0, A_POP, TPS_Null, 0, NULL},
 	{p_iseqC, '-', A_NEXT, TPS_InCloseCommentFirst, 0, NULL},
 	{NULL, 0, A_NEXT, TPS_Null, 0, NULL}
 };
 
-static TParserStateActionItem actionTPS_InCloseCommentFirst[] = {
+static const TParserStateActionItem actionTPS_InCloseCommentFirst[] = {
 	{p_isEOF, 0, A_POP, TPS_Null, 0, NULL},
 	{p_iseqC, '-', A_NEXT, TPS_InCloseCommentLast, 0, NULL},
 	{NULL, 0, A_NEXT, TPS_InComment, 0, NULL}
 };
 
-static TParserStateActionItem actionTPS_InCloseCommentLast[] = {
+static const TParserStateActionItem actionTPS_InCloseCommentLast[] = {
 	{p_isEOF, 0, A_POP, TPS_Null, 0, NULL},
 	{p_iseqC, '-', A_NEXT, TPS_Null, 0, NULL},
 	{p_iseqC, '>', A_NEXT, TPS_InCommentEnd, 0, NULL},
 	{NULL, 0, A_NEXT, TPS_InComment, 0, NULL}
 };
 
-static TParserStateActionItem actionTPS_InCommentEnd[] = {
-	{NULL, 0, A_BINGO | A_CLRALL, TPS_Base, TAG, NULL}
+static const TParserStateActionItem actionTPS_InCommentEnd[] = {
+	{NULL, 0, A_BINGO | A_CLRALL, TPS_Base, TAG_T, NULL}
 };
 
-static TParserStateActionItem actionTPS_InHostFirstDomain[] = {
+static const TParserStateActionItem actionTPS_InHostFirstDomain[] = {
 	{p_isEOF, 0, A_POP, TPS_Null, 0, NULL},
-	{p_islatin, 0, A_NEXT, TPS_InHostDomainSecond, 0, NULL},
+	{p_isasclet, 0, A_NEXT, TPS_InHostDomainSecond, 0, NULL},
 	{p_isdigit, 0, A_NEXT, TPS_InHost, 0, NULL},
 	{NULL, 0, A_POP, TPS_Null, 0, NULL}
 };
 
-static TParserStateActionItem actionTPS_InHostDomainSecond[] = {
+static const TParserStateActionItem actionTPS_InHostDomainSecond[] = {
 	{p_isEOF, 0, A_POP, TPS_Null, 0, NULL},
-	{p_islatin, 0, A_NEXT, TPS_InHostDomain, 0, NULL},
+	{p_isasclet, 0, A_NEXT, TPS_InHostDomain, 0, NULL},
 	{p_isdigit, 0, A_PUSH, TPS_InHost, 0, NULL},
 	{p_iseqC, '-', A_PUSH, TPS_InHostFirstAN, 0, NULL},
 	{p_iseqC, '.', A_PUSH, TPS_InHostFirstDomain, 0, NULL},
@@ -982,79 +980,79 @@ static TParserStateActionItem actionTPS_InHostDomainSecond[] = {
 	{NULL, 0, A_POP, TPS_Null, 0, NULL}
 };
 
-static TParserStateActionItem actionTPS_InHostDomain[] = {
+static const TParserStateActionItem actionTPS_InHostDomain[] = {
 	{p_isEOF, 0, A_BINGO | A_CLRALL, TPS_Base, HOST, NULL},
-	{p_islatin, 0, A_NEXT, TPS_InHostDomain, 0, NULL},
+	{p_isasclet, 0, A_NEXT, TPS_InHostDomain, 0, NULL},
 	{p_isdigit, 0, A_PUSH, TPS_InHost, 0, NULL},
 	{p_iseqC, ':', A_PUSH, TPS_InPortFirst, 0, NULL},
 	{p_iseqC, '-', A_PUSH, TPS_InHostFirstAN, 0, NULL},
 	{p_iseqC, '.', A_PUSH, TPS_InHostFirstDomain, 0, NULL},
 	{p_iseqC, '@', A_PUSH, TPS_InEmail, 0, NULL},
 	{p_isdigit, 0, A_POP, TPS_Null, 0, NULL},
-	{p_isstophost, 0, A_BINGO | A_CLRALL, TPS_InURIStart, HOST, NULL},
+	{p_isstophost, 0, A_BINGO | A_CLRALL, TPS_InURLPathStart, HOST, NULL},
 	{p_iseqC, '/', A_PUSH, TPS_InFURL, 0, NULL},
 	{NULL, 0, A_BINGO | A_CLRALL, TPS_Base, HOST, NULL}
 };
 
-static TParserStateActionItem actionTPS_InPortFirst[] = {
+static const TParserStateActionItem actionTPS_InPortFirst[] = {
 	{p_isEOF, 0, A_POP, TPS_Null, 0, NULL},
 	{p_isdigit, 0, A_NEXT, TPS_InPort, 0, NULL},
 	{NULL, 0, A_POP, TPS_Null, 0, NULL}
 };
 
-static TParserStateActionItem actionTPS_InPort[] = {
+static const TParserStateActionItem actionTPS_InPort[] = {
 	{p_isEOF, 0, A_BINGO | A_CLRALL, TPS_Base, HOST, NULL},
 	{p_isdigit, 0, A_NEXT, TPS_InPort, 0, NULL},
-	{p_isstophost, 0, A_BINGO | A_CLRALL, TPS_InURIStart, HOST, NULL},
+	{p_isstophost, 0, A_BINGO | A_CLRALL, TPS_InURLPathStart, HOST, NULL},
 	{p_iseqC, '/', A_PUSH, TPS_InFURL, 0, NULL},
 	{NULL, 0, A_BINGO | A_CLRALL, TPS_Base, HOST, NULL}
 };
 
-static TParserStateActionItem actionTPS_InHostFirstAN[] = {
+static const TParserStateActionItem actionTPS_InHostFirstAN[] = {
 	{p_isEOF, 0, A_POP, TPS_Null, 0, NULL},
 	{p_isdigit, 0, A_NEXT, TPS_InHost, 0, NULL},
-	{p_islatin, 0, A_NEXT, TPS_InHost, 0, NULL},
+	{p_isasclet, 0, A_NEXT, TPS_InHost, 0, NULL},
 	{NULL, 0, A_POP, TPS_Null, 0, NULL}
 };
 
-static TParserStateActionItem actionTPS_InHost[] = {
+static const TParserStateActionItem actionTPS_InHost[] = {
 	{p_isEOF, 0, A_POP, TPS_Null, 0, NULL},
 	{p_isdigit, 0, A_NEXT, TPS_InHost, 0, NULL},
-	{p_islatin, 0, A_NEXT, TPS_InHost, 0, NULL},
+	{p_isasclet, 0, A_NEXT, TPS_InHost, 0, NULL},
 	{p_iseqC, '@', A_PUSH, TPS_InEmail, 0, NULL},
 	{p_iseqC, '.', A_PUSH, TPS_InHostFirstDomain, 0, NULL},
 	{p_iseqC, '-', A_PUSH, TPS_InHostFirstAN, 0, NULL},
 	{NULL, 0, A_POP, TPS_Null, 0, NULL}
 };
 
-static TParserStateActionItem actionTPS_InEmail[] = {
+static const TParserStateActionItem actionTPS_InEmail[] = {
 	{p_ishost, 0, A_BINGO | A_CLRALL, TPS_Base, EMAIL, NULL},
 	{NULL, 0, A_POP, TPS_Null, 0, NULL}
 };
 
-static TParserStateActionItem actionTPS_InFileFirst[] = {
+static const TParserStateActionItem actionTPS_InFileFirst[] = {
 	{p_isEOF, 0, A_POP, TPS_Null, 0, NULL},
-	{p_islatin, 0, A_NEXT, TPS_InFile, 0, NULL},
+	{p_isasclet, 0, A_NEXT, TPS_InFile, 0, NULL},
 	{p_isdigit, 0, A_NEXT, TPS_InFile, 0, NULL},
 	{p_iseqC, '.', A_NEXT, TPS_InPathFirst, 0, NULL},
 	{p_iseqC, '_', A_NEXT, TPS_InFile, 0, NULL},
-	{p_iseqC, '?', A_PUSH, TPS_InURIFirst, 0, NULL},
+	{p_iseqC, '?', A_PUSH, TPS_InURLPathFirst, 0, NULL},
 	{p_iseqC, '~', A_PUSH, TPS_InFileTwiddle, 0, NULL},
 	{NULL, 0, A_POP, TPS_Null, 0, NULL}
 };
 
-static TParserStateActionItem actionTPS_InFileTwiddle[] = {
+static const TParserStateActionItem actionTPS_InFileTwiddle[] = {
 	{p_isEOF, 0, A_POP, TPS_Null, 0, NULL},
-	{p_islatin, 0, A_NEXT, TPS_InFile, 0, NULL},
+	{p_isasclet, 0, A_NEXT, TPS_InFile, 0, NULL},
 	{p_isdigit, 0, A_NEXT, TPS_InFile, 0, NULL},
 	{p_iseqC, '_', A_NEXT, TPS_InFile, 0, NULL},
 	{p_iseqC, '/', A_NEXT, TPS_InFileFirst, 0, NULL},
 	{NULL, 0, A_POP, TPS_Null, 0, NULL}
 };
 
-static TParserStateActionItem actionTPS_InPathFirst[] = {
+static const TParserStateActionItem actionTPS_InPathFirst[] = {
 	{p_isEOF, 0, A_POP, TPS_Null, 0, NULL},
-	{p_islatin, 0, A_NEXT, TPS_InFile, 0, NULL},
+	{p_isasclet, 0, A_NEXT, TPS_InFile, 0, NULL},
 	{p_isdigit, 0, A_NEXT, TPS_InFile, 0, NULL},
 	{p_iseqC, '_', A_NEXT, TPS_InFile, 0, NULL},
 	{p_iseqC, '.', A_NEXT, TPS_InPathSecond, 0, NULL},
@@ -1062,14 +1060,14 @@ static TParserStateActionItem actionTPS_InPathFirst[] = {
 	{NULL, 0, A_POP, TPS_Null, 0, NULL}
 };
 
-static TParserStateActionItem actionTPS_InPathFirstFirst[] = {
+static const TParserStateActionItem actionTPS_InPathFirstFirst[] = {
 	{p_isEOF, 0, A_POP, TPS_Null, 0, NULL},
 	{p_iseqC, '.', A_NEXT, TPS_InPathSecond, 0, NULL},
 	{p_iseqC, '/', A_NEXT, TPS_InFileFirst, 0, NULL},
 	{NULL, 0, A_POP, TPS_Null, 0, NULL}
 };
 
-static TParserStateActionItem actionTPS_InPathSecond[] = {
+static const TParserStateActionItem actionTPS_InPathSecond[] = {
 	{p_isEOF, 0, A_BINGO | A_CLEAR, TPS_Base, FILEPATH, NULL},
 	{p_iseqC, '/', A_NEXT | A_PUSH, TPS_InFileFirst, 0, NULL},
 	{p_iseqC, '/', A_BINGO | A_CLEAR, TPS_Base, FILEPATH, NULL},
@@ -1077,312 +1075,279 @@ static TParserStateActionItem actionTPS_InPathSecond[] = {
 	{NULL, 0, A_POP, TPS_Null, 0, NULL}
 };
 
-static TParserStateActionItem actionTPS_InFile[] = {
+static const TParserStateActionItem actionTPS_InFile[] = {
 	{p_isEOF, 0, A_BINGO, TPS_Base, FILEPATH, NULL},
-	{p_islatin, 0, A_NEXT, TPS_InFile, 0, NULL},
+	{p_isasclet, 0, A_NEXT, TPS_InFile, 0, NULL},
 	{p_isdigit, 0, A_NEXT, TPS_InFile, 0, NULL},
 	{p_iseqC, '.', A_PUSH, TPS_InFileNext, 0, NULL},
 	{p_iseqC, '_', A_NEXT, TPS_InFile, 0, NULL},
 	{p_iseqC, '-', A_NEXT, TPS_InFile, 0, NULL},
 	{p_iseqC, '/', A_PUSH, TPS_InFileFirst, 0, NULL},
-	{p_iseqC, '?', A_PUSH, TPS_InURIFirst, 0, NULL},
+	{p_iseqC, '?', A_PUSH, TPS_InURLPathFirst, 0, NULL},
 	{NULL, 0, A_BINGO, TPS_Base, FILEPATH, NULL}
 };
 
-static TParserStateActionItem actionTPS_InFileNext[] = {
+static const TParserStateActionItem actionTPS_InFileNext[] = {
 	{p_isEOF, 0, A_POP, TPS_Null, 0, NULL},
-	{p_islatin, 0, A_CLEAR, TPS_InFile, 0, NULL},
+	{p_isasclet, 0, A_CLEAR, TPS_InFile, 0, NULL},
 	{p_isdigit, 0, A_CLEAR, TPS_InFile, 0, NULL},
 	{p_iseqC, '_', A_CLEAR, TPS_InFile, 0, NULL},
 	{NULL, 0, A_POP, TPS_Null, 0, NULL}
 };
 
-static TParserStateActionItem actionTPS_InURIFirst[] = {
+static const TParserStateActionItem actionTPS_InURLPathFirst[] = {
 	{p_isEOF, 0, A_POP, TPS_Null, 0, NULL},
 	{p_iseqC, '"', A_POP, TPS_Null, 0, NULL},
 	{p_iseqC, '\'', A_POP, TPS_Null, 0, NULL},
-	{p_isnotspace, 0, A_CLEAR, TPS_InURI, 0, NULL},
+	{p_isnotspace, 0, A_CLEAR, TPS_InURLPath, 0, NULL},
 	{NULL, 0, A_POP, TPS_Null, 0, NULL},
 };
 
-static TParserStateActionItem actionTPS_InURIStart[] = {
-	{NULL, 0, A_NEXT, TPS_InURI, 0, NULL}
+static const TParserStateActionItem actionTPS_InURLPathStart[] = {
+	{NULL, 0, A_NEXT, TPS_InURLPath, 0, NULL}
 };
 
-static TParserStateActionItem actionTPS_InURI[] = {
-	{p_isEOF, 0, A_BINGO, TPS_Base, URI, NULL},
-	{p_iseqC, '"', A_BINGO, TPS_Base, URI, NULL},
-	{p_iseqC, '\'', A_BINGO, TPS_Base, URI, NULL},
-	{p_isnotspace, 0, A_NEXT, TPS_InURI, 0, NULL},
-	{NULL, 0, A_BINGO, TPS_Base, URI, NULL}
+static const TParserStateActionItem actionTPS_InURLPath[] = {
+	{p_isEOF, 0, A_BINGO, TPS_Base, URLPATH, NULL},
+	{p_iseqC, '"', A_BINGO, TPS_Base, URLPATH, NULL},
+	{p_iseqC, '\'', A_BINGO, TPS_Base, URLPATH, NULL},
+	{p_isnotspace, 0, A_NEXT, TPS_InURLPath, 0, NULL},
+	{NULL, 0, A_BINGO, TPS_Base, URLPATH, NULL}
 };
 
-static TParserStateActionItem actionTPS_InFURL[] = {
+static const TParserStateActionItem actionTPS_InFURL[] = {
 	{p_isEOF, 0, A_POP, TPS_Null, 0, NULL},
-	{p_isURI, 0, A_BINGO | A_CLRALL, TPS_Base, FURL, SpecialFURL},
+	{p_isURLPath, 0, A_BINGO | A_CLRALL, TPS_Base, URL_T, SpecialFURL},
 	{NULL, 0, A_POP, TPS_Null, 0, NULL}
 };
 
-static TParserStateActionItem actionTPS_InProtocolFirst[] = {
+static const TParserStateActionItem actionTPS_InProtocolFirst[] = {
 	{p_isEOF, 0, A_POP, TPS_Null, 0, NULL},
 	{p_iseqC, '/', A_NEXT, TPS_InProtocolSecond, 0, NULL},
 	{NULL, 0, A_POP, TPS_Null, 0, NULL}
 };
 
-static TParserStateActionItem actionTPS_InProtocolSecond[] = {
+static const TParserStateActionItem actionTPS_InProtocolSecond[] = {
 	{p_isEOF, 0, A_POP, TPS_Null, 0, NULL},
 	{p_iseqC, '/', A_NEXT, TPS_InProtocolEnd, 0, NULL},
 	{NULL, 0, A_POP, TPS_Null, 0, NULL}
 };
 
-static TParserStateActionItem actionTPS_InProtocolEnd[] = {
+static const TParserStateActionItem actionTPS_InProtocolEnd[] = {
 	{NULL, 0, A_BINGO | A_CLRALL, TPS_Base, PROTOCOL, NULL}
 };
 
-static TParserStateActionItem actionTPS_InHyphenLatWordFirst[] = {
+static const TParserStateActionItem actionTPS_InHyphenAsciiWordFirst[] = {
 	{p_isEOF, 0, A_POP, TPS_Null, 0, NULL},
-	{p_islatin, 0, A_NEXT, TPS_InHyphenLatWord, 0, NULL},
-	{p_isnonlatin, 0, A_NEXT, TPS_InHyphenUWord, 0, NULL},
-	{p_isdigit, 0, A_NEXT, TPS_InHyphenValue, 0, NULL},
-	{p_isdigit, 0, A_NEXT, TPS_InHyphenUWord, 0, NULL},
+	{p_isasclet, 0, A_NEXT, TPS_InHyphenAsciiWord, 0, NULL},
+	{p_isalpha, 0, A_NEXT, TPS_InHyphenWord, 0, NULL},
+	{p_isdigit, 0, A_NEXT, TPS_InHyphenDigitLookahead, 0, NULL},
 	{NULL, 0, A_POP, TPS_Null, 0, NULL}
 };
 
-static TParserStateActionItem actionTPS_InHyphenLatWord[] = {
-	{p_isEOF, 0, A_BINGO | A_CLRALL, TPS_InParseHyphen, LATHYPHENWORD, SpecialHyphen},
-	{p_islatin, 0, A_NEXT, TPS_InHyphenLatWord, 0, NULL},
-	{p_isnonlatin, 0, A_NEXT, TPS_InHyphenUWord, 0, NULL},
-	{p_isdigit, 0, A_NEXT, TPS_InHyphenUWord, 0, NULL},
-	{p_iseqC, '-', A_PUSH, TPS_InHyphenLatWordFirst, 0, NULL},
-	{NULL, 0, A_BINGO | A_CLRALL, TPS_InParseHyphen, LATHYPHENWORD, SpecialHyphen}
+static const TParserStateActionItem actionTPS_InHyphenAsciiWord[] = {
+	{p_isEOF, 0, A_BINGO | A_CLRALL, TPS_InParseHyphen, ASCIIHWORD, SpecialHyphen},
+	{p_isasclet, 0, A_NEXT, TPS_InHyphenAsciiWord, 0, NULL},
+	{p_isalpha, 0, A_NEXT, TPS_InHyphenWord, 0, NULL},
+	{p_isdigit, 0, A_NEXT, TPS_InHyphenNumWord, 0, NULL},
+	{p_iseqC, '-', A_PUSH, TPS_InHyphenAsciiWordFirst, 0, NULL},
+	{NULL, 0, A_BINGO | A_CLRALL, TPS_InParseHyphen, ASCIIHWORD, SpecialHyphen}
 };
 
-static TParserStateActionItem actionTPS_InHyphenCyrWordFirst[] = {
+static const TParserStateActionItem actionTPS_InHyphenWordFirst[] = {
 	{p_isEOF, 0, A_POP, TPS_Null, 0, NULL},
-	{p_isnonlatin, 0, A_NEXT, TPS_InHyphenCyrWord, 0, NULL},
-	{p_islatin, 0, A_NEXT, TPS_InHyphenUWord, 0, NULL},
-	{p_isdigit, 0, A_NEXT, TPS_InHyphenValue, 0, NULL},
-	{p_isdigit, 0, A_NEXT, TPS_InHyphenUWord, 0, NULL},
+	{p_isalpha, 0, A_NEXT, TPS_InHyphenWord, 0, NULL},
+	{p_isdigit, 0, A_NEXT, TPS_InHyphenDigitLookahead, 0, NULL},
 	{NULL, 0, A_POP, TPS_Null, 0, NULL}
 };
 
-static TParserStateActionItem actionTPS_InHyphenCyrWord[] = {
-	{p_isEOF, 0, A_BINGO | A_CLRALL, TPS_InParseHyphen, CYRHYPHENWORD, SpecialHyphen},
-	{p_isnonlatin, 0, A_NEXT, TPS_InHyphenCyrWord, 0, NULL},
-	{p_islatin, 0, A_NEXT, TPS_InHyphenUWord, 0, NULL},
-	{p_isdigit, 0, A_NEXT, TPS_InHyphenUWord, 0, NULL},
-	{p_iseqC, '-', A_PUSH, TPS_InHyphenCyrWordFirst, 0, NULL},
-	{NULL, 0, A_BINGO | A_CLRALL, TPS_InParseHyphen, CYRHYPHENWORD, SpecialHyphen}
+static const TParserStateActionItem actionTPS_InHyphenWord[] = {
+	{p_isEOF, 0, A_BINGO | A_CLRALL, TPS_InParseHyphen, HWORD, SpecialHyphen},
+	{p_isalpha, 0, A_NEXT, TPS_InHyphenWord, 0, NULL},
+	{p_isdigit, 0, A_NEXT, TPS_InHyphenNumWord, 0, NULL},
+	{p_iseqC, '-', A_PUSH, TPS_InHyphenWordFirst, 0, NULL},
+	{NULL, 0, A_BINGO | A_CLRALL, TPS_InParseHyphen, HWORD, SpecialHyphen}
 };
 
-static TParserStateActionItem actionTPS_InHyphenUWordFirst[] = {
+static const TParserStateActionItem actionTPS_InHyphenNumWordFirst[] = {
 	{p_isEOF, 0, A_POP, TPS_Null, 0, NULL},
-	{p_isdigit, 0, A_NEXT, TPS_InHyphenValue, 0, NULL},
-	{p_isalnum, 0, A_NEXT, TPS_InHyphenUWord, 0, NULL},
+	{p_isalpha, 0, A_NEXT, TPS_InHyphenNumWord, 0, NULL},
+	{p_isdigit, 0, A_NEXT, TPS_InHyphenDigitLookahead, 0, NULL},
 	{NULL, 0, A_POP, TPS_Null, 0, NULL}
 };
 
-static TParserStateActionItem actionTPS_InHyphenUWord[] = {
-	{p_isEOF, 0, A_BINGO | A_CLRALL, TPS_InParseHyphen, HYPHENWORD, SpecialHyphen},
-	{p_isalnum, 0, A_NEXT, TPS_InHyphenUWord, 0, NULL},
-	{p_iseqC, '-', A_PUSH, TPS_InHyphenUWordFirst, 0, NULL},
-	{NULL, 0, A_BINGO | A_CLRALL, TPS_InParseHyphen, HYPHENWORD, SpecialHyphen}
+static const TParserStateActionItem actionTPS_InHyphenNumWord[] = {
+	{p_isEOF, 0, A_BINGO | A_CLRALL, TPS_InParseHyphen, NUMHWORD, SpecialHyphen},
+	{p_isalnum, 0, A_NEXT, TPS_InHyphenNumWord, 0, NULL},
+	{p_iseqC, '-', A_PUSH, TPS_InHyphenNumWordFirst, 0, NULL},
+	{NULL, 0, A_BINGO | A_CLRALL, TPS_InParseHyphen, NUMHWORD, SpecialHyphen}
 };
 
-static TParserStateActionItem actionTPS_InHyphenValueFirst[] = {
+static const TParserStateActionItem actionTPS_InHyphenDigitLookahead[] = {
 	{p_isEOF, 0, A_POP, TPS_Null, 0, NULL},
-	{p_isdigit, 0, A_NEXT, TPS_InHyphenValueExact, 0, NULL},
+	{p_isdigit, 0, A_NEXT, TPS_InHyphenDigitLookahead, 0, NULL},
+	{p_isalpha, 0, A_NEXT, TPS_InHyphenNumWord, 0, NULL},
 	{NULL, 0, A_POP, TPS_Null, 0, NULL}
 };
 
-static TParserStateActionItem actionTPS_InHyphenValue[] = {
-	{p_isEOF, 0, A_BINGO | A_CLRALL, TPS_InParseHyphen, HYPHENWORD, SpecialHyphen},
-	{p_isdigit, 0, A_NEXT, TPS_InHyphenValue, 0, NULL},
-	{p_iseqC, '.', A_PUSH, TPS_InHyphenValueFirst, 0, NULL},
-	{p_iseqC, '-', A_PUSH, TPS_InHyphenUWordFirst, 0, NULL},
-	{p_isalpha, 0, A_NEXT, TPS_InHyphenUWord, 0, NULL},
-	{NULL, 0, A_BINGO | A_CLRALL, TPS_InParseHyphen, HYPHENWORD, SpecialHyphen}
-};
-
-static TParserStateActionItem actionTPS_InHyphenValueExact[] = {
-	{p_isEOF, 0, A_BINGO | A_CLRALL, TPS_InParseHyphen, HYPHENWORD, SpecialHyphen},
-	{p_isdigit, 0, A_NEXT, TPS_InHyphenValueExact, 0, NULL},
-	{p_iseqC, '.', A_PUSH, TPS_InHyphenValueFirst, 0, NULL},
-	{p_iseqC, '-', A_PUSH, TPS_InHyphenUWordFirst, 0, NULL},
-	{NULL, 0, A_BINGO | A_CLRALL, TPS_InParseHyphen, HYPHENWORD, SpecialHyphen}
-};
-
-static TParserStateActionItem actionTPS_InParseHyphen[] = {
+static const TParserStateActionItem actionTPS_InParseHyphen[] = {
 	{p_isEOF, 0, A_RERUN, TPS_Base, 0, NULL},
-	{p_islatin, 0, A_NEXT, TPS_InHyphenLatWordPart, 0, NULL},
-	{p_isnonlatin, 0, A_NEXT, TPS_InHyphenCyrWordPart, 0, NULL},
-	{p_isdigit, 0, A_NEXT, TPS_InHyphenUnsignedInt, 0, NULL},
+	{p_isasclet, 0, A_NEXT, TPS_InHyphenAsciiWordPart, 0, NULL},
+	{p_isalpha, 0, A_NEXT, TPS_InHyphenWordPart, 0, NULL},
+	{p_isdigit, 0, A_PUSH, TPS_InHyphenUnsignedInt, 0, NULL},
 	{p_iseqC, '-', A_PUSH, TPS_InParseHyphenHyphen, 0, NULL},
 	{NULL, 0, A_RERUN, TPS_Base, 0, NULL}
 };
 
-static TParserStateActionItem actionTPS_InParseHyphenHyphen[] = {
+static const TParserStateActionItem actionTPS_InParseHyphenHyphen[] = {
 	{p_isEOF, 0, A_POP, TPS_Null, 0, NULL},
 	{p_isalnum, 0, A_BINGO | A_CLEAR, TPS_InParseHyphen, SPACE, NULL},
 	{NULL, 0, A_POP, TPS_Null, 0, NULL}
 };
 
-static TParserStateActionItem actionTPS_InHyphenCyrWordPart[] = {
-	{p_isEOF, 0, A_BINGO, TPS_Base, CYRPARTHYPHENWORD, NULL},
-	{p_isnonlatin, 0, A_NEXT, TPS_InHyphenCyrWordPart, 0, NULL},
-	{p_islatin, 0, A_NEXT, TPS_InHyphenUWordPart, 0, NULL},
-	{p_isdigit, 0, A_NEXT, TPS_InHyphenUWordPart, 0, NULL},
-	{NULL, 0, A_BINGO, TPS_InParseHyphen, CYRPARTHYPHENWORD, NULL}
+static const TParserStateActionItem actionTPS_InHyphenWordPart[] = {
+	{p_isEOF, 0, A_BINGO, TPS_Base, PARTHWORD, NULL},
+	{p_isalpha, 0, A_NEXT, TPS_InHyphenWordPart, 0, NULL},
+	{p_isdigit, 0, A_NEXT, TPS_InHyphenNumWordPart, 0, NULL},
+	{NULL, 0, A_BINGO, TPS_InParseHyphen, PARTHWORD, NULL}
 };
 
-static TParserStateActionItem actionTPS_InHyphenLatWordPart[] = {
-	{p_isEOF, 0, A_BINGO, TPS_Base, LATPARTHYPHENWORD, NULL},
-	{p_islatin, 0, A_NEXT, TPS_InHyphenLatWordPart, 0, NULL},
-	{p_isnonlatin, 0, A_NEXT, TPS_InHyphenUWordPart, 0, NULL},
-	{p_isdigit, 0, A_NEXT, TPS_InHyphenUWordPart, 0, NULL},
-	{NULL, 0, A_BINGO, TPS_InParseHyphen, LATPARTHYPHENWORD, NULL}
+static const TParserStateActionItem actionTPS_InHyphenAsciiWordPart[] = {
+	{p_isEOF, 0, A_BINGO, TPS_Base, ASCIIPARTHWORD, NULL},
+	{p_isasclet, 0, A_NEXT, TPS_InHyphenAsciiWordPart, 0, NULL},
+	{p_isalpha, 0, A_NEXT, TPS_InHyphenWordPart, 0, NULL},
+	{p_isdigit, 0, A_NEXT, TPS_InHyphenNumWordPart, 0, NULL},
+	{NULL, 0, A_BINGO, TPS_InParseHyphen, ASCIIPARTHWORD, NULL}
 };
 
-static TParserStateActionItem actionTPS_InHyphenUWordPart[] = {
-	{p_isEOF, 0, A_BINGO, TPS_Base, PARTHYPHENWORD, NULL},
-	{p_isalnum, 0, A_NEXT, TPS_InHyphenUWordPart, 0, NULL},
-	{NULL, 0, A_BINGO, TPS_InParseHyphen, PARTHYPHENWORD, NULL}
+static const TParserStateActionItem actionTPS_InHyphenNumWordPart[] = {
+	{p_isEOF, 0, A_BINGO, TPS_Base, NUMPARTHWORD, NULL},
+	{p_isalnum, 0, A_NEXT, TPS_InHyphenNumWordPart, 0, NULL},
+	{NULL, 0, A_BINGO, TPS_InParseHyphen, NUMPARTHWORD, NULL}
 };
 
-static TParserStateActionItem actionTPS_InHyphenUnsignedInt[] = {
-	{p_isEOF, 0, A_BINGO, TPS_Base, UNSIGNEDINT, NULL},
-	{p_isdigit, 0, A_NEXT, TPS_InHyphenUnsignedInt, 0, NULL},
-	{p_isalpha, 0, A_NEXT, TPS_InHyphenUWordPart, 0, NULL},
-	{p_iseqC, '.', A_PUSH, TPS_InHDecimalPartFirst, 0, NULL},
-	{NULL, 0, A_BINGO, TPS_InParseHyphen, UNSIGNEDINT, NULL}
-};
-
-static TParserStateActionItem actionTPS_InHDecimalPartFirst[] = {
+static const TParserStateActionItem actionTPS_InHyphenUnsignedInt[] = {
 	{p_isEOF, 0, A_POP, TPS_Null, 0, NULL},
-	{p_isdigit, 0, A_CLEAR, TPS_InHDecimalPart, 0, NULL},
+	{p_isdigit, 0, A_NEXT, TPS_Null, 0, NULL},
+	{p_isalpha, 0, A_CLEAR, TPS_InHyphenNumWordPart, 0, NULL},
 	{NULL, 0, A_POP, TPS_Null, 0, NULL}
 };
 
-static TParserStateActionItem actionTPS_InHDecimalPart[] = {
-	{p_isEOF, 0, A_BINGO, TPS_Base, DECIMAL, NULL},
-	{p_isdigit, 0, A_NEXT, TPS_InHDecimalPart, 0, NULL},
-	{p_iseqC, '.', A_PUSH, TPS_InHVersionPartFirst, 0, NULL},
-	{NULL, 0, A_BINGO, TPS_InParseHyphen, DECIMAL, NULL}
-};
-
-static TParserStateActionItem actionTPS_InHVersionPartFirst[] = {
-	{p_isEOF, 0, A_POP, TPS_Null, 0, NULL},
-	{p_isdigit, 0, A_CLEAR, TPS_InHVersionPart, 0, NULL},
-	{NULL, 0, A_POP, TPS_Null, 0, NULL}
-};
-
-static TParserStateActionItem actionTPS_InHVersionPart[] = {
-	{p_isEOF, 0, A_BINGO, TPS_Base, VERSIONNUMBER, NULL},
-	{p_isdigit, 0, A_NEXT, TPS_InHVersionPart, 0, NULL},
-	{p_iseqC, '.', A_PUSH, TPS_InHVersionPartFirst, 0, NULL},
-	{NULL, 0, A_BINGO, TPS_InParseHyphen, VERSIONNUMBER, NULL}
-};
 
 /*
- * order should be the same as in typedef enum {} TParserState!!
+ * main table of per-state parser actions
+ */
+typedef struct
+{
+	const TParserStateActionItem *action;	/* the actual state info */
+	TParserState state;			/* only for Assert crosscheck */
+#ifdef WPARSER_TRACE
+	const char *state_name;		/* only for debug printout */
+#endif
+} TParserStateAction;
+
+#ifdef WPARSER_TRACE
+#define TPARSERSTATEACTION(state) \
+	{ CppConcat(action,state), state, CppAsString(state) }
+#else
+#define TPARSERSTATEACTION(state) \
+	{ CppConcat(action,state), state }
+#endif
+
+/*
+ * order must be the same as in typedef enum {} TParserState!!
  */
 
 static const TParserStateAction Actions[] = {
-	{TPS_Base, actionTPS_Base},
-	{TPS_InUWord, actionTPS_InUWord},
-	{TPS_InLatWord, actionTPS_InLatWord},
-	{TPS_InCyrWord, actionTPS_InCyrWord},
-	{TPS_InUnsignedInt, actionTPS_InUnsignedInt},
-	{TPS_InSignedIntFirst, actionTPS_InSignedIntFirst},
-	{TPS_InSignedInt, actionTPS_InSignedInt},
-	{TPS_InSpace, actionTPS_InSpace},
-	{TPS_InUDecimalFirst, actionTPS_InUDecimalFirst},
-	{TPS_InUDecimal, actionTPS_InUDecimal},
-	{TPS_InDecimalFirst, actionTPS_InDecimalFirst},
-	{TPS_InDecimal, actionTPS_InDecimal},
-	{TPS_InVerVersion, actionTPS_InVerVersion},
-	{TPS_InSVerVersion, actionTPS_InSVerVersion},
-	{TPS_InVersionFirst, actionTPS_InVersionFirst},
-	{TPS_InVersion, actionTPS_InVersion},
-	{TPS_InMantissaFirst, actionTPS_InMantissaFirst},
-	{TPS_InMantissaSign, actionTPS_InMantissaSign},
-	{TPS_InMantissa, actionTPS_InMantissa},
-	{TPS_InHTMLEntityFirst, actionTPS_InHTMLEntityFirst},
-	{TPS_InHTMLEntity, actionTPS_InHTMLEntity},
-	{TPS_InHTMLEntityNumFirst, actionTPS_InHTMLEntityNumFirst},
-	{TPS_InHTMLEntityNum, actionTPS_InHTMLEntityNum},
-	{TPS_InHTMLEntityEnd, actionTPS_InHTMLEntityEnd},
-	{TPS_InTagFirst, actionTPS_InTagFirst},
-	{TPS_InXMLBegin, actionTPS_InXMLBegin},
-	{TPS_InTagCloseFirst, actionTPS_InTagCloseFirst},
-	{TPS_InTagName, actionTPS_InTagName},
-	{TPS_InTagBeginEnd, actionTPS_InTagBeginEnd},
-	{TPS_InTag, actionTPS_InTag},
-	{TPS_InTagEscapeK, actionTPS_InTagEscapeK},
-	{TPS_InTagEscapeKK, actionTPS_InTagEscapeKK},
-	{TPS_InTagBackSleshed, actionTPS_InTagBackSleshed},
-	{TPS_InTagEnd, actionTPS_InTagEnd},
-	{TPS_InCommentFirst, actionTPS_InCommentFirst},
-	{TPS_InCommentLast, actionTPS_InCommentLast},
-	{TPS_InComment, actionTPS_InComment},
-	{TPS_InCloseCommentFirst, actionTPS_InCloseCommentFirst},
-	{TPS_InCloseCommentLast, actionTPS_InCloseCommentLast},
-	{TPS_InCommentEnd, actionTPS_InCommentEnd},
-	{TPS_InHostFirstDomain, actionTPS_InHostFirstDomain},
-	{TPS_InHostDomainSecond, actionTPS_InHostDomainSecond},
-	{TPS_InHostDomain, actionTPS_InHostDomain},
-	{TPS_InPortFirst, actionTPS_InPortFirst},
-	{TPS_InPort, actionTPS_InPort},
-	{TPS_InHostFirstAN, actionTPS_InHostFirstAN},
-	{TPS_InHost, actionTPS_InHost},
-	{TPS_InEmail, actionTPS_InEmail},
-	{TPS_InFileFirst, actionTPS_InFileFirst},
-	{TPS_InFileTwiddle, actionTPS_InFileTwiddle},
-	{TPS_InPathFirst, actionTPS_InPathFirst},
-	{TPS_InPathFirstFirst, actionTPS_InPathFirstFirst},
-	{TPS_InPathSecond, actionTPS_InPathSecond},
-	{TPS_InFile, actionTPS_InFile},
-	{TPS_InFileNext, actionTPS_InFileNext},
-	{TPS_InURIFirst, actionTPS_InURIFirst},
-	{TPS_InURIStart, actionTPS_InURIStart},
-	{TPS_InURI, actionTPS_InURI},
-	{TPS_InFURL, actionTPS_InFURL},
-	{TPS_InProtocolFirst, actionTPS_InProtocolFirst},
-	{TPS_InProtocolSecond, actionTPS_InProtocolSecond},
-	{TPS_InProtocolEnd, actionTPS_InProtocolEnd},
-	{TPS_InHyphenLatWordFirst, actionTPS_InHyphenLatWordFirst},
-	{TPS_InHyphenLatWord, actionTPS_InHyphenLatWord},
-	{TPS_InHyphenCyrWordFirst, actionTPS_InHyphenCyrWordFirst},
-	{TPS_InHyphenCyrWord, actionTPS_InHyphenCyrWord},
-	{TPS_InHyphenUWordFirst, actionTPS_InHyphenUWordFirst},
-	{TPS_InHyphenUWord, actionTPS_InHyphenUWord},
-	{TPS_InHyphenValueFirst, actionTPS_InHyphenValueFirst},
-	{TPS_InHyphenValue, actionTPS_InHyphenValue},
-	{TPS_InHyphenValueExact, actionTPS_InHyphenValueExact},
-	{TPS_InParseHyphen, actionTPS_InParseHyphen},
-	{TPS_InParseHyphenHyphen, actionTPS_InParseHyphenHyphen},
-	{TPS_InHyphenCyrWordPart, actionTPS_InHyphenCyrWordPart},
-	{TPS_InHyphenLatWordPart, actionTPS_InHyphenLatWordPart},
-	{TPS_InHyphenUWordPart, actionTPS_InHyphenUWordPart},
-	{TPS_InHyphenUnsignedInt, actionTPS_InHyphenUnsignedInt},
-	{TPS_InHDecimalPartFirst, actionTPS_InHDecimalPartFirst},
-	{TPS_InHDecimalPart, actionTPS_InHDecimalPart},
-	{TPS_InHVersionPartFirst, actionTPS_InHVersionPartFirst},
-	{TPS_InHVersionPart, actionTPS_InHVersionPart},
-	{TPS_Null, NULL}
+	TPARSERSTATEACTION(TPS_Base),
+	TPARSERSTATEACTION(TPS_InNumWord),
+	TPARSERSTATEACTION(TPS_InAsciiWord),
+	TPARSERSTATEACTION(TPS_InWord),
+	TPARSERSTATEACTION(TPS_InUnsignedInt),
+	TPARSERSTATEACTION(TPS_InSignedIntFirst),
+	TPARSERSTATEACTION(TPS_InSignedInt),
+	TPARSERSTATEACTION(TPS_InSpace),
+	TPARSERSTATEACTION(TPS_InUDecimalFirst),
+	TPARSERSTATEACTION(TPS_InUDecimal),
+	TPARSERSTATEACTION(TPS_InDecimalFirst),
+	TPARSERSTATEACTION(TPS_InDecimal),
+	TPARSERSTATEACTION(TPS_InVerVersion),
+	TPARSERSTATEACTION(TPS_InSVerVersion),
+	TPARSERSTATEACTION(TPS_InVersionFirst),
+	TPARSERSTATEACTION(TPS_InVersion),
+	TPARSERSTATEACTION(TPS_InMantissaFirst),
+	TPARSERSTATEACTION(TPS_InMantissaSign),
+	TPARSERSTATEACTION(TPS_InMantissa),
+	TPARSERSTATEACTION(TPS_InHTMLEntityFirst),
+	TPARSERSTATEACTION(TPS_InHTMLEntity),
+	TPARSERSTATEACTION(TPS_InHTMLEntityNumFirst),
+	TPARSERSTATEACTION(TPS_InHTMLEntityNum),
+	TPARSERSTATEACTION(TPS_InHTMLEntityEnd),
+	TPARSERSTATEACTION(TPS_InTagFirst),
+	TPARSERSTATEACTION(TPS_InXMLBegin),
+	TPARSERSTATEACTION(TPS_InTagCloseFirst),
+	TPARSERSTATEACTION(TPS_InTagName),
+	TPARSERSTATEACTION(TPS_InTagBeginEnd),
+	TPARSERSTATEACTION(TPS_InTag),
+	TPARSERSTATEACTION(TPS_InTagEscapeK),
+	TPARSERSTATEACTION(TPS_InTagEscapeKK),
+	TPARSERSTATEACTION(TPS_InTagBackSleshed),
+	TPARSERSTATEACTION(TPS_InTagEnd),
+	TPARSERSTATEACTION(TPS_InCommentFirst),
+	TPARSERSTATEACTION(TPS_InCommentLast),
+	TPARSERSTATEACTION(TPS_InComment),
+	TPARSERSTATEACTION(TPS_InCloseCommentFirst),
+	TPARSERSTATEACTION(TPS_InCloseCommentLast),
+	TPARSERSTATEACTION(TPS_InCommentEnd),
+	TPARSERSTATEACTION(TPS_InHostFirstDomain),
+	TPARSERSTATEACTION(TPS_InHostDomainSecond),
+	TPARSERSTATEACTION(TPS_InHostDomain),
+	TPARSERSTATEACTION(TPS_InPortFirst),
+	TPARSERSTATEACTION(TPS_InPort),
+	TPARSERSTATEACTION(TPS_InHostFirstAN),
+	TPARSERSTATEACTION(TPS_InHost),
+	TPARSERSTATEACTION(TPS_InEmail),
+	TPARSERSTATEACTION(TPS_InFileFirst),
+	TPARSERSTATEACTION(TPS_InFileTwiddle),
+	TPARSERSTATEACTION(TPS_InPathFirst),
+	TPARSERSTATEACTION(TPS_InPathFirstFirst),
+	TPARSERSTATEACTION(TPS_InPathSecond),
+	TPARSERSTATEACTION(TPS_InFile),
+	TPARSERSTATEACTION(TPS_InFileNext),
+	TPARSERSTATEACTION(TPS_InURLPathFirst),
+	TPARSERSTATEACTION(TPS_InURLPathStart),
+	TPARSERSTATEACTION(TPS_InURLPath),
+	TPARSERSTATEACTION(TPS_InFURL),
+	TPARSERSTATEACTION(TPS_InProtocolFirst),
+	TPARSERSTATEACTION(TPS_InProtocolSecond),
+	TPARSERSTATEACTION(TPS_InProtocolEnd),
+	TPARSERSTATEACTION(TPS_InHyphenAsciiWordFirst),
+	TPARSERSTATEACTION(TPS_InHyphenAsciiWord),
+	TPARSERSTATEACTION(TPS_InHyphenWordFirst),
+	TPARSERSTATEACTION(TPS_InHyphenWord),
+	TPARSERSTATEACTION(TPS_InHyphenNumWordFirst),
+	TPARSERSTATEACTION(TPS_InHyphenNumWord),
+	TPARSERSTATEACTION(TPS_InHyphenDigitLookahead),
+	TPARSERSTATEACTION(TPS_InParseHyphen),
+	TPARSERSTATEACTION(TPS_InParseHyphenHyphen),
+	TPARSERSTATEACTION(TPS_InHyphenWordPart),
+	TPARSERSTATEACTION(TPS_InHyphenAsciiWordPart),
+	TPARSERSTATEACTION(TPS_InHyphenNumWordPart),
+	TPARSERSTATEACTION(TPS_InHyphenUnsignedInt)
 };
 
 
 static bool
 TParserGet(TParser * prs)
 {
-	TParserStateActionItem *item = NULL;
+	const TParserStateActionItem *item = NULL;
+
+	Assert(prs->state);
 
 	if (prs->state->posbyte >= prs->lenstr)
 		return false;
 
-	Assert(prs->state);
-	prs->lexeme = prs->str + prs->state->posbyte;
+	prs->token = prs->str + prs->state->posbyte;
 	prs->state->pushedAtAction = NULL;
 
 	/* look at string */
@@ -1398,39 +1363,67 @@ TParserGet(TParser * prs)
 		Assert(prs->state->state >= TPS_Base && prs->state->state < TPS_Null);
 		Assert(Actions[prs->state->state].state == prs->state->state);
 
-		item = Actions[prs->state->state].action;
-		Assert(item != NULL);
-
-		if (item < prs->state->pushedAtAction)
-			item = prs->state->pushedAtAction;
+		if (prs->state->pushedAtAction)
+		{
+			/* After a POP, pick up at the next test */
+			item = prs->state->pushedAtAction + 1;
+			prs->state->pushedAtAction = NULL;
+		}
+		else
+		{
+			item = Actions[prs->state->state].action;
+			Assert(item != NULL);
+		}
 
 		/* find action by character class */
 		while (item->isclass)
 		{
 			prs->c = item->c;
 			if (item->isclass(prs) != 0)
-			{
-				if (item > prs->state->pushedAtAction)	/* remember: after
-														 * pushing we were by
-														 * false way */
-					break;
-			}
+				break;
 			item++;
 		}
 
-		prs->state->pushedAtAction = NULL;
+#ifdef WPARSER_TRACE
+		{
+			TParserPosition *ptr;
+
+			fprintf(stderr, "state ");
+			/* indent according to stack depth */
+			for (ptr = prs->state->prev; ptr; ptr = ptr->prev)
+				fprintf(stderr, "  ");
+			fprintf(stderr, "%s ", Actions[prs->state->state].state_name);
+			if (prs->state->posbyte < prs->lenstr)
+				fprintf(stderr, "at %c", *(prs->str + prs->state->posbyte));
+			else
+				fprintf(stderr, "at EOF");
+			fprintf(stderr, " matched rule %d flags%s%s%s%s%s%s%s%s%s%s%s\n",
+					(int) (item - Actions[prs->state->state].action),
+					(item->flags & A_BINGO) ? " BINGO" : "",
+					(item->flags & A_POP) ? " POP" : "",
+					(item->flags & A_PUSH) ? " PUSH" : "",
+					(item->flags & A_RERUN) ? " RERUN" : "",
+					(item->flags & A_CLEAR) ? " CLEAR" : "",
+					(item->flags & A_MERGE) ? " MERGE" : "",
+					(item->flags & A_CLRALL) ? " CLRALL" : "",
+					(item->tostate != TPS_Null) ? " tostate " : "",
+					(item->tostate != TPS_Null) ? Actions[item->tostate].state_name : "",
+					(item->type > 0) ? " type " : "",
+					tok_alias[item->type]);
+		}
+#endif
 
 		/* call special handler if exists */
 		if (item->special)
 			item->special(prs);
 
-		/* BINGO, lexeme is found */
+		/* BINGO, token is found */
 		if (item->flags & A_BINGO)
 		{
 			Assert(item->type > 0);
-			prs->lenbytelexeme = prs->state->lenbytelexeme;
-			prs->lencharlexeme = prs->state->lencharlexeme;
-			prs->state->lenbytelexeme = prs->state->lencharlexeme = 0;
+			prs->lenbytetoken = prs->state->lenbytetoken;
+			prs->lenchartoken = prs->state->lenchartoken;
+			prs->state->lenbytetoken = prs->state->lenchartoken = 0;
 			prs->type = item->type;
 		}
 
@@ -1478,8 +1471,8 @@ TParserGet(TParser * prs)
 			prs->state->posbyte = ptr->posbyte;
 			prs->state->poschar = ptr->poschar;
 			prs->state->charlen = ptr->charlen;
-			prs->state->lenbytelexeme = ptr->lenbytelexeme;
-			prs->state->lencharlexeme = ptr->lencharlexeme;
+			prs->state->lenbytetoken = ptr->lenbytetoken;
+			prs->state->lenchartoken = ptr->lenchartoken;
 			pfree(ptr);
 		}
 
@@ -1488,10 +1481,12 @@ TParserGet(TParser * prs)
 			prs->state->state = item->tostate;
 
 		/* check for go away */
-		if ((item->flags & A_BINGO) || (prs->state->posbyte >= prs->lenstr && (item->flags & A_RERUN) == 0))
+		if ((item->flags & A_BINGO) ||
+			(prs->state->posbyte >= prs->lenstr &&
+			 (item->flags & A_RERUN) == 0))
 			break;
 
-		/* go to begining of loop if we should rerun or we just restore state */
+		/* go to beginning of loop if we should rerun or we just restore state */
 		if (item->flags & (A_RERUN | A_POP))
 			continue;
 
@@ -1499,9 +1494,9 @@ TParserGet(TParser * prs)
 		if (prs->state->charlen)
 		{
 			prs->state->posbyte += prs->state->charlen;
-			prs->state->lenbytelexeme += prs->state->charlen;
+			prs->state->lenbytetoken += prs->state->charlen;
 			prs->state->poschar++;
-			prs->state->lencharlexeme++;
+			prs->state->lenchartoken++;
 		}
 	}
 
@@ -1542,8 +1537,8 @@ prsd_nexttoken(PG_FUNCTION_ARGS)
 	if (!TParserGet(p))
 		PG_RETURN_INT32(0);
 
-	*t = p->lexeme;
-	*tlen = p->lenbytelexeme;
+	*t = p->token;
+	*tlen = p->lenbytetoken;
 
 	PG_RETURN_INT32(p->type);
 }
@@ -1557,16 +1552,15 @@ prsd_end(PG_FUNCTION_ARGS)
 	PG_RETURN_VOID();
 }
 
-#define LEAVETOKEN(x)	( (x)==12 )
-#define COMPLEXTOKEN(x) ( (x)==5 || (x)==15 || (x)==16 || (x)==17 )
-#define ENDPUNCTOKEN(x) ( (x)==12 )
+#define LEAVETOKEN(x)	( (x)==SPACE )
+#define COMPLEXTOKEN(x) ( (x)==URL_T || (x)==NUMHWORD || (x)==ASCIIHWORD || (x)==HWORD )
+#define ENDPUNCTOKEN(x) ( (x)==SPACE )
 
-
-#define TS_IDIGNORE(x) ( (x)==13 || (x)==14 || (x)==12 || (x)==23 )
-#define HLIDIGNORE(x) ( (x)==5 || (x)==13 || (x)==15 || (x)==16 || (x)==17 )
-#define HTMLHLIDIGNORE(x) ( (x)==5 || (x)==15 || (x)==16 || (x)==17 )
-#define NONWORDTOKEN(x) ( (x)==12 || HLIDIGNORE(x) )
-#define NOENDTOKEN(x)	( NONWORDTOKEN(x) || (x)==7 || (x)==8 || (x)==20 || (x)==21 || (x)==22 || TS_IDIGNORE(x) )
+#define TS_IDIGNORE(x) ( (x)==TAG_T || (x)==PROTOCOL || (x)==SPACE || (x)==HTMLENTITY )
+#define HLIDIGNORE(x) ( (x)==URL_T || (x)==TAG_T || (x)==NUMHWORD || (x)==ASCIIHWORD || (x)==HWORD )
+#define HTMLHLIDIGNORE(x) ( (x)==URL_T || (x)==NUMHWORD || (x)==ASCIIHWORD || (x)==HWORD )
+#define NONWORDTOKEN(x) ( (x)==SPACE || HLIDIGNORE(x) )
+#define NOENDTOKEN(x)	( NONWORDTOKEN(x) || (x)==SCIENTIFIC || (x)==VERSIONNUMBER || (x)==DECIMAL || (x)==SIGNEDINT || (x)==UNSIGNEDINT || TS_IDIGNORE(x) )
 
 typedef struct
 {
