@@ -175,6 +175,9 @@
 /* Define to 1 if you have the `getrusage' function. */
 #undef HAVE_GETRUSAGE
 
+/* Define to 1 if you have the `gettimeofday' function. */
+#undef HAVE_GETTIMEOFDAY
+
 /* Define to 1 if you have the <gssapi/gssapi.h> header file. */
 #undef HAVE_GSSAPI_GSSAPI_H
 
@@ -301,6 +304,9 @@
 
 /* Define to 1 if you have the `on_exit' function. */
 #undef HAVE_ON_EXIT
+
+/* Define to 1 if you have the <ossp/uuid.h> header file. */
+#undef HAVE_OSSP_UUID_H
 
 /* Define to 1 if you have the <pam/pam_appl.h> header file. */
 #undef HAVE_PAM_PAM_APPL_H
@@ -562,6 +568,9 @@
 /* Define to 1 if you have the <utime.h> header file. */
 #undef HAVE_UTIME_H
 
+/* Define to 1 if you have the <uuid.h> header file. */
+#undef HAVE_UUID_H
+
 /* Define to 1 if you have the `vsnprintf' function. */
 #undef HAVE_VSNPRINTF
 
@@ -666,7 +675,8 @@
 /* Define to 1 to build with XML support. (--with-libxml) */
 #undef USE_LIBXML
 
-/* Define to 1 to build with XSLT support. (--with-libxslt) */
+/* Define to 1 to use XSLT support when building /contrib/xml2.
+   (--with-libxslt) */
 #undef USE_LIBXSLT
 
 /* Define to select named POSIX semaphores. */
