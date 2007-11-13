@@ -12,7 +12,7 @@
  *	by PostgreSQL
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/bin/pg_dump/pg_dump.c,v 1.473 2007/10/13 20:18:41 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/bin/pg_dump/pg_dump.c,v 1.475 2007/11/08 10:37:54 petere Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -463,19 +463,19 @@ main(int argc, char **argv)
 
 	if (dataOnly && schemaOnly)
 	{
-		write_msg(NULL, "options \"schema only\" (-s) and \"data only\" (-a) cannot be used together\n");
+		write_msg(NULL, "options -s/--schema-only and -a/--data-only cannot be used together\n");
 		exit(1);
 	}
 
 	if (dataOnly && outputClean)
 	{
-		write_msg(NULL, "options \"clean\" (-c) and \"data only\" (-a) cannot be used together\n");
+		write_msg(NULL, "options -c/--clean and -a/--data-only cannot be used together\n");
 		exit(1);
 	}
 
 	if (dumpInserts == true && oids == true)
 	{
-		write_msg(NULL, "INSERT (-d, -D) and OID (-o) options cannot be used together\n");
+		write_msg(NULL, "options -d/-D/--inserts/--column-inserts and -o/--oids cannot be used together\n");
 		write_msg(NULL, "(The INSERT command cannot set OIDs.)\n");
 		exit(1);
 	}
@@ -5524,7 +5524,7 @@ dumpEnumType(Archive *fout, TypeInfo *tinfo)
 	/* should be at least 1 value */
 	if (num == 0)
 	{
-		write_msg(NULL, "No rows found for enum");
+		write_msg(NULL, "no label definitions found for enum ID %u\n", tinfo->dobj.catId.oid);
 		exit_nicely();
 	}
 
@@ -5753,7 +5753,7 @@ dumpBaseType(Archive *fout, TypeInfo *tinfo)
 	ntups = PQntuples(res);
 	if (ntups != 1)
 	{
-		write_msg(NULL, "Got %d rows instead of one from: %s",
+		write_msg(NULL, "query returned %d rows instead of one: %s\n",
 				  ntups, query->data);
 		exit_nicely();
 	}
@@ -5938,7 +5938,7 @@ dumpDomain(Archive *fout, TypeInfo *tinfo)
 	ntups = PQntuples(res);
 	if (ntups != 1)
 	{
-		write_msg(NULL, "Got %d rows instead of one from: %s",
+		write_msg(NULL, "query returned %d rows instead of one: %s\n",
 				  ntups, query->data);
 		exit_nicely();
 	}
@@ -6057,7 +6057,7 @@ dumpCompositeType(Archive *fout, TypeInfo *tinfo)
 	ntups = PQntuples(res);
 	if (ntups < 1)
 	{
-		write_msg(NULL, "query yielded no rows: %s\n", query->data);
+		write_msg(NULL, "query returned no rows: %s\n", query->data);
 		exit_nicely();
 	}
 
@@ -6537,7 +6537,7 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 	ntups = PQntuples(res);
 	if (ntups != 1)
 	{
-		write_msg(NULL, "Got %d rows instead of one from: %s",
+		write_msg(NULL, "query returned %d rows instead of one: %s\n",
 				  ntups, query->data);
 		exit_nicely();
 	}
@@ -7029,7 +7029,7 @@ dumpOpr(Archive *fout, OprInfo *oprinfo)
 	ntups = PQntuples(res);
 	if (ntups != 1)
 	{
-		write_msg(NULL, "Got %d rows instead of one from: %s",
+		write_msg(NULL, "query returned %d rows instead of one: %s\n",
 				  ntups, query->data);
 		exit_nicely();
 	}
@@ -7276,7 +7276,7 @@ convertTSFunction(Oid funcOid)
 	ntups = PQntuples(res);
 	if (ntups != 1)
 	{
-		write_msg(NULL, "Got %d rows instead of one from \"%s\"\n",
+		write_msg(NULL, "query returned %d rows instead of one: %s\n",
 				  ntups, query);
 		exit_nicely();
 	}
@@ -7380,7 +7380,7 @@ dumpOpclass(Archive *fout, OpclassInfo *opcinfo)
 	ntups = PQntuples(res);
 	if (ntups != 1)
 	{
-		write_msg(NULL, "Got %d rows instead of one from: %s",
+		write_msg(NULL, "query returned %d rows instead of one: %s\n",
 				  ntups, query->data);
 		exit_nicely();
 	}
@@ -7718,7 +7718,7 @@ dumpOpfamily(Archive *fout, OpfamilyInfo *opfinfo)
 	ntups = PQntuples(res);
 	if (ntups != 1)
 	{
-		write_msg(NULL, "Got %d rows instead of one from: %s",
+		write_msg(NULL, "query returned %d rows instead of one: %s\n",
 				  ntups, query->data);
 		exit_nicely();
 	}
@@ -7891,7 +7891,7 @@ dumpConversion(Archive *fout, ConvInfo *convinfo)
 	ntups = PQntuples(res);
 	if (ntups != 1)
 	{
-		write_msg(NULL, "Got %d rows instead of one from: %s",
+		write_msg(NULL, "query returned %d rows instead of one: %s\n",
 				  ntups, query->data);
 		exit_nicely();
 	}
@@ -8085,7 +8085,7 @@ dumpAgg(Archive *fout, AggInfo *agginfo)
 	ntups = PQntuples(res);
 	if (ntups != 1)
 	{
-		write_msg(NULL, "Got %d rows instead of one from: %s",
+		write_msg(NULL, "query returned %d rows instead of one: %s\n",
 				  ntups, query->data);
 		exit_nicely();
 	}
@@ -8308,7 +8308,7 @@ dumpTSDictionary(Archive *fout, TSDictInfo * dictinfo)
 	ntups = PQntuples(res);
 	if (ntups != 1)
 	{
-		write_msg(NULL, "Got %d rows instead of one from \"%s\"\n",
+		write_msg(NULL, "query returned %d rows instead of one: %s\n",
 				  ntups, query->data);
 		exit_nicely();
 	}
@@ -8459,7 +8459,7 @@ dumpTSConfig(Archive *fout, TSConfigInfo * cfginfo)
 	ntups = PQntuples(res);
 	if (ntups != 1)
 	{
-		write_msg(NULL, "Got %d rows instead of one from \"%s\"\n",
+		write_msg(NULL, "query returned %d rows instead of one: %s\n",
 				  ntups, query->data);
 		exit_nicely();
 	}
@@ -9810,7 +9810,7 @@ dumpRule(Archive *fout, RuleInfo *rinfo)
 
 	if (PQntuples(res) != 1)
 	{
-		write_msg(NULL, "query to get rule \"%s\" for table \"%s\" failed: wrong number of rows returned",
+		write_msg(NULL, "query to get rule \"%s\" for table \"%s\" failed: wrong number of rows returned\n",
 				  rinfo->dobj.name, tbinfo->dobj.name);
 		exit_nicely();
 	}
@@ -10093,7 +10093,7 @@ getFormattedTypeName(Oid oid, OidOptions opts)
 	ntups = PQntuples(res);
 	if (ntups != 1)
 	{
-		write_msg(NULL, "query yielded %d rows instead of one: %s\n",
+		write_msg(NULL, "query returned %d rows instead of one: %s\n",
 				  ntups, query->data);
 		exit_nicely();
 	}

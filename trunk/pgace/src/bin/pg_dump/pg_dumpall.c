@@ -6,7 +6,7 @@
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
- * $PostgreSQL: pgsql/src/bin/pg_dump/pg_dumpall.c,v 1.93 2007/10/13 20:18:41 tgl Exp $
+ * $PostgreSQL: pgsql/src/bin/pg_dump/pg_dumpall.c,v 1.96 2007/11/07 13:11:05 petere Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -329,7 +329,7 @@ main(int argc, char *argv[])
 	/* Make sure the user hasn't specified a mix of globals-only options */
 	if (globals_only && roles_only)
 	{
-		fprintf(stderr, _("%s: --globals-only and --roles-only cannot be used together\n"),
+		fprintf(stderr, _("%s: options -g/--globals-only and -r/--roles-only cannot be used together\n"),
 				progname);
 		fprintf(stderr, _("Try \"%s --help\" for more information.\n"),
 				progname);
@@ -338,7 +338,7 @@ main(int argc, char *argv[])
 	
 	if (globals_only && tablespaces_only)
 	{
-		fprintf(stderr, _("%s: --globals-only and --tablespaces-only cannot be used together\n"),
+		fprintf(stderr, _("%s: options -g/--globals-only and -t/--tablespaces-only cannot be used together\n"),
 				progname);
 		fprintf(stderr, _("Try \"%s --help\" for more information.\n"),
 				progname);
@@ -347,7 +347,7 @@ main(int argc, char *argv[])
 	
 	if (roles_only && tablespaces_only)
 	{
-		fprintf(stderr, _("%s: --roles-only and --tablespaces-only cannot be used together\n"),
+		fprintf(stderr, _("%s: options -r/--roles-only and -t/--tablespaces-only cannot be used together\n"),
 				progname);
 		fprintf(stderr, _("Try \"%s --help\" for more information.\n"),
 				progname);
@@ -382,7 +382,8 @@ main(int argc, char *argv[])
 				
 		if (!conn)
 		{
-			fprintf(stderr, _("%s: could not connect to databases \"postgres\" or \"template1\". Please specify an alternative database\n"),
+			fprintf(stderr, _("%s: could not connect to databases \"postgres\" or \"template1\"\n"
+					  "Please specify an alternative database.\n"),
 					progname);
 			fprintf(stderr, _("Try \"%s --help\" for more information.\n"),
 					progname);
@@ -398,8 +399,8 @@ main(int argc, char *argv[])
 		OPF = fopen(filename, PG_BINARY_W);
 		if (!OPF)
 		{
-			fprintf(stderr, _("%s: could not open the output file \"%s\"\n"),
-					progname, filename);
+			fprintf(stderr, _("%s: could not open the output file \"%s\": %s\n"),
+					progname, filename, strerror(errno));
 			exit(1);
 		}
 	}
@@ -507,7 +508,7 @@ help(void)
 
 	printf(_("\nConnection options:\n"));
 	printf(_("  -h, --host=HOSTNAME      database server host or socket directory\n"));
-	printf(_("  -l, --database=dbname    specify an alternate default database\n"));
+	printf(_("  -l, --database=dbname    specify an alternative default database\n"));
 	printf(_("  -p, --port=PORT          database server port number\n"));
 	printf(_("  -U, --username=NAME      connect as specified database user\n"));
 	printf(_("  -W, --password           force password prompt (should happen automatically)\n"));
@@ -1210,8 +1211,8 @@ dumpDatabases(PGconn *conn)
 			OPF = fopen(filename, PG_BINARY_A);
 			if (!OPF)
 			{
-				fprintf(stderr, _("%s: could not re-open the output file \"%s\"\n"),
-						progname, filename);
+				fprintf(stderr, _("%s: could not re-open the output file \"%s\": %s\n"),
+						progname, filename, strerror(errno));
 				exit(1);
 			}
 		}
