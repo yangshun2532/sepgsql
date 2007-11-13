@@ -1,4 +1,4 @@
-<!-- $PostgreSQL: pgsql/doc/src/sgml/textsearch.sgml,v 1.23 2007/10/22 20:13:37 tgl Exp $ -->
+<!-- $PostgreSQL: pgsql/doc/src/sgml/textsearch.sgml,v 1.31 2007/11/10 15:39:34 momjian Exp $ -->
 
 <chapter id="textsearch">
  <title id="textsearch-title">Full Text Search</title>
@@ -1040,7 +1040,7 @@ ORDER BY rank DESC LIMIT 10;
 
    <para>
     <function>ts_headline</function> accepts a document along
-    with a query, and returns one or more ellipsis-separated excerpts from
+    with a query, and returns an excerpt from
     the document in which terms from the query are highlighted.  The
     configuration to be used to parse the document can be specified by
     <replaceable>config</replaceable>; if <replaceable>config</replaceable>
@@ -1094,24 +1094,27 @@ StartSel=&lt;b&gt;, StopSel=&lt;/b&gt;, MaxWords=35, MinWords=15, ShortWord=3, H
     For example:
 
 <programlisting>
-SELECT ts_headline('ts_headline accepts a document along
-with a query, and returns one or more ellipsis-separated excerpts from
-the document in which terms from the query are highlighted.',
-  to_tsquery('ellipsis &amp; term'));
-                            ts_headline                             
---------------------------------------------------------------------
- &lt;b&gt;ellipsis&lt;/b&gt;-separated excerpts from
- the document in which &lt;b&gt;terms&lt;/b&gt; from the query are highlighted.
+SELECT ts_headline('The most common type of search
+is to find all documents containing given query terms 
+and return them in order of their similarity to the
+query.', to_tsquery('query &amp; similarity'));
+                        ts_headline                         
+------------------------------------------------------------
+ given &lt;b&gt;query&lt;/b&gt; terms
+ and return them in order of their &lt;b&gt;similarity&lt;/b&gt; to the
+ &lt;b&gt;query&lt;/b&gt;.
 
-SELECT ts_headline('ts_headline accepts a document along
-with a query, and returns one or more ellipsis-separated excerpts from
-the document in which terms from the query are highlighted.',
-  to_tsquery('ellipsis &amp; term'),
+SELECT ts_headline('The most common type of search
+is to find all documents containing given query terms
+and return them in order of their similarity to the
+query.',
+  to_tsquery('query &amp; similarity'), 
   'StartSel = &lt;, StopSel = &gt;');
-                          ts_headline                          
----------------------------------------------------------------
- &lt;ellipsis&gt;-separated excerpts from
- the document in which &lt;terms&gt; from the query are highlighted.
+                      ts_headline                      
+-------------------------------------------------------
+ given &lt;query&gt; terms
+ and return them in order of their &lt;similarity&gt; to the
+ &lt;query&gt;.
 </programlisting>
    </para>
 
@@ -1460,33 +1463,6 @@ SELECT ts_rewrite('a &amp; b'::tsquery, 'a'::tsquery, 'c'::tsquery);
 
       <term>
        <synopsis>
-        ts_rewrite(ARRAY[<replaceable class="PARAMETER">query</replaceable> <type>tsquery</>, <replaceable class="PARAMETER">target</replaceable> <type>tsquery</>, <replaceable class="PARAMETER">substitute</replaceable> <type>tsquery</>]) returns <type>tsquery</>
-       </synopsis>
-      </term>
-
-      <listitem>
-       <para>
-        Aggregate form.  XXX if we choose not to remove this, it needs to
-        be documented better.  Note it is not listed in
-        textsearch-functions-table at the moment.
-
-<programlisting>
-CREATE TABLE aliases (t tsquery PRIMARY KEY, s tsquery);
-INSERT INTO aliases VALUES('a', 'c');
-
-SELECT ts_rewrite(ARRAY['a &amp; b'::tsquery, t,s]) FROM aliases;
- ts_rewrite
-------------
- 'b' &amp; 'c'
-</programlisting>
-       </para>
-      </listitem>
-     </varlistentry>
-
-     <varlistentry>
-
-      <term>
-       <synopsis>
         ts_rewrite (<replaceable class="PARAMETER">query</> <type>tsquery</>, <replaceable class="PARAMETER">select</> <type>text</>) returns <type>tsquery</>
        </synopsis>
       </term>
@@ -1775,125 +1751,136 @@ LIMIT 10;
     </thead>
     <tbody>
      <row>
-      <entry>lword</entry>
-      <entry>Latin word (only ASCII letters)</entry>
-      <entry><literal>foo</literal></entry>
+      <entry><literal>asciiword</></entry>
+      <entry>Word, all ASCII letters</entry>
+      <entry><literal>elephant</literal></entry>
      </row>
      <row>
-      <entry>nlword</entry>
-      <entry>Non-latin word (only non-ASCII letters)</entry>
-      <entry><literal></literal></entry>
+      <entry><literal>word</></entry>
+      <entry>Word, all letters</entry>
+      <entry><literal>ma&ntilde;ana</literal></entry>
      </row>
      <row>
-      <entry>word</entry>
-      <entry>Word (other cases)</entry>
+      <entry><literal>numword</></entry>
+      <entry>Word, letters and digits</entry>
       <entry><literal>beta1</literal></entry>
      </row>
      <row>
-      <entry>lhword</entry>
-      <entry>Latin hyphenated word</entry>
-      <entry><literal>foo-bar</literal></entry>
+      <entry><literal>asciihword</></entry>
+      <entry>Hyphenated word, all ASCII</entry>
+      <entry><literal>up-to-date</literal></entry>
      </row>
      <row>
-      <entry>nlhword</entry>
-      <entry>Non-latin hyphenated word</entry>
-      <entry><literal></literal></entry>
+      <entry><literal>hword</></entry>
+      <entry>Hyphenated word, all letters</entry>
+      <entry><literal>l&oacute;gico-matem&aacute;tica</literal></entry>
      </row>
      <row>
-      <entry>hword</entry>
-      <entry>Hyphenated word</entry>
-      <entry><literal>foo-beta1</literal></entry>
+      <entry><literal>numhword</></entry>
+      <entry>Hyphenated word, letters and digits</entry>
+      <entry><literal>postgresql-beta1</literal></entry>
      </row>
      <row>
-      <entry>lpart_hword</entry>
-      <entry>Latin part of hyphenated word</entry>
-      <entry><literal>foo</literal> or <literal>bar</literal> in the context
-       <literal>foo-bar</></entry>
+      <entry><literal>hword_asciipart</></entry>
+      <entry>Hyphenated word part, all ASCII</entry>
+      <entry><literal>postgresql</literal> in the context <literal>postgresql-beta1</literal></entry>
      </row>
      <row>
-      <entry>nlpart_hword</entry>
-      <entry>Non-latin part of hyphenated word</entry>
-      <entry><literal></literal></entry>
+      <entry><literal>hword_part</></entry>
+      <entry>Hyphenated word part, all letters</entry>
+      <entry><literal>l&oacute;gico</literal> or <literal>matem&aacute;tica</literal>
+       in the context <literal>l&oacute;gico-matem&aacute;tica</literal></entry>
      </row>
      <row>
-      <entry>part_hword</entry>
-      <entry>Part of hyphenated word</entry>
+      <entry><literal>hword_numpart</></entry>
+      <entry>Hyphenated word part, letters and digits</entry>
       <entry><literal>beta1</literal> in the context
-       <literal>foo-beta1</></entry>
+       <literal>postgresql-beta1</literal></entry>
      </row>
      <row>
-      <entry>email</entry>
+      <entry><literal>email</></entry>
       <entry>Email address</entry>
-      <entry><literal>foo@bar.com</literal></entry>
+      <entry><literal>foo@example.com</literal></entry>
      </row>
      <row>
-      <entry>protocol</entry>
+      <entry><literal>protocol</></entry>
       <entry>Protocol head</entry>
       <entry><literal>http://</literal></entry>
      </row>
      <row>
-      <entry>url</entry>
+      <entry><literal>url</></entry>
       <entry>URL</entry>
-      <entry><literal>foo.com/stuff/index.html</literal></entry>
+      <entry><literal>example.com/stuff/index.html</literal></entry>
      </row>
      <row>
-      <entry>host</entry>
+      <entry><literal>host</></entry>
       <entry>Host</entry>
-      <entry><literal>foo.com</literal></entry>
+      <entry><literal>example.com</literal></entry>
      </row>
      <row>
-      <entry>uri</entry>
-      <entry>URI</entry>
+      <entry><literal>url_path</></entry>
+      <entry>URL path</entry>
       <entry><literal>/stuff/index.html</literal>, in the context of a URL</entry>
      </row>
      <row>
-      <entry>file</entry>
+      <entry><literal>file</></entry>
       <entry>File or path name</entry>
       <entry><literal>/usr/local/foo.txt</literal>, if not within a URL</entry>
      </row>
      <row>
-      <entry>sfloat</entry>
+      <entry><literal>sfloat</></entry>
       <entry>Scientific notation</entry>
       <entry><literal>-1.234e56</literal></entry>
      </row>
      <row>
-      <entry>float</entry>
+      <entry><literal>float</></entry>
       <entry>Decimal notation</entry>
       <entry><literal>-1.234</literal></entry>
      </row>
      <row>
-      <entry>int</entry>
+      <entry><literal>int</></entry>
       <entry>Signed integer</entry>
       <entry><literal>-1234</literal></entry>
      </row>
      <row>
-      <entry>uint</entry>
+      <entry><literal>uint</></entry>
       <entry>Unsigned integer</entry>
       <entry><literal>1234</literal></entry>
      </row>
      <row>
-      <entry>version</entry>
+      <entry><literal>version</></entry>
       <entry>Version number</entry>
       <entry><literal>8.3.0</literal></entry>
      </row>
      <row>
-      <entry>tag</entry>
-      <entry>HTML Tag</entry>
+      <entry><literal>tag</></entry>
+      <entry>HTML tag</entry>
       <entry><literal>&lt;A HREF="dictionaries.html"&gt;</literal></entry>
      </row>
      <row>
-      <entry>entity</entry>
-      <entry>HTML Entity</entry>
+      <entry><literal>entity</></entry>
+      <entry>HTML entity</entry>
       <entry><literal>&amp;amp;</literal></entry>
      </row>
      <row>
-      <entry>blank</entry>
+      <entry><literal>blank</></entry>
       <entry>Space symbols</entry>
       <entry>(any whitespace or punctuation not otherwise recognized)</entry>
      </row>
     </tbody>
    </tgroup>
   </table>
+
+  <note>
+   <para>
+    The parser's notion of a <quote>letter</> is determined by the server's
+    locale setting, specifically <varname>lc_ctype</>.  Words containing
+    only the basic ASCII letters are reported as a separate token type,
+    since it is sometimes useful to distinguish them.  In most European
+    languages, token types <literal>word</> and <literal>asciiword</>
+    should always be treated alike.
+   </para>
+  </note>
 
   <para>
    It is possible for the parser to produce overlapping tokens from the same
@@ -1902,14 +1889,14 @@ LIMIT 10;
 
 <programlisting>
 SELECT alias, description, token FROM ts_debug('foo-bar-beta1');
-    alias    |          description          |     token     
--------------+-------------------------------+---------------
- hword       | Hyphenated word               | foo-bar-beta1
- lpart_hword | Latin part of hyphenated word | foo
- blank       | Space symbols                 | -
- lpart_hword | Latin part of hyphenated word | bar
- blank       | Space symbols                 | -
- part_hword  | Part of hyphenated word       | beta1
+      alias      |               description                |     token     
+-----------------+------------------------------------------+---------------
+ numhword        | Hyphenated word, letters and digits      | foo-bar-beta1
+ hword_asciipart | Hyphenated word part, all ASCII          | foo
+ blank           | Space symbols                            | -
+ hword_asciipart | Hyphenated word part, all ASCII          | bar
+ blank           | Space symbols                            | -
+ hword_numpart   | Hyphenated word part, letters and digits | beta1
 </programlisting>
 
    This behavior is desirable since it allows searches to work for both
@@ -1917,13 +1904,13 @@ SELECT alias, description, token FROM ts_debug('foo-bar-beta1');
    instructive example:
 
 <programlisting>
-SELECT alias, description, token FROM ts_debug('http://foo.com/stuff/index.html');
-  alias   |  description  |          token           
-----------+---------------+--------------------------
+SELECT alias, description, token FROM ts_debug('http://example.com/stuff/index.html');
+  alias   |  description  |            token             
+----------+---------------+------------------------------
  protocol | Protocol head | http://
- url      | URL           | foo.com/stuff/index.html
- host     | Host          | foo.com
- uri      | URI           | /stuff/index.html
+ url      | URL           | example.com/stuff/index.html
+ host     | Host          | example.com
+ url_path | URL path      | /stuff/index.html
 </programlisting>
   </para>
 
@@ -2045,13 +2032,13 @@ SELECT alias, description, token FROM ts_debug('http://foo.com/stuff/index.html'
    a <application>Snowball</> stemmer or <literal>simple</>, which
    recognizes everything.  For example, for an astronomy-specific search
    (<literal>astro_en</literal> configuration) one could bind token type
-   <type>lword</type> (Latin word) to a synonym dictionary of astronomical
+   <type>asciiword</type> (ASCII word) to a synonym dictionary of astronomical
    terms, a general English dictionary and a <application>Snowball</> English
    stemmer:
 
 <programlisting>
 ALTER TEXT SEARCH CONFIGURATION astro_en
-    ADD MAPPING FOR lword WITH astrosyn, english_ispell, english_stem;
+    ADD MAPPING FOR asciiword WITH astrosyn, english_ispell, english_stem;
 </programlisting>
   </para>
 
@@ -2073,7 +2060,7 @@ SELECT to_tsvector('english','in the list of stop words');
  'list':3 'stop':5 'word':6
 </programlisting>
 
-    The mising positions 1,2,4 are because of stop words.  Ranks
+    The missing positions 1,2,4 are because of stop words.  Ranks
     calculated for documents with and without stop words are quite different:
 
 <programlisting>
@@ -2187,9 +2174,9 @@ SELECT ts_lexize('public.simple_dict','The');
 
 <programlisting>
 SELECT * FROM ts_debug('english', 'Paris');
- alias | description | token |  dictionaries  |  dictionary  | lexemes 
--------+-------------+-------+----------------+--------------+---------
- lword | Latin word  | Paris | {english_stem} | english_stem | {pari}
+   alias   |   description   | token |  dictionaries  |  dictionary  | lexemes 
+-----------+-----------------+-------+----------------+--------------+---------
+ asciiword | Word, all ASCII | Paris | {english_stem} | english_stem | {pari}
 
 CREATE TEXT SEARCH DICTIONARY my_synonym (
     TEMPLATE = synonym,
@@ -2197,12 +2184,12 @@ CREATE TEXT SEARCH DICTIONARY my_synonym (
 );
 
 ALTER TEXT SEARCH CONFIGURATION english
-    ALTER MAPPING FOR lword WITH my_synonym, english_stem;
+    ALTER MAPPING FOR asciiword WITH my_synonym, english_stem;
 
 SELECT * FROM ts_debug('english', 'Paris');
- alias | description | token |       dictionaries        | dictionary | lexemes 
--------+-------------+-------+---------------------------+------------+---------
- lword | Latin word  | Paris | {my_synonym,english_stem} | my_synonym | {paris}
+   alias   |   description   | token |       dictionaries        | dictionary | lexemes 
+-----------+-----------------+-------+---------------------------+------------+---------
+ asciiword | Word, all ASCII | Paris | {my_synonym,english_stem} | my_synonym | {paris}
 </programlisting>
    </para>
 
@@ -2271,20 +2258,17 @@ more sample word(s) : more indexed word(s)
    </para>
 
    <para>
-    Stop words recognized by the subdictionary are replaced by a <quote>stop
-    word placeholder</quote> to record their position. To illustrate this,
-    consider these phrases:
+    Specific stop words recognized by the subdictionary cannot be
+    specified;  instead use <literal>?</> to mark the location where any
+    stop word can appear.  For example, assuming that <literal>a</> and
+    <literal>the</> are stop words according to the subdictionary:
 
 <programlisting>
-a one the two : swsw
-the one a two : swsw2
+? one ? two : swsw
 </programlisting>
 
-    Assuming that <literal>a</> and <literal>the</> are stop words according
-    to the subdictionary, these two phrases are identical to the thesaurus:
-    they both look like <replaceable>stopword</> <literal>one</>
-    <replaceable>stopword</> <literal>two</>.  Input matching this pattern
-    will be replaced by <literal>swsw2</>, according to the tie-breaking rule.
+    matches <literal>a one the two</> and <literal>the one a two</>;
+    both would be replaced by <literal>swsw</>.
    </para>
 
    <para>
@@ -2293,7 +2277,7 @@ the one a two : swsw2
     uses these assignments to check if it should handle the next word or stop
     accumulation.  The thesaurus dictionary must be configured
     carefully. For example, if the thesaurus dictionary is assigned to handle
-    only the <literal>lword</literal> token, then a thesaurus dictionary
+    only the <literal>asciiword</literal> token, then a thesaurus dictionary
     definition like <literal>one 7</> will not work since token type
     <literal>uint</literal> is not assigned to the thesaurus dictionary.
    </para>
@@ -2353,7 +2337,7 @@ CREATE TEXT SEARCH DICTIONARY thesaurus_simple (
 
 <programlisting>
 ALTER TEXT SEARCH CONFIGURATION russian
-    ADD MAPPING FOR lword, lhword, lpart_hword WITH thesaurus_simple;
+    ADD MAPPING FOR asciiword, asciihword, hword_asciipart WITH thesaurus_simple;
 </programlisting>
    </para>
 
@@ -2382,7 +2366,7 @@ CREATE TEXT SEARCH DICTIONARY thesaurus_astro (
 );
 
 ALTER TEXT SEARCH CONFIGURATION russian
-    ADD MAPPING FOR lword, lhword, lpart_hword WITH thesaurus_astro, english_stem;
+    ADD MAPPING FOR asciiword, asciihword, hword_asciipart WITH thesaurus_astro, english_stem;
 </programlisting>
 
     Now we can see how it works.
@@ -2555,7 +2539,7 @@ CREATE TEXT SEARCH DICTIONARY english_stem (
    <para>
     A <application>Snowball</> dictionary recognizes everything, whether
     or not it is able to simplify the word, so it should be placed
-    at the end of the dictionary list. It it useless to have it
+    at the end of the dictionary list. It is useless to have it
     before any other dictionary because a token will never pass through it to
     the next dictionary.
    </para>
@@ -2633,12 +2617,13 @@ CREATE TEXT SEARCH DICTIONARY english_ispell (
 );
 </programlisting>
 
-    Now we can set up the mappings for Latin words for configuration
+    Now we can set up the mappings for words in configuration
     <literal>pg</>:
 
 <programlisting>
 ALTER TEXT SEARCH CONFIGURATION pg
-    ALTER MAPPING FOR lword, lhword, lpart_hword
+    ALTER MAPPING FOR asciiword, asciihword, hword_asciipart,
+                      word, hword, hword_part
     WITH pg_dict, english_ispell, english_stem;
 </programlisting>
 
@@ -2647,7 +2632,7 @@ ALTER TEXT SEARCH CONFIGURATION pg
 
 <programlisting>
 ALTER TEXT SEARCH CONFIGURATION pg
-    DROP MAPPING FOR email, url, sfloat, uri, float;
+    DROP MAPPING FOR email, url, url_path, sfloat, float;
 </programlisting>
    </para>
 
@@ -2778,32 +2763,32 @@ SHOW default_text_search_config;
 
 <programlisting>
 SELECT * FROM ts_debug('english','a fat  cat sat on a mat - it ate a fat rats');
- alias |  description  | token |  dictionaries  |  dictionary  | lexemes 
--------+---------------+-------+----------------+--------------+---------
- lword | Latin word    | a     | {english_stem} | english_stem | {}
- blank | Space symbols |       | {}             |              | 
- lword | Latin word    | fat   | {english_stem} | english_stem | {fat}
- blank | Space symbols |       | {}             |              | 
- lword | Latin word    | cat   | {english_stem} | english_stem | {cat}
- blank | Space symbols |       | {}             |              | 
- lword | Latin word    | sat   | {english_stem} | english_stem | {sat}
- blank | Space symbols |       | {}             |              | 
- lword | Latin word    | on    | {english_stem} | english_stem | {}
- blank | Space symbols |       | {}             |              | 
- lword | Latin word    | a     | {english_stem} | english_stem | {}
- blank | Space symbols |       | {}             |              | 
- lword | Latin word    | mat   | {english_stem} | english_stem | {mat}
- blank | Space symbols |       | {}             |              | 
- blank | Space symbols | -     | {}             |              | 
- lword | Latin word    | it    | {english_stem} | english_stem | {}
- blank | Space symbols |       | {}             |              | 
- lword | Latin word    | ate   | {english_stem} | english_stem | {ate}
- blank | Space symbols |       | {}             |              | 
- lword | Latin word    | a     | {english_stem} | english_stem | {}
- blank | Space symbols |       | {}             |              | 
- lword | Latin word    | fat   | {english_stem} | english_stem | {fat}
- blank | Space symbols |       | {}             |              | 
- lword | Latin word    | rats  | {english_stem} | english_stem | {rat}
+   alias   |   description   | token |  dictionaries  |  dictionary  | lexemes 
+-----------+-----------------+-------+----------------+--------------+---------
+ asciiword | Word, all ASCII | a     | {english_stem} | english_stem | {}
+ blank     | Space symbols   |       | {}             |              | 
+ asciiword | Word, all ASCII | fat   | {english_stem} | english_stem | {fat}
+ blank     | Space symbols   |       | {}             |              | 
+ asciiword | Word, all ASCII | cat   | {english_stem} | english_stem | {cat}
+ blank     | Space symbols   |       | {}             |              | 
+ asciiword | Word, all ASCII | sat   | {english_stem} | english_stem | {sat}
+ blank     | Space symbols   |       | {}             |              | 
+ asciiword | Word, all ASCII | on    | {english_stem} | english_stem | {}
+ blank     | Space symbols   |       | {}             |              | 
+ asciiword | Word, all ASCII | a     | {english_stem} | english_stem | {}
+ blank     | Space symbols   |       | {}             |              | 
+ asciiword | Word, all ASCII | mat   | {english_stem} | english_stem | {mat}
+ blank     | Space symbols   |       | {}             |              | 
+ blank     | Space symbols   | -     | {}             |              | 
+ asciiword | Word, all ASCII | it    | {english_stem} | english_stem | {}
+ blank     | Space symbols   |       | {}             |              | 
+ asciiword | Word, all ASCII | ate   | {english_stem} | english_stem | {ate}
+ blank     | Space symbols   |       | {}             |              | 
+ asciiword | Word, all ASCII | a     | {english_stem} | english_stem | {}
+ blank     | Space symbols   |       | {}             |              | 
+ asciiword | Word, all ASCII | fat   | {english_stem} | english_stem | {fat}
+ blank     | Space symbols   |       | {}             |              | 
+ asciiword | Word, all ASCII | rats  | {english_stem} | english_stem | {rat}
 </programlisting>
   </para>
 
@@ -2824,23 +2809,23 @@ CREATE TEXT SEARCH DICTIONARY english_ispell (
 );
 
 ALTER TEXT SEARCH CONFIGURATION public.english
-   ALTER MAPPING FOR lword WITH english_ispell, english_stem;
+   ALTER MAPPING FOR asciiword WITH english_ispell, english_stem;
 </programlisting>
 
 <programlisting>
 SELECT * FROM ts_debug('public.english','The Brightest supernovaes');
- alias |  description  |    token    |         dictionaries          |   dictionary   |   lexemes   
--------+---------------+-------------+-------------------------------+----------------+-------------
- lword | Latin word    | The         | {english_ispell,english_stem} | english_ispell | {}
- blank | Space symbols |             | {}                            |                | 
- lword | Latin word    | Brightest   | {english_ispell,english_stem} | english_ispell | {bright}
- blank | Space symbols |             | {}                            |                | 
- lword | Latin word    | supernovaes | {english_ispell,english_stem} | english_stem   | {supernova}
+   alias   |   description   |    token    |         dictionaries          |   dictionary   |   lexemes   
+-----------+-----------------+-------------+-------------------------------+----------------+-------------
+ asciiword | Word, all ASCII | The         | {english_ispell,english_stem} | english_ispell | {}
+ blank     | Space symbols   |             | {}                            |                | 
+ asciiword | Word, all ASCII | Brightest   | {english_ispell,english_stem} | english_ispell | {bright}
+ blank     | Space symbols   |             | {}                            |                | 
+ asciiword | Word, all ASCII | supernovaes | {english_ispell,english_stem} | english_stem   | {supernova}
 </programlisting>
 
   <para>
    In this example, the word <literal>Brightest</> was recognized by the
-   parser as a <literal>Latin word</literal> (alias <literal>lword</literal>).
+   parser as an <literal>ASCII word</literal> (alias <literal>asciiword</literal>).
    For this token type the dictionary list is
    <literal>english_ispell</> and
    <literal>english_stem</literal>. The word was recognized by
@@ -2868,13 +2853,13 @@ SELECT * FROM ts_debug('public.english','The Brightest supernovaes');
 <programlisting>
 SELECT alias, token, dictionary, lexemes
 FROM ts_debug('public.english','The Brightest supernovaes');
- alias |    token    |   dictionary   |   lexemes   
--------+-------------+----------------+-------------
- lword | The         | english_ispell | {}
- blank |             |                | 
- lword | Brightest   | english_ispell | {bright}
- blank |             |                | 
- lword | supernovaes | english_stem   | {supernova}
+   alias   |    token    |   dictionary   |   lexemes   
+-----------+-------------+----------------+-------------
+ asciiword | The         | english_ispell | {}
+ blank     |             |                | 
+ asciiword | Brightest   | english_ispell | {bright}
+ blank     |             |                | 
+ asciiword | supernovaes | english_stem   | {supernova}
 </programlisting>
   </para>
 
@@ -2935,31 +2920,31 @@ SELECT * FROM ts_parse('default', '123 - a number');
 
 <programlisting>
 SELECT * FROM ts_token_type('default');
- tokid |    alias     |            description
--------+--------------+-----------------------------------
-     1 | lword        | Latin word
-     2 | nlword       | Non-latin word
-     3 | word         | Word
-     4 | email        | Email
-     5 | url          | URL
-     6 | host         | Host
-     7 | sfloat       | Scientific notation
-     8 | version      | VERSION
-     9 | part_hword   | Part of hyphenated word
-    10 | nlpart_hword | Non-latin part of hyphenated word
-    11 | lpart_hword  | Latin part of hyphenated word
-    12 | blank        | Space symbols
-    13 | tag          | HTML Tag
-    14 | protocol     | Protocol head
-    15 | hword        | Hyphenated word
-    16 | lhword       | Latin hyphenated word
-    17 | nlhword      | Non-latin hyphenated word
-    18 | uri          | URI
-    19 | file         | File or path name
-    20 | float        | Decimal notation
-    21 | int          | Signed integer
-    22 | uint         | Unsigned integer
-    23 | entity       | HTML Entity
+ tokid |      alias      |               description                
+-------+-----------------+------------------------------------------
+     1 | asciiword       | Word, all ASCII
+     2 | word            | Word, all letters
+     3 | numword         | Word, letters and digits
+     4 | email           | Email address
+     5 | url             | URL
+     6 | host            | Host
+     7 | sfloat          | Scientific notation
+     8 | version         | Version number
+     9 | hword_numpart   | Hyphenated word part, letters and digits
+    10 | hword_part      | Hyphenated word part, all letters
+    11 | hword_asciipart | Hyphenated word part, all ASCII
+    12 | blank           | Space symbols
+    13 | tag             | HTML tag
+    14 | protocol        | Protocol head
+    15 | numhword        | Hyphenated word, letters and digits
+    16 | asciihword      | Hyphenated word, all ASCII
+    17 | hword           | Hyphenated word, all letters
+    18 | url_path        | URL path
+    19 | file            | File or path name
+    20 | float           | Decimal notation
+    21 | int             | Signed integer
+    22 | uint            | Unsigned integer
+    23 | entity          | HTML entity
 </programlisting>
    </para>
 
@@ -3107,8 +3092,9 @@ SELECT plainto_tsquery('supernovae stars');
   </para>
 
   <para>
-   A GiST index is <firstterm>lossy</firstterm>, meaning it is necessary
-   to check the actual table row to eliminate false matches.
+   A GiST index is <firstterm>lossy</firstterm>, meaning that the index
+   may produce false matches, and it is necessary
+   to check the actual table row to eliminate such false matches.
    <productname>PostgreSQL</productname> does this automatically; for
    example, in the query plan below, the <literal>Filter:</literal>
    line indicates the index output will be rechecked:
@@ -3126,14 +3112,15 @@ EXPLAIN SELECT * FROM apod WHERE textsearch @@ to_tsquery('supernovae');
    index by a fixed-length signature. The signature is generated by hashing
    each word into a random bit in an n-bit string, with all these bits OR-ed
    together to produce an n-bit document signature.  When two words hash to
-   the same bit position there will be a false match, and if all words in
+   the same bit position there will be a false match.  If all words in
    the query have matches (real or false) then the table row must be
    retrieved to see if the match is correct.
   </para>
 
   <para>
-   Lossiness causes performance degradation since random access to table
-   records is slow; this limits the usefulness of GiST indexes.  The
+   Lossiness causes performance degradation due to useless fetches of table
+   records that turn out to be false matches.  Since random access to table
+   records is slow, this limits the usefulness of GiST indexes.  The
    likelihood of false matches depends on several factors, in particular the
    number of unique words, so using dictionaries to reduce this number is
    recommended.
@@ -3304,27 +3291,27 @@ EXPLAIN SELECT * FROM apod WHERE textsearch @@ to_tsquery('supernovae');
 =&gt; \dF+ russian
 Text search configuration "pg_catalog.russian"
 Parser: "pg_catalog.default"
-    Token     | Dictionaries 
---------------+--------------
- email        | simple
- file         | simple
- float        | simple
- host         | simple
- hword        | russian_stem
- int          | simple
- lhword       | english_stem
- lpart_hword  | english_stem
- lword        | english_stem
- nlhword      | russian_stem
- nlpart_hword | russian_stem
- nlword       | russian_stem
- part_hword   | russian_stem
- sfloat       | simple
- uint         | simple
- uri          | simple
- url          | simple
- version      | simple
- word         | russian_stem
+      Token      | Dictionaries 
+-----------------+--------------
+ asciihword      | english_stem
+ asciiword       | english_stem
+ email           | simple
+ file            | simple
+ float           | simple
+ host            | simple
+ hword           | russian_stem
+ hword_asciipart | english_stem
+ hword_numpart   | simple
+ hword_part      | russian_stem
+ int             | simple
+ numhword        | simple
+ numword         | simple
+ sfloat          | simple
+ uint            | simple
+ url             | simple
+ url_path        | simple
+ version         | simple
+ word            | russian_stem
 </programlisting>
      </para>
     </listitem>
@@ -3389,32 +3376,32 @@ Parser: "pg_catalog.default"
  Get headline    | prsd_headline  | 
  Get token types | prsd_lextype   | 
 
-   Token types for parser "pg_catalog.default"
-  Token name  |            Description            
---------------+-----------------------------------
- blank        | Space symbols
- email        | Email
- entity       | HTML Entity
- file         | File or path name
- float        | Decimal notation
- host         | Host
- hword        | Hyphenated word
- int          | Signed integer
- lhword       | Latin hyphenated word
- lpart_hword  | Latin part of hyphenated word
- lword        | Latin word
- nlhword      | Non-latin hyphenated word
- nlpart_hword | Non-latin part of hyphenated word
- nlword       | Non-latin word
- part_hword   | Part of hyphenated word
- protocol     | Protocol head
- sfloat       | Scientific notation
- tag          | HTML Tag
- uint         | Unsigned integer
- uri          | URI
- url          | URL
- version      | VERSION
- word         | Word
+        Token types for parser "pg_catalog.default"
+   Token name    |               Description                
+-----------------+------------------------------------------
+ asciihword      | Hyphenated word, all ASCII
+ asciiword       | Word, all ASCII
+ blank           | Space symbols
+ email           | Email address
+ entity          | HTML entity
+ file            | File or path name
+ float           | Decimal notation
+ host            | Host
+ hword           | Hyphenated word, all letters
+ hword_asciipart | Hyphenated word part, all ASCII
+ hword_numpart   | Hyphenated word part, letters and digits
+ hword_part      | Hyphenated word part, all letters
+ int             | Signed integer
+ numhword        | Hyphenated word, letters and digits
+ numword         | Word, letters and digits
+ protocol        | Protocol head
+ sfloat          | Scientific notation
+ tag             | HTML tag
+ uint            | Unsigned integer
+ url             | URL
+ url_path        | URL path
+ version         | Version number
+ word            | Word, all letters
 (23 rows)
 </programlisting>
      </para>
@@ -3583,6 +3570,12 @@ Parser: "pg_catalog.default"
     <para>
      Relocation of configuration from add-on tables into core system catalogs
      will break client queries that looked at the add-on tables.
+    </para>
+   </listitem>
+
+   <listitem>
+    <para>
+     Thesaurus files now use <literal>?</> for stop words.
     </para>
    </listitem>
 

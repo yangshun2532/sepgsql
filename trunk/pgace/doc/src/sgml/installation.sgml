@@ -1,4 +1,4 @@
-<!-- $PostgreSQL: pgsql/doc/src/sgml/installation.sgml,v 1.294 2007/10/06 15:50:43 alvherre Exp $ -->
+<!-- $PostgreSQL: pgsql/doc/src/sgml/installation.sgml,v 1.297 2007/11/05 17:43:20 momjian Exp $ -->
 
 <chapter id="installation">
  <title><![%standalone-include[<productname>PostgreSQL</>]]>
@@ -937,11 +937,10 @@ su - postgres
        <term><option>--with-ossp-uuid</option></term>
        <listitem>
         <para>
-         Build with the <ulink
-         url="http://www.ossp.org/pkg/lib/uuid/">OSSP UUID
-         library</ulink>.  This is necessary for the contrib module
-         <literal>uuid-ossp</literal> which provides functions to
-         generate UUIDs.<indexterm><primary>UUID</primary></indexterm>
+         Use the <ulink url="http://www.ossp.org/pkg/lib/uuid/">OSSP UUID
+         library</ulink> when building <filename>/contrib/uuid-ossp</>.
+         The library provides functions to generate
+         UUIDs.<indexterm><primary>UUID</primary></indexterm>
         </para>
        </listitem>
       </varlistentry>
@@ -973,9 +972,9 @@ su - postgres
        <term><option>--with-libxslt</option></term>
        <listitem>
         <para>
-         Build with libxslt. The <filename>contrib/xml2</> module 
-         relies on this library to perform Stylesheet transformations of
-         XML. 
+         Use libxslt when building <filename>/contrib/xml2</>.
+         <filename>/contrib/xml2</> relies on this library to perform
+         Stylesheet transformations of XML.
         </para>
        </listitem>
       </varlistentry>
