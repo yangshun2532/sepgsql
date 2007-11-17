@@ -5,7 +5,7 @@
  *
  * Copyright (c) 1998-2007, PostgreSQL Global Development Group
  *
- * $PostgreSQL: pgsql/src/include/tsearch/ts_utils.h,v 1.7 2007/10/23 01:44:39 tgl Exp $
+ * $PostgreSQL: pgsql/src/include/tsearch/ts_utils.h,v 1.10 2007/11/15 22:25:17 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -26,13 +26,13 @@ struct TSVectorParseStateData;	/* opaque struct in tsvector_parser.c */
 typedef struct TSVectorParseStateData *TSVectorParseState;
 
 extern TSVectorParseState init_tsvector_parser(char *input,
-											   bool oprisdelim,
-											   bool is_tsquery);
+					 bool oprisdelim,
+					 bool is_tsquery);
 extern void reset_tsvector_parser(TSVectorParseState state, char *input);
-extern bool gettoken_tsvector(TSVectorParseState state, 
-							  char **token, int *len,
-							  WordEntryPos **pos, int *poslen,
-							  char **endptr);
+extern bool gettoken_tsvector(TSVectorParseState state,
+				  char **token, int *len,
+				  WordEntryPos **pos, int *poslen,
+				  char **endptr);
 extern void close_tsvector_parser(TSVectorParseState state);
 
 /* parse_tsquery */
@@ -40,9 +40,11 @@ extern void close_tsvector_parser(TSVectorParseState state);
 struct TSQueryParserStateData;	/* private in backend/utils/adt/tsquery.c */
 typedef struct TSQueryParserStateData *TSQueryParserState;
 
-typedef void (*PushFunction)(Datum opaque, TSQueryParserState state, 
-				char *token, int tokenlen, 
-				int2 tokenweights /* bitmap as described in QueryOperand struct */ );
+typedef void (*PushFunction) (Datum opaque, TSQueryParserState state,
+										  char *token, int tokenlen,
+										  int2 tokenweights		/* bitmap as described
+																 * in QueryOperand
+								  struct */ );
 
 extern TSQuery parse_tsquery(char *buf,
 			  PushFunction pushval,
@@ -50,7 +52,7 @@ extern TSQuery parse_tsquery(char *buf,
 
 /* Functions for use by PushFunction implementations */
 extern void pushValue(TSQueryParserState state,
-			 char *strval, int lenval, int2 weight);
+		  char *strval, int lenval, int2 weight);
 extern void pushStop(TSQueryParserState state);
 extern void pushOperator(TSQueryParserState state, int8 operator);
 
@@ -64,10 +66,11 @@ typedef struct
 	union
 	{
 		uint16		pos;
+
 		/*
-		 * When apos array is used, apos[0] is the number of elements
-		 * in the array (excluding apos[0]), and alen is the allocated
-		 * size of the array.
+		 * When apos array is used, apos[0] is the number of elements in the
+		 * array (excluding apos[0]), and alen is the allocated size of the
+		 * array.
 		 */
 		uint16	   *apos;
 	}			pos;
@@ -83,7 +86,7 @@ typedef struct
 	int4		pos;
 } ParsedText;
 
-extern void parsetext(Oid cfgId, ParsedText * prs, char *buf, int4 buflen);
+extern void parsetext(Oid cfgId, ParsedText *prs, char *buf, int4 buflen);
 
 /*
  * headline framework, flow in common to generate:
@@ -92,16 +95,16 @@ extern void parsetext(Oid cfgId, ParsedText * prs, char *buf, int4 buflen);
  *	3 generateHeadline to generate result text
  */
 
-extern void hlparsetext(Oid cfgId, HeadlineParsedText * prs, TSQuery query,
+extern void hlparsetext(Oid cfgId, HeadlineParsedText *prs, TSQuery query,
 			char *buf, int4 buflen);
-extern text *generateHeadline(HeadlineParsedText * prs);
+extern text *generateHeadline(HeadlineParsedText *prs);
 
 /*
  * Common check function for tsvector @@ tsquery
  */
 
-extern bool TS_execute(QueryItem * curitem, void *checkval, bool calcnot,
-		   bool (*chkcond) (void *checkval, QueryOperand * val));
+extern bool TS_execute(QueryItem *curitem, void *checkval, bool calcnot,
+		   bool (*chkcond) (void *checkval, QueryOperand *val));
 
 /*
  * Useful conversion macros
@@ -159,8 +162,8 @@ extern Datum gin_ts_consistent(PG_FUNCTION_ARGS);
 /*
  * TSQuery Utilities
  */
-extern QueryItem *clean_NOT(QueryItem * ptr, int4 *len);
-extern QueryItem *clean_fakeval(QueryItem * ptr, int4 *len);
+extern QueryItem *clean_NOT(QueryItem *ptr, int4 *len);
+extern QueryItem *clean_fakeval(QueryItem *ptr, int4 *len);
 
 typedef struct QTNode
 {
@@ -182,17 +185,19 @@ typedef uint64 TSQuerySign;
 #define TSQS_SIGLEN  (sizeof(TSQuerySign)*BITS_PER_BYTE)
 
 
-extern QTNode *QT2QTN(QueryItem * in, char *operand);
+extern QTNode *QT2QTN(QueryItem *in, char *operand);
 extern TSQuery QTN2QT(QTNode *in);
-extern void QTNFree(QTNode * in);
-extern void QTNSort(QTNode * in);
-extern void QTNTernary(QTNode * in);
-extern void QTNBinary(QTNode * in);
-extern int	QTNodeCompare(QTNode * an, QTNode * bn);
+extern void QTNFree(QTNode *in);
+extern void QTNSort(QTNode *in);
+extern void QTNTernary(QTNode *in);
+extern void QTNBinary(QTNode *in);
+extern int	QTNodeCompare(QTNode *an, QTNode *bn);
 extern QTNode *QTNCopy(QTNode *in);
 extern void QTNClearFlags(QTNode *in, uint32 flags);
-extern bool QTNEq(QTNode * a, QTNode * b);
+extern bool QTNEq(QTNode *a, QTNode *b);
 extern TSQuerySign makeTSQuerySign(TSQuery a);
+extern QTNode *findsubquery(QTNode *root, QTNode *ex, QTNode *subs,
+			 bool *isfind);
 
 /*
  * TSQuery GiST support

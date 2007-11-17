@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/nodes/outfuncs.c,v 1.316 2007/11/08 21:49:47 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/nodes/outfuncs.c,v 1.318 2007/11/15 22:25:15 momjian Exp $
  *
  * NOTES
  *	  Every node type that can appear in stored rules' parsetrees *must*
@@ -989,7 +989,7 @@ static void
 _outXmlExpr(StringInfo str, XmlExpr *node)
 {
 	WRITE_NODE_TYPE("XMLEXPR");
-	
+
 	WRITE_ENUM_FIELD(op, XmlExprOp);
 	WRITE_STRING_FIELD(name);
 	WRITE_NODE_FIELD(named_args);

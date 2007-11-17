@@ -7,7 +7,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/tsearch/dict_thesaurus.c,v 1.6 2007/11/10 15:39:34 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/backend/tsearch/dict_thesaurus.c,v 1.8 2007/11/15 22:25:16 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -70,7 +70,7 @@ typedef struct
 
 
 static void
-newLexeme(DictThesaurus * d, char *b, char *e, uint16 idsubst, uint16 posinsubst)
+newLexeme(DictThesaurus *d, char *b, char *e, uint16 idsubst, uint16 posinsubst)
 {
 	TheLexeme  *ptr;
 
@@ -104,7 +104,7 @@ newLexeme(DictThesaurus * d, char *b, char *e, uint16 idsubst, uint16 posinsubst
 }
 
 static void
-addWrd(DictThesaurus * d, char *b, char *e, uint16 idsubst, uint16 nwrd, uint16 posinsubst, bool useasis)
+addWrd(DictThesaurus *d, char *b, char *e, uint16 idsubst, uint16 nwrd, uint16 posinsubst, bool useasis)
 {
 	static int	nres = 0;
 	static int	ntres = 0;
@@ -167,7 +167,7 @@ addWrd(DictThesaurus * d, char *b, char *e, uint16 idsubst, uint16 nwrd, uint16 
 #define TR_INSUBS	4
 
 static void
-thesaurusRead(char *filename, DictThesaurus * d)
+thesaurusRead(char *filename, DictThesaurus *d)
 {
 	FILE	   *fh;
 	int			lineno = 0;
@@ -311,7 +311,7 @@ thesaurusRead(char *filename, DictThesaurus * d)
 }
 
 static TheLexeme *
-addCompiledLexeme(TheLexeme * newwrds, int *nnw, int *tnm, TSLexeme * lexeme, LexemeInfo * src, uint16 tnvariant)
+addCompiledLexeme(TheLexeme *newwrds, int *nnw, int *tnm, TSLexeme *lexeme, LexemeInfo *src, uint16 tnvariant)
 {
 
 	if (*nnw >= *tnm)
@@ -343,7 +343,7 @@ addCompiledLexeme(TheLexeme * newwrds, int *nnw, int *tnm, TSLexeme * lexeme, Le
 }
 
 static int
-cmpLexemeInfo(LexemeInfo * a, LexemeInfo * b)
+cmpLexemeInfo(LexemeInfo *a, LexemeInfo *b)
 {
 	if (a == NULL || b == NULL)
 		return 0;
@@ -365,7 +365,7 @@ cmpLexemeInfo(LexemeInfo * a, LexemeInfo * b)
 }
 
 static int
-cmpLexeme(TheLexeme * a, TheLexeme * b)
+cmpLexeme(TheLexeme *a, TheLexeme *b)
 {
 	if (a->lexeme == NULL)
 	{
@@ -400,7 +400,7 @@ cmpTheLexeme(const void *a, const void *b)
 }
 
 static void
-compileTheLexeme(DictThesaurus * d)
+compileTheLexeme(DictThesaurus *d)
 {
 	int			i,
 				nnw = 0,
@@ -412,16 +412,16 @@ compileTheLexeme(DictThesaurus * d)
 	{
 		TSLexeme   *ptr;
 
-		if (strcmp(d->wrds[i].lexeme, "?") == 0)	/* Is stop word marker? */
+		if (strcmp(d->wrds[i].lexeme, "?") == 0)		/* Is stop word marker? */
 			newwrds = addCompiledLexeme(newwrds, &nnw, &tnm, NULL, d->wrds[i].entries, 0);
 		else
 		{
 			ptr = (TSLexeme *) DatumGetPointer(FunctionCall4(&(d->subdict->lexize),
-										   PointerGetDatum(d->subdict->dictData),
-											  PointerGetDatum(d->wrds[i].lexeme),
-										Int32GetDatum(strlen(d->wrds[i].lexeme)),
-														 PointerGetDatum(NULL)));
-	
+									   PointerGetDatum(d->subdict->dictData),
+										  PointerGetDatum(d->wrds[i].lexeme),
+									Int32GetDatum(strlen(d->wrds[i].lexeme)),
+													 PointerGetDatum(NULL)));
+
 			if (!ptr)
 				elog(ERROR, "thesaurus word-sample \"%s\" isn't recognized by subdictionary (rule %d)",
 					 d->wrds[i].lexeme, d->wrds[i].entries->idsubst + 1);
@@ -435,7 +435,7 @@ compileTheLexeme(DictThesaurus * d)
 					TSLexeme   *remptr = ptr + 1;
 					int			tnvar = 1;
 					int			curvar = ptr->nvariant;
-	
+
 					/* compute n words in one variant */
 					while (remptr->lexeme)
 					{
@@ -444,14 +444,14 @@ compileTheLexeme(DictThesaurus * d)
 						tnvar++;
 						remptr++;
 					}
-	
+
 					remptr = ptr;
 					while (remptr->lexeme && remptr->nvariant == curvar)
 					{
 						newwrds = addCompiledLexeme(newwrds, &nnw, &tnm, remptr, d->wrds[i].entries, tnvar);
 						remptr++;
 					}
-	
+
 					ptr = remptr;
 				}
 			}
@@ -503,7 +503,7 @@ compileTheLexeme(DictThesaurus * d)
 }
 
 static void
-compileTheSubstitute(DictThesaurus * d)
+compileTheSubstitute(DictThesaurus *d)
 {
 	int			i;
 
@@ -651,9 +651,10 @@ thesaurus_init(PG_FUNCTION_ARGS)
 }
 
 static LexemeInfo *
-findTheLexeme(DictThesaurus * d, char *lexeme)
+findTheLexeme(DictThesaurus *d, char *lexeme)
 {
-	TheLexeme	key, *res;
+	TheLexeme	key,
+			   *res;
 
 	if (d->nwrds == 0)
 		return NULL;
@@ -669,7 +670,7 @@ findTheLexeme(DictThesaurus * d, char *lexeme)
 }
 
 static bool
-matchIdSubst(LexemeInfo * stored, uint16 idsubst)
+matchIdSubst(LexemeInfo *stored, uint16 idsubst)
 {
 	bool		res = true;
 
@@ -689,7 +690,7 @@ matchIdSubst(LexemeInfo * stored, uint16 idsubst)
 }
 
 static LexemeInfo *
-findVariant(LexemeInfo * in, LexemeInfo * stored, uint16 curpos, LexemeInfo ** newin, int newn)
+findVariant(LexemeInfo *in, LexemeInfo *stored, uint16 curpos, LexemeInfo **newin, int newn)
 {
 	for (;;)
 	{
@@ -748,7 +749,7 @@ findVariant(LexemeInfo * in, LexemeInfo * stored, uint16 curpos, LexemeInfo ** n
 }
 
 static TSLexeme *
-copyTSLexeme(TheSubstitute * ts)
+copyTSLexeme(TheSubstitute *ts)
 {
 	TSLexeme   *res;
 	uint16		i;
@@ -766,7 +767,7 @@ copyTSLexeme(TheSubstitute * ts)
 }
 
 static TSLexeme *
-checkMatch(DictThesaurus * d, LexemeInfo * info, uint16 curpos, bool *moreres)
+checkMatch(DictThesaurus *d, LexemeInfo *info, uint16 curpos, bool *moreres)
 {
 	*moreres = false;
 	while (info)

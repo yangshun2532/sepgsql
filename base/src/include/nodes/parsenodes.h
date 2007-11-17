@@ -7,7 +7,7 @@
  * Portions Copyright (c) 1996-2007, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/nodes/parsenodes.h,v 1.354 2007/10/24 23:27:08 tgl Exp $
+ * $PostgreSQL: pgsql/src/include/nodes/parsenodes.h,v 1.356 2007/11/15 22:25:17 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -338,7 +338,7 @@ typedef struct SortBy
 {
 	NodeTag		type;
 	SortByDir	sortby_dir;		/* ASC/DESC/USING */
-	SortByNulls	sortby_nulls;	/* NULLS FIRST/LAST */
+	SortByNulls sortby_nulls;	/* NULLS FIRST/LAST */
 	List	   *useOp;			/* name of op to use, if SORTBY_USING */
 	Node	   *node;			/* expression to sort on */
 } SortBy;
@@ -427,7 +427,7 @@ typedef struct IndexElem
 	Node	   *expr;			/* expression to index, or NULL */
 	List	   *opclass;		/* name of desired opclass; NIL = default */
 	SortByDir	ordering;		/* ASC/DESC/default */
-	SortByNulls	nulls_ordering;	/* FIRST/LAST/default */
+	SortByNulls nulls_ordering; /* FIRST/LAST/default */
 } IndexElem;
 
 /*
@@ -624,8 +624,8 @@ typedef struct SortClause
 {
 	NodeTag		type;
 	Index		tleSortGroupRef;	/* reference into targetlist */
-	Oid			sortop;				/* the ordering operator ('<' op) */
-	bool		nulls_first;		/* do NULLs come before normal values? */
+	Oid			sortop;			/* the ordering operator ('<' op) */
+	bool		nulls_first;	/* do NULLs come before normal values? */
 } SortClause;
 
 /*
@@ -1472,16 +1472,16 @@ typedef struct CommentStmt
  *		Declare Cursor Statement
  *
  * Note: the "query" field of DeclareCursorStmt is only used in the raw grammar
- * output.  After parse analysis it's set to null, and the Query points to the
+ * output.	After parse analysis it's set to null, and the Query points to the
  * DeclareCursorStmt, not vice versa.
  * ----------------------
  */
-#define CURSOR_OPT_BINARY		0x0001		/* BINARY */
-#define CURSOR_OPT_SCROLL		0x0002		/* SCROLL explicitly given */
-#define CURSOR_OPT_NO_SCROLL	0x0004		/* NO SCROLL explicitly given */
-#define CURSOR_OPT_INSENSITIVE	0x0008		/* INSENSITIVE */
-#define CURSOR_OPT_HOLD			0x0010		/* WITH HOLD */
-#define CURSOR_OPT_FAST_PLAN	0x0020		/* prefer fast-start plan */
+#define CURSOR_OPT_BINARY		0x0001	/* BINARY */
+#define CURSOR_OPT_SCROLL		0x0002	/* SCROLL explicitly given */
+#define CURSOR_OPT_NO_SCROLL	0x0004	/* NO SCROLL explicitly given */
+#define CURSOR_OPT_INSENSITIVE	0x0008	/* INSENSITIVE */
+#define CURSOR_OPT_HOLD			0x0010	/* WITH HOLD */
+#define CURSOR_OPT_FAST_PLAN	0x0020	/* prefer fast-start plan */
 
 typedef struct DeclareCursorStmt
 {
@@ -1499,7 +1499,7 @@ typedef struct ClosePortalStmt
 {
 	NodeTag		type;
 	char	   *portalname;		/* name of the portal (cursor) */
-								/* NULL means CLOSE ALL */
+	/* NULL means CLOSE ALL */
 } ClosePortalStmt;
 
 /* ----------------------
@@ -1856,7 +1856,7 @@ typedef struct VacuumStmt
 	bool		full;			/* do FULL (non-concurrent) vacuum */
 	bool		analyze;		/* do ANALYZE step */
 	bool		verbose;		/* print progress info */
-	int			freeze_min_age;	/* min freeze age, or -1 to use default */
+	int			freeze_min_age; /* min freeze age, or -1 to use default */
 	RangeVar   *relation;		/* single table to process, or NULL */
 	List	   *va_cols;		/* list of column names, or NIL for all */
 } VacuumStmt;
@@ -1897,7 +1897,7 @@ typedef enum DiscardMode
 typedef struct DiscardStmt
 {
 	NodeTag		type;
-	DiscardMode	target;
+	DiscardMode target;
 } DiscardStmt;
 
 /* ----------------------
@@ -2013,7 +2013,7 @@ typedef struct DeallocateStmt
 {
 	NodeTag		type;
 	char	   *name;			/* The name of the plan to remove */
-								/* NULL means DEALLOCATE ALL */
+	/* NULL means DEALLOCATE ALL */
 } DeallocateStmt;
 
 /*
@@ -2055,14 +2055,14 @@ typedef struct AlterTSConfigurationStmt
 	List	   *cfgname;		/* qualified name (list of Value strings) */
 
 	/*
-	 * dicts will be non-NIL if ADD/ALTER MAPPING was specified.
-	 * If dicts is NIL, but tokentype isn't, DROP MAPPING was specified.
+	 * dicts will be non-NIL if ADD/ALTER MAPPING was specified. If dicts is
+	 * NIL, but tokentype isn't, DROP MAPPING was specified.
 	 */
-	List		*tokentype;		/* list of Value strings */
-	List		*dicts;			/* list of list of Value strings */
-	bool		 override;		/* if true - remove old variant */
-	bool		 replace;		/* if true - replace dictionary by another */
-	bool		 missing_ok;	/* for DROP - skip error if missing? */
+	List	   *tokentype;		/* list of Value strings */
+	List	   *dicts;			/* list of list of Value strings */
+	bool		override;		/* if true - remove old variant */
+	bool		replace;		/* if true - replace dictionary by another */
+	bool		missing_ok;		/* for DROP - skip error if missing? */
 } AlterTSConfigurationStmt;
 
 #endif   /* PARSENODES_H */

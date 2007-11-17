@@ -7,7 +7,7 @@
  *
  * Portions Copyright (c) 1996-2007, PostgreSQL Global Development Group
  *
- *	  $PostgreSQL: pgsql/src/include/utils/guc_tables.h,v 1.35 2007/09/11 00:06:42 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/include/utils/guc_tables.h,v 1.37 2007/11/15 22:25:17 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -97,8 +97,8 @@ typedef struct guc_stack
 	int			nest_level;		/* nesting depth at which we made entry */
 	GucStackState state;		/* see enum above */
 	GucSource	source;			/* source of the prior value */
-	union config_var_value prior;	/* previous value of variable */
-	union config_var_value masked;	/* SET value in a GUC_SET_LOCAL entry */
+	union config_var_value prior;		/* previous value of variable */
+	union config_var_value masked;		/* SET value in a GUC_SET_LOCAL entry */
 	/* masked value's source must be PGC_S_SESSION, so no need to store it */
 } GucStack;
 

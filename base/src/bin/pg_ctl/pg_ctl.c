@@ -4,7 +4,7 @@
  *
  * Portions Copyright (c) 1996-2007, PostgreSQL Global Development Group
  *
- * $PostgreSQL: pgsql/src/bin/pg_ctl/pg_ctl.c,v 1.86 2007/11/10 21:48:51 momjian Exp $
+ * $PostgreSQL: pgsql/src/bin/pg_ctl/pg_ctl.c,v 1.89 2007/11/15 21:14:41 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -138,7 +138,7 @@ static pid_t postmasterPID = -1;
 
 static pgpid_t get_pgpid(void);
 static char **readfile(const char *path);
-static int start_postmaster(void);
+static int	start_postmaster(void);
 static void read_post_opts(void);
 
 static bool test_postmaster_connection(bool);
@@ -415,7 +415,7 @@ test_postmaster_connection(bool do_checkpoint)
 	int			i;
 	char		portstr[32];
 	char	   *p;
-	char		connstr[128]; /* Should be way more than enough! */
+	char		connstr[128];	/* Should be way more than enough! */
 
 	*portstr = '\0';
 
@@ -505,14 +505,15 @@ test_postmaster_connection(bool do_checkpoint)
 			if (do_checkpoint)
 			{
 				/*
-				 * Increment the wait hint by 6 secs (connection timeout + sleep)
-				 * We must do this to indicate to the SCM that our startup time is
-				 * changing, otherwise it'll usually send a stop signal after 20
-				 * seconds, despite incrementing the checkpoint counter.
+				 * Increment the wait hint by 6 secs (connection timeout +
+				 * sleep) We must do this to indicate to the SCM that our
+				 * startup time is changing, otherwise it'll usually send a
+				 * stop signal after 20 seconds, despite incrementing the
+				 * checkpoint counter.
 				 */
 				status.dwWaitHint += 6000;
 				status.dwCheckPoint++;
-				SetServiceStatus(hStatus, (LPSERVICE_STATUS) &status);
+				SetServiceStatus(hStatus, (LPSERVICE_STATUS) & status);
 			}
 
 			else
@@ -528,22 +529,23 @@ test_postmaster_connection(bool do_checkpoint)
 
 
 #if defined(HAVE_GETRLIMIT) && defined(RLIMIT_CORE)
-static void 
+static void
 unlimit_core_size(void)
 {
 	struct rlimit lim;
-	getrlimit(RLIMIT_CORE,&lim);
+
+	getrlimit(RLIMIT_CORE, &lim);
 	if (lim.rlim_max == 0)
 	{
-			write_stderr(_("%s: cannot set core file size limit; disallowed by hard limit\n"), 
-						 progname);
-			return;
+		write_stderr(_("%s: cannot set core file size limit; disallowed by hard limit\n"),
+					 progname);
+		return;
 	}
 	else if (lim.rlim_max == RLIM_INFINITY || lim.rlim_cur < lim.rlim_max)
 	{
 		lim.rlim_cur = lim.rlim_max;
-		setrlimit(RLIMIT_CORE,&lim);
-	}	
+		setrlimit(RLIMIT_CORE, &lim);
+	}
 }
 #endif
 
@@ -1166,7 +1168,7 @@ pgwin32_ServiceMain(DWORD argc, LPTSTR * argv)
 
 	memset(&pi, 0, sizeof(pi));
 
-        read_post_opts();
+	read_post_opts();
 
 	/* Register the control request handler */
 	if ((hStatus = RegisterServiceCtrlHandler(register_servicename, pgwin32_ServiceHandler)) == (SERVICE_STATUS_HANDLE) 0)
@@ -1191,15 +1193,18 @@ pgwin32_ServiceMain(DWORD argc, LPTSTR * argv)
 		write_eventlog(EVENTLOG_INFORMATION_TYPE, _("Waiting for server startup...\n"));
 		if (test_postmaster_connection(true) == false)
 		{
-                	write_eventlog(EVENTLOG_INFORMATION_TYPE, _("Timed out waiting for server startup\n"));
- 			pgwin32_SetServiceStatus(SERVICE_STOPPED);
+			write_eventlog(EVENTLOG_INFORMATION_TYPE, _("Timed out waiting for server startup\n"));
+			pgwin32_SetServiceStatus(SERVICE_STOPPED);
 			return;
 		}
 		write_eventlog(EVENTLOG_INFORMATION_TYPE, _("Server started and accepting connections\n"));
 	}
 
-        /* Save the checkpoint value as it might have been incremented in test_postmaster_connection */
-        check_point_start = status.dwCheckPoint;
+	/*
+	 * Save the checkpoint value as it might have been incremented in
+	 * test_postmaster_connection
+	 */
+	check_point_start = status.dwCheckPoint;
 
 	pgwin32_SetServiceStatus(SERVICE_RUNNING);
 
@@ -1465,22 +1470,22 @@ do_help(void)
 	printf(_("%s is a utility to start, stop, restart, reload configuration files,\n"
 			 "report the status of a PostgreSQL server, or signal a PostgreSQL process.\n\n"), progname);
 	printf(_("Usage:\n"));
-	printf(_("  %s start   [-w] [-t secs] [-D DATADIR] [-s] [-l FILENAME] [-o \"OPTIONS\"]\n"), progname);
-	printf(_("  %s stop    [-W] [-D DATADIR] [-s] [-m SHUTDOWN-MODE]\n"), progname);
-	printf(_("  %s restart [-w] [-t secs] [-D DATADIR] [-s] [-m SHUTDOWN-MODE]\n                   [-o \"OPTIONS\"]\n"), progname);
+	printf(_("  %s start   [-w] [-t SECS] [-D DATADIR] [-s] [-l FILENAME] [-o \"OPTIONS\"]\n"), progname);
+	printf(_("  %s stop    [-W] [-t SECS] [-D DATADIR] [-s] [-m SHUTDOWN-MODE]\n"), progname);
+	printf(_("  %s restart [-w] [-t SECS] [-D DATADIR] [-s] [-m SHUTDOWN-MODE]\n                   [-o \"OPTIONS\"]\n"), progname);
 	printf(_("  %s reload  [-D DATADIR] [-s]\n"), progname);
 	printf(_("  %s status  [-D DATADIR]\n"), progname);
 	printf(_("  %s kill    SIGNALNAME PID\n"), progname);
 #if defined(WIN32) || defined(__CYGWIN__)
 	printf(_("  %s register   [-N SERVICENAME] [-U USERNAME] [-P PASSWORD] [-D DATADIR]\n"
-			 "                    [-w] [-t timeout] [-o \"OPTIONS\"]\n"), progname);
+		 "                    [-w] [-t SECS] [-o \"OPTIONS\"]\n"), progname);
 	printf(_("  %s unregister [-N SERVICENAME]\n"), progname);
 #endif
 
 	printf(_("\nCommon options:\n"));
 	printf(_("  -D, --pgdata DATADIR   location of the database storage area\n"));
 	printf(_("  -s, --silent           only print errors, no informational messages\n"));
-	printf(_("  -t secs                seconds to wait when using -w option\n"));
+	printf(_("  -t SECS                seconds to wait when using -w option\n"));
 	printf(_("  -w                     wait until operation completes\n"));
 	printf(_("  -W                     do not wait until operation completes\n"));
 	printf(_("  --help                 show this help, then exit\n"));

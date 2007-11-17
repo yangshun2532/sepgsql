@@ -7,7 +7,7 @@
  * Portions Copyright (c) 1996-2007, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/storage/smgr.h,v 1.59 2007/09/05 18:10:48 tgl Exp $
+ * $PostgreSQL: pgsql/src/include/storage/smgr.h,v 1.61 2007/11/15 21:14:44 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -76,14 +76,16 @@ extern void smgrtruncate(SMgrRelation reln, BlockNumber nblocks,
 			 bool isTemp);
 extern void smgrimmedsync(SMgrRelation reln);
 extern void smgrDoPendingDeletes(bool isCommit);
-extern int	smgrGetPendingDeletes(bool forCommit, RelFileNode **ptr,
-								  bool *haveNonTemp);
+extern int smgrGetPendingDeletes(bool forCommit, RelFileNode **ptr,
+					  bool *haveNonTemp);
 extern void AtSubCommit_smgr(void);
 extern void AtSubAbort_smgr(void);
 extern void PostPrepare_smgr(void);
 extern void smgrcommit(void);
 extern void smgrabort(void);
+extern void smgrpreckpt(void);
 extern void smgrsync(void);
+extern void smgrpostckpt(void);
 
 extern void smgr_redo(XLogRecPtr lsn, XLogRecord *record);
 extern void smgr_desc(StringInfo buf, uint8 xl_info, char *rec);
@@ -104,7 +106,9 @@ extern void mdwrite(SMgrRelation reln, BlockNumber blocknum, char *buffer,
 extern BlockNumber mdnblocks(SMgrRelation reln);
 extern void mdtruncate(SMgrRelation reln, BlockNumber nblocks, bool isTemp);
 extern void mdimmedsync(SMgrRelation reln);
+extern void mdpreckpt(void);
 extern void mdsync(void);
+extern void mdpostckpt(void);
 
 extern void RememberFsyncRequest(RelFileNode rnode, BlockNumber segno);
 extern void ForgetRelationFsyncRequests(RelFileNode rnode);

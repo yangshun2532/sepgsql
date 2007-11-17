@@ -18,7 +18,7 @@
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/nodes/equalfuncs.c,v 1.313 2007/09/03 18:46:30 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/nodes/equalfuncs.c,v 1.315 2007/11/15 22:25:15 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -663,9 +663,9 @@ static bool
 _equalPathKey(PathKey *a, PathKey *b)
 {
 	/*
-	 * This is normally used on non-canonicalized PathKeys, so must chase
-	 * up to the topmost merged EquivalenceClass and see if those are the
-	 * same (by pointer equality).
+	 * This is normally used on non-canonicalized PathKeys, so must chase up
+	 * to the topmost merged EquivalenceClass and see if those are the same
+	 * (by pointer equality).
 	 */
 	EquivalenceClass *a_eclass;
 	EquivalenceClass *b_eclass;

@@ -7,7 +7,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/adt/tsquery_util.c,v 1.5 2007/10/23 01:44:39 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/utils/adt/tsquery_util.c,v 1.7 2007/11/15 22:25:16 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -19,7 +19,7 @@
 #include "miscadmin.h"
 
 QTNode *
-QT2QTN(QueryItem * in, char *operand)
+QT2QTN(QueryItem *in, char *operand)
 {
 	QTNode	   *node = (QTNode *) palloc0(sizeof(QTNode));
 
@@ -52,7 +52,7 @@ QT2QTN(QueryItem * in, char *operand)
 }
 
 void
-QTNFree(QTNode * in)
+QTNFree(QTNode *in)
 {
 	if (!in)
 		return;
@@ -84,20 +84,20 @@ QTNFree(QTNode * in)
 }
 
 int
-QTNodeCompare(QTNode * an, QTNode * bn)
+QTNodeCompare(QTNode *an, QTNode *bn)
 {
 	/* since this function recurses, it could be driven to stack overflow. */
 	check_stack_depth();
 
 	if (an->valnode->type != bn->valnode->type)
 		return (an->valnode->type > bn->valnode->type) ? -1 : 1;
-	
+
 	if (an->valnode->type == QI_OPR)
 	{
 		QueryOperator *ao = &an->valnode->operator;
 		QueryOperator *bo = &bn->valnode->operator;
 
-		if(ao->oper != bo->oper)
+		if (ao->oper != bo->oper)
 			return (ao->oper > bo->oper) ? -1 : 1;
 
 		if (an->nchild != bn->nchild)
@@ -139,7 +139,7 @@ cmpQTN(const void *a, const void *b)
 }
 
 void
-QTNSort(QTNode * in)
+QTNSort(QTNode *in)
 {
 	int			i;
 
@@ -156,7 +156,7 @@ QTNSort(QTNode * in)
 }
 
 bool
-QTNEq(QTNode * a, QTNode * b)
+QTNEq(QTNode *a, QTNode *b)
 {
 	uint32		sign = a->sign & b->sign;
 
@@ -169,12 +169,12 @@ QTNEq(QTNode * a, QTNode * b)
 /*
  * Remove unnecessary intermediate nodes. For example:
  *
- *  OR          OR
- * a  OR    -> a b c
- *   b  c      
+ *	OR			OR
+ * a  OR	-> a b c
+ *	 b	c
  */
 void
-QTNTernary(QTNode * in)
+QTNTernary(QTNode *in)
 {
 	int			i;
 
@@ -205,7 +205,7 @@ QTNTernary(QTNode * in)
 			memcpy(in->child + i, cc->child, cc->nchild * sizeof(QTNode *));
 			i += cc->nchild - 1;
 
-			if(cc->flags & QTN_NEEDFREE)
+			if (cc->flags & QTN_NEEDFREE)
 				pfree(cc->valnode);
 			pfree(cc);
 		}
@@ -217,7 +217,7 @@ QTNTernary(QTNode * in)
  * (Opposite of QTNTernary)
  */
 void
-QTNBinary(QTNode * in)
+QTNBinary(QTNode *in)
 {
 	int			i;
 
@@ -261,7 +261,7 @@ QTNBinary(QTNode * in)
  * terminators.
  */
 static void
-cntsize(QTNode * in, int *sumlen, int *nnode)
+cntsize(QTNode *in, int *sumlen, int *nnode)
 {
 	/* since this function recurses, it could be driven to stack overflow. */
 	check_stack_depth();
