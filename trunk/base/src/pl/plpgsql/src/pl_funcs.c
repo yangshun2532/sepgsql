@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/pl/plpgsql/src/pl_funcs.c,v 1.63 2007/07/25 04:19:08 neilc Exp $
+ *	  $PostgreSQL: pgsql/src/pl/plpgsql/src/pl_funcs.c,v 1.65 2007/11/15 22:25:17 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -766,7 +766,7 @@ static void
 dump_fetch(PLpgSQL_stmt_fetch *stmt)
 {
 	dump_ind();
-	
+
 	if (!stmt->is_move)
 	{
 		printf("FETCH curvar=%d\n", stmt->curvar);
@@ -814,7 +814,7 @@ dump_cursor_direction(PLpgSQL_stmt_fetch *stmt)
 		default:
 			printf("??? unknown cursor direction %d", stmt->direction);
 	}
-	
+
 	if (stmt->expr)
 	{
 		dump_expr(stmt->expr);
@@ -822,7 +822,7 @@ dump_cursor_direction(PLpgSQL_stmt_fetch *stmt)
 	}
 	else
 		printf("%d\n", stmt->how_many);
-		
+
 	dump_indent -= 2;
 }
 
@@ -1124,4 +1124,3 @@ plpgsql_dumptree(PLpgSQL_function *func)
 	printf("\nEnd of execution tree of function %s\n\n", func->fn_name);
 	fflush(stdout);
 }
-

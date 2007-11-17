@@ -15,7 +15,7 @@
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/nodes/copyfuncs.c,v 1.383 2007/10/11 18:05:26 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/nodes/copyfuncs.c,v 1.385 2007/11/15 22:25:15 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -70,7 +70,7 @@
 static PlannedStmt *
 _copyPlannedStmt(PlannedStmt *from)
 {
-	PlannedStmt	   *newnode = makeNode(PlannedStmt);
+	PlannedStmt *newnode = makeNode(PlannedStmt);
 
 	COPY_SCALAR_FIELD(commandType);
 	COPY_SCALAR_FIELD(canSetTag);
@@ -729,7 +729,7 @@ _copyRangeVar(RangeVar *from)
 static IntoClause *
 _copyIntoClause(IntoClause *from)
 {
-	IntoClause   *newnode = makeNode(IntoClause);
+	IntoClause *newnode = makeNode(IntoClause);
 
 	COPY_NODE_FIELD(rel);
 	COPY_NODE_FIELD(colNames);
@@ -1028,7 +1028,7 @@ _copyRelabelType(RelabelType *from)
 static CoerceViaIO *
 _copyCoerceViaIO(CoerceViaIO *from)
 {
-	CoerceViaIO   *newnode = makeNode(CoerceViaIO);
+	CoerceViaIO *newnode = makeNode(CoerceViaIO);
 
 	COPY_NODE_FIELD(arg);
 	COPY_SCALAR_FIELD(resulttype);
@@ -1043,7 +1043,7 @@ _copyCoerceViaIO(CoerceViaIO *from)
 static ArrayCoerceExpr *
 _copyArrayCoerceExpr(ArrayCoerceExpr *from)
 {
-	ArrayCoerceExpr   *newnode = makeNode(ArrayCoerceExpr);
+	ArrayCoerceExpr *newnode = makeNode(ArrayCoerceExpr);
 
 	COPY_NODE_FIELD(arg);
 	COPY_SCALAR_FIELD(elemfuncid);
@@ -1197,7 +1197,7 @@ _copyMinMaxExpr(MinMaxExpr *from)
 static XmlExpr *
 _copyXmlExpr(XmlExpr *from)
 {
-	XmlExpr *newnode = makeNode(XmlExpr);
+	XmlExpr    *newnode = makeNode(XmlExpr);
 
 	COPY_SCALAR_FIELD(op);
 	COPY_STRING_FIELD(name);
@@ -1395,7 +1395,7 @@ _copyFromExpr(FromExpr *from)
 static PathKey *
 _copyPathKey(PathKey *from)
 {
-	PathKey *newnode = makeNode(PathKey);
+	PathKey    *newnode = makeNode(PathKey);
 
 	/* EquivalenceClasses are never moved, so just shallow-copy the pointer */
 	COPY_SCALAR_FIELD(pk_eclass);

@@ -8,7 +8,7 @@
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/access/nbtree/nbtxlog.c,v 1.46 2007/09/20 17:56:30 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/access/nbtree/nbtxlog.c,v 1.49 2007/11/16 19:53:50 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -271,8 +271,10 @@ btree_xlog_split(bool onleft, bool isroot,
 	char	   *datapos;
 	int			datalen;
 	OffsetNumber newitemoff = 0;
-	Item newitem = NULL;
-	Size newitemsz = 0;
+	Item		newitem = NULL;
+	Size		newitemsz = 0;
+	Item		left_hikey = NULL;
+	Size		left_hikeysz = 0;
 
 	reln = XLogOpenRelation(xlrec->node);
 
@@ -289,6 +291,17 @@ btree_xlog_split(bool onleft, bool isroot,
 		datalen -= sizeof(BlockIdData);
 
 		forget_matching_split(xlrec->node, downlink, false);
+
+		/* Extract left hikey and its size (still assuming 16-bit alignment) */
+		if (!(record->xl_info & XLR_BKP_BLOCK_1))
+		{
+			/* We assume 16-bit alignment is enough for IndexTupleSize */
+			left_hikey = (Item) datapos;
+			left_hikeysz = MAXALIGN(IndexTupleSize(left_hikey));
+
+			datapos += left_hikeysz;
+			datalen -= left_hikeysz;
+		}
 	}
 
 	/* Extract newitem and newitemoff, if present */
@@ -302,17 +315,13 @@ btree_xlog_split(bool onleft, bool isroot,
 
 	if (onleft && !(record->xl_info & XLR_BKP_BLOCK_1))
 	{
-		IndexTupleData itupdata;
-
 		/*
-		 * We need to copy the tuple header to apply IndexTupleDSize, because
-		 * of alignment considerations.  However, we assume that PageAddItem
-		 * doesn't care about the alignment of the newitem pointer it's given.
+		 * We assume that 16-bit alignment is enough to apply IndexTupleSize
+		 * (since it's fetching from a uint16 field) and also enough for
+		 * PageAddItem to insert the tuple.
 		 */
-		newitem = datapos;
-		memcpy(&itupdata, datapos, sizeof(IndexTupleData));
-		newitemsz = IndexTupleDSize(itupdata);
-		newitemsz = MAXALIGN(newitemsz);
+		newitem = (Item) datapos;
+		newitemsz = MAXALIGN(IndexTupleSize(newitem));
 		datapos += newitemsz;
 		datalen -= newitemsz;
 	}
@@ -333,6 +342,18 @@ btree_xlog_split(bool onleft, bool isroot,
 
 	_bt_restore_page(rpage, datapos, datalen);
 
+	/*
+	 * On leaf level, the high key of the left page is equal to the
+	 * first key on the right page.
+	 */
+	if (xlrec->level == 0)
+	{
+		ItemId		hiItemId = PageGetItemId(rpage, P_FIRSTDATAKEY(ropaque));
+
+		left_hikey = PageGetItem(rpage, hiItemId);
+		left_hikeysz = ItemIdGetLength(hiItemId);
+	}
+
 	PageSetLSN(rpage, lsn);
 	PageSetTLI(rpage, ThisTimeLineID);
 	MarkBufferDirty(rbuf);
@@ -343,15 +364,15 @@ btree_xlog_split(bool onleft, bool isroot,
 	 * Reconstruct left (original) sibling if needed.  Note that this code
 	 * ensures that the items remaining on the left page are in the correct
 	 * item number order, but it does not reproduce the physical order they
-	 * would have had.  Is this worth changing?  See also _bt_restore_page().
+	 * would have had.	Is this worth changing?  See also _bt_restore_page().
 	 */
 	if (!(record->xl_info & XLR_BKP_BLOCK_1))
 	{
-		Buffer lbuf = XLogReadBuffer(reln, xlrec->leftsib, false);
+		Buffer		lbuf = XLogReadBuffer(reln, xlrec->leftsib, false);
 
 		if (BufferIsValid(lbuf))
 		{
-			Page lpage = (Page) BufferGetPage(lbuf);
+			Page		lpage = (Page) BufferGetPage(lbuf);
 			BTPageOpaque lopaque = (BTPageOpaque) PageGetSpecialPointer(lpage);
 
 			if (!XLByteLE(lsn, PageGetLSN(lpage)))
@@ -359,19 +380,18 @@ btree_xlog_split(bool onleft, bool isroot,
 				OffsetNumber off;
 				OffsetNumber maxoff = PageGetMaxOffsetNumber(lpage);
 				OffsetNumber deletable[MaxOffsetNumber];
-				int ndeletable = 0;
-				ItemId hiItemId;
-				Item hiItem;
+				int			ndeletable = 0;
 
 				/*
-				 * Remove the items from the left page that were copied to
-				 * the right page.  Also remove the old high key, if any.
-				 * (We must remove everything before trying to insert any
-				 * items, else we risk not having enough space.)
+				 * Remove the items from the left page that were copied to the
+				 * right page.	Also remove the old high key, if any. (We must
+				 * remove everything before trying to insert any items, else
+				 * we risk not having enough space.)
 				 */
 				if (!P_RIGHTMOST(lopaque))
 				{
 					deletable[ndeletable++] = P_HIKEY;
+
 					/*
 					 * newitemoff is given to us relative to the original
 					 * page's item numbering, so adjust it for this deletion.
@@ -393,11 +413,8 @@ btree_xlog_split(bool onleft, bool isroot,
 						elog(PANIC, "failed to add new item to left page after split");
 				}
 
-				/* Set high key equal to the first key on the right page */
-				hiItemId = PageGetItemId(rpage, P_FIRSTDATAKEY(ropaque));
-				hiItem = PageGetItem(rpage, hiItemId);
-
-				if (PageAddItem(lpage, hiItem, ItemIdGetLength(hiItemId),
+				/* Set high key */
+				if (PageAddItem(lpage, left_hikey, left_hikeysz,
 								P_HIKEY, false, false) == InvalidOffsetNumber)
 					elog(PANIC, "failed to add high key to left page after split");
 
@@ -421,11 +438,11 @@ btree_xlog_split(bool onleft, bool isroot,
 	/* Fix left-link of the page to the right of the new right sibling */
 	if (xlrec->rnext != P_NONE && !(record->xl_info & XLR_BKP_BLOCK_2))
 	{
-		Buffer buffer = XLogReadBuffer(reln, xlrec->rnext, false);
+		Buffer		buffer = XLogReadBuffer(reln, xlrec->rnext, false);
 
 		if (BufferIsValid(buffer))
 		{
-			Page page = (Page) BufferGetPage(buffer);
+			Page		page = (Page) BufferGetPage(buffer);
 
 			if (!XLByteLE(lsn, PageGetLSN(page)))
 			{
@@ -795,7 +812,7 @@ btree_desc(StringInfo buf, uint8 xl_info, char *rec)
 								 xlrec->node.spcNode, xlrec->node.dbNode,
 								 xlrec->node.relNode);
 				appendStringInfo(buf, "left %u, right %u, next %u, level %u, firstright %d",
-								 xlrec->leftsib, xlrec->rightsib, xlrec->rnext,
+							   xlrec->leftsib, xlrec->rightsib, xlrec->rnext,
 								 xlrec->level, xlrec->firstright);
 				break;
 			}
@@ -807,7 +824,7 @@ btree_desc(StringInfo buf, uint8 xl_info, char *rec)
 								 xlrec->node.spcNode, xlrec->node.dbNode,
 								 xlrec->node.relNode);
 				appendStringInfo(buf, "left %u, right %u, next %u, level %u, firstright %d",
-								 xlrec->leftsib, xlrec->rightsib, xlrec->rnext,
+							   xlrec->leftsib, xlrec->rightsib, xlrec->rnext,
 								 xlrec->level, xlrec->firstright);
 				break;
 			}
@@ -819,7 +836,7 @@ btree_desc(StringInfo buf, uint8 xl_info, char *rec)
 								 xlrec->node.spcNode, xlrec->node.dbNode,
 								 xlrec->node.relNode);
 				appendStringInfo(buf, "left %u, right %u, next %u, level %u, firstright %d",
-								 xlrec->leftsib, xlrec->rightsib, xlrec->rnext,
+							   xlrec->leftsib, xlrec->rightsib, xlrec->rnext,
 								 xlrec->level, xlrec->firstright);
 				break;
 			}
@@ -831,7 +848,7 @@ btree_desc(StringInfo buf, uint8 xl_info, char *rec)
 								 xlrec->node.spcNode, xlrec->node.dbNode,
 								 xlrec->node.relNode);
 				appendStringInfo(buf, "left %u, right %u, next %u, level %u, firstright %d",
-								 xlrec->leftsib, xlrec->rightsib, xlrec->rnext,
+							   xlrec->leftsib, xlrec->rightsib, xlrec->rnext,
 								 xlrec->level, xlrec->firstright);
 				break;
 			}

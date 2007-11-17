@@ -11,7 +11,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/storage/smgr/smgr.c,v 1.106 2007/09/05 18:10:48 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/storage/smgr/smgr.c,v 1.108 2007/11/15 21:14:38 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -53,11 +53,13 @@ typedef struct f_smgr
 										   char *buffer, bool isTemp);
 	BlockNumber (*smgr_nblocks) (SMgrRelation reln);
 	void		(*smgr_truncate) (SMgrRelation reln, BlockNumber nblocks,
-								  bool isTemp);
+											  bool isTemp);
 	void		(*smgr_immedsync) (SMgrRelation reln);
 	void		(*smgr_commit) (void);	/* may be NULL */
 	void		(*smgr_abort) (void);	/* may be NULL */
+	void		(*smgr_pre_ckpt) (void);		/* may be NULL */
 	void		(*smgr_sync) (void);	/* may be NULL */
+	void		(*smgr_post_ckpt) (void);		/* may be NULL */
 } f_smgr;
 
 
@@ -65,7 +67,7 @@ static const f_smgr smgrsw[] = {
 	/* magnetic disk */
 	{mdinit, NULL, mdclose, mdcreate, mdunlink, mdextend,
 		mdread, mdwrite, mdnblocks, mdtruncate, mdimmedsync,
-		NULL, NULL, mdsync
+		NULL, NULL, mdpreckpt, mdsync, mdpostckpt
 	}
 };
 
@@ -778,7 +780,22 @@ smgrabort(void)
 }
 
 /*
- *	smgrsync() -- Sync files to disk at checkpoint time.
+ *	smgrpreckpt() -- Prepare for checkpoint.
+ */
+void
+smgrpreckpt(void)
+{
+	int			i;
+
+	for (i = 0; i < NSmgr; i++)
+	{
+		if (smgrsw[i].smgr_pre_ckpt)
+			(*(smgrsw[i].smgr_pre_ckpt)) ();
+	}
+}
+
+/*
+ *	smgrsync() -- Sync files to disk during checkpoint.
  */
 void
 smgrsync(void)
@@ -789,6 +806,21 @@ smgrsync(void)
 	{
 		if (smgrsw[i].smgr_sync)
 			(*(smgrsw[i].smgr_sync)) ();
+	}
+}
+
+/*
+ *	smgrpostckpt() -- Post-checkpoint cleanup.
+ */
+void
+smgrpostckpt(void)
+{
+	int			i;
+
+	for (i = 0; i < NSmgr; i++)
+	{
+		if (smgrsw[i].smgr_post_ckpt)
+			(*(smgrsw[i].smgr_post_ckpt)) ();
 	}
 }
 
@@ -816,8 +848,8 @@ smgr_redo(XLogRecPtr lsn, XLogRecord *record)
 		/*
 		 * Forcibly create relation if it doesn't exist (which suggests that
 		 * it was dropped somewhere later in the WAL sequence).  As in
-		 * XLogOpenRelation, we prefer to recreate the rel and replay the
-		 * log as best we can until the drop is seen.
+		 * XLogOpenRelation, we prefer to recreate the rel and replay the log
+		 * as best we can until the drop is seen.
 		 */
 		smgrcreate(reln, false, true);
 

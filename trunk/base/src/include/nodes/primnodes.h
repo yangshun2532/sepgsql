@@ -10,7 +10,7 @@
  * Portions Copyright (c) 1996-2007, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/nodes/primnodes.h,v 1.133 2007/08/26 21:44:25 tgl Exp $
+ * $PostgreSQL: pgsql/src/include/nodes/primnodes.h,v 1.135 2007/11/15 22:25:17 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -89,7 +89,7 @@ typedef struct IntoClause
 	List	   *colNames;		/* column names to assign, or NIL */
 	List	   *options;		/* options from WITH clause */
 	OnCommitAction onCommit;	/* what do we do at COMMIT? */
-	char	   *tableSpaceName;	/* table space to use, or NULL */
+	char	   *tableSpaceName; /* table space to use, or NULL */
 } IntoClause;
 
 

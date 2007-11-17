@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# $PostgreSQL: pgsql/src/tools/pgindent/pgindent,v 1.90 2006/12/27 23:03:52 momjian Exp $
+# $PostgreSQL: pgsql/src/tools/pgindent/pgindent,v 1.96 2007/11/16 01:25:15 momjian Exp $
 
 # Known bugs:
 #
@@ -33,21 +33,32 @@ fi
 for FILE
 do
 	cat "$FILE" |
-# convert // comments to /* */
+
+# Convert // comments to /* */
 	sed 's;^\([ 	]*\)//\(.*\)$;\1/* \2 */;g' |
+
 # Avoid bug that converts 'x =- 1' to 'x = -1'
 	sed 's;=- ;-= ;g' |
-# mark some comments for special treatment later
+
+# Mark some comments for special treatment later
 	sed 's;/\*  *---;/*---X_X;g' |
-# workaround for indent bug with 'else' handling
-# trim trailing space after single-line after-'else' comment
-# so next test can be done easily
-	sed 's;\([} 	]\)else[ 	]*\(/\*.*\*/\)[ 	]*$;\1else	\2;g' |
-# indent multi-line after-'else' comment so BSD indent will move it properly
-	sed 's;\([} 	]\)else[ 	]*\(/\*.*[^\*][^/]\)$;\1else\
+
+# 'else' followed by a single-line comment, followed by
+# a brace on the next line confuses BSD indent, so we push
+# the comment down to the next line, then later pull it
+# back up again.  Add space before _PGMV or indent will add
+# it for us.
+	sed 's;\([} 	]\)else[ 	]*\(/\*\)\(.*\*/\)[ 	]*$;\1else\
+    \2 _PGMV\3;g' |
+
+# Indent multi-line after-'else' comment so BSD indent will move it properly.
+# We already moved down single-line comments above.  Check for '*' to make
+# sure we are not in a single-line comment that has other text on the line.
+	sed 's;\([} 	]\)else[ 	]*\(/\*[^\*]*\)[ 	]*$;\1else\
     \2;g' |
 	detab -t4 -qc |
-# work around bug where function that defines no local variables misindents
+
+# Work around bug where function that defines no local variables misindents
 # switch() case lines and line after #else.  Do not do for struct/enum.
 	awk '	BEGIN	{line1 = ""; line2 = ""}
 		{
@@ -69,7 +80,8 @@ do
 			if (NR >= 1)
 				print line1;
 		}' |
-# prevent indenting of code in 'extern "C"' blocks
+
+# Prevent indenting of code in 'extern "C"' blocks.
 	awk '	BEGIN	{line1 = ""; line2 = ""; skips = 0}
 		{
 			line2 = $0;
@@ -103,15 +115,18 @@ do
 			if (NR >= 1 && skips <= 1)
 				print line1;
 		}' |
-# protect backslashes in DATA()
+
+# Protect backslashes in DATA().
 	sed 's;^DATA(.*$;/*&*/;' |
-# protect wrapping in CATALOG()
+
+# Protect wrapping in CATALOG().
 	sed 's;^CATALOG(.*$;/*&*/;' >/tmp/$$a
 
 # We get the list of typedef's from /src/tools/find_typedef
 	indent -bad -bap -bc -bl -d0 -cdb -nce -nfc1 -di12 -i4 -l79 \
 		-lp -nip -npro -bbb $EXTRA_OPTS \
 -TAES_KEY \
+-TAFFIX \
 -TAMT \
 -TAMTS \
 -TASN1_BIT_STRING \
@@ -157,6 +172,8 @@ do
 -TAclMode \
 -TAclObjectKind \
 -TAclResult \
+-TAffixNode \
+-TAffixNodeData \
 -TAfterTriggerEvent \
 -TAfterTriggerEventData \
 -TAfterTriggerEventList \
@@ -190,10 +207,13 @@ do
 -TAlterDomainStmt \
 -TAlterFunctionStmt \
 -TAlterObjectSchemaStmt \
+-TAlterOpFamilyStmt \
 -TAlterOwnerStmt \
 -TAlterRoleSetStmt \
 -TAlterRoleStmt \
 -TAlterSeqStmt \
+-TAlterTSConfigurationStmt \
+-TAlterTSDictionaryStmt \
 -TAlterTableCmd \
 -TAlterTableStmt \
 -TAlterTableType \
@@ -211,6 +231,8 @@ do
 -TArchiveMode \
 -TArchiverStage \
 -TArrayBuildState \
+-TArrayCoerceExpr \
+-TArrayCoerceExprState \
 -TArrayConstIterState \
 -TArrayExpr \
 -TArrayExprIterState \
@@ -227,6 +249,9 @@ do
 -TAttrDefault \
 -TAttrNumber \
 -TAuthRequest \
+-TAutoVacuumShmemStruct \
+-TAutoVacuumSignal \
+-TAuxProcType \
 -TBF_KEY \
 -TBIGNUM \
 -TBINOP \
@@ -234,6 +259,8 @@ do
 -TBIO_F_BUFFER_CTX \
 -TBIO_METHOD \
 -TBIO_dummy \
+-TBITVEC \
+-TBITVECP \
 -TBIT_STRING_BITNAME \
 -TBLOCK \
 -TBMS_Membership \
@@ -296,6 +323,9 @@ do
 -TBufFile \
 -TBufFlags \
 -TBuffer \
+-TBufferAccessStrategy \
+-TBufferAccessStrategyData \
+-TBufferAccessStrategyType \
 -TBufferDesc \
 -TBufferLookupEnt \
 -TBufferStrategyControl \
@@ -303,14 +333,22 @@ do
 -TBuildAccumulator \
 -TByte \
 -TBytef \
+-TCACHESIGN \
 -TCAC_state \
 -TCAST_KEY \
 -TCATEGORY \
 -TCFuncHashTabEntry \
+-TCHKVAL \
 -TCIRCLE \
+-TCMPDAffix \
 -TCOMP_CTX \
 -TCOMP_METHOD \
 -TCONDOP \
+-TCONF \
+-TCONF_IMODULE \
+-TCONF_METHOD \
+-TCONF_MODULE \
+-TCONF_VALUE \
 -TCOP \
 -TCPFunction \
 -TCPPFunction \
@@ -325,6 +363,8 @@ do
 -TCURCUR \
 -TCV \
 -TCacheCallbackFunction \
+-TCachedPlan \
+-TCachedPlanSource \
 -TCancelRequestPacket \
 -TCaseExpr \
 -TCaseExprState \
@@ -342,6 +382,7 @@ do
 -TChangeVarNodes_context \
 -TCheckPoint \
 -TCheckPointStmt \
+-TCheckpointStatsData \
 -TChromosome \
 -TCity \
 -TClientData \
@@ -354,16 +395,24 @@ do
 -TCoerceToDomain \
 -TCoerceToDomainState \
 -TCoerceToDomainValue \
+-TCoerceViaIO \
+-TCoerceViaIOState \
 -TCoercionCodes \
 -TCoercionContext \
 -TCoercionForm \
+-TCoercionPathType \
 -TColumnDef \
 -TColumnIOData \
 -TColumnRef \
+-TComboCidEntry \
+-TComboCidEntryData \
+-TComboCidKey \
+-TComboCidKeyData \
 -TCommandDest \
 -TCommandId \
 -TCommentItem \
 -TCommentStmt \
+-TCompareScalarsContext \
 -TCompositeTypeStmt \
 -TConnStatusType \
 -TConst \
@@ -373,7 +422,6 @@ do
 -TConstraintCategory \
 -TConstraintInfo \
 -TConstraintsSetStmt \
--TContextNode \
 -TControlFileData \
 -TConvInfo \
 -TConvertRowtypeExpr \
@@ -388,9 +436,11 @@ do
 -TCreateCastStmt \
 -TCreateConversionStmt \
 -TCreateDomainStmt \
+-TCreateEnumStmt \
 -TCreateFunctionStmt \
 -TCreateOpClassItem \
 -TCreateOpClassStmt \
+-TCreateOpFamilyStmt \
 -TCreatePLangStmt \
 -TCreateRoleStmt \
 -TCreateSchemaStmt \
@@ -404,7 +454,9 @@ do
 -TCreatedbStmt \
 -TCred \
 -TCtlCommand \
+-TCurrentOfExpr \
 -TCustomOutPtr \
+-TCycleCtr \
 -TDBState \
 -TDCHCacheEntry \
 -TDCH_poz \
@@ -426,6 +478,7 @@ do
 -TDatum \
 -TDatumPtr \
 -TDatumTupleFields \
+-TDeadLockState \
 -TDeallocateStmt \
 -TDeclareCursorStmt \
 -TDefElem \
@@ -433,10 +486,19 @@ do
 -TDeleteStmt \
 -TDependencyType \
 -TDestReceiver \
+-TDictISpell \
+-TDictSimple \
+-TDictSnowball \
+-TDictSubState \
+-TDictSyn \
+-TDictThesaurus \
+-TDiscardMode \
+-TDiscardStmt \
 -TDistinctExpr \
 -TDl_info \
 -TDlelem \
 -TDllist \
+-TDocRepresentation \
 -TDomainConstraintState \
 -TDomainConstraintType \
 -TDomainIOData \
@@ -455,6 +517,13 @@ do
 -TDynamicFileList \
 -TEDGE \
 -TENGINE \
+-TENGINE_CIPHERS_PTR \
+-TENGINE_CMD_DEFN \
+-TENGINE_CTRL_FUNC_PTR \
+-TENGINE_DIGESTS_PTR \
+-TENGINE_GEN_FUNC_PTR \
+-TENGINE_GEN_INT_FUNC_PTR \
+-TENGINE_LOAD_KEY_PTR \
 -TERR_FNS \
 -TERR_STATE \
 -TERR_STRING_DATA \
@@ -473,6 +542,8 @@ do
 -TEndDataPtr \
 -TEntryAccumulator \
 -TEolType \
+-TEquivalenceClass \
+-TEquivalenceMember \
 -TErrorContextCallback \
 -TErrorData \
 -TExceptionLabelMap \
@@ -483,6 +554,7 @@ do
 -TExecStatus \
 -TExecStatusType \
 -TExecuteStmt \
+-TExplainOneQuery_hook_type \
 -TExplainState \
 -TExplainStmt \
 -TExpr \
@@ -492,6 +564,8 @@ do
 -TExprDoneCond \
 -TExprState \
 -TExprStateEvalFunc \
+-TExtensionBehavior \
+-TExtention \
 -TFF \
 -TFILE \
 -TFSMHeader \
@@ -526,6 +600,7 @@ do
 -TFormData_pg_database \
 -TFormData_pg_depend \
 -TFormData_pg_description \
+-TFormData_pg_enum \
 -TFormData_pg_index \
 -TFormData_pg_inherits \
 -TFormData_pg_language \
@@ -534,6 +609,7 @@ do
 -TFormData_pg_namespace \
 -TFormData_pg_opclass \
 -TFormData_pg_operator \
+-TFormData_pg_opfamily \
 -TFormData_pg_pltemplate \
 -TFormData_pg_proc \
 -TFormData_pg_rewrite \
@@ -543,6 +619,11 @@ do
 -TFormData_pg_statistic \
 -TFormData_pg_tablespace \
 -TFormData_pg_trigger \
+-TFormData_pg_ts_config \
+-TFormData_pg_ts_config_map \
+-TFormData_pg_ts_dict \
+-TFormData_pg_ts_parser \
+-TFormData_pg_ts_template \
 -TFormData_pg_type \
 -TForm_pg_aggregate \
 -TForm_pg_am \
@@ -560,6 +641,7 @@ do
 -TForm_pg_database \
 -TForm_pg_depend \
 -TForm_pg_description \
+-TForm_pg_enum \
 -TForm_pg_index \
 -TForm_pg_inherits \
 -TForm_pg_language \
@@ -568,6 +650,7 @@ do
 -TForm_pg_namespace \
 -TForm_pg_opclass \
 -TForm_pg_operator \
+-TForm_pg_opfamily \
 -TForm_pg_pltemplate \
 -TForm_pg_proc \
 -TForm_pg_rewrite \
@@ -577,6 +660,11 @@ do
 -TForm_pg_statistic \
 -TForm_pg_tablespace \
 -TForm_pg_trigger \
+-TForm_pg_ts_config \
+-TForm_pg_ts_config_map \
+-TForm_pg_ts_dict \
+-TForm_pg_ts_parser \
+-TForm_pg_ts_template \
 -TForm_pg_type \
 -TFormatNode \
 -TFromExpr \
@@ -619,7 +707,7 @@ do
 -TGinBtreeData \
 -TGinBtreeStack \
 -TGinBuildState \
--TGinNSN \
+-TGinChkVal \
 -TGinPageOpaque \
 -TGinPageOpaqueData \
 -TGinPostingTreeScan \
@@ -647,6 +735,7 @@ do
 -TGroupClause \
 -TGroupState \
 -TGroupVarInfo \
+-TGucAction \
 -TGucBoolAssignHook \
 -TGucContext \
 -TGucIntAssignHook \
@@ -654,6 +743,7 @@ do
 -TGucShowHook \
 -TGucSource \
 -TGucStack \
+-TGucStackState \
 -TGucStringAssignHook \
 -THASHACTION \
 -THASHBUCKET \
@@ -692,6 +782,8 @@ do
 -THashScanOpaqueData \
 -THashState \
 -THashValueFunc \
+-THeadlineParsedText \
+-THeadlineWordEntry \
 -THeapScanDesc \
 -THeapScanDescData \
 -THeapTuple \
@@ -703,6 +795,7 @@ do
 -TI16 \
 -TI32 \
 -TI8 \
+-TINFIX \
 -TIO \
 -TIOFuncSelector \
 -TIV \
@@ -745,17 +838,20 @@ do
 -TInt8TransTypeData \
 -TIntArray \
 -TInternalGrant \
+-TInterpState \
 -TInterval \
+-TIntoClause \
+-TInvalRelidContext \
 -TInvalidationChunk \
 -TInvalidationListHeader \
 -TIpcMemoryId \
 -TIpcMemoryKey \
 -TIpcSemaphoreId \
 -TIpcSemaphoreKey \
+-TIspellDict \
 -TItem \
 -TItemId \
 -TItemIdData \
--TItemIdFlags \
 -TItemLength \
 -TItemOffset \
 -TItemPointer \
@@ -768,7 +864,6 @@ do
 -TJoinState \
 -TJoinType \
 -TJunkFilter \
--TKBsort \
 -TKEYMAP_ENTRY \
 -TKEYMAP_ENTRY_ARRAY \
 -TKeySuffix \
@@ -797,17 +892,23 @@ do
 -TLWLock \
 -TLWLockId \
 -TLWLockMode \
--TLWLockNode \
 -TLWLockPadded \
 -TLargeObjectDesc \
+-TLexDescr \
+-TLexemeEntry \
+-TLexemeInfo \
+-TLexizeData \
 -TLimit \
 -TLimitState \
 -TLimitStateCond \
 -TList \
 -TListCell \
+-TListDictionary \
+-TListParsedLex \
 -TListenStmt \
 -TLoadStmt \
 -TLocalBufferLookupEnt \
+-TLocalTransactionId \
 -TLocationIndex \
 -TLockAcquireResult \
 -TLockData \
@@ -836,12 +937,12 @@ do
 -TMemoryContext \
 -TMemoryContextData \
 -TMemoryContextMethods \
--TMergeFunctionKind \
 -TMergeJoin \
 -TMergeJoinClause \
 -TMergeJoinClauseData \
 -TMergeJoinState \
 -TMergePath \
+-TMergeScanSelCache \
 -TMinMaxAggInfo \
 -TMinMaxExpr \
 -TMinMaxExprState \
@@ -855,6 +956,7 @@ do
 -TNETSCAPE_CERT_SEQUENCE \
 -TNETSCAPE_SPKAC \
 -TNETSCAPE_SPKI \
+-TNODE \
 -TNUMCacheEntry \
 -TNUMDesc \
 -TNUMProc \
@@ -891,18 +993,24 @@ do
 -TOffsetVarNodes_context \
 -TOid \
 -TOidOptions \
+-TOldToNewMapping \
+-TOldToNewMappingData \
+-TOldTriggerInfo \
 -TOldstyle_fnextra \
 -TOnCommitAction \
 -TOnCommitItem \
 -TOpClassCacheEnt \
--TOpClassMember \
 -TOpExpr \
+-TOpFamilyMember \
 -TOpclassInfo \
 -TOperator \
+-TOpfamilyInfo \
 -TOprInfo \
 -TOuterJoinInfo \
 -TOutputContext \
 -TOutrec \
+-TOverrideSearchPath \
+-TOverrideStackEntry \
 -TPADOFFSET \
 -TPATH \
 -TPBE2PARAM \
@@ -917,7 +1025,6 @@ do
 -TPGErrorVerbosity \
 -TPGFInfoFunction \
 -TPGFunction \
--TPGLZ_DecompState \
 -TPGLZ_Header \
 -TPGLZ_HistEntry \
 -TPGLZ_Strategy \
@@ -956,6 +1063,7 @@ do
 -TPKCS7_SIGNER_INFO \
 -TPKCS7_SIGN_ENVELOPE \
 -TPKCS8_PRIV_KEY_INFO \
+-TPLAINTREE \
 -TPLTemplate \
 -TPLpgSQL_arrayelem \
 -TPLpgSQL_condition \
@@ -993,6 +1101,7 @@ do
 -TPLpgSQL_stmt_raise \
 -TPLpgSQL_stmt_return \
 -TPLpgSQL_stmt_return_next \
+-TPLpgSQL_stmt_return_query \
 -TPLpgSQL_stmt_while \
 -TPLpgSQL_trigarg \
 -TPLpgSQL_type \
@@ -1000,6 +1109,7 @@ do
 -TPLpgSQL_variable \
 -TPMOP \
 -TPMSignalReason \
+-TPMState \
 -TPOLYGON \
 -TPQArgBlock \
 -TPQEnvironmentOption \
@@ -1034,21 +1144,28 @@ do
 -TParamListInfoData \
 -TParamRef \
 -TParseState \
+-TParsedLex \
+-TParsedText \
+-TParsedWord \
 -TPath \
--TPathKeyItem \
+-TPathClauseUsage \
+-TPathKey \
 -TPathKeysComparison \
 -TPattern_Prefix_Status \
 -TPattern_Type \
 -TPendingOperationEntry \
+-TPendingOperationTag \
 -TPendingRelDelete \
+-TPendingUnlinkEntry \
 -TPerlExitListEntry \
 -TPerlInterpreter \
 -TPgBackendStatus \
 -TPgStat_Counter \
--TPgStat_Info \
+-TPgStat_GlobalStats \
 -TPgStat_Msg \
 -TPgStat_MsgAnalyze \
 -TPgStat_MsgAutovacStart \
+-TPgStat_MsgBgWriter \
 -TPgStat_MsgDropdb \
 -TPgStat_MsgDummy \
 -TPgStat_MsgHdr \
@@ -1058,11 +1175,19 @@ do
 -TPgStat_MsgVacuum \
 -TPgStat_StatDBEntry \
 -TPgStat_StatTabEntry \
+-TPgStat_SubXactStatus \
+-TPgStat_TableCounts \
 -TPgStat_TableEntry \
+-TPgStat_TableStatus \
+-TPgStat_TableXactStatus \
 -TPg_finfo_record \
 -TPg_magic_struct \
+-TPipeProtoChunk \
+-TPipeProtoHeader \
 -TPlan \
 -TPlanState \
+-TPlannedStmt \
+-TPlannerGlobal \
 -TPlannerInfo \
 -TPlannerParamItem \
 -TPoint \
@@ -1095,18 +1220,32 @@ do
 -TProcessingMode \
 -TProjectionInfo \
 -TProtocolVersion \
+-TPrsStorage \
 -TPsqlScanResult \
 -TPsqlScanState \
 -TPsqlScanStateData \
 -TPsqlSettings \
+-TPushFunction \
+-TQTN2QTState \
+-TQTNode \
 -TQualCost \
+-TQualItem \
 -TQuery \
 -TQueryDesc \
+-TQueryItem \
+-TQueryItemType \
+-TQueryOperand \
+-TQueryOperator \
+-TQueryRepresentation \
 -TQuerySource \
+-TRAND_METHOD \
 -TRC2_KEY \
 -TRC4_KEY \
 -TREGEXP \
 -TRIPEMD160_CTX \
+-TRI_CompareHashEntry \
+-TRI_CompareKey \
+-TRI_ConstraintInfo \
 -TRI_QueryHashEntry \
 -TRI_QueryKey \
 -TRSA \
@@ -1126,6 +1265,8 @@ do
 -TRecordCacheEntry \
 -TRecordIOData \
 -TRegProcedure \
+-TRegis \
+-TRegisNode \
 -TReindexStmt \
 -TRelFileNode \
 -TRelIdCacheEnt \
@@ -1142,6 +1283,7 @@ do
 -TRelids \
 -TRemoveFuncStmt \
 -TRemoveOpClassStmt \
+-TRemoveOpFamilyStmt \
 -TRenameStmt \
 -TResTarget \
 -TResolveNew_context \
@@ -1158,6 +1300,8 @@ do
 -TResultState \
 -TReturnSetInfo \
 -TRewriteRule \
+-TRewriteState \
+-TRewriteStateData \
 -TRmgrData \
 -TRmgrId \
 -TRoleStmtType \
@@ -1176,7 +1320,12 @@ do
 -TSISeg \
 -TSMgrRelation \
 -TSMgrRelationData \
+-TSPELL \
+-TSPIPlanPtr \
 -TSPITupleTable \
+-TSPLITCOST \
+-TSPNode \
+-TSPNodeData \
 -TSQLFunctionCache \
 -TSQLFunctionCachePtr \
 -TSSL \
@@ -1205,6 +1354,7 @@ do
 -TScanKey \
 -TScanKeyData \
 -TScanKeyword \
+-TScanQueryWalkerContext \
 -TScanState \
 -TSchemaQuery \
 -TSelectStmt \
@@ -1234,7 +1384,13 @@ do
 -TShutdownMode \
 -TSigHandler \
 -TSighandler_t \
+-TSignTSVector \
 -TSigsave_t \
+-TSimpleEstateStackEntry \
+-TSimpleOidList \
+-TSimpleOidListCell \
+-TSimpleStringList \
+-TSimpleStringListCell \
 -TSize \
 -TSlruCtl \
 -TSlruCtlData \
@@ -1246,13 +1402,16 @@ do
 -TSlruSharedData \
 -TSnapshot \
 -TSnapshotData \
+-TSnapshotSatisfiesFunc \
 -TSockAddr \
 -TSort \
 -TSortBy \
+-TSortByDir \
+-TSortByNulls \
 -TSortClause \
--TSortFunctionKind \
 -TSortState \
 -TSortTuple \
+-TSplitVar \
 -TSplitedPageLayout \
 -TStackElem \
 -TStandardChunkHeader \
@@ -1260,9 +1419,12 @@ do
 -TStartBlobsPtr \
 -TStartDataPtr \
 -TStartupPacket \
+-TStatEntry \
 -TStatMsgType \
+-TStatStorage \
 -TStdAnalyzeData \
 -TStdRdOptions \
+-TStopList \
 -TStrategyNumber \
 -TStringInfo \
 -TStringInfoData \
@@ -1276,6 +1438,7 @@ do
 -TSubXactEvent \
 -TSubqueryScan \
 -TSubqueryScanState \
+-TSyn \
 -TSysScanDesc \
 -TSysScanDescData \
 -TTAR_MEMBER \
@@ -1283,8 +1446,32 @@ do
 -TTBMStatus \
 -TTBlockState \
 -TTIDBitmap \
+-TTParser \
+-TTParserCharTest \
+-TTParserPosition \
+-TTParserSpecial \
+-TTParserState \
+-TTParserStateAction \
+-TTParserStateActionItem \
+-TTSAnyCacheEntry \
+-TTSConfigCacheEntry \
+-TTSConfigInfo \
+-TTSDictInfo \
+-TTSDictionaryCacheEntry \
+-TTSLexeme \
+-TTSParserCacheEntry \
+-TTSParserInfo \
+-TTSQuery \
+-TTSQueryData \
+-TTSQueryParserState \
+-TTSQuerySign \
+-TTSTemplateInfo \
+-TTSTokenTypeStorage \
+-TTSVector \
+-TTSVectorData \
+-TTSVectorParseState \
 -TTStoreState \
--TTabStatArray \
+-TTabStatusArray \
 -TTableDataInfo \
 -TTableInfo \
 -TTargetEntry \
@@ -1381,8 +1568,12 @@ do
 -TTcl_Var \
 -TTcl_VarTraceProc \
 -TTcl_WaitForEventProc \
+-TTextPositionState \
+-TTheLexeme \
+-TTheSubstitute \
 -TThingFile \
 -TThread \
+-TTidHashKey \
 -TTidPath \
 -TTidScan \
 -TTidScanState \
@@ -1429,9 +1620,12 @@ do
 -TTwoPhaseCallback \
 -TTwoPhaseFileHeader \
 -TTwoPhaseLockRecord \
+-TTwoPhasePgStatRecord \
 -TTwoPhaseRecordOnDisk \
 -TTwoPhaseRmgrId \
 -TTwoPhaseStateData \
+-TTxidEpoch \
+-TTxidSnapshot \
 -TType \
 -TTypeCacheEntry \
 -TTypeCast \
@@ -1452,6 +1646,8 @@ do
 -TUniquePathMethod \
 -TUniqueState \
 -TUnlistenStmt \
+-TUnresolvedTup \
+-TUnresolvedTupData \
 -TUpdateStmt \
 -TUserAuth \
 -TVFunction \
@@ -1476,14 +1672,21 @@ do
 -TVariableAssignHook \
 -TVariableCache \
 -TVariableCacheData \
--TVariableResetStmt \
+-TVariableSetKind \
 -TVariableSetStmt \
 -TVariableShowStmt \
 -TVariableSpace \
 -TVariableStatData \
 -TVfd \
 -TViewStmt \
+-TVirtualTransactionId \
 -TWAIT_ORDER \
+-TWordEntry \
+-TWordEntryIN \
+-TWordEntryPos \
+-TWordEntryPosVector \
+-TWorkerInfo \
+-TWorkerInfoData \
 -TWorking_State \
 -TWriteBufPtr \
 -TWriteBytePtr \
@@ -1549,6 +1752,14 @@ do
 -TXactCallbackItem \
 -TXactEvent \
 -TXidStatus \
+-TXmlBinaryType \
+-TXmlExpr \
+-TXmlExprOp \
+-TXmlExprState \
+-TXmlOptionType \
+-TXmlSerialize \
+-TXmlStandaloneType \
+-TYYLTYPE \
 -TYYSTYPE \
 -TYY_BUFFER_STATE \
 -TYY_CHAR \
@@ -1561,16 +1772,16 @@ do
 -T_ossl_old_des_cblock \
 -T_ossl_old_des_key_schedule \
 -Taclitem \
--Talc_extra \
 -Talloc_func \
 -Tanyarray \
 -Tassoc_list \
--Tatc_extra \
 -Tattribute_used_context \
 -Tauth_entry \
 -Tauthmem_entry \
--Tautovac_dbase \
 -Tautovac_table \
+-Tav_relation \
+-Tavl_dbase \
+-Tavw_dbase \
 -TbackslashResult \
 -Tbio_info_cb \
 -Tbitmapword \
@@ -1578,7 +1789,7 @@ do
 -Tbits32 \
 -Tbits8 \
 -Tbool \
--Tbt_incomplete_split \
+-Tbt_incomplete_action \
 -Tbytea \
 -Tcached_re_str \
 -Tcaddr_t \
@@ -1592,12 +1803,16 @@ do
 -Tchr \
 -Tclock_t \
 -Tclockid_t \
+-TcmpEntriesData \
 -Tcodes_t \
 -Tcolor \
 -Tcomment_t \
+-Tconf_finish_func \
+-Tconf_init_func \
 -Tconst_DES_cblock \
 -Tcontain_var_reference_context \
 -Tconvert_testexpr_context \
+-Tcost_qual_eval_context \
 -Tcv_flags_t \
 -Tdaddr_t \
 -Tdatetkn \
@@ -1608,10 +1823,25 @@ do
 -Tdirectory_fctx \
 -Tdiv_t \
 -Tdouble \
+-Tds_state \
+-Tdyn_MEM_free_cb \
+-Tdyn_MEM_malloc_cb \
+-Tdyn_MEM_realloc_cb \
+-Tdyn_dynlock_create_cb \
+-Tdyn_dynlock_destroy_cb \
+-Tdyn_dynlock_lock_cb \
+-Tdyn_lock_add_lock_cb \
+-Tdyn_lock_locking_cb \
+-Tdynamic_LOCK_fns \
+-Tdynamic_MEM_fns \
+-Tdynamic_bind_engine \
+-Tdynamic_fns \
+-Tdynamic_v_check_fn \
 -TevalPlanQual \
 -Teval_const_expressions_context \
 -Texecution_state \
 -Texpectation \
+-Texplain_get_index_name_hook_type \
 -Tf_smgr \
 -Tfd_mask \
 -Tfd_set \
@@ -1619,6 +1849,9 @@ do
 -Tfinalize_primnode_context \
 -Tfind_expr_references_context \
 -Tfind_minimum_var_level_context \
+-Tfix_join_expr_context \
+-Tfix_scan_expr_context \
+-Tfix_upper_expr_context \
 -Tfixpt_t \
 -Tflatten_join_alias_vars_context \
 -Tfloat \
@@ -1630,14 +1863,12 @@ do
 -Tfloat8 \
 -TfmNodePtr \
 -TfmStringInfo \
--Tfp_except \
--Tfp_rnd \
--Tfpclass_t \
 -Tfpos_t \
 -Tfree_func \
 -Tfsec_t \
 -Tfunc_ptr \
 -Tgenerate_series_fctx \
+-Tget_relation_info_hook_type \
 -Tgid_t \
 -TginIncompleteSplit \
 -TginxlogCreatePostingTree \
@@ -1655,6 +1886,7 @@ do
 -Thashnode \
 -ThbaPort \
 -Thelp_handler \
+-ThlCheck \
 -Tin_addr_t \
 -Tin_port_t \
 -Tindexed_tlist \
@@ -1682,7 +1914,7 @@ do
 -TitemIdSort \
 -TitemIdSortData \
 -Tjmp_buf \
--Tjoin_references_context \
+-Tjoin_search_hook_type \
 -Tkey_t \
 -TlclContext \
 -TlclTocEntry \
@@ -1700,7 +1932,6 @@ do
 -Tnls_uint32 \
 -Tnumeric \
 -TobjectType \
--TobjnameArg \
 -Toff_t \
 -Toidvector \
 -Top_tr_array \
@@ -1716,19 +1947,27 @@ do
 -Tpg_enc2name \
 -Tpg_encname \
 -Tpg_local_to_utf \
+-Tpg_local_to_utf_combined \
+-Tpg_re_flags \
 -Tpg_time_t \
 -Tpg_tz \
+-Tpg_tz_cache \
 -Tpg_tzenum \
 -Tpg_utf_to_local \
+-Tpg_utf_to_local_combined \
+-Tpg_uuid_t \
 -Tpg_wchar \
 -Tpg_wchar_tbl \
 -Tpgpid_t \
 -Tpgsql_thing_t \
 -Tpgthreadlock_t \
 -Tpid_t \
+-Tplanner_hook_type \
 -Tplperl_call_data \
 -Tplperl_proc_desc \
+-Tplperl_proc_entry \
 -Tplperl_query_desc \
+-Tplperl_query_entry \
 -Tplpgsql_HashEnt \
 -Tpltcl_proc_desc \
 -Tpltcl_query_desc \
@@ -1736,6 +1975,7 @@ do
 -Tpqsigfunc \
 -TprintQueryOpt \
 -TprintTableOpt \
+-Tprocess_sublinks_context \
 -TpromptStatus_t \
 -Tpthread_attr_t \
 -Tpthread_cond_t \
@@ -1759,6 +1999,7 @@ do
 -Tregex_t \
 -Tregexec_t \
 -Tregexp \
+-Tregexp_matches_ctx \
 -Tregister_t \
 -Tregmatch_t \
 -Tregnode \
@@ -1766,12 +2007,12 @@ do
 -Tregproc \
 -TremoteDep \
 -TrendezvousHashEntry \
--Treplace_vars_with_subplan_refs_context \
 -Trewrite_event \
 -Trm_detail_t \
 -Trune_t \
 -Trunops_proc_t \
 -Tsa_family_t \
+-Tsave_buffer \
 -Tsegsz_t \
 -Tsequence_magic \
 -Tsig_atomic_t \
@@ -1787,14 +2028,20 @@ do
 -Tspeed_t \
 -TsqlparseInfo \
 -TsqlparseState \
+-Tss_lru_item_t \
+-Tss_scan_location_t \
+-Tss_scan_locations_t \
 -Tssize_t \
 -Tssl_crock_st \
 -Tstack_t \
+-Tstemmer_module \
+-TstmtCacheEntry \
 -Tstrconst \
 -Tsubstitute_actual_parameters_context \
 -Tsvindex \
 -Tsvtype \
 -Tswblk_t \
+-Tsymbol \
 -Ttcflag_t \
 -Ttcp_seq \
 -TteReqs \
@@ -1802,6 +2049,9 @@ do
 -Ttime_t \
 -Ttlist_vinfo \
 -Tts_db_fctx \
+-Tts_tokentype \
+-Ttsstat \
+-Ttxid \
 -TtzEntry \
 -TuInt \
 -TuIntf \
@@ -1831,7 +2081,9 @@ do
 -Tushort \
 -Tv_i_state \
 -Tva_list \
--Tvarattrib \
+-Tvarattrib_1b \
+-Tvarattrib_1b_e \
+-Tvarattrib_4b \
 -Tvm_offset_t \
 -Tvm_size_t \
 -Tvoid \
@@ -1853,6 +2105,7 @@ do
 -Txl_dbase_drop_rec_old \
 -Txl_heap_clean \
 -Txl_heap_delete \
+-Txl_heap_freeze \
 -Txl_heap_header \
 -Txl_heap_inplace \
 -Txl_heap_insert \
@@ -1872,37 +2125,45 @@ do
 -Txl_xact_abort_prepared \
 -Txl_xact_commit \
 -Txl_xact_commit_prepared \
+-Txmltype \
 -Tyy_size_t \
 -Tyy_state_type \
 -Tyysigned_char \
 -Tz_stream \
 -Tz_streamp \
 /tmp/$$a >/tmp/$$ 2>&1
+
 	if [ "$?" -ne 0 -o -s /tmp/$$ ]
 	then	echo
 		echo "$FILE"
 		cat /tmp/$$
 	fi
 	cat /tmp/$$a |
-# restore DATA/CATALOG lines
+
+# Restore DATA/CATALOG lines.
 	sed 's;^/\*\(DATA(.*\)\*/$;\1;' |
 	sed 's;^/\*\(CATALOG(.*\)\*/$;\1;' |
-# remove tabs and retab with four spaces
+
+# Remove tabs and retab with four spaces.
 	detab -t8 -qc |
 	entab -t4 -qc |
 	sed 's;^/\* Open extern \"C\" \*/$;{;' |
 	sed 's;^/\* Close extern \"C\" \*/$;};' |
 	sed 's;/\*---X_X;/* ---;g' |
-# workaround indent bug for 'static'
+
+# Workaround indent bug for 'static'.
 	sed 's;^static[ 	][ 	]*;static ;g' |
-# remove too much indenting after closing brace
+
+# Remove too much indenting after closing brace.
 	sed 's;^}	[ 	]*;}	;' |
-# indent single-line after-'else' comment by only one tab
+
+# Indent single-line after-'else' comment by only one tab.
 	sed 's;\([} 	]\)else[ 	]*\(/\*.*\*/\)[ 	]*$;\1else	\2;g' |
-# pull in #endif comments
+
+# Pull in #endif comments.
 	sed 's;^#endif[ 	][ 	]*/\*;#endif   /*;' |
-# work around #else indenting next line if #ifdef defines variables at top
-# work around misindenting of function with no variables defined
+
+# Work around misindenting of function with no variables defined.
 	awk '
 	{
 		if ($0 ~ /^[ 	]*int[ 	]*pgindent_func_no_var_fix;/)
@@ -1912,11 +2173,14 @@ do
 		}
 		else 	print $0;
 	}' |
-# add space after comments that start on tab stops
+
+# Add space after comments that start on tab stops.
 	sed 's;\([^ 	]\)\(/\*.*\*/\)$;\1	\2;' |
-# move trailing * in function return type
+
+# Move trailing * in function return type.
 	sed 's;^\([A-Za-z_][^ 	]*\)[ 	][ 	]*\*$;\1 *;' |
-# remove un-needed braces around single statements
+
+# Remove un-needed braces around single statements.
 # Do not use because it uglifies PG_TRY/PG_CATCH blocks and probably
 # isn't needed for general use.
 #	awk '
@@ -1945,7 +2209,8 @@ do
 #			if (NR >= 1 && skips <= 2)
 #				print line2;
 #		}' |
-# remove blank line between opening brace and block comment
+
+# Remove blank line between opening brace and block comment.
 	awk '
 	{
 			line3 = $0;  
@@ -1973,7 +2238,34 @@ do
 			if (NR >= 1 && skips <= 2)
 				print line2;
 		}' |
-# remove trailing blank lines, helps with adding blank before trailing #endif
+
+# Pull up single-line comment after 'else' that was pulled down above
+	awk '
+		{
+			if (NR != 1)
+			{
+				if ($0 ~ "/\* _PGMV")
+				{
+					# remove tag
+					sub(" _PGMV", "", $0);
+					# remove leading whitespace
+					sub("^[ 	]*", "", $0);
+					# add comment with single tab prefix
+					print prev_line"	"$0;
+					# throw away current line
+					getline;
+				}
+				else
+					print prev_line;
+			}
+			prev_line = $0;
+		}
+		END {
+			if (NR >= 1)
+				print prev_line;
+		}' |
+
+# Remove trailing blank lines, helps with adding blank before trailing #endif.
 	awk '	BEGIN	{blank_lines = 0;}
 		{
 			line1 = $0;
@@ -1986,7 +2278,8 @@ do
 				print line1;
 			}
 		}' |
-# remove blank line before #else, #elif, and #endif
+
+# Remove blank line before #else, #elif, and #endif.
 	awk '	BEGIN	{line1 = ""; line2 = ""; skips = 0}
 		{
 			line2 = $0;
@@ -2010,7 +2303,8 @@ do
 			if (NR >= 1 && skips <= 1)
 				print line1;
 		}' |
-# add blank line before #endif if it is the last line in the file
+
+# Add blank line before #endif if it is the last line in the file.
 	awk '	BEGIN	{line1 = ""; line2 = ""}
 		{
 			line2 = $0;
@@ -2023,6 +2317,7 @@ do
 				printf "\n";
 			print line1;
 		}' |
+
 #  Move prototype names to the same line as return type.  Useful for ctags. 
 #  Indent should do this, but it does not.  It formats prototypes just
 #  like real functions.
@@ -2066,7 +2361,8 @@ do
 		}
 		else	print $0;
 	}' |
-# fix indenting of typedef caused by __cplusplus in libpq-fe.h
+
+# Fix indenting of typedef caused by __cplusplus in libpq-fe.h.
 	(
 		if echo "$FILE" | grep -q 'libpq-fe.h$'
 		then	sed 's/^[	]*typedef enum/typedef enum/'

@@ -8,7 +8,7 @@
  * Portions Copyright (c) 1996-2007, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/executor/execdesc.h,v 1.34 2007/02/20 17:32:17 tgl Exp $
+ * $PostgreSQL: pgsql/src/include/executor/execdesc.h,v 1.36 2007/11/15 22:25:17 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -35,7 +35,7 @@ typedef struct QueryDesc
 {
 	/* These fields are provided by CreateQueryDesc */
 	CmdType		operation;		/* CMD_SELECT, CMD_UPDATE, etc. */
-	PlannedStmt	*plannedstmt;	/* planner's output, or null if utility */
+	PlannedStmt *plannedstmt;	/* planner's output, or null if utility */
 	Node	   *utilitystmt;	/* utility statement, or null */
 	Snapshot	snapshot;		/* snapshot to use for query */
 	Snapshot	crosscheck_snapshot;	/* crosscheck for RI update/delete */
@@ -58,9 +58,9 @@ extern QueryDesc *CreateQueryDesc(PlannedStmt *plannedstmt,
 				bool doInstrument);
 
 extern QueryDesc *CreateUtilityQueryDesc(Node *utilitystmt,
-				Snapshot snapshot,
-				DestReceiver *dest,
-				ParamListInfo params);
+					   Snapshot snapshot,
+					   DestReceiver *dest,
+					   ParamListInfo params);
 
 extern void FreeQueryDesc(QueryDesc *qdesc);
 

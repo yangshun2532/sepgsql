@@ -6,7 +6,7 @@
  * Portions Copyright (c) 1996-2007, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/snowball/dict_snowball.c,v 1.3 2007/08/25 00:03:59 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/snowball/dict_snowball.c,v 1.5 2007/11/15 22:25:16 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -66,6 +66,7 @@ PG_MODULE_MAGIC;
 
 PG_FUNCTION_INFO_V1(dsnowball_init);
 Datum		dsnowball_init(PG_FUNCTION_ARGS);
+
 PG_FUNCTION_INFO_V1(dsnowball_lexize);
 Datum		dsnowball_lexize(PG_FUNCTION_ARGS);
 
@@ -143,7 +144,7 @@ typedef struct DictSnowball
 
 
 static void
-locate_stem_module(DictSnowball * d, char *lang)
+locate_stem_module(DictSnowball *d, char *lang)
 {
 	const stemmer_module *m;
 
@@ -238,7 +239,7 @@ dsnowball_lexize(PG_FUNCTION_ARGS)
 {
 	DictSnowball *d = (DictSnowball *) PG_GETARG_POINTER(0);
 	char	   *in = (char *) PG_GETARG_POINTER(1);
-	int32	   len = PG_GETARG_INT32(2);
+	int32		len = PG_GETARG_INT32(2);
 	char	   *txt = lowerstr_with_len(in, len);
 	TSLexeme   *res = palloc0(sizeof(TSLexeme) * 2);
 
@@ -259,7 +260,7 @@ dsnowball_lexize(PG_FUNCTION_ARGS)
 
 			recoded = (char *) pg_do_encoding_conversion((unsigned char *) txt,
 														 strlen(txt),
-														 GetDatabaseEncoding(),
+													   GetDatabaseEncoding(),
 														 PG_UTF8);
 			if (recoded == NULL)
 				elog(ERROR, "encoding conversion failed");
@@ -292,7 +293,7 @@ dsnowball_lexize(PG_FUNCTION_ARGS)
 			recoded = (char *) pg_do_encoding_conversion((unsigned char *) txt,
 														 strlen(txt),
 														 PG_UTF8,
-														 GetDatabaseEncoding());
+													  GetDatabaseEncoding());
 			if (recoded == NULL)
 				elog(ERROR, "encoding conversion failed");
 
