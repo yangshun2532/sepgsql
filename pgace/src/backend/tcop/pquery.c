@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/tcop/pquery.c,v 1.117 2007/09/03 18:46:30 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/tcop/pquery.c,v 1.119 2007/11/15 22:25:16 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -68,9 +68,9 @@ CreateQueryDesc(PlannedStmt *plannedstmt,
 	QueryDesc  *qd = (QueryDesc *) palloc(sizeof(QueryDesc));
 
 	qd->operation = plannedstmt->commandType;	/* operation */
-	qd->plannedstmt = plannedstmt;				/* plan */
-	qd->utilitystmt = plannedstmt->utilityStmt;	/* in case DECLARE CURSOR */
-	qd->snapshot = snapshot;					/* snapshot */
+	qd->plannedstmt = plannedstmt;		/* plan */
+	qd->utilitystmt = plannedstmt->utilityStmt; /* in case DECLARE CURSOR */
+	qd->snapshot = snapshot;	/* snapshot */
 	qd->crosscheck_snapshot = crosscheck_snapshot;		/* RI check snapshot */
 	qd->dest = dest;			/* output dest */
 	qd->params = params;		/* parameter values passed into query */
@@ -95,10 +95,10 @@ CreateUtilityQueryDesc(Node *utilitystmt,
 {
 	QueryDesc  *qd = (QueryDesc *) palloc(sizeof(QueryDesc));
 
-	qd->operation = CMD_UTILITY;				/* operation */
+	qd->operation = CMD_UTILITY;	/* operation */
 	qd->plannedstmt = NULL;
-	qd->utilitystmt = utilitystmt;				/* utility command */
-	qd->snapshot = snapshot;					/* snapshot */
+	qd->utilitystmt = utilitystmt;		/* utility command */
+	qd->snapshot = snapshot;	/* snapshot */
 	qd->crosscheck_snapshot = InvalidSnapshot;	/* RI check snapshot */
 	qd->dest = dest;			/* output dest */
 	qd->params = params;		/* parameter values passed into query */
@@ -583,7 +583,7 @@ PortalStart(Portal portal, ParamListInfo params, Snapshot snapshot)
 				 * take care of it if needed.
 				 */
 				{
-					Node *ustmt = PortalGetPrimaryStmt(portal);
+					Node	   *ustmt = PortalGetPrimaryStmt(portal);
 
 					Assert(!IsA(ustmt, PlannedStmt));
 					portal->tupDesc = UtilityTupleDescriptor(ustmt);
@@ -1222,7 +1222,7 @@ PortalRunMulti(Portal portal, bool isTopLevel,
 	 */
 	foreach(stmtlist_item, portal->stmts)
 	{
-		Node   *stmt = (Node *) lfirst(stmtlist_item);
+		Node	   *stmt = (Node *) lfirst(stmtlist_item);
 
 		/*
 		 * If we got a cancel signal in prior command, quit
@@ -1370,7 +1370,7 @@ PortalRunFetch(Portal portal,
 				 * results in the portal's tuplestore.
 				 */
 				if (!portal->holdStore)
-					FillPortalStore(portal, false /* isTopLevel */);
+					FillPortalStore(portal, false /* isTopLevel */ );
 
 				/*
 				 * Now fetch desired portion of results.

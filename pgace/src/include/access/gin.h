@@ -4,7 +4,7 @@
  *
  *	Copyright (c) 2006-2007, PostgreSQL Global Development Group
  *
- *	$PostgreSQL: pgsql/src/include/access/gin.h,v 1.13 2007/08/21 01:11:22 tgl Exp $
+ *	$PostgreSQL: pgsql/src/include/access/gin.h,v 1.15 2007/11/16 21:50:06 tgl Exp $
  *--------------------------------------------------------------------------
  */
 
@@ -233,7 +233,7 @@ extern void GinInitBuffer(Buffer b, uint32 f);
 extern void GinInitPage(Page page, uint32 f, Size pageSize);
 extern int	compareEntries(GinState *ginstate, Datum a, Datum b);
 extern Datum *extractEntriesS(GinState *ginstate, Datum value,
-							  int32 *nentries, bool *needUnique);
+				int32 *nentries, bool *needUnique);
 extern Datum *extractEntriesSU(GinState *ginstate, Datum value, int32 *nentries);
 extern Page GinPageGetCopyPage(Page page);
 
@@ -399,8 +399,8 @@ typedef struct GinScanOpaqueData
 
 	GinScanKey	keys;
 	uint32		nkeys;
-	bool		isVoidRes; /* true if ginstate.extractQueryFn 
-							  guarantees that nothing will be found */
+	bool		isVoidRes;		/* true if ginstate.extractQueryFn guarantees
+								 * that nothing will be found */
 
 	GinScanKey	markPos;
 } GinScanOpaqueData;
@@ -453,7 +453,7 @@ typedef struct
 	uint32		maxdepth;
 	EntryAccumulator **stack;
 	uint32		stackpos;
-	uint32		allocatedMemory;
+	long		allocatedMemory;
 
 	uint32		length;
 	EntryAccumulator *entryallocator;

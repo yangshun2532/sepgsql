@@ -9,7 +9,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/optimizer/plan/setrefs.c,v 1.137 2007/10/11 18:05:27 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/optimizer/plan/setrefs.c,v 1.139 2007/11/15 22:25:15 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -68,8 +68,8 @@ typedef struct
 
 static Plan *set_plan_refs(PlannerGlobal *glob, Plan *plan, int rtoffset);
 static Plan *set_subqueryscan_references(PlannerGlobal *glob,
-										 SubqueryScan *plan,
-										 int rtoffset);
+							SubqueryScan *plan,
+							int rtoffset);
 static bool trivial_subqueryscan(SubqueryScan *plan);
 static Node *fix_scan_expr(PlannerGlobal *glob, Node *node, int rtoffset);
 static Node *fix_scan_expr_mutator(Node *node, fix_scan_expr_context *context);
@@ -87,18 +87,18 @@ static Var *search_indexed_tlist_for_non_var(Node *node,
 								 indexed_tlist *itlist,
 								 Index newvarno);
 static List *fix_join_expr(PlannerGlobal *glob,
-						   List *clauses,
-						   indexed_tlist *outer_itlist,
-						   indexed_tlist *inner_itlist,
-						   Index acceptable_rel, int rtoffset);
+			  List *clauses,
+			  indexed_tlist *outer_itlist,
+			  indexed_tlist *inner_itlist,
+			  Index acceptable_rel, int rtoffset);
 static Node *fix_join_expr_mutator(Node *node,
-								   fix_join_expr_context *context);
+					  fix_join_expr_context *context);
 static Node *fix_upper_expr(PlannerGlobal *glob,
-							Node *node,
-							indexed_tlist *subplan_itlist,
-							int rtoffset);
+			   Node *node,
+			   indexed_tlist *subplan_itlist,
+			   int rtoffset);
 static Node *fix_upper_expr_mutator(Node *node,
-									fix_upper_expr_context *context);
+					   fix_upper_expr_context *context);
 static bool fix_opfuncids_walker(Node *node, void *context);
 
 
@@ -155,7 +155,7 @@ static bool fix_opfuncids_walker(Node *node, void *context);
  * the list of relation OIDs is appended to glob->relationOids.
  *
  * Notice that we modify Plan nodes in-place, but use expression_tree_mutator
- * to process targetlist and qual expressions.  We can assume that the Plan
+ * to process targetlist and qual expressions.	We can assume that the Plan
  * nodes were just built by the planner and are not multiply referenced, but
  * it's not so safe to assume that for expression tree nodes.
  */
@@ -166,15 +166,15 @@ set_plan_references(PlannerGlobal *glob, Plan *plan, List *rtable)
 	ListCell   *lc;
 
 	/*
-	 * In the flat rangetable, we zero out substructure pointers that are
-	 * not needed by the executor; this reduces the storage space and
-	 * copying cost for cached plans.  We keep only the alias and eref
-	 * Alias fields, which are needed by EXPLAIN.
+	 * In the flat rangetable, we zero out substructure pointers that are not
+	 * needed by the executor; this reduces the storage space and copying cost
+	 * for cached plans.  We keep only the alias and eref Alias fields, which
+	 * are needed by EXPLAIN.
 	 */
 	foreach(lc, rtable)
 	{
-		RangeTblEntry  *rte = (RangeTblEntry *) lfirst(lc);
-		RangeTblEntry  *newrte;
+		RangeTblEntry *rte = (RangeTblEntry *) lfirst(lc);
+		RangeTblEntry *newrte;
 
 		/* flat copy to duplicate all the scalar fields */
 		newrte = (RangeTblEntry *) palloc(sizeof(RangeTblEntry));
@@ -193,11 +193,11 @@ set_plan_references(PlannerGlobal *glob, Plan *plan, List *rtable)
 		/*
 		 * If it's a plain relation RTE, add the table to relationOids.
 		 *
-		 * We do this even though the RTE might be unreferenced in the
-		 * plan tree; this would correspond to cases such as views that
-		 * were expanded, child tables that were eliminated by constraint
-		 * exclusion, etc.  Schema invalidation on such a rel must still
-		 * force rebuilding of the plan.
+		 * We do this even though the RTE might be unreferenced in the plan
+		 * tree; this would correspond to cases such as views that were
+		 * expanded, child tables that were eliminated by constraint
+		 * exclusion, etc.	Schema invalidation on such a rel must still force
+		 * rebuilding of the plan.
 		 *
 		 * Note we don't bother to avoid duplicate list entries.  We could,
 		 * but it would probably cost more cycles than it would save.
@@ -229,7 +229,7 @@ set_plan_refs(PlannerGlobal *glob, Plan *plan, int rtoffset)
 	{
 		case T_SeqScan:
 			{
-				SeqScan *splan = (SeqScan *) plan;
+				SeqScan    *splan = (SeqScan *) plan;
 
 				splan->scanrelid += rtoffset;
 				splan->plan.targetlist =
@@ -240,7 +240,7 @@ set_plan_refs(PlannerGlobal *glob, Plan *plan, int rtoffset)
 			break;
 		case T_IndexScan:
 			{
-				IndexScan *splan = (IndexScan *) plan;
+				IndexScan  *splan = (IndexScan *) plan;
 
 				splan->scan.scanrelid += rtoffset;
 				splan->scan.plan.targetlist =
@@ -282,7 +282,7 @@ set_plan_refs(PlannerGlobal *glob, Plan *plan, int rtoffset)
 			break;
 		case T_TidScan:
 			{
-				TidScan *splan = (TidScan *) plan;
+				TidScan    *splan = (TidScan *) plan;
 
 				splan->scan.scanrelid += rtoffset;
 				splan->scan.plan.targetlist =
@@ -340,11 +340,12 @@ set_plan_refs(PlannerGlobal *glob, Plan *plan, int rtoffset)
 			/*
 			 * These plan types don't actually bother to evaluate their
 			 * targetlists, because they just return their unmodified input
-			 * tuples.  Even though the targetlist won't be used by the
+			 * tuples.	Even though the targetlist won't be used by the
 			 * executor, we fix it up for possible use by EXPLAIN (not to
 			 * mention ease of debugging --- wrong varnos are very confusing).
 			 */
 			set_dummy_tlist_references(plan, rtoffset);
+
 			/*
 			 * Since these plan types don't check quals either, we should not
 			 * find any qual expression attached to them.
@@ -353,13 +354,13 @@ set_plan_refs(PlannerGlobal *glob, Plan *plan, int rtoffset)
 			break;
 		case T_Limit:
 			{
-				Limit *splan = (Limit *) plan;
+				Limit	   *splan = (Limit *) plan;
 
 				/*
 				 * Like the plan types above, Limit doesn't evaluate its tlist
 				 * or quals.  It does have live expressions for limit/offset,
-				 * however; and those cannot contain subplan variable refs,
-				 * so fix_scan_expr works for them.
+				 * however; and those cannot contain subplan variable refs, so
+				 * fix_scan_expr works for them.
 				 */
 				set_dummy_tlist_references(plan, rtoffset);
 				Assert(splan->plan.qual == NIL);
@@ -376,7 +377,7 @@ set_plan_refs(PlannerGlobal *glob, Plan *plan, int rtoffset)
 			break;
 		case T_Result:
 			{
-				Result *splan = (Result *) plan;
+				Result	   *splan = (Result *) plan;
 
 				/*
 				 * Result may or may not have a subplan; if not, it's more
@@ -398,7 +399,7 @@ set_plan_refs(PlannerGlobal *glob, Plan *plan, int rtoffset)
 			break;
 		case T_Append:
 			{
-				Append *splan = (Append *) plan;
+				Append	   *splan = (Append *) plan;
 
 				/*
 				 * Append, like Sort et al, doesn't actually evaluate its
@@ -416,7 +417,7 @@ set_plan_refs(PlannerGlobal *glob, Plan *plan, int rtoffset)
 			break;
 		case T_BitmapAnd:
 			{
-				BitmapAnd *splan = (BitmapAnd *) plan;
+				BitmapAnd  *splan = (BitmapAnd *) plan;
 
 				/* BitmapAnd works like Append, but has no tlist */
 				Assert(splan->plan.targetlist == NIL);
@@ -431,7 +432,7 @@ set_plan_refs(PlannerGlobal *glob, Plan *plan, int rtoffset)
 			break;
 		case T_BitmapOr:
 			{
-				BitmapOr *splan = (BitmapOr *) plan;
+				BitmapOr   *splan = (BitmapOr *) plan;
 
 				/* BitmapOr works like Append, but has no tlist */
 				Assert(splan->plan.targetlist == NIL);
@@ -637,9 +638,10 @@ fix_scan_expr_mutator(Node *node, fix_scan_expr_context *context)
 		Var		   *var = copyVar((Var *) node);
 
 		Assert(var->varlevelsup == 0);
+
 		/*
 		 * We should not see any Vars marked INNER, but in a nestloop inner
-		 * scan there could be OUTER Vars.  Leave them alone.
+		 * scan there could be OUTER Vars.	Leave them alone.
 		 */
 		Assert(var->varno != INNER);
 		if (var->varno > 0 && var->varno != OUTER)
@@ -657,9 +659,10 @@ fix_scan_expr_mutator(Node *node, fix_scan_expr_context *context)
 		cexpr->cvarno += context->rtoffset;
 		return (Node *) cexpr;
 	}
+
 	/*
-	 * Since we update opcode info in-place, this part could possibly
-	 * scribble on the planner's input data structures, but it's OK.
+	 * Since we update opcode info in-place, this part could possibly scribble
+	 * on the planner's input data structures, but it's OK.
 	 */
 	if (IsA(node, OpExpr))
 		set_opfuncid((OpExpr *) node);
@@ -1038,7 +1041,7 @@ set_dummy_tlist_references(Plan *plan, int rtoffset)
 		}
 		else
 		{
-			newvar->varnoold = 0;	/* wasn't ever a plain Var */
+			newvar->varnoold = 0;		/* wasn't ever a plain Var */
 			newvar->varoattno = 0;
 		}
 
@@ -1325,9 +1328,10 @@ fix_join_expr_mutator(Node *node, fix_join_expr_context *context)
 		if (newvar)
 			return (Node *) newvar;
 	}
+
 	/*
-	 * Since we update opcode info in-place, this part could possibly
-	 * scribble on the planner's input data structures, but it's OK.
+	 * Since we update opcode info in-place, this part could possibly scribble
+	 * on the planner's input data structures, but it's OK.
 	 */
 	if (IsA(node, OpExpr))
 		set_opfuncid((OpExpr *) node);
@@ -1422,9 +1426,10 @@ fix_upper_expr_mutator(Node *node, fix_upper_expr_context *context)
 		if (newvar)
 			return (Node *) newvar;
 	}
+
 	/*
-	 * Since we update opcode info in-place, this part could possibly
-	 * scribble on the planner's input data structures, but it's OK.
+	 * Since we update opcode info in-place, this part could possibly scribble
+	 * on the planner's input data structures, but it's OK.
 	 */
 	if (IsA(node, OpExpr))
 		set_opfuncid((OpExpr *) node);
@@ -1485,8 +1490,8 @@ set_returning_clause_references(PlannerGlobal *glob,
 	 * We can perform the desired Var fixup by abusing the fix_join_expr
 	 * machinery that normally handles inner indexscan fixup.  We search the
 	 * top plan's targetlist for Vars of non-result relations, and use
-	 * fix_join_expr to convert RETURNING Vars into references to those
-	 * tlist entries, while leaving result-rel Vars as-is.
+	 * fix_join_expr to convert RETURNING Vars into references to those tlist
+	 * entries, while leaving result-rel Vars as-is.
 	 */
 	itlist = build_tlist_index_other_vars(topplan->targetlist, resultRelation);
 

@@ -8,7 +8,7 @@
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
- *			$PostgreSQL: pgsql/src/backend/access/gin/ginutil.c,v 1.10 2007/01/31 15:09:45 teodor Exp $
+ *			$PostgreSQL: pgsql/src/backend/access/gin/ginutil.c,v 1.12 2007/11/15 22:25:14 momjian Exp $
  *-------------------------------------------------------------------------
  */
 
@@ -126,7 +126,7 @@ compareEntries(GinState *ginstate, Datum a, Datum b)
 									   &ginstate->compareFn,
 									   a, b
 									   )
-	);
+		);
 }
 
 typedef struct

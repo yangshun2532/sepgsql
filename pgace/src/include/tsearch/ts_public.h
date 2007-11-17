@@ -6,7 +6,7 @@
  *
  * Copyright (c) 1998-2007, PostgreSQL Global Development Group
  *
- * $PostgreSQL: pgsql/src/include/tsearch/ts_public.h,v 1.5 2007/11/09 22:37:35 tgl Exp $
+ * $PostgreSQL: pgsql/src/include/tsearch/ts_public.h,v 1.7 2007/11/15 22:25:17 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -42,7 +42,7 @@ typedef struct
 				type:8,
 				len:16;
 	char	   *word;
-	QueryOperand  *item;
+	QueryOperand *item;
 } HeadlineWordEntry;
 
 typedef struct
@@ -60,7 +60,7 @@ typedef struct
  * Common useful things for tsearch subsystem
  */
 extern char *get_tsearch_config_filename(const char *basename,
-										 const char *extension);
+							const char *extension);
 
 extern char *pnstrdup(const char *in, int len);
 
@@ -74,7 +74,7 @@ typedef struct
 } StopList;
 
 extern void readstoplist(const char *fname, StopList *s,
-						 char *(*wordop) (const char *));
+			 char *(*wordop) (const char *));
 extern bool searchstoplist(StopList *s, char *key);
 
 /*

@@ -7,7 +7,7 @@
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/commands/trigger.c,v 1.222 2007/11/05 19:00:25 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/commands/trigger.c,v 1.224 2007/11/16 01:51:22 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -43,7 +43,7 @@
 
 
 /* GUC variables */
-int		SessionReplicationRole = SESSION_REPLICATION_ROLE_ORIGIN;
+int			SessionReplicationRole = SESSION_REPLICATION_ROLE_ORIGIN;
 
 
 /* Local function prototypes */
@@ -68,7 +68,7 @@ static void AfterTriggerSaveEvent(ResultRelInfo *relinfo, int event,
  *
  * constraintOid, if nonzero, says that this trigger is being created
  * internally to implement that constraint.  A suitable pg_depend entry will
- * be made to link the trigger to that constraint.  constraintOid is zero when
+ * be made to link the trigger to that constraint.	constraintOid is zero when
  * executing a user-entered CREATE TRIGGER command.
  *
  * Note: can return InvalidOid if we decided to not create a trigger at all,
@@ -212,11 +212,11 @@ CreateTrigger(CreateTrigStmt *stmt, Oid constraintOid)
 	}
 
 	/*
-	 * If the command is a user-entered CREATE CONSTRAINT TRIGGER command
-	 * that references one of the built-in RI_FKey trigger functions, assume
-	 * it is from a dump of a pre-7.3 foreign key constraint, and take steps
-	 * to convert this legacy representation into a regular foreign key
-	 * constraint.  Ugly, but necessary for loading old dump files.
+	 * If the command is a user-entered CREATE CONSTRAINT TRIGGER command that
+	 * references one of the built-in RI_FKey trigger functions, assume it is
+	 * from a dump of a pre-7.3 foreign key constraint, and take steps to
+	 * convert this legacy representation into a regular foreign key
+	 * constraint.	Ugly, but necessary for loading old dump files.
 	 */
 	if (stmt->isconstraint && !OidIsValid(constraintOid) &&
 		list_length(stmt->args) >= 6 &&
@@ -422,8 +422,8 @@ CreateTrigger(CreateTrigStmt *stmt, Oid constraintOid)
 	{
 		/*
 		 * It's for a constraint, so make it an internal dependency of the
-		 * constraint.  We can skip depending on the relations, as there'll
-		 * be an indirect dependency via the constraint.
+		 * constraint.	We can skip depending on the relations, as there'll be
+		 * an indirect dependency via the constraint.
 		 */
 		referenced.classId = ConstraintRelationId;
 		referenced.objectId = constraintOid;
@@ -462,7 +462,7 @@ CreateTrigger(CreateTrigStmt *stmt, Oid constraintOid)
  * full-fledged foreign key constraints.
  *
  * The conversion is complex because a pre-7.3 foreign key involved three
- * separate triggers, which were reported separately in dumps.  While the
+ * separate triggers, which were reported separately in dumps.	While the
  * single trigger on the referencing table adds no new information, we need
  * to know the trigger functions of both of the triggers on the referenced
  * table to build the constraint declaration.  Also, due to lack of proper
@@ -470,13 +470,14 @@ CreateTrigger(CreateTrigStmt *stmt, Oid constraintOid)
  * an incomplete set of triggers resulting in an only partially enforced
  * FK constraint.  (This would happen if one of the tables had been dropped
  * and re-created, but only if the DB had been affected by a 7.0 pg_dump bug
- * that caused loss of tgconstrrelid information.)  We choose to translate to
+ * that caused loss of tgconstrrelid information.)	We choose to translate to
  * an FK constraint only when we've seen all three triggers of a set.  This is
  * implemented by storing unmatched items in a list in TopMemoryContext.
  * We match triggers together by comparing the trigger arguments (which
  * include constraint name, table and column names, so should be good enough).
  */
-typedef struct {
+typedef struct
+{
 	List	   *args;			/* list of (T_String) Values or NIL */
 	Oid			funcoids[3];	/* OIDs of trigger functions */
 	/* The three function OIDs are stored in the order update, delete, child */
@@ -487,7 +488,7 @@ ConvertTriggerToFK(CreateTrigStmt *stmt, Oid funcoid)
 {
 	static List *info_list = NIL;
 
-	static const char * const funcdescr[3] = {
+	static const char *const funcdescr[3] = {
 		gettext_noop("Found referenced table's UPDATE trigger."),
 		gettext_noop("Found referenced table's DELETE trigger."),
 		gettext_noop("Found referencing table's trigger.")
@@ -512,7 +513,7 @@ ConvertTriggerToFK(CreateTrigStmt *stmt, Oid funcoid)
 	i = 0;
 	foreach(l, stmt->args)
 	{
-		Value *arg = (Value *) lfirst(l);
+		Value	   *arg = (Value *) lfirst(l);
 
 		i++;
 		if (i < 4)				/* skip constraint and table names */
@@ -538,7 +539,7 @@ ConvertTriggerToFK(CreateTrigStmt *stmt, Oid funcoid)
 	i = 0;
 	foreach(l, fk_attrs)
 	{
-		Value *arg = (Value *) lfirst(l);
+		Value	   *arg = (Value *) lfirst(l);
 
 		if (i++ > 0)
 			appendStringInfoChar(&buf, ',');
@@ -549,7 +550,7 @@ ConvertTriggerToFK(CreateTrigStmt *stmt, Oid funcoid)
 	i = 0;
 	foreach(l, pk_attrs)
 	{
-		Value *arg = (Value *) lfirst(l);
+		Value	   *arg = (Value *) lfirst(l);
 
 		if (i++ > 0)
 			appendStringInfoChar(&buf, ',');
@@ -599,9 +600,9 @@ ConvertTriggerToFK(CreateTrigStmt *stmt, Oid funcoid)
 		MemoryContext oldContext;
 
 		ereport(NOTICE,
-				(errmsg("ignoring incomplete trigger group for constraint \"%s\" %s",
-						constr_name, buf.data),
-				 errdetail(funcdescr[funcnum])));
+		(errmsg("ignoring incomplete trigger group for constraint \"%s\" %s",
+				constr_name, buf.data),
+		 errdetail(funcdescr[funcnum])));
 		oldContext = MemoryContextSwitchTo(TopMemoryContext);
 		info = (OldTriggerInfo *) palloc0(sizeof(OldTriggerInfo));
 		info->args = copyObject(stmt->args);
@@ -615,9 +616,9 @@ ConvertTriggerToFK(CreateTrigStmt *stmt, Oid funcoid)
 	{
 		/* Second trigger of set */
 		ereport(NOTICE,
-				(errmsg("ignoring incomplete trigger group for constraint \"%s\" %s",
-						constr_name, buf.data),
-				 errdetail(funcdescr[funcnum])));
+		(errmsg("ignoring incomplete trigger group for constraint \"%s\" %s",
+				constr_name, buf.data),
+		 errdetail(funcdescr[funcnum])));
 	}
 	else
 	{
@@ -1185,8 +1186,8 @@ RelationBuildTriggers(Relation relation)
 			int			i;
 
 			val = DatumGetByteaP(fastgetattr(htup,
-											Anum_pg_trigger_tgargs,
-											tgrel->rd_att, &isnull));
+											 Anum_pg_trigger_tgargs,
+											 tgrel->rd_att, &isnull));
 			if (isnull)
 				elog(ERROR, "tgargs is null in trigger for relation \"%s\"",
 					 RelationGetRelationName(relation));
@@ -1644,7 +1645,7 @@ ExecBSInsertTriggers(EState *estate, ResultRelInfo *relinfo)
 				trigger->tgenabled == TRIGGER_DISABLED)
 				continue;
 		}
-		else /* ORIGIN or LOCAL role */
+		else	/* ORIGIN or LOCAL role */
 		{
 			if (trigger->tgenabled == TRIGGER_FIRES_ON_REPLICA ||
 				trigger->tgenabled == TRIGGER_DISABLED)
@@ -1703,7 +1704,7 @@ ExecBRInsertTriggers(EState *estate, ResultRelInfo *relinfo,
 				trigger->tgenabled == TRIGGER_DISABLED)
 				continue;
 		}
-		else /* ORIGIN or LOCAL role */
+		else	/* ORIGIN or LOCAL role */
 		{
 			if (trigger->tgenabled == TRIGGER_FIRES_ON_REPLICA ||
 				trigger->tgenabled == TRIGGER_DISABLED)
@@ -1775,7 +1776,7 @@ ExecBSDeleteTriggers(EState *estate, ResultRelInfo *relinfo)
 				trigger->tgenabled == TRIGGER_DISABLED)
 				continue;
 		}
-		else /* ORIGIN or LOCAL role */
+		else	/* ORIGIN or LOCAL role */
 		{
 			if (trigger->tgenabled == TRIGGER_FIRES_ON_REPLICA ||
 				trigger->tgenabled == TRIGGER_DISABLED)
@@ -1841,7 +1842,7 @@ ExecBRDeleteTriggers(EState *estate, ResultRelInfo *relinfo,
 				trigger->tgenabled == TRIGGER_DISABLED)
 				continue;
 		}
-		else /* ORIGIN or LOCAL role */
+		else	/* ORIGIN or LOCAL role */
 		{
 			if (trigger->tgenabled == TRIGGER_FIRES_ON_REPLICA ||
 				trigger->tgenabled == TRIGGER_DISABLED)
@@ -1926,7 +1927,7 @@ ExecBSUpdateTriggers(EState *estate, ResultRelInfo *relinfo)
 				trigger->tgenabled == TRIGGER_DISABLED)
 				continue;
 		}
-		else /* ORIGIN or LOCAL role */
+		else	/* ORIGIN or LOCAL role */
 		{
 			if (trigger->tgenabled == TRIGGER_FIRES_ON_REPLICA ||
 				trigger->tgenabled == TRIGGER_DISABLED)
@@ -1997,7 +1998,7 @@ ExecBRUpdateTriggers(EState *estate, ResultRelInfo *relinfo,
 				trigger->tgenabled == TRIGGER_DISABLED)
 				continue;
 		}
-		else /* ORIGIN or LOCAL role */
+		else	/* ORIGIN or LOCAL role */
 		{
 			if (trigger->tgenabled == TRIGGER_FIRES_ON_REPLICA ||
 				trigger->tgenabled == TRIGGER_DISABLED)
@@ -2676,7 +2677,7 @@ afterTriggerInvokeEvents(AfterTriggerEventList *events,
 				trigdesc = rInfo->ri_TrigDesc;
 				finfo = rInfo->ri_TrigFunctions;
 				instr = rInfo->ri_TrigInstrument;
-				if (trigdesc == NULL)		/* should not happen */
+				if (trigdesc == NULL)	/* should not happen */
 					elog(ERROR, "relation %u has no triggers",
 						 event->ate_relid);
 			}
@@ -2732,7 +2733,7 @@ afterTriggerInvokeEvents(AfterTriggerEventList *events,
 
 	if (local_estate)
 	{
-		ListCell *l;
+		ListCell   *l;
 
 		foreach(l, estate->es_trig_target_relations)
 		{
@@ -2912,8 +2913,8 @@ AfterTriggerFireDeferred(void)
 		ActiveSnapshot = CopySnapshot(GetTransactionSnapshot());
 
 	/*
-	 * Run all the remaining triggers.	Loop until they are all gone, in
-	 * case some trigger queues more for us to do.
+	 * Run all the remaining triggers.	Loop until they are all gone, in case
+	 * some trigger queues more for us to do.
 	 */
 	while (afterTriggerMarkEvents(events, NULL, false))
 	{
@@ -2947,13 +2948,13 @@ AfterTriggerEndXact(bool isCommit)
 	 *
 	 * Since all the info is in TopTransactionContext or children thereof, we
 	 * don't really need to do anything to reclaim memory.  However, the
-	 * pending-events list could be large, and so it's useful to discard
-	 * it as soon as possible --- especially if we are aborting because we
-	 * ran out of memory for the list!
+	 * pending-events list could be large, and so it's useful to discard it as
+	 * soon as possible --- especially if we are aborting because we ran out
+	 * of memory for the list!
 	 *
-	 * (Note: any event_cxts of child subtransactions could also be
-	 * deleted here, but we have no convenient way to find them, so we
-	 * leave it to TopTransactionContext reset to clean them up.)
+	 * (Note: any event_cxts of child subtransactions could also be deleted
+	 * here, but we have no convenient way to find them, so we leave it to
+	 * TopTransactionContext reset to clean them up.)
 	 */
 	if (afterTriggers && afterTriggers->event_cxt)
 		MemoryContextDelete(afterTriggers->event_cxt);
@@ -2980,9 +2981,8 @@ AfterTriggerBeginSubXact(void)
 
 	/*
 	 * Allocate more space in the stacks if needed.  (Note: because the
-	 * minimum nest level of a subtransaction is 2, we waste the first
-	 * couple entries of each array; not worth the notational effort to
-	 * avoid it.)
+	 * minimum nest level of a subtransaction is 2, we waste the first couple
+	 * entries of each array; not worth the notational effort to avoid it.)
 	 */
 	while (my_level >= afterTriggers->maxtransdepth)
 	{
@@ -3078,16 +3078,17 @@ AfterTriggerEndSubXact(bool isCommit)
 		afterTriggers->state_stack[my_level] = NULL;
 		Assert(afterTriggers->query_depth ==
 			   afterTriggers->depth_stack[my_level]);
+
 		/*
 		 * It's entirely possible that the subxact created an event_cxt but
 		 * there is not anything left in it (because all the triggers were
-		 * fired at end-of-statement).  If so, we should release the context
-		 * to prevent memory leakage in a long sequence of subtransactions.
-		 * We can detect whether there's anything of use in the context by
-		 * seeing if anything was added to the global events list since
-		 * subxact start.  (This test doesn't catch every case where the
-		 * context is deletable; for instance maybe the only additions were
-		 * from a sub-sub-xact.  But it handles the common case.)
+		 * fired at end-of-statement).	If so, we should release the context
+		 * to prevent memory leakage in a long sequence of subtransactions. We
+		 * can detect whether there's anything of use in the context by seeing
+		 * if anything was added to the global events list since subxact
+		 * start.  (This test doesn't catch every case where the context is
+		 * deletable; for instance maybe the only additions were from a
+		 * sub-sub-xact.  But it handles the common case.)
 		 */
 		if (afterTriggers->cxt_stack[my_level] &&
 			afterTriggers->events.tail == afterTriggers->events_stack[my_level].tail)
@@ -3622,7 +3623,7 @@ AfterTriggerSaveEvent(ResultRelInfo *relinfo, int event, bool row_trigger,
 				trigger->tgenabled == TRIGGER_DISABLED)
 				continue;
 		}
-		else /* ORIGIN or LOCAL role */
+		else	/* ORIGIN or LOCAL role */
 		{
 			if (trigger->tgenabled == TRIGGER_FIRES_ON_REPLICA ||
 				trigger->tgenabled == TRIGGER_DISABLED)
@@ -3675,10 +3676,10 @@ AfterTriggerSaveEvent(ResultRelInfo *relinfo, int event, bool row_trigger,
 
 		/*
 		 * If we don't yet have an event context for the current (sub)xact,
-		 * create one.  Make it a child of CurTransactionContext to ensure it
+		 * create one.	Make it a child of CurTransactionContext to ensure it
 		 * will go away if the subtransaction aborts.
 		 */
-		if (my_level > 1)			/* subtransaction? */
+		if (my_level > 1)		/* subtransaction? */
 		{
 			Assert(my_level < afterTriggers->maxtransdepth);
 			cxtptr = &afterTriggers->cxt_stack[my_level];

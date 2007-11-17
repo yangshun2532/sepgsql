@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/catalog/pg_aggregate.c,v 1.87 2007/09/03 00:39:14 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/catalog/pg_aggregate.c,v 1.88 2007/11/15 21:14:33 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -172,8 +172,8 @@ AggregateCreate(const char *aggName,
 		ereport(ERROR,
 				(errcode(ERRCODE_DATATYPE_MISMATCH),
 				 errmsg("cannot determine result data type"),
-		   errdetail("An aggregate returning a polymorphic type "
-					 "must have at least one polymorphic argument.")));
+				 errdetail("An aggregate returning a polymorphic type "
+						   "must have at least one polymorphic argument.")));
 
 	/* handle sortop, if supplied */
 	if (aggsortopName)
@@ -215,7 +215,7 @@ AggregateCreate(const char *aggName,
 							  PointerGetDatum(NULL),	/* proconfig */
 							  1,				/* procost */
 							  0,				/* prorows */
-							  NULL);			/* pgace opaque */
+							  NULL);			/* PGACE opaque */
 
 	/*
 	 * Okay to create the pg_aggregate entry.

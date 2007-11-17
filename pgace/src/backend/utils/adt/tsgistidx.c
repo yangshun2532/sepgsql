@@ -7,7 +7,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/adt/tsgistidx.c,v 1.4 2007/09/11 08:46:29 teodor Exp $
+ *	  $PostgreSQL: pgsql/src/backend/utils/adt/tsgistidx.c,v 1.6 2007/11/16 01:12:24 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -30,10 +30,8 @@
 typedef char BITVEC[SIGLEN];
 typedef char *BITVECP;
 
-#define LOOPBYTE(a) \
-	for(i=0;i<SIGLEN;i++) {\
-		a;\
-}
+#define LOOPBYTE \
+			for(i=0;i<SIGLEN;i++)
 
 #define GETBYTE(x,i) ( *( (BITVECP)(x) + (int)( (i) / BITS_PER_BYTE ) ) )
 #define GETBITBYTE(x,i) ( ((char)(x)) >> (i) & 0x01 )
@@ -52,7 +50,7 @@ typedef char *BITVECP;
 
 typedef struct
 {
-	int32		vl_len_; /* varlena header (do not touch directly!) */
+	int32		vl_len_;		/* varlena header (do not touch directly!) */
 	int4		flag;
 	char		data[1];
 } SignTSVector;
@@ -135,8 +133,8 @@ gtsvectorout(PG_FUNCTION_ARGS)
 static int
 compareint(const void *va, const void *vb)
 {
-	int4 a = *((int4 *) va);
-	int4 b = *((int4 *) vb);
+	int4		a = *((int4 *) va);
+	int4		b = *((int4 *) vb);
 
 	if (a == b)
 		return 0;
@@ -169,7 +167,7 @@ uniqueint(int4 *a, int4 l)
 }
 
 static void
-makesign(BITVECP sign, SignTSVector * a)
+makesign(BITVECP sign, SignTSVector *a)
 {
 	int4		k,
 				len = ARRNELEM(a);
@@ -252,10 +250,11 @@ gtsvector_compress(PG_FUNCTION_ARGS)
 		SignTSVector *res;
 		BITVECP		sign = GETSIGN(DatumGetPointer(entry->key));
 
-		LOOPBYTE(
-				 if ((sign[i] & 0xff) != 0xff)
-				 PG_RETURN_POINTER(retval);
-		);
+		LOOPBYTE
+		{
+			if ((sign[i] & 0xff) != 0xff)
+				PG_RETURN_POINTER(retval);
+		}
 
 		len = CALCGTSIZE(SIGNKEY | ALLISTRUE, 0);
 		res = (SignTSVector *) palloc(len);
@@ -300,7 +299,7 @@ typedef struct
  * is there value 'val' in array or not ?
  */
 static bool
-checkcondition_arr(void *checkval, QueryOperand * val)
+checkcondition_arr(void *checkval, QueryOperand *val)
 {
 	int4	   *StopLow = ((CHKVAL *) checkval)->arrb;
 	int4	   *StopHigh = ((CHKVAL *) checkval)->arre;
@@ -323,7 +322,7 @@ checkcondition_arr(void *checkval, QueryOperand * val)
 }
 
 static bool
-checkcondition_bit(void *checkval, QueryOperand * val)
+checkcondition_bit(void *checkval, QueryOperand *val)
 {
 	return GETBIT(checkval, HASHVAL(val->valcrc));
 }
@@ -365,7 +364,7 @@ gtsvector_consistent(PG_FUNCTION_ARGS)
 }
 
 static int4
-unionkey(BITVECP sbase, SignTSVector * add)
+unionkey(BITVECP sbase, SignTSVector *add)
 {
 	int4		i;
 
@@ -376,9 +375,8 @@ unionkey(BITVECP sbase, SignTSVector * add)
 		if (ISALLTRUE(add))
 			return 1;
 
-		LOOPBYTE(
-				 sbase[i] |= sadd[i];
-		);
+		LOOPBYTE
+			sbase[i] |= sadd[i];
 	}
 	else
 	{
@@ -446,13 +444,14 @@ gtsvector_same(PG_FUNCTION_ARGS)
 						sb = GETSIGN(b);
 
 			*result = true;
-			LOOPBYTE(
-					 if (sa[i] != sb[i])
-					 {
-				*result = false;
-				break;
+			LOOPBYTE
+			{
+				if (sa[i] != sb[i])
+				{
+					*result = false;
+					break;
+				}
 			}
-			);
 		}
 	}
 	else
@@ -487,9 +486,8 @@ sizebitvec(BITVECP sign)
 	int4		size = 0,
 				i;
 
-	LOOPBYTE(
-			 size += number_of_ones[(unsigned char) sign[i]];
-	);
+	LOOPBYTE
+		size += number_of_ones[(unsigned char) sign[i]];
 	return size;
 }
 
@@ -500,15 +498,16 @@ hemdistsign(BITVECP a, BITVECP b)
 				diff,
 				dist = 0;
 
-	LOOPBYTE(
-			 diff = (unsigned char) (a[i] ^ b[i]);
-	dist += number_of_ones[diff];
-	);
+	LOOPBYTE
+	{
+		diff = (unsigned char) (a[i] ^ b[i]);
+		dist += number_of_ones[diff];
+	}
 	return dist;
 }
 
 static int
-hemdist(SignTSVector * a, SignTSVector * b)
+hemdist(SignTSVector *a, SignTSVector *b)
 {
 	if (ISALLTRUE(a))
 	{
@@ -558,7 +557,7 @@ typedef struct
 } CACHESIGN;
 
 static void
-fillcache(CACHESIGN * item, SignTSVector * key)
+fillcache(CACHESIGN *item, SignTSVector *key)
 {
 	item->allistrue = false;
 	if (ISARRKEY(key))
@@ -579,8 +578,8 @@ typedef struct
 static int
 comparecost(const void *va, const void *vb)
 {
-	SPLITCOST *a = (SPLITCOST *) va;
-	SPLITCOST *b = (SPLITCOST *) vb;
+	SPLITCOST  *a = (SPLITCOST *) va;
+	SPLITCOST  *b = (SPLITCOST *) vb;
 
 	if (a->cost == b->cost)
 		return 0;
@@ -590,7 +589,7 @@ comparecost(const void *va, const void *vb)
 
 
 static int
-hemdistcache(CACHESIGN * a, CACHESIGN * b)
+hemdistcache(CACHESIGN *a, CACHESIGN *b)
 {
 	if (a->allistrue)
 	{
@@ -760,9 +759,8 @@ gtsvector_picksplit(PG_FUNCTION_ARGS)
 			else
 			{
 				ptr = cache[j].sign;
-				LOOPBYTE(
-						 union_l[i] |= ptr[i];
-				);
+				LOOPBYTE
+					union_l[i] |= ptr[i];
 			}
 			*left++ = j;
 			v->spl_nleft++;
@@ -777,9 +775,8 @@ gtsvector_picksplit(PG_FUNCTION_ARGS)
 			else
 			{
 				ptr = cache[j].sign;
-				LOOPBYTE(
-						 union_r[i] |= ptr[i];
-				);
+				LOOPBYTE
+					union_r[i] |= ptr[i];
 			}
 			*right++ = j;
 			v->spl_nright++;
