@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/parser/parse_target.c,v 1.156 2007/09/27 17:42:03 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/parser/parse_target.c,v 1.157 2007/11/15 21:14:37 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -854,8 +854,8 @@ ExpandColumnRefStar(ParseState *pstate, ColumnRef *cref,
 		 *
 		 * Since the grammar only accepts bare '*' at top level of SELECT, we
 		 * need not handle the targetlist==false case here.  However, we must
-		 * test for it because the grammar currently fails to distinguish
-		 * a quoted name "*" from a real asterisk.
+		 * test for it because the grammar currently fails to distinguish a
+		 * quoted name "*" from a real asterisk.
 		 */
 		if (!targetlist)
 			elog(ERROR, "invalid use of *");
@@ -1347,8 +1347,8 @@ FigureColnameInternal(Node *node, char **name)
 			break;
 		case T_XmlExpr:
 			/* make SQL/XML functions act like a regular function */
-			switch (((XmlExpr*) node)->op)
-			{		
+			switch (((XmlExpr *) node)->op)
+			{
 				case IS_XMLCONCAT:
 					*name = "xmlconcat";
 					return 2;
@@ -1373,7 +1373,7 @@ FigureColnameInternal(Node *node, char **name)
 				case IS_DOCUMENT:
 					/* nothing */
 					break;
-			} 
+			}
 			break;
 		case T_XmlSerialize:
 			*name = "xmlserialize";

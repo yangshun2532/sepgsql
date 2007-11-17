@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/tcop/postgres.c,v 1.537 2007/08/02 23:39:44 adunstan Exp $
+ *	  $PostgreSQL: pgsql/src/backend/tcop/postgres.c,v 1.538 2007/11/15 21:14:38 momjian Exp $
  *
  * NOTES
  *	  this is the "main" module of the postgres backend and
@@ -143,6 +143,7 @@ static bool ignore_till_sync = false;
  * in order to reduce overhead for short-lived queries.
  */
 static CachedPlanSource *unnamed_stmt_psrc = NULL;
+
 /* workspace for building a new unnamed statement in */
 static MemoryContext unnamed_stmt_context = NULL;
 
@@ -215,8 +216,8 @@ InteractiveBackend(StringInfo inBuf)
 	if (UseNewLine)
 	{
 		/*
-		 * if we are using \n as a delimiter, then read characters until
-		 * the \n.
+		 * if we are using \n as a delimiter, then read characters until the
+		 * \n.
 		 */
 		while ((c = interactive_getc()) != EOF)
 		{
@@ -837,10 +838,10 @@ exec_simple_query(const char *query_string)
 	MemoryContextSwitchTo(oldcontext);
 
 	/*
-	 * We'll tell PortalRun it's a top-level command iff there's exactly
-	 * one raw parsetree.  If more than one, it's effectively a transaction
-	 * block and we want PreventTransactionChain to reject unsafe commands.
-	 * (Note: we're assuming that query rewrite cannot add commands that are
+	 * We'll tell PortalRun it's a top-level command iff there's exactly one
+	 * raw parsetree.  If more than one, it's effectively a transaction block
+	 * and we want PreventTransactionChain to reject unsafe commands. (Note:
+	 * we're assuming that query rewrite cannot add commands that are
 	 * significant to PreventTransactionChain.)
 	 */
 	isTopLevel = (list_length(parsetree_list) == 1);
@@ -1177,8 +1178,8 @@ exec_parse_message(const char *query_string,	/* string to execute */
 		 * originally specified parameter set is not required to be complete,
 		 * so we have to use parse_analyze_varparams().
 		 *
-		 * XXX must use copyObject here since parse analysis scribbles on
-		 * its input, and we need the unmodified raw parse tree for possible
+		 * XXX must use copyObject here since parse analysis scribbles on its
+		 * input, and we need the unmodified raw parse tree for possible
 		 * replanning later.
 		 */
 		if (log_parser_stats)
@@ -1246,7 +1247,7 @@ exec_parse_message(const char *query_string,	/* string to execute */
 							   commandTag,
 							   paramTypes,
 							   numParams,
-							   0,				/* default cursor options */
+							   0,		/* default cursor options */
 							   stmt_list,
 							   false);
 	}
@@ -1256,7 +1257,7 @@ exec_parse_message(const char *query_string,	/* string to execute */
 		 * paramTypes and query_string need to be copied into
 		 * unnamed_stmt_context.  The rest is there already
 		 */
-		Oid	   *newParamTypes;
+		Oid		   *newParamTypes;
 
 		if (numParams > 0)
 		{
@@ -1271,7 +1272,7 @@ exec_parse_message(const char *query_string,	/* string to execute */
 												 commandTag,
 												 newParamTypes,
 												 numParams,
-												 0,	/* cursor options */
+												 0,		/* cursor options */
 												 stmt_list,
 												 fully_planned,
 												 true,
@@ -1417,7 +1418,7 @@ exec_bind_message(StringInfo input_message)
 		ereport(ERROR,
 				(errcode(ERRCODE_PROTOCOL_VIOLATION),
 				 errmsg("bind message supplies %d parameters, but prepared statement \"%s\" requires %d",
-				   numParams, stmt_name, psrc->num_params)));
+						numParams, stmt_name, psrc->num_params)));
 
 	/*
 	 * If we are in aborted transaction state, the only portals we can
@@ -1601,8 +1602,8 @@ exec_bind_message(StringInfo input_message)
 	{
 		/*
 		 * Revalidate the cached plan; this may result in replanning.  Any
-		 * cruft will be generated in MessageContext.  The plan refcount
-		 * will be assigned to the Portal, so it will be released at portal
+		 * cruft will be generated in MessageContext.  The plan refcount will
+		 * be assigned to the Portal, so it will be released at portal
 		 * destruction.
 		 */
 		cplan = RevalidateCachedPlan(psrc, false);
@@ -1684,7 +1685,7 @@ exec_bind_message(StringInfo input_message)
 							*stmt_name ? stmt_name : "<unnamed>",
 							*portal_name ? "/" : "",
 							*portal_name ? portal_name : "",
-							psrc->query_string ? psrc->query_string : "<source not stored>"),
+			psrc->query_string ? psrc->query_string : "<source not stored>"),
 					 errhidestmt(true),
 					 errdetail_params(params)));
 			break;
@@ -1846,7 +1847,7 @@ exec_execute_message(const char *portal_name, long max_rows)
 
 	completed = PortalRun(portal,
 						  max_rows,
-						  true,					/* always top level */
+						  true, /* always top level */
 						  receiver,
 						  receiver,
 						  completionTag);
@@ -2138,8 +2139,8 @@ exec_describe_statement_message(const char *stmt_name)
 
 	/*
 	 * If we are in aborted transaction state, we can't run
-	 * SendRowDescriptionMessage(), because that needs catalog accesses.
-	 * (We can't do RevalidateCachedPlan, either, but that's a lesser problem.)
+	 * SendRowDescriptionMessage(), because that needs catalog accesses. (We
+	 * can't do RevalidateCachedPlan, either, but that's a lesser problem.)
 	 * Hence, refuse to Describe statements that return data.  (We shouldn't
 	 * just refuse all Describes, since that might break the ability of some
 	 * clients to issue COMMIT or ROLLBACK commands, if they use code that
@@ -2372,6 +2373,7 @@ drop_unnamed_stmt(void)
 	if (unnamed_stmt_psrc)
 		DropCachedPlan(unnamed_stmt_psrc);
 	unnamed_stmt_psrc = NULL;
+
 	/*
 	 * If we failed while trying to build a prior unnamed statement, we may
 	 * have a memory context that wasn't assigned to a completed plancache
@@ -2568,7 +2570,7 @@ ProcessInterrupts(void)
 		else
 			ereport(FATAL,
 					(errcode(ERRCODE_ADMIN_SHUTDOWN),
-					 errmsg("terminating connection due to administrator command")));
+			 errmsg("terminating connection due to administrator command")));
 	}
 	if (QueryCancelPending)
 	{
@@ -2628,8 +2630,8 @@ check_stack_depth(void)
 		ereport(ERROR,
 				(errcode(ERRCODE_STATEMENT_TOO_COMPLEX),
 				 errmsg("stack depth limit exceeded"),
-				 errhint("Increase the configuration parameter \"max_stack_depth\", "
-						 "after ensuring the platform's stack depth limit is adequate.")));
+		 errhint("Increase the configuration parameter \"max_stack_depth\", "
+		   "after ensuring the platform's stack depth limit is adequate.")));
 	}
 }
 
@@ -2856,9 +2858,9 @@ PostgresMain(int argc, char *argv[], const char *username)
 	gucsource = PGC_S_ARGV;		/* initial switches came from command line */
 
 	/*
-	 * Parse command-line options.  CAUTION: keep this in sync with
-	 * postmaster/postmaster.c (the option sets should not conflict)
-	 * and with the common help() function in main/main.c.
+	 * Parse command-line options.	CAUTION: keep this in sync with
+	 * postmaster/postmaster.c (the option sets should not conflict) and with
+	 * the common help() function in main/main.c.
 	 */
 	while ((flag = getopt(argc, argv, "A:B:c:D:d:EeFf:h:ijk:lN:nOo:Pp:r:S:sTt:v:W:y:-:")) != -1)
 	{
@@ -3123,7 +3125,7 @@ PostgresMain(int argc, char *argv[], const char *username)
 	if (IsUnderPostmaster)
 		pqsignal(SIGQUIT, quickdie);	/* hard crash time */
 	else
-		pqsignal(SIGQUIT, die);		/* cancel current query and exit */
+		pqsignal(SIGQUIT, die); /* cancel current query and exit */
 	pqsignal(SIGALRM, handle_sig_alarm);		/* timeout conditions */
 
 	/*
@@ -3791,11 +3793,11 @@ get_stack_depth_rlimit(void)
 			val = rlim.rlim_cur;
 	}
 	return val;
-#else /* no getrlimit */
+#else							/* no getrlimit */
 #if defined(WIN32) || defined(__CYGWIN__)
 	/* On Windows we set the backend stack size in src/backend/Makefile */
 	return WIN32_STACK_RLIMIT;
-#else  /* not windows ... give up */
+#else							/* not windows ... give up */
 	return -1;
 #endif
 #endif

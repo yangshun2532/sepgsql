@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/adt/tsquery_cleanup.c,v 1.5 2007/09/20 23:27:11 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/utils/adt/tsquery_cleanup.c,v 1.7 2007/11/15 22:25:16 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -30,7 +30,7 @@ typedef struct NODE
  * make query tree from plain view of query
  */
 static NODE *
-maketree(QueryItem * in)
+maketree(QueryItem *in)
 {
 	NODE	   *node = (NODE *) palloc(sizeof(NODE));
 
@@ -51,12 +51,12 @@ maketree(QueryItem * in)
 typedef struct
 {
 	QueryItem  *ptr;
-	int		len; /* allocated size of ptr */
-	int		cur; /* number of elements in ptr */
+	int			len;			/* allocated size of ptr */
+	int			cur;			/* number of elements in ptr */
 } PLAINTREE;
 
 static void
-plainnode(PLAINTREE * state, NODE * node)
+plainnode(PLAINTREE *state, NODE *node)
 {
 	/* since this function recurses, it could be driven to stack overflow. */
 	check_stack_depth();
@@ -77,7 +77,7 @@ plainnode(PLAINTREE * state, NODE * node)
 	}
 	else
 	{
-		int	cur = state->cur;
+		int			cur = state->cur;
 
 		state->cur++;
 		plainnode(state, node->right);
@@ -91,7 +91,7 @@ plainnode(PLAINTREE * state, NODE * node)
  * make plain view of tree from a NODE-tree representation
  */
 static QueryItem *
-plaintree(NODE * root, int *len)
+plaintree(NODE *root, int *len)
 {
 	PLAINTREE	pl;
 
@@ -109,7 +109,7 @@ plaintree(NODE * root, int *len)
 }
 
 static void
-freetree(NODE * node)
+freetree(NODE *node)
 {
 	/* since this function recurses, it could be driven to stack overflow. */
 	check_stack_depth();
@@ -130,7 +130,7 @@ freetree(NODE * node)
  * Operator ! always return TRUE
  */
 static NODE *
-clean_NOT_intree(NODE * node)
+clean_NOT_intree(NODE *node)
 {
 	/* since this function recurses, it could be driven to stack overflow. */
 	check_stack_depth();
@@ -157,7 +157,7 @@ clean_NOT_intree(NODE * node)
 	else
 	{
 		NODE	   *res = node;
-		
+
 		Assert(node->valnode->operator.oper == OP_AND);
 
 		node->left = clean_NOT_intree(node->left);
@@ -183,7 +183,7 @@ clean_NOT_intree(NODE * node)
 }
 
 QueryItem *
-clean_NOT(QueryItem * ptr, int *len)
+clean_NOT(QueryItem *ptr, int *len)
 {
 	NODE	   *root = maketree(ptr);
 
@@ -201,17 +201,20 @@ clean_NOT(QueryItem * ptr, int *len)
 /*
  * output values for result output parameter of clean_fakeval_intree
  */
-#define V_UNKNOWN	0 /* the expression can't be evaluated statically */
-#define V_TRUE		1 /* the expression is always true (not implemented) */
-#define V_FALSE		2 /* the expression is always false (not implemented) */
-#define V_STOP		3 /* the expression is a stop word */
+#define V_UNKNOWN	0			/* the expression can't be evaluated
+								 * statically */
+#define V_TRUE		1			/* the expression is always true (not
+								 * implemented) */
+#define V_FALSE		2			/* the expression is always false (not
+								 * implemented) */
+#define V_STOP		3			/* the expression is a stop word */
 
 /*
  * Clean query tree from values which is always in
  * text (stopword)
  */
 static NODE *
-clean_fakeval_intree(NODE * node, char *result)
+clean_fakeval_intree(NODE *node, char *result)
 {
 	char		lresult = V_UNKNOWN,
 				rresult = V_UNKNOWN;
@@ -221,8 +224,7 @@ clean_fakeval_intree(NODE * node, char *result)
 
 	if (node->valnode->type == QI_VAL)
 		return node;
-	else 
-	if (node->valnode->type == QI_VALSTOP)
+	else if (node->valnode->type == QI_VALSTOP)
 	{
 		pfree(node);
 		*result = V_STOP;
@@ -270,7 +272,7 @@ clean_fakeval_intree(NODE * node, char *result)
 }
 
 QueryItem *
-clean_fakeval(QueryItem * ptr, int *len)
+clean_fakeval(QueryItem *ptr, int *len)
 {
 	NODE	   *root = maketree(ptr);
 	char		result = V_UNKNOWN;

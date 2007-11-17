@@ -6,7 +6,7 @@
  * Portions Copyright (c) 1996-2007, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/bin/pg_dump/pg_dump.h,v 1.136 2007/08/21 01:11:21 tgl Exp $
+ * $PostgreSQL: pgsql/src/bin/pg_dump/pg_dump.h,v 1.138 2007/11/15 22:25:16 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -398,7 +398,7 @@ typedef struct _dictInfo
 	DumpableObject dobj;
 	char	   *rolname;
 	Oid			dicttemplate;
-	char		*dictinitoption;
+	char	   *dictinitoption;
 } TSDictInfo;
 
 typedef struct _tmplInfo

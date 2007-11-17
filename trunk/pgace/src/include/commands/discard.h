@@ -6,7 +6,7 @@
  *
  * Copyright (c) 1996-2007, PostgreSQL Global Development Group
  *
- * $PostgreSQL: pgsql/src/include/commands/discard.h,v 1.1 2007/04/26 16:13:13 neilc Exp $
+ * $PostgreSQL: pgsql/src/include/commands/discard.h,v 1.3 2007/11/15 22:25:17 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */

@@ -7,7 +7,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/adt/tsquery_rewrite.c,v 1.7 2007/10/24 03:30:03 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/utils/adt/tsquery_rewrite.c,v 1.10 2007/11/15 22:25:16 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -46,13 +46,13 @@ static QTNode *
 findeq(QTNode *node, QTNode *ex, QTNode *subs, bool *isfind)
 {
 
-	if ((node->sign & ex->sign) != ex->sign || 
+	if ((node->sign & ex->sign) != ex->sign ||
 		node->valnode->type != ex->valnode->type)
 		return node;
 
 	if (node->flags & QTN_NOCHANGE)
 		return node;
-	
+
 	if (node->valnode->type == QI_OPR)
 	{
 		if (node->valnode->operator.oper != ex->valnode->operator.oper)
@@ -77,9 +77,8 @@ findeq(QTNode *node, QTNode *ex, QTNode *subs, bool *isfind)
 		{
 			/*
 			 * AND and NOT are commutative, so we check if a subset of the
-			 * children match. For example, if tnode is A | B | C, and 
-			 * ex is B | C, we have a match after we convert tnode to
-			 * A | (B | C).
+			 * children match. For example, if tnode is A | B | C, and ex is B
+			 * | C, we have a match after we convert tnode to A | (B | C).
 			 */
 			int		   *counters = (int *) palloc(sizeof(int) * node->nchild);
 			int			i;
@@ -149,7 +148,7 @@ findeq(QTNode *node, QTNode *ex, QTNode *subs, bool *isfind)
 			pfree(counters);
 		}
 	}
-	else 
+	else
 	{
 		Assert(node->valnode->type == QI_VAL);
 
@@ -194,7 +193,7 @@ dofindsubquery(QTNode *root, QTNode *ex, QTNode *subs, bool *isfind)
 }
 
 static QTNode *
-dropvoidsubtree(QTNode * root)
+dropvoidsubtree(QTNode *root)
 {
 
 	if (!root)
@@ -233,7 +232,7 @@ dropvoidsubtree(QTNode * root)
 	return root;
 }
 
-static QTNode *
+QTNode *
 findsubquery(QTNode *root, QTNode *ex, QTNode *subs, bool *isfind)
 {
 	bool		DidFind = false;

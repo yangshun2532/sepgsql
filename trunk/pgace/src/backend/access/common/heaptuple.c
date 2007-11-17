@@ -28,7 +28,7 @@
  * without explicitly invoking the toaster.
  *
  * This change will break any code that assumes it needn't detoast values
- * that have been put into a tuple but never sent to disk.  Hopefully there
+ * that have been put into a tuple but never sent to disk.	Hopefully there
  * are few such places.
  *
  * Varlenas still have alignment 'i' (or 'd') in pg_type/pg_attribute, since
@@ -57,7 +57,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/access/common/heaptuple.c,v 1.118 2007/11/07 12:24:23 petere Exp $
+ *	  $PostgreSQL: pgsql/src/backend/access/common/heaptuple.c,v 1.119 2007/11/15 21:14:31 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -100,19 +100,19 @@ heap_compute_data_size(TupleDesc tupleDesc,
 
 	for (i = 0; i < numberOfAttributes; i++)
 	{
-		Datum	val;
+		Datum		val;
 
 		if (isnull[i])
 			continue;
 
 		val = values[i];
 
- 		if (ATT_IS_PACKABLE(att[i]) &&
+		if (ATT_IS_PACKABLE(att[i]) &&
 			VARATT_CAN_MAKE_SHORT(DatumGetPointer(val)))
 		{
 			/*
-			 * we're anticipating converting to a short varlena header,
-			 * so adjust length and don't count any alignment
+			 * we're anticipating converting to a short varlena header, so
+			 * adjust length and don't count any alignment
 			 */
 			data_length += VARATT_CONVERTED_SHORT_SIZE(DatumGetPointer(val));
 		}
@@ -148,19 +148,19 @@ ComputeDataSize(TupleDesc tupleDesc,
 
 	for (i = 0; i < numberOfAttributes; i++)
 	{
-		Datum	val;
+		Datum		val;
 
 		if (nulls[i] != ' ')
 			continue;
 
 		val = values[i];
 
- 		if (ATT_IS_PACKABLE(att[i]) &&
+		if (ATT_IS_PACKABLE(att[i]) &&
 			VARATT_CAN_MAKE_SHORT(DatumGetPointer(val)))
 		{
 			/*
-			 * we're anticipating converting to a short varlena header,
-			 * so adjust length and don't count any alignment
+			 * we're anticipating converting to a short varlena header, so
+			 * adjust length and don't count any alignment
 			 */
 			data_length += VARATT_CONVERTED_SHORT_SIZE(DatumGetPointer(val));
 		}
@@ -196,6 +196,7 @@ heap_fill_tuple(TupleDesc tupleDesc,
 	int			i;
 	int			numberOfAttributes = tupleDesc->natts;
 	Form_pg_attribute *att = tupleDesc->attrs;
+
 #ifdef USE_ASSERT_CHECKING
 	char	   *start = data;
 #endif
@@ -239,8 +240,8 @@ heap_fill_tuple(TupleDesc tupleDesc,
 		}
 
 		/*
-		 * XXX we use the att_align macros on the pointer value itself,
-		 * not on an offset.  This is a bit of a hack.
+		 * XXX we use the att_align macros on the pointer value itself, not on
+		 * an offset.  This is a bit of a hack.
 		 */
 
 		if (att[i]->attbyval)
@@ -328,6 +329,7 @@ DataFill(TupleDesc tupleDesc,
 	int			i;
 	int			numberOfAttributes = tupleDesc->natts;
 	Form_pg_attribute *att = tupleDesc->attrs;
+
 #ifdef USE_ASSERT_CHECKING
 	char	   *start = data;
 #endif
@@ -371,8 +373,8 @@ DataFill(TupleDesc tupleDesc,
 		}
 
 		/*
-		 * XXX we use the att_align macros on the pointer value itself,
-		 * not on an offset.  This is a bit of a hack.
+		 * XXX we use the att_align macros on the pointer value itself, not on
+		 * an offset.  This is a bit of a hack.
 		 */
 
 		if (att[i]->attbyval)
@@ -615,8 +617,8 @@ nocachegetattr(HeapTuple tuple,
 
 		/*
 		 * Otherwise, check for non-fixed-length attrs up to and including
-		 * target.  If there aren't any, it's safe to cheaply initialize
-		 * the cached offsets for these attrs.
+		 * target.	If there aren't any, it's safe to cheaply initialize the
+		 * cached offsets for these attrs.
 		 */
 		if (HeapTupleHasVarWidth(tuple))
 		{
@@ -677,8 +679,8 @@ nocachegetattr(HeapTuple tuple,
 		int			i;
 
 		/*
-		 * Now we know that we have to walk the tuple CAREFULLY.  But we
-		 * still might be able to cache some offsets for next time.
+		 * Now we know that we have to walk the tuple CAREFULLY.  But we still
+		 * might be able to cache some offsets for next time.
 		 *
 		 * Note - This loop is a little tricky.  For each non-null attribute,
 		 * we have to first account for alignment padding before the attr,
@@ -687,12 +689,12 @@ nocachegetattr(HeapTuple tuple,
 		 * attcacheoff until we reach either a null or a var-width attribute.
 		 */
 		off = 0;
-		for (i = 0; ; i++)			/* loop exit is at "break" */
+		for (i = 0;; i++)		/* loop exit is at "break" */
 		{
 			if (HeapTupleHasNulls(tuple) && att_isnull(i, bp))
 			{
 				usecache = false;
-				continue;			/* this cannot be the target att */
+				continue;		/* this cannot be the target att */
 			}
 
 			/* If we know the next offset, we can skip the rest */
@@ -701,10 +703,10 @@ nocachegetattr(HeapTuple tuple,
 			else if (att[i]->attlen == -1)
 			{
 				/*
-				 * We can only cache the offset for a varlena attribute
-				 * if the offset is already suitably aligned, so that there
-				 * would be no pad bytes in any case: then the offset will
-				 * be valid for either an aligned or unaligned value.
+				 * We can only cache the offset for a varlena attribute if the
+				 * offset is already suitably aligned, so that there would be
+				 * no pad bytes in any case: then the offset will be valid for
+				 * either an aligned or unaligned value.
 				 */
 				if (usecache &&
 					off == att_align_nominal(off, att[i]->attalign))
@@ -775,11 +777,12 @@ heap_getsysattr(HeapTuple tup, int attnum, TupleDesc tupleDesc, bool *isnull)
 			break;
 		case MinCommandIdAttributeNumber:
 		case MaxCommandIdAttributeNumber:
+
 			/*
-			 * cmin and cmax are now both aliases for the same field,
-			 * which can in fact also be a combo command id.  XXX perhaps we
-			 * should return the "real" cmin or cmax if possible, that is
-			 * if we are inside the originating transaction?
+			 * cmin and cmax are now both aliases for the same field, which
+			 * can in fact also be a combo command id.	XXX perhaps we should
+			 * return the "real" cmin or cmax if possible, that is if we are
+			 * inside the originating transaction?
 			 */
 			result = CommandIdGetDatum(HeapTupleHeaderGetRawCommandId(tup->t_data));
 			break;
@@ -865,7 +868,8 @@ heap_form_tuple(TupleDesc tupleDescriptor,
 {
 	HeapTuple	tuple;			/* return tuple */
 	HeapTupleHeader td;			/* tuple data */
-	Size		len, data_len;
+	Size		len,
+				data_len;
 	int			hoff;
 	bool		hasnull = false;
 	Form_pg_attribute *att = tupleDescriptor->attrs;
@@ -975,7 +979,8 @@ heap_formtuple(TupleDesc tupleDescriptor,
 {
 	HeapTuple	tuple;			/* return tuple */
 	HeapTupleHeader td;			/* tuple data */
-	Size		len, data_len;
+	Size		len,
+				data_len;
 	int			hoff;
 	bool		hasnull = false;
 	Form_pg_attribute *att = tupleDescriptor->attrs;
@@ -1275,10 +1280,10 @@ heap_deform_tuple(HeapTuple tuple, TupleDesc tupleDesc,
 		else if (thisatt->attlen == -1)
 		{
 			/*
-			 * We can only cache the offset for a varlena attribute
-			 * if the offset is already suitably aligned, so that there
-			 * would be no pad bytes in any case: then the offset will
-			 * be valid for either an aligned or unaligned value.
+			 * We can only cache the offset for a varlena attribute if the
+			 * offset is already suitably aligned, so that there would be no
+			 * pad bytes in any case: then the offset will be valid for either
+			 * an aligned or unaligned value.
 			 */
 			if (!slow &&
 				off == att_align_nominal(off, thisatt->attalign))
@@ -1387,10 +1392,10 @@ heap_deformtuple(HeapTuple tuple,
 		else if (thisatt->attlen == -1)
 		{
 			/*
-			 * We can only cache the offset for a varlena attribute
-			 * if the offset is already suitably aligned, so that there
-			 * would be no pad bytes in any case: then the offset will
-			 * be valid for either an aligned or unaligned value.
+			 * We can only cache the offset for a varlena attribute if the
+			 * offset is already suitably aligned, so that there would be no
+			 * pad bytes in any case: then the offset will be valid for either
+			 * an aligned or unaligned value.
 			 */
 			if (!slow &&
 				off == att_align_nominal(off, thisatt->attalign))
@@ -1496,10 +1501,10 @@ slot_deform_tuple(TupleTableSlot *slot, int natts)
 		else if (thisatt->attlen == -1)
 		{
 			/*
-			 * We can only cache the offset for a varlena attribute
-			 * if the offset is already suitably aligned, so that there
-			 * would be no pad bytes in any case: then the offset will
-			 * be valid for either an aligned or unaligned value.
+			 * We can only cache the offset for a varlena attribute if the
+			 * offset is already suitably aligned, so that there would be no
+			 * pad bytes in any case: then the offset will be valid for either
+			 * an aligned or unaligned value.
 			 */
 			if (!slow &&
 				off == att_align_nominal(off, thisatt->attalign))
@@ -1803,7 +1808,8 @@ heap_form_minimal_tuple(TupleDesc tupleDescriptor,
 						bool *isnull)
 {
 	MinimalTuple tuple;			/* return tuple */
-	Size		len, data_len;
+	Size		len,
+				data_len;
 	int			hoff;
 	bool		hasnull = false;
 	Form_pg_attribute *att = tupleDescriptor->attrs;

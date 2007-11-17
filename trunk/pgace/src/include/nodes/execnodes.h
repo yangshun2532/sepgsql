@@ -7,7 +7,7 @@
  * Portions Copyright (c) 1996-2007, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/nodes/execnodes.h,v 1.179 2007/10/24 18:37:08 tgl Exp $
+ * $PostgreSQL: pgsql/src/include/nodes/execnodes.h,v 1.181 2007/11/15 22:25:17 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -318,7 +318,7 @@ typedef struct EState
 	JunkFilter *es_junkFilter;	/* currently active junk filter */
 
 	/* Stuff used for firing triggers: */
-	List	   *es_trig_target_relations;	/* trigger-only ResultRelInfos */
+	List	   *es_trig_target_relations;		/* trigger-only ResultRelInfos */
 	TupleTableSlot *es_trig_tuple_slot; /* for trigger output tuples */
 
 	/* Stuff used for SELECT INTO: */
@@ -344,7 +344,7 @@ typedef struct EState
 
 	List	   *es_exprcontexts;	/* List of ExprContexts within EState */
 
-	List	   *es_subplanstates;	/* List of PlanState for SubPlans */
+	List	   *es_subplanstates;		/* List of PlanState for SubPlans */
 
 	/*
 	 * this ExprContext is for per-output-tuple operations, such as constraint
@@ -404,7 +404,7 @@ typedef struct TupleHashTableData
 	HTAB	   *hashtab;		/* underlying dynahash table */
 	int			numCols;		/* number of columns in lookup key */
 	AttrNumber *keyColIdx;		/* attr numbers of key columns */
-	FmgrInfo   *tab_hash_funcs;	/* hash functions for table datatype(s) */
+	FmgrInfo   *tab_hash_funcs; /* hash functions for table datatype(s) */
 	FmgrInfo   *tab_eq_funcs;	/* equality functions for table datatype(s) */
 	MemoryContext tablecxt;		/* memory context containing table */
 	MemoryContext tempcxt;		/* context for function evaluations */
@@ -618,9 +618,9 @@ typedef struct SubPlanState
 	MemoryContext tablecxt;		/* memory context containing tables */
 	ExprContext *innerecontext; /* working context for comparisons */
 	AttrNumber *keyColIdx;		/* control data for hash tables */
-	FmgrInfo   *tab_hash_funcs;	/* hash functions for table datatype(s) */
+	FmgrInfo   *tab_hash_funcs; /* hash functions for table datatype(s) */
 	FmgrInfo   *tab_eq_funcs;	/* equality functions for table datatype(s) */
-	FmgrInfo   *lhs_hash_funcs;	/* hash functions for lefthand datatype(s) */
+	FmgrInfo   *lhs_hash_funcs; /* hash functions for lefthand datatype(s) */
 	FmgrInfo   *cur_eq_funcs;	/* equality functions for LHS vs. table */
 } SubPlanState;
 
@@ -668,10 +668,10 @@ typedef struct ArrayCoerceExprState
 {
 	ExprState	xprstate;
 	ExprState  *arg;			/* input array value */
-	Oid			resultelemtype;	/* element type of result array */
+	Oid			resultelemtype; /* element type of result array */
 	FmgrInfo	elemfunc;		/* lookup info for element coercion function */
 	/* use struct pointer to avoid including array.h here */
-	struct ArrayMapState *amstate;	/* workspace for array_map */
+	struct ArrayMapState *amstate;		/* workspace for array_map */
 } ArrayCoerceExprState;
 
 /* ----------------
@@ -782,7 +782,7 @@ typedef struct XmlExprState
 {
 	ExprState	xprstate;
 	List	   *named_args;		/* ExprStates for named arguments */
-	FmgrInfo   *named_outfuncs;	/* array of output fns for named arguments */
+	FmgrInfo   *named_outfuncs; /* array of output fns for named arguments */
 	List	   *args;			/* ExprStates for other arguments */
 } XmlExprState;
 
@@ -1087,7 +1087,7 @@ typedef struct BitmapHeapScanState
 /* ----------------
  *	 TidScanState information
  *
- *		isCurrentOf	   scan has a CurrentOfExpr qual
+ *		isCurrentOf    scan has a CurrentOfExpr qual
  *		NumTids		   number of tids in this scan
  *		TidPtr		   index of currently fetched tid
  *		TidList		   evaluated item pointers (array of size NumTids)

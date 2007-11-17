@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/commands/copy.c,v 1.287 2007/09/12 20:49:27 adunstan Exp $
+ *	  $PostgreSQL: pgsql/src/backend/commands/copy.c,v 1.288 2007/11/15 21:14:33 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -1004,7 +1004,7 @@ DoCopy(const CopyStmt *stmt, const char *queryString)
 					 errmsg("COPY (SELECT) WITH OIDS is not supported")));
 
 		/*
-		 * Run parse analysis and rewrite.  Note this also acquires sufficient
+		 * Run parse analysis and rewrite.	Note this also acquires sufficient
 		 * locks on the source table(s).
 		 *
 		 * Because the parser and planner tend to scribble on their input, we
@@ -1689,8 +1689,8 @@ CopyFrom(CopyState cstate)
 	MemoryContext oldcontext = CurrentMemoryContext;
 	ErrorContextCallback errcontext;
 	CommandId	mycid = GetCurrentCommandId();
-	bool		use_wal = true;		/* by default, use WAL logging */
-	bool		use_fsm = true;		/* by default, use FSM for free space */
+	bool		use_wal = true; /* by default, use WAL logging */
+	bool		use_fsm = true; /* by default, use FSM for free space */
 
 	Assert(cstate->rel);
 
@@ -2260,7 +2260,7 @@ CopyFrom(CopyState cstate)
 							cstate->filename)));
 	}
 
-	/* 
+	/*
 	 * If we skipped writing WAL, then we need to sync the heap (but not
 	 * indexes since those use WAL anyway)
 	 */
@@ -2797,7 +2797,7 @@ CopyReadAttributesText(CopyState cstate, int maxfields, char **fieldvals)
 		char	   *start_ptr;
 		char	   *end_ptr;
 		int			input_len;
-		bool        saw_high_bit = false;
+		bool		saw_high_bit = false;
 
 		/* Make sure space remains in fieldvals[] */
 		if (fieldno >= maxfields)
@@ -2888,7 +2888,7 @@ CopyReadAttributesText(CopyState cstate, int maxfields, char **fieldvals)
 								}
 								c = val & 0xff;
 								if (IS_HIGHBIT_SET(c))
-									saw_high_bit = true;							
+									saw_high_bit = true;
 							}
 						}
 						break;
@@ -2916,7 +2916,7 @@ CopyReadAttributesText(CopyState cstate, int maxfields, char **fieldvals)
 						 * literally
 						 */
 				}
-			}			
+			}
 
 			/* Add c to output string */
 			*output_ptr++ = c;
@@ -2925,13 +2925,15 @@ CopyReadAttributesText(CopyState cstate, int maxfields, char **fieldvals)
 		/* Terminate attribute value in output area */
 		*output_ptr++ = '\0';
 
-		/* If we de-escaped a char with the high bit set, make sure
-		 * we still have valid data for the db encoding. Avoid calling strlen 
-		 * here for the sake of efficiency.
+		/*
+		 * If we de-escaped a char with the high bit set, make sure we still
+		 * have valid data for the db encoding. Avoid calling strlen here for
+		 * the sake of efficiency.
 		 */
 		if (saw_high_bit)
 		{
-			char *fld = fieldvals[fieldno];
+			char	   *fld = fieldvals[fieldno];
+
 			pg_verifymbstr(fld, output_ptr - (fld + 1), false);
 		}
 
@@ -3189,15 +3191,15 @@ CopyAttributeOutText(CopyState cstate, char *string)
 	 * We have to grovel through the string searching for control characters
 	 * and instances of the delimiter character.  In most cases, though, these
 	 * are infrequent.	To avoid overhead from calling CopySendData once per
-	 * character, we dump out all characters between escaped characters in
-	 * a single call.  The loop invariant is that the data from "start" to
-	 * "ptr" can be sent literally, but hasn't yet been.
+	 * character, we dump out all characters between escaped characters in a
+	 * single call.  The loop invariant is that the data from "start" to "ptr"
+	 * can be sent literally, but hasn't yet been.
 	 *
 	 * We can skip pg_encoding_mblen() overhead when encoding is safe, because
 	 * in valid backend encodings, extra bytes of a multibyte character never
 	 * look like ASCII.  This loop is sufficiently performance-critical that
-	 * it's worth making two copies of it to get the IS_HIGHBIT_SET() test
-	 * out of the normal safe-encoding path.
+	 * it's worth making two copies of it to get the IS_HIGHBIT_SET() test out
+	 * of the normal safe-encoding path.
 	 */
 	if (cstate->encoding_embeds_ascii)
 	{
@@ -3208,13 +3210,16 @@ CopyAttributeOutText(CopyState cstate, char *string)
 			{
 				DUMPSOFAR();
 				CopySendChar(cstate, '\\');
-				start = ptr++;		/* we include char in next run */
+				start = ptr++;	/* we include char in next run */
 			}
 			else if ((unsigned char) c < (unsigned char) 0x20)
 			{
 				switch (c)
 				{
-					/* \r and \n must be escaped, the others are traditional */
+						/*
+						 * \r and \n must be escaped, the others are
+						 * traditional
+						 */
 					case '\b':
 					case '\f':
 					case '\n':
@@ -3246,13 +3251,16 @@ CopyAttributeOutText(CopyState cstate, char *string)
 			{
 				DUMPSOFAR();
 				CopySendChar(cstate, '\\');
-				start = ptr++;		/* we include char in next run */
+				start = ptr++;	/* we include char in next run */
 			}
 			else if ((unsigned char) c < (unsigned char) 0x20)
 			{
 				switch (c)
 				{
-					/* \r and \n must be escaped, the others are traditional */
+						/*
+						 * \r and \n must be escaped, the others are
+						 * traditional
+						 */
 					case '\b':
 					case '\f':
 					case '\n':

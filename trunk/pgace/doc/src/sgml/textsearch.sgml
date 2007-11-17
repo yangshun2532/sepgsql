@@ -1,4 +1,4 @@
-<!-- $PostgreSQL: pgsql/doc/src/sgml/textsearch.sgml,v 1.31 2007/11/10 15:39:34 momjian Exp $ -->
+<!-- $PostgreSQL: pgsql/doc/src/sgml/textsearch.sgml,v 1.36 2007/11/16 03:23:07 tgl Exp $ -->
 
 <chapter id="textsearch">
  <title id="textsearch-title">Full Text Search</title>
@@ -538,15 +538,15 @@ CREATE INDEX pgweb_idx ON pgweb USING gin(to_tsvector('english', title || body))
     indexed when the other is <literal>NULL</>:
 
 <programlisting>
-ALTER TABLE pgweb ADD COLUMN textsearch_index tsvector;
-UPDATE pgweb SET textsearch_index =
+ALTER TABLE pgweb ADD COLUMN textsearchable_index_col tsvector;
+UPDATE pgweb SET textsearchable_index_col =
      to_tsvector('english', coalesce(title,'') || coalesce(body,''));
 </programlisting>
 
     Then we create a <acronym>GIN</acronym> index to speed up the search:
 
 <programlisting>
-CREATE INDEX textsearch_idx ON pgweb USING gin(textsearch_index);
+CREATE INDEX textsearch_idx ON pgweb USING gin(textsearchable_index_col);
 </programlisting>
 
     Now we are ready to perform a fast full text search:
@@ -554,7 +554,7 @@ CREATE INDEX textsearch_idx ON pgweb USING gin(textsearch_index);
 <programlisting>
 SELECT title
 FROM pgweb
-WHERE to_tsquery('create &amp; table') @@ textsearch_index
+WHERE textsearchable_index_col @@ to_tsquery('create &amp; table')
 ORDER BY last_mod_date DESC LIMIT 10;
 </programlisting>
    </para>
@@ -940,6 +940,7 @@ SELECT plainto_tsquery('english', 'The Fat &amp; Rats:C');
      <listitem>
       <para>
        4 divides the rank by the mean harmonic distance between extents
+       (this is implemented only by <function>ts_rank_cd</>)
       </para>
      </listitem>
      <listitem>
@@ -953,17 +954,24 @@ SELECT plainto_tsquery('english', 'The Fat &amp; Rats:C');
        of unique words in document
       </para>
      </listitem>
+     <listitem>
+      <para>
+       32 divides the rank by itself + 1
+      </para>
+     </listitem>
     </itemizedlist>
 
+    If more than one flag bit is specified, the transformations are
+    applied in the order listed.
    </para>
 
    <para>
     It is important to note that the ranking functions do not use any global
-    information so it is impossible to produce a fair normalization to 1% or
-    100%, as sometimes desired.  However, a simple technique like
-    <literal>rank/(rank+1)</literal> can be applied.  Of course, this is just
-    a cosmetic change, i.e., the ordering of the search results will not
-    change.
+    information, so it is impossible to produce a fair normalization to 1% or
+    100% as sometimes desired.  Normalization option 32
+    (<literal>rank/(rank+1)</literal>) can be applied to scale all ranks
+    into the range zero to one, but of course this is just a cosmetic change;
+    it will not affect the ordering of the search results.
    </para>
 
    <para>
@@ -991,7 +999,7 @@ ORDER BY rank DESC LIMIT 10;
     This is the same example using normalized ranking:
 
 <programlisting>
-SELECT title, ts_rank_cd(textsearch, query)/(ts_rank_cd(textsearch, query) + 1) AS rank
+SELECT title, ts_rank_cd(textsearch, query, 32 /* rank/(rank+1) */ ) AS rank
 FROM apod, to_tsquery('neutrino|(dark &amp; matter)') query
 WHERE  query @@ textsearch
 ORDER BY rank DESC LIMIT 10;
@@ -2093,9 +2101,11 @@ SELECT ts_rank_cd (to_tsvector('english','list stop words'), to_tsquery('list &a
    <para>
     The <literal>simple</> dictionary template operates by converting the
     input token to lower case and checking it against a file of stop words.
-    If it is found in the file then <literal>NULL</> is returned, causing
+    If it is found in the file then an empty array is returned, causing
     the token to be discarded.  If not, the lower-cased form of the word
-    is returned as the normalized lexeme.
+    is returned as the normalized lexeme.  Alternatively, the dictionary
+    can be configured to report non-stop-words as unrecognized, allowing
+    them to be passed on to the next dictionary in the list.
    </para>
 
    <para>
@@ -2136,6 +2146,35 @@ SELECT ts_lexize('public.simple_dict','The');
 -----------
  {}
 </programlisting>
+   </para>
+
+   <para>
+    We can also choose to return <literal>NULL</>, instead of the lower-cased
+    word, if it is not found in the stop words file.  This behavior is
+    selected by setting the dictionary's <literal>Accept</> parameter to
+    <literal>false</>.  Continuing the example:
+
+<programlisting>
+ALTER TEXT SEARCH DICTIONARY public.simple_dict ( Accept = false );
+
+SELECT ts_lexize('public.simple_dict','YeS');
+ ts_lexize
+-----------
+
+
+SELECT ts_lexize('public.simple_dict','The');
+ ts_lexize
+-----------
+ {}
+</programlisting>
+   </para>
+
+   <para>
+    With the default setting of <literal>Accept</> = <literal>true</>,
+    it is only useful to place a <literal>simple</> dictionary at the end
+    of a list of dictionaries, since it will never pass on any token to
+    a following dictionary.  Conversely, <literal>Accept</> = <literal>false</>
+    is only useful when there is at least one following dictionary.
    </para>
 
    <caution>
@@ -3218,6 +3257,13 @@ EXPLAIN SELECT * FROM apod WHERE textsearch @@ to_tsquery('supernovae');
   </para>
 
   <para>
+   Note that <acronym>GIN</acronym> index build time can often be improved
+   by increasing <xref linkend="guc-maintenance-work-mem">, while
+   <acronym>GiST</acronym> index build time is not sensitive to that
+   parameter.
+  </para>
+
+  <para>
    Partitioning of big collections and the proper use of GiST and GIN indexes
    allows the implementation of very fast searches with online update.
    Partitioning can be done at the database level using table inheritance
@@ -3489,99 +3535,77 @@ Parser: "pg_catalog.default"
   <title>Migration from Pre-8.3 Text Search</title>
 
   <para>
-   This area needs lots of work.  Here is a quick list of known issues:
+   Applications that used the <filename>contrib/tsearch2</> add-on module
+   for text searching will need some adjustments to work with the
+   built-in features:
   </para>
 
-  <itemizedlist mark="bullet">
+  <itemizedlist>
    <listitem>
     <para>
-     The old contrib/tsearch2 objects <emphasis>must</> be removed from
-     the pg_dump output from a pre-8.3 database.  While many of them won't
-     load for lack of a tsearch2.so library, some do and cause problems.
-     We have a working perl script for doing this with a custom- or tar-format
-     backup, but there is a proposal to incorporate the functionality directly
-     into pg_restore.  Neither approach will help for pg_dumpall output.
+     Some functions have been renamed or had small adjustments in their
+     argument lists, and all of them are now in the <literal>pg_catalog</>
+     schema, whereas in a previous installation they would have been in
+     <literal>public</> or another non-system schema.  There is a new
+     version of <filename>contrib/tsearch2</> (see <xref linkend="tsearch2">)
+     that provides a compatibility layer to solve most problems in this
+     area.
     </para>
    </listitem>
 
    <listitem>
     <para>
-     The old dump may include schema-qualified references to the old
-     contrib/tsearch2 objects; for example <literal>public.tsvector</>
-     columns in table definitions.  These will fail since the objects
-     are now in the pg_catalog schema.  Given current pg_dump behavior
-     this will happen only for tables that are in a different schema
-     from the tsearch2 objects; which makes it more likely to bite
-     people who carefully put their tsearch2 objects in a
-     non-<literal>public</> schema.
-    </para>
-
-    <para>
-     Question: will restore-time failures of this type happen for
-     any objects other than the tsvector and tsquery datatypes?
-    </para>
-
-    <para>
-     The basic alternatives for fixing this seem to involve creating
-     a dummy linkage, such as a public.tsvector domain linking to the
-     base pg_catalog.tsvector type (which only helps for the datatypes);
-     or stripping the schema references out of the dump.  We could
-     just recommend that users do this manually, or try to provide
-     some tools to help.
+     The old <filename>contrib/tsearch2</> functions and other objects
+     <emphasis>must</> be suppressed when loading <application>pg_dump</>
+     output from a pre-8.3 database.  While many of them won't load anyway,
+     a few will and then cause problems.  One simple way to deal with this
+     is to load the new <filename>contrib/tsearch2</> module before restoring
+     the dump; then it will block the old objects from being loaded.
     </para>
    </listitem>
 
    <listitem>
     <para>
-     We have renamed the built-in tsvector update triggers, and changed
-     their arguments too.  This will result in CREATE TRIGGER commands
-     failing during load, which can be ignored, but users will need to
-     re-issue them with suitable argument adjustment.  We probably
-     can't automate that for them.  Also, the old tsearch2 trigger
-     function offered an option to invoke functions, which was removed
-     as being a security hole.  Users who were relying on that will need to
-     write custom trigger functions as a substitute.  I think all we
-     can do here is document what to do to fix it.
+     Text search configuration setup is completely different now.
+     Instead of manually inserting rows into configuration tables,
+     search is configured through the specialized SQL commands shown
+     earlier in this chapter.  There is not currently any automated
+     support for converting an existing custom configuration for 8.3;
+     you're on your own here.
     </para>
    </listitem>
 
    <listitem>
     <para>
-     We have renamed a number of other functions besides the triggers,
-     compared to the tsearch2 versions.  This seems unlikely to cause
-     any problems during dump/reload but it will require adjustments in
-     the bodies of stored procedures and in client application code.
-     Again, not much to do except document it.
-    </para>
-   </listitem>
+     Most types of dictionaries rely on some outside-the-database
+     configuration files.  These are largely compatible with pre-8.3
+     usage, but note the following differences:
 
-   <listitem>
-    <para>
-     Configuration setup is completely different now.  Can we provide
-     any automated assistance for translating an old custom setup?
-     It probably can't be 100% automatic in any case, so maybe documentation
-     is the best we can do here too.  Aside from the inside-the-database
-     differences, outside-the-database configuration files now have
-     prescribed location and extensions, which was not true before.
-    </para>
-   </listitem>
+     <itemizedlist  spacing="compact" mark="bullet">
+      <listitem>
+       <para>
+        Configuration files now must be placed in a single specified
+        directory (<filename>$SHAREDIR/tsearch_data</>), and must have
+        a specific extension depending on the type of file, as noted
+        previously in the descriptions of the various dictionary types.
+        This restriction was added to forestall security problems.
+       </para>
+      </listitem>
 
-   <listitem>
-    <para>
-     Relocation of configuration from add-on tables into core system catalogs
-     will break client queries that looked at the add-on tables.
-    </para>
-   </listitem>
+      <listitem>
+       <para>
+        Configuration files must be encoded in UTF-8 encoding,
+        regardless of what database encoding is used.
+       </para>
+      </listitem>
 
-   <listitem>
-    <para>
-     Thesaurus files now use <literal>?</> for stop words.
-    </para>
-   </listitem>
-
-   <listitem>
-    <para>
-     What else?
+      <listitem>
+       <para>
+        In thesaurus configuration files, stop words must be marked with
+        <literal>?</>.
+       </para>
+      </listitem>
+     </itemizedlist>
     </para>
    </listitem>
 

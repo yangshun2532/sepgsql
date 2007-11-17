@@ -39,7 +39,7 @@
  * Portions Copyright (c) 1996-2007, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/utils/portal.h,v 1.75 2007/04/12 06:53:48 neilc Exp $
+ * $PostgreSQL: pgsql/src/include/utils/portal.h,v 1.77 2007/11/15 22:25:17 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
