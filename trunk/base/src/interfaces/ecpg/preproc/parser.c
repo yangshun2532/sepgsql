@@ -1,3 +1,24 @@
+/*-------------------------------------------------------------------------
+ *
+ * parser.c
+ *		Main entry point/driver for PostgreSQL grammar
+ *
+ * Note that the grammar is not allowed to perform any table access
+ * (since we need to be able to do basic parsing even while inside an
+ * aborted transaction).  Therefore, the data structures returned by
+ * the grammar are "raw" parsetrees that still need to be analyzed by
+ * analyze.c and related files.
+ *
+ *
+ * Portions Copyright (c) 1996-2007, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1994, Regents of the University of California
+ *
+ * IDENTIFICATION
+ *	  $PostgreSQL: pgsql/src/interfaces/ecpg/preproc/parser.c,v 1.2 2007/11/15 21:14:45 momjian Exp $
+ *
+ *-------------------------------------------------------------------------
+ */
+
 #include "postgres_fe.h"
 
 #include "extern.h"
