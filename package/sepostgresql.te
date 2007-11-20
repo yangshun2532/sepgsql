@@ -281,3 +281,30 @@ tunable_policy(`! sepgsql_enable_auditdeny',`
 tunable_policy(`! sepgsql_enable_audittuple || ! sepgsql_enable_auditdeny',`
 	dontaudit domain sepgsql_table_type : db_tuple all_db_tuple_perms;
 ')
+
+########################################
+#
+# Hotfixes for labeled networking
+# 
+# NOTE: These changes are to be merged in the later releases.
+optional_policy(`
+	gen_require(`
+		attribute sepgsql_server_type;
+		attribute sepgsql_users_domain;
+		attribute unconfined_domain_type;
+		type unlabeled_t;
+		type ipsec_spd_t;
+		type racoon_t;
+	')
+	# allow unconfined_t to set default SPD context
+	allow unconfined_domain_type ipsec_spd_t : association { setcontext };
+	# allow server/client domain to communicate via default SPD context
+	allow { sepgsql_server_type sepgsql_users_domain } ipsec_spd_t : association { polmatch };
+	allow { sepgsql_server_type sepgsql_users_domain } self : association { sendto };
+	allow sepgsql_server_type sepgsql_users_domain : { association tcp_socket } recvfrom;
+	allow sepgsql_users_domain sepgsql_server_type : { association tcp_socket } recvfrom;
+	# racoon_t/unlabeled_t related
+	allow unlabeled_t self : association { sendto };
+	allow unlabeled_t ipsec_spd_t : association { polmatch };
+	allow racoon_t unlabeled_t : association { setcontext };
+')

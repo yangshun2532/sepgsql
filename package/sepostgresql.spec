@@ -208,6 +208,9 @@ fi
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
 
 %changelog
+* Wed Nov 21 2007 <kaigai@kaigai.gr.jp> - 8.2.5-1.66
+- Add a policy module hotfix for labeled networking
+
 * Thu Nov 1 2007 <kaigai@kaigai.gr.jp> - 8.2.5-1.51
 - Re-organize repository to prepare to branch 8.3.x based tree.
   (no differences from 8.2.5-1.33)
