@@ -37,7 +37,7 @@ fi
 DIST=`rpm -E '%dist'`
 if [ "${DIST}" = ".fc7" ]; then
     REQUIRED_POLICY_VERSION="= `rpm -q --qf '%{version}-%{release}' selinux-policy-devel`"
-    if ! echo "$SEPGPOLVERSION" | grep -q .sepgsql; then
+    if ! echo "$REQUIRED_POLICY_VERSION" | grep -q .sepgsql; then
         echo "selinux-policy-devel is NOT SE-PostgreSQL supported version"
         echo "It does not contain the definition of object classes and access"
         echo "vectors related to database objects."
