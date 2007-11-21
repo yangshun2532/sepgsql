@@ -71,7 +71,7 @@ echo "svn update"
 echo
 echo "svn merge -c `expr ${SVNREV} + 2` ./pgace ./sepgsql"
 echo "svn diff ./sepgsql"
-echo "svn commit -m 'merge updates of ${SVNBRANCH}/pgace into ${SVNBRANCH}/sepgsql at `env LANG=C date`' ./sepgsql
+echo "svn commit -m 'merge updates of ${SVNBRANCH}/pgace into ${SVNBRANCH}/sepgsql at `env LANG=C date`' ./sepgsql"
 echo "svn update"
 
 
