@@ -66,5 +66,12 @@ echo "svn update"
 echo
 echo "svn merge -c `expr ${SVNREV} + 1` ./base ./pgace"
 echo "svn diff ./pgace"
-echo "svn commit -m 'Updates in ${SVNBRANCH}/base are merged into ${SVNBRANCH}/pgace at `env LANG=C date`'" ./pgace
+echo "svn commit -m 'merge updates of ${SVNBRANCH}/base into ${SVNBRANCH}/pgace at `env LANG=C date`' ./pgace"
 echo "svn update"
+echo
+echo "svn merge -c `expr ${SVNREV} + 2` ./pgace ./sepgsql"
+echo "svn diff ./sepgsql"
+echo "svn commit -m 'merge updates of ${SVNBRANCH}/pgace into ${SVNBRANCH}/sepgsql at `env LANG=C date`' ./sepgsql
+echo "svn update"
+
+
