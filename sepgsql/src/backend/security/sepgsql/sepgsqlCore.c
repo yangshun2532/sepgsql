@@ -211,7 +211,6 @@ static struct {
 	SHMEM_OFFSET slot[AVC_DATUM_CACHE_SLOTS];
 	SHMEM_OFFSET freelist;
 	int lru_hint;
-	int enabled;
 	int enforcing;
 	struct avc_datum entry[AVC_DATUM_CACHE_MAXNODES];
 
@@ -310,9 +309,8 @@ legacy_mapping:
 
 static void sepgsql_avc_reset()
 {
-	int i, enforcing, enabled;
+	int i, enforcing;
 
-	enabled = is_selinux_enabled();
 	enforcing = security_getenforce();
 	Assert(enforcing==0 || enforcing==1);
 
@@ -329,7 +327,6 @@ static void sepgsql_avc_reset()
 		avc_shmem->freelist = MAKE_OFFSET(avd);
 	}
 	sepgsql_load_class_av_mapping();
-	avc_shmem->enabled = enabled;
 	avc_shmem->enforcing = enforcing;
 
 	LWLockRelease(avc_shmem->lock);
@@ -1006,14 +1003,10 @@ void sepgsqlFinalizePostmaster()
 
 bool sepgsqlIsEnabled()
 {
-	int enabled;
+	static int enabled = -1;
 
-	if (avc_shmem) {
-		LWLockAcquire(avc_shmem->lock, LW_SHARED);
-		enabled = avc_shmem->enabled;
-		LWLockRelease(avc_shmem->lock);
-	} else {
+	if (enabled < 0)
 		enabled = is_selinux_enabled();
-	}
-	return (enabled > 0 ? true : false);
+
+	return enabled > 0 ? true : false;
 }
