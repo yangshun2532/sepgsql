@@ -32,6 +32,11 @@ LIBS := $(filter-out -lpgport, $(LIBS)) $(LDAP_LIBS_BE)
 # The backend doesn't need everything that's in LIBS, however
 LIBS := $(filter-out -lz -lreadline -ledit -ltermcap -lncurses -lcurses, $(LIBS))
 
+# SELinux support needs to link libselinux
+ifeq ($(enable_selinux), yes)
+LIBS += -lselinux
+endif
+
 ##########################################################################
 
 all: submake-libpgport postgres $(POSTGRES_IMP)
