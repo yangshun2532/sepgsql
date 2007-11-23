@@ -11,8 +11,8 @@ include $(top_builddir)/src/Makefile.global
 OBJS := pgaceCommon.o
 
 ifeq ($(enable_selinux), yes)
-OBJS += sepgsql/sepgsqlCore.o sepgsql/sepgsqlPerms.o \
-	sepgsql/sepgsqlHooks.o sepgsql/sepgsqlProxy.o
+OBJS += sepgsql/core.c sepgsql/hooks.c sepgsql/interface.c \
+	sepgsql/permissions.c sepgsql/proxy.c
 else
 OBJS += pgaceHooks.o
 endif
