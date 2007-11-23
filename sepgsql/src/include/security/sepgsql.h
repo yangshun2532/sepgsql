@@ -1,5 +1,5 @@
-#ifndef SEPGSQL_INTERNAL_H
-#define SEPGSQL_INTERNAL_H
+#ifndef SEPGSQL_H
+#define SEPGSQL_H
 
 /* system catalogs */
 #include "catalog/catalog.h"
@@ -44,34 +44,6 @@
 	ereport(NOTICE, (errcode(ERRCODE_WARNING),							\
 					 errmsg("%s(%d): " fmt, __FUNCTION__, __LINE__, ##__VA_ARGS__)))
 #define selbugon(x)	do { if (x)((char *)NULL)[0] = 'a'; }while(0)
-
-// for debugging macros
-#define seldump_pg_class(rel)											\
-	selnotice("pg_class (%p) { relname='%s', relnamespace=%u, reltype=%u, "	\
-			  "relowner=%u, relam=%u, relfilenode=%u, reltablespace=%u, " \
-			  "relpages=%d, reltuples=%f, reltoastrelid=%u, reltoastidxid=%u, " \
-			  "relhasindex=%c, relisshared=%c, relkind=%c, relnatts=%d, " \
-			  "relchecks=%d, reltriggers=%d, relukeys=%d, relfkeys=%d, " \
-			  "relrefs=%d, relhasoids=%c, relhaspkey=%c, relhasrules=%c, " \
-			  "relhassubclass=%c, ...}",								\
-			  (rel), NameStr((rel)->relname), (rel)->relnamespace, \
-			  (rel)->reltype, (rel)->relowner, (rel)->relam, (rel)->relfilenode, \
-			  (rel)->reltablespace, (rel)->relpages, (rel)->reltuples, \
-			  (rel)->reltoastrelid, (rel)->reltoastidxid, (rel)->relhasindex ? 'y' : 'n', \
-			  (rel)->relisshared ? 'y' : 'n', (rel)->relkind, (rel)->relnatts, \
-			  (rel)->relchecks,	(rel)->reltriggers, (rel)->relukeys, (rel)->relfkeys, \
-			  (rel)->relrefs, (rel)->relhasoids ? 'y' : 'n', (rel)->relhaspkey ? 'y' : 'n', \
-			  (rel)->relhasrules ? 'y' : 'n', (rel)->relhassubclass ? 'y' : 'n')
-#define seldump_pg_attribute(att)										\
-	selnotice("pg_attribute (%p) { attrelid=%u, attname='%s', atttypid=%u, " \
-			  "attstattarget=%d, attlen=%d, attnum=%d, attndims=%d, attcacheoff=%d, " \
-			  "atttypmod=%d, attbyval=%c, attstorage=%c, attalign=%d, attnotnull=%c, " \
-			  "atthasdef=%c, attisdropped=%c, attislocal=%c, attinhcount=%d }", \
-			  (att), (att)->attrelid, NameStr((att)->attname), (att)->atttypid, \
-			  (att)->attstattarget, (att)->attlen, (att)->attnum, (att)->attndims, \
-			  (att)->attcacheoff, (att)->atttypmod,	(att)->attbyval, (att)->attstorage, \
-			  (att)->attalign, (att)->attnotnull ? 'y' : 'n', (att)->atthasdef ? 'y' : 'n', \
-			  (att)->attisdropped ? 'y' : 'n', (att)->attislocal ? 'y' : 'n', (att)->attinhcount)
 
 /* object classes and access vectors are not included, in default */
 #ifndef SECCLASS_DB_DATABASE
@@ -150,124 +122,109 @@
 #define DB_BLOB__EXPORT                           0x00000200UL
 
 /*
- * SE-PostgreSQL core functions
- *   src/backend/security/sepgsqlCore.c
+ * The implementation of PGACE/SE-PostgreSQL hooks
  */
-extern bool  sepgsqlIsEnabled(void);
+
+/* Initialize / Finalize related hooks */
 extern Size  sepgsqlShmemSize(void);
-extern void  sepgsqlInitialize(void);
+extern void  sepgsqlInitialize(bool is_bootstrap);
 extern int   sepgsqlInitializePostmaster(void);
 extern void  sepgsqlFinalizePostmaster(void);
 
-extern Oid  sepgsqlGetServerContext(void);
-extern Oid  sepgsqlGetClientContext(void);
-extern void  sepgsqlSetClientContext(Oid new_ctx);
-extern Oid  sepgsqlGetDatabaseContext(void);
-extern char *sepgsqlGetDatabaseName(void);
-
-extern bool sepgsql_avc_permission_noaudit(Oid ssid, Oid tsid, uint16 tclass,
-										   uint32 perms, char **audit, char *objname);
-extern void  sepgsql_avc_permission(Oid ssid, Oid tsid, uint16 tclass,
-									uint32 perms, char *objname);
-extern char *sepgsqlGetTupleName(Oid relid, HeapTuple tuple);
-extern void  sepgsql_audit(bool result, char *message);
-extern Oid   sepgsql_avc_createcon(Oid ssid, Oid tsid, uint16 tclass);
-extern Oid   sepgsql_avc_relabelcon(Oid ssid, Oid tsid, uint16 tclass);
-extern bool  sepgsql_check_context(char *context);
-
-extern Datum sepgsql_getcon(PG_FUNCTION_ARGS);
-
-/*
- * SE-PostgreSQL proxy functions
- *   src/backend/security/sepgsqlProxy.c
- */
+/* SQL proxy hooks */
 extern List *sepgsqlProxyQuery(Query *query);
 extern void  sepgsqlVerifyQuery(Query *query);
+
+/* HeapTuple modification hooks */
+extern bool  sepgsqlHeapTupleInsert(Relation rel, HeapTuple tuple,
+									bool is_internal, bool with_returning);
+extern bool  sepgsqlHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple newtup,
+								   bool is_internal, bool with_returning);
+extern bool  sepgsqlHeapTupleDelete(Relation rel, ItemPointer otid,
+								   bool is_internal, bool with_returning);
+
+/*  Extended SQL statement hooks */
+extern DefElem *sepgsqlGramSecurityLabel(char *defname, char *context);
+extern bool  sepgsqlNodeIsSecurityLabel(DefElem *defel);
+extern Oid   sepgsqlParseSecurityLabel(DefElem *defel);
+
+/* DATABASE related hooks */
+extern void  sepgsqlSetDatabaseParam(const char *name, char *argstring);
+extern void  sepgsqlGetDatabaseParam(const char *name);
+
+/* FUNCTION related hooks */
+extern void  sepgsqlCallFunction(FmgrInfo *finfo, bool with_perm_check);
+extern bool  sepgsqlCallFunctionTrigger(FmgrInfo *finfo, TriggerData *tgdata);
 extern Oid   sepgsqlPreparePlanCheck(Relation rel);
 extern void  sepgsqlRestorePlanCheck(Relation rel, Oid pgace_saved);
 
-/*
- * SE-PostgreSQL hooks
- *   src/backend/security/sepgsqlHooks.c
- */
+/* TABLE related hooks */
+extern void  sepgsqlLockTable(Oid relid);
+extern bool  sepgsqlAlterTable(Relation rel, AlterTableCmd *cmd);
 
-/* simple_heap_xxxx hooks */
-extern void sepgsqlSimpleHeapInsert(Relation rel, HeapTuple tuple);
-extern void sepgsqlSimpleHeapUpdate(Relation rel, ItemPointer tid, HeapTuple newtup);
-extern void sepgsqlSimpleHeapDelete(Relation rel, ItemPointer tid);
+/* COPY TO/COPY FROM statement hooks */
+extern void  sepgsqlCopyTable(Relation rel, List *attnumlist, bool is_from);
+extern bool  sepgsqlCopyToTuple(Relation rel, HeapTuple tuple);
 
-/* heap_xxxx hooks for implicit labeling */
-extern void sepgsqlHeapInsert(Relation rel, HeapTuple tuple);
-extern void sepgsqlHeapUpdate(Relation rel, HeapTuple newtup, HeapTuple oldtup);
+/* Loadable shared library module hooks */
+extern void  sepgsqlLoadSharedModule(const char *filename);
 
-/* INSERT/UPDATE/DELETE statement hooks */
-extern bool sepgsqlExecInsert(Relation rel, HeapTuple tuple, bool with_returning);
-extern bool sepgsqlExecUpdate(Relation rel, HeapTuple newtup, ItemPointer tid, bool with_returning);
-extern bool sepgsqlExecDelete(Relation rel, ItemPointer tid, bool with_returning);
+/* Binary Large Object (BLOB) hooks */
+extern Oid   sepgsqlLargeObjectGetSecurity(HeapTuple tuple);
+extern void  sepgsqlLargeObjectSetSecurity(HeapTuple tuple, Oid lo_security, bool is_first);
+extern void  sepgsqlLargeObjectCreate(Relation rel, HeapTuple tuple);
+extern void  sepgsqlLargeObjectDrop(Relation rel, HeapTuple tuple);
+extern void  sepgsqlLargeObjectOpen(Relation rel, HeapTuple tuple, bool read_only);
+extern void  sepgsqlLargeObjectRead(Relation rel, HeapTuple tuple);
+extern void  sepgsqlLargeObjectWrite(Relation rel, HeapTuple newtup, HeapTuple oldtup);
+extern void  sepgsqlLargeObjectTruncate(Relation rel, Oid loid);
+extern void  sepgsqlLargeObjectImport(void);
+extern void  sepgsqlLargeObjectExport(void);
 
-/* DATABASE */
-extern void sepgsqlAlterDatabaseContext(Relation rel, HeapTuple tuple, char *new_context);
-extern void sepgsqlSetDatabaseParam(const char *name, char *argstring);
-extern void sepgsqlGetDatabaseParam(const char *name);
-
-/* RELATION/ATTRIBUTE */
-extern void sepgsqlLockTable(Oid relid);
-
-/* FUNCTION */
-extern void sepgsqlCallFunction(FmgrInfo *finfo, bool with_perm_check);
-extern bool sepgsqlCallFunctionTrigger(FmgrInfo *finfo, TriggerData *tgdata);
-extern void sepgsqlAlterProcedureContext(Relation rel, HeapTuple tuple, char *context);
-
-/* COPY */
-extern void sepgsqlCopyTable(Relation rel, List *attnumlist, bool is_from);
-extern bool sepgsqlCopyToTuple(Relation rel, HeapTuple tuple);
-extern bool sepgsqlCopyFromTuple(Relation rel, HeapTuple tuple);
-
-/* LOAD shared library module */
-extern void sepgsqlLoadSharedModule(const char *filename);
-
-/* copy/print node object */
-extern Node *sepgsqlCopyObject(Node *node);
-extern bool sepgsqlOutObject(StringInfo str, Node *node);
-
-/* SECURITY LABEL IN/OUT */
+/* Security Label hooks */
 extern char *sepgsqlSecurityLabelIn(char *context);
 extern char *sepgsqlSecurityLabelOut(char *context);
-extern bool sepgsqlSecurityLabelIsValid(char *context);
+extern bool  sepgsqlSecurityLabelIsValid(char *context);
 extern char *sepgsqlSecurityLabelOfLabel(char *context);
 extern char *sepgsqlSecurityLabelNotFound(Oid sid);
 
-/*
- * SE-PostgreSQL Binary Large Object (BLOB) functions
- *   src/backend/security/sepgsqlLargeObject.c
- */
-extern Oid  sepgsqlLargeObjectGetSecurity(HeapTuple tuple);
-extern void sepgsqlLargeObjectSetSecurity(HeapTuple tuple, Oid lo_security, bool is_first);
-extern void sepgsqlLargeObjectCreate(Relation rel, HeapTuple tuple);
-extern void sepgsqlLargeObjectDrop(Relation rel, HeapTuple tuple);
-extern void sepgsqlLargeObjectOpen(Relation rel, HeapTuple tuple, bool read_only);
-extern void sepgsqlLargeObjectRead(Relation rel, HeapTuple tuple);
-extern void sepgsqlLargeObjectWrite(Relation rel, HeapTuple newtup, HeapTuple oldtup);
-extern void sepgsqlLargeObjectImport(void);
-extern void sepgsqlLargeObjectExport(void);
+/* Extended node type hooks */
+extern Node *sepgsqlCopyObject(Node *node);
+extern bool  sepgsqlOutObject(StringInfo str, Node *node);
 
 /*
- * SE-PostgreSQL Heap related functions
- *   src/backend/security/sepgsqlHeap.c
+ * SE-PostgreSQL core functions
+ *   src/backend/security/sepgsql/core.c
  */
+extern bool  sepgsqlIsEnabled(void);
+extern Oid   sepgsqlGetServerContext(void);
+extern Oid   sepgsqlGetClientContext(void);
+extern void  sepgsqlSetClientContext(Oid new_ctx);
+extern Oid   sepgsqlGetDatabaseContext(void);
+extern char *sepgsqlGetDatabaseName(void);
 
-extern Oid sepgsqlComputeImplicitContext(Relation rel, HeapTuple tuple);
-extern bool sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, HeapTuple oldtup,
-								   uint32 perms, bool abort);
+/* userspace access vector cache related */
+extern void  sepgsql_avc_permission(Oid ssid, Oid tsid, uint16 tclass,
+									uint32 perms, char *objname);
+extern bool  sepgsql_avc_permission_noaudit(Oid ssid, Oid tsid, uint16 tclass,
+											uint32 perms, char **audit, char *objname);
+extern void  sepgsql_audit(bool result, char *message);
+extern Oid   sepgsql_avc_createcon(Oid ssid, Oid tsid, uint16 tclass);
+extern Oid   sepgsql_avc_relabelcon(Oid ssid, Oid tsid, uint16 tclass);
+
+/*
+ * SE-PostgreSQL permission evaluation related
+ *   src/backend/security/sepgsql/permission.c
+ */
+extern char *sepgsqlGetTupleName(Oid relid, HeapTuple tuple);
+extern Oid   sepgsqlComputeImplicitContext(Relation rel, HeapTuple tuple);
+extern bool  sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, HeapTuple oldtup,
+									uint32 perms, bool abort);
+/*
+ * SE-PostgreSQL SQL FUNCTIONS
+ */
+extern Datum sepgsql_getcon(PG_FUNCTION_ARGS);
 extern Datum sepgsql_tuple_perms(PG_FUNCTION_ARGS);
 extern Datum sepgsql_tuple_perms_abort(PG_FUNCTION_ARGS);
 
-/*
- * SE-PostgreSQL extended SQL statement
- *   src/backend/security/sepgsqlExtStmt.c
- */
-extern DefElem *sepgsqlGramSecurityLabel(char *defname, char *context);
-extern bool sepgsqlNodeIsSecurityLabel(DefElem *defel);
-extern Oid sepgsqlParseSecurityLabel(DefElem *defel);
-
-#endif /* SEPGSQL_INTERNAL_H */
+#endif /* SEPGSQL_H */
