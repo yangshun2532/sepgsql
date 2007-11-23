@@ -153,7 +153,7 @@ createdb(const CreatedbStmt *stmt)
 					 errmsg("LOCATION is not supported anymore"),
 					 errhint("Consider using tablespaces instead.")));
 		}
-		else if (pgaceNodeIsSecurityLabel(defel)) {
+		else if (pgaceIsGramSecurityItem(defel)) {
 			if (dpgace_item)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
@@ -433,7 +433,7 @@ createdb(const CreatedbStmt *stmt)
 						   new_record, new_record_nulls);
 
 	HeapTupleSetOid(tuple, dboid);
-	pgaceCreateDatabaseCommon(tuple, dpgace_item);
+	pgaceGramCreateDatabase(pg_database_rel, tuple, dpgace_item);
 
 	simple_heap_insert(pg_database_rel, tuple);
 
@@ -860,7 +860,7 @@ AlterDatabase(AlterDatabaseStmt *stmt)
 						 errmsg("conflicting or redundant options")));
 			dconnlimit = defel;
 		}
-		else if (pgaceNodeIsSecurityLabel(defel)) {
+		else if (pgaceIsGramSecurityItem(defel)) {
 			if (dpgace_item)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
@@ -912,7 +912,7 @@ AlterDatabase(AlterDatabaseStmt *stmt)
 
 	newtuple = heap_modifytuple(tuple, RelationGetDescr(rel), new_record,
 								new_record_nulls, new_record_repl);
-	pgaceAlterDatabaseCommon(newtuple, dpgace_item);
+	pgaceGramAlterDatabase(rel, newtuple, dpgace_item);
 	simple_heap_update(rel, &tuple->t_self, newtuple);
 
 	/* Update indexes */

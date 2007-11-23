@@ -436,7 +436,7 @@ DefineRelation(CreateStmt *stmt, char relkind)
 										  stmt->oncommit,
 										  reloptions,
 										  allowSystemTableMods,
-										  pgaceBuildAttrListForRelation(stmt));
+										  pgaceRelationAttrList(stmt));
 
 	StoreCatalogInheritance(relationId, inheritOids);
 
