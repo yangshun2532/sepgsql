@@ -144,9 +144,16 @@ extern bool  sepgsqlHeapTupleDelete(Relation rel, ItemPointer otid,
 								   bool is_internal, bool with_returning);
 
 /*  Extended SQL statement hooks */
-extern DefElem *sepgsqlGramSecurityLabel(char *defname, char *context);
-extern bool  sepgsqlNodeIsSecurityLabel(DefElem *defel);
-extern Oid   sepgsqlParseSecurityLabel(DefElem *defel);
+extern DefElem *sepgsqlGramSecurityItem(const char *defname, const char *value);
+extern bool pgaceIsGramSecurityItem(DefElem *defel);
+extern void pgaceGramCreateRelation(Relation rel, HeapTuple tuple, DefElem *defel);
+extern void pgaceGramCreateAttribute(Relation rel, HeapTuple tuple, DefElem *defel);
+extern void pgaceGramAlterRelation(Relation rel, HeapTuple tuple, DefElem *defel);
+extern void pgaceGramAlterAttribute(Relation rel, HeapTuple tuple, DefElem *defel);
+extern void pgaceGramCreateDatabase(Relation rel, HeapTuple tuple, DefElem *defel);
+extern void pgaceGramAlterDatabase(Relation rel, HeapTuple tuple, DefElem *defel);
+extern void pgaceGramCreateFunction(Relation rel, HeapTuple tuple, DefElem *defel);
+extern void pgaceGramAlterFunction(Relation rel, HeapTuple tuple, DefElem *defel);
 
 /* DATABASE related hooks */
 extern void  sepgsqlSetDatabaseParam(const char *name, char *argstring);
