@@ -96,25 +96,66 @@ bool pgaceHeapTupleDelete(Relation rel, ItemPointer otid,
 /******************************************************************
  * Extended SQL statement hooks
  ******************************************************************/
-DefElem *pgaceGramSecurityLabel(char *defname, char *value)
+DefElem *pgaceGramSecurityItem(const char *defname, const char *value)
 {
 	if (sepgsqlIsEnabled())
-		return sepgsqlGramSecurityLabel(defname, value);
+		return sepgsqlGramSecurityItem(defname, value);
 	return NULL;
 }
 
-bool pgaceNodeIsSecurityLabel(DefElem *defel)
+bool pgaceIsGramSecurityItem(DefElem *defel)
 {
 	if (sepgsqlIsEnabled())
-		return sepgsqlNodeIsSecurityLabel(defel);
+		return sepgsqlIsGramSecurityItem(defel);
 	return false;
 }
 
-Oid pgaceParseSecurityLabel(DefElem *defel)
+void pgaceGramCreateRelation(Relation rel, HeapTuple tuple, DefElem *defel)
 {
-	if (sepgsqlIsEnabled() && defel)
-		return sepgsqlParseSecurityLabel(defel);
-	return InvalidOid;
+	if (sepgsqlIsEnabled())
+		return sepgsqlGramCreateRelation(rel, tuple, defel);
+}
+
+void pgaceGramCreateAttribute(Relation rel, HeapTuple tuple, DefElem *defel)
+{
+	if (sepgsqlIsEnabled())
+		return sepgsqlGramCreateAttribute(rel, tuple, defel);
+}
+
+void pgaceGramAlterRelation(Relation rel, HeapTuple tuple, DefElem *defel)
+{
+	if (sepgsqlIsEnabled())
+		return sepgsqlGramAlterRelation(rel, tuple, defel);
+}
+
+void pgaceGramAlterAttribute(Relation rel, HeapTuple tuple, DefElem *defel)
+{
+	if (sepgsqlIsEnabled())
+		return sepgsqlGramAlterAttribute(rel, tuple, defel);
+}
+
+void pgaceGramCreateDatabase(Relation rel, HeapTuple tuple, DefElem *defel)
+{
+	if (sepgsqlIsEnabled())
+		sepgsqlGramCreateDatabase(rel, tuple, defel);
+}
+
+void pgaceGramAlterDatabase(Relation rel, HeapTuple tuple, DefElem *defel)
+{
+	if (sepgsqlIsEnabled())
+		sepgsqlGramAlterDatabase(rel, tuple, defel);
+}
+
+void pgaceGramCreateFunction(Relation rel, HeapTuple tuple, DefElem *defel)
+{
+	if (sepgsqlIsEnabled())
+		sepgsqlGramCreateFunction(rel, tuple, defel);
+}
+
+void pgaceGramAlterFunction(Relation rel, HeapTuple tuple, DefElem *defel)
+{
+	if (sepgsqlIsEnabled())
+		sepgsqlGramAlterFunction(rel, tuple, defel);
 }
 
 /******************************************************************

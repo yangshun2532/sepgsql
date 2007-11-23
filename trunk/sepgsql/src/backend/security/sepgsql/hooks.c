@@ -49,22 +49,6 @@ static HeapTuple __getHeapTupleFromItemPointer(Relation rel, ItemPointer tid)
 /*******************************************************************************
  * Extended SQL statement hooks
  *******************************************************************************/
-/* make context = 'xxx' node */
-DefElem *sepgsqlGramSecurityLabel(char *defname, char *context) {
-	DefElem *n = NULL;
-	if (!strcmp(defname, "context"))
-		n = makeDefElem(pstrdup(defname), (Node *) makeString(context));
-	return n;
-}
-
-/* whether DefElem holds security context, or not */
-bool sepgsqlNodeIsSecurityLabel(DefElem *defel) {
-	Assert(IsA(defel, DefElem));
-	if (defel->defname && !strcmp(defel->defname, "context"))
-		return true;
-	return false;
-}
-
 /* parse explicitly specified security context */
 Oid sepgsqlParseSecurityLabel(DefElem *defel) {
 	Datum newcon;
@@ -73,6 +57,69 @@ Oid sepgsqlParseSecurityLabel(DefElem *defel) {
 	newcon = DirectFunctionCall1(security_label_in,
 								 CStringGetDatum(strVal(defel->arg)));
 	return DatumGetObjectId(newcon);
+}
+
+DefElem *sepgsqlGramSecurityItem(const char *defname, const char *value)
+{
+	DefElem *n = NULL;
+	if (!strcmp(defname, "context"))
+		n = makeDefElem(pstrdup(defname), (Node *) makeString(context));
+	return n;
+}
+
+bool sepgsqlIsGramSecurityItem(DefElem *defel)
+{
+	Assert(IsA(defel, DefElem));
+	if (defel->defname && !strcmp(defel->defname, "context"))
+		return true;
+	return false;
+}
+
+static void __put_gram_context(HeapTuple tuple, DefElem *defel)
+{
+	Oid newcon = DirectFunctionCall1(security_label_in,
+									 CStringGetDatum(strVal(defel->arg)));
+	HeapTupleSetSecurity(tuple, newcon);
+}
+
+void sepgsqlGramCreateRelation(Relation rel, HeapTuple tuple, DefElem *defel)
+{
+	__put_gram_context(tuple, defel);
+}
+
+void sepgsqlGramCreateAttribute(Relation rel, HeapTuple tuple, DefElem *defel)
+{
+	__put_gram_context(tuple, defel);
+}
+
+void sepgsqlGramAlterRelation(Relation rel, HeapTuple tuple, DefElem *defel)
+{
+	__put_gram_context(tuple, defel);
+}
+
+void sepgsqlGramAlterAttribute(Relation rel, HeapTuple tuple, DefElem *defel)
+{
+	__put_gram_context(tuple, defel);
+}
+
+void sepgsqlGramCreateDatabase(Relation rel, HeapTuple tuple, DefElem *defel)
+{
+	__put_gram_context(tuple, defel);
+}
+
+void sepgsqlGramAlterDatabase(Relation rel, HeapTuple tuple, DefElem *defel)
+{
+	__put_gram_context(tuple, defel);
+}
+
+void sepgsqlGramCreateFunction(Relation rel, HeapTuple tuple, DefElem *defel)
+{
+	__put_gram_context(tuple, defel);
+}
+
+void sepgsqlGramAlterFunction(Relation rel, HeapTuple tuple, DefElem *defel)
+{
+	__put_gram_context(tuple, defel);
 }
 
 /*******************************************************************************
