@@ -126,36 +126,35 @@ void pgaceFetchSecurityLabel(JunkFilter *junkfilter,
  *****************************************************************************/
 
 /* CREATE TABLE with explicit CONTEXT */
-List *pgaceBuildAttrListForRelation(CreateStmt *stmt) {
+List *pgaceRelationAttrList(CreateStmt *stmt)
+{
 	List *result = NIL;
 	ListCell *l;
 	DefElem *defel, *newel;
-	Oid t_security;
 
-	if (stmt->pgace_item) {
-		defel = (DefElem *) stmt->pgace_item;
+	if (stmt->pgaceItem) {
+		defel = (DefElem *) stmt->pgaceItem;
+
 		Assert(IsA(defel, DefElem));
-		
-		t_security = pgaceParseSecurityLabel(defel);
-		newel = makeDefElem(NULL, (Node *) makeInteger(t_security));
-
+		if (!pgaceIsGramSecurityItem(defel))
+			elog(ERROR, "node is not a pgace security item");
+		newel = makeDefElem(NULL, (Node *) copyObject(defel));
 		result = lappend(result, newel);
 	}
 
 	foreach (l, stmt->tableElts) {
 		ColumnDef *cdef = (ColumnDef *) lfirst(l);
-		defel = (DefElem *) cdef->pgace_item;
+		defel = (DefElem *) cdef->pgaceItem;
 
 		if (defel) {
 			Assert(IsA(defel, DefElem));
-			t_security = pgaceParseSecurityLabel(defel);
+			if (!pgaceIsGramSecurityItem(defel))
+				elog(ERROR, "node is not a pgace security item");
 			newel = makeDefElem(pstrdup(cdef->colname),
-								(Node *) makeInteger(t_security));
-
+								(Node *) copyObject(defel));
 			result = lappend(result, newel);
 		}
 	}
-
 	return result;
 }
 
@@ -166,9 +165,8 @@ void pgaceCreateRelationCommon(Relation rel, HeapTuple tuple, List *pgace_attr_l
 		DefElem *defel = (DefElem *) lfirst(l);
 
 		if (!defel->defname) {
-			Oid t_security = intVal(defel->arg);
-
-			HeapTupleSetSecurity(tuple, t_security);
+			Assert(pgaceIsGramSecurityItem((DefElem *)defel->arg));
+			pgaceGramCreateRelation(rel, tuple, (DefElem *)defel->arg);
 			break;
 		}
 	}
@@ -184,9 +182,8 @@ void pgaceCreateAttributeCommon(Relation rel, HeapTuple tuple, List *pgace_attr_
 		if (!defel->defname)
 			continue;	/* for table */
 		if (!strcmp(defel->defname, NameStr(attr->attname))) {
-			Oid t_security = intVal(defel->arg);
-
-			HeapTupleSetSecurity(tuple, t_security);
+			Assert(pgaceIsGramSecurityItem((DefElem *)defel->arg));
+			pgaceGramCreateAttribute(rel, tuple, (DefElem *)defel->arg);
 			break;
 		}
 	}
@@ -196,7 +193,6 @@ void pgaceCreateAttributeCommon(Relation rel, HeapTuple tuple, List *pgace_attr_
 static void alterRelationCommon(Relation rel, DefElem *defel) {
 	Relation pg_class;
 	HeapTuple tuple;
-	Oid t_security;
 
 	pg_class = heap_open(RelationRelationId, RowExclusiveLock);
 
@@ -204,13 +200,8 @@ static void alterRelationCommon(Relation rel, DefElem *defel) {
 							   ObjectIdGetDatum(RelationGetRelid(rel)),
 							   0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
-		ereport(ERROR,
-				(errcode(ERRCODE_UNDEFINED_TABLE),
-				 errmsg("relation '%s' does not exist",
-						RelationGetRelationName(rel))));
-
-	t_security = pgaceParseSecurityLabel(defel);
-	HeapTupleSetSecurity(tuple, t_security);
+		elog(ERROR, "cache lookup failed for relation '%s'", RelationGetRelationName(rel));
+	pgaceGramAlterRelation(rel, tuple, defel);
 
 	simple_heap_update(pg_class, &tuple->t_self, tuple);
 	CatalogUpdateIndexes(pg_class, tuple);
@@ -222,19 +213,14 @@ static void alterRelationCommon(Relation rel, DefElem *defel) {
 static void alterAttributeCommon(Relation rel, char *colName, DefElem *defel) {
 	Relation pg_attr;
 	HeapTuple tuple;
-	Oid t_security;
 
 	pg_attr = heap_open(AttributeRelationId, RowExclusiveLock);
 
 	tuple = SearchSysCacheCopyAttName(RelationGetRelid(rel), colName);
 	if (!HeapTupleIsValid(tuple))
-		ereport(ERROR,
-				(errcode(ERRCODE_UNDEFINED_COLUMN),
-				 errmsg("column \"%s\" of relation \"%s\" does not exist",
-						colName, RelationGetRelationName(rel))));
-
-	t_security = pgaceParseSecurityLabel(defel);
-	HeapTupleSetSecurity(tuple, t_security);
+		elog(ERROR, "cache lookup failed for attribute '%s' of relation '%s'", 
+			 colName, RelationGetRelationName(rel));
+	pgaceGramAlterAttribute(rel, tuple, defel);
 
 	simple_heap_update(pg_attr, &tuple->t_self, tuple);
 	CatalogUpdateIndexes(pg_attr, tuple);
@@ -248,42 +234,14 @@ void pgaceAlterRelationCommon(Relation rel, AlterTableCmd *cmd) {
 
 	Assert(IsA(defel, DefElem));
 
-	if (!pgaceNodeIsSecurityLabel(defel))
-		elog(ERROR, "unrecognized security attribute");
+	if (!pgaceIsGramSecurityItem(defel))
+		elog(ERROR, "unsupported pgace security item");
 
 	if (!cmd->name) {
 		alterRelationCommon(rel, defel);
 	} else {
 		alterAttributeCommon(rel, cmd->name, defel);
 	}
-}
-
-static void pgacePutSecurityLabel(HeapTuple tuple, DefElem *defel) {
-	Oid t_security;
-
-	if (!defel)
-		return;
-
-	Assert(IsA(defel, DefElem) && IsA(defel->arg, String));
-
-	t_security = pgaceParseSecurityLabel(defel);
-	HeapTupleSetSecurity(tuple, t_security);
-}
-
-void pgaceCreateDatabaseCommon(HeapTuple tuple, DefElem *defel) {
-	pgacePutSecurityLabel(tuple, defel);
-}
-
-void pgaceAlterDatabaseCommon(HeapTuple tuple, DefElem *defel) {
-	pgacePutSecurityLabel(tuple, defel);
-}
-
-void pgaceCreateFunctionCommon(HeapTuple tuple, DefElem *defel) {
-	pgacePutSecurityLabel(tuple, defel);
-}
-
-void pgaceAlterFunctionCommon(HeapTuple tuple, DefElem *defel) {
-	pgacePutSecurityLabel(tuple, defel);
 }
 
 /*****************************************************************************
