@@ -352,7 +352,7 @@ static Node *makeXmlExpr(XmlExprOp op, char *name, List *named_args, List *args)
 %type <str>		OptTableSpace OptConsTableSpace OptTableSpaceOwner
 %type <list>	opt_check_option
 
-%type <defelt> OptSecurityLabel SecurityLabelItem
+%type <defelt> OptSecurityItem SecurityItem
 
 %type <target>	xml_attribute_el
 %type <list>	xml_attribute_list xml_attributes
@@ -1641,20 +1641,20 @@ alter_table_cmd:
 					$$ = (Node *)n;
 				}
 			/* ALTER TABLE <relation> CONTEXT = '...' */
-			| SecurityLabelItem
+			| SecurityItem
 				{
 					AlterTableCmd *n = makeNode(AlterTableCmd);
-                    n->subtype = AT_SetSecurityLabel;
+					n->subtype = AT_SetSecurityLabel;
 					n->name = NULL;
 					n->def = (Node *) $1;
 					$$ = (Node *) n;
 				}
 			/* ALTER TABLE <relation> ALTER [COLUMN] <colname> CONTEXT = '...' */
-			| ALTER opt_column ColId SecurityLabelItem
+			| ALTER opt_column ColId SecurityItem
 				{
 					AlterTableCmd *n = makeNode(AlterTableCmd);
 					n->subtype = AT_SetSecurityLabel;
-                    n->name = $3;
+					n->name = $3;
 					n->def = (Node *) $4;
 					$$ = (Node *) n;
 				}
@@ -1904,7 +1904,7 @@ opt_using:
  *****************************************************************************/
 
 CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
-			OptInherit OptWith OnCommitOption OptTableSpace OptSecurityLabel
+			OptInherit OptWith OnCommitOption OptTableSpace OptSecurityItem
 				{
 					CreateStmt *n = makeNode(CreateStmt);
 					$4->istemp = $2;
@@ -1915,11 +1915,11 @@ CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
 					n->options = $9;
 					n->oncommit = $10;
 					n->tablespacename = $11;
-					n->pgace_item = (Node *) $12;
+					n->pgaceItem = (Node *) $12;
 					$$ = (Node *)n;
 				}
 		| CREATE OptTemp TABLE qualified_name OF qualified_name
-			'(' OptTableElementList ')' OptWith OnCommitOption OptTableSpace OptSecurityLabel
+			'(' OptTableElementList ')' OptWith OnCommitOption OptTableSpace OptSecurityItem
 				{
 					/* SQL99 CREATE TABLE OF <UDT> (cols) seems to be satisfied
 					 * by our inheritance capabilities. Let's try it...
@@ -1933,7 +1933,7 @@ CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
 					n->options = $10;
 					n->oncommit = $11;
 					n->tablespacename = $12;
-					n->pgace_item = (Node *) $13;
+					n->pgaceItem = (Node *) $13;
 					$$ = (Node *)n;
 				}
 		;
@@ -1976,14 +1976,14 @@ TableElement:
 			| TableConstraint					{ $$ = $1; }
 		;
 
-columnDef:	ColId Typename ColQualList OptSecurityLabel
+columnDef:	ColId Typename ColQualList OptSecurityItem
 				{
 					ColumnDef *n = makeNode(ColumnDef);
 					n->colname = $1;
 					n->typename = $2;
 					n->constraints = $3;
 					n->is_local = true;
-					n->pgace_item = (Node *) $4;
+					n->pgaceItem = (Node *) $4;
 					$$ = (Node *)n;
 				}
 		;
@@ -4302,7 +4302,7 @@ common_func_opt_item:
 					/* we abuse the normal content of a DefElem here */
 					$$ = makeDefElem("set", (Node *)$1);
 				}
-			| SecurityLabelItem
+			| SecurityItem
 				{
 					$$ = $1;
 				}
@@ -5389,7 +5389,7 @@ createdb_opt_item:
 				{
 					$$ = makeDefElem("owner", NULL);
 				}
-			| SecurityLabelItem
+			| SecurityItem
 				{
 					$$ = $1;
 				}
@@ -5441,7 +5441,7 @@ alterdb_opt_item:
 				{
 					$$ = makeDefElem("connectionlimit", (Node *)makeInteger($4));
 				}
-			| SecurityLabelItem
+			| SecurityItem
 				{
 					$$ = $1;
 				}
@@ -8774,21 +8774,21 @@ target_el:	a_expr AS ColLabel
 
 /*****************************************************************************
  *
- * Explicit Security Labeling
+ * PGACE Security Items
  *
  *****************************************************************************/
 
-OptSecurityLabel:
-			SecurityLabelItem						{ $$ = $1; }
-			| /* EMPTY */							{ $$ = NULL; }
+OptSecurityItem:
+			SecurityItem				{ $$ = $1; }
+			| /* EMPTY */				{ $$ = NULL; }
 			;
 
-SecurityLabelItem:
+SecurityItem:
 			IDENT '=' Sconst
 				{
-					DefElem *n = pgaceGramSecurityLabel($1, $3);
+					DefElem *n = pgaceGramSecurityItem($1, $3);
 					if (n == NULL)
-					   yyerror("syntax error");
+						yyerror("syntax error");
 					$$ = n;
 				}
 			;

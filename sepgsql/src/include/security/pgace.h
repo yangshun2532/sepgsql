@@ -49,9 +49,16 @@ extern bool pgaceHeapTupleDelete(Relation rel, ItemPointer otid,
 /******************************************************************
  * Extended SQL statement hooks
  ******************************************************************/
-extern DefElem *pgaceGramSecurityLabel(char *defname, char *value);
-extern bool     pgaceNodeIsSecurityLabel(DefElem *defel);
-extern Oid      pgaceParseSecurityLabel(DefElem *defel);
+extern DefElem *pgaceGramSecurityItem(const char *defname, const char *value);
+extern bool pgaceIsGramSecurityItem(DefElem *defel);
+extern void pgaceGramCreateRelation(Relation rel, HeapTuple tuple, DefElem *defel);
+extern void pgaceGramCreateAttribute(Relation rel, HeapTuple tuple, DefElem *defel);
+extern void pgaceGramAlterRelation(Relation rel, HeapTuple tuple, DefElem *defel);
+extern void pgaceGramAlterAttribute(Relation rel, HeapTuple tuple, DefElem *defel);
+extern void pgaceGramCreateDatabase(Relation rel, HeapTuple tuple, DefElem *defel);
+extern void pgaceGramAlterDatabase(Relation rel, HeapTuple tuple, DefElem *defel);
+extern void pgaceGramCreateFunction(Relation rel, HeapTuple tuple, DefElem *defel);
+extern void pgaceGramAlterFunction(Relation rel, HeapTuple tuple, DefElem *defel);
 
 /******************************************************************
  * DATABASE related hooks
@@ -124,14 +131,10 @@ extern void pgaceTransformInsertStmt(List **p_icolumns, List **p_attrnos, List *
 extern void pgaceFetchSecurityLabel(JunkFilter *junkfilter, TupleTableSlot *slot, Oid *tts_security);
 
 /* Extended SQL statements related */
-extern List *pgaceBuildAttrListForRelation(CreateStmt *stmt);
+extern List *pgaceRelationAttrList(CreateStmt *stmt);
 extern void  pgaceCreateRelationCommon(Relation rel, HeapTuple tuple, List *pgace_attr_list);
 extern void  pgaceCreateAttributeCommon(Relation rel, HeapTuple tuple, List *pgace_attr_list);
 extern void  pgaceAlterRelationCommon(Relation rel, AlterTableCmd *cmd);
-extern void  pgaceCreateDatabaseCommon(HeapTuple tuple, DefElem *defel);
-extern void  pgaceAlterDatabaseCommon(HeapTuple tuple, DefElem *defel);
-extern void  pgaceCreateFunctionCommon(HeapTuple tuple, DefElem *defel);
-extern void  pgaceAlterFunctionCommon(HeapTuple tuple, DefElem *defel);
 
 /* SQL functions */
 extern Datum security_label_in(PG_FUNCTION_ARGS);

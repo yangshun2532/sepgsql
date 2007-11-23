@@ -414,7 +414,7 @@ compute_attributes_sql_style(List *options,
 							 ArrayType **proconfig,
 							 float4 *procost,
 							 float4 *prorows,
-							 DefElem **pgace_item)
+							 DefElem **pgaceItem)
 {
 	ListCell   *option;
 	DefElem    *as_item = NULL;
@@ -446,13 +446,13 @@ compute_attributes_sql_style(List *options,
 						 errmsg("conflicting or redundant options")));
 			language_item = defel;
 		}
-		else if (pgaceNodeIsSecurityLabel(defel))
+		else if (pgaceIsGramSecurityItem(defel))
 		{
-			if (*pgace_item)
+			if (*pgaceItem)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
 						 errmsg("conflicting or redundant options")));
-			*pgace_item = defel;
+			*pgaceItem = defel;
 		}
 		else if (compute_common_attribute(defel,
 										  &volatility_item,
@@ -634,7 +634,7 @@ CreateFunction(CreateFunctionStmt *stmt)
 	HeapTuple	languageTuple;
 	Form_pg_language languageStruct;
 	List	   *as_clause;
-	DefElem	   *pgace_item = NULL;
+	DefElem	   *pgaceItem = NULL;
 
 	/* Convert list of names to a name and namespace */
 	namespaceId = QualifiedNameGetCreationNamespace(stmt->funcname,
@@ -658,7 +658,7 @@ CreateFunction(CreateFunctionStmt *stmt)
 	compute_attributes_sql_style(stmt->options,
 								 &as_clause, &language,
 								 &volatility, &isStrict, &security,
-								 &proconfig, &procost, &prorows, &pgace_item);
+								 &proconfig, &procost, &prorows, &pgaceItem);
 
 	/* Convert language name to canonical case */
 	languageName = case_translate_language_name(language);
@@ -813,7 +813,7 @@ CreateFunction(CreateFunctionStmt *stmt)
 					PointerGetDatum(proconfig),
 					procost,
 					prorows,
-					pgace_item);
+					pgaceItem);
 }
 
 
@@ -1163,7 +1163,7 @@ AlterFunction(AlterFunctionStmt *stmt)
 	List	   *set_items = NIL;
 	DefElem    *cost_item = NULL;
 	DefElem    *rows_item = NULL;
-	DefElem	   *pgace_def_item = NULL;
+	DefElem	   *pgaceItem = NULL;
 
 	rel = heap_open(ProcedureRelationId, RowExclusiveLock);
 
@@ -1195,12 +1195,12 @@ AlterFunction(AlterFunctionStmt *stmt)
 	{
 		DefElem    *defel = (DefElem *) lfirst(l);
 
-		if (pgaceNodeIsSecurityLabel(defel)) {
-			if (pgace_def_item)
+		if (pgaceIsGramSecurityItem(defel)) {
+			if (pgaceItem)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
 						 errmsg("conflicting or redundant options")));
-			pgace_def_item = defel;
+			pgaceItem = defel;
 			continue;
 		}
 
@@ -1274,7 +1274,7 @@ AlterFunction(AlterFunctionStmt *stmt)
 		tup = heap_modifytuple(tup, RelationGetDescr(rel),
 							   repl_val, repl_null, repl_repl);
 	}
-	pgaceAlterFunctionCommon(tup, pgace_def_item);
+	pgaceGramAlterFunction(rel, tup, pgaceItem);
 
 	/* Do the update */
 	simple_heap_update(rel, &tup->t_self, tup);
