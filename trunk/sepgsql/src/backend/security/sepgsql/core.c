@@ -14,6 +14,7 @@
 #include "libpq/pqsignal.h"
 #include "miscadmin.h"
 #include "security/pgace.h"
+#include "security/sepgsql.h"
 #include "storage/lwlock.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
@@ -821,7 +822,7 @@ char *sepgsqlGetDatabaseName()
 	return datname;
 }
 
-void sepgsqlInitialize()
+void sepgsqlInitialize(bool is_bootstrap)
 {
 	sepgsql_avc_init();
 

@@ -4,6 +4,11 @@
  *
  * Copyright (c) 2007 KaiGai Kohei <kaigai@kaigai.gr.jp>
  */
+#include "postgres.h"
+
+#include "executor/executor.h"
+#include "security/pgace.h"
+#include "security/sepgsql.h"
 
 /******************************************************************
  * Initialize / Finalize related hooks
@@ -18,7 +23,7 @@ Size pgaceShmemSize(void)
 void pgaceInitialize(bool is_bootstrap)
 {
 	if (sepgsqlIsEnabled())
-		sepgsqlInitialize();
+		sepgsqlInitialize(is_bootstrap);
 }
 
 bool pgaceInitializePostmaster(void)
@@ -31,7 +36,7 @@ bool pgaceInitializePostmaster(void)
 void pgaceFinalizePostmaster(void)
 {
 	if (sepgsqlIsEnabled())
-		sepgsqlFinalizePostmaster()
+		sepgsqlFinalizePostmaster();
 }
 
 /******************************************************************
@@ -60,10 +65,11 @@ void pgacePortalStart(Portal portal)
 
 void pgaceExecutorStart(QueryDesc *queryDesc, int eflags)
 {
-	if (sepgsqlIsEnabled() && !(eflags & EXEC_FLAG_EXPLAIN_ONLY)) {
-		Assert(queryDesc->parsetree != NULL);
-		sepgsqlVerifyQuery(queryDesc->parsetree);
-	}
+// FIXME: pgsql-8.3 does not contain Query in queryDesc ?
+//	if (sepgsqlIsEnabled() && !(eflags & EXEC_FLAG_EXPLAIN_ONLY)) {
+//		Assert(queryDesc->parsetree != NULL);
+//		sepgsqlVerifyQuery(queryDesc->parsetree);
+//	}
 }
 
 /******************************************************************
@@ -217,13 +223,6 @@ void pgaceLockTable(Oid relid)
 {
 	if (sepgsqlIsEnabled())
 		sepgsqlLockTable(relid);
-}
-
-bool pgaceAlterTable(Relation rel, AlterTableCmd *cmd)
-{
-	if (sepgsqlIsEnabled())
-		return sepgsqlAlterTable(rel, cmd);
-	return false;
 }
 
 /******************************************************************

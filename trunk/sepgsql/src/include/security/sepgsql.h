@@ -145,15 +145,15 @@ extern bool  sepgsqlHeapTupleDelete(Relation rel, ItemPointer otid,
 
 /*  Extended SQL statement hooks */
 extern DefElem *sepgsqlGramSecurityItem(const char *defname, const char *value);
-extern bool pgaceIsGramSecurityItem(DefElem *defel);
-extern void pgaceGramCreateRelation(Relation rel, HeapTuple tuple, DefElem *defel);
-extern void pgaceGramCreateAttribute(Relation rel, HeapTuple tuple, DefElem *defel);
-extern void pgaceGramAlterRelation(Relation rel, HeapTuple tuple, DefElem *defel);
-extern void pgaceGramAlterAttribute(Relation rel, HeapTuple tuple, DefElem *defel);
-extern void pgaceGramCreateDatabase(Relation rel, HeapTuple tuple, DefElem *defel);
-extern void pgaceGramAlterDatabase(Relation rel, HeapTuple tuple, DefElem *defel);
-extern void pgaceGramCreateFunction(Relation rel, HeapTuple tuple, DefElem *defel);
-extern void pgaceGramAlterFunction(Relation rel, HeapTuple tuple, DefElem *defel);
+extern bool sepgsqlIsGramSecurityItem(DefElem *defel);
+extern void sepgsqlGramCreateRelation(Relation rel, HeapTuple tuple, DefElem *defel);
+extern void sepgsqlGramCreateAttribute(Relation rel, HeapTuple tuple, DefElem *defel);
+extern void sepgsqlGramAlterRelation(Relation rel, HeapTuple tuple, DefElem *defel);
+extern void sepgsqlGramAlterAttribute(Relation rel, HeapTuple tuple, DefElem *defel);
+extern void sepgsqlGramCreateDatabase(Relation rel, HeapTuple tuple, DefElem *defel);
+extern void sepgsqlGramAlterDatabase(Relation rel, HeapTuple tuple, DefElem *defel);
+extern void sepgsqlGramCreateFunction(Relation rel, HeapTuple tuple, DefElem *defel);
+extern void sepgsqlGramAlterFunction(Relation rel, HeapTuple tuple, DefElem *defel);
 
 /* DATABASE related hooks */
 extern void  sepgsqlSetDatabaseParam(const char *name, char *argstring);
