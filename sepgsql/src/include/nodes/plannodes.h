@@ -73,6 +73,8 @@ typedef struct PlannedStmt
 	List	   *relationOids;	/* OIDs of relations the plan depends on */
 
 	int			nParamExec;		/* number of PARAM_EXEC Params used */
+
+	Node	   *pgaceItem;		/* PGACE: an opaque item for security purpose */
 } PlannedStmt;
 
 /* macro for fetching the Plan associated with a SubPlan node */

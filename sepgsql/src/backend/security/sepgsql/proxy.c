@@ -22,6 +22,7 @@
 #include "optimizer/plancat.h"
 #include "parser/parse_relation.h"
 #include "parser/parse_target.h"
+#include "parser/parsetree.h"
 #include "security/pgace.h"
 #include "security/sepgsql.h"
 #include "storage/lock.h"
@@ -967,7 +968,7 @@ static List *proxyGeneralQuery(Query *query)
 	List *selist = NIL;
 
 	selist = proxyRteSubQuery(selist, NULL, query);
-	query->pgaceList = selist;
+	query->pgaceItem = selist;
 
 	return list_make1(query);
 }
@@ -983,7 +984,7 @@ static List *proxyExecuteStmt(Query *query)
 	qcData.parent = NULL;
 	qcData.tail = query;
 	selist = sepgsqlWalkExpr(selist, &qcData, (Node *) estmt->params, 0);
-	query->pgaceList = selist;
+	query->pgaceItem = selist;
 
 	return list_make1(query);
 }
@@ -1340,21 +1341,27 @@ static void execVerifyQuery(List *selist)
 	}
 }
 
-void sepgsqlVerifyQuery(Query *query)
+void sepgsqlVerifyQuery(PlannedStmt *pstmt)
 {
-	List *selist = copyObject(query->pgaceList);
+	RangeTblEntry *rte;
+	List *selist;
+	ListCell *l;
+
+	Assert(IsA(pstmt->pgaceItem, List));
+	selist = pstmt->pgaceItem;
 
 	/* expand table inheritances */
 	selist = expandSEvalListInheritance(selist);
 
 	/* add checks for access via trigger function */
-	if (query->resultRelation > 0) {
-		RangeTblEntry *rte = (RangeTblEntry *) list_nth(query->rtable,
-														query->resultRelation - 1);
-		Assert(IsA(rte, RangeTblEntry));
-		selist = addEvalTriggerAccess(selist, rte->relid, rte->inh, query->commandType);
-	}
+	foreach(l, pstmt->resultRelations) {
+		Index rindex = lfirst_int(l);
 
+		rte = rt_fetch(rindex, pstmt->rtable);
+		Assert(IsA(rte, RangeTblEntry));
+
+		selist = addEvalTriggerAccess(selist, rte->relid, rte->inh, pstmt->commandType);
+	}
 	execVerifyQuery(selist);
 }
 

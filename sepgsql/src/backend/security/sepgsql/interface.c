@@ -65,11 +65,10 @@ void pgacePortalStart(Portal portal)
 
 void pgaceExecutorStart(QueryDesc *queryDesc, int eflags)
 {
-// FIXME: pgsql-8.3 does not contain Query in queryDesc ?
-//	if (sepgsqlIsEnabled() && !(eflags & EXEC_FLAG_EXPLAIN_ONLY)) {
-//		Assert(queryDesc->parsetree != NULL);
-//		sepgsqlVerifyQuery(queryDesc->parsetree);
-//	}
+	if (sepgsqlIsEnabled() && !(eflags & EXEC_FLAG_EXPLAIN_ONLY)) {
+		Assert(queryDesc->plannedstmt != NULL);
+		sepgsqlVerifyQuery(queryDesc->plannedstmt);
+	}
 }
 
 /******************************************************************
