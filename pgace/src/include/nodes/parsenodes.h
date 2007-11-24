@@ -131,7 +131,7 @@ typedef struct Query
 
 	Node	   *setOperations;	/* set-operation tree if this is top level of
 								 * a UNION/INTERSECT/EXCEPT query */
-	List	   *pgaceList;		/* PGACE: an opaque list */
+	Node	   *pgaceItem;		/* PGACE: an opaque item for security purpose */
 } Query;
 
 

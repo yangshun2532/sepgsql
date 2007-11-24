@@ -253,6 +253,7 @@ _outPlannedStmt(StringInfo str, PlannedStmt *node)
 	WRITE_NODE_FIELD(rowMarks);
 	WRITE_NODE_FIELD(relationOids);
 	WRITE_INT_FIELD(nParamExec);
+	WRITE_NODE_FIELD(pgaceItem);
 }
 
 /*
@@ -1739,6 +1740,7 @@ _outQuery(StringInfo str, Query *node)
 	WRITE_NODE_FIELD(limitCount);
 	WRITE_NODE_FIELD(rowMarks);
 	WRITE_NODE_FIELD(setOperations);
+	WRITE_NODE_FIELD(pgaceItem);
 }
 
 static void
