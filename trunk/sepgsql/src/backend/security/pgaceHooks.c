@@ -380,19 +380,6 @@ void pgaceLockTable(Oid relid)
 	/* do nothing */
 }
 
-/*
- * pgaceAlterTable() is called to modify table/column. The PGACE implementation
- * have to update the target tuples within pg_class or pg_attribute.
- * If AlterTableCmd tag is unexpected one, 
- *
- * @rel : the target relation
- * @cmd : AlterTableCmd object
- */
-bool pgaceAlterTable(Relation rel, AlterTableCmd *cmd)
-{
-	return false;
-}
-
 /******************************************************************
  * COPY TO/COPY FROM statement hooks
  ******************************************************************/
