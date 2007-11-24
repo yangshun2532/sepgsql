@@ -86,6 +86,7 @@ _copyPlannedStmt(PlannedStmt *from)
 	COPY_NODE_FIELD(rowMarks);
 	COPY_NODE_FIELD(relationOids);
 	COPY_SCALAR_FIELD(nParamExec);
+	COPY_NODE_FIELD(pgaceItem);
 
 	return newnode;
 }
@@ -1870,7 +1871,7 @@ _copyQuery(Query *from)
 	COPY_NODE_FIELD(limitCount);
 	COPY_NODE_FIELD(rowMarks);
 	COPY_NODE_FIELD(setOperations);
-	COPY_NODE_FIELD(pgaceList);
+	COPY_NODE_FIELD(pgaceItem);
 
 	return newnode;
 }
