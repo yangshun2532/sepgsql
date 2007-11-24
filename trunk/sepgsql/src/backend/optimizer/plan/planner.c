@@ -101,6 +101,10 @@ planner(Query *parse, int cursorOptions, ParamListInfo boundParams)
 		result = (*planner_hook) (parse, cursorOptions, boundParams);
 	else
 		result = standard_planner(parse, cursorOptions, boundParams);
+
+	/* PGACE: pgaceItem is passed to PlannedStmt */
+	result->pgaceItem = parse->pgaceItem;
+
 	return result;
 }
 

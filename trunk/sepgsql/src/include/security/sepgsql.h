@@ -133,7 +133,7 @@ extern void  sepgsqlFinalizePostmaster(void);
 
 /* SQL proxy hooks */
 extern List *sepgsqlProxyQuery(Query *query);
-extern void  sepgsqlVerifyQuery(Query *query);
+extern void  sepgsqlVerifyQuery(PlannedStmt *pstmt);
 
 /* HeapTuple modification hooks */
 extern bool  sepgsqlHeapTupleInsert(Relation rel, HeapTuple tuple,
