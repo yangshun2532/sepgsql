@@ -87,16 +87,18 @@ void pgaceTransformInsertStmt(List **p_icolumns, List **p_attrnos, List *targetL
 	}
 }
 
-void pgaceFetchSecurityLabel(JunkFilter *junkfilter, TupleTableSlot *slot, Oid *tts_security) {
+void pgaceFetchSecurityAttribute(JunkFilter *junkfilter, TupleTableSlot *slot)
+{
+	AttrNumber attno;
 	Datum datum;
-	bool isNull;
+	bool isnull;
 
-	if (ExecGetJunkAttribute(junkfilter,
-							 slot,
-							 SECURITY_SYSATTR_NAME,
-							 &datum,
-							 &isNull) && !isNull)
-		*tts_security = DatumGetObjectId(datum);
+	attno = ExecFindJunkAttribute(junkfilter, SECURITY_SYSATTR_NAME);
+	if (attno != InvalidAttrNumber) {
+		datum = ExecGetJunkAttribute(slot, attno, &isnull);
+		if (!isnull)
+			slot->tts_security = DatumGetObjectId(datum);
+	}
 }
 #else  /* SECURITY_SYSATTR_NAME */
 
@@ -115,8 +117,7 @@ void pgaceTransformInsertStmt(List **p_icolumns,
 }
 
 void pgaceFetchSecurityLabel(JunkFilter *junkfilter,
-							 TupleTableSlot *slot,
-							 Oid *tts_security) {
+							 TupleTableSlot *slot) {
 	/* do nothing */
 }
 #endif /* SECURITY_SYSATTR_NAME */
