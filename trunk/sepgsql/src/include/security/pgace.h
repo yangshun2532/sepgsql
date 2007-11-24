@@ -126,9 +126,9 @@ extern bool  pgaceOutObject(StringInfo str, Node *node);
  ******************************************************************/
 /* Security attribute system column support */
 extern bool pgaceIsSecuritySystemColumn(int attrno);
+extern void pgaceFetchSecurityAttribute(JunkFilter *junkfilter, TupleTableSlot *slot);
 extern void pgaceTransformSelectStmt(List *targetList);
 extern void pgaceTransformInsertStmt(List **p_icolumns, List **p_attrnos, List *targetList);
-extern void pgaceFetchSecurityLabel(JunkFilter *junkfilter, TupleTableSlot *slot, Oid *tts_security);
 
 /* Extended SQL statements related */
 extern List *pgaceRelationAttrList(CreateStmt *stmt);

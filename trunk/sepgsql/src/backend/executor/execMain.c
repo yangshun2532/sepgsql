@@ -1195,8 +1195,6 @@ ExecutePlan(EState *estate,
 
 	for (;;)
 	{
-		Oid		__tts_security = InvalidOid;
-
 		/* Reset the per-output-tuple exprcontext */
 		ResetPerTupleExprContext(estate);
 
@@ -1223,6 +1221,9 @@ lnext:	;
 			break;
 		}
 		slot = planSlot;
+
+		/* PGACE: Reset an explicit security labeling */
+		slot->tts_security = InvalidOid;
 
 		/*
 		 * if we have a junk filter, then project a new tuple with the junk
@@ -1343,7 +1344,7 @@ lnext:	;
 			 * If client specified a explicit security label,
 			 * pgaceFetchSecurityLabel() fetch it via junk attribute.
 			 */
-			pgaceFetchSecurityLabel(junkfilter, slot, &__tts_security);
+			pgaceFetchSecurityAttribute(junkfilter, slot);
 
 			/*
 			 * Create a new "clean" tuple with all junk attributes removed. We
@@ -1353,7 +1354,6 @@ lnext:	;
 			if (operation != CMD_DELETE)
 				slot = ExecFilterJunk(junkfilter, slot);
 		}
-		slot->tts_security = __tts_security;
 
 		/*
 		 * now that we have a tuple, do the appropriate thing with it.. either
@@ -1474,7 +1474,9 @@ ExecInsert(TupleTableSlot *slot,
 	resultRelInfo = estate->es_result_relation_info;
 	resultRelationDesc = resultRelInfo->ri_RelationDesc;
 
+	/* PGACE: put an explicit security labeling */
 	HeapTupleStoreSecurityFromSlot(tuple, slot);
+
 	/* BEFORE ROW INSERT Triggers */
 	if (resultRelInfo->ri_TrigDesc &&
 		resultRelInfo->ri_TrigDesc->n_before_row[TRIGGER_EVENT_INSERT] > 0)
@@ -1726,7 +1728,9 @@ ExecUpdate(TupleTableSlot *slot,
 	resultRelInfo = estate->es_result_relation_info;
 	resultRelationDesc = resultRelInfo->ri_RelationDesc;
 
+	/* PGACE: put an explicit security attribute */
 	HeapTupleStoreSecurityFromSlot(tuple, slot);
+
 	/* BEFORE ROW UPDATE Triggers */
 	if (resultRelInfo->ri_TrigDesc &&
 		resultRelInfo->ri_TrigDesc->n_before_row[TRIGGER_EVENT_UPDATE] > 0)
