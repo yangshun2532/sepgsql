@@ -79,7 +79,6 @@ extern void pgaceRestorePlanCheck(Relation rel, Datum pgace_saved);
  * TABLE related hooks
  ******************************************************************/
 extern void pgaceLockTable(Oid relid);
-extern bool pgaceAlterTable(Relation rel, AlterTableCmd *cmd);
 
 /******************************************************************
  * COPY TO/COPY FROM statement hooks

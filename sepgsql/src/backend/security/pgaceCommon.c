@@ -116,8 +116,8 @@ void pgaceTransformInsertStmt(List **p_icolumns,
 	/* do nothing */
 }
 
-void pgaceFetchSecurityLabel(JunkFilter *junkfilter,
-							 TupleTableSlot *slot) {
+void pgaceFetchSecurityAttribute(JunkFilter *junkfilter,
+								 TupleTableSlot *slot) {
 	/* do nothing */
 }
 #endif /* SECURITY_SYSATTR_NAME */
