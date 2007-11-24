@@ -10,6 +10,7 @@
 #include "access/heapam.h"
 #include "miscadmin.h"
 #include "security/pgace.h"
+#include "security/sepgsql.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
 #include "utils/syscache.h"

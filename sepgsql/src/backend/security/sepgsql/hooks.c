@@ -12,6 +12,7 @@
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
 #include "security/pgace.h"
+#include "security/sepgsql.h"
 #include "utils/fmgroids.h"
 #include "utils/syscache.h"
 #include <fcntl.h>
@@ -49,21 +50,11 @@ static HeapTuple __getHeapTupleFromItemPointer(Relation rel, ItemPointer tid)
 /*******************************************************************************
  * Extended SQL statement hooks
  *******************************************************************************/
-/* parse explicitly specified security context */
-Oid sepgsqlParseSecurityLabel(DefElem *defel) {
-	Datum newcon;
-	Assert(IsA(defel, DefElem));
-
-	newcon = DirectFunctionCall1(security_label_in,
-								 CStringGetDatum(strVal(defel->arg)));
-	return DatumGetObjectId(newcon);
-}
-
 DefElem *sepgsqlGramSecurityItem(const char *defname, const char *value)
 {
 	DefElem *n = NULL;
 	if (!strcmp(defname, "context"))
-		n = makeDefElem(pstrdup(defname), (Node *) makeString(context));
+		n = makeDefElem(pstrdup(defname), (Node *) makeString(value));
 	return n;
 }
 

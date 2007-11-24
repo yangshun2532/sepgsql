@@ -23,6 +23,7 @@
 #include "parser/parse_relation.h"
 #include "parser/parse_target.h"
 #include "security/pgace.h"
+#include "security/sepgsql.h"
 #include "storage/lock.h"
 #include "utils/fmgroids.h"
 #include "utils/syscache.h"
@@ -623,7 +624,7 @@ static List *makePseudoTargetList(Oid relid) {
 					 attno, NameStr(classForm->relname));
 		attrForm = (Form_pg_attribute) GETSTRUCT(atttup);
 		if (attrForm->attisdropped) {
-			expr = (Expr *) makeNullConst(INT4OID);
+			expr = (Expr *) makeNullConst(INT4OID, -1);
 		} else {
 			expr = (Expr *) makeVar(1,
 									attno,
@@ -745,7 +746,7 @@ static List *proxyRteRelation(List *selist, queryChain *qc, int rtindex, Node **
 		v2 = makeVar(rtindex, SecurityAttributeNumber, OIDOID, -1, 0);
 		
 		/* 3rd arg : permission set */
-		c3 = makeConst(INT4OID, sizeof(int32), Int32GetDatum(perms), false, true);
+		c3 = makeConst(INT4OID, -1, sizeof(int32), Int32GetDatum(perms), false, true);
 
 		/* 4th arg : RECORD of the target relation */
 		v4 = makeVar(rtindex, 0, RelationGetForm(rel)->reltype, -1, 0);
@@ -1399,6 +1400,8 @@ bool sepgsqlCopyToTuple(Relation rel, HeapTuple tuple)
 	return sepgsqlCheckTuplePerms(rel, tuple, NULL, DB_TUPLE__SELECT, false);
 }
 
+#if 0
+// sepgsqlCopyFromTuple is replaced by sepgsqlHeapTupleInsert()
 bool sepgsqlCopyFromTuple(Relation rel, HeapTuple tuple)
 {
 	Oid tcontext = HeapTupleGetSecurity(tuple);
@@ -1410,6 +1413,7 @@ bool sepgsqlCopyFromTuple(Relation rel, HeapTuple tuple)
 	}
 	return sepgsqlCheckTuplePerms(rel, tuple, NULL, DB_TUPLE__INSERT, false);
 }
+#endif
 
 /* ----------------------------------------------------------
  * node copy/print hooks
