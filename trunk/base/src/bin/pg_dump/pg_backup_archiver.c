@@ -15,7 +15,7 @@
  *
  *
  * IDENTIFICATION
- *		$PostgreSQL: pgsql/src/bin/pg_dump/pg_backup_archiver.c,v 1.149 2007/11/15 21:14:41 momjian Exp $
+ *		$PostgreSQL: pgsql/src/bin/pg_dump/pg_backup_archiver.c,v 1.151 2007/11/24 20:26:49 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -247,6 +247,22 @@ RestoreArchive(Archive *AHX, RestoreOptions *ropt)
 				ahprintf(AH, "%s", te->dropStmt);
 			}
 		}
+
+		/*
+		 * _selectOutputSchema may have set currSchema to reflect the effect
+		 * of a "SET search_path" command it emitted.  However, by now we may
+		 * have dropped that schema; or it might not have existed in the first
+		 * place.  In either case the effective value of search_path will not
+		 * be what we think.  Forcibly reset currSchema so that we will
+		 * re-establish the search_path setting when needed (after creating
+		 * the schema).
+		 *
+		 * If we treated users as pg_dump'able objects then we'd need to reset
+		 * currUser here too.
+		 */
+		if (AH->currSchema)
+			free(AH->currSchema);
+		AH->currSchema = strdup("");
 	}
 
 	/*
