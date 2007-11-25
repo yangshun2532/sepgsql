@@ -198,6 +198,7 @@ extern char *sepgsqlSecurityLabelNotFound(Oid sid);
 /* Extended node type hooks */
 extern Node *sepgsqlCopyObject(Node *node);
 extern bool  sepgsqlOutObject(StringInfo str, Node *node);
+extern void *sepgsqlReadObject(char *token);
 
 /*
  * SE-PostgreSQL core functions

@@ -355,3 +355,12 @@ bool pgaceOutObject(StringInfo str, Node *node)
 		sepgsqlOutObject(str, node);
 	return false;
 }
+
+void *pgaceReadObject(char *token)
+{
+	void *result = NULL;
+
+	if (sepgsqlIsEnabled())
+		result = sepgsqlReadObject(token);
+	return NULL;
+}

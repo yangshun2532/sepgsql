@@ -68,9 +68,11 @@ bool sepgsqlIsGramSecurityItem(DefElem *defel)
 
 static void __put_gram_context(HeapTuple tuple, DefElem *defel)
 {
-	Oid newcon = DirectFunctionCall1(security_label_in,
-									 CStringGetDatum(strVal(defel->arg)));
-	HeapTupleSetSecurity(tuple, newcon);
+	if (defel) {
+		Oid newcon = DirectFunctionCall1(security_label_in,
+										 CStringGetDatum(strVal(defel->arg)));
+		HeapTupleSetSecurity(tuple, newcon);
+	}
 }
 
 void sepgsqlGramCreateRelation(Relation rel, HeapTuple tuple, DefElem *defel)
