@@ -1,0 +1,136 @@
+= The PGACE Reference Manual =
+
+PGACE (PostgreSQL Access Control Extension) is a framework to implement an additional security features built-in PostgreSQL database management system.
+
+*NOTE:* This manual it not completed yet.
+
+= Reference Manual =
+
+This is a list of all PGACE hooks, and its explanations.
+
+
+== Initialization / Finalization related ==
+{{{Size pgaceShmemSize(void)}}}
+ pgaceShmemSize() is called when PostgreSQL estimate the size of its shared memory segment on boot time. You can return the size to be required by the security feature.
+ The result of this hook will be added to the total size the of shared memory segment, then the security feature will be able to allocate this area.
+ 
+ If you do not use any shared memory segment, this hook should return 0.
+
+{{{bool pgaceInitializePostmaster(void)}}}
+ pgaceInitializePostmaster() is called on the starting up process of the postmaster.
+ You can initialize the security feature on this chance.
+ If the hooks returns *false*, the starting up process of the postmaster will be failed.
+
+ If you don't have any initialization of the security feature, this hook should unconditionally return true.
+
+{{{void pgaceFinalizePostmaster(void)}}}
+ pgaceFinalizePostmaster() is called on the cleaning up process of the postmaster.
+ You can finalize the security feature on this chance.
+ 
+ If you don't have any finalization of the security feature, this hook should do nothing.
+
+{{{void pgaceInitialize(bool is_bootstrap)}}}
+ pgaceInitialize() is called when a client connects the postmaster and a new instance is generated, or when a postgresql is executed with bootstrap mode to initialize the database cluster.
+ 
+ *bool is_bootstrap* means whether the current mode is bootstraping, or not. If true, the current mode is bootstraping mode.
+ 
+ If you don't have any initialization of the security feature on this chance, this hook should do nothing.
+
+== SQL Proxy hooks ==
+{{{List *pgaceProxyQuery(List *queryList)}}}
+
+{{{void  pgacePortalStart(Portal portal)}}}
+
+{{{void  pgaceExecutorStart(QueryDesc *queryDesc, int eflags)}}}
+
+== HeapTuple modification hooks ==
+{{{bool pgaceHeapTupleInsert(Relation rel, HeapTuple tuple, bool is_internal, bool with_returning)}}}
+
+{{{bool pgaceHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple newtup, bool is_internal, bool with_returning)}}}
+
+{{{bool pgaceHeapTupleDelete(Relation rel, ItemPointer otid, bool is_internal, bool with_returning)}}}
+
+== Extended SQL statement hooks ==
+{{{DefElem *pgaceGramSecurityItem(char *defname, char *value)}}}
+
+{{{bool pgaceIsGramSecurityItem(DefElem *defel)}}}
+
+{{{void pgaceGramCreateRelation(Relation rel, HeapTuple tuple, DefElem *defel)}}}
+
+{{{void pgaceGramCreateAttribute(Relation rel, HeapTuple tuple, DefElem *defel)}}}
+
+{{{void pgaceGramAlterRelation(Relation rel, HeapTuple tuple, DefElem *defel)}}}
+
+{{{void pgaceGramAlterAttribute(Relation rel, HeapTuple tuple, DefElem *defel)}}}
+
+{{{void pgaceGramCreateDatabase(Relation rel, HeapTuple tuple, DefElem *defel)}}}
+
+{{{void pgaceGramAlterDatabase(Relation rel, HeapTuple tuple, DefElem *defel)}}}
+
+{{{void pgaceGramCreateFunction(Relation rel, HeapTuple tuple, DefElem *defel)}}}
+
+{{{void pgaceGramAlterFunction(Relation rel, HeapTuple tuple, DefElem *defel)}}}
+
+== Database related hooks ==
+{{{void pgaceSetDatabaseParam(const char *name, char *argstring)}}}
+
+{{{void pgaceGetDatabaseParam(const char *name)}}}
+
+== Function related hooks ==
+{{{void pgaceCallFunction(FmgrInfo *finfo)}}}
+
+{{{bool pgaceCallFunctionTrigger(FmgrInfo *finfo, TriggerData *tgdata)}}}
+
+{{{void pgaceCallFunctionFastPath(FmgrInfo *finfo)}}}
+
+{{{Datum pgacePreparePlanCheck(Relation rel)}}}
+
+{{{void pgaceRestorePlanCheck(Relation rel, Datum pgace_saved)}}}
+
+== Table related hooks ==
+{{{void pgaceLockTable(Oid relid)}}}
+
+== Copy To/From statement hooks ==
+{{{void pgaceCopyTable(Relation rel, List *attNumList, bool isFrom)}}}
+
+{{{bool pgaceCopyToTuple(Relation rel, HeapTuple tuple)}}}
+
+== Loadable shared library module hooks ==
+{{{void pgaceLoadSharedModule(const char *filename)}}}
+
+== Binary Large Object (BLOB) hooks ==
+{{{Oid  pgaceLargeObjectGetSecurity(HeapTuple tuple)}}}
+
+{{{void pgaceLargeObjectSetSecurity(HeapTuple tuple, Oid lo_security, bool is_first)}}}
+
+{{{void pgaceLargeObjectCreate(Relation rel, HeapTuple tuple)}}}
+
+{{{void pgaceLargeObjectDrop(Relation rel, HeapTuple tuple)}}}
+
+{{{void pgaceLargeObjectOpen(Relation rel, HeapTuple tuple, bool read_only)}}}
+
+{{{void pgaceLargeObjectRead(Relation rel, HeapTuple tuple, bool is_first)}}}
+
+{{{void pgaceLargeObjectWrite(Relation rel, HeapTuple newtup, HeapTuple oldtup, bool is_first)}}}
+
+{{{void pgaceLargeObjectTruncate(Relation rel, Oid loid)}}}
+
+{{{void pgaceLargeObjectImport(int fd)}}}
+
+{{{void pgaceLargeObjectExport(int fd, Oid loid)}}}
+
+== Security Label hooks ==
+{{{char *pgaceSecurityLabelIn(char *seclabel)}}}
+
+{{{char *pgaceSecurityLabelOut(char *seclabel)}}}
+
+{{{bool  pgaceSecurityLabelIsValid(char *seclabel)}}}
+
+{{{char *pgaceSecurityLabelOfLabel(char *new_label)}}}
+
+{{{char *pgaceSecurityLabelNotFound(Oid sid)}}}
+
+== Extended node type hooks ==
+{{{Node *pgaceCopyObject(Node *orig)}}}
+
+{{{bool  pgaceOutObject(StringInfo str, Node *node)}}}
