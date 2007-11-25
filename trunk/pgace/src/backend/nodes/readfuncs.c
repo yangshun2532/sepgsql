@@ -154,6 +154,7 @@ _readQuery(void)
 	READ_NODE_FIELD(limitCount);
 	READ_NODE_FIELD(rowMarks);
 	READ_NODE_FIELD(setOperations);
+	READ_NODE_FIELD(pgaceItem);
 
 	READ_DONE();
 }
@@ -1126,8 +1127,9 @@ parseNodeString(void)
 		return_value = _readDeclareCursorStmt();
 	else
 	{
-		elog(ERROR, "badly formatted node string \"%.32s\"...", token);
-		return_value = NULL;	/* keep compiler quiet */
+		return_value = pgaceReadObject(token);
+		if (!return_value)
+			elog(ERROR, "badly formatted node string \"%.32s\"...", token);
 	}
 
 	return (Node *) return_value;
