@@ -390,6 +390,24 @@ void sepgsqlLargeObjectWrite(Relation rel, HeapTuple newtup, HeapTuple oldtup)
 	sepgsqlCheckTuplePerms(rel, newtup, NULL, DB_TUPLE__UPDATE | DB_BLOB__WRITE, true);
 }
 
+void sepgsqlLargeObjectTruncate(Relation rel, Oid loid) {
+	ScanKeyData skey;
+	SysScanDesc sd;
+	HeapTuple tuple;
+
+	ScanKeyInit(&skey,
+				Anum_pg_largeobject_loid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(loid));
+	sd = systable_beginscan(rel, LargeObjectLOidPNIndexId, true,
+							SnapshotNow, 1, &skey);
+	tuple = systable_getnext(sd);
+	if (!HeapTupleIsValid(tuple))
+		selerror("large object %u does not exist", loid);
+	sepgsqlCheckTuplePerms(rel, tuple, NULL, DB_TUPLE__UPDATE | DB_BLOB__WRITE, true);
+	systable_endscan(sd);
+}
+
 void sepgsqlLargeObjectImport()
 {
 	sepgsql_avc_permission(sepgsqlGetClientContext(),
