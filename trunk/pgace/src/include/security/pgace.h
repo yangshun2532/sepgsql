@@ -49,7 +49,7 @@ extern bool pgaceHeapTupleDelete(Relation rel, ItemPointer otid,
 /******************************************************************
  * Extended SQL statement hooks
  ******************************************************************/
-extern DefElem *pgaceGramSecurityItem(const char *defname, const char *value);
+extern DefElem *pgaceGramSecurityItem(char *defname, char *value);
 extern bool pgaceIsGramSecurityItem(DefElem *defel);
 extern void pgaceGramCreateRelation(Relation rel, HeapTuple tuple, DefElem *defel);
 extern void pgaceGramCreateAttribute(Relation rel, HeapTuple tuple, DefElem *defel);
