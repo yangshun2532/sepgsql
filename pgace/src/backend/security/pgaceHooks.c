@@ -632,6 +632,14 @@ bool pgaceOutObject(StringInfo str, Node *node)
 	return false;
 }
 
-
-
-
+/*
+ * pgaceReadObject() provides a hook to read a text representation of an object.
+ * If a given token is a tag extended by PGACE implementation, it have to create
+ * an object same as original one.
+ *
+ * @token : a tag for the object
+ */
+void *pgaceReadObject(char *token)
+{
+	return NULL;
+}
