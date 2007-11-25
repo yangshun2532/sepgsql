@@ -32,7 +32,7 @@ This is a list of all PGACE hooks, and its explanations.
 {{{void pgaceInitialize(bool is_bootstrap)}}}
  pgaceInitialize() is called when a client connects the postmaster and a new instance is generated, or when a postgresql is executed with bootstrap mode to initialize the database cluster.
  
- *bool is_bootstrap* means whether the current mode is bootstraping, or not. If true, the current mode is bootstraping mode.
+ * *bool is_bootstrap* means whether the current mode is bootstraping, or not. If true, the current mode is bootstraping mode.
  
  If you don't have any initialization of the security feature on this chance, this hook should do nothing.
 
