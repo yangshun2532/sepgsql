@@ -19,6 +19,7 @@
 #include "catalog/pg_type.h"
 #include "executor/spi.h"
 #include "nodes/makefuncs.h"
+#include "nodes/readfuncs.h"
 #include "optimizer/plancat.h"
 #include "parser/parse_relation.h"
 #include "parser/parse_target.h"
@@ -1470,9 +1471,9 @@ bool sepgsqlOutObject(StringInfo str, Node *node) {
 		appendStringInfo(str, ":c.inh %s", seitem->c.inh ? "true" : "false");
 		break;
 	case SECCLASS_DB_COLUMN:
-		appendStringInfo(str, ":a.relid %u", seitem->c.relid);
-		appendStringInfo(str, ":a.inh %s", seitem->c.inh ? "true" : "false");
-		appendStringInfo(str, ":a.attno %u", seitem->c.inh);
+		appendStringInfo(str, ":a.relid %u", seitem->a.relid);
+		appendStringInfo(str, ":a.inh %s", seitem->a.inh ? "true" : "false");
+		appendStringInfo(str, ":a.attno %u", seitem->a.attno);
 		break;
 	case SECCLASS_DB_PROCEDURE:
 		appendStringInfo(str, ":p.funcid %u", seitem->p.funcid);
@@ -1482,6 +1483,70 @@ bool sepgsqlOutObject(StringInfo str, Node *node) {
 		break;
 	}
 	return true;
+}
+
+void *sepgsqlReadObject(char *token)
+{
+	SEvalItem *seitem;
+	int length;
+
+	if (strcmp(token, "SEVALITEM"))
+		return NULL;
+
+	seitem = makeNode(SEvalItem);
+
+	/* :tclass */
+	token = pg_strtok(&length);
+	token = pg_strtok(&length);
+	seitem->tclass = atoi(token);
+
+	/* :perms */
+	token = pg_strtok(&length);
+	token = pg_strtok(&length);
+	seitem->perms = (unsigned int) strtoul(token, NULL, 10);
+
+	switch (seitem->tclass) {
+    case SECCLASS_DB_TABLE:
+		/* :c.relid */
+		token = pg_strtok(&length);
+		token = pg_strtok(&length);
+		seitem->c.relid = (unsigned int) strtoul(token, NULL, 10);
+
+		/* :c.inh */
+		token = pg_strtok(&length);
+		token = pg_strtok(&length);
+		seitem->c.inh = (strcmp(token, "true") == 0 ? true : false);
+		break;
+
+	case SECCLASS_DB_COLUMN:
+		/* :a.relid */
+		token = pg_strtok(&length);
+		token = pg_strtok(&length);
+		seitem->a.relid = (unsigned int) strtoul(token, NULL, 10);
+
+		/* :a.inh */
+		token = pg_strtok(&length);
+		token = pg_strtok(&length);
+		seitem->a.inh = (strcmp(token, "true") == 0 ? true : false);
+
+		/* :a.attno */
+		token = pg_strtok(&length);
+		token = pg_strtok(&length);
+		seitem->a.attno = atoi(token);
+		break;
+
+    case SECCLASS_DB_PROCEDURE:
+		/* :p.funcid */
+		token = pg_strtok(&length);
+		token = pg_strtok(&length);
+		seitem->p.funcid = (unsigned int) strtoul(token, NULL, 10);
+		break;
+
+	default:
+		selerror("unrecognized SEvalItem node (tclass: %d)", seitem->tclass);
+		break;
+	}
+	return (void *) seitem;
 }
 
 /* ----------------------------------------------------------

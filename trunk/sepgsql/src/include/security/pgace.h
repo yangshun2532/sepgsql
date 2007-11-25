@@ -119,6 +119,7 @@ extern char *pgaceSecurityLabelNotFound(Oid sid);
  ******************************************************************/
 extern Node *pgaceCopyObject(Node *orig);
 extern bool  pgaceOutObject(StringInfo str, Node *node);
+extern void *pgaceReadObject(char *token);
 
 /******************************************************************
  * PGACE common facilities (not a hooks)
