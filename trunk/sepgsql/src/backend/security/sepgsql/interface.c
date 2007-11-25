@@ -101,7 +101,7 @@ bool pgaceHeapTupleDelete(Relation rel, ItemPointer otid,
 /******************************************************************
  * Extended SQL statement hooks
  ******************************************************************/
-DefElem *pgaceGramSecurityItem(const char *defname, const char *value)
+DefElem *pgaceGramSecurityItem(char *defname, char *value)
 {
 	if (sepgsqlIsEnabled())
 		return sepgsqlGramSecurityItem(defname, value);

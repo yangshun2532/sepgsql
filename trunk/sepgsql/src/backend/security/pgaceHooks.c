@@ -155,7 +155,7 @@ bool pgaceHeapTupleDelete(Relation rel, ItemPointer otid,
  * @defname : given <parameter> string
  * @value   : given <value> string
  */
-DefElem *pgaceGramSecurityItem(const char *defname, const char *value)
+DefElem *pgaceGramSecurityItem(char *defname, char *value)
 {
 	return NULL;
 }

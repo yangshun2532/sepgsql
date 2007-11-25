@@ -50,7 +50,7 @@ static HeapTuple __getHeapTupleFromItemPointer(Relation rel, ItemPointer tid)
 /*******************************************************************************
  * Extended SQL statement hooks
  *******************************************************************************/
-DefElem *sepgsqlGramSecurityItem(const char *defname, const char *value)
+DefElem *sepgsqlGramSecurityItem(char *defname, char *value)
 {
 	DefElem *n = NULL;
 	if (!strcmp(defname, "context"))

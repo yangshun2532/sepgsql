@@ -144,7 +144,7 @@ extern bool  sepgsqlHeapTupleDelete(Relation rel, ItemPointer otid,
 								   bool is_internal, bool with_returning);
 
 /*  Extended SQL statement hooks */
-extern DefElem *sepgsqlGramSecurityItem(const char *defname, const char *value);
+extern DefElem *sepgsqlGramSecurityItem(char *defname, char *value);
 extern bool sepgsqlIsGramSecurityItem(DefElem *defel);
 extern void sepgsqlGramCreateRelation(Relation rel, HeapTuple tuple, DefElem *defel);
 extern void sepgsqlGramCreateAttribute(Relation rel, HeapTuple tuple, DefElem *defel);
