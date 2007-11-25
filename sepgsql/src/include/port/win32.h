@@ -1,4 +1,4 @@
-/* $PostgreSQL: pgsql/src/include/port/win32.h,v 1.79 2007/11/15 21:14:44 momjian Exp $ */
+/* $PostgreSQL: pgsql/src/include/port/win32.h,v 1.81 2007/11/24 01:55:26 momjian Exp $ */
 
 #if defined(_MSC_VER) || defined(__BORLANDC__)
 #define WIN32_ONLY_COMPILER
@@ -9,8 +9,9 @@
  * Always build with SSPI support. Keep it as a #define in case
  * we want a switch to disable it sometime in the future.
  */
+#ifndef __BORLANDC__
 #define ENABLE_SSPI 1
-
+#endif
 
 /* undefine and redefine after #include */
 #undef mkdir
@@ -280,8 +281,8 @@ extern void _dosmaperr(unsigned long);
 
 /* Things that exist in MingW headers, but need to be added to MSVC */
 #ifdef WIN32_ONLY_COMPILER
-#ifndef __BORLANDC__
 typedef long ssize_t;
+#ifndef __BORLANDC__
 typedef unsigned short mode_t;
 #endif
 
