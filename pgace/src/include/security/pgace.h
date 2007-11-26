@@ -126,7 +126,7 @@ extern void *pgaceReadObject(char *token);
  ******************************************************************/
 /* Security attribute system column support */
 extern bool pgaceIsSecuritySystemColumn(int attrno);
-extern void pgaceFetchSecurityAttribute(JunkFilter *junkfilter, TupleTableSlot *slot);
+extern void pgaceFetchSecurityAttribute(JunkFilter *junkfilter, TupleTableSlot *slot, Oid *tts_security);
 extern void pgaceTransformSelectStmt(List *targetList);
 extern void pgaceTransformInsertStmt(List **p_icolumns, List **p_attrnos, List *targetList);
 
