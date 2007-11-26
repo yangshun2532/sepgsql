@@ -1,0 +1,10 @@
+#
+# SE-PostgreSQL install path
+#
+/usr/bin/sepostgres		--	gen_context(system_u:object_r:postgresql_exec_t,s0)
+/usr/bin/initdb.sepgsql		--	gen_context(system_u:object_r:postgresql_exec_t,s0)
+/usr/bin/sepg_ctl		--	gen_context(system_u:object_r:initrc_exec_t,s0)
+
+/var/lib/sepgsql(/.*)?			gen_context(system_u:object_r:postgresql_db_t,s0)
+/var/lib/sepgsql/pgstartup\.log		gen_context(system_u:object_r:postgresql_log_t,s0)
+/var/log/sepostgresql\.log.*	--	gen_context(system_u:object_r:postgresql_log_t,s0)
