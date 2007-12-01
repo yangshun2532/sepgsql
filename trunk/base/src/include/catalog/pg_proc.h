@@ -7,7 +7,7 @@
  * Portions Copyright (c) 1996-2007, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/catalog/pg_proc.h,v 1.478 2007/11/15 21:14:43 momjian Exp $
+ * $PostgreSQL: pgsql/src/include/catalog/pg_proc.h,v 1.481 2007/11/28 19:33:04 tgl Exp $
  *
  * NOTES
  *	  The script catalog/genbki.sh reads this file and generates .bki
@@ -2631,6 +2631,8 @@ DATA(insert OID =  1282 ( quote_ident	   PGNSP PGUID 12 1 0 f f t f i 1 25 "25" 
 DESCR("quote an identifier for usage in a querystring");
 DATA(insert OID =  1283 ( quote_literal    PGNSP PGUID 12 1 0 f f t f i 1 25 "25" _null_ _null_ _null_ quote_literal - _null_ _null_ ));
 DESCR("quote a literal for usage in a querystring");
+DATA(insert OID =  1285 ( quote_literal    PGNSP PGUID 14 1 0 f f t f v 1 25 "2283" _null_ _null_ _null_ "select pg_catalog.quote_literal($1::pg_catalog.text)" - _null_ _null_ ));
+DESCR("quote a data value for usage in a querystring");
 
 DATA(insert OID = 1798 (  oidin			   PGNSP PGUID 12 1 0 f f t f i 1 26 "2275" _null_ _null_ _null_ oidin - _null_ _null_ ));
 DESCR("I/O");
@@ -4028,13 +4030,13 @@ DATA(insert OID = 2892 (  pg_advisory_unlock_all		PGNSP PGUID 12 1 0 f f t f v 0
 DESCR("release all advisory locks");
 
 /* XML support */
-DATA(insert OID = 2893 (  xml_in		   PGNSP PGUID 12 1 0 f f t f i 1 142 "2275" _null_ _null_ _null_ xml_in - _null_ _null_ ));
+DATA(insert OID = 2893 (  xml_in		   PGNSP PGUID 12 1 0 f f t f s 1 142 "2275" _null_ _null_ _null_ xml_in - _null_ _null_ ));
 DESCR("I/O");
 DATA(insert OID = 2894 (  xml_out		   PGNSP PGUID 12 1 0 f f t f i 1 2275 "142" _null_ _null_ _null_ xml_out - _null_ _null_ ));
 DESCR("I/O");
 DATA(insert OID = 2895 (  xmlcomment	   PGNSP PGUID 12 1 0 f f t f i 1 142 "25" _null_ _null_ _null_ xmlcomment - _null_ _null_ ));
 DESCR("generate an XML comment");
-DATA(insert OID = 2896 (  xml			   PGNSP PGUID 12 1 0 f f t f i 1 142 "25" _null_ _null_ _null_ texttoxml - _null_ _null_ ));
+DATA(insert OID = 2896 (  xml			   PGNSP PGUID 12 1 0 f f t f s 1 142 "25" _null_ _null_ _null_ texttoxml - _null_ _null_ ));
 DESCR("perform a non-validating parse of a character string to produce an XML value");
 DATA(insert OID = 2897 (  xmlvalidate	   PGNSP PGUID 12 1 0 f f t f i 2 16 "142 25" _null_ _null_ _null_ xmlvalidate - _null_ _null_ ));
 DESCR("validate an XML value");
@@ -4046,7 +4048,7 @@ DATA(insert OID = 2900 (  xmlconcat2	   PGNSP PGUID 12 1 0 f f f f i 2 142 "142 
 DESCR("aggregate transition function");
 DATA(insert OID = 2901 (  xmlagg		   PGNSP PGUID 12 1 0 t f f f i 1 142 "142" _null_ _null_ _null_ aggregate_dummy - _null_ _null_ ));
 DESCR("concatenate XML values");
-DATA(insert OID = 2922 (  text			   PGNSP PGUID 12 1 0 f f t f s 1 25 "142" _null_ _null_ _null_ xmltotext - _null_ _null_ ));
+DATA(insert OID = 2922 (  text			   PGNSP PGUID 12 1 0 f f t f i 1 25 "142" _null_ _null_ _null_ xmltotext - _null_ _null_ ));
 DESCR("serialize an XML value to a character string");
 
 DATA(insert OID = 2923 (  table_to_xml				  PGNSP PGUID 12 100 0 f f t f s 4 142 "2205 16 16 25" _null_ _null_ "{tbl,nulls,tableforest,targetns}" table_to_xml - _null_ _null_ ));
@@ -4221,9 +4223,9 @@ DESCR("GiST tsvector support");
 
 DATA(insert OID = 3656 (  gin_extract_tsvector	PGNSP PGUID 12 1 0 f f t f i 2 2281 "3614 2281" _null_ _null_ _null_	gin_extract_tsvector - _null_ _null_ ));
 DESCR("GIN tsvector support");
-DATA(insert OID = 3657 (  gin_extract_query		PGNSP PGUID 12 1 0 f f t f i 3 2281 "2281 2281 21" _null_ _null_ _null_ gin_extract_query - _null_ _null_ ));
+DATA(insert OID = 3657 (  gin_extract_tsquery	PGNSP PGUID 12 1 0 f f t f i 3 2281 "3615 2281 21" _null_ _null_ _null_ gin_extract_tsquery - _null_ _null_ ));
 DESCR("GIN tsvector support");
-DATA(insert OID = 3658 (  gin_ts_consistent		PGNSP PGUID 12 1 0 f f t f i 3 16 "2281 21 2281" _null_ _null_ _null_	gin_ts_consistent - _null_ _null_ ));
+DATA(insert OID = 3658 (  gin_tsquery_consistent PGNSP PGUID 12 1 0 f f t f i 3 16 "2281 21 3615" _null_ _null_ _null_	gin_tsquery_consistent - _null_ _null_ ));
 DESCR("GIN tsvector support");
 
 DATA(insert OID = 3662 (  tsquery_lt			PGNSP PGUID 12 1 0 f f t f i 2 16 "3615 3615" _null_ _null_ _null_ tsquery_lt - _null_ _null_ ));
