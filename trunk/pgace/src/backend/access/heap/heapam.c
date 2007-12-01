@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/access/heap/heapam.c,v 1.245 2007/11/15 21:14:32 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/backend/access/heap/heapam.c,v 1.246 2007/11/30 21:22:53 tgl Exp $
  *
  *
  * INTERFACE ROUTINES
@@ -1896,7 +1896,7 @@ simple_heap_insert(Relation relation, HeapTuple tup)
 	if (!pgaceHeapTupleInsert(relation, tup, true, false))
 		elog(ERROR, "simple_heap_insert on %s failed due to security reason",
 			 		 RelationGetRelationName(relation));
-	return heap_insert(relation, tup, GetCurrentCommandId(), true, true);
+	return heap_insert(relation, tup, GetCurrentCommandId(true), true, true);
 }
 
 /*
@@ -2182,7 +2182,7 @@ simple_heap_delete(Relation relation, ItemPointer tid)
 			 		 RelationGetRelationName(relation));
 	result = heap_delete(relation, tid,
 						 &update_ctid, &update_xmax,
-						 GetCurrentCommandId(), InvalidSnapshot,
+						 GetCurrentCommandId(true), InvalidSnapshot,
 						 true /* wait for commit */ );
 	switch (result)
 	{
@@ -2828,7 +2828,7 @@ simple_heap_update(Relation relation, ItemPointer otid, HeapTuple tup)
 			 		RelationGetRelationName(relation));
 	result = heap_update(relation, otid, tup,
 						 &update_ctid, &update_xmax,
-						 GetCurrentCommandId(), InvalidSnapshot,
+						 GetCurrentCommandId(true), InvalidSnapshot,
 						 true /* wait for commit */ );
 	switch (result)
 	{
