@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/libpq/auth.c,v 1.159 2007/11/15 21:14:35 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/backend/libpq/auth.c,v 1.161 2007/11/28 13:30:16 petere Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -524,7 +524,7 @@ pg_GSS_recvauth(Port *port)
 	maj_stat = gss_display_name(&min_stat, port->gss->name, &gbuf, NULL);
 	if (maj_stat != GSS_S_COMPLETE)
 		pg_GSS_error(ERROR,
-					 gettext_noop("retreiving GSS user name failed"),
+					 gettext_noop("retrieving GSS user name failed"),
 					 maj_stat, min_stat);
 
 	/*
@@ -607,7 +607,7 @@ pg_SSPI_error(int severity, char *errmsg, SECURITY_STATUS r)
 	if (FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM, NULL, r, 0, sysmsg, sizeof(sysmsg), NULL) == 0)
 		ereport(severity,
 				(errmsg_internal("%s", errmsg),
-				 errdetail("sspi error %x", (unsigned int) r)));
+				 errdetail("SSPI error %x", (unsigned int) r)));
 	else
 		ereport(severity,
 				(errmsg_internal("%s", errmsg),
