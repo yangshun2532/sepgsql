@@ -2,7 +2,7 @@
 #
 # PostgreSQL documentation makefile
 #
-# $PostgreSQL: pgsql/doc/src/sgml/Makefile,v 1.101 2007/10/07 00:32:11 alvherre Exp $
+# $PostgreSQL: pgsql/doc/src/sgml/Makefile,v 1.105 2007/12/15 10:28:21 momjian Exp $
 #
 #----------------------------------------------------------------------------
 
@@ -36,9 +36,6 @@ endif
 ifndef SGMLSPL
 SGMLSPL = sgmlspl
 endif
-
-CONVERT = convert
-EPSTOPDF = epstopdf
 
 # docbook2man generates man pages from docbook refentry source code.
 D2MSCRIPT= $(D2MDIR)/docbook2man-spec.pl
@@ -164,9 +161,15 @@ JADE.tex.call = $(JADE) $(JADEFLAGS) $(SGMLINCLUDE) $(CATALOG) -d $(srcdir)/styl
 	jadetex $<
 
 # PostScript from TeX
+postgres.ps:
+	$(error Invalid target;  use postgres-A4.ps or postgres-US.ps as targets)
+	
 %.ps: %.dvi
 	dvips -o $@ $<
 
+postgres.pdf:
+	$(error Invalid target;  use postgres-A4.pdf or postgres-US.pdf as targets)
+	
 %.pdf: %.tex-pdf
 	@rm -f $*.aux $*.log $*.out
 # multiple runs are necessary to create proper intra-document links
@@ -180,18 +183,6 @@ JADE.tex.call = $(JADE) $(JADEFLAGS) $(SGMLINCLUDE) $(CATALOG) -d $(srcdir)/styl
 # tools that can make use of this.
 %.fot: %.sgml $(ALLSGML) html
 	$(JADE) $(JADEFLAGS) $(SGMLINCLUDE) $(CATALOG) -d stylesheet.dsl -t fot -i output-print -o $@ $<
-
-
-# Graphics
-
-%.gif:
-	cp $(srcdir)/../graphics/$@ .
-
-%.eps: %.gif
-	$(CONVERT) $< eps:$@
-
-%.pdf: %.eps
-	$(EPSTOPDF) $<
 
 
 ##
@@ -290,11 +281,11 @@ check: postgres.sgml $(ALLSGML)
 
 clean distclean maintainer-clean:
 # HTML
-	rm -f HTML.manifest *.html *.gif
+	rm -f HTML.manifest *.html
 # man
 	rm -rf *.1 *.$(DEFAULTSECTION) man1 man$(DEFAULTSECTION) manpage.refs manpage.links manpage.log
 # print
-	rm -f *.rtf *.tex-ps *.tex-pdf *.dvi *.aux *.log *.ps *.pdf *.out *.eps *.fot
+	rm -f *.rtf *.tex-ps *.tex-pdf *.dvi *.aux *.log *.ps *.pdf *.out *.fot
 # index
 	rm -f HTML.index HTML.index.start $(GENERATED_SGML)
 # text

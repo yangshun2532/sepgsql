@@ -1,4 +1,4 @@
-<!-- $PostgreSQL: pgsql/doc/src/sgml/func.sgml,v 1.414 2007/11/28 15:42:31 petere Exp $ -->
+<!-- $PostgreSQL: pgsql/doc/src/sgml/func.sgml,v 1.418 2007/12/15 01:18:34 tgl Exp $ -->
 
  <chapter id="functions">
   <title>Functions and Operators</title>
@@ -1386,7 +1386,7 @@
         <literal><function>convert_to</function>(<parameter>string</parameter> <type>text</type>,
         <parameter>dest_encoding</parameter> <type>name</type>)</literal>
        </entry>
-       <entry><type>text</type></entry>
+       <entry><type>bytea</type></entry>
        <entry>
         Convert string to <parameter>dest_encoding</parameter>.
        </entry>
@@ -4960,7 +4960,7 @@ SELECT SUBSTRING('XY1234Z', 'Y*?([0-9]{1,3})');
        </row>
        <row>
         <entry><literal>J</literal></entry>
-        <entry>Julian Day (days since January 1, 4712 BC at midnight)</entry>
+        <entry>Julian Day (days since November 24, 4714 BC at midnight)</entry>
        </row>
        <row>
         <entry><literal>Q</literal></entry>
@@ -7752,15 +7752,15 @@ CREATE TYPE rainbow AS ENUM ('red', 'orange', 'yellow', 'green', 'blue', 'purple
         <entry><literal><function>to_tsquery</function>(<optional> <replaceable class="PARAMETER">config</> <type>regconfig</> , </optional> <replaceable class="PARAMETER">query</> <type>text</type>)</literal></entry>
         <entry><type>tsquery</type></entry>
         <entry>normalize words and convert to <type>tsquery</></entry>
-        <entry><literal>to_tsquery('english', 'The & Fat & Rats')</literal></entry>
-        <entry><literal>'fat' & 'rat'</literal></entry>
+        <entry><literal>to_tsquery('english', 'The &amp; Fat &amp; Rats')</literal></entry>
+        <entry><literal>'fat' &amp; 'rat'</literal></entry>
        </row>
        <row>
         <entry><literal><function>plainto_tsquery</function>(<optional> <replaceable class="PARAMETER">config</> <type>regconfig</> , </optional> <replaceable class="PARAMETER">query</> <type>text</type>)</literal></entry>
         <entry><type>tsquery</type></entry>
         <entry>produce <type>tsquery</> ignoring punctuation</entry>
         <entry><literal>plainto_tsquery('english', 'The Fat Rats')</literal></entry>
-        <entry><literal>'fat' & 'rat'</literal></entry>
+        <entry><literal>'fat' &amp; 'rat'</literal></entry>
        </row>
        <row>
         <entry><literal><function>numnode</function>(<type>tsquery</>)</literal></entry>
@@ -7773,7 +7773,7 @@ CREATE TYPE rainbow AS ENUM ('red', 'orange', 'yellow', 'green', 'blue', 'purple
         <entry><literal><function>querytree</function>(<replaceable class="PARAMETER">query</replaceable> <type>tsquery</>)</literal></entry>
         <entry><type>text</type></entry>
         <entry>get indexable part of a <type>tsquery</></entry>
-        <entry><literal>querytree('foo & ! bar'::tsquery)</literal></entry>
+        <entry><literal>querytree('foo &amp; ! bar'::tsquery)</literal></entry>
         <entry><literal>'foo'</literal></entry>
        </row>
        <row>
@@ -8612,6 +8612,12 @@ table2-mapping
         <entry><type>bigint</type></entry>
         <entry>Return value most recently obtained with
         <function>nextval</function> for specified sequence</entry>
+      </row>
+      <row>
+        <entry><literal><function>lastval</function>()</literal></entry>
+        <entry><type>bigint</type></entry>
+        <entry>Return value most recently obtained with
+        <function>nextval</function> for any sequence</entry>
       </row>
       <row>
         <entry><literal><function>nextval</function>(<type>regclass</type>)</literal></entry>
