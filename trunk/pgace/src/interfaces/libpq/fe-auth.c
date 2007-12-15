@@ -7,7 +7,7 @@
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/interfaces/libpq/fe-auth.c,v 1.133 2007/11/15 21:14:46 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/interfaces/libpq/fe-auth.c,v 1.135 2007/12/09 19:01:40 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -618,11 +618,18 @@ pg_SSPI_continue(PGconn *conn)
 			return STATUS_ERROR;
 		}
 
-		if (pqPacketSend(conn, 'p',
-				   outbuf.pBuffers[0].pvBuffer, outbuf.pBuffers[0].cbBuffer))
+		/*
+		 * If the negotiation is complete, there may be zero bytes to send. The server is
+		 * at this point not expecting any more data, so don't send it.
+		 */
+		if (outbuf.pBuffers[0].cbBuffer > 0)
 		{
-			FreeContextBuffer(outbuf.pBuffers[0].pvBuffer);
-			return STATUS_ERROR;
+			if (pqPacketSend(conn, 'p',
+					   outbuf.pBuffers[0].pvBuffer, outbuf.pBuffers[0].cbBuffer))
+			{
+				FreeContextBuffer(outbuf.pBuffers[0].pvBuffer);
+				return STATUS_ERROR;
+			}
 		}
 		FreeContextBuffer(outbuf.pBuffers[0].pvBuffer);
 	}
@@ -947,7 +954,8 @@ pg_fe_sendauth(AuthRequest areq, PGconn *conn)
 		case AUTH_REQ_MD5:
 		case AUTH_REQ_CRYPT:
 		case AUTH_REQ_PASSWORD:
-			if (conn->pgpass == NULL || *conn->pgpass == '\0')
+			conn->password_needed = true;
+			if (conn->pgpass == NULL || conn->pgpass[0] == '\0')
 			{
 				printfPQExpBuffer(&conn->errorMessage,
 								  PQnoPasswordSupplied);

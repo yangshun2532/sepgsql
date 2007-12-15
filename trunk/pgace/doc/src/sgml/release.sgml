@@ -1,4 +1,4 @@
-<!-- $PostgreSQL: pgsql/doc/src/sgml/release.sgml,v 1.557 2007/11/30 03:27:48 momjian Exp $ -->
+<!-- $PostgreSQL: pgsql/doc/src/sgml/release.sgml,v 1.569 2007/12/12 06:58:33 momjian Exp $ -->
 <!--
 
 Typical markup:
@@ -35,13 +35,44 @@ do it for earlier branch release files.
 <appendix id="release">
  <title>Release Notes</title>
 
+ <sect1 id="release-introduction">
+  <title>Introduction</title>
+
+  <para>
+   The release notes contain the significant changes in each PostgreSQL
+   release, with major features and migration issues often listed at the
+   top.  The release notes do not contain changes that affect only a few
+   users or changes that are internal and therefore not user-visible.  For
+   example, the optimizer is improved in almost every release, but the
+   improvements are usually observed by users as simply faster queries.
+  </para>
+
+  <para>
+   A complete list of changes for each release can be obtained by
+   viewing the <link linkend="cvs">CVS</link> logs for each release.  The <ulink
+   url="http://archives.postgresql.org/pgsql-committers/">committers email
+   list</ulink> contains all source code changes as well.   There is also
+   a <ulink url="http://developer.postgresql.org/cvsweb.cgi/pgsql/">web
+   interface</ulink> that shows changes to specific files.
+   <!-- we need a file containing the CVS logs for each release, and something
+   like the SVN web interface that groups commits but has branches -->
+  </para>
+
+  <para>
+   The name appearing next to each item represents the major developer for
+   that item.  Of course all changes involve community discussion and patch
+   review so each item is truly a community effort.
+  </para>
+
+ </sect1>
+
  <sect1 id="release-8-3">
   <title>Release 8.3</title>
 
   <note>
    <title>Release date</title>
    <simpara>2007-12-??</simpara>
-   <para>CURRENT AS OF 2007-11-29</>
+   <para>CURRENT AS OF 2007-12-01</>
   </note>
 
   <sect2>
@@ -165,14 +196,15 @@ do it for earlier branch release files.
 
     <listitem>
      <para>
-      Distributed checkpoints prevent checkpoint I/O spikes
+      Checkpoint writes can be spread over a longer time period to smooth
+      the I/O spike during each checkpoint
      </para>
     </listitem>
 
     <listitem>
      <para>
       Heap-Only Tuples (<acronym>HOT</>) accelerate space reuse for
-      <command>UPDATE</>s
+      most <command>UPDATE</>s
      </para>
     </listitem>
 
@@ -216,6 +248,10 @@ do it for earlier branch release files.
     </listitem>
 
    </itemizedlist>
+
+   <para>
+    The above items are explained in more detail in the sections below.
+   </para>
 
   </sect2>
 
@@ -380,8 +416,8 @@ current_date &lt; 2017-11-17
 
      <listitem>
       <para>
-       <command>ALTER SEQUENCE</> no longer affects <function>currval()</>
-       (Tom)
+       <command>ALTER SEQUENCE</> no longer affects the sequence's
+       <function>currval()</> state (Tom)
       </para>
      </listitem>
 
@@ -547,6 +583,23 @@ current_date &lt; 2017-11-17
 
      <listitem>
       <para>
+       Disallow database encodings that are inconsistent with the server's
+       locale setting (Tom)
+      </para>
+
+      <para>
+       On most platforms, <literal>C</> locale is the only locale that
+       will work with any database encoding.  Other locale settings imply
+       a specific encoding and will misbehave if the database encoding
+       is something different.  (Typical symptoms include bogus textual
+       sort order and wrong results from <function>upper()</> or
+       <function>lower()</>.)  The server now rejects attempts to create
+       databases that have an incompatible encoding.
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
        Ensure that <function>chr()</function> cannot create
        invalidly-encoded values (Andrew)
       </para>
@@ -665,8 +718,9 @@ current_date &lt; 2017-11-17
 
      <listitem>
       <para>
-       Distributed checkpoints prevent checkpoint I/O spikes (Itagaki
-       Takahiro and Heikki Linnakangas)
+       Checkpoint writes can be spread over a longer time period to smooth
+       the I/O spike during each checkpoint (Itagaki Takahiro and Heikki
+       Linnakangas)
       </para>
 
       <para>
@@ -681,18 +735,18 @@ current_date &lt; 2017-11-17
 
      <listitem>
       <para>
-       Heap-Only Tuples (<acronym>HOT</>) accelerate space reuse for
+       Heap-Only Tuples (<acronym>HOT</>) accelerate space reuse for most
        <command>UPDATE</>s (Pavan Deolasee, with ideas from many others)
       </para>
 
       <para>
-       <command>UPDATE</>s and <command>DELETE</>s leave dead tuples behind,
-       as do failed <command>INSERT</>s.  Previously only
+       <command>UPDATE</>s and <command>DELETE</>s leave dead tuples
+       behind, as do failed <command>INSERT</>s.  Previously only
        <command>VACUUM</> could reclaim space taken by dead tuples. With
        <acronym>HOT</> dead tuple space can be reclaimed at the time of
-       <command>UPDATE</> or <command>INSERT</>.  This allows for more
-       consistent performance.  Also, <acronym>HOT</> avoids making duplicate
-       index entries when an <command>UPDATE</> changes no indexed columns.
+       <command>UPDATE</> or <command>INSERT</> if no changes are made to
+       indexed columns.  This allows for more consistent performance.
+       Also, <acronym>HOT</> avoids adding duplicate index entries.
       </para>
      </listitem>
 
@@ -735,6 +789,19 @@ current_date &lt; 2017-11-17
        vacuums to prevent transaction ID wraparound.
        Other performance
        improvements were also made that should improve concurrency.
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Avoid incrementing the command counter after a read-only command (Tom)
+      </para>
+
+      <para>
+       There was formerly a hard limit of 2<superscript>32</>
+       (4 billion) commands per transaction.  Now only commands that
+       actually changed the database count, so while this limit still
+       exists, it should be significantly less annoying.
       </para>
      </listitem>
 
@@ -811,6 +878,12 @@ current_date &lt; 2017-11-17
      <listitem>
       <para>
        Improve hash join performance for cases with many NULLs (Tom)
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Speed up operator lookup for cases with non-exact datatype matches (Tom)
       </para>
      </listitem>
 
@@ -902,6 +975,40 @@ current_date &lt; 2017-11-17
 
      <listitem>
       <para>
+       Guard against a very-low-probability data loss scenario by preventing
+       re-use of a deleted table's relfilenode until after the next
+       checkpoint (Heikki)
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Fix <command>CREATE CONSTRAINT TRIGGER</>
+       to convert old-style foreign key trigger definitions into regular
+       foreign key constraints (Tom)
+      </para>
+
+      <para>
+       This will ease porting of foreign key constraints carried forward from
+       pre-7.3 databases, if they were never converted using
+       <filename>contrib/adddepend</>.
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Fix <literal>DEFAULT NULL</> to override inherited defaults (Tom)
+      </para>
+
+      <para>
+       <literal>DEFAULT NULL</> was formerly considered a noise phrase, but it
+       should (and now does) override non-null defaults that would otherwise
+       be inherited from a parent table or domain.
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
        Add new encodings EUC_JIS_2004 and SHIFT_JIS_2004 (Tatsuo)
       </para>
 
@@ -914,7 +1021,12 @@ current_date &lt; 2017-11-17
       <para>
        Change server startup log message from <quote>database system is
        ready</quote> to <quote>database system is ready to accept
-       connections</quote>
+       connections</quote>, and adjust its timing
+      </para>
+
+      <para>
+       The message now appears only when the postmaster is really ready
+       to accept connections.
       </para>
      </listitem>
 
@@ -995,8 +1107,8 @@ current_date &lt; 2017-11-17
       </para>
 
       <para>
-       CSV-format log files can be loaded into a database table for subsequent
-       analysis.
+       CSV-format log files can easily be loaded into a database table for
+       subsequent analysis.
       </para>
      </listitem>
 
@@ -1066,7 +1178,7 @@ current_date &lt; 2017-11-17
 
      <listitem>
       <para>
-       Fix pgstats counting of live and dead tuples to recognize that
+       Fix statistical counting of live and dead tuples to recognize that
        committed and aborted transactions have different effects (Tom)
       </para>
      </listitem>
@@ -1240,15 +1352,27 @@ current_date &lt; 2017-11-17
        Create a general mechanism that supports casts to and from the
        standard string types (<type>TEXT</type>, <type>VARCHAR</type>,
        <type>CHAR</type>) for <emphasis>every</emphasis> datatype, by
-       invoking the datatype's I/O functions (Tom)  XXX examples?
+       invoking the datatype's I/O functions (Tom)
       </para>
 
       <para>
+       Previously, such casts were available only for types that had
+       specialized function(s) for the purpose.
        These new casts are assignment-only in the to-string direction,
        explicit-only in the other direction, and therefore should create no
-       surprising behavior.  Various
-       datatype-specific casting functions that were equivalent to this
-       behavior were removed.
+       surprising behavior.
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Allow <literal>UNION</> and related constructs to return a domain
+       type, when all inputs are of that domain type (Tom)
+      </para>
+
+      <para>
+       Formerly, the output would be considered to be of the domain's base
+       type.
       </para>
      </listitem>
 
@@ -1263,8 +1387,7 @@ current_date &lt; 2017-11-17
        comparisons, if the data types have compatible hash functions.
        Currently, cross-data-type hashing support exists for
        <type>smallint</type>/<type>integer</type>/<type>bigint</type>,
-       and for <type>float4</type>/<type>float8</type>.  XXX how do you do
-       hash aggregate two different data types
+       and for <type>float4</type>/<type>float8</type>.
       </para>
      </listitem>
 
@@ -1360,8 +1483,8 @@ current_date &lt; 2017-11-17
 
       <para>
        This allows a user-defined type to take a modifier, like
-       <type>ssnum(7)</>.  Previously only
-       predefined system data types could have modifiers.
+       <type>ssnum(7)</>.  Previously only built-in
+       data types could have modifiers.
       </para>
      </listitem>
 
@@ -1428,7 +1551,7 @@ current_date &lt; 2017-11-17
      <listitem>
       <para>
        Implement <command>CREATE TABLE LIKE ...  INCLUDING
-       INDEXES</command> (Trevor Hardcastle, Nikhil S, Neil)
+       INDEXES</command> (Trevor Hardcastle, Nikhil Sontakke, Neil)
       </para>
      </listitem>
 
@@ -1623,7 +1746,7 @@ current_date &lt; 2017-11-17
        snapshot that does not change during the transaction.  This function
        allows the snapshot to be discarded and a new snapshot loaded during
        the next statistics query. This is particularly useful for PL/PgSQL
-       functions which are confined to a single transaction.
+       functions, which are confined to a single transaction.
       </para>
      </listitem>
 
@@ -1771,6 +1894,17 @@ current_date &lt; 2017-11-17
 
      <listitem>
       <para>
+       Make qualification of variables with block labels work properly (Tom)
+      </para>
+
+      <para>
+       Formerly, outer-level block labels could unexpectedly interfere with
+       recognition of inner-level record or row references.
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
        Tighten requirements for <literal>FOR</literal> loop
        <literal>STEP</> values (Tom)
       </para>
@@ -1779,7 +1913,6 @@ current_date &lt; 2017-11-17
        Prevent non-positive <literal>STEP</> values, and handle
        loop overflows.
       </para>
-       
      </listitem>
 
      <listitem>
@@ -1800,7 +1933,7 @@ current_date &lt; 2017-11-17
       <para>
        Allow type-name arguments to PL/Perl
        <function>spi_prepare()</function> to be data type aliases in
-       addition to names in <literal>pg_type</literal> (Andrew)
+       addition to names found in <literal>pg_type</literal> (Andrew)
       </para>
      </listitem>
 
@@ -1808,14 +1941,14 @@ current_date &lt; 2017-11-17
       <para>
        Allow type-name arguments to PL/Python 
        <function>plpy.prepare()</function> to be data type aliases in
-       addition to names in <literal>pg_type</literal> (Andrew)
+       addition to names found in <literal>pg_type</literal> (Andrew)
       </para>
      </listitem>
 
      <listitem>
       <para>
        Allow type-name arguments to PL/Tcl <function>spi_prepare</> to 
-       be data type aliases in addition to names in
+       be data type aliases in addition to names found in
        <literal>pg_type</literal> (Andrew)
       </para>
      </listitem>
@@ -1920,6 +2053,13 @@ current_date &lt; 2017-11-17
       </para>
      </listitem>
 
+     <listitem>
+      <para>
+       Correctly detect and report errors while reading a <literal>-f</>
+       input file (Peter)
+      </para>
+     </listitem>
+
     </itemizedlist>
 
    </sect3>
@@ -1993,19 +2133,21 @@ current_date &lt; 2017-11-17
 
      <listitem>
       <para>
-       Add <application>pg_ctl</> timeout parameter (Bruce)
+       Add a <literal>-t</> (timeout) parameter to <application>pg_ctl</>
+       (Bruce)
       </para>
 
       <para>
        This controls how long <application>pg_ctl</> will wait when waiting
-       for server startup or shutdown.
+       for server startup or shutdown.  Formerly the timeout was hard-wired
+       as 60 seconds.
       </para>
      </listitem>
 
      <listitem>
       <para>
-       Add <application>pg_ctl</> option to control generation
-       of core dumps (Andrew)
+       Add a <application>pg_ctl</> option to control generation
+       of server core dumps (Andrew)
       </para>
      </listitem>
 
@@ -2075,16 +2217,30 @@ current_date &lt; 2017-11-17
 
      <listitem>
       <para>
-       Add <function>PQconnectionUsedPassword()</function> that returns
-       true if the server required a password (Joe Conway)
+       Add <function>PQconnectionNeedsPassword()</function> that returns
+       true if the server required a password but none was supplied
+       (Joe Conway, Tom)
       </para>
 
       <para>
        If this returns true after a failed connection attempt, a client
        application should prompt the user for a password.  In the past
-       applications have had to check for a specific error messages to
+       applications have had to check for a specific error message string to
        decide whether a password is needed; that approach is now
        deprecated.
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Add <function>PQconnectionUsedPassword()</function> that returns
+       true if the supplied password was actually used
+       (Joe Conway, Tom)
+      </para>
+
+      <para>
+       This is useful in some security contexts where it is important
+       to know whether a user-supplied password is actually valid.
       </para>
      </listitem>
 
@@ -2120,7 +2276,7 @@ current_date &lt; 2017-11-17
 
      <listitem>
       <para>
-       Make ecpg libraries export only necessary API symbols (Michael)
+       Make the ecpg libraries export only necessary API symbols (Michael)
       </para>
      </listitem>
 
@@ -2149,6 +2305,13 @@ current_date &lt; 2017-11-17
 
      <listitem>
       <para>
+       Drastically reduce postmaster's memory usage when it has many child
+       processes (Magnus)
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
        Allow regression tests to be started by an administrative
        user (Magnus)
       </para>
@@ -2170,6 +2333,17 @@ current_date &lt; 2017-11-17
 
      <listitem>
       <para>
+       Add cursor-related functionality in SPI (Pavel Stehule)
+      </para>
+
+      <para>
+       Allow access to the cursor-related planning options, and add
+       <command>FETCH</>/<command>MOVE</> routines.
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
        Allow execution of cursor commands through
        <function>SPI_execute</function> (Tom)
       </para>
@@ -2182,24 +2356,13 @@ current_date &lt; 2017-11-17
 
      <listitem>
       <para>
-       SPI plan pointers are now <literal>SPIPlanPtr</> instead of
+       SPI plan pointers are now declared as <literal>SPIPlanPtr</> instead of
        <literal>void *</> (Tom)
       </para>
 
       <para>
        This does not break application code, but switching is
        recommended to help catch simple programming mistakes.
-      </para>
-     </listitem>
-
-     <listitem>
-      <para>
-       Add cursor-related functionality in SPI (Pavel Stehule)
-      </para>
-
-      <para>
-       Allow access to the cursor-related planning options, and add
-       <command>FETCH</>/<command>MOVE</> routines.
       </para>
      </listitem>
 
@@ -2213,16 +2376,16 @@ current_date &lt; 2017-11-17
 
      <listitem>
       <para>
-       Add <application>configure</> <literal>--enable-profiling</>
+       Add <application>configure</> option <literal>--enable-profiling</>
        to enable code profiling (works only with <application>gcc</>)
-       (Korry Douglas and Nikhil S)
+       (Korry Douglas and Nikhil Sontakke)
       </para>
      </listitem>
 
      <listitem>
       <para>
-       Add <application>configure</> <literal>--with-system-tzdata</>
-       to use the operating system time zone database (Peter)
+       Add <application>configure</> option <literal>--with-system-tzdata</>
+       to use the operating system's time zone database (Peter)
       </para>
      </listitem>
 
@@ -2241,8 +2404,8 @@ current_date &lt; 2017-11-17
       </para>
 
       <para>
-       Documentions builds will now build indexes by default, unless
-       <literal>draft</> is used.
+       Unless <literal>draft</> is used, the documentation build will
+       now be repeated if necessary to ensure the index is up-to-date.
       </para>
      </listitem>
 
@@ -2311,7 +2474,8 @@ current_date &lt; 2017-11-17
 
      <listitem>
       <para>
-       Add tas() support for Renesas' M32R processor (Kazuhiro Inaoka)
+       Add <function>tas()</> support for Renesas' M32R processor
+       (Kazuhiro Inaoka)
       </para>
      </listitem>
 
@@ -2393,6 +2557,16 @@ current_date &lt; 2017-11-17
        Use <application>configure</>
        <literal>--with-ossp-uuid</literal> to activate. This takes
        advantage of the new <type>UUID</type> builtin type.
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Add <filename>contrib/dict_int</filename>,
+       <filename>contrib/dict_xsyn</filename>, and
+       <filename>contrib/test_parser</filename> modules to provide
+       sample add-on text search dictionary templates and parsers
+       (Sergey Karpov)
       </para>
      </listitem>
 
@@ -4710,7 +4884,7 @@ current_date &lt; 2017-11-17
       </para>
 
       <para>
-       The new operators are <literal>&</> (and), <literal>|</>
+       The new operators are <literal>&amp;</> (and), <literal>|</>
        (or), <literal>~</> (not), <type>inet</> <literal>+</> <type>int8</>,
        <type>inet</> <literal>-</> <type>int8</>, and
        <type>inet</> <literal>-</> <type>inet</>.
@@ -8756,8 +8930,8 @@ psql -t -f fixseq.sql db1 | psql -e db1
 
      <listitem>
       <para>
-       Remove the <literal>&lt;&lt</>, <literal>&gt;&gt;</>,
-       <literal>&amp;&lt</>, and <literal>&amp;&gt;</> operators from
+       Remove the <literal>&lt;&lt;</>, <literal>&gt;&gt;</>,
+       <literal>&amp;&lt;</>, and <literal>&amp;&gt;</> operators from
        <filename>/contrib/cube</>
       </para>
       <para>
@@ -10125,7 +10299,7 @@ typedefs (Michael)</para></listitem>
      <listitem>
       <para>
        This is the first <productname>PostgreSQL</productname> release
-       to run natively on <trademark class=registered>Microsoft Windows</> as
+       to run natively on <trademark class="registered">Microsoft Windows</> as
        a server. It can run as a <productname>Windows</> service. This
        release supports NT-based Windows releases like
        <productname>Windows 2000 SP4</>, <productname>Windows XP</>, and
@@ -19064,7 +19238,7 @@ Copy pg_ident.conf.sample into /lib directory in install (Bruce)
 Add SJIS UDC (NEC selection IBM kanji) support (Eiji Tokuya)
 Fix too long syslog message (Tatsuo)
 Fix problem with quoted indexes that are too long (Tom)
-JDBC ResultSet.getTimestamp() fix (Gregory Krasnow & Floyd Marinescu)
+JDBC ResultSet.getTimestamp() fix (Gregory Krasnow &amp; Floyd Marinescu)
 ecpg changes (Michael)
     </programlisting>
    </para>
@@ -20916,7 +21090,7 @@ Source Tree Changes
 Add new html development tools, and flow chart in /tools/backend
 Fix for SCO compiles
 Stratus computer port Robert Gillies
-Added support for shlib for BSD44_derived & i386_solaris
+Added support for shlib for BSD44_derived &amp; i386_solaris
 Make configure more automated(Brook)
 Add script to check regression test results
 Break parser functions into smaller files, group together(Bruce)
@@ -21102,7 +21276,7 @@ Enhancements
 ------------
 Default genetic optimizer GEQO parameter is now 8(Bruce)
 Allow use parameters in target list having aggregates in functions(Vadim)
-Added JDBC driver as an interface(Adrian & Peter)
+Added JDBC driver as an interface(Adrian &amp; Peter)
 pg_password utility
 Return number of rows inserted/affected by INSERT/UPDATE/DELETE etc.(Vadim)
 Triggers implemented with CREATE TRIGGER (SQL3)(Vadim)
@@ -21113,7 +21287,7 @@ Include reserved words for string handling, outer joins, and unions(Thomas)
 Implement extended comments ("/* ... */") using exclusive states(Thomas)
 Add "//" single-line comments(Bruce)
 Remove some restrictions on characters in operator names(Thomas)
-DEFAULT and CONSTRAINT for tables implemented (SQL92)(Vadim & Thomas)
+DEFAULT and CONSTRAINT for tables implemented (SQL92)(Vadim &amp; Thomas)
 Add text concatenation operator and function (SQL92)(Thomas)
 Support WITH TIME ZONE syntax (SQL92)(Thomas)
 Support INTERVAL unit TO unit syntax (SQL92)(Thomas)
@@ -21135,7 +21309,7 @@ Replace distance operator "&lt;===&gt;" with "&lt;-&gt;"(Thomas)
 Replace "above" operator "!^" with "&gt;^" and "below" operator "!|" with "&lt;^"(Thomas)
 Add routines for text trimming on both ends, substring, and string position(Thomas)
 Added conversion routines circle(box) and poly(circle)(Thomas)
-Allow internal sorts to be stored in memory rather than in files(Bruce & Vadim)
+Allow internal sorts to be stored in memory rather than in files(Bruce &amp; Vadim)
 Allow functions and operators on internally-identical types to succeed(Bruce)
 Speed up backend start-up after profiling analysis(Bruce)
 Inline frequently called functions for performance(Bruce)
@@ -21168,7 +21342,7 @@ new interfaces directory(Marc)
 Replace fopen() calls with calls to fd.c functions(Bruce)
 Make functions static where possible(Bruce)
 enclose unused functions in #ifdef NOT_USED(Bruce)
-Remove call to difftime() in timestamp support to fix SunOS(Bruce & Thomas)
+Remove call to difftime() in timestamp support to fix SunOS(Bruce &amp; Thomas)
 Changes for Digital Unix
 Portability fix for pg_dumpall(Bruce)
 Rename pg_attribute.attnvals to attdispersion(Bruce)
@@ -21176,12 +21350,12 @@ Rename pg_attribute.attnvals to attdispersion(Bruce)
 "built-in" manual page now "pgbuiltin"(Bruce)
 "drop" manual page now "drop_table"(Bruce)
 Add "create_trigger", "drop_trigger" manual pages(Thomas)
-Add constraints regression test(Vadim & Thomas)
+Add constraints regression test(Vadim &amp; Thomas)
 Add comments syntax regression test(Thomas)
 Add PGINDENT and support program(Bruce)
 Massive commit to run PGINDENT on all *.c and *.h files(Bruce)
 Files moved to /src/tools directory(Bruce)
-SPI and Trigger programming guides (Vadim & D'Arcy)
+SPI and Trigger programming guides (Vadim &amp; D'Arcy)
 </programlisting>
 </para>
 </sect2>
@@ -21488,7 +21662,7 @@ Allow libpq to distinguish between text value '' and null(Bruce)
 Allow non-postgres users with createdb privs to destroydb's
 Allow restriction on who can create C functions(Bryan)
 Allow restriction on who can do backend COPY(Bryan)
-Can shrink tables, pg_time and pg_log(Vadim & Erich)
+Can shrink tables, pg_time and pg_log(Vadim &amp; Erich)
 Change debug level 2 to print queries only, changed debug heading layout(Bruce)
 Change default decimal constant representation from float4 to float8(Bruce)
 European date format now set when postmaster is started

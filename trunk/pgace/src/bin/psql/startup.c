@@ -3,7 +3,7 @@
  *
  * Copyright (c) 2000-2007, PostgreSQL Global Development Group
  *
- * $PostgreSQL: pgsql/src/bin/psql/startup.c,v 1.141 2007/07/08 19:07:38 tgl Exp $
+ * $PostgreSQL: pgsql/src/bin/psql/startup.c,v 1.145 2007/12/12 21:41:47 tgl Exp $
  */
 #include "postgres_fe.h"
 
@@ -104,8 +104,6 @@ main(int argc, char *argv[])
 {
 	struct adhoc_opts options;
 	int			successResult;
-
-	char	   *username = NULL;
 	char	   *password = NULL;
 	char	   *password_prompt = NULL;
 	bool		new_pass;
@@ -142,6 +140,7 @@ main(int argc, char *argv[])
 	pset.cur_cmd_source = stdin;
 	pset.cur_cmd_interactive = false;
 
+	/* We rely on unmentioned fields of pset.popt to start out 0/false/NULL */
 	pset.popt.topt.format = PRINT_ALIGNED;
 	pset.popt.topt.border = 1;
 	pset.popt.topt.pager = 1;
@@ -176,26 +175,14 @@ main(int argc, char *argv[])
 	if (!pset.popt.topt.recordSep)
 		pset.popt.topt.recordSep = pg_strdup(DEFAULT_RECORD_SEP);
 
-	if (options.username)
-	{
-		/*
-		 * The \001 is a hack to support the deprecated -u option which issues
-		 * a username prompt. The recommended option is -U followed by the
-		 * name on the command line.
-		 */
-		if (strcmp(options.username, "\001") == 0)
-			username = simple_prompt("User name: ", 100, true);
-		else
-			username = pg_strdup(options.username);
-	}
-
 	if (options.username == NULL)
 		password_prompt = pg_strdup(_("Password: "));
 	else
 	{
 		password_prompt = malloc(strlen(_("Password for user %s: ")) - 2 +
 								 strlen(options.username) + 1);
-		sprintf(password_prompt, _("Password for user %s: "), options.username);
+		sprintf(password_prompt, _("Password for user %s: "),
+				options.username);
 	}
 
 	if (pset.getPassword)
@@ -208,10 +195,10 @@ main(int argc, char *argv[])
 		pset.db = PQsetdbLogin(options.host, options.port, NULL, NULL,
 					options.action == ACT_LIST_DB && options.dbname == NULL ?
 							   "postgres" : options.dbname,
-							   username, password);
+							   options.username, password);
 
 		if (PQstatus(pset.db) == CONNECTION_BAD &&
-			PQconnectionUsedPassword(pset.db) &&
+			PQconnectionNeedsPassword(pset.db) &&
 			password == NULL &&
 			!feof(stdin))
 		{
@@ -221,7 +208,6 @@ main(int argc, char *argv[])
 		}
 	} while (new_pass);
 
-	free(username);
 	free(password);
 	free(password_prompt);
 
@@ -446,11 +432,10 @@ parse_psql_options(int argc, char *argv[], struct adhoc_opts * options)
 	extern char *optarg;
 	extern int	optind;
 	int			c;
-	bool		used_old_u_option = false;
 
 	memset(options, 0, sizeof *options);
 
-	while ((c = getopt_long(argc, argv, "aAc:d:eEf:F:h:HlL:no:p:P:qR:sStT:uU:v:VWxX?1",
+	while ((c = getopt_long(argc, argv, "aAc:d:eEf:F:h:HlL:no:p:P:qR:sStT:U:v:VWxX?1",
 							long_options, &optindex)) != -1)
 	{
 		switch (c)
@@ -551,13 +536,6 @@ parse_psql_options(int argc, char *argv[], struct adhoc_opts * options)
 			case 'T':
 				pset.popt.topt.tableAttr = pg_strdup(optarg);
 				break;
-			case 'u':
-				pset.getPassword = true;
-				options->username = "\001";		/* hopefully nobody has that
-												 * username */
-				/* this option is out */
-				used_old_u_option = true;
-				break;
 			case 'U':
 				options->username = optarg;
 				break;
@@ -644,10 +622,6 @@ parse_psql_options(int argc, char *argv[], struct adhoc_opts * options)
 
 		optind++;
 	}
-
-	if (used_old_u_option && !pset.quiet)
-		fprintf(stderr, _("%s: Warning: The -u option is deprecated. Use -U.\n"), pset.progname);
-
 }
 
 
