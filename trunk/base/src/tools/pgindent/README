@@ -3,22 +3,24 @@ files.
 
 To use pgindent:
 
-1) Build the source tree with _debug_ symbols and install
+1) Build the source tree with _debug_ symbols and all possible configure options
 
-2) Get the list of _current_ typedefs by running:
+2) Install to /usr/local/pgsql
 
-	src/tools/find_typedef /usr/local/pgsql/bin /usr/local/pgsql/lib
+3) Install all /contrib modules
 
-3) Add the typedef output to the pgindent script.
+4) Save a list of typedefs by running:
 
-4) Run 'gmake distclean' from the top of the source tree to remove any
+	src/tools/find_typedef /usr/local/pgsql/bin /usr/local/pgsql/lib > /tmp/pgtypedefs
+
+5) Run 'gmake distclean' from the top of the source tree to remove any
    derived C files.
 
-5) From the top of the source tree, run:
+6) From the top of the source tree, run:
 
 	find . -name '*.[ch]' -type f -print |
 	egrep -v '/s_lock.h|/ecpg/test/expected/|/snowball/libstemmer/' |
-	xargs -n100 pgindent
+	xargs -n100 pgindent /tmp/pgtypedefs
 
 ---------------------------------------------------------------------------
 
