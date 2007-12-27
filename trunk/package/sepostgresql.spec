@@ -27,7 +27,7 @@ Source5: sepostgresql.8
 Patch0: sepostgresql-pgace-%%__base_postgresql_version__%%-%%__sepgsql_major_version__%%.patch
 Patch1: sepostgresql-sepgsql-%%__base_postgresql_version__%%-%%__sepgsql_major_version__%%.patch
 Patch2: sepostgresql-fedora-prefix.patch
-BuildRequires: perl glibc-devel bison flex autoconf readline-devel zlib-devel >= 1.0.4
+BuildRequires: perl glibc-devel bison flex readline-devel zlib-devel >= 1.0.4
 Buildrequires: checkpolicy libselinux-devel >= 2.0.13 selinux-policy-devel selinux-policy >= 3.0.6
 Requires(pre): shadow-utils
 Requires(post): policycoreutils /sbin/chkconfig
@@ -67,7 +67,6 @@ done
 popd
 
 # build SE-PostgreSQL
-autoconf
 %configure      --disable-rpath                 \
                 --enable-selinux                \
 %if %{defined sepgextension}
