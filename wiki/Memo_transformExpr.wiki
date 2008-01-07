@@ -1,0 +1,189 @@
+== transformExpr() の解析 ==
+
+*背景*
+  SE-PostgreSQLが入力値をチェックする際、transformExpr()を通過したノード型(Primenode)を理解できる必要がある。どのようなノード型が入ってくるかは、PostgreSQLのバージョン依存であるため、ベースバージョンのアップデートに伴い、SE-PostgreSQL側も対応を強化する必要がある。
+  このメモは、最初のバージョンである 8.2.5-1.0 以降に追加されたPrimenodeをトラッキングするためのものである。
+
+=== 型キャスト ===
+  * 以下の Primenode 群は、適切な型へと型キャストを受ける場合がある。型キャストを行なうのは typecast_expression() → coerce_to_target_type() であり、入力された Primenode は以下の型に変換される可能性がある。また、変換されずに As-Is で出力される可能性、型のパラメータのみが変換されて出力される可能性もある。
+  * 関数の引数を再帰的に transformExpr() で呼び出す事もあり、
+  * T_CoerceToDomain型
+  * T_RelabelType型
+  * T_RowExpr型
+  * T_ConvertRowtypeExpr型
+  * T_FuncExpr型
+  * T_ArrayCoerceExpr型
+  * T_CoerceViaIO型
+
+=== T_ColumnRef ===
+  * postgresql-8.2.x に存在
+  * transformColumnRef() 関数による変換で、T_Var型、T_FuncExpr型、T_Aggref型、T_Var型、T_FieldSelect型を返却する可能性がある。
+
+=== T_ParamRef ===
+  * postgresql-8.2.x に存在
+  * transformParamRef() 関数による変換で、T_Param型に変換される。
+
+=== T_A_Const ===
+  * postgresql-8.2.x に存在
+  * make_const()関数による変換で T_Const 型に変換される。型キャストを行う場合がある。
+
+=== T_A_Indirection ===
+  * postgresql-8.2.x に存在
+  * transformIndirection()関数による変換で、要素の A_Indices リストは T_ArrayRef型、T_FuncExpr型、T_Aggref型、T_Var型、T_FieldSelect型を返却する可能性がある。
+
+=== T_TypeCast ===
+  * postgresql-8.2.x に存在
+  * 必要に応じて型キャストを噛ませる。
+
+=== T_A_Expr ===
+  * postgresql-8.2.x に存在
+  * AEXPR_OPに対して、T_NullTest型、T_SubLink型、T_OpExpr型、T_Bool型、T_RowCompareExpr型を返す
+  * AEXPR_AND, AEXPR_OR, AEXPR_NOTに対して T_BoolExpr型を返す。
+  * AEXPR_OP_ANY, AEXPR_OP_ALL に対して T_ScalarArrayOpExpr型を返す。
+  * AEXPR_DISTINCT に対して T_DistinctExpr型を返す。
+  * AEXPR_NULLIF に対して T_NullIfExpr型を返す。
+  * AEXPR_OF に対して T_Const型を返す。
+  * AEXPR_IN に対して T_OpExpr型、T_Bool型、T_RowCompareExpr型、T_ScalarArrayOpExpr型を返す。
+
+=== T_FuncCall ===
+  * postgresql-8.2.x に存在
+  * transformFuncCall()関数で、T_FuncExpr型への変換を行なう。
+
+=== T_SubLink ===
+  * postgresql-8.2.x に存在
+  * transformSubLink()関数で、T_SubLink副問合せのparse/analyzeを行なう。型変換は行なわず、T_SubLink型がそのまま出力される。
+
+=== T_CaseExpr ===
+  * postgresql-8.2.x に存在
+  * transformCaseExpr()関数による変換で、T_CaseExpr型に変換される。条件句は各々T_CaseWhen型とT_BoolExpr型の組み合わせ、T_Const型(default値)に変換される。
+
+=== T_ArrayExpr ===
+  * postgresql-8.2.x に存在
+  * transformArrayExpr()関数による変換で、T_ArrayExpr型に変換される。
+
+=== T_RowExpr ===
+  * postgresql-8.2.x に存在
+  * transformRowExpr()関数で、テーブル名.* や間接参照の解決を行なう。T_RowExpr型を返す。
+
+=== T_CoalesceExpr ===
+  * postgresql-8.2.x に存在
+  * COALESCE()関数 ... 引数リストの最初のNULLでない値を返す。
+  * transformCoalesceExpr()関数で、引数リストの型チェックと型キャストの挿入を行なう。自身の型は変換しない。
+
+=== T_MinMaxExpr ===
+  * postgresql-8.2.x に存在
+  * transformMinMaxExpr()関数で、引数リストの型チェックと型キャストの挿入を行なう。自身の型は変換しない。
+
+=== T_XmlExpr ===
+  * postgresql-8.3.x で追加
+  * transformXmlExpr()による変換で、named_args と args に transformExpr() 処理を行なう。自身の型は変換しない。
+
+=== T_XmlSerialize ===
+  * postgresql-8.3.x で追加
+  * transformXmlSerialize()による変換で、T_XmlExpr型に変換される。型キャストを行う場合がある。
+
+=== T_NullTest ===
+  * postgresql-8.2.x に存在
+  * 引数リストをtransferExpr()する。自身の型は変換しない。
+
+=== T_BooleanTest ===
+  * postgresql-8.3.x で追加
+  * transformBooleanTest()関数で、引数の型キャストを行なう。自身の型は変換しない。
+
+=== T_CurrentOfExpr ===
+  * postgresql-8.3.x で追加
+  * transformCurrentOfExpr()関数で、CurrentOfExpr.cvarno に RTE番号を挿入。自身の型は変換しない。
+
+=== T_Var ===
+  * postgresql-8.2.x に存在
+  * 単純なカラムの参照
+  * transformExpr()による変換はなし
+
+=== T_Const ===
+  * postgresql-8.2.x に存在
+  * 定数値の表現
+  * transformExpr()による変換はなし
+
+=== T_Param ===
+  * postgresql-8.2.x に存在
+  * パラメータ付きSQLでの、パラメータ参照（$1, $2, ...）
+  * transformExpr()による変換はなし
+
+=== T_Aggref ===
+  * postgresql-8.2.x に存在
+  * transformExpr()による変換はなし
+
+=== T_ArrayRef ===
+  * postgresql-8.2.x に存在
+  * transformExpr()による変換はなし
+
+=== T_FuncExpr ===
+  * postgresql-8.2.x に存在
+  * 関数呼び出し。
+  * transformExpr()による変換はなし
+
+=== T_OpExpr ===
+  * postgresql-8.2.x に存在
+  * transformExpr()による変換はなし
+
+=== T_DistinctExpr ===
+  * postgresql-8.2.x に存在
+  * x IS [NOT] DISTINCT FROM y 演算子
+  * transformExpr()による変換はなし
+
+=== T_ScalarArrayOpExpr ===
+  * postgresql-8.2.x に存在
+  * transformExpr()による変換はなし
+
+=== T_NullIfExpr ===
+  * postgresql-8.2.x に存在
+  * transformExpr()による変換はなし
+
+=== T_BoolExpr ===
+  * postgresql-8.2.x に存在
+  * transformExpr()による変換はなし
+
+=== T_FieldSelect ===
+  * postgresql-8.2.x に存在
+  * transformExpr()による変換はなし
+
+=== T_FieldStore ===
+  * postgresql-8.2.x に存在
+  * 単純なカラムの参照
+  * transformExpr()による変換はなし
+
+=== T_RelabelType ===
+  * postgresql-8.2.x に存在
+  * 物理的なフォーマットの変換を伴わない型変換（例：INT2→INT4など）
+  * transformExpr()による変換はなし
+
+=== T_CoerceViaIO ===
+  * postgresql-8.3.x から登場
+  * transformExpr()による変換はなし
+
+=== T_ArrayCoerceExpr ===
+  * postgresql-8.3.x から登場
+  * transformExpr()による変換はなし
+
+=== T_ConvertRowtypeExpr ===
+  * postgresql-8.2.x に存在
+  * transformExpr()による変換はなし
+
+=== T_CaseTestExpr ===
+  * postgresql-8.2.x に存在
+  * transformExpr()による変換はなし
+
+=== T_CoerceToDomain ===
+  * postgresql-8.2.x に存在
+  * transformExpr()による変換はなし
+
+=== T_CoerceToDomainValue ===
+  * postgresql-8.2.x に存在
+  * transformExpr()による変換はなし
+
+=== T_SetToDefault ===
+  * postgresql-8.2.x に存在
+  * transformExpr()による変換はなし
+
+=== これ以外の型 ===
+  * transformExpr()関数でエラーとなる
