@@ -6,12 +6,12 @@
  * There is hardly anything left of Paul Brown's original implementation...
  *
  *
- * Portions Copyright (c) 1996-2007, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994-5, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/commands/cluster.c,v 1.165 2007/11/15 21:14:33 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/backend/commands/cluster.c,v 1.167 2008/01/02 23:34:42 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -30,6 +30,7 @@
 #include "catalog/namespace.h"
 #include "catalog/toasting.h"
 #include "commands/cluster.h"
+#include "commands/trigger.h"
 #include "commands/vacuum.h"
 #include "miscadmin.h"
 #include "storage/procarray.h"
@@ -456,6 +457,17 @@ check_index_is_clusterable(Relation OldHeap, Oid indexOid, bool recheck)
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 			   errmsg("cannot cluster temporary tables of other sessions")));
+
+	/*
+	 * Also check for pending AFTER trigger events on the relation.  We can't
+	 * just leave those be, since they will try to fetch tuples that the
+	 * CLUSTER has moved to new TIDs.
+	 */
+	if (AfterTriggerPendingOnRel(RelationGetRelid(OldHeap)))
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_IN_USE),
+				 errmsg("cannot cluster table \"%s\" because it has pending trigger events",
+						RelationGetRelationName(OldHeap))));
 
 	/* Drop relcache refcnt on OldIndex, but keep lock */
 	index_close(OldIndex, NoLock);

@@ -32,12 +32,12 @@
  * and munge the system catalogs of the new database.
  *
  *
- * Portions Copyright (c) 1996-2007, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/commands/tablespace.c,v 1.51 2007/11/15 21:14:34 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/backend/commands/tablespace.c,v 1.53 2008/01/01 19:45:49 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -923,11 +923,10 @@ assign_default_tablespace(const char *newval, bool doit, GucSource source)
 		if (newval[0] != '\0' &&
 			!OidIsValid(get_tablespace_oid(newval)))
 		{
-			if (source >= PGC_S_INTERACTIVE)
-				ereport(ERROR,
-						(errcode(ERRCODE_UNDEFINED_OBJECT),
-						 errmsg("tablespace \"%s\" does not exist",
-								newval)));
+			ereport(GUC_complaint_elevel(source),
+					(errcode(ERRCODE_UNDEFINED_OBJECT),
+					 errmsg("tablespace \"%s\" does not exist",
+							newval)));
 			return NULL;
 		}
 	}
