@@ -1,4 +1,4 @@
-<!-- $PostgreSQL: pgsql/doc/src/sgml/runtime.sgml,v 1.397 2007/12/25 17:06:52 momjian Exp $ -->
+<!-- $PostgreSQL: pgsql/doc/src/sgml/runtime.sgml,v 1.401 2007/12/29 04:59:27 momjian Exp $ -->
 
 <chapter Id="runtime">
  <title>Operating System Environment</title>
@@ -1606,6 +1606,17 @@ $ <userinput>kill -INT `head -1 /usr/local/pgsql/data/postmaster.pid`</userinput
    the database server by modifying <xref linkend="guc-ssl-ciphers"> in
    <filename>postgresql.conf</>.
   </para>
+
+  <note>
+   <para>
+    It is possible to have authentication without encryption overhead by
+    using <literal>NULL-SHA</> or <literal>NULL-MD5</> ciphers.  However,
+    a man-in-the-middle could read and pass communications between client
+    and server.  Also, encryption overhead is minimal compared to the
+    overhead of authentication.  For these reasons NULL ciphers are not
+    recommended.
+   </para>
+  </note>
 
   <para>
    To start in <acronym>SSL</> mode, the files <filename>server.crt</>

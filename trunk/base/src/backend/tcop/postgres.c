@@ -3,12 +3,12 @@
  * postgres.c
  *	  POSTGRES C Backend Interface
  *
- * Portions Copyright (c) 1996-2007, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/tcop/postgres.c,v 1.539 2007/12/06 14:32:54 alvherre Exp $
+ *	  $PostgreSQL: pgsql/src/backend/tcop/postgres.c,v 1.541 2008/01/01 19:45:52 momjian Exp $
  *
  * NOTES
  *	  this is the "main" module of the postgres backend and
@@ -2644,7 +2644,7 @@ assign_max_stack_depth(int newval, bool doit, GucSource source)
 
 	if (stack_rlimit > 0 && newval_bytes > stack_rlimit - STACK_DEPTH_SLOP)
 	{
-		ereport((source >= PGC_S_INTERACTIVE) ? ERROR : LOG,
+		ereport(GUC_complaint_elevel(source),
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 				 errmsg("\"max_stack_depth\" must not exceed %ldkB",
 						(stack_rlimit - STACK_DEPTH_SLOP) / 1024L),
