@@ -28,13 +28,13 @@ Patch0: sepostgresql-pgace-%%__base_postgresql_version__%%-%%__sepgsql_major_ver
 Patch1: sepostgresql-sepgsql-%%__base_postgresql_version__%%-%%__sepgsql_major_version__%%.patch
 Patch2: sepostgresql-fedora-prefix.patch
 BuildRequires: perl glibc-devel bison flex readline-devel zlib-devel >= 1.0.4
-Buildrequires: checkpolicy libselinux-devel >= 2.0.13 selinux-policy-devel selinux-policy >= 3.0.6
+Buildrequires: checkpolicy libselinux-devel >= 2.0.43 selinux-policy-devel selinux-policy >= 3.0.6
 Requires(pre): shadow-utils
 Requires(post): policycoreutils /sbin/chkconfig
 Requires(preun): /sbin/chkconfig /sbin/service
 Requires(postun): policycoreutils
 # Requires: postgresql-server = %{version}
-Requires: policycoreutils >= 2.0.16 libselinux >= 2.0.13 selinux-policy >= 3.0.6
+Requires: policycoreutils >= 2.0.16 libselinux >= 2.0.43 selinux-policy >= 3.0.6
 
 %description
 Security Enhanced PostgreSQL is an extension of PostgreSQL
