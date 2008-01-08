@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/catalog/index.c,v 1.274 2006/10/04 00:29:50 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/backend/catalog/index.c,v 1.274.2.2 2008/01/03 21:23:45 tgl Exp $
  *
  *
  * INTERFACE ROUTINES
@@ -40,6 +40,7 @@
 #include "executor/executor.h"
 #include "miscadmin.h"
 #include "optimizer/clauses.h"
+#include "optimizer/var.h"
 #include "parser/parse_expr.h"
 #include "storage/procarray.h"
 #include "storage/smgr.h"
@@ -690,6 +691,8 @@ index_create(Oid heapRelationId,
 		}
 		else
 		{
+			bool	have_simple_col = false;
+
 			/* Create auto dependencies on simply-referenced columns */
 			for (i = 0; i < indexInfo->ii_NumIndexAttrs; i++)
 			{
@@ -700,7 +703,28 @@ index_create(Oid heapRelationId,
 					referenced.objectSubId = indexInfo->ii_KeyAttrNumbers[i];
 
 					recordDependencyOn(&myself, &referenced, DEPENDENCY_AUTO);
+
+					have_simple_col = true;
 				}
+			}
+
+			/*
+			 * It's possible for an index to not depend on any columns of
+			 * the table at all, in which case we need to give it a dependency
+			 * on the table as a whole; else it won't get dropped when the
+			 * table is dropped.  This edge case is not totally useless;
+			 * for example, a unique index on a constant expression can serve
+			 * to prevent a table from containing more than one row.
+			 */
+			if (!have_simple_col &&
+				!contain_vars_of_level((Node *) indexInfo->ii_Expressions, 0) &&
+				!contain_vars_of_level((Node *) indexInfo->ii_Predicate, 0))
+			{
+				referenced.classId = RelationRelationId;
+				referenced.objectId = heapRelationId;
+				referenced.objectSubId = 0;
+
+				recordDependencyOn(&myself, &referenced, DEPENDENCY_AUTO);
 			}
 		}
 
@@ -1267,6 +1291,8 @@ index_build(Relation heapRelation,
 {
 	RegProcedure procedure;
 	IndexBuildResult *stats;
+	Oid			save_userid;
+	bool		save_secdefcxt;
 
 	/*
 	 * sanity checks
@@ -1278,6 +1304,13 @@ index_build(Relation heapRelation,
 	Assert(RegProcedureIsValid(procedure));
 
 	/*
+	 * Switch to the table owner's userid, so that any index functions are
+	 * run as that user.
+	 */
+	GetUserIdAndContext(&save_userid, &save_secdefcxt);
+	SetUserIdAndContext(heapRelation->rd_rel->relowner, true);
+
+	/*
 	 * Call the access method's build procedure
 	 */
 	stats = (IndexBuildResult *)
@@ -1286,6 +1319,9 @@ index_build(Relation heapRelation,
 										 PointerGetDatum(indexRelation),
 										 PointerGetDatum(indexInfo)));
 	Assert(PointerIsValid(stats));
+
+	/* Restore userid */
+	SetUserIdAndContext(save_userid, save_secdefcxt);
 
 	/*
 	 * Update heap and index pg_class rows
@@ -1614,6 +1650,8 @@ validate_index(Oid heapId, Oid indexId, Snapshot snapshot)
 	IndexInfo  *indexInfo;
 	IndexVacuumInfo ivinfo;
 	v_i_state	state;
+	Oid			save_userid;
+	bool		save_secdefcxt;
 
 	/* Open and lock the parent heap relation */
 	heapRelation = heap_open(heapId, ShareUpdateExclusiveLock);
@@ -1629,6 +1667,13 @@ validate_index(Oid heapId, Oid indexId, Snapshot snapshot)
 
 	/* mark build is concurrent just for consistency */
 	indexInfo->ii_Concurrent = true;
+
+	/*
+	 * Switch to the table owner's userid, so that any index functions are
+	 * run as that user.
+	 */
+	GetUserIdAndContext(&save_userid, &save_secdefcxt);
+	SetUserIdAndContext(heapRelation->rd_rel->relowner, true);
 
 	/*
 	 * Scan the index and gather up all the TIDs into a tuplesort object.
@@ -1665,6 +1710,9 @@ validate_index(Oid heapId, Oid indexId, Snapshot snapshot)
 	elog(DEBUG2,
 		 "validate_index found %.0f heap tuples, %.0f index tuples; inserted %.0f missing tuples",
 		 state.htups, state.itups, state.tups_inserted);
+
+	/* Restore userid */
+	SetUserIdAndContext(save_userid, save_secdefcxt);
 
 	/* Close rels, but keep locks */
 	index_close(indexRelation, NoLock);
