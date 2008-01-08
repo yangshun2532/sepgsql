@@ -26,7 +26,7 @@ Source4: sepostgresql.fc
 Source5: sepostgresql.8
 Patch0: sepostgresql-%%__base_postgresql_version__%%-%%__sepgsql_major_version__%%.patch
 Patch1: sepostgresql-fedora-prefix.patch
-BuildRequires: perl glibc-devel bison flex autoconf readline-devel zlib-devel >= 1.0.4
+BuildRequires: perl glibc-devel bison flex readline-devel zlib-devel >= 1.0.4
 Buildrequires: checkpolicy libselinux-devel >= 2.0.13 selinux-policy-devel %%__required_policy_version__%%
 Requires(pre): shadow-utils
 Requires(post): policycoreutils /sbin/chkconfig
@@ -65,7 +65,6 @@ done
 popd
 
 # build SE-PostgreSQL
-autoconf
 %configure      --disable-rpath                 \
                 --enable-selinux                \
 %if %{defined sepgextension}
@@ -76,8 +75,7 @@ autoconf
                 --datadir=%{_datadir}/sepgsql
 
 # parallel build, if possible
-SECCLASS_DB_DATABASE=`grep ^define %{_datadir}/selinux/devel/include/support/all_perms.spt | cat -n | grep all_db_database_perms | awk '{print $1}'`
-make CUSTOM_COPT="-D SECCLASS_DB_DATABASE=${SECCLASS_DB_DATABASE}" %{?_smp_mflags}
+make %{?_smp_mflags}
 
 %install
 rm -rf %{buildroot}
@@ -208,6 +206,9 @@ fi
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
 
 %changelog
+* Tue Jan  8 2008 <kaigai@kaigai.gr.jp> - 8.2.6-1.129
+- update base PostgreSQL to 8.2.6
+
 * Wed Nov 21 2007 <kaigai@kaigai.gr.jp> - 8.2.5-1.66
 - Add a policy module hotfix for labeled networking
 
