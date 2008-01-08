@@ -105,8 +105,9 @@ mv %{buildroot}%{_bindir}.orig/pg_dumpall    %{buildroot}%{_bindir}/sepg_dumpall
 # /usr/lib/sepgsql
 mv %{buildroot}%{_libdir}/sepgsql  %{buildroot}%{_libdir}/sepgsql.orig
 install -d %{buildroot}%{_libdir}/sepgsql
-mv %{buildroot}%{_libdir}/sepgsql.orig/*_and_*.so  %{buildroot}%{_libdir}/sepgsql
-mv %{buildroot}%{_libdir}/sepgsql.orig/plpgsql.so  %{buildroot}%{_libdir}/sepgsql
+mv %{buildroot}%{_libdir}/sepgsql.orig/*_and_*.so	%{buildroot}%{_libdir}/sepgsql
+mv %{buildroot}%{_libdir}/sepgsql.orig/plpgsql.so	%{buildroot}%{_libdir}/sepgsql
+mv %{buildroot}%{_libdir}/sepgsql.orig/dict_snowball.so	%{buildroot}%{_libdir}/sepgsql
 
 # remove unnecessary files
 rm -rf %{buildroot}%{_bindir}.orig
@@ -192,6 +193,7 @@ fi
 %dir %{_libdir}/sepgsql
 %{_libdir}/sepgsql/plpgsql.so
 %{_libdir}/sepgsql/*_and_*.so
+%{_libdir}/sepgsql/dict_snowball.so
 %dir %{_datadir}/sepgsql
 %{_datadir}/sepgsql/postgres.bki
 %{_datadir}/sepgsql/postgres.description
