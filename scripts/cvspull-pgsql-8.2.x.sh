@@ -23,8 +23,6 @@ cvs -z3 -d :pserver:anoncvs@anoncvs.postgresql.org:/projects/cvsroot \
     export -r ${CVSTAG} -d pgsql.cvs pgsql
 test $? -eq 0 || exit 1
 
-rm -f pgsql.cvs/configure
-
 # ---- export SVN ----
 svn update ${SEPGSQL_REPOSITORY}
 svn export ${SEPGSQL_REPOSITORY}${SVNBRANCH}/base pgsql.svn

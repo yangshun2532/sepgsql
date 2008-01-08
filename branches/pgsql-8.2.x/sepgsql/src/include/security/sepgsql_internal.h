@@ -73,16 +73,17 @@
 			  (att)->attalign, (att)->attnotnull ? 'y' : 'n', (att)->atthasdef ? 'y' : 'n', \
 			  (att)->attisdropped ? 'y' : 'n', (att)->attislocal ? 'y' : 'n', (att)->attinhcount)
 
-/* object classes and access vectors are not included, in default */
-#ifndef SECCLASS_DB_DATABASE
-#define SECCLASS_DB_DATABASE		(62)	/* next to SECCLASS_MEMPROTECT */
-#endif
+/* The definition of object classes/access vectors are defined at libselinux-devel */
+#ifndef SECCLASS_DB_DATABASE		/* for legacy selinux/flask.h */
+#define SECCLASS_DB_DATABASE			(62)		/* next to SECCLASS_MEMPROTECT */
 #define SECCLASS_DB_TABLE			(SECCLASS_DB_DATABASE + 1)
-#define SECCLASS_DB_PROCEDURE		(SECCLASS_DB_DATABASE + 2)
+#define SECCLASS_DB_PROCEDURE			(SECCLASS_DB_DATABASE + 2)
 #define SECCLASS_DB_COLUMN			(SECCLASS_DB_DATABASE + 3)
 #define SECCLASS_DB_TUPLE			(SECCLASS_DB_DATABASE + 4)
 #define SECCLASS_DB_BLOB			(SECCLASS_DB_DATABASE + 5)
+#endif
 
+#ifndef COMMON_DATABASE__CREATE		/* for legacy selinux/av_permission.h */
 #define COMMON_DATABASE__CREATE                   0x00000001UL
 #define COMMON_DATABASE__DROP                     0x00000002UL
 #define COMMON_DATABASE__GETATTR                  0x00000004UL
@@ -148,6 +149,7 @@
 #define DB_BLOB__WRITE                            0x00000080UL
 #define DB_BLOB__IMPORT                           0x00000100UL
 #define DB_BLOB__EXPORT                           0x00000200UL
+#endif
 
 /*
  * SE-PostgreSQL core functions
