@@ -2,7 +2,7 @@
 
 # This script pulls the PostgreSQL tree from CVS.
 # ---- parametors ----
-CVSTAG="REL8_2_5"
+CVSTAG="REL8_2_6"
 SVNBRANCH="/branches/pgsql-8.2.x"
 
 SEPGSQL_REPOSITORY=`(cd \`dirname $0\`/..; pwd)`
