@@ -77,8 +77,7 @@ popd
                 --datadir=%{_datadir}/sepgsql
 
 # parallel build, if possible
-SECCLASS_DB_DATABASE=`grep ^define %{_datadir}/selinux/devel/include/support/all_perms.spt | cat -n | grep all_db_database_perms | awk '{print $1}'`
-make CUSTOM_COPT="-D SECCLASS_DB_DATABASE=${SECCLASS_DB_DATABASE}" %{?_smp_mflags}
+make %{?_smp_mflags}
 
 %install
 rm -rf %{buildroot}
