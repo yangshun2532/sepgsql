@@ -63,7 +63,7 @@
 
 === T_RowExpr ===
   * postgresql-8.2.x に存在
-  * transformRowExpr()関数で、テーブル名.* や間接参照の解決を行なう。T_RowExpr型を返す。
+  * transformRowExpr()関数で、テーブル名.＊ や間接参照の解決を行なう。T_RowExpr型を返す。
 
 === T_CoalesceExpr ===
   * postgresql-8.2.x に存在
