@@ -411,6 +411,9 @@ static List *sepgsqlWalkExpr(List *selist, queryChain *qc, Node *node, int flags
 	case T_Const:
 	case T_Param:
 	case T_CaseTestExpr:
+	case T_CoerceToDomainValue:
+	case T_SetToDefault:
+	case T_CurrentOfExpr:
 		/* do nothing */
 		break;
 	case T_List: {
@@ -519,6 +522,20 @@ static List *sepgsqlWalkExpr(List *selist, queryChain *qc, Node *node, int flags
 								 (Node *) ((RelabelType *) node)->arg, flags);
 		break;
 	}
+	case T_CoerceViaIO: {
+		selist = sepgsqlWalkExpr(selist, qc,
+								 (Node *) ((CoerceViaIO *) node)->arg, flags);
+		break;
+	}
+	case T_ArrayCoerceExpr: {
+		ArrayCoerceExpr *ace = (ArrayCoerceExpr *) node;
+
+		if (ace->elemfuncid != InvalidOid)
+			selist = addEvalPgProc(selist, ace->elemfuncid, DB_PROCEDURE__EXECUTE);
+		selist = sepgsqlWalkExpr(selist, qc, (Node *) ace->arg, flags);
+
+		break;
+	}
 	case T_CoalesceExpr: {
 		selist = sepgsqlWalkExpr(selist, qc,
 								 (Node *) ((CoalesceExpr *) node)->args, flags);
@@ -527,6 +544,13 @@ static List *sepgsqlWalkExpr(List *selist, queryChain *qc, Node *node, int flags
 	case T_MinMaxExpr: {
 		selist = sepgsqlWalkExpr(selist, qc,
 								 (Node *) ((MinMaxExpr *) node)->args, flags);
+		break;
+	}
+	case T_XmlExpr: {
+		XmlExpr *xe = (XmlExpr *) node;
+
+		selist = sepgsqlWalkExpr(selist, qc, xe->named_args, flags);
+		selist = sepgsqlWalkExpr(selist, qc, xe->args, flags);
 		break;
 	}
 	case T_NullTest: {
@@ -969,7 +993,7 @@ static List *proxyGeneralQuery(Query *query)
 	List *selist = NIL;
 
 	selist = proxyRteSubQuery(selist, NULL, query);
-	query->pgaceItem = selist;
+	query->pgaceItem = (Node *) selist;
 
 	return list_make1(query);
 }
@@ -985,7 +1009,7 @@ static List *proxyExecuteStmt(Query *query)
 	qcData.parent = NULL;
 	qcData.tail = query;
 	selist = sepgsqlWalkExpr(selist, &qcData, (Node *) estmt->params, 0);
-	query->pgaceItem = selist;
+	query->pgaceItem = (Node *) selist;
 
 	return list_make1(query);
 }
@@ -1349,7 +1373,7 @@ void sepgsqlVerifyQuery(PlannedStmt *pstmt)
 	ListCell *l;
 
 	Assert(IsA(pstmt->pgaceItem, List));
-	selist = pstmt->pgaceItem;
+	selist = (List *) pstmt->pgaceItem;
 
 	/* expand table inheritances */
 	selist = expandSEvalListInheritance(selist);
