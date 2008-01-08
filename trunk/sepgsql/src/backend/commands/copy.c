@@ -3,12 +3,12 @@
  * copy.c
  *		Implements the COPY utility command
  *
- * Portions Copyright (c) 1996-2007, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/commands/copy.c,v 1.290 2007/12/03 00:03:05 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/commands/copy.c,v 1.295 2008/01/01 19:45:48 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -879,11 +879,22 @@ DoCopy(const CopyStmt *stmt, const char *queryString)
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 				 errmsg("COPY null representation cannot use newline or carriage return")));
 
-	/* Disallow backslash in non-CSV mode */
-	if (!cstate->csv_mode && strchr(cstate->delim, '\\') != NULL)
+	/*
+	 * Disallow unsafe delimiter characters in non-CSV mode.  We can't allow
+	 * backslash because it would be ambiguous.  We can't allow the other
+	 * cases because data characters matching the delimiter must be
+	 * backslashed, and certain backslash combinations are interpreted
+	 * non-literally by COPY IN.  Disallowing all lower case ASCII letters
+	 * is more than strictly necessary, but seems best for consistency and
+	 * future-proofing.  Likewise we disallow all digits though only octal
+	 * digits are actually dangerous.
+	 */
+	if (!cstate->csv_mode &&
+		strchr("\\.abcdefghijklmnopqrstuvwxyz0123456789",
+			   cstate->delim[0]) != NULL)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg("COPY delimiter cannot be backslash")));
+				 errmsg("COPY delimiter cannot be \"%s\"", cstate->delim)));
 
 	/* Check header */
 	if (!cstate->csv_mode && cstate->header_line)
@@ -901,6 +912,11 @@ DoCopy(const CopyStmt *stmt, const char *queryString)
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("COPY quote must be a single ASCII character")));
+
+	if (cstate->csv_mode && cstate->delim[0] == cstate->quote[0])
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("COPY delimiter and quote must be different")));
 
 	/* Check escape */
 	if (!cstate->csv_mode && cstate->escape != NULL)
@@ -2532,12 +2548,12 @@ CopyReadLineText(CopyState cstate)
 					if (cstate->eol_type == EOL_CRNL)
 						ereport(ERROR,
 								(errcode(ERRCODE_BAD_COPY_FILE_FORMAT),
-								 errmsg(!cstate->csv_mode ?
-									"literal carriage return found in data" :
-								   "unquoted carriage return found in data"),
-								 errhint(!cstate->csv_mode ?
-								"Use \"\\r\" to represent carriage return." :
-										 "Use quoted CSV field to represent carriage return.")));
+								 !cstate->csv_mode ?
+								 errmsg("literal carriage return found in data") :
+								 errmsg("unquoted carriage return found in data"),
+								 !cstate->csv_mode ?
+								 errhint("Use \"\\r\" to represent carriage return.") :
+								 errhint("Use quoted CSV field to represent carriage return.")));
 
 					/*
 					 * if we got here, it is the first line and we didn't find
@@ -2549,12 +2565,12 @@ CopyReadLineText(CopyState cstate)
 			else if (cstate->eol_type == EOL_NL)
 				ereport(ERROR,
 						(errcode(ERRCODE_BAD_COPY_FILE_FORMAT),
-						 errmsg(!cstate->csv_mode ?
-								"literal carriage return found in data" :
-								"unquoted carriage return found in data"),
-						 errhint(!cstate->csv_mode ?
-								 "Use \"\\r\" to represent carriage return." :
-					 "Use quoted CSV field to represent carriage return.")));
+						 !cstate->csv_mode ?
+						 errmsg("literal carriage return found in data") :
+						 errmsg("unquoted carriage return found in data"),
+						 !cstate->csv_mode ?
+						 errhint("Use \"\\r\" to represent carriage return.") :
+						 errhint("Use quoted CSV field to represent carriage return.")));
 			/* If reach here, we have found the line terminator */
 			break;
 		}
@@ -2565,12 +2581,12 @@ CopyReadLineText(CopyState cstate)
 			if (cstate->eol_type == EOL_CR || cstate->eol_type == EOL_CRNL)
 				ereport(ERROR,
 						(errcode(ERRCODE_BAD_COPY_FILE_FORMAT),
-						 errmsg(!cstate->csv_mode ?
-								"literal newline found in data" :
-								"unquoted newline found in data"),
-						 errhint(!cstate->csv_mode ?
-								 "Use \"\\n\" to represent newline." :
-							 "Use quoted CSV field to represent newline.")));
+						 !cstate->csv_mode ?
+						 errmsg("literal newline found in data") :
+						 errmsg("unquoted newline found in data"),
+						 !cstate->csv_mode ?
+						 errhint("Use \"\\n\" to represent newline.") :
+						 errhint("Use quoted CSV field to represent newline.")));
 			cstate->eol_type = EOL_NL;	/* in case not set yet */
 			/* If reach here, we have found the line terminator */
 			break;
@@ -3206,13 +3222,7 @@ CopyAttributeOutText(CopyState cstate, char *string)
 		start = ptr;
 		while ((c = *ptr) != '\0')
 		{
-			if (c == '\\' || c == delimc)
-			{
-				DUMPSOFAR();
-				CopySendChar(cstate, '\\');
-				start = ptr++;	/* we include char in next run */
-			}
-			else if ((unsigned char) c < (unsigned char) 0x20)
+			if ((unsigned char) c < (unsigned char) 0x20)
 			{
 				/*
 				 * \r and \n must be escaped, the others are traditional.
@@ -3242,6 +3252,9 @@ CopyAttributeOutText(CopyState cstate, char *string)
 						c = 'v';
 						break;
 					default:
+						/* If it's the delimiter, must backslash it */
+						if (c == delimc)
+							break;
 						/* All ASCII control chars are length 1 */
 						ptr++;
 						continue;		/* fall to end of loop */
@@ -3251,6 +3264,12 @@ CopyAttributeOutText(CopyState cstate, char *string)
 				CopySendChar(cstate, '\\');
 				CopySendChar(cstate, c);
 				start = ++ptr;			/* do not include char in next run */
+			}
+			else if (c == '\\' || c == delimc)
+			{
+				DUMPSOFAR();
+				CopySendChar(cstate, '\\');
+				start = ptr++;	/* we include char in next run */
 			}
 			else if (IS_HIGHBIT_SET(c))
 				ptr += pg_encoding_mblen(cstate->client_encoding, ptr);
@@ -3263,13 +3282,7 @@ CopyAttributeOutText(CopyState cstate, char *string)
 		start = ptr;
 		while ((c = *ptr) != '\0')
 		{
-			if (c == '\\' || c == delimc)
-			{
-				DUMPSOFAR();
-				CopySendChar(cstate, '\\');
-				start = ptr++;	/* we include char in next run */
-			}
-			else if ((unsigned char) c < (unsigned char) 0x20)
+			if ((unsigned char) c < (unsigned char) 0x20)
 			{
 				/*
 				 * \r and \n must be escaped, the others are traditional.
@@ -3299,6 +3312,9 @@ CopyAttributeOutText(CopyState cstate, char *string)
 						c = 'v';
 						break;
 					default:
+						/* If it's the delimiter, must backslash it */
+						if (c == delimc)
+							break;
 						/* All ASCII control chars are length 1 */
 						ptr++;
 						continue;		/* fall to end of loop */
@@ -3308,6 +3324,12 @@ CopyAttributeOutText(CopyState cstate, char *string)
 				CopySendChar(cstate, '\\');
 				CopySendChar(cstate, c);
 				start = ++ptr;			/* do not include char in next run */
+			}
+			else if (c == '\\' || c == delimc)
+			{
+				DUMPSOFAR();
+				CopySendChar(cstate, '\\');
+				start = ptr++;	/* we include char in next run */
 			}
 			else
 				ptr++;
