@@ -408,6 +408,8 @@ static List *sepgsqlWalkExpr(List *selist, queryChain *qc, Node *node, int flags
 	case T_Const:
 	case T_Param:
 	case T_CaseTestExpr:
+	case T_CoerceToDomainValue:
+	case T_SetToDefault:
 		/* do nothing */
 		break;
 	case T_List: {
