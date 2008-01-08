@@ -4,9 +4,9 @@
  *	   Win32 open() replacement
  *
  *
- * Portions Copyright (c) 1996-2007, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
  *
- * $PostgreSQL: pgsql/src/port/open.c,v 1.23 2007/12/20 20:27:53 mha Exp $
+ * $PostgreSQL: pgsql/src/port/open.c,v 1.26 2008/01/01 19:46:00 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -111,7 +111,7 @@ pgwin32_open(const char *fileName, int fileFlags,...)
 				    (errmsg("could not open file \"%s\": %s", fileName, 
 					  (err == ERROR_SHARING_VIOLATION)?_("sharing violation"):_("lock violation")),
 					 errdetail("Continuing to retry for 30 seconds."),
-					 errhint("You may have antivirus, backup or similar software interfering with the database.")));
+					 errhint("You might have antivirus, backup, or similar software interfering with the database system.")));
 #endif
 
 			if (loops < 300)

@@ -4,10 +4,10 @@
  * External declarations pertaining to backend/utils/misc/guc.c and
  * backend/utils/misc/guc-file.l
  *
- * Copyright (c) 2000-2007, PostgreSQL Global Development Group
+ * Copyright (c) 2000-2008, PostgreSQL Global Development Group
  * Written by Peter Eisentraut <peter_e@gmx.net>.
  *
- * $PostgreSQL: pgsql/src/include/utils/guc.h,v 1.88 2007/11/15 22:25:17 momjian Exp $
+ * $PostgreSQL: pgsql/src/include/utils/guc.h,v 1.90 2008/01/01 19:45:59 momjian Exp $
  *--------------------------------------------------------------------
  */
 #ifndef GUC_H
@@ -220,6 +220,8 @@ extern void ProcessGUCArray(ArrayType *array,
 				GucContext context, GucSource source, GucAction action);
 extern ArrayType *GUCArrayAdd(ArrayType *array, const char *name, const char *value);
 extern ArrayType *GUCArrayDelete(ArrayType *array, const char *name);
+
+extern int	GUC_complaint_elevel(GucSource source);
 
 extern void pg_timezone_abbrev_initialize(void);
 
