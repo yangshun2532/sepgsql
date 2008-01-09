@@ -549,8 +549,8 @@ static List *sepgsqlWalkExpr(List *selist, queryChain *qc, Node *node, int flags
 	case T_XmlExpr: {
 		XmlExpr *xe = (XmlExpr *) node;
 
-		selist = sepgsqlWalkExpr(selist, qc, xe->named_args, flags);
-		selist = sepgsqlWalkExpr(selist, qc, xe->args, flags);
+		selist = sepgsqlWalkExpr(selist, qc, (Node *) xe->named_args, flags);
+		selist = sepgsqlWalkExpr(selist, qc, (Node *) xe->args, flags);
 		break;
 	}
 	case T_NullTest: {
