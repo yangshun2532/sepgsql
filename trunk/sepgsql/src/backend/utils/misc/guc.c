@@ -268,6 +268,7 @@ static int	max_index_keys;
 static int	max_identifier_length;
 static int	block_size;
 static bool integer_datetimes;
+static char *security_sysattr_name;
 
 /* should be static, but commands/variable.c needs to get at these */
 char	   *role_string;
@@ -2450,6 +2451,20 @@ static struct config_string ConfigureNamesString[] =
 		"ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH", NULL, NULL
 	},
 #endif   /* USE_SSL */
+
+	{
+		{"security_sysattr_name", PGC_INTERNAL, PRESET_OPTIONS,
+			gettext_noop("Shows the name of security attribute system column"),
+			NULL,
+			GUC_REPORT | GUC_NOT_IN_SAMPLE | GUC_DISALLOW_IN_FILE
+		},
+		&security_sysattr_name,
+#ifdef SECURITY_SYSATTR_NAME
+		SECURITY_SYSATTR_NAME, NULL, NULL,
+#else
+		"undefined", NULL, NULL,
+#endif
+	},
 
 	/* End-of-list marker */
 	{
