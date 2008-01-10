@@ -535,11 +535,9 @@ extern char *selinux_mnt;
 
 char *sepgsqlSecurityLabelNotFound(Oid sid) {
 	security_context_t unlabeled_con;
+	char *result = NULL;
 
-#ifndef SEPGSQLOPT_LIBSELINUX_1_33
 	if (!security_get_initial_context_raw("unlabeled", &unlabeled_con)) {
-		char *result;
-
 		PG_TRY();
 		{
 			result = pstrdup(unlabeled_con);
@@ -551,19 +549,8 @@ char *sepgsqlSecurityLabelNotFound(Oid sid) {
 		}
 		PG_END_TRY();
 		freecon(unlabeled_con);
-		return result;
 	}
-#endif
-	/* FIXME: This fallback code should be eliminated in the near future.
-	 * /selinux/init_contexts support will be enabled at 2.6.22 kernel.
-	 */
-	unlabeled_con = "system_u:object_r:unlabeled_t:s0";
-	if (sepgsqlSecurityLabelIsValid(unlabeled_con))
-		return pstrdup(unlabeled_con);
-	unlabeled_con = "system_u:object_r:unlabeled_t";
-	if (sepgsqlSecurityLabelIsValid(unlabeled_con))
-		return pstrdup(unlabeled_con);
-	return NULL;
+	return result;
 }
 
 /******************************************************************
