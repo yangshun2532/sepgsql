@@ -919,6 +919,10 @@ heap_form_tuple(TupleDesc tupleDescriptor,
 	if (tupleDescriptor->tdhasoid)
 		len += sizeof(Oid);
 
+#ifdef SECURITY_SYSATTR_NAME
+	len += sizeof(Oid);
+#endif
+
 	hoff = len = MAXALIGN(len); /* align user data safely */
 
 	data_len = heap_compute_data_size(tupleDescriptor, values, isnull);
@@ -949,6 +953,10 @@ heap_form_tuple(TupleDesc tupleDescriptor,
 
 	if (tupleDescriptor->tdhasoid)		/* else leave infomask = 0 */
 		td->t_infomask = HEAP_HASOID;
+
+#ifdef SECURITY_SYSATTR_NAME
+	td->t_infomask |= HEAP_HASSECURITY;
+#endif
 
 	heap_fill_tuple(tupleDescriptor,
 					values,
@@ -1030,6 +1038,10 @@ heap_formtuple(TupleDesc tupleDescriptor,
 	if (tupleDescriptor->tdhasoid)
 		len += sizeof(Oid);
 
+#ifdef SECURITY_SYSATTR_NAME
+	len += sizeof(Oid);
+#endif
+
 	hoff = len = MAXALIGN(len); /* align user data safely */
 
 	data_len = ComputeDataSize(tupleDescriptor, values, nulls);
@@ -1060,6 +1072,10 @@ heap_formtuple(TupleDesc tupleDescriptor,
 
 	if (tupleDescriptor->tdhasoid)		/* else leave infomask = 0 */
 		td->t_infomask = HEAP_HASOID;
+
+#ifdef SECURITY_SYSATTR_NAME
+	td->t_infomask |= HEAP_HASSECURITY;
+#endif
 
 	DataFill(tupleDescriptor,
 			 values,
@@ -1859,6 +1875,10 @@ heap_form_minimal_tuple(TupleDesc tupleDescriptor,
 	if (tupleDescriptor->tdhasoid)
 		len += sizeof(Oid);
 
+#ifdef SECURITY_SYSATTR_NAME
+	len += sizeof(Oid);
+#endif
+
 	hoff = len = MAXALIGN(len); /* align user data safely */
 
 	data_len = heap_compute_data_size(tupleDescriptor, values, isnull);
@@ -1879,6 +1899,10 @@ heap_form_minimal_tuple(TupleDesc tupleDescriptor,
 
 	if (tupleDescriptor->tdhasoid)		/* else leave infomask = 0 */
 		tuple->t_infomask = HEAP_HASOID;
+
+#ifdef SECURITY_SYSATTR_NAME
+	tuple->t_infomask |= HEAP_HASSECURITY;
+#endif
 
 	heap_fill_tuple(tupleDescriptor,
 					values,
@@ -1991,6 +2015,11 @@ heap_addheader(int natts,		/* max domain index */
 	hoff = offsetof(HeapTupleHeaderData, t_bits);
 	if (withoid)
 		hoff += sizeof(Oid);
+
+#ifdef SECURITY_SYSATTR_NAME
+	hoff += sizeof(Oid);
+#endif
+
 	hoff = MAXALIGN(hoff);
 	len = hoff + structlen;
 
@@ -2008,6 +2037,10 @@ heap_addheader(int natts,		/* max domain index */
 
 	if (withoid)				/* else leave infomask = 0 */
 		td->t_infomask = HEAP_HASOID;
+
+#ifdef SECURITY_SYSATTR_NAME
+	td->t_infomask |= HEAP_HASSECURITY;
+#endif
 
 	memcpy((char *) td + hoff, structure, structlen);
 
