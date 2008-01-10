@@ -589,6 +589,9 @@ toast_insert_or_update(Relation rel, HeapTuple newtup, HeapTuple oldtup,
 		hoff += BITMAPLEN(numAttrs);
 	if (newtup->t_data->t_infomask & HEAP_HASOID)
 		hoff += sizeof(Oid);
+#ifdef SECURITY_SYSATTR_NAME
+	hoff += sizeof(Oid);
+#endif
 	hoff = MAXALIGN(hoff);
 	Assert(hoff == newtup->t_data->t_hoff);
 	/* now convert to a limit on the tuple data size */
@@ -838,6 +841,9 @@ toast_insert_or_update(Relation rel, HeapTuple newtup, HeapTuple oldtup,
 			new_len += BITMAPLEN(numAttrs);
 		if (olddata->t_infomask & HEAP_HASOID)
 			new_len += sizeof(Oid);
+#ifdef SECURITY_SYSATTR_NAME
+		new_len += sizeof(Oid);
+#endif
 		new_len = MAXALIGN(new_len);
 		Assert(new_len == olddata->t_hoff);
 		new_data_len = heap_compute_data_size(tupleDesc,
@@ -989,6 +995,9 @@ toast_flatten_tuple_attribute(Datum value,
 		new_len += BITMAPLEN(numAttrs);
 	if (olddata->t_infomask & HEAP_HASOID)
 		new_len += sizeof(Oid);
+#ifdef SECURITY_SYSATTR_NAME
+	new_len += sizeof(Oid);
+#endif
 	new_len = MAXALIGN(new_len);
 	Assert(new_len == olddata->t_hoff);
 	new_data_len = heap_compute_data_size(tupleDesc,
