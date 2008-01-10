@@ -1813,7 +1813,6 @@ heap_insert(Relation relation, HeapTuple tup, CommandId cid,
 		rdata[0].buffer = InvalidBuffer;
 		rdata[0].next = &(rdata[1]);
 
-		xlhdr.t_security = HeapTupleGetSecurity(heaptup);
 		xlhdr.t_infomask2 = heaptup->t_data->t_infomask2;
 		xlhdr.t_infomask = heaptup->t_data->t_infomask;
 		xlhdr.t_hoff = heaptup->t_data->t_hoff;
@@ -3812,7 +3811,6 @@ log_heap_update(Relation reln, Buffer oldbuf, ItemPointerData from,
 	xlhdr.hdr.t_infomask2 = newtup->t_data->t_infomask2;
 	xlhdr.hdr.t_infomask = newtup->t_data->t_infomask;
 	xlhdr.hdr.t_hoff = newtup->t_data->t_hoff;
-	xlhdr.hdr.t_security = HeapTupleGetSecurity(newtup);
 	if (move)					/* remember xmax & xmin */
 	{
 		TransactionId xid[2];	/* xmax, xmin */
@@ -4208,7 +4206,6 @@ heap_xlog_insert(XLogRecPtr lsn, XLogRecord *record)
 	htup->t_infomask2 = xlhdr.t_infomask2;
 	htup->t_infomask = xlhdr.t_infomask;
 	htup->t_hoff = xlhdr.t_hoff;
-	HeapTupleHeaderSetSecurity(htup, xlhdr.t_security);
 	HeapTupleHeaderSetXmin(htup, record->xl_xid);
 	HeapTupleHeaderSetCmin(htup, FirstCommandId);
 	htup->t_ctid = xlrec->target.tid;
@@ -4379,7 +4376,6 @@ newsame:;
 	htup->t_infomask2 = xlhdr.t_infomask2;
 	htup->t_infomask = xlhdr.t_infomask;
 	htup->t_hoff = xlhdr.t_hoff;
-	HeapTupleHeaderSetSecurity(htup, xlhdr.t_security);
 
 	if (move)
 	{
