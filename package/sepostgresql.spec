@@ -26,7 +26,8 @@ Source4: sepostgresql.fc
 Source5: sepostgresql.8
 Patch0: sepostgresql-pgace-%%__base_postgresql_version__%%-%%__sepgsql_major_version__%%.patch
 Patch1: sepostgresql-sepgsql-%%__base_postgresql_version__%%-%%__sepgsql_major_version__%%.patch
-Patch2: sepostgresql-fedora-prefix.patch
+Patch2: sepostgresql-pg_dump-%%__base_postgresql_version__%%-%%__sepgsql_major_version__%%.patch
+Patch3: sepostgresql-fedora-prefix.patch
 BuildRequires: perl glibc-devel bison flex readline-devel zlib-devel >= 1.0.4
 Buildrequires: checkpolicy libselinux-devel >= 2.0.43 selinux-policy-devel selinux-policy >= 3.0.6
 Requires(pre): shadow-utils
@@ -49,6 +50,7 @@ reference monitor to check any SQL query.
 %patch0 -p1
 %patch1 -p1
 %patch2 -p1
+%patch3 -p1
 mkdir selinux-policy
 cp -p %{SOURCE2} %{SOURCE3} %{SOURCE4} selinux-policy
 
@@ -212,6 +214,9 @@ fi
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
 
 %changelog
+* Thu Jan 10 2008 <kaigai@kaigai.gr.jp> - sepostgresql-8.3RC1-2.37
+- add sepg_dump/sepg_dumpall support for 8.3base package.
+
 * Mon Nov 26 2007 <kaigai@kaigai.gr.jp> - 8.3beta3-2.0
 - Branch from 8.2.x tree
 
