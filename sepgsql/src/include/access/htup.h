@@ -137,8 +137,6 @@ typedef struct HeapTupleHeaderData
 
 	ItemPointerData t_ctid;		/* current TID of this or newer tuple */
 
-	Oid			t_security;		/* PGACE: security attribute of the tuple */
-
 	/* Fields below here must match MinimalTupleData! */
 
 	uint16		t_infomask2;	/* number of attributes + various flags */
@@ -163,7 +161,7 @@ typedef HeapTupleHeaderData *HeapTupleHeader;
 #define HEAP_HASVARWIDTH		0x0002	/* has variable-width attribute(s) */
 #define HEAP_HASEXTERNAL		0x0004	/* has external stored attribute(s) */
 #define HEAP_HASOID				0x0008	/* has an object-id field */
-/* bit 0x0010 is available */
+#define HEAP_HASSECURITY		0x0010	/* has an security attribute field */
 #define HEAP_COMBOCID			0x0020	/* t_cid is a combo cid */
 #define HEAP_XMAX_EXCL_LOCK		0x0040	/* xmax is exclusive locker */
 #define HEAP_XMAX_SHARED_LOCK	0x0080	/* xmax is shared locker */
@@ -349,13 +347,27 @@ do { \
 	(tup)->t_infomask2 = ((tup)->t_infomask2 & ~HEAP_NATTS_MASK) | (natts) \
 )
 
-#define HeapTupleHeaderGetSecurity(htup)			\
-	((htup)->t_security)
-#define HeapTupleHeaderSetSecurity(htup,security)	\
-	((htup)->t_security = (security))
-#define HeapTupleGetSecurity(tuple)					\
+#define HeapTupleHeaderGetSecurity(tup)									\
+	(																	\
+		((tup)->t_infomask & HEAP_HASSECURITY)							\
+		? (*((Oid *)((char *)(tup) + (tup)->t_hoff						\
+					 - (((tup)->t_infomask & HEAP_HASOID) ? sizeof(Oid) : 0) \
+					 - sizeof(Oid))))									\
+		: InvalidOid													\
+	)
+
+#define HeapTupleHeaderSetSecurity(tup, security)						\
+	do {																\
+		Assert((tup)->t_infomask & HEAP_HASSECURITY);					\
+		*((Oid *)((char *)(tup) + (tup)->t_hoff							\
+				  - (((tup)->t_infomask & HEAP_HASOID) ? sizeof(Oid) : 0) \
+				  - sizeof(Oid))) = (security);							\
+	} while(0)
+
+#define HeapTupleGetSecurity(tuple)				\
 	HeapTupleHeaderGetSecurity((tuple)->t_data)
-#define HeapTupleSetSecurity(tuple, security)		\
+
+#define HeapTupleSetSecurity(tuple, security)	\
 	HeapTupleHeaderSetSecurity((tuple)->t_data, (security))
 
 /*
@@ -635,7 +647,6 @@ typedef struct xl_heap_delete
  */
 typedef struct xl_heap_header
 {
-	Oid			t_security;
 	uint16		t_infomask2;
 	uint16		t_infomask;
 	uint8		t_hoff;
