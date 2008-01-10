@@ -335,7 +335,7 @@ char *pgaceSecurityLabelOfLabel(char *new_label)
 char *pgaceSecurityLabelNotFound(Oid sid)
 {
 	if (sepgsqlIsEnabled())
-		sepgsqlSecurityLabelNotFound(sid);
+		return sepgsqlSecurityLabelNotFound(sid);
 	return pstrdup("unlabeled");
 }
 
