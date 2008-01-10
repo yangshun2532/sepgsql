@@ -206,7 +206,8 @@ fi
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
 
 %changelog
-* Tue Jan  8 2008 <kaigai@kaigai.gr.jp> - 8.2.6-1.129
+* Tue Jan  8 2008 <kaigai@kaigai.gr.jp> - 8.2.6-1.140
+- add "security_sysattr_name" GUC variable
 - update base PostgreSQL to 8.2.6
 
 * Wed Nov 21 2007 <kaigai@kaigai.gr.jp> - 8.2.5-1.66
