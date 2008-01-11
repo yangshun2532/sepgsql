@@ -1,0 +1,75 @@
+= PGACE Interfaces =
+
+This document describes for PGACE (PostgreSQL Access Control Extenstion) framework, contains useful information to develop your security feature, like SE-PostgreSQL.
+
+== 1. Terminology ==
+*The guest of PGACE*
+  A security module using PGACE. It implements any PGACE hooks, and makes its decision based on its security policy when these hooks are invoked. SE-PostgreSQL is the first guest of PGACE.
+
+== 2. What is the PGACE? ==
+
+PostgreSQL Access Control Extension (PGACE) is a framework to implement an advanced security feature within PostgreSQL relational database management system. It provides several security hooks on strategic point, facilities to manage security label of any tuples, and a bit extensions in SQL grammar.
+
+It was primarily designed for Security-Enhanced PostgreSQL (SE-PostgreSQL). It works collaborating with operating system (SELinux) and applies its security policy on accesses toward any database object. However, the guest of PGACE is not limited to SE-PostgreSQL. We can implement any other module which works collaborating with other secure operating system, for example.
+
+=== 2-1. Security Hooks ===
+
+PGACE provides several hooks on strategic point, and the guest of PGACE can override the implementation of the hooks to make its decision on access control. It enables your security module to be invoked just before a new tuple is inserted, just before the sent queries are optimized, and so on.
+For example, SE-PostgreSQL module is invoked via PGACE hooks and it communicates with operating system (SELinux), then it returns success or generates an error according to the security policy of SELinux.
+
+These hooks will make no impact when no guest of PGACE is enabled. The dummy/stub hooks are defined at `src/backend/security/pgaceHooks.c`.
+When you implement your security module, you have to drop `src/backend/security/pgaceHooks.c` from `src/backend/security/Makefile` and add the source of your ones instead.
+
+=== 2-2. Managing security label ===
+Security label is an attribute of each tuple to identify its sensitivity, represented in text format like `system_u:object_r:sepgsql_table_t:s0` in SELinux case. The guest of PGACE can use this attribute to make its decision for access control.
+In actually, the text representation of security labels are stored in `pg_security` system catalog, and each tuple has object id to indicate one of them. It is called as security identifier. This implementation enables to reduce useless storage consumption. SID is stored in variable length field of HeapTupleHeader structure. We can get/set SID using `HeapTupleGetSecurity(tuple)` and `HeapTupleSetSecurity(tuple, security)` macros.
+{{{
+The format of HeapTupleHeader
++---------------------------------+ +0
+| union {                         |
+|     HeapTupleFields t_heap;     |
+|     DatumTupleFields t_datum;   |
+| } t_choice;                     |
++---------------------------------+ +12
+| ItemPointerData t_ctid;         |
++---------------------------------+ +18
+| uint16  t_infomask2;            |
++---------------------------------+ +20
+| uint16  t_infomask;             |
++---------------------------------+ +22
+| uint8   t_hoff;                 | ----------------------------+
++---------------------------------+                             |
+|         :                       |                             |
+| padding field                   |                             |
+|         :                       |                             |
++---------------------------------+ +t_hoff - 2 * sizeof(Oid)   |
+| Oid ... SID of tuple (if exist) |                             |
++---------------------------------+ +t_hoff - sizeof(Oid)       |
+| Oid ... OID of tuple (if exist) |                             |
++---------------------------------+ +t_off       <--------------+
+| Containts of tuple              |
+|                                 |
+:                                 :
+}}}
+
+You have to define SECURITY_SYSATTR_NAME appropriatly in src/include/pg_config.h, to use this feature. It defines the name of system column to access security attribute of each tuple.
+
+=== 2-3. Extensions in SQL grammer ===
+PGACE provides a template of extension in SQL, to specify explicit security label on creation of databases, tables, and procedures.
+In the SE-PostgreSQL case, `CONTEXT = '<security context>'` option is enabled for this purpose. 
+{{{
+CREATE TABLE t1 {
+  a integer primary key CONTEXT = 'system_u:object_r:sepgsql_ro_table_t:s0',
+  b text
+} CONTEXT = 'system_u:object_r:sepgsql_table_t:s0:c0'
+}}}
+
+== 3. The way to implement security feature ==
+
+
+
+== 4. Extended data structure ==
+
+
+
+== 5. The list of hooks ==
