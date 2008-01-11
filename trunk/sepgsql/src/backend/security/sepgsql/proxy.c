@@ -1372,6 +1372,8 @@ void sepgsqlVerifyQuery(PlannedStmt *pstmt)
 	List *selist;
 	ListCell *l;
 
+	if (!pstmt->pgaceItem)
+		return;
 	Assert(IsA(pstmt->pgaceItem, List));
 	selist = (List *) pstmt->pgaceItem;
 
