@@ -738,12 +738,10 @@ transformSelectStmt(ParseState *pstate, SelectStmt *stmt)
 	/* handle any SELECT INTO/CREATE TABLE AS spec */
 	if (stmt->intoClause)
 	{
+		pgaceTransformSelectStmt(qry->targetList);
 		qry->intoClause = stmt->intoClause;
-		if (stmt->intoClause->colNames) {
-			/* FIXME: Does it work really in 8.3.x? */
-			pgaceTransformSelectStmt(qry->targetList);
+		if (stmt->intoClause->colNames)
 			applyColumnNames(qry->targetList, stmt->intoClause->colNames);
-		}
 	}
 
 	qry->rtable = pstate->p_rtable;
