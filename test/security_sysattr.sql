@@ -47,8 +47,8 @@ SELECT security_context, * FROM t1;
 
 -- TEST: (05) insert a tuple with explicit labeling
 INSERT INTO t1 (security_context, x, y)
-       VALUES ('system_u:object_r:sepgsql_table_t:s0:c3', 7, 'ggg')
-       VALUES ('system_u:object_r:sepgsql_table_t:s0:c3', 8, 'hhh');
+       VALUES ('system_u:object_r:sepgsql_table_t:s0:c3', 7, 'ggg'),
+       	      ('system_u:object_r:sepgsql_table_t:s0:c3', 8, 'hhh');
 SELECT security_context, * FROM t1;
 
 -- TEST: (06) SELECT INTO with explicit labeling
