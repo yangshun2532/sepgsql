@@ -4,7 +4,7 @@ export LANG=C
 # ---- build parametors
 SEPGSQL_MAJOR_VERSION="2"
 SEPGSQL_MINOR_OFFSET="538"
-SEPGSQL_EXTENSION=".alpha"
+SEPGSQL_EXTENSION=".beta"
 SEPGSQL_BRANCH="/trunk"
 
 # -- SE-PostgreSQL repository
@@ -26,9 +26,9 @@ RPMSOURCE=`rpm -E '%{_sourcedir}'`
 test -d ${RPMSOURCE} || exit 1
 
 # -- get base postgresql tar+gz, if necessary
-if [ ! -e ${RPMSOURCE}/postgresql-${BASE_VERSION}.tar.gz ]; then
-    wget -O ${RPMSOURCE}/postgresql-${BASE_VERSION}.tar.gz \
-	"ftp://ftp.postgresql.org/pub/source/v${BASE_VERSION}/postgresql-${BASE_VERSION}.tar.gz" || exit 1
+if [ ! -e ${RPMSOURCE}/postgresql-${BASE_VERSION}.tar.bz2 ]; then
+    wget -O ${RPMSOURCE}/postgresql-${BASE_VERSION}.tar.bz2 \
+	"ftp://ftp.postgresql.org/pub/source/v${BASE_VERSION}/postgresql-${BASE_VERSION}.tar.bz2" || exit 1
 fi
 
 # -- make a working directory

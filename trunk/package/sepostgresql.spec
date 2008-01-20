@@ -18,7 +18,7 @@ License: BSD
 Group: Applications/Databases
 Url: http://code.google.com/p/sepgsql/
 Buildroot: %(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
-Source0: ftp://ftp.postgresql.org/pub/source/v%{version}/postgresql-%{version}.tar.gz
+Source0: ftp://ftp.postgresql.org/pub/source/v%{version}/postgresql-%{version}.tar.bz2
 Source1: sepostgresql.init
 Source2: sepostgresql.if
 Source3: sepostgresql.te
@@ -34,7 +34,7 @@ Requires(pre): shadow-utils
 Requires(post): policycoreutils /sbin/chkconfig
 Requires(preun): /sbin/chkconfig /sbin/service
 Requires(postun): policycoreutils
-# Requires: postgresql-server = %{version}
+Requires: postgresql-server = %{version}
 Requires: policycoreutils >= 2.0.16 libselinux >= 2.0.43 selinux-policy >= 3.0.6
 
 %description
@@ -75,8 +75,9 @@ popd
                 --enable-debug                  \
                 --enable-cassert                \
 %endif
-                --libdir=%{_libdir}/sepgsql     \
-                --datadir=%{_datadir}/sepgsql
+                --libdir=%{_libdir}/pgsql       \
+                --datadir=%{_datadir}/sepgsql   \
+                --with-system-tzdata=/usr/share/zoneinfo
 
 # parallel build, if possible
 make %{?_smp_mflags}
@@ -104,16 +105,9 @@ mv %{buildroot}%{_bindir}.orig/postgres      %{buildroot}%{_bindir}/sepostgres
 mv %{buildroot}%{_bindir}.orig/pg_dump       %{buildroot}%{_bindir}/sepg_dump
 mv %{buildroot}%{_bindir}.orig/pg_dumpall    %{buildroot}%{_bindir}/sepg_dumpall
 
-# /usr/lib/sepgsql
-mv %{buildroot}%{_libdir}/sepgsql  %{buildroot}%{_libdir}/sepgsql.orig
-install -d %{buildroot}%{_libdir}/sepgsql
-mv %{buildroot}%{_libdir}/sepgsql.orig/*_and_*.so	%{buildroot}%{_libdir}/sepgsql
-mv %{buildroot}%{_libdir}/sepgsql.orig/plpgsql.so	%{buildroot}%{_libdir}/sepgsql
-mv %{buildroot}%{_libdir}/sepgsql.orig/dict_snowball.so	%{buildroot}%{_libdir}/sepgsql
-
 # remove unnecessary files
 rm -rf %{buildroot}%{_bindir}.orig
-rm -rf %{buildroot}%{_libdir}/sepgsql.orig
+rm -rf %{buildroot}%{_libdir}
 rm -rf %{buildroot}%{_includedir}
 rm -rf %{buildroot}%{_usr}/doc
 rm -rf %{buildroot}%{_datadir}/sepgsql/timezone
@@ -192,10 +186,6 @@ fi
 %{_bindir}/sepg_dump
 %{_bindir}/sepg_dumpall
 %{_mandir}/man8/sepostgresql.*
-%dir %{_libdir}/sepgsql
-%{_libdir}/sepgsql/plpgsql.so
-%{_libdir}/sepgsql/*_and_*.so
-%{_libdir}/sepgsql/dict_snowball.so
 %dir %{_datadir}/sepgsql
 %{_datadir}/sepgsql/postgres.bki
 %{_datadir}/sepgsql/postgres.description
@@ -214,6 +204,9 @@ fi
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
 
 %changelog
+* Sun Jan 20 2008 <kaigai@kaigai.gr.jp> - sepostgresql-8.3RC2-2.52
+- shares /usr/lib/pgsql/*.so libraries, with original postgresql.
+
 * Thu Jan 10 2008 <kaigai@kaigai.gr.jp> - sepostgresql-8.3RC1-2.37
 - add sepg_dump/sepg_dumpall support for 8.3base package.
 
