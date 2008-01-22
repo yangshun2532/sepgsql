@@ -13,10 +13,12 @@
 #include "catalog/pg_attribute.h"
 #include "catalog/pg_largeobject.h"
 #include "catalog/pg_security.h"
+#include "catalog/pg_type.h"
 #include "executor/executor.h"
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
 #include "nodes/parsenodes.h"
+#include "parser/parse_expr.h"
 #include "security/pgace.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
@@ -42,8 +44,12 @@ void pgaceTransformSelectStmt(List *targetList) {
 
 		if (tle->resjunk)
 			continue;
-		if (!strcmp(tle->resname, SECURITY_SYSATTR_NAME))
+		if (!strcmp(tle->resname, SECURITY_SYSATTR_NAME)) {
+			if (exprType(tle->expr) != SECLABELOID)
+				elog(ERROR, "type mismatch in explicit labeling");
 			tle->resjunk = true;
+			break;
+		}
 	}
 }
 
