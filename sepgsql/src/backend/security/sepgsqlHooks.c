@@ -29,6 +29,7 @@ static HeapTuple __getHeapTupleFromItemPointer(Relation rel, ItemPointer tid)
 	HeapTuple oldtup;
 
 	buffer = ReadBuffer(rel, ItemPointerGetBlockNumber(tid));
+	LockBuffer(buffer, BUFFER_LOCK_SHARE);
 
 	dp = (PageHeader) BufferGetPage(buffer);
 	lp = PageGetItemId(dp, ItemPointerGetOffsetNumber(tid));
@@ -39,8 +40,9 @@ static HeapTuple __getHeapTupleFromItemPointer(Relation rel, ItemPointer tid)
 	tuple.t_len = ItemIdGetLength(lp);
 	tuple.t_self = *tid;
 	tuple.t_tableOid = RelationGetRelid(rel);
-
 	oldtup = heap_copytuple(&tuple);
+
+	LockBuffer(buffer, BUFFER_LOCK_UNLOCK);
 	ReleaseBuffer(buffer);
 
 	return oldtup;
