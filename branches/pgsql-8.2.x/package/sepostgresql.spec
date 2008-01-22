@@ -206,6 +206,11 @@ fi
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
 
 %changelog
+* Tue Jan 22 2008 <kaigai@kaigai.gr.jp> - 8.2.6-1.158
+- backporting bugfixes:
+  lack of lacks when refering buffer pages at update/delete hooks
+  unexpected behavior in explicit labeling using SELECT ... INTO statement
+
 * Tue Jan  8 2008 <kaigai@kaigai.gr.jp> - 8.2.6-1.140
 - add "security_sysattr_name" GUC variable
 - update base PostgreSQL to 8.2.6
