@@ -144,17 +144,9 @@ static const char *sepgsql_class_to_string(uint16 tclass)
 		if (selinux_catalog[i].tclass.inum == tclass)
 			return selinux_catalog[i].tclass.name;
 	}
-#ifdef SEPGSQLOPT_LIBSELINUX_1_33
-	/* for legacy libselinux (Fedora core 6) */
-	/* This code will be replaced near future */
-	if (tclass == SECCLASS_PROCESS)
-		return "process";
-	return "unknown";
-#else
 	/* because tclass didn't match with userspace object classes,
 	 * its external representation is always same as internal one */
 	return security_class_to_string((security_class_t) tclass);
-#endif
 }
 
 static const char *sepgsql_av_perm_to_string(uint16 tclass, uint32 perm)
@@ -172,17 +164,9 @@ static const char *sepgsql_av_perm_to_string(uint16 tclass, uint32 perm)
 			return "unknown";
 		}
 	}
-#ifdef SEPGSQLOPT_LIBSELINUX_1_33
-	/* for legacy libselinux (Fedora core 6) */
-	/* This code will be replaced near future */
-	if (tclass == SECCLASS_PROCESS && perm == PROCESS__TRANSITION)
-		return "transition";
-	return "unknown";
-#else
 	/* because tclass/perm didn't match with userspace object classes,
 	 * its external representation is always same as internal one */
 	return security_av_perm_to_string((security_class_t) tclass, (access_vector_t) perm);
-#endif
 }
 
 /*
@@ -358,14 +342,9 @@ static uint32 sepgsql_validate_av_perms(security_class_t tclass, access_vector_t
 				if (avc_shmem->catalog[i].av_perms[j].external & perms)
 					__perms |= avc_shmem->catalog[i].av_perms[j].internal;
 			}
-			//selnotice("tclass(ext:%d -> int:%d) av_perms(ext:%08x -> int:%08x) validated",
-			//		  tclass, avc_shmem->catalog[i].tclass.internal,
-			//		  perms, __perms);
 			return __perms;
 		}
 	}
-	//selnotice("tclass = %d is not user tclass, perms (%08x) is used as is", tclass, perms);
-
 	return (uint32) perms;
 }
 
