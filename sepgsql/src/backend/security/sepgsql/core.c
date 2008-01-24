@@ -446,44 +446,45 @@ static Oid sepgsql_compute_relabel(Oid ssid, Oid tsid, uint16 tclass)
 	return nsid;
 }
 
-static char *sepgsql_avc_audit(uint32 perms, struct avc_datum *avd, char *objname)
+static bool __avc_audit(uint32 perms, struct avc_datum *avd, char *objname,
+						char *audit_buf, int buflen)
 {
 	/* we have to hold LW_SHARED lock at least */
 	uint32 denied, audited, mask;
-	char buffer[4096];
 	char *context;
-	int len;
+	int ofs = 0;
 
 	denied = perms & ~avd->allowed;
 	audited = denied ? (denied & avd->auditdeny) : (perms & avd->auditallow);
 	if (!audited)
-		return NULL;
+		return false;
 
-	len = snprintf(buffer, sizeof(buffer), "%s {", denied ? "denied" : "granted");
+	ofs += snprintf(audit_buf + ofs, buflen - ofs, "%s {",
+					denied ? "denied" : "granted");
 	for (mask=1; mask; mask <<= 1) {
 		if (audited & mask) {
-			len += snprintf(buffer + len, sizeof(buffer) - len, " %s",
+			ofs += snprintf(audit_buf + ofs, buflen - ofs, " %s",
 							sepgsql_av_perm_to_string(avd->tclass, mask));
 		}
 	}
-	len += snprintf(buffer + len, sizeof(buffer) - len, " }");
+	ofs += snprintf(audit_buf + ofs, buflen - ofs, " }");
 
 	context = DatumGetCString(DirectFunctionCall1(security_label_out, 
 												  ObjectIdGetDatum(avd->ssid)));
-	len += snprintf(buffer + len, sizeof(buffer) - len, " scontext=%s", context);
+	ofs += snprintf(audit_buf + ofs, buflen - ofs, " scontext=%s", context);
 	pfree(context);
 
 	context =  DatumGetCString(DirectFunctionCall1(security_label_out,
 												   ObjectIdGetDatum(avd->tsid)));
-	len += snprintf(buffer + len, sizeof(buffer) - len, " tcontext=%s", context);
+	ofs += snprintf(audit_buf + ofs, buflen - ofs, " tcontext=%s", context);
 	pfree(context);
 
-	len += snprintf(buffer + len, sizeof(buffer) - len, " tclass=%s",
+	ofs += snprintf(audit_buf + ofs, buflen - ofs, " tclass=%s",
 					sepgsql_class_to_string(avd->tclass));
 	if (objname)
-		len += snprintf(buffer + len, sizeof(buffer) - len, " name=%s", objname);
+		ofs += snprintf(audit_buf + ofs, buflen - ofs, " name=%s", objname);
 
-	return pstrdup(buffer);
+	return true;
 }
 
 static inline int sepgsql_avc_hash(Oid ssid, Oid tsid, uint16 tclass)
@@ -561,10 +562,10 @@ static void sepgsql_avc_insert(struct avc_datum *tmp)
 	return;
 }
 
-bool sepgsql_avc_permission_noaudit(Oid ssid, Oid tsid, uint16 tclass, uint32 perms,
-									char **audit, char *objname)
+static bool __avc_permission(Oid ssid, Oid tsid, uint16 tclass, uint32 perms,
+							 char *objname, struct avc_datum *local_avd)
 {
-	struct avc_datum *avd, lavd;
+	struct avc_datum *avd;
 	uint32 denied;
 	bool rc = true;
 	bool wlock = false;
@@ -575,15 +576,15 @@ retry:
 	if (!avd) {
 		LWLockRelease(avc_shmem->lock);
 
-		sepgsql_compute_avc_datum(ssid, tsid, tclass, &lavd);
+		sepgsql_compute_avc_datum(ssid, tsid, tclass, local_avd);
 
 		LWLockAcquire(avc_shmem->lock, LW_EXCLUSIVE);
 		wlock = true;
-		sepgsql_avc_insert(&lavd);
+		sepgsql_avc_insert(local_avd);
 	} else {
-		memcpy(&lavd, avd, sizeof(struct avc_datum));
+		memcpy(local_avd, avd, sizeof(struct avc_datum));
 	}
-	denied = perms & ~lavd.allowed;
+	denied = perms & ~local_avd->allowed;
 	if (!perms || denied) {
 		if (avc_shmem->enforcing) {
 			errno = EACCES;
@@ -604,40 +605,42 @@ retry:
 		}
 	}
 	LWLockRelease(avc_shmem->lock);
-	if (audit)
-		*audit = sepgsql_avc_audit(perms, &lavd, objname);
 
 	return rc;
 }
 
 void sepgsql_avc_permission(Oid ssid, Oid tsid, uint16 tclass, uint32 perms, char *objname)
 {
-	char *audit;
+	struct avc_datum local_avd;
+	char audit_buf[4096];
 	bool rc;
 
-	rc = sepgsql_avc_permission_noaudit(ssid, tsid, tclass, perms, &audit, objname);
-	sepgsql_audit(rc, audit);
-
-	if (audit)
-		pfree(audit);
+	rc = __avc_permission(ssid, tsid, tclass, perms, objname, &local_avd);
+	if (__avc_audit(perms, &local_avd, objname,
+					audit_buf, sizeof(audit_buf))) {
+		elog(rc ? NOTICE : ERROR, "SELinux: %s", audit_buf);
+	} else if (rc != true) {
+		elog(ERROR, "SELinux: security policy violation.");
+	}
 }
 
-void sepgsql_audit(bool result, char *message)
+bool sepgsql_avc_permission_noabort(Oid ssid, Oid tsid, uint16 tclass, uint32 perms, char *objname)
 {
-	if (message) {
-		ereport((result ? NOTICE : ERROR),
-				(errcode(ERRCODE_INTERNAL_ERROR),
-				 errmsg("SELinux: %s", message)));
-	} else if (!result) {
-		ereport(ERROR,
-				(errcode(ERRCODE_INTERNAL_ERROR),
-				 errmsg("Transaction aborted due to SELinux access denied.")));
+	struct avc_datum local_avd;
+	char audit_buf[4096];
+	bool rc;
+
+	rc = __avc_permission(ssid, tsid, tclass, perms, objname, &local_avd);
+	if (__avc_audit(perms, &local_avd, objname,
+					audit_buf, sizeof(audit_buf))) {
+		elog(NOTICE, "SELinux: %s", audit_buf);
 	}
+	return rc;
 }
 
 Oid sepgsql_avc_createcon(Oid ssid, Oid tsid, uint16 tclass)
 {
-	struct avc_datum *avd, lavd;
+	struct avc_datum *avd, local_avd;
 	Oid nsid;
 
 	LWLockAcquire(avc_shmem->lock, LW_SHARED);
@@ -645,11 +648,11 @@ Oid sepgsql_avc_createcon(Oid ssid, Oid tsid, uint16 tclass)
 	if (!avd) {
 		LWLockRelease(avc_shmem->lock);
 
-		sepgsql_compute_avc_datum(ssid, tsid, tclass, &lavd);
+		sepgsql_compute_avc_datum(ssid, tsid, tclass, &local_avd);
 
 		LWLockAcquire(avc_shmem->lock, LW_EXCLUSIVE);
-		sepgsql_avc_insert(&lavd);
-		nsid = lavd.create;
+		sepgsql_avc_insert(&local_avd);
+		nsid = local_avd.create;
 	} else {
 		nsid = avd->create;
 	}
