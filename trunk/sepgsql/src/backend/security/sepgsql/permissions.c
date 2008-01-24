@@ -361,14 +361,19 @@ static bool __check_tuple_perms(Oid tableoid, Oid tcontext, uint32 perms,
 	}
 
 	if (perms) {
-		char *audit;
-		rc = sepgsql_avc_permission_noaudit(sepgsqlGetClientContext(),
-											tcontext,
-											tclass,
-											perms,
-											&audit,
-											sepgsqlGetTupleName(tableoid, tuple));
-		sepgsql_audit(abort ? rc : true, audit);
+		if (abort) {
+			sepgsql_avc_permission(sepgsqlGetClientContext(),
+								   tcontext,
+								   tclass,
+								   perms,
+								   sepgsqlGetTupleName(tableoid, tuple));
+		} else {
+			rc = sepgsql_avc_permission_noabort(sepgsqlGetClientContext(),
+												tcontext,
+												tclass,
+												perms,
+												sepgsqlGetTupleName(tableoid, tuple));
+		}
 	}
 	return rc;
 }
