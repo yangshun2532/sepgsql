@@ -45,7 +45,7 @@ void pgaceTransformSelectStmt(List *targetList) {
 		if (tle->resjunk)
 			continue;
 		if (!strcmp(tle->resname, SECURITY_SYSATTR_NAME)) {
-			if (exprType(tle->expr) != SECLABELOID)
+			if (exprType((Node *) tle->expr) != SECLABELOID)
 				elog(ERROR, "type mismatch in explicit labeling");
 			tle->resjunk = true;
 			break;
@@ -348,11 +348,6 @@ static Oid early_security_label_to_sid(char *seclabel)
 		if (sid < minsid)
 			minsid = sid;
 	}
-	if (!pgaceSecurityLabelIsValid(seclabel))
-		ereport(ERROR,
-				(errcode(ERRCODE_INTERNAL_ERROR),
-				 errmsg("'%s' is not a valid security label", seclabel)));
-
 	sid = minsid - 1;
 	fprintf(filp, "%u %s\n", sid, seclabel);
 	fclose(filp);
@@ -381,25 +376,25 @@ static char *early_sid_to_security_label(Oid sid)
 	fclose(filp);
 
 not_found:
-	seclabel = pgaceSecurityLabelNotFound(sid);
-	ereport((seclabel ? DEBUG1 : ERROR),
-			(errcode(ERRCODE_INTERNAL_ERROR),
-			 errmsg("no text representation for sid = %u", sid)));
+	seclabel = pgaceSecurityLabelCheckValid(NULL);
+	elog(seclabel ? NOTICE : ERROR,
+		 "PGACE: No text representation for sid = %u", sid);
 	return seclabel;
 }
 
 static Oid get_security_label_oid(Relation rel, CatalogIndexState ind, char *new_label)
 {
 	/* rel has to be opened with RowExclusiveLock */
-	char *mlabel_str = pgaceSecurityLabelOfLabel(new_label);
+	char *mlabel_str, *__mlabel_str;
 	Datum mlabel_text;
 	HeapTuple tuple;
 	Oid label_oid;
 
-	if (!pgaceSecurityLabelIsValid(mlabel_str))
-		ereport(ERROR,
-				(errcode(ERRCODE_INTERNAL_ERROR),
-				 errmsg("'%s' is not a valid security label", mlabel_str)));
+	mlabel_str = pgaceSecurityLabelOfLabel(new_label);
+	__mlabel_str = pgaceSecurityLabelCheckValid(mlabel_str);
+	if (mlabel_str != __mlabel_str)
+		elog(NOTICE, "PGACE: '%s' is not a valid security label,"
+					 " '%s' is applied instead.", mlabel_str, __mlabel_str);
 
 	/* 1. lookup syscache */
 	mlabel_text = DirectFunctionCall1(textin, CStringGetDatum(mlabel_str));
@@ -484,10 +479,6 @@ static Oid security_label_to_sid(char *label_str)
 			Datum value = PointerGetDatum(label_text);
 			char isnull = ' ';
 
-			if (!pgaceSecurityLabelIsValid(label_str))
-				ereport(ERROR,
-						(errcode(ERRCODE_INTERNAL_ERROR),
-						 errmsg("'%s' is not a valid security label", label_str)));
 			ind = CatalogOpenIndexes(rel);
 
 			tuple = heap_formtuple(RelationGetDescr(rel),
@@ -539,10 +530,9 @@ static char *sid_to_security_label(Oid sid)
 		heap_close(rel, AccessShareLock);
 
 		if (!HeapTupleIsValid(tuple)) {
-			seclabel = pgaceSecurityLabelNotFound(sid);
-			ereport((seclabel ? DEBUG1 : ERROR),
-					(errcode(ERRCODE_INTERNAL_ERROR),
-					 errmsg("no text representation for sid = %u", sid)));
+			seclabel = pgaceSecurityLabelCheckValid(NULL);
+			elog(seclabel ? NOTICE : ERROR,
+				 "PGACE: No text representation for sid = %u", sid);
 			return seclabel;
 		}
 	}
@@ -563,12 +553,14 @@ Datum
 security_label_in(PG_FUNCTION_ARGS)
 {
 	char *label = PG_GETARG_CSTRING(0);
-	Oid sid;
+	char *__label;
 
 	label = pgaceSecurityLabelIn(label);
-	sid = security_label_to_sid(label);
+	__label = pgaceSecurityLabelCheckValid(label);
+	if (label != __label)
+		elog(ERROR, "PGACE: '%s' is not a valid security label", label);
 
-	PG_RETURN_OID(sid);
+	PG_RETURN_OID(security_label_to_sid(label));
 }
 
 /* security_label_out -- security_label output function */
@@ -576,12 +568,12 @@ Datum
 security_label_out(PG_FUNCTION_ARGS)
 {
 	Oid sid = PG_GETARG_OID(0);
-	char *label;
-
-	label = sid_to_security_label(sid);
-	label = pgaceSecurityLabelOut(label);
-
-	PG_RETURN_CSTRING(label);
+	char *label = sid_to_security_label(sid);
+	char *__label = pgaceSecurityLabelCheckValid(label);
+	if (label != __label)
+		elog(NOTICE, "PGACE: '%s' is not a valid security label,"
+					 " '%s' is applied instead.", label, __label);
+	PG_RETURN_CSTRING(pgaceSecurityLabelOut(__label));
 }
 
 /* security_label_raw_in -- security_label input function in raw format */
@@ -589,6 +581,11 @@ Datum
 security_label_raw_in(PG_FUNCTION_ARGS)
 {
 	char *label = PG_GETARG_CSTRING(0);
+	char *__label;
+
+	__label = pgaceSecurityLabelCheckValid(label);
+	if (label != __label)
+		elog(ERROR, "PGACE: '%s' is not a valid security label", label);
 
 	PG_RETURN_OID(security_label_to_sid(label));
 }
@@ -598,8 +595,13 @@ Datum
 security_label_raw_out(PG_FUNCTION_ARGS)
 {
 	Oid sid = PG_GETARG_OID(0);
+	char *label = sid_to_security_label(sid);
+	char *__label = pgaceSecurityLabelCheckValid(label);
 
-	PG_RETURN_CSTRING(sid_to_security_label(sid));
+	if (label != __label)
+		elog(NOTICE, "PGACE: '%s' is not a valid security label,"
+					 " '%s' is applied instead.", label, __label);
+	PG_RETURN_CSTRING(__label);
 }
 
 /* text_to_security_label -- security_label cast function */
