@@ -566,14 +566,19 @@ char *pgaceSecurityLabelOut(char *seclabel)
 }
 
 /*
- * pgaceSecurityLabelIsValid() checks whether the @seclabel is valid or not.
- * return false, if @seclabel is not valid security attribute in text representation.
+ * pgaceSecurityLabelCheckValid() checks whether the @seclabel is valid or not.
+ * In addition, it can returns an alternative security label, if possible.
+ * 
+ * It has to return @seclabel as is, if @seclabel is a valid security label.
+ * It can return an alternative label, if @seclabel is NOT a valid one and
+ * there is an alternative. In any other case, it returns NULL.
+ * @seclabel may be NULL. In this case, @seclabel is always invalid.
  *
- * @seclabel : security attribute in text representation
+ * @seclabel : security label to be checked
  */
-bool pgaceSecurityLabelIsValid(char *seclabel)
+char *pgaceSecurityLabelCheckValid(char *seclabel)
 {
-	return true;
+	return seclabel;
 }
 
 /*
@@ -584,18 +589,6 @@ bool pgaceSecurityLabelIsValid(char *seclabel)
  *              inserted into pg_security.
  */
 char *pgaceSecurityLabelOfLabel(char *new_label)
-{
-	return pstrdup("unlabeled");
-}
-
-/*
- * pgaceSecurityLabelNotFound() has to return a string representation of security
- * attribute, when no tuple with oid equals to @sid is within pg_security system
- * catalog.
- *
- * @sid : required sid, but not found on pg_security
- */
-char *pgaceSecurityLabelNotFound(Oid sid)
 {
 	return pstrdup("unlabeled");
 }

@@ -110,9 +110,8 @@ extern void pgaceLargeObjectExport(int fd, Oid loid);
  ******************************************************************/
 extern char *pgaceSecurityLabelIn(char *seclabel);
 extern char *pgaceSecurityLabelOut(char *seclabel);
-extern bool  pgaceSecurityLabelIsValid(char *seclabel);
+extern char *pgaceSecurityLabelCheckValid(char *seclabel);
 extern char *pgaceSecurityLabelOfLabel(char *new_label);
-extern char *pgaceSecurityLabelNotFound(Oid sid);
 
 /******************************************************************
  * Extended node type hooks
