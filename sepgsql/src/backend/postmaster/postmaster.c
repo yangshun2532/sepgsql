@@ -2047,8 +2047,7 @@ pmdie(SIGNAL_ARGS)
 			ExitPostmaster(0);
 			break;
 	}
-	// FIXME: Is it really necessary?
-	//pgaceFinalizePostmaster();
+	pgaceFinalizePostmaster();
 
 	PG_SETMASK(&UnBlockSig);
 
