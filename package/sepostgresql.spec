@@ -204,6 +204,9 @@ fi
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
 
 %changelog
+* Fri Jan 25 2008 <kaigai@kaigai.gr.jp> - sepostgresql-8.3RC2-2.62
+- BUGFIX: add handling to invalid contexts already stored
+
 * Tue Jan 22 2008 <kaigai@kaigai.gr.jp> - sepostgresql-8.3RC2-2.56
 - BUGFIX: lack of locks when refering buffer pages at update/delete hooks
 - BUGFIX: explicit labeling using SELECT ... INTO statement.

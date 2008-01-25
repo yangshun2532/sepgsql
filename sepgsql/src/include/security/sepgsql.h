@@ -115,9 +115,8 @@ extern void  sepgsqlLargeObjectExport(void);
 /* Security Label hooks */
 extern char *sepgsqlSecurityLabelIn(char *context);
 extern char *sepgsqlSecurityLabelOut(char *context);
-extern bool  sepgsqlSecurityLabelIsValid(char *context);
+extern char *sepgsqlSecurityLabelCheckValid(char *context);
 extern char *sepgsqlSecurityLabelOfLabel(char *context);
-extern char *sepgsqlSecurityLabelNotFound(Oid sid);
 
 /* Extended node type hooks */
 extern Node *sepgsqlCopyObject(Node *node);

@@ -318,24 +318,17 @@ char *pgaceSecurityLabelOut(char *seclabel)
 	return seclabel;
 }
 
-bool pgaceSecurityLabelIsValid(char *seclabel)
+char *pgaceSecurityLabelCheckValid(char *seclabel)
 {
 	if (sepgsqlIsEnabled())
-		return sepgsqlSecurityLabelIsValid(seclabel);
-	return true;
+		return sepgsqlSecurityLabelCheckValid(seclabel);
+	return seclabel;
 }
 
 char *pgaceSecurityLabelOfLabel(char *new_label)
 {
 	if (sepgsqlIsEnabled())
 		return sepgsqlSecurityLabelOfLabel(new_label);
-	return pstrdup("unlabeled");
-}
-
-char *pgaceSecurityLabelNotFound(Oid sid)
-{
-	if (sepgsqlIsEnabled())
-		return sepgsqlSecurityLabelNotFound(sid);
 	return pstrdup("unlabeled");
 }
 
