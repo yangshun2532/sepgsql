@@ -483,10 +483,29 @@ char *sepgsqlSecurityLabelOut(char *raw_context) {
 	return result;
 }
 
-bool sepgsqlSecurityLabelIsValid(char *context) {
-	if (!security_check_context_raw(context))
-		return true;
-	return false;
+char *sepgsqlSecurityLabelCheckValid(char *context) {
+	security_context_t unlbl_con;
+	char *unlbl_result = NULL;
+
+	if (context && !security_check_context_raw(context))
+		return context;
+
+	/* context is invalid one */
+	if (security_get_initial_context_raw("unlabeled", &unlbl_con))
+		elog(ERROR, "SELinux: could not assign an alternative security context");
+	PG_TRY();
+	{
+		unlbl_result = pstrdup(unlbl_con);
+	}
+	PG_CATCH();
+	{
+		freecon(unlbl_con);
+		PG_RE_THROW();
+	}
+	PG_END_TRY();
+	freecon(unlbl_con);
+
+	return unlbl_result;
 }
 
 char *sepgsqlSecurityLabelOfLabel(char *context) {
@@ -511,10 +530,11 @@ char *sepgsqlSecurityLabelOfLabel(char *context) {
 
 	/* compute pg_selinux tuple context */
 	rc = security_compute_create_raw(scon, tcon, SECCLASS_DB_TUPLE, &ncon);
+	elog(NOTICE, "scon=%s tcon=%s tclass=%u rc=%d", scon, tcon, SECCLASS_DB_TUPLE, errno);
 	pfree(tcon);
 	freecon(scon);
 	if (rc)
-		selerror("could not compute a newly created security context");
+		elog(ERROR, "SELinux: could not compute label of pg_security");
 
 	/* copy tuple's context */
 	PG_TRY();
@@ -531,28 +551,6 @@ char *sepgsqlSecurityLabelOfLabel(char *context) {
 	freecon(ncon);
 
 	return _ncon;
-}
-
-extern char *selinux_mnt;
-
-char *sepgsqlSecurityLabelNotFound(Oid sid) {
-	security_context_t unlabeled_con;
-	char *result = NULL;
-
-	if (!security_get_initial_context_raw("unlabeled", &unlabeled_con)) {
-		PG_TRY();
-		{
-			result = pstrdup(unlabeled_con);
-		}
-		PG_CATCH();
-		{
-			freecon(unlabeled_con);
-			PG_RE_THROW();
-		}
-		PG_END_TRY();
-		freecon(unlabeled_con);
-	}
-	return result;
 }
 
 /******************************************************************
