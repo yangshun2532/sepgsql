@@ -279,7 +279,7 @@ static bool pg_security_is_available() {
 
 	if (pg_security_state > 0)
 		return true;
-	if (IsBootstrapProcessingMode() || pg_security_state == 0)
+	if (IsBootstrapProcessingMode() || pg_security_state==0)
 		return false;
 	/*
 	 * if initial setting up was not done, the cache file is remaining.
@@ -288,7 +288,7 @@ static bool pg_security_is_available() {
 	 * the existance of 'EARLY_PG_SECURITY'.
 	 */
 	snprintf(fname, sizeof(fname), "%s/%s", DataDir, EARLY_PG_SECURITY);
-	filp = fopen(fname, "a+");
+	filp = fopen(fname, "rb");
 	if (filp) {
 		Relation rel;
 		CatalogIndexState ind;
@@ -327,12 +327,12 @@ static bool pg_security_is_available() {
 		PG_CATCH();
 		{
 			fclose(filp);
-			pg_security_state = -1;
 			PG_RE_THROW();
 		}
 		PG_END_TRY();
 		fclose(filp);
-		unlink(fname);
+		if (unlink(fname) != 0)
+			elog(ERROR, "PGACE: could not unlink '%s'", fname);
 	}
 	pg_security_state = 1;
 
