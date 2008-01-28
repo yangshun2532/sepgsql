@@ -1,7 +1,7 @@
 /**********************************************************************
  * plperl.c - perl as a procedural language for PostgreSQL
  *
- *	  $PostgreSQL: pgsql/src/pl/plperl/plperl.c,v 1.134 2007/12/01 17:58:42 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/pl/plperl/plperl.c,v 1.136 2008/01/23 00:55:47 adunstan Exp $
  *
  **********************************************************************/
 
@@ -260,6 +260,13 @@ _PG_init(void)
 #define SAFE_MODULE \
 	"require Safe; $Safe::VERSION"
 
+/* 
+ * The temporary enabling of the caller opcode here is to work around a
+ * bug in perl 5.10, which unkindly changed the way its Safe.pm works, without
+ * notice. It is quite safe, as caller is informational only, and in any case
+ * we only enable it while we load the 'strict' module.
+ */
+
 #define SAFE_OK \
 	"use vars qw($PLContainer); $PLContainer = new Safe('PLPerl');" \
 	"$PLContainer->permit_only(':default');" \
@@ -272,8 +279,8 @@ _PG_init(void)
 	"sub ::mksafefunc {" \
 	"      my $ret = $PLContainer->reval(qq[sub { $_[0] $_[1] }]); " \
 	"      $@ =~ s/\\(eval \\d+\\) //g if $@; return $ret; }" \
-	"$PLContainer->permit('require'); $PLContainer->reval('use strict;');" \
-	"$PLContainer->deny('require');" \
+	"$PLContainer->permit(qw[require caller]); $PLContainer->reval('use strict;');" \
+	"$PLContainer->deny(qw[require caller]); " \
 	"sub ::mk_strict_safefunc {" \
 	"      my $ret = $PLContainer->reval(qq[sub { BEGIN { strict->import(); } $_[0] $_[1] }]); " \
 	"      $@ =~ s/\\(eval \\d+\\) //g if $@; return $ret; }"
