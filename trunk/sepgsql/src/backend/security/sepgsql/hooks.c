@@ -530,7 +530,6 @@ char *sepgsqlSecurityLabelOfLabel(char *context) {
 
 	/* compute pg_selinux tuple context */
 	rc = security_compute_create_raw(scon, tcon, SECCLASS_DB_TUPLE, &ncon);
-	elog(NOTICE, "scon=%s tcon=%s tclass=%u rc=%d", scon, tcon, SECCLASS_DB_TUPLE, errno);
 	pfree(tcon);
 	freecon(scon);
 	if (rc)
