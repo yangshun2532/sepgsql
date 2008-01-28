@@ -15,7 +15,7 @@
  *
  * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
  *
- * $PostgreSQL: pgsql/src/backend/utils/adt/ri_triggers.c,v 1.101 2008/01/03 21:23:15 tgl Exp $
+ * $PostgreSQL: pgsql/src/backend/utils/adt/ri_triggers.c,v 1.102 2008/01/25 04:46:07 tgl Exp $
  *
  * ----------
  */
@@ -3100,6 +3100,8 @@ ri_FetchConstraintInfo(RI_ConstraintInfo *riinfo,
 		elog(ERROR, "conkey is not a 1-D smallint array");
 	riinfo->nkeys = numkeys;
 	memcpy(riinfo->fk_attnums, ARR_DATA_PTR(arr), numkeys * sizeof(int16));
+	if ((Pointer) arr != DatumGetPointer(adatum))
+		pfree(arr);				/* free de-toasted copy, if any */
 
 	adatum = SysCacheGetAttr(CONSTROID, tup,
 							 Anum_pg_constraint_confkey, &isNull);
@@ -3114,6 +3116,8 @@ ri_FetchConstraintInfo(RI_ConstraintInfo *riinfo,
 		ARR_ELEMTYPE(arr) != INT2OID)
 		elog(ERROR, "confkey is not a 1-D smallint array");
 	memcpy(riinfo->pk_attnums, ARR_DATA_PTR(arr), numkeys * sizeof(int16));
+	if ((Pointer) arr != DatumGetPointer(adatum))
+		pfree(arr);				/* free de-toasted copy, if any */
 
 	adatum = SysCacheGetAttr(CONSTROID, tup,
 							 Anum_pg_constraint_conpfeqop, &isNull);
@@ -3128,6 +3132,8 @@ ri_FetchConstraintInfo(RI_ConstraintInfo *riinfo,
 		ARR_ELEMTYPE(arr) != OIDOID)
 		elog(ERROR, "conpfeqop is not a 1-D Oid array");
 	memcpy(riinfo->pf_eq_oprs, ARR_DATA_PTR(arr), numkeys * sizeof(Oid));
+	if ((Pointer) arr != DatumGetPointer(adatum))
+		pfree(arr);				/* free de-toasted copy, if any */
 
 	adatum = SysCacheGetAttr(CONSTROID, tup,
 							 Anum_pg_constraint_conppeqop, &isNull);
@@ -3142,6 +3148,8 @@ ri_FetchConstraintInfo(RI_ConstraintInfo *riinfo,
 		ARR_ELEMTYPE(arr) != OIDOID)
 		elog(ERROR, "conppeqop is not a 1-D Oid array");
 	memcpy(riinfo->pp_eq_oprs, ARR_DATA_PTR(arr), numkeys * sizeof(Oid));
+	if ((Pointer) arr != DatumGetPointer(adatum))
+		pfree(arr);				/* free de-toasted copy, if any */
 
 	adatum = SysCacheGetAttr(CONSTROID, tup,
 							 Anum_pg_constraint_conffeqop, &isNull);
@@ -3156,6 +3164,8 @@ ri_FetchConstraintInfo(RI_ConstraintInfo *riinfo,
 		ARR_ELEMTYPE(arr) != OIDOID)
 		elog(ERROR, "conffeqop is not a 1-D Oid array");
 	memcpy(riinfo->ff_eq_oprs, ARR_DATA_PTR(arr), numkeys * sizeof(Oid));
+	if ((Pointer) arr != DatumGetPointer(adatum))
+		pfree(arr);				/* free de-toasted copy, if any */
 
 	ReleaseSysCache(tup);
 }
