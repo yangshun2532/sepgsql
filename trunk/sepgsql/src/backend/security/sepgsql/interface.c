@@ -250,15 +250,14 @@ void pgaceLoadSharedModule(const char *filename) {
  * Binary Large Object (BLOB) hooks
  ******************************************************************/
 
-Oid pgaceLargeObjectGetSecurity(HeapTuple tuple) {
-	if (!sepgsqlIsEnabled())
-		selerror("SELinux is disabled");
-	return sepgsqlLargeObjectGetSecurity(tuple);
+void pgaceLargeObjectGetSecurity(HeapTuple tuple) {
+	if (sepgsqlIsEnabled())
+		sepgsqlLargeObjectGetSecurity(tuple);
 }
 
-void pgaceLargeObjectSetSecurity(HeapTuple tuple, Oid lo_security, bool is_first) {
+void pgaceLargeObjectSetSecurity(HeapTuple tuple, Oid lo_security) {
 	if (sepgsqlIsEnabled())
-		sepgsqlLargeObjectSetSecurity(tuple, lo_security, is_first);
+		sepgsqlLargeObjectSetSecurity(tuple, lo_security);
 }
 
 void pgaceLargeObjectCreate(Relation rel, HeapTuple tuple) {
