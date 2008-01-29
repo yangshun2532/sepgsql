@@ -135,7 +135,7 @@ close_lo_relation(bool isCommit)
  * read with can be specified.
  */
 static bool
-myLargeObjectExists(Oid loid, Snapshot snapshot)
+myLargeObjectExists(Oid loid, Snapshot snapshot, int flags)
 {
 	bool		retval = false;
 	Relation	pg_largeobject;
@@ -158,7 +158,7 @@ myLargeObjectExists(Oid loid, Snapshot snapshot)
 
 	tuple = systable_getnext(sd);
 	if (HeapTupleIsValid(tuple)) {
-		pgaceLargeObjectOpen(pg_largeobject, tuple, !(snapshot == SnapshotNow));
+		pgaceLargeObjectOpen(pg_largeobject, tuple, flags == IFS_RDLOCK);
 		retval = true;
 	}
 
@@ -259,7 +259,7 @@ inv_open(Oid lobjId, int flags, MemoryContext mcxt)
 		elog(ERROR, "invalid flags: %d", flags);
 
 	/* Can't use LargeObjectExists here because it always uses SnapshotNow */
-	if (!myLargeObjectExists(lobjId, retval->snapshot))
+	if (!myLargeObjectExists(lobjId, retval->snapshot, retval->flags))
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("large object %u does not exist", lobjId)));
