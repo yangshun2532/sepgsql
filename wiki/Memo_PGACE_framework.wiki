@@ -27,7 +27,7 @@ When a developer tries to implement his security module as a guest of PGACE, he 
     |  |     return true;                  |
     |  +-----------------------------------+
     |
-    | ... If SE-PostgreSQL is enabled
+    | ... When SE-PostgreSQL is enabled
     |     at security/sepgsql/interface.c
     |    +---- pgaceHeapTupleInsert() ---------------+
     +------->  - attach default security attribute   |
@@ -72,11 +72,11 @@ Any text representation is actually stored in `pg_security` system catalog, newl
 |    |         :                |
 |    | padding field            |
 |    |         :                |
-|    +--------------------------+ +t_hoff - 2 * sizeof(Oid)
-|    | Oid  <security ID>   O-------------------------------+
-|    +--------------------------+ +t_hoff - sizeof(Oid)     |
-|    | Oid  <Object ID>         |                           |
-+--> +--------------------------+ +t_off                    |
+|    |  +-----------------------+ +t_hoff - 2 * sizeof(Oid)
+|    |  | Oid  <security ID>  O-----------------------------+
+|    |  +-----------------------+ +t_hoff - sizeof(Oid)     |
+|    |  | Oid  <Object ID>      |                           |
++--> +--+-----------------------+ +t_off                    |
      | Containts of tuple       |                           |
      |                          |                           |
      :                          :                           |
@@ -108,155 +108,363 @@ Any text representation is actually stored in `pg_security` system catalog, newl
 This section introduces the specifications of PGACE hooks.
 
 === 5.1 Initialization/Finalization hooks ===
-`Size pgaceShmemSize(void)`
-  It is invoked when shared memory segment is created. The guest can returns the size of shared memory buffer required. The returned value will be added to total size of them.
-  If you require no shared memory buffer, 0 should be always returned.
 
-`void pgaceInitialize(bool is_bootstrap)`
-  It is invoked on initialization of PostgreSQL instance. The guest can override this hook to initialize itself.
-  If you don't need this hook, do nothing here.
+*`Size pgaceShmemSize(void)`*
 
-  @*is_bootstrap*
-    true, if this hook is invoked in bootstraping mode. Elsewhere, it is false.
+It is invoked during shared memory segment creation.
+The guest can return the size of shred memory required.
+The returned value will be added to total size of them.
+If you require no shared memory buffer, 0 should be always returned.
 
-`bool pgaceInitializePostmaster(void)`
-  It is invoked on initialization of PostgreSQL server process. The guest can override this hook to initialize itself.
-  The guest can return `false` to notice something errors are happen. The caller will exit PostgreSQL server process soon.
+*`void pgaceInitialize(bool is_bootstrap)`*
 
-  If you don't need this hook, always return `true`.
+It is invoked during initialization of PostgreSQL instance.
+The guest can override this hook to initialize itself, confirm the attributes of client and so on.
 
-`void pgaceFinalizePostmaster(void)`
-  It is invoked on finalization of PostgreSQL server process. The guest can override this hook to cleanup itself.
-  
+ * `bool is_bootstrap`
+   true, if this hook is invoked in bootstraping mode. Elsewhere, it is false.
+
+*`bool pgaceInitializePostmaster(void)`*
+
+It is involed during initialization of Postmaster server process.
+The guest can override this hook to initialize itself.
+The guest can return the status of its initialization.
+The caller will exit soon, if it receieved `false` from this hook,
+otherwise you should always return `true`.
+
+*`void pgaceFinalizePostmaster(void)`*
+
+It is invoked just before the dead of Postmaster server process.
+The guest can override this hook to cleanup itself.
 
 === 5.2 SQL proxy hooks ===
 
-`List *pgaceProxyQuery(List *queryList)`
-  It is invoked just after query rewriting phase. The guest can override this hook to check and modify the list of Query trees.
-  DDL queries don't go through query rewriter, however, this hook is also invoked in same timing.
-  The guest has to return the list of checked/modified Query trees. If you don't modify any Query tree, the `queryList` should be returned as is.
+*`List *pgaceProxyQuery(List *queryList)`*
 
-  @*queryList*
-    the list of Query-trees currently processed. You can fetch each Query tree as follows:
-{{{
+It is invoked just after query rewriting phase.
+The guest can override this hook to check and modify the list of Query-trees.
+DDL queries don't go through query rewriter, however, this hook is also invoked in same timing.
+
+The guest has to return the list of checked or modified Query-trees.
+If you don't modify any Query-tree, the `queryList` should be returned as is.
+
+ * `List *queryList`
+  the list of Query-trees currently processes.
+  You can fetch each Query-tree as follows:
+  {{{
 ListCell *l;
 
 foreach (l, queryList) {
     Query *q = (Query *) lfirst(l);
           :
 }
-}}}
+  }}}
 
-`void pgacePortalStart(Portal portal)`
-  It is invoked just before executing PortalStart(). The guest can override this hook to check the Portal.
+*`void pgacePortalStart(Portal portal)`*
 
-`void pgaceExecutorStart(QueryDesc *queryDesc, int eflags)`
-  It is invoked just before executing ExecutorStart(). The guest can override this hook to check the Query descriptor.
+It is invoked just before executing PortalStart().
+The guest can override this hook to check the Portal.
 
-  @*queryDesc*
-    It is the first argument of ExecutorStart().
-  @*eflags*
-    It is the second argument of ExecutorStart(). You should pay attention that `eflags & EXEC_FLAG_EXPLAIN_ONLY` means this query is not executed in actualy.
+ * `Portal portal`
+  It is the first argument of PortalStart() as is.
+
+*`void pgaceExecutorStart(QueryDesc *queryDesc, int eflags)`*
+
+It is invoked just before executing ExecutorStart().
+The guest can override this hook to check the Query descriptor.
+
+ * `queryDesc`
+  It is the query descriptor currently processed, and the first argument of ExecutorStart().
+ * `eflags`
+  It is the second argument of ExecutorStart().
+  You should pay attention that this query is not actually executed when `eflags & EXEC_FLAG_EXPLAIN_ONLY` is positive.
 
 
 === 5.3 HeapTuple modification hooks ===
 
-`bool pgaceHeapTupleInsert(Relation rel, HeapTuple tuple, bool is_internal, bool with_returning)`
+*`bool pgaceHeapTupleInsert(Relation rel, HeapTuple tuple, bool is_internal, bool with_returning)`*
 
+It is invoked just before when a new tuple is inserted.
+In this time, all per-tuple BEFORE INSERT triggers have been invoked yet.
+The guest can check this tuple to make its decison.
 
-`bool pgaceHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple newtup, bool is_internal, bool with_returning)`
+The new tuple doesn't have its security attribute without explicit labeling.
+The guest should attach its security attribute, if necessary.
 
+This hook can return `false` to prevent inserting the tuple delivered.
+When `is_internal` is `false`, insertion of the tuple is skipped. Otherwise, an error will be generated and it aborts current transaction. No need to say, the guest can generate an error directly.
 
-`bool pgaceHeapTupleDelete(Relation rel, ItemPointer otid, bool is_internal, bool with_returning)`
+ * `Relation rel`
+  The target relation of this operation.
+ * `HeapTuple tuple`
+  The new tuple to be inserted
+ * `bool is_internal`
+  It indicates whether we cannot skip to insert this tuple, or not.
+ * `bool with_returning`
+  true, if `INSERT` statement has `RETURNING` clause.
 
+*`bool pgaceHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple newtup, bool is_internal, bool with_returning)`*
+
+It is invoked just before when an existing tuple is updated.
+In this time, all per-tuple BEFORE UPDATE triggers have been invoked yet.
+The guest can check this new/old tuple to make its decison.
+
+The new tuple doesn't have its security attribute without explicit labeling.
+The guest should copy its security attribute from older version, if necessary.
+
+This hook can return `false` to prevent updating the tuple delivered.
+When `is_internal` is `false`, updating the tuple will be skipped. Otherwise, an error will be generated and it aborts current transaction. No need to say, the guest can generate an error directly.
+
+ * `Relation rel`
+  The target relation of this operation.
+ * `ItemPointer otid`
+  Pointer of the older version tuple.
+ * `HeapTuple newtup`
+  The new tuple to be updated.
+ * `bool is_internal`
+  It indicates whether we cannot skip to update this tuple, or not.
+ * `bool with_returning`
+  true, if `UPDATE` statement has `RETURNING` clause.
+
+*`bool pgaceHeapTupleDelete(Relation rel, ItemPointer otid, bool is_internal, bool with_returning)`*
+
+It is invoked just before when an existing tuple is deleted.
+In this time, all per-tuple BEFORE DELETE triggers have been invoked yet.
+The guest can check this new/old tuple to make its decison.
+
+This hook can return `false` to prevent deleting the tuple delivered.
+When `is_internal` is `false`, updating the tuple will be skipped. Otherwise, an error will be generated and it aborts current transaction. No need to say, the guest can generate an error directly.
+
+ * `Relation rel`
+  The target relation of this operation.
+ * `ItemPointer otid`
+  Pointer of the older version tuple.
+ * `bool is_internal`
+  It indicates whether we cannot skip to delete this tuple, or not.
+ * `bool with_returning`
+  true, if `DELETE` statement has `RETURNING` clause.
 
 === 5.4 Extended SQL statement hooks ===
 
-`DefElem *pgaceGramSecurityItem(char *defname, char *value)`
+The following series of hooks enables to provide several options to support explicit security labeling in CREATE TABLE/FUNCTION/DATABASE and ALTER TABLE/FUNCTION/DATABASE statements.
 
-`bool pgaceIsGramSecurityItem(DefElem *defel)`
+In SE-PostgreSQL case, it is extended as follows:
+{{{
+CREATE TABLE tbl (
+    a   integer primary key;
+    b   text CONTEXT = 'system_u:object_r:sepgsql_table_t:Secret'
+) CONTEXT = 'system_u:object_r:sepgsql_fixed_table_t';
+}}}
 
-`void pgaceGramCreateRelation(Relation rel, HeapTuple tuple, DefElem *defel)`
+In `src/backend/parser/gram.y`, the token of `CONTEXT = ...` is delivered to `pgaceGramSecurityItem()`. The first argument is left-hand of the token, and the second one is the right-hand. It generates a `DefElem` item which contains right-hand value, if the statement is acceptable.
 
-`void pgaceGramCreateAttribute(Relation rel, HeapTuple tuple, DefElem *defel)`
+`pgaceIsGramSecurityItem()` has to confirm whether the required `DefElem` item is came from `pgaceGramSecurityItem`, or not. It is generally done with checking `DefElem::defname`.
 
-`void pgaceGramAlterRelation(Relation rel, HeapTuple tuple, DefElem *defel)`
+The rest of hooks are invoked just before updating system catalog while these statements are executed.
 
-`void pgaceGramAlterAttribute(Relation rel, HeapTuple tuple, DefElem *defel)`
+*`DefElem *pgaceGramSecurityItem(char *defname, char *value)`*
 
-`void pgaceGramCreateDatabase(Relation rel, HeapTuple tuple, DefElem *defel)`
+It is invoked when query parser found a `<left hand> = <right hand>` pair in CREATE TABLE/FUNCTION/DATABASE or ALTER TABLE/FUNCTION/DATABASE statements.
+The guest has to check whether the left-hand is appropriate, or not. If appropriate, it can return `DefElen` item which contains the right-hand value.
+When the pair is not unexpected one, the guest should return NULL. It will cause a syntax error.
+ * `char *defname`
+  The right-hand of the pair. In the above example, `"context"` will be delivered.
+ * `char *value`
+  The left-hand of the pair. In the above example, `"system_u:object_r:sepgsql_table_t:Secret"` will be delivered.
 
-`void pgaceGramAlterDatabase(Relation rel, HeapTuple tuple, DefElem *defel)`
+*`bool pgaceIsGramSecurityItem(DefElem *defel)`*
 
-`void pgaceGramCreateFunction(Relation rel, HeapTuple tuple, DefElem *defel)`
+It is invoked when PGACE need to confirm whether the required `DefElem` item contains extended option, or not.
+It has to return true, if the delivered `DefElem` item is generated at `pgaceGramSecurityItem`. Otherwise, it should always false.
 
-`void pgaceGramAlterFunction(Relation rel, HeapTuple tuple, DefElem *defel)`
+ * `DefElem *defel`
+  `DefElem` object to be confirmed.
 
+*`void pgaceGramCreateRelation(Relation rel, HeapTuple tuple, DefElem *defel)`*
+
+It is invoked just before insering a tuple into `pg_class` system catalog, if CREATE TABLE has extended options.
+The guest can modify the given tuple which contains the metadata of new relation.
+Typically, an explicitly specified security attribtue will be attached using `HeapTupleSetSecurity()`.
+
+ * `Relation rel`
+  `pg_class` relation opened with `RowExclusiveLock`.
+ * `HeapTuple tuple`
+  A tuple to be inserted into `pg_class`.
+ * `DefElem *defel`
+  A `DefElem` item generated at `pgaceGramSecurityItem()`.
+
+*NOTE:* pgaceHeapTupleInsert() will be invoked later, so permission checks are not necessary.
+
+*`void pgaceGramCreateAttribute(Relation rel, HeapTuple tuple, DefElem *defel)`*
+
+It is invoked just before inserting a tuple into `pg_attribute` system catalog, if CREATE TABLE has extended options in the column definition.
+The guest can modify the given tuple which contains the metadata of new column.
+Typically, an explicitly specified security attribtue will be attached using `HeapTupleSetSecurity()`.
+
+ * `Relation rel`
+  `pg_attribute` relation opened with `RowExclusiveLock`.
+ * `HeapTuple tuple`
+  A tuple to be updated within `pg_attribute`.
+ * `DefElem *defel`
+  A `DefElem` item generated at `pgaceGramSecurityItem()`.
+
+*NOTE:* pgaceHeapTupleInsert() will be invoked later, so permission checks are not necessary.
+
+*`void pgaceGramAlterRelation(Relation rel, HeapTuple tuple, DefElem *defel)`*
+
+It is invoked just before updating `pg_class` system catalog, if ALTER TABLE has extended options.
+The guest can modify the given tuple which contains the metadata of relation.
+Typically, an explicitly specified security attribtue will be attached using `HeapTupleSetSecurity()`.
+
+ * `Relation rel`
+  `pg_class` relation opened with `RowExclusiveLock`.
+ * `HeapTuple tuple`
+  A tuple to be inserted into `pg_class`.
+ * `DefElem *defel`
+  A `DefElem` item generated at `pgaceGramSecurityItem()`.
+
+*NOTE:* pgaceHeapTupleUpdate() will be invoked later, so permission checks are not necessary.
+
+*`void pgaceGramAlterAttribute(Relation rel, HeapTuple tuple, DefElem *defel)`*
+
+It is invoked just before updating `pg_attribute` system catalog, if ALTER TABLE has extended options in the column definition.
+The guest can modify the given tuple which contains the metadata of the column.
+Typically, an explicitly specified security attribtue will be attached using `HeapTupleSetSecurity()`.
+
+ * `Relation rel`
+  `pg_class` relation opened with `RowExclusiveLock`.
+ * `HeapTuple tuple`
+  A tuple to be updated within `pg_class`.
+ * `DefElem *defel`
+  A `DefElem` item generated at `pgaceGramSecurityItem()`.
+
+*NOTE:* pgaceHeapTupleUpdate() will be invoked later, so permission checks are not necessary.
+
+*`void pgaceGramCreateDatabase(Relation rel, HeapTuple tuple, DefElem *defel)`*
+
+It is invoked just before inserting `pg_databse` system catalog, if CREATE DATABASE has extended options.
+The guest can modify the given tuple which contains the metadata of new database.
+Typically, an explicitly specified security attribtue will be attached using `HeapTupleSetSecurity()`.
+
+ * `Relation rel`
+  `pg_database` relation opened with `RowExclusiveLock`.
+ * `HeapTuple tuple`
+  A tuple to be inserted into `pg_database`.
+ * `DefElem *defel`
+  A `DefElem` item generated at `pgaceGramSecurityItem()`.
+
+*NOTE:* pgaceHeapTupleInsert() will be invoked later, so permission checks are not necessary.
+
+*`void pgaceGramAlterDatabase(Relation rel, HeapTuple tuple, DefElem *defel)`*
+
+It is invoked just before updating `pg_databse` system catalog, if ALTER DATABASE has extended options.
+The guest can modify the given tuple which contains the metadata of the database.
+Typically, an explicitly specified security attribtue will be attached using `HeapTupleSetSecurity()`.
+
+ * `Relation rel`
+  `pg_database` relation opened with `RowExclusiveLock`.
+ * `HeapTuple tuple`
+  A tuple to be inserted into `pg_database`.
+ * `DefElem *defel`
+  A `DefElem` item generated at `pgaceGramSecurityItem()`.
+
+*NOTE:* pgaceHeapTupleUpdate() will be invoked later, so permission checks are not necessary.
+
+*`void pgaceGramCreateFunction(Relation rel, HeapTuple tuple, DefElem *defel)`*
+
+It is invoked just before inserting a tuple into `pg_proc` system catalog, if `CREATE FUNCTION` has extended options.
+The guest can modify the given tuple which contains the metadata of new function.
+Typically, an explicitly specified security attribtue will be attached using `HeapTupleSetSecurity()`.
+
+ * `Relation rel`
+  `pg_proc` relation opened with `RowExclusiveLock`.
+ * `HeapTuple tuple`
+  A tuple to be inserted into `pg_proc`.
+ * `DefElem *defel`
+  A `DefElem` item generated at `pgaceGramSecurityItem()`.
+
+*NOTE:* pgaceHeapTupleInsert() will be invoked later, so permission checks are not necessary.
+
+*`void pgaceGramAlterFunction(Relation rel, HeapTuple tuple, DefElem *defel)`*
+
+It is invoked just before updating `pg_proc` system catalog, if `ALTER FUNCTION` has extended options.
+The guest can modify the given tuple which contains the metadata of new function.
+Typically, an explicitly specified security attribtue will be attached using `HeapTupleSetSecurity()`.
+
+ * `Relation rel`
+  `pg_proc` relation opened with `RowExclusiveLock`.
+ * `HeapTuple tuple`
+  A tuple to be updated within `pg_proc`.
+ * `DefElem *defel`
+  A `DefElem` item generated at `pgaceGramSecurityItem()`.
+
+
+*NOTE:* pgaceHeapTupleUpdate() will be invoked later, so permission checks are not necessary.
 
 === 5.5 DATABASE related hooks ===
 
-`void pgaceSetDatabaseParam(const char *name, char *argstring)`
+*`void pgaceSetDatabaseParam(const char *name, char *argstring)`*
 
-`void pgaceGetDatabaseParam(const char *name)`
+*`void pgaceGetDatabaseParam(const char *name)`*
 
 === 5.6 FUNCTION related hooks ===
-`void pgaceCallFunction(FmgrInfo *finfo)`
+*`void pgaceCallFunction(FmgrInfo *finfo)`*
 
-`bool pgaceCallFunctionTrigger(FmgrInfo *finfo, TriggerData *tgdata)`
+*`bool pgaceCallFunctionTrigger(FmgrInfo *finfo, TriggerData *tgdata)`*
 
-`void pgaceCallFunctionFastPath(FmgrInfo *finfo)`
+*`void pgaceCallFunctionFastPath(FmgrInfo *finfo)`*
 
-`Datum pgacePreparePlanCheck(Relation rel)`
+*`Datum pgacePreparePlanCheck(Relation rel)`*
 
-`void pgaceRestorePlanCheck(Relation rel, Datum pgace_saved)`
+*`void pgaceRestorePlanCheck(Relation rel, Datum pgace_saved)`*
 
 
 === 5.7 TABLE related hooks ===
-`void pgaceLockTable(Oid relid)`
+*`void pgaceLockTable(Oid relid)`*
 
 === 5.8 COPY TO/COPY FROM statement hooks ===
 
-`void pgaceCopyTable(Relation rel, List *attNumList, bool isFrom)`
+*`void pgaceCopyTable(Relation rel, List *attNumList, bool isFrom)`*
 
 
-`bool pgaceCopyToTuple(Relation rel, HeapTuple tuple)`
+*`bool pgaceCopyToTuple(Relation rel, HeapTuple tuple)`*
 
 
 === 5.9 Binary Large Object (BLOB) hooks ===
 
-`Oid pgaceLargeObjectGetSecurity(HeapTuple tuple)`
+*`Oid pgaceLargeObjectGetSecurity(HeapTuple tuple)`*
 
-`void pgaceLargeObjectSetSecurity(HeapTuple tuple, Oid lo_security, bool is_first)`
+*`void pgaceLargeObjectSetSecurity(HeapTuple tuple, Oid lo_security, bool is_first)`*
 
-`void pgaceLargeObjectCreate(Relation rel, HeapTuple tuple)`
+*`void pgaceLargeObjectCreate(Relation rel, HeapTuple tuple)`*
 
-`void pgaceLargeObjectDrop(Relation rel, HeapTuple tuple)`
+*`void pgaceLargeObjectDrop(Relation rel, HeapTuple tuple)`*
 
-`void pgaceLargeObjectOpen(Relation rel, HeapTuple tuple, bool read_only)`
+*`void pgaceLargeObjectOpen(Relation rel, HeapTuple tuple, bool read_only)`*
 
-`void pgaceLargeObjectRead(Relation rel, HeapTuple tuple, bool is_first)`
+*`void pgaceLargeObjectRead(Relation rel, HeapTuple tuple, bool is_first)`*
 
-`void pgaceLargeObjectWrite(Relation rel, HeapTuple newtup, HeapTuple oldtup, bool is_first)`
+*`void pgaceLargeObjectWrite(Relation rel, HeapTuple newtup, HeapTuple oldtup, bool is_first)`*
 
-`void pgaceLargeObjectTruncate(Relation rel, Oid loid)`
+*`void pgaceLargeObjectTruncate(Relation rel, Oid loid)`*
 
-`void pgaceLargeObjectImport(int fd)`
+*`void pgaceLargeObjectImport(int fd)`*
 
-`void pgaceLargeObjectExport(int fd, Oid loid)`
+*`void pgaceLargeObjectExport(int fd, Oid loid)`*
 
 === 5.10 Security Label hooks ===
 
-`char *pgaceSecurityLabelIn(char *seclabel)`
+*`char *pgaceSecurityLabelIn(char *seclabel)`*
 
-`char *pgaceSecurityLabelOut(char *seclabel)`
+*`char *pgaceSecurityLabelOut(char *seclabel)`*
 
-`char *pgaceSecurityLabelCheckValid(char *seclabel)`
+*`char *pgaceSecurityLabelCheckValid(char *seclabel)`*
 
-`char *pgaceSecurityLabelOfLabel(char *new_label)`
+*`char *pgaceSecurityLabelOfLabel(char *new_label)`*
 
 === 5.11 Extended node type hooks ===
-`Node *pgaceCopyObject(Node *orig)`
+*`Node *pgaceCopyObject(Node *orig)`*
 
-`bool pgaceOutObject(StringInfo str, Node *node)`
+*`bool pgaceOutObject(StringInfo str, Node *node)`*
 
-`void *pgaceReadObject(char *token)`
+*`void *pgaceReadObject(char *token)`*
