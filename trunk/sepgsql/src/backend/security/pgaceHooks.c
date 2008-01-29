@@ -431,11 +431,8 @@ void pgaceLoadSharedModule(const char *filename) {
  *
  * @tuple : a tuple which is a part of the target largeobject.
  */
-Oid pgaceLargeObjectGetSecurity(HeapTuple tuple) {
-	ereport(ERROR,
-			(errcode(ERRCODE_INTERNAL_ERROR),
-			 errmsg("There is no security attribute support.")));
-	return InvalidOid;
+void pgaceLargeObjectGetSecurity(HeapTuple tuple) {
+	elog(ERROR, "PGACE: There is no guest module.");
 }
 
 /*
@@ -443,14 +440,9 @@ Oid pgaceLargeObjectGetSecurity(HeapTuple tuple) {
  *
  * @tuple       : a tuple which is a part of the target largeobject.
  * @lo_security : new security attribute specified
- * @is_first    : true, if it's the first call in the largeobject.
- *                Because a largeobject may contain some tuples, this hook
- *                may be called several times for a single largeobject.
  */
-void pgaceLargeObjectSetSecurity(HeapTuple tuple, Oid lo_security, bool is_first) {
-	ereport(ERROR,
-			(errcode(ERRCODE_INTERNAL_ERROR),
-			 errmsg("There is no security attribute support.")));
+void pgaceLargeObjectSetSecurity(HeapTuple tuple, Oid lo_security) {
+	elog(ERROR, "PGACE: There is no guest module.");
 }
 
 /*

@@ -94,8 +94,8 @@ extern void pgaceLoadSharedModule(const char *filename);
 /******************************************************************
  * Binary Large Object (BLOB) hooks
  ******************************************************************/
-extern Oid  pgaceLargeObjectGetSecurity(HeapTuple tuple);
-extern void pgaceLargeObjectSetSecurity(HeapTuple tuple, Oid lo_security, bool is_first);
+extern void pgaceLargeObjectGetSecurity(HeapTuple tuple);
+extern void pgaceLargeObjectSetSecurity(HeapTuple tuple, Oid lo_security);
 extern void pgaceLargeObjectCreate(Relation rel, HeapTuple tuple);
 extern void pgaceLargeObjectDrop(Relation rel, HeapTuple tuple);
 extern void pgaceLargeObjectOpen(Relation rel, HeapTuple tuple, bool read_only);
