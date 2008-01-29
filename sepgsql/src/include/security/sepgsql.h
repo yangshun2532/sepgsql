@@ -101,8 +101,8 @@ extern bool  sepgsqlCopyToTuple(Relation rel, HeapTuple tuple);
 extern void  sepgsqlLoadSharedModule(const char *filename);
 
 /* Binary Large Object (BLOB) hooks */
-extern Oid   sepgsqlLargeObjectGetSecurity(HeapTuple tuple);
-extern void  sepgsqlLargeObjectSetSecurity(HeapTuple tuple, Oid lo_security, bool is_first);
+extern void  sepgsqlLargeObjectGetSecurity(HeapTuple tuple);
+extern void  sepgsqlLargeObjectSetSecurity(HeapTuple tuple, Oid lo_security);
 extern void  sepgsqlLargeObjectCreate(Relation rel, HeapTuple tuple);
 extern void  sepgsqlLargeObjectDrop(Relation rel, HeapTuple tuple);
 extern void  sepgsqlLargeObjectOpen(Relation rel, HeapTuple tuple, bool read_only);
