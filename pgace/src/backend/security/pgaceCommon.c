@@ -653,7 +653,8 @@ lo_get_security(PG_FUNCTION_ARGS)
 							SnapshotNow, 1, &skey);
 
 	while ((tuple = systable_getnext(sd)) != NULL) {
-		lo_security = pgaceLargeObjectGetSecurity(tuple);
+		lo_security = HeapTupleGetSecurity(tuple);
+		pgaceLargeObjectGetSecurity(tuple);
 		found = true;
 		break;
 	}
@@ -662,9 +663,7 @@ lo_get_security(PG_FUNCTION_ARGS)
 	heap_close(rel, AccessShareLock);
 
 	if (!found)
-		ereport(ERROR,
-				(errcode(ERRCODE_UNDEFINED_OBJECT),
-				 errmsg("large object %u does not exist", loid)));
+		elog(ERROR, "large object %u does not exist", loid);
 
 	PG_RETURN_OID(lo_security);
 }
@@ -695,7 +694,8 @@ lo_set_security(PG_FUNCTION_ARGS)
 
 	while ((tuple = systable_getnext(sd)) != NULL) {
 		newtup = heap_copytuple(tuple);
-		pgaceLargeObjectSetSecurity(newtup, lo_security, !found);
+		if (!found)
+			pgaceLargeObjectSetSecurity(newtup, lo_security);
 		simple_heap_update(rel, &newtup->t_self, newtup);
 		CatalogUpdateIndexes(rel, newtup);
 		found = true;
@@ -707,9 +707,7 @@ lo_set_security(PG_FUNCTION_ARGS)
 	CommandCounterIncrement();
 
 	if (!found)
-		ereport(ERROR,
-				(errcode(ERRCODE_UNDEFINED_OBJECT),
-				 errmsg("large object %u does not exist", loid)));
+		elog(ERROR, "large object %u does not exist.", loid);
 
 	PG_RETURN_BOOL(true);
 }
