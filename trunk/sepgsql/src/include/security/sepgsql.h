@@ -28,6 +28,7 @@
 #include "catalog/pg_type.h"
 #include "lib/stringinfo.h"
 #include "nodes/nodes.h"
+#include "nodes/parsenodes.h"
 #include "storage/large_object.h"
 
 #include <selinux/selinux.h>
@@ -44,6 +45,20 @@
 	ereport(NOTICE, (errcode(ERRCODE_WARNING),							\
 					 errmsg("%s(%d): " fmt, __FUNCTION__, __LINE__, ##__VA_ARGS__)))
 #define selbugon(x)	do { if (x)((char *)NULL)[0] = 'a'; }while(0)
+
+/*
+ * Permission codes of internal representation
+ */
+#define SEPGSQL_PERMS_USE				(1UL << (N_ACL_RIGHTS + 0))
+#define SEPGSQL_PERMS_SELECT			(1UL << (N_ACL_RIGHTS + 1))
+#define SEPGSQL_PERMS_UPDATE			(1UL << (N_ACL_RIGHTS + 2))
+#define SEPGSQL_PERMS_INSERT			(1UL << (N_ACL_RIGHTS + 3))
+#define SEPGSQL_PERMS_DELETE			(1UL << (N_ACL_RIGHTS + 4))
+#define SEPGSQL_PERMS_RELABELFROM		(1UL << (N_ACL_RIGHTS + 5))
+#define SEPGSQL_PERMS_RELABELTO			(1UL << (N_ACL_RIGHTS + 6))
+#define SEPGSQL_PERMS_READ				(1UL << (N_ACL_RIGHTS + 7))
+#define SEPGSQL_PERMS_WRITE				(1UL << (N_ACL_RIGHTS + 8))
+#define SEPGSQL_PERMS_ALL				(SEPGSQL_PERMS_WRITE - SEPGSQL_PERMS_USE)
 
 /*
  * The implementation of PGACE/SE-PostgreSQL hooks

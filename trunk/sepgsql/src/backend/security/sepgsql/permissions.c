@@ -61,14 +61,33 @@ static Oid __lookupRelationForm(Oid relid, Form_pg_class classForm) {
 	return t_security;
 }
 
-static uint32 __tuple_perms_to_common_perms(uint32 perms) {
+static uint32 __sepgsql_perms_to_common_perms(uint32 perms) {
 	uint32 __perms = 0;
-	__perms |= (perms & DB_TUPLE__RELABELFROM ? COMMON_DATABASE__RELABELFROM : 0);
-	__perms |= (perms & DB_TUPLE__RELABELTO ? COMMON_DATABASE__RELABELTO : 0);
-	__perms |= (perms & DB_TUPLE__SELECT ? COMMON_DATABASE__GETATTR : 0);
-    __perms |= (perms & DB_TUPLE__UPDATE ? COMMON_DATABASE__SETATTR : 0);
-    __perms |= (perms & DB_TUPLE__INSERT ? COMMON_DATABASE__CREATE : 0);
-    __perms |= (perms & DB_TUPLE__DELETE ? COMMON_DATABASE__DROP : 0);
+
+	Assert((perms & ~SEPGSQL_PERMS_ALL) == 0);
+	__perms |= (perms & SEPGSQL_PERMS_USE		? COMMON_DATABASE__GETATTR : 0);
+	__perms |= (perms & SEPGSQL_PERMS_SELECT	? COMMON_DATABASE__GETATTR : 0);
+	__perms |= (perms & SEPGSQL_PERMS_UPDATE	? COMMON_DATABASE__SETATTR : 0);
+	__perms |= (perms & SEPGSQL_PERMS_INSERT	? COMMON_DATABASE__CREATE  : 0);
+	__perms |= (perms & SEPGSQL_PERMS_DELETE	? COMMON_DATABASE__DROP    : 0);
+	__perms |= (perms & SEPGSQL_PERMS_RELABELFROM ? COMMON_DATABASE__RELABELFROM : 0);
+	__perms |= (perms & SEPGSQL_PERMS_RELABELTO	? COMMON_DATABASE__RELABELTO : 0);
+
+	return __perms;
+}
+
+static uint32 __sepgsql_perms_to_tuple_perms(uint32 perms) {
+	uint32 __perms = 0;
+
+	Assert((perms & ~SEPGSQL_PERMS_ALL) == 0);
+	__perms |= (perms & SEPGSQL_PERMS_USE		? DB_TUPLE__USE : 0);
+	__perms |= (perms & SEPGSQL_PERMS_SELECT	? DB_TUPLE__SELECT : 0);
+	__perms |= (perms & SEPGSQL_PERMS_UPDATE	? DB_TUPLE__UPDATE : 0);
+	__perms |= (perms & SEPGSQL_PERMS_INSERT	? DB_TUPLE__INSERT : 0);
+	__perms |= (perms & SEPGSQL_PERMS_DELETE	? DB_TUPLE__DELETE : 0);
+	__perms |= (perms & SEPGSQL_PERMS_RELABELFROM ? DB_TUPLE__RELABELFROM : 0);
+	__perms |= (perms & SEPGSQL_PERMS_RELABELTO	? DB_TUPLE__RELABELTO : 0);
+
 	return __perms;
 }
 
@@ -176,12 +195,13 @@ static void __check_pg_attribute(HeapTuple tuple, HeapTuple oldtup,
 		__lookupRelationForm(attrForm->attrelid, &classForm);
 		if (classForm.relkind != RELKIND_RELATION) {
 			*p_tclass = SECCLASS_DB_TUPLE;
+			*p_perms = __sepgsql_perms_to_tuple_perms(*p_perms);
 			return;
 		}
 		break;
 	}
 	*p_tclass = SECCLASS_DB_COLUMN;
-	*p_perms = __tuple_perms_to_common_perms(*p_perms);
+	*p_perms = __sepgsql_perms_to_common_perms(*p_perms);
 	if (HeapTupleIsValid(oldtup)) {
 		Form_pg_attribute oldForm = (Form_pg_attribute) GETSTRUCT(oldtup);
 
@@ -200,12 +220,13 @@ static void __check_pg_largeobject(HeapTuple tuple, HeapTuple oldtup,
 	SysScanDesc sd;
 	uint32 perms = 0;
 
-	perms |= (*p_perms & DB_TUPLE__SELECT ? DB_BLOB__GETATTR : 0);
-	perms |= (*p_perms & DB_TUPLE__UPDATE ? DB_BLOB__SETATTR : 0);
-	perms |= (*p_perms & DB_BLOB__READ    ? DB_BLOB__READ    : 0);
-	perms |= (*p_perms & DB_BLOB__WRITE   ? DB_BLOB__WRITE   : 0);
+	perms |= (*p_perms & SEPGSQL_PERMS_USE    ? DB_BLOB__GETATTR : 0);
+	perms |= (*p_perms & SEPGSQL_PERMS_SELECT ? DB_BLOB__GETATTR : 0);
+	perms |= (*p_perms & SEPGSQL_PERMS_UPDATE ? DB_BLOB__SETATTR : 0);
+	perms |= (*p_perms & SEPGSQL_PERMS_READ   ? DB_BLOB__READ  : 0);
+	perms |= (*p_perms & SEPGSQL_PERMS_WRITE  ? DB_BLOB__WRITE : 0);
 
-	if (*p_perms & DB_TUPLE__INSERT) {
+	if (*p_perms & SEPGSQL_PERMS_INSERT) {
 		bool found = false;
 
 		ScanKeyInit(&skey,
@@ -243,7 +264,7 @@ static void __check_pg_largeobject(HeapTuple tuple, HeapTuple oldtup,
 		}
 		systable_endscan(sd);
 		heap_close(rel, AccessShareLock);
-		perms |= (!found ? DB_BLOB__DROP : DB_BLOB__SETATTR);
+		perms |= (!found ? DB_BLOB__DROP : DB_BLOB__SETATTR | DB_BLOB__WRITE);
 	}
 	*p_tclass = SECCLASS_DB_BLOB;
 	*p_perms = perms;
@@ -252,7 +273,7 @@ static void __check_pg_largeobject(HeapTuple tuple, HeapTuple oldtup,
 static void __check_pg_proc(HeapTuple tuple, HeapTuple oldtup,
 							uint32 *p_perms, uint16 *p_tclass)
 {
-	uint32 perms = __tuple_perms_to_common_perms(*p_perms);
+	uint32 perms = __sepgsql_perms_to_common_perms(*p_perms);
 	Form_pg_proc procForm = (Form_pg_proc) GETSTRUCT(tuple);
 
 	if (procForm->prolang == ClanguageId) {
@@ -319,9 +340,10 @@ static void __check_pg_relation(HeapTuple tuple, HeapTuple oldtup,
 	Form_pg_class classForm = (Form_pg_class) GETSTRUCT(tuple);
 	if (classForm->relkind == RELKIND_RELATION) {
 		*p_tclass = SECCLASS_DB_TABLE;
-		*p_perms = __tuple_perms_to_common_perms(*p_perms);
+		*p_perms = __sepgsql_perms_to_common_perms(*p_perms);
 	} else {
 		*p_tclass = SECCLASS_DB_TUPLE;
+		*p_perms = __sepgsql_perms_to_tuple_perms(*p_perms);
 	}
 }
 
@@ -335,7 +357,7 @@ static bool __check_tuple_perms(Oid tableoid, Oid tcontext, uint32 perms,
 
 	switch (tableoid) {
 	case DatabaseRelationId:		/* pg_database */
-		perms = __tuple_perms_to_common_perms(perms);
+		perms = __sepgsql_perms_to_common_perms(perms);
 		tclass = SECCLASS_DB_DATABASE;
 		break;
 
@@ -356,6 +378,7 @@ static bool __check_tuple_perms(Oid tableoid, Oid tcontext, uint32 perms,
 		break;
 
 	default:
+		perms = __sepgsql_perms_to_tuple_perms(perms);
 		tclass = SECCLASS_DB_TUPLE;
 		break;
 	}
