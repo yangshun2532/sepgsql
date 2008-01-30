@@ -28,6 +28,7 @@
 #include "catalog/pg_type.h"
 #include "lib/stringinfo.h"
 #include "nodes/nodes.h"
+#include "nodes/parsenodes.h"
 #include "storage/large_object.h"
 
 #include <selinux/selinux.h>
@@ -73,11 +74,25 @@
 			  (att)->attalign, (att)->attnotnull ? 'y' : 'n', (att)->atthasdef ? 'y' : 'n', \
 			  (att)->attisdropped ? 'y' : 'n', (att)->attislocal ? 'y' : 'n', (att)->attinhcount)
 
+/*
+ * Permission codes of internal representation
+ */
+#define SEPGSQL_PERMS_USE			(1UL << (N_ACL_RIGHTS + 0))
+#define SEPGSQL_PERMS_SELECT		(1UL << (N_ACL_RIGHTS + 1))
+#define SEPGSQL_PERMS_UPDATE		(1UL << (N_ACL_RIGHTS + 2))
+#define SEPGSQL_PERMS_INSERT		(1UL << (N_ACL_RIGHTS + 3))
+#define SEPGSQL_PERMS_DELETE		(1UL << (N_ACL_RIGHTS + 4))
+#define SEPGSQL_PERMS_RELABELFROM	(1UL << (N_ACL_RIGHTS + 5))
+#define SEPGSQL_PERMS_RELABELTO		(1UL << (N_ACL_RIGHTS + 6))
+#define SEPGSQL_PERMS_READ			(1UL << (N_ACL_RIGHTS + 7))
+#define SEPGSQL_PERMS_WRITE			(1UL << (N_ACL_RIGHTS + 8))
+#define SEPGSQL_PERMS_ALL			(SEPGSQL_PERMS_WRITE - SEPGSQL_PERMS_USE)
+
 /* The definition of object classes/access vectors are defined at libselinux-devel */
 #ifndef SECCLASS_DB_DATABASE		/* for legacy selinux/flask.h */
-#define SECCLASS_DB_DATABASE			(62)		/* next to SECCLASS_MEMPROTECT */
+#define SECCLASS_DB_DATABASE		(62)		/* next to SECCLASS_MEMPROTECT */
 #define SECCLASS_DB_TABLE			(SECCLASS_DB_DATABASE + 1)
-#define SECCLASS_DB_PROCEDURE			(SECCLASS_DB_DATABASE + 2)
+#define SECCLASS_DB_PROCEDURE		(SECCLASS_DB_DATABASE + 2)
 #define SECCLASS_DB_COLUMN			(SECCLASS_DB_DATABASE + 3)
 #define SECCLASS_DB_TUPLE			(SECCLASS_DB_DATABASE + 4)
 #define SECCLASS_DB_BLOB			(SECCLASS_DB_DATABASE + 5)
