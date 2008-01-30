@@ -30,16 +30,6 @@
 #include "utils/fmgroids.h"
 #include "utils/syscache.h"
 
-#define RTEMARK_USE           (1<<(N_ACL_RIGHTS))
-#define RTEMARK_SELECT        (1<<(N_ACL_RIGHTS + 1))
-#define RTEMARK_INSERT        (1<<(N_ACL_RIGHTS + 2))
-#define RTEMARK_UPDATE        (1<<(N_ACL_RIGHTS + 3))
-#define RTEMARK_DELETE        (1<<(N_ACL_RIGHTS + 4))
-#define RTEMARK_RELABELFROM   (1<<(N_ACL_RIGHTS + 5))
-#define RTEMARK_RELABELTO     (1<<(N_ACL_RIGHTS + 6))
-#define RTEMARK_BLOB_READ     (1<<(N_ACL_RIGHTS + 7))
-#define RTEMARK_BLOB_WRITE    (1<<(N_ACL_RIGHTS + 8))
-
 /* SE-PostgreSQL Evaluation Item */
 #define T_SEvalItem		(T_TIDBitmap + 1)		/* must be unique identifier */
 
@@ -121,12 +111,11 @@ static List *__addEvalPgClass(List *selist, Oid relid, bool inh, uint32 perms)
 
 static List *addEvalPgClass(List *selist, RangeTblEntry *rte, uint32 perms)
 {
-	rte->requiredPerms |= (perms & DB_TABLE__USE    ? RTEMARK_USE    : 0);
-	rte->requiredPerms |= (perms & DB_TABLE__SELECT ? RTEMARK_SELECT : 0);
-	rte->requiredPerms |= (perms & DB_TABLE__INSERT ? RTEMARK_INSERT : 0);
-	rte->requiredPerms |= (perms & DB_TABLE__UPDATE ? RTEMARK_UPDATE : 0);
-	rte->requiredPerms |= (perms & DB_TABLE__DELETE ? RTEMARK_DELETE : 0);
-
+	rte->requiredPerms |= (perms & DB_TABLE__USE    ? SEPGSQL_PERMS_USE : 0);
+	rte->requiredPerms |= (perms & DB_TABLE__SELECT ? SEPGSQL_PERMS_SELECT : 0);
+	rte->requiredPerms |= (perms & DB_TABLE__INSERT ? SEPGSQL_PERMS_INSERT : 0);
+	rte->requiredPerms |= (perms & DB_TABLE__UPDATE ? SEPGSQL_PERMS_UPDATE : 0);
+	rte->requiredPerms |= (perms & DB_TABLE__DELETE ? SEPGSQL_PERMS_DELETE : 0);
 	return __addEvalPgClass(selist, rte->relid, rte->inh, perms);
 }
 
@@ -161,15 +150,15 @@ static List *addEvalPgAttribute(List *selist, RangeTblEntry *rte, AttrNumber att
 	/* for 'security_context' */
 	if (attno == SecurityAttributeNumber
 		&& (perms & (DB_COLUMN__UPDATE | DB_COLUMN__INSERT)))
-		rte->requiredPerms |= RTEMARK_RELABELFROM;
+		rte->requiredPerms |= SEPGSQL_PERMS_RELABELFROM;
 
 	/* for 'pg_largeobject' */
 	if (rte->relid == LargeObjectRelationId
 		&& attno == Anum_pg_largeobject_data) {
 		if (perms & DB_COLUMN__SELECT)
-			rte->requiredPerms |= RTEMARK_BLOB_READ;
+			rte->requiredPerms |= SEPGSQL_PERMS_READ;
 		if (perms & (DB_COLUMN__UPDATE | DB_COLUMN__INSERT))
-			rte->requiredPerms |= RTEMARK_BLOB_WRITE;
+			rte->requiredPerms |= SEPGSQL_PERMS_WRITE;
 	}
 
 	return __addEvalPgAttribute(selist, rte->relid, rte->inh, attno, perms);
@@ -731,7 +720,7 @@ static List *proxyRteRelation(List *selist, queryChain *qc, int rtindex, Node **
 	RangeTblEntry *rte;
 	Relation rel;
 	TupleDesc tdesc;
-	uint32 perms = 0;
+	uint32 perms;
 
 	query = getQueryFromChain(qc);
 	rte = list_nth(query->rtable, rtindex - 1);
@@ -739,25 +728,7 @@ static List *proxyRteRelation(List *selist, queryChain *qc, int rtindex, Node **
 	tdesc = RelationGetDescr(rel);
 
 	/* setup tclass and access vector */
-	perms = 0;
-	if (rte->requiredPerms & RTEMARK_USE)
-		perms |= DB_TUPLE__USE;
-	if (rte->requiredPerms & RTEMARK_SELECT)
-		perms |= DB_TUPLE__SELECT;
-	if (rte->requiredPerms & RTEMARK_INSERT)
-		perms |= DB_TUPLE__INSERT;
-	if (rte->requiredPerms & RTEMARK_UPDATE)
-		perms |= DB_TUPLE__UPDATE;
-	if (rte->requiredPerms & RTEMARK_DELETE)
-		perms |= DB_TUPLE__DELETE;
-	if (rte->requiredPerms & RTEMARK_RELABELFROM)
-		perms |= DB_TUPLE__RELABELFROM;
-	if (rte->requiredPerms & RTEMARK_RELABELTO)
-		perms |= DB_TUPLE__RELABELTO;
-	if (rte->requiredPerms & RTEMARK_BLOB_READ)
-		perms |= DB_BLOB__READ;
-	if (rte->requiredPerms & RTEMARK_BLOB_WRITE)
-		perms |= DB_BLOB__WRITE;
+	perms = rte->requiredPerms & SEPGSQL_PERMS_ALL;
 
 	/* append sepgsql_tuple_perm(relid, record, perms) */
 	if (perms) {
@@ -805,7 +776,7 @@ static List *proxyRteOuterJoin(List *selist, queryChain *qc, Query *query)
 	/* clean-up polluted RangeTblEntry */
 	foreach (l, query->rtable) {
 		RangeTblEntry *rte = (RangeTblEntry *) lfirst(l);
-		rte->requiredPerms &= ((1<<N_ACL_RIGHTS) - 1);
+		rte->requiredPerms &= ~SEPGSQL_PERMS_ALL;
 	}
 
 	return selist;
@@ -849,20 +820,29 @@ static List *proxyRteSubQuery(List *selist, queryChain *qc, Query *query)
 	if (cmdType != CMD_DELETE) {
 		foreach (l, query->targetList) {
 			TargetEntry *tle = lfirst(l);
+			bool is_security_attr = false;
 			Assert(IsA(tle, TargetEntry));
 
-			selist = sepgsqlWalkExpr(selist, qc, (Node *) tle->expr,
-									 tle->resjunk ? WKFLAG_INTERNAL_USE : 0);
+			if (tle->resjunk && !strcmp(tle->resname, SECURITY_SYSATTR_NAME))
+				is_security_attr = true;
+
+			/* pure junk target entries */
+			if (tle->resjunk && !is_security_attr) {
+				elog(NOTICE, "junk: %s", tle->resname);
+				selist = sepgsqlWalkExpr(selist, qc, (Node *) tle->expr, WKFLAG_INTERNAL_USE);
+				continue;
+			}
+
+			selist = sepgsqlWalkExpr(selist, qc, (Node *) tle->expr, 0);
 			/* mark insert/update target */
 			if (cmdType==CMD_UPDATE || cmdType==CMD_INSERT) {
 				uint32 perms = (cmdType == CMD_UPDATE
 								? DB_COLUMN__UPDATE : DB_COLUMN__INSERT);
-				if (tle->resjunk) {
-					if (!strcmp(tle->resname, SECURITY_SYSATTR_NAME))
-						selist = addEvalPgAttribute(selist,
-													rte,
-													SecurityAttributeNumber,
-													perms);
+				if (is_security_attr) {
+					selist = addEvalPgAttribute(selist,
+												rte,
+												SecurityAttributeNumber,
+												perms);
 					continue;
 				}
 				selist = addEvalPgAttribute(selist, rte, tle->resno, perms);
@@ -902,7 +882,7 @@ static List *proxyRteSubQuery(List *selist, queryChain *qc, Query *query)
 	/* clean-up polluted RangeTblEntry */
 	foreach (l, query->rtable) {
 		rte = (RangeTblEntry *) lfirst(l);
-		rte->requiredPerms &= ((1<<N_ACL_RIGHTS) - 1);
+		rte->requiredPerms &= ~SEPGSQL_PERMS_ALL;
 	}
 
 	return selist;
@@ -1119,22 +1099,20 @@ static void verifyPgClassPerms(Oid relid, bool inh, uint32 perms)
 	Form_pg_class pgclass;
 	HeapTuple tuple;
 
-	/* check untouchable tables */
-	if (perms & (DB_TABLE__UPDATE | DB_TABLE__INSERT | DB_TABLE__DELETE)) {
-		if (relid == SecurityRelationId)
-			selerror("user cannot modify pg_security directly, for security reason");
-	}
+	/* prevent to modify pg_security directly */
+	if (relid == SecurityRelationId
+		&& (perms & (DB_TABLE__UPDATE | DB_TABLE__INSERT | DB_TABLE__DELETE)) != 0)
+		elog(ERROR, "SELinux: user cannot modify pg_security directly");
 
 	/* check table:{required permissions} */
 	tuple = SearchSysCache(RELOID,
 						   ObjectIdGetDatum(relid),
 						   0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
-		selerror("RELOID cache lookup failed (relid=%u)", relid);
+		elog(ERROR, "SELinux: relation (oid=%u) does not exist", relid);
 	pgclass = (Form_pg_class) GETSTRUCT(tuple);
 
 	if (pgclass->relkind != RELKIND_RELATION) {
-		//selnotice("%s is not a general relation", NameStr(pgclass->relname));
 		ReleaseSysCache(tuple);
 		return;
 	}
@@ -1154,10 +1132,10 @@ static void verifyPgAttributePerms(Oid relid, bool inh, AttrNumber attno, uint32
 	Form_pg_attribute attrForm;
 
 	tuple = SearchSysCache(RELOID,
-							ObjectIdGetDatum(relid),
-							0, 0, 0);
+						   ObjectIdGetDatum(relid),
+						   0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
-		selerror("RELOID cache lookup failed (relid=%u)", relid);
+		elog(ERROR, "SELinux: relation (oid=%u) does not exist", relid);
 	classForm = (Form_pg_class) GETSTRUCT(tuple);
 	if (classForm->relkind != RELKIND_RELATION) {
 		/* column:{ xxx } checks are applied only column within tables */
@@ -1202,7 +1180,7 @@ static void verifyPgAttributePerms(Oid relid, bool inh, AttrNumber attno, uint32
 						   Int16GetDatum(attno),
 						   0, 0);
 	if (!HeapTupleIsValid(tuple))
-		selerror("ATTNUM cache lookup failed (relid=%u, attno=%d)", relid, attno);
+		elog(ERROR, "SELinux: cache lookup failed for attribute %d of relation %u", attno, relid);
 
 	/* check column:{required permissions} */
 	sepgsql_avc_permission(sepgsqlGetClientContext(),
@@ -1431,23 +1409,8 @@ void sepgsqlCopyTable(Relation rel, List *attNumList, bool isFrom)
 
 bool sepgsqlCopyToTuple(Relation rel, HeapTuple tuple)
 {
-	return sepgsqlCheckTuplePerms(rel, tuple, NULL, DB_TUPLE__SELECT, false);
+	return sepgsqlCheckTuplePerms(rel, tuple, NULL, SEPGSQL_PERMS_SELECT, false);
 }
-
-#if 0
-// sepgsqlCopyFromTuple is replaced by sepgsqlHeapTupleInsert()
-bool sepgsqlCopyFromTuple(Relation rel, HeapTuple tuple)
-{
-	Oid tcontext = HeapTupleGetSecurity(tuple);
-
-	if (tcontext == InvalidOid) {
-		/* implicit labeling */
-		tcontext = sepgsqlComputeImplicitContext(rel, tuple);
-		HeapTupleSetSecurity(tuple, tcontext);
-	}
-	return sepgsqlCheckTuplePerms(rel, tuple, NULL, DB_TUPLE__INSERT, false);
-}
-#endif
 
 /* ----------------------------------------------------------
  * node copy/print hooks
