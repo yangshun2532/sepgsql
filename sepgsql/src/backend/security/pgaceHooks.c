@@ -471,10 +471,9 @@ void pgaceLargeObjectDrop(Relation rel, HeapTuple tuple) {
  * pgaceLargeObjectRead is called when they read from a large object
  *
  * @rel   : pg_largeobject relation opened with AccessShareLock
- * @tuple : a tuple within the target large object
- * @is_first : true, if it attempts to read the first block in this loop.
+ * @tuple : the head tuple within the given large object
  */
-void pgaceLargeObjectRead(Relation rel, HeapTuple tuple, bool is_first) {
+void pgaceLargeObjectRead(Relation rel, HeapTuple tuple) {
 	/* do nothing */
 }
 
@@ -482,11 +481,10 @@ void pgaceLargeObjectRead(Relation rel, HeapTuple tuple, bool is_first) {
  * pgaceLargeObjectWrite() is called when they write to a large object
  *
  * @rel    : pg_largeobject relation opened with RowExclusiveLock
- * @newtup : a new tuple within the target large object
- * @oldtup : a original tuple within the target large object, if exist
- * @is_first : true, if it attempts to write the first block in this loop.
+ * @newtup : the head tuple within the given large object
+ * @oldtup : the head tuple in older version, if exist
  */
-void pgaceLargeObjectWrite(Relation rel, HeapTuple newtup, HeapTuple oldtup, bool is_first) {
+void pgaceLargeObjectWrite(Relation rel, HeapTuple newtup, HeapTuple oldtup) {
 	/* do nothing */
 }
 
