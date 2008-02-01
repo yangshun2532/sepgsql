@@ -1428,7 +1428,7 @@ CopyTo(CopyState cstate)
 		{
 			CHECK_FOR_INTERRUPTS();
 
-			if (!pgaceCopyToTuple(cstate->rel, tuple))
+			if (!pgaceCopyToTuple(cstate->rel, cstate->attnumlist, tuple))
 				continue;
 
 			/* Deconstruct the tuple ... faster than repeated heap_getattr */
