@@ -135,11 +135,10 @@ close_lo_relation(bool isCommit)
  * read with can be specified.
  */
 static bool
-myLargeObjectExists(Oid loid, Snapshot snapshot, int flags)
+myLargeObjectExists(Oid loid, Snapshot snapshot)
 {
 	bool		retval = false;
 	Relation	pg_largeobject;
-	HeapTuple	tuple;
 	ScanKeyData skey[1];
 	SysScanDesc sd;
 
@@ -156,11 +155,8 @@ myLargeObjectExists(Oid loid, Snapshot snapshot, int flags)
 	sd = systable_beginscan(pg_largeobject, LargeObjectLOidPNIndexId, true,
 							snapshot, 1, skey);
 
-	tuple = systable_getnext(sd);
-	if (HeapTupleIsValid(tuple)) {
-		pgaceLargeObjectOpen(pg_largeobject, tuple, flags == IFS_RDLOCK);
+	if (systable_getnext(sd) != NULL)
 		retval = true;
-	}
 
 	systable_endscan(sd);
 
@@ -259,7 +255,7 @@ inv_open(Oid lobjId, int flags, MemoryContext mcxt)
 		elog(ERROR, "invalid flags: %d", flags);
 
 	/* Can't use LargeObjectExists here because it always uses SnapshotNow */
-	if (!myLargeObjectExists(lobjId, retval->snapshot, retval->flags))
+	if (!myLargeObjectExists(lobjId, retval->snapshot))
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("large object %u does not exist", lobjId)));
@@ -420,7 +416,6 @@ inv_read(LargeObjectDesc *obj_desc, char *buf, int nbytes)
 	ScanKeyData skey[2];
 	IndexScanDesc sd;
 	HeapTuple	tuple;
-	bool		pgace_checked = false;
 
 	Assert(PointerIsValid(obj_desc));
 	Assert(buf != NULL);
@@ -452,8 +447,7 @@ inv_read(LargeObjectDesc *obj_desc, char *buf, int nbytes)
 		if (HeapTupleHasNulls(tuple))	/* paranoia */
 			elog(ERROR, "null field found in pg_largeobject");
 
-		pgaceLargeObjectRead(lo_heap_r, tuple, !pgace_checked);
-		pgace_checked = true;
+		pgaceLargeObjectRead(lo_heap_r, tuple, !nread);
 
 		data = (Form_pg_largeobject) GETSTRUCT(tuple);
 
@@ -534,7 +528,6 @@ inv_write(LargeObjectDesc *obj_desc, const char *buf, int nbytes)
 	char		nulls[Natts_pg_largeobject];
 	char		replace[Natts_pg_largeobject];
 	CatalogIndexState indstate;
-	bool		pgace_checked = false;
 
 	Assert(PointerIsValid(obj_desc));
 	Assert(buf != NULL);
@@ -643,8 +636,7 @@ inv_write(LargeObjectDesc *obj_desc, const char *buf, int nbytes)
 			replace[Anum_pg_largeobject_data - 1] = 'r';
 			newtup = heap_modifytuple(oldtuple, RelationGetDescr(lo_heap_r),
 									  values, nulls, replace);
-			pgaceLargeObjectWrite(lo_heap_r, newtup, oldtuple, !pgace_checked);
-			pgace_checked = true;
+			pgaceLargeObjectWrite(lo_heap_r, newtup, oldtuple, !(nwritten - n));
 			simple_heap_update(lo_heap_r, &newtup->t_self, newtup);
 			CatalogIndexInsert(indstate, newtup);
 			heap_freetuple(newtup);
@@ -688,8 +680,7 @@ inv_write(LargeObjectDesc *obj_desc, const char *buf, int nbytes)
 			values[Anum_pg_largeobject_pageno - 1] = Int32GetDatum(pageno);
 			values[Anum_pg_largeobject_data - 1] = PointerGetDatum(&workbuf);
 			newtup = heap_formtuple(lo_heap_r->rd_att, values, nulls);
-			pgaceLargeObjectWrite(lo_heap_r, newtup, NULL, !pgace_checked);
-			pgace_checked = true;
+			pgaceLargeObjectWrite(lo_heap_r, newtup, NULL, !(nwritten - n));
 			simple_heap_insert(lo_heap_r, newtup);
 			CatalogIndexInsert(indstate, newtup);
 			heap_freetuple(newtup);
@@ -742,8 +733,6 @@ inv_truncate(LargeObjectDesc *obj_desc, int len)
 
 	open_lo_relation();
 
-	pgaceLargeObjectTruncate(lo_heap_r, obj_desc->id);
-
 	indstate = CatalogOpenIndexes(lo_heap_r);
 
 	ScanKeyInit(&skey[0],
@@ -771,6 +760,7 @@ inv_truncate(LargeObjectDesc *obj_desc, int len)
 		olddata = (Form_pg_largeobject) GETSTRUCT(oldtuple);
 		Assert(olddata->pageno >= pageno);
 	}
+	pgaceLargeObjectTruncate(lo_heap_r, obj_desc->id, oldtuple);
 
 	/*
 	 * If we found the page of the truncation point we need to truncate the

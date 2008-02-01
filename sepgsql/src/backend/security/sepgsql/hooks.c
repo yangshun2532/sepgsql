@@ -354,50 +354,61 @@ void sepgsqlLargeObjectDrop(Relation rel, HeapTuple tuple)
 						   sepgsqlGetTupleName(LargeObjectRelationId, tuple));
 }
 
-void sepgsqlLargeObjectOpen(Relation rel, HeapTuple tuple, bool read_only)
+void sepgsqlLargeObjectRead(Relation rel, HeapTuple tuple, bool is_first)
 {
-	sepgsqlCheckTuplePerms(rel, tuple, NULL, SEPGSQL_PERMS_SELECT, true);
+	/* already allowed */
+	if (!is_first)
+		return;
+	sepgsqlCheckTuplePerms(rel, tuple, NULL,
+						   SEPGSQL_PERMS_SELECT | SEPGSQL_PERMS_READ, true);
 }
 
-void sepgsqlLargeObjectRead(Relation rel, HeapTuple tuple)
+void sepgsqlLargeObjectWrite(Relation rel, HeapTuple newtup, HeapTuple oldtup, bool is_first)
 {
-	sepgsqlCheckTuplePerms(rel, tuple, NULL, SEPGSQL_PERMS_SELECT | SEPGSQL_PERMS_READ, true);
-}
+	ScanKeyData skey;
+    SysScanDesc sd;
+    HeapTuple tuple;
+	Oid loid;
 
-void sepgsqlLargeObjectWrite(Relation rel, HeapTuple newtup, HeapTuple oldtup)
-{
-	Oid lo_security;
+	/* already allowed */
+	if (!is_first)
+		return;
 
+	/* update existing region */
 	if (HeapTupleIsValid(oldtup)) {
-		lo_security = HeapTupleGetSecurity(oldtup);
-	} else {
-		Form_pg_largeobject lobj_form
-			= (Form_pg_largeobject) GETSTRUCT(newtup);
-		ScanKeyData skey;
-		SysScanDesc sd;
-		HeapTuple tuple;
-
-		ScanKeyInit(&skey,
-					Anum_pg_largeobject_loid,
-					BTEqualStrategyNumber, F_OIDEQ,
-					ObjectIdGetDatum(lobj_form->loid));
-		sd = systable_beginscan(rel, LargeObjectLOidPNIndexId, true,
-								SnapshotNow, 1, &skey);
-		tuple = systable_getnext(sd);
-		if (!HeapTupleIsValid(tuple))
-			selerror("large object %u does not exist", lobj_form->loid);
-		lo_security = HeapTupleGetSecurity(tuple);
-		systable_endscan(sd);
+		HeapTupleSetSecurity(newtup, HeapTupleGetSecurity(oldtup));
+		sepgsqlCheckTuplePerms(rel, newtup, NULL, SEPGSQL_PERMS_UPDATE, true);
+		return;
 	}
-	HeapTupleSetSecurity(newtup, lo_security);
-	sepgsqlCheckTuplePerms(rel, newtup, NULL, SEPGSQL_PERMS_UPDATE | SEPGSQL_PERMS_WRITE, true);
+
+	/* insert a new large object page */
+	loid = ((Form_pg_largeobject) GETSTRUCT(newtup))->loid;
+	ScanKeyInit(&skey,
+				Anum_pg_largeobject_loid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(loid));
+	sd = systable_beginscan(rel, LargeObjectLOidPNIndexId, true,
+							SnapshotSelf, 1, &skey);
+	tuple = systable_getnext(sd);
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "SELinux: large object %u does not exist", loid);
+	HeapTupleSetSecurity(newtup, HeapTupleGetSecurity(tuple));
+	sepgsqlCheckTuplePerms(rel, newtup, NULL, SEPGSQL_PERMS_UPDATE, true);
+	systable_endscan(sd);
 }
 
-void sepgsqlLargeObjectTruncate(Relation rel, Oid loid) {
+void sepgsqlLargeObjectTruncate(Relation rel, Oid loid, HeapTuple headtup) {
 	ScanKeyData skey;
 	SysScanDesc sd;
 	HeapTuple tuple;
 
+	/* simple truncating case */
+	if (HeapTupleIsValid(headtup)) {
+		sepgsqlCheckTuplePerms(rel, headtup, NULL, SEPGSQL_PERMS_UPDATE, true);
+		return;
+	}
+
+	/* terminated in a hole */
 	ScanKeyInit(&skey,
 				Anum_pg_largeobject_loid,
 				BTEqualStrategyNumber, F_OIDEQ,
@@ -406,8 +417,8 @@ void sepgsqlLargeObjectTruncate(Relation rel, Oid loid) {
 							SnapshotNow, 1, &skey);
 	tuple = systable_getnext(sd);
 	if (!HeapTupleIsValid(tuple))
-		selerror("large object %u does not exist", loid);
-	sepgsqlCheckTuplePerms(rel, tuple, NULL, SEPGSQL_PERMS_UPDATE | SEPGSQL_PERMS_WRITE, true);
+		elog(ERROR, "SELinux: large object %u does not exist", loid);
+	sepgsqlCheckTuplePerms(rel, tuple, NULL, SEPGSQL_PERMS_UPDATE, true);
 	systable_endscan(sd);
 }
 
