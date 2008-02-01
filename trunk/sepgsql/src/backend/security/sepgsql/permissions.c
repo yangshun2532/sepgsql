@@ -222,7 +222,7 @@ static void __check_pg_largeobject(HeapTuple tuple, HeapTuple oldtup,
 
 	perms |= (*p_perms & SEPGSQL_PERMS_USE    ? DB_BLOB__GETATTR : 0);
 	perms |= (*p_perms & SEPGSQL_PERMS_SELECT ? DB_BLOB__GETATTR : 0);
-	perms |= (*p_perms & SEPGSQL_PERMS_UPDATE ? DB_BLOB__SETATTR : 0);
+	perms |= (*p_perms & SEPGSQL_PERMS_UPDATE ? DB_BLOB__SETATTR | DB_BLOB__WRITE: 0);
 	perms |= (*p_perms & SEPGSQL_PERMS_INSERT ? DB_BLOB__SETATTR | DB_BLOB__WRITE: 0);
 	perms |= (*p_perms & SEPGSQL_PERMS_DELETE ? DB_BLOB__SETATTR | DB_BLOB__WRITE: 0);
 	perms |= (*p_perms & SEPGSQL_PERMS_READ   ? DB_BLOB__READ  : 0);
