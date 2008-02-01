@@ -2,30 +2,7 @@
 #define SEPGSQL_H
 
 /* system catalogs */
-#include "catalog/catalog.h"
-#include "catalog/indexing.h"
-#include "catalog/pg_aggregate.h"
-#include "catalog/pg_am.h"
-#include "catalog/pg_attribute.h"
-#include "catalog/pg_authid.h"
-#include "catalog/pg_cast.h"
-#include "catalog/pg_class.h"
-#include "catalog/pg_constraint.h"
-#include "catalog/pg_conversion.h"
-#include "catalog/pg_database.h"
-#include "catalog/pg_language.h"
-#include "catalog/pg_largeobject.h"
-#include "catalog/pg_listener.h"
-#include "catalog/pg_namespace.h"
-#include "catalog/pg_opclass.h"
-#include "catalog/pg_operator.h"
-#include "catalog/pg_pltemplate.h"
-#include "catalog/pg_proc.h"
-#include "catalog/pg_rewrite.h"
 #include "catalog/pg_security.h"
-#include "catalog/pg_tablespace.h"
-#include "catalog/pg_trigger.h"
-#include "catalog/pg_type.h"
 #include "lib/stringinfo.h"
 #include "nodes/nodes.h"
 #include "nodes/parsenodes.h"
@@ -160,7 +137,7 @@ extern Oid   sepgsql_avc_relabelcon(Oid ssid, Oid tsid, uint16 tclass);
  * SE-PostgreSQL permission evaluation related
  *   src/backend/security/sepgsql/permission.c
  */
-extern char *sepgsqlGetTupleName(Oid relid, HeapTuple tuple);
+extern char *sepgsqlGetTupleName(Oid relid, HeapTuple tuple, NameData *name);
 extern Oid   sepgsqlComputeImplicitContext(Relation rel, HeapTuple tuple);
 extern bool  sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, HeapTuple oldtup,
 									uint32 perms, bool abort);

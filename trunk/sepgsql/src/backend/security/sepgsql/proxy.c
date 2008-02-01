@@ -10,12 +10,14 @@
 #include "access/genam.h"
 #include "access/heapam.h"
 #include "catalog/heap.h"
+#include "catalog/indexing.h"
 #include "catalog/pg_attribute.h"
 #include "catalog/pg_class.h"
 #include "catalog/pg_database.h"
 #include "catalog/pg_largeobject.h"
 #include "catalog/pg_operator.h"
 #include "catalog/pg_proc.h"
+#include "catalog/pg_trigger.h"
 #include "catalog/pg_type.h"
 #include "executor/spi.h"
 #include "nodes/makefuncs.h"
@@ -1099,6 +1101,7 @@ static void verifyPgClassPerms(Oid relid, bool inh, uint32 perms)
 {
 	Form_pg_class pgclass;
 	HeapTuple tuple;
+	NameData name;
 
 	/* prevent to modify pg_security directly */
 	if (relid == SecurityRelationId
@@ -1122,7 +1125,7 @@ static void verifyPgClassPerms(Oid relid, bool inh, uint32 perms)
 						   HeapTupleGetSecurity(tuple),
 						   SECCLASS_DB_TABLE,
 						   perms,
-						   sepgsqlGetTupleName(RelationRelationId, tuple));
+						   sepgsqlGetTupleName(RelationRelationId, tuple, &name));
 	ReleaseSysCache(tuple);
 }
 
@@ -1131,6 +1134,7 @@ static void verifyPgAttributePerms(Oid relid, bool inh, AttrNumber attno, uint32
 	HeapTuple tuple;
 	Form_pg_class classForm;
 	Form_pg_attribute attrForm;
+	NameData name;
 
 	tuple = SearchSysCache(RELOID,
 						   ObjectIdGetDatum(relid),
@@ -1168,7 +1172,7 @@ static void verifyPgAttributePerms(Oid relid, bool inh, AttrNumber attno, uint32
 								   HeapTupleGetSecurity(tuple),
 								   SECCLASS_DB_COLUMN,
 								   perms,
-								   sepgsqlGetTupleName(AttributeRelationId, tuple));
+								   sepgsqlGetTupleName(AttributeRelationId, tuple, &name));
 		}
 		systable_endscan(scan);
 		heap_close(rel, AccessShareLock);
@@ -1188,13 +1192,14 @@ static void verifyPgAttributePerms(Oid relid, bool inh, AttrNumber attno, uint32
 						   HeapTupleGetSecurity(tuple),
 						   SECCLASS_DB_COLUMN,
 						   perms,
-						   sepgsqlGetTupleName(AttributeRelationId, tuple));
+						   sepgsqlGetTupleName(AttributeRelationId, tuple, &name));
 	ReleaseSysCache(tuple);
 }
 
 static void verifyPgProcPerms(Oid funcid, uint32 perms)
 {
 	HeapTuple tuple;
+	NameData name;
 	Oid newcon;
 
 	tuple = SearchSysCache(PROCOID,
@@ -1215,7 +1220,7 @@ static void verifyPgProcPerms(Oid funcid, uint32 perms)
 						   HeapTupleGetSecurity(tuple),
 						   SECCLASS_DB_PROCEDURE,
 						   perms,
-						   sepgsqlGetTupleName(ProcedureRelationId, tuple));
+						   sepgsqlGetTupleName(ProcedureRelationId, tuple, &name));
 
 	/* check domain transition, if necessary */
 	if (newcon != sepgsqlGetClientContext()) {
