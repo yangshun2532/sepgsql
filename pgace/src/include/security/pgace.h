@@ -98,10 +98,9 @@ extern void pgaceLargeObjectGetSecurity(HeapTuple tuple);
 extern void pgaceLargeObjectSetSecurity(HeapTuple tuple, Oid lo_security);
 extern void pgaceLargeObjectCreate(Relation rel, HeapTuple tuple);
 extern void pgaceLargeObjectDrop(Relation rel, HeapTuple tuple);
-extern void pgaceLargeObjectOpen(Relation rel, HeapTuple tuple, bool read_only);
 extern void pgaceLargeObjectRead(Relation rel, HeapTuple tuple, bool is_first);
 extern void pgaceLargeObjectWrite(Relation rel, HeapTuple newtup, HeapTuple oldtup, bool is_first);
-extern void pgaceLargeObjectTruncate(Relation rel, Oid loid);
+extern void pgaceLargeObjectTruncate(Relation rel, Oid loid, HeapTuple headtup);
 extern void pgaceLargeObjectImport(int fd);
 extern void pgaceLargeObjectExport(int fd, Oid loid);
 
