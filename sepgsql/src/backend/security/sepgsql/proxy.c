@@ -116,6 +116,11 @@ static List *addEvalPgClass(List *selist, RangeTblEntry *rte, uint32 perms)
 	rte->requiredPerms |= (perms & DB_TABLE__INSERT ? SEPGSQL_PERMS_INSERT : 0);
 	rte->requiredPerms |= (perms & DB_TABLE__UPDATE ? SEPGSQL_PERMS_UPDATE : 0);
 	rte->requiredPerms |= (perms & DB_TABLE__DELETE ? SEPGSQL_PERMS_DELETE : 0);
+
+	/* for 'pg_largeobject' */
+	if (rte->relid == LargeObjectRelationId && (perms & DB_TABLE__DELETE))
+		rte->requiredPerms |= SEPGSQL_PERMS_WRITE;
+
 	return __addEvalPgClass(selist, rte->relid, rte->inh, perms);
 }
 
@@ -147,17 +152,25 @@ static List *__addEvalPgAttribute(List *selist, Oid relid, bool inh, AttrNumber 
 
 static List *addEvalPgAttribute(List *selist, RangeTblEntry *rte, AttrNumber attno, uint32 perms)
 {
+	uint32 t_perms = 0;
+
+	/* for table:{ ... } permission */
+	t_perms |= (perms & DB_COLUMN__USE    ? DB_TABLE__USE : 0);
+	t_perms |= (perms & DB_COLUMN__SELECT ? DB_TABLE__SELECT : 0);
+	t_perms |= (perms & DB_COLUMN__INSERT ? DB_TABLE__INSERT : 0);
+	t_perms |= (perms & DB_COLUMN__UPDATE ? DB_TABLE__UPDATE : 0);
+	selist = addEvalPgClass(selist, rte, t_perms);
+
 	/* for 'security_context' */
 	if (attno == SecurityAttributeNumber
 		&& (perms & (DB_COLUMN__UPDATE | DB_COLUMN__INSERT)))
 		rte->requiredPerms |= SEPGSQL_PERMS_RELABELFROM;
 
 	/* for 'pg_largeobject' */
-	if (rte->relid == LargeObjectRelationId
-		&& attno == Anum_pg_largeobject_data) {
-		if (perms & DB_COLUMN__SELECT)
+	if (rte->relid == LargeObjectRelationId) {
+		if ((perms & DB_COLUMN__SELECT) && attno == Anum_pg_largeobject_data)
 			rte->requiredPerms |= SEPGSQL_PERMS_READ;
-		if (perms & (DB_COLUMN__UPDATE | DB_COLUMN__INSERT))
+		if ((perms & (DB_COLUMN__UPDATE | DB_COLUMN__INSERT)) && attno > 0)
 			rte->requiredPerms |= SEPGSQL_PERMS_WRITE;
 	}
 
@@ -279,11 +292,7 @@ static List *walkVarHelper(List *selist, queryChain *qc, Var *var, int flags)
 
 	switch (rte->rtekind) {
 	case RTE_RELATION:
-		/* table:{select} */
-		selist = addEvalPgClass(selist, rte,
-								(flags & WKFLAG_INTERNAL_USE)
-								? DB_TABLE__USE : DB_TABLE__SELECT);
-		/* column:{select} */
+		/* table:{select/use} and column:{select/use} */
 		selist = addEvalPgAttribute(selist, rte, var->varattno,
 									(flags & WKFLAG_INTERNAL_USE)
 									? DB_COLUMN__USE : DB_COLUMN__SELECT);
@@ -348,11 +357,7 @@ static List *walkVarHelper(List *selist, queryChain *qc, Var *var, int flags)
 							 rte->relid, var->varattno);
 				svar = (Var *) tle->expr;
 			}
-			/* table:{select} or [use} */
-			selist = addEvalPgClass(selist, srte,
-									(flags & WKFLAG_INTERNAL_USE)
-									? DB_TABLE__USE : DB_TABLE__SELECT);
-			/* column:{select} or {use}*/
+			/* table:{select/use} and column:{select/use} */
 			selist = addEvalPgAttribute(selist, srte, svar->varattno,
 										(flags & WKFLAG_INTERNAL_USE)
 										? DB_COLUMN__USE : DB_COLUMN__SELECT);
@@ -797,57 +802,51 @@ static List *proxyRteSubQuery(List *selist, queryChain *qc, Query *query)
 	/* rewrite outer join */
 	rewriteOuterJoinTree((Node *) query->jointree, query, false);
 
-	if (cmdType != CMD_SELECT) {
-		rte = list_nth(query->rtable, query->resultRelation - 1);
-		Assert(IsA(rte, RangeTblEntry) && rte->rtekind==RTE_RELATION);
-		switch (cmdType) {
-		case CMD_INSERT:
-			selist = addEvalPgClass(selist, rte, DB_TABLE__INSERT);
-			break;
-		case CMD_UPDATE:
-			selist = addEvalPgClass(selist, rte, DB_TABLE__UPDATE);
-			break;
-		case CMD_DELETE:
-			selist = addEvalPgClass(selist, rte, DB_TABLE__DELETE);
-			break;
-		default:
-			selerror("commandType = %d should not be found here", cmdType);
-			break;
-		}
-	}
-
-	/* permission mark on the target columns */
-	if (cmdType != CMD_DELETE) {
+	switch (cmdType) {
+	case CMD_SELECT:
+	case CMD_UPDATE:
+	case CMD_INSERT:
 		foreach (l, query->targetList) {
 			TargetEntry *tle = lfirst(l);
 			bool is_security_attr = false;
+			uint32 perms;
 			Assert(IsA(tle, TargetEntry));
 
-			if (tle->resjunk && !strcmp(tle->resname, SECURITY_SYSATTR_NAME))
+			if (tle->resjunk && tle->resname
+				&& !strcmp(tle->resname, SECURITY_SYSATTR_NAME))
 				is_security_attr = true;
 
 			/* pure junk target entries */
 			if (tle->resjunk && !is_security_attr) {
-				elog(NOTICE, "junk: %s", tle->resname);
 				selist = sepgsqlWalkExpr(selist, qc, (Node *) tle->expr, WKFLAG_INTERNAL_USE);
 				continue;
 			}
 
 			selist = sepgsqlWalkExpr(selist, qc, (Node *) tle->expr, 0);
-			/* mark insert/update target */
-			if (cmdType==CMD_UPDATE || cmdType==CMD_INSERT) {
-				uint32 perms = (cmdType == CMD_UPDATE
-								? DB_COLUMN__UPDATE : DB_COLUMN__INSERT);
-				if (is_security_attr) {
-					selist = addEvalPgAttribute(selist,
-												rte,
-												SecurityAttributeNumber,
-												perms);
-					continue;
-				}
-				selist = addEvalPgAttribute(selist, rte, tle->resno, perms);
-			}
+
+			if (cmdType == CMD_SELECT)
+				continue;
+
+			rte = list_nth(query->rtable, query->resultRelation - 1);
+			Assert(IsA(rte, RangeTblEntry) && rte->rtekind==RTE_RELATION);
+			perms = (cmdType == CMD_UPDATE ? DB_COLUMN__UPDATE : DB_COLUMN__INSERT);
+
+			selist = addEvalPgAttribute(selist,
+										rte,
+										is_security_attr ? SecurityAttributeNumber : tle->resno,
+										perms);
 		}
+		break;
+
+	case CMD_DELETE:
+		rte = list_nth(query->rtable, query->resultRelation - 1);
+		Assert(IsA(rte, RangeTblEntry) && rte->rtekind==RTE_RELATION);
+		selist = addEvalPgClass(selist, rte, DB_TABLE__DELETE);
+		break;
+
+	default:
+		elog(ERROR, "SELinux: unexpected cmdType = %d", cmdType);
+		break;
 	}
 
 	/* permission mark on RETURNING clause, if necessary */
@@ -864,9 +863,11 @@ static List *proxyRteSubQuery(List *selist, queryChain *qc, Query *query)
 							 WKFLAG_INTERNAL_USE);
 
 	/* permission mark on the ORDER BY clause */
+	// MEMO: no need to walk it again, it is checked as junk entries
 	//selist = sepgsqlWalkExpr(selist, qc, (Node *) query->sortClause, WKFLAG_INTERNAL_USE);
 
 	/* permission mark on the GROUP BY/HAVING clause */
+	// MEMO: no need to walk it again, it is checked as junk entries
 	//selist = sepgsqlWalkExpr(selist, qc, (Node *) query->groupClause, WKFLAG_INTERNAL_USE);
 
 	/* permission mark on the UNION/INTERSECT/EXCEPT */
@@ -1409,7 +1410,11 @@ void sepgsqlCopyTable(Relation rel, List *attNumList, bool isFrom)
 
 bool sepgsqlCopyToTuple(Relation rel, HeapTuple tuple)
 {
-	return sepgsqlCheckTuplePerms(rel, tuple, NULL, SEPGSQL_PERMS_SELECT, false);
+	uint32 perms = SEPGSQL_PERMS_SELECT;
+
+	if (RelationGetRelid(rel) == LargeObjectRelationId)
+		perms |= SEPGSQL_PERMS_READ;
+	return sepgsqlCheckTuplePerms(rel, tuple, NULL, perms, false);
 }
 
 /* ----------------------------------------------------------
