@@ -400,10 +400,11 @@ void pgaceCopyTable(Relation rel, List *attNumList, bool isFrom) {
  * filtered, or not in the process of COPY TO statement.
  * If it returns false, the given tuple will be filtered from the result set
  *
- * @rel   : the target relation
- * @tuple : the target tuple
+ * @rel        : the target relation
+ * @attNumList : the list of attribute numbers
+ * @tuple      : the target tuple
  */
-bool pgaceCopyToTuple(Relation rel, HeapTuple tuple) {
+bool pgaceCopyToTuple(Relation rel, List *attNumList, HeapTuple tuple) {
 	return true;
 }
 
