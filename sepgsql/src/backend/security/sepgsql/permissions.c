@@ -548,7 +548,7 @@ Oid sepgsqlComputeImplicitContext(Relation rel, HeapTuple tuple) {
 		ScanKeyData skey;
 		SysScanDesc sd;
 		HeapTuple lotup;
-		Oid loid, lo_security;
+		Oid loid, lo_security = InvalidOid;
 
 		loid = ((Form_pg_largeobject) GETSTRUCT(tuple))->loid;
 		ScanKeyInit(&skey,
@@ -558,11 +558,13 @@ Oid sepgsqlComputeImplicitContext(Relation rel, HeapTuple tuple) {
 		sd = systable_beginscan(rel, LargeObjectLOidPNIndexId, true,
 								SnapshotSelf, 1, &skey);
 		lotup = systable_getnext(sd);
-		if (HeapTupleIsValid(lotup)) {
+		if (HeapTupleIsValid(lotup))
 			lo_security = HeapTupleGetSecurity(lotup);
-			systable_endscan(sd);
+		systable_endscan(sd);
+		/* Inherit previous page's security context */
+		if (lo_security != InvalidOid)
 			return lo_security;
-		}
+		/* compute newly created one */
 		tclass = SECCLASS_DB_BLOB;
 		tcon = sepgsqlGetDatabaseContext();
 		break;
