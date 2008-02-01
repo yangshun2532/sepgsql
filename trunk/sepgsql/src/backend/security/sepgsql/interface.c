@@ -270,24 +270,19 @@ void pgaceLargeObjectDrop(Relation rel, HeapTuple tuple) {
 		sepgsqlLargeObjectDrop(rel, tuple);
 }
 
-void pgaceLargeObjectOpen(Relation rel, HeapTuple tuple, bool read_only) {
-	if (sepgsqlIsEnabled())
-		sepgsqlLargeObjectOpen(rel, tuple, read_only);
-}
-
 void pgaceLargeObjectRead(Relation rel, HeapTuple tuple, bool is_first) {
 	if (sepgsqlIsEnabled())
-		sepgsqlLargeObjectRead(rel, tuple);
+		sepgsqlLargeObjectRead(rel, tuple, is_first);
 }
 
 void pgaceLargeObjectWrite(Relation rel, HeapTuple newtup, HeapTuple oldtup, bool is_first) {
 	if (sepgsqlIsEnabled())
-		sepgsqlLargeObjectWrite(rel, newtup, oldtup);
+		sepgsqlLargeObjectWrite(rel, newtup, oldtup, is_first);
 }
 
-void pgaceLargeObjectTruncate(Relation rel, Oid loid) {
+void pgaceLargeObjectTruncate(Relation rel, Oid loid, HeapTuple headtup) {
 	if (sepgsqlIsEnabled())
-		sepgsqlLargeObjectTruncate(rel, loid);
+		sepgsqlLargeObjectTruncate(rel, loid, headtup);
 }
 
 void pgaceLargeObjectImport(int fd) {

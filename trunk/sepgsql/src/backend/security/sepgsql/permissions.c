@@ -497,11 +497,29 @@ Oid sepgsqlComputeImplicitContext(Relation rel, HeapTuple tuple) {
 		tcon = sepgsqlGetDatabaseContext();
 		break;
 
-	case LargeObjectRelationId:
+	case LargeObjectRelationId: {		/* pg_largeobject */
+		ScanKeyData skey;
+		SysScanDesc sd;
+		HeapTuple lotup;
+		Oid loid, lo_security;
+
+		loid = ((Form_pg_largeobject) GETSTRUCT(tuple))->loid;
+		ScanKeyInit(&skey,
+					Anum_pg_largeobject_loid,
+					BTEqualStrategyNumber, F_OIDEQ,
+					ObjectIdGetDatum(loid));
+		sd = systable_beginscan(rel, LargeObjectLOidPNIndexId, true,
+								SnapshotSelf, 1, &skey);
+		lotup = systable_getnext(sd);
+		if (HeapTupleIsValid(lotup)) {
+			lo_security = HeapTupleGetSecurity(lotup);
+			systable_endscan(sd);
+			return lo_security;
+		}
 		tclass = SECCLASS_DB_BLOB;
 		tcon = sepgsqlGetDatabaseContext();
 		break;
-
+	}
 	case TypeRelationId:		/* pg_type */
 		if (IsBootstrapProcessingMode()) {
 			/* special case in early phase */

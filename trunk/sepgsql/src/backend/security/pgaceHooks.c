@@ -468,17 +468,6 @@ void pgaceLargeObjectDrop(Relation rel, HeapTuple tuple) {
 }
 
 /*
- * pgaceLargeObjectOpen() is called when a large object is opened
- *
- * @rel       : pg_largeobject relation opened with RowExclusiveLock
- * @tuple     : head of the tuples within the target large object
- * @read_only : true, if large object is opened as read only mode
- */
-void pgaceLargeObjectOpen(Relation rel, HeapTuple tuple, bool read_only) {
-	/* do nothing */
-}
-
-/*
  * pgaceLargeObjectRead is called when they read from a large object
  *
  * @rel   : pg_largeobject relation opened with AccessShareLock
@@ -504,10 +493,11 @@ void pgaceLargeObjectWrite(Relation rel, HeapTuple newtup, HeapTuple oldtup, boo
 /*
  * pgaceLargeObjectTruncate() is called when they truncate a large object.
  *
- * @rel  : pg_largeobject relation opened with RowExclusiveLock
- * @loid : large object identifier
+ * @rel     : pg_largeobject relation opened with RowExclusiveLock
+ * @loid    : large object identifier
+ * @headtup : the head tuple to be truncated. NULL means this BLOB will be expanded.
  */
-void pgaceLargeObjectTruncate(Relation rel, Oid loid) {
+void pgaceLargeObjectTruncate(Relation rel, Oid loid, HeapTuple headtup) {
 	/* do nothing */
 }
 
