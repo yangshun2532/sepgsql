@@ -110,7 +110,7 @@ extern bool  sepgsqlAlterTable(Relation rel, AlterTableCmd *cmd);
 
 /* COPY TO/COPY FROM statement hooks */
 extern void  sepgsqlCopyTable(Relation rel, List *attnumlist, bool is_from);
-extern bool  sepgsqlCopyToTuple(Relation rel, HeapTuple tuple);
+extern bool  sepgsqlCopyToTuple(Relation rel, List *attnumlist, HeapTuple tuple);
 
 /* Loadable shared library module hooks */
 extern void  sepgsqlLoadSharedModule(const char *filename);
