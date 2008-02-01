@@ -223,12 +223,12 @@ static void __check_pg_largeobject(HeapTuple tuple, HeapTuple oldtup,
 	perms |= (*p_perms & SEPGSQL_PERMS_USE    ? DB_BLOB__GETATTR : 0);
 	perms |= (*p_perms & SEPGSQL_PERMS_SELECT ? DB_BLOB__GETATTR : 0);
 	perms |= (*p_perms & SEPGSQL_PERMS_UPDATE ? DB_BLOB__SETATTR : 0);
+	perms |= (*p_perms & SEPGSQL_PERMS_INSERT ? DB_BLOB__SETATTR | DB_BLOB__WRITE: 0);
+	perms |= (*p_perms & SEPGSQL_PERMS_DELETE ? DB_BLOB__SETATTR | DB_BLOB__WRITE: 0);
 	perms |= (*p_perms & SEPGSQL_PERMS_READ   ? DB_BLOB__READ  : 0);
 	perms |= (*p_perms & SEPGSQL_PERMS_WRITE  ? DB_BLOB__WRITE : 0);
 
 	if (*p_perms & SEPGSQL_PERMS_INSERT) {
-		bool found = false;
-
 		ScanKeyInit(&skey,
 					Anum_pg_largeobject_loid,
 					BTEqualStrategyNumber, F_OIDEQ,
@@ -236,14 +236,14 @@ static void __check_pg_largeobject(HeapTuple tuple, HeapTuple oldtup,
 		rel = heap_open(LargeObjectRelationId, AccessShareLock);
 		sd = systable_beginscan(rel, LargeObjectLOidPNIndexId, true,
 								SnapshotSelf, 1, &skey);
-		if (HeapTupleIsValid(systable_getnext(sd)))
-            found = true;
+		/* INSERT the first one means create a largeobject */
+		if (!HeapTupleIsValid(systable_getnext(sd)))
+			perms |= DB_BLOB__CREATE;
 		systable_endscan(sd);
 		heap_close(rel, AccessShareLock);
-		perms |= (!found ? DB_BLOB__CREATE : DB_BLOB__SETATTR);
 	}
 
-	if (*p_perms & DB_TUPLE__DELETE) {
+	if (*p_perms & SEPGSQL_PERMS_DELETE) {
 		HeapTuple exttup;
 		bool found = false;
 
@@ -264,7 +264,9 @@ static void __check_pg_largeobject(HeapTuple tuple, HeapTuple oldtup,
 		}
 		systable_endscan(sd);
 		heap_close(rel, AccessShareLock);
-		perms |= (!found ? DB_BLOB__DROP : DB_BLOB__SETATTR | DB_BLOB__WRITE);
+
+		if (!found)
+			perms |= DB_BLOB__DROP;
 	}
 	*p_tclass = SECCLASS_DB_BLOB;
 	*p_perms = perms;
