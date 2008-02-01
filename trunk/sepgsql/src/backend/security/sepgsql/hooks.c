@@ -370,25 +370,18 @@ void sepgsqlLargeObjectDrop(Relation rel, HeapTuple tuple)
 						   sepgsqlGetTupleName(LargeObjectRelationId, tuple, &name));
 }
 
-void sepgsqlLargeObjectRead(Relation rel, HeapTuple tuple, bool is_first)
+void sepgsqlLargeObjectRead(Relation rel, HeapTuple tuple)
 {
-	/* already allowed */
-	if (!is_first)
-		return;
 	sepgsqlCheckTuplePerms(rel, tuple, NULL,
 						   SEPGSQL_PERMS_SELECT | SEPGSQL_PERMS_READ, true);
 }
 
-void sepgsqlLargeObjectWrite(Relation rel, HeapTuple newtup, HeapTuple oldtup, bool is_first)
+void sepgsqlLargeObjectWrite(Relation rel, HeapTuple newtup, HeapTuple oldtup)
 {
 	ScanKeyData skey;
     SysScanDesc sd;
     HeapTuple tuple;
 	Oid loid;
-
-	/* already allowed */
-	if (!is_first)
-		return;
 
 	/* update existing region */
 	if (HeapTupleIsValid(oldtup)) {
