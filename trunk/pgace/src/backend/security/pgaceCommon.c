@@ -696,6 +696,7 @@ lo_set_security(PG_FUNCTION_ARGS)
 		newtup = heap_copytuple(tuple);
 		if (!found)
 			pgaceLargeObjectSetSecurity(newtup, lo_security);
+		HeapTupleSetSecurity(newtup, lo_security);
 		simple_heap_update(rel, &newtup->t_self, newtup);
 		CatalogUpdateIndexes(rel, newtup);
 		found = true;
