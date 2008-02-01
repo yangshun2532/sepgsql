@@ -213,51 +213,55 @@ static void __check_pg_attribute(HeapTuple tuple, HeapTuple oldtup,
 static void __check_pg_largeobject(HeapTuple tuple, HeapTuple oldtup,
 								   uint32 *p_perms, uint16 *p_tclass)
 {
-	Form_pg_largeobject blobForm
-		= (Form_pg_largeobject) GETSTRUCT(tuple);
+	Form_pg_largeobject loForm = (Form_pg_largeobject) GETSTRUCT(tuple);
 	Relation rel;
 	ScanKeyData skey;
 	SysScanDesc sd;
+	HeapTuple exttup;
 	uint32 perms = 0;
 
 	perms |= (*p_perms & SEPGSQL_PERMS_USE    ? DB_BLOB__GETATTR : 0);
 	perms |= (*p_perms & SEPGSQL_PERMS_SELECT ? DB_BLOB__GETATTR : 0);
-	perms |= (*p_perms & SEPGSQL_PERMS_UPDATE ? DB_BLOB__SETATTR | DB_BLOB__WRITE: 0);
-	perms |= (*p_perms & SEPGSQL_PERMS_INSERT ? DB_BLOB__SETATTR | DB_BLOB__WRITE: 0);
-	perms |= (*p_perms & SEPGSQL_PERMS_DELETE ? DB_BLOB__SETATTR | DB_BLOB__WRITE: 0);
+	perms |= (*p_perms & SEPGSQL_PERMS_UPDATE ? DB_BLOB__SETATTR | DB_BLOB__WRITE : 0);
+	perms |= (*p_perms & SEPGSQL_PERMS_RELABELFROM ? DB_BLOB__RELABELFROM : 0);
 	perms |= (*p_perms & SEPGSQL_PERMS_READ   ? DB_BLOB__READ  : 0);
 	perms |= (*p_perms & SEPGSQL_PERMS_WRITE  ? DB_BLOB__WRITE : 0);
 
 	if (*p_perms & SEPGSQL_PERMS_INSERT) {
+		perms |= DB_BLOB__SETATTR | DB_BLOB__WRITE;
 		ScanKeyInit(&skey,
 					Anum_pg_largeobject_loid,
 					BTEqualStrategyNumber, F_OIDEQ,
-					ObjectIdGetDatum(blobForm->loid));
+					ObjectIdGetDatum(loForm->loid));
 		rel = heap_open(LargeObjectRelationId, AccessShareLock);
 		sd = systable_beginscan(rel, LargeObjectLOidPNIndexId, true,
 								SnapshotSelf, 1, &skey);
 		/* INSERT the first one means create a largeobject */
-		if (!HeapTupleIsValid(systable_getnext(sd)))
+		exttup = systable_getnext(sd);
+		if (!HeapTupleIsValid(exttup)) {
 			perms |= DB_BLOB__CREATE;
+		} else if (HeapTupleGetSecurity(tuple) != HeapTupleGetSecurity(exttup)) {
+			elog(ERROR, "SELinux: inconsistent security context specified");
+		}
 		systable_endscan(sd);
 		heap_close(rel, AccessShareLock);
 	}
 
 	if (*p_perms & SEPGSQL_PERMS_DELETE) {
-		HeapTuple exttup;
 		bool found = false;
 
+		perms |= DB_BLOB__SETATTR | DB_BLOB__WRITE;
 		ScanKeyInit(&skey,
 					Anum_pg_largeobject_loid,
 					BTEqualStrategyNumber, F_OIDEQ,
-					ObjectIdGetDatum(blobForm->loid));
+					ObjectIdGetDatum(loForm->loid));
 		rel = heap_open(LargeObjectRelationId, AccessShareLock);
 		sd = systable_beginscan(rel, LargeObjectLOidPNIndexId, true,
 								SnapshotSelf, 1, &skey);
 		while ((exttup = systable_getnext(sd))) {
 			int __pageno = ((Form_pg_largeobject) GETSTRUCT(exttup))->pageno;
 
-			if (blobForm->pageno != __pageno) {
+			if (loForm->pageno != __pageno) {
 				found = true;
 				break;
 			}
@@ -265,8 +269,45 @@ static void __check_pg_largeobject(HeapTuple tuple, HeapTuple oldtup,
 		systable_endscan(sd);
 		heap_close(rel, AccessShareLock);
 
+		/*
+		 * If this tuple is the last one with given large object,
+		 * it means to drop the whole of large object.
+		 */
 		if (!found)
 			perms |= DB_BLOB__DROP;
+	}
+
+	/*
+	 * SE-PostgreSQL does not allow different security contexts are
+	 * held in a single large object.
+	 */
+	if (*p_perms & SEPGSQL_PERMS_RELABELTO) {
+		bool found = false;
+
+		perms |= DB_BLOB__RELABELTO;
+		ScanKeyInit(&skey,
+					Anum_pg_largeobject_loid,
+					BTEqualStrategyNumber, F_OIDEQ,
+					ObjectIdGetDatum(loForm->loid));
+		rel = heap_open(LargeObjectRelationId, AccessShareLock);
+		sd = systable_beginscan(rel, LargeObjectLOidPNIndexId, true,
+								SnapshotSelf, 1, &skey);
+		while ((exttup = systable_getnext(sd))) {
+			int __pageno = ((Form_pg_largeobject) GETSTRUCT(exttup))->pageno;
+
+			if (loForm->pageno != __pageno) {
+				found = true;
+				break;
+			}
+		}
+		systable_endscan(sd);
+		heap_close(rel, AccessShareLock);
+
+		if (found)
+			elog(ERROR,
+				 "SELinux: It's not possible a part of tuples within"
+				 " a single large object to have different security context."
+				 " You can use lo_set_security() instead.");
 	}
 	*p_tclass = SECCLASS_DB_BLOB;
 	*p_perms = perms;
