@@ -1408,12 +1408,22 @@ void sepgsqlCopyTable(Relation rel, List *attNumList, bool isFrom)
 	execVerifyQuery(selist);
 }
 
-bool sepgsqlCopyToTuple(Relation rel, HeapTuple tuple)
+bool sepgsqlCopyToTuple(Relation rel, List *attNumList, HeapTuple tuple)
 {
 	uint32 perms = SEPGSQL_PERMS_SELECT;
 
-	if (RelationGetRelid(rel) == LargeObjectRelationId)
-		perms |= SEPGSQL_PERMS_READ;
+	/* for 'pg_largeobject' */
+	if (RelationGetRelid(rel) == LargeObjectRelationId) {
+		ListCell *l;
+
+		foreach (l, attNumList) {
+			AttrNumber attnum = lfirst_int(l);
+			if (attnum == Anum_pg_largeobject_data) {
+				perms |= SEPGSQL_PERMS_READ;
+				break;
+			}
+		}
+	}
 	return sepgsqlCheckTuplePerms(rel, tuple, NULL, perms, false);
 }
 

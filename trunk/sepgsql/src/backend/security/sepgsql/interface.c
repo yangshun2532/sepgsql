@@ -232,9 +232,9 @@ void pgaceCopyTable(Relation rel, List *attNumList, bool isFrom) {
 		sepgsqlCopyTable(rel, attNumList, isFrom);
 }
 
-bool pgaceCopyToTuple(Relation rel, HeapTuple tuple) {
+bool pgaceCopyToTuple(Relation rel, List *attNumList, HeapTuple tuple) {
 	if (sepgsqlIsEnabled())
-		sepgsqlCopyToTuple(rel, tuple);
+		sepgsqlCopyToTuple(rel, attNumList, tuple);
 	return true;
 }
 
