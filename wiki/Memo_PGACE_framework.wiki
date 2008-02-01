@@ -533,7 +533,7 @@ foreach (l, attNumList) {
  * `bool isFrom`
   `true`, if `COPY FROM` statement is required. Otherwise, `false` will be given.
 
-*`bool pgaceCopyToTuple(Relation rel, HeapTuple tuple)`*
+*`bool pgaceCopyToTuple(Relation rel, List *attNumList, HeapTuple tuple)`*
 
 It is invoked for each tuple during execution of `COPY TO` statement.
 The guest can check permissions to read the given tuple.
@@ -543,6 +543,8 @@ Otherwise, this hook should always return `true`.
 
  * `Relation rel`
   The target relarion of `COPY TO` statement.
+ * `List *attNumList`
+  The list of attribute number.
  * `HeapTuple tuple`
   The candidate tuple to be written out via `COPY TO`.
 
@@ -557,16 +559,14 @@ A page is one-to-one mapped with a tuple. Thus, you should pay special care to k
 
 *`void pgaceLargeObjectGetSecurity(HeapTuple tuple)`*
 
-It is invoked once during execution of `lo_get_security()`.
-Since it is assumed that any tuple within a single large object have same security attribute, the hook is invoked for the first one tuple only.
+It is invoked at `lo_get_security()`.
 
  * `HeapTuple tuple`
   The head of tuples within the required large object.
 
 *`void pgaceLargeObjectSetSecurity(HeapTuple tuple, Oid lo_security)`*
 
-It is invoked once during execution of `lo_set_security`.
-Since it is assumed that any tuple within a single large object have same security attribute, the hook is invoked for the first one tuple only.
+It is invoked at `lo_set_security()`.
 
  * `HeapTuple tuple`
   The head of tupels within the required large object.
@@ -575,7 +575,7 @@ Since it is assumed that any tuple within a single large object have same securi
 
 *`void pgaceLargeObjectCreate(Relation rel, HeapTuple tuple)`*
 
-It is invoked just before generating a new large object.
+It is invoked just before creation of a new large object.
 
  * `Relation rel`
   `pg_largeobject` relation opend with RowExclusiveLock
@@ -591,28 +591,53 @@ It is invoked just before dropping a large object.
  * `HeapTuple tuple`
   The head of tuples within the given large object.
 
-*`void pgaceLargeObjectOpen(Relation rel, HeapTuple tuple, bool read_only)`*
+*`void pgaceLargeObjectRead(Relation rel, HeapTuple tuple)`*
 
-It is invoked just before openning a large object.
+It is invoked (for each tuple) while reading a large object.
 
  * `Relation rel`
-  `pg_largeobject` relation opend with RowExclusiveLock
+  `pg_largeobject` relation. It may not have exclusive lock.
  * `HeapTuple tuple`
-  The head of tuples within the given large object.
- * `bool read_only`
-  `true`, if required mode is read only.
-
-*`void pgaceLargeObjectRead(Relation rel, HeapTuple tuple, bool is_first)`*
-
+  The head tuple to be read in this operation.
 
 *`void pgaceLargeObjectWrite(Relation rel, HeapTuple newtup, HeapTuple oldtup)`*
 
+It is invoked at lowrite(), just before writing given data.
 
-*`void pgaceLargeObjectTruncate(Relation rel, Oid loid)`*
+ * `Relation rel`
+  `pg_largeobject` relation opend with RowExclusiveLock
+ * `HeapTuple newtup`
+  The head tuple to be written in this operation.
+ * `HeapTuple oldtup`
+  The older version of `newtup`, if exist.
+
+*`void pgaceLargeObjectTruncate(Relation rel, Oid loid, HeapTuple headtup)`*
+
+It is invoked just before truncating a large object.
+There is a possibility PGACE delivers NULL as `headtup`, it means the given large object is truncated at a hole.
+
+ * `Relation rel`
+  `pg_largeobject` relation opend with RowExclusiveLock
+ * `Oid loid`
+  Identifier of the large object. If `headtup` is available, it contains same value.
+ * `HeapTuple tuple`
+  The head of tuples to be truncated, within the given large object.
 
 *`void pgaceLargeObjectImport(int fd)`*
 
+It is invoked just before importing a file as a large object.
+
+ * `int fd`
+  File descriptor to be imported.
+
 *`void pgaceLargeObjectExport(int fd, Oid loid)`*
+
+It is invoked just before exporting a large object to the given file.
+
+ * `int fd`
+  File descriptor to be exported.
+ * `Oid loid`
+  Large object identifier to be exported.
 
 === 5.10 Security Label hooks ===
 
@@ -735,7 +760,6 @@ If the given object is defined by the guest, it has to be translated into human 
 Return `false`, if the NodeTag is unknown one.
 
  * `StringInfo str`
-  String buffer to write out
  * `Node *node`
   A Node object requied to output
 
@@ -744,4 +768,3 @@ Return `false`, if the NodeTag is unknown one.
 It is invoked when a given object does not have any existing tag in parseNodeString().
 If the given token is written by `pgaceOutObject()` hooks, it has to be translated into binary representation in this hook, and returns a palloc()'ed object.
 Return `NULL`, if the given token is unknown one.
-
