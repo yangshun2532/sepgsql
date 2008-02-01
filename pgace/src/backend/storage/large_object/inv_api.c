@@ -447,7 +447,8 @@ inv_read(LargeObjectDesc *obj_desc, char *buf, int nbytes)
 		if (HeapTupleHasNulls(tuple))	/* paranoia */
 			elog(ERROR, "null field found in pg_largeobject");
 
-		pgaceLargeObjectRead(lo_heap_r, tuple, !nread);
+		if (!nread)
+			pgaceLargeObjectRead(lo_heap_r, tuple);
 
 		data = (Form_pg_largeobject) GETSTRUCT(tuple);
 
@@ -636,7 +637,8 @@ inv_write(LargeObjectDesc *obj_desc, const char *buf, int nbytes)
 			replace[Anum_pg_largeobject_data - 1] = 'r';
 			newtup = heap_modifytuple(oldtuple, RelationGetDescr(lo_heap_r),
 									  values, nulls, replace);
-			pgaceLargeObjectWrite(lo_heap_r, newtup, oldtuple, !(nwritten - n));
+			if (nwritten - n == 0)
+				pgaceLargeObjectWrite(lo_heap_r, newtup, oldtuple);
 			simple_heap_update(lo_heap_r, &newtup->t_self, newtup);
 			CatalogIndexInsert(indstate, newtup);
 			heap_freetuple(newtup);
@@ -680,7 +682,8 @@ inv_write(LargeObjectDesc *obj_desc, const char *buf, int nbytes)
 			values[Anum_pg_largeobject_pageno - 1] = Int32GetDatum(pageno);
 			values[Anum_pg_largeobject_data - 1] = PointerGetDatum(&workbuf);
 			newtup = heap_formtuple(lo_heap_r->rd_att, values, nulls);
-			pgaceLargeObjectWrite(lo_heap_r, newtup, NULL, !(nwritten - n));
+			if (nwritten - n == 0)
+				pgaceLargeObjectWrite(lo_heap_r, newtup, NULL);
 			simple_heap_insert(lo_heap_r, newtup);
 			CatalogIndexInsert(indstate, newtup);
 			heap_freetuple(newtup);
