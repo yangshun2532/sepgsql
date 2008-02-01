@@ -84,7 +84,7 @@ extern void pgaceLockTable(Oid relid);
  * COPY TO/COPY FROM statement hooks
  ******************************************************************/
 extern void pgaceCopyTable(Relation rel, List *attNumList, bool isFrom);
-extern bool pgaceCopyToTuple(Relation rel, HeapTuple tuple);
+extern bool pgaceCopyToTuple(Relation rel, List *attNumList, HeapTuple tuple);
 
 /******************************************************************
  * Loadable shared library module hooks
