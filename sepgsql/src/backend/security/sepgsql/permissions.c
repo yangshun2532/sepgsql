@@ -8,6 +8,18 @@
 
 #include "access/genam.h"
 #include "access/heapam.h"
+#include "catalog/catalog.h"
+#include "catalog/indexing.h"
+#include "catalog/pg_attribute.h"
+#include "catalog/pg_authid.h"
+#include "catalog/pg_class.h"
+#include "catalog/pg_database.h"
+#include "catalog/pg_language.h"
+#include "catalog/pg_largeobject.h"
+#include "catalog/pg_proc.h"
+#include "catalog/pg_security.h"
+#include "catalog/pg_trigger.h"
+#include "catalog/pg_type.h"
 #include "miscadmin.h"
 #include "security/pgace.h"
 #include "security/sepgsql.h"
@@ -91,89 +103,81 @@ static uint32 __sepgsql_perms_to_tuple_perms(uint32 perms) {
 	return __perms;
 }
 
-char *sepgsqlGetTupleName(Oid relid, HeapTuple tuple)
+char *sepgsqlGetTupleName(Oid relid, HeapTuple tuple, NameData *name)
 {
-	char buffer[NAMEDATALEN * 2 + 32];
-
 	switch (relid) {
-	case AccessMethodRelationId:
-		return NameStr(((Form_pg_am) GETSTRUCT(tuple))->amname);
-
 	case AttributeRelationId: {
-		Form_pg_attribute attrForm = (Form_pg_attribute) GETSTRUCT(tuple);
-		Form_pg_class classForm;
+		Form_pg_attribute attr = (Form_pg_attribute) GETSTRUCT(tuple);
 		HeapTuple reltup;
 
-		if (IsBootstrapProcessingMode())
-			return NameStr(attrForm->attname);
-
+		if (IsBootstrapProcessingMode()) {
+			strncpy(NameStr(*name),
+					NameStr(attr->attname),
+					NAMEDATALEN);
+			return NameStr(*name);
+		}
 		reltup = SearchSysCache(RELOID,
-								ObjectIdGetDatum(attrForm->attrelid),
+								ObjectIdGetDatum(attr->attrelid),
 								0, 0, 0);
-		if (!HeapTupleIsValid(reltup))
-			return NameStr(attrForm->attname);
-
-		classForm = (Form_pg_class) GETSTRUCT(reltup);
-		snprintf(buffer, sizeof(buffer), "%s.%s",
-				 NameStr(classForm->relname),
-				 NameStr(attrForm->attname));
+		if (!HeapTupleIsValid(reltup)) {
+			strncpy(NameStr(*name),
+					NameStr(attr->attname),
+					NAMEDATALEN);
+			return NameStr(*name);
+		}
+		snprintf(NameStr(*name), NAMEDATALEN, "%s.%s",
+				 NameStr(((Form_pg_class) GETSTRUCT(reltup))->relname),
+				 NameStr(attr->attname));
 		ReleaseSysCache(reltup);
-		return pstrdup(buffer);
+		return NameStr(*name);
 	}
-	case AuthIdRelationId:
-		return NameStr(((Form_pg_authid) GETSTRUCT(tuple))->rolname);
-
-	case RelationRelationId:
-		return NameStr(((Form_pg_class) GETSTRUCT(tuple))->relname);
-
-	case ConstraintRelationId:
-		return NameStr(((Form_pg_constraint) GETSTRUCT(tuple))->conname);
-
-	case ConversionRelationId:
-		return NameStr(((Form_pg_conversion) GETSTRUCT(tuple))->conname);
-
-	case DatabaseRelationId:
-		return NameStr(((Form_pg_database) GETSTRUCT(tuple))->datname);
-
-	case LanguageRelationId:
-		return NameStr(((Form_pg_language) GETSTRUCT(tuple))->lanname);
-
-	case LargeObjectRelationId:
-		snprintf(buffer, sizeof(buffer), "loid:%u",
+	case AuthIdRelationId: {
+		strncpy(NameStr(*name),
+				NameStr(((Form_pg_authid) GETSTRUCT(tuple))->rolname),
+				NAMEDATALEN);
+		return NameStr(*name);
+	}
+	case RelationRelationId: {
+		strncpy(NameStr(*name),
+				NameStr(((Form_pg_class) GETSTRUCT(tuple))->relname),
+				NAMEDATALEN);
+		return NameStr(*name);
+	}
+	case DatabaseRelationId: {
+		strncpy(NameStr(*name),
+				NameStr(((Form_pg_database) GETSTRUCT(tuple))->datname),
+				NAMEDATALEN);
+		return NameStr(*name);
+	}
+	case LargeObjectRelationId: {
+		snprintf(NameStr(*name), NAMEDATALEN, "loid:%u",
 				 ((Form_pg_largeobject) GETSTRUCT(tuple))->loid);
-		return pstrdup(buffer);
-
-	case ListenerRelationId:
-		return NameStr(((Form_pg_listener) GETSTRUCT(tuple))->relname);
-
-	case NamespaceRelationId:
-		return NameStr(((Form_pg_namespace) GETSTRUCT(tuple))->nspname);
-
-	case OperatorClassRelationId:
-		return NameStr(((Form_pg_opclass) GETSTRUCT(tuple))->opcname);
-
-	case OperatorRelationId:
-		return NameStr(((Form_pg_operator) GETSTRUCT(tuple))->oprname);
-
-	case PLTemplateRelationId:
-		return NameStr(((Form_pg_pltemplate) GETSTRUCT(tuple))->tmplname);
-
-	case ProcedureRelationId:
-		return NameStr(((Form_pg_proc) GETSTRUCT(tuple))->proname);
-
-	case RewriteRelationId:
-		return NameStr(((Form_pg_rewrite) GETSTRUCT(tuple))->rulename);
-
-	case TableSpaceRelationId:
-		return NameStr(((Form_pg_tablespace) GETSTRUCT(tuple))->spcname);
-
-	case TriggerRelationId:
-		return NameStr(((Form_pg_trigger) GETSTRUCT(tuple))->tgname);
-
-	case TypeRelationId:
-		snprintf(buffer, sizeof(buffer), "pg_type.%s",
+		return NameStr(*name);
+	}
+	case ProcedureRelationId: {
+		strncpy(NameStr(*name),
+				NameStr(((Form_pg_proc) GETSTRUCT(tuple))->proname),
+				NAMEDATALEN);
+		return NameStr(*name);
+	}
+	case TriggerRelationId: {
+		strncpy(NameStr(*name),
+				NameStr(((Form_pg_trigger) GETSTRUCT(tuple))->tgname),
+				NAMEDATALEN);
+		return NameStr(*name);
+	}
+	case TypeRelationId: {
+		snprintf(NameStr(*name), NAMEDATALEN, "pg_type::%s",
 				 NameStr(((Form_pg_type) GETSTRUCT(tuple))->typname));
-		return pstrdup(buffer);
+		return NameStr(*name);
+	}
+	default:
+		if (HeapTupleGetOid(tuple) != InvalidOid) {
+			snprintf(NameStr(*name), NAMEDATALEN, "relid:%u,oid:%u",
+					 relid, HeapTupleGetOid(tuple));
+			return NameStr(*name);
+		}
+		break;
 	}
 	return NULL;
 }
@@ -427,18 +431,20 @@ static bool __check_tuple_perms(Oid tableoid, Oid tcontext, uint32 perms,
 	}
 
 	if (perms) {
+		NameData name;
+
 		if (abort) {
 			sepgsql_avc_permission(sepgsqlGetClientContext(),
 								   tcontext,
 								   tclass,
 								   perms,
-								   sepgsqlGetTupleName(tableoid, tuple));
+								   sepgsqlGetTupleName(tableoid, tuple, &name));
 		} else {
 			rc = sepgsql_avc_permission_noabort(sepgsqlGetClientContext(),
 												tcontext,
 												tclass,
 												perms,
-												sepgsqlGetTupleName(tableoid, tuple));
+												sepgsqlGetTupleName(tableoid, tuple, &name));
 		}
 	}
 	return rc;

@@ -10,6 +10,7 @@
 #include "access/genam.h"
 #include "access/tupdesc.h"
 #include "access/xact.h"
+#include "catalog/pg_database.h"
 #include "libpq/libpq-be.h"
 #include "libpq/pqsignal.h"
 #include "miscadmin.h"
