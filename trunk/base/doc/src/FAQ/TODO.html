@@ -8,7 +8,7 @@
 <body bgcolor="#FFFFFF" text="#000000" link="#FF0000" vlink="#A00000" alink="#0000FF">
 <h1><a name="section_1">PostgreSQL TODO List</a></h1>
 <p>Current maintainer:     Bruce Momjian (<a href="mailto:bruce@momjian.us">bruce@momjian.us</a>)<br/>
-Last updated:           Mon Jan 14 17:13:36 EST 2008
+Last updated:           Thu Jan 31 21:41:04 EST 2008
 </p>
 <p>The most recent version of this document can be viewed at<br/>
 <a href="http://www.postgresql.org/docs/faqs.TODO.html">http://www.postgresql.org/docs/faqs.TODO.html</a>.
@@ -133,7 +133,6 @@ first.  There is also a developer's wiki at<br/>
 </p>
     </li><li>%Create dump tool for write-ahead logs for use in determining
             transaction id for point-in-time recovery
-    </li><li>Allow the PITR process to be debugged and data examined
     </li><li>Allow recovery.conf to support the same syntax as
             postgresql.conf, including quoting
 <p>            <a href="http://archives.postgresql.org/pgsql-hackers/2006-12/msg00497.php">http://archives.postgresql.org/pgsql-hackers/2006-12/msg00497.php</a>
@@ -1019,6 +1018,12 @@ first.  There is also a developer's wiki at<br/>
 </p>
   </li><li>Add idle_in_transaction_timeout GUC so locks are not held for long
   periods of time
+  </li><li>Improve deadlock detection when a page cleaning lock conflicts
+  with a shared buffer that is pinned
+<p>  <a href="http://archives.postgresql.org/pgsql-bugs/2008-01/msg00138.php">http://archives.postgresql.org/pgsql-bugs/2008-01/msg00138.php</a>
+  <a href="http://archives.postgresql.org/pgsql-hackers/2008-01/msg00873.php">http://archives.postgresql.org/pgsql-hackers/2008-01/msg00873.php</a>
+  <a href="http://archives.postgresql.org/pgsql-committers/2008-01/msg00365.php">http://archives.postgresql.org/pgsql-committers/2008-01/msg00365.php</a>
+</p>
 </li></ul>
 <h1><a name="section_15">Startup Time Improvements</a></h1>
 
@@ -1240,20 +1245,21 @@ first.  There is also a developer's wiki at<br/>
 </p>
   </li><li>Allow plug-in modules to emulate features from other databases
   </li><li>Add Oracle-style packages  (Pavel)
-</li></ul>
-<p>          A package would be a schema with session-local variables,<br/>
-          public/private functions, and initialization functions.  It<br/>
-          is also possible to implement these capabilities<br/>
-          in any schema and not use a separate "packages"<br/>
-          syntax at all.
+<p>  A package would be a schema with session-local variables,
+  public/private functions, and initialization functions.  It
+  is also possible to implement these capabilities
+  in any schema and not use a separate "packages"
+  syntax at all.
 </p>
-<p>          <a href="http://archives.postgresql.org/pgsql-hackers/2006-08/msg00384.php">http://archives.postgresql.org/pgsql-hackers/2006-08/msg00384.php</a>
+<p>  <a href="http://archives.postgresql.org/pgsql-hackers/2006-08/msg00384.php">http://archives.postgresql.org/pgsql-hackers/2006-08/msg00384.php</a>
 </p>
-<ul>
-  <li>Consider allowing control of upper/lower case folding of unquoted
+  </li><li>Consider allowing control of upper/lower case folding of unquoted
   identifiers
 <p>  <a href="http://archives.postgresql.org/pgsql-hackers/2004-04/msg00818.php">http://archives.postgresql.org/pgsql-hackers/2004-04/msg00818.php</a>
   <a href="http://archives.postgresql.org/pgsql-hackers/2006-10/msg01527.php">http://archives.postgresql.org/pgsql-hackers/2006-10/msg01527.php</a>
+</p>
+  </li><li>Add autonomous transactions
+<p>  <a href="http://archives.postgresql.org/pgsql-hackers/2008-01/msg00893.php">http://archives.postgresql.org/pgsql-hackers/2008-01/msg00893.php</a>
 </p>
 </li></ul>
 <h1><a name="section_21">Features We Do <u>Not</u> Want</a></h1>
