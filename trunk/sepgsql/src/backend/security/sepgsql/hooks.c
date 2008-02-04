@@ -134,7 +134,7 @@ void sepgsqlGetDatabaseParam(const char *name)
 						   ObjectIdGetDatum(MyDatabaseId),
 						   0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
-		selerror("cache lookup failed for database %u", MyDatabaseId);
+		elog(ERROR, "cache lookup failed for database %u", MyDatabaseId);
 
 	sepgsql_avc_permission(sepgsqlGetClientContext(),
 						   HeapTupleGetSecurity(tuple),
@@ -153,7 +153,7 @@ void sepgsqlSetDatabaseParam(const char *name, char *argstring)
 						   ObjectIdGetDatum(MyDatabaseId),
 						   0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
-		selerror("cache lookup failed for database %u", MyDatabaseId);
+		elog(ERROR, "cache lookup failed for database %u", MyDatabaseId);
 	sepgsql_avc_permission(sepgsqlGetClientContext(),
 						   HeapTupleGetSecurity(tuple),
 						   SECCLASS_DB_DATABASE,
@@ -175,7 +175,7 @@ void sepgsqlLockTable(Oid relid)
 						   ObjectIdGetDatum(relid),
 						   0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
-		selerror("cache lookup failed for relation %u", relid);
+		elog(ERROR, "SELinux: cache lookup failed for relation %u", relid);
 	classForm = (Form_pg_class) GETSTRUCT(tuple);
 
 	if (classForm->relkind == RELKIND_RELATION)
@@ -226,7 +226,7 @@ void sepgsqlCallFunction(FmgrInfo *finfo, bool with_perm_check)
 						   ObjectIdGetDatum(finfo->fn_oid),
 						   0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
-		selerror("cache lookup failed for procedure %u", finfo->fn_oid);
+		elog(ERROR, "SELinux: cache lookup failed for procedure %u", finfo->fn_oid);
 
 	/* check trusted procedure */
 	execcon = sepgsql_avc_createcon(sepgsqlGetClientContext(),
@@ -271,7 +271,7 @@ bool sepgsqlCallFunctionTrigger(FmgrInfo *finfo, TriggerData *tgdata)
 		if (TRIGGER_FIRED_AFTER(tgdata->tg_event))
 			oldtup = tgdata->tg_trigtuple;
 	} else {
-		selerror("unknown trigger event type (%u)", tgdata->tg_event);
+		elog(ERROR, "SELinux: unexpected trigger event type (%u)", tgdata->tg_event);
 	}
 	if (oldtup && !sepgsqlCheckTuplePerms(rel, oldtup, NULL, SEPGSQL_PERMS_SELECT, false))
 		return false;
@@ -292,7 +292,7 @@ void sepgsqlLoadSharedModule(const char *filename)
 	Datum filecon_sid;
 
 	if (getfilecon_raw(filename, &filecon) < 1)
-		selerror("could not obtain security context of %s", filename);
+		elog(ERROR, "SELinux: could not obtain security context of %s", filename);
 	PG_TRY();
 	{
 		filecon_sid = DirectFunctionCall1(security_label_raw_in,
@@ -459,12 +459,12 @@ char *sepgsqlSecurityLabelIn(char *context) {
 
 	rc = selinux_trans_to_raw_context(context, &raw_context);
 	if (rc)
-		selerror("could not translate MLS label");
+		elog(ERROR, "SELinux: could not translate MLS label");
 
 	rc = security_canonicalize_context_raw(raw_context, &canonical_context);
 	freecon(raw_context);
 	if (rc)
-		selerror("could not canonicalize the context");
+		elog(ERROR, "SELinux: could not formalize security context");
 
 	PG_TRY();
 	{
@@ -486,7 +486,7 @@ char *sepgsqlSecurityLabelOut(char *raw_context) {
 	char *result;
 
 	if (selinux_raw_to_trans_context(raw_context, &context))
-		selerror("could not translate MLS label");
+		elog(ERROR, "could not translate MLS label");
 	PG_TRY();
 	{
 		result = pstrdup(context);
@@ -537,7 +537,7 @@ char *sepgsqlSecurityLabelOfLabel(char *context) {
 						   ObjectIdGetDatum(SecurityRelationId),
 						   0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
-		selerror("pg_security (relid=%u) not found", SecurityRelationId);
+		elog(ERROR, "SELinux: cache lookup failed for pg_security");
 	tcon = DatumGetCString(DirectFunctionCall1(security_label_raw_out,
 											   ObjectIdGetDatum(HeapTupleGetSecurity(tuple))));
 	ReleaseSysCache(tuple);
@@ -545,7 +545,7 @@ char *sepgsqlSecurityLabelOfLabel(char *context) {
 	/* obtain server's context */
 	rc = getcon_raw(&scon);
 	if (rc)
-		selerror("could not obtain server's context");
+		elog(ERROR, "SELinux: could not obtain server's context");
 
 	/* compute pg_selinux tuple context */
 	rc = security_compute_create_raw(scon, tcon, SECCLASS_DB_TUPLE, &ncon);

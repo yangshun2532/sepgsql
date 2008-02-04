@@ -12,17 +12,6 @@
 #include <selinux/flask.h>
 #include <selinux/av_permissions.h>
 
-#define selerror(fmt, ...)												\
-	ereport(ERROR,  (errcode(ERRCODE_INTERNAL_ERROR),					\
-					 errmsg("%s(%d): " fmt, __FUNCTION__, __LINE__, ##__VA_ARGS__)))
-#define selnotice(fmt, ...)												\
-	ereport(NOTICE, (errcode(ERRCODE_WARNING),							\
-					 errmsg("%s(%d): " fmt, __FUNCTION__, __LINE__, ##__VA_ARGS__)))
-#define seldebug(fmt, ...)												\
-	ereport(NOTICE, (errcode(ERRCODE_WARNING),							\
-					 errmsg("%s(%d): " fmt, __FUNCTION__, __LINE__, ##__VA_ARGS__)))
-#define selbugon(x)	do { if (x)((char *)NULL)[0] = 'a'; }while(0)
-
 /*
  * Permission codes of internal representation
  */

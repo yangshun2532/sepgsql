@@ -285,7 +285,7 @@ static List *walkVarHelper(List *selist, queryChain *qc, Var *var, int flags)
 
 	Assert(IsA(var, Var));
 	if (!qc)
-		selerror("we could not use Var node in parameter list");
+		elog(ERROR, "SELinux: Var node should not appear in parameter list");
 
 	qc = upperQueryChain(qc, var->varlevelsup);
 	query = getQueryFromChain(qc);
@@ -355,8 +355,8 @@ static List *walkVarHelper(List *selist, queryChain *qc, Var *var, int flags)
 				tle = list_nth(sqry->targetList, var->varattno - 1);
 				Assert(IsA(tle, TargetEntry));
 				if (!IsA(tle->expr, Var))
-					selerror("dropped column is accessed (relid=%u, attno=%d)",
-							 rte->relid, var->varattno);
+					elog(ERROR, "SELinux: refering to dropped column (relid=%u, attno=%d)",
+						 rte->relid, var->varattno);
 				svar = (Var *) tle->expr;
 			}
 			/* table:{select/use} and column:{select/use} */
@@ -370,7 +370,7 @@ static List *walkVarHelper(List *selist, queryChain *qc, Var *var, int flags)
 	case RTE_VALUES:
 		break;
 	default:
-		selerror("unrecognized rtekind (%d)", rte->rtekind);
+		elog(ERROR, "SELinux: unexpected rtekind (%d)", rte->rtekind);
 		break;
 	}
 	return selist;
@@ -385,7 +385,7 @@ static List *walkOpExprHelper(List *selist, Oid opid)
 						   ObjectIdGetDatum(opid),
 						   0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
-		selerror("cache lookup failed for OPEROID = %u", opid);
+		elog(ERROR, "SELinux: cache lookup failed for operator %u", opid);
 	oprform = (Form_pg_operator) GETSTRUCT(tuple);
 
 	selist = addEvalPgProc(selist, oprform->oprcode, DB_PROCEDURE__EXECUTE);
@@ -597,7 +597,8 @@ static List *sepgsqlWalkExpr(List *selist, queryChain *qc, Node *node, int flags
 		break;
 	}
 	default:
-		selnotice("node(%d) is ignored => %s", nodeTag(node), nodeToString(node));
+		elog(NOTICE, "SELinux: node with tag %d is ignored => %s",
+			 nodeTag(node), nodeToString(node));
 		break;
 	}
 	return selist;
@@ -632,7 +633,7 @@ static List *makePseudoTargetList(Oid relid) {
 							ObjectIdGetDatum(relid),
 							0, 0, 0);
 	if (!HeapTupleIsValid(reltup))
-		selerror("relation (oid: %u) does not exist", relid);
+		elog(ERROR, "SELinux: cache lookup failed for relation %u", relid);
 
 	classForm = (Form_pg_class) GETSTRUCT(reltup);
 	relnatts = classForm->relnatts;
@@ -642,8 +643,8 @@ static List *makePseudoTargetList(Oid relid) {
 								Int16GetDatum(attno),
 								0, 0);
 		if (!HeapTupleIsValid(atttup))
-			selerror("attribute %u of relation '%s' does not exist",
-					 attno, NameStr(classForm->relname));
+			elog(ERROR, "SELinux: cache lookup failed for attribute %d of relation %s",
+				 attno, NameStr(classForm->relname));
 		attrForm = (Form_pg_attribute) GETSTRUCT(atttup);
 		if (attrForm->attisdropped) {
 			expr = (Expr *) makeNullConst(INT4OID, -1);
@@ -717,7 +718,7 @@ static void rewriteOuterJoinTree(Node *n, Query *query, bool is_outer_join)
 		rewriteOuterJoinTree(j->rarg, query,
 							 (j->jointype == JOIN_RIGHT || j->jointype == JOIN_FULL));
 	} else {
-		selerror("unrecognized node type (%d) in query->jointree", nodeTag(n));
+		elog(ERROR, "SELinux: unexpected node type (%d) in Query->jointree", nodeTag(n));
 	}
 }
 
@@ -923,7 +924,7 @@ static List *proxyJoinTree(List *selist, queryChain *qc, Node *n, Node **quals)
 			selist = sepgsqlWalkExpr(selist, qc, (Node *) rte->values_lists, 0);
 			break;
 		default:
-			selerror("rtekind = %d should not be found fromList", rte->rtekind);
+			elog(ERROR, "SELinux: unexpected rtekinf = %d at fromList", rte->rtekind);
 			break;
 		}
 	} else if (IsA(n, FromExpr)) {
@@ -940,7 +941,7 @@ static List *proxyJoinTree(List *selist, queryChain *qc, Node *n, Node **quals)
 		selist = proxyJoinTree(selist, qc, j->larg, &j->quals);
 		selist = proxyJoinTree(selist, qc, j->rarg, &j->quals);
 	} else {
-		selerror("unrecognized node type (%d) in query->jointree", nodeTag(n));
+		elog(ERROR, "SELinux: unexpected node type (%d) at Query->jointree", nodeTag(n));
 	}
 	return selist;
 }
@@ -965,7 +966,7 @@ static List *proxySetOperations(List *selist, queryChain *qc, Node *n)
 		selist = proxySetOperations(selist, qc, (Node *) op->larg);
 		selist = proxySetOperations(selist, qc, (Node *) op->rarg);
     } else {
-		selerror("setOperationsTree contains => %s", nodeToString(n));
+		elog(ERROR, "SELinux: setOperationsTree contains => %s", nodeToString(n));
     }
 
 	return selist;
@@ -1040,7 +1041,8 @@ static List *proxyTruncateStmt(Query *query)
 		subquery_lids = lappend_oid(subquery_lids, RelationGetRelid(rel));
 		heap_close(rel, NoLock);
 
-		selnotice("virtual TRUNCATE %s", RelationGetRelationName(rel));
+		elog(NOTICE, "SELinux: TRUNCATE %s is replaced unconditional DELETE",
+			 RelationGetRelationName(rel));
 	}
 
 	if (stmt->behavior == DROP_CASCADE) {
@@ -1083,8 +1085,7 @@ List *sepgsqlProxyQuery(Query *query)
 		}
 		break;
 	default:
-		selerror("unknown command type (=%d) found",
-				 query->commandType);
+		elog(ERROR, "SELinux: unexpected command type (%d)", query->commandType);
 		break;
 	}
 	return new_list;
@@ -1206,7 +1207,7 @@ static void verifyPgProcPerms(Oid funcid, uint32 perms)
 						   ObjectIdGetDatum(funcid),
 						   0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
-		selerror("cache lookup failed for procedure %d", funcid);
+		elog(ERROR, "SELinux: cache lookup failed for procedure %d", funcid);
 
 	/* compute domain transition */
 	newcon = sepgsql_avc_createcon(sepgsqlGetClientContext(),
@@ -1264,8 +1265,8 @@ static List *__expandPgAttributeInheritance(List *selist, Oid relid, char *attna
 
 		tuple = SearchSysCacheAttName(lfirst_oid(l), attname);
 		if (!HeapTupleIsValid(tuple))
-			selerror("relation %u does not have attribute %s",
-                     lfirst_oid(l), attname);
+			elog(ERROR, "SELinux: cache lookup failed for attribute %s of relation %u",
+				 attname, lfirst_oid(l));
 		attrForm = (Form_pg_attribute) GETSTRUCT(tuple);
 		selist = __addEvalPgAttribute(selist, lfirst_oid(l), false, attrForm->attnum, perms);
 		selist = __expandPgAttributeInheritance(selist, lfirst_oid(l), attname, perms);
@@ -1311,7 +1312,8 @@ static List *expandSEvalListInheritance(List *selist) {
 									   Int16GetDatum(se->a.attno),
 									   0, 0);
 				if (!HeapTupleIsValid(tuple))
-					selerror("relation %u attribute %d not found", se->a.relid, se->a.attno);
+					elog(ERROR, "SELinux: cache lookup failed for attribute %d of relation %u",
+						 se->a.attno, se->a.relid);
 				attrForm = (Form_pg_attribute) GETSTRUCT(tuple);
 
 				result = __expandPgAttributeInheritance(result,
@@ -1344,7 +1346,7 @@ static void execVerifyQuery(List *selist)
 			verifyPgProcPerms(se->p.funcid, se->perms);
 			break;
 		default:
-			selerror("unknown SEvalItem (tclass=%u)", se->tclass);
+			elog(ERROR, "SELinux: unexpected SEvalItem (tclass: %d)", se->tclass);
 			break;
 		}
 	}
@@ -1459,7 +1461,7 @@ Node *sepgsqlCopyObject(Node *__oldnode) {
 		newnode->p.funcid = oldnode->p.funcid;
 		break;
 	default:
-		selerror("unrecognized SEvalItem node (tclass: %d)", oldnode->tclass);
+		elog(ERROR, "SELinux: unexpected SEvalItem node (tclass: %d)", oldnode->tclass);
 		break;
 	}
 	return (Node *) newnode;
@@ -1488,7 +1490,7 @@ bool sepgsqlOutObject(StringInfo str, Node *node) {
 		appendStringInfo(str, ":p.funcid %u", seitem->p.funcid);
 		break;
 	default:
-		selerror("unrecognized SEvalItem node (tclass: %d)", seitem->tclass);
+		elog(ERROR, "SELinux: unexpected SEvalItem node (tclass: %d)", seitem->tclass);
 		break;
 	}
 	return true;
@@ -1552,7 +1554,7 @@ void *sepgsqlReadObject(char *token)
 		break;
 
 	default:
-		selerror("unrecognized SEvalItem node (tclass: %d)", seitem->tclass);
+		elog(ERROR, "SELinux: unexpected SEvalItem node (tclass: %d)", seitem->tclass);
 		break;
 	}
 	return (void *) seitem;

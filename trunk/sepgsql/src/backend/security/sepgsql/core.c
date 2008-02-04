@@ -376,11 +376,11 @@ static void sepgsql_compute_avc_datum(Oid ssid, Oid tsid, uint16 tclass,
 	}
 
 	if (security_compute_av_raw(scon, tcon, tclass_external, 0, &x))
-		selerror("could not obtain access vector decision "
-				 " scon='%s' tcon='%s' tclass=%u", scon, tcon, tclass);
+		elog(ERROR, "SELinux: could not compute an access vector decision"
+			 " scon='%s' tcon='%s' tclass=%u", scon, tcon, tclass);
 	if (security_compute_create_raw(scon, tcon, tclass_external, &ncon) != 0)
-		selerror("could not obtain a newly created security context "
-				 "scon='%s' tcon='%s' tclass=%u", scon, tcon, tclass);
+		elog(ERROR, "SELinux: could not compute an implicit security context"
+			 " scon='%s' tcon='%s' tclass=%u", scon, tcon, tclass);
 
 	avd->ssid = ssid;
 	avd->tsid = tsid;
@@ -424,8 +424,8 @@ static Oid sepgsql_compute_relabel(Oid ssid, Oid tsid, uint16 tclass)
 	tcon = DatumGetCString(tmp);
 
 	if (security_compute_relabel_raw(scon, tcon, tclass, &ncon) != 0)
-		selerror("could not obtain a newly relabeled security context "
-				 "scon='%s' tcon='%s' tclass=%u", scon, tcon, tclass);
+		elog(ERROR, "SELinux: could not compute a relabeled security context"
+			 " scon='%s' tcon='%s' tclass=%u", scon, tcon, tclass);
 
 	PG_TRY();
 	{
@@ -682,7 +682,7 @@ static Oid sepgsql_system_getcon()
 	Oid ssid;
 
 	if (getcon_raw(&context) != 0)
-		selerror("could not obtain security context of server process");
+		elog(ERROR, "SELinux: could not obtain security context of server process");
 
 	PG_TRY();
 	{
@@ -709,10 +709,10 @@ static Oid sepgsql_system_getpeercon(int sockfd)
 		/* we can set finally fallbacked context */
 		__context = getenv("SEPGSQL_FALLBACK_CONTEXT");
 		if (!__context)
-			selerror("could not obtain security context of database client");
+			elog(ERROR, "SELinux: could not obtain security context of database client");
 		if (security_check_context(__context) ||
 			selinux_trans_to_raw_context(__context, &context))
-			selerror("'%s' is not a valid context", __context);
+			elog(ERROR, "SELinux: '%s' is not a valid context", __context);
 	}
 
 	PG_TRY();
@@ -777,7 +777,7 @@ Oid sepgsqlGetDatabaseContext()
 						   ObjectIdGetDatum(MyDatabaseId),
 						   0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
-		selerror("cache lookup failed for Database %u", MyDatabaseId);
+		elog(ERROR, "SELinux: cache lookup failed for database %u", MyDatabaseId);
 	datcon = HeapTupleGetSecurity(tuple);
 	ReleaseSysCache(tuple);
 
@@ -797,7 +797,7 @@ char *sepgsqlGetDatabaseName()
 						   ObjectIdGetDatum(MyDatabaseId),
 						   0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
-		selerror("cache lookup failed for Database %u", MyDatabaseId);
+		elog(ERROR, "SELinux: cache lookup failed for database %u", MyDatabaseId);
 	dat_form = (Form_pg_database) GETSTRUCT(tuple);
 	datname = pstrdup(NameStr(dat_form->datname));
 	ReleaseSysCache(tuple);
@@ -844,7 +844,7 @@ void sepgsqlInitialize(bool is_bootstrap)
  */
 static void sepgsqlMonitoringPolicyState_SIGHUP(int signum)
 {
-	selnotice("selinux userspace AVC reset, by receiving SIGHUP");
+	elog(NOTICE, "SELinux: userspace AVC reset");
 	sepgsql_avc_reset();
 }
 
@@ -855,8 +855,6 @@ static int sepgsqlMonitoringPolicyState()
 	socklen_t addrlen;
 	struct nlmsghdr *nlh;
 	int i, rc, nl_sockfd;
-
-	seldebug("%s pid=%u", __FUNCTION__, getpid());
 
 	/* close listen port */
 	for (i=3; !close(i); i++);
@@ -878,7 +876,7 @@ static int sepgsqlMonitoringPolicyState()
 	/* open netlink socket */
 	nl_sockfd = socket(PF_NETLINK, SOCK_RAW, NETLINK_SELINUX);
 	if (nl_sockfd < 0) {
-		selnotice("could not create netlink socket");
+		elog(NOTICE, "SELinux: could not open netlink socket");
 		return 1;
 	}
 
@@ -886,7 +884,7 @@ static int sepgsqlMonitoringPolicyState()
 	addr.nl_family = AF_NETLINK;
 	addr.nl_groups = SELNL_GRP_AVC;
 	if (bind(nl_sockfd, (struct sockaddr *)&addr, sizeof(addr))) {
-		selnotice("could not bind netlink socket");
+		elog(NOTICE, "SELinux: could not bint netlink socket");
 		return 1;
 	}
 
@@ -898,23 +896,23 @@ static int sepgsqlMonitoringPolicyState()
 		if (rc < 0) {
 			if (errno == EINTR)
 				continue;
-			selnotice("selinux netlink: recvfrom() error=%d, %s",
-					  errno, strerror(errno));
+			elog(NOTICE, "SELinux: netlink recvfrom() errno=%d (%s)",
+				 errno, strerror(errno));
 			return 1;
 		}
 
 		if (addrlen != sizeof(addr)) {
-			selnotice("selinux netlink: netlink address truncated (len = %d)", addrlen);
+			elog(NOTICE, "SELinux: netlink address truncated (len=%d)", addrlen);
 			return 1;
 		}
 
 		if (addr.nl_pid) {
-			selnotice("selinux netlink: received spoofed packet from: %u", addr.nl_pid);
+			elog(NOTICE, "SELinux: netlink received spoofed packet from: %u", addr.nl_pid);
 			continue;
 		}
 
 		if (rc == 0) {
-			selnotice("selinux netlink: received EOF on socket");
+			elog(NOTICE, "SELinux: netlink received EOF on socket");
 			return 1;
 		}
 
@@ -922,7 +920,7 @@ static int sepgsqlMonitoringPolicyState()
 
 		if (nlh->nlmsg_flags & MSG_TRUNC
 			|| nlh->nlmsg_len > (unsigned int)rc) {
-			selnotice("selinux netlink: incomplete netlink message");
+			elog(NOTICE, "SELinux: netlink incomplete netlink message");
 			return 1;
 		}
 
@@ -931,23 +929,23 @@ static int sepgsqlMonitoringPolicyState()
 			struct nlmsgerr *err = NLMSG_DATA(nlh);
 			if (err->error == 0)
 				break;
-			selnotice("selinux netlink: error message %d", -err->error);
+			elog(NOTICE, "SELinux: netlink error message %d", -err->error);
 			return 1;
 		}
 		case SELNL_MSG_SETENFORCE: {
 			struct selnl_msg_setenforce *msg = NLMSG_DATA(nlh);
-			selnotice("selinux netlink: received setenforce notice (enforcing=%d)", msg->val);
+			elog(NOTICE, "SELinux: netlink received setenforce notice (enforcing=%d)", msg->val);
 			sepgsql_avc_reset();
 			break;
 		}
 		case SELNL_MSG_POLICYLOAD: {
 			struct selnl_msg_policyload *msg = NLMSG_DATA(nlh);
-			selnotice("selinux netlink: received policyload notice (seqno=%d)", msg->seqno);
+			elog(NOTICE, "SELinux: netlink received policyload notice (seqno=%d)", msg->seqno);
 			sepgsql_avc_reset();
 			break;
 		}
 		default:
-			selnotice("selinux netlink: unknown message type (%d)", nlh->nlmsg_type);
+			elog(NOTICE, "SELinux: netlink unknown message type (%d)", nlh->nlmsg_type);
 			return 1;
 		}
 	}
@@ -962,7 +960,7 @@ int sepgsqlInitializePostmaster()
 	if (MonitoringPolicyStatePid == 0) {
 		exit(sepgsqlMonitoringPolicyState());
 	} else if (MonitoringPolicyStatePid < 0) {
-		selnotice("could not create a child process to monitor the policy state");
+		elog(NOTICE, "SELinux: could not create a policy state monitoring process.");
 		return false;
 	}
 	return true;
@@ -977,8 +975,8 @@ void sepgsqlFinalizePostmaster()
 
 	if (MonitoringPolicyStatePid > 0) {
 		if (kill(MonitoringPolicyStatePid, SIGTERM) < 0) {
-			selnotice("could not kill(%u, SIGTERM), errno=%d (%s)",
-					  MonitoringPolicyStatePid, errno, strerror(errno));
+			elog(NOTICE, "SELinux: could not kill(%u, SIGTERM), (%s)",
+				 MonitoringPolicyStatePid, strerror(errno));
 			return;
 		}
 		waitpid(MonitoringPolicyStatePid, &status, 0);
