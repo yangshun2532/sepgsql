@@ -61,7 +61,7 @@ static Oid __lookupRelationForm(Oid relid, Form_pg_class classForm) {
 							  true, SnapshotSelf, 1, &skey);
 	tuple = systable_getnext(scan);
 	if (!HeapTupleIsValid(tuple))
-		selerror("relation %u is not exist", relid);
+		elog(ERROR, "SELinux: cache lookup failed for relation %u", relid);
 
 	if (classForm)
 		memcpy(classForm, GETSTRUCT(tuple), sizeof(FormData_pg_class));
@@ -355,7 +355,7 @@ static void __check_pg_proc(HeapTuple tuple, HeapTuple oldtup,
 				filename = DatumGetCString(DirectFunctionCall1(textout, newbin));
 				filename = expand_dynamic_library_name(filename);
 				if (getfilecon_raw(filename, &filecon) < 1)
-					selerror("could not obtain the security context of '%s'", filename);
+					elog(ERROR, "could not obtain the security context of '%s'", filename);
 				PG_TRY();
 				{
 					filesid = DirectFunctionCall1(security_label_raw_in,
