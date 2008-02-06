@@ -205,7 +205,7 @@ tunable_policy(`sepgsql_enable_unconfined',`
 # SE-PostgreSQL policy for generic domain
 #
 
-allow sepgsql_users_domain sepgsql_db_t : db_database { getattr access };
+allow sepgsql_users_domain sepgsql_db_t : db_database { getattr access get_param set_param};
 
 allow sepgsql_users_domain sepgsql_table_t : db_table { getattr use select update insert delete };
 allow sepgsql_users_domain sepgsql_table_t : db_column { getattr use select update insert };
