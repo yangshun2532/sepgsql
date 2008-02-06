@@ -97,43 +97,31 @@ Any text representation is actually stored in `pg_security` system catalog, newl
 
 == 3. The way to implement security feature ==
 
+The default hooks which don't affect anything in access controls are defined at `src/backend/security/pgaceHooks.c`. Thus, it has to be skipped on building binaries if you try to implement own guest security module on PGACE.
 
+Using Makefile is the easiest way to tuen on / off your security module.
+In the SE-PostgreSQL, it utilizes Makefile as follows:
 
-== 4. Extended function/type/data structure ==
+{{{
+OBJS := pgaceCommon.o
 
-=== 4.1 Extended function ===
+ifeq ($(enable_selinux), yes)
+OBJS += sepgsql/core.o sepgsql/hooks.o sepgsql/interface.o \
+    sepgsql/permissions.o sepgsql/proxy.o
+else
+OBJS += pgaceHooks.o
+endif
+}}}
 
+`enable_selinux` is enabled when `--enable-selinux` is specified at configure script.
 
-=== 4.2 Extended type ===
+Your security module has to contain all the hooks defined in `pgaceHooks.c` at least.
 
-*`security_label security_label_in(cstring)`*
-
-*`cstring security_label_out(security_label)`*
-
-*`security_label security_label_raw_in(cstring)`*
-
-*`cstring security_label_raw_out(security_label)`*
-
-*`security_label text_to_security_label(cstring)`*
-
-*`cstring security_label_to_text(security_label)`*
-
-*`security_label lo_get_security(oid)`*
-
-*`bool lo_set_security(oid, security_label)`*
-
-
-
-=== 4.2 Extended internal data structure ===
-
-
-
-
-== 5. The list of hooks ==
+== 4. The list of hooks ==
 
 This section introduces the specifications of PGACE hooks.
 
-=== 5.1 Initialization/Finalization hooks ===
+=== 4.1 Initialization/Finalization hooks ===
 
 *`Size pgaceShmemSize(void)`*
 
@@ -163,7 +151,7 @@ otherwise you should always return `true`.
 It is invoked just before the dead of Postmaster server process.
 The guest can override this hook to cleanup itself.
 
-=== 5.2 SQL proxy hooks ===
+=== 4.2 SQL proxy hooks ===
 
 *`List *pgaceProxyQuery(List *queryList)`*
 
@@ -206,7 +194,7 @@ The guest can override this hook to check the Query descriptor.
   You should pay attention that this query is not actually executed when `eflags & EXEC_FLAG_EXPLAIN_ONLY` is positive.
 
 
-=== 5.3 HeapTuple modification hooks ===
+=== 4.3 HeapTuple modification hooks ===
 
 *`bool pgaceHeapTupleInsert(Relation rel, HeapTuple tuple, bool is_internal, bool with_returning)`*
 
@@ -270,7 +258,7 @@ When `is_internal` is `false`, updating the tuple will be skipped. Otherwise, an
  * `bool with_returning`
   true, if `DELETE` statement has `RETURNING` clause.
 
-=== 5.4 Extended SQL statement hooks ===
+=== 4.4 Extended SQL statement hooks ===
 
 The following series of hooks enables to provide several options to support explicit security labeling in CREATE TABLE/FUNCTION/DATABASE and ALTER TABLE/FUNCTION/DATABASE statements.
 
@@ -427,7 +415,7 @@ Typically, an explicitly specified security attribtue will be attached using `He
 
 *NOTE:* pgaceHeapTupleUpdate() will be invoked later, so permission checks are not necessary.
 
-=== 5.5 DATABASE related hooks ===
+=== 4.5 DATABASE related hooks ===
 
 *`void pgaceSetDatabaseParam(const char *name, char *argstring)`*
 
@@ -445,7 +433,7 @@ It is invoked just before executing `SHOW <parameter>` statement.
  * `const char *name`
   The name of parameter. `"all"` means `SHOW ALL` required.
 
-=== 5.6 FUNCTION related hooks ===
+=== 4.6 FUNCTION related hooks ===
 
 *`void pgaceCallFunction(FmgrInfo *finfo)`*
 
@@ -501,7 +489,7 @@ It is invoked just after calling a function which implements fereign key constra
  * `Datum pgace_saved`
   The returned value of `pgacePreparePlanCheck()`
 
-=== 5.7 TABLE related hooks ===
+=== 4.7 TABLE related hooks ===
 
 *`void pgaceLockTable(Oid relid)`*
 
@@ -510,7 +498,7 @@ It is invoked just before executing `LOCK TABLE` statement.
  * `Oid relid`
   The target of the relation to be locked.
 
-=== 5.8 COPY TO/COPY FROM statement hooks ===
+=== 4.8 COPY TO/COPY FROM statement hooks ===
 
 *`void pgaceCopyTable(Relation rel, List *attNumList, bool isFrom)`*
 
@@ -550,7 +538,7 @@ Otherwise, this hook should always return `true`.
 
 *NOTE:* pgaceHeapTupleInsert() will be invoked for each tuple during execution of `COPY FROM`.
 
-=== 5.9 Binary Large Object (BLOB) hooks ===
+=== 4.9 Binary Large Object (BLOB) hooks ===
 
 A binary large object is stored into `pg_largeobject` system catalog in PostgreSQL.
 It is separated into one or more units called as page.
@@ -639,7 +627,7 @@ It is invoked just before exporting a large object to the given file.
  * `Oid loid`
   Large object identifier to be exported.
 
-=== 5.10 Security Label hooks ===
+=== 4.10 Security Label hooks ===
 
 The following four hooks are used to support `security_label` type.
 
@@ -737,7 +725,7 @@ The reason why such a special case is provided is to avoid infinity invocation t
  * `char *new_label`
   A new entry to be inserted into `pg_security`. The guest has to return a security label of this new label.
 
-=== 5.11 Extended node type hooks ===
+=== 4.11 Extended node type hooks ===
 
 The guest can define its own Node type.
 The following hooks are invoked in copyObject(), _outNode() and parseNodeString().
