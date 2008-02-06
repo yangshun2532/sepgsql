@@ -34,6 +34,7 @@ Requires(preun): /sbin/chkconfig /sbin/service
 Requires(postun): policycoreutils
 Requires: postgresql-server = %{version}
 Requires: policycoreutils >= 2.0.16 libselinux >= 2.0.13 selinux-policy %%__required_policy_version__%%
+Requires: tzdata
 
 %description
 Security Enhanced PostgreSQL is an extension of PostgreSQL
@@ -72,7 +73,8 @@ popd
                 --enable-cassert                \
 %endif
                 --libdir=%{_libdir}/sepgsql     \
-                --datadir=%{_datadir}/sepgsql
+                --datadir=%{_datadir}/sepgsql	\
+                --with-system-tzdata=/usr/share/zoneinfo
 
 # parallel build, if possible
 make %{?_smp_mflags}
@@ -206,6 +208,11 @@ fi
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
 
 %changelog
+* Wed Feb  6 2008 <kaigai@kaigai.gr.jp> - 8.2.6-1.206
+- bugfix: blob:{read} is not evaluated correctly
+- add --with-system-tzdata config option
+- policy update: allow db_database:{set_param}
+
 * Tue Jan 22 2008 <kaigai@kaigai.gr.jp> - 8.2.6-1.158
 - backporting bugfixes:
   lack of lacks when refering buffer pages at update/delete hooks
