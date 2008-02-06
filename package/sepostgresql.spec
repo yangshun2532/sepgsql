@@ -36,6 +36,7 @@ Requires(preun): /sbin/chkconfig /sbin/service
 Requires(postun): policycoreutils
 Requires: postgresql-server = %{version}
 Requires: policycoreutils >= 2.0.16 libselinux >= 2.0.43 selinux-policy >= 3.0.6
+Requires: tzdata
 
 %description
 Security Enhanced PostgreSQL is an extension of PostgreSQL
