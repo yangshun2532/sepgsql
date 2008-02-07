@@ -205,6 +205,16 @@ fi
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
 
 %changelog
+* Thu Feb  7 2008 <kaigai@kaigai.gr.jp> - sepostgresql-8.3.0-2.105
+- update base version to stable 8.3.0
+- add tzdata dependency
+- allow db_database:{get_param set_param} for generic domain
+- error message cleanups
+- Improve large object hooks in PGACE framework
+- BUGFIX: db_blob:{drop} was checked at loread()
+- BUGFIX: incorrect permission in DELETE with RETURNING clause
+- incorrect permission when we read and update security_context in same time.
+
 * Fri Jan 25 2008 <kaigai@kaigai.gr.jp> - sepostgresql-8.3RC2-2.62
 - BUGFIX: add handling to invalid contexts already stored
 
