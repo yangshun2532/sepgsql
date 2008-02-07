@@ -34,7 +34,6 @@ Requires(preun): /sbin/chkconfig /sbin/service
 Requires(postun): policycoreutils
 Requires: postgresql-server = %{version}
 Requires: policycoreutils >= 2.0.16 libselinux >= 2.0.13 selinux-policy %%__required_policy_version__%%
-Requires: tzdata
 
 %description
 Security Enhanced PostgreSQL is an extension of PostgreSQL
@@ -73,8 +72,7 @@ popd
                 --enable-cassert                \
 %endif
                 --libdir=%{_libdir}/sepgsql     \
-                --datadir=%{_datadir}/sepgsql	\
-                --with-system-tzdata=/usr/share/zoneinfo
+                --datadir=%{_datadir}/sepgsql
 
 # parallel build, if possible
 make %{?_smp_mflags}
@@ -113,7 +111,6 @@ rm -rf %{buildroot}%{_bindir}.orig
 rm -rf %{buildroot}%{_libdir}/sepgsql.orig
 rm -rf %{buildroot}%{_includedir}
 rm -rf %{buildroot}%{_usr}/doc
-rm -rf %{buildroot}%{_datadir}/sepgsql/timezone
 rm -rf %{buildroot}%{_mandir}
 
 # /var/lib/sepgsql
@@ -198,6 +195,7 @@ fi
 %{_datadir}/sepgsql/postgres.shdescription
 %{_datadir}/sepgsql/system_views.sql
 %{_datadir}/sepgsql/*.sample
+%{_datadir}/sepgsql/timezone/
 %{_datadir}/sepgsql/timezonesets/
 %{_datadir}/sepgsql/conversion_create.sql
 %{_datadir}/sepgsql/information_schema.sql
@@ -208,10 +206,10 @@ fi
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
 
 %changelog
-* Wed Feb  6 2008 <kaigai@kaigai.gr.jp> - 8.2.6-1.206
+* Wed Feb  6 2008 <kaigai@kaigai.gr.jp> - 8.2.6-1.208
 - bugfix: blob:{read} is not evaluated correctly
-- add --with-system-tzdata config option
 - policy update: allow db_database:{set_param}
+- packs timezone related files
 
 * Tue Jan 22 2008 <kaigai@kaigai.gr.jp> - 8.2.6-1.158
 - backporting bugfixes:
