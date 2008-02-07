@@ -24,6 +24,7 @@ Source2: sepostgresql.if
 Source3: sepostgresql.te
 Source4: sepostgresql.fc
 Source5: sepostgresql.8
+Source6: sepostgresql.logrotate
 Patch0: sepostgresql-pgace-%%__base_postgresql_version__%%-%%__sepgsql_major_version__%%.patch
 Patch1: sepostgresql-sepgsql-%%__base_postgresql_version__%%-%%__sepgsql_major_version__%%.patch
 Patch2: sepostgresql-pg_dump-%%__base_postgresql_version__%%-%%__sepgsql_major_version__%%.patch
@@ -36,7 +37,7 @@ Requires(preun): /sbin/chkconfig /sbin/service
 Requires(postun): policycoreutils
 Requires: postgresql-server = %{version}
 Requires: policycoreutils >= 2.0.16 libselinux >= 2.0.43 selinux-policy >= 3.0.6
-Requires: tzdata
+Requires: tzdata logrotate
 
 %description
 Security Enhanced PostgreSQL is an extension of PostgreSQL
@@ -123,6 +124,10 @@ install -d -m 700 %{buildroot}%{_localstatedir}/lib/sepgsql/backups
 mkdir -p %{buildroot}%{_initrddir}
 install -p -m 755 %{SOURCE1} %{buildroot}%{_initrddir}/sepostgresql
 
+# /etc/logrotate.d/
+mkdir -p %{buildroot}%{_sysconfdir}/logrotate.d
+install -p -m 644 %{SOURCE6} %{buildroot}%{_sysconfdir}/logrotate.d/sepostgresql
+
 # /usr/share/man/*
 mkdir -p %{buildroot}%{_mandir}/man8
 install -p -m 644 %{SOURCE5} %{buildroot}%{_mandir}/man8
@@ -181,6 +186,7 @@ fi
 %defattr(-,root,root,-)
 %doc COPYRIGHT README HISTORY
 %{_initrddir}/sepostgresql
+%{_sysconfdir}/logrotate.d/sepostgresql
 %{_bindir}/initdb.sepgsql
 %{_bindir}/sepg_ctl
 %{_bindir}/sepostgres
@@ -205,6 +211,9 @@ fi
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
 
 %changelog
+* Thu Feb  7 2008 <kaigai@kaigai.gr.jp> - sepostgresql-8.3.0-2.108
+- add /etc/logrotate.d/sepostgresql
+
 * Thu Feb  7 2008 <kaigai@kaigai.gr.jp> - sepostgresql-8.3.0-2.105
 - update base version to stable 8.3.0
 - add tzdata dependency

@@ -1,0 +1,11 @@
+# logrotate configuration for SE-PostgreSQL
+
+/var/log/sepostgresql.log {
+    rotate 4
+    compress
+    size 4M
+    notifempty
+    postrotate
+        /sbin/service sepostgresql restart >& /dev/null
+    endscript
+}
