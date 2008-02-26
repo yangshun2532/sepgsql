@@ -211,6 +211,9 @@ fi
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
 
 %changelog
+* Tue Feb 26 2008 <kaigai@kaigai.gr.jp> - sepostgresql-8.3.0-2.113
+- BUGFIX: CREATE/ALTER TABLE with CONTEXT='...' did nothing.
+
 * Thu Feb  7 2008 <kaigai@kaigai.gr.jp> - sepostgresql-8.3.0-2.108
 - add /etc/logrotate.d/sepostgresql
 
