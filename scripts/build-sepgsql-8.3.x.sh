@@ -90,6 +90,9 @@ cp package/sepostgresql.8 ${RPMSOURCE}
 echo "CPY: sepostgresql-fedora-prefix.patch"
 cp package/sepostgresql-fedora-prefix.patch ${RPMSOURCE}
 
+echo "CPY: sepostgresql.logrotate"
+cp package/sepostgresql.logrotate ${RPMSOURCE}
+
 # ---- build rpm package
 rpmbuild -ba ${RPMSOURCE}/sepostgresql.spec
 
