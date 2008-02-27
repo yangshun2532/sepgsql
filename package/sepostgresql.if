@@ -1,11 +1,11 @@
 ########################################
 ## <summary>
-##     marks as a server process of SE-PostgreSQL.
+##      Marks the specified domain as SE-PostgreSQL server process.
 ## </summary>
-## <param name="type">
-##     <summary>
-##     Type marked as a database object type.
-##     </summary>
+## <param name="domain">
+##      <summary>
+##      Domain to be marked
+##      </summary>
 ## </param>
 #
 interface(`sepgsql_server_domain',`
@@ -13,6 +13,61 @@ interface(`sepgsql_server_domain',`
 		attribute sepgsql_server_type;
 	')
 	typeattribute $1 sepgsql_server_type;
+')
+
+########################################
+## <summary>
+##      Allow the specified domain unconfined accesses to any database objects
+##  managed by SE-PostgreSQL,
+## </summary>
+## <param name="domain">
+##      <summary>
+##      Domain allowed access.
+##      </summary>
+## </param>
+#
+interface(`sepgsql_unconfined_domain',`
+	gen_require(`
+		attribute sepgsql_unconfined_type;
+		attribute sepgsql_client_type;
+	')
+	typeattribute $1 sepgsql_unconfined_type;
+	typeattribute $1 sepgsql_client_type;
+')
+
+########################################
+## <summary>
+##      Allow the specified domain unprivileged accesses to any database objects
+##  managed by SE-PostgreSQL,
+## </summary>
+## <param name="domain">
+##      <summary>
+##      Domain allowed access.
+##      </summary>
+## </param>
+#
+interface(`sepgsql_client_domain',`
+	gen_require(`
+		attribute sepgsql_client_type;
+	')
+	typeattribute $1 sepgsql_client_type;
+')
+
+########################################
+## <summary>
+##      Allow the specified role to invoke trusted procedures
+## </summary>
+## <param name="role">
+##  <summary>
+##  The role associated with the domain.
+##  </summary>
+## </param>
+#
+interface(`sepgsql_trusted_procedure_role',`
+	gen_require(`
+		type sepgsql_trusted_domain_t;
+	')
+	role $1 types sepgsql_trusted_domain_t;
 ')
 
 ########################################
@@ -25,45 +80,9 @@ interface(`sepgsql_server_domain',`
 ##     </summary>
 ## </param>
 #
-interface(`sepgsql_module_object',`
+interface(`sepgsql_loadable_module',`
 	gen_require(`
 		attribute sepgsql_module_type;
 	')
 	typeattribute $1 sepgsql_module_type;
-')
-
-########################################
-## <summary>
-##     marks as a administrative client process of SE-PostgreSQL.
-## </summary>
-## <param name="type">
-##     <summary>
-##     A domain marked as a administrative client domain
-##     </summary>
-## </param>
-#
-interface(`sepgsql_unconfined_domain',`
-	gen_require(`
-		attribute sepgsql_admin_domain;
-		attribute sepgsql_users_domain;
-	')
-	typeattribute $1 sepgsql_admin_domain;
-	typeattribute $1 sepgsql_users_domain;
-')
-
-########################################
-## <summary>
-##     marks as a generic client process of SE-PostgreSQL.
-## </summary>
-## <param name="type">
-##     <summary>
-##     A domain marked as a generic client domain
-##     </summary>
-## </param>
-#
-interface(`sepgsql_client_domain',`
-	gen_require(`
-		attribute sepgsql_users_domain;
-	')
-	typeattribute $1 sepgsql_users_domain;
 ')
