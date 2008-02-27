@@ -211,6 +211,9 @@ fi
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
 
 %changelog
+* Wed Feb 27 2008 <kaigai@kaigai.gr.jp> - sepostgresql-8.3.0-2.115
+- ".beta" removed.
+
 * Wed Feb 27 2008 <kaigai@kaigai.gr.jp> - sepostgresql-8.3.0-2.114
 - Security policy updates
 

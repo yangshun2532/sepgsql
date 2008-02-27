@@ -4,7 +4,7 @@ export LANG=C
 # ---- build parametors
 SEPGSQL_MAJOR_VERSION="2"
 SEPGSQL_MINOR_OFFSET="538"
-SEPGSQL_EXTENSION=".beta"
+SEPGSQL_EXTENSION=""
 SEPGSQL_BRANCH="/trunk"
 
 # -- SE-PostgreSQL repository
