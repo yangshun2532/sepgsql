@@ -87,6 +87,9 @@ cat package/sepostgresql.te | \
 echo "CPY: sepostgresql.8"
 cp package/sepostgresql.8 ${RPMSOURCE}
 
+echo "CPY: sepostgresql.logrotate"
+cp package/sepostgresql.logrotate ${RPMSOURCE}
+
 echo "CPY: sepostgresql-fedora-prefix.patch"
 cp package/sepostgresql-fedora-prefix.patch ${RPMSOURCE}
 

@@ -30,13 +30,13 @@ Patch1: sepostgresql-sepgsql-%%__base_postgresql_version__%%-%%__sepgsql_major_v
 Patch2: sepostgresql-pg_dump-%%__base_postgresql_version__%%-%%__sepgsql_major_version__%%.patch
 Patch3: sepostgresql-fedora-prefix.patch
 BuildRequires: perl glibc-devel bison flex readline-devel zlib-devel >= 1.0.4
-Buildrequires: checkpolicy libselinux-devel >= 2.0.43 selinux-policy-devel selinux-policy >= 3.0.6
+Buildrequires: checkpolicy libselinux-devel >= 2.0.43 selinux-policy-devel selinux-policy >= 3.3
 Requires(pre): shadow-utils
 Requires(post): policycoreutils /sbin/chkconfig
 Requires(preun): /sbin/chkconfig /sbin/service
 Requires(postun): policycoreutils
 Requires: postgresql-server = %{version}
-Requires: policycoreutils >= 2.0.16 libselinux >= 2.0.43 selinux-policy >= 3.0.6
+Requires: policycoreutils >= 2.0.16 libselinux >= 2.0.43 selinux-policy >= 3.3
 Requires: tzdata logrotate
 
 %description
@@ -211,6 +211,9 @@ fi
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
 
 %changelog
+* Wed Feb 27 2008 <kaigai@kaigai.gr.jp> - sepostgresql-8.3.0-2.114
+- Security policy updates
+
 * Tue Feb 26 2008 <kaigai@kaigai.gr.jp> - sepostgresql-8.3.0-2.113
 - BUGFIX: CREATE/ALTER TABLE with CONTEXT='...' did nothing.
 
