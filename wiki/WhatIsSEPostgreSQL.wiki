@@ -1,0 +1,18 @@
+= What is SE-PostgreSQL? =
+
+http://sepgsql.googlecode.com/files/sepgsql_logo.png
+
+Security-Enhanced PostgreSQL, or SE-PostgreSQL, is an extension built in PostgreSQL. It works as a reference monitor within database management system, and provides advanced access control features known as fine-grained mandatory access control, collaborating with SELinux.
+
+SELinux is an operating system feature to apply its security policy when we accesses any resource managed by operating system (like files, networks, etc...). It can also act itself as a security server for userspace object manager, like DBMS, X-window ans so on.
+
+SE-PostgreSQL checks any SQL query came from clients before its execution, and make its decision refering the security policy of SELinux. The checks are orthogonally done from existing database ACL mechanism, so both DAC and MAC have to allow user's access as SELinux doing on filesystem.
+
+The most characteristic feature of SE-PostgreSQL is ''system-wide consistency in access control'', by sharing the security policy with operating system. It enables to build a database management system into information flow control scheme unified with operating system.
+
+== Information flow control unified with operating system ==
+
+== fine-grained access control ==
+
+== mandatory access control ==
+
