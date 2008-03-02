@@ -211,6 +211,10 @@ fi
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
 
 %changelog
+* Sun Mar  2 2008 <kaigai@kaigai.gr.jp> - sepostgresql-8.3.0-2.120
+- BUGFIX: CREATE TABLE statement with explicit labeled columns
+- BUGFIX: SELECT count(*) does not filter unallowed tuples
+
 * Wed Feb 27 2008 <kaigai@kaigai.gr.jp> - sepostgresql-8.3.0-2.117
 - ".beta" removed.
 
