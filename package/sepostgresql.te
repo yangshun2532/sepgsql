@@ -1,7 +1,12 @@
 policy_module(sepostgresql, %%POLICY_VERSION%%)
 
 gen_require(`
-	all_userspace_class_perms
+	class db_database all_db_database_perms;
+	class db_table all_db_table_perms;
+	class db_procedure all_db_procedure_perms;
+	class db_column all_db_column_perms;
+	class db_tuple all_db_tuple_perms;
+	class db_blob all_db_blob_perms;
 
 	type postgresql_t;
 	type lib_t, shlib_t;
