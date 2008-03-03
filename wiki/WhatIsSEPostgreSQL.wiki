@@ -88,7 +88,44 @@ It is necessary to drop violated columns like "`SELECT id, name, age FROM person
 
 
 == Row-level access controls ==
+{{{
+CREATE TABLE drink (
+    id      integer primary key,
+    name    varchar(32),
+    price   integer
+);
+GRANT ALL ON drink TO PUBLIC;
+
+INSERT INTO drink (id, name, price)
+    VALUES (11, 'water', 100),
+           (12, 'coke',  120),
+           (13, 'milk',  150),
+           (14, 'juice', 130),
+           (21, 'beer',  240),
+           (22, 'wine',  480);
+UPDATE drink SET security_context = 'system_u:object_r:sepgsql_table_t:s0:c0' WHERE id IN (21,22);
+}}}
 
 
 == Column level access controls ==
 
+
+{{{
+CREATE TABLE customer (
+    cid     integer primary key,
+    cname   varchar(32),
+    credit  varchar(32)  CONTEXT = 'system_u:object_r:sepgsql_secret_table_t:s0'
+);
+GRANT ALL ON customer TO PUBLIC;
+
+INSERT INTO customer (cid, cname, credit)
+    VALUES ( 10, 'jack', '1111-2222-3333-4444'),
+           ( 13, 'adam', '5555-6666-7777-8888'),
+           ( 14, 'liza', '9876-5432-1098-7654');
+
+CREATE OR REPLACE FUNCTION show_credit (integer) RETURNS text
+    LANGUAGE 'sql'
+    CONTEXT = 'system_u:object_r:sepgsql_trusted_proc_t'
+    AS 'SELECT substring(credit from ''^[0-9]+-'') || ''xxxx-xxxx-xxxx'' FROM customer WHERE CID = $1';
+GRANT ALL ON show_credit TO PUBLIC;
+}}}
