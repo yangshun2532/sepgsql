@@ -1,18 +1,94 @@
-= What is SE-PostgreSQL? =
-
 http://sepgsql.googlecode.com/files/sepgsql_logo.png
 
-Security-Enhanced PostgreSQL, or SE-PostgreSQL, is an extension built in PostgreSQL. It works as a reference monitor within database management system, and provides advanced access control features known as fine-grained mandatory access control, collaborating with SELinux.
+= What is SE-PostgreSQL? =
 
-SELinux is an operating system feature to apply its security policy when we accesses any resource managed by operating system (like files, networks, etc...). It can also act itself as a security server for userspace object manager, like DBMS, X-window ans so on.
+Security-Enhanced PostgreSQL (SE-PostgreSQL) is a security extension built in PostgreSQL.
+It works as a reference monitor within relational database management system, and provides fine-grained mandatory access control features collaborating with SELinux and its security policy.
 
-SE-PostgreSQL checks any SQL query came from clients before its execution, and make its decision refering the security policy of SELinux. The checks are orthogonally done from existing database ACL mechanism, so both DAC and MAC have to allow user's access as SELinux doing on filesystem.
+These features enable to put a database management system into data flow control scheme, integrated with operating system. We call the most characteristic feature of SE-PostgreSQL as ''system-wide consistency in access controls''. Any other RDBMS cannot provide this feature in current.
 
-The most characteristic feature of SE-PostgreSQL is ''system-wide consistency in access control'', by sharing the security policy with operating system. It enables to build a database management system into information flow control scheme unified with operating system.
+= Why we need SE-PostgreSQL =
+We can consider RDBMS, including PostgreSQL, is one of the methods to communicate between processes.
+
+http://sepgsql.googlecode.com/files/sepgsql_dfc.png
+
+SELinux is an operating system feature to apply its security policy whenever we accesses any resource managed by operating system, like files, sockets, IPC objects and so on.
+Protection of leaking classified information is the most significant purpose of SELinux. However, it can be leaked via various kind of routes, when we have different security policy for several routes. As frequently said, the most vulnerable route is its security level of whole the system. Therefore, we have to apply a single unified security policy for various kind of resources, as SELinux doing.
+
+It enables to protect leaking ''A Secret Information Asset'' managed by users with clearance into another one.
+But you have to pay attention there are several userspace object managers (like X-Window, RDBMS, etc...) which can be used as a method of inter-processes communication. The data-flows in the userspace are invisible from SELinux, because it works in the kernel.
+
+It means they need to refer the security policy of SELinux to check whether the required access on userspace resources should be allowed, or not. One representative userspace object manager is relational database management systems which can manage massive amount of userspace resources.
+
+SE-PostgreSQL can control accesses on its managing resources, based on the security policy of SELinux.
+It enables to apply a single unified policy onto database objects (like tables, columns, etc...) as SELinux doing on resources managed by operating system.
 
 == Information flow control unified with operating system ==
 
-== fine-grained access control ==
+http://sepgsql.googlecode.com/files/sepgsql_and_pgsql.png
+
+The above figure compares the original PostgreSQL with SE-PostgreSQL.
+
+When a `SystemHigh` user holds classified information and he writes it into filesystem as a file,
+this file is labeled as `Classified` by SELinux.
+If a `SystemLow` user tries to access the information stored in this file, it is not succeeded
+because SELinux prevents users with lower clearance to access files with higher one.
+
+However, when a `SystemHigh` user inserts his classified information into PostgreSQL as a database record,
+PostgreSQL does not handle it based on the security policy of SELinux, so this record does not have any available security context. Therefore, the `SystemLow` user can access this recored. It means breakage of data flow control scheme.
+
+Meanwhile, the inserted record into SE-PostgreSQL is labeled as `Classified`, as SELinux doing on filesystem.
+`SystemLow` user cannot access this record, because the security policy of SELinux does not allow him to access and SE-PostgreSQL makes its decision according to the security policy.
+
+In the result, same access control policy is applied for both passes, and there is no breakage of data flow control in SE-PostgreSQL.
 
 == mandatory access control ==
+
+The original PostgreSQL has special privilleged users called as superuser.
+They can refere, modify and remove any database object without any limitation,
+as a traditional `root` can do anything on operating system.
+
+SE-PostgreSQL provides mandatory access control (MAC) feature, and
+it is applied for any database client including privileged users.
+
+When either MAC or database ACL configured with GRANT/REVOKE statement
+does not allow a client to access the reuired database object, it is not succeeded.
+
+== fine-grained access control ==
+
+SE-PostgreSQL provides fine-grainer access control than the original PostgreSQL.
+It includes column- and tuple- level access control.
+
+http://sepgsql.googlecode.com/files/sepgsql_fine_grained.png
+
+The table of drink contains six tuples. The four tuples have `Unclassified` label, and rest of them have `Secret` one.
+These attributes are stored in system column named as `security_context`.
+When `SystemHigh` user tries to dump this table with `SELECT * FROM drink`, the result set contains six tuples.
+However, `SystemLow` user get only four tuples, because all tuples labeled as `Secret` are filtered from the result set.
+
+In column level access control, the current transaction is aborted when a user tries to access violated column.
+For example, consider the column `salary` of the following table is labeled as `Secret`.
+{{{
++------------------------------+
+| TABLE: person                |
++----+----------+-----+--------+
+| id | name     | age | salary |
++----+----------+-----+--------+
+| 10 | T.Yamada |  28 | $2500  |
+| 12 | K.Suzuki |  31 | $3000  |
+|  : |   :
+}}}
+When `SystemLow` user tries to execute "`SELECT * FROM person;`", it will be aborted because this query refers `salary` column without appropriate permission.
+It is necessary to drop violated columns like "`SELECT id, name, age FROM person;`".
+
+= Examples of SE-PostgreSQL =
+
+
+== Operating system set up ==
+
+
+== Row-level access controls ==
+
+
+== Column level access controls ==
 
