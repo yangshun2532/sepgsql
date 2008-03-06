@@ -398,34 +398,6 @@ static List *walkOpExprHelper(List *selist, Oid opid)
 	return selist;
 }
 
-static List *walkAggrefHelper(List *selist, Query *query, Node *node)
-{
-	if (node == NULL)
-		return selist;
-
-	if (IsA(node, RangeTblRef)) {
-		RangeTblRef *rtr = (RangeTblRef *) node;
-		RangeTblEntry *rte = rt_fetch(rtr->rtindex, query->rtable);
-
-		if (rte->rtekind == RTE_RELATION)
-			selist = addEvalPgAttribute(selist, rte, 0, DB_COLUMN__SELECT);
-	} else if (IsA(node, JoinExpr)) {
-		JoinExpr *j = (JoinExpr *) node;
-
-		selist = walkAggrefHelper(selist, query, j->larg);
-		selist = walkAggrefHelper(selist, query, j->rarg);
-	} else if (IsA(node, FromExpr)) {
-		FromExpr *fm = (FromExpr *)node;
-		ListCell *l;
-
-		foreach (l, fm->fromlist)
-			selist = walkAggrefHelper(selist, query, lfirst(l));
-	} else {
-		elog(ERROR, "SELinux: unexpected node type (%d) at Query->fromlist", nodeTag(node));
-	}
-	return selist;
-}
-
 static List *sepgsqlWalkExpr(List *selist, queryChain *qc, Node *node, int flags)
 {
 	if (node == NULL)
@@ -463,10 +435,6 @@ static List *sepgsqlWalkExpr(List *selist, queryChain *qc, Node *node, int flags
 
 		selist = addEvalPgProc(selist, aggref->aggfnoid, DB_PROCEDURE__EXECUTE);
 		selist = sepgsqlWalkExpr(selist, qc, (Node *) aggref->args, flags);
-		if (aggref->aggstar) {
-			Query *query = getQueryFromChain(qc);
-			selist = walkAggrefHelper(selist, query, (Node *) query->jointree);
-		}
 		break;
 	}
 	case T_OpExpr:
@@ -822,6 +790,34 @@ static List *proxyRteOuterJoin(List *selist, queryChain *qc, Query *query)
 	return selist;
 }
 
+static List *__checkSelectTargets(List *selist, Query *query, Node *node)
+{
+	if (node == NULL)
+		return selist;
+
+	if (IsA(node, RangeTblRef)) {
+		RangeTblRef *rtr = (RangeTblRef *) node;
+		RangeTblEntry *rte = rt_fetch(rtr->rtindex, query->rtable);
+
+		if (rte->rtekind == RTE_RELATION)
+			selist = addEvalPgClass(selist, rte, DB_TABLE__SELECT);
+	} else if (IsA(node, JoinExpr)) {
+		JoinExpr *j = (JoinExpr *) node;
+
+		selist = __checkSelectTargets(selist, query, j->larg);
+		selist = __checkSelectTargets(selist, query, j->rarg);
+	} else if (IsA(node, FromExpr)) {
+		FromExpr *fm = (FromExpr *)node;
+		ListCell *l;
+
+		foreach (l, fm->fromlist)
+			selist = __checkSelectTargets(selist, query, lfirst(l));
+	} else {
+		elog(ERROR, "SELinux: unexpected node type (%d) at Query->fromlist", nodeTag(node));
+	}
+	return selist;
+}
+
 static List *proxyRteSubQuery(List *selist, queryChain *qc, Query *query)
 {
 	CmdType cmdType = query->commandType;
@@ -839,6 +835,8 @@ static List *proxyRteSubQuery(List *selist, queryChain *qc, Query *query)
 
 	switch (cmdType) {
 	case CMD_SELECT:
+		selist = __checkSelectTargets(selist, query, (Node *)query->jointree);
+
 	case CMD_UPDATE:
 	case CMD_INSERT:
 		foreach (l, query->targetList) {
