@@ -5,7 +5,7 @@ http://sepgsql.googlecode.com/files/sepgsql_logo.png
 Security-Enhanced PostgreSQL (SE-PostgreSQL) is a security extension built in PostgreSQL.
 It works as a reference monitor within relational database management system, and provides fine-grained mandatory access control features collaborating with SELinux and its security policy.
 
-These features enable to put a database management system into data flow control scheme, integrated with operating system. We call the most characteristic feature of SE-PostgreSQL as ''system-wide consistency in access controls''. Any other RDBMS cannot provide this feature in current.
+These features enable to deploy a database management system into data flow control scheme, integrated with operating system. We call the most characteristic feature of SE-PostgreSQL as ''system-wide consistency in access controls''. Any other RDBMS cannot provide this feature in current.
 
 = Why we need SE-PostgreSQL =
 We can consider RDBMS, including PostgreSQL, is one of the methods to communicate between processes.
@@ -83,6 +83,7 @@ It is necessary to drop violated columns like "`SELECT id, name, age FROM person
 
 = Examples of SE-PostgreSQL =
 
+This section shows several examples to know the functionalities of SE-PostgreSQL.
 
 == Operating system set up ==
 
@@ -95,7 +96,7 @@ CREATE TABLE drink (
     price   integer
 );
 GRANT ALL ON drink TO PUBLIC;
-
+ 
 INSERT INTO drink (id, name, price)
     VALUES (11, 'water', 100),
            (12, 'coke',  120),
@@ -109,6 +110,9 @@ UPDATE drink SET security_context = 'system_u:object_r:sepgsql_table_t:s0:c0' WH
 
 == Column level access controls ==
 
+This section shows an example of column-level access controls.
+
+Execute the following SQL operations at `unconfined_t` domain, to set up a sample table and function.
 
 {{{
 CREATE TABLE customer (
@@ -117,15 +121,71 @@ CREATE TABLE customer (
     credit  varchar(32)  CONTEXT = 'system_u:object_r:sepgsql_secret_table_t:s0'
 );
 GRANT ALL ON customer TO PUBLIC;
-
+ 
 INSERT INTO customer (cid, cname, credit)
     VALUES ( 10, 'jack', '1111-2222-3333-4444'),
            ( 13, 'adam', '5555-6666-7777-8888'),
            ( 14, 'liza', '9876-5432-1098-7654');
-
+ 
 CREATE OR REPLACE FUNCTION show_credit (integer) RETURNS text
     LANGUAGE 'sql'
     CONTEXT = 'system_u:object_r:sepgsql_trusted_proc_t'
     AS 'SELECT substring(credit from ''^[0-9]+-'') || ''xxxx-xxxx-xxxx'' FROM customer WHERE CID = $1';
-GRANT ALL ON show_credit TO PUBLIC;
+}}}
+
+Pay attention `customer.credit` is declared as `sepgsql_secret_table_t`.
+
+It means non-administrative domain canno read this column, as follows:
+{{{
+[tak@saba ~]$ id -Z
+user_u:user_r:user_t:s0
+ 
+[tak@saba ~]$ psql postgres
+Welcome to psql 8.3.0, the PostgreSQL interactive terminal.
+ 
+Type:  \copyright for distribution terms
+       \h for help with SQL commands
+       \? for help with psql commands
+       \g or terminate with semicolon to execute query
+       \q to quit
+ 
+postgres=# SELECT sepgsql_getcon();
+     sepgsql_getcon
+-------------------------
+ user_u:user_r:user_t:s0
+(1 row)
+ 
+postgres=# SELECT * FROM customer;
+ERROR:  SELinux: denied { select }                            \
+        scontext=user_u:user_r:user_t:s0                      \
+        tcontext=system_u:object_r:sepgsql_secret_table_t:s0  \
+        tclass=db_column name=customer.credit
+}}}
+
+The following example shows clearly that refering `customer.credit` prevents to execute SQL.
+{{{
+postgres=# SELECT cid, cname FROM customer;
+ cid | cname
+-----+-------
+  10 | jack
+  13 | adam
+  14 | liza
+(3 rows)
+}}}
+
+The idea of ''trusted-procedure'' enables to provide safe methods to access prevented database objects.
+
+Pay attention `show_credit(integer)` is declared as `sepgsql_trusted_proc_t`.
+Invokation of `sepgsql_trusted_proc_t` makes domain transition to `sepgsql_trusted_domain_t`. The default security policy allows this domain to access widespread database objects.
+`show_credit(integer)` returns head of 4 chars in credit card number and rest of turned letter. It can refer `sepgsql_secret_table_t` column, but it does not leak the contains.
+{{{
+postgres=# SELECT cid, cname, show_credit(cid) FROM customer;
+ cid | cname |     show_credit
+-----+-------+---------------------
+  10 | jack  | 1111-xxxx-xxxx-xxxx
+  13 | adam  | 5555-xxxx-xxxx-xxxx
+  14 | liza  | 9876-xxxx-xxxx-xxxx
+(3 rows)
+ 
+postgres=#
 }}}
