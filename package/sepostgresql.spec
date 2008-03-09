@@ -206,7 +206,7 @@ fi
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
 
 %changelog
-* Sun Mar  2 2008 <kaigai@kaigai.gr.jp> - 8.2.6-1.225
+* Sun Mar  2 2008 <kaigai@kaigai.gr.jp> - 8.2.6-1.231
 - bugfix: SELECT count(*) was not filtered correctly.
 
 * Wed Feb  6 2008 <kaigai@kaigai.gr.jp> - 8.2.6-1.208
