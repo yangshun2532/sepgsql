@@ -1,3 +1,4 @@
+#labels Phase-Design
 http://sepgsql.googlecode.com/files/sepgsql_logo.png
 
 = What is SE-PostgreSQL? =
@@ -76,7 +77,7 @@ For example, consider the column `salary` of the following table is labeled as `
 +----+----------+-----+--------+
 | 10 | T.Yamada |  28 | $2500  |
 | 12 | K.Suzuki |  31 | $3000  |
-|  : |   :
+|  : |    :     |  :  |   :    |
 }}}
 When `SystemLow` user tries to execute "`SELECT * FROM person;`", it will be aborted because this query refers `salary` column without appropriate permission.
 It is necessary to drop violated columns like "`SELECT id, name, age FROM person;`".
@@ -84,9 +85,6 @@ It is necessary to drop violated columns like "`SELECT id, name, age FROM person
 = Examples of SE-PostgreSQL =
 
 This section shows several examples to know the functionalities of SE-PostgreSQL.
-
-== Operating system set up ==
-
 
 == Row-level access controls ==
 This section shows an example of row-level access controls.
@@ -126,8 +124,8 @@ INSERT INTO drink (id, gid, name, price)
 UPDATE genre SET security_context = 'system_u:object_r:sepgsql_table_t:s0:c0' WHERE gid = 6;
 UPDATE drink SET security_context = 'system_u:object_r:sepgsql_table_t:s0:c0' WHERE id IN (15,16,17);
 }}}
-
-`...:unconfined_t:SystemLow-SystemHigh` will get the following result
+ 
+`...:unconfined_t:SystemLow-SystemHigh` will get the following result, without any filtered tuple.
 {{{
 kaigai=# SELECT security_context, * FROM drink;
              security_context             | id | gid | name  | price
@@ -141,7 +139,7 @@ kaigai=# SELECT security_context, * FROM drink;
  system_u:object_r:sepgsql_table_t:s0:c0  | 16 |     | soup  |   180
  system_u:object_r:sepgsql_table_t:s0:c0  | 17 |   7 | beer  |   240
 (8 rows)
-
+ 
 kaigai=#
 }}}
 
@@ -153,7 +151,7 @@ kaigai=# SELECT sepgsql_getcon();
 -------------------------------------------
  unconfined_u:unconfined_r:unconfined_t:s0
 (1 row)
-
+ 
 kaigai=# SELECT security_context, * FROM drink;
              security_context             | id | gid | name  | price
 ------------------------------------------+----+-----+-------+-------
@@ -163,7 +161,7 @@ kaigai=# SELECT security_context, * FROM drink;
  unconfined_u:object_r:sepgsql_table_t:s0 | 14 |   5 | juice |   130
  unconfined_u:object_r:sepgsql_table_t:s0 | 18 |   7 | wine  |   480
 (5 rows)
-
+ 
 kaigai=#
 }}}
 
@@ -173,6 +171,12 @@ It is done before joining relations, as if filtered tuples don't exist.
 Pay attention, 'fizzwater' is filtered but 'coke' is remain in the result set.
 {{{
 [kaigai@saba test]$ runcon -l s0 psql -q
+kaigai=# SELECT sepgsql_getcon();
+              sepgsql_getcon
+-------------------------------------------
+ unconfined_u:unconfined_r:unconfined_t:s0
+(1 row)
+ 
 kaigai=# SELECT * FROM drink left join genre on drink.gid = genre.gid;
  id | gid | name  | price | gid |    dsc
 ----+-----+-------+-------+-----+------------
@@ -182,7 +186,7 @@ kaigai=# SELECT * FROM drink left join genre on drink.gid = genre.gid;
  14 |   5 | juice |   130 |   5 | soft drink
  18 |   7 | wine  |   480 |   7 | alcohol
 (5 rows)
-
+ 
 kaigai=#
 }}}
 
