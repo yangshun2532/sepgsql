@@ -84,8 +84,6 @@ It is necessary to drop violated columns like "`SELECT id, name, age FROM person
 
 = Examples of SE-PostgreSQL =
 
-This section shows several examples to know the functionalities of SE-PostgreSQL.
-
 == Row-level access controls ==
 This section shows an example of row-level access controls.
 
