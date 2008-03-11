@@ -765,8 +765,22 @@ static List *__checkSelectTargets(List *selist, Query *query, Node *node)
 		RangeTblRef *rtr = (RangeTblRef *) node;
 		RangeTblEntry *rte = list_nth(query->rtable, rtr->rtindex - 1);
 
-		if (rte->rtekind == RTE_RELATION)
+		switch (rte->rtekind) {
+		case RTE_RELATION:
 			selist = addEvalPgClass(selist, rte, DB_TABLE__SELECT);
+			break;
+		case RTE_SUBQUERY:
+			if (rte->relid) {
+				Query *sqry = rte->subquery;
+				RangeTblEntry *srte = list_nth(query->rtable, 0);
+
+				selist = addEvalPgClass(selist, srte, DB_TABLE__SELECT);
+			}
+			break;
+		default:
+			/* do nothing */
+			break;
+		}
 	} else if (IsA(node, JoinExpr)) {
 		JoinExpr *j = (JoinExpr *) node;
 
