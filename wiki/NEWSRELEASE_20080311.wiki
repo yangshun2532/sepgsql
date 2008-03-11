@@ -34,8 +34,7 @@ asset from threats like leaking, manupulation and so on.
     http://code.google.com/p/sepgsql/wiki/WhatIsSEPostgreSQL
 
 = v8.3 ベースの SE-PostgreSQL を公開 =
-SE-PostgreSQL 開発チームは、v8.3 ベース SE-PostgreSQL の最初の
-バージョンを公開しました。
+SE-PostgreSQL 開発チームは、v8.3 ベース SE-PostgreSQL を公開しました。
 
   http://download.fedora.redhat.com/pub/fedora/linux/development
 
