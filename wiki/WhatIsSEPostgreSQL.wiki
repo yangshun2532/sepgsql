@@ -89,24 +89,102 @@ This section shows several examples to know the functionalities of SE-PostgreSQL
 
 
 == Row-level access controls ==
+This section shows an example of row-level access controls.
+
+Execute the following SQL operations at `unconfined_t` domain with `SystemLow-SystemHigh`,
+to set up a sample table and function.
 {{{
+CREATE TABLE genre (
+    gid     integer primary key,
+    dsc     varchar (32)
+);
+GRANT ALL ON genre TO PUBLIC;
+ 
 CREATE TABLE drink (
     id      integer primary key,
+    gid     integer references genre(gid),
     name    varchar(32),
     price   integer
 );
 GRANT ALL ON drink TO PUBLIC;
  
-INSERT INTO drink (id, name, price)
-    VALUES (11, 'water', 100),
-           (12, 'coke',  120),
-           (13, 'milk',  150),
-           (14, 'juice', 130),
-           (21, 'beer',  240),
-           (22, 'wine',  480);
-UPDATE drink SET security_context = 'system_u:object_r:sepgsql_table_t:s0:c0' WHERE id IN (21,22);
+INSERT INTO genre (gid, dsc)
+    VALUES (5, 'soft drink'),
+           (6, 'fizzwater'),
+           (7, 'alcohol');
+ 
+INSERT INTO drink (id, gid, name, price)
+    VALUES (11, NULL, 'water', 100),
+           (12,    6, 'coke',  120),
+           (13,    5, 'milk',  150),
+           (14,    5, 'juice', 130),
+           (15,    6, 'cider', 140),
+           (16, NULL, 'soup',  180),
+           (17,    7, 'beer',  240),
+           (18,    7, 'wine',  480);
+ 
+UPDATE genre SET security_context = 'system_u:object_r:sepgsql_table_t:s0:c0' WHERE gid = 6;
+UPDATE drink SET security_context = 'system_u:object_r:sepgsql_table_t:s0:c0' WHERE id IN (15,16,17);
 }}}
 
+`...:unconfined_t:SystemLow-SystemHigh` will get the following result
+{{{
+kaigai=# SELECT security_context, * FROM drink;
+             security_context             | id | gid | name  | price
+------------------------------------------+----+-----+-------+-------
+ unconfined_u:object_r:sepgsql_table_t:s0 | 11 |     | water |   100
+ unconfined_u:object_r:sepgsql_table_t:s0 | 12 |   6 | coke  |   120
+ unconfined_u:object_r:sepgsql_table_t:s0 | 13 |   5 | milk  |   150
+ unconfined_u:object_r:sepgsql_table_t:s0 | 14 |   5 | juice |   130
+ unconfined_u:object_r:sepgsql_table_t:s0 | 18 |   7 | wine  |   480
+ system_u:object_r:sepgsql_table_t:s0:c0  | 15 |   6 | cider |   140
+ system_u:object_r:sepgsql_table_t:s0:c0  | 16 |     | soup  |   180
+ system_u:object_r:sepgsql_table_t:s0:c0  | 17 |   7 | beer  |   240
+(8 rows)
+
+kaigai=#
+}}}
+
+If you have weaker permissions, any violated tuples are filtered from result set.
+{{{
+[kaigai@saba test]$ runcon -l s0 psql -q
+kaigai=# SELECT sepgsql_getcon();
+              sepgsql_getcon
+-------------------------------------------
+ unconfined_u:unconfined_r:unconfined_t:s0
+(1 row)
+
+kaigai=# SELECT security_context, * FROM drink;
+             security_context             | id | gid | name  | price
+------------------------------------------+----+-----+-------+-------
+ unconfined_u:object_r:sepgsql_table_t:s0 | 11 |     | water |   100
+ unconfined_u:object_r:sepgsql_table_t:s0 | 12 |   6 | coke  |   120
+ unconfined_u:object_r:sepgsql_table_t:s0 | 13 |   5 | milk  |   150
+ unconfined_u:object_r:sepgsql_table_t:s0 | 14 |   5 | juice |   130
+ unconfined_u:object_r:sepgsql_table_t:s0 | 18 |   7 | wine  |   480
+(5 rows)
+
+kaigai=#
+}}}
+
+SE-PostgreSQL filters any violated tuple, even if a query contains multiple relations.
+It is done before joining relations, as if filtered tuples don't exist.
+
+Pay attention, 'fizzwater' is filtered but 'coke' is remain in the result set.
+{{{
+[kaigai@saba test]$ runcon -l s0 psql -q
+kaigai=# SELECT * FROM drink left join genre on drink.gid = genre.gid;
+ id | gid | name  | price | gid |    dsc
+----+-----+-------+-------+-----+------------
+ 11 |     | water |   100 |     |
+ 12 |   6 | coke  |   120 |     |
+ 13 |   5 | milk  |   150 |   5 | soft drink
+ 14 |   5 | juice |   130 |   5 | soft drink
+ 18 |   7 | wine  |   480 |   7 | alcohol
+(5 rows)
+
+kaigai=#
+}}}
 
 == Column level access controls ==
 
