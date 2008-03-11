@@ -1,13 +1,12 @@
 http://sepgsql.googlecode.com/files/sepgsql_logo.png
 
 = Now v8.3 based SE-PostgreSQL is available =
-SE-PostgreSQL development team publicated the first version of
-v8.3 based SE-PostgreSQL at:
+SE-PostgreSQL development team publish v8.3 based SE-PostgreSQL at:
 
 http://download.fedora.redhat.com/pub/fedora/linux/development
 
 You can obtain the v8.3 based sepostgresql package which contains
-its security policy module.
+its security policy module from here.
 {{{
 NOTE: This version is not available at Fedora 8 or prior.
       Please wait for Fedora 9, or update your system to rawhide.
