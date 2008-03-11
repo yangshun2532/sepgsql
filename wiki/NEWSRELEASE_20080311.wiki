@@ -1,7 +1,7 @@
 http://sepgsql.googlecode.com/files/sepgsql_logo.png
 
 = Now v8.3 based SE-PostgreSQL is available =
-SE-PostgreSQL development team publish v8.3 based SE-PostgreSQL at:
+SE-PostgreSQL development team published v8.3 based SE-PostgreSQL at:
 
 http://download.fedora.redhat.com/pub/fedora/linux/development
 
