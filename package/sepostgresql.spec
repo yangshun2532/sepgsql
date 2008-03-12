@@ -5,7 +5,7 @@
 # -----------------------------------------------------
 
 # SELinux policy types
-%define selinux_variants mls strict targeted
+%define selinux_variants mls targeted
 
 # SE-PostgreSQL status extension
 %%__sepgsql_extension__%%
@@ -20,15 +20,13 @@ Url: http://code.google.com/p/sepgsql/
 Buildroot: %(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
 Source0: ftp://ftp.postgresql.org/pub/source/v%{version}/postgresql-%{version}.tar.bz2
 Source1: sepostgresql.init
-Source2: sepostgresql.if
-Source3: sepostgresql.te
-Source4: sepostgresql.fc
-Source5: sepostgresql.8
-Source6: sepostgresql.logrotate
+Source2: sepostgresql.8
+Source3: sepostgresql.logrotate
 Patch0: sepostgresql-pgace-%%__base_postgresql_version__%%-%%__sepgsql_major_version__%%.patch
 Patch1: sepostgresql-sepgsql-%%__base_postgresql_version__%%-%%__sepgsql_major_version__%%.patch
 Patch2: sepostgresql-pg_dump-%%__base_postgresql_version__%%-%%__sepgsql_major_version__%%.patch
-Patch3: sepostgresql-fedora-prefix.patch
+Patch3: sepostgresql-policy-%%__base_postgresql_version__%%-%%__sepgsql_major_version__%%.patch
+Patch4: sepostgresql-fedora-prefix.patch
 BuildRequires: perl glibc-devel bison flex readline-devel zlib-devel >= 1.0.4
 Buildrequires: checkpolicy libselinux-devel >= 2.0.43 selinux-policy-devel selinux-policy >= 3.0.6
 Requires(pre): shadow-utils
@@ -53,20 +51,18 @@ reference monitor to check any SQL query.
 %patch1 -p1
 %patch2 -p1
 %patch3 -p1
-mkdir selinux-policy
-cp -p %{SOURCE2} %{SOURCE3} %{SOURCE4} selinux-policy
+%patch4 -p1
 
 %build
 CFLAGS="${CFLAGS:-%optflags}" ; export CFLAGS
 CXXFLAGS="${CXXFLAGS:-%optflags}" ; export CXXFLAGS
 
 # build Binary Policy Module
-pushd selinux-policy
+pushd contrib/sepgsql-policy
 for selinuxvariant in %{selinux_variants}
 do
-    make NAME=${selinuxvariant} -f %{_datadir}/selinux/devel/Makefile
+    make NAME=${selinuxvariant}
     mv %{name}.pp %{name}.pp.${selinuxvariant}
-    make NAME=${selinuxvariant} -f %{_datadir}/selinux/devel/Makefile clean
 done
 popd
 
@@ -87,7 +83,7 @@ make %{?_smp_mflags}
 %install
 rm -rf %{buildroot}
 
-pushd selinux-policy
+pushd contrib/sepgsql-policy
 for selinuxvariant in %{selinux_variants}
 do
     install -d %{buildroot}%{_datadir}/selinux/${selinuxvariant}
@@ -126,11 +122,11 @@ install -p -m 755 %{SOURCE1} %{buildroot}%{_initrddir}/sepostgresql
 
 # /etc/logrotate.d/
 mkdir -p %{buildroot}%{_sysconfdir}/logrotate.d
-install -p -m 644 %{SOURCE6} %{buildroot}%{_sysconfdir}/logrotate.d/sepostgresql
+install -p -m 644 %{SOURCE3} %{buildroot}%{_sysconfdir}/logrotate.d/sepostgresql
 
 # /usr/share/man/*
 mkdir -p %{buildroot}%{_mandir}/man8
-install -p -m 644 %{SOURCE5} %{buildroot}%{_mandir}/man8
+install -p -m 644 %{SOURCE2} %{buildroot}%{_mandir}/man8
 
 %clean
 rm -rf %{buildroot}
@@ -184,7 +180,7 @@ fi
 
 %files
 %defattr(-,root,root,-)
-%doc COPYRIGHT README HISTORY
+%doc COPYRIGHT README
 %{_initrddir}/sepostgresql
 %{_sysconfdir}/logrotate.d/sepostgresql
 %{_bindir}/initdb.sepgsql
