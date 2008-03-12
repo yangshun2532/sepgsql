@@ -24,6 +24,7 @@
 
 #include "nodes/parsenodes.h"
 #include "nodes/readfuncs.h"
+#include "security/pgace.h"
 
 
 /*
