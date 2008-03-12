@@ -2,10 +2,10 @@
 export LANG=C
 
 # ---- build parametors
-SEPGSQL_MAJOR_VERSION="2"
-SEPGSQL_MINOR_OFFSET="538"
+SEPGSQL_MAJOR_VERSION="3"
+SEPGSQL_MINOR_OFFSET="654"
 SEPGSQL_EXTENSION=""
-SEPGSQL_BRANCH="/branches/pgsql-8.3.x"
+SEPGSQL_BRANCH="/trunk"
 
 # -- SE-PostgreSQL repository
 SEPGSQL_REPOSITORY=`(cd \`dirname $0\`/..; pwd)`
