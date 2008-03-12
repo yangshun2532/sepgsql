@@ -13,7 +13,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/commands/vacuum.c,v 1.363 2008/01/03 21:23:15 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/commands/vacuum.c,v 1.366 2008/03/10 02:04:08 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -30,6 +30,7 @@
 #include "access/xlog.h"
 #include "catalog/namespace.h"
 #include "catalog/pg_database.h"
+#include "catalog/pg_namespace.h"
 #include "commands/dbcommands.h"
 #include "commands/vacuum.h"
 #include "executor/executor.h"
@@ -1048,9 +1049,18 @@ vacuum_rel(Oid relid, VacuumStmt *vacstmt, char expected_relkind)
 	if (!(pg_class_ownercheck(RelationGetRelid(onerel), GetUserId()) ||
 		  (pg_database_ownercheck(MyDatabaseId, GetUserId()) && !onerel->rd_rel->relisshared)))
 	{
-		ereport(WARNING,
-				(errmsg("skipping \"%s\" --- only table or database owner can vacuum it",
-						RelationGetRelationName(onerel))));
+		if (onerel->rd_rel->relisshared)
+			ereport(WARNING,
+					(errmsg("skipping \"%s\" --- only superuser can vacuum it",
+							RelationGetRelationName(onerel))));
+		else if (onerel->rd_rel->relnamespace == PG_CATALOG_NAMESPACE)
+			ereport(WARNING,
+					(errmsg("skipping \"%s\" --- only superuser or database owner can vacuum it",
+							RelationGetRelationName(onerel))));
+		else
+			ereport(WARNING,
+					(errmsg("skipping \"%s\" --- only table or database owner can vacuum it",
+							RelationGetRelationName(onerel))));
 		relation_close(onerel, lmode);
 		CommitTransactionCommand();
 		return;
@@ -1659,12 +1669,18 @@ scan_heap(VRelStats *vacrelstats, Relation onerel,
 		free_space += vacpage->free;
 
 		/*
-		 * Add the page to fraged_pages if it has a useful amount of free
-		 * space.  "Useful" means enough for a minimal-sized tuple. But we
-		 * don't know that accurately near the start of the relation, so add
-		 * pages unconditionally if they have >= BLCKSZ/10 free space.
+		 * Add the page to vacuum_pages if it requires reaping, and add it to
+		 * fraged_pages if it has a useful amount of free space.  "Useful"
+		 * means enough for a minimal-sized tuple.  But we don't know that
+		 * accurately near the start of the relation, so add pages
+		 * unconditionally if they have >= BLCKSZ/10 free space.  Also
+		 * forcibly add pages with no live tuples, to avoid confusing the
+		 * empty_end_pages logic.  (In the presence of unreasonably small
+		 * fillfactor, it seems possible that such pages might not pass
+		 * the free-space test, but they had better be in the list anyway.)
 		 */
-		do_frag = (vacpage->free >= min_tlen || vacpage->free >= BLCKSZ / 10);
+		do_frag = (vacpage->free >= min_tlen || vacpage->free >= BLCKSZ / 10 ||
+				   notup);
 
 		if (do_reap || do_frag)
 		{
@@ -1679,6 +1695,7 @@ scan_heap(VRelStats *vacrelstats, Relation onerel,
 		/*
 		 * Include the page in empty_end_pages if it will be empty after
 		 * vacuuming; this is to keep us from using it as a move destination.
+		 * Note that such pages are guaranteed to be in fraged_pages.
 		 */
 		if (notup)
 		{
@@ -3444,7 +3461,7 @@ vac_update_fsm(Relation onerel, VacPageList fraged_pages,
 	int			nPages = fraged_pages->num_pages;
 	VacPage    *pagedesc = fraged_pages->pagedesc;
 	Size		threshold;
-	PageFreeSpaceInfo *pageSpaces;
+	FSMPageData *pageSpaces;
 	int			outPages;
 	int			i;
 
@@ -3460,8 +3477,7 @@ vac_update_fsm(Relation onerel, VacPageList fraged_pages,
 	 */
 	threshold = GetAvgFSMRequestSize(&onerel->rd_node);
 
-	pageSpaces = (PageFreeSpaceInfo *)
-		palloc(nPages * sizeof(PageFreeSpaceInfo));
+	pageSpaces = (FSMPageData *) palloc(nPages * sizeof(FSMPageData));
 	outPages = 0;
 
 	for (i = 0; i < nPages; i++)
@@ -3476,8 +3492,8 @@ vac_update_fsm(Relation onerel, VacPageList fraged_pages,
 
 		if (pagedesc[i]->free >= threshold)
 		{
-			pageSpaces[outPages].blkno = pagedesc[i]->blkno;
-			pageSpaces[outPages].avail = pagedesc[i]->free;
+			FSMPageSetPageNum(&pageSpaces[outPages], pagedesc[i]->blkno);
+			FSMPageSetSpace(&pageSpaces[outPages], pagedesc[i]->free);
 			outPages++;
 		}
 	}
@@ -3725,7 +3741,19 @@ enough_space(VacPage vacpage, Size len)
 static Size
 PageGetFreeSpaceWithFillFactor(Relation relation, Page page)
 {
-	Size		freespace = PageGetHeapFreeSpace(page);
+	/*
+	 * It is correct to use PageGetExactFreeSpace() here, *not*
+	 * PageGetHeapFreeSpace().  This is because (a) we do our own, exact
+	 * accounting for whether line pointers must be added, and (b) we will
+	 * recycle any LP_DEAD line pointers before starting to add rows to a
+	 * page, but that may not have happened yet at the time this function is
+	 * applied to a page, which means PageGetHeapFreeSpace()'s protection
+	 * against too many line pointers on a page could fire incorrectly.  We do
+	 * not need that protection here: since VACUUM FULL always recycles all
+	 * dead line pointers first, it'd be physically impossible to insert more
+	 * than MaxHeapTuplesPerPage tuples anyway.
+	 */
+	Size		freespace = PageGetExactFreeSpace(page);
 	Size		targetfree;
 
 	targetfree = RelationGetTargetPageFreeSpace(relation,

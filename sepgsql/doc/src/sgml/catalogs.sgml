@@ -1,4 +1,4 @@
-<!-- $PostgreSQL: pgsql/doc/src/sgml/catalogs.sgml,v 2.161 2008/01/31 18:40:02 tgl Exp $ -->
+<!-- $PostgreSQL: pgsql/doc/src/sgml/catalogs.sgml,v 2.163 2008/03/10 12:55:13 mha Exp $ -->
 <!--
  Documentation of the system catalogs, directed toward PostgreSQL developers
  -->
@@ -5691,7 +5691,10 @@
       <entry>any OID column</entry>
       <entry>
        OID of the object within its system catalog, or NULL if the
-       object is not a general database object
+       object is not a general database object.
+       For advisory locks it is used to distinguish the two key
+       spaces (<literal>1</> for an int8 key, <literal>2</> for two
+       int4 keys).
       </entry>
      </row>
      <row>
@@ -6257,8 +6260,8 @@
      <row>
       <entry><structfield>vartype</structfield></entry>
       <entry><type>text</type></entry>
-      <entry>Parameter type (<literal>bool</>, <literal>integer</>,
-       <literal>real</>, or <literal>string</>)
+      <entry>Parameter type (<literal>bool</>, <literal>enum</>,
+       <literal>integer</>, <literal>real</>, or <literal>string</>)
       </entry>
      </row>
      <row>
@@ -6276,6 +6279,12 @@
       <entry><structfield>max_val</structfield></entry>
       <entry><type>text</type></entry>
       <entry>Maximum allowed value of the parameter (NULL for non-numeric
+      values)</entry>
+     </row>
+     <row>
+      <entry><structfield>enumvals</structfield></entry>
+      <entry><type>text</type></entry>
+      <entry>Allowed values in enum parameters (NULL for non-enum
       values)</entry>
      </row>
     </tbody>

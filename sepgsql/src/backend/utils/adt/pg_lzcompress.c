@@ -4,7 +4,7 @@
  *		This is an implementation of LZ compression for PostgreSQL.
  *		It uses a simple history table and generates 2-3 byte tags
  *		capable of backward copy information for 3-273 bytes with
- *		an offset of max. 4095.
+ *		a max offset of 4095.
  *
  *		Entry routines:
  *
@@ -166,13 +166,12 @@
  *
  * Copyright (c) 1999-2008, PostgreSQL Global Development Group
  *
- * $PostgreSQL: pgsql/src/backend/utils/adt/pg_lzcompress.c,v 1.29 2008/01/01 19:45:52 momjian Exp $
+ * $PostgreSQL: pgsql/src/backend/utils/adt/pg_lzcompress.c,v 1.31 2008/03/08 01:09:36 tgl Exp $
  * ----------
  */
 #include "postgres.h"
 
-#include <unistd.h>
-#include <fcntl.h>
+#include <limits.h>
 
 #include "utils/pg_lzcompress.h"
 
@@ -211,27 +210,23 @@ typedef struct PGLZ_HistEntry
  * ----------
  */
 static const PGLZ_Strategy strategy_default_data = {
-	256,						/* Data chunks less than 256 bytes are not
-								 * compressed */
-	6144,						/* Data chunks >= 6K force compression, unless
-								 * compressed output is larger than input */
-	20,							/* Below 6K, compression rates below 20% mean
-								 * fallback to uncompressed */
-	128,						/* Stop history lookup if a match of 128 bytes
-								 * is found */
-	10							/* Lower good match size by 10% at every
-								 * lookup loop iteration */
+	32,				/* Data chunks less than 32 bytes are not compressed */
+	1024 * 1024,	/* Data chunks over 1MB are not compressed either */
+	25,				/* Require 25% compression rate, or not worth it */
+	1024,			/* Give up if no compression in the first 1KB */
+	128,			/* Stop history lookup if a match of 128 bytes is found */
+	10				/* Lower good match size by 10% at every loop iteration */
 };
 const PGLZ_Strategy *const PGLZ_strategy_default = &strategy_default_data;
 
 
 static const PGLZ_Strategy strategy_always_data = {
-	0,							/* Chunks of any size are compressed */
-	0,
-	0,							/* It's enough to save one single byte */
-	128,						/* Stop history lookup if a match of 128 bytes
-								 * is found */
-	6							/* Look harder for a good match */
+	0,				/* Chunks of any size are compressed */
+	INT_MAX,
+	0,				/* It's enough to save one single byte */
+	INT_MAX,		/* Never give up early */
+	128,			/* Stop history lookup if a match of 128 bytes is found */
+	6				/* Look harder for a good match */
 };
 const PGLZ_Strategy *const PGLZ_strategy_always = &strategy_always_data;
 
@@ -491,6 +486,7 @@ pglz_compress(const char *source, int32 slen, PGLZ_Header *dest,
 	unsigned char *ctrlp = &ctrl_dummy;
 	unsigned char ctrlb = 0;
 	unsigned char ctrl = 0;
+	bool		found_match = false;
 	int32		match_len;
 	int32		match_off;
 	int32		good_match;
@@ -506,11 +502,12 @@ pglz_compress(const char *source, int32 slen, PGLZ_Header *dest,
 		strategy = PGLZ_strategy_default;
 
 	/*
-	 * If the strategy forbids compression (at all or if source chunk too
-	 * small), fail.
+	 * If the strategy forbids compression (at all or if source chunk size
+	 * out of range), fail.
 	 */
 	if (strategy->match_size_good <= 0 ||
-		slen < strategy->min_input_size)
+		slen < strategy->min_input_size ||
+		slen > strategy->max_input_size)
 		return false;
 
 	/*
@@ -519,41 +516,44 @@ pglz_compress(const char *source, int32 slen, PGLZ_Header *dest,
 	dest->rawsize = slen;
 
 	/*
-	 * Limit the match size to the maximum implementation allowed value
+	 * Limit the match parameters to the supported range.
 	 */
-	if ((good_match = strategy->match_size_good) > PGLZ_MAX_MATCH)
+	good_match = strategy->match_size_good;
+	if (good_match > PGLZ_MAX_MATCH)
 		good_match = PGLZ_MAX_MATCH;
-	if (good_match < 17)
+	else if (good_match < 17)
 		good_match = 17;
 
-	if ((good_drop = strategy->match_size_drop) < 0)
+	good_drop = strategy->match_size_drop;
+	if (good_drop < 0)
 		good_drop = 0;
-	if (good_drop > 100)
+	else if (good_drop > 100)
 		good_drop = 100;
+
+	need_rate = strategy->min_comp_rate;
+	if (need_rate < 0)
+		need_rate = 0;
+	else if (need_rate > 99)
+		need_rate = 99;
+
+	/*
+	 * Compute the maximum result size allowed by the strategy, namely
+	 * the input size minus the minimum wanted compression rate.  This had
+	 * better be <= slen, else we might overrun the provided output buffer.
+	 */
+	if (slen > (INT_MAX/100))
+	{
+		/* Approximate to avoid overflow */
+		result_max = (slen / 100) * (100 - need_rate);
+	}
+	else
+		result_max = (slen * (100 - need_rate)) / 100;
 
 	/*
 	 * Initialize the history lists to empty.  We do not need to zero the
 	 * hist_entries[] array; its entries are initialized as they are used.
 	 */
-	memset((void *) hist_start, 0, sizeof(hist_start));
-
-	/*
-	 * Compute the maximum result size allowed by the strategy. If the input
-	 * size exceeds force_input_size, the max result size is the input size
-	 * itself. Otherwise, it is the input size minus the minimum wanted
-	 * compression rate.
-	 */
-	if (slen >= strategy->force_input_size)
-		result_max = slen;
-	else
-	{
-		need_rate = strategy->min_comp_rate;
-		if (need_rate < 0)
-			need_rate = 0;
-		else if (need_rate > 99)
-			need_rate = 99;
-		result_max = slen - ((slen * need_rate) / 100);
-	}
+	memset(hist_start, 0, sizeof(hist_start));
 
 	/*
 	 * Compress the source directly into the output buffer.
@@ -568,6 +568,15 @@ pglz_compress(const char *source, int32 slen, PGLZ_Header *dest,
 		 * allow 4 slop bytes.
 		 */
 		if (bp - bstart >= result_max)
+			return false;
+
+		/*
+		 * If we've emitted more than first_success_by bytes without finding
+		 * anything compressible at all, fail.  This lets us fall out
+		 * reasonably quickly when looking at incompressible input (such as
+		 * pre-compressed data).
+		 */
+		if (!found_match && bp - bstart >= strategy->first_success_by)
 			return false;
 
 		/*
@@ -586,9 +595,10 @@ pglz_compress(const char *source, int32 slen, PGLZ_Header *dest,
 				pglz_hist_add(hist_start, hist_entries,
 							  hist_next, hist_recycle,
 							  dp, dend);
-				dp++;			/* Do not do this ++ in the line above!		*/
+				dp++;			/* Do not do this ++ in the line above! */
 				/* The macro would do it four times - Jan.	*/
 			}
+			found_match = true;
 		}
 		else
 		{
@@ -599,7 +609,7 @@ pglz_compress(const char *source, int32 slen, PGLZ_Header *dest,
 			pglz_hist_add(hist_start, hist_entries,
 						  hist_next, hist_recycle,
 						  dp, dend);
-			dp++;				/* Do not do this ++ in the line above!		*/
+			dp++;				/* Do not do this ++ in the line above! */
 			/* The macro would do it four times - Jan.	*/
 		}
 	}
@@ -631,26 +641,26 @@ pglz_compress(const char *source, int32 slen, PGLZ_Header *dest,
 void
 pglz_decompress(const PGLZ_Header *source, char *dest)
 {
-	const unsigned char *dp;
-	const unsigned char *dend;
-	unsigned char *bp;
-	unsigned char ctrl;
-	int32		ctrlc;
-	int32		len;
-	int32		off;
-	int32		destsize;
+	const unsigned char *sp;
+	const unsigned char *srcend;
+	unsigned char *dp;
+	unsigned char *destend;
 
-	dp = ((const unsigned char *) source) + sizeof(PGLZ_Header);
-	dend = ((const unsigned char *) source) + VARSIZE(source);
-	bp = (unsigned char *) dest;
+	sp = ((const unsigned char *) source) + sizeof(PGLZ_Header);
+	srcend = ((const unsigned char *) source) + VARSIZE(source);
+	dp = (unsigned char *) dest;
+	destend = dp + source->rawsize;
 
-	while (dp < dend)
+	while (sp < srcend && dp < destend)
 	{
 		/*
-		 * Read one control byte and process the next 8 items.
+		 * Read one control byte and process the next 8 items (or as many
+		 * as remain in the compressed input).
 		 */
-		ctrl = *dp++;
-		for (ctrlc = 0; ctrlc < 8 && dp < dend; ctrlc++)
+		unsigned char ctrl = *sp++;
+		int		ctrlc;
+
+		for (ctrlc = 0; ctrlc < 8 && sp < srcend; ctrlc++)
 		{
 			if (ctrl & 1)
 			{
@@ -661,11 +671,27 @@ pglz_decompress(const PGLZ_Header *source, char *dest)
 				 * coded as 18, another extension tag byte tells how much
 				 * longer the match really was (0-255).
 				 */
-				len = (dp[0] & 0x0f) + 3;
-				off = ((dp[0] & 0xf0) << 4) | dp[1];
-				dp += 2;
+				int32		len;
+				int32		off;
+
+				len = (sp[0] & 0x0f) + 3;
+				off = ((sp[0] & 0xf0) << 4) | sp[1];
+				sp += 2;
 				if (len == 18)
-					len += *dp++;
+					len += *sp++;
+
+				/*
+				 * Check for output buffer overrun, to ensure we don't
+				 * clobber memory in case of corrupt input.  Note: we must
+				 * advance dp here to ensure the error is detected below
+				 * the loop.  We don't simply put the elog inside the loop
+				 * since that will probably interfere with optimization.
+				 */
+				if (dp + len > destend)
+				{
+					dp += len;
+					break;
+				}
 
 				/*
 				 * Now we copy the bytes specified by the tag from OUTPUT to
@@ -675,8 +701,8 @@ pglz_decompress(const PGLZ_Header *source, char *dest)
 				 */
 				while (len--)
 				{
-					*bp = bp[-off];
-					bp++;
+					*dp = dp[-off];
+					dp++;
 				}
 			}
 			else
@@ -685,7 +711,10 @@ pglz_decompress(const PGLZ_Header *source, char *dest)
 				 * An unset control bit means LITERAL BYTE. So we just copy
 				 * one from INPUT to OUTPUT.
 				 */
-				*bp++ = *dp++;
+				if (dp >= destend)	/* check for buffer overrun */
+					break;			/* do not clobber memory */
+
+				*dp++ = *sp++;
 			}
 
 			/*
@@ -696,14 +725,10 @@ pglz_decompress(const PGLZ_Header *source, char *dest)
 	}
 
 	/*
-	 * Check we decompressed the right amount, else die.  This is a FATAL
-	 * condition if we tromped on more memory than expected (we assume we have
-	 * not tromped on shared memory, though, so need not PANIC).
+	 * Check we decompressed the right amount.
 	 */
-	destsize = (char *) bp - dest;
-	if (destsize != source->rawsize)
-		elog(destsize > source->rawsize ? FATAL : ERROR,
-			 "compressed data is corrupt");
+	if (dp != destend || sp != srcend)
+		elog(ERROR, "compressed data is corrupt");
 
 	/*
 	 * That's it.
