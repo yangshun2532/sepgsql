@@ -1,0 +1,88 @@
+########################################
+## <summary>
+##      Marks the specified domain as SE-PostgreSQL server process.
+## </summary>
+## <param name="domain">
+##      <summary>
+##      Domain to be marked
+##      </summary>
+## </param>
+#
+interface(`sepgsql_server_domain',`
+	gen_require(`
+		attribute sepgsql_server_type;
+	')
+	typeattribute $1 sepgsql_server_type;
+')
+
+########################################
+## <summary>
+##      Allow the specified domain unconfined accesses to any database objects
+##  managed by SE-PostgreSQL,
+## </summary>
+## <param name="domain">
+##      <summary>
+##      Domain allowed access.
+##      </summary>
+## </param>
+#
+interface(`sepgsql_unconfined_domain',`
+	gen_require(`
+		attribute sepgsql_unconfined_type;
+		attribute sepgsql_client_type;
+	')
+	typeattribute $1 sepgsql_unconfined_type;
+	typeattribute $1 sepgsql_client_type;
+')
+
+########################################
+## <summary>
+##      Allow the specified domain unprivileged accesses to any database objects
+##  managed by SE-PostgreSQL,
+## </summary>
+## <param name="domain">
+##      <summary>
+##      Domain allowed access.
+##      </summary>
+## </param>
+#
+interface(`sepgsql_client_domain',`
+	gen_require(`
+		attribute sepgsql_client_type;
+	')
+	typeattribute $1 sepgsql_client_type;
+')
+
+########################################
+## <summary>
+##      Allow the specified role to invoke trusted procedures
+## </summary>
+## <param name="role">
+##  <summary>
+##  The role associated with the domain.
+##  </summary>
+## </param>
+#
+interface(`sepgsql_trusted_procedure_role',`
+	gen_require(`
+		type sepgsql_trusted_domain_t;
+	')
+	role $1 types sepgsql_trusted_domain_t;
+')
+
+########################################
+## <summary>
+##     Marks as a SE-PostgreSQL loadable shared library module
+## </summary>
+## <param name="type">
+##     <summary>
+##     Type marked as a database object type.
+##     </summary>
+## </param>
+#
+interface(`sepgsql_loadable_module',`
+	gen_require(`
+		attribute sepgsql_module_type;
+	')
+	typeattribute $1 sepgsql_module_type;
+')
