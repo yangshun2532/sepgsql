@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/tcop/postgres.c,v 1.542 2008/01/26 19:55:08 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/tcop/postgres.c,v 1.544 2008/03/10 12:55:13 mha Exp $
  *
  * NOTES
  *	  this is the "main" module of the postgres backend and
@@ -19,6 +19,7 @@
 
 #include "postgres.h"
 
+#include <time.h>
 #include <unistd.h>
 #include <signal.h>
 #include <fcntl.h>
@@ -84,7 +85,7 @@ CommandDest whereToSendOutput = DestDebug;
 /* flag for logging end of session */
 bool		Log_disconnections = false;
 
-LogStmtLevel log_statement = LOGSTMT_NONE;
+int			log_statement = LOGSTMT_NONE;
 
 /* GUC variable for maximum stack depth (measured in kilobytes) */
 int			max_stack_depth = 100;

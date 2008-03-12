@@ -2301,3 +2301,29 @@ Tue, 15 Jan 2008 11:26:14 +0100
 	- Set compat library version to 3.0.
 	- Set ecpg library version to 6.0.
 	- Set ecpg version to 4.4.
+
+Wed, 06 Feb 2008 09:04:48 +0100
+
+	- Fixed segfault in ecpg when using an array element.
+	- Free all memory in auto-prepare mode.
+
+Thu, 14 Feb 2008 13:11:34 +0100
+
+	- Added SQLSTATE macro closing bug #3961.
+	- EXECUTE can return NOT FOUND so it should be checked here too.
+	- Changed regression test accordingly.
+
+Fri, 15 Feb 2008 12:01:13 +0100
+
+	- Changed the way symbols are defined in C in INFORMIX mode.
+
+Sun, 17 Feb 2008 18:45:39 +0100
+
+	- Removed duplicate include of ecpgtype.h.
+	- Changed INFORMIX mode symbol definition yet again because the old
+	  way didn't work on NetBSD.
+
+Sun, 02 Mar 2008 11:50:48 +0100
+
+	- Fixed bug that caused arrays of varchar to be output with incomplete
+	  name.

@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/storage/lmgr/lock.c,v 1.180 2008/01/01 19:45:52 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/backend/storage/lmgr/lock.c,v 1.182 2008/03/04 19:54:06 tgl Exp $
  *
  * NOTES
  *	  A lock table is a shared memory hash table.  When
@@ -37,7 +37,6 @@
 #include "access/twophase_rmgr.h"
 #include "miscadmin.h"
 #include "pgstat.h"
-#include "storage/lmgr.h"
 #include "utils/memutils.h"
 #include "utils/ps_status.h"
 #include "utils/resowner.h"
@@ -1102,9 +1101,7 @@ WaitOnLock(LOCALLOCK *locallock, ResourceOwner owner)
 {
 	LOCKMETHODID lockmethodid = LOCALLOCK_LOCKMETHOD(*locallock);
 	LockMethod	lockMethodTable = LockMethods[lockmethodid];
-	const char *old_status;
-	char	   *new_status = NULL;
-	int			len;
+	char	   * volatile new_status = NULL;
 
 	LOCK_PRINT("WaitOnLock: sleeping on lock",
 			   locallock->lock, locallock->tag.mode);
@@ -1112,6 +1109,9 @@ WaitOnLock(LOCALLOCK *locallock, ResourceOwner owner)
 	/* Report change to waiting status */
 	if (update_process_title)
 	{
+		const char *old_status;
+		int			len;
+
 		old_status = get_ps_display(&len);
 		new_status = (char *) palloc(len + 8 + 1);
 		memcpy(new_status, old_status, len);
@@ -1132,38 +1132,62 @@ WaitOnLock(LOCALLOCK *locallock, ResourceOwner owner)
 	 * that a cancel/die interrupt will interrupt ProcSleep after someone else
 	 * grants us the lock, but before we've noticed it. Hence, after granting,
 	 * the locktable state must fully reflect the fact that we own the lock;
-	 * we can't do additional work on return. Contrariwise, if we fail, any
-	 * cleanup must happen in xact abort processing, not here, to ensure it
-	 * will also happen in the cancel/die case.
+	 * we can't do additional work on return.
+	 *
+	 * We can and do use a PG_TRY block to try to clean up after failure,
+	 * but this still has a major limitation: elog(FATAL) can occur while
+	 * waiting (eg, a "die" interrupt), and then control won't come back here.
+	 * So all cleanup of essential state should happen in LockWaitCancel,
+	 * not here.  We can use PG_TRY to clear the "waiting" status flags,
+	 * since doing that is unimportant if the process exits.
 	 */
-
-	if (ProcSleep(locallock, lockMethodTable) != STATUS_OK)
+	PG_TRY();
 	{
-		/*
-		 * We failed as a result of a deadlock, see CheckDeadLock(). Quit now.
-		 */
-		awaitedLock = NULL;
-		LOCK_PRINT("WaitOnLock: aborting on lock",
-				   locallock->lock, locallock->tag.mode);
-		LWLockRelease(LockHashPartitionLock(locallock->hashcode));
+		if (ProcSleep(locallock, lockMethodTable) != STATUS_OK)
+		{
+			/*
+			 * We failed as a result of a deadlock, see CheckDeadLock().
+			 * Quit now.
+			 */
+			awaitedLock = NULL;
+			LOCK_PRINT("WaitOnLock: aborting on lock",
+					   locallock->lock, locallock->tag.mode);
+			LWLockRelease(LockHashPartitionLock(locallock->hashcode));
 
-		/*
-		 * Now that we aren't holding the partition lock, we can give an error
-		 * report including details about the detected deadlock.
-		 */
-		DeadLockReport();
-		/* not reached */
+			/*
+			 * Now that we aren't holding the partition lock, we can give an
+			 * error report including details about the detected deadlock.
+			 */
+			DeadLockReport();
+			/* not reached */
+		}
 	}
+	PG_CATCH();
+	{
+		/* In this path, awaitedLock remains set until LockWaitCancel */
+
+		/* Report change to non-waiting status */
+		pgstat_report_waiting(false);
+		if (update_process_title)
+		{
+			set_ps_display(new_status, false);
+			pfree(new_status);
+		}
+
+		/* and propagate the error */
+		PG_RE_THROW();
+	}
+	PG_END_TRY();
 
 	awaitedLock = NULL;
 
 	/* Report change to non-waiting status */
+	pgstat_report_waiting(false);
 	if (update_process_title)
 	{
 		set_ps_display(new_status, false);
 		pfree(new_status);
 	}
-	pgstat_report_waiting(false);
 
 	LOCK_PRINT("WaitOnLock: wakeup on lock",
 			   locallock->lock, locallock->tag.mode);
@@ -1845,12 +1869,6 @@ AtPrepare_Locks(void)
 			if (lockOwners[i].owner == NULL)
 				elog(ERROR, "cannot PREPARE when session locks exist");
 		}
-
-		/* Can't handle it if the lock is on a temporary object */
-		if (LockTagIsTemp(&locallock->tag.lock))
-			ereport(ERROR,
-					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-					 errmsg("cannot PREPARE a transaction that has operated on temporary tables")));
 
 		/*
 		 * Create a 2PC record.
