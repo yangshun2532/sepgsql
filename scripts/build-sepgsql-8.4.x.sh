@@ -53,14 +53,22 @@ tar -jcf ${RPMSOURCE}/postgresql-${BASE_VERSION}.tar.bz2 postgresql-${BASE_VERSI
 mv postgresql-${BASE_VERSION} base
 
 echo "GEN: sepostgresql-pgace-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch"
-diff -rpNU3 base pgace > ${RPMSOURCE}/sepostgresql-pgace-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch
+diff -rpNU3 base pgace	\
+    > ${RPMSOURCE}/sepostgresql-pgace-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch
 
 echo "GEN: sepostgresql-pg_dump-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch"
-diff -rpNU3 pgace/src/bin sepgsql/src/bin > ${RPMSOURCE}/sepostgresql-pg_dump-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch
+diff -rpNU3 pgace/src/bin sepgsql/src/bin	\
+    > ${RPMSOURCE}/sepostgresql-pg_dump-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch
 rm -rf pgace/src/bin sepgsql/src/bin
 
+echo "GEN: sepostgresql-policy-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch"
+diff -rpNU3 pgace/contrib/sepgsql-policy sepgsql/contrib/sepgsql-policy	\
+    > ${RPMSOURCE}/sepostgresql-policy-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch
+rm -rf pgace/contrib sepgsql/contrib
+
 echo "GEN: sepostgresql-sepgsql-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch"
-diff -rpNU3 pgace sepgsql > ${RPMSOURCE}/sepostgresql-sepgsql-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch
+diff -rpNU3 pgace sepgsql	\
+    > ${RPMSOURCE}/sepostgresql-sepgsql-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch
 
 echo "GEN: sepostgresql.init"
 cat package/sepostgresql.init | \
@@ -79,17 +87,6 @@ cat package/sepostgresql.spec | \
     sed "s/%%__sepgsql_extension__%%/${__SEPGSQL_EXTENSION}/g" \
     > ${RPMSOURCE}/sepostgresql.spec
 
-echo "CPY: sepostgresql.if"
-cp package/sepostgresql.if ${RPMSOURCE}
-
-echo "CPY: sepostgresql.fc"
-cp package/sepostgresql.fc ${RPMSOURCE}
-
-echo "CPY: sepostgresql.te"
-cat package/sepostgresql.te | \
-    sed "s/%%POLICY_VERSION%%/${SEPGSQL_VERSION}/g" \
-    > ${RPMSOURCE}/sepostgresql.te
-
 echo "CPY: sepostgresql.8"
 cp package/sepostgresql.8 ${RPMSOURCE}
 
@@ -98,9 +95,6 @@ cp package/sepostgresql.logrotate ${RPMSOURCE}
 
 echo "CPY: sepostgresql-fedora-prefix.patch"
 cp package/sepostgresql-fedora-prefix.patch ${RPMSOURCE}
-
-echo "CPY: sepostgresql.logrotate"
-cp package/sepostgresql.logrotate ${RPMSOURCE}
 
 # ---- build rpm package
 rpmbuild -ba ${RPMSOURCE}/sepostgresql.spec

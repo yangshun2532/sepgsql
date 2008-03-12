@@ -1,4 +1,4 @@
-policy_module(sepostgresql, %%POLICY_VERSION%%)
+policy_module(sepostgresql, 3.01)
 
 gen_require(`
         class db_database all_db_database_perms;
