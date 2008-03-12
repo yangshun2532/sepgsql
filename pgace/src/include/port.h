@@ -6,7 +6,7 @@
  * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/port.h,v 1.116 2008/01/01 19:45:56 momjian Exp $
+ * $PostgreSQL: pgsql/src/include/port.h,v 1.118 2008/02/29 15:31:33 mha Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -42,6 +42,7 @@ extern void get_lib_path(const char *my_exec_path, char *ret_path);
 extern void get_pkglib_path(const char *my_exec_path, char *ret_path);
 extern void get_locale_path(const char *my_exec_path, char *ret_path);
 extern void get_doc_path(const char *my_exec_path, char *ret_path);
+extern void get_html_path(const char *my_exec_path, char *ret_path);
 extern void get_man_path(const char *my_exec_path, char *ret_path);
 extern bool get_home_path(char *ret_path);
 extern void get_parent_directory(char *path);
@@ -77,6 +78,12 @@ extern void set_pglocale_pgservice(const char *argv0, const char *app);
 extern int	find_my_exec(const char *argv0, char *retpath);
 extern int find_other_exec(const char *argv0, const char *target,
 				const char *versionstr, char *retpath);
+
+/* Windows security token manipulation (in exec.c) */
+#ifdef WIN32
+extern BOOL AddUserToDacl(HANDLE hProcess);
+#endif
+
 
 #if defined(WIN32) || defined(__CYGWIN__)
 #define EXE ".exe"

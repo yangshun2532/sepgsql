@@ -3,7 +3,7 @@ package Mkvcbuild;
 #
 # Package that generates build files for msvc build
 #
-# $PostgreSQL: pgsql/src/tools/msvc/Mkvcbuild.pm,v 1.24 2007/11/13 22:49:47 tgl Exp $
+# $PostgreSQL: pgsql/src/tools/msvc/Mkvcbuild.pm,v 1.26 2008/02/28 12:17:59 mha Exp $
 #
 use Carp;
 use Win32;
@@ -31,7 +31,7 @@ my $contrib_extrasource = {
     'cube' => ['cubescan.l','cubeparse.y'],
     'seg' => ['segscan.l','segparse.y']
 };
-my @contrib_excludes = ('pgcrypto','uuid-ossp');
+my @contrib_excludes = ('pgcrypto');
 
 sub mkvcbuild
 {
@@ -66,7 +66,9 @@ sub mkvcbuild
     $postgres->AddFiles('src\backend\bootstrap','bootscanner.l','bootparse.y');
     $postgres->AddFiles('src\backend\utils\misc','guc-file.l');
     $postgres->AddDefine('BUILDING_DLL');
-    $postgres->AddLibrary('wsock32.lib ws2_32.lib secur32.lib');
+    $postgres->AddLibrary('wsock32.lib');
+    $postgres->AddLibrary('ws2_32.lib');
+    $postgres->AddLibrary('secur32.lib');
     $postgres->AddLibrary('wldap32.lib') if ($solution->{options}->{ldap});
     $postgres->FullExportDLL('postgres.lib');
 
@@ -179,7 +181,8 @@ sub mkvcbuild
     my $initdb = AddSimpleFrontend('initdb');
     $initdb->AddIncludeDir('src\interfaces\libpq');
     $initdb->AddDefine('FRONTEND');
-    $initdb->AddLibrary('wsock32.lib ws2_32.lib');
+    $initdb->AddLibrary('wsock32.lib');
+    $initdb->AddLibrary('ws2_32.lib');
 
     my $pgconfig = AddSimpleFrontend('pg_config');
 
@@ -242,6 +245,16 @@ sub mkvcbuild
     if (!$solution->{options}->{openssl})
     {
         push @contrib_excludes,'sslinfo';
+    }
+
+    if ($solution->{options}->{uuid})
+    {
+       $contrib_extraincludes->{'uuid-ossp'} = [ $solution->{options}->{uuid} . '\include' ];
+       $contrib_extralibs->{'uuid-ossp'} = [ $solution->{options}->{uuid} . '\lib\uuid.lib' ];
+    }
+	 else
+    {
+       push @contrib_excludes,'uuid-ossp';
     }
 
     # Pgcrypto makefile too complex to parse....
