@@ -1,4 +1,4 @@
-/* $PostgreSQL: pgsql/src/interfaces/ecpg/preproc/preproc.y,v 1.359 2008/01/15 10:31:47 meskes Exp $ */
+/* $PostgreSQL: pgsql/src/interfaces/ecpg/preproc/preproc.y,v 1.362 2008/03/01 03:26:35 tgl Exp $ */
 
 /* Copyright comment */
 %{
@@ -521,8 +521,9 @@ add_typedef(char *name, char * dimension, char * length, enum ECPGttype type_enu
 %nonassoc	OVERLAPS
 %nonassoc	BETWEEN
 %nonassoc	IN_P
-%left		POSTFIXOP					/* dummy for postfix Op rules */
-%left		Op OPERATOR				/* multi-character ops and user-defined operators */
+%left		POSTFIXOP		/* dummy for postfix Op rules */
+%nonassoc	IDENT			/* to support target_el without AS */
+%left		Op OPERATOR		/* multi-character ops and user-defined operators */
 %nonassoc	NOTNULL
 %nonassoc	ISNULL
 %nonassoc	IS NULL_P TRUE_P FALSE_P UNKNOWN
@@ -807,7 +808,7 @@ stmt:  AlterDatabaseStmt		{ output_statement($1, 0, ECPGst_normal); }
 		| DropUserStmt		{ output_statement($1, 0, ECPGst_normal); }
 		| DropdbStmt		{ output_statement($1, 0, ECPGst_normal); }
 		| ExplainStmt		{ output_statement($1, 0, ECPGst_normal); }
-		| ExecuteStmt		{ output_statement($1, 0, ECPGst_execute); }
+		| ExecuteStmt		{ output_statement($1, 1, ECPGst_execute); }
 		| FetchStmt		{ output_statement($1, 1, ECPGst_normal); }
 		| GrantStmt		{ output_statement($1, 0, ECPGst_normal); }
 		| GrantRoleStmt		{ output_statement($1, 0, ECPGst_normal); }
@@ -4695,9 +4696,10 @@ target_list:  target_list ',' target_el
 			{ $$ = $1;	}
 		;
 
-/* AS is not optional because shift/red conflict with unary ops */
 target_el:	a_expr AS ColLabel
 			{ $$ = cat_str(3, $1, make_str("as"), $3); }
+		| a_expr IDENT
+			{ $$ = cat_str(3, $1, make_str("as"), $2); }
 		| a_expr
 			{ $$ = $1; }
 		| '*'
@@ -5845,7 +5847,7 @@ prepared_name: name	 	{
 						int i;
 
 						for (i = 0; i< strlen($1); i++)
-							$1[i] = tolower($1[i]);
+							$1[i] = tolower((unsigned char) $1[i]);
 
 						$$ = make3_str(make_str("\""), $1, make_str("\""));
 					}

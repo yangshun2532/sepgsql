@@ -1,6 +1,5 @@
 /* Processed by ecpg (regression mode) */
 /* These include files are added by the preprocessor */
-#include <ecpgtype.h>
 #include <ecpglib.h>
 #include <ecpgerrno.h>
 #include <sqlca.h>
@@ -171,6 +170,9 @@ if (sqlca.sqlcode < 0) sqlprint();}
 		{ ECPGdo(__LINE__, 0, 1, NULL, 0, 1, "i", 
 	ECPGt_int,&(value),(long)1,(long)1,sizeof(int), 
 	ECPGt_NO_INDICATOR, NULL , 0L, 0L, 0L, ECPGt_EOIT, ECPGt_EORT);
+#line 52 "prep.pgc"
+
+if (sqlca.sqlcode == ECPG_NOT_FOUND) sqlprint();
 #line 52 "prep.pgc"
 
 if (sqlca.sqlcode < 0) sqlprint();}
