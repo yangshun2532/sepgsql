@@ -6,7 +6,7 @@
  * for developers.	If you edit any of these, be sure to do a *full*
  * rebuild (and an initdb if noted).
  *
- * $PostgreSQL: pgsql/src/include/pg_config_manual.h,v 1.27 2007/06/08 18:23:53 tgl Exp $
+ * $PostgreSQL: pgsql/src/include/pg_config_manual.h,v 1.29 2008/03/10 20:06:27 tgl Exp $
  *------------------------------------------------------------------------
  */
 
@@ -27,8 +27,9 @@
 
 /*
  * RELSEG_SIZE is the maximum number of blocks allowed in one disk
- * file.  Thus, the maximum size of a single file is RELSEG_SIZE *
- * BLCKSZ; relations bigger than that are divided into multiple files.
+ * file when USE_SEGMENTED_FILES is defined.  Thus, the maximum size 
+ * of a single file is RELSEG_SIZE * BLCKSZ; relations bigger than that 
+ * are divided into multiple files.
  *
  * RELSEG_SIZE * BLCKSZ must be less than your OS' limit on file size.
  * This is often 2 GB or 4GB in a 32-bit operating system, unless you
@@ -39,9 +40,16 @@
  * in the direction of a small limit.  (Besides, a power-of-2 value
  * saves a few cycles in md.c.)
  *
+ * When not using segmented files, RELSEG_SIZE is set to zero so that
+ * this behavior can be distinguished in pg_control.
+ *
  * Changing RELSEG_SIZE requires an initdb.
  */
+#ifdef USE_SEGMENTED_FILES
 #define RELSEG_SIZE (0x40000000 / BLCKSZ)
+#else
+#define RELSEG_SIZE 0
+#endif
 
 /*
  * Size of a WAL file block.  This need have no particular relation to BLCKSZ.
@@ -98,16 +106,6 @@
  * Number of spare LWLocks to allocate for user-defined add-on code.
  */
 #define NUM_USER_DEFINED_LWLOCKS	4
-
-/*
- * Define this to make libpgtcl's "pg_result -assign" command process
- * C-style backslash sequences in returned tuple data and convert
- * PostgreSQL array values into Tcl lists.	CAUTION: This conversion
- * is *wrong* unless you install the routines in
- * contrib/string/string_io to make the server produce C-style
- * backslash sequences in the first place.
- */
-/* #define TCL_ARRAYS */
 
 /*
  * Define this if you want psql to _always_ ask for a username and a

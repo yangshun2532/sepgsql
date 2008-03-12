@@ -42,7 +42,7 @@
  * Portions Copyright (c) 1994, Regents of the University of California
  * Portions taken from FreeBSD.
  *
- * $PostgreSQL: pgsql/src/bin/initdb/initdb.c,v 1.152 2008/01/01 19:45:55 momjian Exp $
+ * $PostgreSQL: pgsql/src/bin/initdb/initdb.c,v 1.155 2008/02/29 23:31:20 adunstan Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -66,9 +66,6 @@
 int			optreset;
 #endif
 
-
-/* version string we expect back from postgres */
-#define PG_VERSIONSTR "postgres (PostgreSQL) " PG_VERSION "\n"
 
 /*
  * these values are passed in by makefile defines
@@ -2332,7 +2329,28 @@ CreateRestrictedProcess(char *cmd, PROCESS_INFORMATION * processInfo)
 		return 0;
 	}
 
-	return CreateProcessAsUser(restrictedToken, NULL, cmd, NULL, NULL, TRUE, 0, NULL, NULL, &si, processInfo);
+	if (!CreateProcessAsUser(restrictedToken,
+						NULL,
+						cmd,
+						NULL,
+						NULL,
+						TRUE,
+						CREATE_SUSPENDED,
+						NULL,
+						NULL,
+						&si,
+						processInfo))
+
+	{
+		fprintf(stderr, "CreateProcessAsUser failed: %lu\n", GetLastError());
+		return 0;
+	}
+
+#ifndef __CYGWIN__
+	AddUserToDacl(processInfo->hProcess);
+#endif
+
+	return ResumeThread(processInfo->hThread);
 }
 #endif
 
@@ -2666,7 +2684,7 @@ main(int argc, char *argv[])
 	sprintf(pgdenv, "PGDATA=%s", pg_data);
 	putenv(pgdenv);
 
-	if ((ret = find_other_exec(argv[0], "postgres", PG_VERSIONSTR,
+	if ((ret = find_other_exec(argv[0], "postgres", PG_BACKEND_VERSIONSTR,
 							   backend_exec)) < 0)
 	{
 		char		full_path[MAXPGPATH];
