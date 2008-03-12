@@ -35,10 +35,9 @@ For Major Releases
 ==================
 (in addition to the above)
 
-* Bump library versions, if appropriate (see below)
+* Bump minor library versions, major if appropriate (see below)
 	o src/interfaces/*/Makefile
 	o src/interfaces/*/*/Makefile
-	o update ecpg regression expected files for new library number
 
 * Release notes
 	o check that dashed items from the TODO list are complete
@@ -46,18 +45,18 @@ For Major Releases
 	o group items into categories
 	o select major features
 	o select incompatibilities
-	o add documenation for items
+	o add documentation for items
 
 * Documentation
-	document all new features
-	update help output from inside the programs
-	doc/src/sgml/ref manual pages
-	convert any literal "<" and ">" characters, use tools/find_gt_lt
+	o document all new features
+	o update help output from inside the programs
+	o doc/src/sgml/ref manual pages
+	o convert any literal "<" and ">" characters, use tools/find_gt_lt
 
 * Ports
-	update config.guess and config.sub at the start of beta
-	update ports list in doc/src/sgml/installation.sgml
-	update platform-specific FAQ's, if needed
+	o update config.guess and config.sub at the start of beta
+	o update ports list in doc/src/sgml/installation.sgml
+	o update platform-specific FAQ's, if needed
 
 * Update inet/cidr data types with newest Bind patches
 
@@ -114,6 +113,10 @@ The minor version number should be updated whenever the functionality of
 the library has changed, typically a change in source code between releases
 would mean an increase in the minor version number so long as it does not
 require a major version increase.
+
+Given that we make at least minor changes to our libraries in every major
+PostgreSQL version, we always bump all minor library version numbers at the
+start of each development cycle as a matter of policy.
 
 Minimizing Changes
 ==================
