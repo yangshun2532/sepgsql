@@ -4,7 +4,7 @@ export LANG=C
 # ---- build parametors
 SEPGSQL_MAJOR_VERSION="3"
 SEPGSQL_MINOR_OFFSET="654"
-SEPGSQL_EXTENSION=""
+SEPGSQL_EXTENSION=".alpha"
 SEPGSQL_BRANCH="/trunk"
 
 # -- SE-PostgreSQL repository
@@ -25,11 +25,11 @@ SEPGSQL_VERSION="${SEPGSQL_MAJOR_VERSION}.${SEPGSQL_MINOR_VERSION}"
 RPMSOURCE=`rpm -E '%{_sourcedir}'`
 test -d ${RPMSOURCE} || exit 1
 
-# -- get base postgresql tar+gz, if necessary
-if [ ! -e ${RPMSOURCE}/postgresql-${BASE_VERSION}.tar.bz2 ]; then
-    wget -O ${RPMSOURCE}/postgresql-${BASE_VERSION}.tar.bz2 \
-	"ftp://ftp.postgresql.org/pub/source/v${BASE_VERSION}/postgresql-${BASE_VERSION}.tar.bz2" || exit 1
-fi
+## -- get base postgresql tar+gz, if necessary
+#if [ ! -e ${RPMSOURCE}/postgresql-${BASE_VERSION}.tar.bz2 ]; then
+#    wget -O ${RPMSOURCE}/postgresql-${BASE_VERSION}.tar.bz2 \
+#	"ftp://ftp.postgresql.org/pub/source/v${BASE_VERSION}/postgresql-${BASE_VERSION}.tar.bz2" || exit 1
+#fi
 
 # -- make a working directory
 WORKDIR=`mktemp -d`
@@ -45,6 +45,12 @@ echo
 # -- make a SE-PostgreSQL patch
 svn export ${SEPGSQL_REPOSITORY}${SEPGSQL_BRANCH} altroot || exit 1
 cd altroot
+
+mv base postgresql-${BASE_VERSION}
+echo "GEN: postgresql-${BASE_VERSION}.tar.bz2"
+chmod a+x postgresql-${BASE_VERSION}/configure
+tar -jcf ${RPMSOURCE}/postgresql-${BASE_VERSION}.tar.bz2 postgresql-${BASE_VERSION}
+mv postgresql-${BASE_VERSION} base
 
 echo "GEN: sepostgresql-pgace-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch"
 diff -rpNU3 base pgace > ${RPMSOURCE}/sepostgresql-pgace-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch
