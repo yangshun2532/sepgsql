@@ -97,25 +97,34 @@ Any text representation is actually stored in `pg_security` system catalog, newl
 
 == 3. The way to implement security feature ==
 
-The default hooks which don't affect anything in access controls are defined at `src/backend/security/pgaceHooks.c`. Thus, it has to be skipped on building binaries if you try to implement own guest security module on PGACE.
+The default hooks are defined at `src/backend/security/pgaceHooks.c` with short description of their specification. When no guest module is enabled, these hooks don't provide anything in access controls.
 
-Using Makefile is the easiest way to tuen on / off your security module.
-In the SE-PostgreSQL, it utilizes Makefile as follows:
-
+You can extend them as follows:
 {{{
-OBJS := pgaceCommon.o
-
-ifeq ($(enable_selinux), yes)
-OBJS += sepgsql/core.o sepgsql/hooks.o sepgsql/interface.o \
-    sepgsql/permissions.o sepgsql/proxy.o
-else
-OBJS += pgaceHooks.o
-endif
+ /*
+  * pgaceHeapTupleInsert() is called when a new tuple attempt to be inserted.
+  * If it returns false, this insertion of a new tuple will be cancelled.
+  * However, it does not generate any error.
+  *
+  * @rel            : the target relation
+  * @tuple          : the tuple attmpt to be inserted
+  * @is_internal    : true, if this operation is invoked by system internal processes.
+  * @with_returning : true, if INSERT statement has RETURNING clause.
+  */
+ bool pgaceHeapTupleInsert(Relation rel, HeapTuple tuple,
+                           bool is_internal, bool with_returning)
+ {
+ #ifdef HAVE_SELINUX
+     if (sepgsqlIsEnabled())
+         return sepgsqlHeapTupleInsert(rel, tuple, is_internal, with_returning);
+ #endif
+     return true;
+ }
 }}}
 
-`enable_selinux` is enabled when `--enable-selinux` is specified at configure script.
+`HAVE_SELINUX` is defined at `src/include/pg_config.h`, and it is enabled when we run `configure` script with `--enable-selinux` option.
 
-Your security module has to contain all the hooks defined in `pgaceHooks.c` at least.
+If you want to add a new security module more than SE-PostgreSQL, add your `#ifdef ... #endif` block and invoke your module from here.
 
 == 4. The list of hooks ==
 
