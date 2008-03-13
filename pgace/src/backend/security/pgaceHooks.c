@@ -617,3 +617,12 @@ void *pgaceReadObject(char *token)
 {
 	return NULL;
 }
+
+/******************************************************************
+ * Extended functions stub
+ ******************************************************************/
+
+/*
+ * In this section, you can put function stubs when your security
+ * module is not activated.
+ */
