@@ -8,8 +8,6 @@ subdir = src/backend/security
 top_builddir = ../../..
 include $(top_builddir)/src/Makefile.global
 
-OBJS := pgaceCommon.o
-
-OBJS += pgaceHooks.o
+OBJS := pgaceCommon.o pgaceHooks.o
 
 include $(top_builddir)/src/backend/common.mk
