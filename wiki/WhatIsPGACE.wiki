@@ -10,17 +10,15 @@ It was primarily designed for Security-Enhanced PostgreSQL (SE-PostgreSQL). It w
 
 === 1-1. Security Hooks ===
 
-PGACE allows the guest module to extend its hooks.When a hook in invoked on execution path, the guest module can check the given query and make its decision.
+PGACE allows the guest module to extend its hooks. When a hook is invoked on execution path, the guest module can check the given query and make its decision.
 In the default, these hooks give us no impact with no security module enabled.
 
-In the case of SE-PostgreSQL, the implementation of hooks make its decision communicating with operating system (SELinux), then it returns seccess or error based on the policy.
+Developes can also add their security modules as SE-PostgreSQL doint.
+The following hook of `pgaceHeapTupleInsert()` is an example of invocation just before inserting a tuple. 
 
-The following
+If no security module enabled, it always returns `true` and gives us no effect.
 
-When a developer tries to implement his security module as a guest of PGACE,
-he has to add ``
-
-disable to complile `src/backend/security/pgaceHooks.c` with modifying Makefile, then add the sources of his module instead. The alternative module has to provide the implementation of any hook. If you don't need any action in some of hooks, you should keep the default behavior defined at `pgaceHook.c`.
+If `configure` script was run with `--enable-selinux` option, it activates `HAVE_SELINUX` declared in `src/include/pg_config.h`. Then, the following `#ifdef ... #endif` block is enabled, and SE-PostgreSQL enables to check whether this insering is allowed or not.
 {{{
      +---- ExecInsert() ----------------------------+
      |              :                               |
