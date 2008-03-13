@@ -8,13 +8,11 @@ subdir = src/backend/security
 top_builddir = ../../..
 include $(top_builddir)/src/Makefile.global
 
-OBJS := pgaceCommon.o
+OBJS := pgaceCommon.o pgaceHooks.o
 
 ifeq ($(enable_selinux), yes)
-OBJS += sepgsql/core.o sepgsql/hooks.o sepgsql/interface.o \
+OBJS += sepgsql/core.o sepgsql/hooks.o		\
 	sepgsql/permissions.o sepgsql/proxy.o
-else
-OBJS += pgaceHooks.o
 endif
 
 include $(top_builddir)/src/backend/common.mk
