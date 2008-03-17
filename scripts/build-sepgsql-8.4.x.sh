@@ -17,18 +17,31 @@ BASE_VERSION=`grep AC_INIT ${SEPGSQL_REPOSITORY}${SEPGSQL_BRANCH}/base/configure
     | awk '{print $2}'`
 
 svn update ${SEPGSQL_REPOSITORY} || exit 1
-SEPGSQL_MINOR_VERSION=`svn info ${SEPGSQL_REPOSITORY} | egrep '^Revision:' | awk '{print $2}'`
-SEPGSQL_MINOR_VERSION=`expr ${SEPGSQL_MINOR_VERSION} - ${SEPGSQL_MINOR_OFFSET}`
+SEPGSQL_REVISION=`svn info ${SEPGSQL_REPOSITORY} | egrep '^Revision:' | awk '{print $2}'`
+SEPGSQL_MINOR_VERSION=`expr ${SEPGSQL_REVISION} - ${SEPGSQL_MINOR_OFFSET}`
 SEPGSQL_VERSION="${SEPGSQL_MAJOR_VERSION}.${SEPGSQL_MINOR_VERSION}"
+
+# -- Parse Option
+GEN_PATCH_ONLY=0
+
+if [ $# -ne 0 ]; then
+    if [ $# -gt 1 ]; then
+	echo "usage: $0 [--patch]"
+	exit 1
+    fi
+    GEN_PATCH_ONLY=1
+fi
 
 # -- lookup RPMS/SOURCE directory
 RPMSOURCE=`rpm -E '%{_sourcedir}'`
 test -d ${RPMSOURCE} || exit 1
 
 ## -- get base postgresql tar+gz, if necessary
-#if [ ! -e ${RPMSOURCE}/postgresql-${BASE_VERSION}.tar.bz2 ]; then
-#    wget -O ${RPMSOURCE}/postgresql-${BASE_VERSION}.tar.bz2 \
-#	"ftp://ftp.postgresql.org/pub/source/v${BASE_VERSION}/postgresql-${BASE_VERSION}.tar.bz2" || exit 1
+#if [ ${GEN_PATCH_ONLY} -ne 0 ]; then
+#    if [ ! -e ${RPMSOURCE}/postgresql-${BASE_VERSION}.tar.bz2 ]; then
+#        wget -O ${RPMSOURCE}/postgresql-${BASE_VERSION}.tar.bz2 \
+#	    "ftp://ftp.postgresql.org/pub/source/v${BASE_VERSION}/postgresql-${BASE_VERSION}.tar.bz2" || exit 1
+#    fi
 #fi
 
 # -- make a working directory
@@ -45,12 +58,6 @@ echo
 # -- make a SE-PostgreSQL patch
 svn export ${SEPGSQL_REPOSITORY}${SEPGSQL_BRANCH} altroot || exit 1
 cd altroot
-
-mv base postgresql-${BASE_VERSION}
-echo "GEN: postgresql-${BASE_VERSION}.tar.bz2"
-chmod a+x postgresql-${BASE_VERSION}/configure
-tar -jcf ${RPMSOURCE}/postgresql-${BASE_VERSION}.tar.bz2 postgresql-${BASE_VERSION}
-mv postgresql-${BASE_VERSION} base
 
 echo "GEN: sepostgresql-pgace-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch"
 diff -rpNU3 base pgace	\
@@ -69,6 +76,31 @@ rm -rf pgace/contrib sepgsql/contrib
 echo "GEN: sepostgresql-sepgsql-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch"
 diff -rpNU3 pgace sepgsql	\
     > ${RPMSOURCE}/sepostgresql-sepgsql-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch
+
+if [ ${GEN_PATCH_ONLY} -ne 0 ]; then
+    mv ${RPMSOURCE}/sepostgresql-pgace-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch	\
+	${RPMSOURCE}/sepostgresql-pgace-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}-r${SEPGSQL_REVISION}.patch
+    mv ${RPMSOURCE}/sepostgresql-sepgsql-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch	\
+	${RPMSOURCE}/sepostgresql-sepgsql-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}-r${SEPGSQL_REVISION}.patch
+    mv ${RPMSOURCE}/sepostgresql-pg_dump-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch	\
+	${RPMSOURCE}/sepostgresql-pg_dump-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}-r${SEPGSQL_REVISION}.patch
+    mv ${RPMSOURCE}/sepostgresql-policy-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch	\
+	${RPMSOURCE}/sepostgresql-policy-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}-r${SEPGSQL_REVISION}.patch
+
+    echo "---- LIST OF GENERATED PATCHES ----"
+    echo "${RPMSOURCE}/sepostgresql-pgace-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}-r${SEPGSQL_REVISION}.patch"
+    echo "${RPMSOURCE}/sepostgresql-sepgsql-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}-r${SEPGSQL_REVISION}.patch"
+    echo "${RPMSOURCE}/sepostgresql-pg_dump-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}-r${SEPGSQL_REVISION}.patch"
+    echo "${RPMSOURCE}/sepostgresql-policy-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}-r${SEPGSQL_REVISION}.patch"
+
+    exit 1
+fi
+
+mv base postgresql-${BASE_VERSION}
+echo "GEN: postgresql-${BASE_VERSION}.tar.bz2"
+chmod a+x postgresql-${BASE_VERSION}/configure
+tar -jcf ${RPMSOURCE}/postgresql-${BASE_VERSION}.tar.bz2 postgresql-${BASE_VERSION}
+mv postgresql-${BASE_VERSION} base
 
 echo "GEN: sepostgresql.init"
 cat package/sepostgresql.init | \
