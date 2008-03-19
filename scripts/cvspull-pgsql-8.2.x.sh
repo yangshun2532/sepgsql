@@ -2,7 +2,7 @@
 
 # This script pulls the PostgreSQL tree from CVS.
 # ---- parametors ----
-CVSTAG="REL8_2_6"
+CVSTAG="REL8_2_7"
 SVNBRANCH="/branches/pgsql-8.2.x"
 
 SEPGSQL_REPOSITORY=`(cd \`dirname $0\`/..; pwd)`
@@ -63,7 +63,7 @@ echo "svn commit -m 'CVS pull -r ${CVSTAG} at `env LANG=C date`' ./base"
 echo "svn update"
 echo
 echo "svn merge -c `expr ${SVNREV} + 1` ./base ./sepgsql"
-echo "svn diff ./pgace"
+echo "svn diff ./sepgsql"
 echo "svn commit -m 'CVS pull -r ${CVSTAG} at `env LANG=C date`' ./sepgsql"
 echo "svn update"
 echo "--------"
