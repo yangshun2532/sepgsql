@@ -1,7 +1,7 @@
 PostgreSQL TODO List
 ====================
 Current maintainer:	Bruce Momjian (bruce@momjian.us)
-Last updated:		Tue Mar 11 21:47:58 EDT 2008
+Last updated:		Tue Mar 18 19:35:12 EDT 2008
 
 The most recent version of this document can be viewed at
 http://www.postgresql.org/docs/faqs.TODO.html.
@@ -47,6 +47,10 @@ Administration
 * Allow statistics collector information to be pulled from the collector
   process directly, rather than requiring the collector to write a
   filesystem file twice a second?
+* Reduce file system activity overhead of statistics file pgstat.stat
+
+  http://archives.postgresql.org/pgsql-general/2007-12/msg00106.php
+
 * Allow statistics last vacuum/analyze execution times to be displayed
   without requiring stats_row_level to be enabled
 * Allow log_min_messages to be specified on a per-module basis
@@ -88,6 +92,11 @@ Administration
 
   http://archives.postgresql.org/pgsql-hackers/2007-12/msg00924.php
 
+* Allow SSL key file permission checks to be optionally disabled when
+  sharing SSL keys with other applications
+
+  http://archives.postgresql.org/pgsql-bugs/2007-12/msg00069.php
+
 * Allow client certificate names to be checked against the client
   hostname
 
@@ -115,6 +124,11 @@ Administration
 	  using '%'
 
 	  http://archives.postgresql.org/pgsql-hackers/2007-06/msg00550.php
+
+	o Allow Kerberos to disable stripping of realms so we can
+	  check the username@realm against multiple realms
+
+	  http://archives.postgresql.org/pgsql-hackers/2007-11/msg00009.php
 
 
 * Tablespaces
@@ -149,20 +163,30 @@ Administration
 
 * Point-In-Time Recovery (PITR)
 
-	  o Allow a warm standby system to also allow read-only statements
-	    [pitr]
+	o Allow a warm standby system to also allow read-only statements
+	  [pitr]
 
-	    http://archives.postgresql.org/pgsql-hackers/2007-03/msg00050.php
+	  http://archives.postgresql.org/pgsql-hackers/2007-03/msg00050.php
 
-	  o %Create dump tool for write-ahead logs for use in determining
-	    transaction id for point-in-time recovery
+	o %Create dump tool for write-ahead logs for use in determining
+	  transaction id for point-in-time recovery
 
-	    This is useful for checking PITR recovery.
+	  This is useful for checking PITR recovery.
 
-	  o Allow recovery.conf to support the same syntax as
-	    postgresql.conf, including quoting
+	o Allow recovery.conf to support the same syntax as
+	  postgresql.conf, including quoting
 
-	    http://archives.postgresql.org/pgsql-hackers/2006-12/msg00497.php
+	  http://archives.postgresql.org/pgsql-hackers/2006-12/msg00497.php
+
+	o Fix server restart problem when the server was shutdown during
+	  a PITR backup
+
+	  http://archives.postgresql.org/pgsql-hackers/2007-11/msg00800.php
+
+	o Recreate pg_xlog/archive_status/ if it doesn't exist after
+	  restoring from a PITR backup
+
+	  http://archives.postgresql.org/pgsql-hackers/2007-12/msg00487.php
 
 
 Data Types
@@ -218,6 +242,19 @@ Data Types
 * Consider a function-based API for '@@' full text searches
 
   http://archives.postgresql.org/pgsql-hackers/2007-11/msg00511.php
+
+* Improve text search error messages
+
+  http://archives.postgresql.org/pgsql-hackers/2007-10/msg00966.php
+  http://archives.postgresql.org/pgsql-hackers/2007-11/msg01146.php
+
+* Consider a special data type for regular expressions
+
+  http://archives.postgresql.org/pgsql-hackers/2007-08/msg01067.php
+
+* Reduce BIT data type overhead using short varlena headers
+
+  http://archives.postgresql.org/pgsql-general/2007-12/msg00273.php
 
 
 * Dates and Times
@@ -411,6 +448,15 @@ Functions
 
   http://archives.postgresql.org/pgsql-hackers/2007-04/msg01180.php
 
+* Add array_accum() and array_to_set() functions for arrays
+
+  The standards specify array_agg() and UNNEST.
+  http://archives.postgresql.org/pgsql-hackers/2007-08/msg00464.php
+
+* Fix /contrib/ltree operator
+
+  http://archives.postgresql.org/pgsql-bugs/2007-11/msg00044.php
+
 
 
 Multi-Language Support
@@ -580,6 +626,7 @@ SQL Commands
   http://archives.postgresql.org/pgsql-hackers/2007-01/msg01375.php
   http://archives.postgresql.org/pgsql-hackers/2008-02/msg00642.php
   http://archives.postgresql.org/pgsql-patches/2007-03/msg00139.php
+  http://archives.postgresql.org/pgsql-hackers/2007-11/msg01334.php
 
 * Add DEFAULT .. AS OWNER so permission checks are done as the table
   owner
@@ -636,6 +683,8 @@ SQL Commands
 
 	  http://archives.postgresql.org/pgsql-hackers/2006-07/msg01306.php
 	  http://archives.postgresql.org/pgsql-hackers/2007-03/msg00865.php
+	  http://archives.postgresql.org/pgsql-patches/2007-04/msg00315.php
+	  http://archives.postgresql.org/pgsql-patches/2008-03/msg00237.php
 
 	o Research self-referential UPDATEs that see inconsistent row versions
 	  in read-committed mode
@@ -718,6 +767,7 @@ SQL Commands
 
 	  This requires the use of a savepoint before each COPY line is
 	  processed, with ROLLBACK on COPY failure.
+	  http://archives.postgresql.org/pgsql-hackers/2007-12/msg00572.php
 
 	o Allow COPY on a newly-created table to skip WAL logging
 
@@ -940,6 +990,9 @@ Clients
 
 	  Ideally it will not generate an error for invalid permissions
 
+	o Include the symbolic SQLSTATE name in verbose error reports
+
+	  http://archives.postgresql.org/pgsql-general/2007-09/msg00438.php
 
 
 * pg_dump / pg_restore
@@ -992,6 +1045,8 @@ Clients
 	  statement_timeout
 
 	  Using psql to restore a pg_dump dump is also affected.
+
+	o Remove pre-7.3 pg_dump code that assumes pg_depend does not exit
 
 
 * ecpg
@@ -1123,6 +1178,7 @@ Indexes
   and expression indexes
   http://archives.postgresql.org/pgsql-general/2007-05/msg01228.php
   http://archives.postgresql.org/pgsql-general/2007-06/msg00542.php
+  http://archives.postgresql.org/pgsql-hackers/2008-01/msg01066.php
 
 * Consider compressing indexes by storing key values duplicated in
   several rows as a single index entry
@@ -1138,6 +1194,7 @@ Indexes
   to replace the existing index file.  CREATE INDEX CONCURRENTLY does not
   have this complication.  This would allow index compaction without
   downtime.
+  http://archives.postgresql.org/pgsql-performance/2007-08/msg00289.php
 
 * Allow multiple indexes to be created concurrently, ideally via a
   single heap scan, and have pg_restore use it
@@ -1186,9 +1243,7 @@ Indexes
 	  of the key itself
 	o Add WAL logging for crash recovery
 	o Allow multi-column hash indexes
-	o During index creation, pre-sort the tuples to improve build speed
-
-	  http://archives.postgresql.org/pgsql-hackers/2007-03/msg01199.php
+	o -During index creation, pre-sort the tuples to improve build speed
 
 
 
@@ -1455,10 +1510,12 @@ Write-Ahead Log
 
 * Speed WAL recovery by allowing more than one page to be prefetched
 
-  This involves having a separate process that can be told which pages
-  the recovery process will need in the near future.
+  This should be done utilizing the same infrastructure used for
+  prefetching in general to avoid introducing complex error-prone code
+  in WAL replay.
+  http://archives.postgresql.org/pgsql-general/2007-12/msg00683.php
+  http://archives.postgresql.org/pgsql-hackers/2007-12/msg00497.php
   http://archives.postgresql.org/pgsql-hackers/2008-02/msg01279.php
-
 
 
 Optimizer / Executor
@@ -1531,6 +1588,7 @@ Miscellaneous Performance
   results coming back asynchronously.
 
   http://archives.postgresql.org/pgsql-hackers/2006-10/msg00820.php
+  http://archives.postgresql.org/pgsql-performance/2007-09/msg00255.php
   http://archives.postgresql.org/pgsql-hackers/2007-12/msg00027.php
 
 * Use mmap() rather than SYSV shared memory or to write WAL files?
@@ -1572,18 +1630,42 @@ Miscellaneous Performance
 
   http://archives.postgresql.org/pgsql-general/2007-02/msg00493.php
 
-* Experiment with multi-threaded backend better resource utilization
+* Experiment with multi-threaded backend better I/O utilization
 
-  This would allow a single query to make use of multiple CPU's or
-  multiple I/O channels simultaneously.  One idea is to create a
-  background reader that can pre-fetch sequential and index scan
-  pages needed by other backends.  This could be expanded to allow
-  concurrent reads from multiple devices in a partitioned table.
+  This would allow a single query to make use of multiple I/O channels
+  simultaneously.  One idea is to create a background reader that can
+  pre-fetch sequential and index scan pages needed by other backends.
+  This could be expanded to allow concurrent reads from multiple devices
+  in a partitioned table.
+
+* Experiment with multi-threaded backend better CPU utilization
+
+  This would allow several CPUs to be used for a single query, such as
+  for sorting or query execution.
 
 * Consider increasing the minimum allowed number of shared buffers
 
   http://archives.postgresql.org/pgsql-bugs/2008-02/msg00157.php
 
+* Expire published xmin for read-only and idle transactions
+
+  http://archives.postgresql.org/pgsql-hackers/2007-09/msg00343.php
+
+* Consider if CommandCounterIncrement() can avoid its
+  AcceptInvalidationMessages() call
+
+  http://archives.postgresql.org/pgsql-committers/2007-11/msg00585.php
+
+* Consider Cartesian joins when both relations are needed to form an
+  indexscan qualification for a third relation
+
+  http://archives.postgresql.org/pgsql-performance/2007-12/msg00090.php
+
+* Consider not storing a NULL bitmap on disk if all the NULLs are
+  trailing
+
+  http://archives.postgresql.org/pgsql-hackers/2007-12/msg00624.php
+  http://archives.postgresql.org/pgsql-patches/2007-12/msg00109.php
 
 
 
@@ -1650,6 +1732,10 @@ Source Code
 
   http://archives.postgresql.org/pgsql-patches/2007-08/msg00067.php
 
+* Remove use of MAKE_PTR and MAKE_OFFSET macros
+
+  http://archives.postgresql.org/pgsql-general/2007-08/msg01510.php
+
 
 * Win32
 
@@ -1661,9 +1747,18 @@ Source Code
 	o Allow psql to use readline once non-US code pages work with
 	  backslashes
 	o Fix problem with shared memory on the Win32 Terminal Server
+	o Diagnose problem where shared memory can sometimes not be
+	  attached by postmaster children
+
+	  http://archives.postgresql.org/pgsql-general/2007-08/msg01377.php
+
 	o Improve signal handling
 
 	  http://archives.postgresql.org/pgsql-patches/2005-06/msg00027.php
+
+	o Convert MSVC build system to remove most batch files
+
+	  http://archives.postgresql.org/pgsql-hackers/2007-08/msg00961.php
 
 
 
