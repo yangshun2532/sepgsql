@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/access/heap/heapam.c,v 1.222.2.1 2007/02/04 20:00:49 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/access/heap/heapam.c,v 1.222.2.2 2008/03/04 19:54:23 tgl Exp $
  *
  *
  * INTERFACE ROUTINES
@@ -700,6 +700,10 @@ relation_open(Oid relationId, LOCKMODE lockmode)
 	if (!RelationIsValid(r))
 		elog(ERROR, "could not open relation with OID %u", relationId);
 
+	/* Make note that we've accessed a temporary relation */
+	if (r->rd_istemp)
+		MyXactAccessedTempRel = true;
+
 	return r;
 }
 
@@ -741,6 +745,10 @@ try_relation_open(Oid relationId, LOCKMODE lockmode)
 
 	if (!RelationIsValid(r))
 		elog(ERROR, "could not open relation with OID %u", relationId);
+
+	/* Make note that we've accessed a temporary relation */
+	if (r->rd_istemp)
+		MyXactAccessedTempRel = true;
 
 	return r;
 }
@@ -785,6 +793,10 @@ relation_open_nowait(Oid relationId, LOCKMODE lockmode)
 
 	if (!RelationIsValid(r))
 		elog(ERROR, "could not open relation with OID %u", relationId);
+
+	/* Make note that we've accessed a temporary relation */
+	if (r->rd_istemp)
+		MyXactAccessedTempRel = true;
 
 	return r;
 }
