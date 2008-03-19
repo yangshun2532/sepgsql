@@ -7,7 +7,7 @@
  *
  * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
  *
- *	  $PostgreSQL: pgsql/src/include/utils/guc_tables.h,v 1.39 2008/03/10 12:55:13 mha Exp $
+ *	  $PostgreSQL: pgsql/src/include/utils/guc_tables.h,v 1.41 2008/03/17 17:45:09 mha Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -35,15 +35,6 @@ union config_var_value
 	double		realval;
 	char	   *stringval;
 	int			enumval;
-};
-
-/*
- * Enum values are made up of an array of name-value pairs
- */
-struct config_enum_entry
-{
-	const char *name;
-	int			val;
 };
 
 /*
@@ -244,5 +235,11 @@ extern const char *const GucSource_Names[];
 extern struct config_generic **get_guc_variables(void);
 
 extern void build_guc_variables(void);
+
+/* search in enum options */
+extern const char *config_enum_lookup_by_value(struct config_enum *record, int val);
+extern bool config_enum_lookup_by_name(struct config_enum *record,
+									  const char *value, int *retval);
+
 
 #endif   /* GUC_TABLES_H */
