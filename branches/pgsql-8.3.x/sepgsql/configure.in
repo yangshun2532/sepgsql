@@ -1,5 +1,5 @@
 dnl Process this file with autoconf to produce a configure script.
-dnl $PostgreSQL: pgsql/configure.in,v 1.546 2008/02/01 04:16:29 scrappy Exp $
+dnl $PostgreSQL: pgsql/configure.in,v 1.546.2.3 2008/03/14 03:23:22 scrappy Exp $
 dnl
 dnl Developers, please strive to achieve this order:
 dnl
@@ -17,7 +17,7 @@ dnl Read the Autoconf manual for details.
 dnl
 m4_pattern_forbid(^PGAC_)dnl to catch undefined macros
 
-AC_INIT([PostgreSQL], [8.3.0], [pgsql-bugs@postgresql.org])
+AC_INIT([PostgreSQL], [8.3.1], [pgsql-bugs@postgresql.org])
 
 m4_if(m4_defn([m4_PACKAGE_VERSION]), [2.59], [], [m4_fatal([Autoconf version 2.59 is required.
 Untested combinations of 'autoconf' and PostgreSQL versions are not
@@ -290,6 +290,8 @@ if test "$GCC" = yes -a "$ICC" = no; then
   PGAC_PROG_CC_CFLAGS_OPT([-Wendif-labels])
   # Disable strict-aliasing rules; needed for gcc 3.3+
   PGAC_PROG_CC_CFLAGS_OPT([-fno-strict-aliasing])
+  # Disable optimizations that assume no overflow; needed for gcc 4.3+
+  PGAC_PROG_CC_CFLAGS_OPT([-fwrapv])
 elif test "$ICC" = yes; then
   # Intel's compiler has a bug/misoptimization in checking for
   # division by NAN (NaN == 0), -mp1 fixes it, so add it to the CFLAGS.
@@ -1120,8 +1122,13 @@ else
   AC_LIBOBJ(getaddrinfo)
 fi
 
-# similarly, use system's getopt_long() only if system provides struct option.
-if test x"$ac_cv_type_struct_option" = xyes ; then
+# Similarly, use system's getopt_long() only if system provides struct option.
+# Solaris' getopt() doesn't do what we want for long options, so always use
+# our versions on that platform.
+if test "$PORTNAME" = "solaris"; then
+  AC_LIBOBJ(getopt)
+  AC_LIBOBJ(getopt_long)
+elif test x"$ac_cv_type_struct_option" = xyes ; then
   AC_REPLACE_FUNCS([getopt_long])
 else
   AC_LIBOBJ(getopt_long)
