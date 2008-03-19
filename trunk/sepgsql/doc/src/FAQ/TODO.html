@@ -8,7 +8,7 @@
 <body bgcolor="#FFFFFF" text="#000000" link="#FF0000" vlink="#A00000" alink="#0000FF">
 <h1><a name="section_1">PostgreSQL TODO List</a></h1>
 <p>Current maintainer:     Bruce Momjian (<a href="mailto:bruce@momjian.us">bruce@momjian.us</a>)<br/>
-Last updated:           Tue Mar 11 21:47:58 EDT 2008
+Last updated:           Tue Mar 18 19:35:12 EDT 2008
 </p>
 <p>The most recent version of this document can be viewed at<br/>
 <a href="http://www.postgresql.org/docs/faqs.TODO.html">http://www.postgresql.org/docs/faqs.TODO.html</a>.
@@ -50,6 +50,9 @@ first.  There is also a developer's wiki at<br/>
   </li><li>Allow statistics collector information to be pulled from the collector
   process directly, rather than requiring the collector to write a
   filesystem file twice a second?
+  </li><li>Reduce file system activity overhead of statistics file pgstat.stat
+<p>  <a href="http://archives.postgresql.org/pgsql-general/2007-12/msg00106.php">http://archives.postgresql.org/pgsql-general/2007-12/msg00106.php</a>
+</p>
   </li><li>Allow statistics last vacuum/analyze execution times to be displayed
   without requiring stats_row_level to be enabled
   </li><li>Allow log_min_messages to be specified on a per-module basis
@@ -85,6 +88,10 @@ first.  There is also a developer's wiki at<br/>
   </li><li>Allow SSL authentication/encryption over unix domain sockets
 <p>  <a href="http://archives.postgresql.org/pgsql-hackers/2007-12/msg00924.php">http://archives.postgresql.org/pgsql-hackers/2007-12/msg00924.php</a>
 </p>
+  </li><li>Allow SSL key file permission checks to be optionally disabled when
+  sharing SSL keys with other applications
+<p>  <a href="http://archives.postgresql.org/pgsql-bugs/2007-12/msg00069.php">http://archives.postgresql.org/pgsql-bugs/2007-12/msg00069.php</a>
+</p>
   </li><li>Allow client certificate names to be checked against the client
   hostname
 <p>  This is already implemented in
@@ -109,6 +116,10 @@ first.  There is also a developer's wiki at<br/>
     </li><li>Consider normalizing fractions in postgresql.conf, perhaps
           using '%'
 <p>          <a href="http://archives.postgresql.org/pgsql-hackers/2007-06/msg00550.php">http://archives.postgresql.org/pgsql-hackers/2007-06/msg00550.php</a>
+</p>
+    </li><li>Allow Kerberos to disable stripping of realms so we can
+          check the username@realm against multiple realms
+<p>          <a href="http://archives.postgresql.org/pgsql-hackers/2007-11/msg00009.php">http://archives.postgresql.org/pgsql-hackers/2007-11/msg00009.php</a>
 </p>
   </li></ul>
   </li><li>Tablespaces
@@ -140,16 +151,24 @@ first.  There is also a developer's wiki at<br/>
   </li><li>Point-In-Time Recovery (PITR)
   <ul>
     <li>Allow a warm standby system to also allow read-only statements
-            [<a href="http://momjian.postgresql.org/cgi-bin/pgtodo?pitr">pitr</a>]
-<p>            <a href="http://archives.postgresql.org/pgsql-hackers/2007-03/msg00050.php">http://archives.postgresql.org/pgsql-hackers/2007-03/msg00050.php</a>
+          [<a href="http://momjian.postgresql.org/cgi-bin/pgtodo?pitr">pitr</a>]
+<p>          <a href="http://archives.postgresql.org/pgsql-hackers/2007-03/msg00050.php">http://archives.postgresql.org/pgsql-hackers/2007-03/msg00050.php</a>
 </p>
     </li><li>%Create dump tool for write-ahead logs for use in determining
-            transaction id for point-in-time recovery
-<p>            This is useful for checking PITR recovery.
+          transaction id for point-in-time recovery
+<p>          This is useful for checking PITR recovery.
 </p>
     </li><li>Allow recovery.conf to support the same syntax as
-            postgresql.conf, including quoting
-<p>            <a href="http://archives.postgresql.org/pgsql-hackers/2006-12/msg00497.php">http://archives.postgresql.org/pgsql-hackers/2006-12/msg00497.php</a>
+          postgresql.conf, including quoting
+<p>          <a href="http://archives.postgresql.org/pgsql-hackers/2006-12/msg00497.php">http://archives.postgresql.org/pgsql-hackers/2006-12/msg00497.php</a>
+</p>
+    </li><li>Fix server restart problem when the server was shutdown during
+          a PITR backup
+<p>          <a href="http://archives.postgresql.org/pgsql-hackers/2007-11/msg00800.php">http://archives.postgresql.org/pgsql-hackers/2007-11/msg00800.php</a>
+</p>
+    </li><li>Recreate pg_xlog/archive_status/ if it doesn't exist after
+          restoring from a PITR backup
+<p>          <a href="http://archives.postgresql.org/pgsql-hackers/2007-12/msg00487.php">http://archives.postgresql.org/pgsql-hackers/2007-12/msg00487.php</a>
 </p>
   </li></ul>
 </li></ul>
@@ -196,6 +215,16 @@ first.  There is also a developer's wiki at<br/>
 </p>
   </li><li>Consider a function-based API for '@@' full text searches
 <p>  <a href="http://archives.postgresql.org/pgsql-hackers/2007-11/msg00511.php">http://archives.postgresql.org/pgsql-hackers/2007-11/msg00511.php</a>
+</p>
+  </li><li>Improve text search error messages
+<p>  <a href="http://archives.postgresql.org/pgsql-hackers/2007-10/msg00966.php">http://archives.postgresql.org/pgsql-hackers/2007-10/msg00966.php</a>
+  <a href="http://archives.postgresql.org/pgsql-hackers/2007-11/msg01146.php">http://archives.postgresql.org/pgsql-hackers/2007-11/msg01146.php</a>
+</p>
+  </li><li>Consider a special data type for regular expressions
+<p>  <a href="http://archives.postgresql.org/pgsql-hackers/2007-08/msg01067.php">http://archives.postgresql.org/pgsql-hackers/2007-08/msg01067.php</a>
+</p>
+  </li><li>Reduce BIT data type overhead using short varlena headers
+<p>  <a href="http://archives.postgresql.org/pgsql-general/2007-12/msg00273.php">http://archives.postgresql.org/pgsql-general/2007-12/msg00273.php</a>
 </p>
   </li><li>Dates and Times
   <ul>
@@ -367,6 +396,13 @@ first.  There is also a developer's wiki at<br/>
   </li><li>Add temporal versions of generate_series()
 <p>  <a href="http://archives.postgresql.org/pgsql-hackers/2007-04/msg01180.php">http://archives.postgresql.org/pgsql-hackers/2007-04/msg01180.php</a>
 </p>
+  </li><li>Add array_accum() and array_to_set() functions for arrays
+<p>  The standards specify array_agg() and UNNEST.
+  <a href="http://archives.postgresql.org/pgsql-hackers/2007-08/msg00464.php">http://archives.postgresql.org/pgsql-hackers/2007-08/msg00464.php</a>
+</p>
+  </li><li>Fix /contrib/ltree operator
+<p>  <a href="http://archives.postgresql.org/pgsql-bugs/2007-11/msg00044.php">http://archives.postgresql.org/pgsql-bugs/2007-11/msg00044.php</a>
+</p>
 </li></ul>
 <h1><a name="section_5">Multi-Language Support</a></h1>
 
@@ -513,6 +549,7 @@ first.  There is also a developer's wiki at<br/>
 <p>  <a href="http://archives.postgresql.org/pgsql-hackers/2007-01/msg01375.php">http://archives.postgresql.org/pgsql-hackers/2007-01/msg01375.php</a>
   <a href="http://archives.postgresql.org/pgsql-hackers/2008-02/msg00642.php">http://archives.postgresql.org/pgsql-hackers/2008-02/msg00642.php</a>
   <a href="http://archives.postgresql.org/pgsql-patches/2007-03/msg00139.php">http://archives.postgresql.org/pgsql-patches/2007-03/msg00139.php</a>
+  <a href="http://archives.postgresql.org/pgsql-hackers/2007-11/msg01334.php">http://archives.postgresql.org/pgsql-hackers/2007-11/msg01334.php</a>
 </p>
   </li><li>Add DEFAULT .. AS OWNER so permission checks are done as the table
   owner
@@ -558,6 +595,8 @@ first.  There is also a developer's wiki at<br/>
     <li>Allow UPDATE tab SET ROW (col, ...) = (SELECT...)
 <p>          <a href="http://archives.postgresql.org/pgsql-hackers/2006-07/msg01306.php">http://archives.postgresql.org/pgsql-hackers/2006-07/msg01306.php</a>
           <a href="http://archives.postgresql.org/pgsql-hackers/2007-03/msg00865.php">http://archives.postgresql.org/pgsql-hackers/2007-03/msg00865.php</a>
+          <a href="http://archives.postgresql.org/pgsql-patches/2007-04/msg00315.php">http://archives.postgresql.org/pgsql-patches/2007-04/msg00315.php</a>
+          <a href="http://archives.postgresql.org/pgsql-patches/2008-03/msg00237.php">http://archives.postgresql.org/pgsql-patches/2008-03/msg00237.php</a>
 </p>
     </li><li>Research self-referential UPDATEs that see inconsistent row versions
           in read-committed mode
@@ -628,6 +667,7 @@ first.  There is also a developer's wiki at<br/>
     <li>Allow COPY to report error lines and continue
 <p>          This requires the use of a savepoint before each COPY line is
           processed, with ROLLBACK on COPY failure.
+          <a href="http://archives.postgresql.org/pgsql-hackers/2007-12/msg00572.php">http://archives.postgresql.org/pgsql-hackers/2007-12/msg00572.php</a>
 </p>
     </li><li>Allow COPY on a newly-created table to skip WAL logging
 <p>          On crash recovery, the table involved in the COPY would
@@ -820,6 +860,9 @@ first.  There is also a developer's wiki at<br/>
     </li><li>Have \l+ show database size, if permissions allow
 <p>          Ideally it will not generate an error for invalid permissions
 </p>
+    </li><li>Include the symbolic SQLSTATE name in verbose error reports
+<p>          <a href="http://archives.postgresql.org/pgsql-general/2007-09/msg00438.php">http://archives.postgresql.org/pgsql-general/2007-09/msg00438.php</a>
+</p>
   </li></ul>
   </li><li>pg_dump / pg_restore
   <ul>
@@ -869,6 +912,7 @@ first.  There is also a developer's wiki at<br/>
           statement_timeout
 <p>          Using psql to restore a pg_dump dump is also affected.
 </p>
+    </li><li>Remove pre-7.3 pg_dump code that assumes pg_depend does not exit
   </li></ul>
   </li><li>ecpg
   <ul>
@@ -982,6 +1026,7 @@ first.  There is also a developer's wiki at<br/>
   and expression indexes
   <a href="http://archives.postgresql.org/pgsql-general/2007-05/msg01228.php">http://archives.postgresql.org/pgsql-general/2007-05/msg01228.php</a>
   <a href="http://archives.postgresql.org/pgsql-general/2007-06/msg00542.php">http://archives.postgresql.org/pgsql-general/2007-06/msg00542.php</a>
+  <a href="http://archives.postgresql.org/pgsql-hackers/2008-01/msg01066.php">http://archives.postgresql.org/pgsql-hackers/2008-01/msg01066.php</a>
 </p>
   </li><li>Consider compressing indexes by storing key values duplicated in
   several rows as a single index entry
@@ -995,6 +1040,7 @@ first.  There is also a developer's wiki at<br/>
   to replace the existing index file.  CREATE INDEX CONCURRENTLY does not
   have this complication.  This would allow index compaction without
   downtime.
+  <a href="http://archives.postgresql.org/pgsql-performance/2007-08/msg00289.php">http://archives.postgresql.org/pgsql-performance/2007-08/msg00289.php</a>
 </p>
   </li><li>Allow multiple indexes to be created concurrently, ideally via a
   single heap scan, and have pg_restore use it
@@ -1037,9 +1083,7 @@ first.  There is also a developer's wiki at<br/>
           of the key itself
   </li><li>Add WAL logging for crash recovery
   </li><li>Allow multi-column hash indexes
-  </li><li>During index creation, pre-sort the tuples to improve build speed
-<p>          <a href="http://archives.postgresql.org/pgsql-hackers/2007-03/msg01199.php">http://archives.postgresql.org/pgsql-hackers/2007-03/msg01199.php</a>
-</p>
+  </li><li>-<em>During index creation, pre-sort the tuples to improve build speed</em>
 </li></ul>
 <h1><a name="section_13">Fsync</a></h1>
 
@@ -1268,8 +1312,11 @@ first.  There is also a developer's wiki at<br/>
   of indexes on TOAST tables.
 </p>
   </li><li>Speed WAL recovery by allowing more than one page to be prefetched
-<p>  This involves having a separate process that can be told which pages
-  the recovery process will need in the near future.
+<p>  This should be done utilizing the same infrastructure used for
+  prefetching in general to avoid introducing complex error-prone code
+  in WAL replay.
+  <a href="http://archives.postgresql.org/pgsql-general/2007-12/msg00683.php">http://archives.postgresql.org/pgsql-general/2007-12/msg00683.php</a>
+  <a href="http://archives.postgresql.org/pgsql-hackers/2007-12/msg00497.php">http://archives.postgresql.org/pgsql-hackers/2007-12/msg00497.php</a>
   <a href="http://archives.postgresql.org/pgsql-hackers/2008-02/msg01279.php">http://archives.postgresql.org/pgsql-hackers/2008-02/msg01279.php</a>
 </p>
 </li></ul>
@@ -1331,6 +1378,7 @@ first.  There is also a developer's wiki at<br/>
   results coming back asynchronously.
 </p>
 <p>  <a href="http://archives.postgresql.org/pgsql-hackers/2006-10/msg00820.php">http://archives.postgresql.org/pgsql-hackers/2006-10/msg00820.php</a>
+  <a href="http://archives.postgresql.org/pgsql-performance/2007-09/msg00255.php">http://archives.postgresql.org/pgsql-performance/2007-09/msg00255.php</a>
   <a href="http://archives.postgresql.org/pgsql-hackers/2007-12/msg00027.php">http://archives.postgresql.org/pgsql-hackers/2007-12/msg00027.php</a>
 </p>
   </li><li>Use mmap() rather than SYSV shared memory or to write WAL files?
@@ -1367,15 +1415,35 @@ first.  There is also a developer's wiki at<br/>
 </p>
 <p>  <a href="http://archives.postgresql.org/pgsql-general/2007-02/msg00493.php">http://archives.postgresql.org/pgsql-general/2007-02/msg00493.php</a>
 </p>
-  </li><li>Experiment with multi-threaded backend better resource utilization
-<p>  This would allow a single query to make use of multiple CPU's or
-  multiple I/O channels simultaneously.  One idea is to create a
-  background reader that can pre-fetch sequential and index scan
-  pages needed by other backends.  This could be expanded to allow
-  concurrent reads from multiple devices in a partitioned table.
+  </li><li>Experiment with multi-threaded backend better I/O utilization
+<p>  This would allow a single query to make use of multiple I/O channels
+  simultaneously.  One idea is to create a background reader that can
+  pre-fetch sequential and index scan pages needed by other backends.
+  This could be expanded to allow concurrent reads from multiple devices
+  in a partitioned table.
+</p>
+  </li><li>Experiment with multi-threaded backend better CPU utilization
+<p>  This would allow several CPUs to be used for a single query, such as
+  for sorting or query execution.
 </p>
   </li><li>Consider increasing the minimum allowed number of shared buffers
 <p>  <a href="http://archives.postgresql.org/pgsql-bugs/2008-02/msg00157.php">http://archives.postgresql.org/pgsql-bugs/2008-02/msg00157.php</a>
+</p>
+  </li><li>Expire published xmin for read-only and idle transactions
+<p>  <a href="http://archives.postgresql.org/pgsql-hackers/2007-09/msg00343.php">http://archives.postgresql.org/pgsql-hackers/2007-09/msg00343.php</a>
+</p>
+  </li><li>Consider if CommandCounterIncrement() can avoid its
+  AcceptInvalidationMessages() call
+<p>  <a href="http://archives.postgresql.org/pgsql-committers/2007-11/msg00585.php">http://archives.postgresql.org/pgsql-committers/2007-11/msg00585.php</a>
+</p>
+  </li><li>Consider Cartesian joins when both relations are needed to form an
+  indexscan qualification for a third relation
+<p>  <a href="http://archives.postgresql.org/pgsql-performance/2007-12/msg00090.php">http://archives.postgresql.org/pgsql-performance/2007-12/msg00090.php</a>
+</p>
+  </li><li>Consider not storing a NULL bitmap on disk if all the NULLs are
+  trailing
+<p>  <a href="http://archives.postgresql.org/pgsql-hackers/2007-12/msg00624.php">http://archives.postgresql.org/pgsql-hackers/2007-12/msg00624.php</a>
+  <a href="http://archives.postgresql.org/pgsql-patches/2007-12/msg00109.php">http://archives.postgresql.org/pgsql-patches/2007-12/msg00109.php</a>
 </p>
 </li></ul>
 <h1><a name="section_22">Source Code</a></h1>
@@ -1431,6 +1499,9 @@ first.  There is also a developer's wiki at<br/>
   </li><li>Consider simplifying how memory context resets handle child contexts
 <p>  <a href="http://archives.postgresql.org/pgsql-patches/2007-08/msg00067.php">http://archives.postgresql.org/pgsql-patches/2007-08/msg00067.php</a>
 </p>
+  </li><li>Remove use of MAKE_PTR and MAKE_OFFSET macros
+<p>  <a href="http://archives.postgresql.org/pgsql-general/2007-08/msg01510.php">http://archives.postgresql.org/pgsql-general/2007-08/msg01510.php</a>
+</p>
   </li><li>Win32
   <ul>
     <li>Remove configure.in check for link failure when cause is found
@@ -1441,8 +1512,15 @@ first.  There is also a developer's wiki at<br/>
     </li><li>Allow psql to use readline once non-US code pages work with
           backslashes
     </li><li>Fix problem with shared memory on the Win32 Terminal Server
+    </li><li>Diagnose problem where shared memory can sometimes not be
+          attached by postmaster children
+<p>          <a href="http://archives.postgresql.org/pgsql-general/2007-08/msg01377.php">http://archives.postgresql.org/pgsql-general/2007-08/msg01377.php</a>
+</p>
     </li><li>Improve signal handling
 <p>          <a href="http://archives.postgresql.org/pgsql-patches/2005-06/msg00027.php">http://archives.postgresql.org/pgsql-patches/2005-06/msg00027.php</a>
+</p>
+    </li><li>Convert MSVC build system to remove most batch files
+<p>          <a href="http://archives.postgresql.org/pgsql-hackers/2007-08/msg00961.php">http://archives.postgresql.org/pgsql-hackers/2007-08/msg00961.php</a>
 </p>
   </li></ul>
   </li><li>Wire Protocol Changes
