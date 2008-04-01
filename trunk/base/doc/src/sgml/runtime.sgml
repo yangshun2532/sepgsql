@@ -1,4 +1,4 @@
-<!-- $PostgreSQL: pgsql/doc/src/sgml/runtime.sgml,v 1.409 2008/02/26 18:01:26 petere Exp $ -->
+<!-- $PostgreSQL: pgsql/doc/src/sgml/runtime.sgml,v 1.411 2008/03/31 02:43:14 tgl Exp $ -->
 
 <chapter Id="runtime">
  <title>Operating System Environment</title>
@@ -183,7 +183,8 @@ postgres$ <userinput>initdb -D /usr/local/pgsql/data</userinput>
     Specifically, delayed (asynchronous) writes to the <acronym>NFS</>
     server can cause reliability problems;   if possible, mount
     <acronym>NFS</> file systems synchronously (without caching) to avoid
-    this.  (Storage Area Networks (<acronym>SAN</>) use a low-level
+    this.  Also, soft-mounting <acronym>NFS</> is not recommended.
+    (Storage Area Networks (<acronym>SAN</>) use a low-level
     communication protocol rather than <acronym>NFS</>.)
    </para>
 
@@ -1631,7 +1632,11 @@ $ <userinput>kill -INT `head -1 /usr/local/pgsql/data/postmaster.pid`</userinput
    To start in <acronym>SSL</> mode, the files <filename>server.crt</>
    and <filename>server.key</> must exist in the server's data directory.
    These files should contain the server certificate and private key,
-   respectively. If the private key is protected with a passphrase, the
+   respectively.
+   On Unix systems, the permissions on <filename>server.key</filename> must
+   disallow any access to world or group; achieve this by the command
+   <command>chmod 0600 server.key</command>.  
+   If the private key is protected with a passphrase, the
    server will prompt for the passphrase and will not start until it has
    been entered.
   </para>
@@ -1730,10 +1735,15 @@ rm privkey.pem
     Enter the old passphrase to unlock the existing key. Now do:
 <programlisting>
 openssl req -x509 -in server.req -text -key server.key -out server.crt
-chmod og-rwx server.key
 </programlisting>
     to turn the certificate into a self-signed certificate and to copy
     the key and certificate to where the server will look for them.
+    Finally do
+<programlisting>
+chmod og-rwx server.key
+</programlisting>
+    because the server will reject the file if its permissions are more
+    liberal than this.
     For more details on how to create your server private key and
     certificate, refer to the <productname>OpenSSL</> documentation.
    </para>

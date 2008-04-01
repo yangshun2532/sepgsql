@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/catalog/index.c,v 1.292 2008/01/30 19:46:48 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/catalog/index.c,v 1.296 2008/03/26 21:10:37 alvherre Exp $
  *
  *
  * INTERFACE ROUTINES
@@ -55,6 +55,8 @@
 #include "utils/relcache.h"
 #include "utils/syscache.h"
 #include "utils/tuplesort.h"
+#include "utils/snapmgr.h"
+#include "utils/tqual.h"
 
 
 /* state info for validate_index bulkdelete callback */
@@ -374,8 +376,7 @@ UpdateIndexRelation(Oid indexoid,
 		char	   *exprsString;
 
 		exprsString = nodeToString(indexInfo->ii_Expressions);
-		exprsDatum = DirectFunctionCall1(textin,
-										 CStringGetDatum(exprsString));
+		exprsDatum = CStringGetTextDatum(exprsString);
 		pfree(exprsString);
 	}
 	else
@@ -390,8 +391,7 @@ UpdateIndexRelation(Oid indexoid,
 		char	   *predString;
 
 		predString = nodeToString(make_ands_explicit(indexInfo->ii_Predicate));
-		predDatum = DirectFunctionCall1(textin,
-										CStringGetDatum(predString));
+		predDatum = CStringGetTextDatum(predString);
 		pfree(predString);
 	}
 	else

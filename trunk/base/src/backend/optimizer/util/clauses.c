@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/optimizer/util/clauses.c,v 1.255 2008/03/18 22:04:14 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/optimizer/util/clauses.c,v 1.257 2008/04/01 00:48:33 tgl Exp $
  *
  * HISTORY
  *	  AUTHOR			DATE			MAJOR EVENT
@@ -1687,16 +1687,22 @@ rowtype_field_matches(Oid rowtypeid, int fieldnum,
  * We assume that the tree has already been type-checked and contains
  * only operators and functions that are reasonable to try to execute.
  *
+ * NOTE: "root" can be passed as NULL if the caller never wants to do any
+ * Param substitutions.
+ *
  * NOTE: the planner assumes that this will always flatten nested AND and
  * OR clauses into N-argument form.  See comments in prepqual.c.
  *--------------------
  */
 Node *
-eval_const_expressions(Node *node)
+eval_const_expressions(PlannerInfo *root, Node *node)
 {
 	eval_const_expressions_context context;
 
-	context.boundParams = NULL; /* don't use any bound params */
+	if (root)
+		context.boundParams = root->glob->boundParams;	/* bound Params */
+	else
+		context.boundParams = NULL;
 	context.active_fns = NIL;	/* nothing being recursively simplified */
 	context.case_val = NULL;	/* no CASE being examined */
 	context.estimate = false;	/* safe transformations only */
@@ -3002,7 +3008,7 @@ inline_function(Oid funcid, Oid result_type, List *args,
 						  &isNull);
 	if (isNull)
 		elog(ERROR, "null prosrc for function %u", funcid);
-	src = DatumGetCString(DirectFunctionCall1(textout, tmp));
+	src = TextDatumGetCString(tmp);
 
 	/*
 	 * We just do parsing and parse analysis, not rewriting, because rewriting
@@ -3227,7 +3233,7 @@ sql_inline_error_callback(void *arg)
 							  &isnull);
 		if (isnull)
 			elog(ERROR, "null prosrc");
-		prosrc = DatumGetCString(DirectFunctionCall1(textout, tmp));
+		prosrc = TextDatumGetCString(tmp);
 		errposition(0);
 		internalerrposition(syntaxerrposition);
 		internalerrquery(prosrc);
@@ -3454,7 +3460,7 @@ inline_set_returning_function(PlannerInfo *root, Node *node)
 						  &isNull);
 	if (isNull)
 		elog(ERROR, "null prosrc for function %u", fexpr->funcid);
-	src = DatumGetCString(DirectFunctionCall1(textout, tmp));
+	src = TextDatumGetCString(tmp);
 
 	/*
 	 * Parse, analyze, and rewrite (unlike inline_function(), we can't

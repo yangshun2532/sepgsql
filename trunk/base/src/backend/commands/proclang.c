@@ -7,7 +7,7 @@
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/commands/proclang.c,v 1.74 2008/01/01 19:45:49 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/backend/commands/proclang.c,v 1.77 2008/03/27 03:57:33 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -22,6 +22,7 @@
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_pltemplate.h"
 #include "catalog/pg_proc.h"
+#include "catalog/pg_proc_fn.h"
 #include "catalog/pg_type.h"
 #include "commands/dbcommands.h"
 #include "commands/defrem.h"
@@ -34,6 +35,7 @@
 #include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
 #include "utils/syscache.h"
+#include "utils/tqual.h"
 
 
 typedef struct
@@ -360,20 +362,17 @@ find_language_template(const char *languageName)
 		datum = heap_getattr(tup, Anum_pg_pltemplate_tmplhandler,
 							 RelationGetDescr(rel), &isnull);
 		if (!isnull)
-			result->tmplhandler =
-				DatumGetCString(DirectFunctionCall1(textout, datum));
+			result->tmplhandler = TextDatumGetCString(datum);
 
 		datum = heap_getattr(tup, Anum_pg_pltemplate_tmplvalidator,
 							 RelationGetDescr(rel), &isnull);
 		if (!isnull)
-			result->tmplvalidator =
-				DatumGetCString(DirectFunctionCall1(textout, datum));
+			result->tmplvalidator = TextDatumGetCString(datum);
 
 		datum = heap_getattr(tup, Anum_pg_pltemplate_tmpllibrary,
 							 RelationGetDescr(rel), &isnull);
 		if (!isnull)
-			result->tmpllibrary =
-				DatumGetCString(DirectFunctionCall1(textout, datum));
+			result->tmpllibrary = TextDatumGetCString(datum);
 
 		/* Ignore template if handler or library info is missing */
 		if (!result->tmplhandler || !result->tmpllibrary)

@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/pl/plpgsql/src/pl_exec.c,v 1.202 2008/01/01 19:46:00 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/pl/plpgsql/src/pl_exec.c,v 1.208 2008/04/01 03:51:09 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -32,10 +32,20 @@
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
+#include "utils/snapmgr.h"
 #include "utils/typcache.h"
 
 
 static const char *const raise_skip_msg = "RAISE";
+
+typedef struct
+{
+	int			nargs;			/* number of arguments */
+	Oid		   *types;			/* types of arguments */
+	Datum	   *values;			/* evaluated argument values */
+	char	   *nulls;			/* null markers (' '/'n' style) */
+	bool	   *freevals;		/* which arguments are pfree-able */
+} PreparedParamsData;
 
 /*
  * All plpgsql function executions within a single transaction share the same
@@ -177,6 +187,9 @@ static bool compatible_tupdesc(TupleDesc td1, TupleDesc td2);
 static void exec_set_found(PLpgSQL_execstate *estate, bool state);
 static void plpgsql_create_econtext(PLpgSQL_execstate *estate);
 static void free_var(PLpgSQL_var *var);
+static PreparedParamsData *exec_eval_using_params(PLpgSQL_execstate *estate,
+												  List *params);
+static void free_params_data(PreparedParamsData *ppd);
 
 
 /* ----------
@@ -532,13 +545,15 @@ plpgsql_exec_trigger(PLpgSQL_function *func,
 
 	var = (PLpgSQL_var *) (estate.datums[func->tg_op_varno]);
 	if (TRIGGER_FIRED_BY_INSERT(trigdata->tg_event))
-		var->value = DirectFunctionCall1(textin, CStringGetDatum("INSERT"));
+		var->value = CStringGetTextDatum("INSERT");
 	else if (TRIGGER_FIRED_BY_UPDATE(trigdata->tg_event))
-		var->value = DirectFunctionCall1(textin, CStringGetDatum("UPDATE"));
+		var->value = CStringGetTextDatum("UPDATE");
 	else if (TRIGGER_FIRED_BY_DELETE(trigdata->tg_event))
-		var->value = DirectFunctionCall1(textin, CStringGetDatum("DELETE"));
+		var->value = CStringGetTextDatum("DELETE");
+	else if (TRIGGER_FIRED_BY_TRUNCATE(trigdata->tg_event))
+		var->value = CStringGetTextDatum("TRUNCATE");
 	else
-		elog(ERROR, "unrecognized trigger action: not INSERT, DELETE, or UPDATE");
+		elog(ERROR, "unrecognized trigger action: not INSERT, DELETE, UPDATE, or TRUNCATE");
 	var->isnull = false;
 	var->freeval = true;
 
@@ -550,9 +565,9 @@ plpgsql_exec_trigger(PLpgSQL_function *func,
 
 	var = (PLpgSQL_var *) (estate.datums[func->tg_when_varno]);
 	if (TRIGGER_FIRED_BEFORE(trigdata->tg_event))
-		var->value = DirectFunctionCall1(textin, CStringGetDatum("BEFORE"));
+		var->value = CStringGetTextDatum("BEFORE");
 	else if (TRIGGER_FIRED_AFTER(trigdata->tg_event))
-		var->value = DirectFunctionCall1(textin, CStringGetDatum("AFTER"));
+		var->value = CStringGetTextDatum("AFTER");
 	else
 		elog(ERROR, "unrecognized trigger execution time: not BEFORE or AFTER");
 	var->isnull = false;
@@ -560,9 +575,9 @@ plpgsql_exec_trigger(PLpgSQL_function *func,
 
 	var = (PLpgSQL_var *) (estate.datums[func->tg_level_varno]);
 	if (TRIGGER_FIRED_FOR_ROW(trigdata->tg_event))
-		var->value = DirectFunctionCall1(textin, CStringGetDatum("ROW"));
+		var->value = CStringGetTextDatum("ROW");
 	else if (TRIGGER_FIRED_FOR_STATEMENT(trigdata->tg_event))
-		var->value = DirectFunctionCall1(textin, CStringGetDatum("STATEMENT"));
+		var->value = CStringGetTextDatum("STATEMENT");
 	else
 		elog(ERROR, "unrecognized trigger event type: not ROW or STATEMENT");
 	var->isnull = false;
@@ -611,8 +626,7 @@ plpgsql_exec_trigger(PLpgSQL_function *func,
 	{
 		estate.trig_argv = palloc(sizeof(Datum) * estate.trig_nargs);
 		for (i = 0; i < trigdata->tg_trigger->tgnargs; i++)
-			estate.trig_argv[i] = DirectFunctionCall1(textin,
-						   CStringGetDatum(trigdata->tg_trigger->tgargs[i]));
+			estate.trig_argv[i] = CStringGetTextDatum(trigdata->tg_trigger->tgargs[i]);
 	}
 
 	estate.err_text = gettext_noop("during function entry");
@@ -1070,15 +1084,13 @@ exec_stmt_block(PLpgSQL_execstate *estate, PLpgSQL_stmt_block *block)
 
 					state_var = (PLpgSQL_var *)
 						estate->datums[block->exceptions->sqlstate_varno];
-					state_var->value = DirectFunctionCall1(textin,
-					   CStringGetDatum(unpack_sql_state(edata->sqlerrcode)));
+					state_var->value = CStringGetTextDatum(unpack_sql_state(edata->sqlerrcode));
 					state_var->freeval = true;
 					state_var->isnull = false;
 
 					errm_var = (PLpgSQL_var *)
 						estate->datums[block->exceptions->sqlerrm_varno];
-					errm_var->value = DirectFunctionCall1(textin,
-											CStringGetDatum(edata->message));
+					errm_var->value = CStringGetTextDatum(edata->message);
 					errm_var->freeval = true;
 					errm_var->isnull = false;
 
@@ -2007,10 +2019,11 @@ static int
 exec_stmt_return_next(PLpgSQL_execstate *estate,
 					  PLpgSQL_stmt_return_next *stmt)
 {
-	TupleDesc	tupdesc;
-	int			natts;
-	HeapTuple	tuple;
-	bool		free_tuple = false;
+	TupleDesc		tupdesc;
+	int				natts;
+	MemoryContext	oldcxt;
+	HeapTuple		tuple = NULL;
+	bool			free_tuple = false;
 
 	if (!estate->retisset)
 		ereport(ERROR,
@@ -2048,9 +2061,10 @@ exec_stmt_return_next(PLpgSQL_execstate *estate,
 												tupdesc->attrs[0]->atttypmod,
 													isNull);
 
-					tuple = heap_form_tuple(tupdesc, &retval, &isNull);
-
-					free_tuple = true;
+					oldcxt = MemoryContextSwitchTo(estate->tuple_store_cxt);
+					tuplestore_putvalues(estate->tuple_store, tupdesc,
+										 &retval, &isNull);
+					MemoryContextSwitchTo(oldcxt);
 				}
 				break;
 
@@ -2087,7 +2101,6 @@ exec_stmt_return_next(PLpgSQL_execstate *estate,
 
 			default:
 				elog(ERROR, "unrecognized dtype: %d", retvar->dtype);
-				tuple = NULL;	/* keep compiler quiet */
 				break;
 		}
 	}
@@ -2114,9 +2127,10 @@ exec_stmt_return_next(PLpgSQL_execstate *estate,
 										tupdesc->attrs[0]->atttypmod,
 										isNull);
 
-		tuple = heap_form_tuple(tupdesc, &retval, &isNull);
-
-		free_tuple = true;
+		oldcxt = MemoryContextSwitchTo(estate->tuple_store_cxt);
+		tuplestore_putvalues(estate->tuple_store, tupdesc,
+							 &retval, &isNull);
+		MemoryContextSwitchTo(oldcxt);
 
 		exec_eval_cleanup(estate);
 	}
@@ -2125,13 +2139,10 @@ exec_stmt_return_next(PLpgSQL_execstate *estate,
 		ereport(ERROR,
 				(errcode(ERRCODE_SYNTAX_ERROR),
 				 errmsg("RETURN NEXT must have a parameter")));
-		tuple = NULL;			/* keep compiler quiet */
 	}
 
 	if (HeapTupleIsValid(tuple))
 	{
-		MemoryContext oldcxt;
-
 		oldcxt = MemoryContextSwitchTo(estate->tuple_store_cxt);
 		tuplestore_puttuple(estate->tuple_store, tuple);
 		MemoryContextSwitchTo(oldcxt);
@@ -2677,9 +2688,21 @@ exec_stmt_dynexecute(PLpgSQL_execstate *estate,
 	exec_eval_cleanup(estate);
 
 	/*
-	 * Call SPI_execute() without preparing a saved plan.
+	 * Execute the query without preparing a saved plan.
 	 */
-	exec_res = SPI_execute(querystr, estate->readonly_func, 0);
+	if (stmt->params)
+	{
+		PreparedParamsData *ppd;
+
+		ppd = exec_eval_using_params(estate, stmt->params);
+		exec_res = SPI_execute_with_args(querystr,
+										 ppd->nargs, ppd->types,
+										 ppd->values, ppd->nulls,
+										 estate->readonly_func, 0);
+		free_params_data(ppd);
+	}
+	else
+		exec_res = SPI_execute(querystr, estate->readonly_func, 0);
 
 	switch (exec_res)
 	{
@@ -2827,7 +2850,6 @@ exec_stmt_dynfors(PLpgSQL_execstate *estate, PLpgSQL_stmt_dynfors *stmt)
 	PLpgSQL_row *row = NULL;
 	SPITupleTable *tuptab;
 	int			n;
-	SPIPlanPtr	plan;
 	Portal		portal;
 	bool		found = false;
 
@@ -2857,19 +2879,35 @@ exec_stmt_dynfors(PLpgSQL_execstate *estate, PLpgSQL_stmt_dynfors *stmt)
 	exec_eval_cleanup(estate);
 
 	/*
-	 * Prepare a plan and open an implicit cursor for the query
+	 * Open an implicit cursor for the query.  We use SPI_cursor_open_with_args
+	 * even when there are no params, because this avoids making and freeing
+	 * one copy of the plan.
 	 */
-	plan = SPI_prepare(querystr, 0, NULL);
-	if (plan == NULL)
-		elog(ERROR, "SPI_prepare failed for \"%s\": %s",
-			 querystr, SPI_result_code_string(SPI_result));
-	portal = SPI_cursor_open(NULL, plan, NULL, NULL,
-							 estate->readonly_func);
+	if (stmt->params)
+	{
+		PreparedParamsData *ppd;
+
+		ppd = exec_eval_using_params(estate, stmt->params);
+		portal = SPI_cursor_open_with_args(NULL,
+										   querystr,
+										   ppd->nargs, ppd->types,
+										   ppd->values, ppd->nulls,
+										   estate->readonly_func, 0);
+		free_params_data(ppd);
+	}
+	else
+	{
+		portal = SPI_cursor_open_with_args(NULL,
+										   querystr,
+										   0, NULL,
+										   NULL, NULL,
+										   estate->readonly_func, 0);
+	}
+
 	if (portal == NULL)
 		elog(ERROR, "could not open implicit cursor for query \"%s\": %s",
 			 querystr, SPI_result_code_string(SPI_result));
 	pfree(querystr);
-	SPI_freeplan(plan);
 
 	/*
 	 * Fetch the initial 10 tuples
@@ -3018,7 +3056,7 @@ exec_stmt_open(PLpgSQL_execstate *estate, PLpgSQL_stmt_open *stmt)
 	curvar = (PLpgSQL_var *) (estate->datums[stmt->curvar]);
 	if (!curvar->isnull)
 	{
-		curname = DatumGetCString(DirectFunctionCall1(textout, curvar->value));
+		curname = TextDatumGetCString(curvar->value);
 		if (SPI_cursor_find(curname) != NULL)
 			ereport(ERROR,
 					(errcode(ERRCODE_DUPLICATE_CURSOR),
@@ -3091,7 +3129,7 @@ exec_stmt_open(PLpgSQL_execstate *estate, PLpgSQL_stmt_open *stmt)
 		 * ----------
 		 */
 		free_var(curvar);
-		curvar->value = DirectFunctionCall1(textin, CStringGetDatum(portal->name));
+		curvar->value = CStringGetTextDatum(portal->name);
 		curvar->isnull = false;
 		curvar->freeval = true;
 
@@ -3189,7 +3227,7 @@ exec_stmt_open(PLpgSQL_execstate *estate, PLpgSQL_stmt_open *stmt)
 	 * ----------
 	 */
 	free_var(curvar);
-	curvar->value = DirectFunctionCall1(textin, CStringGetDatum(portal->name));
+	curvar->value = CStringGetTextDatum(portal->name);
 	curvar->isnull = false;
 	curvar->freeval = true;
 
@@ -3223,7 +3261,7 @@ exec_stmt_fetch(PLpgSQL_execstate *estate, PLpgSQL_stmt_fetch *stmt)
 		ereport(ERROR,
 				(errcode(ERRCODE_NULL_VALUE_NOT_ALLOWED),
 				 errmsg("cursor variable \"%s\" is NULL", curvar->refname)));
-	curname = DatumGetCString(DirectFunctionCall1(textout, curvar->value));
+	curname = TextDatumGetCString(curvar->value);
 
 	portal = SPI_cursor_find(curname);
 	if (portal == NULL)
@@ -3319,7 +3357,7 @@ exec_stmt_close(PLpgSQL_execstate *estate, PLpgSQL_stmt_close *stmt)
 		ereport(ERROR,
 				(errcode(ERRCODE_NULL_VALUE_NOT_ALLOWED),
 				 errmsg("cursor variable \"%s\" is NULL", curvar->refname)));
-	curname = DatumGetCString(DirectFunctionCall1(textout, curvar->value));
+	curname = TextDatumGetCString(curvar->value);
 
 	portal = SPI_cursor_find(curname);
 	if (portal == NULL)
@@ -5069,4 +5107,80 @@ free_var(PLpgSQL_var *var)
 		pfree(DatumGetPointer(var->value));
 		var->freeval = false;
 	}
+}
+
+/*
+ * exec_eval_using_params --- evaluate params of USING clause
+ */
+static PreparedParamsData *
+exec_eval_using_params(PLpgSQL_execstate *estate, List *params)
+{
+	PreparedParamsData *ppd;
+	int			nargs;
+	int			i;
+	ListCell   *lc;
+
+	ppd = (PreparedParamsData *) palloc(sizeof(PreparedParamsData));
+	nargs = list_length(params);
+
+	ppd->nargs = nargs;
+	ppd->types = (Oid *) palloc(nargs * sizeof(Oid));
+	ppd->values = (Datum *) palloc(nargs * sizeof(Datum));
+	ppd->nulls = (char *) palloc(nargs * sizeof(char));
+	ppd->freevals = (bool *) palloc(nargs * sizeof(bool));
+
+	i = 0;
+	foreach(lc, params)
+	{
+		PLpgSQL_expr *param = (PLpgSQL_expr *) lfirst(lc);
+		bool	isnull;
+
+		ppd->values[i] = exec_eval_expr(estate, param,
+										&isnull,
+										&ppd->types[i]);
+		ppd->nulls[i] = isnull ? 'n' : ' ';
+		ppd->freevals[i] = false;
+
+		/* pass-by-ref non null values must be copied into plpgsql context */
+		if (!isnull)
+		{
+			int16	typLen;
+			bool	typByVal;
+
+			get_typlenbyval(ppd->types[i], &typLen, &typByVal);
+			if (!typByVal)
+			{
+				ppd->values[i] = datumCopy(ppd->values[i], typByVal, typLen);
+				ppd->freevals[i] = true;
+			}
+		}
+
+		exec_eval_cleanup(estate);
+
+		i++;
+	}
+
+	return ppd;
+}
+
+/*
+ * free_params_data --- pfree all pass-by-reference values used in USING clause
+ */
+static void
+free_params_data(PreparedParamsData *ppd)
+{
+	int 	i;
+
+	for (i = 0; i < ppd->nargs; i++)
+	{
+		if (ppd->freevals[i])
+			pfree(DatumGetPointer(ppd->values[i]));
+	}
+
+	pfree(ppd->types);
+	pfree(ppd->values);
+	pfree(ppd->nulls);
+	pfree(ppd->freevals);
+
+	pfree(ppd);
 }
