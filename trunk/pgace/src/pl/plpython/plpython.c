@@ -1,7 +1,7 @@
 /**********************************************************************
  * plpython.c - python as a procedural language for PostgreSQL
  *
- *	$PostgreSQL: pgsql/src/pl/plpython/plpython.c,v 1.106 2008/01/02 03:10:27 tgl Exp $
+ *	$PostgreSQL: pgsql/src/pl/plpython/plpython.c,v 1.108 2008/03/28 00:21:56 tgl Exp $
  *
  *********************************************************************
  */
@@ -714,6 +714,8 @@ PLy_trigger_build_args(FunctionCallInfo fcinfo, PLyProcedure * proc, HeapTuple *
 				pltevent = PyString_FromString("DELETE");
 			else if (TRIGGER_FIRED_BY_UPDATE(tdata->tg_event))
 				pltevent = PyString_FromString("UPDATE");
+			else if (TRIGGER_FIRED_BY_TRUNCATE(tdata->tg_event))
+				pltevent = PyString_FromString("TRUNCATE");
 			else
 			{
 				elog(ERROR, "unrecognized OP tg_event: %u", tdata->tg_event);
@@ -1298,7 +1300,7 @@ PLy_procedure_create(HeapTuple procTup, Oid tgreloid, char *key)
 
 			/* Fetch argument name */
 			if (proc->argnames)
-				proc->argnames[i] = PLy_strdup(DatumGetCString(DirectFunctionCall1(textout, elems[i])));
+				proc->argnames[i] = PLy_strdup(TextDatumGetCString(elems[i]));
 		}
 
 		/*
@@ -1308,8 +1310,7 @@ PLy_procedure_create(HeapTuple procTup, Oid tgreloid, char *key)
 									  Anum_pg_proc_prosrc, &isnull);
 		if (isnull)
 			elog(ERROR, "null prosrc");
-		procSource = DatumGetCString(DirectFunctionCall1(textout,
-														 prosrcdatum));
+		procSource = TextDatumGetCString(prosrcdatum);
 
 		PLy_procedure_compile(proc, procSource);
 

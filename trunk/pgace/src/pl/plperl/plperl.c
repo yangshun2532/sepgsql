@@ -1,7 +1,7 @@
 /**********************************************************************
  * plperl.c - perl as a procedural language for PostgreSQL
  *
- *	  $PostgreSQL: pgsql/src/pl/plperl/plperl.c,v 1.136 2008/01/23 00:55:47 adunstan Exp $
+ *	  $PostgreSQL: pgsql/src/pl/plperl/plperl.c,v 1.139 2008/03/28 00:21:56 tgl Exp $
  *
  **********************************************************************/
 
@@ -542,7 +542,7 @@ plperl_safe_init(void)
 			desc.arg_is_rowtype[0] = false;
 			fmgr_info(F_TEXTOUT, &(desc.arg_out_func[0]));
 
-			fcinfo.arg[0] = DirectFunctionCall1(textin, CStringGetDatum("a"));
+			fcinfo.arg[0] = CStringGetTextDatum("a");
 			fcinfo.argnull[0] = false;
 			
 			/* and make the call */
@@ -689,6 +689,8 @@ plperl_trigger_build_args(FunctionCallInfo fcinfo)
 												   tupdesc));
 		}
 	}
+	else if (TRIGGER_FIRED_BY_TRUNCATE(tdata->tg_event))
+		event = "TRUNCATE";
 	else
 		event = "UNKNOWN";
 
@@ -1395,6 +1397,8 @@ plperl_trigger_handler(PG_FUNCTION_ARGS)
 			retval = (Datum) trigdata->tg_newtuple;
 		else if (TRIGGER_FIRED_BY_DELETE(trigdata->tg_event))
 			retval = (Datum) trigdata->tg_trigtuple;
+		else if (TRIGGER_FIRED_BY_TRUNCATE(trigdata->tg_event))
+			retval = (Datum) trigdata->tg_trigtuple;
 		else
 			retval = (Datum) 0; /* can this happen? */
 	}
@@ -1668,8 +1672,7 @@ compile_plperl_function(Oid fn_oid, bool is_trigger)
 									  Anum_pg_proc_prosrc, &isnull);
 		if (isnull)
 			elog(ERROR, "null prosrc");
-		proc_source = DatumGetCString(DirectFunctionCall1(textout,
-														  prosrcdatum));
+		proc_source = TextDatumGetCString(prosrcdatum);
 
 		/************************************************************
 		 * Create the procedure in the interpreter
@@ -1869,7 +1872,6 @@ plperl_return_next(SV *sv)
 	FunctionCallInfo fcinfo;
 	ReturnSetInfo *rsi;
 	MemoryContext old_cxt;
-	HeapTuple	tuple;
 
 	if (!sv)
 		return;
@@ -1944,8 +1946,15 @@ plperl_return_next(SV *sv)
 
 	if (prodesc->fn_retistuple)
 	{
+		HeapTuple tuple;
+
 		tuple = plperl_build_tuple_result((HV *) SvRV(sv),
 										  current_call_data->attinmeta);
+
+		/* Make sure to store the tuple in a long-lived memory context */
+		MemoryContextSwitchTo(rsi->econtext->ecxt_per_query_memory);
+		tuplestore_puttuple(current_call_data->tuple_store, tuple);
+		MemoryContextSwitchTo(old_cxt);
 	}
 	else
 	{
@@ -1967,13 +1976,13 @@ plperl_return_next(SV *sv)
 			isNull = true;
 		}
 
-		tuple = heap_form_tuple(current_call_data->ret_tdesc, &ret, &isNull);
+		/* Make sure to store the tuple in a long-lived memory context */
+		MemoryContextSwitchTo(rsi->econtext->ecxt_per_query_memory);
+		tuplestore_putvalues(current_call_data->tuple_store,
+							 current_call_data->ret_tdesc,
+							 &ret, &isNull);
+		MemoryContextSwitchTo(old_cxt);
 	}
-
-	/* Make sure to store the tuple in a long-lived memory context */
-	MemoryContextSwitchTo(rsi->econtext->ecxt_per_query_memory);
-	tuplestore_puttuple(current_call_data->tuple_store, tuple);
-	MemoryContextSwitchTo(old_cxt);
 
 	MemoryContextReset(current_call_data->tmp_cxt);
 }

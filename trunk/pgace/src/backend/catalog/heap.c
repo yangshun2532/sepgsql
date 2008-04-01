@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/catalog/heap.c,v 1.327 2008/01/01 19:45:48 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/backend/catalog/heap.c,v 1.332 2008/03/27 03:57:33 tgl Exp $
  *
  *
  * INTERFACE ROUTINES
@@ -45,6 +45,7 @@
 #include "catalog/pg_statistic.h"
 #include "catalog/pg_tablespace.h"
 #include "catalog/pg_type.h"
+#include "catalog/pg_type_fn.h"
 #include "commands/tablecmds.h"
 #include "commands/typecmds.h"
 #include "miscadmin.h"
@@ -60,7 +61,9 @@
 #include "utils/inval.h"
 #include "utils/lsyscache.h"
 #include "utils/relcache.h"
+#include "utils/snapmgr.h"
 #include "utils/syscache.h"
+#include "utils/tqual.h"
 
 
 static void AddNewRelationTuple(Relation pg_class_desc,
@@ -1482,10 +1485,8 @@ StoreAttrDefault(Relation rel, AttrNumber attnum, char *adbin)
 	 */
 	values[Anum_pg_attrdef_adrelid - 1] = RelationGetRelid(rel);
 	values[Anum_pg_attrdef_adnum - 1] = attnum;
-	values[Anum_pg_attrdef_adbin - 1] = DirectFunctionCall1(textin,
-													 CStringGetDatum(adbin));
-	values[Anum_pg_attrdef_adsrc - 1] = DirectFunctionCall1(textin,
-													 CStringGetDatum(adsrc));
+	values[Anum_pg_attrdef_adbin - 1] = CStringGetTextDatum(adbin);
+	values[Anum_pg_attrdef_adsrc - 1] = CStringGetTextDatum(adsrc);
 
 	adrel = heap_open(AttrDefaultRelationId, RowExclusiveLock);
 

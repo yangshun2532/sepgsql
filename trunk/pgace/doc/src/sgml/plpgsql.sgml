@@ -1,4 +1,4 @@
-<!-- $PostgreSQL: pgsql/doc/src/sgml/plpgsql.sgml,v 1.123 2008/01/23 02:04:47 tgl Exp $ -->
+<!-- $PostgreSQL: pgsql/doc/src/sgml/plpgsql.sgml,v 1.126 2008/04/01 03:51:09 tgl Exp $ -->
 
 <chapter id="plpgsql"> 
   <title><application>PL/pgSQL</application> - <acronym>SQL</acronym> Procedural Language</title>
@@ -1005,20 +1005,23 @@ END;
      <command>EXECUTE</command> statement is provided:
 
 <synopsis>
-EXECUTE <replaceable class="command">command-string</replaceable> <optional> INTO <optional>STRICT</optional> <replaceable>target</replaceable> </optional>;
+EXECUTE <replaceable class="command">command-string</replaceable> <optional> INTO <optional>STRICT</optional> <replaceable>target</replaceable> </optional> <optional> USING <replaceable>expression</replaceable> <optional>, ...</optional> </optional>;
 </synopsis>
 
      where <replaceable>command-string</replaceable> is an expression
      yielding a string (of type <type>text</type>) containing the
-     command to be executed and <replaceable>target</replaceable> is a
-     record variable, row variable, or a comma-separated list of
-     simple variables and record/row fields.
+     command to be executed.  The optional <replaceable>target</replaceable>
+     is a record variable, a row variable, or a comma-separated list of
+     simple variables and record/row fields, into which the results of
+     the command will be stored.  The optional <literal>USING</> expressions
+     supply values to be inserted into the command.
     </para>
 
     <para>
      No substitution of <application>PL/pgSQL</> variables is done on the
      computed command string.  Any required variable values must be inserted
-     in the command string as it is constructed.
+     in the command string as it is constructed; or you can use parameters
+     as described below.
     </para>
 
     <para>
@@ -1046,6 +1049,51 @@ EXECUTE <replaceable class="command">command-string</replaceable> <optional> INT
      If the <literal>STRICT</> option is given, an error is reported
      unless the query produces exactly one row.
     </para>
+    
+    <para>
+     The command string can use parameter values, which are referenced
+     in the command as <literal>$1</>, <literal>$2</>, etc.
+     These symbols refer to values supplied in the <literal>USING</>
+     clause.  This method is often preferable to inserting data values
+     into the command string as text: it avoids run-time overhead of
+     converting the values to text and back, and it is much less prone
+     to SQL-injection attacks since there is no need for quoting or escaping.
+     An example is:
+<programlisting>
+EXECUTE 'SELECT count(*) FROM mytable WHERE inserted_by = $1 AND inserted <= $2'
+   INTO c
+   USING checked_user, checked_date;
+</programlisting>
+
+     Note that parameter symbols can only be used for data values
+     &mdash; if you want to use dynamically determined table or column
+     names, you must insert them into the command string textually.
+     For example, if the preceding query needed to be done against a
+     dynamically selected table, you could do this:
+<programlisting>
+EXECUTE 'SELECT count(*) FROM '
+    || tabname::regclass
+    || ' WHERE inserted_by = $1 AND inserted <= $2'
+   INTO c
+   USING checked_user, checked_date;
+</programlisting>
+    </para>
+
+    <para>
+     An <command>EXECUTE</> with a simple constant command string and some
+     <literal>USING</> parameters, as in the first example above, is
+     functionally equivalent to just writing the command directly in 
+     <application>PL/pgSQL</application> and allowing replacement of 
+     <application>PL/pgSQL</application> variables to happen automatically.
+     The important difference is that <command>EXECUTE</> will re-plan
+     the command on each execution, generating a plan that is specific
+     to the current parameter values; whereas
+     <application>PL/pgSQL</application> normally creates a generic plan
+     and caches it for re-use.  In situations where the best plan depends
+     strongly on the parameter values, <command>EXECUTE</> can be
+     significantly faster; while when the plan is not sensitive to parameter
+     values, re-planning will be a waste.
+    </para>
 
     <para>
      <command>SELECT INTO</command> is not currently supported within
@@ -1065,6 +1113,24 @@ EXECUTE <replaceable class="command">command-string</replaceable> <optional> INT
      <application>PL/pgSQL</> functions (and is not needed).
     </para>
    </note>
+
+   <example id="plpgsql-quote-literal-example">
+   <title>Quoting values in dynamic queries</title>
+
+    <indexterm>
+     <primary>quote_ident</primary>
+     <secondary>use in PL/PgSQL</secondary>
+    </indexterm>
+
+    <indexterm>
+     <primary>quote_literal</primary>
+     <secondary>use in PL/PgSQL</secondary>
+    </indexterm>
+
+    <indexterm>
+     <primary>quote_nullable</primary>
+     <secondary>use in PL/PgSQL</secondary>
+    </indexterm>
 
     <para>
      When working with dynamic commands you will often have to handle escaping
@@ -1091,32 +1157,64 @@ EXECUTE 'UPDATE tbl SET '
 </programlisting>
     </para>
 
-    <indexterm>
-     <primary>quote_ident</primary>
-     <secondary>use in PL/PgSQL</secondary>
-    </indexterm>
-
-    <indexterm>
-     <primary>quote_literal</primary>
-     <secondary>use in PL/PgSQL</secondary>
-    </indexterm>
-
     <para>
      This example demonstrates the use of the
      <function>quote_ident</function> and
-     <function>quote_literal</function> functions.  For safety,
-     expressions containing column and table identifiers should be
-     passed to <function>quote_ident</function>.  Expressions containing
-     values that should be literal strings in the constructed command
-     should be passed to <function>quote_literal</function>.  Both
-     take the appropriate steps to return the input text enclosed in
-     double or single quotes respectively, with any embedded special
-     characters properly escaped.
+     <function>quote_literal</function> functions (see <xref
+     linkend="functions-string">).  For safety, expressions containing column
+     or table identifiers should be passed through
+     <function>quote_ident</function> before insertion in a dynamic query.
+     Expressions containing values that should be literal strings in the
+     constructed command should be passed through <function>quote_literal</>.
+     These functions take the appropriate steps to return the input text
+     enclosed in double or single quotes respectively, with any embedded
+     special characters properly escaped.
+    </para>
+
+    <para>
+     Because <function>quote_literal</function> is labelled
+     <literal>STRICT</literal>, it will always return null when called with a
+     null argument.  In the above example, if <literal>newvalue</> or
+     <literal>keyvalue</> were null, the entire dynamic query string would
+     become null, leading to an error from <command>EXECUTE</command>.
+     You can avoid this problem by using the <function>quote_nullable</>
+     function, which works the same as <function>quote_literal</> except that
+     when called with a null argument it returns the string <literal>NULL</>.
+     For example,
+<programlisting>
+EXECUTE 'UPDATE tbl SET '
+        || quote_ident(colname)
+        || ' = '
+        || quote_nullable(newvalue)
+        || ' WHERE key = '
+        || quote_nullable(keyvalue);
+</programlisting>
+     If you are dealing with values that might be null, you should usually
+     use <function>quote_nullable</> in place of <function>quote_literal</>.
+    </para>
+
+    <para>
+     As always, care must be taken to ensure that null values in a query do
+     not deliver unintended results.  For example the <literal>WHERE</> clause
+<programlisting>
+     'WHERE key = ' || quote_nullable(keyvalue)
+</programlisting> 
+     will never succeed if <literal>keyvalue</> is null, because the
+     result of using the equality operator <literal>=</> with a null operand
+     is always null.  If you wish null to work like an ordinary key value,
+     you would need to rewrite the above as
+<programlisting>
+     'WHERE key IS NOT DISTINCT FROM ' || quote_nullable(keyvalue)
+</programlisting>
+     (At present, <literal>IS NOT DISTINCT FROM</> is handled much less
+     efficiently than <literal>=</>, so don't do this unless you must.
+     See <xref linkend="functions-comparison"> for
+     more information on nulls and <literal>IS DISTINCT</>.)
     </para>
 
     <para>
      Note that dollar quoting is only useful for quoting fixed text.
-     It would be a very bad idea to try to do the above example as:
+     It would be a very bad idea to try to write this example as:
 <programlisting>
 EXECUTE 'UPDATE tbl SET '
         || quote_ident(colname)
@@ -1129,8 +1227,10 @@ EXECUTE 'UPDATE tbl SET '
      happened to contain <literal>$$</>.  The same objection would
      apply to any other dollar-quoting delimiter you might pick.
      So, to safely quote text that is not known in advance, you
-     <emphasis>must</> use <function>quote_literal</function>.
+     <emphasis>must</> use <function>quote_literal</>,
+     <function>quote_nullable</>, or <function>quote_ident</>, as appropriate.
     </para>
+   </example>
 
     <para>
      A much larger example of a dynamic command and
@@ -1945,7 +2045,7 @@ $$ LANGUAGE plpgsql;
      rows:
 <synopsis>
 <optional> &lt;&lt;<replaceable>label</replaceable>&gt;&gt; </optional>
-FOR <replaceable>target</replaceable> IN EXECUTE <replaceable>text_expression</replaceable> LOOP 
+FOR <replaceable>target</replaceable> IN EXECUTE <replaceable>text_expression</replaceable> <optional> USING <replaceable>expression</replaceable> <optional>, ...</optional> </optional> LOOP 
     <replaceable>statements</replaceable>
 END LOOP <optional> <replaceable>label</replaceable> </optional>;
 </synopsis>
@@ -1954,6 +2054,8 @@ END LOOP <optional> <replaceable>label</replaceable> </optional>;
      on each entry to the <literal>FOR</> loop.  This allows the programmer to
      choose the speed of a preplanned query or the flexibility of a dynamic
      query, just as with a plain <command>EXECUTE</command> statement.
+     As with <command>EXECUTE</command>, parameter values can be inserted
+     into the dynamic command via <literal>USING</>.
     </para>
    </sect2>
 
@@ -2733,9 +2835,9 @@ RAISE EXCEPTION 'Nonexistent ID --> %', user_id;
      <listitem>
       <para>
        Data type <type>text</type>; a string of
-       <literal>INSERT</literal>, <literal>UPDATE</literal>, or
-       <literal>DELETE</literal> telling for which operation the
-       trigger was fired.
+       <literal>INSERT</literal>, <literal>UPDATE</literal>,
+       <literal>DELETE</literal>, or <literal>TRUNCATE</>
+       telling for which operation the trigger was fired.
       </para>
      </listitem>
     </varlistentry>

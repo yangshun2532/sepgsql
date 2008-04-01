@@ -3,7 +3,7 @@
  *
  * Copyright (c) 2000-2008, PostgreSQL Global Development Group
  *
- * $PostgreSQL: pgsql/src/bin/psql/describe.c,v 1.164 2008/01/01 19:45:56 momjian Exp $
+ * $PostgreSQL: pgsql/src/bin/psql/describe.c,v 1.166 2008/03/30 18:10:20 tgl Exp $
  */
 #include "postgres_fe.h"
 #include "describe.h"
@@ -417,12 +417,20 @@ listAllDbs(bool verbose)
 	printfPQExpBuffer(&buf,
 					  "SELECT d.datname as \"%s\",\n"
 					  "       r.rolname as \"%s\",\n"
-					  "       pg_catalog.pg_encoding_to_char(d.encoding) as \"%s\"",
+					  "       pg_catalog.pg_encoding_to_char(d.encoding) as \"%s\",\n"
+					  "       d.datacl as \"%s\"",
 					  gettext_noop("Name"),
 					  gettext_noop("Owner"),
-					  gettext_noop("Encoding"));
+					  gettext_noop("Encoding"),
+					  gettext_noop("Access Privileges"));
 	if (verbose)
 	{
+		appendPQExpBuffer(&buf,
+						  ",\n       CASE WHEN pg_catalog.has_database_privilege(d.datname, 'CONNECT')\n"
+						  "            THEN pg_catalog.pg_size_pretty(pg_catalog.pg_database_size(d.datname))\n"
+						  "            ELSE 'No Access'\n"
+						  "       END as \"%s\"",
+						  gettext_noop("Size"));
 		appendPQExpBuffer(&buf,
 						  ",\n       t.spcname as \"%s\"",
 						  gettext_noop("Tablespace"));
@@ -1106,12 +1114,14 @@ describeOneTableDetails(const char *schemaname,
 				   *result3 = NULL,
 				   *result4 = NULL,
 				   *result5 = NULL,
-				   *result6 = NULL;
+				   *result6 = NULL,
+				   *result7 = NULL;
 		int			check_count = 0,
 					index_count = 0,
 					foreignkey_count = 0,
 					rule_count = 0,
 					trigger_count = 0,
+					referencedby_count = 0,
 					inherits_count = 0;
 		int			count_footers = 0;
 
@@ -1228,24 +1238,47 @@ describeOneTableDetails(const char *schemaname,
 				foreignkey_count = PQntuples(result5);
 		}
 
-		/* count inherited tables */
-		printfPQExpBuffer(&buf, "SELECT c.oid::regclass FROM pg_catalog.pg_class c, pg_catalog.pg_inherits i WHERE c.oid=i.inhparent AND i.inhrelid = '%s' ORDER BY inhseqno ASC", oid);
-
-		result6 = PSQLexec(buf.data, false);
-		if (!result6)
+		/* count incoming foreign-key references (none if no triggers) */
+		if (tableinfo.triggers)
 		{
+			printfPQExpBuffer(&buf,
+							  "SELECT conname, conrelid::pg_catalog.regclass,\n"
+							  "  pg_catalog.pg_get_constraintdef(oid, true) as condef\n"
+							  "FROM pg_catalog.pg_constraint c\n"
+							  "WHERE c.confrelid = '%s' AND c.contype = 'f' ORDER BY 1",
+							  oid);
+			result6 = PSQLexec(buf.data, false);
+			if (!result6)
+			{
+				PQclear(result1);
+				PQclear(result2);
+				PQclear(result3);
+				PQclear(result4);
+				PQclear(result5);
+				goto error_return;
+			}
+			else
+				referencedby_count = PQntuples(result6);
+		}
+
+		/* count inherited tables */
+		printfPQExpBuffer(&buf, "SELECT c.oid::pg_catalog.regclass FROM pg_catalog.pg_class c, pg_catalog.pg_inherits i WHERE c.oid=i.inhparent AND i.inhrelid = '%s' ORDER BY inhseqno", oid);
+
+		result7 = PSQLexec(buf.data, false);
+		if (!result7)
+		{        
 			PQclear(result1);
 			PQclear(result2);
 			PQclear(result3);
 			PQclear(result4);
 			PQclear(result5);
+			PQclear(result6);
 			goto error_return;
 		}
 		else
-			inherits_count = PQntuples(result6);
+			inherits_count = PQntuples(result7);
 
-		footers = pg_malloc_zero((index_count + check_count + rule_count + trigger_count + foreignkey_count + inherits_count + 7 + 1)
-								 * sizeof(*footers));
+		footers = pg_malloc_zero((index_count + check_count + rule_count + trigger_count + foreignkey_count + referencedby_count + inherits_count + 8 + 1) * sizeof(*footers));
 
 		/* print indexes */
 		if (index_count > 0)
@@ -1328,6 +1361,22 @@ describeOneTableDetails(const char *schemaname,
 				printfPQExpBuffer(&buf, _("    \"%s\" %s"),
 								  PQgetvalue(result5, i, 0),
 								  PQgetvalue(result5, i, 1));
+
+				footers[count_footers++] = pg_strdup(buf.data);
+			}
+		}
+
+		/* print incoming foreign-key constraints */
+		if (referencedby_count > 0)
+		{
+			printfPQExpBuffer(&buf, _("Referenced by:"));
+			footers[count_footers++] = pg_strdup(buf.data);
+			for (i = 0; i < referencedby_count; i++)
+			{
+				printfPQExpBuffer(&buf, _("  \"%s\" IN %s %s"),
+								  PQgetvalue(result6, i, 0),
+								  PQgetvalue(result6, i, 1),
+								  PQgetvalue(result6, i, 2));
 
 				footers[count_footers++] = pg_strdup(buf.data);
 			}
@@ -1487,9 +1536,9 @@ describeOneTableDetails(const char *schemaname,
 			const char *s = _("Inherits");
 
 			if (i == 0)
-				printfPQExpBuffer(&buf, "%s: %s", s, PQgetvalue(result6, i, 0));
+				printfPQExpBuffer(&buf, "%s: %s", s, PQgetvalue(result7, i, 0));
 			else
-				printfPQExpBuffer(&buf, "%*s  %s", (int) strlen(s), "", PQgetvalue(result6, i, 0));
+				printfPQExpBuffer(&buf, "%*s  %s", (int) strlen(s), "", PQgetvalue(result7, i, 0));
 			if (i < inherits_count - 1)
 				appendPQExpBuffer(&buf, ",");
 
@@ -1516,6 +1565,7 @@ describeOneTableDetails(const char *schemaname,
 		PQclear(result4);
 		PQclear(result5);
 		PQclear(result6);
+		PQclear(result7);
 	}
 
 	printTable(title.data, headers,
