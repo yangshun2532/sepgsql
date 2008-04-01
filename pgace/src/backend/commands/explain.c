@@ -7,7 +7,7 @@
  * Portions Copyright (c) 1994-5, Regents of the University of California
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/commands/explain.c,v 1.169 2008/01/01 19:45:49 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/backend/commands/explain.c,v 1.171 2008/03/26 18:48:59 alvherre Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -31,6 +31,7 @@
 #include "utils/guc.h"
 #include "utils/lsyscache.h"
 #include "utils/tuplesort.h"
+#include "utils/snapmgr.h"
 
 
 /* Hook for plugins to get control in ExplainOneQuery() */

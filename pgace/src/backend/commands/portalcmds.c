@@ -14,7 +14,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/commands/portalcmds.c,v 1.70 2008/03/20 20:05:56 alvherre Exp $
+ *	  $PostgreSQL: pgsql/src/backend/commands/portalcmds.c,v 1.72 2008/03/26 18:48:59 alvherre Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -28,6 +28,7 @@
 #include "executor/executor.h"
 #include "tcop/pquery.h"
 #include "utils/memutils.h"
+#include "utils/snapmgr.h"
 
 
 /*
