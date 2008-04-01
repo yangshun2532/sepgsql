@@ -11,7 +11,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/parser/gram.y,v 2.609 2008/03/20 21:42:48 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/parser/gram.y,v 2.611 2008/03/28 00:21:55 tgl Exp $
  *
  * HISTORY
  *	  AUTHOR			DATE			MAJOR EVENT
@@ -2719,6 +2719,7 @@ TriggerOneEvent:
 			INSERT									{ $$ = 'i'; }
 			| DELETE_P								{ $$ = 'd'; }
 			| UPDATE								{ $$ = 'u'; }
+			| TRUNCATE								{ $$ = 't'; }
 		;
 
 TriggerForSpec:
@@ -7198,10 +7199,6 @@ ConstDatetime:
 						$$ = SystemTypeName("timestamptz");
 					else
 						$$ = SystemTypeName("timestamp");
-					/* XXX the timezone field seems to be unused
-					 * - thomas 2001-09-06
-					 */
-					$$->timezone = $5;
 					$$->typmods = list_make1(makeIntConst($3));
 					$$->location = @1;
 				}
@@ -7211,10 +7208,6 @@ ConstDatetime:
 						$$ = SystemTypeName("timestamptz");
 					else
 						$$ = SystemTypeName("timestamp");
-					/* XXX the timezone field seems to be unused
-					 * - thomas 2001-09-06
-					 */
-					$$->timezone = $2;
 					$$->location = @1;
 				}
 			| TIME '(' Iconst ')' opt_timezone

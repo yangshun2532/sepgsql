@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/commands/tablecmds.c,v 1.243 2008/03/19 18:38:30 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/commands/tablecmds.c,v 1.250 2008/03/31 03:34:27 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -32,6 +32,7 @@
 #include "catalog/pg_tablespace.h"
 #include "catalog/pg_trigger.h"
 #include "catalog/pg_type.h"
+#include "catalog/pg_type_fn.h"
 #include "catalog/toasting.h"
 #include "commands/cluster.h"
 #include "commands/defrem.h"
@@ -65,7 +66,9 @@
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
 #include "utils/relcache.h"
+#include "utils/snapmgr.h"
 #include "utils/syscache.h"
+#include "utils/tqual.h"
 
 
 /*
@@ -536,6 +539,9 @@ ExecuteTruncate(TruncateStmt *stmt)
 {
 	List	   *rels = NIL;
 	List	   *relids = NIL;
+	EState	   *estate;
+	ResultRelInfo *resultRelInfos;
+	ResultRelInfo *resultRelInfo;
 	ListCell   *cell;
 
 	/*
@@ -598,6 +604,45 @@ ExecuteTruncate(TruncateStmt *stmt)
 		heap_truncate_check_FKs(rels, false);
 #endif
 
+	/* Prepare to catch AFTER triggers. */
+	AfterTriggerBeginQuery();
+
+	/*
+	 * To fire triggers, we'll need an EState as well as a ResultRelInfo
+	 * for each relation.
+	 */
+	estate = CreateExecutorState();
+	resultRelInfos = (ResultRelInfo *)
+		palloc(list_length(rels) * sizeof(ResultRelInfo));
+	resultRelInfo = resultRelInfos;
+	foreach(cell, rels)
+	{
+		Relation	rel = (Relation) lfirst(cell);
+
+		InitResultRelInfo(resultRelInfo,
+						  rel,
+						  0,			/* dummy rangetable index */
+						  CMD_DELETE,	/* don't need any index info */
+						  false);
+		resultRelInfo++;
+	}
+	estate->es_result_relations = resultRelInfos;
+	estate->es_num_result_relations = list_length(rels);
+
+	/*
+	 * Process all BEFORE STATEMENT TRUNCATE triggers before we begin
+	 * truncating (this is because one of them might throw an error).
+	 * Also, if we were to allow them to prevent statement execution,
+	 * that would need to be handled here.
+	 */
+	resultRelInfo = resultRelInfos;
+	foreach(cell, rels)
+	{
+		estate->es_result_relation_info = resultRelInfo;
+		ExecBSTruncateTriggers(estate, resultRelInfo);
+		resultRelInfo++;
+	}
+
 	/*
 	 * OK, truncate each table.
 	 */
@@ -617,8 +662,6 @@ ExecuteTruncate(TruncateStmt *stmt)
 		heap_relid = RelationGetRelid(rel);
 		toast_relid = rel->rd_rel->reltoastrelid;
 
-		heap_close(rel, NoLock);
-
 		/*
 		 * The same for the toast table, if any.
 		 */
@@ -633,6 +676,31 @@ ExecuteTruncate(TruncateStmt *stmt)
 		 * Reconstruct the indexes to match, and we're done.
 		 */
 		reindex_relation(heap_relid, true);
+	}
+
+	/*
+	 * Process all AFTER STATEMENT TRUNCATE triggers.
+	 */
+	resultRelInfo = resultRelInfos;
+	foreach(cell, rels)
+	{
+		estate->es_result_relation_info = resultRelInfo;
+		ExecASTruncateTriggers(estate, resultRelInfo);
+		resultRelInfo++;
+	}
+
+	/* Handle queued AFTER triggers */
+	AfterTriggerEndQuery(estate);
+
+	/* We can clean up the EState now */
+	FreeExecutorState(estate);
+
+	/* And close the rels (can't do this while EState still holds refs) */
+	foreach(cell, rels)
+	{
+		Relation	rel = (Relation) lfirst(cell);
+
+		heap_close(rel, NoLock);
 	}
 }
 
@@ -6183,7 +6251,7 @@ decompile_conbin(HeapTuple contup, TupleDesc tupdesc)
 
 	expr = DirectFunctionCall2(pg_get_expr, attr,
 							   ObjectIdGetDatum(con->conrelid));
-	return DatumGetCString(DirectFunctionCall1(textout, expr));
+	return TextDatumGetCString(expr);
 }
 
 /*

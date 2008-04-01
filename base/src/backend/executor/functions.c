@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/executor/functions.c,v 1.121 2008/03/18 22:04:14 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/executor/functions.c,v 1.124 2008/03/26 18:48:59 alvherre Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -28,6 +28,7 @@
 #include "utils/builtins.h"
 #include "utils/datum.h"
 #include "utils/lsyscache.h"
+#include "utils/snapmgr.h"
 #include "utils/syscache.h"
 #include "utils/typcache.h"
 
@@ -244,7 +245,7 @@ init_sql_fcache(FmgrInfo *finfo)
 						  &isNull);
 	if (isNull)
 		elog(ERROR, "null prosrc for function %u", foid);
-	fcache->src = DatumGetCString(DirectFunctionCall1(textout, tmp));
+	fcache->src = TextDatumGetCString(tmp);
 
 	/*
 	 * Parse and rewrite the queries in the function text.
@@ -777,7 +778,7 @@ sql_exec_error_callback(void *arg)
 							  &isnull);
 		if (isnull)
 			elog(ERROR, "null prosrc");
-		prosrc = DatumGetCString(DirectFunctionCall1(textout, tmp));
+		prosrc = TextDatumGetCString(tmp);
 		errposition(0);
 		internalerrposition(syntaxerrposition);
 		internalerrquery(prosrc);

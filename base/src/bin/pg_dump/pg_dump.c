@@ -12,20 +12,14 @@
  *	by PostgreSQL
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/bin/pg_dump/pg_dump.c,v 1.483 2008/03/20 17:36:57 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/bin/pg_dump/pg_dump.c,v 1.486 2008/03/28 00:21:56 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
 
-/*
- * Although this is not a backend module, we must include postgres.h anyway
- * so that we can include a bunch of backend include files.  pg_dump has
- * never pretended to be very independent of the backend anyhow ...
- */
-#include "postgres.h"
+#include "postgres_fe.h"
 
 #include <unistd.h>
-
 #include <ctype.h>
 #ifdef ENABLE_NLS
 #include <locale.h>
@@ -40,12 +34,12 @@
 int			optreset;
 #endif
 
+#include "access/attnum.h"
 #include "access/htup.h"
 #include "catalog/pg_class.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_trigger.h"
 #include "catalog/pg_type.h"
-#include "commands/sequence.h"
 #include "libpq/libpq-fs.h"
 
 #include "pg_backup_archiver.h"
@@ -745,8 +739,7 @@ help(const char *progname)
 	printf(_("\nGeneral options:\n"));
 	printf(_("  -f, --file=FILENAME      output file name\n"));
 	printf(_("  -F, --format=c|t|p       output file format (custom, tar, plain text)\n"));
-	printf(_("  -i, --ignore-version     proceed even when server version mismatches\n"
-			 "                           pg_dump version\n"));
+	printf(_("  -i, --ignore-version     ignore server version mismatch\n"));
 	printf(_("  -v, --verbose            verbose mode\n"));
 	printf(_("  -Z, --compress=0-9       compression level for compressed formats\n"));
 	printf(_("  --help                   show this help, then exit\n"));
@@ -9637,6 +9630,13 @@ dumpTrigger(Archive *fout, TriggerInfo *tginfo)
 			appendPQExpBuffer(query, " OR UPDATE");
 		else
 			appendPQExpBuffer(query, " UPDATE");
+	}
+	if (TRIGGER_FOR_TRUNCATE(tginfo->tgtype))
+	{
+		if (findx > 0)
+			appendPQExpBuffer(query, " OR TRUNCATE");
+		else
+			appendPQExpBuffer(query, " TRUNCATE");
 	}
 	appendPQExpBuffer(query, " ON %s\n",
 					  fmtId(tbinfo->dobj.name));

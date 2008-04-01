@@ -9,7 +9,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/adt/ruleutils.c,v 1.269 2008/01/06 01:03:16 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/utils/adt/ruleutils.c,v 1.272 2008/03/28 00:21:56 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -45,6 +45,7 @@
 #include "rewrite/rewriteSupport.h"
 #include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
+#include "utils/tqual.h"
 #include "utils/typcache.h"
 #include "utils/xml.h"
 
@@ -498,6 +499,13 @@ pg_get_triggerdef(PG_FUNCTION_ARGS)
 		else
 			appendStringInfo(&buf, " UPDATE");
 	}
+	if (TRIGGER_FOR_TRUNCATE(trigrec->tgtype))
+	{
+		if (findx > 0)
+			appendStringInfo(&buf, " OR TRUNCATE");
+		else
+			appendStringInfo(&buf, " TRUNCATE");
+	}
 	appendStringInfo(&buf, " ON %s ",
 					 generate_relation_name(trigrec->tgrelid));
 
@@ -697,8 +705,7 @@ pg_get_indexdef_worker(Oid indexrelid, int colno, bool showTblSpc,
 		exprsDatum = SysCacheGetAttr(INDEXRELID, ht_idx,
 									 Anum_pg_index_indexprs, &isnull);
 		Assert(!isnull);
-		exprsString = DatumGetCString(DirectFunctionCall1(textout,
-														  exprsDatum));
+		exprsString = TextDatumGetCString(exprsDatum);
 		indexprs = (List *) stringToNode(exprsString);
 		pfree(exprsString);
 	}
@@ -836,8 +843,7 @@ pg_get_indexdef_worker(Oid indexrelid, int colno, bool showTblSpc,
 			predDatum = SysCacheGetAttr(INDEXRELID, ht_idx,
 										Anum_pg_index_indpred, &isnull);
 			Assert(!isnull);
-			predString = DatumGetCString(DirectFunctionCall1(textout,
-															 predDatum));
+			predString = TextDatumGetCString(predDatum);
 			node = (Node *) stringToNode(predString);
 			pfree(predString);
 
@@ -1092,7 +1098,7 @@ pg_get_constraintdef_worker(Oid constraintId, bool fullCommand,
 					elog(ERROR, "null conbin for constraint %u",
 						 constraintId);
 
-				conbin = DatumGetCString(DirectFunctionCall1(textout, val));
+				conbin = TextDatumGetCString(val);
 				expr = stringToNode(conbin);
 
 				/* Set up deparsing context for Var nodes in constraint */
@@ -1222,8 +1228,7 @@ pg_get_expr_worker(text *expr, Oid relid, char *relname, int prettyFlags)
 	char	   *str;
 
 	/* Convert input TEXT object to C string */
-	exprstr = DatumGetCString(DirectFunctionCall1(textout,
-												  PointerGetDatum(expr)));
+	exprstr = text_to_cstring(expr);
 
 	/* Convert expression to node tree */
 	node = (Node *) stringToNode(exprstr);
@@ -1232,6 +1237,8 @@ pg_get_expr_worker(text *expr, Oid relid, char *relname, int prettyFlags)
 	context = deparse_context_for(relname, relid);
 	str = deparse_expression_pretty(node, context, false, false,
 									prettyFlags, 0);
+
+	pfree(exprstr);
 
 	return str;
 }
@@ -1286,7 +1293,7 @@ Datum
 pg_get_serial_sequence(PG_FUNCTION_ARGS)
 {
 	text	   *tablename = PG_GETARG_TEXT_P(0);
-	text	   *columnname = PG_GETARG_TEXT_P(1);
+	text	   *columnname = PG_GETARG_TEXT_PP(1);
 	RangeVar   *tablerv;
 	Oid			tableOid;
 	char	   *column;
@@ -1302,8 +1309,7 @@ pg_get_serial_sequence(PG_FUNCTION_ARGS)
 	tableOid = RangeVarGetRelid(tablerv, false);
 
 	/* Get the number of the column */
-	column = DatumGetCString(DirectFunctionCall1(textout,
-											   PointerGetDatum(columnname)));
+	column = text_to_cstring(columnname);
 
 	attnum = get_attnum(tableOid, column);
 	if (attnum == InvalidAttrNumber)
@@ -5439,16 +5445,9 @@ static text *
 string_to_text(char *str)
 {
 	text	   *result;
-	int			slen = strlen(str);
-	int			tlen;
 
-	tlen = slen + VARHDRSZ;
-	result = (text *) palloc(tlen);
-	SET_VARSIZE(result, tlen);
-	memcpy(VARDATA(result), str, slen);
-
+	result = cstring_to_text(str);
 	pfree(str);
-
 	return result;
 }
 
@@ -5482,9 +5481,9 @@ flatten_reloptions(Oid relid)
 		 * array_to_text() relies on flinfo to be valid.  So use
 		 * OidFunctionCall2.
 		 */
-		sep = DirectFunctionCall1(textin, CStringGetDatum(", "));
+		sep = CStringGetTextDatum(", ");
 		txt = OidFunctionCall2(F_ARRAY_TO_TEXT, reloptions, sep);
-		result = DatumGetCString(DirectFunctionCall1(textout, txt));
+		result = TextDatumGetCString(txt);
 	}
 
 	ReleaseSysCache(tuple);

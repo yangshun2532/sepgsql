@@ -7,7 +7,7 @@
  * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/catalog/pg_proc.h,v 1.482 2008/01/01 19:45:57 momjian Exp $
+ * $PostgreSQL: pgsql/src/include/catalog/pg_proc.h,v 1.485 2008/03/27 03:57:34 tgl Exp $
  *
  * NOTES
  *	  The script catalog/genbki.sh reads this file and generates .bki
@@ -23,12 +23,7 @@
 #ifndef PG_PROC_H
 #define PG_PROC_H
 
-/* ----------------
- *		postgres.h contains the system type definitions and the
- *		CATALOG(), BKI_BOOTSTRAP and DATA() sugar words so this file
- *		can be read by both genbki.sh and the C compiler.
- * ----------------
- */
+#include "catalog/genbki.h"
 
 /* ----------------
  *		pg_proc definition.  cpp turns this into
@@ -1026,6 +1021,8 @@ DATA(insert OID = 763 (  smgrne			   PGNSP PGUID 12 1 0 f f t f i 2 16 "210 210"
 DESCR("storage manager");
 
 DATA(insert OID = 764 (  lo_import		   PGNSP PGUID 12 1 0 f f t f v 1 26 "25" _null_ _null_ _null_	lo_import - _null_ _null_ ));
+DESCR("large object import");
+DATA(insert OID = 767 (  lo_import		   PGNSP PGUID 12 1 0 f f t f v 2 26 "25 26" _null_ _null_ _null_	lo_import_with_oid - _null_ _null_ ));
 DESCR("large object import");
 DATA(insert OID = 765 (  lo_export		   PGNSP PGUID 12 1 0 f f t f v 2 23 "26 25" _null_ _null_ _null_ lo_export - _null_ _null_ ));
 DESCR("large object export");
@@ -2633,6 +2630,10 @@ DATA(insert OID =  1283 ( quote_literal    PGNSP PGUID 12 1 0 f f t f i 1 25 "25
 DESCR("quote a literal for usage in a querystring");
 DATA(insert OID =  1285 ( quote_literal    PGNSP PGUID 14 1 0 f f t f v 1 25 "2283" _null_ _null_ _null_ "select pg_catalog.quote_literal($1::pg_catalog.text)" - _null_ _null_ ));
 DESCR("quote a data value for usage in a querystring");
+DATA(insert OID =  1289 ( quote_nullable   PGNSP PGUID 12 1 0 f f f f i 1 25 "25" _null_ _null_ _null_ quote_nullable - _null_ _null_ ));
+DESCR("quote a possibly-null literal for usage in a querystring");
+DATA(insert OID =  1290 ( quote_nullable   PGNSP PGUID 14 1 0 f f f f v 1 25 "2283" _null_ _null_ _null_ "select pg_catalog.quote_nullable($1::pg_catalog.text)" - _null_ _null_ ));
+DESCR("quote a possibly-null data value for usage in a querystring");
 
 DATA(insert OID = 1798 (  oidin			   PGNSP PGUID 12 1 0 f f t f i 1 26 "2275" _null_ _null_ _null_ oidin - _null_ _null_ ));
 DESCR("I/O");
@@ -4436,32 +4437,5 @@ DESCR("is txid visible in snapshot?");
 #define PROARGMODE_IN		'i'
 #define PROARGMODE_OUT		'o'
 #define PROARGMODE_INOUT	'b'
-
-
-/*
- * prototypes for functions in pg_proc.c
- */
-extern Oid ProcedureCreate(const char *procedureName,
-				Oid procNamespace,
-				bool replace,
-				bool returnsSet,
-				Oid returnType,
-				Oid languageObjectId,
-				Oid languageValidator,
-				const char *prosrc,
-				const char *probin,
-				bool isAgg,
-				bool security_definer,
-				bool isStrict,
-				char volatility,
-				oidvector *parameterTypes,
-				Datum allParameterTypes,
-				Datum parameterModes,
-				Datum parameterNames,
-				Datum proconfig,
-				float4 procost,
-				float4 prorows);
-
-extern bool function_parse_error_transpose(const char *prosrc);
 
 #endif   /* PG_PROC_H */
