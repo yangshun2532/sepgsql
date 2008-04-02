@@ -31,6 +31,7 @@
 #include "storage/lock.h"
 #include "utils/fmgroids.h"
 #include "utils/syscache.h"
+#include "utils/tqual.h"
 
 /* SE-PostgreSQL Evaluation Item */
 #define T_SEvalItem		(T_TIDBitmap + 1)		/* must be unique identifier */
