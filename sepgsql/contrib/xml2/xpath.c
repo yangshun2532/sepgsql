@@ -55,11 +55,6 @@ Datum		xpath_table(PG_FUNCTION_ARGS);
 char	   *errbuf;				/* per line error buffer */
 char	   *pgxml_errorMsg = NULL;		/* overall error message */
 
-/* Convenience macros */
-
-#define GET_TEXT(cstrp) DatumGetTextP(DirectFunctionCall1(textin, CStringGetDatum(cstrp)))
-#define GET_STR(textp) DatumGetCString(DirectFunctionCall1(textout, PointerGetDatum(textp)))
-
 #define ERRBUF_SIZE 200
 
 /* memory handling passthrough functions (e.g. palloc, pstrdup are
@@ -651,11 +646,11 @@ xpath_table(PG_FUNCTION_ARGS)
 	MemoryContext oldcontext;
 
 /* Function parameters */
-	char	   *pkeyfield = GET_STR(PG_GETARG_TEXT_P(0));
-	char	   *xmlfield = GET_STR(PG_GETARG_TEXT_P(1));
-	char	   *relname = GET_STR(PG_GETARG_TEXT_P(2));
-	char	   *xpathset = GET_STR(PG_GETARG_TEXT_P(3));
-	char	   *condition = GET_STR(PG_GETARG_TEXT_P(4));
+	char	   *pkeyfield = text_to_cstring(PG_GETARG_TEXT_PP(0));
+	char	   *xmlfield = text_to_cstring(PG_GETARG_TEXT_PP(1));
+	char	   *relname = text_to_cstring(PG_GETARG_TEXT_PP(2));
+	char	   *xpathset = text_to_cstring(PG_GETARG_TEXT_PP(3));
+	char	   *condition = text_to_cstring(PG_GETARG_TEXT_PP(4));
 
 	char	  **values;
 	xmlChar   **xpaths;
@@ -808,11 +803,9 @@ xpath_table(PG_FUNCTION_ARGS)
 		xmlXPathCompExprPtr comppath;
 
 		/* Extract the row data as C Strings */
-
 		spi_tuple = tuptable->vals[i];
 		pkey = SPI_getvalue(spi_tuple, spi_tupdesc, 1);
 		xmldoc = SPI_getvalue(spi_tuple, spi_tupdesc, 2);
-
 
 		/*
 		 * Clear the values array, so that not-well-formed documents return
@@ -827,11 +820,14 @@ xpath_table(PG_FUNCTION_ARGS)
 		values[0] = pkey;
 
 		/* Parse the document */
-		doctree = xmlParseMemory(xmldoc, strlen(xmldoc));
+		if (xmldoc)
+			doctree = xmlParseMemory(xmldoc, strlen(xmldoc));
+		else					/* treat NULL as not well-formed */
+			doctree = NULL;
 
 		if (doctree == NULL)
-		{						/* not well-formed, so output all-NULL tuple */
-
+		{
+			/* not well-formed, so output all-NULL tuple */
 			ret_tuple = BuildTupleFromCStrings(attinmeta, values);
 			oldcontext = MemoryContextSwitchTo(per_query_ctx);
 			tuplestore_puttuple(tupstore, ret_tuple);
@@ -923,8 +919,10 @@ xpath_table(PG_FUNCTION_ARGS)
 
 		xmlFreeDoc(doctree);
 
-		pfree(pkey);
-		pfree(xmldoc);
+		if (pkey)
+			pfree(pkey);
+		if (xmldoc)
+			pfree(xmldoc);
 	}
 
 	xmlCleanupParser();

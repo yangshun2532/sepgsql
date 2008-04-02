@@ -6,7 +6,7 @@
  * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/backend/commands/user.c,v 1.178 2008/01/01 19:45:49 momjian Exp $
+ * $PostgreSQL: pgsql/src/backend/commands/user.c,v 1.181 2008/03/26 21:10:38 alvherre Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -30,6 +30,7 @@
 #include "utils/guc.h"
 #include "utils/lsyscache.h"
 #include "utils/syscache.h"
+#include "utils/tqual.h"
 
 
 extern bool Password_encryption;
@@ -311,14 +312,14 @@ CreateRole(CreateRoleStmt *stmt)
 	{
 		if (!encrypt_password || isMD5(password))
 			new_record[Anum_pg_authid_rolpassword - 1] =
-				DirectFunctionCall1(textin, CStringGetDatum(password));
+				CStringGetTextDatum(password);
 		else
 		{
 			if (!pg_md5_encrypt(password, stmt->role, strlen(stmt->role),
 								encrypted_password))
 				elog(ERROR, "password encryption failed");
 			new_record[Anum_pg_authid_rolpassword - 1] =
-				DirectFunctionCall1(textin, CStringGetDatum(encrypted_password));
+				CStringGetTextDatum(encrypted_password);
 		}
 	}
 	else
@@ -639,14 +640,14 @@ AlterRole(AlterRoleStmt *stmt)
 	{
 		if (!encrypt_password || isMD5(password))
 			new_record[Anum_pg_authid_rolpassword - 1] =
-				DirectFunctionCall1(textin, CStringGetDatum(password));
+				CStringGetTextDatum(password);
 		else
 		{
 			if (!pg_md5_encrypt(password, stmt->role, strlen(stmt->role),
 								encrypted_password))
 				elog(ERROR, "password encryption failed");
 			new_record[Anum_pg_authid_rolpassword - 1] =
-				DirectFunctionCall1(textin, CStringGetDatum(encrypted_password));
+				CStringGetTextDatum(encrypted_password);
 		}
 		new_record_repl[Anum_pg_authid_rolpassword - 1] = 'r';
 	}
@@ -828,6 +829,7 @@ DropRole(DropRoleStmt *stmt)
 					tmp_tuple;
 		ScanKeyData scankey;
 		char	   *detail;
+		char	   *detail_log;
 		SysScanDesc sscan;
 		Oid			roleid;
 
@@ -885,12 +887,14 @@ DropRole(DropRoleStmt *stmt)
 		LockSharedObject(AuthIdRelationId, roleid, 0, AccessExclusiveLock);
 
 		/* Check for pg_shdepend entries depending on this role */
-		if ((detail = checkSharedDependencies(AuthIdRelationId, roleid)) != NULL)
+		if (checkSharedDependencies(AuthIdRelationId, roleid,
+									&detail, &detail_log))
 			ereport(ERROR,
 					(errcode(ERRCODE_DEPENDENT_OBJECTS_STILL_EXIST),
 					 errmsg("role \"%s\" cannot be dropped because some objects depend on it",
 							role),
-					 errdetail("%s", detail)));
+					 errdetail("%s", detail),
+					 errdetail_log("%s", detail_log)));
 
 		/*
 		 * Remove the role from the pg_authid table
@@ -1057,7 +1061,7 @@ RenameRole(const char *oldname, const char *newname)
 
 	datum = heap_getattr(oldtuple, Anum_pg_authid_rolpassword, dsc, &isnull);
 
-	if (!isnull && isMD5(DatumGetCString(DirectFunctionCall1(textout, datum))))
+	if (!isnull && isMD5(TextDatumGetCString(datum)))
 	{
 		/* MD5 uses the username as salt, so just clear it on a rename */
 		repl_repl[Anum_pg_authid_rolpassword - 1] = 'r';
