@@ -1,5 +1,5 @@
 <!--
-$PostgreSQL: pgsql/doc/src/sgml/ref/pg_dump.sgml,v 1.99 2008/03/20 17:36:57 tgl Exp $
+$PostgreSQL: pgsql/doc/src/sgml/ref/pg_dump.sgml,v 1.101 2008/03/26 16:34:47 tgl Exp $
 PostgreSQL documentation
 -->
 
@@ -301,14 +301,15 @@ PostgreSQL documentation
        </para>
 
        <para>
-        <application>pg_dump</application> can dump from servers running
-        previous releases of <productname>PostgreSQL</>, but very old
-        versions are not supported anymore (currently, those prior to 7.0).
-        Dumping from a server newer than <application>pg_dump</application>
-        is likely not to work at all.
-        Use this option if you need to override the version check (and
-        if <application>pg_dump</application> then fails, don't say
-        you weren't warned).
+        By default, <application>pg_dump</> will refuse to attempt
+        to dump from a server that is of a newer <productname>PostgreSQL</>
+        version than <application>pg_dump</application> is.  It will also
+        refuse to attempt to dump from a server that is older than the oldest
+        supported version (currently, 7.0).  The <option>-i</> option
+        overrides this check and forces a dump to be attempted anyway.
+        This option is <emphasis>deprecated</> because the dump is very
+        likely to fail &mdash; or worse, seem to succeed but be wrong or
+        incomplete.
        </para>
       </listitem>
      </varlistentry>

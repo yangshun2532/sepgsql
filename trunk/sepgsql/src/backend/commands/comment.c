@@ -7,7 +7,7 @@
  * Copyright (c) 1996-2008, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/commands/comment.c,v 1.100 2008/01/01 19:45:48 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/backend/commands/comment.c,v 1.102 2008/03/26 21:10:37 alvherre Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -52,6 +52,7 @@
 #include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
 #include "utils/syscache.h"
+#include "utils/tqual.h"
 
 
 /*
@@ -215,7 +216,7 @@ CreateComments(Oid oid, Oid classoid, int32 subid, char *comment)
 		values[i++] = ObjectIdGetDatum(oid);
 		values[i++] = ObjectIdGetDatum(classoid);
 		values[i++] = Int32GetDatum(subid);
-		values[i++] = DirectFunctionCall1(textin, CStringGetDatum(comment));
+		values[i++] = CStringGetTextDatum(comment);
 	}
 
 	/* Use the index to search for a matching old tuple */
@@ -314,7 +315,7 @@ CreateSharedComments(Oid oid, Oid classoid, char *comment)
 		i = 0;
 		values[i++] = ObjectIdGetDatum(oid);
 		values[i++] = ObjectIdGetDatum(classoid);
-		values[i++] = DirectFunctionCall1(textin, CStringGetDatum(comment));
+		values[i++] = CStringGetTextDatum(comment);
 	}
 
 	/* Use the index to search for a matching old tuple */

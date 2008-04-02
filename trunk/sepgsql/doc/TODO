@@ -1,7 +1,7 @@
 PostgreSQL TODO List
 ====================
 Current maintainer:	Bruce Momjian (bruce@momjian.us)
-Last updated:		Tue Mar 18 19:35:12 EDT 2008
+Last updated:		Fri Mar 28 11:18:29 EDT 2008
 
 The most recent version of this document can be viewed at
 http://www.postgresql.org/docs/faqs.TODO.html.
@@ -53,6 +53,9 @@ Administration
 
 * Allow statistics last vacuum/analyze execution times to be displayed
   without requiring stats_row_level to be enabled
+
+  http://archives.postgresql.org/pgsql-docs/2007-04/msg00028.php
+
 * Allow log_min_messages to be specified on a per-module basis
 
   This would allow administrators to see more detailed information from
@@ -69,6 +72,10 @@ Administration
 
   http://archives.postgresql.org/pgsql-hackers/2007-03/msg00375.php
   http://archives.postgresql.org/pgsql-hackers/2007-04/msg00151.php
+  http://archives.postgresql.org/pgsql-hackers/2008-01/msg00028.php
+  http://archives.postgresql.org/pgsql-hackers/2008-01/msg00248.php
+  http://archives.postgresql.org/pgsql-hackers/2008-01/msg00387.php
+  http://archives.postgresql.org/pgsql-hackers/2008-01/msg00413.php
 
 * Allow auto-selection of partitioned tables for min/max() operations
 * Allow more complex user/database default GUC settings
@@ -255,6 +262,17 @@ Data Types
 * Reduce BIT data type overhead using short varlena headers
 
   http://archives.postgresql.org/pgsql-general/2007-12/msg00273.php
+
+* Allow xml arrays to be cast to other data types
+
+  http://archives.postgresql.org/pgsql-hackers/2007-09/msg00981.php
+  http://archives.postgresql.org/pgsql-hackers/2007-10/msg00231.php
+  http://archives.postgresql.org/pgsql-hackers/2007-11/msg00471.php
+
+* Simplify integer cross-data-type operators
+
+  http://archives.postgresql.org/pgsql-bugs/2008-01/msg00189.php
+
 
 
 * Dates and Times
@@ -456,6 +474,23 @@ Functions
 * Fix /contrib/ltree operator
 
   http://archives.postgresql.org/pgsql-bugs/2007-11/msg00044.php
+
+* Fix inconsistent precedence of =, >, and < compared to <>, >=, and <=
+
+  http://archives.postgresql.org/pgsql-bugs/2007-12/msg00145.php
+
+* Fix regular expression bug when using complex back-references
+
+  http://archives.postgresql.org/pgsql-bugs/2007-10/msg00000.php
+
+* Have /contrib/dblink reuse unnamed connections
+
+  http://archives.postgresql.org/pgsql-hackers/2007-10/msg00895.php
+
+* Add SQL-standard array_agg() and unnest() array functions
+
+  http://archives.postgresql.org/pgsql-hackers/2008-01/msg01017.php
+
 
 
 
@@ -661,6 +696,11 @@ SQL Commands
   Ideally the information would be pulled from the SGML file
   automatically.
 
+* Improve reporting of UNION type mismatches
+
+  http://archives.postgresql.org/pgsql-hackers/2007-04/msg00944.php
+  http://archives.postgresql.org/pgsql-hackers/2008-03/msg00597.php
+
 
 * CREATE
 
@@ -676,6 +716,10 @@ SQL Commands
 	  Right now pg_attribute.attnotnull records the NOT NULL status
 	  of the column, but does not record the contraint name
 
+	o Prevent concurrent CREATE TABLE table1 from sometimes returning
+	  a cryptic error message
+
+	  http://archives.postgresql.org/pgsql-bugs/2007-10/msg00169.php
 
 
 * UPDATE
@@ -900,6 +944,16 @@ Server-Side Languages
 
 	  http://archives.postgresql.org/pgsql-hackers/2007-07/msg00436.php
 
+	o Consider keeping seperate cached copies when search_path changes
+
+	  http://archives.postgresql.org/pgsql-hackers/2008-01/msg01009.php
+
+	o Add CASE capability to language (already in SQL)
+
+	  http://archives.postgresql.org/pgsql-hackers/2008-01/msg00696.php
+
+
+
 
 * Other
 	o Add table function support to pltcl, plpythonu
@@ -994,6 +1048,12 @@ Clients
 
 	  http://archives.postgresql.org/pgsql-general/2007-09/msg00438.php
 
+	o Improve display if enums
+
+	  http://archives.postgresql.org/pgsql-hackers/2008-01/msg00826.php
+
+
+
 
 * pg_dump / pg_restore
 	o %Add dumping of comments on index columns and composite type columns
@@ -1047,6 +1107,11 @@ Clients
 	  Using psql to restore a pg_dump dump is also affected.
 
 	o Remove pre-7.3 pg_dump code that assumes pg_depend does not exit
+	o Allow pre/data/post files when schema and data are dumped
+	  separately, for performance reasons
+
+	  http://archives.postgresql.org/pgsql-hackers/2008-02/msg00205.php
+
 
 
 * ecpg
@@ -1140,9 +1205,7 @@ Triggers
 
   http://archives.postgresql.org/pgsql-general/2007-02/msg01466.php
 
-* Add ability to trigger on TRUNCATE
-
-  http://archives.postgresql.org/pgsql-sql/2008-01/msg00050.php
+* -Add ability to trigger on TRUNCATE
 
 
 
@@ -1199,6 +1262,10 @@ Indexes
 * Allow multiple indexes to be created concurrently, ideally via a
   single heap scan, and have pg_restore use it
 
+* Consider sorting entries before inserting into btree index
+
+  http://archives.postgresql.org/pgsql-general/2008-01/msg01010.php
+
 
 
 * Inheritance
@@ -1216,6 +1283,11 @@ Indexes
 	o Require all CHECK constraints to be inherited
 
 	  http://archives.postgresql.org/pgsql-bugs/2007-04/msg00026.php
+
+	o Add checks to prevent a CREATE RULE views on inherited tables
+
+	  http://archives.postgresql.org/pgsql-general/2008-02/msg01420.php
+	  http://archives.postgresql.org/pgsql-general/2008-03/msg00077.php
 
 
 * GIST
@@ -1431,6 +1503,9 @@ Locking
   http://archives.postgresql.org/pgsql-hackers/2008-01/msg00873.php
   http://archives.postgresql.org/pgsql-committers/2008-01/msg00365.php
 
+* Detect deadlocks involving LockBufferForCleanup()
+
+  http://archives.postgresql.org/pgsql-hackers/2008-01/msg00873.php
 
 
 
@@ -1517,6 +1592,27 @@ Write-Ahead Log
   http://archives.postgresql.org/pgsql-hackers/2007-12/msg00497.php
   http://archives.postgresql.org/pgsql-hackers/2008-02/msg01279.php
 
+* Improve WAL concurrency by increasing lock granularity
+
+  http://archives.postgresql.org/pgsql-hackers/2008-02/msg00556.php
+
+* Be more aggressive about creating WAL files
+
+  http://archives.postgresql.org/pgsql-hackers/2007-10/msg01325.php
+  http://archives.postgresql.org/pgsql-hackers/2004-07/msg01075.php
+  http://archives.postgresql.org/pgsql-hackers/2005-04/msg00556.php
+
+* Have resource managers report the duration of their status changes
+
+  http://archives.postgresql.org/pgsql-hackers/2007-10/msg01468.php
+
+* Move pgfoundry's xlogdump to /contrib and have it rely more closely
+  on the WAL backend code
+
+  http://archives.postgresql.org/pgsql-hackers/2007-11/msg00035.php
+
+
+
 
 Optimizer / Executor
 ====================
@@ -1590,6 +1686,7 @@ Miscellaneous Performance
   http://archives.postgresql.org/pgsql-hackers/2006-10/msg00820.php
   http://archives.postgresql.org/pgsql-performance/2007-09/msg00255.php
   http://archives.postgresql.org/pgsql-hackers/2007-12/msg00027.php
+  http://archives.postgresql.org/pgsql-patches/2008-01/msg00170.php
 
 * Use mmap() rather than SYSV shared memory or to write WAL files?
 
@@ -1617,6 +1714,11 @@ Miscellaneous Performance
 
   http://archives.postgresql.org/pgsql-hackers/2007-08/msg00030.php
   http://archives.postgresql.org/pgsql-performance/2007-08/msg00024.php
+
+* Consider transaction start/end performance improvements
+
+  http://archives.postgresql.org/pgsql-hackers/2007-07/msg00948.php
+  http://archives.postgresql.org/pgsql-hackers/2008-03/msg00361.php
 
 * Allow user configuration of TOAST thresholds
 
@@ -1656,6 +1758,10 @@ Miscellaneous Performance
 
   http://archives.postgresql.org/pgsql-committers/2007-11/msg00585.php
 
+* Improve performance of shared invalidation queue for multiple CPUs
+
+  http://archives.postgresql.org/pgsql-performance/2008-01/msg00023.php
+
 * Consider Cartesian joins when both relations are needed to form an
   indexscan qualification for a third relation
 
@@ -1667,6 +1773,32 @@ Miscellaneous Performance
   http://archives.postgresql.org/pgsql-hackers/2007-12/msg00624.php
   http://archives.postgresql.org/pgsql-patches/2007-12/msg00109.php
 
+* Sort large UPDATE/DELETEs so it is done in heap order
+
+  http://archives.postgresql.org/pgsql-hackers/2008-01/msg01119.php
+
+* -Avoid tuple some tuple copying in sort routines
+* SMP scalability improvements
+
+  http://archives.postgresql.org/pgsql-hackers/2007-07/msg00439.php
+  http://archives.postgresql.org/pgsql-hackers/2007-09/msg00206.php
+  http://archives.postgresql.org/pgsql-hackers/2008-03/msg00361.php
+
+* Research reducing deTOASTing in more places
+
+  http://archives.postgresql.org/pgsql-hackers/2007-09/msg00895.php
+
+* Consider being smarter about memory and external files used during
+  sorts
+
+  http://archives.postgresql.org/pgsql-hackers/2007-11/msg01101.php
+  http://archives.postgresql.org/pgsql-hackers/2007-12/msg00045.php
+
+* Allow one transaction to see tuples using the snapshot of another
+  transaction
+
+  This would assist multiple backends in working together.
+  http://archives.postgresql.org/pgsql-hackers/2008-01/msg00400.php
 
 
 Source Code
@@ -1736,6 +1868,24 @@ Source Code
 
   http://archives.postgresql.org/pgsql-general/2007-08/msg01510.php
 
+* Convert single quotes to apostrophes in the PDF documentation
+
+  http://archives.postgresql.org/pgsql-docs/2007-12/msg00059.php
+
+* Create three versions of libpgport to simplify client code
+
+  http://archives.postgresql.org/pgsql-hackers/2007-10/msg00154.php
+
+* Remove old-style routines for manipulating tuples
+
+  http://archives.postgresql.org/pgsql-hackers/2007-10/msg00851.php
+
+* Improve detection of shared memory segments being used by other
+  FreeBSD jails
+
+  http://archives.postgresql.org/pgsql-hackers/2008-01/msg00656.php
+
+
 
 * Win32
 
@@ -1759,6 +1909,22 @@ Source Code
 	o Convert MSVC build system to remove most batch files
 
 	  http://archives.postgresql.org/pgsql-hackers/2007-08/msg00961.php
+
+	o Prevent SSL from sending network packets to avoid interference
+	  with Win32 signal emulation
+
+	  http://archives.postgresql.org/pgsql-hackers/2007-12/msg00455.php
+
+	o Support pgxs when using MSVC
+
+	o Fix MSVC NLS support, like for to_char()
+
+	  http://archives.postgresql.org/pgsql-hackers/2008-02/msg00485.php
+	  http://archives.postgresql.org/pgsql-patches/2008-02/msg00038.php
+
+	o Find a correct rint() substitute on Windows
+
+	  http://archives.postgresql.org/pgsql-hackers/2008-01/msg00808.php
 
 
 
@@ -1796,6 +1962,7 @@ Exotic Features
 
   http://archives.postgresql.org/pgsql-hackers/2004-04/msg00818.php
   http://archives.postgresql.org/pgsql-hackers/2006-10/msg01527.php
+  http://archives.postgresql.org/pgsql-hackers/2008-03/msg00849.php
 
 * Add autonomous transactions
 
