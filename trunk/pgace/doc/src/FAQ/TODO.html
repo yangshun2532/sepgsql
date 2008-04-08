@@ -8,7 +8,7 @@
 <body bgcolor="#FFFFFF" text="#000000" link="#FF0000" vlink="#A00000" alink="#0000FF">
 <h1><a name="section_1">PostgreSQL TODO List</a></h1>
 <p>Current maintainer:     Bruce Momjian (<a href="mailto:bruce@momjian.us">bruce@momjian.us</a>)<br/>
-Last updated:           Fri Mar 28 11:18:29 EDT 2008
+Last updated:           Sun Apr  6 22:14:10 EDT 2008
 </p>
 <p>The most recent version of this document can be viewed at<br/>
 <a href="http://www.postgresql.org/docs/faqs.TODO.html">http://www.postgresql.org/docs/faqs.TODO.html</a>.
@@ -440,13 +440,15 @@ first.  There is also a developer's wiki at<br/>
   database creation might have locale-aware indexes.  The indexes would
   need to be reindexed to match the new locale.
 </p>
-  </li><li>Allow encoding on a per-column basis optionally using the ICU library:
+  </li><li>Allow encoding on a per-column basis optionally using the ICU library
 <p>  Right now only one encoding is allowed per database.  [<a href="http://momjian.postgresql.org/cgi-bin/pgtodo?locale">locale</a>]
 </p>
 <p>  <a href="http://archives.postgresql.org/pgsql-hackers/2005-03/msg00932.php">http://archives.postgresql.org/pgsql-hackers/2005-03/msg00932.php</a>
   <a href="http://archives.postgresql.org/pgsql-patches/2005-08/msg00309.php">http://archives.postgresql.org/pgsql-patches/2005-08/msg00309.php</a>
   <a href="http://archives.postgresql.org/pgsql-patches/2006-03/msg00233.php">http://archives.postgresql.org/pgsql-patches/2006-03/msg00233.php</a>
   <a href="http://archives.postgresql.org/pgsql-hackers/2006-09/msg00662.php">http://archives.postgresql.org/pgsql-hackers/2006-09/msg00662.php</a>
+  <a href="http://wiki.postgresql.org/wiki/Todo:Collate">http://wiki.postgresql.org/wiki/Todo:Collate</a> 
+  <a href="http://wiki.postgresql.org/wiki/Todo:ICU">http://wiki.postgresql.org/wiki/Todo:ICU</a>
 </p>
   </li><li>Add CREATE COLLATE?  [<a href="http://momjian.postgresql.org/cgi-bin/pgtodo?locale">locale</a>]
   </li><li>Support multiple simultaneous character sets, per SQL92
@@ -576,6 +578,8 @@ first.  There is also a developer's wiki at<br/>
   <a href="http://archives.postgresql.org/pgsql-hackers/2008-02/msg00642.php">http://archives.postgresql.org/pgsql-hackers/2008-02/msg00642.php</a>
   <a href="http://archives.postgresql.org/pgsql-patches/2007-03/msg00139.php">http://archives.postgresql.org/pgsql-patches/2007-03/msg00139.php</a>
   <a href="http://archives.postgresql.org/pgsql-hackers/2007-11/msg01334.php">http://archives.postgresql.org/pgsql-hackers/2007-11/msg01334.php</a>
+  <a href="http://archives.postgresql.org/pgsql-patches/2008-01/msg00105.php">http://archives.postgresql.org/pgsql-patches/2008-01/msg00105.php</a>
+  <a href="http://archives.postgresql.org/pgsql-patches/2008-03/msg00327.php">http://archives.postgresql.org/pgsql-patches/2008-03/msg00327.php</a>
 </p>
   </li><li>Add DEFAULT .. AS OWNER so permission checks are done as the table
   owner
@@ -838,6 +842,9 @@ first.  There is also a developer's wiki at<br/>
           than only text
 <p>          <a href="http://archives.postgresql.org/pgsql-hackers/2007-05/msg00289.php">http://archives.postgresql.org/pgsql-hackers/2007-05/msg00289.php</a>
 </p>
+    </li><li>Add ability to obfuscate function bodies
+<p>          <a href="http://archives.postgresql.org/pgsql-patches/2008-01/msg00125.php">http://archives.postgresql.org/pgsql-patches/2008-01/msg00125.php</a>
+</p>
   </li></ul>
 </li></ul>
 <h1><a name="section_10">Clients</a></h1>
@@ -854,9 +861,6 @@ first.  There is also a developer's wiki at<br/>
   </li><li>Add a function like pg_get_indexdef() that report more detailed index
   information
 <p>  <a href="http://archives.postgresql.org/pgsql-bugs/2007-12/msg00166.php">http://archives.postgresql.org/pgsql-bugs/2007-12/msg00166.php</a>
-</p>
-  </li><li>Prefix command-line utilities like createuser with 'pg_'
-<p>  <a href="http://archives.postgresql.org/pgsql-hackers/2007-06/msg00025.php">http://archives.postgresql.org/pgsql-hackers/2007-06/msg00025.php</a>
 </p>
   </li><li>psql
   <ul>
@@ -1399,6 +1403,9 @@ first.  There is also a developer's wiki at<br/>
   </li><li>Improve ability to display optimizer analysis using OPTIMIZER_DEBUG
   </li><li>Have EXPLAIN ANALYZE issue NOTICE messages when the estimated and
   actual row counts differ by a specified percentage
+  </li><li>Improve how ANALYZE computes in-doubt tuples
+<p>  <a href="http://archives.postgresql.org/pgsql-hackers/2007-11/msg00771.php">http://archives.postgresql.org/pgsql-hackers/2007-11/msg00771.php</a>
+</p>
   </li><li>Consider using hash buckets to do DISTINCT, rather than sorting
 <p>  This would be beneficial when there are few distinct values.  This is
   already used by GROUP BY.

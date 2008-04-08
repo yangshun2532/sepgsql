@@ -3,7 +3,7 @@
  *
  * Copyright (c) 2000-2008, PostgreSQL Global Development Group
  *
- * $PostgreSQL: pgsql/src/bin/psql/mainloop.c,v 1.87 2008/01/01 19:45:56 momjian Exp $
+ * $PostgreSQL: pgsql/src/bin/psql/mainloop.c,v 1.90 2008/04/05 03:40:15 tgl Exp $
  */
 #include "postgres_fe.h"
 #include "mainloop.h"
@@ -168,6 +168,20 @@ MainLoop(FILE *source)
 		if (line[0] == '\0' && !psql_scan_in_quote(scan_state))
 		{
 			free(line);
+			continue;
+		}
+
+		/* A request for help? Be friendly and give them some guidance */
+		if (pset.cur_cmd_interactive && query_buf->len == 0 &&
+			pg_strncasecmp(line, "help", 4) == 0 &&
+			(line[4] == '\0' || line[4] == ';' || isspace((unsigned char) line[4])))
+		{
+			free(line);
+			puts(_("You are using psql, the command-line interface to PostgreSQL."));
+			puts(_("Enter SQL commands, or type \\? for a list of backslash options."));
+			puts(_("Use \\h for SQL command help."));
+			puts(_("Use \\q to quit."));
+			fflush(stdout);
 			continue;
 		}
 
