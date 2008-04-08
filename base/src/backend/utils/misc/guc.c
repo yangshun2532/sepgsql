@@ -10,7 +10,7 @@
  * Written by Peter Eisentraut <peter_e@gmx.net>.
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/misc/guc.c,v 1.440 2008/03/25 22:42:45 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/utils/misc/guc.c,v 1.446 2008/04/04 17:25:23 tgl Exp $
  *
  *--------------------------------------------------------------------
  */
@@ -54,6 +54,7 @@
 #include "postmaster/postmaster.h"
 #include "postmaster/syslogger.h"
 #include "postmaster/walwriter.h"
+#include "regex/regex.h"
 #include "storage/fd.h"
 #include "storage/freespace.h"
 #include "tcop/tcopprot.h"
@@ -134,15 +135,13 @@ static const char *assign_log_destination(const char *value,
 #ifdef HAVE_SYSLOG
 static int	syslog_facility = LOG_LOCAL0;
 
-static const char *assign_syslog_facility(const char *facility,
-					   bool doit, GucSource source);
+static bool assign_syslog_facility(int newval,
+				    bool doit, GucSource source);
 static const char *assign_syslog_ident(const char *ident,
 					bool doit, GucSource source);
 #endif
 
-static const char *assign_defaultxactisolevel(const char *newval, bool doit,
-						   GucSource source);
-static const char *assign_session_replication_role(const char *newval, bool doit,
+static bool assign_session_replication_role(int newval, bool doit,
 								GucSource source);
 static const char *show_num_temp_buffers(void);
 static bool assign_phony_autocommit(bool newval, bool doit, GucSource source);
@@ -154,10 +153,7 @@ static bool assign_stage_log_stats(bool newval, bool doit, GucSource source);
 static bool assign_log_stats(bool newval, bool doit, GucSource source);
 static bool assign_transaction_read_only(bool newval, bool doit, GucSource source);
 static const char *assign_canonical_path(const char *newval, bool doit, GucSource source);
-static const char *assign_backslash_quote(const char *newval, bool doit, GucSource source);
 static const char *assign_timezone_abbreviations(const char *newval, bool doit, GucSource source);
-static const char *assign_xmlbinary(const char *newval, bool doit, GucSource source);
-static const char *assign_xmloption(const char *newval, bool doit, GucSource source);
 static const char *show_archive_command(void);
 static bool assign_tcp_keepalives_idle(int newval, bool doit, GucSource source);
 static bool assign_tcp_keepalives_interval(int newval, bool doit, GucSource source);
@@ -205,6 +201,71 @@ static const struct config_enum_entry log_statement_options[] = {
 	{"ddl", LOGSTMT_DDL},
 	{"mod", LOGSTMT_MOD},
 	{"all", LOGSTMT_ALL},
+	{NULL, 0}
+};
+
+static const struct config_enum_entry regex_flavor_options[] = {
+    {"advanced", REG_ADVANCED},
+    {"extended", REG_EXTENDED},
+    {"basic", REG_BASIC},
+    {NULL, 0}
+};
+
+static const struct config_enum_entry isolation_level_options[] = {
+	{"serializable", XACT_SERIALIZABLE},
+	{"repeatable read", XACT_REPEATABLE_READ},
+	{"read committed", XACT_READ_COMMITTED},
+	{"read uncommitted", XACT_READ_UNCOMMITTED},
+	{NULL, 0}
+};
+
+static const struct config_enum_entry session_replication_role_options[] = {
+	{"origin", SESSION_REPLICATION_ROLE_ORIGIN},
+	{"replica", SESSION_REPLICATION_ROLE_REPLICA},
+	{"local", SESSION_REPLICATION_ROLE_LOCAL},
+	{NULL, 0}
+};
+
+#ifdef HAVE_SYSLOG
+static const struct config_enum_entry syslog_facility_options[] = {
+	{"local0", LOG_LOCAL0},
+	{"local1", LOG_LOCAL1},
+	{"local2", LOG_LOCAL2},
+	{"local3", LOG_LOCAL3},
+	{"local4", LOG_LOCAL4},
+	{"local5", LOG_LOCAL5},
+	{"local6", LOG_LOCAL6},
+	{"local7", LOG_LOCAL7},
+	{NULL, 0}
+};
+#endif
+
+static const struct config_enum_entry xmlbinary_options[] = {
+	{"base64", XMLBINARY_BASE64},
+	{"hex", XMLBINARY_HEX},
+	{NULL, 0}
+};
+
+static const struct config_enum_entry xmloption_options[] = {
+	{"content", XMLOPTION_CONTENT},
+	{"document", XMLOPTION_DOCUMENT},
+	{NULL, 0}
+};
+
+/*
+ * Although only "on", "off", and "safe_encoding" are documented, we
+ * accept all the likely variants of "on" and "off".
+ */
+static const struct config_enum_entry backslash_quote_options[] = {
+	{"safe_encoding", BACKSLASH_QUOTE_SAFE_ENCODING},
+	{"on", BACKSLASH_QUOTE_ON},
+	{"off", BACKSLASH_QUOTE_OFF},
+	{"true", BACKSLASH_QUOTE_ON},
+	{"false", BACKSLASH_QUOTE_OFF},
+	{"yes", BACKSLASH_QUOTE_ON},
+	{"no", BACKSLASH_QUOTE_OFF},
+	{"1", BACKSLASH_QUOTE_ON},
+	{"0", BACKSLASH_QUOTE_OFF},
 	{NULL, 0}
 };
 
@@ -261,20 +322,15 @@ int			tcp_keepalives_count;
 static char *log_destination_string;
 
 #ifdef HAVE_SYSLOG
-static char *syslog_facility_str;
 static char *syslog_ident_str;
 #endif
 static bool phony_autocommit;
 static bool session_auth_is_superuser;
 static double phony_random_seed;
-static char *backslash_quote_string;
 static char *client_encoding_string;
 static char *datestyle_string;
-static char *default_iso_level_string;
-static char *session_replication_role_string;
 static char *locale_collate;
 static char *locale_ctype;
-static char *regex_flavor_string;
 static char *server_encoding_string;
 static char *server_version_string;
 static int	server_version_num;
@@ -284,8 +340,6 @@ static char *timezone_abbreviations_string;
 static char *XactIsoLevel_string;
 static char *data_directory;
 static char *custom_variable_classes;
-static char *xmlbinary_string;
-static char *xmloption_string;
 static int	max_function_args;
 static int	max_index_keys;
 static int	max_identifier_length;
@@ -1921,15 +1975,6 @@ static struct config_string ConfigureNamesString[] =
 	},
 
 	{
-		{"backslash_quote", PGC_USERSET, COMPAT_OPTIONS_PREVIOUS,
-			gettext_noop("Sets whether \"\\'\" is allowed in string literals."),
-			gettext_noop("Valid values are ON, OFF, and SAFE_ENCODING.")
-		},
-		&backslash_quote_string,
-		"safe_encoding", assign_backslash_quote, NULL
-	},
-
-	{
 		{"client_encoding", PGC_USERSET, CLIENT_CONN_LOCALE,
 			gettext_noop("Sets the client's character set encoding."),
 			NULL,
@@ -1986,26 +2031,6 @@ static struct config_string ConfigureNamesString[] =
 		},
 		&temp_tablespaces,
 		"", assign_temp_tablespaces, NULL
-	},
-
-	{
-		{"default_transaction_isolation", PGC_USERSET, CLIENT_CONN_STATEMENT,
-			gettext_noop("Sets the transaction isolation level of each new transaction."),
-			gettext_noop("Each SQL transaction has an isolation level, which "
-						 "can be either \"read uncommitted\", \"read committed\", \"repeatable read\", or \"serializable\".")
-		},
-		&default_iso_level_string,
-		"read committed", assign_defaultxactisolevel, NULL
-	},
-
-	{
-		{"session_replication_role", PGC_SUSET, CLIENT_CONN_STATEMENT,
-			gettext_noop("Sets the session's behavior for triggers and rewrite rules."),
-			gettext_noop("Each session can be either"
-						 " \"origin\", \"replica\", or \"local\".")
-		},
-		&session_replication_role_string,
-		"origin", assign_session_replication_role, NULL
 	},
 
 	{
@@ -2147,15 +2172,6 @@ static struct config_string ConfigureNamesString[] =
 	},
 
 	{
-		{"regex_flavor", PGC_USERSET, COMPAT_OPTIONS_PREVIOUS,
-			gettext_noop("Sets the regular expression \"flavor\"."),
-			gettext_noop("This can be set to advanced, extended, or basic.")
-		},
-		&regex_flavor_string,
-		"advanced", assign_regex_flavor, NULL
-	},
-
-	{
 		{"search_path", PGC_USERSET, CLIENT_CONN_STATEMENT,
 			gettext_noop("Sets the schema search order for names that are not schema-qualified."),
 			NULL,
@@ -2241,15 +2257,6 @@ static struct config_string ConfigureNamesString[] =
 	},
 
 #ifdef HAVE_SYSLOG
-	{
-		{"syslog_facility", PGC_SIGHUP, LOGGING_WHERE,
-			gettext_noop("Sets the syslog \"facility\" to be used when syslog enabled."),
-			gettext_noop("Valid values are LOCAL0, LOCAL1, LOCAL2, LOCAL3, "
-						 "LOCAL4, LOCAL5, LOCAL6, LOCAL7.")
-		},
-		&syslog_facility_str,
-		"LOCAL0", assign_syslog_facility, NULL
-	},
 	{
 		{"syslog_ident", PGC_SIGHUP, LOGGING_WHERE,
 			gettext_noop("Sets the program name used to identify PostgreSQL "
@@ -2389,25 +2396,6 @@ static struct config_string ConfigureNamesString[] =
 	},
 
 	{
-		{"xmlbinary", PGC_USERSET, CLIENT_CONN_STATEMENT,
-			gettext_noop("Sets how binary values are to be encoded in XML."),
-			gettext_noop("Valid values are BASE64 and HEX.")
-		},
-		&xmlbinary_string,
-		"base64", assign_xmlbinary, NULL
-	},
-
-	{
-		{"xmloption", PGC_USERSET, CLIENT_CONN_STATEMENT,
-			gettext_noop("Sets whether XML data in implicit parsing and serialization "
-						 "operations is to be considered as documents or content fragments."),
-			gettext_noop("Valid values are DOCUMENT and CONTENT.")
-		},
-		&xmloption_string,
-		"content", assign_xmloption, NULL
-	},
-
-	{
 		{"default_text_search_config", PGC_USERSET, CLIENT_CONN_LOCALE,
 			gettext_noop("Sets default text search configuration."),
 			NULL
@@ -2438,6 +2426,15 @@ static struct config_string ConfigureNamesString[] =
 static struct config_enum ConfigureNamesEnum[] =
 {
 	{
+		{"backslash_quote", PGC_USERSET, COMPAT_OPTIONS_PREVIOUS,
+			gettext_noop("Sets whether \"\\'\" is allowed in string literals."),
+			gettext_noop("Valid values are ON, OFF, and SAFE_ENCODING.")
+		},
+		&backslash_quote,
+		BACKSLASH_QUOTE_SAFE_ENCODING, backslash_quote_options, NULL, NULL
+	},
+
+	{
 		{"client_min_messages", PGC_USERSET, LOGGING_WHEN,
 			gettext_noop("Sets the message levels that are sent to the client."),
 			gettext_noop("Valid values are DEBUG5, DEBUG4, DEBUG3, DEBUG2, "
@@ -2447,6 +2444,16 @@ static struct config_enum ConfigureNamesEnum[] =
 		},
 		&client_min_messages,
 		NOTICE, message_level_options,NULL, NULL
+	},
+
+	{
+		{"default_transaction_isolation", PGC_USERSET, CLIENT_CONN_STATEMENT,
+			gettext_noop("Sets the transaction isolation level of each new transaction."),
+			gettext_noop("Each SQL transaction has an isolation level, which "
+						 "can be either \"read uncommitted\", \"read committed\", \"repeatable read\", or \"serializable\".")
+		},
+		&DefaultXactIsoLevel,
+		XACT_READ_COMMITTED, isolation_level_options, NULL, NULL
 	},
 
 	{
@@ -2488,7 +2495,56 @@ static struct config_enum ConfigureNamesEnum[] =
 		LOGSTMT_NONE, log_statement_options, NULL, NULL
 	},
 
+#ifdef HAVE_SYSLOG
+	{
+		{"syslog_facility", PGC_SIGHUP, LOGGING_WHERE,
+			gettext_noop("Sets the syslog \"facility\" to be used when syslog enabled."),
+			gettext_noop("Valid values are LOCAL0, LOCAL1, LOCAL2, LOCAL3, "
+						 "LOCAL4, LOCAL5, LOCAL6, LOCAL7.")
+		},
+		&syslog_facility,
+		LOG_LOCAL0, syslog_facility_options, assign_syslog_facility, NULL
+	},
+#endif
 
+	{
+		{"regex_flavor", PGC_USERSET, COMPAT_OPTIONS_PREVIOUS,
+			gettext_noop("Sets the regular expression \"flavor\"."),
+			gettext_noop("This can be set to advanced, extended, or basic.")
+		},
+		&regex_flavor,
+		REG_ADVANCED, regex_flavor_options, NULL, NULL
+	},
+
+	{
+		{"session_replication_role", PGC_SUSET, CLIENT_CONN_STATEMENT,
+			gettext_noop("Sets the session's behavior for triggers and rewrite rules."),
+			gettext_noop("Each session can be either"
+						 " \"origin\", \"replica\", or \"local\".")
+		},
+		&SessionReplicationRole,
+		SESSION_REPLICATION_ROLE_ORIGIN, session_replication_role_options,
+		assign_session_replication_role, NULL
+	},
+
+	{
+		{"xmlbinary", PGC_USERSET, CLIENT_CONN_STATEMENT,
+			gettext_noop("Sets how binary values are to be encoded in XML."),
+			gettext_noop("Valid values are BASE64 and HEX.")
+		},
+		&xmlbinary,
+		XMLBINARY_BASE64, xmlbinary_options, NULL, NULL
+	},
+
+	{
+		{"xmloption", PGC_USERSET, CLIENT_CONN_STATEMENT,
+			gettext_noop("Sets whether XML data in implicit parsing and serialization "
+						 "operations is to be considered as documents or content fragments."),
+			gettext_noop("Valid values are DOCUMENT and CONTENT.")
+		},
+		&xmloption,
+		XMLOPTION_CONTENT, xmloption_options, NULL, NULL
+	},
 
 
 	/* End-of-list marker */
@@ -6842,38 +6898,14 @@ assign_log_destination(const char *value, bool doit, GucSource source)
 
 #ifdef HAVE_SYSLOG
 
-static const char *
-assign_syslog_facility(const char *facility, bool doit, GucSource source)
+static bool
+assign_syslog_facility(int newval, bool doit, GucSource source)
 {
-	int			syslog_fac;
-
-	if (pg_strcasecmp(facility, "LOCAL0") == 0)
-		syslog_fac = LOG_LOCAL0;
-	else if (pg_strcasecmp(facility, "LOCAL1") == 0)
-		syslog_fac = LOG_LOCAL1;
-	else if (pg_strcasecmp(facility, "LOCAL2") == 0)
-		syslog_fac = LOG_LOCAL2;
-	else if (pg_strcasecmp(facility, "LOCAL3") == 0)
-		syslog_fac = LOG_LOCAL3;
-	else if (pg_strcasecmp(facility, "LOCAL4") == 0)
-		syslog_fac = LOG_LOCAL4;
-	else if (pg_strcasecmp(facility, "LOCAL5") == 0)
-		syslog_fac = LOG_LOCAL5;
-	else if (pg_strcasecmp(facility, "LOCAL6") == 0)
-		syslog_fac = LOG_LOCAL6;
-	else if (pg_strcasecmp(facility, "LOCAL7") == 0)
-		syslog_fac = LOG_LOCAL7;
-	else
-		return NULL;			/* reject */
-
 	if (doit)
-	{
-		syslog_facility = syslog_fac;
 		set_syslog_parameters(syslog_ident_str ? syslog_ident_str : "postgres",
-							  syslog_facility);
-	}
+							  newval);
 
-	return facility;
+	return true;
 }
 
 static const char *
@@ -6887,59 +6919,19 @@ assign_syslog_ident(const char *ident, bool doit, GucSource source)
 #endif   /* HAVE_SYSLOG */
 
 
-static const char *
-assign_defaultxactisolevel(const char *newval, bool doit, GucSource source)
+static bool
+assign_session_replication_role(int newval, bool doit, GucSource source)
 {
-	if (pg_strcasecmp(newval, "serializable") == 0)
-	{
-		if (doit)
-			DefaultXactIsoLevel = XACT_SERIALIZABLE;
-	}
-	else if (pg_strcasecmp(newval, "repeatable read") == 0)
-	{
-		if (doit)
-			DefaultXactIsoLevel = XACT_REPEATABLE_READ;
-	}
-	else if (pg_strcasecmp(newval, "read committed") == 0)
-	{
-		if (doit)
-			DefaultXactIsoLevel = XACT_READ_COMMITTED;
-	}
-	else if (pg_strcasecmp(newval, "read uncommitted") == 0)
-	{
-		if (doit)
-			DefaultXactIsoLevel = XACT_READ_UNCOMMITTED;
-	}
-	else
-		return NULL;
-	return newval;
-}
-
-static const char *
-assign_session_replication_role(const char *newval, bool doit, GucSource source)
-{
-	int			newrole;
-
-	if (pg_strcasecmp(newval, "origin") == 0)
-		newrole = SESSION_REPLICATION_ROLE_ORIGIN;
-	else if (pg_strcasecmp(newval, "replica") == 0)
-		newrole = SESSION_REPLICATION_ROLE_REPLICA;
-	else if (pg_strcasecmp(newval, "local") == 0)
-		newrole = SESSION_REPLICATION_ROLE_LOCAL;
-	else
-		return NULL;
-
 	/*
 	 * Must flush the plan cache when changing replication role; but don't
 	 * flush unnecessarily.
 	 */
-	if (doit && SessionReplicationRole != newrole)
+	if (doit && SessionReplicationRole != newval)
 	{
 		ResetPlanCache();
-		SessionReplicationRole = newrole;
 	}
 
-	return newval;
+	return true;
 }
 
 static const char *
@@ -7120,31 +7112,6 @@ assign_canonical_path(const char *newval, bool doit, GucSource source)
 }
 
 static const char *
-assign_backslash_quote(const char *newval, bool doit, GucSource source)
-{
-	BackslashQuoteType bq;
-	bool		bqbool;
-
-	/*
-	 * Although only "on", "off", and "safe_encoding" are documented, we use
-	 * parse_bool so we can accept all the likely variants of "on" and "off".
-	 */
-	if (pg_strcasecmp(newval, "safe_encoding") == 0)
-		bq = BACKSLASH_QUOTE_SAFE_ENCODING;
-	else if (parse_bool(newval, &bqbool))
-	{
-		bq = bqbool ? BACKSLASH_QUOTE_ON : BACKSLASH_QUOTE_OFF;
-	}
-	else
-		return NULL;			/* reject */
-
-	if (doit)
-		backslash_quote = bq;
-
-	return newval;
-}
-
-static const char *
 assign_timezone_abbreviations(const char *newval, bool doit, GucSource source)
 {
 	/*
@@ -7200,42 +7167,6 @@ pg_timezone_abbrev_initialize(void)
 		SetConfigOption("timezone_abbreviations", "Default",
 						PGC_POSTMASTER, PGC_S_ARGV);
 	}
-}
-
-static const char *
-assign_xmlbinary(const char *newval, bool doit, GucSource source)
-{
-	XmlBinaryType xb;
-
-	if (pg_strcasecmp(newval, "base64") == 0)
-		xb = XMLBINARY_BASE64;
-	else if (pg_strcasecmp(newval, "hex") == 0)
-		xb = XMLBINARY_HEX;
-	else
-		return NULL;			/* reject */
-
-	if (doit)
-		xmlbinary = xb;
-
-	return newval;
-}
-
-static const char *
-assign_xmloption(const char *newval, bool doit, GucSource source)
-{
-	XmlOptionType xo;
-
-	if (pg_strcasecmp(newval, "document") == 0)
-		xo = XMLOPTION_DOCUMENT;
-	else if (pg_strcasecmp(newval, "content") == 0)
-		xo = XMLOPTION_CONTENT;
-	else
-		return NULL;			/* reject */
-
-	if (doit)
-		xmloption = xo;
-
-	return newval;
 }
 
 static const char *
