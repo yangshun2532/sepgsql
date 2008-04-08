@@ -3,7 +3,7 @@
  *
  * Copyright (c) 2000-2008, PostgreSQL Global Development Group
  *
- * $PostgreSQL: pgsql/src/bin/psql/help.c,v 1.124 2008/03/29 19:40:12 tgl Exp $
+ * $PostgreSQL: pgsql/src/bin/psql/help.c,v 1.126 2008/04/04 18:00:25 momjian Exp $
  */
 #include "postgres_fe.h"
 
