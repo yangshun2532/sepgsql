@@ -1,4 +1,4 @@
-<!-- $PostgreSQL: pgsql/doc/src/sgml/catalogs.sgml,v 2.163 2008/03/10 12:55:13 mha Exp $ -->
+<!-- $PostgreSQL: pgsql/doc/src/sgml/catalogs.sgml,v 2.165 2008/04/14 17:05:32 tgl Exp $ -->
 <!--
  Documentation of the system catalogs, directed toward PostgreSQL developers
  -->
@@ -473,10 +473,10 @@
      </row>
 
      <row>
-      <entry><structfield>amgetmulti</structfield></entry>
+      <entry><structfield>amgetbitmap</structfield></entry>
       <entry><type>regproc</type></entry>
       <entry><literal><link linkend="catalog-pg-proc"><structname>pg_proc</structname></link>.oid</literal></entry>
-      <entry><quote>Fetch multiple tuples</quote> function</entry>
+      <entry><quote>Fetch all valid tuples</quote> function</entry>
      </row>
 
      <row>
@@ -604,13 +604,6 @@
       <entry><type>int2</type></entry>
       <entry></entry>
       <entry>Operator strategy number</entry>
-     </row>
-
-     <row>
-      <entry><structfield>amopreqcheck</structfield></entry>
-      <entry><type>bool</type></entry>
-      <entry></entry>
-      <entry>Index hit must be rechecked</entry>
      </row>
 
      <row>

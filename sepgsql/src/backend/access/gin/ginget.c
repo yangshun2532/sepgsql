@@ -8,13 +8,15 @@
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
- *			$PostgreSQL: pgsql/src/backend/access/gin/ginget.c,v 1.10 2008/01/01 19:45:46 momjian Exp $
+ *			$PostgreSQL: pgsql/src/backend/access/gin/ginget.c,v 1.13 2008/04/14 17:05:33 tgl Exp $
  *-------------------------------------------------------------------------
  */
 
 #include "postgres.h"
+
 #include "access/gin.h"
 #include "catalog/index.h"
+#include "miscadmin.h"
 #include "utils/memutils.h"
 
 static bool
@@ -341,10 +343,12 @@ entryGetItem(Relation index, GinScanEntry entry)
 
 /*
  * Sets key->curItem to new found heap item pointer for one scan key
- * returns isFinished!
+ * Returns isFinished, ie TRUE means we did NOT get a new item pointer!
+ * Also, *keyrecheck is set true if recheck is needed for this scan key.
  */
 static bool
-keyGetItem(Relation index, GinState *ginstate, MemoryContext tempCtx, GinScanKey key)
+keyGetItem(Relation index, GinState *ginstate, MemoryContext tempCtx,
+		   GinScanKey key, bool *keyrecheck)
 {
 	uint32		i;
 	GinScanEntry entry;
@@ -389,31 +393,36 @@ keyGetItem(Relation index, GinState *ginstate, MemoryContext tempCtx, GinScanKey
 			return TRUE;
 		}
 
-		if (key->nentries == 1)
-		{
-			/* we can do not call consistentFn !! */
-			key->entryRes[0] = TRUE;
-			return FALSE;
-		}
+		/*
+		 * if key->nentries == 1 then the consistentFn should always succeed,
+		 * but we must call it anyway to find out the recheck status.
+		 */
 
 		/* setting up array for consistentFn */
 		for (i = 0; i < key->nentries; i++)
 		{
 			entry = key->scanEntry + i;
 
-			if (entry->isFinished == FALSE && compareItemPointers(&entry->curItem, &key->curItem) == 0)
+			if (entry->isFinished == FALSE &&
+				compareItemPointers(&entry->curItem, &key->curItem) == 0)
 				key->entryRes[i] = TRUE;
 			else
 				key->entryRes[i] = FALSE;
 		}
 
+		/*
+		 * Initialize *keyrecheck in case the consistentFn doesn't know it
+		 * should set it.  The safe assumption in that case is to force
+		 * recheck.
+		 */
+		*keyrecheck = true;
+
 		oldCtx = MemoryContextSwitchTo(tempCtx);
-		res = DatumGetBool(FunctionCall3(
-										 &ginstate->consistentFn,
+		res = DatumGetBool(FunctionCall4(&ginstate->consistentFn,
 										 PointerGetDatum(key->entryRes),
 										 UInt16GetDatum(key->strategy),
-										 key->query
-										 ));
+										 key->query,
+										 PointerGetDatum(keyrecheck)));
 		MemoryContextSwitchTo(oldCtx);
 		MemoryContextReset(tempCtx);
 	} while (!res);
@@ -426,23 +435,34 @@ keyGetItem(Relation index, GinState *ginstate, MemoryContext tempCtx, GinScanKey
  * returns true if found
  */
 static bool
-scanGetItem(IndexScanDesc scan, ItemPointerData *item)
+scanGetItem(IndexScanDesc scan, ItemPointerData *item, bool *recheck)
 {
-	uint32		i;
 	GinScanOpaque so = (GinScanOpaque) scan->opaque;
+	uint32		i;
+	bool		keyrecheck;
+
+	/*
+	 * We return recheck = true if any of the keyGetItem calls return
+	 * keyrecheck = true.  Note that because the second loop might advance
+	 * some keys, this could theoretically be too conservative.  In practice
+	 * though, we expect that a consistentFn's recheck result will depend
+	 * only on the operator and the query, so for any one key it should
+	 * stay the same regardless of advancing to new items.  So it's not
+	 * worth working harder.
+	 */
+	*recheck = false;
 
 	ItemPointerSetMin(item);
 	for (i = 0; i < so->nkeys; i++)
 	{
 		GinScanKey	key = so->keys + i;
 
-		if (keyGetItem(scan->indexRelation, &so->ginstate, so->tempCtx, key) == FALSE)
-		{
-			if (compareItemPointers(item, &key->curItem) < 0)
-				*item = key->curItem;
-		}
-		else
+		if (keyGetItem(scan->indexRelation, &so->ginstate, so->tempCtx,
+					   key, &keyrecheck))
 			return FALSE;		/* finished one of keys */
+		if (compareItemPointers(item, &key->curItem) < 0)
+			*item = key->curItem;
+		*recheck |= keyrecheck;
 	}
 
 	for (i = 1; i <= so->nkeys; i++)
@@ -457,8 +477,10 @@ scanGetItem(IndexScanDesc scan, ItemPointerData *item)
 				break;
 			else if (cmp > 0)
 			{
-				if (keyGetItem(scan->indexRelation, &so->ginstate, so->tempCtx, key) == TRUE)
+				if (keyGetItem(scan->indexRelation, &so->ginstate, so->tempCtx,
+							   key, &keyrecheck))
 					return FALSE;		/* finished one of keys */
+				*recheck |= keyrecheck;
 			}
 			else
 			{					/* returns to begin */
@@ -476,34 +498,38 @@ scanGetItem(IndexScanDesc scan, ItemPointerData *item)
 #define GinIsVoidRes(s)		( ((GinScanOpaque) scan->opaque)->isVoidRes == true )
 
 Datum
-gingetmulti(PG_FUNCTION_ARGS)
+gingetbitmap(PG_FUNCTION_ARGS)
 {
 	IndexScanDesc scan = (IndexScanDesc) PG_GETARG_POINTER(0);
-	ItemPointer tids = (ItemPointer) PG_GETARG_POINTER(1);
-	int32		max_tids = PG_GETARG_INT32(2);
-	int32	   *returned_tids = (int32 *) PG_GETARG_POINTER(3);
+	TIDBitmap *tbm = (TIDBitmap *) PG_GETARG_POINTER(1);
+	int64		ntids;
 
 	if (GinIsNewKey(scan))
 		newScanKey(scan);
 
-	*returned_tids = 0;
-
 	if (GinIsVoidRes(scan))
-		PG_RETURN_BOOL(false);
+		PG_RETURN_INT64(0);
 
 	startScan(scan);
 
-	do
+	ntids = 0;
+	for (;;)
 	{
-		if (scanGetItem(scan, tids + *returned_tids))
-			(*returned_tids)++;
-		else
+		ItemPointerData iptr;
+		bool		recheck;
+
+		CHECK_FOR_INTERRUPTS();
+
+		if (!scanGetItem(scan, &iptr, &recheck))
 			break;
-	} while (*returned_tids < max_tids);
+
+		tbm_add_tuples(tbm, &iptr, 1, recheck);
+		ntids++;
+	}
 
 	stopScan(scan);
 
-	PG_RETURN_BOOL(*returned_tids == max_tids);
+	PG_RETURN_INT64(ntids);
 }
 
 Datum
@@ -523,7 +549,7 @@ gingettuple(PG_FUNCTION_ARGS)
 		PG_RETURN_BOOL(false);
 
 	startScan(scan);
-	res = scanGetItem(scan, &scan->xs_ctup.t_self);
+	res = scanGetItem(scan, &scan->xs_ctup.t_self, &scan->xs_recheck);
 	stopScan(scan);
 
 	PG_RETURN_BOOL(res);
