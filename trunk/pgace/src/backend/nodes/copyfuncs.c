@@ -15,7 +15,7 @@
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/nodes/copyfuncs.c,v 1.390 2008/03/21 22:41:48 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/nodes/copyfuncs.c,v 1.392 2008/04/14 17:05:33 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -281,8 +281,6 @@ _copyIndexScan(IndexScan *from)
 	COPY_SCALAR_FIELD(indexid);
 	COPY_NODE_FIELD(indexqual);
 	COPY_NODE_FIELD(indexqualorig);
-	COPY_NODE_FIELD(indexstrategy);
-	COPY_NODE_FIELD(indexsubtype);
 	COPY_SCALAR_FIELD(indexorderdir);
 
 	return newnode;
@@ -307,8 +305,6 @@ _copyBitmapIndexScan(BitmapIndexScan *from)
 	COPY_SCALAR_FIELD(indexid);
 	COPY_NODE_FIELD(indexqual);
 	COPY_NODE_FIELD(indexqualorig);
-	COPY_NODE_FIELD(indexstrategy);
-	COPY_NODE_FIELD(indexsubtype);
 
 	return newnode;
 }
@@ -2480,7 +2476,6 @@ _copyCreateOpClassItem(CreateOpClassItem *from)
 	COPY_NODE_FIELD(name);
 	COPY_NODE_FIELD(args);
 	COPY_SCALAR_FIELD(number);
-	COPY_SCALAR_FIELD(recheck);
 	COPY_NODE_FIELD(class_args);
 	COPY_NODE_FIELD(storedtype);
 
