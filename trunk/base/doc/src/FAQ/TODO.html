@@ -8,15 +8,13 @@
 <body bgcolor="#FFFFFF" text="#000000" link="#FF0000" vlink="#A00000" alink="#0000FF">
 <h1><a name="section_1">PostgreSQL TODO List</a></h1>
 <p>Current maintainer:     Bruce Momjian (<a href="mailto:bruce@momjian.us">bruce@momjian.us</a>)<br/>
-Last updated:           Sun Apr  6 22:14:10 EDT 2008
+Last updated:           Sat Apr 19 08:32:51 EDT 2008
 </p>
 <p>The most recent version of this document can be viewed at<br/>
 <a href="http://www.postgresql.org/docs/faqs.TODO.html">http://www.postgresql.org/docs/faqs.TODO.html</a>.
 </p>
 <p><strong>A hyphen, "-", marks changes that will appear in the upcoming 8.3 release.</strong><br/>
 <strong>A percent sign, "%", marks items that are easier to implement.</strong>
-</p>
-<p>Bracketed items, "[<a href="http://momjian.postgresql.org/cgi-bin/pgtodo?"></a>]", have more detail.
 </p>
 <p>This list contains all known PostgreSQL bugs and feature requests. If<br/>
 you would like to work on an item, please read the Developer's FAQ<br/>
@@ -26,16 +24,8 @@ first.  There is also a developer's wiki at<br/>
 <h1><a name="section_2">Administration</a></h1>
 
 <ul>
-  <li>Allow administrators to safely terminate individual sessions either
+  <li>-<em>Allow administrators to safely terminate individual sessions either</em>
   via an SQL function or SIGTERM
-<p>  Lock table corruption following SIGTERM of an individual backend
-  has been reported in 8.0.  A possible cause was fixed in 8.1, but
-  it is unknown whether other problems exist.  This item mostly
-  requires additional testing rather than of writing any new code.
-</p>
-<p>  <a href="http://archives.postgresql.org/pgsql-hackers/2006-08/msg00174.php">http://archives.postgresql.org/pgsql-hackers/2006-08/msg00174.php</a>
-  <a href="http://archives.postgresql.org/pgsql-hackers/2007-04/msg00218.php">http://archives.postgresql.org/pgsql-hackers/2007-04/msg00218.php</a>
-</p>
   </li><li>Check for unreferenced table files created by transactions that were
   in-progress when the server terminated abruptly
 <p>  <a href="http://archives.postgresql.org/pgsql-patches/2006-06/msg00096.php">http://archives.postgresql.org/pgsql-patches/2006-06/msg00096.php</a>
@@ -157,7 +147,6 @@ first.  There is also a developer's wiki at<br/>
   </li><li>Point-In-Time Recovery (PITR)
   <ul>
     <li>Allow a warm standby system to also allow read-only statements
-          [<a href="http://momjian.postgresql.org/cgi-bin/pgtodo?pitr">pitr</a>]
 <p>          <a href="http://archives.postgresql.org/pgsql-hackers/2007-03/msg00050.php">http://archives.postgresql.org/pgsql-hackers/2007-03/msg00050.php</a>
 </p>
     </li><li>%Create dump tool for write-ahead logs for use in determining
@@ -240,15 +229,19 @@ first.  There is also a developer's wiki at<br/>
   </li><li>Simplify integer cross-data-type operators
 <p>  <a href="http://archives.postgresql.org/pgsql-bugs/2008-01/msg00189.php">http://archives.postgresql.org/pgsql-bugs/2008-01/msg00189.php</a>
 </p>
+  </li><li>Allow XML to accept more liberal DOCTYPE specifications
+<p>  <a href="http://archives.postgresql.org/pgsql-general/2008-02/msg00347.php">http://archives.postgresql.org/pgsql-general/2008-02/msg00347.php</a>
+</p>
   </li><li>Dates and Times
   <ul>
     <li>Allow infinite dates and intervals just like infinite timestamps
     </li><li>Merge hardwired timezone names with the TZ database; allow either
           kind everywhere a TZ name is currently taken
     </li><li>Allow TIMESTAMP WITH TIME ZONE to store the original timezone
-          information, either zone name or offset from UTC [<a href="http://momjian.postgresql.org/cgi-bin/pgtodo?timezone">timezone</a>]
+          information, either zone name or offset from UTC
 <p>          If the TIMESTAMP value is stored with a time zone name, interval
           computations should adjust based on the time zone rules.
+          <a href="http://archives.postgresql.org/pgsql-hackers/2004-10/msg00705.php">http://archives.postgresql.org/pgsql-hackers/2004-10/msg00705.php</a>
 </p>
     </li><li>Fix SELECT '0.01 years'::interval, '0.01 months'::interval
     </li><li>Add a GUC variable to allow output of interval values in ISO8601
@@ -429,6 +422,10 @@ first.  There is also a developer's wiki at<br/>
   </li><li>Add SQL-standard array_agg() and unnest() array functions
 <p>  <a href="http://archives.postgresql.org/pgsql-hackers/2008-01/msg01017.php">http://archives.postgresql.org/pgsql-hackers/2008-01/msg01017.php</a>
 </p>
+  </li><li>Allow calling of a procedure outside a SELECT that can control the
+  transaction state
+<p>  <a href="http://archives.postgresql.org/pgsql-hackers/2007-10/msg01375.php">http://archives.postgresql.org/pgsql-hackers/2007-10/msg01375.php</a>
+</p>
 </li></ul>
 <h1><a name="section_5">Multi-Language Support</a></h1>
 
@@ -440,17 +437,22 @@ first.  There is also a developer's wiki at<br/>
   database creation might have locale-aware indexes.  The indexes would
   need to be reindexed to match the new locale.
 </p>
-  </li><li>Allow encoding on a per-column basis optionally using the ICU library
-<p>  Right now only one encoding is allowed per database.  [<a href="http://momjian.postgresql.org/cgi-bin/pgtodo?locale">locale</a>]
+  </li><li>Allow encoding on a per-column basis optionally using the ICU library;
+  Add CREATE COLLATE
+<p>  Right now only one encoding is allowed per database.
 </p>
 <p>  <a href="http://archives.postgresql.org/pgsql-hackers/2005-03/msg00932.php">http://archives.postgresql.org/pgsql-hackers/2005-03/msg00932.php</a>
+  <a href="http://archives.postgresql.org/pgsql-patches/2005-08/msg00039.php">http://archives.postgresql.org/pgsql-patches/2005-08/msg00039.php</a>
   <a href="http://archives.postgresql.org/pgsql-patches/2005-08/msg00309.php">http://archives.postgresql.org/pgsql-patches/2005-08/msg00309.php</a>
+  <a href="http://archives.postgresql.org/pgsql-hackers/2005-09/msg00110.php">http://archives.postgresql.org/pgsql-hackers/2005-09/msg00110.php</a>
+  <a href="http://archives.postgresql.org/pgsql-patches/2005-09/msg00020.php">http://archives.postgresql.org/pgsql-patches/2005-09/msg00020.php</a>
+  <a href="http://archives.postgresql.org/pgsql-hackers/2005-12/msg01121.php">http://archives.postgresql.org/pgsql-hackers/2005-12/msg01121.php</a>
+  <a href="http://archives.postgresql.org/pgsql-hackers/2006-01/msg00767.php">http://archives.postgresql.org/pgsql-hackers/2006-01/msg00767.php</a>
   <a href="http://archives.postgresql.org/pgsql-patches/2006-03/msg00233.php">http://archives.postgresql.org/pgsql-patches/2006-03/msg00233.php</a>
   <a href="http://archives.postgresql.org/pgsql-hackers/2006-09/msg00662.php">http://archives.postgresql.org/pgsql-hackers/2006-09/msg00662.php</a>
   <a href="http://wiki.postgresql.org/wiki/Todo:Collate">http://wiki.postgresql.org/wiki/Todo:Collate</a> 
   <a href="http://wiki.postgresql.org/wiki/Todo:ICU">http://wiki.postgresql.org/wiki/Todo:ICU</a>
 </p>
-  </li><li>Add CREATE COLLATE?  [<a href="http://momjian.postgresql.org/cgi-bin/pgtodo?locale">locale</a>]
   </li><li>Support multiple simultaneous character sets, per SQL92
   </li><li>Improve UTF8 combined character handling?
   </li><li>Add octet_length_server() and octet_length_client()
@@ -485,7 +487,6 @@ first.  There is also a developer's wiki at<br/>
   <a href="http://archives.postgresql.org/pgsql-patches/2006-08/msg00255.php">http://archives.postgresql.org/pgsql-patches/2006-08/msg00255.php</a>
 </p>
   </li><li>Add the functionality for WITH CHECK OPTION clause of CREATE VIEW
-  </li><li>Allow NOTIFY in rules involving conditionals
   </li><li>Allow VIEW/RULE recompilation when the underlying tables change
 <p>  Another issue is whether underlying table changes should be reflected
   in the view, e.g. should SELECT * show additional columns if they
@@ -524,32 +525,16 @@ first.  There is also a developer's wiki at<br/>
   </li><li>Improve logging of prepared transactions recovered during startup
 <p>  <a href="http://archives.postgresql.org/pgsql-hackers/2006-11/msg00092.php">http://archives.postgresql.org/pgsql-hackers/2006-11/msg00092.php</a>
 </p>
-  </li><li>Allow LISTEN/NOTIFY to store info in memory rather than tables?
-<p>  Currently LISTEN/NOTIFY information is stored in pg_listener. Storing
-  such information in memory would improve performance.
-</p>
-  </li><li>Add optional textual message to NOTIFY
-<p>  This would allow an informational message to be added to the notify
-  message, perhaps indicating the row modified or other custom
-  information.
-</p>
-  </li><li>Allow multiple identical NOTIFY events to always be communicated to the
-  client, rather than sent as a single notification to the listener
-<p>  <a href="http://archives.postgresql.org/pgsql-general/2008-01/msg00057.php">http://archives.postgresql.org/pgsql-general/2008-01/msg00057.php</a>
-</p>
   </li><li>Add a GUC variable to warn about non-standard SQL usage in queries
-  </li><li>Add SQL-standard MERGE command, typically used to merge two tables
-  [<a href="http://momjian.postgresql.org/cgi-bin/pgtodo?merge">merge</a>]
-<p>  This is similar to UPDATE, then for unmatched rows, INSERT.
-  Whether concurrent access allows modifications which could cause
-  row loss is implementation independent.
-</p>
-  </li><li>Add REPLACE or UPSERT command that does UPDATE, or on failure, INSERT
-  [<a href="http://momjian.postgresql.org/cgi-bin/pgtodo?merge">merge</a>]
-<p>  To implement this cleanly requires that the table have a unique index
-  so duplicate checking can be easily performed.  It is possible to
-  do it without a unique index if we require the user to LOCK the table
-  before the MERGE.
+  </li><li>Add SQL-standard MERGE/REPLACE/UPSERT command
+<p>  MERGE is typically used to merge two tables.  REPLACE or UPSERT
+  command does UPDATE, or on failure, INSERT. This is similar to UPDATE,
+  then for unmatched rows, INSERT.  Whether concurrent access allows
+  modifications which could cause row loss is implementation independent.
+  To implement this cleanly requires that the table have a unique index
+  so duplicate checking can be easily performed.  It is possible to do it
+  without a unique index if we require the user to LOCK the table before
+  the MERGE.
 </p>
 <p>  <a href="http://archives.postgresql.org/pgsql-hackers/2005-11/msg00501.php">http://archives.postgresql.org/pgsql-hackers/2005-11/msg00501.php</a>
   <a href="http://archives.postgresql.org/pgsql-hackers/2005-11/msg00536.php">http://archives.postgresql.org/pgsql-hackers/2005-11/msg00536.php</a>
@@ -759,6 +744,27 @@ first.  There is also a developer's wiki at<br/>
     <li>Add SET PERFORMANCE_TIPS option to suggest INDEX, VACUUM, VACUUM
           ANALYZE, and CLUSTER
   </li></ul>
+  </li><li>LISTEN/NOTIFY
+  <ul>
+    <li>Allow LISTEN/NOTIFY to store info in memory rather than tables?
+<p>          Currently LISTEN/NOTIFY information is stored in pg_listener. 
+          Storing such information in memory would improve performance.
+</p>
+    </li><li>Add optional textual message to NOTIFY
+<p>          This would allow an informational message to be added to the notify
+          message, perhaps indicating the row modified or other custom
+          information.
+</p>
+    </li><li>Allow multiple identical NOTIFY events to always be communicated
+          to the client, rather than sent as a single notification to the
+          listener
+<p>          <a href="http://archives.postgresql.org/pgsql-general/2008-01/msg00057.php">http://archives.postgresql.org/pgsql-general/2008-01/msg00057.php</a>
+</p>
+    </li><li>Allow NOTIFY in rules involving conditionals
+    </li><li>Improve LISTEN concurrency
+<p>          <a href="http://archives.postgresql.org/pgsql-hackers/2008-02/msg01106.php">http://archives.postgresql.org/pgsql-hackers/2008-02/msg01106.php</a>
+</p>
+  </li></ul>
 </li></ul>
 <h1><a name="section_8">Referential Integrity</a></h1>
 
@@ -796,7 +802,7 @@ first.  There is also a developer's wiki at<br/>
 </p>
     </li><li>Allow function parameters to be passed by name,
           get_employee_salary(12345 AS emp_id, 2001 AS tax_year)
-    </li><li>Allow handling of %TYPE arrays, e.g. tab.col%TYPE[<a href="http://momjian.postgresql.org/cgi-bin/pgtodo?"></a>]
+    </li><li>Allow handling of %TYPE arrays, e.g. tab.col%TYPE[]
     </li><li>Allow listing of record column names, and access to
           record columns via variables, e.g. columns := r.(*),
           tval2 := r.(colname)
@@ -866,11 +872,12 @@ first.  There is also a developer's wiki at<br/>
   <ul>
     <li>Have psql show current values for a sequence
     </li><li>Move psql backslash database information into the backend, use
-          mnemonic commands? [<a href="http://momjian.postgresql.org/cgi-bin/pgtodo?psql">psql</a>]
+          mnemonic commands?
 <p>          This would allow non-psql clients to pull the same information out
           of the database as psql.
+          <a href="http://archives.postgresql.org/pgsql-hackers/2004-01/msg00191.php">http://archives.postgresql.org/pgsql-hackers/2004-01/msg00191.php</a>
 </p>
-    </li><li>Fix psql's \d commands more consistent
+    </li><li>Make psql's \d commands more consistent
 <p>          <a href="http://archives.postgresql.org/pgsql-hackers/2004-11/msg00014.php">http://archives.postgresql.org/pgsql-hackers/2004-11/msg00014.php</a>
           <a href="http://archives.postgresql.org/pgsql-hackers/2004-11/msg00014.php">http://archives.postgresql.org/pgsql-hackers/2004-11/msg00014.php</a>
 </p>
@@ -977,7 +984,7 @@ first.  There is also a developer's wiki at<br/>
     </li><li>Use backend PREPARE/EXECUTE facility for ecpg where possible
     </li><li>Implement SQLDA
     </li><li>Fix nested C comments
-    </li><li>%sqlwarn[<a href="http://momjian.postgresql.org/cgi-bin/pgtodo?6">6</a>] should be 'W' if the PRECISION or SCALE value specified
+    </li><li>%sqlwarn[6] should be 'W' if the PRECISION or SCALE value specified
     </li><li>Make SET CONNECTION thread-aware, non-standard?
     </li><li>Allow multidimensional arrays
     </li><li>Add internationalized message strings
@@ -1063,6 +1070,10 @@ first.  There is also a developer's wiki at<br/>
 </p>
 <p>  <a href="http://archives.postgresql.org/pgsql-patches/2005-07/msg00512.php">http://archives.postgresql.org/pgsql-patches/2005-07/msg00512.php</a>
   <a href="http://archives.postgresql.org/pgsql-hackers/2006-12/msg01107.php">http://archives.postgresql.org/pgsql-hackers/2006-12/msg01107.php</a>
+  <a href="http://archives.postgresql.org/pgsql-hackers/2007-03/msg00265.php">http://archives.postgresql.org/pgsql-hackers/2007-03/msg00265.php</a>
+  <a href="http://archives.postgresql.org/pgsql-hackers/2007-03/msg01214.php">http://archives.postgresql.org/pgsql-hackers/2007-03/msg01214.php</a>
+  <a href="http://archives.postgresql.org/pgsql-patches/2007-05/msg00013.php">http://archives.postgresql.org/pgsql-patches/2007-05/msg00013.php</a>
+  <a href="http://archives.postgresql.org/pgsql-hackers/2007-07/msg00741.php">http://archives.postgresql.org/pgsql-hackers/2007-07/msg00741.php</a>
 </p>
   </li><li>Allow accurate statistics to be collected on indexes with more than
   one column or expression indexes, perhaps using per-index statistics
@@ -1083,6 +1094,8 @@ first.  There is also a developer's wiki at<br/>
   <a href="http://archives.postgresql.org/pgsql-hackers/2007-02/msg01264.php">http://archives.postgresql.org/pgsql-hackers/2007-02/msg01264.php</a>
   <a href="http://archives.postgresql.org/pgsql-hackers/2007-03/msg00465.php">http://archives.postgresql.org/pgsql-hackers/2007-03/msg00465.php</a>
   <a href="http://archives.postgresql.org/pgsql-patches/2007-03/msg00163.php">http://archives.postgresql.org/pgsql-patches/2007-03/msg00163.php</a>
+  <a href="http://archives.postgresql.org/pgsql-hackers/2007-08/msg00014.php">http://archives.postgresql.org/pgsql-hackers/2007-08/msg00014.php</a>
+  <a href="http://archives.postgresql.org/pgsql-hackers/2007-08/msg00487.php">http://archives.postgresql.org/pgsql-hackers/2007-08/msg00487.php</a>
 </p>
   </li><li>Add REINDEX CONCURRENTLY, like CREATE INDEX CONCURRENTLY
 <p>  This is difficult because you must upgrade to an exclusive table lock
@@ -1095,6 +1108,9 @@ first.  There is also a developer's wiki at<br/>
   single heap scan, and have pg_restore use it
   </li><li>Consider sorting entries before inserting into btree index
 <p>  <a href="http://archives.postgresql.org/pgsql-general/2008-01/msg01010.php">http://archives.postgresql.org/pgsql-general/2008-01/msg01010.php</a>
+</p>
+  </li><li>Allow index scans to return matching index keys
+<p>  <a href="http://archives.postgresql.org/pgsql-hackers/2007-03/msg01079.php">http://archives.postgresql.org/pgsql-hackers/2007-03/msg01079.php</a>
 </p>
   </li><li>Inheritance
   <ul>
@@ -1193,11 +1209,15 @@ first.  There is also a developer's wiki at<br/>
   checked at the end --- if it is the same, the table has not been
   modified --- any table change would increment the counter.
 </p>
+<p>  <a href="http://archives.postgresql.org/pgsql-patches/2007-10/msg00166.php">http://archives.postgresql.org/pgsql-patches/2007-10/msg00166.php</a>
+  <a href="http://archives.postgresql.org/pgsql-patches/2008-01/msg00049.php">http://archives.postgresql.org/pgsql-patches/2008-01/msg00049.php</a>
+</p>
   </li><li>Consider automatic caching of statements at various levels:
   <ul>
     <li>Parsed query tree
     </li><li>Query execute plan
     </li><li>Query results
+        <a href="http://archives.postgresql.org/pgsql-hackers/2008-04/msg00823.php">http://archives.postgresql.org/pgsql-hackers/2008-04/msg00823.php</a>
   </li></ul>
   </li><li>Consider increasing internal areas when shared buffers is increased
 <p>  <a href="http://archives.postgresql.org/pgsql-hackers/2005-10/msg01419.php">http://archives.postgresql.org/pgsql-hackers/2005-10/msg01419.php</a>
@@ -1240,6 +1260,11 @@ first.  There is also a developer's wiki at<br/>
 </p>
 <p>  <a href="http://archives.postgresql.org/pgsql-hackers/2006-12/msg01188.php">http://archives.postgresql.org/pgsql-hackers/2006-12/msg01188.php</a>
   <a href="http://archives.postgresql.org/pgsql-hackers/2007-01/msg00121.php">http://archives.postgresql.org/pgsql-hackers/2007-01/msg00121.php</a>
+  <a href="http://archives.postgresql.org/pgsql-patches/2007-03/msg00508.php">http://archives.postgresql.org/pgsql-patches/2007-03/msg00508.php</a>
+  <a href="http://archives.postgresql.org/pgsql-patches/2007-04/msg00347.php">http://archives.postgresql.org/pgsql-patches/2007-04/msg00347.php</a>
+  <a href="http://archives.postgresql.org/pgsql-hackers/2007-11/msg00156.php">http://archives.postgresql.org/pgsql-hackers/2007-11/msg00156.php</a>
+  <a href="http://archives.postgresql.org/pgsql-hackers/2008-03/msg00546.php">http://archives.postgresql.org/pgsql-hackers/2008-03/msg00546.php</a>
+  <a href="http://archives.postgresql.org/pgsql-hackers/2008-04/msg00416.php">http://archives.postgresql.org/pgsql-hackers/2008-04/msg00416.php</a>
 </p>
   </li><li>Allow FSM to return free space toward the beginning of the heap file,
   in hopes that empty pages at the end can be truncated by VACUUM
@@ -1307,7 +1332,7 @@ first.  There is also a developer's wiki at<br/>
 <h1><a name="section_17">Startup Time Improvements</a></h1>
 
 <ul>
-  <li>Experiment with multi-threaded backend for backend creation [<a href="http://momjian.postgresql.org/cgi-bin/pgtodo?thread">thread</a>]
+  <li>Experiment with multi-threaded backend for backend creation
 <p>  This would prevent the overhead associated with process creation. Most
   operating systems have trivial process creation time compared to
   database startup overhead, but a few operating systems (Win32,
@@ -1318,11 +1343,12 @@ first.  There is also a developer's wiki at<br/>
 <h1><a name="section_18">Write-Ahead Log</a></h1>
 
 <ul>
-  <li>Eliminate need to write full pages to WAL before page modification [<a href="http://momjian.postgresql.org/cgi-bin/pgtodo?wal">wal</a>]
+  <li>Eliminate need to write full pages to WAL before page modification
 <p>  Currently, to protect against partial disk page writes, we write
   full page images to WAL before they are modified so we can correct any
   partial page writes during recovery.  These pages can also be
   eliminated from point-in-time archive files.
+  <a href="http://archives.postgresql.org/pgsql-hackers/2002-06/msg00655.php">http://archives.postgresql.org/pgsql-hackers/2002-06/msg00655.php</a>
 </p>
   <ul>
     <li>When off, write CRC to WAL and check file system blocks
@@ -1352,23 +1378,26 @@ first.  There is also a developer's wiki at<br/>
 <p>  Currently fsync of WAL requires the disk platter to perform a full
   rotation to fsync again. One idea is to write the WAL to different
   offsets that might reduce the rotational delay.
+  <a href="http://archives.postgresql.org/pgsql-hackers/2002-11/msg00483.php">http://archives.postgresql.org/pgsql-hackers/2002-11/msg00483.php</a>
 </p>
   </li><li>Allow WAL logging to be turned off for a table, but the table
-  might be dropped or truncated during crash recovery [<a href="http://momjian.postgresql.org/cgi-bin/pgtodo?walcontrol">walcontrol</a>]
+  might be dropped or truncated during crash recovery
 <p>  Allow tables to bypass WAL writes and just fsync() dirty pages on
   commit.  This should be implemented using ALTER TABLE, e.g. ALTER
-  TABLE PERSISTENCE [<a href="http://momjian.postgresql.org/cgi-bin/pgtodo? DROP | TRUNCATE | DEFAULT "> DROP | TRUNCATE | DEFAULT </a>].  Tables using
+  TABLE PERSISTENCE [ DROP | TRUNCATE | DEFAULT ].  Tables using
   non-default logging should not use referential integrity with
   default-logging tables.  A table without dirty buffers during a
   crash could perhaps avoid the drop/truncate.
+  <a href="http://archives.postgresql.org/pgsql-hackers/2005-12/msg01016.php">http://archives.postgresql.org/pgsql-hackers/2005-12/msg01016.php</a>
 </p>
   </li><li>Allow WAL logging to be turned off for a table, but the table would
-  avoid being truncated/dropped [<a href="http://momjian.postgresql.org/cgi-bin/pgtodo?walcontrol">walcontrol</a>]
+  avoid being truncated/dropped
 <p>  To do this, only a single writer can modify the table, and writes
   must happen only on new pages so the new pages can be removed during
   crash recovery.  Readers can continue accessing the table.  Such
   tables probably cannot have indexes.  One complexity is the handling
   of indexes on TOAST tables.
+  <a href="http://archives.postgresql.org/pgsql-hackers/2005-12/msg01016.php">http://archives.postgresql.org/pgsql-hackers/2005-12/msg01016.php</a>
 </p>
   </li><li>Speed WAL recovery by allowing more than one page to be prefetched
 <p>  This should be done utilizing the same infrastructure used for
@@ -1621,6 +1650,12 @@ first.  There is also a developer's wiki at<br/>
   </li><li>Improve detection of shared memory segments being used by other
   FreeBSD jails
 <p>  <a href="http://archives.postgresql.org/pgsql-hackers/2008-01/msg00656.php">http://archives.postgresql.org/pgsql-hackers/2008-01/msg00656.php</a>
+</p>
+  </li><li>Implement the non-threaded Avahi service discovery protocol
+<p>  <a href="http://archives.postgresql.org/pgsql-hackers/2008-02/msg00939.php">http://archives.postgresql.org/pgsql-hackers/2008-02/msg00939.php</a>
+  <a href="http://archives.postgresql.org/pgsql-patches/2008-02/msg00097.php">http://archives.postgresql.org/pgsql-patches/2008-02/msg00097.php</a>
+  <a href="http://archives.postgresql.org/pgsql-hackers/2008-03/msg01211.php">http://archives.postgresql.org/pgsql-hackers/2008-03/msg01211.php</a>
+  <a href="http://archives.postgresql.org/pgsql-patches/2008-04/msg00001.php">http://archives.postgresql.org/pgsql-patches/2008-04/msg00001.php</a>
 </p>
   </li><li>Win32
   <ul>

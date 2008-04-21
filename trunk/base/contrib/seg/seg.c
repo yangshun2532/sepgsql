@@ -33,16 +33,28 @@ extern int	 seg_yydebug;
 /*
 ** Input/Output routines
 */
-SEG		   *seg_in(char *str);
-char	   *seg_out(SEG * seg);
-float32		seg_lower(SEG * seg);
-float32		seg_upper(SEG * seg);
-float32		seg_center(SEG * seg);
+PG_FUNCTION_INFO_V1(seg_in);
+PG_FUNCTION_INFO_V1(seg_out);
+PG_FUNCTION_INFO_V1(seg_size);
+PG_FUNCTION_INFO_V1(seg_lower);
+PG_FUNCTION_INFO_V1(seg_upper);
+PG_FUNCTION_INFO_V1(seg_center);
+
+Datum		seg_in(PG_FUNCTION_ARGS);
+Datum		seg_out(PG_FUNCTION_ARGS);
+Datum		seg_size(PG_FUNCTION_ARGS);
+Datum		seg_lower(PG_FUNCTION_ARGS);
+Datum		seg_upper(PG_FUNCTION_ARGS);
+Datum		seg_center(PG_FUNCTION_ARGS);
 
 /*
 ** GiST support methods
 */
-bool		gseg_consistent(GISTENTRY *entry, SEG * query, StrategyNumber strategy);
+bool		gseg_consistent(GISTENTRY *entry,
+							SEG * query,
+							StrategyNumber strategy,
+							Oid subtype,
+							bool *recheck);
 GISTENTRY  *gseg_compress(GISTENTRY *entry);
 GISTENTRY  *gseg_decompress(GISTENTRY *entry);
 float	   *gseg_penalty(GISTENTRY *origentry, GISTENTRY *newentry, float *result);
@@ -71,7 +83,6 @@ bool		seg_over_right(SEG * a, SEG * b);
 SEG		   *seg_union(SEG * a, SEG * b);
 SEG		   *seg_inter(SEG * a, SEG * b);
 void		rt_seg_size(SEG * a, float *sz);
-float	   *seg_size(SEG * a);
 
 /*
 ** Various operators
@@ -94,9 +105,10 @@ int			significant_digits(char *s);
  * Input/Output functions
  *****************************************************************************/
 
-SEG *
-seg_in(char *str)
+Datum
+seg_in(PG_FUNCTION_ARGS)
 {
+	char	   *str = PG_GETARG_CSTRING(0);
 	SEG		   *result = palloc(sizeof(SEG));
 
 	seg_scanner_init(str);
@@ -106,17 +118,15 @@ seg_in(char *str)
 
 	seg_scanner_finish();
 
-	return (result);
+	PG_RETURN_POINTER(result);
 }
 
-char *
-seg_out(SEG * seg)
+Datum
+seg_out(PG_FUNCTION_ARGS)
 {
+	SEG		   *seg = (SEG *) PG_GETARG_POINTER(0);
 	char	   *result;
 	char	   *p;
-
-	if (seg == NULL)
-		return (NULL);
 
 	p = result = (char *) palloc(40);
 
@@ -134,14 +144,14 @@ seg_out(SEG * seg)
 	{
 		if (seg->l_ext != '-')
 		{
-			/* print the lower boudary if exists */
+			/* print the lower boundary if exists */
 			p += restore(p, seg->lower, seg->l_sigd);
 			p += sprintf(p, " ");
 		}
 		p += sprintf(p, "..");
 		if (seg->u_ext != '-')
 		{
-			/* print the upper boudary if exists */
+			/* print the upper boundary if exists */
 			p += sprintf(p, " ");
 			if (seg->u_ext == '>' || seg->u_ext == '<' || seg->l_ext == '~')
 				p += sprintf(p, "%c", seg->u_ext);
@@ -149,43 +159,31 @@ seg_out(SEG * seg)
 		}
 	}
 
-	return (result);
+	PG_RETURN_CSTRING(result);
 }
 
-float32
-seg_center(SEG * seg)
+Datum
+seg_center(PG_FUNCTION_ARGS)
 {
-	float32		result = (float32) palloc(sizeof(float32data));
+	SEG 	*seg = (SEG *) PG_GETARG_POINTER(0);
 
-	if (!seg)
-		return (float32) NULL;
-
-	*result = ((float) seg->lower + (float) seg->upper) / 2.0;
-	return (result);
+	PG_RETURN_FLOAT4(((float) seg->lower + (float) seg->upper) / 2.0);
 }
 
-float32
-seg_lower(SEG * seg)
+Datum
+seg_lower(PG_FUNCTION_ARGS)
 {
-	float32		result = (float32) palloc(sizeof(float32data));
+	SEG 	*seg = (SEG *) PG_GETARG_POINTER(0);
 
-	if (!seg)
-		return (float32) NULL;
-
-	*result = (float) seg->lower;
-	return (result);
+	PG_RETURN_FLOAT4(seg->lower);
 }
 
-float32
-seg_upper(SEG * seg)
+Datum
+seg_upper(PG_FUNCTION_ARGS)
 {
-	float32		result = (float32) palloc(sizeof(float32data));
+	SEG		*seg = (SEG *) PG_GETARG_POINTER(0);
 
-	if (!seg)
-		return (float32) NULL;
-
-	*result = (float) seg->upper;
-	return (result);
+	PG_RETURN_FLOAT4(seg->upper);
 }
 
 
@@ -202,8 +200,13 @@ seg_upper(SEG * seg)
 bool
 gseg_consistent(GISTENTRY *entry,
 				SEG * query,
-				StrategyNumber strategy)
+				StrategyNumber strategy,
+				Oid subtype,
+				bool *recheck)
 {
+	/* All cases served by this function are exact */
+	*recheck = false;
+
 	/*
 	 * if entry is not leaf, use gseg_internal_consistent, else use
 	 * gseg_leaf_consistent
@@ -715,16 +718,12 @@ rt_seg_size(SEG * a, float *size)
 	return;
 }
 
-float *
-seg_size(SEG * a)
+Datum
+seg_size(PG_FUNCTION_ARGS)
 {
-	float	   *result;
+	SEG 	*seg = (SEG *) PG_GETARG_POINTER(0);
 
-	result = (float *) palloc(sizeof(float));
-
-	*result = (float) Abs(a->upper - a->lower);
-
-	return (result);
+	PG_RETURN_FLOAT4((float) Abs(seg->upper - seg->lower));
 }
 
 

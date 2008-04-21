@@ -7,7 +7,7 @@
  * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/backend/access/transam/xlog.c,v 1.296 2008/04/05 01:34:06 momjian Exp $
+ * $PostgreSQL: pgsql/src/backend/access/transam/xlog.c,v 1.298 2008/04/21 00:26:44 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -43,6 +43,7 @@
 #include "postmaster/bgwriter.h"
 #include "storage/bufpage.h"
 #include "storage/fd.h"
+#include "storage/ipc.h"
 #include "storage/pmsignal.h"
 #include "storage/procarray.h"
 #include "storage/smgr.h"
@@ -419,11 +420,11 @@ static void writeTimeLineHistory(TimeLineID newTLI, TimeLineID parentTLI,
 static void WriteControlFile(void);
 static void ReadControlFile(void);
 static char *str_time(pg_time_t tnow);
-static void issue_xlog_fsync(void);
-
 #ifdef WAL_DEBUG
 static void xlog_outrec(StringInfo buf, XLogRecord *record);
 #endif
+static void issue_xlog_fsync(void);
+static void pg_start_backup_callback(int code, Datum arg);
 static bool read_backup_label(XLogRecPtr *checkPointLoc,
 				  XLogRecPtr *minRecoveryLoc);
 static void rm_redo_error_callback(void *arg);
@@ -3790,10 +3791,12 @@ WriteControlFile(void)
 	ControlFile->toast_max_chunk_size = TOAST_MAX_CHUNK_SIZE;
 
 #ifdef HAVE_INT64_TIMESTAMP
-	ControlFile->enableIntTimes = TRUE;
+	ControlFile->enableIntTimes = true;
 #else
-	ControlFile->enableIntTimes = FALSE;
+	ControlFile->enableIntTimes = false;
 #endif
+	ControlFile->float4ByVal = FLOAT4PASSBYVAL;
+	ControlFile->float8ByVal = FLOAT8PASSBYVAL;
 
 	ControlFile->localeBuflen = LOCALE_NAME_BUFLEN;
 	localeptr = setlocale(LC_COLLATE, NULL);
@@ -3999,18 +4002,50 @@ ReadControlFile(void)
 				 errhint("It looks like you need to recompile or initdb.")));
 
 #ifdef HAVE_INT64_TIMESTAMP
-	if (ControlFile->enableIntTimes != TRUE)
+	if (ControlFile->enableIntTimes != true)
 		ereport(FATAL,
 				(errmsg("database files are incompatible with server"),
 				 errdetail("The database cluster was initialized without HAVE_INT64_TIMESTAMP"
 				  " but the server was compiled with HAVE_INT64_TIMESTAMP."),
 				 errhint("It looks like you need to recompile or initdb.")));
 #else
-	if (ControlFile->enableIntTimes != FALSE)
+	if (ControlFile->enableIntTimes != false)
 		ereport(FATAL,
 				(errmsg("database files are incompatible with server"),
 				 errdetail("The database cluster was initialized with HAVE_INT64_TIMESTAMP"
 			   " but the server was compiled without HAVE_INT64_TIMESTAMP."),
+				 errhint("It looks like you need to recompile or initdb.")));
+#endif
+
+#ifdef USE_FLOAT4_BYVAL
+	if (ControlFile->float4ByVal != true)
+		ereport(FATAL,
+				(errmsg("database files are incompatible with server"),
+				 errdetail("The database cluster was initialized without USE_FLOAT4_BYVAL"
+						   " but the server was compiled with USE_FLOAT4_BYVAL."),
+				 errhint("It looks like you need to recompile or initdb.")));
+#else
+	if (ControlFile->float4ByVal != false)
+		ereport(FATAL,
+				(errmsg("database files are incompatible with server"),
+				 errdetail("The database cluster was initialized with USE_FLOAT4_BYVAL"
+						   " but the server was compiled without USE_FLOAT4_BYVAL."),
+				 errhint("It looks like you need to recompile or initdb.")));
+#endif
+
+#ifdef USE_FLOAT8_BYVAL
+	if (ControlFile->float8ByVal != true)
+		ereport(FATAL,
+				(errmsg("database files are incompatible with server"),
+				 errdetail("The database cluster was initialized without USE_FLOAT8_BYVAL"
+						   " but the server was compiled with USE_FLOAT8_BYVAL."),
+				 errhint("It looks like you need to recompile or initdb.")));
+#else
+	if (ControlFile->float8ByVal != false)
+		ereport(FATAL,
+				(errmsg("database files are incompatible with server"),
+				 errdetail("The database cluster was initialized with USE_FLOAT8_BYVAL"
+						   " but the server was compiled without USE_FLOAT8_BYVAL."),
 				 errhint("It looks like you need to recompile or initdb.")));
 #endif
 
@@ -6442,8 +6477,8 @@ pg_start_backup(PG_FUNCTION_ARGS)
 	XLogCtl->Insert.forcePageWrites = true;
 	LWLockRelease(WALInsertLock);
 
-	/* Use a TRY block to ensure we release forcePageWrites if fail below */
-	PG_TRY();
+	/* Ensure we release forcePageWrites if fail below */
+	PG_ENSURE_ERROR_CLEANUP(pg_start_backup_callback, (Datum) 0);
 	{
 		/*
 		 * Force a CHECKPOINT.	Aside from being necessary to prevent torn
@@ -6515,16 +6550,7 @@ pg_start_backup(PG_FUNCTION_ARGS)
 					 errmsg("could not write file \"%s\": %m",
 							BACKUP_LABEL_FILE)));
 	}
-	PG_CATCH();
-	{
-		/* Turn off forcePageWrites on failure */
-		LWLockAcquire(WALInsertLock, LW_EXCLUSIVE);
-		XLogCtl->Insert.forcePageWrites = false;
-		LWLockRelease(WALInsertLock);
-
-		PG_RE_THROW();
-	}
-	PG_END_TRY();
+	PG_END_ENSURE_ERROR_CLEANUP(pg_start_backup_callback, (Datum) 0);
 
 	/*
 	 * We're done.  As a convenience, return the starting WAL location.
@@ -6532,6 +6558,16 @@ pg_start_backup(PG_FUNCTION_ARGS)
 	snprintf(xlogfilename, sizeof(xlogfilename), "%X/%X",
 			 startpoint.xlogid, startpoint.xrecoff);
 	PG_RETURN_TEXT_P(cstring_to_text(xlogfilename));
+}
+
+/* Error cleanup callback for pg_start_backup */
+static void
+pg_start_backup_callback(int code, Datum arg)
+{
+	/* Turn off forcePageWrites on failure */
+	LWLockAcquire(WALInsertLock, LW_EXCLUSIVE);
+	XLogCtl->Insert.forcePageWrites = false;
+	LWLockRelease(WALInsertLock);
 }
 
 /*
