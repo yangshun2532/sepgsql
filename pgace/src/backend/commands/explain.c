@@ -7,7 +7,7 @@
  * Portions Copyright (c) 1994-5, Regents of the University of California
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/commands/explain.c,v 1.171 2008/03/26 18:48:59 alvherre Exp $
+ *	  $PostgreSQL: pgsql/src/backend/commands/explain.c,v 1.173 2008/04/18 01:42:17 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -20,7 +20,6 @@
 #include "commands/prepare.h"
 #include "commands/trigger.h"
 #include "executor/instrument.h"
-#include "nodes/print.h"
 #include "optimizer/clauses.h"
 #include "optimizer/planner.h"
 #include "optimizer/var.h"
@@ -44,7 +43,7 @@ explain_get_index_name_hook_type explain_get_index_name_hook = NULL;
 typedef struct ExplainState
 {
 	/* options */
-	bool		printNodes;		/* do nodeToString() too */
+	bool		printTList;		/* print plan targetlists */
 	bool		printAnalyze;	/* print actual times */
 	/* other states */
 	PlannedStmt *pstmt;			/* top of plan */
@@ -61,6 +60,8 @@ static void explain_outNode(StringInfo str,
 				Plan *plan, PlanState *planstate,
 				Plan *outer_plan,
 				int indent, ExplainState *es);
+static void show_plan_tlist(Plan *plan,
+							StringInfo str, int indent, ExplainState *es);
 static void show_scan_qual(List *qual, const char *qlabel,
 			   int scanrelid, Plan *outer_plan, Plan *inner_plan,
 			   StringInfo str, int indent, ExplainState *es);
@@ -269,29 +270,10 @@ ExplainOnePlan(PlannedStmt *plannedstmt, ParamListInfo params,
 
 	es = (ExplainState *) palloc0(sizeof(ExplainState));
 
-	es->printNodes = stmt->verbose;
+	es->printTList = stmt->verbose;
 	es->printAnalyze = stmt->analyze;
 	es->pstmt = queryDesc->plannedstmt;
 	es->rtable = queryDesc->plannedstmt->rtable;
-
-	if (es->printNodes)
-	{
-		char	   *s;
-		char	   *f;
-
-		s = nodeToString(queryDesc->plannedstmt->planTree);
-		if (s)
-		{
-			if (Explain_pretty_print)
-				f = pretty_format_node_dump(s);
-			else
-				f = format_node_dump(s);
-			pfree(s);
-			do_text_output_multiline(tstate, f);
-			pfree(f);
-			do_text_output_oneline(tstate, ""); /* separator line */
-		}
-	}
 
 	initStringInfo(&buf);
 	explain_outNode(&buf,
@@ -443,7 +425,7 @@ explain_outNode(StringInfo str,
 				Plan *outer_plan,
 				int indent, ExplainState *es)
 {
-	char	   *pname;
+	const char *pname;
 	int			i;
 
 	if (plan == NULL)
@@ -744,6 +726,10 @@ explain_outNode(StringInfo str,
 		appendStringInfo(str, " (never executed)");
 	appendStringInfoChar(str, '\n');
 
+	/* target list */
+	if (es->printTList)
+		show_plan_tlist(plan, str, indent, es);
+
 	/* quals, sort keys, etc */
 	switch (nodeTag(plan))
 	{
@@ -1041,6 +1027,54 @@ explain_outNode(StringInfo str,
 							indent + 4, es);
 		}
 	}
+}
+
+/*
+ * Show the targetlist of a plan node
+ */
+static void
+show_plan_tlist(Plan *plan,
+				StringInfo str, int indent, ExplainState *es)
+{
+	List	   *context;
+	bool		useprefix;
+	ListCell   *lc;
+	int			i;
+
+	/* No work if empty tlist (this occurs eg in bitmap indexscans) */
+	if (plan->targetlist == NIL)
+		return;
+	/* The tlist of an Append isn't real helpful, so suppress it */
+	if (IsA(plan, Append))
+		return;
+
+	/* Set up deparsing context */
+	context = deparse_context_for_plan((Node *) outerPlan(plan),
+									   (Node *) innerPlan(plan),
+									   es->rtable);
+	useprefix = list_length(es->rtable) > 1;
+
+	/* Emit line prefix */
+	for (i = 0; i < indent; i++)
+		appendStringInfo(str, "  ");
+	appendStringInfo(str, "  Output: ");
+
+	/* Deparse each non-junk result column */
+	i = 0;
+	foreach(lc, plan->targetlist)
+	{
+		TargetEntry *tle = (TargetEntry *) lfirst(lc);
+
+		if (tle->resjunk)
+			continue;
+		if (i++ > 0)
+			appendStringInfo(str, ", ");
+		appendStringInfoString(str,
+							   deparse_expression((Node *) tle->expr, context,
+												  useprefix, false));
+	}
+
+	appendStringInfoChar(str, '\n');
 }
 
 /*

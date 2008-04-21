@@ -13,7 +13,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/commands/dbcommands.c,v 1.205 2008/03/26 21:10:37 alvherre Exp $
+ *	  $PostgreSQL: pgsql/src/backend/commands/dbcommands.c,v 1.208 2008/04/18 17:05:45 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -42,6 +42,7 @@
 #include "postmaster/bgwriter.h"
 #include "security/pgace.h"
 #include "storage/freespace.h"
+#include "storage/ipc.h"
 #include "storage/procarray.h"
 #include "storage/smgr.h"
 #include "utils/acl.h"
@@ -54,7 +55,14 @@
 #include "utils/tqual.h"
 
 
+typedef struct
+{
+	Oid			src_dboid;		/* source (template) DB */
+	Oid			dest_dboid;		/* DB we are trying to create */
+} createdb_failure_params;
+
 /* non-export function prototypes */
+static void createdb_failure_callback(int code, Datum arg);
 static bool get_db_info(const char *name, LOCKMODE lockmode,
 			Oid *dbIdP, Oid *ownerIdP,
 			int *encodingP, bool *dbIsTemplateP, bool *dbAllowConnP,
@@ -101,6 +109,7 @@ createdb(const CreatedbStmt *stmt)
 	int			encoding = -1;
 	int			dbconnlimit = -1;
 	int			ctype_encoding;
+	createdb_failure_params fparms;
 
 	/* Extract options from the statement node tree */
 	foreach(option, stmt->options)
@@ -459,12 +468,15 @@ createdb(const CreatedbStmt *stmt)
 
 	/*
 	 * Once we start copying subdirectories, we need to be able to clean 'em
-	 * up if we fail.  Establish a TRY block to make sure this happens. (This
+	 * up if we fail.  Use an ENSURE block to make sure this happens.  (This
 	 * is not a 100% solution, because of the possibility of failure during
 	 * transaction commit after we leave this routine, but it should handle
 	 * most scenarios.)
 	 */
-	PG_TRY();
+	fparms.src_dboid = src_dboid;
+	fparms.dest_dboid = dboid;
+	PG_ENSURE_ERROR_CLEANUP(createdb_failure_callback,
+							PointerGetDatum(&fparms));
 	{
 		/*
 		 * Iterate through all tablespaces of the template database, and copy
@@ -575,18 +587,25 @@ createdb(const CreatedbStmt *stmt)
 		 */
 		database_file_update_needed();
 	}
-	PG_CATCH();
-	{
-		/* Release lock on source database before doing recursive remove */
-		UnlockSharedObject(DatabaseRelationId, src_dboid, 0,
-						   ShareLock);
+	PG_END_ENSURE_ERROR_CLEANUP(createdb_failure_callback,
+								PointerGetDatum(&fparms));
+}
 
-		/* Throw away any successfully copied subdirectories */
-		remove_dbtablespaces(dboid);
+/* Error cleanup callback for createdb */
+static void
+createdb_failure_callback(int code, Datum arg)
+{
+	createdb_failure_params *fparms = (createdb_failure_params *) DatumGetPointer(arg);
 
-		PG_RE_THROW();
-	}
-	PG_END_TRY();
+	/*
+	 * Release lock on source database before doing recursive remove.
+	 * This is not essential but it seems desirable to release the lock
+	 * as soon as possible.
+	 */
+	UnlockSharedObject(DatabaseRelationId, fparms->src_dboid, 0, ShareLock);
+
+	/* Throw away any successfully copied subdirectories */
+	remove_dbtablespaces(fparms->dest_dboid);
 }
 
 
@@ -706,18 +725,20 @@ dropdb(const char *dbname, bool missing_ok)
 	pgstat_drop_database(db_id);
 
 	/*
-	 * Tell bgwriter to forget any pending fsync requests for files in the
-	 * database; else it'll fail at next checkpoint.
+	 * Tell bgwriter to forget any pending fsync and unlink requests for files
+	 * in the database; else the fsyncs will fail at next checkpoint, or worse,
+	 * it will delete files that belong to a newly created database with the
+	 * same OID.
 	 */
 	ForgetDatabaseFsyncRequests(db_id);
 
 	/*
-	 * On Windows, force a checkpoint so that the bgwriter doesn't hold any
-	 * open files, which would cause rmdir() to fail.
+	 * Force a checkpoint to make sure the bgwriter has received the message
+	 * sent by ForgetDatabaseFsyncRequests. On Windows, this also ensures that
+	 * the bgwriter doesn't hold any open files, which would cause rmdir() to
+	 * fail.
 	 */
-#ifdef WIN32
 	RequestCheckpoint(CHECKPOINT_IMMEDIATE | CHECKPOINT_FORCE | CHECKPOINT_WAIT);
-#endif
 
 	/*
 	 * Remove all tablespace subdirs belonging to the database.
@@ -1319,7 +1340,7 @@ remove_dbtablespaces(Oid db_id)
 
 		if (!rmtree(dstpath, true))
 			ereport(WARNING,
-					(errmsg("could not remove database directory \"%s\"",
+					(errmsg("some useless files may be left behind in old database directory \"%s\"",
 							dstpath)));
 
 		/* Record the filesystem change in XLOG */
@@ -1488,7 +1509,7 @@ dbase_redo(XLogRecPtr lsn, XLogRecord *record)
 		{
 			if (!rmtree(dst_path, true))
 				ereport(WARNING,
-						(errmsg("could not remove database directory \"%s\"",
+						(errmsg("some useless files may be left behind in old database directory \"%s\"",
 								dst_path)));
 		}
 
@@ -1527,7 +1548,7 @@ dbase_redo(XLogRecPtr lsn, XLogRecord *record)
 		/* And remove the physical files */
 		if (!rmtree(dst_path, true))
 			ereport(WARNING,
-					(errmsg("could not remove database directory \"%s\"",
+					(errmsg("some useless files may be left behind in old database directory \"%s\"",
 							dst_path)));
 	}
 	else
