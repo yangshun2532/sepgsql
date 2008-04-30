@@ -269,3 +269,96 @@ postgres=# SELECT cid, cname, show_credit(cid) FROM customer;
  
 postgres=#
 }}}
+
+= How to build/install SE-PostgreSQL =
+
+To apply RPM package is a recommended way to install/set up SE-PostgreSQL.
+We now provide `sepostgresql` RPM package, and you can obtain it from:
+
+http://download.fedora.redhat.com/pub/fedora/linux/development/
+
+However, you can build it by yourself.
+
+== ENVIRONMENT ==
+Please confirm your system environment.
+ * Fedora 8 or later system
+ * SELinux is enabled and working
+ * kernel-2.6.24 or later
+ * selinux-policy and selinux-policy-devel v3.0.8 or later
+ * libselinux, policycoreutils
+
+== BUILD ==
+{{{
+$ tar jxvf postgresql-snapshot.tar.bz2
+$ cd postgresql-snapshot
+$ patch -p1 < ../sepostgresql-pgace-8.4devel-3-r739.patch
+$ patch -p1 < ../sepostgresql-sepgsql-8.4devel-3-r739.patch
+$ patch -p1 < ../sepostgresql-pg_dump-8.4devel-3-r739.patch
+$ patch -p1 < ../sepostgresql-policy-8.4devel-3-r739.patch
+
+$ ./configure --enable-selinux
+$ make
+$ make -C contrib/sepgsql-policy
+$ su
+# make install
+
+# /usr/sbin/semodule -i contrib/sepgsql-policy/sepostgresql.pp
+  (NOTE: semodule is a utility to load/unload security policy modules.)
+
+# /sbin/restorecon -R /usr/local/pgsql
+  (NOTE: restorecon is a utilicy to initialize security context of files.)
+}}}
+
+== SETUP ==
+{{{
+# mkdir -p /opt/sepgsql
+# chown foo_user:var_group /opt/sepgsql
+# chcon -t postgresql_db_t /opt/sepgsql
+  (NOTE: chcon is a utility to set up security context of files.)
+# exit
+
+$ /usr/sbin/run_init /usr/local/pgsql/bin/initdb -D /opt/sepgsql
+  (NOTE: run_init is a utility to start a program, as if it is branched from init script.)
+$ /usr/local/pgsql/bin/pg_ctl -D /opt/sepgsql start
+}}}
+
+== SUMMARYS FOR EVERY PATCHES ==
+
+=== [1/4] - sepostgresql-pgace-8.4devel-3.patch ===
+
+This patch provides PGACE (PostgreSQL Access Control Extension) framework.
+
+It has a similar idea of LSM (Linu Security Module).
+It can provide a guest module several hooks at strategic points.
+The guest module can make its decision whether required actions should be
+allowed, or not.
+In addition, PGACE also provides falicilites to manage security attribute
+of database objects. Any tuple can have a its security attribute, and the
+guest module can refer it to control accesses.
+
+=== [2/4] - sepostgresql-sepgsql-8.4devel-3.patch ===
+
+This patch provides SE-PostgreSQL facilities based on PGACE.
+
+Security-Enhanced PostgreSQL (SE-PostgreSQL) is a security extension
+built in PostgreSQL, to provide system-wide consistency in access
+controls. It enables to apply a single unigied security policy of
+SELinux for both operating system and database management system.
+In addition, it also provides fine-grained mandatory access which
+includes column-/row- level non-bypassable access control even if
+privileged database users.
+
+=== [3/4] - sepostgresql-pg_dump-8.4devel-3.patch ===
+
+This patch gives us a feature to dump database with security attribute.
+It is turned on with '--enable-selinux' option at pg_dump/pg_dumpall,
+when the server works as SE- version.
+No need to say, users need to have enough capabilities to dump whole of
+database. It it same when they tries to restore the database.
+
+=== [4/4] - sepostgresql-policy-8.4devel-3.patch ===
+
+This patch gives us the default security policy for SE-PostgreSQL.
+You can build it as a security policy module. It can be linked with
+the existing distributor's policy, and reloaded.
+
