@@ -10,7 +10,7 @@
  * Written by Peter Eisentraut <peter_e@gmx.net>.
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/misc/guc.c,v 1.447 2008/04/18 01:42:17 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/utils/misc/guc.c,v 1.449 2008/04/29 20:44:49 tgl Exp $
  *
  *--------------------------------------------------------------------
  */
@@ -5207,29 +5207,45 @@ flatten_set_variable_args(const char *name, List *args)
 
 	initStringInfo(&buf);
 
+	/*
+	 * Each list member may be a plain A_Const node, or an A_Const within a
+	 * TypeCast; the latter case is supported only for ConstInterval
+	 * arguments (for SET TIME ZONE).
+	 */
 	foreach(l, args)
 	{
-		A_Const    *arg = (A_Const *) lfirst(l);
+		Node       *arg = (Node *) lfirst(l);
 		char	   *val;
+		TypeName   *typename = NULL;
+		A_Const	   *con;
 
 		if (l != list_head(args))
 			appendStringInfo(&buf, ", ");
 
+		if (IsA(arg, TypeCast))
+		{
+			TypeCast *tc = (TypeCast *) arg;
+
+			arg = tc->arg;
+			typename = tc->typename;
+		}
+
 		if (!IsA(arg, A_Const))
 			elog(ERROR, "unrecognized node type: %d", (int) nodeTag(arg));
+		con = (A_Const *) arg;
 
-		switch (nodeTag(&arg->val))
+		switch (nodeTag(&con->val))
 		{
 			case T_Integer:
-				appendStringInfo(&buf, "%ld", intVal(&arg->val));
+				appendStringInfo(&buf, "%ld", intVal(&con->val));
 				break;
 			case T_Float:
 				/* represented as a string, so just copy it */
-				appendStringInfoString(&buf, strVal(&arg->val));
+				appendStringInfoString(&buf, strVal(&con->val));
 				break;
 			case T_String:
-				val = strVal(&arg->val);
-				if (arg->typename != NULL)
+				val = strVal(&con->val);
+				if (typename != NULL)
 				{
 					/*
 					 * Must be a ConstInterval argument for TIME ZONE. Coerce
@@ -5241,7 +5257,7 @@ flatten_set_variable_args(const char *name, List *args)
 					Datum		interval;
 					char	   *intervalout;
 
-					typoid = typenameTypeId(NULL, arg->typename, &typmod);
+					typoid = typenameTypeId(NULL, typename, &typmod);
 					Assert(typoid == INTERVALOID);
 
 					interval =
@@ -5269,7 +5285,7 @@ flatten_set_variable_args(const char *name, List *args)
 				break;
 			default:
 				elog(ERROR, "unrecognized node type: %d",
-					 (int) nodeTag(&arg->val));
+					 (int) nodeTag(&con->val));
 				break;
 		}
 	}
