@@ -206,6 +206,9 @@ fi
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
 
 %changelog
+* Wed Apr 30 2008 <kaigai@kaigai.gr.jp> - 8.2.7-1.298
+- BUGFIX: ROW-level control did not work correctly on TRUNCATE
+
 * Thu Mar 27 2008 <kaigai@kaigai.gr.jp> - 8.2.7-1.281
 - update base PostgreSQL 8.2.6->8.2.7
 
