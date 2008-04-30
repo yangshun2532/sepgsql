@@ -1042,7 +1042,7 @@ static List *proxyExecuteStmt(Query *query)
 	return list_make1(query);
 }
 
-static Query *convertTruncateToDelete(Relation rel)
+static List *convertTruncateToDelete(Relation rel)
 {
 	Query *query = makeNode(Query);
 	RangeTblEntry *rte;
@@ -1062,31 +1062,30 @@ static Query *convertTruncateToDelete(Relation rel)
 	query->hasSubLinks = false;
 	query->hasAggs = false;
 
-	sepgsqlProxyQuery(query);
+	elog(NOTICE, "SELinux: TRUNCATE %s is replaced unconditional DELETE",
+		 RelationGetRelationName(rel));
 
-	return query;
+	return sepgsqlProxyQuery(query);
 }
 
 static List *proxyTruncateStmt(Query *query)
 {
 	TruncateStmt *stmt = (TruncateStmt *) query->utilityStmt;
 	Relation rel;
-	Query *subqry;
 	ListCell *l;
-	List *subquery_list = NIL, *subquery_lids = NIL;
+	List *subquery_list = NIL;
+	List *subquery_lids = NIL;
 
 	/* resolve the relation names */
 	foreach (l, stmt->relations) {
 		RangeVar *rv = lfirst(l);
 
 		rel = heap_openrv(rv, AccessShareLock);
-		subqry = convertTruncateToDelete(rel);
-		subquery_list = lappend(subquery_list, subqry);
-		subquery_lids = lappend_oid(subquery_lids, RelationGetRelid(rel));
-		heap_close(rel, NoLock);
-
-		elog(NOTICE, "SELinux: TRUNCATE %s is replaced unconditional DELETE",
-			 RelationGetRelationName(rel));
+		subquery_list = list_concat(subquery_list,
+									convertTruncateToDelete(rel));
+		subquery_lids = lappend_oid(subquery_lids,
+									RelationGetRelid(rel));
+		heap_close(rel, AccessShareLock);
 	}
 
 	if (stmt->behavior == DROP_CASCADE) {
@@ -1095,9 +1094,9 @@ static List *proxyTruncateStmt(Query *query)
 			Oid relid = lfirst_oid(l);
 
 			rel = heap_open(relid, AccessShareLock);
-			subqry = convertTruncateToDelete(rel);
-			subquery_list = lappend(subquery_list, subqry);
-			heap_close(rel, NoLock);
+			subquery_list = list_concat(subquery_list,
+										convertTruncateToDelete(rel));
+			heap_close(rel, AccessShareLock);
 		}
 	}
 	return subquery_list;

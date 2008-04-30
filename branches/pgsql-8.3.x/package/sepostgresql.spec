@@ -211,6 +211,9 @@ fi
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
 
 %changelog
+* Wed Apr 30 2008 <kaigai@kaigai.gr.jp> - sepostgresql-8.3.1-2.196
+- BUGFIX: ROW-level control did not work correctly on TRUNCATE
+
 * Sun Mar  9 2008 <kaigai@kaigai.gr.jp> - sepostgresql-8.3.0-2.129
 - BUGFIX: more conprehensive fixes in "SELECT COUNT(*) ..."
 
