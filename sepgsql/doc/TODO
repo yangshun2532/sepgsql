@@ -1,12 +1,12 @@
 PostgreSQL TODO List
 ====================
 Current maintainer:	Bruce Momjian (bruce@momjian.us)
-Last updated:		Sat Apr 19 08:32:51 EDT 2008
+Last updated:		Mon Apr 28 19:08:21 EDT 2008
 
 The most recent version of this document can be viewed at
 http://www.postgresql.org/docs/faqs.TODO.html.
 
-#A hyphen, "-", marks changes that will appear in the upcoming 8.3 release.#
+#A hyphen, "-", marks changes that will appear in the upcoming 8.4 release.#
 #A percent sign, "%", marks items that are easier to implement.#
 
 This list contains all known PostgreSQL bugs and feature requests. If
@@ -265,6 +265,10 @@ Data Types
 
   http://archives.postgresql.org/pgsql-general/2008-02/msg00347.php
 
+* Allow adding/renaming/removing enumerated values to an existing
+  enumerated data type
+
+  http://archives.postgresql.org/pgsql-hackers/2008-04/msg01718.php
 
 * Dates and Times
 
@@ -603,6 +607,14 @@ SQL Commands
 
   http://archives.postgresql.org/pgsql-hackers/2006-11/msg00092.php
 
+* Improve failure message when DROP DATABASE is used on a database that
+  has prepared transactions
+* Allow prepared transactions with temporary tables created and dropped
+  in the same transaction, and when an ON COMMIT DELETE ROWS temporary 
+  table is accessed
+
+  http://archives.postgresql.org/pgsql-hackers/2008-03/msg00047.php
+
 * Add a GUC variable to warn about non-standard SQL usage in queries
 * Add SQL-standard MERGE/REPLACE/UPSERT command
 
@@ -617,6 +629,7 @@ SQL Commands
 
   http://archives.postgresql.org/pgsql-hackers/2005-11/msg00501.php
   http://archives.postgresql.org/pgsql-hackers/2005-11/msg00536.php
+  http://archives.postgresql.org/pgsql-hackers/2008-04/msg01475.php
 
 * Add NOVICE output level for helpful messages like automatic sequence/index
   creation
@@ -656,8 +669,6 @@ SQL Commands
 * Add column to pg_stat_activity that shows the progress of long-running
   commands like CREATE INDEX and VACUUM
 * Implement SQL:2003 window functions
-* Improve failure message when DROP DATABASE is used on a database that
-  has prepared transactions
 * Allow INSERT/UPDATE ... RETURNING inside a SELECT 'FROM' clause
 
   http://archives.postgresql.org/pgsql-general/2006-09/msg00803.php
@@ -822,6 +833,10 @@ SQL Commands
 	  Currently this is always treated as a zero-length string,
 	  which generates an error when loading into an integer column
 	  http://archives.postgresql.org/pgsql-hackers/2007-07/msg00905.php
+
+	o Impove COPY performance
+
+	  http://archives.postgresql.org/pgsql-hackers/2008-02/msg00954.php
 
 
 
@@ -1061,7 +1076,7 @@ Clients
 
 	  http://archives.postgresql.org/pgsql-hackers/2008-01/msg00826.php
 
-
+	o Add prompt escape to display the client and server versions
 
 
 * pg_dump / pg_restore
@@ -1256,15 +1271,17 @@ Indexes
   http://archives.postgresql.org/pgsql-general/2007-06/msg00542.php
   http://archives.postgresql.org/pgsql-hackers/2008-01/msg01066.php
 
-* Consider compressing indexes by storing key values duplicated in
-  several rows as a single index entry
+* Consider smaller indexes that record a range of values per heap page,
+  rather than having one index entry for every heap row
 
+  This is useful if the heap is clustered by the indexed values.
   http://archives.postgresql.org/pgsql-hackers/2006-12/msg00341.php
   http://archives.postgresql.org/pgsql-hackers/2007-02/msg01264.php
   http://archives.postgresql.org/pgsql-hackers/2007-03/msg00465.php
   http://archives.postgresql.org/pgsql-patches/2007-03/msg00163.php
   http://archives.postgresql.org/pgsql-hackers/2007-08/msg00014.php
   http://archives.postgresql.org/pgsql-hackers/2007-08/msg00487.php
+  http://archives.postgresql.org/pgsql-hackers/2008-04/msg01589.php
 
 * Add REINDEX CONCURRENTLY, like CREATE INDEX CONCURRENTLY
 
@@ -1281,9 +1298,11 @@ Indexes
 
   http://archives.postgresql.org/pgsql-general/2008-01/msg01010.php
 
-* Allow index scans to return matching index keys
+* Allow index scans to return matching index keys, not just the matching
+  heap locations
 
-  http://archives.postgresql.org/pgsql-hackers/2007-03/msg01079.php
+  http://archives.postgresql.org/pgsql-hackers/2008-04/msg01657.php
+
 
 
 * Inheritance
