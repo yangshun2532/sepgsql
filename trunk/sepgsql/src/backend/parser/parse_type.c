@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/parser/parse_type.c,v 1.95 2008/04/11 22:54:23 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/parser/parse_type.c,v 1.97 2008/04/29 20:44:49 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -289,19 +289,15 @@ typenameTypeMod(ParseState *pstate, const TypeName *typename, Type typ)
 		{
 			A_Const    *ac = (A_Const *) tm;
 
-			/*
-			 * The grammar hands back some integers with ::int4 attached, so
-			 * allow a cast decoration if it's an Integer value, but not
-			 * otherwise.
-			 */
 			if (IsA(&ac->val, Integer))
 			{
 				cstr = (char *) palloc(32);
 				snprintf(cstr, 32, "%ld", (long) ac->val.val.ival);
 			}
-			else if (ac->typename == NULL)		/* no casts allowed */
+			else if (IsA(&ac->val, Float) ||
+					 IsA(&ac->val, String))
 			{
-				/* otherwise we can just use the str field directly. */
+				/* we can just use the str field directly. */
 				cstr = ac->val.val.str;
 			}
 		}
