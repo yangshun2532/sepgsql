@@ -207,26 +207,34 @@ fi
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
 
 %changelog
-* Sun Mar  9 2008 <kaigai@kaigai.gr.jp> - sepostgresql-8.3.0-2.129
+* Wed Apr 30 2008 <kaigai@kaigai.gr.jp> - 8.4devel-3.82
+- BUGFIX: ROW-level control did not work correctly on TRUNCATE
+- Code clean up in sepgsql/proxy.c, using expression_tree_walker().
+- Inconsistent version number format at Changelogs
+
+* Wed Mar 12 2008 <kaigai@kaigai.gr.jp> - 8.4devel-3.26
+- 8.4devel tree was branched.
+
+* Sun Mar  9 2008 <kaigai@kaigai.gr.jp> - 8.3.0-2.129
 - BUGFIX: more conprehensive fixes in "SELECT COUNT(*) ..."
 
-* Sun Mar  2 2008 <kaigai@kaigai.gr.jp> - sepostgresql-8.3.0-2.120
+* Sun Mar  2 2008 <kaigai@kaigai.gr.jp> - 8.3.0-2.120
 - BUGFIX: CREATE TABLE statement with explicit labeled columns
 - BUGFIX: SELECT count(*) does not filter unallowed tuples
 
-* Wed Feb 27 2008 <kaigai@kaigai.gr.jp> - sepostgresql-8.3.0-2.117
+* Wed Feb 27 2008 <kaigai@kaigai.gr.jp> - 8.3.0-2.117
 - ".beta" removed.
 
-* Wed Feb 27 2008 <kaigai@kaigai.gr.jp> - sepostgresql-8.3.0-2.114
+* Wed Feb 27 2008 <kaigai@kaigai.gr.jp> - 8.3.0-2.114
 - Security policy updates
 
-* Tue Feb 26 2008 <kaigai@kaigai.gr.jp> - sepostgresql-8.3.0-2.113
+* Tue Feb 26 2008 <kaigai@kaigai.gr.jp> - 8.3.0-2.113
 - BUGFIX: CREATE/ALTER TABLE with CONTEXT='...' did nothing.
 
-* Thu Feb  7 2008 <kaigai@kaigai.gr.jp> - sepostgresql-8.3.0-2.108
+* Thu Feb  7 2008 <kaigai@kaigai.gr.jp> - 8.3.0-2.108
 - add /etc/logrotate.d/sepostgresql
 
-* Thu Feb  7 2008 <kaigai@kaigai.gr.jp> - sepostgresql-8.3.0-2.105
+* Thu Feb  7 2008 <kaigai@kaigai.gr.jp> - 8.3.0-2.105
 - update base version to stable 8.3.0
 - add tzdata dependency
 - allow db_database:{get_param set_param} for generic domain
@@ -236,17 +244,17 @@ fi
 - BUGFIX: incorrect permission in DELETE with RETURNING clause
 - incorrect permission when we read and update security_context in same time.
 
-* Fri Jan 25 2008 <kaigai@kaigai.gr.jp> - sepostgresql-8.3RC2-2.62
+* Fri Jan 25 2008 <kaigai@kaigai.gr.jp> - 8.3RC2-2.62
 - BUGFIX: add handling to invalid contexts already stored
 
-* Tue Jan 22 2008 <kaigai@kaigai.gr.jp> - sepostgresql-8.3RC2-2.56
+* Tue Jan 22 2008 <kaigai@kaigai.gr.jp> - 8.3RC2-2.56
 - BUGFIX: lack of locks when refering buffer pages at update/delete hooks
 - BUGFIX: explicit labeling using SELECT ... INTO statement.
 
-* Sun Jan 20 2008 <kaigai@kaigai.gr.jp> - sepostgresql-8.3RC2-2.52
+* Sun Jan 20 2008 <kaigai@kaigai.gr.jp> - 8.3RC2-2.52
 - shares /usr/lib/pgsql/*.so libraries, with original postgresql.
 
-* Thu Jan 10 2008 <kaigai@kaigai.gr.jp> - sepostgresql-8.3RC1-2.37
+* Thu Jan 10 2008 <kaigai@kaigai.gr.jp> - 8.3RC1-2.37
 - add sepg_dump/sepg_dumpall support for 8.3base package.
 
 * Mon Nov 26 2007 <kaigai@kaigai.gr.jp> - 8.3beta3-2.0
