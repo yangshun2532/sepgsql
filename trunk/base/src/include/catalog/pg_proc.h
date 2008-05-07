@@ -7,7 +7,7 @@
  * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/catalog/pg_proc.h,v 1.494 2008/04/29 13:00:22 alvherre Exp $
+ * $PostgreSQL: pgsql/src/include/catalog/pg_proc.h,v 1.496 2008/05/04 23:19:23 tgl Exp $
  *
  * NOTES
  *	  The script catalog/genbki.sh reads this file and generates .bki
@@ -3872,6 +3872,10 @@ DATA(insert OID = 1068 (  generate_series PGNSP PGUID 12 1 1000 f f t t i 3 20 "
 DESCR("non-persistent series generator");
 DATA(insert OID = 1069 (  generate_series PGNSP PGUID 12 1 1000 f f t t i 2 20 "20 20" _null_ _null_ _null_ generate_series_int8 - _null_ _null_ ));
 DESCR("non-persistent series generator");
+DATA(insert OID = 938  (  generate_series PGNSP PGUID 12 1 1000 f f t t i 3 1114 "1114 1114 1186" _null_ _null_ _null_ generate_series_timestamp - _null_ _null_ ));
+DESCR("non-persistent series generator");
+DATA(insert OID = 939  (  generate_series PGNSP PGUID 12 1 1000 f f t t s 3 1184 "1184 1184 1186" _null_ _null_ _null_ generate_series_timestamptz - _null_ _null_ ));
+DESCR("non-persistent series generator");
 
 /* boolean aggregates */
 DATA(insert OID = 2515 ( booland_statefunc			   PGNSP PGUID 12 1 0 f f t f i 2 16 "16 16" _null_ _null_ _null_ booland_statefunc - _null_ _null_ ));
@@ -3922,8 +3926,11 @@ DATA(insert OID = 2559 ( lastval			   PGNSP PGUID 12 1 0 f f t f v 0 20 "" _null
 DESCR("current value from last used sequence");
 
 /* start time function */
-DATA(insert OID = 2560 (  pg_postmaster_start_time PGNSP PGUID 12 1 0 f f t f s 0 1184 "" _null_ _null_ _null_ pgsql_postmaster_start_time - _null_ _null_ ));
+DATA(insert OID = 2560 (  pg_postmaster_start_time	PGNSP PGUID 12 1 0 f f t f s 0 1184 "" _null_ _null_ _null_ pg_postmaster_start_time - _null_ _null_ ));
 DESCR("postmaster start time");
+/* config reload time function */
+DATA(insert OID = 2034 (  pg_conf_load_time			PGNSP PGUID 12 1 0 f f t f s 0 1184 "" _null_ _null_ _null_ pg_conf_load_time - _null_ _null_ ));
+DESCR("configuration load time");
 
 /* new functions for Y-direction rtree opclasses */
 DATA(insert OID = 2562 (  box_below		   PGNSP PGUID 12 1 0 f f t f i 2 16 "603 603" _null_ _null_ _null_ box_below - _null_ _null_ ));

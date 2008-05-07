@@ -3,7 +3,7 @@
  *
  * Copyright (c) 2000-2008, PostgreSQL Global Development Group
  *
- * $PostgreSQL: pgsql/src/bin/psql/describe.c,v 1.167 2008/04/14 15:04:20 alvherre Exp $
+ * $PostgreSQL: pgsql/src/bin/psql/describe.c,v 1.170 2008/05/05 01:21:03 adunstan Exp $
  */
 #include "postgres_fe.h"
 #include "describe.h"
@@ -307,11 +307,22 @@ describeTypes(const char *pattern, bool verbose)
 						  "    WHEN t.typlen < 0\n"
 						  "      THEN CAST('var' AS pg_catalog.text)\n"
 						  "    ELSE CAST(t.typlen AS pg_catalog.text)\n"
-						  "  END AS \"%s\",\n",
+						  "  END AS \"%s\",\n"
+						  "  pg_catalog.array_to_string(\n"
+						  "  	 ARRAY(\n"
+						  "		     SELECT e.enumlabel\n"
+						  "          FROM pg_catalog.pg_enum e\n"
+						  "          WHERE e.enumtypid = t.oid\n"
+						  "          ORDER BY e.oid\n"
+						  "      ),\n"
+						  "      E'\\n'\n"
+						  "  ) AS \"%s\",\n",
 						  gettext_noop("Internal name"),
-						  gettext_noop("Size"));
+						  gettext_noop("Size"),
+						  gettext_noop("Elements"));
+						  
 	appendPQExpBuffer(&buf,
-				"  pg_catalog.obj_description(t.oid, 'pg_type') as \"%s\"\n",
+					  "  pg_catalog.obj_description(t.oid, 'pg_type') as \"%s\"\n",
 					  gettext_noop("Description"));
 
 	appendPQExpBuffer(&buf, "FROM pg_catalog.pg_type t\n"
@@ -482,7 +493,7 @@ permissionsList(const char *pattern)
 					  "SELECT n.nspname as \"%s\",\n"
 					  "  c.relname as \"%s\",\n"
 					  "  CASE c.relkind WHEN 'r' THEN '%s' WHEN 'v' THEN '%s' WHEN 'S' THEN '%s' END as \"%s\",\n"
-					  "  c.relacl as \"%s\"\n"
+					  "  pg_catalog.array_to_string(c.relacl, E'\\n') as \"%s\"\n"
 					  "FROM pg_catalog.pg_class c\n"
 	   "     LEFT JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace\n"
 					  "WHERE c.relkind IN ('r', 'v', 'S')\n",
@@ -1766,9 +1777,14 @@ listTables(const char *tabtypes, const char *pattern, bool verbose)
 						  gettext_noop("Table"));
 
 	if (verbose)
+	{
+		appendPQExpBuffer(&buf,
+						  ",\n  pg_catalog.pg_size_pretty(pg_catalog.pg_relation_size(c.oid)) as \"%s\"",
+					  	  gettext_noop("Size"));
 		appendPQExpBuffer(&buf,
 			  ",\n  pg_catalog.obj_description(c.oid, 'pg_class') as \"%s\"",
 						  gettext_noop("Description"));
+	}
 
 	appendPQExpBuffer(&buf,
 					  "\nFROM pg_catalog.pg_class c"
