@@ -1358,7 +1358,6 @@ Optional Features:
   --enable-debug          build with debugging symbols (-g)
   --enable-profiling      build with profiling enabled
   --enable-dtrace         build with DTrace support
-  --disable-segmented-files disable data file segmentation (requires largefile support)
   --enable-depend         turn on automatic dependency tracking
   --enable-cassert        enable assertion checks (for debugging)
   --enable-thread-safety  make client libraries thread-safe
@@ -1375,7 +1374,11 @@ Optional Packages:
   --with-includes=DIRS    look for additional header files in DIRS
   --with-libraries=DIRS   look for additional libraries in DIRS
   --with-libs=DIRS        alternative spelling of --with-libraries
-  --with-pgport=PORTNUM   change default port number [5432]
+  --with-pgport=PORTNUM   set default port number [5432]
+  --with-blocksize=BLOCKSIZE  set table block size in kB [8]
+  --with-segsize=SEGSIZE  set table segment size in GB [1]
+  --with-wal-blocksize=BLOCKSIZE  set WAL block size in kB [8]
+  --with-wal-segsize=SEGSIZE  set WAL segment size in MB [16]
   --with-tcl              build Tcl modules (PL/Tcl)
   --with-tclconfig=DIR    tclConfig.sh is in DIR
   --with-perl             build Perl modules (PL/Perl)
@@ -2551,33 +2554,210 @@ fi
 
 
 #
-# Data file segmentation
+# Block size
 #
+{ echo "$as_me:$LINENO: checking for block size" >&5
+echo $ECHO_N "checking for block size... $ECHO_C" >&6; }
 
-pgac_args="$pgac_args enable_segmented_files"
+pgac_args="$pgac_args with_blocksize"
 
-# Check whether --enable-segmented-files was given.
-if test "${enable_segmented_files+set}" = set; then
-  enableval=$enable_segmented_files;
-  case $enableval in
+
+# Check whether --with-blocksize was given.
+if test "${with_blocksize+set}" = set; then
+  withval=$with_blocksize;
+  case $withval in
     yes)
-      :
+      { { echo "$as_me:$LINENO: error: argument required for --with-blocksize option" >&5
+echo "$as_me: error: argument required for --with-blocksize option" >&2;}
+   { (exit 1); exit 1; }; }
       ;;
     no)
-      :
+      { { echo "$as_me:$LINENO: error: argument required for --with-blocksize option" >&5
+echo "$as_me: error: argument required for --with-blocksize option" >&2;}
+   { (exit 1); exit 1; }; }
       ;;
     *)
-      { { echo "$as_me:$LINENO: error: no argument expected for --enable-segmented-files option" >&5
-echo "$as_me: error: no argument expected for --enable-segmented-files option" >&2;}
-   { (exit 1); exit 1; }; }
+      blocksize=$withval
       ;;
   esac
 
 else
-  enable_segmented_files=yes
-
+  blocksize=8
 fi
 
+
+case ${blocksize} in
+  1) BLCKSZ=1024;;
+  2) BLCKSZ=2048;;
+  4) BLCKSZ=4096;;
+  8) BLCKSZ=8192;;
+ 16) BLCKSZ=16384;;
+ 32) BLCKSZ=32768;;
+  *) { { echo "$as_me:$LINENO: error: Invalid block size. Allowed values are 1,2,4,8,16,32." >&5
+echo "$as_me: error: Invalid block size. Allowed values are 1,2,4,8,16,32." >&2;}
+   { (exit 1); exit 1; }; }
+esac
+{ echo "$as_me:$LINENO: result: ${blocksize}kB" >&5
+echo "${ECHO_T}${blocksize}kB" >&6; }
+
+
+cat >>confdefs.h <<_ACEOF
+#define BLCKSZ ${BLCKSZ}
+_ACEOF
+
+
+#
+# Relation segment size
+#
+{ echo "$as_me:$LINENO: checking for segment size" >&5
+echo $ECHO_N "checking for segment size... $ECHO_C" >&6; }
+
+pgac_args="$pgac_args with_segsize"
+
+
+# Check whether --with-segsize was given.
+if test "${with_segsize+set}" = set; then
+  withval=$with_segsize;
+  case $withval in
+    yes)
+      { { echo "$as_me:$LINENO: error: argument required for --with-segsize option" >&5
+echo "$as_me: error: argument required for --with-segsize option" >&2;}
+   { (exit 1); exit 1; }; }
+      ;;
+    no)
+      { { echo "$as_me:$LINENO: error: argument required for --with-segsize option" >&5
+echo "$as_me: error: argument required for --with-segsize option" >&2;}
+   { (exit 1); exit 1; }; }
+      ;;
+    *)
+      segsize=$withval
+      ;;
+  esac
+
+else
+  segsize=1
+fi
+
+
+# this expression is set up to avoid unnecessary integer overflow
+# blocksize is already guaranteed to be a factor of 1024
+RELSEG_SIZE=`expr '(' 1024 / ${blocksize} ')' '*' ${segsize} '*' 1024`
+test $? -eq 0 || exit 1
+{ echo "$as_me:$LINENO: result: ${segsize}GB" >&5
+echo "${ECHO_T}${segsize}GB" >&6; }
+
+
+cat >>confdefs.h <<_ACEOF
+#define RELSEG_SIZE ${RELSEG_SIZE}
+_ACEOF
+
+
+#
+# WAL block size
+#
+{ echo "$as_me:$LINENO: checking for WAL block size" >&5
+echo $ECHO_N "checking for WAL block size... $ECHO_C" >&6; }
+
+pgac_args="$pgac_args with_wal_blocksize"
+
+
+# Check whether --with-wal-blocksize was given.
+if test "${with_wal_blocksize+set}" = set; then
+  withval=$with_wal_blocksize;
+  case $withval in
+    yes)
+      { { echo "$as_me:$LINENO: error: argument required for --with-wal-blocksize option" >&5
+echo "$as_me: error: argument required for --with-wal-blocksize option" >&2;}
+   { (exit 1); exit 1; }; }
+      ;;
+    no)
+      { { echo "$as_me:$LINENO: error: argument required for --with-wal-blocksize option" >&5
+echo "$as_me: error: argument required for --with-wal-blocksize option" >&2;}
+   { (exit 1); exit 1; }; }
+      ;;
+    *)
+      wal_blocksize=$withval
+      ;;
+  esac
+
+else
+  wal_blocksize=8
+fi
+
+
+case ${wal_blocksize} in
+  1) XLOG_BLCKSZ=1024;;
+  2) XLOG_BLCKSZ=2048;;
+  4) XLOG_BLCKSZ=4096;;
+  8) XLOG_BLCKSZ=8192;;
+ 16) XLOG_BLCKSZ=16384;;
+ 32) XLOG_BLCKSZ=32768;;
+ 64) XLOG_BLCKSZ=65536;;
+  *) { { echo "$as_me:$LINENO: error: Invalid WAL block size. Allowed values are 1,2,4,8,16,32,64." >&5
+echo "$as_me: error: Invalid WAL block size. Allowed values are 1,2,4,8,16,32,64." >&2;}
+   { (exit 1); exit 1; }; }
+esac
+{ echo "$as_me:$LINENO: result: ${wal_blocksize}kB" >&5
+echo "${ECHO_T}${wal_blocksize}kB" >&6; }
+
+
+cat >>confdefs.h <<_ACEOF
+#define XLOG_BLCKSZ ${XLOG_BLCKSZ}
+_ACEOF
+
+
+#
+# WAL segment size
+#
+{ echo "$as_me:$LINENO: checking for WAL segment size" >&5
+echo $ECHO_N "checking for WAL segment size... $ECHO_C" >&6; }
+
+pgac_args="$pgac_args with_wal_segsize"
+
+
+# Check whether --with-wal-segsize was given.
+if test "${with_wal_segsize+set}" = set; then
+  withval=$with_wal_segsize;
+  case $withval in
+    yes)
+      { { echo "$as_me:$LINENO: error: argument required for --with-wal-segsize option" >&5
+echo "$as_me: error: argument required for --with-wal-segsize option" >&2;}
+   { (exit 1); exit 1; }; }
+      ;;
+    no)
+      { { echo "$as_me:$LINENO: error: argument required for --with-wal-segsize option" >&5
+echo "$as_me: error: argument required for --with-wal-segsize option" >&2;}
+   { (exit 1); exit 1; }; }
+      ;;
+    *)
+      wal_segsize=$withval
+      ;;
+  esac
+
+else
+  wal_segsize=16
+fi
+
+
+case ${wal_segsize} in
+  1) ;;
+  2) ;;
+  4) ;;
+  8) ;;
+ 16) ;;
+ 32) ;;
+ 64) ;;
+  *) { { echo "$as_me:$LINENO: error: Invalid WAL segment size. Allowed values are 1,2,4,8,16,32,64." >&5
+echo "$as_me: error: Invalid WAL segment size. Allowed values are 1,2,4,8,16,32,64." >&2;}
+   { (exit 1); exit 1; }; }
+esac
+{ echo "$as_me:$LINENO: result: ${wal_segsize}MB" >&5
+echo "${ECHO_T}${wal_segsize}MB" >&6; }
+
+
+cat >>confdefs.h <<_ACEOF
+#define XLOG_SEG_SIZE (${wal_segsize} * 1024 * 1024)
+_ACEOF
 
 
 #
@@ -24398,12 +24578,11 @@ _ACEOF
 
 
 
-if test "$ac_cv_sizeof_off_t" -lt 8 -o "$enable_segmented_files" = "yes"; then
-
-cat >>confdefs.h <<\_ACEOF
-#define USE_SEGMENTED_FILES 1
-_ACEOF
-
+# If we don't have largefile support, can't handle segsize >= 2GB.
+if test "$ac_cv_sizeof_off_t" -lt 8 -a "$segsize" != "1"; then
+   { { echo "$as_me:$LINENO: error: Large file support is not enabled. Segment size cannot be larger than 1GB." >&5
+echo "$as_me: error: Large file support is not enabled. Segment size cannot be larger than 1GB." >&2;}
+   { (exit 1); exit 1; }; }
 fi
 
 # SunOS doesn't handle negative byte comparisons properly with +/- return
