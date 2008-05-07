@@ -10,7 +10,7 @@
  * Written by Peter Eisentraut <peter_e@gmx.net>.
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/misc/guc.c,v 1.449 2008/04/29 20:44:49 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/utils/misc/guc.c,v 1.451 2008/05/02 21:26:10 tgl Exp $
  *
  *--------------------------------------------------------------------
  */
@@ -1339,7 +1339,7 @@ static struct config_int ConfigureNamesInt[] =
 			GUC_UNIT_KB
 		},
 		&work_mem,
-		1024, 8 * BLCKSZ / 1024, MAX_KILOBYTES, NULL, NULL
+		1024, 64, MAX_KILOBYTES, NULL, NULL
 	},
 
 	{
@@ -1889,6 +1889,16 @@ static struct config_real ConfigureNamesReal[] =
 		},
 		&cpu_operator_cost,
 		DEFAULT_CPU_OPERATOR_COST, 0, DBL_MAX, NULL, NULL
+	},
+
+	{
+		{"cursor_tuple_fraction", PGC_USERSET, QUERY_TUNING_OTHER,
+			gettext_noop("Sets the planner's estimate of the fraction of "
+						 "a cursor's rows that will be retrieved."),
+			NULL
+		},
+		&cursor_tuple_fraction,
+		DEFAULT_CURSOR_TUPLE_FRACTION, 0.0, 1.0, NULL, NULL
 	},
 
 	{
