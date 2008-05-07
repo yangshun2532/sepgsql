@@ -62,14 +62,8 @@ echo "svn diff ./base"
 echo "svn commit -m 'CVS pull -r ${CVSTAG} at `env LANG=C date`' ./base"
 echo "svn update"
 echo
-echo "svn merge -c `expr ${SVNREV} + 1` ./base ./pgace"
-echo "svn diff ./pgace"
-echo "svn commit -m 'merge updates of ${SVNBRANCH}/base into ${SVNBRANCH}/pgace at `env LANG=C date`' ./pgace"
-echo "svn update"
-echo
-echo "svn merge -c `expr ${SVNREV} + 2` ./pgace ./sepgsql"
+echo "svn merge -c `expr ${SVNREV} + 1` ./base ./sepgsql"
 echo "svn diff ./sepgsql"
 echo "svn commit -m 'merge updates of ${SVNBRANCH}/pgace into ${SVNBRANCH}/sepgsql at `env LANG=C date`' ./sepgsql"
 echo "svn update"
-
 
