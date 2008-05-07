@@ -1,7 +1,7 @@
 PostgreSQL TODO List
 ====================
 Current maintainer:	Bruce Momjian (bruce@momjian.us)
-Last updated:		Mon Apr 28 19:08:21 EDT 2008
+Last updated:		Wed May  7 00:45:53 EDT 2008
 
 The most recent version of this document can be viewed at
 http://www.postgresql.org/docs/faqs.TODO.html.
@@ -32,7 +32,7 @@ Administration
   from the template database, it is not clear that setting schemas to the db
   owner is correct.
 
-* Add function to report the time of the most recent server reload
+* -Add function to report the time of the most recent server reload
 * Allow statistics collector information to be pulled from the collector
   process directly, rather than requiring the collector to write a
   filesystem file twice a second?
@@ -230,19 +230,6 @@ Data Types
 
   http://archives.postgresql.org/pgsql-hackers/2008-02/msg01214.php
 
-* Allow text search dictionary to filter out only stop words
-
-  http://archives.postgresql.org/pgsql-patches/2007-11/msg00081.php
-
-* Consider a function-based API for '@@' full text searches
-
-  http://archives.postgresql.org/pgsql-hackers/2007-11/msg00511.php
-
-* Improve text search error messages
-
-  http://archives.postgresql.org/pgsql-hackers/2007-10/msg00966.php
-  http://archives.postgresql.org/pgsql-hackers/2007-11/msg01146.php
-
 * Consider a special data type for regular expressions
 
   http://archives.postgresql.org/pgsql-hackers/2007-08/msg01067.php
@@ -383,6 +370,29 @@ Data Types
 	* MONEY dumps in a locale-specific format making it difficult to
 	  restore to a system with a different locale
 	* Allow MONEY to be easily cast to/from other numeric data types
+
+* Text Search
+
+	o Allow dictionaries to change the token that is passed on to
+	  later dictionaries
+
+	  http://archives.postgresql.org/pgsql-patches/2007-11/msg00081.php
+
+	o Consider a function-based API for '@@' searches
+
+	  http://archives.postgresql.org/pgsql-hackers/2007-11/msg00511.php
+
+	o Improve text search error messages
+
+	  http://archives.postgresql.org/pgsql-hackers/2007-10/msg00966.php
+	  http://archives.postgresql.org/pgsql-hackers/2007-11/msg01146.php
+
+	o Consider changing error to warning for strings larger than one
+	  megabyte
+
+	  http://archives.postgresql.org/pgsql-bugs/2008-02/msg00190.php
+	  http://archives.postgresql.org/pgsql-patches/2008-03/msg00062.php
+
 
 
 Functions
@@ -1072,10 +1082,7 @@ Clients
 
 	  http://archives.postgresql.org/pgsql-general/2007-09/msg00438.php
 
-	o Improve display if enums
-
-	  http://archives.postgresql.org/pgsql-hackers/2008-01/msg00826.php
-
+	o -Improve display of enums to show valid enum values
 	o Add prompt escape to display the client and server versions
 
 
@@ -1262,14 +1269,15 @@ Indexes
   http://archives.postgresql.org/pgsql-performance/2006-10/msg00222.php
   http://archives.postgresql.org/pgsql-hackers/2007-03/msg01131.php
 
-* Consider increasing the number of default statistics target, and
-  reduce statistics target overhead
+* Consider increasing the default and maximum number of statistics targets,
+  and reduce statistics target overhead
 
   Also consider having a larger statistics target for indexed columns
-  and expression indexes
+  and expression indexes.
   http://archives.postgresql.org/pgsql-general/2007-05/msg01228.php
   http://archives.postgresql.org/pgsql-general/2007-06/msg00542.php
   http://archives.postgresql.org/pgsql-hackers/2008-01/msg01066.php
+  http://archives.postgresql.org/pgsql-hackers/2008-03/msg00188.php
 
 * Consider smaller indexes that record a range of values per heap page,
   rather than having one index entry for every heap row
