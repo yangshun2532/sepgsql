@@ -1256,14 +1256,18 @@ static void execVerifyQuery(List *selist)
 	}
 }
 
-void sepgsqlVerifyQuery(PlannedStmt *pstmt)
+void sepgsqlVerifyQuery(PlannedStmt *pstmt, int eflags)
 {
 	RangeTblEntry *rte;
 	List *selist;
 	ListCell *l;
 
+	/* EXPLAIN statement does not access any object. */
+	if (eflags & EXEC_FLAG_EXPLAIN_ONLY)
+		return;
 	if (!pstmt->pgaceItem)
 		return;
+
 	Assert(IsA(pstmt->pgaceItem, List));
 	selist = (List *) pstmt->pgaceItem;
 
