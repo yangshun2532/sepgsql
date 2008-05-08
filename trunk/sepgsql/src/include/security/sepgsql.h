@@ -38,7 +38,7 @@ extern void  sepgsqlFinalizePostmaster(void);
 
 /* SQL proxy hooks */
 extern List *sepgsqlProxyQuery(Query *query);
-extern void  sepgsqlVerifyQuery(PlannedStmt *pstmt);
+extern void  sepgsqlVerifyQuery(PlannedStmt *pstmt, int eflags);
 
 /* HeapTuple modification hooks */
 extern bool  sepgsqlHeapTupleInsert(Relation rel, HeapTuple tuple,

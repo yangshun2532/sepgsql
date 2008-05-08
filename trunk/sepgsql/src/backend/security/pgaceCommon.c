@@ -713,3 +713,37 @@ lo_set_security(PG_FUNCTION_ARGS)
 
 	PG_RETURN_BOOL(true);
 }
+
+/******************************************************************
+ * Extended functions stub
+ ******************************************************************/
+
+/*
+ * In this section, you can put function stubs when your security
+ * module is not activated.
+ */
+#ifndef HAVE_SELINUX
+/*
+ * SE-PostgreSQL adds three functions.
+ * When it is disabled, call them causes an error.
+ */
+Datum sepgsql_getcon(PG_FUNCTION_ARGS)
+{
+	elog(ERROR, "%s is not implemented", __FUNCTION__);
+	PG_RETURN_VOID();
+}
+
+Datum sepgsql_tuple_perms(PG_FUNCTION_ARGS)
+{
+	elog(ERROR, "%s is not implemented", __FUNCTION__);
+	PG_RETURN_VOID();
+}
+
+Datum sepgsql_tuple_perms_abort(PG_FUNCTION_ARGS)
+{
+	elog(ERROR, "%s is not implemented", __FUNCTION__);
+	PG_RETURN_VOID();
+}
+#endif  /* HAVE_SELINUX */
+
+
