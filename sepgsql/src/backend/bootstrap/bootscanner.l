@@ -97,7 +97,6 @@ insert			{ return(INSERT_TUPLE); }
 "indices"		{ return(INDICES); }
 "unique"		{ return(UNIQUE); }
 "index"			{ return(INDEX); }
-"security"		{ return(SECURITY); }
 "on"			{ return(ON); }
 "using"			{ return(USING); }
 "toast"			{ return(XTOAST); }

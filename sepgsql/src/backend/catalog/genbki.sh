@@ -324,8 +324,6 @@ comment_level > 0 { next; }
 }
 
 /^BUILD_INDICES/	{ print "build indices"; }
-
-/^BUILD_SECURITY/	{ print "build security"; }
 	
 # ----------------
 #	CATALOG() definitions take some more work.
