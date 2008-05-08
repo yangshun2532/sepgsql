@@ -42,7 +42,6 @@
 #include "nodes/pg_list.h"
 #include "nodes/primnodes.h"
 #include "rewrite/prs2lock.h"
-#include "security/pgace.h"
 #include "storage/block.h"
 #include "storage/fd.h"
 #include "storage/ipc.h"
@@ -101,7 +100,7 @@ int num_columns_read = 0;
 
 %token <ival> CONST_P ID
 %token OPEN XCLOSE XCREATE INSERT_TUPLE
-%token XDECLARE INDEX ON USING XBUILD INDICES SECURITY UNIQUE XTOAST
+%token XDECLARE INDEX ON USING XBUILD INDICES UNIQUE XTOAST
 %token COMMA EQUALS LPAREN RPAREN
 %token OBJ_ID XBOOTSTRAP XSHARED_RELATION XWITHOUT_OIDS NULLVAL
 %start TopLevel
@@ -130,7 +129,6 @@ Boot_Query :
 		| Boot_DeclareUniqueIndexStmt
 		| Boot_DeclareToastStmt
 		| Boot_BuildIndsStmt
-		| Boot_BuildSecurityStmt
 		;
 
 Boot_OpenStmt:
@@ -299,14 +297,6 @@ Boot_BuildIndsStmt:
 				}
 		;
 
-Boot_BuildSecurityStmt:
-		  XBUILD SECURITY
-				{
-					do_start();
-					pgaceBootstrapBuildSecurity();
-					do_end();
-				}
-		;
 
 boot_index_params:
 		boot_index_params COMMA boot_index_param	{ $$ = lappend($1, $3); }
