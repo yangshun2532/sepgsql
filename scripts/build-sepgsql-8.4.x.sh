@@ -59,39 +59,25 @@ echo
 svn export ${SEPGSQL_REPOSITORY}${SEPGSQL_BRANCH} altroot || exit 1
 cd altroot
 
-echo "GEN: sepostgresql-pgace-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch"
-diff -rpNU3 base pgace	\
-    > ${RPMSOURCE}/sepostgresql-pgace-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch
-
 echo "GEN: sepostgresql-pg_dump-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch"
-diff -rpNU3 pgace/src/bin sepgsql/src/bin	\
+diff -rpNU3 base/src/bin sepgsql/src/bin	\
     > ${RPMSOURCE}/sepostgresql-pg_dump-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch
-rm -rf pgace/src/bin sepgsql/src/bin
-
-echo "GEN: sepostgresql-policy-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch"
-diff -rpNU3 pgace/contrib/sepgsql-policy sepgsql/contrib/sepgsql-policy	\
-    > ${RPMSOURCE}/sepostgresql-policy-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch
-rm -rf pgace/contrib sepgsql/contrib
+rm -rf sepgsql/src/bin
+cp -R base/src/bin sepgsql/src/bin
 
 echo "GEN: sepostgresql-sepgsql-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch"
-diff -rpNU3 pgace sepgsql	\
+diff -rpNU3 base sepgsql	\
     > ${RPMSOURCE}/sepostgresql-sepgsql-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch
 
 if [ ${GEN_PATCH_ONLY} -ne 0 ]; then
-    mv ${RPMSOURCE}/sepostgresql-pgace-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch	\
-	${RPMSOURCE}/sepostgresql-pgace-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}-r${SEPGSQL_REVISION}.patch
     mv ${RPMSOURCE}/sepostgresql-sepgsql-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch	\
 	${RPMSOURCE}/sepostgresql-sepgsql-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}-r${SEPGSQL_REVISION}.patch
     mv ${RPMSOURCE}/sepostgresql-pg_dump-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch	\
 	${RPMSOURCE}/sepostgresql-pg_dump-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}-r${SEPGSQL_REVISION}.patch
-    mv ${RPMSOURCE}/sepostgresql-policy-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch	\
-	${RPMSOURCE}/sepostgresql-policy-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}-r${SEPGSQL_REVISION}.patch
 
     echo "---- LIST OF GENERATED PATCHES ----"
-    echo "${RPMSOURCE}/sepostgresql-pgace-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}-r${SEPGSQL_REVISION}.patch"
     echo "${RPMSOURCE}/sepostgresql-sepgsql-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}-r${SEPGSQL_REVISION}.patch"
     echo "${RPMSOURCE}/sepostgresql-pg_dump-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}-r${SEPGSQL_REVISION}.patch"
-    echo "${RPMSOURCE}/sepostgresql-policy-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}-r${SEPGSQL_REVISION}.patch"
 
     exit 1
 fi
@@ -124,6 +110,13 @@ cp package/sepostgresql.8 ${RPMSOURCE}
 
 echo "CPY: sepostgresql.logrotate"
 cp package/sepostgresql.logrotate ${RPMSOURCE}
+
+echo "CPY: sepostgresql.te"
+cp package/sepostgresql.te ${RPMSOURCE}
+echo "CPY: sepostgresql.if"
+cp package/sepostgresql.if ${RPMSOURCE}
+echo "CPY: sepostgresql.fc"
+cp package/sepostgresql.fc ${RPMSOURCE}
 
 echo "CPY: sepostgresql-fedora-prefix.patch"
 cp package/sepostgresql-fedora-prefix.patch ${RPMSOURCE}
