@@ -983,6 +983,11 @@ void sepgsqlFinalizePostmaster()
 	}
 }
 
+void sepgsqlBootstrapBuildSecurity(void)
+{
+	elog(ERROR, "We have no init security handler :)");
+}
+
 bool sepgsqlIsEnabled()
 {
 	static int enabled = -1;

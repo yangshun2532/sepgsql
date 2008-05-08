@@ -94,6 +94,20 @@ pgaceFinalizePostmaster(void)
 	 */
 }
 
+/*
+ * pgaceBootstrapBuildSecurity() is called just before initial indexing.
+ * The guest module can set up security attribute of whole database.
+ */
+static inline void
+pgaceBootstrapBuildSecurity(void)
+{
+#ifdef HAVE_SELINUX
+	if (sepgsqlIsEnabled())
+		sepgsqlBootstrapBuildSecurity();
+#endif
+	/* do nothing */
+}
+
 /******************************************************************
  * SQL proxy hooks
  ******************************************************************/
