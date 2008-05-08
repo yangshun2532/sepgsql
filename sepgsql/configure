@@ -5374,11 +5374,13 @@ fi
 { echo "$as_me:$LINENO: result: $ac_cv_lib_selinux_getpeercon" >&5
 echo "${ECHO_T}$ac_cv_lib_selinux_getpeercon" >&6; }
 if test $ac_cv_lib_selinux_getpeercon = yes; then
-  cat >>confdefs.h <<\_ACEOF
+
+cat >>confdefs.h <<\_ACEOF
 #define SECURITY_SYSATTR_NAME "security_context"
 _ACEOF
 
-		     cat >>confdefs.h <<_ACEOF
+
+cat >>confdefs.h <<_ACEOF
 #define HAVE_SELINUX 1
 _ACEOF
 
