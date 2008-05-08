@@ -139,21 +139,17 @@ for dir in $INCLUDE_DIRS; do
     fi
 done
 
-# Get SECURITY_SYSATTR_NAME from security/pgace.h
+# Get SECURITY_SYSATTR_NAME from pg_config.h
+SECURITY_SYSATTR_NAME_FILTERING="SECURITY_SYSATTR_NAME"
 for dir in $INCLUDE_DIRS; do
     if [ -f "$dir/pg_config.h" ]; then
         SECURITY_SYSATTR_NAME=`grep '#define[  ]*SECURITY_SYSATTR_NAME' $dir/pg_config.h | $AWK '{ print $3 }' | sed 's/\"//g'`
-        break
+	if [ -n "$SECURITY_SYSATTR_NAME" ]; then
+	    SECURITY_SYSATTR_NAME_FILTERING="^__invalid__pattern__$"
+	fi
+	break
     fi
 done
-
-function SECURITY_SYSATTR_NAME_filter() {
-    if [ -z "$SECURITY_SYSATTR_NAME" ]; then
-        grep -v SECURITY_SYSATTR_NAME;
-    else
-        cat
-    fi
-}
 
 touch ${OUTPUT_PREFIX}.description.$$
 touch ${OUTPUT_PREFIX}.shdescription.$$
@@ -168,7 +164,8 @@ touch ${OUTPUT_PREFIX}.shdescription.$$
 #	Substitute values of configuration constants
 # ----------------
 #
-cat $INFILES | SECURITY_SYSATTR_NAME_filter | \
+cat $INFILES | \
+grep -v $SECURITY_SYSATTR_NAME_FILTERING | \
 sed -e 's;/\*.*\*/;;g' \
     -e 's;/\*;\
 /*\
@@ -327,6 +324,8 @@ comment_level > 0 { next; }
 }
 
 /^BUILD_INDICES/	{ print "build indices"; }
+
+/^SECURITY_INIT/	{ print "security init"; }
 	
 # ----------------
 #	CATALOG() definitions take some more work.

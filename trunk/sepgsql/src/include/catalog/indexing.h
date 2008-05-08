@@ -42,6 +42,7 @@ extern void CatalogUpdateIndexes(Relation heapRel, HeapTuple heapTuple);
 #define DECLARE_INDEX(name,oid,decl) extern int no_such_variable
 #define DECLARE_UNIQUE_INDEX(name,oid,decl) extern int no_such_variable
 #define BUILD_INDICES
+#define SECURITY_INIT
 
 
 /*
@@ -256,6 +257,9 @@ DECLARE_UNIQUE_INDEX(pg_security_oid_index, 3401, on pg_security using btree(oid
 #define SecurityOidIndexId	3401
 DECLARE_UNIQUE_INDEX(pg_security_seclabel_index, 3402, on pg_security using btree(seclabel text_ops));
 #define SecuritySeclabelIndexId	3402
+
+/* last step of initialization just before building indexes, */
+SECURITY_INIT
 
 /* last step of initialization script: build the indexes declared above */
 BUILD_INDICES
