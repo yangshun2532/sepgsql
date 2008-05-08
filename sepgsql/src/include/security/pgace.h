@@ -899,65 +899,6 @@ pgaceSecurityLabelOfLabel(char *new_label)
 }
 
 /******************************************************************
- * Extended node type hooks
- ******************************************************************/
-
-/*
- * If PGACE implementation requires new node type, a method to copy object.
- * pgaceCopyObject() provides a hook to copy new node typed object.
- * If a given object (@orig) has a tag extended by PGACE implementation,
- * it have to copy and return it.
- * If it returns NULL, @orig is not available for the PGACE implementation.
- *
- * @orig : a object which to copy
- */
-static inline Node *
-pgaceCopyObject(Node *orig)
-{
-#ifdef HAVE_SELINUX
-	if (sepgsqlIsEnabled())
-		return sepgsqlCopyObject(orig);
-#endif
-	return NULL;
-}
-
-/*
- * pgaceOutObject() provides a hook to translate a object to text representation.
- * If a given object (@node) has a tag extended by PGACE implementation, it have
- * to put a text representation into StringInfo.
- * If it returns false, @node is not available for the PGACE implementation.
- *
- * @str  : StringInfo which to put the text representation
- * @node : a object that text representation is required
- */
-static inline bool
-pgaceOutObject(StringInfo str, Node *node)
-{
-#ifdef HAVE_SELINUX
-	if (sepgsqlIsEnabled())
-		sepgsqlOutObject(str, node);
-#endif
-	return false;
-}
-
-/*
- * pgaceReadObject() provides a hook to read a text representation of an object.
- * If a given token is a tag extended by PGACE implementation, it have to create
- * an object same as original one.
- *
- * @token : a tag for the object
- */
-static inline void *
-pgaceReadObject(char *token)
-{
-#ifdef HAVE_SELINUX
-	if (sepgsqlIsEnabled())
-		return sepgsqlReadObject(token);
-#endif
-	return NULL;
-}
-
-/******************************************************************
  * PGACE common facilities (not a hooks)
  ******************************************************************/
 
