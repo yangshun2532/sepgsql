@@ -1,6 +1,7 @@
+
 /*
  * include/security/pgace.h
- *   headers for PostgreSQL Access Control Extensions (PGACE)
+ *	 headers for PostgreSQL Access Control Extensions (PGACE)
  * Copyright 2007 KaiGai Kohei <kaigai@kaigai.gr.jp>
  */
 #ifndef PGACE_H
@@ -34,7 +35,8 @@
  * required by PGACE implementation. If no shared memory segment needed,
  * it should return 0.
  */
-static inline Size pgaceShmemSize(void)
+static inline Size
+pgaceShmemSize(void)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
@@ -49,13 +51,16 @@ static inline Size pgaceShmemSize(void)
  *
  * @is_bootstrap : true, if bootstraping mode.
  */
-static inline void pgaceInitialize(bool is_bootstrap)
+static inline void
+pgaceInitialize(bool is_bootstrap)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
 		sepgsqlInitialize(is_bootstrap);
 #endif
-	/* do nothing */
+	/*
+	 * do nothing
+	 */
 }
 
 /*
@@ -63,7 +68,8 @@ static inline void pgaceInitialize(bool is_bootstrap)
  * is started up. If it returns false, the server starting up process
  * will be aborted.
  */
-static inline bool pgaceInitializePostmaster(void)
+static inline bool
+pgaceInitializePostmaster(void)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
@@ -76,18 +82,22 @@ static inline bool pgaceInitializePostmaster(void)
  * pgaceFinalizePostmaster() is called when a postmaster server process
  * is just ending up.
  */
-static inline void pgaceFinalizePostmaster(void)
+static inline void
+pgaceFinalizePostmaster(void)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
 		sepgsqlFinalizePostmaster();
 #endif
-	/* do nothing */
+	/*
+	 * do nothing
+	 */
 }
 
 /******************************************************************
  * SQL proxy hooks
  ******************************************************************/
+
 /*
  * pgaceProxyQuery() is called just after query rewrite phase.
  * PGACE implementation can modify the query trees in this hook,
@@ -95,15 +105,19 @@ static inline void pgaceFinalizePostmaster(void)
  *
  * @queryList : a list of Query typed objects.
  */
-static inline List *pgaceProxyQuery(List *queryList)
+static inline List *
+pgaceProxyQuery(List *queryList)
 {
 #ifdef HAVE_SELINUX
-	if (sepgsqlIsEnabled()) {
-		List *newList = NIL;
-		ListCell *l;
+	if (sepgsqlIsEnabled())
+	{
+		List	   *newList = NIL;
 
-		foreach (l, queryList) {
-			Query *q = (Query *) lfirst(l);
+		ListCell   *l;
+
+		foreach(l, queryList)
+		{
+			Query	   *q = (Query *) lfirst(l);
 
 			newList = list_concat(newList, sepgsqlProxyQuery(q));
 		}
@@ -118,27 +132,34 @@ static inline List *pgaceProxyQuery(List *queryList)
  *
  * @portal : a Portal object currently executed.
  */
-static inline void pgacePortalStart(Portal portal)
+static inline void
+pgacePortalStart(Portal portal)
 {
-	/* do nothing */
+	/*
+	 * do nothing
+	 */
 }
 
 /*
  * pgaceExecutorStart() is called on the top of ExecutorStart().
  *
  * @queryDesc : a QueryDesc object given to ExecutorStart().
- * @eflags    : eflags valus given to ExecutorStart().
- *              if EXEC_FLAG_EXPLAIN_ONLY is set, no real access will run.
+ * @eflags	  : eflags valus given to ExecutorStart().
+ *				if EXEC_FLAG_EXPLAIN_ONLY is set, no real access will run.
  */
-static inline void pgaceExecutorStart(QueryDesc *queryDesc, int eflags)
+static inline void
+pgaceExecutorStart(QueryDesc *queryDesc, int eflags)
 {
 #ifdef HAVE_SELINUX
-	if (sepgsqlIsEnabled()) {
+	if (sepgsqlIsEnabled())
+	{
 		Assert(queryDesc->plannedstmt != NULL);
 		sepgsqlVerifyQuery(queryDesc->plannedstmt, eflags);
 	}
 #endif
-	/* do nothing */
+	/*
+	 * do nothing
+	 */
 }
 
 /******************************************************************
@@ -150,13 +171,14 @@ static inline void pgaceExecutorStart(QueryDesc *queryDesc, int eflags)
  * If it returns false, this insertion of a new tuple will be cancelled.
  * However, it does not generate any error.
  *
- * @rel            : the target relation
- * @tuple          : the tuple attmpt to be inserted
+ * @rel			   : the target relation
+ * @tuple		   : the tuple attmpt to be inserted
  * @is_internal    : true, if this operation is invoked by system internal processes.
  * @with_returning : true, if INSERT statement has RETURNING clause.
  */
-static inline bool pgaceHeapTupleInsert(Relation rel, HeapTuple tuple,
-										bool is_internal, bool with_returning)
+static inline bool
+pgaceHeapTupleInsert(Relation rel, HeapTuple tuple,
+					 bool is_internal, bool with_returning)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
@@ -170,18 +192,20 @@ static inline bool pgaceHeapTupleInsert(Relation rel, HeapTuple tuple,
  * If it returns false, this update will be cancelled.
  * However, it does not generate any error.
  *
- * @rel            : the target relation
- * @otid           : ItemPointer of the tuple to be updated
- * @newtup         : the new contains of the updated tuple
+ * @rel			   : the target relation
+ * @otid		   : ItemPointer of the tuple to be updated
+ * @newtup		   : the new contains of the updated tuple
  * @is_internal    : true, if this operation is invoked by system internal processes.
  * @with_returning : true, if INSERT statement has RETURNING clause.
  */
-static inline bool pgaceHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple newtup,
-										bool is_internal, bool with_returning)
+static inline bool
+pgaceHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple newtup,
+					 bool is_internal, bool with_returning)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
-		return sepgsqlHeapTupleUpdate(rel, otid, newtup, is_internal, with_returning);
+		return sepgsqlHeapTupleUpdate(rel, otid, newtup, is_internal,
+									  with_returning);
 #endif
 	return true;
 }
@@ -191,13 +215,14 @@ static inline bool pgaceHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTupl
  * If it returns false, this deletion will be cancelled.
  * However, it does not generate any error.
  *
- * @rel            : the target relation
- * @otid           : ItemPointer of the tuple to be deleted
+ * @rel			   : the target relation
+ * @otid		   : ItemPointer of the tuple to be deleted
  * @is_internal    : true, if this operation is invoked by system internal processes.
  * @with_returning : true, if INSERT statement has RETURNING clause.
  */
-static inline bool pgaceHeapTupleDelete(Relation rel, ItemPointer otid,
-										bool is_internal, bool with_returning)
+static inline bool
+pgaceHeapTupleDelete(Relation rel, ItemPointer otid,
+					 bool is_internal, bool with_returning)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
@@ -217,9 +242,10 @@ static inline bool pgaceHeapTupleDelete(Relation rel, ItemPointer otid,
  * return NULL to cause yyerror().
  *
  * @defname : given <parameter> string
- * @value   : given <value> string
+ * @value	: given <value> string
  */
-static inline DefElem *pgaceGramSecurityItem(char *defname, char *value)
+static inline DefElem *
+pgaceGramSecurityItem(char *defname, char *value)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
@@ -234,7 +260,8 @@ static inline DefElem *pgaceGramSecurityItem(char *defname, char *value)
  *
  * @defel : given DefElem object
  */
-static inline bool pgaceIsGramSecurityItem(DefElem *defel)
+static inline bool
+pgaceIsGramSecurityItem(DefElem *defel)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
@@ -251,13 +278,16 @@ static inline bool pgaceIsGramSecurityItem(DefElem *defel)
  * @tuple : a tuple of new relation
  * @defel : extended statement
  */
-static inline void pgaceGramCreateRelation(Relation rel, HeapTuple tuple, DefElem *defel)
+static inline void
+pgaceGramCreateRelation(Relation rel, HeapTuple tuple, DefElem *defel)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
 		return sepgsqlGramCreateRelation(rel, tuple, defel);
 #endif
-	/* do nothing */
+	/*
+	 * do nothing
+	 */
 }
 
 /*
@@ -268,13 +298,16 @@ static inline void pgaceGramCreateRelation(Relation rel, HeapTuple tuple, DefEle
  * @tuple : a tuple of new attribute
  * @defel : extended statement
  */
-static inline void pgaceGramCreateAttribute(Relation rel, HeapTuple tuple, DefElem *defel)
+static inline void
+pgaceGramCreateAttribute(Relation rel, HeapTuple tuple, DefElem *defel)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
 		return sepgsqlGramCreateAttribute(rel, tuple, defel);
 #endif
-	/* do nothing */
+	/*
+	 * do nothing
+	 */
 }
 
 /*
@@ -285,13 +318,16 @@ static inline void pgaceGramCreateAttribute(Relation rel, HeapTuple tuple, DefEl
  * @tuple : a tuple of new relation
  * @defel : extended statement
  */
-static inline void pgaceGramAlterRelation(Relation rel, HeapTuple tuple, DefElem *defel)
+static inline void
+pgaceGramAlterRelation(Relation rel, HeapTuple tuple, DefElem *defel)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
 		return sepgsqlGramAlterRelation(rel, tuple, defel);
 #endif
-	/* do nothing */
+	/*
+	 * do nothing
+	 */
 }
 
 /*
@@ -302,14 +338,18 @@ static inline void pgaceGramAlterRelation(Relation rel, HeapTuple tuple, DefElem
  * @tuple : a tuple of new attribute
  * @defel : extended statement
  */
-static inline void pgaceGramAlterAttribute(Relation rel, HeapTuple tuple, DefElem *defel)
+static inline void
+pgaceGramAlterAttribute(Relation rel, HeapTuple tuple, DefElem *defel)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
 		return sepgsqlGramAlterAttribute(rel, tuple, defel);
 #endif
-	/* do nothing */
+	/*
+	 * do nothing
+	 */
 }
+
 /*
  * pgaceGramCreateDatabase() is called to modify a tuple just before inserting
  * a new database with CREATE DATABASE, if extended statement is used.
@@ -318,13 +358,16 @@ static inline void pgaceGramAlterAttribute(Relation rel, HeapTuple tuple, DefEle
  * @tuple : a tuple of the new database
  * @defel : extended statement
  */
-static inline void pgaceGramCreateDatabase(Relation rel, HeapTuple tuple, DefElem *defel)
+static inline void
+pgaceGramCreateDatabase(Relation rel, HeapTuple tuple, DefElem *defel)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
 		sepgsqlGramCreateDatabase(rel, tuple, defel);
 #endif
-	/* do nothing */
+	/*
+	 * do nothing
+	 */
 }
 
 /*
@@ -335,13 +378,16 @@ static inline void pgaceGramCreateDatabase(Relation rel, HeapTuple tuple, DefEle
  * @tuple : a tuple of the updated database
  * @defel : extended statement
  */
-static inline void pgaceGramAlterDatabase(Relation rel, HeapTuple tuple, DefElem *defel)
+static inline void
+pgaceGramAlterDatabase(Relation rel, HeapTuple tuple, DefElem *defel)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
 		sepgsqlGramAlterDatabase(rel, tuple, defel);
 #endif
-	/* do nothing */
+	/*
+	 * do nothing
+	 */
 }
 
 /*
@@ -352,13 +398,16 @@ static inline void pgaceGramAlterDatabase(Relation rel, HeapTuple tuple, DefElem
  * @tuple : a tuple of the new function
  * @defel : extended statement
  */
-static inline void pgaceGramCreateFunction(Relation rel, HeapTuple tuple, DefElem *defel)
+static inline void
+pgaceGramCreateFunction(Relation rel, HeapTuple tuple, DefElem *defel)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
 		sepgsqlGramCreateFunction(rel, tuple, defel);
 #endif
-	/* do nothing */
+	/*
+	 * do nothing
+	 */
 }
 
 /*
@@ -369,32 +418,39 @@ static inline void pgaceGramCreateFunction(Relation rel, HeapTuple tuple, DefEle
  * @tuple : a tuple of the function
  * @defel : extended statement
  */
-static inline void pgaceGramAlterFunction(Relation rel, HeapTuple tuple, DefElem *defel)
+static inline void
+pgaceGramAlterFunction(Relation rel, HeapTuple tuple, DefElem *defel)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
 		sepgsqlGramAlterFunction(rel, tuple, defel);
 #endif
-	/* do nothing */
+	/*
+	 * do nothing
+	 */
 }
 
 /******************************************************************
  * DATABASE related hooks
  ******************************************************************/
+
 /*
  * pgaceSetDatabaseParam() is called when clients tries to set GUC variables
  *
  * @name   : The name of GUC variable
  * @argstr : The new valus of GUC variable. If argstr is NULL, it means
- *           clients tries to reset the variable.
+ *			 clients tries to reset the variable.
  */
-static inline void pgaceSetDatabaseParam(const char *name, char *argstring)
+static inline void
+pgaceSetDatabaseParam(const char *name, char *argstring)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
 		sepgsqlSetDatabaseParam(name, argstring);
 #endif
-	/* do nothing */
+	/*
+	 * do nothing
+	 */
 }
 
 /*
@@ -402,31 +458,38 @@ static inline void pgaceSetDatabaseParam(const char *name, char *argstring)
  *
  * @name : The name of GUC variable
  */
-static inline void pgaceGetDatabaseParam(const char *name)
+static inline void
+pgaceGetDatabaseParam(const char *name)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
 		sepgsqlGetDatabaseParam(name);
 #endif
-	/* do nothing */
+	/*
+	 * do nothing
+	 */
 }
 
 /******************************************************************
  * FUNCTION related hooks
  ******************************************************************/
+
 /*
  * pgaceCallFunction() is called just before executing SQL function
  * as a part of query.
  *
- * @finfo    : FmgrInfo object for the target function
+ * @finfo	 : FmgrInfo object for the target function
  */
-static inline void pgaceCallFunction(FmgrInfo *finfo)
+static inline void
+pgaceCallFunction(FmgrInfo *finfo)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
 		sepgsqlCallFunction(finfo, false);
 #endif
-	/* do nothing */
+	/*
+	 * do nothing
+	 */
 }
 
 /*
@@ -439,7 +502,8 @@ static inline void pgaceCallFunction(FmgrInfo *finfo)
  * @finfo  : FmgrInfo object for the target function
  * @tgdata : TriggerData object for the current trigger invokation
  */
-static inline bool pgaceCallFunctionTrigger(FmgrInfo *finfo, TriggerData *tgdata)
+static inline bool
+pgaceCallFunctionTrigger(FmgrInfo *finfo, TriggerData *tgdata)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
@@ -454,24 +518,31 @@ static inline bool pgaceCallFunctionTrigger(FmgrInfo *finfo, TriggerData *tgdata
  *
  * @finfo  : FmgrInfo object for the target function
  */
-static inline void pgaceCallFunctionFastPath(FmgrInfo *finfo)
+static inline void
+pgaceCallFunctionFastPath(FmgrInfo *finfo)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
 		sepgsqlCallFunction(finfo, true);
 #endif
-	/* do nothing */
-}/*
-  * pgacePreparePlanCheck() is called before foreign key/primary key constraint checks,
-  * at ri_PlanCheck(). PGACE implementation can return its opaque data for any purpose.
-  *
-  * @rel : the target relation in which a constraint is configured
-  */
-static inline Datum pgacePreparePlanCheck(Relation rel)
+	/*
+	 * do nothing
+	 */
+}
+
+/*
+ * pgacePreparePlanCheck() is called before foreign key/primary key constraint checks,
+ * at ri_PlanCheck(). PGACE implementation can return its opaque data for any purpose.
+ *
+ * @rel : the target relation in which a constraint is configured
+ */
+static inline Datum
+pgacePreparePlanCheck(Relation rel)
 {
 #ifdef HAVE_SELINUX
-	if (sepgsqlIsEnabled()) {
-		Oid saved;
+	if (sepgsqlIsEnabled())
+	{
+		Oid			saved;
 
 		saved = sepgsqlPreparePlanCheck(rel);
 		return ObjectIdGetDatum(saved);
@@ -485,16 +556,19 @@ static inline Datum pgacePreparePlanCheck(Relation rel)
  * at ri_PlanCheck(). PGACE implementation can use an opaque data generated in the above
  * pgacePreparePlanCheck().
  *
- * @rel         : the target relation in which a constraint is configured
+ * @rel			: the target relation in which a constraint is configured
  * @pgace_saved : an opaque data returned from pgacePreparePlanCheck()
  */
-static inline void pgaceRestorePlanCheck(Relation rel, Datum pgace_saved)
+static inline void
+pgaceRestorePlanCheck(Relation rel, Datum pgace_saved)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
 		sepgsqlRestorePlanCheck(rel, DatumGetObjectId(pgace_saved));
 #endif
-	/* do nothing */
+	/*
+	 * do nothing
+	 */
 }
 
 /******************************************************************
@@ -506,13 +580,16 @@ static inline void pgaceRestorePlanCheck(Relation rel, Datum pgace_saved)
  *
  * @relid : the target relation id
  */
-static inline void pgaceLockTable(Oid relid)
+static inline void
+pgaceLockTable(Oid relid)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
 		sepgsqlLockTable(relid);
 #endif
-	/* do nothing */
+	/*
+	 * do nothing
+	 */
 }
 
 /******************************************************************
@@ -522,16 +599,20 @@ static inline void pgaceLockTable(Oid relid)
 /*
  * pgaceCopyTable() is called when COPY TO/COPY FROM statement is processed
  *
- * @rel        : the target relation
+ * @rel		   : the target relation
  * @attNumList : the list of attribute numbers
- * @isFrom     : true, if the given statement is 'COPY FROM'
+ * @isFrom	   : true, if the given statement is 'COPY FROM'
  */
-static inline void pgaceCopyTable(Relation rel, List *attNumList, bool isFrom) {
+static inline void
+pgaceCopyTable(Relation rel, List *attNumList, bool isFrom)
+{
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
 		sepgsqlCopyTable(rel, attNumList, isFrom);
 #endif
-	/* do nothing */
+	/*
+	 * do nothing
+	 */
 }
 
 /*
@@ -539,11 +620,13 @@ static inline void pgaceCopyTable(Relation rel, List *attNumList, bool isFrom) {
  * filtered, or not in the process of COPY TO statement.
  * If it returns false, the given tuple will be filtered from the result set
  *
- * @rel        : the target relation
+ * @rel		   : the target relation
  * @attNumList : the list of attribute numbers
- * @tuple      : the target tuple
+ * @tuple	   : the target tuple
  */
-static inline bool pgaceCopyToTuple(Relation rel, List *attNumList, HeapTuple tuple) {
+static inline bool
+pgaceCopyToTuple(Relation rel, List *attNumList, HeapTuple tuple)
+{
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
 		sepgsqlCopyToTuple(rel, attNumList, tuple);
@@ -561,12 +644,16 @@ static inline bool pgaceCopyToTuple(Relation rel, List *attNumList, HeapTuple tu
  *
  * @filename : full path name of the shared library module
  */
-static inline void pgaceLoadSharedModule(const char *filename) {
+static inline void
+pgaceLoadSharedModule(const char *filename)
+{
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
 		sepgsqlLoadSharedModule(filename);
 #endif
-	/* do nothing */
+	/*
+	 * do nothing
+	 */
 }
 
 /******************************************************************
@@ -579,7 +666,9 @@ static inline void pgaceLoadSharedModule(const char *filename) {
  *
  * @tuple : a tuple which is a part of the target largeobject.
  */
-static inline void pgaceLargeObjectGetSecurity(HeapTuple tuple) {
+static inline void
+pgaceLargeObjectGetSecurity(HeapTuple tuple)
+{
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
 		sepgsqlLargeObjectGetSecurity(tuple);
@@ -591,10 +680,12 @@ static inline void pgaceLargeObjectGetSecurity(HeapTuple tuple) {
 /*
  * pgaceLargeObjectSetSecurity() is called when lo_set_security() is executed
  *
- * @tuple       : a tuple which is a part of the target largeobject.
+ * @tuple		: a tuple which is a part of the target largeobject.
  * @lo_security : new security attribute specified
  */
-static inline void pgaceLargeObjectSetSecurity(HeapTuple tuple, Oid lo_security) {
+static inline void
+pgaceLargeObjectSetSecurity(HeapTuple tuple, Oid lo_security)
+{
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
 		sepgsqlLargeObjectSetSecurity(tuple, lo_security);
@@ -609,12 +700,16 @@ static inline void pgaceLargeObjectSetSecurity(HeapTuple tuple, Oid lo_security)
  * @rel   : pg_largeobject relation opened with RowExclusiveLock
  * @tuple : a new tuple for the new large object
  */
-static inline void pgaceLargeObjectCreate(Relation rel, HeapTuple tuple) {
+static inline void
+pgaceLargeObjectCreate(Relation rel, HeapTuple tuple)
+{
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
 		sepgsqlLargeObjectCreate(rel, tuple);
 #endif
-	/* do nothing */
+	/*
+	 * do nothing
+	 */
 }
 
 /*
@@ -624,12 +719,16 @@ static inline void pgaceLargeObjectCreate(Relation rel, HeapTuple tuple) {
  * @rel   : pg_largeobject relation opened with RowExclusiveLock
  * @tuple : one of the tuples within the target large object
  */
-static inline void pgaceLargeObjectDrop(Relation rel, HeapTuple tuple) {
+static inline void
+pgaceLargeObjectDrop(Relation rel, HeapTuple tuple)
+{
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
 		sepgsqlLargeObjectDrop(rel, tuple);
 #endif
-	/* do nothing */
+	/*
+	 * do nothing
+	 */
 }
 
 /*
@@ -638,12 +737,16 @@ static inline void pgaceLargeObjectDrop(Relation rel, HeapTuple tuple) {
  * @rel   : pg_largeobject relation opened with AccessShareLock
  * @tuple : the head tuple within the given large object
  */
-static inline void pgaceLargeObjectRead(Relation rel, HeapTuple tuple) {
+static inline void
+pgaceLargeObjectRead(Relation rel, HeapTuple tuple)
+{
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
 		sepgsqlLargeObjectRead(rel, tuple);
 #endif
-	/* do nothing */
+	/*
+	 * do nothing
+	 */
 }
 
 /*
@@ -653,27 +756,35 @@ static inline void pgaceLargeObjectRead(Relation rel, HeapTuple tuple) {
  * @newtup : the head tuple within the given large object
  * @oldtup : the head tuple in older version, if exist
  */
-static inline void pgaceLargeObjectWrite(Relation rel, HeapTuple newtup, HeapTuple oldtup) {
+static inline void
+pgaceLargeObjectWrite(Relation rel, HeapTuple newtup, HeapTuple oldtup)
+{
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
 		sepgsqlLargeObjectWrite(rel, newtup, oldtup);
 #endif
-	/* do nothing */
+	/*
+	 * do nothing
+	 */
 }
 
 /*
  * pgaceLargeObjectTruncate() is called when they truncate a large object.
  *
- * @rel     : pg_largeobject relation opened with RowExclusiveLock
- * @loid    : large object identifier
+ * @rel		: pg_largeobject relation opened with RowExclusiveLock
+ * @loid	: large object identifier
  * @headtup : the head tuple to be truncated. NULL means this BLOB will be expanded.
  */
-static inline void pgaceLargeObjectTruncate(Relation rel, Oid loid, HeapTuple headtup) {
+static inline void
+pgaceLargeObjectTruncate(Relation rel, Oid loid, HeapTuple headtup)
+{
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
 		sepgsqlLargeObjectTruncate(rel, loid, headtup);
 #endif
-	/* do nothing */
+	/*
+	 * do nothing
+	 */
 }
 
 /*
@@ -681,31 +792,40 @@ static inline void pgaceLargeObjectTruncate(Relation rel, Oid loid, HeapTuple he
  *
  * @fd : file descriptor to be inported
  */
-static inline void pgaceLargeObjectImport(int fd) {
+static inline void
+pgaceLargeObjectImport(int fd)
+{
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
 		sepgsqlLargeObjectImport();
 #endif
-	/* do nothing */
+	/*
+	 * do nothing
+	 */
 }
 
 /*
  * pgaceLargeObjectExport() is called when lo_import() is processed
  *
- * @fd   : file descriptor to be exported
+ * @fd	 : file descriptor to be exported
  * @loid : large object to be exported
  */
-static inline void pgaceLargeObjectExport(int fd, Oid loid) {
+static inline void
+pgaceLargeObjectExport(int fd, Oid loid)
+{
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
 		sepgsqlLargeObjectExport();
 #endif
-	/* do nothing */
+	/*
+	 * do nothing
+	 */
 }
 
 /******************************************************************
  * Security Label hooks
  ******************************************************************/
+
 /*
  * PGACE implementation can use pgaceSecurityLabelIn() hook to translate
  * a input security label from external representation into internal one.
@@ -713,7 +833,8 @@ static inline void pgaceLargeObjectExport(int fd, Oid loid) {
  *
  * @seclabel : security label being input
  */
-static inline char *pgaceSecurityLabelIn(char *seclabel)
+static inline char *
+pgaceSecurityLabelIn(char *seclabel)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
@@ -729,7 +850,8 @@ static inline char *pgaceSecurityLabelIn(char *seclabel)
  *
  * @seclabel : security label being output
  */
-static inline char *pgaceSecurityLabelOut(char *seclabel)
+static inline char *
+pgaceSecurityLabelOut(char *seclabel)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
@@ -749,7 +871,8 @@ static inline char *pgaceSecurityLabelOut(char *seclabel)
  *
  * @seclabel : security label to be checked
  */
-static inline char *pgaceSecurityLabelCheckValid(char *seclabel)
+static inline char *
+pgaceSecurityLabelCheckValid(char *seclabel)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
@@ -763,9 +886,10 @@ static inline char *pgaceSecurityLabelCheckValid(char *seclabel)
  * generated tuple within pg_security
  *
  * @new_label : a text representation of security context which will be newly
- *              inserted into pg_security.
+ *				inserted into pg_security.
  */
-static inline char *pgaceSecurityLabelOfLabel(char *new_label)
+static inline char *
+pgaceSecurityLabelOfLabel(char *new_label)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
@@ -787,7 +911,8 @@ static inline char *pgaceSecurityLabelOfLabel(char *new_label)
  *
  * @orig : a object which to copy
  */
-static inline Node *pgaceCopyObject(Node *orig)
+static inline Node *
+pgaceCopyObject(Node *orig)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
@@ -805,7 +930,8 @@ static inline Node *pgaceCopyObject(Node *orig)
  * @str  : StringInfo which to put the text representation
  * @node : a object that text representation is required
  */
-static inline bool pgaceOutObject(StringInfo str, Node *node)
+static inline bool
+pgaceOutObject(StringInfo str, Node *node)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
@@ -821,7 +947,8 @@ static inline bool pgaceOutObject(StringInfo str, Node *node)
  *
  * @token : a tag for the object
  */
-static inline void *pgaceReadObject(char *token)
+static inline void *
+pgaceReadObject(char *token)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
@@ -833,26 +960,42 @@ static inline void *pgaceReadObject(char *token)
 /******************************************************************
  * PGACE common facilities (not a hooks)
  ******************************************************************/
+
 /* Security attribute system column support */
 extern bool pgaceIsSecuritySystemColumn(int attrno);
-extern void pgaceFetchSecurityAttribute(JunkFilter *junkfilter, TupleTableSlot *slot, Oid *tts_security);
+
+extern void pgaceFetchSecurityAttribute(JunkFilter *junkfilter,
+										TupleTableSlot *slot,
+										Oid *tts_security);
 extern void pgaceTransformSelectStmt(List *targetList);
-extern void pgaceTransformInsertStmt(List **p_icolumns, List **p_attrnos, List *targetList);
+
+extern void pgaceTransformInsertStmt(List **p_icolumns, List **p_attrnos,
+									 List *targetList);
 
 /* Extended SQL statements related */
 extern List *pgaceRelationAttrList(CreateStmt *stmt);
-extern void  pgaceCreateRelationCommon(Relation rel, HeapTuple tuple, List *pgace_attr_list);
-extern void  pgaceCreateAttributeCommon(Relation rel, HeapTuple tuple, List *pgace_attr_list);
-extern void  pgaceAlterRelationCommon(Relation rel, AlterTableCmd *cmd);
+
+extern void pgaceCreateRelationCommon(Relation rel, HeapTuple tuple,
+									  List *pgace_attr_list);
+extern void pgaceCreateAttributeCommon(Relation rel, HeapTuple tuple,
+									   List *pgace_attr_list);
+extern void pgaceAlterRelationCommon(Relation rel, AlterTableCmd *cmd);
 
 /* SQL functions */
 extern Datum security_label_in(PG_FUNCTION_ARGS);
+
 extern Datum security_label_out(PG_FUNCTION_ARGS);
+
 extern Datum security_label_raw_in(PG_FUNCTION_ARGS);
+
 extern Datum security_label_raw_out(PG_FUNCTION_ARGS);
+
 extern Datum text_to_security_label(PG_FUNCTION_ARGS);
+
 extern Datum security_label_to_text(PG_FUNCTION_ARGS);
+
 extern Datum lo_get_security(PG_FUNCTION_ARGS);
+
 extern Datum lo_set_security(PG_FUNCTION_ARGS);
 
 #endif // PGACE_H
