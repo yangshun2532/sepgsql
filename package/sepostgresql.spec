@@ -22,11 +22,12 @@ Source0: ftp://ftp.postgresql.org/pub/source/v%{version}/postgresql-%{version}.t
 Source1: sepostgresql.init
 Source2: sepostgresql.8
 Source3: sepostgresql.logrotate
-Patch0: sepostgresql-pgace-%%__base_postgresql_version__%%-%%__sepgsql_major_version__%%.patch
-Patch1: sepostgresql-sepgsql-%%__base_postgresql_version__%%-%%__sepgsql_major_version__%%.patch
-Patch2: sepostgresql-pg_dump-%%__base_postgresql_version__%%-%%__sepgsql_major_version__%%.patch
-Patch3: sepostgresql-policy-%%__base_postgresql_version__%%-%%__sepgsql_major_version__%%.patch
-Patch4: sepostgresql-fedora-prefix.patch
+Source4: sepostgresql.te
+Source5: sepostgresql.if
+Source6: sepostgresql.fc
+Patch0: sepostgresql-sepgsql-%%__base_postgresql_version__%%-%%__sepgsql_major_version__%%.patch
+Patch1: sepostgresql-pg_dump-%%__base_postgresql_version__%%-%%__sepgsql_major_version__%%.patch
+Patch2: sepostgresql-fedora-prefix.patch
 BuildRequires: perl glibc-devel bison flex readline-devel zlib-devel >= 1.0.4
 Buildrequires: checkpolicy libselinux-devel >= 2.0.43 selinux-policy-devel selinux-policy >= 3.0.6
 Requires(pre): shadow-utils
@@ -47,22 +48,29 @@ reference monitor to check any SQL query.
 
 %prep
 %setup -q -n postgresql-%{version}
+pwd
 %patch0 -p1
+pwd
 %patch1 -p1
+pwd
 %patch2 -p1
-%patch3 -p1
-%patch4 -p1
+pwd
+mkdir -p sepgsql_policy
+cp %{SOURCE4} sepgsql_policy
+cp %{SOURCE5} sepgsql_policy
+cp %{SOURCE6} sepgsql_policy
 
 %build
 CFLAGS="${CFLAGS:-%optflags}" ; export CFLAGS
 CXXFLAGS="${CXXFLAGS:-%optflags}" ; export CXXFLAGS
 
 # build Binary Policy Module
-pushd contrib/sepgsql-policy
+pushd sepgsql_policy
 for selinuxvariant in %{selinux_variants}
 do
-    make NAME=${selinuxvariant}
+    make NAME=${selinuxvariant} -f %{_datadir}/selinux/devel/Makefile
     mv %{name}.pp %{name}.pp.${selinuxvariant}
+    make NAME=${selinuxvariant} -f %{_datadir}/selinux/devel/Makefile clean
 done
 popd
 
@@ -83,7 +91,7 @@ make %{?_smp_mflags}
 %install
 rm -rf %{buildroot}
 
-pushd contrib/sepgsql-policy
+pushd sepgsql_policy
 for selinuxvariant in %{selinux_variants}
 do
     install -d %{buildroot}%{_datadir}/selinux/${selinuxvariant}
