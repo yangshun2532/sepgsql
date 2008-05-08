@@ -13,6 +13,29 @@
 #include <selinux/av_permissions.h>
 
 /*
+ * SE-PostgreSQL Evaluation Items
+ */
+typedef struct SEvalItem {
+	NodeTag type;
+	uint16 tclass;
+	uint32 perms;
+	union {
+		struct {
+			Oid relid;
+			bool inh;
+		} c;  /* for pg_class */
+		struct {
+			Oid relid;
+			bool inh;
+			AttrNumber attno;
+		} a;  /* for pg_attribute */
+		struct {
+			Oid funcid;
+		} p;  /* for pg_proc */
+	};
+} SEvalItem;
+
+/*
  * Permission codes of internal representation
  */
 #define SEPGSQL_PERMS_USE				(1UL << (N_ACL_RIGHTS + 0))
@@ -130,13 +153,6 @@ extern char *sepgsqlSecurityLabelOut(char *context);
 extern char *sepgsqlSecurityLabelCheckValid(char *context);
 
 extern char *sepgsqlSecurityLabelOfLabel(char *context);
-
-/* Extended node type hooks */
-extern Node *sepgsqlCopyObject(Node *node);
-
-extern bool sepgsqlOutObject(StringInfo str, Node *node);
-
-extern void *sepgsqlReadObject(char *token);
 
 /*
  * SE-PostgreSQL core functions

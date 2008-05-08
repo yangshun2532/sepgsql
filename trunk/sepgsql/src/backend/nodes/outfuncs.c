@@ -2050,6 +2050,42 @@ _outFkConstraint(StringInfo str, FkConstraint *node)
 	WRITE_BOOL_FIELD(skip_validation);
 }
 
+/*****************************************************************************
+ *
+ *	Stuff from security/*.h
+ *
+ *****************************************************************************/
+#ifdef HAVE_SELINUX
+static void
+_outSEvalItem(StringInfo str, SEvalItem *node)
+{
+
+	WRITE_NODE_TYPE("SEVALITEM");
+
+	WRITE_UINT_FIELD(tclass);
+	WRITE_UINT_FIELD(perms);
+
+	switch (node->tclass)
+	{
+		case SECCLASS_DB_TABLE:
+			WRITE_OID_FIELD(c.relid);
+			WRITE_BOOL_FIELD(c.inh);
+			break;
+		case SECCLASS_DB_COLUMN:
+			WRITE_OID_FIELD(a.relid);
+			WRITE_BOOL_FIELD(a.inh);
+			WRITE_INT_FIELD(a.attno);
+			break;
+		case SECCLASS_DB_PROCEDURE:
+			WRITE_OID_FIELD(p.funcid);
+			break;
+		default:
+			elog(ERROR, "unrecognized object class: %d",
+				 (int) node->tclass);
+			break;
+	}
+}
+#endif
 
 /*
  * _outNode -
@@ -2446,10 +2482,13 @@ _outNode(StringInfo str, void *obj)
 			case T_XmlSerialize:
 				_outXmlSerialize(str, obj);
 				break;
+#ifdef HAVE_SELINUX
+			case T_SEvalItem:
+				_outSEvalItem(str, obj);
+				break;
+#endif
 
 			default:
-				if (pgaceOutObject(str, obj))
-					break;
 
 				/*
 				 * This should be an ERROR, but it's too useful to be able to
