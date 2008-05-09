@@ -292,8 +292,9 @@ void sepgsqlLoadSharedModule(const char *filename)
 	security_context_t filecon;
 	Datum filecon_sid;
 
-	if (getfilecon_raw(filename, &filecon) < 1)
+	if (getfilecon_raw(filename, &filecon) < 0)
 		elog(ERROR, "SELinux: could not obtain security context of %s", filename);
+
 	PG_TRY();
 	{
 		filecon_sid = DirectFunctionCall1(security_label_raw_in,
