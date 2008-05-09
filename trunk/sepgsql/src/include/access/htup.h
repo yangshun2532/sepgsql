@@ -347,9 +347,12 @@ do { \
 	(tup)->t_infomask2 = ((tup)->t_infomask2 & ~HEAP_NATTS_MASK) | (natts) \
 )
 
+#define HeapTupleHeaderHasSecurity(tup)			\
+	((tup)->t_infomask & HEAP_HASSECURITY)
+
 #define HeapTupleHeaderGetSecurity(tup)									\
 	(																	\
-		((tup)->t_infomask & HEAP_HASSECURITY)							\
+		HeapTupleHeaderHasSecurity(tup)									\
 		? (*((Oid *)((char *)(tup) + (tup)->t_hoff						\
 					 - (((tup)->t_infomask & HEAP_HASOID) ? sizeof(Oid) : 0) \
 					 - sizeof(Oid))))									\
@@ -358,11 +361,14 @@ do { \
 
 #define HeapTupleHeaderSetSecurity(tup, security)						\
 	do {																\
-		Assert((tup)->t_infomask & HEAP_HASSECURITY);					\
+		Assert(HeapTupleHeaderHasSecurity(tup));						\
 		*((Oid *)((char *)(tup) + (tup)->t_hoff							\
 				  - (((tup)->t_infomask & HEAP_HASOID) ? sizeof(Oid) : 0) \
 				  - sizeof(Oid))) = (security);							\
 	} while(0)
+
+#define HeapTupleHasSecurity(tuple)				\
+	HeapTupleHeaderHasSecurity((tuple)->t_data)
 
 #define HeapTupleGetSecurity(tuple)				\
 	HeapTupleHeaderGetSecurity((tuple)->t_data)

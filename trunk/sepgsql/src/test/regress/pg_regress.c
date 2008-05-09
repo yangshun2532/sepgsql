@@ -62,8 +62,8 @@ static char *shellprog = SHELLPROG;
 #endif
 
 /* currently we can use the same diff switches on all platforms */
-const char *basic_diff_opts = "-w";
-const char *pretty_diff_opts = "-w -C3";
+const char *basic_diff_opts = "-pNU1000"; // "-w"
+const char *pretty_diff_opts = "-pNU1000"; // "-w -C3";
 
 /* options settable from command line */
 _stringlist *dblist = NULL;
