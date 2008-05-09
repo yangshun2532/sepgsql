@@ -69,6 +69,8 @@ extern List *sepgsqlProxyQuery(Query *query);
 
 extern void sepgsqlVerifyQuery(PlannedStmt *pstmt, int eflags);
 
+extern void sepgsqlEvaluateParams(List *params);
+
 /* HeapTuple modification hooks */
 extern bool sepgsqlHeapTupleInsert(Relation rel, HeapTuple tuple,
 								   bool is_internal, bool with_returning);

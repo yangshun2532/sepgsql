@@ -54,9 +54,8 @@ static void proxyRteRelation(sepgsqlWalkerContext *swc, int rtindex, Node **qual
 static void proxyRteSubQuery(sepgsqlWalkerContext *swc, Query *query);
 static void proxyJoinTree(sepgsqlWalkerContext *swc, Node *node, Node **quals);
 static void proxySetOperations(sepgsqlWalkerContext *swc, Node *node);
-
-/* static  */
 static bool sepgsqlExprWalker(Node *node, sepgsqlWalkerContext *swc);
+static void execVerifyQuery(List *selist);
 
 /* -----------------------------------------------------------
  * addEvalXXXX -- add evaluation items into Query->SEvalItemList.
@@ -271,6 +270,9 @@ static void walkVarHelper(sepgsqlWalkerContext *swc, Var *var)
 		lv--;
 	}
 	query = qstack->query;
+	if (!query)
+		elog(ERROR, "could not walk T_Var node in this context");
+
 	rte = rt_fetch(var->varno, query->rtable);
 	Assert(IsA(rte, RangeTblEntry));
 
@@ -862,25 +864,6 @@ static List *proxyGeneralQuery(Query *query)
 	return list_make1(query);
 }
 
-static List *proxyExecuteStmt(Query *query)
-{
-	ExecuteStmt *estmt = (ExecuteStmt *) query->utilityStmt;
-	sepgsqlWalkerContext swcData;
-	queryStack qsData;
-
-	Assert(nodeTag(query->utilityStmt) == T_ExecuteStmt);
-
-	qsData.parent = NULL;
-	qsData.query = query;
-	memset(&swcData, 0, sizeof(sepgsqlWalkerContext));
-	swcData.qstack = &qsData;
-
-	sepgsqlExprWalkerFlags((Node *) estmt->params, &swcData, false);
-	query->pgaceItem = (Node *) swcData.selist;
-
-	return list_make1(query);
-}
-
 static List *convertTruncateToDelete(Relation rel)
 {
 	Query *query = makeNode(Query);
@@ -956,9 +939,6 @@ List *sepgsqlProxyQuery(Query *query)
 		case T_TruncateStmt:
 			new_list = proxyTruncateStmt(query);
 			break;
-		case T_ExecuteStmt:
-			new_list = proxyExecuteStmt(query);
-			break;
 		default:
 			new_list = list_make1(query);
 			/* do nothing now */
@@ -970,6 +950,20 @@ List *sepgsqlProxyQuery(Query *query)
 		break;
 	}
 	return new_list;
+}
+
+void sepgsqlEvaluateParams(List *params)
+{
+	sepgsqlWalkerContext swcData;
+	queryStack qsData;
+
+	memset(&qsData, 0, sizeof(queryStack));
+	memset(&swcData, 0, sizeof(sepgsqlWalkerContext));
+	swcData.qstack = &qsData;
+
+	sepgsqlExprWalkerFlags((Node *)params, &swcData, false);
+
+	execVerifyQuery(swcData.selist);
 }
 
 /* *******************************************************************************

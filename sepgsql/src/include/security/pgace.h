@@ -162,6 +162,19 @@ pgaceExecutorStart(QueryDesc *queryDesc, int eflags)
 	 */
 }
 
+/*
+ * pgaceEvaluateParams() is called on statement with parameter
+ */
+static inline void
+pgaceEvaluateParams(List *params)
+{
+#ifdef HAVE_SELINUX
+	if (sepgsqlIsEnabled())
+		sepgsqlEvaluateParams(params);
+#endif
+}
+
+
 /******************************************************************
  * HeapTuple modification hooks
  ******************************************************************/
