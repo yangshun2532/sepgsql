@@ -905,7 +905,7 @@ static List *proxyTruncateStmt(Query *query)
 									RelationGetRelid(rel));
 		heap_close(rel, AccessShareLock);
 
-		elog(NOTICE, "SELinux: TRUNCATE %s is replaced unconditional DELETE",
+		elog(LOG, "SELinux: TRUNCATE %s is replaced unconditional DELETE",
 			 RelationGetRelationName(rel));
 	}
 
