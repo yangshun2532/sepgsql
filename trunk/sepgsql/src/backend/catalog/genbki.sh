@@ -144,9 +144,7 @@ SECURITY_SYSATTR_NAME_FILTERING="SECURITY_SYSATTR_NAME"
 for dir in $INCLUDE_DIRS; do
     if [ -f "$dir/pg_config.h" ]; then
         SECURITY_SYSATTR_NAME=`grep '#define[  ]*SECURITY_SYSATTR_NAME' $dir/pg_config.h | $AWK '{ print $3 }' | sed 's/\"//g'`
-	if [ -n "$SECURITY_SYSATTR_NAME" ]; then
-	    SECURITY_SYSATTR_NAME_FILTERING="^__invalid__pattern__$"
-	fi
+	test -n "$SECURITY_SYSATTR_NAME" && SECURITY_SYSATTR_NAME_FILTERING="^__invalid__pattern__$"
 	break
     fi
 done
