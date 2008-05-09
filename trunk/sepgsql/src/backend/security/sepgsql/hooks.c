@@ -528,7 +528,7 @@ char *sepgsqlSecurityLabelCheckValid(char *context) {
 	return unlbl_result;
 }
 
-char *sepgsqlSecurityLabelOfLabel(char *context) {
+char *sepgsqlSecurityLabelOfLabel() {
 	HeapTuple tuple;
 	security_context_t scon, tcon, ncon, _ncon;
 	int rc;

@@ -884,16 +884,13 @@ pgaceSecurityLabelCheckValid(char *seclabel)
 /*
  * pgaceSecurityLabelOfLabel() returns the security attribute of a newly
  * generated tuple within pg_security
- *
- * @new_label : a text representation of security context which will be newly
- *				inserted into pg_security.
  */
 static inline char *
-pgaceSecurityLabelOfLabel(char *new_label)
+pgaceSecurityLabelOfLabel(void)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
-		return sepgsqlSecurityLabelOfLabel(new_label);
+		return sepgsqlSecurityLabelOfLabel();
 #endif
 	return pstrdup("unlabeled");
 }
@@ -912,6 +909,9 @@ extern void pgaceTransformSelectStmt(List *targetList);
 
 extern void pgaceTransformInsertStmt(List **p_icolumns, List **p_attrnos,
 									 List *targetList);
+
+/* Security Label Management */
+extern void pgacePostBootstrapingMode(void);
 
 /* Extended SQL statements related */
 extern List *pgaceRelationAttrList(CreateStmt *stmt);
