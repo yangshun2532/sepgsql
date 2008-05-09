@@ -256,297 +256,267 @@ void pgaceAlterRelationCommon(Relation rel, AlterTableCmd *cmd) {
 /*****************************************************************************
  *   security_label type input/output handler
  *****************************************************************************/
-static Oid early_security_label_to_sid(char *seclabel);
-static char *early_sid_to_security_label(Oid sid);
-#define EARLY_PG_SECURITY  "global/pg_security.bootstrap"
 
-static bool pg_security_is_available() {
-	/* -1 : early mode, 0: now in transfer, 1: available */
-	static int pg_security_state = -1;
-	char fname[MAXPGPATH];
-	FILE *filp;
+typedef struct earlySeclabel {
+	struct earlySeclabel *next;
+	Oid sid;
+	char seclabel[1];
+} earlySeclabel;
 
-	if (pg_security_state > 0)
-		return true;
-	if (IsBootstrapProcessingMode() || pg_security_state==0)
-		return false;
-	/*
-	 * if initial setting up was not done, the cache file is remaining.
-	 * so we have to insert its contains into pg_selinux.
-	 * we can make decision of whether it already done, or not, by looking
-	 * the existance of 'EARLY_PG_SECURITY'.
-	 */
-	snprintf(fname, sizeof(fname), "%s/%s", DataDir, EARLY_PG_SECURITY);
-	filp = fopen(fname, "rb");
-	if (filp) {
-		Relation rel;
-		CatalogIndexState ind;
-		HeapTuple tuple;
-		char buffer[1024];
-		Oid secoid, metaoid;
-		Datum value;
-		char  isnull;
-
-		pg_security_state = 0;
-
-		PG_TRY();
-		{
-			rel = heap_open(SecurityRelationId, RowExclusiveLock);
-			ind = CatalogOpenIndexes(rel);
-			while (fscanf(filp, "%u %s", &secoid, buffer) == 2) {
-				metaoid = early_security_label_to_sid(pgaceSecurityLabelOfLabel(buffer));
-
-				value = DirectFunctionCall1(textin, CStringGetDatum(buffer));
-				isnull = ' ';
-				tuple = heap_formtuple(RelationGetDescr(rel), &value, &isnull);
-
-				HeapTupleSetOid(tuple, secoid);
-				HeapTupleSetSecurity(tuple, metaoid);
-
-				simple_heap_insert(rel, tuple);
-				CatalogIndexInsert(ind, tuple);
-
-				heap_freetuple(tuple);
-			}
-			CatalogCloseIndexes(ind);
-			heap_close(rel, RowExclusiveLock);
-
-			CommandCounterIncrement();
-		}
-		PG_CATCH();
-		{
-			fclose(filp);
-			PG_RE_THROW();
-		}
-		PG_END_TRY();
-		fclose(filp);
-		if (unlink(fname) != 0)
-			elog(ERROR, "PGACE: could not unlink '%s'", fname);
-	}
-	pg_security_state = 1;
-
-	return true;
-}
+static earlySeclabel *earlySeclabelList = NULL;
 
 static Oid early_security_label_to_sid(char *seclabel)
 {
-	char fname[MAXPGPATH], buffer[1024];
-	Oid sid, minsid = SecurityRelationId;
-	FILE *filp;
+	earlySeclabel *es;
+	Oid minsid = SecurityRelationId;
 
-	snprintf(fname, sizeof(fname), "%s/%s", DataDir, EARLY_PG_SECURITY);
-	filp = fopen(fname, "a+b");
-	if (!filp)
-		ereport(ERROR,
-				(errcode(ERRCODE_INTERNAL_ERROR),
-				 errmsg("could not open '%s'", fname)));
-	flock(fileno(filp), LOCK_EX);
-	while (fscanf(filp, "%u %s", &sid, buffer) == 2) {
-		if (!strcmp(seclabel, buffer)) {
-			fclose(filp);
-			return sid;
-		}
-		if (sid < minsid)
-			minsid = sid;
+	for (es = earlySeclabelList; es != NULL; es = es->next)
+	{
+		if (!strcmp(seclabel, es->seclabel))
+			return es->sid;
+		if (es->sid < minsid)
+			minsid = es->sid;
 	}
-	sid = minsid - 1;
-	fprintf(filp, "%u %s\n", sid, seclabel);
-	fclose(filp);
+	/* not found */
+	es = malloc(sizeof(earlySeclabel) + strlen(seclabel));
+	es->next = earlySeclabelList;
+	es->sid = minsid - 1;
+	strcpy(es->seclabel, seclabel);
+	earlySeclabelList = es;
 
-	return sid;
+	return es->sid;
 }
 
 static char *early_sid_to_security_label(Oid sid)
 {
-	char fname[MAXPGPATH], buffer[1024], *seclabel;
-	FILE *filp;
-	Oid __sid;
+	earlySeclabel *es;
+	char *seclabel;
 
-	snprintf(fname, sizeof(fname), "%s/%s", DataDir, EARLY_PG_SECURITY);
-	filp = fopen(fname, "rb");
-	if (!filp)
-		goto not_found;
-
-	flock(fileno(filp), LOCK_SH);
-	while (fscanf(filp, "%u %s", &__sid, buffer) == 2) {
-		if (sid == __sid) {
-			fclose(filp);
-			return pstrdup(buffer);
-		}
+	for (es = earlySeclabelList; es != NULL; es = es->next)
+	{
+		if (es->sid == sid)
+			return pstrdup(es->seclabel);
 	}
-	fclose(filp);
-
-not_found:
+	/* not found */
 	seclabel = pgaceSecurityLabelCheckValid(NULL);
 	elog(seclabel ? NOTICE : ERROR,
 		 "PGACE: No text representation for sid = %u", sid);
-	return seclabel;
+	return pstrdup(seclabel);
 }
 
-static Oid get_security_label_oid(Relation rel, CatalogIndexState ind, char *new_label)
+void pgacePostBootstrapingMode(void)
+{
+	Relation rel;
+	CatalogIndexState ind;
+	HeapTuple tuple;
+	earlySeclabel *es, *_es;
+	Oid meta_sid;
+	Datum value;
+	char isnull;
+
+	StartTransactionCommand();
+
+	meta_sid = early_security_label_to_sid(pgaceSecurityLabelOfLabel());
+
+	rel = heap_open(SecurityRelationId, RowExclusiveLock);
+	ind = CatalogOpenIndexes(rel);
+
+	for (es = earlySeclabelList; es != NULL; es = _es)
+	{
+		_es = es->next;
+
+		value = DirectFunctionCall1(textin, CStringGetDatum(es->seclabel));
+		isnull = ' ';
+		tuple = heap_formtuple(RelationGetDescr(rel), &value, &isnull);
+
+		HeapTupleSetOid(tuple, es->sid);
+		HeapTupleSetSecurity(tuple, meta_sid);
+
+		simple_heap_insert(rel, tuple);
+		CatalogIndexInsert(ind, tuple);
+
+		heap_freetuple(tuple);
+
+		free(es);
+	}
+	CatalogCloseIndexes(ind);
+	heap_close(rel, RowExclusiveLock);
+
+	CommitTransactionCommand();
+}
+
+static Oid get_security_label_oid(Relation rel, CatalogIndexState ind)
 {
 	/* rel has to be opened with RowExclusiveLock */
-	char *mlabel_str, *__mlabel_str;
-	Datum mlabel_text;
+	char *slabel;
+	Datum slabelText;
+	Oid slabelOid;
 	HeapTuple tuple;
-	Oid label_oid;
+	SysScanDesc scan;
+	ScanKeyData skey;
+	char isnull;
 
-	mlabel_str = pgaceSecurityLabelOfLabel(new_label);
-	__mlabel_str = pgaceSecurityLabelCheckValid(mlabel_str);
-	if (mlabel_str != __mlabel_str)
-		elog(NOTICE, "PGACE: '%s' is not a valid security label,"
-					 " '%s' is applied instead.", mlabel_str, __mlabel_str);
+	slabel = pgaceSecurityLabelOfLabel();
 
 	/* 1. lookup syscache */
-	mlabel_text = DirectFunctionCall1(textin, CStringGetDatum(mlabel_str));
+	slabelText = DirectFunctionCall1(textin, CStringGetDatum(slabel));
 	tuple = SearchSysCache(SECURITYLABEL,
-						   mlabel_text,
+						   slabelText,
 						   0, 0, 0);
 	if (HeapTupleIsValid(tuple)) {
-		label_oid = HeapTupleGetSecurity(tuple);
+		slabelOid = HeapTupleGetOid(tuple);
 		ReleaseSysCache(tuple);
-	} else {
-		/* 2. lookup table on SnapshotSelf */
-		SysScanDesc scan;
-		ScanKeyData skey;
-
-		ScanKeyInit(&skey,
-					Anum_pg_security_seclabel,
-					BTEqualStrategyNumber, F_TEXTEQ,
-					PointerGetDatum(mlabel_text));
-		scan = systable_beginscan(rel, SecuritySeclabelIndexId,
-								  true, SnapshotSelf, 1, &skey);
-		tuple = systable_getnext(scan);
-		if (HeapTupleIsValid(tuple)) {
-			label_oid = HeapTupleGetSecurity(tuple);
-		} else {
-			/* 3. insert a new tuple into pg_security */
-			Datum value = PointerGetDatum(mlabel_text);
-			char isnull = ' ';
-			Oid meta_oid;
-
-			tuple = heap_formtuple(RelationGetDescr(rel),
-								   &value, &isnull);
-			meta_oid = GetNewOid(rel);
-			HeapTupleSetOid(tuple, meta_oid);
-			HeapTupleSetSecurity(tuple, meta_oid);
-
-			label_oid = simple_heap_insert(rel, tuple);
-			Assert(label_oid == meta_oid);
-
-			CatalogIndexInsert(ind, tuple);
-		}
-		systable_endscan(scan);
+		return slabelOid;
 	}
-	return label_oid;
+
+	/* 2. lookup pg_security with SnapshotSelf */
+	ScanKeyInit(&skey,
+				Anum_pg_security_seclabel,
+				BTEqualStrategyNumber, F_TEXTEQ,
+				PointerGetDatum(slabelText));
+	scan = systable_beginscan(rel, SecuritySeclabelIndexId,
+							  true, SnapshotSelf, 1, &skey);
+	tuple = systable_getnext(scan);
+	if (HeapTupleIsValid(tuple)) {
+		slabelOid = HeapTupleGetOid(tuple);
+		goto out;
+	}
+
+	/* 3. insert a new tuple into pg_security */
+	isnull = ' ';
+	tuple = heap_formtuple(RelationGetDescr(rel),
+						   &slabelText, &isnull);
+	slabelOid = GetNewOid(rel);
+	HeapTupleSetOid(tuple, slabelOid);
+	HeapTupleSetSecurity(tuple, slabelOid);
+
+	simple_heap_insert(rel, tuple);
+	CatalogIndexInsert(ind, tuple);
+
+out:
+	systable_endscan(scan);
+
+	return slabelOid;
 }
 
-static Oid security_label_to_sid(char *label_str)
+static Oid security_label_to_sid(char *label)
 {
-	Datum label_text;
-	Oid label_oid;
-	HeapTuple tuple;
+	Relation rel;
+	CatalogIndexState ind;
+    SysScanDesc scan;
+    ScanKeyData skey;
+    HeapTuple tuple;
+    Datum labelText;
+    Oid labelOid, labelSid;
+	char isnull;
 
-	if (!pg_security_is_available())
-		return early_security_label_to_sid(label_str);
+    if (IsBootstrapProcessingMode())
+		return early_security_label_to_sid(label);
 
-	/* 1. lookup system cache first */
-	label_text = DirectFunctionCall1(textin, CStringGetDatum(label_str));
+	/* 1. lookup syscache */
+	labelText = DirectFunctionCall1(textin, CStringGetDatum(label));
 	tuple = SearchSysCache(SECURITYLABEL,
-						   label_text,
+						   labelText,
 						   0, 0, 0);
 	if (HeapTupleIsValid(tuple)) {
-		label_oid = HeapTupleGetOid(tuple);
+		labelOid = HeapTupleGetOid(tuple);
 		ReleaseSysCache(tuple);
-	} else {
-		/* 2. lookup within the current command ID */
-		Relation rel;
-		SysScanDesc scan;
-		ScanKeyData skey;
-		Oid meta_oid;
-
-		rel = heap_open(SecurityRelationId, RowExclusiveLock);
-		ScanKeyInit(&skey,
-					Anum_pg_security_seclabel,
-					BTEqualStrategyNumber, F_TEXTEQ,
-					PointerGetDatum(label_text));
-		scan = systable_beginscan(rel, SecuritySeclabelIndexId,
-								  true, SnapshotSelf, 1, &skey);
-		tuple = systable_getnext(scan);
-		if (HeapTupleIsValid(tuple)) {
-			label_oid = HeapTupleGetOid(tuple);
-		} else {
-			CatalogIndexState ind;
-			Datum value = PointerGetDatum(label_text);
-			char isnull = ' ';
-
-			ind = CatalogOpenIndexes(rel);
-
-			tuple = heap_formtuple(RelationGetDescr(rel),
-								   &value, &isnull);
-			meta_oid = get_security_label_oid(rel, ind, label_str);
-			HeapTupleSetSecurity(tuple, meta_oid);
-
-			label_oid = simple_heap_insert(rel, tuple);
-
-			CatalogIndexInsert(ind, tuple);
-			CatalogCloseIndexes(ind);
-		}
-		systable_endscan(scan);
-		heap_close(rel, RowExclusiveLock);
+		return labelOid;
 	}
-	return label_oid;
+
+	/* 2. lookup pg_security with SnapshotSelf */
+	rel = heap_open(SecurityRelationId, RowExclusiveLock);
+
+	ScanKeyInit(&skey,
+				Anum_pg_security_seclabel,
+				BTEqualStrategyNumber, F_TEXTEQ,
+				PointerGetDatum(labelText));
+	scan = systable_beginscan(rel, SecuritySeclabelIndexId,
+							  true, SnapshotSelf, 1, &skey);
+	tuple = systable_getnext(scan);
+	if (HeapTupleIsValid(tuple)) {
+		labelOid = HeapTupleGetOid(tuple);
+		goto out;
+	}
+
+	/* 3. insert a new tuple into pg_security */
+	ind = CatalogOpenIndexes(rel);
+
+	isnull = ' ';
+	tuple = heap_formtuple(RelationGetDescr(rel),
+						   &labelText, &isnull);
+	labelSid = get_security_label_oid(rel, ind);
+	HeapTupleSetSecurity(tuple, labelSid);
+
+	labelOid = simple_heap_insert(rel, tuple);
+	CatalogIndexInsert(ind, tuple);
+
+	CatalogCloseIndexes(ind);
+
+out:
+	systable_endscan(scan);
+	heap_close(rel, RowExclusiveLock);
+
+	return labelOid;
 }
 
 static char *sid_to_security_label(Oid sid)
 {
+	Relation rel;
+	SysScanDesc scan;
+	ScanKeyData skey;
 	HeapTuple tuple;
-	Datum tcon;
-	char *seclabel;
-	bool isnull, syscache = true;
+	Datum labelText;
+	char *label;
+	bool isnull;
 
-	if (!pg_security_is_available())
+	if (IsBootstrapProcessingMode())
 		return early_sid_to_security_label(sid);
 
+	/* 1. search system cache */
 	tuple = SearchSysCache(SECURITYOID,
 						   ObjectIdGetDatum(sid),
 						   0, 0, 0);
-	if (!HeapTupleIsValid(tuple)) {
-		Relation rel;
-		SysScanDesc scan;
-		ScanKeyData skey;
-
-		syscache = false;
-		rel = heap_open(SecurityRelationId, AccessShareLock);
-		ScanKeyInit(&skey,
-					ObjectIdAttributeNumber,
-					BTEqualStrategyNumber, F_OIDEQ,
-					ObjectIdGetDatum(sid));
-		scan = systable_beginscan(rel, SecurityOidIndexId,
-								  true, SnapshotSelf, 1, &skey);
-		tuple = systable_getnext(scan);
-		if (HeapTupleIsValid(tuple))
-			tuple = heap_copytuple(tuple);
-		systable_endscan(scan);
-		heap_close(rel, AccessShareLock);
-
-		if (!HeapTupleIsValid(tuple)) {
-			seclabel = pgaceSecurityLabelCheckValid(NULL);
-			elog(seclabel ? NOTICE : ERROR,
-				 "PGACE: No text representation for sid = %u", sid);
-			return seclabel;
-		}
-	}
-	tcon = SysCacheGetAttr(SECURITYOID,
-						   tuple,
-						   Anum_pg_security_seclabel,
-						   &isnull);
-	seclabel = DatumGetCString(DirectFunctionCall1(textout,
-												   PointerGetDatum(tcon)));
-	if (syscache)
+	if (HeapTupleIsValid(tuple)) {
+		labelText = SysCacheGetAttr(SECURITYOID,
+									tuple,
+									Anum_pg_security_seclabel,
+									&isnull);
+		label = DatumGetCString(DirectFunctionCall1(textout,
+													PointerGetDatum(labelText)));
 		ReleaseSysCache(tuple);
+		return label;
+	}
 
-	return seclabel;
+	/* 2. search pg_security with Snapshotself */
+	rel = heap_open(SecurityRelationId, AccessShareLock);
+	ScanKeyInit(&skey,
+				ObjectIdAttributeNumber,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(sid));
+	scan = systable_beginscan(rel, SecurityOidIndexId,
+							  true, SnapshotSelf, 1, &skey);
+	tuple = systable_getnext(scan);
+	if (HeapTupleIsValid(tuple))
+		tuple = heap_copytuple(tuple);
+	systable_endscan(scan);
+	heap_close(rel, AccessShareLock);
+
+	if (HeapTupleIsValid(tuple)) {
+		labelText = SysCacheGetAttr(SECURITYOID,
+									tuple,
+									Anum_pg_security_seclabel,
+									&isnull);
+		label = DatumGetCString(DirectFunctionCall1(textout,
+													PointerGetDatum(labelText)));
+		return label;
+	}
+
+	/* 3. fallback security label */
+	label = pgaceSecurityLabelCheckValid(NULL);
+	elog(label ? NOTICE : ERROR,
+		 "PGACE: no text representation: sid = %u", sid);
+	return pstrdup(label);
 }
 
 /* security_label_in -- security_label input function */

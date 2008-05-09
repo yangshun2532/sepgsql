@@ -154,7 +154,7 @@ extern char *sepgsqlSecurityLabelOut(char *context);
 
 extern char *sepgsqlSecurityLabelCheckValid(char *context);
 
-extern char *sepgsqlSecurityLabelOfLabel(char *context);
+extern char *sepgsqlSecurityLabelOfLabel();
 
 /*
  * SE-PostgreSQL core functions
