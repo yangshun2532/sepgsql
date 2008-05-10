@@ -915,8 +915,8 @@ static List *proxyTruncateStmt(Query *query)
 			Oid relid = lfirst_oid(l);
 
 			rel = heap_open(relid, AccessShareLock);
-			subquery_list = lappend(subquery_list,
-									convertTruncateToDelete(rel));
+			subquery_list = list_concat(subquery_list,
+										convertTruncateToDelete(rel));
 			heap_close(rel, AccessShareLock);
 		}
 	}
