@@ -5,35 +5,13 @@
 #include "catalog/pg_security.h"
 #include "lib/stringinfo.h"
 #include "nodes/nodes.h"
+#include "nodes/params.h"
 #include "nodes/parsenodes.h"
 #include "storage/large_object.h"
 
 #include <selinux/selinux.h>
 #include <selinux/flask.h>
 #include <selinux/av_permissions.h>
-
-/*
- * SE-PostgreSQL Evaluation Items
- */
-typedef struct SEvalItem {
-	NodeTag type;
-	uint16 tclass;
-	uint32 perms;
-	union {
-		struct {
-			Oid relid;
-			bool inh;
-		} c;  /* for pg_class */
-		struct {
-			Oid relid;
-			bool inh;
-			AttrNumber attno;
-		} a;  /* for pg_attribute */
-		struct {
-			Oid funcid;
-		} p;  /* for pg_proc */
-	};
-} SEvalItem;
 
 /*
  * Permission codes of internal representation
@@ -70,6 +48,8 @@ extern List *sepgsqlProxyQuery(Query *query);
 extern void sepgsqlVerifyQuery(PlannedStmt *pstmt, int eflags);
 
 extern void sepgsqlEvaluateParams(List *params);
+
+extern void sepgsqlProcessUtility(Node *parsetree, ParamListInfo params, bool isTopLevel);
 
 /* HeapTuple modification hooks */
 extern bool sepgsqlHeapTupleInsert(Relation rel, HeapTuple tuple,

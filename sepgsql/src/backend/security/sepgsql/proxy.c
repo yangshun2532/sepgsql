@@ -11,6 +11,7 @@
 #include "access/heapam.h"
 #include "catalog/heap.h"
 #include "catalog/indexing.h"
+#include "catalog/namespace.h"
 #include "catalog/pg_attribute.h"
 #include "catalog/pg_class.h"
 #include "catalog/pg_database.h"
@@ -22,6 +23,7 @@
 #include "executor/spi.h"
 #include "nodes/makefuncs.h"
 #include "nodes/readfuncs.h"
+#include "nodes/security.h"
 #include "optimizer/clauses.h"
 #include "optimizer/plancat.h"
 #include "parser/parse_relation.h"
@@ -69,8 +71,8 @@ static List *__addEvalPgClass(List *selist, Oid relid, bool inh, uint32 perms)
 	foreach (l, selist) {
 		se = (SEvalItem *) lfirst(l);
 		if (se->tclass == SECCLASS_DB_TABLE
-			&& se->c.relid == relid
-			&& se->c.inh == inh) {
+			&& se->relid == relid
+			&& se->inh == inh) {
 			se->perms |= perms;
 			return selist;
 		}
@@ -79,8 +81,8 @@ static List *__addEvalPgClass(List *selist, Oid relid, bool inh, uint32 perms)
 	se = makeNode(SEvalItem);
 	se->tclass = SECCLASS_DB_TABLE;
 	se->perms = perms;
-	se->c.relid = relid;
-	se->c.inh = inh;
+	se->relid = relid;
+	se->inh = inh;
 
 	return lappend(selist, se);
 }
@@ -108,9 +110,9 @@ static List *__addEvalPgAttribute(List *selist, Oid relid, bool inh, AttrNumber 
 	foreach (l, selist) {
 		se = (SEvalItem *) lfirst(l);
 		if (se->tclass == SECCLASS_DB_COLUMN
-			&& se->a.relid == relid
-			&& se->a.inh == inh
-			&& se->a.attno == attno) {
+			&& se->relid == relid
+			&& se->inh == inh
+			&& se->attno == attno) {
 			se->perms |= perms;
 			return selist;
 		}
@@ -119,9 +121,9 @@ static List *__addEvalPgAttribute(List *selist, Oid relid, bool inh, AttrNumber 
 	se = makeNode(SEvalItem);
 	se->tclass = SECCLASS_DB_COLUMN;
 	se->perms = perms;
-	se->a.relid = relid;
-	se->a.inh = inh;
-	se->a.attno = attno;
+	se->relid = relid;
+	se->inh = inh;
+	se->attno = attno;
 
 	return lappend(selist, se);
 }
@@ -161,7 +163,7 @@ static List *addEvalPgProc(List *selist, Oid funcid, uint32 perms)
 	foreach (l, selist) {
 		se = (SEvalItem *) lfirst(l);
 		if (se->tclass == SECCLASS_DB_PROCEDURE
-			&& se->p.funcid == funcid) {
+			&& se->funcid == funcid) {
 			se->perms |= perms;
 			return selist;
 		}
@@ -169,7 +171,7 @@ static List *addEvalPgProc(List *selist, Oid funcid, uint32 perms)
 	se = makeNode(SEvalItem);
 	se->tclass = SECCLASS_DB_PROCEDURE;
 	se->perms = perms;
-	se->p.funcid = funcid;
+	se->funcid = funcid;
 
 	return lappend(selist, se);
 }
@@ -864,65 +866,6 @@ static List *proxyGeneralQuery(Query *query)
 	return list_make1(query);
 }
 
-static List *convertTruncateToDelete(Relation rel)
-{
-	Query *query = makeNode(Query);
-	RangeTblEntry *rte;
-	RangeTblRef *rtr;
-
-	rte = addRangeTableEntryForRelation(NULL, rel, NULL, false, false);
-	rte->requiredPerms = ACL_DELETE;
-	rtr = makeNode(RangeTblRef);
-	rtr->rtindex = 1;
-
-	query->commandType = CMD_DELETE;
-	query->rtable = list_make1(rte);
-	query->jointree = makeNode(FromExpr);
-	query->jointree->fromlist = list_make1(rtr);
-	query->jointree->quals = NULL;
-	query->resultRelation = rtr->rtindex;
-	query->hasSubLinks = false;
-	query->hasAggs = false;
-
-	return sepgsqlProxyQuery(query);
-}
-
-static List *proxyTruncateStmt(Query *query)
-{
-	TruncateStmt *stmt = (TruncateStmt *) query->utilityStmt;
-	Relation rel;
-	ListCell *l;
-	List *subquery_list = NIL, *subquery_lids = NIL;
-
-	/* resolve the relation names */
-	foreach (l, stmt->relations) {
-		RangeVar *rv = lfirst(l);
-
-		rel = heap_openrv(rv, AccessShareLock);
-		subquery_list = list_concat(subquery_list,
-									convertTruncateToDelete(rel));
-		subquery_lids = lappend_oid(subquery_lids,
-									RelationGetRelid(rel));
-		heap_close(rel, AccessShareLock);
-
-		elog(LOG, "SELinux: TRUNCATE %s is replaced unconditional DELETE",
-			 RelationGetRelationName(rel));
-	}
-
-	if (stmt->behavior == DROP_CASCADE) {
-		subquery_lids = heap_truncate_find_FKs(subquery_lids);
-		foreach (l, subquery_lids) {
-			Oid relid = lfirst_oid(l);
-
-			rel = heap_open(relid, AccessShareLock);
-			subquery_list = list_concat(subquery_list,
-										convertTruncateToDelete(rel));
-			heap_close(rel, AccessShareLock);
-		}
-	}
-	return subquery_list;
-}
-
 List *sepgsqlProxyQuery(Query *query)
 {
 	List *new_list = NIL;
@@ -934,19 +877,9 @@ List *sepgsqlProxyQuery(Query *query)
 	case CMD_DELETE:
 		new_list = proxyGeneralQuery(query);
 		break;
-	case CMD_UTILITY:
-		switch (nodeTag(query->utilityStmt)) {
-		case T_TruncateStmt:
-			new_list = proxyTruncateStmt(query);
-			break;
-		default:
-			new_list = list_make1(query);
-			/* do nothing now */
-			break;
-		}
-		break;
 	default:
-		elog(ERROR, "SELinux: unexpected command type (%d)", query->commandType);
+		/* do nothing */
+		new_list = list_make1(query);
 		break;
 	}
 	return new_list;
@@ -1110,6 +1043,29 @@ static void verifyPgProcPerms(Oid funcid, uint32 perms)
 	ReleaseSysCache(tuple);
 }
 
+static void verifyRelationTuplePerms(Oid relid, uint32 perms)
+{
+	Relation rel;
+	HeapScanDesc scan;
+	HeapTuple tuple;
+	NameData name;
+
+	rel = heap_open(relid, AccessShareLock);
+	scan = heap_beginscan(rel, SnapshotNow, 0, NULL);
+
+	while ((tuple = heap_getnext(scan, ForwardScanDirection)) != NULL)
+	{
+		sepgsql_avc_permission(sepgsqlGetClientContext(),
+							   HeapTupleGetSecurity(tuple),
+							   SECCLASS_DB_TUPLE,
+							   perms,
+							   sepgsqlGetTupleName(relid, tuple, &name));
+	}
+
+	heap_endscan(scan);
+	heap_close(rel, AccessShareLock);
+}
+
 static List *__expandPgClassInheritance(List *selist, Oid relid, uint32 perms)
 {
 	List *child_list = find_inheritance_children(relid);
@@ -1162,41 +1118,40 @@ static List *expandSEvalListInheritance(List *selist) {
 		result = lappend(result, se);
 		switch (se->tclass) {
 		case SECCLASS_DB_TABLE:
-			if (se->c.inh) {
-				se->c.inh = false;
-				result = __expandPgClassInheritance(result,
-													se->c.relid,
-													se->perms);
+			if (se->inh) {
+				se->inh = false;
+				result =  __expandPgClassInheritance(result, se->relid, se->perms);
 			}
 			break;
 		case SECCLASS_DB_COLUMN:
-			if (se->a.inh) {
-				Form_pg_attribute attrForm;
+			if (se->inh) {
+				Form_pg_attribute attr;
 				HeapTuple tuple;
 
-				se->a.inh = false;
-				if (se->a.attno == 0) {
-					result = __expandPgAttributeInheritance(result,
-															se->a.relid,
-															NULL,
-															se->perms);
+				se->inh = false;
+				if (se->attno == 0) {
+					result = __expandPgAttributeInheritance(result, se->relid, NULL, se->perms);
 					break;
 				}
+
 				tuple = SearchSysCache(ATTNUM,
-									   ObjectIdGetDatum(se->a.relid),
-									   Int16GetDatum(se->a.attno),
+									   ObjectIdGetDatum(se->relid),
+									   Int16GetDatum(se->attno),
 									   0, 0);
 				if (!HeapTupleIsValid(tuple))
 					elog(ERROR, "SELinux: cache lookup failed for attribute %d of relation %u",
-						 se->a.attno, se->a.relid);
-				attrForm = (Form_pg_attribute) GETSTRUCT(tuple);
+						 se->attno, se->relid);
+				attr = (Form_pg_attribute) GETSTRUCT(tuple);
 
-				result = __expandPgAttributeInheritance(result,
-														se->a.relid,
-														NameStr(attrForm->attname),
-														se->perms);
+				result = __expandPgAttributeInheritance(result, se->relid, NameStr(attr->attname), se->perms);
 				ReleaseSysCache(tuple);
 			}
+			break;
+		case SECCLASS_DB_PROCEDURE:
+			/* do nothing */
+			break;
+		default:
+			elog(ERROR, "SELinux: unknown tclass type = %d in SEvalItem", se->tclass);
 			break;
 		}
 	}
@@ -1212,13 +1167,16 @@ static void execVerifyQuery(List *selist)
 
 		switch (se->tclass) {
 		case SECCLASS_DB_TABLE:
-			verifyPgClassPerms(se->c.relid, se->c.inh, se->perms);
+			verifyPgClassPerms(se->relid, se->inh, se->perms);
 			break;
 		case SECCLASS_DB_COLUMN:
-			verifyPgAttributePerms(se->a.relid, se->a.inh, se->a.attno, se->perms);
+			verifyPgAttributePerms(se->relid, se->inh, se->attno, se->perms);
 			break;
 		case SECCLASS_DB_PROCEDURE:
-			verifyPgProcPerms(se->p.funcid, se->perms);
+			verifyPgProcPerms(se->funcid, se->perms);
+			break;
+		case SECCLASS_DB_TUPLE:
+			verifyRelationTuplePerms(se->relid, se->perms);
 			break;
 		default:
 			elog(ERROR, "SELinux: unexpected SEvalItem (tclass: %d)", se->tclass);
@@ -1240,7 +1198,7 @@ void sepgsqlVerifyQuery(PlannedStmt *pstmt, int eflags)
 		return;
 
 	Assert(IsA(pstmt->pgaceItem, List));
-	selist = (List *) pstmt->pgaceItem;
+	selist = copyObject(pstmt->pgaceItem);
 
 	/* expand table inheritances */
 	selist = expandSEvalListInheritance(selist);
@@ -1255,6 +1213,78 @@ void sepgsqlVerifyQuery(PlannedStmt *pstmt, int eflags)
 		selist = addEvalTriggerAccess(selist, rte->relid, rte->inh, pstmt->commandType);
 	}
 	execVerifyQuery(selist);
+}
+
+/* --------------------------------------------------------------
+ * Process Utility hooks
+ * --------------------------------------------------------------
+ */
+
+static void checkTruncateStmt(TruncateStmt *stmt)
+{
+	Relation rel;
+	HeapScanDesc scan;
+	HeapTuple tuple;
+	List *relidList = NIL;
+	ListCell *l;
+
+	foreach (l, stmt->relations) {
+		RangeVar *rv = lfirst(l);
+
+		relidList = lappend_oid(relidList,
+								RangeVarGetRelid(rv, false));
+	}
+
+	if (stmt->behavior == DROP_CASCADE) {
+		relidList = list_concat(relidList,
+								heap_truncate_find_FKs(relidList));
+	}
+
+	foreach (l, relidList) {
+		Oid relid = lfirst_oid(l);
+		NameData name;
+
+		/* 1. db_table:{delete} */
+		tuple = SearchSysCache(RELOID,
+							   ObjectIdGetDatum(relid), 0, 0, 0);
+		if (!HeapTupleIsValid(tuple))
+			elog(ERROR, "SELinux: cache lookup failed for relation %u", relid);
+
+		sepgsql_avc_permission(sepgsqlGetClientContext(),
+							   HeapTupleGetSecurity(tuple),
+							   SECCLASS_DB_TABLE,
+							   DB_TABLE__DELETE,
+							   sepgsqlGetTupleName(RelationRelationId, tuple, &name));
+		ReleaseSysCache(tuple);
+
+		/* 2. db_tuple:{delete} */
+		rel = heap_open(relid, AccessShareLock);
+		scan = heap_beginscan(rel, SnapshotNow, 0, NULL);
+
+		while ((tuple = heap_getnext(scan, ForwardScanDirection)) != NULL)
+		{
+			sepgsql_avc_permission(sepgsqlGetClientContext(),
+								   HeapTupleGetSecurity(tuple),
+								   SECCLASS_DB_TUPLE,
+								   DB_TUPLE__DELETE,
+								   sepgsqlGetTupleName(relid, tuple, &name));
+		}
+		heap_endscan(scan);
+		heap_close(rel, AccessShareLock);
+	}
+}
+
+void sepgsqlProcessUtility(Node *parsetree, ParamListInfo params, bool isTopLevel)
+{
+	switch (nodeTag(parsetree))
+	{
+	case T_TruncateStmt:
+		checkTruncateStmt((TruncateStmt *) parsetree);
+		break;
+	default:
+		/* do nothing  */
+		break;
+	}
 }
 
 /* *******************************************************************************
