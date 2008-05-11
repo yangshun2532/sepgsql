@@ -24,7 +24,7 @@
 
 #include "nodes/parsenodes.h"
 #include "nodes/readfuncs.h"
-#include "security/pgace.h"
+#include "nodes/security.h"
 
 
 /*
@@ -1010,9 +1010,8 @@ _readRangeTblEntry(void)
 }
 
 /*
- * Stuff from security/*.h
+ * Stuff from nodes/security.h
  */
-#ifdef HAVE_SELINUX
 static SEvalItem *
 _readSEvalItem(void)
 {
@@ -1021,29 +1020,13 @@ _readSEvalItem(void)
 	READ_UINT_FIELD(tclass);
 	READ_UINT_FIELD(perms);
 
-	switch (local_node->tclass)
-	{
-	case SECCLASS_DB_TABLE:
-		READ_OID_FIELD(c.relid);
-		READ_BOOL_FIELD(c.inh);
-		break;
-	case SECCLASS_DB_COLUMN:
-		READ_OID_FIELD(a.relid);
-		READ_BOOL_FIELD(a.inh);
-		READ_INT_FIELD(a.attno);
-		break;
-    case SECCLASS_DB_PROCEDURE:
-		READ_OID_FIELD(p.funcid);
-		break;
-	default:
-		elog(ERROR, "unrecognized object class: %d",
-			 (int) local_node->tclass);
-		break;
-	}
+	READ_OID_FIELD(relid);
+	READ_BOOL_FIELD(inh);
+	READ_INT_FIELD(attno);
+	READ_OID_FIELD(funcid);
 
 	READ_DONE();
 }
-#endif
 
 /*
  * parseNodeString
@@ -1161,10 +1144,8 @@ parseNodeString(void)
 		return_value = _readNotifyStmt();
 	else if (MATCH("DECLARECURSOR", 13))
 		return_value = _readDeclareCursorStmt();
-#ifdef HAVE_SELINUX
 	else if (MATCH("SEVALITEM", 9))
 		return_value = _readSEvalItem();
-#endif
 	else
 	{
 		elog(ERROR, "badly formatted node string \"%.32s\"...", token);

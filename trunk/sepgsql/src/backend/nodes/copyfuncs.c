@@ -24,7 +24,7 @@
 
 #include "nodes/plannodes.h"
 #include "nodes/relation.h"
-#include "security/pgace.h"
+#include "nodes/security.h"
 #include "utils/datum.h"
 
 
@@ -3006,11 +3006,9 @@ _copyValue(Value *from)
 }
 
 /* ****************************************************************
- *					security/*.h copy functions
+ *					nodes/security.h copy functions
  * ****************************************************************
  */
-#ifdef HAVE_SELINUX
-
 static SEvalItem *
 _copySEvalItem(SEvalItem *from)
 {
@@ -3019,28 +3017,13 @@ _copySEvalItem(SEvalItem *from)
 	COPY_SCALAR_FIELD(tclass);
 	COPY_SCALAR_FIELD(perms);
 
-	switch (from->tclass)
-	{
-		case SECCLASS_DB_TABLE:
-			COPY_SCALAR_FIELD(c.relid);
-			COPY_SCALAR_FIELD(c.inh);
-			break;
-		case SECCLASS_DB_COLUMN:
-			COPY_SCALAR_FIELD(a.relid);
-			COPY_SCALAR_FIELD(a.attno);
-			COPY_SCALAR_FIELD(a.inh);
-			break;
-		case SECCLASS_DB_PROCEDURE:
-			COPY_SCALAR_FIELD(p.funcid);
-			break;
-		default:
-			elog(ERROR, "unrecognized node type: %d", from->tclass);
-			break;
-	}
+	COPY_SCALAR_FIELD(relid);
+	COPY_SCALAR_FIELD(inh);
+	COPY_SCALAR_FIELD(attno);
+	COPY_SCALAR_FIELD(funcid);
 
 	return newnode;
 }
-#endif
 
 /*
  * copyObject
@@ -3647,11 +3630,9 @@ copyObject(void *from)
 		case T_XmlSerialize:
 			retval = _copyXmlSerialize(from);
 			break;
-#ifdef HAVE_SELINUX
 		case T_SEvalItem:
 			retval = _copySEvalItem(from);
 			break;
-#endif
 
 		default:
 			elog(ERROR, "unrecognized node type: %d", (int) nodeTag(from));

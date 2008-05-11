@@ -163,6 +163,20 @@ pgaceExecutorStart(QueryDesc *queryDesc, int eflags)
 }
 
 /*
+ * pgaceProcessUtility() is called on the top of ProcessUtility()
+ */
+static inline void
+pgaceProcessUtility(Node *parsetree, ParamListInfo params, bool isTopLevel)
+{
+#ifdef HAVE_SELINUX
+	if (sepgsqlIsEnabled())
+	{
+		sepgsqlProcessUtility(parsetree, params, isTopLevel);
+	}
+#endif
+}
+
+/*
  * pgaceEvaluateParams() is called on statement with parameter
  */
 static inline void
