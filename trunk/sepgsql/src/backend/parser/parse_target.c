@@ -339,9 +339,12 @@ transformAssignedExpr(ParseState *pstate,
 	if (attrno > 0) {
 		attrtype = attnumTypeId(rd, attrno);
 		attrtypmod = rd->rd_att->attrs[attrno - 1]->atttypmod;
-	} else if (pgaceIsSecuritySystemColumn(attrno)) {
-		attrtype = SECLABELOID;
-		attrtypmod = -1;
+	} else if (SystemAttributeIsWritable(attrno)) {
+		Form_pg_attribute attr;
+
+		attr = SystemAttributeDefinition(attrno, RelationGetForm(rd)->relhasoids);
+		attrtype = attr->atttypid;
+		attrtypmod = attr->atttypmod;
 	} else {
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
@@ -490,7 +493,7 @@ updateTargetListEntry(ParseState *pstate,
 	tle->resno = (AttrNumber) attrno;
 	tle->resname = colname;
 
-	if (pgaceIsSecuritySystemColumn(attrno))
+	if (SystemAttributeIsWritable(attrno))
 		tle->resjunk = true;
 }
 
@@ -758,7 +761,7 @@ checkInsertTargets(ParseState *pstate, List *cols, List **attrnos)
 		Bitmapset  *wholecols = NULL;
 		Bitmapset  *partialcols = NULL;
 		ListCell   *tl;
-		bool		security_attr = false;
+		uint		system_attrs = 0;
 
 		foreach(tl, cols)
 		{
@@ -775,14 +778,14 @@ checkInsertTargets(ParseState *pstate, List *cols, List **attrnos)
 						   name,
 						 RelationGetRelationName(pstate->p_target_relation)),
 						 parser_errposition(pstate, col->location)));
-			} else if (attrno <= 0) {
-				if (pgaceIsSecuritySystemColumn(attrno)) {
-					if (security_attr)
+			} else if (attrno < 0) {
+				if (SystemAttributeIsWritable(attrno)) {
+					if (system_attrs & (1<<(-attrno)))
 						ereport(ERROR,
 								(errcode(ERRCODE_DUPLICATE_COLUMN),
 								 errmsg("column \"%s\" specified more than once", name),
 								 parser_errposition(pstate, col->location)));
-					security_attr = true;
+					system_attrs |= (1<<(-attrno));
 					*attrnos = lappend_int(*attrnos, attrno);
 					continue;
 				}
