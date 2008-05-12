@@ -405,9 +405,6 @@ transformInsertStmt(ParseState *pstate, InsertStmt *stmt)
 		Assert(rte == rt_fetch(rtr->rtindex, pstate->p_rtable));
 		pstate->p_joinlist = lappend(pstate->p_joinlist, rtr);
 
-		/* security attribute system column support */
-		pgaceTransformInsertStmt(&icolumns, &attrnos, selectQuery->targetList);
-
 		/*----------
 		 * Generate an expression list for the INSERT that selects all the
 		 * non-resjunk columns from the subquery.  (INSERT's tlist must be
@@ -673,6 +670,52 @@ transformInsertRow(ParseState *pstate, List *exprlist,
 	return result;
 }
 
+static void
+transformSelectIntoSystemColumn(ParseState *pstate, Query *qry)
+{
+	ListCell *l;
+	uint system_attrs = 0;
+	bool relhasoids = false;
+
+	/* checks "WITH OIDS" */
+	foreach (l, qry->intoClause->options) {
+		DefElem *f = (DefElem *) lfirst(l);
+
+		if (!strcmp(f->defname, "oids") && intVal(f->arg)) {
+			relhasoids = true;
+			break;
+		}
+	}
+
+	foreach (l, qry->targetList) {
+		Form_pg_attribute attr;
+		TargetEntry *tle = lfirst(l);
+
+		if (tle->resjunk)
+            continue;
+
+		attr = SystemAttributeByName(tle->resname, relhasoids);
+		if (attr && SystemAttributeIsWritable(attr->attnum)) {
+			/* duplication checks */
+			if (system_attrs & (1<<(-attr->attnum)))
+				continue;
+			system_attrs |= (1<<(-attr->attnum));
+
+			tle->resjunk = true;
+
+			if (exprType((Node *) tle->expr) != attr->atttypid) {
+				tle->expr = (Expr *) coerce_to_target_type(pstate,
+														   (Node *) tle->expr,
+														   exprType((Node *) tle->expr),
+														   attr->atttypid,
+														   attr->atttypmod,
+														   COERCION_IMPLICIT,
+														   COERCE_IMPLICIT_CAST);
+			}
+			tle->resjunk = true;
+		}
+	}
+}
 
 /*
  * transformSelectStmt -
@@ -738,8 +781,8 @@ transformSelectStmt(ParseState *pstate, SelectStmt *stmt)
 	/* handle any SELECT INTO/CREATE TABLE AS spec */
 	if (stmt->intoClause)
 	{
-		pgaceTransformSelectStmt(qry->targetList);
 		qry->intoClause = stmt->intoClause;
+		transformSelectIntoSystemColumn(pstate, qry);
 		if (stmt->intoClause->colNames)
 			applyColumnNames(qry->targetList, stmt->intoClause->colNames);
 	}

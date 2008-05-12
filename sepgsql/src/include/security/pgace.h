@@ -25,6 +25,12 @@
  *
  * see, src/include/pg_config.h
  */
+#ifdef SECURITY_SYSATTR_NAME
+#define pgaceIsSecuritySystemColumn(attno)		\
+	((attno) == SecurityAttributeNumber ? true : false)
+#else
+#define pgaceIsSecuritySystemColumn(attno)		(false)
+#endif
 
 /******************************************************************
  * Initialize / Finalize related hooks
@@ -925,17 +931,6 @@ pgaceSecurityLabelOfLabel(void)
 /******************************************************************
  * PGACE common facilities (not a hooks)
  ******************************************************************/
-
-/* Security attribute system column support */
-extern bool pgaceIsSecuritySystemColumn(int attrno);
-
-extern void pgaceFetchSecurityAttribute(JunkFilter *junkfilter,
-										TupleTableSlot *slot,
-										Oid *tts_security);
-extern void pgaceTransformSelectStmt(List *targetList);
-
-extern void pgaceTransformInsertStmt(List **p_icolumns, List **p_attrnos,
-									 List *targetList);
 
 /* Security Label Management */
 extern void pgacePostBootstrapingMode(void);

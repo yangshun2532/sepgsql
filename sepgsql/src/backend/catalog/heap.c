@@ -203,6 +203,21 @@ SystemAttributeByName(const char *attname, bool relhasoids)
 	return NULL;
 }
 
+/*
+ * This function returns true, if the given attribute number is writable
+ * system column. If not, returns false.
+ */
+bool
+SystemAttributeIsWritable(AttrNumber attno)
+{
+	if (attno == ObjectIdAttributeNumber)
+		return true;
+#ifdef SECURITY_SYSATTR_NAME
+	if (attno == SecurityAttributeNumber)
+		return true;
+#endif
+	return false;
+}
 
 /* ----------------------------------------------------------------
  *				XXX END OF UGLY HARD CODED BADNESS XXX

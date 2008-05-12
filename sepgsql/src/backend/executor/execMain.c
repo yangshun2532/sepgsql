@@ -1163,6 +1163,48 @@ ExecEndPlan(PlanState *planstate, EState *estate)
 	}
 }
 
+/*
+ * fetchWritableSystemAttribute() fetches writable system column data
+ * using Junkfilter, and saves them at TupleTableSlot temporary.
+ *
+ * storeWritableSystemAttribute() copies these fetched data into
+ * header structure of HeapTuple.
+ */
+static void
+fetchWritableSystemAttribute(JunkFilter *junkfilter, TupleTableSlot *slot,
+							 Oid *tts_objectid, Oid *tts_security)
+{
+	AttrNumber attno;
+	Datum datum;
+	bool isnull;
+
+	/* extract oid */
+	attno = ExecFindJunkAttribute(junkfilter, "oid");
+	if (attno != InvalidAttrNumber) {
+		datum = ExecGetJunkAttribute(slot, attno, &isnull);
+		if (!isnull)
+			*tts_objectid = DatumGetObjectId(datum);
+	}
+#ifdef SECURITY_SYSATTR_NAME
+	attno = ExecFindJunkAttribute(junkfilter, SECURITY_SYSATTR_NAME);
+	if (attno != InvalidAttrNumber) {
+		datum = ExecGetJunkAttribute(slot, attno, &isnull);
+		if (!isnull)
+			*tts_security = DatumGetObjectId(datum);
+	}
+#endif
+}
+
+static void
+storeWritableSystemAttribute(Relation rel, TupleTableSlot *slot, HeapTuple tuple)
+{
+	if (RelationGetForm(rel)->relhasoids)
+		HeapTupleSetOid(tuple, slot->tts_objectid);
+#ifdef SECURITY_SYSATTR_NAME
+	HeapTupleSetSecurity(tuple, slot->tts_security);
+#endif
+}
+
 /* ----------------------------------------------------------------
  *		ExecutePlan
  *
@@ -1230,7 +1272,8 @@ ExecutePlan(EState *estate,
 
 	for (;;)
 	{
-		Oid __tts_security = InvalidOid;	/* PGACE: explicit security labaling */
+		Oid tts_objectid = InvalidOid;
+		Oid tts_security = InvalidOid;
 
 		/* Reset the per-output-tuple exprcontext */
 		ResetPerTupleExprContext(estate);
@@ -1356,11 +1399,9 @@ lnext:	;
 			}
 
 			/*
-			 * PGACE: security attribute system columnt support.
-			 * If client specified a explicit security label,
-			 * pgaceFetchSecurityLabel() fetch it via junk attribute.
+			 * extract writable system attribute
 			 */
-			pgaceFetchSecurityAttribute(junkfilter, slot, &__tts_security);
+			fetchWritableSystemAttribute(junkfilter, slot, &tts_objectid, &tts_security);
 
 			/*
 			 * extract the 'ctid' junk attribute.
@@ -1389,7 +1430,8 @@ lnext:	;
 			if (operation != CMD_DELETE)
 				slot = ExecFilterJunk(junkfilter, slot);
 		}
-		slot->tts_security = __tts_security;
+		slot->tts_objectid = tts_objectid;
+		slot->tts_security = tts_security;
 
 		/*
 		 * now that we have a tuple, do the appropriate thing with it.. either
@@ -1510,8 +1552,7 @@ ExecInsert(TupleTableSlot *slot,
 	resultRelInfo = estate->es_result_relation_info;
 	resultRelationDesc = resultRelInfo->ri_RelationDesc;
 
-	/* PGACE: put an explicit security labeling */
-	HeapTupleStoreSecurityFromSlot(tuple, slot);
+	storeWritableSystemAttribute(resultRelationDesc, slot, tuple);
 
 	/* BEFORE ROW INSERT Triggers */
 	if (resultRelInfo->ri_TrigDesc &&
@@ -1762,8 +1803,7 @@ ExecUpdate(TupleTableSlot *slot,
 	resultRelInfo = estate->es_result_relation_info;
 	resultRelationDesc = resultRelInfo->ri_RelationDesc;
 
-	/* PGACE: put an explicit security attribute */
-	HeapTupleStoreSecurityFromSlot(tuple, slot);
+	storeWritableSystemAttribute(resultRelationDesc, slot, tuple);
 
 	/* BEFORE ROW UPDATE Triggers */
 	if (resultRelInfo->ri_TrigDesc &&
@@ -2784,8 +2824,7 @@ intorel_receive(TupleTableSlot *slot, DestReceiver *self)
 
 	tuple = ExecCopySlotTuple(slot);
 
-	/* PGACE: store explicit security labeling and check HeapTuple insertion permission */
-	HeapTupleStoreSecurityFromSlot(tuple, slot);
+	storeWritableSystemAttribute(estate->es_into_relation_descriptor, slot, tuple);
 	if (!pgaceHeapTupleInsert(estate->es_into_relation_descriptor, tuple, false, false)) {
 		heap_freetuple(tuple);
 		return;
