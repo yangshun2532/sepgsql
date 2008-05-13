@@ -454,6 +454,8 @@ void sepgsqlLargeObjectExport()
 /*******************************************************************************
  * ExecScan hooks
  *******************************************************************************/
+static bool abort_on_violated_tuple = false;
+
 bool sepgsqlExecScan(Scan *scan, Relation rel, TupleTableSlot *slot)
 {
 	HeapTuple tuple;
@@ -464,7 +466,23 @@ bool sepgsqlExecScan(Scan *scan, Relation rel, TupleTableSlot *slot)
 
 	tuple = ExecMaterializeSlot(slot);
 
-	return sepgsqlCheckTuplePerms(rel, tuple, NULL, perms, false);
+	return sepgsqlCheckTuplePerms(rel, tuple, NULL, perms,
+								  abort_on_violated_tuple);
+}
+
+/* ----------------------------------------------------------
+ * special cases in foreign key constraint
+ * ---------------------------------------------------------- */
+Datum sepgsqlPreparePlanCheck(Relation rel) {
+	Datum pgace_saved = BoolGetDatum(abort_on_violated_tuple);
+
+	abort_on_violated_tuple = true;
+
+	return pgace_saved;
+}
+
+void sepgsqlRestorePlanCheck(Relation rel, Datum pgace_saved) {
+	abort_on_violated_tuple = DatumGetBool(pgace_saved);
 }
 
 /*******************************************************************************

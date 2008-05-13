@@ -95,9 +95,9 @@ extern void sepgsqlCallFunction(FmgrInfo *finfo, bool with_perm_check);
 
 extern bool sepgsqlCallFunctionTrigger(FmgrInfo *finfo, TriggerData *tgdata);
 
-extern Oid	sepgsqlPreparePlanCheck(Relation rel);
+extern Datum sepgsqlPreparePlanCheck(Relation rel);
 
-extern void sepgsqlRestorePlanCheck(Relation rel, Oid pgace_saved);
+extern void sepgsqlRestorePlanCheck(Relation rel, Datum pgace_saved);
 
 /* TABLE related hooks */
 extern void sepgsqlLockTable(Oid relid);
