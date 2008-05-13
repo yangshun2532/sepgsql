@@ -8,16 +8,19 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/access/heap/pruneheap.c,v 1.9 2008/03/26 21:10:37 alvherre Exp $
+ *	  $PostgreSQL: pgsql/src/backend/access/heap/pruneheap.c,v 1.11 2008/05/12 16:06:09 alvherre Exp $
  *
  *-------------------------------------------------------------------------
  */
 #include "postgres.h"
 
 #include "access/heapam.h"
+#include "access/htup.h"
 #include "access/transam.h"
 #include "miscadmin.h"
 #include "pgstat.h"
+#include "storage/bufpage.h"
+#include "storage/off.h"
 #include "utils/inval.h"
 #include "utils/tqual.h"
 

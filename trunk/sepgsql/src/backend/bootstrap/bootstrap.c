@@ -8,7 +8,7 @@
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/bootstrap/bootstrap.c,v 1.242 2008/04/21 00:26:45 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/bootstrap/bootstrap.c,v 1.243 2008/05/12 00:00:46 alvherre Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -33,6 +33,7 @@
 #include "postmaster/bgwriter.h"
 #include "postmaster/walwriter.h"
 #include "security/pgace.h"
+#include "storage/bufmgr.h"
 #include "storage/freespace.h"
 #include "storage/ipc.h"
 #include "storage/proc.h"

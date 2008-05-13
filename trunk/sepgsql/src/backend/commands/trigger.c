@@ -7,7 +7,7 @@
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/commands/trigger.c,v 1.231 2008/03/28 00:21:55 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/commands/trigger.c,v 1.233 2008/05/12 20:01:59 alvherre Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -15,6 +15,7 @@
 
 #include "access/genam.h"
 #include "access/heapam.h"
+#include "access/sysattr.h"
 #include "access/xact.h"
 #include "catalog/catalog.h"
 #include "catalog/dependency.h"
@@ -32,6 +33,7 @@
 #include "nodes/makefuncs.h"
 #include "parser/parse_func.h"
 #include "security/pgace.h"
+#include "storage/bufmgr.h"
 #include "tcop/utility.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
@@ -2981,6 +2983,7 @@ void
 AfterTriggerFireDeferred(void)
 {
 	AfterTriggerEventList *events;
+	bool		snap_pushed = false;
 
 	/* Must be inside a transaction */
 	Assert(afterTriggers != NULL);
@@ -2995,7 +2998,10 @@ AfterTriggerFireDeferred(void)
 	 */
 	events = &afterTriggers->events;
 	if (events->head != NULL)
-		ActiveSnapshot = CopySnapshot(GetTransactionSnapshot());
+	{
+		PushActiveSnapshot(GetTransactionSnapshot());
+		snap_pushed = true;
+	}
 
 	/*
 	 * Run all the remaining triggers.	Loop until they are all gone, in case
@@ -3007,6 +3013,9 @@ AfterTriggerFireDeferred(void)
 
 		afterTriggerInvokeEvents(events, firing_id, NULL, true);
 	}
+
+	if (snap_pushed)
+		PopActiveSnapshot();
 
 	Assert(events->head == NULL);
 }
