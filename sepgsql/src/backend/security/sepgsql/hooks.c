@@ -452,6 +452,22 @@ void sepgsqlLargeObjectExport()
 }
 
 /*******************************************************************************
+ * ExecScan hooks
+ *******************************************************************************/
+bool sepgsqlExecScan(Scan *scan, Relation rel, TupleTableSlot *slot)
+{
+	HeapTuple tuple;
+	uint32 perms = scan->pgaceTuplePerms;
+
+	if (!perms)
+		return true;
+
+	tuple = ExecMaterializeSlot(slot);
+
+	return sepgsqlCheckTuplePerms(rel, tuple, NULL, perms, false);
+}
+
+/*******************************************************************************
  * security_label hooks
  *******************************************************************************/
 char *sepgsqlSecurityLabelIn(char *context) {

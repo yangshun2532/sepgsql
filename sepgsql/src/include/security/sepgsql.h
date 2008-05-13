@@ -4,6 +4,7 @@
 /* system catalogs */
 #include "catalog/pg_security.h"
 #include "lib/stringinfo.h"
+#include "nodes/execnodes.h"
 #include "nodes/nodes.h"
 #include "nodes/params.h"
 #include "nodes/parsenodes.h"
@@ -16,16 +17,15 @@
 /*
  * Permission codes of internal representation
  */
-#define SEPGSQL_PERMS_USE				(1UL << (N_ACL_RIGHTS + 0))
-#define SEPGSQL_PERMS_SELECT			(1UL << (N_ACL_RIGHTS + 1))
-#define SEPGSQL_PERMS_UPDATE			(1UL << (N_ACL_RIGHTS + 2))
-#define SEPGSQL_PERMS_INSERT			(1UL << (N_ACL_RIGHTS + 3))
-#define SEPGSQL_PERMS_DELETE			(1UL << (N_ACL_RIGHTS + 4))
-#define SEPGSQL_PERMS_RELABELFROM		(1UL << (N_ACL_RIGHTS + 5))
-#define SEPGSQL_PERMS_RELABELTO			(1UL << (N_ACL_RIGHTS + 6))
-#define SEPGSQL_PERMS_READ				(1UL << (N_ACL_RIGHTS + 7))
-#define SEPGSQL_PERMS_WRITE				(1UL << (N_ACL_RIGHTS + 8))
-#define SEPGSQL_PERMS_ALL				((SEPGSQL_PERMS_WRITE << 1) - SEPGSQL_PERMS_USE)
+#define SEPGSQL_PERMS_USE				(1UL << 0)
+#define SEPGSQL_PERMS_SELECT			(1UL << 1)
+#define SEPGSQL_PERMS_UPDATE			(1UL << 2)
+#define SEPGSQL_PERMS_INSERT			(1UL << 3)
+#define SEPGSQL_PERMS_DELETE			(1UL << 4)
+#define SEPGSQL_PERMS_RELABELFROM		(1UL << 5)
+#define SEPGSQL_PERMS_RELABELTO			(1UL << 6)
+#define SEPGSQL_PERMS_READ				(1UL << 7)
+#define SEPGSQL_PERMS_WRITE				(1UL << 8)
 
 /*
  * The implementation of PGACE/SE-PostgreSQL hooks
@@ -50,6 +50,9 @@ extern void sepgsqlVerifyQuery(PlannedStmt *pstmt, int eflags);
 extern void sepgsqlEvaluateParams(List *params);
 
 extern void sepgsqlProcessUtility(Node *parsetree, ParamListInfo params, bool isTopLevel);
+
+/* ExecScan hooks */
+extern bool sepgsqlExecScan(Scan *scan, Relation rel, TupleTableSlot *slot);
 
 /* HeapTuple modification hooks */
 extern bool sepgsqlHeapTupleInsert(Relation rel, HeapTuple tuple,

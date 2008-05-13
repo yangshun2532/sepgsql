@@ -1521,6 +1521,7 @@ _copyRangeTblEntry(RangeTblEntry *from)
 	COPY_SCALAR_FIELD(inFromCl);
 	COPY_SCALAR_FIELD(requiredPerms);
 	COPY_SCALAR_FIELD(checkAsUser);
+	COPY_SCALAR_FIELD(pgaceTuplePerms);
 
 	return newnode;
 }

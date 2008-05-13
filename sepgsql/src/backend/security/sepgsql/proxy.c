@@ -89,15 +89,15 @@ static List *__addEvalPgClass(List *selist, Oid relid, bool inh, uint32 perms)
 
 static List *addEvalPgClass(List *selist, RangeTblEntry *rte, uint32 perms)
 {
-	rte->requiredPerms |= (perms & DB_TABLE__USE    ? SEPGSQL_PERMS_USE : 0);
-	rte->requiredPerms |= (perms & DB_TABLE__SELECT ? SEPGSQL_PERMS_SELECT : 0);
-	rte->requiredPerms |= (perms & DB_TABLE__INSERT ? SEPGSQL_PERMS_INSERT : 0);
-	rte->requiredPerms |= (perms & DB_TABLE__UPDATE ? SEPGSQL_PERMS_UPDATE : 0);
-	rte->requiredPerms |= (perms & DB_TABLE__DELETE ? SEPGSQL_PERMS_DELETE : 0);
+	rte->pgaceTuplePerms |= (perms & DB_TABLE__USE    ? SEPGSQL_PERMS_USE : 0);
+	rte->pgaceTuplePerms |= (perms & DB_TABLE__SELECT ? SEPGSQL_PERMS_SELECT : 0);
+	rte->pgaceTuplePerms |= (perms & DB_TABLE__INSERT ? SEPGSQL_PERMS_INSERT : 0);
+	rte->pgaceTuplePerms |= (perms & DB_TABLE__UPDATE ? SEPGSQL_PERMS_UPDATE : 0);
+	rte->pgaceTuplePerms |= (perms & DB_TABLE__DELETE ? SEPGSQL_PERMS_DELETE : 0);
 
 	/* for 'pg_largeobject' */
 	if (rte->relid == LargeObjectRelationId && (perms & DB_TABLE__DELETE))
-		rte->requiredPerms |= SEPGSQL_PERMS_WRITE;
+		rte->pgaceTuplePerms |= SEPGSQL_PERMS_WRITE;
 
 	return __addEvalPgClass(selist, rte->relid, rte->inh, perms);
 }
@@ -142,14 +142,14 @@ static List *addEvalPgAttribute(List *selist, RangeTblEntry *rte, AttrNumber att
 	/* for 'security_context' */
 	if (attno == SecurityAttributeNumber
 		&& (perms & (DB_COLUMN__UPDATE | DB_COLUMN__INSERT)))
-		rte->requiredPerms |= SEPGSQL_PERMS_RELABELFROM;
+		rte->pgaceTuplePerms |= SEPGSQL_PERMS_RELABELFROM;
 
 	/* for 'pg_largeobject' */
 	if (rte->relid == LargeObjectRelationId) {
 		if ((perms & DB_COLUMN__SELECT) && attno == Anum_pg_largeobject_data)
-			rte->requiredPerms |= SEPGSQL_PERMS_READ;
+			rte->pgaceTuplePerms |= SEPGSQL_PERMS_READ;
 		if ((perms & (DB_COLUMN__UPDATE | DB_COLUMN__INSERT)) && attno > 0)
-			rte->requiredPerms |= SEPGSQL_PERMS_WRITE;
+			rte->pgaceTuplePerms |= SEPGSQL_PERMS_WRITE;
 	}
 
 	return __addEvalPgAttribute(selist, rte->relid, rte->inh, attno, perms);
@@ -583,11 +583,15 @@ static void proxyRteRelation(sepgsqlWalkerContext *swc, int rtindex, Node **qual
 	uint32 perms;
 
 	rte = rt_fetch(rtindex, query->rtable);
+
+	elog(NOTICE, "Tuple Permission = %u on relid = %u", rte->pgaceTuplePerms, rte->relid);
+	return;
+
 	rel = relation_open(rte->relid, AccessShareLock);
 	tdesc = RelationGetDescr(rel);
 
 	/* setup tclass and access vector */
-	perms = rte->requiredPerms & SEPGSQL_PERMS_ALL;
+	perms = rte->pgaceTuplePerms;
 
 	/* append sepgsql_tuple_perm(relid, record, perms) */
 	if (perms) {
@@ -630,11 +634,6 @@ static void proxyRteOuterJoin(sepgsqlWalkerContext *swc, Query *query)
 
 	proxyRteRelation(swc, 1, &query->jointree->quals);
 
-	/* clean-up polluted RangeTblEntry */
-	foreach (l, query->rtable) {
-		RangeTblEntry *rte = (RangeTblEntry *) lfirst(l);
-		rte->requiredPerms &= ~SEPGSQL_PERMS_ALL;
-	}
 	swc->qstack = qsData.parent;
 }
 
@@ -690,7 +689,7 @@ static void proxyRteSubQuery(sepgsqlWalkerContext *swc, Query *query)
 	swc->qstack = &qsData;
 
 	/* rewrite outer join */
-	rewriteOuterJoinTree((Node *) query->jointree, query, false);
+	//rewriteOuterJoinTree((Node *) query->jointree, query, false);
 
 	switch (cmdType) {
 	case CMD_SELECT:
@@ -766,12 +765,6 @@ static void proxyRteSubQuery(sepgsqlWalkerContext *swc, Query *query)
 	 * The target Relation of INSERT is noe necessary to append it
 	 */
 	proxyJoinTree(swc, (Node *) query->jointree, &query->jointree->quals);
-
-	/* clean-up polluted RangeTblEntry */
-	foreach (l, query->rtable) {
-		rte = (RangeTblEntry *) lfirst(l);
-		rte->requiredPerms &= ~SEPGSQL_PERMS_ALL;
-	}
 
 	/* pop a query to queryStack */
 	swc->qstack = qsData.parent;

@@ -218,6 +218,14 @@ typedef struct Scan
 {
 	Plan		plan;
 	Index		scanrelid;		/* relid is index into the range table */
+
+	/*
+	 * pgaceTuplePerms is used to show permission set to be applied to
+	 * tuple-leve access controls by security module.
+	 * It is copied from related RangeTblEntry's one when Scan structure
+	 * is created.
+	 */
+	uint32		pgaceTuplePerms;
 } Scan;
 
 /* ----------------
