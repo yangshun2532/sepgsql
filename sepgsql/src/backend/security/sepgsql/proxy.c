@@ -26,6 +26,7 @@
 #include "nodes/security.h"
 #include "optimizer/clauses.h"
 #include "optimizer/plancat.h"
+#include "optimizer/prep.h"
 #include "parser/parse_relation.h"
 #include "parser/parse_target.h"
 #include "parser/parsetree.h"
@@ -65,26 +66,26 @@ static void execVerifyQuery(List *selist);
  * ----------------------------------------------------------- */
 static List *__addEvalPgClass(List *selist, Oid relid, bool inh, uint32 perms)
 {
-	SEvalItem *se;
+	SEvalItemRelation *ser;
 	ListCell *l;
 
-	foreach (l, selist) {
-		se = (SEvalItem *) lfirst(l);
-		if (se->tclass == SECCLASS_DB_TABLE
-			&& se->relid == relid
-			&& se->inh == inh) {
-			se->perms |= perms;
+	foreach (l, selist)
+	{
+		ser = (SEvalItemRelation *) lfirst(l);
+		if (IsA(ser, SEvalItemRelation)
+			&& ser->relid == relid && ser->inh == inh)
+		{
+			ser->perms |= perms;
 			return selist;
 		}
 	}
 	/* not found */
-	se = makeNode(SEvalItem);
-	se->tclass = SECCLASS_DB_TABLE;
-	se->perms = perms;
-	se->relid = relid;
-	se->inh = inh;
+	ser = makeNode(SEvalItemRelation);
+	ser->perms = perms;
+	ser->relid = relid;
+	ser->inh = inh;
 
-	return lappend(selist, se);
+	return lappend(selist, ser);
 }
 
 static List *addEvalPgClass(List *selist, RangeTblEntry *rte, uint32 perms)
@@ -104,28 +105,26 @@ static List *addEvalPgClass(List *selist, RangeTblEntry *rte, uint32 perms)
 
 static List *__addEvalPgAttribute(List *selist, Oid relid, bool inh, AttrNumber attno, uint32 perms)
 {
+	SEvalItemAttribute *sea;
 	ListCell *l;
-	SEvalItem *se;
 
 	foreach (l, selist) {
-		se = (SEvalItem *) lfirst(l);
-		if (se->tclass == SECCLASS_DB_COLUMN
-			&& se->relid == relid
-			&& se->inh == inh
-			&& se->attno == attno) {
-			se->perms |= perms;
+		sea = (SEvalItemAttribute *) lfirst(l);
+		if (IsA(sea, SEvalItemAttribute)
+			&& sea->relid == relid && sea->inh == inh && sea->attno == attno)
+		{
+			sea->perms |= perms;
 			return selist;
 		}
 	}
 	/* not found */
-	se = makeNode(SEvalItem);
-	se->tclass = SECCLASS_DB_COLUMN;
-	se->perms = perms;
-	se->relid = relid;
-	se->inh = inh;
-	se->attno = attno;
+	sea = makeNode(SEvalItemAttribute);
+	sea->perms = perms;
+	sea->relid = relid;
+	sea->inh = inh;
+	sea->attno = attno;
 
-	return lappend(selist, se);
+	return lappend(selist, sea);
 }
 
 static List *addEvalPgAttribute(List *selist, RangeTblEntry *rte, AttrNumber attno, uint32 perms)
@@ -157,23 +156,24 @@ static List *addEvalPgAttribute(List *selist, RangeTblEntry *rte, AttrNumber att
 
 static List *addEvalPgProc(List *selist, Oid funcid, uint32 perms)
 {
+	SEvalItemProcedure *sep;
 	ListCell *l;
-	SEvalItem *se;
 
 	foreach (l, selist) {
-		se = (SEvalItem *) lfirst(l);
-		if (se->tclass == SECCLASS_DB_PROCEDURE
-			&& se->funcid == funcid) {
-			se->perms |= perms;
+		sep = (SEvalItemProcedure *) lfirst(l);
+		if (IsA(sep, SEvalItemProcedure)
+			&& sep->funcid == funcid)
+		{
+			sep->perms |= perms;
 			return selist;
 		}
 	}
-	se = makeNode(SEvalItem);
-	se->tclass = SECCLASS_DB_PROCEDURE;
-	se->perms = perms;
-	se->funcid = funcid;
+	/* not found */
+	sep = makeNode(SEvalItemProcedure);
+	sep->perms = perms;
+	sep->funcid = funcid;
 
-	return lappend(selist, se);
+	return lappend(selist, sep);
 }
 
 static List *addEvalTriggerAccess(List *selist, Oid relid, bool is_inh, int cmdType)
@@ -1036,54 +1036,30 @@ static void verifyPgProcPerms(Oid funcid, uint32 perms)
 	ReleaseSysCache(tuple);
 }
 
-static void verifyRelationTuplePerms(Oid relid, uint32 perms)
+static List *expandRelationInheritance(List *selist, Oid relid, uint32 perms)
 {
-	Relation rel;
-	HeapScanDesc scan;
-	HeapTuple tuple;
-	NameData name;
-
-	rel = heap_open(relid, AccessShareLock);
-	scan = heap_beginscan(rel, SnapshotNow, 0, NULL);
-
-	while ((tuple = heap_getnext(scan, ForwardScanDirection)) != NULL)
-	{
-		sepgsql_avc_permission(sepgsqlGetClientContext(),
-							   HeapTupleGetSecurity(tuple),
-							   SECCLASS_DB_TUPLE,
-							   perms,
-							   sepgsqlGetTupleName(relid, tuple, &name));
-	}
-
-	heap_endscan(scan);
-	heap_close(rel, AccessShareLock);
-}
-
-static List *__expandPgClassInheritance(List *selist, Oid relid, uint32 perms)
-{
-	List *child_list = find_inheritance_children(relid);
+	List *inherits = find_all_inheritors(relid);
 	ListCell *l;
 
-	foreach (l, child_list) {
+	foreach (l, inherits)
 		selist = __addEvalPgClass(selist, lfirst_oid(l), false, perms);
-		selist = __expandPgClassInheritance(selist, lfirst_oid(l), perms);
-	}
+
 	return selist;
 }
 
-static List *__expandPgAttributeInheritance(List *selist, Oid relid, char *attname, uint32 perms)
+static List *expandAttributeInheritance(List *selist, Oid relid, char *attname, uint32 perms)
 {
-	List *child_list = find_inheritance_children(relid);
+	List *inherits = find_all_inheritors(relid);
 	ListCell *l;
 
-	foreach (l, child_list) {
-		Form_pg_attribute attrForm;
+	foreach (l, inherits)
+	{
+		Form_pg_attribute attr;
 		HeapTuple tuple;
 
-		if (!attname) {
-			/* attname == NULL means RECORD reference */
+		if (!attname)
+		{
 			selist = __addEvalPgAttribute(selist, lfirst_oid(l), false, 0, perms);
-			selist = __expandPgAttributeInheritance(selist, lfirst_oid(l), NULL, perms);
 			continue;
 		}
 
@@ -1091,9 +1067,9 @@ static List *__expandPgAttributeInheritance(List *selist, Oid relid, char *attna
 		if (!HeapTupleIsValid(tuple))
 			elog(ERROR, "SELinux: cache lookup failed for attribute %s of relation %u",
 				 attname, lfirst_oid(l));
-		attrForm = (Form_pg_attribute) GETSTRUCT(tuple);
-		selist = __addEvalPgAttribute(selist, lfirst_oid(l), false, attrForm->attnum, perms);
-		selist = __expandPgAttributeInheritance(selist, lfirst_oid(l), attname, perms);
+
+		attr = (Form_pg_attribute) GETSTRUCT(tuple);
+		selist = __addEvalPgAttribute(selist, lfirst_oid(l), false, attr->attnum, perms);
 
 		ReleaseSysCache(tuple);
 	}
@@ -1101,50 +1077,70 @@ static List *__expandPgAttributeInheritance(List *selist, Oid relid, char *attna
 	return selist;
 }
 
-static List *expandSEvalListInheritance(List *selist) {
+static List *expandSEvalItemInheritance(List *selist)
+{
+	SEvalItemRelation *ser;
+	SEvalItemAttribute *sea;
+
 	List *result = NIL;
 	ListCell *l;
 
-	foreach (l, selist) {
-		SEvalItem *se = (SEvalItem *) lfirst(l);
+	foreach (l, selist)
+	{
+		Node *node = lfirst(l);
 
-		result = lappend(result, se);
-		switch (se->tclass) {
-		case SECCLASS_DB_TABLE:
-			if (se->inh) {
-				se->inh = false;
-				result =  __expandPgClassInheritance(result, se->relid, se->perms);
+		result = lappend(result, node);
+		switch (nodeTag(node))
+		{
+		case T_SEvalItemRelation:
+			ser = (SEvalItemRelation *) node;
+			if (ser->inh) {
+				ser->inh = false;
+				result = expandRelationInheritance(result,
+												   ser->relid,
+												   ser->perms);
 			}
 			break;
-		case SECCLASS_DB_COLUMN:
-			if (se->inh) {
+
+		case T_SEvalItemAttribute:
+			sea = (SEvalItemAttribute *) node;
+			if (sea->inh) {
 				Form_pg_attribute attr;
 				HeapTuple tuple;
 
-				se->inh = false;
-				if (se->attno == 0) {
-					result = __expandPgAttributeInheritance(result, se->relid, NULL, se->perms);
+				sea->inh = false;
+				if (sea->attno == 0)
+				{
+					result = expandAttributeInheritance(result,
+														sea->relid,
+														NULL,
+														sea->perms);
 					break;
 				}
 
 				tuple = SearchSysCache(ATTNUM,
-									   ObjectIdGetDatum(se->relid),
-									   Int16GetDatum(se->attno),
+									   ObjectIdGetDatum(sea->relid),
+									   Int16GetDatum(sea->attno),
 									   0, 0);
 				if (!HeapTupleIsValid(tuple))
 					elog(ERROR, "SELinux: cache lookup failed for attribute %d of relation %u",
-						 se->attno, se->relid);
+						 sea->attno, sea->relid);
 				attr = (Form_pg_attribute) GETSTRUCT(tuple);
 
-				result = __expandPgAttributeInheritance(result, se->relid, NameStr(attr->attname), se->perms);
+				result = expandAttributeInheritance(result,
+													sea->relid,
+													NameStr(attr->attname),
+													sea->perms);
 				ReleaseSysCache(tuple);
 			}
 			break;
-		case SECCLASS_DB_PROCEDURE:
+
+		case T_SEvalItemProcedure:
 			/* do nothing */
 			break;
+
 		default:
-			elog(ERROR, "SELinux: unknown tclass type = %d in SEvalItem", se->tclass);
+			elog(ERROR, "Invalid node type (%d) in SEvalItemList", nodeTag(node));
 			break;
 		}
 	}
@@ -1153,29 +1149,38 @@ static List *expandSEvalListInheritance(List *selist) {
 
 static void execVerifyQuery(List *selist)
 {
+	SEvalItemRelation *ser;
+	SEvalItemAttribute *sea;
+	SEvalItemProcedure *sep;
 	ListCell *l;
 
-	foreach (l, selist) {
-		SEvalItem *se = lfirst(l);
+	foreach (l, selist)
+	{
+		Node *node = lfirst(l);
 
-		switch (se->tclass) {
-		case SECCLASS_DB_TABLE:
-			verifyPgClassPerms(se->relid, se->inh, se->perms);
+		switch  (nodeTag(node))
+		{
+		case T_SEvalItemRelation:
+			ser = (SEvalItemRelation *) node;
+			verifyPgClassPerms(ser->relid, ser->inh, ser->perms);
 			break;
-		case SECCLASS_DB_COLUMN:
-			verifyPgAttributePerms(se->relid, se->inh, se->attno, se->perms);
+
+		case T_SEvalItemAttribute:
+			sea = (SEvalItemAttribute *) node;
+			verifyPgAttributePerms(sea->relid, sea->inh, sea->attno, sea->perms);
 			break;
-		case SECCLASS_DB_PROCEDURE:
-			verifyPgProcPerms(se->funcid, se->perms);
+
+		case T_SEvalItemProcedure:
+			sep = (SEvalItemProcedure *) node;
+			verifyPgProcPerms(sep->funcid, sep->perms);
 			break;
-		case SECCLASS_DB_TUPLE:
-			verifyRelationTuplePerms(se->relid, se->perms);
-			break;
+
 		default:
-			elog(ERROR, "SELinux: unexpected SEvalItem (tclass: %d)", se->tclass);
+			elog(ERROR, "Invalid node type (%d) in SEvalItemList", nodeTag(node));
 			break;
 		}
 	}
+
 }
 
 void sepgsqlVerifyQuery(PlannedStmt *pstmt, int eflags)
@@ -1194,7 +1199,7 @@ void sepgsqlVerifyQuery(PlannedStmt *pstmt, int eflags)
 	selist = copyObject(pstmt->pgaceItem);
 
 	/* expand table inheritances */
-	selist = expandSEvalListInheritance(selist);
+	selist = expandSEvalItemInheritance(selist);
 
 	/* add checks for access via trigger function */
 	foreach(l, pstmt->resultRelations) {

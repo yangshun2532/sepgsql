@@ -3010,17 +3010,40 @@ _copyValue(Value *from)
  *					nodes/security.h copy functions
  * ****************************************************************
  */
-static SEvalItem *
-_copySEvalItem(SEvalItem *from)
+static SEvalItemRelation *
+_copySEvalItemRelation(SEvalItemRelation *from)
 {
-	SEvalItem *newnode = makeNode(SEvalItem);
+	SEvalItemRelation *newnode = makeNode(SEvalItemRelation);
 
-	COPY_SCALAR_FIELD(tclass);
+	COPY_SCALAR_FIELD(perms);
+
+	COPY_SCALAR_FIELD(relid);
+	COPY_SCALAR_FIELD(inh);
+
+	return newnode;
+}
+
+static SEvalItemAttribute *
+_copySEvalItemAttribute(SEvalItemAttribute *from)
+{
+	SEvalItemAttribute *newnode = makeNode(SEvalItemAttribute);
+
 	COPY_SCALAR_FIELD(perms);
 
 	COPY_SCALAR_FIELD(relid);
 	COPY_SCALAR_FIELD(inh);
 	COPY_SCALAR_FIELD(attno);
+
+	return newnode;
+}
+
+static SEvalItemProcedure *
+_copySEvalItemProcedure(SEvalItemProcedure *from)
+{
+	SEvalItemProcedure *newnode = makeNode(SEvalItemProcedure);
+
+	COPY_SCALAR_FIELD(perms);
+
 	COPY_SCALAR_FIELD(funcid);
 
 	return newnode;
@@ -3631,8 +3654,14 @@ copyObject(void *from)
 		case T_XmlSerialize:
 			retval = _copyXmlSerialize(from);
 			break;
-		case T_SEvalItem:
-			retval = _copySEvalItem(from);
+		case T_SEvalItemRelation:
+			retval = _copySEvalItemRelation(from);
+			break;
+		case T_SEvalItemAttribute:
+			retval = _copySEvalItemAttribute(from);
+			break;
+		case T_SEvalItemProcedure:
+			retval = _copySEvalItemProcedure(from);
 			break;
 
 		default:

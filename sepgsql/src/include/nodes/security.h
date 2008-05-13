@@ -10,29 +10,46 @@
 #ifndef NODES_SECURITY_H
 #define NODES_SECURITY_H
 
-/* ----------------
- * SEvalItem
+/*
+ * SEvalItemRelation
  *
- *   This structure contains what permissions should be evaluated by SE-PostgreSQL.
- *
- *   tclass		object class of SELinux
- *   perms		permissions of SELinux
- *   relid		relation id, not used for SECCLASS_DB_PROCEDURE
- *   inh		indication whether relid is inherited, or not
- *   attno		attribute number, only used for SECCLASS_DB_COLUMN
- *   funcid		procedure id, only used for SECCLASS_DB_PROCEDURE
- * ----------------
+ * SE-PostgreSQL permission evaluation item for a relation
  */
-typedef struct SEvalItem {
+typedef struct SEvalItemRelation {
 	NodeTag type;
 
-	uint16 tclass;
+	uint32 perms;
+
+	Oid relid;
+	bool inh;
+} SEvalItemRelation;
+
+/*
+ * SEvalItemAttribute
+ *
+ * SE-PostgreSQL permission evaluation item for an attribute
+ */
+typedef struct SEvalItemAttribute {
+	NodeTag type;
+
 	uint32 perms;
 
 	Oid relid;
 	bool inh;
 	AttrNumber attno;
+} SEvalItemAttribute;
+
+/*
+ * SEvalItemProcedure
+ *
+ * SE-PostgreSQL permission evaluation item for a procedure
+ */
+typedef struct SEvalItemProcedure {
+	NodeTag type;
+
+	uint32 perms;
+
 	Oid funcid;
-} SEvalItem;
+} SEvalItemProcedure;
 
 #endif	/* NODES_SECURITY_H */
