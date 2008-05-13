@@ -2057,17 +2057,35 @@ _outFkConstraint(StringInfo str, FkConstraint *node)
  *
  *****************************************************************************/
 static void
-_outSEvalItem(StringInfo str, SEvalItem *node)
+_outSEvalItemRelation(StringInfo str, SEvalItemRelation *node)
 {
+	WRITE_NODE_TYPE("SEVALITEMRELATION");
 
-	WRITE_NODE_TYPE("SEVALITEM");
+	WRITE_UINT_FIELD(perms);
 
-	WRITE_UINT_FIELD(tclass);
+	WRITE_OID_FIELD(relid);
+	WRITE_BOOL_FIELD(inh);
+}
+
+static void
+_outSEvalItemAttribute(StringInfo str, SEvalItemAttribute *node)
+{
+	WRITE_NODE_TYPE("SEVALITEMATTRIBUTE");
+
 	WRITE_UINT_FIELD(perms);
 
 	WRITE_OID_FIELD(relid);
 	WRITE_BOOL_FIELD(inh);
 	WRITE_INT_FIELD(attno);
+}
+
+static void
+_outSEvalItemProcedure(StringInfo str, SEvalItemProcedure *node)
+{
+	WRITE_NODE_TYPE("SEVALITEMPROCEDURE");
+
+	WRITE_UINT_FIELD(perms);
+
 	WRITE_OID_FIELD(funcid);
 }
 
@@ -2466,8 +2484,14 @@ _outNode(StringInfo str, void *obj)
 			case T_XmlSerialize:
 				_outXmlSerialize(str, obj);
 				break;
-			case T_SEvalItem:
-				_outSEvalItem(str, obj);
+			case T_SEvalItemRelation:
+				_outSEvalItemRelation(str, obj);
+				break;
+			case T_SEvalItemAttribute:
+				_outSEvalItemAttribute(str, obj);
+				break;
+			case T_SEvalItemProcedure:
+				_outSEvalItemProcedure(str, obj);
 				break;
 
 			default:
