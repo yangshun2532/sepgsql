@@ -11,7 +11,7 @@
  * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/backend/access/transam/xlogutils.c,v 1.51 2008/01/01 19:45:48 momjian Exp $
+ * $PostgreSQL: pgsql/src/backend/access/transam/xlogutils.c,v 1.53 2008/05/12 16:06:09 alvherre Exp $
  *
  *-------------------------------------------------------------------------
  */

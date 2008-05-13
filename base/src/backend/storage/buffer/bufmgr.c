@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/storage/buffer/bufmgr.c,v 1.228 2008/01/01 19:45:51 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/backend/storage/buffer/bufmgr.c,v 1.230 2008/05/12 16:06:09 alvherre Exp $
  *
  *-------------------------------------------------------------------------
  */

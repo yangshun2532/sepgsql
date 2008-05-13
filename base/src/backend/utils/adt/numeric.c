@@ -14,7 +14,7 @@
  * Copyright (c) 1998-2008, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/adt/numeric.c,v 1.110 2008/04/21 00:26:45 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/utils/adt/numeric.c,v 1.114 2008/05/09 21:31:23 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -1893,16 +1893,21 @@ numeric_power(PG_FUNCTION_ARGS)
 	trunc_var(&arg2_trunc, 0);
 
 	/*
-	 * Return special SQLSTATE error codes for a few conditions mandated by
-	 * the standard.
+	 * The SQL spec requires that we emit a particular SQLSTATE error code for
+	 * certain error conditions.  Specifically, we don't return a divide-by-zero
+	 * error code for 0 ^ -1.
 	 */
-	if ((cmp_var(&arg1, &const_zero) == 0 &&
-		 cmp_var(&arg2, &const_zero) < 0) ||
-		(cmp_var(&arg1, &const_zero) < 0 &&
-		 cmp_var(&arg2, &arg2_trunc) != 0))
+	if (cmp_var(&arg1, &const_zero) == 0 &&
+		cmp_var(&arg2, &const_zero) < 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_ARGUMENT_FOR_POWER_FUNCTION),
-				 errmsg("invalid argument for power function")));
+				 errmsg("zero raised to a negative power is undefined")));
+
+	if (cmp_var(&arg1, &const_zero) < 0 &&
+		cmp_var(&arg2, &arg2_trunc) != 0)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_ARGUMENT_FOR_POWER_FUNCTION),
+				 errmsg("a negative number raised to a non-integer power yields a complex result")));
 
 	/*
 	 * Call power_var() to compute and return the result; note it handles
@@ -5202,6 +5207,17 @@ power_var(NumericVar *base, NumericVar *exp, NumericVar *result)
 		free_var(&x);
 	}
 
+	/*
+	 *	This avoids log(0) for cases of 0 raised to a non-integer.
+	 *	0 ^ 0 handled by power_var_int().
+	 */
+	if (cmp_var(base, &const_zero) == 0)
+	{
+		set_var_from_var(&const_zero, result);
+		result->dscale = NUMERIC_MIN_SIG_DIGITS;	/* no need to round */
+		return;
+	}
+	
 	init_var(&ln_base);
 	init_var(&ln_num);
 
@@ -5266,15 +5282,15 @@ power_var_int(NumericVar *base, int exp, NumericVar *result, int rscale)
 	NumericVar	base_prod;
 	int			local_rscale;
 
-	/* Detect some special cases, particularly 0^0. */
-
 	switch (exp)
 	{
 		case 0:
-			if (base->ndigits == 0)
-				ereport(ERROR,
-						(errcode(ERRCODE_FLOATING_POINT_EXCEPTION),
-						 errmsg("zero raised to zero is undefined")));
+			/*
+			 *	While 0 ^ 0 can be either 1 or indeterminate (error), we
+			 *	treat it as 1 because most programming languages do this.
+			 *	SQL:2003 also requires a return value of 1.
+			 *	http://en.wikipedia.org/wiki/Exponentiation#Zero_to_the_zero_power
+			 */
 			set_var_from_var(&const_one, result);
 			result->dscale = rscale;	/* no need to round */
 			return;
