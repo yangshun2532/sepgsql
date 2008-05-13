@@ -605,6 +605,15 @@ typedef struct RangeTblEntry
 	bool		inFromCl;		/* present in FROM clause? */
 	AclMode		requiredPerms;	/* bitmask of required access permissions */
 	Oid			checkAsUser;	/* if valid, check access as this role */
+
+	/*
+	 * The guest of PGACE can use pgaceTuplePerms to mark permission set
+	 * of tuple-level access controls. This field is copied to scan node
+	 * (like SeqSan), and it can be refered within pgaceExecScan() hook.
+	 * If this hook returns false, the given tuple is filtered from the
+	 * result set.
+	 */
+	uint32		pgaceTuplePerms;
 } RangeTblEntry;
 
 /*

@@ -1005,6 +1005,7 @@ _readRangeTblEntry(void)
 	READ_BOOL_FIELD(inFromCl);
 	READ_UINT_FIELD(requiredPerms);
 	READ_OID_FIELD(checkAsUser);
+	READ_UINT_FIELD(pgaceTuplePerms);
 
 	READ_DONE();
 }

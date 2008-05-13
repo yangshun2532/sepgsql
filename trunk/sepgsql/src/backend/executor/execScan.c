@@ -20,6 +20,7 @@
 
 #include "executor/executor.h"
 #include "miscadmin.h"
+#include "security/pgace.h"
 #include "utils/memutils.h"
 
 
@@ -64,8 +65,19 @@ ExecScan(ScanState *node,
 	 * If we have neither a qual to check nor a projection to do, just skip
 	 * all the overhead and return the raw scan tuple.
 	 */
-	if (!qual && !projInfo)
-		return (*accessMtd) (node);
+	if (!qual && !projInfo) {
+		for (;;)
+		{
+			resultSlot = (*accessMtd) (node);
+			if (TupIsNull(resultSlot))
+				break;
+			if (pgaceExecScan((Scan *)node->ps.plan,
+							  node->ss_currentRelation, resultSlot))
+				break;
+			ResetExprContext(node->ps.ps_ExprContext);
+		}
+		return resultSlot;
+	}
 
 	/*
 	 * Check to see if we're still projecting out tuples from a previous scan
@@ -127,8 +139,11 @@ ExecScan(ScanState *node,
 		 * check for non-nil qual here to avoid a function call to ExecQual()
 		 * when the qual is nil ... saves only a few cycles, but they add up
 		 * ...
+		 * And security check for tuple level access controls at the last.
 		 */
-		if (!qual || ExecQual(qual, econtext, false))
+		if ((!qual || ExecQual(qual, econtext, false))
+			&& pgaceExecScan((Scan *)node->ps.plan,
+							 node->ss_currentRelation, slot))
 		{
 			/*
 			 * Found a satisfactory scan tuple.

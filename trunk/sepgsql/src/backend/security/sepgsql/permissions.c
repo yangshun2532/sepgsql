@@ -77,7 +77,6 @@ static Oid __lookupRelationForm(Oid relid, Form_pg_class classForm) {
 static uint32 __sepgsql_perms_to_common_perms(uint32 perms) {
 	uint32 __perms = 0;
 
-	Assert((perms & ~SEPGSQL_PERMS_ALL) == 0);
 	__perms |= (perms & SEPGSQL_PERMS_USE		? COMMON_DATABASE__GETATTR : 0);
 	__perms |= (perms & SEPGSQL_PERMS_SELECT	? COMMON_DATABASE__GETATTR : 0);
 	__perms |= (perms & SEPGSQL_PERMS_UPDATE	? COMMON_DATABASE__SETATTR : 0);
@@ -92,7 +91,6 @@ static uint32 __sepgsql_perms_to_common_perms(uint32 perms) {
 static uint32 __sepgsql_perms_to_tuple_perms(uint32 perms) {
 	uint32 __perms = 0;
 
-	Assert((perms & ~SEPGSQL_PERMS_ALL) == 0);
 	__perms |= (perms & SEPGSQL_PERMS_USE		? DB_TUPLE__USE : 0);
 	__perms |= (perms & SEPGSQL_PERMS_SELECT	? DB_TUPLE__SELECT : 0);
 	__perms |= (perms & SEPGSQL_PERMS_UPDATE	? DB_TUPLE__UPDATE : 0);

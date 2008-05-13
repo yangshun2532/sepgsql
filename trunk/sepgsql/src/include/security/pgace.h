@@ -8,6 +8,7 @@
 #define PGACE_H
 
 #include "access/htup.h"
+#include "access/sysattr.h"
 #include "commands/trigger.h"
 #include "executor/execdesc.h"
 #include "nodes/parsenodes.h"
@@ -166,6 +167,21 @@ pgaceExecutorStart(QueryDesc *queryDesc, int eflags)
 	/*
 	 * do nothing
 	 */
+}
+
+/*
+ * pgaceExecScan() is invoked on ExecScan() to apply tuple level access
+ * controls. If this hook returns false, the give tuple is filtered from
+ * the result set.
+ */
+static inline bool
+pgaceExecScan(Scan *scan, Relation rel, TupleTableSlot *slot)
+{
+#ifdef HAVE_SELINUX
+	if (sepgsqlIsEnabled())
+		return sepgsqlExecScan(scan, rel, slot);
+#endif
+	return true;
 }
 
 /*

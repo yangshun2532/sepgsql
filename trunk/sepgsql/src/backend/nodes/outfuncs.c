@@ -1831,6 +1831,7 @@ _outRangeTblEntry(StringInfo str, RangeTblEntry *node)
 	WRITE_BOOL_FIELD(inFromCl);
 	WRITE_UINT_FIELD(requiredPerms);
 	WRITE_OID_FIELD(checkAsUser);
+	WRITE_UINT_FIELD(pgaceTuplePerms);
 }
 
 static void
