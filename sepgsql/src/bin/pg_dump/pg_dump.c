@@ -12,7 +12,7 @@
  *	by PostgreSQL
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/bin/pg_dump/pg_dump.c,v 1.489 2008/05/03 23:32:32 adunstan Exp $
+ *	  $PostgreSQL: pgsql/src/bin/pg_dump/pg_dump.c,v 1.491 2008/05/12 00:00:53 alvherre Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -35,7 +35,7 @@ int			optreset;
 #endif
 
 #include "access/attnum.h"
-#include "access/htup.h"
+#include "access/sysattr.h"
 #include "catalog/pg_class.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_trigger.h"
@@ -123,6 +123,7 @@ static void expand_table_name_patterns(SimpleStringList *patterns,
 						   SimpleOidList *oids);
 static NamespaceInfo *findNamespace(Oid nsoid, Oid objoid);
 static void dumpTableData(Archive *fout, TableDataInfo *tdinfo);
+static void guessConstraintInheritance(TableInfo *tblinfo, int numTables);
 static void dumpComment(Archive *fout, const char *target,
 			const char *namespace, const char *owner,
 			CatalogId catalogId, int subid, DumpId dumpId);
@@ -668,6 +669,9 @@ main(int argc, char **argv)
 	 * objects we intend to dump.
 	 */
 	tblinfo = getSchemaData(&numTables);
+
+	if (g_fout->remoteVersion < 80400)
+		guessConstraintInheritance(tblinfo, numTables);
 
 	if (!schemaOnly)
 		getTableData(tblinfo, numTables, oids);
@@ -1404,6 +1408,81 @@ getTableData(TableInfo *tblinfo, int numTables, bool oids)
 			tdinfo->tdtable = &(tblinfo[i]);
 			tdinfo->oids = oids;
 			addObjectDependency(&tdinfo->dobj, tblinfo[i].dobj.dumpId);
+		}
+	}
+}
+
+
+/*
+ * guessConstraintInheritance:
+ *	In pre-8.4 databases, we can't tell for certain which constraints
+ *	are inherited.  We assume a CHECK constraint is inherited if its name
+ *	matches the name of any constraint in the parent.  Originally this code
+ *	tried to compare the expression texts, but that can fail for various
+ *	reasons --- for example, if the parent and child tables are in different
+ *	schemas, reverse-listing of function calls may produce different text
+ *	(schema-qualified or not) depending on search path.
+ *
+ *	In 8.4 and up we can rely on the conislocal field to decide which
+ *	constraints must be dumped; much safer.
+ *
+ *	This function assumes all conislocal flags were initialized to TRUE.
+ *	It clears the flag on anything that seems to be inherited.
+ */
+static void
+guessConstraintInheritance(TableInfo *tblinfo, int numTables)
+{
+	int			i,
+				j,
+				k;
+
+	for (i = 0; i < numTables; i++)
+	{
+		TableInfo  *tbinfo = &(tblinfo[i]);
+		int			numParents;
+		TableInfo **parents;
+		TableInfo  *parent;
+
+		/* Sequences and views never have parents */
+		if (tbinfo->relkind == RELKIND_SEQUENCE ||
+			tbinfo->relkind == RELKIND_VIEW)
+			continue;
+
+		/* Don't bother computing anything for non-target tables, either */
+		if (!tbinfo->dobj.dump)
+			continue;
+
+		numParents = tbinfo->numParents;
+		parents = tbinfo->parents;
+
+		if (numParents == 0)
+			continue;			/* nothing to see here, move along */
+
+		/* scan for inherited CHECK constraints */
+		for (j = 0; j < tbinfo->ncheck; j++)
+		{
+			ConstraintInfo *constr;
+
+			constr = &(tbinfo->checkexprs[j]);
+
+			for (k = 0; k < numParents; k++)
+			{
+				int			l;
+
+				parent = parents[k];
+				for (l = 0; l < parent->ncheck; l++)
+				{
+					ConstraintInfo *pconstr = &(parent->checkexprs[l]);
+
+					if (strcmp(pconstr->dobj.name, constr->dobj.name) == 0)
+					{
+						constr->conislocal = false;
+						break;
+					}
+				}
+				if (!constr->conislocal)
+					break;
+			}
 		}
 	}
 }
@@ -3576,7 +3655,7 @@ getIndexes(TableInfo tblinfo[], int numTables)
 				constrinfo[j].contype = contype;
 				constrinfo[j].condef = NULL;
 				constrinfo[j].conindex = indxinfo[j].dobj.dumpId;
-				constrinfo[j].coninherited = false;
+				constrinfo[j].conislocal = true;
 				constrinfo[j].separate = true;
 
 				indxinfo[j].indexconstraint = constrinfo[j].dobj.dumpId;
@@ -3677,7 +3756,7 @@ getConstraints(TableInfo tblinfo[], int numTables)
 			constrinfo[j].contype = 'f';
 			constrinfo[j].condef = strdup(PQgetvalue(res, j, i_condef));
 			constrinfo[j].conindex = 0;
-			constrinfo[j].coninherited = false;
+			constrinfo[j].conislocal = true;
 			constrinfo[j].separate = true;
 		}
 
@@ -3760,7 +3839,7 @@ getDomainConstraints(TypeInfo *tinfo)
 		constrinfo[i].contype = 'c';
 		constrinfo[i].condef = strdup(PQgetvalue(res, i, i_consrc));
 		constrinfo[i].conindex = 0;
-		constrinfo[i].coninherited = false;
+		constrinfo[i].conislocal = true;
 		constrinfo[i].separate = false;
 
 		/*
@@ -4650,10 +4729,22 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 						  tbinfo->dobj.name);
 
 			resetPQExpBuffer(q);
-			if (g_fout->remoteVersion >= 70400)
+			if (g_fout->remoteVersion >= 80400)
 			{
 				appendPQExpBuffer(q, "SELECT tableoid, oid, conname, "
-							"pg_catalog.pg_get_constraintdef(oid) AS consrc "
+							"pg_catalog.pg_get_constraintdef(oid) AS consrc, "
+								  "conislocal "
+								  "FROM pg_catalog.pg_constraint "
+								  "WHERE conrelid = '%u'::pg_catalog.oid "
+								  "   AND contype = 'c' "
+								  "ORDER BY conname",
+								  tbinfo->dobj.catId.oid);
+			}
+			else if (g_fout->remoteVersion >= 70400)
+			{
+				appendPQExpBuffer(q, "SELECT tableoid, oid, conname, "
+							"pg_catalog.pg_get_constraintdef(oid) AS consrc, "
+								  "true as conislocal "
 								  "FROM pg_catalog.pg_constraint "
 								  "WHERE conrelid = '%u'::pg_catalog.oid "
 								  "   AND contype = 'c' "
@@ -4664,7 +4755,8 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 			{
 				/* no pg_get_constraintdef, must use consrc */
 				appendPQExpBuffer(q, "SELECT tableoid, oid, conname, "
-								  "'CHECK (' || consrc || ')' AS consrc "
+								  "'CHECK (' || consrc || ')' AS consrc, "
+								  "true as conislocal "
 								  "FROM pg_catalog.pg_constraint "
 								  "WHERE conrelid = '%u'::pg_catalog.oid "
 								  "   AND contype = 'c' "
@@ -4676,7 +4768,8 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 				/* 7.2 did not have OIDs in pg_relcheck */
 				appendPQExpBuffer(q, "SELECT tableoid, 0 as oid, "
 								  "rcname AS conname, "
-								  "'CHECK (' || rcsrc || ')' AS consrc "
+								  "'CHECK (' || rcsrc || ')' AS consrc, "
+								  "true as conislocal "
 								  "FROM pg_relcheck "
 								  "WHERE rcrelid = '%u'::oid "
 								  "ORDER BY rcname",
@@ -4686,7 +4779,8 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 			{
 				appendPQExpBuffer(q, "SELECT tableoid, oid, "
 								  "rcname AS conname, "
-								  "'CHECK (' || rcsrc || ')' AS consrc "
+								  "'CHECK (' || rcsrc || ')' AS consrc, "
+								  "true as conislocal "
 								  "FROM pg_relcheck "
 								  "WHERE rcrelid = '%u'::oid "
 								  "ORDER BY rcname",
@@ -4698,7 +4792,8 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 				appendPQExpBuffer(q, "SELECT "
 								  "(SELECT oid FROM pg_class WHERE relname = 'pg_relcheck') AS tableoid, "
 								  "oid, rcname AS conname, "
-								  "'CHECK (' || rcsrc || ')' AS consrc "
+								  "'CHECK (' || rcsrc || ')' AS consrc, "
+								  "true as conislocal "
 								  "FROM pg_relcheck "
 								  "WHERE rcrelid = '%u'::oid "
 								  "ORDER BY rcname",
@@ -4732,7 +4827,7 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 				constrs[j].contype = 'c';
 				constrs[j].condef = strdup(PQgetvalue(res, j, 3));
 				constrs[j].conindex = 0;
-				constrs[j].coninherited = false;
+				constrs[j].conislocal = (PQgetvalue(res, j, 4)[0] == 't');
 				constrs[j].separate = false;
 
 				constrs[j].dobj.dump = tbinfo->dobj.dump;
@@ -4748,8 +4843,8 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 
 				/*
 				 * If the constraint is inherited, this will be detected
-				 * later.  We also detect later if the constraint must be
-				 * split out from the table definition.
+				 * later (in pre-8.4 databases).  We also detect later if the
+				 * constraint must be split out from the table definition.
 				 */
 			}
 			PQclear(res);
@@ -8920,7 +9015,7 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 		{
 			ConstraintInfo *constr = &(tbinfo->checkexprs[j]);
 
-			if (constr->coninherited || constr->separate)
+			if (constr->separate || !constr->conislocal)
 				continue;
 
 			if (actual_atts > 0)
@@ -9038,7 +9133,7 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 	{
 		ConstraintInfo *constr = &(tbinfo->checkexprs[j]);
 
-		if (constr->coninherited || constr->separate)
+		if (constr->separate || !constr->conislocal)
 			continue;
 
 		dumpTableConstraintComment(fout, constr);

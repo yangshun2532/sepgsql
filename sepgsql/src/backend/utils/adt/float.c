@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/adt/float.c,v 1.155 2008/04/21 00:26:45 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/utils/adt/float.c,v 1.157 2008/05/09 21:31:23 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -1331,13 +1331,17 @@ dpow(PG_FUNCTION_ARGS)
 
 	/*
 	 * The SQL spec requires that we emit a particular SQLSTATE error code for
-	 * certain error conditions.
+	 * certain error conditions.  Specifically, we don't return a divide-by-zero
+	 * error code for 0 ^ -1.
 	 */
-	if ((arg1 == 0 && arg2 < 0) ||
-		(arg1 < 0 && floor(arg2) != arg2))
+	if (arg1 == 0 && arg2 < 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_ARGUMENT_FOR_POWER_FUNCTION),
-				 errmsg("invalid argument for power function")));
+				 errmsg("zero raised to a negative power is undefined")));
+	if (arg1 < 0 && floor(arg2) != arg2)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_ARGUMENT_FOR_POWER_FUNCTION),
+				 errmsg("a negative number raised to a non-integer power yields a complex result")));
 
 	/*
 	 * pow() sets errno only on some platforms, depending on whether it
