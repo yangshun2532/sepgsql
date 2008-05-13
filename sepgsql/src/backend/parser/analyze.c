@@ -24,6 +24,7 @@
 
 #include "postgres.h"
 
+#include "catalog/heap.h"
 #include "catalog/pg_type.h"
 #include "nodes/makefuncs.h"
 #include "optimizer/clauses.h"
