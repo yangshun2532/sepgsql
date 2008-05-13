@@ -11,7 +11,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/commands/cluster.c,v 1.173 2008/04/13 19:18:14 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/commands/cluster.c,v 1.176 2008/05/12 20:01:59 alvherre Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -34,6 +34,7 @@
 #include "commands/trigger.h"
 #include "commands/vacuum.h"
 #include "miscadmin.h"
+#include "storage/bufmgr.h"
 #include "storage/procarray.h"
 #include "utils/acl.h"
 #include "utils/fmgroids.h"
@@ -211,6 +212,7 @@ cluster(ClusterStmt *stmt, bool isTopLevel)
 		rvs = get_tables_to_cluster(cluster_context);
 
 		/* Commit to get out of starting transaction */
+		PopActiveSnapshot();
 		CommitTransactionCommand();
 
 		/* Ok, now that we've got them all, cluster them one by one */
@@ -221,8 +223,9 @@ cluster(ClusterStmt *stmt, bool isTopLevel)
 			/* Start a new transaction for each relation. */
 			StartTransactionCommand();
 			/* functions in indexes may want a snapshot set */
-			ActiveSnapshot = CopySnapshot(GetTransactionSnapshot());
+			PushActiveSnapshot(GetTransactionSnapshot());
 			cluster_rel(rvtc, true);
+			PopActiveSnapshot();
 			CommitTransactionCommand();
 		}
 
@@ -639,9 +642,12 @@ make_new_heap(Oid OIDOldHeap, const char *NewName, Oid NewTableSpace)
 
 	/*
 	 * Need to make a copy of the tuple descriptor, since
-	 * heap_create_with_catalog modifies it.
+	 * heap_create_with_catalog modifies it.  Note that the NewHeap will
+	 * not receive any of the defaults or constraints associated with the
+	 * OldHeap; we don't need 'em, and there's no reason to spend cycles
+	 * inserting them into the catalogs only to delete them.
 	 */
-	tupdesc = CreateTupleDescCopyConstr(OldHeapDesc);
+	tupdesc = CreateTupleDescCopy(OldHeapDesc);
 
 	/*
 	 * Use options of the old heap for new heap.
@@ -662,6 +668,7 @@ make_new_heap(Oid OIDOldHeap, const char *NewName, Oid NewTableSpace)
 										  InvalidOid,
 										  OldHeap->rd_rel->relowner,
 										  tupdesc,
+										  NIL,
 										  OldHeap->rd_rel->relkind,
 										  OldHeap->rd_rel->relisshared,
 										  true,
