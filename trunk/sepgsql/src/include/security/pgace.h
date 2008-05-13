@@ -590,12 +590,7 @@ pgacePreparePlanCheck(Relation rel)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
-	{
-		Oid			saved;
-
-		saved = sepgsqlPreparePlanCheck(rel);
-		return ObjectIdGetDatum(saved);
-	}
+		return sepgsqlPreparePlanCheck(rel);
 #endif
 	return (Datum) 0;
 }
@@ -613,11 +608,9 @@ pgaceRestorePlanCheck(Relation rel, Datum pgace_saved)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
-		sepgsqlRestorePlanCheck(rel, DatumGetObjectId(pgace_saved));
+		sepgsqlRestorePlanCheck(rel, pgace_saved);
 #endif
-	/*
-	 * do nothing
-	 */
+	/* do nothing */
 }
 
 /******************************************************************

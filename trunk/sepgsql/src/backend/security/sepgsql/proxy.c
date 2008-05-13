@@ -1341,15 +1341,3 @@ bool sepgsqlCopyToTuple(Relation rel, List *attNumList, HeapTuple tuple)
 	return sepgsqlCheckTuplePerms(rel, tuple, NULL, perms, false);
 }
 
-/* ----------------------------------------------------------
- * special cases in foreign key constraint
- * ---------------------------------------------------------- */
-Oid sepgsqlPreparePlanCheck(Relation rel) {
-	Oid pgace_saved = fnoid_sepgsql_tuple_perm;
-	fnoid_sepgsql_tuple_perm = F_SEPGSQL_TUPLE_PERMS_ABORT;
-	return pgace_saved;
-}
-
-void sepgsqlRestorePlanCheck(Relation rel, Oid pgace_saved) {
-	fnoid_sepgsql_tuple_perm = pgace_saved;
-}
