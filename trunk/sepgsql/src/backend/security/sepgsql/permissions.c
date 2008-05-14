@@ -449,42 +449,6 @@ static bool __check_tuple_perms(Oid tableoid, Oid tcontext, uint32 perms,
 	return rc;
 }
 
-/*
- * MEMO: we cannot obtain system column from RECORD datatype.
- * If those are necesasry, they should be separately delivered. 
- */
-Datum sepgsql_tuple_perms(PG_FUNCTION_ARGS)
-{
-	Oid tableoid = PG_GETARG_OID(0);
-	Oid tcontext = PG_GETARG_OID(1);
-	uint32 perms = PG_GETARG_UINT32(2);
-	HeapTupleHeader rec = PG_GETARG_HEAPTUPLEHEADER(3);
-	HeapTupleData tuple;
-
-	tuple.t_len = HeapTupleHeaderGetDatumLength(rec);
-	ItemPointerSetInvalid(&tuple.t_self);
-	tuple.t_tableOid = tableoid;
-	tuple.t_data = rec;
-
-	PG_RETURN_BOOL(__check_tuple_perms(tableoid, tcontext, perms, &tuple, NULL, false));
-}
-
-Datum sepgsql_tuple_perms_abort(PG_FUNCTION_ARGS)
-{
-	Oid tableoid = PG_GETARG_OID(0);
-	Oid tcontext = PG_GETARG_OID(1);
-	uint32 perms = PG_GETARG_UINT32(2);
-	HeapTupleHeader rec = PG_GETARG_HEAPTUPLEHEADER(3);
-	HeapTupleData tuple;
-
-	tuple.t_len = HeapTupleHeaderGetDatumLength(rec);
-	ItemPointerSetInvalid(&tuple.t_self);
-	tuple.t_tableOid = tableoid;
-	tuple.t_data = rec;
-
-	PG_RETURN_BOOL(__check_tuple_perms(tableoid, tcontext, perms, &tuple, NULL, true));
-}
-
 bool sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, HeapTuple oldtup, uint32 perms, bool abort)
 {
 	return __check_tuple_perms(RelationGetRelid(rel),
