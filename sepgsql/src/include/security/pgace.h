@@ -723,11 +723,11 @@ pgaceLoadSharedModule(const char *filename)
  * @tuple : a tuple which is a part of the target largeobject.
  */
 static inline void
-pgaceLargeObjectGetSecurity(HeapTuple tuple)
+pgaceLargeObjectGetSecurity(Relation rel, HeapTuple tuple)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
-		sepgsqlLargeObjectGetSecurity(tuple);
+		sepgsqlLargeObjectGetSecurity(rel, tuple);
 #else
 	elog(ERROR, "PGACE: There is no guest module.");
 #endif
@@ -740,11 +740,11 @@ pgaceLargeObjectGetSecurity(HeapTuple tuple)
  * @lo_security : new security attribute specified
  */
 static inline void
-pgaceLargeObjectSetSecurity(HeapTuple tuple, Oid lo_security)
+pgaceLargeObjectSetSecurity(Relation rel, HeapTuple oldtup, HeapTuple newtup)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
-		sepgsqlLargeObjectSetSecurity(tuple, lo_security);
+		sepgsqlLargeObjectSetSecurity(rel, oldtup, newtup);
 #else
 	elog(ERROR, "PGACE: There is no guest module.");
 #endif

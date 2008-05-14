@@ -114,9 +114,9 @@ extern bool sepgsqlCopyToTuple(Relation rel, List *attnumlist,
 extern void sepgsqlLoadSharedModule(const char *filename);
 
 /* Binary Large Object (BLOB) hooks */
-extern void sepgsqlLargeObjectGetSecurity(HeapTuple tuple);
+extern void sepgsqlLargeObjectGetSecurity(Relation rel, HeapTuple tuple);
 
-extern void sepgsqlLargeObjectSetSecurity(HeapTuple tuple, Oid lo_security);
+extern void sepgsqlLargeObjectSetSecurity(Relation rel, HeapTuple oldtup, HeapTuple newtup);
 
 extern void sepgsqlLargeObjectCreate(Relation rel, HeapTuple tuple);
 
@@ -139,7 +139,7 @@ extern char *sepgsqlSecurityLabelOut(char *context);
 
 extern char *sepgsqlSecurityLabelCheckValid(char *context);
 
-extern char *sepgsqlSecurityLabelOfLabel();
+extern char *sepgsqlSecurityLabelOfLabel(void);
 
 /*
  * SE-PostgreSQL core functions
