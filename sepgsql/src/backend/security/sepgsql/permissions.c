@@ -393,70 +393,61 @@ static void __check_pg_relation(HeapTuple tuple, HeapTuple oldtup,
 	}
 }
 
-static bool __check_tuple_perms(Oid tableoid, Oid tcontext, uint32 perms,
-								HeapTuple tuple, HeapTuple oldtup, bool abort)
+bool sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, HeapTuple oldtup, uint32 perms, bool abort)
 {
 	uint16 tclass;
 	bool rc = true;
 
 	Assert(tuple != NULL);
 
-	switch (tableoid) {
-	case DatabaseRelationId:		/* pg_database */
-		perms = __sepgsql_perms_to_common_perms(perms);
-		tclass = SECCLASS_DB_DATABASE;
-		break;
+	switch (RelationGetRelid(rel))
+	{
+		case DatabaseRelationId:		/* pg_datbase */
+			perms = __sepgsql_perms_to_common_perms(perms);
+			tclass = SECCLASS_DB_DATABASE;
+			break;
 
-	case RelationRelationId:		/* pg_class */
-		__check_pg_relation(tuple, oldtup, &perms, &tclass);
-		break;
+		case RelationRelationId:		/* pg_class */
+			__check_pg_relation(tuple, oldtup, &perms, &tclass);
+			break;
 
-	case AttributeRelationId:		/* pg_attribute */
-		__check_pg_attribute(tuple, oldtup, &perms, &tclass);
-		break;
+		case AttributeRelationId:		/* pg_attribute */
+			__check_pg_attribute(tuple, oldtup, &perms, &tclass);
+			break;
 
-	case ProcedureRelationId:		/* pg_proc */
-		__check_pg_proc(tuple, oldtup, &perms, &tclass);
-		break;
+		case ProcedureRelationId:		/* pg_proc */
+			__check_pg_proc(tuple, oldtup, &perms, &tclass);
+			break;
 
-	case LargeObjectRelationId:		/* pg_largeobject */
-		__check_pg_largeobject(tuple, oldtup, &perms, &tclass);
-		break;
+		case LargeObjectRelationId:		/* pg_largeobject */
+			__check_pg_largeobject(tuple, oldtup, &perms, &tclass);
+			break;
 
-	default:
-		perms = __sepgsql_perms_to_tuple_perms(perms);
-		tclass = SECCLASS_DB_TUPLE;
-		break;
+		default:
+			perms = __sepgsql_perms_to_tuple_perms(perms);
+			tclass = SECCLASS_DB_TUPLE;
+			break;
 	}
 
-	if (perms) {
+	if (perms)
+	{
 		NameData name;
+
+		sepgsqlGetTupleName(RelationGetRelid(rel), tuple, &name);
 
 		if (abort) {
 			sepgsql_avc_permission(sepgsqlGetClientContext(),
-								   tcontext,
-								   tclass,
-								   perms,
-								   sepgsqlGetTupleName(tableoid, tuple, &name));
-		} else {
+								   HeapTupleGetSecurity(tuple),
+								   tclass, perms, NameStr(name));
+		}
+		else
+		{
 			rc = sepgsql_avc_permission_noabort(sepgsqlGetClientContext(),
-												tcontext,
-												tclass,
-												perms,
-												sepgsqlGetTupleName(tableoid, tuple, &name));
+												HeapTupleGetSecurity(tuple),
+												tclass, perms, NameStr(name));
 		}
 	}
 	return rc;
-}
-
-bool sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, HeapTuple oldtup, uint32 perms, bool abort)
-{
-	return __check_tuple_perms(RelationGetRelid(rel),
-							   HeapTupleGetSecurity(tuple),
-							   perms,
-							   tuple,
-							   oldtup,
-							   abort);
 }
 
 Oid sepgsqlComputeImplicitContext(Relation rel, HeapTuple tuple) {
