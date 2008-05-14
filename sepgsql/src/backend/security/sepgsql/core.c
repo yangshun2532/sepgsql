@@ -784,6 +784,35 @@ Oid sepgsqlGetDatabaseContext()
 	return datcon;
 }
 
+Oid sepgsqlGetDefaultDatabaseContext(void)
+{
+	static Oid default_dbcon_cached = InvalidOid;
+	char *context, *user, *role, *type, *range;
+	char buffer[1024];
+
+	if (default_dbcon_cached != InvalidOid)
+		return default_dbcon_cached;
+
+	/*
+	 * TODO: we should call selabel_lookup() here, when libselinux
+	 *       got SE-PostgreSQL default database context support.
+	 */
+	context = DatumGetCString(DirectFunctionCall1(security_label_raw_out,
+								 ObjectIdGetDatum(sepgsqlGetClientContext())));
+	user = strtok(context, ":");
+	role = strtok(NULL, ":");
+	type = strtok(NULL, ":");
+	range = strtok(NULL, "-");
+	snprintf(buffer, sizeof(buffer), "%s:%s:%s:%s",
+			 user, "object_r", "sepgsql_db_t", range);
+	default_dbcon_cached =
+		DatumGetObjectId(DirectFunctionCall1(security_label_raw_in,
+											 CStringGetDatum(buffer)));
+
+	return default_dbcon_cached;
+}
+
+
 char *sepgsqlGetDatabaseName()
 {
 	Form_pg_database dat_form;
@@ -809,9 +838,11 @@ void sepgsqlInitialize(bool is_bootstrap)
 {
 	sepgsql_avc_init();
 
+	/* obtain security context of server process */
+	sepgsqlServerContext = sepgsql_system_getcon();
+
 	if (IsBootstrapProcessingMode()) {
-		sepgsqlServerContext = sepgsql_system_getcon();
-		sepgsqlClientContext = sepgsql_system_getcon();
+		sepgsqlClientContext = sepgsqlServerContext;
 		sepgsql_avc_permission(sepgsqlGetClientContext(),
 							   sepgsqlGetDatabaseContext(),
 							   SECCLASS_DB_DATABASE,
@@ -820,15 +851,11 @@ void sepgsqlInitialize(bool is_bootstrap)
 		return;
 	}
 
-	/* obtain security context of server process */
-	sepgsqlServerContext = sepgsql_system_getcon();
-
 	/* obtain security context of client process */
-	if (MyProcPort != NULL) {
+	if (MyProcPort != NULL)
 		sepgsqlClientContext = sepgsql_system_getpeercon(MyProcPort->sock);
-	} else {
+	else
 		sepgsqlClientContext = sepgsql_system_getcon();
-	}
 
 	sepgsql_avc_permission(sepgsqlGetClientContext(),
 						   sepgsqlGetDatabaseContext(),

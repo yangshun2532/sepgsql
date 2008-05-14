@@ -456,9 +456,7 @@ Oid sepgsqlComputeImplicitContext(Relation rel, HeapTuple tuple) {
 
 	switch (RelationGetRelid(rel)) {
 	case DatabaseRelationId:		/* pg_database */
-		tclass = SECCLASS_DB_DATABASE;
-		tcon = sepgsqlGetServerContext();
-		break;
+		return sepgsqlGetDefaultDatabaseContext();
 
 	case RelationRelationId: {		/* pg_class */
 		Form_pg_class classForm = (Form_pg_class) GETSTRUCT(tuple);
