@@ -64,7 +64,7 @@ static void execVerifyQuery(List *selist);
  * addEvalXXXX -- add evaluation items into Query->SEvalItemList.
  * Those are used for execution phase.
  * ----------------------------------------------------------- */
-static List *__addEvalPgClass(List *selist, Oid relid, bool inh, uint32 perms)
+static List *addEvalRelation(List *selist, Oid relid, bool inh, uint32 perms)
 {
 	SEvalItemRelation *ser;
 	ListCell *l;
@@ -88,7 +88,7 @@ static List *__addEvalPgClass(List *selist, Oid relid, bool inh, uint32 perms)
 	return lappend(selist, ser);
 }
 
-static List *addEvalPgClass(List *selist, RangeTblEntry *rte, uint32 perms)
+static List *addEvalRelationRTE(List *selist, RangeTblEntry *rte, uint32 perms)
 {
 	rte->pgaceTuplePerms |= (perms & DB_TABLE__USE    ? SEPGSQL_PERMS_USE : 0);
 	rte->pgaceTuplePerms |= (perms & DB_TABLE__SELECT ? SEPGSQL_PERMS_SELECT : 0);
@@ -100,10 +100,10 @@ static List *addEvalPgClass(List *selist, RangeTblEntry *rte, uint32 perms)
 	if (rte->relid == LargeObjectRelationId && (perms & DB_TABLE__DELETE))
 		rte->pgaceTuplePerms |= SEPGSQL_PERMS_WRITE;
 
-	return __addEvalPgClass(selist, rte->relid, rte->inh, perms);
+	return addEvalRelation(selist, rte->relid, rte->inh, perms);
 }
 
-static List *__addEvalPgAttribute(List *selist, Oid relid, bool inh, AttrNumber attno, uint32 perms)
+static List *addEvalAttribute(List *selist, Oid relid, bool inh, AttrNumber attno, uint32 perms)
 {
 	SEvalItemAttribute *sea;
 	ListCell *l;
@@ -127,7 +127,7 @@ static List *__addEvalPgAttribute(List *selist, Oid relid, bool inh, AttrNumber 
 	return lappend(selist, sea);
 }
 
-static List *addEvalPgAttribute(List *selist, RangeTblEntry *rte, AttrNumber attno, uint32 perms)
+static List *addEvalAttributeRTE(List *selist, RangeTblEntry *rte, AttrNumber attno, uint32 perms)
 {
 	uint32 t_perms = 0;
 
@@ -136,7 +136,7 @@ static List *addEvalPgAttribute(List *selist, RangeTblEntry *rte, AttrNumber att
 	t_perms |= (perms & DB_COLUMN__SELECT ? DB_TABLE__SELECT : 0);
 	t_perms |= (perms & DB_COLUMN__INSERT ? DB_TABLE__INSERT : 0);
 	t_perms |= (perms & DB_COLUMN__UPDATE ? DB_TABLE__UPDATE : 0);
-	selist = addEvalPgClass(selist, rte, t_perms);
+	selist = addEvalRelationRTE(selist, rte, t_perms);
 
 	/* for 'security_context' */
 	if (attno == SecurityAttributeNumber
@@ -151,7 +151,7 @@ static List *addEvalPgAttribute(List *selist, RangeTblEntry *rte, AttrNumber att
 			rte->pgaceTuplePerms |= SEPGSQL_PERMS_WRITE;
 	}
 
-	return __addEvalPgAttribute(selist, rte->relid, rte->inh, attno, perms);
+	return addEvalAttribute(selist, rte->relid, rte->inh, attno, perms);
 }
 
 static List *addEvalPgProc(List *selist, Oid funcid, uint32 perms)
@@ -223,11 +223,11 @@ static List *addEvalTriggerAccess(List *selist, Oid relid, bool is_inh, int cmdT
 									0, 0, 0);
 			classForm = (Form_pg_class) GETSTRUCT(reltup);
 
-			selist = __addEvalPgClass(selist, relid, false, DB_TABLE__SELECT);
+			selist = addEvalRelation(selist, relid, false, DB_TABLE__SELECT);
 			for (attnum = FirstLowInvalidHeapAttributeNumber + 1; attnum <= 0; attnum++) {
 				if (attnum == ObjectIdAttributeNumber && !classForm->relhasoids)
 					continue;
-				selist = __addEvalPgAttribute(selist, relid, false, attnum, DB_COLUMN__SELECT);
+				selist = addEvalAttribute(selist, relid, false, attnum, DB_COLUMN__SELECT);
 			}
 			ReleaseSysCache(reltup);
 
@@ -281,9 +281,9 @@ static void walkVarHelper(sepgsqlWalkerContext *swc, Var *var)
 	switch (rte->rtekind) {
 	case RTE_RELATION:
 		/* table:{select/use} and column:{select/use} */
-		swc->selist = addEvalPgAttribute(swc->selist, rte, var->varattno,
-										 swc->is_internal_use
-										 ? DB_COLUMN__USE : DB_COLUMN__SELECT);
+		swc->selist = addEvalAttributeRTE(swc->selist, rte, var->varattno,
+										  swc->is_internal_use
+										  ? DB_COLUMN__USE : DB_COLUMN__SELECT);
 		break;
 
 	case RTE_JOIN:
@@ -348,9 +348,9 @@ static void walkVarHelper(sepgsqlWalkerContext *swc, Var *var)
 				svar = (Var *) tle->expr;
 			}
 			/* table:{select/use} and column:{select/use} */
-			swc->selist = addEvalPgAttribute(swc->selist, srte, svar->varattno,
-											 swc->is_internal_use
-											 ? DB_COLUMN__USE : DB_COLUMN__SELECT);
+			swc->selist = addEvalAttributeRTE(swc->selist, srte, svar->varattno,
+											  swc->is_internal_use
+											  ? DB_COLUMN__USE : DB_COLUMN__SELECT);
 		}
 		break;
 
@@ -648,14 +648,14 @@ static void __checkSelectTargets(sepgsqlWalkerContext *swc, Query *query, Node *
 
 		switch (rte->rtekind) {
 		case RTE_RELATION:
-			swc->selist = addEvalPgClass(swc->selist, rte, DB_TABLE__SELECT);
+			swc->selist = addEvalRelationRTE(swc->selist, rte, DB_TABLE__SELECT);
 			break;
 		case RTE_SUBQUERY:
 			if (rte->relid) {
 				Query *sqry = rte->subquery;
 				RangeTblEntry *srte = rt_fetch(1, sqry->rtable);
 
-				swc->selist = addEvalPgClass(swc->selist, srte, DB_TABLE__SELECT);
+				swc->selist = addEvalRelationRTE(swc->selist, srte, DB_TABLE__SELECT);
 			}
 			break;
 		default:
@@ -721,16 +721,16 @@ static void proxyRteSubQuery(sepgsqlWalkerContext *swc, Query *query)
 			rte = list_nth(query->rtable, query->resultRelation - 1);
 			Assert(IsA(rte, RangeTblEntry) && rte->rtekind==RTE_RELATION);
 
-			swc->selist = addEvalPgAttribute(swc->selist, rte,
-											 is_security_attr ? SecurityAttributeNumber : tle->resno,
-											 cmdType == CMD_UPDATE ? DB_COLUMN__UPDATE : DB_COLUMN__INSERT);
+			swc->selist = addEvalAttributeRTE(swc->selist, rte,
+											  is_security_attr ? SecurityAttributeNumber : tle->resno,
+											  cmdType == CMD_UPDATE ? DB_COLUMN__UPDATE : DB_COLUMN__INSERT);
 		}
 		break;
 
 	case CMD_DELETE:
 		rte = rt_fetch(query->resultRelation, query->rtable);
 		Assert(IsA(rte, RangeTblEntry) && rte->rtekind==RTE_RELATION);
-		swc->selist = addEvalPgClass(swc->selist, rte, DB_TABLE__DELETE);
+		swc->selist = addEvalRelationRTE(swc->selist, rte, DB_TABLE__DELETE);
 		break;
 
 	default:
@@ -1042,7 +1042,7 @@ static List *expandRelationInheritance(List *selist, Oid relid, uint32 perms)
 	ListCell *l;
 
 	foreach (l, inherits)
-		selist = __addEvalPgClass(selist, lfirst_oid(l), false, perms);
+		selist = addEvalRelation(selist, lfirst_oid(l), false, perms);
 
 	return selist;
 }
@@ -1059,7 +1059,7 @@ static List *expandAttributeInheritance(List *selist, Oid relid, char *attname, 
 
 		if (!attname)
 		{
-			selist = __addEvalPgAttribute(selist, lfirst_oid(l), false, 0, perms);
+			selist = addEvalAttribute(selist, lfirst_oid(l), false, 0, perms);
 			continue;
 		}
 
@@ -1069,7 +1069,7 @@ static List *expandAttributeInheritance(List *selist, Oid relid, char *attname, 
 				 attname, lfirst_oid(l));
 
 		attr = (Form_pg_attribute) GETSTRUCT(tuple);
-		selist = __addEvalPgAttribute(selist, lfirst_oid(l), false, attr->attnum, perms);
+		selist = addEvalAttribute(selist, lfirst_oid(l), false, attr->attnum, perms);
 
 		ReleaseSysCache(tuple);
 	}
@@ -1306,13 +1306,13 @@ void sepgsqlCopyTable(Relation rel, List *attNumList, bool isFrom)
 	if (RelationGetForm(rel)->relkind != RELKIND_RELATION)
 		return;
 
-	selist = __addEvalPgClass(selist, RelationGetRelid(rel), false,
-							  isFrom ? DB_TABLE__INSERT : DB_TABLE__SELECT);
+	selist = addEvalRelation(selist, RelationGetRelid(rel), false,
+							 isFrom ? DB_TABLE__INSERT : DB_TABLE__SELECT);
 	foreach (l, attNumList) {
 		AttrNumber attnum = lfirst_int(l);
 
-		selist = __addEvalPgAttribute(selist, RelationGetRelid(rel), false, attnum,
-									  isFrom ? DB_COLUMN__INSERT : DB_COLUMN__SELECT);
+		selist = addEvalAttribute(selist, RelationGetRelid(rel), false, attnum,
+								  isFrom ? DB_COLUMN__INSERT : DB_COLUMN__SELECT);
 	}
 
 	/* check call trigger function */
