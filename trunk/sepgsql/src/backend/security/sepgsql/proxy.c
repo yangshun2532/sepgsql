@@ -53,10 +53,7 @@ typedef struct sepgsqlWalkerContext {
 } sepgsqlWalkerContext;
 
 /* static definitions for proxy functions */
-static void proxyRteRelation(sepgsqlWalkerContext *swc, int rtindex, Node **quals);
 static void proxyRteSubQuery(sepgsqlWalkerContext *swc, Query *query);
-static void proxyJoinTree(sepgsqlWalkerContext *swc, Node *node, Node **quals);
-static void proxySetOperations(sepgsqlWalkerContext *swc, Node *node);
 static bool sepgsqlExprWalker(Node *node, sepgsqlWalkerContext *swc);
 static void execVerifyQuery(List *selist);
 
@@ -465,178 +462,6 @@ static bool sepgsqlExprWalkerFlags(Node *node, sepgsqlWalkerContext *swc, bool i
  * sepgsqlVerifyQuery() at later phase.
  * *******************************************************************************/
 
-static Oid fnoid_sepgsql_tuple_perm = F_SEPGSQL_TUPLE_PERMS;
-
-/*
- * When we use LEFT OUTER JOIN, any condition defined at ON clause are not
- * considered to filter tuples, so left-hand relation have to be re-written
- * as a subquery to filter violated tuples.
- */
-static List *makePseudoTargetList(Oid relid) {
-	HeapTuple reltup, atttup;
-	Form_pg_class classForm;
-	Form_pg_attribute attrForm;
-	AttrNumber attno, relnatts;
-	TargetEntry *tle;
-	Expr *expr;
-	List *targetList = NIL;
-
-	reltup = SearchSysCache(RELOID,
-							ObjectIdGetDatum(relid),
-							0, 0, 0);
-	if (!HeapTupleIsValid(reltup))
-		elog(ERROR, "SELinux: cache lookup failed for relation %u", relid);
-
-	classForm = (Form_pg_class) GETSTRUCT(reltup);
-	relnatts = classForm->relnatts;
-	for (attno = 1; attno <= relnatts; attno++) {
-		atttup = SearchSysCache(ATTNUM,
-								ObjectIdGetDatum(relid),
-								Int16GetDatum(attno),
-								0, 0);
-		if (!HeapTupleIsValid(atttup))
-			elog(ERROR, "SELinux: cache lookup failed for attribute %d of relation %s",
-				 attno, NameStr(classForm->relname));
-		attrForm = (Form_pg_attribute) GETSTRUCT(atttup);
-		if (attrForm->attisdropped) {
-			expr = (Expr *) makeNullConst(INT4OID, -1);
-		} else {
-			expr = (Expr *) makeVar(1,
-									attno,
-									attrForm->atttypid,
-									attrForm->atttypmod,
-									0);
-		}
-		tle = makeTargetEntry(expr, attno, NULL, false);
-		targetList = lappend(targetList, tle);
-		ReleaseSysCache(atttup);
-
-		Assert(list_length(targetList) == attno);
-	}
-	ReleaseSysCache(reltup);
-
-	return targetList;
-}
-
-static void rewriteOuterJoinTree(Node *n, Query *query, bool is_outer_join)
-{
-	RangeTblRef *rtr, *srtr;
-	RangeTblEntry *rte, *srte;
-	Query *sqry;
-	FromExpr *sfrm;
-
-	if (IsA(n, RangeTblRef)) {
-		if (!is_outer_join)
-			return;
-
-		rtr = (RangeTblRef *) n;
-		rte = list_nth(query->rtable, rtr->rtindex - 1);
-		Assert(IsA(rte, RangeTblEntry));
-		if (rte->rtekind != RTE_RELATION)
-			return;
-
-		/* setup alternative query */
-		sqry = makeNode(Query);
-		sqry->commandType = CMD_SELECT;
-		sqry->targetList = makePseudoTargetList(rte->relid);
-
-		srte = copyObject(rte);
-		sqry->rtable = list_make1(srte);
-
-		srtr = makeNode(RangeTblRef);
-		srtr->rtindex = 1;
-
-		sfrm = makeNode(FromExpr);
-		sfrm->fromlist = list_make1(srtr);
-		sfrm->quals = NULL;
-
-		sqry->jointree = sfrm;
-        sqry->hasSubLinks = false;
-        sqry->hasAggs = false;
-
-		rte->rtekind = RTE_SUBQUERY;
-		rte->subquery = sqry;
-	} else if (IsA(n, FromExpr)) {
-		FromExpr *f = (FromExpr *)n;
-        ListCell *l;
-
-        foreach (l, f->fromlist)
-			rewriteOuterJoinTree(lfirst(l), query, false);
-	} else if (IsA(n, JoinExpr)) {
-        JoinExpr *j = (JoinExpr *) n;
-
-		rewriteOuterJoinTree(j->larg, query,
-							 (j->jointype == JOIN_LEFT || j->jointype == JOIN_FULL));
-		rewriteOuterJoinTree(j->rarg, query,
-							 (j->jointype == JOIN_RIGHT || j->jointype == JOIN_FULL));
-	} else {
-		elog(ERROR, "SELinux: unexpected node type (%d) in Query->jointree", nodeTag(n));
-	}
-}
-
-static void proxyRteRelation(sepgsqlWalkerContext *swc, int rtindex, Node **quals)
-{
-	Query *query = swc->qstack->query;
-	RangeTblEntry *rte;
-	Relation rel;
-	TupleDesc tdesc;
-	uint32 perms;
-
-	rte = rt_fetch(rtindex, query->rtable);
-
-	elog(NOTICE, "Tuple Permission = %u on relid = %u", rte->pgaceTuplePerms, rte->relid);
-	return;
-
-	rel = relation_open(rte->relid, AccessShareLock);
-	tdesc = RelationGetDescr(rel);
-
-	/* setup tclass and access vector */
-	perms = rte->pgaceTuplePerms;
-
-	/* append sepgsql_tuple_perm(relid, record, perms) */
-	if (perms) {
-		Var *v1, *v2, *v4;
-		Const *c3;
-		FuncExpr *func;
-
-		/* 1st arg : Oid of the target relation */
-		v1 = makeVar(rtindex, TableOidAttributeNumber, OIDOID, -1, 0);
-
-		/* 2nd arg : Security Attribute of tuple */
-		v2 = makeVar(rtindex, SecurityAttributeNumber, OIDOID, -1, 0);
-		
-		/* 3rd arg : permission set */
-		c3 = makeConst(INT4OID, -1, sizeof(int32), Int32GetDatum(perms), false, true);
-
-		/* 4th arg : RECORD of the target relation */
-		v4 = makeVar(rtindex, 0, RelationGetForm(rel)->reltype, -1, 0);
-
-		/* append sepgsql_tuple_perm */
-		func = makeFuncExpr(fnoid_sepgsql_tuple_perm, BOOLOID,
-							list_make4(v1, v2, c3, v4), COERCE_DONTCARE);
-		if (*quals == NULL) {
-			*quals = (Node *) func;
-		} else {
-			*quals = (Node *) makeBoolExpr(AND_EXPR, list_make2(func, *quals));
-		}
-	}
-	relation_close(rel, AccessShareLock);
-}
-
-static void proxyRteOuterJoin(sepgsqlWalkerContext *swc, Query *query)
-{
-	struct queryStack qsData;
-	ListCell *l;
-
-	qsData.parent = swc->qstack;
-	qsData.query = query;
-	swc->qstack = &qsData;
-
-	proxyRteRelation(swc, 1, &query->jointree->quals);
-
-	swc->qstack = qsData.parent;
-}
-
 static void checkSelectFromExpr(sepgsqlWalkerContext *swc, Query *query, Node *node)
 {
 	if (node == NULL)
@@ -672,6 +497,96 @@ static void checkSelectFromExpr(sepgsqlWalkerContext *swc, Query *query, Node *n
 	}
 }
 
+static void proxyJoinTree(sepgsqlWalkerContext *swc, Node *node)
+{
+	Query *query = swc->qstack->query;
+
+	if (node == NULL)
+		return;
+
+	switch (nodeTag(node))
+	{
+		case T_RangeTblRef: {
+			RangeTblRef *rtr = (RangeTblRef *) node;
+			RangeTblEntry *rte = rt_fetch(rtr->rtindex, query->rtable);
+			Assert(IsA(rte, RangeTblEntry));
+
+			switch (rte->rtekind)
+			{
+				case RTE_SUBQUERY:
+					proxyRteSubQuery(swc, rte->subquery);
+					break;
+
+				case RTE_FUNCTION:
+					sepgsqlExprWalkerFlags(rte->funcexpr, swc, false);
+					break;
+
+				case RTE_VALUES:
+					sepgsqlExprWalkerFlags((Node *) rte->values_lists, swc, false);
+					break;
+
+				default:
+					break;
+			}
+			break;
+		}
+		case T_FromExpr: {
+			FromExpr *f = (FromExpr *)node;
+			ListCell *l;
+
+			sepgsqlExprWalkerFlags(f->quals, swc, true);
+			foreach (l, f->fromlist)
+				proxyJoinTree(swc, lfirst(l));
+			break;
+		}
+		case T_JoinExpr: {
+			JoinExpr *j = (JoinExpr *) node;
+
+			sepgsqlExprWalkerFlags(j->quals, swc, true);
+			proxyJoinTree(swc, j->larg);
+			proxyJoinTree(swc, j->rarg);
+
+			break;
+		}
+		default:
+			elog(ERROR, "SELinux: unexpected node type (%d) at jointree",
+				 nodeTag(node));
+			break;
+	}
+}
+
+static void proxySetOperations(sepgsqlWalkerContext *swc, Node *node)
+{
+	Query *query = swc->qstack->query;
+
+	if (node == NULL)
+		return;
+
+	switch (nodeTag(node))
+	{
+		case T_RangeTblRef: {
+			RangeTblRef *rtr = (RangeTblRef *) node;
+			RangeTblEntry *rte = rt_fetch(rtr->rtindex, query->rtable);
+
+			Assert(IsA(rte, RangeTblEntry) && rte->rtekind == RTE_SUBQUERY);
+			proxyRteSubQuery(swc, rte->subquery);
+
+			break;
+		}
+		case T_SetOperationStmt: {
+			SetOperationStmt *sop = (SetOperationStmt *) node;
+
+			proxySetOperations(swc, sop->larg);
+			proxySetOperations(swc, sop->rarg);
+			break;
+		}
+		default:
+			elog(ERROR, "SELinux enexpected node (%d) in setOperations tree",
+				 nodeTag(node));
+			break;
+	}
+}
+
 static void proxyRteSubQuery(sepgsqlWalkerContext *swc, Query *query)
 {
 	CmdType cmdType = query->commandType;
@@ -683,9 +598,6 @@ static void proxyRteSubQuery(sepgsqlWalkerContext *swc, Query *query)
 	qsData.parent = swc->qstack;
 	qsData.query = query;
 	swc->qstack = &qsData;
-
-	/* rewrite outer join */
-	//rewriteOuterJoinTree((Node *) query->jointree, query, false);
 
 	switch (cmdType) {
 	case CMD_SELECT:
@@ -760,88 +672,10 @@ static void proxyRteSubQuery(sepgsqlWalkerContext *swc, Query *query)
 	 * for SELECT/UPDATE/DELETE statement.
 	 * The target Relation of INSERT is noe necessary to append it
 	 */
-	proxyJoinTree(swc, (Node *) query->jointree, &query->jointree->quals);
+	proxyJoinTree(swc, (Node *) query->jointree);
 
 	/* pop a query to queryStack */
 	swc->qstack = qsData.parent;
-}
-
-static void proxyJoinTree(sepgsqlWalkerContext *swc, Node *node, Node **quals)
-{
-	Query *query = swc->qstack->query;
-
-	if (node == NULL)
-		return;
-
-	if (IsA(node, RangeTblRef)) {
-		RangeTblRef *rtr = (RangeTblRef *) node;
-		RangeTblEntry *rte = rt_fetch(rtr->rtindex, query->rtable);
-		Assert(IsA(rte, RangeTblEntry));
-
-		switch (rte->rtekind) {
-		case RTE_RELATION:
-			proxyRteRelation(swc, rtr->rtindex, quals);
-			break;
-
-		case RTE_SUBQUERY:
-			if (rte->relid) {
-				proxyRteOuterJoin(swc, rte->subquery);
-			} else {
-				proxyRteSubQuery(swc, rte->subquery);
-			}
-			break;
-
-		case RTE_FUNCTION:
-			sepgsqlExprWalkerFlags(rte->funcexpr, swc, false);
-			break;
-
-		case RTE_VALUES:
-			sepgsqlExprWalkerFlags((Node *) rte->values_lists, swc, false);
-			break;
-
-		default:
-			elog(ERROR, "SELinux: unexpected rtekinf = %d at fromList", rte->rtekind);
-			break;
-		}
-	} else if (IsA(node, FromExpr)) {
-		FromExpr *f = (FromExpr *)node;
-		ListCell *l;
-
-		sepgsqlExprWalkerFlags(f->quals, swc, true);
-		foreach (l, f->fromlist)
-			proxyJoinTree(swc, lfirst(l), quals);
-	} else if (IsA(node, JoinExpr)) {
-		JoinExpr *j = (JoinExpr *) node;
-
-		sepgsqlExprWalkerFlags(j->quals, swc, true);
-		proxyJoinTree(swc, j->larg, &j->quals);
-		proxyJoinTree(swc, j->rarg, &j->quals);
-	} else {
-		elog(ERROR, "SELinux: unexpected node type (%d) at Query->jointree", nodeTag(node));
-	}
-}
-
-static void proxySetOperations(sepgsqlWalkerContext *swc, Node *node)
-{
-	Query *query = swc->qstack->query;
-
-	if (node == NULL)
-		return;
-
-	if (IsA(node, RangeTblRef)) {
-		RangeTblRef *rtr = (RangeTblRef *) node;
-		RangeTblEntry *rte = rt_fetch(rtr->rtindex, query->rtable);
-
-		Assert(IsA(rte, RangeTblEntry) && rte->rtekind == RTE_SUBQUERY);
-		proxyRteSubQuery(swc, rte->subquery);
-
-    } else if (IsA(node, SetOperationStmt)) {
-		proxySetOperations(swc, ((SetOperationStmt *) node)->larg);
-		proxySetOperations(swc, ((SetOperationStmt *) node)->rarg);
-
-    } else {
-		elog(ERROR, "SELinux: setOperationsTree contains => %s", nodeToString(node));
-    }
 }
 
 static List *proxyGeneralQuery(Query *query)
