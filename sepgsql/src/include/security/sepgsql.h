@@ -38,9 +38,7 @@ extern void sepgsqlInitialize(bool is_bootstrap);
 
 extern int	sepgsqlInitializePostmaster(void);
 
-extern void sepgsqlFinalizePostmaster(void);
-
-extern void sepgsqlBootstrapBuildSecurity(void);
+extern pid_t sepgsqlStartupWorkerProcess(void);
 
 /* SQL proxy hooks */
 extern List *sepgsqlProxyQuery(Query *query);

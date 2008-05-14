@@ -14,8 +14,10 @@
 #include "libpq/libpq-be.h"
 #include "libpq/pqsignal.h"
 #include "miscadmin.h"
+#include "postmaster/postmaster.h"
 #include "security/pgace.h"
 #include "security/sepgsql.h"
+#include "storage/ipc.h"
 #include "storage/lwlock.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
@@ -869,36 +871,40 @@ void sepgsqlInitialize(bool is_bootstrap)
  * thread receive a notification via netlink socket. The notification is
  * delivered into any PostgreSQL instance by reseting shared avc.
  */
-static void sepgsqlMonitoringPolicyState_SIGHUP(int signum)
+static bool sepgsqlStateMonitorAlive;
+
+static void
+sepgsqlStateMonitorSIGHUP(SIGNAL_ARGS)
 {
-	elog(NOTICE, "SELinux: userspace AVC reset");
+	elog(NOTICE, "SELinux: userspace avc reset");
 	sepgsql_avc_reset();
 }
 
-static int sepgsqlMonitoringPolicyState()
+static int sepgsqlStateMonitorMain()
 {
 	char buffer[2048];
 	struct sockaddr_nl addr;
 	socklen_t addrlen;
 	struct nlmsghdr *nlh;
-	int i, rc, nl_sockfd;
+	int rc, nl_sockfd;
 
-	/* close listen port */
-	for (i=3; !close(i); i++);
+	sepgsqlStateMonitorAlive = true;
 
 	/* map shared memory segment */
 	sepgsql_avc_init();
 
 	/* setup the signal handler */
 	pqinitmask();
-	pqsignal(SIGHUP,  sepgsqlMonitoringPolicyState_SIGHUP);
-	pqsignal(SIGINT,  SIG_DFL);
-	pqsignal(SIGQUIT, SIG_DFL);
-	pqsignal(SIGTERM, SIG_DFL);
-	pqsignal(SIGUSR1, SIG_DFL);
-	pqsignal(SIGUSR2, SIG_DFL);
+	pqsignal(SIGHUP, sepgsqlStateMonitorSIGHUP);
+	pqsignal(SIGINT, SIG_IGN);
+	pqsignal(SIGTERM, exit);
+	pqsignal(SIGQUIT, exit);
+	pqsignal(SIGUSR1, SIG_IGN);
+	pqsignal(SIGUSR2, SIG_IGN);
 	pqsignal(SIGCHLD, SIG_DFL);
 	PG_SETMASK(&UnBlockSig);
+
+	elog(LOG, "SELinux: policy state monitoring process (pid: %u)", getpid());
 
 	/* open netlink socket */
 	nl_sockfd = socket(PF_NETLINK, SOCK_RAW, NETLINK_SELINUX);
@@ -916,7 +922,7 @@ static int sepgsqlMonitoringPolicyState()
 	}
 
 	/* waiting loop */
-	while (true) {
+	while (sepgsqlStateMonitorAlive) {
 		addrlen = sizeof(addr);
 		rc = recvfrom(nl_sockfd, buffer, sizeof(buffer), 0,
 					  (struct sockaddr *)&addr, &addrlen);
@@ -979,40 +985,23 @@ static int sepgsqlMonitoringPolicyState()
 	return 0;
 }
 
-static pid_t MonitoringPolicyStatePid = -1;
-
-int sepgsqlInitializePostmaster()
+pid_t sepgsqlStartupWorkerProcess(void)
 {
-	MonitoringPolicyStatePid = fork();
-	if (MonitoringPolicyStatePid == 0) {
-		exit(sepgsqlMonitoringPolicyState());
-	} else if (MonitoringPolicyStatePid < 0) {
-		elog(NOTICE, "SELinux: could not create a policy state monitoring process.");
-		return false;
+	pid_t chld;
+
+	chld = fork();
+	if (chld == 0)
+	{
+		ClosePostmasterPorts(false);
+
+		on_exit_reset();
+
+		exit(sepgsqlStateMonitorMain());
 	}
-	return true;
-}
+	else if (chld > 0)
+		return chld;
 
-void sepgsqlFinalizePostmaster()
-{
-	int status;
-
-	if (!sepgsqlIsEnabled())
-		return;
-
-	if (MonitoringPolicyStatePid > 0) {
-		if (kill(MonitoringPolicyStatePid, SIGTERM) < 0) {
-			elog(NOTICE, "SELinux: could not kill(%u, SIGTERM), (%s)",
-				 MonitoringPolicyStatePid, strerror(errno));
-			return;
-		}
-		waitpid(MonitoringPolicyStatePid, &status, 0);
-	}
-}
-
-void sepgsqlBootstrapBuildSecurity(void)
-{
-	elog(ERROR, "We have no init security handler :)");
+	return (pid_t) 0;
 }
 
 bool sepgsqlIsEnabled()
