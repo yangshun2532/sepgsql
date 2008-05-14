@@ -148,6 +148,20 @@ pgacePortalStart(Portal portal)
 }
 
 /*
+ * pgaceIsAllowPlannerHook()
+ *
+ */
+static inline bool
+pgaceIsAllowPlannerHook()
+{
+#ifdef HAVE_SELINUX
+	if (sepgsqlIsEnabled())
+		return false;
+#endif
+	return true;
+}
+
+/*
  * pgaceExecutorStart() is called on the top of ExecutorStart().
  *
  * @queryDesc : a QueryDesc object given to ExecutorStart().
