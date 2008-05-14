@@ -318,34 +318,29 @@ void sepgsqlLoadSharedModule(const char *filename)
 /*******************************************************************************
  * Binary Large Object hooks
  *******************************************************************************/
-void sepgsqlLargeObjectGetSecurity(HeapTuple tuple) {
-	Oid lo_security = HeapTupleGetSecurity(tuple);
-	NameData name;
-
-	sepgsql_avc_permission(sepgsqlGetClientContext(),
-						   lo_security,
-						   SECCLASS_DB_BLOB,
-						   DB_BLOB__GETATTR,
-						   sepgsqlGetTupleName(LargeObjectRelationId, tuple, &name));
+void sepgsqlLargeObjectGetSecurity(Relation rel, HeapTuple tuple) {
+	/* check db_blob:{getattr} */
+	sepgsqlCheckTuplePerms(rel, tuple, NULL,
+						   SEPGSQL_PERMS_SELECT, true);
 }
 
-void sepgsqlLargeObjectSetSecurity(HeapTuple tuple, Oid lo_security)
+void sepgsqlLargeObjectSetSecurity(Relation rel, HeapTuple oldtup, HeapTuple newtup)
 {
 	NameData name;
 
 	/* check db_blob:{setattr relabelfrom} */
 	sepgsql_avc_permission(sepgsqlGetClientContext(),
-						   HeapTupleGetSecurity(tuple),
+						   HeapTupleGetSecurity(oldtup),
 						   SECCLASS_DB_BLOB,
 						   DB_BLOB__SETATTR | DB_BLOB__RELABELFROM,
-						   sepgsqlGetTupleName(LargeObjectRelationId, tuple, &name));
+						   sepgsqlGetTupleName(LargeObjectRelationId, oldtup, &name));
 
 	/* check db_blob:{relabelto} */
 	sepgsql_avc_permission(sepgsqlGetClientContext(),
-						   lo_security,
+						   HeapTupleGetSecurity(newtup),
 						   SECCLASS_DB_BLOB,
 						   DB_BLOB__RELABELTO,
-						   sepgsqlGetTupleName(LargeObjectRelationId, tuple, &name));
+						   sepgsqlGetTupleName(LargeObjectRelationId, newtup, &name));
 }
 
 void sepgsqlLargeObjectCreate(Relation rel, HeapTuple tuple)
@@ -563,7 +558,7 @@ char *sepgsqlSecurityLabelCheckValid(char *context) {
 	return unlbl_result;
 }
 
-char *sepgsqlSecurityLabelOfLabel() {
+char *sepgsqlSecurityLabelOfLabel(void) {
 	HeapTuple tuple;
 	security_context_t scon, tcon, ncon, _ncon;
 	int rc;
