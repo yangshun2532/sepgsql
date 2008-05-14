@@ -65,40 +65,20 @@ pgaceInitialize(bool is_bootstrap)
 	if (sepgsqlIsEnabled())
 		sepgsqlInitialize(is_bootstrap);
 #endif
-	/*
-	 * do nothing
-	 */
+	/* do nothing */
 }
 
 /*
- * pgaceInitializePostmaster() is called when a postmaster server process
- * is started up. If it returns false, the server starting up process
- * will be aborted.
+ * pgaceStartupWorkerProcess() can fork a worker process
  */
-static inline bool
-pgaceInitializePostmaster(void)
+static inline pid_t
+pgaceStartupWorkerProcess(void)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
-		return sepgsqlInitializePostmaster();
+		return sepgsqlStartupWorkerProcess();
 #endif
-	return true;
-}
-
-/*
- * pgaceFinalizePostmaster() is called when a postmaster server process
- * is just ending up.
- */
-static inline void
-pgaceFinalizePostmaster(void)
-{
-#ifdef HAVE_SELINUX
-	if (sepgsqlIsEnabled())
-		sepgsqlFinalizePostmaster();
-#endif
-	/*
-	 * do nothing
-	 */
+	return (pid_t) 0;
 }
 
 /******************************************************************
