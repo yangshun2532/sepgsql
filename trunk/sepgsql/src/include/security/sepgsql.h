@@ -155,6 +155,8 @@ extern void sepgsqlSetClientContext(Oid new_ctx);
 
 extern Oid	sepgsqlGetDatabaseContext(void);
 
+extern Oid	sepgsqlGetDefaultDatabaseContext(void);
+
 extern char *sepgsqlGetDatabaseName(void);
 
 /* userspace access vector cache related */
