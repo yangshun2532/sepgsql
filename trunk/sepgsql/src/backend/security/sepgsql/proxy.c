@@ -637,42 +637,38 @@ static void proxyRteOuterJoin(sepgsqlWalkerContext *swc, Query *query)
 	swc->qstack = qsData.parent;
 }
 
-static void __checkSelectTargets(sepgsqlWalkerContext *swc, Query *query, Node *node)
+static void checkSelectFromExpr(sepgsqlWalkerContext *swc, Query *query, Node *node)
 {
 	if (node == NULL)
 		return;
 
-	if (IsA(node, RangeTblRef)) {
-		RangeTblRef *rtr = (RangeTblRef *) node;
-		RangeTblEntry *rte = rt_fetch(rtr->rtindex, query->rtable);
+	switch (nodeTag(node))
+	{
+		case T_RangeTblRef: {
+			RangeTblRef *rtr = (RangeTblRef *) node;
+			RangeTblEntry *rte = rt_fetch(rtr->rtindex, query->rtable);
 
-		switch (rte->rtekind) {
-		case RTE_RELATION:
-			swc->selist = addEvalRelationRTE(swc->selist, rte, DB_TABLE__SELECT);
-			break;
-		case RTE_SUBQUERY:
-			if (rte->relid) {
-				Query *sqry = rte->subquery;
-				RangeTblEntry *srte = rt_fetch(1, sqry->rtable);
-
-				swc->selist = addEvalRelationRTE(swc->selist, srte, DB_TABLE__SELECT);
-			}
-			break;
-		default:
-			/* do nothing */
+			if (rte->rtekind == RTE_RELATION)
+				swc->selist = addEvalRelationRTE(swc->selist, rte, DB_TABLE__SELECT);
 			break;
 		}
-	} else if (IsA(node, JoinExpr)) {
-		__checkSelectTargets(swc, query, ((JoinExpr *) node)->larg);
-		__checkSelectTargets(swc, query, ((JoinExpr *) node)->rarg);
+		case T_JoinExpr: {
+			JoinExpr *j = (JoinExpr *) node;
 
-	} else if (IsA(node, FromExpr)) {
-		ListCell *l;
+			checkSelectFromExpr(swc, query, j->larg);
+			checkSelectFromExpr(swc, query, j->rarg);
+			break;
+		}
+		case T_FromExpr: {
+			FromExpr *f = (FromExpr *) node;
+			ListCell *l;
 
-		foreach (l, ((FromExpr *)node)->fromlist)
-			__checkSelectTargets(swc, query, lfirst(l));
-	} else {
-		elog(ERROR, "SELinux: unexpected node type (%d) at Query->fromlist", nodeTag(node));
+			foreach (l, f->fromlist)
+				checkSelectFromExpr(swc, query, lfirst(l));
+			break;
+		}
+		default:
+			elog(ERROR, "SELinux: unexpected node type (%d) on fromlist", nodeTag(node));
 	}
 }
 
@@ -693,7 +689,7 @@ static void proxyRteSubQuery(sepgsqlWalkerContext *swc, Query *query)
 
 	switch (cmdType) {
 	case CMD_SELECT:
-		__checkSelectTargets(swc, query, (Node *)query->jointree);
+		checkSelectFromExpr(swc, query, (Node *) query->jointree);
 
 	case CMD_UPDATE:
 	case CMD_INSERT:
