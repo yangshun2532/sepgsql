@@ -1,4 +1,4 @@
-policy_module(sepostgresql, 3.02)
+policy_module(sepostgresql, 3.03)
 
 gen_require(`
 	class db_database all_db_database_perms;
@@ -32,6 +32,13 @@ gen_tunable(sepgsql_enable_auditallow, false)
 ## </p>
 ## </desc>
 gen_tunable(sepgsql_enable_auditdeny,  true)
+
+## <desc>
+## <p>
+## Allow to generate audittuple logs
+## </p>
+## </desc>
+gen_tunable(sepgsql_enable_audittuple,  false)
 
 ## <desc>
 ## <p>
@@ -137,9 +144,6 @@ allow sepgsql_client_type sepgsql_table_t:db_table { getattr use select update i
 allow sepgsql_client_type sepgsql_table_t:db_column { getattr use select update insert };
 allow sepgsql_client_type sepgsql_table_t:db_tuple { use select update insert delete };
 
-# Dontaudit deny logs in row-level access control
-dontaudit sepgsql_client_type { sepgsql_table_type -sepgsql_sysobj_table_type }:db_tuple *;
-
 allow sepgsql_client_type sepgsql_ro_table_t:db_table { getattr use select };
 allow sepgsql_client_type sepgsql_ro_table_t:db_column { getattr use select };
 allow sepgsql_client_type sepgsql_ro_table_t:db_tuple { use select };
@@ -169,7 +173,7 @@ tunable_policy(`sepgsql_enable_users_ddl',`
 # Unconfined access to this module
 #
 
-allow sepgsql_unconfined_type postgresql_t:db_blob { import export };
+allow sepgsql_unconfined_type { self postgresql_t }:db_blob { import export };
 allow sepgsql_unconfined_type sepgsql_database_type:db_database *;
 allow sepgsql_unconfined_type sepgsql_table_type:{ db_table db_column db_tuple } *;
 allow sepgsql_unconfined_type sepgsql_blob_type:db_blob *;
@@ -273,13 +277,16 @@ optional_policy(`
 # SE-PostgreSQL audit switch for debugging
 #
 tunable_policy(`sepgsql_enable_auditallow',`
-	auditallow domain sepgsql_database_type  : db_database all_db_database_perms;
-	auditallow domain sepgsql_table_type     : db_table all_db_table_perms;
-	auditallow domain sepgsql_table_type     : db_column all_db_column_perms;
-	auditallow domain sepgsql_procedure_type : db_procedure all_db_procedure_perms;
-	auditallow domain sepgsql_blob_type      : db_blob all_db_blob_perms;
-	auditallow domain postgresql_t           : db_blob { import export };
+	auditallow domain sepgsql_database_type  : db_database *;
+	auditallow domain sepgsql_table_type     : db_table *;
+	auditallow domain sepgsql_table_type     : db_column *;
+	auditallow domain sepgsql_procedure_type : db_procedure *;
+	auditallow domain sepgsql_blob_type      : db_blob *;
+	auditallow domain domain                 : db_blob { import export };
 	auditallow domain sepgsql_module_type    : db_database { install_module };
+')
+tunable_policy(`sepgsql_enable_auditallow && sepgsql_enable_audittuple',`
+	auditallow domain sepgsql_table_type     : db_tuple *;
 ')
 tunable_policy(`! sepgsql_enable_auditdeny',`
 	dontaudit domain sepgsql_database_type   : db_database *;
@@ -287,6 +294,9 @@ tunable_policy(`! sepgsql_enable_auditdeny',`
 	dontaudit domain sepgsql_table_type      : db_column *;
 	dontaudit domain sepgsql_procedure_type  : db_procedure *;
 	dontaudit domain sepgsql_blob_type       : db_blob *;
-	dontaudit domain postgresql_t            : db_blob { import export };
+	dontaudit domain domain                  : db_blob { import export };
 	dontaudit domain sepgsql_module_type     : db_database { install_module };
+')
+tunable_policy(`! sepgsql_enable_auditdeny && !sepgsql_enable_audittuple',`
+	dontaudit domain sepgsql_table_type      : db_tuple *;
 ')
