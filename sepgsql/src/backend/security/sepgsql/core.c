@@ -764,28 +764,6 @@ void sepgsqlSetClientContext(Oid new_context)
 	sepgsqlClientContext = new_context;
 }
 
-Oid sepgsqlGetDatabaseContext()
-{
-	HeapTuple tuple;
-	Oid datcon;
-
-	if (IsBootstrapProcessingMode()) {
-		return sepgsql_avc_createcon(sepgsqlGetClientContext(),
-									 sepgsqlGetServerContext(),
-									 SECCLASS_DB_DATABASE);
-	}
-
-	tuple = SearchSysCache(DATABASEOID,
-						   ObjectIdGetDatum(MyDatabaseId),
-						   0, 0, 0);
-	if (!HeapTupleIsValid(tuple))
-		elog(ERROR, "SELinux: cache lookup failed for database %u", MyDatabaseId);
-	datcon = HeapTupleGetSecurity(tuple);
-	ReleaseSysCache(tuple);
-
-	return datcon;
-}
-
 Oid sepgsqlGetDefaultDatabaseContext(void)
 {
 	static Oid default_dbcon_cached = InvalidOid;
@@ -814,6 +792,24 @@ Oid sepgsqlGetDefaultDatabaseContext(void)
 	return default_dbcon_cached;
 }
 
+Oid sepgsqlGetDatabaseContext()
+{
+	HeapTuple tuple;
+	Oid datcon;
+
+	if (IsBootstrapProcessingMode())
+		return sepgsqlGetDefaultDatabaseContext();
+
+	tuple = SearchSysCache(DATABASEOID,
+						   ObjectIdGetDatum(MyDatabaseId),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "SELinux: cache lookup failed for database %u", MyDatabaseId);
+	datcon = HeapTupleGetSecurity(tuple);
+	ReleaseSysCache(tuple);
+
+	return datcon;
+}
 
 char *sepgsqlGetDatabaseName()
 {
