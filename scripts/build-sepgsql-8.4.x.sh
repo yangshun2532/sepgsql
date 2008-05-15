@@ -70,6 +70,12 @@ diff -rpNU3 base/contrib/sepgsql_policy sepgsql/contrib/sepgsql_policy	\
     > ${RPMSOURCE}/sepostgresql-policy-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch
 rm -rf sepgsql/contrib/sepgsql_policy
 
+echo "GET: sepostgresql-regress-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch"
+diff -rpNU3 base/src/test/regress sepgsql/src/test/regress \
+    > ${RPMSOURCE}/sepostgresql-regress-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch
+rm -rf sepgsql/src/test/regress
+cp -R base/src/test/regress sepgsql/src/test/regress
+
 echo "GEN: sepostgresql-sepgsql-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch"
 diff -rpNU3 base sepgsql	\
     > ${RPMSOURCE}/sepostgresql-sepgsql-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch
@@ -81,11 +87,14 @@ if [ ${GEN_PATCH_ONLY} -ne 0 ]; then
 	${RPMSOURCE}/sepostgresql-pg_dump-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}-r${SEPGSQL_REVISION}.patch
     mv ${RPMSOURCE}/sepostgresql-policy-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch  \
         ${RPMSOURCE}/sepostgresql-policy-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}-r${SEPGSQL_REVISION}.patch
+    mv ${RPMSOURCE}/sepostgresql-regress-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch \
+	${RPMSOURCE}/sepostgresql-regress-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}-r${SEPGSQL_REVISION}.patch
 
     echo "---- LIST OF GENERATED PATCHES ----"
     echo "${RPMSOURCE}/sepostgresql-sepgsql-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}-r${SEPGSQL_REVISION}.patch"
     echo "${RPMSOURCE}/sepostgresql-pg_dump-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}-r${SEPGSQL_REVISION}.patch"
     echo "${RPMSOURCE}/sepostgresql-policy-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}-r${SEPGSQL_REVISION}.patch"
+    echo "${RPMSOURCE}/sepostgresql-regress-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}-r${SEPGSQL_REVISION}.patch"
 
     exit 1
 fi
