@@ -109,9 +109,10 @@ rm -rf %{buildroot}%{_bindir}.orig
 %if %{sepgsql_standalone}
 mv %{buildroot}%{_libdir}/sepgsql  %{buildroot}%{_libdir}/sepgsql.orig
 install -d %{buildroot}%{_libdir}/sepgsql
-mv %{buildroot}%{_libdir}/sepgsql.orig/plpgsql.so     %{buildroot}%{_libdir}/sepgsql
-mv %{buildroot}%{_libdir}/sepgsql.orig/*_and_*.so     %{buildroot}%{_libdir}/sepgsql
-mv %{buildroot}%{_libdir}/sepgsql.orig/dict_snowball  %{buildroot}%{_libdir}/sepgsql
+mv %{buildroot}%{_libdir}/sepgsql.orig/plpgsql.so   \
+   %{buildroot}%{_libdir}/sepgsql.orig/*_and_*.so   \
+   %{buildroot}%{_libdir}/sepgsql.orig/dict_*.so    \
+   %{buildroot}%{_libdir}/sepgsql
 
 rm -rf %{buildroot}%{_libdir}/sepgsql.orig
 %else
@@ -218,6 +219,7 @@ fi
 %dir %{_libdir}/sepgsql
 %{_libdir}/sepgsql/plpgsql.so
 %{_libdir}/sepgsql/*_and_*.so
+%{_libdir}/sepgsql/dict_*.so
 %endif
 %attr(644,root,root) %{_datadir}/selinux/*/sepostgresql.pp
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql
