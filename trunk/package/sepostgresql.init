@@ -8,7 +8,7 @@
 #---------------------------------------------------------------------
 
 PGVERSION="%%__base_postgresql_version__%%"
-PGMAJORVERSION=`echo "$PGVERSION" | sed 's/^\([0-9]*\.[0-9a-z]*\).*$/\1/'`
+PGMAJORVERSION=`echo "$PGVERSION" | sed 's/^\([0-9]*\.[0-9]*\).*$/\1/'`
 SEPGVERSION="%%__sepgsql_version__%%"
 
 # source function library
