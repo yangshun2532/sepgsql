@@ -10,6 +10,8 @@
 # SE-PostgreSQL status extension
 %%__sepgsql_extension__%%
 
+%{!?sepgsql_standalone:%define sepgsql_standalone 1}
+
 Summary: Security Enhanced PostgreSQL
 Name: sepostgresql
 Version: %%__base_postgresql_version__%%
@@ -35,7 +37,9 @@ Requires(pre): shadow-utils
 Requires(post): policycoreutils /sbin/chkconfig
 Requires(preun): /sbin/chkconfig /sbin/service
 Requires(postun): policycoreutils
+%if !%{sepgsql_standalone}
 Requires: postgresql-server = %{version}
+%endif
 Requires: policycoreutils >= 2.0.16 libselinux >= 2.0.43 selinux-policy >= 3.0.6
 Requires: tzdata logrotate
 
@@ -61,23 +65,18 @@ CXXFLAGS="${CXXFLAGS:-%optflags}" ; export CXXFLAGS
 # configure SE-PostgreSQL
 %configure      --disable-rpath                 \
                 --enable-selinux                \
-%if %{defined sepgextension}
                 --enable-debug                  \
                 --enable-cassert                \
-%endif
+%if %{sepgsql_standalone}
+                --libdir=%{_libdir}/sepgsql     \
+%else
                 --libdir=%{_libdir}/pgsql       \
+%endif
                 --datadir=%{_datadir}/sepgsql   \
                 --with-system-tzdata=/usr/share/zoneinfo
 
-# build binary security policy module
-pushd contrib/sepgsql_policy
-for selinuxvariant in %{selinux_variants}
-do
-    make %{name}.pp.${selinuxvariant}
-done
-popd
-
 # parallel build, if possible
+make -C contrib/sepgsql_policy
 make %{?_smp_mflags}
 
 %install
@@ -104,10 +103,22 @@ mv %{buildroot}%{_bindir}.orig/pg_ctl        %{buildroot}%{_bindir}/sepg_ctl
 mv %{buildroot}%{_bindir}.orig/postgres      %{buildroot}%{_bindir}/sepostgres
 mv %{buildroot}%{_bindir}.orig/pg_dump       %{buildroot}%{_bindir}/sepg_dump
 mv %{buildroot}%{_bindir}.orig/pg_dumpall    %{buildroot}%{_bindir}/sepg_dumpall
+rm -rf %{buildroot}%{_bindir}.orig
+
+# shared library files if neeced
+%if %{sepgsql_standalone}
+mv %{buildroot}%{_libdir}/sepgsql  %{buildroot}%{_libdir}/sepgsql.orig
+install -d %{buildroot}%{_libdir}/sepgsql
+mv %{buildroot}%{_libdir}/sepgsql.orig/plpgsql.so     %{buildroot}%{_libdir}/sepgsql
+mv %{buildroot}%{_libdir}/sepgsql.orig/*_and_*.so     %{buildroot}%{_libdir}/sepgsql
+mv %{buildroot}%{_libdir}/sepgsql.orig/dict_snowball  %{buildroot}%{_libdir}/sepgsql
+
+rm -rf %{buildroot}%{_libdir}/sepgsql.orig
+%else
+rm -rf %{buildroot}%{_libdir}
+%endif
 
 # remove unnecessary files
-rm -rf %{buildroot}%{_bindir}.orig
-rm -rf %{buildroot}%{_libdir}
 rm -rf %{buildroot}%{_includedir}
 rm -rf %{buildroot}%{_usr}/doc
 rm -rf %{buildroot}%{_datadir}/sepgsql/timezone
@@ -203,6 +214,11 @@ fi
 %{_datadir}/sepgsql/conversion_create.sql
 %{_datadir}/sepgsql/information_schema.sql
 %{_datadir}/sepgsql/sql_features.txt
+%if %{sepgsql_standalone}
+%dir %{_libdir}/sepgsql
+%{_libdir}/sepgsql/plpgsql.so
+%{_libdir}/sepgsql/*_and_*.so
+%endif
 %attr(644,root,root) %{_datadir}/selinux/*/sepostgresql.pp
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/data
