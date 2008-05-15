@@ -1746,31 +1746,6 @@ create_role(const char *rolename, const _stringlist * granted_dbs)
 }
 
 static void
-setfiles_if_available(const char *temp_install)
-{
-	FILE *filp;
-	struct stat st_buf;
-	char buf[MAXPGPATH * 4], poltype[128];
-
-	/* Is /sbin/setfiles available? */
-	if (stat("/sbin/setfiles", &st_buf) < 0)
-		return;
-
-	/* get policy type */
-	filp = popen(". /etc/selinux/config; echo $SELINUXTYPE", "r");
-	if (!filp)
-		return;
-	fscanf(filp, "%s", poltype);
-	pclose(filp);
-
-	/* run /sbin/setfiles */
-	sprintf(buf, "%s -r %s/install /etc/selinux/%s/contexts/files/file_contexts %s/install",
-			"/sbin/setfiles", temp_install, poltype, temp_install);
-
-	system(buf);
-}
-
-static void
 help(void)
 {
 	printf(_("PostgreSQL regression test driver\n"));
@@ -2028,8 +2003,6 @@ regression_main(int argc, char *argv[], init_function ifunc, test_function tfunc
 			fprintf(stderr, _("\n%s: installation failed\nExamine %s/log/install.log for the reason.\nCommand was: %s\n"), progname, outputdir, buf);
 			exit_nicely(2);
 		}
-
-		setfiles_if_available(temp_install);
 
 		/* initdb */
 		header(_("initializing database system"));
