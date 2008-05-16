@@ -6,6 +6,7 @@
 #include "postgres.h"
 
 #include "access/genam.h"
+#include "access/hash.h"
 #include "access/heapam.h"
 #include "access/xact.h"
 #include "catalog/catalog.h"
@@ -524,7 +525,7 @@ security_label_lt(PG_FUNCTION_ARGS)
 									 ObjectIdGetDatum(PG_GETARG_OID(0)));
 	Datum rtxt = DirectFunctionCall1(security_label_raw_out,
 									 ObjectIdGetDatum(PG_GETARG_OID(1)));
-	PG_RETURN_BOOL(strcmp(ltxt, rtxt) < 0);
+	PG_RETURN_BOOL(strcmp(DatumGetCString(ltxt), DatumGetCString(rtxt)) < 0);
 }
 
 Datum
@@ -534,7 +535,7 @@ security_label_gt(PG_FUNCTION_ARGS)
 									 ObjectIdGetDatum(PG_GETARG_OID(0)));
 	Datum rtxt = DirectFunctionCall1(security_label_raw_out,
 									 ObjectIdGetDatum(PG_GETARG_OID(1)));
-	PG_RETURN_BOOL(strcmp(ltxt, rtxt) > 0);
+	PG_RETURN_BOOL(strcmp(DatumGetCString(ltxt), DatumGetCString(rtxt)) > 0);
 }
 
 Datum
@@ -544,7 +545,7 @@ security_label_le(PG_FUNCTION_ARGS)
 									 ObjectIdGetDatum(PG_GETARG_OID(0)));
 	Datum rtxt = DirectFunctionCall1(security_label_raw_out,
 									 ObjectIdGetDatum(PG_GETARG_OID(1)));
-	PG_RETURN_BOOL(strcmp(ltxt, rtxt) <= 0);
+	PG_RETURN_BOOL(strcmp(DatumGetCString(ltxt), DatumGetCString(rtxt)) <= 0);
 }
 
 Datum
@@ -554,7 +555,26 @@ security_label_ge(PG_FUNCTION_ARGS)
 									 ObjectIdGetDatum(PG_GETARG_OID(0)));
 	Datum rtxt = DirectFunctionCall1(security_label_raw_out,
 									 ObjectIdGetDatum(PG_GETARG_OID(1)));
-	PG_RETURN_BOOL(strcmp(ltxt, rtxt) >= 0);
+	PG_RETURN_BOOL(strcmp(DatumGetCString(ltxt), DatumGetCString(rtxt)) >= 0);
+}
+
+Datum
+security_label_cmp(PG_FUNCTION_ARGS)
+{
+	Datum ltxt = DirectFunctionCall1(security_label_raw_out,
+									 ObjectIdGetDatum(PG_GETARG_OID(0)));
+	Datum rtxt = DirectFunctionCall1(security_label_raw_out,
+									 ObjectIdGetDatum(PG_GETARG_OID(1)));
+	PG_RETURN_INT32(strcmp(DatumGetCString(ltxt), DatumGetCString(rtxt)));
+}
+
+Datum
+security_label_hash(PG_FUNCTION_ARGS)
+{
+	Datum txt = DirectFunctionCall1(security_label_raw_out,
+									ObjectIdGetDatum(PG_GETARG_OID(0)));
+
+	return hash_any(DatumGetCString(txt), strlen(DatumGetCString(txt)));
 }
 
 /*****************************************************************************

@@ -572,10 +572,10 @@ DATA(insert OID = 2949 ( _txid_snapshot PGNSP PGUID -1 f b t \054 0 2970 0 array
 /*
  * security_label is used to represent the attribute of each tuple
  */
-DATA(insert OID = 3403 ( security_label PGNSP PGUID  4 t b t \054 0 0 3418 security_label_in security_label_out - - - - - i p f 0 -1 0 _null_ _null_ ));
+DATA(insert OID = 3403 ( security_label PGNSP PGUID  4 t b t \054 0 0 3420 security_label_in security_label_out - - - - - i p f 0 -1 0 _null_ _null_ ));
 DESCR("Security Label Identifier for PGACE");
 #define SECLABELOID		3403
-DATA(insert OID = 3418 ( _security_label PGNSP PGUID -1 f b t \054 0 3403 0 array_in array_out - - - - - i x f 0 -1 0 _null_ _null_ ));
+DATA(insert OID = 3420 ( _security_label PGNSP PGUID -1 f b t \054 0 3403 0 array_in array_out - - - - - i x f 0 -1 0 _null_ _null_ ));
 
 /*
  * pseudo-types

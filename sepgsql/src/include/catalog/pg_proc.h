@@ -4158,9 +4158,11 @@ DATA(insert OID = 3414 ( security_label_lt              PGNSP PGUID 12 1 0 f f t
 DATA(insert OID = 3415 ( security_label_gt              PGNSP PGUID 12 1 0 f f t f i 2 16 "3403 3403" _null_ _null_ _null_ security_label_gt    - _null_ _null_ ));
 DATA(insert OID = 3416 ( security_label_le              PGNSP PGUID 12 1 0 f f t f i 2 16 "3403 3403" _null_ _null_ _null_ security_label_le    - _null_ _null_ ));
 DATA(insert OID = 3417 ( security_label_ge              PGNSP PGUID 12 1 0 f f t f i 2 16 "3403 3403" _null_ _null_ _null_ security_label_ge    - _null_ _null_ ));
+DATA(insert OID = 3418 ( security_label_cmp             PGNSP PGUID 12 1 0 f f t f i 2 23 "3403 3403" _null_ _null_ _null_ security_label_cmp   - _null_ _null_ ));
+DATA(insert OID = 3419 ( security_label_hash            PGNSP PGUID 12 1 0 f f t f i 1 23 "3403" _null_ _null_ _null_ security_label_hash       - _null_ _null_ ));
 
 /* SE-PostgreSQL related function */
-DATA(insert OID = 3420 ( sepgsql_getcon			PGNSP PGUID 12 1 0 f f t f v 0 3403 "" _null_ _null_ _null_ sepgsql_getcon - _null_ _null_ ));
+DATA(insert OID = 3450 ( sepgsql_getcon			PGNSP PGUID 12 1 0 f f t f v 0 3403 "" _null_ _null_ _null_ sepgsql_getcon - _null_ _null_ ));
 
 /* enum related procs */
 DATA(insert OID = 3504 (  anyenum_in	PGNSP PGUID 12 1 0 f f t f i 1 3500 "2275" _null_ _null_ _null_ anyenum_in - _null_ _null_ ));
