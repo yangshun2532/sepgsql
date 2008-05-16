@@ -496,6 +496,67 @@ security_label_to_text(PG_FUNCTION_ARGS)
 	return DirectFunctionCall1(textin, seclabel);
 }
 
+/*
+ * operators for security_label
+ */
+Datum
+security_label_eq(PG_FUNCTION_ARGS)
+{
+	Oid l = PG_GETARG_OID(0);
+	Oid r = PG_GETARG_OID(1);
+
+	PG_RETURN_BOOL(l == r);
+}
+
+Datum
+security_label_neq(PG_FUNCTION_ARGS)
+{
+	Oid l = PG_GETARG_OID(0);
+	Oid r = PG_GETARG_OID(1);
+
+	PG_RETURN_BOOL(l != r);
+}
+
+Datum
+security_label_lt(PG_FUNCTION_ARGS)
+{
+	Datum ltxt = DirectFunctionCall1(security_label_raw_out,
+									 ObjectIdGetDatum(PG_GETARG_OID(0)));
+	Datum rtxt = DirectFunctionCall1(security_label_raw_out,
+									 ObjectIdGetDatum(PG_GETARG_OID(1)));
+	PG_RETURN_BOOL(strcmp(ltxt, rtxt) < 0);
+}
+
+Datum
+security_label_gt(PG_FUNCTION_ARGS)
+{
+	Datum ltxt = DirectFunctionCall1(security_label_raw_out,
+									 ObjectIdGetDatum(PG_GETARG_OID(0)));
+	Datum rtxt = DirectFunctionCall1(security_label_raw_out,
+									 ObjectIdGetDatum(PG_GETARG_OID(1)));
+	PG_RETURN_BOOL(strcmp(ltxt, rtxt) > 0);
+}
+
+Datum
+security_label_le(PG_FUNCTION_ARGS)
+{
+	Datum ltxt = DirectFunctionCall1(security_label_raw_out,
+									 ObjectIdGetDatum(PG_GETARG_OID(0)));
+	Datum rtxt = DirectFunctionCall1(security_label_raw_out,
+									 ObjectIdGetDatum(PG_GETARG_OID(1)));
+	PG_RETURN_BOOL(strcmp(ltxt, rtxt) <= 0);
+}
+
+Datum
+security_label_ge(PG_FUNCTION_ARGS)
+{
+	Datum ltxt = DirectFunctionCall1(security_label_raw_out,
+									 ObjectIdGetDatum(PG_GETARG_OID(0)));
+	Datum rtxt = DirectFunctionCall1(security_label_raw_out,
+									 ObjectIdGetDatum(PG_GETARG_OID(1)));
+	PG_RETURN_BOOL(strcmp(ltxt, rtxt) >= 0);
+}
+
 /*****************************************************************************
  *	 Set/Get security attribute of Large Object
  *****************************************************************************/

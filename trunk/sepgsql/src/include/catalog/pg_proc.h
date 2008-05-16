@@ -4152,6 +4152,12 @@ DATA(insert OID = 3408 ( text_to_security_label		PGNSP PGUID 12 1 0 f f t f i 1 
 DATA(insert OID = 3409 ( security_label_to_text		PGNSP PGUID 12 1 0 f f t f i 1 25 "3403"    _null_ _null_ _null_ security_label_to_text - _null_ _null_ ));
 DATA(insert OID = 3410 ( lo_get_security		PGNSP PGUID 12 1 0 f f t f v 1 3403 "26"    _null_ _null_ _null_ lo_get_security        - _null_ _null_ ));
 DATA(insert OID = 3411 ( lo_set_security		PGNSP PGUID 12 1 0 f f t f v 2 16 "26 3403" _null_ _null_ _null_ lo_set_security        - _null_ _null_ ));
+DATA(insert OID = 3412 ( security_label_eq              PGNSP PGUID 12 1 0 f f t f i 2 16 "3403 3403" _null_ _null_ _null_ security_label_eq    - _null_ _null_ ));
+DATA(insert OID = 3413 ( security_label_neq              PGNSP PGUID 12 1 0 f f t f i 2 16 "3403 3403" _null_ _null_ _null_ security_label_neq    - _null_ _null_ ));
+DATA(insert OID = 3414 ( security_label_lt              PGNSP PGUID 12 1 0 f f t f i 2 16 "3403 3403" _null_ _null_ _null_ security_label_lt    - _null_ _null_ ));
+DATA(insert OID = 3415 ( security_label_gt              PGNSP PGUID 12 1 0 f f t f i 2 16 "3403 3403" _null_ _null_ _null_ security_label_gt    - _null_ _null_ ));
+DATA(insert OID = 3416 ( security_label_le              PGNSP PGUID 12 1 0 f f t f i 2 16 "3403 3403" _null_ _null_ _null_ security_label_le    - _null_ _null_ ));
+DATA(insert OID = 3417 ( security_label_ge              PGNSP PGUID 12 1 0 f f t f i 2 16 "3403 3403" _null_ _null_ _null_ security_label_ge    - _null_ _null_ ));
 
 /* SE-PostgreSQL related function */
 DATA(insert OID = 3420 ( sepgsql_getcon			PGNSP PGUID 12 1 0 f f t f v 0 3403 "" _null_ _null_ _null_ sepgsql_getcon - _null_ _null_ ));
