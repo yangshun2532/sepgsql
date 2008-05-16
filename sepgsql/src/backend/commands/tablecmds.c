@@ -2700,11 +2700,14 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap)
 			if (newrel)
 			{
 				Oid			tupOid = InvalidOid;
+				Oid			tupSid = InvalidOid;
 
 				/* Extract data from old tuple */
 				heap_deform_tuple(tuple, oldTupDesc, values, isnull);
 				if (oldTupDesc->tdhasoid)
 					tupOid = HeapTupleGetOid(tuple);
+				if (HeapTupleHasSecurity(tuple))
+					tupSid = HeapTupleGetSecurity(tuple);
 
 				/* Set dropped attributes to null in new tuple */
 				foreach(lc, dropped_attrs)
@@ -2736,6 +2739,9 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap)
 				/* Preserve OID, if any */
 				if (newTupDesc->tdhasoid)
 					HeapTupleSetOid(tuple, tupOid);
+				/* Preserve Security ID, if any */
+				if (tupSid != InvalidOid)
+					HeapTupleSetSecurity(tuple, tupSid);
 			}
 
 			/* Now check any constraints on the possibly-changed tuple */
