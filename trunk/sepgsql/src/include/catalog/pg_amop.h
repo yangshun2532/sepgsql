@@ -491,6 +491,15 @@ DATA(insert (	2968  2950 2950 4 2977	403 ));
 DATA(insert (	2968  2950 2950 5 2975	403 ));
 
 /*
+ * btree security_label_ops
+ */
+DATA(insert (   3421  3403 3403 1 3414  403 ));
+DATA(insert (   3421  3403 3403 2 3416  403 ));
+DATA(insert (   3421  3403 3403 3 3412  403 ));
+DATA(insert (   3421  3403 3403 4 3417  403 ));
+DATA(insert (   3421  3403 3403 5 3415  403 ));
+
+/*
  *	hash index _ops
  */
 
@@ -561,6 +570,8 @@ DATA(insert (	2232   19 19 1 2334	405 ));
 DATA(insert (	2235   1033 1033 1  974	405 ));
 /* uuid_ops */
 DATA(insert (	2969   2950 2950 1 2972 405 ));
+/* security_label_ops */
+DATA(insert (   3422   3403 3403 1 3412 405 ));
 /* numeric_ops */
 DATA(insert (	1998   1700 1700 1 1752 405 ));
 
