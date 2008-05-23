@@ -431,20 +431,21 @@ bool sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, HeapTuple oldtup, uin
 
 	if (perms)
 	{
-		NameData name;
+		NameData tupNameBuf;
+		char *tupName;
 
-		sepgsqlGetTupleName(RelationGetRelid(rel), tuple, &name);
+		tupName = sepgsqlGetTupleName(RelationGetRelid(rel), tuple, &tupNameBuf);
 
 		if (abort) {
 			sepgsql_avc_permission(sepgsqlGetClientContext(),
 								   HeapTupleGetSecurity(tuple),
-								   tclass, perms, NameStr(name));
+								   tclass, perms, tupName);
 		}
 		else
 		{
 			rc = sepgsql_avc_permission_noabort(sepgsqlGetClientContext(),
 												HeapTupleGetSecurity(tuple),
-												tclass, perms, NameStr(name));
+												tclass, perms, tupName);
 		}
 	}
 	return rc;
