@@ -11,7 +11,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/parser/keywords.c,v 1.195 2008/03/27 03:57:33 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/parser/keywords.c,v 1.197 2008/05/21 19:51:01 meskes Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -29,8 +29,11 @@
 #define YYSTYPE int
 
 #include "parser/keywords.h"
+#ifndef ECPG_COMPILE
 #include "parser/parse.h"
-
+#else
+#include "preproc.h"
+#endif
 
 /*
  * List of keyword (name, token-value, category) entries.
@@ -101,6 +104,7 @@ static const ScanKeyword ScanKeywords[] = {
 	{"constraint", CONSTRAINT, RESERVED_KEYWORD},
 	{"constraints", CONSTRAINTS, UNRESERVED_KEYWORD},
 	{"content", CONTENT_P, UNRESERVED_KEYWORD},
+	{"continue", CONTINUE_P, UNRESERVED_KEYWORD},
 	{"conversion", CONVERSION_P, UNRESERVED_KEYWORD},
 	{"copy", COPY, UNRESERVED_KEYWORD},
 	{"cost", COST, UNRESERVED_KEYWORD},
@@ -181,6 +185,7 @@ static const ScanKeyword ScanKeywords[] = {
 	{"header", HEADER_P, UNRESERVED_KEYWORD},
 	{"hold", HOLD, UNRESERVED_KEYWORD},
 	{"hour", HOUR_P, UNRESERVED_KEYWORD},
+	{"identity", IDENTITY_P, UNRESERVED_KEYWORD},
 	{"if", IF_P, UNRESERVED_KEYWORD},
 	{"ilike", ILIKE, TYPE_FUNC_NAME_KEYWORD},
 	{"immediate", IMMEDIATE, UNRESERVED_KEYWORD},
