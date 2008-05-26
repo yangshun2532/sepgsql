@@ -1,3 +1,6 @@
+/*
+ * $PostgreSQL: pgsql/src/interfaces/ecpg/preproc/type.h,v 1.50 2008/05/20 23:17:32 meskes Exp $ 
+ */
 #ifndef _ECPG_PREPROC_TYPE_H
 #define _ECPG_PREPROC_TYPE_H
 
@@ -186,11 +189,5 @@ struct fetch_desc
 	char	   *str;
 	char	   *name;
 };
-
-typedef struct ScanKeyword
-{
-	char	   *name;
-	int			value;
-} ScanKeyword;
 
 #endif   /* _ECPG_PREPROC_TYPE_H */

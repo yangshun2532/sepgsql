@@ -3,7 +3,7 @@ package Mkvcbuild;
 #
 # Package that generates build files for msvc build
 #
-# $PostgreSQL: pgsql/src/tools/msvc/Mkvcbuild.pm,v 1.29 2008/05/10 15:30:11 adunstan Exp $
+# $PostgreSQL: pgsql/src/tools/msvc/Mkvcbuild.pm,v 1.31 2008/05/21 19:51:01 meskes Exp $
 #
 use Carp;
 use Win32;
@@ -167,6 +167,7 @@ sub mkvcbuild
     $ecpg->AddDefine('MAJOR_VERSION=4');
     $ecpg->AddDefine('MINOR_VERSION=2');
     $ecpg->AddDefine('PATCHLEVEL=1');
+    $ecpg->AddDefine('ECPG_COMPILE');
     $ecpg->AddReference($libpgport);
 
     my $pgregress_ecpg = $solution->AddProject('pg_regress_ecpg','exe','misc');
