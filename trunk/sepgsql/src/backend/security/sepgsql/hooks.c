@@ -40,7 +40,7 @@ static HeapTuple __getHeapTupleFromItemPointer(Relation rel, ItemPointer tid)
 	dp = (PageHeader) BufferGetPage(buffer);
 	lp = PageGetItemId(dp, ItemPointerGetOffsetNumber(tid));
 
-	Assert(ItemIdIsUsed(lp));
+	Assert(ItemIdIsNormal(lp));
 
 	tuple.t_data = (HeapTupleHeader) PageGetItem((Page) dp, lp);
 	tuple.t_len = ItemIdGetLength(lp);
