@@ -256,7 +256,6 @@ static void walkVarHelper(sepgsqlWalkerContext *swc, Var *var)
 	RangeTblEntry *rte;
 	queryStack *qstack;
 	Query *query;
-	Node *node;
 	int lv;
 
 	Assert(IsA(var, Var));
@@ -275,91 +274,17 @@ static void walkVarHelper(sepgsqlWalkerContext *swc, Var *var)
 	rte = rt_fetch(var->varno, query->rtable);
 	Assert(IsA(rte, RangeTblEntry));
 
-	switch (rte->rtekind) {
-	case RTE_RELATION:
+	if (rte->rtekind == RTE_RELATION)
+	{
 		/* table:{select/use} and column:{select/use} */
 		swc->selist = addEvalAttributeRTE(swc->selist, rte, var->varattno,
 										  swc->is_internal_use
 										  ? DB_COLUMN__USE : DB_COLUMN__SELECT);
-		break;
-
-	case RTE_JOIN:
-		node = list_nth(rte->joinaliasvars, var->varattno - 1);
+	}
+	else if (rte->rtekind == RTE_JOIN)
+	{
+		Node *node = list_nth(rte->joinaliasvars, var->varattno - 1);
 		sepgsqlExprWalker(node, swc);
-		break;
-
-	case RTE_SUBQUERY:
-		/* In normal cases, rte->relid equals zero for subquery.
-		 * If rte->relid has none-zero value, it's rewritten subquery
-		 * for outer join handling.
-		 */
-		if (rte->relid) {
-			Query *sqry = rte->subquery;
-			RangeTblEntry *srte;
-			TargetEntry *tle;
-			Var *svar;
-
-			Assert(sqry->commandType == CMD_SELECT);
-			Assert(list_length(sqry->rtable) == 1);
-
-			srte = (RangeTblEntry *) list_nth(sqry->rtable, 0);
-			Assert(srte->rtekind == RTE_RELATION);
-			Assert(srte->relid == rte->relid);
-
-			if (var->varattno < 1) {
-				ListCell *l;
-				bool found = false;
-
-				foreach(l, sqry->targetList) {
-					TargetEntry *tle = lfirst(l);
-
-					Assert(IsA(tle, TargetEntry));
-					if (IsA(tle->expr, Const))
-						continue;
-
-					svar = (Var *) tle->expr;
-					Assert(IsA(svar, Var));
-					if (svar->varattno == var->varattno) {
-						var->varattno = tle->resno;
-						found = true;
-						break;
-					}
-				}
-				if (!found) {
-					AttrNumber resno = list_length(sqry->targetList) + 1;
-					svar = makeVar(1,
-								   var->varattno,
-								   var->vartype,
-								   var->vartypmod,
-								   0);
-					tle = makeTargetEntry((Expr *) svar, resno, NULL, false);
-					var->varattno = resno;
-					sqry->targetList = lappend(sqry->targetList, tle);
-				}
-			} else {
-				tle = list_nth(sqry->targetList, var->varattno - 1);
-				Assert(IsA(tle, TargetEntry));
-				if (!IsA(tle->expr, Var))
-					elog(ERROR, "SELinux: refering to dropped column (relid=%u, attno=%d)",
-						 rte->relid, var->varattno);
-				svar = (Var *) tle->expr;
-			}
-			/* table:{select/use} and column:{select/use} */
-			swc->selist = addEvalAttributeRTE(swc->selist, srte, svar->varattno,
-											  swc->is_internal_use
-											  ? DB_COLUMN__USE : DB_COLUMN__SELECT);
-		}
-		break;
-
-	case RTE_SPECIAL:
-	case RTE_FUNCTION:
-	case RTE_VALUES:
-		/* do nothing */
-		break;
-
-	default:
-		elog(ERROR, "SELinux: unexpected rtekind (%d)", rte->rtekind);
-		break;
 	}
 }
 
@@ -394,11 +319,15 @@ static bool sepgsqlExprWalker(Node *node, sepgsqlWalkerContext *swc)
 		break;
 
 	case T_FuncExpr:
-		swc->selist = addEvalPgProc(swc->selist, ((FuncExpr *) node)->funcid, DB_PROCEDURE__EXECUTE);
+		swc->selist = addEvalPgProc(swc->selist,
+									((FuncExpr *) node)->funcid,
+									DB_PROCEDURE__EXECUTE);
 		break;
 
 	case T_Aggref:
-		swc->selist = addEvalPgProc(swc->selist, ((Aggref *) node)->aggfnoid, DB_PROCEDURE__EXECUTE);
+		swc->selist = addEvalPgProc(swc->selist,
+									((Aggref *) node)->aggfnoid,
+									DB_PROCEDURE__EXECUTE);
 		break;
 
 	case T_OpExpr:
@@ -422,7 +351,9 @@ static bool sepgsqlExprWalker(Node *node, sepgsqlWalkerContext *swc)
 		ArrayCoerceExpr *ace = (ArrayCoerceExpr *) node;
 
 		if (ace->elemfuncid != InvalidOid)
-			swc->selist = addEvalPgProc(swc->selist, ace->elemfuncid, DB_PROCEDURE__EXECUTE);
+			swc->selist = addEvalPgProc(swc->selist,
+										ace->elemfuncid,
+										DB_PROCEDURE__EXECUTE);
 		break;
 	}
 	case T_RowCompareExpr: {
