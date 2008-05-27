@@ -132,7 +132,7 @@ pgacePortalStart(Portal portal)
  *
  */
 static inline bool
-pgaceIsAllowPlannerHook()
+pgaceIsAllowPlannerHook(void)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
