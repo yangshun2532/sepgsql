@@ -195,7 +195,6 @@ struct avc_datum {
 #define AVC_DATUM_CACHE_SLOTS    512
 #define AVC_DATUM_CACHE_MAXNODES 800
 static struct {
-	LWLockId lock;
 	SHMEM_OFFSET slot[AVC_DATUM_CACHE_SLOTS];
 	SHMEM_OFFSET freelist;
 	int lru_hint;
@@ -302,7 +301,7 @@ static void sepgsql_avc_reset()
 	enforcing = security_getenforce();
 	Assert(enforcing==0 || enforcing==1);
 
-	LWLockAcquire(avc_shmem->lock, LW_EXCLUSIVE);
+	LWLockAcquire(SepgsqlAvcLock, LW_EXCLUSIVE);
 
 	for (i=0; i < AVC_DATUM_CACHE_SLOTS; i++)
 		avc_shmem->slot[i] = INVALID_OFFSET;
@@ -317,7 +316,7 @@ static void sepgsql_avc_reset()
 	sepgsql_load_class_av_mapping();
 	avc_shmem->enforcing = enforcing;
 
-	LWLockRelease(avc_shmem->lock);
+	LWLockRelease(SepgsqlAvcLock);
 }
 
 static void sepgsql_avc_init()
@@ -326,10 +325,8 @@ static void sepgsql_avc_init()
 
 	avc_shmem = ShmemInitStruct("SELinux userspace AVC",
 								sepgsqlShmemSize(), &found_avc);
-	if (!found_avc) {
-		avc_shmem->lock = LWLockAssign();
+	if (!found_avc)
 		sepgsql_avc_reset();
-	}
 }
 
 static uint32 sepgsql_validate_av_perms(security_class_t tclass, access_vector_t perms)
@@ -368,7 +365,7 @@ static void sepgsql_compute_avc_datum(Oid ssid, Oid tsid, uint16 tclass,
 							  ObjectIdGetDatum(tsid));
 	tcon = DatumGetCString(tmp);
 
-	LWLockAcquire(avc_shmem->lock, LW_SHARED);
+	LWLockAcquire(SepgsqlAvcLock, LW_SHARED);
 	/* translate internal tclass into external one, to query the kernel */
 	for (i=0; i < NUM_SELINUX_CATALOG; i++) {
 		if (avc_shmem->catalog[i].tclass.internal == tclass) {
@@ -392,7 +389,7 @@ static void sepgsql_compute_avc_datum(Oid ssid, Oid tsid, uint16 tclass,
 	avd->decided = sepgsql_validate_av_perms(tclass_external, x.decided);
 	avd->auditallow = sepgsql_validate_av_perms(tclass_external, x.auditallow);
 	avd->auditdeny = sepgsql_validate_av_perms(tclass_external, x.auditdeny);
-	LWLockRelease(avc_shmem->lock);
+	LWLockRelease(SepgsqlAvcLock);
 
 	PG_TRY();
 	{
@@ -573,15 +570,15 @@ static bool __avc_permission(Oid ssid, Oid tsid, uint16 tclass, uint32 perms,
 	bool rc = true;
 	bool wlock = false;
 
-	LWLockAcquire(avc_shmem->lock, LW_SHARED);
+	LWLockAcquire(SepgsqlAvcLock, LW_SHARED);
 retry:
 	avd = sepgsql_avc_lookup(ssid, tsid, tclass, perms);
 	if (!avd) {
-		LWLockRelease(avc_shmem->lock);
+		LWLockRelease(SepgsqlAvcLock);
 
 		sepgsql_compute_avc_datum(ssid, tsid, tclass, local_avd);
 
-		LWLockAcquire(avc_shmem->lock, LW_EXCLUSIVE);
+		LWLockAcquire(SepgsqlAvcLock, LW_EXCLUSIVE);
 		wlock = true;
 		sepgsql_avc_insert(local_avd);
 	} else {
@@ -595,8 +592,8 @@ retry:
 		} else {
 			if (!wlock) {
 				/* update avd need LW_EXCLUSIVE lock onto shmem */
-				LWLockRelease(avc_shmem->lock);
-				LWLockAcquire(avc_shmem->lock, LW_EXCLUSIVE);
+				LWLockRelease(SepgsqlAvcLock);
+				LWLockAcquire(SepgsqlAvcLock, LW_EXCLUSIVE);
 				wlock = true;
 				goto retry;
 			}
@@ -607,7 +604,7 @@ retry:
 				avd->allowed |= denied;
 		}
 	}
-	LWLockRelease(avc_shmem->lock);
+	LWLockRelease(SepgsqlAvcLock);
 
 	return rc;
 }
@@ -646,20 +643,20 @@ Oid sepgsql_avc_createcon(Oid ssid, Oid tsid, uint16 tclass)
 	struct avc_datum *avd, local_avd;
 	Oid nsid;
 
-	LWLockAcquire(avc_shmem->lock, LW_SHARED);
+	LWLockAcquire(SepgsqlAvcLock, LW_SHARED);
 	avd = sepgsql_avc_lookup(ssid, tsid, tclass, 0);
 	if (!avd) {
-		LWLockRelease(avc_shmem->lock);
+		LWLockRelease(SepgsqlAvcLock);
 
 		sepgsql_compute_avc_datum(ssid, tsid, tclass, &local_avd);
 
-		LWLockAcquire(avc_shmem->lock, LW_EXCLUSIVE);
+		LWLockAcquire(SepgsqlAvcLock, LW_EXCLUSIVE);
 		sepgsql_avc_insert(&local_avd);
 		nsid = local_avd.create;
 	} else {
 		nsid = avd->create;
 	}
-	LWLockRelease(avc_shmem->lock);
+	LWLockRelease(SepgsqlAvcLock);
 
 	return nsid;
 }
