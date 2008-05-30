@@ -163,9 +163,9 @@ static FormData_pg_attribute a7 = {
  * If SELinux is enabled, it is defined as "security_context"
  */
 static FormData_pg_attribute a8 = {
-	0, {SECURITY_SYSATTR_NAME}, SECLABELOID, 0, sizeof(Oid),
+	0, {SECURITY_SYSATTR_NAME}, TEXTOID, 0, -1,
 	SecurityAttributeNumber, 0, -1, -1,
-	true, 'p', 'i', true, false, false, true, 0
+	false, 'x', 'i', true, false, false, true, 0
 };
 
 static const Form_pg_attribute SysAtt[] = {&a1, &a2, &a3, &a4, &a5, &a6, &a7, &a8};
