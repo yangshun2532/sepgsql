@@ -156,14 +156,27 @@ extern Oid	sepgsqlGetDefaultDatabaseContext(void);
 extern char *sepgsqlGetDatabaseName(void);
 
 /* userspace access vector cache related */
-extern void sepgsql_avc_permission(Oid ssid, Oid tsid, uint16 tclass,
-								   uint32 perms, char *objname);
-extern bool sepgsql_avc_permission_noabort(Oid ssid, Oid tsid, uint16 tclass,
-										   uint32 perms, char *objname);
-extern Oid	sepgsql_avc_createcon(Oid ssid, Oid tsid, uint16 tclass);
+extern void sepgsqlAvcInit(void);
 
-extern Oid	sepgsql_avc_relabelcon(Oid ssid, Oid tsid, uint16 tclass);
+extern void sepgsqlAvcAudit(const security_context_t scon,
+							const security_context_t tcon,
+							security_class_t tclass,
+							access_vector_t perms,
+							struct av_decision *avd,
+							const char *objname,
+							int error_level);
 
+extern void sepgsqlAvcPermission(const security_context_t scon,
+								 const security_context_t tcon,
+								 security_class_t tclass,
+								 access_vector_t perms,
+								 const char *objname);
+
+extern bool sepgsqlAvcPermissionNoAudit(const security_context_t scon,
+										const security_context_t tcon,
+										security_class_t tclass,
+										access_vector_t perms,
+										struct av_decision *avd);
 /*
  * SE-PostgreSQL permission evaluation related
  *	 src/backend/security/sepgsql/permission.c
