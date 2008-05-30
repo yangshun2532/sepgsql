@@ -158,48 +158,50 @@ void pgaceAlterRelationCommon(Relation rel, AlterTableCmd *cmd) {
 typedef struct earlySeclabel {
 	struct earlySeclabel *next;
 	Oid sid;
-	char seclabel[1];
+	char label[1];
 } earlySeclabel;
 
 static earlySeclabel *earlySeclabelList = NULL;
 
-static Oid early_security_label_to_sid(char *seclabel)
+static Oid earlySecurityLabelToSid(char *label)
 {
 	earlySeclabel *es;
 	Oid minsid = SecurityRelationId;
 
+	label = pgaceValidateSecurityLabelIn(label);
+
 	for (es = earlySeclabelList; es != NULL; es = es->next)
 	{
-		if (!strcmp(seclabel, es->seclabel))
+		if (!strcmp(label, es->label))
 			return es->sid;
 		if (es->sid < minsid)
 			minsid = es->sid;
 	}
 	/* not found */
-	es = malloc(sizeof(earlySeclabel) + strlen(seclabel));
+	es = malloc(sizeof(earlySeclabel) + strlen(label));
 	es->next = earlySeclabelList;
 	es->sid = minsid - 1;
-	strcpy(es->seclabel, seclabel);
+	strcpy(es->label, label);
 	earlySeclabelList = es;
 
 	return es->sid;
 }
 
-static char *early_sid_to_security_label(Oid sid)
+static char *earlySidToSecurityLabel(Oid sid)
 {
 	earlySeclabel *es;
-	char *seclabel;
+	char *label;
 
 	for (es = earlySeclabelList; es != NULL; es = es->next)
 	{
 		if (es->sid == sid)
-			return pstrdup(es->seclabel);
+			return pstrdup(es->label);
 	}
 	/* not found */
-	seclabel = pgaceSecurityLabelCheckValid(NULL);
-	elog(seclabel ? NOTICE : ERROR,
-		 "PGACE: No text representation for sid = %u", sid);
-	return pstrdup(seclabel);
+	label = pgaceValidateSecurityLabelOut(NULL);
+	Assert(label != NULL);
+
+	return pstrdup(label);
 }
 
 void pgacePostBootstrapingMode(void)
@@ -214,7 +216,7 @@ void pgacePostBootstrapingMode(void)
 
 	StartTransactionCommand();
 
-	meta_sid = early_security_label_to_sid(pgaceSecurityLabelOfLabel());
+	meta_sid = earlySecurityLabelToSid(pgaceSecurityLabelOfLabel());
 
 	rel = heap_open(SecurityRelationId, RowExclusiveLock);
 	ind = CatalogOpenIndexes(rel);
@@ -223,7 +225,7 @@ void pgacePostBootstrapingMode(void)
 	{
 		_es = es->next;
 
-		value = DirectFunctionCall1(textin, CStringGetDatum(es->seclabel));
+		value = DirectFunctionCall1(textin, CStringGetDatum(es->label));
 		isnull = ' ';
 		tuple = heap_formtuple(RelationGetDescr(rel), &value, &isnull);
 
@@ -243,83 +245,23 @@ void pgacePostBootstrapingMode(void)
 	CommitTransactionCommand();
 }
 
-static Oid get_security_label_oid(Relation rel, CatalogIndexState ind)
-{
-	/* rel has to be opened with RowExclusiveLock */
-	char *slabel;
-	Datum slabelText;
-	Oid slabelOid;
-	HeapTuple tuple;
-	SysScanDesc scan;
-	ScanKeyData skey;
-	char isnull;
-
-	slabel = pgaceSecurityLabelOfLabel();
-
-	/* 1. lookup syscache */
-	slabelText = DirectFunctionCall1(textin, CStringGetDatum(slabel));
-	tuple = SearchSysCache(SECURITYLABEL,
-						   slabelText,
-						   0, 0, 0);
-	if (HeapTupleIsValid(tuple)) {
-		slabelOid = HeapTupleGetOid(tuple);
-		ReleaseSysCache(tuple);
-		return slabelOid;
-	}
-
-	/* 2. lookup pg_security with SnapshotSelf */
-	ScanKeyInit(&skey,
-				Anum_pg_security_seclabel,
-				BTEqualStrategyNumber, F_TEXTEQ,
-				PointerGetDatum(slabelText));
-	scan = systable_beginscan(rel, SecuritySeclabelIndexId,
-							  true, SnapshotSelf, 1, &skey);
-	tuple = systable_getnext(scan);
-	if (HeapTupleIsValid(tuple)) {
-		slabelOid = HeapTupleGetOid(tuple);
-		goto out;
-	}
-
-	/* 3. insert a new tuple into pg_security */
-	isnull = ' ';
-	tuple = heap_formtuple(RelationGetDescr(rel),
-						   &slabelText, &isnull);
-	slabelOid = GetNewOid(rel);
-	HeapTupleSetOid(tuple, slabelOid);
-	HeapTupleSetSecurity(tuple, slabelOid);
-
-	simple_heap_insert(rel, tuple);
-	CatalogIndexInsert(ind, tuple);
-
-out:
-	systable_endscan(scan);
-
-	return slabelOid;
-}
-
-static Oid security_label_to_sid(char *label)
+static Oid lookupSidBySecurityLabel(char *label)
 {
 	Relation rel;
-	CatalogIndexState ind;
-    SysScanDesc scan;
+	HeapTuple tuple;
+	SysScanDesc scan;
     ScanKeyData skey;
-    HeapTuple tuple;
-    Datum labelText;
-    Oid labelOid, labelSid;
-	char isnull;
-
-    if (IsBootstrapProcessingMode())
-		return early_security_label_to_sid(label);
+	Datum labelTxt;
+	Oid labelOid;
 
 	/* 1. lookup syscache */
-	labelText = DirectFunctionCall1(textin, CStringGetDatum(label));
+	labelTxt = DirectFunctionCall1(textin, CStringGetDatum(label));
 	tuple = SearchSysCache(SECURITYLABEL,
-						   labelText,
-						   0, 0, 0);
+						   labelTxt, 0, 0, 0);
 	if (HeapTupleIsValid(tuple)) {
 		labelOid = HeapTupleGetOid(tuple);
 		ReleaseSysCache(tuple);
-		return labelOid;
+		goto out;
 	}
 
 	/* 2. lookup pg_security with SnapshotSelf */
@@ -328,66 +270,92 @@ static Oid security_label_to_sid(char *label)
 	ScanKeyInit(&skey,
 				Anum_pg_security_seclabel,
 				BTEqualStrategyNumber, F_TEXTEQ,
-				PointerGetDatum(labelText));
+				PointerGetDatum(labelTxt));
 	scan = systable_beginscan(rel, SecuritySeclabelIndexId,
 							  true, SnapshotSelf, 1, &skey);
 	tuple = systable_getnext(scan);
-	if (HeapTupleIsValid(tuple)) {
-		labelOid = HeapTupleGetOid(tuple);
-		goto out;
-	}
+	labelOid = HeapTupleIsValid(tuple)
+		? HeapTupleGetOid(tuple) : InvalidOid;
+	systable_endscan(scan);
+out:
+	return labelOid;
+}
 
-	/* 3. insert a new tuple into pg_security */
+Oid pgaceSecurityLabelToSid(char *label)
+{
+	Relation rel;
+	CatalogIndexState ind;
+	HeapTuple tuple;
+	Oid labelOid, labelSid;
+	Datum labelTxt;
+	char isnull, *slabel;
+
+	if (IsBootstrapProcessingMode())
+		return earlySecurityLabelToSid(label);
+
+	/* valid label checks */
+	label = pgaceValidateSecurityLabelIn(label);
+
+	labelOid = lookupSidBySecurityLabel(label);
+	if (labelOid != InvalidOid)
+		return labelOid;
+
+	/* not found, insert a new one */
+	rel = heap_open(SecurityRelationId, RowExclusiveLock);
+
+	slabel = pgaceSecurityLabelOfLabel();
+
+	if (strcmp(label, slabel) == 0) {
+		labelOid = labelSid = GetNewOid(rel);
+	} else {
+		labelSid = pgaceSecurityLabelToSid(slabel);
+		labelOid = GetNewOid(rel);
+	}
 	ind = CatalogOpenIndexes(rel);
 
 	isnull = ' ';
 	tuple = heap_formtuple(RelationGetDescr(rel),
-						   &labelText, &isnull);
-	labelSid = get_security_label_oid(rel, ind);
+						   &labelTxt, &isnull);
 	HeapTupleSetSecurity(tuple, labelSid);
+	HeapTupleSetOid(tuple, labelOid);
 
-	labelOid = simple_heap_insert(rel, tuple);
+	simple_heap_insert(rel, tuple);
 	CatalogIndexInsert(ind, tuple);
-
-	CatalogCloseIndexes(ind);
-
-out:
-	systable_endscan(scan);
-	heap_close(rel, RowExclusiveLock);
 
 	return labelOid;
 }
 
-static char *sid_to_security_label(Oid sid)
+char *pgaceSidToSecurityLabel(Oid sid)
 {
 	Relation rel;
 	SysScanDesc scan;
 	ScanKeyData skey;
 	HeapTuple tuple;
-	Datum labelText;
-	char *label;
+	Datum labelTxt;
+	char *label = NULL;
 	bool isnull;
 
 	if (IsBootstrapProcessingMode())
-		return early_sid_to_security_label(sid);
+		return earlySidToSecurityLabel(sid);
 
-	/* 1. search system cache */
+	/* 1. lookup system cache */
 	tuple = SearchSysCache(SECURITYOID,
 						   ObjectIdGetDatum(sid),
 						   0, 0, 0);
 	if (HeapTupleIsValid(tuple)) {
-		labelText = SysCacheGetAttr(SECURITYOID,
-									tuple,
-									Anum_pg_security_seclabel,
-									&isnull);
-		label = DatumGetCString(DirectFunctionCall1(textout,
-													PointerGetDatum(labelText)));
+		labelTxt = SysCacheGetAttr(SECURITYOID,
+								   tuple,
+								   Anum_pg_security_seclabel,
+								   &isnull);
+		Assert(!isnull);
+		label = TextDatumGetCString(labelTxt);
 		ReleaseSysCache(tuple);
-		return label;
+		goto out;
 	}
 
-	/* 2. search pg_security with Snapshotself */
+	/* 2. lookup pg_security with SnapshotSelf */
 	rel = heap_open(SecurityRelationId, AccessShareLock);
+
 	ScanKeyInit(&skey,
 				ObjectIdAttributeNumber,
 				BTEqualStrategyNumber, F_OIDEQ,
@@ -395,186 +363,22 @@ static char *sid_to_security_label(Oid sid)
 	scan = systable_beginscan(rel, SecurityOidIndexId,
 							  true, SnapshotSelf, 1, &skey);
 	tuple = systable_getnext(scan);
-	if (HeapTupleIsValid(tuple))
-		tuple = heap_copytuple(tuple);
+	if (HeapTupleIsValid(tuple)) {
+		labelTxt = SysCacheGetAttr(SECURITYOID,
+								   tuple,
+								   Anum_pg_security_seclabel,
+								   &isnull);
+		Assert(!isnull);
+		label = TextDatumGetCString(labelTxt);
+	}
 	systable_endscan(scan);
 	heap_close(rel, AccessShareLock);
 
-	if (HeapTupleIsValid(tuple)) {
-		labelText = SysCacheGetAttr(SECURITYOID,
-									tuple,
-									Anum_pg_security_seclabel,
-									&isnull);
-		label = DatumGetCString(DirectFunctionCall1(textout,
-													PointerGetDatum(labelText)));
-		return label;
-	}
+out:
+	label = pgaceValidateSecurityLabelOut(label);
+	Assert(label != NULL);
 
-	/* 3. fallback security label */
-	label = pgaceSecurityLabelCheckValid(NULL);
-	elog(label ? NOTICE : ERROR,
-		 "PGACE: no text representation: sid = %u", sid);
-	return pstrdup(label);
-}
-
-/* security_label_in -- security_label input function */
-Datum
-security_label_in(PG_FUNCTION_ARGS)
-{
-	char *label = PG_GETARG_CSTRING(0);
-	char *__label;
-
-	label = pgaceSecurityLabelIn(label);
-	__label = pgaceSecurityLabelCheckValid(label);
-	if (label != __label)
-		elog(ERROR, "PGACE: '%s' is not a valid security label", label);
-
-	PG_RETURN_OID(security_label_to_sid(label));
-}
-
-/* security_label_out -- security_label output function */
-Datum
-security_label_out(PG_FUNCTION_ARGS)
-{
-	Oid sid = PG_GETARG_OID(0);
-	char *label = sid_to_security_label(sid);
-	char *__label = pgaceSecurityLabelCheckValid(label);
-	if (label != __label)
-		elog(NOTICE, "PGACE: '%s' is not a valid security label,"
-					 " '%s' is applied instead.", label, __label);
-	PG_RETURN_CSTRING(pgaceSecurityLabelOut(__label));
-}
-
-/* security_label_raw_in -- security_label input function in raw format */
-Datum
-security_label_raw_in(PG_FUNCTION_ARGS)
-{
-	char *label = PG_GETARG_CSTRING(0);
-	char *__label;
-
-	__label = pgaceSecurityLabelCheckValid(label);
-	if (label != __label)
-		elog(ERROR, "PGACE: '%s' is not a valid security label", label);
-
-	PG_RETURN_OID(security_label_to_sid(label));
-}
-
-/* security_label_raw_out -- security_label output function in raw format */
-Datum
-security_label_raw_out(PG_FUNCTION_ARGS)
-{
-	Oid sid = PG_GETARG_OID(0);
-	char *label = sid_to_security_label(sid);
-	char *__label = pgaceSecurityLabelCheckValid(label);
-
-	if (label != __label)
-		elog(NOTICE, "PGACE: '%s' is not a valid security label,"
-					 " '%s' is applied instead.", label, __label);
-	PG_RETURN_CSTRING(__label);
-}
-
-/* text_to_security_label -- security_label cast function */
-Datum
-text_to_security_label(PG_FUNCTION_ARGS)
-{
-	text *t = PG_GETARG_TEXT_P(0);
-	Datum seclabel;
-
-	seclabel = DirectFunctionCall1(textout,
-								   PointerGetDatum(t));
-	return DirectFunctionCall1(security_label_in, seclabel);
-}
-
-/* security_label_to_text -- security_label cast function */
-Datum
-security_label_to_text(PG_FUNCTION_ARGS)
-{
-	Oid sid = PG_GETARG_OID(0);
-	Datum seclabel;
-
-	seclabel = DirectFunctionCall1(security_label_out,
-								   ObjectIdGetDatum(sid));
-	return DirectFunctionCall1(textin, seclabel);
-}
-
-/*
- * operators for security_label
- */
-Datum
-security_label_eq(PG_FUNCTION_ARGS)
-{
-	Oid l = PG_GETARG_OID(0);
-	Oid r = PG_GETARG_OID(1);
-
-	PG_RETURN_BOOL(l == r);
-}
-
-Datum
-security_label_neq(PG_FUNCTION_ARGS)
-{
-	Oid l = PG_GETARG_OID(0);
-	Oid r = PG_GETARG_OID(1);
-
-	PG_RETURN_BOOL(l != r);
-}
-
-Datum
-security_label_lt(PG_FUNCTION_ARGS)
-{
-	Datum ltxt = DirectFunctionCall1(security_label_raw_out,
-									 ObjectIdGetDatum(PG_GETARG_OID(0)));
-	Datum rtxt = DirectFunctionCall1(security_label_raw_out,
-									 ObjectIdGetDatum(PG_GETARG_OID(1)));
-	PG_RETURN_BOOL(strcmp(DatumGetCString(ltxt), DatumGetCString(rtxt)) < 0);
-}
-
-Datum
-security_label_gt(PG_FUNCTION_ARGS)
-{
-	Datum ltxt = DirectFunctionCall1(security_label_raw_out,
-									 ObjectIdGetDatum(PG_GETARG_OID(0)));
-	Datum rtxt = DirectFunctionCall1(security_label_raw_out,
-									 ObjectIdGetDatum(PG_GETARG_OID(1)));
-	PG_RETURN_BOOL(strcmp(DatumGetCString(ltxt), DatumGetCString(rtxt)) > 0);
-}
-
-Datum
-security_label_le(PG_FUNCTION_ARGS)
-{
-	Datum ltxt = DirectFunctionCall1(security_label_raw_out,
-									 ObjectIdGetDatum(PG_GETARG_OID(0)));
-	Datum rtxt = DirectFunctionCall1(security_label_raw_out,
-									 ObjectIdGetDatum(PG_GETARG_OID(1)));
-	PG_RETURN_BOOL(strcmp(DatumGetCString(ltxt), DatumGetCString(rtxt)) <= 0);
-}
-
-Datum
-security_label_ge(PG_FUNCTION_ARGS)
-{
-	Datum ltxt = DirectFunctionCall1(security_label_raw_out,
-									 ObjectIdGetDatum(PG_GETARG_OID(0)));
-	Datum rtxt = DirectFunctionCall1(security_label_raw_out,
-									 ObjectIdGetDatum(PG_GETARG_OID(1)));
-	PG_RETURN_BOOL(strcmp(DatumGetCString(ltxt), DatumGetCString(rtxt)) >= 0);
-}
-
-Datum
-security_label_cmp(PG_FUNCTION_ARGS)
-{
-	Datum ltxt = DirectFunctionCall1(security_label_raw_out,
-									 ObjectIdGetDatum(PG_GETARG_OID(0)));
-	Datum rtxt = DirectFunctionCall1(security_label_raw_out,
-									 ObjectIdGetDatum(PG_GETARG_OID(1)));
-	PG_RETURN_INT32(strcmp(DatumGetCString(ltxt), DatumGetCString(rtxt)));
-}
-
-Datum
-security_label_hash(PG_FUNCTION_ARGS)
-{
-	Datum txt = DirectFunctionCall1(security_label_raw_out,
-									ObjectIdGetDatum(PG_GETARG_OID(0)));
-
-	return hash_any(DatumGetCString(txt), strlen(DatumGetCString(txt)));
+	return label;
 }
 
 /*****************************************************************************
