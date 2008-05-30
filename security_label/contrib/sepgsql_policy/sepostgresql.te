@@ -1,0 +1,321 @@
+policy_module(sepostgresql, 3.05)
+
+gen_require(`
+	class db_database all_db_database_perms;
+	class db_table all_db_table_perms;
+	class db_procedure all_db_procedure_perms;
+	class db_column all_db_column_perms;
+	class db_tuple all_db_tuple_perms;
+	class db_blob all_db_blob_perms;
+
+	attribute home_type;
+	type postgresql_t, unlabeled_t;
+
+	role system_r;
+')
+
+#################################
+#
+# SE-PostgreSQL Declarations
+#
+
+## <desc>
+## <p>
+## Allow to generate auditallow logs
+## </p>
+## </desc>
+gen_tunable(sepgsql_enable_auditallow, false)
+
+## <desc>
+## <p>
+## Allow to generate auditdeny logs
+## </p>
+## </desc>
+gen_tunable(sepgsql_enable_auditdeny,  true)
+
+## <desc>
+## <p>
+## Allow to generate audittuple logs
+## </p>
+## </desc>
+gen_tunable(sepgsql_enable_audittuple,  false)
+
+## <desc>
+## <p>
+## Allow unprivileged users to execute DDL statement
+## </p>
+## </desc>
+gen_tunable(sepgsql_enable_users_ddl,  true)
+
+## <desc>
+## <p>
+## Allow widespread permissions for regression test
+## Don't set TRUE on operation phase
+## </p>
+## </desc>
+gen_tunable(sepgsql_regression_test_mode, false)
+
+# database clients attribute
+attribute sepgsql_client_type;
+attribute sepgsql_unconfined_type;
+
+# database objects attribute
+attribute sepgsql_database_type;
+attribute sepgsql_table_type;
+attribute sepgsql_sysobj_table_type;
+attribute sepgsql_procedure_type;
+attribute sepgsql_blob_type;
+attribute sepgsql_module_type;
+
+# database object types
+type sepgsql_blob_t;
+postgresql_blob_object(sepgsql_blob_t)
+
+type sepgsql_db_t;
+postgresql_database_object(sepgsql_db_t)
+
+type sepgsql_fixed_table_t;
+postgresql_table_object(sepgsql_fixed_table_t)
+
+type sepgsql_proc_t;
+postgresql_procedure_object(sepgsql_proc_t)
+
+type sepgsql_ro_blob_t;
+postgresql_blob_object(sepgsql_ro_blob_t)
+
+type sepgsql_ro_table_t;
+postgresql_table_object(sepgsql_ro_table_t)
+
+type sepgsql_secret_blob_t;
+postgresql_blob_object(sepgsql_secret_blob_t)
+
+type sepgsql_secret_table_t;
+postgresql_table_object(sepgsql_secret_table_t)
+
+type sepgsql_sysobj_t;
+postgresql_system_table_object(sepgsql_sysobj_t)
+
+type sepgsql_table_t;
+postgresql_table_object(sepgsql_table_t)
+
+type sepgsql_trusted_proc_t;
+postgresql_procedure_object(sepgsql_trusted_proc_t)
+
+# Trusted Procedure Domain
+type sepgsql_trusted_domain_t;
+domain_type(sepgsql_trusted_domain_t)
+postgresql_unconfined(sepgsql_trusted_domain_t)
+role system_r types sepgsql_trusted_domain_t;
+
+########################################
+#
+# SE-PostgreSQL Local Policy
+#
+allow postgresql_t self:netlink_selinux_socket create_socket_perms;
+selinux_get_enforce_mode(postgresql_t)
+selinux_validate_context(postgresql_t)
+selinux_compute_access_vector(postgresql_t)
+selinux_compute_create_context(postgresql_t)
+selinux_compute_relabel_context(postgresql_t)
+seutil_libselinux_linked(postgresql_t)
+
+allow postgresql_t sepgsql_database_type:db_database *;
+type_transition postgresql_t postgresql_t:db_database sepgsql_db_t;
+
+allow postgresql_t sepgsql_module_type:db_database install_module;
+allow postgresql_t sepgsql_table_type:{ db_table db_column db_tuple } *;
+allow postgresql_t sepgsql_procedure_type:db_procedure *;
+allow postgresql_t sepgsql_blob_type:db_blob *;
+
+# server specific type transitions
+type_transition postgresql_t sepgsql_database_type:db_table sepgsql_sysobj_t;
+type_transition postgresql_t sepgsql_database_type:db_procedure sepgsql_proc_t;
+type_transition postgresql_t sepgsql_database_type:db_blob sepgsql_blob_t;
+
+# Database/Loadable module
+allow sepgsql_database_type sepgsql_module_type:db_database load_module;
+
+########################################
+#
+# Rules common to all clients
+#
+
+# Client domain constraint
+allow sepgsql_client_type sepgsql_db_t:db_database { getattr access get_param set_param };
+type_transition sepgsql_client_type postgresql_t:db_database sepgsql_db_t;
+
+allow sepgsql_client_type sepgsql_fixed_table_t:db_table { getattr use select insert };
+allow sepgsql_client_type sepgsql_fixed_table_t:db_column { getattr use select insert };
+allow sepgsql_client_type sepgsql_fixed_table_t:db_tuple { use select insert };
+
+allow sepgsql_client_type sepgsql_table_t:db_table { getattr use select update insert delete };
+allow sepgsql_client_type sepgsql_table_t:db_column { getattr use select update insert };
+allow sepgsql_client_type sepgsql_table_t:db_tuple { use select update insert delete };
+
+allow sepgsql_client_type sepgsql_ro_table_t:db_table { getattr use select };
+allow sepgsql_client_type sepgsql_ro_table_t:db_column { getattr use select };
+allow sepgsql_client_type sepgsql_ro_table_t:db_tuple { use select };
+
+allow sepgsql_client_type sepgsql_secret_table_t:db_table getattr;
+allow sepgsql_client_type sepgsql_secret_table_t:db_column getattr;
+
+allow sepgsql_client_type sepgsql_sysobj_t:db_table { getattr use select };
+allow sepgsql_client_type sepgsql_sysobj_t:db_column { getattr use select };
+allow sepgsql_client_type sepgsql_sysobj_t:db_tuple { use select };
+
+allow sepgsql_client_type sepgsql_proc_t:db_procedure { getattr execute };
+allow sepgsql_client_type sepgsql_trusted_proc_t:db_procedure { getattr execute entrypoint };
+
+allow sepgsql_client_type sepgsql_blob_t:db_blob { create drop getattr setattr read write };
+allow sepgsql_client_type sepgsql_ro_blob_t:db_blob { getattr read };
+allow sepgsql_client_type sepgsql_secret_blob_t:db_blob getattr;
+
+tunable_policy(`sepgsql_enable_users_ddl',`
+	allow sepgsql_client_type sepgsql_table_t:db_table { create drop setattr };
+	allow sepgsql_client_type sepgsql_table_t:db_column { create drop setattr };
+	allow sepgsql_client_type sepgsql_sysobj_t:db_tuple { update insert delete };
+')
+
+########################################
+#
+# Unconfined access to this module
+#
+
+allow sepgsql_unconfined_type { self postgresql_t }:db_blob { import export };
+allow sepgsql_unconfined_type sepgsql_database_type:db_database *;
+allow sepgsql_unconfined_type sepgsql_table_type:{ db_table db_column db_tuple } *;
+allow sepgsql_unconfined_type sepgsql_blob_type:db_blob *;
+allow sepgsql_unconfined_type { sepgsql_proc_t sepgsql_trusted_proc_t }:db_procedure *;
+allow sepgsql_unconfined_type sepgsql_procedure_type:db_procedure { create drop getattr setattr relabelfrom relabelto };
+allow sepgsql_unconfined_type sepgsql_module_type:db_database install_module;
+
+type_transition sepgsql_unconfined_type sepgsql_database_type:db_blob sepgsql_blob_t;
+type_transition sepgsql_unconfined_type sepgsql_database_type:db_table sepgsql_table_t;
+type_transition sepgsql_unconfined_type postgresql_t:db_database sepgsql_db_t;
+
+type_transition sepgsql_unconfined_type sepgsql_database_type:db_procedure sepgsql_proc_t;
+
+
+########################################
+#
+# Allow permission to external domains
+#
+
+# relabelfrom for invalid security context
+allow sepgsql_unconfined_type unlabeled_t:db_database { setattr relabelfrom };
+allow sepgsql_unconfined_type unlabeled_t:db_table { setattr relabelfrom };
+allow sepgsql_unconfined_type unlabeled_t:db_procedure { setattr relabelfrom };
+allow sepgsql_unconfined_type unlabeled_t:db_column { setattr relabelfrom };
+allow sepgsql_unconfined_type unlabeled_t:db_tuple { update relabelfrom };
+allow sepgsql_unconfined_type unlabeled_t:db_blob { setattr relabelfrom };
+
+# administrative client domain
+optional_policy(`
+	gen_require(`
+		type unconfined_t;
+	')
+	postgresql_unconfined(unconfined_t)
+')
+
+optional_policy(`
+	gen_require(`
+		type sysadm_t;
+	')
+	postgresql_unconfined(sysadm_t)
+')
+
+# unprivilleged client domain
+optional_policy(`
+	gen_require(`
+		type user_t;
+		role user_r;
+	')
+	postgresql_userdom_template(user,user_t,user_r)
+')
+
+optional_policy(`
+	gen_require(`
+		type staff_t;
+		role staff_r;
+	')
+	postgresql_userdom_template(staff,staff_t,staff_r)
+')
+
+optional_policy(`
+	gen_require(`
+		type guest_t;
+		role guest_r;
+	')
+	postgresql_userdom_template(guest,guest_t,guest_r)
+')
+
+optional_policy(`
+	gen_require(`
+		type xguest_t;
+		role xguest_r;
+	')
+	postgresql_userdom_template(xguest,xguest_t,xguest_r)
+')
+
+optional_policy(`
+	gen_require(`
+		type httpd_t;
+	')
+	postgresql_unpriv_client(httpd_t)
+')
+
+optional_policy(`
+	gen_require(`
+		type httpd_sys_script_t;
+	')
+	postgresql_unpriv_client(httpd_sys_script_t)
+')
+
+# SE-PostgreSQL loadable modules
+optional_policy(`
+	gen_require(`
+		type lib_t, textrel_shlib_t;
+	')
+	postgresql_loadable_module(lib_t)
+	postgresql_loadable_module(textrel_shlib_t)
+')
+
+########################################
+#
+# SE-PostgreSQL audit switch for debugging
+#
+tunable_policy(`sepgsql_enable_auditallow',`
+	auditallow sepgsql_client_type sepgsql_database_type  : db_database *;
+	auditallow sepgsql_client_type sepgsql_table_type     : db_table *;
+	auditallow sepgsql_client_type sepgsql_table_type     : db_column *;
+	auditallow sepgsql_client_type sepgsql_procedure_type : db_procedure *;
+	auditallow sepgsql_client_type sepgsql_blob_type      : db_blob *;
+	auditallow sepgsql_client_type postgresql_t           : db_blob { import export };
+	auditallow sepgsql_client_type sepgsql_module_type    : db_database { install_module };
+')
+tunable_policy(`sepgsql_enable_auditallow && sepgsql_enable_audittuple',`
+	auditallow sepgsql_client_type sepgsql_table_type     : db_tuple *;
+')
+tunable_policy(`! sepgsql_enable_auditdeny',`
+	dontaudit sepgsql_client_type sepgsql_database_type   : db_database *;
+	dontaudit sepgsql_client_type sepgsql_table_type      : db_table *;
+	dontaudit sepgsql_client_type sepgsql_table_type      : db_column *;
+	dontaudit sepgsql_client_type sepgsql_procedure_type  : db_procedure *;
+	dontaudit sepgsql_client_type sepgsql_blob_type       : db_blob *;
+	dontaudit sepgsql_client_type postgresql_t            : db_blob { import export };
+	dontaudit sepgsql_client_type sepgsql_module_type     : db_database { install_module };
+')
+tunable_policy(`! sepgsql_enable_auditdeny || ! sepgsql_enable_audittuple',`
+	dontaudit sepgsql_client_type sepgsql_table_type      : db_tuple *;
+')
+
+########################################
+#
+# SE-PostgreSQL regression test mode switch
+#
+tunable_policy(`sepgsql_regression_test_mode',`
+	allow sepgsql_client_type self : db_blob { import export };
+
+	allow sepgsql_client_type   home_type : db_database { install_module };
+	allow sepgsql_database_type home_type : db_database { load_module };
+')
