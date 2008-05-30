@@ -862,59 +862,24 @@ pgaceLargeObjectExport(int fd, Oid loid)
  * Security Label hooks
  ******************************************************************/
 
-/*
- * PGACE implementation can use pgaceSecurityLabelIn() hook to translate
- * a input security label from external representation into internal one.
- * If no translation is necessary, it has to return @seclabel as is.
- *
- * @seclabel : security label being input
- */
 static inline char *
-pgaceSecurityLabelIn(char *seclabel)
+pgaceValidateSecurityLabelIn(const char *seclabel)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
-		seclabel = sepgsqlSecurityLabelIn(seclabel);
+		return sepgsqlValidateSecurityLabelIn(seclabel);
 #endif
-	return seclabel;
+	return pstrdup("unlabeled");
 }
 
-/*
- * PGACE implementation can use pgaceSecurityLabelOut() hook to translate
- * a security label in internal representation into external one.
- * If no translation is necessary, it has to return @seclabel as is.
- *
- * @seclabel : security label being output
- */
 static inline char *
-pgaceSecurityLabelOut(char *seclabel)
+pgaceValidateSecurityLabelOut(const char *seclabel)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
-		seclabel = sepgsqlSecurityLabelOut(seclabel);
+		return sepgsqlValidateSecurityLabelOut(seclabel);
 #endif
-	return seclabel;
-}
-
-/*
- * pgaceSecurityLabelCheckValid() checks whether the @seclabel is valid or not.
- * In addition, it can returns an alternative security label, if possible.
- *
- * It has to return @seclabel as is, if @seclabel is a valid security label.
- * It can return an alternative label, if @seclabel is NOT a valid one and
- * there is an alternative. In any other case, it returns NULL.
- * @seclabel may be NULL. In this case, @seclabel is always invalid.
- *
- * @seclabel : security label to be checked
- */
-static inline char *
-pgaceSecurityLabelCheckValid(char *seclabel)
-{
-#ifdef HAVE_SELINUX
-	if (sepgsqlIsEnabled())
-		return sepgsqlSecurityLabelCheckValid(seclabel);
-#endif
-	return seclabel;
+	return pstrdup("unlabeled");
 }
 
 /*
@@ -938,6 +903,10 @@ pgaceSecurityLabelOfLabel(void)
 /* Security Label Management */
 extern void pgacePostBootstrapingMode(void);
 
+extern Oid pgaceSecurityLabelToSid(char *label);
+
+extern char *pgaceSidToSecurityLabel(Oid sid);
+
 /* Extended SQL statements related */
 extern List *pgaceRelationAttrList(CreateStmt *stmt);
 
@@ -948,18 +917,6 @@ extern void pgaceCreateAttributeCommon(Relation rel, HeapTuple tuple,
 extern void pgaceAlterRelationCommon(Relation rel, AlterTableCmd *cmd);
 
 /* SQL functions */
-extern Datum security_label_in(PG_FUNCTION_ARGS);
-
-extern Datum security_label_out(PG_FUNCTION_ARGS);
-
-extern Datum security_label_raw_in(PG_FUNCTION_ARGS);
-
-extern Datum security_label_raw_out(PG_FUNCTION_ARGS);
-
-extern Datum text_to_security_label(PG_FUNCTION_ARGS);
-
-extern Datum security_label_to_text(PG_FUNCTION_ARGS);
-
 extern Datum lo_get_security(PG_FUNCTION_ARGS);
 
 extern Datum lo_set_security(PG_FUNCTION_ARGS);
