@@ -899,14 +899,6 @@ DATA(insert OID = 2975 (  ">"	   PGNSP PGUID b f f 2950 2950 16 2974 2976 uuid_g
 DATA(insert OID = 2976 (  "<="	   PGNSP PGUID b f f 2950 2950 16 2977 2975 uuid_le scalarltsel scalarltjoinsel ));
 DATA(insert OID = 2977 (  ">="	   PGNSP PGUID b f f 2950 2950 16 2976 2974 uuid_ge scalargtsel scalargtjoinsel ));
 
-/* security_label operator */
-DATA(insert OID = 3412 (  "="      PGNSP PGUID b t t 3403 3403 16 3412 3413 security_label_eq eqsel eqjoinsel ));
-DATA(insert OID = 3413 (  "<>"     PGNSP PGUID b f f 3403 3403 16 3413 3412 security_label_neq neqsel neqjoinsel ));
-DATA(insert OID = 3414 (  "<"      PGNSP PGUID b f f 3403 3403 16 3415 3417 security_label_lt scalarltsel scalarltjoinsel ));
-DATA(insert OID = 3415 (  ">"      PGNSP PGUID b f f 3403 3403 16 3414 3416 security_label_gt scalargtsel scalargtjoinsel ));
-DATA(insert OID = 3416 (  "<="     PGNSP PGUID b f f 3403 3403 16 3417 3415 security_label_le scalarltsel scalarltjoinsel ));
-DATA(insert OID = 3417 (  ">="     PGNSP PGUID b f f 3403 3403 16 3416 3414 security_label_ge scalargtsel scalargtjoinsel ));
-
 /* enum operators */
 DATA(insert OID = 3516 (  "="	   PGNSP PGUID b t t 3500 3500 16 3516 3517 enum_eq eqsel eqjoinsel ));
 DATA(insert OID = 3517 (  "<>"	   PGNSP PGUID b f f 3500 3500 16 3517 3516 enum_ne neqsel neqjoinsel ));
