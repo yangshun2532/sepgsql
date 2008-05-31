@@ -13,6 +13,7 @@
 #include "storage/ipc.h"
 #include "storage/lwlock.h"
 #include "utils/memutils.h"
+#include "utils/syscache.h"
 #include <linux/netlink.h>
 #include <linux/selinux_netlink.h>
 #include <signal.h>
@@ -526,6 +527,38 @@ void sepgsqlAvcPermission(const security_context_t scon,
 	/* In the case when access denied but no audit log*/
 	if (!rc)
 		elog(ERROR, "SELinux: security policy violation.");
+}
+
+void sepgsqlAvcClientHasPerm(Oid tsid,
+							 security_class_t tclass,
+							 access_vector_t perms,
+							 const char *objname)
+{
+	security_context_t tcontext;
+	HeapTuple tuple;
+	Datum labelTxt;
+	bool isnull;
+
+	tuple = SearchSysCache(SECURITYOID,
+						   ObjectIdGetDatum(tsid),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "SELinux: cache lookup failed security id: %u", tsid);
+
+	labelTxt = SysCacheGetAttr(SECURITYOID,
+							   tuple,
+							   Anum_pg_security_seclabel,
+							   &isnull);
+	Assert(isnull == true);
+
+	tcontext = TextDatumGetCString(labelTxt);
+
+	sepgsqlAvcPermission(sepgsqlGetClientContext(),
+						 tcontext, tclass, perms, objname);
+
+	pfree(tcontext);
+
+	ReleaseSysCache(tuple);
 }
 
 void sepgsqlAvcInit(void)
