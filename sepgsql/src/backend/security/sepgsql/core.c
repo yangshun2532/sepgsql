@@ -68,6 +68,15 @@ const security_context_t sepgsqlGetDefaultDatabaseContext(void)
 	return defaultDatabaseContext;
 }
 
+const security_context_t sepgsqlSwitchClientContext(security_context_t new_context)
+{
+	security_context_t original_context = clientContext;
+
+	clientContext = new_context;
+
+	return original_context;
+}
+
 static void initContexts(void)
 {
 	/* server context */

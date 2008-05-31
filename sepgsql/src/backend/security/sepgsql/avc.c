@@ -366,8 +366,7 @@ static void sepgsql_avc_compute(const security_context_t scon,
 
 static struct avc_datum *sepgsql_avc_lookup(const security_context_t scon,
 											const security_context_t tcon,
-											security_class_t tclass,
-											access_vector_t perms)
+											security_class_t tclass)
 {
 	List *slot;
 	ListCell *l;
@@ -479,7 +478,7 @@ bool sepgsqlAvcPermissionNoAudit(const security_context_t scon,
 	struct avc_datum *cache;
 
 retry:
-	cache = sepgsql_avc_lookup(scon, tcon, tclass, perms);
+	cache = sepgsql_avc_lookup(scon, tcon, tclass);
 
 	Assert(!!cache);
 
@@ -529,36 +528,23 @@ void sepgsqlAvcPermission(const security_context_t scon,
 		elog(ERROR, "SELinux: security policy violation.");
 }
 
-void sepgsqlAvcClientHasPerm(Oid tsid,
-							 security_class_t tclass,
-							 access_vector_t perms,
-							 const char *objname)
+char *sepgsqlAvcCreateCon(const security_context_t scon,
+						  const security_context_t tcon,
+						  security_class_t tclass)
 {
-	security_context_t tcontext;
-	HeapTuple tuple;
-	Datum labelTxt;
-	bool isnull;
+	struct avc_datum *cache;
 
-	tuple = SearchSysCache(SECURITYOID,
-						   ObjectIdGetDatum(tsid),
-						   0, 0, 0);
-	if (!HeapTupleIsValid(tuple))
-		elog(ERROR, "SELinux: cache lookup failed security id: %u", tsid);
+retry:
+	cache = sepgsql_avc_lookup(scon, tcon, tclass);
+	Assert(cache != NULL);
 
-	labelTxt = SysCacheGetAttr(SECURITYOID,
-							   tuple,
-							   Anum_pg_security_seclabel,
-							   &isnull);
-	Assert(isnull == true);
+	if (avc_version != selinux_state->version) {
+		/* security policy reloaded */
+		sepgsql_avc_reset();
+		goto retry;
+	}
 
-	tcontext = TextDatumGetCString(labelTxt);
-
-	sepgsqlAvcPermission(sepgsqlGetClientContext(),
-						 tcontext, tclass, perms, objname);
-
-	pfree(tcontext);
-
-	ReleaseSysCache(tuple);
+	return pstrdup(cache->ncon);
 }
 
 void sepgsqlAvcInit(void)
