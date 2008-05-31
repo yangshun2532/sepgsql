@@ -36,8 +36,6 @@ extern Size sepgsqlShmemSize(void);
 
 extern void sepgsqlInitialize(bool is_bootstrap);
 
-extern int	sepgsqlInitializePostmaster(void);
-
 extern pid_t sepgsqlStartupWorkerProcess(void);
 
 /* SQL proxy hooks */
@@ -143,19 +141,18 @@ extern char *sepgsqlSecurityLabelOfLabel(void);
  */
 extern bool sepgsqlIsEnabled(void);
 
-extern Oid	sepgsqlGetServerContext(void);
+extern const security_context_t sepgsqlGetServerContext(void);
 
-extern Oid	sepgsqlGetClientContext(void);
+extern const security_context_t sepgsqlGetClientContext(void);
 
-extern void sepgsqlSetClientContext(Oid new_ctx);
+extern const security_context_t sepgsqlGetDatabaseContext(void);
 
-extern Oid	sepgsqlGetDatabaseContext(void);
+extern const security_context_t sepgsqlGetDefaultDatabaseContext(void);
 
-extern Oid	sepgsqlGetDefaultDatabaseContext(void);
-
-extern char *sepgsqlGetDatabaseName(void);
-
-/* userspace access vector cache related */
+/*
+ * SE-PostgreSQL userspace avc functions
+ *   src/backend/security/sepgsql/avc.c
+ */
 extern void sepgsqlAvcInit(void);
 
 extern void sepgsqlAvcAudit(const security_context_t scon,
