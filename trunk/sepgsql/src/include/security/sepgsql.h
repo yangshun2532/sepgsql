@@ -145,6 +145,8 @@ extern const security_context_t sepgsqlGetServerContext(void);
 
 extern const security_context_t sepgsqlGetClientContext(void);
 
+extern const security_context_t sepgsqlSwitchClientContext(security_context_t newcon);
+
 extern const security_context_t sepgsqlGetDatabaseContext(void);
 
 extern const security_context_t sepgsqlGetDefaultDatabaseContext(void);
@@ -163,6 +165,10 @@ extern void sepgsqlAvcAudit(const security_context_t scon,
 							const char *objname,
 							int error_level);
 
+extern char *sepgsqlAvcCreateCon(const security_context_t scon,
+								 const security_context_t tcon,
+								 security_class_t tclass);
+
 extern void sepgsqlAvcPermission(const security_context_t scon,
 								 const security_context_t tcon,
 								 security_class_t tclass,
@@ -174,13 +180,14 @@ extern bool sepgsqlAvcPermissionNoAudit(const security_context_t scon,
 										security_class_t tclass,
 										access_vector_t perms,
 										struct av_decision *avd);
+
 /*
  * SE-PostgreSQL permission evaluation related
  *	 src/backend/security/sepgsql/permission.c
  */
-extern char *sepgsqlGetTupleName(Oid relid, HeapTuple tuple, NameData *name);
+extern void sepgsqlGetTupleName(Oid relid, HeapTuple tuple, NameData *name);
 
-extern Oid	sepgsqlComputeImplicitContext(Relation rel, HeapTuple tuple);
+extern char *sepgsqlGetDefaultContext(Relation rel, HeapTuple tuple);
 
 extern bool sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple,
 								   HeapTuple oldtup, uint32 perms, bool abort);
