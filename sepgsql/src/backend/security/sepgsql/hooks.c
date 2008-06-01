@@ -316,39 +316,41 @@ void sepgsqlLargeObjectGetSecurity(Relation rel, HeapTuple tuple) {
 
 void sepgsqlLargeObjectSetSecurity(Relation rel, HeapTuple oldtup, HeapTuple newtup)
 {
-	NameData name;
+	char nmbuf[256];
+	bool has_name;
 
 	/* check db_blob:{setattr relabelfrom} */
-	sepgsqlGetTupleName(LargeObjectRelationId, oldtup, &name);
+	has_name = sepgsqlGetTupleName(LargeObjectRelationId, oldtup, nmbuf, sizeof(nmbuf));
 	sepgsqlAvcPermission(sepgsqlGetClientContext(),
 						 pgaceSidToSecurityLabel(HeapTupleGetSecurity(oldtup)),
 						 SECCLASS_DB_BLOB,
 						 DB_BLOB__SETATTR | DB_BLOB__RELABELFROM,
-						 NameStr(name));
+						 has_name ? nmbuf : NULL);
 
 	/* check db_blob:{relabelto} */
-	sepgsqlGetTupleName(LargeObjectRelationId, newtup, &name);
+	has_name = sepgsqlGetTupleName(LargeObjectRelationId, newtup, nmbuf, sizeof(nmbuf));
 	sepgsqlAvcPermission(sepgsqlGetClientContext(),
 						 pgaceSidToSecurityLabel(HeapTupleGetSecurity(newtup)),
 						 SECCLASS_DB_BLOB,
 						 DB_BLOB__RELABELTO,
-						 NameStr(name));
+						 has_name ? nmbuf : NULL);
 }
 
 void sepgsqlLargeObjectCreate(Relation rel, HeapTuple tuple)
 {
 	security_context_t context;
-	NameData name;
 	Oid security_id;
+	char nmbuf[256];
+	bool has_name;
 
 	context = sepgsqlGetDefaultContext(rel, tuple);
 
-	sepgsqlGetTupleName(LargeObjectRelationId, tuple, &name);
+	has_name = sepgsqlGetTupleName(LargeObjectRelationId, tuple, nmbuf, sizeof(nmbuf));
 	sepgsqlAvcPermission(sepgsqlGetClientContext(),
 						 context,
 						 SECCLASS_DB_BLOB,
 						 DB_BLOB__CREATE,
-						 NameStr(name));
+						 has_name ? nmbuf : NULL);
 
 	security_id = pgaceSecurityLabelToSid(context);
 	HeapTupleSetSecurity(tuple, security_id);
@@ -359,16 +361,17 @@ void sepgsqlLargeObjectCreate(Relation rel, HeapTuple tuple)
 void sepgsqlLargeObjectDrop(Relation rel, HeapTuple tuple)
 {
 	security_context_t context;
-	NameData name;
+	char nmbuf[256];
+	bool has_name;
 
 	context = pgaceSidToSecurityLabel(HeapTupleGetSecurity(tuple));
 
-	sepgsqlGetTupleName(LargeObjectRelationId, tuple, &name);
+	has_name = sepgsqlGetTupleName(LargeObjectRelationId, tuple, nmbuf, sizeof(nmbuf));
 	sepgsqlAvcPermission(sepgsqlGetClientContext(),
 						 context,
 						 SECCLASS_DB_BLOB,
 						 DB_BLOB__DROP,
-						 NameStr(name));
+						 has_name ? nmbuf : NULL);
 	pfree(context);
 }
 

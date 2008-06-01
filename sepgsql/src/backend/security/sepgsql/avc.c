@@ -418,13 +418,13 @@ out:
 	return cache;
 }
 
-static bool sepgsql_avc_audit(char *buffer, uint32 buflen,
-							  const security_context_t scon,
-							  const security_context_t tcon,
-							  security_class_t tclass,
-							  access_vector_t perms,
-							  struct av_decision *avd,
-							  const char *objname)
+static bool avc_audit_common(char *buffer, uint32 buflen,
+							 const security_context_t scon,
+							 const security_context_t tcon,
+							 security_class_t tclass,
+							 access_vector_t perms,
+							 struct av_decision *avd,
+							 const char *objname)
 {
 	access_vector_t denied, audited, mask;
 	uint32 ofs = 0;
@@ -452,27 +452,11 @@ static bool sepgsql_avc_audit(char *buffer, uint32 buflen,
 	return true;
 }
 
-void sepgsqlAvcAudit(const security_context_t scon,
-					 const security_context_t tcon,
-					 security_class_t tclass,
-					 access_vector_t perms,
-					 struct av_decision *avd,
-					 const char *objname, int error_level)
-{
-	char audit_buffer[4096];
-	bool rc;
-
-	rc = sepgsql_avc_audit(audit_buffer, sizeof(audit_buffer),
-						   scon, tcon, tclass, perms, avd, objname);
-	if (rc)
-		elog(error_level, "SELinux: %s", audit_buffer);
-}
-
-bool sepgsqlAvcPermissionNoAudit(const security_context_t scon,
-								 const security_context_t tcon,
-								 security_class_t tclass,
-								 access_vector_t perms,
-								 struct av_decision *avd)
+static bool avc_permission_common(const security_context_t scon,
+								  const security_context_t tcon,
+								  security_class_t tclass,
+								  access_vector_t perms,
+								  struct av_decision *avd)
 {
 	access_vector_t denied;
 	struct avc_datum *cache;
@@ -515,22 +499,43 @@ void sepgsqlAvcPermission(const security_context_t scon,
 						  access_vector_t perms,
 						  const char *objname)
 {
-	struct av_decision local_avd;
+	struct av_decision avd;
+	char audit_buffer[2048];
 	bool rc;
 
-	rc = sepgsqlAvcPermissionNoAudit(scon, tcon, tclass, perms, &local_avd);
+	rc = avc_permission_common(scon, tcon, tclass, perms, &avd);
 
-	sepgsqlAvcAudit(scon, tcon, tclass, perms, &local_avd, objname,
-					rc ? NOTICE : ERROR);
-
-	/* In the case when access denied but no audit log*/
-	if (!rc)
-		elog(ERROR, "SELinux: security policy violation.");
+	if (avc_audit_common(audit_buffer, sizeof(audit_buffer),
+						 scon, tcon, tclass, perms, &avd, objname))
+	{
+		elog(rc ? NOTICE : ERROR, "SELinux: %s", audit_buffer);
+	}
+	else if (!rc)
+		elog(ERROR, "SELinux: security policy violation");
 }
 
-char *sepgsqlAvcCreateCon(const security_context_t scon,
-						  const security_context_t tcon,
-						  security_class_t tclass)
+bool sepgsqlAvcPermissionNoAbort(const security_context_t scon,
+								 const security_context_t tcon,
+								 security_class_t tclass,
+								 access_vector_t perms,
+								 const char *objname)
+{
+	struct av_decision avd;
+	char audit_buffer[2048];
+	bool rc;
+
+	rc = avc_permission_common(scon, tcon, tclass, perms, &avd);
+
+	if (avc_audit_common(audit_buffer, sizeof(audit_buffer),
+						 scon, tcon, tclass, perms, &avd, objname))
+		elog(NOTICE, "SELinux: %s", audit_buffer);
+
+	return rc;
+}
+
+security_context_t sepgsqlAvcCreateCon(const security_context_t scon,
+									   const security_context_t tcon,
+									   security_class_t tclass)
 {
 	struct avc_datum *cache;
 
