@@ -432,7 +432,7 @@ bool sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, HeapTuple oldtup, uin
 		bool has_name;
 
 		has_name = sepgsqlGetTupleName(RelationGetRelid(rel), tuple, nmbuf, sizeof(nmbuf));
-		tcontext = pgaceSidToSecurityLabel(HeapTupleGetSecurity(tuple));
+		tcontext = pgaceLookupSecurityLabel(HeapTupleGetSecurity(tuple));
 
 		if (abort) {
 			sepgsqlAvcPermission(sepgsqlGetClientContext(),
@@ -469,7 +469,7 @@ security_context_t sepgsqlGetDefaultContext(Relation rel, HeapTuple tuple)
 			break;
 		}
 		tsid = lookupRelationSecurityId(RelationRelationId, NULL);
-		tcontext = pgaceSidToSecurityLabel(tsid);
+		tcontext = pgaceLookupSecurityLabel(tsid);
 		tclass = SECCLASS_DB_TUPLE;
 		break;
 	}
@@ -490,7 +490,7 @@ security_context_t sepgsqlGetDefaultContext(Relation rel, HeapTuple tuple)
 			break;
 		}
 		tsid = lookupRelationSecurityId(attForm->attrelid, &relkind);
-		tcontext = pgaceSidToSecurityLabel(tsid);
+		tcontext = pgaceLookupSecurityLabel(tsid);
 		tclass = (relkind == RELKIND_RELATION
 				  ? SECCLASS_DB_COLUMN : SECCLASS_DB_TUPLE);
 		break;
@@ -520,7 +520,7 @@ security_context_t sepgsqlGetDefaultContext(Relation rel, HeapTuple tuple)
 			tsid = HeapTupleGetSecurity(lotup);
 			systable_endscan(sd);
 
-			return pgaceSidToSecurityLabel(tsid);
+			return pgaceLookupSecurityLabel(tsid);
 		}
 		systable_endscan(sd);
 
@@ -540,7 +540,7 @@ security_context_t sepgsqlGetDefaultContext(Relation rel, HeapTuple tuple)
 		}
 	default:
 		tsid = lookupRelationSecurityId(RelationGetRelid(rel), NULL);
-		tcontext = pgaceSidToSecurityLabel(tsid);
+		tcontext = pgaceLookupSecurityLabel(tsid);
 		tclass = SECCLASS_DB_TUPLE;
 		break;
 	}

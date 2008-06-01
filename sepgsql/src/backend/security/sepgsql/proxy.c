@@ -681,7 +681,7 @@ static void verifyPgClassPerms(Oid relid, bool inh, uint32 perms)
 		char nmbuf[256];
 		bool has_name;
 
-		tcontext = pgaceSidToSecurityLabel(HeapTupleGetSecurity(tuple));
+		tcontext = pgaceLookupSecurityLabel(HeapTupleGetSecurity(tuple));
 		has_name = sepgsqlGetTupleName(RelationRelationId, tuple, nmbuf, sizeof(nmbuf));
 
 		sepgsqlAvcPermission(sepgsqlGetClientContext(),
@@ -734,7 +734,7 @@ static void verifyPgAttributePerms(Oid relid, bool inh, AttrNumber attno, uint32
 			if (attForm->attisdropped || attForm->attnum < 1)
 				continue;
 
-			tcontext = pgaceSidToSecurityLabel(HeapTupleGetSecurity(tuple));
+			tcontext = pgaceLookupSecurityLabel(HeapTupleGetSecurity(tuple));
 			has_name = sepgsqlGetTupleName(AttributeRelationId, tuple, nmbuf, sizeof(nmbuf));
 			sepgsqlAvcPermission(sepgsqlGetClientContext(),
 								 tcontext,
@@ -756,7 +756,7 @@ static void verifyPgAttributePerms(Oid relid, bool inh, AttrNumber attno, uint32
 	if (!HeapTupleIsValid(tuple))
 		elog(ERROR, "SELinux: cache lookup failed for attribute %d of relation %u", attno, relid);
 
-	tcontext = pgaceSidToSecurityLabel(HeapTupleGetSecurity(tuple));
+	tcontext = pgaceLookupSecurityLabel(HeapTupleGetSecurity(tuple));
 	has_name = sepgsqlGetTupleName(AttributeRelationId, tuple, nmbuf, sizeof(nmbuf));
 	sepgsqlAvcPermission(sepgsqlGetClientContext(),
 						 tcontext,
@@ -779,7 +779,7 @@ static void verifyPgProcPerms(Oid funcid, uint32 perms)
 						   0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
 		elog(ERROR, "SELinux: cache lookup failed for procedure %d", funcid);
-	tcontext = pgaceSidToSecurityLabel(HeapTupleGetSecurity(tuple));
+	tcontext = pgaceLookupSecurityLabel(HeapTupleGetSecurity(tuple));
 	has_name = sepgsqlGetTupleName(ProcedureRelationId, tuple, nmbuf, sizeof(nmbuf));
 
 	/* check domain transition */
@@ -1022,7 +1022,7 @@ static void checkTruncateStmt(TruncateStmt *stmt)
 							   ObjectIdGetDatum(relid), 0, 0, 0);
 		if (!HeapTupleIsValid(tuple))
 			elog(ERROR, "SELinux: cache lookup failed for relation %u", relid);
-		tcontext = pgaceSidToSecurityLabel(HeapTupleGetSecurity(tuple));
+		tcontext = pgaceLookupSecurityLabel(HeapTupleGetSecurity(tuple));
 		has_name = sepgsqlGetTupleName(RelationRelationId, tuple, nmbuf, sizeof(nmbuf));
 		sepgsqlAvcPermission(sepgsqlGetClientContext(),
 							 tcontext,
@@ -1038,7 +1038,7 @@ static void checkTruncateStmt(TruncateStmt *stmt)
 
 		while ((tuple = heap_getnext(scan, ForwardScanDirection)) != NULL)
 		{
-			tcontext = pgaceSidToSecurityLabel(HeapTupleGetSecurity(tuple));
+			tcontext = pgaceLookupSecurityLabel(HeapTupleGetSecurity(tuple));
 			has_name = sepgsqlGetTupleName(RelationRelationId, tuple, nmbuf, sizeof(nmbuf));
 			sepgsqlAvcPermission(sepgsqlGetClientContext(),
 								 tcontext,
