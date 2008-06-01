@@ -112,7 +112,7 @@ void sepgsqlGetDatabaseParam(const char *name)
 
 	dbForm = (Form_pg_database) GETSTRUCT(tuple);
 
-	dbcon = pgaceSidToSecurityLabel(HeapTupleGetSecurity(tuple));
+	dbcon = pgaceLookupSecurityLabel(HeapTupleGetSecurity(tuple));
 
 	sepgsqlAvcPermission(sepgsqlGetClientContext(),
 						 dbcon,
@@ -136,7 +136,7 @@ void sepgsqlSetDatabaseParam(const char *name, char *argstring)
 
 	dbForm = (Form_pg_database) GETSTRUCT(tuple);
 
-	dbcon = pgaceSidToSecurityLabel(HeapTupleGetSecurity(tuple));
+	dbcon = pgaceLookupSecurityLabel(HeapTupleGetSecurity(tuple));
 
 	sepgsqlAvcPermission(sepgsqlGetClientContext(),
 						 dbcon,
@@ -162,7 +162,7 @@ void sepgsqlLockTable(Oid relid)
 		elog(ERROR, "SELinux: cache lookup failed for relation %u", relid);
 	clsForm = (Form_pg_class) GETSTRUCT(tuple);
 
-	tblcon = pgaceSidToSecurityLabel(HeapTupleGetSecurity(tuple));
+	tblcon = pgaceLookupSecurityLabel(HeapTupleGetSecurity(tuple));
 
 	if (clsForm->relkind == RELKIND_RELATION)
 	{
@@ -218,7 +218,7 @@ void sepgsqlCallFunction(FmgrInfo *finfo, bool with_perm_check)
 	proForm = (Form_pg_proc) GETSTRUCT(tuple);
 
 	/* check trusted procedure */
-	procon = pgaceSidToSecurityLabel(HeapTupleGetSecurity(tuple));
+	procon = pgaceLookupSecurityLabel(HeapTupleGetSecurity(tuple));
 
 	newcon = sepgsqlAvcCreateCon(sepgsqlGetClientContext(),
 								 procon,
@@ -322,7 +322,7 @@ void sepgsqlLargeObjectSetSecurity(Relation rel, HeapTuple oldtup, HeapTuple new
 	/* check db_blob:{setattr relabelfrom} */
 	has_name = sepgsqlGetTupleName(LargeObjectRelationId, oldtup, nmbuf, sizeof(nmbuf));
 	sepgsqlAvcPermission(sepgsqlGetClientContext(),
-						 pgaceSidToSecurityLabel(HeapTupleGetSecurity(oldtup)),
+						 pgaceLookupSecurityLabel(HeapTupleGetSecurity(oldtup)),
 						 SECCLASS_DB_BLOB,
 						 DB_BLOB__SETATTR | DB_BLOB__RELABELFROM,
 						 has_name ? nmbuf : NULL);
@@ -330,7 +330,7 @@ void sepgsqlLargeObjectSetSecurity(Relation rel, HeapTuple oldtup, HeapTuple new
 	/* check db_blob:{relabelto} */
 	has_name = sepgsqlGetTupleName(LargeObjectRelationId, newtup, nmbuf, sizeof(nmbuf));
 	sepgsqlAvcPermission(sepgsqlGetClientContext(),
-						 pgaceSidToSecurityLabel(HeapTupleGetSecurity(newtup)),
+						 pgaceLookupSecurityLabel(HeapTupleGetSecurity(newtup)),
 						 SECCLASS_DB_BLOB,
 						 DB_BLOB__RELABELTO,
 						 has_name ? nmbuf : NULL);
@@ -364,7 +364,7 @@ void sepgsqlLargeObjectDrop(Relation rel, HeapTuple tuple)
 	char nmbuf[256];
 	bool has_name;
 
-	context = pgaceSidToSecurityLabel(HeapTupleGetSecurity(tuple));
+	context = pgaceLookupSecurityLabel(HeapTupleGetSecurity(tuple));
 
 	has_name = sepgsqlGetTupleName(LargeObjectRelationId, tuple, nmbuf, sizeof(nmbuf));
 	sepgsqlAvcPermission(sepgsqlGetClientContext(),
@@ -578,7 +578,7 @@ char *sepgsqlSecurityLabelOfLabel(void)
 	if (!HeapTupleIsValid(tuple))
 		elog(ERROR, "SELinux: cache lookup failed for relation %u", SecurityRelationId);
 
-	table_context = pgaceSidToSecurityLabel(HeapTupleGetSecurity(tuple));
+	table_context = pgaceLookupSecurityLabel(HeapTupleGetSecurity(tuple));
 
 	tuple_context = sepgsqlAvcCreateCon(sepgsqlGetServerContext(),
 										table_context,

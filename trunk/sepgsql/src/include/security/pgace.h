@@ -905,7 +905,9 @@ extern void pgacePostBootstrapingMode(void);
 
 extern Oid pgaceSecurityLabelToSid(char *label);
 
-extern char *pgaceSidToSecurityLabel(Oid sid);
+extern char *pgaceSidToSecurityLabel(Oid security_id);
+
+extern char *pgaceLookupSecurityLabel(Oid security_id);
 
 /* Extended SQL statements related */
 extern List *pgaceRelationAttrList(CreateStmt *stmt);

@@ -302,6 +302,8 @@ static void sepgsql_avc_reclaim(void)
 
 	while (avc_datum_count > AVC_HASH_NUM_NODES)
 	{
+		Assert(false);
+
 		avc_lru_hint = (avc_lru_hint + 1) % AVC_HASH_NUM_SLOTS;
 		slot = avc_slot[avc_lru_hint];
 		foreach (l, slot)
@@ -353,6 +355,7 @@ static void sepgsql_avc_compute(const security_context_t scon,
 		cache->scon = pstrdup(scon);
 		cache->tcon = pstrdup(tcon);
 		cache->ncon = pstrdup(ncon);
+		cache->tclass = tclass;
 	}
 	PG_CATCH();
 	{
@@ -371,7 +374,7 @@ static struct avc_datum *sepgsql_avc_lookup(const security_context_t scon,
 	List *slot;
 	ListCell *l;
 	struct avc_datum *cache;
-	uint32 hash_key;
+	uint32 hash_key, index;
 	MemoryContext oldctx;
 	bool first = true;
 
@@ -380,9 +383,9 @@ static struct avc_datum *sepgsql_avc_lookup(const security_context_t scon,
 	hash_key = (DatumGetUInt32(hash_any((unsigned char *)scon, strlen(scon)))
 				^ DatumGetUInt32(hash_any((unsigned char *)tcon, strlen(tcon)))
 				^ (tclass << 2));
+	index = hash_key % AVC_HASH_NUM_SLOTS;
 
-	slot = avc_slot[hash_key % AVC_HASH_NUM_SLOTS];
-	foreach (l, slot)
+	foreach (l, avc_slot[index])
 	{
 		cache = lfirst(l);
 
@@ -392,8 +395,8 @@ static struct avc_datum *sepgsql_avc_lookup(const security_context_t scon,
 			&& !strcmp(cache->tcon, tcon)) {
 			/* move to the first of this slot */
 			if (!first) {
-				list_delete_ptr(slot, cache);
-				slot = lcons(cache, slot);
+				list_delete_ptr(avc_slot[index], cache);
+				avc_slot[index] = lcons(avc_slot[index], cache);
 			}
 			cache->hot_cache = true;
 			goto out;
@@ -409,7 +412,7 @@ static struct avc_datum *sepgsql_avc_lookup(const security_context_t scon,
 
 	/* insert it */
 	cache->hash_key = hash_key;
-	slot = lcons(cache, slot);
+	avc_slot[index] = lcons(cache, slot);
 	avc_datum_count++;
 
 out:

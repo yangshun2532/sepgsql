@@ -112,30 +112,16 @@ static void initContexts(void)
 	else
 	{
 		HeapTuple tuple;
-		Oid security_id;
-		Datum labelTxt;
-		bool isnull;
+		security_context_t dbcontext;
 
 		tuple = SearchSysCache(DATABASEOID,
 							   ObjectIdGetDatum(MyDatabaseId),
 							   0, 0, 0);
 		if (!HeapTupleIsValid(tuple))
 			elog(ERROR, "SELinux: cache lookup failed for database %u", MyDatabaseId);
-		security_id = HeapTupleGetSecurity(tuple);
+		dbcontext = pgaceLookupSecurityLabel(HeapTupleGetSecurity(tuple));
+		databaseContext = strdup(dbcontext);
 		ReleaseSysCache(tuple);
-
-		tuple = SearchSysCache(SECURITYOID,
-							   ObjectIdGetDatum(security_id),
-							   0, 0, 0);
-		if (!HeapTupleIsValid(tuple))
-			elog(ERROR, "SELinux: cache lookup failed for security id %u", security_id);
-		labelTxt = SysCacheGetAttr(SECURITYOID,
-								   tuple,
-								   Anum_pg_security_seclabel,
-								   &isnull);
-		Assert(isnull != false);
-
-		databaseContext = strdup(TextDatumGetCString(labelTxt));
 		if (!databaseContext)
 			elog(ERROR, "SELinux: memory allocation error");
 	}
