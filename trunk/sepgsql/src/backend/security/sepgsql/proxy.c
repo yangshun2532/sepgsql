@@ -662,9 +662,7 @@ void sepgsqlEvaluateParams(List *params)
  * *******************************************************************************/
 static void verifyPgClassPerms(Oid relid, bool inh, uint32 perms)
 {
-	Form_pg_class pgclass;
 	HeapTuple tuple;
-	NameData name;
 
 	/* prevent to modify pg_security directly */
 	if (relid == SecurityRelationId
@@ -677,36 +675,38 @@ static void verifyPgClassPerms(Oid relid, bool inh, uint32 perms)
 						   0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
 		elog(ERROR, "SELinux: relation (oid=%u) does not exist", relid);
-	pgclass = (Form_pg_class) GETSTRUCT(tuple);
+	if (((Form_pg_class) GETSTRUCT(tuple))->relkind == RELKIND_RELATION)
+	{
+		security_context_t tcontext;
+		char nmbuf[256];
+		bool has_name;
 
-	if (pgclass->relkind != RELKIND_RELATION) {
-		ReleaseSysCache(tuple);
-		return;
+		tcontext = pgaceSidToSecurityLabel(HeapTupleGetSecurity(tuple));
+		has_name = sepgsqlGetTupleName(RelationRelationId, tuple, nmbuf, sizeof(nmbuf));
+
+		sepgsqlAvcPermission(sepgsqlGetClientContext(),
+							 tcontext,
+							 SECCLASS_DB_TABLE,
+							 (access_vector_t) perms,
+							 has_name ? nmbuf : NULL);
 	}
-
-	sepgsql_avc_permission(sepgsqlGetClientContext(),
-						   HeapTupleGetSecurity(tuple),
-						   SECCLASS_DB_TABLE,
-						   perms,
-						   sepgsqlGetTupleName(RelationRelationId, tuple, &name));
 	ReleaseSysCache(tuple);
 }
 
 static void verifyPgAttributePerms(Oid relid, bool inh, AttrNumber attno, uint32 perms)
 {
 	HeapTuple tuple;
-	Form_pg_class classForm;
-	Form_pg_attribute attrForm;
-	NameData name;
+	security_context_t tcontext;
+	char nmbuf[256];
+	bool has_name;
 
 	tuple = SearchSysCache(RELOID,
 						   ObjectIdGetDatum(relid),
 						   0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
 		elog(ERROR, "SELinux: relation (oid=%u) does not exist", relid);
-	classForm = (Form_pg_class) GETSTRUCT(tuple);
-	if (classForm->relkind != RELKIND_RELATION) {
-		/* column:{ xxx } checks are applied only column within tables */
+	if (((Form_pg_class) GETSTRUCT(tuple))->relkind != RELKIND_RELATION)
+	{
 		ReleaseSysCache(tuple);
 		return;
 	}
@@ -728,21 +728,27 @@ static void verifyPgAttributePerms(Oid relid, bool inh, AttrNumber attno, uint32
 		scan = systable_beginscan(rel, AttributeRelidNumIndexId,
 								  true, SnapshotNow, 1, &skey);
 		while ((tuple = systable_getnext(scan)) != NULL) {
-			attrForm = (Form_pg_attribute) GETSTRUCT(tuple);
-			if (attrForm->attisdropped || attrForm->attnum < 1)
+			Form_pg_attribute attForm
+				= (Form_pg_attribute) GETSTRUCT(tuple);
+
+			if (attForm->attisdropped || attForm->attnum < 1)
 				continue;
-			sepgsql_avc_permission(sepgsqlGetClientContext(),
-								   HeapTupleGetSecurity(tuple),
-								   SECCLASS_DB_COLUMN,
-								   perms,
-								   sepgsqlGetTupleName(AttributeRelationId, tuple, &name));
+
+			tcontext = pgaceSidToSecurityLabel(HeapTupleGetSecurity(tuple));
+			has_name = sepgsqlGetTupleName(AttributeRelationId, tuple, nmbuf, sizeof(nmbuf));
+			sepgsqlAvcPermission(sepgsqlGetClientContext(),
+								 tcontext,
+								 SECCLASS_DB_COLUMN,
+								 perms,
+								 has_name ? nmbuf : NULL);
+			pfree(tcontext);
 		}
 		systable_endscan(scan);
 		heap_close(rel, AccessShareLock);
 
 		return;
 	}
-
+	/* check required column's permission */
 	tuple = SearchSysCache(ATTNUM,
 						   ObjectIdGetDatum(relid),
 						   Int16GetDatum(attno),
@@ -750,49 +756,55 @@ static void verifyPgAttributePerms(Oid relid, bool inh, AttrNumber attno, uint32
 	if (!HeapTupleIsValid(tuple))
 		elog(ERROR, "SELinux: cache lookup failed for attribute %d of relation %u", attno, relid);
 
-	/* check column:{required permissions} */
-	sepgsql_avc_permission(sepgsqlGetClientContext(),
-						   HeapTupleGetSecurity(tuple),
-						   SECCLASS_DB_COLUMN,
-						   perms,
-						   sepgsqlGetTupleName(AttributeRelationId, tuple, &name));
+	tcontext = pgaceSidToSecurityLabel(HeapTupleGetSecurity(tuple));
+	has_name = sepgsqlGetTupleName(AttributeRelationId, tuple, nmbuf, sizeof(nmbuf));
+	sepgsqlAvcPermission(sepgsqlGetClientContext(),
+						 tcontext,
+						 SECCLASS_DB_COLUMN,
+						 perms,
+						 has_name ? nmbuf : NULL);
+	pfree(tcontext);
 	ReleaseSysCache(tuple);
 }
 
 static void verifyPgProcPerms(Oid funcid, uint32 perms)
 {
 	HeapTuple tuple;
-	NameData name;
-	Oid newcon;
+	security_context_t tcontext, ncontext;
+	char nmbuf[256];
+	bool has_name;
 
 	tuple = SearchSysCache(PROCOID,
 						   ObjectIdGetDatum(funcid),
 						   0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
 		elog(ERROR, "SELinux: cache lookup failed for procedure %d", funcid);
+	tcontext = pgaceSidToSecurityLabel(HeapTupleGetSecurity(tuple));
+	has_name = sepgsqlGetTupleName(ProcedureRelationId, tuple, nmbuf, sizeof(nmbuf));
 
-	/* compute domain transition */
-	newcon = sepgsql_avc_createcon(sepgsqlGetClientContext(),
-								   HeapTupleGetSecurity(tuple),
+	/* check domain transition */
+	ncontext = sepgsqlAvcCreateCon(sepgsqlGetClientContext(),
+								   tcontext,
 								   SECCLASS_PROCESS);
-	if (newcon != sepgsqlGetClientContext())
+	if (strcmp(sepgsqlGetClientContext(), ncontext))
+	{
 		perms |= DB_PROCEDURE__ENTRYPOINT;
 
-	/* check procedure executiong permission */
-	sepgsql_avc_permission(sepgsqlGetClientContext(),
-						   HeapTupleGetSecurity(tuple),
-						   SECCLASS_DB_PROCEDURE,
-						   perms,
-						   sepgsqlGetTupleName(ProcedureRelationId, tuple, &name));
-
-	/* check domain transition, if necessary */
-	if (newcon != sepgsqlGetClientContext()) {
-		sepgsql_avc_permission(sepgsqlGetClientContext(),
-							   newcon,
-							   SECCLASS_PROCESS,
-							   PROCESS__TRANSITION,
-							   NULL);
+		sepgsqlAvcPermission(sepgsqlGetClientContext(),
+							 ncontext,
+							 SECCLASS_PROCESS,
+							 PROCESS__TRANSITION,
+							 NULL);
 	}
+	pfree(ncontext);
+
+	/* check procedure executiong permission */
+	sepgsqlAvcPermission(sepgsqlGetClientContext(),
+						 tcontext,
+						 SECCLASS_DB_PROCEDURE,
+						 perms,
+						 has_name ? nmbuf : NULL);
+	pfree(tcontext);
 
 	ReleaseSysCache(tuple);
 }
@@ -1001,19 +1013,23 @@ static void checkTruncateStmt(TruncateStmt *stmt)
 
 	foreach (l, relidList) {
 		Oid relid = lfirst_oid(l);
-		NameData name;
+		security_context_t tcontext;
+		char nmbuf[256];
+		bool has_name;
 
 		/* 1. db_table:{delete} */
 		tuple = SearchSysCache(RELOID,
 							   ObjectIdGetDatum(relid), 0, 0, 0);
 		if (!HeapTupleIsValid(tuple))
 			elog(ERROR, "SELinux: cache lookup failed for relation %u", relid);
-
-		sepgsql_avc_permission(sepgsqlGetClientContext(),
-							   HeapTupleGetSecurity(tuple),
-							   SECCLASS_DB_TABLE,
-							   DB_TABLE__DELETE,
-							   sepgsqlGetTupleName(RelationRelationId, tuple, &name));
+		tcontext = pgaceSidToSecurityLabel(HeapTupleGetSecurity(tuple));
+		has_name = sepgsqlGetTupleName(RelationRelationId, tuple, nmbuf, sizeof(nmbuf));
+		sepgsqlAvcPermission(sepgsqlGetClientContext(),
+							 tcontext,
+							 SECCLASS_DB_TABLE,
+							 DB_TABLE__DELETE,
+							 has_name ? nmbuf : NULL);
+		pfree(tcontext);
 		ReleaseSysCache(tuple);
 
 		/* 2. db_tuple:{delete} */
@@ -1022,11 +1038,14 @@ static void checkTruncateStmt(TruncateStmt *stmt)
 
 		while ((tuple = heap_getnext(scan, ForwardScanDirection)) != NULL)
 		{
-			sepgsql_avc_permission(sepgsqlGetClientContext(),
-								   HeapTupleGetSecurity(tuple),
-								   SECCLASS_DB_TUPLE,
-								   DB_TUPLE__DELETE,
-								   sepgsqlGetTupleName(relid, tuple, &name));
+			tcontext = pgaceSidToSecurityLabel(HeapTupleGetSecurity(tuple));
+			has_name = sepgsqlGetTupleName(RelationRelationId, tuple, nmbuf, sizeof(nmbuf));
+			sepgsqlAvcPermission(sepgsqlGetClientContext(),
+								 tcontext,
+								 SECCLASS_DB_TUPLE,
+								 DB_TUPLE__DELETE,
+								 has_name ? nmbuf : NULL);
+			pfree(tcontext);
 		}
 		heap_endscan(scan);
 		heap_close(rel, AccessShareLock);
