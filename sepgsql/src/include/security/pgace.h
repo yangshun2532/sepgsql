@@ -863,23 +863,33 @@ pgaceLargeObjectExport(int fd, Oid loid)
  ******************************************************************/
 
 static inline char *
-pgaceValidateSecurityLabelIn(const char *seclabel)
+pgaceTranslateSecurityLabelIn(char *seclabel)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
-		return sepgsqlValidateSecurityLabelIn(seclabel);
+		return sepgsqlTranslateSecurityLabelIn(seclabel);
 #endif
 	return pstrdup("unlabeled");
 }
 
 static inline char *
-pgaceValidateSecurityLabelOut(const char *seclabel)
+pgaceTranslateSecurityLabelOut(char *seclabel)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
-		return sepgsqlValidateSecurityLabelOut(seclabel);
+		return sepgsqlTranslateSecurityLabelOut(seclabel);
 #endif
 	return pstrdup("unlabeled");
+}
+
+static inline char *
+pgaceValidateSecurityLabel(char *seclabel)
+{
+#ifdef HAVE_SELINUX
+	if (sepgsqlIsEnabled())
+		return sepgsqlValidateSecurityLabel(seclabel);
+#endif
+	return seclabel;
 }
 
 /*

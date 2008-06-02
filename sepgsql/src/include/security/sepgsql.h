@@ -129,9 +129,11 @@ extern void sepgsqlLargeObjectImport(void);
 extern void sepgsqlLargeObjectExport(void);
 
 /* Security Label hooks */
-extern char *sepgsqlValidateSecurityLabelIn(const char *context);
+extern char *sepgsqlTranslateSecurityLabelIn(char *context);
 
-extern char *sepgsqlValidateSecurityLabelOut(const char *context);
+extern char *sepgsqlTranslateSecurityLabelOut(char *context);
+
+extern char *sepgsqlValidateSecurityLabel(char *context);
 
 extern char *sepgsqlSecurityLabelOfLabel(void);
 

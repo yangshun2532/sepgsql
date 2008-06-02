@@ -152,7 +152,7 @@ void pgaceAlterRelationCommon(Relation rel, AlterTableCmd *cmd) {
 }
 
 /*****************************************************************************
- *   security_label type input/output handler
+ *  security attribute management
  *****************************************************************************/
 
 typedef struct earlySeclabel {
@@ -167,8 +167,6 @@ static Oid earlySecurityLabelToSid(char *label)
 {
 	earlySeclabel *es;
 	Oid minsid = SecurityRelationId;
-
-	label = pgaceValidateSecurityLabelIn(label);
 
 	for (es = earlySeclabelList; es != NULL; es = es->next)
 	{
@@ -280,49 +278,6 @@ out:
 	return labelOid;
 }
 
-Oid pgaceSecurityLabelToSid(char *label)
-{
-	Relation rel;
-	CatalogIndexState ind;
-	HeapTuple tuple;
-	Oid labelOid, labelSid;
-	Datum labelTxt;
-	char isnull, *slabel;
-
-	/* valid label checks */
-	label = pgaceValidateSecurityLabelIn(label);
-
-	labelOid = lookupSecurityIdCommon(label);
-	if (labelOid == InvalidOid)
-	{
-		/* not found, insert a new one */
-		rel = heap_open(SecurityRelationId, RowExclusiveLock);
-
-		slabel = pgaceSecurityLabelOfLabel();
-
-		if (!strcmp(label, slabel))
-		{
-			labelOid = labelSid = GetNewOid(rel);
-		}
-		else
-		{
-			labelSid = pgaceSecurityLabelToSid(slabel);
-			labelOid = GetNewOid(rel);
-		}
-		ind = CatalogOpenIndexes(rel);
-
-		isnull = ' ';
-		tuple = heap_formtuple(RelationGetDescr(rel),
-							   &labelTxt, &isnull);
-		HeapTupleSetSecurity(tuple, labelSid);
-		HeapTupleSetOid(tuple, labelOid);
-
-		simple_heap_insert(rel, tuple);
-		CatalogIndexInsert(ind, tuple);
-	}
-	return labelOid;
-}
-
 static char *lookupSecurityLabelCommon(Oid security_id)
 {
 	Relation rel;
@@ -376,25 +331,83 @@ static char *lookupSecurityLabelCommon(Oid security_id)
 	return label;
 }
 
+Oid pgaceSecurityLabelToSid(char *label)
+{
+	Relation rel;
+	CatalogIndexState ind;
+	HeapTuple tuple;
+	Oid labelOid, labelSid;
+	Datum labelTxt;
+	char isnull, *slabel;
+
+	/* valid label checks */
+	label = pgaceTranslateSecurityLabelIn(label);
+	label = pgaceValidateSecurityLabel(label);
+
+	labelOid = lookupSecurityIdCommon(label);
+	if (labelOid == InvalidOid)
+	{
+		/* not found, insert a new one */
+		rel = heap_open(SecurityRelationId, RowExclusiveLock);
+
+		slabel = pgaceSecurityLabelOfLabel();
+
+		if (!strcmp(label, slabel))
+		{
+			labelOid = labelSid = GetNewOid(rel);
+		}
+		else
+		{
+			labelSid = pgaceSecurityLabelToSid(slabel);
+			labelOid = GetNewOid(rel);
+		}
+		ind = CatalogOpenIndexes(rel);
+
+		isnull = ' ';
+		tuple = heap_formtuple(RelationGetDescr(rel),
+							   &labelTxt, &isnull);
+		HeapTupleSetSecurity(tuple, labelSid);
+		HeapTupleSetOid(tuple, labelOid);
+
+		simple_heap_insert(rel, tuple);
+		CatalogIndexInsert(ind, tuple);
+	}
+	return labelOid;
+}
+
 char *pgaceSidToSecurityLabel(Oid security_id)
 {
-	char *label = lookupSecurityLabelCommon(security_id);
+	char *sec_label;
 
-	/* label can be NULL, if not on pg_security */
-	label = pgaceValidateSecurityLabelOut(label);
-	Assert(label != NULL);
+	if (security_id == InvalidOid)
+		sec_label = pgaceValidateSecurityLabel(NULL);
+	else
+	{
+		sec_label = lookupSecurityLabelCommon(security_id);
+		if (!sec_label)
+			elog(ERROR, "security id: %u is not a valid identifier", security_id);
+	}
+	sec_label = pgaceTranslateSecurityLabelOut(sec_label);
+	Assert(sec_label != NULL);
 
-	return label;
+	return sec_label;
 }
 
 char *pgaceLookupSecurityLabel(Oid security_id)
 {
-	char *label = lookupSecurityLabelCommon(security_id);
+	char *sec_label;
 
-	if (!label)
-		elog(ERROR, "security id: %u is not a valid identifier", security_id);
+	if (security_id == InvalidOid)
+		sec_label = pgaceValidateSecurityLabel(NULL);
+	else
+	{
+		sec_label = lookupSecurityLabelCommon(security_id);
+		if (!sec_label)
+			elog(ERROR, "security id: %u is not a valid identifier", security_id);
+	}
+	Assert(sec_label != NULL);
 
-	return label;
+	return sec_label;
 }
 
 /*****************************************************************************
