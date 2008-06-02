@@ -363,6 +363,7 @@ Oid pgaceSecurityLabelToSid(char *label)
 		}
 		ind = CatalogOpenIndexes(rel);
 
+		labelTxt = CStringGetTextDatum(label);
 		isnull = ' ';
 		tuple = heap_formtuple(RelationGetDescr(rel),
 							   &labelTxt, &isnull);
@@ -371,6 +372,9 @@ Oid pgaceSecurityLabelToSid(char *label)
 
 		simple_heap_insert(rel, tuple);
 		CatalogIndexInsert(ind, tuple);
+
+		CatalogCloseIndexes(ind);
+		heap_close(rel, RowExclusiveLock);
 	}
 	return labelOid;
 }

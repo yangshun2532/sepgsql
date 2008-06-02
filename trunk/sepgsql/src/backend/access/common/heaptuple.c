@@ -791,9 +791,14 @@ heap_getsysattr(HeapTuple tup, int attnum, TupleDesc tupleDesc, bool *isnull)
 			result = ObjectIdGetDatum(tup->t_tableOid);
 			break;
 #ifdef SECURITY_SYSATTR_NAME
-		case SecurityAttributeNumber:
-			result = ObjectIdGetDatum(HeapTupleGetSecurity(tup));
+		case SecurityAttributeNumber: {
+			Oid security_id = HeapTupleGetSecurity(tup);
+			char *sec_label = pgaceSidToSecurityLabel(security_id);
+
+			result = CStringGetTextDatum(sec_label);
+			pfree(sec_label);
 			break;
+		}
 #endif
 		default:
 			elog(ERROR, "invalid attnum: %d", attnum);

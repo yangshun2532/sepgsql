@@ -1179,25 +1179,19 @@ ExecEndPlan(PlanState *planstate, EState *estate)
  */
 static void
 fetchWritableSystemAttribute(JunkFilter *junkfilter, TupleTableSlot *slot,
-							 Oid *tts_objectid, Oid *tts_security)
+							 Datum *tts_security)
 {
 	AttrNumber attno;
 	Datum datum;
 	bool isnull;
 
-	/* extract oid */
-	attno = ExecFindJunkAttribute(junkfilter, "oid");
-	if (attno != InvalidAttrNumber) {
-		datum = ExecGetJunkAttribute(slot, attno, &isnull);
-		if (!isnull)
-			*tts_objectid = DatumGetObjectId(datum);
-	}
 #ifdef SECURITY_SYSATTR_NAME
 	attno = ExecFindJunkAttribute(junkfilter, SECURITY_SYSATTR_NAME);
-	if (attno != InvalidAttrNumber) {
+	if (attno != InvalidAttrNumber)
+	{
 		datum = ExecGetJunkAttribute(slot, attno, &isnull);
 		if (!isnull)
-			*tts_security = DatumGetObjectId(datum);
+			*tts_security = datum;
 	}
 #endif
 }
@@ -1205,10 +1199,20 @@ fetchWritableSystemAttribute(JunkFilter *junkfilter, TupleTableSlot *slot,
 static void
 storeWritableSystemAttribute(Relation rel, TupleTableSlot *slot, HeapTuple tuple)
 {
-	if (RelationGetForm(rel)->relhasoids)
-		HeapTupleSetOid(tuple, slot->tts_objectid);
 #ifdef SECURITY_SYSATTR_NAME
-	HeapTupleSetSecurity(tuple, slot->tts_security);
+	if (!DatumGetPointer(slot->tts_security))
+		HeapTupleSetSecurity(tuple, InvalidOid);
+	else
+	{
+		Oid security_id;
+		char *label;
+
+		label = TextDatumGetCString(slot->tts_security);
+
+		security_id = pgaceSecurityLabelToSid(label);
+
+		HeapTupleSetSecurity(tuple, security_id);
+	}
 #endif
 }
 
@@ -1279,8 +1283,7 @@ ExecutePlan(EState *estate,
 
 	for (;;)
 	{
-		Oid tts_objectid = InvalidOid;
-		Oid tts_security = InvalidOid;
+		Datum tts_security = PointerGetDatum(NULL);
 
 		/* Reset the per-output-tuple exprcontext */
 		ResetPerTupleExprContext(estate);
@@ -1408,7 +1411,7 @@ lnext:	;
 			/*
 			 * extract writable system attribute
 			 */
-			fetchWritableSystemAttribute(junkfilter, slot, &tts_objectid, &tts_security);
+			fetchWritableSystemAttribute(junkfilter, slot, &tts_security);
 
 			/*
 			 * extract the 'ctid' junk attribute.
@@ -1437,7 +1440,6 @@ lnext:	;
 			if (operation != CMD_DELETE)
 				slot = ExecFilterJunk(junkfilter, slot);
 		}
-		slot->tts_objectid = tts_objectid;
 		slot->tts_security = tts_security;
 
 		/*
