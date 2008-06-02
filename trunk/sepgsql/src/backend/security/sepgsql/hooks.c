@@ -493,75 +493,80 @@ void sepgsqlRestorePlanCheck(Relation rel, Datum pgace_saved) {
 /*******************************************************************************
  * security_label hooks
  *******************************************************************************/
-char *sepgsqlValidateSecurityLabelIn(const char *context)
+char *sepgsqlTranslateSecurityLabelIn(char *context)
 {
-	security_context_t raw_context;
+	security_context_t i_context;
 	char *result;
 
-	if (context != NULL)
-	{
-		if (security_check_context((security_context_t) context) < 0)
-			elog(ERROR, "SELinux: invalid security context: %s", context);
-		if (selinux_trans_to_raw_context((security_context_t) context, &raw_context) < 0)
-			elog(ERROR, "SELinux: could not translate mls label");
-	}
-	else
-	{
-		/* unlabaled context */
-		if (security_get_initial_context_raw("unlabeled", &raw_context) < 0)
-			elog(ERROR, "SELinux: could not get unlabeled context");
-	}
+	if (selinux_trans_to_raw_context((security_context_t) context, &i_context) < 0)
+		elog(ERROR, "SELinux: could not translate mls label");
 
 	PG_TRY();
 	{
-		result = pstrdup(raw_context);
+		result = pstrdup(i_context);
 	}
 	PG_CATCH();
 	{
-		freecon(raw_context);
+		freecon(i_context);
 		PG_RE_THROW();
 	}
 	PG_END_TRY();
-	freecon(raw_context);
+	freecon(i_context);
 
 	return result;
 }
 
-char *sepgsqlValidateSecurityLabelOut(const char *context)
+char *sepgsqlTranslateSecurityLabelOut(char *context)
 {
-	security_context_t trans_context;
+	security_context_t o_context;
 	char *result;
 
-	if (context != NULL)
-	{
-		if (security_check_context_raw((security_context_t) context) < 0)
-		{
-			if (security_get_initial_context("unlabeled", &trans_context) < 0)
-				elog(ERROR, "SELinux: could not get unlabeled context");
-		}
-		else
-		{
-			if (selinux_raw_to_trans_context((security_context_t) context, &trans_context) < 0)
-				elog(ERROR, "SELinux: could not translate mls label");
-		}
-	}
-	else
-	{
-		if (security_get_initial_context("unlabeled", &trans_context) < 0)
-			elog(ERROR, "SELinux: could not get unlabeled context");
-	}
+	if (selinux_raw_to_trans_context((security_context_t) context, &o_context) < 0)
+		elog(ERROR, "SELinux: could not translate mls label");
 
 	PG_TRY();
 	{
-		result = pstrdup(trans_context);
+		result = pstrdup(o_context);
 	}
 	PG_CATCH();
 	{
-		freecon(trans_context);
+		freecon(o_context);
 		PG_RE_THROW();
 	}
 	PG_END_TRY();
-	freecon(trans_context);
+	freecon(o_context);
+
+	return result;
+}
+
+/*
+ * sepgsqlValidateSecurityLabel() checks whether the given context
+ * is valid for the current policy, or not.
+ * If not valid, it returns alternative context.
+ */
+char *sepgsqlValidateSecurityLabel(char *context)
+{
+	security_context_t unlabeled;
+	char *result;
+
+	if (context != NULL
+		&& !security_check_context_raw((security_context_t) context))
+		return context;
+
+	if (security_get_initial_context_raw("unlabeled", &unlabeled))
+		elog(ERROR, "SELinux: could not get unlabeled context");
+
+	PG_TRY();
+	{
+		result = pstrdup(unlabeled);
+	}
+	PG_CATCH();
+	{
+		freecon(unlabeled);
+		PG_RE_THROW();
+	}
+	PG_END_TRY();
+	freecon(unlabeled);
 
 	return result;
 }
