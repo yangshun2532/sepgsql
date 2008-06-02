@@ -1,7 +1,7 @@
 PostgreSQL TODO List
 ====================
 Current maintainer:	Bruce Momjian (bruce@momjian.us)
-Last updated:		Mon May 19 20:35:36 EDT 2008
+Last updated:		Wed May 28 22:04:08 EDT 2008
 
 The most recent version of this document can be viewed at
 http://www.postgresql.org/docs/faqs.TODO.html.
@@ -1218,7 +1218,9 @@ Triggers
 
   Right now all deferred trigger information is stored in backend
   memory.  This could exhaust memory for very large trigger queues.
-  This item involves dumping large queues into files.
+  This item involves dumping large queues into files, or doing some
+  kind of join to process all the triggers, or some bulk operation.
+  http://archives.postgresql.org/pgsql-hackers/2008-05/msg00876.php
 
 * Allow triggers to be disabled in only the current session.
 
@@ -1983,7 +1985,7 @@ Source Code
 	o Remove configure.in check for link failure when cause is found
 	o Remove readdir() errno patch when runtime/mingwex/dirent.c rev
 	  1.4 is released
-	o Remove psql newline patch when we find out why mingw outputs an
+	o -Remove psql newline patch when we find out why mingw outputs an
 	  extra newline
 	o Allow psql to use readline once non-US code pages work with
 	  backslashes
