@@ -549,9 +549,12 @@ char *sepgsqlValidateSecurityLabel(char *context)
 	security_context_t unlabeled;
 	char *result;
 
-	if (context != NULL
-		&& !security_check_context_raw((security_context_t) context))
+	if (context != NULL)
+	{
+		if (security_check_context_raw((security_context_t) context) < 0)
+			elog(ERROR, "SELinux: %s is invalid security context", context);
 		return context;
+	}
 
 	if (security_get_initial_context_raw("unlabeled", &unlabeled))
 		elog(ERROR, "SELinux: could not get unlabeled context");

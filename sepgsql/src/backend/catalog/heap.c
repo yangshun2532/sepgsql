@@ -218,8 +218,6 @@ SystemAttributeByName(const char *attname, bool relhasoids)
 bool
 SystemAttributeIsWritable(AttrNumber attno)
 {
-	if (attno == ObjectIdAttributeNumber)
-		return true;
 #ifdef SECURITY_SYSATTR_NAME
 	if (attno == SecurityAttributeNumber)
 		return true;
