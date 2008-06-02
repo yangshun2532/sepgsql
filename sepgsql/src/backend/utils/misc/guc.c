@@ -10,7 +10,7 @@
  * Written by Peter Eisentraut <peter_e@gmx.net>.
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/misc/guc.c,v 1.454 2008/05/15 00:17:40 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/utils/misc/guc.c,v 1.456 2008/05/28 09:04:06 mha Exp $
  *
  *--------------------------------------------------------------------
  */
@@ -174,90 +174,90 @@ static char *config_enum_get_options(struct config_enum *record,
  * Options for enum values defined in this module.
  */
 static const struct config_enum_entry message_level_options[] = {
-	{"debug", DEBUG2},
-	{"debug5", DEBUG5},
-	{"debug4", DEBUG4},
-	{"debug3", DEBUG3},
-	{"debug2", DEBUG2},
-	{"debug1", DEBUG1},
-	{"log", LOG},
-	{"info", INFO},
-	{"notice", NOTICE},
-	{"warning", WARNING},
-	{"error", ERROR},
-	{"fatal", FATAL},
-	{"panic", PANIC},
-	{NULL, 0}
+	{"debug", DEBUG2, false},
+	{"debug5", DEBUG5, false},
+	{"debug4", DEBUG4, false},
+	{"debug3", DEBUG3, false},
+	{"debug2", DEBUG2, false},
+	{"debug1", DEBUG1, false},
+	{"log", LOG, false},
+	{"info", INFO, false},
+	{"notice", NOTICE, false},
+	{"warning", WARNING, false},
+	{"error", ERROR, false},
+	{"fatal", FATAL, false},
+	{"panic", PANIC, false},
+	{NULL, 0, false}
 };
 
 static const struct config_enum_entry log_error_verbosity_options[] = {
-	{"default", PGERROR_DEFAULT},
-	{"terse", PGERROR_TERSE},
-	{"verbose", PGERROR_VERBOSE},
-	{NULL, 0}
+	{"default", PGERROR_DEFAULT, false},
+	{"terse", PGERROR_TERSE, false},
+	{"verbose", PGERROR_VERBOSE, false},
+	{NULL, 0, false}
 };
 
 static const struct config_enum_entry log_statement_options[] = {
-	{"none", LOGSTMT_NONE},
-	{"ddl", LOGSTMT_DDL},
-	{"mod", LOGSTMT_MOD},
-	{"all", LOGSTMT_ALL},
-	{NULL, 0}
+	{"none", LOGSTMT_NONE, false},
+	{"ddl", LOGSTMT_DDL, false},
+	{"mod", LOGSTMT_MOD, false},
+	{"all", LOGSTMT_ALL, false},
+	{NULL, 0, false}
 };
 
 static const struct config_enum_entry regex_flavor_options[] = {
-    {"advanced", REG_ADVANCED},
-    {"extended", REG_EXTENDED},
-    {"basic", REG_BASIC},
-    {NULL, 0}
+    {"advanced", REG_ADVANCED, false},
+    {"extended", REG_EXTENDED, false},
+    {"basic", REG_BASIC, false},
+    {NULL, 0, false}
 };
 
 static const struct config_enum_entry isolation_level_options[] = {
-	{"serializable", XACT_SERIALIZABLE},
-	{"repeatable read", XACT_REPEATABLE_READ},
-	{"read committed", XACT_READ_COMMITTED},
-	{"read uncommitted", XACT_READ_UNCOMMITTED},
+	{"serializable", XACT_SERIALIZABLE, false},
+	{"repeatable read", XACT_REPEATABLE_READ, false},
+	{"read committed", XACT_READ_COMMITTED, false},
+	{"read uncommitted", XACT_READ_UNCOMMITTED, false},
 	{NULL, 0}
 };
 
 static const struct config_enum_entry session_replication_role_options[] = {
-	{"origin", SESSION_REPLICATION_ROLE_ORIGIN},
-	{"replica", SESSION_REPLICATION_ROLE_REPLICA},
-	{"local", SESSION_REPLICATION_ROLE_LOCAL},
-	{NULL, 0}
+	{"origin", SESSION_REPLICATION_ROLE_ORIGIN, false},
+	{"replica", SESSION_REPLICATION_ROLE_REPLICA, false},
+	{"local", SESSION_REPLICATION_ROLE_LOCAL, false},
+	{NULL, 0, false}
 };
 
 #ifdef HAVE_SYSLOG
 static const struct config_enum_entry syslog_facility_options[] = {
-	{"local0", LOG_LOCAL0},
-	{"local1", LOG_LOCAL1},
-	{"local2", LOG_LOCAL2},
-	{"local3", LOG_LOCAL3},
-	{"local4", LOG_LOCAL4},
-	{"local5", LOG_LOCAL5},
-	{"local6", LOG_LOCAL6},
-	{"local7", LOG_LOCAL7},
+	{"local0", LOG_LOCAL0, false},
+	{"local1", LOG_LOCAL1, false},
+	{"local2", LOG_LOCAL2, false},
+	{"local3", LOG_LOCAL3, false},
+	{"local4", LOG_LOCAL4, false},
+	{"local5", LOG_LOCAL5, false},
+	{"local6", LOG_LOCAL6, false},
+	{"local7", LOG_LOCAL7, false},
 	{NULL, 0}
 };
 #endif
 
 static const struct config_enum_entry track_function_options[] = {
-	{"none", TRACK_FUNC_OFF},
-	{"pl", TRACK_FUNC_PL},
-	{"all", TRACK_FUNC_ALL},
-	{NULL, 0}
+	{"none", TRACK_FUNC_OFF, false},
+	{"pl", TRACK_FUNC_PL, false},
+	{"all", TRACK_FUNC_ALL, false},
+	{NULL, 0, false}
 };
 
 static const struct config_enum_entry xmlbinary_options[] = {
-	{"base64", XMLBINARY_BASE64},
-	{"hex", XMLBINARY_HEX},
-	{NULL, 0}
+	{"base64", XMLBINARY_BASE64, false},
+	{"hex", XMLBINARY_HEX, false},
+	{NULL, 0, false}
 };
 
 static const struct config_enum_entry xmloption_options[] = {
-	{"content", XMLOPTION_CONTENT},
-	{"document", XMLOPTION_DOCUMENT},
-	{NULL, 0}
+	{"content", XMLOPTION_CONTENT, false},
+	{"document", XMLOPTION_DOCUMENT, false},
+	{NULL, 0, false}
 };
 
 /*
@@ -265,16 +265,16 @@ static const struct config_enum_entry xmloption_options[] = {
  * accept all the likely variants of "on" and "off".
  */
 static const struct config_enum_entry backslash_quote_options[] = {
-	{"safe_encoding", BACKSLASH_QUOTE_SAFE_ENCODING},
-	{"on", BACKSLASH_QUOTE_ON},
-	{"off", BACKSLASH_QUOTE_OFF},
-	{"true", BACKSLASH_QUOTE_ON},
-	{"false", BACKSLASH_QUOTE_OFF},
-	{"yes", BACKSLASH_QUOTE_ON},
-	{"no", BACKSLASH_QUOTE_OFF},
-	{"1", BACKSLASH_QUOTE_ON},
-	{"0", BACKSLASH_QUOTE_OFF},
-	{NULL, 0}
+	{"safe_encoding", BACKSLASH_QUOTE_SAFE_ENCODING, false},
+	{"on", BACKSLASH_QUOTE_ON, false},
+	{"off", BACKSLASH_QUOTE_OFF, false},
+	{"true", BACKSLASH_QUOTE_ON, true},
+	{"false", BACKSLASH_QUOTE_OFF, true},
+	{"yes", BACKSLASH_QUOTE_ON, true},
+	{"no", BACKSLASH_QUOTE_OFF, true},
+	{"1", BACKSLASH_QUOTE_ON, true},
+	{"0", BACKSLASH_QUOTE_OFF, true},
+	{NULL, 0, false}
 };
 
 /*
@@ -4357,8 +4357,8 @@ config_enum_lookup_by_name(struct config_enum *record, const char *value, int *r
 
 
 /*
- * Return a list of all available options for an enum, separated
- * by ", " (comma-space).
+ * Return a list of all available options for an enum, excluding
+ * hidden ones, separated by ", " (comma-space).
  * If prefix is non-NULL, it is added before the first enum value.
  * If suffix is non-NULL, it is added to the end of the string.
  */
@@ -4371,10 +4371,12 @@ config_enum_get_options(struct config_enum *record, const char *prefix, const ch
 
 	if (!entry || !entry->name)
 		return NULL;					/* Should not happen */
-	
+
 	while (entry && entry->name)
 	{
-		len += strlen(entry->name) + 2; /* string and ", " */
+		if (!entry->hidden)
+			len += strlen(entry->name) + 2; /* string and ", " */
+
 		entry++;
 	}
 
@@ -4385,13 +4387,28 @@ config_enum_get_options(struct config_enum *record, const char *prefix, const ch
 	entry = record->options;
 	while (entry && entry->name)
 	{
-		strcat(hintmsg, entry->name);
-		strcat(hintmsg, ", ");
+		if (!entry->hidden)
+		{
+			strcat(hintmsg, entry->name);
+			strcat(hintmsg, ", ");
+		}
+
 		entry++;
 	}
 
-	/* Replace final comma/space */
-	hintmsg[strlen(hintmsg)-2] = '\0';
+	len = strlen(hintmsg);
+
+	/*
+	 * All the entries may have been hidden, leaving the string empty
+	 * if no prefix was given. This indicates a broken GUC setup, since
+	 * there is no use for an enum without any values, so we just check
+	 * to make sure we don't write to invalid memory instead of actually
+	 * trying to do something smart with it.
+	 */
+	if (len > 1)
+		/* Replace final comma/space */
+		hintmsg[len-2] = '\0';
+
 	strcat(hintmsg, suffix);
 
 	return hintmsg;
@@ -4648,6 +4665,10 @@ set_config_option(const char *name, const char *value,
 					source = conf->gen.reset_source;
 				}
 
+				/* Save old value to support transaction abort */
+				if (changeVal && !makeDefault)
+					push_old_value(&conf->gen, action);
+
 				if (conf->assign_hook)
 					if (!(*conf->assign_hook) (newval, changeVal, source))
 					{
@@ -4658,32 +4679,26 @@ set_config_option(const char *name, const char *value,
 						return false;
 					}
 
-				if (changeVal || makeDefault)
+				if (changeVal)
 				{
-					/* Save old value to support transaction abort */
-					if (!makeDefault)
-						push_old_value(&conf->gen, action);
-					if (changeVal)
-					{
-						*conf->variable = newval;
-						conf->gen.source = source;
-					}
-					if (makeDefault)
-					{
-						GucStack   *stack;
+					*conf->variable = newval;
+					conf->gen.source = source;
+				}
+				if (makeDefault)
+				{
+					GucStack   *stack;
 
-						if (conf->gen.reset_source <= source)
+					if (conf->gen.reset_source <= source)
+					{
+						conf->reset_val = newval;
+						conf->gen.reset_source = source;
+					}
+					for (stack = conf->gen.stack; stack; stack = stack->prev)
+					{
+						if (stack->source <= source)
 						{
-							conf->reset_val = newval;
-							conf->gen.reset_source = source;
-						}
-						for (stack = conf->gen.stack; stack; stack = stack->prev)
-						{
-							if (stack->source <= source)
-							{
-								stack->prior.boolval = newval;
-								stack->source = source;
-							}
+							stack->prior.boolval = newval;
+							stack->source = source;
 						}
 					}
 				}
@@ -4725,6 +4740,10 @@ set_config_option(const char *name, const char *value,
 					source = conf->gen.reset_source;
 				}
 
+				/* Save old value to support transaction abort */
+				if (changeVal && !makeDefault)
+					push_old_value(&conf->gen, action);
+
 				if (conf->assign_hook)
 					if (!(*conf->assign_hook) (newval, changeVal, source))
 					{
@@ -4735,32 +4754,26 @@ set_config_option(const char *name, const char *value,
 						return false;
 					}
 
-				if (changeVal || makeDefault)
+				if (changeVal)
 				{
-					/* Save old value to support transaction abort */
-					if (!makeDefault)
-						push_old_value(&conf->gen, action);
-					if (changeVal)
-					{
-						*conf->variable = newval;
-						conf->gen.source = source;
-					}
-					if (makeDefault)
-					{
-						GucStack   *stack;
+					*conf->variable = newval;
+					conf->gen.source = source;
+				}
+				if (makeDefault)
+				{
+					GucStack   *stack;
 
-						if (conf->gen.reset_source <= source)
+					if (conf->gen.reset_source <= source)
+					{
+						conf->reset_val = newval;
+						conf->gen.reset_source = source;
+					}
+					for (stack = conf->gen.stack; stack; stack = stack->prev)
+					{
+						if (stack->source <= source)
 						{
-							conf->reset_val = newval;
-							conf->gen.reset_source = source;
-						}
-						for (stack = conf->gen.stack; stack; stack = stack->prev)
-						{
-							if (stack->source <= source)
-							{
-								stack->prior.intval = newval;
-								stack->source = source;
-							}
+							stack->prior.intval = newval;
+							stack->source = source;
 						}
 					}
 				}
@@ -4799,6 +4812,10 @@ set_config_option(const char *name, const char *value,
 					source = conf->gen.reset_source;
 				}
 
+				/* Save old value to support transaction abort */
+				if (changeVal && !makeDefault)
+					push_old_value(&conf->gen, action);
+
 				if (conf->assign_hook)
 					if (!(*conf->assign_hook) (newval, changeVal, source))
 					{
@@ -4809,32 +4826,26 @@ set_config_option(const char *name, const char *value,
 						return false;
 					}
 
-				if (changeVal || makeDefault)
+				if (changeVal)
 				{
-					/* Save old value to support transaction abort */
-					if (!makeDefault)
-						push_old_value(&conf->gen, action);
-					if (changeVal)
-					{
-						*conf->variable = newval;
-						conf->gen.source = source;
-					}
-					if (makeDefault)
-					{
-						GucStack   *stack;
+					*conf->variable = newval;
+					conf->gen.source = source;
+				}
+				if (makeDefault)
+				{
+					GucStack   *stack;
 
-						if (conf->gen.reset_source <= source)
+					if (conf->gen.reset_source <= source)
+					{
+						conf->reset_val = newval;
+						conf->gen.reset_source = source;
+					}
+					for (stack = conf->gen.stack; stack; stack = stack->prev)
+					{
+						if (stack->source <= source)
 						{
-							conf->reset_val = newval;
-							conf->gen.reset_source = source;
-						}
-						for (stack = conf->gen.stack; stack; stack = stack->prev)
-						{
-							if (stack->source <= source)
-							{
-								stack->prior.realval = newval;
-								stack->source = source;
-							}
+							stack->prior.realval = newval;
+							stack->source = source;
 						}
 					}
 				}
@@ -4888,6 +4899,10 @@ set_config_option(const char *name, const char *value,
 					source = conf->gen.reset_source;
 				}
 
+				/* Save old value to support transaction abort */
+				if (changeVal && !makeDefault)
+					push_old_value(&conf->gen, action);
+
 				if (conf->assign_hook && newval)
 				{
 					const char *hookresult;
@@ -4925,40 +4940,32 @@ set_config_option(const char *name, const char *value,
 					}
 				}
 
-				if (changeVal || makeDefault)
+				if (changeVal)
 				{
-					/* Save old value to support transaction abort */
-					if (!makeDefault)
-						push_old_value(&conf->gen, action);
-					if (changeVal)
-					{
-						set_string_field(conf, conf->variable, newval);
-						conf->gen.source = source;
-					}
-					if (makeDefault)
-					{
-						GucStack   *stack;
+					set_string_field(conf, conf->variable, newval);
+					conf->gen.source = source;
+				}
+				if (makeDefault)
+				{
+					GucStack   *stack;
 
-						if (conf->gen.reset_source <= source)
+					if (conf->gen.reset_source <= source)
+					{
+						set_string_field(conf, &conf->reset_val, newval);
+						conf->gen.reset_source = source;
+					}
+					for (stack = conf->gen.stack; stack; stack = stack->prev)
+					{
+						if (stack->source <= source)
 						{
-							set_string_field(conf, &conf->reset_val, newval);
-							conf->gen.reset_source = source;
+							set_string_field(conf, &stack->prior.stringval,
+											 newval);
+							stack->source = source;
 						}
-						for (stack = conf->gen.stack; stack; stack = stack->prev)
-						{
-							if (stack->source <= source)
-							{
-								set_string_field(conf, &stack->prior.stringval,
-												 newval);
-								stack->source = source;
-							}
-						}
-						/* Perhaps we didn't install newval anywhere */
-						if (newval && !string_field_used(conf, newval))
-							free(newval);
 					}
 				}
-				else if (newval)
+				/* Perhaps we didn't install newval anywhere */
+				if (newval && !string_field_used(conf, newval))
 					free(newval);
 				break;
 			}
@@ -4992,6 +4999,10 @@ set_config_option(const char *name, const char *value,
 					source = conf->gen.reset_source;
 				}
 
+				/* Save old value to support transaction abort */
+				if (changeVal && !makeDefault)
+					push_old_value(&conf->gen, action);
+
 				if (conf->assign_hook)
 					if (!(*conf->assign_hook) (newval, changeVal, source))
 					{
@@ -5003,32 +5014,26 @@ set_config_option(const char *name, const char *value,
 						return false;
 					}
 
-				if (changeVal || makeDefault)
+				if (changeVal)
 				{
-					/* Save old value to support transaction abort */
-					if (!makeDefault)
-						push_old_value(&conf->gen, action);
-					if (changeVal)
-					{
-						*conf->variable = newval;
-						conf->gen.source = source;
-					}
-					if (makeDefault)
-					{
-						GucStack   *stack;
+					*conf->variable = newval;
+					conf->gen.source = source;
+				}
+				if (makeDefault)
+				{
+					GucStack   *stack;
 
-						if (conf->gen.reset_source <= source)
+					if (conf->gen.reset_source <= source)
+					{
+						conf->reset_val = newval;
+						conf->gen.reset_source = source;
+					}
+					for (stack = conf->gen.stack; stack; stack = stack->prev)
+					{
+						if (stack->source <= source)
 						{
-							conf->reset_val = newval;
-							conf->gen.reset_source = source;
-						}
-						for (stack = conf->gen.stack; stack; stack = stack->prev)
-						{
-							if (stack->source <= source)
-							{
-								stack->prior.enumval = newval;
-								stack->source = source;
-							}
+							stack->prior.enumval = newval;
+							stack->source = source;
 						}
 					}
 				}
