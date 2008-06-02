@@ -163,10 +163,9 @@ typedef struct CopyStateData
 	int			raw_buf_index;	/* next byte to process */
 	int			raw_buf_len;	/* total # of bytes stored */
 
-	/* dumpable/restorable system column support */
+	/* security attribute dump/restore support */
 	FmgrInfo	security_out_function;
 	bool		security_force_quot;
-	bool		security_force_notnull;
 } CopyStateData;
 
 typedef CopyStateData *CopyState;
@@ -1100,7 +1099,8 @@ DoCopy(const CopyStmt *stmt, const char *queryString)
 						(errcode(ERRCODE_INVALID_COLUMN_REFERENCE),
 				   errmsg("FORCE QUOTE column \"%s\" not referenced by COPY",
 						  NameStr(tupDesc->attrs[attnum - 1]->attname))));
-			if (pgaceIsSecuritySystemColumn(attnum)) {
+			if (pgaceIsSecuritySystemColumn(attnum))
+			{
 				cstate->security_force_quot = true;
 				continue;
 			}
@@ -1127,7 +1127,7 @@ DoCopy(const CopyStmt *stmt, const char *queryString)
 				errmsg("FORCE NOT NULL column \"%s\" not referenced by COPY",
 					   NameStr(tupDesc->attrs[attnum - 1]->attname))));
 			if (pgaceIsSecuritySystemColumn(attnum))
-				continue; /* ignore, if specified */
+				continue;	/* ignore, if specified */
 
 			cstate->force_notnull_flags[attnum - 1] = true;
 		}
@@ -1321,23 +1321,25 @@ CopyTo(CopyState cstate)
 		Oid			out_func_oid;
 		bool		isvarlena;
 		FmgrInfo    *out_fmgr;
-		Form_pg_attribute pg_attribute;
+		Form_pg_attribute attForm;
 
-		if (pgaceIsSecuritySystemColumn(attnum)) {
-			/* PGACE: dumpable system column */
-			pg_attribute = SystemAttributeDefinition(attnum, false);
+		if (pgaceIsSecuritySystemColumn(attnum))
+		{
+			attForm = SystemAttributeDefinition(attnum, false);
 			out_fmgr = &cstate->security_out_function;
-		} else {
-			pg_attribute = attr[attnum - 1];
+		}
+		else
+		{
+			attForm = attr[attnum - 1];
 			out_fmgr = &cstate->out_functions[attnum - 1];
 		}
 
 		if (cstate->binary)
-			getTypeBinaryOutputInfo(pg_attribute->atttypid,
+			getTypeBinaryOutputInfo(attForm->atttypid,
 									&out_func_oid,
 									&isvarlena);
 		else
-			getTypeOutputInfo(pg_attribute->atttypid,
+			getTypeOutputInfo(attForm->atttypid,
 							  &out_func_oid,
 							  &isvarlena);
 		fmgr_info(out_func_oid, out_fmgr);
@@ -1395,13 +1397,14 @@ CopyTo(CopyState cstate)
 					CopySendChar(cstate, cstate->delim[0]);
 				hdr_delim = true;
 
-				colname = NameStr(attr[attnum - 1]->attname);
-				if (pgaceIsSecuritySystemColumn(attnum)) {
-					Form_pg_attribute sysatt = SystemAttributeDefinition(attnum, false);
-					colname = NameStr(sysatt->attname);
-				} else {
-					colname = NameStr(attr[attnum - 1]->attname);
+				if (pgaceIsSecuritySystemColumn(attnum))
+				{
+					Form_pg_attribute attForm
+						= SystemAttributeDefinition(attnum, false);
+					colname = NameStr(attForm->attname);
 				}
+				else
+					colname = NameStr(attr[attnum - 1]->attname);
 
 				CopyAttributeOutCSV(cstate, colname, false,
 									list_length(cstate->attnumlist) == 1);
@@ -1434,7 +1437,10 @@ CopyTo(CopyState cstate)
 			heap_deform_tuple(tuple, tupDesc, values, nulls);
 
 			/* Format and send the data */
-			CopyOneRowTo(cstate, HeapTupleGetOid(tuple), HeapTupleGetSecurity(tuple), values, nulls);
+			CopyOneRowTo(cstate,
+						 HeapTupleGetOid(tuple),
+						 HeapTupleGetSecurity(tuple),
+						 values, nulls);
 		}
 
 		heap_endscan(scandesc);
@@ -1511,13 +1517,16 @@ CopyOneRowTo(CopyState cstate, Oid tupleOid, Oid tupleSecurity, Datum *values, b
 			need_delim = true;
 		}
 
-		/* PGACE: dumpable system column support */
-		if (pgaceIsSecuritySystemColumn(attnum)) {
-			value = tupleSecurity;
+		if (pgaceIsSecuritySystemColumn(attnum))
+		{
+			char *tmp = pgaceSidToSecurityLabel(tupleSecurity);
+			value = CStringGetTextDatum(tmp);
 			isnull = false;
 			force_quot = cstate->security_force_quot;
 			out_fmgr = &cstate->security_out_function;
-		} else {
+		}
+		else
+		{
 			value = values[attnum - 1];
 			isnull = nulls[attnum - 1];
 			force_quot = cstate->force_quote_flags[attnum - 1];
@@ -1681,12 +1690,12 @@ CopyFrom(CopyState cstate)
 	FmgrInfo   *in_functions;
 	FmgrInfo	oid_in_function;
 	FmgrInfo	security_in_function;
-	bool		security_in_function_prepared = false;
 	Oid		   *typioparams;
 	Oid			oid_typioparam;
 	Oid			security_typioparam;
 	int			attnum;
 	int			i;
+	ListCell   *l;
 	Oid			in_func_oid;
 	Datum	   *values;
 	char	   *nulls;
@@ -1922,6 +1931,25 @@ CopyFrom(CopyState cstate)
 		fmgr_info(in_func_oid, &oid_in_function);
 	}
 
+	foreach (l, cstate->attnumlist)
+	{
+		attnum = lfirst_int(l);
+
+		if (pgaceIsSecuritySystemColumn(attnum))
+		{
+			if (!cstate->binary)
+				getTypeInputInfo(TEXTOID,
+								 &in_func_oid,
+								 &security_typioparam);
+			else
+				getTypeBinaryInputInfo(TEXTOID,
+									   &in_func_oid,
+									   &security_typioparam);
+			fmgr_info(in_func_oid, &security_in_function);
+			break;
+		}
+	}
+
 	values = (Datum *) palloc(num_phys_attrs * sizeof(Datum));
 	nulls = (char *) palloc(num_phys_attrs * sizeof(char));
 
@@ -1954,7 +1982,7 @@ CopyFrom(CopyState cstate)
 	{
 		bool		skip_tuple;
 		Oid			loaded_oid = InvalidOid;
-		Oid			loaded_security = InvalidOid;
+		Datum		loaded_security = PointerGetDatum(NULL);
 
 		CHECK_FOR_INTERRUPTS();
 
@@ -2029,29 +2057,26 @@ CopyFrom(CopyState cstate)
 				int			attnum = lfirst_int(cur);
 				int			m = attnum - 1;
 
-				if (pgaceIsSecuritySystemColumn(attnum)) {
-					Form_pg_attribute sysatt = SystemAttributeDefinition(attnum, false);
+				if (pgaceIsSecuritySystemColumn(attnum))
+				{
+					Form_pg_attribute attForm
+						= SystemAttributeDefinition(attnum, false);
+
 					if (fieldno >= fldct)
 						ereport(ERROR,
 								(errcode(ERRCODE_BAD_COPY_FILE_FORMAT),
 								 errmsg("missing data for column \"%s\"",
-										NameStr(sysatt->attname))));
+										NameStr(attForm->attname))));
 					string = field_strings[fieldno++];
-					cstate->cur_attname = NameStr(attr[m]->attname);
+					cstate->cur_attname = NameStr(attForm->attname);
 					cstate->cur_attval = string;
-
-					if (!security_in_function_prepared) {
-						getTypeInputInfo(sysatt->atttypid, &in_func_oid,
-										 &security_typioparam);
-						fmgr_info(in_func_oid, &security_in_function);
-						security_in_function_prepared = true;
-					}
-					if (string) {
-						Datum d = InputFunctionCall(&security_in_function,
-													string,
-													security_typioparam,
-													sysatt->atttypmod);
-						loaded_security = ObjectIdGetDatum(d);
+					if (string)
+					{
+						loaded_security
+							= InputFunctionCall(&security_in_function,
+												string,
+												&security_typioparam,
+												attForm->atttypmod);
 					}
 					cstate->cur_attname = NULL;
 					cstate->cur_attval = NULL;
@@ -2128,29 +2153,23 @@ CopyFrom(CopyState cstate)
 				int			attnum = lfirst_int(cur);
 				int			m = attnum - 1;
 
-				if (pgaceIsSecuritySystemColumn(attnum)) {
-					Form_pg_attribute sysatt = SystemAttributeDefinition(attnum, false);
-					Datum d;
+				if (pgaceIsSecuritySystemColumn(attnum))
+				{
+					Form_pg_attribute attForm
+						= SystemAttributeDefinition(attnum, false);
+					Datum tmp;
 
-					cstate->cur_attname = NameStr(sysatt->attname);
+					cstate->cur_attname = NameStr(attForm->attname);
 					i++;
 
-					if (!security_in_function_prepared) {
-						Oid security_in_func_oid;
-						getTypeBinaryInputInfo(sysatt->atttypid,
-											   &security_in_func_oid,
-											   &security_typioparam);
-						fmgr_info(security_in_func_oid, &security_in_function);
-						security_in_function_prepared = true;
-					}
-					d = CopyReadBinaryAttribute(cstate,
-												i,
-												&security_in_function,
-												security_typioparam,
-												sysatt->atttypmod,
-												&isnull);
+					tmp = CopyReadBinaryAttribute(cstate,
+												  i,
+												  &security_in_function,
+												  &security_typioparam,
+												  attForm->atttypmod,
+												  &isnull);
 					if (!isnull)
-						loaded_security = ObjectIdGetDatum(d);
+						loaded_security = tmp;
 					cstate->cur_attname = NULL;
 					continue;
 				}
@@ -2186,7 +2205,12 @@ CopyFrom(CopyState cstate)
 
 		if (cstate->oids && file_has_oids)
 			HeapTupleSetOid(tuple, loaded_oid);
-		HeapTupleSetSecurity(tuple, loaded_security);
+		if (loaded_security != PointerGetDatum(NULL))
+		{
+			Oid security_id
+				= pgaceSecurityLabelToSid(TextDatumGetCString(loaded_security));
+			HeapTupleSetSecurity(tuple, security_id);
+		}
 
 		/* Triggers and stuff need to be invoked in query context. */
 		MemoryContextSwitchTo(oldcontext);
@@ -3490,14 +3514,15 @@ CopyGetAttnums(TupleDesc tupDesc, Relation rel, List *attnamelist)
 				}
 			}
 
-			/* PGACE: writable system column support */
+			/* Is it writable system column? */
 			if (attnum == InvalidAttrNumber)
 			{
-				Form_pg_attribute sysatt = SystemAttributeByName(name, true);
-				if (sysatt) {
-					if (pgaceIsSecuritySystemColumn(sysatt->attnum))
-						attnum = sysatt->attnum;
-				}
+				Form_pg_attribute attForm;
+				bool relhasoids = RelationGetForm(rel)->relhasoids;
+
+				attForm = SystemAttributeByName(name, relhasoids);
+				if (attForm && pgaceIsSecuritySystemColumn(attForm->attnum))
+					attnum = attForm->attnum;
 			}
 
 			if (attnum == InvalidAttrNumber)
@@ -3549,7 +3574,9 @@ copy_dest_receive(TupleTableSlot *slot, DestReceiver *self)
 	slot_getallattrs(slot);
 
 	/* And send the data */
-	CopyOneRowTo(cstate, InvalidOid, InvalidOid, slot->tts_values, slot->tts_isnull);
+	CopyOneRowTo(cstate,
+				 InvalidOid, InvalidOid,
+				 slot->tts_values, slot->tts_isnull);
 }
 
 /*
