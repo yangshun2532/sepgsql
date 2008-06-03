@@ -262,7 +262,7 @@ static Oid lookupSecurityIdCommon(char *label)
 	}
 
 	/* 2. lookup pg_security with SnapshotSelf */
-	rel = heap_open(SecurityRelationId, RowExclusiveLock);
+	rel = heap_open(SecurityRelationId, AccessShareLock);
 
 	ScanKeyInit(&skey,
 				Anum_pg_security_seclabel,
@@ -274,6 +274,8 @@ static Oid lookupSecurityIdCommon(char *label)
 	labelOid = HeapTupleIsValid(tuple)
 		? HeapTupleGetOid(tuple) : InvalidOid;
 	systable_endscan(scan);
+
+	heap_close(rel, AccessShareLock);
 out:
 	return labelOid;
 }
