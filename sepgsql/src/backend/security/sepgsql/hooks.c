@@ -205,10 +205,13 @@ static Datum invokeTrustedProcedure(PG_FUNCTION_ARGS)
 
 void sepgsqlCallFunction(FmgrInfo *finfo, bool with_perm_check)
 {
+	MemoryContext oldctx;
 	Form_pg_proc proForm;
 	HeapTuple tuple;
 	security_context_t procon, newcon;
 	access_vector_t perms = DB_PROCEDURE__EXECUTE;
+
+	oldctx = MemoryContextSwitchTo(finfo->fn_mcxt);
 
 	tuple = SearchSysCache(PROCOID,
 						   ObjectIdGetDatum(finfo->fn_oid),
@@ -224,7 +227,7 @@ void sepgsqlCallFunction(FmgrInfo *finfo, bool with_perm_check)
 								 procon,
 								 SECCLASS_PROCESS);
 
-	if (!strcmp(newcon, sepgsqlGetClientContext()))
+	if (strcmp(newcon, sepgsqlGetClientContext()))
 	{
 		finfo->fn_pgace_addr = finfo->fn_addr;
 		finfo->fn_pgace_data = CStringGetDatum(newcon);
@@ -244,6 +247,8 @@ void sepgsqlCallFunction(FmgrInfo *finfo, bool with_perm_check)
 	}
 
 	ReleaseSysCache(tuple);
+
+	MemoryContextSwitchTo(oldctx);
 }
 
 bool sepgsqlCallFunctionTrigger(FmgrInfo *finfo, TriggerData *tgdata)

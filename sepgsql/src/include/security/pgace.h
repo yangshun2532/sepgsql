@@ -530,9 +530,7 @@ pgaceCallFunction(FmgrInfo *finfo)
 	if (sepgsqlIsEnabled())
 		sepgsqlCallFunction(finfo, false);
 #endif
-	/*
-	 * do nothing
-	 */
+	/* do nothing */
 }
 
 /*
@@ -568,9 +566,7 @@ pgaceCallFunctionFastPath(FmgrInfo *finfo)
 	if (sepgsqlIsEnabled())
 		sepgsqlCallFunction(finfo, true);
 #endif
-	/*
-	 * do nothing
-	 */
+	/* do nothing */
 }
 
 /*
