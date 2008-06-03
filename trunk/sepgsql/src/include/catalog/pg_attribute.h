@@ -452,7 +452,7 @@ DATA(insert ( 1259 cmin				29 0  4  -4 0 -1 -1 t p i t f f t 0));
 DATA(insert ( 1259 xmax				28 0  4  -5 0 -1 -1 t p i t f f t 0));
 DATA(insert ( 1259 cmax				29 0  4  -6 0 -1 -1 t p i t f f t 0));
 DATA(insert ( 1259 tableoid			26 0  4  -7 0 -1 -1 t p i t f f t 0));
-DATA(insert ( 1259 SECURITY_SYSATTR_NAME 25 0 4 -8 0 -1 -1 t p i t f f t 0));
+DATA(insert ( 1259 SECURITY_SYSATTR_NAME 25 0 -1 -8 0 -1 -1 f x i t f f t 0));
 
 /* ----------------
  *		pg_index
