@@ -4131,8 +4131,8 @@ DATA(insert OID = 2963 (  uuid_hash		   PGNSP PGUID 12 1 0 f f t f i 1 23 "2950"
 DESCR("hash");
 
 /* PostgreSQL Access Control Extension related functions */
-DATA(insert OID = 3410 ( lo_get_security		PGNSP PGUID 12 1 0 f f t f v 1 3403 "26"    _null_ _null_ _null_ lo_get_security        - _null_ _null_ ));
-DATA(insert OID = 3411 ( lo_set_security		PGNSP PGUID 12 1 0 f f t f v 2 16 "26 3403" _null_ _null_ _null_ lo_set_security        - _null_ _null_ ));
+DATA(insert OID = 3410 ( lo_get_security		PGNSP PGUID 12 1 0 f f t f v 1 25 "26"    _null_ _null_ _null_ lo_get_security        - _null_ _null_ ));
+DATA(insert OID = 3411 ( lo_set_security		PGNSP PGUID 12 1 0 f f t f v 2 16 "26 25" _null_ _null_ _null_ lo_set_security        - _null_ _null_ ));
 
 /* SE-PostgreSQL related function */
 DATA(insert OID = 3450 ( sepgsql_getcon			PGNSP PGUID 12 1 0 f f t f v 0 25 "" _null_ _null_ _null_ sepgsql_getcon - _null_ _null_ ));
