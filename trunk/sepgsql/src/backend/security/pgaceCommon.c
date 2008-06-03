@@ -421,7 +421,7 @@ Datum
 lo_get_security(PG_FUNCTION_ARGS)
 {
 	Oid loid = PG_GETARG_OID(0);
-	Oid lo_security = InvalidOid;
+	Oid security_id = InvalidOid;
 	Relation rel;
 	ScanKeyData skey;
 	SysScanDesc sd;
@@ -439,7 +439,7 @@ lo_get_security(PG_FUNCTION_ARGS)
 							SnapshotNow, 1, &skey);
 
 	while ((tuple = systable_getnext(sd)) != NULL) {
-		lo_security = HeapTupleGetSecurity(tuple);
+		security_id = HeapTupleGetSecurity(tuple);
 		pgaceLargeObjectGetSecurity(rel, tuple);
 		found = true;
 		break;
@@ -451,20 +451,23 @@ lo_get_security(PG_FUNCTION_ARGS)
 	if (!found)
 		elog(ERROR, "large object %u does not exist", loid);
 
-	PG_RETURN_OID(lo_security);
+	return CStringGetTextDatum(pgaceSidToSecurityLabel(security_id));
 }
 
 Datum
 lo_set_security(PG_FUNCTION_ARGS)
 {
 	Oid loid = PG_GETARG_OID(0);
-	Oid lo_security = PG_GETARG_OID(1);
+	Datum labelTxt = PG_GETARG_TEXT_P(1);
+	Oid security_id;
 	Relation rel;
 	ScanKeyData skey;
 	SysScanDesc sd;
 	HeapTuple tuple, newtup;
 	CatalogIndexState indstate;
 	bool found = false;
+
+	security_id = pgaceSecurityLabelToSid(TextDatumGetCString(labelTxt));
 
 	ScanKeyInit(&skey,
 				Anum_pg_largeobject_loid,
@@ -480,7 +483,7 @@ lo_set_security(PG_FUNCTION_ARGS)
 
 	while ((tuple = systable_getnext(sd)) != NULL) {
 		newtup = heap_copytuple(tuple);
-		HeapTupleSetSecurity(newtup, lo_security);
+		HeapTupleSetSecurity(newtup, security_id);
 		if (!found)
 			pgaceLargeObjectSetSecurity(rel, tuple, newtup);
 		simple_heap_update(rel, &newtup->t_self, newtup);
