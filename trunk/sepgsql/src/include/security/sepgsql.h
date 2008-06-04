@@ -182,8 +182,6 @@ extern security_context_t sepgsqlAvcCreateCon(const security_context_t scon,
  * SE-PostgreSQL permission evaluation related
  *	 src/backend/security/sepgsql/permission.c
  */
-extern bool sepgsqlGetTupleName(Oid relid, HeapTuple tuple, char *buffer, int buflen);
-
 extern const char *sepgsqlTupleName(Oid relid, HeapTuple tuple);
 
 extern security_context_t sepgsqlGetDefaultContext(Relation rel, HeapTuple tuple);
