@@ -186,7 +186,7 @@ extern security_context_t sepgsqlAvcCreateCon(const security_context_t scon,
  */
 extern bool sepgsqlGetTupleName(Oid relid, HeapTuple tuple, char *buffer, int buflen);
 
-extern const char *getTupleName(Oid relid, HeapTuple tuple);
+extern const char *sepgsqlTupleName(Oid relid, HeapTuple tuple);
 
 extern security_context_t sepgsqlGetDefaultContext(Relation rel, HeapTuple tuple);
 
