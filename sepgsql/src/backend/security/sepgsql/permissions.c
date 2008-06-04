@@ -109,83 +109,74 @@ static access_vector_t sepgsql_perms_to_tuple_perms(uint32 perms) {
 	return result;
 }
 
-bool sepgsqlGetTupleName(Oid relid, HeapTuple tuple, char *buffer, int buflen)
+const char *sepgsqlTupleName(Oid relid, HeapTuple tuple)
 {
-	Form_pg_attribute attForm;
-	HeapTuple reltup;
+	static char buffer[NAMEDATALEN * 3];
 
 	switch (relid)
 	{
-	case AttributeRelationId:
-		attForm = (Form_pg_attribute) GETSTRUCT(tuple);
+	case AttributeRelationId: {
+		Form_pg_attribute attForm
+			= (Form_pg_attribute) GETSTRUCT(tuple);
 
 		if (!IsBootstrapProcessingMode())
 		{
-			reltup = SearchSysCache(RELOID,
-									ObjectIdGetDatum(attForm->attrelid),
-									0, 0, 0);
-			if (HeapTupleIsValid(reltup))
+			HeapTuple exttup
+				= SearchSysCache(RELOID,
+								 ObjectIdGetDatum(attForm->attrelid),
+								 0, 0, 0);
+			if (HeapTupleIsValid(exttup))
 			{
-				snprintf(buffer, buflen, "%s.%s",
-						 NameStr(((Form_pg_class) GETSTRUCT(reltup))->relname),
+				snprintf(buffer, sizeof(buffer), "%s.%s",
+						 NameStr(((Form_pg_class) GETSTRUCT(exttup))->relname),
 						 NameStr(((Form_pg_attribute) GETSTRUCT(tuple))->attname));
-				ReleaseSysCache(reltup);
+				ReleaseSysCache(exttup);
 				break;
 			}
 		}
-		snprintf(buffer, buflen, "%s",
+		snprintf(buffer, sizeof(buffer), "%s",
 				 NameStr(((Form_pg_attribute) GETSTRUCT(tuple))->attname));
 		break;
-
+	}
 	case AuthIdRelationId:
-		snprintf(buffer, buflen, "%s",
+		snprintf(buffer, sizeof(buffer), "%s",
 				 NameStr(((Form_pg_authid) GETSTRUCT(tuple))->rolname));
 		break;
 
 	case RelationRelationId:
-		snprintf(buffer, buflen, "%s",
+		snprintf(buffer, sizeof(buffer), "%s",
 				 NameStr(((Form_pg_class) GETSTRUCT(tuple))->relname));
 		break;
 
 	case DatabaseRelationId:
-		snprintf(buffer, buflen, "%s",
+		snprintf(buffer, sizeof(buffer), "%s",
 				 NameStr(((Form_pg_database) GETSTRUCT(tuple))->datname));
 		break;
 
 	case LargeObjectRelationId:
-		snprintf(buffer, buflen, "loid:%u",
+		snprintf(buffer, sizeof(buffer), "loid:%u",
 				 ((Form_pg_largeobject) GETSTRUCT(tuple))->loid);
 		break;
 
 	case ProcedureRelationId:
-		snprintf(buffer, buflen, "%s",
+		snprintf(buffer, sizeof(buffer), "%s",
 				 NameStr(((Form_pg_proc) GETSTRUCT(tuple))->proname));
 		break;
 
 	case TriggerRelationId:
-		snprintf(buffer, buflen, "%s",
+		snprintf(buffer, sizeof(buffer), "%s",
 				 NameStr(((Form_pg_trigger) GETSTRUCT(tuple))->tgname));
 		break;
 
 	case TypeRelationId:
-		snprintf(buffer, buflen, "pg_type::%s",
+		snprintf(buffer, sizeof(buffer), "pg_type::%s",
 				 NameStr(((Form_pg_type) GETSTRUCT(tuple))->typname));
 		break;
 	default:
 		/* this tuple has no name */
-		return false;
+		return NULL;
 	}
-	return true;
-}
-
-const char *sepgsqlTupleName(Oid relid, HeapTuple tuple)
-{
-	static char buffer[NAMEDATALEN * 3];
-	bool rc;
-
-	rc = sepgsqlGetTupleName(relid, tuple, buffer, sizeof(buffer));
-
-	return rc ? buffer : NULL;
+	return buffer;
 }
 
 static void check_pg_attribute(HeapTuple tuple, HeapTuple oldtup,
@@ -366,23 +357,19 @@ bool sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, HeapTuple oldtup, uin
 
 	if (perms)
 	{
-		security_context_t tcontext;
-		char nmbuf[256];
-		bool has_name;
-
-		has_name = sepgsqlGetTupleName(RelationGetRelid(rel), tuple, nmbuf, sizeof(nmbuf));
-		tcontext = pgaceLookupSecurityLabel(HeapTupleGetSecurity(tuple));
+		security_context_t tcontext
+			= pgaceLookupSecurityLabel(HeapTupleGetSecurity(tuple));
 
 		if (abort) {
 			sepgsqlAvcPermission(sepgsqlGetClientContext(),
 								 tcontext, tclass, perms,
-								 has_name ? nmbuf : NULL);
+								 sepgsqlTupleName(RelationGetRelid(rel), tuple));
 		}
 		else
 		{
 			rc = sepgsqlAvcPermissionNoAbort(sepgsqlGetClientContext(),
 											 tcontext, tclass, perms,
-											 has_name ? nmbuf : NULL);
+											 sepgsqlTupleName(RelationGetRelid(rel), tuple));
 		}
 		pfree(tcontext);
 	}
