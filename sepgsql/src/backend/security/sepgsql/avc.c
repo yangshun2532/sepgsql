@@ -328,19 +328,24 @@ static void sepgsql_avc_compute(const security_context_t scon,
 								struct avc_datum *cache)
 {
 	security_class_t e_tclass;
-	security_context_t ncon;
+	security_context_t svcon, tvcon, ncon;
 	struct av_decision avd;
+
+	svcon = (!security_check_context_raw(scon)
+			 ? scon : sepgsqlGetUnlabeledContext());
+	tvcon = (!security_check_context_raw(tcon)
+			 ? tcon : sepgsqlGetUnlabeledContext());
 
 	LWLockAcquire(SepgsqlAvcLock, LW_SHARED);
 
 	e_tclass = trans_to_external_tclass(tclass);
 
-	if (security_compute_av_raw(scon, tcon, e_tclass, 0, &avd))
+	if (security_compute_av_raw(svcon, tvcon, e_tclass, 0, &avd))
 		elog(ERROR, "SELinux: could not compute a new avc entry"
-			 " scon=%s tcon=%s tclass=%u", scon, tcon, e_tclass);
-	if (security_compute_create_raw(scon, tcon, e_tclass, &ncon))
+			 " scon=%s tcon=%s tclass=%u", svcon, tvcon, e_tclass);
+	if (security_compute_create_raw(svcon, tvcon, e_tclass, &ncon))
 		elog(ERROR, "SELinux: could not compute a new createcon "
-			 "scon=%s tcon=%s tclass=%u", scon, tcon, e_tclass);
+			 "scon=%s tcon=%s tclass=%u", svcon, tvcon, e_tclass);
 
 	cache->allowed = trans_to_internal_perms(e_tclass, avd.allowed);
 	cache->decided = trans_to_internal_perms(e_tclass, avd.decided);
@@ -371,7 +376,6 @@ static struct avc_datum *sepgsql_avc_lookup(const security_context_t scon,
 											const security_context_t tcon,
 											security_class_t tclass)
 {
-	List *slot;
 	ListCell *l;
 	struct avc_datum *cache;
 	uint32 hash_key, index;
@@ -396,7 +400,7 @@ static struct avc_datum *sepgsql_avc_lookup(const security_context_t scon,
 			/* move to the first of this slot */
 			if (!first) {
 				list_delete_ptr(avc_slot[index], cache);
-				avc_slot[index] = lcons(avc_slot[index], cache);
+				avc_slot[index] = lcons(cache, avc_slot[index]);
 			}
 			cache->hot_cache = true;
 			goto out;
@@ -412,7 +416,7 @@ static struct avc_datum *sepgsql_avc_lookup(const security_context_t scon,
 
 	/* insert it */
 	cache->hash_key = hash_key;
-	avc_slot[index] = lcons(cache, slot);
+	avc_slot[index] = lcons(cache, avc_slot[index]);
 	avc_datum_count++;
 
 out:

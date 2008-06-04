@@ -17,6 +17,7 @@
 static security_context_t serverContext = NULL;
 static security_context_t clientContext = NULL;
 static security_context_t databaseContext = NULL;
+static security_context_t unlabeledContext = NULL;
 
 const security_context_t sepgsqlGetServerContext(void)
 {
@@ -34,6 +35,17 @@ const security_context_t sepgsqlGetDatabaseContext(void)
 {
 	Assert(databaseContext != NULL);
 	return databaseContext;
+}
+
+const security_context_t sepgsqlGetUnlabeledContext(void)
+{
+	if (unlabeledContext)
+		return unlabeledContext;
+
+	if (security_get_initial_context_raw("unlabeled", &unlabeledContext) < 0)
+		elog(ERROR, "SELinux: could not get unlabeled context");
+
+	return unlabeledContext;
 }
 
 const security_context_t sepgsqlGetDefaultDatabaseContext(void)
@@ -322,7 +334,7 @@ Datum sepgsql_set_role(PG_FUNCTION_ARGS)
 		snprintf(buffer, sizeof(buffer), "%s:%s:%s:%s",
 				 user, TextDatumGetCString(PG_GETARG_TEXT_P(1)), type, range);
 	else
-		snprintf(buffer, sizeof(buffer), "%s:%s:%s:%s",
+		snprintf(buffer, sizeof(buffer), "%s:%s:%s",
 				 user, TextDatumGetCString(PG_GETARG_TEXT_P(1)), type);
 	if (selinux_raw_to_trans_context((security_context_t) buffer, &newcon) < 0)
 		elog(ERROR, "SELinux: could not set a new range");

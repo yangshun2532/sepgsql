@@ -460,7 +460,7 @@ Datum
 lo_set_security(PG_FUNCTION_ARGS)
 {
 	Oid loid = PG_GETARG_OID(0);
-	Datum labelTxt = PG_GETARG_TEXT_P(1);
+	Datum labelTxt = PG_GETARG_DATUM(1);
 	Oid security_id;
 	Relation rel;
 	ScanKeyData skey;
