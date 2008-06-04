@@ -313,151 +313,285 @@ void sepgsqlLoadSharedModule(const char *filename)
 /*******************************************************************************
  * Binary Large Object hooks
  *******************************************************************************/
-void sepgsqlLargeObjectGetSecurity(Relation rel, HeapTuple tuple) {
-	/* check db_blob:{getattr} */
-	sepgsqlCheckTuplePerms(rel, tuple, NULL,
-						   SEPGSQL_PERMS_SELECT, true);
-}
-
-void sepgsqlLargeObjectSetSecurity(Relation rel, HeapTuple oldtup, HeapTuple newtup)
-{
-	char nmbuf[256];
-	bool has_name;
-
-	/* check db_blob:{setattr relabelfrom} */
-	has_name = sepgsqlGetTupleName(LargeObjectRelationId, oldtup, nmbuf, sizeof(nmbuf));
-	sepgsqlAvcPermission(sepgsqlGetClientContext(),
-						 pgaceLookupSecurityLabel(HeapTupleGetSecurity(oldtup)),
-						 SECCLASS_DB_BLOB,
-						 DB_BLOB__SETATTR | DB_BLOB__RELABELFROM,
-						 has_name ? nmbuf : NULL);
-
-	/* check db_blob:{relabelto} */
-	has_name = sepgsqlGetTupleName(LargeObjectRelationId, newtup, nmbuf, sizeof(nmbuf));
-	sepgsqlAvcPermission(sepgsqlGetClientContext(),
-						 pgaceLookupSecurityLabel(HeapTupleGetSecurity(newtup)),
-						 SECCLASS_DB_BLOB,
-						 DB_BLOB__RELABELTO,
-						 has_name ? nmbuf : NULL);
-}
 
 void sepgsqlLargeObjectCreate(Relation rel, HeapTuple tuple)
 {
-	security_context_t context;
+	security_context_t tcontext;
 	Oid security_id;
-	char nmbuf[256];
-	bool has_name;
 
-	context = sepgsqlGetDefaultContext(rel, tuple);
-
-	has_name = sepgsqlGetTupleName(LargeObjectRelationId, tuple, nmbuf, sizeof(nmbuf));
+	tcontext = sepgsqlGetDefaultContext(rel, tuple);
 	sepgsqlAvcPermission(sepgsqlGetClientContext(),
-						 context,
+						 tcontext,
 						 SECCLASS_DB_BLOB,
 						 DB_BLOB__CREATE,
-						 has_name ? nmbuf : NULL);
-
-	security_id = pgaceSecurityLabelToSid(context);
+						 sepgsqlTupleName(RelationGetRelid(rel), tuple));
+	security_id = pgaceSecurityLabelToSid(tcontext);
 	HeapTupleSetSecurity(tuple, security_id);
-
-	pfree(context);
+	pfree(tcontext);
 }
 
-void sepgsqlLargeObjectDrop(Relation rel, HeapTuple tuple)
+void sepgsqlLargeObjectDrop(Relation rel, HeapTuple tuple,
+							bool is_first, Datum *pgaceItem)
 {
-	security_context_t context;
-	char nmbuf[256];
-	bool has_name;
+	List *sidList = is_first ? NIL : (List *)(*pgaceItem);
+	ListCell *l;
+	security_context_t tcontext;
+	Oid security_id = HeapTupleGetSecurity(tuple);
 
-	context = pgaceLookupSecurityLabel(HeapTupleGetSecurity(tuple));
-
-	has_name = sepgsqlGetTupleName(LargeObjectRelationId, tuple, nmbuf, sizeof(nmbuf));
+	foreach (l, sidList)
+	{
+		if (lfirst_oid(l) == security_id)
+			return;	/* already checked */
+	}
+	tcontext = pgaceLookupSecurityLabel(security_id);
 	sepgsqlAvcPermission(sepgsqlGetClientContext(),
-						 context,
+						 tcontext,
 						 SECCLASS_DB_BLOB,
 						 DB_BLOB__DROP,
-						 has_name ? nmbuf : NULL);
-	pfree(context);
+						 sepgsqlTupleName(RelationGetRelid(rel), tuple));
+	sidList = lappend_oid(sidList, security_id);
+	*pgaceItem = PointerGetDatum(sidList);
 }
 
-void sepgsqlLargeObjectRead(Relation rel, HeapTuple tuple)
+bool sepgsqlLargeObjectRead(Relation rel, HeapTuple tuple,
+							bool is_first, Datum *pgaceItem)
 {
-	sepgsqlCheckTuplePerms(rel, tuple, NULL,
-						   SEPGSQL_PERMS_SELECT | SEPGSQL_PERMS_READ, true);
-}
+	struct {
+		List *allowList;
+		List *denyList;
+	} *rd_desc = is_first ? palloc0(sizeof(*rd_desc))
+						  : DatumGetPointer(*pgaceItem);
+	ListCell *l;
+	security_context_t tcontext;
+	Oid security_id;
+	bool rc;
 
-// TODO: pgace should deliver LargeObjectDesc with security attribute
-void sepgsqlLargeObjectWrite(Relation rel, HeapTuple newtup, HeapTuple oldtup)
-{
-	ScanKeyData skey;
-    SysScanDesc sd;
-    HeapTuple tuple;
-	Oid loid;
-
-	/* update existing region */
-	if (HeapTupleIsValid(oldtup)) {
-		HeapTupleSetSecurity(newtup, HeapTupleGetSecurity(oldtup));
-		sepgsqlCheckTuplePerms(rel, newtup, NULL, SEPGSQL_PERMS_UPDATE, true);
-		return;
+	security_id = HeapTupleGetSecurity(tuple);
+	foreach (l, rd_desc->allowList)
+	{
+		if (lfirst_oid(l) == security_id)
+			return true;	/* already allowed */
 	}
 
-	/* insert a new large object page */
-	loid = ((Form_pg_largeobject) GETSTRUCT(newtup))->loid;
-	ScanKeyInit(&skey,
-				Anum_pg_largeobject_loid,
-				BTEqualStrategyNumber, F_OIDEQ,
-				ObjectIdGetDatum(loid));
-	sd = systable_beginscan(rel, LargeObjectLOidPNIndexId, true,
-							SnapshotSelf, 1, &skey);
-	tuple = systable_getnext(sd);
-	if (!HeapTupleIsValid(tuple))
-		elog(ERROR, "SELinux: large object %u does not exist", loid);
-	HeapTupleSetSecurity(newtup, HeapTupleGetSecurity(tuple));
-	sepgsqlCheckTuplePerms(rel, newtup, NULL, SEPGSQL_PERMS_UPDATE, true);
-	systable_endscan(sd);
+	foreach (l, rd_desc->denyList)
+	{
+		if (lfirst_oid(l) == security_id)
+			return false;	/* already denied */
+	}
+
+	tcontext = pgaceLookupSecurityLabel(security_id);
+	rc = sepgsqlAvcPermissionNoAbort(sepgsqlGetClientContext(),
+									 tcontext,
+									 SECCLASS_DB_BLOB,
+									 DB_BLOB__READ,
+									 sepgsqlTupleName(RelationGetRelid(rel), tuple));
+	if (rc)
+		rd_desc->allowList = lappend_oid(rd_desc->allowList, security_id);
+	else
+		rd_desc->denyList = lappend_oid(rd_desc->denyList, security_id);
+
+	*pgaceItem = PointerGetDatum(rd_desc);
+
+	return rc;
 }
 
-void sepgsqlLargeObjectTruncate(Relation rel, Oid loid, HeapTuple headtup) {
-	ScanKeyData skey;
+void sepgsqlLargeObjectWrite(Relation rel, Relation idx,
+							 HeapTuple newtup, HeapTuple oldtup,
+							 bool is_first, Datum *pgaceItem)
+{
+	security_context_t tcontext;
+	Oid security_id;
+	ListCell *l;
+	struct {
+		List *allowList;
+		Oid   default_sid;
+	} *wr_desc = is_first ? palloc0(sizeof(*wr_desc))
+						  : DatumGetPointer(*pgaceItem);
+
+	if (HeapTupleIsValid(newtup))
+	{
+		if (HeapTupleIsValid(oldtup))
+			security_id = HeapTupleGetSecurity(oldtup);
+		else if (wr_desc->default_sid != InvalidOid)
+			security_id = wr_desc->default_sid;
+		else
+		{
+			SysScanDesc sd;
+			ScanKeyData skey;
+			HeapTuple tuple;
+			Form_pg_largeobject loForm
+				= (Form_pg_largeobject) GETSTRUCT(newtup);
+
+			ScanKeyInit(&skey,
+						Anum_pg_largeobject_loid,
+						BTEqualStrategyNumber, F_OIDEQ,
+						ObjectIdGetDatum(loForm->loid));
+			sd = systable_beginscan_ordered(rel, idx,
+											SnapshotNow, 1, &skey);
+			security_id = InvalidOid;
+			while ((tuple = systable_getnext_ordered(sd, ForwardScanDirection)) != NULL)
+			{
+				security_id = HeapTupleGetSecurity(tuple);
+				if (security_id != InvalidOid)
+					break;
+			}
+			systable_endscan_ordered(sd);
+
+			if (security_id == InvalidOid)
+			{
+				tcontext = sepgsqlGetDefaultContext(rel, newtup);
+				security_id = pgaceSecurityLabelToSid(tcontext);
+			}
+			wr_desc->default_sid = security_id;
+		}
+		HeapTupleSetSecurity(newtup, security_id);
+	}
+	else
+	{
+		Assert(HeapTupleIsValid(oldtup));
+		security_id = HeapTupleGetSecurity(oldtup);
+		newtup = oldtup;
+	}
+
+	foreach (l, wr_desc->allowList)
+	{
+		if (lfirst_oid(l) == security_id)
+			return;		/* already allowed */
+	}
+
+	tcontext = pgaceLookupSecurityLabel(security_id);
+	sepgsqlAvcPermission(sepgsqlGetClientContext(),
+						 tcontext,
+						 SECCLASS_DB_BLOB,
+						 DB_BLOB__WRITE,
+						 sepgsqlTupleName(RelationGetRelid(rel), newtup));
+	wr_desc->allowList = lappend_oid(wr_desc->allowList, security_id);
+
+	*pgaceItem = PointerGetDatum(wr_desc);
+}
+
+static void blob_import_export_common(bool import, Oid loid, int fdesc, const char *filename)
+{
+	Relation rel;
 	SysScanDesc sd;
+	ScanKeyData skey;
 	HeapTuple tuple;
+	bool found = false;
+	List *sidList = NIL;
+	ListCell *l;
+	Oid security_id;
+	security_context_t tcontext;
 
-	/* simple truncating case */
-	if (HeapTupleIsValid(headtup)) {
-		sepgsqlCheckTuplePerms(rel, headtup, NULL, SEPGSQL_PERMS_UPDATE, true);
-		return;
-	}
-
-	/* terminated in a hole */
+	/* db_blob:{import/export} to target object */
+	rel = heap_open(LargeObjectRelationId, AccessShareLock);
 	ScanKeyInit(&skey,
 				Anum_pg_largeobject_loid,
 				BTEqualStrategyNumber, F_OIDEQ,
 				ObjectIdGetDatum(loid));
 	sd = systable_beginscan(rel, LargeObjectLOidPNIndexId, true,
 							SnapshotNow, 1, &skey);
-	tuple = systable_getnext(sd);
-	if (!HeapTupleIsValid(tuple))
-		elog(ERROR, "SELinux: large object %u does not exist", loid);
-	sepgsqlCheckTuplePerms(rel, tuple, NULL, SEPGSQL_PERMS_UPDATE, true);
+	while ((tuple = systable_getnext(sd)) != NULL)
+	{
+		found = true;
+
+		security_id = HeapTupleGetSecurity(tuple);
+		foreach (l, sidList)
+		{
+			if (lfirst_oid(l) == security_id)
+				goto next;	/* already allowed */
+		}
+
+		tcontext = pgaceLookupSecurityLabel(security_id);
+		sepgsqlAvcPermission(sepgsqlGetClientContext(),
+							 tcontext,
+							 SECCLASS_DB_BLOB,
+							 import ? DB_BLOB__IMPORT : DB_BLOB__EXPORT,
+							 sepgsqlTupleName(RelationGetRelid(rel), tuple));
+		sidList = lappend_oid(sidList, security_id);
+	next:
+		;
+	}
 	systable_endscan(sd);
+	heap_close(rel, AccessShareLock);
+
+	if (!found)
+		elog(ERROR, "SELinux: could not find target large object %u", loid);
+
+	/* file:{read} to target file */
+	if (!fgetfilecon_raw(fdesc, &tcontext))
+		elog(ERROR, "SELinux: could not get security context of %s", filename);
+	PG_TRY();
+	{
+		sepgsqlAvcPermission(sepgsqlGetClientContext(),
+							 tcontext,
+							 SECCLASS_FILE,
+							 import ? FILE__READ : FILE__WRITE,
+							 filename);
+	}
+	PG_CATCH();
+	{
+		freecon(tcontext);
+		PG_RE_THROW();
+	}
+	PG_END_TRY();
+	freecon(tcontext);
 }
 
-void sepgsqlLargeObjectImport(void)
+void sepgsqlLargeObjectImport(Oid loid, int fdesc, const char *filename)
 {
-	sepgsqlAvcPermission(sepgsqlGetClientContext(),
-						 sepgsqlGetServerContext(),
-						 SECCLASS_DB_BLOB,
-						 DB_BLOB__IMPORT,
-						 NULL);
+	blob_import_export_common(true, loid, fdesc, filename);
 }
 
-void sepgsqlLargeObjectExport(void)
+void sepgsqlLargeObjectExport(Oid loid, int fdesc, const char *filename)
 {
+	blob_import_export_common(false, loid, fdesc, filename);
+}
+
+void sepgsqlLargeObjectGetSecurity(Relation rel, HeapTuple tuple)
+{
+	Oid security_id = HeapTupleGetSecurity(tuple);
+	security_context_t tcontext = pgaceLookupSecurityLabel(security_id);
+
 	sepgsqlAvcPermission(sepgsqlGetClientContext(),
-						 sepgsqlGetServerContext(),
+						 tcontext,
 						 SECCLASS_DB_BLOB,
-						 DB_BLOB__EXPORT,
-						 NULL);
+						 DB_BLOB__GETATTR,
+						 sepgsqlTupleName(RelationGetRelid(rel), tuple));
+}
+
+void sepgsqlLargeObjectSetSecurity(Relation rel, HeapTuple tuple, Oid security_id,
+								   bool is_first, Datum *pgaceItem)
+{
+	security_context_t tcontext;
+	List *sidList = is_first ? NIL : (List *) (*pgaceItem);
+	ListCell *l;
+
+	foreach (l, sidList)
+	{
+		if (lfirst_oid(l) == security_id)
+			return;		/* already checked */
+	}
+
+	/* check db_blob:{setattr relabelfrom} */
+	tcontext = pgaceLookupSecurityLabel(HeapTupleGetSecurity(tuple));
+	sepgsqlAvcPermission(sepgsqlGetClientContext(),
+						 tcontext,
+						 SECCLASS_DB_BLOB,
+						 DB_BLOB__SETATTR | DB_BLOB__RELABELFROM,
+						 sepgsqlTupleName(RelationGetRelid(rel), tuple));
+	sidList = lappend_oid(sidList, HeapTupleGetSecurity(tuple));
+
+	/* check db_blob:{setattr relabelto} */
+	if (is_first)
+	{
+		tcontext = pgaceLookupSecurityLabel(security_id);
+		sepgsqlAvcPermission(sepgsqlGetClientContext(),
+							 tcontext,
+							 SECCLASS_DB_BLOB,
+							 DB_BLOB__RELABELTO,
+							 sepgsqlTupleName(RelationGetRelid(rel), tuple));
+	}
+	*pgaceItem = PointerGetDatum(sidList);
 }
 
 /*******************************************************************************
@@ -465,7 +599,6 @@ void sepgsqlLargeObjectExport(void)
  *******************************************************************************/
 static bool abort_on_violated_tuple = false;
 
-// FIXME: it should be revised for new style
 bool sepgsqlExecScan(Scan *scan, Relation rel, TupleTableSlot *slot)
 {
 	HeapTuple tuple;
