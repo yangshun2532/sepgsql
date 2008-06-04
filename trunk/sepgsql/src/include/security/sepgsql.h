@@ -147,9 +147,11 @@ extern const security_context_t sepgsqlGetServerContext(void);
 
 extern const security_context_t sepgsqlGetClientContext(void);
 
-extern const security_context_t sepgsqlSwitchClientContext(security_context_t newcon);
-
 extern const security_context_t sepgsqlGetDatabaseContext(void);
+
+extern const security_context_t sepgsqlGetUnlabeledContext(void);
+
+extern const security_context_t sepgsqlSwitchClientContext(security_context_t newcon);
 
 extern const security_context_t sepgsqlGetDefaultDatabaseContext(void);
 
