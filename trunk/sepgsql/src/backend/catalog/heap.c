@@ -692,6 +692,9 @@ InsertPgClassTuple(Relation pg_class_desc,
 
 	CatalogUpdateIndexes(pg_class_desc, tup);
 
+	/* temporary use for this tuple */
+	InsertSysCache(RelationGetRelid(pg_class_desc), tup);
+
 	heap_freetuple(tup);
 }
 

@@ -808,6 +808,21 @@ ReleaseSysCache(HeapTuple tuple)
 }
 
 /*
+ * InsertSysCache
+ *      interts a tuple temporary until next CommandCounterIncrement
+ */
+void InsertSysCache(Oid relid, HeapTuple tuple)
+{
+	int cacheId;
+
+	for (cacheId = 0; cacheId < SysCacheSize; cacheId++)
+	{
+		if (SysCache[cacheId]->cc_reloid == relid)
+			InsertCatCache(SysCache[cacheId], tuple);
+	}
+}
+
+/*
  * SearchSysCacheCopy
  *
  * A convenience routine that does SearchSysCache and (if successful)

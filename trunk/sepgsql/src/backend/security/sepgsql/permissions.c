@@ -37,46 +37,21 @@
  */
 static Oid lookupRelationSecurityId(Oid relid, char *relkind)
 {
-	Relation rel;
-	SysScanDesc scan;
-    ScanKeyData skey;
-    HeapTuple tuple;
+	HeapTuple tuple;
 	Oid security_id;
 
 	/* 1. lookup system cache */
 	tuple = SearchSysCache(RELOID,
 						   ObjectIdGetDatum(relid),
 						   0, 0, 0);
-	if (HeapTupleIsValid(tuple))
-	{
-		if (relkind)
-			*relkind = ((Form_pg_class) GETSTRUCT(tuple))->relkind;
-
-		security_id = HeapTupleGetSecurity(tuple);
-		ReleaseSysCache(tuple);
-
-		return security_id;
-	}
-
-	/* 2. lookup pg_class with SnapshotSelf */
-	rel = heap_open(RelationRelationId, AccessShareLock);
-	ScanKeyInit(&skey,
-				ObjectIdAttributeNumber,
-				BTEqualStrategyNumber, F_OIDEQ,
-				ObjectIdGetDatum(relid));
-	scan = systable_beginscan(rel, ClassOidIndexId,
-							  true, SnapshotSelf, 1, &skey);
-	tuple = systable_getnext(scan);
 	if (!HeapTupleIsValid(tuple))
 		elog(ERROR, "SELinux: cache lookup failed for relation %u", relid);
 
 	if (relkind)
 		*relkind = ((Form_pg_class) GETSTRUCT(tuple))->relkind;
-
 	security_id = HeapTupleGetSecurity(tuple);
 
-	systable_endscan(scan);
-	heap_close(rel, AccessShareLock);
+	ReleaseSysCache(tuple);
 
 	return security_id;
 }
