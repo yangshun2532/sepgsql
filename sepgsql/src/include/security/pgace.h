@@ -692,12 +692,75 @@ pgaceLoadSharedModule(const char *filename)
  * Binary Large Object (BLOB) hooks
  ******************************************************************/
 
+static inline void
+pgaceLargeObjectCreate(Relation rel, HeapTuple tuple)
+{
+#ifdef HAVE_SELINUX
+	if (sepgsqlIsEnabled())
+		sepgsqlLargeObjectCreate(rel, tuple);
+#endif
+	/* do nothing */
+}
+
 /*
- * pgaceLargeObjectGetSecurity() is called when lo_get_security() is executed
- * It returns its security attribute.
- *
- * @tuple : a tuple which is a part of the target largeobject.
+ * LargeObjectDrop() iterates simple_heap_delete(), pgaceItem is kept
+ * in a series of loop
  */
+static inline void
+pgaceLargeObjectDrop(Relation rel, HeapTuple tuple, bool is_first, Datum *pgaceItem)
+{
+#ifdef HAVE_SELINUX
+    if (sepgsqlIsEnabled())
+		sepgsqlLargeObjectDrop(rel, tuple, is_first, pgaceItem);
+#endif
+	/* do nothing */
+}
+
+/*
+ * returning 'false' means this page should be dealt as a hole.
+ */
+static inline bool
+pgaceLargeObjectRead(Relation rel, HeapTuple tuple, bool is_first, Datum *pgaceItem)
+{
+#ifdef HAVE_SELINUX
+	if (sepgsqlIsEnabled())
+		sepgsqlLargeObjectRead(rel, tuple, is_first, pgaceItem);
+#endif
+	return true;
+}
+
+static inline void
+pgaceLargeObjectWrite(Relation rel, Relation idx,
+					  HeapTuple newtup, HeapTuple oldtup,
+					  bool is_first, Datum *pgaceItem)
+{
+#ifdef HAVE_SELINUX
+	if (sepgsqlIsEnabled())
+		sepgsqlLargeObjectWrite(rel, idx, newtup, oldtup, is_first, pgaceItem);
+#endif
+	/* do nothing */
+}
+
+static inline void
+pgaceLargeObjectImport(Oid loid, int fdesc, const char *filename)
+{
+#ifdef HAVE_SELINUX
+	if (sepgsqlIsEnabled())
+		sepgsqlLargeObjectImport(loid, fdesc, filename);
+#endif
+	/* do nothing */
+}
+
+static inline void
+pgaceLargeObjectExport(Oid loid, int fdesc, const char *filename)
+{
+#ifdef HAVE_SELINUX
+	if (sepgsqlIsEnabled())
+		sepgsqlLargeObjectExport(loid, fdesc, filename);
+#endif
+	/* do nothing */
+}
+
 static inline void
 pgaceLargeObjectGetSecurity(Relation rel, HeapTuple tuple)
 {
@@ -709,150 +772,19 @@ pgaceLargeObjectGetSecurity(Relation rel, HeapTuple tuple)
 #endif
 }
 
-/*
- * pgaceLargeObjectSetSecurity() is called when lo_set_security() is executed
- *
- * @tuple		: a tuple which is a part of the target largeobject.
- * @lo_security : new security attribute specified
- */
 static inline void
-pgaceLargeObjectSetSecurity(Relation rel, HeapTuple oldtup, HeapTuple newtup)
+pgaceLargeObjectSetSecurity(Relation rel, HeapTuple tuple, Oid security_id,
+							bool is_first, Datum *pgaceItem)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
-		sepgsqlLargeObjectSetSecurity(rel, oldtup, newtup);
+		sepgsqlLargeObjectSetSecurity(rel, tuple, security_id, is_first, pgaceItem);
 #else
 	elog(ERROR, "PGACE: There is no guest module.");
 #endif
 }
 
-/*
- * pgaceLargeObjectCreate() is called when a new large object is created
- *
- * @rel   : pg_largeobject relation opened with RowExclusiveLock
- * @tuple : a new tuple for the new large object
- */
-static inline void
-pgaceLargeObjectCreate(Relation rel, HeapTuple tuple)
-{
-#ifdef HAVE_SELINUX
-	if (sepgsqlIsEnabled())
-		sepgsqlLargeObjectCreate(rel, tuple);
-#endif
-	/*
-	 * do nothing
-	 */
-}
 
-/*
- * pgaceLargeObjectDrop() is called when a large object is dropped once for
- * a large object
- *
- * @rel   : pg_largeobject relation opened with RowExclusiveLock
- * @tuple : one of the tuples within the target large object
- */
-static inline void
-pgaceLargeObjectDrop(Relation rel, HeapTuple tuple)
-{
-#ifdef HAVE_SELINUX
-	if (sepgsqlIsEnabled())
-		sepgsqlLargeObjectDrop(rel, tuple);
-#endif
-	/*
-	 * do nothing
-	 */
-}
-
-/*
- * pgaceLargeObjectRead is called when they read from a large object
- *
- * @rel   : pg_largeobject relation opened with AccessShareLock
- * @tuple : the head tuple within the given large object
- */
-static inline void
-pgaceLargeObjectRead(Relation rel, HeapTuple tuple)
-{
-#ifdef HAVE_SELINUX
-	if (sepgsqlIsEnabled())
-		sepgsqlLargeObjectRead(rel, tuple);
-#endif
-	/*
-	 * do nothing
-	 */
-}
-
-/*
- * pgaceLargeObjectWrite() is called when they write to a large object
- *
- * @rel    : pg_largeobject relation opened with RowExclusiveLock
- * @newtup : the head tuple within the given large object
- * @oldtup : the head tuple in older version, if exist
- */
-static inline void
-pgaceLargeObjectWrite(Relation rel, HeapTuple newtup, HeapTuple oldtup)
-{
-#ifdef HAVE_SELINUX
-	if (sepgsqlIsEnabled())
-		sepgsqlLargeObjectWrite(rel, newtup, oldtup);
-#endif
-	/*
-	 * do nothing
-	 */
-}
-
-/*
- * pgaceLargeObjectTruncate() is called when they truncate a large object.
- *
- * @rel		: pg_largeobject relation opened with RowExclusiveLock
- * @loid	: large object identifier
- * @headtup : the head tuple to be truncated. NULL means this BLOB will be expanded.
- */
-static inline void
-pgaceLargeObjectTruncate(Relation rel, Oid loid, HeapTuple headtup)
-{
-#ifdef HAVE_SELINUX
-	if (sepgsqlIsEnabled())
-		sepgsqlLargeObjectTruncate(rel, loid, headtup);
-#endif
-	/*
-	 * do nothing
-	 */
-}
-
-/*
- * pgaceLargeObjectImport() is called when lo_import() is processed
- *
- * @fd : file descriptor to be inported
- */
-static inline void
-pgaceLargeObjectImport(int fd)
-{
-#ifdef HAVE_SELINUX
-	if (sepgsqlIsEnabled())
-		sepgsqlLargeObjectImport();
-#endif
-	/*
-	 * do nothing
-	 */
-}
-
-/*
- * pgaceLargeObjectExport() is called when lo_import() is processed
- *
- * @fd	 : file descriptor to be exported
- * @loid : large object to be exported
- */
-static inline void
-pgaceLargeObjectExport(int fd, Oid loid)
-{
-#ifdef HAVE_SELINUX
-	if (sepgsqlIsEnabled())
-		sepgsqlLargeObjectExport();
-#endif
-	/*
-	 * do nothing
-	 */
-}
 
 /******************************************************************
  * Security Label hooks

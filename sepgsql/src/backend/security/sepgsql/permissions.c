@@ -178,6 +178,16 @@ bool sepgsqlGetTupleName(Oid relid, HeapTuple tuple, char *buffer, int buflen)
 	return true;
 }
 
+const char *sepgsqlTupleName(Oid relid, HeapTuple tuple)
+{
+	static char buffer[NAMEDATALEN * 3];
+	bool rc;
+
+	rc = sepgsqlGetTupleName(relid, tuple, buffer, sizeof(buffer));
+
+	return rc ? buffer : NULL;
+}
+
 static void check_pg_attribute(HeapTuple tuple, HeapTuple oldtup,
 							   access_vector_t *p_perms, security_class_t *p_tclass)
 {

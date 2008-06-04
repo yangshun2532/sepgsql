@@ -372,12 +372,15 @@ lo_import_internal(text *filename, Oid lobjOid)
 				 errmsg("could not open server file \"%s\": %m",
 						fnamebuf)));
 
-	pgaceLargeObjectImport(fd);
-
 	/*
 	 * create an inversion object
 	 */
 	oid = inv_create(lobjOid);
+
+	/*
+	 * check permission to import a file into this object
+	 */
+	pgaceLargeObjectImport(oid, fd, fnamebuf);
 
 	/*
 	 * read in from the filesystem and write to the inversion object
@@ -450,8 +453,10 @@ lo_export(PG_FUNCTION_ARGS)
 				(errcode_for_file_access(),
 				 errmsg("could not create server file \"%s\": %m",
 						fnamebuf)));
-
-	pgaceLargeObjectExport(fd, lobjId);
+	/*
+	 * check permission to export this object into a file
+	 */
+	pgaceLargeObjectExport(lobjId, fd, fnamebuf);
 
 	/*
 	 * read in from the inversion file and write to the filesystem

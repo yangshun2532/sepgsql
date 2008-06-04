@@ -424,31 +424,32 @@ lo_get_security(PG_FUNCTION_ARGS)
 {
 	Oid loid = PG_GETARG_OID(0);
 	Oid security_id = InvalidOid;
-	Relation rel;
+	Relation lorel, loidx;
 	ScanKeyData skey;
 	SysScanDesc sd;
 	HeapTuple tuple;
 	bool found = false;
+
+	lorel = heap_open(LargeObjectRelationId, AccessShareLock);
+	loidx = index_open(LargeObjectLOidPNIndexId, AccessShareLock);
 
 	ScanKeyInit(&skey,
 				Anum_pg_largeobject_loid,
 				BTEqualStrategyNumber, F_OIDEQ,
 				ObjectIdGetDatum(loid));
 
-	rel = heap_open(LargeObjectRelationId, AccessShareLock);
-
-	sd = systable_beginscan(rel, LargeObjectLOidPNIndexId, true,
-							SnapshotNow, 1, &skey);
-
-	while ((tuple = systable_getnext(sd)) != NULL) {
+	sd = systable_beginscan_ordered(lorel, loidx,
+									SnapshotNow, 1, &skey);
+	tuple = systable_getnext_ordered(sd, ForwardScanDirection);
+	if (HeapTupleIsValid(tuple))
+	{
+		pgaceLargeObjectGetSecurity(lorel, tuple);
 		security_id = HeapTupleGetSecurity(tuple);
-		pgaceLargeObjectGetSecurity(rel, tuple);
 		found = true;
-		break;
 	}
-	systable_endscan(sd);
-
-	heap_close(rel, AccessShareLock);
+	systable_endscan_ordered(sd);
+    index_close(loidx, AccessShareLock);
+    heap_close(lorel, AccessShareLock);
 
 	if (!found)
 		elog(ERROR, "large object %u does not exist", loid);
@@ -461,12 +462,13 @@ lo_set_security(PG_FUNCTION_ARGS)
 {
 	Oid loid = PG_GETARG_OID(0);
 	Datum labelTxt = PG_GETARG_DATUM(1);
-	Oid security_id;
 	Relation rel;
 	ScanKeyData skey;
 	SysScanDesc sd;
 	HeapTuple tuple, newtup;
 	CatalogIndexState indstate;
+	Datum pgaceItem;
+	Oid security_id;
 	bool found = false;
 
 	security_id = pgaceSecurityLabelToSid(TextDatumGetCString(labelTxt));
@@ -480,14 +482,15 @@ lo_set_security(PG_FUNCTION_ARGS)
 
 	indstate = CatalogOpenIndexes(rel);
 
-	sd = systable_beginscan(rel, LargeObjectLOidPNIndexId, true,
-							SnapshotNow, 1, &skey);
+	sd = systable_beginscan(rel, LargeObjectLOidPNIndexId,
+							true, SnapshotNow, 1, &skey);
 
 	while ((tuple = systable_getnext(sd)) != NULL) {
+		pgaceLargeObjectSetSecurity(rel, tuple, security_id,
+									!found, &pgaceItem);
 		newtup = heap_copytuple(tuple);
 		HeapTupleSetSecurity(newtup, security_id);
-		if (!found)
-			pgaceLargeObjectSetSecurity(rel, tuple, newtup);
+
 		simple_heap_update(rel, &newtup->t_self, newtup);
 		CatalogUpdateIndexes(rel, newtup);
 		found = true;

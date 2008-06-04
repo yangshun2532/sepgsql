@@ -83,6 +83,7 @@ LargeObjectDrop(Oid loid)
 	ScanKeyData skey[1];
 	SysScanDesc sd;
 	HeapTuple	tuple;
+	Datum		pgaceItem;
 
 	ScanKeyInit(&skey[0],
 				Anum_pg_largeobject_loid,
@@ -96,8 +97,7 @@ LargeObjectDrop(Oid loid)
 
 	while ((tuple = systable_getnext(sd)) != NULL)
 	{
-		if (!found)
-			pgaceLargeObjectDrop(pg_largeobject, tuple);
+		pgaceLargeObjectDrop(pg_largeobject, tuple, !found, &pgaceItem);
 		simple_heap_delete(pg_largeobject, &tuple->t_self);
 		found = true;
 	}
