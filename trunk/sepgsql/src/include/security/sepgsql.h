@@ -156,8 +156,6 @@ extern const security_context_t sepgsqlGetUnlabeledContext(void);
 
 extern const security_context_t sepgsqlSwitchClientContext(security_context_t newcon);
 
-extern const security_context_t sepgsqlGetDefaultDatabaseContext(void);
-
 /*
  * SE-PostgreSQL userspace avc functions
  *   src/backend/security/sepgsql/avc.c

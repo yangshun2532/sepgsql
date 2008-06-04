@@ -399,7 +399,9 @@ security_context_t sepgsqlGetDefaultContext(Relation rel, HeapTuple tuple)
 	switch (RelationGetRelid(rel))
 	{
 	case DatabaseRelationId:		/* pg_database */
-		return sepgsqlGetDefaultDatabaseContext();
+		tcontext = sepgsqlGetClientContext();
+		tclass = SECCLASS_DB_DATABASE;
+		break;
 
 	case RelationRelationId:		/* pg_class */
 		if (((Form_pg_class) GETSTRUCT(tuple))->relkind == RELKIND_RELATION)
