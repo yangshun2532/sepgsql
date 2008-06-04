@@ -48,39 +48,6 @@ const security_context_t sepgsqlGetUnlabeledContext(void)
 	return unlabeledContext;
 }
 
-const security_context_t sepgsqlGetDefaultDatabaseContext(void)
-{
-	static security_context_t defaultDatabaseContext = NULL;
-	security_context_t context;
-	char *user, *role, *type, *range;
-	char buffer[1024];
-
-	if (defaultDatabaseContext)
-		return defaultDatabaseContext;
-
-	/*
-	 * TODO: we should call selabel_lookup() here, when libselinux got
-	 *       default database context support.
-	 */
-	context = pstrdup(sepgsqlGetClientContext());
-
-	user = strtok(context, ":");
-	role = strtok(NULL, ":");
-	type = strtok(NULL, ":");
-	range = strtok(NULL, "-");
-
-	snprintf(buffer, sizeof(buffer), "%s:object_r:%s:%s",
-			 user, "sepgsql_db_t", range);
-	if (security_check_context_raw((security_context_t) buffer))
-		elog(ERROR, "SELinux: invalid default database context");
-
-	defaultDatabaseContext = strdup(buffer);
-	if (!defaultDatabaseContext)
-		elog(ERROR, "SELinux: memory allocation error");
-
-	return defaultDatabaseContext;
-}
-
 const security_context_t sepgsqlSwitchClientContext(security_context_t new_context)
 {
 	security_context_t original_context = clientContext;
@@ -120,7 +87,11 @@ static void initContexts(void)
 	/* database context */
 	if (IsBootstrapProcessingMode())
 	{
-		databaseContext = sepgsqlGetDefaultDatabaseContext();
+		if (security_compute_create_raw(clientContext,
+										clientContext,
+										SECCLASS_DB_DATABASE,
+										&databaseContext) < 0)
+			elog(ERROR, "SELinux: could not get security context of database");
 	}
 	else
 	{
