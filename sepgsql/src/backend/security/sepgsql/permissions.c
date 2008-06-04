@@ -225,102 +225,31 @@ static void check_pg_attribute(HeapTuple tuple, HeapTuple oldtup,
 static void check_pg_largeobject(HeapTuple tuple, HeapTuple oldtup,
 								 access_vector_t *p_perms, security_class_t *p_tclass)
 {
-	Form_pg_largeobject loForm = (Form_pg_largeobject) GETSTRUCT(tuple);
-	Relation rel;
-	ScanKeyData skey;
-	SysScanDesc sd;
-	HeapTuple exttup;
-	access_vector_t perms = 0;
+	access_vector_t perms;
 
-	perms |= (*p_perms & SEPGSQL_PERMS_USE    ? DB_BLOB__GETATTR : 0);
-	perms |= (*p_perms & SEPGSQL_PERMS_SELECT ? DB_BLOB__GETATTR : 0);
-	perms |= (*p_perms & SEPGSQL_PERMS_UPDATE ? DB_BLOB__SETATTR | DB_BLOB__WRITE : 0);
-	perms |= (*p_perms & SEPGSQL_PERMS_RELABELFROM ? DB_BLOB__RELABELFROM : 0);
+	/*
+	 * NOTE: INSERT tuples into pg_largeobject has a possibility to create
+	 * a new largeobject, if the given loid is not exist on the current
+	 * pg_largeobject. Ditto for DELETE statement, it also has a possibility
+	 * to drop a largeobject, if it removes all tuples within a large object.
+	 *
+	 * db_blob:{create} and db_blob:{drop} should be evaluated for 
+	 * creation/deletion of largeobject, but we have to check pg_largeobject
+	 * with SnapshotSelf whether there is one or more tuple having same loid,
+	 * or not, on each tuple insertion or deletion.
+	 *
+	 * So, we assume any INSERT means db_blob:{create}, any DELETE means
+	 * db_blob:{drop}.
+	 */
+	perms = sepgsql_perms_to_common_perms(*p_perms);
+	perms |= (*p_perms & SEPGSQL_PERMS_INSERT ? DB_BLOB__WRITE : 0);
+	perms |= (*p_perms & SEPGSQL_PERMS_DELETE ? DB_BLOB__WRITE : 0);
 	perms |= (*p_perms & SEPGSQL_PERMS_READ   ? DB_BLOB__READ  : 0);
 	perms |= (*p_perms & SEPGSQL_PERMS_WRITE  ? DB_BLOB__WRITE : 0);
 
-	if (*p_perms & SEPGSQL_PERMS_INSERT) {
-		perms |= DB_BLOB__SETATTR | DB_BLOB__WRITE;
-		ScanKeyInit(&skey,
-					Anum_pg_largeobject_loid,
-					BTEqualStrategyNumber, F_OIDEQ,
-					ObjectIdGetDatum(loForm->loid));
-		rel = heap_open(LargeObjectRelationId, AccessShareLock);
-		sd = systable_beginscan(rel, LargeObjectLOidPNIndexId, true,
-								SnapshotSelf, 1, &skey);
-		/* INSERT the first one means create a largeobject */
-		exttup = systable_getnext(sd);
-		if (!HeapTupleIsValid(exttup)) {
-			perms |= DB_BLOB__CREATE;
-		} else if (HeapTupleGetSecurity(tuple) != HeapTupleGetSecurity(exttup)) {
-			elog(ERROR, "SELinux: inconsistent security context specified");
-		}
-		systable_endscan(sd);
-		heap_close(rel, AccessShareLock);
-	}
+	// TODO: add DB_BLOB__CREATE | DB_BLOB__DROP for SEPGSQL_PERMS_UPDATE,
+	//       if loid is changed
 
-	if (*p_perms & SEPGSQL_PERMS_DELETE) {
-		bool found = false;
-
-		perms |= DB_BLOB__SETATTR | DB_BLOB__WRITE;
-		ScanKeyInit(&skey,
-					Anum_pg_largeobject_loid,
-					BTEqualStrategyNumber, F_OIDEQ,
-					ObjectIdGetDatum(loForm->loid));
-		rel = heap_open(LargeObjectRelationId, AccessShareLock);
-		sd = systable_beginscan(rel, LargeObjectLOidPNIndexId, true,
-								SnapshotSelf, 1, &skey);
-		while ((exttup = systable_getnext(sd))) {
-			int pageno = ((Form_pg_largeobject) GETSTRUCT(exttup))->pageno;
-
-			if (loForm->pageno != pageno) {
-				found = true;
-				break;
-			}
-		}
-		systable_endscan(sd);
-		heap_close(rel, AccessShareLock);
-
-		/*
-		 * If this tuple is the last one with given large object,
-		 * it means to drop the whole of large object.
-		 */
-		if (!found)
-			perms |= DB_BLOB__DROP;
-	}
-
-	/*
-	 * SE-PostgreSQL does not allow different security contexts are
-	 * held in a single large object.
-	 */
-	if (*p_perms & SEPGSQL_PERMS_RELABELTO) {
-		bool found = false;
-
-		perms |= DB_BLOB__RELABELTO;
-		ScanKeyInit(&skey,
-					Anum_pg_largeobject_loid,
-					BTEqualStrategyNumber, F_OIDEQ,
-					ObjectIdGetDatum(loForm->loid));
-		rel = heap_open(LargeObjectRelationId, AccessShareLock);
-		sd = systable_beginscan(rel, LargeObjectLOidPNIndexId, true,
-								SnapshotSelf, 1, &skey);
-		while ((exttup = systable_getnext(sd))) {
-			int pageno = ((Form_pg_largeobject) GETSTRUCT(exttup))->pageno;
-
-			if (loForm->pageno != pageno) {
-				found = true;
-				break;
-			}
-		}
-		systable_endscan(sd);
-		heap_close(rel, AccessShareLock);
-
-		if (found)
-			elog(ERROR,
-				 "SELinux: It's not possible a part of tuples within"
-				 " a single large object to have different security context."
-				 " You can use lo_set_security() instead.");
-	}
 	*p_tclass = SECCLASS_DB_BLOB;
 	*p_perms = perms;
 }
@@ -465,83 +394,76 @@ security_context_t sepgsqlGetDefaultContext(Relation rel, HeapTuple tuple)
 	security_context_t tcontext;
 	security_class_t tclass;
 	Oid tsid;
+	char relkind;
 
 	switch (RelationGetRelid(rel))
 	{
 	case DatabaseRelationId:		/* pg_database */
 		return sepgsqlGetDefaultDatabaseContext();
 
-	case RelationRelationId: {		/* pg_class */
-		Form_pg_class clsForm = (Form_pg_class) GETSTRUCT(tuple);
-		if (clsForm->relkind == RELKIND_RELATION) {
+	case RelationRelationId:		/* pg_class */
+		if (((Form_pg_class) GETSTRUCT(tuple))->relkind == RELKIND_RELATION)
+		{
 			tclass = SECCLASS_DB_TABLE;
 			tcontext = sepgsqlGetDatabaseContext();
-			break;
 		}
-		tsid = lookupRelationSecurityId(RelationRelationId, NULL);
-		tcontext = pgaceLookupSecurityLabel(tsid);
-		tclass = SECCLASS_DB_TUPLE;
+		else
+		{
+			tsid = lookupRelationSecurityId(RelationRelationId, NULL);
+			tcontext = pgaceLookupSecurityLabel(tsid);
+			tclass = SECCLASS_DB_TUPLE;
+		}
 		break;
-	}
-	case AttributeRelationId: {		/* pg_attribute */
-		Form_pg_attribute attForm = (Form_pg_attribute) GETSTRUCT(tuple);
-		char relkind;
 
+	case AttributeRelationId:		/* pg_attribute */
 		/* special case in bootstraping mode */
-		if (IsBootstrapProcessingMode()
-			&& (attForm->attrelid == TypeRelationId ||
-				attForm->attrelid == ProcedureRelationId ||
-				attForm->attrelid == AttributeRelationId ||
-				attForm->attrelid == RelationRelationId)) {
-			tcontext = sepgsqlAvcCreateCon(sepgsqlGetClientContext(),
-										   sepgsqlGetDatabaseContext(),
-										   SECCLASS_DB_TABLE);
-			tclass = SECCLASS_DB_COLUMN;
+		switch (((Form_pg_attribute) GETSTRUCT(tuple))->attrelid)
+		{
+		case TypeRelationId:
+		case ProcedureRelationId:
+		case AttributeRelationId:
+		case RelationRelationId:
+			if (IsBootstrapProcessingMode())
+			{
+				tcontext = sepgsqlAvcCreateCon(sepgsqlGetClientContext(),
+											   sepgsqlGetDatabaseContext(),
+											   SECCLASS_DB_TABLE);
+				tclass = SECCLASS_DB_COLUMN;
+				break;
+			}
+		default:
+			tsid = lookupRelationSecurityId(((Form_pg_attribute) GETSTRUCT(tuple))->attrelid,
+											&relkind);
+			tcontext = pgaceLookupSecurityLabel(tsid);
+			tclass = (relkind == RELKIND_RELATION
+					  ? SECCLASS_DB_COLUMN : SECCLASS_DB_TUPLE);
 			break;
 		}
-		tsid = lookupRelationSecurityId(attForm->attrelid, &relkind);
-		tcontext = pgaceLookupSecurityLabel(tsid);
-		tclass = (relkind == RELKIND_RELATION
-				  ? SECCLASS_DB_COLUMN : SECCLASS_DB_TUPLE);
 		break;
-	}
+
 	case ProcedureRelationId:
 		tclass = SECCLASS_DB_PROCEDURE;
 		tcontext = sepgsqlGetDatabaseContext();
 		break;
 
-	case LargeObjectRelationId: {		/* pg_largeobject */
-		ScanKeyData skey;
-		SysScanDesc sd;
-		HeapTuple lotup;
-		Oid loid;
-
-		loid = ((Form_pg_largeobject) GETSTRUCT(tuple))->loid;
-		ScanKeyInit(&skey,
-					Anum_pg_largeobject_loid,
-					BTEqualStrategyNumber, F_OIDEQ,
-					ObjectIdGetDatum(loid));
-		sd = systable_beginscan(rel, LargeObjectLOidPNIndexId, true,
-								SnapshotSelf, 1, &skey);
-		lotup = systable_getnext(sd);
-		if (HeapTupleIsValid(lotup))
-		{
-			/* inherit previous page's context, if exist */
-			tsid = HeapTupleGetSecurity(lotup);
-			systable_endscan(sd);
-
-			return pgaceLookupSecurityLabel(tsid);
-		}
-		systable_endscan(sd);
-
-		tcontext = sepgsqlGetDatabaseContext();
+	case LargeObjectRelationId:		/* pg_largeobject */
+		/*
+		 * NOTE: a desirable behavior when a new tuple insertion is
+		 * inheris the security context of previous pages.
+		 * However, it need to lookup pg_largeobject with SnapshotSelf
+		 * for each insertion.
+		 *
+		 * If you insert tuples via lowrite(), it inherits correctly.
+		 * Fundamentally, we don't use INSERT a tuple directlly.
+		 */
 		tclass = SECCLASS_DB_BLOB;
+		tcontext = sepgsqlGetDatabaseContext();
 		break;
-	}
+
 	case TypeRelationId:		/* pg_type */
 		if (IsBootstrapProcessingMode())
 		{
-			/* we cannot touch in very early phase */
+			/* we cannot touch system cache in very early phase */
 			tcontext = sepgsqlAvcCreateCon(sepgsqlGetClientContext(),
 										   sepgsqlGetDatabaseContext(),
 										   SECCLASS_DB_TABLE);
