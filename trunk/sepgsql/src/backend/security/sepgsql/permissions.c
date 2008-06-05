@@ -137,7 +137,7 @@ static void check_pg_attribute(HeapTuple tuple, HeapTuple oldtup,
 								ObjectIdGetDatum(attForm->attrelid),
 								0, 0, 0);
 		if (!HeapTupleIsValid(reltup))
-			elog(ERROR, "cache lookup failed for relation %u", attForm->attrelid);
+			elog(ERROR, "SELinux: cache lookup failed for relation %u", attForm->attrelid);
 		if (RELKIND_RELATION != ((Form_pg_class) GETSTRUCT(reltup))->relkind)
 		{
 			*p_tclass = SECCLASS_DB_TUPLE;
@@ -228,7 +228,9 @@ static void check_pg_proc(HeapTuple tuple, HeapTuple oldtup,
 				file_name = DatumGetCString(DirectFunctionCall1(textout, newbin));
 				file_name = expand_dynamic_library_name(file_name);
 				if (getfilecon_raw(file_name, &file_context) < 0)
-					elog(ERROR, "SELinux: could not obtain security context of %s", file_name);
+					ereport(ERROR,
+							(errcode(ERRCODE_SELINUX_ERROR),
+							 errmsg("SELinux: could not get context of %s", file_name)));
 				PG_TRY();
 				{
 					sepgsqlAvcPermission(sepgsqlGetClientContext(),

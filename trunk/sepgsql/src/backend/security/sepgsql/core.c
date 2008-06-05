@@ -43,7 +43,9 @@ const security_context_t sepgsqlGetUnlabeledContext(void)
 		return unlabeledContext;
 
 	if (security_get_initial_context_raw("unlabeled", &unlabeledContext) < 0)
-		elog(ERROR, "SELinux: could not get unlabeled context");
+		ereport(ERROR,
+				(errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("SELinux: could not get unlabeled context")));
 
 	return unlabeledContext;
 }
@@ -61,7 +63,9 @@ static void initContexts(void)
 {
 	/* server context */
 	if (getcon_raw(&serverContext))
-		elog(ERROR, "SELinux: could not get security context of server process");
+		ereport(ERROR,
+				(errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("SELinux: could not get server process context")));
 
 	/* client context */
 	if (!MyProcPort)
@@ -77,10 +81,15 @@ static void initContexts(void)
 			char *fallback = getenv("SEPGSQL_FALLBACK_CONTEXT");
 
 			if (!fallback)
-				elog(ERROR, "SELinux: could not get security context of client process");
+				ereport(ERROR,
+						(errcode(ERRCODE_SELINUX_ERROR),
+						 errmsg("SELinux: could not get client process context")));
+
 			if (security_check_context(fallback)
 				|| selinux_trans_to_raw_context(fallback, &clientContext))
-				elog(ERROR, "SELinux: %s is not a valid security context", fallback);
+				ereport(ERROR,
+						(errcode(ERRCODE_SELINUX_ERROR),
+						 errmsg("SELinux: %s is not a valid context", fallback)));
 		}
 	}
 
@@ -91,7 +100,9 @@ static void initContexts(void)
 										clientContext,
 										SECCLASS_DB_DATABASE,
 										&databaseContext) < 0)
-			elog(ERROR, "SELinux: could not get security context of database");
+			ereport(ERROR,
+					(errcode(ERRCODE_SELINUX_ERROR),
+					 errmsg("SELinux: could not get database context")));
 	}
 	else
 	{
@@ -165,7 +176,9 @@ Datum sepgsql_getcon(PG_FUNCTION_ARGS)
 	Datum labelTxt;
 
 	if (selinux_raw_to_trans_context(clientContext, &context))
-		elog(ERROR, "SELinux: could not translate mls label");
+		ereport(ERROR,
+				(errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("SELinux: could not translate mls label")));
 	PG_TRY();
 	{
 		labelTxt = CStringGetTextDatum(context);
@@ -187,7 +200,9 @@ Datum sepgsql_getservcon(PG_FUNCTION_ARGS)
 	Datum labelTxt;
 
 	if (selinux_raw_to_trans_context(serverContext, &context))
-		elog(ERROR, "SELinux: could not translate mls label");
+		ereport(ERROR,
+				(errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("SELinux: could not translate mls label")));
 	PG_TRY();
 	{
 		labelTxt = CStringGetTextDatum(context);
@@ -209,7 +224,9 @@ static void parse_to_context(security_context_t context,
 	security_context_t raw_context;
 
 	if (selinux_trans_to_raw_context(context, &raw_context) < 0)
-		elog(ERROR, "SELinux: could not parse given security context");
+        ereport(ERROR,
+                (errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("SELinux: could not translate mls label")));
 	PG_TRY();
 	{
 		char *tmp;
@@ -266,8 +283,9 @@ Datum sepgsql_set_user(PG_FUNCTION_ARGS)
 		snprintf(buffer, sizeof(buffer), "%s:%s:%s",
 				 TextDatumGetCString(PG_GETARG_TEXT_P(1)), role, type);
 	if (selinux_raw_to_trans_context((security_context_t) buffer, &newcon) < 0)
-		elog(ERROR, "SELinux: could not set a new range");
-
+		ereport(ERROR,
+				(errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("SELinux: could not set a new user")));
 	PG_TRY();
     {
 		result = CStringGetTextDatum(newcon);
@@ -308,8 +326,9 @@ Datum sepgsql_set_role(PG_FUNCTION_ARGS)
 		snprintf(buffer, sizeof(buffer), "%s:%s:%s",
 				 user, TextDatumGetCString(PG_GETARG_TEXT_P(1)), type);
 	if (selinux_raw_to_trans_context((security_context_t) buffer, &newcon) < 0)
-		elog(ERROR, "SELinux: could not set a new range");
-
+		ereport(ERROR,
+				(errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("SELinux: could not set a new role")));
 	PG_TRY();
     {
 		result = CStringGetTextDatum(newcon);
@@ -350,8 +369,9 @@ Datum sepgsql_set_type(PG_FUNCTION_ARGS)
 		snprintf(buffer, sizeof(buffer), "%s:%s:%s",
 				 user, role, TextDatumGetCString(PG_GETARG_TEXT_P(1)));
 	if (selinux_raw_to_trans_context((security_context_t) buffer, &newcon) < 0)
-		elog(ERROR, "SELinux: could not set a new range");
-
+		ereport(ERROR,
+				(errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("SELinux: could not set a new type")));
 	PG_TRY();
     {
 		result = CStringGetTextDatum(newcon);
@@ -392,8 +412,9 @@ Datum sepgsql_set_range(PG_FUNCTION_ARGS)
 		snprintf(buffer, sizeof(buffer), "%s:%s:%s",
 				 user, role, type);
 	if (selinux_raw_to_trans_context((security_context_t) buffer, &newcon) < 0)
-		elog(ERROR, "SELinux: could not set a new range");
-
+		ereport(ERROR,
+				(errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("SELinux: could not set a new range")));
 	PG_TRY();
     {
 		result = CStringGetTextDatum(newcon);
