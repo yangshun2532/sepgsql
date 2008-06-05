@@ -777,15 +777,19 @@ checkInsertTargets(ParseState *pstate, List *cols, List **attrnos)
 
 			/* Lookup column name, ereport on failure */
 			attrno = attnameAttNum(pstate->p_target_relation, name, true);
-			if (attrno == InvalidAttrNumber) {
+			if (attrno == InvalidAttrNumber)
+			{
 				ereport(ERROR,
 						(errcode(ERRCODE_UNDEFINED_COLUMN),
 					errmsg("column \"%s\" of relation \"%s\" does not exist",
 						   name,
 						 RelationGetRelationName(pstate->p_target_relation)),
 						 parser_errposition(pstate, col->location)));
-			} else if (attrno < 0) {
-				if (SystemAttributeIsWritable(attrno)) {
+			}
+			else if (attrno < 0)
+			{
+				if (SystemAttributeIsWritable(attrno))
+				{
 					if (system_attrs & (1<<(-attrno)))
 						ereport(ERROR,
 								(errcode(ERRCODE_DUPLICATE_COLUMN),
