@@ -2075,7 +2075,7 @@ CopyFrom(CopyState cstate)
 						loaded_security
 							= InputFunctionCall(&security_in_function,
 												string,
-												&security_typioparam,
+												security_typioparam,
 												attForm->atttypmod);
 					}
 					cstate->cur_attname = NULL;
@@ -2165,7 +2165,7 @@ CopyFrom(CopyState cstate)
 					tmp = CopyReadBinaryAttribute(cstate,
 												  i,
 												  &security_in_function,
-												  &security_typioparam,
+												  security_typioparam,
 												  attForm->atttypmod,
 												  &isnull);
 					if (!isnull)

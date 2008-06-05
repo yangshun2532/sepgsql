@@ -357,6 +357,7 @@ transformAssignedExpr(ParseState *pstate,
 				 errmsg("cannot assign to system column \"%s\"",
 						colname),
 				 parser_errposition(pstate, location)));
+		return NULL;	/* compiler kindness */
 	}
 
 	/*

@@ -198,6 +198,7 @@ static char *earlySidToSecurityLabel(Oid sid)
 			return pstrdup(es->label);
 	}
 	elog(ERROR, "security id: %u is not a valid identifier", sid);
+	return NULL;	/* for compiler kindness */
 }
 
 void pgacePostBootstrapingMode(void)
