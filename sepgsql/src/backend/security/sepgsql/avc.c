@@ -341,11 +341,15 @@ static void sepgsql_avc_compute(const security_context_t scon,
 	e_tclass = trans_to_external_tclass(tclass);
 
 	if (security_compute_av_raw(svcon, tvcon, e_tclass, 0, &avd))
-		elog(ERROR, "SELinux: could not compute a new avc entry"
-			 " scon=%s tcon=%s tclass=%u", svcon, tvcon, e_tclass);
+		ereport(ERROR,
+				(errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("SELinux: could not compute a new avc entry"
+						" scon=%s tcon=%s tclass=%u", svcon, tvcon, tclass)));
 	if (security_compute_create_raw(svcon, tvcon, e_tclass, &ncon))
-		elog(ERROR, "SELinux: could not compute a new createcon "
-			 "scon=%s tcon=%s tclass=%u", svcon, tvcon, e_tclass);
+		ereport(ERROR,
+				(errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("SELinux: could not compute a new avc entry"
+						" scon=%s tcon=%s tclass=%u", svcon, tvcon, tclass)));
 
 	cache->allowed = trans_to_internal_perms(e_tclass, avd.allowed);
 	cache->decided = trans_to_internal_perms(e_tclass, avd.decided);
@@ -434,6 +438,7 @@ static bool avc_audit_common(char *buffer, uint32 buflen,
 							 const char *objname)
 {
 	access_vector_t denied, audited, mask;
+	security_context_t svcon, tvcon;
 	uint32 ofs = 0;
 
 	denied = perms & ~avd->allowed;
@@ -449,9 +454,13 @@ static bool avc_audit_common(char *buffer, uint32 buflen,
 			ofs += snprintf(buffer + ofs, buflen - ofs, " %s",
                             sepgsql_av_perm_to_string(tclass, mask));
 	}
+	svcon = sepgsqlTranslateSecurityLabelOut(scon);
+	tvcon = sepgsqlTranslateSecurityLabelOut(tcon);
 	ofs += snprintf(buffer + ofs, buflen - ofs,
-					" } scontext=%s tcontext=%s tclass=%s", scon, tcon,
-					sepgsql_class_to_string(tclass));
+					" } scontext=%s tcontext=%s tclass=%s",
+					svcon, tvcon, sepgsql_class_to_string(tclass));
+	pfree(svcon);
+	pfree(tvcon);
 	if (objname)
 		ofs += snprintf(buffer + ofs, buflen - ofs,
 						" name=%s", objname);
@@ -514,11 +523,13 @@ void sepgsqlAvcPermission(const security_context_t scon,
 
 	if (avc_audit_common(audit_buffer, sizeof(audit_buffer),
 						 scon, tcon, tclass, perms, &avd, objname))
-	{
-		elog(rc ? NOTICE : ERROR, "SELinux: %s", audit_buffer);
-	}
+		ereport(rc ? NOTICE : ERROR,
+				(errcode(ERRCODE_SELINUX_AUDIT),
+				 errmsg("SELinux: %s", audit_buffer)));
 	else if (!rc)
-		elog(ERROR, "SELinux: security policy violation");
+		ereport(ERROR,
+				(errcode(ERRCODE_SELINUX_AUDIT),
+				 errmsg("SELinux: security policy violation")));
 }
 
 bool sepgsqlAvcPermissionNoAbort(const security_context_t scon,
@@ -535,8 +546,9 @@ bool sepgsqlAvcPermissionNoAbort(const security_context_t scon,
 
 	if (avc_audit_common(audit_buffer, sizeof(audit_buffer),
 						 scon, tcon, tclass, perms, &avd, objname))
-		elog(NOTICE, "SELinux: %s", audit_buffer);
-
+		ereport(NOTICE,
+				(errcode(ERRCODE_SELINUX_AUDIT),
+				 errmsg("SELinux: %s", audit_buffer)));
 	return rc;
 }
 
@@ -599,7 +611,9 @@ static bool sepgsqlStateMonitorAlive = true;
 
 static void sepgsqlStateMonitorSIGHUP(SIGNAL_ARGS)
 {
-	elog(NOTICE, "SELinux: userspace avc reset");
+	ereport(NOTICE,
+			(errcode(ERRCODE_SELINUX_INFO),
+			 errmsg("SELinux: reset userspace avc")));
 	sepgsql_avc_reset();
 }
 
@@ -625,19 +639,26 @@ static int sepgsqlStateMonitorMain()
 	pqsignal(SIGCHLD, SIG_DFL);
 	PG_SETMASK(&UnBlockSig);
 
-	elog(LOG, "SELinux: policy state monitoring process (pid: %u)", getpid());
+	ereport(NOTICE,
+			(errcode(ERRCODE_SELINUX_INFO),
+			 errmsg("SELinux: policy state monitor process (pid: %u)", getpid())));
 
 	/* open netlink socket */
 	nl_sockfd = socket(PF_NETLINK, SOCK_RAW, NETLINK_SELINUX);
-	if (nl_sockfd < 0) {
-		elog(NOTICE, "SELinux: could not open netlink socket");
+	if (nl_sockfd < 0)
+	{
+		ereport(NOTICE,
+				(errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("SELinux: could not open netlink socket")));
 		return 1;
 	}
 	memset(&addr, 0, sizeof(addr));
 	addr.nl_family = AF_NETLINK;
 	addr.nl_groups = SELNL_GRP_AVC;
 	if (bind(nl_sockfd, (struct sockaddr *)&addr, sizeof(addr))) {
-		elog(NOTICE, "SELinux: could not bint netlink socket");
+		ereport(NOTICE,
+				(errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("SELinux: could not bind netlink socket")));
 		return 1;
 	}
 
@@ -646,41 +667,61 @@ static int sepgsqlStateMonitorMain()
 		addrlen = sizeof(addr);
 		rc = recvfrom(nl_sockfd, buffer, sizeof(buffer), 0,
 					  (struct sockaddr *)&addr, &addrlen);
-		if (rc < 0) {
+		if (rc < 0)
+		{
 			if (errno == EINTR)
 				continue;
-			elog(NOTICE, "SELinux: netlink recvfrom() errno=%d (%s)",
-				 errno, strerror(errno));
+
+			ereport(NOTICE,
+					(errcode(ERRCODE_SELINUX_ERROR),
+					 errmsg("SELinux: error on netlink recvfrom(): %s",
+							strerror(errno))));
 			return 1;
 		}
 
-		if (addrlen != sizeof(addr)) {
-			elog(NOTICE, "SELinux: netlink address truncated (len=%d)", addrlen);
+		if (addrlen != sizeof(addr))
+		{
+			ereport(NOTICE,
+					(errcode(ERRCODE_SELINUX_ERROR),
+					 errmsg("SELinux: netlink address truncated (len=%d)", addrlen)));
 			return 1;
 		}
 
-		if (addr.nl_pid) {
-			elog(NOTICE, "SELinux: netlink received spoofed packet from: %u", addr.nl_pid);
+		if (addr.nl_pid)
+		{
+			ereport(NOTICE,
+					(errcode(ERRCODE_SELINUX_ERROR),
+					 errmsg("SELinux: netlink received spoofed packet from: %u", addr.nl_pid)));
 			continue;
 		}
 
-		if (rc == 0) {
-			elog(NOTICE, "SELinux: netlink received EOF on socket");
+		if (rc == 0)
+		{
+			ereport(NOTICE,
+					(errcode(ERRCODE_SELINUX_ERROR),
+					 errmsg("SELinux: netlink received EOF")));
 			return 1;
 		}
 
 		nlh = (struct nlmsghdr *) buffer;
 
 		if (nlh->nlmsg_flags & MSG_TRUNC
-			|| nlh->nlmsg_len > (unsigned int)rc) {
-			elog(NOTICE, "SELinux: netlink incomplete netlink message");
+			|| nlh->nlmsg_len > (unsigned int)rc)
+		{
+			ereport(NOTICE,
+					(errcode(ERRCODE_SELINUX_ERROR),
+					 errmsg("SELinux: netlink incomplete message")));
 			return 1;
 		}
-		switch (nlh->nlmsg_type) {
+
+		switch (nlh->nlmsg_type)
+		{
 		case SELNL_MSG_SETENFORCE: {
 			struct selnl_msg_setenforce *msg = NLMSG_DATA(nlh);
 
-			elog(NOTICE, "SELinux: setenforce notifier (enforcing=%d)", msg->val);
+			ereport(NOTICE,
+					(errcode(ERRCODE_SELINUX_INFO),
+					 errmsg("SELinux: setenforce notifier (enforcing=%d)", msg->val)));
 
 			LWLockAcquire(SepgsqlAvcLock, LW_EXCLUSIVE);
 			load_class_av_mapping();
@@ -695,7 +736,9 @@ static int sepgsqlStateMonitorMain()
 		case SELNL_MSG_POLICYLOAD: {
 			struct selnl_msg_policyload *msg = NLMSG_DATA(nlh);
 
-			elog(NOTICE, "SELinux: policyload notifier (seqno=%d)", msg->seqno);
+			ereport(NOTICE,
+					(errcode(ERRCODE_SELINUX_INFO),
+					 errmsg("policyload notifier (seqno=%d)", msg->seqno)));
 
 			LWLockAcquire(SepgsqlAvcLock, LW_EXCLUSIVE);
 			load_class_av_mapping();
@@ -709,11 +752,16 @@ static int sepgsqlStateMonitorMain()
 			struct nlmsgerr *err = NLMSG_DATA(nlh);
 			if (err->error == 0)
 				break;
-			elog(NOTICE, "SELinux: netlink error message %d", -err->error);
+
+			ereport(NOTICE,
+					(errcode(ERRCODE_SELINUX_ERROR),
+					 errmsg("SELinux: netlink error: %s", strerror(-err->error))));
 			return 1;
 		}
 		default:
-			elog(NOTICE, "SELinux: netlink unknown message type (%d)", nlh->nlmsg_type);
+			ereport(NOTICE,
+					(errcode(ERRCODE_SELINUX_ERROR),
+					 errmsg("netlink unknown message type (%d)", nlh->nlmsg_type)));
 			return 1;
 		}
 	}

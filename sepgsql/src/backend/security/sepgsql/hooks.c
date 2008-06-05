@@ -108,7 +108,7 @@ void sepgsqlGetDatabaseParam(const char *name)
 						   ObjectIdGetDatum(MyDatabaseId),
 						   0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
-		elog(ERROR, "cache lookup failed for database %u", MyDatabaseId);
+		elog(ERROR, "SELinux: cache lookup failed for database %u", MyDatabaseId);
 
 	dbForm = (Form_pg_database) GETSTRUCT(tuple);
 
@@ -132,7 +132,7 @@ void sepgsqlSetDatabaseParam(const char *name, char *argstring)
 						   ObjectIdGetDatum(MyDatabaseId),
 						   0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
-		elog(ERROR, "cache lookup failed for database %u", MyDatabaseId);
+		elog(ERROR, "SELinux: cache lookup failed for database %u", MyDatabaseId);
 
 	dbForm = (Form_pg_database) GETSTRUCT(tuple);
 
@@ -291,8 +291,9 @@ void sepgsqlLoadSharedModule(const char *filename)
 	security_context_t filecon;
 
 	if (getfilecon_raw(filename, &filecon) < 0)
-		elog(ERROR, "SELinux: could not obtain security context of %s", filename);
-
+		ereport(ERROR,
+				(errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("SELinux: could not get context of %s", filename)));
 	PG_TRY();
 	{
 		sepgsqlAvcPermission(sepgsqlGetDatabaseContext(),
@@ -515,11 +516,13 @@ static void blob_import_export_common(bool import, Oid loid, int fdesc, const ch
 	heap_close(rel, AccessShareLock);
 
 	if (!found)
-		elog(ERROR, "SELinux: could not find target large object %u", loid);
+		elog(ERROR, "SELinux: failed to lookup large object: %u", loid);
 
 	/* file:{read} to target file */
 	if (!fgetfilecon_raw(fdesc, &tcontext))
-		elog(ERROR, "SELinux: could not get security context of %s", filename);
+		ereport(ERROR,
+				(errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("SELinux: could not get context of %s", filename)));
 	PG_TRY();
 	{
 		sepgsqlAvcPermission(sepgsqlGetClientContext(),
@@ -637,8 +640,9 @@ char *sepgsqlTranslateSecurityLabelIn(char *context)
 	char *result;
 
 	if (selinux_trans_to_raw_context((security_context_t) context, &i_context) < 0)
-		elog(ERROR, "SELinux: could not translate mls label");
-
+		ereport(ERROR,
+				(errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("SELinux: could not translate mls label")));
 	PG_TRY();
 	{
 		result = pstrdup(i_context);
@@ -660,8 +664,9 @@ char *sepgsqlTranslateSecurityLabelOut(char *context)
 	char *result;
 
 	if (selinux_raw_to_trans_context((security_context_t) context, &o_context) < 0)
-		elog(ERROR, "SELinux: could not translate mls label");
-
+		ereport(ERROR,
+				(errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("SELinux: could not translate mls label")));
 	PG_TRY();
 	{
 		result = pstrdup(o_context);
@@ -690,13 +695,16 @@ char *sepgsqlValidateSecurityLabel(char *context)
 	if (context != NULL)
 	{
 		if (security_check_context_raw((security_context_t) context) < 0)
-			elog(ERROR, "SELinux: %s is invalid security context", context);
+			ereport(ERROR,
+					(errcode(ERRCODE_SELINUX_ERROR),
+					 errmsg("SELinux: %s is invalid security context", context)));
 		return context;
 	}
 
 	if (security_get_initial_context_raw("unlabeled", &unlabeled))
-		elog(ERROR, "SELinux: could not get unlabeled context");
-
+		ereport(ERROR,
+				(errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("SELinux: could not get unlabeled context")));
 	PG_TRY();
 	{
 		result = pstrdup(unlabeled);

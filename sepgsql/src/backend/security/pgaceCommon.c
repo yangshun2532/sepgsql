@@ -107,7 +107,8 @@ static void alterRelationCommon(Relation rel, DefElem *defel) {
 							   ObjectIdGetDatum(RelationGetRelid(rel)),
 							   0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
-		elog(ERROR, "cache lookup failed for relation '%s'", RelationGetRelationName(rel));
+		elog(ERROR, "cache lookup failed for relation '%s'",
+			 RelationGetRelationName(rel));
 	pgaceGramAlterRelation(rel, tuple, defel);
 
 	simple_heap_update(pg_class, &tuple->t_self, tuple);
@@ -142,7 +143,9 @@ void pgaceAlterRelationCommon(Relation rel, AlterTableCmd *cmd) {
 	Assert(IsA(defel, DefElem));
 
 	if (!pgaceIsGramSecurityItem(defel))
-		elog(ERROR, "unsupported pgace security item");
+		ereport(ERROR,
+				(errcode(ERRCODE_PGACE_ERROR),
+				 errmsg("PGACE: unsupported security item")));
 
 	if (!cmd->name) {
 		alterRelationCommon(rel, defel);

@@ -269,7 +269,7 @@ static void walkVarHelper(sepgsqlWalkerContext *swc, Var *var)
 	}
 	query = qstack->query;
 	if (!query)
-		elog(ERROR, "could not walk T_Var node in this context");
+		elog(ERROR, "SELinux: could not walk T_Var node in this context");
 
 	rte = rt_fetch(var->varno, query->rtable);
 	Assert(IsA(rte, RangeTblEntry));
@@ -662,20 +662,24 @@ void sepgsqlEvaluateParams(List *params)
  * *******************************************************************************/
 static void verifyPgClassPerms(Oid relid, bool inh, uint32 perms)
 {
+	Form_pg_class clsForm;
 	HeapTuple tuple;
 
 	/* prevent to modify pg_security directly */
 	if (relid == SecurityRelationId
 		&& (perms & (DB_TABLE__UPDATE | DB_TABLE__INSERT | DB_TABLE__DELETE)) != 0)
-		elog(ERROR, "SELinux: user cannot modify pg_security directly");
+		ereport(ERROR,
+				(errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("SELinux: user cannot modify pg_security directly")));
 
 	/* check table:{required permissions} */
 	tuple = SearchSysCache(RELOID,
 						   ObjectIdGetDatum(relid),
 						   0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
-		elog(ERROR, "SELinux: relation (oid=%u) does not exist", relid);
-	if (((Form_pg_class) GETSTRUCT(tuple))->relkind == RELKIND_RELATION)
+		elog(ERROR, "SELinux: cache lookup failed for relation: %u", relid);
+	clsForm = (Form_pg_class) GETSTRUCT(tuple);
+	if (clsForm->relkind == RELKIND_RELATION)
 	{
 		security_context_t tcontext
 			= pgaceLookupSecurityLabel(HeapTupleGetSecurity(tuple));
@@ -691,6 +695,7 @@ static void verifyPgClassPerms(Oid relid, bool inh, uint32 perms)
 
 static void verifyPgAttributePerms(Oid relid, bool inh, AttrNumber attno, uint32 perms)
 {
+	Form_pg_class clsForm;
 	HeapTuple tuple;
 	security_context_t tcontext;
 
@@ -698,8 +703,10 @@ static void verifyPgAttributePerms(Oid relid, bool inh, AttrNumber attno, uint32
 						   ObjectIdGetDatum(relid),
 						   0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
-		elog(ERROR, "SELinux: relation (oid=%u) does not exist", relid);
-	if (((Form_pg_class) GETSTRUCT(tuple))->relkind != RELKIND_RELATION)
+		elog(ERROR, "SELinux: cache lookup failed for relation: %u", relid);
+
+	clsForm = (Form_pg_class) GETSTRUCT(tuple);
+	if (clsForm->relkind != RELKIND_RELATION)
 	{
 		ReleaseSysCache(tuple);
 		return;
@@ -902,7 +909,7 @@ static List *expandSEvalItemInheritance(List *selist)
 			break;
 
 		default:
-			elog(ERROR, "Invalid node type (%d) in SEvalItemList", nodeTag(node));
+			elog(ERROR, "SELinux: Invalid node type (%d) in SEvalItemList", nodeTag(node));
 			break;
 		}
 	}
@@ -938,7 +945,7 @@ static void execVerifyQuery(List *selist)
 			break;
 
 		default:
-			elog(ERROR, "Invalid node type (%d) in SEvalItemList", nodeTag(node));
+			elog(ERROR, "SELinux: Invalid node type (%d) in SEvalItemList", nodeTag(node));
 			break;
 		}
 	}
