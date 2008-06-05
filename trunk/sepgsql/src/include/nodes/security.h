@@ -10,6 +10,9 @@
 #ifndef NODES_SECURITY_H
 #define NODES_SECURITY_H
 
+#include "access/attnum.h"
+#include "nodes/nodes.h"
+
 /*
  * SEvalItemRelation
  *
