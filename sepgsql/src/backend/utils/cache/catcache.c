@@ -1326,8 +1326,6 @@ void InsertCatCache(CatCache *cache, HeapTuple tuple)
 	ScanKeyData skey[4];
 	uint32 hashValue;
     Index hashIndex;
-	Dlelem *elt;
-	CatCTup *ct;
 	bool isnull;
 	int i;
 
