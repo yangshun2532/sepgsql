@@ -1,7 +1,10 @@
 /*
  * src/backend/security/pgaceCommon.c
- *   Common part of PostgreSQL Access Control Extension
- * Copyright 2007 KaiGai Kohei <kaigai@kaigai.gr.jp>
+ *    common framework of security modules
+ *
+ * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1994, Regents of the University of California
+ *
  */
 #include "postgres.h"
 

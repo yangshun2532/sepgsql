@@ -1,8 +1,10 @@
 /*
- * src/backend/security/sepgsqlPerms.c
- *   SE-PostgreSQL permission checking functions
+ * src/backend/security/sepgsql/permissions.c
+ *   applies SE-PostgreSQL permission checks
  *
- * Copyright (c) 2007 KaiGai Kohei <kaigai@kaigai.gr.jp>
+ * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1994, Regents of the University of California
+ *
  */
 #include "postgres.h"
 

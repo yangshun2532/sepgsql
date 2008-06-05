@@ -1,9 +1,11 @@
 /*
- * src/backend/security/sepgsqlProxy.c
- *   SE-PostgreSQL Query Proxy function to walk on query node tree
- *   and append tuple filter.
+ * src/backend/security/sepgsql/proxy.c
+ *    proxy routines to pick up all appeared columns, functions, ...
+ *    within given queries, and apply mandatory access controls.
  *
- * Copyright KaiGai Kohei <kaigai@kaigai.gr.jp>
+ * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1994, Regents of the University of California
+ *
  */
 #include "postgres.h"
 

@@ -1,8 +1,10 @@
 /*
  * src/backend/security/sepgsql/avc.c
- *   SE-PostgreSQL userspace access vector cache,
+ *    SE-PostgreSQL userspace access vector cache
  *
- * Copyright (c) 2008 KaiGai Kohei <kaigai@kaigai.gr.jp>
+ * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1994, Regents of the University of California
+ *
  */
 #include "postgres.h"
 
