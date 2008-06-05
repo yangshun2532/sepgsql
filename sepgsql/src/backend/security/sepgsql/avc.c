@@ -1,6 +1,7 @@
+
 /*
  * src/backend/security/sepgsql/avc.c
- *    SE-PostgreSQL userspace access vector cache
+ *	  SE-PostgreSQL userspace access vector cache
  *
  * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
@@ -21,18 +22,21 @@
 #include <signal.h>
 #include <unistd.h>
 
-static struct {
-	struct {
+static struct
+{
+	struct
+	{
 		const char *name;
 		security_class_t internal;
 	} tclass;
-	struct {
-		char *name;
+	struct
+	{
+		char	   *name;
 		access_vector_t internal;
 	} av_perms[sizeof(access_vector_t) * 8];
 } selinux_catalog[] = {
 	{
-		{ "db_database", SECCLASS_DB_DATABASE },
+		{ "db_database", SECCLASS_DB_DATABASE},
 		{
 			{ "create",			DB_DATABASE__CREATE },
 			{ "drop",			DB_DATABASE__DROP },
@@ -45,11 +49,11 @@ static struct {
 			{ "load_module",	DB_DATABASE__LOAD_MODULE },
 			{ "get_param",		DB_DATABASE__GET_PARAM },
 			{ "set_param",		DB_DATABASE__SET_PARAM },
-			{ NULL,				0UL },
+			{ NULL, 0UL },
 		}
 	},
 	{
-		{ "db_table", SECCLASS_DB_TABLE },
+		{ "db_table", SECCLASS_DB_TABLE},
 		{
 			{ "create",			DB_TABLE__CREATE },
 			{ "drop",			DB_TABLE__DROP },
@@ -57,17 +61,17 @@ static struct {
 			{ "setattr",		DB_TABLE__SETATTR },
 			{ "relabelfrom",	DB_TABLE__RELABELFROM },
 			{ "relabelto",		DB_TABLE__RELABELTO },
-			{ "use",			DB_TABLE__USE },
+			{ "use",   			DB_TABLE__USE },
 			{ "select",			DB_TABLE__SELECT },
 			{ "update",			DB_TABLE__UPDATE },
 			{ "insert",			DB_TABLE__INSERT },
 			{ "delete",			DB_TABLE__DELETE },
 			{ "lock",			DB_TABLE__LOCK },
-			{ NULL,				0UL },
+			{ NULL, 0UL },
 		}
 	},
 	{
-		{ "db_procedure", SECCLASS_DB_PROCEDURE },
+		{ "db_procedure", SECCLASS_DB_PROCEDURE},
 		{
 			{ "create",			DB_PROCEDURE__CREATE },
 			{ "drop",			DB_PROCEDURE__DROP },
@@ -77,11 +81,11 @@ static struct {
 			{ "relabelto",		DB_PROCEDURE__RELABELTO },
 			{ "execute",		DB_PROCEDURE__EXECUTE },
 			{ "entrypoint",		DB_PROCEDURE__ENTRYPOINT },
-			{ NULL,				0UL },
+			{ NULL, 0UL },
 		}
 	},
 	{
-		{ "db_column", SECCLASS_DB_COLUMN },
+		{ "db_column", SECCLASS_DB_COLUMN},
 		{
 			{ "create",			DB_COLUMN__CREATE },
 			{ "drop",			DB_COLUMN__DROP },
@@ -93,39 +97,40 @@ static struct {
 			{ "select",			DB_COLUMN__SELECT },
 			{ "update",			DB_COLUMN__UPDATE },
 			{ "insert",			DB_COLUMN__INSERT },
-			{ NULL,				0UL },
+			{ NULL, 0UL },
 		}
 	},
 	{
 		{ "db_tuple", SECCLASS_DB_TUPLE },
 		{
-			{ "relabelfrom",	DB_TUPLE__RELABELFROM },
-			{ "relabelto",		DB_TUPLE__RELABELTO },
-			{ "use",			DB_TUPLE__USE },
-			{ "select",			DB_TUPLE__SELECT },
-			{ "update",			DB_TUPLE__UPDATE },
-			{ "insert",			DB_TUPLE__INSERT },
-			{ "delete",			DB_TUPLE__DELETE },
-			{ NULL,				0UL },
+			{ "relabelfrom",	DB_TUPLE__RELABELFROM},
+			{ "relabelto",		DB_TUPLE__RELABELTO},
+			{ "use",			DB_TUPLE__USE},
+			{ "select",			DB_TUPLE__SELECT},
+			{ "update",			DB_TUPLE__UPDATE},
+			{ "insert",			DB_TUPLE__INSERT},
+			{ "delete",			DB_TUPLE__DELETE},
+			{ NULL, 0UL},
 		}
 	},
 	{
 		{ "db_blob", SECCLASS_DB_BLOB },
 		{
-			{ "create",			DB_BLOB__CREATE },
-			{ "drop",			DB_BLOB__DROP },
-			{ "getattr",		DB_BLOB__GETATTR },
-			{ "setattr",		DB_BLOB__SETATTR },
-			{ "relabelfrom",	DB_BLOB__RELABELFROM },
-			{ "relabelto",		DB_BLOB__RELABELTO },
-			{ "read",			DB_BLOB__READ },
-			{ "write",			DB_BLOB__WRITE },
-			{ "import",			DB_BLOB__IMPORT },
-			{ "export",			DB_BLOB__EXPORT },
-			{ NULL,				0UL },
+			{ "create",			DB_BLOB__CREATE},
+			{ "drop",			DB_BLOB__DROP},
+			{ "getattr",		DB_BLOB__GETATTR},
+			{ "setattr",		DB_BLOB__SETATTR},
+			{ "relabelfrom",	DB_BLOB__RELABELFROM},
+			{ "relabelto",		DB_BLOB__RELABELTO},
+			{ "read",			DB_BLOB__READ},
+			{ "write",			DB_BLOB__WRITE},
+			{ "import",			DB_BLOB__IMPORT},
+			{ "export",			DB_BLOB__EXPORT},
+			{ NULL, 0UL},
 		}
 	},
 };
+
 #define NUM_SELINUX_CATALOG (sizeof(selinux_catalog) / sizeof(selinux_catalog[0]))
 
 static MemoryContext AvcMemCtx;
@@ -133,27 +138,32 @@ static MemoryContext AvcMemCtx;
 #define AVC_HASH_NUM_SLOTS		256
 #define AVC_HASH_NUM_NODES		600
 
-struct avc_datum {
-	uint32 hash_key;
+struct avc_datum
+{
+	uint32		hash_key;
 
-	security_context_t	scon;	/* source security context */
-	security_context_t	tcon;	/* target security context */
-	security_class_t	tclass;	/* object class number */
+	security_context_t scon;	/* source security context */
+	security_context_t tcon;	/* target security context */
+	security_class_t tclass;	/* object class number */
 
-	security_context_t	ncon;	/* newly created security context */
+	security_context_t ncon;	/* newly created security context */
 
 	access_vector_t allowed;
 	access_vector_t decided;
 	access_vector_t auditallow;
 	access_vector_t auditdeny;
 
-	bool hot_cache;
+	bool		hot_cache;
 };
 
 static sig_atomic_t avc_version;
+
 static bool avc_enforcing;
+
 static List *avc_slot[AVC_HASH_NUM_SLOTS];
+
 static uint32 avc_datum_count = 0;
+
 static uint32 avc_lru_hint = 0;
 
 /*
@@ -162,39 +172,47 @@ static uint32 avc_lru_hint = 0;
  * We can read selinux_state->version without locking,
  * but have to hold SepgsqlAvcLock to refer other members.
  */
-struct {
-	/* only state monitoring process can update version */
+struct
+{
+	/*
+	 * only state monitoring process can update version.
+	 * any other process can read it without locks.
+	 */
 	volatile sig_atomic_t version;
 
-	/* if enforcing = true, SELinux is in enforcing mode */
-	bool enforcing;
+	bool		enforcing;
 
-	/* object class/permission mapping */
-	struct {
-		struct {
+	struct
+	{
+		struct
+		{
 			security_class_t internal;
 			security_class_t external;
 		} tclass;
-		struct {
+		struct
+		{
 			access_vector_t internal;
 			access_vector_t external;
 		} av_perms[sizeof(access_vector_t) * 8];
 	} catalog[NUM_SELINUX_CATALOG];
-} *selinux_state = NULL;
+}	*selinux_state = NULL;
 
-Size sepgsqlShmemSize(void)
+Size
+sepgsqlShmemSize(void)
 {
 	return sizeof(*selinux_state);
 }
 
-static void load_class_av_mapping(void)
+static void
+load_class_av_mapping(void)
 {
 	/* have to hold LW_EXCLUSIVE, at least */
 	security_class_t tclass;
 	access_vector_t av_perms;
-	int i, j;
+	int			i, j;
 
-	for (i=0; i < NUM_SELINUX_CATALOG; i++) {
+	for (i = 0; i < NUM_SELINUX_CATALOG; i++)
+	{
 		tclass = string_to_security_class(selinux_catalog[i].tclass.name);
 		if (!tclass)
 			tclass = selinux_catalog[i].tclass.internal;
@@ -203,8 +221,10 @@ static void load_class_av_mapping(void)
 			= selinux_catalog[i].tclass.internal;
 		selinux_state->catalog[i].tclass.external = tclass;
 
-		for (j=0; selinux_catalog[i].av_perms[j].name; j++) {
-			av_perms = string_to_av_perm(tclass, selinux_catalog[i].av_perms[j].name);
+		for (j = 0; selinux_catalog[i].av_perms[j].name; j++)
+		{
+			av_perms =
+				string_to_av_perm(tclass, selinux_catalog[i].av_perms[j].name);
 			if (!av_perms)
 				av_perms = selinux_catalog[i].av_perms[j].internal;
 
@@ -219,13 +239,14 @@ static security_class_t
 trans_to_external_tclass(security_class_t i_tclass)
 {
 	/* have to hold SepgsqlAvcLock with LW_SHARED */
-	int i;
+	int			i;
 
-	for (i=0; i < NUM_SELINUX_CATALOG; i++) {
+	for (i = 0; i < NUM_SELINUX_CATALOG; i++)
+	{
 		if (selinux_state->catalog[i].tclass.internal == i_tclass)
 			return selinux_state->catalog[i].tclass.external;
 	}
-	return i_tclass;	/* use it as is for kernel classes */
+	return i_tclass;			/* use it as is for kernel classes */
 }
 
 static access_vector_t
@@ -233,54 +254,68 @@ trans_to_internal_perms(security_class_t e_tclass, access_vector_t e_perms)
 {
 	/* have to hold SepgsqlAvcLock with LW_SHARED */
 	access_vector_t i_perms = 0UL;
-	int i, j;
+	int			i, j;
 
-	for (i=0; i < NUM_SELINUX_CATALOG; i++) {
+	for (i = 0; i < NUM_SELINUX_CATALOG; i++)
+	{
 		if (selinux_state->catalog[i].tclass.external != e_tclass)
 			continue;
-		for (j=0; j < sizeof(access_vector_t) * 8; j++) {
+		for (j = 0; j < sizeof(access_vector_t) * 8; j++)
+		{
 			if (selinux_state->catalog[i].av_perms[j].external & e_perms)
 				i_perms |= selinux_state->catalog[i].av_perms[j].internal;
 		}
 		return i_perms;
 	}
-	return i_perms;		/* use it as is for kernel classes */
+	return i_perms;				/* use it as is for kernel classes */
 }
 
-static const char *sepgsql_class_to_string(security_class_t tclass)
+static const char *
+sepgsql_class_to_string(security_class_t tclass)
 {
-	int i;
+	int			i;
 
-	for (i=0; i < NUM_SELINUX_CATALOG; i++) {
+	for (i = 0; i < NUM_SELINUX_CATALOG; i++)
+	{
 		if (selinux_catalog[i].tclass.internal == tclass)
 			return selinux_catalog[i].tclass.name;
 	}
-	/* tclass is always same as external one, for kernel object classes */
+	/*
+	 * tclass is always same as external one, for kernel object classes
+	 */
 	return security_class_to_string(tclass);
 }
 
-static const char *sepgsql_av_perm_to_string(security_class_t tclass, access_vector_t perm)
+static const char *
+sepgsql_av_perm_to_string(security_class_t tclass, access_vector_t perm)
 {
-	int i, j;
+	int			i,
+				j;
 
-	for (i=0; i < NUM_SELINUX_CATALOG; i++) {
-		if (selinux_catalog[i].tclass.internal == tclass) {
-			char *perm_name;
+	for (i = 0; i < NUM_SELINUX_CATALOG; i++)
+	{
+		if (selinux_catalog[i].tclass.internal == tclass)
+		{
+			char	   *perm_name;
 
-			for (j=0; (perm_name = selinux_catalog[i].av_perms[j].name); j++) {
+			for (j = 0; (perm_name = selinux_catalog[i].av_perms[j].name); j++)
+			{
 				if (selinux_catalog[i].av_perms[j].internal == perm)
 					return perm_name;
 			}
 			return "unknown";
 		}
 	}
-	/* tclass is always same as external one, for kernel object classes */
+	/*
+	 * tclass is always same as external one, for kernel object classes
+	 */
 	return security_av_perm_to_string(tclass, perm);
 }
 
-static void sepgsql_avc_reset(void)
+static void
+sepgsql_avc_reset(void)
 {
-	int i;
+	int			i;
 
 	MemoryContextReset(AvcMemCtx);
 
@@ -289,17 +324,18 @@ static void sepgsql_avc_reset(void)
 	avc_version = selinux_state->version;
 	avc_enforcing = selinux_state->enforcing;
 
-	for (i=0; i < AVC_HASH_NUM_SLOTS; i++)
+	for (i = 0; i < AVC_HASH_NUM_SLOTS; i++)
 		avc_slot[i] = NIL;
 	avc_datum_count = 0;
 
 	LWLockRelease(SepgsqlAvcLock);
 }
 
-static void sepgsql_avc_reclaim(void)
+static void
+sepgsql_avc_reclaim(void)
 {
-	List *slot;
-	ListCell *l;
+	List	   *slot;
+	ListCell   *l;
 	struct avc_datum *cache;
 
 	while (avc_datum_count > AVC_HASH_NUM_NODES)
@@ -308,7 +344,7 @@ static void sepgsql_avc_reclaim(void)
 
 		avc_lru_hint = (avc_lru_hint + 1) % AVC_HASH_NUM_SLOTS;
 		slot = avc_slot[avc_lru_hint];
-		foreach (l, slot)
+		foreach(l, slot)
 		{
 			cache = lfirst(l);
 
@@ -324,10 +360,10 @@ static void sepgsql_avc_reclaim(void)
 	}
 }
 
-static void sepgsql_avc_compute(const security_context_t scon,
-								const security_context_t tcon,
-								security_class_t tclass,
-								struct avc_datum *cache)
+static void
+sepgsql_avc_compute(const security_context_t scon,
+					const security_context_t tcon,
+					security_class_t tclass, struct avc_datum *cache)
 {
 	security_class_t e_tclass;
 	security_context_t svcon, tvcon, ncon;
@@ -378,34 +414,38 @@ static void sepgsql_avc_compute(const security_context_t scon,
 	freecon(ncon);
 }
 
-static struct avc_datum *sepgsql_avc_lookup(const security_context_t scon,
-											const security_context_t tcon,
-											security_class_t tclass)
+static struct avc_datum *
+sepgsql_avc_lookup(const security_context_t scon,
+				   const security_context_t tcon, security_class_t tclass)
 {
-	ListCell *l;
+	ListCell   *l;
 	struct avc_datum *cache;
-	uint32 hash_key, index;
+	uint32		hash_key, index;
 	MemoryContext oldctx;
-	bool first = true;
+	bool		first = true;
 
 	oldctx = MemoryContextSwitchTo(AvcMemCtx);
 
-	hash_key = (DatumGetUInt32(hash_any((unsigned char *)scon, strlen(scon)))
-				^ DatumGetUInt32(hash_any((unsigned char *)tcon, strlen(tcon)))
+	hash_key = (DatumGetUInt32(hash_any((unsigned char *) scon, strlen(scon)))
+				^DatumGetUInt32(hash_any((unsigned char *) tcon, strlen(tcon)))
 				^ (tclass << 2));
 	index = hash_key % AVC_HASH_NUM_SLOTS;
 
-	foreach (l, avc_slot[index])
+	foreach(l, avc_slot[index])
 	{
 		cache = lfirst(l);
 
 		if (cache->hash_key == hash_key
 			&& cache->tclass == tclass
-			&& !strcmp(cache->scon, scon)
-			&& !strcmp(cache->tcon, tcon)) {
-			/* move to the first of this slot */
-			if (!first) {
+			&& !strcmp(cache->scon, scon) && !strcmp(cache->tcon, tcon))
+		{
+			/*
+			 * move to the first of this slot
+			 */
+			if (!first)
+			{
 				list_delete_ptr(avc_slot[index], cache);
+
 				avc_slot[index] = lcons(cache, avc_slot[index]);
 			}
 			cache->hot_cache = true;
@@ -413,35 +453,39 @@ static struct avc_datum *sepgsql_avc_lookup(const security_context_t scon,
 		}
 		first = false;
 	}
-	/* reclaim avc, if needed */
+	/*
+	 * reclaim avc, if needed
+	 */
 	sepgsql_avc_reclaim();
 
-	/* not found, and make a new one */
+	/*
+	 * not found, and make a new one
+	 */
 	cache = palloc0(sizeof(struct avc_datum));
 	sepgsql_avc_compute(scon, tcon, tclass, cache);
 
-	/* insert it */
 	cache->hash_key = hash_key;
 	avc_slot[index] = lcons(cache, avc_slot[index]);
+
 	avc_datum_count++;
 
-out:
+  out:
 	MemoryContextSwitchTo(oldctx);
 
 	return cache;
 }
 
-static bool avc_audit_common(char *buffer, uint32 buflen,
-							 const security_context_t scon,
-							 const security_context_t tcon,
-							 security_class_t tclass,
-							 access_vector_t perms,
-							 struct av_decision *avd,
-							 const char *objname)
+static bool
+avc_audit_common(char *buffer, uint32 buflen,
+				 const security_context_t scon,
+				 const security_context_t tcon,
+				 security_class_t tclass,
+				 access_vector_t perms,
+				 struct av_decision *avd, const char *objname)
 {
 	access_vector_t denied, audited, mask;
 	security_context_t svcon, tvcon;
-	uint32 ofs = 0;
+	uint32		ofs = 0;
 
 	denied = perms & ~avd->allowed;
 	audited = denied ? (denied & avd->auditdeny) : (perms & avd->auditallow);
@@ -454,38 +498,42 @@ static bool avc_audit_common(char *buffer, uint32 buflen,
 	{
 		if (audited & mask)
 			ofs += snprintf(buffer + ofs, buflen - ofs, " %s",
-                            sepgsql_av_perm_to_string(tclass, mask));
+							sepgsql_av_perm_to_string(tclass, mask));
 	}
+	ofs += snprintf(buffer + ofs, buflen - ofs, " } ");
+
 	svcon = sepgsqlTranslateSecurityLabelOut(scon);
 	tvcon = sepgsqlTranslateSecurityLabelOut(tcon);
 	ofs += snprintf(buffer + ofs, buflen - ofs,
-					" } scontext=%s tcontext=%s tclass=%s",
+					"scontext=%s tcontext=%s tclass=%s",
 					svcon, tvcon, sepgsql_class_to_string(tclass));
 	pfree(svcon);
 	pfree(tvcon);
 	if (objname)
-		ofs += snprintf(buffer + ofs, buflen - ofs,
-						" name=%s", objname);
+		ofs += snprintf(buffer + ofs, buflen - ofs, " name=%s", objname);
 
 	return true;
 }
 
-static bool avc_permission_common(const security_context_t scon,
-								  const security_context_t tcon,
-								  security_class_t tclass,
-								  access_vector_t perms,
-								  struct av_decision *avd)
+static bool
+avc_permission_common(const security_context_t scon,
+					  const security_context_t tcon,
+					  security_class_t tclass,
+					  access_vector_t perms, struct av_decision *avd)
 {
 	access_vector_t denied;
 	struct avc_datum *cache;
 
-retry:
+  retry:
 	cache = sepgsql_avc_lookup(scon, tcon, tclass);
 
 	Assert(!!cache);
 
-	if (avc_version != selinux_state->version) {
-		/* security policy reloaded */
+	if (avc_version != selinux_state->version)
+	{
+		/*
+		 * security policy reloaded
+		 */
 		sepgsql_avc_reset();
 		goto retry;
 	}
@@ -500,26 +548,29 @@ retry:
 	}
 
 	denied = perms & ~cache->allowed;
-	if (!perms || denied) {
+	if (!perms || denied)
+	{
 		if (avc_enforcing)
 			return false;
 
-		/* grant permission to avoid flood of denied log
-		 * on permissive mode*/
+		/*
+		 * grant permission to avoid flood of denied log
+		 * * on permissive mode
+		 */
 		cache->allowed |= perms;
 	}
 	return true;
 }
 
-void sepgsqlAvcPermission(const security_context_t scon,
-						  const security_context_t tcon,
-						  security_class_t tclass,
-						  access_vector_t perms,
-						  const char *objname)
+void
+sepgsqlAvcPermission(const security_context_t scon,
+					 const security_context_t tcon,
+					 security_class_t tclass,
+					 access_vector_t perms, const char *objname)
 {
 	struct av_decision avd;
-	char audit_buffer[2048];
-	bool rc;
+	char		audit_buffer[2048];
+	bool		rc;
 
 	rc = avc_permission_common(scon, tcon, tclass, perms, &avd);
 
@@ -534,15 +585,15 @@ void sepgsqlAvcPermission(const security_context_t scon,
 				 errmsg("SELinux: security policy violation")));
 }
 
-bool sepgsqlAvcPermissionNoAbort(const security_context_t scon,
-								 const security_context_t tcon,
-								 security_class_t tclass,
-								 access_vector_t perms,
-								 const char *objname)
+bool
+sepgsqlAvcPermissionNoAbort(const security_context_t scon,
+							const security_context_t tcon,
+							security_class_t tclass,
+							access_vector_t perms, const char *objname)
 {
 	struct av_decision avd;
-	char audit_buffer[2048];
-	bool rc;
+	char		audit_buffer[2048];
+	bool		rc;
 
 	rc = avc_permission_common(scon, tcon, tclass, perms, &avd);
 
@@ -554,18 +605,21 @@ bool sepgsqlAvcPermissionNoAbort(const security_context_t scon,
 	return rc;
 }
 
-security_context_t sepgsqlAvcCreateCon(const security_context_t scon,
-									   const security_context_t tcon,
-									   security_class_t tclass)
+security_context_t
+sepgsqlAvcCreateCon(const security_context_t scon,
+					const security_context_t tcon, security_class_t tclass)
 {
 	struct avc_datum *cache;
 
-retry:
+  retry:
 	cache = sepgsql_avc_lookup(scon, tcon, tclass);
 	Assert(cache != NULL);
 
-	if (avc_version != selinux_state->version) {
-		/* security policy reloaded */
+	if (avc_version != selinux_state->version)
+	{
+		/*
+		 * security policy reloaded
+		 */
 		sepgsql_avc_reset();
 		goto retry;
 	}
@@ -573,25 +627,30 @@ retry:
 	return pstrdup(cache->ncon);
 }
 
-void sepgsqlAvcInit(void)
+void
+sepgsqlAvcInit(void)
 {
-	bool found;
+	bool		found;
 
-	/* local memory */
+	/*
+	 * local memory
+	 */
 	AvcMemCtx = AllocSetContextCreate(TopMemoryContext,
 									  "SE-PostgreSQL userspace avc",
 									  ALLOCSET_DEFAULT_MINSIZE,
 									  ALLOCSET_DEFAULT_INITSIZE,
 									  ALLOCSET_DEFAULT_MAXSIZE);
 
-	/* shared memory */
+	/*
+	 * shared memory
+	 */
 	selinux_state = ShmemInitStruct("SELinux policy state",
 									sepgsqlShmemSize(), &found);
 	if (!found)
 	{
-		int enforcing = security_getenforce();
+		int			enforcing = security_getenforce();
 
-		Assert(enforcing==0 || enforcing==1);
+		Assert(enforcing == 0 || enforcing == 1);
 
 		LWLockAcquire(SepgsqlAvcLock, LW_EXCLUSIVE);
 		selinux_state->version = 0;
@@ -601,7 +660,9 @@ void sepgsqlAvcInit(void)
 		LWLockRelease(SepgsqlAvcLock);
 	}
 
-	/* reset local avc */
+	/*
+	 * reset local avc
+	 */
 	sepgsql_avc_reset();
 }
 
@@ -611,7 +672,8 @@ void sepgsqlAvcInit(void)
 
 static bool sepgsqlStateMonitorAlive = true;
 
-static void sepgsqlStateMonitorSIGHUP(SIGNAL_ARGS)
+static void
+sepgsqlStateMonitorSIGHUP(SIGNAL_ARGS)
 {
 	ereport(NOTICE,
 			(errcode(ERRCODE_SELINUX_INFO),
@@ -619,18 +681,23 @@ static void sepgsqlStateMonitorSIGHUP(SIGNAL_ARGS)
 	sepgsql_avc_reset();
 }
 
-static int sepgsqlStateMonitorMain()
+static int
+sepgsqlStateMonitorMain()
 {
-	char buffer[2048];
+	char		buffer[2048];
 	struct sockaddr_nl addr;
-	socklen_t addrlen;
+	socklen_t	addrlen;
 	struct nlmsghdr *nlh;
-	int rc, nl_sockfd;
+	int			rc, nl_sockfd;
 
-	/* map shared memory segment */
+	/*
+	 * map shared memory segment
+	 */
 	sepgsqlAvcInit();
 
-	/* setup the signal handler */
+	/*
+	 * setup the signal handler
+	 */
 	pqinitmask();
 	pqsignal(SIGHUP, sepgsqlStateMonitorSIGHUP);
 	pqsignal(SIGINT, SIG_IGN);
@@ -645,7 +712,9 @@ static int sepgsqlStateMonitorMain()
 			(errcode(ERRCODE_SELINUX_INFO),
 			 errmsg("SELinux: policy state monitor process (pid: %u)", getpid())));
 
-	/* open netlink socket */
+	/*
+	 * open netlink socket
+	 */
 	nl_sockfd = socket(PF_NETLINK, SOCK_RAW, NETLINK_SELINUX);
 	if (nl_sockfd < 0)
 	{
@@ -657,18 +726,22 @@ static int sepgsqlStateMonitorMain()
 	memset(&addr, 0, sizeof(addr));
 	addr.nl_family = AF_NETLINK;
 	addr.nl_groups = SELNL_GRP_AVC;
-	if (bind(nl_sockfd, (struct sockaddr *)&addr, sizeof(addr))) {
+	if (bind(nl_sockfd, (struct sockaddr *) &addr, sizeof(addr)))
+	{
 		ereport(NOTICE,
 				(errcode(ERRCODE_SELINUX_ERROR),
 				 errmsg("SELinux: could not bind netlink socket")));
 		return 1;
 	}
 
-	/* waiting loop */
-	while (sepgsqlStateMonitorAlive) {
+	/*
+	 * waiting loop
+	 */
+	while (sepgsqlStateMonitorAlive)
+	{
 		addrlen = sizeof(addr);
 		rc = recvfrom(nl_sockfd, buffer, sizeof(buffer), 0,
-					  (struct sockaddr *)&addr, &addrlen);
+					  (struct sockaddr *) &addr, &addrlen);
 		if (rc < 0)
 		{
 			if (errno == EINTR)
@@ -676,8 +749,7 @@ static int sepgsqlStateMonitorMain()
 
 			ereport(NOTICE,
 					(errcode(ERRCODE_SELINUX_ERROR),
-					 errmsg("SELinux: error on netlink recvfrom(): %s",
-							strerror(errno))));
+					 errmsg("SELinux: error on netlink recvfrom(): %s", strerror(errno))));
 			return 1;
 		}
 
@@ -685,7 +757,8 @@ static int sepgsqlStateMonitorMain()
 		{
 			ereport(NOTICE,
 					(errcode(ERRCODE_SELINUX_ERROR),
-					 errmsg("SELinux: netlink address truncated (len=%d)", addrlen)));
+					 errmsg("SELinux: netlink address truncated (len=%d)",
+							addrlen)));
 			return 1;
 		}
 
@@ -706,9 +779,7 @@ static int sepgsqlStateMonitorMain()
 		}
 
 		nlh = (struct nlmsghdr *) buffer;
-
-		if (nlh->nlmsg_flags & MSG_TRUNC
-			|| nlh->nlmsg_len > (unsigned int)rc)
+		if (nlh->nlmsg_flags & MSG_TRUNC || nlh->nlmsg_len > (unsigned int) rc)
 		{
 			ereport(NOTICE,
 					(errcode(ERRCODE_SELINUX_ERROR),
@@ -718,61 +789,70 @@ static int sepgsqlStateMonitorMain()
 
 		switch (nlh->nlmsg_type)
 		{
-		case SELNL_MSG_SETENFORCE: {
-			struct selnl_msg_setenforce *msg = NLMSG_DATA(nlh);
+			case SELNL_MSG_SETENFORCE:
+				{
+					struct selnl_msg_setenforce *msg = NLMSG_DATA(nlh);
 
-			ereport(NOTICE,
-					(errcode(ERRCODE_SELINUX_INFO),
-					 errmsg("SELinux: setenforce notifier (enforcing=%d)", msg->val)));
+					ereport(NOTICE,
+							(errcode(ERRCODE_SELINUX_INFO),
+							 errmsg("SELinux: setenforce notifier (enforcing=%d)", msg->val)));
 
-			LWLockAcquire(SepgsqlAvcLock, LW_EXCLUSIVE);
-			load_class_av_mapping();
+					LWLockAcquire(SepgsqlAvcLock, LW_EXCLUSIVE);
+					load_class_av_mapping();
 
-			/* userspace avc invalidation */
-			selinux_state->version = selinux_state->version + 1;
-			selinux_state->enforcing = msg->val ? true : false;
+					/*
+					 * userspace avc invalidation
+					 */
+					selinux_state->version = selinux_state->version + 1;
+					selinux_state->enforcing = msg->val ? true : false;
 
-			LWLockRelease(SepgsqlAvcLock);
-			break;
-		}
-		case SELNL_MSG_POLICYLOAD: {
-			struct selnl_msg_policyload *msg = NLMSG_DATA(nlh);
+					LWLockRelease(SepgsqlAvcLock);
+					break;
+				}
+			case SELNL_MSG_POLICYLOAD:
+				{
+					struct selnl_msg_policyload *msg = NLMSG_DATA(nlh);
 
-			ereport(NOTICE,
-					(errcode(ERRCODE_SELINUX_INFO),
-					 errmsg("policyload notifier (seqno=%d)", msg->seqno)));
+					ereport(NOTICE,
+							(errcode(ERRCODE_SELINUX_INFO),
+							 errmsg("policyload notifier (seqno=%d)", msg->seqno)));
 
-			LWLockAcquire(SepgsqlAvcLock, LW_EXCLUSIVE);
-			load_class_av_mapping();
-			/* userspace avc invalidation */
-			selinux_state->version = selinux_state->version + 1;
+					LWLockAcquire(SepgsqlAvcLock, LW_EXCLUSIVE);
+					load_class_av_mapping();
+					/*
+					 * userspace avc invalidation
+					 */
+					selinux_state->version = selinux_state->version + 1;
 
-			LWLockRelease(SepgsqlAvcLock);
-			break;
-		}
-		case NLMSG_ERROR: {
-			struct nlmsgerr *err = NLMSG_DATA(nlh);
-			if (err->error == 0)
-				break;
+					LWLockRelease(SepgsqlAvcLock);
+					break;
+				}
+			case NLMSG_ERROR:
+				{
+					struct nlmsgerr *err = NLMSG_DATA(nlh);
 
-			ereport(NOTICE,
-					(errcode(ERRCODE_SELINUX_ERROR),
-					 errmsg("SELinux: netlink error: %s", strerror(-err->error))));
-			return 1;
-		}
-		default:
-			ereport(NOTICE,
-					(errcode(ERRCODE_SELINUX_ERROR),
-					 errmsg("netlink unknown message type (%d)", nlh->nlmsg_type)));
-			return 1;
+					if (err->error == 0)
+						break;
+
+					ereport(NOTICE,
+							(errcode(ERRCODE_SELINUX_ERROR),
+							 errmsg("SELinux: netlink error: %s", strerror(-err->error))));
+					return 1;
+				}
+			default:
+				ereport(NOTICE,
+						(errcode(ERRCODE_SELINUX_ERROR),
+						 errmsg("netlink unknown message type (%d)", nlh->nlmsg_type)));
+				return 1;
 		}
 	}
 	return 0;
 }
 
-pid_t sepgsqlStartupWorkerProcess(void)
+pid_t
+sepgsqlStartupWorkerProcess(void)
 {
-	pid_t chld;
+	pid_t		chld;
 
 	chld = fork();
 	if (chld == 0)
