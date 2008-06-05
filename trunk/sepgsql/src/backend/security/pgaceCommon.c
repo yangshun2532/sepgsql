@@ -450,22 +450,62 @@ lo_set_security(PG_FUNCTION_ARGS)
  * SE-PostgreSQL adds three functions.
  * When it is disabled, call them causes an error.
  */
+static Datum sepgsql_is_disabled(const char *function)
+{
+	ereport(ERROR,
+			(errcode(ERRCODE_SELINUX_ERROR),
+			 errmsg("%s is not implemented", function)));
+	PG_RETURN_VOID();
+}
+
 Datum sepgsql_getcon(PG_FUNCTION_ARGS)
 {
-	elog(ERROR, "%s is not implemented", __FUNCTION__);
-	PG_RETURN_VOID();
+	return sepgsql_is_disabled(__FUNCTION__);
 }
 
-Datum sepgsql_tuple_perms(PG_FUNCTION_ARGS)
+Datum sepgsql_getservcon(PG_FUNCTION_ARGS)
 {
-	elog(ERROR, "%s is not implemented", __FUNCTION__);
-	PG_RETURN_VOID();
+	return sepgsql_is_disabled(__FUNCTION__);
 }
 
-Datum sepgsql_tuple_perms_abort(PG_FUNCTION_ARGS)
+Datum sepgsql_get_user(PG_FUNCTION_ARGS)
 {
-	elog(ERROR, "%s is not implemented", __FUNCTION__);
-	PG_RETURN_VOID();
+	return sepgsql_is_disabled(__FUNCTION__);
+}
+
+Datum sepgsql_get_role(PG_FUNCTION_ARGS)
+{
+	return sepgsql_is_disabled(__FUNCTION__);
+}
+
+Datum sepgsql_get_type(PG_FUNCTION_ARGS)
+{
+	return sepgsql_is_disabled(__FUNCTION__);
+}
+
+Datum sepgsql_get_range(PG_FUNCTION_ARGS)
+{
+	return sepgsql_is_disabled(__FUNCTION__);
+}
+
+Datum sepgsql_set_user(PG_FUNCTION_ARGS)
+{
+	return sepgsql_is_disabled(__FUNCTION__);
+}
+
+Datum sepgsql_set_role(PG_FUNCTION_ARGS)
+{
+	return sepgsql_is_disabled(__FUNCTION__);
+}
+
+Datum sepgsql_set_type(PG_FUNCTION_ARGS)
+{
+	return sepgsql_is_disabled(__FUNCTION__);
+}
+
+Datum sepgsql_set_range(PG_FUNCTION_ARGS)
+{
+	return sepgsql_is_disabled(__FUNCTION__);
 }
 #endif  /* HAVE_SELINUX */
 
