@@ -1,8 +1,10 @@
 /*
- * src/backend/sepgsqlHooks.c
- *   SE-PostgreSQL hooks
+ * src/backend/security/sepgsql/hooks.c
+ *    implementations of PGACE framework
  *
- * Copyright 2007 KaiGai Kohei <kaigai@kaigai.gr.jp>
+ * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1994, Regents of the University of California
+ *
  */
 #include "postgres.h"
 

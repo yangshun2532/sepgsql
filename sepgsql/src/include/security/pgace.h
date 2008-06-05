@@ -1,8 +1,10 @@
-
 /*
  * include/security/pgace.h
- *	 headers for PostgreSQL Access Control Extensions (PGACE)
- * Copyright 2007 KaiGai Kohei <kaigai@kaigai.gr.jp>
+ *    headers for PostgreSQL Access Control Extension (PGACE)
+ *
+ * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1994, Regents of the University of California
+ *
  */
 #ifndef PGACE_H
 #define PGACE_H

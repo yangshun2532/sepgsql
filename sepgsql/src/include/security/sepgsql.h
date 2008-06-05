@@ -1,3 +1,11 @@
+/*
+ * src/include/security/sepgsql.h
+ *    headers for Security-Enhanced PostgreSQL (SE-PostgreSQL)
+ *
+ * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1994, Regents of the University of California
+ *
+ */
 #ifndef SEPGSQL_H
 #define SEPGSQL_H
 
@@ -8,7 +16,6 @@
 #include "nodes/nodes.h"
 #include "nodes/params.h"
 #include "nodes/parsenodes.h"
-#include "storage/large_object.h"
 
 #include <selinux/selinux.h>
 #include <selinux/flask.h>
