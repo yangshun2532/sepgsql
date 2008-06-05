@@ -337,16 +337,21 @@ transformAssignedExpr(ParseState *pstate,
 	Relation	rd = pstate->p_target_relation;
 
 	Assert(rd != NULL);
-	if (attrno > 0) {
+	if (attrno > 0)
+	{
 		attrtype = attnumTypeId(rd, attrno);
 		attrtypmod = rd->rd_att->attrs[attrno - 1]->atttypmod;
-	} else if (SystemAttributeIsWritable(attrno)) {
+	}
+	else if (SystemAttributeIsWritable(attrno))
+	{
 		Form_pg_attribute attr;
 
 		attr = SystemAttributeDefinition(attrno, RelationGetForm(rd)->relhasoids);
 		attrtype = attr->atttypid;
 		attrtypmod = attr->atttypmod;
-	} else {
+	}
+	else
+	{
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot assign to system column \"%s\"",
