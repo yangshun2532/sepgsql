@@ -175,6 +175,11 @@ Datum sepgsql_getcon(PG_FUNCTION_ARGS)
 	security_context_t context;
 	Datum labelTxt;
 
+	if (!sepgsqlIsEnabled())
+		ereport(ERROR,
+				(errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("SELinux: disabled now")));
+
 	if (selinux_raw_to_trans_context(clientContext, &context))
 		ereport(ERROR,
 				(errcode(ERRCODE_SELINUX_ERROR),
@@ -199,6 +204,11 @@ Datum sepgsql_getservcon(PG_FUNCTION_ARGS)
 	security_context_t context;
 	Datum labelTxt;
 
+	if (!sepgsqlIsEnabled())
+		ereport(ERROR,
+				(errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("SELinux: disabled now")));
+
 	if (selinux_raw_to_trans_context(serverContext, &context))
 		ereport(ERROR,
 				(errcode(ERRCODE_SELINUX_ERROR),
@@ -222,6 +232,11 @@ static void parse_to_context(security_context_t context,
 							 char **user, char **role, char **type, char **range)
 {
 	security_context_t raw_context;
+
+	if (!sepgsqlIsEnabled())
+		ereport(ERROR,
+				(errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("SELinux: disabled now")));
 
 	if (selinux_trans_to_raw_context(context, &raw_context) < 0)
         ereport(ERROR,
