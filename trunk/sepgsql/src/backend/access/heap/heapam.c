@@ -2452,8 +2452,7 @@ l2:
 		/* this is redundant with an Assert in HeapTupleSetOid */
 		Assert(newtup->t_data->t_infomask & HEAP_HASOID);
 #endif
-		if (!OidIsValid(HeapTupleGetOid(newtup)))
-			HeapTupleSetOid(newtup, HeapTupleGetOid(&oldtup));
+		HeapTupleSetOid(newtup, HeapTupleGetOid(&oldtup));
 	}
 	else
 	{

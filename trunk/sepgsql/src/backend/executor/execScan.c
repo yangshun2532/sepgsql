@@ -49,7 +49,7 @@ TupleTableSlot *
 ExecScan(ScanState *node,
 		 ExecScanAccessMtd accessMtd)	/* function returning a tuple */
 {
-	ExprContext *econtext;
+	ExprContext *econtext = node->ps.ps_ExprContext;
 	List	   *qual;
 	ProjectionInfo *projInfo;
 	ExprDoneCond isDone;
@@ -65,16 +65,20 @@ ExecScan(ScanState *node,
 	 * If we have neither a qual to check nor a projection to do, just skip
 	 * all the overhead and return the raw scan tuple.
 	 */
-	if (!qual && !projInfo) {
-		for (;;)
+	if (!qual && !projInfo)
+	{
+		while (true)
 		{
 			resultSlot = (*accessMtd) (node);
+
 			if (TupIsNull(resultSlot))
 				break;
+
 			if (pgaceExecScan((Scan *)node->ps.plan,
 							  node->ss_currentRelation, resultSlot))
 				break;
-			ResetExprContext(node->ps.ps_ExprContext);
+
+			ResetExprContext(econtext);
 		}
 		return resultSlot;
 	}
@@ -99,7 +103,6 @@ ExecScan(ScanState *node,
 	 * storage allocated in the previous tuple cycle.  Note this can't happen
 	 * until we're done projecting out tuples from a scan tuple.
 	 */
-	econtext = node->ps.ps_ExprContext;
 	ResetExprContext(econtext);
 
 	/*
