@@ -194,8 +194,7 @@ static char *earlySidToSecurityLabel(Oid sid)
 		if (es->sid == sid)
 			return pstrdup(es->label);
 	}
-	/* not found */
-	return NULL;
+	elog(ERROR, "security id: %u is not a valid identifier", sid);
 }
 
 void pgacePostBootstrapingMode(void)
@@ -239,117 +238,36 @@ void pgacePostBootstrapingMode(void)
 	CommitTransactionCommand();
 }
 
-static Oid lookupSecurityIdCommon(char *label)
-{
-	Relation rel;
-	HeapTuple tuple;
-	SysScanDesc scan;
-    ScanKeyData skey;
-	Datum labelTxt;
-	Oid labelOid;
-
-	if (IsBootstrapProcessingMode())
-		return earlySecurityLabelToSid(label);
-
-	/* 1. lookup syscache */
-	labelTxt = CStringGetTextDatum(label);
-	tuple = SearchSysCache(SECURITYLABEL,
-						   labelTxt, 0, 0, 0);
-	if (HeapTupleIsValid(tuple)) {
-		labelOid = HeapTupleGetOid(tuple);
-		ReleaseSysCache(tuple);
-		goto out;
-	}
-
-	/* 2. lookup pg_security with SnapshotSelf */
-	rel = heap_open(SecurityRelationId, AccessShareLock);
-
-	ScanKeyInit(&skey,
-				Anum_pg_security_seclabel,
-				BTEqualStrategyNumber, F_TEXTEQ,
-				PointerGetDatum(labelTxt));
-	scan = systable_beginscan(rel, SecuritySeclabelIndexId,
-							  true, SnapshotSelf, 1, &skey);
-	tuple = systable_getnext(scan);
-	labelOid = HeapTupleIsValid(tuple)
-		? HeapTupleGetOid(tuple) : InvalidOid;
-	systable_endscan(scan);
-
-	heap_close(rel, AccessShareLock);
-out:
-	return labelOid;
-}
-
-static char *lookupSecurityLabelCommon(Oid security_id)
-{
-	Relation rel;
-	SysScanDesc scan;
-    ScanKeyData skey;
-    HeapTuple tuple;
-    Datum labelTxt;
-    char *label = NULL;
-    bool isnull;
-
-	if (IsBootstrapProcessingMode())
-		return earlySidToSecurityLabel(security_id);
-
-	/* 1. lookup system cache */
-	tuple = SearchSysCache(SECURITYOID,
-						   ObjectIdGetDatum(security_id),
-						   0, 0, 0);
-	if (HeapTupleIsValid(tuple))
-	{
-		labelTxt = SysCacheGetAttr(SECURITYOID,
-								   tuple,
-								   Anum_pg_security_seclabel,
-								   &isnull);
-		Assert(!isnull);
-		label = TextDatumGetCString(labelTxt);
-		ReleaseSysCache(tuple);
-		return label;
-	}
-
-	/* 2. lookup pg_security with SnapshotSelf */
-	rel = heap_open(SecurityRelationId, AccessShareLock);
-
-	ScanKeyInit(&skey,
-				ObjectIdAttributeNumber,
-				BTEqualStrategyNumber, F_OIDEQ,
-				ObjectIdGetDatum(security_id));
-	scan = systable_beginscan(rel, SecurityOidIndexId,
-							  true, SnapshotSelf, 1, &skey);
-	tuple = systable_getnext(scan);
-	if (HeapTupleIsValid(tuple)) {
-		labelTxt = SysCacheGetAttr(SECURITYOID,
-								   tuple,
-								   Anum_pg_security_seclabel,
-								   &isnull);
-		Assert(!isnull);
-		label = TextDatumGetCString(labelTxt);
-	}
-	systable_endscan(scan);
-	heap_close(rel, AccessShareLock);
-
-	return label;
-}
-
 Oid pgaceSecurityLabelToSid(char *label)
 {
-	Relation rel;
-	CatalogIndexState ind;
-	HeapTuple tuple;
 	Oid labelOid, labelSid;
-	Datum labelTxt;
-	char isnull, *slabel;
+	HeapTuple tuple;
 
 	/* valid label checks */
 	label = pgaceTranslateSecurityLabelIn(label);
 	label = pgaceValidateSecurityLabel(label);
 
-	labelOid = lookupSecurityIdCommon(label);
-	if (labelOid == InvalidOid)
+	if (IsBootstrapProcessingMode())
+		return earlySecurityLabelToSid(label);
+
+	/* lookup syscache at first */
+	tuple = SearchSysCache(SECURITYLABEL,
+						   CStringGetTextDatum(label),
+						   0, 0, 0);
+	if (HeapTupleIsValid(tuple))
 	{
-		/* not found, insert a new one */
+		labelOid = HeapTupleGetOid(tuple);
+		ReleaseSysCache(tuple);
+	}
+	else
+	{
+		/* not found, insert a new one into pg_security */
+		Relation rel;
+		CatalogIndexState ind;
+		char *slabel;
+		Datum labelTxt;
+		char isnull;
+
 		rel = heap_open(SecurityRelationId, RowExclusiveLock);
 
 		slabel = pgaceSecurityLabelOfLabel();
@@ -363,6 +281,7 @@ Oid pgaceSecurityLabelToSid(char *label)
 			labelSid = pgaceSecurityLabelToSid(slabel);
 			labelOid = GetNewOid(rel);
 		}
+
 		ind = CatalogOpenIndexes(rel);
 
 		labelTxt = CStringGetTextDatum(label);
@@ -375,45 +294,52 @@ Oid pgaceSecurityLabelToSid(char *label)
 		simple_heap_insert(rel, tuple);
 		CatalogIndexInsert(ind, tuple);
 
+		InsertSysCache(RelationGetRelid(rel), tuple);
+
 		CatalogCloseIndexes(ind);
 		heap_close(rel, RowExclusiveLock);
 	}
+
 	return labelOid;
-}
-
-char *pgaceSidToSecurityLabel(Oid security_id)
-{
-	char *sec_label;
-
-	if (security_id == InvalidOid)
-		sec_label = pgaceValidateSecurityLabel(NULL);
-	else
-	{
-		sec_label = lookupSecurityLabelCommon(security_id);
-		if (!sec_label)
-			elog(ERROR, "security id: %u is not a valid identifier", security_id);
-	}
-	sec_label = pgaceTranslateSecurityLabelOut(sec_label);
-	Assert(sec_label != NULL);
-
-	return sec_label;
 }
 
 char *pgaceLookupSecurityLabel(Oid security_id)
 {
-	char *sec_label;
+	HeapTuple tuple;
+	Datum labelTxt;
+	char *label, isnull;
 
 	if (security_id == InvalidOid)
-		sec_label = pgaceValidateSecurityLabel(NULL);
-	else
-	{
-		sec_label = lookupSecurityLabelCommon(security_id);
-		if (!sec_label)
-			elog(ERROR, "security id: %u is not a valid identifier", security_id);
-	}
-	Assert(sec_label != NULL);
+		return pgaceValidateSecurityLabel(NULL);
 
-	return sec_label;
+	if (IsBootstrapProcessingMode())
+		return earlySidToSecurityLabel(security_id);
+
+	tuple = SearchSysCache(SECURITYOID,
+						   ObjectIdGetDatum(security_id),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "security id: %u is not a valid identifier", security_id);
+
+	labelTxt = SysCacheGetAttr(SECURITYOID,
+							   tuple,
+							   Anum_pg_security_seclabel,
+							   &isnull);
+	Assert(!isnull);
+	label = TextDatumGetCString(labelTxt);
+	ReleaseSysCache(tuple);
+
+	return label;
+}
+
+char *pgaceSidToSecurityLabel(Oid security_id)
+{
+	char *label = pgaceLookupSecurityLabel(security_id);
+
+	label = pgaceTranslateSecurityLabelOut(label);
+	Assert(label != NULL);
+
+	return label;
 }
 
 /*****************************************************************************
