@@ -6,10 +6,6 @@
  */
 #include "postgres.h"
 
-#include "access/genam.h"
-#include "access/heapam.h"
-#include "catalog/catalog.h"
-#include "catalog/indexing.h"
 #include "catalog/pg_attribute.h"
 #include "catalog/pg_authid.h"
 #include "catalog/pg_class.h"
@@ -22,39 +18,7 @@
 #include "catalog/pg_type.h"
 #include "miscadmin.h"
 #include "security/pgace.h"
-#include "security/sepgsql.h"
-#include "utils/builtins.h"
-#include "utils/fmgroids.h"
 #include "utils/syscache.h"
-#include "utils/tqual.h"
-#include "utils/typcache.h"
-
-/*
- * If we have to refere a object which is newly inserted or updated
- * in the same command, SearchSysCache() returns NULL because it use
- * SnapshowNow internally. The followings are fallback routine to
- * avoid a failed cache lookup.
- */
-static Oid lookupRelationSecurityId(Oid relid, char *relkind)
-{
-	HeapTuple tuple;
-	Oid security_id;
-
-	/* 1. lookup system cache */
-	tuple = SearchSysCache(RELOID,
-						   ObjectIdGetDatum(relid),
-						   0, 0, 0);
-	if (!HeapTupleIsValid(tuple))
-		elog(ERROR, "SELinux: cache lookup failed for relation %u", relid);
-
-	if (relkind)
-		*relkind = ((Form_pg_class) GETSTRUCT(tuple))->relkind;
-	security_id = HeapTupleGetSecurity(tuple);
-
-	ReleaseSysCache(tuple);
-
-	return security_id;
-}
 
 static access_vector_t sepgsql_perms_to_common_perms(uint32 perms) {
 	access_vector_t result = 0;
@@ -157,9 +121,10 @@ const char *sepgsqlTupleName(Oid relid, HeapTuple tuple)
 static void check_pg_attribute(HeapTuple tuple, HeapTuple oldtup,
 							   access_vector_t *p_perms, security_class_t *p_tclass)
 {
-	Form_pg_attribute attForm = (Form_pg_attribute) GETSTRUCT(tuple);
-	char relkind;
+	Form_pg_attribute attForm, oldForm;
+	HeapTuple reltup;
 
+	attForm = (Form_pg_attribute) GETSTRUCT(tuple);
 	switch (attForm->attrelid) {
     case TypeRelationId:
     case ProcedureRelationId:
@@ -168,20 +133,26 @@ static void check_pg_attribute(HeapTuple tuple, HeapTuple oldtup,
 		/* those are pure relation */
 		break;
 	default:
-		lookupRelationSecurityId(attForm->attrelid, &relkind);
-		if (relkind != RELKIND_RELATION)
+		reltup = SearchSysCache(RELOID,
+								ObjectIdGetDatum(attForm->attrelid),
+								0, 0, 0);
+		if (!HeapTupleIsValid(reltup))
+			elog(ERROR, "cache lookup failed for relation %u", attForm->attrelid);
+		if (RELKIND_RELATION != ((Form_pg_class) GETSTRUCT(reltup))->relkind)
 		{
 			*p_tclass = SECCLASS_DB_TUPLE;
 			*p_perms = sepgsql_perms_to_tuple_perms(*p_perms);
+			ReleaseSysCache(reltup);
 			return;
 		}
+		ReleaseSysCache(reltup);
 		break;
 	}
 	*p_tclass = SECCLASS_DB_COLUMN;
 	*p_perms = sepgsql_perms_to_common_perms(*p_perms);
 	if (HeapTupleIsValid(oldtup))
 	{
-		Form_pg_attribute oldForm = (Form_pg_attribute) GETSTRUCT(oldtup);
+		oldForm = (Form_pg_attribute) GETSTRUCT(oldtup);
 
 		if (oldForm->attisdropped != true && attForm->attisdropped == true)
 			*p_perms |= DB_COLUMN__DROP;
@@ -354,63 +325,64 @@ bool sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, HeapTuple oldtup, uin
 security_context_t sepgsqlGetDefaultContext(Relation rel, HeapTuple tuple)
 {
 	security_context_t tcontext;
-	security_class_t tclass;
-	Oid tsid;
-	char relkind;
+	security_class_t tclass = 0;
 
+	/* special cases */
 	switch (RelationGetRelid(rel))
 	{
-	case DatabaseRelationId:		/* pg_database */
-		tcontext = sepgsqlGetClientContext();
+	case DatabaseRelationId:
 		tclass = SECCLASS_DB_DATABASE;
+		tcontext = sepgsqlGetClientContext();
 		break;
 
-	case RelationRelationId:		/* pg_class */
-		if (((Form_pg_class) GETSTRUCT(tuple))->relkind == RELKIND_RELATION)
+	case RelationRelationId: {
+		Form_pg_class clsForm = (Form_pg_class) GETSTRUCT(tuple);
+
+		if (clsForm->relkind == RELKIND_RELATION)
 		{
 			tclass = SECCLASS_DB_TABLE;
 			tcontext = sepgsqlGetDatabaseContext();
 		}
-		else
-		{
-			tsid = lookupRelationSecurityId(RelationRelationId, NULL);
-			tcontext = pgaceLookupSecurityLabel(tsid);
-			tclass = SECCLASS_DB_TUPLE;
-		}
 		break;
+	}
+	case AttributeRelationId: {
+		Form_pg_attribute attForm = (Form_pg_attribute) GETSTRUCT(tuple);
+		HeapTuple reltup;
 
-	case AttributeRelationId:		/* pg_attribute */
-		/* special case in bootstraping mode */
-		switch (((Form_pg_attribute) GETSTRUCT(tuple))->attrelid)
+		switch (attForm->attrelid)
 		{
 		case TypeRelationId:
 		case ProcedureRelationId:
 		case AttributeRelationId:
 		case RelationRelationId:
+			/* we cannot touch these relations at very early phase in bootstrap */
 			if (IsBootstrapProcessingMode())
 			{
+				tclass = SECCLASS_DB_COLUMN;
 				tcontext = sepgsqlAvcCreateCon(sepgsqlGetClientContext(),
 											   sepgsqlGetDatabaseContext(),
 											   SECCLASS_DB_TABLE);
-				tclass = SECCLASS_DB_COLUMN;
 				break;
 			}
 		default:
-			tsid = lookupRelationSecurityId(((Form_pg_attribute) GETSTRUCT(tuple))->attrelid,
-											&relkind);
-			tcontext = pgaceLookupSecurityLabel(tsid);
-			tclass = (relkind == RELKIND_RELATION
-					  ? SECCLASS_DB_COLUMN : SECCLASS_DB_TUPLE);
-			break;
+			reltup = SearchSysCache(RELOID,
+									ObjectIdGetDatum(attForm->attrelid),
+									0, 0, 0);
+			if (!HeapTupleIsValid(reltup))
+				elog(ERROR, "SELinux: cache lookup failed for relation %u", attForm->attrelid);
+			tclass = (RELKIND_RELATION == ((Form_pg_class) GETSTRUCT(reltup))->relkind)
+				? SECCLASS_DB_COLUMN : SECCLASS_DB_TUPLE;
+			tcontext = pgaceLookupSecurityLabel(HeapTupleGetSecurity(reltup));
+			ReleaseSysCache(reltup);
 		}
 		break;
-
+	}
 	case ProcedureRelationId:
 		tclass = SECCLASS_DB_PROCEDURE;
 		tcontext = sepgsqlGetDatabaseContext();
 		break;
 
-	case LargeObjectRelationId:		/* pg_largeobject */
+	case LargeObjectRelationId:
 		/*
 		 * NOTE: a desirable behavior when a new tuple insertion is
 		 * inheris the security context of previous pages.
@@ -424,21 +396,30 @@ security_context_t sepgsqlGetDefaultContext(Relation rel, HeapTuple tuple)
 		tcontext = sepgsqlGetDatabaseContext();
 		break;
 
-	case TypeRelationId:		/* pg_type */
+	case TypeRelationId:
 		if (IsBootstrapProcessingMode())
 		{
 			/* we cannot touch system cache in very early phase */
+			tclass = SECCLASS_DB_TUPLE;
 			tcontext = sepgsqlAvcCreateCon(sepgsqlGetClientContext(),
 										   sepgsqlGetDatabaseContext(),
 										   SECCLASS_DB_TABLE);
-			tclass = SECCLASS_DB_TUPLE;
-			break;
 		}
-	default:
-		tsid = lookupRelationSecurityId(RelationGetRelid(rel), NULL);
-		tcontext = pgaceLookupSecurityLabel(tsid);
-		tclass = SECCLASS_DB_TUPLE;
 		break;
+	}
+	/* normal or user defined relation */
+	if (tclass == 0)
+	{
+		HeapTuple reltup;
+
+		reltup = SearchSysCache(RELOID,
+								ObjectIdGetDatum(RelationGetRelid(rel)),
+								0, 0, 0);
+		if (!HeapTupleIsValid(reltup))
+			elog(ERROR, "SELinux: cache lookup failed for relation %u", RelationGetRelid(rel));
+		tclass = SECCLASS_DB_TUPLE;
+		tcontext = pgaceLookupSecurityLabel(HeapTupleGetSecurity(reltup));
+		ReleaseSysCache(reltup);
 	}
 	return sepgsqlAvcCreateCon(sepgsqlGetClientContext(),
 							   tcontext, tclass);
