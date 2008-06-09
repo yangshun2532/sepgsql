@@ -256,5 +256,4 @@ interface(`postgresql_unconfined',`
 	')
 
 	typeattribute $1 sepgsql_unconfined_type;
-	typeattribute $1 sepgsql_client_type;
 ')
