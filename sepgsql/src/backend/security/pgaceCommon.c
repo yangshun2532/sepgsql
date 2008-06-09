@@ -36,7 +36,29 @@
  *	 Extended SQL statements support
  *****************************************************************************/
 
-/* CREATE TABLE with explicit CONTEXT */
+/*
+ * PGACE enables to create a new table labed as explicitly specified security
+ * attribute. It is implemented as an extension of SQL statement like:
+ *   CREATE TABLE memo (
+ *       id   integer primary key,
+ *       msg  TEXT
+ *   ) CONTEXT = 'system_u:object_r:sepgsql_secret_table_t';
+ *
+ * The specified security attribute is chained as a list of DefElem object,
+ * at CreateStmt->pgaceItem for a table, ColumnDef->pgaceItem for a column.
+ *
+ * These items are generated at pgaceGramSecurityItem() hook invoked from
+ * parser/gram.y. Then, pgaceRelationAttrList() pick them up and re-organize
+ * as a list, to pass it as an argument of heap_create_with_catalog().
+ *
+ * When the list is not NIL, it means user specifies a security attribute
+ * explicitly for a newly created table or column.
+ * pgaceGramCreateRelation() and pgaceGramCreateAttribute() are invoked
+ * just before inserting a new tuple into system catalog, and PGACE
+ * framework invokes pgaceGramCreateRelation() and/or pgaceGramCreateAttribute()
+ * hooks to give a chance the gurst to attach proper security attributes.
+ */
+
 List *
 pgaceRelationAttrList(CreateStmt *stmt)
 {
@@ -116,7 +138,20 @@ pgaceCreateAttributeCommon(Relation rel, HeapTuple tuple,
 	}
 }
 
-/* ALTER <tblname> [ALTER <colname>] CONTEXT = 'xxx' statement */
+/*
+ * pgaceAlterRelationCommon()
+ *
+ * This function is invoked when a user requires to change security attribute
+ * of table/column with "ALTER TABLE" statement.
+ *
+ * When a user attempt to relabel a table, PGACE invokes alterRelationCommon()
+ * and it gives the guest module a chance to set a new security attribute of
+ * specified table.
+ * When a user attempt to relabel a column, PGACE invokes alterAttributeCommon()
+ * and it gives the guest module a chance to set a new security attribute of
+ * specified column.
+ */
+
 static void
 alterRelationCommon(Relation rel, DefElem *defel)
 {
@@ -186,6 +221,39 @@ pgaceAlterRelationCommon(Relation rel, AlterTableCmd *cmd)
 /*****************************************************************************
  *	security attribute management
  *****************************************************************************/
+
+/*
+ * The following functions enables to manage security attribute of each tuple
+ * (including ones within system catalog).
+ *
+ * Security attribute has these features:
+ * 1. It is imported/exported with text representation, like
+ *    'system_u:object_r:sepgsql_table_t:s0'
+ * 2. In generally, many tuples share a same security attribute.
+ *    (They are grouped by security attribute in other word.)
+ * 3. A object can have one security attribute at most.
+ *    (It can have a state of unlabeled.)
+ *
+ * PGACE utilizes a newly added system catalog of pg_security to store text
+ * representation of security attribute efficiently. Any tuple has a object id
+ * of a tuple within pg_security system catalog, we call it as a security id.
+ *
+ * Users can show security attribute as if it stored text data, but any tuple
+ * has a security id which has a length of sizeof(Oid), without text data.
+ * It is translated each other when it is exported/imported.
+ *
+ * pgaceSidToSecurityLabel() returns a text representation for a given security,
+ * id, and pgaceSecurityLabelToSid() returns a security id for a give text
+ * representation. (If a given text representation was not found on pg_security
+ * system catalog, PGACE inserts a new entry automatically.)
+ *
+ * In the very early phase (invoked by initdb), pg_security system catalos is
+ * not available yet. The earlySecurityLabelToSid() and earlySidToSecurityLabel()
+ * is used to hold relationships between security id and text representation.
+ * These relationships are stored at the end of bootstraping mode by
+ * pgacePostBootstrapingMode(). It write any cached relationships into pg_security
+ * system catalog.
+ */
 
 typedef struct earlySeclabel
 {
@@ -346,6 +414,12 @@ pgaceSecurityLabelToSid(char *label)
 	return labelOid;
 }
 
+/*
+ * pgaceLookupSecurityLabel()
+ *
+ * The PGACE guest module can use this interface to get a text representation
+ * in raw-format, without cosmetic translation.
+ */
 char *
 pgaceLookupSecurityLabel(Oid security_id)
 {
@@ -387,6 +461,17 @@ pgaceSidToSecurityLabel(Oid security_id)
 /*****************************************************************************
  *	 Set/Get security attribute of Large Object
  *****************************************************************************/
+
+/*
+ * lo_get_security()
+ *
+ * This function returns a security attribute of large object
+ * in TEXT representation.
+ *
+ * It assumes the first page means the whole of large object.
+ * The guest of PGACE should pay effort to keep its consistency.
+ */
+
 Datum
 lo_get_security(PG_FUNCTION_ARGS)
 {
@@ -422,6 +507,14 @@ lo_get_security(PG_FUNCTION_ARGS)
 
 	return CStringGetTextDatum(pgaceSidToSecurityLabel(security_id));
 }
+
+/*
+ * lo_set_security()
+ *
+ * This function set a new security attribute of a large object.
+ * It scans pg_largeobject system catalog with a given loid,
+ * and invokes pgaceLargeObjectSetSecurity() for each page frame.
+ */
 
 Datum
 lo_set_security(PG_FUNCTION_ARGS)
@@ -474,19 +567,18 @@ lo_set_security(PG_FUNCTION_ARGS)
 }
 
 /******************************************************************
- * Extended functions stub
+ * Function stubs related to security modules
  ******************************************************************/
 
 /*
- * In this section, you can put function stubs when your security
- * module is not activated.
+ * If the guest of PGACE added its specific functions, it has to put
+ * function stubs on the following section, because the guest modules
+ * are not compiled and linked when it is disabled.
+ * It can cause a build problem in other environments.
  */
+
 #ifndef HAVE_SELINUX
 
-/*
- * SE-PostgreSQL adds three functions.
- * When it is disabled, call them causes an error.
- */
 static Datum
 sepgsql_is_disabled(const char *function)
 {
