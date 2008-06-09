@@ -1,4 +1,4 @@
-policy_module(sepostgresql, 3.06)
+policy_module(sepostgresql, 3.07)
 
 gen_require(`
 	class db_database all_db_database_perms;
@@ -32,13 +32,6 @@ gen_tunable(sepgsql_enable_auditallow, false)
 ## </p>
 ## </desc>
 gen_tunable(sepgsql_enable_auditdeny,  true)
-
-## <desc>
-## <p>
-## Allow to generate audittuple logs
-## </p>
-## </desc>
-gen_tunable(sepgsql_enable_audittuple,  false)
 
 ## <desc>
 ## <p>
@@ -181,7 +174,6 @@ tunable_policy(`sepgsql_enable_users_ddl',`
 # Unconfined access to this module
 #
 
-allow sepgsql_unconfined_type { self postgresql_t }:db_blob { import export };
 allow sepgsql_unconfined_type sepgsql_database_type:db_database *;
 allow sepgsql_unconfined_type sepgsql_table_type:{ db_table db_column db_tuple } *;
 allow sepgsql_unconfined_type sepgsql_blob_type:db_blob *;
@@ -289,32 +281,26 @@ tunable_policy(`sepgsql_enable_auditallow',`
 	auditallow sepgsql_client_type sepgsql_table_type     : db_column *;
 	auditallow sepgsql_client_type sepgsql_procedure_type : db_procedure *;
 	auditallow sepgsql_client_type sepgsql_blob_type      : db_blob *;
-	auditallow sepgsql_client_type postgresql_t           : db_blob { import export };
 	auditallow sepgsql_client_type sepgsql_module_type    : db_database { install_module };
 ')
-tunable_policy(`sepgsql_enable_auditallow && sepgsql_enable_audittuple',`
-	auditallow sepgsql_client_type sepgsql_table_type     : db_tuple *;
-')
+
 tunable_policy(`! sepgsql_enable_auditdeny',`
 	dontaudit sepgsql_client_type sepgsql_database_type   : db_database *;
 	dontaudit sepgsql_client_type sepgsql_table_type      : db_table *;
 	dontaudit sepgsql_client_type sepgsql_table_type      : db_column *;
 	dontaudit sepgsql_client_type sepgsql_procedure_type  : db_procedure *;
 	dontaudit sepgsql_client_type sepgsql_blob_type       : db_blob *;
-	dontaudit sepgsql_client_type postgresql_t            : db_blob { import export };
 	dontaudit sepgsql_client_type sepgsql_module_type     : db_database { install_module };
 ')
-tunable_policy(`! sepgsql_enable_auditdeny || ! sepgsql_enable_audittuple',`
-	dontaudit sepgsql_client_type sepgsql_table_type      : db_tuple *;
-')
+
+#dontaudit { postgresql_t sepgsql_client_type sepgsql_unconfined_type } { sepgsql_table_type - sepgsql_sysobj_table_type } : db_tuple { use select update insert delete };
 
 ########################################
 #
 # SE-PostgreSQL regression test mode switch
 #
 tunable_policy(`sepgsql_regression_test_mode',`
-	allow sepgsql_client_type self : db_blob { import export };
-
-	allow sepgsql_client_type   home_type : db_database { install_module };
-	allow sepgsql_database_type home_type : db_database { load_module };
+	allow sepgsql_client_type       home_type : db_database { install_module };
+	allow sepgsql_unconfined_type   home_type : db_database { install_module };
+	allow sepgsql_database_type     home_type : db_database { load_module };
 ')

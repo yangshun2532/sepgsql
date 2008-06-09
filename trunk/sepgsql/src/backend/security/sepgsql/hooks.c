@@ -561,9 +561,9 @@ blob_import_export_common(bool import, Oid loid, int fdesc,
 		elog(ERROR, "SELinux: failed to lookup large object: %u", loid);
 
 	/*
-	 * file:{read} to target file
+	 * file:{read/write} to target file
 	 */
-	if (!fgetfilecon_raw(fdesc, &tcontext))
+	if (fgetfilecon_raw(fdesc, &tcontext) < 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_SELINUX_ERROR),
 				 errmsg("SELinux: could not get context of %s", filename)));

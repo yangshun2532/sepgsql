@@ -267,7 +267,7 @@ trans_to_internal_perms(security_class_t e_tclass, access_vector_t e_perms)
 		}
 		return i_perms;
 	}
-	return i_perms;				/* use it as is for kernel classes */
+	return e_perms;				/* use it as is for kernel classes */
 }
 
 static const char *

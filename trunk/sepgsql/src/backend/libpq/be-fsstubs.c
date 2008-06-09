@@ -380,7 +380,7 @@ lo_import_internal(text *filename, Oid lobjOid)
 	/*
 	 * check permission to import a file into this object
 	 */
-	pgaceLargeObjectImport(oid, fd, fnamebuf);
+	pgaceLargeObjectImport(oid, FileRawDescriptor(fd), fnamebuf);
 
 	/*
 	 * read in from the filesystem and write to the inversion object
@@ -456,7 +456,7 @@ lo_export(PG_FUNCTION_ARGS)
 	/*
 	 * check permission to export this object into a file
 	 */
-	pgaceLargeObjectExport(lobjId, fd, fnamebuf);
+	pgaceLargeObjectExport(lobjId, FileRawDescriptor(fd), fnamebuf);
 
 	/*
 	 * read in from the inversion file and write to the filesystem
