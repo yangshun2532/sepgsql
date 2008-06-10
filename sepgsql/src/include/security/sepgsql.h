@@ -98,7 +98,7 @@ extern void sepgsqlCallFunction(FmgrInfo *finfo, bool with_perm_check);
 
 extern bool sepgsqlCallFunctionTrigger(FmgrInfo *finfo, TriggerData *tgdata);
 
-extern Datum sepgsqlPreparePlanCheck(Relation rel);
+extern void sepgsqlPreparePlanCheck(Relation rel, Datum *pgace_saved);
 
 extern void sepgsqlRestorePlanCheck(Relation rel, Datum pgace_saved);
 

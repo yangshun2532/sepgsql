@@ -45,21 +45,25 @@
  * {
  * #ifdef HAVE_SELINUX
  *     if (sepgsqlIsEnabled())
- *         return sepgsqlHeapTupleInsert(rel, tuple, is_internal, with_returning);
+ *         return sepgsqlHeapTupleInsert(rel, tuple,
+ *                                       is_internal,
+ *                                       with_returning);
  * #endif
  * #ifdef HAVE_FOO_SECURITY
  *     if (fooIsEnabled())
- *         return fooHeapTupleInsert(rel, tuple, is_internal, with_returning);
+ *         return fooHeapTupleInsert(rel, tuple,
+ *                                   is_internal,
+ *                                   with_returning);
  * #endif
  *     return true;
  * }
  * ____________
  *
- * It can invokes specific security subsystem and the callee makes its decision
- * whether the required access it allowed, or not.
- * When no security module is available, these hooks have to keep the default
- * behaivior to keep compatibility. In this case,  pgaceHeapTupleInsert() has
- * to return 'true'.
+ * It can invokes specific security subsystem and the callee makes
+ * its decision whether the required access it allowed, or not.
+ * When no security module is available, these hooks have to keep
+ * the default behaivior to keep compatibility.
+ * In this case,  pgaceHeapTupleInsert() has to return 'true'.
  *
  * Any hook has a comment to show the purpose of itself.
  * Please look at this one to understand each hooks.
@@ -118,7 +122,6 @@ pgaceInitialize(bool is_bootstrap)
 		return;
 	}
 #endif
-	/* do nothing */
 }
 
 /*
@@ -206,7 +209,6 @@ pgaceExecutorStart(QueryDesc *queryDesc, int eflags)
 		return;
 	}
 #endif
-	/* do nothing */
 }
 
 /*
@@ -371,13 +373,58 @@ pgaceHeapTupleDelete(Relation rel, ItemPointer otid,
  ******************************************************************/
 
 /*
- * PGACE implementation can use pgaceGramSecurityItem() hook to extend
- * SQL statement for security purpose. This hook is deployed on parser/gram.y
- * as a part of the SQL grammer. If no SQL extension is necessary, it has to
- * return NULL to cause yyerror().
+ * PGACE framework provides its guest facilities to manage security
+ * attribute of database object, using an extended SQL statement.
  *
- * @defname : given <parameter> string
- * @value	: given <value> string
+ * For example:
+ *   CREATE TABLE tbl (
+ *       x  integer,
+ *       y  text
+ *   ) CONTEXT = 'system_u:object_r:sepgsql_ro_table_t:Classified',
+ *
+ * In SE-PostgreSQL, this statement enables to create a new table
+ * with explicitly specified security attribute by CONTEXT = 'xxx'
+ * clause. We call the clause as a "security attribute modifier".
+ *
+ * The series of hooks enables the guest to handle the given
+ * security attribute and apply it on the specified database
+ * object.
+ * 
+ * The guest can apply this feature on the following statement:
+ *
+ * CREATE DATABASE <database>
+ * ALTER DATABASE <database>
+ * CREATE TABLE <table>
+ * ALTER TABLE <table>
+ * ALTER TABLE <table> ALTER <column>
+ * CREATE FUNCTION <function>
+ * ALTER FUNCTION <function>
+ */
+
+/*
+ * pgaceGramSecurityItem
+ *
+ * This hook is invoked during parsing a give query from parser/gram.y,
+ * and it generates a DefElem object which holds explicitly specified
+ * security attribute. If the guest support the feature of security
+ * attribute modifier, this hook has to check whether the given clause
+ * is appropriate, or not.
+ * 
+ * In the following exmaple case:
+ *   CREATE TABLE tbl (
+ *       x  integer,
+ *       y  text
+ *   ) CONTEXT = 'system_u:object_r:sepgsql_ro_table_t:Classified',
+ *
+ * This hook is invoked with "context" as an argument of defname
+ * and "system_u:object_r:sepgsql_ro_table_t:Classified" as an
+ * argument of value, and has to check whether it is appropriate
+ * as a security attribute modifier, or not.
+ * If OK, the hook generates a DefElem object which contains
+ * the given context, and returns it.
+ *
+ * To return NULL means that "This clause is not a security attribute
+ * modifier", then it makes an error.
  */
 static inline DefElem *
 pgaceGramSecurityItem(char *defname, char *value)
@@ -390,10 +437,11 @@ pgaceGramSecurityItem(char *defname, char *value)
 }
 
 /*
- * PGACE implementation has to return true, if the given DefElem holds
- * security item generated in pgaceGramSecurityItem(). false, if any other.
+ * pgaceIsGramSecurityItem
  *
- * @defel : given DefElem object
+ * This hook checks whether the given DefElem object means security
+ * attribute modifier generated at pgaceGramSecurityItem(), or not.
+ * If OK, it returns true.
  */
 static inline bool
 pgaceIsGramSecurityItem(DefElem *defel)
@@ -406,12 +454,21 @@ pgaceIsGramSecurityItem(DefElem *defel)
 }
 
 /*
- * pgaceGramCreateRelation() is called to modify a tuple just before inserting
- * a new relation with CREATE TABLE, if extended statement is used.
+ * The series of following hooks has three arguments.
+ * - rel is an opened relation of the target system catalog.
+ * - tuple is a new tuple to be inserted/updated.
+ * - defel is a security attribute modifier generated at
+ *   pgaceGramSecurityItem().
+ */
+
+/*
+ * pgaceGramCreateRelation
  *
- * @rel   : pg_class relation
- * @tuple : a tuple of new relation
- * @defel : extended statement
+ * This hook invoked to apply an explicitly specified security attribute
+ * just before inserting a new tuple into pg_class system catalog on
+ * the processing of CREATE TABLE.
+ * The guest can attach the required security attribute for the given
+ * tuple which means a new relation.
  */
 static inline void
 pgaceGramCreateRelation(Relation rel, HeapTuple tuple, DefElem *defel)
@@ -420,18 +477,16 @@ pgaceGramCreateRelation(Relation rel, HeapTuple tuple, DefElem *defel)
 	if (sepgsqlIsEnabled())
 		return sepgsqlGramCreateRelation(rel, tuple, defel);
 #endif
-	/*
-	 * do nothing
-	 */
 }
 
 /*
- * pgaceGramCreateAttribute() is called to modify a tuple just before inserting
- * a new attribute with CREATE TABLE, if extended statement is used.
+ * pgaceGramCreateAttribute
  *
- * @rel   : pg_attribute relation
- * @tuple : a tuple of new attribute
- * @defel : extended statement
+ * This hook invoked to apply an explicitly specified security attribute
+ * just before inserting a new tuple into pg_attribute system catalog on
+ * the processing of CREATE TABLE.
+ * The guest can attach the required security attribute for the given
+ * tuple which means a new column.
  */
 static inline void
 pgaceGramCreateAttribute(Relation rel, HeapTuple tuple, DefElem *defel)
@@ -440,18 +495,16 @@ pgaceGramCreateAttribute(Relation rel, HeapTuple tuple, DefElem *defel)
 	if (sepgsqlIsEnabled())
 		return sepgsqlGramCreateAttribute(rel, tuple, defel);
 #endif
-	/*
-	 * do nothing
-	 */
 }
 
 /*
- * pgaceGramAlterRelation() is called to modify a tuple just before updating
- * a relation with ALTER TABLE, if extended statement is used.
+ * pgaceGramAlterRelation
  *
- * @rel   : target relation
- * @tuple : a tuple of new relation
- * @defel : extended statement
+ * This hook invoked to apply an explicitly specified security attribute
+ * just before updating an older tuple of pg_class system catalog on
+ * the processing of ALTER TABLE.
+ * The guest can attach the required security attribute for the given
+ * tuple which means a table.
  */
 static inline void
 pgaceGramAlterRelation(Relation rel, HeapTuple tuple, DefElem *defel)
@@ -460,18 +513,16 @@ pgaceGramAlterRelation(Relation rel, HeapTuple tuple, DefElem *defel)
 	if (sepgsqlIsEnabled())
 		return sepgsqlGramAlterRelation(rel, tuple, defel);
 #endif
-	/*
-	 * do nothing
-	 */
 }
 
 /*
- * pgaceGramAlterAttribute() is called to modify a tuple just before updating
- * an attribute with ALTER TABLE, if extended statement is specified.
+ * pgaceGramAlterAttribute
  *
- * @rel   : target relation
- * @tuple : a tuple of new attribute
- * @defel : extended statement
+ * This hook invoked to apply an explicitly specified security attribute
+ * just before updating an older tuple of pg_attribute system catalog on
+ * the processing of ALTER TABLE.
+ * The guest can attach the required security attribute for the given
+ * tuple which means a column.
  */
 static inline void
 pgaceGramAlterAttribute(Relation rel, HeapTuple tuple, DefElem *defel)
@@ -480,89 +531,90 @@ pgaceGramAlterAttribute(Relation rel, HeapTuple tuple, DefElem *defel)
 	if (sepgsqlIsEnabled())
 		return sepgsqlGramAlterAttribute(rel, tuple, defel);
 #endif
-	/*
-	 * do nothing
-	 */
 }
 
 /*
- * pgaceGramCreateDatabase() is called to modify a tuple just before inserting
- * a new database with CREATE DATABASE, if extended statement is used.
+ * pgaceGramCreateDatabase
  *
- * @rel   : pg_database relation
- * @tuple : a tuple of the new database
- * @defel : extended statement
+ * This hook invoked to apply an explicitly specified security attribute
+ * just before inserting a new tuple into pg_database system catalog on
+ * the processing of CREATE DATABASE.
+ * The guest can attach the required security attribute for the given
+ * tuple which means a database.
  */
 static inline void
 pgaceGramCreateDatabase(Relation rel, HeapTuple tuple, DefElem *defel)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
+	{
 		sepgsqlGramCreateDatabase(rel, tuple, defel);
+		return;
+	}
 #endif
-	/*
-	 * do nothing
-	 */
 }
 
 /*
- * pgaceGramAlterDatabase() is called to modify a tuple just before updating
- * a database with ALTER DATABASE, if extended statement is used.
+ * pgaceGramAlterDatabase
  *
- * @rel   : pg_database relation
- * @tuple : a tuple of the updated database
- * @defel : extended statement
+ * This hook invoked to apply an explicitly specified security attribute
+ * just before updating an older tuple of pg_database system catalog on
+ * the processing of ALTER DATABASE.
+ * The guest can attach the required security attribute for the given
+ * tuple which means a database.
  */
 static inline void
 pgaceGramAlterDatabase(Relation rel, HeapTuple tuple, DefElem *defel)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
+	{
 		sepgsqlGramAlterDatabase(rel, tuple, defel);
+		return;
+	}
 #endif
-	/*
-	 * do nothing
-	 */
 }
 
 /*
- * pgaceGramCreateFunction() is called to modify a tuple just before inserting
- * a new function into pg_proc, if extended statement is used.
+ * pgaceGramCreateFunction
  *
- * @rel   : pg_proc relation
- * @tuple : a tuple of the new function
- * @defel : extended statement
+ * This hook invoked to apply an explicitly specified security attribute
+ * just before inserting a new tuple into pg_proc system catalog on
+ * the processing of CREATE FUNCTION.
+ * The guest can attach the required security attribute for the given
+ * tuple which means a function.
  */
 static inline void
 pgaceGramCreateFunction(Relation rel, HeapTuple tuple, DefElem *defel)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
+	{
 		sepgsqlGramCreateFunction(rel, tuple, defel);
+		return;
+	}
 #endif
-	/*
-	 * do nothing
-	 */
 }
 
 /*
- * pgaceGramAlterFunction() is called to modify a tuple just before updating
- * a function with ALTER FUNCTION, if extended statement is used.
+ * pgaceGramAlterFunction
  *
- * @rel   : pg_proc relation
- * @tuple : a tuple of the function
- * @defel : extended statement
+ * This hook invoked to apply an explicitly specified security attribute
+ * just before updating an older tuple of pg_proc system catalog on
+ * the processing of ALTER FUNCTION.
+ * The guest can attach the required security attribute for the given
+ * tuple which means a function.
  */
 static inline void
 pgaceGramAlterFunction(Relation rel, HeapTuple tuple, DefElem *defel)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
+	{
 		sepgsqlGramAlterFunction(rel, tuple, defel);
+		return;
+	}
 #endif
-	/*
-	 * do nothing
-	 */
 }
 
 /******************************************************************
@@ -570,37 +622,46 @@ pgaceGramAlterFunction(Relation rel, HeapTuple tuple, DefElem *defel)
  ******************************************************************/
 
 /*
- * pgaceSetDatabaseParam() is called when clients tries to set GUC variables
+ * pgaceSetDatabaseParam
  *
- * @name   : The name of GUC variable
- * @argstr : The new valus of GUC variable. If argstr is NULL, it means
- *			 clients tries to reset the variable.
+ * This hook is invoked just before putting a new value on a GUC
+ * variable.
+ *
+ * arguments:
+ * - name is a name of GUC variable.
+ * - argstring is its new value. NULL means user tries to reset
+ *   the given GUC variable.
  */
 static inline void
 pgaceSetDatabaseParam(const char *name, char *argstring)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
+	{
 		sepgsqlSetDatabaseParam(name, argstring);
+		return;
+	}
 #endif
-	/*
-	 * do nothing
-	 */
 }
 
 /*
- * pgaceGetDatabaseParam() is called when clients tries to refer GUC variables
+ * pgaceGetDatabaseParam
  *
- * @name : The name of GUC variable
+ * This hook is invoked just before reffering a GUC variable.
+ *
+ * arguments:
+ * - name is a name of GUC variable.
  */
 static inline void
 pgaceGetDatabaseParam(const char *name)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
+	{
 		sepgsqlGetDatabaseParam(name);
+		return;
+	}
 #endif
-	/* do nothing */
 }
 
 /******************************************************************
@@ -608,30 +669,35 @@ pgaceGetDatabaseParam(const char *name)
  ******************************************************************/
 
 /*
- * pgaceCallFunction() is called just before executing SQL function
- * as a part of query.
+ * pgaceCallFunction
  *
- * @finfo	 : FmgrInfo object for the target function
+ * This hook is invoked just before execute a function as a part
+ * of the query. It provides a FmgrInfo object used to execute
+ * function, and the guest can store an opaque data within
+ * FmgrInfo::fn_pgaceItem.
  */
 static inline void
 pgaceCallFunction(FmgrInfo *finfo)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
+	{
 		sepgsqlCallFunction(finfo, false);
+		return;
+	}
 #endif
-	/* do nothing */
 }
 
 /*
- * pgaceCallFunctionTrigger() is called just before executing
- * trigger function.
- * If it returns false, the trigger function will not be called and caller
- * receives NULL tuple as a result. In the case when Before-Row triggers,
- * it means the current operations on the tuple should be skipped.
+ * pgaceCallFunctionTrigger
  *
- * @finfo  : FmgrInfo object for the target function
- * @tgdata : TriggerData object for the current trigger invokation
+ * This hook is invoked just before executing trigger function.
+ * If it returns false, the trigger function is not invoked and
+ * caller receives a NULL tuple as a result.
+ * (It also means skip to update/delete the tuple in BR-triggers.)
+ *
+ * The guest can refer FmgrInfo and TriggerData object to make
+ * its decision.
  */
 static inline bool
 pgaceCallFunctionTrigger(FmgrInfo *finfo, TriggerData *tgdata)
@@ -644,53 +710,60 @@ pgaceCallFunctionTrigger(FmgrInfo *finfo, TriggerData *tgdata)
 }
 
 /*
- * pgaceCallFunctionFastPath() is called just before executing
- * SQL function in the fast path.
+ * pgaceCallFunctionFastPath
  *
- * @finfo  : FmgrInfo object for the target function
+ * This hook is invoked just before executing a function in
+ * fast path.
  */
 static inline void
 pgaceCallFunctionFastPath(FmgrInfo *finfo)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
+	{
 		sepgsqlCallFunction(finfo, true);
+		return;
+	}
 #endif
-	/* do nothing */
 }
 
 /*
- * pgacePreparePlanCheck() is called before foreign key/primary key constraint checks,
- * at ri_PlanCheck(). PGACE implementation can return its opaque data for any purpose.
+ * pgacePreparePlanCheck
  *
- * @rel : the target relation in which a constraint is configured
+ * This hook is invoked just before FK/PK constraint checks.
+ * The guest can change its state during FK/PK constraint checks,
+ * and restore it on pgaceRestorePlanCheck().
+ * If it needs an opaque data, pgace_saved can be used to store
+ * an opaque data.
  */
-static inline Datum
-pgacePreparePlanCheck(Relation rel)
+static inline void
+pgacePreparePlanCheck(Relation rel, Datum *pgace_saved)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
-		return sepgsqlPreparePlanCheck(rel);
+	{
+		sepgsqlPreparePlanCheck(rel, pgace_saved);
+		return;
+	}
 #endif
-	return (Datum) 0;
 }
 
 /*
- * pgaceRestorePlanCheck() is called after foreign key/primary key constraint checks,
- * at ri_PlanCheck(). PGACE implementation can use an opaque data generated in the above
- * pgacePreparePlanCheck().
+ * pgaceRestorePlanCheck
  *
- * @rel			: the target relation in which a constraint is configured
- * @pgace_saved : an opaque data returned from pgacePreparePlanCheck()
+ * This hook is invoked just after FK/PK constraint checks.
+ * When the guest change something, it can be restored in this hook.
  */
 static inline void
 pgaceRestorePlanCheck(Relation rel, Datum pgace_saved)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
+	{
 		sepgsqlRestorePlanCheck(rel, pgace_saved);
+		return;
+	}
 #endif
-	/* do nothing */
 }
 
 /******************************************************************
@@ -698,18 +771,21 @@ pgaceRestorePlanCheck(Relation rel, Datum pgace_saved)
  ******************************************************************/
 
 /*
- * pgaceLockTable() is called when explicit LOCK statement used.
+ * pgaceLockTable
  *
- * @relid : the target relation id
+ * This hook is invoked when user tries to LOCK a table explicitly.
+ * The argument of relid shows the target relation id.
  */
 static inline void
 pgaceLockTable(Oid relid)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
+	{
 		sepgsqlLockTable(relid);
+		return;
+	}
 #endif
-	/* do nothing */
 }
 
 /******************************************************************
@@ -717,11 +793,16 @@ pgaceLockTable(Oid relid)
  ******************************************************************/
 
 /*
- * pgaceCopyTable() is called when COPY TO/COPY FROM statement is processed
+ * pgaceCopyTable
  *
- * @rel		   : the target relation
- * @attNumList : the list of attribute numbers
- * @isFrom	   : true, if the given statement is 'COPY FROM'
+ * This hook is invoked before executing COPY TO/COPY FROM statement,
+ * to give the guest a chance to check tables/columns appeared in.
+ *
+ * arguments:
+ * - rel is the target relation of this COPY TO/FROM statement.
+ *   It can be NULL, when COPY (SELECT ...) TO ... is given.
+ * - attNumList is a list of attribute number
+ * - isFrom is a bool to show the direction of the COPY
  */
 static inline void
 pgaceCopyTable(Relation rel, List *attNumList, bool isFrom)
@@ -733,17 +814,22 @@ pgaceCopyTable(Relation rel, List *attNumList, bool isFrom)
 		return;
 	}
 #endif
-	/* do nothing */
 }
 
 /*
- * pgaceCopyToTuple() is called to check whether the given tuple should be
- * filtered, or not in the process of COPY TO statement.
- * If it returns false, the given tuple will be filtered from the result set
+ * pgaceCopyToTuple
  *
- * @rel		   : the target relation
- * @attNumList : the list of attribute numbers
- * @tuple	   : the target tuple
+ * This hook is invoked just before output of a fetched tuple on
+ * processing COPY TO statement, to give the guest a chance to make
+ * a decision whether the given tuple is visible, or not.
+ * If it returns false, the given tuple is not exported, as if it
+ * does not exist on the target relation.
+ * Elsewhere, 
+ *
+ * arguments:
+ * - rel is the target relation of this 
+ * - attNumList is a list of attribute number
+ * - tuple is a tuple to be checked
  */
 static inline bool
 pgaceCopyToTuple(Relation rel, List *attNumList, HeapTuple tuple)
@@ -760,60 +846,89 @@ pgaceCopyToTuple(Relation rel, List *attNumList, HeapTuple tuple)
  ******************************************************************/
 
 /*
- * pgaceLoadSharedModule() is called just before load a shared library
- * module.
+ * pgaceLoadSharedModule
  *
- * @filename : full path name of the shared library module
+ * This hook is invoked before loading a shared library module,
+ * to give the guest a change to confirm whether the required
+ * module is safe, or not.
+ *
+ * This hook can be also invoked implicitly when a user tries
+ * to call a function implemented within external modules.
  */
 static inline void
 pgaceLoadSharedModule(const char *filename)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
+	{
 		sepgsqlLoadSharedModule(filename);
+		return;
+	}
 #endif
-	/*
-	 * do nothing
-	 */
 }
 
 /******************************************************************
  * Binary Large Object (BLOB) hooks
  ******************************************************************/
 
+/*
+ * pgaceLargeObjectCreate
+ *
+ * This hook is invoked just before inserting a tuple of the first
+ * page into pg_largeobject system catalog, to give the guest
+ * a chance to make its decision and attach proper security attribute.
+ */
 static inline void
 pgaceLargeObjectCreate(Relation rel, HeapTuple tuple)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
+	{
 		sepgsqlLargeObjectCreate(rel, tuple);
+		return;
+	}
 #endif
-	/* do nothing */
 }
 
 /*
- * LargeObjectDrop() iterates simple_heap_delete(), pgaceItem is kept
- * in a series of loop
+ * LargeObjectDrop
+ *
+ * This hook is invoked for each tuple within a dropped largeobject,
+ * to give the guest a chance to make its decision.
+ * In the series of iteration of deleting a tuple, the guest can
+ * hold its state as an opaque data on pgaceItem.
+ *
+ * arguments:
+ * - rel is a opened Relation of pg_largeobject.
+ * - tuple is a tuple within pg_largeobject, to be deleted.
+ * - is_first shows this invocation is the first in the series of
+ *   iteration, if it is true.
+ * - pgaceItem is a pointer to an opaque data structure.
  */
 static inline void
-pgaceLargeObjectDrop(Relation rel, HeapTuple tuple, bool is_first, Datum *pgaceItem)
+pgaceLargeObjectDrop(Relation rel, HeapTuple tuple,
+					 bool is_first, Datum *pgaceItem)
 {
 #ifdef HAVE_SELINUX
-    if (sepgsqlIsEnabled())
+	if (sepgsqlIsEnabled())
+	{
 		sepgsqlLargeObjectDrop(rel, tuple, is_first, pgaceItem);
+		return;
+	}
 #endif
-	/* do nothing */
 }
 
 /*
  * returning 'false' means this page should be dealt as a hole.
  */
 static inline bool
-pgaceLargeObjectRead(Relation rel, HeapTuple tuple, bool is_first, Datum *pgaceItem)
+pgaceLargeObjectRead(Relation rel, HeapTuple tuple,
+					 bool is_first, Datum *pgaceItem)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
-		sepgsqlLargeObjectRead(rel, tuple, is_first, pgaceItem);
+		return sepgsqlLargeObjectRead(rel, tuple,
+									  is_first, pgaceItem);
 #endif
 	return true;
 }
@@ -825,9 +940,12 @@ pgaceLargeObjectWrite(Relation rel, Relation idx,
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
-		sepgsqlLargeObjectWrite(rel, idx, newtup, oldtup, is_first, pgaceItem);
+	{
+		sepgsqlLargeObjectWrite(rel, idx, newtup, oldtup,
+								is_first, pgaceItem);
+		return;
+	}
 #endif
-	/* do nothing */
 }
 
 static inline void
@@ -835,9 +953,11 @@ pgaceLargeObjectImport(Oid loid, int fdesc, const char *filename)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
+	{
 		sepgsqlLargeObjectImport(loid, fdesc, filename);
+		return;
+	}
 #endif
-	/* do nothing */
 }
 
 static inline void
@@ -845,9 +965,11 @@ pgaceLargeObjectExport(Oid loid, int fdesc, const char *filename)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
+	{
 		sepgsqlLargeObjectExport(loid, fdesc, filename);
+		return;
+	}
 #endif
-	/* do nothing */
 }
 
 static inline void
@@ -855,10 +977,12 @@ pgaceLargeObjectGetSecurity(Relation rel, HeapTuple tuple)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
+	{
 		sepgsqlLargeObjectGetSecurity(rel, tuple);
-#else
-	elog(ERROR, "PGACE: There is no guest module.");
+		return;
+	}
 #endif
+	elog(ERROR, "PGACE: There is no guest module.");
 }
 
 static inline void
@@ -867,18 +991,34 @@ pgaceLargeObjectSetSecurity(Relation rel, HeapTuple tuple, Oid security_id,
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
-		sepgsqlLargeObjectSetSecurity(rel, tuple, security_id, is_first, pgaceItem);
-#else
-	elog(ERROR, "PGACE: There is no guest module.");
+	{
+		sepgsqlLargeObjectSetSecurity(rel, tuple, security_id,
+									  is_first, pgaceItem);
+		return;
+	}
 #endif
+	elog(ERROR, "PGACE: There is no guest module.");
 }
-
-
 
 /******************************************************************
  * Security Label hooks
  ******************************************************************/
 
+/*
+ * pgaceTranslateSecurityLabelIn
+ *
+ * This hook enables the guest to translate a text representation
+ * of a given security attribute in external format into internal
+ * raw-format. It is invoked when user specifies security attribute
+ * explicitly in INSERT/UPDATE statement, to translate it into
+ * raw-internal format.
+ *
+ * It has to return a palloc()'ed Cstring, as a raw-internal format.
+ *
+ * In SE-PostgreSQL it supports translation in MLS/MCS labels like:
+ *   "system_u:object_r:sepgsql_table_t:SystemHigh"
+ *     <-->  "system_u:object_r:sepgsql_table_t:s0:c0.c1023"
+ */
 static inline char *
 pgaceTranslateSecurityLabelIn(char *seclabel)
 {
@@ -889,6 +1029,13 @@ pgaceTranslateSecurityLabelIn(char *seclabel)
 	return pstrdup("unlabeled");
 }
 
+/*
+ * pgaceTranslateSecurityLabelOut
+ *
+ * This hook enables the guest to translate a text representation
+ * of a given security attribute in internal format into cosmetic
+ * external format.
+ */
 static inline char *
 pgaceTranslateSecurityLabelOut(char *seclabel)
 {
@@ -899,6 +1046,13 @@ pgaceTranslateSecurityLabelOut(char *seclabel)
 	return pstrdup("unlabeled");
 }
 
+/*
+ * pgaceValidateSecurityLabel
+ *
+ * This hook enables the guest to validate the given security attribute
+ * in raw-internal format. If it is not available, the hook has to
+ * return an alternative security attribute.
+ */
 static inline char *
 pgaceValidateSecurityLabel(char *seclabel)
 {
@@ -910,8 +1064,10 @@ pgaceValidateSecurityLabel(char *seclabel)
 }
 
 /*
- * pgaceSecurityLabelOfLabel() returns the security attribute of a newly
- * generated tuple within pg_security
+ * pgaceSecurityLabelOfLabel
+ *
+ * This hook has to return the security attribute of a newly inserted
+ * tuple within pg_security
  */
 static inline char *
 pgaceSecurityLabelOfLabel(void)
