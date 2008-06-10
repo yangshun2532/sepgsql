@@ -736,24 +736,34 @@ proxyGeneralQuery(Query *query)
 }
 
 List *
-sepgsqlProxyQuery(Query *query)
+sepgsqlProxyQuery(List *queryList)
 {
-	List	   *new_list = NIL;
+	List	   *newList = NIL;
+	ListCell   *l;
 
-	switch (query->commandType)
+	foreach (l, queryList)
 	{
+		Query  *query = (Query *) lfirst(l);
+
+		Assert(IsA(query, Query));
+
+		switch (query->commandType)
+		{
 		case CMD_SELECT:
 		case CMD_UPDATE:
 		case CMD_INSERT:
 		case CMD_DELETE:
-			new_list = proxyGeneralQuery(query);
+			newList = list_concat(newList,
+								  proxyGeneralQuery(query));
 			break;
 		default:
-			/* do nothing */
-			new_list = list_make1(query);
+			newList = list_concat(newList,
+								  list_make1(query));
 			break;
+		}
 	}
-	return new_list;
+
+	return newList;
 }
 
 void

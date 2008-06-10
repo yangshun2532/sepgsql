@@ -22,6 +22,50 @@
 #endif
 
 /*
+ * The definitions of PGACE hooks are follows:
+ *
+ * These are declared as static inline functions which give us no effect
+ * in the default (no security modules are enabled), and independent from
+ * its platform.
+ *
+ * The purpose of PGACE framework is to provide a security subsystems
+ * common hooks to apply its access controls, and minimize the impact
+ * to add a new security subsystem.
+ *
+ * (*) We calls the security subsystem implemented on PGACE framework
+ *     as "the guest", in this comment.
+ *
+ * When a security module uses this framework, is has to add a #ifdef
+ * ... #endif block into the needed hooks, as follows:
+ * 
+ * ------------
+ * static inline bool
+ * pgaceHeapTupleInsert(Relation rel, HeapTuple tuple,
+ *                      bool is_internal, bool with_returning)
+ * {
+ * #ifdef HAVE_SELINUX
+ *     if (sepgsqlIsEnabled())
+ *         return sepgsqlHeapTupleInsert(rel, tuple, is_internal, with_returning);
+ * #endif
+ * #ifdef HAVE_FOO_SECURITY
+ *     if (fooIsEnabled())
+ *         return fooHeapTupleInsert(rel, tuple, is_internal, with_returning);
+ * #endif
+ *     return true;
+ * }
+ * ____________
+ *
+ * It can invokes specific security subsystem and the callee makes its decision
+ * whether the required access it allowed, or not.
+ * When no security module is available, these hooks have to keep the default
+ * behaivior to keep compatibility. In this case,  pgaceHeapTupleInsert() has
+ * to return 'true'.
+ *
+ * Any hook has a comment to show the purpose of itself.
+ * Please look at this one to understand each hooks.
+ */
+
+/*
  * SECURITY_SYSATTR_NAME is the name of system column name
  * for security attribute, defined in pg_config.h
  * If it is not defined, security attribute support is disabled
@@ -36,13 +80,15 @@
 #endif
 
 /******************************************************************
- * Initialize / Finalize related hooks
+ * Initialization hooks
  ******************************************************************/
 
 /*
- * pgaceShmemSize() have to return the size of shared memory segment
- * required by PGACE implementation. If no shared memory segment needed,
- * it should return 0.
+ * pgaceShmemSize
+ *
+ * This hook has to return the size of shared memory required
+ * by the guest. If it needs no shared memory region, it should
+ * return 0.
  */
 static inline Size
 pgaceShmemSize(void)
@@ -55,23 +101,37 @@ pgaceShmemSize(void)
 }
 
 /*
- * pgaceInitialize() is called when a new PostgreSQL instance is generated.
- * A PGACE implementation can initialize itself.
+ * pgaceInitialize
  *
- * @is_bootstrap : true, if bootstraping mode.
+ * This hook is invoked when a new PostgreSQL instance is created.
+ * The guest can use this hook to initialize itself.
+ * 
+ * is_bootstrap is true, if bootstraping mode.
  */
 static inline void
 pgaceInitialize(bool is_bootstrap)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
+	{
 		sepgsqlInitialize(is_bootstrap);
+		return;
+	}
 #endif
 	/* do nothing */
 }
 
 /*
- * pgaceStartupWorkerProcess() can fork a worker process
+ * pgaceInitialize
+ *
+ * The guest can create a worker process in this hook, if necessary.
+ * (currently, PGACE does not support multiple worker processes.)
+ *
+ * This hooks has to return the PID of child process. It is managed
+ * by postmaster in the same way to manage the other children.
+ * So, the worker process has to be available to handle signals.
+ *
+ * If unnecessary, it has to return (pid_t) 0.
  */
 static inline pid_t
 pgaceStartupWorkerProcess(void)
@@ -88,50 +148,34 @@ pgaceStartupWorkerProcess(void)
  ******************************************************************/
 
 /*
- * pgaceProxyQuery() is called just after query rewrite phase.
- * PGACE implementation can modify the query trees in this hook,
- * if necessary.
+ * pgaceProxyQuery
  *
- * @queryList : a list of Query typed objects.
+ * This hook is invoked just after query is rewritten.
+ *
+ * The guest can check/modify/replace given query trees in this
+ * hook, if necessary.
+ * queryList is a list of Query object processes by rewriter.
  */
 static inline List *
 pgaceProxyQuery(List *queryList)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
-	{
-		List	   *newList = NIL;
-
-		ListCell   *l;
-
-		foreach(l, queryList)
-		{
-			Query	   *q = (Query *) lfirst(l);
-
-			newList = list_concat(newList, sepgsqlProxyQuery(q));
-		}
-		queryList = newList;
-	}
+		return sepgsqlProxyQuery(queryList);
 #endif
 	return queryList;
 }
 
 /*
- * pgacePortalStart() is called on the top of PortalStart().
+ * pgaceIsAllowPlannerHook
  *
- * @portal : a Portal object currently executed.
- */
-static inline void
-pgacePortalStart(Portal portal)
-{
-	/*
-	 * do nothing
-	 */
-}
-
-/*
- * pgaceIsAllowPlannerHook()
+ * The guest can control whether planner_hook is available, or not.
+ * It returns false, if it is not allowed to apply planner_hook.
  *
+ * The purpose of this hook is to make sure pgace opaque data are delivered
+ * to PlannedStmt::pgaceItem and Scan::pgaceTuplePerms, because they are
+ * copied in standard_planner(). Overriding planner_hook has a possibility
+ * to prevent the guest works correctly.
  */
 static inline bool
 pgaceIsAllowPlannerHook(void)
@@ -144,11 +188,12 @@ pgaceIsAllowPlannerHook(void)
 }
 
 /*
- * pgaceExecutorStart() is called on the top of ExecutorStart().
+ * pgaceExecutorStart
  *
- * @queryDesc : a QueryDesc object given to ExecutorStart().
- * @eflags	  : eflags valus given to ExecutorStart().
- *				if EXEC_FLAG_EXPLAIN_ONLY is set, no real access will run.
+ * This hook is invoked on the head of ExecutorStart().
+ *
+ * The arguments of this hook are come from the ones of ExecutorStart
+ * as is.
  */
 static inline void
 pgaceExecutorStart(QueryDesc *queryDesc, int eflags)
@@ -158,17 +203,26 @@ pgaceExecutorStart(QueryDesc *queryDesc, int eflags)
 	{
 		Assert(queryDesc->plannedstmt != NULL);
 		sepgsqlVerifyQuery(queryDesc->plannedstmt, eflags);
+		return;
 	}
 #endif
-	/*
-	 * do nothing
-	 */
+	/* do nothing */
 }
 
 /*
- * pgaceExecScan() is invoked on ExecScan() to apply tuple level access
- * controls. If this hook returns false, the give tuple is filtered from
- * the result set.
+ * pgaceExecScan
+ *
+ * This hook is invoked on ExecScan for each tuple fetched.
+ * The guest can check its visibility, and can skip to scan the given
+ * tuple. If this hook returns false, the tuple is filtered from the
+ * result set or the target of updates/deletion.
+ *
+ * Otherwise, it has to return true.
+ *
+ * The guest can refer Scan::pgaceTuplePerms (declared as uint32).
+ * It is a copy come from RangeTblEntry::pgaceTuplePerms set in
+ * the previous phase. It can be used to mark what permissions are
+ * required to scanned tuples.
  */
 static inline bool
 pgaceExecScan(Scan *scan, Relation rel, TupleTableSlot *slot)
@@ -181,7 +235,9 @@ pgaceExecScan(Scan *scan, Relation rel, TupleTableSlot *slot)
 }
 
 /*
- * pgaceProcessUtility() is called on the top of ProcessUtility()
+ * pgaceProcessUtility
+ *
+ * This hooks is invoked on the head of ProcessUtility().
  */
 static inline void
 pgaceProcessUtility(Node *parsetree, ParamListInfo params, bool isTopLevel)
@@ -190,19 +246,26 @@ pgaceProcessUtility(Node *parsetree, ParamListInfo params, bool isTopLevel)
 	if (sepgsqlIsEnabled())
 	{
 		sepgsqlProcessUtility(parsetree, params, isTopLevel);
+		return;
 	}
 #endif
 }
 
 /*
- * pgaceEvaluateParams() is called on statement with parameter
+ * pgaceEvaluateParams
+ *
+ * This hook is invoked just before parameter lists are evaluated
+ * at EvaluateParams().
  */
 static inline void
 pgaceEvaluateParams(List *params)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
+	{
 		sepgsqlEvaluateParams(params);
+		return;
+	}
 #endif
 }
 
@@ -212,14 +275,22 @@ pgaceEvaluateParams(List *params)
  ******************************************************************/
 
 /*
- * pgaceHeapTupleInsert() is called when a new tuple attempt to be inserted.
- * If it returns false, this insertion of a new tuple will be cancelled.
- * However, it does not generate any error.
+ * pgaceHeapTupleInsert
  *
- * @rel			   : the target relation
- * @tuple		   : the tuple attmpt to be inserted
- * @is_internal    : true, if this operation is invoked by system internal processes.
- * @with_returning : true, if INSERT statement has RETURNING clause.
+ * This hooks is invoked just before a new tuple is inserted.
+ * If it returns false, inserting the given tuple is skipped.
+ * (or generates an error, if we cannot skip it simply.)
+ *
+ * The guest has to set a security attribute of a newly inserted
+ * tuple, if necessary and when user does not specify it explicitly.
+ *
+ * arguments:
+ * - rel is the target relation to be inserted.
+ * - tuple is the new tuple to be inserted.
+ * - is_internal is a bool to show whether it directly come from
+ *   user's query, or not.
+ * - with_returning is a bool to show whether this INSERT statement
+ *   has RETURNING clause, or not.
  */
 static inline bool
 pgaceHeapTupleInsert(Relation rel, HeapTuple tuple,
@@ -227,21 +298,32 @@ pgaceHeapTupleInsert(Relation rel, HeapTuple tuple,
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
-		return sepgsqlHeapTupleInsert(rel, tuple, is_internal, with_returning);
+		return sepgsqlHeapTupleInsert(rel, tuple,
+									  is_internal,
+									  with_returning);
 #endif
 	return true;
 }
 
 /*
- * pgaceHeapTupleUpdate() is called when a tuple attempt to be updated.
- * If it returns false, this update will be cancelled.
- * However, it does not generate any error.
+ * pgaceHeapTupleUpdate
  *
- * @rel			   : the target relation
- * @otid		   : ItemPointer of the tuple to be updated
- * @newtup		   : the new contains of the updated tuple
- * @is_internal    : true, if this operation is invoked by system internal processes.
- * @with_returning : true, if INSERT statement has RETURNING clause.
+ * This hook is invoked just before a tuple is updated.
+ * If it returns false, updating the given tuple is skipped.
+ * (or generates an error, if we cannot skip it simply.)
+ *
+ * The guest has to preserve a security attribute of the updated
+ * tuple, if necessary and when user specify its new security
+ * attribute explicitly.
+ *
+ * arguments:
+ * - rel is the target relation to be updated.
+ * - otid is the ItemPointer of the tuple with older version.
+ * - newtup is the tuple to be updated.
+ * - is_internal is a bool to show whether it directly come from
+ *   user's query, or not.
+ * - with_returning is a bool to show whether this INSERT statement
+ *   has RETURNING clause, or not.
  */
 static inline bool
 pgaceHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple newtup,
@@ -249,21 +331,27 @@ pgaceHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple newtup,
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
-		return sepgsqlHeapTupleUpdate(rel, otid, newtup, is_internal,
+		return sepgsqlHeapTupleUpdate(rel, otid, newtup,
+									  is_internal,
 									  with_returning);
 #endif
 	return true;
 }
 
 /*
- * pgaceHeapTupleDelete() is called when a tuple attempt to be deleted.
- * If it returns false, this deletion will be cancelled.
- * However, it does not generate any error.
+ * pgaceHeapTupleDelete
  *
- * @rel			   : the target relation
- * @otid		   : ItemPointer of the tuple to be deleted
- * @is_internal    : true, if this operation is invoked by system internal processes.
- * @with_returning : true, if INSERT statement has RETURNING clause.
+ * This hook is invoked just before a tuple is deleted.
+ * If it returns false, deleting the given tuple is skipped.
+ * (or generates an error, if we cannot skip it simply.)
+ *
+ * arguments:
+ * - rel is the target relation to be deleted.
+ * - otid is the ItemPointer of the tuple to be deleted.
+ * - is_internal is a bool to show whether it directly come from
+ *   user's query, or not.
+ * - with_returning is a bool to show whether this INSERT statement
+ *   has RETURNING clause, or not.
  */
 static inline bool
 pgaceHeapTupleDelete(Relation rel, ItemPointer otid,
@@ -271,7 +359,9 @@ pgaceHeapTupleDelete(Relation rel, ItemPointer otid,
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
-		return sepgsqlHeapTupleDelete(rel, otid, is_internal, with_returning);
+		return sepgsqlHeapTupleDelete(rel, otid,
+									  is_internal,
+									  with_returning);
 #endif
 	return true;
 }
@@ -510,9 +600,7 @@ pgaceGetDatabaseParam(const char *name)
 	if (sepgsqlIsEnabled())
 		sepgsqlGetDatabaseParam(name);
 #endif
-	/*
-	 * do nothing
-	 */
+	/* do nothing */
 }
 
 /******************************************************************
@@ -621,9 +709,7 @@ pgaceLockTable(Oid relid)
 	if (sepgsqlIsEnabled())
 		sepgsqlLockTable(relid);
 #endif
-	/*
-	 * do nothing
-	 */
+	/* do nothing */
 }
 
 /******************************************************************
@@ -642,11 +728,12 @@ pgaceCopyTable(Relation rel, List *attNumList, bool isFrom)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
+	{
 		sepgsqlCopyTable(rel, attNumList, isFrom);
+		return;
+	}
 #endif
-	/*
-	 * do nothing
-	 */
+	/* do nothing */
 }
 
 /*
@@ -663,7 +750,7 @@ pgaceCopyToTuple(Relation rel, List *attNumList, HeapTuple tuple)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
-		sepgsqlCopyToTuple(rel, attNumList, tuple);
+		return sepgsqlCopyToTuple(rel, attNumList, tuple);
 #endif
 	return true;
 }
@@ -857,10 +944,5 @@ extern void pgaceCreateRelationCommon(Relation rel, HeapTuple tuple,
 extern void pgaceCreateAttributeCommon(Relation rel, HeapTuple tuple,
 									   List *pgace_attr_list);
 extern void pgaceAlterRelationCommon(Relation rel, AlterTableCmd *cmd);
-
-/* SQL functions */
-extern Datum lo_get_security(PG_FUNCTION_ARGS);
-
-extern Datum lo_set_security(PG_FUNCTION_ARGS);
 
 #endif // PGACE_H
