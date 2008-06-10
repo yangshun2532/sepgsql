@@ -1,4 +1,4 @@
-policy_module(sepostgresql, 3.07)
+policy_module(sepostgresql, 3.08)
 
 gen_require(`
 	class db_database all_db_database_perms;
@@ -293,7 +293,7 @@ tunable_policy(`! sepgsql_enable_auditdeny',`
 	dontaudit sepgsql_client_type sepgsql_module_type     : db_database { install_module };
 ')
 
-#dontaudit { postgresql_t sepgsql_client_type sepgsql_unconfined_type } { sepgsql_table_type - sepgsql_sysobj_table_type } : db_tuple { use select update insert delete };
+dontaudit { postgresql_t sepgsql_client_type sepgsql_unconfined_type } { sepgsql_table_type - sepgsql_sysobj_table_type } : db_tuple { use select update insert delete };
 
 ########################################
 #
