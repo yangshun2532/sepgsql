@@ -3224,7 +3224,7 @@ ri_PlanCheck(const char *querystr, int nargs, Oid *argtypes,
 	SetUserIdAndContext(RelationGetForm(query_rel)->relowner, true);
 
 	/* Create the plan */
-	save_pgace = pgacePreparePlanCheck(query_rel);
+	pgacePreparePlanCheck(query_rel, &save_pgace);
 	PG_TRY();
 	{
 		qplan = SPI_prepare(querystr, nargs, argtypes);

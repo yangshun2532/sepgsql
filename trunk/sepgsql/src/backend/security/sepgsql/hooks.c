@@ -193,21 +193,27 @@ sepgsqlLockTable(Oid relid)
  * PROCEDURE related hooks
  *******************************************************************************/
 
+typedef struct
+{
+	PGFunction			fn_addr;
+	security_context_t	fn_con;
+} sepgsql_fn_info;
+
 static Datum
 invokeTrustedProcedure(PG_FUNCTION_ARGS)
 {
-	security_context_t orig_context, new_context;
+	sepgsql_fn_info *sefinfo = fcinfo->flinfo->fn_pgaceItem;
+	security_context_t orig_context;
 	Datum		retval;
 
 	/*
 	 * set new domain
 	 */
-	new_context = DatumGetCString(fcinfo->flinfo->fn_pgace_data);
-	orig_context = sepgsqlSwitchClientContext(new_context);
+	orig_context = sepgsqlSwitchClientContext(sefinfo->fn_con);
 
 	PG_TRY();
 	{
-		retval = fcinfo->flinfo->fn_pgace_addr(fcinfo);
+		retval = sefinfo->fn_addr(fcinfo);
 	}
 	PG_CATCH();
 	{
@@ -247,9 +253,13 @@ sepgsqlCallFunction(FmgrInfo *finfo, bool with_perm_check)
 
 	if (strcmp(newcon, sepgsqlGetClientContext()))
 	{
-		finfo->fn_pgace_addr = finfo->fn_addr;
-		finfo->fn_pgace_data = CStringGetDatum(newcon);
+		sepgsql_fn_info *sefinfo
+			= palloc(sizeof(sepgsql_fn_info));
+
+		sefinfo->fn_addr = finfo->fn_addr;
+		sefinfo->fn_con = CStringGetDatum(newcon);
 		finfo->fn_addr = invokeTrustedProcedure;
+		finfo->fn_pgaceItem = sefinfo;
 
 		perms |= DB_PROCEDURE__ENTRYPOINT;
 	}
@@ -671,14 +681,13 @@ sepgsqlExecScan(Scan *scan, Relation rel, TupleTableSlot *slot)
 /* ----------------------------------------------------------
  * special cases in foreign key constraint
  * ---------------------------------------------------------- */
-Datum
-sepgsqlPreparePlanCheck(Relation rel)
+void
+sepgsqlPreparePlanCheck(Relation rel, Datum *pgace_saved)
 {
-	Datum		pgace_saved = BoolGetDatum(abort_on_violated_tuple);
+	/* store the current status */
+	*pgace_saved = BoolGetDatum(abort_on_violated_tuple);
 
 	abort_on_violated_tuple = true;
-
-	return pgace_saved;
 }
 
 void
@@ -792,7 +801,8 @@ sepgsqlSecurityLabelOfLabel(void)
 	tuple = SearchSysCache(RELOID,
 						   ObjectIdGetDatum(SecurityRelationId), 0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
-		elog(ERROR, "SELinux: cache lookup failed for relation %u", SecurityRelationId);
+		elog(ERROR, "SELinux: cache lookup failed for relation %u",
+					SecurityRelationId);
 
 	table_context = pgaceLookupSecurityLabel(HeapTupleGetSecurity(tuple));
 
