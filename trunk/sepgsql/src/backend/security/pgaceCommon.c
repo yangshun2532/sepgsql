@@ -20,6 +20,7 @@
 #include "catalog/pg_security.h"
 #include "catalog/pg_type.h"
 #include "executor/executor.h"
+#include "libpq/be-fsstubs.h"
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
 #include "nodes/parsenodes.h"
@@ -471,7 +472,6 @@ pgaceSidToSecurityLabel(Oid security_id)
  * It assumes the first page means the whole of large object.
  * The guest of PGACE should pay effort to keep its consistency.
  */
-
 Datum
 lo_get_security(PG_FUNCTION_ARGS)
 {
@@ -515,7 +515,6 @@ lo_get_security(PG_FUNCTION_ARGS)
  * It scans pg_largeobject system catalog with a given loid,
  * and invokes pgaceLargeObjectSetSecurity() for each page frame.
  */
-
 Datum
 lo_set_security(PG_FUNCTION_ARGS)
 {
