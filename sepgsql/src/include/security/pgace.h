@@ -875,9 +875,11 @@ pgaceLoadSharedModule(const char *filename)
 /*
  * pgaceLargeObjectCreate
  *
- * This hook is invoked just before inserting a tuple of the first
- * page into pg_largeobject system catalog, to give the guest
- * a chance to make its decision and attach proper security attribute.
+ * This hooks is invoked just before the first tuple of a new large
+ * object is inserted, to give the guest a change to make its
+ * decision and attach proper security context for the tuple.
+ *
+ * The argument of rel is the opened pg_largeobject system catalog.
  */
 static inline void
 pgaceLargeObjectCreate(Relation rel, HeapTuple tuple)
@@ -891,6 +893,15 @@ pgaceLargeObjectCreate(Relation rel, HeapTuple tuple)
 #endif
 }
 
+/*
+ * pgaceLargeObjectDrop
+ *
+ * This hook is invoked just before each tuple of a large object
+ * are deleted, to give the guest a change to make its decision.
+ *
+ * The argument of pgaceItem is an opaque data, the guest can
+ * use it discreationally.
+ */
 static inline void
 pgaceLargeObjectDrop(Relation rel, HeapTuple tuple, void **pgaceItem)
 {
@@ -903,6 +914,14 @@ pgaceLargeObjectDrop(Relation rel, HeapTuple tuple, void **pgaceItem)
 #endif
 }
 
+/*
+ * pgaceLargeObjectRead
+ *
+ * This hook is invoked at the head of lo_read().
+ * If the guest allows a large object to have non-uniform security
+ * attributes (not a unique one for each page frame), using HeapTuple
+ * related hooks are more recommendable.
+ */
 static inline void
 pgaceLargeObjectRead(LargeObjectDesc *lodesc, int length)
 {
@@ -915,6 +934,11 @@ pgaceLargeObjectRead(LargeObjectDesc *lodesc, int length)
 #endif
 }
 
+/*
+ * pgaceLargeObjectWrite
+ *
+ * This hook is invoked at the head of lo_write().
+ */
 static inline void
 pgaceLargeObjectWrite(LargeObjectDesc *lodesc, int length)
 {
@@ -927,6 +951,11 @@ pgaceLargeObjectWrite(LargeObjectDesc *lodesc, int length)
 #endif
 }
 
+/*
+ * pgaceLargeObjectTruncate
+ *
+ * This hook is invoked at the head of lo_truncate().
+ */
 static inline void
 pgaceLargeObjectTruncate(LargeObjectDesc *lodesc, int offset)
 {
@@ -939,6 +968,11 @@ pgaceLargeObjectTruncate(LargeObjectDesc *lodesc, int offset)
 #endif
 }
 
+/*
+ * pgaceLargeObjectImport
+ *
+ * This hook is invoked just before importing the given file.
+ */
 static inline void
 pgaceLargeObjectImport(Oid loid, int fdesc, const char *filename)
 {
@@ -951,6 +985,11 @@ pgaceLargeObjectImport(Oid loid, int fdesc, const char *filename)
 #endif
 }
 
+/*
+ * pgaceLargeObjectExport
+ *
+ * This hook is invoked just before exporting the given large object.
+ */
 static inline void
 pgaceLargeObjectExport(Oid loid, int fdesc, const char *filename)
 {
@@ -963,6 +1002,13 @@ pgaceLargeObjectExport(Oid loid, int fdesc, const char *filename)
 #endif
 }
 
+/*
+ * pgaceLargeObjectGetSecurity
+ *
+ * This hook is invoked when user requires to run lo_get_security()
+ * Note that PGACE assumes the security attribute of first page frame
+ * of large object represents its security attribute.
+ */
 static inline void
 pgaceLargeObjectGetSecurity(Relation rel, HeapTuple tuple)
 {
@@ -976,6 +1022,14 @@ pgaceLargeObjectGetSecurity(Relation rel, HeapTuple tuple)
 	elog(ERROR, "PGACE: There is no guest module.");
 }
 
+/*
+ * pgaceLargeObjectSetSecurity
+ *
+ * This hook is invoked when user requires to run lo_set_security(),
+ * for each tuple within a given large object, which have unchecked
+ * security attribute. In other word, PGACE does not require the guest
+ * to check permission toward same security attribute twice, or more.
+ */
 static inline void
 pgaceLargeObjectSetSecurity(Relation rel, HeapTuple newtup, HeapTuple oldtup)
 {
