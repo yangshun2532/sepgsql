@@ -1201,7 +1201,10 @@ storeWritableSystemAttribute(Relation rel, TupleTableSlot *slot, HeapTuple tuple
 {
 #ifdef SECURITY_SYSATTR_NAME
 	if (!DatumGetPointer(slot->tts_security))
-		HeapTupleSetSecurity(tuple, InvalidOid);
+	{
+		if (HeapTupleHasSecurity(tuple))
+			HeapTupleSetSecurity(tuple, InvalidOid);
+	}
 	else
 	{
 		Oid security_id;

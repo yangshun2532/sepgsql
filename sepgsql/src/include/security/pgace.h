@@ -1048,6 +1048,23 @@ pgaceLargeObjectSetSecurity(Relation rel, HeapTuple newtup, HeapTuple oldtup)
  ******************************************************************/
 
 /*
+ * pgaceSecurityAttributeNecessary
+ *
+ * This hook provides a hint to the heap input/output subsystem.
+ * If it returns true, sizeof(Oid) bytes are expanded in HeapTupleHeader
+ * to store security identifier.
+ */
+static inline bool
+pgaceSecurityAttributeNecessary(void)
+{
+#ifdef HAVE_SELINUX
+	if (sepgsqlIsEnabled())
+		return true;
+#endif
+	return false;
+}
+
+/*
  * pgaceTranslateSecurityLabelIn
  *
  * This hook enables the guest to translate a text representation
