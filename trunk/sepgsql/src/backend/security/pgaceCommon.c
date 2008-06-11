@@ -315,6 +315,9 @@ pgacePostBootstrapingMode(void)
 	Datum		value;
 	char		isnull;
 
+	if (!es)
+		return;
+
 	StartTransactionCommand();
 
 	meta_sid = earlySecurityLabelToSid(pgaceSecurityLabelOfLabel());

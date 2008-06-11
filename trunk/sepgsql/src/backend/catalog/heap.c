@@ -219,7 +219,8 @@ bool
 SystemAttributeIsWritable(AttrNumber attno)
 {
 #ifdef SECURITY_SYSATTR_NAME
-	if (attno == SecurityAttributeNumber)
+	if (pgaceSecurityAttributeNecessary()
+		&& attno == SecurityAttributeNumber)
 		return true;
 #endif
 	return false;

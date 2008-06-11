@@ -831,7 +831,6 @@ heap_copytuple(HeapTuple tuple)
 	newTuple->t_tableOid = tuple->t_tableOid;
 	newTuple->t_data = (HeapTupleHeader) ((char *) newTuple + HEAPTUPLESIZE);
 	memcpy((char *) newTuple->t_data, (char *) tuple->t_data, tuple->t_len);
-	HeapTupleSetSecurity(newTuple, HeapTupleGetSecurity(tuple));
 	return newTuple;
 }
 
@@ -925,9 +924,8 @@ heap_form_tuple(TupleDesc tupleDescriptor,
 	if (tupleDescriptor->tdhasoid)
 		len += sizeof(Oid);
 
-#ifdef SECURITY_SYSATTR_NAME
-	len += sizeof(Oid);
-#endif
+	if (pgaceSecurityAttributeNecessary())
+		len += sizeof(Oid);
 
 	hoff = len = MAXALIGN(len); /* align user data safely */
 
@@ -960,9 +958,8 @@ heap_form_tuple(TupleDesc tupleDescriptor,
 	if (tupleDescriptor->tdhasoid)		/* else leave infomask = 0 */
 		td->t_infomask = HEAP_HASOID;
 
-#ifdef SECURITY_SYSATTR_NAME
-	td->t_infomask |= HEAP_HASSECURITY;
-#endif
+	if (pgaceSecurityAttributeNecessary())
+		td->t_infomask |= HEAP_HASSECURITY;
 
 	heap_fill_tuple(tupleDescriptor,
 					values,
@@ -1044,9 +1041,8 @@ heap_formtuple(TupleDesc tupleDescriptor,
 	if (tupleDescriptor->tdhasoid)
 		len += sizeof(Oid);
 
-#ifdef SECURITY_SYSATTR_NAME
-	len += sizeof(Oid);
-#endif
+	if (pgaceSecurityAttributeNecessary())
+		len += sizeof(Oid);
 
 	hoff = len = MAXALIGN(len); /* align user data safely */
 
@@ -1079,9 +1075,8 @@ heap_formtuple(TupleDesc tupleDescriptor,
 	if (tupleDescriptor->tdhasoid)		/* else leave infomask = 0 */
 		td->t_infomask = HEAP_HASOID;
 
-#ifdef SECURITY_SYSATTR_NAME
-	td->t_infomask |= HEAP_HASSECURITY;
-#endif
+	if (pgaceSecurityAttributeNecessary())
+		td->t_infomask |= HEAP_HASSECURITY;
 
 	DataFill(tupleDescriptor,
 			 values,
@@ -1161,7 +1156,8 @@ heap_modify_tuple(HeapTuple tuple,
 	newTuple->t_tableOid = tuple->t_tableOid;
 	if (tupleDesc->tdhasoid)
 		HeapTupleSetOid(newTuple, HeapTupleGetOid(tuple));
-	HeapTupleSetSecurity(newTuple, HeapTupleGetSecurity(tuple));
+	if (HeapTupleHasSecurity(newTuple))
+		HeapTupleSetSecurity(newTuple, HeapTupleGetSecurity(tuple));
 
 	return newTuple;
 }
@@ -1234,7 +1230,8 @@ heap_modifytuple(HeapTuple tuple,
 	newTuple->t_tableOid = tuple->t_tableOid;
 	if (tupleDesc->tdhasoid)
 		HeapTupleSetOid(newTuple, HeapTupleGetOid(tuple));
-	HeapTupleSetSecurity(newTuple, HeapTupleGetSecurity(tuple));
+	if (HeapTupleHasSecurity(newTuple))
+		HeapTupleSetSecurity(newTuple, HeapTupleGetSecurity(tuple));
 
 	return newTuple;
 }
@@ -1881,9 +1878,8 @@ heap_form_minimal_tuple(TupleDesc tupleDescriptor,
 	if (tupleDescriptor->tdhasoid)
 		len += sizeof(Oid);
 
-#ifdef SECURITY_SYSATTR_NAME
-	len += sizeof(Oid);
-#endif
+	if (pgaceSecurityAttributeNecessary())
+		len += sizeof(Oid);
 
 	hoff = len = MAXALIGN(len); /* align user data safely */
 
@@ -1906,9 +1902,8 @@ heap_form_minimal_tuple(TupleDesc tupleDescriptor,
 	if (tupleDescriptor->tdhasoid)		/* else leave infomask = 0 */
 		tuple->t_infomask = HEAP_HASOID;
 
-#ifdef SECURITY_SYSATTR_NAME
-	tuple->t_infomask |= HEAP_HASSECURITY;
-#endif
+	if (pgaceSecurityAttributeNecessary())
+		tuple->t_infomask |= HEAP_HASSECURITY;
 
 	heap_fill_tuple(tupleDescriptor,
 					values,
@@ -2022,9 +2017,8 @@ heap_addheader(int natts,		/* max domain index */
 	if (withoid)
 		hoff += sizeof(Oid);
 
-#ifdef SECURITY_SYSATTR_NAME
-	hoff += sizeof(Oid);
-#endif
+	if (pgaceSecurityAttributeNecessary())
+		hoff += sizeof(Oid);
 
 	hoff = MAXALIGN(hoff);
 	len = hoff + structlen;
@@ -2044,9 +2038,8 @@ heap_addheader(int natts,		/* max domain index */
 	if (withoid)				/* else leave infomask = 0 */
 		td->t_infomask = HEAP_HASOID;
 
-#ifdef SECURITY_SYSATTR_NAME
-	td->t_infomask |= HEAP_HASSECURITY;
-#endif
+	if (pgaceSecurityAttributeNecessary())
+		td->t_infomask |= HEAP_HASSECURITY;
 
 	memcpy((char *) td + hoff, structure, structlen);
 
