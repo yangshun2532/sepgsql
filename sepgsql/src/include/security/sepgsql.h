@@ -119,15 +119,13 @@ extern void sepgsqlLoadSharedModule(const char *filename);
 /* Binary Large Object (BLOB) hooks */
 extern void sepgsqlLargeObjectCreate(Relation rel, HeapTuple tuple);
 
-extern void sepgsqlLargeObjectDrop(Relation rel, HeapTuple tuple,
-								   bool is_first, Datum *pgaceItem);
+extern void sepgsqlLargeObjectDrop(Relation rel, HeapTuple tuple, void **pgaceItem);
 
-extern bool sepgsqlLargeObjectRead(Relation rel, HeapTuple tuple,
-								   bool is_first, Datum *pgaceItem);
+extern void sepgsqlLargeObjectRead(LargeObjectDesc *lodesc, int length);
 
-extern void sepgsqlLargeObjectWrite(Relation rel, Relation idx,
-									HeapTuple newtup, HeapTuple oldtup,
-									bool is_first, Datum *pgaceItem);
+extern void sepgsqlLargeObjectWrite(LargeObjectDesc *lodesc, int length);
+
+extern void sepgsqlLargeObjectTruncate(LargeObjectDesc *lodesc, int offset);
 
 extern void sepgsqlLargeObjectImport(Oid loid, int fdesc, const char *filename);
 
@@ -135,8 +133,7 @@ extern void sepgsqlLargeObjectExport(Oid loid, int fdesc, const char *filename);
 
 extern void sepgsqlLargeObjectGetSecurity(Relation rel, HeapTuple tuple);
 
-extern void sepgsqlLargeObjectSetSecurity(Relation rel, HeapTuple tuple, Oid security_id,
-										  bool is_first, Datum *pgaceItem);
+extern void sepgsqlLargeObjectSetSecurity(Relation rel, HeapTuple newtup, HeapTuple oldtup);
 
 /* Security Label hooks */
 extern char *sepgsqlTranslateSecurityLabelIn(char *context);

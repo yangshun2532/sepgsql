@@ -18,7 +18,6 @@
 #include "access/heapam.h"
 #include "catalog/indexing.h"
 #include "catalog/pg_largeobject.h"
-#include "catalog/pg_security.h"
 #include "security/pgace.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
@@ -83,7 +82,7 @@ LargeObjectDrop(Oid loid)
 	ScanKeyData skey[1];
 	SysScanDesc sd;
 	HeapTuple	tuple;
-	Datum		pgaceItem;
+	void	   *pgaceItem = NULL;
 
 	ScanKeyInit(&skey[0],
 				Anum_pg_largeobject_loid,
@@ -97,7 +96,7 @@ LargeObjectDrop(Oid loid)
 
 	while ((tuple = systable_getnext(sd)) != NULL)
 	{
-		pgaceLargeObjectDrop(pg_largeobject, tuple, !found, &pgaceItem);
+		pgaceLargeObjectDrop(pg_largeobject, tuple, &pgaceItem);
 		simple_heap_delete(pg_largeobject, &tuple->t_self);
 		found = true;
 	}

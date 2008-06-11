@@ -167,7 +167,7 @@ addEvalAttributeRTE(List *selist, RangeTblEntry *rte, AttrNumber attno, uint32 p
 	{
 		if ((perms & DB_COLUMN__SELECT) && attno == Anum_pg_largeobject_data)
 			rte->pgaceTuplePerms |= SEPGSQL_PERMS_READ;
-		if ((perms & (DB_COLUMN__UPDATE | DB_COLUMN__INSERT)) && attno > 0)
+		if ((perms & DB_COLUMN__UPDATE) && attno == Anum_pg_largeobject_data)
 			rte->pgaceTuplePerms |= SEPGSQL_PERMS_WRITE;
 	}
 
@@ -646,14 +646,11 @@ proxyRteSubQuery(sepgsqlWalkerContext *swc, Query *query)
 				Assert(IsA(rte, RangeTblEntry)
 					   && rte->rtekind == RTE_RELATION);
 
-				swc->selist = addEvalAttributeRTE(swc->selist, rte,
-												  is_security_attr ?
-												  SecurityAttributeNumber :
-												  tle->resno,
-												  cmdType ==
-												  CMD_UPDATE ?
-												  DB_COLUMN__UPDATE :
-												  DB_COLUMN__INSERT);
+				swc->selist	= addEvalAttributeRTE(swc->selist, rte,
+												  is_security_attr
+												  ? SecurityAttributeNumber : tle->resno,
+												  cmdType == CMD_UPDATE
+												  ? DB_COLUMN__UPDATE : DB_COLUMN__INSERT);
 			}
 			break;
 

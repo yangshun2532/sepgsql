@@ -14,6 +14,7 @@
 #include "commands/trigger.h"
 #include "executor/execdesc.h"
 #include "nodes/parsenodes.h"
+#include "storage/large_object.h"
 #include "utils/builtins.h"
 #include "utils/rel.h"
 
@@ -890,59 +891,49 @@ pgaceLargeObjectCreate(Relation rel, HeapTuple tuple)
 #endif
 }
 
-/*
- * LargeObjectDrop
- *
- * This hook is invoked for each tuple within a dropped largeobject,
- * to give the guest a chance to make its decision.
- * In the series of iteration of deleting a tuple, the guest can
- * hold its state as an opaque data on pgaceItem.
- *
- * arguments:
- * - rel is a opened Relation of pg_largeobject.
- * - tuple is a tuple within pg_largeobject, to be deleted.
- * - is_first shows this invocation is the first in the series of
- *   iteration, if it is true.
- * - pgaceItem is a pointer to an opaque data structure.
- */
 static inline void
-pgaceLargeObjectDrop(Relation rel, HeapTuple tuple,
-					 bool is_first, Datum *pgaceItem)
+pgaceLargeObjectDrop(Relation rel, HeapTuple tuple, void **pgaceItem)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
 	{
-		sepgsqlLargeObjectDrop(rel, tuple, is_first, pgaceItem);
+		sepgsqlLargeObjectDrop(rel, tuple, pgaceItem);
 		return;
 	}
 #endif
 }
 
-/*
- * returning 'false' means this page should be dealt as a hole.
- */
-static inline bool
-pgaceLargeObjectRead(Relation rel, HeapTuple tuple,
-					 bool is_first, Datum *pgaceItem)
-{
-#ifdef HAVE_SELINUX
-	if (sepgsqlIsEnabled())
-		return sepgsqlLargeObjectRead(rel, tuple,
-									  is_first, pgaceItem);
-#endif
-	return true;
-}
-
 static inline void
-pgaceLargeObjectWrite(Relation rel, Relation idx,
-					  HeapTuple newtup, HeapTuple oldtup,
-					  bool is_first, Datum *pgaceItem)
+pgaceLargeObjectRead(LargeObjectDesc *lodesc, int length)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
 	{
-		sepgsqlLargeObjectWrite(rel, idx, newtup, oldtup,
-								is_first, pgaceItem);
+		sepgsqlLargeObjectRead(lodesc, length);
+		return;
+	}
+#endif
+}
+
+static inline void
+pgaceLargeObjectWrite(LargeObjectDesc *lodesc, int length)
+{
+#ifdef HAVE_SELINUX
+    if (sepgsqlIsEnabled())
+    {
+		sepgsqlLargeObjectWrite(lodesc, length);
+		return;
+	}
+#endif
+}
+
+static inline void
+pgaceLargeObjectTruncate(LargeObjectDesc *lodesc, int offset)
+{
+#ifdef HAVE_SELINUX
+	if (sepgsqlIsEnabled())
+	{
+		sepgsqlLargeObjectTruncate(lodesc, offset);
 		return;
 	}
 #endif
@@ -986,14 +977,12 @@ pgaceLargeObjectGetSecurity(Relation rel, HeapTuple tuple)
 }
 
 static inline void
-pgaceLargeObjectSetSecurity(Relation rel, HeapTuple tuple, Oid security_id,
-							bool is_first, Datum *pgaceItem)
+pgaceLargeObjectSetSecurity(Relation rel, HeapTuple newtup, HeapTuple oldtup)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
 	{
-		sepgsqlLargeObjectSetSecurity(rel, tuple, security_id,
-									  is_first, pgaceItem);
+		sepgsqlLargeObjectSetSecurity(rel, newtup, oldtup);
 		return;
 	}
 #endif
