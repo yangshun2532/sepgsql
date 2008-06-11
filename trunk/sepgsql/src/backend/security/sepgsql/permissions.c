@@ -9,6 +9,9 @@
  */
 #include "postgres.h"
 
+#include "access/heapam.h"
+#include "access/genam.h"
+#include "catalog/indexing.h"
 #include "catalog/pg_attribute.h"
 #include "catalog/pg_authid.h"
 #include "catalog/pg_class.h"
@@ -21,7 +24,9 @@
 #include "catalog/pg_type.h"
 #include "miscadmin.h"
 #include "security/pgace.h"
+#include "utils/fmgroids.h"
 #include "utils/syscache.h"
+#include "utils/tqual.h"
 
 static access_vector_t
 sepgsql_perms_to_common_perms(uint32 perms)
@@ -200,15 +205,8 @@ check_pg_largeobject(HeapTuple tuple, HeapTuple oldtup,
 	perms = sepgsql_perms_to_common_perms(*p_perms);
 	perms |= (*p_perms & SEPGSQL_PERMS_INSERT ? DB_BLOB__WRITE : 0);
 	perms |= (*p_perms & SEPGSQL_PERMS_DELETE ? DB_BLOB__WRITE : 0);
-	perms |= (*p_perms & SEPGSQL_PERMS_READ ? DB_BLOB__READ : 0);
-	perms |= (*p_perms & SEPGSQL_PERMS_WRITE ? DB_BLOB__WRITE : 0);
-
-	/*
-	 * TODO: add DB_BLOB__CREATE | DB_BLOB__DROP for SEPGSQL_PERMS_UPDATE,
-	 */
-	/*
-	 * if loid is changed
-	 */
+	perms |= (*p_perms & SEPGSQL_PERMS_READ   ? DB_BLOB__READ  : 0);
+	perms |= (*p_perms & SEPGSQL_PERMS_WRITE  ? DB_BLOB__WRITE : 0);
 
 	*p_tclass = SECCLASS_DB_BLOB;
 	*p_perms = perms;
@@ -369,7 +367,7 @@ sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, HeapTuple oldtup,
 security_context_t
 sepgsqlGetDefaultContext(Relation rel, HeapTuple tuple)
 {
-	security_context_t tcontext;
+	security_context_t tcontext = NULL;
 	security_class_t tclass = 0;
 
 	/*
@@ -438,17 +436,56 @@ sepgsqlGetDefaultContext(Relation rel, HeapTuple tuple)
 			break;
 
 		case LargeObjectRelationId:
-			/*
-			 * NOTE: a desirable behavior when a new tuple insertion is
-			 * inheris the security context of previous pages.
-			 * However, it need to lookup pg_largeobject with SnapshotSelf
-			 * for each insertion.
-			 *
-			 * If you insert tuples via lowrite(), it inherits correctly.
-			 * Fundamentally, we don't use INSERT a tuple directlly.
-			 */
-			tclass = SECCLASS_DB_BLOB;
-			tcontext = sepgsqlGetDatabaseContext();
+			{
+				/*
+				 * NOTE:
+				 * A new tuple to be inserted into pg_largeobject inheris
+				 * security context of tuple with same large object id.
+				 * We can scan it with SnapshotNow because lo_create invokes
+				 * CommandCounterIncrement() just after create a new large
+				 * object.
+				 *
+				 * If no page found, it means this action is to insert the
+				 * first page, or user run INSERT INTO ... statement with
+				 * multiple tuples with same loid.
+				 * However, these newly inserted tuples are labeled by
+				 * TYPE_TRANSITION rules in both cases. So, there are
+				 * no differences.
+				 */
+				Form_pg_largeobject loForm
+					= (Form_pg_largeobject) GETSTRUCT(tuple);
+				Relation		rel;
+				ScanKeyData		skey;
+				SysScanDesc		scan;
+				HeapTuple		lotup;
+
+				rel = heap_open(LargeObjectRelationId, AccessShareLock);
+				ScanKeyInit(&skey,
+							Anum_pg_largeobject_loid,
+							BTEqualStrategyNumber, F_OIDEQ,
+							ObjectIdGetDatum(loForm->loid));
+				scan = systable_beginscan(rel,
+										  LargeObjectLOidPNIndexId, true,
+										  SnapshotNow, 1, &skey);
+				while ((lotup = systable_getnext(scan)) != NULL)
+				{
+					Oid	security_id = HeapTupleGetSecurity(lotup);
+
+					if (security_id == InvalidOid)
+					{
+						tcontext = pgaceLookupSecurityLabel(security_id);
+						break;
+					}
+				}
+				systable_endscan(scan);
+				heap_close(rel, AccessShareLock);
+
+				if (tcontext != NULL)
+					return tcontext;
+
+				tcontext = sepgsqlGetDatabaseContext();
+				tclass = SECCLASS_DB_BLOB;
+			}
 			break;
 
 		case TypeRelationId:

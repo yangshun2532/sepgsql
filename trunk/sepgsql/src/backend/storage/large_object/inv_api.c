@@ -39,7 +39,6 @@
 #include "catalog/pg_largeobject.h"
 #include "commands/comment.h"
 #include "libpq/libpq-fs.h"
-#include "security/pgace.h"
 #include "storage/large_object.h"
 #include "utils/fmgroids.h"
 #include "utils/resowner.h"
@@ -415,7 +414,6 @@ inv_read(LargeObjectDesc *obj_desc, char *buf, int nbytes)
 	ScanKeyData skey[2];
 	SysScanDesc sd;
 	HeapTuple	tuple;
-	Datum		pgaceItem;
 
 	Assert(PointerIsValid(obj_desc));
 	Assert(buf != NULL);
@@ -446,10 +444,6 @@ inv_read(LargeObjectDesc *obj_desc, char *buf, int nbytes)
 
 		if (HeapTupleHasNulls(tuple))	/* paranoia */
 			elog(ERROR, "null field found in pg_largeobject");
-
-		if (!pgaceLargeObjectRead(lo_heap_r, tuple, !nread, &pgaceItem))
-			continue;
-
 		data = (Form_pg_largeobject) GETSTRUCT(tuple);
 
 		/*
@@ -530,7 +524,6 @@ inv_write(LargeObjectDesc *obj_desc, const char *buf, int nbytes)
 	char		nulls[Natts_pg_largeobject];
 	char		replace[Natts_pg_largeobject];
 	CatalogIndexState indstate;
-	Datum		pgaceItem;
 
 	Assert(PointerIsValid(obj_desc));
 	Assert(buf != NULL);
@@ -639,8 +632,6 @@ inv_write(LargeObjectDesc *obj_desc, const char *buf, int nbytes)
 			replace[Anum_pg_largeobject_data - 1] = 'r';
 			newtup = heap_modifytuple(oldtuple, RelationGetDescr(lo_heap_r),
 									  values, nulls, replace);
-			pgaceLargeObjectWrite(lo_heap_r, lo_index_r, newtup, oldtuple,
-								  !(nwritten - n), &pgaceItem);
 			simple_heap_update(lo_heap_r, &newtup->t_self, newtup);
 			CatalogIndexInsert(indstate, newtup);
 			heap_freetuple(newtup);
@@ -684,8 +675,6 @@ inv_write(LargeObjectDesc *obj_desc, const char *buf, int nbytes)
 			values[Anum_pg_largeobject_pageno - 1] = Int32GetDatum(pageno);
 			values[Anum_pg_largeobject_data - 1] = PointerGetDatum(&workbuf);
 			newtup = heap_formtuple(lo_heap_r->rd_att, values, nulls);
-			pgaceLargeObjectWrite(lo_heap_r, lo_index_r, newtup, NULL,
-								  !(nwritten - n), &pgaceItem);
 			simple_heap_insert(lo_heap_r, newtup);
 			CatalogIndexInsert(indstate, newtup);
 			heap_freetuple(newtup);
@@ -727,7 +716,6 @@ inv_truncate(LargeObjectDesc *obj_desc, int len)
 	char		nulls[Natts_pg_largeobject];
 	char		replace[Natts_pg_largeobject];
 	CatalogIndexState indstate;
-	Datum		pgaceItem;
 
 	Assert(PointerIsValid(obj_desc));
 
@@ -813,7 +801,6 @@ inv_truncate(LargeObjectDesc *obj_desc, int len)
 		replace[Anum_pg_largeobject_data - 1] = 'r';
 		newtup = heap_modifytuple(oldtuple, RelationGetDescr(lo_heap_r),
 								  values, nulls, replace);
-		pgaceLargeObjectWrite(lo_heap_r, lo_index_r, newtup, oldtuple, true, &pgaceItem);
 		simple_heap_update(lo_heap_r, &newtup->t_self, newtup);
 		CatalogIndexInsert(indstate, newtup);
 		heap_freetuple(newtup);
@@ -848,7 +835,6 @@ inv_truncate(LargeObjectDesc *obj_desc, int len)
 		values[Anum_pg_largeobject_pageno - 1] = Int32GetDatum(pageno);
 		values[Anum_pg_largeobject_data - 1] = PointerGetDatum(&workbuf);
 		newtup = heap_formtuple(lo_heap_r->rd_att, values, nulls);
-		pgaceLargeObjectWrite(lo_heap_r, lo_index_r, newtup, NULL, true, &pgaceItem);
 		simple_heap_insert(lo_heap_r, newtup);
 		CatalogIndexInsert(indstate, newtup);
 		heap_freetuple(newtup);
@@ -859,7 +845,6 @@ inv_truncate(LargeObjectDesc *obj_desc, int len)
 	 */
 	while ((oldtuple = systable_getnext_ordered(sd, ForwardScanDirection)) != NULL)
 	{
-		pgaceLargeObjectWrite(lo_heap_r, lo_index_r, NULL, oldtuple, false, &pgaceItem);
 		simple_heap_delete(lo_heap_r, &oldtuple->t_self);
 	}
 

@@ -476,34 +476,31 @@ Datum
 lo_get_security(PG_FUNCTION_ARGS)
 {
 	Oid			loid = PG_GETARG_OID(0);
-	Oid			security_id = InvalidOid;
-	Relation	lorel, loidx;
+	Relation	rel;
 	ScanKeyData skey;
-	SysScanDesc sd;
+	SysScanDesc scan;
 	HeapTuple	tuple;
-	bool		found = false;
+	Oid			security_id;
 
-	lorel = heap_open(LargeObjectRelationId, AccessShareLock);
-	loidx = index_open(LargeObjectLOidPNIndexId, AccessShareLock);
+	rel = heap_open(LargeObjectRelationId, AccessShareLock);
 
 	ScanKeyInit(&skey,
 				Anum_pg_largeobject_loid,
-				BTEqualStrategyNumber, F_OIDEQ, ObjectIdGetDatum(loid));
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(loid));
 
-	sd = systable_beginscan_ordered(lorel, loidx, SnapshotNow, 1, &skey);
-	tuple = systable_getnext_ordered(sd, ForwardScanDirection);
-	if (HeapTupleIsValid(tuple))
-	{
-		pgaceLargeObjectGetSecurity(lorel, tuple);
-		security_id = HeapTupleGetSecurity(tuple);
-		found = true;
-	}
-	systable_endscan_ordered(sd);
-	index_close(loidx, AccessShareLock);
-	heap_close(lorel, AccessShareLock);
+	scan = systable_beginscan(rel, LargeObjectLOidPNIndexId, true,
+							  SnapshotNow, 1, &skey);
+	tuple = systable_getnext(scan);
+	if (!HeapTupleIsValid(tuple))
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_OBJECT),
+				 errmsg("large object %u does not exist", loid)));
+	pgaceLargeObjectGetSecurity(rel, tuple);
+	security_id = HeapTupleGetSecurity(tuple);
 
-	if (!found)
-		elog(ERROR, "large object %u does not exist", loid);
+	systable_endscan(scan);
+	heap_close(rel, AccessShareLock);
 
 	return CStringGetTextDatum(pgaceSidToSecurityLabel(security_id));
 }
@@ -523,32 +520,43 @@ lo_set_security(PG_FUNCTION_ARGS)
 	Relation	rel;
 	ScanKeyData skey;
 	SysScanDesc sd;
-	HeapTuple	tuple, newtup;
+	HeapTuple	oldtup, newtup;
 	CatalogIndexState indstate;
-	Datum		pgaceItem;
 	Oid			security_id;
+	List	   *okList = NIL;
 	bool		found = false;
 
 	security_id = pgaceSecurityLabelToSid(TextDatumGetCString(labelTxt));
 
 	ScanKeyInit(&skey,
 				Anum_pg_largeobject_loid,
-				BTEqualStrategyNumber, F_OIDEQ, ObjectIdGetDatum(loid));
+				BTEqualStrategyNumber,
+				F_OIDEQ, ObjectIdGetDatum(loid));
 
 	rel = heap_open(LargeObjectRelationId, RowExclusiveLock);
 
 	indstate = CatalogOpenIndexes(rel);
 
-	sd = systable_beginscan(rel, LargeObjectLOidPNIndexId,
-							true, SnapshotNow, 1, &skey);
+	sd = systable_beginscan(rel,
+							LargeObjectLOidPNIndexId, true,
+							SnapshotNow, 1, &skey);
 
-	while ((tuple = systable_getnext(sd)) != NULL)
+	while ((oldtup = systable_getnext(sd)) != NULL)
 	{
-		pgaceLargeObjectSetSecurity(rel, tuple, security_id,
-									!found, &pgaceItem);
-		newtup = heap_copytuple(tuple);
+		ListCell *l;
+
+		newtup = heap_copytuple(oldtup);
 		HeapTupleSetSecurity(newtup, security_id);
 
+		foreach (l, okList)
+		{
+			if (HeapTupleGetSecurity(oldtup) == lfirst_oid(l))
+				goto skip;		/* already checked */
+		}
+		okList = lappend_oid(okList, HeapTupleGetSecurity(oldtup));
+
+		pgaceLargeObjectSetSecurity(rel, newtup, oldtup);
+	skip:
 		simple_heap_update(rel, &newtup->t_self, newtup);
 		CatalogUpdateIndexes(rel, newtup);
 		found = true;
@@ -560,7 +568,9 @@ lo_set_security(PG_FUNCTION_ARGS)
 	CommandCounterIncrement();
 
 	if (!found)
-		elog(ERROR, "large object %u does not exist.", loid);
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_OBJECT),
+				 errmsg("large object %u does not exist", loid)));
 
 	PG_RETURN_BOOL(true);
 }

@@ -157,6 +157,8 @@ lo_read(int fd, char *buf, int len)
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("invalid large-object descriptor: %d", fd)));
 
+	pgaceLargeObjectRead(cookies[fd], len);
+
 	status = inv_read(cookies[fd], buf, len);
 
 	return status;
@@ -177,6 +179,8 @@ lo_write(int fd, const char *buf, int len)
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 			  errmsg("large object descriptor %d was not opened for writing",
 					 fd)));
+
+	pgaceLargeObjectWrite(cookies[fd], len);
 
 	status = inv_write(cookies[fd], buf, len);
 
@@ -491,6 +495,8 @@ lo_truncate(PG_FUNCTION_ARGS)
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("invalid large-object descriptor: %d", fd)));
+
+	pgaceLargeObjectTruncate(cookies[fd], len);
 
 	inv_truncate(cookies[fd], len);
 
