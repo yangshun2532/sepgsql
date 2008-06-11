@@ -1,4 +1,4 @@
-policy_module(sepostgresql, 3.08)
+policy_module(sepostgresql, 3.09)
 
 gen_require(`
 	class db_database all_db_database_perms;
@@ -276,24 +276,24 @@ optional_policy(`
 # SE-PostgreSQL audit switch for debugging
 #
 tunable_policy(`sepgsql_enable_auditallow',`
-	auditallow sepgsql_client_type sepgsql_database_type  : db_database *;
-	auditallow sepgsql_client_type sepgsql_table_type     : db_table *;
-	auditallow sepgsql_client_type sepgsql_table_type     : db_column *;
-	auditallow sepgsql_client_type sepgsql_procedure_type : db_procedure *;
-	auditallow sepgsql_client_type sepgsql_blob_type      : db_blob *;
-	auditallow sepgsql_client_type sepgsql_module_type    : db_database { install_module };
+	auditallow domain sepgsql_database_type  : db_database *;
+	auditallow domain sepgsql_table_type     : db_table *;
+	auditallow domain sepgsql_table_type     : db_column *;
+	auditallow domain sepgsql_procedure_type : db_procedure *;
+	auditallow domain sepgsql_blob_type      : db_blob *;
+	auditallow domain sepgsql_module_type    : db_database { install_module };
 ')
 
 tunable_policy(`! sepgsql_enable_auditdeny',`
-	dontaudit sepgsql_client_type sepgsql_database_type   : db_database *;
-	dontaudit sepgsql_client_type sepgsql_table_type      : db_table *;
-	dontaudit sepgsql_client_type sepgsql_table_type      : db_column *;
-	dontaudit sepgsql_client_type sepgsql_procedure_type  : db_procedure *;
-	dontaudit sepgsql_client_type sepgsql_blob_type       : db_blob *;
-	dontaudit sepgsql_client_type sepgsql_module_type     : db_database { install_module };
+	dontaudit domain sepgsql_database_type   : db_database *;
+	dontaudit domain sepgsql_table_type      : db_table *;
+	dontaudit domain sepgsql_table_type      : db_column *;
+	dontaudit domain sepgsql_procedure_type  : db_procedure *;
+	dontaudit domain sepgsql_blob_type       : db_blob *;
+	dontaudit domain sepgsql_module_type     : db_database { install_module };
 ')
 
-dontaudit { postgresql_t sepgsql_client_type sepgsql_unconfined_type } { sepgsql_table_type - sepgsql_sysobj_table_type } : db_tuple { use select update insert delete };
+dontaudit domain { sepgsql_table_type - sepgsql_sysobj_table_type } : db_tuple { use select update insert delete };
 
 ########################################
 #
