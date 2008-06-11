@@ -22,6 +22,19 @@
 #include <selinux/av_permissions.h>
 
 /*
+ * SE-PostgreSQL modes
+ */
+typedef enum
+{
+	SEPGSQL_MODE_DEFAULT,
+	SEPGSQL_MODE_ENFORCING,
+	SEPGSQL_MODE_PERMISSIVE,
+	SEPGSQL_MODE_DISABLED,
+} SepgsqlModeType;
+
+extern SepgsqlModeType sepostgresql_mode;
+
+/*
  * Permission codes of internal representation
  */
 #define SEPGSQL_PERMS_USE				(1UL << 0)

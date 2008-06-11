@@ -260,6 +260,16 @@ static const struct config_enum_entry xmloption_options[] = {
 	{NULL, 0, false}
 };
 
+#ifdef HAVE_SELINUX
+static const struct config_enum_entry sepgsqloption_options[] = {
+	{"default", SEPGSQL_MODE_DEFAULT, false},
+	{"enforcing", SEPGSQL_MODE_ENFORCING, false},
+	{"permissive", SEPGSQL_MODE_PERMISSIVE, false},
+	{"disabled", SEPGSQL_MODE_DISABLED, false},
+	{NULL, 0, false},
+};
+#endif
+
 /*
  * Although only "on", "off", and "safe_encoding" are documented, we
  * accept all the likely variants of "on" and "off".
@@ -2421,6 +2431,7 @@ static struct config_string ConfigureNamesString[] =
 	},
 #endif   /* USE_SSL */
 
+#ifdef SECURITY_SYSATTR_NAME
 	{
 		{"security_sysattr_name", PGC_INTERNAL, PRESET_OPTIONS,
 			gettext_noop("Shows the name of security attribute system column"),
@@ -2428,10 +2439,7 @@ static struct config_string ConfigureNamesString[] =
 			GUC_REPORT | GUC_NOT_IN_SAMPLE | GUC_DISALLOW_IN_FILE
 		},
 		&security_sysattr_name,
-#ifdef SECURITY_SYSATTR_NAME
 		SECURITY_SYSATTR_NAME, NULL, NULL,
-#else
-		"undefined", NULL, NULL,
 #endif
 	},
 
@@ -2583,8 +2591,17 @@ static struct config_enum ConfigureNamesEnum[] =
 		&xmloption,
 		XMLOPTION_CONTENT, xmloption_options, NULL, NULL
 	},
-
-
+#ifdef HAVE_SELINUX
+	{
+		{"sepostgresql", PGC_POSTMASTER, UNGROUPED,
+		 gettext_noop("SE-PostgreSQL working mode"),
+		 gettext_noop("Valid values are DEFAULT, PERMISSIVE, ENFORCING, DISABLED"),
+		 0,
+		},
+		&sepostgresql_mode,
+		SEPGSQL_MODE_DEFAULT, sepgsqloption_options, NULL, NULL
+	},
+#endif
 	/* End-of-list marker */
 	{
 		{NULL, 0, 0, NULL, NULL}, NULL, 0, NULL, NULL, NULL

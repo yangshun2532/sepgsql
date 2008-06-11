@@ -17,6 +17,8 @@
 #include "utils/syscache.h"
 #include <selinux/context.h>
 
+SepgsqlModeType sepostgresql_mode;
+
 static security_context_t serverContext = NULL;
 static security_context_t clientContext = NULL;
 static security_context_t databaseContext = NULL;
@@ -186,7 +188,22 @@ sepgsqlIsEnabled(void)
 	static int	enabled = -1;
 
 	if (enabled < 0)
-		enabled = is_selinux_enabled();
+	{
+		if (sepostgresql_mode == SEPGSQL_MODE_DISABLED)
+			enabled = 0;
+		else
+		{
+			enabled = is_selinux_enabled();
+			if (!enabled		/* in-kernel SELinux is disabled */
+				&& sepostgresql_mode != SEPGSQL_MODE_DEFAULT)
+			{
+				ereport(FATAL,
+						(errcode(ERRCODE_SELINUX_ERROR),
+						 errmsg("SELinux: disabled in kernel, but sepostgresql = %s",
+								SEPGSQL_MODE_ENFORCING ? "enforcing" : "permissive")));
+			}
+		}
+	}
 
 	return enabled > 0 ? true : false;
 }
