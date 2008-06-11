@@ -315,7 +315,7 @@ pgacePostBootstrapingMode(void)
 	Datum		value;
 	char		isnull;
 
-	if (!es)
+	if (!earlySeclabelList)
 		return;
 
 	StartTransactionCommand();
