@@ -22,6 +22,45 @@
 #include <signal.h>
 #include <unistd.h>
 
+/*
+ * uAVC: userspace Access Vector Cache
+ *
+ * SE-PostgreSQL makes inqueries for SELinux to check whether the security
+ * policy allows the required action, or not. However, it need to invoke
+ * system call because SELinux is a kernel feature and it hold its security
+ * policy in the kernel memory.
+ *
+ * uAVC enables to reduce the number of kernel invocation, with caching
+ * the result of inquiries. When we have to make a decision based on the
+ * security policy of SELinux, it tries to find up an appropriate cache
+ * entry on the uAVC. If exist, we don't need to invoke a system call
+ * and can reduce unnecessary overhead.
+ *
+ * If not exist, SE-PostgreSQL makes a new cache entry based on the
+ * result of inquiries, and chains it on uAVC to prepare the following
+ * decision makings.
+ *
+ * uAVC has a version number to check whether it is now valid, or not.
+ * Not need to say, uAVC cache entry has to be invalid just after
+ * policy reloaded or state change.
+ * If it is not match the latest one, updated by the policy state
+ * monitoring process, uAVC has to be reseted.
+ */
+
+/*
+ * Dynamic object class/access vector mapping
+ *
+ * SELinux exports the list of object classes (it means kind of object, like
+ * file or table) and access vectors (it means permission set, like read,
+ * select, ...) under /selinux/class.
+ * It enables to provide userspace object managers a interface to get what
+ * codes should be used to ask SELinux.
+ *
+ * libselinux provides an API to translate a string expression and a code
+ * used by the loaded security policy. These correspondences are not assured
+ * over the bound of policy loading, so we have to reload the mapping after
+ * in-kernel policy is reloaded, or its state is changed.
+ */
 static struct
 {
 	struct
@@ -155,22 +194,30 @@ struct avc_datum
 
 	bool		hot_cache;
 };
-
 static sig_atomic_t avc_version;
-
 static bool avc_enforcing;
-
 static List *avc_slot[AVC_HASH_NUM_SLOTS];
-
 static uint32 avc_datum_count = 0;
-
 static uint32 avc_lru_hint = 0;
 
 /*
- * selinux_state is assigned on shared memory region.
+ * selinux_state
  *
- * We can read selinux_state->version without locking,
- * but have to hold SepgsqlAvcLock to refer other members.
+ * This structure shows the global state of SELinux and its security
+ * policy, and it is assigned on shared memory region.
+ *
+ * The most significant variable is selinux_state->version.
+ * Any instance can refer this variable to confirm current sequence
+ * number of policy state, without locking.
+ * 
+ * The only process able to update this variable is policy state
+ * monitoring process forked by postmaster. It can receive notifications
+ * from the kernel via netlink socket, and it update selinux_state->version
+ * to encourage any instance to reflush its uAVC.
+ *
+ * When we read rest of variable, we have to hold SepgsqlAvcLock LWlock
+ * as a reader. enforceing shows the current SELinux working mode.
+ * catalog shows the mapping set of security classes and access vectors.
  */
 struct
 {
@@ -203,10 +250,16 @@ sepgsqlShmemSize(void)
 	return sizeof(*selinux_state);
 }
 
+/*
+ * load_class_av_mapping
+ *
+ * This function rebuild the mapping set of security classes and access
+ * vectors on selinux_state. It has to be invoked by the policy state
+ * monitoring process with SepgsqlAvcLock in LW_EXCLUSIVE.
+ */
 static void
 load_class_av_mapping(void)
 {
-	/* have to hold LW_EXCLUSIVE, at least */
 	security_class_t tclass;
 	access_vector_t av_perms;
 	int			i, j;
@@ -289,8 +342,7 @@ sepgsql_class_to_string(security_class_t tclass)
 static const char *
 sepgsql_av_perm_to_string(security_class_t tclass, access_vector_t perm)
 {
-	int			i,
-				j;
+	int			i, j;
 
 	for (i = 0; i < NUM_SELINUX_CATALOG; i++)
 	{
@@ -312,6 +364,11 @@ sepgsql_av_perm_to_string(security_class_t tclass, access_vector_t perm)
 	return security_av_perm_to_string(tclass, perm);
 }
 
+/*
+ * sepgsql_avc_reset
+ *
+ * This function clears all current avc entries, and update its version.
+ */
 static void
 sepgsql_avc_reset(void)
 {
@@ -331,6 +388,12 @@ sepgsql_avc_reset(void)
 	LWLockRelease(SepgsqlAvcLock);
 }
 
+/*
+ * sepgsql_avc_reclaim
+ *
+ * This function reclaims recently not-used avc entries,
+ * when the number of caches overs AVC_HASH_NUM_NODES
+ */
 static void
 sepgsql_avc_reclaim(void)
 {
@@ -360,10 +423,17 @@ sepgsql_avc_reclaim(void)
 	}
 }
 
+/*
+ * sepgsql_avc_compute
+ *
+ * This function compute an avc cache for the given subject/target
+ * context and object class, based on results of inquiries to SELinux.
+ */
 static void
 sepgsql_avc_compute(const security_context_t scon,
 					const security_context_t tcon,
-					security_class_t tclass, struct avc_datum *cache)
+					security_class_t tclass,
+					struct avc_datum *cache)
 {
 	security_class_t e_tclass;
 	security_context_t svcon, tvcon, ncon;
@@ -414,9 +484,17 @@ sepgsql_avc_compute(const security_context_t scon,
 	freecon(ncon);
 }
 
+/*
+ * sepgsql_avc_lookup
+ *
+ * This function find up a required avc cache entry. If the current AVC
+ * does not hold one required, it also create a new avc cache entry
+ * and compute it using sepgsql_avc_compute(), and returns it.
+ */
 static struct avc_datum *
 sepgsql_avc_lookup(const security_context_t scon,
-				   const security_context_t tcon, security_class_t tclass)
+				   const security_context_t tcon,
+				   security_class_t tclass)
 {
 	ListCell   *l;
 	struct avc_datum *cache;
@@ -475,6 +553,13 @@ sepgsql_avc_lookup(const security_context_t scon,
 	return cache;
 }
 
+/*
+ * avc_audit_common
+ *
+ * This function makes an audit message on the given Cstring buffer,
+ * based on the given av_decision (which is the result of permission
+ * checks).
+ */
 static bool
 avc_audit_common(char *buffer, uint32 buflen,
 				 const security_context_t scon,
@@ -515,6 +600,17 @@ avc_audit_common(char *buffer, uint32 buflen,
 	return true;
 }
 
+/*
+ * sepgsqlAvcPermission
+ * sepgsqlAvcPermissionNoAbort
+ *
+ * These functions make a dicision for the given action, using AVC.
+ * If the security policy does not allows to execute the given action,
+ * sepgsqlAvcPermission() generates an audit log record and aborts
+ * the current transaction. sepgsqlAvcPermissionNoAbort() also generates
+ * an audit record but does not abort current transaction. It returns
+ * the result as a bool.
+ */
 static bool
 avc_permission_common(const security_context_t scon,
 					  const security_context_t tcon,
@@ -526,7 +622,6 @@ avc_permission_common(const security_context_t scon,
 
   retry:
 	cache = sepgsql_avc_lookup(scon, tcon, tclass);
-
 	Assert(!!cache);
 
 	if (avc_version != selinux_state->version)
@@ -605,6 +700,12 @@ sepgsqlAvcPermissionNoAbort(const security_context_t scon,
 	return rc;
 }
 
+/*
+ * sepgsqlAvcCreateCon
+ *
+ * This function returns a security context to be attached
+ * on the object newly created object.
+ */
 security_context_t
 sepgsqlAvcCreateCon(const security_context_t scon,
 					const security_context_t tcon, security_class_t tclass)
@@ -668,6 +769,12 @@ sepgsqlAvcInit(void)
 
 /*
  * SELinux state monitoring process
+ *
+ * This process is forked from postmaster to monitor the state of SELinux.
+ * SELinux can make a notifier message to userspace object manager via
+ * netlink socket. When it receives the message, it updates selinux_state
+ * structure assigned on shared memory region to make any instance reset
+ * its AVC soon.
  */
 
 static bool sepgsqlStateMonitorAlive = true;
@@ -710,8 +817,8 @@ sepgsqlStateMonitorMain()
 
 	ereport(NOTICE,
 			(errcode(ERRCODE_SELINUX_INFO),
-			 errmsg("SELinux: policy state monitor process (pid: %u)", getpid())));
-
+			 errmsg("SELinux: policy state monitor process (pid: %u)",
+					getpid())));
 	/*
 	 * open netlink socket
 	 */
@@ -749,7 +856,8 @@ sepgsqlStateMonitorMain()
 
 			ereport(NOTICE,
 					(errcode(ERRCODE_SELINUX_ERROR),
-					 errmsg("SELinux: error on netlink recvfrom(): %s", strerror(errno))));
+					 errmsg("SELinux: error on netlink recvfrom(): %s",
+							strerror(errno))));
 			return 1;
 		}
 
@@ -766,7 +874,8 @@ sepgsqlStateMonitorMain()
 		{
 			ereport(NOTICE,
 					(errcode(ERRCODE_SELINUX_ERROR),
-					 errmsg("SELinux: netlink received spoofed packet from: %u", addr.nl_pid)));
+					 errmsg("SELinux: netlink received spoofed packet from: %u",
+							addr.nl_pid)));
 			continue;
 		}
 
@@ -795,7 +904,8 @@ sepgsqlStateMonitorMain()
 
 					ereport(NOTICE,
 							(errcode(ERRCODE_SELINUX_INFO),
-							 errmsg("SELinux: setenforce notifier (enforcing=%d)", msg->val)));
+							 errmsg("SELinux: setenforce notifier"
+									" (enforcing=%d)", msg->val)));
 
 					LWLockAcquire(SepgsqlAvcLock, LW_EXCLUSIVE);
 					load_class_av_mapping();
@@ -815,7 +925,8 @@ sepgsqlStateMonitorMain()
 
 					ereport(NOTICE,
 							(errcode(ERRCODE_SELINUX_INFO),
-							 errmsg("policyload notifier (seqno=%d)", msg->seqno)));
+							 errmsg("policyload notifier (seqno=%d)",
+									msg->seqno)));
 
 					LWLockAcquire(SepgsqlAvcLock, LW_EXCLUSIVE);
 					load_class_av_mapping();
@@ -836,13 +947,15 @@ sepgsqlStateMonitorMain()
 
 					ereport(NOTICE,
 							(errcode(ERRCODE_SELINUX_ERROR),
-							 errmsg("SELinux: netlink error: %s", strerror(-err->error))));
+							 errmsg("SELinux: netlink error: %s",
+									strerror(-err->error))));
 					return 1;
 				}
 			default:
 				ereport(NOTICE,
 						(errcode(ERRCODE_SELINUX_ERROR),
-						 errmsg("netlink unknown message type (%d)", nlh->nlmsg_type)));
+						 errmsg("netlink unknown message type (%d)",
+								nlh->nlmsg_type)));
 				return 1;
 		}
 	}
