@@ -379,7 +379,21 @@ sepgsql_avc_reset(void)
 	LWLockAcquire(SepgsqlAvcLock, LW_SHARED);
 
 	avc_version = selinux_state->version;
-	avc_enforcing = selinux_state->enforcing;
+	switch (sepostgresql_mode)
+	{
+	case SEPGSQL_MODE_DEFAULT:
+		avc_enforcing = selinux_state->enforcing;
+		break;
+	case SEPGSQL_MODE_PERMISSIVE:
+		avc_enforcing = false;
+		break;
+	case SEPGSQL_MODE_ENFORCING:
+		avc_enforcing = false;
+		break;
+	default:
+		elog(FATAL, "SELinux: undefined state in SE-PostgreSQL");
+		break;
+	}
 
 	for (i = 0; i < AVC_HASH_NUM_SLOTS; i++)
 		avc_slot[i] = NIL;
