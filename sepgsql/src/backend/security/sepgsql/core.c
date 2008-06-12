@@ -21,7 +21,6 @@ SepgsqlModeType sepostgresql_mode;
 
 static security_context_t serverContext = NULL;
 static security_context_t clientContext = NULL;
-static security_context_t databaseContext = NULL;
 static security_context_t unlabeledContext = NULL;
 
 const security_context_t
@@ -41,8 +40,76 @@ sepgsqlGetClientContext(void)
 const security_context_t
 sepgsqlGetDatabaseContext(void)
 {
-	Assert(databaseContext != NULL);
-	return databaseContext;
+	security_context_t dcontext;
+
+	if (IsBootstrapProcessingMode())
+	{
+		security_context_t tmp;
+
+        if (security_compute_create_raw(sepgsqlGetClientContext(),
+										sepgsqlGetClientContext(),
+										SECCLASS_DB_DATABASE, &tmp) < 0)
+			ereport(ERROR,
+					(errcode(ERRCODE_SELINUX_ERROR),
+					 errmsg("SELinux: could not get database context")));
+        PG_TRY();
+        {
+			dcontext = pstrdup(tmp);
+        }
+        PG_CATCH();
+        {
+			freecon(tmp);
+			PG_RE_THROW();
+        }
+        PG_END_TRY();
+        freecon(tmp);
+	}
+	else
+	{
+		HeapTuple tuple;
+
+		tuple = SearchSysCache(DATABASEOID,
+							   ObjectIdGetDatum(MyDatabaseId),
+							   0, 0, 0);
+		if (!HeapTupleIsValid(tuple))
+			elog(ERROR, "SELinux: cache lookup failed for database: %u", MyDatabaseId);
+
+		dcontext = pgaceLookupSecurityLabel(HeapTupleGetSecurity(tuple));
+
+		ReleaseSysCache(tuple);
+	}
+
+	return dcontext;
+}
+
+Oid
+sepgsqlGetDatabaseSecurityId(void)
+{
+	Oid security_id;
+
+	if (IsBootstrapProcessingMode())
+	{
+		security_context_t dcontext
+			= sepgsqlGetDatabaseContext();
+
+		security_id = pgaceSecurityLabelToSid(dcontext);
+	}
+	else
+	{
+		HeapTuple tuple;
+
+		tuple = SearchSysCache(DATABASEOID,
+							   ObjectIdGetDatum(MyDatabaseId),
+							   0, 0, 0);
+		if (!HeapTupleIsValid(tuple))
+			elog(ERROR, "SELinux: cache lookup failed for database: %u", MyDatabaseId);
+
+		security_id = HeapTupleGetSecurity(tuple);
+
+		ReleaseSysCache(tuple);
+	}
+
+	return security_id;
 }
 
 const security_context_t
@@ -113,37 +180,6 @@ initContexts(void)
 								fallback)));
 		}
 	}
-
-	/*
-	 * database context
-	 */
-	if (IsBootstrapProcessingMode())
-	{
-		if (security_compute_create_raw(clientContext,
-										clientContext,
-										SECCLASS_DB_DATABASE,
-										&databaseContext) < 0)
-			ereport(ERROR,
-					(errcode(ERRCODE_SELINUX_ERROR),
-					 errmsg("SELinux: could not get database context")));
-	}
-	else
-	{
-		HeapTuple	tuple;
-
-		security_context_t dbcontext;
-
-		tuple = SearchSysCache(DATABASEOID,
-							   ObjectIdGetDatum(MyDatabaseId), 0, 0, 0);
-		if (!HeapTupleIsValid(tuple))
-			elog(ERROR, "SELinux: cache lookup failed for database %u",
-				 MyDatabaseId);
-		dbcontext = pgaceLookupSecurityLabel(HeapTupleGetSecurity(tuple));
-		databaseContext = strdup(dbcontext);
-		ReleaseSysCache(tuple);
-		if (!databaseContext)
-			elog(ERROR, "SELinux: memory allocation error");
-	}
 }
 
 void
@@ -179,7 +215,10 @@ sepgsqlInitialize(bool bootstrap)
 
 	sepgsqlAvcPermission(sepgsqlGetClientContext(),
 						 sepgsqlGetDatabaseContext(),
-						 SECCLASS_DB_DATABASE, DB_DATABASE__ACCESS, dbname);
+						 SECCLASS_DB_DATABASE,
+						 DB_DATABASE__ACCESS,
+						 dbname,
+						 true);
 }
 
 bool
