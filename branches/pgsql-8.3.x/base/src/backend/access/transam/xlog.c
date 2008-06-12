@@ -7,7 +7,7 @@
  * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/backend/access/transam/xlog.c,v 1.292 2008/01/21 11:17:46 petere Exp $
+ * $PostgreSQL: pgsql/src/backend/access/transam/xlog.c,v 1.292.2.4 2008/05/13 20:54:02 mha Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -43,6 +43,7 @@
 #include "postmaster/bgwriter.h"
 #include "storage/bufpage.h"
 #include "storage/fd.h"
+#include "storage/ipc.h"
 #include "storage/pmsignal.h"
 #include "storage/procarray.h"
 #include "storage/smgr.h"
@@ -420,11 +421,11 @@ static void writeTimeLineHistory(TimeLineID newTLI, TimeLineID parentTLI,
 static void WriteControlFile(void);
 static void ReadControlFile(void);
 static char *str_time(pg_time_t tnow);
-static void issue_xlog_fsync(void);
-
 #ifdef WAL_DEBUG
 static void xlog_outrec(StringInfo buf, XLogRecord *record);
 #endif
+static void issue_xlog_fsync(void);
+static void pg_start_backup_callback(int code, Datum arg);
 static bool read_backup_label(XLogRecPtr *checkPointLoc,
 				  XLogRecPtr *minRecoveryLoc);
 static void rm_redo_error_callback(void *arg);
@@ -2482,6 +2483,35 @@ RestoreArchivedFile(char *path, const char *xlogfname,
 	}
 
 	/*
+	 * Calculate the archive file cutoff point for use during log shipping
+	 * replication. All files earlier than this point can be deleted
+	 * from the archive, though there is no requirement to do so.
+	 *
+	 * We initialise this with the filename of an InvalidXLogRecPtr, which
+	 * will prevent the deletion of any WAL files from the archive
+	 * because of the alphabetic sorting property of WAL filenames. 
+	 *
+	 * Once we have successfully located the redo pointer of the checkpoint
+	 * from which we start recovery we never request a file prior to the redo
+	 * pointer of the last restartpoint. When redo begins we know that we
+	 * have successfully located it, so there is no need for additional
+	 * status flags to signify the point when we can begin deleting WAL files
+	 * from the archive. 
+	 */
+	if (InRedo)
+	{
+		XLByteToSeg(ControlFile->checkPointCopy.redo,
+					restartLog, restartSeg);
+		XLogFileName(lastRestartPointFname,
+					 ControlFile->checkPointCopy.ThisTimeLineID,
+					 restartLog, restartSeg);
+		/* we shouldn't need anything earlier than last restart point */
+		Assert(strcmp(lastRestartPointFname, xlogfname) <= 0);
+	}
+	else
+		XLogFileName(lastRestartPointFname, 0, 0, 0);
+
+	/*
 	 * construct the command to be executed
 	 */
 	dp = xlogRestoreCmd;
@@ -2510,11 +2540,6 @@ RestoreArchivedFile(char *path, const char *xlogfname,
 				case 'r':
 					/* %r: filename of last restartpoint */
 					sp++;
-					XLByteToSeg(ControlFile->checkPointCopy.redo,
-								restartLog, restartSeg);
-					XLogFileName(lastRestartPointFname,
-								 ControlFile->checkPointCopy.ThisTimeLineID,
-								 restartLog, restartSeg);
 					StrNCpy(dp, lastRestartPointFname, endp - dp);
 					dp += strlen(dp);
 					break;
@@ -3292,8 +3317,11 @@ got_record:;
 	return (XLogRecord *) buffer;
 
 next_record_is_invalid:;
-	close(readFile);
-	readFile = -1;
+	if (readFile >= 0)
+	{
+		close(readFile);
+		readFile = -1;
+	}
 	nextRecord = NULL;
 	return NULL;
 }
@@ -6445,8 +6473,8 @@ pg_start_backup(PG_FUNCTION_ARGS)
 	XLogCtl->Insert.forcePageWrites = true;
 	LWLockRelease(WALInsertLock);
 
-	/* Use a TRY block to ensure we release forcePageWrites if fail below */
-	PG_TRY();
+	/* Ensure we release forcePageWrites if fail below */
+	PG_ENSURE_ERROR_CLEANUP(pg_start_backup_callback, (Datum) 0);
 	{
 		/*
 		 * Force a CHECKPOINT.	Aside from being necessary to prevent torn
@@ -6518,16 +6546,7 @@ pg_start_backup(PG_FUNCTION_ARGS)
 					 errmsg("could not write file \"%s\": %m",
 							BACKUP_LABEL_FILE)));
 	}
-	PG_CATCH();
-	{
-		/* Turn off forcePageWrites on failure */
-		LWLockAcquire(WALInsertLock, LW_EXCLUSIVE);
-		XLogCtl->Insert.forcePageWrites = false;
-		LWLockRelease(WALInsertLock);
-
-		PG_RE_THROW();
-	}
-	PG_END_TRY();
+	PG_END_ENSURE_ERROR_CLEANUP(pg_start_backup_callback, (Datum) 0);
 
 	/*
 	 * We're done.  As a convenience, return the starting WAL location.
@@ -6537,6 +6556,16 @@ pg_start_backup(PG_FUNCTION_ARGS)
 	result = DatumGetTextP(DirectFunctionCall1(textin,
 											 CStringGetDatum(xlogfilename)));
 	PG_RETURN_TEXT_P(result);
+}
+
+/* Error cleanup callback for pg_start_backup */
+static void
+pg_start_backup_callback(int code, Datum arg)
+{
+	/* Turn off forcePageWrites on failure */
+	LWLockAcquire(WALInsertLock, LW_EXCLUSIVE);
+	XLogCtl->Insert.forcePageWrites = false;
+	LWLockRelease(WALInsertLock);
 }
 
 /*

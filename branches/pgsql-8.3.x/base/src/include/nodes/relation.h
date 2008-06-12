@@ -7,7 +7,7 @@
  * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/nodes/relation.h,v 1.154 2008/01/11 04:02:18 tgl Exp $
+ * $PostgreSQL: pgsql/src/include/nodes/relation.h,v 1.154.2.2 2008/04/21 20:54:24 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -693,12 +693,17 @@ typedef struct TidPath
  *
  * Note: it is possible for "subpaths" to contain only one, or even no,
  * elements.  These cases are optimized during create_append_plan.
+ * In particular, an AppendPath with no subpaths is a "dummy" path that
+ * is created to represent the case that a relation is provably empty.
  */
 typedef struct AppendPath
 {
 	Path		path;
 	List	   *subpaths;		/* list of component Paths */
 } AppendPath;
+
+#define IS_DUMMY_PATH(p) \
+	(IsA((p), AppendPath) && ((AppendPath *) (p))->subpaths == NIL)
 
 /*
  * ResultPath represents use of a Result plan node to compute a variable-free
@@ -1102,8 +1107,10 @@ typedef struct OuterJoinInfo
  * We record information about each such IN clause in an InClauseInfo struct.
  * These structs are kept in the PlannerInfo node's in_info_list.
  *
- * Note: sub_targetlist is just a list of Vars or expressions; it does not
- * contain TargetEntry nodes.
+ * Note: sub_targetlist is a bit misnamed; it is a list of the expressions
+ * on the RHS of the IN's join clauses.  (This normally starts out as a list
+ * of Vars referencing the subquery outputs, but can get mutated if the
+ * subquery is flattened into the main query.)
  */
 
 typedef struct InClauseInfo
@@ -1111,8 +1118,8 @@ typedef struct InClauseInfo
 	NodeTag		type;
 	Relids		lefthand;		/* base relids in lefthand expressions */
 	Relids		righthand;		/* base relids coming from the subselect */
-	List	   *sub_targetlist; /* targetlist of original RHS subquery */
-	List	   *in_operators;	/* OIDs of the IN's equality operator(s) */
+	List	   *sub_targetlist; /* RHS expressions of the IN's comparisons */
+	List	   *in_operators;	/* OIDs of the IN's equality operators */
 } InClauseInfo;
 
 /*
