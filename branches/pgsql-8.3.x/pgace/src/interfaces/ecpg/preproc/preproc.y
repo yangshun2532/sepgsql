@@ -1,4 +1,4 @@
-/* $PostgreSQL: pgsql/src/interfaces/ecpg/preproc/preproc.y,v 1.359.2.2 2008/03/01 03:26:44 tgl Exp $ */
+/* $PostgreSQL: pgsql/src/interfaces/ecpg/preproc/preproc.y,v 1.359.2.4 2008/06/04 12:26:14 meskes Exp $ */
 
 /* Copyright comment */
 %{
@@ -87,8 +87,10 @@ mmerror(int error_code, enum errortype type, char * error, ...)
 			ret_value = error_code;
 			break;
 		case ET_FATAL:
-			fclose(yyin);
-			fclose(yyout);
+			if (yyin)
+				fclose(yyin);
+			if (yyout)
+				fclose(yyout);
 			if (unlink(output_filename) != 0 && *output_filename != '-')
 			        fprintf(stderr, "Could not remove output file %s!\n", output_filename);
 			exit(error_code);
@@ -6270,6 +6272,7 @@ ECPGKeywords_vanames:  SQL_BREAK		{ $$ = make_str("break"); }
 		| SQL_RETURNED_OCTET_LENGTH	{ $$ = make_str("returned_octet_length"); }
 		| SQL_SCALE					{ $$ = make_str("scale"); }
 		| SQL_SECTION				{ $$ = make_str("section"); }
+		| SQL_SQL				{ $$ = make_str("sql"); }
 		| SQL_SQLERROR				{ $$ = make_str("sqlerror"); }
 		| SQL_SQLPRINT				{ $$ = make_str("sqlprint"); }
 		| SQL_SQLWARNING			{ $$ = make_str("sqlwarning"); }

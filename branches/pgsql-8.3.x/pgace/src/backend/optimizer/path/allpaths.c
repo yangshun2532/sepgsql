@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/optimizer/path/allpaths.c,v 1.168 2008/01/11 04:02:18 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/optimizer/path/allpaths.c,v 1.168.2.2 2008/04/01 00:48:44 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -205,7 +205,7 @@ set_plain_rel_pathlist(PlannerInfo *root, RelOptInfo *rel, RangeTblEntry *rte)
 	 * set_append_rel_pathlist().
 	 */
 	if (rel->reloptkind == RELOPT_BASEREL &&
-		relation_excluded_by_constraints(rel, rte))
+		relation_excluded_by_constraints(root, rel, rte))
 	{
 		set_dummy_rel_pathlist(rel);
 		return;
@@ -321,7 +321,7 @@ set_append_rel_pathlist(PlannerInfo *root, RelOptInfo *rel,
 			adjust_appendrel_attrs((Node *) rel->baserestrictinfo,
 								   appinfo);
 
-		if (relation_excluded_by_constraints(childrel, childRTE))
+		if (relation_excluded_by_constraints(root, childrel, childRTE))
 		{
 			/*
 			 * This child need not be scanned, so we can omit it from the
@@ -428,7 +428,7 @@ set_append_rel_pathlist(PlannerInfo *root, RelOptInfo *rel,
  *	  Build a dummy path for a relation that's been excluded by constraints
  *
  * Rather than inventing a special "dummy" path type, we represent this as an
- * AppendPath with no members.
+ * AppendPath with no members (see also IS_DUMMY_PATH macro).
  */
 static void
 set_dummy_rel_pathlist(RelOptInfo *rel)
