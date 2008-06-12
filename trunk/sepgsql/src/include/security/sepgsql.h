@@ -173,27 +173,35 @@ extern const security_context_t sepgsqlGetUnlabeledContext(void);
 
 extern const security_context_t sepgsqlSwitchClientContext(security_context_t newcon);
 
+extern Oid sepgsqlGetDatabaseSecurityId(void);
+
 /*
  * SE-PostgreSQL userspace avc functions
  *   src/backend/security/sepgsql/avc.c
  */
 extern void sepgsqlAvcInit(void);
 
-extern void sepgsqlAvcPermission(const security_context_t scon,
+extern bool sepgsqlAvcPermission(const security_context_t scon,
 								 const security_context_t tcon,
 								 security_class_t tclass,
 								 access_vector_t perms,
-								 const char *objname);
+								 const char *objname,
+								 bool abort);
 
-extern bool sepgsqlAvcPermissionNoAbort(const security_context_t scon,
-										const security_context_t tcon,
-										security_class_t tclass,
-										access_vector_t perms,
-										const char *objname);
+extern bool sepgsqlAvcPermissionSid(const security_context_t scon,
+									Oid tsid,
+									security_class_t tclass,
+									access_vector_t perms,
+									const char *objname,
+									bool abort);
 
 extern security_context_t sepgsqlAvcCreateCon(const security_context_t scon,
 											  const security_context_t tcon,
 											  security_class_t tclass);
+
+extern Oid sepgsqlAvcCreateConSid(const security_context_t scon,
+								  Oid tsid,
+								  security_class_t tclass);
 
 /*
  * SE-PostgreSQL permission evaluation related
@@ -201,7 +209,7 @@ extern security_context_t sepgsqlAvcCreateCon(const security_context_t scon,
  */
 extern const char *sepgsqlTupleName(Oid relid, HeapTuple tuple);
 
-extern security_context_t sepgsqlGetDefaultContext(Relation rel, HeapTuple tuple);
+extern void sepgsqlSetDefaultContext(Relation rel, HeapTuple tuple);
 
 extern bool sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple,
 								   HeapTuple oldtup, uint32 perms, bool abort);

@@ -177,23 +177,25 @@ static MemoryContext AvcMemCtx;
 #define AVC_HASH_NUM_SLOTS		256
 #define AVC_HASH_NUM_NODES		600
 
-struct avc_datum
+typedef struct
 {
-	uint32		hash_key;
+	uint32				hash_key;
 
-	security_context_t scon;	/* source security context */
-	security_context_t tcon;	/* target security context */
-	security_class_t tclass;	/* object class number */
+	security_context_t	scon;	/* source security context */
+	security_context_t	tcon;	/* target security context */
+	Oid					tsid;	/* target security id, if exist */
+	security_class_t	tclass;	/* object class number */
 
-	security_context_t ncon;	/* newly created security context */
+	security_context_t	ncon;	/* newly created security context */
+	Oid					nsid;	/* security id of ncon, if exist */
 
-	access_vector_t allowed;
-	access_vector_t decided;
-	access_vector_t auditallow;
-	access_vector_t auditdeny;
+	access_vector_t		allowed;
+	access_vector_t		decided;
+	access_vector_t		auditallow;
+	access_vector_t		auditdeny;
 
-	bool		hot_cache;
-};
+	bool				hot_cache;
+} avc_datum;
 static sig_atomic_t avc_version;
 static bool avc_enforcing;
 static List *avc_slot[AVC_HASH_NUM_SLOTS];
@@ -413,7 +415,7 @@ sepgsql_avc_reclaim(void)
 {
 	List	   *slot;
 	ListCell   *l;
-	struct avc_datum *cache;
+	avc_datum *cache;
 
 	while (avc_datum_count > AVC_HASH_NUM_NODES)
 	{
@@ -437,6 +439,24 @@ sepgsql_avc_reclaim(void)
 	}
 }
 
+static void
+sepgsql_avc_insert(avc_datum *cache, uint32 hash_key)
+{
+	uint32 index;
+
+	cache->hash_key = hash_key;
+	index = hash_key % AVC_HASH_NUM_SLOTS;
+
+	/*
+	 * reclaim avc, if needed
+	 */
+	sepgsql_avc_reclaim();
+
+	avc_slot[index] = lcons(cache, avc_slot[index]);
+
+	avc_datum_count++;
+}
+
 /*
  * sepgsql_avc_compute
  *
@@ -447,7 +467,7 @@ static void
 sepgsql_avc_compute(const security_context_t scon,
 					const security_context_t tcon,
 					security_class_t tclass,
-					struct avc_datum *cache)
+					avc_datum *cache)
 {
 	security_class_t e_tclass;
 	security_context_t svcon, tvcon, ncon;
@@ -499,72 +519,62 @@ sepgsql_avc_compute(const security_context_t scon,
 }
 
 /*
- * sepgsql_avc_lookup
+ * avc_lookup_entry
+ * avc_lookup_entry_sid
  *
- * This function find up a required avc cache entry. If the current AVC
- * does not hold one required, it also create a new avc cache entry
- * and compute it using sepgsql_avc_compute(), and returns it.
+ * These function lookup the required avc_datum on AVC.
+ * It returns avc_datum object which has required tag.
+ * If not found, NULL will be returned.
  */
-static struct avc_datum *
-sepgsql_avc_lookup(const security_context_t scon,
-				   const security_context_t tcon,
-				   security_class_t tclass)
+static avc_datum *
+avc_lookup_entry(const security_context_t scon,
+				 const security_context_t tcon,
+				 security_class_t tclass, uint32 hash)
 {
-	ListCell   *l;
-	struct avc_datum *cache;
-	uint32		hash_key, index;
-	MemoryContext oldctx;
-	bool		first = true;
+	uint32 index = hash % AVC_HASH_NUM_SLOTS;
+	avc_datum *cache;
+	ListCell *l;
 
-	oldctx = MemoryContextSwitchTo(AvcMemCtx);
-
-	hash_key = (DatumGetUInt32(hash_any((unsigned char *) scon, strlen(scon)))
-				^DatumGetUInt32(hash_any((unsigned char *) tcon, strlen(tcon)))
-				^ (tclass << 2));
-	index = hash_key % AVC_HASH_NUM_SLOTS;
-
-	foreach(l, avc_slot[index])
+	foreach (l, avc_slot[index])
 	{
 		cache = lfirst(l);
 
-		if (cache->hash_key == hash_key
+		if (cache->hash_key == hash
 			&& cache->tclass == tclass
-			&& !strcmp(cache->scon, scon) && !strcmp(cache->tcon, tcon))
+			&& !strcmp(cache->scon, scon)
+			&& !strcmp(cache->tcon, tcon))
 		{
-			/*
-			 * move to the first of this slot
-			 */
-			if (!first)
-			{
-				list_delete_ptr(avc_slot[index], cache);
-
-				avc_slot[index] = lcons(cache, avc_slot[index]);
-			}
 			cache->hot_cache = true;
-			goto out;
+			return cache;
 		}
-		first = false;
 	}
-	/*
-	 * reclaim avc, if needed
-	 */
-	sepgsql_avc_reclaim();
+	return NULL;
+}
 
-	/*
-	 * not found, and make a new one
-	 */
-	cache = palloc0(sizeof(struct avc_datum));
-	sepgsql_avc_compute(scon, tcon, tclass, cache);
 
-	cache->hash_key = hash_key;
-	avc_slot[index] = lcons(cache, avc_slot[index]);
 
-	avc_datum_count++;
+static avc_datum *
+avc_lookup_entry_sid(const security_context_t scon,
+					 Oid tsid, security_class_t tclass, uint32 hash)
+{
+	uint32 index = hash % AVC_HASH_NUM_SLOTS;
+	avc_datum *cache;
+	ListCell *l;
 
-  out:
-	MemoryContextSwitchTo(oldctx);
+	foreach (l, avc_slot[index])
+	{
+		cache = lfirst(l);
 
-	return cache;
+		if (cache->hash_key == hash
+			&& cache->tclass == tclass
+			&& cache->tsid == tsid
+			&& !strcmp(cache->scon, scon))
+		{
+			cache->hot_cache = true;
+			return cache;
+		}
+	}
+	return NULL;
 }
 
 /*
@@ -575,19 +585,16 @@ sepgsql_avc_lookup(const security_context_t scon,
  * checks).
  */
 static bool
-avc_audit_common(char *buffer, uint32 buflen,
-				 const security_context_t scon,
-				 const security_context_t tcon,
-				 security_class_t tclass,
-				 access_vector_t perms,
-				 struct av_decision *avd, const char *objname)
+avc_audit_common(char *buffer, uint32 buflen, avc_datum *cache,
+				 access_vector_t perms, const char *objname)
 {
 	access_vector_t denied, audited, mask;
 	security_context_t svcon, tvcon;
 	uint32		ofs = 0;
 
-	denied = perms & ~avd->allowed;
-	audited = denied ? (denied & avd->auditdeny) : (perms & avd->auditallow);
+	denied = perms & ~cache->allowed;
+	audited = denied ? (denied & cache->auditdeny) : (perms & cache->auditallow);
+
 	if (!audited)
 		return false;
 
@@ -597,15 +604,15 @@ avc_audit_common(char *buffer, uint32 buflen,
 	{
 		if (audited & mask)
 			ofs += snprintf(buffer + ofs, buflen - ofs, " %s",
-							sepgsql_av_perm_to_string(tclass, mask));
+							sepgsql_av_perm_to_string(cache->tclass, mask));
 	}
 	ofs += snprintf(buffer + ofs, buflen - ofs, " } ");
 
-	svcon = sepgsqlTranslateSecurityLabelOut(scon);
-	tvcon = sepgsqlTranslateSecurityLabelOut(tcon);
+	svcon = sepgsqlTranslateSecurityLabelOut(cache->scon);
+	tvcon = sepgsqlTranslateSecurityLabelOut(cache->tcon);
 	ofs += snprintf(buffer + ofs, buflen - ofs,
 					"scontext=%s tcontext=%s tclass=%s",
-					svcon, tvcon, sepgsql_class_to_string(tclass));
+					svcon, tvcon, sepgsql_class_to_string(cache->tclass));
 	pfree(svcon);
 	pfree(tvcon);
 	if (objname)
@@ -616,7 +623,7 @@ avc_audit_common(char *buffer, uint32 buflen,
 
 /*
  * sepgsqlAvcPermission
- * sepgsqlAvcPermissionNoAbort
+ * sepgsqlAvcPermissionSid
  *
  * These functions make a dicision for the given action, using AVC.
  * If the security policy does not allows to execute the given action,
@@ -626,92 +633,133 @@ avc_audit_common(char *buffer, uint32 buflen,
  * the result as a bool.
  */
 static bool
-avc_permission_common(const security_context_t scon,
-					  const security_context_t tcon,
-					  security_class_t tclass,
-					  access_vector_t perms, struct av_decision *avd)
+avc_permission_common(avc_datum *cache, access_vector_t perms,
+					  const char *objname, bool abort)
 {
+	char audit_buffer[2048];
 	access_vector_t denied;
-	struct avc_datum *cache;
-
-  retry:
-	cache = sepgsql_avc_lookup(scon, tcon, tclass);
-	Assert(!!cache);
-
-	if (avc_version != selinux_state->version)
-	{
-		/*
-		 * security policy reloaded
-		 */
-		sepgsql_avc_reset();
-		goto retry;
-	}
-
-	if (avd)
-	{
-		memset(avd, 0, sizeof(struct av_decision));
-		avd->allowed = cache->allowed;
-		avd->decided = cache->decided;
-		avd->auditallow = cache->auditallow;
-		avd->auditdeny = cache->auditdeny;
-	}
+	bool rc = true;
 
 	denied = perms & ~cache->allowed;
 	if (!perms || denied)
 	{
 		if (avc_enforcing)
-			return false;
-
-		/*
-		 * grant permission to avoid flood of denied log
-		 * * on permissive mode
-		 */
-		cache->allowed |= perms;
+			rc = false;
+		else
+		{
+			/*
+			 * In permissive mode, once denied permissions are 
+			 * allowed to avoid a flood of denied logs.
+			 */
+			cache->allowed |= perms;
+		}
 	}
-	return true;
-}
-
-void
-sepgsqlAvcPermission(const security_context_t scon,
-					 const security_context_t tcon,
-					 security_class_t tclass,
-					 access_vector_t perms, const char *objname)
-{
-	struct av_decision avd;
-	char		audit_buffer[2048];
-	bool		rc;
-
-	rc = avc_permission_common(scon, tcon, tclass, perms, &avd);
-
+	/*
+	 * generate an audit record, if necessary
+	 */
 	if (avc_audit_common(audit_buffer, sizeof(audit_buffer),
-						 scon, tcon, tclass, perms, &avd, objname))
-		ereport(rc ? NOTICE : ERROR,
+						 cache, perms, objname))
+	{
+		ereport((!rc && abort) ? ERROR : NOTICE,
 				(errcode(ERRCODE_SELINUX_AUDIT),
 				 errmsg("SELinux: %s", audit_buffer)));
-	else if (!rc)
+	}
+	else if (!rc && abort)
 		ereport(ERROR,
 				(errcode(ERRCODE_SELINUX_AUDIT),
 				 errmsg("SELinux: security policy violation")));
+
+	return rc;
 }
 
 bool
-sepgsqlAvcPermissionNoAbort(const security_context_t scon,
-							const security_context_t tcon,
-							security_class_t tclass,
-							access_vector_t perms, const char *objname)
+sepgsqlAvcPermission(const security_context_t scon,
+					 const security_context_t tcon,
+					 security_class_t tclass,
+					 access_vector_t perms,
+					 const char *objname, bool abort)
 {
-	struct av_decision avd;
-	char		audit_buffer[2048];
-	bool		rc;
+	avc_datum *cache;
+	uint32 hash;
 
-	rc = avc_permission_common(scon, tcon, tclass, perms, &avd);
+	/*
+	 * check avc invalidation
+	 */
+	if (avc_version != selinux_state->version)
+		sepgsql_avc_reset();
 
-	if (avc_audit_common(audit_buffer, sizeof(audit_buffer),
-						 scon, tcon, tclass, perms, &avd, objname))
-		ereport(NOTICE,
-				(errcode(ERRCODE_SELINUX_AUDIT),
-				 errmsg("SELinux: %s", audit_buffer)));
-	return rc;
+	/*
+	 * lookup avc entry
+	 */
+	hash = DatumGetUInt32(hash_any((unsigned char *) scon, strlen(scon)))
+		^ DatumGetUInt32(hash_any((unsigned char *) tcon, strlen(tcon)))
+		^ (tclass << 2);
+
+	cache = avc_lookup_entry(scon, tcon, tclass, hash);
+	if (!cache)
+	{
+		/*
+		 * not found, make a new avc entry
+		 */
+		MemoryContext oldctx
+			= MemoryContextSwitchTo(AvcMemCtx);
+
+		cache = palloc0(sizeof(avc_datum));
+		sepgsql_avc_compute(scon, tcon, tclass, cache);
+	
+		sepgsql_avc_insert(cache, hash);
+	
+		MemoryContextSwitchTo(oldctx);
+	}
+
+	return avc_permission_common(cache, perms, objname, abort);
+}
+
+bool
+sepgsqlAvcPermissionSid(const security_context_t scon, Oid tsid,
+						security_class_t tclass,
+						access_vector_t perms,
+						const char *objname, bool abort)
+{
+	avc_datum *cache;
+	uint32 hash;
+
+	/*
+	 * check avc invalidation
+	 */
+	if (avc_version != selinux_state->version)
+		sepgsql_avc_reset();
+
+	/*
+	 * lookup avc entry
+	 */
+	hash = DatumGetUInt32(hash_any((unsigned char *) scon, strlen(scon)))
+		^ DatumGetUInt32(hash_any((unsigned char *) &tsid, sizeof(Oid)))
+		^ (tclass << 2);
+
+	cache = avc_lookup_entry_sid(scon, tsid, tclass, hash);
+	if (!cache)
+	{
+		/*
+		 * not found, make a new avc entry
+		 */
+		MemoryContext oldctx = MemoryContextSwitchTo(AvcMemCtx);
+		security_context_t tcon;
+
+		cache = palloc0(sizeof(avc_datum));
+
+		tcon = pgaceLookupSecurityLabel(tsid);
+		sepgsql_avc_compute(scon, tcon, tclass, cache);
+		pfree(tcon);
+
+		cache->tsid = tsid;
+
+		sepgsql_avc_insert(cache, hash);
+
+		MemoryContextSwitchTo(oldctx);
+	}
+
+	return avc_permission_common(cache, perms, objname, abort);
 }
 
 /*
@@ -724,24 +772,95 @@ security_context_t
 sepgsqlAvcCreateCon(const security_context_t scon,
 					const security_context_t tcon, security_class_t tclass)
 {
-	struct avc_datum *cache;
+	avc_datum *cache;
+	uint32 hash;
 
-  retry:
-	cache = sepgsql_avc_lookup(scon, tcon, tclass);
-	Assert(cache != NULL);
-
+	/*
+	 * check avc invalidation
+	 */
 	if (avc_version != selinux_state->version)
+		sepgsql_avc_reset();
+
+	/*
+	 * lookup avc entry
+	 */
+	hash = DatumGetUInt32(hash_any((unsigned char *) scon, strlen(scon)))
+		^ DatumGetUInt32(hash_any((unsigned char *) tcon, strlen(tcon)))
+		^ (tclass << 2);
+	cache = avc_lookup_entry(scon, tcon, tclass, hash);
+	if (!cache)
 	{
 		/*
-		 * security policy reloaded
+		 * not found, make a new avc entry
 		 */
-		sepgsql_avc_reset();
-		goto retry;
-	}
+		MemoryContext oldctx
+			= MemoryContextSwitchTo(AvcMemCtx);
 
+		cache = palloc0(sizeof(avc_datum));
+		sepgsql_avc_compute(scon, tcon, tclass, cache);
+
+		sepgsql_avc_insert(cache, hash);
+
+		MemoryContextSwitchTo(oldctx);
+	}
 	return pstrdup(cache->ncon);
 }
 
+Oid
+sepgsqlAvcCreateConSid(const security_context_t scon, Oid tsid,
+					   security_class_t tclass)
+{
+	avc_datum *cache;
+	uint32 hash;
+
+	/*
+	 * check avc invalidation
+	 */
+	if (avc_version != selinux_state->version)
+		sepgsql_avc_reset();
+
+	/*
+	 * lookup avc entry
+	 */
+    hash = DatumGetUInt32(hash_any((unsigned char *) scon, strlen(scon)))
+        ^ DatumGetUInt32(hash_any((unsigned char *) &tsid, sizeof(Oid)))
+        ^ (tclass << 2);
+	cache = avc_lookup_entry_sid(scon, tsid, tclass, hash);
+	if (!cache)
+	{
+		/*
+		 * not found, make a new avc entry
+		 */
+		MemoryContext oldctx
+			= MemoryContextSwitchTo(AvcMemCtx);
+		security_context_t tcon;
+
+		cache = palloc0(sizeof(avc_datum));
+
+        tcon = pgaceLookupSecurityLabel(tsid);
+        sepgsql_avc_compute(scon, tcon, tclass, cache);
+        pfree(tcon);
+
+		cache->tsid = tsid;
+
+		sepgsql_avc_insert(cache, hash);
+
+		MemoryContextSwitchTo(oldctx);
+	}
+	if (!cache->nsid)
+	{
+		Oid nsid = pgaceSecurityLabelToSid(cache->ncon);
+
+		cache->nsid = nsid;
+	}
+	return cache->nsid;
+}
+
+/*
+ * sepgsqlAvcInit
+ *
+ * Initialize local memory context and assign shared memory segment
+ */
 void
 sepgsqlAvcInit(void)
 {
