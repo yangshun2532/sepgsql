@@ -33,13 +33,13 @@ sepgsql_perms_to_common_perms(uint32 perms)
 {
 	access_vector_t result = 0;
 
-	result |= (perms & SEPGSQL_PERMS_USE		? COMMON_DATABASE__GETATTR : 0);
-	result |= (perms & SEPGSQL_PERMS_SELECT		? COMMON_DATABASE__GETATTR : 0);
-	result |= (perms & SEPGSQL_PERMS_UPDATE		? COMMON_DATABASE__SETATTR : 0);
-	result |= (perms & SEPGSQL_PERMS_INSERT		? COMMON_DATABASE__CREATE : 0);
-	result |= (perms & SEPGSQL_PERMS_DELETE		? COMMON_DATABASE__DROP : 0);
-	result |= (perms & SEPGSQL_PERMS_RELABELFROM? COMMON_DATABASE__RELABELFROM : 0);
-	result |= (perms & SEPGSQL_PERMS_RELABELTO	? COMMON_DATABASE__RELABELTO : 0);
+	result |= (perms & SEPGSQL_PERMS_USE         ? COMMON_DATABASE__GETATTR : 0);
+	result |= (perms & SEPGSQL_PERMS_SELECT      ? COMMON_DATABASE__GETATTR : 0);
+	result |= (perms & SEPGSQL_PERMS_UPDATE      ? COMMON_DATABASE__SETATTR : 0);
+	result |= (perms & SEPGSQL_PERMS_INSERT      ? COMMON_DATABASE__CREATE : 0);
+	result |= (perms & SEPGSQL_PERMS_DELETE      ? COMMON_DATABASE__DROP : 0);
+	result |= (perms & SEPGSQL_PERMS_RELABELFROM ? COMMON_DATABASE__RELABELFROM : 0);
+	result |= (perms & SEPGSQL_PERMS_RELABELTO   ? COMMON_DATABASE__RELABELTO : 0);
 
 	return result;
 }
@@ -49,13 +49,13 @@ sepgsql_perms_to_tuple_perms(uint32 perms)
 {
 	access_vector_t result = 0;
 
-	result |= (perms & SEPGSQL_PERMS_USE		? DB_TUPLE__USE : 0);
-	result |= (perms & SEPGSQL_PERMS_SELECT		? DB_TUPLE__SELECT : 0);
-	result |= (perms & SEPGSQL_PERMS_UPDATE		? DB_TUPLE__UPDATE : 0);
-	result |= (perms & SEPGSQL_PERMS_INSERT		? DB_TUPLE__INSERT : 0);
-	result |= (perms & SEPGSQL_PERMS_DELETE		? DB_TUPLE__DELETE : 0);
-	result |= (perms & SEPGSQL_PERMS_RELABELFROM? DB_TUPLE__RELABELFROM : 0);
-	result |= (perms & SEPGSQL_PERMS_RELABELTO	? DB_TUPLE__RELABELTO : 0);
+	result |= (perms & SEPGSQL_PERMS_USE         ? DB_TUPLE__USE : 0);
+	result |= (perms & SEPGSQL_PERMS_SELECT      ? DB_TUPLE__SELECT : 0);
+	result |= (perms & SEPGSQL_PERMS_UPDATE      ? DB_TUPLE__UPDATE : 0);
+	result |= (perms & SEPGSQL_PERMS_INSERT      ? DB_TUPLE__INSERT : 0);
+	result |= (perms & SEPGSQL_PERMS_DELETE      ? DB_TUPLE__DELETE : 0);
+	result |= (perms & SEPGSQL_PERMS_RELABELFROM ? DB_TUPLE__RELABELFROM : 0);
+	result |= (perms & SEPGSQL_PERMS_RELABELTO   ? DB_TUPLE__RELABELTO : 0);
 
 	return result;
 }
@@ -135,9 +135,27 @@ sepgsqlTupleName(Oid relid, HeapTuple tuple)
 	return buffer;
 }
 
+/*
+ * sepgsqlCheckTuplePerms 
+ *
+ * This function evaluates given permission set (SEPGSQL_PERMS_*) onto the
+ * given tuple, with translating them into proper SELinux permission.
+ *  
+ * Accesses to some of system catalog has special meanings. DELETE a tuple
+ * within pg_class also means DROP TABLE for instance. In this case,
+ * SE-PostgreSQL translate given SEPGSQL_PERMS_DELETE into DB_TABLE__DROP
+ * to keep consistency of user operation. To delete a tuple within pg_class
+ * always means dropping a table independent from what SQL statement is
+ * used.
+ *
+ * Thus, checks for some of system catalog need to modify given permission
+ * set at checkTuplePermsXXXX() functions.
+ */
+
 static void
-check_pg_attribute(HeapTuple tuple, HeapTuple oldtup,
-				   access_vector_t *p_perms, security_class_t *p_tclass)
+checkTuplePermsAttribute(HeapTuple tuple, HeapTuple oldtup,
+						 access_vector_t *p_perms,
+						 security_class_t *p_tclass)
 {
 	Form_pg_attribute attForm, oldForm;
 	HeapTuple	reltup;
@@ -183,8 +201,9 @@ check_pg_attribute(HeapTuple tuple, HeapTuple oldtup,
 }
 
 static void
-check_pg_largeobject(HeapTuple tuple, HeapTuple oldtup,
-					 access_vector_t *p_perms, security_class_t *p_tclass)
+checkTuplePermsLargeObject(HeapTuple tuple, HeapTuple oldtup,
+						   access_vector_t *p_perms,
+						   security_class_t *p_tclass)
 {
 	access_vector_t perms;
 
@@ -213,8 +232,9 @@ check_pg_largeobject(HeapTuple tuple, HeapTuple oldtup,
 }
 
 static void
-check_pg_proc(HeapTuple tuple, HeapTuple oldtup,
-			  access_vector_t *p_perms, security_class_t *p_tclass)
+checkTuplePermsProcedure(HeapTuple tuple, HeapTuple oldtup,
+						 access_vector_t *p_perms,
+						 security_class_t *p_tclass)
 {
 	access_vector_t perms = sepgsql_perms_to_common_perms(*p_perms);
 	Form_pg_proc procForm = (Form_pg_proc) GETSTRUCT(tuple);
@@ -288,8 +308,9 @@ check_pg_proc(HeapTuple tuple, HeapTuple oldtup,
 }
 
 static void
-check_pg_relation(HeapTuple tuple, HeapTuple oldtup,
-				  access_vector_t *p_perms, security_class_t *p_tclass)
+checkTuplePermsRelation(HeapTuple tuple, HeapTuple oldtup,
+						access_vector_t *p_perms,
+						security_class_t *p_tclass)
 {
 	Form_pg_class classForm = (Form_pg_class) GETSTRUCT(tuple);
 
@@ -322,19 +343,19 @@ sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, HeapTuple oldtup,
 			break;
 
 		case RelationRelationId:		/* pg_class */
-			check_pg_relation(tuple, oldtup, &perms, &tclass);
+			checkTuplePermsRelation(tuple, oldtup, &perms, &tclass);
 			break;
 
 		case AttributeRelationId:		/* pg_attribute */
-			check_pg_attribute(tuple, oldtup, &perms, &tclass);
+			checkTuplePermsAttribute(tuple, oldtup, &perms, &tclass);
 			break;
 
 		case ProcedureRelationId:		/* pg_proc */
-			check_pg_proc(tuple, oldtup, &perms, &tclass);
+			checkTuplePermsRelation(tuple, oldtup, &perms, &tclass);
 			break;
 
 		case LargeObjectRelationId:		/* pg_largeobject */
-			check_pg_largeobject(tuple, oldtup, &perms, &tclass);
+			checkTuplePermsLargeObject(tuple, oldtup, &perms, &tclass);
 			break;
 
 		default:
