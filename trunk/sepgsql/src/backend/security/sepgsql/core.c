@@ -153,7 +153,9 @@ initContexts(void)
 	if (!MyProcPort)
 	{
 		/*
-		 * a client process is a server process in same time
+		 * When the proces is not invoked as a backend of clietnt,
+		 * it works as a server process and as a client process
+		 * in same time.
 		 */
 		clientContext = serverContext;
 	}
@@ -163,6 +165,18 @@ initContexts(void)
 		{
 			/*
 			 * fallbacked security context
+			 *
+			 * When getpeercon() API does not obtain the context of
+			 * peer process, SEPGSQL_FALLBACK_CONTEXT environment
+			 * variable is used as an alternative security context
+			 * of the peer.
+			 *
+			 * getpeercon() needs the following condition to fail:
+			 * - Connection come from remote host,
+			 * - and, there is no labeled ipsec configuration between
+			 *   localhost and remote host.
+			 * - and, there is no static fallbacked context configuration
+			 *   for the remote host.
 			 */
 			char	   *fallback = getenv("SEPGSQL_FALLBACK_CONTEXT");
 
@@ -182,6 +196,14 @@ initContexts(void)
 	}
 }
 
+/*
+ * sepgsqlInitialize
+ *
+ * It initializes SE-PostgreSQL itself including assignment of shared
+ * memory segment, reset of AVC, obtaining the client/server security
+ * context and checks whether the client can access the required database,
+ * or not.
+ */
 void
 sepgsqlInitialize(bool bootstrap)
 {
@@ -221,6 +243,28 @@ sepgsqlInitialize(bool bootstrap)
 						 true);
 }
 
+/*
+ * sepgsqlIsEnabled
+ *
+ * This function returns the state of SE-PostgreSQL when PGACE hooks
+ * are invoked, to prevent to call sepgsqlXXXX() functions when
+ * SE-PostgreSQL is disabled.
+ *
+ * We can config the state of SE-PostgreSQL in $PGDATA/postgresql.conf.
+ * The GUC option "sepostgresql" can have the following four parameter.
+ *
+ * - default    : It always follows the in-kernel SELinux state. When it
+ *                works in Enforcing mode, SE-PostgreSQL also works in
+ *                Enforcing mode. Changes of in-kernel state are delivered
+ *                to userspace SE-PostgreSQL soon, and SELinux state 
+ *                monitoring process updates it rapidly.
+ * - enforcing  : It always works in Enforcing mode. In-kernel SELinux
+ *                has to be enabled.
+ * - permissive : It always works in Permissive mode. In-kernel SELinux
+ *                has to be enabled.
+ * - disabled   : It disables SE-PostgreSQL feature. It works as if
+ *                original PostgreSQL
+ */
 bool
 sepgsqlIsEnabled(void)
 {
@@ -248,7 +292,9 @@ sepgsqlIsEnabled(void)
 }
 
 /*
- * sepgsql_getcon(void) -- returns a security context of client
+ * sepgsql_getcon(void)
+ *
+ * It returns security context of client
  */
 Datum
 sepgsql_getcon(PG_FUNCTION_ARGS)
@@ -280,6 +326,11 @@ sepgsql_getcon(PG_FUNCTION_ARGS)
 	PG_RETURN_DATUM(labelTxt);
 }
 
+/*
+ * sepgsql_getcon(void)
+ *
+ * It returns security context of server process
+ */
 Datum
 sepgsql_getservcon(PG_FUNCTION_ARGS)
 {
@@ -356,6 +407,11 @@ parse_to_context(security_context_t context,
 	freecon(raw_context);
 }
 
+/*
+ * text sepgsql_get_user(text)
+ *
+ * It picks up the USER field of given security context.
+ */
 Datum
 sepgsql_get_user(PG_FUNCTION_ARGS)
 {
@@ -366,6 +422,11 @@ sepgsql_get_user(PG_FUNCTION_ARGS)
 	PG_RETURN_TEXT_P(CStringGetTextDatum(user));
 }
 
+/*
+ * text sepgsql_set_user(text, text)
+ *
+ * It replaces the USER field of given security context by the second argument.
+ */
 Datum
 sepgsql_set_user(PG_FUNCTION_ARGS)
 {
@@ -401,6 +462,11 @@ sepgsql_set_user(PG_FUNCTION_ARGS)
 	PG_RETURN_DATUM(result);
 }
 
+/*
+ * text sepgsql_get_role(text)
+ *
+ * It picks up the ROLE field of given security context.
+ */
 Datum
 sepgsql_get_role(PG_FUNCTION_ARGS)
 {
@@ -411,6 +477,11 @@ sepgsql_get_role(PG_FUNCTION_ARGS)
 	PG_RETURN_TEXT_P(CStringGetTextDatum(role));
 }
 
+/*
+ * text sepgsql_set_user(text, text)
+ *
+ * It replaces the ROLE field of given security context by the second argument.
+ */
 Datum
 sepgsql_set_role(PG_FUNCTION_ARGS)
 {
@@ -446,6 +517,11 @@ sepgsql_set_role(PG_FUNCTION_ARGS)
 	PG_RETURN_DATUM(result);
 }
 
+/*
+ * text sepgsql_get_type(text)
+ *
+ * It picks up the TYPE field of given security context.
+ */
 Datum
 sepgsql_get_type(PG_FUNCTION_ARGS)
 {
@@ -456,6 +532,11 @@ sepgsql_get_type(PG_FUNCTION_ARGS)
 	PG_RETURN_TEXT_P(CStringGetTextDatum(type));
 }
 
+/*
+ * text sepgsql_set_user(text, text)
+ *
+ * It replaces the TYPE field of given security context by the second argument.
+ */
 Datum
 sepgsql_set_type(PG_FUNCTION_ARGS)
 {
@@ -491,6 +572,11 @@ sepgsql_set_type(PG_FUNCTION_ARGS)
 	PG_RETURN_DATUM(result);
 }
 
+/*
+ * text sepgsql_get_range(text)
+ *
+ * It picks up the RANGE field of given security context.
+ */
 Datum
 sepgsql_get_range(PG_FUNCTION_ARGS)
 {
@@ -501,6 +587,11 @@ sepgsql_get_range(PG_FUNCTION_ARGS)
 	PG_RETURN_TEXT_P(CStringGetTextDatum(range));
 }
 
+/*
+ * text sepgsql_set_user(text, text)
+ *
+ * It replaces the RANGE field of given security context by the second argument.
+ */
 Datum
 sepgsql_set_range(PG_FUNCTION_ARGS)
 {
