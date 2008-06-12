@@ -7,7 +7,7 @@
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
- *		$PostgreSQL: pgsql/src/backend/access/transam/twophase.c,v 1.39 2008/01/01 19:45:48 momjian Exp $
+ *		$PostgreSQL: pgsql/src/backend/access/transam/twophase.c,v 1.39.2.2 2008/05/19 18:16:46 heikki Exp $
  *
  * NOTES
  *		Each global transaction is associated with a global transaction
@@ -56,6 +56,7 @@
 #include "storage/procarray.h"
 #include "storage/smgr.h"
 #include "utils/builtins.h"
+#include "utils/memutils.h"
 
 
 /*
@@ -827,7 +828,6 @@ StartPrepare(GlobalTransaction gxact)
 		save_state_data(children, hdr.nsubxacts * sizeof(TransactionId));
 		/* While we have the child-xact data, stuff it in the gxact too */
 		GXactLoadSubxactData(gxact, hdr.nsubxacts, children);
-		pfree(children);
 	}
 	if (hdr.ncommitrels > 0)
 	{
@@ -865,6 +865,15 @@ EndPrepare(GlobalTransaction gxact)
 	hdr = (TwoPhaseFileHeader *) records.head->data;
 	Assert(hdr->magic == TWOPHASE_MAGIC);
 	hdr->total_len = records.total_len + sizeof(pg_crc32);
+
+	/*
+	 * If the file size exceeds MaxAllocSize, we won't be able to read it in
+	 * ReadTwoPhaseFile. Check for that now, rather than fail at commit time.
+	 */
+	if (hdr->total_len > MaxAllocSize)
+		ereport(ERROR,
+				(errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED),
+				 errmsg("two-phase state file maximum length exceeded")));
 
 	/*
 	 * Create the 2PC state file.
@@ -1046,7 +1055,9 @@ ReadTwoPhaseFile(TransactionId xid)
 
 	/*
 	 * Check file length.  We can determine a lower bound pretty easily. We
-	 * set an upper bound mainly to avoid palloc() failure on a corrupt file.
+	 * set an upper bound to avoid palloc() failure on a corrupt file, though
+	 * we can't guarantee that we won't get an out of memory error anyway,
+	 * even on a valid file.
 	 */
 	if (fstat(fd, &stat))
 	{
@@ -1061,7 +1072,7 @@ ReadTwoPhaseFile(TransactionId xid)
 	if (stat.st_size < (MAXALIGN(sizeof(TwoPhaseFileHeader)) +
 						MAXALIGN(sizeof(TwoPhaseRecordOnDisk)) +
 						sizeof(pg_crc32)) ||
-		stat.st_size > 10000000)
+		stat.st_size > MaxAllocSize)
 	{
 		close(fd);
 		return NULL;

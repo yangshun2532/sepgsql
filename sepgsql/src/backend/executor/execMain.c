@@ -26,7 +26,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/executor/execMain.c,v 1.303 2008/02/07 17:09:51 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/executor/execMain.c,v 1.303.2.1 2008/04/21 03:49:51 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -761,6 +761,16 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 				 */
 				estate->es_junkFilter =
 					estate->es_result_relation_info->ri_junkFilter;
+
+				/*
+				 * We currently can't support rowmarks in this case, because
+				 * the associated junk CTIDs might have different resnos in
+				 * different subplans.
+				 */
+				if (estate->es_rowMarks)
+					ereport(ERROR,
+							(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+							 errmsg("SELECT FOR UPDATE/SHARE is not supported within a query with multiple result relations")));
 			}
 			else
 			{
@@ -778,18 +788,6 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 				{
 					/* For SELECT, want to return the cleaned tuple type */
 					tupType = j->jf_cleanTupType;
-					/* For SELECT FOR UPDATE/SHARE, find the ctid attrs now */
-					foreach(l, estate->es_rowMarks)
-					{
-						ExecRowMark *erm = (ExecRowMark *) lfirst(l);
-						char		resname[32];
-
-						snprintf(resname, sizeof(resname), "ctid%u", erm->rti);
-						erm->ctidAttNo = ExecFindJunkAttribute(j, resname);
-						if (!AttributeNumberIsValid(erm->ctidAttNo))
-							elog(ERROR, "could not find junk \"%s\" column",
-								 resname);
-					}
 				}
 				else if (operation == CMD_UPDATE || operation == CMD_DELETE)
 				{
@@ -798,10 +796,27 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 					if (!AttributeNumberIsValid(j->jf_junkAttNo))
 						elog(ERROR, "could not find junk ctid column");
 				}
+
+				/* For SELECT FOR UPDATE/SHARE, find the ctid attrs now */
+				foreach(l, estate->es_rowMarks)
+				{
+					ExecRowMark *erm = (ExecRowMark *) lfirst(l);
+					char		resname[32];
+
+					snprintf(resname, sizeof(resname), "ctid%u", erm->rti);
+					erm->ctidAttNo = ExecFindJunkAttribute(j, resname);
+					if (!AttributeNumberIsValid(erm->ctidAttNo))
+						elog(ERROR, "could not find junk \"%s\" column",
+							 resname);
+				}
 			}
 		}
 		else
+		{
 			estate->es_junkFilter = NULL;
+			if (estate->es_rowMarks)
+				elog(ERROR, "SELECT FOR UPDATE/SHARE, but no junk columns");
+		}
 	}
 
 	/*
@@ -1249,40 +1264,21 @@ lnext:	;
 		slot = planSlot;
 
 		/*
-		 * if we have a junk filter, then project a new tuple with the junk
+		 * If we have a junk filter, then project a new tuple with the junk
 		 * removed.
 		 *
 		 * Store this new "clean" tuple in the junkfilter's resultSlot.
 		 * (Formerly, we stored it back over the "dirty" tuple, which is WRONG
 		 * because that tuple slot has the wrong descriptor.)
 		 *
-		 * Also, extract all the junk information we need.
+		 * But first, extract all the junk information we need.
 		 */
 		if ((junkfilter = estate->es_junkFilter) != NULL)
 		{
-			Datum		datum;
-			bool		isNull;
-
-			/*
-			 * extract the 'ctid' junk attribute.
-			 */
-			if (operation == CMD_UPDATE || operation == CMD_DELETE)
-			{
-				datum = ExecGetJunkAttribute(slot, junkfilter->jf_junkAttNo,
-											 &isNull);
-				/* shouldn't ever get a null result... */
-				if (isNull)
-					elog(ERROR, "ctid is NULL");
-
-				tupleid = (ItemPointer) DatumGetPointer(datum);
-				tuple_ctid = *tupleid;	/* make sure we don't free the ctid!! */
-				tupleid = &tuple_ctid;
-			}
-
 			/*
 			 * Process any FOR UPDATE or FOR SHARE locking requested.
 			 */
-			else if (estate->es_rowMarks != NIL)
+			if (estate->es_rowMarks != NIL)
 			{
 				ListCell   *l;
 
@@ -1290,6 +1286,8 @@ lnext:	;
 				foreach(l, estate->es_rowMarks)
 				{
 					ExecRowMark *erm = lfirst(l);
+					Datum		datum;
+					bool		isNull;
 					HeapTupleData tuple;
 					Buffer		buffer;
 					ItemPointerData update_ctid;
@@ -1367,6 +1365,25 @@ lnext:	;
 			 * pgaceFetchSecurityLabel() fetch it via junk attribute.
 			 */
 			pgaceFetchSecurityAttribute(junkfilter, slot, &__tts_security);
+
+			/*
+			 * extract the 'ctid' junk attribute.
+			 */
+			if (operation == CMD_UPDATE || operation == CMD_DELETE)
+			{
+				Datum		datum;
+				bool		isNull;
+
+				datum = ExecGetJunkAttribute(slot, junkfilter->jf_junkAttNo,
+											 &isNull);
+				/* shouldn't ever get a null result... */
+				if (isNull)
+					elog(ERROR, "ctid is NULL");
+
+				tupleid = (ItemPointer) DatumGetPointer(datum);
+				tuple_ctid = *tupleid;	/* make sure we don't free the ctid!! */
+				tupleid = &tuple_ctid;
+			}
 
 			/*
 			 * Create a new "clean" tuple with all junk attributes removed. We
