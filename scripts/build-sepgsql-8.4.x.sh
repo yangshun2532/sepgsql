@@ -3,7 +3,6 @@ export LANG=C
 
 # ---- build parametors
 SEPGSQL_MAJOR_VERSION="3"
-SEPGSQL_MINOR_OFFSET="654"
 SEPGSQL_EXTENSION=".alpha"
 SEPGSQL_BRANCH="/trunk"
 
@@ -18,8 +17,7 @@ BASE_VERSION=`grep AC_INIT ${SEPGSQL_REPOSITORY}${SEPGSQL_BRANCH}/base/configure
 
 svn update ${SEPGSQL_REPOSITORY} || exit 1
 SEPGSQL_REVISION=`svn info ${SEPGSQL_REPOSITORY} | egrep '^Revision:' | awk '{print $2}'`
-SEPGSQL_MINOR_VERSION=`expr ${SEPGSQL_REVISION} - ${SEPGSQL_MINOR_OFFSET}`
-SEPGSQL_VERSION="${SEPGSQL_MAJOR_VERSION}.${SEPGSQL_MINOR_VERSION}"
+SEPGSQL_VERSION="${SEPGSQL_MAJOR_VERSION}.${SEPGSQL_REVISION}"
 
 # -- Parse Option
 GEN_PATCH_ONLY=0
@@ -127,3 +125,4 @@ rpmbuild -ba ${RPMSOURCE}/sepostgresql.spec
 
 # ---- clean up
 rm -rf ${WORKDIR}
+
