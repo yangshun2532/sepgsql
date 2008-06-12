@@ -10,7 +10,7 @@
  *	Win32 (NT, Win2k, XP).	replace() doesn't work on Win95/98/Me.
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/port/dirmod.c,v 1.44.2.1 2006/12/04 22:24:04 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/port/dirmod.c,v 1.44.2.3 2008/04/12 00:00:08 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -447,3 +447,40 @@ report_and_fail:
 	fnames_cleanup(filenames);
 	return false;
 }
+
+
+#if defined(WIN32) && !defined(__CYGWIN__)
+
+#undef stat
+
+/*
+ * The stat() function in win32 is not guaranteed to update the st_size
+ * field when run. So we define our own version that uses the Win32 API
+ * to update this field.
+ */
+int 
+pgwin32_safestat(const char *path, struct stat *buf)
+{
+	int r;
+	WIN32_FILE_ATTRIBUTE_DATA attr;
+
+	r = stat(path, buf);
+	if (r < 0)
+		return r;
+
+	if (!GetFileAttributesEx(path, GetFileExInfoStandard, &attr))
+	{
+		_dosmaperr(GetLastError());
+		return -1;
+	}
+
+	/*
+	 * XXX no support for large files here, but we don't do that in
+	 * general on Win32 yet.
+	 */
+	buf->st_size = attr.nFileSizeLow;
+
+	return 0;
+}
+
+#endif
