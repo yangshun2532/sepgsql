@@ -10,7 +10,7 @@
  * Written by Peter Eisentraut <peter_e@gmx.net>.
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/misc/guc.c,v 1.360.2.1 2007/04/23 15:13:30 neilc Exp $
+ *	  $PostgreSQL: pgsql/src/backend/utils/misc/guc.c,v 1.360.2.2 2008/05/26 18:54:43 tgl Exp $
  *
  *--------------------------------------------------------------------
  */
@@ -3998,6 +3998,10 @@ set_config_option(const char *name, const char *value,
 					source = conf->gen.reset_source;
 				}
 
+				/* Save old value to support transaction abort */
+				if (changeVal && !makeDefault)
+					push_old_value(&conf->gen);
+
 				if (conf->assign_hook)
 					if (!(*conf->assign_hook) (newval, changeVal, source))
 					{
@@ -4010,9 +4014,6 @@ set_config_option(const char *name, const char *value,
 
 				if (changeVal || makeDefault)
 				{
-					/* Save old value to support transaction abort */
-					if (!makeDefault)
-						push_old_value(&conf->gen);
 					if (changeVal)
 					{
 						*conf->variable = newval;
@@ -4082,6 +4083,10 @@ set_config_option(const char *name, const char *value,
 					source = conf->gen.reset_source;
 				}
 
+				/* Save old value to support transaction abort */
+				if (changeVal && !makeDefault)
+					push_old_value(&conf->gen);
+
 				if (conf->assign_hook)
 					if (!(*conf->assign_hook) (newval, changeVal, source))
 					{
@@ -4094,9 +4099,6 @@ set_config_option(const char *name, const char *value,
 
 				if (changeVal || makeDefault)
 				{
-					/* Save old value to support transaction abort */
-					if (!makeDefault)
-						push_old_value(&conf->gen);
 					if (changeVal)
 					{
 						*conf->variable = newval;
@@ -4166,6 +4168,10 @@ set_config_option(const char *name, const char *value,
 					source = conf->gen.reset_source;
 				}
 
+				/* Save old value to support transaction abort */
+				if (changeVal && !makeDefault)
+					push_old_value(&conf->gen);
+
 				if (conf->assign_hook)
 					if (!(*conf->assign_hook) (newval, changeVal, source))
 					{
@@ -4178,9 +4184,6 @@ set_config_option(const char *name, const char *value,
 
 				if (changeVal || makeDefault)
 				{
-					/* Save old value to support transaction abort */
-					if (!makeDefault)
-						push_old_value(&conf->gen);
 					if (changeVal)
 					{
 						*conf->variable = newval;
@@ -4255,6 +4258,10 @@ set_config_option(const char *name, const char *value,
 					break;
 				}
 
+				/* Save old value to support transaction abort */
+				if (changeVal && !makeDefault)
+					push_old_value(&conf->gen);
+
 				if (conf->assign_hook)
 				{
 					const char *hookresult;
@@ -4294,9 +4301,6 @@ set_config_option(const char *name, const char *value,
 
 				if (changeVal || makeDefault)
 				{
-					/* Save old value to support transaction abort */
-					if (!makeDefault)
-						push_old_value(&conf->gen);
 					if (changeVal)
 					{
 						set_string_field(conf, conf->variable, newval);
