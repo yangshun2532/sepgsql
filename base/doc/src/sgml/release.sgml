@@ -1,4 +1,4 @@
-<!-- $PostgreSQL: pgsql/doc/src/sgml/release.sgml,v 1.488.2.17 2008/03/13 23:48:11 tgl Exp $ -->
+<!-- $PostgreSQL: pgsql/doc/src/sgml/release.sgml,v 1.488.2.21 2008/06/08 21:46:26 tgl Exp $ -->
 <!--
 
 Typical markup:
@@ -63,6 +63,268 @@ do it for earlier branch release files.
    review, so each item is truly a community effort.
   </para>
 
+ <sect1 id="release-8-2-9">
+  <title>Release 8.2.9</title>
+
+  <note>
+  <title>Release date</title>
+  <simpara>2008-06-12</simpara>
+  </note>
+
+  <para>
+   This release contains one serious and one minor bug fix over 8.2.8.
+   For information about new features in the 8.2 major release, see
+   <xref linkend="release-8-2">.
+  </para>
+
+  <sect2>
+   <title>Migration to Version 8.2.9</title>
+
+   <para>
+    A dump/restore is not required for those running 8.2.X.
+    However, if you are upgrading from a version earlier than 8.2.7,
+    see the release notes for 8.2.7.
+   </para>
+
+  </sect2>
+
+  <sect2>
+   <title>Changes</title>
+
+   <itemizedlist>
+
+    <listitem>
+     <para>
+      Make <function>pg_get_ruledef()</> parenthesize negative constants (Tom)
+     </para>
+
+     <para>
+      Before this fix, a negative constant in a view or rule might be dumped
+      as, say, <literal>-42::integer</>, which is subtly incorrect: it should
+      be <literal>(-42)::integer</> due to operator precedence rules.
+      Usually this would make little difference, but it could interact with
+      another recent patch to cause
+      <productname>PostgreSQL</> to reject what had been a valid
+      <command>SELECT DISTINCT</> view query.  Since this could result in
+      <application>pg_dump</> output failing to reload, it is being treated
+      as a high-priority fix.  The only released versions in which dump
+      output is actually incorrect are 8.3.1 and 8.2.7.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Make <command>ALTER AGGREGATE ... OWNER TO</> update
+      <structname>pg_shdepend</> (Tom)
+     </para>
+
+     <para>
+      This oversight could lead to problems if the aggregate was later
+      involved in a <command>DROP OWNED</> or <command>REASSIGN OWNED</>
+      operation.
+     </para>
+    </listitem>
+
+   </itemizedlist>
+
+  </sect2>
+ </sect1>
+
+ <sect1 id="release-8-2-8">
+  <title>Release 8.2.8</title>
+
+  <note>
+  <title>Release date</title>
+  <simpara>never released</simpara>
+  </note>
+
+  <para>
+   This release contains a variety of fixes from 8.2.7.
+   For information about new features in the 8.2 major release, see
+   <xref linkend="release-8-2">.
+  </para>
+
+  <sect2>
+   <title>Migration to Version 8.2.8</title>
+
+   <para>
+    A dump/restore is not required for those running 8.2.X.
+    However, if you are upgrading from a version earlier than 8.2.7,
+    see the release notes for 8.2.7.
+   </para>
+
+  </sect2>
+
+  <sect2>
+   <title>Changes</title>
+
+   <itemizedlist>
+
+    <listitem>
+     <para>
+      Fix <literal>ERRORDATA_STACK_SIZE exceeded</literal> crash that
+      occurred on Windows when using UTF-8 database encoding and a different
+      client encoding (Tom)
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Fix <command>ALTER TABLE ADD COLUMN ... PRIMARY KEY</> so that the new
+      column is correctly checked to see if it's been initialized to all
+      non-nulls (Brendan Jurd)
+     </para>
+
+     <para>
+      Previous versions neglected to check this requirement at all.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Fix possible <command>CREATE TABLE</> failure when inheriting the
+      <quote>same</> constraint from multiple parent relations that
+      inherited that constraint from a common ancestor (Tom)
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Fix <function>pg_get_ruledef()</> to show the alias, if any, attached
+      to the target table of an <command>UPDATE</> or <command>DELETE</>
+      (Tom)
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Fix GIN bug that could result in a <literal>too many LWLocks
+      taken</literal> failure (Teodor)
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Avoid possible crash when decompressing corrupted data
+      (Zdenek Kotala)
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Repair two places where SIGTERM exit of a backend could leave corrupted
+      state in shared memory (Tom)
+     </para>
+
+     <para>
+      Neither case is very important if SIGTERM is used to shut down the
+      whole database cluster together, but there was a problem if someone
+      tried to SIGTERM individual backends.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Fix conversions between ISO-8859-5 and other encodings to handle
+      Cyrillic <quote>Yo</> characters (<literal>e</> and <literal>E</> with
+      two dots) (Sergey Burladyan)
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Fix several datatype input functions, notably <function>array_in()</>,
+      that were allowing unused bytes in their results to contain
+      uninitialized, unpredictable values (Tom)
+     </para>
+
+     <para>
+      This could lead to failures in which two apparently identical literal
+      values were not seen as equal, resulting in the parser complaining
+      about unmatched <literal>ORDER BY</> and <literal>DISTINCT</>
+      expressions.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Fix a corner case in regular-expression substring matching
+      (<literal>substring(<replaceable>string</> from
+      <replaceable>pattern</>)</literal>) (Tom)
+     </para>
+
+     <para>
+      The problem occurs when there is a match to the pattern overall but
+      the user has specified a parenthesized subexpression and that
+      subexpression hasn't got a match.  An example is
+      <literal>substring('foo' from 'foo(bar)?')</>.
+      This should return NULL, since <literal>(bar)</> isn't matched, but
+      it was mistakenly returning the whole-pattern match instead (ie,
+      <literal>foo</>).
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Update time zone data files to <application>tzdata</> release 2008c (for
+      DST law changes in Morocco, Iraq, Choibalsan, Pakistan, Syria, Cuba, and
+      Argentina/San_Luis)
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Fix incorrect result from <application>ecpg</>'s
+      <function>PGTYPEStimestamp_sub()</> function (Michael)
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Fix broken GiST comparison function for <filename>contrib/tsearch2</>'s
+      <type>tsquery</> type (Teodor)
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Fix possible crashes in <filename>contrib/cube</> functions (Tom)
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Fix core dump in <filename>contrib/xml2</>'s
+      <function>xpath_table()</> function when the input query returns a
+      NULL value (Tom)
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Fix <filename>contrib/xml2</>'s makefile to not override
+      <literal>CFLAGS</> (Tom)
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Fix <literal>DatumGetBool</> macro to not fail with <application>gcc</>
+      4.3 (Tom)
+     </para>
+
+     <para>
+      This problem affects <quote>old style</> (V0) C functions that
+      return boolean.  The fix is already in 8.3, but the need to
+      back-patch it was not realized at the time.
+     </para>
+    </listitem>
+
+   </itemizedlist>
+
+  </sect2>
+ </sect1>
+
  <sect1 id="release-8-2-7">
   <title>Release 8.2.7</title>
 
@@ -73,6 +335,8 @@ do it for earlier branch release files.
 
   <para>
    This release contains a variety of fixes from 8.2.6.
+   For information about new features in the 8.2 major release, see
+   <xref linkend="release-8-2">.
   </para>
 
   <sect2>
@@ -145,7 +409,7 @@ do it for earlier branch release files.
      </para>
 
      <para>
-      This was formerly allowed but trying to do it had various unpleasant 
+      This was formerly allowed but trying to do it had various unpleasant
       consequences, notably that the originating backend could not exit
       as long as an <command>UNLISTEN</> remained uncommitted.
      </para>
@@ -321,7 +585,7 @@ do it for earlier branch release files.
      <para>
       This failure has only been observed to occur when a user-defined
       datatype's output routine issues a NOTICE, but there is no
-      guaranteee it couldn't happen due to other causes.
+      guarantee it couldn't happen due to other causes.
      </para>
     </listitem>
 
@@ -341,6 +605,8 @@ do it for earlier branch release files.
   <para>
    This release contains a variety of fixes from 8.2.5,
    including fixes for significant security issues.
+   For information about new features in the 8.2 major release, see
+   <xref linkend="release-8-2">.
   </para>
 
   <sect2>
@@ -629,6 +895,8 @@ do it for earlier branch release files.
 
   <para>
    This release contains a variety of fixes from 8.2.4.
+   For information about new features in the 8.2 major release, see
+   <xref linkend="release-8-2">.
   </para>
 
   <sect2>
@@ -805,6 +1073,8 @@ do it for earlier branch release files.
   <para>
    This release contains a variety of fixes from 8.2.3,
    including a security fix.
+   For information about new features in the 8.2 major release, see
+   <xref linkend="release-8-2">.
   </para>
 
   <sect2>
@@ -946,6 +1216,8 @@ do it for earlier branch release files.
 
   <para>
    This release contains two fixes from 8.2.2.
+   For information about new features in the 8.2 major release, see
+   <xref linkend="release-8-2">.
   </para>
 
   <sect2>
@@ -991,6 +1263,8 @@ do it for earlier branch release files.
   <para>
    This release contains a variety of fixes from 8.2.1, including
    a security fix.
+   For information about new features in the 8.2 major release, see
+   <xref linkend="release-8-2">.
   </para>
 
   <sect2>
@@ -1146,6 +1420,8 @@ do it for earlier branch release files.
 
   <para>
    This release contains a variety of fixes from 8.2.
+   For information about new features in the 8.2 major release, see
+   <xref linkend="release-8-2">.
   </para>
 
   <sect2>
@@ -3827,6 +4103,323 @@ do it for earlier branch release files.
   </sect2>
  </sect1>
 
+ <sect1 id="release-8-1-13">
+  <title>Release 8.1.13</title>
+
+  <note>
+  <title>Release date</title>
+  <simpara>2008-06-12</simpara>
+  </note>
+
+  <para>
+   This release contains one serious and one minor bug fix over 8.1.12.
+   For information about new features in the 8.1 major release, see
+   <xref linkend="release-8-1">.
+  </para>
+
+  <sect2>
+   <title>Migration to Version 8.1.13</title>
+
+   <para>
+    A dump/restore is not required for those running 8.1.X.
+    However, if you are upgrading from a version earlier than 8.1.2,
+    see the release notes for 8.1.2.
+   </para>
+
+  </sect2>
+
+  <sect2>
+   <title>Changes</title>
+
+   <itemizedlist>
+
+    <listitem>
+     <para>
+      Make <function>pg_get_ruledef()</> parenthesize negative constants (Tom)
+     </para>
+
+     <para>
+      Before this fix, a negative constant in a view or rule might be dumped
+      as, say, <literal>-42::integer</>, which is subtly incorrect: it should
+      be <literal>(-42)::integer</> due to operator precedence rules.
+      Usually this would make little difference, but it could interact with
+      another recent patch to cause
+      <productname>PostgreSQL</> to reject what had been a valid
+      <command>SELECT DISTINCT</> view query.  Since this could result in
+      <application>pg_dump</> output failing to reload, it is being treated
+      as a high-priority fix.  The only released versions in which dump
+      output is actually incorrect are 8.3.1 and 8.2.7.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Make <command>ALTER AGGREGATE ... OWNER TO</> update
+      <structname>pg_shdepend</> (Tom)
+     </para>
+
+     <para>
+      This oversight could lead to problems if the aggregate was later
+      involved in a <command>DROP OWNED</> or <command>REASSIGN OWNED</>
+      operation.
+     </para>
+    </listitem>
+
+   </itemizedlist>
+
+  </sect2>
+ </sect1>
+
+ <sect1 id="release-8-1-12">
+  <title>Release 8.1.12</title>
+
+  <note>
+  <title>Release date</title>
+  <simpara>never released</simpara>
+  </note>
+
+  <para>
+   This release contains a variety of fixes from 8.1.11.
+   For information about new features in the 8.1 major release, see
+   <xref linkend="release-8-1">.
+  </para>
+
+  <sect2>
+   <title>Migration to Version 8.1.12</title>
+
+   <para>
+    A dump/restore is not required for those running 8.1.X.
+    However, if you are upgrading from a version earlier than 8.1.2,
+    see the release notes for 8.1.2.
+   </para>
+
+  </sect2>
+
+  <sect2>
+   <title>Changes</title>
+
+   <itemizedlist>
+
+    <listitem>
+     <para>
+      Fix <command>ALTER TABLE ADD COLUMN ... PRIMARY KEY</> so that the new
+      column is correctly checked to see if it's been initialized to all
+      non-nulls (Brendan Jurd)
+     </para>
+
+     <para>
+      Previous versions neglected to check this requirement at all.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Fix possible <command>CREATE TABLE</> failure when inheriting the
+      <quote>same</> constraint from multiple parent relations that
+      inherited that constraint from a common ancestor (Tom)
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Fix conversions between ISO-8859-5 and other encodings to handle
+      Cyrillic <quote>Yo</> characters (<literal>e</> and <literal>E</> with
+      two dots) (Sergey Burladyan)
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Fix a few datatype input functions
+      that were allowing unused bytes in their results to contain
+      uninitialized, unpredictable values (Tom)
+     </para>
+
+     <para>
+      This could lead to failures in which two apparently identical literal
+      values were not seen as equal, resulting in the parser complaining
+      about unmatched <literal>ORDER BY</> and <literal>DISTINCT</>
+      expressions.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Fix a corner case in regular-expression substring matching
+      (<literal>substring(<replaceable>string</> from
+      <replaceable>pattern</>)</literal>) (Tom)
+     </para>
+
+     <para>
+      The problem occurs when there is a match to the pattern overall but
+      the user has specified a parenthesized subexpression and that
+      subexpression hasn't got a match.  An example is
+      <literal>substring('foo' from 'foo(bar)?')</>.
+      This should return NULL, since <literal>(bar)</> isn't matched, but
+      it was mistakenly returning the whole-pattern match instead (ie,
+      <literal>foo</>).
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Update time zone data files to <application>tzdata</> release 2008c (for
+      DST law changes in Morocco, Iraq, Choibalsan, Pakistan, Syria, Cuba,
+      Argentina/San_Luis, and Chile)
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Fix incorrect result from <application>ecpg</>'s
+      <function>PGTYPEStimestamp_sub()</> function (Michael)
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Fix core dump in <filename>contrib/xml2</>'s
+      <function>xpath_table()</> function when the input query returns a
+      NULL value (Tom)
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Fix <filename>contrib/xml2</>'s makefile to not override
+      <literal>CFLAGS</> (Tom)
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Fix <literal>DatumGetBool</> macro to not fail with <application>gcc</>
+      4.3 (Tom)
+     </para>
+
+     <para>
+      This problem affects <quote>old style</> (V0) C functions that
+      return boolean.  The fix is already in 8.3, but the need to
+      back-patch it was not realized at the time.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Fix longstanding <command>LISTEN</>/<command>NOTIFY</>
+      race condition (Tom)
+     </para>
+
+     <para>
+      In rare cases a session that had just executed a
+      <command>LISTEN</> might not get a notification, even though
+      one would be expected because the concurrent transaction executing
+      <command>NOTIFY</> was observed to commit later.
+     </para>
+
+     <para>
+      A side effect of the fix is that a transaction that has executed
+      a not-yet-committed <command>LISTEN</> command will not see any
+      row in <structname>pg_listener</> for the <command>LISTEN</>,
+      should it choose to look; formerly it would have.  This behavior
+      was never documented one way or the other, but it is possible that
+      some applications depend on the old behavior.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Disallow <command>LISTEN</> and <command>UNLISTEN</> within a
+      prepared transaction (Tom)
+     </para>
+
+     <para>
+      This was formerly allowed but trying to do it had various unpleasant
+      consequences, notably that the originating backend could not exit
+      as long as an <command>UNLISTEN</> remained uncommitted.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Fix rare crash when an error occurs during a query using a hash index
+      (Heikki)
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Fix input of datetime values for February 29 in years BC (Tom)
+     </para>
+
+     <para>
+      The former coding was mistaken about which years were leap years.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Fix <quote>unrecognized node type</> error in some variants of
+      <command>ALTER OWNER</> (Tom)
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Fix <application>pg_ctl</> to correctly extract the postmaster's port
+      number from command-line options (Itagaki Takahiro, Tom)
+     </para>
+
+     <para>
+      Previously, <literal>pg_ctl start -w</> could try to contact the
+      postmaster on the wrong port, leading to bogus reports of startup
+      failure.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Use <option>-fwrapv</> to defend against possible misoptimization
+      in recent <application>gcc</> versions (Tom)
+     </para>
+
+     <para>
+      This is known to be necessary when building <productname>PostgreSQL</>
+      with <application>gcc</> 4.3 or later.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Fix display of constant expressions in <literal>ORDER BY</>
+      and <literal>GROUP BY</> (Tom)
+     </para>
+
+     <para>
+      An explictly casted constant would be shown incorrectly.  This could
+      for example lead to corruption of a view definition during
+      dump and reload.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Fix <application>libpq</> to handle NOTICE messages correctly
+      during COPY OUT (Tom)
+     </para>
+
+     <para>
+      This failure has only been observed to occur when a user-defined
+      datatype's output routine issues a NOTICE, but there is no
+      guarantee it couldn't happen due to other causes.
+     </para>
+    </listitem>
+
+   </itemizedlist>
+
+  </sect2>
+ </sect1>
+
  <sect1 id="release-8-1-11">
   <title>Release 8.1.11</title>
 
@@ -3838,6 +4431,8 @@ do it for earlier branch release files.
   <para>
    This release contains a variety of fixes from 8.1.10,
    including fixes for significant security issues.
+   For information about new features in the 8.1 major release, see
+   <xref linkend="release-8-1">.
   </para>
 
   <para>
@@ -4087,6 +4682,8 @@ do it for earlier branch release files.
 
   <para>
    This release contains a variety of fixes from 8.1.9.
+   For information about new features in the 8.1 major release, see
+   <xref linkend="release-8-1">.
   </para>
 
   <sect2>
@@ -4207,6 +4804,8 @@ do it for earlier branch release files.
   <para>
    This release contains a variety of fixes from 8.1.8,
    including a security fix.
+   For information about new features in the 8.1 major release, see
+   <xref linkend="release-8-1">.
   </para>
 
   <sect2>
@@ -4295,6 +4894,8 @@ do it for earlier branch release files.
 
   <para>
    This release contains one fix from 8.1.7.
+   For information about new features in the 8.1 major release, see
+   <xref linkend="release-8-1">.
   </para>
 
   <sect2>
@@ -4336,6 +4937,8 @@ do it for earlier branch release files.
   <para>
    This release contains a variety of fixes from 8.1.6, including
    a security fix.
+   For information about new features in the 8.1 major release, see
+   <xref linkend="release-8-1">.
   </para>
 
   <sect2>
@@ -4435,6 +5038,8 @@ do it for earlier branch release files.
 
   <para>
    This release contains a variety of fixes from 8.1.5.
+   For information about new features in the 8.1 major release, see
+   <xref linkend="release-8-1">.
   </para>
 
   <sect2>
@@ -4583,6 +5188,8 @@ do it for earlier branch release files.
 
   <para>
    This release contains a variety of fixes from 8.1.4.
+   For information about new features in the 8.1 major release, see
+   <xref linkend="release-8-1">.
   </para>
 
   <sect2>
@@ -4659,6 +5266,8 @@ compilers (Hiroshi Saito)</para></listitem>
   <para>
    This release contains a variety of fixes from 8.1.3,
    including patches for extremely serious security issues.
+   For information about new features in the 8.1 major release, see
+   <xref linkend="release-8-1">.
   </para>
 
   <sect2>
@@ -4811,6 +5420,8 @@ documented (Tom)</para></listitem>
   <para>
    This release contains a variety of fixes from 8.1.2,
    including one very serious security issue.
+   For information about new features in the 8.1 major release, see
+   <xref linkend="release-8-1">.
   </para>
 
   <sect2>
@@ -4930,6 +5541,8 @@ creation (Tom)</para></listitem>
 
   <para>
    This release contains a variety of fixes from 8.1.1.
+   For information about new features in the 8.1 major release, see
+   <xref linkend="release-8-1">.
   </para>
 
   <sect2>
@@ -5031,6 +5644,8 @@ what's actually returned by the query (Joe)</para></listitem>
 
   <para>
    This release contains a variety of fixes from 8.1.0.
+   For information about new features in the 8.1 major release, see
+   <xref linkend="release-8-1">.
   </para>
 
   <sect2>
@@ -7233,6 +7848,297 @@ psql -t -f fixseq.sql db1 | psql -e db1
   </sect2>
  </sect1>
 
+ <sect1 id="release-8-0-17">
+  <title>Release 8.0.17</title>
+
+  <note>
+  <title>Release date</title>
+  <simpara>2008-06-12</simpara>
+  </note>
+
+  <para>
+   This release contains one serious bug fix over 8.0.16.
+   For information about new features in the 8.0 major release, see
+   <xref linkend="release-8-0">.
+  </para>
+
+  <sect2>
+   <title>Migration to Version 8.0.17</title>
+
+   <para>
+    A dump/restore is not required for those running 8.0.X.
+    However, if you are upgrading from a version earlier than 8.0.6,
+    see the release notes for 8.0.6.
+   </para>
+
+  </sect2>
+
+  <sect2>
+   <title>Changes</title>
+
+   <itemizedlist>
+
+    <listitem>
+     <para>
+      Make <function>pg_get_ruledef()</> parenthesize negative constants (Tom)
+     </para>
+
+     <para>
+      Before this fix, a negative constant in a view or rule might be dumped
+      as, say, <literal>-42::integer</>, which is subtly incorrect: it should
+      be <literal>(-42)::integer</> due to operator precedence rules.
+      Usually this would make little difference, but it could interact with
+      another recent patch to cause
+      <productname>PostgreSQL</> to reject what had been a valid
+      <command>SELECT DISTINCT</> view query.  Since this could result in
+      <application>pg_dump</> output failing to reload, it is being treated
+      as a high-priority fix.  The only released versions in which dump
+      output is actually incorrect are 8.3.1 and 8.2.7.
+     </para>
+    </listitem>
+
+   </itemizedlist>
+
+  </sect2>
+ </sect1>
+
+ <sect1 id="release-8-0-16">
+  <title>Release 8.0.16</title>
+
+  <note>
+  <title>Release date</title>
+  <simpara>never released</simpara>
+  </note>
+
+  <para>
+   This release contains a variety of fixes from 8.0.15.
+   For information about new features in the 8.0 major release, see
+   <xref linkend="release-8-0">.
+  </para>
+
+  <sect2>
+   <title>Migration to Version 8.0.16</title>
+
+   <para>
+    A dump/restore is not required for those running 8.0.X.
+    However, if you are upgrading from a version earlier than 8.0.6,
+    see the release notes for 8.0.6.
+   </para>
+
+  </sect2>
+
+  <sect2>
+   <title>Changes</title>
+
+   <itemizedlist>
+
+    <listitem>
+     <para>
+      Fix <command>ALTER TABLE ADD COLUMN ... PRIMARY KEY</> so that the new
+      column is correctly checked to see if it's been initialized to all
+      non-nulls (Brendan Jurd)
+     </para>
+
+     <para>
+      Previous versions neglected to check this requirement at all.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Fix possible <command>CREATE TABLE</> failure when inheriting the
+      <quote>same</> constraint from multiple parent relations that
+      inherited that constraint from a common ancestor (Tom)
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Fix conversions between ISO-8859-5 and other encodings to handle
+      Cyrillic <quote>Yo</> characters (<literal>e</> and <literal>E</> with
+      two dots) (Sergey Burladyan)
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Fix a few datatype input functions
+      that were allowing unused bytes in their results to contain
+      uninitialized, unpredictable values (Tom)
+     </para>
+
+     <para>
+      This could lead to failures in which two apparently identical literal
+      values were not seen as equal, resulting in the parser complaining
+      about unmatched <literal>ORDER BY</> and <literal>DISTINCT</>
+      expressions.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Fix a corner case in regular-expression substring matching
+      (<literal>substring(<replaceable>string</> from
+      <replaceable>pattern</>)</literal>) (Tom)
+     </para>
+
+     <para>
+      The problem occurs when there is a match to the pattern overall but
+      the user has specified a parenthesized subexpression and that
+      subexpression hasn't got a match.  An example is
+      <literal>substring('foo' from 'foo(bar)?')</>.
+      This should return NULL, since <literal>(bar)</> isn't matched, but
+      it was mistakenly returning the whole-pattern match instead (ie,
+      <literal>foo</>).
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Update time zone data files to <application>tzdata</> release 2008c (for
+      DST law changes in Morocco, Iraq, Choibalsan, Pakistan, Syria, Cuba,
+      Argentina/San_Luis, and Chile)
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Fix incorrect result from <application>ecpg</>'s
+      <function>PGTYPEStimestamp_sub()</> function (Michael)
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Fix core dump in <filename>contrib/xml2</>'s
+      <function>xpath_table()</> function when the input query returns a
+      NULL value (Tom)
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Fix <filename>contrib/xml2</>'s makefile to not override
+      <literal>CFLAGS</> (Tom)
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Fix <literal>DatumGetBool</> macro to not fail with <application>gcc</>
+      4.3 (Tom)
+     </para>
+
+     <para>
+      This problem affects <quote>old style</> (V0) C functions that
+      return boolean.  The fix is already in 8.3, but the need to
+      back-patch it was not realized at the time.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Fix longstanding <command>LISTEN</>/<command>NOTIFY</>
+      race condition (Tom)
+     </para>
+
+     <para>
+      In rare cases a session that had just executed a
+      <command>LISTEN</> might not get a notification, even though
+      one would be expected because the concurrent transaction executing
+      <command>NOTIFY</> was observed to commit later.
+     </para>
+
+     <para>
+      A side effect of the fix is that a transaction that has executed
+      a not-yet-committed <command>LISTEN</> command will not see any
+      row in <structname>pg_listener</> for the <command>LISTEN</>,
+      should it choose to look; formerly it would have.  This behavior
+      was never documented one way or the other, but it is possible that
+      some applications depend on the old behavior.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Fix rare crash when an error occurs during a query using a hash index
+      (Heikki)
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Fix input of datetime values for February 29 in years BC (Tom)
+     </para>
+
+     <para>
+      The former coding was mistaken about which years were leap years.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Fix <quote>unrecognized node type</> error in some variants of
+      <command>ALTER OWNER</> (Tom)
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Fix <application>pg_ctl</> to correctly extract the postmaster's port
+      number from command-line options (Itagaki Takahiro, Tom)
+     </para>
+
+     <para>
+      Previously, <literal>pg_ctl start -w</> could try to contact the
+      postmaster on the wrong port, leading to bogus reports of startup
+      failure.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Use <option>-fwrapv</> to defend against possible misoptimization
+      in recent <application>gcc</> versions (Tom)
+     </para>
+
+     <para>
+      This is known to be necessary when building <productname>PostgreSQL</>
+      with <application>gcc</> 4.3 or later.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Fix display of constant expressions in <literal>ORDER BY</>
+      and <literal>GROUP BY</> (Tom)
+     </para>
+
+     <para>
+      An explictly casted constant would be shown incorrectly.  This could
+      for example lead to corruption of a view definition during
+      dump and reload.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Fix <application>libpq</> to handle NOTICE messages correctly
+      during COPY OUT (Tom)
+     </para>
+
+     <para>
+      This failure has only been observed to occur when a user-defined
+      datatype's output routine issues a NOTICE, but there is no
+      guarantee it couldn't happen due to other causes.
+     </para>
+    </listitem>
+
+   </itemizedlist>
+
+  </sect2>
+ </sect1>
+
  <sect1 id="release-8-0-15">
   <title>Release 8.0.15</title>
 
@@ -7244,6 +8150,8 @@ psql -t -f fixseq.sql db1 | psql -e db1
   <para>
    This release contains a variety of fixes from 8.0.14,
    including fixes for significant security issues.
+   For information about new features in the 8.0 major release, see
+   <xref linkend="release-8-0">.
   </para>
 
   <para>
@@ -7457,6 +8365,8 @@ psql -t -f fixseq.sql db1 | psql -e db1
 
   <para>
    This release contains a variety of fixes from 8.0.13.
+   For information about new features in the 8.0 major release, see
+   <xref linkend="release-8-0">.
   </para>
 
   <sect2>
@@ -7564,6 +8474,8 @@ psql -t -f fixseq.sql db1 | psql -e db1
   <para>
    This release contains a variety of fixes from 8.0.12,
    including a security fix.
+   For information about new features in the 8.0 major release, see
+   <xref linkend="release-8-0">.
   </para>
 
   <sect2>
@@ -7638,6 +8550,8 @@ psql -t -f fixseq.sql db1 | psql -e db1
 
   <para>
    This release contains one fix from 8.0.11.
+   For information about new features in the 8.0 major release, see
+   <xref linkend="release-8-0">.
   </para>
 
   <sect2>
@@ -7679,6 +8593,8 @@ psql -t -f fixseq.sql db1 | psql -e db1
   <para>
    This release contains a variety of fixes from 8.0.10, including
    a security fix.
+   For information about new features in the 8.0 major release, see
+   <xref linkend="release-8-0">.
   </para>
 
   <sect2>
@@ -7747,6 +8663,8 @@ psql -t -f fixseq.sql db1 | psql -e db1
 
   <para>
    This release contains a variety of fixes from 8.0.9.
+   For information about new features in the 8.0 major release, see
+   <xref linkend="release-8-0">.
   </para>
 
   <sect2>
@@ -7864,6 +8782,8 @@ psql -t -f fixseq.sql db1 | psql -e db1
 
   <para>
    This release contains a variety of fixes from 8.0.8.
+   For information about new features in the 8.0 major release, see
+   <xref linkend="release-8-0">.
   </para>
 
   <sect2>
@@ -7919,6 +8839,8 @@ Wieland)</para></listitem>
   <para>
    This release contains a variety of fixes from 8.0.7,
    including patches for extremely serious security issues.
+   For information about new features in the 8.0 major release, see
+   <xref linkend="release-8-0">.
   </para>
 
   <sect2>
@@ -8030,6 +8952,8 @@ Fuhr)</para></listitem>
 
   <para>
    This release contains a variety of fixes from 8.0.6.
+   For information about new features in the 8.0 major release, see
+   <xref linkend="release-8-0">.
   </para>
 
   <sect2>
@@ -8127,6 +9051,8 @@ and <function>isinf</> during configure (Tom)</para></listitem>
 
   <para>
    This release contains a variety of fixes from 8.0.5.
+   For information about new features in the 8.0 major release, see
+   <xref linkend="release-8-0">.
   </para>
 
   <sect2>
@@ -8210,6 +9136,8 @@ what's actually returned by the query (Joe)</para></listitem>
 
   <para>
    This release contains a variety of fixes from 8.0.4.
+   For information about new features in the 8.0 major release, see
+   <xref linkend="release-8-0">.
   </para>
 
   <sect2>
@@ -8290,6 +9218,8 @@ to subquery results</para></listitem>
 
   <para>
    This release contains a variety of fixes from 8.0.3.
+   For information about new features in the 8.0 major release, see
+   <xref linkend="release-8-0">.
   </para>
 
   <sect2>
@@ -8386,6 +9316,8 @@ code</para></listitem>
   <para>
    This release contains a variety of fixes from 8.0.2, including several
    security-related issues.
+   For information about new features in the 8.0 major release, see
+   <xref linkend="release-8-0">.
   </para>
 
   <sect2>
@@ -8503,6 +9435,8 @@ data types</para></listitem>
 
   <para>
    This release contains a variety of fixes from 8.0.1.
+   For information about new features in the 8.0 major release, see
+   <xref linkend="release-8-0">.
   </para>
 
   <sect2>
@@ -8659,6 +9593,8 @@ addresses in <type>INET</> data types (Tom)</para></listitem>
   <para>
    This release contains a variety of fixes from 8.0.0, including several
    security-related issues.
+   For information about new features in the 8.0 major release, see
+   <xref linkend="release-8-0">.
   </para>
 
   <sect2>
@@ -11060,6 +11996,205 @@ typedefs (Michael)</para></listitem>
   </sect2>
  </sect1>
 
+ <sect1 id="release-7-4-21">
+  <title>Release 7.4.21</title>
+
+  <note>
+  <title>Release date</title>
+  <simpara>2008-06-12</simpara>
+  </note>
+
+  <para>
+   This release contains one serious bug fix over 7.4.20.
+   For information about new features in the 7.4 major release, see
+   <xref linkend="release-7-4">.
+  </para>
+
+  <sect2>
+   <title>Migration to Version 7.4.21</title>
+
+   <para>
+    A dump/restore is not required for those running 7.4.X.
+    However, if you are upgrading from a version earlier than 7.4.11,
+    see the release notes for 7.4.11.
+   </para>
+
+  </sect2>
+
+  <sect2>
+   <title>Changes</title>
+
+   <itemizedlist>
+
+    <listitem>
+     <para>
+      Make <function>pg_get_ruledef()</> parenthesize negative constants (Tom)
+     </para>
+
+     <para>
+      Before this fix, a negative constant in a view or rule might be dumped
+      as, say, <literal>-42::integer</>, which is subtly incorrect: it should
+      be <literal>(-42)::integer</> due to operator precedence rules.
+      Usually this would make little difference, but it could interact with
+      another recent patch to cause
+      <productname>PostgreSQL</> to reject what had been a valid
+      <command>SELECT DISTINCT</> view query.  Since this could result in
+      <application>pg_dump</> output failing to reload, it is being treated
+      as a high-priority fix.  The only released versions in which dump
+      output is actually incorrect are 8.3.1 and 8.2.7.
+     </para>
+    </listitem>
+
+   </itemizedlist>
+
+  </sect2>
+ </sect1>
+
+ <sect1 id="release-7-4-20">
+  <title>Release 7.4.20</title>
+
+  <note>
+  <title>Release date</title>
+  <simpara>never released</simpara>
+  </note>
+
+  <para>
+   This release contains a variety of fixes from 7.4.19.
+   For information about new features in the 7.4 major release, see
+   <xref linkend="release-7-4">.
+  </para>
+
+  <sect2>
+   <title>Migration to Version 7.4.20</title>
+
+   <para>
+    A dump/restore is not required for those running 7.4.X.
+    However, if you are upgrading from a version earlier than 7.4.11,
+    see the release notes for 7.4.11.
+   </para>
+
+  </sect2>
+
+  <sect2>
+   <title>Changes</title>
+
+   <itemizedlist>
+
+    <listitem>
+     <para>
+      Fix conversions between ISO-8859-5 and other encodings to handle
+      Cyrillic <quote>Yo</> characters (<literal>e</> and <literal>E</> with
+      two dots) (Sergey Burladyan)
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Fix a few datatype input functions
+      that were allowing unused bytes in their results to contain
+      uninitialized, unpredictable values (Tom)
+     </para>
+
+     <para>
+      This could lead to failures in which two apparently identical literal
+      values were not seen as equal, resulting in the parser complaining
+      about unmatched <literal>ORDER BY</> and <literal>DISTINCT</>
+      expressions.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Fix a corner case in regular-expression substring matching
+      (<literal>substring(<replaceable>string</> from
+      <replaceable>pattern</>)</literal>) (Tom)
+     </para>
+
+     <para>
+      The problem occurs when there is a match to the pattern overall but
+      the user has specified a parenthesized subexpression and that
+      subexpression hasn't got a match.  An example is
+      <literal>substring('foo' from 'foo(bar)?')</>.
+      This should return NULL, since <literal>(bar)</> isn't matched, but
+      it was mistakenly returning the whole-pattern match instead (ie,
+      <literal>foo</>).
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Fix incorrect result from <application>ecpg</>'s
+      <function>PGTYPEStimestamp_sub()</> function (Michael)
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Fix <literal>DatumGetBool</> macro to not fail with <application>gcc</>
+      4.3 (Tom)
+     </para>
+
+     <para>
+      This problem affects <quote>old style</> (V0) C functions that
+      return boolean.  The fix is already in 8.3, but the need to
+      back-patch it was not realized at the time.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Fix longstanding <command>LISTEN</>/<command>NOTIFY</>
+      race condition (Tom)
+     </para>
+
+     <para>
+      In rare cases a session that had just executed a
+      <command>LISTEN</> might not get a notification, even though
+      one would be expected because the concurrent transaction executing
+      <command>NOTIFY</> was observed to commit later.
+     </para>
+
+     <para>
+      A side effect of the fix is that a transaction that has executed
+      a not-yet-committed <command>LISTEN</> command will not see any
+      row in <structname>pg_listener</> for the <command>LISTEN</>,
+      should it choose to look; formerly it would have.  This behavior
+      was never documented one way or the other, but it is possible that
+      some applications depend on the old behavior.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Fix display of constant expressions in <literal>ORDER BY</>
+      and <literal>GROUP BY</> (Tom)
+     </para>
+
+     <para>
+      An explictly casted constant would be shown incorrectly.  This could
+      for example lead to corruption of a view definition during
+      dump and reload.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Fix <application>libpq</> to handle NOTICE messages correctly
+      during COPY OUT (Tom)
+     </para>
+
+     <para>
+      This failure has only been observed to occur when a user-defined
+      datatype's output routine issues a NOTICE, but there is no
+      guarantee it couldn't happen due to other causes.
+     </para>
+    </listitem>
+
+   </itemizedlist>
+
+  </sect2>
+ </sect1>
+
  <sect1 id="release-7-4-19">
   <title>Release 7.4.19</title>
 
@@ -11071,6 +12206,8 @@ typedefs (Michael)</para></listitem>
   <para>
    This release contains a variety of fixes from 7.4.18,
    including fixes for significant security issues.
+   For information about new features in the 7.4 major release, see
+   <xref linkend="release-7-4">.
   </para>
 
   <sect2>
@@ -11222,6 +12359,8 @@ typedefs (Michael)</para></listitem>
 
   <para>
    This release contains fixes from 7.4.17.
+   For information about new features in the 7.4 major release, see
+   <xref linkend="release-7-4">.
   </para>
 
   <sect2>
@@ -11297,6 +12436,8 @@ typedefs (Michael)</para></listitem>
   <para>
    This release contains fixes from 7.4.16,
    including a security fix.
+   For information about new features in the 7.4 major release, see
+   <xref linkend="release-7-4">.
   </para>
 
   <sect2>
@@ -11366,6 +12507,8 @@ typedefs (Michael)</para></listitem>
   <para>
    This release contains a variety of fixes from 7.4.15, including
    a security fix.
+   For information about new features in the 7.4 major release, see
+   <xref linkend="release-7-4">.
   </para>
 
   <sect2>
@@ -11434,6 +12577,8 @@ typedefs (Michael)</para></listitem>
 
   <para>
    This release contains a variety of fixes from 7.4.14.
+   For information about new features in the 7.4 major release, see
+   <xref linkend="release-7-4">.
   </para>
 
   <sect2>
@@ -11521,6 +12666,8 @@ typedefs (Michael)</para></listitem>
 
   <para>
    This release contains a variety of fixes from 7.4.13.
+   For information about new features in the 7.4 major release, see
+   <xref linkend="release-7-4">.
   </para>
 
   <sect2>
@@ -11567,6 +12714,8 @@ ANYARRAY</para></listitem>
   <para>
    This release contains a variety of fixes from 7.4.12,
    including patches for extremely serious security issues.
+   For information about new features in the 7.4 major release, see
+   <xref linkend="release-7-4">.
   </para>
 
   <sect2>
@@ -11671,6 +12820,8 @@ Fuhr)</para></listitem>
 
   <para>
    This release contains a variety of fixes from 7.4.11.
+   For information about new features in the 7.4 major release, see
+   <xref linkend="release-7-4">.
   </para>
 
   <sect2>
@@ -11732,6 +12883,8 @@ and <function>isinf</> during configure (Tom)</para></listitem>
 
   <para>
    This release contains a variety of fixes from 7.4.10.
+   For information about new features in the 7.4 major release, see
+   <xref linkend="release-7-4">.
   </para>
 
   <sect2>
@@ -11797,6 +12950,8 @@ what's actually returned by the query (Joe)</para></listitem>
 
   <para>
    This release contains a variety of fixes from 7.4.9.
+   For information about new features in the 7.4 major release, see
+   <xref linkend="release-7-4">.
   </para>
 
   <sect2>
@@ -11848,6 +13003,8 @@ table has been dropped</para></listitem>
 
   <para>
    This release contains a variety of fixes from 7.4.8.
+   For information about new features in the 7.4 major release, see
+   <xref linkend="release-7-4">.
   </para>
 
   <sect2>
@@ -11916,6 +13073,8 @@ code</para></listitem>
   <para>
    This release contains a variety of fixes from 7.4.7, including several
    security-related issues.
+   For information about new features in the 7.4 major release, see
+   <xref linkend="release-7-4">.
   </para>
 
   <sect2>
@@ -12098,6 +13257,8 @@ holder of the lock released it within a very narrow window.
   <para>
    This release contains a variety of fixes from 7.4.6, including several
    security-related issues.
+   For information about new features in the 7.4 major release, see
+   <xref linkend="release-7-4">.
   </para>
 
   <sect2>
@@ -12155,6 +13316,8 @@ GMT</para></listitem>
 
   <para>
    This release contains a variety of fixes from 7.4.5.
+   For information about new features in the 7.4 major release, see
+   <xref linkend="release-7-4">.
   </para>
 
 
@@ -12225,6 +13388,8 @@ ECPG prepare statement</para></listitem>
 
   <para>
    This release contains one serious bug fix over 7.4.4.
+   For information about new features in the 7.4 major release, see
+   <xref linkend="release-7-4">.
   </para>
 
 
@@ -12261,6 +13426,8 @@ still worth a re-release.  The bug does not exist in pre-7.4 releases.
 
   <para>
    This release contains a variety of fixes from 7.4.3.
+   For information about new features in the 7.4 major release, see
+   <xref linkend="release-7-4">.
   </para>
 
 
@@ -12311,6 +13478,8 @@ aggregate plan</para></listitem>
 
   <para>
    This release contains a variety of fixes from 7.4.2.
+   For information about new features in the 7.4 major release, see
+   <xref linkend="release-7-4">.
   </para>
 
 
@@ -12367,6 +13536,8 @@ names from outer query levels.
 
   <para>
    This release contains a variety of fixes from 7.4.1.
+   For information about new features in the 7.4 major release, see
+   <xref linkend="release-7-4">.
   </para>
 
 
@@ -12508,6 +13679,8 @@ inconveniences associated with the <literal>i/I</> problem.</para></listitem>
 
   <para>
    This release contains a variety of fixes from 7.4.
+   For information about new features in the 7.4 major release, see
+   <xref linkend="release-7-4">.
   </para>
 
 
