@@ -30,6 +30,7 @@
 #include "catalog/pg_database.h"
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_pltemplate.h"
+#include "catalog/pg_security.h"
 #include "catalog/pg_shdepend.h"
 #include "catalog/pg_shdescription.h"
 #include "catalog/pg_tablespace.h"
@@ -257,6 +258,7 @@ IsSharedRelation(Oid relationId)
 		relationId == AuthMemRelationId ||
 		relationId == DatabaseRelationId ||
 		relationId == PLTemplateRelationId ||
+		relationId == SecurityRelationId ||
 		relationId == SharedDescriptionRelationId ||
 		relationId == SharedDependRelationId ||
 		relationId == TableSpaceRelationId)
@@ -269,6 +271,8 @@ IsSharedRelation(Oid relationId)
 		relationId == DatabaseNameIndexId ||
 		relationId == DatabaseOidIndexId ||
 		relationId == PLTemplateNameIndexId ||
+		relationId == SecurityOidIndexId ||
+		relationId == SecuritySeclabelIndexId ||
 		relationId == SharedDescriptionObjIndexId ||
 		relationId == SharedDependDependerIndexId ||
 		relationId == SharedDependReferenceIndexId ||

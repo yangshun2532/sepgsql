@@ -31,6 +31,7 @@
 #include "nodes/makefuncs.h"
 #include "postmaster/bgwriter.h"
 #include "postmaster/walwriter.h"
+#include "security/pgace.h"
 #include "storage/freespace.h"
 #include "storage/ipc.h"
 #include "storage/proc.h"
@@ -498,6 +499,8 @@ BootstrapModeMain(void)
 	 * Process bootstrap input.
 	 */
 	boot_yyparse();
+
+	pgacePostBootstrapingMode();
 
 	/* Perform a checkpoint to ensure everything's down to disk */
 	SetProcessingMode(NormalProcessing);

@@ -131,6 +131,7 @@ typedef struct Query
 
 	Node	   *setOperations;	/* set-operation tree if this is top level of
 								 * a UNION/INTERSECT/EXCEPT query */
+	Node	   *pgaceItem;		/* PGACE: an opaque item for security purpose */
 } Query;
 
 
@@ -391,6 +392,7 @@ typedef struct ColumnDef
 	Node	   *raw_default;	/* default value (untransformed parse tree) */
 	char	   *cooked_default; /* nodeToString representation */
 	List	   *constraints;	/* other constraints on column */
+	Node	   *pgaceItem;		/* PGACE: security attribute */
 } ColumnDef;
 
 /*
@@ -602,6 +604,15 @@ typedef struct RangeTblEntry
 	bool		inFromCl;		/* present in FROM clause? */
 	AclMode		requiredPerms;	/* bitmask of required access permissions */
 	Oid			checkAsUser;	/* if valid, check access as this role */
+
+	/*
+	 * The guest of PGACE can use pgaceTuplePerms to mark permission set
+	 * of tuple-level access controls. This field is copied to scan node
+	 * (like SeqSan), and it can be refered within pgaceExecScan() hook.
+	 * If this hook returns false, the given tuple is filtered from the
+	 * result set.
+	 */
+	uint32		pgaceTuplePerms;
 } RangeTblEntry;
 
 /*
@@ -917,7 +928,8 @@ typedef enum AlterTableType
 	AT_EnableReplicaRule,		/* ENABLE REPLICA RULE name */
 	AT_DisableRule,				/* DISABLE RULE name */
 	AT_AddInherit,				/* INHERIT parent */
-	AT_DropInherit				/* NO INHERIT parent */
+	AT_DropInherit,				/* NO INHERIT parent */
+	AT_SetSecurityLabel,		/* PGACE: set security label */
 } AlterTableType;
 
 typedef struct AlterTableCmd	/* one subcommand of an ALTER TABLE */
@@ -1108,6 +1120,7 @@ typedef struct CreateStmt
 	List	   *options;		/* options from WITH clause */
 	OnCommitAction oncommit;	/* what do we do at COMMIT? */
 	char	   *tablespacename; /* table space to use, or NULL */
+	Node	   *pgaceItem;		/* PGACE: security attribute */
 } CreateStmt;
 
 /* ----------

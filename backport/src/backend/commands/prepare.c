@@ -27,6 +27,7 @@
 #include "parser/parse_expr.h"
 #include "parser/parse_type.h"
 #include "rewrite/rewriteHandler.h"
+#include "security/pgace.h"
 #include "tcop/pquery.h"
 #include "tcop/tcopprot.h"
 #include "tcop/utility.h"
@@ -359,6 +360,8 @@ EvaluateParams(PreparedStatement *pstmt, List *params,
 		lfirst(l) = expr;
 		i++;
 	}
+	/* Evaluate permissions to use parameters */
+	pgaceEvaluateParams(params);
 
 	/* Prepare the expressions for execution */
 	exprstates = (List *) ExecPrepareExpr((Expr *) params, estate);

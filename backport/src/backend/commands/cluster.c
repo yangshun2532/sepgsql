@@ -666,7 +666,8 @@ make_new_heap(Oid OIDOldHeap, const char *NewName, Oid NewTableSpace)
 										  0,
 										  ONCOMMIT_NOOP,
 										  reloptions,
-										  allowSystemTableMods);
+										  allowSystemTableMods,
+										  NIL);
 
 	ReleaseSysCache(tuple);
 
@@ -856,6 +857,10 @@ copy_heap_data(Oid OIDNewHeap, Oid OIDOldHeap, Oid OIDOldIndex)
 		/* Preserve OID, if any */
 		if (NewHeap->rd_rel->relhasoids)
 			HeapTupleSetOid(copiedTuple, HeapTupleGetOid(tuple));
+
+		/* Preserve SID, if any */
+		if (HeapTupleHasSecurity(tuple))
+			HeapTupleSetSecurity(copiedTuple, HeapTupleGetSecurity(tuple));
 
 		/* The heap rewrite module does the rest */
 		rewrite_heap_tuple(rwstate, tuple, copiedTuple);

@@ -76,6 +76,8 @@
 #define TSTEMPLATEOID		45
 #define TYPENAMENSP			46
 #define TYPEOID				47
+#define SECURITYOID			48
+#define SECURITYLABEL		49
 
 extern void InitCatalogCache(void);
 extern void InitCatalogCachePhase2(void);
@@ -83,6 +85,8 @@ extern void InitCatalogCachePhase2(void);
 extern HeapTuple SearchSysCache(int cacheId,
 			   Datum key1, Datum key2, Datum key3, Datum key4);
 extern void ReleaseSysCache(HeapTuple tuple);
+
+extern void InsertSysCache(Oid relid, HeapTuple tuple);
 
 /* convenience routines */
 extern HeapTuple SearchSysCacheCopy(int cacheId,

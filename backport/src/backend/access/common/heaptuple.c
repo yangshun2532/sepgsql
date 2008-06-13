@@ -67,6 +67,7 @@
 #include "access/heapam.h"
 #include "access/tuptoaster.h"
 #include "executor/tuptable.h"
+#include "security/pgace.h"
 
 
 /* Does att's datatype allow packing into the 1-byte-header varlena format? */
@@ -473,6 +474,9 @@ heap_attisnull(HeapTuple tup, int attnum)
 		case MinCommandIdAttributeNumber:
 		case MaxTransactionIdAttributeNumber:
 		case MaxCommandIdAttributeNumber:
+#ifdef SECURITY_SYSATTR_NAME
+		case SecurityAttributeNumber:
+#endif
 			/* these are never null */
 			break;
 
@@ -785,6 +789,16 @@ heap_getsysattr(HeapTuple tup, int attnum, TupleDesc tupleDesc, bool *isnull)
 		case TableOidAttributeNumber:
 			result = ObjectIdGetDatum(tup->t_tableOid);
 			break;
+#ifdef SECURITY_SYSATTR_NAME
+		case SecurityAttributeNumber: {
+			Oid security_id = HeapTupleGetSecurity(tup);
+			char *sec_label = pgaceSidToSecurityLabel(security_id);
+
+			result = CStringGetTextDatum(sec_label);
+			pfree(sec_label);
+			break;
+		}
+#endif
 		default:
 			elog(ERROR, "invalid attnum: %d", attnum);
 			result = 0;			/* keep compiler quiet */
@@ -909,6 +923,9 @@ heap_form_tuple(TupleDesc tupleDescriptor,
 	if (tupleDescriptor->tdhasoid)
 		len += sizeof(Oid);
 
+	if (pgaceSecurityAttributeNecessary())
+		len += sizeof(Oid);
+
 	hoff = len = MAXALIGN(len); /* align user data safely */
 
 	data_len = heap_compute_data_size(tupleDescriptor, values, isnull);
@@ -939,6 +956,9 @@ heap_form_tuple(TupleDesc tupleDescriptor,
 
 	if (tupleDescriptor->tdhasoid)		/* else leave infomask = 0 */
 		td->t_infomask = HEAP_HASOID;
+
+	if (pgaceSecurityAttributeNecessary())
+		td->t_infomask |= HEAP_HASSECURITY;
 
 	heap_fill_tuple(tupleDescriptor,
 					values,
@@ -1020,6 +1040,9 @@ heap_formtuple(TupleDesc tupleDescriptor,
 	if (tupleDescriptor->tdhasoid)
 		len += sizeof(Oid);
 
+	if (pgaceSecurityAttributeNecessary())
+		len += sizeof(Oid);
+
 	hoff = len = MAXALIGN(len); /* align user data safely */
 
 	data_len = ComputeDataSize(tupleDescriptor, values, nulls);
@@ -1050,6 +1073,9 @@ heap_formtuple(TupleDesc tupleDescriptor,
 
 	if (tupleDescriptor->tdhasoid)		/* else leave infomask = 0 */
 		td->t_infomask = HEAP_HASOID;
+
+	if (pgaceSecurityAttributeNecessary())
+		td->t_infomask |= HEAP_HASSECURITY;
 
 	DataFill(tupleDescriptor,
 			 values,
@@ -1129,6 +1155,8 @@ heap_modify_tuple(HeapTuple tuple,
 	newTuple->t_tableOid = tuple->t_tableOid;
 	if (tupleDesc->tdhasoid)
 		HeapTupleSetOid(newTuple, HeapTupleGetOid(tuple));
+	if (HeapTupleHasSecurity(newTuple))
+		HeapTupleSetSecurity(newTuple, HeapTupleGetSecurity(tuple));
 
 	return newTuple;
 }
@@ -1201,6 +1229,8 @@ heap_modifytuple(HeapTuple tuple,
 	newTuple->t_tableOid = tuple->t_tableOid;
 	if (tupleDesc->tdhasoid)
 		HeapTupleSetOid(newTuple, HeapTupleGetOid(tuple));
+	if (HeapTupleHasSecurity(newTuple))
+		HeapTupleSetSecurity(newTuple, HeapTupleGetSecurity(tuple));
 
 	return newTuple;
 }
@@ -1847,6 +1877,9 @@ heap_form_minimal_tuple(TupleDesc tupleDescriptor,
 	if (tupleDescriptor->tdhasoid)
 		len += sizeof(Oid);
 
+	if (pgaceSecurityAttributeNecessary())
+		len += sizeof(Oid);
+
 	hoff = len = MAXALIGN(len); /* align user data safely */
 
 	data_len = heap_compute_data_size(tupleDescriptor, values, isnull);
@@ -1867,6 +1900,9 @@ heap_form_minimal_tuple(TupleDesc tupleDescriptor,
 
 	if (tupleDescriptor->tdhasoid)		/* else leave infomask = 0 */
 		tuple->t_infomask = HEAP_HASOID;
+
+	if (pgaceSecurityAttributeNecessary())
+		tuple->t_infomask |= HEAP_HASSECURITY;
 
 	heap_fill_tuple(tupleDescriptor,
 					values,
@@ -1979,6 +2015,10 @@ heap_addheader(int natts,		/* max domain index */
 	hoff = offsetof(HeapTupleHeaderData, t_bits);
 	if (withoid)
 		hoff += sizeof(Oid);
+
+	if (pgaceSecurityAttributeNecessary())
+		hoff += sizeof(Oid);
+
 	hoff = MAXALIGN(hoff);
 	len = hoff + structlen;
 
@@ -1996,6 +2036,9 @@ heap_addheader(int natts,		/* max domain index */
 
 	if (withoid)				/* else leave infomask = 0 */
 		td->t_infomask = HEAP_HASOID;
+
+	if (pgaceSecurityAttributeNecessary())
+		td->t_infomask |= HEAP_HASSECURITY;
 
 	memcpy((char *) td + hoff, structure, structlen);
 

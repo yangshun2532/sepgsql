@@ -45,6 +45,7 @@
 #include "libpq/be-fsstubs.h"
 #include "libpq/libpq-fs.h"
 #include "miscadmin.h"
+#include "security/pgace.h"
 #include "storage/fd.h"
 #include "storage/large_object.h"
 #include "utils/memutils.h"
@@ -154,6 +155,8 @@ lo_read(int fd, char *buf, int len)
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("invalid large-object descriptor: %d", fd)));
 
+	pgaceLargeObjectRead(cookies[fd], len);
+
 	status = inv_read(cookies[fd], buf, len);
 
 	return status;
@@ -174,6 +177,8 @@ lo_write(int fd, const char *buf, int len)
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 			  errmsg("large object descriptor %d was not opened for writing",
 					 fd)));
+
+	pgaceLargeObjectWrite(cookies[fd], len);
 
 	status = inv_write(cookies[fd], buf, len);
 
@@ -359,6 +364,11 @@ lo_import(PG_FUNCTION_ARGS)
 	lobjOid = inv_create(InvalidOid);
 
 	/*
+	 * check permission to import a file into this object
+	 */
+	pgaceLargeObjectImport(lobjOid, FileRawDescriptor(fd), fnamebuf);
+
+	/*
 	 * read in from the filesystem and write to the inversion object
 	 */
 	lobj = inv_open(lobjOid, INV_WRITE, fscxt);
@@ -433,6 +443,10 @@ lo_export(PG_FUNCTION_ARGS)
 				(errcode_for_file_access(),
 				 errmsg("could not create server file \"%s\": %m",
 						fnamebuf)));
+	/*
+	 * check permission to export this object into a file
+	 */
+	pgaceLargeObjectExport(lobjId, FileRawDescriptor(fd), fnamebuf);
 
 	/*
 	 * read in from the inversion file and write to the filesystem
@@ -467,6 +481,8 @@ lo_truncate(PG_FUNCTION_ARGS)
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("invalid large-object descriptor: %d", fd)));
+
+	pgaceLargeObjectTruncate(cookies[fd], len);
 
 	inv_truncate(cookies[fd], len);
 

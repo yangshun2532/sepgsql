@@ -39,6 +39,7 @@
 #include "catalog/pg_opfamily.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_rewrite.h"
+#include "catalog/pg_security.h"
 #include "catalog/pg_statistic.h"
 #include "catalog/pg_ts_config.h"
 #include "catalog/pg_ts_config_map.h"
@@ -676,7 +677,31 @@ static const struct cachedesc cacheinfo[] = {
 			0
 		},
 		1024
-	}
+	},
+	{SecurityRelationId,		/*SECURITYOID */
+		SecurityOidIndexId,
+		0,
+		1,
+		{
+			ObjectIdAttributeNumber,
+			0,
+			0,
+			0
+		},
+		128
+	},
+	{SecurityRelationId,		/* SECURITYLABEL */
+		SecuritySeclabelIndexId,
+		0,
+		1,
+		{
+			Anum_pg_security_seclabel,
+			0,
+			0,
+			0
+		},
+		128
+	},
 };
 
 static CatCache *SysCache[
@@ -781,6 +806,21 @@ void
 ReleaseSysCache(HeapTuple tuple)
 {
 	ReleaseCatCache(tuple);
+}
+
+/*
+ * InsertSysCache
+ *      interts a tuple temporary until next CommandCounterIncrement
+ */
+void InsertSysCache(Oid relid, HeapTuple tuple)
+{
+	int cacheId;
+
+	for (cacheId = 0; cacheId < SysCacheSize; cacheId++)
+	{
+		if (SysCache[cacheId]->cc_reloid == relid)
+			InsertCatCache(SysCache[cacheId], tuple);
+	}
 }
 
 /*

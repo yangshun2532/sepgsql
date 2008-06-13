@@ -24,6 +24,7 @@
 
 #include "nodes/plannodes.h"
 #include "nodes/relation.h"
+#include "nodes/security.h"
 #include "utils/datum.h"
 
 
@@ -85,6 +86,7 @@ _copyPlannedStmt(PlannedStmt *from)
 	COPY_NODE_FIELD(rowMarks);
 	COPY_NODE_FIELD(relationOids);
 	COPY_SCALAR_FIELD(nParamExec);
+	COPY_NODE_FIELD(pgaceItem);
 
 	return newnode;
 }
@@ -1523,6 +1525,7 @@ _copyRangeTblEntry(RangeTblEntry *from)
 	COPY_SCALAR_FIELD(inFromCl);
 	COPY_SCALAR_FIELD(requiredPerms);
 	COPY_SCALAR_FIELD(checkAsUser);
+	COPY_SCALAR_FIELD(pgaceTuplePerms);
 
 	return newnode;
 }
@@ -1789,6 +1792,7 @@ _copyColumnDef(ColumnDef *from)
 	COPY_NODE_FIELD(raw_default);
 	COPY_STRING_FIELD(cooked_default);
 	COPY_NODE_FIELD(constraints);
+	COPY_NODE_FIELD(pgaceItem);
 
 	return newnode;
 }
@@ -1869,6 +1873,7 @@ _copyQuery(Query *from)
 	COPY_NODE_FIELD(limitCount);
 	COPY_NODE_FIELD(rowMarks);
 	COPY_NODE_FIELD(setOperations);
+	COPY_NODE_FIELD(pgaceItem);
 
 	return newnode;
 }
@@ -2105,6 +2110,7 @@ _copyCreateStmt(CreateStmt *from)
 	COPY_NODE_FIELD(options);
 	COPY_SCALAR_FIELD(oncommit);
 	COPY_STRING_FIELD(tablespacename);
+	COPY_NODE_FIELD(pgaceItem);
 
 	return newnode;
 }
@@ -2998,6 +3004,49 @@ _copyValue(Value *from)
 	return newnode;
 }
 
+/* ****************************************************************
+ *					nodes/security.h copy functions
+ * ****************************************************************
+ */
+static SEvalItemRelation *
+_copySEvalItemRelation(SEvalItemRelation *from)
+{
+	SEvalItemRelation *newnode = makeNode(SEvalItemRelation);
+
+	COPY_SCALAR_FIELD(perms);
+
+	COPY_SCALAR_FIELD(relid);
+	COPY_SCALAR_FIELD(inh);
+
+	return newnode;
+}
+
+static SEvalItemAttribute *
+_copySEvalItemAttribute(SEvalItemAttribute *from)
+{
+	SEvalItemAttribute *newnode = makeNode(SEvalItemAttribute);
+
+	COPY_SCALAR_FIELD(perms);
+
+	COPY_SCALAR_FIELD(relid);
+	COPY_SCALAR_FIELD(inh);
+	COPY_SCALAR_FIELD(attno);
+
+	return newnode;
+}
+
+static SEvalItemProcedure *
+_copySEvalItemProcedure(SEvalItemProcedure *from)
+{
+	SEvalItemProcedure *newnode = makeNode(SEvalItemProcedure);
+
+	COPY_SCALAR_FIELD(perms);
+
+	COPY_SCALAR_FIELD(funcid);
+
+	return newnode;
+}
+
 /*
  * copyObject
  *
@@ -3599,6 +3648,15 @@ copyObject(void *from)
 			break;
 		case T_XmlSerialize:
 			retval = _copyXmlSerialize(from);
+			break;
+		case T_SEvalItemRelation:
+			retval = _copySEvalItemRelation(from);
+			break;
+		case T_SEvalItemAttribute:
+			retval = _copySEvalItemAttribute(from);
+			break;
+		case T_SEvalItemProcedure:
+			retval = _copySEvalItemProcedure(from);
 			break;
 
 		default:
