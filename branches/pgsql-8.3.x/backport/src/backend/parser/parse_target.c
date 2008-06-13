@@ -14,6 +14,7 @@
  */
 #include "postgres.h"
 
+#include "catalog/heap.h"
 #include "catalog/pg_type.h"
 #include "commands/dbcommands.h"
 #include "funcapi.h"
@@ -26,6 +27,7 @@
 #include "parser/parse_relation.h"
 #include "parser/parse_target.h"
 #include "parser/parse_type.h"
+#include "security/pgace.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
 #include "utils/typcache.h"
@@ -335,14 +337,28 @@ transformAssignedExpr(ParseState *pstate,
 	Relation	rd = pstate->p_target_relation;
 
 	Assert(rd != NULL);
-	if (attrno <= 0)
+	if (attrno > 0)
+	{
+		attrtype = attnumTypeId(rd, attrno);
+		attrtypmod = rd->rd_att->attrs[attrno - 1]->atttypmod;
+	}
+	else if (SystemAttributeIsWritable(attrno))
+	{
+		Form_pg_attribute attr;
+
+		attr = SystemAttributeDefinition(attrno, RelationGetForm(rd)->relhasoids);
+		attrtype = attr->atttypid;
+		attrtypmod = attr->atttypmod;
+	}
+	else
+	{
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot assign to system column \"%s\"",
 						colname),
 				 parser_errposition(pstate, location)));
-	attrtype = attnumTypeId(rd, attrno);
-	attrtypmod = rd->rd_att->attrs[attrno - 1]->atttypmod;
+		return NULL;	/* compiler kindness */
+	}
 
 	/*
 	 * If the expression is a DEFAULT placeholder, insert the attribute's
@@ -483,6 +499,9 @@ updateTargetListEntry(ParseState *pstate,
 	 */
 	tle->resno = (AttrNumber) attrno;
 	tle->resname = colname;
+
+	if (SystemAttributeIsWritable(attrno))
+		tle->resjunk = true;
 }
 
 
@@ -749,6 +768,7 @@ checkInsertTargets(ParseState *pstate, List *cols, List **attrnos)
 		Bitmapset  *wholecols = NULL;
 		Bitmapset  *partialcols = NULL;
 		ListCell   *tl;
+		uint		system_attrs = 0;
 
 		foreach(tl, cols)
 		{
@@ -757,14 +777,35 @@ checkInsertTargets(ParseState *pstate, List *cols, List **attrnos)
 			int			attrno;
 
 			/* Lookup column name, ereport on failure */
-			attrno = attnameAttNum(pstate->p_target_relation, name, false);
+			attrno = attnameAttNum(pstate->p_target_relation, name, true);
 			if (attrno == InvalidAttrNumber)
+			{
 				ereport(ERROR,
 						(errcode(ERRCODE_UNDEFINED_COLUMN),
 					errmsg("column \"%s\" of relation \"%s\" does not exist",
 						   name,
 						 RelationGetRelationName(pstate->p_target_relation)),
 						 parser_errposition(pstate, col->location)));
+			}
+			else if (attrno < 0)
+			{
+				if (SystemAttributeIsWritable(attrno))
+				{
+					if (system_attrs & (1<<(-attrno)))
+						ereport(ERROR,
+								(errcode(ERRCODE_DUPLICATE_COLUMN),
+								 errmsg("column \"%s\" specified more than once", name),
+								 parser_errposition(pstate, col->location)));
+					system_attrs |= (1<<(-attrno));
+					*attrnos = lappend_int(*attrnos, attrno);
+					continue;
+				}
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_COLUMN_REFERENCE),
+						 errmsg("column \"%s\" of relation \"%s\" is system column",
+								name, RelationGetRelationName(pstate->p_target_relation)),
+						                         parser_errposition(pstate, col->location)));
+			}
 
 			/*
 			 * Check for duplicates, but only of whole columns --- we allow

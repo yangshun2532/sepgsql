@@ -24,6 +24,7 @@
 
 #include "nodes/parsenodes.h"
 #include "nodes/readfuncs.h"
+#include "nodes/security.h"
 
 
 /*
@@ -154,6 +155,7 @@ _readQuery(void)
 	READ_NODE_FIELD(limitCount);
 	READ_NODE_FIELD(rowMarks);
 	READ_NODE_FIELD(setOperations);
+	READ_NODE_FIELD(pgaceItem);
 
 	READ_DONE();
 }
@@ -1003,10 +1005,52 @@ _readRangeTblEntry(void)
 	READ_BOOL_FIELD(inFromCl);
 	READ_UINT_FIELD(requiredPerms);
 	READ_OID_FIELD(checkAsUser);
+	READ_UINT_FIELD(pgaceTuplePerms);
 
 	READ_DONE();
 }
 
+/*
+ * Stuff from nodes/security.h
+ */
+static SEvalItemRelation *
+_readSEvalItemRelation(void)
+{
+	READ_LOCALS(SEvalItemRelation);
+
+	READ_UINT_FIELD(perms);
+
+	READ_OID_FIELD(relid);
+	READ_BOOL_FIELD(inh);
+
+	READ_DONE();
+}
+
+static SEvalItemAttribute *
+_readSEvalItemAttribute(void)
+{
+	READ_LOCALS(SEvalItemAttribute);
+
+	READ_UINT_FIELD(perms);
+
+	READ_OID_FIELD(relid);
+	READ_BOOL_FIELD(inh);
+	READ_INT_FIELD(attno);
+
+	READ_DONE();
+}
+
+static SEvalItemProcedure *
+_readSEvalItemProcedure(void)
+{
+	READ_LOCALS(SEvalItemProcedure);
+
+	READ_UINT_FIELD(perms);
+
+	READ_OID_FIELD(funcid);
+
+	READ_DONE();
+}
 
 /*
  * parseNodeString
@@ -1124,6 +1168,12 @@ parseNodeString(void)
 		return_value = _readNotifyStmt();
 	else if (MATCH("DECLARECURSOR", 13))
 		return_value = _readDeclareCursorStmt();
+	else if (MATCH("SEVALITEMRELATION", 17))
+		return_value = _readSEvalItemRelation();
+	else if (MATCH("SEVALITEMATTRIBUTE", 18))
+		return_value = _readSEvalItemAttribute();
+	else if (MATCH("SEVALITEMPROCEDURE", 18))
+		return_value = _readSEvalItemProcedure();
 	else
 	{
 		elog(ERROR, "badly formatted node string \"%.32s\"...", token);

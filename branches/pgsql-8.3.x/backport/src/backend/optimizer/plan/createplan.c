@@ -287,6 +287,12 @@ create_scan_plan(PlannerInfo *root, Path *best_path)
 	}
 
 	/*
+	 * The guest of PGACE can refer plan->pgaceTuplePerms to apply
+	 * tuple level access control in the pgaceExecScan() hook.
+	 */
+	((Scan *)plan)->pgaceTuplePerms = rel->pgaceTuplePerms;
+
+	/*
 	 * If there are any pseudoconstant clauses attached to this node, insert a
 	 * gating Result node that evaluates the pseudoconstants as one-time
 	 * quals.

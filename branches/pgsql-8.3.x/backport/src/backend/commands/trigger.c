@@ -31,6 +31,7 @@
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
 #include "parser/parse_func.h"
+#include "security/pgace.h"
 #include "tcop/utility.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
@@ -1573,6 +1574,12 @@ ExecCallTriggerFunc(TriggerData *trigdata,
 	 * Call the function, passing no arguments but setting a context.
 	 */
 	InitFunctionCallInfoData(fcinfo, finfo, 0, (Node *) trigdata, NULL);
+
+	if (!pgaceCallFunctionTrigger(finfo, trigdata))
+	{
+		MemoryContextSwitchTo(oldContext);
+		return (HeapTuple) DatumGetPointer(NULL);
+	}
 
 	result = FunctionCallInvoke(&fcinfo);
 

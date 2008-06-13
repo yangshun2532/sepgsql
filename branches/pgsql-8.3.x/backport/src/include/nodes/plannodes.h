@@ -73,6 +73,8 @@ typedef struct PlannedStmt
 	List	   *relationOids;	/* OIDs of relations the plan depends on */
 
 	int			nParamExec;		/* number of PARAM_EXEC Params used */
+
+	Node	   *pgaceItem;		/* PGACE: an opaque item for security purpose */
 } PlannedStmt;
 
 /* macro for fetching the Plan associated with a SubPlan node */
@@ -216,6 +218,14 @@ typedef struct Scan
 {
 	Plan		plan;
 	Index		scanrelid;		/* relid is index into the range table */
+
+	/*
+	 * pgaceTuplePerms is used to show permission set to be applied to
+	 * tuple-leve access controls by security module.
+	 * It is copied from related RangeTblEntry's one when Scan structure
+	 * is created.
+	 */
+	uint32		pgaceTuplePerms;
 } Scan;
 
 /* ----------------

@@ -366,6 +366,8 @@ typedef struct RelOptInfo
 	 * list just to avoid recomputing the best inner indexscan repeatedly for
 	 * similar outer relations.  See comments for InnerIndexscanInfo.
 	 */
+
+	uint32		pgaceTuplePerms;		/* copied from RangeTblEntry */
 } RelOptInfo;
 
 /*

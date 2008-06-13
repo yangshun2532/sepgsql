@@ -35,6 +35,7 @@
 #include "access/tuptoaster.h"
 #include "access/xact.h"
 #include "catalog/catalog.h"
+#include "security/pgace.h"
 #include "utils/fmgroids.h"
 #include "utils/pg_lzcompress.h"
 #include "utils/typcache.h"
@@ -589,6 +590,8 @@ toast_insert_or_update(Relation rel, HeapTuple newtup, HeapTuple oldtup,
 		hoff += BITMAPLEN(numAttrs);
 	if (newtup->t_data->t_infomask & HEAP_HASOID)
 		hoff += sizeof(Oid);
+	if (pgaceSecurityAttributeNecessary())
+		hoff += sizeof(Oid);
 	hoff = MAXALIGN(hoff);
 	Assert(hoff == newtup->t_data->t_hoff);
 	/* now convert to a limit on the tuple data size */
@@ -838,6 +841,8 @@ toast_insert_or_update(Relation rel, HeapTuple newtup, HeapTuple oldtup,
 			new_len += BITMAPLEN(numAttrs);
 		if (olddata->t_infomask & HEAP_HASOID)
 			new_len += sizeof(Oid);
+		if (pgaceSecurityAttributeNecessary())
+			new_len += sizeof(Oid);
 		new_len = MAXALIGN(new_len);
 		Assert(new_len == olddata->t_hoff);
 		new_data_len = heap_compute_data_size(tupleDesc,
@@ -988,6 +993,8 @@ toast_flatten_tuple_attribute(Datum value,
 	if (has_nulls)
 		new_len += BITMAPLEN(numAttrs);
 	if (olddata->t_infomask & HEAP_HASOID)
+		new_len += sizeof(Oid);
+	if (pgaceSecurityAttributeNecessary())
 		new_len += sizeof(Oid);
 	new_len = MAXALIGN(new_len);
 	Assert(new_len == olddata->t_hoff);
@@ -1175,6 +1182,8 @@ toast_save_datum(Relation rel, Datum value,
 		if (!HeapTupleIsValid(toasttup))
 			elog(ERROR, "failed to build TOAST tuple");
 
+		if (!pgaceHeapTupleInsert(toastrel, toasttup, true, false))
+			elog(ERROR, "failed to insert TOAST tuple due to security reason");
 		heap_insert(toastrel, toasttup, mycid, use_wal, use_fsm);
 
 		/*

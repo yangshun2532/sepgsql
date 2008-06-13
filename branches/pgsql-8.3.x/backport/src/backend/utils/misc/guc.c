@@ -54,6 +54,7 @@
 #include "postmaster/postmaster.h"
 #include "postmaster/syslogger.h"
 #include "postmaster/walwriter.h"
+#include "security/pgace.h"
 #include "storage/fd.h"
 #include "storage/freespace.h"
 #include "tcop/tcopprot.h"
@@ -268,11 +269,12 @@ static int	max_index_keys;
 static int	max_identifier_length;
 static int	block_size;
 static bool integer_datetimes;
+static char *security_sysattr_name;
 
 /* should be static, but commands/variable.c needs to get at these */
 char	   *role_string;
 char	   *session_authorization_string;
-
+char	   *sepostgresql_mode;
 
 /*
  * Displayable names for context types (enum GucContext)
@@ -2460,6 +2462,29 @@ static struct config_string ConfigureNamesString[] =
 	},
 #endif   /* USE_SSL */
 
+#ifdef SECURITY_SYSATTR_NAME
+	{
+		{"security_sysattr_name", PGC_INTERNAL, PRESET_OPTIONS,
+			gettext_noop("Shows the name of security attribute system column"),
+			NULL,
+			GUC_REPORT | GUC_NOT_IN_SAMPLE | GUC_DISALLOW_IN_FILE
+		},
+		&security_sysattr_name,
+		SECURITY_SYSATTR_NAME, NULL, NULL,
+	},
+#endif
+#ifdef HAVE_SELINUX
+	{
+		{"sepostgresql", PGC_POSTMASTER, PRESET_OPTIONS,
+			gettext_noop("SE-PostgreSQL working mode"),
+			gettext_noop("Valid values are DEFAULT, PERMISSIVE, ENFORCING, DISABLED"),
+			0,
+		},
+		 &sepostgresql_mode,
+		 "default", NULL, NULL,
+	},
+#endif
+
 	/* End-of-list marker */
 	{
 		{NULL, 0, 0, NULL, NULL}, NULL, NULL, NULL, NULL
@@ -3299,6 +3324,8 @@ void
 ResetAllOptions(void)
 {
 	int			i;
+
+	pgaceSetDatabaseParam("all", NULL);
 
 	for (i = 0; i < num_guc_variables; i++)
 	{
@@ -4972,6 +4999,7 @@ ExecSetVariableStmt(VariableSetStmt *stmt)
 	{
 		case VAR_SET_VALUE:
 		case VAR_SET_CURRENT:
+			pgaceSetDatabaseParam(stmt->name, ExtractSetVariableArgs(stmt));
 			set_config_option(stmt->name,
 							  ExtractSetVariableArgs(stmt),
 							  (superuser() ? PGC_SUSET : PGC_USERSET),
@@ -5029,6 +5057,7 @@ ExecSetVariableStmt(VariableSetStmt *stmt)
 			break;
 		case VAR_SET_DEFAULT:
 		case VAR_RESET:
+			pgaceSetDatabaseParam(stmt->name, NULL);
 			set_config_option(stmt->name,
 							  NULL,
 							  (superuser() ? PGC_SUSET : PGC_USERSET),
@@ -5357,6 +5386,9 @@ EmitWarningsOnPlaceholders(const char *className)
 void
 GetPGVariable(const char *name, DestReceiver *dest)
 {
+	/* PGACE: check get param permission */
+	pgaceGetDatabaseParam(name);
+
 	if (guc_name_compare(name, "all") == 0)
 		ShowAllGUCConfig(dest);
 	else

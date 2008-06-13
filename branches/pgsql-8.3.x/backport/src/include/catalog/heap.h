@@ -52,7 +52,8 @@ extern Oid heap_create_with_catalog(const char *relname,
 						 int oidinhcount,
 						 OnCommitAction oncommit,
 						 Datum reloptions,
-						 bool allow_system_table_mods);
+						 bool allow_system_table_mods,
+						 List *pgace_attr_list);
 
 extern void heap_drop_with_catalog(Oid relid);
 
@@ -65,7 +66,8 @@ extern List *heap_truncate_find_FKs(List *relationIds);
 extern void InsertPgClassTuple(Relation pg_class_desc,
 				   Relation new_rel_desc,
 				   Oid new_rel_oid,
-				   Datum reloptions);
+				   Datum reloptions,
+				   List *pgace_attr_list);
 
 extern List *AddRelationRawConstraints(Relation rel,
 						  List *rawColDefaults,
@@ -95,6 +97,8 @@ extern Form_pg_attribute SystemAttributeDefinition(AttrNumber attno,
 
 extern Form_pg_attribute SystemAttributeByName(const char *attname,
 					  bool relhasoids);
+
+extern bool SystemAttributeIsWritable(AttrNumber attno);
 
 extern void CheckAttributeNamesTypes(TupleDesc tupdesc, char relkind);
 

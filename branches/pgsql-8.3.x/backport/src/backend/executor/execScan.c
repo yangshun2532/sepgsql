@@ -20,6 +20,7 @@
 
 #include "executor/executor.h"
 #include "miscadmin.h"
+#include "security/pgace.h"
 #include "utils/memutils.h"
 
 
@@ -48,7 +49,7 @@ TupleTableSlot *
 ExecScan(ScanState *node,
 		 ExecScanAccessMtd accessMtd)	/* function returning a tuple */
 {
-	ExprContext *econtext;
+	ExprContext *econtext = node->ps.ps_ExprContext;
 	List	   *qual;
 	ProjectionInfo *projInfo;
 	ExprDoneCond isDone;
@@ -65,7 +66,22 @@ ExecScan(ScanState *node,
 	 * all the overhead and return the raw scan tuple.
 	 */
 	if (!qual && !projInfo)
-		return (*accessMtd) (node);
+	{
+		while (true)
+		{
+			resultSlot = (*accessMtd) (node);
+
+			if (TupIsNull(resultSlot))
+				break;
+
+			if (pgaceExecScan((Scan *)node->ps.plan,
+							  node->ss_currentRelation, resultSlot))
+				break;
+
+			ResetExprContext(econtext);
+		}
+		return resultSlot;
+	}
 
 	/*
 	 * Check to see if we're still projecting out tuples from a previous scan
@@ -87,7 +103,6 @@ ExecScan(ScanState *node,
 	 * storage allocated in the previous tuple cycle.  Note this can't happen
 	 * until we're done projecting out tuples from a scan tuple.
 	 */
-	econtext = node->ps.ps_ExprContext;
 	ResetExprContext(econtext);
 
 	/*
@@ -127,8 +142,11 @@ ExecScan(ScanState *node,
 		 * check for non-nil qual here to avoid a function call to ExecQual()
 		 * when the qual is nil ... saves only a few cycles, but they add up
 		 * ...
+		 * And security check for tuple level access controls at the last.
 		 */
-		if (!qual || ExecQual(qual, econtext, false))
+		if ((!qual || ExecQual(qual, econtext, false))
+			&& pgaceExecScan((Scan *)node->ps.plan,
+							 node->ss_currentRelation, slot))
 		{
 			/*
 			 * Found a satisfactory scan tuple.

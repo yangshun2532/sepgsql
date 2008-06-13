@@ -130,6 +130,16 @@ for dir in $INCLUDE_DIRS; do
     fi
 done
 
+# Get SECURITY_SYSATTR_NAME from pg_config.h
+SECURITY_SYSATTR_NAME_FILTERING="SECURITY_SYSATTR_NAME"
+for dir in $INCLUDE_DIRS; do
+    if [ -f "$dir/pg_config.h" ]; then
+        SECURITY_SYSATTR_NAME=`grep '#define[  ]*SECURITY_SYSATTR_NAME' $dir/pg_config.h | $AWK '{ print $3 }' | sed 's/\"//g'`
+	test -n "$SECURITY_SYSATTR_NAME" && SECURITY_SYSATTR_NAME_FILTERING="^__invalid__pattern__$"
+	break
+    fi
+done
+
 touch ${OUTPUT_PREFIX}.description.$$
 touch ${OUTPUT_PREFIX}.shdescription.$$
 
@@ -144,6 +154,7 @@ touch ${OUTPUT_PREFIX}.shdescription.$$
 # ----------------
 #
 cat $INFILES | \
+grep -v $SECURITY_SYSATTR_NAME_FILTERING | \
 sed -e 's;/\*.*\*/;;g' \
     -e 's;/\*;\
 /*\
@@ -165,6 +176,7 @@ sed -e "s/;[ 	]*$//g" \
     -e "s/PGUID/$BOOTSTRAP_SUPERUSERID/g" \
     -e "s/NAMEDATALEN/$NAMEDATALEN/g" \
     -e "s/PGNSP/$PG_CATALOG_NAMESPACE/g" \
+    -e "s/SECURITY_SYSATTR_NAME/$SECURITY_SYSATTR_NAME/g" \
 | $AWK '
 # ----------------
 #	now use awk to process remaining .h file..

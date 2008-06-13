@@ -38,6 +38,7 @@
 #include "parser/parse_expr.h"
 #include "parser/parse_oper.h"
 #include "parser/parsetree.h"
+#include "security/pgace.h"
 #include "utils/lsyscache.h"
 #include "utils/syscache.h"
 
@@ -97,7 +98,7 @@ planner(Query *parse, int cursorOptions, ParamListInfo boundParams)
 {
 	PlannedStmt *result;
 
-	if (planner_hook)
+	if (planner_hook && pgaceIsAllowPlannerHook())
 		result = (*planner_hook) (parse, cursorOptions, boundParams);
 	else
 		result = standard_planner(parse, cursorOptions, boundParams);
@@ -197,6 +198,7 @@ standard_planner(Query *parse, int cursorOptions, ParamListInfo boundParams)
 	result->rowMarks = parse->rowMarks;
 	result->relationOids = glob->relationOids;
 	result->nParamExec = list_length(glob->paramlist);
+	result->pgaceItem = parse->pgaceItem;
 
 	return result;
 }

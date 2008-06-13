@@ -1313,6 +1313,38 @@ ReleaseCatCache(HeapTuple tuple)
 		CatCacheRemoveCTup(ct->my_cache, ct);
 }
 
+/*
+ * InsertCatCache
+ *
+ * This function enables to refer a tuple recently inserted, using catcache
+ * until next CommandCounterIncrement.
+ */
+void InsertCatCache(CatCache *cache, HeapTuple tuple)
+{
+	ScanKeyData skey[4];
+	uint32 hashValue;
+    Index hashIndex;
+	bool isnull;
+	int i;
+
+	/* initialize the search key information */
+    memcpy(skey, cache->cc_skey, sizeof(skey));
+	for (i=0; i < cache->cc_nkeys; i++)
+	{
+		skey[i].sk_argument = heap_getattr(tuple, cache->cc_key[i],
+										   cache->cc_tupdesc, &isnull);
+		Assert(!isnull);
+	}
+
+	/* find the hash bucket in which to look for the tuple */
+	if (cache->cc_tupdesc == NULL)
+        CatalogCacheInitializeCache(cache);
+	hashValue = CatalogCacheComputeHashValue(cache, cache->cc_nkeys, skey);
+	hashIndex = HASH_INDEX(hashValue, cache->cc_nbuckets);
+
+	/* Insert a new tuple */
+	CatalogCacheCreateEntry(cache, tuple, hashValue, hashIndex, false);
+}
 
 /*
  *	SearchCatCacheList

@@ -107,6 +107,7 @@
 #include "postmaster/pgarch.h"
 #include "postmaster/postmaster.h"
 #include "postmaster/syslogger.h"
+#include "security/pgace.h"
 #include "storage/fd.h"
 #include "storage/ipc.h"
 #include "storage/pg_shmem.h"
@@ -214,7 +215,8 @@ static pid_t StartupPID = 0,
 			AutoVacPID = 0,
 			PgArchPID = 0,
 			PgStatPID = 0,
-			SysLoggerPID = 0;
+			SysLoggerPID = 0,
+			pgaceWorkerPID = 0;
 
 /* Startup/shutdown state */
 #define			NoShutdown		0
@@ -1321,6 +1323,10 @@ ServerLoop(void)
 		if (PgStatPID == 0 && pmState == PM_RUN)
 			PgStatPID = pgstat_start();
 
+		/* If we have lost the pgace worker (if needed), try to start a new one */
+		if (pgaceWorkerPID == 0 && pmState == PM_RUN)
+			pgaceWorkerPID = pgaceStartupWorkerProcess();
+
 		/*
 		 * Touch the socket and lock file every 58 minutes, to ensure that
 		 * they are not removed by overzealous /tmp-cleaning tasks.  We assume
@@ -1911,6 +1917,8 @@ SIGHUP_handler(SIGNAL_ARGS)
 			signal_child(PgArchPID, SIGHUP);
 		if (SysLoggerPID != 0)
 			signal_child(SysLoggerPID, SIGHUP);
+		if (pgaceWorkerPID != 0)
+			signal_child(pgaceWorkerPID, SIGHUP);
 		/* PgStatPID does not currently need SIGHUP */
 
 		/* Reload authentication config files too */
@@ -1968,6 +1976,9 @@ pmdie(SIGNAL_ARGS)
 				/* and the walwriter too */
 				if (WalWriterPID != 0)
 					signal_child(WalWriterPID, SIGTERM);
+				/* and the pgace worker too */
+				if (pgaceWorkerPID != 0)
+					signal_child(pgaceWorkerPID, SIGTERM);
 				pmState = PM_WAIT_BACKENDS;
 			}
 
@@ -2006,6 +2017,9 @@ pmdie(SIGNAL_ARGS)
 				/* and the walwriter too */
 				if (WalWriterPID != 0)
 					signal_child(WalWriterPID, SIGTERM);
+				/* and the walwriter too */
+				if (pgaceWorkerPID != 0)
+					signal_child(pgaceWorkerPID, SIGTERM);
 				pmState = PM_WAIT_BACKENDS;
 			}
 
@@ -2039,6 +2053,8 @@ pmdie(SIGNAL_ARGS)
 				signal_child(PgArchPID, SIGQUIT);
 			if (PgStatPID != 0)
 				signal_child(PgStatPID, SIGQUIT);
+			if (pgaceWorkerPID != 0)
+				signal_child(pgaceWorkerPID, SIGQUIT);
 			ExitPostmaster(0);
 			break;
 	}
@@ -2287,6 +2303,16 @@ reaper(SIGNAL_ARGS)
 			continue;
 		}
 
+		/* Was it the PGACE worker process? */
+		if (pid == pgaceWorkerPID)
+		{
+			pgaceWorkerPID = 0;
+			if (!EXIT_STATUS_0(exitstatus))
+				LogChildExit(LOG, _("PGACE worker process"),
+							 pid, exitstatus);
+			continue;
+		}
+
 		/*
 		 * Else do standard backend child cleanup.
 		 */
@@ -2454,6 +2480,18 @@ HandleChildCrash(int pid, int exitstatus, const char *procname)
 		signal_child(AutoVacPID, (SendStop ? SIGSTOP : SIGQUIT));
 	}
 
+	/* Take care of the pgace worker too */
+	if (pid == pgaceWorkerPID)
+		pgaceWorkerPID = 0;
+	else if (pgaceWorkerPID != 0 && !FatalError)
+	{
+		ereport(DEBUG2,
+				(errmsg_internal("sending %s to process %d",
+								 (SendStop ? "SIGSTOP" : "SIGQUIT"),
+								 (int) pgaceWorkerPID)));
+		signal_child(pgaceWorkerPID, (SendStop ? SIGSTOP : SIGQUIT));
+	}
+
 	/*
 	 * Force a power-cycle of the pgarch process too.  (This isn't absolutely
 	 * necessary, but it seems like a good idea for robustness, and it
@@ -2573,7 +2611,8 @@ PostmasterStateMachine(void)
 			StartupPID == 0 &&
 			(BgWriterPID == 0 || !FatalError) &&
 			WalWriterPID == 0 &&
-			AutoVacPID == 0)
+			AutoVacPID == 0 &&
+			pgaceWorkerPID == 0)
 		{
 			if (FatalError)
 			{

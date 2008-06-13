@@ -26,6 +26,7 @@
 #include "lib/stringinfo.h"
 #include "nodes/plannodes.h"
 #include "nodes/relation.h"
+#include "nodes/security.h"
 #include "utils/datum.h"
 
 
@@ -252,6 +253,7 @@ _outPlannedStmt(StringInfo str, PlannedStmt *node)
 	WRITE_NODE_FIELD(rowMarks);
 	WRITE_NODE_FIELD(relationOids);
 	WRITE_INT_FIELD(nParamExec);
+	WRITE_NODE_FIELD(pgaceItem);
 }
 
 /*
@@ -1748,6 +1750,7 @@ _outQuery(StringInfo str, Query *node)
 	WRITE_NODE_FIELD(limitCount);
 	WRITE_NODE_FIELD(rowMarks);
 	WRITE_NODE_FIELD(setOperations);
+	WRITE_NODE_FIELD(pgaceItem);
 }
 
 static void
@@ -1833,6 +1836,7 @@ _outRangeTblEntry(StringInfo str, RangeTblEntry *node)
 	WRITE_BOOL_FIELD(inFromCl);
 	WRITE_UINT_FIELD(requiredPerms);
 	WRITE_OID_FIELD(checkAsUser);
+	WRITE_UINT_FIELD(pgaceTuplePerms);
 }
 
 static void
@@ -2045,6 +2049,43 @@ _outFkConstraint(StringInfo str, FkConstraint *node)
 	WRITE_BOOL_FIELD(skip_validation);
 }
 
+/*****************************************************************************
+ *
+ *	Stuff from nodes/security.h
+ *
+ *****************************************************************************/
+static void
+_outSEvalItemRelation(StringInfo str, SEvalItemRelation *node)
+{
+	WRITE_NODE_TYPE("SEVALITEMRELATION");
+
+	WRITE_UINT_FIELD(perms);
+
+	WRITE_OID_FIELD(relid);
+	WRITE_BOOL_FIELD(inh);
+}
+
+static void
+_outSEvalItemAttribute(StringInfo str, SEvalItemAttribute *node)
+{
+	WRITE_NODE_TYPE("SEVALITEMATTRIBUTE");
+
+	WRITE_UINT_FIELD(perms);
+
+	WRITE_OID_FIELD(relid);
+	WRITE_BOOL_FIELD(inh);
+	WRITE_INT_FIELD(attno);
+}
+
+static void
+_outSEvalItemProcedure(StringInfo str, SEvalItemProcedure *node)
+{
+	WRITE_NODE_TYPE("SEVALITEMPROCEDURE");
+
+	WRITE_UINT_FIELD(perms);
+
+	WRITE_OID_FIELD(funcid);
+}
 
 /*
  * _outNode -
@@ -2437,6 +2478,15 @@ _outNode(StringInfo str, void *obj)
 				break;
 			case T_XmlSerialize:
 				_outXmlSerialize(str, obj);
+				break;
+			case T_SEvalItemRelation:
+				_outSEvalItemRelation(str, obj);
+				break;
+			case T_SEvalItemAttribute:
+				_outSEvalItemAttribute(str, obj);
+				break;
+			case T_SEvalItemProcedure:
+				_outSEvalItemProcedure(str, obj);
 				break;
 
 			default:

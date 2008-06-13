@@ -47,6 +47,7 @@
 #include "miscadmin.h"
 #include "parser/parse_func.h"
 #include "parser/parse_type.h"
+#include "security/pgace.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
@@ -412,7 +413,8 @@ compute_attributes_sql_style(List *options,
 							 bool *security_definer,
 							 ArrayType **proconfig,
 							 float4 *procost,
-							 float4 *prorows)
+							 float4 *prorows,
+							 DefElem **pgaceItem)
 {
 	ListCell   *option;
 	DefElem    *as_item = NULL;
@@ -443,6 +445,14 @@ compute_attributes_sql_style(List *options,
 						(errcode(ERRCODE_SYNTAX_ERROR),
 						 errmsg("conflicting or redundant options")));
 			language_item = defel;
+		}
+		else if (pgaceIsGramSecurityItem(defel))
+		{
+			if (*pgaceItem)
+				ereport(ERROR,
+						(errcode(ERRCODE_SYNTAX_ERROR),
+						 errmsg("conflicting or redundant options")));
+			*pgaceItem = defel;
 		}
 		else if (compute_common_attribute(defel,
 										  &volatility_item,
@@ -624,6 +634,7 @@ CreateFunction(CreateFunctionStmt *stmt)
 	HeapTuple	languageTuple;
 	Form_pg_language languageStruct;
 	List	   *as_clause;
+	DefElem	   *pgaceItem = NULL;
 
 	/* Convert list of names to a name and namespace */
 	namespaceId = QualifiedNameGetCreationNamespace(stmt->funcname,
@@ -647,7 +658,7 @@ CreateFunction(CreateFunctionStmt *stmt)
 	compute_attributes_sql_style(stmt->options,
 								 &as_clause, &language,
 								 &volatility, &isStrict, &security,
-								 &proconfig, &procost, &prorows);
+								 &proconfig, &procost, &prorows, &pgaceItem);
 
 	/* Convert language name to canonical case */
 	languageName = case_translate_language_name(language);
@@ -801,7 +812,8 @@ CreateFunction(CreateFunctionStmt *stmt)
 					PointerGetDatum(parameterNames),
 					PointerGetDatum(proconfig),
 					procost,
-					prorows);
+					prorows,
+					pgaceItem);
 }
 
 
@@ -1151,6 +1163,7 @@ AlterFunction(AlterFunctionStmt *stmt)
 	List	   *set_items = NIL;
 	DefElem    *cost_item = NULL;
 	DefElem    *rows_item = NULL;
+	DefElem	   *pgaceItem = NULL;
 
 	rel = heap_open(ProcedureRelationId, RowExclusiveLock);
 
@@ -1181,6 +1194,15 @@ AlterFunction(AlterFunctionStmt *stmt)
 	foreach(l, stmt->actions)
 	{
 		DefElem    *defel = (DefElem *) lfirst(l);
+
+		if (pgaceIsGramSecurityItem(defel)) {
+			if (pgaceItem)
+				ereport(ERROR,
+						(errcode(ERRCODE_SYNTAX_ERROR),
+						 errmsg("conflicting or redundant options")));
+			pgaceItem = defel;
+			continue;
+		}
 
 		if (compute_common_attribute(defel,
 									 &volatility_item,
@@ -1252,6 +1274,7 @@ AlterFunction(AlterFunctionStmt *stmt)
 		tup = heap_modifytuple(tup, RelationGetDescr(rel),
 							   repl_val, repl_null, repl_repl);
 	}
+	pgaceGramAlterFunction(rel, tup, pgaceItem);
 
 	/* Do the update */
 	simple_heap_update(rel, &tup->t_self, tup);

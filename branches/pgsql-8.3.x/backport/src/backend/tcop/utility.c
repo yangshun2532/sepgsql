@@ -49,6 +49,7 @@
 #include "postmaster/bgwriter.h"
 #include "rewrite/rewriteDefine.h"
 #include "rewrite/rewriteRemove.h"
+#include "security/pgace.h"
 #include "storage/fd.h"
 #include "tcop/pquery.h"
 #include "tcop/utility.h"
@@ -396,6 +397,8 @@ ProcessUtility(Node *parsetree,
 
 	if (completionTag)
 		completionTag[0] = '\0';
+
+	pgaceProcessUtility(parsetree, params, isTopLevel);
 
 	switch (nodeTag(parsetree))
 	{

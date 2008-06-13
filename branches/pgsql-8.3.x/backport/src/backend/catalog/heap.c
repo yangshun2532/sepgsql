@@ -53,6 +53,7 @@
 #include "parser/parse_coerce.h"
 #include "parser/parse_expr.h"
 #include "parser/parse_relation.h"
+#include "security/pgace.h"
 #include "storage/smgr.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
@@ -67,7 +68,8 @@ static void AddNewRelationTuple(Relation pg_class_desc,
 					Oid new_rel_oid, Oid new_type_oid,
 					Oid relowner,
 					char relkind,
-					Datum reloptions);
+					Datum reloptions,
+					List *pgace_attr_list);
 static Oid AddNewRelationType(const char *typeName,
 				   Oid typeNamespace,
 				   Oid new_rel_oid,
@@ -144,7 +146,21 @@ static FormData_pg_attribute a7 = {
 	true, 'p', 'i', true, false, false, true, 0
 };
 
+#ifdef SECURITY_SYSATTR_NAME
+/*
+ * SECURITY_SYSATTR_NAME is defined at PGACE header file.
+ * If SELinux is enabled, it is defined as "security_context"
+ */
+static FormData_pg_attribute a8 = {
+	0, {SECURITY_SYSATTR_NAME}, TEXTOID, 0, -1,
+	SecurityAttributeNumber, 0, -1, -1,
+	false, 'x', 'i', true, false, false, true, 0
+};
+
+static const Form_pg_attribute SysAtt[] = {&a1, &a2, &a3, &a4, &a5, &a6, &a7, &a8};
+#else
 static const Form_pg_attribute SysAtt[] = {&a1, &a2, &a3, &a4, &a5, &a6, &a7};
+#endif
 
 /*
  * This function returns a Form_pg_attribute pointer for a system attribute.
@@ -184,6 +200,20 @@ SystemAttributeByName(const char *attname, bool relhasoids)
 	return NULL;
 }
 
+/*
+ * This function returns true, if the given attribute number is writable
+ * system column. If not, returns false.
+ */
+bool
+SystemAttributeIsWritable(AttrNumber attno)
+{
+#ifdef SECURITY_SYSATTR_NAME
+	if (pgaceSecurityAttributeNecessary()
+		&& attno == SecurityAttributeNumber)
+		return true;
+#endif
+	return false;
+}
 
 /* ----------------------------------------------------------------
  *				XXX END OF UGLY HARD CODED BADNESS XXX
@@ -467,7 +497,8 @@ AddNewAttributeTuples(Oid new_rel_oid,
 					  TupleDesc tupdesc,
 					  char relkind,
 					  bool oidislocal,
-					  int oidinhcount)
+					  int oidinhcount,
+					  List *pgace_attr_list)
 {
 	const Form_pg_attribute *dpp;
 	int			i;
@@ -502,6 +533,7 @@ AddNewAttributeTuples(Oid new_rel_oid,
 							 false,
 							 ATTRIBUTE_TUPLE_SIZE,
 							 (void *) *dpp);
+		pgaceCreateAttributeCommon(rel, tup, pgace_attr_list);
 
 		simple_heap_insert(rel, tup);
 
@@ -592,7 +624,8 @@ void
 InsertPgClassTuple(Relation pg_class_desc,
 				   Relation new_rel_desc,
 				   Oid new_rel_oid,
-				   Datum reloptions)
+				   Datum reloptions,
+				   List *pgace_attr_list)
 {
 	Form_pg_class rd_rel = new_rel_desc->rd_rel;
 	Datum		values[Natts_pg_class];
@@ -642,11 +675,15 @@ InsertPgClassTuple(Relation pg_class_desc,
 	 * be embarrassing to do this sort of thing in polite company.
 	 */
 	HeapTupleSetOid(tup, new_rel_oid);
+	pgaceCreateRelationCommon(pg_class_desc, tup, pgace_attr_list);
 
 	/* finally insert the new tuple, update the indexes, and clean up */
 	simple_heap_insert(pg_class_desc, tup);
 
 	CatalogUpdateIndexes(pg_class_desc, tup);
+
+	/* temporary use for this tuple */
+	InsertSysCache(RelationGetRelid(pg_class_desc), tup);
 
 	heap_freetuple(tup);
 }
@@ -665,7 +702,8 @@ AddNewRelationTuple(Relation pg_class_desc,
 					Oid new_type_oid,
 					Oid relowner,
 					char relkind,
-					Datum reloptions)
+					Datum reloptions,
+					List *pgace_attr_list)
 {
 	Form_pg_class new_rel_reltup;
 
@@ -725,7 +763,7 @@ AddNewRelationTuple(Relation pg_class_desc,
 	new_rel_desc->rd_att->tdtypeid = new_type_oid;
 
 	/* Now build and insert the tuple */
-	InsertPgClassTuple(pg_class_desc, new_rel_desc, new_rel_oid, reloptions);
+	InsertPgClassTuple(pg_class_desc, new_rel_desc, new_rel_oid, reloptions, pgace_attr_list);
 }
 
 
@@ -791,7 +829,8 @@ heap_create_with_catalog(const char *relname,
 						 int oidinhcount,
 						 OnCommitAction oncommit,
 						 Datum reloptions,
-						 bool allow_system_table_mods)
+						 bool allow_system_table_mods,
+						 List *pgace_attr_list)
 {
 	Relation	pg_class_desc;
 	Relation	new_rel_desc;
@@ -963,13 +1002,14 @@ heap_create_with_catalog(const char *relname,
 						new_type_oid,
 						ownerid,
 						relkind,
-						reloptions);
+						reloptions,
+						pgace_attr_list);
 
 	/*
 	 * now add tuples to pg_attribute for the attributes in our new relation.
 	 */
 	AddNewAttributeTuples(relid, new_rel_desc->rd_att, relkind,
-						  oidislocal, oidinhcount);
+						  oidislocal, oidinhcount, pgace_attr_list);
 
 	/*
 	 * Make a dependency link to force the relation to be deleted if its
