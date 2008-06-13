@@ -661,7 +661,11 @@ avc_permission_common(avc_datum *cache, access_vector_t perms,
 {
 	char audit_buffer[2048];
 	access_vector_t denied;
+	bool audit;
 	bool rc = true;
+
+	audit = avc_audit_common(audit_buffer, sizeof(audit_buffer),
+							 cache, perms, objname);
 
 	denied = perms & ~cache->allowed;
 	if (!perms || denied)
@@ -677,11 +681,8 @@ avc_permission_common(avc_datum *cache, access_vector_t perms,
 			cache->allowed |= perms;
 		}
 	}
-	/*
-	 * generate an audit record, if necessary
-	 */
-	if (avc_audit_common(audit_buffer, sizeof(audit_buffer),
-						 cache, perms, objname))
+
+	if (audit)
 	{
 		ereport((!rc && abort) ? ERROR : NOTICE,
 				(errcode(ERRCODE_SELINUX_AUDIT),
