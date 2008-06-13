@@ -194,6 +194,11 @@
      </row>
 
      <row>
+       <entry><link linkend="catalog-pg-security"><structname>pg_security</structname></link></entry>
+       <entry>text representation of security attribute</entry>
+     </row>
+
+     <row>
       <entry><link linkend="catalog-pg-shdepend"><structname>pg_shdepend</structname></link></entry>
       <entry>dependencies on shared objects</entry>
      </row>
@@ -3858,6 +3863,73 @@
 
  </sect1>
 
+ <sect1 id="catalog-pg-security">
+   <title><structname>pg_security</structname></title>
+
+   <indexterm zone="catalog-pg-security">
+     <primary>pg_security</primary>
+   </indexterm>
+
+   <para>
+     The catalog <structname>pg_security</structname> stores text representation
+     of security attributes managed by PGACE framework.
+   </para>
+
+   <para>
+     When a security module is enabled on PGACE framework and it utilizes security
+     attribute to make its decision, we have to associate a security attribute with
+     a tuple. In generally, security attribute is a formatted string and massive
+     objects tend to share same attribute. So, it is not efficient to store it
+     as a text for each object. The number of security attribute is much less
+     than the number of object, in other word.
+   </para>
+
+   <para>
+     PGACE provides a facility to associate them effectively,
+     using <structname>pg_security</structname> system catalog.
+
+     It enables a security module to put an object identifier into padding area
+     of tuple header, called as <literal>security id</literal>.
+   </para>
+
+   <para>
+     <literal>security id</literal> means an object identifier (oid) of a tuple
+     within <structname>pg_security</structname> system catalog, which contains
+     a text representation.
+     So, we can translate security id to text representation on exporting, and
+     vice versa. When a new text representation is given, a new tuple is added
+     to <structname>pg_security</structname> and a new <literal>security id</literal>
+     is assigned by PGACE.
+   </para>
+
+   <para>
+     See <xref linkend="security"> for more information.
+   </para>
+
+   <table>
+     <title><structname>pg_security</>Columns</title>
+     
+     <tgroup cols=4>
+       <thead>
+	 <row>
+	   <entry>Name</entry>
+	   <entry>Type</entry>
+	   <entry>References</entry>
+	   <entry>Description</entry>
+	 </row>
+       </thead>
+
+       <tbody>
+	 <row>
+	   <entry><structfield>seclabel</structfield></entry>
+	   <entry><type>text</type></entry>
+	   <entry></entry>
+	   <entry>Text representation of security attribute</entry>
+	 </row>
+       </tbody>
+     </tgroup>
+   </table>
+ </sect1>
 
  <sect1 id="catalog-pg-shdepend">
   <title><structname>pg_shdepend</structname></title>

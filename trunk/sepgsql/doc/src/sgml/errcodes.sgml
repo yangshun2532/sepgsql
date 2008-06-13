@@ -1396,6 +1396,33 @@
 <entry>too_many_rows</entry>
 </row>
 
+<row>
+<entry spanname="span13"><emphasis role="bold">Class SE &mdash; Security Error</></entry>
+</row>
+
+<row>
+<entry><literal>SE000</literal></entry>
+<entry>PGACE ERROR</entry>
+<entry>pgace_framework_error</entry>
+</row>
+
+<row>
+<entry><literal>SE001</literal></entry>
+<entry>SELINUX ERROR</entry>
+<entry>selinux_error</entry>
+</row>
+
+<row>
+<entry><literal>SE002</literal></entry>
+<entry>SELINUX AUDIT</entry>
+<entry>selinux_audit_record</entry>
+</row>
+
+<row>
+<entry><literal>SE003</literal></entry>
+<entry>SELINUX INFO</entry>
+<entry>information_from_selinux</entry>
+</row>
 
 <row>
 <entry spanname="span13"><emphasis role="bold">Class XX &mdash; Internal Error</></entry>

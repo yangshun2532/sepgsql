@@ -1,0 +1,86 @@
+<appendix id="security">
+ <title>Enhanced security features</title>
+
+ <abstract>
+   <para>
+     In this chapter, we introduce enhanced security features
+     built in PostgreSQL version 8.4.x or later.
+   </para>
+
+   <para>
+     SE-PostgreSQL (Security Enhanced PostgreSQL) is an enhanced
+     security feature. It provides fine-grained mandatory access
+     controls including row-/column- level, and security policy
+     integration with operating system (SELinux).
+   </para>
+ </abstract>
+
+ <sect1 id="security-sepgsql-setup">
+   <title>SE-PostgreSQL setup</title>
+   <abstract>
+     <para>
+       In this chapter, we introduce the way to build and setup
+       SE-PostgreSQL.
+     </para>
+   </abstract>
+
+   <sect2 id="security-sepgsql-setup-build">
+     <title>build and installation</title>
+     <para>
+       To activate SE-PostgreSQL feature, you can specify --enable-selinux
+       option in the configure script, as follows:
+       <screen>
+	 <prompt>$ </prompt><userinput>./configure --enable-selinux</userinput>
+       </screen>
+       It requires the libselinux library and header files to build.
+       Please confirm its version is 2.0.43 or later.
+     </para>
+
+     <para>
+       SE-PostgreSQL requires its security policy module to work correctly.
+       contrib/sepgsql_policy contains the source of security policy.
+       <screen>
+	 <prompt>$ </prompt><userinput>gmake -C contrib/sepgsql_policy</userinput>
+       </screen>
+       If you can make it correctly, the security policy module is generated
+       at contrib/sepgsql_policy/sepostgresql.pp.
+       It can be linked with semodule command, as follows:
+       <screen>
+	 <prompt># </prompt><userinput>semodule -i contrib/sepgsql_policy</userinput>
+       </screen>
+     </para>
+
+     <para>
+       SELinux requires security context of files are associated correctly.
+       Just before you invoke initdb, run /sbin/restorecon to attach
+       correct security context for installed files.
+       <screen>
+	 <prompt># </prompt><userinput>/sbin/restorecon -R /usr/local/pgsql</userinput>
+       </screen>
+     </para>
+
+   </sect2>
+
+   <sect2 id="security-sepgsql-setup-guc">
+     <title>GUC options</title>
+     
+     <para>
+       empty
+     </para>
+   </sect2>
+ </sect1>
+
+ <sect1 id="security-sepgsql-feature">
+   <title>hoge</title>
+   <para>
+     empty
+   </para>
+ </sect1>
+
+ <sect1 id="security-pgace">
+   <title>PGACE Security Framework</title>
+   <para>
+     empty
+   </para>
+ </sect1>
+</appendix>

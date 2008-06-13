@@ -136,6 +136,7 @@
 <!entity keywords   SYSTEM "keywords.sgml">
 <!entity release    SYSTEM "release.sgml">
 <!entity acronyms   SYSTEM "acronyms.sgml">
+<!entity security   SYSTEM "security.sgml">
 
 <!entity features-supported   SYSTEM "features-supported.sgml">
 <!entity features-unsupported SYSTEM "features-unsupported.sgml">
