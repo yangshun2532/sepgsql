@@ -254,6 +254,7 @@
   &features;
   &release;
   &contrib;
+  &security;
   &external-projects;
   &cvs;
   &docguide;
