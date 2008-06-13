@@ -351,7 +351,7 @@ sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, HeapTuple oldtup,
 			break;
 
 		case ProcedureRelationId:		/* pg_proc */
-			checkTuplePermsRelation(tuple, oldtup, &perms, &tclass);
+			checkTuplePermsProcedure(tuple, oldtup, &perms, &tclass);
 			break;
 
 		case LargeObjectRelationId:		/* pg_largeobject */
