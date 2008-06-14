@@ -76,10 +76,10 @@ enum SysCacheIdentifier
 	TSTEMPLATENAMENSP,
 	TSTEMPLATEOID,
 	TYPENAMENSP,
-	TYPEOID
+	TYPEOID,
+	SECURITYOID,
+	SECURITYLABEL,
 };
-#define SECURITYOID			48
-#define SECURITYLABEL		49
 
 extern void InitCatalogCache(void);
 extern void InitCatalogCachePhase2(void);

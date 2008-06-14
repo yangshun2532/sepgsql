@@ -387,14 +387,13 @@ checkLargeObjectPages(Oid loid, Snapshot snapshot,
 					  int32 start_pageno, int32 end_pageno,
 					  access_vector_t perms)
 {
-	Relation		rel, idx;
+	Relation		rel;
 	HeapTuple		tuple;
 	SysScanDesc		sd;
 	ScanKeyData		skey[2];
 	List		   *okList = NIL;
 
 	rel = heap_open(LargeObjectRelationId, AccessShareLock);
-	idx = index_open(LargeObjectLOidPNIndexId, AccessShareLock);
 
 	ScanKeyInit(&skey[0],
 				Anum_pg_largeobject_loid,
@@ -402,7 +401,8 @@ checkLargeObjectPages(Oid loid, Snapshot snapshot,
 				ObjectIdGetDatum(loid));
 
 	if (start_pageno <= 0)
-		sd = systable_beginscan_ordered(rel, idx, snapshot, 1, skey);
+		sd = systable_beginscan(rel, LargeObjectLOidPNIndexId,
+								true, snapshot, 1, skey);
 	else
 	{
 		ScanKeyInit(&skey[1],
@@ -410,10 +410,11 @@ checkLargeObjectPages(Oid loid, Snapshot snapshot,
 					BTGreaterEqualStrategyNumber, F_INT4GE,
 					Int32GetDatum(start_pageno));
 
-		sd = systable_beginscan_ordered(rel, idx, snapshot, 2, skey);
+		sd = systable_beginscan(rel, LargeObjectLOidPNIndexId,
+								true, snapshot, 2, skey);
 	}
 
-	while ((tuple = systable_getnext_ordered(sd, ForwardScanDirection)) != NULL)
+	while ((tuple = systable_getnext(sd)) != NULL)
 	{
 		Form_pg_largeobject loForm
 			= (Form_pg_largeobject) GETSTRUCT(tuple);
@@ -441,11 +442,10 @@ checkLargeObjectPages(Oid loid, Snapshot snapshot,
 	skip:
 		;
 	}
-	systable_endscan_ordered(sd);
+	systable_endscan(sd);
 
 	list_free(okList);
 
-	index_close(idx, NoLock);
 	heap_close(rel, NoLock);
 }
 
