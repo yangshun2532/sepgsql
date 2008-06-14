@@ -2440,8 +2440,8 @@ static struct config_string ConfigureNamesString[] =
 		},
 		&security_sysattr_name,
 		SECURITY_SYSATTR_NAME, NULL, NULL,
-#endif
 	},
+#endif
 
 	/* End-of-list marker */
 	{

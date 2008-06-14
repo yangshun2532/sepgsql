@@ -2029,7 +2029,7 @@ pmdie(SIGNAL_ARGS)
 				/* and the walwriter too */
 				if (WalWriterPID != 0)
 					signal_child(WalWriterPID, SIGTERM);
-				/* and the walwriter too */
+				/* and the pgaceWorker too */
 				if (pgaceWorkerPID != 0)
 					signal_child(pgaceWorkerPID, SIGTERM);
 				pmState = PM_WAIT_BACKENDS;

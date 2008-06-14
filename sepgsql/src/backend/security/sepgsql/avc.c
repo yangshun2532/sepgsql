@@ -803,7 +803,7 @@ sepgsqlAvcCreateCon(const security_context_t scon,
 	/*
 	 * lookup avc entry
 	 */
-	hash = sepgsql_avc_hash(scon, tcon, InvalidOid, hash);
+	hash = sepgsql_avc_hash(scon, tcon, InvalidOid, tclass);
 	cache = avc_lookup_entry(scon, tcon, tclass, hash);
 	if (!cache)
 	{
