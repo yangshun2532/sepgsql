@@ -124,7 +124,7 @@ main(int argc, char *argv[])
 		{"disable-triggers", no_argument, &disable_triggers, 1},
 		{"no-tablespaces", no_argument, &no_tablespaces, 1},
 		{"use-set-session-authorization", no_argument, &use_setsessauth, 1},
-		{"enable-selinux", no_argument, NULL, 1001},
+		{"enable-selinux", no_argument, &enable_selinux, 1},
 
 		{NULL, 0, NULL, 0}
 	};
@@ -297,10 +297,8 @@ main(int argc, char *argv[])
 					no_tablespaces = 1;
 				else if (strcmp(optarg, "use-set-session-authorization") == 0)
 					use_setsessauth = 1;
-				else if (strcmp(optarg, "enable-selinux") == 0) {
-					appendPQExpBuffer(pgdumpopts, " --enable-selinux");
+				else if (strcmp(optarg, "enable-selinux") == 0)
 					enable_selinux = 1;
-				}
 				else
 				{
 					fprintf(stderr,
@@ -309,11 +307,6 @@ main(int argc, char *argv[])
 					fprintf(stderr, _("Try \"%s --help\" for more information.\n"), progname);
 					exit(1);
 				}
-				break;
-
-			case 1001:
-				appendPQExpBuffer(pgdumpopts, " --enable-selinux");
-				enable_selinux = 1;
 				break;
 
 			case 0:
@@ -334,6 +327,8 @@ main(int argc, char *argv[])
 		appendPQExpBuffer(pgdumpopts, " --no-tablespaces");
 	if (use_setsessauth)
 		appendPQExpBuffer(pgdumpopts, " --use-set-session-authorization");
+	if (enable_selinux)
+		appendPQExpBuffer(pgdumpopts, " --enable-selinux");
 
 	if (optind < argc)
 	{
@@ -409,22 +404,23 @@ main(int argc, char *argv[])
 		}
 	}
 
-	if (enable_selinux) {
-        /* confirm whther server support SELinux features */
-        const char *tmp = PQparameterStatus(conn, "security_sysattr_name");
+	if (enable_selinux)
+	{
+		/* confirm server SELinux support */
+		const char *security_sysattr_name
+			= PQparameterStatus(conn, "security_sysattr_name");
 
-        if (!tmp) {
-			fprintf(stderr, "could not get security_sysattr_name from libpq\n");
-            exit(1);
-        }
-        if (!!strcmp(SELINUX_SYSATTR_NAME, tmp) != 0) {
+		if (!security_sysattr_name)
+		{
+			fprintf(stderr, "could not get security_sysattr_name parameter\n");
+			exit(1);
+		}
+
+		if (strcmp(SELINUX_SYSATTR_NAME, security_sysattr_name))
+		{
 			fprintf(stderr, "server does not have SELinux feature\n");
-            exit(1);
-        }
-        if (server_version < 80204) {
-			fprintf(stderr, "server version is too old (%u)\n", server_version);
-            exit(1);
-        }
+			exit(1);
+		}
 	}
 
 	/*
@@ -957,10 +953,10 @@ dumpCreateDB(PGconn *conn)
 						   "pg_encoding_to_char(d.encoding), "
 						   "datistemplate, datacl, datconnlimit, "
 						   "(SELECT spcname FROM pg_tablespace t WHERE t.oid = d.dattablespace) AS dattablespace "
-						   "%s "
+						   "%s"
 			  "FROM pg_database d LEFT JOIN pg_authid u ON (datdba = u.oid) "
 						   "WHERE datallowconn ORDER BY 1",
-						   (!enable_selinux ? "" : "d." SELINUX_SYSATTR_NAME));
+						   !enable_selinux ? "" : (",d." SELINUX_SYSATTR_NAME " "));
 	else if (server_version >= 80000)
 		appendPQExpBuffer(buf,
 						   "SELECT datname, "

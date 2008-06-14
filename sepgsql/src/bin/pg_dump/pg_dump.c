@@ -560,20 +560,21 @@ main(int argc, char **argv)
 	std_strings = PQparameterStatus(g_conn, "standard_conforming_strings");
 	g_fout->std_strings = (std_strings && strcmp(std_strings, "on") == 0);
 
-	if (enable_selinux) {
-		/* confirm whther server support SELinux features */
-		const char *tmp = PQparameterStatus(g_conn, "security_sysattr_name");
+	if (enable_selinux)
+	{
+		/* confirm server SELinux support */
+		const char *security_sysattr_name
+			= PQparameterStatus(g_conn, "security_sysattr_name");
 
-		if (!tmp) {
-			write_msg(NULL, "could not get security_sysattr_name from libpq\n");
+		if (!security_sysattr_name)
+		{
+			write_msg(NULL, "could not get security_sysattr_name parameter\n");
 			exit(1);
 		}
-		if (!!strcmp(SELINUX_SYSATTR_NAME, tmp) != 0) {
+
+		if (strcmp(SELINUX_SYSATTR_NAME, security_sysattr_name))
+		{
 			write_msg(NULL, "server does not have SELinux feature\n");
-			exit(1);
-		}
-		if (g_fout->remoteVersion < 80204) {
-			write_msg(NULL, "server version is too old (%u)\n", g_fout->remoteVersion);
 			exit(1);
 		}
 	}
@@ -1200,7 +1201,7 @@ dumpTableData_insert(Archive *fout, void *dcontext)
 	{
 		appendPQExpBuffer(q, "DECLARE _pg_dump_cursor CURSOR FOR "
 						  "SELECT * %s FROM ONLY %s",
-						  (!enable_selinux ? "" : "," SELINUX_SYSATTR_NAME),
+						  !enable_selinux ? "" : ("," SELINUX_SYSATTR_NAME),
 						  fmtQualifiedId(tbinfo->dobj.namespace->dobj.name,
 										 classname));
 	}
@@ -1892,23 +1893,25 @@ dumpBlobComments(Archive *AH, void *arg)
 			blobOid = atooid(PQgetvalue(res, i, 0));
 
 			/* dump security context of binary large object */
-			if (enable_selinux) {
-				PGresult	*__res;
-				char		query[512];
+			if (enable_selinux)
+			{
+				PGresult	*lores;
+				char		query[256];
 
 				snprintf(query, sizeof(query),
 						 "SELECT lo_get_security(%u)", blobOid);
-				__res = PQexec(g_conn, query);
-				check_sql_result(__res, g_conn, query, PGRES_TUPLES_OK);
+				lores = PQexec(g_conn, query);
+				check_sql_result(lores, g_conn, query, PGRES_TUPLES_OK);
 
-				if (PQntuples(__res) != 1) {
+				if (PQntuples(lores) != 1)
+				{
 					write_msg(NULL, "lo_get_security(%u) returns %d tuples\n",
-							  blobOid, PQntuples(__res));
+							  blobOid, PQntuples(lores));
 					exit_nicely();
 				}
 				archprintf(AH, "SELECT lo_set_security(%u, '%s');\n",
-						   blobOid, PQgetvalue(__res, 0, 0));
-				PQclear(__res);
+						   blobOid, PQgetvalue(lores, 0, 0));
+				PQclear(lores);
 			}
 
 			/* ignore blobs without comments */
@@ -3073,7 +3076,7 @@ getTables(int *numTables)
 						  "where relkind in ('%c', '%c', '%c', '%c') "
 						  "order by c.oid",
 						  username_subquery,
-						  (!enable_selinux ? "" : ",c." SELINUX_SYSATTR_NAME),
+						  !enable_selinux ? "" : (",c." SELINUX_SYSATTR_NAME),
 						  RELKIND_SEQUENCE,
 						  RELKIND_RELATION, RELKIND_SEQUENCE,
 						  RELKIND_VIEW, RELKIND_COMPOSITE_TYPE);
@@ -4512,7 +4515,7 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 							  "where a.attrelid = '%u'::pg_catalog.oid "
 							  "and a.attnum > 0::pg_catalog.int2 "
 							  "order by a.attrelid, a.attnum",
-							  (!enable_selinux ? "" : ",a." SELINUX_SYSATTR_NAME),
+							  !enable_selinux ? "" : (",a." SELINUX_SYSATTR_NAME),
 							  tbinfo->dobj.catId.oid);
 		}
 		else if (g_fout->remoteVersion >= 70100)
@@ -6632,7 +6635,7 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 						  "%s "		/* security context, if required */
 						  "FROM pg_catalog.pg_proc "
 						  "WHERE oid = '%u'::pg_catalog.oid",
-						  (!enable_selinux ? "" : "," SELINUX_SYSATTR_NAME),
+						  !enable_selinux ? "" : ("," SELINUX_SYSATTR_NAME),
 						  finfo->dobj.catId.oid);
 	}
 	else if (g_fout->remoteVersion >= 80100)
@@ -6734,8 +6737,9 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 	prorows = PQgetvalue(res, 0, PQfnumber(res, "prorows"));
 	lanname = PQgetvalue(res, 0, PQfnumber(res, "lanname"));
 
-	if (enable_selinux) {
-		int i_selinux = PQfnumber(res, "security_context");
+	if (enable_selinux)
+	{
+		int i_selinux = PQfnumber(res, SELINUX_SYSATTR_NAME);
 
 		if (i_selinux >= 0 && !PQgetisnull(res, 0, i_selinux))
 			proselinux = PQgetvalue(res, 0, i_selinux);
@@ -9002,7 +9006,11 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 					appendPQExpBuffer(q, " NOT NULL");
 
 				if (enable_selinux && tbinfo->attsecurity[j])
-					appendPQExpBuffer(q, " CONTEXT = '%s'", tbinfo->attsecurity[j]);
+				{
+					if (tbinfo->relsecurity
+						&& strcmp(tbinfo->relsecurity, tbinfo->attsecurity[j]) != 0)
+						appendPQExpBuffer(q, " CONTEXT = '%s'", tbinfo->attsecurity[j]);
+				}
 
 				actual_atts++;
 			}
@@ -10512,7 +10520,8 @@ fmtCopyColumnList(const TableInfo *ti)
 	appendPQExpBuffer(q, "(");
 	needComma = false;
 
-	if (enable_selinux) {
+	if (enable_selinux)
+	{
 		appendPQExpBuffer(q, SELINUX_SYSATTR_NAME);
 		needComma = true;
 	}
