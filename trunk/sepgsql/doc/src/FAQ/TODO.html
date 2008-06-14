@@ -8,7 +8,7 @@
 <body bgcolor="#FFFFFF" text="#000000" link="#FF0000" vlink="#A00000" alink="#0000FF">
 <h1><a name="section_1">PostgreSQL TODO List</a></h1>
 <p>Current maintainer:     Bruce Momjian (<a href="mailto:bruce@momjian.us">bruce@momjian.us</a>)<br/>
-Last updated:           Wed May 28 22:04:08 EDT 2008
+Last updated:           Fri Jun 13 12:24:28 EDT 2008
 </p>
 <p>The most recent version of this document can be viewed at<br/>
 <a href="http://www.postgresql.org/docs/faqs.TODO.html">http://www.postgresql.org/docs/faqs.TODO.html</a>.
@@ -107,6 +107,7 @@ first.  There is also a developer's wiki at<br/>
           check the username@realm against multiple realms
 <p>          <a href="http://archives.postgresql.org/pgsql-hackers/2007-11/msg00009.php">http://archives.postgresql.org/pgsql-hackers/2007-11/msg00009.php</a>
 </p>
+    </li><li>Add functions to syntax check configuration files
   </li></ul>
   </li><li>Tablespaces
   <ul>
@@ -603,9 +604,11 @@ first.  There is also a developer's wiki at<br/>
 <p>  <a href="http://archives.postgresql.org/pgsql-patches/2008-04/msg00203.php">http://archives.postgresql.org/pgsql-patches/2008-04/msg00203.php</a>
 </p>
   </li><li>Implement SQL:2003 window functions
-  </li><li>Allow INSERT/UPDATE ... RETURNING inside a SELECT 'FROM' clause
+  </li><li>Allow INSERT/UPDATE ... RETURNING inside a SELECT 'FROM' clause or
+  target list
 <p>  <a href="http://archives.postgresql.org/pgsql-general/2006-09/msg00803.php">http://archives.postgresql.org/pgsql-general/2006-09/msg00803.php</a>
   <a href="http://archives.postgresql.org/pgsql-hackers/2006-10/msg00693.php">http://archives.postgresql.org/pgsql-hackers/2006-10/msg00693.php</a>
+  <a href="http://archives.postgresql.org/pgsql-hackers/2008-06/msg00124.php">http://archives.postgresql.org/pgsql-hackers/2008-06/msg00124.php</a>
 </p>
   </li><li>Increase locking when DROPing objects so dependent objects cannot
   get dropped while the DROP operation is happening
@@ -1708,8 +1711,8 @@ first.  There is also a developer's wiki at<br/>
     <li>Remove configure.in check for link failure when cause is found
     </li><li>Remove readdir() errno patch when runtime/mingwex/dirent.c rev
           1.4 is released
-    </li><li>-<em>Remove psql newline patch when we find out why mingw outputs an
-          extra newline</em>
+    </li><li>-<em>Remove psql newline patch when we find out why mingw outputs an</em>
+          extra newline
     </li><li>Allow psql to use readline once non-US code pages work with
           backslashes
     </li><li>Fix problem with shared memory on the Win32 Terminal Server

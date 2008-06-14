@@ -351,7 +351,8 @@ alter table atacc3 inherit atacc2;
 ERROR:  child table is missing column "test2"
 -- fail due to mismatched data type
 alter table atacc3 add test2 bool;
-alter table atacc3 add inherit atacc2;
+alter table atacc3 inherit atacc2;
+ERROR:  child table "atacc3" has different type for column "test2"
 alter table atacc3 drop test2;
 -- succeed
 alter table atacc3 add test2 int;
@@ -376,7 +377,6 @@ select test2 from atacc2;
 
 drop table atacc2 cascade;
 NOTICE:  drop cascades to table atacc3
-NOTICE:  drop cascades to constraint foo on table atacc3
 drop table atacc1;
 -- adding only to a parent is disallowed as of 8.4
 create table atacc1 (test int);
@@ -1161,8 +1161,9 @@ order by relname, attnum;
 (8 rows)
 
 drop table p1, p2 cascade;
-NOTICE:  drop cascades to table c1
-NOTICE:  drop cascades to table gc1
+NOTICE:  drop cascades to 2 other objects
+DETAIL:  drop cascades to table c1
+drop cascades to table gc1
 --
 -- Test the ALTER TABLE WITHOUT OIDS command
 --
@@ -1251,7 +1252,6 @@ select * from p1;
 
 drop table p1 cascade;
 NOTICE:  drop cascades to table c1
-NOTICE:  drop cascades to constraint p1_a1_check on table c1
 -- test that operations with a dropped column do not try to reference
 -- its datatype
 create domain mytype as text;
@@ -1470,12 +1470,9 @@ select alter2.plus1(41);
 
 -- clean up
 drop schema alter2 cascade;
-NOTICE:  drop cascades to type alter2.ctype
-NOTICE:  drop cascades to type alter2.posint
-NOTICE:  drop cascades to function alter2.plus1(integer)
-NOTICE:  drop cascades to view alter2.v1
-NOTICE:  drop cascades to rule _RETURN on view alter2.v1
-NOTICE:  drop cascades to sequence alter2.t1_f1_seq
-NOTICE:  drop cascades to default for table alter2.t1 column f1
-NOTICE:  drop cascades to table alter2.t1
-NOTICE:  drop cascades to constraint t1_f2_check on table alter2.t1
+NOTICE:  drop cascades to 5 other objects
+DETAIL:  drop cascades to table alter2.t1
+drop cascades to view alter2.v1
+drop cascades to function alter2.plus1(integer)
+drop cascades to type alter2.posint
+drop cascades to type alter2.ctype
