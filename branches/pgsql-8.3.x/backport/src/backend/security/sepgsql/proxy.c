@@ -27,6 +27,7 @@
 #include "optimizer/clauses.h"
 #include "optimizer/plancat.h"
 #include "optimizer/prep.h"
+#include "optimizer/tlist.h"
 #include "parser/parsetree.h"
 #include "security/pgace.h"
 #include "storage/lock.h"
@@ -34,12 +35,30 @@
 #include "utils/syscache.h"
 #include "utils/tqual.h"
 
+/*
+ * queryStack
+ *
+ * This structure represents a hierarchical relationshipt
+ * between subqueries. When a Var node has positive varlevelsup,
+ * it refers upper level Query structure using the chain of
+ * queryStack.
+ */
 typedef struct queryStack
 {
 	struct queryStack *parent;
 	Query	   *query;
 } queryStack;
 
+/*
+ * sepgsqlWalkerContext
+ *
+ * This structure holds a context during analyzing a given query.
+ * selist is a list of SEvalItemXXX objects to enumerate appared
+ * tables, columns and functions. It is evaluated later, just
+ * before executing query.
+ * is_internal_use shows the current state whether the current
+ * Node is chained with target list, or conditional clause.
+ */
 typedef struct sepgsqlWalkerContext
 {
 	List	   *selist;			/* List of SEvalItem */
@@ -56,10 +75,16 @@ static bool sepgsqlExprWalker(Node *node, sepgsqlWalkerContext *swc);
 
 static void execVerifyQuery(List *selist);
 
-/* -----------------------------------------------------------
- * addEvalXXXX -- add evaluation items into Query->SEvalItemList.
- * Those are used for execution phase.
- * ----------------------------------------------------------- */
+/*
+ * addEvalRelation
+ * addEvalRelationRTE
+ *
+ * These functions add a given relation into selist, if it is not
+ * contained yet. In addition, addEvalRelationRTE also marks required 
+ * permissions on rte->pgaceTuplePerms. It is delivered to Scan object
+ * and we can use it on ExecScan hook to apply tuple-level access
+ * controls.
+ */
 static List *
 addEvalRelation(List *selist, Oid relid, bool inh, uint32 perms)
 {
@@ -110,6 +135,16 @@ addEvalRelationRTE(List *selist, RangeTblEntry *rte, uint32 perms)
 	return addEvalRelation(selist, rte->relid, rte->inh, perms);
 }
 
+/*
+ * addEvalAttribute
+ * addEvalAttributeRTE
+ *
+ * These functions add a given attribute into selist, if it is not
+ * contained yet. In addition, addEvalAttributeRTE also marks required 
+ * permissions on rte->pgaceTuplePerms. It is delivered to Scan object
+ * and we can use it on ExecScan hook to apply tuple-level access
+ * controls.
+ */
 static List *
 addEvalAttribute(List *selist, Oid relid, bool inh, AttrNumber attno, uint32 perms)
 {
@@ -174,6 +209,12 @@ addEvalAttributeRTE(List *selist, RangeTblEntry *rte, AttrNumber attno, uint32 p
 	return addEvalAttribute(selist, rte->relid, rte->inh, attno, perms);
 }
 
+/*
+ * addEvalPgProc
+ *
+ * This function adds a given procedure into selist, if it is not
+ * contained yet.
+ */
 static List *
 addEvalPgProc(List *selist, Oid funcid, uint32 perms)
 {
@@ -200,6 +241,14 @@ addEvalPgProc(List *selist, Oid funcid, uint32 perms)
 	return lappend(selist, sep);
 }
 
+/*
+ * addEvalTriggerAccess
+ *
+ * This function adds needed items into selist, to execute a trigger
+ * function. At least, it requires permission set to execute a function
+ * configured as a trigger, to select a table and whole of columns
+ * because whole of a tuple is delivered to trigger functions.
+ */
 static List *
 addEvalTriggerAccess(List *selist, Oid relid, bool is_inh, int cmdType)
 {
@@ -287,12 +336,17 @@ addEvalTriggerAccess(List *selist, Oid relid, bool is_inh, int cmdType)
 	return selist;
 }
 
-/* *******************************************************************************
- * sepgsqlExprWalker() -- walk on expression tree recursively to pick up and to construct
- * a SEvalItem list related to expression node.
- * It is evaluated at later phase.
- * *******************************************************************************/
-
+/*
+ * sepgsqlExprWalker
+ *
+ * This function walks on the given node tree recursively, to pick up 
+ * all appeared tables, columns and functions. Their identifiers are
+ * chained swc->selist, and evaluated later.
+ *
+ * walkVarHelper and walkOpExprHelper are used to simplify its
+ * implementation. If swx->is_internal_use is true, it add a "use"
+ * permission to be evaluate, or a "select" permission otherwise.
+ */
 static void
 walkVarHelper(sepgsqlWalkerContext *swc, Var *var)
 {
@@ -328,12 +382,13 @@ walkVarHelper(sepgsqlWalkerContext *swc, Var *var)
 		 */
 		swc->selist = addEvalAttributeRTE(swc->selist, rte, var->varattno,
 										  swc->is_internal_use
-										  ? DB_COLUMN__USE :
-										  DB_COLUMN__SELECT);
+										  ? DB_COLUMN__USE : DB_COLUMN__SELECT);
+
 	}
 	else if (rte->rtekind == RTE_JOIN)
 	{
-		Node	   *node = list_nth(rte->joinaliasvars, var->varattno - 1);
+		Node	   *node = list_nth(rte->joinaliasvars,
+									var->varattno - 1);
 
 		sepgsqlExprWalker(node, swc);
 	}
@@ -354,8 +409,8 @@ walkOpExprHelper(sepgsqlWalkerContext *swc, Oid opid)
 		addEvalPgProc(swc->selist, oprform->oprcode, DB_PROCEDURE__EXECUTE);
 	/*
 	 * NOTE: opr->oprrest and opr->oprjoin are internal use only
-	 * * and have no effect onto the data references, so we don't
-	 * * apply any checkings for them.
+	 * and have no effect onto the data references, so we don't
+	 * apply any checkings for them.
 	 */
 	ReleaseSysCache(tuple);
 }
@@ -422,10 +477,22 @@ sepgsqlExprWalker(Node *node, sepgsqlWalkerContext *swc)
 				foreach(l, rce->opnos) walkOpExprHelper(swc, lfirst_oid(l));
 				break;
 			}
+		case T_SortClause:
+		case T_GroupClause:
+			{
+				SortClause *sc = (SortClause *) node;
+				Query *q = swc->qstack->query;
+				TargetEntry *tle
+					= get_sortgroupref_tle(sc->tleSortGroupRef, q->targetList);
+
+				Assert(IsA(tle, TargetEntry));
+
+				walkOpExprHelper(swc, sc->sortop);
+				sepgsqlExprWalker((Node *)tle->expr, swc);
+			}
+			return false;	/* expression_tree_walker does not suppor them */
+
 		default:
-			/*
-			 * do nothing here
-			 */
 			break;
 	}
 
@@ -445,15 +512,13 @@ sepgsqlExprWalkerFlags(Node *node, sepgsqlWalkerContext *swc, bool is_internal_u
 	return rc;
 }
 
-/* *******************************************************************************
- * proxyRteXXXX() -- check any relation type objects in the required query,
- * including general relation, outer|inner|cross join and subquery.
+/*
+ * checkSelectFromExpr
  *
- * sepgsqlProxyQuery() is called just after query rewriting phase to constract
- * a list of SEvalItems. It is attached into Query->pgaceList and evaluated by
- * sepgsqlVerifyQuery() at later phase.
- * *******************************************************************************/
-
+ * It appends SEvalItem of any relation within FROM clause into
+ * selist recursively.
+ *
+ */
 static void
 checkSelectFromExpr(sepgsqlWalkerContext *swc, Query *query, Node *node)
 {
@@ -496,6 +561,13 @@ checkSelectFromExpr(sepgsqlWalkerContext *swc, Query *query, Node *node)
 	}
 }
 
+/*
+ * proxyJoinTree
+ *
+ * It appends SEvalItem of WHERE/JOIN ON clause, nodes in VALUE
+ * clause or function which returns a relation, or invokes
+ * proxyRteSubQuery recursively.
+ */
 static void
 proxyJoinTree(sepgsqlWalkerContext *swc, Node *node)
 {
@@ -559,6 +631,13 @@ proxyJoinTree(sepgsqlWalkerContext *swc, Node *node)
 	}
 }
 
+/*
+ * proxySetOperations
+ *
+ * It walks on a query tree recursively when set operations
+ * (UNION, INTERSECT, EXCEPT) are used.
+ *
+ */
 static void
 proxySetOperations(sepgsqlWalkerContext *swc, Node *node)
 {
@@ -595,6 +674,19 @@ proxySetOperations(sepgsqlWalkerContext *swc, Node *node)
 	}
 }
 
+/*
+ * proxyRteSubQuery
+ *
+ * It walks on the given DML Query to enumerate all appeared tables,
+ * columns and functions which include implementations of operator.
+ * While its walking, it generates a list of SEvalItemXXXX object
+ * to be evaluated later, and marks required permission on
+ * RangeTblEntry->pgaceTuplePerms. The swc->selist is copied to
+ * PlannedStmt->pgaceItem and evaluated on the hook invoked from
+ * the executor. RangeTblEntry->pgaceTuplePerms is copied to 
+ * Scan->pgaceTuplePerms and it can be refered at sepgsqlExecScan()
+ * hook to apply tuple-level access controls.
+ */
 static void
 proxyRteSubQuery(sepgsqlWalkerContext *swc, Query *query)
 {
@@ -613,6 +705,9 @@ proxyRteSubQuery(sepgsqlWalkerContext *swc, Query *query)
 	switch (cmdType)
 	{
 		case CMD_SELECT:
+			/*
+			 * add db_table:{select} for any relation in FROM clause
+			 */
 			checkSelectFromExpr(swc, query, (Node *) query->jointree);
 
 		case CMD_UPDATE:
@@ -629,7 +724,8 @@ proxyRteSubQuery(sepgsqlWalkerContext *swc, Query *query)
 					is_security_attr = true;
 
 				/*
-				 * pure junk target entries
+				 * Result set of junk target entries are not shown
+				 * to users, so it is evaluated with "use" permission.
 				 */
 				if (tle->resjunk && !is_security_attr)
 				{
@@ -639,22 +735,33 @@ proxyRteSubQuery(sepgsqlWalkerContext *swc, Query *query)
 
 				sepgsqlExprWalkerFlags((Node *) tle->expr, swc, false);
 
-				if (cmdType == CMD_SELECT)
-					continue;
+				if (cmdType == CMD_UPDATE || cmdType == CMD_INSERT)
+				{
+					/*
+					 * Add SEvalItem for the target of INSERT/UPDATE
+					 */
+					AttrNumber attno
+						= is_security_attr
+							? SecurityAttributeNumber : tle->resno;
+					uint32 perms
+						= cmdType == CMD_UPDATE
+							? DB_COLUMN__UPDATE : DB_COLUMN__INSERT;
 
-				rte = list_nth(query->rtable, query->resultRelation - 1);
-				Assert(IsA(rte, RangeTblEntry)
-					   && rte->rtekind == RTE_RELATION);
+					rte = rt_fetch(query->resultRelation, query->rtable);
+					Assert(IsA(rte, RangeTblEntry)
+						   && rte->rtekind == RTE_RELATION);
 
-				swc->selist	= addEvalAttributeRTE(swc->selist, rte,
-												  is_security_attr
-												  ? SecurityAttributeNumber : tle->resno,
-												  cmdType == CMD_UPDATE
-												  ? DB_COLUMN__UPDATE : DB_COLUMN__INSERT);
+					swc->selist
+						= addEvalAttributeRTE(swc->selist, rte, attno, perms);
+				}
 			}
 			break;
 
 		case CMD_DELETE:
+			/*
+			 * NOTE:
+			 * column level checks are not applied on DELETE.
+			 */
 			rte = rt_fetch(query->resultRelation, query->rtable);
 			Assert(IsA(rte, RangeTblEntry) && rte->rtekind == RTE_RELATION);
 
@@ -668,7 +775,7 @@ proxyRteSubQuery(sepgsqlWalkerContext *swc, Query *query)
 	}
 
 	/*
-	 * permission mark on RETURNING clause, if necessary
+	 * RETURNING clause requires "select" permission
 	 */
 	foreach(l, query->returningList)
 	{
@@ -678,28 +785,14 @@ proxyRteSubQuery(sepgsqlWalkerContext *swc, Query *query)
 
 		sepgsqlExprWalkerFlags((Node *) te->expr, swc, false);
 	}
-
 	/*
-	 * permission mark on the WHERE/HAVING clause
+	 * WHERE/JOIN ... ON/HAVING/ORDER BY/GROUP BY ... clause
+	 * to apply "use" permission
 	 */
-	sepgsqlExprWalkerFlags(query->jointree->quals, swc, true);
+	proxyJoinTree(swc, (Node *) query->jointree);
 	sepgsqlExprWalkerFlags(query->havingQual, swc, true);
-
-	/*
-	 * permission mark on the ORDER BY clause
-	 */
-	/*
-	 * MEMO: no need to walk it again, it is checked as junk entries
-	 */
-	// selist = sepgsqlWalkExpr(selist, qc, (Node *) query->sortClause, WKFLAG_INTERNAL_USE);
-
-	/*
-	 * permission mark on the GROUP BY/HAVING clause
-	 */
-	/*
-	 * MEMO: no need to walk it again, it is checked as junk entries
-	 */
-	// selist = sepgsqlWalkExpr(selist, qc, (Node *) query->groupClause, WKFLAG_INTERNAL_USE);
+	sepgsqlExprWalkerFlags((Node *) query->sortClause, swc, true);
+	sepgsqlExprWalkerFlags((Node *) query->groupClause, swc, true);
 
 	/*
 	 * permission mark on the UNION/INTERSECT/EXCEPT
@@ -707,31 +800,22 @@ proxyRteSubQuery(sepgsqlWalkerContext *swc, Query *query)
 	proxySetOperations(swc, query->setOperations);
 
 	/*
-	 * append sepgsql_permission() on the FROM clause/USING clause
-	 * * for SELECT/UPDATE/DELETE statement.
-	 * * The target Relation of INSERT is noe necessary to append it
-	 */
-	proxyJoinTree(swc, (Node *) query->jointree);
-
-	/*
 	 * pop a query to queryStack
 	 */
 	swc->qstack = qsData.parent;
 }
 
-static List *
-proxyGeneralQuery(Query *query)
-{
-	sepgsqlWalkerContext swcData;
-
-	memset(&swcData, 0, sizeof(sepgsqlWalkerContext));
-
-	proxyRteSubQuery(&swcData, query);
-	query->pgaceItem = (Node *) swcData.selist;
-
-	return list_make1(query);
-}
-
+/*
+ * sepgsqlProxyQuery
+ *
+ * This function is invoked just after the given queries rewritten
+ * by the query rewriter. It invokes proxyRteSubQuery() for any
+ * DML queries to pick up all appeared database object and stores
+ * the list of them into Query->pgaceItem to evaluate later.
+ *
+ * It does not do anything for DDL queries because it is processed
+ * on sepgsqlProcessUtility() hook.
+ */
 List *
 sepgsqlProxyQuery(List *queryList)
 {
@@ -750,12 +834,19 @@ sepgsqlProxyQuery(List *queryList)
 		case CMD_UPDATE:
 		case CMD_INSERT:
 		case CMD_DELETE:
-			newList = list_concat(newList,
-								  proxyGeneralQuery(query));
+			{
+				sepgsqlWalkerContext swcData;
+
+				memset(&swcData, 0, sizeof(swcData));
+
+				proxyRteSubQuery(&swcData, query);
+				query->pgaceItem = (Node *) swcData.selist;
+
+				newList = lappend(newList, query);
+			}
 			break;
 		default:
-			newList = list_concat(newList,
-								  list_make1(query));
+			newList = lappend(newList, query);
 			break;
 		}
 	}
@@ -763,6 +854,12 @@ sepgsqlProxyQuery(List *queryList)
 	return newList;
 }
 
+/*
+ * sepgsqlEvaluateParams
+ *
+ * It checks permissions to execute functions just before
+ * parameter list is generated.
+ */
 void
 sepgsqlEvaluateParams(List *params)
 {
@@ -779,13 +876,18 @@ sepgsqlEvaluateParams(List *params)
 	execVerifyQuery(swcData.selist);
 }
 
-/* *******************************************************************************
- * verifyXXXX() -- checks any SEvalItem attached with Query->pgaceList.
- * Those are generated in proxyXXXX() phase, and this evaluation is done
- * just before PortalStart().
- * The reason why the checks are delayed is to handle cases when parse
- * and execute are separated like PREPARE/EXECUTE statement.
- * *******************************************************************************/
+/*
+ * verityXXXX()
+ *
+ * These functions are invoked from execVerifyQuery, to evaluate
+ * SEvalItemXXXX objects generated at sepgsqlProxyQuery().
+ */
+
+/*
+ * verifyPgClassPerms
+ *
+ * It evaluates SEvalItemRelation object to access tables.
+ */
 static void
 verifyPgClassPerms(Oid relid, bool inh, uint32 perms)
 {
@@ -819,6 +921,11 @@ verifyPgClassPerms(Oid relid, bool inh, uint32 perms)
 	ReleaseSysCache(tuple);
 }
 
+/*
+ * verifyPgAttributePerms
+ *
+ * It evaluates SEvalItemAttribute to access columns.
+ */
 static void
 verifyPgAttributePerms(Oid relid, bool inh, AttrNumber attno, uint32 perms)
 {
@@ -894,6 +1001,11 @@ verifyPgAttributePerms(Oid relid, bool inh, AttrNumber attno, uint32 perms)
 	ReleaseSysCache(tuple);
 }
 
+/*
+ * verifyPgProcedurePerms
+ *
+ * It evaluates SEvalItemProcedure object to access tables.
+ */
 static void
 verifyPgProcPerms(Oid funcid, uint32 perms)
 {
@@ -937,6 +1049,20 @@ verifyPgProcPerms(Oid funcid, uint32 perms)
 	ReleaseSysCache(tuple);
 }
 
+/*
+ * expandSEvalItemInheritance
+ *
+ * When a request to table/column is inheritable, we have to expand
+ * the target to child relations, because accessing a column within
+ * parent table also means accessing a column within child relation
+ * in same time.
+ *
+ * For example, when t2 and t3 inherits t1, we have to check permission
+ * on t2.x and t3.x for the request to t1.x.
+ * It is impossible to be done before, because we have a chance to
+ * change inheritance relationships between PREPARE and EXECUTE.
+ * So, we have to check it in execution phase.
+ */
 static List *
 expandRelationInheritance(List *selist, Oid relid, uint32 perms)
 {
@@ -975,7 +1101,8 @@ expandAttributeInheritance(List *selist, Oid relid, char *attname,
 				 attname, lfirst_oid(l));
 
 		attr = (Form_pg_attribute) GETSTRUCT(tuple);
-		selist = addEvalAttribute(selist, lfirst_oid(l), false, attr->attnum, perms);
+		selist = addEvalAttribute(selist, lfirst_oid(l), false,
+								  attr->attnum, perms);
 
 		ReleaseSysCache(tuple);
 	}
@@ -1056,6 +1183,12 @@ expandSEvalItemInheritance(List *selist)
 	return result;
 }
 
+/*
+ * execVerifyQuery
+ *
+ * This function scans the given list, and invokes proper function
+ * to evaluate it.
+ */
 static void
 execVerifyQuery(List *selist)
 {
@@ -1092,9 +1225,19 @@ execVerifyQuery(List *selist)
 				break;
 		}
 	}
-
 }
 
+/*
+ * sepgsqlVerifyQuery
+ *
+ * This function is invoked at the head of ExecutorStart, to evaluate
+ * permissions to access appeared object within the given query.
+ * Query->pgaceItem is a list of SEvalItemXXXX objects generated in
+ * previous phase, and it is copied to PlannedStmt->pgaceItem in the
+ * optimizer.
+ * sepgsqlVerifyQuery expand relations/columns and append permissions
+ * to execute trigger functions, if necessary.
+ */
 void
 sepgsqlVerifyQuery(PlannedStmt *pstmt, int eflags)
 {
@@ -1135,11 +1278,22 @@ sepgsqlVerifyQuery(PlannedStmt *pstmt, int eflags)
 	execVerifyQuery(selist);
 }
 
-/* --------------------------------------------------------------
+/*
+ * --------------------------------------------------------------
  * Process Utility hooks
  * --------------------------------------------------------------
  */
 
+/*
+ * checkTruncateStmt
+ *
+ * This function checks permissions of tuples within the given
+ * tables before TRUNCATE them. Because its meanings are same
+ * as unconditional DELETE logically, SE-PostgreSQL attempt to
+ * apply same permission for them operation.
+ * If there is a violated tuple at most, it stops to execute 
+ * TRUNCATE and abort current trunsaction.
+ */
 static void
 checkTruncateStmt(TruncateStmt *stmt)
 {
@@ -1199,6 +1353,14 @@ checkTruncateStmt(TruncateStmt *stmt)
 	}
 }
 
+/*
+ * sepgsqlProcessUtility
+ *
+ * This function is invoked from the head of ProcessUtility(), and
+ * checks given DDL queries.
+ * SE-PostgreSQL catch most of DDL actions on HeapTuple hooks, but
+ * an exception is TRUNCATE statement.
+ */
 void
 sepgsqlProcessUtility(Node *parsetree, ParamListInfo params, bool isTopLevel)
 {
@@ -1215,14 +1377,17 @@ sepgsqlProcessUtility(Node *parsetree, ParamListInfo params, bool isTopLevel)
 	}
 }
 
-/* *******************************************************************************
- * PGACE hooks: we cannon the following hooks in sepgsqlHooks.c because they
- * refers static defined variables in sepgsqlProxy.c
- * *******************************************************************************/
-
 /* ----------------------------------------------------------
  * COPY TO/COPY FROM statement hooks
  * ---------------------------------------------------------- */
+
+/*
+ * sepgsqlCopyTable
+ *
+ * This function checks permission on the target table and columns
+ * of COPY statement. We don't place it at sepgsql/hooks.c because
+ * it internally uses addEvalXXXX() interface statically declared.
+ */
 void
 sepgsqlCopyTable(Relation rel, List *attNumList, bool isFrom)
 {
@@ -1263,6 +1428,14 @@ sepgsqlCopyTable(Relation rel, List *attNumList, bool isFrom)
 	execVerifyQuery(selist);
 }
 
+/*
+ * sepgsqlCopyToTuple
+ *
+ * This function check permission to read the given tuple.
+ * If not allowed to read, it returns false to skip COPY TO
+ * this tuple. In the result, any violated tuples are filtered
+ * from the result of COPY TO, as if these are not exist.
+ */
 bool
 sepgsqlCopyToTuple(Relation rel, List *attNumList, HeapTuple tuple)
 {

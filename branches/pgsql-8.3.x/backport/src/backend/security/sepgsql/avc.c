@@ -620,20 +620,47 @@ avc_audit_common(char *buffer, uint32 buflen, avc_datum *cache,
  * sepgsqlAvcPermission
  * sepgsqlAvcPermissionSid
  *
- * These functions make a dicision for the given action, using AVC.
- * If the security policy does not allows to execute the given action,
- * sepgsqlAvcPermission() generates an audit log record and aborts
- * the current transaction. sepgsqlAvcPermissionNoAbort() also generates
- * an audit record but does not abort current transaction. It returns
- * the result as a bool.
+ * These functions make a dicision for the given action, and an audit
+ * record if necessary. When the required action is not allowed by
+ * the policy and "abort" is true, these functions aborts current
+ * transaction. Elsewhere, it returns the result simply.
+ * 
+ * They tries to lookup an cached entry on uAVC. If it does not found
+ * on uAVC, it create a new entry and insert it for the future usage.
+ * In most cases, this feature enables to reduce the number of kernel
+ * invocation.
+ *
+ * The only difference between two API is we can use security id as
+ * second argument of sepgsqlAvcPermissionSid(). In most cases to
+ * invoke AVC functions, we have to evaluate permissions onto required
+ * tuple holding security id. It enables to reduce overhead to translate
+ * security id and text representation.
  */
+static inline uint32
+sepgsql_avc_hash(const security_context_t scon, const security_context_t tcon,
+				 Oid security_id, security_class_t tclass)
+{
+	uint32 hash = 0;
+
+	hash ^= (scon ? DatumGetUInt32(hash_any((unsigned char *) scon, strlen(scon))) : 0);
+	hash ^= (tcon ? DatumGetUInt32(hash_any((unsigned char *) tcon, strlen(tcon))) : 0);
+	hash ^= DatumGetUInt32(hash_any((unsigned char *) &security_id, sizeof(Oid)));
+	hash ^= (tclass << 2);
+
+	return hash;
+}
+
 static bool
 avc_permission_common(avc_datum *cache, access_vector_t perms,
 					  const char *objname, bool abort)
 {
 	char audit_buffer[2048];
 	access_vector_t denied;
+	bool audit;
 	bool rc = true;
+
+	audit = avc_audit_common(audit_buffer, sizeof(audit_buffer),
+							 cache, perms, objname);
 
 	denied = perms & ~cache->allowed;
 	if (!perms || denied)
@@ -649,11 +676,8 @@ avc_permission_common(avc_datum *cache, access_vector_t perms,
 			cache->allowed |= perms;
 		}
 	}
-	/*
-	 * generate an audit record, if necessary
-	 */
-	if (avc_audit_common(audit_buffer, sizeof(audit_buffer),
-						 cache, perms, objname))
+
+	if (audit)
 	{
 		ereport((!rc && abort) ? ERROR : NOTICE,
 				(errcode(ERRCODE_SELINUX_AUDIT),
@@ -686,10 +710,7 @@ sepgsqlAvcPermission(const security_context_t scon,
 	/*
 	 * lookup avc entry
 	 */
-	hash = DatumGetUInt32(hash_any((unsigned char *) scon, strlen(scon)))
-		^ DatumGetUInt32(hash_any((unsigned char *) tcon, strlen(tcon)))
-		^ (tclass << 2);
-
+	hash = sepgsql_avc_hash(scon, tcon, InvalidOid, tclass);
 	cache = avc_lookup_entry(scon, tcon, tclass, hash);
 	if (!cache)
 	{
@@ -728,10 +749,7 @@ sepgsqlAvcPermissionSid(const security_context_t scon, Oid tsid,
 	/*
 	 * lookup avc entry
 	 */
-	hash = DatumGetUInt32(hash_any((unsigned char *) scon, strlen(scon)))
-		^ DatumGetUInt32(hash_any((unsigned char *) &tsid, sizeof(Oid)))
-		^ (tclass << 2);
-
+	hash = sepgsql_avc_hash(scon, NULL, tsid, tclass);
 	cache = avc_lookup_entry_sid(scon, tsid, tclass, hash);
 	if (!cache)
 	{
@@ -759,9 +777,10 @@ sepgsqlAvcPermissionSid(const security_context_t scon, Oid tsid,
 
 /*
  * sepgsqlAvcCreateCon
+ * sepgsqlAvcCreateConSid
  *
- * This function returns a security context to be attached
- * on the object newly created object.
+ * These functions returns a security context or security id of newly
+ * created object based on the security policy.
  */
 security_context_t
 sepgsqlAvcCreateCon(const security_context_t scon,
@@ -779,9 +798,7 @@ sepgsqlAvcCreateCon(const security_context_t scon,
 	/*
 	 * lookup avc entry
 	 */
-	hash = DatumGetUInt32(hash_any((unsigned char *) scon, strlen(scon)))
-		^ DatumGetUInt32(hash_any((unsigned char *) tcon, strlen(tcon)))
-		^ (tclass << 2);
+	hash = sepgsql_avc_hash(scon, tcon, InvalidOid, tclass);
 	cache = avc_lookup_entry(scon, tcon, tclass, hash);
 	if (!cache)
 	{
@@ -817,9 +834,7 @@ sepgsqlAvcCreateConSid(const security_context_t scon, Oid tsid,
 	/*
 	 * lookup avc entry
 	 */
-    hash = DatumGetUInt32(hash_any((unsigned char *) scon, strlen(scon)))
-        ^ DatumGetUInt32(hash_any((unsigned char *) &tsid, sizeof(Oid)))
-        ^ (tclass << 2);
+	hash = sepgsql_avc_hash(scon, NULL, tsid, tclass);
 	cache = avc_lookup_entry_sid(scon, tsid, tclass, hash);
 	if (!cache)
 	{
@@ -832,9 +847,9 @@ sepgsqlAvcCreateConSid(const security_context_t scon, Oid tsid,
 
 		cache = palloc0(sizeof(avc_datum));
 
-        tcon = pgaceLookupSecurityLabel(tsid);
-        sepgsql_avc_compute(scon, tcon, tclass, cache);
-        pfree(tcon);
+		tcon = pgaceLookupSecurityLabel(tsid);
+		sepgsql_avc_compute(scon, tcon, tclass, cache);
+		pfree(tcon);
 
 		cache->tsid = tsid;
 
