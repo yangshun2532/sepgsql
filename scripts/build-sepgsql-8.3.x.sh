@@ -44,15 +44,19 @@ echo
 svn export ${SEPGSQL_REPOSITORY}${SEPGSQL_BRANCH} altroot || exit 1
 cd altroot
 
-echo "GEN: sepostgresql-pgace-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch"
-diff -rpNU3 base pgace > ${RPMSOURCE}/sepostgresql-pgace-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch
-
 echo "GEN: sepostgresql-pg_dump-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch"
-diff -rpNU3 pgace/src/bin sepgsql/src/bin > ${RPMSOURCE}/sepostgresql-pg_dump-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch
-rm -rf pgace/src/bin sepgsql/src/bin
+diff -rpNU3 base/src/bin sepgsql/src/bin \
+    > ${RPMSOURCE}/sepostgresql-pg_dump-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch
+rm -rf base/src/bin sepgsql/src/bin
+
+echo "GEN: sepostgresql-policy-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch"
+diff -rpNU3 base/contrib/sepgsql_policy sepgsql/contrib/sepgsql_policy \
+    > ${RPMSOURCE}/sepostgresql-policy-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch
+rm -rf sepgsql/contrib/sepgsql_policy
 
 echo "GEN: sepostgresql-sepgsql-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch"
-diff -rpNU3 pgace sepgsql > ${RPMSOURCE}/sepostgresql-sepgsql-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch
+diff -rpNU3 base sepgsql \
+    > ${RPMSOURCE}/sepostgresql-sepgsql-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch
 
 echo "GEN: sepostgresql.init"
 cat package/sepostgresql.init | \
@@ -70,17 +74,6 @@ cat package/sepostgresql.spec | \
     sed "s/%%__sepgsql_major_version__%%/${SEPGSQL_MAJOR_VERSION}/g" | \
     sed "s/%%__sepgsql_extension__%%/${__SEPGSQL_EXTENSION}/g" \
     > ${RPMSOURCE}/sepostgresql.spec
-
-echo "CPY: sepostgresql.if"
-cp package/sepostgresql.if ${RPMSOURCE}
-
-echo "CPY: sepostgresql.fc"
-cp package/sepostgresql.fc ${RPMSOURCE}
-
-echo "CPY: sepostgresql.te"
-cat package/sepostgresql.te | \
-    sed "s/%%POLICY_VERSION%%/${SEPGSQL_VERSION}/g" \
-    > ${RPMSOURCE}/sepostgresql.te
 
 echo "CPY: sepostgresql.8"
 cp package/sepostgresql.8 ${RPMSOURCE}
