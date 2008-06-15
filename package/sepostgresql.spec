@@ -20,13 +20,10 @@ Url: http://code.google.com/p/sepgsql/
 Buildroot: %(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
 Source0: ftp://ftp.postgresql.org/pub/source/v%{version}/postgresql-%{version}.tar.bz2
 Source1: sepostgresql.init
-Source2: sepostgresql.if
-Source3: sepostgresql.te
-Source4: sepostgresql.fc
-Source5: sepostgresql.8
-Source6: sepostgresql.logrotate
-Patch0: sepostgresql-pgace-%%__base_postgresql_version__%%-%%__sepgsql_major_version__%%.patch
-Patch1: sepostgresql-sepgsql-%%__base_postgresql_version__%%-%%__sepgsql_major_version__%%.patch
+Source2: sepostgresql.8
+Source3: sepostgresql.logrotate
+Patch0: sepostgresql-sepgsql-%%__base_postgresql_version__%%-%%__sepgsql_major_version__%%.patch
+Patch1: sepostgresql-policy-%%__base_postgresql_version__%%-%%__sepgsql_major_version__%%.patch
 Patch2: sepostgresql-pg_dump-%%__base_postgresql_version__%%-%%__sepgsql_major_version__%%.patch
 Patch3: sepostgresql-fedora-prefix.patch
 BuildRequires: perl glibc-devel bison flex readline-devel zlib-devel >= 1.0.4
@@ -53,22 +50,10 @@ reference monitor to check any SQL query.
 %patch1 -p1
 %patch2 -p1
 %patch3 -p1
-mkdir selinux-policy
-cp -p %{SOURCE2} %{SOURCE3} %{SOURCE4} selinux-policy
 
 %build
 CFLAGS="${CFLAGS:-%optflags}" ; export CFLAGS
 CXXFLAGS="${CXXFLAGS:-%optflags}" ; export CXXFLAGS
-
-# build Binary Policy Module
-pushd selinux-policy
-for selinuxvariant in %{selinux_variants}
-do
-    make NAME=${selinuxvariant} -f %{_datadir}/selinux/devel/Makefile
-    mv %{name}.pp %{name}.pp.${selinuxvariant}
-    make NAME=${selinuxvariant} -f %{_datadir}/selinux/devel/Makefile clean
-done
-popd
 
 # build SE-PostgreSQL
 %configure      --disable-rpath                 \
@@ -83,20 +68,13 @@ popd
 
 # parallel build, if possible
 make %{?_smp_mflags}
+make -C contrib/sepgsql_policy
 
 %install
 rm -rf %{buildroot}
 
-pushd selinux-policy
-for selinuxvariant in %{selinux_variants}
-do
-    install -d %{buildroot}%{_datadir}/selinux/${selinuxvariant}
-    install -p -m 644 %{name}.pp.${selinuxvariant} \
-        %{buildroot}%{_datadir}/selinux/${selinuxvariant}/%{name}.pp
-done
-popd
-
-make DESTDIR=%{buildroot}  install
+make DESTDIR=%{buildroot} install
+make DESTDIR=%{buildroot} -C contrib/sepgsql_policy install
 
 # avoid to conflict with native postgresql package
 mv %{buildroot}%{_bindir}  %{buildroot}%{_bindir}.orig
@@ -124,13 +102,13 @@ install -d -m 700 %{buildroot}%{_localstatedir}/lib/sepgsql/backups
 mkdir -p %{buildroot}%{_initrddir}
 install -p -m 755 %{SOURCE1} %{buildroot}%{_initrddir}/sepostgresql
 
-# /etc/logrotate.d/
-mkdir -p %{buildroot}%{_sysconfdir}/logrotate.d
-install -p -m 644 %{SOURCE6} %{buildroot}%{_sysconfdir}/logrotate.d/sepostgresql
-
 # /usr/share/man/*
 mkdir -p %{buildroot}%{_mandir}/man8
-install -p -m 644 %{SOURCE5} %{buildroot}%{_mandir}/man8
+install -p -m 644 %{SOURCE2} %{buildroot}%{_mandir}/man8
+
+# /etc/logrotate.d/
+mkdir -p %{buildroot}%{_sysconfdir}/logrotate.d
+install -p -m 644 %{SOURCE3} %{buildroot}%{_sysconfdir}/logrotate.d/sepostgresql
 
 %clean
 rm -rf %{buildroot}
@@ -211,6 +189,9 @@ fi
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
 
 %changelog
+* Sun Jun 15 2008 <kaigai@kaigai.gr.jp> - 8.3.3-2.889
+- backport 8.4devel features.
+
 * Fri Jun 13 2008 <kaigai@kaigai.gr.jp> - 8.3.3-2.869
 - upgrade base PostgreSQL 8.3.1 -> 8.3.3
 
