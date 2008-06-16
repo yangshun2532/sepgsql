@@ -1,86 +1,416 @@
 <appendix id="security">
- <title>Enhanced security features</title>
+ <title>Enhanced Security Features</title>
 
  <abstract>
    <para>
-     In this chapter, we introduce enhanced security features
-     built in PostgreSQL version 8.4.x or later.
+     This chapter introduces enhanced security features built in core
+     PostgreSQL, which includes mandatory access controls, row and column
+     level access controls, security policy integration between database
+     management system and operating system and so on.
    </para>
 
    <para>
-     SE-PostgreSQL (Security Enhanced PostgreSQL) is an enhanced
-     security feature. It provides fine-grained mandatory access
-     controls including row-/column- level, and security policy
-     integration with operating system (SELinux).
+     SE-PostgreSQL (Security Enhanced PostgreSQL) provides an additional
+     access control mechanism, collaborating with SELinux and its security
+     policy.
+
+     The security policy of SELinux is a set of rules to control accesses
+     to describe who can access what objects comprehensively.
+
+     The key concept of SE-PostgreSQL is to share a single unified security
+     policy with operating system, and apply it on accesses to database
+     objects (like tables, columns, ...) based on same rules, as if client
+     accesses to filesystem objects.
+
+     In addition, SE-PostgreSQL applies its access control decision for
+     any query come from any clietns including privileged database roles,
+     and provides maximum flexibility in configuration using row and column
+     level access controls.
+
+     These feature enables to protect information leaks and manipulation
+     from malicious insider and to reduce damages from SQL injection and
+     application bugs.
+   </para>
+
+   <para>
+     PostgreSQL provides a security framework named as PGACE (PostgreSQL
+     Access Control Extension). It is consist of a series of hooks and
+     facilities to manage security attribute of each database objects.
+
+     It enables to minimize impacts to add a new security feature like
+     SE-PostgreSQL, and provide basic facilities to make a decision.
    </para>
  </abstract>
 
  <sect1 id="security-sepgsql-setup">
-   <title>SE-PostgreSQL setup</title>
-   <abstract>
-     <para>
-       In this chapter, we introduce the way to build and setup
-       SE-PostgreSQL.
-     </para>
-   </abstract>
+   <title>SE-PostgreSQL Installation and Setup</title>
 
-   <sect2 id="security-sepgsql-setup-build">
-     <title>build and installation</title>
+   <sect2>
+     <title>Requirements</title>
      <para>
-       To activate SE-PostgreSQL feature, you can specify --enable-selinux
-       option in the configure script, as follows:
-       <screen>
-	 <prompt>$ </prompt><userinput>./configure --enable-selinux</userinput>
-       </screen>
-       It requires the libselinux library and header files to build.
-       Please confirm its version is 2.0.43 or later.
+       We need the following packages to build and work SE-PostgreSQL
+       correctly. Please confirm them at first.
      </para>
 
-     <para>
-       SE-PostgreSQL requires its security policy module to work correctly.
-       contrib/sepgsql_policy contains the source of security policy.
-       <screen>
-	 <prompt>$ </prompt><userinput>gmake -C contrib/sepgsql_policy</userinput>
-       </screen>
-       If you can make it correctly, the security policy module is generated
-       at contrib/sepgsql_policy/sepostgresql.pp.
-       It can be linked with semodule command, as follows:
-       <screen>
-	 <prompt># </prompt><userinput>semodule -i contrib/sepgsql_policy</userinput>
-       </screen>
-     </para>
-
-     <para>
-       SELinux requires security context of files are associated correctly.
-       Just before you invoke initdb, run /sbin/restorecon to attach
-       correct security context for installed files.
-       <screen>
-	 <prompt># </prompt><userinput>/sbin/restorecon -R /usr/local/pgsql</userinput>
-       </screen>
-     </para>
-
+     <itemizedlist>
+       <listitem>
+	 <para>
+	   Linux kernel (2.6.23, or later)
+	 </para>
+       </listitem>
+       <listitem>
+	 <para>
+	   libselinux and libselinux-devel (2.0.43, or later)
+	 </para>
+       </listitem>
+       <listitem>
+	 <para>
+	   selinux-policy and selinux-policy-devel (3.0.6, or later)
+	 </para>
+       </listitem>
+       <listitem>
+	 <para>
+	   policycoreutils (2.0.16, or later)
+	 </para>
+       </listitem>
+     </itemizedlist>
    </sect2>
 
-   <sect2 id="security-sepgsql-setup-guc">
-     <title>GUC options</title>
-     
+   <sect2>
+     <title>Configure</title>
      <para>
-       empty
+       In the default, SE-PostgreSQL feature is not activated.
+       We have to specify <option>--enable-selinux</option> option
+       to configure script. It enables to build your PostgreSQL
+       with features to support SELinux.
      </para>
+
+     <para>
+<screen>
+  <prompt>$ </prompt><userinput>./configure --enable-selinux</userinput>
+</screen>
+     </para>
+   </sect2>
+
+   <sect2>
+     <title>Build</title>
+     <para>
+       SE-PostgreSQL needs its security policy to make its decision.
+       The source of security policy is stored in
+       <filename>contrib/sepgsql_policy/</filename>, and you can build
+       it as a binary security policy module. It can be installed later
+       without rebuilding whole of the policy.
+     </para>
+
+     <para>
+       We have to build binaries and security policy as follows:
+<screen>
+  <prompt>$ </prompt><userinput>make</userinput>
+  <prompt>$ </prompt><userinput>make -C contrib/sepgsql_policy</userinput>
+</screen>       
+     </para>
+   </sect2>
+
+   <sect2>
+     <title>Installation</title>
+     <para>
+       We need several additional steps to install SE-PostgreSQL and its
+       security policy correctly.
+<screen>
+  <prompt>$ </prompt><userinput>su</userinput>
+  <prompt># </prompt><userinput>/usr/sbin/semodule -i contrib/sepgsql_policy/sepostgresql.pp</userinput>
+  <prompt># </prompt><userinput>make install</userinput>
+  <prompt># </prompt><userinput>/sbin/restorecon -R /usr/local/pgsql</userinput>
+</screen>
+     </para>
+
+     <para>
+       <command>/usr/sbin/semodule</command> is a command to manage binary
+       security policy modules of SELinux. <option>-i</option> is a option
+       to install a new module.
+
+       If you have already installed <filename>sepostgresql.pp</filename>,
+       use <option>-u</option> to upgrade instead.
+     </para>
+
+     <para>
+       <command>/sbin/restorecon</command> is a command to label proper
+       security context of given files. <option>-R</option> option means
+       recursive relabeling under the given directory.
+
+       If you change the installation path, specify the appropriate
+       directory instead.
+     </para>
+   </sect2>
+
+   <sect2>
+     <title>GUC Parameters</title>
+
+     <sect3>
+       <title>sepostgresql</title>
+       <para>
+	 The <varname>sepostgresql</varname> parameter enables to spevify
+	 SE-PostgreSQL working mode.
+	 It can be specified on <filename>$PGDATA/postgresql.conf</filename>
+	 and we need to restart postmaster process to reflect its changing.
+       </para>
+
+       <synopsis>
+ sepostgresql = [ default | enforcing | permissive | disabled ]
+       </synopsis>
+
+       <variablelist>
+         <varlistentry>
+           <term><literal>default</literal></term>
+           <listitem>
+             <para>
+	       This is the default behavior, when we omit this configuration.
+               It always follows the configuration of operating system.
+             </para>
+           </listitem>
+         </varlistentry>
+
+         <varlistentry>
+           <term><literal>enforcing</literal></term>
+           <listitem>
+             <para>
+               It always works SE-PostgreSQL in enforcing mode
+               which enables to apply mandatory access controls
+               on any user's action.
+
+               This mode requires in-kernel SELinux is activated
+               in either enforcing or permissive mode.
+             </para>
+           </listitem>
+         </varlistentry>
+
+         <varlistentry>
+           <term><literal>permissive</literal></term>
+           <listitem>
+             <para>
+               It always works SE-PostgreSQL in permissive mode
+               which enables to evaluate user's action and generate
+               audit records, but does not prevent them.
+
+               This mode requires in-kernel SELinux is activated
+               in either enforcing or permissive mode.
+             </para>
+           </listitem>
+         </varlistentry>
+
+         <varlistentry>
+           <term><literal>disabled</literal></term>
+           <listitem>
+             <para>
+	       It always disables SE-PostgreSQL features.
+             </para>
+           </listitem>
+         </varlistentry>
+       </variablelist>
+     </sect3>
    </sect2>
  </sect1>
 
- <sect1 id="security-sepgsql-feature">
-   <title>hoge</title>
-   <para>
-     empty
-   </para>
+ <sect1>
+   <title>SE-PostgreSQL Features</title>
+
+   <sect2>
+     <title>A single unified security policy</title>
+
+     <para>
+       It is the most significant concept of SE-PostgreSQL to apply
+       mandatory access controls based on a single unified security
+       policy between OS and RDBMS.
+
+       Filesystem and RDBMS have common property which can store
+       our information asset and apply its permission checks on
+       accesses come from users via system-calls or SQL-queries.
+
+       However, they works independently and its consistency is not
+       made sure.
+       A single unified security policy means we can always apply
+       same access control rules on both OS and RDBMS, and make
+       sure its consistency.
+     </para>
+
+     <sect3>
+       <title>Security Context</title>
+       <para>
+	 The security policy of SELinux is described as a set of relationships
+	 between two security contexts.
+
+	 Security context is a formatted string as follows:
+	 <synopsis>
+ system_u:object_r:postgresql_db_t:SystemHigh
+	 </synopsis>
+	 
+	 In SELinux'ed platform, any process and any resources (like file,
+	 socket, shared memory segment, ...) have its security context,
+	 and these are used to make a decision by SELinux.
+       </para>
+
+       <para>
+	 For example, when a process with a security context of
+	 <literal>system_u:system_r:postgresql_t:s0</literal> tries to write
+	 a log record to <filename>/var/log/postgresql.log</filename> labeled
+	 as <literal>system_u:object_r:postgresql_log_t:s0</literal>,
+	 write(2) system call is hooked in the kernel and SELinux looks up
+	 its security policy to find out an entry which has a relationship
+	 between these two security context.
+
+	 If the entry allows the process to write, SELinux does nothing
+	 any more. Otherwise, SELinux prevents it to write a log record
+	 on the given file.
+       </para>
+
+       <para>
+	 By the same token, we have to associate a security context for
+	 each database object to make a decision based on the security
+	 policy of SELinux, in same format as operating system doing.
+
+	 In SE-PostgreSQL, we can refer the security context of each
+	 tuple using <literal>security_context</literal> system column
+	 as follows:
+<screen>
+<prompt># </prompt><userinput>SELECT security_context, * FROM drink;</userinput>
+                 security_context                 | id | name  | price
+--------------------------------------------------+----+-------+-------
+ unconfined_u:object_r:sepgsql_table_t            |  1 | water |   100
+ unconfined_u:object_r:sepgsql_table_t            |  2 | coke  |   120
+ unconfined_u:object_r:sepgsql_table_t            |  3 | juice |   130
+ unconfined_u:object_r:sepgsql_table_t:Classified |  4 | cofee |   180
+ unconfined_u:object_r:sepgsql_table_t:Classified |  5 | beer  |   240
+ unconfined_u:object_r:sepgsql_table_t:Classified |  6 | sake  |   320
+(6 rows)
+</screen>
+       </para>
+
+       <para>
+	 The security policy also has rules to decide the security context
+	 of newly inserted tuples, and SE-PostgreSQL applies it on new
+	 tuples when these are inserted, in the default.
+
+	 However, users can explicitly specifies a security context of
+	 a new tuple, using <literal>INSERT</literal> statement with
+	 <literal>security_context</literal> system column as a target.
+
+	 No need to say, users have to have permission to insert a tuple
+	 with specified security context.
+	 </para>
+<screen>
+<prompt># </prompt><userinput>INSERT INTO drink (security_context, id, name, price)
+     VALUES('system_u:object_r:sepgsql_table_t:SystemHigh', 7, 'tea', 130);</userinput>
+INSERT 16538 1
+<prompt># </prompt><userinput>SELECT security_context, * FROM drink;</userinput>
+                 security_context                 | id | name  | price
+--------------------------------------------------+----+-------+-------
+ unconfined_u:object_r:sepgsql_table_t            |  1 | water |   100
+ unconfined_u:object_r:sepgsql_table_t            |  2 | coke  |   120
+ unconfined_u:object_r:sepgsql_table_t            |  3 | juice |   130
+ unconfined_u:object_r:sepgsql_table_t:Classified |  4 | cofee |   180
+ unconfined_u:object_r:sepgsql_table_t:Classified |  5 | beer  |   240
+ unconfined_u:object_r:sepgsql_table_t:Classified |  6 | sake  |   320
+ system_u:object_r:sepgsql_table_t:SystemHigh     |  7 | tea   |   130
+(7 rows)
+</screen>
+
+       <para>
+	 We can also change security context of tuples using
+	 <literal>UPDATE</literal> statement as <literal>INSERT</literal>
+	 doing.
+       </para>
+<screen>
+<prompt># </prompt><userinput>UPDATE drink SET security_context = 'unconfined_u:object_r:sepgsql_secret_table_t' WHERE id in (3,4,5);</userinput>
+UPDATE 3
+kaigai=# SELECT security_context, * FROM drink;
+                 security_context                 | id | name  | price
+--------------------------------------------------+----+-------+-------
+ unconfined_u:object_r:sepgsql_table_t            |  1 | water |   100
+ unconfined_u:object_r:sepgsql_table_t            |  2 | coke  |   120
+ unconfined_u:object_r:sepgsql_table_t:Classified |  6 | sake  |   320
+ system_u:object_r:sepgsql_table_t:SystemHigh     |  7 | tea   |   130
+ unconfined_u:object_r:sepgsql_secret_table_t     |  3 | juice |   130
+ unconfined_u:object_r:sepgsql_secret_table_t     |  4 | cofee |   180
+ unconfined_u:object_r:sepgsql_secret_table_t     |  5 | beer  |   240
+(7 rows)
+</screen>
+
+       <para>
+	 SE-PostgreSQL also checks permission on using tables, columns
+	 and so on. In PostgreSQL, these are represented as a tuple within
+	 system catalogs, and SE-PostgreSQL uses it as a security context
+	 of tables, columns and so on.
+
+	 For example, a tuple within <literal>pg_attribute</literal> shows
+	 definition of a column, and its security context also means
+	 column's one.
+       </para>
+     </sect3>
+
+     <sect3>
+       <title>Client Authority</title>
+       <para>
+	 getpeercon() ... we can get peercon .
+	 
+	 How to set up -> see, SE-PostgreSQL Administration
+
+       </para>
+     </sect3>
+   </sect2>
+
+   <sect2>
+     <title>Mandatory access controls</title>
+     <para>empty></para>
+   </sect2>
+
+   <sect2>
+     <title>Tuple-level access controls</title>
+     <para>empty</para>
+   </sect2>
+
+   <sect2>
+     <title>Column-level access controls</title>
+     <para>empty</para>
+   </sect2>
  </sect1>
 
- <sect1 id="security-pgace">
+ <sect1>
+   <title>SE-PostgreSQL Administration</title>
+
+   <sect2>
+     <title>Backup and Restore</title>
+     <para>empty</para>
+   </sect2>
+
+   <sect2>
+     <title>Labeled Networking</title>
+     <para>empty</para>
+   </sect2>
+
+   <sect2>
+     <title>Related Functions</title>
+
+     <variablelist>
+       <varlistentry>
+	 <term><literal>sepgsql_getcon()</literal></term>
+	 <listitem>
+	   <para>
+	     This functions returns security context of client in text
+	     representation.
+	   </para>
+	 </listitem>
+       </varlistentry>
+
+     </variablelist>
+
+   </sect2>
+ </sect1>
+
+ <sect1>
    <title>PGACE Security Framework</title>
    <para>
      empty
    </para>
  </sect1>
+
 </appendix>
