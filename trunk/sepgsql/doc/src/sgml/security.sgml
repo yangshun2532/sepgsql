@@ -482,12 +482,126 @@ unconfined_u:unconfined_r:unconfined_t:Classified
 
    <sect2>
      <title>Tuple-level access controls</title>
-     <para>empty</para>
+     <para>
+       SE-PostgreSQL applies its access controls for each tuple.
+
+       If client tries to select, update or delete violated tuples,
+       these tuples are filtered from the result set or ignored from
+       the target of updates/deletions, as if they are not exist
+       on the table.
+     </para>
+
+     <para>
+       The following example shows the case when two users with different
+       security context tries to <literal>SELECT</literal> same table
+       with same SQL.
+
+       A <literal>Classified</literal> user can whole of the table.
+       But <literal>Classified</literal> tuples are invisible from
+       other users.
+     </para>
+<screen>
+<prompt>[kaigai@saba ~]$ </prompt><userinput>id -Z</userinput>
+unconfined_u:unconfined_r:unconfined_t:Classified
+<prompt>[kaigai@saba ~]$ </prompt><userinput>psql -q postgres</userinput>
+postgres=# SELECT security_context, * FROM drink;
+                 security_context                 | id | name  | price
+--------------------------------------------------+----+-------+-------
+ unconfined_u:object_r:sepgsql_table_t            |  1 | water |   100
+ unconfined_u:object_r:sepgsql_table_t            |  2 | coke  |   120
+ unconfined_u:object_r:sepgsql_table_t            |  3 | juice |   130
+ unconfined_u:object_r:sepgsql_table_t            |  4 | cofee |   180
+ unconfined_u:object_r:sepgsql_table_t:Classified |  5 | beer  |   240
+ unconfined_u:object_r:sepgsql_table_t:Classified |  6 | sake  |   320
+(6 rows)
+</screen>
+     <para>
+       It shows the <literal>Classified</literal> user got 6 tuples
+       with unconditional <literal>SELECT</literal> on drink table.
+
+       However, the unclassified (not labeled) user got 4 tuples
+       with same SQL, because of filtering violated tuples.
+     </para>
+<screen>
+<prompt>[ymj@saba ~]$ </prompt><userinput>id -Z</userinput>
+unconfined_u:unconfined_r:unconfined_t
+<prompt>[ymj@saba ~]$ </prompt><userinput>psql -q postgres</userinput>
+postgres=# SELECT security_context, * FROM drink;
+           security_context            | id | name  | price
+---------------------------------------+----+-------+-------
+ unconfined_u:object_r:sepgsql_table_t |  1 | water |   100
+ unconfined_u:object_r:sepgsql_table_t |  2 | coke  |   120
+ unconfined_u:object_r:sepgsql_table_t |  3 | juice |   130
+ unconfined_u:object_r:sepgsql_table_t |  4 | cofee |   180
+(4 rows)
+</screen>
    </sect2>
 
    <sect2>
      <title>Column-level access controls</title>
-     <para>empty</para>
+     <para>
+       SE-PostgreSQL also enables to set up access permissions on
+       per-column granularity. It walks on the given query trees
+       to pick up all appeared column.
+
+       If it contains one or more violated columns, SE-PostgreSQL
+       abort query execution and returns an error to users.
+       This behavior is different from tuple-level access controls.
+     </para>
+
+     <para>
+       The following example shows a case when we declared
+       <literal>ccredit</literal> column to store credit card numbers
+       as a secret column from unclassified users.
+
+       The following SQL is declaration of table and initial records.
+     </para>
+<screen>
+CREATE TABLE customer (
+    cid     integer primary key,
+    cname   varchar(32),
+    credit  varchar(32)  CONTEXT = 'system_u:object_r:sepgsql_secret_table_t'
+);
+GRANT ALL ON customer TO PUBLIC;
+
+INSERT INTO customer (cid, cname, credit)
+    VALUES ( 10, 'jack', '1111-2222-3333-4444'),
+           ( 13, 'adam', '5555-6666-7777-8888'),
+           ( 14, 'liza', '9876-5432-1098-7654');
+</screen>
+     <para>
+       In the first query, he tries to select all columns but SE-PostgreSQL
+       detect accesses on <literal>ccredit</literal> column, then it is aborted
+       with an audit records.
+
+       In the second query, he tries to select rest of column except
+       for <literal>ccredit</literal> column, then the query is executed
+       correctly, because violated column is not appeared in this query.
+     </para>
+<screen>
+[tak@saba ~]$ id -Z
+staff_u:staff_r:staff_t
+[tak@saba ~]$ psql -q postgres
+postgres=# SELECT * FROM customer;
+ERROR:  SELinux: denied { select } \
+	scontext=staff_u:staff_r:staff_t \
+	tcontext=system_u:object_r:sepgsql_secret_table_t \
+	tclass=db_column name=customer.credit
+postgres=# SELECT cid, cname FROM customer;
+ cid | cname
+-----+-------
+  10 | jack
+  13 | adam
+  14 | liza
+(3 rows)
+</screen>
+     <para>
+       SE-PostgreSQL also checks clients' permission to access tables,
+       to invoke funcion and to read/write large objects in same way.
+
+       If clients does not have enough permissions on these objects,
+       SE-PostgreSQL aborts query execution and raises an error.
+     </para>
    </sect2>
 
    <sect2>
@@ -533,9 +647,13 @@ unconfined_u:unconfined_r:unconfined_t:Classified
 	   </para>
 	 </listitem>
        </varlistentry>
-
      </variablelist>
 
+   </sect2>
+
+   <sect2>
+     <title>Object Classes and Permissions</title>
+     <para>empty</para>
    </sect2>
  </sect1>
 
