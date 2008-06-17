@@ -328,7 +328,7 @@
  unconfined_u:object_r:sepgsql_table_t            |  1 | water |   100
  unconfined_u:object_r:sepgsql_table_t            |  2 | coke  |   120
  unconfined_u:object_r:sepgsql_table_t            |  3 | juice |   130
- unconfined_u:object_r:sepgsql_table_t:Classified |  4 | cofee |   180
+ unconfined_u:object_r:sepgsql_table_t            |  4 | cofee |   180
  unconfined_u:object_r:sepgsql_table_t:Classified |  5 | beer  |   240
  unconfined_u:object_r:sepgsql_table_t:Classified |  6 | sake  |   320
 (6 rows)
@@ -468,7 +468,7 @@ unconfined_u:unconfined_r:unconfined_t:Classified
        The other is controllability by the resource owner.
 
        DAC feature allows the resource owner to change its access control
-       rules, like a owner can invoke <literal>GRANT</literal> statement
+       rules, like a owner can invoke <command>GRANT</command> statement
        on his tables.
 
        On the other hand, MAC feature restrict users including resource
@@ -493,7 +493,7 @@ unconfined_u:unconfined_r:unconfined_t:Classified
 
      <para>
        The following example shows the case when two users with different
-       security context tries to <literal>SELECT</literal> same table
+       security context tries to <command>SELECT</command> same table
        with same SQL.
 
        A <literal>Classified</literal> user can whole of the table.
@@ -517,7 +517,7 @@ postgres=# SELECT security_context, * FROM drink;
 </screen>
      <para>
        It shows the <literal>Classified</literal> user got 6 tuples
-       with unconditional <literal>SELECT</literal> on drink table.
+       with unconditional <command>SELECT</command> on drink table.
 
        However, the unclassified (not labeled) user got 4 tuples
        with same SQL, because of filtering violated tuples.
@@ -603,22 +603,6 @@ postgres=# SELECT cid, cname FROM customer;
        SE-PostgreSQL aborts query execution and raises an error.
      </para>
    </sect2>
-
-   <sect2>
-     <title>Case Studies</title>
-
-     <sect3>
-       <title>SELECT statement</title>
-       <para>empty</para>
-     </sect3>
-
-     <sect3>
-       <title>UPDATE statement</title>
-       <para>empty</para>
-     </sect3>
-
-   </sect2>
-
  </sect1>
 
  <sect1>
@@ -626,7 +610,73 @@ postgres=# SELECT cid, cname FROM customer;
 
    <sect2>
      <title>Backup and Restore</title>
-     <para>empty</para>
+     <para>
+       When we restore a database from backups, we have to restore
+       its security context correctly as GRANT statement doing on
+       the restored table.
+     </para>
+
+     <para>
+       The <command>pg_dump</command> and <command>pg_dumpall</command>
+       have <option>--enable-selinux</option> option to dump databases
+       with its security context.
+
+       The dumped image can be restored with proper security context.
+     </para>
+
+     <para>
+       No need to say, a process which invokes <command>pg_dump</command>
+       has to be allowed to refer whole of the database,
+       because SE-PostgreSQL filters all violated tuples from the result
+       set, or aborts query execution if it contains references violated
+       columns and so on.
+
+       These requirements are same when we restore the image.
+       A process which invokes <command>pg_restore</command> has to have
+       enough permission to create/insert these object with specified
+       security context.
+     </para>
+
+<screen>
+<prompt>$ </prompt><userinput>pg_dump --enable-selinux</userinput>
+	:
+      (snip)
+	:
+--
+-- Name: drink; Type: TABLE; Schema: public; Owner: kaigai; Tablespace:
+--
+
+CREATE TABLE drink (
+    id integer NOT NULL,
+    name character varying(48),
+    price integer
+) CONTEXT = 'unconfined_u:object_r:sepgsql_table_t';
+	:
+      (snip)
+	:
+--
+-- Data for Name: drink; Type: TABLE DATA; Schema: public; Owner: kaigai
+--
+
+COPY drink (security_context, id, name, price) FROM stdin;
+unconfined_u:object_r:sepgsql_table_t	1	water	100
+unconfined_u:object_r:sepgsql_table_t	2	coke	120
+unconfined_u:object_r:sepgsql_table_t	3	juice	130
+unconfined_u:object_r:sepgsql_table_t	4	cofee	180
+unconfined_u:object_r:sepgsql_table_t:Classified	5	beer	240
+unconfined_u:object_r:sepgsql_table_t:Classified	6	sake	320
+\.
+	:
+      (snip)
+	:
+</screen>
+     <para>
+       This example shows a backup image with explicitly specified security
+       context on tables and tuples.
+
+       If a column has different security context from tables' one, it also
+       specified explicitly in the <command>CREATE TABLE</command> statement.
+     </para>
    </sect2>
 
    <sect2 id="security-sepgsql-labeled-networks">
@@ -647,13 +697,9 @@ postgres=# SELECT cid, cname FROM customer;
 	   </para>
 	 </listitem>
        </varlistentry>
+
      </variablelist>
 
-   </sect2>
-
-   <sect2>
-     <title>Object Classes and Permissions</title>
-     <para>empty</para>
    </sect2>
  </sect1>
 
