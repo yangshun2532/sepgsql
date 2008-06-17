@@ -256,7 +256,7 @@
    </sect2>
  </sect1>
 
- <sect1>
+ <sect1 id="security-sepgsql-features">
    <title>SE-PostgreSQL Features</title>
 
    <sect2>
@@ -605,7 +605,7 @@ postgres=# SELECT cid, cname FROM customer;
    </sect2>
  </sect1>
 
- <sect1>
+ <sect1 id="security-sepgsql-admin">
    <title>SE-PostgreSQL Administration</title>
 
    <sect2>
@@ -638,7 +638,7 @@ postgres=# SELECT cid, cname FROM customer;
      </para>
 
 <screen>
-<prompt>$ </prompt><userinput>pg_dump --enable-selinux</userinput>
+<prompt>$ </prompt><userinput>pg_dump --enable-selinux postgres</userinput>
 	:
       (snip)
 	:
@@ -680,30 +680,222 @@ unconfined_u:object_r:sepgsql_table_t:Classified	6	sake	320
    </sect2>
 
    <sect2 id="security-sepgsql-labeled-networks">
-     <title>Labeled Networking</title>
-     <para>empty</para>
-   </sect2>
+     <title>Labeled Networks</title>
+     <para>
+       Labeled Networks is an excellent technology.
+       It enables to obtain the security context of peer process communicating
+       via TCP/IP connection.
+     </para>
 
-   <sect2>
-     <title>Related Functions</title>
+     <para>
+       This technology contains two facilities.
+       One is <literal>Labeled IPsec</literal>,
+       and the other is <literal>Static Fallbacked Context</literal>.
 
-     <variablelist>
-       <varlistentry>
-	 <term><literal>sepgsql_getcon()</literal></term>
-	 <listitem>
-	   <para>
-	     This functions returns security context of client in text
-	     representation.
-	   </para>
-	 </listitem>
-       </varlistentry>
+       This section shows the way to set up both labeled networks
+       technology.
+     </para>
 
-     </variablelist>
+     <sect3>
+       <title>Labeled IPsec</title>
+       <para>
+	 When we begin to communicate using an encrypted channel
+	 with IPsec, <command>racoon</command> which is a key-exchange
+	 daemon exchanges encryption keys of both peers.
 
+	 It does not exchange only encryption keys in actually,
+	 but the security context of process connecting to is also
+	 delivered to the peer side.
+
+	 The delivered security context is cached on the kernel, and
+	 it is exported into applications, if it required via
+	 <command>getpeercon()</command> API.
+       </para>
+
+       <para>
+	 This section introduces the steps to set up labeled ipsec.
+
+	 For more detailed information, visit <ulink url="http://www.redhat.com/docs/manuals/enterprise/RHEL-4-Manual/en-US/Security_Guide/s1-vpn-ipsec.html">Red Hat Enterprise Linux 4 - Security Guide</ulink>
+       </para>
+
+       <sect4>
+	 <title>Example Environment</title>
+	 <para>
+	   In this introduction, we assume the server host where SE-PostgreSQL
+	   works has an IP address of <literal>192.168.1.10</literal> and
+	   the client host has IP address of <literal>192.168.1.200</literal>.
+
+	   They are wired to same network, and can communicate each other
+	   directly, without any router.
+	 </para>
+
+	 <para>
+	   The purpose of the following configuration is to obtain
+	   the security context of the process working on the client host
+	   (<literal>192.168.1.200</literal>) from SE-PostgreSQL daemon
+	   working on the server host (<literal>192.168.1.10</literal>), 
+	   when a connection is established.
+	 </para>
+       </sect4>
+
+       <sect4>
+	 <title>Adding a SPD entry</title>
+	 <para>
+	   It is needed to add an SPD (Security Policy Database) entry
+	   to indicate applying IPsec on channels between two host.
+
+	   Note that SPD is not a term of SELinux, it is a configuration
+	   parameter of IPsec, although it's a bit confusable.
+	 </para>
+
+	 <para>
+	   This example shows esp/transport mode should be applied on
+	   outbounding packets from <literal>192.168.1.10</literal>
+	   to <literal>192.168.1.200</literal>, and inbounding packets
+	   from <literal>192.168.1.200</literal> to
+	   <literal>192.168.1.10</literal>.
+
+<programlisting>
+spdadd 192.168.1.10 192.168.1.200 any
+-ctx 1 1 "system_u:object_r:ipsec_spd_t:s0"
+-P out ipsec
+esp/transport//require;
+
+spdadd 192.168.1.200 192.168.1.10 any
+-ctx 1 1 "system_u:object_r:ipsec_spd_t:s0"
+-P in ipsec
+esp/transport//require;
+</programlisting>
+
+	   In addition, the second line of each entries enables to
+	   turn on security context delivery during key exchanging.
+	 </para>
+
+	 <para>
+	   You can load the above configuration using
+	   <command>setkey</command> command.
+
+	   Save your configuration into a temporary file,
+	   and invoke <command>setkey</command> with the file
+	   as an argument.
+<screen>
+<prompt># </prompt><userinput>/sbin/setkey -f &lt;your configuration file&gt;</userinput>
+</screen>
+	 </para>
+
+	 <para>
+	   It is necessary to apply on both server side and client side.
+
+	   Note that you have to invert IP addreses on the client side.
+	 </para>
+       </sect4>
+
+       <sect4>
+	 <title>Racoon configuration</title>
+	 <para>
+	   In the next, we have to edit a configuration file of
+	   <command>racoon</command> to specify encryption algorithm,
+	   authentication method and so on.
+
+	   This example uses pre shared key to authenticate the peer
+	   host (<literal>192.168.1.200</literal>) for simplification.
+
+	   Note that you have to invert IP addresses on the client side.
+	 </para>
+
+	 <para>
+	   An additional entry to <filename>/etc/racoon/racoon.conf</filename>.
+<programlisting>
+remote 192.168.1.200
+{
+	exchange_mode aggressive, main;
+	my_identifier address;
+	proposal {
+		encryption_algorithm 3des;
+		hash_algorithm sha1;
+		authentication_method pre_shared_key;
+		dh_group 2 ;
+	}
+}
+</programlisting>
+	 </para>
+
+	 <para>
+	   We have to put a set of key string and IP address of destination
+	   in <filename>/etc/racoon/psk.txt</filename>.
+
+	   The key string has also to be same in the client side.
+<programlisting>
+# file for pre-shared keys used for IKE authentication
+# format is: 'identifier' 'key'
+# For example:
+#
+# 10.1.1.1 flibbertigibbet
+# www.example.com 12345
+# foo@www.example.com micropachycephalosaurus
+192.168.1.200	somethingsecrettext
+</programlisting>
+         </para>
+       </sect4>
+
+       <sect4>
+	 <title>Restart Racoon</title>
+	 <para>
+	   Restart racoon daemon in both peers.
+	 </para>
+<screen>
+<prompt># </prompt><userinput>service racoon restart</userinput>
+</screen>
+       </sect4>
+     </sect3>
+
+     <sect3>
+       <title>Static Fallbacked Context</title>
+       <para>
+	 We cannot apply labeled IPsec for any situation.
+
+	 It requires both server and cliets being SElinux'ed and IPsec is
+	 available on thier communication channel.
+       </para>
+
+       <para>
+	 SELinux provides an alternative method to identify a security
+	 context of peer process inside the <literal>getpeercon()</literal>
+	 API, when a connection come from unlabeled networks.
+
+	 This facility is called as static fallbacked context.
+	 It enables to return a security context associated with IP address
+	 or network interfaces, as if a new connection come from labeled
+	 networks.
+       </para>
+
+       <para>
+	 <command>netlabelctl</command> within <literal>netlabel_tools</literal>
+	 package can be used to set up static fallbacked context.
+       </para>
+
+       <para>
+	 The following example shows a case when we associate a security
+	 context with connections come from <literal>192.168.1.0/24</literal>.
+<screen>
+<prompt># </prompt><userinput>/sbin/netlabelctl unlbl add address:192.168.1.0/24 label:user_u:user_r:user_t:s0</userinput>
+</screen>
+	 The following example shows a case when we associate a security
+	 context with connections come from <literal>eth0</literal>.
+<screen>
+<prompt># </prompt><userinput>/sbin/netlabelctl unlbl add dev:eth0 label:staff_u:staff_r:staff_t:s0:c0</userinput>
+</screen>
+	 The following example shows a case when we associate a security
+	 context with connections not matching any static fallbacked context.
+<screen>
+<prompt># </prompt><userinput>/sbin/netlabelctl unlbl default label:guest_u:guest_r:guest_t:s0</userinput>
+</screen>
+       </para>
+     </sect3>
    </sect2>
  </sect1>
 
- <sect1>
+ <sect1 id="security-pgace-framework">
    <title>PGACE Security Framework</title>
    <para>
      empty
