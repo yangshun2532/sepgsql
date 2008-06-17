@@ -19,7 +19,7 @@
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
 #include "security/pgace.h"
-#include "security/sepgsql.h"
+#include "storage/bufmgr.h"
 #include "utils/fmgroids.h"
 #include "utils/syscache.h"
 #include "utils/tqual.h"
