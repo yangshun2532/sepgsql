@@ -4,9 +4,6 @@
 # Copyright 2007 KaiGai Kohei <kaigai@kaigai.gr.jp>
 # -----------------------------------------------------
 
-# SELinux policy types
-%define selinux_variants mls targeted
-
 # SE-PostgreSQL status extension
 %%__sepgsql_extension__%%
 
@@ -24,13 +21,11 @@ Source0: ftp://ftp.postgresql.org/pub/source/v%{version}/postgresql-%{version}.t
 Source1: sepostgresql.init
 Source2: sepostgresql.8
 Source3: sepostgresql.logrotate
-Source4: sepostgresql.te
-Source5: sepostgresql.if
-Source6: sepostgresql.fc
 Patch0: sepostgresql-sepgsql-%%__base_postgresql_version__%%-%%__sepgsql_major_version__%%.patch
 Patch1: sepostgresql-pg_dump-%%__base_postgresql_version__%%-%%__sepgsql_major_version__%%.patch
 Patch2: sepostgresql-policy-%%__base_postgresql_version__%%-%%__sepgsql_major_version__%%.patch
-Patch3: sepostgresql-fedora-prefix.patch
+Patch3: sepostgresql-docs-%%__base_postgresql_version__%%-%%__sepgsql_major_version__%%.patch
+Patch4: sepostgresql-fedora-prefix.patch
 BuildRequires: perl glibc-devel bison flex readline-devel zlib-devel >= 1.0.4
 Buildrequires: checkpolicy libselinux-devel >= 2.0.43 selinux-policy-devel selinux-policy >= 3.0.6
 Requires(pre): shadow-utils
@@ -57,6 +52,7 @@ reference monitor to check any SQL query.
 %patch1 -p1
 %patch2 -p1
 %patch3 -p1
+%patch4 -p1
 
 %build
 CFLAGS="${CFLAGS:-%optflags}" ; export CFLAGS
@@ -76,24 +72,13 @@ CXXFLAGS="${CXXFLAGS:-%optflags}" ; export CXXFLAGS
                 --with-system-tzdata=/usr/share/zoneinfo
 
 # parallel build, if possible
-make -C contrib/sepgsql_policy
 make %{?_smp_mflags}
+make -C contrib/sepgsql_policy
 
 %install
 rm -rf %{buildroot}
-
-# install binary security policy module
-pushd contrib/sepgsql_policy
-for selinuxvariant in %{selinux_variants}
-do
-    install -d %{buildroot}%{_datadir}/selinux/${selinuxvariant}
-    install -p -m 644 %{name}.pp.${selinuxvariant} \
-        %{buildroot}%{_datadir}/selinux/${selinuxvariant}/%{name}.pp
-done
-popd
-
-# install SE-PostgreSQL
-make DESTDIR=%{buildroot}  install
+make DESTDIR=%{buildroot} install
+make DESTDIR=%{buildroot} -C contrib/sepgsql_policy install
 
 # avoid to conflict with native postgresql package
 mv %{buildroot}%{_bindir}  %{buildroot}%{_bindir}.orig
@@ -156,13 +141,18 @@ exit 0
 /sbin/chkconfig --add %{name}
 /sbin/ldconfig
 
-for selinuxvariant in %{selinux_variants}
+policy_stores=`cd /usr/share/selinux; ls -d * | grep -v devel`
+for store in ${policy_stores}
 do
-    %{_sbindir}/semodule -s ${selinuxvariant} -l >& /dev/null || continue;
+    %{_sbindir}/semodule -s ${store} -l >& /dev/null || continue;
 
-    %{_sbindir}/semodule -s ${selinuxvariant} -l | egrep -q '^%{name}' && \
-        %{_sbindir}/semodule -s ${selinuxvariant} -r %{name} >& /dev/null || :
-    %{_sbindir}/semodule -s ${selinuxvariant} -i %{_datadir}/selinux/${selinuxvariant}/%{name}.pp >& /dev/null || :
+    if %{_sbindir}/semodule -s ${store} -l | egrep -q '^%{name}'; then
+        %{_sbindir}/semodule -s ${store} \
+            -u %{_datadir}/selinux/${store}/%{name}.pp >& /dev/null || :
+    else
+        %{_sbindir}/semodule -s ${store} \
+            -i %{_datadir}/selinux/${store}/%{name}.pp >& /dev/null || :
+    fi
 done
 
 # Fix up non-standard file contexts
@@ -181,12 +171,10 @@ if [ $1 -ge 1 ]; then           # rpm -U case
     /sbin/service %{name} condrestart >/dev/null 2>&1 || :
 fi
 if [ $1 -eq 0 ]; then           # rpm -e case
-    for selinuxvariant in %{selinux_variants}
+    policy_stores=`cd /usr/share/selinux; ls -d * | grep -v devel`
+    for store in ${policy_stores}
     do
-        %{_sbindir}/semodule -s ${selinuxvariant} -l >& /dev/null || continue;
-
-        %{_sbindir}/semodule -s ${selinuxvariant} -l | egrep -q '^%{name}' && \
-            %{_sbindir}/semodule -s ${selinuxvariant} -r %{name} >& /dev/null || :
+        %{_sbindir}/semodule -s ${store} -r %{name} >& /dev/null || :
     done
     /sbin/fixfiles -R %{name} restore || :
     test -d %{_localstatedir}/lib/sepgsql && /sbin/restorecon -R %{_localstatedir}/lib/sepgsql || :
