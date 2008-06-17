@@ -146,13 +146,9 @@ for store in ${policy_stores}
 do
     %{_sbindir}/semodule -s ${store} -l >& /dev/null || continue;
 
-    if %{_sbindir}/semodule -s ${store} -l | egrep -q '^%{name}'; then
-        %{_sbindir}/semodule -s ${store} \
-            -u %{_datadir}/selinux/${store}/%{name}.pp >& /dev/null || :
-    else
-        %{_sbindir}/semodule -s ${store} \
-            -i %{_datadir}/selinux/${store}/%{name}.pp >& /dev/null || :
-    fi
+    %{_sbindir}/semodule -s ${store} -r %{name} >& /dev/null || :
+    %{_sbindir}/semodule -s ${store} \
+        -i %{_datadir}/selinux/${store}/%{name}.pp >& /dev/null || :
 done
 
 # Fix up non-standard file contexts

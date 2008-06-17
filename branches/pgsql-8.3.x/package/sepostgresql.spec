@@ -4,9 +4,6 @@
 # Copyright 2007 KaiGai Kohei <kaigai@kaigai.gr.jp>
 # -----------------------------------------------------
 
-# SELinux policy types
-%define selinux_variants mls strict targeted
-
 # SE-PostgreSQL status extension
 %%__sepgsql_extension__%%
 
@@ -124,13 +121,14 @@ exit 0
 /sbin/chkconfig --add %{name}
 /sbin/ldconfig
 
-for selinuxvariant in %{selinux_variants}
+policy_stores=`cd /usr/share/selinux; ls -d * | grep -v devel`
+for store in ${policy_stores}
 do
-    %{_sbindir}/semodule -s ${selinuxvariant} -l >& /dev/null || continue;
+    %{_sbindir}/semodule -s ${store} -l >& /dev/null || continue;
 
-    %{_sbindir}/semodule -s ${selinuxvariant} -l | egrep -q '^%{name}' && \
-        %{_sbindir}/semodule -s ${selinuxvariant} -r %{name} >& /dev/null || :
-    %{_sbindir}/semodule -s ${selinuxvariant} -i %{_datadir}/selinux/${selinuxvariant}/%{name}.pp >& /dev/null || :
+    %{_sbindir}/semodule -s ${store} -r %{name} >& /dev/null || :
+    %{_sbindir}/semodule -s ${store} \
+        -i %{_datadir}/selinux/${store}/%{name}.pp >& /dev/null || :
 done
 
 # Fix up non-standard file contexts
@@ -149,12 +147,10 @@ if [ $1 -ge 1 ]; then           # rpm -U case
     /sbin/service %{name} condrestart >/dev/null 2>&1 || :
 fi
 if [ $1 -eq 0 ]; then           # rpm -e case
-    for selinuxvariant in %{selinux_variants}
+    policy_stores=`cd /usr/share/selinux; ls -d * | grep -v devel`
+    for store in ${policy_stores}
     do
-        %{_sbindir}/semodule -s ${selinuxvariant} -l >& /dev/null || continue;
-
-        %{_sbindir}/semodule -s ${selinuxvariant} -l | egrep -q '^%{name}' && \
-            %{_sbindir}/semodule -s ${selinuxvariant} -r %{name} >& /dev/null || :
+        %{_sbindir}/semodule -s ${store} -r %{name} >& /dev/null || :
     done
     /sbin/fixfiles -R %{name} restore || :
     test -d %{_localstatedir}/lib/sepgsql && /sbin/restorecon -R %{_localstatedir}/lib/sepgsql || :
