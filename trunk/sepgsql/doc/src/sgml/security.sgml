@@ -607,7 +607,10 @@ postgres=# SELECT cid, cname FROM customer;
 
  <sect1 id="security-sepgsql-admin">
    <title>SE-PostgreSQL Administration</title>
-
+   <para>
+     This chapter introduces methods to backup/restore with security
+     context, and to apply security context of remote processes.
+   </para>
    <sect2>
      <title>Backup and Restore</title>
      <para>
@@ -898,8 +901,188 @@ remote 192.168.1.200
  <sect1 id="security-pgace-framework">
    <title>PGACE Security Framework</title>
    <para>
-     empty
+     This chapter introduces the design of PGACE (PostgreSQL Access
+     Control Extension) Security Framework.
+
+     It enables to add various kind of security subsystems based on
+     different access control models and platforms (we call it as
+     "the guest") with minimun impact toward core PostgreSQL.
    </para>
+
+   <para>
+     PGACE provides two major facilities.
+   </para>
+
+   <para>     
+     One is a set of security hooks injected into several strategic points
+     within core PostgreSQL. The guest can utilize these hooks to invoke
+     itself, and make a its decision on the strategic point.
+
+     Any PGACE hooks are declared at
+     <filename>src/include/security/pgace.h</filename>, as inline
+     functions with short descriptions.
+
+     The guest can extend these hooks to invoke its implementation
+     when it is activated.
+     Any platform dependency have to be put in the guest implementation,
+     because PGACE hooks are declared completely platform independent
+     hooks.
+   </para>
+
+   <para>
+     The other is a facility to manage security attribute of each tuple.
+     It enables the guest to make its decision based on a security
+     attribute with minimum storage comsumption.
+
+     In the most cases, security attribute has a text representation
+     but massive object shares one or several attributes.
+
+     PGACE utilize this characteristic to reduce storage comsumption
+     using an alternate key called as security id.
+
+     The security id is an integer value with <literal>sizeof(Oid)</literal>
+     width, and can be used to indicate <literal>oid</literal> attribute
+     of <structname>pg_security</structname> which hold a text representation.
+
+     PGACE provides utility functions to translate between a security id
+     and text representation for internal use.
+   </para>
+
+   <sect2>
+     <title>Security Hooks</title>
+
+     <para>
+       The following hooks is invoked just before insertion of a new tuple.
+
+       When the hooks returns <literal>false</literal> to the caller,
+       insertion of a new tuple is skipped. Otherwise, the rest of steps
+       are done normally.
+<programlisting>
+static inline bool
+pgaceHeapTupleInsert(Relation rel, HeapTuple tuple,
+                     bool is_internal, bool with_returning)
+{
+#ifdef HAVE_SELINUX
+    if (sepgsqlIsEnabled())
+        return sepgsqlHeapTupleInsert(rel, tuple,
+                                      is_internal,
+                                      with_returning);
+#endif
+    return true;
+}
+</programlisting>
+     </para>
+
+     <para>
+       The author of the security subsystem has to keep the default
+       behavior when his module is disabled.
+
+       In this example, SELinux related function is enclosed by
+       <literal>#ifdef</literal> block, and invoked only when
+       it isactivated. (<function>sepgsqlIsEnabled()</function>
+       returns <literal>true</literal> only when SE-PostgreSQL
+       is enabled.)
+     </para>
+
+     <para>
+       If you add a new security subsystem, add a new
+       <literal>#ifdef</literal> block to enclose invocation
+       code to avoid conflicts.
+
+       The following example shows a case when you add a new security
+       subsystem activated witth <literal>HAVE_FOO_SECURITY</literal>.
+
+<programlisting>
+static inline bool
+pgaceHeapTupleInsert(Relation rel, HeapTuple tuple,
+                     bool is_internal, bool with_returning)
+{
+#ifdef HAVE_SELINUX
+    if (sepgsqlIsEnabled())
+        return sepgsqlHeapTupleInsert(rel, tuple,
+                                      is_internal,
+                                      with_returning);
+#elifdef HAVE_FOO_SECURITY
+    if (fooSecurityIsEnabled())
+        return fooSecurityHeapTupleInsert(rel, tuple,
+                                          is_internal,
+                                          with_returning);
+#endif
+    return true;
+}
+</programlisting>
+     </para>
+
+     <para>
+       Note that two or more security subsystem cannot be activated
+       in build time (also in run time, no need to say).
+       These are mutually exclusive, because we don't provide
+       a framework to associate several security attributes
+       within a tuple and cannot be shared.
+     </para>
+
+     <para>
+       Some of hooks are declared as <literal>void</literal> typed
+       functions.
+
+       If your security subsystem decide the required is not allowed
+       in these hooks, it can generate an error to abort the series
+       of steps.
+     </para>
+
+   </sect2>
+
+   <sect2>
+     <title>Security Attribute Management</title>
+
+     <para>
+       Security id of tuples are stored in the padding area of
+       <structname>HeapTupleHeader</structname>.
+
+       The guest can get or set the security id of given tuple using
+       <function>HeapTupleGetSecurity()</function> and
+       <function>HeapTupleSetSecurity()</function> macros.
+
+       When the tuple does not have its security id, it returns
+       <literal>InvalidOid</literal> and the guest have to handle it.
+     </para>
+
+     <para>
+       PGACE provides an internal API to translate between
+       security id and text representation.
+
+       The <function>pgaceLookupSecurityLabel()</function> returns
+       a text representation for the given security id.
+
+       On the other hand, <function>pgaceLookupSecurityId()</function>
+       returns a security id for the given text representation.
+       When the given text representation was not found on
+       <structname>pg_security</structname>, it insert a new entry
+       automatically.
+
+       Thus, the guest subsystem should pay attention not to invoke
+       <function>pgaceLookupSecurityId()</function> in read-only
+       transaction.
+     </para>
+
+     <para>
+       A constant of <literal>SECURITY_SYSATTR_NAME</literal> defines
+       the name of security system column. It provides a way to expose
+       the security attribute of each tuple in text representation.
+
+       The system column has a characteristic, that is writable.
+
+       The security system column is declared as a TEXT type attribute,
+       and user can specify the target of <command>UPDATE</command> or
+       <command>INSERT</command>.
+
+       PGACE internally translates the specified text representation
+       into a security id, and stores it within a new tuple.
+
+       If the guest uses the feature of security attribute,
+       it has to be able to handle these translation.
+     </para>
+   </sect2>
  </sect1>
 
 </appendix>
