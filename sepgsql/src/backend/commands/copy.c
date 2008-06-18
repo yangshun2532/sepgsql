@@ -283,6 +283,19 @@ static bool CopyGetInt32(CopyState cstate, int32 *val);
 static void CopySendInt16(CopyState cstate, int16 val);
 static bool CopyGetInt16(CopyState cstate, int16 *val);
 
+/*
+ * IsWritableSecurityAttribute
+ *
+ * It returns false, if the given attribute is not
+ * a writable security system attribute.
+ */
+#ifdef SECURITY_SYSATTR_NAME
+#define IsWritableSecurityAttribute(attnum)		\
+	((attnum) == SecurityAttributeNumber		\
+	 && pgaceSecurityAttributeNecessary())
+#else
+#define IsWritableSecurityAttribute(attnum)		(false)
+#endif
 
 /*
  * Send copy start/stop messages for frontend copies.  These have changed
@@ -1101,7 +1114,7 @@ DoCopy(const CopyStmt *stmt, const char *queryString)
 						(errcode(ERRCODE_INVALID_COLUMN_REFERENCE),
 				   errmsg("FORCE QUOTE column \"%s\" not referenced by COPY",
 						  NameStr(tupDesc->attrs[attnum - 1]->attname))));
-			if (pgaceIsSecuritySystemColumn(attnum))
+			if (IsWritableSecurityAttribute(attnum))
 			{
 				cstate->security_force_quot = true;
 				continue;
@@ -1128,7 +1141,7 @@ DoCopy(const CopyStmt *stmt, const char *queryString)
 						(errcode(ERRCODE_INVALID_COLUMN_REFERENCE),
 				errmsg("FORCE NOT NULL column \"%s\" not referenced by COPY",
 					   NameStr(tupDesc->attrs[attnum - 1]->attname))));
-			if (pgaceIsSecuritySystemColumn(attnum))
+			if (IsWritableSecurityAttribute(attnum))
 				continue;	/* ignore, if specified */
 
 			cstate->force_notnull_flags[attnum - 1] = true;
@@ -1324,7 +1337,7 @@ CopyTo(CopyState cstate)
 		FmgrInfo    *out_fmgr;
 		Form_pg_attribute attForm;
 
-		if (pgaceIsSecuritySystemColumn(attnum))
+		if (IsWritableSecurityAttribute(attnum))
 		{
 			attForm = SystemAttributeDefinition(attnum, false);
 			out_fmgr = &cstate->security_out_function;
@@ -1398,7 +1411,7 @@ CopyTo(CopyState cstate)
 					CopySendChar(cstate, cstate->delim[0]);
 				hdr_delim = true;
 
-				if (pgaceIsSecuritySystemColumn(attnum))
+				if (IsWritableSecurityAttribute(attnum))
 				{
 					Form_pg_attribute attForm
 						= SystemAttributeDefinition(attnum, false);
@@ -1518,7 +1531,7 @@ CopyOneRowTo(CopyState cstate, Oid tupleOid, Oid tupleSecurity, Datum *values, b
 			need_delim = true;
 		}
 
-		if (pgaceIsSecuritySystemColumn(attnum))
+		if (IsWritableSecurityAttribute(attnum))
 		{
 			char *tmp = pgaceSidToSecurityLabel(tupleSecurity);
 			value = CStringGetTextDatum(tmp);
@@ -1936,7 +1949,7 @@ CopyFrom(CopyState cstate)
 	{
 		attnum = lfirst_int(l);
 
-		if (pgaceIsSecuritySystemColumn(attnum))
+		if (IsWritableSecurityAttribute(attnum))
 		{
 			if (!cstate->binary)
 				getTypeInputInfo(TEXTOID,
@@ -2058,7 +2071,7 @@ CopyFrom(CopyState cstate)
 				int			attnum = lfirst_int(cur);
 				int			m = attnum - 1;
 
-				if (pgaceIsSecuritySystemColumn(attnum))
+				if (IsWritableSecurityAttribute(attnum))
 				{
 					Form_pg_attribute attForm
 						= SystemAttributeDefinition(attnum, false);
@@ -2154,7 +2167,7 @@ CopyFrom(CopyState cstate)
 				int			attnum = lfirst_int(cur);
 				int			m = attnum - 1;
 
-				if (pgaceIsSecuritySystemColumn(attnum))
+				if (IsWritableSecurityAttribute(attnum))
 				{
 					Form_pg_attribute attForm
 						= SystemAttributeDefinition(attnum, false);
@@ -3508,7 +3521,7 @@ CopyGetAttnums(TupleDesc tupDesc, Relation rel, List *attnamelist)
 				bool relhasoids = RelationGetForm(rel)->relhasoids;
 
 				attForm = SystemAttributeByName(name, relhasoids);
-				if (attForm && pgaceIsSecuritySystemColumn(attForm->attnum))
+				if (attForm && IsWritableSecurityAttribute(attForm->attnum))
 					attnum = attForm->attnum;
 			}
 

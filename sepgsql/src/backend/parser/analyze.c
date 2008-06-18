@@ -675,18 +675,9 @@ static void
 transformSelectIntoSystemColumn(ParseState *pstate, Query *qry)
 {
 	ListCell *l;
-	uint system_attrs = 0;
-	bool relhasoids = false;
-
-	/* checks "WITH OIDS" */
-	foreach (l, qry->intoClause->options) {
-		DefElem *f = (DefElem *) lfirst(l);
-
-		if (!strcmp(f->defname, "oids") && intVal(f->arg)) {
-			relhasoids = true;
-			break;
-		}
-	}
+	uint32 system_attrs = 0;
+	bool relhasoids
+		= interpretOidsOption(qry->intoClause->options);
 
 	foreach (l, qry->targetList) {
 		Form_pg_attribute attr;
@@ -696,15 +687,17 @@ transformSelectIntoSystemColumn(ParseState *pstate, Query *qry)
             continue;
 
 		attr = SystemAttributeByName(tle->resname, relhasoids);
-		if (attr && SystemAttributeIsWritable(attr->attnum)) {
+		if (attr && SystemAttributeIsWritable(attr->attnum, relhasoids))
+		{
+			uint32 mask = (1<<(-attr->attnum));
+
 			/* duplication checks */
-			if (system_attrs & (1<<(-attr->attnum)))
+			if (system_attrs & mask)
 				continue;
-			system_attrs |= (1<<(-attr->attnum));
+			system_attrs |= mask;
 
-			tle->resjunk = true;
-
-			if (exprType((Node *) tle->expr) != attr->atttypid) {
+			if (exprType((Node *) tle->expr) != attr->atttypid)
+			{
 				tle->expr = (Expr *) coerce_to_target_type(pstate,
 														   (Node *) tle->expr,
 														   exprType((Node *) tle->expr),

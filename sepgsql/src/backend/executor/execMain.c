@@ -1196,24 +1196,19 @@ fetchWritableSystemAttribute(JunkFilter *junkfilter, TupleTableSlot *slot,
 static void
 storeWritableSystemAttribute(Relation rel, TupleTableSlot *slot, HeapTuple tuple)
 {
-#ifdef SECURITY_SYSATTR_NAME
-	if (!DatumGetPointer(slot->tts_security))
+	/* for security attribute */
+	if (HeapTupleHasSecurity(tuple))
 	{
-		if (HeapTupleHasSecurity(tuple))
+		if (!DatumGetPointer(slot->tts_security))
 			HeapTupleSetSecurity(tuple, InvalidOid);
+		else
+		{
+			char   *label = TextDatumGetCString(slot->tts_security);
+
+			HeapTupleSetSecurity(tuple,
+								 pgaceSecurityLabelToSid(label));
+		}
 	}
-	else
-	{
-		Oid security_id;
-		char *label;
-
-		label = TextDatumGetCString(slot->tts_security);
-
-		security_id = pgaceSecurityLabelToSid(label);
-
-		HeapTupleSetSecurity(tuple, security_id);
-	}
-#endif
 }
 
 /* ----------------------------------------------------------------
