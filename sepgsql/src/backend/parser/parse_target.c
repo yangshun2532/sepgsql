@@ -335,6 +335,7 @@ transformAssignedExpr(ParseState *pstate,
 	Oid			attrtype;		/* type of target column */
 	int32		attrtypmod;
 	Relation	rd = pstate->p_target_relation;
+	bool		relhasoids = RelationGetForm(rd)->relhasoids;
 
 	Assert(rd != NULL);
 	if (attrno > 0)
@@ -342,11 +343,11 @@ transformAssignedExpr(ParseState *pstate,
 		attrtype = attnumTypeId(rd, attrno);
 		attrtypmod = rd->rd_att->attrs[attrno - 1]->atttypmod;
 	}
-	else if (SystemAttributeIsWritable(attrno))
+	else if (SystemAttributeIsWritable(attrno, relhasoids))
 	{
 		Form_pg_attribute attr;
 
-		attr = SystemAttributeDefinition(attrno, RelationGetForm(rd)->relhasoids);
+		attr = SystemAttributeDefinition(attrno, relhasoids);
 		attrtype = attr->atttypid;
 		attrtypmod = attr->atttypmod;
 	}
@@ -483,6 +484,9 @@ updateTargetListEntry(ParseState *pstate,
 					  List *indirection,
 					  int location)
 {
+	bool	relhasoids
+		= RelationGetForm(pstate->p_target_relation)->relhasoids;
+
 	/* Fix up expression as needed */
 	tle->expr = transformAssignedExpr(pstate,
 									  tle->expr,
@@ -500,7 +504,7 @@ updateTargetListEntry(ParseState *pstate,
 	tle->resno = (AttrNumber) attrno;
 	tle->resname = colname;
 
-	if (SystemAttributeIsWritable(attrno))
+	if (SystemAttributeIsWritable(attrno, relhasoids))
 		tle->resjunk = true;
 }
 
@@ -768,7 +772,7 @@ checkInsertTargets(ParseState *pstate, List *cols, List **attrnos)
 		Bitmapset  *wholecols = NULL;
 		Bitmapset  *partialcols = NULL;
 		ListCell   *tl;
-		uint		system_attrs = 0;
+		uint32		system_attrs = 0;
 
 		foreach(tl, cols)
 		{
@@ -789,14 +793,19 @@ checkInsertTargets(ParseState *pstate, List *cols, List **attrnos)
 			}
 			else if (attrno < 0)
 			{
-				if (SystemAttributeIsWritable(attrno))
+				bool    relhasoids
+					= RelationGetForm(pstate->p_target_relation)->relhasoids;
+
+				if (SystemAttributeIsWritable(attrno, relhasoids))
 				{
-					if (system_attrs & (1<<(-attrno)))
+					uint32	mask = (1<<(-attrno));
+
+					if (system_attrs & mask)
 						ereport(ERROR,
 								(errcode(ERRCODE_DUPLICATE_COLUMN),
 								 errmsg("column \"%s\" specified more than once", name),
 								 parser_errposition(pstate, col->location)));
-					system_attrs |= (1<<(-attrno));
+					system_attrs |= mask;
 					*attrnos = lappend_int(*attrnos, attrno);
 					continue;
 				}
