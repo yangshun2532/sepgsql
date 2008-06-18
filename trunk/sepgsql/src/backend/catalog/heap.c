@@ -216,7 +216,7 @@ SystemAttributeByName(const char *attname, bool relhasoids)
  * system column. If not, returns false.
  */
 bool
-SystemAttributeIsWritable(AttrNumber attno)
+SystemAttributeIsWritable(AttrNumber attno, bool relhasoids)
 {
 #ifdef SECURITY_SYSATTR_NAME
 	if (pgaceSecurityAttributeNecessary()
