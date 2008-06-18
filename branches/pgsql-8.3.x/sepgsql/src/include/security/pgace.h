@@ -69,20 +69,6 @@
  * Please look at this one to understand each hooks.
  */
 
-/*
- * SECURITY_SYSATTR_NAME is the name of system column name
- * for security attribute, defined in pg_config.h
- * If it is not defined, security attribute support is disabled
- *
- * see, src/include/pg_config.h
- */
-#ifdef SECURITY_SYSATTR_NAME
-#define pgaceIsSecuritySystemColumn(attno)		\
-	((attno) == SecurityAttributeNumber ? true : false)
-#else
-#define pgaceIsSecuritySystemColumn(attno)		(false)
-#endif
-
 /******************************************************************
  * Initialization hooks
  ******************************************************************/
