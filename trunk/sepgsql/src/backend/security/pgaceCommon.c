@@ -349,8 +349,14 @@ pgacePostBootstrapingMode(void)
 	CommitTransactionCommand();
 }
 
+/*
+ * pgaceLookupSecurityId()
+ *
+ * The PGACE guest subsystem can use this interface to get a security id
+ * for a given text representation.
+ */
 Oid
-pgaceSecurityLabelToSid(char *label)
+pgaceLookupSecurityId(char *raw_label)
 {
 	Oid			labelOid, labelSid;
 	HeapTuple	tuple;
@@ -358,16 +364,17 @@ pgaceSecurityLabelToSid(char *label)
 	/*
 	 * valid label checks
 	 */
-	label = pgaceTranslateSecurityLabelIn(label);
-	label = pgaceValidateSecurityLabel(label);
+	raw_label = pgaceValidateSecurityLabel(raw_label);
 
 	if (IsBootstrapProcessingMode())
-		return earlySecurityLabelToSid(label);
+		return earlySecurityLabelToSid(raw_label);
 
 	/*
 	 * lookup syscache at first
 	 */
-	tuple = SearchSysCache(SECURITYLABEL, CStringGetTextDatum(label), 0, 0, 0);
+	tuple = SearchSysCache(SECURITYLABEL,
+						   CStringGetTextDatum(raw_label),
+						   0, 0, 0);
 	if (HeapTupleIsValid(tuple))
 	{
 		labelOid = HeapTupleGetOid(tuple);
@@ -388,27 +395,42 @@ pgaceSecurityLabelToSid(char *label)
 
 		slabel = pgaceSecurityLabelOfLabel();
 
-		if (!strcmp(label, slabel))
+		if (!strcmp(raw_label, slabel))
 		{
 			labelOid = labelSid = GetNewOid(rel);
 		}
 		else
 		{
-			labelSid = pgaceSecurityLabelToSid(slabel);
+			labelSid = pgaceLookupSecurityId(slabel);
 			labelOid = GetNewOid(rel);
 		}
 
 		ind = CatalogOpenIndexes(rel);
 
-		labelTxt = CStringGetTextDatum(label);
+		labelTxt = CStringGetTextDatum(raw_label);
 		isnull = ' ';
-		tuple = heap_formtuple(RelationGetDescr(rel), &labelTxt, &isnull);
+		tuple = heap_formtuple(RelationGetDescr(rel),
+							   &labelTxt, &isnull);
 		HeapTupleSetSecurity(tuple, labelSid);
 		HeapTupleSetOid(tuple, labelOid);
 
 		simple_heap_insert(rel, tuple);
 		CatalogIndexInsert(ind, tuple);
 
+		/*
+		 * NOTE:
+		 * We also have to insert a cache entry of new tuple of
+		 * pg_security for temporary usage.
+		 * If user tries to apply same security attribute twice
+		 * or more within same command id, PGACE cannot decide
+		 * whether it should be inserted, or not, because it
+		 * cannot scan the prior one with SnapshotNow.
+		 *
+		 * A cache entry inserted will be invalidated on the
+		 * next CommandIdIncrement().
+		 * The purpose of InsertSysCache() here is to prevent
+		 * duplicate insertion
+		 */
 		InsertSysCache(RelationGetRelid(rel), tuple);
 
 		CatalogCloseIndexes(ind);
@@ -416,6 +438,14 @@ pgaceSecurityLabelToSid(char *label)
 	}
 
 	return labelOid;
+}
+
+Oid
+pgaceSecurityLabelToSid(char *label)
+{
+	char *raw_label = pgaceTranslateSecurityLabelIn(label);
+
+	return pgaceLookupSecurityId(raw_label);
 }
 
 /*
