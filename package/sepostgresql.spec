@@ -5,6 +5,9 @@
 # -----------------------------------------------------
 
 # SE-PostgreSQL status extension
+%define selinux_policy_stores targeted mls
+%define selinux_policy_name   sepostgresql-devel
+
 %%__sepgsql_extension__%%
 
 %{!?sepgsql_standalone:%define sepgsql_standalone 1}
@@ -27,7 +30,7 @@ Patch2: sepostgresql-policy-%%__base_postgresql_version__%%-%%__sepgsql_major_ve
 Patch3: sepostgresql-docs-%%__base_postgresql_version__%%-%%__sepgsql_major_version__%%.patch
 Patch4: sepostgresql-fedora-prefix.patch
 BuildRequires: perl glibc-devel bison flex readline-devel zlib-devel >= 1.0.4
-Buildrequires: checkpolicy libselinux-devel >= 2.0.43 selinux-policy-devel selinux-policy >= 3.0.6
+Buildrequires: checkpolicy libselinux-devel >= 2.0.43 selinux-policy-devel selinux-policy >= 3.4.2
 Requires(pre): shadow-utils
 Requires(post): policycoreutils /sbin/chkconfig
 Requires(preun): /sbin/chkconfig /sbin/service
@@ -35,7 +38,7 @@ Requires(postun): policycoreutils
 %if !%{sepgsql_standalone}
 Requires: postgresql-server = %{version}
 %endif
-Requires: policycoreutils >= 2.0.16 libselinux >= 2.0.43 selinux-policy >= 3.0.6
+Requires: policycoreutils >= 2.0.16 libselinux >= 2.0.43 selinux-policy >= 3.4.2
 Requires: tzdata logrotate
 
 %description
@@ -73,12 +76,21 @@ CXXFLAGS="${CXXFLAGS:-%optflags}" ; export CXXFLAGS
 
 # parallel build, if possible
 make %{?_smp_mflags}
+touch contrib/sepgsql_policy/%{selinux_policy_name}.fc  # to create void .fc file
 make -C contrib/sepgsql_policy
 
 %install
 rm -rf %{buildroot}
 make DESTDIR=%{buildroot} install
-make DESTDIR=%{buildroot} -C contrib/sepgsql_policy install
+
+for store in %{selinux_policy_stores}
+do
+    test -e contrib/sepgsql_policy/%{selinux_policy_name}.pp.${store} || continue;
+
+    install -d %{buildroot}%{_datadir}/selinux/${store}
+    install -p -m 644 contrib/sepgsql_policy/%{selinux_policy_name}.pp.${store} \
+               %{buildroot}%{_datadir}/selinux/${store}/%{selinux_policy_name}.pp
+done
 
 # avoid to conflict with native postgresql package
 mv %{buildroot}%{_bindir}  %{buildroot}%{_bindir}.orig
@@ -141,14 +153,12 @@ exit 0
 /sbin/chkconfig --add %{name}
 /sbin/ldconfig
 
-policy_stores=`cd /usr/share/selinux; ls -d * | grep -v devel`
-for store in ${policy_stores}
+for store in %{selinux_policy_stores}
 do
-    %{_sbindir}/semodule -s ${store} -l >& /dev/null || continue;
-
-    %{_sbindir}/semodule -s ${store} -r %{name} >& /dev/null || :
-    %{_sbindir}/semodule -s ${store} \
-        -i %{_datadir}/selinux/${store}/%{name}.pp >& /dev/null || :
+    if %{_sbindir}/semodule -s ${store} -l | egrep -q "^%{selinux_policy_name}"; then
+       %{_sbindir}/semodule -s ${store}	   \
+           -u %{_datadir}/selinux/${store}/%{selinux_policy_name}.pp >& /dev/null || :
+    fi
 done
 
 # Fix up non-standard file contexts
@@ -167,13 +177,13 @@ if [ $1 -ge 1 ]; then           # rpm -U case
     /sbin/service %{name} condrestart >/dev/null 2>&1 || :
 fi
 if [ $1 -eq 0 ]; then           # rpm -e case
-    policy_stores=`cd /usr/share/selinux; ls -d * | grep -v devel`
-    for store in ${policy_stores}
+    for store in %{selinux_policy_stores}
     do
-        %{_sbindir}/semodule -s ${store} -r %{name} >& /dev/null || :
+        %{_sbindir}/semodule -s ${store} -r %{selinux_policy_name} >& /dev/null || :
     done
     /sbin/fixfiles -R %{name} restore || :
-    test -d %{_localstatedir}/lib/sepgsql && /sbin/restorecon -R %{_localstatedir}/lib/sepgsql || :
+    test -d %{_localstatedir}/lib/sepgsql \
+    	 && /sbin/restorecon -R %{_localstatedir}/lib/sepgsql || :
 fi
 
 %files
@@ -205,7 +215,7 @@ fi
 %{_libdir}/sepgsql/*_and_*.so
 %{_libdir}/sepgsql/dict_*.so
 %endif
-%attr(644,root,root) %{_datadir}/selinux/*/sepostgresql.pp
+%attr(644,root,root) %{_datadir}/selinux/*/%{selinux_policy_name}.pp
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/data
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
