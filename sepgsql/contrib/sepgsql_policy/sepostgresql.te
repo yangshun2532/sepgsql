@@ -1,4 +1,4 @@
-policy_module(sepostgresql, 3.09)
+policy_module(sepostgresql, 3.10)
 
 gen_require(`
 	class db_database all_db_database_perms;
@@ -8,7 +8,7 @@ gen_require(`
 	class db_tuple all_db_tuple_perms;
 	class db_blob all_db_blob_perms;
 
-	attribute home_type;
+	attribute domain, home_type;
 	type postgresql_t, unlabeled_t;
 
 	role system_r;
@@ -62,42 +62,42 @@ attribute sepgsql_module_type;
 
 # database object types
 type sepgsql_blob_t;
-postgresql_blob_object(sepgsql_blob_t)
+sepostgresql_blob_object(sepgsql_blob_t)
 
 type sepgsql_db_t;
-postgresql_database_object(sepgsql_db_t)
+sepostgresql_database_object(sepgsql_db_t)
 
 type sepgsql_fixed_table_t;
-postgresql_table_object(sepgsql_fixed_table_t)
+sepostgresql_table_object(sepgsql_fixed_table_t)
 
 type sepgsql_proc_t;
-postgresql_procedure_object(sepgsql_proc_t)
+sepostgresql_procedure_object(sepgsql_proc_t)
 
 type sepgsql_ro_blob_t;
-postgresql_blob_object(sepgsql_ro_blob_t)
+sepostgresql_blob_object(sepgsql_ro_blob_t)
 
 type sepgsql_ro_table_t;
-postgresql_table_object(sepgsql_ro_table_t)
+sepostgresql_table_object(sepgsql_ro_table_t)
 
 type sepgsql_secret_blob_t;
-postgresql_blob_object(sepgsql_secret_blob_t)
+sepostgresql_blob_object(sepgsql_secret_blob_t)
 
 type sepgsql_secret_table_t;
-postgresql_table_object(sepgsql_secret_table_t)
+sepostgresql_table_object(sepgsql_secret_table_t)
 
 type sepgsql_sysobj_t;
-postgresql_system_table_object(sepgsql_sysobj_t)
+sepostgresql_system_table_object(sepgsql_sysobj_t)
 
 type sepgsql_table_t;
-postgresql_table_object(sepgsql_table_t)
+sepostgresql_table_object(sepgsql_table_t)
 
 type sepgsql_trusted_proc_t;
-postgresql_procedure_object(sepgsql_trusted_proc_t)
+sepostgresql_procedure_object(sepgsql_trusted_proc_t)
 
 # Trusted Procedure Domain
 type sepgsql_trusted_domain_t;
 domain_type(sepgsql_trusted_domain_t)
-postgresql_unconfined(sepgsql_trusted_domain_t)
+sepostgresql_unconfined(sepgsql_trusted_domain_t)
 role system_r types sepgsql_trusted_domain_t;
 
 ########################################
@@ -205,14 +205,14 @@ optional_policy(`
 	gen_require(`
 		type unconfined_t;
 	')
-	postgresql_unconfined(unconfined_t)
+	sepostgresql_unconfined(unconfined_t)
 ')
 
 optional_policy(`
 	gen_require(`
 		type sysadm_t;
 	')
-	postgresql_unconfined(sysadm_t)
+	sepostgresql_unconfined(sysadm_t)
 ')
 
 # unprivilleged client domain
@@ -221,7 +221,7 @@ optional_policy(`
 		type user_t;
 		role user_r;
 	')
-	postgresql_userdom_template(user,user_t,user_r)
+	sepostgresql_userdom_template(user,user_t,user_r)
 ')
 
 optional_policy(`
@@ -229,7 +229,7 @@ optional_policy(`
 		type staff_t;
 		role staff_r;
 	')
-	postgresql_userdom_template(staff,staff_t,staff_r)
+	sepostgresql_userdom_template(staff,staff_t,staff_r)
 ')
 
 optional_policy(`
@@ -237,7 +237,7 @@ optional_policy(`
 		type guest_t;
 		role guest_r;
 	')
-	postgresql_userdom_template(guest,guest_t,guest_r)
+	sepostgresql_userdom_template(guest,guest_t,guest_r)
 ')
 
 optional_policy(`
@@ -245,21 +245,21 @@ optional_policy(`
 		type xguest_t;
 		role xguest_r;
 	')
-	postgresql_userdom_template(xguest,xguest_t,xguest_r)
+	sepostgresql_userdom_template(xguest,xguest_t,xguest_r)
 ')
 
 optional_policy(`
 	gen_require(`
 		type httpd_t;
 	')
-	postgresql_unpriv_client(httpd_t)
+	sepostgresql_unpriv_client(httpd_t)
 ')
 
 optional_policy(`
 	gen_require(`
 		type httpd_sys_script_t;
 	')
-	postgresql_unpriv_client(httpd_sys_script_t)
+	sepostgresql_unpriv_client(httpd_sys_script_t)
 ')
 
 # SE-PostgreSQL loadable modules
@@ -267,8 +267,8 @@ optional_policy(`
 	gen_require(`
 		type lib_t, textrel_shlib_t;
 	')
-	postgresql_loadable_module(lib_t)
-	postgresql_loadable_module(textrel_shlib_t)
+	sepostgresql_loadable_module(lib_t)
+	sepostgresql_loadable_module(textrel_shlib_t)
 ')
 
 ########################################

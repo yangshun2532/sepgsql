@@ -23,7 +23,7 @@
 ##      </summary>
 ## </param>
 #
-template(`postgresql_userdom_template',`
+template(`sepostgresql_userdom_template',`
 	gen_require(`
 		class db_database all_db_database_perms;
 		class db_table all_db_table_perms;
@@ -101,7 +101,7 @@ template(`postgresql_userdom_template',`
 ##     </summary>
 ## </param>
 #
-interface(`postgresql_loadable_module',`
+interface(`sepostgresql_loadable_module',`
 	gen_require(`
 		attribute sepgsql_module_type;
 	')
@@ -119,7 +119,7 @@ interface(`postgresql_loadable_module',`
 ##     </summary>
 ## </param>
 #
-interface(`postgresql_database_object',`
+interface(`sepostgresql_database_object',`
 	gen_require(`
 		attribute sepgsql_database_type;
 	')
@@ -137,7 +137,7 @@ interface(`postgresql_database_object',`
 ##     </summary>
 ## </param>
 #
-interface(`postgresql_table_object',`
+interface(`sepostgresql_table_object',`
 	gen_require(`
 		attribute sepgsql_table_type;
 	')
@@ -155,7 +155,7 @@ interface(`postgresql_table_object',`
 ##     </summary>
 ## </param>
 #
-interface(`postgresql_system_table_object',`
+interface(`sepostgresql_system_table_object',`
 	gen_require(`
 		attribute sepgsql_table_type;
 		attribute sepgsql_sysobj_table_type;
@@ -175,7 +175,7 @@ interface(`postgresql_system_table_object',`
 ##     </summary>
 ## </param>
 #
-interface(`postgresql_procedure_object',`
+interface(`sepostgresql_procedure_object',`
 	gen_require(`
 		attribute sepgsql_procedure_type;
 	')
@@ -193,7 +193,7 @@ interface(`postgresql_procedure_object',`
 ##     </summary>
 ## </param>
 #
-interface(`postgresql_blob_object',`
+interface(`sepostgresql_blob_object',`
 	gen_require(`
 		attribute sepgsql_blob_type;
 	')
@@ -212,7 +212,7 @@ interface(`postgresql_blob_object',`
 ##      </summary>
 ## </param>
 #
-interface(`postgresql_unpriv_client',`
+interface(`sepostgresql_unpriv_client',`
 	gen_require(`
 		class db_table all_db_table_perms;
 		class db_procedure all_db_procedure_perms;
@@ -250,7 +250,7 @@ interface(`postgresql_unpriv_client',`
 ##      </summary>
 ## </param>
 #
-interface(`postgresql_unconfined',`
+interface(`sepostgresql_unconfined',`
 	gen_require(`
 		attribute sepgsql_unconfined_type;
 	')
