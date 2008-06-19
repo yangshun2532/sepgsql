@@ -5,6 +5,9 @@
 # -----------------------------------------------------
 
 # SE-PostgreSQL status extension
+%define selinux_policy_stores targeted mls
+%define selinux_policy_name   sepostgresql-devel
+
 %%__sepgsql_extension__%%
 
 Summary: Security Enhanced PostgreSQL
@@ -71,7 +74,15 @@ make -C contrib/sepgsql_policy
 rm -rf %{buildroot}
 
 make DESTDIR=%{buildroot} install
-make DESTDIR=%{buildroot} -C contrib/sepgsql_policy install
+
+for store in %{selinux_policy_stores}
+do
+    test -e contrib/sepgsql_policy/%{selinux_policy_name}.pp.${store} || continue;
+
+    install -d %{buildroot}%{_datadir}/selinux/${store}
+    install -p -m 644 contrib/sepgsql_policy/%{selinux_policy_name}.pp.${store} \
+    	              %{buildroot}%{_datadir}/selinux/${store}/%{selinux_policy_name}.pp
+done
 
 # avoid to conflict with native postgresql package
 mv %{buildroot}%{_bindir}  %{buildroot}%{_bindir}.orig
@@ -121,14 +132,12 @@ exit 0
 /sbin/chkconfig --add %{name}
 /sbin/ldconfig
 
-policy_stores=`cd /usr/share/selinux; ls -d * | grep -v devel`
-for store in ${policy_stores}
+for store in %{selinux_policy_stores}
 do
-    %{_sbindir}/semodule -s ${store} -l >& /dev/null || continue;
-
-    %{_sbindir}/semodule -s ${store} -r %{name} >& /dev/null || :
-    %{_sbindir}/semodule -s ${store} \
-        -i %{_datadir}/selinux/${store}/%{name}.pp >& /dev/null || :
+    if %{_sbindir}/semodule -s ${store} -l | egrep -q "^%{selinux_policy_name}"; then
+       %{_sbindir}/semodule -s ${store}	   \
+           -u %{_datadir}/selinux/${store}/%{selinux_policy_name}.pp >& /dev/null || :
+    fi
 done
 
 # Fix up non-standard file contexts
@@ -147,10 +156,9 @@ if [ $1 -ge 1 ]; then           # rpm -U case
     /sbin/service %{name} condrestart >/dev/null 2>&1 || :
 fi
 if [ $1 -eq 0 ]; then           # rpm -e case
-    policy_stores=`cd /usr/share/selinux; ls -d * | grep -v devel`
-    for store in ${policy_stores}
+    for store in %{selinux_policy_stores}
     do
-        %{_sbindir}/semodule -s ${store} -r %{name} >& /dev/null || :
+        %{_sbindir}/semodule -s ${store} -r %{selinux_policy_name} >& /dev/null || :
     done
     /sbin/fixfiles -R %{name} restore || :
     test -d %{_localstatedir}/lib/sepgsql && /sbin/restorecon -R %{_localstatedir}/lib/sepgsql || :
@@ -179,7 +187,7 @@ fi
 %{_datadir}/sepgsql/conversion_create.sql
 %{_datadir}/sepgsql/information_schema.sql
 %{_datadir}/sepgsql/sql_features.txt
-%attr(644,root,root) %{_datadir}/selinux/*/sepostgresql.pp
+%attr(644,root,root) %{_datadir}/selinux/*/%{selinux_policy_name}.pp
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/data
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
