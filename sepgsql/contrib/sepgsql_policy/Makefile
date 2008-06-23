@@ -26,6 +26,7 @@ install: all
 	$(foreach p, $(policy_types), $(MAKE) $(MAKEOVERRIDES) policy=$(p) .install-policy;)
 
 %.pp: %.te %.if %.fc
+	rm -f $@
 	$(MAKE) NAME=$(policy) -f $(policy_makefile) $@
 	mv $@ $@.$(policy)
 
