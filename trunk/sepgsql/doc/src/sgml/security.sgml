@@ -1002,7 +1002,7 @@ pgaceHeapTupleInsert(Relation rel, HeapTuple tuple,
         return sepgsqlHeapTupleInsert(rel, tuple,
                                       is_internal,
                                       with_returning);
-#elifdef HAVE_FOO_SECURITY
+#elif define(HAVE_FOO_SECURITY)
     if (fooSecurityIsEnabled())
         return fooSecurityHeapTupleInsert(rel, tuple,
                                           is_internal,
