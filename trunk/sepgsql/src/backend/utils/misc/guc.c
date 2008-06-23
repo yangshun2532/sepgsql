@@ -5785,7 +5785,7 @@ EmitWarningsOnPlaceholders(const char *className)
 void
 GetPGVariable(const char *name, DestReceiver *dest)
 {
-	/* PGACE: check get param permission */
+	/* Check get param permissions */
 	pgaceGetDatabaseParam(name);
 
 	if (guc_name_compare(name, "all") == 0)

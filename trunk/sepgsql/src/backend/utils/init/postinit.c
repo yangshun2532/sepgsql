@@ -616,7 +616,7 @@ InitPostgres(const char *in_dbname, Oid dboid, const char *username,
 	if (!bootstrap)
 		pgstat_bestart();
 
-	/* PGACE: initialize access control extension facility */
+	/* initialize mandatory access control facilities */
 	pgaceInitialize(bootstrap);
 
 	/* close the transaction we started above */
