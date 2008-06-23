@@ -23,7 +23,7 @@
      accesses to filesystem objects.
 
      In addition, SE-PostgreSQL applies its access control decision for
-     any query come from any clietns including privileged database roles,
+     any query come from any clients including privileged database roles,
      and provides maximum flexibility in configuration using row and column
      level access controls.
 
@@ -146,7 +146,7 @@
    <sect2>
      <title>initdb and startup</title>
      <para>
-       The directories to store database coluster should be labeled as
+       The directories to store database cluster should be labeled as
        <literal>postgresql_db_t</literal> type, to pass in-kernel SELinux's
        checks on file accesses.
 
@@ -174,7 +174,7 @@
 </screen>
      <para>
        <literal>semanage</literal> with <literal>fcontext</literal> subcommand
-       enables to config the default security context of given path in regular
+       enables to configure the default security context of given path in regular
        expression, and it is used in <literal>restorecon</literal>.
      </para>
 
@@ -194,7 +194,7 @@
      <sect3>
        <title>sepostgresql</title>
        <para>
-	 The <varname>sepostgresql</varname> parameter enables to spevify
+	 The <varname>sepostgresql</varname> parameter enables to specify
 	 SE-PostgreSQL working mode.
 	 It can be specified on <filename>$PGDATA/postgresql.conf</filename>
 	 and we need to restart postmaster process to reflect its changing.
@@ -328,7 +328,7 @@
  unconfined_u:object_r:sepgsql_table_t            |  1 | water |   100
  unconfined_u:object_r:sepgsql_table_t            |  2 | coke  |   120
  unconfined_u:object_r:sepgsql_table_t            |  3 | juice |   130
- unconfined_u:object_r:sepgsql_table_t            |  4 | cofee |   180
+ unconfined_u:object_r:sepgsql_table_t            |  4 | coffee|   180
  unconfined_u:object_r:sepgsql_table_t:Classified |  5 | beer  |   240
  unconfined_u:object_r:sepgsql_table_t:Classified |  6 | sake  |   320
 (6 rows)
@@ -336,7 +336,7 @@
 
        <para>
 	 The security policy also has rules to decide the security context
-	 of newly inserted tuples. When a tuple in inserted, SE-PostgreSQL
+	 of newly inserted tuple. When a tuple in inserted, SE-PostgreSQL
 	 associate it on the new tuple in the default.
        </para>
 
@@ -454,7 +454,7 @@ unconfined_u:unconfined_r:unconfined_t:Classified
      <para>
        The one is a property of "always invoked".
 
-       MAC feature is applied on all accesses from users/clietns, even if
+       MAC feature is applied on all accesses from users/clients, even if
        it come from privileged users, like <literal>root</literal> on
        operating system.
 
@@ -636,7 +636,7 @@ postgres=# SELECT cid, cname FROM customer;
 
        These requirements are same when we restore the image.
        A process which invokes <command>pg_restore</command> has to have
-       enough permission to create/insert these object with specified
+       enough permission to create/insert these objects with specified
        security context.
      </para>
 
@@ -858,7 +858,7 @@ remote 192.168.1.200
 	 We cannot apply labeled IPsec for any situation.
 
 	 It requires both server and cliets being SElinux'ed and IPsec is
-	 available on thier communication channel.
+	 available on their communication channel.
        </para>
 
        <para>
