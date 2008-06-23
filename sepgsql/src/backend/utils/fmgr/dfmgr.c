@@ -106,7 +106,7 @@ load_external_function(char *filename, char *funcname,
 	/* Expand the possibly-abbreviated filename to an exact path name */
 	fullname = expand_dynamic_library_name(filename);
 
-	/* PGACE: check whether the module can be loaded, or not */
+	/* Check whether the shared library should be loaded, or not */
 	pgaceLoadSharedModule(fullname);
 
 	/* Load the shared library, unless we already did */
@@ -149,7 +149,7 @@ load_file(const char *filename, bool restricted)
 	/* Expand the possibly-abbreviated filename to an exact path name */
 	fullname = expand_dynamic_library_name(filename);
 
-	/* PGACE: check whether the module can be loaded, or not */
+	/* Check whether the library should be loaded, or not */
 	pgaceLoadSharedModule(fullname);
 
 	/* Unload the library if currently loaded */

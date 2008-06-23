@@ -1881,7 +1881,6 @@ QueryRewrite(Query *parsetree)
 	if (!foundOriginalQuery && lastInstead != NULL)
 		lastInstead->canSetTag = true;
 
-	/* PGACE: general queries proxy */
 	results = pgaceProxyQuery(results);
 
 	return results;

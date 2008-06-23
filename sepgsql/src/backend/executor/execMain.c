@@ -1597,7 +1597,7 @@ ExecInsert(TupleTableSlot *slot,
 		ExecConstraints(resultRelInfo, slot, estate);
 
 	/*
-	 * PGACE: check HeapTuple Insertion permission
+	 * Mandatory access controls of the tuple
 	 */
 	if (!pgaceHeapTupleInsert(resultRelationDesc, tuple,
 							  false, !!resultRelInfo->ri_projectReturning))
@@ -1855,7 +1855,9 @@ lreplace:;
 	if (resultRelationDesc->rd_att->constr)
 		ExecConstraints(resultRelInfo, slot, estate);
 
-	/* PGACE: check HeapTuple update permission */
+	/*
+	 * Mandatory access controls of the tuple
+	 */
 	if (!pgaceHeapTupleUpdate(resultRelationDesc, tupleid, tuple,
 							  false, !!resultRelInfo->ri_projectReturning))
 		return;
