@@ -10,6 +10,8 @@ URL: http://code.google.com/p/sepgsql/
 Source0: %{name}.c
 Source1: %{name}.te
 Source2: %{name}.conf
+BuildRequires: httpd-devel checkpolicy
+Requires: httpd-devel policycoreutils
 BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root
 
 %description
@@ -37,12 +39,12 @@ done
 rm -rf %{buildroot}
 
 cd %{name}-%{version}
-install -d %{buildroot}/etc/httpd/modules \
+install -d %{buildroot}%{_libdir}/httpd/modules \
            %{buildroot}/etc/httpd/conf.d  \
-           %{_datadir}/selinux
+           %{buildroot}/%{_datadir}/selinux
 
-install -p -m 755 .libs/%{name}.so %{buildroot}/etc/httpd/modules
-install -p -m 644 %{SOURCE2} %{buildroot}/etc/httpd/conf.d
+install -p -m 755 .libs/%{name}.so %{buildroot}%{_libdir}/httpd/modules
+install -p -m 644 %{SOURCE2}       %{buildroot}/etc/httpd/conf.d
 for policy in %{selinux_policy_types}
 do
     install -d %{buildroot}%{_datadir}/selinux/${policy}
@@ -54,12 +56,13 @@ done
 rm -rf %{buildroot}
 
 %post
+/sbin/fixfiles -R %{name} restore || :
+
 for policy in %{selinux_policy_types}
 do
-    if %{_sbindir}/semodule -s ${policy} -l | egrep -q "^%{name}"; then
-        %{_sbindir}/semodule -s ${policy} \
-            -u %{_datadir}/selinux/${policy}/%{name}.pp >& /dev/null || :
-    fi
+    %{_sbindir}/semodule -s ${policy} -r %{name} >& /dev/null || :
+    %{_sbindir}/semodule -s ${policy} \
+            -i %{_datadir}/selinux/${policy}/%{name}.pp >& /dev/null || :
 done
 
 %postun
@@ -73,7 +76,7 @@ fi
 %files
 %defattr(-,root,root,-)
 %{_sysconfdir}/httpd/conf.d/%{name}.conf
-%{_sysconfdir}/httpd/modules/%{name}.so
+%{_libdir}/httpd/modules/%{name}.so
 %{_datadir}/selinux/*/%{name}.pp
 
 %changelog

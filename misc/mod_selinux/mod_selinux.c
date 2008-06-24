@@ -32,8 +32,8 @@ typedef struct selinux_cfg
 #define username_is_matched(x,y)						\
 	(((x)==NULL && (y)==NULL) || ((x)!=NULL && (y)!=NULL && !strcmp((x),(y))))
 
-#define selinux_logger(srv, fmt, ...)					\
-	ap_log_error(APLOG_MARK, APLOG_NOTICE, 0, (srv),	\
+#define selinux_logger(srv, fmt, ...)				\
+	ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, (srv),	\
 				 "%s: " fmt, __FUNCTION__, __VA_ARGS__)
 
 static int selinux_setexeccon(request_rec *r)
