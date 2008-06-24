@@ -879,19 +879,16 @@ remote 192.168.1.200
 
        <para>
 	 The following example shows a case when we associate a security
-	 context with connections come from <literal>192.168.1.0/24</literal>.
+	 context with connections come from <literal>192.168.1.0/24</literal>
+	 via all network interfaces.
 <screen>
-<prompt># </prompt><userinput>/sbin/netlabelctl unlbl add address:192.168.1.0/24 label:user_u:user_r:user_t:s0</userinput>
+<prompt># </prompt><userinput>/sbin/netlabelctl unlbl add default address:192.168.1.0/24 label:user_u:user_r:user_t:s0</userinput>
 </screen>
 	 The following example shows a case when we associate a security
-	 context with connections come from <literal>eth0</literal>.
+	 context with connections come from <literal>192.168.2.0/24</literal>
+	 via <literal>eth0</literal>.
 <screen>
-<prompt># </prompt><userinput>/sbin/netlabelctl unlbl add dev:eth0 label:staff_u:staff_r:staff_t:s0:c0</userinput>
-</screen>
-	 The following example shows a case when we associate a security
-	 context with connections not matching any static fallbacked context.
-<screen>
-<prompt># </prompt><userinput>/sbin/netlabelctl unlbl default label:guest_u:guest_r:guest_t:s0</userinput>
+<prompt># </prompt><userinput>/sbin/netlabelctl unlbl add dev:eth0 address:192.168.2.0/24 label:staff_u:staff_r:staff_t:s0:c0</userinput>
 </screen>
        </para>
      </sect3>
