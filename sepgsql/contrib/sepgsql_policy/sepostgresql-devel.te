@@ -1,4 +1,4 @@
-policy_module(sepostgresql-devel, 3.10)
+policy_module(sepostgresql-devel, 3.11)
 
 gen_require(`
 	class db_database all_db_database_perms;
@@ -58,6 +58,7 @@ tunable_policy(`sepgsql_enable_auditallow',`
 	auditallow domain sepgsql_procedure_type : db_procedure *;
 	auditallow domain sepgsql_blob_type      : db_blob *;
 	auditallow domain sepgsql_module_type    : db_database { install_module };
+	auditallow sepgsql_database_type sepgsql_module_type : db_database { load_module };
 ')
 
 tunable_policy(`! sepgsql_enable_auditdeny',`
@@ -67,6 +68,7 @@ tunable_policy(`! sepgsql_enable_auditdeny',`
 	dontaudit domain sepgsql_procedure_type  : db_procedure *;
 	dontaudit domain sepgsql_blob_type       : db_blob *;
 	dontaudit domain sepgsql_module_type     : db_database { install_module };
+	dontaudit sepgsql_database_type sepgsql_module_type : db_database { load_module };
 ')
 
 ########################################
