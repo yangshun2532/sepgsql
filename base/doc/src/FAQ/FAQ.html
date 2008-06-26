@@ -10,7 +10,7 @@
   alink="#0000ff">
     <H1>Frequently Asked Questions (FAQ) for PostgreSQL</H1>
 
-    <P>Last updated: Fri Apr 25 10:34:17 EDT 2008</P>
+    <P>Last updated: Wed Jun 25 23:54:14 EDT 2008</P>
 
     <P>Current maintainer: Bruce Momjian (<A href=
     "mailto:bruce@momjian.us">bruce@momjian.us</A>)
@@ -210,12 +210,12 @@
 
     <P>PostgreSQL also runs natively on Microsoft Windows NT-based operating
     systems like Win2000 SP4, WinXP, and Win2003.  A prepackaged installer is
-    available at <a href= "http://pgfoundry.org/projects/pginstaller">
-    http://pgfoundry.org/projects/pginstaller</a>.  MSDOS-based versions
+    available at <a href= "http://www.postgresql.org/download/windows">
+    http://www.postgresql.org/download/windows</a>.  MSDOS-based versions
     of Windows (Win95, Win98, WinMe) can run PostgreSQL using Cygwin.</P>
 
     <p>There is also a Novell Netware 6 port at
-    <a href="http://forge.novell.com">http://forge.novell.com</a>,
+    <a href="http://developer.novell.com/wiki/index.php/Postgresql">http://developer.novell.com/wiki/index.php/Postgresql</a>,
     and an OS/2 (eComStation) version at <a href=
     "http://hobbes.nmsu.edu/cgi-bin/h-search?sh=1&amp;button=Search&amp;key=postgreSQL&amp;stype=all&amp;sort=type&amp;dir=%2F">
     http://hobbes.nmsu.edu/cgi-bin/h-search?sh=1&amp;button=Search&amp;key=postgreSQL&amp;stype=all&amp;sort=type&amp;dir=%2F</a>.</p>
@@ -229,7 +229,7 @@
 
     <H3 id="item1.6">1.6) What is the most recent release?</H3>
 
-    <P>The latest release of PostgreSQL is version 8.3.1.</P>
+    <P>The latest release of PostgreSQL is version 8.3.3.</P>
 
     <P>We plan to have a major release every year, with minor releases
     every few months.</P>
@@ -347,7 +347,7 @@
     "http://www.postgresql.org/docs/books/">http://www.postgresql.org/docs/books/</A>.
     There is also a collection of PostgreSQL technical articles at <A
     href=
-    "http://www.postgresql.org/docs/techdocs">http://www.postgresql.org/docs/techdocs</A>.</P>
+    "http://wiki.postgresql.org/wiki/Community_Generated_Articles%2C_Guides%2C_and_Documentation">http://wiki.postgresql.org/wiki/Community_Generated_Articles%2C_Guides%2C_and_Documentation</A>.</P>
 
     <P>The command line client program <I>psql</I> has some \d commands to show
     information about types, operators, functions, aggregates, etc. - use \? to 
@@ -514,8 +514,8 @@
 
     <P>There are a large number of GUI Tools that are available for PostgreSQL
     from both commercial and open source developers. A detailed list can be
-    found in the <A href="http://www.postgresql.org/docs/techdocs.54">
-    PostgreSQL Community Documentation</A></P>
+    found in the <A href="http://wiki.postgresql.org/wiki/Community_Guide_to_PostgreSQL_GUI_Tools">
+    Community Guide to PostgreSQL GUI Tools</A>.</P>
 
     <HR>
 
@@ -598,9 +598,11 @@
     <H3 id="item3.4">3.4) What debugging features are
     available?</H3>
 
-    <P>There are many <CODE>log_*</CODE> server configuration variables
-    that enable printing of query and process statistics which can be
-    very useful for debugging and performance measurements.</P>
+    <P>There are many <CODE>log_*</CODE> server configuration
+    variables at <a
+    href="http://www.postgresql.org/docs/current/interactive/runtime-config-logging.html">http://www.postgresql.org/docs/current/interactive/runtime-config-logging.html</a>
+    that enable printing of query and process statistics which
+    can be very useful for debugging and performance measurements.</P>
 
     <H3 id="item3.5">3.5) Why do I get <I>"Sorry, too many
     clients"</I> when trying to connect?</H3>
@@ -1072,8 +1074,8 @@ length</TD></TR>
     columns from a function?</H3>
 
     <P>It is easy using set-returning functions, 
-    <a href="http://www.postgresql.org/docs/techdocs.17">
-    http://www.postgresql.org/docs/techdocs.17</a>.</P>
+    <a href="http://wiki.postgresql.org/wiki/Return_more_than_one_row_of_data_from_PL/pgSQL_functions">
+    http://wiki.postgresql.org/wiki/Return_more_than_one_row_of_data_from_PL/pgSQL_functions</a>.</P>
 
     <H3 id="item4.19">4.19) Why do I get "relation with OID #####
     does not exist" errors when accessing temporary tables in PL/PgSQL
