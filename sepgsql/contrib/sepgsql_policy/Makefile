@@ -29,7 +29,10 @@ install: all
 	$(MAKE) NAME=$(policy) -f $(policy_makefile) $@
 	mv $@ $@.$(policy)
 
-%.fc: sepostgresql.fc.template
+sepostgresql-devel.fc: sepostgresql.fc.template
+	cat $< | grep -v ^/var | sed -e $(prefix_ptn) -e $(bindir_ptn) -e $(libdir_ptn) > $@
+
+sepostgresql.fc: sepostgresql.fc.template
 	cat $< | sed -e $(prefix_ptn) -e $(bindir_ptn) -e $(libdir_ptn) > $@
 
 clean:
