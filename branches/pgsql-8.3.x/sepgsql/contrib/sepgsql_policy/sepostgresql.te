@@ -91,12 +91,12 @@ sepostgresql_system_table_object(sepgsql_sysobj_t)
 type sepgsql_table_t;
 sepostgresql_table_object(sepgsql_table_t)
 
-type sepgsql_trusted_proc_t;
-sepostgresql_procedure_object(sepgsql_trusted_proc_t)
+type sepgsql_trusted_proc_exec_t;
+sepostgresql_procedure_object(sepgsql_trusted_proc_exec_t)
 
 # Trusted Procedure Domain
 type sepgsql_trusted_proc_t;
-domain_type(sepgsql_trusted_procn_t)
+domain_type(sepgsql_trusted_proc_t)
 sepostgresql_unconfined(sepgsql_trusted_proc_t)
 role system_r types sepgsql_trusted_proc_t;
 
