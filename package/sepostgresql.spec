@@ -6,7 +6,16 @@
 
 # SE-PostgreSQL status extension
 %define selinux_policy_stores targeted mls
-%define selinux_policy_name   sepostgresql-devel
+
+# check policy dependency
+%define fullset_policy %(rpm -E '%{dist}' | grep -cE '^\.fc[1-9]$')
+%if %{fullset_policy}
+%define required_policy_version    3.0.6
+%define policy_module_name         sepostgresql
+%else
+%define required_policy_version    3.4.2
+%define policy_module_name         sepostgresql-devel
+%endif
 
 %%__sepgsql_extension__%%
 
@@ -27,13 +36,15 @@ Patch1: sepostgresql-policy-%%__base_postgresql_version__%%-%%__sepgsql_major_ve
 Patch2: sepostgresql-pg_dump-%%__base_postgresql_version__%%-%%__sepgsql_major_version__%%.patch
 Patch3: sepostgresql-fedora-prefix.patch
 BuildRequires: perl glibc-devel bison flex readline-devel zlib-devel >= 1.0.4
-Buildrequires: checkpolicy libselinux-devel >= 2.0.43 selinux-policy-devel selinux-policy >= 3.0.6
+BuildRequires: checkpolicy libselinux-devel >= 2.0.43 selinux-policy-devel
+BuildRequires: selinux-policy >= %{required_policy_version}
 Requires(pre): shadow-utils
 Requires(post): policycoreutils /sbin/chkconfig
 Requires(preun): /sbin/chkconfig /sbin/service
 Requires(postun): policycoreutils
 Requires: postgresql-server = %{version}
-Requires: policycoreutils >= 2.0.16 libselinux >= 2.0.43 selinux-policy >= 3.0.6
+Requires: policycoreutils >= 2.0.16 libselinux >= 2.0.43
+Requires: selinux-policy >= %{required_policy_version}
 Requires: tzdata logrotate
 
 %description
@@ -68,6 +79,7 @@ CXXFLAGS="${CXXFLAGS:-%optflags}" ; export CXXFLAGS
 
 # parallel build, if possible
 make %{?_smp_mflags}
+touch contrib/sepgsql_policy/sepostgresql-devel.fc	# to make empty .fc file
 make -C contrib/sepgsql_policy
 
 %install
@@ -77,11 +89,9 @@ make DESTDIR=%{buildroot} install
 
 for store in %{selinux_policy_stores}
 do
-    test -e contrib/sepgsql_policy/%{selinux_policy_name}.pp.${store} || continue;
-
     install -d %{buildroot}%{_datadir}/selinux/${store}
-    install -p -m 644 contrib/sepgsql_policy/%{selinux_policy_name}.pp.${store} \
-    	              %{buildroot}%{_datadir}/selinux/${store}/%{selinux_policy_name}.pp
+    install -p -m 644 contrib/sepgsql_policy/%{policy_module_name}.pp.${store} \
+               %{buildroot}%{_datadir}/selinux/${store}/%{policy_module_name}.pp
 done
 
 # avoid to conflict with native postgresql package
@@ -134,10 +144,16 @@ exit 0
 
 for store in %{selinux_policy_stores}
 do
-    if %{_sbindir}/semodule -s ${store} -l | egrep -q "^%{selinux_policy_name}"; then
-       %{_sbindir}/semodule -s ${store}	   \
-           -u %{_datadir}/selinux/${store}/%{selinux_policy_name}.pp >& /dev/null || :
+%if %{fullset_policy}
+    %{_sbindir}/semodule -s ${store} -r %{policy_module_name} >& /dev/null || :
+    %{_sbindir}/semodule -s ${store}    \
+        -i %{_datadir}/selinux/${store}/%{policy_module_name}.pp >& /dev/null || :
+%else
+    if %{_sbindir}/semodule -s ${store} -l | grep -Eq "^%{policy_module_name}"; then
+        %{_sbindir}/semodule -s ${store}    \
+            -u %{_datadir}/selinux/${store}/%{policy_module_name}.pp >& /dev/null || :
     fi
+%endif
 done
 
 # Fix up non-standard file contexts
@@ -158,7 +174,7 @@ fi
 if [ $1 -eq 0 ]; then           # rpm -e case
     for store in %{selinux_policy_stores}
     do
-        %{_sbindir}/semodule -s ${store} -r %{selinux_policy_name} >& /dev/null || :
+        %{_sbindir}/semodule -s ${store} -r %{policy_module_name} >& /dev/null || :
     done
     /sbin/fixfiles -R %{name} restore || :
     test -d %{_localstatedir}/lib/sepgsql && /sbin/restorecon -R %{_localstatedir}/lib/sepgsql || :
@@ -187,7 +203,7 @@ fi
 %{_datadir}/sepgsql/conversion_create.sql
 %{_datadir}/sepgsql/information_schema.sql
 %{_datadir}/sepgsql/sql_features.txt
-%attr(644,root,root) %{_datadir}/selinux/*/%{selinux_policy_name}.pp
+%attr(644,root,root) %{_datadir}/selinux/*/%{policy_module_name}.pp
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/data
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
