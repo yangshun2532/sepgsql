@@ -76,7 +76,7 @@ CXXFLAGS="${CXXFLAGS:-%optflags}" ; export CXXFLAGS
 
 # parallel build, if possible
 make %{?_smp_mflags}
-touch contrib/sepgsql_policy/%{selinux_policy_name}.fc  # to create void .fc file
+touch contrib/sepgsql_policy/sepostgresql-devel.fc	# to create empty .fc file
 make -C contrib/sepgsql_policy
 
 %install
