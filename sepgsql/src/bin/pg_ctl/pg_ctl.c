@@ -4,7 +4,7 @@
  *
  * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
  *
- * $PostgreSQL: pgsql/src/bin/pg_ctl/pg_ctl.c,v 1.98 2008/04/24 14:23:43 mha Exp $
+ * $PostgreSQL: pgsql/src/bin/pg_ctl/pg_ctl.c,v 1.102 2008/06/26 03:51:56 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -140,7 +140,6 @@ static void read_post_opts(void);
 static bool test_postmaster_connection(bool);
 static bool postmaster_is_alive(pid_t pid);
 
-static char def_postopts_file[MAXPGPATH];
 static char postopts_file[MAXPGPATH];
 static char pid_file[MAXPGPATH];
 static char conf_file[MAXPGPATH];
@@ -362,13 +361,12 @@ start_postmaster(void)
 	 * everything to a shell to process them.
 	 */
 	if (log_file != NULL)
-		snprintf(cmd, MAXPGPATH, "%s\"%s\" %s%s < \"%s\" >> \"%s\" 2>&1 &%s",
-				 SYSTEMQUOTE, postgres_path, pgdata_opt, post_opts,
-				 DEVNULL, log_file, SYSTEMQUOTE);
+		snprintf(cmd, MAXPGPATH, SYSTEMQUOTE "\"%s\" %s%s < \"%s\" >> \"%s\" 2>&1 &" SYSTEMQUOTE,
+				 postgres_path, pgdata_opt, post_opts,
+				 DEVNULL, log_file);
 	else
-		snprintf(cmd, MAXPGPATH, "%s\"%s\" %s%s < \"%s\" 2>&1 &%s",
-				 SYSTEMQUOTE, postgres_path, pgdata_opt, post_opts,
-				 DEVNULL, SYSTEMQUOTE);
+		snprintf(cmd, MAXPGPATH, SYSTEMQUOTE "\"%s\" %s%s < \"%s\" 2>&1 &" SYSTEMQUOTE,
+				 postgres_path, pgdata_opt, post_opts, DEVNULL);
 
 	return system(cmd);
 #else							/* WIN32 */
@@ -381,13 +379,11 @@ start_postmaster(void)
 	PROCESS_INFORMATION pi;
 
 	if (log_file != NULL)
-		snprintf(cmd, MAXPGPATH, "CMD /C %s\"%s\" %s%s < \"%s\" >> \"%s\" 2>&1%s",
-				 SYSTEMQUOTE, postgres_path, pgdata_opt, post_opts,
-				 DEVNULL, log_file, SYSTEMQUOTE);
+		snprintf(cmd, MAXPGPATH, "CMD /C " SYSTEMQUOTE "\"%s\" %s%s < \"%s\" >> \"%s\" 2>&1" SYSTEMQUOTE,
+				 postgres_path, pgdata_opt, post_opts, DEVNULL, log_file);
 	else
-		snprintf(cmd, MAXPGPATH, "CMD /C %s\"%s\" %s%s < \"%s\" 2>&1%s",
-				 SYSTEMQUOTE, postgres_path, pgdata_opt, post_opts,
-				 DEVNULL, SYSTEMQUOTE);
+		snprintf(cmd, MAXPGPATH, "CMD /C " SYSTEMQUOTE "\"%s\" %s%s < \"%s\" 2>&1" SYSTEMQUOTE,
+				 postgres_path, pgdata_opt, post_opts, DEVNULL);
 
 	if (!CreateRestrictedProcess(cmd, &pi))
 		return GetLastError();
@@ -575,55 +571,48 @@ unlimit_core_size(void)
 static void
 read_post_opts(void)
 {
-	char	   *optline = NULL;
-
 	if (post_opts == NULL)
 	{
-		char	  **optlines;
-		int			len;
-
-		optlines = readfile(ctl_command == RESTART_COMMAND ?
-							postopts_file : def_postopts_file);
-		if (optlines == NULL)
+		post_opts = "";		/* defatult */
+		if (ctl_command == RESTART_COMMAND)
 		{
-			if (ctl_command == START_COMMAND || ctl_command == RUN_AS_SERVICE_COMMAND)
-				post_opts = "";
-			else
+			char	  **optlines;
+
+			optlines = readfile(postopts_file);
+			if (optlines == NULL)
 			{
 				write_stderr(_("%s: could not read file \"%s\"\n"), progname, postopts_file);
 				exit(1);
 			}
-		}
-		else if (optlines[0] == NULL || optlines[1] != NULL)
-		{
-			write_stderr(_("%s: option file \"%s\" must have exactly one line\n"),
-						 progname, ctl_command == RESTART_COMMAND ?
-						 postopts_file : def_postopts_file);
-			exit(1);
-		}
-		else
-		{
-			optline = optlines[0];
-			len = strcspn(optline, "\r\n");
-			optline[len] = '\0';
-
-			if (ctl_command == RESTART_COMMAND)
+			else if (optlines[0] == NULL || optlines[1] != NULL)
 			{
+				write_stderr(_("%s: option file \"%s\" must have exactly one line\n"),
+							 progname, postopts_file);
+				exit(1);
+			}
+			else
+			{
+				int			len;
+				char	   *optline;
 				char	   *arg1;
 
-				arg1 = strchr(optline, *SYSTEMQUOTE);
-				if (arg1 == NULL || arg1 == optline)
-					post_opts = "";
-				else
+				optline = optlines[0];
+				/* trim off line endings */
+				len = strcspn(optline, "\r\n");
+				optline[len] = '\0';
+
+				/*
+				 * Are we at the first option, as defined by space and
+				 * double-quote?
+				 */
+				if ((arg1 = strstr(optline, " \"")) != NULL)
 				{
-					*(arg1 - 1) = '\0'; /* this should be a space */
-					post_opts = arg1;
+					*arg1 = '\0';	/* terminate so we get only program name */
+					post_opts = arg1 + 1; /* point past whitespace */
 				}
 				if (postgres_path != NULL)
 					postgres_path = optline;
 			}
-			else
-				post_opts = optline;
 		}
 	}
 }
@@ -1894,7 +1883,6 @@ main(int argc, char **argv)
 
 	if (pg_data)
 	{
-		snprintf(def_postopts_file, MAXPGPATH, "%s/postmaster.opts.default", pg_data);
 		snprintf(postopts_file, MAXPGPATH, "%s/postmaster.opts", pg_data);
 		snprintf(pid_file, MAXPGPATH, "%s/postmaster.pid", pg_data);
 		snprintf(conf_file, MAXPGPATH, "%s/postgresql.conf", pg_data);

@@ -1,7 +1,7 @@
 PostgreSQL TODO List
 ====================
 Current maintainer:	Bruce Momjian (bruce@momjian.us)
-Last updated:		Wed Jun 18 21:15:40 EDT 2008
+Last updated:		Wed Jun 25 23:57:52 EDT 2008
 
 The most recent version of this document can be viewed at
 http://www.postgresql.org/docs/faqs.TODO.html.
@@ -62,6 +62,7 @@ Administration
   defaults so things like search_path can be defaulted for a
   specific user connecting to a specific database.
 
+* Allow custom variables to appear in pg_settings()
 * Allow custom variable classes that can restrict who can set the values
 
   http://archives.postgresql.org/pgsql-hackers/2006-11/msg00911.php
@@ -87,6 +88,11 @@ Administration
   This is already implemented in
   libpq/fe-secure.c::verify_peer_name_matches_certificate() but the code
   is commented out.
+
+* Improve server security options
+
+  http://archives.postgresql.org/pgsql-hackers/2008-04/msg01875.php
+  http://archives.postgresql.org/pgsql-hackers/2008-05/msg00000.php
 
 * Configuration files
 
@@ -116,6 +122,10 @@ Administration
 	  http://archives.postgresql.org/pgsql-hackers/2007-11/msg00009.php
 
 	o Add functions to syntax check configuration files
+
+	o Improve LDAP authentication configuration options
+
+	  http://archives.postgresql.org/pgsql-hackers/2008-04/msg01745.php
 
 
 * Tablespaces
@@ -649,6 +659,7 @@ SQL Commands
 
   http://archives.postgresql.org/pgsql-hackers/2005-11/msg00501.php
   http://archives.postgresql.org/pgsql-hackers/2005-11/msg00536.php
+  http://archives.postgresql.org/pgsql-hackers/2008-04/msg01157.php
   http://archives.postgresql.org/pgsql-hackers/2008-04/msg01475.php
 
 * Add NOVICE output level for helpful messages like automatic sequence/index
@@ -868,6 +879,10 @@ SQL Commands
 	o Impove COPY performance
 
 	  http://archives.postgresql.org/pgsql-hackers/2008-02/msg00954.php
+
+	o Allow COPY to report errors sooner
+
+         http://archives.postgresql.org/pgsql-hackers/2008-04/msg01169.php
 
 
 
@@ -1153,7 +1168,7 @@ Clients
 
 	o Allow pg_restore to load different parts of the COPY data
 	  simultaneously
-	o Prevent pg_dump/pg_restore from being affected by
+	o -Prevent pg_dump/pg_restore from being affected by
 	  statement_timeout
 
 	  Using psql to restore a pg_dump dump is also affected.
@@ -1388,6 +1403,25 @@ Indexes
 	o Allow multi-column hash indexes
 	o -During index creation, pre-sort the tuples to improve build speed
 
+Sorting
+=======
+* Consider using hash buckets to do DISTINCT, rather than sorting
+
+  This would be beneficial when there are few distinct values.  This is
+  already used by GROUP BY.
+
+* Consider whether duplicate keys should be sorted by block/offset
+
+  http://archives.postgresql.org/pgsql-hackers/2008-03/msg00558.php
+
+* -Avoid tuple some tuple copying in sort routines
+* Consider being smarter about memory and external files used during
+  sorts
+
+  http://archives.postgresql.org/pgsql-hackers/2007-11/msg01101.php
+  http://archives.postgresql.org/pgsql-hackers/2007-12/msg00045.php
+
+* Consider detoasting keys before sorting
 
 
 Fsync
@@ -1711,11 +1745,6 @@ Optimizer / Executor
 
   http://archives.postgresql.org/pgsql-hackers/2007-11/msg00771.php
 
-* Consider using hash buckets to do DISTINCT, rather than sorting
-
-  This would be beneficial when there are few distinct values.  This is
-  already used by GROUP BY.
-
 * Log statements where the optimizer row estimates were dramatically
   different from the number of rows actually found?
 * Consider compressed annealing to search for query plans
@@ -1865,7 +1894,6 @@ Miscellaneous Performance
 
   http://archives.postgresql.org/pgsql-hackers/2008-01/msg01119.php
 
-* -Avoid tuple some tuple copying in sort routines
 * SMP scalability improvements
 
   http://archives.postgresql.org/pgsql-hackers/2007-07/msg00439.php
@@ -1875,12 +1903,6 @@ Miscellaneous Performance
 * Research reducing deTOASTing in more places
 
   http://archives.postgresql.org/pgsql-hackers/2007-09/msg00895.php
-
-* Consider being smarter about memory and external files used during
-  sorts
-
-  http://archives.postgresql.org/pgsql-hackers/2007-11/msg01101.php
-  http://archives.postgresql.org/pgsql-hackers/2007-12/msg00045.php
 
 * Allow one transaction to see tuples using the snapshot of another
   transaction
@@ -1917,7 +1939,6 @@ Source Code
   http://archives.postgresql.org/pgsql-hackers/2006-09/msg02238.php
   http://archives.postgresql.org/pgsql-patches/2006-10/msg00048.php
 
-* Consider detoasting keys before sorting
 * Consider GnuTLS if OpenSSL license becomes a problem
 
   http://archives.postgresql.org/pgsql-patches/2006-05/msg00040.php
@@ -1984,6 +2005,11 @@ Source Code
   http://archives.postgresql.org/pgsql-patches/2008-02/msg00097.php
   http://archives.postgresql.org/pgsql-hackers/2008-03/msg01211.php
   http://archives.postgresql.org/pgsql-patches/2008-04/msg00001.php
+
+* Implement a module capability for loading /contrib-style extensions
+
+  http://archives.postgresql.org/pgsql-patches/2008-04/msg00164.php
+
 
 * Win32
 
