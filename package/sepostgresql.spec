@@ -5,8 +5,8 @@
 # -----------------------------------------------------
 
 # SE-PostgreSQL status extension
-%define selinux_policy_stores targeted mls
-%define selinux_policy_name   sepostgresql-devel
+%define selinux_policy_stores      targeted mls
+%define policy_module_name         sepostgresql-devel
 
 %%__sepgsql_extension__%%
 
@@ -30,7 +30,7 @@ Patch2: sepostgresql-policy-%%__base_postgresql_version__%%-%%__sepgsql_major_ve
 Patch3: sepostgresql-docs-%%__base_postgresql_version__%%-%%__sepgsql_major_version__%%.patch
 Patch4: sepostgresql-fedora-prefix.patch
 BuildRequires: perl glibc-devel bison flex readline-devel zlib-devel >= 1.0.4
-Buildrequires: checkpolicy libselinux-devel >= 2.0.43 selinux-policy-devel selinux-policy >= 3.4.2
+Buildrequires: checkpolicy libselinux-devel >= 2.0.43 selinux-policy >= 3.4.2
 Requires(pre): shadow-utils
 Requires(post): policycoreutils /sbin/chkconfig
 Requires(preun): /sbin/chkconfig /sbin/service
@@ -85,11 +85,9 @@ make DESTDIR=%{buildroot} install
 
 for store in %{selinux_policy_stores}
 do
-    test -e contrib/sepgsql_policy/%{selinux_policy_name}.pp.${store} || continue;
-
     install -d %{buildroot}%{_datadir}/selinux/${store}
-    install -p -m 644 contrib/sepgsql_policy/%{selinux_policy_name}.pp.${store} \
-               %{buildroot}%{_datadir}/selinux/${store}/%{selinux_policy_name}.pp
+    install -p -m 644 contrib/sepgsql_policy/%{policy_module_name}.pp.${store} \
+               %{buildroot}%{_datadir}/selinux/${store}/%{policy_module_name}.pp
 done
 
 # avoid to conflict with native postgresql package
@@ -155,9 +153,9 @@ exit 0
 
 for store in %{selinux_policy_stores}
 do
-    if %{_sbindir}/semodule -s ${store} -l | egrep -q "^%{selinux_policy_name}"; then
+    if %{_sbindir}/semodule -s ${store} -l | egrep -q "^%{policy_module_name}"; then
        %{_sbindir}/semodule -s ${store}	   \
-           -u %{_datadir}/selinux/${store}/%{selinux_policy_name}.pp >& /dev/null || :
+           -u %{_datadir}/selinux/${store}/%{policy_module_name}.pp >& /dev/null || :
     fi
 done
 
@@ -179,7 +177,7 @@ fi
 if [ $1 -eq 0 ]; then           # rpm -e case
     for store in %{selinux_policy_stores}
     do
-        %{_sbindir}/semodule -s ${store} -r %{selinux_policy_name} >& /dev/null || :
+        %{_sbindir}/semodule -s ${store} -r %{policy_module_name} >& /dev/null || :
     done
     /sbin/fixfiles -R %{name} restore || :
     test -d %{_localstatedir}/lib/sepgsql \
@@ -215,7 +213,7 @@ fi
 %{_libdir}/sepgsql/*_and_*.so
 %{_libdir}/sepgsql/dict_*.so
 %endif
-%attr(644,root,root) %{_datadir}/selinux/*/%{selinux_policy_name}.pp
+%attr(644,root,root) %{_datadir}/selinux/*/%{policy_module_name}.pp
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/data
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
