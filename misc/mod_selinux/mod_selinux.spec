@@ -2,7 +2,7 @@
 
 Summary: SELinux awared CGI script invoker
 Name: mod_selinux
-Version: 0.1
+Version: 0.2
 Release: r%{mod_selinux_revision}
 License: ASL 2.0
 Group: Applications/Internet
@@ -10,8 +10,8 @@ URL: http://code.google.com/p/sepgsql/
 Source0: %{name}.c
 Source1: %{name}.te
 Source2: %{name}.conf
-BuildRequires: httpd-devel checkpolicy
-Requires: httpd-devel policycoreutils
+BuildRequires: httpd-devel checkpolicy %%__selinux_policy_name__%% >= %%__selinux_policy_version__%%
+Requires: httpd policycoreutils selinux-policy >= %%__selinux_policy_version__%%
 BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root
 
 %description
@@ -31,7 +31,7 @@ cd %{name}-%{version}
 # mod_selinux.pp
 for policy in %{selinux_policy_types}
 do
-    make NAME=${policy} -f %{_datadir}/selinux/devel/Makefile
+    make NAME=${policy} -f %{?policy_devel_root}%{_datadir}/selinux/devel/Makefile
     mv %{name}.pp %{name}.pp.${policy}
 done
 
