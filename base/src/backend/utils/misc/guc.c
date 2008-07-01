@@ -10,7 +10,7 @@
  * Written by Peter Eisentraut <peter_e@gmx.net>.
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/misc/guc.c,v 1.456 2008/05/28 09:04:06 mha Exp $
+ *	  $PostgreSQL: pgsql/src/backend/utils/misc/guc.c,v 1.460 2008/07/01 06:36:11 mha Exp $
  *
  *--------------------------------------------------------------------
  */
@@ -172,18 +172,40 @@ static char *config_enum_get_options(struct config_enum *record,
 /*
  * Options for enum values defined in this module.
  */
-static const struct config_enum_entry message_level_options[] = {
-	{"debug", DEBUG2, false},
+
+/*
+ * We have different sets for client and server message level options because
+ * they sort slightly different (see "log" level)
+ */
+static const struct config_enum_entry client_message_level_options[] = {
+	{"debug", DEBUG2, true},
 	{"debug5", DEBUG5, false},
 	{"debug4", DEBUG4, false},
 	{"debug3", DEBUG3, false},
 	{"debug2", DEBUG2, false},
 	{"debug1", DEBUG1, false},
 	{"log", LOG, false},
+	{"info", INFO, true},
+	{"notice", NOTICE, false},
+	{"warning", WARNING, false},
+	{"error", ERROR, false},
+	{"fatal", FATAL, true},
+	{"panic", PANIC, true},
+	{NULL, 0, false}
+};
+
+static const struct config_enum_entry server_message_level_options[] = {
+	{"debug", DEBUG2, true},
+	{"debug5", DEBUG5, false},
+	{"debug4", DEBUG4, false},
+	{"debug3", DEBUG3, false},
+	{"debug2", DEBUG2, false},
+	{"debug1", DEBUG1, false},
 	{"info", INFO, false},
 	{"notice", NOTICE, false},
 	{"warning", WARNING, false},
 	{"error", ERROR, false},
+	{"log", LOG, false},
 	{"fatal", FATAL, false},
 	{"panic", PANIC, false},
 	{NULL, 0, false}
@@ -1848,6 +1870,15 @@ static struct config_int ConfigureNamesInt[] =
 		-1, -1, INT_MAX, NULL, NULL
 	},
 
+	{
+		{"track_activity_query_size", PGC_POSTMASTER, RESOURCES_MEM,
+			gettext_noop("Sets the size reserved for pg_stat_activity.current_query, in bytes."),
+			NULL,
+		},
+		&pgstat_track_activity_query_size,
+		1024, 100, 102400, NULL, NULL
+	},
+
 	/* End-of-list marker */
 	{
 		{NULL, 0, 0, NULL, NULL}, NULL, 0, 0, 0, NULL, NULL
@@ -2440,13 +2471,11 @@ static struct config_enum ConfigureNamesEnum[] =
 	{
 		{"client_min_messages", PGC_USERSET, LOGGING_WHEN,
 			gettext_noop("Sets the message levels that are sent to the client."),
-			gettext_noop("Valid values are DEBUG5, DEBUG4, DEBUG3, DEBUG2, "
-						 "DEBUG1, LOG, NOTICE, WARNING, and ERROR. Each level includes all the "
-						 "levels that follow it. The later the level, the fewer messages are "
-						 "sent.")
+			gettext_noop("Each level includes all the levels that follow it. The later"
+						 " the level, the fewer messages are sent.")
 		},
 		&client_min_messages,
-		NOTICE, message_level_options,NULL, NULL
+		NOTICE, client_message_level_options,NULL, NULL
 	},
 
 	{
@@ -2471,12 +2500,10 @@ static struct config_enum ConfigureNamesEnum[] =
 	{
 		{"log_min_messages", PGC_SUSET, LOGGING_WHEN,
 			gettext_noop("Sets the message levels that are logged."),
-			gettext_noop("Valid values are DEBUG5, DEBUG4, DEBUG3, DEBUG2, DEBUG1, "
-			"INFO, NOTICE, WARNING, ERROR, LOG, FATAL, and PANIC. Each level "
-						 "includes all the levels that follow it.")
+			gettext_noop("Each level includes all levels that follow it.")
 		},
 		&log_min_messages,
-		WARNING, message_level_options, NULL, NULL
+		WARNING, server_message_level_options, NULL, NULL
 	},
 
 	{
@@ -2486,7 +2513,7 @@ static struct config_enum ConfigureNamesEnum[] =
 						 "specified level or a higher level are logged.")
 		},
 		&log_min_error_statement,
-		ERROR, message_level_options, NULL, NULL
+		ERROR, server_message_level_options, NULL, NULL
 	},
 
 	{
@@ -3982,7 +4009,7 @@ ReportGUCOption(struct config_generic * record)
  * If the string parses okay, return true, else false.
  * If okay and result is not NULL, return the value in *result.
  */
-static bool
+bool
 parse_bool(const char *value, bool *result)
 {
 	size_t		len = strlen(value);

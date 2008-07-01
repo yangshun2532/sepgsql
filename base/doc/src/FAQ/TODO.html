@@ -8,7 +8,7 @@
 <body bgcolor="#FFFFFF" text="#000000" link="#FF0000" vlink="#A00000" alink="#0000FF">
 <h1><a name="section_1">PostgreSQL TODO List</a></h1>
 <p>Current maintainer:     Bruce Momjian (<a href="mailto:bruce@momjian.us">bruce@momjian.us</a>)<br/>
-Last updated:           Wed Jun 25 23:57:52 EDT 2008
+Last updated:           Mon Jun 30 15:45:09 EDT 2008
 </p>
 <p>The most recent version of this document can be viewed at<br/>
 <a href="http://www.postgresql.org/docs/faqs.TODO.html">http://www.postgresql.org/docs/faqs.TODO.html</a>.
@@ -576,6 +576,7 @@ first.  There is also a developer's wiki at<br/>
   <a href="http://archives.postgresql.org/pgsql-hackers/2005-11/msg00536.php">http://archives.postgresql.org/pgsql-hackers/2005-11/msg00536.php</a>
   <a href="http://archives.postgresql.org/pgsql-hackers/2008-04/msg01157.php">http://archives.postgresql.org/pgsql-hackers/2008-04/msg01157.php</a>
   <a href="http://archives.postgresql.org/pgsql-hackers/2008-04/msg01475.php">http://archives.postgresql.org/pgsql-hackers/2008-04/msg01475.php</a>
+  <a href="http://archives.postgresql.org/pgsql-hackers/2008-04/msg01890.php">http://archives.postgresql.org/pgsql-hackers/2008-04/msg01890.php</a>
 </p>
   </li><li>Add NOVICE output level for helpful messages like automatic sequence/index
   creation
@@ -968,8 +969,19 @@ first.  There is also a developer's wiki at<br/>
 </p>
     </li><li>-<em>Improve display of enums to show valid enum values</em>
     </li><li>Add prompt escape to display the client and server versions
+    </li><li>Add option to wrap column values at whitespace boundaries,
+          rather than chopping them at a fixed width.
+<p>          Currently, "wrapped" format chops values into fixed
+          widths.  Perhaps the word wrapping could use the same
+          algorithm documented in the W3C specification.
+          <a href="http://archives.postgresql.org/pgsql-hackers/2008-05/msg00404.php">http://archives.postgresql.org/pgsql-hackers/2008-05/msg00404.php</a>
+          <a href="http://www.w3.org/TR/CSS21/tables.html<strong>auto-table-layout">http://www.w3.org/TR/CSS21/tables.html</strong>auto-table-layout</a>
+    <li>Add "auto" expanded mode that outputs in expanded format if
+          "wrapped" mode can't wrap the output to the screen width
+<p>          <a href="http://archives.postgresql.org/pgsql-hackers/2008-05/msg00417.php">http://archives.postgresql.org/pgsql-hackers/2008-05/msg00417.php</a>
+</p>
   </li></ul>
-  </li><li>pg_dump / pg_restore
+  <li>pg_dump / pg_restore
   <ul>
     <li>%Add dumping of comments on index columns and composite type columns
     </li><li>%Add full object name to the tag field.  eg. for operators we need
@@ -1069,7 +1081,7 @@ first.  There is also a developer's wiki at<br/>
 </p>
   </li></ul>
 </li></ul>
-<h1><a name="section_11">Triggers</a></h1>
+</p><h1><a name="section_11">Triggers</a></h1>
 
 <ul>
   <li>Add deferred trigger queue file
@@ -1730,6 +1742,8 @@ first.  There is also a developer's wiki at<br/>
   </li><li>Implement a module capability for loading /contrib-style extensions
 <p>  <a href="http://archives.postgresql.org/pgsql-patches/2008-04/msg00164.php">http://archives.postgresql.org/pgsql-patches/2008-04/msg00164.php</a>
 </p>
+  </li><li>Fix system views like pg_stat_all_tables to use set-returning
+  functions, rather than views of per-column functions
   </li><li>Win32
   <ul>
     <li>Remove configure.in check for link failure when cause is found
@@ -1829,6 +1843,6 @@ first.  There is also a developer's wiki at<br/>
   to run in the same process address space as the client application
   would add too much complexity and failure cases.</p>
 </li></ul>
-
+</li></ul></li></ul>
 </body>
 </html>
