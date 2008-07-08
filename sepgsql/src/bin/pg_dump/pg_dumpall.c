@@ -67,7 +67,7 @@ static int	no_tablespaces = 0;
 static int	use_setsessauth = 0;
 static int	server_version;
 
-/* flag to tuen on/off SE-PostgreSQL support */
+/* flag to turn on/off SE-PostgreSQL support */
 #define SELINUX_SYSATTR_NAME	"security_context"
 static int  enable_selinux = 0;
 

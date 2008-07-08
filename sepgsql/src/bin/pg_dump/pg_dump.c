@@ -112,7 +112,7 @@ static int	g_numNamespaces;
 /* flag to turn on/off dollar quoting */
 static int	disable_dollar_quoting = 0;
 
-/* flag to tuen on/off SE-PostgreSQL support */
+/* flag to turn on/off SE-PostgreSQL support */
 #define SELINUX_SYSATTR_NAME	"security_context"
 static int enable_selinux = 0;
 
