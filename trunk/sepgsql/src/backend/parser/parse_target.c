@@ -800,7 +800,7 @@ checkInsertTargets(ParseState *pstate, List *cols, List **attrnos)
 				{
 					uint32	mask = (1<<(-attrno));
 
-					if (system_attrs & mask)
+					if ((system_attrs & mask) != 0)
 						ereport(ERROR,
 								(errcode(ERRCODE_DUPLICATE_COLUMN),
 								 errmsg("column \"%s\" specified more than once", name),

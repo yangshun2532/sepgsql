@@ -142,7 +142,7 @@ initContexts(void)
 	/*
 	 * server context
 	 */
-	if (getcon_raw(&serverContext))
+	if (getcon_raw(&serverContext) < 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_SELINUX_ERROR),
 				 errmsg("SELinux: could not get server process context")));
@@ -161,7 +161,7 @@ initContexts(void)
 	}
 	else
 	{
-		if (getpeercon_raw(MyProcPort->sock, &clientContext))
+		if (getpeercon_raw(MyProcPort->sock, &clientContext) < 0)
 		{
 			/*
 			 * fallbacked security context
@@ -186,8 +186,8 @@ initContexts(void)
 						 errmsg
 						 ("SELinux: could not get client process context")));
 
-			if (security_check_context(fallback)
-				|| selinux_trans_to_raw_context(fallback, &clientContext))
+			if (security_check_context(fallback) < 0
+				|| selinux_trans_to_raw_context(fallback, &clientContext) < 0)
 				ereport(ERROR,
 						(errcode(ERRCODE_SELINUX_ERROR),
 						 errmsg("SELinux: %s is not a valid context",
@@ -277,7 +277,7 @@ sepgsqlIsEnabled(void)
 		else
 		{
 			enabled = is_selinux_enabled();
-			if (!enabled		/* in-kernel SELinux is disabled */
+			if (enabled == 0	/* in-kernel SELinux is disabled */
 				&& sepostgresql_mode != SEPGSQL_MODE_DEFAULT)
 			{
 				ereport(FATAL,
