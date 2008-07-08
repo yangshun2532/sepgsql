@@ -307,7 +307,7 @@ sepgsql_getcon(PG_FUNCTION_ARGS)
 				(errcode(ERRCODE_SELINUX_ERROR),
 				 errmsg("SELinux: disabled now")));
 
-	if (selinux_raw_to_trans_context(clientContext, &context))
+	if (selinux_raw_to_trans_context(clientContext, &context) < 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_SELINUX_ERROR),
 				 errmsg("SELinux: could not translate mls label")));
@@ -342,7 +342,7 @@ sepgsql_getservcon(PG_FUNCTION_ARGS)
 				(errcode(ERRCODE_SELINUX_ERROR),
 				 errmsg("SELinux: disabled now")));
 
-	if (selinux_raw_to_trans_context(serverContext, &context))
+	if (selinux_raw_to_trans_context(serverContext, &context) < 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_SELINUX_ERROR),
 				 errmsg("SELinux: could not translate mls label")));
