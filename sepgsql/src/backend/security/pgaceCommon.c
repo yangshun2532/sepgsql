@@ -130,7 +130,7 @@ pgaceCreateAttributeCommon(Relation rel, HeapTuple tuple,
 
 		if (!defel->defname)
 			continue;			/* for table */
-		if (!strcmp(defel->defname, NameStr(attr->attname)))
+		if (strcmp(defel->defname, NameStr(attr->attname)) == 0)
 		{
 			Assert(pgaceIsGramSecurityItem((DefElem *) defel->arg));
 			pgaceGramCreateAttribute(rel, tuple, (DefElem *) defel->arg);

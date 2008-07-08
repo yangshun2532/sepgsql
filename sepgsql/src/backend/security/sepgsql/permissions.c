@@ -255,8 +255,7 @@ checkTuplePermsProcedure(HeapTuple tuple, HeapTuple oldtup,
 			{
 				oldbin = SysCacheGetAttr(PROCOID, oldtup,
 										 Anum_pg_proc_probin, &isnull);
-				if (isnull
-					||
+				if (isnull ||
 					DatumGetBool(DirectFunctionCall2(textne, oldbin, newbin)))
 					verify = true;
 			}
@@ -539,7 +538,7 @@ sepgsqlSetDefaultContext(Relation rel, HeapTuple tuple)
 				Form_pg_class clsForm
 					= (Form_pg_class) GETSTRUCT(tuple);
 
-				if (clsForm->relkind)
+				if (clsForm->relkind == RELKIND_RELATION)
 				{
 					setDefaultContextRelation(rel, tuple);
 					return;

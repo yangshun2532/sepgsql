@@ -96,7 +96,8 @@ addEvalRelation(List *selist, Oid relid, bool inh, uint32 perms)
 	{
 		ser = (SEvalItemRelation *) lfirst(l);
 		if (IsA(ser, SEvalItemRelation)
-			&& ser->relid == relid && ser->inh == inh)
+			&& ser->relid == relid
+			&& ser->inh == inh)
 		{
 			ser->perms |= perms;
 			return selist;
@@ -156,7 +157,9 @@ addEvalAttribute(List *selist, Oid relid, bool inh, AttrNumber attno, uint32 per
 	{
 		sea = (SEvalItemAttribute *) lfirst(l);
 		if (IsA(sea, SEvalItemAttribute)
-			&& sea->relid == relid && sea->inh == inh && sea->attno == attno)
+			&& sea->relid == relid
+			&& sea->inh == inh
+			&& sea->attno == attno)
 		{
 			sea->perms |= perms;
 			return selist;
@@ -225,7 +228,8 @@ addEvalPgProc(List *selist, Oid funcid, uint32 perms)
 	foreach(l, selist)
 	{
 		sep = (SEvalItemProcedure *) lfirst(l);
-		if (IsA(sep, SEvalItemProcedure) && sep->funcid == funcid)
+		if (IsA(sep, SEvalItemProcedure)
+			&& sep->funcid == funcid)
 		{
 			sep->perms |= perms;
 			return selist;
@@ -258,7 +262,8 @@ addEvalTriggerAccess(List *selist, Oid relid, bool is_inh, int cmdType)
 	HeapTuple	tuple;
 	bool		checked = false;
 
-	Assert(cmdType == CMD_INSERT || cmdType == CMD_UPDATE
+	Assert(cmdType == CMD_INSERT
+		   || cmdType == CMD_UPDATE
 		   || cmdType == CMD_DELETE);
 
 	rel = heap_open(TriggerRelationId, AccessShareLock);
@@ -276,8 +281,7 @@ addEvalTriggerAccess(List *selist, Oid relid, bool is_inh, int cmdType)
 
 		if ((cmdType == CMD_INSERT && !TRIGGER_FOR_INSERT(trigForm->tgtype))
 			|| (cmdType == CMD_UPDATE && !TRIGGER_FOR_UPDATE(trigForm->tgtype))
-			|| (cmdType == CMD_DELETE
-				&& !TRIGGER_FOR_DELETE(trigForm->tgtype)))
+			|| (cmdType == CMD_DELETE && !TRIGGER_FOR_DELETE(trigForm->tgtype)))
 			continue;
 
 		/*
@@ -293,8 +297,8 @@ addEvalTriggerAccess(List *selist, Oid relid, bool is_inh, int cmdType)
 			&& TRIGGER_FOR_INSERT(trigForm->tgtype))
 			continue;
 
-		selist =
-			addEvalPgProc(selist, trigForm->tgfoid, DB_PROCEDURE__EXECUTE);
+		selist = addEvalPgProc(selist, trigForm->tgfoid,
+							   DB_PROCEDURE__EXECUTE);
 		if (!checked)
 		{
 			HeapTuple	reltup;
@@ -305,15 +309,13 @@ addEvalTriggerAccess(List *selist, Oid relid, bool is_inh, int cmdType)
 			classForm = (Form_pg_class) GETSTRUCT(reltup);
 
 			selist = addEvalRelation(selist, relid, false, DB_TABLE__SELECT);
-			for (attnum = FirstLowInvalidHeapAttributeNumber + 1; attnum <= 0;
-				 attnum++)
+			for (attnum = FirstLowInvalidHeapAttributeNumber + 1; attnum <= 0; attnum++)
 			{
 				if (attnum == ObjectIdAttributeNumber
 					&& !classForm->relhasoids)
 					continue;
-				selist =
-					addEvalAttribute(selist, relid, false, attnum,
-									 DB_COLUMN__SELECT);
+				selist = addEvalAttribute(selist, relid, false, attnum,
+										  DB_COLUMN__SELECT);
 			}
 			ReleaseSysCache(reltup);
 
@@ -329,8 +331,8 @@ addEvalTriggerAccess(List *selist, Oid relid, bool is_inh, int cmdType)
 		ListCell   *l;
 
 		foreach(l, child_list)
-			selist =
-			addEvalTriggerAccess(selist, lfirst_oid(l), is_inh, cmdType);
+			selist = addEvalTriggerAccess(selist, lfirst_oid(l),
+										  is_inh, cmdType);
 	}
 
 	return selist;
@@ -405,8 +407,8 @@ walkOpExprHelper(sepgsqlWalkerContext *swc, Oid opid)
 		elog(ERROR, "SELinux: cache lookup failed for operator %u", opid);
 	oprform = (Form_pg_operator) GETSTRUCT(tuple);
 
-	swc->selist =
-		addEvalPgProc(swc->selist, oprform->oprcode, DB_PROCEDURE__EXECUTE);
+	swc->selist = addEvalPgProc(swc->selist, oprform->oprcode,
+								DB_PROCEDURE__EXECUTE);
 	/*
 	 * NOTE: opr->oprrest and opr->oprjoin are internal use only
 	 * and have no effect onto the data references, so we don't
@@ -471,7 +473,6 @@ sepgsqlExprWalker(Node *node, sepgsqlWalkerContext *swc)
 		case T_RowCompareExpr:
 			{
 				RowCompareExpr *rce = (RowCompareExpr *) node;
-
 				ListCell   *l;
 
 				foreach(l, rce->opnos) walkOpExprHelper(swc, lfirst_oid(l));
@@ -719,8 +720,8 @@ proxyRteSubQuery(sepgsqlWalkerContext *swc, Query *query)
 
 				Assert(IsA(tle, TargetEntry));
 
-				if (tle->resjunk && tle->resname
-					&& !strcmp(tle->resname, SECURITY_SYSATTR_NAME))
+				if (tle->resjunk && tle->resname &&
+					strcmp(tle->resname, SECURITY_SYSATTR_NAME) == 0)
 					is_security_attr = true;
 
 				/*
@@ -765,8 +766,8 @@ proxyRteSubQuery(sepgsqlWalkerContext *swc, Query *query)
 			rte = rt_fetch(query->resultRelation, query->rtable);
 			Assert(IsA(rte, RangeTblEntry) && rte->rtekind == RTE_RELATION);
 
-			swc->selist =
-				addEvalRelationRTE(swc->selist, rte, DB_TABLE__DELETE);
+			swc->selist = addEvalRelationRTE(swc->selist, rte,
+											 DB_TABLE__DELETE);
 			break;
 
 		default:
@@ -1248,7 +1249,7 @@ sepgsqlVerifyQuery(PlannedStmt *pstmt, int eflags)
 	/*
 	 * EXPLAIN statement does not access any object.
 	 */
-	if (eflags & EXEC_FLAG_EXPLAIN_ONLY)
+	if ((eflags & EXEC_FLAG_EXPLAIN_ONLY) != 0)
 		return;
 	if (!pstmt->pgaceItem)
 		return;
@@ -1271,9 +1272,8 @@ sepgsqlVerifyQuery(PlannedStmt *pstmt, int eflags)
 		rte = rt_fetch(rindex, pstmt->rtable);
 		Assert(IsA(rte, RangeTblEntry));
 
-		selist =
-			addEvalTriggerAccess(selist, rte->relid, rte->inh,
-								 pstmt->commandType);
+		selist = addEvalTriggerAccess(selist, rte->relid, rte->inh,
+									  pstmt->commandType);
 	}
 	execVerifyQuery(selist);
 }
@@ -1413,17 +1413,15 @@ sepgsqlCopyTable(Relation rel, List *attNumList, bool isFrom)
 		AttrNumber	attnum = lfirst_int(l);
 
 		selist = addEvalAttribute(selist, RelationGetRelid(rel), false, attnum,
-								  isFrom ? DB_COLUMN__INSERT :
-								  DB_COLUMN__SELECT);
+								  isFrom ? DB_COLUMN__INSERT : DB_COLUMN__SELECT);
 	}
 
 	/*
 	 * check call trigger function
 	 */
 	if (isFrom)
-		selist =
-			addEvalTriggerAccess(selist, RelationGetRelid(rel), false,
-								 CMD_INSERT);
+		selist = addEvalTriggerAccess(selist, RelationGetRelid(rel),
+									  false, CMD_INSERT);
 
 	execVerifyQuery(selist);
 }
