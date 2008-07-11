@@ -371,7 +371,6 @@ sepgsql_av_perm_to_string(security_class_t tclass, access_vector_t perm)
  *
  * This function clears all current avc entries, and update its version.
  */
-extern char *sepostgresql_mode;		/* in guc.c */
 
 static void
 sepgsql_avc_reset(void)
