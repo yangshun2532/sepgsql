@@ -70,6 +70,27 @@
  */
 
 /******************************************************************
+ * Shows the PGACE guest identifier
+ ******************************************************************/
+
+/*
+ * pgaceSecurityFeatureIdentity
+ *
+ * This hook has to return unique identifier of the PGACE guest.
+ * A GUC parameter of 'pgace_security_feature' shows this value.
+ */
+
+static inline const char *
+pgaceSecurityFeatureIdentity(void)
+{
+#ifdef HAVE_SELINUX
+	if (sepgsqlIsEnabled())
+		return "selinux";
+#endif
+	return "nothing";
+}
+
+/******************************************************************
  * Initialization hooks
  ******************************************************************/
 
@@ -1128,12 +1149,17 @@ pgaceSecurityLabelOfLabel(void)
  * PGACE common facilities (not a hooks)
  ******************************************************************/
 
+/* GUC parameter support */
+extern const char *pgaceShowSecurityFeature(void);
+
 /* Security Label Management */
 extern void pgacePostBootstrapingMode(void);
 
 extern Oid pgaceSecurityLabelToSid(char *label);
 
 extern char *pgaceSidToSecurityLabel(Oid security_id);
+
+extern Oid pgaceLookupSecurityId(char *label);
 
 extern char *pgaceLookupSecurityLabel(Oid security_id);
 

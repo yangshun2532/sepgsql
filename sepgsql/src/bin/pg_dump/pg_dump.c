@@ -50,6 +50,7 @@ int			optreset;
 
 #include "pg_backup_archiver.h"
 #include "dumputils.h"
+#include "pg_ace_dump.h"
 
 extern char *optarg;
 extern int	optind,
@@ -118,9 +119,8 @@ static int	g_numNamespaces;
 /* flag to turn on/off dollar quoting */
 static int	disable_dollar_quoting = 0;
 
-/* flag to tuen on/off SE-PostgreSQL support */
-#define SELINUX_SYSATTR_NAME	"security_context"
-static int enable_selinux = 0;
+/* flag to turn on/off security attribute support */
+static int pg_ace_feature = PG_ACE_FEATURE_NOTHING;
 
 static void help(const char *progname);
 static void expand_schema_name_patterns(SimpleStringList *patterns,
@@ -270,7 +270,7 @@ main(int argc, char **argv)
 		{"disable-dollar-quoting", no_argument, &disable_dollar_quoting, 1},
 		{"disable-triggers", no_argument, &disable_triggers, 1},
 		{"use-set-session-authorization", no_argument, &use_setsessauth, 1},
-		{"enable-selinux", no_argument, &enable_selinux, 1},
+		{"security-context", no_argument, &pg_ace_feature, PG_ACE_FEATURE_SELINUX},
 
 		{NULL, 0, NULL, 0}
 	};
@@ -423,8 +423,8 @@ main(int argc, char **argv)
 					disable_triggers = 1;
 				else if (strcmp(optarg, "use-set-session-authorization") == 0)
 					use_setsessauth = 1;
-				else if (strcmp(optarg, "enable-selinux") == 0)
-					enable_selinux = 1;
+				else if (strcmp(optarg, "security-context") == 0)
+					pg_ace_feature = PG_ACE_FEATURE_SELINUX;
 				else
 				{
 					fprintf(stderr,
@@ -555,24 +555,7 @@ main(int argc, char **argv)
 	std_strings = PQparameterStatus(g_conn, "standard_conforming_strings");
 	g_fout->std_strings = (std_strings && strcmp(std_strings, "on") == 0);
 
-	if (enable_selinux)
-	{
-		/* confirm server SELinux support */
-		const char *security_sysattr_name
-			= PQparameterStatus(g_conn, "security_sysattr_name");
-
-		if (!security_sysattr_name)
-		{
-			write_msg(NULL, "could not get security_sysattr_name parameter\n");
-			exit(1);
-		}
-
-		if (strcmp(SELINUX_SYSATTR_NAME, security_sysattr_name))
-		{
-			write_msg(NULL, "server does not have SELinux feature\n");
-			exit(1);
-		}
-	}
+	pg_ace_dumpCheckServerFeature(pg_ace_feature, g_conn);
 
 	/* Set the datestyle to ISO to ensure the dump's portability */
 	do_sql_command(g_conn, "SET DATESTYLE = ISO");
@@ -796,7 +779,7 @@ help(const char *progname)
 	printf(_("  --use-set-session-authorization\n"
 			 "                              use SESSION AUTHORIZATION commands instead of\n"
 	"                              ALTER OWNER commands to set ownership\n"));
-	printf(_("  --enable-selinux            enable to dump security context in SE-PostgreSQL\n"));
+	printf(_("  --security-context          enable to dump security context of SE-PostgreSQL\n"));
 
 	printf(_("\nConnection options:\n"));
 	printf(_("  -h, --host=HOSTNAME      database server host or socket directory\n"));
@@ -1187,7 +1170,7 @@ dumpTableData_insert(Archive *fout, void *dcontext)
 	{
 		appendPQExpBuffer(q, "DECLARE _pg_dump_cursor CURSOR FOR "
 						  "SELECT * %s FROM ONLY %s",
-						  !enable_selinux ? "" : ("," SELINUX_SYSATTR_NAME),
+						  pg_ace_dumpTableDataQuery(pg_ace_feature),
 						  fmtQualifiedId(tbinfo->dobj.namespace->dobj.name,
 										 classname));
 	}
@@ -1803,27 +1786,7 @@ dumpBlobComments(Archive *AH, void *arg)
 
 			blobOid = atooid(PQgetvalue(res, i, 0));
 
-			/* dump security context of binary large object */
-			if (enable_selinux)
-			{
-				PGresult	*lores;
-				char		query[256];
-
-				snprintf(query, sizeof(query),
-						 "SELECT lo_get_security(%u)", blobOid);
-				lores = PQexec(g_conn, query);
-				check_sql_result(lores, g_conn, query, PGRES_TUPLES_OK);
-
-				if (PQntuples(lores) != 1)
-				{
-					write_msg(NULL, "lo_get_security(%u) returns %d tuples\n",
-							  blobOid, PQntuples(lores));
-					exit_nicely();
-				}
-				archprintf(AH, "SELECT lo_set_security(%u, '%s');\n",
-						   blobOid, PQgetvalue(lores, 0, 0));
-				PQclear(lores);
-			}
+			pg_ace_dumpBlobComments(pg_ace_feature, AH, g_conn, blobOid);
 
 			/* ignore blobs without comments */
 			if (PQgetisnull(res, i, 1))
@@ -2936,7 +2899,6 @@ getTables(int *numTables)
 	int			i_owning_col;
 	int			i_reltablespace;
 	int			i_reloptions;
-	int			i_selinux;
 
 	/* Make sure we are in proper schema */
 	selectSourceSchema("pg_catalog");
@@ -2987,7 +2949,7 @@ getTables(int *numTables)
 						  "where relkind in ('%c', '%c', '%c', '%c') "
 						  "order by c.oid",
 						  username_subquery,
-						  !enable_selinux ? "" : (",c." SELINUX_SYSATTR_NAME),
+						  pg_ace_dumpClassQuery(pg_ace_feature),
 						  RELKIND_SEQUENCE,
 						  RELKIND_RELATION, RELKIND_SEQUENCE,
 						  RELKIND_VIEW, RELKIND_COMPOSITE_TYPE);
@@ -3154,7 +3116,6 @@ getTables(int *numTables)
 	i_owning_col = PQfnumber(res, "owning_col");
 	i_reltablespace = PQfnumber(res, "reltablespace");
 	i_reloptions = PQfnumber(res, "reloptions");
-	i_selinux = PQfnumber(res, SELINUX_SYSATTR_NAME);
 
 	for (i = 0; i < ntups; i++)
 	{
@@ -3185,9 +3146,7 @@ getTables(int *numTables)
 		}
 		tblinfo[i].reltablespace = strdup(PQgetvalue(res, i, i_reltablespace));
 		tblinfo[i].reloptions = strdup(PQgetvalue(res, i, i_reloptions));
-		tblinfo[i].relsecurity = NULL;
-		if (i_selinux >= 0)
-			tblinfo[i].relsecurity = strdup(PQgetvalue(res, i, i_selinux));
+		tblinfo[i].relsecurity = pg_ace_dumpClassPreserve(pg_ace_feature, res, i);
 
 		/* other fields were zeroed above */
 
@@ -4376,7 +4335,6 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 	int			i_atthasdef;
 	int			i_attisdropped;
 	int			i_attislocal;
-	int			i_attselinux;
 	PGresult   *res;
 	int			ntups;
 	bool		hasdefaults;
@@ -4426,7 +4384,7 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 							  "where a.attrelid = '%u'::pg_catalog.oid "
 							  "and a.attnum > 0::pg_catalog.int2 "
 							  "order by a.attrelid, a.attnum",
-							  !enable_selinux ? "" : (",a." SELINUX_SYSATTR_NAME),
+							  pg_ace_dumpAttributeQuery(pg_ace_feature),
 							  tbinfo->dobj.catId.oid);
 		}
 		else if (g_fout->remoteVersion >= 70100)
@@ -4475,7 +4433,6 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 		i_atthasdef = PQfnumber(res, "atthasdef");
 		i_attisdropped = PQfnumber(res, "attisdropped");
 		i_attislocal = PQfnumber(res, "attislocal");
-		i_attselinux = PQfnumber(res, SELINUX_SYSATTR_NAME);
 
 		tbinfo->numatts = ntups;
 		tbinfo->attnames = (char **) malloc(ntups * sizeof(char *));
@@ -4519,10 +4476,7 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 			tbinfo->inhAttrDef[j] = false;
 			tbinfo->inhNotNull[j] = false;
 
-			/* security attribute, if defined */
-			tbinfo->attsecurity[j] = NULL;
-			if (i_attselinux >= 0 && !PQgetisnull(res, j, i_attselinux))
-				tbinfo->attsecurity[j] = strdup(PQgetvalue(res, j, i_attselinux));
+			tbinfo->attsecurity[j] = pg_ace_dumpAttributePreserve(pg_ace_feature, res, j);
 		}
 
 		PQclear(res);
@@ -6495,7 +6449,6 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 	char	   *proconfig;
 	char	   *procost;
 	char	   *prorows;
-	char	   *proselinux = NULL;
 	char	   *lanname;
 	char	   *rettypename;
 	int			nallargs;
@@ -6530,7 +6483,7 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 						  "%s "		/* security context, if required */
 						  "FROM pg_catalog.pg_proc "
 						  "WHERE oid = '%u'::pg_catalog.oid",
-						  !enable_selinux ? "" : ("," SELINUX_SYSATTR_NAME),
+						  pg_ace_dumpProcQuery(pg_ace_feature),
 						  finfo->dobj.catId.oid);
 	}
 	else if (g_fout->remoteVersion >= 80100)
@@ -6631,14 +6584,6 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 	procost = PQgetvalue(res, 0, PQfnumber(res, "procost"));
 	prorows = PQgetvalue(res, 0, PQfnumber(res, "prorows"));
 	lanname = PQgetvalue(res, 0, PQfnumber(res, "lanname"));
-
-	if (enable_selinux)
-	{
-		int i_selinux = PQfnumber(res, SELINUX_SYSATTR_NAME);
-
-		if (i_selinux >= 0 && !PQgetisnull(res, 0, i_selinux))
-			proselinux = PQgetvalue(res, 0, i_selinux);
-	}
 
 	/*
 	 * See backend/commands/define.c for details of how the 'AS' clause is
@@ -6776,8 +6721,7 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 	if (prosecdef[0] == 't')
 		appendPQExpBuffer(q, " SECURITY DEFINER");
 
-	if (proselinux)
-		appendPQExpBuffer(q, " CONTEXT = '%s'", proselinux);
+	pg_ace_dumpProcPrint(pg_ace_feature, q, res, 0);
 
 	/*
 	 * COST and ROWS are emitted only if present and not default, so as not to
@@ -8860,12 +8804,7 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 				if (tbinfo->notnull[j] && !tbinfo->inhNotNull[j])
 					appendPQExpBuffer(q, " NOT NULL");
 
-				if (enable_selinux && tbinfo->attsecurity[j])
-				{
-					if (tbinfo->relsecurity
-						&& strcmp(tbinfo->relsecurity, tbinfo->attsecurity[j]) != 0)
-						appendPQExpBuffer(q, " CONTEXT = '%s'", tbinfo->attsecurity[j]);
-				}
+				pg_ace_dumpAttributePrint(pg_ace_feature, q, tbinfo, j);
 
 				actual_atts++;
 			}
@@ -8914,8 +8853,7 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 		if (tbinfo->reloptions && strlen(tbinfo->reloptions) > 0)
 			appendPQExpBuffer(q, "\nWITH (%s)", tbinfo->reloptions);
 
-		if (enable_selinux && tbinfo->relsecurity)
-			appendPQExpBuffer(q, " CONTEXT = '%s'", tbinfo->relsecurity);
+		pg_ace_dumpClassPrint(pg_ace_feature, q, tbinfo);
 
 		appendPQExpBuffer(q, ";\n");
 
@@ -10335,11 +10273,8 @@ fmtCopyColumnList(const TableInfo *ti)
 	appendPQExpBuffer(q, "(");
 	needComma = false;
 
-	if (enable_selinux)
-	{
-		appendPQExpBuffer(q, SELINUX_SYSATTR_NAME);
+	if (pg_ace_dumpCopyColumnList(pg_ace_feature, q))
 		needComma = true;
-	}
 
 	for (i = 0; i < numatts; i++)
 	{

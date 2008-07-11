@@ -1,4 +1,3 @@
-
 /*
  * src/backend/security/sepgsql/hooks.c
  *	  implementations of PGACE framework
@@ -36,7 +35,7 @@ sepgsqlGramSecurityItem(char *defname, char *value)
 {
 	DefElem    *n = NULL;
 
-	if (!strcmp(defname, "context"))
+	if (strcmp(defname, "security_context") == 0)
 		n = makeDefElem(pstrdup(defname), (Node *) makeString(value));
 	return n;
 }
@@ -46,7 +45,7 @@ sepgsqlIsGramSecurityItem(DefElem *defel)
 {
 	Assert(IsA(defel, DefElem));
 
-	if (defel->defname && !strcmp(defel->defname, "context"))
+	if (defel->defname && strcmp(defel->defname, "security_context") == 0)
 		return true;
 	return false;
 }
@@ -56,7 +55,7 @@ putExplicitContext(HeapTuple tuple, DefElem *defel)
 {
 	if (defel)
 	{
-		Oid			security_id = pgaceSecurityLabelToSid(strVal(defel->arg));
+		Oid		security_id = pgaceSecurityLabelToSid(strVal(defel->arg));
 
 		HeapTupleSetSecurity(tuple, security_id);
 	}
@@ -236,7 +235,7 @@ sepgsqlCallFunction(FmgrInfo *finfo, bool with_perm_check)
 	newcon = sepgsqlAvcCreateCon(sepgsqlGetClientContext(),
 								 procon,
 								 SECCLASS_PROCESS);
-	if (strcmp(newcon, sepgsqlGetClientContext()))
+	if (strcmp(newcon, sepgsqlGetClientContext()) != 0)
 	{
 		sepgsql_fn_info *sefinfo
 			= palloc0(sizeof(sepgsql_fn_info));
@@ -584,7 +583,7 @@ sepgsqlExecScan(Scan *scan, Relation rel, TupleTableSlot *slot)
 	HeapTuple	tuple;
 	uint32		perms = scan->pgaceTuplePerms;
 
-	if (!perms)
+	if (perms == 0)
 		return true;
 
 	tuple = ExecMaterializeSlot(slot);
@@ -620,7 +619,7 @@ sepgsqlTranslateSecurityLabelIn(char *context)
 	security_context_t i_context;
 	char	   *result;
 
-	if (selinux_trans_to_raw_context((security_context_t) context, &i_context))
+	if (selinux_trans_to_raw_context((security_context_t) context, &i_context) < 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_SELINUX_ERROR),
 				 errmsg("SELinux: could not translate mls label")));
@@ -645,7 +644,7 @@ sepgsqlTranslateSecurityLabelOut(char *context)
 	security_context_t o_context;
 	char	   *result;
 
-	if (selinux_raw_to_trans_context((security_context_t) context, &o_context))
+	if (selinux_raw_to_trans_context((security_context_t) context, &o_context) < 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_SELINUX_ERROR),
 				 errmsg("SELinux: could not translate mls label")));
@@ -677,7 +676,7 @@ sepgsqlValidateSecurityLabel(char *context)
 
 	if (context != NULL)
 	{
-		if (security_check_context_raw((security_context_t) context))
+		if (security_check_context_raw((security_context_t) context) < 0)
 			ereport(ERROR,
 					(errcode(ERRCODE_SELINUX_ERROR),
 					 errmsg("SELinux: %s is invalid security context",
@@ -685,7 +684,7 @@ sepgsqlValidateSecurityLabel(char *context)
 		return context;
 	}
 
-	if (security_get_initial_context_raw("unlabeled", &unlabeled))
+	if (security_get_initial_context_raw("unlabeled", &unlabeled) < 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_SELINUX_ERROR),
 				 errmsg("SELinux: could not get unlabeled context")));
