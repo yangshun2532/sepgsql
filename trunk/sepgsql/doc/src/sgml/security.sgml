@@ -560,7 +560,7 @@ postgres=# SELECT security_context, * FROM drink;
 CREATE TABLE customer (
     cid     integer primary key,
     cname   varchar(32),
-    credit  varchar(32)  CONTEXT = 'system_u:object_r:sepgsql_secret_table_t'
+    credit  varchar(32)  SECURITY_CONTEXT = 'system_u:object_r:sepgsql_secret_table_t'
 );
 GRANT ALL ON customer TO PUBLIC;
 
@@ -653,7 +653,7 @@ CREATE TABLE drink (
     id integer NOT NULL,
     name character varying(48),
     price integer
-) CONTEXT = 'unconfined_u:object_r:sepgsql_table_t';
+) SECURITY_CONTEXT = 'unconfined_u:object_r:sepgsql_table_t';
 	:
       (snip)
 	:
