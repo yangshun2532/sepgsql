@@ -23,7 +23,7 @@
 ##      </summary>
 ## </param>
 #
-template(`sepostgresql_userdom_template',`
+template(`sepgsql_userdom_template',`
 	gen_require(`
 		class db_database all_db_database_perms;
 		class db_table all_db_table_perms;
@@ -48,16 +48,16 @@ template(`sepostgresql_userdom_template',`
 	typeattribute $2 sepgsql_client_type;
 
 	type $1_sepgsql_blob_t;
-	sepostgresql_blob_object($1_sepgsql_blob_t)
+	sepgsql_blob_object($1_sepgsql_blob_t)
 
 	type $1_sepgsql_proc_exec_t;
-	sepostgresql_procedure_object($1_sepgsql_proc_exec_t)
+	sepgsql_procedure_object($1_sepgsql_proc_exec_t)
 
 	type $1_sepgsql_sysobj_t;
-	sepostgresql_system_table_object($1_sepgsql_sysobj_t)
+	sepgsql_system_table_object($1_sepgsql_sysobj_t)
 
 	type $1_sepgsql_table_t;
-	sepostgresql_table_object($1_sepgsql_table_t)
+	sepgsql_table_object($1_sepgsql_table_t)
 
 	role $3 types sepgsql_trusted_proc_t;
 
@@ -101,7 +101,7 @@ template(`sepostgresql_userdom_template',`
 ##     </summary>
 ## </param>
 #
-interface(`sepostgresql_loadable_module',`
+interface(`sepgsql_loadable_module',`
 	gen_require(`
 		attribute sepgsql_module_type;
 	')
@@ -119,7 +119,7 @@ interface(`sepostgresql_loadable_module',`
 ##     </summary>
 ## </param>
 #
-interface(`sepostgresql_database_object',`
+interface(`sepgsql_database_object',`
 	gen_require(`
 		attribute sepgsql_database_type;
 	')
@@ -137,7 +137,7 @@ interface(`sepostgresql_database_object',`
 ##     </summary>
 ## </param>
 #
-interface(`sepostgresql_table_object',`
+interface(`sepgsql_table_object',`
 	gen_require(`
 		attribute sepgsql_table_type;
 	')
@@ -155,7 +155,7 @@ interface(`sepostgresql_table_object',`
 ##     </summary>
 ## </param>
 #
-interface(`sepostgresql_system_table_object',`
+interface(`sepgsql_system_table_object',`
 	gen_require(`
 		attribute sepgsql_table_type;
 		attribute sepgsql_sysobj_table_type;
@@ -175,7 +175,7 @@ interface(`sepostgresql_system_table_object',`
 ##     </summary>
 ## </param>
 #
-interface(`sepostgresql_procedure_object',`
+interface(`sepgsql_procedure_object',`
 	gen_require(`
 		attribute sepgsql_procedure_type;
 	')
@@ -193,7 +193,7 @@ interface(`sepostgresql_procedure_object',`
 ##     </summary>
 ## </param>
 #
-interface(`sepostgresql_blob_object',`
+interface(`sepgsql_blob_object',`
 	gen_require(`
 		attribute sepgsql_blob_type;
 	')
@@ -212,7 +212,7 @@ interface(`sepostgresql_blob_object',`
 ##      </summary>
 ## </param>
 #
-interface(`sepostgresql_unpriv_client',`
+interface(`sepgsql_unpriv_client',`
 	gen_require(`
 		class db_table all_db_table_perms;
 		class db_procedure all_db_procedure_perms;
@@ -250,7 +250,7 @@ interface(`sepostgresql_unpriv_client',`
 ##      </summary>
 ## </param>
 #
-interface(`sepostgresql_unconfined',`
+interface(`sepgsql_unconfined',`
 	gen_require(`
 		attribute sepgsql_unconfined_type;
 	')
