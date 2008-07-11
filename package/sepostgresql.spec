@@ -13,6 +13,9 @@
 %{!?ssl:%define ssl 1}
 %{!?sepgsql_standalone:%define sepgsql_standalone 1}
 
+# Optional features
+%{!?ssl:%define ssl 1}
+
 Summary: Security Enhanced PostgreSQL
 Name: sepostgresql
 Version: %%__base_postgresql_version__%%
@@ -44,6 +47,9 @@ Requires: postgresql-server = %{version}
 %endif
 Requires: policycoreutils >= 2.0.16 libselinux >= 2.0.43 selinux-policy >= 3.4.2
 Requires: tzdata logrotate
+%if %ssl
+BuildRequires: openssl-devel
+%endif
 
 %description
 Security Enhanced PostgreSQL is an extension of PostgreSQL
@@ -227,6 +233,11 @@ fi
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
 
 %changelog
+* Fri Jul 11 2008 <kaigai@kaigai.gr.jp> - 8.4devel-3.945
+- Design improvement which contains the way to manage security context,
+  tuple-level access control changes to avoid patent confliction, 
+  pg_dump option name changing and so on.
+
 * Wed Apr 30 2008 <kaigai@kaigai.gr.jp> - 8.4devel-3.82
 - BUGFIX: ROW-level control did not work correctly on TRUNCATE
 - Code clean up in sepgsql/proxy.c, using expression_tree_walker().
