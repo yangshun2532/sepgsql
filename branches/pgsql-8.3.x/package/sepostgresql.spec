@@ -218,8 +218,8 @@ fi
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
 
 %changelog
-* Fri Jul 11 2008 <kaigai@kaigai.gr.jp> - 8.3.3-2.950
-- Fix build error in security policy module
+* Fri Jul 11 2008 <kaigai@kaigai.gr.jp> - 8.3.3-2.952
+- Security policy module updates
 
 * Fri Jul 11 2008 <kaigai@kaigai.gr.jp> - 8.3.3-2.945
 - Add OpenSSL support
