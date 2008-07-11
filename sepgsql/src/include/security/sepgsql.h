@@ -32,7 +32,7 @@ typedef enum
 	SEPGSQL_MODE_DISABLED,
 } SepgsqlModeType;
 
-extern SepgsqlModeType sepostgresql_mode;
+extern int sepostgresql_mode;
 
 /*
  * Permission codes of internal representation

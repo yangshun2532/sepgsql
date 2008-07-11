@@ -389,7 +389,7 @@ static int	max_index_keys;
 static int	max_identifier_length;
 static int	block_size;
 static bool integer_datetimes;
-static char *security_sysattr_name;
+static char *pgace_security_feature;
 
 /* should be static, but commands/variable.c needs to get at these */
 char	   *role_string;
@@ -2462,17 +2462,15 @@ static struct config_string ConfigureNamesString[] =
 	},
 #endif   /* USE_SSL */
 
-#ifdef SECURITY_SYSATTR_NAME
 	{
-		{"security_sysattr_name", PGC_INTERNAL, PRESET_OPTIONS,
-			gettext_noop("Shows the name of security attribute system column"),
+		{"pgace_security_feature", PGC_INTERNAL, PRESET_OPTIONS,
+			gettext_noop("Shows the guest of PGACE security framework"),
 			NULL,
 			GUC_REPORT | GUC_NOT_IN_SAMPLE | GUC_DISALLOW_IN_FILE
 		},
-		&security_sysattr_name,
-		SECURITY_SYSATTR_NAME, NULL, NULL,
+		&pgace_security_feature,
+		NULL, NULL, pgaceShowSecurityFeature,
 	},
-#endif
 
 	/* End-of-list marker */
 	{
