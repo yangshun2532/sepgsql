@@ -2,7 +2,7 @@
 # contrib/sepgsql_policy/Makefile
 #   Makefile of security policy module for SE-PostgreSQL
 #
-top_builddir = ../..
+top_builddir = ../../../../..
 include $(top_builddir)/src/Makefile.global
 
 policy_basedir	:= /usr/share/selinux

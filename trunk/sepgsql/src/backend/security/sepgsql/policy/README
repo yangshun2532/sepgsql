@@ -21,7 +21,7 @@ o Introduction
 
 o Build & Installation
 
-  $ cd contrib/sepgsql_policy
+  $ cd src/backend/security/sepgsql/policy
   $ make
   $ su
   # /usr/sbin/semodule -i sepostgresql-devel.pp
@@ -43,8 +43,7 @@ o Booleans
   level.
 
 - sepgsql_regression_test_mode (default: off)
- This boolean provides several permission to run regression test on
- your home directory. It enables to load shared library files deployed
- on home directory.
- However, we don't recommend it to turn on in the operation phase.
-
+  This boolean provides several permission to run regression test on
+  your home directory. It enables to load shared library files deployed
+  on home directory.
+  However, we don't recommend it to turn on in the operation phase.
