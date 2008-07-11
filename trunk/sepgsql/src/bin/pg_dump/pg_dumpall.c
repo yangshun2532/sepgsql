@@ -27,6 +27,7 @@ int			optreset;
 #endif
 
 #include "dumputils.h"
+#include "pg_ace_dump.h"
 
 
 /* version string we expect back from pg_dump */
@@ -67,9 +68,8 @@ static int	no_tablespaces = 0;
 static int	use_setsessauth = 0;
 static int	server_version;
 
-/* flag to turn on/off SE-PostgreSQL support */
-#define SELINUX_SYSATTR_NAME	"security_context"
-static int  enable_selinux = 0;
+/* flag to turn on/off security attribute support */
+static int	pg_ace_feature = PG_ACE_FEATURE_NOTHING;
 
 static FILE *OPF;
 static char *filename = NULL;
@@ -124,7 +124,7 @@ main(int argc, char *argv[])
 		{"disable-triggers", no_argument, &disable_triggers, 1},
 		{"no-tablespaces", no_argument, &no_tablespaces, 1},
 		{"use-set-session-authorization", no_argument, &use_setsessauth, 1},
-		{"enable-selinux", no_argument, &enable_selinux, 1},
+		{"security-context", no_argument, &pg_ace_feature, PG_ACE_FEATURE_SELINUX},
 
 		{NULL, 0, NULL, 0}
 	};
@@ -297,8 +297,8 @@ main(int argc, char *argv[])
 					no_tablespaces = 1;
 				else if (strcmp(optarg, "use-set-session-authorization") == 0)
 					use_setsessauth = 1;
-				else if (strcmp(optarg, "enable-selinux") == 0)
-					enable_selinux = 1;
+				else if (strcmp(optarg, "security-context") == 0)
+					pg_ace_feature = PG_ACE_FEATURE_SELINUX;
 				else
 				{
 					fprintf(stderr,
@@ -327,8 +327,8 @@ main(int argc, char *argv[])
 		appendPQExpBuffer(pgdumpopts, " --no-tablespaces");
 	if (use_setsessauth)
 		appendPQExpBuffer(pgdumpopts, " --use-set-session-authorization");
-	if (enable_selinux)
-		appendPQExpBuffer(pgdumpopts, " --enable-selinux");
+	if (pg_ace_feature == PG_ACE_FEATURE_SELINUX)
+		appendPQExpBuffer(pgdumpopts, " --security-context");
 
 	if (optind < argc)
 	{
@@ -404,24 +404,7 @@ main(int argc, char *argv[])
 		}
 	}
 
-	if (enable_selinux)
-	{
-		/* confirm server SELinux support */
-		const char *security_sysattr_name
-			= PQparameterStatus(conn, "security_sysattr_name");
-
-		if (!security_sysattr_name)
-		{
-			fprintf(stderr, "could not get security_sysattr_name parameter\n");
-			exit(1);
-		}
-
-		if (strcmp(SELINUX_SYSATTR_NAME, security_sysattr_name))
-		{
-			fprintf(stderr, "server does not have SELinux feature\n");
-			exit(1);
-		}
-	}
+	pg_ace_dumpCheckServerFeature(pg_ace_feature, conn);
 
 	/*
 	 * Open the output file if required, otherwise use stdout
@@ -536,7 +519,7 @@ help(void)
 	printf(_("  --use-set-session-authorization\n"
 			 "                           use SESSION AUTHORIZATION commands instead of\n"
 			 "                           OWNER TO commands\n"));
-	printf(_("  --enable-selinux         enable to dump security attribute\n"));
+	printf(_("  --security-context       enables to dump security context of SE-PostgreSQL\n"));
 
 	printf(_("\nConnection options:\n"));
 	printf(_("  -h, --host=HOSTNAME      database server host or socket directory\n"));
@@ -953,10 +936,10 @@ dumpCreateDB(PGconn *conn)
 						   "pg_encoding_to_char(d.encoding), "
 						   "datistemplate, datacl, datconnlimit, "
 						   "(SELECT spcname FROM pg_tablespace t WHERE t.oid = d.dattablespace) AS dattablespace "
-						   "%s"
+						   "%s "
 			  "FROM pg_database d LEFT JOIN pg_authid u ON (datdba = u.oid) "
 						   "WHERE datallowconn ORDER BY 1",
-						   !enable_selinux ? "" : (",d." SELINUX_SYSATTR_NAME " "));
+						   pg_ace_dumpDatabaseQuery(pg_ace_feature));
 	else if (server_version >= 80000)
 		appendPQExpBuffer(buf,
 						   "SELECT datname, "
@@ -1013,7 +996,6 @@ dumpCreateDB(PGconn *conn)
 		char	   *dbacl = PQgetvalue(res, i, 4);
 		char	   *dbconnlimit = PQgetvalue(res, i, 5);
 		char	   *dbtablespace = PQgetvalue(res, i, 6);
-		char	   *dbsecurity = PQgetvalue(res, i, 7);
 		char	   *fdbname;
 
 		fdbname = strdup(fmtId(dbname));
@@ -1057,8 +1039,7 @@ dumpCreateDB(PGconn *conn)
 				appendPQExpBuffer(buf, " CONNECTION LIMIT = %s",
 								  dbconnlimit);
 
-			if (enable_selinux && dbsecurity)
-				appendPQExpBuffer(buf, " CONTEXT = '%s'", dbsecurity);
+			pg_ace_dumpDatabasePrint(pg_ace_feature, buf, res, i);
 
 			appendPQExpBuffer(buf, ";\n");
 
