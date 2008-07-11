@@ -48,16 +48,16 @@ template(`sepostgresql_userdom_template',`
 	typeattribute $2 sepgsql_client_type;
 
 	type $1_sepgsql_blob_t;
-	postgresql_blob_object($1_sepgsql_blob_t)
+	sepostgresql_blob_object($1_sepgsql_blob_t)
 
 	type $1_sepgsql_proc_exec_t;
-	postgresql_procedure_object($1_sepgsql_proc_exec_t)
+	sepostgresql_procedure_object($1_sepgsql_proc_exec_t)
 
 	type $1_sepgsql_sysobj_t;
-	postgresql_system_table_object($1_sepgsql_sysobj_t)
+	sepostgresql_system_table_object($1_sepgsql_sysobj_t)
 
 	type $1_sepgsql_table_t;
-	postgresql_table_object($1_sepgsql_table_t)
+	sepostgresql_table_object($1_sepgsql_table_t)
 
 	role $3 types sepgsql_trusted_proc_t;
 

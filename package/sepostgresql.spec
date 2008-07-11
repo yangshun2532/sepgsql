@@ -233,6 +233,9 @@ fi
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
 
 %changelog
+* Fri Jul 11 2008 <kaigai@kaigai.gr.jp> - 8.4devel-3.950
+- Fix build error in security policy module
+
 * Fri Jul 11 2008 <kaigai@kaigai.gr.jp> - 8.4devel-3.945
 - Design improvement which contains the way to manage security context,
   tuple-level access control changes to avoid patent confliction, 
