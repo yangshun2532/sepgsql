@@ -57,25 +57,32 @@ echo
 svn export ${SEPGSQL_REPOSITORY}${SEPGSQL_BRANCH} altroot || exit 1
 cd altroot
 
+if [ ${GEN_PATCH_ONLY} -ne 0 ]; then
+    mv base postgresql-${BASE_VERSION}
+    echo "GEN: postgresql-${BASE_VERSION}.tar.bz2"
+    chmod a+x postgresql-${BASE_VERSION}/configure
+    tar -jcf ${RPMSOURCE}/postgresql-${BASE_VERSION}.tar.bz2 postgresql-${BASE_VERSION}
+    mv postgresql-${BASE_VERSION} base
+fi
+
 echo "GEN: sepostgresql-pg_dump-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch"
-diff -rpNU3 base/src/bin sepgsql/src/bin	\
+diff -rpNU3 base/src/bin sepgsql/src/bin		\
     > ${RPMSOURCE}/sepostgresql-pg_dump-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch
-rm -rf sepgsql/src/bin
-cp -R base/src/bin sepgsql/src/bin
+rm -rf base/src/bin sepgsql/src/bin
 
 echo "GEN: sepostgresql-policy-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch"
-diff -rpNU3 base/contrib/sepgsql_policy sepgsql/contrib/sepgsql_policy	\
+diff -rpNU3 base/src/backend/security/sepgsql/policy	\
+            sepgsql/src/backend/security/sepgsql/policy	\
     > ${RPMSOURCE}/sepostgresql-policy-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch
-rm -rf sepgsql/contrib/sepgsql_policy
+rm -rf sepgsql/src/backend/security/sepgsql/policy
 
 echo "GEN: sepostgresql-docs-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch"
-diff -rpNU3 base/doc sepgsql/doc \
+diff -rpNU3 base/doc sepgsql/doc			\
     > ${RPMSOURCE}/sepostgresql-docs-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch
-rm -rf sepgsql/doc
-cp -R base/doc sepgsql/doc
+rm -rf base/doc sepgsql/doc
 
 echo "GEN: sepostgresql-sepgsql-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch"
-diff -rpNU3 base sepgsql	\
+diff -rpNU3 base sepgsql				\
     > ${RPMSOURCE}/sepostgresql-sepgsql-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch
 
 if [ ${GEN_PATCH_ONLY} -ne 0 ]; then
@@ -96,12 +103,6 @@ if [ ${GEN_PATCH_ONLY} -ne 0 ]; then
 
     exit 1
 fi
-
-mv base postgresql-${BASE_VERSION}
-echo "GEN: postgresql-${BASE_VERSION}.tar.bz2"
-chmod a+x postgresql-${BASE_VERSION}/configure
-tar -jcf ${RPMSOURCE}/postgresql-${BASE_VERSION}.tar.bz2 postgresql-${BASE_VERSION}
-mv postgresql-${BASE_VERSION} base
 
 echo "GEN: sepostgresql.init"
 cat package/sepostgresql.init | \

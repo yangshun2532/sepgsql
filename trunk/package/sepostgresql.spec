@@ -76,8 +76,9 @@ CXXFLAGS="${CXXFLAGS:-%optflags}" ; export CXXFLAGS
 
 # parallel build, if possible
 make %{?_smp_mflags}
-touch contrib/sepgsql_policy/sepostgresql-devel.fc	# to create empty .fc file
-make -C contrib/sepgsql_policy
+# to create empty .fc file
+touch src/backend/security/sepgsql/policy/sepostgresql.fc
+make -C src/backend/security/sepgsql/policy
 
 %install
 rm -rf %{buildroot}
@@ -86,7 +87,7 @@ make DESTDIR=%{buildroot} install
 for store in %{selinux_policy_stores}
 do
     install -d %{buildroot}%{_datadir}/selinux/${store}
-    install -p -m 644 contrib/sepgsql_policy/%{policy_module_name}.pp.${store} \
+    install -p -m 644 src/backend/security/sepgsql/policy/%{policy_module_name}.pp.${store} \
                %{buildroot}%{_datadir}/selinux/${store}/%{policy_module_name}.pp
 done
 
