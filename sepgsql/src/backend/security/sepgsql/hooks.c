@@ -1,4 +1,3 @@
-
 /*
  * src/backend/security/sepgsql/hooks.c
  *	  implementations of PGACE framework
@@ -36,7 +35,7 @@ sepgsqlGramSecurityItem(char *defname, char *value)
 {
 	DefElem    *n = NULL;
 
-	if (strcmp(defname, "context") == 0)
+	if (strcmp(defname, "security_context") == 0)
 		n = makeDefElem(pstrdup(defname), (Node *) makeString(value));
 	return n;
 }
@@ -46,7 +45,7 @@ sepgsqlIsGramSecurityItem(DefElem *defel)
 {
 	Assert(IsA(defel, DefElem));
 
-	if (defel->defname && strcmp(defel->defname, "context") == 0)
+	if (defel->defname && strcmp(defel->defname, "security_context") == 0)
 		return true;
 	return false;
 }
