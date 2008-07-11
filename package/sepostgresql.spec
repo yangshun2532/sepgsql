@@ -74,14 +74,14 @@ CXXFLAGS="${CXXFLAGS:-%optflags}" ; export CXXFLAGS
 # build SE-PostgreSQL
 %configure      --disable-rpath                 \
                 --enable-selinux                \
+%if %{ssl}
+                --with-openssl                  \
+%endif
 %if %{defined sepgextension}
                 --enable-debug                  \
                 --enable-cassert                \
 %endif
                 --libdir=%{_libdir}/pgsql       \
-%if %{ssl}
-                --with-openssl                  \
-%endif
                 --datadir=%{_datadir}/sepgsql   \
                 --with-system-tzdata=/usr/share/zoneinfo
 
@@ -218,6 +218,10 @@ fi
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
 
 %changelog
+* Fri Jul 11 2008 <kaigai@kaigai.gr.jp> - 8.3.3-2.945
+- Add OpenSSL support
+- backport 8.4devel fixes
+
 * Sun Jun 15 2008 <kaigai@kaigai.gr.jp> - 8.3.3-2.889
 - backport 8.4devel features.
 
