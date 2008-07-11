@@ -50,9 +50,10 @@ diff -rpNU3 base/src/bin sepgsql/src/bin \
 rm -rf base/src/bin sepgsql/src/bin
 
 echo "GEN: sepostgresql-policy-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch"
-diff -rpNU3 base/contrib/sepgsql_policy sepgsql/contrib/sepgsql_policy \
+diff -rpNU3 base/src/backend/security/sepgsql/policy		\
+	    sepgsql/src/backend/security/sepgsql/policy		\
     > ${RPMSOURCE}/sepostgresql-policy-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch
-rm -rf sepgsql/contrib/sepgsql_policy
+rm -rf sepgsql/src/backend/security/sepgsql/policy
 
 echo "GEN: sepostgresql-sepgsql-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch"
 diff -rpNU3 base sepgsql \

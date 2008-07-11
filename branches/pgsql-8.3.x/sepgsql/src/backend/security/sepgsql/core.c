@@ -140,7 +140,7 @@ initContexts(void)
 	/*
 	 * server context
 	 */
-	if (getcon_raw(&serverContext))
+	if (getcon_raw(&serverContext) < 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_SELINUX_ERROR),
 				 errmsg("SELinux: could not get server process context")));
@@ -159,7 +159,7 @@ initContexts(void)
 	}
 	else
 	{
-		if (getpeercon_raw(MyProcPort->sock, &clientContext))
+		if (getpeercon_raw(MyProcPort->sock, &clientContext) < 0)
 		{
 			/*
 			 * fallbacked security context
@@ -184,8 +184,8 @@ initContexts(void)
 						 errmsg
 						 ("SELinux: could not get client process context")));
 
-			if (security_check_context(fallback)
-				|| selinux_trans_to_raw_context(fallback, &clientContext))
+			if (security_check_context(fallback) < 0
+				|| selinux_trans_to_raw_context(fallback, &clientContext) < 0)
 				ereport(ERROR,
 						(errcode(ERRCODE_SELINUX_ERROR),
 						 errmsg("SELinux: %s is not a valid context",
@@ -263,7 +263,6 @@ sepgsqlInitialize(bool bootstrap)
  * - disabled   : It disables SE-PostgreSQL feature. It works as if
  *                original PostgreSQL
  */
-extern char *sepostgresql_mode;		/* in guc.c */
 
 bool
 sepgsqlIsEnabled(void)
@@ -272,16 +271,16 @@ sepgsqlIsEnabled(void)
 
 	if (enabled < 0)
 	{
-		if (!strcmp(sepostgresql_mode, "disabled"))
+		if (strcmp(sepostgresql_mode, "disabled") == 0)
 			enabled = 0;
 		else
 		{
 			int rc = is_selinux_enabled();
 
-			if (!strcmp(sepostgresql_mode, "default"))
+			if (strcmp(sepostgresql_mode, "default") == 0)
 				enabled = rc;
-			else if (!strcmp(sepostgresql_mode, "permissice")
-					 || !strcmp(sepostgresql_mode, "enforcing"))
+			else if (strcmp(sepostgresql_mode, "permissice") == 0
+					 || strcmp(sepostgresql_mode, "enforcing") == 0)
 			{
 				if (rc == 0)
 					ereport(FATAL,
@@ -319,7 +318,7 @@ sepgsql_getcon(PG_FUNCTION_ARGS)
 				(errcode(ERRCODE_SELINUX_ERROR),
 				 errmsg("SELinux: disabled now")));
 
-	if (selinux_raw_to_trans_context(clientContext, &context))
+	if (selinux_raw_to_trans_context(clientContext, &context) < 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_SELINUX_ERROR),
 				 errmsg("SELinux: could not translate mls label")));
@@ -354,7 +353,7 @@ sepgsql_getservcon(PG_FUNCTION_ARGS)
 				(errcode(ERRCODE_SELINUX_ERROR),
 				 errmsg("SELinux: disabled now")));
 
-	if (selinux_raw_to_trans_context(serverContext, &context))
+	if (selinux_raw_to_trans_context(serverContext, &context) < 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_SELINUX_ERROR),
 				 errmsg("SELinux: could not translate mls label")));

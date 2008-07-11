@@ -317,7 +317,7 @@ trans_to_internal_perms(security_class_t e_tclass, access_vector_t e_perms)
 			continue;
 		for (j = 0; j < sizeof(access_vector_t) * 8; j++)
 		{
-			if (selinux_state->catalog[i].av_perms[j].external & e_perms)
+			if ((selinux_state->catalog[i].av_perms[j].external & e_perms) != 0)
 				i_perms |= selinux_state->catalog[i].av_perms[j].internal;
 		}
 		return i_perms;
@@ -414,8 +414,6 @@ sepgsql_avc_reclaim(void)
 
 	while (avc_datum_count > AVC_HASH_NUM_NODES)
 	{
-		Assert(false);
-
 		avc_lru_hint = (avc_lru_hint + 1) % AVC_HASH_NUM_SLOTS;
 		slot = avc_slot[avc_lru_hint];
 		foreach(l, slot)
@@ -477,12 +475,12 @@ sepgsql_avc_compute(const security_context_t scon,
 
 	e_tclass = trans_to_external_tclass(tclass);
 
-	if (security_compute_av_raw(svcon, tvcon, e_tclass, 0, &avd))
+	if (security_compute_av_raw(svcon, tvcon, e_tclass, 0, &avd) < 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_SELINUX_ERROR),
 				 errmsg("SELinux: could not compute a new avc entry"
 						" scon=%s tcon=%s tclass=%u", svcon, tvcon, tclass)));
-	if (security_compute_create_raw(svcon, tvcon, e_tclass, &ncon))
+	if (security_compute_create_raw(svcon, tvcon, e_tclass, &ncon) < 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_SELINUX_ERROR),
 				 errmsg("SELinux: could not compute a new avc entry"
@@ -536,8 +534,8 @@ avc_lookup_entry(const security_context_t scon,
 
 		if (cache->hash_key == hash
 			&& cache->tclass == tclass
-			&& !strcmp(cache->scon, scon)
-			&& !strcmp(cache->tcon, tcon))
+			&& strcmp(cache->scon, scon) == 0
+			&& strcmp(cache->tcon, tcon) == 0)
 		{
 			cache->hot_cache = true;
 			return cache;
@@ -563,7 +561,7 @@ avc_lookup_entry_sid(const security_context_t scon,
 		if (cache->hash_key == hash
 			&& cache->tclass == tclass
 			&& cache->tsid == tsid
-			&& !strcmp(cache->scon, scon))
+			&& strcmp(cache->scon, scon) == 0)
 		{
 			cache->hot_cache = true;
 			return cache;
@@ -590,14 +588,14 @@ avc_audit_common(char *buffer, uint32 buflen, avc_datum *cache,
 	denied = perms & ~cache->allowed;
 	audited = denied ? (denied & cache->auditdeny) : (perms & cache->auditallow);
 
-	if (!audited)
+	if (audited == 0)
 		return false;
 
 	ofs += snprintf(buffer + ofs, buflen - ofs, "%s {",
 					denied ? "denied" : "granted");
-	for (mask = 1; mask; mask <<= 1)
+	for (mask = 1; mask != 0; mask <<= 1)
 	{
-		if (audited & mask)
+		if ((audited & mask) != 0)
 			ofs += snprintf(buffer + ofs, buflen - ofs, " %s",
 							sepgsql_av_perm_to_string(cache->tclass, mask));
 	}
