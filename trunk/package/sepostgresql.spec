@@ -77,7 +77,7 @@ CXXFLAGS="${CXXFLAGS:-%optflags}" ; export CXXFLAGS
 # parallel build, if possible
 make %{?_smp_mflags}
 # to create empty .fc file
-touch src/backend/security/sepgsql/policy/sepostgresql.fc
+touch src/backend/security/sepgsql/policy/%{policy_module_name}.fc
 make -C src/backend/security/sepgsql/policy
 
 %install
