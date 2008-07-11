@@ -621,7 +621,7 @@ postgres=# SELECT cid, cname FROM customer;
 
      <para>
        The <command>pg_dump</command> and <command>pg_dumpall</command>
-       have <option>--enable-selinux</option> option to dump databases
+       have <option>--security-context</option> option to dump databases
        with its security context.
 
        The dumped image can be restored with proper security context.
@@ -641,7 +641,7 @@ postgres=# SELECT cid, cname FROM customer;
      </para>
 
 <screen>
-<prompt>$ </prompt><userinput>pg_dump --enable-selinux postgres</userinput>
+<prompt>$ </prompt><userinput>pg_dump --security-context postgres</userinput>
 	:
       (snip)
 	:
