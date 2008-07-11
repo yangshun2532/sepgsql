@@ -10,6 +10,7 @@
 
 %%__sepgsql_extension__%%
 
+%{!?ssl:%define ssl 1}
 %{!?sepgsql_standalone:%define sepgsql_standalone 1}
 
 Summary: Security Enhanced PostgreSQL
@@ -31,6 +32,9 @@ Patch3: sepostgresql-docs-%%__base_postgresql_version__%%-%%__sepgsql_major_vers
 Patch4: sepostgresql-fedora-prefix.patch
 BuildRequires: perl glibc-devel bison flex readline-devel zlib-devel >= 1.0.4
 Buildrequires: checkpolicy libselinux-devel >= 2.0.43 selinux-policy >= 3.4.2
+%if %{ssl}
+BuildRequires: openssl-devel
+%endif
 Requires(pre): shadow-utils
 Requires(post): policycoreutils /sbin/chkconfig
 Requires(preun): /sbin/chkconfig /sbin/service
@@ -70,6 +74,9 @@ CXXFLAGS="${CXXFLAGS:-%optflags}" ; export CXXFLAGS
                 --libdir=%{_libdir}/sepgsql     \
 %else
                 --libdir=%{_libdir}/pgsql       \
+%endif
+%if %{ssl}
+                --with-openssl                  \
 %endif
                 --datadir=%{_datadir}/sepgsql   \
                 --with-system-tzdata=/usr/share/zoneinfo
