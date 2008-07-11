@@ -19,6 +19,8 @@
 
 %%__sepgsql_extension__%%
 
+%{!?ssl:%define ssl 1}
+
 Summary: Security Enhanced PostgreSQL
 Name: sepostgresql
 Version: %%__base_postgresql_version__%%
@@ -38,6 +40,9 @@ Patch3: sepostgresql-fedora-prefix.patch
 BuildRequires: perl glibc-devel bison flex readline-devel zlib-devel >= 1.0.4
 BuildRequires: checkpolicy libselinux-devel >= 2.0.43 selinux-policy-devel
 BuildRequires: selinux-policy >= %{required_policy_version}
+%if %{ssl}
+BuildRequires: openssl-devel
+%endif
 Requires(pre): shadow-utils
 Requires(post): policycoreutils /sbin/chkconfig
 Requires(preun): /sbin/chkconfig /sbin/service
@@ -74,6 +79,9 @@ CXXFLAGS="${CXXFLAGS:-%optflags}" ; export CXXFLAGS
                 --enable-cassert                \
 %endif
                 --libdir=%{_libdir}/pgsql       \
+%if %{ssl}
+                --with-openssl                  \
+%endif
                 --datadir=%{_datadir}/sepgsql   \
                 --with-system-tzdata=/usr/share/zoneinfo
 
