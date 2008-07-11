@@ -1160,6 +1160,8 @@ extern Oid pgaceSecurityLabelToSid(char *label);
 
 extern char *pgaceSidToSecurityLabel(Oid security_id);
 
+extern Oid pgaceLookupSecurityId(char *label);
+
 extern char *pgaceLookupSecurityLabel(Oid security_id);
 
 /* Extended SQL statements related */
