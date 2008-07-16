@@ -8,7 +8,7 @@
 <body bgcolor="#FFFFFF" text="#000000" link="#FF0000" vlink="#A00000" alink="#0000FF">
 <h1><a name="section_1">PostgreSQL TODO List</a></h1>
 <p>Current maintainer:     Bruce Momjian (<a href="mailto:bruce@momjian.us">bruce@momjian.us</a>)<br/>
-Last updated:           Tue Jul  1 14:26:21 EDT 2008
+Last updated:           Tue Jul 15 11:03:34 EDT 2008
 </p>
 <p>The most recent version of this document can be viewed at<br/>
 <a href="http://www.postgresql.org/docs/faqs.TODO.html">http://www.postgresql.org/docs/faqs.TODO.html</a>.
@@ -173,7 +173,7 @@ first.  There is also a developer's wiki at<br/>
           postgresql.conf, including quoting
 <p>          <a href="http://archives.postgresql.org/pgsql-hackers/2006-12/msg00497.php">http://archives.postgresql.org/pgsql-hackers/2006-12/msg00497.php</a>
 </p>
-    </li><li>Fix server restart problem when the server was shutdown during
+    </li><li>-<em>Fix server restart problem when the server was shutdown during</em>
           a PITR backup
 <p>          <a href="http://archives.postgresql.org/pgsql-hackers/2007-11/msg00800.php">http://archives.postgresql.org/pgsql-hackers/2007-11/msg00800.php</a>
 </p>
@@ -181,6 +181,8 @@ first.  There is also a developer's wiki at<br/>
           restoring from a PITR backup
 <p>          <a href="http://archives.postgresql.org/pgsql-hackers/2007-12/msg00487.php">http://archives.postgresql.org/pgsql-hackers/2007-12/msg00487.php</a>
 </p>
+    </li><li>Reduce PITR WAL file size by removing full page writes and
+          by removing trailing bytes to improve compression
   </li></ul>
 </li></ul>
 <h1><a name="section_3">Data Types</a></h1>
@@ -429,7 +431,7 @@ first.  There is also a developer's wiki at<br/>
   </li><li>Reduce memory usage of aggregates in set returning functions
 <p>  <a href="http://archives.postgresql.org/pgsql-performance/2008-01/msg00031.php">http://archives.postgresql.org/pgsql-performance/2008-01/msg00031.php</a>
 </p>
-  </li><li>Add temporal versions of generate_series()
+  </li><li>-<em>Add temporal versions of generate_series()</em>
 <p>  <a href="http://archives.postgresql.org/pgsql-hackers/2007-04/msg01180.php">http://archives.postgresql.org/pgsql-hackers/2007-04/msg01180.php</a>
 </p>
   </li><li>Add array_accum() and array_to_set() functions for arrays
@@ -531,6 +533,9 @@ first.  There is also a developer's wiki at<br/>
   to manager the triggers and summary table automatically.  A more
   sophisticated implementation would automatically retrieve from the
   summary table when the main table is referenced, if possible.
+</p>
+  </li><li>Improve ability to modify views via ALTER TABLE
+<p>  <a href="http://archives.postgresql.org/pgsql-hackers/2008-05/msg00691.php">http://archives.postgresql.org/pgsql-hackers/2008-05/msg00691.php</a>
 </p>
 </li></ul>
 <h1><a name="section_7">SQL Commands</a></h1>
@@ -925,7 +930,7 @@ first.  There is also a developer's wiki at<br/>
 </p>
   </li><li>psql
   <ul>
-    <li>Have psql show current values for a sequence
+    <li>-<em>Have psql show current values for a sequence</em>
     </li><li>Move psql backslash database information into the backend, use
           mnemonic commands?
 <p>          This would allow non-psql clients to pull the same information out
@@ -1663,6 +1668,9 @@ first.  There is also a developer's wiki at<br/>
 <p>  This would assist multiple backends in working together.
   <a href="http://archives.postgresql.org/pgsql-hackers/2008-01/msg00400.php">http://archives.postgresql.org/pgsql-hackers/2008-01/msg00400.php</a>
 </p>
+  </li><li>Consider decreasing the I/O caused by updating tuple hint bits
+<p>  <a href="http://archives.postgresql.org/pgsql-hackers/2008-05/msg00847.php">http://archives.postgresql.org/pgsql-hackers/2008-05/msg00847.php</a>
+</p>
 </li></ul>
 <h1><a name="section_23">Source Code</a></h1>
 
@@ -1812,6 +1820,7 @@ first.  There is also a developer's wiki at<br/>
 <p>  <a href="http://archives.postgresql.org/pgsql-hackers/2004-04/msg00818.php">http://archives.postgresql.org/pgsql-hackers/2004-04/msg00818.php</a>
   <a href="http://archives.postgresql.org/pgsql-hackers/2006-10/msg01527.php">http://archives.postgresql.org/pgsql-hackers/2006-10/msg01527.php</a>
   <a href="http://archives.postgresql.org/pgsql-hackers/2008-03/msg00849.php">http://archives.postgresql.org/pgsql-hackers/2008-03/msg00849.php</a>
+  <a href="http://archives.postgresql.org/pgsql-hackers/2008-07/msg00415.php">http://archives.postgresql.org/pgsql-hackers/2008-07/msg00415.php</a>
 </p>
   </li><li>Add autonomous transactions
 <p>  <a href="http://archives.postgresql.org/pgsql-hackers/2008-01/msg00893.php">http://archives.postgresql.org/pgsql-hackers/2008-01/msg00893.php</a>

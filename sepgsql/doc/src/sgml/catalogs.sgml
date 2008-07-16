@@ -1,4 +1,4 @@
-<!-- $PostgreSQL: pgsql/doc/src/sgml/catalogs.sgml,v 2.166 2008/05/09 23:32:03 tgl Exp $ -->
+<!-- $PostgreSQL: pgsql/doc/src/sgml/catalogs.sgml,v 2.169 2008/07/16 01:30:21 tgl Exp $ -->
 <!--
  Documentation of the system catalogs, directed toward PostgreSQL developers
  -->
@@ -1445,7 +1445,7 @@
       <entry><literal><link linkend="catalog-pg-proc"><structname>pg_proc</structname></link>.oid</literal></entry>
       <entry>
        The OID of the function to use to perform this cast.  Zero is
-       stored if the data types are binary compatible (that is, no
+       stored if the data types are binary coercible (that is, no
        run-time operation is needed to perform the cast)
       </entry>
      </row>
@@ -3648,7 +3648,8 @@
       <entry><literal><link linkend="catalog-pg-type"><structname>pg_type</structname></link>.oid</literal></entry>
       <entry>
        An array with the data types of the function arguments.  This includes
-       only input arguments (including <literal>INOUT</literal> arguments), and thus represents
+       only input arguments (including <literal>INOUT</literal> and
+       <literal>VARIADIC</> arguments), and thus represents
        the call signature of the function
       </entry>
      </row>
@@ -3659,8 +3660,9 @@
       <entry><literal><link linkend="catalog-pg-type"><structname>pg_type</structname></link>.oid</literal></entry>
       <entry>
        An array with the data types of the function arguments.  This includes
-       all arguments (including <literal>OUT</literal> and <literal>INOUT</literal> arguments); however, if all the
-       arguments are IN arguments, this field will be null.
+       all arguments (including <literal>OUT</literal> and
+       <literal>INOUT</literal> arguments); however, if all the
+       arguments are <literal>IN</literal> arguments, this field will be null.
        Note that subscripting is 1-based, whereas for historical reasons
        <structfield>proargtypes</> is subscripted from 0
       </entry>
@@ -3674,8 +3676,10 @@
         An array with the modes of the function arguments, encoded as
         <literal>i</literal> for <literal>IN</> arguments,
         <literal>o</literal> for <literal>OUT</> arguments,
-        <literal>b</literal> for <literal>INOUT</> arguments.
-        If all the arguments are <literal>IN</literal> arguments, this field will be null.
+        <literal>b</literal> for <literal>INOUT</> arguments,
+        <literal>v</literal> for <literal>VARIADIC</> arguments.
+        If all the arguments are <literal>IN</literal> arguments,
+        this field will be null.
         Note that subscripts correspond to positions of
         <structfield>proallargtypes</> not <structfield>proargtypes</>
       </entry>
@@ -6588,6 +6592,8 @@
       <entry>
        A list of the most common values in the column. (NULL if
        no values seem to be more common than any others.)
+       For some datatypes such as <type>tsvector</>, this is a list of
+       the most common element values rather than values of the type itself.
       </entry>
      </row>
 
@@ -6596,10 +6602,10 @@
       <entry><type>real[]</type></entry>
       <entry></entry>
       <entry>
-       A list of the frequencies of the most common values,
+       A list of the frequencies of the most common values or elements,
        i.e., number of occurrences of each divided by total number of rows.
        (NULL when <structfield>most_common_vals</structfield> is.)
-     </entry>
+      </entry>
      </row>
 
      <row>
