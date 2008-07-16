@@ -8,7 +8,7 @@
  *
  * Copyright (c) 2000-2008, PostgreSQL Global Development Group
  *
- * $PostgreSQL: pgsql/src/bin/psql/describe.c,v 1.175 2008/07/03 15:59:55 petere Exp $
+ * $PostgreSQL: pgsql/src/bin/psql/describe.c,v 1.182 2008/07/16 01:30:23 tgl Exp $
  */
 #include "postgres_fe.h"
 
@@ -106,7 +106,7 @@ describeAggregates(const char *pattern, bool verbose)
 
 	myopt.nullPrint = NULL;
 	myopt.title = _("List of aggregate functions");
-	myopt.trans_headers = true;
+	myopt.translate_header = true;
 
 	printQuery(res, &myopt, pset.queryFout, pset.logfile);
 
@@ -166,7 +166,7 @@ describeTablespaces(const char *pattern, bool verbose)
 
 	myopt.nullPrint = NULL;
 	myopt.title = _("List of tablespaces");
-	myopt.trans_headers = true;
+	myopt.translate_header = true;
 
 	printQuery(res, &myopt, pset.queryFout, pset.logfile);
 
@@ -204,7 +204,8 @@ describeFunctions(const char *pattern, bool verbose)
 					  "        CASE\n"
 					  "          WHEN p.proargmodes[s.i] = 'i' THEN ''\n"
 					  "          WHEN p.proargmodes[s.i] = 'o' THEN 'OUT '\n"
-					"          WHEN p.proargmodes[s.i] = 'b' THEN 'INOUT '\n"
+					  "          WHEN p.proargmodes[s.i] = 'b' THEN 'INOUT '\n"
+					  "          WHEN p.proargmodes[s.i] = 'v' THEN 'VARIADIC '\n"
 					  "        END ||\n"
 					  "        CASE\n"
 			 "          WHEN COALESCE(p.proargnames[s.i], '') = '' THEN ''\n"
@@ -278,7 +279,7 @@ describeFunctions(const char *pattern, bool verbose)
 
 	myopt.nullPrint = NULL;
 	myopt.title = _("List of functions");
-	myopt.trans_headers = true;
+	myopt.translate_header = true;
 
 	printQuery(res, &myopt, pset.queryFout, pset.logfile);
 
@@ -368,7 +369,7 @@ describeTypes(const char *pattern, bool verbose)
 
 	myopt.nullPrint = NULL;
 	myopt.title = _("List of data types");
-	myopt.trans_headers = true;
+	myopt.translate_header = true;
 
 	printQuery(res, &myopt, pset.queryFout, pset.logfile);
 
@@ -418,7 +419,7 @@ describeOperators(const char *pattern)
 
 	myopt.nullPrint = NULL;
 	myopt.title = _("List of operators");
-	myopt.trans_headers = true;
+	myopt.translate_header = true;
 
 	printQuery(res, &myopt, pset.queryFout, pset.logfile);
 
@@ -478,7 +479,7 @@ listAllDbs(bool verbose)
 
 	myopt.nullPrint = NULL;
 	myopt.title = _("List of databases");
-	myopt.trans_headers = true;
+	myopt.translate_header = true;
 
 	printQuery(res, &myopt, pset.queryFout, pset.logfile);
 
@@ -497,7 +498,7 @@ permissionsList(const char *pattern)
 	PQExpBufferData buf;
 	PGresult   *res;
 	printQueryOpt myopt = pset.popt;
-	static const bool trans_columns[] = {false, false, true, false};
+	static const bool translate_columns[] = {false, false, true, false};
 
 	initPQExpBuffer(&buf);
 
@@ -546,8 +547,8 @@ permissionsList(const char *pattern)
 	myopt.nullPrint = NULL;
 	printfPQExpBuffer(&buf, _("Access privileges"));
 	myopt.title = buf.data;
-	myopt.trans_headers = true;
-	myopt.trans_columns = trans_columns;
+	myopt.translate_header = true;
+	myopt.translate_columns = translate_columns;
 
 	printQuery(res, &myopt, pset.queryFout, pset.logfile);
 
@@ -572,7 +573,7 @@ objectDescription(const char *pattern)
 	PQExpBufferData buf;
 	PGresult   *res;
 	printQueryOpt myopt = pset.popt;
-	static const bool trans_columns[] = {false, false, true, false};
+	static const bool translate_columns[] = {false, false, true, false};
 
 	initPQExpBuffer(&buf);
 
@@ -712,8 +713,8 @@ objectDescription(const char *pattern)
 
 	myopt.nullPrint = NULL;
 	myopt.title = _("Object descriptions");
-	myopt.trans_headers = true;
-	myopt.trans_columns = trans_columns;
+	myopt.translate_header = true;
+	myopt.translate_columns = translate_columns;
 
 	printQuery(res, &myopt, pset.queryFout, pset.logfile);
 
@@ -811,7 +812,8 @@ describeOneTableDetails(const char *schemaname,
 	printTableContent cont;
 	int			i;
 	char	   *view_def = NULL;
-	char	   *headers[4];
+	char	   *headers[6];
+	char	  **seq_values = NULL;
 	char	  **modifiers = NULL;
 	char	  **ptr;
 	PQExpBufferData title;
@@ -867,8 +869,37 @@ describeOneTableDetails(const char *schemaname,
 	tableinfo.hasrules = strcmp(PQgetvalue(res, 0, 4), "t") == 0;
 	tableinfo.hasoids = strcmp(PQgetvalue(res, 0, 5), "t") == 0;
 	tableinfo.tablespace = (pset.sversion >= 80000) ?
-		atooid(PQgetvalue(res, 0, 6)) : 0;
+								atooid(PQgetvalue(res, 0, 6)) : 0;
 	PQclear(res);
+	
+	/*
+	 * This is used to get the values of a sequence and store it in an
+	 * array that will be used later.
+	 */
+	if (tableinfo.relkind == 'S')
+	{
+		PGresult   *result;
+		
+#define SEQ_NUM_COLS 10
+		printfPQExpBuffer(&buf,
+				"SELECT sequence_name, last_value, \n"
+				"		start_value, increment_by, \n"
+				"		max_value, min_value, cache_value, \n"
+				"		log_cnt, is_cycled, is_called \n"
+				"FROM \"%s\"",
+				relationname);
+		
+		result = PSQLexec(buf.data, false);
+		if (!result)
+			goto error_return;
+		
+		seq_values = pg_malloc_zero((SEQ_NUM_COLS+1) * sizeof(*seq_values));
+		
+		for (i = 0; i < SEQ_NUM_COLS; i++) 
+			seq_values[i] = pg_strdup(PQgetvalue(result, 0, i));
+		
+		PQclear(result);
+	}
 
 	/* Get column info (index requires additional checks) */
 	printfPQExpBuffer(&buf, "SELECT a.attname,");
@@ -878,7 +909,7 @@ describeOneTableDetails(const char *schemaname,
 					  "\n   WHERE d.adrelid = a.attrelid AND d.adnum = a.attnum AND a.atthasdef),"
 					  "\n  a.attnotnull, a.attnum");
 	if (verbose)
-		appendPQExpBuffer(&buf, ", pg_catalog.col_description(a.attrelid, a.attnum)");
+		appendPQExpBuffer(&buf, ", a.attstorage, pg_catalog.col_description(a.attrelid, a.attnum)");
 	appendPQExpBuffer(&buf, "\nFROM pg_catalog.pg_attribute a");
 	if (tableinfo.relkind == 'i')
 		appendPQExpBuffer(&buf, ", pg_catalog.pg_index i");
@@ -932,20 +963,26 @@ describeOneTableDetails(const char *schemaname,
 	}
 
 	/* Set the number of columns, and their names */
-	cols = 2;
-	headers[0] = "Column";
-	headers[1] = "Type";
+	cols += 2;
+	headers[0] = gettext_noop("Column");
+	headers[1] = gettext_noop("Type");
 
 	if (tableinfo.relkind == 'r' || tableinfo.relkind == 'v')
 	{
 		show_modifiers = true;
-		headers[cols++] = "Modifiers";
+		headers[cols++] = gettext_noop("Modifiers");
 		modifiers = pg_malloc_zero((numrows + 1) * sizeof(*modifiers));
 	}
 
+	if (tableinfo.relkind == 'S')
+		headers[cols++] = gettext_noop("Value");
+		
 	if (verbose)
-		headers[cols++] = "Description";
-
+	{
+		headers[cols++] = gettext_noop("Storage");
+		headers[cols++] = gettext_noop("Description");
+	}
+	
 	printTableInit(&cont, &myopt, title.data, cols, numrows);
 
 	for (i = 0; i < cols; i++)
@@ -977,7 +1014,11 @@ describeOneTableDetails(const char *schemaname,
 
 		/* Type */
 		printTableAddCell(&cont, PQgetvalue(res, i, 1), false);
-
+		
+		/* A special 'Value' column for sequences */
+		if (tableinfo.relkind == 'S')
+			printTableAddCell(&cont, seq_values[i], false);
+		
 		/* Extra: not null and default */
 		if (show_modifiers)
 		{
@@ -1000,9 +1041,19 @@ describeOneTableDetails(const char *schemaname,
 			printTableAddCell(&cont, modifiers[i], false);
 		}
 
-		/* Description */
+		/* Storage and Description */
 		if (verbose)
-			printTableAddCell(&cont, PQgetvalue(res, i, 5), false);
+		{
+			char *storage = PQgetvalue(res, i, 5);
+			/* these strings are literal in our syntax, so not translated. */
+			printTableAddCell(&cont, (storage[0]=='p' ? "plain" :
+									  (storage[0]=='m' ? "main" :
+									   (storage[0]=='x' ? "extended" :
+										(storage[0]=='e' ? "external" :
+										 "???")))),
+							  false);
+			printTableAddCell(&cont, PQgetvalue(res, i, 6), false);
+		}
 	}
 
 	/* Make footers */
@@ -1530,7 +1581,14 @@ error_return:
 	termPQExpBuffer(&buf);
 	termPQExpBuffer(&title);
 	termPQExpBuffer(&tmpbuf);
-
+	
+	if (tableinfo.relkind == 'S')
+	{
+		for (ptr = seq_values; *ptr; ptr++)
+			free(*ptr);
+		free(seq_values);
+	}
+    
 	if (show_modifiers)
 	{
 		for (ptr = modifiers; *ptr; ptr++)
@@ -1770,7 +1828,7 @@ listTables(const char *tabtypes, const char *pattern, bool verbose)
 	PQExpBufferData buf;
 	PGresult   *res;
 	printQueryOpt myopt = pset.popt;
-	static const bool trans_columns[] = {false, false, true, false, false, false};
+	static const bool translate_columns[] = {false, false, true, false, false, false};
 
 	if (!(showTables || showIndexes || showViews || showSeq))
 		showTables = showViews = showSeq = true;
@@ -1867,8 +1925,8 @@ listTables(const char *tabtypes, const char *pattern, bool verbose)
 	{
 		myopt.nullPrint = NULL;
 		myopt.title = _("List of relations");
-		myopt.trans_headers = true;
-		myopt.trans_columns = trans_columns;
+		myopt.translate_header = true;
+		myopt.translate_columns = translate_columns;
 
 		printQuery(res, &myopt, pset.queryFout, pset.logfile);
 	}
@@ -1925,7 +1983,7 @@ listDomains(const char *pattern)
 
 	myopt.nullPrint = NULL;
 	myopt.title = _("List of domains");
-	myopt.trans_headers = true;
+	myopt.translate_header = true;
 
 	printQuery(res, &myopt, pset.queryFout, pset.logfile);
 
@@ -1944,7 +2002,7 @@ listConversions(const char *pattern)
 	PQExpBufferData buf;
 	PGresult   *res;
 	printQueryOpt myopt = pset.popt;
-	static const bool trans_columns[] = {false, false, false, false, true};
+	static const bool translate_columns[] = {false, false, false, false, true};
 
 	initPQExpBuffer(&buf);
 
@@ -1977,8 +2035,8 @@ listConversions(const char *pattern)
 
 	myopt.nullPrint = NULL;
 	myopt.title = _("List of conversions");
-	myopt.trans_headers = true;
-	myopt.trans_columns = trans_columns;
+	myopt.translate_header = true;
+	myopt.translate_columns = translate_columns;
 
 	printQuery(res, &myopt, pset.queryFout, pset.logfile);
 
@@ -1997,19 +2055,19 @@ listCasts(const char *pattern)
 	PQExpBufferData buf;
 	PGresult   *res;
 	printQueryOpt myopt = pset.popt;
-	static const bool trans_columns[] = {false, false, false, true};
+	static const bool translate_columns[] = {false, false, false, true};
 
 	initPQExpBuffer(&buf);
 	/*
 	 * We need left join here for binary casts.  Also note that we don't
-	 * attempt to localize '(binary compatible)', because there's too much
+	 * attempt to localize '(binary coercible)', because there's too much
 	 * risk of gettext translating a function name that happens to match
 	 * some string in the PO database.
 	 */
 	printfPQExpBuffer(&buf,
 			   "SELECT pg_catalog.format_type(castsource, NULL) AS \"%s\",\n"
 			   "       pg_catalog.format_type(casttarget, NULL) AS \"%s\",\n"
-					  "       CASE WHEN castfunc = 0 THEN '(binary compatible)'\n"
+					  "       CASE WHEN castfunc = 0 THEN '(binary coercible)'\n"
 					  "            ELSE p.proname\n"
 					  "       END as \"%s\",\n"
 					  "       CASE WHEN c.castcontext = 'e' THEN '%s'\n"
@@ -2032,8 +2090,8 @@ listCasts(const char *pattern)
 
 	myopt.nullPrint = NULL;
 	myopt.title = _("List of casts");
-	myopt.trans_headers = true;
-	myopt.trans_columns = trans_columns;
+	myopt.translate_header = true;
+	myopt.translate_columns = translate_columns;
 
 	printQuery(res, &myopt, pset.queryFout, pset.logfile);
 
@@ -2085,7 +2143,7 @@ listSchemas(const char *pattern, bool verbose)
 
 	myopt.nullPrint = NULL;
 	myopt.title = _("List of schemas");
-	myopt.trans_headers = true;
+	myopt.translate_header = true;
 
 	printQuery(res, &myopt, pset.queryFout, pset.logfile);
 
@@ -2142,7 +2200,7 @@ listTSParsers(const char *pattern, bool verbose)
 
 	myopt.nullPrint = NULL;
 	myopt.title = _("List of text search parsers");
-	myopt.trans_headers = true;
+	myopt.translate_header = true;
 
 	printQuery(res, &myopt, pset.queryFout, pset.logfile);
 
@@ -2225,7 +2283,7 @@ describeOneTSParser(const char *oid, const char *nspname, const char *prsname)
 	PGresult   *res;
 	char		title[1024];
 	printQueryOpt myopt = pset.popt;
-	static const bool trans_columns[] = {true, false, false};
+	static const bool translate_columns[] = {true, false, false};
 
 	initPQExpBuffer(&buf);
 
@@ -2286,8 +2344,8 @@ describeOneTSParser(const char *oid, const char *nspname, const char *prsname)
 	myopt.title = title;
 	myopt.footers = NULL;
 	myopt.default_footer = false;
-	myopt.trans_headers = true;
-	myopt.trans_columns = trans_columns;
+	myopt.translate_header = true;
+	myopt.translate_columns = translate_columns;
 
 	printQuery(res, &myopt, pset.queryFout, pset.logfile);
 
@@ -2317,8 +2375,8 @@ describeOneTSParser(const char *oid, const char *nspname, const char *prsname)
 	myopt.title = title;
 	myopt.footers = NULL;
 	myopt.default_footer = true;
-	myopt.trans_headers = true;
-	myopt.trans_columns = NULL;
+	myopt.translate_header = true;
+	myopt.translate_columns = NULL;
 
 	printQuery(res, &myopt, pset.queryFout, pset.logfile);
 
@@ -2386,7 +2444,7 @@ listTSDictionaries(const char *pattern, bool verbose)
 
 	myopt.nullPrint = NULL;
 	myopt.title = _("List of text search dictionaries");
-	myopt.trans_headers = true;
+	myopt.translate_header = true;
 
 	printQuery(res, &myopt, pset.queryFout, pset.logfile);
 
@@ -2454,7 +2512,7 @@ listTSTemplates(const char *pattern, bool verbose)
 
 	myopt.nullPrint = NULL;
 	myopt.title = _("List of text search templates");
-	myopt.trans_headers = true;
+	myopt.translate_header = true;
 
 	printQuery(res, &myopt, pset.queryFout, pset.logfile);
 
@@ -2511,7 +2569,7 @@ listTSConfigs(const char *pattern, bool verbose)
 
 	myopt.nullPrint = NULL;
 	myopt.title = _("List of text search configurations");
-	myopt.trans_headers = true;
+	myopt.translate_header = true;
 
 	printQuery(res, &myopt, pset.queryFout, pset.logfile);
 
@@ -2649,7 +2707,7 @@ describeOneTSConfig(const char *oid, const char *nspname, const char *cfgname,
 	myopt.title = title.data;
 	myopt.footers = NULL;
 	myopt.default_footer = false;
-	myopt.trans_headers = true;
+	myopt.translate_header = true;
 
 	printQuery(res, &myopt, pset.queryFout, pset.logfile);
 
