@@ -7,7 +7,7 @@
  * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/catalog/pg_proc.h,v 1.504 2008/07/03 20:58:46 tgl Exp $
+ * $PostgreSQL: pgsql/src/include/catalog/pg_proc.h,v 1.507 2008/07/16 01:30:23 tgl Exp $
  *
  * NOTES
  *	  The script catalog/genbki.sh reads this file and generates .bki
@@ -1010,8 +1010,10 @@ DATA(insert OID = 1191 (  generate_subscripts PGNSP PGUID 12 1 1000 f f t t i 3 
 DESCR("array subscripts generator");
 DATA(insert OID = 1192 (  generate_subscripts PGNSP PGUID 12 1 1000 f f t t i 2 23 "2277 23" _null_ _null_ _null_ generate_subscripts_nodir - _null_ _null_ ));
 DESCR("array subscripts generator");
-
-
+DATA(insert OID = 1193 (  array_fill PGNSP PGUID 12 1 0 f f f f i 2 2277 "2283 1007" _null_ _null_ _null_ array_fill - _null_ _null_ ));
+DESCR("array constructor with value");
+DATA(insert OID = 1286 (  array_fill PGNSP PGUID 12 1 0 f f f f i 3 2277 "2283 1007 1007" _null_ _null_ _null_ array_fill_with_lower_bounds - _null_ _null_ ));
+DESCR("array constructor with value");
 DATA(insert OID = 760 (  smgrin			   PGNSP PGUID 12 1 0 f f t f s 1 210 "2275" _null_ _null_ _null_  smgrin - _null_ _null_ ));
 DESCR("I/O");
 DATA(insert OID = 761 (  smgrout		   PGNSP PGUID 12 1 0 f f t f s 1 2275 "210" _null_ _null_ _null_  smgrout - _null_ _null_ ));
@@ -4329,6 +4331,9 @@ DESCR("GiST tsquery support");
 DATA(insert OID = 3701 (  gtsquery_consistent			PGNSP PGUID 12 1 0 f f t f i 5 16 "2281 2281 23 26 2281" _null_ _null_ _null_ gtsquery_consistent - _null_ _null_ ));
 DESCR("GiST tsquery support");
 
+DATA(insert OID = 3688 (  ts_typanalyze	PGNSP PGUID 12 1 0 f f t f s 1 16 "2281" _null_ _null_ _null_ ts_typanalyze - _null_ _null_ ));
+DESCR("tsvector typanalyze");
+
 DATA(insert OID = 3689 (  ts_stat		PGNSP PGUID 12 10 10000 f f t t v 1 2249 "25" "{25,25,23,23}" "{i,o,o,o}" "{query,word,ndoc,nentry}" ts_stat1 - _null_ _null_ ));
 DESCR("statistics of tsvector column");
 DATA(insert OID = 3690 (  ts_stat		PGNSP PGUID 12 10 10000 f f t t v 2 2249 "25 25" "{25,25,25,23,23}" "{i,i,o,o,o}" "{query,weights,word,ndoc,nentry}" ts_stat2 - _null_ _null_ ));
@@ -4485,5 +4490,6 @@ DESCR("is txid visible in snapshot?");
 #define PROARGMODE_IN		'i'
 #define PROARGMODE_OUT		'o'
 #define PROARGMODE_INOUT	'b'
+#define PROARGMODE_VARIADIC	'v'
 
 #endif   /* PG_PROC_H */

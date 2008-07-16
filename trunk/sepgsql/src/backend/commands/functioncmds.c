@@ -10,7 +10,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/commands/functioncmds.c,v 1.93 2008/06/19 00:46:04 alvherre Exp $
+ *	  $PostgreSQL: pgsql/src/backend/commands/functioncmds.c,v 1.96 2008/07/16 01:30:22 tgl Exp $
  *
  * DESCRIPTION
  *	  These routines take the parse tree and pick out the
@@ -48,6 +48,7 @@
 #include "commands/defrem.h"
 #include "commands/proclang.h"
 #include "miscadmin.h"
+#include "parser/parse_coerce.h"
 #include "parser/parse_func.h"
 #include "parser/parse_type.h"
 #include "security/pgace.h"
@@ -173,6 +174,7 @@ examine_parameter_list(List *parameters, Oid languageOid,
 	Datum	   *paramModes;
 	Datum	   *paramNames;
 	int			outCount = 0;
+	int			varCount = 0;
 	bool		have_names = false;
 	ListCell   *x;
 	int			i;
@@ -228,13 +230,39 @@ examine_parameter_list(List *parameters, Oid languageOid,
 					 errmsg("functions cannot accept set arguments")));
 
 		if (fp->mode != FUNC_PARAM_OUT)
+		{
+			/* only OUT parameters can follow a VARIADIC parameter */
+			if (varCount > 0)
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_FUNCTION_DEFINITION),
+						 errmsg("VARIADIC parameter must be the last input parameter")));
 			inTypes[inCount++] = toid;
+		}
 
-		if (fp->mode != FUNC_PARAM_IN)
+		if (fp->mode != FUNC_PARAM_IN && fp->mode != FUNC_PARAM_VARIADIC)
 		{
 			if (outCount == 0)	/* save first OUT param's type */
 				*requiredResultType = toid;
 			outCount++;
+		}
+
+		if (fp->mode == FUNC_PARAM_VARIADIC)
+		{
+			varCount++;
+			/* validate variadic parameter type */
+			switch (toid)
+			{
+				case ANYARRAYOID:
+				case ANYOID:
+					/* okay */
+					break;
+				default:
+					if (!OidIsValid(get_element_type(toid)))
+						ereport(ERROR,
+								(errcode(ERRCODE_INVALID_FUNCTION_DEFINITION),
+								 errmsg("VARIADIC parameter must be an array")));
+					break;
+			}
 		}
 
 		allTypes[i] = ObjectIdGetDatum(toid);
@@ -253,7 +281,7 @@ examine_parameter_list(List *parameters, Oid languageOid,
 	/* Now construct the proper outputs as needed */
 	*parameterTypes = buildoidvector(inTypes, inCount);
 
-	if (outCount > 0)
+	if (outCount > 0 || varCount > 0)
 	{
 		*allParameterTypes = construct_array(allTypes, parameterCount, OIDOID,
 											 sizeof(Oid), true, 'i');
@@ -1426,10 +1454,10 @@ CreateCast(CreateCastStmt *stmt)
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
 				  errmsg("cast function must take one to three arguments")));
-		if (procstruct->proargtypes.values[0] != sourcetypeid)
+		if (!IsBinaryCoercible(sourcetypeid, procstruct->proargtypes.values[0]))
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
-			errmsg("argument of cast function must match source data type")));
+			errmsg("argument of cast function must match or be binary-coercible from source data type")));
 		if (nargs > 1 && procstruct->proargtypes.values[1] != INT4OID)
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
@@ -1438,10 +1466,10 @@ CreateCast(CreateCastStmt *stmt)
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
 			errmsg("third argument of cast function must be type boolean")));
-		if (procstruct->prorettype != targettypeid)
+		if (!IsBinaryCoercible(procstruct->prorettype, targettypeid))
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
-					 errmsg("return data type of cast function must match target data type")));
+					 errmsg("return data type of cast function must match or be binary-coercible to target data type")));
 
 		/*
 		 * Restricting the volatility of a cast function may or may not be a
