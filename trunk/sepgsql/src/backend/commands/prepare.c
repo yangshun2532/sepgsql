@@ -10,7 +10,7 @@
  * Copyright (c) 2002-2008, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/commands/prepare.c,v 1.87 2008/05/12 20:01:59 alvherre Exp $
+ *	  $PostgreSQL: pgsql/src/backend/commands/prepare.c,v 1.89 2008/07/21 15:26:55 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -163,6 +163,12 @@ PrepareQuery(PrepareStmt *stmt, const char *queryString)
 
 /*
  * Implements the 'EXECUTE' utility statement.
+ *
+ * Note: this is one of very few places in the code that needs to deal with
+ * two query strings at once.  The passed-in queryString is that of the
+ * EXECUTE, which we might need for error reporting while processing the
+ * parameter expressions.  The query_string that we copy from the plan
+ * source is that of the original PREPARE.
  */
 void
 ExecuteQuery(ExecuteStmt *stmt, const char *queryString,
@@ -175,6 +181,7 @@ ExecuteQuery(ExecuteStmt *stmt, const char *queryString,
 	ParamListInfo paramLI = NULL;
 	EState	   *estate = NULL;
 	Portal		portal;
+	char	   *query_string;
 
 	/* Look it up in the hash table */
 	entry = FetchPreparedStatement(stmt->name, true);
@@ -203,6 +210,10 @@ ExecuteQuery(ExecuteStmt *stmt, const char *queryString,
 	portal = CreateNewPortal();
 	/* Don't display the portal in pg_cursors, it is for internal use only */
 	portal->visible = false;
+
+	/* Copy the plan's saved query string into the portal's memory */
+	query_string = MemoryContextStrdup(PortalGetHeapMemory(portal),
+									   entry->plansource->query_string);
 
 	/*
 	 * For CREATE TABLE / AS EXECUTE, we must make a copy of the stored query
@@ -250,13 +261,9 @@ ExecuteQuery(ExecuteStmt *stmt, const char *queryString,
 		plan_list = cplan->stmt_list;
 	}
 
-	/*
-	 * Note: we don't bother to copy the source query string into the portal.
-	 * Any errors it might be useful for will already have been reported.
-	 */
 	PortalDefineQuery(portal,
 					  NULL,
-					  NULL,
+					  query_string,
 					  entry->plansource->commandTag,
 					  plan_list,
 					  cplan);
@@ -780,12 +787,7 @@ pg_prepared_statement(PG_FUNCTION_ARGS)
 			MemSet(nulls, 0, sizeof(nulls));
 
 			values[0] = CStringGetTextDatum(prep_stmt->stmt_name);
-
-			if (prep_stmt->plansource->query_string == NULL)
-				nulls[1] = true;
-			else
-				values[1] = CStringGetTextDatum(prep_stmt->plansource->query_string);
-
+			values[1] = CStringGetTextDatum(prep_stmt->plansource->query_string);
 			values[2] = TimestampTzGetDatum(prep_stmt->prepare_time);
 			values[3] = build_regtype_array(prep_stmt->plansource->param_types,
 										  prep_stmt->plansource->num_params);
