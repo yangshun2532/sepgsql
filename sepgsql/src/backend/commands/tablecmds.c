@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/commands/tablecmds.c,v 1.259 2008/06/19 00:46:04 alvherre Exp $
+ *	  $PostgreSQL: pgsql/src/backend/commands/tablecmds.c,v 1.261 2008/07/16 19:33:25 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -773,6 +773,12 @@ ExecuteTruncate(TruncateStmt *stmt)
 		Relation	rel;
 
 		rel = heap_openrv(rv, AccessExclusiveLock);
+		/* don't throw error for "TRUNCATE foo, foo" */
+		if (list_member_oid(relids, RelationGetRelid(rel)))
+		{
+			heap_close(rel, AccessExclusiveLock);
+			continue;
+		}
 		truncate_check_rel(rel);
 		rels = lappend(rels, rel);
 		relids = lappend_oid(relids, RelationGetRelid(rel));

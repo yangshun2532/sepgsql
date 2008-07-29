@@ -1,4 +1,4 @@
-<!-- $PostgreSQL: pgsql/doc/src/sgml/catalogs.sgml,v 2.169 2008/07/16 01:30:21 tgl Exp $ -->
+<!-- $PostgreSQL: pgsql/doc/src/sgml/catalogs.sgml,v 2.171 2008/07/18 03:32:51 tgl Exp $ -->
 <!--
  Documentation of the system catalogs, directed toward PostgreSQL developers
  -->
@@ -3575,6 +3575,14 @@
      </row>
 
      <row>
+      <entry><structfield>provariadic</structfield></entry>
+      <entry><type>oid</type></entry>
+      <entry><literal><link linkend="catalog-pg-type"><structname>pg_type</structname></link>.oid</literal></entry>
+      <entry>Data type of the variadic array parameter's elements,
+       or zero if the function does not have a variadic parameter</entry>
+     </row>
+
+     <row>
       <entry><structfield>proisagg</structfield></entry>
       <entry><type>bool</type></entry>
       <entry></entry>
@@ -3677,7 +3685,8 @@
         <literal>i</literal> for <literal>IN</> arguments,
         <literal>o</literal> for <literal>OUT</> arguments,
         <literal>b</literal> for <literal>INOUT</> arguments,
-        <literal>v</literal> for <literal>VARIADIC</> arguments.
+        <literal>v</literal> for <literal>VARIADIC</> arguments,
+        <literal>t</literal> for <literal>TABLE</> arguments.
         If all the arguments are <literal>IN</literal> arguments,
         this field will be null.
         Note that subscripts correspond to positions of
