@@ -1,0 +1,12 @@
+policy_module(httpd-selinux,1.0)
+
+gen_require(`
+	type httpd_t;
+	attribute mcssetcats;
+');
+
+ifdef(`enable_mcs',`
+	typeattribute httpd_t mcssetcats;
+')
+
+
