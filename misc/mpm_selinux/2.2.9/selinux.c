@@ -468,48 +468,49 @@ int ap_graceful_stop_signalled(void)
 
 struct selinux_arguments
 {
-	conn_rec *conn;
-	void *csd;
+    conn_rec *conn;
+    void *csd;
 };
 
 static void *APR_THREAD_FUNC
 selinux_process_worker(apr_thread_t *thd, void *opaque)
 {
-	struct selinux_arguments *args = opaque;
-	ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, NULL,
-				 "SELinux: invokes a temporary thread to kick contains handler");
-	ap_process_connection(args->conn, args->csd);
+    struct selinux_arguments *args = opaque;
 
-	return NULL;
+    ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, NULL,
+		 "SELinux: invoked a temporary thread to handle "
+		 "a request within more restricted domain");
+    ap_process_connection(args->conn, args->csd);
+
+    return NULL;
 }
 
 static void selinux_process_connection(apr_pool_t *pool,
-									   conn_rec *c,
-									   void *csd)
+				       conn_rec *conn, void *csd)
 {
-	apr_thread_t *thread;
-	apr_status_t rv, threadrv;
-	struct selinux_arguments args;
+    apr_thread_t *thread;
+    apr_status_t rv, threadrv;
+    struct selinux_arguments args;
 
-	args.conn = c;
-	args.csd = csd;
+    args.conn = conn;
+    args.csd = csd;
 
-	rv = apr_thread_create(&thread,
-						   NULL,
-						   selinux_process_worker,
-						   &args,
-						   pool);
-	if (rv != APR_SUCCESS) {
-		ap_log_error(APLOG_MARK, APLOG_CRIT, rv, NULL,
-					 "apr_thread_create: unable to create thread");
-		clean_child_exit(APEXIT_CHILDSICK);
-	}
+    rv = apr_thread_create(&thread,
+			   NULL,
+			   selinux_process_worker,
+			   &args,
+			   pool);
+    if (rv != APR_SUCCESS) {
+	ap_log_error(APLOG_MARK, APLOG_CRIT, rv, NULL,
+		     "SELinux: unable to create thread at apr_thread_create");
+	clean_child_exit(APEXIT_CHILDSICK);
+    }
 
-	rv = apr_thread_join(&threadrv, thread);
-	if (rv != APR_SUCCESS) {
-		ap_log_error(APLOG_MARK, APLOG_CRIT, rv, NULL,
-					 "apr_thread_join: unable to join thread");
-	}
+    rv = apr_thread_join(&threadrv, thread);
+    if (rv != APR_SUCCESS) {
+	ap_log_error(APLOG_MARK, APLOG_CRIT, rv, NULL,
+		     "SELinux: unable to join thread at apr_thread_join");
+    }
 }
 
 static void child_main(int child_num_arg)
@@ -693,6 +694,7 @@ static void child_main(int child_num_arg)
          * We now have a connection, so set it up with the appropriate
          * socket options, file descriptors, and read/write buffers.
          */
+
         current_conn = ap_run_create_connection(ptrans, ap_server_conf, csd, my_child_num, sbh, bucket_alloc);
         if (current_conn) {
             selinux_process_connection(ptrans, current_conn, csd);
@@ -1514,12 +1516,9 @@ static const char *set_server_limit (cmd_parms *cmd, void *dummy, const char *ar
 }
 
 /*
- * ==================================================
- * SELinux related facilities
- * ==================================================
+ * SELinux Related Enhancements
+ * ----------------------------------------------------------------
  */
-module AP_MODULE_DECLARE_DATA mpm_selinux_module;
-
 typedef struct selinux_entry
 {
     struct selinux_entry *next;
@@ -1527,6 +1526,9 @@ typedef struct selinux_entry
     char *name;
     char *domain;
     char *range;
+
+    unsigned char is_default;
+    unsigned char is_anonymous;
 } selinux_entry;
 
 typedef struct selinux_config
@@ -1535,227 +1537,255 @@ typedef struct selinux_config
     struct selinux_entry *users_list;
 } selinux_config;
 
+module AP_MODULE_DECLARE_DATA mpm_selinux_module;
+
 /*
  * selinux_handler 
  *
  * This hooks set up user's specific domain/range based on
  * configuration and HTTP authorized username.
  */
-#define selinux_matched_username(x,y)						\
-	((!(x) && !(y)) || ((x) && (y) && !strcmp((x),(y))))
-
 static int selinux_handler(request_rec *r)
 {
-	selinux_config *sconf = ap_get_module_config(r->per_dir_config,
-												 &mpm_selinux_module);
-	selinux_entry *s, *match = NULL;
-	security_context_t context;
-	char *user, *role, *domain, *range;
-	char buffer[1024];
+    selinux_config *sconf = ap_get_module_config(r->per_dir_config,
+						 &mpm_selinux_module);
+    selinux_entry *s, *match = NULL;
+    security_context_t context;
+    char *user, *role, *domain, *range;
+    char buffer[1024];
 
-	if (!sconf)
-		return DECLINED;
-
-	for (s = sconf->users_list; s; s = s->next)
-	{
-		if (!s->name)
-			match = s;
-		if (selinux_matched_username(r->user, s->name))
-		{
-			match = s;
-			break;
-		}
-	}
-
-	if (!match)
-		return DECLINED;
-
-	if (getcon_raw(&context) < 0)
-	{
-		ap_log_error(APLOG_MARK, APLOG_ERR, 0, r->server,
-					 "SELinux: getcon_raw() failed (%s)",
-					 strerror(errno));
-		return HTTP_INTERNAL_SERVER_ERROR;
-	}
-
-	user   = strtok(context, ":");
-	role   = strtok(NULL, ":");
-	domain = strtok(NULL, ":");
-	range  = strtok(NULL, "\0");
-
-	if (range)
-	{
-		snprintf(buffer, sizeof(buffer), "%s:%s:%s:%s",
-				 user, role,
-				 match->domain ? match->domain : domain,
-				 match->range ? match->range : range);
-	}
-	else
-	{
-		snprintf(buffer, sizeof(buffer), "%s:%s:%s",
-				 user, role,
-				 match->domain ? match->domain : domain);
-	}
-	freecon(context);
-
-	if (setcon((security_context_t) buffer) < 0)
-	{
-		ap_log_error(APLOG_MARK, APLOG_ERR, 0, r->server,
-					 "SELinux: setcon_raw(%s) for user: %s failed (%s)",
-					 buffer, r->user, strerror(errno));
-		return HTTP_INTERNAL_SERVER_ERROR;
-	}
-
-	ap_log_error(APLOG_MARK, APLOG_ERR, 0, r->server,
-				 "SELinux: setcon_raw(%s) for user: %s",
-				 buffer, r->user);
-
+    if (!sconf)
 	return DECLINED;
-}
 
+    for (s = sconf->users_list; s; s = s->next) {
+	if (s->is_default)
+	    match = s;
+	if (!r->user) {
+	    if (s->is_anonymous) {
+		match = s;
+		break;
+	    }
+	} else if (s->name) {
+	    if (!strcmp(r->user, s->name)) {
+		match = s;
+		break;
+	    }
+	}
+    }
+
+    if (!match) {
+	ap_log_error(APLOG_MARK, APLOG_ERR, 0, r->server,
+		     "No matched selinuxUserDomain/selinuxUserRange, "
+		     "please add entries for __default__ or __anonymous__");
+	return HTTP_INTERNAL_SERVER_ERROR;
+    }
+
+    if (getcon_raw(&context) < 0) {
+	ap_log_error(APLOG_MARK, APLOG_ERR, 0, r->server,
+		     "SELinux: getcon_raw() failed (%s)",
+		     strerror(errno));
+	return HTTP_INTERNAL_SERVER_ERROR;
+    }
+
+    user   = strtok(context, ":");
+    role   = strtok(NULL, ":");
+    domain = strtok(NULL, ":");
+    range  = strtok(NULL, "\0");
+
+    if (range) {
+	snprintf(buffer, sizeof(buffer), "%s:%s:%s:%s",
+		 user, role,
+		 match->domain ? match->domain : domain,
+		 match->range ? match->range : range);
+    } else {
+	snprintf(buffer, sizeof(buffer), "%s:%s:%s",
+		 user, role,
+		 match->domain ? match->domain : domain);
+    }
+    freecon(context);
+
+    if (setcon((security_context_t) buffer) < 0) {
+	ap_log_error(APLOG_MARK, APLOG_ERR, 0, r->server,
+		     "SELinux: setcon_raw(%s) for user: %s failed (%s)",
+		     buffer, r->user, strerror(errno));
+	return HTTP_INTERNAL_SERVER_ERROR;
+    }
+
+    ap_log_error(APLOG_MARK, APLOG_ERR, 0, r->server,
+		 "SELinux: setcon_raw(%s) for user: %s",
+		 buffer, r->user);
+
+    return DECLINED;
+}
 
 void *selinux_create_dir_config(apr_pool_t *p, char *dirname)
 {
-	selinux_config *scfg = apr_palloc(p, sizeof(selinux_config));
+    selinux_config *scfg = apr_pcalloc(p, sizeof(selinux_config));
 
-	ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, NULL,
-				 "SELinux: create dir config at %s", dirname);
+    ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, NULL,
+		 "SELinux: create dir config at %s", dirname);
 
-	scfg->dirname = apr_pstrdup(p, dirname);
-	scfg->users_list = NULL;
+    scfg->dirname = apr_pstrdup(p, dirname);
+    scfg->users_list = NULL;
 
-	return scfg;
+    return scfg;
 }
 
 void *selinux_merge_dir_config(apr_pool_t *p,
-			       void *base_config, void *new_config)
+			       void *base_config,
+			       void *new_config)
 {
     selinux_config *bconf = base_config;
     selinux_config *nconf = new_config;
     selinux_config *mconf; /* merged config */
     selinux_entry *s, *t;
 
-	ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, NULL,
-				 "SELinux: merge dir config base: %s, new: %s",
-				 bconf->dirname, nconf->dirname);
+    ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, NULL,
+		 "SELinux: merge dir config base: %s, new: %s",
+		 bconf->dirname, nconf->dirname);
 
-	mconf = apr_palloc(p, sizeof(selinux_config));
-	mconf->users_list = NULL;
-	mconf->dirname = apr_pstrdup(p, nconf->dirname);
+    mconf = apr_pcalloc(p, sizeof(selinux_config));
+    mconf->users_list = NULL;
+    mconf->dirname = apr_pstrdup(p, nconf->dirname);
 
     /* copy base config */
-    for (s = bconf->users_list; s; s = s->next)
-	{
-		t = apr_palloc(p, sizeof(selinux_entry));
-		t->name   = (s->name   ? apr_pstrdup(p, s->name)   : NULL);
-		t->domain = (s->domain ? apr_pstrdup(p, s->domain) : NULL);
-		t->range  = (s->range  ? apr_pstrdup(p, s->range)  : NULL);
-		t->next	  = mconf->users_list;
-		mconf->users_list = t;
+    for (s = bconf->users_list; s; s = s->next) {
+	t = apr_palloc(p, sizeof(selinux_entry));
+	t->name = (s->name   ? apr_pstrdup(p, s->name)   : NULL);
+	t->domain = (s->domain ? apr_pstrdup(p, s->domain) : NULL);
+	t->range = (s->range  ? apr_pstrdup(p, s->range)  : NULL);
+	t->is_default = s->is_default;
+	t->is_anonymous = s->is_anonymous;
+
+	t->next = mconf->users_list;
+	mconf->users_list = t;
+    }
+
+    /* merge new config */
+    for (s = nconf->users_list; s; s = s->next) {
+	for (t = mconf->users_list; t; t = t->next) {
+	    if (s->is_default == t->is_default &&
+		s->is_anonymous == t->is_anonymous &&
+		((!s->name && !t->name) || !strcmp(s->name, t->name))) {
+		if (s->domain)
+		    t->domain = apr_pstrdup(p, s->domain);
+		if (s->range)
+		    t->range = apr_pstrdup(p, s->range);
+	    }
+	    break;
 	}
 
-	/* merge new config */
-	for (s = nconf->users_list; s; s = s->next)
-	{
-		for (t = mconf->users_list; t; t = t->next)
-		{
-			if (selinux_matched_username(s->name, t->name))
-			{
-				if (s->domain)
-					t->domain = apr_pstrdup(p, s->domain);
-				if (s->range)
-					t->range = apr_pstrdup(p, s->range);
-				break;
-			}
-		}
-		if (!t)
-		{
-			t = apr_palloc(p, sizeof(selinux_entry));
-			t->name   = (s->name   ? apr_pstrdup(p, s->name)   : NULL);
-			t->domain = (s->domain ? apr_pstrdup(p, s->domain) : NULL);
-			t->range  = (s->range  ? apr_pstrdup(p, s->range)  : NULL);
-			t->next   = mconf->users_list;
-			mconf->users_list = t;
-		}
+	if (!t) {
+	    t = apr_palloc(p, sizeof(selinux_entry));
+	    t->name = (s->name   ? apr_pstrdup(p, s->name)   : NULL);
+	    t->domain = (s->domain ? apr_pstrdup(p, s->domain) : NULL);
+	    t->range = (s->range  ? apr_pstrdup(p, s->range)  : NULL);
+	    t->is_default = s->is_default;
+	    t->is_anonymous = s->is_anonymous;
+	    t->next = mconf->users_list;
+	    mconf->users_list = t;
 	}
+    }
 
-	return mconf;
+    return mconf;
 }
 
 static const char *
 selinux_config_user_domain(cmd_parms *cmd, void *mconfig,
-						   const char *v1, const char *v2)
+			   const char *v1, const char *v2)
 {
-	selinux_config *sconf = ap_get_module_config(cmd->context,
-												 &mpm_selinux_module);
-	selinux_entry *s;
-	const char *username
-		= (!strcmp("__default__", v1) ? NULL : v1);
+    selinux_config *sconf
+	= ap_get_module_config(cmd->context,
+			       &mpm_selinux_module);
+    selinux_entry *s;
+    unsigned char is_default = 0;
+    unsigned char is_anonymous = 0;
+    const char *username = NULL;
 
-	ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, cmd->server,
-				 "SELinux: user=%s domain=%s dir=%s",
-				 v1, v2, sconf->dirname);
+    if (!strcmp("__default__", v1))
+        is_default = 1;
+    else if (!strcmp("__anonymous__", v1))
+        is_anonymous = 1;
+    else
+        username = v1;
 
-	/* duplication check */
-	for (s = sconf->users_list; s; s = s->next)
-	{
-		if (selinux_matched_username(s->name, username))
-		{
-			if (s->domain)
-				return "duplicate selinuxUserDomain entries";
-			s->domain = apr_pstrdup(cmd->pool, v2);
-			return NULL;
-		}
-	}
+    ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, cmd->server,
+		 "SELinux: user=%s domain=%s dir=%s",
+		 v1, v2, sconf->dirname);
 
-	/* new entry */
-	s = apr_palloc(cmd->pool, sizeof(selinux_entry));
-	s->name = username ? apr_pstrdup(cmd->pool, username) : NULL;
-	s->domain = apr_pstrdup(cmd->pool, v2);
-	s->range = NULL;
+    /* duplication check */
+    for (s = sconf->users_list; s; s = s->next) {
+        if (s->is_default == is_default &&
+            s->is_anonymous == is_anonymous &&
+            (!username || !strcmp(s->name, username))) {
+            if (s->domain)
+                return "duplicate selinuxUserDomain entries";
+	    s->domain = apr_pstrdup(cmd->pool, v2);
+            return NULL;
+        }
+    }
 
-	s->next = sconf->users_list;
-	sconf->users_list = s;
+    /* new entry */
+    s = apr_pcalloc(cmd->pool, sizeof(selinux_entry));
+    s->name = username ? apr_pstrdup(cmd->pool, username) : NULL;
+    s->domain = apr_pstrdup(cmd->pool, v2);
+    s->range = NULL;
+    s->is_default = is_default;
+    s->is_anonymous = is_anonymous;
 
-	return NULL;
+    s->next = sconf->users_list;
+    sconf->users_list = s;
+
+    return NULL;
 }
 
 static const char *
 selinux_config_user_range(cmd_parms *cmd, void *mconfig,
-						  const char *v1, const char *v2)
+			  const char *v1, const char *v2)
 {
-	selinux_config *sconf = ap_get_module_config(cmd->context,
-												 &mpm_selinux_module);
-	selinux_entry *s;
-	const char *username
-		= (!strcmp("__default__", v1) ? NULL : v1);
+    selinux_config *sconf
+	= ap_get_module_config(cmd->context,
+			       &mpm_selinux_module);
+    selinux_entry *s;
+    unsigned char is_default = 0;
+    unsigned char is_anonymous = 0;
+    const char *username = NULL;
 
-	ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, cmd->server,
-				 "SELinux: user=%s domain=%s dir=%s",
-				 v1, v2, sconf->dirname);
+    if (!strcmp("__default__", v1))
+	is_default = 1;
+    else if (!strcmp("__anonymous__", v1))
+	is_anonymous = 1;
+    else
+	username = v1;
 
-	/* duplication check */
-	for (s = sconf->users_list; s; s = s->next)
-	{
-		if (selinux_matched_username(s->name, username))
-		{
-			if (s->range)
-				return "duplicate selinuxUserRange entries";
-			s->range = apr_pstrdup(cmd->pool, v2);
-			return NULL;
-		}
+    ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, cmd->server,
+		 "SELinux: user=%s range=%s dir=%s",
+		 v1, v2, sconf->dirname);
+
+    /* duplication check */
+    for (s = sconf->users_list; s; s = s->next) {
+	if (s->is_default == is_default &&
+	    s->is_anonymous == is_anonymous &&
+	    (!username || !strcmp(s->name, username))) {
+	    if (s->range)
+		return "duplicate selinuxUserRange entries";
+	    s->range = apr_pstrdup(cmd->pool, v2);
+	    return NULL;
 	}
+    }
 
-	/* new entry */
-	s = apr_palloc(cmd->pool, sizeof(selinux_entry));
-	s->name = username ? apr_pstrdup(cmd->pool, username) : NULL;
-	s->domain = NULL;
-	s->range = apr_pstrdup(cmd->pool, v2);
+    /* new entry */
+    s = apr_pcalloc(cmd->pool, sizeof(selinux_entry));
+    s->name = username ? apr_pstrdup(cmd->pool, username) : NULL;
+    s->domain = NULL;
+    s->range = apr_pstrdup(cmd->pool, v2);
+    s->is_default = is_default;
+    s->is_anonymous = is_anonymous;
 
-	s->next = sconf->users_list;
-	sconf->users_list = s;
+    s->next = sconf->users_list;
+    sconf->users_list = s;
 
-	return NULL;
+    return NULL;
 }
 
 static const command_rec prefork_cmds[] = {
@@ -1773,12 +1803,10 @@ AP_INIT_TAKE1("ServerLimit", set_server_limit, NULL, RSRC_CONF,
               "Maximum value of MaxClients for this run of Apache"),
 AP_GRACEFUL_SHUTDOWN_TIMEOUT_COMMAND,
 AP_INIT_TAKE2("selinuxUserDomain",
-	      selinux_config_user_domain,
-	      NULL, OR_OPTIONS,
+	      selinux_config_user_domain, NULL, OR_OPTIONS,
 	      "set per user domain of contains handler"),
 AP_INIT_TAKE2("selinuxUserRange",
-	      selinux_config_user_range,
-	      NULL, OR_OPTIONS,
+	      selinux_config_user_range, NULL, OR_OPTIONS,
 	      "set per user range of contains handler"),
 { NULL }
 };
