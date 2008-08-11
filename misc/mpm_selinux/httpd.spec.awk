@@ -59,7 +59,7 @@
     print "    %{_sbindir}/semodule -s ${store} -r httpd-selinux >& /dev/null || :"
     print "    %{_sbindir}/semodule -s ${store} -i %{_datadir}/selinux/${store}/httpd-selinux.pp >& /dev/null || :"
     print "done"
-    print "/sbin/fixfiles -R %{name} restore || :"
+    print "/sbin/restorecon -R `rpm -ql %{name}` || :"
     print ""
     print "%postun selinux"
     print "if [ $1 -eq 0 ]; then"
