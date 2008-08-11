@@ -1,4 +1,4 @@
-policy_module(httpd-selinux,1.0)
+policy_module(httpd-selinux,1.1)
 
 gen_require(`
 	type httpd_t;
@@ -9,4 +9,8 @@ ifdef(`enable_mcs',`
 	typeattribute httpd_t mcssetcats;
 ')
 
+ifdef(`enable_mls',`
+	typeattribute httpd_t mlsprocsetsl;
+')
 
+allow httpd_t self : process { setcurrent };
