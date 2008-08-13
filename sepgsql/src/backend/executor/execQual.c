@@ -1513,6 +1513,8 @@ ExecMakeTableFunctionResult(ExprState *funcexpr,
 			FuncExpr   *func = (FuncExpr *) fcache->xprstate.expr;
 
 			init_fcache(func->funcid, fcache, econtext->ecxt_per_query_memory);
+
+			pgaceCallFunction(&fcache->func);
 		}
 		returnsSet = fcache->func.fn_retset;
 
@@ -1795,6 +1797,8 @@ ExecEvalOper(FuncExprState *fcache,
 	/* Go directly to ExecMakeFunctionResult on subsequent uses */
 	fcache->xprstate.evalfunc = (ExprStateEvalFunc) ExecMakeFunctionResult;
 
+	pgaceCallFunction(&fcache->func);
+
 	return ExecMakeFunctionResult(fcache, econtext, isNull, isDone);
 }
 
@@ -1834,6 +1838,8 @@ ExecEvalDistinct(FuncExprState *fcache,
 
 		init_fcache(op->opfuncid, fcache, econtext->ecxt_per_query_memory);
 		Assert(!fcache->func.fn_retset);
+
+		pgaceCallFunction(&fcache->func);
 	}
 
 	/*
@@ -1914,6 +1920,8 @@ ExecEvalScalarArrayOp(ScalarArrayOpExprState *sstate,
 		init_fcache(opexpr->opfuncid, &sstate->fxprstate,
 					econtext->ecxt_per_query_memory);
 		Assert(!sstate->fxprstate.func.fn_retset);
+
+		pgaceCallFunction(&sstate->fxprstate.func);
 	}
 
 	/* Need to prep callinfo structure */
@@ -3101,6 +3109,8 @@ ExecEvalNullIf(FuncExprState *nullIfExpr,
 
 		init_fcache(op->opfuncid, nullIfExpr, econtext->ecxt_per_query_memory);
 		Assert(!nullIfExpr->func.fn_retset);
+
+		pgaceCallFunction(&nullIfExpr->func);
 	}
 
 	/*
