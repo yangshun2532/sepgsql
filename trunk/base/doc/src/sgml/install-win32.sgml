@@ -1,4 +1,4 @@
-<!-- $PostgreSQL: pgsql/doc/src/sgml/install-win32.sgml,v 1.47 2008/03/14 17:28:23 alvherre Exp $ -->
+<!-- $PostgreSQL: pgsql/doc/src/sgml/install-win32.sgml,v 1.49 2008/07/29 15:23:44 mha Exp $ -->
 
 <chapter id="install-win32">
  <title>Installation on <productname>Windows</productname></title>
@@ -73,7 +73,7 @@
    or the free Express edition of
    <productname>Visual Studio 2005</productname>. The following additional products
    are required to build the complete package. Use the
-   <filename>config.pl</filename> to specify which directories the libraries
+   <filename>config.pl</filename> file to specify which directories the libraries
    are available in.
 
    <variablelist>
@@ -83,14 +83,16 @@
       ActiveState Perl is required to run the build generation scripts. MinGW
       or Cygwin Perl will not work. It must also be present in the PATH.
       Binaries can be downloaded from
-      <ulink url="http://www.activestate.com"></>.
+      <ulink url="http://www.activestate.com"></> (Note: version 5.8 is required,
+      the free Standard Distribution is sufficient).
      </para></listitem>
     </varlistentry>
 
     <varlistentry>
      <term><productname>ActiveState TCL</productname></term>
      <listitem><para>
-      Required for building <application>PL/TCL</application>.
+      Required for building <application>PL/TCL</application> (Note: version
+      8.4 is required, the free Standard Distribution is sufficient).
      </para></listitem>
     </varlistentry>
 
