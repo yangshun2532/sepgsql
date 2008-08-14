@@ -15,7 +15,7 @@
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/nodes/copyfuncs.c,v 1.395 2008/07/16 01:30:22 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/nodes/copyfuncs.c,v 1.399 2008/08/07 19:35:02 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -654,10 +654,13 @@ _copySetOp(SetOp *from)
 	 * copy remainder of node
 	 */
 	COPY_SCALAR_FIELD(cmd);
+	COPY_SCALAR_FIELD(strategy);
 	COPY_SCALAR_FIELD(numCols);
 	COPY_POINTER_FIELD(dupColIdx, from->numCols * sizeof(AttrNumber));
 	COPY_POINTER_FIELD(dupOperators, from->numCols * sizeof(Oid));
 	COPY_SCALAR_FIELD(flagColIdx);
+	COPY_SCALAR_FIELD(firstFlag);
+	COPY_SCALAR_FIELD(numGroups);
 
 	return newnode;
 }
@@ -1545,24 +1548,13 @@ _copyFkConstraint(FkConstraint *from)
 	return newnode;
 }
 
-static SortClause *
-_copySortClause(SortClause *from)
+static SortGroupClause *
+_copySortGroupClause(SortGroupClause *from)
 {
-	SortClause *newnode = makeNode(SortClause);
+	SortGroupClause *newnode = makeNode(SortGroupClause);
 
 	COPY_SCALAR_FIELD(tleSortGroupRef);
-	COPY_SCALAR_FIELD(sortop);
-	COPY_SCALAR_FIELD(nulls_first);
-
-	return newnode;
-}
-
-static GroupClause *
-_copyGroupClause(GroupClause *from)
-{
-	GroupClause *newnode = makeNode(GroupClause);
-
-	COPY_SCALAR_FIELD(tleSortGroupRef);
+	COPY_SCALAR_FIELD(eqop);
 	COPY_SCALAR_FIELD(sortop);
 	COPY_SCALAR_FIELD(nulls_first);
 
@@ -1865,6 +1857,7 @@ _copyQuery(Query *from)
 	COPY_NODE_FIELD(intoClause);
 	COPY_SCALAR_FIELD(hasAggs);
 	COPY_SCALAR_FIELD(hasSubLinks);
+	COPY_SCALAR_FIELD(hasDistinctOn);
 	COPY_NODE_FIELD(rtable);
 	COPY_NODE_FIELD(jointree);
 	COPY_NODE_FIELD(targetList);
@@ -1958,6 +1951,7 @@ _copySetOperationStmt(SetOperationStmt *from)
 	COPY_NODE_FIELD(rarg);
 	COPY_NODE_FIELD(colTypes);
 	COPY_NODE_FIELD(colTypmods);
+	COPY_NODE_FIELD(groupClauses);
 
 	return newnode;
 }
@@ -3635,11 +3629,8 @@ copyObject(void *from)
 		case T_RangeTblEntry:
 			retval = _copyRangeTblEntry(from);
 			break;
-		case T_SortClause:
-			retval = _copySortClause(from);
-			break;
-		case T_GroupClause:
-			retval = _copyGroupClause(from);
+		case T_SortGroupClause:
+			retval = _copySortGroupClause(from);
 			break;
 		case T_RowMarkClause:
 			retval = _copyRowMarkClause(from);

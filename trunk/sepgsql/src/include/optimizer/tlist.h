@@ -7,7 +7,7 @@
  * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/optimizer/tlist.h,v 1.49 2008/01/01 19:45:58 momjian Exp $
+ * $PostgreSQL: pgsql/src/include/optimizer/tlist.h,v 1.52 2008/08/07 19:35:02 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -23,15 +23,21 @@ extern TargetEntry *tlist_member_ignore_relabel(Node *node, List *targetlist);
 extern List *flatten_tlist(List *tlist);
 extern List *add_to_flat_tlist(List *tlist, List *vars);
 
+extern List *get_tlist_exprs(List *tlist, bool includeJunk);
+extern bool tlist_same_datatypes(List *tlist, List *colTypes, bool junkOK);
+
 extern TargetEntry *get_sortgroupref_tle(Index sortref,
 					 List *targetList);
-extern TargetEntry *get_sortgroupclause_tle(SortClause *sortClause,
+extern TargetEntry *get_sortgroupclause_tle(SortGroupClause *sgClause,
 						List *targetList);
-extern Node *get_sortgroupclause_expr(SortClause *sortClause,
+extern Node *get_sortgroupclause_expr(SortGroupClause *sgClause,
 						 List *targetList);
-extern List *get_sortgrouplist_exprs(List *sortClauses,
+extern List *get_sortgrouplist_exprs(List *sgClauses,
 						List *targetList);
 
-extern bool tlist_same_datatypes(List *tlist, List *colTypes, bool junkOK);
+extern Oid *extract_grouping_ops(List *groupClause);
+extern AttrNumber *extract_grouping_cols(List *groupClause, List *tlist);
+extern bool grouping_is_sortable(List *groupClause);
+extern bool grouping_is_hashable(List *groupClause);
 
 #endif   /* TLIST_H */
