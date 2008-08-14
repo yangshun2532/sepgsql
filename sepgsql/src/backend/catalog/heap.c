@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/catalog/heap.c,v 1.334 2008/05/12 00:00:46 alvherre Exp $
+ *	  $PostgreSQL: pgsql/src/backend/catalog/heap.c,v 1.337 2008/08/11 11:05:10 heikki Exp $
  *
  *
  * INTERFACE ROUTINES
@@ -322,13 +322,16 @@ heap_create(const char *relname,
 									 shared_relation);
 
 	/*
-	 * have the storage manager create the relation's disk file, if needed.
+	 * Have the storage manager create the relation's disk file, if needed.
+	 *
+	 * We only create storage for the main fork here. The caller is
+	 * responsible for creating any additional forks if needed.
 	 */
 	if (create_storage)
 	{
 		Assert(rel->rd_smgr == NULL);
 		RelationOpenSmgr(rel);
-		smgrcreate(rel->rd_smgr, rel->rd_istemp, false);
+		smgrcreate(rel->rd_smgr, MAIN_FORKNUM, rel->rd_istemp, false);
 	}
 
 	return rel;
@@ -799,6 +802,8 @@ AddNewRelationType(const char *typeName,
 				   new_rel_kind,	/* relation kind */
 				   -1,			/* internal size (varlena) */
 				   TYPTYPE_COMPOSITE,	/* type-type (composite) */
+				   TYPCATEGORY_COMPOSITE, /* type-category (ditto) */
+				   false,		/* composite types are never preferred */
 				   DEFAULT_TYPDELIM,	/* default array delimiter */
 				   F_RECORD_IN, /* input procedure */
 				   F_RECORD_OUT,	/* output procedure */
@@ -977,6 +982,8 @@ heap_create_with_catalog(const char *relname,
 				   0,			/* relkind, also N/A here */
 				   -1,			/* Internal size (varlena) */
 				   TYPTYPE_BASE,	/* Not composite - typelem is */
+				   TYPCATEGORY_ARRAY, /* type-category (array) */
+				   false,		/* array types are never preferred */
 				   DEFAULT_TYPDELIM,	/* default array delimiter */
 				   F_ARRAY_IN,	/* array input proc */
 				   F_ARRAY_OUT, /* array output proc */
@@ -1421,13 +1428,18 @@ heap_drop_with_catalog(Oid relid)
 	rel = relation_open(relid, AccessExclusiveLock);
 
 	/*
-	 * Schedule unlinking of the relation's physical file at commit.
+	 * Schedule unlinking of the relation's physical files at commit.
 	 */
 	if (rel->rd_rel->relkind != RELKIND_VIEW &&
 		rel->rd_rel->relkind != RELKIND_COMPOSITE_TYPE)
 	{
+		ForkNumber forknum;
+
 		RelationOpenSmgr(rel);
-		smgrscheduleunlink(rel->rd_smgr, rel->rd_istemp);
+		for (forknum = 0; forknum <= MAX_FORKNUM; forknum++)
+			if (smgrexists(rel->rd_smgr, forknum))
+				smgrscheduleunlink(rel->rd_smgr, forknum, rel->rd_istemp);
+		RelationCloseSmgr(rel);
 	}
 
 	/*

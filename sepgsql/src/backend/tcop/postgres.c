@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/tcop/postgres.c,v 1.554 2008/07/18 20:26:06 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/tcop/postgres.c,v 1.555 2008/08/01 13:16:09 alvherre Exp $
  *
  * NOTES
  *	  this is the "main" module of the postgres backend and
@@ -50,6 +50,8 @@
 #include "miscadmin.h"
 #include "nodes/print.h"
 #include "optimizer/planner.h"
+#include "pgstat.h"
+#include "pg_trace.h"
 #include "parser/analyze.h"
 #include "parser/parser.h"
 #include "postmaster/autovacuum.h"
@@ -71,7 +73,6 @@
 #include "utils/snapmgr.h"
 #include "mb/pg_wchar.h"
 
-#include "pgstat.h"
 
 extern int	optind;
 extern char *optarg;
@@ -552,6 +553,8 @@ pg_parse_query(const char *query_string)
 {
 	List	   *raw_parsetree_list;
 
+	TRACE_POSTGRESQL_QUERY_PARSE_START(query_string);
+
 	if (log_parser_stats)
 		ResetUsage();
 
@@ -573,6 +576,8 @@ pg_parse_query(const char *query_string)
 	}
 #endif
 
+	TRACE_POSTGRESQL_QUERY_PARSE_DONE(query_string);
+
 	return raw_parsetree_list;
 }
 
@@ -592,6 +597,8 @@ pg_analyze_and_rewrite(Node *parsetree, const char *query_string,
 	Query	   *query;
 	List	   *querytree_list;
 
+	TRACE_POSTGRESQL_QUERY_REWRITE_START(query_string);
+
 	/*
 	 * (1) Perform parse analysis.
 	 */
@@ -607,6 +614,8 @@ pg_analyze_and_rewrite(Node *parsetree, const char *query_string,
 	 * (2) Rewrite the queries, as necessary
 	 */
 	querytree_list = pg_rewrite_query(query);
+
+	TRACE_POSTGRESQL_QUERY_REWRITE_DONE(query_string);
 
 	return querytree_list;
 }
@@ -681,6 +690,8 @@ pg_plan_query(Query *querytree, int cursorOptions, ParamListInfo boundParams)
 	if (querytree->commandType == CMD_UTILITY)
 		return NULL;
 
+	TRACE_POSTGRESQL_QUERY_PLAN_START();
+
 	if (log_planner_stats)
 		ResetUsage();
 
@@ -714,6 +725,8 @@ pg_plan_query(Query *querytree, int cursorOptions, ParamListInfo boundParams)
 	 */
 	if (Debug_print_plan)
 		elog_node_display(DEBUG1, "plan", plan, Debug_pretty_print);
+
+	TRACE_POSTGRESQL_QUERY_PLAN_DONE();
 
 	return plan;
 }
@@ -789,12 +802,15 @@ exec_simple_query(const char *query_string)
 	bool		isTopLevel;
 	char		msec_str[32];
 
+
 	/*
 	 * Report query to various monitoring facilities.
 	 */
 	debug_query_string = query_string;
 
 	pgstat_report_activity(query_string);
+
+	TRACE_POSTGRESQL_QUERY_START(query_string);
 
 	/*
 	 * We use save_log_statement_stats so ShowUsage doesn't report incorrect
@@ -1061,6 +1077,8 @@ exec_simple_query(const char *query_string)
 
 	if (save_log_statement_stats)
 		ShowUsage("QUERY STATISTICS");
+
+	TRACE_POSTGRESQL_QUERY_DONE(query_string);
 
 	debug_query_string = NULL;
 }
