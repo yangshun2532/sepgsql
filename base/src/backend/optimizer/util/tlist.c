@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/optimizer/util/tlist.c,v 1.78 2008/01/01 19:45:50 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/backend/optimizer/util/tlist.c,v 1.81 2008/08/07 19:35:02 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -18,6 +18,7 @@
 #include "optimizer/tlist.h"
 #include "optimizer/var.h"
 #include "parser/parse_expr.h"
+#include "utils/lsyscache.h"
 
 
 /*****************************************************************************
@@ -133,76 +134,25 @@ add_to_flat_tlist(List *tlist, List *vars)
 
 
 /*
- * get_sortgroupref_tle
- *		Find the targetlist entry matching the given SortGroupRef index,
- *		and return it.
- */
-TargetEntry *
-get_sortgroupref_tle(Index sortref, List *targetList)
-{
-	ListCell   *l;
-
-	foreach(l, targetList)
-	{
-		TargetEntry *tle = (TargetEntry *) lfirst(l);
-
-		if (tle->ressortgroupref == sortref)
-			return tle;
-	}
-
-	elog(ERROR, "ORDER/GROUP BY expression not found in targetlist");
-	return NULL;				/* keep compiler quiet */
-}
-
-/*
- * get_sortgroupclause_tle
- *		Find the targetlist entry matching the given SortClause
- *		(or GroupClause) by ressortgroupref, and return it.
+ * get_tlist_exprs
+ *		Get just the expression subtrees of a tlist
  *
- * Because GroupClause is typedef'd as SortClause, either kind of
- * node can be passed without casting.
- */
-TargetEntry *
-get_sortgroupclause_tle(SortClause *sortClause,
-						List *targetList)
-{
-	return get_sortgroupref_tle(sortClause->tleSortGroupRef, targetList);
-}
-
-/*
- * get_sortgroupclause_expr
- *		Find the targetlist entry matching the given SortClause
- *		(or GroupClause) by ressortgroupref, and return its expression.
- *
- * Because GroupClause is typedef'd as SortClause, either kind of
- * node can be passed without casting.
- */
-Node *
-get_sortgroupclause_expr(SortClause *sortClause, List *targetList)
-{
-	TargetEntry *tle = get_sortgroupclause_tle(sortClause, targetList);
-
-	return (Node *) tle->expr;
-}
-
-/*
- * get_sortgrouplist_exprs
- *		Given a list of SortClauses (or GroupClauses), build a list
- *		of the referenced targetlist expressions.
+ * Resjunk columns are ignored unless includeJunk is true
  */
 List *
-get_sortgrouplist_exprs(List *sortClauses, List *targetList)
+get_tlist_exprs(List *tlist, bool includeJunk)
 {
 	List	   *result = NIL;
 	ListCell   *l;
 
-	foreach(l, sortClauses)
+	foreach(l, tlist)
 	{
-		SortClause *sortcl = (SortClause *) lfirst(l);
-		Node	   *sortexpr;
+		TargetEntry *tle = (TargetEntry *) lfirst(l);
 
-		sortexpr = get_sortgroupclause_expr(sortcl, targetList);
-		result = lappend(result, sortexpr);
+		if (tle->resjunk && !includeJunk)
+			continue;
+
+		result = lappend(result, tle->expr);
 	}
 	return result;
 }
@@ -242,5 +192,177 @@ tlist_same_datatypes(List *tlist, List *colTypes, bool junkOK)
 	}
 	if (curColType != NULL)
 		return false;			/* tlist shorter than colTypes */
+	return true;
+}
+
+
+/*
+ * get_sortgroupref_tle
+ *		Find the targetlist entry matching the given SortGroupRef index,
+ *		and return it.
+ */
+TargetEntry *
+get_sortgroupref_tle(Index sortref, List *targetList)
+{
+	ListCell   *l;
+
+	foreach(l, targetList)
+	{
+		TargetEntry *tle = (TargetEntry *) lfirst(l);
+
+		if (tle->ressortgroupref == sortref)
+			return tle;
+	}
+
+	elog(ERROR, "ORDER/GROUP BY expression not found in targetlist");
+	return NULL;				/* keep compiler quiet */
+}
+
+/*
+ * get_sortgroupclause_tle
+ *		Find the targetlist entry matching the given SortGroupClause
+ *		by ressortgroupref, and return it.
+ */
+TargetEntry *
+get_sortgroupclause_tle(SortGroupClause *sgClause,
+						List *targetList)
+{
+	return get_sortgroupref_tle(sgClause->tleSortGroupRef, targetList);
+}
+
+/*
+ * get_sortgroupclause_expr
+ *		Find the targetlist entry matching the given SortGroupClause
+ *		by ressortgroupref, and return its expression.
+ */
+Node *
+get_sortgroupclause_expr(SortGroupClause *sgClause, List *targetList)
+{
+	TargetEntry *tle = get_sortgroupclause_tle(sgClause, targetList);
+
+	return (Node *) tle->expr;
+}
+
+/*
+ * get_sortgrouplist_exprs
+ *		Given a list of SortGroupClauses, build a list
+ *		of the referenced targetlist expressions.
+ */
+List *
+get_sortgrouplist_exprs(List *sgClauses, List *targetList)
+{
+	List	   *result = NIL;
+	ListCell   *l;
+
+	foreach(l, sgClauses)
+	{
+		SortGroupClause *sortcl = (SortGroupClause *) lfirst(l);
+		Node	   *sortexpr;
+
+		sortexpr = get_sortgroupclause_expr(sortcl, targetList);
+		result = lappend(result, sortexpr);
+	}
+	return result;
+}
+
+
+/*****************************************************************************
+ *		Functions to extract data from a list of SortGroupClauses
+ *
+ * These don't really belong in tlist.c, but they are sort of related to the
+ * functions just above, and they don't seem to deserve their own file.
+ *****************************************************************************/
+
+/*
+ * extract_grouping_ops - make an array of the equality operator OIDs
+ *		for a SortGroupClause list
+ */
+Oid *
+extract_grouping_ops(List *groupClause)
+{
+	int			numCols = list_length(groupClause);
+	int			colno = 0;
+	Oid		   *groupOperators;
+	ListCell   *glitem;
+
+	groupOperators = (Oid *) palloc(sizeof(Oid) * numCols);
+
+	foreach(glitem, groupClause)
+	{
+		SortGroupClause *groupcl = (SortGroupClause *) lfirst(glitem);
+
+		groupOperators[colno] = groupcl->eqop;
+		Assert(OidIsValid(groupOperators[colno]));
+		colno++;
+	}
+
+	return groupOperators;
+}
+
+/*
+ * extract_grouping_cols - make an array of the grouping column resnos
+ *		for a SortGroupClause list
+ */
+AttrNumber *
+extract_grouping_cols(List *groupClause, List *tlist)
+{
+	AttrNumber *grpColIdx;
+	int			numCols = list_length(groupClause);
+	int			colno = 0;
+	ListCell   *glitem;
+
+	grpColIdx = (AttrNumber *) palloc(sizeof(AttrNumber) * numCols);
+
+	foreach(glitem, groupClause)
+	{
+		SortGroupClause *groupcl = (SortGroupClause *) lfirst(glitem);
+		TargetEntry *tle = get_sortgroupclause_tle(groupcl, tlist);
+
+		grpColIdx[colno++] = tle->resno;
+	}
+
+	return grpColIdx;
+}
+
+/*
+ * grouping_is_sortable - is it possible to implement grouping list by sorting?
+ *
+ * This is easy since the parser will have included a sortop if one exists.
+ */
+bool
+grouping_is_sortable(List *groupClause)
+{
+	ListCell   *glitem;
+
+	foreach(glitem, groupClause)
+	{
+		SortGroupClause *groupcl = (SortGroupClause *) lfirst(glitem);
+
+		if (!OidIsValid(groupcl->sortop))
+			return false;
+	}
+	return true;
+}
+
+/*
+ * grouping_is_hashable - is it possible to implement grouping list by hashing?
+ *
+ * We assume hashing is OK if the equality operators are marked oprcanhash.
+ * (If there isn't actually a supporting hash function, the executor will
+ * complain at runtime; but this is a misdeclaration of the operator, not
+ * a system bug.)
+ */
+bool
+grouping_is_hashable(List *groupClause)
+{
+	ListCell   *glitem;
+
+	foreach(glitem, groupClause)
+	{
+		SortGroupClause *groupcl = (SortGroupClause *) lfirst(glitem);
+
+		if (!op_hashjoinable(groupcl->eqop))
+			return false;
+	}
 	return true;
 }
