@@ -1,16 +1,26 @@
-policy_module(httpd-selinux,1.1)
+policy_module(httpd-selinux, 1.2)
 
 gen_require(`
 	type httpd_t;
-	attribute mcssetcats;
-');
-
-ifdef(`enable_mcs',`
-	typeattribute httpd_t mcssetcats;
-')
-
-ifdef(`enable_mls',`
-	typeattribute httpd_t mlsprocsetsl;
+	type httpd_sys_script_t;
+	type httpd_user_script_t;
 ')
 
 allow httpd_t self : process { setcurrent };
+
+typebounds httpd_t httpd_sys_script_t;
+typebounds httpd_t httpd_user_script_t;
+
+optional_policy(`
+	gen_require(`
+		attribute mcssetcats;
+	')
+	typeattribute httpd_t mcssetcats;
+')
+
+optional_policy(`
+	gen_require(`
+		attribute mlsprocsetsl;
+	')
+	typeattribute httpd_t mlsprocsetsl;
+')
