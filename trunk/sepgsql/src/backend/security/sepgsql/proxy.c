@@ -478,25 +478,31 @@ sepgsqlExprWalker(Node *node, sepgsqlWalkerContext *swc)
 				foreach(l, rce->opnos) walkOpExprHelper(swc, lfirst_oid(l));
 				break;
 			}
-		case T_SortClause:
-		case T_GroupClause:
+		case T_SortGroupClause:
 			{
-				SortClause *sc = (SortClause *) node;
-				Query *q = swc->qstack->query;
+				SortGroupClause *sgc = (SortGroupClause *) node;
+				Query *query = swc->qstack->query;
 				TargetEntry *tle
-					= get_sortgroupref_tle(sc->tleSortGroupRef, q->targetList);
+					= get_sortgroupref_tle(sgc->tleSortGroupRef,
+										   query->targetList);
 
 				Assert(IsA(tle, TargetEntry));
-
-				walkOpExprHelper(swc, sc->sortop);
+				walkOpExprHelper(swc, sgc->eqop);
+				if (sgc->sortop != InvalidOid)
+					walkOpExprHelper(swc, sgc->sortop);
 				sepgsqlExprWalker((Node *)tle->expr, swc);
-			}
-			return false;	/* expression_tree_walker does not suppor them */
 
+				return false;
+				/*
+				 * expression_tree_walker () does not understand
+				 * T_SortGroupClause node and it is a termination
+				 * node, so we simply return with false to continue
+				 * walking node tree.
+				 */
+			}
 		default:
 			break;
 	}
-
 	return expression_tree_walker(node, sepgsqlExprWalker, (void *) swc);
 }
 
