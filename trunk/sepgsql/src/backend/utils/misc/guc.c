@@ -10,7 +10,7 @@
  * Written by Peter Eisentraut <peter_e@gmx.net>.
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/misc/guc.c,v 1.466 2008/08/15 08:37:40 mha Exp $
+ *	  $PostgreSQL: pgsql/src/backend/utils/misc/guc.c,v 1.470 2008/08/25 15:11:00 mha Exp $
  *
  *--------------------------------------------------------------------
  */
@@ -327,7 +327,7 @@ bool		log_duration = false;
 bool		Debug_print_plan = false;
 bool		Debug_print_parse = false;
 bool		Debug_print_rewritten = false;
-bool		Debug_pretty_print = false;
+bool		Debug_pretty_print = true;
 
 bool		log_parser_stats = false;
 bool		log_planner_stats = false;
@@ -784,7 +784,7 @@ static struct config_bool ConfigureNamesBool[] =
 	},
 	{
 		{"debug_print_parse", PGC_USERSET, LOGGING_WHAT,
-			gettext_noop("Prints the parse tree to the server log."),
+			gettext_noop("Logs each query's parse tree."),
 			NULL
 		},
 		&Debug_print_parse,
@@ -792,7 +792,7 @@ static struct config_bool ConfigureNamesBool[] =
 	},
 	{
 		{"debug_print_rewritten", PGC_USERSET, LOGGING_WHAT,
-			gettext_noop("Prints the parse tree after rewriting to server log."),
+			gettext_noop("Logs each query's rewritten parse tree."),
 			NULL
 		},
 		&Debug_print_rewritten,
@@ -800,7 +800,7 @@ static struct config_bool ConfigureNamesBool[] =
 	},
 	{
 		{"debug_print_plan", PGC_USERSET, LOGGING_WHAT,
-			gettext_noop("Prints the execution plan to server log."),
+			gettext_noop("Logs each query's execution plan."),
 			NULL
 		},
 		&Debug_print_plan,
@@ -812,7 +812,7 @@ static struct config_bool ConfigureNamesBool[] =
 			NULL
 		},
 		&Debug_pretty_print,
-		false, NULL, NULL
+		true, NULL, NULL
 	},
 	{
 		{"log_parser_stats", PGC_SUSET, STATS_MONITORING,
@@ -1913,7 +1913,7 @@ static struct config_int ConfigureNamesInt[] =
 	},
 
 	{
-		{"log_temp_files", PGC_USERSET, LOGGING_WHAT,
+		{"log_temp_files", PGC_SUSET, LOGGING_WHAT,
 			gettext_noop("Log the use of temporary files larger than this number of kilobytes."),
 			gettext_noop("Zero logs all files. The default is -1 (turning this feature off)."),
 			GUC_UNIT_KB
@@ -2482,7 +2482,7 @@ static struct config_string ConfigureNamesString[] =
 	},
 
 	{
-		{"stats_temp_directory", PGC_POSTMASTER, STATS_COLLECTOR,
+		{"stats_temp_directory", PGC_SIGHUP, STATS_COLLECTOR,
 			gettext_noop("Writes temporary statistics files to the specified directory."),
 			NULL,
 			GUC_SUPERUSER_ONLY
@@ -4631,16 +4631,18 @@ set_config_option(const char *name, const char *value,
 				if (changeVal && !is_newvalue_equal(record, value))
 					ereport(elevel,
 							(errcode(ERRCODE_CANT_CHANGE_RUNTIME_PARAM),
-							 errmsg("parameter \"%s\" cannot be changed after server start; configuration file change ignored",
-									name)));
+							 errmsg("attempted change of parameter \"%s\" ignored",
+									name),
+							 errdetail("This parameter cannot be changed after server start.")));
 				return true;
 			}
 			if (context != PGC_POSTMASTER)
 			{
 				ereport(elevel,
 						(errcode(ERRCODE_CANT_CHANGE_RUNTIME_PARAM),
-						 errmsg("parameter \"%s\" cannot be changed after server start",
-								name)));
+						 errmsg("attempted change of parameter \"%s\" ignored",
+								name),
+						 errdetail("This parameter cannot be changed after server start.")));
 				return false;
 			}
 			break;
