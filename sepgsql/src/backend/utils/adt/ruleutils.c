@@ -9,7 +9,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/adt/ruleutils.c,v 1.279 2008/08/02 21:32:00 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/utils/adt/ruleutils.c,v 1.281 2008/08/25 22:42:34 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -33,11 +33,11 @@
 #include "executor/spi.h"
 #include "funcapi.h"
 #include "nodes/makefuncs.h"
+#include "nodes/nodeFuncs.h"
 #include "optimizer/clauses.h"
 #include "optimizer/tlist.h"
 #include "parser/gramparse.h"
 #include "parser/keywords.h"
-#include "parser/parse_expr.h"
 #include "parser/parse_func.h"
 #include "parser/parse_oper.h"
 #include "parser/parsetree.h"
@@ -3730,6 +3730,11 @@ get_rule_expr(Node *node, deparse_context *context,
 				else
 					appendStringInfo(buf, "(subplan)");
 			}
+			break;
+
+		case T_AlternativeSubPlan:
+			/* As above, just punt */
+			appendStringInfo(buf, "(alternative subplans)");
 			break;
 
 		case T_FieldSelect:
