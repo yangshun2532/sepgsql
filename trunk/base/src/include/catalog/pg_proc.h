@@ -7,7 +7,7 @@
  * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/catalog/pg_proc.h,v 1.510 2008/08/16 00:01:37 tgl Exp $
+ * $PostgreSQL: pgsql/src/include/catalog/pg_proc.h,v 1.512 2008/08/25 11:18:43 mha Exp $
  *
  * NOTES
  *	  The script catalog/genbki.sh reads this file and generates .bki
@@ -237,6 +237,7 @@ DESCR("I/O");
 DATA(insert OID =  110 (  unknownout	   PGNSP PGUID 12 1 0 0 f f t f i 1 2275	"705" _null_ _null_ _null_	unknownout _null_ _null_ _null_ ));
 DESCR("I/O");
 DATA(insert OID = 111 (  numeric_fac	   PGNSP PGUID 12 1 0 0 f f t f i 1 1700 "20" _null_ _null_ _null_	numeric_fac _null_ _null_ _null_ ));
+DESCR("equivalent to factorial");
 
 DATA(insert OID = 115 (  box_above_eq	   PGNSP PGUID 12 1 0 0 f f t f i 2  16 "603 603" _null_ _null_ _null_	box_above_eq _null_ _null_ _null_ ));
 DESCR("is above (allows touching)");
@@ -3156,11 +3157,11 @@ DATA(insert OID = 2077 (  current_setting	PGNSP PGUID 12 1 0 0 f f t f s 1 25 "2
 DESCR("SHOW X as a function");
 DATA(insert OID = 2078 (  set_config		PGNSP PGUID 12 1 0 0 f f f f v 3 25 "25 25 16" _null_ _null_ _null_ set_config_by_name _null_ _null_ _null_ ));
 DESCR("SET X as a function");
-DATA(insert OID = 2084 (  pg_show_all_settings	PGNSP PGUID 12 1 1000 0 f f t t s 0 2249 "" _null_ _null_ _null_ show_all_settings _null_ _null_ _null_ ));
+DATA(insert OID = 2084 (  pg_show_all_settings	PGNSP PGUID 12 1 1000 0 f f t t s 0 2249 "" "{25,25,25,25,25,25,25,25,25,25,25,25}" "{o,o,o,o,o,o,o,o,o,o,o,o}" "{name,setting,unit,category,short_desc,extra_desc,context,vartype,source,min_val,max_val,enumvals}" show_all_settings _null_ _null_ _null_ ));
 DESCR("SHOW ALL as a function");
-DATA(insert OID = 1371 (  pg_lock_status   PGNSP PGUID 12 1 1000 0 f f t t v 0 2249 "" _null_ _null_ _null_ pg_lock_status _null_ _null_ _null_ ));
+DATA(insert OID = 1371 (  pg_lock_status   PGNSP PGUID 12 1 1000 0 f f t t v 0 2249 "" "{25,26,26,23,21,25,28,26,26,21,25,23,25,16}" "{o,o,o,o,o,o,o,o,o,o,o,o,o,o}" "{locktype,database,relation,page,tuple,virtualxid,transactionid,classid,objid,objsubid,virtualtransaction,pid,mode,granted}" pg_lock_status _null_ _null_ _null_ ));
 DESCR("view system lock information");
-DATA(insert OID = 1065 (  pg_prepared_xact PGNSP PGUID 12 1 1000 0 f f t t v 0 2249 "" _null_ _null_ _null_ pg_prepared_xact _null_ _null_ _null_ ));
+DATA(insert OID = 1065 (  pg_prepared_xact PGNSP PGUID 12 1 1000 0 f f t t v 0 2249 "" "{28,25,1184,26,26}" "{o,o,o,o,o}" "{transaction,gid,prepared,ownerid,dbid}" pg_prepared_xact _null_ _null_ _null_ ));
 DESCR("view two-phase transactions");
 
 DATA(insert OID = 2079 (  pg_table_is_visible		PGNSP PGUID 12 1 0 0 f f t f s 1 16 "26" _null_ _null_ _null_ pg_table_is_visible _null_ _null_ _null_ ));
@@ -3228,121 +3229,225 @@ DESCR("convert boolean to text");
 /* Aggregates (moved here from pg_aggregate for 7.3) */
 
 DATA(insert OID = 2100 (  avg				PGNSP PGUID 12 1 0 0 t f f f i 1 1700 "20" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("the average (arithmetic mean) as numeric of all bigint values");
 DATA(insert OID = 2101 (  avg				PGNSP PGUID 12 1 0 0 t f f f i 1 1700 "23" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("the average (arithmetic mean) as numeric of all integer values");
 DATA(insert OID = 2102 (  avg				PGNSP PGUID 12 1 0 0 t f f f i 1 1700 "21" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("the average (arithmetic mean) as numeric of all smallint values");
 DATA(insert OID = 2103 (  avg				PGNSP PGUID 12 1 0 0 t f f f i 1 1700 "1700" _null_ _null_ _null_ aggregate_dummy _null_ _null_ _null_ ));
+DESCR("the average (arithmetic mean) as numeric of all numeric values");
 DATA(insert OID = 2104 (  avg				PGNSP PGUID 12 1 0 0 t f f f i 1 701 "700" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("the average (arithmetic mean) as float8 of all float4 values");
 DATA(insert OID = 2105 (  avg				PGNSP PGUID 12 1 0 0 t f f f i 1 701 "701" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("the average (arithmetic mean) as float8 of all float8 values");
 DATA(insert OID = 2106 (  avg				PGNSP PGUID 12 1 0 0 t f f f i 1 1186 "1186" _null_ _null_ _null_ aggregate_dummy _null_ _null_ _null_ ));
+DESCR("the average (arithmetic mean) as interval of all interval values");
 
 DATA(insert OID = 2107 (  sum				PGNSP PGUID 12 1 0 0 t f f f i 1 1700 "20" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("sum as numeric across all bigint input values");
 DATA(insert OID = 2108 (  sum				PGNSP PGUID 12 1 0 0 t f f f i 1 20 "23" _null_ _null_ _null_ aggregate_dummy _null_ _null_ _null_ ));
+DESCR("sum as bigint across all integer input values");
 DATA(insert OID = 2109 (  sum				PGNSP PGUID 12 1 0 0 t f f f i 1 20 "21" _null_ _null_ _null_ aggregate_dummy _null_ _null_ _null_ ));
+DESCR("sum as bigint across all smallint input values");
 DATA(insert OID = 2110 (  sum				PGNSP PGUID 12 1 0 0 t f f f i 1 700 "700" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("sum as float4 across all float4 input values");
 DATA(insert OID = 2111 (  sum				PGNSP PGUID 12 1 0 0 t f f f i 1 701 "701" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("sum as float8 across all float8 input values");
 DATA(insert OID = 2112 (  sum				PGNSP PGUID 12 1 0 0 t f f f i 1 790 "790" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("sum as money across all money input values");
 DATA(insert OID = 2113 (  sum				PGNSP PGUID 12 1 0 0 t f f f i 1 1186 "1186" _null_ _null_ _null_ aggregate_dummy _null_ _null_ _null_ ));
+DESCR("sum as interval across all interval input values");
 DATA(insert OID = 2114 (  sum				PGNSP PGUID 12 1 0 0 t f f f i 1 1700 "1700" _null_ _null_ _null_ aggregate_dummy _null_ _null_ _null_ ));
+DESCR("sum as numeric across all numeric input values");
 
 DATA(insert OID = 2115 (  max				PGNSP PGUID 12 1 0 0 t f f f i 1 20 "20" _null_ _null_ _null_ aggregate_dummy _null_ _null_ _null_ ));
+DESCR("maximum value of all bigint input values");
 DATA(insert OID = 2116 (  max				PGNSP PGUID 12 1 0 0 t f f f i 1 23 "23" _null_ _null_ _null_ aggregate_dummy _null_ _null_ _null_ ));
+DESCR("maximum value of all integer input values");
 DATA(insert OID = 2117 (  max				PGNSP PGUID 12 1 0 0 t f f f i 1 21 "21" _null_ _null_ _null_ aggregate_dummy _null_ _null_ _null_ ));
+DESCR("maximum value of all smallint input values");
 DATA(insert OID = 2118 (  max				PGNSP PGUID 12 1 0 0 t f f f i 1 26 "26" _null_ _null_ _null_ aggregate_dummy _null_ _null_ _null_ ));
+DESCR("maximum value of all oid input values");
 DATA(insert OID = 2119 (  max				PGNSP PGUID 12 1 0 0 t f f f i 1 700 "700" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("maximum value of all float4 input values");
 DATA(insert OID = 2120 (  max				PGNSP PGUID 12 1 0 0 t f f f i 1 701 "701" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("maximum value of all float8 input values");
 DATA(insert OID = 2121 (  max				PGNSP PGUID 12 1 0 0 t f f f i 1 702 "702" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("maximum value of all abstime input values");
 DATA(insert OID = 2122 (  max				PGNSP PGUID 12 1 0 0 t f f f i 1 1082 "1082" _null_ _null_ _null_ aggregate_dummy _null_ _null_ _null_ ));
+DESCR("maximum value of all date input values");
 DATA(insert OID = 2123 (  max				PGNSP PGUID 12 1 0 0 t f f f i 1 1083 "1083" _null_ _null_ _null_ aggregate_dummy _null_ _null_ _null_ ));
+DESCR("maximum value of all time input values");
 DATA(insert OID = 2124 (  max				PGNSP PGUID 12 1 0 0 t f f f i 1 1266 "1266" _null_ _null_ _null_ aggregate_dummy _null_ _null_ _null_ ));
+DESCR("maximum value of all time with time zone input values");
 DATA(insert OID = 2125 (  max				PGNSP PGUID 12 1 0 0 t f f f i 1 790 "790" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("maximum value of all money input values");
 DATA(insert OID = 2126 (  max				PGNSP PGUID 12 1 0 0 t f f f i 1 1114 "1114" _null_ _null_ _null_ aggregate_dummy _null_ _null_ _null_ ));
+DESCR("maximum value of all timestamp input values");
 DATA(insert OID = 2127 (  max				PGNSP PGUID 12 1 0 0 t f f f i 1 1184 "1184" _null_ _null_ _null_ aggregate_dummy _null_ _null_ _null_ ));
+DESCR("maximum value of all timestamp with time zone input values");
 DATA(insert OID = 2128 (  max				PGNSP PGUID 12 1 0 0 t f f f i 1 1186 "1186" _null_ _null_ _null_ aggregate_dummy _null_ _null_ _null_ ));
+DESCR("maximum value of all interval input values");
 DATA(insert OID = 2129 (  max				PGNSP PGUID 12 1 0 0 t f f f i 1 25 "25" _null_ _null_ _null_ aggregate_dummy _null_ _null_ _null_ ));
+DESCR("maximum value of all text input values");
 DATA(insert OID = 2130 (  max				PGNSP PGUID 12 1 0 0 t f f f i 1 1700 "1700" _null_ _null_ _null_ aggregate_dummy _null_ _null_ _null_ ));
+DESCR("maximum value of all numeric input values");
 DATA(insert OID = 2050 (  max				PGNSP PGUID 12 1 0 0 t f f f i 1 2277 "2277" _null_ _null_ _null_ aggregate_dummy _null_ _null_ _null_ ));
+DESCR("maximum value of all anyarray input values");
 DATA(insert OID = 2244 (  max				PGNSP PGUID 12 1 0 0 t f f f i 1 1042 "1042" _null_ _null_ _null_ aggregate_dummy _null_ _null_ _null_ ));
+DESCR("maximum value of all bpchar input values");
 DATA(insert OID = 2797 (  max				PGNSP PGUID 12 1 0 0 t f f f i 1 27 "27" _null_ _null_ _null_ aggregate_dummy _null_ _null_ _null_ ));
+DESCR("maximum value of all tid input values");
 
 DATA(insert OID = 2131 (  min				PGNSP PGUID 12 1 0 0 t f f f i 1 20 "20" _null_ _null_ _null_ aggregate_dummy _null_ _null_ _null_ ));
+DESCR("minimum value of all bigint input values");
 DATA(insert OID = 2132 (  min				PGNSP PGUID 12 1 0 0 t f f f i 1 23 "23" _null_ _null_ _null_ aggregate_dummy _null_ _null_ _null_ ));
+DESCR("minimum value of all integer input values");
 DATA(insert OID = 2133 (  min				PGNSP PGUID 12 1 0 0 t f f f i 1 21 "21" _null_ _null_ _null_ aggregate_dummy _null_ _null_ _null_ ));
+DESCR("minimum value of all smallint input values");
 DATA(insert OID = 2134 (  min				PGNSP PGUID 12 1 0 0 t f f f i 1 26 "26" _null_ _null_ _null_ aggregate_dummy _null_ _null_ _null_ ));
+DESCR("minimum value of all oid input values");
 DATA(insert OID = 2135 (  min				PGNSP PGUID 12 1 0 0 t f f f i 1 700 "700" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("minimum value of all float4 input values");
 DATA(insert OID = 2136 (  min				PGNSP PGUID 12 1 0 0 t f f f i 1 701 "701" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("minimum value of all float8 input values");
 DATA(insert OID = 2137 (  min				PGNSP PGUID 12 1 0 0 t f f f i 1 702 "702" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("minimum value of all abstime input values");
 DATA(insert OID = 2138 (  min				PGNSP PGUID 12 1 0 0 t f f f i 1 1082 "1082" _null_ _null_ _null_ aggregate_dummy _null_ _null_ _null_ ));
+DESCR("minimum value of all date input values");
 DATA(insert OID = 2139 (  min				PGNSP PGUID 12 1 0 0 t f f f i 1 1083 "1083" _null_ _null_ _null_ aggregate_dummy _null_ _null_ _null_ ));
+DESCR("minimum value of all time input values");
 DATA(insert OID = 2140 (  min				PGNSP PGUID 12 1 0 0 t f f f i 1 1266 "1266" _null_ _null_ _null_ aggregate_dummy _null_ _null_ _null_ ));
+DESCR("minimum value of all time with time zone input values");
 DATA(insert OID = 2141 (  min				PGNSP PGUID 12 1 0 0 t f f f i 1 790 "790" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("minimum value of all money input values");
 DATA(insert OID = 2142 (  min				PGNSP PGUID 12 1 0 0 t f f f i 1 1114 "1114" _null_ _null_ _null_ aggregate_dummy _null_ _null_ _null_ ));
+DESCR("minimum value of all timestamp input values");
 DATA(insert OID = 2143 (  min				PGNSP PGUID 12 1 0 0 t f f f i 1 1184 "1184" _null_ _null_ _null_ aggregate_dummy _null_ _null_ _null_ ));
+DESCR("minimum value of all timestamp with time zone input values");
 DATA(insert OID = 2144 (  min				PGNSP PGUID 12 1 0 0 t f f f i 1 1186 "1186" _null_ _null_ _null_ aggregate_dummy _null_ _null_ _null_ ));
+DESCR("minimum value of all interval input values");
 DATA(insert OID = 2145 (  min				PGNSP PGUID 12 1 0 0 t f f f i 1 25 "25" _null_ _null_ _null_ aggregate_dummy _null_ _null_ _null_ ));
+DESCR("minimum value of all text values");
 DATA(insert OID = 2146 (  min				PGNSP PGUID 12 1 0 0 t f f f i 1 1700 "1700" _null_ _null_ _null_ aggregate_dummy _null_ _null_ _null_ ));
+DESCR("minimum value of all numeric input values");
 DATA(insert OID = 2051 (  min				PGNSP PGUID 12 1 0 0 t f f f i 1 2277 "2277" _null_ _null_ _null_ aggregate_dummy _null_ _null_ _null_ ));
+DESCR("minimum value of all anyarray input values");
 DATA(insert OID = 2245 (  min				PGNSP PGUID 12 1 0 0 t f f f i 1 1042 "1042" _null_ _null_ _null_ aggregate_dummy _null_ _null_ _null_ ));
+DESCR("minimum value of all bpchar input values");
 DATA(insert OID = 2798 (  min				PGNSP PGUID 12 1 0 0 t f f f i 1 27 "27" _null_ _null_ _null_ aggregate_dummy _null_ _null_ _null_ ));
+DESCR("minimum value of all tid input values");
 
 /* count has two forms: count(any) and count(*) */
 DATA(insert OID = 2147 (  count				PGNSP PGUID 12 1 0 0 t f f f i 1 20 "2276" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("number of input rows for which the input expression is not null");
 DATA(insert OID = 2803 (  count				PGNSP PGUID 12 1 0 0 t f f f i 0 20 "" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("number of input rows");
 
 DATA(insert OID = 2718 (  var_pop			PGNSP PGUID 12 1 0 0 t f f f i 1 1700 "20" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("population variance of bigint input values (square of the population standard deviation)");
 DATA(insert OID = 2719 (  var_pop			PGNSP PGUID 12 1 0 0 t f f f i 1 1700 "23" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("population variance of integer input values (square of the population standard deviation)");
 DATA(insert OID = 2720 (  var_pop			PGNSP PGUID 12 1 0 0 t f f f i 1 1700 "21" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("population variance of smallint input values (square of the population standard deviation)");
 DATA(insert OID = 2721 (  var_pop			PGNSP PGUID 12 1 0 0 t f f f i 1 701 "700" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("population variance of float4 input values (square of the population standard deviation)");
 DATA(insert OID = 2722 (  var_pop			PGNSP PGUID 12 1 0 0 t f f f i 1 701 "701" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("population variance of float8 input values (square of the population standard deviation)");
 DATA(insert OID = 2723 (  var_pop			PGNSP PGUID 12 1 0 0 t f f f i 1 1700 "1700" _null_ _null_ _null_ aggregate_dummy _null_ _null_ _null_ ));
+DESCR("population variance of numeric input values (square of the population standard deviation)");
 
 DATA(insert OID = 2641 (  var_samp			PGNSP PGUID 12 1 0 0 t f f f i 1 1700 "20" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("sample variance of bigint input values (square of the sample standard deviation)");
 DATA(insert OID = 2642 (  var_samp			PGNSP PGUID 12 1 0 0 t f f f i 1 1700 "23" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("sample variance of integer input values (square of the sample standard deviation)");
 DATA(insert OID = 2643 (  var_samp			PGNSP PGUID 12 1 0 0 t f f f i 1 1700 "21" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("sample variance of smallint input values (square of the sample standard deviation)");
 DATA(insert OID = 2644 (  var_samp			PGNSP PGUID 12 1 0 0 t f f f i 1 701 "700" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("sample variance of float4 input values (square of the sample standard deviation)");
+
 DATA(insert OID = 2645 (  var_samp			PGNSP PGUID 12 1 0 0 t f f f i 1 701 "701" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("sample variance of float8 input values (square of the sample standard deviation)");
 DATA(insert OID = 2646 (  var_samp			PGNSP PGUID 12 1 0 0 t f f f i 1 1700 "1700" _null_ _null_ _null_ aggregate_dummy _null_ _null_ _null_ ));
+DESCR("sample variance of numeric input values (square of the sample standard deviation)");
 
 DATA(insert OID = 2148 (  variance			PGNSP PGUID 12 1 0 0 t f f f i 1 1700 "20" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("historical alias for var_samp");
 DATA(insert OID = 2149 (  variance			PGNSP PGUID 12 1 0 0 t f f f i 1 1700 "23" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("historical alias for var_samp");
 DATA(insert OID = 2150 (  variance			PGNSP PGUID 12 1 0 0 t f f f i 1 1700 "21" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("historical alias for var_samp");
 DATA(insert OID = 2151 (  variance			PGNSP PGUID 12 1 0 0 t f f f i 1 701 "700" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("historical alias for var_samp");
 DATA(insert OID = 2152 (  variance			PGNSP PGUID 12 1 0 0 t f f f i 1 701 "701" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("historical alias for var_samp");
 DATA(insert OID = 2153 (  variance			PGNSP PGUID 12 1 0 0 t f f f i 1 1700 "1700" _null_ _null_ _null_ aggregate_dummy _null_ _null_ _null_ ));
+DESCR("historical alias for var_samp");
 
 DATA(insert OID = 2724 (  stddev_pop		PGNSP PGUID 12 1 0 0 t f f f i 1 1700 "20" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("population standard deviation of bigint input values");
 DATA(insert OID = 2725 (  stddev_pop		PGNSP PGUID 12 1 0 0 t f f f i 1 1700 "23" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("population standard deviation of integer input values");
 DATA(insert OID = 2726 (  stddev_pop		PGNSP PGUID 12 1 0 0 t f f f i 1 1700 "21" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("population standard deviation of smallint input values");
 DATA(insert OID = 2727 (  stddev_pop		PGNSP PGUID 12 1 0 0 t f f f i 1 701 "700" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("population standard deviation of float4 input values");
 DATA(insert OID = 2728 (  stddev_pop		PGNSP PGUID 12 1 0 0 t f f f i 1 701 "701" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("population standard deviation of float8 input values");
 DATA(insert OID = 2729 (  stddev_pop		PGNSP PGUID 12 1 0 0 t f f f i 1 1700 "1700" _null_ _null_ _null_ aggregate_dummy _null_ _null_ _null_ ));
+DESCR("population standard deviation of numeric input values");
 
 DATA(insert OID = 2712 (  stddev_samp		PGNSP PGUID 12 1 0 0 t f f f i 1 1700 "20" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("sample standard deviation of bigint input values");
 DATA(insert OID = 2713 (  stddev_samp		PGNSP PGUID 12 1 0 0 t f f f i 1 1700 "23" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("sample standard deviation of integer input values");
 DATA(insert OID = 2714 (  stddev_samp		PGNSP PGUID 12 1 0 0 t f f f i 1 1700 "21" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("sample standard deviation of smallint input values");
 DATA(insert OID = 2715 (  stddev_samp		PGNSP PGUID 12 1 0 0 t f f f i 1 701 "700" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("sample standard deviation of float4 input values");
 DATA(insert OID = 2716 (  stddev_samp		PGNSP PGUID 12 1 0 0 t f f f i 1 701 "701" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("sample standard deviation of float8 input values");
 DATA(insert OID = 2717 (  stddev_samp		PGNSP PGUID 12 1 0 0 t f f f i 1 1700 "1700" _null_ _null_ _null_ aggregate_dummy _null_ _null_ _null_ ));
+DESCR("sample standard deviation of numeric input values");
 
 DATA(insert OID = 2154 (  stddev			PGNSP PGUID 12 1 0 0 t f f f i 1 1700 "20" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("historical alias for stddev_samp");
 DATA(insert OID = 2155 (  stddev			PGNSP PGUID 12 1 0 0 t f f f i 1 1700 "23" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("historical alias for stddev_samp");
 DATA(insert OID = 2156 (  stddev			PGNSP PGUID 12 1 0 0 t f f f i 1 1700 "21" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("historical alias for stddev_samp");
 DATA(insert OID = 2157 (  stddev			PGNSP PGUID 12 1 0 0 t f f f i 1 701 "700" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("historical alias for stddev_samp");
 DATA(insert OID = 2158 (  stddev			PGNSP PGUID 12 1 0 0 t f f f i 1 701 "701" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("historical alias for stddev_samp");
 DATA(insert OID = 2159 (  stddev			PGNSP PGUID 12 1 0 0 t f f f i 1 1700 "1700" _null_ _null_ _null_ aggregate_dummy _null_ _null_ _null_ ));
+DESCR("historical alias for stddev_samp");
 
 DATA(insert OID = 2818 (  regr_count		PGNSP PGUID 12 1 0 0 t f f f i 2 20 "701 701" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("number of input rows in which both expressions are nonnull");
 DATA(insert OID = 2819 (  regr_sxx			PGNSP PGUID 12 1 0 0 t f f f i 2 701 "701 701" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("sum of squares of the independent variable (sum(X^2) - sum(X)^2/N)");
 DATA(insert OID = 2820 (  regr_syy			PGNSP PGUID 12 1 0 0 t f f f i 2 701 "701 701" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("sum of squares of the dependent variable (sum(Y^2) - sum(Y)^2/N)");
 DATA(insert OID = 2821 (  regr_sxy			PGNSP PGUID 12 1 0 0 t f f f i 2 701 "701 701" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("sum of products of independent times dependent variable (sum(X*Y) - sum(X) * sum(Y)/N)");
 DATA(insert OID = 2822 (  regr_avgx			PGNSP PGUID 12 1 0 0 t f f f i 2 701 "701 701" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("average of the independent variable (sum(X)/N)");
 DATA(insert OID = 2823 (  regr_avgy			PGNSP PGUID 12 1 0 0 t f f f i 2 701 "701 701" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("average of the dependent variable (sum(Y)/N)");
 DATA(insert OID = 2824 (  regr_r2			PGNSP PGUID 12 1 0 0 t f f f i 2 701 "701 701" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("square of the correlation coefficient");
 DATA(insert OID = 2825 (  regr_slope		PGNSP PGUID 12 1 0 0 t f f f i 2 701 "701 701" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("slope of the least-squares-fit linear equation determined by the (X, Y) pairs");
 DATA(insert OID = 2826 (  regr_intercept	PGNSP PGUID 12 1 0 0 t f f f i 2 701 "701 701" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("y-intercept of the least-squares-fit linear equation determined by the (X, Y) pairs");
 
 DATA(insert OID = 2827 (  covar_pop			PGNSP PGUID 12 1 0 0 t f f f i 2 701 "701 701" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("population covariance");
 DATA(insert OID = 2828 (  covar_samp		PGNSP PGUID 12 1 0 0 t f f f i 2 701 "701 701" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("sample covariance");
 DATA(insert OID = 2829 (  corr				PGNSP PGUID 12 1 0 0 t f f f i 2 701 "701 701" _null_ _null_ _null_  aggregate_dummy _null_ _null_ _null_ ));
+DESCR("correlation coefficient");
 
 DATA(insert OID = 2160 ( text_pattern_lt	 PGNSP PGUID 12 1 0 0 f f t f i 2 16 "25 25" _null_ _null_ _null_ text_pattern_lt _null_ _null_ _null_ ));
 DATA(insert OID = 2161 ( text_pattern_le	 PGNSP PGUID 12 1 0 0 f f t f i 2 16 "25 25" _null_ _null_ _null_ text_pattern_le _null_ _null_ _null_ ));
@@ -3870,9 +3975,9 @@ DATA(insert OID = 2508 (  pg_get_constraintdef PGNSP PGUID 12 1 0 0 f f t f s 2 
 DESCR("constraint description with pretty-print option");
 DATA(insert OID = 2509 (  pg_get_expr		   PGNSP PGUID 12 1 0 0 f f t f s 3 25 "25 26 16" _null_ _null_ _null_ pg_get_expr_ext _null_ _null_ _null_ ));
 DESCR("deparse an encoded expression with pretty-print option");
-DATA(insert OID = 2510 (  pg_prepared_statement PGNSP PGUID 12 1 1000 0 f f t t s 0 2249 "" _null_ _null_ _null_ pg_prepared_statement _null_ _null_ _null_ ));
+DATA(insert OID = 2510 (  pg_prepared_statement PGNSP PGUID 12 1 1000 0 f f t t s 0 2249 "" "{25,25,1184,2211,16}" "{o,o,o,o,o}" "{name,statement,prepare_time,parameter_types,from_sql}" pg_prepared_statement _null_ _null_ _null_ ));
 DESCR("get the prepared statements for this session");
-DATA(insert OID = 2511 (  pg_cursor PGNSP PGUID 12 1 1000 0 f f t t s 0 2249 "" _null_ _null_ _null_ pg_cursor _null_ _null_ _null_ ));
+DATA(insert OID = 2511 (  pg_cursor PGNSP PGUID 12 1 1000 0 f f t t s 0 2249 "" "{25,25,16,16,16,1184}" "{o,o,o,o,o,o}" "{name,statement,is_holdable,is_binary,is_scrollable,creation_time}" pg_cursor _null_ _null_ _null_ ));
 DESCR("get the open cursors for this session");
 DATA(insert OID = 2599 (  pg_timezone_abbrevs	PGNSP PGUID 12 1 1000 0 f f t t s 0 2249 "" "{25,1186,16}" "{o,o,o}" "{abbrev,utc_offset,is_dst}" pg_timezone_abbrevs _null_ _null_ _null_ ));
 DESCR("get the available time zone abbreviations");
@@ -4180,11 +4285,17 @@ DESCR("smaller of two");
 DATA(insert OID = 3525 (  enum_larger	PGNSP PGUID 12 1 0 0 f f t f i 2 3500 "3500 3500" _null_ _null_ _null_ enum_larger _null_ _null_ _null_ ));
 DESCR("larger of two");
 DATA(insert OID = 3526 (  max			PGNSP PGUID 12 1 0 0 t f f f i 1 3500 "3500" _null_ _null_ _null_ aggregate_dummy _null_ _null_ _null_ ));
+DESCR("maximum of anyenum");
 DATA(insert OID = 3527 (  min			PGNSP PGUID 12 1 0 0 t f f f i 1 3500 "3500" _null_ _null_ _null_ aggregate_dummy _null_ _null_ _null_ ));
+DESCR("minimum of anyenum");
 DATA(insert OID = 3528 (  enum_first	PGNSP PGUID 12 1 0 0 f f f f s 1 3500 "3500" _null_ _null_ _null_ enum_first _null_ _null_ _null_ ));
+DESCR("returns the first value of the input enum type");
 DATA(insert OID = 3529 (  enum_last		PGNSP PGUID 12 1 0 0 f f f f s 1 3500 "3500" _null_ _null_ _null_ enum_last _null_ _null_ _null_ ));
+DESCR("returns the last value of the input enum type");
 DATA(insert OID = 3530 (  enum_range	PGNSP PGUID 12 1 0 0 f f f f s 2 2277 "3500 3500" _null_ _null_ _null_ enum_range_bounds _null_ _null_ _null_ ));
+DESCR("returns the range between the two given enum values, as an ordered array");
 DATA(insert OID = 3531 (  enum_range	PGNSP PGUID 12 1 0 0 f f f f s 1 2277 "3500" _null_ _null_ _null_ enum_range_all _null_ _null_ _null_ ));
+DESCR("returns the range of the given enum type as an ordered array");
 DATA(insert OID = 3532 (  enum_recv		PGNSP PGUID 12 1 0 0 f f t f s 2 3500 "2275 26" _null_ _null_ _null_ enum_recv _null_ _null_ _null_ ));
 DATA(insert OID = 3533 (  enum_send		PGNSP PGUID 12 1 0 0 f f t f s 1 17	"3500" _null_ _null_ _null_ enum_send _null_ _null_ _null_ ));
 
