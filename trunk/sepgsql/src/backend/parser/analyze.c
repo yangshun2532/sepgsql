@@ -705,7 +705,8 @@ transformSelectIntoSystemColumn(ParseState *pstate, Query *qry)
 														   attr->atttypid,
 														   attr->atttypmod,
 														   COERCION_IMPLICIT,
-														   COERCE_IMPLICIT_CAST);
+														   COERCE_IMPLICIT_CAST,
+														   -1);
 			}
 			tle->resjunk = true;
 		}
