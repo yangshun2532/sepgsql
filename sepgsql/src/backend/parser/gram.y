@@ -11,7 +11,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/parser/gram.y,v 2.619 2008/08/28 23:09:47 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/parser/gram.y,v 2.620 2008/08/30 01:39:14 tgl Exp $
  *
  * HISTORY
  *	  AUTHOR			DATE			MAJOR EVENT
@@ -90,7 +90,7 @@ static bool QueryIsRule = FALSE;
  */
 /*#define __YYSCLASS*/
 
-static Node *makeColumnRef(char *relname, List *indirection, int location);
+static Node *makeColumnRef(char *colname, List *indirection, int location);
 static Node *makeTypeCast(Node *arg, TypeName *typename, int location);
 static Node *makeStringConst(char *str, int location);
 static Node *makeStringConstCast(char *str, int location, TypeName *typename);
@@ -103,6 +103,7 @@ static Node *makeBoolAConst(bool state, int location);
 static FuncCall *makeOverlaps(List *largs, List *rargs, int location);
 static void check_qualified_name(List *names);
 static List *check_func_name(List *names);
+static List *check_indirection(List *indirection);
 static List *extractArgTypes(List *parameters);
 static SelectStmt *findLeftmostSelect(SelectStmt *node);
 static void insertSelectOptions(SelectStmt *stmt,
@@ -5172,9 +5173,7 @@ UnlistenStmt:
 			| UNLISTEN '*'
 				{
 					UnlistenStmt *n = makeNode(UnlistenStmt);
-					n->relation = makeNode(RangeVar);
-					n->relation->relname = "*";
-					n->relation->schemaname = NULL;
+					n->relation = NULL;
 					$$ = (Node *)n;
 				}
 		;
@@ -6035,7 +6034,7 @@ insert_column_item:
 				{
 					$$ = makeNode(ResTarget);
 					$$->name = $1;
-					$$->indirection = $2;
+					$$->indirection = check_indirection($2);
 					$$->val = NULL;
 					$$->location = @1;
 				}
@@ -6174,7 +6173,7 @@ set_target:
 				{
 					$$ = makeNode(ResTarget);
 					$$->name = $1;
-					$$->indirection = $2;
+					$$->indirection = check_indirection($2);
 					$$->val = NULL;	/* upper production sets this */
 					$$->location = @1;
 				}
@@ -7878,7 +7877,7 @@ c_expr:		columnref								{ $$ = $1; }
 					{
 						A_Indirection *n = makeNode(A_Indirection);
 						n->arg = (Node *) p;
-						n->indirection = $2;
+						n->indirection = check_indirection($2);
 						$$ = (Node *) n;
 					}
 					else
@@ -7890,7 +7889,7 @@ c_expr:		columnref								{ $$ = $1; }
 					{
 						A_Indirection *n = makeNode(A_Indirection);
 						n->arg = $2;
-						n->indirection = $4;
+						n->indirection = check_indirection($4);
 						$$ = (Node *)n;
 					}
 					else
@@ -8445,7 +8444,7 @@ xml_attribute_el: a_expr AS ColLabel
 				{
 					$$ = makeNode(ResTarget);
 					$$->name = $3;
-					$$->indirection = NULL;
+					$$->indirection = NIL;
 					$$->val = (Node *) $1;
 					$$->location = @1;
 				}
@@ -8453,7 +8452,7 @@ xml_attribute_el: a_expr AS ColLabel
 				{
 					$$ = makeNode(ResTarget);
 					$$->name = NULL;
-					$$->indirection = NULL;
+					$$->indirection = NIL;
 					$$->val = (Node *) $1;
 					$$->location = @1;
 				}
@@ -8760,7 +8759,7 @@ indirection_el:
 				}
 			| '.' '*'
 				{
-					$$ = (Node *) makeString("*");
+					$$ = (Node *) makeNode(A_Star);
 				}
 			| '[' a_expr ']'
 				{
@@ -8869,7 +8868,7 @@ target_el:	a_expr AS ColLabel
 			| '*'
 				{
 					ColumnRef *n = makeNode(ColumnRef);
-					n->fields = list_make1(makeString("*"));
+					n->fields = list_make1(makeNode(A_Star));
 					n->location = @1;
 
 					$$ = makeNode(ResTarget);
@@ -9567,7 +9566,7 @@ SpecialRuleRelation:
 %%
 
 static Node *
-makeColumnRef(char *relname, List *indirection, int location)
+makeColumnRef(char *colname, List *indirection, int location)
 {
 	/*
 	 * Generate a ColumnRef node, with an A_Indirection node added if there
@@ -9589,23 +9588,30 @@ makeColumnRef(char *relname, List *indirection, int location)
 			if (nfields == 0)
 			{
 				/* easy case - all indirection goes to A_Indirection */
-				c->fields = list_make1(makeString(relname));
-				i->indirection = indirection;
+				c->fields = list_make1(makeString(colname));
+				i->indirection = check_indirection(indirection);
 			}
 			else
 			{
 				/* got to split the list in two */
-				i->indirection = list_copy_tail(indirection, nfields);
+				i->indirection = check_indirection(list_copy_tail(indirection,
+																  nfields));
 				indirection = list_truncate(indirection, nfields);
-				c->fields = lcons(makeString(relname), indirection);
+				c->fields = lcons(makeString(colname), indirection);
 			}
 			i->arg = (Node *) c;
 			return (Node *) i;
 		}
+		else if (IsA(lfirst(l), A_Star))
+		{
+			/* We only allow '*' at the end of a ColumnRef */
+			if (lnext(l) != NULL)
+				yyerror("improper use of \"*\"");
+		}
 		nfields++;
 	}
 	/* No subscripting, so all indirection gets added to field list */
-	c->fields = lcons(makeString(relname), indirection);
+	c->fields = lcons(makeString(colname), indirection);
 	return (Node *) c;
 }
 
@@ -9768,8 +9774,6 @@ check_qualified_name(List *names)
 	{
 		if (!IsA(lfirst(i), String))
 			yyerror("syntax error");
-		else if (strcmp(strVal(lfirst(i)), "*") == 0)
-			yyerror("syntax error");
 	}
 }
 
@@ -9787,10 +9791,29 @@ check_func_name(List *names)
 	{
 		if (!IsA(lfirst(i), String))
 			yyerror("syntax error");
-		else if (strcmp(strVal(lfirst(i)), "*") == 0)
-			yyerror("syntax error");
 	}
 	return names;
+}
+
+/* check_indirection --- check the result of indirection production
+ *
+ * We only allow '*' at the end of the list, but it's hard to enforce that
+ * in the grammar, so do it here.
+ */
+static List *
+check_indirection(List *indirection)
+{
+	ListCell *l;
+
+	foreach(l, indirection)
+	{
+		if (IsA(lfirst(l), A_Star))
+		{
+			if (lnext(l) != NULL)
+				yyerror("improper use of \"*\"");
+		}
+	}
+	return indirection;
 }
 
 /* extractArgTypes()
