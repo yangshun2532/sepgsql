@@ -1,4 +1,3 @@
-
 LTLIBRARY_NAME    = libselinux.la
 LTLIBRARY_SOURCES = selinux.c auth_selinux.c
 

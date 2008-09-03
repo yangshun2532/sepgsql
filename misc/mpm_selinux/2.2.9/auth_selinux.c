@@ -19,8 +19,6 @@
 #include "http_config.h"
 #include "http_log.h"
 
-#include "auth_selinux.h"
-
 #include <selinux/selinux.h>
 
 typedef struct selinux_entry
@@ -42,11 +40,17 @@ typedef struct selinux_config
 } selinux_config;
 
 /*
+ * Forward declaration
+ */
+module AP_MODULE_DECLARE_DATA auth_selinux_module;
+
+
+/*
  * auth_selinux_post_config
  *
  * SELinux awared Apache MPM does not allow to enable KeepAlive mode,
  */
-int auth_selinux_post_config(apr_pool_t *pconf, apr_pool_t *plog,
+static int auth_selinux_post_config(apr_pool_t *pconf, apr_pool_t *plog,
 			     apr_pool_t *ptemp, server_rec *s)
 {
     if (s->keep_alive) {
@@ -57,10 +61,10 @@ int auth_selinux_post_config(apr_pool_t *pconf, apr_pool_t *plog,
     return OK;
 }
 
-int auth_selinux_handler(request_rec *r)
+static int auth_selinux_handler(request_rec *r)
 {
     selinux_config *sconf = ap_get_module_config(r->per_dir_config,
-						 &mpm_selinux_module);
+						 &auth_selinux_module);
     selinux_entry *s, *match = NULL;
     security_context_t context;
     char *user, *role, *domain, *range;
@@ -123,7 +127,7 @@ int auth_selinux_handler(request_rec *r)
     return DECLINED;
 }
 
-void *auth_selinux_create_dir_config(apr_pool_t *p, char *dirname)
+static void *auth_selinux_create_dir_config(apr_pool_t *p, char *dirname)
 {
     selinux_config *sconf = apr_pcalloc(p, sizeof(selinux_config));
 
@@ -136,7 +140,7 @@ void *auth_selinux_create_dir_config(apr_pool_t *p, char *dirname)
     return sconf;
 }
 
-void *auth_selinux_merge_dir_config(apr_pool_t *p,
+static void *auth_selinux_merge_dir_config(apr_pool_t *p,
 				    void *base_config, void *new_config)
 {
     selinux_config *bconf = base_config;
@@ -189,12 +193,12 @@ void *auth_selinux_merge_dir_config(apr_pool_t *p,
     return mconf;
 }
 
-const char *auth_selinux_config_user_domain(cmd_parms *cmd, void *mconfig,
+static const char *auth_selinux_config_user_domain(cmd_parms *cmd, void *mconfig,
 					    const char *v1, const char *v2)
 {
     selinux_config *sconf
 	= ap_get_module_config(cmd->context,
-			       &mpm_selinux_module);
+			       &auth_selinux_module);
     selinux_entry *s;
     const char *username = NULL;
 
@@ -227,12 +231,12 @@ const char *auth_selinux_config_user_domain(cmd_parms *cmd, void *mconfig,
     return NULL;
 }
 
-const char *auth_selinux_config_user_range(cmd_parms *cmd, void *mconfig,
+static const char *auth_selinux_config_user_range(cmd_parms *cmd, void *mconfig,
 					   const char *v1, const char *v2)
 {
     selinux_config *sconf
 	= ap_get_module_config(cmd->context,
-			       &mpm_selinux_module);
+			       &auth_selinux_module);
     selinux_entry *s;
     const char *username = NULL;
 
@@ -264,3 +268,39 @@ const char *auth_selinux_config_user_range(cmd_parms *cmd, void *mconfig,
 
     return NULL;
 }
+
+static void auth_selinux_register_hooks(apr_pool_t *p)
+{
+    /*
+     * SELinux awared Apache MPM requires to invoke set per-request
+     * domain/range hooks at the top of contains handler.
+     */
+    ap_hook_post_config(auth_selinux_post_config,
+			NULL, NULL, APR_HOOK_MIDDLE);
+
+    ap_hook_handler(auth_selinux_handler,
+		    NULL, NULL, APR_HOOK_REALLY_FIRST);
+}
+
+static const command_rec auth_selinux_cmds[] = {
+    AP_INIT_TAKE2("selinuxUserDomain",
+		  auth_selinux_config_user_domain,
+		  NULL, OR_OPTIONS,
+		  "set per user domain of contains handler"),
+    AP_INIT_TAKE2("selinuxUserRange",
+		  auth_selinux_config_user_range,
+		  NULL, OR_OPTIONS,
+		  "set per user range of contains handler"),
+    {NULL},
+};
+
+module AP_MODULE_DECLARE_DATA auth_selinux_module =
+{
+    STANDARD20_MODULE_STUFF,
+    auth_selinux_create_dir_config,	/* create per-directory config */
+    auth_selinux_merge_dir_config,	/* merge per-directory config */
+    NULL,				/* server config creator */
+    NULL,				/* server config merger */
+    auth_selinux_cmds,			/* command table */
+    auth_selinux_register_hooks,	/* set up other request processing hooks */
+};

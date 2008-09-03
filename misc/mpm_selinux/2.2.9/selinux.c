@@ -48,7 +48,6 @@
 #include "ap_listen.h"
 #include "ap_mmn.h"
 #include "apr_poll.h"
-#include "auth_selinux.h"
 
 #ifdef HAVE_BSTRING_H
 #include <bstring.h>            /* for IRIX, FD_SET calls bzero() */
@@ -694,7 +693,7 @@ static void child_main(int child_num_arg)
 
         current_conn = ap_run_create_connection(ptrans, ap_server_conf, csd, my_child_num, sbh, bucket_alloc);
         if (current_conn) {
-	    selinux_process_connection(ptrans, current_conn, csd);
+            selinux_process_connection(ptrans, current_conn, csd);
             ap_lingering_close(current_conn);
         }
 
@@ -1392,13 +1391,6 @@ static void prefork_hooks(apr_pool_t *p)
      * to retrieve it, so register as REALLY_FIRST
      */
     ap_hook_pre_config(prefork_pre_config, NULL, NULL, APR_HOOK_REALLY_FIRST);
-
-    /*
-     * SELinux awared Apache MPM requires to invoke set per-request
-     * domain/range hooks at the top of contains handler.
-     */
-    ap_hook_post_config(auth_selinux_post_config, NULL, NULL, APR_HOOK_MIDDLE);
-    ap_hook_handler(auth_selinux_handler, NULL, NULL, APR_HOOK_REALLY_FIRST);
 }
 
 static const char *set_daemons_to_start(cmd_parms *cmd, void *dummy, const char *arg)
@@ -1525,15 +1517,14 @@ AP_INIT_TAKE1("MaxClients", set_max_clients, NULL, RSRC_CONF,
 AP_INIT_TAKE1("ServerLimit", set_server_limit, NULL, RSRC_CONF,
               "Maximum value of MaxClients for this run of Apache"),
 AP_GRACEFUL_SHUTDOWN_TIMEOUT_COMMAND,
-AP_AUTH_SELINUX_COMMAND,
 { NULL }
 };
 
 module AP_MODULE_DECLARE_DATA mpm_selinux_module = {
     MPM20_MODULE_STUFF,
     ap_mpm_rewrite_args,        /* hook to run before apache parses args */
-    auth_selinux_create_dir_config,	/* create per-directory config */
-    auth_selinux_merge_dir_config,	/* merge per-directory config */
+    NULL,                       /* create per-directory config structure */
+    NULL,                       /* merge per-directory config structures */
     NULL,                       /* create per-server config structure */
     NULL,                       /* merge per-server config structures */
     prefork_cmds,               /* command apr_table_t */

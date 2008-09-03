@@ -4,5 +4,6 @@ if test "$MPM_NAME" = "selinux" ; then
     AC_CHECK_LIB(selinux, is_selinux_enabled, [
         APR_ADDTO(AP_LIBS, [-lselinux])
     ])
-fi
 
+    MODLIST="$MODLIST auth_selinux"
+fi
