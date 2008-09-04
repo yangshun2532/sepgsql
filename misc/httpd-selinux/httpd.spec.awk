@@ -6,19 +6,22 @@
 /^License:/ {
     print "# SELinux awared MPM";
     print "Patch99: httpd-mpm-selinux.patch";
-    print "Source99: mpm_selinux.conf";
+    print "Source99: httpd-selinux.conf";
     print;
     next;
 }
 /^%package[ ]+devel$/ {
     print "%package selinux";
-    print "Group: Development/Libraries";
+    print "Group: System Environment/Daemons";
     print "Summary: SELinux awared Apache MPM (prefork base)";
     print "Requires: httpd = %{version}-%{release}";
+    print "Requires: policycoreutils, selinux-policy";
     print "BuildRequires: checkpolicy, selinux-policy";
     print "";
     print "%description selinux";
-    print "SELinux awared Apache MPM (prefork base)";
+    print "This package contains SELinux awared Apache MPM";
+    print "implementation which allows to invoke contains";
+    print "handler under individual security context.";
     print "";
     print;
     next;
@@ -48,7 +51,7 @@
     print "    install -m 644 -p httpd-selinux.$store.pp ${RPM_BUILD_ROOT}%{_datadir}/selinux/${store}/httpd-selinux.pp"
     print "done"
     print "popd"
-    print "install -m 644 -p %SOURCE99 ${RPM_BUILD_ROOT}%{_sysconfdir}/httpd/conf.d/mpm_selinux.conf";
+    print "install -m 644 -p %SOURCE99 ${RPM_BUILD_ROOT}%{_sysconfdir}/httpd/conf.d/httpd-selinux.conf";
     print "";
     print;
     next;
@@ -56,10 +59,9 @@
 /^%check$/ {
     print "%post selinux"
     print "for store in %{selinux_policy_stores}; do"
-    print "    %{_sbindir}/semodule -s ${store} -r httpd-selinux >& /dev/null || :"
     print "    %{_sbindir}/semodule -s ${store} -i %{_datadir}/selinux/${store}/httpd-selinux.pp >& /dev/null || :"
     print "done"
-    print "/sbin/restorecon -R `rpm -ql %{name}` || :"
+    print "/sbin/fixfiles -R %{name} restore || :"
     print ""
     print "%postun selinux"
     print "if [ $1 -eq 0 ]; then"
@@ -74,7 +76,7 @@
 /^%files[ ]+devel/ {
     print "%files selinux"
     print "%{_sbindir}/httpd.selinux"
-    print "%config(noreplace) %{_sysconfdir}/httpd/conf.d/mpm_selinux.conf"
+    print "%config(noreplace) %{_sysconfdir}/httpd/conf.d/httpd-selinux.conf"
     print "%{_datadir}/selinux/*/httpd-selinux.pp"
     print "";
     print;
