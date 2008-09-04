@@ -21,12 +21,15 @@
 #include "http_log.h"
 
 #include <selinux/selinux.h>
+#include <selinux/context.h>
 
 typedef struct selinux_config
 {
 	char *dirname;
-	char *conffile;
-	int   available;
+
+	char *config_file;
+	char *default_domain;
+	char *default_range;
 } selinux_config;
 
 /*
@@ -56,29 +59,30 @@ static int selinux_auth_handler(request_rec *r)
 {
 	selinux_config *sconf = ap_get_module_config(r->per_dir_config,
 						     &selinux_auth_module);
-	security_context_t context;
+	security_context_t security_context;
+	context_t context;
 	const char *delim = " \t\r\n";
-	char *ident, *user, *role, *domain, *range, *tmp;
-	char buffer[1024], new_domain[512], new_range[512];
+	char *ident, *domain, *range, *tmp;
+	char buffer[1024];
 	FILE *filp;
-	int match;
 
-	if (!sconf || !sconf->available)
+	if (!sconf)
 		return DECLINED;	/* do nothing */
 
+	if (!sconf->config_file || !r->user)
+		goto not_found;
 	/*
 	 * Parse configuration file
 	 */
-	filp = fopen(sconf->conffile, "rb");
+	filp = fopen(sconf->config_file, "rb");
 	if (!filp)
 	{
 		ap_log_error(APLOG_MARK, APLOG_ERR, 0, r->server,
 			     "SELinux: could not open %s (%s)",
-			     sconf->conffile, strerror(errno));
+			     sconf->config_file, strerror(errno));
 		return HTTP_INTERNAL_SERVER_ERROR;
 	}
 
-	match = 0;
 	while (fgets(buffer, sizeof(buffer), filp))
 	{
 		tmp = strchr(buffer, '#');
@@ -89,16 +93,13 @@ static int selinux_auth_handler(request_rec *r)
 		if (!ident)
 			continue;	/* empty line */
 
-		if (!strcmp(ident, "__default__"))
-			ident = NULL;
-
 		domain = strtok_r(NULL, delim, &tmp);
 		if (!domain || strtok_r(NULL, delim, &tmp))
 		{
 			fclose(filp);
 			ap_log_error(APLOG_MARK, APLOG_ERR, 0, r->server,
 				     "SELinux: syntax error at %s",
-				     sconf->conffile);
+				     sconf->config_file);
 			return HTTP_INTERNAL_SERVER_ERROR;
 		}
 
@@ -108,44 +109,34 @@ static int selinux_auth_handler(request_rec *r)
 			range++;
 		}
 
-		if (!ident || (r->user && !strcmp(r->user, ident)))
+		if (!strcmp(r->user, ident))
 		{
-			if (!domain || !strcmp(domain, "*"))
-				new_domain[0] = '\0';
-			else {
-				strncpy(new_domain, domain, sizeof(new_domain));
-				new_domain[sizeof(new_domain) - 1] = '\0';
-			}
+			if (domain && !strcmp(domain, "*"))
+				domain = NULL;
+			if (range && !strcmp(range, "*"))
+				range = NULL;
 
-			if (!range || !strcmp(range, "*"))
-				new_range[0] = '\0';
-			else {
-				strncpy(new_range, range, sizeof(new_range));
-				new_range[sizeof(new_range) - 1] = '\0';
-			}
-			match = 1;
-
-			if (ident)
-				break;
+			goto found;
 		}
 	}
 	fclose(filp);
 
-	if (!match)
-	{
-		ap_log_error(APLOG_MARK, APLOG_ERR, 0, r->server,
-			     "SELinux: No matched user domain/range for %s",
-			     r->user ? r->user : "anonymous");
-		return HTTP_INTERNAL_SERVER_ERROR;
-	}
+	/*
+	 * If sconf->config_file does not contain required
+	 * user entry, default ones are applied.
+	 */
+not_found:
+	domain = sconf->default_domain;
+	range  = sconf->default_range;
 
+found:
 	/*
 	 * Set a new security context
 	 */
-	if (new_domain[0] == '\0' && new_range[0] == '\0')
-		return DECLINED;	/* we need to do nothing */
+	if (!domain && !range)
+		return DECLINED;	/* No need to do anything */
 
-	if (getcon_raw(&context) < 0)
+	if (getcon_raw(&security_context) < 0)
 	{
 		ap_log_error(APLOG_MARK, APLOG_ERR, 0, r->server,
 			     "SELinux: getcon_raw() failed (%s)",
@@ -153,37 +144,48 @@ static int selinux_auth_handler(request_rec *r)
 		return HTTP_INTERNAL_SERVER_ERROR;
 	}
 
-	user	= strtok_r(context, ":", &tmp);
-	role	= strtok_r(NULL, ":", &tmp);
-	domain	= strtok_r(NULL, ":", &tmp);
-	range	= strtok_r(NULL, "\0", &tmp);
-
-	if (range) {
-		snprintf(buffer, sizeof(buffer), "%s:%s:%s:%s",
-			 user, role,
-			 new_domain[0] ? new_domain : domain,
-			 new_range[0] ? new_range : range);
-	}
-	else
+	context = context_new(security_context);
+	freecon(security_context);
+	if (!context)
 	{
-		snprintf(buffer, sizeof(buffer), "%s:%s:%s",
-			 user, role,
-			 new_domain[0] ? new_domain : domain);
+		ap_log_error(APLOG_MARK, APLOG_ERR, 0, r->server,
+			     "SELinux: context_new(%s) failed (%s)",
+			     security_context, strerror(errno));
+		return HTTP_INTERNAL_SERVER_ERROR;
 	}
-	freecon(context);
 
-	if (setcon((security_context_t) buffer) < 0) {
+	if (domain)
+		context_type_set(context, domain);
+	if (range)
+		context_range_set(context, range);
+
+	security_context = context_str(context);
+	context_free(context);
+	if (!security_context)
+	{
+		ap_log_error(APLOG_MARK, APLOG_ERR, 0, r->server,
+			     "SELinux: context_str() failed (%s)",
+			     strerror(errno));
+		return HTTP_INTERNAL_SERVER_ERROR;
+	}
+
+	if (setcon(security_context) < 0)
+	{
 		ap_log_error(APLOG_MARK, APLOG_ERR, 0, r->server,
 			     "SELinux: setcon(%s) for %s failed (%s)",
-			     buffer,
+			     security_context,
 			     r->user ? r->user : "anonymous",
 			     strerror(errno));
+		freecon(security_context);
+
 		return HTTP_INTERNAL_SERVER_ERROR;
 	}
 
 	ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server,
 		     "SELinux: setcon(%s) for %s",
-		     buffer, r->user ? r->user : "anonymous");
+		     security_context,
+		     r->user ? r->user : "anonymous");
+	freecon(security_context);
 
 	return DECLINED;
 }
@@ -197,53 +199,56 @@ static void *selinux_auth_create_dir_config(apr_pool_t *p,
 		     "SELinux: create dir config at %s", dirname);
 
 	sconf->dirname = apr_pstrdup(p, dirname);
-	sconf->conffile = NULL;
-	sconf->available = 0;
+	sconf->config_file = NULL;
+	sconf->default_domain = NULL;
+	sconf->default_range = NULL;
 
 	return sconf;
 }
 
-static void *selinux_auth_merge_dir_config(apr_pool_t *p,
-					   void *base_config,
-					   void *new_config)
-{
-	selinux_config *bconf = base_config;
-	selinux_config *nconf = new_config;
-	selinux_config *mconf;	/* merged config */
-
-	ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, NULL,
-		     "SELinux: merge dir config base: %s, new: %s",
-		     bconf->dirname, nconf->dirname);
-
-	mconf = apr_pcalloc(p, sizeof(selinux_config));
-	mconf->dirname = apr_pstrdup(p, nconf->dirname);
-	mconf->conffile = apr_pstrdup(p, nconf->conffile);
-	mconf->available = nconf->available;
-
-	return mconf;
-}
-
-static const char *set_auth_config_file(cmd_parms *cmd,
-					void *mconfig,
-					const char *v1)
+static const char *set_config_file(cmd_parms *cmd,
+				   void *mconfig, const char *v1)
 {
 	selinux_config *sconf
 		= ap_get_module_config(cmd->context,
 				       &selinux_auth_module);
 
-	if (!strcasecmp(v1, "none")) {
-		ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, cmd->server,
-			     "selinuxAuthConfigFile = None for %s",
-			     sconf->dirname);
-		sconf->available = 0;
-		sconf->conffile = NULL;
-	} else {
-		ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, cmd->server,
-			     "selinuxAuthConfigFile = '%s' for %s",
-			     v1, sconf->dirname);
-		sconf->available = 1;
-		sconf->conffile = apr_pstrdup(cmd->pool, v1);
-	}
+	ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, cmd->server,
+		     "selinuxAuthConfigFile = %s for %s",
+		     v1, sconf->dirname);
+
+	if (!strcasecmp(v1, "none"))
+		sconf->config_file = NULL;
+	else
+		sconf->config_file = apr_pstrdup(cmd->pool, v1);
+
+	return NULL;
+}
+
+static const char *set_default_domain(cmd_parms *cmd,
+				      void *mconfig, const char *v1)
+{
+	selinux_config *sconf
+		= ap_get_module_config(cmd->context,
+				       &selinux_auth_module);
+	ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, cmd->server,
+		     "selinuxAuthDefaultDomain = %s for %s",
+		     v1, sconf->dirname);
+	sconf->default_domain = apr_pstrdup(cmd->pool, v1);
+
+	return NULL;
+}
+
+static const char *set_default_range(cmd_parms *cmd,
+				     void *mconfig, const char *v1)
+{
+	selinux_config *sconf
+		= ap_get_module_config(cmd->context,
+				       &selinux_auth_module);
+	ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, cmd->server,
+		     "selinuxAuthDefaultRange = %s for %s",
+		     v1, sconf->dirname);
+	sconf->default_range = apr_pstrdup(cmd->pool, v1);
 
 	return NULL;
 }
@@ -263,8 +268,14 @@ static void selinux_auth_register_hooks(apr_pool_t *p)
 
 static const command_rec selinux_auth_cmds[] = {
 	AP_INIT_TAKE1("selinuxAuthConfigFile",
-		      set_auth_config_file, NULL, OR_OPTIONS,
+		      set_config_file, NULL, OR_OPTIONS,
 		      "Apache/SELinux support with HTTP authentication"),
+	AP_INIT_TAKE1("selinuxAuthDefaultDomain",
+		      set_default_domain, NULL, OR_OPTIONS,
+		      "Default domain of Apache/SELinux support"),
+	AP_INIT_TAKE1("selinuxAuthDefaultRange",
+		      set_default_range, NULL, OR_OPTIONS,
+		      "Default range of Apache/SELinux support"),
 	{NULL},
 };
 
@@ -272,7 +283,7 @@ module AP_MODULE_DECLARE_DATA selinux_auth_module =
 {
 	STANDARD20_MODULE_STUFF,
 	selinux_auth_create_dir_config,	/* create per-directory config */
-	selinux_auth_merge_dir_config,	/* merge per-directory config */
+	NULL,				/* merge per-directory config */
 	NULL,				/* server config creator */
 	NULL,				/* server config merger */
 	selinux_auth_cmds,		/* command table */
