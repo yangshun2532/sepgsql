@@ -60,6 +60,42 @@ PHP_FUNCTION(selinux_fsetfilecon_raw);
 PHP_FUNCTION(selinux_getpeercon);
 PHP_FUNCTION(selinux_getpeercon_raw);
 
+/*
+ * get initial context
+ */
+PHP_FUNCTION(selinux_get_initial_context);
+PHP_FUNCTION(selinux_get_initial_context_raw);
+
+/*
+ * sanity check in security context
+ */
+PHP_FUNCTION(selinux_check_context);
+PHP_FUNCTION(selinux_check_context_raw);
+PHP_FUNCTION(selinux_canonicalize_context);
+PHP_FUNCTION(selinux_canonicalize_context_raw);
+
+/*
+ * global setting related
+ */
+PHP_FUNCTION(selinux_getenforce);
+PHP_FUNCTION(selinux_setenforce);
+PHP_FUNCTION(selinux_policyvers);
+
+/*
+ * booleans
+ */
+PHP_FUNCTION(selinux_get_boolean_names);
+PHP_FUNCTION(selinux_get_boolean_pending);
+PHP_FUNCTION(selinux_get_boolean_active);
+PHP_FUNCTION(selinux_set_boolean);
+PHP_FUNCTION(selinux_commit_booleans);
+
+/*
+ * mcstrans
+ */
+PHP_FUNCTION(selinux_trans_to_raw_context);
+PHP_FUNCTION(selinux_raw_to_trans_context);
+
 #else	/* HAVE_SELINUX */
 
 #define selinux_module_ptr NULL
