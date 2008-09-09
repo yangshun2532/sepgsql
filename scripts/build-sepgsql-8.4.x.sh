@@ -21,14 +21,7 @@ SEPGSQL_VERSION="${SEPGSQL_MAJOR_VERSION}.${SEPGSQL_REVISION}"
 
 # -- Parse Option
 GEN_PATCH_ONLY=0
-
-if [ $# -ne 0 ]; then
-    if [ $# -gt 1 ]; then
-	echo "usage: $0 [--patch]"
-	exit 1
-    fi
-    GEN_PATCH_ONLY=1
-fi
+test "--patch" = "$1" && GEN_PATCH_ONLY=1
 
 # -- lookup RPMS/SOURCE directory
 RPMSOURCE=`rpm -E '%{_sourcedir}'`
@@ -57,7 +50,7 @@ echo
 svn export ${SEPGSQL_REPOSITORY}${SEPGSQL_BRANCH} altroot || exit 1
 cd altroot
 
-if [ ${GEN_PATCH_ONLY} -ne 0 ]; then
+if [ ${GEN_PATCH_ONLY} -eq 0 ]; then
     mv base postgresql-${BASE_VERSION}
     echo "GEN: postgresql-${BASE_VERSION}.tar.bz2"
     chmod a+x postgresql-${BASE_VERSION}/configure

@@ -26,7 +26,7 @@ rpm2cpio "$1" | (cd ${RPMSOURCE}; cpio -idu)
 # setup awk source file
 (
     echo '/^Release:/ {'
-    echo '    printf("%s selinux.%s\n", $1, $2)'
+    echo '    printf("%s %s.selinux\n", $1, $2)'
     echo '    next'
     echo '}'
     echo '/^BuildRoot:/ {'

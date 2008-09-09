@@ -186,6 +186,16 @@ static const char *set_pgsql_query(cmd_parms *cmd,
 			     "Query param[%d]: %s", index + 1, sconf->params[index]);
 	}
 
+	fprintf(stderr, "Given query: %s\n", v1);
+	fprintf(stderr, "Modified query: %s\n", sconf->query);
+	for (index = 0; index < MAX_QUERY_PARAMS; index++)
+        {
+                if (!sconf->params[index])
+                        break;
+		fprintf(stderr, "Query param[%d]: %s\n",
+			index + 1, sconf->params[index]);
+	}
+
 	return NULL;
 }
 
