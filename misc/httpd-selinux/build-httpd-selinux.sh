@@ -24,6 +24,7 @@ svn export ${BASEDIR}/${VERSION} \
 rpm2cpio "$1" | (cd ${RPMSOURCE}; cpio -idu)
 
 cp ${BASEDIR}/httpd-selinux.conf ${RPMSOURCE}
+cp ${BASEDIR}/selinux_auth.conf  ${RPMSOURCE}
 
 cat ${RPMSOURCE}/httpd.spec              \
     | awk -f ${BASEDIR}/httpd.spec.awk   \

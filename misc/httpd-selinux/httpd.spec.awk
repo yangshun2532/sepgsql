@@ -7,6 +7,7 @@
     print "# SELinux awared MPM";
     print "Patch99: httpd-mpm-selinux.patch";
     print "Source99: httpd-selinux.conf";
+    print "Source98: selinux_auth.conf";
     print;
     next;
 }
@@ -51,7 +52,8 @@
     print "    install -m 644 -p httpd-selinux.$store.pp ${RPM_BUILD_ROOT}%{_datadir}/selinux/${store}/httpd-selinux.pp"
     print "done"
     print "popd"
-    print "install -m 644 -p %SOURCE99 ${RPM_BUILD_ROOT}%{_sysconfdir}/httpd/conf.d/httpd-selinux.conf";
+    print "install -m 644 -p %SOURCE99 ${RPM_BUILD_ROOT}%{_sysconfdir}/httpd/conf.d";
+    print "install -m 644 -p %SOURCE98 ${RPM_BUILD_ROOT}%{contentdir}"
     print "";
     print;
     next;
@@ -77,6 +79,7 @@
     print "%files selinux"
     print "%{_sbindir}/httpd.selinux"
     print "%config(noreplace) %{_sysconfdir}/httpd/conf.d/httpd-selinux.conf"
+    print "%{contentdir}/selinux_auth.conf"
     print "%{_datadir}/selinux/*/httpd-selinux.pp"
     print "";
     print;
