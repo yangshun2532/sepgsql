@@ -13,10 +13,12 @@ svn info ${BASEDIR}/${VERSION} >& /dev/null || exit 1
 # make a patch
 RPMSOURCE=`rpm -E '%_sourcedir'` || exit 1
 WKDIR=`mktemp -d` || exit 1
-mkdir -p ${WKDIR}/httpd-${VERSION}/server/mpm/selinux
+mkdir -p ${WKDIR}/httpd-${VERSION}/server/mpm/selinux/policy
 mkdir -p ${WKDIR}/httpd-selinux-${VERSION}/server/mpm
 svn export ${BASEDIR}/${VERSION} \
     ${WKDIR}/httpd-selinux-${VERSION}/server/mpm/selinux
+svn export ${BASEDIR}/policy	\
+    ${WKDIR}/httpd-selinux-${VERSION}/server/mpm/selinux/policy
 (cd ${WKDIR}; diff -rpNU3 httpd-${VERSION} httpd-selinux-${VERSION}) \
     > ${RPMSOURCE}/httpd-selinux.conf
 

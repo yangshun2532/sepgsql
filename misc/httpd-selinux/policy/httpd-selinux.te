@@ -8,9 +8,6 @@ gen_require(`
 
 allow httpd_t self : process { setcurrent };
 
-typebounds httpd_t httpd_sys_script_t;
-typebounds httpd_t httpd_user_script_t;
-
 optional_policy(`
 	gen_require(`
 		attribute mcssetcats;
