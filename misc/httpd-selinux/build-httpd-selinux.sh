@@ -20,7 +20,7 @@ svn export ${BASEDIR}/${VERSION} \
 svn export ${BASEDIR}/policy	\
     ${WKDIR}/httpd-selinux-${VERSION}/server/mpm/selinux/policy
 (cd ${WKDIR}; diff -rpNU3 httpd-${VERSION} httpd-selinux-${VERSION}) \
-    > ${RPMSOURCE}/httpd-selinux.conf
+    > ${RPMSOURCE}/httpd-mpm-selinux.patch
 
 # extract source rpm
 rpm2cpio "$1" | (cd ${RPMSOURCE}; cpio -idu)
