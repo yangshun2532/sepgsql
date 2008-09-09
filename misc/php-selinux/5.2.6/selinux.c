@@ -135,500 +135,482 @@ PHP_FUNCTION(selinux_mls_is_enabled)
 /*
  * Wrappers for the /proc/pid/attr API.
  */
-PHP_FUNCTION(selinux_getcon)
+static void do_selinux_getcon(INTERNAL_FUNCTION_PARAMETERS, int raw)
 {
 	security_context_t context;
+	int rc;
 
-	if (getcon(&context) < 0)
+	if (!raw)
+		rc = getcon(&context);
+	else
+		rc = getcon_raw(&context);
+
+	if (rc < 0)
 		RETURN_FALSE;
-
 	RETVAL_STRING(context, 1);
 	freecon(context);
+}
+
+PHP_FUNCTION(selinux_getcon)
+{
+	do_selinux_getcon(INTERNAL_FUNCTION_PARAM_PASSTHRU, 0);
 }
 
 PHP_FUNCTION(selinux_getcon_raw)
 {
-	security_context_t context;
+	do_selinux_getcon(INTERNAL_FUNCTION_PARAM_PASSTHRU, 1);
+}
 
-	if (getcon_raw(&context) < 0)
+static void do_selinux_setcon(INTERNAL_FUNCTION_PARAMETERS, int raw)
+{
+	char *context;
+	int rc, context_len;
+
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
+				  "s", &context, &context_len) == FAILURE)
 		RETURN_FALSE;
 
-	RETVAL_STRING(context, 1);
-	freecon(context);
+	if (!raw)
+		rc = setcon(context);
+	else
+		rc = setcon_raw(context);
+
+	if (rc < 0)
+		RETURN_FALSE;
+	RETURN_TRUE;
 }
 
 PHP_FUNCTION(selinux_setcon)
 {
-	char *context;
-	int context_len;
-
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
-				  "s", &context, &context_len) == FAILURE)
-		RETURN_FALSE;
-	if (setcon(context) < 0)
-		RETURN_FALSE;
-
-	RETURN_TRUE;
+	do_selinux_setcon(INTERNAL_FUNCTION_PARAM_PASSTHRU, 0);
 }
 
 PHP_FUNCTION(selinux_setcon_raw)
 {
-	char *context;
-	int context_len;
-
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
-				  "s", &context, &context_len) == FAILURE)
-		RETURN_FALSE;
-
-	if (setcon_raw(context) < 0)
-		RETURN_FALSE;
-
-	RETURN_TRUE;
+	do_selinux_setcon(INTERNAL_FUNCTION_PARAM_PASSTHRU, 1);
 }
 
-PHP_FUNCTION(selinux_getpidcon)
+static void do_selinux_getpidcon(INTERNAL_FUNCTION_PARAMETERS, int raw)
 {
 	security_context_t context;
 	long pid;
-
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
-				  "l", &pid) == FAILURE
-	    || getpidcon((pid_t) pid, &context) < 0)
-
-
-	if (getpidcon((pid_t) pid, &context) < 0)
-		RETURN_FALSE;
-
-	RETVAL_STRING(context, 1);
-        freecon(context);
-}
-
-PHP_FUNCTION(selinux_getpidcon_raw)
-{
-	security_context_t context;
-	long pid;
+	int rc;
 
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
 				  "l", &pid) == FAILURE)
 		RETURN_FALSE;
 
-	if (getpidcon_raw((pid_t) pid, &context) < 0)
-		RETURN_FALSE;
+	if (!raw)
+		rc = getpidcon((pid_t) pid, &context);
+	else
+		rc = getpidcon_raw((pid_t) pid, &context);
 
-	RETVAL_STRING(context, 1);
+	if (rc < 0)
+		RETURN_FALSE;
+        RETVAL_STRING(context, 1);
+        freecon(context);
+}
+
+PHP_FUNCTION(selinux_getpidcon)
+{
+	do_selinux_getpidcon(INTERNAL_FUNCTION_PARAM_PASSTHRU, 0);
+}
+
+PHP_FUNCTION(selinux_getpidcon_raw)
+{
+	do_selinux_getpidcon(INTERNAL_FUNCTION_PARAM_PASSTHRU, 1);
+}
+
+static void do_selinux_getprevcon(INTERNAL_FUNCTION_PARAMETERS, int raw)
+{
+	security_context_t context;
+	int rc;
+
+	if (!raw)
+		rc = getprevcon(&context);
+	else
+		rc = getprevcon_raw(&context);
+
+	if (rc < 0)
+		RETURN_FALSE;
+        RETVAL_STRING(context, 1);
         freecon(context);
 }
 
 PHP_FUNCTION(selinux_getprevcon)
 {
-	security_context_t context;
-
-	if (getprevcon(&context) < 0)
-		RETURN_FALSE;
-
-	RETVAL_STRING(context, 1);
-	freecon(context);
+	do_selinux_getprevcon(INTERNAL_FUNCTION_PARAM_PASSTHRU, 0);
 }
 
 PHP_FUNCTION(selinux_getprevcon_raw)
 {
+	do_selinux_getprevcon(INTERNAL_FUNCTION_PARAM_PASSTHRU, 1);
+}
+
+static void do_selinux_getexeccon(INTERNAL_FUNCTION_PARAMETERS, int raw)
+{
 	security_context_t context;
+	int rc;
 
-	if (getprevcon_raw(&context) < 0)
+	if (!raw)
+		rc = getexeccon(&context);
+	else
+		rc = getexeccon_raw(&context);
+
+	if (rc < 0)
 		RETURN_FALSE;
-
 	RETVAL_STRING(context, 1);
 	freecon(context);
 }
 
 PHP_FUNCTION(selinux_getexeccon)
 {
-	security_context_t context;
-
-	if (getexeccon(&context) < 0)
-		RETURN_FALSE;
-
-	RETVAL_STRING(context, 1);
-	freecon(context);
+	do_selinux_getexeccon(INTERNAL_FUNCTION_PARAM_PASSTHRU, 0);
 }
 
 PHP_FUNCTION(selinux_getexeccon_raw)
 {
-	security_context_t context;
+	do_selinux_getexeccon(INTERNAL_FUNCTION_PARAM_PASSTHRU, 1);
+}
 
-	if (getexeccon_raw(&context) < 0)
+static void do_selinux_setexeccon(INTERNAL_FUNCTION_PARAMETERS, int raw)
+{
+	char *context;
+	int rc, context_len;
+
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
+				  "s", &context, &context_len) == FAILURE)
 		RETURN_FALSE;
 
-	RETVAL_STRING(context, 1);
-	freecon(context);
+	if (!raw)
+		rc = setexeccon(context);
+	else
+		rc = setexeccon_raw(context);
+	if (rc < 0)
+		RETURN_FALSE;
+	RETURN_TRUE;
 }
 
 PHP_FUNCTION(selinux_setexeccon)
 {
-	char *context;
-	int context_len;
-
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
-				  "s", &context, &context_len) == FAILURE)
-		RETURN_FALSE;
-	if (setexeccon(context) < 0)
-		RETURN_FALSE;
-
-	RETURN_TRUE;
+	do_selinux_setexeccon(INTERNAL_FUNCTION_PARAM_PASSTHRU, 0);
 }
 
 PHP_FUNCTION(selinux_setexeccon_raw)
 {
-	char *context;
-	int context_len;
+	do_selinux_getexeccon(INTERNAL_FUNCTION_PARAM_PASSTHRU, 1);
+}
 
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
-				  "s", &context, &context_len) == FAILURE)
-		RETURN_FALSE;
-	if (setexeccon_raw(context) < 0)
-		RETURN_FALSE;
+static void do_selinux_getfscreatecon(INTERNAL_FUNCTION_PARAMETERS, int raw)
+{
+	security_context_t context;
+	int rc;
 
-	RETURN_TRUE;
+	if (!raw)
+		rc = getfscreatecon(&context);
+	else
+		rc = getfscreatecon_raw(&context);
+
+	if (rc < 0)
+		RETURN_FALSE;
+	RETVAL_STRING(context, 1);
+	freecon(context);
 }
 
 PHP_FUNCTION(selinux_getfscreatecon)
 {
-	security_context_t context;
-
-	if (getfscreatecon(&context) < 0)
-		RETURN_FALSE;
-	RETVAL_STRING(context, 1);
-	freecon(context);
+	do_selinux_getfscreatecon(INTERNAL_FUNCTION_PARAM_PASSTHRU, 0);
 }
 
 PHP_FUNCTION(selinux_getfscreatecon_raw)
 {
-	security_context_t context;
+	do_selinux_getfscreatecon(INTERNAL_FUNCTION_PARAM_PASSTHRU, 1);
+}
 
-	if (getfscreatecon_raw(&context) < 0)
+static void do_selinux_setfscreatecon(INTERNAL_FUNCTION_PARAMETERS, int raw)
+{
+	char *context;
+	int rc, context_len;
+
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
+				  "s", &context, &context_len) == FAILURE)
 		RETURN_FALSE;
-	RETVAL_STRING(context, 1);
-	freecon(context);
+
+	if (!raw)
+		rc = setfscreatecon(context);
+	else
+		rc = setfscreatecon_raw(context);
+
+	if (rc < 0)
+		RETURN_FALSE;
+        RETURN_TRUE;
 }
 
 PHP_FUNCTION(selinux_setfscreatecon)
 {
-	char *context;
-	int context_len;
-
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
-				  "s", &context, &context_len) == FAILURE)
-		RETURN_FALSE;
-	if (setfscreatecon(context) < 0)
-		RETURN_FALSE;
-
-	RETURN_TRUE;
+	do_selinux_setfscreatecon(INTERNAL_FUNCTION_PARAM_PASSTHRU, 0);
 }
 
 PHP_FUNCTION(selinux_setfscreatecon_raw)
 {
-	char *context;
-	int context_len;
+	do_selinux_setfscreatecon(INTERNAL_FUNCTION_PARAM_PASSTHRU, 1);
+}
 
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
-				  "s", &context, &context_len) == FAILURE)
-		RETURN_FALSE;
-	if (setfscreatecon_raw(context) < 0)
-		RETURN_FALSE;
+static void do_selinux_getkeycreatecon(INTERNAL_FUNCTION_PARAMETERS, int raw)
+{
+	security_context_t context;
+	int rc;
 
-	RETURN_TRUE;
+	if (!raw)
+		rc = getkeycreatecon(&context);
+	else
+		rc = getkeycreatecon_raw(&context);
+
+	if (rc < 0)
+		RETURN_FALSE;
+	RETVAL_STRING(context, 1);
+	freecon(context);
 }
 
 PHP_FUNCTION(selinux_getkeycreatecon)
 {
-	security_context_t context;
-
-	if (getkeycreatecon(&context) < 0)
-		RETURN_FALSE;
-	RETVAL_STRING(context, 1);
-	freecon(context);
+	do_selinux_getkeycreatecon(INTERNAL_FUNCTION_PARAM_PASSTHRU, 0);
 }
 
 PHP_FUNCTION(selinux_getkeycreatecon_raw)
 {
-	security_context_t context;
+	do_selinux_getkeycreatecon(INTERNAL_FUNCTION_PARAM_PASSTHRU, 1);
+}
 
-	if (getkeycreatecon_raw(&context) < 0)
+static void do_selinux_setkeycreatecon(INTERNAL_FUNCTION_PARAMETERS, int raw)
+{
+	char *context;
+	int rc, context_len;
+
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
+				  "s", &context, &context_len) == FAILURE)
 		RETURN_FALSE;
-	RETVAL_STRING(context, 1);
-	freecon(context);
+
+	if (!raw)
+		rc = setkeycreatecon(context);
+	else
+		rc = setkeycreatecon_raw(context);
+
+	if (rc < 0)
+		RETURN_FALSE;
+	RETURN_TRUE;
 }
 
 PHP_FUNCTION(selinux_setkeycreatecon)
 {
-	char *context;
-	int context_len;
-
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
-				  "s", &context, &context_len) == FAILURE)
-		RETURN_FALSE;
-	if (setkeycreatecon(context) < 0)
-		RETURN_FALSE;
-
-	RETURN_TRUE;
+	do_selinux_setkeycreatecon(INTERNAL_FUNCTION_PARAM_PASSTHRU, 0);
 }
 
 PHP_FUNCTION(selinux_setkeycreatecon_raw)
 {
-	char *context;
-	int context_len;
+	do_selinux_setkeycreatecon(INTERNAL_FUNCTION_PARAM_PASSTHRU, 1);
+}
 
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
-				  "s", &context, &context_len) == FAILURE)
-		RETURN_FALSE;
-	if (setkeycreatecon_raw(context) < 0)
-		RETURN_FALSE;
+static void do_selinux_getsockcreatecon(INTERNAL_FUNCTION_PARAMETERS, int raw)
+{
+	security_context_t context;
+	int rc;
 
-	RETURN_TRUE;
+	if (!raw)
+		rc = getsockcreatecon(&context);
+	else
+		rc = getsockcreatecon_raw(&context);
+
+	if (rc < 0)
+		RETURN_FALSE;
+	RETVAL_STRING(context, 1);
+	freecon(context);
 }
 
 PHP_FUNCTION(selinux_getsockcreatecon)
 {
-	security_context_t context;
-
-	if (getsockcreatecon(&context) < 0)
-		RETURN_FALSE;
-	RETVAL_STRING(context, 1);
-	freecon(context);
+	do_selinux_getsockcreatecon(INTERNAL_FUNCTION_PARAM_PASSTHRU, 0);
 }
 
 PHP_FUNCTION(selinux_getsockcreatecon_raw)
 {
-	security_context_t context;
+	do_selinux_getsockcreatecon(INTERNAL_FUNCTION_PARAM_PASSTHRU, 1);
+}
 
-	if (getsockcreatecon_raw(&context) < 0)
+static void do_selinux_setsockcreatecon(INTERNAL_FUNCTION_PARAMETERS, int raw)
+{
+	char *context;
+	int rc, context_len;
+
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
+				  "s", &context, &context_len) == FAILURE)
 		RETURN_FALSE;
-	RETVAL_STRING(context, 1);
-	freecon(context);
+
+	if (!raw)
+		rc = setsockcreatecon(context);
+	else
+		rc = setsockcreatecon_raw(context);
+
+	if (rc < 0)
+		RETURN_FALSE;
+	RETURN_TRUE;
 }
 
 PHP_FUNCTION(selinux_setsockcreatecon)
 {
-	char *context;
-	int context_len;
-
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
-				  "s", &context, &context_len) == FAILURE)
-		RETURN_FALSE;
-	if (setsockcreatecon(context) < 0)
-		RETURN_FALSE;
-
-	RETURN_TRUE;
+	do_selinux_setsockcreatecon(INTERNAL_FUNCTION_PARAM_PASSTHRU, 0);
 }
 
 PHP_FUNCTION(selinux_setsockcreatecon_raw)
 {
-	char *context;
-	int context_len;
-
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
-				  "s", &context, &context_len) == FAILURE)
-		RETURN_FALSE;
-	if (setsockcreatecon_raw(context) < 0)
-		RETURN_FALSE;
-
-	RETURN_TRUE;
+	do_selinux_setsockcreatecon(INTERNAL_FUNCTION_PARAM_PASSTHRU, 1);
 }
 
 /*
  * Get file context
  */
-PHP_FUNCTION(selinux_getfilecon)
+static void do_selinux_getfilecon(INTERNAL_FUNCTION_PARAMETERS, int raw, int link)
 {
 	char *filename;
-	int filename_len;
+	int rc, filename_len;
 	security_context_t context;
 
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
 				  "s", &filename, &filename_len) == FAILURE)
 		RETURN_FALSE;
 
-	if (getfilecon(filename, &context) < 0)
+	if (!link) {
+		if (!raw)
+			rc = getfilecon(filename, &context);
+		else
+			rc = getfilecon_raw(filename, &context);
+	} else {
+		if (!raw)
+			rc = lgetfilecon(filename, &context);
+		else
+			rc = lgetfilecon_raw(filename, &context);
+	}
+	if (rc < 0)
 		RETURN_FALSE;
-
 	RETVAL_STRING(context, 1);
 	freecon(context);
+}
+
+PHP_FUNCTION(selinux_getfilecon)
+{
+	do_selinux_getfilecon(INTERNAL_FUNCTION_PARAM_PASSTHRU, 0, 0);
 }
 
 PHP_FUNCTION(selinux_getfilecon_raw)
 {
-	char *filename;
-	int filename_len;
-	security_context_t context;
-
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
-				  "s", &filename, &filename_len) == FAILURE)
-		RETURN_FALSE;
-
-	if (getfilecon(filename, &context) < 0)
-		RETURN_FALSE;
-
-	RETVAL_STRING(context, 1);
-	freecon(context);
+	do_selinux_getfilecon(INTERNAL_FUNCTION_PARAM_PASSTHRU, 1, 0);
 }
 
 PHP_FUNCTION(selinux_lgetfilecon)
 {
-	char *filename;
-	int filename_len;
-	security_context_t context;
-
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
-				  "s", &filename, &filename_len) == FAILURE)
-		RETURN_FALSE;
-
-	if (lgetfilecon(filename, &context) < 0)
-		RETURN_FALSE;
-
-	RETVAL_STRING(context, 1);
-	freecon(context);
+	do_selinux_getfilecon(INTERNAL_FUNCTION_PARAM_PASSTHRU, 0, 1);
 }
 
 PHP_FUNCTION(selinux_lgetfilecon_raw)
 {
-	char *filename;
-	int filename_len;
+	do_selinux_getfilecon(INTERNAL_FUNCTION_PARAM_PASSTHRU, 1, 1);
+}
+
+static void do_selinux_fgetfilecon(INTERNAL_FUNCTION_PARAMETERS, int raw)
+{
+	zval *z;
+	php_stream *stream;
 	security_context_t context;
+	int rc, fd;
 
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
-				  "s", &filename, &filename_len) == FAILURE)
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "z", &z) == FAILURE)
+		RETURN_FALSE;
+	php_stream_from_zval_no_verify(stream, &z);
+
+	if (!stream)
 		RETURN_FALSE;
 
-	if (lgetfilecon_raw(filename, &context) < 0)
+	if (php_stream_cast(stream, PHP_STREAM_AS_FD,
+			    (void **) &fd, REPORT_ERRORS) != SUCCESS)
 		RETURN_FALSE;
 
+	if (!raw)
+		rc = fgetfilecon(fd, &context);
+	else
+		rc = fgetfilecon_raw(fd, &context);
+
+	if (rc < 0)
+		RETURN_FALSE;
 	RETVAL_STRING(context, 1);
 	freecon(context);
 }
 
 PHP_FUNCTION(selinux_fgetfilecon)
 {
-	zval *z;
-	php_stream *stream;
-	security_context_t context;
-	int fd;
-
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "z", &z) == FAILURE)
-		RETURN_FALSE;
-	php_stream_from_zval_no_verify(stream, &z);
-
-	if (!stream)
-		RETURN_FALSE;
-
-	if (php_stream_cast(stream, PHP_STREAM_AS_FD,
-			    (void **) &fd, REPORT_ERRORS) != SUCCESS)
-		RETURN_FALSE;
-
-	if (fgetfilecon(fd, &context) < 0)
-		RETURN_FALSE;
-
-	RETVAL_STRING(context, 1);
-	freecon(context);
+	do_selinux_fgetfilecon(INTERNAL_FUNCTION_PARAM_PASSTHRU, 0);
 }
 
 PHP_FUNCTION(selinux_fgetfilecon_raw)
 {
-	zval *z;
-	php_stream *stream;
-	security_context_t context;
-	int fd;
-
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "z", &z) == FAILURE)
-		RETURN_FALSE;
-	php_stream_from_zval_no_verify(stream, &z);
-
-	if (!stream)
-		RETURN_FALSE;
-
-	if (php_stream_cast(stream, PHP_STREAM_AS_FD,
-			    (void **) &fd, REPORT_ERRORS) != SUCCESS)
-		RETURN_FALSE;
-
-	if (fgetfilecon_raw(fd, &context) < 0)
-		RETURN_FALSE;
-
-	RETVAL_STRING(context, 1);
-	freecon(context);
+	do_selinux_fgetfilecon(INTERNAL_FUNCTION_PARAM_PASSTHRU, 1);
 }
 
 /*
  * Set file context
  */
-PHP_FUNCTION(selinux_setfilecon)
+static void do_selinux_setfilecon(INTERNAL_FUNCTION_PARAMETERS, int raw, int link)
 {
 	char *filename, *context;
-	int filename_len, context_len;
+	int rc, filename_len, context_len;
 
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "ss",
 				  &filename, &filename_len,
 				  &context, &context_len) == FAILURE)
 		RETURN_FALSE;
 
-	if (setfilecon(filename, context) < 0)
-		RETURN_FALSE;
+	if (!link) {
+		if (!raw)
+			rc = setfilecon(filename, context);
+		else
+			rc = setfilecon_raw(filename, context);
+	} else {
+		if (!raw)
+			rc = lsetfilecon(filename, context);
+		else
+			rc = lsetfilecon_raw(filename, context);
+	}
 
+	if (rc < 0)
+		RETURN_FALSE;
 	RETURN_TRUE;
+}
+
+PHP_FUNCTION(selinux_setfilecon)
+{
+	do_selinux_setfilecon(INTERNAL_FUNCTION_PARAM_PASSTHRU, 0, 0);
 }
 
 PHP_FUNCTION(selinux_setfilecon_raw)
 {
-	char *filename, *context;
-	int filename_len, context_len;
-
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "ss",
-				  &filename, &filename_len,
-				  &context, &context_len) == FAILURE)
-		RETURN_FALSE;
-
-	if (setfilecon_raw(filename, context) < 0)
-		RETURN_FALSE;
-
-	RETURN_TRUE;
+	do_selinux_setfilecon(INTERNAL_FUNCTION_PARAM_PASSTHRU, 1, 0);
 }
 
 PHP_FUNCTION(selinux_lsetfilecon)
 {
-	char *filename, *context;
-	int filename_len, context_len;
-
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "ss",
-				  &filename, &filename_len,
-				  &context, &context_len) == FAILURE)
-		RETURN_FALSE;
-
-	if (lsetfilecon(filename, context) < 0)
-		RETURN_FALSE;
-
-	RETURN_TRUE;
+	do_selinux_setfilecon(INTERNAL_FUNCTION_PARAM_PASSTHRU, 0, 1);
 }
 
 PHP_FUNCTION(selinux_lsetfilecon_raw)
 {
-	char *filename, *context;
-	int filename_len, context_len;
-
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "ss",
-				  &filename, &filename_len,
-				  &context, &context_len) == FAILURE)
-		RETURN_FALSE;
-
-	if (lsetfilecon_raw(filename, context) < 0)
-		RETURN_FALSE;
-
-	RETURN_TRUE;
+	do_selinux_setfilecon(INTERNAL_FUNCTION_PARAM_PASSTHRU, 1, 1);
 }
 
-PHP_FUNCTION(selinux_fsetfilecon)
+static void do_selinux_fsetfilecon(INTERNAL_FUNCTION_PARAMETERS, int raw)
 {
 	zval *z;
 	php_stream *stream;
 	security_context_t context;
-	int fd;
+	int rc, fd;
 
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
 				  "zs", &z, &context) == FAILURE)
@@ -642,46 +624,35 @@ PHP_FUNCTION(selinux_fsetfilecon)
 			    (void **) &fd, REPORT_ERRORS) != SUCCESS)
 		RETURN_FALSE;
 
-	if (fsetfilecon(fd, context) < 0)
-		RETURN_FALSE;
+	if (!raw)
+		rc = fsetfilecon(fd, context);
+	else
+		rc = fsetfilecon_raw(fd, context);
 
+	if (rc < 0)
+		RETURN_FALSE;
 	RETURN_TRUE;
+}
+PHP_FUNCTION(selinux_fsetfilecon)
+{
+	do_selinux_fsetfilecon(INTERNAL_FUNCTION_PARAM_PASSTHRU, 0);
 }
 
 PHP_FUNCTION(selinux_fsetfilecon_raw)
 {
-	zval *z;
-	php_stream *stream;
-	security_context_t context;
-	int fd;
-
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
-				  "zs", &z, &context) == FAILURE)
-		RETURN_FALSE;
-
-	php_stream_from_zval_no_verify(stream, &z);
-	if (!stream)
-		RETURN_FALSE;
-
-	if (php_stream_cast(stream, PHP_STREAM_AS_FD,
-			    (void **) &fd, REPORT_ERRORS) != SUCCESS)
-		RETURN_FALSE;
-
-	if (fsetfilecon_raw(fd, context) < 0)
-		RETURN_FALSE;
-
-	RETURN_TRUE;
+	do_selinux_fsetfilecon(INTERNAL_FUNCTION_PARAM_PASSTHRU, 1);
 }
 
 /*
  * Labeled Networking
  */
-PHP_FUNCTION(selinux_getpeercon)
+
+static void do_selinux_getpeercon(INTERNAL_FUNCTION_PARAMETERS, int raw)
 {
 	zval *z;
 	php_stream *stream;
 	security_context_t context;
-	int sockfd;
+	int rc, sockfd;
 
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "z", &z) == FAILURE)
 		RETURN_FALSE;
@@ -694,99 +665,246 @@ PHP_FUNCTION(selinux_getpeercon)
 			    (void **) &sockfd, REPORT_ERRORS) != SUCCESS)
 		RETURN_FALSE;
 
-	if (getpeercon(sockfd, &context) < 0)
-		RETURN_FALSE;
+	if (!raw)
+		rc = getpeercon(sockfd, &context);
+	else
+		rc = getpeercon_raw(sockfd, &context);
 
+	if (rc < 0)
+		RETURN_FALSE;
 	RETVAL_STRING(context, 1);
 	freecon(context);
 }
 
+PHP_FUNCTION(selinux_getpeercon)
+{
+	do_selinux_getpeercon(INTERNAL_FUNCTION_PARAM_PASSTHRU, 0);
+}
+
 PHP_FUNCTION(selinux_getpeercon_raw)
 {
-	zval *z;
-	php_stream *stream;
-	security_context_t context;
-	int sockfd;
-
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "z", &z) == FAILURE)
-		RETURN_FALSE;
-
-	php_stream_from_zval_no_verify(stream, &z);
-	if (!stream)
-		RETURN_FALSE;
-
-	if (php_stream_cast(stream, PHP_STREAM_AS_FD,
-			    (void **) &sockfd, REPORT_ERRORS) != SUCCESS)
-		RETURN_FALSE;
-
-	if (getpeercon_raw(sockfd, &context) < 0)
-		RETURN_FALSE;
-
-	RETVAL_STRING(context, 1);
-	freecon(context);
+	do_selinux_getpeercon(INTERNAL_FUNCTION_PARAM_PASSTHRU, 1);
 }
 
 /*
  * get initial context
  */
+static void do_selinux_get_initial_context(INTERNAL_FUNCTION_PARAMETERS, int raw)
+{
+	char *name;
+	int rc, length;
+	security_context_t context;
+
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
+				  "s", &name, &length) == FAILURE)
+		RETURN_FALSE;
+
+	if (!raw)
+		rc = security_get_initial_context(name, &context);
+	else
+		rc = security_get_initial_context_raw(name, &context);
+
+	if (rc < 0)
+		RETURN_FALSE;
+	RETVAL_STRING(context, 1);
+	freecon(context);
+}
+
 PHP_FUNCTION(selinux_get_initial_context)
-{}
+{
+	do_selinux_get_initial_context(INTERNAL_FUNCTION_PARAM_PASSTHRU, 0);
+}
 
 PHP_FUNCTION(selinux_get_initial_context_raw)
-{}
+{
+	do_selinux_get_initial_context(INTERNAL_FUNCTION_PARAM_PASSTHRU, 1);
+}
 
 /*
  * sanity check in security context
  */
+static void do_selinux_check_context(INTERNAL_FUNCTION_PARAMETERS, int raw)
+{
+	char *context;
+	int rc, context_len;
+
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
+				  "s", &context, &context_len) == FAILURE)
+		RETURN_FALSE;
+
+	if (!raw)
+		rc = security_check_context(context);
+	else
+		rc = security_check_context_raw(context);
+
+	if (rc < 0)
+		RETURN_FALSE;
+	RETURN_TRUE;
+}
+
 PHP_FUNCTION(selinux_check_context)
-{}
+{
+	do_selinux_check_context(INTERNAL_FUNCTION_PARAM_PASSTHRU, 0);
+}
 
 PHP_FUNCTION(selinux_check_context_raw)
-{}
+{
+	do_selinux_check_context(INTERNAL_FUNCTION_PARAM_PASSTHRU, 1);
+}
+
+static do_selinux_canonicalize_context(INTERNAL_FUNCTION_PARAMETERS, int raw)
+{
+	security_context_t canonicalized;
+	char *context;
+	int rc, context_len;
+
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
+				  "s", &context, &context_len) == FAILURE)
+		RETURN_FALSE;
+
+	if (!raw)
+		rc = security_canonicalize_context(context, &canonicalized);
+	else
+		rc = security_canonicalize_context_raw(context, &canonicalized);
+
+	if (rc < 0)
+		RETURN_FALSE;
+	RETVAL_STRING(context, 1);
+        freecon(context);
+}
 
 PHP_FUNCTION(selinux_canonicalize_context)
-{}
+{
+	do_selinux_canonicalize_context(INTERNAL_FUNCTION_PARAM_PASSTHRU, 0);
+}
 
 PHP_FUNCTION(selinux_canonicalize_context_raw)
-{}
+{
+	do_selinux_canonicalize_context(INTERNAL_FUNCTION_PARAM_PASSTHRU, 1);
+}
 
 /*
  * global setting related
  */
 PHP_FUNCTION(selinux_getenforce)
-{}
+{
+	int rc = security_getenforce();
+
+	RETURN_LONG(rc);
+}
 
 PHP_FUNCTION(selinux_setenforce)
-{}
+{
+	long mode;
+
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
+                                  "l", &mode) == FAILURE)
+                RETURN_FALSE;
+
+	if (security_setenforce(mode))
+		RETURN_FALSE;
+	RETURN_TRUE;
+}
 
 PHP_FUNCTION(selinux_policyvers)
-{}
+{
+	int policyvers = security_policyvers();
+
+	RETURN_LONG(policyvers);
+}
 
 /*
  * booleans
  */
 PHP_FUNCTION(selinux_get_boolean_names)
-{}
+{
+}
 
 PHP_FUNCTION(selinux_get_boolean_pending)
-{}
+{
+	char *bool_name;
+	int length;
+	long value;
+
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
+				  "s", &bool_name, &length) == FAILURE)
+		RETURN_FALSE;
+
+	value = security_get_boolean_pending(bool_name);
+
+	RETURN_LONG(value);
+}
 
 PHP_FUNCTION(selinux_get_boolean_active)
-{}
+{
+	char *bool_name;
+	int length;
+	long value;
+
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
+				  "s", &bool_name, &length) == FAILURE)
+		RETURN_FALSE;
+
+	value = security_get_boolean_active(bool_name);
+
+	RETURN_LONG(value);
+}
 
 PHP_FUNCTION(selinux_set_boolean)
-{}
+{
+	char *bool_name;
+	int length;
+	zend_bool new_value;
+
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
+				  "sb", &bool_name, &length, &new_value) == FAILURE)
+		RETURN_FALSE;
+
+	if (security_set_boolean(bool_name, new_value) < 0)
+		RETURN_FALSE;
+	RETURN_TRUE;
+}
 
 PHP_FUNCTION(selinux_commit_booleans)
-{}
+{
+	if (security_commit_booleans() < 0)
+		RETURN_FALSE;
+	RETURN_TRUE;
+}
 
 /*
  * mcstrans
  */
 PHP_FUNCTION(selinux_trans_to_raw_context)
-{}
+{
+	security_context_t raw_context;
+	char *context;
+	int length;
+
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
+				  "s", &context, &length) == FAILURE)
+		RETURN_FALSE;
+
+	if (selinux_trans_to_raw_context(context, &raw_context) < 0)
+		RETURN_FALSE;
+	RETVAL_STRING(raw_context, 1);
+	freecon(raw_context);
+}
 
 PHP_FUNCTION(selinux_raw_to_trans_context)
-{}
+{
+	security_context_t trans_context;
+	char *context;
+	int length;
+
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
+				  "s", &context, &length) == FAILURE)
+		RETURN_FALSE;
+
+	if (selinux_trans_to_raw_context(context, &trans_context) < 0)
+		RETURN_FALSE;
+	RETVAL_STRING(trans_context, 1);
+	freecon(trans_context);
+}
 
 #endif	/* HAVE_SELINUX */
