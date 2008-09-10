@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/nodes/outfuncs.c,v 1.337 2008/08/30 01:39:14 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/nodes/outfuncs.c,v 1.339 2008/09/09 18:58:08 tgl Exp $
  *
  * NOTES
  *	  Every node type that can appear in stored rules' parsetrees *must*
@@ -255,6 +255,7 @@ _outPlannedStmt(StringInfo str, PlannedStmt *node)
 	WRITE_NODE_FIELD(returningLists);
 	WRITE_NODE_FIELD(rowMarks);
 	WRITE_NODE_FIELD(relationOids);
+	WRITE_NODE_FIELD(invalItems);
 	WRITE_INT_FIELD(nParamExec);
 }
 
@@ -594,6 +595,14 @@ _outUnique(StringInfo str, Unique *node)
 }
 
 static void
+_outHash(StringInfo str, Hash *node)
+{
+	WRITE_NODE_TYPE("HASH");
+
+	_outPlanInfo(str, (Plan *) node);
+}
+
+static void
 _outSetOp(StringInfo str, SetOp *node)
 {
 	int			i;
@@ -631,11 +640,14 @@ _outLimit(StringInfo str, Limit *node)
 }
 
 static void
-_outHash(StringInfo str, Hash *node)
+_outPlanInvalItem(StringInfo str, PlanInvalItem *node)
 {
-	WRITE_NODE_TYPE("HASH");
+	WRITE_NODE_TYPE("PLANINVALITEM");
 
-	_outPlanInfo(str, (Plan *) node);
+	WRITE_INT_FIELD(cacheId);
+	appendStringInfo(str, " :tupleId (%u,%u)",
+					 ItemPointerGetBlockNumber(&node->tupleId),
+					 ItemPointerGetOffsetNumber(&node->tupleId));
 }
 
 /*****************************************************************************
@@ -667,6 +679,7 @@ _outRangeVar(StringInfo str, RangeVar *node)
 	WRITE_ENUM_FIELD(inhOpt, InhOption);
 	WRITE_BOOL_FIELD(istemp);
 	WRITE_NODE_FIELD(alias);
+	WRITE_LOCATION_FIELD(location);
 }
 
 static void
@@ -1353,6 +1366,7 @@ _outPlannerGlobal(StringInfo str, PlannerGlobal *node)
 	WRITE_BITMAPSET_FIELD(rewindPlanIDs);
 	WRITE_NODE_FIELD(finalrtable);
 	WRITE_NODE_FIELD(relationOids);
+	WRITE_NODE_FIELD(invalItems);
 }
 
 static void
@@ -1609,7 +1623,7 @@ _outNotifyStmt(StringInfo str, NotifyStmt *node)
 {
 	WRITE_NODE_TYPE("NOTIFY");
 
-	WRITE_NODE_FIELD(relation);
+	WRITE_STRING_FIELD(conditionname);
 }
 
 static void
@@ -2038,10 +2052,11 @@ _outSortBy(StringInfo str, SortBy *node)
 {
 	WRITE_NODE_TYPE("SORTBY");
 
+	WRITE_NODE_FIELD(node);
 	WRITE_ENUM_FIELD(sortby_dir, SortByDir);
 	WRITE_ENUM_FIELD(sortby_nulls, SortByNulls);
 	WRITE_NODE_FIELD(useOp);
-	WRITE_NODE_FIELD(node);
+	WRITE_LOCATION_FIELD(location);
 }
 
 static void
@@ -2204,14 +2219,17 @@ _outNode(StringInfo str, void *obj)
 			case T_Unique:
 				_outUnique(str, obj);
 				break;
+			case T_Hash:
+				_outHash(str, obj);
+				break;
 			case T_SetOp:
 				_outSetOp(str, obj);
 				break;
 			case T_Limit:
 				_outLimit(str, obj);
 				break;
-			case T_Hash:
-				_outHash(str, obj);
+			case T_PlanInvalItem:
+				_outPlanInvalItem(str, obj);
 				break;
 			case T_Alias:
 				_outAlias(str, obj);
