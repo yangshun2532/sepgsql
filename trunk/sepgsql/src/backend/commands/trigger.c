@@ -7,7 +7,7 @@
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/commands/trigger.c,v 1.236 2008/07/18 20:26:06 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/commands/trigger.c,v 1.237 2008/09/01 20:42:44 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -656,7 +656,7 @@ ConvertTriggerToFK(CreateTrigStmt *stmt, Oid funcoid)
 			else
 			{
 				/* Work around ancient pg_dump bug that omitted constrrel */
-				fkcon->pktable = makeRangeVar(NULL, pk_table_name);
+				fkcon->pktable = makeRangeVar(NULL, pk_table_name, -1);
 			}
 		}
 		else
@@ -668,7 +668,7 @@ ConvertTriggerToFK(CreateTrigStmt *stmt, Oid funcoid)
 			else
 			{
 				/* Work around ancient pg_dump bug that omitted constrrel */
-				atstmt->relation = makeRangeVar(NULL, fk_table_name);
+				atstmt->relation = makeRangeVar(NULL, fk_table_name, -1);
 			}
 		}
 		atstmt->cmds = list_make1(atcmd);

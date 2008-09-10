@@ -1,4 +1,4 @@
-<!-- $PostgreSQL: pgsql/doc/src/sgml/func.sgml,v 1.443 2008/07/21 04:47:00 tgl Exp $ -->
+<!-- $PostgreSQL: pgsql/doc/src/sgml/func.sgml,v 1.446 2008/09/08 00:47:40 tgl Exp $ -->
 
  <chapter id="functions">
   <title>Functions and Operators</title>
@@ -11369,7 +11369,7 @@ SELECT has_function_privilege('joeuser', 'myfunc(int, text)', 'execute');
     The desired access privilege type
     is specified by a text string, which must evaluate to one of the
     values <literal>SELECT</literal>, <literal>INSERT</literal>,
-    <literal>UPDATE</literal>, <literal>DELETE</literal>,
+    <literal>UPDATE</literal>, <literal>DELETE</literal>, <literal>TRUNCATE</>,
     <literal>REFERENCES</literal>, or <literal>TRIGGER</literal>.
     (Case of the string is not significant, however.)
     An example is:
@@ -11563,6 +11563,10 @@ SELECT pg_type_is_visible('myschema.widget'::regtype);
    </indexterm>
 
    <indexterm>
+    <primary>pg_get_functiondef</primary>
+   </indexterm>
+
+   <indexterm>
     <primary>pg_get_function_arguments</primary>
    </indexterm>
 
@@ -11642,6 +11646,11 @@ SELECT pg_type_is_visible('myschema.widget'::regtype);
        <entry><type>text</type></entry>
        <entry>decompile internal form of an expression, assuming that any Vars
        in it refer to the relation indicated by the second parameter</entry>
+      </row>
+      <row>
+       <entry><literal><function>pg_get_functiondef</function>(<parameter>func_oid</parameter>)</literal></entry>
+       <entry><type>text</type></entry>
+       <entry>get definition of a function</entry>
       </row>
       <row>
        <entry><literal><function>pg_get_function_arguments</function>(<parameter>func_oid</parameter>)</literal></entry>
@@ -11756,6 +11765,8 @@ SELECT pg_type_is_visible('myschema.widget'::regtype);
   </para>
 
   <para>
+   <function>pg_get_functiondef</> returns a complete
+   <command>CREATE OR REPLACE FUNCTION</> statement for a function.
    <function>pg_get_function_arguments</function> returns the argument list
    of a function, in the form it would need to appear in within
    <command>CREATE FUNCTION</>.
@@ -11995,11 +12006,14 @@ SELECT pg_type_is_visible('myschema.widget'::regtype);
       <row>
        <entry><type>xip_list</type></entry>
        <entry>
-        Active txids at the time of the snapshot.  All of them are between
-        <literal>xmin</> and <literal>xmax</>.  A txid that is
-        <literal>xmin &lt;= txid &lt; xmax</literal> and not in this list was
-        already completed at the time of the snapshot, and thus either visible
-        or dead according to its commit status.
+        Active txids at the time of the snapshot.  The list
+        includes only those active txids between <literal>xmin</>
+        and <literal>xmax</>; there might be active txids higher
+        than xmax.  A txid that is <literal>xmin &lt;= txid &lt;
+        xmax</literal> and not in this list was already completed
+        at the time of the snapshot, and thus either visible or
+        dead according to its commit status.  The list does not
+        include txids of subtransactions.
        </entry>
       </row>
 
