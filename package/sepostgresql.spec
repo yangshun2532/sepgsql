@@ -218,6 +218,9 @@ fi
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
 
 %changelog
+* Wed Aug 13 2008 <kaigai@kaigai.gr.jp> - 8.3.3-2.964
+- bugfix: trusted procedure invokation
+
 * Fri Jul 11 2008 <kaigai@kaigai.gr.jp> - 8.3.3-2.952
 - Security policy module updates
 
