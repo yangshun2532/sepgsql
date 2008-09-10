@@ -15,7 +15,7 @@
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/nodes/copyfuncs.c,v 1.403 2008/08/30 01:39:13 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/nodes/copyfuncs.c,v 1.405 2008/09/09 18:58:08 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -88,6 +88,7 @@ _copyPlannedStmt(PlannedStmt *from)
 	COPY_NODE_FIELD(returningLists);
 	COPY_NODE_FIELD(rowMarks);
 	COPY_NODE_FIELD(relationOids);
+	COPY_NODE_FIELD(invalItems);
 	COPY_SCALAR_FIELD(nParamExec);
 
 	return newnode;
@@ -689,6 +690,21 @@ _copyLimit(Limit *from)
 	return newnode;
 }
 
+/*
+ * _copyPlanInvalItem
+ */
+static PlanInvalItem *
+_copyPlanInvalItem(PlanInvalItem *from)
+{
+	PlanInvalItem *newnode = makeNode(PlanInvalItem);
+
+	COPY_SCALAR_FIELD(cacheId);
+	/* tupleId isn't really a "scalar", but this works anyway */
+	COPY_SCALAR_FIELD(tupleId);
+
+	return newnode;
+}
+
 /* ****************************************************************
  *					   primnodes.h copy functions
  * ****************************************************************
@@ -722,6 +738,7 @@ _copyRangeVar(RangeVar *from)
 	COPY_SCALAR_FIELD(inhOpt);
 	COPY_SCALAR_FIELD(istemp);
 	COPY_NODE_FIELD(alias);
+	COPY_LOCATION_FIELD(location);
 
 	return newnode;
 }
@@ -1773,10 +1790,11 @@ _copySortBy(SortBy *from)
 {
 	SortBy	   *newnode = makeNode(SortBy);
 
+	COPY_NODE_FIELD(node);
 	COPY_SCALAR_FIELD(sortby_dir);
 	COPY_SCALAR_FIELD(sortby_nulls);
 	COPY_NODE_FIELD(useOp);
-	COPY_NODE_FIELD(node);
+	COPY_LOCATION_FIELD(location);
 
 	return newnode;
 }
@@ -2406,7 +2424,7 @@ _copyNotifyStmt(NotifyStmt *from)
 {
 	NotifyStmt *newnode = makeNode(NotifyStmt);
 
-	COPY_NODE_FIELD(relation);
+	COPY_STRING_FIELD(conditionname);
 
 	return newnode;
 }
@@ -2416,7 +2434,7 @@ _copyListenStmt(ListenStmt *from)
 {
 	ListenStmt *newnode = makeNode(ListenStmt);
 
-	COPY_NODE_FIELD(relation);
+	COPY_STRING_FIELD(conditionname);
 
 	return newnode;
 }
@@ -2426,7 +2444,7 @@ _copyUnlistenStmt(UnlistenStmt *from)
 {
 	UnlistenStmt *newnode = makeNode(UnlistenStmt);
 
-	COPY_NODE_FIELD(relation);
+	COPY_STRING_FIELD(conditionname);
 
 	return newnode;
 }
@@ -3154,6 +3172,9 @@ copyObject(void *from)
 			break;
 		case T_Limit:
 			retval = _copyLimit(from);
+			break;
+		case T_PlanInvalItem:
+			retval = _copyPlanInvalItem(from);
 			break;
 
 			/*

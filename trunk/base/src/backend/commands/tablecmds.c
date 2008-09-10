@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/commands/tablecmds.c,v 1.264 2008/08/28 23:09:45 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/commands/tablecmds.c,v 1.266 2008/09/08 00:47:40 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -989,6 +989,8 @@ ExecuteTruncate(TruncateStmt *stmt)
 static void
 truncate_check_rel(Relation rel)
 {
+	AclResult	aclresult;
+
 	/* Only allow truncate on regular tables */
 	if (rel->rd_rel->relkind != RELKIND_RELATION)
 		ereport(ERROR,
@@ -997,8 +999,10 @@ truncate_check_rel(Relation rel)
 						RelationGetRelationName(rel))));
 
 	/* Permissions checks */
-	if (!pg_class_ownercheck(RelationGetRelid(rel), GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
+	aclresult = pg_class_aclcheck(RelationGetRelid(rel), GetUserId(),
+								  ACL_TRUNCATE);
+	if (aclresult != ACLCHECK_OK)
+		aclcheck_error(aclresult, ACL_KIND_CLASS,
 					   RelationGetRelationName(rel));
 
 	if (!allowSystemTableMods && IsSystemRelation(rel))
@@ -5112,7 +5116,8 @@ createForeignKeyTriggers(Relation rel, FkConstraint *fkconstraint,
 	 * Reconstruct a RangeVar for my relation (not passed in, unfortunately).
 	 */
 	myRel = makeRangeVar(get_namespace_name(RelationGetNamespace(rel)),
-						 pstrdup(RelationGetRelationName(rel)));
+						 pstrdup(RelationGetRelationName(rel)),
+						 -1);
 
 	/* Make changes-so-far visible */
 	CommandCounterIncrement();
