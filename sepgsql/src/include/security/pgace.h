@@ -133,7 +133,7 @@ pgaceInitialize(bool is_bootstrap)
 }
 
 /*
- * pgaceInitialize
+ * pgaceStartupWorkerProcess
  *
  * The guest can create a worker process in this hook, if necessary.
  * (currently, PGACE does not support multiple worker processes.)
@@ -190,6 +190,27 @@ pgaceProxyQuery(List *queryList)
  */
 static inline bool
 pgaceIsAllowPlannerHook(void)
+{
+#ifdef HAVE_SELINUX
+	if (sepgsqlIsEnabled())
+		return false;
+#endif
+	return true;
+}
+
+/*
+ * pgaceIsAllowExecutorRunHook
+ *
+ * The guest can control ExecutorRun_hook can be available, or not.
+ * It returns false, if it is not allowed to apply ExecutorRun_hook.
+ *
+ * The purpose of this hook is to make sure the standard_ExecutorRun()
+ * is invoked, because several important hooks are invoked from the path.
+ * Overriding ExecutorRun_hook has a possibility to prevent the guest
+ * works correctly.
+ */
+static inline bool
+pgaceIsAllowExecutorRunHook(void)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
