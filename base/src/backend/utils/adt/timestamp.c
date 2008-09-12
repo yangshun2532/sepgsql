@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/adt/timestamp.c,v 1.190 2008/07/07 18:09:46 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/utils/adt/timestamp.c,v 1.192 2008/09/11 15:27:30 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -604,6 +604,7 @@ interval_in(PG_FUNCTION_ARGS)
 			   *tm = &tt;
 	int			dtype;
 	int			nf;
+	int			range;
 	int			dterr;
 	char	   *field[MAXDATEFIELDS];
 	int			ftype[MAXDATEFIELDS];
@@ -617,10 +618,15 @@ interval_in(PG_FUNCTION_ARGS)
 	tm->tm_sec = 0;
 	fsec = 0;
 
+	if (typmod >= 0)
+		range = INTERVAL_RANGE(typmod);
+	else
+		range = INTERVAL_FULL_RANGE;
+
 	dterr = ParseDateTime(str, workbuf, sizeof(workbuf), field,
 						  ftype, MAXDATEFIELDS, &nf);
 	if (dterr == 0)
-		dterr = DecodeInterval(field, ftype, nf, &dtype, tm, &fsec);
+		dterr = DecodeInterval(field, ftype, nf, range, &dtype, tm, &fsec);
 	if (dterr != 0)
 	{
 		if (dterr == DTERR_FIELD_OVERFLOW)
@@ -738,7 +744,7 @@ intervaltypmodin(PG_FUNCTION_ARGS)
 	tl = ArrayGetIntegerTypmods(ta, &n);
 
 	/*
-	 * tl[0] - opt_interval tl[1] - Iconst (optional)
+	 * tl[0] - interval range (fields bitmask)  tl[1] - precision (optional)
 	 *
 	 * Note we must validate tl[0] even though it's normally guaranteed
 	 * correct by the grammar --- consider SELECT 'foo'::"interval"(1000).
@@ -875,7 +881,7 @@ intervaltypmodout(PG_FUNCTION_ARGS)
 	}
 
 	if (precision != INTERVAL_FULL_PRECISION)
-		snprintf(res, 64, "(%d)%s", precision, fieldstr);
+		snprintf(res, 64, "%s(%d)", fieldstr, precision);
 	else
 		snprintf(res, 64, "%s", fieldstr);
 
@@ -945,7 +951,7 @@ AdjustIntervalForTypmod(Interval *interval, int32 typmod)
 	 * Unspecified range and precision? Then not necessary to adjust. Setting
 	 * typmod to -1 is the convention for all types.
 	 */
-	if (typmod != -1)
+	if (typmod >= 0)
 	{
 		int			range = INTERVAL_RANGE(typmod);
 		int			precision = INTERVAL_PRECISION(typmod);
