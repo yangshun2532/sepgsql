@@ -26,6 +26,7 @@
 #include "postgres.h"
 
 #include "nodes/relation.h"
+#include "nodes/security.h"
 #include "utils/datum.h"
 
 
@@ -1925,6 +1926,37 @@ _equalXmlSerialize(XmlSerialize *a, XmlSerialize *b)
 }
 
 /*
+ * Stuff from nodes/security.h
+ */
+static bool
+_equalSEvalItemRelation(SEvalItemRelation *a, SEvalItemRelation *b)
+{
+	COMPARE_SCALAR_FIELD(perms);
+	COMPARE_SCALAR_FIELD(relid);
+	COMPARE_SCALAR_FIELD(inh);
+
+	return true;
+}
+
+static bool
+_equalSEvalItemAttribute(SEvalItemAttribute *a, SEvalItemAttribute *b)
+{
+	COMPARE_SCALAR_FIELD(perms);
+	COMPARE_SCALAR_FIELD(relid);
+	COMPARE_SCALAR_FIELD(inh);
+	COMPARE_SCALAR_FIELD(attno);
+
+	return true;
+}
+
+static bool
+_equalSEvalItemProcedure(SEvalItemProcedure *a, SEvalItemProcedure *b)
+{
+	COMPARE_SCALAR_FIELD(perms);
+	COMPARE_SCALAR_FIELD(funcid);
+}
+
+/*
  * Stuff from pg_list.h
  */
 
@@ -2526,6 +2558,15 @@ equal(void *a, void *b)
 			break;
 		case T_XmlSerialize:
 			retval = _equalXmlSerialize(a, b);
+			break;
+		case T_SEvalItemRelation:
+			retval = _equalSEvalItemRelation(a, b);
+			break;
+		case T_SEvalItemAttribute:
+			retval = _equalSEvalItemAttribute(a, b);
+			break;
+		case T_SEvalItemProcedure:
+			retval = _equalSEvalItemProcedure(a, b);
 			break;
 
 		default:
