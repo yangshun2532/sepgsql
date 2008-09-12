@@ -235,7 +235,7 @@ ExecutorRun(QueryDesc *queryDesc,
 {
 	TupleTableSlot *result;
 
-	if (ExecutorRun_hook)
+	if (ExecutorRun_hook && pgaceIsAllowExecutorRunHook())
 		result = (*ExecutorRun_hook) (queryDesc, direction, count);
 	else
 		result = standard_ExecutorRun(queryDesc, direction, count);
