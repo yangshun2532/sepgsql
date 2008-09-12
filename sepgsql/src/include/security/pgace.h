@@ -132,7 +132,7 @@ pgaceInitialize(bool is_bootstrap)
 }
 
 /*
- * pgaceInitialize
+ * pgaceStartupWorkerProcess
  *
  * The guest can create a worker process in this hook, if necessary.
  * (currently, PGACE does not support multiple worker processes.)
