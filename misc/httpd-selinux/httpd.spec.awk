@@ -79,7 +79,7 @@
     print "%files selinux"
     print "%{_sbindir}/httpd.selinux"
     print "%config(noreplace) %{_sysconfdir}/httpd/conf.d/httpd-selinux.conf"
-    print "%{contentdir}/selinux_auth.conf"
+    print "%config(noreplace) %{contentdir}/selinux_auth.conf"
     print "%{_datadir}/selinux/*/httpd-selinux.pp"
     print "";
     print;

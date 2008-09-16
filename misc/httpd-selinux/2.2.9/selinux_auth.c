@@ -127,14 +127,15 @@ found:
 	}
 
 	context = context_new(security_context);
-	freecon(security_context);
 	if (!context)
 	{
 		ap_log_error(APLOG_MARK, APLOG_ERR, 0, r->server,
 			     "SELinux: context_new(%s) failed (%s)",
 			     security_context, strerror(errno));
+		freecon(security_context);
 		return HTTP_INTERNAL_SERVER_ERROR;
 	}
+	freecon(security_context);
 
 	if (domain)
 		context_type_set(context, domain);
@@ -142,12 +143,12 @@ found:
 		context_range_set(context, range);
 
 	security_context = context_str(context);
-	context_free(context);
 	if (!security_context)
 	{
 		ap_log_error(APLOG_MARK, APLOG_ERR, 0, r->server,
 			     "SELinux: context_str() failed (%s)",
 			     strerror(errno));
+		context_free(context);
 		return HTTP_INTERNAL_SERVER_ERROR;
 	}
 
@@ -158,8 +159,7 @@ found:
 			     security_context,
 			     r->user ? r->user : "anonymous",
 			     strerror(errno));
-		freecon(security_context);
-
+		context_free(context);
 		return HTTP_INTERNAL_SERVER_ERROR;
 	}
 
@@ -167,7 +167,7 @@ found:
 		     "SELinux: setcon(%s) for %s",
 		     security_context,
 		     r->user ? r->user : "anonymous");
-	freecon(security_context);
+	context_free(context);
 
 	return DECLINED;
 }
