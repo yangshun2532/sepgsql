@@ -63,7 +63,7 @@
     print "for store in %{selinux_policy_stores}; do"
     print "    %{_sbindir}/semodule -s ${store} -i %{_datadir}/selinux/${store}/httpd-selinux.pp >& /dev/null || :"
     print "done"
-    print "/sbin/fixfiles -R %{name} restore || :"
+    print "/sbin/fixfiles -R %{name}-selinux restore || :"
     print ""
     print "%postun selinux"
     print "if [ $1 -eq 0 ]; then"
