@@ -59,10 +59,23 @@ zend_function_entry selinux_functions[] = {
 	PHP_FE(selinux_lsetfilecon_raw,		NULL)
 	PHP_FE(selinux_fsetfilecon,		NULL)
 	PHP_FE(selinux_fsetfilecon_raw,		NULL)
+	PHP_FE(selinux_lsetfilecon_default,	NULL)
 
 	/* labeled networking  */
 	PHP_FE(selinux_getpeercon,		NULL)
 	PHP_FE(selinux_getpeercon_raw,		NULL)
+
+	/* security_compute_XXXX() wrappers */
+	PHP_FE(selinux_compute_av,		NULL)
+	PHP_FE(selinux_compute_av_raw,		NULL)
+	PHP_FE(selinux_compute_create,		NULL)
+	PHP_FE(selinux_compute_create_raw,	NULL)
+	PHP_FE(selinux_compute_relabel,		NULL)
+	PHP_FE(selinux_compute_relabel_raw,	NULL)
+	PHP_FE(selinux_compute_member,		NULL)
+	PHP_FE(selinux_compute_member_raw,	NULL)
+	PHP_FE(selinux_compute_user,		NULL)
+	PHP_FE(selinux_compute_user_raw,	NULL)
 
 	/* get initial context */
 	PHP_FE(selinux_get_initial_context,	NULL)
@@ -85,6 +98,13 @@ zend_function_entry selinux_functions[] = {
 	PHP_FE(selinux_get_boolean_active,	NULL)
 	PHP_FE(selinux_set_boolean,		NULL)
 	PHP_FE(selinux_commit_booleans,		NULL)
+
+	/* security class/access vector mapping */
+	PHP_FE(selinux_string_to_class,		NULL)
+	PHP_FE(selinux_class_to_string,		NULL)
+	PHP_FE(selinux_av_perm_to_string,	NULL)
+	PHP_FE(selinux_string_to_av_perm,	NULL)
+	PHP_FE(selinux_av_string,		NULL)
 
 	/* mcstrans */
 	PHP_FE(selinux_trans_to_raw_context,	NULL)
@@ -113,13 +133,11 @@ zend_module_entry selinux_module_entry = {
 ZEND_GET_MODULE(selinux)
 #endif
 
-PHP_MINIT_FUNCTION(selinux)
-{
-	return SUCCESS;
-}
-
 PHP_FUNCTION(selinux_is_enabled)
 {
+	if (ZEND_NUM_ARGS() != 0)
+		ZEND_WRONG_PARAM_COUNT();
+
 	if (is_selinux_enabled())
 		RETURN_TRUE;
 	RETURN_FALSE;
@@ -127,6 +145,9 @@ PHP_FUNCTION(selinux_is_enabled)
 
 PHP_FUNCTION(selinux_mls_is_enabled)
 {
+	if (ZEND_NUM_ARGS() != 0)
+		ZEND_WRONG_PARAM_COUNT();
+
 	if (is_selinux_mls_enabled())
 		RETURN_TRUE;
 	RETURN_FALSE;
@@ -139,6 +160,9 @@ static void do_selinux_getcon(INTERNAL_FUNCTION_PARAMETERS, int raw)
 {
 	security_context_t context;
 	int rc;
+
+	if (ZEND_NUM_ARGS() != 0)
+		ZEND_WRONG_PARAM_COUNT();
 
 	if (!raw)
 		rc = getcon(&context);
@@ -226,6 +250,9 @@ static void do_selinux_getprevcon(INTERNAL_FUNCTION_PARAMETERS, int raw)
 	security_context_t context;
 	int rc;
 
+	if (ZEND_NUM_ARGS() != 0)
+		ZEND_WRONG_PARAM_COUNT();
+
 	if (!raw)
 		rc = getprevcon(&context);
 	else
@@ -251,6 +278,9 @@ static void do_selinux_getexeccon(INTERNAL_FUNCTION_PARAMETERS, int raw)
 {
 	security_context_t context;
 	int rc;
+
+	if (ZEND_NUM_ARGS() != 0)
+		ZEND_WRONG_PARAM_COUNT();
 
 	if (!raw)
 		rc = getexeccon(&context);
@@ -305,6 +335,9 @@ static void do_selinux_getfscreatecon(INTERNAL_FUNCTION_PARAMETERS, int raw)
 {
 	security_context_t context;
 	int rc;
+
+	if (ZEND_NUM_ARGS() != 0)
+		ZEND_WRONG_PARAM_COUNT();
 
 	if (!raw)
 		rc = getfscreatecon(&context);
@@ -361,6 +394,9 @@ static void do_selinux_getkeycreatecon(INTERNAL_FUNCTION_PARAMETERS, int raw)
 	security_context_t context;
 	int rc;
 
+	if (ZEND_NUM_ARGS() != 0)
+		ZEND_WRONG_PARAM_COUNT();
+
 	if (!raw)
 		rc = getkeycreatecon(&context);
 	else
@@ -415,6 +451,9 @@ static void do_selinux_getsockcreatecon(INTERNAL_FUNCTION_PARAMETERS, int raw)
 {
 	security_context_t context;
 	int rc;
+
+	if (ZEND_NUM_ARGS() != 0)
+		ZEND_WRONG_PARAM_COUNT();
 
 	if (!raw)
 		rc = getsockcreatecon(&context);
@@ -643,6 +682,20 @@ PHP_FUNCTION(selinux_fsetfilecon_raw)
 	do_selinux_fsetfilecon(INTERNAL_FUNCTION_PARAM_PASSTHRU, 1);
 }
 
+PHP_FUNCTION(selinux_lsetfilecon_default)
+{
+	char *filename;
+	int filename_len;
+
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s",
+				  &filename, &filename_len) == FAILURE)
+		RETURN_FALSE;
+
+	if (selinux_lsetfilecon_default(filename) < 0)
+		RETURN_FALSE;
+	RETURN_TRUE;
+}
+
 /*
  * Labeled Networking
  */
@@ -684,6 +737,183 @@ PHP_FUNCTION(selinux_getpeercon)
 PHP_FUNCTION(selinux_getpeercon_raw)
 {
 	do_selinux_getpeercon(INTERNAL_FUNCTION_PARAM_PASSTHRU, 1);
+}
+
+/*
+ * security_compute_XXXX() wrappers
+ */
+static void do_selinux_compute_av(INTERNAL_FUNCTION_PARAMETERS, int raw)
+{
+	char *scon, *tcon;
+	int rc, scon_len, tcon_len;
+	long tclass;
+	struct av_decision avd;
+
+        if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "ssl",
+				  &scon, &scon_len,
+				  &tcon, &tcon_len, &tclass) == FAILURE)
+		RETURN_FALSE;
+	if (!raw)
+		rc = security_compute_av(scon, tcon, tclass, -1, &avd);
+	else
+		rc = security_compute_av_raw(scon, tcon, tclass, -1, &avd);
+
+	if (rc < 0)
+		RETURN_FALSE;
+
+	array_init(return_value);
+	add_assoc_long(return_value, "allowed",    avd.allowed);
+	add_assoc_long(return_value, "decided",    avd.decided);
+	add_assoc_long(return_value, "auditallow", avd.auditallow);
+	add_assoc_long(return_value, "auditdeny",  avd.auditdeny);
+	add_assoc_long(return_value, "seqno",      avd.seqno);
+}
+
+PHP_FUNCTION(selinux_compute_av)
+{
+	do_selinux_compute_av(INTERNAL_FUNCTION_PARAM_PASSTHRU, 0);
+}
+
+PHP_FUNCTION(selinux_compute_av_raw)
+{
+	do_selinux_compute_av(INTERNAL_FUNCTION_PARAM_PASSTHRU, 1);
+}
+
+static void do_selinux_compute_create(INTERNAL_FUNCTION_PARAMETERS, int raw)
+{
+	security_context_t context;
+	char *scon, *tcon;
+	int rc, scon_len, tcon_len;
+	long tclass;
+
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "ssl",
+				  &scon, &scon_len,
+				  &tcon, &tcon_len, &tclass) == FAILURE)
+		RETURN_FALSE;
+
+	if (!raw)
+		rc = security_compute_create(scon, tcon, tclass, &context);
+	else
+		rc = security_compute_create_raw(scon, tcon, tclass, &context);
+
+	if (rc < 0)
+		RETURN_FALSE;
+	RETVAL_STRING(context, 1);
+	freecon(context);
+}
+
+PHP_FUNCTION(selinux_compute_create)
+{
+	do_selinux_compute_create(INTERNAL_FUNCTION_PARAM_PASSTHRU, 0);
+}
+
+PHP_FUNCTION(selinux_compute_create_raw)
+{
+	do_selinux_compute_create(INTERNAL_FUNCTION_PARAM_PASSTHRU, 1);
+}
+
+static void do_selinux_compute_relabel(INTERNAL_FUNCTION_PARAMETERS, int raw)
+{
+	security_context_t context;
+	char *scon, *tcon;
+	int rc, scon_len, tcon_len;
+	long tclass;
+
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "ssl",
+				  &scon, &scon_len,
+				  &tcon, &tcon_len, &tclass) == FAILURE)
+		RETURN_FALSE;
+
+	if (!raw)
+		rc = security_compute_relabel(scon, tcon, tclass, &context);
+	else
+		rc = security_compute_relabel_raw(scon, tcon, tclass, &context);
+
+	if (rc < 0)
+		RETURN_FALSE;
+	RETVAL_STRING(context, 1);
+	freecon(context);
+}
+
+PHP_FUNCTION(selinux_compute_relabel)
+{
+	do_selinux_compute_relabel(INTERNAL_FUNCTION_PARAM_PASSTHRU, 0);
+}
+
+PHP_FUNCTION(selinux_compute_relabel_raw)
+{
+	do_selinux_compute_relabel(INTERNAL_FUNCTION_PARAM_PASSTHRU, 1);
+}
+
+static void do_selinux_compute_member(INTERNAL_FUNCTION_PARAMETERS, int raw)
+{
+	security_context_t context;
+	char *scon, *tcon;
+	int rc, scon_len, tcon_len;
+	long tclass;
+
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "ssl",
+				  &scon, &scon_len,
+				  &tcon, &tcon_len, &tclass) == FAILURE)
+		RETURN_FALSE;
+
+	if (!raw)
+		rc = security_compute_member(scon, tcon, tclass, &context);
+	else
+		rc = security_compute_member_raw(scon, tcon, tclass, &context);
+
+	if (rc < 0)
+		RETURN_FALSE;
+	RETVAL_STRING(context, 1);
+	freecon(context);
+}
+
+PHP_FUNCTION(selinux_compute_member)
+{
+	do_selinux_compute_member(INTERNAL_FUNCTION_PARAM_PASSTHRU, 0);
+}
+
+PHP_FUNCTION(selinux_compute_member_raw)
+{
+	do_selinux_compute_member(INTERNAL_FUNCTION_PARAM_PASSTHRU, 1);
+}
+
+static void do_selinux_compute_user(INTERNAL_FUNCTION_PARAMETERS, int raw)
+{
+	security_context_t *contexts;
+	char *scon, *username;
+	int i, rc, scon_len, username_len;
+	long tclass;
+
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "ss",
+				  &scon, &scon_len,
+				  &username, &username_len) == FAILURE)
+		RETURN_FALSE;
+
+	if (!raw)
+		rc = security_compute_user(scon, username, &contexts);
+	else
+		rc = security_compute_user_raw(scon, username, &contexts);
+
+	if (rc < 0)
+		RETURN_FALSE;
+
+	array_init(return_value);
+	for (i=0; contexts[i]; i++)
+	{
+		add_next_index_string(return_value, contexts[i], 1);
+	}
+	freeconary(contexts);
+}
+
+PHP_FUNCTION(selinux_compute_user)
+{
+	do_selinux_compute_user(INTERNAL_FUNCTION_PARAM_PASSTHRU, 0);
+}
+
+PHP_FUNCTION(selinux_compute_user_raw)
+{
+	do_selinux_compute_user(INTERNAL_FUNCTION_PARAM_PASSTHRU, 1);
 }
 
 /*
@@ -788,7 +1018,12 @@ PHP_FUNCTION(selinux_canonicalize_context_raw)
  */
 PHP_FUNCTION(selinux_getenforce)
 {
-	int rc = security_getenforce();
+	int rc;
+
+	if (ZEND_NUM_ARGS() != 0)
+		ZEND_WRONG_PARAM_COUNT();
+
+	rc = security_getenforce();
 
 	RETURN_LONG(rc);
 }
@@ -808,7 +1043,12 @@ PHP_FUNCTION(selinux_setenforce)
 
 PHP_FUNCTION(selinux_policyvers)
 {
-	int policyvers = security_policyvers();
+	int policyvers;
+
+	if (ZEND_NUM_ARGS() != 0)
+		ZEND_WRONG_PARAM_COUNT();
+
+	policyvers = security_policyvers();
 
 	RETURN_LONG(policyvers);
 }
@@ -818,6 +1058,21 @@ PHP_FUNCTION(selinux_policyvers)
  */
 PHP_FUNCTION(selinux_get_boolean_names)
 {
+	char **bool_names;
+	int i, len;
+
+	if (ZEND_NUM_ARGS() != 0)
+		ZEND_WRONG_PARAM_COUNT();
+
+	if (security_get_boolean_names(&bool_names, &len) < 0)
+		RETURN_FALSE;
+
+	array_init(return_value);
+	for (i=0; i < len; i++) {
+		add_next_index_string(return_value, bool_names[i], 1);
+		free(bool_names[i]);
+	}
+	free(bool_names);
 }
 
 PHP_FUNCTION(selinux_get_boolean_pending)
@@ -826,8 +1081,8 @@ PHP_FUNCTION(selinux_get_boolean_pending)
 	int length;
 	long value;
 
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
-				  "s", &bool_name, &length) == FAILURE)
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s",
+				  &bool_name, &length) == FAILURE)
 		RETURN_FALSE;
 
 	value = security_get_boolean_pending(bool_name);
@@ -841,8 +1096,8 @@ PHP_FUNCTION(selinux_get_boolean_active)
 	int length;
 	long value;
 
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
-				  "s", &bool_name, &length) == FAILURE)
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s",
+				  &bool_name, &length) == FAILURE)
 		RETURN_FALSE;
 
 	value = security_get_boolean_active(bool_name);
@@ -856,8 +1111,8 @@ PHP_FUNCTION(selinux_set_boolean)
 	int length;
 	zend_bool new_value;
 
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
-				  "sb", &bool_name, &length, &new_value) == FAILURE)
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "sb",
+				  &bool_name, &length, &new_value) == FAILURE)
 		RETURN_FALSE;
 
 	if (security_set_boolean(bool_name, new_value) < 0)
@@ -870,6 +1125,87 @@ PHP_FUNCTION(selinux_commit_booleans)
 	if (security_commit_booleans() < 0)
 		RETURN_FALSE;
 	RETURN_TRUE;
+}
+
+/*
+ * security class/access vector mapping
+ */
+PHP_FUNCTION(selinux_string_to_class)
+{
+	security_class_t tclass;
+	char *tclass_name;
+	int length;
+
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s",
+				  &tclass_name, &length) == FAILURE)
+		RETURN_FALSE;
+
+	tclass = string_to_security_class(tclass_name);
+	if (!tclass)
+		RETURN_FALSE;
+	RETURN_LONG(tclass);
+}
+
+PHP_FUNCTION(selinux_class_to_string)
+{
+	long tclass;
+	const char *tclass_name;
+
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "l",
+				  &tclass) == FAILURE)
+		RETURN_FALSE;
+
+	tclass_name = security_class_to_string(tclass);
+	if (!tclass_name)
+		RETURN_FALSE;
+	RETURN_STRING(tclass_name, 1);
+}
+
+PHP_FUNCTION(selinux_string_to_av_perm)
+{
+	long tclass;
+	char *av_perm_name;
+	int length;
+	access_vector_t av_perm;
+
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "ls",
+				  &tclass, &av_perm_name, &length) == FAILURE)
+		RETURN_FALSE;
+	av_perm = string_to_av_perm(tclass, av_perm_name);
+	if (!av_perm)
+		RETURN_FALSE;
+	RETURN_LONG(av_perm);
+}
+
+PHP_FUNCTION(selinux_av_perm_to_string)
+{
+	long tclass, av_perm;
+	const char *av_perm_name;
+
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "ll",
+				  &tclass, &av_perm) == FAILURE)
+		RETURN_FALSE;
+
+	av_perm_name = security_av_perm_to_string(tclass, av_perm);
+	if (!av_perm_name)
+		RETURN_FALSE;
+	RETURN_STRING(av_perm_name, 1);
+}
+
+PHP_FUNCTION(selinux_av_string)
+{
+	long tclass, av_perms;
+	char *av_string;
+
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "ll",
+				  &tclass, &av_perms) == FAILURE)
+		RETURN_FALSE;
+
+	if (security_av_string(tclass, av_perms, &av_string) < 0)
+		RETURN_FALSE;
+
+	RETVAL_STRING(av_string, 1);
+	free(av_string);
 }
 
 /*

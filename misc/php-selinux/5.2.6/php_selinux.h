@@ -53,12 +53,27 @@ PHP_FUNCTION(selinux_lsetfilecon);
 PHP_FUNCTION(selinux_lsetfilecon_raw);
 PHP_FUNCTION(selinux_fsetfilecon);
 PHP_FUNCTION(selinux_fsetfilecon_raw);
+PHP_FUNCTION(selinux_lsetfilecon_default);
 
 /*
  * Labeled Networking
  */
 PHP_FUNCTION(selinux_getpeercon);
 PHP_FUNCTION(selinux_getpeercon_raw);
+
+/*
+ * security_compute_XXXX() wrappers
+ */
+PHP_FUNCTION(selinux_compute_av);
+PHP_FUNCTION(selinux_compute_av_raw);
+PHP_FUNCTION(selinux_compute_create);
+PHP_FUNCTION(selinux_compute_create_raw);
+PHP_FUNCTION(selinux_compute_relabel);
+PHP_FUNCTION(selinux_compute_relabel_raw);
+PHP_FUNCTION(selinux_compute_member);
+PHP_FUNCTION(selinux_compute_member_raw);
+PHP_FUNCTION(selinux_compute_user);
+PHP_FUNCTION(selinux_compute_user_raw);
 
 /*
  * get initial context
@@ -89,6 +104,15 @@ PHP_FUNCTION(selinux_get_boolean_pending);
 PHP_FUNCTION(selinux_get_boolean_active);
 PHP_FUNCTION(selinux_set_boolean);
 PHP_FUNCTION(selinux_commit_booleans);
+
+/*
+ * security class/access vector mapping
+ */
+PHP_FUNCTION(selinux_string_to_class);
+PHP_FUNCTION(selinux_class_to_string);
+PHP_FUNCTION(selinux_av_perm_to_string);
+PHP_FUNCTION(selinux_string_to_av_perm);
+PHP_FUNCTION(selinux_av_string);
 
 /*
  * mcstrans
