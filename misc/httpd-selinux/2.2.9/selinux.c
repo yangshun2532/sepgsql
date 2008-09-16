@@ -1374,6 +1374,24 @@ static int prefork_pre_config(apr_pool_t *p, apr_pool_t *plog, apr_pool_t *ptemp
     return OK;
 }
 
+/*
+ * httpd-selinux does not allow KeepAlive mode in same time,
+ * because it enables a one-time thread to handle several requests
+ * iteratively.
+ */
+static int selinux_post_config(apr_pool_t *pconf, apr_pool_t *plog,
+			       apr_pool_t *ptemp, server_rec *serv)
+{
+    /* check the state of KeepAlive */
+    if (serv->keep_alive) {
+        ap_log_error(APLOG_MARK, APLOG_ERR, 0, serv,
+                     "Unable KeepAlive on httpd-selinux. "
+                     "Please turn it off");
+        return HTTP_INTERNAL_SERVER_ERROR;
+    }
+    return OK;
+}
+
 static void prefork_hooks(apr_pool_t *p)
 {
     /* The prefork open_logs phase must run before the core's, or stderr
@@ -1391,6 +1409,11 @@ static void prefork_hooks(apr_pool_t *p)
      * to retrieve it, so register as REALLY_FIRST
      */
     ap_hook_pre_config(prefork_pre_config, NULL, NULL, APR_HOOK_REALLY_FIRST);
+
+    /*
+     * httpd-selinux does not allow KeepAlive mode in same time.
+     */
+    ap_hook_post_config(selinux_post_config, NULL, NULL, APR_HOOK_MIDDLE);
 }
 
 static const char *set_daemons_to_start(cmd_parms *cmd, void *dummy, const char *arg)

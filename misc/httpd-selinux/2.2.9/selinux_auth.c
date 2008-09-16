@@ -37,24 +37,6 @@ typedef struct selinux_config
  */
 module AP_MODULE_DECLARE_DATA selinux_auth_module;
 
-/*
- * auth_selinux_post_config
- *
- * SELinux awared Apache MPM does not allow to enable KeepAlive mode,
- */
-static int selinux_auth_post_config(apr_pool_t *pconf, apr_pool_t *plog,
-				    apr_pool_t *ptemp, server_rec *serv)
-{
-	/* check the state of KeepAlive */
-	if (serv->keep_alive) {
-		ap_log_error(APLOG_MARK, APLOG_ERR, 0, serv,
-			     "Unable KeepAlive on httpd-selinux. "
-			     "Please turn it off");
-		return HTTP_INTERNAL_SERVER_ERROR;
-	}
-	return OK;
-}
-
 static int selinux_auth_handler(request_rec *r)
 {
 	selinux_config *sconf = ap_get_module_config(r->per_dir_config,
@@ -255,13 +237,6 @@ static const char *set_default_range(cmd_parms *cmd,
 
 static void selinux_auth_register_hooks(apr_pool_t *p)
 {
-	/*
-	 * SELinux awared Apache MPM requires to invoke set per-request
-	 * domain/range hooks at the top of contains handler.
-	 */
-	ap_hook_post_config(selinux_auth_post_config,
-			    NULL, NULL, APR_HOOK_MIDDLE);
-
 	ap_hook_handler(selinux_auth_handler,
 			NULL, NULL, APR_HOOK_REALLY_FIRST);
 }
