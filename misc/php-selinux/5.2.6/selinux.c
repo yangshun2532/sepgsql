@@ -18,9 +18,14 @@
  * SELinux functions
  */
 zend_function_entry selinux_functions[] = {
-	/*  wrappers for the /proc/pid/attr API */
+	/* global state API */
 	PHP_FE(selinux_is_enabled,		NULL)
 	PHP_FE(selinux_mls_is_enabled,		NULL)
+	PHP_FE(selinux_getenforce,		NULL)
+	PHP_FE(selinux_setenforce,		NULL)
+	PHP_FE(selinux_policyvers,		NULL)
+
+	/*  wrappers for the /proc/pid/attr API */
 	PHP_FE(selinux_getcon,			NULL)
 	PHP_FE(selinux_getcon_raw,		NULL)
 	PHP_FE(selinux_setcon,			NULL)
@@ -87,11 +92,6 @@ zend_function_entry selinux_functions[] = {
 	PHP_FE(selinux_canonicalize_context,	NULL)
 	PHP_FE(selinux_canonicalize_context_raw,NULL)
 
-	/* global setting related */
-	PHP_FE(selinux_getenforce,		NULL)
-	PHP_FE(selinux_setenforce,		NULL)
-	PHP_FE(selinux_policyvers,		NULL)
-
 	/* booleans */
 	PHP_FE(selinux_get_boolean_names,	NULL)
 	PHP_FE(selinux_get_boolean_pending,	NULL)
@@ -110,6 +110,10 @@ zend_function_entry selinux_functions[] = {
 	PHP_FE(selinux_trans_to_raw_context,	NULL)
 	PHP_FE(selinux_raw_to_trans_context,	NULL)
 
+	/* matchpathcon */
+	PHP_FE(selinux_matchpathcon,		NULL)
+	PHP_FE(selinux_matchpathcon_raw,	NULL)
+
 	{NULL, NULL, NULL},
 };
 
@@ -120,11 +124,11 @@ zend_module_entry selinux_module_entry = {
 	STANDARD_MODULE_HEADER,
 	"selinux",
 	selinux_functions,
-	NULL,		/* module_startup_func */
-	NULL,		/* module_shutdown_func */
-	NULL,		/* request_startup_func */
-	NULL,		/* request_shutdown_func */
-	NULL,		/* info_func */
+	NULL,			/* module_startup_func */
+	NULL,			/* module_shutdown_func */
+	NULL,			/* request_startup_func */
+	PHP_RSHUTDOWN(selinux),	/* request_shutdown_func */
+	NULL,			/* info_func */
 	NO_VERSION_YET,
 	STANDARD_MODULE_PROPERTIES,
 };
@@ -133,6 +137,19 @@ zend_module_entry selinux_module_entry = {
 ZEND_GET_MODULE(selinux)
 #endif
 
+/*
+ * SELinux module cleanups
+ */
+PHP_RSHUTDOWN_FUNCTION(selinux)
+{
+	matchpathcon_fini();
+
+	return SUCCESS;
+}
+
+/*
+ * Global state APIs
+ */
 PHP_FUNCTION(selinux_is_enabled)
 {
 	if (ZEND_NUM_ARGS() != 0)
@@ -151,6 +168,43 @@ PHP_FUNCTION(selinux_mls_is_enabled)
 	if (is_selinux_mls_enabled())
 		RETURN_TRUE;
 	RETURN_FALSE;
+}
+
+PHP_FUNCTION(selinux_getenforce)
+{
+	int rc;
+
+	if (ZEND_NUM_ARGS() != 0)
+		ZEND_WRONG_PARAM_COUNT();
+
+	rc = security_getenforce();
+
+	RETURN_LONG(rc);
+}
+
+PHP_FUNCTION(selinux_setenforce)
+{
+	long mode;
+
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
+                                  "l", &mode) == FAILURE)
+                RETURN_FALSE;
+
+	if (security_setenforce(mode))
+		RETURN_FALSE;
+	RETURN_TRUE;
+}
+
+PHP_FUNCTION(selinux_policyvers)
+{
+	int policyvers;
+
+	if (ZEND_NUM_ARGS() != 0)
+		ZEND_WRONG_PARAM_COUNT();
+
+	policyvers = security_policyvers();
+
+	RETURN_LONG(policyvers);
 }
 
 /*
@@ -1026,46 +1080,6 @@ PHP_FUNCTION(selinux_canonicalize_context_raw)
 }
 
 /*
- * global setting related
- */
-PHP_FUNCTION(selinux_getenforce)
-{
-	int rc;
-
-	if (ZEND_NUM_ARGS() != 0)
-		ZEND_WRONG_PARAM_COUNT();
-
-	rc = security_getenforce();
-
-	RETURN_LONG(rc);
-}
-
-PHP_FUNCTION(selinux_setenforce)
-{
-	long mode;
-
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
-                                  "l", &mode) == FAILURE)
-                RETURN_FALSE;
-
-	if (security_setenforce(mode))
-		RETURN_FALSE;
-	RETURN_TRUE;
-}
-
-PHP_FUNCTION(selinux_policyvers)
-{
-	int policyvers;
-
-	if (ZEND_NUM_ARGS() != 0)
-		ZEND_WRONG_PARAM_COUNT();
-
-	policyvers = security_policyvers();
-
-	RETURN_LONG(policyvers);
-}
-
-/*
  * booleans
  */
 PHP_FUNCTION(selinux_get_boolean_names)
@@ -1170,7 +1184,7 @@ PHP_FUNCTION(selinux_class_to_string)
 	tclass_name = security_class_to_string(tclass);
 	if (!tclass_name)
 		RETURN_FALSE;
-	RETURN_STRING(tclass_name, 1);
+	RETURN_STRING((char *)tclass_name, 1);
 }
 
 PHP_FUNCTION(selinux_string_to_av_perm)
@@ -1201,7 +1215,7 @@ PHP_FUNCTION(selinux_av_perm_to_string)
 	av_perm_name = security_av_perm_to_string(tclass, av_perm);
 	if (!av_perm_name)
 		RETURN_FALSE;
-	RETURN_STRING(av_perm_name, 1);
+	RETURN_STRING((char *)av_perm_name, 1);
 }
 
 PHP_FUNCTION(selinux_av_string)
@@ -1253,6 +1267,83 @@ PHP_FUNCTION(selinux_raw_to_trans_context)
 		RETURN_FALSE;
 	RETVAL_STRING(trans_context, 1);
 	freecon(trans_context);
+}
+
+/*
+ * matchpathcon
+ */
+
+static void do_selinux_matchpathcon(INTERNAL_FUNCTION_PARAMETERS, int raw)
+{
+	security_context_t context;
+	char *path, *mode;
+	int i, c, path_len, mode_len;
+	mode_t mode_bits = 0;
+	zend_bool baseonly = 0;
+	unsigned int flags = 0;
+
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s|sb",
+				  &path, &path_len,
+				  &mode, &mode_len,
+				  &baseonly) == FAILURE)
+		RETURN_FALSE;
+
+	if (baseonly)
+		flags |= MATCHPATHCON_BASEONLY;
+	if (raw)
+		flags |= MATCHPATHCON_NOTRANS;
+
+	set_matchpathcon_flags(flags);
+
+	if (ZEND_NUM_ARGS() > 1)
+	{
+		for (i=0; mode[i] != '\0'; i++)
+		{
+			switch (mode[i])
+			{
+			case 'b':
+				mode_bits |= S_IFBLK;
+				break;
+			case 'c':
+				mode_bits |= S_IFCHR;
+				break;
+			case 'd':
+				mode_bits |= S_IFDIR;
+				break;
+			case 'p':
+				mode_bits |= S_IFIFO;
+				break;
+			case 'l':
+				mode_bits |= S_IFLNK;
+				break;
+			case 's':
+				mode_bits |= S_IFSOCK;
+				break;
+			case '-':
+				mode_bits |= S_IFREG;
+				break;
+			default:
+				zend_error(E_WARNING,
+					   "%c: not a valid mode identifier",
+					   mode[i]);
+				RETURN_FALSE;
+			}
+		}
+	}
+	if (matchpathcon(path, mode_bits, &context) < 0)
+		RETURN_FALSE;
+	RETVAL_STRING(context, 1);
+	freecon(context);
+}
+
+PHP_FUNCTION(selinux_matchpathcon)
+{
+	do_selinux_matchpathcon(INTERNAL_FUNCTION_PARAM_PASSTHRU, 0);
+}
+
+PHP_FUNCTION(selinux_matchpathcon_raw)
+{
+	do_selinux_matchpathcon(INTERNAL_FUNCTION_PARAM_PASSTHRU, 1);
 }
 
 #endif	/* HAVE_SELINUX */

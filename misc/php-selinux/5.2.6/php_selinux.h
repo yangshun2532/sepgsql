@@ -6,9 +6,20 @@
 extern zend_module_entry selinux_module_entry;
 #define selinux_module_ptr &selinux_module_entry
 
-PHP_MINIT_FUNCTION(selinux);
+PHP_RSHUTDOWN_FUNCTION(selinux);
+
+/*
+ * Global state API
+ */
 PHP_FUNCTION(selinux_is_enabled);
 PHP_FUNCTION(selinux_mls_is_enabled);
+PHP_FUNCTION(selinux_getenforce);
+PHP_FUNCTION(selinux_setenforce);
+PHP_FUNCTION(selinux_policyvers);
+
+/*
+ * Wrappers for the /proc/<pid>/attr API
+ */
 PHP_FUNCTION(selinux_getcon);
 PHP_FUNCTION(selinux_getcon_raw);
 PHP_FUNCTION(selinux_setcon);
@@ -90,13 +101,6 @@ PHP_FUNCTION(selinux_canonicalize_context);
 PHP_FUNCTION(selinux_canonicalize_context_raw);
 
 /*
- * global setting related
- */
-PHP_FUNCTION(selinux_getenforce);
-PHP_FUNCTION(selinux_setenforce);
-PHP_FUNCTION(selinux_policyvers);
-
-/*
  * booleans
  */
 PHP_FUNCTION(selinux_get_boolean_names);
@@ -119,6 +123,12 @@ PHP_FUNCTION(selinux_av_string);
  */
 PHP_FUNCTION(selinux_trans_to_raw_context);
 PHP_FUNCTION(selinux_raw_to_trans_context);
+
+/*
+ * matchpathcon
+ */
+PHP_FUNCTION(selinux_matchpathcon);
+PHP_FUNCTION(selinux_matchpathcon_raw);
 
 #else	/* HAVE_SELINUX */
 
