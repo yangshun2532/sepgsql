@@ -312,6 +312,9 @@ static void do_selinux_setexeccon(INTERNAL_FUNCTION_PARAMETERS, int raw)
 				  "s", &context, &context_len) == FAILURE)
 		RETURN_FALSE;
 
+	if (context_len == 0)
+		context = NULL;
+
 	if (!raw)
 		rc = setexeccon(context);
 	else
@@ -368,6 +371,9 @@ static void do_selinux_setfscreatecon(INTERNAL_FUNCTION_PARAMETERS, int raw)
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
 				  "s", &context, &context_len) == FAILURE)
 		RETURN_FALSE;
+
+	if (context_len == 0)
+		context = NULL;
 
 	if (!raw)
 		rc = setfscreatecon(context);
@@ -427,6 +433,9 @@ static void do_selinux_setkeycreatecon(INTERNAL_FUNCTION_PARAMETERS, int raw)
 				  "s", &context, &context_len) == FAILURE)
 		RETURN_FALSE;
 
+	if (context_len == 0)
+		context = NULL;
+
 	if (!raw)
 		rc = setkeycreatecon(context);
 	else
@@ -484,6 +493,9 @@ static void do_selinux_setsockcreatecon(INTERNAL_FUNCTION_PARAMETERS, int raw)
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
 				  "s", &context, &context_len) == FAILURE)
 		RETURN_FALSE;
+
+	if (context_len == 0)
+		context = NULL;
 
 	if (!raw)
 		rc = setsockcreatecon(context);
