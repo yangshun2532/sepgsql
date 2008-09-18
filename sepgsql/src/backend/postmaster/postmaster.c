@@ -37,7 +37,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/postmaster/postmaster.c,v 1.562 2008/08/25 15:11:01 mha Exp $
+ *	  $PostgreSQL: pgsql/src/backend/postmaster/postmaster.c,v 1.563 2008/09/15 12:32:57 mha Exp $
  *
  * NOTES
  *
@@ -890,7 +890,15 @@ PostmasterMain(int argc, char *argv[])
 	/*
 	 * Load configuration files for client authentication.
 	 */
-	load_hba();
+	if (!load_hba())
+	{
+		/* 
+		 * It makes no sense continue if we fail to load the HBA file, since 
+		 * there is no way to connect to the database in this case.
+		 */
+		ereport(FATAL,
+				(errmsg("could not load pg_hba.conf")));
+	}
 	load_ident();
 
 	/*
@@ -1935,7 +1943,10 @@ SIGHUP_handler(SIGNAL_ARGS)
 			signal_child(pgaceWorkerPID, SIGHUP);
 
 		/* Reload authentication config files too */
-		load_hba();
+		if (!load_hba())
+			ereport(WARNING,
+					(errmsg("pg_hba.conf not reloaded")));
+
 		load_ident();
 
 #ifdef EXEC_BACKEND
@@ -3120,7 +3131,15 @@ BackendInitialize(Port *port)
 											  ALLOCSET_DEFAULT_MAXSIZE);
 	MemoryContextSwitchTo(PostmasterContext);
 
-	load_hba();
+	if (!load_hba())
+	{
+		/* 
+		 * It makes no sense continue if we fail to load the HBA file, since 
+		 * there is no way to connect to the database in this case.
+		 */
+		ereport(FATAL,
+				(errmsg("could not load pg_hba.conf")));
+	}
 	load_ident();
 	load_role();
 #endif
