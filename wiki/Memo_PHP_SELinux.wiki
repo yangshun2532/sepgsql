@@ -314,7 +314,7 @@ to the human-readable format ("translated"),
 and returns the human-readable format string, or `false` on error.
 
 == matchpathcon ==
-=== string selinux_matchpathcon(string $path [,string $mode [,bool $baseonly]])
+=== string selinux_matchpathcon(string $path [,string $mode [,bool $baseonly]]) ===
 This function matches the specified pathname and mode against the file contexts configuration and returns an appropriate security context, or `false` on error.
 The `$mode` can contain several characters as the following table to narrow dows target file type. If omitted, it disables mode matching. But should be provided whenever possible, as it may affect the matching.
 If `$baseonly` is true, it makes this function ignore local defined file contexts. The default is `false`.
