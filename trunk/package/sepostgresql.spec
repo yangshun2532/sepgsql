@@ -32,7 +32,8 @@ Patch0: sepostgresql-sepgsql-%%__base_postgresql_version__%%-%%__sepgsql_major_v
 Patch1: sepostgresql-pg_dump-%%__base_postgresql_version__%%-%%__sepgsql_major_version__%%.patch
 Patch2: sepostgresql-policy-%%__base_postgresql_version__%%-%%__sepgsql_major_version__%%.patch
 Patch3: sepostgresql-docs-%%__base_postgresql_version__%%-%%__sepgsql_major_version__%%.patch
-Patch4: sepostgresql-fedora-prefix.patch
+Patch4: sepostgresql-tests-%%__base_postgresql_version__%%-%%__sepgsql_major_version__%%.patch
+Patch5: sepostgresql-fedora-prefix.patch
 BuildRequires: perl glibc-devel bison flex readline-devel zlib-devel >= 1.0.4
 Buildrequires: checkpolicy libselinux-devel >= 2.0.43 selinux-policy >= 3.4.2
 %if %{ssl}
@@ -66,6 +67,7 @@ reference monitor to check any SQL query.
 %patch2 -p1
 %patch3 -p1
 %patch4 -p1
+%patch5 -p1
 
 %build
 CFLAGS="${CFLAGS:-%optflags}" ; export CFLAGS
