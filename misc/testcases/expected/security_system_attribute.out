@@ -1,0 +1,162 @@
+-- 
+-- testcases for security system attribute
+-- 
+-- selinux_user: unconfined_u
+-- selinux_role: unconfined_r
+-- selinux_type: unconfined_t
+-- selinux_range: s0-s0:c0.c15
+-- initial setups
+CREATE TABLE t1 (
+       x     integer,
+       y     text
+);
+CREATE TABLE t2 (
+       a     integer,
+       b     float
+);
+INSERT INTO t1 VALUES (1, 'aaa'), (2, 'bbb'), (3, 'ccc'),
+       	       	      (4, 'ddd'), (5, 'eee'), (6, 'fff');
+INSERT INTO t2 VALUES (2, 0.22), (3, 0.33), (5, 0.55);
+-- access security_context via SELECT
+SELECT security_context, * FROM t1;
+             security_context             | x |  y  
+------------------------------------------+---+-----
+ unconfined_u:object_r:sepgsql_table_t:s0 | 1 | aaa
+ unconfined_u:object_r:sepgsql_table_t:s0 | 2 | bbb
+ unconfined_u:object_r:sepgsql_table_t:s0 | 3 | ccc
+ unconfined_u:object_r:sepgsql_table_t:s0 | 4 | ddd
+ unconfined_u:object_r:sepgsql_table_t:s0 | 5 | eee
+ unconfined_u:object_r:sepgsql_table_t:s0 | 6 | fff
+(6 rows)
+
+SELECT '(' || security_context::text || ')', * FROM t1;
+                  ?column?                  | x |  y  
+--------------------------------------------+---+-----
+ (unconfined_u:object_r:sepgsql_table_t:s0) | 1 | aaa
+ (unconfined_u:object_r:sepgsql_table_t:s0) | 2 | bbb
+ (unconfined_u:object_r:sepgsql_table_t:s0) | 3 | ccc
+ (unconfined_u:object_r:sepgsql_table_t:s0) | 4 | ddd
+ (unconfined_u:object_r:sepgsql_table_t:s0) | 5 | eee
+ (unconfined_u:object_r:sepgsql_table_t:s0) | 6 | fff
+(6 rows)
+
+SELECT security_context::text || y FROM t1;
+                  ?column?                   
+---------------------------------------------
+ unconfined_u:object_r:sepgsql_table_t:s0aaa
+ unconfined_u:object_r:sepgsql_table_t:s0bbb
+ unconfined_u:object_r:sepgsql_table_t:s0ccc
+ unconfined_u:object_r:sepgsql_table_t:s0ddd
+ unconfined_u:object_r:sepgsql_table_t:s0eee
+ unconfined_u:object_r:sepgsql_table_t:s0fff
+(6 rows)
+
+-- access security_context via COPY
+COPY t1 TO stdout;
+1	aaa
+2	bbb
+3	ccc
+4	ddd
+5	eee
+6	fff
+COPY t1 (security_context, x, y) TO stdout;
+unconfined_u:object_r:sepgsql_table_t:s0	1	aaa
+unconfined_u:object_r:sepgsql_table_t:s0	2	bbb
+unconfined_u:object_r:sepgsql_table_t:s0	3	ccc
+unconfined_u:object_r:sepgsql_table_t:s0	4	ddd
+unconfined_u:object_r:sepgsql_table_t:s0	5	eee
+unconfined_u:object_r:sepgsql_table_t:s0	6	fff
+-- update security_context via UPDATE
+UPDATE t1 SET security_context = 'system_u:object_r:sepgsql_table_t:s0:c0'
+       WHERE x in (2, 3);
+UPDATE t1 SET security_context = sepgsql_set_range(security_context, 's0:c1')
+       WHERE x in (1, 5);
+UPDATE t1 SET security_context = security_context || ':c2'
+       WHERE x in (4, 6);
+SELECT security_context, * FROM t1;
+              security_context               | x |  y  
+---------------------------------------------+---+-----
+ system_u:object_r:sepgsql_table_t:s0:c0     | 2 | bbb
+ system_u:object_r:sepgsql_table_t:s0:c0     | 3 | ccc
+ unconfined_u:object_r:sepgsql_table_t:s0:c1 | 1 | aaa
+ unconfined_u:object_r:sepgsql_table_t:s0:c1 | 5 | eee
+ unconfined_u:object_r:sepgsql_table_t:s0:c2 | 4 | ddd
+ unconfined_u:object_r:sepgsql_table_t:s0:c2 | 6 | fff
+(6 rows)
+
+UPDATE t2 SET security_context = sepgsql_set_type(security_context, 'sepgsql_ro_table_t');
+SELECT t1.security_context, t2.security_context, * FROM t1, t2;
+              security_context               |              security_context               | x |  y  | a |  b   
+---------------------------------------------+---------------------------------------------+---+-----+---+------
+ system_u:object_r:sepgsql_table_t:s0:c0     | unconfined_u:object_r:sepgsql_ro_table_t:s0 | 2 | bbb | 2 | 0.22
+ system_u:object_r:sepgsql_table_t:s0:c0     | unconfined_u:object_r:sepgsql_ro_table_t:s0 | 3 | ccc | 2 | 0.22
+ unconfined_u:object_r:sepgsql_table_t:s0:c1 | unconfined_u:object_r:sepgsql_ro_table_t:s0 | 1 | aaa | 2 | 0.22
+ unconfined_u:object_r:sepgsql_table_t:s0:c1 | unconfined_u:object_r:sepgsql_ro_table_t:s0 | 5 | eee | 2 | 0.22
+ unconfined_u:object_r:sepgsql_table_t:s0:c2 | unconfined_u:object_r:sepgsql_ro_table_t:s0 | 4 | ddd | 2 | 0.22
+ unconfined_u:object_r:sepgsql_table_t:s0:c2 | unconfined_u:object_r:sepgsql_ro_table_t:s0 | 6 | fff | 2 | 0.22
+ system_u:object_r:sepgsql_table_t:s0:c0     | unconfined_u:object_r:sepgsql_ro_table_t:s0 | 2 | bbb | 3 | 0.33
+ system_u:object_r:sepgsql_table_t:s0:c0     | unconfined_u:object_r:sepgsql_ro_table_t:s0 | 3 | ccc | 3 | 0.33
+ unconfined_u:object_r:sepgsql_table_t:s0:c1 | unconfined_u:object_r:sepgsql_ro_table_t:s0 | 1 | aaa | 3 | 0.33
+ unconfined_u:object_r:sepgsql_table_t:s0:c1 | unconfined_u:object_r:sepgsql_ro_table_t:s0 | 5 | eee | 3 | 0.33
+ unconfined_u:object_r:sepgsql_table_t:s0:c2 | unconfined_u:object_r:sepgsql_ro_table_t:s0 | 4 | ddd | 3 | 0.33
+ unconfined_u:object_r:sepgsql_table_t:s0:c2 | unconfined_u:object_r:sepgsql_ro_table_t:s0 | 6 | fff | 3 | 0.33
+ system_u:object_r:sepgsql_table_t:s0:c0     | unconfined_u:object_r:sepgsql_ro_table_t:s0 | 2 | bbb | 5 | 0.55
+ system_u:object_r:sepgsql_table_t:s0:c0     | unconfined_u:object_r:sepgsql_ro_table_t:s0 | 3 | ccc | 5 | 0.55
+ unconfined_u:object_r:sepgsql_table_t:s0:c1 | unconfined_u:object_r:sepgsql_ro_table_t:s0 | 1 | aaa | 5 | 0.55
+ unconfined_u:object_r:sepgsql_table_t:s0:c1 | unconfined_u:object_r:sepgsql_ro_table_t:s0 | 5 | eee | 5 | 0.55
+ unconfined_u:object_r:sepgsql_table_t:s0:c2 | unconfined_u:object_r:sepgsql_ro_table_t:s0 | 4 | ddd | 5 | 0.55
+ unconfined_u:object_r:sepgsql_table_t:s0:c2 | unconfined_u:object_r:sepgsql_ro_table_t:s0 | 6 | fff | 5 | 0.55
+(18 rows)
+
+-- insert a tuple with explicit labeling
+INSERT INTO t1 (security_context, x, y)
+       VALUES ('unconfined_u:object_r:sepgsql_table_t:s0:c3', 7, 'ggg'),
+       	      ('unconfined_u:object_r:sepgsql_table_t:s0:c3', 8, 'hhh');
+SELECT security_context, * FROM t1;
+              security_context               | x |  y  
+---------------------------------------------+---+-----
+ system_u:object_r:sepgsql_table_t:s0:c0     | 2 | bbb
+ system_u:object_r:sepgsql_table_t:s0:c0     | 3 | ccc
+ unconfined_u:object_r:sepgsql_table_t:s0:c1 | 1 | aaa
+ unconfined_u:object_r:sepgsql_table_t:s0:c1 | 5 | eee
+ unconfined_u:object_r:sepgsql_table_t:s0:c2 | 4 | ddd
+ unconfined_u:object_r:sepgsql_table_t:s0:c2 | 6 | fff
+ unconfined_u:object_r:sepgsql_table_t:s0:c3 | 7 | ggg
+ unconfined_u:object_r:sepgsql_table_t:s0:c3 | 8 | hhh
+(8 rows)
+
+-- SELECT INTO with explicit labeling
+SELECT security_context, * INTO t3 FROM t1 WHERE x in (2, 5, 6);
+SELECT security_context, * FROM t3;
+              security_context               | x |  y  
+---------------------------------------------+---+-----
+ system_u:object_r:sepgsql_table_t:s0:c0     | 2 | bbb
+ unconfined_u:object_r:sepgsql_table_t:s0:c1 | 5 | eee
+ unconfined_u:object_r:sepgsql_table_t:s0:c2 | 6 | fff
+(3 rows)
+
+-- CREATE TABLE AS with explicit labeling
+CREATE TABLE t4 AS SELECT security_context, x AS v, y AS w FROM t1;
+SELECT security_context, * FROM t3;
+              security_context               | x |  y  
+---------------------------------------------+---+-----
+ system_u:object_r:sepgsql_table_t:s0:c0     | 2 | bbb
+ unconfined_u:object_r:sepgsql_table_t:s0:c1 | 5 | eee
+ unconfined_u:object_r:sepgsql_table_t:s0:c2 | 6 | fff
+(3 rows)
+
+CREATE TABLE t5 AS SELECT security_context AS z, * FROM t1;
+SELECT security_context, * FROM t3;
+              security_context               | x |  y  
+---------------------------------------------+---+-----
+ system_u:object_r:sepgsql_table_t:s0:c0     | 2 | bbb
+ unconfined_u:object_r:sepgsql_table_t:s0:c1 | 5 | eee
+ unconfined_u:object_r:sepgsql_table_t:s0:c2 | 6 | fff
+(3 rows)
+
+-- cleanups
+DROP TABLE t1;
+DROP TABLE t2;
+DROP TABLE t3;
+DROP TABLE t4;
+DROP TABLE t5;

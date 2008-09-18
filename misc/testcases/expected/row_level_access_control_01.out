@@ -1,0 +1,66 @@
+-- 
+-- testcases for row-level access controls (weak user)
+-- 
+-- selinux_user: unconfined_u
+-- selinux_role: unconfined_r
+-- selinux_type: unconfined_t
+-- selinux_range: s0
+SELECT security_context, * FROM t1;
+             security_context             | x |   y   
+------------------------------------------+---+-------
+ unconfined_u:object_r:sepgsql_table_t:s0 | 1 | water
+ unconfined_u:object_r:sepgsql_table_t:s0 | 3 | juice
+ unconfined_u:object_r:sepgsql_table_t:s0 | 5 | sake
+ unconfined_u:object_r:sepgsql_table_t:s0 | 7 | wine
+(4 rows)
+
+SELECT security_context, * FROM t2;
+             security_context             | a |  b  
+------------------------------------------+---+-----
+ unconfined_u:object_r:sepgsql_table_t:s0 | 4 | ccc
+(1 row)
+
+SELECT security_context, * FROM t3;
+             security_context             | s  |   t   
+------------------------------------------+----+-------
+ unconfined_u:object_r:sepgsql_table_t:s0 | 11 | green
+ unconfined_u:object_r:sepgsql_table_t:s0 | 12 | blue
+(2 rows)
+
+BEGIN;
+UPDATE t3 SET t = t || '_updt' RETURNING security_context, *;
+             security_context             | s  |     t      
+------------------------------------------+----+------------
+ unconfined_u:object_r:sepgsql_table_t:s0 | 11 | green_updt
+ unconfined_u:object_r:sepgsql_table_t:s0 | 12 | blue_updt
+(2 rows)
+
+SELECT security_context, * FROM t3;
+             security_context             | s  |     t      
+------------------------------------------+----+------------
+ unconfined_u:object_r:sepgsql_table_t:s0 | 11 | green_updt
+ unconfined_u:object_r:sepgsql_table_t:s0 | 12 | blue_updt
+(2 rows)
+
+ROLLBACK;
+BEGIN;
+DELETE FROM t3 WHERE s < 12 RETURNING security_context, *;
+             security_context             | s  |   t   
+------------------------------------------+----+-------
+ unconfined_u:object_r:sepgsql_table_t:s0 | 11 | green
+(1 row)
+
+SELECT security_context, * FROM t3;
+             security_context             | s  |  t   
+------------------------------------------+----+------
+ unconfined_u:object_r:sepgsql_table_t:s0 | 12 | blue
+(1 row)
+
+ROLLBACK;
+-- invisible PK exists
+INSERT INTO t1 VALUES (8, 'green tea');
+psql:./row_level_access_control_01.sql:26: ERROR:  duplicate key value violates unique constraint "t1_pkey"
+-- invisible FK referes visible PK
+DELETE FROM t1 WHERE x = 3;
+psql:./row_level_access_control_01.sql:29: ERROR:  update or delete on table "t1" violates foreign key constraint "t2_a_fkey" on table "t2"
+DETAIL:  Key (x)=(3) is still referenced from table "t2".
