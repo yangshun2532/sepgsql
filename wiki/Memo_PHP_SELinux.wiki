@@ -314,18 +314,21 @@ to the human-readable format ("translated"),
 and returns the human-readable format string, or `false` on error.
 
 == matchpathcon ==
-=== string selinux_matchpathcon(string $path [,string $mode [,bool $baseonly]]) ===
+=== string selinux_matchpathcon(string $path [,int $mode [,bool $baseonly [,bool $validate]]]) ===
 This function matches the specified pathname and mode against the file contexts configuration and returns an appropriate security context, or `false` on error.
-The `$mode` can contain several characters as the following table to narrow dows target file type. If omitted, it disables mode matching. But should be provided whenever possible, as it may affect the matching.
-If `$baseonly` is true, it makes this function ignore local defined file contexts. The default is `false`.
+The optional `$mode` is used to enable mode matching, and its typical input is the result of `lstat()` for the target path. If omitted or 0 is given, it disables mode matching. But should be provided whenever possible, as it may affect the matching.
+If the optional `$baseonly` is true, it makes this function ignore local defined file contexts. The default is `false`.
+If the optional `$validate` is true, sanity checks for security context is enabled. The default is `false`
 
-|| *character* || *File type* ||
-|| `-` || Regular files ||
-|| `d` || Directory ||
-|| `c` || Character Device file ||
-|| `b` || Block Device file ||
-|| `l` || Symbolic link ||
-|| `s` || Unix domain socket ||
+*usage:*
+{{{
+$ php -r \
+'$fname = "/etc/shadow";
+ $st = lstat($fname);
+ echo selinux_matchpathcon($fname, $st['mode']);
+ echo "\n";'
+system_u:object_r:shadow_t
+}}}
 
 It also has a *raw* version API named as `selinux_matchpathcon_raw`.
 
