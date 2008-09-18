@@ -64,7 +64,6 @@ zend_function_entry selinux_functions[] = {
 	PHP_FE(selinux_lsetfilecon_raw,		NULL)
 	PHP_FE(selinux_fsetfilecon,		NULL)
 	PHP_FE(selinux_fsetfilecon_raw,		NULL)
-	PHP_FE(selinux_lsetfilecon_default,	NULL)
 
 	/* labeled networking  */
 	PHP_FE(selinux_getpeercon,		NULL)
@@ -113,6 +112,7 @@ zend_function_entry selinux_functions[] = {
 	/* matchpathcon */
 	PHP_FE(selinux_matchpathcon,		NULL)
 	PHP_FE(selinux_matchpathcon_raw,	NULL)
+	PHP_FE(selinux_lsetfilecon_default,	NULL)
 
 	{NULL, NULL, NULL},
 };
@@ -748,24 +748,9 @@ PHP_FUNCTION(selinux_fsetfilecon_raw)
 	do_selinux_fsetfilecon(INTERNAL_FUNCTION_PARAM_PASSTHRU, 1);
 }
 
-PHP_FUNCTION(selinux_lsetfilecon_default)
-{
-	char *filename;
-	int filename_len;
-
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s",
-				  &filename, &filename_len) == FAILURE)
-		RETURN_FALSE;
-
-	if (selinux_lsetfilecon_default(filename) < 0)
-		RETURN_FALSE;
-	RETURN_TRUE;
-}
-
 /*
  * Labeled Networking
  */
-
 static void do_selinux_getpeercon(INTERNAL_FUNCTION_PARAMETERS, int raw)
 {
 	zval *z;
@@ -1276,61 +1261,29 @@ PHP_FUNCTION(selinux_raw_to_trans_context)
 static void do_selinux_matchpathcon(INTERNAL_FUNCTION_PARAMETERS, int raw)
 {
 	security_context_t context;
-	char *path, *mode;
-	int i, c, path_len, mode_len;
-	mode_t mode_bits = 0;
+	char *path;
+	int path_len;
+	long mode = 0;
 	zend_bool baseonly = 0;
+	zend_bool validate = 0;
 	unsigned int flags = 0;
 
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s|sb",
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s|lbb",
 				  &path, &path_len,
-				  &mode, &mode_len,
-				  &baseonly) == FAILURE)
+				  &mode, &baseonly, &validate) == FAILURE)
 		RETURN_FALSE;
 
 	if (baseonly)
 		flags |= MATCHPATHCON_BASEONLY;
 	if (raw)
 		flags |= MATCHPATHCON_NOTRANS;
+	if (validate)
+		flags |= MATCHPATHCON_VALIDATE;
 
 	set_matchpathcon_flags(flags);
 
-	if (ZEND_NUM_ARGS() > 1)
-	{
-		for (i=0; mode[i] != '\0'; i++)
-		{
-			switch (mode[i])
-			{
-			case 'b':
-				mode_bits |= S_IFBLK;
-				break;
-			case 'c':
-				mode_bits |= S_IFCHR;
-				break;
-			case 'd':
-				mode_bits |= S_IFDIR;
-				break;
-			case 'p':
-				mode_bits |= S_IFIFO;
-				break;
-			case 'l':
-				mode_bits |= S_IFLNK;
-				break;
-			case 's':
-				mode_bits |= S_IFSOCK;
-				break;
-			case '-':
-				mode_bits |= S_IFREG;
-				break;
-			default:
-				zend_error(E_WARNING,
-					   "%c: not a valid mode identifier",
-					   mode[i]);
-				RETURN_FALSE;
-			}
-		}
-	}
-	if (matchpathcon(path, mode_bits, &context) < 0)
+	mode &= S_IFMT;
+	if (matchpathcon(path, mode, &context) < 0)
 		RETURN_FALSE;
 	RETVAL_STRING(context, 1);
 	freecon(context);
@@ -1344,6 +1297,20 @@ PHP_FUNCTION(selinux_matchpathcon)
 PHP_FUNCTION(selinux_matchpathcon_raw)
 {
 	do_selinux_matchpathcon(INTERNAL_FUNCTION_PARAM_PASSTHRU, 1);
+}
+
+PHP_FUNCTION(selinux_lsetfilecon_default)
+{
+	char *filename;
+	int filename_len;
+
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s",
+				  &filename, &filename_len) == FAILURE)
+		RETURN_FALSE;
+
+	if (selinux_lsetfilecon_default(filename) < 0)
+		RETURN_FALSE;
+	RETURN_TRUE;
 }
 
 #endif	/* HAVE_SELINUX */
