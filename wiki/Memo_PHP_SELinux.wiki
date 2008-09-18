@@ -26,6 +26,7 @@ It returns `true` if we are running on a SELinux MLS kernel, or `false` otherwis
 === int selinux_getenforce(void) ===
 This function is a wrapper of `security_getenforce`.
 It returns 0 if SELinux is running in permissive mode, 1 if it is running in enforcing mode, and -1 on error.
+
 === bool selinux_setenforce(int $mode) ===
 This function is a wrapper of `security_setenforce`.
 It sets SELinux to enforcing mode if the 1 is passed in, and sets it to permissive mode if 0 is passed in.
@@ -40,6 +41,7 @@ It returns the version of the policy (a positive integer) on success, or `false`
 === string selinux_getcon(void) ===
 This function is a wrapper of `getcon`.
 It retrieves the context of the current process, or `false` on error.
+
 It also has a *raw* version API named as `selinux_getcon_raw`.
 
 === bool selinux_setcon(string $context) ===
@@ -48,22 +50,26 @@ It sets the current security context of the process to the `$context`.
 Note that use of this function requires that the entire application be
 trusted to maintain any desired separation between the old and new security
 contexts, unlike exec-based transitions performed via `selinux_setexeccon`.
+
 It also has a *raw* version API named as `selinux_setcon_raw`.
 
 === string selinux_getpidcon(int $pid) ===
 This function is a wrapper of `getpidcon`.
 It returns the process context for the specified PID, or `false` on error.
-It also has a *raw* version API named as ``.
+
+It also has a *raw* version API named as `selinux_getpidcon_raw`.
 
 === string selinux_getprevcon(void) ===
 This function is a wrapper of `getprevcon`.
 It same as `selinux_getcon` but gets the context before the last exec.
+
 It also has a *raw* version API named as `selinux_getprevcon_raw`.
 
 === string selinux_getexeccon(void) ===
 This function is a wrapper of `getexeccon`.
 It retrieves the context used for executing a new process, or `false` on error.
 The returned value can be an empty string. It means here is no explicit configuration.
+
 It also has a *raw* version API named as `selinux_getexeccon_raw`.
 
 === bool selinux_setexeccon(string $context) ===
@@ -72,12 +78,14 @@ It sets the context used for the next execve call.
 NULL can be passed to `selinux_setexeccon` to reset to the default policy behavior.
 The exec context is automatically reset after the next execve, so a program doesn't
 need to explicitly sanitize it upon startup.
+
 It also has a *raw* version API named as `selinux_setexeccon_raw`.
 
 === string selinux_getfscreatecon(void) ===
 This function is a wrapper of `getfscreatecon`.
 It retrieves the context used for creating a new file system object.
 The returned value can be an empty string. It means here is no explicit configuration.
+
 It also has a *raw* version API named as `selinux_getfscreatecon_raw`.
 
 === bool selinux_setfscreatecon(string $context) ===
@@ -88,6 +96,7 @@ The fscreate context is automatically reset after the next execve, so a program 
 need to explicitly sanitize it upon startup.
 `selinux_setfscreatecon` can be applied prior to library functions that internally
 perform an file creation, in order to set an file context on the objects.
+
 It also has a *raw* version API named as `selinux_setfscreatecon_raw`.
 
 === string selinux_getkeycreatecon(void) ===
@@ -102,13 +111,15 @@ It sets the context used for creating a new keyring object.
 NULL can be passed to `selinux_setkeycreatecon` to reset to the default policy behavior.
 The keycreate context is automatically reset after the next execve, so a program doesn't
 need to explicitly sanitize it upon startup.
+
 It also has *_raw* version API named as `selinux_setkeycreatecon_raw`.
 
 === string selinux_getsockcreatecon(void) ===
 This function is a wrapper of `getsockcreatecon`.
 It retrieves the context used for creating a new socket object.
 The returned value can be an empty string. It means here is no explicit configuration.
-It also has *_raw* version API named as `selinux_getsockcreatecon_raw`.
+
+It also has *raw* version API named as `selinux_getsockcreatecon_raw`.
 
 === bool selinux_setsockcreatecon(string $context) ===
 This function is a wrapper of `setsockcreatecon`.
@@ -116,6 +127,7 @@ It sets the context used for creating a new socket object.
 NULL can be passed to `selinux_setsockcreatecon` to reset to the default policy behavior.
 The keycreate context is automatically reset after the next execve, so a program doesn't
 need to explicitly sanitize it upon startup.
+
 It also has a *raw* version API named as `selinux_setsockcreatecon_raw`.
 
 == Get/Set file context API ==
@@ -123,45 +135,48 @@ It also has a *raw* version API named as `selinux_setsockcreatecon_raw`.
 === string selinux_getfilecon(string $path) ===
 This function is a wrapper of `getfilecon`.
 It retrieves the context associated with the given path in the file system, or `false` on error.
+
 It also has a *raw* version API named as `selinux_getfilecon_raw`.
 
 === string selinux_lgetfilecon(string $path) ===
 This function is a wrapper of `lgetfilecon`.
 It is identical to `selinux_getfilecon`, except in the case of a symbolic link,
 where the link itself is interrogated, not the file that it refers to.
+
 It also has a *raw* version API named as `selinux_lgetfilecon_raw`.
 
 === string selinux_fgetfilecon(resource $stream) ===
 This function is a wrapper of `fgetfilecon`.
 It is identical to `selinux_getfilecon`, only the open file pointed to by `$stream`
 (as returned by `fopen()`)is interrogated in place of path.
+
 It also has a *raw* version API named as `selinux_fgetfilecon_raw`.
 
 === bool selinux_setfilecon(string $path, string $context) ===
 This function is a wrapper of `setfilecon`.
 It sets the security context of the file system object and returns `true` on success, or `false` on error.
+
 It also has a *raw* version API named as `selinux_setfilecon_raw`.
 
 === bool selinux_lsetfilecon(string $path, string $context) ===
 This function is a wrapper of `lsetfilecon`.
 It is identical to `selinux_setfilecon`, except in the case of a symbolic link,
 where the link itself is interrogated, not the file that it refers to.
+
 It also has a *raw* version API named as `selinux_lsetfilecon_raw`.
 
 === bool selinux_fsetfilecon(resource $stream, string $context) ===
 This function is a wrapper of `fsetfilecon`.
 It is identical to `selinux_setfilecon`, only the open file pointed to by `$stream`
 (as returned by `fopen()`)is interrogated in place of path.
-It also has a *raw* version API named as `selinux_fsetfilecon_raw`.
 
-=== bool selinux_lsetfilecon_default(string $path) ===
-This function is a wrapper of `selinux_lsetfilecon_default`.
-It sets the file context on to the system defaults and returns `true` on success, or `false` on error.
+It also has a *raw* version API named as `selinux_fsetfilecon_raw`.
 
 == Labeled Networking ==
 === string selinux_getpeercon(resource $stream) ===
 This function is a wrapper of `getpeercon`.
 It retrieves context of peer socket which is given by `$stream` (opened by stream_socket API).
+
 It also has *_raw* version API named as `selinux_getpeercon_raw`.
 
 == security_compute_XXXX() wrappers ==
@@ -169,45 +184,75 @@ It also has *_raw* version API named as `selinux_getpeercon_raw`.
 This function is a wrapper of `security_compute_av`.
 It queries whether the policy permits the source context `$scontext` to access the target context `$tcontext` via class `$tclass`, and returns an associative array which contains access vector decision, or `false` on error.
 The returned array contains *allowed*, *decided*, *auditallow*, *auditdeny* and *seqno* members in integer representation.
+
+*usage:*
+{{{
+$ ./sapi/cli/php -r \
+      '$tclass = selinux_string_to_class("file");
+       $avd = selinux_compute_av("unconfined_u:unconfined_r:unconfined_t",
+                                 "system_u:object_r:var_log_t",
+                                 $tclass);
+       var_dump($avd);'
+array(5) {
+  ["allowed"]=>
+  int(-524289)
+  ["decided"]=>
+  int(-1)
+  ["auditallow"]=>
+  int(0)
+  ["auditdeny"]=>
+  int(-17)
+  ["seqno"]=>
+  int(10)
+}
+}}}
+
 It also has a *raw* version API named as `selinux_compute_av_raw`.
 
 === string selinux_compute_create(string $scontext, string $tcontext, int $tclass) ===
 This function is a wrapper of `security_compute_create`.
 It is used to compute a context to use for labeling a new object in a particular class based on a security context pair.
+
 It also has a *raw* version API named as `selinux_compute_create_raw`.
 
-=== string selinux_compute_relabel(string $scon, string $tcon, int $tclass) ===
+=== string selinux_compute_relabel(string $scontext, string $tcontext, int $tclass) ===
 This function is a wrapper of `security_compute_relabel`.
 It is used to compute the new context to use when relabeling an object.
 It is used in the pam_selinux.so source and the newrole  source to determine
 the correct label for the tty at login time, but can be used for other things.
+
 It also has a *raw* version API named as `selinux_compute_relabel_raw`.
 
-=== string selinux_compute_member(string $scon, string $tcon, int $tclass) ===
+=== string selinux_compute_member(string $scontext, string $tcontext, int $tclass) ===
 This function is a wrapper of `security_compute_member`.
 It is used to compute the context to use when labeling a polyinstantiated object instance.
+
 It also has a *raw* version API named as `selinux_compute_member_raw`.
 
-=== array selinux_compute_user(string $scon, string $username) ===
+=== array selinux_compute_user(string $scontext, string $username) ===
 This function is a wrapper of `security_compute_user`.
 It is used to determine the set of user contexts that can be reached from a source context.
+
 It also has a *raw* version API named as `security_compute_user_raw`.
 
 == Get initial context ==
 === string selinux_get_initial_context(string $init_name) ===
 This function is a wrapper of `security_get_initial_context`.
 It is used to get the context of a kernel initial security identifier specified by `$init_name`.
-It also has a *raw* version API named as ``.
+
+It also has a *raw* version API named as `string selinux_get_initial_context_raw`.
 
 == Sanity checks for security context ==
 === bool selinux_check_context(string $context) ===
 This function is a wrapper of `security_check_context`.
 It returns `true` if SELinux is running and the `$context` is valid, otherwise it returns `false`.
+
 It also has a *raw* version API named as `selinux_check_context_raw`.
 
 === string selinux_canonicalize_context(string $context) ===
 This function is a wrapper of `security_canonicalize_context`.
 It returns canonicalized security context if the `$context` is valid, otherwise it returns `false`.
+
 It also has a *raw* version API named as `selinux_canonicalize_context_raw`.
 
 == Booleans ==
@@ -242,21 +287,48 @@ It returns a string name for class `$tclass`, or `false` if no such class exists
 
 === int selinux_string_to_av_perm(int $tclass, string $av_name) ===
 This function is a wrapper of `string_to_av_perm`.
-It returns the access vector bit corresponding to the string `$av_name` and security class `$tclass`, or `false` if no such value exists.
+It returns the access vector bit corresponding to the string `$av_name` and security class `$tclass`,
+or `false` if no such value exists.
 
 === string selinux_av_perm_to_string(int $tclass, int $av_perm) ===
 This function is a wrapper of `security_av_perm_to_string`.
-It returns a string name for the access vector bit `$av_perm` of class `$tclass`, or `false` if either argument is invalid.
+It returns a string name for the access vector bit `$av_perm` of class `$tclass`,
+or `false` if either argument is invalid.
 
 === string selinux_av_string(int $tclass, int $av_perms) ===
 This function is a wrapper of `security_av_string`.
-It returns a full access vector string representation using `$tclass` and `$av_perms`, which may have multiple bits set.
+It returns a full access vector string representation using `$tclass` and `$av_perms`,
+which may have multiple bits set.
 
 == mcstrans ==
 === string selinux_trans_to_raw_context(string $context) ===
 This function is a wrapper of `selinux_trans_to_raw_context`.
-It performs context translation from the human-readable format ("translated") to the internal system format ("raw"), and returns the raw format string, or `false` on error.
+It performs context translation from the human-readable format ("translated")
+to the internal system format ("raw"),
+and returns the raw format string, or `false` on error.
 
 === string selinux_raw_to_trans_context(string $context) ===
 This function is a wrapper of `selinux_raw_to_trans_context`.
-It performs context translation from the internal system format ("raw") to the human-readable format ("translated") to , and returns the human-readable format string, or `false` on error.
+It performs context translation from the internal system format ("raw")
+to the human-readable format ("translated"),
+and returns the human-readable format string, or `false` on error.
+
+== matchpathcon ==
+=== string selinux_matchpathcon(string $path [,string $mode [,bool $baseonly]])
+This function matches the specified pathname and mode against the file contexts configuration and returns an appropriate security context, or `false` on error.
+The `$mode` can contain several characters as the following table to narrow dows target file type. If omitted, it disables mode matching. But should be provided whenever possible, as it may affect the matching.
+If `$baseonly` is true, it makes this function ignore local defined file contexts. The default is `false`.
+
+|| *character* || *File type* ||
+|| `-` || Regular files ||
+|| `d` || Directory ||
+|| `c` || Character Device file ||
+|| `b` || Block Device file ||
+|| `l` || Symbolic link ||
+|| `s` || Unix domain socket ||
+
+It also has a *raw* version API named as `selinux_matchpathcon_raw`.
+
+=== bool selinux_lsetfilecon_default(string $path) ===
+This function is a wrapper of `selinux_lsetfilecon_default`.
+It sets the file context on to the system defaults and returns `true` on success, or `false` on error.
