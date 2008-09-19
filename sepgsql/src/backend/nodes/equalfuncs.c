@@ -1954,6 +1954,8 @@ _equalSEvalItemProcedure(SEvalItemProcedure *a, SEvalItemProcedure *b)
 {
 	COMPARE_SCALAR_FIELD(perms);
 	COMPARE_SCALAR_FIELD(funcid);
+
+	return true;
 }
 
 /*
