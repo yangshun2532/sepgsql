@@ -23,6 +23,7 @@
 #include "catalog/pg_proc.h"
 #include "catalog/pg_trigger.h"
 #include "executor/executor.h"
+#include "nodes/nodeFuncs.h"
 #include "nodes/security.h"
 #include "optimizer/clauses.h"
 #include "optimizer/plancat.h"
