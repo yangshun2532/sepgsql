@@ -74,7 +74,7 @@ diff -rpNU3 base/doc sepgsql/doc			\
     > ${RPMSOURCE}/sepostgresql-docs-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch
 rm -rf base/doc sepgsql/doc
 
-echo "GET: sepostgresql-tests-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch"
+echo "GEN: sepostgresql-tests-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch"
 diff -rpNU3 base/src/test sepgsql/src/test		\
     > ${RPMSOURCE}/sepostgresql-tests-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch
 rm -rf base/src/test sepgsql/src/test
@@ -82,28 +82,6 @@ rm -rf base/src/test sepgsql/src/test
 echo "GEN: sepostgresql-sepgsql-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch"
 diff -rpNU3 base sepgsql				\
     > ${RPMSOURCE}/sepostgresql-sepgsql-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch
-
-if [ ${GEN_PATCH_ONLY} -ne 0 ]; then
-    mv ${RPMSOURCE}/sepostgresql-sepgsql-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch	\
-	${RPMSOURCE}/sepostgresql-sepgsql-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}-r${SEPGSQL_REVISION}.patch
-    mv ${RPMSOURCE}/sepostgresql-pg_dump-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch	\
-	${RPMSOURCE}/sepostgresql-pg_dump-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}-r${SEPGSQL_REVISION}.patch
-    mv ${RPMSOURCE}/sepostgresql-policy-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch  \
-        ${RPMSOURCE}/sepostgresql-policy-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}-r${SEPGSQL_REVISION}.patch
-    mv ${RPMSOURCE}/sepostgresql-docs-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch \
-	${RPMSOURCE}/sepostgresql-docs-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}-r${SEPGSQL_REVISION}.patch
-    mv ${RPMSOURCE}/sepostgresql-tests-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch \
-	${RPMSOURCE}/sepostgresql-tests-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}-r${SEPGSQL_REVISION}.patch
-
-    echo "---- LIST OF GENERATED PATCHES ----"
-    echo "${RPMSOURCE}/sepostgresql-sepgsql-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}-r${SEPGSQL_REVISION}.patch"
-    echo "${RPMSOURCE}/sepostgresql-pg_dump-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}-r${SEPGSQL_REVISION}.patch"
-    echo "${RPMSOURCE}/sepostgresql-policy-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}-r${SEPGSQL_REVISION}.patch"
-    echo "${RPMSOURCE}/sepostgresql-docs-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}-r${SEPGSQL_REVISION}.patch"
-    echo "${RPMSOURCE}/sepostgresql-tests-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}-r${SEPGSQL_REVISION}.patch"
-
-    exit 1
-fi
 
 echo "GEN: sepostgresql.init"
 cat package/sepostgresql.init | \
@@ -131,9 +109,28 @@ cp package/sepostgresql.logrotate ${RPMSOURCE}
 echo "CPY: sepostgresql-fedora-prefix.patch"
 cp package/sepostgresql-fedora-prefix.patch ${RPMSOURCE}
 
-# ---- build rpm package
-rpmbuild -ba ${RPMSOURCE}/sepostgresql.spec
+# ---- build rpm package, if necessary
+if [ ${GEN_PATCH_ONLY} -eq 0 ]; then
+    rpmbuild -ba ${RPMSOURCE}/sepostgresql.spec
+fi
+
+mv ${RPMSOURCE}/sepostgresql-sepgsql-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch	\
+    ${RPMSOURCE}/sepostgresql-sepgsql-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}-r${SEPGSQL_REVISION}.patch
+mv ${RPMSOURCE}/sepostgresql-pg_dump-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch	\
+    ${RPMSOURCE}/sepostgresql-pg_dump-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}-r${SEPGSQL_REVISION}.patch
+mv ${RPMSOURCE}/sepostgresql-policy-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch  \
+    ${RPMSOURCE}/sepostgresql-policy-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}-r${SEPGSQL_REVISION}.patch
+mv ${RPMSOURCE}/sepostgresql-docs-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch \
+    ${RPMSOURCE}/sepostgresql-docs-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}-r${SEPGSQL_REVISION}.patch
+mv ${RPMSOURCE}/sepostgresql-tests-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch \
+    ${RPMSOURCE}/sepostgresql-tests-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}-r${SEPGSQL_REVISION}.patch
+
+echo "---- LIST OF GENERATED PATCHES ----"
+echo "${RPMSOURCE}/sepostgresql-sepgsql-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}-r${SEPGSQL_REVISION}.patch"
+echo "${RPMSOURCE}/sepostgresql-pg_dump-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}-r${SEPGSQL_REVISION}.patch"
+echo "${RPMSOURCE}/sepostgresql-policy-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}-r${SEPGSQL_REVISION}.patch"
+echo "${RPMSOURCE}/sepostgresql-docs-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}-r${SEPGSQL_REVISION}.patch"
+echo "${RPMSOURCE}/sepostgresql-tests-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}-r${SEPGSQL_REVISION}.patch"
 
 # ---- clean up
 rm -rf ${WORKDIR}
-
