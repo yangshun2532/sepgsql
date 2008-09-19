@@ -1180,4 +1180,22 @@ extern void pgaceAlterRelationCommon(Relation rel, AlterTableCmd *cmd);
 #define TextDatumGetCString(x)					\
 	(DatumGetCString(DirectFunctionCall1(textout, PointerGetDatum(x))))
 
+/******************************************************************
+ * SQL function declaration related to PGACE security framework
+ ******************************************************************/
+
+/*
+ * SE-PostgreSQL SQL FUNCTIONS
+ */
+extern Datum sepgsql_getcon(PG_FUNCTION_ARGS);
+extern Datum sepgsql_getservcon(PG_FUNCTION_ARGS);
+extern Datum sepgsql_get_user(PG_FUNCTION_ARGS);
+extern Datum sepgsql_get_role(PG_FUNCTION_ARGS);
+extern Datum sepgsql_get_type(PG_FUNCTION_ARGS);
+extern Datum sepgsql_get_range(PG_FUNCTION_ARGS);
+extern Datum sepgsql_set_user(PG_FUNCTION_ARGS);
+extern Datum sepgsql_set_role(PG_FUNCTION_ARGS);
+extern Datum sepgsql_set_type(PG_FUNCTION_ARGS);
+extern Datum sepgsql_set_range(PG_FUNCTION_ARGS);
+
 #endif // PGACE_H
