@@ -1,0 +1,49 @@
+-- 
+-- initial setup of tuple level access control
+-- 
+-- selinux_user: unconfined_u
+-- selinux_role: unconfined_r
+-- selinux_type: unconfined_t
+-- selinux_range: s0-s0:c0.c15
+CREATE TABLE t1
+(
+	x	integer primary key,
+	y	text
+);
+psql:./10_tuple_level_access_control.sql:13: NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "t1_pkey" for table "t1"
+CREATE TABLE t2
+(
+	a	integer primary key,
+	b	text
+);
+psql:./10_tuple_level_access_control.sql:19: NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "t2_pkey" for table "t2"
+INSERT INTO t1 VALUES	(1, 'water'),  (2, 'coke'),  (3, 'juice'),
+			(4, 'coffee'), (5, 'beer'),  (6, 'wine');
+INSERT INTO t2 VALUES	(1, 'red'),    (2, 'blue'),  (3, 'green'),
+			(4, 'yellow'), (5, 'black'), (6, 'white');
+UPDATE t1 SET security_context = sepgsql_set_range(security_context, 's0:c1')
+	WHERE x IN (2, 3, 4);
+UPDATE t2 SET security_context = sepgsql_set_range(security_context, 's0:c1')
+	WHERE a IN (1, 4, 5);
+SELECT security_context, * FROM t1;
+              security_context               | x |   y    
+---------------------------------------------+---+--------
+ unconfined_u:object_r:sepgsql_table_t:s0    | 1 | water
+ unconfined_u:object_r:sepgsql_table_t:s0    | 5 | beer
+ unconfined_u:object_r:sepgsql_table_t:s0    | 6 | wine
+ unconfined_u:object_r:sepgsql_table_t:s0:c1 | 2 | coke
+ unconfined_u:object_r:sepgsql_table_t:s0:c1 | 3 | juice
+ unconfined_u:object_r:sepgsql_table_t:s0:c1 | 4 | coffee
+(6 rows)
+
+SELECT security_context, * FROM t2;
+              security_context               | a |   b    
+---------------------------------------------+---+--------
+ unconfined_u:object_r:sepgsql_table_t:s0    | 2 | blue
+ unconfined_u:object_r:sepgsql_table_t:s0    | 3 | green
+ unconfined_u:object_r:sepgsql_table_t:s0    | 6 | white
+ unconfined_u:object_r:sepgsql_table_t:s0:c1 | 1 | red
+ unconfined_u:object_r:sepgsql_table_t:s0:c1 | 4 | yellow
+ unconfined_u:object_r:sepgsql_table_t:s0:c1 | 5 | black
+(6 rows)
+
