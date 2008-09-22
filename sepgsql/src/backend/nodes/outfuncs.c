@@ -289,6 +289,7 @@ _outScanInfo(StringInfo str, Scan *node)
 	_outPlanInfo(str, (Plan *) node);
 
 	WRITE_UINT_FIELD(scanrelid);
+	WRITE_UINT_FIELD(pgaceTuplePerms);
 }
 
 /*
