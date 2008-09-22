@@ -53,6 +53,8 @@ TESTCASES=`ls ./*.sql`
 NUM_TESTS=`ls ./*.sql | wc -l`
 COUNT=1
 
+rm -f ${BASEDIR}/result.diff
+
 for X in $TESTCASES
 do
     PREFIX=`basename $X | sed -e 's/.sql$//g'`
@@ -72,6 +74,9 @@ do
     else
 	echo "FAIL"
     fi
+    cat ${WORKDIR}/${PREFIX}.diff >> ${BASEDIR}/result.diff
 
     COUNT=`expr $COUNT + 1`
 done
+
+echo "${BASEDIR}/result.diff shows differences from expected result"
