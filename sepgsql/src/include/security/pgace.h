@@ -735,39 +735,40 @@ pgaceCallFunctionFastPath(FmgrInfo *finfo)
 }
 
 /*
- * pgacePreparePlanCheck
+ * pgaceBeginPerformCheckFK
  *
- * This hook is invoked just before FK/PK constraint checks.
- * The guest can change its state during FK/PK constraint checks,
- * and restore it on pgaceRestorePlanCheck().
- * If it needs an opaque data, pgace_saved can be used to store
- * an opaque data.
+ * This hook is invoked just before performing FK constraint checks.
+ * The guest can change its internal state during the checks.
+ * The major purpose of this function is to prevent violation of
+ * integrity consistentency violation due to row-level access control.
+ * If the guest requires an opaque data, save_pgace can be used
+ * to store it.
  */
 static inline void
-pgacePreparePlanCheck(Relation rel, Datum *pgace_saved)
+pgaceBeginPerformCheckFK(Relation rel, bool rel_is_primary, Datum *save_pgace)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
 	{
-		sepgsqlPreparePlanCheck(rel, pgace_saved);
+		sepgsqlBeginPerformCheckFK(rel, rel_is_primary, save_pgace);
 		return;
 	}
 #endif
 }
 
 /*
- * pgaceRestorePlanCheck
+ * pgaceEndPerformCheckFK
  *
- * This hook is invoked just after FK/PK constraint checks.
- * When the guest change something, it can be restored in this hook.
+ * This hook is invoked just after performing FK constraint checks.
+ * The guest can restore its internal state using this hook.
  */
 static inline void
-pgaceRestorePlanCheck(Relation rel, Datum pgace_saved)
+pgaceEndPerformCheckFK(Relation rel, bool rel_is_primary, Datum save_pgace)
 {
 #ifdef HAVE_SELINUX
 	if (sepgsqlIsEnabled())
 	{
-		sepgsqlRestorePlanCheck(rel, pgace_saved);
+		sepgsqlEndPerformCheckFK(rel, rel_is_primary, save_pgace);
 		return;
 	}
 #endif

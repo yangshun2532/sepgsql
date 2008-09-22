@@ -103,9 +103,9 @@ extern void sepgsqlCallFunction(FmgrInfo *finfo, bool with_perm_check);
 
 extern bool sepgsqlCallFunctionTrigger(FmgrInfo *finfo, TriggerData *tgdata);
 
-extern void sepgsqlPreparePlanCheck(Relation rel, Datum *pgace_saved);
+extern void sepgsqlBeginPerformCheckFK(Relation rel, bool rel_is_primary, Datum *save_pgace);
 
-extern void sepgsqlRestorePlanCheck(Relation rel, Datum pgace_saved);
+extern void sepgsqlEndPerformCheckFK(Relation rel, bool rel_is_primary, Datum save_pgace);
 
 /* TABLE related hooks */
 extern void sepgsqlLockTable(Oid relid);

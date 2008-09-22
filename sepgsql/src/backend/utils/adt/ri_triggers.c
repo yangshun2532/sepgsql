@@ -3203,7 +3203,6 @@ ri_PlanCheck(const char *querystr, int nargs, Oid *argtypes,
 	Relation	query_rel;
 	Oid			save_userid;
 	bool		save_secdefcxt;
-	Datum		save_pgace;
 
 	/*
 	 * The query is always run against the FK table except when this is an
@@ -3221,18 +3220,7 @@ ri_PlanCheck(const char *querystr, int nargs, Oid *argtypes,
 	SetUserIdAndContext(RelationGetForm(query_rel)->relowner, true);
 
 	/* Create the plan */
-	pgacePreparePlanCheck(query_rel, &save_pgace);
-	PG_TRY();
-	{
-		qplan = SPI_prepare(querystr, nargs, argtypes);
-	}
-	PG_CATCH();
-	{
-		pgaceRestorePlanCheck(query_rel, save_pgace);
-		PG_RE_THROW();
-	}
-	PG_END_TRY();
-	pgaceRestorePlanCheck(query_rel, save_pgace);
+	qplan = SPI_prepare(querystr, nargs, argtypes);
 
 	if (qplan == NULL)
 		elog(ERROR, "SPI_prepare returned %d for %s", SPI_result, querystr);
@@ -3269,6 +3257,7 @@ ri_PerformCheck(RI_QueryKey *qkey, SPIPlanPtr qplan,
 	int			spi_result;
 	Oid			save_userid;
 	bool		save_secdefcxt;
+	Datum		save_pgace;
 	Datum		vals[RI_MAX_NUMKEYS * 2];
 	char		nulls[RI_MAX_NUMKEYS * 2];
 
@@ -3349,11 +3338,22 @@ ri_PerformCheck(RI_QueryKey *qkey, SPIPlanPtr qplan,
 	GetUserIdAndContext(&save_userid, &save_secdefcxt);
 	SetUserIdAndContext(RelationGetForm(query_rel)->relowner, true);
 
-	/* Finally we can run the query. */
-	spi_result = SPI_execute_snapshot(qplan,
-									  vals, nulls,
-									  test_snapshot, crosscheck_snapshot,
-									  false, false, limit);
+	pgaceBeginPerformCheckFK(query_rel, query_rel == pk_rel, &save_pgace);
+	PG_TRY();
+	{
+		/* Finally we can run the query. */
+		spi_result = SPI_execute_snapshot(qplan,
+										  vals, nulls,
+										  test_snapshot, crosscheck_snapshot,
+										  false, false, limit);
+	}
+	PG_CATCH();
+	{
+		pgaceEndPerformCheckFK(query_rel, query_rel == pk_rel, save_pgace);
+		PG_RE_THROW();
+	}
+	PG_END_TRY();
+	pgaceEndPerformCheckFK(query_rel, query_rel == pk_rel, save_pgace);
 
 	/* Restore UID */
 	SetUserIdAndContext(save_userid, save_secdefcxt);
