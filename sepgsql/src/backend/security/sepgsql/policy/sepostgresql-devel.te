@@ -1,4 +1,4 @@
-policy_module(sepostgresql-devel, 3.11)
+policy_module(sepostgresql-devel, 3.13)
 
 gen_require(`
 	class db_database all_db_database_perms;
@@ -18,6 +18,11 @@ gen_require(`
 	attribute sepgsql_procedure_type;
 	attribute sepgsql_blob_type;
 	attribute sepgsql_module_type;
+
+	# for testcases
+	attribute tmpfile;
+	role unconfined_r;
+	type unconfined_t;
 ')
 
 #################################
@@ -28,14 +33,8 @@ gen_require(`
 type sepgsql_test_t;
 domain_type(sepgsql_test_t)
 
-optional_policy(`
-	gen_require(`
-		type unconfined_t;
-		role unconfined_r;
-	')
-	allow unconfined_t sepgsql_test_t : process transition;
-	role unconfined_r types sepgsql_test_t;
-')
+allow unconfined_t sepgsql_test_t : process transition;
+role unconfined_r types sepgsql_test_t;
 
 corecmd_exec_bin(sepgsql_test_t)
 allow sepgsql_test_t bin_t : file { entrypoint };
@@ -51,12 +50,12 @@ files_search_home(sepgsql_test_t)
 allow sepgsql_test_t home_type : file rw_file_perms;
 allow sepgsql_test_t home_type : dir search_dir_perms;
 miscfiles_read_localization(sepgsql_test_t)
-files_manage_generic_tmp_files(sepgsql_test_t)
 
-optional_policy(`
-	postgresql_stream_connect(sepgsql_test_t)
-	postgresql_unpriv_client(sepgsql_test_t)
-')
+allow sepgsql_test_t tmpfile : dir search_dir_perms;
+allow sepgsql_test_t tmpfile : file rw_file_perms;
+
+postgresql_stream_connect(sepgsql_test_t)
+postgresql_unpriv_client(sepgsql_test_t)
 
 optional_policy(`
 	nscd_shm_use(sepgsql_test_t)
