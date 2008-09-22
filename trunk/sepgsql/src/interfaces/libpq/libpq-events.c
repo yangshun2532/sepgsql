@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/interfaces/libpq/libpq-events.c,v 1.1 2008/09/17 04:31:08 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/interfaces/libpq/libpq-events.c,v 1.3 2008/09/19 20:06:13 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -76,6 +76,7 @@ PQregisterEventProc(PGconn *conn, PGEventProc proc,
 		return FALSE;
 	conn->events[conn->nEvents].passThrough = passThrough;
 	conn->events[conn->nEvents].data = NULL;
+	conn->events[conn->nEvents].resultInitialized = FALSE;
 	conn->nEvents++;
 
 	regevt.conn = conn;
@@ -173,4 +174,36 @@ PQresultInstanceData(const PGresult *result, PGEventProc proc)
 			return result->events[i].data;
 
 	return NULL;
+}
+
+/*
+ * Fire RESULTCREATE events for an application-created PGresult.
+ *
+ * The conn argument can be NULL if event procedures won't use it.
+ */
+int
+PQfireResultCreateEvents(PGconn *conn, PGresult *res)
+{
+	int i;
+
+	if (!res)
+		return FALSE;
+
+	for (i = 0; i < res->nEvents; i++)
+	{
+		if (!res->events[i].resultInitialized)
+		{
+			PGEventResultCreate evt;
+
+			evt.conn = conn;
+			evt.result = res;
+			if (!res->events[i].proc(PGEVT_RESULTCREATE, &evt,
+									 res->events[i].passThrough))
+				return FALSE;
+
+			res->events[i].resultInitialized = TRUE;
+		}
+	}
+
+	return TRUE;
 }
