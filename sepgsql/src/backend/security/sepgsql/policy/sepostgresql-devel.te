@@ -30,14 +30,16 @@ domain_type(sepgsql_test_t)
 
 optional_policy(`
 	gen_require(`
-		role unconfined_r;
 		type unconfined_t;
+		role unconfined_r;
 	')
-	role unconfined_r types sepgsql_test_t;
 	allow unconfined_t sepgsql_test_t : process transition;
+	role unconfined_r types sepgsql_test_t;
 ')
 
 corecmd_exec_bin(sepgsql_test_t)
+allow sepgsql_test_t bin_t : file { entrypoint };
+
 files_read_usr_files(sepgsql_test_t)
 files_read_etc_files(sepgsql_test_t)
 libs_use_ld_so(sepgsql_test_t)
@@ -45,7 +47,6 @@ libs_use_shared_libs(sepgsql_test_t)
 
 term_use_all_terms(sepgsql_test_t)
 
-allow sepgsql_test_t bin_t : file { entrypoint };
 files_search_home(sepgsql_test_t)
 allow sepgsql_test_t home_type : file rw_file_perms;
 allow sepgsql_test_t home_type : dir search_dir_perms;
