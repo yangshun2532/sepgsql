@@ -593,21 +593,31 @@ sepgsqlExecScan(Scan *scan, Relation rel, TupleTableSlot *slot)
 }
 
 /* ----------------------------------------------------------
- * special cases in foreign key constraint
+ * special cases for Foreign Key constraint
  * ---------------------------------------------------------- */
 void
-sepgsqlPreparePlanCheck(Relation rel, Datum *pgace_saved)
+sepgsqlBeginPerformCheckFK(Relation rel, bool is_primary, Datum *save_pgace)
 {
-	/* store the current status */
-	*pgace_saved = BoolGetDatum(abort_on_violated_tuple);
+	/*
+	 * NOTE: when a tuple is inserted/updated on FK side, all we should do
+	 * is simply filtering violated tuples on PK size, as normal row-level
+	 * access control doin.
+	 * In the result, INSERT/UPDATE with invisible tuple is failed.
+	 */
+	if (is_primary)
+		return;
 
+	*save_pgace = BoolGetDatum(abort_on_violated_tuple);
 	abort_on_violated_tuple = true;
 }
 
 void
-sepgsqlRestorePlanCheck(Relation rel, Datum pgace_saved)
+sepgsqlEndPerformCheckFK(Relation rel, bool is_primary, Datum save_pgace)
 {
-	abort_on_violated_tuple = DatumGetBool(pgace_saved);
+	if (is_primary)
+		return;
+
+	abort_on_violated_tuple = DatumGetBool(save_pgace);
 }
 
 /*******************************************************************************
