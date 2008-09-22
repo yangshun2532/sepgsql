@@ -1379,6 +1379,7 @@ _outRelOptInfo(StringInfo str, RelOptInfo *node)
 	WRITE_BOOL_FIELD(has_eclass_joins);
 	WRITE_BITMAPSET_FIELD(index_outer_relids);
 	WRITE_NODE_FIELD(index_inner_paths);
+	WRITE_UINT_FIELD(pgaceTuplePerms);
 }
 
 static void
@@ -1547,6 +1548,7 @@ _outCreateStmt(StringInfo str, CreateStmt *node)
 	WRITE_NODE_FIELD(options);
 	WRITE_ENUM_FIELD(oncommit, OnCommitAction);
 	WRITE_STRING_FIELD(tablespacename);
+	WRITE_NODE_FIELD(pgaceItem);
 }
 
 static void
@@ -1662,6 +1664,7 @@ _outColumnDef(StringInfo str, ColumnDef *node)
 	WRITE_NODE_FIELD(raw_default);
 	WRITE_STRING_FIELD(cooked_default);
 	WRITE_NODE_FIELD(constraints);
+	WRITE_NODE_FIELD(pgaceItem);
 }
 
 static void
