@@ -1,4 +1,4 @@
-policy_module(sepostgresql-devel, 3.13)
+policy_module(sepostgresql-devel, 3.14)
 
 gen_require(`
 	class db_database all_db_database_perms;
@@ -23,6 +23,7 @@ gen_require(`
 	attribute tmpfile;
 	role unconfined_r;
 	type unconfined_t;
+	type sepgsql_trusted_proc_t;
 ')
 
 #################################
@@ -35,6 +36,7 @@ domain_type(sepgsql_test_t)
 
 allow unconfined_t sepgsql_test_t : process transition;
 role unconfined_r types sepgsql_test_t;
+role unconfined_r types sepgsql_trusted_proc_t;
 
 corecmd_exec_bin(sepgsql_test_t)
 allow sepgsql_test_t bin_t : file { entrypoint };
