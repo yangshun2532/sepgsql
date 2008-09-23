@@ -218,6 +218,9 @@ fi
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
 
 %changelog
+* Tue Sep 23 2008 <kaigai@kaigai.gr.jp> - 8.3.3-2.1043
+- bugfix: a case when INSERT a FK reference to invisible PK
+
 * Wed Aug 13 2008 <kaigai@kaigai.gr.jp> - 8.3.3-2.964
 - bugfix: trusted procedure invokation
 
