@@ -381,6 +381,8 @@ pgaceLookupSecurityId(char *raw_label)
 	 * valid label checks
 	 */
 	raw_label = pgaceValidateSecurityLabel(raw_label);
+	if (!raw_label)
+		return InvalidOid;
 
 	if (IsBootstrapProcessingMode())
 		return earlySecurityLabelToSid(raw_label);
