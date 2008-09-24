@@ -21,6 +21,9 @@
 #ifdef HAVE_SELINUX
 #include "security/sepgsql.h"
 #endif
+#ifdef HAVE_ROWACL
+#include "security/rowacl.h"
+#endif
 
 /*
  * The definitions of PGACE hooks are follows:
@@ -86,6 +89,8 @@ pgaceSecurityFeatureIdentity(void)
 #if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
 		return "selinux";
+#elif defined(HAVE_ROWACL)
+	return "row_level_acl";
 #endif
 	return "nothing";
 }
@@ -253,6 +258,9 @@ pgaceExecScan(Scan *scan, Relation rel, TupleTableSlot *slot)
 #if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
 		return sepgsqlExecScan(scan, rel, slot);
+#elif defined(HAVE_ROWACL)
+	if (rowaclIsEnabled())
+		return rowaclExecScan(scan, rel, slot);
 #endif
 	return true;
 }
@@ -318,6 +326,11 @@ pgaceHeapTupleInsert(Relation rel, HeapTuple tuple,
 		return sepgsqlHeapTupleInsert(rel, tuple,
 									  is_internal,
 									  with_returning);
+#elif defined(HAVE_ROWACL)
+	if (rowaclIsEnabled())
+		return rowaclHeapTupleInsert(rel, tuple,
+									 is_internal,
+									 with_returning);
 #endif
 	return true;
 }
@@ -351,6 +364,11 @@ pgaceHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple newtup,
 		return sepgsqlHeapTupleUpdate(rel, otid, newtup,
 									  is_internal,
 									  with_returning);
+#elif defined(HAVE_ROWACL)
+	if (rowaclIsEnabled())
+		return rowaclHeapTupleUpdate(rel, otid, newtup,
+									 is_internal,
+									 with_returning);
 #endif
 	return true;
 }
@@ -379,6 +397,11 @@ pgaceHeapTupleDelete(Relation rel, ItemPointer otid,
 		return sepgsqlHeapTupleDelete(rel, otid,
 									  is_internal,
 									  with_returning);
+#elif defined(HAVE_ROWACL)
+	if (rowaclIsEnabled())
+		return rowaclHeapTupleDelete(rel, otid,
+									 is_internal,
+									 with_returning);
 #endif
 	return true;
 }
@@ -734,6 +757,9 @@ pgaceBeginPerformCheckFK(Relation rel, bool rel_is_primary, Datum *save_pgace)
 #if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
 		sepgsqlBeginPerformCheckFK(rel, rel_is_primary, save_pgace);
+#elif defined(HAVE_ROWACL)
+	if (rowaclIsEnabled())
+		rowaclBeginPerformCheckFK(rel, rel_is_primary, save_pgace);
 #endif
 }
 
@@ -749,6 +775,9 @@ pgaceEndPerformCheckFK(Relation rel, bool rel_is_primary, Datum save_pgace)
 #if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
 		sepgsqlEndPerformCheckFK(rel, rel_is_primary, save_pgace);
+#elif defined(HAVE_ROWACL)
+	if (rowaclIsEnabled())
+		rowaclEndPerformCheckFK(rel, rel_is_primary, save_pgace);
 #endif
 }
 
@@ -817,6 +846,9 @@ pgaceCopyToTuple(Relation rel, List *attNumList, HeapTuple tuple)
 #if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
 		return sepgsqlCopyToTuple(rel, attNumList, tuple);
+#elif defined(HAVE_ROWACL)
+	if (rowaclIsEnabled())
+		return rowaclCopyToTuple(rel, attNumList, tuple);
 #endif
 	return true;
 }
@@ -1015,6 +1047,9 @@ pgaceSecurityAttributeNecessary(void)
 #if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
 		return true;
+#elif defined(HAVE_ROWACL)
+	if (rowaclIsEnabled())
+		return true;
 #endif
 	return false;
 }
@@ -1074,6 +1109,9 @@ pgaceValidateSecurityLabel(char *seclabel)
 #if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
 		return sepgsqlValidateSecurityLabel(seclabel);
+#elif defined(HAVE_ROWACL)
+	if (rowaclIsEnabled())
+		return rowaclValidateSecurityLabel(seclabel);
 #endif
 	return seclabel;
 }
@@ -1138,5 +1176,11 @@ extern Datum sepgsql_set_user(PG_FUNCTION_ARGS);
 extern Datum sepgsql_set_role(PG_FUNCTION_ARGS);
 extern Datum sepgsql_set_type(PG_FUNCTION_ARGS);
 extern Datum sepgsql_set_range(PG_FUNCTION_ARGS);
+
+/*
+ * row-level access controls SQL FUNCTIONS
+ */
+extern Datum row_acl_grant(PG_FUNCTION_ARGS);
+extern Datum row_acl_revoke(PG_FUNCTION_ARGS);
 
 #endif // PGACE_H
