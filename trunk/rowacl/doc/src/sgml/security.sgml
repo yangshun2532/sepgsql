@@ -1,0 +1,1085 @@
+<appendix id="security">
+ <title>Enhanced Security Features</title>
+
+ <abstract>
+   <para>
+     This chapter introduces enhanced security features built in core
+     PostgreSQL, which includes mandatory access controls, row and column
+     level access controls, security policy integration between database
+     management system and operating system and so on.
+   </para>
+
+   <para>
+     SE-PostgreSQL (Security Enhanced PostgreSQL) provides an additional
+     access control mechanism, collaborating with SELinux and its security
+     policy.
+
+     The security policy of SELinux is a set of rules to control accesses
+     to describe who can access what objects comprehensively.
+
+     The key concept of SE-PostgreSQL is to share a single unified security
+     policy with operating system, and apply it on accesses to database
+     objects (like tables, columns, ...) based on same rules, as if client
+     accesses to filesystem objects.
+
+     In addition, SE-PostgreSQL applies its access control decision for
+     any query come from any clients including privileged database roles,
+     and provides maximum flexibility in configuration using row and column
+     level access controls.
+
+     These feature enables to protect information leaks and manipulation
+     from malicious insider and to reduce damages from SQL injection and
+     application bugs.
+   </para>
+
+   <para>
+     PostgreSQL provides a security framework named as PGACE (PostgreSQL
+     Access Control Extension). It is consist of a series of hooks and
+     facilities to manage security attribute of each database objects.
+
+     It enables to minimize impacts to add a new security feature like
+     SE-PostgreSQL, and provide basic facilities to make a decision.
+   </para>
+ </abstract>
+
+ <sect1 id="security-sepgsql-setup">
+   <title>SE-PostgreSQL Installation and Setup</title>
+
+   <sect2>
+     <title>Requirements</title>
+     <para>
+       We need the following packages to build and work SE-PostgreSQL
+       correctly. Please confirm them at first.
+     </para>
+
+     <itemizedlist>
+       <listitem>
+	 <para>
+	   Linux kernel (2.6.23, or later)
+	 </para>
+       </listitem>
+       <listitem>
+	 <para>
+	   libselinux and libselinux-devel (2.0.43, or later)
+	 </para>
+       </listitem>
+       <listitem>
+	 <para>
+	   selinux-policy and selinux-policy-devel (3.0.6, or later)
+	 </para>
+       </listitem>
+       <listitem>
+	 <para>
+	   policycoreutils (2.0.16, or later)
+	 </para>
+       </listitem>
+     </itemizedlist>
+   </sect2>
+
+   <sect2>
+     <title>Configure</title>
+     <para>
+       In the default, SE-PostgreSQL feature is not activated.
+       We have to specify <option>--enable-selinux</option> option
+       to configure script. It enables to build your PostgreSQL
+       with features to support SELinux.
+     </para>
+
+     <para>
+<screen>
+  <prompt>$ </prompt><userinput>./configure --enable-selinux</userinput>
+</screen>
+     </para>
+   </sect2>
+
+   <sect2>
+     <title>Build</title>
+     <para>
+       SE-PostgreSQL needs its security policy to make its decision.
+       The source of security policy is stored in
+       <filename>contrib/sepgsql_policy/</filename>, and you can build
+       it as a binary security policy module. It can be installed later
+       without rebuilding whole of the policy.
+     </para>
+
+     <para>
+       We have to build binaries and security policy as follows:
+<screen>
+  <prompt>$ </prompt><userinput>make</userinput>
+  <prompt>$ </prompt><userinput>make -C contrib/sepgsql_policy</userinput>
+</screen>       
+     </para>
+   </sect2>
+
+   <sect2>
+     <title>Installation</title>
+     <para>
+       We need several additional steps to install SE-PostgreSQL and its
+       security policy correctly.
+<screen>
+  <prompt>$ </prompt><userinput>su</userinput>
+  <prompt># </prompt><userinput>/usr/sbin/semodule -i contrib/sepgsql_policy/sepostgresql.pp</userinput>
+  <prompt># </prompt><userinput>make install</userinput>
+  <prompt># </prompt><userinput>/sbin/restorecon -R /usr/local/pgsql</userinput>
+</screen>
+     </para>
+
+     <para>
+       <command>/usr/sbin/semodule</command> is a command to manage binary
+       security policy modules of SELinux. <option>-i</option> is a option
+       to install a new module.
+
+       If you have already installed <filename>sepostgresql.pp</filename>,
+       use <option>-u</option> to upgrade instead.
+     </para>
+
+     <para>
+       <command>/sbin/restorecon</command> is a command to label proper
+       security context of given files. <option>-R</option> option means
+       recursive relabeling under the given directory.
+
+       If you change the installation path, specify the appropriate
+       directory instead.
+     </para>
+   </sect2>
+
+   <sect2>
+     <title>initdb and startup</title>
+     <para>
+       The directories to store database cluster should be labeled as
+       <literal>postgresql_db_t</literal> type, to pass in-kernel SELinux's
+       checks on file accesses.
+
+       The default security policy within distribution assumes it is constructed
+       at <literal>/var/lib/pgsql/data</literal> as the RPM default.
+     </para>
+
+     <para>
+       If you set up it on other directory, the directory should be labeled as
+       <literal>postgresql_db_t</literal> to show it and subtrees are used
+       as a database cluster.
+     </para>
+<screen>
+  <prompt># </prompt><userinput>chcon -t postgresql_db_t -R $PGDATA</userinput>
+</screen>
+     <para>
+       <literal>chcon</literal> is a command to change security context
+       of files directly. If you want to keep the relationship between
+       pathname of $PGDATA and the type, using <literal>semanage</literal>
+       and <literal>restorecon</literal> is a better solution.
+     </para>
+<screen>
+  <prompt># </prompt><userinput>/usr/sbin/semanage fcontext -a -t postgresql_db_t "$PGDATA(/.*)?"</userinput>
+  <prompt># </prompt><userinput>/sbin/restorecon -R $PGDATA</userinput>
+</screen>
+     <para>
+       <literal>semanage</literal> with <literal>fcontext</literal> subcommand
+       enables to configure the default security context of given path in regular
+       expression, and it is used in <literal>restorecon</literal>.
+     </para>
+
+     <para>
+       After <literal>$PGDATA</literal> is labeled correctly,
+       <literal>initdb</literal> and <literal>pg_ctl</literal>should be invoked.
+<screen>
+  <prompt>$ </prompt><userinput>initdb</userinput>
+  <prompt>$ </prompt><userinput>pg_ctl start</userinput>
+</screen>
+     </para>
+   </sect2>
+
+   <sect2>
+     <title>GUC Parameters</title>
+
+     <sect3>
+       <title>sepostgresql</title>
+       <para>
+	 The <varname>sepostgresql</varname> parameter enables to specify
+	 SE-PostgreSQL working mode.
+	 It can be specified on <filename>$PGDATA/postgresql.conf</filename>
+	 and we need to restart postmaster process to reflect its changing.
+       </para>
+
+       <synopsis>
+ sepostgresql = [ default | enforcing | permissive | disabled ]
+       </synopsis>
+
+       <variablelist>
+         <varlistentry>
+           <term><literal>default</literal></term>
+           <listitem>
+             <para>
+	       This is the default behavior, when we omit this configuration.
+               It always follows the configuration of operating system.
+             </para>
+           </listitem>
+         </varlistentry>
+
+         <varlistentry>
+           <term><literal>enforcing</literal></term>
+           <listitem>
+             <para>
+               It always works SE-PostgreSQL in enforcing mode
+               which enables to apply mandatory access controls
+               on any user's action.
+
+               This mode requires in-kernel SELinux is activated
+               in either enforcing or permissive mode.
+             </para>
+           </listitem>
+         </varlistentry>
+
+         <varlistentry>
+           <term><literal>permissive</literal></term>
+           <listitem>
+             <para>
+               It always works SE-PostgreSQL in permissive mode
+               which enables to evaluate user's action and generate
+               audit records, but does not prevent them.
+
+               This mode requires in-kernel SELinux is activated
+               in either enforcing or permissive mode.
+             </para>
+           </listitem>
+         </varlistentry>
+
+         <varlistentry>
+           <term><literal>disabled</literal></term>
+           <listitem>
+             <para>
+	       It always disables SE-PostgreSQL features.
+             </para>
+           </listitem>
+         </varlistentry>
+       </variablelist>
+     </sect3>
+   </sect2>
+ </sect1>
+
+ <sect1 id="security-sepgsql-features">
+   <title>SE-PostgreSQL Features</title>
+
+   <sect2>
+     <title>A single unified security policy</title>
+
+     <para>
+       It is the most significant concept of SE-PostgreSQL to apply
+       its access controls based on a single unified security policy
+       on both OS and RDBMS.
+
+       Filesystem and RDBMS have common property which can store
+       our information asset and apply its permission checks on
+       accesses come from users via system-calls or SQL-queries.
+       On system-calls, filesystem permissions are checked, at the
+       same time database ACLs are checked on SQL-queries.
+
+       However, they works independently in general, thus, there is
+       a possibility to be inconsistent even if they can store same
+       information asset.
+
+       A single unified security policy means we can always apply
+       same access control rules on both OS and RDBMS, and make
+       sure its consistency.
+     </para>
+
+     <sect3>
+       <title>Security Context</title>
+       <para>
+	 The security policy of SELinux is described as a set of relationships
+	 between two security contexts.
+
+	 Security context is a formatted string as follows:
+	 <synopsis>
+ system_u:object_r:postgresql_db_t:SystemHigh
+	 </synopsis>
+	 
+	 In SELinux'ed platform, any process and any resources (like file,
+	 socket, shared memory segment, ...) have its security context,
+	 and these are used to make a decision by SELinux.
+       </para>
+
+       <para>
+	 For example, when a process with a security context of
+	 <literal>system_u:system_r:postgresql_t:s0</literal> tries to write
+	 a log record to <filename>/var/log/postgresql.log</filename> labeled
+	 as <literal>system_u:object_r:postgresql_log_t:s0</literal>,
+	 write(2) system call is hooked in the kernel and SELinux looks up
+	 its security policy to find out an entry which has a relationship
+	 between these two security context.
+
+	 If the entry allows the process to write, SELinux does nothing
+	 any more. Otherwise, SELinux prevents it to write a log record
+	 on the given file.
+       </para>
+
+       <para>
+	 It shows us any resource checked by SELinux have to be labeled
+	 with a security context in same format as operating system doing.
+
+	 SE-PostgreSQL associates a tuple with a security context, and
+	 we can refer it using <literal>security_context</literal> system
+	 column as follows:
+       </para>
+
+<screen>
+<prompt># </prompt><userinput>SELECT security_context, * FROM drink;</userinput>
+                 security_context                 | id | name  | price
+--------------------------------------------------+----+-------+-------
+ unconfined_u:object_r:sepgsql_table_t            |  1 | water |   100
+ unconfined_u:object_r:sepgsql_table_t            |  2 | coke  |   120
+ unconfined_u:object_r:sepgsql_table_t            |  3 | juice |   130
+ unconfined_u:object_r:sepgsql_table_t            |  4 | coffee|   180
+ unconfined_u:object_r:sepgsql_table_t:Classified |  5 | beer  |   240
+ unconfined_u:object_r:sepgsql_table_t:Classified |  6 | sake  |   320
+(6 rows)
+</screen>
+
+       <para>
+	 The security policy also has rules to decide the security context
+	 of newly inserted tuple. When a tuple in inserted, SE-PostgreSQL
+	 associate it on the new tuple in the default.
+       </para>
+
+       <para>
+	 However, users can explicitly specifies a security context of
+	 a new tuple, using <literal>INSERT</literal> statement with
+	 <literal>security_context</literal> system column as a target,
+	 like as:
+       </para>
+
+<screen>
+<prompt># </prompt><userinput>INSERT INTO drink (security_context, id, name, price)
+     VALUES('system_u:object_r:sepgsql_table_t:SystemHigh', 7, 'tea', 130);</userinput>	 
+</screen>
+
+       <para>
+	 We can also change security context of tuples using
+	 <literal>UPDATE</literal> statement as <literal>INSERT</literal>
+	 doing.
+       </para>
+
+<screen>
+<prompt># </prompt><userinput>UPDATE drink SET security_context
+			= 'unconfined_u:object_r:sepgsql_secret_table_t';</userinput>
+</screen>
+
+       <para>
+	 No need to say, users have to have permission to insert a tuple
+	 with specified security context.
+       </para>
+
+       <para>
+	 SE-PostgreSQL also checks permission on using tables, columns
+	 and so on. These are represented as a tuple within system catalogs
+	 in PostgreSQL, and SE-PostgreSQL uses the security context of
+	 these tuples as security context of tables, columns and so on.
+
+	 For example, a tuple within <literal>pg_attribute</literal> shows
+	 definition of a column, and its security context also means
+	 column's one.
+       </para>
+     </sect3>
+
+     <sect3>
+       <title>Client Authority</title>
+       <para>
+	 Another significant factor in access controls is authorities of subject.
+
+	 In operating system, a process has user/group identifiers and its
+	 security context. These are used for access controls in the kernel.
+       </para>
+
+       <para>
+	 One of the goals in SE-PostgreSQL is to apply its access controls on
+	 database objects, as if client process accesses to filesystem objects.
+
+	 This concept requires the security context of client process to make
+	 its decision, not only security contexts of database objects.
+
+	 However, the server process works with its security context as a
+	 server process, not a security context of client process.
+
+	 Therefore, SE-PostgreSQL need to know the security context of the
+	 connected client process.
+       </para>
+
+       <para>
+	 SELinux provides a API named as <literal>getpeercon()</literal>.
+	 It enables to obtain a security context of the peer process
+	 connected via given socket file descriptor.
+
+	 SE-PostgreSQL uses this API to know the security context of
+	 the client process, independent from the database authentication
+	 facilities of PostgreSQL.
+
+	 We can confirm it using <literal>sepgsql_getcon()</literal>
+	 function on SE-PostgreSQL, as follows:
+<screen>
+<prompt>[kaigai@saba ~]$ </prompt><userinput>id -Z</userinput>
+unconfined_u:unconfined_r:unconfined_t:Classified
+<prompt>[kaigai@saba ~]$ </prompt><userinput>psql -q</userinput>
+<prompt>kaigai=# </prompt><userinput>SELECT sepgsql_getcon();</userinput>
+                  sepgsql_getcon
+---------------------------------------------------
+ unconfined_u:unconfined_r:unconfined_t:Classified
+(1 row)
+</screen>
+       </para>
+
+       <para>
+	 Any special configuration is not necessary when clients connect
+	 to SE-PostgreSQL via UNIX domain socket (local connection).
+
+	 However, we need to set up labeled networking when clients connect
+	 to SE-PostgreSQL via TCP/IP socket (remote connection).
+	 See the <xref linkend="security-sepgsql-labeled-networks"> for
+	 more information.
+       </para>
+     </sect3>
+   </sect2>
+
+   <sect2>
+     <title>Mandatory access controls</title>
+     <para>
+       SE-PostgreSQL provides MAC (Mandatory Access Controls) features.
+
+       By contrast, filesystem permission and database ACLs are called
+       as DAC (Discreational Access Controls), not a MAC.
+     </para>
+
+     <para>
+       There are two characteristic differences betwee MAC and DAC.
+     </para>
+
+     <para>
+       The one is a property of "always invoked".
+
+       MAC feature is applied on all accesses from users/clients, even if
+       it come from privileged users, like <literal>root</literal> on
+       operating system.
+
+       PostgreSQL also has a concept of database super users, and 
+       they can bypass checks in database ACLs. MAC features does
+       not admit any exception, including queries come from
+       database super users.
+     </para>
+
+     <para>
+       The other is controllability by the resource owner.
+
+       DAC feature allows the resource owner to change its access control
+       rules, like a owner can invoke <command>GRANT</command> statement
+       on his tables.
+
+       On the other hand, MAC feature restrict users including resource
+       owner to change access control rules of resources without explicit
+       allowing by the policy.
+
+       In SE-PostgreSQL, it means attaching/changing security context
+       of database objects. So, user cannot specify it arbitrarily.
+     </para>
+   </sect2>
+
+   <sect2>
+     <title>Tuple-level access controls</title>
+     <para>
+       SE-PostgreSQL applies its access controls for each tuple.
+
+       If client tries to select, update or delete violated tuples,
+       these tuples are filtered from the result set or ignored from
+       the target of updates/deletions, as if they are not exist
+       on the table.
+     </para>
+
+     <para>
+       The following example shows the case when two users with different
+       security context tries to <command>SELECT</command> same table
+       with same SQL.
+
+       A <literal>Classified</literal> user can whole of the table.
+       But <literal>Classified</literal> tuples are invisible from
+       other users.
+     </para>
+<screen>
+<prompt>[kaigai@saba ~]$ </prompt><userinput>id -Z</userinput>
+unconfined_u:unconfined_r:unconfined_t:Classified
+<prompt>[kaigai@saba ~]$ </prompt><userinput>psql -q postgres</userinput>
+postgres=# SELECT security_context, * FROM drink;
+                 security_context                 | id | name  | price
+--------------------------------------------------+----+-------+-------
+ unconfined_u:object_r:sepgsql_table_t            |  1 | water |   100
+ unconfined_u:object_r:sepgsql_table_t            |  2 | coke  |   120
+ unconfined_u:object_r:sepgsql_table_t            |  3 | juice |   130
+ unconfined_u:object_r:sepgsql_table_t            |  4 | cofee |   180
+ unconfined_u:object_r:sepgsql_table_t:Classified |  5 | beer  |   240
+ unconfined_u:object_r:sepgsql_table_t:Classified |  6 | sake  |   320
+(6 rows)
+</screen>
+     <para>
+       It shows the <literal>Classified</literal> user got 6 tuples
+       with unconditional <command>SELECT</command> on drink table.
+
+       However, the unclassified (not labeled) user got 4 tuples
+       with same SQL, because of filtering violated tuples.
+     </para>
+<screen>
+<prompt>[ymj@saba ~]$ </prompt><userinput>id -Z</userinput>
+unconfined_u:unconfined_r:unconfined_t
+<prompt>[ymj@saba ~]$ </prompt><userinput>psql -q postgres</userinput>
+postgres=# SELECT security_context, * FROM drink;
+           security_context            | id | name  | price
+---------------------------------------+----+-------+-------
+ unconfined_u:object_r:sepgsql_table_t |  1 | water |   100
+ unconfined_u:object_r:sepgsql_table_t |  2 | coke  |   120
+ unconfined_u:object_r:sepgsql_table_t |  3 | juice |   130
+ unconfined_u:object_r:sepgsql_table_t |  4 | cofee |   180
+(4 rows)
+</screen>
+   </sect2>
+
+   <sect2>
+     <title>Column-level access controls</title>
+     <para>
+       SE-PostgreSQL also enables to set up access permissions on
+       per-column granularity. It walks on the given query trees
+       to pick up all appeared column.
+
+       If it contains one or more violated columns, SE-PostgreSQL
+       abort query execution and returns an error to users.
+       This behavior is different from tuple-level access controls.
+     </para>
+
+     <para>
+       The following example shows a case when we declared
+       <literal>ccredit</literal> column to store credit card numbers
+       as a secret column from unclassified users.
+
+       The following SQL is declaration of table and initial records.
+     </para>
+<screen>
+CREATE TABLE customer (
+    cid     integer primary key,
+    cname   varchar(32),
+    credit  varchar(32)  SECURITY_CONTEXT = 'system_u:object_r:sepgsql_secret_table_t'
+);
+GRANT ALL ON customer TO PUBLIC;
+
+INSERT INTO customer (cid, cname, credit)
+    VALUES ( 10, 'jack', '1111-2222-3333-4444'),
+           ( 13, 'adam', '5555-6666-7777-8888'),
+           ( 14, 'liza', '9876-5432-1098-7654');
+</screen>
+     <para>
+       In the first query, he tries to select all columns but SE-PostgreSQL
+       detect accesses on <literal>ccredit</literal> column, then it is aborted
+       with an audit records.
+
+       In the second query, he tries to select rest of column except
+       for <literal>ccredit</literal> column, then the query is executed
+       correctly, because violated column is not appeared in this query.
+     </para>
+<screen>
+[tak@saba ~]$ id -Z
+staff_u:staff_r:staff_t
+[tak@saba ~]$ psql -q postgres
+postgres=# SELECT * FROM customer;
+ERROR:  SELinux: denied { select } \
+	scontext=staff_u:staff_r:staff_t \
+	tcontext=system_u:object_r:sepgsql_secret_table_t \
+	tclass=db_column name=customer.credit
+postgres=# SELECT cid, cname FROM customer;
+ cid | cname
+-----+-------
+  10 | jack
+  13 | adam
+  14 | liza
+(3 rows)
+</screen>
+     <para>
+       SE-PostgreSQL also checks clients' permission to access tables,
+       to invoke funcion and to read/write large objects in same way.
+
+       If clients does not have enough permissions on these objects,
+       SE-PostgreSQL aborts query execution and raises an error.
+     </para>
+   </sect2>
+ </sect1>
+
+ <sect1 id="security-sepgsql-admin">
+   <title>SE-PostgreSQL Administration</title>
+   <para>
+     This chapter introduces methods to backup/restore with security
+     context, and to apply security context of remote processes.
+   </para>
+   <sect2>
+     <title>Backup and Restore</title>
+     <para>
+       When we restore a database from backups, we have to restore
+       its security context correctly as GRANT statement doing on
+       the restored table.
+     </para>
+
+     <para>
+       The <command>pg_dump</command> and <command>pg_dumpall</command>
+       have <option>--security-context</option> option to dump databases
+       with its security context.
+
+       The dumped image can be restored with proper security context.
+     </para>
+
+     <para>
+       No need to say, a process which invokes <command>pg_dump</command>
+       has to be allowed to refer whole of the database,
+       because SE-PostgreSQL filters all violated tuples from the result
+       set, or aborts query execution if it contains references violated
+       columns and so on.
+
+       These requirements are same when we restore the image.
+       A process which invokes <command>pg_restore</command> has to have
+       enough permission to create/insert these objects with specified
+       security context.
+     </para>
+
+<screen>
+<prompt>$ </prompt><userinput>pg_dump --security-context postgres</userinput>
+	:
+      (snip)
+	:
+--
+-- Name: drink; Type: TABLE; Schema: public; Owner: kaigai; Tablespace:
+--
+
+CREATE TABLE drink (
+    id integer NOT NULL,
+    name character varying(48),
+    price integer
+) SECURITY_CONTEXT = 'unconfined_u:object_r:sepgsql_table_t';
+	:
+      (snip)
+	:
+--
+-- Data for Name: drink; Type: TABLE DATA; Schema: public; Owner: kaigai
+--
+
+COPY drink (security_context, id, name, price) FROM stdin;
+unconfined_u:object_r:sepgsql_table_t	1	water	100
+unconfined_u:object_r:sepgsql_table_t	2	coke	120
+unconfined_u:object_r:sepgsql_table_t	3	juice	130
+unconfined_u:object_r:sepgsql_table_t	4	cofee	180
+unconfined_u:object_r:sepgsql_table_t:Classified	5	beer	240
+unconfined_u:object_r:sepgsql_table_t:Classified	6	sake	320
+\.
+	:
+      (snip)
+	:
+</screen>
+     <para>
+       This example shows a backup image with explicitly specified security
+       context on tables and tuples.
+
+       If a column has different security context from tables' one, it also
+       specified explicitly in the <command>CREATE TABLE</command> statement.
+     </para>
+   </sect2>
+
+   <sect2 id="security-sepgsql-labeled-networks">
+     <title>Labeled Networks</title>
+     <para>
+       Labeled Networks is an excellent technology.
+       It enables to obtain the security context of peer process communicating
+       via TCP/IP connection.
+     </para>
+
+     <para>
+       This technology contains two facilities.
+       One is <literal>Labeled IPsec</literal>,
+       and the other is <literal>Static Fallbacked Context</literal>.
+
+       This section shows the way to set up both labeled networks
+       technology.
+     </para>
+
+     <sect3>
+       <title>Labeled IPsec</title>
+       <para>
+	 When we begin to communicate using an encrypted channel
+	 with IPsec, <command>racoon</command> which is a key-exchange
+	 daemon exchanges encryption keys of both peers.
+
+	 It does not exchange only encryption keys in actually,
+	 but the security context of process connecting to is also
+	 delivered to the peer side.
+
+	 The delivered security context is cached on the kernel, and
+	 it is exported into applications, if it required via
+	 <command>getpeercon()</command> API.
+       </para>
+
+       <para>
+	 This section introduces the steps to set up labeled ipsec.
+
+	 For more detailed information, visit <ulink url="http://www.redhat.com/docs/manuals/enterprise/RHEL-4-Manual/en-US/Security_Guide/s1-vpn-ipsec.html">Red Hat Enterprise Linux 4 - Security Guide</ulink>
+       </para>
+
+       <sect4>
+	 <title>Example Environment</title>
+	 <para>
+	   In this introduction, we assume the server host where SE-PostgreSQL
+	   works has an IP address of <literal>192.168.1.10</literal> and
+	   the client host has IP address of <literal>192.168.1.200</literal>.
+
+	   They are wired to same network, and can communicate each other
+	   directly, without any router.
+	 </para>
+
+	 <para>
+	   The purpose of the following configuration is to obtain
+	   the security context of the process working on the client host
+	   (<literal>192.168.1.200</literal>) from SE-PostgreSQL daemon
+	   working on the server host (<literal>192.168.1.10</literal>), 
+	   when a connection is established.
+	 </para>
+       </sect4>
+
+       <sect4>
+	 <title>Adding a SPD entry</title>
+	 <para>
+	   It is needed to add an SPD (Security Policy Database) entry
+	   to indicate applying IPsec on channels between two host.
+
+	   Note that SPD is not a term of SELinux, it is a configuration
+	   parameter of IPsec, although it's a bit confusable.
+	 </para>
+
+	 <para>
+	   This example shows esp/transport mode should be applied on
+	   outbounding packets from <literal>192.168.1.10</literal>
+	   to <literal>192.168.1.200</literal>, and inbounding packets
+	   from <literal>192.168.1.200</literal> to
+	   <literal>192.168.1.10</literal>.
+
+<programlisting>
+spdadd 192.168.1.10 192.168.1.200 any
+-ctx 1 1 "system_u:object_r:ipsec_spd_t:s0"
+-P out ipsec
+esp/transport//require;
+
+spdadd 192.168.1.200 192.168.1.10 any
+-ctx 1 1 "system_u:object_r:ipsec_spd_t:s0"
+-P in ipsec
+esp/transport//require;
+</programlisting>
+
+	   In addition, the second line of each entries enables to
+	   turn on security context delivery during key exchanging.
+	 </para>
+
+	 <para>
+	   You can load the above configuration using
+	   <command>setkey</command> command.
+
+	   Save your configuration into a temporary file,
+	   and invoke <command>setkey</command> with the file
+	   as an argument.
+<screen>
+<prompt># </prompt><userinput>/sbin/setkey -f &lt;your configuration file&gt;</userinput>
+</screen>
+	 </para>
+
+	 <para>
+	   It is necessary to apply on both server side and client side.
+
+	   Note that you have to invert IP addreses on the client side.
+	 </para>
+       </sect4>
+
+       <sect4>
+	 <title>Racoon configuration</title>
+	 <para>
+	   In the next, we have to edit a configuration file of
+	   <command>racoon</command> to specify encryption algorithm,
+	   authentication method and so on.
+
+	   This example uses pre shared key to authenticate the peer
+	   host (<literal>192.168.1.200</literal>) for simplification.
+
+	   Note that you have to invert IP addresses on the client side.
+	 </para>
+
+	 <para>
+	   An additional entry to <filename>/etc/racoon/racoon.conf</filename>.
+<programlisting>
+remote 192.168.1.200
+{
+	exchange_mode aggressive, main;
+	my_identifier address;
+	proposal {
+		encryption_algorithm 3des;
+		hash_algorithm sha1;
+		authentication_method pre_shared_key;
+		dh_group 2 ;
+	}
+}
+</programlisting>
+	 </para>
+
+	 <para>
+	   We have to put a set of key string and IP address of destination
+	   in <filename>/etc/racoon/psk.txt</filename>.
+
+	   The key string has also to be same in the client side.
+<programlisting>
+# file for pre-shared keys used for IKE authentication
+# format is: 'identifier' 'key'
+# For example:
+#
+# 10.1.1.1 flibbertigibbet
+# www.example.com 12345
+# foo@www.example.com micropachycephalosaurus
+192.168.1.200	somethingsecrettext
+</programlisting>
+         </para>
+       </sect4>
+
+       <sect4>
+	 <title>Restart Racoon</title>
+	 <para>
+	   Restart racoon daemon in both peers.
+	 </para>
+<screen>
+<prompt># </prompt><userinput>service racoon restart</userinput>
+</screen>
+       </sect4>
+     </sect3>
+
+     <sect3>
+       <title>Static Fallbacked Context</title>
+       <para>
+	 We cannot apply labeled IPsec for any situation.
+
+	 It requires both server and cliets being SElinux'ed and IPsec is
+	 available on their communication channel.
+       </para>
+
+       <para>
+	 SELinux provides an alternative method to identify a security
+	 context of peer process inside the <literal>getpeercon()</literal>
+	 API, when a connection come from unlabeled networks.
+
+	 This facility is called as static fallbacked context.
+	 It enables to return a security context associated with IP address
+	 or network interfaces, as if a new connection come from labeled
+	 networks.
+       </para>
+
+       <para>
+	 <command>netlabelctl</command> within <literal>netlabel_tools</literal>
+	 package can be used to set up static fallbacked context.
+       </para>
+
+       <para>
+	 The following example shows a case when we associate a security
+	 context with connections come from <literal>192.168.1.0/24</literal>
+	 via all network interfaces.
+<screen>
+<prompt># </prompt><userinput>/sbin/netlabelctl unlbl add default address:192.168.1.0/24 label:user_u:user_r:user_t:s0</userinput>
+</screen>
+	 The following example shows a case when we associate a security
+	 context with connections come from <literal>192.168.2.0/24</literal>
+	 via <literal>eth0</literal>.
+<screen>
+<prompt># </prompt><userinput>/sbin/netlabelctl unlbl add dev:eth0 address:192.168.2.0/24 label:staff_u:staff_r:staff_t:s0:c0</userinput>
+</screen>
+       </para>
+     </sect3>
+   </sect2>
+ </sect1>
+
+ <sect1 id="security-pgace-framework">
+   <title>PGACE Security Framework</title>
+   <para>
+     This chapter introduces the design of PGACE (PostgreSQL Access
+     Control Extension) Security Framework.
+
+     It enables to add various kind of security subsystems based on
+     different access control models and platforms (we call it as
+     "the guest") with minimun impact toward core PostgreSQL.
+   </para>
+
+   <para>
+     PGACE provides two major facilities.
+   </para>
+
+   <para>     
+     One is a set of security hooks injected into several strategic points
+     within core PostgreSQL. The guest can utilize these hooks to invoke
+     itself, and make a its decision on the strategic point.
+
+     Any PGACE hooks are declared at
+     <filename>src/include/security/pgace.h</filename>, as inline
+     functions with short descriptions.
+
+     The guest can extend these hooks to invoke its implementation
+     when it is activated.
+     Any platform dependency have to be put in the guest implementation,
+     because PGACE hooks are declared completely platform independent
+     hooks.
+   </para>
+
+   <para>
+     The other is a facility to manage security attribute of each tuple.
+     It enables the guest to make its decision based on a security
+     attribute with minimum storage comsumption.
+
+     In the most cases, security attribute has a text representation
+     but massive object shares one or several attributes.
+
+     PGACE utilize this characteristic to reduce storage comsumption
+     using an alternate key called as security id.
+
+     The security id is an integer value with <literal>sizeof(Oid)</literal>
+     width, and can be used to indicate <literal>oid</literal> attribute
+     of <structname>pg_security</structname> which hold a text representation.
+
+     PGACE provides utility functions to translate between a security id
+     and text representation for internal use.
+   </para>
+
+   <sect2>
+     <title>Security Hooks</title>
+
+     <para>
+       The following hooks is invoked just before insertion of a new tuple.
+
+       When the hooks returns <literal>false</literal> to the caller,
+       insertion of a new tuple is skipped. Otherwise, the rest of steps
+       are done normally.
+<programlisting>
+static inline bool
+pgaceHeapTupleInsert(Relation rel, HeapTuple tuple,
+                     bool is_internal, bool with_returning)
+{
+#ifdef HAVE_SELINUX
+    if (sepgsqlIsEnabled())
+        return sepgsqlHeapTupleInsert(rel, tuple,
+                                      is_internal,
+                                      with_returning);
+#endif
+    return true;
+}
+</programlisting>
+     </para>
+
+     <para>
+       The author of the security subsystem has to keep the default
+       behavior when his module is disabled.
+
+       In this example, SELinux related function is enclosed by
+       <literal>#ifdef</literal> block, and invoked only when
+       it isactivated. (<function>sepgsqlIsEnabled()</function>
+       returns <literal>true</literal> only when SE-PostgreSQL
+       is enabled.)
+     </para>
+
+     <para>
+       If you add a new security subsystem, add a new
+       <literal>#ifdef</literal> block to enclose invocation
+       code to avoid conflicts.
+
+       The following example shows a case when you add a new security
+       subsystem activated witth <literal>HAVE_FOO_SECURITY</literal>.
+
+<programlisting>
+static inline bool
+pgaceHeapTupleInsert(Relation rel, HeapTuple tuple,
+                     bool is_internal, bool with_returning)
+{
+#ifdef HAVE_SELINUX
+    if (sepgsqlIsEnabled())
+        return sepgsqlHeapTupleInsert(rel, tuple,
+                                      is_internal,
+                                      with_returning);
+#elif define(HAVE_FOO_SECURITY)
+    if (fooSecurityIsEnabled())
+        return fooSecurityHeapTupleInsert(rel, tuple,
+                                          is_internal,
+                                          with_returning);
+#endif
+    return true;
+}
+</programlisting>
+     </para>
+
+     <para>
+       Note that two or more security subsystem cannot be activated
+       in build time (also in run time, no need to say).
+       These are mutually exclusive, because we don't provide
+       a framework to associate several security attributes
+       within a tuple and cannot be shared.
+     </para>
+
+     <para>
+       Some of hooks are declared as <literal>void</literal> typed
+       functions.
+
+       If your security subsystem decide the required is not allowed
+       in these hooks, it can generate an error to abort the series
+       of steps.
+     </para>
+
+   </sect2>
+
+   <sect2>
+     <title>Security Attribute Management</title>
+
+     <para>
+       Security id of tuples are stored in the padding area of
+       <structname>HeapTupleHeader</structname>.
+
+       The guest can get or set the security id of given tuple using
+       <function>HeapTupleGetSecurity()</function> and
+       <function>HeapTupleSetSecurity()</function> macros.
+
+       When the tuple does not have its security id, it returns
+       <literal>InvalidOid</literal> and the guest have to handle it.
+     </para>
+
+     <para>
+       PGACE provides an internal API to translate between
+       security id and text representation.
+
+       The <function>pgaceLookupSecurityLabel()</function> returns
+       a text representation for the given security id.
+
+       On the other hand, <function>pgaceLookupSecurityId()</function>
+       returns a security id for the given text representation.
+       When the given text representation was not found on
+       <structname>pg_security</structname>, it insert a new entry
+       automatically.
+
+       Thus, the guest subsystem should pay attention not to invoke
+       <function>pgaceLookupSecurityId()</function> in read-only
+       transaction.
+     </para>
+
+     <para>
+       A constant of <literal>SECURITY_SYSATTR_NAME</literal> defines
+       the name of security system column. It provides a way to expose
+       the security attribute of each tuple in text representation.
+
+       The system column has a characteristic, that is writable.
+
+       The security system column is declared as a TEXT type attribute,
+       and user can specify the target of <command>UPDATE</command> or
+       <command>INSERT</command>.
+
+       PGACE internally translates the specified text representation
+       into a security id, and stores it within a new tuple.
+
+       If the guest uses the feature of security attribute,
+       it has to be able to handle these translation.
+     </para>
+   </sect2>
+ </sect1>
+
+</appendix>
