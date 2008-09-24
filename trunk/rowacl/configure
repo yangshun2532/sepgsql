@@ -1368,6 +1368,7 @@ Optional Features:
   --enable-thread-safety  make client libraries thread-safe
   --enable-thread-safety-force  force thread-safety despite thread test failure
   --enable-selinux        build with NSA SELinux support
+  --enable-rowacl         build with Row-level ACL
   --disable-float4-byval  disable float4 passed by value
   --disable-float8-byval  disable float8 passed by value
   --disable-largefile     omit support for large files
@@ -5499,6 +5500,11 @@ fi
 
 
 if test "$enable_selinux" = yes; then
+	if test "$enable_rowacl" = yes; then
+		{ { echo "$as_me:$LINENO: error: \"--enable-selinux and --enable-rowacl conflicts\"" >&5
+echo "$as_me: error: \"--enable-selinux and --enable-rowacl conflicts\"" >&2;}
+   { (exit 1); exit 1; }; }
+	fi
 	{ echo "$as_me:$LINENO: checking for getpeercon in -lselinux" >&5
 echo $ECHO_N "checking for getpeercon in -lselinux... $ECHO_C" >&6; }
 if test "${ac_cv_lib_selinux_getpeercon+set}" = set; then
@@ -5577,6 +5583,53 @@ else
 echo "$as_me: error: \"--enable-selinux requires libselinux.\"" >&2;}
    { (exit 1); exit 1; }; }
 fi
+
+fi
+
+#
+# Row-level ACL support
+#
+
+pgac_args="$pgac_args enable_rowacl"
+
+# Check whether --enable-rowacl was given.
+if test "${enable_rowacl+set}" = set; then
+  enableval=$enable_rowacl;
+  case $enableval in
+    yes)
+      :
+      ;;
+    no)
+      :
+      ;;
+    *)
+      { { echo "$as_me:$LINENO: error: no argument expected for --enable-rowacl option" >&5
+echo "$as_me: error: no argument expected for --enable-rowacl option" >&2;}
+   { (exit 1); exit 1; }; }
+      ;;
+  esac
+
+else
+  enable_rowacl=no
+
+fi
+
+
+if test "$enable_rowacl" = yes; then
+	if test "$enable_selinux" = yes; then
+		{ { echo "$as_me:$LINENO: error: \"--enable-rowacl and --enable-selinux conflicts\"" >&5
+echo "$as_me: error: \"--enable-rowacl and --enable-selinux conflicts\"" >&2;}
+   { (exit 1); exit 1; }; }
+	fi
+
+cat >>confdefs.h <<\_ACEOF
+#define SECURITY_SYSATTR_NAME "pg_tuple_acl"
+_ACEOF
+
+
+cat >>confdefs.h <<_ACEOF
+#define HAVE_ROWACL 1
+_ACEOF
 
 fi
 
