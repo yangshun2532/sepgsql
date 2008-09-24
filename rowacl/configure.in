@@ -767,6 +767,9 @@ AC_SUBST(with_zlib)
 PGAC_ARG_BOOL(enable, selinux, no,
               [  --enable-selinux        build with NSA SELinux support])
 if test "$enable_selinux" = yes; then
+	if test "$enable_rowacl" = yes; then
+		AC_MSG_ERROR("--enable-selinux and --enable-rowacl conflicts")
+	fi
 	AC_CHECK_LIB(selinux, getpeercon,
 		     AC_DEFINE(SECURITY_SYSATTR_NAME, "security_context",
 		     	       [Enables system column for security attribute support])
@@ -774,6 +777,21 @@ if test "$enable_selinux" = yes; then
 					[Enables SE-PostgreSQL feature])
 		     AC_SUBST(enable_selinux),
 		     AC_MSG_ERROR("--enable-selinux requires libselinux."))
+fi
+
+#
+# Row-level ACL support
+#
+PGAC_ARG_BOOL(enable, rowacl, no,
+              [  --enable-rowacl         build with Row-level ACL])
+if test "$enable_rowacl" = yes; then
+	if test "$enable_selinux" = yes; then
+		AC_MSG_ERROR("--enable-rowacl and --enable-selinux conflicts")
+	fi
+	AC_DEFINE(SECURITY_SYSATTR_NAME, "pg_tuple_acl",
+	          [Enables system column for row-level ACL])
+	AC_DEFINE_UNQUOTED(HAVE_ROWACL, 1,
+	                   [Enables row-level ACL feature])
 fi
 
 #
