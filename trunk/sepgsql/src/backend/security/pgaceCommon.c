@@ -316,8 +316,8 @@ earlySidToSecurityLabel(Oid sid)
 		if (es->sid == sid)
 			return pstrdup(es->label);
 	}
-	elog(ERROR, "security id: %u is not a valid identifier", sid);
-	return NULL;				/* for compiler kindness */
+
+	return NULL;	/* not found */
 }
 
 void
@@ -377,12 +377,19 @@ pgaceLookupSecurityId(char *raw_label)
 	Oid			labelOid, labelSid;
 	HeapTuple	tuple;
 
-	/*
-	 * valid label checks
-	 */
-	raw_label = pgaceValidateSecurityLabel(raw_label);
 	if (!raw_label)
-		return InvalidOid;
+	{
+		raw_label = pgaceUnlabeledSecurityLabel();
+		if (!raw_label)
+			elog(ERROR, "unlabeled security attribute is unavailable");
+	}
+
+	if (!pgaceCheckValidSecurityLabel(raw_label))
+	{
+		ereport(ERROR,
+				(errcode(ERRCODE_PGACE_ERROR),
+				 errmsg("%s: invalid security attribute", raw_label)));
+	}
 
 	if (IsBootstrapProcessingMode())
 		return earlySecurityLabelToSid(raw_label);
@@ -480,15 +487,20 @@ pgaceLookupSecurityLabel(Oid security_id)
 	char	   *label, isnull;
 
 	if (security_id == InvalidOid)
-		return pgaceValidateSecurityLabel(NULL);
+		goto unlabeled;
 
 	if (IsBootstrapProcessingMode())
-		return earlySidToSecurityLabel(security_id);
+	{
+		label = earlySidToSecurityLabel(security_id);
+		if (!label)
+			goto unlabeled;
+		return label;
+	}
 
 	tuple = SearchSysCache(SECURITYOID,
 						   ObjectIdGetDatum(security_id), 0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
-		elog(ERROR, "security id: %u is not a valid identifier", security_id);
+		goto unlabeled;
 
 	labelTxt = SysCacheGetAttr(SECURITYOID,
 							   tuple, Anum_pg_security_seclabel, &isnull);
@@ -496,18 +508,23 @@ pgaceLookupSecurityLabel(Oid security_id)
 	label = TextDatumGetCString(labelTxt);
 	ReleaseSysCache(tuple);
 
+	if (pgaceCheckValidSecurityLabel(label))
+		return label;
+
+unlabeled:
+	label = pgaceUnlabeledSecurityLabel();
+	if (!label)
+		elog(ERROR, "unlabeled security attribute is unavailable");
+
 	return label;
 }
 
 char *
 pgaceSidToSecurityLabel(Oid security_id)
 {
-	char	   *label = pgaceLookupSecurityLabel(security_id);
+	char *label = pgaceLookupSecurityLabel(security_id);
 
-	label = pgaceTranslateSecurityLabelOut(label);
-	Assert(label != NULL);
-
-	return label;
+	return pgaceTranslateSecurityLabelOut(label);
 }
 
 /*****************************************************************************
