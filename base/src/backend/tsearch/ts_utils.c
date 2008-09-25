@@ -7,7 +7,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/tsearch/ts_utils.c,v 1.9 2008/01/01 19:45:52 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/backend/tsearch/ts_utils.c,v 1.9.2.2 2008/06/19 16:52:31 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -17,7 +17,6 @@
 #include <ctype.h>
 
 #include "miscadmin.h"
-#include "storage/fd.h"
 #include "tsearch/ts_locale.h"
 #include "tsearch/ts_public.h"
 #include "tsearch/ts_utils.h"
@@ -82,23 +81,23 @@ readstoplist(const char *fname, StopList *s, char *(*wordop) (const char *))
 	if (fname && *fname)
 	{
 		char	   *filename = get_tsearch_config_filename(fname, "stop");
-		FILE	   *hin;
+		tsearch_readline_state trst;
 		char	   *line;
 		int			reallen = 0;
 
-		if ((hin = AllocateFile(filename, "r")) == NULL)
+		if (!tsearch_readline_begin(&trst, filename))
 			ereport(ERROR,
 					(errcode(ERRCODE_CONFIG_FILE_ERROR),
 					 errmsg("could not open stop-word file \"%s\": %m",
 							filename)));
 
-		while ((line = t_readline(hin)) != NULL)
+		while ((line = tsearch_readline(&trst)) != NULL)
 		{
 			char	   *pbuf = line;
 
 			/* Trim trailing space */
 			while (*pbuf && !t_isspace(pbuf))
-				pbuf++;
+				pbuf += pg_mblen(pbuf);
 			*pbuf = '\0';
 
 			/* Skip empty lines */
@@ -135,7 +134,7 @@ readstoplist(const char *fname, StopList *s, char *(*wordop) (const char *))
 			(s->len)++;
 		}
 
-		FreeFile(hin);
+		tsearch_readline_end(&trst);
 		pfree(filename);
 	}
 
