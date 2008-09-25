@@ -674,30 +674,31 @@ sepgsqlTranslateSecurityLabelOut(char *context)
 }
 
 /*
- * sepgsqlValidateSecurityLabel() checks whether the given context
- * is valid for the current policy, or not.
- * If not valid, it returns alternative context.
+ * sepgsqlCheckValidateSecurityLabel() checks whether the given
+ * security context is valid on the current working security
+ * policy, or not.
+ * If it's invalid, sepgsqlUnlabeledSecurityLabel() is invoked
+ * at the next to get an alternative security label.
  */
+bool
+sepgsqlCheckValidSecurityLabel(char *context)
+{
+	if (security_check_context_raw((security_context_t) context) < 0)
+		return false;
+
+	return true;
+}
+
 char *
-sepgsqlValidateSecurityLabel(char *context)
+sepgsqlUnlabeledSecurityLabel(void)
 {
 	security_context_t unlabeled;
-	char	   *result;
-
-	if (context != NULL)
-	{
-		if (security_check_context_raw((security_context_t) context) < 0)
-			ereport(ERROR,
-					(errcode(ERRCODE_SELINUX_ERROR),
-					 errmsg("SELinux: %s is invalid security context",
-							context)));
-		return context;
-	}
+	char *result;
 
 	if (security_get_initial_context_raw("unlabeled", &unlabeled) < 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("SELinux: could not get unlabeled context")));
+				 errmsg("SELinux: could not get unlabeled initial context")));
 	PG_TRY();
 	{
 		result = pstrdup(unlabeled);
