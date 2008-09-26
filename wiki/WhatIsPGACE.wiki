@@ -212,9 +212,9 @@ If the guest allows it, return `true`. Otherwise, return `false`.
 It is invoked just before executing ExecutorStart().
 The guest can override this hook to check the Query descriptor.
 
- * `queryDesc`
+ * `QueryDesc queryDesc`
   It is the query descriptor currently processed, and the first argument of ExecutorStart().
- * `eflags`
+ * `int eflags`
   It is the second argument of ExecutorStart().
   You should pay attention that this query is not actually executed when `eflags & EXEC_FLAG_EXPLAIN_ONLY` is positive.
 
@@ -229,11 +229,11 @@ The guest can refer Scan::pgaceTuplePerms (declared as uint32).
 It is a copy come from RangeTblEntry::pgaceTuplePerms set in the previous phase.
 It can be used to mark what permissions are required to scanned tuples.
 
- * `scan`
+ * `Scan scan`
   The current scan node
- * `rel`
+ * `Relation rel`
   The target relation of the current scan
- * `slot`
+ * `TupleTableSlot slot`
   The fetched tuple
 
 ==== `void pgaceProcessUtility(Node *parsetree, ParamListInfo params, bool isTopLevel)` ====
