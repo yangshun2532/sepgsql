@@ -199,7 +199,7 @@ so it is not a desirable to allow overriding it arbitrarily.
 
 If the guest allows it, return `true`. Otherwise, return `false`.
 
-==== `bool pgaceIsAllowExecutorRunHook` ====
+==== `bool pgaceIsAllowExecutorRunHook(void)` ====
 
 This hool gives the guest a chance to control whether `ExecutorRun_hook` can be overrided, or not.
 The `ExecutorRun` invokes `ExecutePlan` and following significant functions,
