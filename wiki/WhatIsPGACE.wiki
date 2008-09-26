@@ -13,7 +13,7 @@ It was primarily designed for Security-Enhanced PostgreSQL (SE-PostgreSQL). It w
 PGACE allows the guest module to extend its hooks. When a hook is invoked on execution path, the guest module can check the given query and make its decision.
 In the default, these hooks give us no impact with no security module enabled.
 
-Developes can also add their security modules as SE-PostgreSQL doint.
+Developes can also add their security modules as SE-PostgreSQL doing.
 The following hook of `pgaceHeapTupleInsert()` is an example of invocation just before inserting a tuple. 
 
 If no security module enabled, it always returns `true` and gives us no effect.
