@@ -629,6 +629,64 @@ lo_set_security(PG_FUNCTION_ARGS)
  ******************************************************************/
 
 /*
+ * Legacy functions support
+ */
+Datum security_label_in(PG_FUNCTION_ARGS);
+Datum security_label_out(PG_FUNCTION_ARGS);
+Datum security_label_raw_in(PG_FUNCTION_ARGS);
+Datum security_label_raw_out(PG_FUNCTION_ARGS);
+Datum text_to_security_label(PG_FUNCTION_ARGS);
+Datum security_label_to_text(PG_FUNCTION_ARGS);
+
+Datum
+security_label_in(PG_FUNCTION_ARGS)
+{
+	return DirectFunctionCall1(textin, PG_GETARG_DATUM(0));
+}
+
+Datum
+security_label_out(PG_FUNCTION_ARGS)
+{
+	return DirectFunctionCall1(textout, PG_GETARG_DATUM(0));
+}
+
+Datum
+security_label_raw_in(PG_FUNCTION_ARGS)
+{
+	ereport(ERROR,
+			(errcode(ERRCODE_PGACE_ERROR),
+			 errmsg("%s is no longer supported", __FUNCTION__)));
+	PG_RETURN_VOID();
+}
+
+Datum
+security_label_raw_out(PG_FUNCTION_ARGS)
+{
+	ereport(ERROR,
+			(errcode(ERRCODE_PGACE_ERROR),
+			 errmsg("%s is no longer supported", __FUNCTION__)));
+	PG_RETURN_VOID();
+}
+
+Datum
+text_to_security_label(PG_FUNCTION_ARGS)
+{
+	ereport(ERROR,
+			(errcode(ERRCODE_PGACE_ERROR),
+			 errmsg("%s is no longer supported", __FUNCTION__)));
+	PG_RETURN_VOID();
+}
+
+Datum
+security_label_to_text(PG_FUNCTION_ARGS)
+{
+	ereport(ERROR,
+			(errcode(ERRCODE_PGACE_ERROR),
+			 errmsg("%s is no longer supported", __FUNCTION__)));
+	PG_RETURN_VOID();
+}
+
+/*
  * If the guest of PGACE added its specific functions, it has to put
  * function stubs on the following section, because the guest modules
  * are not compiled and linked when it is disabled.

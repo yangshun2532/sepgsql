@@ -636,3 +636,27 @@ sepgsql_set_range(PG_FUNCTION_ARGS)
 
 	PG_RETURN_DATUM(result);
 }
+
+/*
+ * SE-PostgreSQL legacy function support
+ */
+Datum sepgsql_tuple_perms(PG_FUNCTION_ARGS);
+Datum sepgsql_tuple_perms_abort(PG_FUNCTION_ARGS);
+
+Datum
+sepgsql_tuple_perms(PG_FUNCTION_ARGS)
+{
+	ereport(ERROR,
+			(errcode(ERRCODE_SELINUX_ERROR),
+			 errmsg("%s is no longer supported", __FUNCTION__)));
+	PG_RETURN_VOID();
+}
+
+Datum
+sepgsql_tuple_perms_abort(PG_FUNCTION_ARGS)
+{
+	ereport(ERROR,
+			(errcode(ERRCODE_SELINUX_ERROR),
+			 errmsg("%s is no longer supported", __FUNCTION__)));
+	PG_RETURN_VOID();
+}
