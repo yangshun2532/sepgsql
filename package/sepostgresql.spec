@@ -7,16 +7,6 @@
 # SE-PostgreSQL status extension
 %define selinux_policy_stores targeted mls
 
-# check policy dependency
-%define fullset_policy %(rpm -E '%{dist}' | grep -cE '^\.fc[1-9]$')
-%if %{fullset_policy}
-%define required_policy_version    3.0.6
-%define policy_module_name         sepostgresql
-%else
-%define required_policy_version    3.4.2
-%define policy_module_name         sepostgresql-devel
-%endif
-
 %%__sepgsql_extension__%%
 
 %{!?ssl:%define ssl 1}
@@ -39,7 +29,7 @@ Patch2: sepostgresql-pg_dump-%%__base_postgresql_version__%%-%%__sepgsql_major_v
 Patch3: sepostgresql-fedora-prefix.patch
 BuildRequires: perl glibc-devel bison flex readline-devel zlib-devel >= 1.0.4
 BuildRequires: checkpolicy libselinux-devel >= 2.0.43 selinux-policy-devel
-BuildRequires: selinux-policy >= %{required_policy_version}
+BuildRequires: selinux-policy >= 3.3.1
 %if %{ssl}
 BuildRequires: openssl-devel
 %endif
@@ -49,7 +39,7 @@ Requires(preun): /sbin/chkconfig /sbin/service
 Requires(postun): policycoreutils
 Requires: postgresql-server = %{version}
 Requires: policycoreutils >= 2.0.16 libselinux >= 2.0.43
-Requires: selinux-policy >= %{required_policy_version}
+Requires: selinux-policy >= 3.3.1-95
 Requires: tzdata logrotate
 
 %description
@@ -88,7 +78,7 @@ CXXFLAGS="${CXXFLAGS:-%optflags}" ; export CXXFLAGS
 # parallel build, if possible
 make %{?_smp_mflags}
 # to create empty .fc file
-touch src/backend/security/sepgsql/policy/%{policy_module_name}.fc
+touch src/backend/security/sepgsql/policy/sepostgresql-devel.fc
 make -C src/backend/security/sepgsql/policy
 
 %install
@@ -99,8 +89,8 @@ make DESTDIR=%{buildroot} install
 for store in %{selinux_policy_stores}
 do
     install -d %{buildroot}%{_datadir}/selinux/${store}
-    install -p -m 644 src/backend/security/sepgsql/policy/%{policy_module_name}.pp.${store} \
-               %{buildroot}%{_datadir}/selinux/${store}/%{policy_module_name}.pp
+    install -p -m 644 src/backend/security/sepgsql/policy/sepostgresql-devel.pp.${store} \
+               %{buildroot}%{_datadir}/selinux/${store}/sepostgresql-devel.pp
 done
 
 # avoid to conflict with native postgresql package
@@ -153,16 +143,11 @@ exit 0
 
 for store in %{selinux_policy_stores}
 do
-%if %{fullset_policy}
-    %{_sbindir}/semodule -s ${store} -r %{policy_module_name} >& /dev/null || :
-    %{_sbindir}/semodule -s ${store}    \
-        -i %{_datadir}/selinux/${store}/%{policy_module_name}.pp >& /dev/null || :
-%else
-    if %{_sbindir}/semodule -s ${store} -l | grep -Eq "^%{policy_module_name}"; then
+    %{_sbindir}/semodule -s ${store} -r sepostgresql >& /dev/null || :
+    if %{_sbindir}/semodule -s ${store} -l | grep -Eq "^sepostgresql-devel"; then
         %{_sbindir}/semodule -s ${store}    \
-            -u %{_datadir}/selinux/${store}/%{policy_module_name}.pp >& /dev/null || :
+            -i %{_datadir}/selinux/${store}/sepostgresql-devel.pp >& /dev/null || :
     fi
-%endif
 done
 
 # Fix up non-standard file contexts
@@ -183,7 +168,7 @@ fi
 if [ $1 -eq 0 ]; then           # rpm -e case
     for store in %{selinux_policy_stores}
     do
-        %{_sbindir}/semodule -s ${store} -r %{policy_module_name} >& /dev/null || :
+        %{_sbindir}/semodule -s ${store} -r sepostgresql-devel >& /dev/null || :
     done
     /sbin/fixfiles -R %{name} restore || :
     test -d %{_localstatedir}/lib/sepgsql && /sbin/restorecon -R %{_localstatedir}/lib/sepgsql || :
@@ -212,12 +197,15 @@ fi
 %{_datadir}/sepgsql/conversion_create.sql
 %{_datadir}/sepgsql/information_schema.sql
 %{_datadir}/sepgsql/sql_features.txt
-%attr(644,root,root) %{_datadir}/selinux/*/%{policy_module_name}.pp
+%attr(644,root,root) %{_datadir}/selinux/*/sepostgresql-devel.pp
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/data
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
 
 %changelog
+* Sat Sep 27 2008 <kaigai@kaigai.gr.jp> - 8.3.3-2.1063
+- update base version to 8.3.4
+
 * Tue Sep 23 2008 <kaigai@kaigai.gr.jp> - 8.3.3-2.1043
 - bugfix: a case when INSERT a FK reference to invisible PK
 
