@@ -268,11 +268,10 @@ checkTuplePermsProcedure(HeapTuple tuple, HeapTuple oldtup,
 				/*
 				 * <client type> <-- database:module_install --> <database type>
 				 */
-				sepgsqlAvcPermission(sepgsqlGetClientContext(),
-									 sepgsqlGetDatabaseContext(),
-									 SECCLASS_DB_DATABASE,
-									 DB_DATABASE__INSTALL_MODULE,
-									 NULL, true);
+				sepgsqlClientHasPermission(sepgsqlGetDatabaseSecurityId(),
+										   SECCLASS_DB_DATABASE,
+										   DB_DATABASE__INSTALL_MODULE,
+										   NULL);
 
 				/*
 				 * <client type> <-- database:module_install --> <file type>
@@ -286,11 +285,11 @@ checkTuplePermsProcedure(HeapTuple tuple, HeapTuple oldtup,
 									file_name)));
 				PG_TRY();
 				{
-					sepgsqlAvcPermission(sepgsqlGetClientContext(),
-										 file_context,
-										 SECCLASS_DB_DATABASE,
-										 DB_DATABASE__INSTALL_MODULE,
-										 file_name, true);
+					sepgsqlComputePermission(sepgsqlGetClientContext(),
+											 file_context,
+											 SECCLASS_DB_DATABASE,
+											 DB_DATABASE__INSTALL_MODULE,
+											 file_name);
 				}
 				PG_CATCH();
 				{
@@ -367,9 +366,16 @@ sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, HeapTuple oldtup,
 	{
 		const char *objname = sepgsqlTupleName(RelationGetRelid(rel), tuple);
 
-		rc = sepgsqlAvcPermissionSid(sepgsqlGetClientContext(),
-									 HeapTupleGetSecurity(tuple),
-									 tclass, perms, objname, abort);
+		if (abort)
+		{
+			sepgsqlClientHasPermission(HeapTupleGetSecurity(tuple),
+									   tclass, perms, objname);
+		}
+		else
+		{
+			rc = sepgsqlClientHasPermissionNoAbort(HeapTupleGetSecurity(tuple),
+												   tclass, perms, objname);
+		}
 	}
 	return rc;
 }
@@ -387,24 +393,22 @@ sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, HeapTuple oldtup,
 static void
 setDefaultContextDatabase(Relation rel, HeapTuple tuple)
 {
-	security_context_t ncontext;
 	Oid security_id;
+	security_context_t newcon;
 
-	ncontext = sepgsqlAvcCreateCon(sepgsqlGetClientContext(),
-								   sepgsqlGetClientContext(),
-								   SECCLASS_DB_DATABASE);
-	security_id = pgaceSecurityLabelToSid(ncontext);
+	newcon = sepgsqlComputeCreateContext(sepgsqlGetClientContext(),
+										 sepgsqlGetClientContext(),
+										 SECCLASS_DB_DATABASE);
+	security_id = pgaceSecurityLabelToSid(newcon);
 	HeapTupleSetSecurity(tuple, security_id);
 }
 
 static void
 setDefaultContextRelation(Relation rel, HeapTuple tuple)
 {
-	Oid dbsid, tblsid;
+	Oid tblsid;
 
-	dbsid = sepgsqlGetDatabaseSecurityId();
-	tblsid = sepgsqlAvcCreateConSid(sepgsqlGetClientContext(),
-									dbsid,
+	tblsid = sepgsqlClientCreateSid(sepgsqlGetDatabaseSecurityId(),
 									SECCLASS_DB_TABLE);
 	HeapTupleSetSecurity(tuple, tblsid);
 }
@@ -431,8 +435,7 @@ setDefaultContextAttribute(Relation rel, HeapTuple tuple)
 		{
 			Oid security_id;
 
-			security_id = sepgsqlAvcCreateConSid(sepgsqlGetClientContext(),
-												 sepgsqlGetDatabaseSecurityId(),
+			security_id = sepgsqlClientCreateSid(sepgsqlGetDatabaseSecurityId(),
 												 SECCLASS_DB_TABLE);
 			HeapTupleSetSecurity(tuple, security_id);
 			break;
@@ -446,12 +449,10 @@ setDefaultContextAttribute(Relation rel, HeapTuple tuple)
 				 attForm->attrelid);
 		clsForm = (Form_pg_class) GETSTRUCT(reltup);
 
-		security_id
-			= sepgsqlAvcCreateConSid(sepgsqlGetClientContext(),
-									 HeapTupleGetSecurity(reltup),
-									 (clsForm->relkind == RELKIND_RELATION
-									  ? SECCLASS_DB_COLUMN
-									  : SECCLASS_DB_TUPLE));
+		security_id = sepgsqlClientCreateSid(HeapTupleGetSecurity(reltup),
+											 (clsForm->relkind == RELKIND_RELATION
+											  ? SECCLASS_DB_COLUMN
+											  : SECCLASS_DB_TUPLE));
 		HeapTupleSetSecurity(tuple, security_id);
 		
 		ReleaseSysCache(reltup);
@@ -465,8 +466,7 @@ setDefaultContextProcedure(Relation rel, HeapTuple tuple)
 {
 	Oid security_id;
 
-	security_id = sepgsqlAvcCreateConSid(sepgsqlGetClientContext(),
-										 sepgsqlGetDatabaseSecurityId(),
+	security_id = sepgsqlClientCreateSid(sepgsqlGetDatabaseSecurityId(),
 										 SECCLASS_DB_PROCEDURE);
 	HeapTupleSetSecurity(tuple, security_id);
 }
@@ -513,8 +513,7 @@ setDefaultContextLargeObject(Relation rel, HeapTuple tuple)
 
 	if (security_id == InvalidOid)
 	{
-		security_id = sepgsqlAvcCreateConSid(sepgsqlGetClientContext(),
-											 sepgsqlGetDatabaseSecurityId(),
+		security_id = sepgsqlClientCreateSid(sepgsqlGetDatabaseSecurityId(),
 											 SECCLASS_DB_BLOB);
 	}
 	HeapTupleSetSecurity(tuple, security_id);
@@ -523,7 +522,6 @@ setDefaultContextLargeObject(Relation rel, HeapTuple tuple)
 void
 sepgsqlSetDefaultContext(Relation rel, HeapTuple tuple)
 {
-	security_context_t ncontext;
 	HeapTuple reltup;
 	Oid security_id;
 
@@ -564,14 +562,8 @@ sepgsqlSetDefaultContext(Relation rel, HeapTuple tuple)
 				/*
 				 * we cannot touch system cache in very early phase
 				 */
-				security_context_t tcontext
-					= sepgsqlAvcCreateCon(sepgsqlGetClientContext(),
-										  sepgsqlGetDatabaseContext(),
-										  SECCLASS_DB_TABLE);
-				ncontext = sepgsqlAvcCreateCon(sepgsqlGetClientContext(),
-											   tcontext,
-											   SECCLASS_DB_TUPLE);
-				security_id = pgaceSecurityLabelToSid(ncontext);
+				security_id = sepgsqlClientCreateSid(sepgsqlGetDatabaseSecurityId(),
+													 SECCLASS_DB_TABLE);
 				HeapTupleSetSecurity(tuple, security_id);
 
 				return;
@@ -588,8 +580,7 @@ sepgsqlSetDefaultContext(Relation rel, HeapTuple tuple)
 		elog(ERROR, "SELinux: cache lookup failed for relation %u",
 			 RelationGetRelid(rel));
 
-	security_id = sepgsqlAvcCreateConSid(sepgsqlGetClientContext(),
-										 HeapTupleGetSecurity(reltup),
+	security_id = sepgsqlClientCreateSid(HeapTupleGetSecurity(reltup),
 										 SECCLASS_DB_TUPLE);
 	HeapTupleSetSecurity(tuple, security_id);
 
