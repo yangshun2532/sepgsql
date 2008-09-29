@@ -141,9 +141,9 @@ extern void sepgsqlLargeObjectGetSecurity(Relation rel, HeapTuple tuple);
 extern void sepgsqlLargeObjectSetSecurity(Relation rel, HeapTuple newtup, HeapTuple oldtup);
 
 /* Security Label hooks */
-extern char *sepgsqlTranslateSecurityLabelIn(char *context);
+extern char *sepgsqlTranslateSecurityLabelIn(const char *context);
 
-extern char *sepgsqlTranslateSecurityLabelOut(char *context);
+extern char *sepgsqlTranslateSecurityLabelOut(const char *context);
 
 extern char *sepgsqlValidateSecurityLabel(char *context);
 
@@ -173,27 +173,35 @@ extern Oid sepgsqlGetDatabaseSecurityId(void);
  */
 extern void sepgsqlAvcInit(void);
 
-extern bool sepgsqlAvcPermission(const security_context_t scon,
-								 const security_context_t tcon,
-								 security_class_t tclass,
-								 access_vector_t perms,
-								 const char *objname,
-								 bool abort);
+extern void sepgsqlAvcSwitchClientContext(security_context_t context);
 
-extern bool sepgsqlAvcPermissionSid(const security_context_t scon,
-									Oid tsid,
-									security_class_t tclass,
-									access_vector_t perms,
-									const char *objname,
-									bool abort);
+extern void sepgsqlClientHasPermission(Oid target_security_id,
+									   security_class_t tclass,
+									   access_vector_t perms,
+									   const char *objname);
 
-extern security_context_t sepgsqlAvcCreateCon(const security_context_t scon,
-											  const security_context_t tcon,
-											  security_class_t tclass);
+extern bool sepgsqlClientHasPermissionNoAbort(Oid target_security_id,
+											  security_class_t tclass,
+											  access_vector_t perms,
+											  const char *objname);
 
-extern Oid sepgsqlAvcCreateConSid(const security_context_t scon,
-								  Oid tsid,
+extern Oid sepgsqlClientCreateSid(Oid target_security_id,
 								  security_class_t tclass);
+
+extern security_context_t
+sepgsqlClientCreateContext(Oid target_security_id,
+						   security_class_t tclass);
+
+extern bool sepgsqlComputePermission(const security_context_t scontext,
+									 const security_context_t tcontext,
+									 security_class_t tclass,
+									 access_vector_t perms,
+									 const char *objname);
+
+extern security_context_t
+sepgsqlComputeCreateContext(const security_context_t scontext,
+							const security_context_t tcontext,
+							security_class_t tclass);
 
 /*
  * SE-PostgreSQL permission evaluation related
