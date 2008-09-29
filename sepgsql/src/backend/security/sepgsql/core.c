@@ -131,6 +131,8 @@ sepgsqlSwitchClientContext(security_context_t new_context)
 
 	clientContext = new_context;
 
+	sepgsqlAvcSwitchClientContext(new_context);
+
 	return original_context;
 }
 
@@ -207,9 +209,9 @@ sepgsqlInitialize(bool bootstrap)
 {
 	char	   *dbname;
 
-	sepgsqlAvcInit();
-
 	initContexts();
+
+	sepgsqlAvcInit();
 
 	/*
 	 * check db_database:{ access }
@@ -233,12 +235,11 @@ sepgsqlInitialize(bool bootstrap)
 		ReleaseSysCache(tuple);
 	}
 
-	sepgsqlAvcPermission(sepgsqlGetClientContext(),
-						 sepgsqlGetDatabaseContext(),
-						 SECCLASS_DB_DATABASE,
-						 DB_DATABASE__ACCESS,
-						 dbname,
-						 true);
+	sepgsqlComputePermission(sepgsqlGetClientContext(),
+							 sepgsqlGetDatabaseContext(),
+							 SECCLASS_DB_DATABASE,
+							 DB_DATABASE__ACCESS,
+							 dbname);
 }
 
 /*
