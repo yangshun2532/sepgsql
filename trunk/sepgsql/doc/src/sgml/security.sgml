@@ -65,7 +65,7 @@
        </listitem>
        <listitem>
 	 <para>
-	   selinux-policy and selinux-policy-devel (3.0.6, or later)
+	   selinux-policy (3.4.2, or later)
 	 </para>
        </listitem>
        <listitem>
@@ -96,41 +96,51 @@
      <title>Build</title>
      <para>
        SE-PostgreSQL needs its security policy to make its decision.
-       The source of security policy is stored in
-       <filename>contrib/sepgsql_policy/</filename>, and you can build
-       it as a binary security policy module. It can be installed later
-       without rebuilding whole of the policy.
+       If you already installed selinux-policy package version 3.4.2 or later,
+       it contains most of core SE-PostgreSQL policies, so you don't need to
+       install special policy modules.
+
+       An additional policy set for development purpose is provided.
+       We can use it to run regression test correctly, and to turn on/off
+       audit messages.
+
+       This policy set is stored in
+       <filename>src/backend/security/sepgsql/policy</filename>,
+       and you can build it as a binary security policy module.
+       It can be installed later without rebuilding whole of the policy.
      </para>
 
      <para>
-       We have to build binaries and security policy as follows:
+       We can build the binary security policy module
+       (<filename>sepostgresql-devel.pp</filename>), as follows:
 <screen>
   <prompt>$ </prompt><userinput>make</userinput>
-  <prompt>$ </prompt><userinput>make -C contrib/sepgsql_policy</userinput>
-</screen>       
+  <prompt>$ </prompt><userinput>make -C src/backend/security/sepgsql/policy</userinput>
+  <prompt>$ </prompt><userinput>/usr/sbin/semodule -i src/backend/security/sepgsql/policy/sepostgresql-devel.pp</userinput>
+</screen>
+     </para>
+
+     <para>
+       The <command>/usr/sbin/semodule</command> is a command to manage binary
+       security policy modules of SELinux. <option>-i</option> option enables to
+       install a new module.
+
+       If you have already installed <filename>sepostgresql-devel.pp</filename>,
+       use <option>-u</option> to upgrade it instead.
      </para>
    </sect2>
 
    <sect2>
      <title>Installation</title>
      <para>
-       We need several additional steps to install SE-PostgreSQL and its
-       security policy correctly.
+       We need an additional step to install SE-PostgreSQL.
+       SELinux requires a security context is assigned for each files correctly.
+       so we need to initialize it on installation, as follows:
 <screen>
   <prompt>$ </prompt><userinput>su</userinput>
-  <prompt># </prompt><userinput>/usr/sbin/semodule -i contrib/sepgsql_policy/sepostgresql.pp</userinput>
   <prompt># </prompt><userinput>make install</userinput>
   <prompt># </prompt><userinput>/sbin/restorecon -R /usr/local/pgsql</userinput>
 </screen>
-     </para>
-
-     <para>
-       <command>/usr/sbin/semodule</command> is a command to manage binary
-       security policy modules of SELinux. <option>-i</option> is a option
-       to install a new module.
-
-       If you have already installed <filename>sepostgresql.pp</filename>,
-       use <option>-u</option> to upgrade instead.
      </para>
 
      <para>
@@ -138,8 +148,9 @@
        security context of given files. <option>-R</option> option means
        recursive relabeling under the given directory.
 
-       If you change the installation path, specify the appropriate
-       directory instead.
+       If the installation path is different from the default of distribution,
+       we recomment to install <filename>sepostgresql-devel.pp</filename>
+       security policy module to set up correct default security context.
      </para>
    </sect2>
 
@@ -601,6 +612,29 @@ postgres=# SELECT cid, cname FROM customer;
 
        If clients does not have enough permissions on these objects,
        SE-PostgreSQL aborts query execution and raises an error.
+     </para>
+   </sect2>
+
+   <sect2>
+     <title>The limitation</title>
+     <para>
+       SE-PostgreSQL does not care about information leaks via covert channels.
+       It is a technical term in security evaluation, and it means a possibility
+       of inference.
+
+       If your requirements contains elimination of covert channels, we don't
+       recommend to apply SE-PostgreSQL. However, it is generally considered
+       as a requirement of edge triggered military region.
+     </para>
+     <para>
+       Here is an example of covert channels.
+
+       When we try to update or delete a tuple with primary key refered by
+       one or more invisible foreign keys, SE-PostgreSQL prevent the action
+       to keep the reference integrity, even if user cannot see the keys.
+
+       As the result, it is possible to infer the exising of foreign key
+       by repeating of errors.
      </para>
    </sect2>
  </sect1>
