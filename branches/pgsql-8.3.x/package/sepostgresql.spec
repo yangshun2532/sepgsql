@@ -7,6 +7,14 @@
 # SE-PostgreSQL status extension
 %define selinux_policy_stores targeted mls
 
+# Check required policy version
+%define fedora9 %(rpm -E '%{dist}' | grep -cE '^\.fc[1-9]$')
+%if %{fedora9}
+%define required_policy_version    3.3.1-96
+%else
+%define required_policy_version    3.4.2
+%endif
+
 %%__sepgsql_extension__%%
 
 %{!?ssl:%define ssl 1}
@@ -28,8 +36,11 @@ Patch1: sepostgresql-policy-%%__base_postgresql_version__%%-%%__sepgsql_major_ve
 Patch2: sepostgresql-pg_dump-%%__base_postgresql_version__%%-%%__sepgsql_major_version__%%.patch
 Patch3: sepostgresql-fedora-prefix.patch
 BuildRequires: perl glibc-devel bison flex readline-devel zlib-devel >= 1.0.4
-BuildRequires: checkpolicy libselinux-devel >= 2.0.43 selinux-policy-devel
-BuildRequires: selinux-policy >= 3.3.1
+BuildRequires: checkpolicy libselinux-devel >= 2.0.43
+BuildRequires: selinux-policy >= %{required_policy_version}
+%if %{fedora9}
+BuildRequires: selinux-policy-devel
+%endif
 %if %{ssl}
 BuildRequires: openssl-devel
 %endif
@@ -39,7 +50,7 @@ Requires(preun): /sbin/chkconfig /sbin/service
 Requires(postun): policycoreutils
 Requires: postgresql-server = %{version}
 Requires: policycoreutils >= 2.0.16 libselinux >= 2.0.43
-Requires: selinux-policy >= 3.3.1-95
+Requires: selinux-policy >= %{required_policy_version}
 Requires: tzdata logrotate
 
 %description
@@ -203,8 +214,9 @@ fi
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
 
 %changelog
-* Sat Sep 27 2008 <kaigai@kaigai.gr.jp> - 8.3.3-2.1063
+* Sat Sep 27 2008 <kaigai@kaigai.gr.jp> - 8.3.3-2.1066
 - update base version to 8.3.4
+- sepostgresql.pp was marked as obsolute
 
 * Tue Sep 23 2008 <kaigai@kaigai.gr.jp> - 8.3.3-2.1043
 - bugfix: a case when INSERT a FK reference to invisible PK
