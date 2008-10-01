@@ -1410,6 +1410,38 @@ sepgsqlCopyTable(Relation rel, List *attNumList, bool isFrom)
 }
 
 /*
+ * sepgsqlCopyFile
+ *
+ * This function check permission whether the client can
+ * read from/write to the given file.
+ */
+void sepgsqlCopyFile(Relation rel, int fdesc, const char *filename, bool isFrom)
+{
+	security_context_t context;
+
+	if (fgetfilecon_raw(fdesc, &context) < 0)
+		ereport(ERROR,
+				(errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("SELinux: could not get context of %s", filename)));
+
+	PG_TRY();
+	{
+		sepgsqlComputePermission(sepgsqlGetClientContext(),
+								 context,
+								 SECCLASS_FILE,
+								 isFrom ? FILE__READ : FILE__WRITE,
+								 filename);
+	}
+	PG_CATCH();
+	{
+		freecon(context);
+		PG_RE_THROW();
+	}
+	PG_END_TRY();
+	freecon(context);
+}
+
+/*
  * sepgsqlCopyToTuple
  *
  * This function check permission to read the given tuple.

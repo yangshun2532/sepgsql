@@ -1271,6 +1271,9 @@ DoCopyTo(CopyState cstate)
 			ereport(ERROR,
 					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
 					 errmsg("\"%s\" is a directory", cstate->filename)));
+
+		pgaceCopyFile(cstate->rel, fileno(cstate->copy_file),
+					  cstate->filename, false);
 	}
 
 	PG_TRY();
@@ -1810,6 +1813,9 @@ CopyFrom(CopyState cstate)
 			ereport(ERROR,
 					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
 					 errmsg("\"%s\" is a directory", cstate->filename)));
+
+		pgaceCopyFile(cstate->rel, fileno(cstate->copy_file),
+					  cstate->filename, true);
 	}
 
 	tupDesc = RelationGetDescr(cstate->rel);
