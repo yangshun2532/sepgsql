@@ -77,11 +77,11 @@
    </sect2>
 
    <sect2>
-     <title>Configure</title>
+     <title>Build and Installation</title>
      <para>
-       In the default, SE-PostgreSQL feature is not activated.
+       In the default, SE-PostgreSQL feature is disabled on build.
        We have to specify <option>--enable-selinux</option> option
-       to configure script. It enables to build your PostgreSQL
+       for configure script. It enables to build your PostgreSQL
        with features to support SELinux.
      </para>
 
@@ -90,67 +90,67 @@
   <prompt>$ </prompt><userinput>./configure --enable-selinux</userinput>
 </screen>
      </para>
-   </sect2>
 
-   <sect2>
-     <title>Build</title>
      <para>
-       SE-PostgreSQL needs its security policy to make its decision.
-       If you already installed selinux-policy package version 3.4.2 or later,
-       it contains most of core SE-PostgreSQL policies, so you don't need to
-       install special policy modules.
-
-       An additional policy set for development purpose is provided.
-       We can use it to run regression test correctly, and to turn on/off
-       audit messages.
-
-       This policy set is stored in
-       <filename>src/backend/security/sepgsql/policy</filename>,
-       and you can build it as a binary security policy module.
-       It can be installed later without rebuilding whole of the policy.
+       SE-PostgreSQL requires in-kernel SELinux to provide its security
+       policy to make its decision.
+       The <literal>selinux-policy-3.4.2</literal> or later contains most
+       of rule set for SE-PostgreSQL, so it is not necessary to install
+       special policy module any more for generic purpose.
      </para>
 
      <para>
-       We can build the binary security policy module
-       (<filename>sepostgresql-devel.pp</filename>), as follows:
+       SE-PostgreSQL also provides an optional policy set for development
+       purpose. It allows several operations like regression test and
+       toggling audit logs, and contains default file security context.
+
+       It is stored at <filename>src/backend/security/sepgsql/policy</filename>,
+       and can be build and installed as a binary security policy module.
+     </para>
+
+     <para>
+       We shows the steps to build SE-PostgreSQL and the optional policy
+       set for development purpose, as follows:
+     </para>
 <screen>
   <prompt>$ </prompt><userinput>make</userinput>
   <prompt>$ </prompt><userinput>make -C src/backend/security/sepgsql/policy</userinput>
-  <prompt>$ </prompt><userinput>/usr/sbin/semodule -i src/backend/security/sepgsql/policy/sepostgresql-devel.pp</userinput>
-</screen>
-     </para>
-
-     <para>
-       The <command>/usr/sbin/semodule</command> is a command to manage binary
-       security policy modules of SELinux. <option>-i</option> option enables to
-       install a new module.
-
-       If you have already installed <filename>sepostgresql-devel.pp</filename>,
-       use <option>-u</option> to upgrade it instead.
-     </para>
-   </sect2>
-
-   <sect2>
-     <title>Installation</title>
-     <para>
-       We need an additional step to install SE-PostgreSQL.
-       SELinux requires a security context is assigned for each files correctly.
-       so we need to initialize it on installation, as follows:
-<screen>
   <prompt>$ </prompt><userinput>su</userinput>
   <prompt># </prompt><userinput>make install</userinput>
-  <prompt># </prompt><userinput>/sbin/restorecon -R /usr/local/pgsql</userinput>
+  <prompt># </prompt><userinput>/usr/sbin/semodule -i src/backend/security/sepgsql/policy/sepostgresql-devel.pp</userinput>
 </screen>
+     <para>
+       The second <command>make</command> builds
+       the <filename>sepostgresql-devel.pp</filename> policy module.
+       It is installed by <command>/usr/sbin/semodule</command>.
      </para>
 
      <para>
-       <command>/sbin/restorecon</command> is a command to label proper
-       security context of given files. <option>-R</option> option means
-       recursive relabeling under the given directory.
+       The in-kernel SELinux requires a security context is assigned
+       for each files correctly.
 
-       If the installation path is different from the default of distribution,
-       we recomment to install <filename>sepostgresql-devel.pp</filename>
-       security policy module to set up correct default security context.
+       The security policy also has its proper default file context
+       described as a relationship between a security context and
+       files identified by pathname of regular expression.
+
+       The <filename>sepostgresql-devel.pp</filename> also contains
+       the relationship based on <option>--prefix</option> option at
+       <command>configure</command> script.
+
+       Thus, all we should do is to restore a proper security context
+       of newly installed files.
+     </para>
+     <para>
+       If you installed your system at <filename>/usr/local/pgsql</filename>,
+       the following command enables to restore proper security context
+       under the directory.
+     </para>
+<screen>
+  <prompt># </prompt><userinput>/sbin/restorecon -R /usr/local/pgsql</userinput>
+</screen>
+     <para>
+       The <command>/sbin/restorecon</command> is a command to label proper security
+       context of given files, and <option>-R</option> specified recursive mode.
      </para>
    </sect2>
 
@@ -183,12 +183,6 @@
   <prompt># </prompt><userinput>/usr/sbin/semanage fcontext -a -t postgresql_db_t "$PGDATA(/.*)?"</userinput>
   <prompt># </prompt><userinput>/sbin/restorecon -R $PGDATA</userinput>
 </screen>
-     <para>
-       <literal>semanage</literal> with <literal>fcontext</literal> subcommand
-       enables to configure the default security context of given path in regular
-       expression, and it is used in <literal>restorecon</literal>.
-     </para>
-
      <para>
        After <literal>$PGDATA</literal> is labeled correctly,
        <literal>initdb</literal> and <literal>pg_ctl</literal>should be invoked.
@@ -618,23 +612,33 @@ postgres=# SELECT cid, cname FROM customer;
    <sect2>
      <title>The limitation</title>
      <para>
-       SE-PostgreSQL does not care about information leaks via covert channels.
-       It is a technical term in security evaluation, and it means a possibility
-       of inference.
-
-       If your requirements contains elimination of covert channels, we don't
-       recommend to apply SE-PostgreSQL. However, it is generally considered
-       as a requirement of edge triggered military region.
+       SE-PostgreSQL dose not care about information leaks via covert channels.
+       It is a technical term used in security evaluation, and means a possibility
+       of inference to invisible data via illicit flows.
      </para>
      <para>
-       Here is an example of covert channels.
+       It had been originally required at upper B2 class of TCSEC, and evaluated
+       products had to declare explicit maximum bandwidth of covert channels.
+       It is now inherited to ISO/IEC15408 knows as CC (Common Criteria).
+     </para>
+     <para>
+       If your requirements contains elimination of covert channels, we don't
+       recommend to apply SE-PostgreSQL. However, it is generally considered
+       as a requirement of extreame condidential military region.
+     </para>
+     <para>
+       An example of covert channels are here.
 
-       When we try to update or delete a tuple with primary key refered by
-       one or more invisible foreign keys, SE-PostgreSQL prevent the action
-       to keep the reference integrity, even if user cannot see the keys.
+       When a man tries to update or delete a tuple with primary key refered by
+       one or more invisible foreign keys, SE-PostgreSQL prevent the action to
+       keep its reference integrity, even if he cannot see the key.
 
-       As the result, it is possible to infer the exising of foreign key
-       by repeating of errors.
+       This error gives him a side-channel information which is an existance
+       of invisible foreign key. Such a behavior is called as covert channel.
+     </para>
+     <para>
+       An actual avoidance for the matter is to apply non-natural primary and
+       foreign keys. It enables to be impossible he infer any meaningful data.
      </para>
    </sect2>
  </sect1>
@@ -993,7 +997,7 @@ static inline bool
 pgaceHeapTupleInsert(Relation rel, HeapTuple tuple,
                      bool is_internal, bool with_returning)
 {
-#ifdef HAVE_SELINUX
+#if defined(HAVE_SELINUX)
     if (sepgsqlIsEnabled())
         return sepgsqlHeapTupleInsert(rel, tuple,
                                       is_internal,
@@ -1028,7 +1032,7 @@ static inline bool
 pgaceHeapTupleInsert(Relation rel, HeapTuple tuple,
                      bool is_internal, bool with_returning)
 {
-#ifdef HAVE_SELINUX
+#if defined(HAVE_SELINUX)
     if (sepgsqlIsEnabled())
         return sepgsqlHeapTupleInsert(rel, tuple,
                                       is_internal,
