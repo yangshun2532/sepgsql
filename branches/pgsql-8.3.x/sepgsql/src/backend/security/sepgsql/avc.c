@@ -829,6 +829,7 @@ sepgsqlComputePermission(const security_context_t scontext,
 						" scontext=%s tcontext=%s tclass=%s",
 						svcon, tvcon, security_class_to_string(e_tclass))));
 
+	cache.tclass = tclass;
 	cache.allowed = trans_to_internal_perms(e_tclass, avd.allowed);
 	cache.decided = trans_to_internal_perms(e_tclass, avd.decided);
 	cache.auditallow = trans_to_internal_perms(e_tclass, avd.auditallow);
