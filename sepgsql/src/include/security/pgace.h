@@ -797,6 +797,29 @@ pgaceCopyTable(Relation rel, List *attNumList, bool isFrom)
 }
 
 /*
+ * pgaceCopyFile
+ *
+ * This hook is invoked just after a target file is opened
+ * at COPY TO/COPY FROM statement to give the guest a chance to
+ * check whether it allows to read/write the file.
+ *
+ * arguments:
+ * - rel is the target relation of this COPY TO/FROM statement.
+ *   It can be NULL, when COPY (SELECT ...) TO ... is given.
+ * - isFrom is a bool to show the direction of the COPY
+ * - fdesc is the file descriptor of the target file opened.
+ * - filename is the filename of fdesc
+ */
+static inline void
+pgaceCopyFile(Relation rel, int fdesc, const char *filename, bool isFrom)
+{
+#if defined(HAVE_SELINUX)
+	if (sepgsqlIsEnabled())
+		sepgsqlCopyFile(rel, fdesc, filename, isFrom);
+#endif
+}
+
+/*
  * pgaceCopyToTuple
  *
  * This hook is invoked just before output of a fetched tuple on
