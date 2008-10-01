@@ -8,7 +8,7 @@ gen_require(`
 	class db_tuple all_db_tuple_perms;
 	class db_blob all_db_blob_perms;
 
-	attribute domain, home_type;
+	attribute domain, home_type, tmpfile;
 	attribute sepgsql_client_type;
 	attribute sepgsql_unconfined_type;
 
@@ -19,10 +19,7 @@ gen_require(`
 	attribute sepgsql_blob_type;
 	attribute sepgsql_module_type;
 
-	# for testcases
-	attribute tmpfile;
-	role unconfined_r;
-	type unconfined_t;
+	type bin_t;
 	type sepgsql_trusted_proc_t;
 ')
 
@@ -34,9 +31,15 @@ gen_require(`
 type sepgsql_test_t;
 domain_type(sepgsql_test_t)
 
-allow unconfined_t sepgsql_test_t : process transition;
-role unconfined_r types sepgsql_test_t;
-role unconfined_r types sepgsql_trusted_proc_t;
+optional_policy(`
+	gen_require(`
+		role unconfined_r;
+		type unconfined_t;
+	')
+	allow unconfined_t sepgsql_test_t : process transition;
+	role unconfined_r types sepgsql_test_t;
+	role unconfined_r types sepgsql_trusted_proc_t;
+')
 
 corecmd_exec_bin(sepgsql_test_t)
 allow sepgsql_test_t bin_t : file { entrypoint };
