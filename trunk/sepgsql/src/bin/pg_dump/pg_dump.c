@@ -12,7 +12,7 @@
  *	by PostgreSQL
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/bin/pg_dump/pg_dump.c,v 1.500 2008/09/08 15:26:23 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/bin/pg_dump/pg_dump.c,v 1.502 2008/09/24 19:33:15 heikki Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -1552,12 +1552,16 @@ dumpDatabase(Archive *AH)
 				i_oid,
 				i_dba,
 				i_encoding,
+				i_collate,
+				i_ctype,
 				i_tablespace;
 	CatalogId	dbCatId;
 	DumpId		dbDumpId;
 	const char *datname,
 			   *dba,
 			   *encoding,
+			   *collate,
+			   *ctype,
 			   *tablespace;
 
 	datname = PQdb(g_conn);
@@ -1569,11 +1573,26 @@ dumpDatabase(Archive *AH)
 	selectSourceSchema("pg_catalog");
 
 	/* Get the database owner and parameters from pg_database */
-	if (g_fout->remoteVersion >= 80200)
+	if (g_fout->remoteVersion >= 80400)
 	{
 		appendPQExpBuffer(dbQry, "SELECT tableoid, oid, "
 						  "(%s datdba) as dba, "
 						  "pg_encoding_to_char(encoding) as encoding, "
+						  "datcollate, datctype, "
+						  "(SELECT spcname FROM pg_tablespace t WHERE t.oid = dattablespace) as tablespace, "
+					  "shobj_description(oid, 'pg_database') as description "
+
+						  "FROM pg_database "
+						  "WHERE datname = ",
+						  username_subquery);
+		appendStringLiteralAH(dbQry, datname, AH);
+	}
+	else if (g_fout->remoteVersion >= 80200)
+	{
+		appendPQExpBuffer(dbQry, "SELECT tableoid, oid, "
+						  "(%s datdba) as dba, "
+						  "pg_encoding_to_char(encoding) as encoding, "
+						  "NULL as datcollate, NULL as datctype, "
 						  "(SELECT spcname FROM pg_tablespace t WHERE t.oid = dattablespace) as tablespace, "
 					  "shobj_description(oid, 'pg_database') as description "
 
@@ -1587,6 +1606,7 @@ dumpDatabase(Archive *AH)
 		appendPQExpBuffer(dbQry, "SELECT tableoid, oid, "
 						  "(%s datdba) as dba, "
 						  "pg_encoding_to_char(encoding) as encoding, "
+						  "NULL as datcollate, NULL as datctype, "
 						  "(SELECT spcname FROM pg_tablespace t WHERE t.oid = dattablespace) as tablespace "
 						  "FROM pg_database "
 						  "WHERE datname = ",
@@ -1598,6 +1618,7 @@ dumpDatabase(Archive *AH)
 		appendPQExpBuffer(dbQry, "SELECT tableoid, oid, "
 						  "(%s datdba) as dba, "
 						  "pg_encoding_to_char(encoding) as encoding, "
+						  "NULL as datcollate, NULL as datctype, "
 						  "NULL as tablespace "
 						  "FROM pg_database "
 						  "WHERE datname = ",
@@ -1611,6 +1632,7 @@ dumpDatabase(Archive *AH)
 						  "oid, "
 						  "(%s datdba) as dba, "
 						  "pg_encoding_to_char(encoding) as encoding, "
+						  "NULL as datcollate, NULL as datctype, "
 						  "NULL as tablespace "
 						  "FROM pg_database "
 						  "WHERE datname = ",
@@ -1641,12 +1663,16 @@ dumpDatabase(Archive *AH)
 	i_oid = PQfnumber(res, "oid");
 	i_dba = PQfnumber(res, "dba");
 	i_encoding = PQfnumber(res, "encoding");
+	i_collate = PQfnumber(res, "datcollate");
+	i_ctype = PQfnumber(res, "datctype");
 	i_tablespace = PQfnumber(res, "tablespace");
 
 	dbCatId.tableoid = atooid(PQgetvalue(res, 0, i_tableoid));
 	dbCatId.oid = atooid(PQgetvalue(res, 0, i_oid));
 	dba = PQgetvalue(res, 0, i_dba);
 	encoding = PQgetvalue(res, 0, i_encoding);
+	collate = PQgetvalue(res, 0, i_collate);
+	ctype = PQgetvalue(res, 0, i_ctype);
 	tablespace = PQgetvalue(res, 0, i_tablespace);
 
 	appendPQExpBuffer(creaQry, "CREATE DATABASE %s WITH TEMPLATE = template0",
@@ -1655,6 +1681,16 @@ dumpDatabase(Archive *AH)
 	{
 		appendPQExpBuffer(creaQry, " ENCODING = ");
 		appendStringLiteralAH(creaQry, encoding, AH);
+	}
+	if (strlen(collate) > 0)
+	{
+		appendPQExpBuffer(creaQry, " COLLATE = ");
+		appendStringLiteralAH(creaQry, collate, AH);
+	}
+	if (strlen(ctype) > 0)
+	{
+		appendPQExpBuffer(creaQry, " CTYPE = ");
+		appendStringLiteralAH(creaQry, ctype, AH);
 	}
 	if (strlen(tablespace) > 0 && strcmp(tablespace, "pg_default") != 0)
 		appendPQExpBuffer(creaQry, " TABLESPACE = %s",
