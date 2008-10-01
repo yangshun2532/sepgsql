@@ -574,7 +574,7 @@ It is invoked on preparation of `COPY TO` and `COPY FROM` statement.
 The guest can check permissions to 
 
  * `Relation rel`
-  The target relation
+  The relation of source or destination. It can be NULL, if SELECT statement is used as a virtual source.
  * `List *attNumList`
   The list of attribute number. It may contains system column which has negative attribute number.
   You can fetch attribute numbers as follows:
@@ -586,6 +586,20 @@ foreach (l, attNumList) {
         :
 }
 }}}
+ * `bool isFrom`
+  `true`, if `COPY FROM` statement is required. Otherwise, `false` will be given.
+
+==== `void pgaceCopyFile(Relation rel, int fdesc, const char *filename, bool isFrom)` ====
+
+It is invoked just after the file of source/destination is opened on COPY statement.
+The guest can check permission whether the client can read/write the file.
+
+ * `Relation rel`
+  The relation of source or destination. It can be NULL, if SELECT statement is used as a virtual source.
+ * `int fdesc`
+  The file descriptor of the opened file.
+ * `const char *filename`
+  The filename of the opened file.
  * `bool isFrom`
   `true`, if `COPY FROM` statement is required. Otherwise, `false` will be given.
 
