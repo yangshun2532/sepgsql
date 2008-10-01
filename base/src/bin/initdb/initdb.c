@@ -42,7 +42,7 @@
  * Portions Copyright (c) 1994, Regents of the University of California
  * Portions taken from FreeBSD.
  *
- * $PostgreSQL: pgsql/src/bin/initdb/initdb.c,v 1.159 2008/08/05 12:09:30 mha Exp $
+ * $PostgreSQL: pgsql/src/bin/initdb/initdb.c,v 1.162 2008/09/30 10:52:13 heikki Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -119,7 +119,6 @@ static int	output_errno = 0;
 /* defaults */
 static int	n_connections = 10;
 static int	n_buffers = 50;
-static int	n_fsm_pages = 20000;
 
 /*
  * Warning messages for authentication methods
@@ -188,7 +187,8 @@ static void trapsig(int signum);
 static void check_ok(void);
 static char *escape_quotes(const char *src);
 static int	locale_date_order(const char *locale);
-static bool chklocale(const char *locale);
+static bool check_locale_name(const char *locale);
+static bool check_locale_encoding(const char *locale, int encoding);
 static void setlocales(void);
 static void usage(const char *progname);
 
@@ -1040,13 +1040,10 @@ static void
 test_config_settings(void)
 {
 	/*
-	 * These macros define the minimum shared_buffers we want for a given
-	 * max_connections value, and the max_fsm_pages setting to be used for a
-	 * given shared_buffers value.	The arrays show the settings to try.
+	 * This macro defines the minimum shared_buffers we want for a given
+	 * max_connections value. The arrays show the settings to try.
 	 */
-
 #define MIN_BUFS_FOR_CONNS(nconns)	((nconns) * 10)
-#define FSM_FOR_BUFS(nbuffers)	((nbuffers) > 1000 ? 50 * (nbuffers) : 20000)
 
 	static const int trial_conns[] = {
 		100, 50, 40, 30, 20, 10
@@ -1064,7 +1061,6 @@ test_config_settings(void)
 				status,
 				test_conns,
 				test_buffs,
-				test_max_fsm,
 				ok_buffers = 0;
 
 
@@ -1075,16 +1071,14 @@ test_config_settings(void)
 	{
 		test_conns = trial_conns[i];
 		test_buffs = MIN_BUFS_FOR_CONNS(test_conns);
-		test_max_fsm = FSM_FOR_BUFS(test_buffs);
 
 		snprintf(cmd, sizeof(cmd),
 				 SYSTEMQUOTE "\"%s\" --boot -x0 %s "
 				 "-c max_connections=%d "
 				 "-c shared_buffers=%d "
-				 "-c max_fsm_pages=%d "
 				 "< \"%s\" > \"%s\" 2>&1" SYSTEMQUOTE,
 				 backend_exec, boot_options,
-				 test_conns, test_buffs, test_max_fsm,
+				 test_conns, test_buffs,
 				 DEVNULL, DEVNULL);
 		status = system(cmd);
 		if (status == 0)
@@ -1099,7 +1093,7 @@ test_config_settings(void)
 
 	printf("%d\n", n_connections);
 
-	printf(_("selecting default shared_buffers/max_fsm_pages ... "));
+	printf(_("selecting default shared_buffers ... "));
 	fflush(stdout);
 
 	for (i = 0; i < bufslen; i++)
@@ -1111,28 +1105,25 @@ test_config_settings(void)
 			test_buffs = ok_buffers;
 			break;
 		}
-		test_max_fsm = FSM_FOR_BUFS(test_buffs);
 
 		snprintf(cmd, sizeof(cmd),
 				 SYSTEMQUOTE "\"%s\" --boot -x0 %s "
 				 "-c max_connections=%d "
 				 "-c shared_buffers=%d "
-				 "-c max_fsm_pages=%d "
 				 "< \"%s\" > \"%s\" 2>&1" SYSTEMQUOTE,
 				 backend_exec, boot_options,
-				 n_connections, test_buffs, test_max_fsm,
+				 n_connections, test_buffs,
 				 DEVNULL, DEVNULL);
 		status = system(cmd);
 		if (status == 0)
 			break;
 	}
 	n_buffers = test_buffs;
-	n_fsm_pages = FSM_FOR_BUFS(n_buffers);
 
 	if ((n_buffers * (BLCKSZ / 1024)) % 1024 == 0)
-		printf("%dMB/%d\n", (n_buffers * (BLCKSZ / 1024)) / 1024, n_fsm_pages);
+		printf("%dMB\n", (n_buffers * (BLCKSZ / 1024)) / 1024);
 	else
-		printf("%dkB/%d\n", n_buffers * (BLCKSZ / 1024), n_fsm_pages);
+		printf("%dkB\n", n_buffers * (BLCKSZ / 1024));
 }
 
 /*
@@ -1162,9 +1153,6 @@ setup_config(void)
 		snprintf(repltok, sizeof(repltok), "shared_buffers = %dkB",
 				 n_buffers * (BLCKSZ / 1024));
 	conflines = replace_token(conflines, "#shared_buffers = 32MB", repltok);
-
-	snprintf(repltok, sizeof(repltok), "max_fsm_pages = %d", n_fsm_pages);
-	conflines = replace_token(conflines, "#max_fsm_pages = 204800", repltok);
 
 #if DEF_PGPORT != 5432
 	snprintf(repltok, sizeof(repltok), "#port = %d", DEF_PGPORT);
@@ -1353,6 +1341,10 @@ bootstrap_template1(char *short_version)
 
 	bki_lines = replace_token(bki_lines, "ENCODING", encodingid);
 
+	bki_lines = replace_token(bki_lines, "LC_COLLATE", lc_collate);
+	
+	bki_lines = replace_token(bki_lines, "LC_CTYPE", lc_ctype);
+	
 	/*
 	 * Pass correct LC_xxx environment to bootstrap.
 	 *
@@ -2179,9 +2171,11 @@ locale_date_order(const char *locale)
 
 /*
  * check if given string is a valid locale specifier
+ *
+ * this should match the backend check_locale() function
  */
 static bool
-chklocale(const char *locale)
+check_locale_name(const char *locale)
 {
 	bool		ret;
 	int			category = LC_CTYPE;
@@ -2204,6 +2198,50 @@ chklocale(const char *locale)
 
 	return ret;
 }
+
+/*
+ * check if the chosen encoding matches the encoding required by the locale
+ *
+ * this should match the similar check in the backend createdb() function
+ */
+static bool
+check_locale_encoding(const char *locale, int user_enc)
+{
+	int			locale_enc;
+
+	locale_enc = pg_get_encoding_from_locale(locale);
+
+	/* We allow selection of SQL_ASCII --- see notes in createdb() */
+	if (!(locale_enc == user_enc ||
+		  locale_enc == PG_SQL_ASCII ||
+		  user_enc == PG_SQL_ASCII
+#ifdef WIN32
+
+	/*
+	 * On win32, if the encoding chosen is UTF8, all locales are OK
+	 * (assuming the actual locale name passed the checks above). This is
+	 * because UTF8 is a pseudo-codepage, that we convert to UTF16 before
+	 * doing any operations on, and UTF16 supports all locales.
+	 */
+		  || user_enc == PG_UTF8
+#endif
+		  ))
+	{
+		fprintf(stderr, _("%s: encoding mismatch\n"), progname);
+		fprintf(stderr,
+			   _("The encoding you selected (%s) and the encoding that the\n"
+			  "selected locale uses (%s) do not match.  This would lead to\n"
+			"misbehavior in various character string processing functions.\n"
+			   "Rerun %s and either do not specify an encoding explicitly,\n"
+				 "or choose a matching combination.\n"),
+				pg_encoding_to_char(user_enc),
+				pg_encoding_to_char(locale_enc),
+				progname);
+		return false;
+	}
+	return true;
+}
+
 
 /*
  * set up the locale variables
@@ -2235,17 +2273,17 @@ setlocales(void)
 	 * override absent/invalid config settings from initdb's locale settings
 	 */
 
-	if (strlen(lc_ctype) == 0 || !chklocale(lc_ctype))
+	if (strlen(lc_ctype) == 0 || !check_locale_name(lc_ctype))
 		lc_ctype = xstrdup(setlocale(LC_CTYPE, NULL));
-	if (strlen(lc_collate) == 0 || !chklocale(lc_collate))
+	if (strlen(lc_collate) == 0 || !check_locale_name(lc_collate))
 		lc_collate = xstrdup(setlocale(LC_COLLATE, NULL));
-	if (strlen(lc_numeric) == 0 || !chklocale(lc_numeric))
+	if (strlen(lc_numeric) == 0 || !check_locale_name(lc_numeric))
 		lc_numeric = xstrdup(setlocale(LC_NUMERIC, NULL));
-	if (strlen(lc_time) == 0 || !chklocale(lc_time))
+	if (strlen(lc_time) == 0 || !check_locale_name(lc_time))
 		lc_time = xstrdup(setlocale(LC_TIME, NULL));
-	if (strlen(lc_monetary) == 0 || !chklocale(lc_monetary))
+	if (strlen(lc_monetary) == 0 || !check_locale_name(lc_monetary))
 		lc_monetary = xstrdup(setlocale(LC_MONETARY, NULL));
-	if (strlen(lc_messages) == 0 || !chklocale(lc_messages))
+	if (strlen(lc_messages) == 0 || !check_locale_name(lc_messages))
 #if defined(LC_MESSAGES) && !defined(WIN32)
 	{
 		/* when available get the current locale setting */
@@ -2378,12 +2416,12 @@ usage(const char *progname)
 	printf(_("\nOptions:\n"));
 	printf(_(" [-D, --pgdata=]DATADIR     location for this database cluster\n"));
 	printf(_("  -E, --encoding=ENCODING   set default encoding for new databases\n"));
-	printf(_("  --locale=LOCALE           initialize database cluster with given locale\n"));
+	printf(_("  --locale=LOCALE           set default locale for new databases\n"));
 	printf(_("  --lc-collate, --lc-ctype, --lc-messages=LOCALE\n"
 			 "  --lc-monetary, --lc-numeric, --lc-time=LOCALE\n"
-			 "                            initialize database cluster with given locale\n"
-			 "                            in the respective category (default taken from\n"
-			 "                            environment)\n"));
+			 "                            set default locale in the respective\n"
+			 "                            category for new databases (default\n"
+			 "                            taken from environment)\n"));
 	printf(_("  --no-locale               equivalent to --locale=C\n"));
 	printf(_("  -T, --text-search-config=CFG\n"
 		 "                            default text search configuration\n"));
@@ -2446,6 +2484,7 @@ main(int argc, char *argv[])
 								 * environment */
 	char		bin_dir[MAXPGPATH];
 	char	   *pg_data_native;
+	int			user_enc;
 
 #ifdef WIN32
 	char	   *restrict_env;
@@ -2862,44 +2901,12 @@ main(int argc, char *argv[])
 		}
 	}
 	else
-	{
-		int			user_enc;
-		int			ctype_enc;
-
 		encodingid = get_encoding_id(encoding);
-		user_enc = atoi(encodingid);
 
-		ctype_enc = pg_get_encoding_from_locale(lc_ctype);
-
-		/* We allow selection of SQL_ASCII --- see notes in createdb() */
-		if (!(ctype_enc == user_enc ||
-			  ctype_enc == PG_SQL_ASCII ||
-			  user_enc == PG_SQL_ASCII
-#ifdef WIN32
-
-		/*
-		 * On win32, if the encoding chosen is UTF8, all locales are OK
-		 * (assuming the actual locale name passed the checks above). This is
-		 * because UTF8 is a pseudo-codepage, that we convert to UTF16 before
-		 * doing any operations on, and UTF16 supports all locales.
-		 */
-			  || user_enc == PG_UTF8
-#endif
-			  ))
-		{
-			fprintf(stderr, _("%s: encoding mismatch\n"), progname);
-			fprintf(stderr,
-			   _("The encoding you selected (%s) and the encoding that the\n"
-			  "selected locale uses (%s) do not match.  This would lead to\n"
-			"misbehavior in various character string processing functions.\n"
-			   "Rerun %s and either do not specify an encoding explicitly,\n"
-				 "or choose a matching combination.\n"),
-					pg_encoding_to_char(user_enc),
-					pg_encoding_to_char(ctype_enc),
-					progname);
-			exit(1);
-		}
-	}
+	user_enc = atoi(encodingid);
+	if (!check_locale_encoding(lc_ctype, user_enc) ||
+		!check_locale_encoding(lc_collate, user_enc))
+		exit(1); /* check_locale_encoding printed the error */
 
 	if (strlen(default_text_search_config) == 0)
 	{

@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/interfaces/libpq/fe-connect.c,v 1.360 2008/09/17 04:31:08 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/interfaces/libpq/fe-connect.c,v 1.362 2008/09/22 14:21:44 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -232,7 +232,7 @@ static PGconn *makeEmptyPGconn(void);
 static void freePGconn(PGconn *conn);
 static void closePGconn(PGconn *conn);
 static PQconninfoOption *conninfo_parse(const char *conninfo,
-			   PQExpBuffer errorMessage, bool *password_from_string);
+			   PQExpBuffer errorMessage, bool use_defaults);
 static char *conninfo_getval(PQconninfoOption *connOptions,
 				const char *keyword);
 static void defaultNoticeReceiver(void *arg, const PGresult *res);
@@ -376,8 +376,7 @@ connectOptions1(PGconn *conn, const char *conninfo)
 	/*
 	 * Parse the conninfo string
 	 */
-	connOptions = conninfo_parse(conninfo, &conn->errorMessage,
-								 &conn->pgpass_from_client);
+	connOptions = conninfo_parse(conninfo, &conn->errorMessage, true);
 	if (connOptions == NULL)
 	{
 		conn->status = CONNECTION_BAD;
@@ -473,7 +472,6 @@ connectOptions2(PGconn *conn)
 										conn->dbName, conn->pguser);
 		if (conn->pgpass == NULL)
 			conn->pgpass = strdup(DefaultPassword);
-		conn->pgpass_from_client = false;
 	}
 
 	/*
@@ -542,7 +540,9 @@ connectOptions2(PGconn *conn)
  *		PQconndefaults
  *
  * Parse an empty string like PQconnectdb() would do and return the
- * working connection options array.
+ * resulting connection options array, ie, all the default values that are
+ * available from the environment etc.  On error (eg out of memory),
+ * NULL is returned.
  *
  * Using this function, an application may determine all possible options
  * and their current default values.
@@ -557,11 +557,12 @@ PQconninfoOption *
 PQconndefaults(void)
 {
 	PQExpBufferData errorBuf;
-	bool		password_from_string;
 	PQconninfoOption *connOptions;
 
 	initPQExpBuffer(&errorBuf);
-	connOptions = conninfo_parse("", &errorBuf, &password_from_string);
+	if (errorBuf.data == NULL)
+		return NULL;			/* out of memory already :-( */
+	connOptions = conninfo_parse("", &errorBuf, true);
 	termPQExpBuffer(&errorBuf);
 	return connOptions;
 }
@@ -662,7 +663,6 @@ PQsetdbLogin(const char *pghost, const char *pgport, const char *pgoptions,
 		if (conn->pgpass)
 			free(conn->pgpass);
 		conn->pgpass = strdup(pwd);
-		conn->pgpass_from_client = true;
 	}
 
 	/*
@@ -3103,17 +3103,51 @@ parseServiceInfo(PQconninfoOption *options, PQExpBuffer errorMessage)
 
 
 /*
+ *		PQconninfoParse
+ *
+ * Parse a string like PQconnectdb() would do and return the
+ * resulting connection options array.  NULL is returned on failure.
+ * The result contains only options specified directly in the string,
+ * not any possible default values.
+ *
+ * If errmsg isn't NULL, *errmsg is set to NULL on success, or a malloc'd
+ * string on failure (use PQfreemem to free it).  In out-of-memory conditions
+ * both *errmsg and the result could be NULL.
+ *
+ * NOTE: the returned array is dynamically allocated and should
+ * be freed when no longer needed via PQconninfoFree().
+ */
+PQconninfoOption *
+PQconninfoParse(const char *conninfo, char **errmsg)
+{
+	PQExpBufferData errorBuf;
+	PQconninfoOption *connOptions;
+
+	if (errmsg)
+		*errmsg = NULL;			/* default */
+	initPQExpBuffer(&errorBuf);
+	if (errorBuf.data == NULL)
+		return NULL;			/* out of memory already :-( */
+	connOptions = conninfo_parse(conninfo, &errorBuf, false);
+	if (connOptions == NULL && errmsg)
+		*errmsg = errorBuf.data;
+	else
+		termPQExpBuffer(&errorBuf);
+	return connOptions;
+}
+
+/*
  * Conninfo parser routine
  *
  * If successful, a malloc'd PQconninfoOption array is returned.
  * If not successful, NULL is returned and an error message is
  * left in errorMessage.
- * *password_from_string is set TRUE if we got a password from the
- * conninfo string, otherwise FALSE.
+ * Defaults are supplied (from a service file, environment variables, etc)
+ * for unspecified options, but only if use_defaults is TRUE.
  */
 static PQconninfoOption *
 conninfo_parse(const char *conninfo, PQExpBuffer errorMessage,
-			   bool *password_from_string)
+			   bool use_defaults)
 {
 	char	   *pname;
 	char	   *pval;
@@ -3123,8 +3157,6 @@ conninfo_parse(const char *conninfo, PQExpBuffer errorMessage,
 	char	   *cp2;
 	PQconninfoOption *options;
 	PQconninfoOption *option;
-
-	*password_from_string = false;			/* default result */
 
 	/* Make a working copy of PQconninfoOptions */
 	options = malloc(sizeof(PQconninfoOptions));
@@ -3282,16 +3314,16 @@ conninfo_parse(const char *conninfo, PQExpBuffer errorMessage,
 			free(buf);
 			return NULL;
 		}
-
-		/*
-		 * Special handling for password
-		 */
-		if (strcmp(option->keyword, "password") == 0)
-			*password_from_string = (option->val[0] != '\0');
 	}
 
 	/* Done with the modifiable input string */
 	free(buf);
+
+	/*
+	 * Stop here if caller doesn't want defaults filled in.
+	 */
+	if (!use_defaults)
+		return options;
 
 	/*
 	 * If there's a service spec, use it to obtain any not-explicitly-given
@@ -3547,7 +3579,7 @@ PQconnectionUsedPassword(const PGconn *conn)
 {
 	if (!conn)
 		return false;
-	if (conn->password_needed && conn->pgpass_from_client)
+	if (conn->password_needed)
 		return true;
 	else
 		return false;
