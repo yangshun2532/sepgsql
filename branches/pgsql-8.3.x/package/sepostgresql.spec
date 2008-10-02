@@ -10,7 +10,7 @@
 # Check required policy version
 %define fedora9 %(rpm -E '%{dist}' | grep -cE '^\.fc[1-9]$')
 %if %{fedora9}
-%define required_policy_version    3.3.1-96
+%define required_policy_version    3.3.1
 %else
 %define required_policy_version    3.4.2
 %endif
@@ -214,6 +214,10 @@ fi
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
 
 %changelog
+* Thu Oct  2 2008 <kaigai@kaigai.gr.jp> - 8.3.3-2.1076
+- bugfix: "(null)" audit logs for non-cached decision making.
+- A hook is added for "COPY TO/FROM <file>" cases.
+
 * Sat Sep 27 2008 <kaigai@kaigai.gr.jp> - 8.3.3-2.1066
 - update base version to 8.3.4
 - sepostgresql.pp was marked as obsolute
