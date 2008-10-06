@@ -47,6 +47,12 @@ fi
 WORKDIR=`mktemp -d` || exit 1
 echo "working directory = ${WORKDIR}"
 
+# temporary files
+touch "/tmp/sepgsql_test_copy"
+chcon -t postgresql_db_t "/tmp/sepgsql_test_copy"
+dd if=/dev/zero of=/tmp/sepgsql_test_blob bs=1024 count=36
+chcon -t postgresql_db_t "/tmp/sepgsql_test_blob"
+
 # run testcases
 cd $BASEDIR/sql
 TESTCASES=`ls ./*.sql`
