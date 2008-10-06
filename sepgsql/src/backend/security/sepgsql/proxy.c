@@ -803,6 +803,18 @@ proxyRteSubQuery(sepgsqlWalkerContext *swc, Query *query)
 	sepgsqlExprWalkerFlags((Node *) query->groupClause, swc, true);
 
 	/*
+	 * Check WITH (RECURSIVE) clause
+	 */
+	foreach(l, query->cteList)
+	{
+		CommonTableExpr *cte = lfirst(l);
+
+		Assert(IsA(cte, CommonTableExpr));
+		Assert(IsA(cte->ctequery, Query));
+		proxyRteSubQuery(swc, cte->ctequery);
+	}
+
+	/*
 	 * permission mark on the UNION/INTERSECT/EXCEPT
 	 */
 	proxySetOperations(swc, query->setOperations);
