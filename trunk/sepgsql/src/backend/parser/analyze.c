@@ -17,7 +17,7 @@
  * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- *	$PostgreSQL: pgsql/src/backend/parser/analyze.c,v 1.379 2008/09/01 20:42:44 tgl Exp $
+ *	$PostgreSQL: pgsql/src/backend/parser/analyze.c,v 1.380 2008/10/04 21:56:54 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -33,6 +33,7 @@
 #include "parser/parse_agg.h"
 #include "parser/parse_clause.h"
 #include "parser/parse_coerce.h"
+#include "parser/parse_cte.h"
 #include "parser/parse_oper.h"
 #include "parser/parse_relation.h"
 #include "parser/parse_target.h"
@@ -311,6 +312,8 @@ transformInsertStmt(ParseState *pstate, InsertStmt *stmt)
 		pstate->p_relnamespace = NIL;
 		sub_varnamespace = pstate->p_varnamespace;
 		pstate->p_varnamespace = NIL;
+		/* There can't be any outer WITH to worry about */
+		Assert(pstate->p_ctenamespace == NIL);
 	}
 	else
 	{
@@ -449,6 +452,13 @@ transformInsertStmt(ParseState *pstate, InsertStmt *stmt)
 		List	   *exprsLists = NIL;
 		int			sublist_length = -1;
 
+		/* process the WITH clause */
+		if (selectStmt->withClause)
+		{
+			qry->hasRecursive = selectStmt->withClause->recursive;
+			qry->cteList = transformWithClause(pstate, selectStmt->withClause);
+		}
+
 		foreach(lc, selectStmt->valuesLists)
 		{
 			List	   *sublist = (List *) lfirst(lc);
@@ -541,6 +551,13 @@ transformInsertStmt(ParseState *pstate, InsertStmt *stmt)
 		List	   *valuesLists = selectStmt->valuesLists;
 
 		Assert(list_length(valuesLists) == 1);
+
+		/* process the WITH clause */
+		if (selectStmt->withClause)
+		{
+			qry->hasRecursive = selectStmt->withClause->recursive;
+			qry->cteList = transformWithClause(pstate, selectStmt->withClause);
+		}
 
 		/* Do basic expression transformation (same as a ROW() expr) */
 		exprList = transformExpressionList(pstate,
@@ -737,6 +754,13 @@ transformSelectStmt(ParseState *pstate, SelectStmt *stmt)
 	/* make FOR UPDATE/FOR SHARE info available to addRangeTableEntry */
 	pstate->p_locking_clause = stmt->lockingClause;
 
+	/* process the WITH clause */
+	if (stmt->withClause)
+	{
+		qry->hasRecursive = stmt->withClause->recursive;
+		qry->cteList = transformWithClause(pstate, stmt->withClause);
+	}
+
 	/* process the FROM clause */
 	transformFromClause(pstate, stmt->fromClause);
 
@@ -857,6 +881,13 @@ transformValuesClause(ParseState *pstate, SelectStmt *stmt)
 	Assert(stmt->groupClause == NIL);
 	Assert(stmt->havingClause == NULL);
 	Assert(stmt->op == SETOP_NONE);
+
+	/* process the WITH clause */
+	if (stmt->withClause)
+	{
+		qry->hasRecursive = stmt->withClause->recursive;
+		qry->cteList = transformWithClause(pstate, stmt->withClause);
+	}
 
 	/*
 	 * For each row of VALUES, transform the raw expressions and gather type
@@ -1103,6 +1134,13 @@ transformSetOperationStmt(ParseState *pstate, SelectStmt *stmt)
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("SELECT FOR UPDATE/SHARE is not allowed with UNION/INTERSECT/EXCEPT")));
 
+	/* process the WITH clause */
+	if (stmt->withClause)
+	{
+		qry->hasRecursive = stmt->withClause->recursive;
+		qry->cteList = transformWithClause(pstate, stmt->withClause);
+	}
+
 	/*
 	 * Recursively transform the components of the tree.
 	 */
@@ -1145,21 +1183,22 @@ transformSetOperationStmt(ParseState *pstate, SelectStmt *stmt)
 		TargetEntry *lefttle = (TargetEntry *) lfirst(left_tlist);
 		char	   *colName;
 		TargetEntry *tle;
-		Expr	   *expr;
+		Var		   *var;
 
 		Assert(!lefttle->resjunk);
 		colName = pstrdup(lefttle->resname);
-		expr = (Expr *) makeVar(leftmostRTI,
-								lefttle->resno,
-								colType,
-								colTypmod,
-								0);
-		tle = makeTargetEntry(expr,
+		var = makeVar(leftmostRTI,
+					  lefttle->resno,
+					  colType,
+					  colTypmod,
+					  0);
+		var->location = exprLocation((Node *) lefttle->expr);
+		tle = makeTargetEntry((Expr *) var,
 							  (AttrNumber) pstate->p_next_resno++,
 							  colName,
 							  false);
 		qry->targetList = lappend(qry->targetList, tle);
-		targetvars = lappend(targetvars, expr);
+		targetvars = lappend(targetvars, var);
 		targetnames = lappend(targetnames, makeString(colName));
 		left_tlist = lnext(left_tlist);
 	}
@@ -1885,6 +1924,30 @@ transformLockingClause(ParseState *pstate, Query *qry, LockingClause *lc)
 					 */
 					transformLockingClause(pstate, rte->subquery, allrels);
 					break;
+				case RTE_CTE:
+					{
+						/*
+						 * We allow FOR UPDATE/SHARE of a WITH query to be
+						 * propagated into the WITH, but it doesn't seem
+						 * very sane to allow this for a reference to an
+						 * outer-level WITH.  And it definitely wouldn't
+						 * work for a self-reference, since we're not done
+						 * analyzing the CTE anyway.
+						 */
+						CommonTableExpr *cte;
+
+						if (rte->ctelevelsup > 0 || rte->self_reference)
+							ereport(ERROR,
+									(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+									 errmsg("SELECT FOR UPDATE/SHARE cannot be applied to an outer-level WITH query")));
+						cte = GetCTEForRTE(pstate, rte);
+						/* should be analyzed by now */
+						Assert(IsA(cte->ctequery, Query));
+						transformLockingClause(pstate,
+											   (Query *) cte->ctequery,
+											   allrels);
+					}
+					break;
 				default:
 					/* ignore JOIN, SPECIAL, FUNCTION RTEs */
 					break;
@@ -1951,6 +2014,32 @@ transformLockingClause(ParseState *pstate, Query *qry, LockingClause *lc)
 									(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 									 errmsg("SELECT FOR UPDATE/SHARE cannot be applied to VALUES"),
 									 parser_errposition(pstate, thisrel->location)));
+							break;
+						case RTE_CTE:
+							{
+								/*
+								 * We allow FOR UPDATE/SHARE of a WITH query
+								 * to be propagated into the WITH, but it
+								 * doesn't seem very sane to allow this for a
+								 * reference to an outer-level WITH.  And it
+								 * definitely wouldn't work for a
+								 * self-reference, since we're not done
+								 * analyzing the CTE anyway.
+								 */
+								CommonTableExpr *cte;
+
+								if (rte->ctelevelsup > 0 || rte->self_reference)
+									ereport(ERROR,
+											(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+											 errmsg("SELECT FOR UPDATE/SHARE cannot be applied to an outer-level WITH query"),
+											 parser_errposition(pstate, thisrel->location)));
+								cte = GetCTEForRTE(pstate, rte);
+								/* should be analyzed by now */
+								Assert(IsA(cte->ctequery, Query));
+								transformLockingClause(pstate,
+													   (Query *) cte->ctequery,
+													   allrels);
+							}
 							break;
 						default:
 							elog(ERROR, "unrecognized RTE type: %d",
