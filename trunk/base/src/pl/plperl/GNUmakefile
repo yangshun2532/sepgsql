@@ -1,5 +1,5 @@
 # Makefile for PL/Perl
-# $PostgreSQL: pgsql/src/pl/plperl/GNUmakefile,v 1.34 2008/04/07 14:15:58 petere Exp $
+# $PostgreSQL: pgsql/src/pl/plperl/GNUmakefile,v 1.36 2008/10/02 08:11:11 petere Exp $
 
 subdir = src/pl/plperl
 top_builddir = ../../..
@@ -50,27 +50,6 @@ all: all-lib
 SPI.c: SPI.xs
 	$(PERL) $(perl_privlibexp)/ExtUtils/xsubpp -typemap $(perl_privlibexp)/ExtUtils/typemap $< >$@
 
-# When doing a VPATH build, copy over the .sql and .out files so that the
-# test script can find them.  See comments in src/test/regress/GNUmakefile.
-ifdef VPATH
-
-ifneq ($(PORTNAME),win32)
-abs_srcdir := $(shell cd $(srcdir) && pwd)
-abs_builddir := $(shell pwd)
-else
-abs_srcdir := $(shell cd $(srcdir) && pwd -W)
-abs_builddir := $(shell pwd -W)
-endif
-
-test_files_src := $(wildcard $(srcdir)/sql/*.sql) $(wildcard $(srcdir)/expected/*.out)
-test_files_build := $(patsubst $(srcdir)/%, $(abs_builddir)/%, $(test_files_src))
-
-all: $(test_files_build)
-$(test_files_build): $(abs_builddir)/%: $(srcdir)/%
-	ln -s $< $@
-
-endif
-
 install: all installdirs install-lib
 
 installdirs: installdirs-lib
@@ -78,7 +57,7 @@ installdirs: installdirs-lib
 uninstall: uninstall-lib
 
 installcheck: submake
-	$(top_builddir)/src/test/regress/pg_regress --psqldir=$(PSQLDIR) $(REGRESS_OPTS) $(REGRESS)
+	$(top_builddir)/src/test/regress/pg_regress --inputdir=$(srcdir) --psqldir=$(PSQLDIR) $(REGRESS_OPTS) $(REGRESS)
 
 .PHONY: submake
 submake:
