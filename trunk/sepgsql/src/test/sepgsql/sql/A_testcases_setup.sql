@@ -120,10 +120,103 @@ CREATE OR REPLACE FUNCTION e3 () RETURNS text
        AS 'SELECT sepgsql_getcon()';
 
 -- -------------------------------------------------------
--- Test F : Extended SQL Grammer
+-- Test F : Large Object
 -- -------------------------------------------------------
 
+SELECT lo_import('/tmp/sepgsql_test_blob', 6001);
+SELECT lo_import('/tmp/sepgsql_test_blob', 6002);
+SELECT lo_import('/tmp/sepgsql_test_blob', 6003);
+
+SELECT lo_set_security(6001, 'system_u:object_r:sepgsql_blob_t:s0');
+SELECT lo_set_security(6002, 'system_u:object_r:sepgsql_ro_blob_t:s0');
+SELECT lo_set_security(6003, 'system_u:object_r:sepgsql_secret_blob_t:s0');
 
 -- -------------------------------------------------------
--- Test G : Large Object
+-- Test G : Copy To/From
 -- -------------------------------------------------------
+
+CREATE TABLE g1 (
+       a     integer,
+       b     text
+);
+
+COPY g1 (security_context, a, b) FROM stdin;
+system_u:object_r:sepgsql_table_t:s0	1	aaa
+system_u:object_r:sepgsql_table_t:s0:c0	2	bbb
+system_u:object_r:sepgsql_table_t:s0	3	ccc
+system_u:object_r:sepgsql_table_t:s0:c1	4	ddd
+system_u:object_r:sepgsql_table_t:s0:c0	5	eee
+system_u:object_r:sepgsql_table_t:s0	6	fff
+system_u:object_r:sepgsql_table_t:s0:c1	7	ggg
+\.
+
+CREATE TABLE g2 (
+       x     integer,
+       y     text SECURITY_CONTEXT = 'system_u:object_r:sepgsql_ro_table_t:s0',
+       z     text SECURITY_CONTEXT = 'system_u:object_r:sepgsql_secret_table_t:s0'
+);
+
+COPY g2 FROM stdin;
+1	aaa	AAA
+2	bbb	BBB
+3	ccc	CCC
+4	ddd	DDD
+\.
+
+-- -------------------------------------------------------
+-- Test H : Set Operations/With Recursive
+-- -------------------------------------------------------
+
+CREATE TABLE h1 (
+	id	integer primary key,
+	pid	integer references h1(id),
+	name	text
+);
+
+CREATE TABLE h2 (
+	s	integer SECURITY_CONTEXT = 'system_u:object_r:sepgsql_secret_table_t:s0',
+	t	integer
+);
+
+CREATE TABLE h3 (
+	a	integer,
+	b	text
+);
+
+CREATE TABLE h4 (
+	x	integer,
+	y	text
+);
+
+COPY h1 (security_context,id,pid,name) FROM stdin;
+system_u:object_r:sepgsql_table_t:s0	0	\N	/
+system_u:object_r:sepgsql_table_t:s0	1	0	/a
+system_u:object_r:sepgsql_table_t:s0	11	1	/a/a
+system_u:object_r:sepgsql_table_t:s0	111	11	/a/a/a
+system_u:object_r:sepgsql_table_t:s0:c1	112	11	/a/a/b
+system_u:object_r:sepgsql_table_t:s0	113	11	/a/a/c
+system_u:object_r:sepgsql_table_t:s0:c1	12	1	/a/b
+system_u:object_r:sepgsql_table_t:s0	121	12	/a/b/a
+system_u:object_r:sepgsql_table_t:s0	122	12	/a/b/c
+system_u:object_r:sepgsql_table_t:s0:c1	2	0	/b
+system_u:object_r:sepgsql_table_t:s0	21	2	/b/a
+system_u:object_r:sepgsql_table_t:s0	22	2	/b/b
+\.
+
+COPY h3 (security_context,a,b) FROM stdin;
+system_u:object_r:sepgsql_table_t:s0	1	aaa
+system_u:object_r:sepgsql_table_t:s0	2	bbb
+system_u:object_r:sepgsql_table_t:s0:c1	3	ccc
+system_u:object_r:sepgsql_table_t:s0:c1	4	ddd
+system_u:object_r:sepgsql_table_t:s0	5	eee
+system_u:object_r:sepgsql_table_t:s0:c1	6	fff
+\.
+
+COPY h4 (security_context,x,y) FROM stdin;
+system_u:object_r:sepgsql_table_t:s0:c1	1	aaa
+system_u:object_r:sepgsql_table_t:s0	2	bbb
+system_u:object_r:sepgsql_table_t:s0	3	ccc
+system_u:object_r:sepgsql_table_t:s0:c1	4	ddd
+system_u:object_r:sepgsql_table_t:s0	5	eee
+system_u:object_r:sepgsql_table_t:s0	6	fff
+\.

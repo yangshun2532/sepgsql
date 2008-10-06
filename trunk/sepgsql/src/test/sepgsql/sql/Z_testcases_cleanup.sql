@@ -40,11 +40,43 @@ DROP FUNCTION e2(integer);
 DROP FUNCTION e3();
 
 -- -------------------------------------------------------
--- Test F : Extended SQL Grammer
+-- Test F : Large Object
 -- -------------------------------------------------------
+
+SELECT lo_unlink(6001);
+SELECT lo_unlink(6002);
+SELECT lo_unlink(6003);
+SELECT lo_unlink(6004);
 
 
 -- -------------------------------------------------------
--- Test G : Large Object
+-- Test G : Copy To/From
 -- -------------------------------------------------------
 
+COPY g1 (security_context, a, b) TO stdout;
+COPY g2 (security_context, x, y, z) TO stdout;
+DROP TABLE g1;
+DROP TABLE g2;
+
+-- -------------------------------------------------------
+-- Test H : Set Operations/With Recursive
+-- -------------------------------------------------------
+
+WITH RECURSIVE h9 AS
+(
+	SELECT security_context, * FROM h1 WHERE pid is NULL
+
+	UNION ALL
+
+	SELECT h1.security_context, h1.* FROM h1,h9 WHERE h1.pid = h9.id
+)
+SELECT * FROM h9;
+
+SELECT * FROM h3;
+
+SELECT * FROM h4;
+
+DROP TABLE h1;
+DROP TABLE h2;
+DROP TABLE h3;
+DROP TABLE h4;

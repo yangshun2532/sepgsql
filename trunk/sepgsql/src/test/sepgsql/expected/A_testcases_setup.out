@@ -158,8 +158,79 @@ CREATE OR REPLACE FUNCTION e3 () RETURNS text
        SECURITY_CONTEXT = 'system_u:object_r:sepgsql_trusted_proc_exec_t:s0'
        AS 'SELECT sepgsql_getcon()';
 -- -------------------------------------------------------
--- Test F : Extended SQL Grammer
+-- Test F : Large Object
 -- -------------------------------------------------------
+SELECT lo_import('/tmp/sepgsql_test_blob', 6001);
+ lo_import 
+-----------
+      6001
+(1 row)
+
+SELECT lo_import('/tmp/sepgsql_test_blob', 6002);
+ lo_import 
+-----------
+      6002
+(1 row)
+
+SELECT lo_import('/tmp/sepgsql_test_blob', 6003);
+ lo_import 
+-----------
+      6003
+(1 row)
+
+SELECT lo_set_security(6001, 'system_u:object_r:sepgsql_blob_t:s0');
+ lo_set_security 
+-----------------
+ t
+(1 row)
+
+SELECT lo_set_security(6002, 'system_u:object_r:sepgsql_ro_blob_t:s0');
+ lo_set_security 
+-----------------
+ t
+(1 row)
+
+SELECT lo_set_security(6003, 'system_u:object_r:sepgsql_secret_blob_t:s0');
+ lo_set_security 
+-----------------
+ t
+(1 row)
+
 -- -------------------------------------------------------
--- Test G : Large Object
+-- Test G : Copy To/From
 -- -------------------------------------------------------
+CREATE TABLE g1 (
+       a     integer,
+       b     text
+);
+COPY g1 (security_context, a, b) FROM stdin;
+CREATE TABLE g2 (
+       x     integer,
+       y     text SECURITY_CONTEXT = 'system_u:object_r:sepgsql_ro_table_t:s0',
+       z     text SECURITY_CONTEXT = 'system_u:object_r:sepgsql_secret_table_t:s0'
+);
+COPY g2 FROM stdin;
+-- -------------------------------------------------------
+-- Test H : Set Operations/With Recursive
+-- -------------------------------------------------------
+CREATE TABLE h1 (
+	id	integer primary key,
+	pid	integer references h1(id),
+	name	text
+);
+psql:./A_testcases_setup.sql:174: NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "h1_pkey" for table "h1"
+CREATE TABLE h2 (
+	s	integer SECURITY_CONTEXT = 'system_u:object_r:sepgsql_secret_table_t:s0',
+	t	integer
+);
+CREATE TABLE h3 (
+	a	integer,
+	b	text
+);
+CREATE TABLE h4 (
+	x	integer,
+	y	text
+);
+COPY h1 (security_context,id,pid,name) FROM stdin;
+COPY h3 (security_context,a,b) FROM stdin;
+COPY h4 (security_context,x,y) FROM stdin;
