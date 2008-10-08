@@ -35,21 +35,20 @@
  * (*) We calls the security subsystem implemented on PGACE framework
  *     as "the guest", in this comment.
  *
- * When a security module uses this framework, is has to add a #ifdef
- * ... #endif block into the needed hooks, as follows:
+ * When a security module uses this framework, is has to add a #if .. #endif
+ * block into the needed hooks, as follows:
  * 
  * ------------
  * static inline bool
  * pgaceHeapTupleInsert(Relation rel, HeapTuple tuple,
  *                      bool is_internal, bool with_returning)
  * {
- * #ifdef HAVE_SELINUX
+ * #if defined(HAVE_SELINUX)
  *     if (sepgsqlIsEnabled())
  *         return sepgsqlHeapTupleInsert(rel, tuple,
  *                                       is_internal,
  *                                       with_returning);
- * #endif
- * #ifdef HAVE_FOO_SECURITY
+ * #elif defined(HAVE_FOO_SECURITY)
  *     if (fooIsEnabled())
  *         return fooHeapTupleInsert(rel, tuple,
  *                                   is_internal,
@@ -83,7 +82,7 @@
 static inline const char *
 pgaceSecurityFeatureIdentity(void)
 {
-#ifdef HAVE_SELINUX
+#if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
 		return "selinux";
 #endif
@@ -104,7 +103,7 @@ pgaceSecurityFeatureIdentity(void)
 static inline Size
 pgaceShmemSize(void)
 {
-#ifdef HAVE_SELINUX
+#if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
 		return sepgsqlShmemSize();
 #endif
@@ -122,12 +121,9 @@ pgaceShmemSize(void)
 static inline void
 pgaceInitialize(bool is_bootstrap)
 {
-#ifdef HAVE_SELINUX
+#if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
-	{
 		sepgsqlInitialize(is_bootstrap);
-		return;
-	}
 #endif
 }
 
@@ -146,7 +142,7 @@ pgaceInitialize(bool is_bootstrap)
 static inline pid_t
 pgaceStartupWorkerProcess(void)
 {
-#ifdef HAVE_SELINUX
+#if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
 		return sepgsqlStartupWorkerProcess();
 #endif
@@ -169,7 +165,7 @@ pgaceStartupWorkerProcess(void)
 static inline List *
 pgaceProxyQuery(List *queryList)
 {
-#ifdef HAVE_SELINUX
+#if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
 		return sepgsqlProxyQuery(queryList);
 #endif
@@ -190,7 +186,7 @@ pgaceProxyQuery(List *queryList)
 static inline bool
 pgaceIsAllowPlannerHook(void)
 {
-#ifdef HAVE_SELINUX
+#if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
 		return false;
 #endif
@@ -208,13 +204,9 @@ pgaceIsAllowPlannerHook(void)
 static inline void
 pgaceExecutorStart(QueryDesc *queryDesc, int eflags)
 {
-#ifdef HAVE_SELINUX
+#if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
-	{
-		Assert(queryDesc->plannedstmt != NULL);
 		sepgsqlVerifyQuery(queryDesc->plannedstmt, eflags);
-		return;
-	}
 #endif
 }
 
@@ -236,7 +228,7 @@ pgaceExecutorStart(QueryDesc *queryDesc, int eflags)
 static inline bool
 pgaceExecScan(Scan *scan, Relation rel, TupleTableSlot *slot)
 {
-#ifdef HAVE_SELINUX
+#if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
 		return sepgsqlExecScan(scan, rel, slot);
 #endif
@@ -251,12 +243,9 @@ pgaceExecScan(Scan *scan, Relation rel, TupleTableSlot *slot)
 static inline void
 pgaceProcessUtility(Node *parsetree, ParamListInfo params, bool isTopLevel)
 {
-#ifdef HAVE_SELINUX
+#if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
-	{
 		sepgsqlProcessUtility(parsetree, params, isTopLevel);
-		return;
-	}
 #endif
 }
 
@@ -269,12 +258,9 @@ pgaceProcessUtility(Node *parsetree, ParamListInfo params, bool isTopLevel)
 static inline void
 pgaceEvaluateParams(List *params)
 {
-#ifdef HAVE_SELINUX
+#if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
-	{
 		sepgsqlEvaluateParams(params);
-		return;
-	}
 #endif
 }
 
@@ -305,7 +291,7 @@ static inline bool
 pgaceHeapTupleInsert(Relation rel, HeapTuple tuple,
 					 bool is_internal, bool with_returning)
 {
-#ifdef HAVE_SELINUX
+#if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
 		return sepgsqlHeapTupleInsert(rel, tuple,
 									  is_internal,
@@ -338,7 +324,7 @@ static inline bool
 pgaceHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple newtup,
 					 bool is_internal, bool with_returning)
 {
-#ifdef HAVE_SELINUX
+#if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
 		return sepgsqlHeapTupleUpdate(rel, otid, newtup,
 									  is_internal,
@@ -366,7 +352,7 @@ static inline bool
 pgaceHeapTupleDelete(Relation rel, ItemPointer otid,
 					 bool is_internal, bool with_returning)
 {
-#ifdef HAVE_SELINUX
+#if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
 		return sepgsqlHeapTupleDelete(rel, otid,
 									  is_internal,
@@ -436,7 +422,7 @@ pgaceHeapTupleDelete(Relation rel, ItemPointer otid,
 static inline DefElem *
 pgaceGramSecurityItem(char *defname, char *value)
 {
-#ifdef HAVE_SELINUX
+#if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
 		return sepgsqlGramSecurityItem(defname, value);
 #endif
@@ -453,7 +439,7 @@ pgaceGramSecurityItem(char *defname, char *value)
 static inline bool
 pgaceIsGramSecurityItem(DefElem *defel)
 {
-#ifdef HAVE_SELINUX
+#if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
 		return sepgsqlIsGramSecurityItem(defel);
 #endif
@@ -480,7 +466,7 @@ pgaceIsGramSecurityItem(DefElem *defel)
 static inline void
 pgaceGramCreateRelation(Relation rel, HeapTuple tuple, DefElem *defel)
 {
-#ifdef HAVE_SELINUX
+#if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
 		return sepgsqlGramCreateRelation(rel, tuple, defel);
 #endif
@@ -498,7 +484,7 @@ pgaceGramCreateRelation(Relation rel, HeapTuple tuple, DefElem *defel)
 static inline void
 pgaceGramCreateAttribute(Relation rel, HeapTuple tuple, DefElem *defel)
 {
-#ifdef HAVE_SELINUX
+#if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
 		return sepgsqlGramCreateAttribute(rel, tuple, defel);
 #endif
@@ -516,7 +502,7 @@ pgaceGramCreateAttribute(Relation rel, HeapTuple tuple, DefElem *defel)
 static inline void
 pgaceGramAlterRelation(Relation rel, HeapTuple tuple, DefElem *defel)
 {
-#ifdef HAVE_SELINUX
+#if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
 		return sepgsqlGramAlterRelation(rel, tuple, defel);
 #endif
@@ -534,7 +520,7 @@ pgaceGramAlterRelation(Relation rel, HeapTuple tuple, DefElem *defel)
 static inline void
 pgaceGramAlterAttribute(Relation rel, HeapTuple tuple, DefElem *defel)
 {
-#ifdef HAVE_SELINUX
+#if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
 		return sepgsqlGramAlterAttribute(rel, tuple, defel);
 #endif
@@ -552,12 +538,9 @@ pgaceGramAlterAttribute(Relation rel, HeapTuple tuple, DefElem *defel)
 static inline void
 pgaceGramCreateDatabase(Relation rel, HeapTuple tuple, DefElem *defel)
 {
-#ifdef HAVE_SELINUX
+#if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
-	{
 		sepgsqlGramCreateDatabase(rel, tuple, defel);
-		return;
-	}
 #endif
 }
 
@@ -573,12 +556,9 @@ pgaceGramCreateDatabase(Relation rel, HeapTuple tuple, DefElem *defel)
 static inline void
 pgaceGramAlterDatabase(Relation rel, HeapTuple tuple, DefElem *defel)
 {
-#ifdef HAVE_SELINUX
+#if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
-	{
 		sepgsqlGramAlterDatabase(rel, tuple, defel);
-		return;
-	}
 #endif
 }
 
@@ -594,12 +574,9 @@ pgaceGramAlterDatabase(Relation rel, HeapTuple tuple, DefElem *defel)
 static inline void
 pgaceGramCreateFunction(Relation rel, HeapTuple tuple, DefElem *defel)
 {
-#ifdef HAVE_SELINUX
+#if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
-	{
 		sepgsqlGramCreateFunction(rel, tuple, defel);
-		return;
-	}
 #endif
 }
 
@@ -615,12 +592,9 @@ pgaceGramCreateFunction(Relation rel, HeapTuple tuple, DefElem *defel)
 static inline void
 pgaceGramAlterFunction(Relation rel, HeapTuple tuple, DefElem *defel)
 {
-#ifdef HAVE_SELINUX
+#if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
-	{
 		sepgsqlGramAlterFunction(rel, tuple, defel);
-		return;
-	}
 #endif
 }
 
@@ -642,12 +616,9 @@ pgaceGramAlterFunction(Relation rel, HeapTuple tuple, DefElem *defel)
 static inline void
 pgaceSetDatabaseParam(const char *name, char *argstring)
 {
-#ifdef HAVE_SELINUX
+#if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
-	{
 		sepgsqlSetDatabaseParam(name, argstring);
-		return;
-	}
 #endif
 }
 
@@ -662,12 +633,9 @@ pgaceSetDatabaseParam(const char *name, char *argstring)
 static inline void
 pgaceGetDatabaseParam(const char *name)
 {
-#ifdef HAVE_SELINUX
+#if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
-	{
 		sepgsqlGetDatabaseParam(name);
-		return;
-	}
 #endif
 }
 
@@ -686,12 +654,9 @@ pgaceGetDatabaseParam(const char *name)
 static inline void
 pgaceCallFunction(FmgrInfo *finfo)
 {
-#ifdef HAVE_SELINUX
+#if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
-	{
 		sepgsqlCallFunction(finfo, false);
-		return;
-	}
 #endif
 }
 
@@ -709,7 +674,7 @@ pgaceCallFunction(FmgrInfo *finfo)
 static inline bool
 pgaceCallFunctionTrigger(FmgrInfo *finfo, TriggerData *tgdata)
 {
-#ifdef HAVE_SELINUX
+#if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
 		return sepgsqlCallFunctionTrigger(finfo, tgdata);
 #endif
@@ -725,12 +690,9 @@ pgaceCallFunctionTrigger(FmgrInfo *finfo, TriggerData *tgdata)
 static inline void
 pgaceCallFunctionFastPath(FmgrInfo *finfo)
 {
-#ifdef HAVE_SELINUX
+#if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
-	{
 		sepgsqlCallFunction(finfo, true);
-		return;
-	}
 #endif
 }
 
@@ -747,12 +709,9 @@ pgaceCallFunctionFastPath(FmgrInfo *finfo)
 static inline void
 pgaceBeginPerformCheckFK(Relation rel, bool rel_is_primary, Datum *save_pgace)
 {
-#ifdef HAVE_SELINUX
+#if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
-	{
 		sepgsqlBeginPerformCheckFK(rel, rel_is_primary, save_pgace);
-		return;
-	}
 #endif
 }
 
@@ -765,12 +724,9 @@ pgaceBeginPerformCheckFK(Relation rel, bool rel_is_primary, Datum *save_pgace)
 static inline void
 pgaceEndPerformCheckFK(Relation rel, bool rel_is_primary, Datum save_pgace)
 {
-#ifdef HAVE_SELINUX
+#if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
-	{
 		sepgsqlEndPerformCheckFK(rel, rel_is_primary, save_pgace);
-		return;
-	}
 #endif
 }
 
@@ -787,12 +743,9 @@ pgaceEndPerformCheckFK(Relation rel, bool rel_is_primary, Datum save_pgace)
 static inline void
 pgaceLockTable(Oid relid)
 {
-#ifdef HAVE_SELINUX
+#if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
-	{
 		sepgsqlLockTable(relid);
-		return;
-	}
 #endif
 }
 
@@ -815,12 +768,9 @@ pgaceLockTable(Oid relid)
 static inline void
 pgaceCopyTable(Relation rel, List *attNumList, bool isFrom)
 {
-#ifdef HAVE_SELINUX
+#if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
-	{
 		sepgsqlCopyTable(rel, attNumList, isFrom);
-		return;
-	}
 #endif
 }
 
@@ -865,7 +815,7 @@ pgaceCopyFile(Relation rel, int fdesc, const char *filename, bool isFrom)
 static inline bool
 pgaceCopyToTuple(Relation rel, List *attNumList, HeapTuple tuple)
 {
-#ifdef HAVE_SELINUX
+#if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
 		return sepgsqlCopyToTuple(rel, attNumList, tuple);
 #endif
@@ -889,12 +839,9 @@ pgaceCopyToTuple(Relation rel, List *attNumList, HeapTuple tuple)
 static inline void
 pgaceLoadSharedModule(const char *filename)
 {
-#ifdef HAVE_SELINUX
+#if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
-	{
 		sepgsqlLoadSharedModule(filename);
-		return;
-	}
 #endif
 }
 
@@ -914,12 +861,9 @@ pgaceLoadSharedModule(const char *filename)
 static inline void
 pgaceLargeObjectCreate(Relation rel, HeapTuple tuple)
 {
-#ifdef HAVE_SELINUX
+#if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
-	{
 		sepgsqlLargeObjectCreate(rel, tuple);
-		return;
-	}
 #endif
 }
 
@@ -935,12 +879,9 @@ pgaceLargeObjectCreate(Relation rel, HeapTuple tuple)
 static inline void
 pgaceLargeObjectDrop(Relation rel, HeapTuple tuple, void **pgaceItem)
 {
-#ifdef HAVE_SELINUX
+#if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
-	{
 		sepgsqlLargeObjectDrop(rel, tuple, pgaceItem);
-		return;
-	}
 #endif
 }
 
@@ -955,12 +896,9 @@ pgaceLargeObjectDrop(Relation rel, HeapTuple tuple, void **pgaceItem)
 static inline void
 pgaceLargeObjectRead(LargeObjectDesc *lodesc, int length)
 {
-#ifdef HAVE_SELINUX
+#if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
-	{
 		sepgsqlLargeObjectRead(lodesc, length);
-		return;
-	}
 #endif
 }
 
@@ -972,12 +910,9 @@ pgaceLargeObjectRead(LargeObjectDesc *lodesc, int length)
 static inline void
 pgaceLargeObjectWrite(LargeObjectDesc *lodesc, int length)
 {
-#ifdef HAVE_SELINUX
+#if defined(HAVE_SELINUX)
     if (sepgsqlIsEnabled())
-    {
 		sepgsqlLargeObjectWrite(lodesc, length);
-		return;
-	}
 #endif
 }
 
@@ -989,12 +924,9 @@ pgaceLargeObjectWrite(LargeObjectDesc *lodesc, int length)
 static inline void
 pgaceLargeObjectTruncate(LargeObjectDesc *lodesc, int offset)
 {
-#ifdef HAVE_SELINUX
+#if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
-	{
 		sepgsqlLargeObjectTruncate(lodesc, offset);
-		return;
-	}
 #endif
 }
 
@@ -1006,12 +938,9 @@ pgaceLargeObjectTruncate(LargeObjectDesc *lodesc, int offset)
 static inline void
 pgaceLargeObjectImport(Oid loid, int fdesc, const char *filename)
 {
-#ifdef HAVE_SELINUX
+#if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
-	{
 		sepgsqlLargeObjectImport(loid, fdesc, filename);
-		return;
-	}
 #endif
 }
 
@@ -1023,12 +952,9 @@ pgaceLargeObjectImport(Oid loid, int fdesc, const char *filename)
 static inline void
 pgaceLargeObjectExport(Oid loid, int fdesc, const char *filename)
 {
-#ifdef HAVE_SELINUX
+#if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
-	{
 		sepgsqlLargeObjectExport(loid, fdesc, filename);
-		return;
-	}
 #endif
 }
 
@@ -1042,14 +968,14 @@ pgaceLargeObjectExport(Oid loid, int fdesc, const char *filename)
 static inline void
 pgaceLargeObjectGetSecurity(Relation rel, HeapTuple tuple)
 {
-#ifdef HAVE_SELINUX
+#if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
 	{
 		sepgsqlLargeObjectGetSecurity(rel, tuple);
 		return;
 	}
 #endif
-	elog(ERROR, "PGACE: There is no guest module.");
+	elog(ERROR, "PGACE: There is no guest module available.");
 }
 
 /*
@@ -1063,14 +989,14 @@ pgaceLargeObjectGetSecurity(Relation rel, HeapTuple tuple)
 static inline void
 pgaceLargeObjectSetSecurity(Relation rel, HeapTuple newtup, HeapTuple oldtup)
 {
-#ifdef HAVE_SELINUX
+#if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
 	{
 		sepgsqlLargeObjectSetSecurity(rel, newtup, oldtup);
 		return;
 	}
 #endif
-	elog(ERROR, "PGACE: There is no guest module.");
+	elog(ERROR, "PGACE: There is no guest module available.");
 }
 
 /******************************************************************
@@ -1087,7 +1013,7 @@ pgaceLargeObjectSetSecurity(Relation rel, HeapTuple newtup, HeapTuple oldtup)
 static inline bool
 pgaceSecurityAttributeNecessary(void)
 {
-#ifdef HAVE_SELINUX
+#if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
 		return true;
 #endif
@@ -1112,7 +1038,7 @@ pgaceSecurityAttributeNecessary(void)
 static inline char *
 pgaceTranslateSecurityLabelIn(char *seclabel)
 {
-#ifdef HAVE_SELINUX
+#if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
 		return sepgsqlTranslateSecurityLabelIn(seclabel);
 #endif
@@ -1129,7 +1055,7 @@ pgaceTranslateSecurityLabelIn(char *seclabel)
 static inline char *
 pgaceTranslateSecurityLabelOut(char *seclabel)
 {
-#ifdef HAVE_SELINUX
+#if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
 		return sepgsqlTranslateSecurityLabelOut(seclabel);
 #endif
@@ -1146,7 +1072,7 @@ pgaceTranslateSecurityLabelOut(char *seclabel)
 static inline char *
 pgaceValidateSecurityLabel(char *seclabel)
 {
-#ifdef HAVE_SELINUX
+#if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
 		return sepgsqlValidateSecurityLabel(seclabel);
 #endif
