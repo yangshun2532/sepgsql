@@ -146,7 +146,9 @@ extern char *sepgsqlTranslateSecurityLabelIn(const char *context);
 
 extern char *sepgsqlTranslateSecurityLabelOut(const char *context);
 
-extern char *sepgsqlValidateSecurityLabel(char *context);
+extern bool  sepgsqlCheckValidSecurityLabel(char *context);
+
+extern char *sepgsqlUnlabeledSecurityLabel(void);
 
 extern char *sepgsqlSecurityLabelOfLabel(void);
 
