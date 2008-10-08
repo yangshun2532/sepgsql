@@ -1042,7 +1042,7 @@ pgaceTranslateSecurityLabelIn(char *seclabel)
 	if (sepgsqlIsEnabled())
 		return sepgsqlTranslateSecurityLabelIn(seclabel);
 #endif
-	return pstrdup("unlabeled");
+	return seclabel;
 }
 
 /*
@@ -1059,7 +1059,7 @@ pgaceTranslateSecurityLabelOut(char *seclabel)
 	if (sepgsqlIsEnabled())
 		return sepgsqlTranslateSecurityLabelOut(seclabel);
 #endif
-	return pstrdup("unlabeled");
+	return seclabel;
 }
 
 /*
@@ -1069,30 +1069,53 @@ pgaceTranslateSecurityLabelOut(char *seclabel)
  * in raw-internal format. If it is not available, the hook has to
  * return an alternative security attribute.
  */
-static inline char *
-pgaceValidateSecurityLabel(char *seclabel)
+static inline bool
+pgaceCheckValidSecurityLabel(char *seclabel)
 {
 #if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
-		return sepgsqlValidateSecurityLabel(seclabel);
+		return sepgsqlCheckValidSecurityLabel(seclabel);
 #endif
-	return seclabel;
+	return false;
+}
+
+/*
+ * pgaceUnlabeledSecurityLabel
+ *
+ * This hooks allows the guest to provide an alternative security
+ * attribute, when no valid text representation found on pg_security.
+ * The hooks has to return an alternative attribute palloc()'ed.
+ */
+static inline char *
+pgaceUnlabeledSecurityLabel(void)
+{
+#if defined(HAVE_SELINUX)
+	if (sepgsqlIsEnabled())
+		return sepgsqlUnlabeledSecurityLabel();
+#endif
+	return NULL;
 }
 
 /*
  * pgaceSecurityLabelOfLabel
  *
  * This hook has to return the security attribute of a newly inserted
- * tuple within pg_security
+ * tuple withing pg_security system catalog. Note that we need a special
+ * handling in the case of pg_security. If a new tuple requires a quite
+ * new security attribute which is not on pg_security, its insertion
+ * invokes one more insertion into pg_security. In the result, it makes
+ * infinite function invocation.
+ * This hook is used to avoid such a situation. The guest has to return
+ * a text represented security attribute.
  */
 static inline char *
 pgaceSecurityLabelOfLabel(void)
 {
-#ifdef HAVE_SELINUX
+#if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
 		return sepgsqlSecurityLabelOfLabel();
 #endif
-	return pstrdup("unlabeled");
+	return NULL;
 }
 
 /******************************************************************
