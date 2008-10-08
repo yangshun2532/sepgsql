@@ -381,7 +381,7 @@ pgaceLookupSecurityId(char *raw_label)
 	{
 		raw_label = pgaceUnlabeledSecurityLabel();
 		if (!raw_label)
-			elog(ERROR, "unlabeled security attribute is unavailable");
+			return InvalidOid;
 	}
 
 	if (!pgaceCheckValidSecurityLabel(raw_label))
@@ -420,7 +420,12 @@ pgaceLookupSecurityId(char *raw_label)
 
 		slabel = pgaceSecurityLabelOfLabel();
 
-		if (!strcmp(raw_label, slabel))
+		if (!slabel)
+		{
+			labelSid = InvalidOid;
+			labelOid = GetNewOid(rel);
+		}
+		else if (!strcmp(raw_label, slabel))
 		{
 			labelOid = labelSid = GetNewOid(rel);
 		}
@@ -514,7 +519,7 @@ pgaceLookupSecurityLabel(Oid security_id)
 unlabeled:
 	label = pgaceUnlabeledSecurityLabel();
 	if (!label)
-		elog(ERROR, "unlabeled security attribute is unavailable");
+		return pstrdup("");
 
 	return label;
 }
