@@ -468,8 +468,12 @@ pgaceGramCreateRelation(Relation rel, HeapTuple tuple, DefElem *defel)
 {
 #if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
-		return sepgsqlGramCreateRelation(rel, tuple, defel);
+	{
+		sepgsqlGramCreateRelation(rel, tuple, defel);
+		return;
+	}
 #endif
+	elog(ERROR, "unsupported option");
 }
 
 /*
@@ -486,8 +490,12 @@ pgaceGramCreateAttribute(Relation rel, HeapTuple tuple, DefElem *defel)
 {
 #if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
-		return sepgsqlGramCreateAttribute(rel, tuple, defel);
+	{
+		sepgsqlGramCreateAttribute(rel, tuple, defel);
+		return;
+	}
 #endif
+	elog(ERROR, "unsupported option");
 }
 
 /*
@@ -504,8 +512,12 @@ pgaceGramAlterRelation(Relation rel, HeapTuple tuple, DefElem *defel)
 {
 #if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
-		return sepgsqlGramAlterRelation(rel, tuple, defel);
+	{
+		sepgsqlGramAlterRelation(rel, tuple, defel);
+		return;
+	}
 #endif
+	elog(ERROR, "unsupported option");
 }
 
 /*
@@ -522,8 +534,12 @@ pgaceGramAlterAttribute(Relation rel, HeapTuple tuple, DefElem *defel)
 {
 #if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
-		return sepgsqlGramAlterAttribute(rel, tuple, defel);
+	{
+		sepgsqlGramAlterAttribute(rel, tuple, defel);
+		return;
+	}
 #endif
+	elog(ERROR, "unsupported option");
 }
 
 /*
@@ -540,8 +556,12 @@ pgaceGramCreateDatabase(Relation rel, HeapTuple tuple, DefElem *defel)
 {
 #if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
+	{
 		sepgsqlGramCreateDatabase(rel, tuple, defel);
+		return;
+	}
 #endif
+	elog(ERROR, "unsupported option");
 }
 
 /*
@@ -558,8 +578,12 @@ pgaceGramAlterDatabase(Relation rel, HeapTuple tuple, DefElem *defel)
 {
 #if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
+	{
 		sepgsqlGramAlterDatabase(rel, tuple, defel);
+		return;
+	}
 #endif
+	elog(ERROR, "unsupported option");
 }
 
 /*
@@ -576,8 +600,12 @@ pgaceGramCreateFunction(Relation rel, HeapTuple tuple, DefElem *defel)
 {
 #if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
+	{
 		sepgsqlGramCreateFunction(rel, tuple, defel);
+		return;
+	}
 #endif
+	elog(ERROR, "unsupported option");
 }
 
 /*
@@ -594,8 +622,12 @@ pgaceGramAlterFunction(Relation rel, HeapTuple tuple, DefElem *defel)
 {
 #if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
+	{
 		sepgsqlGramAlterFunction(rel, tuple, defel);
+		return;
+	}
 #endif
+	elog(ERROR, "unsupported option");
 }
 
 /******************************************************************
