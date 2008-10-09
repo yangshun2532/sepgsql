@@ -777,6 +777,22 @@ if test "$enable_selinux" = yes; then
 fi
 
 #
+# Row-level ACL support
+#
+PGAC_ARG_BOOL(enable, row-acl, no,
+              [  --enable-row-acl        Row-level ACL support])
+if test "$enable_row_acl" = yes; then
+	if test "$enable_selinux" = yes; then
+		AC_MSG_ERROR("we cannot use --enable-selinux and --enable-row-acl concurrently")
+	fi
+	AC_DEFINE(SECURITY_SYSATTR_NAME, "tuple_acl",
+		  [Enables system column for Row-level ACL support])
+	AC_DEFINE_UNQUOTED(HAVE_ROW_ACL, 1,
+			   [Enables Row-level ACL feature])
+	AC_SUBST(enable_row_acl)
+fi
+
+#
 # Elf
 #
 

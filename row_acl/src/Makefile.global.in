@@ -166,6 +166,7 @@ enable_nls	= @enable_nls@
 enable_debug	= @enable_debug@
 enable_dtrace	= @enable_dtrace@
 enable_selinux	= @enable_selinux@
+enable_row_acl	= @enable_row_acl@
 enable_coverage	= @enable_coverage@
 enable_thread_safety	= @enable_thread_safety@
 
