@@ -1,0 +1,34 @@
+--
+-- testcases of cleanup of tuple level access control
+--
+-- selinux_user: unconfined_u
+-- selinux_role: unconfined_r
+-- selinux_type: unconfined_t
+-- selinux_range: s0
+SELECT security_context, * FROM d1;
+             security_context             | id | name 
+------------------------------------------+----+------
+ unconfined_u:object_r:sepgsql_table_t:s0 |  1 | aaa
+ unconfined_u:object_r:sepgsql_table_t:s0 |  4 | ddd
+(2 rows)
+
+SELECT security_context, * FROM d2;
+             security_context             | id | tag 
+------------------------------------------+----+-----
+ unconfined_u:object_r:sepgsql_table_t:s0 |  2 | xxx
+(1 row)
+
+-- invisible PK
+INSERT INTO d1 VALUES (5, 'EEE_ins');
+INSERT INTO d1 VALUES (2, 'BBB_ins');	-- to be failed
+psql:./D_key_constraints_check.sql:14: ERROR:  duplicate key value violates unique constraint "d1_pkey"
+-- visible PK, and invisible FK
+DELETE FROM d1 WHERE id IN (1);
+DELETE FROM d1 WHERE id IN (4);		-- to be failed
+psql:./D_key_constraints_check.sql:18: ERROR:  SELinux: security policy violation
+CONTEXT:  SQL statement "SELECT 1 FROM ONLY "public"."d2" x WHERE $1 OPERATOR(pg_catalog.=) "id" FOR SHARE OF x"
+-- invisible PK with new FK
+INSERT INTO d2 VALUES (4, 'ZZZ_ins');
+INSERT INTO d2 VALUES (3, 'YYY_ins');	-- to be failed
+psql:./D_key_constraints_check.sql:22: ERROR:  insert or update on table "d2" violates foreign key constraint "d2_id_fkey"
+DETAIL:  Key (id)=(3) is not present in table "d1".
