@@ -11,6 +11,7 @@
 #include "catalog/pg_type.h"
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
+#include "nodes/nodeFuncs.h"
 #include "parser/parsetree.h"
 #include "pgstat.h"
 #include "security/pgace.h"
@@ -19,6 +20,13 @@
 #include "utils/array.h"
 #include "utils/fmgroids.h"
 #include "utils/syscache.h"
+
+/*
+ * static function declarations
+ */
+static void  proxySubQuery(Query *query);
+static Acl  *rawAclTextToAclArray(char *raw_acl);
+static char *rawAclTextFromAclArray(Acl *acl);
 
 /******************************************************************
  * Global system setting
@@ -35,7 +43,6 @@ bool rowaclIsEnabled(void)
 /******************************************************************
  * Mark appeared Query/Sub-Query
  ******************************************************************/
-static void proxySubQuery(Query *query);
 
 static bool walkOnNodeTree(Node *node, Query *query)
 {
@@ -63,9 +70,6 @@ static void walkOnJoinTree(Query *query, Node *node)
 {
 	if (!node)
 		return;
-
-	if (nodeTag(node) == 920)
-		((char *) NULL) [0] = 'a';
 
 	if (IsA(node, RangeTblRef))
 	{
@@ -100,13 +104,12 @@ static void walkOnJoinTree(Query *query, Node *node)
 			walkOnJoinTree(query, lfirst(l));
 	}
 	else
-		elog(ERROR, "unexpected node type (%s) on fromlist", nodeTag(node));
+		elog(ERROR, "unexpected node type (%d) on fromlist", nodeTag(node));
 }
 
 static void proxySubQuery(Query *query)
 {
 	RangeTblEntry *rte;
-	ListCell *l;
 
 	if (query->commandType == CMD_UPDATE)
 	{
@@ -155,26 +158,63 @@ List *rowaclProxyQuery(List *queryList)
  * Row-level access controls
  ******************************************************************/
 
+
+static bool under_integrity_checking = false;
+
+static bool rowaclCheckPermission(Relation rel, HeapTuple tuple, AclMode perms)
+{
+	Oid sid = HeapTupleGetSecurity(tuple);
+	Oid userId = GetUserId();
+	Oid ownerId = RelationGetForm(rel)->relowner;
+	char *raw_acl;
+	Acl *acl;
+
+	/* Superusers bypass all permission checking */
+	if (superuser_arg(userId))
+		return true;
+
+	raw_acl = pgaceLookupSecurityLabel(sid);
+	acl = rawAclTextToAclArray(raw_acl);
+
+	/* no acl allows to access anything */
+	if (!acl)
+		return true;
+
+	if (aclmask(acl, userId, ownerId, perms, ACLMASK_ANY))
+		return true;
+
+	return false;
+}
+
 bool rowaclExecScan(Scan *scan, Relation rel, TupleTableSlot *slot)
 {
-	//elog(NOTICE, "%s: scanrelid = %u pgaceTuplePerms = %08x", __FUNCTION__, scan->scanrelid, scan->pgaceTuplePerms);
+	HeapTuple tuple = ExecMaterializeSlot(slot);
 
-	return true;
+	if (!scan->pgaceTuplePerms)
+		return true;
+
+	return rowaclCheckPermission(rel, tuple, scan->pgaceTuplePerms);
 }
 
 bool rowaclCopyToTuple(Relation rel, List *attNumList, HeapTuple tuple)
 {
-	return true;
+	return rowaclCheckPermission(rel, tuple, ACL_SELECT);
 }
 
-void rowaclBeginPerformCheckFK(Relation rel, bool rel_is_primary, Datum *save_pgace)
+void rowaclBeginPerformCheckFK(Relation rel, bool is_primary, Datum *save_pgace)
 {
-
+	if (is_primary)
+		return;
+	*save_pgace = BoolGetDatum(under_integrity_checking);
+	under_integrity_checking = true;
 }
 
-void rowaclEndPerformCheckFK(Relation rel, bool rel_is_primary, Datum save_pgace)
+void rowaclEndPerformCheckFK(Relation rel, bool is_primary, Datum save_pgace)
 {
+	if (is_primary)
+		return;
 
+	under_integrity_checking = DatumGetBool(save_pgace);
 }
 
 /******************************************************************
