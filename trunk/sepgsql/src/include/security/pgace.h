@@ -495,7 +495,10 @@ pgaceGramCreateRelation(Relation rel, HeapTuple tuple, DefElem *defel)
 		return;
 	}
 #endif
-	elog(ERROR, "unsupported option");
+	if (defel)
+		ereport(ERROR,
+				(errcode(ERRCODE_PGACE_ERROR),
+				 errmsg("security extention at CREATE TABLE: unavailable")));
 }
 
 /*
@@ -517,7 +520,10 @@ pgaceGramCreateAttribute(Relation rel, HeapTuple tuple, DefElem *defel)
 		return;
 	}
 #endif
-	elog(ERROR, "unsupported option");
+	if (defel)
+		ereport(ERROR,
+				(errcode(ERRCODE_PGACE_ERROR),
+				 errmsg("security extention at CREATE TABLE column: unavailable")));
 }
 
 /*
@@ -539,7 +545,10 @@ pgaceGramAlterRelation(Relation rel, HeapTuple tuple, DefElem *defel)
 		return;
 	}
 #endif
-	elog(ERROR, "unsupported option");
+	if (defel)
+		ereport(ERROR,
+				(errcode(ERRCODE_PGACE_ERROR),
+				 errmsg("security extention at ALTER TABLE: unavailable")));
 }
 
 /*
@@ -561,7 +570,10 @@ pgaceGramAlterAttribute(Relation rel, HeapTuple tuple, DefElem *defel)
 		return;
 	}
 #endif
-	elog(ERROR, "unsupported option");
+	if (defel)
+		ereport(ERROR,
+				(errcode(ERRCODE_PGACE_ERROR),
+				 errmsg("security extention at ALTER TABLE column: unavailable")));
 }
 
 /*
@@ -583,7 +595,10 @@ pgaceGramCreateDatabase(Relation rel, HeapTuple tuple, DefElem *defel)
 		return;
 	}
 #endif
-	elog(ERROR, "unsupported option");
+	if (defel)
+		ereport(ERROR,
+				(errcode(ERRCODE_PGACE_ERROR),
+				 errmsg("security extention at CREATE DATABASE: unavailable")));
 }
 
 /*
@@ -605,7 +620,10 @@ pgaceGramAlterDatabase(Relation rel, HeapTuple tuple, DefElem *defel)
 		return;
 	}
 #endif
-	elog(ERROR, "unsupported option");
+	if (defel)
+		ereport(ERROR,
+				(errcode(ERRCODE_PGACE_ERROR),
+				 errmsg("security extention at ALTER DATABASE: unavailable")));
 }
 
 /*
@@ -627,7 +645,10 @@ pgaceGramCreateFunction(Relation rel, HeapTuple tuple, DefElem *defel)
 		return;
 	}
 #endif
-	elog(ERROR, "unsupported option");
+	if (defel)
+		ereport(ERROR,
+				(errcode(ERRCODE_PGACE_ERROR),
+				 errmsg("security extention at CREATE FUNCTION: unavailable")));
 }
 
 /*
@@ -649,7 +670,10 @@ pgaceGramAlterFunction(Relation rel, HeapTuple tuple, DefElem *defel)
 		return;
 	}
 #endif
-	elog(ERROR, "unsupported option");
+	if (defel)
+		ereport(ERROR,
+				(errcode(ERRCODE_PGACE_ERROR),
+				 errmsg("security extention at ALTER FUNCTION: unavailable")));
 }
 
 /******************************************************************
