@@ -10,6 +10,7 @@
 #include "catalog/pg_class.h"
 #include "catalog/pg_type.h"
 #include "miscadmin.h"
+#include "nodes/makefuncs.h"
 #include "pgstat.h"
 #include "security/pgace.h"
 #include "storage/bufmgr.h"
@@ -18,8 +19,15 @@
 #include "utils/fmgroids.h"
 #include "utils/syscache.h"
 
+/******************************************************************
+ * Global system setting
+ ******************************************************************/
+
 bool rowaclIsEnabled(void)
 {
+	/*
+	 * TODO: This parameter should be controled via GUC
+	 */
 	return true;
 }
 
@@ -55,7 +63,7 @@ bool rowaclHeapTupleInsert(Relation rel, HeapTuple tuple,
 			/*
 			 * Default ACL via CREATE TABLE
 			 */
-			Form_pg_class class_form = (Form_pg_class) tuple;
+			Form_pg_class class_form = (Form_pg_class) GETSTRUCT(tuple);
 
 			if (class_form->relkind != RELKIND_RELATION)
 				ereport(ERROR,
@@ -159,7 +167,7 @@ bool rowaclHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple newtup,
 			/*
 			 * Default ACL via ALTER TABLE
 			 */
-			Form_pg_class class_form = (Form_pg_class) newtup;
+			Form_pg_class class_form = (Form_pg_class) GETSTRUCT(newtup);
 
 			if (class_form->relkind != RELKIND_RELATION)
 				ereport(ERROR,
@@ -218,19 +226,44 @@ void rowaclEndPerformCheckFK(Relation rel, bool rel_is_primary, Datum save_pgace
 
 DefElem *rowaclGramSecurityItem(char *defname, char *value)
 {
-	return NULL;
+	DefElem *node = NULL;
+
+	if (strcmp(defname, "default_acl") == 0)
+		node = makeDefElem(pstrdup(defname),
+						   (Node *) makeString(value));
+	return node;
 }
 
 bool rowaclIsGramSecurityItem(DefElem *defel)
 {
+	Assert(IsA(defel, DefElem));
+
+	if (defel->defname &&
+		strcmp(defel->defname, "default_acl") == 0)
+		return true;
+
 	return false;
 }
 
 void rowaclGramCreateRelation(Relation rel, HeapTuple tuple, DefElem *defel)
-{}
+{
+	if (defel)
+	{
+		Oid security_id = pgaceSecurityLabelToSid(strVal(defel->arg));
+
+		HeapTupleSetSecurity(tuple, security_id);
+	}
+}
 
 void rowaclGramAlterRelation(Relation rel, HeapTuple tuple, DefElem *defel)
-{}
+{
+	if (defel)
+	{
+		Oid security_id = pgaceSecurityLabelToSid(strVal(defel->arg));
+
+		HeapTupleSetSecurity(tuple, security_id);
+	}
+}
 
 /******************************************************************
  * Security Label interfaces
@@ -278,6 +311,7 @@ static Acl *rawAclTextToAclArray(char *raw_acl)
 static char *rawAclTextFromAclArray(Acl *acl)
 {
 	AclItem *aip;
+	AclMode mask = (ACL_SELECT | ACL_UPDATE | ACL_DELETE);
 	char *raw_acl;
 	int index, aclnum, ofs = 0;
 	bool isnull;
@@ -301,6 +335,12 @@ static char *rawAclTextFromAclArray(Acl *acl)
 							  'i',		/* typalign of aclitem */
 							  &isnull);
 		aip = DatumGetAclItemP(tmp);
+
+		if ((aip->ai_privs & mask) != aip->ai_privs)
+			ereport(ERROR,
+					(errcode(ERRCODE_ROW_ACL_ERROR),
+					 errmsg("unsupported ACL: %04x", aip->ai_privs & ~mask)));
+
 		ofs += sprintf(raw_acl + ofs,
 					   "%s%x:%x:%x",
 					   (ofs == 0 ? "" : ","),
@@ -346,6 +386,9 @@ char *rowaclTranslateSecurityLabelOut(char *acl_string)
 bool rowaclCheckValidSecurityLabel(char *seclabel)
 {
 	int c, phase = 1;
+
+	if (strcmp(seclabel, ROW_ACL_EMPTY_STRING) == 0)
+		return true;
 
 	while ((c = *seclabel++) != '\0')
 	{
