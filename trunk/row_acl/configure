@@ -709,6 +709,7 @@ with_libxslt
 with_system_tzdata
 with_zlib
 enable_selinux
+enable_row_acl
 GREP
 EGREP
 ELF_SYS
@@ -1368,6 +1369,7 @@ Optional Features:
   --enable-thread-safety  make client libraries thread-safe
   --enable-thread-safety-force  force thread-safety despite thread test failure
   --enable-selinux        build with NSA SELinux support
+  --enable-row-acl        Row-level ACL support
   --disable-float4-byval  disable float4 passed by value
   --disable-float8-byval  disable float8 passed by value
   --disable-largefile     omit support for large files
@@ -5577,6 +5579,54 @@ else
 echo "$as_me: error: \"--enable-selinux requires libselinux.\"" >&2;}
    { (exit 1); exit 1; }; }
 fi
+
+fi
+
+#
+# Row-level ACL support
+#
+
+pgac_args="$pgac_args enable_row_acl"
+
+# Check whether --enable-row-acl was given.
+if test "${enable_row_acl+set}" = set; then
+  enableval=$enable_row_acl;
+  case $enableval in
+    yes)
+      :
+      ;;
+    no)
+      :
+      ;;
+    *)
+      { { echo "$as_me:$LINENO: error: no argument expected for --enable-row-acl option" >&5
+echo "$as_me: error: no argument expected for --enable-row-acl option" >&2;}
+   { (exit 1); exit 1; }; }
+      ;;
+  esac
+
+else
+  enable_row_acl=no
+
+fi
+
+
+if test "$enable_row_acl" = yes; then
+	if test "$enable_selinux" = yes; then
+		{ { echo "$as_me:$LINENO: error: \"we cannot use --enable-selinux and --enable-row-acl concurrently\"" >&5
+echo "$as_me: error: \"we cannot use --enable-selinux and --enable-row-acl concurrently\"" >&2;}
+   { (exit 1); exit 1; }; }
+	fi
+
+cat >>confdefs.h <<\_ACEOF
+#define SECURITY_SYSATTR_NAME "tuple_acl"
+_ACEOF
+
+
+cat >>confdefs.h <<_ACEOF
+#define HAVE_ROW_ACL 1
+_ACEOF
+
 
 fi
 
@@ -26850,12 +26900,12 @@ with_libxslt!$with_libxslt$ac_delim
 with_system_tzdata!$with_system_tzdata$ac_delim
 with_zlib!$with_zlib$ac_delim
 enable_selinux!$enable_selinux$ac_delim
+enable_row_acl!$enable_row_acl$ac_delim
 GREP!$GREP$ac_delim
 EGREP!$EGREP$ac_delim
 ELF_SYS!$ELF_SYS$ac_delim
 LDFLAGS_SL!$LDFLAGS_SL$ac_delim
 LD!$LD$ac_delim
-with_gnu_ld!$with_gnu_ld$ac_delim
 _ACEOF
 
   if test `sed -n "s/.*$ac_delim\$/X/p" conf$$subs.sed | grep -c X` = 97; then
@@ -26897,6 +26947,7 @@ _ACEOF
 ac_delim='%!_!# '
 for ac_last_try in false false false false false :; do
   cat >conf$$subs.sed <<_ACEOF
+with_gnu_ld!$with_gnu_ld$ac_delim
 ld_R_works!$ld_R_works$ac_delim
 RANLIB!$RANLIB$ac_delim
 STRIP!$STRIP$ac_delim
@@ -26952,7 +27003,7 @@ vpath_build!$vpath_build$ac_delim
 LTLIBOBJS!$LTLIBOBJS$ac_delim
 _ACEOF
 
-  if test `sed -n "s/.*$ac_delim\$/X/p" conf$$subs.sed | grep -c X` = 53; then
+  if test `sed -n "s/.*$ac_delim\$/X/p" conf$$subs.sed | grep -c X` = 54; then
     break
   elif $ac_last_try; then
     { { echo "$as_me:$LINENO: error: could not make $CONFIG_STATUS" >&5

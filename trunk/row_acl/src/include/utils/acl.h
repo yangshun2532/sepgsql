@@ -231,6 +231,8 @@ extern void select_best_grantor(Oid roleId, AclMode privileges,
 
 extern void initialize_acl(void);
 
+extern void check_acl(const Acl *acl);
+
 /*
  * SQL functions (from acl.c)
  */

@@ -21,6 +21,9 @@
 #ifdef HAVE_SELINUX
 #include "security/sepgsql.h"
 #endif
+#ifdef HAVE_ROW_ACL
+#include "security/row_acl.h"
+#endif
 
 /*
  * The definitions of PGACE hooks are follows:
@@ -169,6 +172,9 @@ pgaceProxyQuery(List *queryList)
 #if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
 		return sepgsqlProxyQuery(queryList);
+#elif defined(HAVE_ROW_ACL)
+	if (rowaclIsEnabled())
+		return rowaclProxyQuery(queryList);
 #endif
 	return queryList;
 }
@@ -190,6 +196,9 @@ pgaceIsAllowPlannerHook(void)
 #if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
 		return false;
+#elif defined(HAVE_ROW_ACL)
+	if (rowaclIsEnabled())
+		return false;
 #endif
 	return true;
 }
@@ -210,6 +219,9 @@ pgaceIsAllowExecutorRunHook(void)
 {
 #if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
+		return false;
+#elif defined(HAVE_ROW_ACL)
+	if (rowaclIsEnabled())
 		return false;
 #endif
 	return true;
@@ -253,6 +265,9 @@ pgaceExecScan(Scan *scan, Relation rel, TupleTableSlot *slot)
 #if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
 		return sepgsqlExecScan(scan, rel, slot);
+#elif defined(HAVE_ROW_ACL)
+	if (rowaclIsEnabled())
+		return rowaclExecScan(scan, rel, slot);
 #endif
 	return true;
 }
@@ -318,6 +333,11 @@ pgaceHeapTupleInsert(Relation rel, HeapTuple tuple,
 		return sepgsqlHeapTupleInsert(rel, tuple,
 									  is_internal,
 									  with_returning);
+#elif defined(HAVE_ROW_ACL)
+	if (rowaclIsEnabled())
+		return rowaclHeapTupleInsert(rel, tuple,
+									 is_internal,
+									 with_returning);
 #endif
 	return true;
 }
@@ -351,6 +371,11 @@ pgaceHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple newtup,
 		return sepgsqlHeapTupleUpdate(rel, otid, newtup,
 									  is_internal,
 									  with_returning);
+#elif defined(HAVE_ROW_ACL)
+	if (rowaclIsEnabled())
+		return rowaclHeapTupleUpdate(rel, otid, newtup,
+									 is_internal,
+									 with_returning);
 #endif
 	return true;
 }
@@ -379,6 +404,11 @@ pgaceHeapTupleDelete(Relation rel, ItemPointer otid,
 		return sepgsqlHeapTupleDelete(rel, otid,
 									  is_internal,
 									  with_returning);
+#elif defined(HAVE_ROW_ACL)
+	if (rowaclIsEnabled())
+		return rowaclHeapTupleDelete(rel, otid,
+									 is_internal,
+									 with_returning);
 #endif
 	return true;
 }
@@ -447,6 +477,9 @@ pgaceGramSecurityItem(char *defname, char *value)
 #if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
 		return sepgsqlGramSecurityItem(defname, value);
+#elif defined(HAVE_ROW_ACL)
+	if (rowaclIsEnabled())
+		return rowaclGramSecurityItem(defname, value);
 #endif
 	return NULL;
 }
@@ -464,6 +497,9 @@ pgaceIsGramSecurityItem(DefElem *defel)
 #if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
 		return sepgsqlIsGramSecurityItem(defel);
+#elif defined(HAVE_ROW_ACL)
+	if (rowaclIsEnabled())
+		return rowaclIsGramSecurityItem(defel);
 #endif
 	return false;
 }
@@ -494,8 +530,17 @@ pgaceGramCreateRelation(Relation rel, HeapTuple tuple, DefElem *defel)
 		sepgsqlGramCreateRelation(rel, tuple, defel);
 		return;
 	}
+#elif defined(HAVE_ROW_ACL)
+	if (rowaclIsEnabled())
+	{
+		rowaclGramCreateRelation(rel, tuple, defel);
+		return;
+	}
 #endif
-	elog(ERROR, "unsupported option");
+	if (defel)
+		ereport(ERROR,
+				(errcode(ERRCODE_PGACE_ERROR),
+				 errmsg("security extention at CREATE TABLE: unavailable")));
 }
 
 /*
@@ -517,7 +562,10 @@ pgaceGramCreateAttribute(Relation rel, HeapTuple tuple, DefElem *defel)
 		return;
 	}
 #endif
-	elog(ERROR, "unsupported option");
+	if (defel)
+		ereport(ERROR,
+				(errcode(ERRCODE_PGACE_ERROR),
+				 errmsg("security extention at CREATE TABLE column: unavailable")));
 }
 
 /*
@@ -538,8 +586,17 @@ pgaceGramAlterRelation(Relation rel, HeapTuple tuple, DefElem *defel)
 		sepgsqlGramAlterRelation(rel, tuple, defel);
 		return;
 	}
+#elif defined(HAVE_ROW_ACL)
+	if (rowaclIsEnabled())
+	{
+		rowaclGramAlterRelation(rel, tuple, defel);
+		return;
+	}
 #endif
-	elog(ERROR, "unsupported option");
+	if (defel)
+		ereport(ERROR,
+				(errcode(ERRCODE_PGACE_ERROR),
+				 errmsg("security extention at ALTER TABLE: unavailable")));
 }
 
 /*
@@ -561,7 +618,10 @@ pgaceGramAlterAttribute(Relation rel, HeapTuple tuple, DefElem *defel)
 		return;
 	}
 #endif
-	elog(ERROR, "unsupported option");
+	if (defel)
+		ereport(ERROR,
+				(errcode(ERRCODE_PGACE_ERROR),
+				 errmsg("security extention at ALTER TABLE column: unavailable")));
 }
 
 /*
@@ -583,7 +643,10 @@ pgaceGramCreateDatabase(Relation rel, HeapTuple tuple, DefElem *defel)
 		return;
 	}
 #endif
-	elog(ERROR, "unsupported option");
+	if (defel)
+		ereport(ERROR,
+				(errcode(ERRCODE_PGACE_ERROR),
+				 errmsg("security extention at CREATE DATABASE: unavailable")));
 }
 
 /*
@@ -605,7 +668,10 @@ pgaceGramAlterDatabase(Relation rel, HeapTuple tuple, DefElem *defel)
 		return;
 	}
 #endif
-	elog(ERROR, "unsupported option");
+	if (defel)
+		ereport(ERROR,
+				(errcode(ERRCODE_PGACE_ERROR),
+				 errmsg("security extention at ALTER DATABASE: unavailable")));
 }
 
 /*
@@ -627,7 +693,10 @@ pgaceGramCreateFunction(Relation rel, HeapTuple tuple, DefElem *defel)
 		return;
 	}
 #endif
-	elog(ERROR, "unsupported option");
+	if (defel)
+		ereport(ERROR,
+				(errcode(ERRCODE_PGACE_ERROR),
+				 errmsg("security extention at CREATE FUNCTION: unavailable")));
 }
 
 /*
@@ -649,7 +718,10 @@ pgaceGramAlterFunction(Relation rel, HeapTuple tuple, DefElem *defel)
 		return;
 	}
 #endif
-	elog(ERROR, "unsupported option");
+	if (defel)
+		ereport(ERROR,
+				(errcode(ERRCODE_PGACE_ERROR),
+				 errmsg("security extention at ALTER FUNCTION: unavailable")));
 }
 
 /******************************************************************
@@ -872,6 +944,9 @@ pgaceCopyToTuple(Relation rel, List *attNumList, HeapTuple tuple)
 #if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
 		return sepgsqlCopyToTuple(rel, attNumList, tuple);
+#elif defined(HAVE_ROW_ACL)
+	if (rowaclIsEnabled())
+		return rowaclCopyToTuple(rel, attNumList, tuple);
 #endif
 	return true;
 }
@@ -1070,6 +1145,9 @@ pgaceSecurityAttributeNecessary(void)
 #if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
 		return true;
+#elif defined(HAVE_ROW_ACL)
+	if (rowaclIsEnabled())
+		return true;
 #endif
 	return false;
 }
@@ -1095,6 +1173,9 @@ pgaceTranslateSecurityLabelIn(char *seclabel)
 #if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
 		return sepgsqlTranslateSecurityLabelIn(seclabel);
+#elif defined(HAVE_ROW_ACL)
+	if (rowaclIsEnabled())
+		return rowaclTranslateSecurityLabelIn(seclabel);
 #endif
 	return seclabel;
 }
@@ -1112,6 +1193,9 @@ pgaceTranslateSecurityLabelOut(char *seclabel)
 #if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
 		return sepgsqlTranslateSecurityLabelOut(seclabel);
+#elif defined(HAVE_ROW_ACL)
+	if (rowaclIsEnabled())
+		return rowaclTranslateSecurityLabelOut(seclabel);
 #endif
 	return seclabel;
 }
@@ -1129,6 +1213,9 @@ pgaceCheckValidSecurityLabel(char *seclabel)
 #if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
 		return sepgsqlCheckValidSecurityLabel(seclabel);
+#elif defined(HAVE_ROW_ACL)
+	if (rowaclIsEnabled())
+		return rowaclCheckValidSecurityLabel(seclabel);
 #endif
 	return false;
 }
@@ -1146,6 +1233,9 @@ pgaceUnlabeledSecurityLabel(void)
 #if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
 		return sepgsqlUnlabeledSecurityLabel();
+#elif defined(HAVE_ROW_ACL)
+	if (rowaclIsEnabled())
+		return rowaclUnlabeledSecurityLabel();
 #endif
 	return NULL;
 }
