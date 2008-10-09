@@ -731,3 +731,33 @@ sepgsql_set_range(PG_FUNCTION_ARGS)
 }
 
 #endif   /* HAVE_SELINUX */
+
+#ifndef HAVE_ROW_ACL
+Datum
+row_acl_grant(PG_FUNCTION_ARGS)
+{
+	ereport(ERROR,
+			(errcode(ERRCODE_ROW_ACL_ERROR),
+			 errmsg("row_acl_grant is unavailable")));
+	PG_RETURN_VOID();
+}
+
+Datum
+row_acl_revoke(PG_FUNCTION_ARGS)
+{
+	ereport(ERROR,
+			(errcode(ERRCODE_ROW_ACL_ERROR),
+			 errmsg("row_acl_revoke is unavailable")));
+	PG_RETURN_VOID();
+}
+
+Datum
+row_acl_revoke_cascade(PG_FUNCTION_ARGS)
+{
+	ereport(ERROR,
+			(errcode(ERRCODE_ROW_ACL_ERROR),
+			 errmsg("row_acl_revoke_cascade is unavailable")));
+	PG_RETURN_VOID();
+}
+
+#endif	/* HAVE_ROW_ACL */

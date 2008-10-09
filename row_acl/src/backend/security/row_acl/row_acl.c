@@ -586,3 +586,119 @@ char *rowaclUnlabeledSecurityLabel(void)
 {
 	return pstrdup(ROW_ACL_EMPTY_STRING);
 }
+
+/******************************************************************
+ * SQL functions
+ ******************************************************************/
+
+/*
+ * usage: rowacl_grant(tableoid, tuple_acl, 'username', 'select,update,delete')
+ *        rowacl_revoke(tableoid, tuple_acl, 'username', 'select,update,delete');
+ */
+static Datum rowacl_grant_revoke(PG_FUNCTION_ARGS, bool grant, bool cascade)
+{
+	FmgrInfo fmgrInfo;
+	char *tmp, *tok;
+	HeapTuple tuple;
+	Oid ownerId;
+	Acl *acl;
+	List *grantees = NIL;
+	AclMode privileges = 0;
+
+	/*
+	 * Get owner Id
+	 */
+	tuple = SearchSysCache(RELOID, PG_GETARG_DATUM(0), 0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		ereport(ERROR,
+				(errcode(ERRCODE_ROW_ACL_ERROR),
+				 errmsg("cache lookup failed for relation: %u",
+						PG_GETARG_OID(0))));
+	ownerId = ((Form_pg_class) GETSTRUCT(tuple))->relowner;
+
+	ReleaseSysCache(tuple);
+
+	/*
+	 * Extract Acl array
+	 */
+	tmp = TextDatumGetCString(PG_GETARG_TEXT_P(1));
+	fmgr_info_cxt(F_ARRAY_IN, &fmgrInfo, CurrentMemoryContext);
+	acl = DatumGetAclP(FunctionCall3(&fmgrInfo,
+									 CStringGetDatum(tmp),
+									 ObjectIdGetDatum(ACLITEMOID),
+									 Int32GetDatum(-1)));
+	/*
+	 * Extract usernames
+	 */
+	tmp = TextDatumGetCString(PG_GETARG_TEXT_P(2));
+	for (tok = strtok(tmp, ","); tok; tok = strtok(NULL, ","))
+	{
+		if (strcasecmp(tok, "public") == 0)
+		{
+			grantees = lappend_oid(grantees, ACL_ID_PUBLIC);
+		}
+		else
+		{
+			Oid roleId = get_roleid(tok);
+
+			if (roleId == InvalidOid)
+				ereport(ERROR,
+						(errcode(ERRCODE_ROW_ACL_ERROR),
+						 errmsg("%s is not a valid identifier", tok)));
+
+			grantees = lappend_oid(grantees, roleId);
+		}
+	}
+
+	/*
+	 * Extract permission names
+	 */
+	tmp = TextDatumGetCString(PG_GETARG_TEXT_P(3));
+	for (tok = strtok(tmp, ","); tok; tok = strtok(NULL, ","))
+	{
+		if (strcasecmp(tok, "all") == 0)
+			privileges |= (ACL_SELECT | ACL_UPDATE | ACL_DELETE);
+		else if (strcasecmp(tok, "select") == 0)
+			privileges |= ACL_SELECT;
+		else if (strcasecmp(tok, "update") == 0)
+            privileges |= ACL_UPDATE;
+        else if (strcasecmp(tok, "delete") == 0)
+            privileges |= ACL_DELETE;
+        else
+			ereport(ERROR,
+					(errcode(ERRCODE_ROW_ACL_ERROR),
+					 errmsg("%s is not a valid permission", tok)));
+	}
+
+	/*
+	 * Merge ACL
+	 */
+	acl = merge_acl_with_grant(acl, grant, false, cascade,
+							   grantees, privileges,
+							   GetUserId(), ownerId);
+
+	fmgr_info_cxt(F_ARRAY_OUT, &fmgrInfo, CurrentMemoryContext);
+	tmp = DatumGetCString(FunctionCall3(&fmgrInfo,
+										PointerGetDatum(acl),
+										ObjectIdGetDatum(ACLITEMOID),
+										Int32GetDatum(-1)));
+	return CStringGetTextDatum(tmp);
+}
+
+Datum
+rowacl_grant(PG_FUNCTION_ARGS)
+{
+	return rowacl_grant_revoke(fcinfo, true, false);
+}
+
+Datum
+rowacl_revoke(PG_FUNCTION_ARGS)
+{
+	return rowacl_grant_revoke(fcinfo, false, false);
+}
+
+Datum
+rowacl_revoke_cascade(PG_FUNCTION_ARGS)
+{
+	return rowacl_grant_revoke(fcinfo, false, true);
+}
