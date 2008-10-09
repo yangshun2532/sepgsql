@@ -11,6 +11,7 @@
 #include "catalog/pg_type.h"
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
+#include "parser/parsetree.h"
 #include "pgstat.h"
 #include "security/pgace.h"
 #include "storage/bufmgr.h"
@@ -32,17 +33,153 @@ bool rowaclIsEnabled(void)
 }
 
 /******************************************************************
- * Row-level access controls
+ * Mark appeared Query/Sub-Query
  ******************************************************************/
+static void proxySubQuery(Query *query);
+
+static bool walkOnNodeTree(Node *node, Query *query)
+{
+	if (!node)
+		return false;
+
+	if (IsA(node, Query))
+	{
+		proxySubQuery((Query *) node);
+	}
+	else if (IsA(node, SortGroupClause))
+	{
+		/*
+		 * expression_tree_walker() does not understand
+		 * T_SortGroupClause node, so we have to avoid it
+		 * walking on the node type.
+		 */
+		return false;
+	}
+
+	return expression_tree_walker(node, walkOnNodeTree, (void *) query);
+}
+
+static void walkOnJoinTree(Query *query, Node *node)
+{
+	if (!node)
+		return;
+
+	if (nodeTag(node) == 920)
+		((char *) NULL) [0] = 'a';
+
+	if (IsA(node, RangeTblRef))
+	{
+		RangeTblRef *rtr = (RangeTblRef *) node;
+		RangeTblEntry *rte = rt_fetch(rtr->rtindex, query->rtable);
+
+		if (rte->rtekind == RTE_RELATION &&
+			rtr->rtindex != query->resultRelation)
+		{
+			rte->pgaceTuplePerms |= ACL_SELECT;
+		}
+		else if (rte->rtekind == RTE_SUBQUERY)
+		{
+			proxySubQuery(rte->subquery);
+		}
+	}
+	else if (IsA(node, JoinExpr))
+	{
+		JoinExpr *join = (JoinExpr *) node;
+
+		walkOnNodeTree(join->quals, query);
+		walkOnJoinTree(query, join->larg);
+		walkOnJoinTree(query, join->rarg);
+	}
+	else if (IsA(node, FromExpr))
+	{
+		FromExpr *from = (FromExpr *) node;
+		ListCell *l;
+
+		walkOnNodeTree(from->quals, query);
+		foreach (l, from->fromlist)
+			walkOnJoinTree(query, lfirst(l));
+	}
+	else
+		elog(ERROR, "unexpected node type (%s) on fromlist", nodeTag(node));
+}
+
+static void proxySubQuery(Query *query)
+{
+	RangeTblEntry *rte;
+	ListCell *l;
+
+	if (query->commandType == CMD_UPDATE)
+	{
+		rte = rt_fetch(query->resultRelation, query->rtable);
+		rte->pgaceTuplePerms |= ACL_UPDATE;
+		if (query->returningList)
+			rte->pgaceTuplePerms |= ACL_SELECT;
+	}
+	else if (query->commandType == CMD_DELETE)
+	{
+		rte = rt_fetch(query->resultRelation, query->rtable);
+		rte->pgaceTuplePerms |= ACL_DELETE;
+		if (query->returningList)
+			rte->pgaceTuplePerms |= ACL_SELECT;
+	}
+	walkOnJoinTree(query, (Node *) query->jointree);
+
+	walkOnNodeTree((Node *) query->targetList, query);
+	walkOnNodeTree((Node *) query->returningList, query);
+	walkOnNodeTree((Node *) query->havingQual,  query);
+	walkOnNodeTree((Node *) query->sortClause,  query);
+	walkOnNodeTree((Node *) query->groupClause, query);
+	walkOnNodeTree((Node *) query->cteList, query);
+}
+
 List *rowaclProxyQuery(List *queryList)
 {
+	ListCell *l;
+
+	foreach (l, queryList)
+	{
+		Query *query = (Query *) lfirst(l);
+
+		Assert(IsA(query, Query));
+
+		if (query->commandType == CMD_SELECT ||
+			query->commandType == CMD_UPDATE ||
+			query->commandType == CMD_DELETE)
+			proxySubQuery(query);
+	}
+
 	return queryList;
 }
 
+/******************************************************************
+ * Row-level access controls
+ ******************************************************************/
+
 bool rowaclExecScan(Scan *scan, Relation rel, TupleTableSlot *slot)
+{
+	//elog(NOTICE, "%s: scanrelid = %u pgaceTuplePerms = %08x", __FUNCTION__, scan->scanrelid, scan->pgaceTuplePerms);
+
+	return true;
+}
+
+bool rowaclCopyToTuple(Relation rel, List *attNumList, HeapTuple tuple)
 {
 	return true;
 }
+
+void rowaclBeginPerformCheckFK(Relation rel, bool rel_is_primary, Datum *save_pgace)
+{
+
+}
+
+void rowaclEndPerformCheckFK(Relation rel, bool rel_is_primary, Datum save_pgace)
+{
+
+}
+
+/******************************************************************
+ * Check appeared Query/Sub-Query
+ ******************************************************************/
 
 bool rowaclHeapTupleInsert(Relation rel, HeapTuple tuple,
 						   bool is_internal, bool with_returning)
@@ -203,21 +340,6 @@ bool rowaclHeapTupleDelete(Relation rel, ItemPointer otid,
 	 * we don't need to do anything here.
 	 */
 	return true;
-}
-
-bool rowaclCopyToTuple(Relation rel, List *attNumList, HeapTuple tuple)
-{
-	return true;
-}
-
-void rowaclBeginPerformCheckFK(Relation rel, bool rel_is_primary, Datum *save_pgace)
-{
-
-}
-
-void rowaclEndPerformCheckFK(Relation rel, bool rel_is_primary, Datum save_pgace)
-{
-
 }
 
 /******************************************************************
