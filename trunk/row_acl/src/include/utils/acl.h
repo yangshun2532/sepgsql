@@ -274,6 +274,11 @@ extern AclResult pg_tablespace_aclcheck(Oid spc_oid, Oid roleid, AclMode mode);
 extern void aclcheck_error(AclResult aclerr, AclObjectKind objectkind,
 			   const char *objectname);
 
+extern Acl *merge_acl_with_grant(Acl *old_acl, bool is_grant,
+								 bool grant_option, DropBehavior behavior,
+								 List *grantees, AclMode privileges,
+								 Oid grantorId, Oid ownerId);
+
 /* ownercheck routines just return true (owner) or false (not) */
 extern bool pg_class_ownercheck(Oid class_oid, Oid roleid);
 extern bool pg_type_ownercheck(Oid type_oid, Oid roleid);
