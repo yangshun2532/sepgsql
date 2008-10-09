@@ -58,6 +58,10 @@ if [ ${GEN_PATCH_ONLY} -eq 0 ]; then
     mv postgresql-${BASE_VERSION} base
 fi
 
+echo "GEN: sepostgresql-row_acl-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch"
+diff -rpNU3 sepgsql row_acl				\
+    > ${RPMSOURCE}/sepostgresql-row_acl-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch
+
 echo "GEN: sepostgresql-pg_dump-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch"
 diff -rpNU3 base/src/bin sepgsql/src/bin		\
     > ${RPMSOURCE}/sepostgresql-pg_dump-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch
@@ -124,6 +128,8 @@ mv ${RPMSOURCE}/sepostgresql-docs-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch
     ${RPMSOURCE}/sepostgresql-docs-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}-r${SEPGSQL_REVISION}.patch
 mv ${RPMSOURCE}/sepostgresql-tests-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch \
     ${RPMSOURCE}/sepostgresql-tests-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}-r${SEPGSQL_REVISION}.patch
+mv ${RPMSOURCE}/sepostgresql-row_acl-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch \
+    ${RPMSOURCE}/sepostgresql-row_acl-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}-r${SEPGSQL_REVISION}.patch
 
 echo "---- LIST OF GENERATED PATCHES ----"
 echo "${RPMSOURCE}/sepostgresql-sepgsql-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}-r${SEPGSQL_REVISION}.patch"
@@ -131,6 +137,7 @@ echo "${RPMSOURCE}/sepostgresql-pg_dump-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}
 echo "${RPMSOURCE}/sepostgresql-policy-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}-r${SEPGSQL_REVISION}.patch"
 echo "${RPMSOURCE}/sepostgresql-docs-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}-r${SEPGSQL_REVISION}.patch"
 echo "${RPMSOURCE}/sepostgresql-tests-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}-r${SEPGSQL_REVISION}.patch"
+echo "${RPMSOURCE}/sepostgresql-row_acl-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}-r${SEPGSQL_REVISION}.patch"
 
 # ---- clean up
 rm -rf ${WORKDIR}
