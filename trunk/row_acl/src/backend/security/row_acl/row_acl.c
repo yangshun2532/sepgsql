@@ -19,6 +19,7 @@
 #include "utils/acl.h"
 #include "utils/array.h"
 #include "utils/fmgroids.h"
+#include "utils/lsyscache.h"
 #include "utils/syscache.h"
 
 /*
@@ -158,8 +159,26 @@ List *rowaclProxyQuery(List *queryList)
  * Row-level access controls
  ******************************************************************/
 
-
 static bool under_integrity_checking = false;
+
+static Acl *rowaclDefaultAclArray(Oid ownerId)
+{
+	Acl *acl = construct_empty_array(ACLITEMOID);
+	AclItem ai;
+	int index = 1;
+
+	ai.ai_grantee = ACL_ID_PUBLIC;
+	ai.ai_grantor = ownerId;
+	ai.ai_privs   = ACL_SELECT | ACL_UPDATE | ACL_DELETE;
+
+	return array_set(acl, 1, &index,
+					 PointerGetDatum(&ai),
+					 false,
+					 -1,
+					 12,     /* typlen of aclitem */
+					 false,  /* typbyval of aclitem */
+					 'i');   /* typalign of aclitem */
+}
 
 static bool rowaclCheckPermission(Relation rel, HeapTuple tuple, AclMode perms)
 {
@@ -169,6 +188,13 @@ static bool rowaclCheckPermission(Relation rel, HeapTuple tuple, AclMode perms)
 	char *raw_acl;
 	Acl *acl;
 
+	/*
+	 * ACL of pg_class means pre-configured default ACL
+	 * It does not used to access control
+	 */
+	if (IsSystemRelation(rel))
+		return true;
+
 	/* Superusers bypass all permission checking */
 	if (superuser_arg(userId))
 		return true;
@@ -176,9 +202,8 @@ static bool rowaclCheckPermission(Relation rel, HeapTuple tuple, AclMode perms)
 	raw_acl = pgaceLookupSecurityLabel(sid);
 	acl = rawAclTextToAclArray(raw_acl);
 
-	/* no acl allows to access anything */
 	if (!acl)
-		return true;
+		acl = rowaclDefaultAclArray(ownerId);
 
 	if (aclmask(acl, userId, ownerId, perms, ACLMASK_ANY))
 		return true;
@@ -270,7 +295,6 @@ bool rowaclHeapTupleInsert(Relation rel, HeapTuple tuple,
 		/*
 		 * Set default ACL
 		 */
-		Oid security_id;
 		HeapTuple reltup
 			= SearchSysCache(RELOID,
 							 ObjectIdGetDatum(RelationGetRelid(rel)),
@@ -279,12 +303,8 @@ bool rowaclHeapTupleInsert(Relation rel, HeapTuple tuple,
 			elog(ERROR, "cache lookup failed for relation %s",
 				 RelationGetRelationName(rel));
 
-		security_id = HeapTupleGetSecurity(reltup);
-		HeapTupleSetSecurity(tuple, security_id);
-		/*
-		 * Note: Relation can have no default ACL (= InvalidOid).
-		 * In this case, no ACLs are assigned to tuple.
-		 */
+		HeapTupleSetSecurity(tuple, HeapTupleGetSecurity(reltup));
+
 		ReleaseSysCache(reltup);
 	}
 
@@ -430,7 +450,6 @@ void rowaclGramAlterRelation(Relation rel, HeapTuple tuple, DefElem *defel)
 /******************************************************************
  * Security Label interfaces
  ******************************************************************/
-
 static Acl *rawAclTextToAclArray(char *raw_acl)
 {
 	Acl *acl = NULL;
@@ -487,17 +506,15 @@ static char *rawAclTextFromAclArray(Acl *acl)
 
 	check_acl(acl);
 
-	raw_acl = palloc0(aclnum * 30);
+	raw_acl = palloc(aclnum * 30);	/* needed enough */
 
 	for (index = 1; index <= ARR_DIMS(acl)[0]; index++)
 	{
-		Datum tmp = array_ref(acl, 1, &index, -1,
-							  12,		/* typlen of aclitem */
-							  false,	/* typbyval of aclitem */
-							  'i',		/* typalign of aclitem */
-							  &isnull);
-		aip = DatumGetAclItemP(tmp);
-
+		aip = DatumGetAclItemP(array_ref(acl, 1, &index, -1,
+										 12,		/* typlen of aclitem */
+										 false,		/* typbyval of aclitem */
+										 'i',		/* typalign of aclitem */
+										 &isnull));
 		if ((aip->ai_privs & mask) != aip->ai_privs)
 			ereport(ERROR,
 					(errcode(ERRCODE_ROW_ACL_ERROR),
@@ -535,7 +552,7 @@ char *rowaclTranslateSecurityLabelOut(char *acl_string)
 
 	acl = rawAclTextToAclArray(acl_string);
 	if (!acl)
-		return pstrdup("{}");
+		return pstrdup("");
 
 	fmgr_info_cxt(F_ARRAY_OUT, &finfo, CurrentMemoryContext);
 	tmp = FunctionCall3(&finfo,
@@ -622,11 +639,18 @@ static Datum rowacl_grant_revoke(PG_FUNCTION_ARGS, bool grant, bool cascade)
 	 * Extract Acl array
 	 */
 	tmp = TextDatumGetCString(PG_GETARG_TEXT_P(1));
-	fmgr_info_cxt(F_ARRAY_IN, &fmgrInfo, CurrentMemoryContext);
-	acl = DatumGetAclP(FunctionCall3(&fmgrInfo,
-									 CStringGetDatum(tmp),
-									 ObjectIdGetDatum(ACLITEMOID),
-									 Int32GetDatum(-1)));
+	if (tmp[0] == '\0')
+	{
+		acl = rowaclDefaultAclArray(ownerId);
+	}
+	else
+	{
+		fmgr_info_cxt(F_ARRAY_IN, &fmgrInfo, CurrentMemoryContext);
+		acl = DatumGetAclP(FunctionCall3(&fmgrInfo,
+										 CStringGetDatum(tmp),
+										 ObjectIdGetDatum(ACLITEMOID),
+										 Int32GetDatum(-1)));
+	}
 	/*
 	 * Extract usernames
 	 */
