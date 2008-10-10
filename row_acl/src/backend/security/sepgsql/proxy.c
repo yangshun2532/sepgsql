@@ -452,15 +452,13 @@ sepgsqlExprWalker(Node *node, sepgsqlWalkerContext *swc)
 			walkOpExprHelper(swc, ((ScalarArrayOpExpr *) node)->opno);
 			break;
 
-		case T_SubLink:
-			{
-				SubLink    *slink = (SubLink *) node;
+		case T_Query:
+			/*
+			 * Subquery within SubLink or CommonTableExpr
+			 */
+			proxyRteSubQuery(swc, (Query *) node);
+			break;
 
-				Assert(IsA(slink->subselect, Query));
-
-				proxyRteSubQuery(swc, (Query *) slink->subselect);
-				break;
-			}
 		case T_ArrayCoerceExpr:
 			{
 				ArrayCoerceExpr *ace = (ArrayCoerceExpr *) node;
@@ -521,55 +519,6 @@ sepgsqlExprWalkerFlags(Node *node, sepgsqlWalkerContext *swc, bool is_internal_u
 }
 
 /*
- * checkSelectFromExpr
- *
- * It appends SEvalItem of any relation within FROM clause into
- * selist recursively.
- *
- */
-static void
-checkSelectFromExpr(sepgsqlWalkerContext *swc, Query *query, Node *node)
-{
-	if (node == NULL)
-		return;
-
-	switch (nodeTag(node))
-	{
-		case T_RangeTblRef:
-			{
-				RangeTblRef *rtr = (RangeTblRef *) node;
-
-				RangeTblEntry *rte = rt_fetch(rtr->rtindex, query->rtable);
-
-				if (rte->rtekind == RTE_RELATION)
-					swc->selist =
-						addEvalRelationRTE(swc->selist, rte, DB_TABLE__SELECT);
-				break;
-			}
-		case T_JoinExpr:
-			{
-				JoinExpr   *j = (JoinExpr *) node;
-
-				checkSelectFromExpr(swc, query, j->larg);
-				checkSelectFromExpr(swc, query, j->rarg);
-				break;
-			}
-		case T_FromExpr:
-			{
-				FromExpr   *f = (FromExpr *) node;
-				ListCell   *l;
-
-				foreach(l, f->fromlist)
-					checkSelectFromExpr(swc, query, lfirst(l));
-				break;
-			}
-		default:
-			elog(ERROR, "SELinux: unexpected node type (%d) on fromlist",
-				 nodeTag(node));
-	}
-}
-
-/*
  * proxyJoinTree
  *
  * It appends SEvalItem of WHERE/JOIN ON clause, nodes in VALUE
@@ -584,58 +533,59 @@ proxyJoinTree(sepgsqlWalkerContext *swc, Node *node)
 	if (node == NULL)
 		return;
 
-	switch (nodeTag(node))
+	if (IsA(node, RangeTblRef))
 	{
-		case T_RangeTblRef:
+		RangeTblRef *rtr = (RangeTblRef *) node;
+		RangeTblEntry *rte = rt_fetch(rtr->rtindex, query->rtable);
+
+		Assert(IsA(rte, RangeTblEntry));
+
+		switch (rte->rtekind)
+		{
+		case RTE_RELATION:
+			if (rtr->rtindex != query->resultRelation)
 			{
-				RangeTblRef *rtr = (RangeTblRef *) node;
-				RangeTblEntry *rte = rt_fetch(rtr->rtindex, query->rtable);
-
-				Assert(IsA(rte, RangeTblEntry));
-
-				switch (rte->rtekind)
-				{
-					case RTE_SUBQUERY:
-						proxyRteSubQuery(swc, rte->subquery);
-						break;
-
-					case RTE_FUNCTION:
-						sepgsqlExprWalkerFlags(rte->funcexpr, swc, false);
-						break;
-
-					case RTE_VALUES:
-						sepgsqlExprWalkerFlags((Node *) rte->values_lists, swc,
-											   false);
-						break;
-
-					default:
-						break;
-				}
-				break;
+				swc->selist = addEvalRelationRTE(swc->selist, rte,
+												 DB_TABLE__SELECT);
 			}
-		case T_FromExpr:
-			{
-				FromExpr   *f = (FromExpr *) node;
-				ListCell   *l;
-
-				sepgsqlExprWalkerFlags(f->quals, swc, true);
-				foreach(l, f->fromlist) proxyJoinTree(swc, lfirst(l));
-				break;
-			}
-		case T_JoinExpr:
-			{
-				JoinExpr   *j = (JoinExpr *) node;
-
-				sepgsqlExprWalkerFlags(j->quals, swc, true);
-				proxyJoinTree(swc, j->larg);
-				proxyJoinTree(swc, j->rarg);
-
-				break;
-			}
-		default:
-			elog(ERROR, "SELinux: unexpected node type (%d) at jointree",
-				 nodeTag(node));
 			break;
+
+		case RTE_SUBQUERY:
+			proxyRteSubQuery(swc, rte->subquery);
+			break;
+
+		case RTE_FUNCTION:
+			sepgsqlExprWalkerFlags(rte->funcexpr, swc, false);
+			break;
+
+		case RTE_VALUES:
+			sepgsqlExprWalkerFlags((Node *) rte->values_lists, swc, false);
+			break;
+
+		default:
+			break;
+		}
+	}
+	else if (IsA(node, FromExpr))
+	{
+		FromExpr *from = (FromExpr *) node;
+		ListCell *l;
+
+		sepgsqlExprWalkerFlags(from->quals, swc, true);
+		foreach(l, from->fromlist)
+			proxyJoinTree(swc, lfirst(l));
+	}
+	else if (IsA(node, JoinExpr))
+	{
+		JoinExpr *join = (JoinExpr *) node;
+
+		sepgsqlExprWalkerFlags(join->quals, swc, true);
+		proxyJoinTree(swc, join->larg);
+		proxyJoinTree(swc, join->rarg);
+	}
+	else
+	{
+		elog(ERROR, "SELinux: unexpected node type (%d)", nodeTag(node));
 	}
 }
 
@@ -654,31 +604,25 @@ proxySetOperations(sepgsqlWalkerContext *swc, Node *node)
 	if (node == NULL)
 		return;
 
-	switch (nodeTag(node))
+	if (IsA(node, RangeTblRef))
 	{
-		case T_RangeTblRef:
-			{
-				RangeTblRef *rtr = (RangeTblRef *) node;
-				RangeTblEntry *rte = rt_fetch(rtr->rtindex, query->rtable);
+		RangeTblRef *rtr = (RangeTblRef *) node;
+		RangeTblEntry *rte = rt_fetch(rtr->rtindex, query->rtable);
 
-				Assert(IsA(rte, RangeTblEntry)
-					   && rte->rtekind == RTE_SUBQUERY);
-				proxyRteSubQuery(swc, rte->subquery);
+		Assert(IsA(rte, RangeTblEntry)
+			   && rte->rtekind == RTE_SUBQUERY);
+		proxyRteSubQuery(swc, rte->subquery);
+	}
+	else if (IsA(node, SetOperationStmt))
+	{
+		SetOperationStmt *sop = (SetOperationStmt *) node;
 
-				break;
-			}
-		case T_SetOperationStmt:
-			{
-				SetOperationStmt *sop = (SetOperationStmt *) node;
-
-				proxySetOperations(swc, sop->larg);
-				proxySetOperations(swc, sop->rarg);
-				break;
-			}
-		default:
-			elog(ERROR, "SELinux enexpected node (%d) in setOperations tree",
-				 nodeTag(node));
-			break;
+		proxySetOperations(swc, sop->larg);
+		proxySetOperations(swc, sop->rarg);
+	}
+	else
+	{
+		elog(ERROR, "SELinux: unexpected node (%d)", nodeTag(node));
 	}
 }
 
@@ -710,113 +654,65 @@ proxyRteSubQuery(sepgsqlWalkerContext *swc, Query *query)
 	qsData.query = query;
 	swc->qstack = &qsData;
 
-	switch (cmdType)
+	if (cmdType != CMD_DELETE)
 	{
-		case CMD_SELECT:
-			/*
-			 * add db_table:{select} for any relation in FROM clause
-			 */
-			checkSelectFromExpr(swc, query, (Node *) query->jointree);
+		foreach(l, query->targetList)
+		{
+			TargetEntry *tle = lfirst(l);
+			bool is_security = false;
 
-		case CMD_UPDATE:
-		case CMD_INSERT:
-			foreach(l, query->targetList)
+			Assert(IsA(tle, TargetEntry));
+
+			if (tle->resjunk &&
+				tle->resname &&
+				strcmp(tle->resname, SECURITY_SYSATTR_NAME) == 0)
+				is_security = true;
+
+			/*
+			 * contents of junk target is not exposed to users,
+			 * so it should be evaluated as "use" permission.
+			 */
+			if (tle->resjunk && !is_security)
 			{
-				TargetEntry *tle = lfirst(l);
-				bool		is_security_attr = false;
-
-				Assert(IsA(tle, TargetEntry));
-
-				if (tle->resjunk && tle->resname &&
-					strcmp(tle->resname, SECURITY_SYSATTR_NAME) == 0)
-					is_security_attr = true;
-
-				/*
-				 * Result set of junk target entries are not shown
-				 * to users, so it is evaluated with "use" permission.
-				 */
-				if (tle->resjunk && !is_security_attr)
-				{
-					sepgsqlExprWalkerFlags((Node *) tle->expr, swc, true);
-					continue;
-				}
-
-				sepgsqlExprWalkerFlags((Node *) tle->expr, swc, false);
-
-				if (cmdType == CMD_UPDATE || cmdType == CMD_INSERT)
-				{
-					/*
-					 * Add SEvalItem for the target of INSERT/UPDATE
-					 */
-					AttrNumber attno
-						= is_security_attr
-							? SecurityAttributeNumber : tle->resno;
-					uint32 perms
-						= cmdType == CMD_UPDATE
-							? DB_COLUMN__UPDATE : DB_COLUMN__INSERT;
-
-					rte = rt_fetch(query->resultRelation, query->rtable);
-					Assert(IsA(rte, RangeTblEntry)
-						   && rte->rtekind == RTE_RELATION);
-
-					swc->selist
-						= addEvalAttributeRTE(swc->selist, rte, attno, perms);
-				}
+				sepgsqlExprWalkerFlags((Node *) tle->expr, swc, true);
+				continue;
 			}
-			break;
 
-		case CMD_DELETE:
-			/*
-			 * NOTE:
-			 * column level checks are not applied on DELETE.
-			 */
-			rte = rt_fetch(query->resultRelation, query->rtable);
-			Assert(IsA(rte, RangeTblEntry) && rte->rtekind == RTE_RELATION);
+			sepgsqlExprWalkerFlags((Node *) tle->expr, swc, false);
 
-			swc->selist = addEvalRelationRTE(swc->selist, rte,
-											 DB_TABLE__DELETE);
-			break;
+			if (cmdType != CMD_SELECT)
+			{
+				AttrNumber attno
+					= (is_security ? SecurityAttributeNumber : tle->resno);
+				uint32 perms
+					= (cmdType == CMD_UPDATE ? DB_COLUMN__UPDATE : DB_COLUMN__INSERT);
 
-		default:
-			elog(ERROR, "SELinux: unexpected cmdType = %d", cmdType);
-			break;
+				rte = rt_fetch(query->resultRelation, query->rtable);
+				Assert(IsA(rte, RangeTblEntry));
+
+				swc->selist = addEvalAttributeRTE(swc->selist, rte, attno, perms);
+			}
+		}
 	}
-
-	/*
-	 * RETURNING clause requires "select" permission
-	 */
-	foreach(l, query->returningList)
+	else
 	{
-		TargetEntry *te = lfirst(l);
+		/*
+		 * NOTE: column level checks are not necessary for normal DELETE
+		 */
+		rte = rt_fetch(query->resultRelation, query->rtable);
+		Assert(IsA(rte, RangeTblEntry));
 
-		Assert(IsA(te, TargetEntry));
-
-		sepgsqlExprWalkerFlags((Node *) te->expr, swc, false);
+		swc->selist = addEvalRelationRTE(swc->selist, rte, DB_TABLE__DELETE);
 	}
-	/*
-	 * WHERE/JOIN ... ON/HAVING/ORDER BY/GROUP BY ... clause
-	 * to apply "use" permission
-	 */
+
 	proxyJoinTree(swc, (Node *) query->jointree);
-	sepgsqlExprWalkerFlags(query->havingQual, swc, true);
+
+	sepgsqlExprWalkerFlags((Node *) query->returningList, swc, false);
+	sepgsqlExprWalkerFlags((Node *) query->havingQual, swc, true);
 	sepgsqlExprWalkerFlags((Node *) query->sortClause, swc, true);
 	sepgsqlExprWalkerFlags((Node *) query->groupClause, swc, true);
+	sepgsqlExprWalkerFlags((Node *) query->cteList, swc, true);
 
-	/*
-	 * Check WITH (RECURSIVE) clause
-	 */
-	foreach(l, query->cteList)
-	{
-		CommonTableExpr *cte = lfirst(l);
-
-		Assert(IsA(cte, CommonTableExpr));
-		Assert(IsA(cte->ctequery, Query));
-		proxyRteSubQuery(swc, cte->ctequery);
-	}
-
-	/*
-	 * permission mark on the UNION/INTERSECT/EXCEPT
-	 */
 	proxySetOperations(swc, query->setOperations);
 
 	/*
