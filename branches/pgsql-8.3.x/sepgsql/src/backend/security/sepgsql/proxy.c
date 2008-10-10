@@ -17,11 +17,13 @@
 #include "catalog/namespace.h"
 #include "catalog/pg_attribute.h"
 #include "catalog/pg_class.h"
+#include "catalog/pg_constraint.h"
 #include "catalog/pg_database.h"
 #include "catalog/pg_largeobject.h"
 #include "catalog/pg_operator.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_trigger.h"
+#include "catalog/pg_type.h"
 #include "executor/executor.h"
 #include "nodes/security.h"
 #include "optimizer/clauses.h"
@@ -31,6 +33,7 @@
 #include "parser/parsetree.h"
 #include "security/pgace.h"
 #include "storage/lock.h"
+#include "utils/array.h"
 #include "utils/fmgroids.h"
 #include "utils/syscache.h"
 #include "utils/tqual.h"
@@ -246,6 +249,79 @@ addEvalPgProc(List *selist, Oid funcid, uint32 perms)
 }
 
 /*
+ * addEvalForeignKeyConstraint
+ *
+ * This function add special case handling for PK/FK constraints.
+ * invoke trigger function requires to access rights for all attribute
+ *
+ */
+static bool
+triggerIsForeignKeyConstraint(Form_pg_trigger trigger)
+{
+	switch (trigger->tgfoid)
+	{
+	case F_RI_FKEY_CHECK_INS:
+	case F_RI_FKEY_CHECK_UPD:
+	case F_RI_FKEY_CASCADE_DEL:
+	case F_RI_FKEY_CASCADE_UPD:
+	case F_RI_FKEY_RESTRICT_DEL:
+	case F_RI_FKEY_RESTRICT_UPD:
+	case F_RI_FKEY_SETNULL_DEL:
+	case F_RI_FKEY_SETNULL_UPD:
+	case F_RI_FKEY_SETDEFAULT_DEL:
+	case F_RI_FKEY_SETDEFAULT_UPD:
+	case F_RI_FKEY_NOACTION_DEL:
+	case F_RI_FKEY_NOACTION_UPD:
+		return true;
+	}
+	return false;
+}
+
+static List *
+addEvalForeignKeyConstraint(List *selist, Form_pg_trigger trigger)
+{
+	HeapTuple contup;
+	Datum attdat;
+	ArrayType *attrs;
+	int index;
+	int16 *attnum;
+	bool isnull;
+
+	contup = SearchSysCache(CONSTROID,
+							ObjectIdGetDatum(trigger->tgconstraint),
+							0, 0, 0);
+	if (!HeapTupleIsValid(contup))
+		elog(ERROR, "SELinux: cache lookup failed for constraint %u",
+			 trigger->tgconstrrelid);
+
+	if (trigger->tgfoid == F_RI_FKEY_CHECK_INS ||
+		trigger->tgfoid == F_RI_FKEY_CHECK_UPD)
+		attdat = SysCacheGetAttr(CONSTROID, contup,
+								 Anum_pg_constraint_conkey, &isnull);
+	else
+		attdat = SysCacheGetAttr(CONSTROID, contup,
+								 Anum_pg_constraint_confkey, &isnull);
+	if (isnull)
+		elog(ERROR, "null PK/FK for constraint %u",
+			 trigger->tgconstrrelid);
+	attrs = DatumGetArrayTypeP(attdat);
+
+	if (ARR_NDIM(attrs) != 1 ||
+		ARR_HASNULL(attrs) ||
+		ARR_ELEMTYPE(attrs) != INT2OID)
+		elog(ERROR, "SELinux: unexpected constraint %u", trigger->tgconstrrelid);
+
+	attnum = (int16 *) ARR_DATA_PTR(attrs);
+	for (index = 0; index < ARR_DIMS(attrs)[0]; index++)
+		selist = addEvalAttribute(selist, trigger->tgrelid, false,
+								  attnum[index], DB_COLUMN__SELECT);
+
+	ReleaseSysCache(contup);
+
+	return selist;
+}
+
+/*
  * addEvalTriggerAccess
  *
  * This function adds needed items into selist, to execute a trigger
@@ -303,20 +379,17 @@ addEvalTriggerAccess(List *selist, Oid relid, bool is_inh, int cmdType)
 		{
 			HeapTuple	reltup;
 			Form_pg_class classForm;
-			AttrNumber	attnum;
 
 			reltup = SearchSysCache(RELOID, ObjectIdGetDatum(relid), 0, 0, 0);
 			classForm = (Form_pg_class) GETSTRUCT(reltup);
 
 			selist = addEvalRelation(selist, relid, false, DB_TABLE__SELECT);
-			for (attnum = FirstLowInvalidHeapAttributeNumber + 1; attnum <= 0; attnum++)
-			{
-				if (attnum == ObjectIdAttributeNumber
-					&& !classForm->relhasoids)
-					continue;
-				selist = addEvalAttribute(selist, relid, false, attnum,
-										  DB_COLUMN__SELECT);
-			}
+
+			if (triggerIsForeignKeyConstraint(trigForm))
+				selist = addEvalForeignKeyConstraint(selist, trigForm);
+			else
+				selist = addEvalAttribute(selist, relid, false,
+										  0, DB_COLUMN__SELECT);
 			ReleaseSysCache(reltup);
 
 			checked = true;
