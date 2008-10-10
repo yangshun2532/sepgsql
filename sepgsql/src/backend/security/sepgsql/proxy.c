@@ -519,55 +519,6 @@ sepgsqlExprWalkerFlags(Node *node, sepgsqlWalkerContext *swc, bool is_internal_u
 }
 
 /*
- * checkSelectFromExpr
- *
- * It appends SEvalItem of any relation within FROM clause into
- * selist recursively.
- *
- */
-static void
-checkSelectFromExpr(sepgsqlWalkerContext *swc, Query *query, Node *node)
-{
-	if (node == NULL)
-		return;
-
-	switch (nodeTag(node))
-	{
-		case T_RangeTblRef:
-			{
-				RangeTblRef *rtr = (RangeTblRef *) node;
-
-				RangeTblEntry *rte = rt_fetch(rtr->rtindex, query->rtable);
-
-				if (rte->rtekind == RTE_RELATION)
-					swc->selist =
-						addEvalRelationRTE(swc->selist, rte, DB_TABLE__SELECT);
-				break;
-			}
-		case T_JoinExpr:
-			{
-				JoinExpr   *j = (JoinExpr *) node;
-
-				checkSelectFromExpr(swc, query, j->larg);
-				checkSelectFromExpr(swc, query, j->rarg);
-				break;
-			}
-		case T_FromExpr:
-			{
-				FromExpr   *f = (FromExpr *) node;
-				ListCell   *l;
-
-				foreach(l, f->fromlist)
-					checkSelectFromExpr(swc, query, lfirst(l));
-				break;
-			}
-		default:
-			elog(ERROR, "SELinux: unexpected node type (%d) on fromlist",
-				 nodeTag(node));
-	}
-}
-
-/*
  * proxyJoinTree
  *
  * It appends SEvalItem of WHERE/JOIN ON clause, nodes in VALUE
