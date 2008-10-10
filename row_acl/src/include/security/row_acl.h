@@ -66,10 +66,10 @@ extern char *rowaclSecurityLabelOfLabel(void);
  * SQL functions
  ******************************************************************/
 
-extern Datum row_acl_grant(PG_FUNCTION_ARGS);
+extern Datum rowacl_grant(PG_FUNCTION_ARGS);
 
-extern Datum row_acl_revoke(PG_FUNCTION_ARGS);
+extern Datum rowacl_revoke(PG_FUNCTION_ARGS);
 
-extern Datum row_acl_revoke_cascade(PG_FUNCTION_ARGS);
+extern Datum rowacl_revoke_cascade(PG_FUNCTION_ARGS);
 
 #endif	/* ROW_ACL_H */
