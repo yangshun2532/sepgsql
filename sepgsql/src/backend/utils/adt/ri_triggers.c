@@ -3343,7 +3343,7 @@ ri_PerformCheck(RI_QueryKey *qkey, SPIPlanPtr qplan,
 	GetUserIdAndContext(&save_userid, &save_secdefcxt);
 	SetUserIdAndContext(RelationGetForm(query_rel)->relowner, true);
 
-	pgaceBeginPerformCheckFK(query_rel, query_rel == pk_rel, &save_pgace);
+	save_pgace = pgaceBeginPerformCheckFK(query_rel, query_rel == pk_rel, save_userid);
 	PG_TRY();
 	{
 		/* Finally we can run the query. */
@@ -3354,11 +3354,11 @@ ri_PerformCheck(RI_QueryKey *qkey, SPIPlanPtr qplan,
 	}
 	PG_CATCH();
 	{
-		pgaceEndPerformCheckFK(query_rel, query_rel == pk_rel, save_pgace);
+		pgaceEndPerformCheckFK(query_rel, save_pgace);
 		PG_RE_THROW();
 	}
 	PG_END_TRY();
-	pgaceEndPerformCheckFK(query_rel, query_rel == pk_rel, save_pgace);
+	pgaceEndPerformCheckFK(query_rel, save_pgace);
 
 	/* Restore UID */
 	SetUserIdAndContext(save_userid, save_secdefcxt);

@@ -781,16 +781,17 @@ pgaceCallFunctionFastPath(FmgrInfo *finfo)
  * The guest can change its internal state during the checks.
  * The major purpose of this function is to prevent violation of
  * integrity consistentency violation due to row-level access control.
- * If the guest requires an opaque data, save_pgace can be used
- * to store it.
+ * If the guest requires an opaque data, it should be returned then
+ * it will be delivered via pgaceEndPerformCheckFK().
  */
-static inline void
-pgaceBeginPerformCheckFK(Relation rel, bool rel_is_primary, Datum *save_pgace)
+static inline Datum
+pgaceBeginPerformCheckFK(Relation rel, bool is_primary, Oid save_userid)
 {
 #if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
-		sepgsqlBeginPerformCheckFK(rel, rel_is_primary, save_pgace);
+		return sepgsqlBeginPerformCheckFK(rel, is_primary, save_userid);
 #endif
+	return PointerGetDatum(NULL);
 }
 
 /*
@@ -800,11 +801,11 @@ pgaceBeginPerformCheckFK(Relation rel, bool rel_is_primary, Datum *save_pgace)
  * The guest can restore its internal state using this hook.
  */
 static inline void
-pgaceEndPerformCheckFK(Relation rel, bool rel_is_primary, Datum save_pgace)
+pgaceEndPerformCheckFK(Relation rel, Datum save_pgace)
 {
 #if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
-		sepgsqlEndPerformCheckFK(rel, rel_is_primary, save_pgace);
+		sepgsqlEndPerformCheckFK(rel, save_pgace);
 #endif
 }
 
