@@ -26,11 +26,9 @@ extern bool rowaclHeapTupleDelete(Relation rel, ItemPointer otid,
 
 extern bool rowaclCopyToTuple(Relation rel, List *attNumList, HeapTuple tuple);
 
-extern void rowaclBeginPerformCheckFK(Relation rel, bool rel_is_primary,
-				      Datum *save_pgace);
+extern Datum rowaclBeginPerformCheckFK(Relation rel, bool is_primary, Oid save_userid);
 
-extern void rowaclEndPerformCheckFK(Relation rel, bool rel_is_primary,
-				    Datum save_pgace);
+extern void rowaclEndPerformCheckFK(Relation rel, Datum save_pgace);
 
 /******************************************************************
  * Default ACL support

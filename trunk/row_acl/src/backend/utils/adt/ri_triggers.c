@@ -3343,7 +3343,7 @@ ri_PerformCheck(RI_QueryKey *qkey, SPIPlanPtr qplan,
 	GetUserIdAndContext(&save_userid, &save_secdefcxt);
 	SetUserIdAndContext(RelationGetForm(query_rel)->relowner, true);
 
-	save_pgace = pgaceBeginPerformCheckFK(query_rel, query_rel == pk_rel, save_userid);
+	save_pgace = pgaceBeginPerformCheckFK(query_rel, detectNewRows, save_userid);
 	PG_TRY();
 	{
 		/* Finally we can run the query. */

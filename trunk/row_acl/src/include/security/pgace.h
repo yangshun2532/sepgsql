@@ -838,6 +838,9 @@ pgaceBeginPerformCheckFK(Relation rel, bool is_primary, Oid save_userid)
 #if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
 		return sepgsqlBeginPerformCheckFK(rel, is_primary, save_userid);
+#elif defined(HAVE_ROW_ACL)
+	if (rowaclIsEnabled())
+		rowaclBeginPerformCheckFK(rel, is_primary, save_userid);
 #endif
 	return PointerGetDatum(NULL);
 }
@@ -854,6 +857,9 @@ pgaceEndPerformCheckFK(Relation rel, Datum save_pgace)
 #if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
 		sepgsqlEndPerformCheckFK(rel, save_pgace);
+#elif defined(HAVE_ROW_ACL)
+	if (rowaclIsEnabled())
+		rowaclEndPerformCheckFK(rel, save_pgace);
 #endif
 }
 

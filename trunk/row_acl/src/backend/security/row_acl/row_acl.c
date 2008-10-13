@@ -159,25 +159,79 @@ List *rowaclProxyQuery(List *queryList)
  * Row-level access controls
  ******************************************************************/
 
-static bool under_integrity_checking = false;
-
-static Acl *rowaclDefaultAclArray(Oid ownerId)
+static Acl *rowaclDefaultAclArray(Oid relid)
 {
-	Acl *acl = construct_empty_array(ACLITEMOID);
-	AclItem ai;
-	int index = 1;
+	HeapTuple tuple;
+	Form_pg_class classForm;
+	Oid ownerId;
+	Datum aclDatum;
+	bool isnull;
+	Acl *acl;
+	AclItem *aidat;
+	int i;
 
-	ai.ai_grantee = ACL_ID_PUBLIC;
-	ai.ai_grantor = ownerId;
-	ai.ai_privs   = ACL_SELECT | ACL_UPDATE | ACL_DELETE;
+	/*
+	 * Get owner Id
+	 */
+	tuple = SearchSysCache(RELOID,
+						   ObjectIdGetDatum(relid),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		ereport(ERROR,
+				(errcode(ERRCODE_ROW_ACL_ERROR),
+				 errmsg("cache lookup failed for relation: %u", relid)));
+	classForm = (Form_pg_class) GETSTRUCT(tuple);
+	ownerId = classForm->relowner;
 
-	return array_set(acl, 1, &index,
-					 PointerGetDatum(&ai),
-					 false,
-					 -1,
-					 12,     /* typlen of aclitem */
-					 false,  /* typbyval of aclitem */
-					 'i');   /* typalign of aclitem */
+	aclDatum = SysCacheGetAttr(RELOID, tuple,
+							   Anum_pg_class_relacl, &isnull);
+	if (isnull)
+	{
+		acl = acldefault(classForm->relkind == RELKIND_SEQUENCE ?
+						 ACL_OBJECT_SEQUENCE : ACL_OBJECT_RELATION,
+						 ownerId);
+	}
+	else
+	{
+		acl = DatumGetAclPCopy(aclDatum);
+	}
+
+	ReleaseSysCache(tuple);
+
+	/*
+	 * Mask unsupported privileges
+	 */
+	aidat = ACL_DAT(acl);
+	for (i = 0; i < ACL_NUM(acl); i++)
+	{
+		aidat[i].ai_privs &= (ACL_SELECT | ACL_UPDATE | ACL_DELETE);
+	}
+
+	return acl;
+}
+
+struct rowaclUserInfoType {
+	Oid userId;
+	bool abort_on_error;
+};
+struct rowaclUserInfoType *rowaclUserInfo = NULL;
+
+Datum rowaclBeginPerformCheckFK(Relation rel, bool is_primary, Oid save_userid)
+{
+	Datum save_pgace = PointerGetDatum(rowaclUserInfo);
+	struct rowaclUserInfoType *uinfo
+		= palloc0(sizeof(struct rowaclUserInfoType));
+	uinfo->userId = (!rowaclUserInfo ? save_userid : rowaclUserInfo->userId);
+	uinfo->abort_on_error = is_primary;
+
+	rowaclUserInfo = uinfo;
+
+	return save_pgace;
+}
+
+void rowaclEndPerformCheckFK(Relation rel, Datum save_pgace)
+{
+	rowaclUserInfo = DatumGetPointer(save_pgace);
 }
 
 static bool rowaclCheckPermission(Relation rel, HeapTuple tuple, AclMode perms)
@@ -188,6 +242,8 @@ static bool rowaclCheckPermission(Relation rel, HeapTuple tuple, AclMode perms)
 	char *raw_acl;
 	Acl *acl;
 
+	if (rowaclUserInfo)
+		userId = rowaclUserInfo->userId;
 	/*
 	 * ACL of pg_class means pre-configured default ACL
 	 * It does not used to access control
@@ -199,14 +255,23 @@ static bool rowaclCheckPermission(Relation rel, HeapTuple tuple, AclMode perms)
 	if (superuser_arg(userId))
 		return true;
 
+	/*
+	 * TODO: looking up hash table with {userId, sid} to boost
+	 * row-level ACL checks
+	 */
 	raw_acl = pgaceLookupSecurityLabel(sid);
 	acl = rawAclTextToAclArray(raw_acl);
 
 	if (!acl)
-		acl = rowaclDefaultAclArray(ownerId);
+		acl = rowaclDefaultAclArray(RelationGetRelid(rel));
 
-	if (aclmask(acl, userId, ownerId, perms, ACLMASK_ANY))
+	if (aclmask(acl, userId, ownerId, perms, ACLMASK_ALL) == perms)
 		return true;
+
+	if (rowaclUserInfo && rowaclUserInfo->abort_on_error)
+		ereport(ERROR,
+				(errcode(ERRCODE_ROW_ACL_ERROR),
+				 errmsg("access violation in row-level acl")));
 
 	return false;
 }
@@ -224,22 +289,6 @@ bool rowaclExecScan(Scan *scan, Relation rel, TupleTableSlot *slot)
 bool rowaclCopyToTuple(Relation rel, List *attNumList, HeapTuple tuple)
 {
 	return rowaclCheckPermission(rel, tuple, ACL_SELECT);
-}
-
-void rowaclBeginPerformCheckFK(Relation rel, bool is_primary, Datum *save_pgace)
-{
-	if (is_primary)
-		return;
-	*save_pgace = BoolGetDatum(under_integrity_checking);
-	under_integrity_checking = true;
-}
-
-void rowaclEndPerformCheckFK(Relation rel, bool is_primary, Datum save_pgace)
-{
-	if (is_primary)
-		return;
-
-	under_integrity_checking = DatumGetBool(save_pgace);
 }
 
 /******************************************************************
@@ -494,13 +543,12 @@ static char *rawAclTextFromAclArray(Acl *acl)
 	AclItem *aip;
 	AclMode mask = (ACL_SELECT | ACL_UPDATE | ACL_DELETE);
 	char *raw_acl;
-	int index, aclnum, ofs = 0;
-	bool isnull;
+	int i, aclnum, ofs = 0;
 
 	if (!acl)
 		return pstrdup(ROW_ACL_EMPTY_STRING);
 
-	aclnum = ArrayGetNItems(ARR_NDIM(acl), ARR_DIMS(acl));
+	aclnum = ACL_NUM(acl);
 	if (aclnum == 0)
 		return pstrdup(ROW_ACL_EMPTY_STRING);
 
@@ -508,24 +556,20 @@ static char *rawAclTextFromAclArray(Acl *acl)
 
 	raw_acl = palloc(aclnum * 30);	/* needed enough */
 
-	for (index = 1; index <= ARR_DIMS(acl)[0]; index++)
+	aip = ACL_DAT(acl);
+	for (i = 0; i < aclnum; i++)
 	{
-		aip = DatumGetAclItemP(array_ref(acl, 1, &index, -1,
-										 12,		/* typlen of aclitem */
-										 false,		/* typbyval of aclitem */
-										 'i',		/* typalign of aclitem */
-										 &isnull));
-		if ((aip->ai_privs & mask) != aip->ai_privs)
+		if ((aip[i].ai_privs & mask) != aip[i].ai_privs)
 			ereport(ERROR,
 					(errcode(ERRCODE_ROW_ACL_ERROR),
-					 errmsg("unsupported ACL: %04x", aip->ai_privs & ~mask)));
+					 errmsg("unsupported ACL: %04x", aip[i].ai_privs & ~mask)));
 
 		ofs += sprintf(raw_acl + ofs,
 					   "%s%x:%x:%x",
 					   (ofs == 0 ? "" : ","),
-					   aip->ai_grantee,
-					   aip->ai_grantor,
-					   aip->ai_privs);
+					   aip[i].ai_grantee,
+					   aip[i].ai_grantor,
+					   aip[i].ai_privs);
 	}
 
 	return raw_acl;
@@ -616,24 +660,10 @@ static Datum rowacl_grant_revoke(PG_FUNCTION_ARGS, bool grant, bool cascade)
 {
 	FmgrInfo fmgrInfo;
 	char *tmp, *tok;
-	HeapTuple tuple;
 	Oid ownerId;
 	Acl *acl;
 	List *grantees = NIL;
 	AclMode privileges = 0;
-
-	/*
-	 * Get owner Id
-	 */
-	tuple = SearchSysCache(RELOID, PG_GETARG_DATUM(0), 0, 0, 0);
-	if (!HeapTupleIsValid(tuple))
-		ereport(ERROR,
-				(errcode(ERRCODE_ROW_ACL_ERROR),
-				 errmsg("cache lookup failed for relation: %u",
-						PG_GETARG_OID(0))));
-	ownerId = ((Form_pg_class) GETSTRUCT(tuple))->relowner;
-
-	ReleaseSysCache(tuple);
 
 	/*
 	 * Extract Acl array
@@ -641,7 +671,10 @@ static Datum rowacl_grant_revoke(PG_FUNCTION_ARGS, bool grant, bool cascade)
 	tmp = TextDatumGetCString(PG_GETARG_TEXT_P(1));
 	if (tmp[0] == '\0')
 	{
-		acl = rowaclDefaultAclArray(ownerId);
+		/*
+		 * Default ACL is same as table acl
+		 */
+		acl = rowaclDefaultAclArray(PG_GETARG_OID(0));
 	}
 	else
 	{
