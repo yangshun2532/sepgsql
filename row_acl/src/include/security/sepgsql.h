@@ -111,9 +111,9 @@ extern void sepgsqlCallFunction(FmgrInfo *finfo, bool with_perm_check);
 
 extern bool sepgsqlCallFunctionTrigger(FmgrInfo *finfo, TriggerData *tgdata);
 
-extern void sepgsqlBeginPerformCheckFK(Relation rel, bool rel_is_primary, Datum *save_pgace);
+extern Datum sepgsqlBeginPerformCheckFK(Relation rel, bool is_primary, Oid save_userid);
 
-extern void sepgsqlEndPerformCheckFK(Relation rel, bool rel_is_primary, Datum save_pgace);
+extern void sepgsqlEndPerformCheckFK(Relation rel, Datum save_pgace);
 
 /* TABLE related hooks */
 extern void sepgsqlLockTable(Oid relid);
