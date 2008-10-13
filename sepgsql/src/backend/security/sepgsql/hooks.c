@@ -576,7 +576,7 @@ sepgsqlBeginPerformCheckFK(Relation rel, bool is_primary, Oid save_userid)
 	 * row-level access controls doing.
 	 * At the result, INSERT/UPDATE with invisible tuple will be failed.
 	 */
-	if (!is_primary)
+	if (is_primary)
 		abort_on_violated_tuple = true;
 
 	return save_pgace;
