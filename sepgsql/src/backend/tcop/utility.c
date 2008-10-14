@@ -10,7 +10,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/tcop/utility.c,v 1.298 2008/09/01 20:42:45 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/tcop/utility.c,v 1.299 2008/10/10 13:48:05 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -148,7 +148,8 @@ check_xact_readonly(Node *parsetree)
 
 	/*
 	 * Note: Commands that need to do more complicated checking are handled
-	 * elsewhere.
+	 * elsewhere, in particular COPY and plannable statements do their
+	 * own checking.
 	 */
 
 	switch (nodeTag(parsetree))
@@ -2018,10 +2019,6 @@ GetCommandLogLevel(Node *parsetree)
 			lev = LOGSTMT_ALL;
 			break;
 
-		case T_CreateDomainStmt:
-			lev = LOGSTMT_DDL;
-			break;
-
 		case T_CreateSchemaStmt:
 			lev = LOGSTMT_DDL;
 			break;
@@ -2057,6 +2054,33 @@ GetCommandLogLevel(Node *parsetree)
 				lev = LOGSTMT_ALL;
 			break;
 
+		case T_PrepareStmt:
+			{
+				PrepareStmt *stmt = (PrepareStmt *) parsetree;
+
+				/* Look through a PREPARE to the contained stmt */
+				lev = GetCommandLogLevel(stmt->query);
+			}
+			break;
+
+		case T_ExecuteStmt:
+			{
+				ExecuteStmt *stmt = (ExecuteStmt *) parsetree;
+				PreparedStatement *ps;
+
+				/* Look through an EXECUTE to the referenced stmt */
+				ps = FetchPreparedStatement(stmt->name, false);
+				if (ps)
+					lev = GetCommandLogLevel(ps->plansource->raw_parse_tree);
+				else
+					lev = LOGSTMT_ALL;
+			}
+			break;
+
+		case T_DeallocateStmt:
+			lev = LOGSTMT_ALL;
+			break;
+
 		case T_RenameStmt:
 			lev = LOGSTMT_DDL;
 			break;
@@ -2074,10 +2098,6 @@ GetCommandLogLevel(Node *parsetree)
 			break;
 
 		case T_AlterDomainStmt:
-			lev = LOGSTMT_DDL;
-			break;
-
-		case T_AlterFunctionStmt:
 			lev = LOGSTMT_DDL;
 			break;
 
@@ -2106,6 +2126,10 @@ GetCommandLogLevel(Node *parsetree)
 			break;
 
 		case T_CreateFunctionStmt:
+			lev = LOGSTMT_DDL;
+			break;
+
+		case T_AlterFunctionStmt:
 			lev = LOGSTMT_DDL;
 			break;
 
@@ -2189,6 +2213,10 @@ GetCommandLogLevel(Node *parsetree)
 			lev = LOGSTMT_ALL;
 			break;
 
+		case T_DiscardStmt:
+			lev = LOGSTMT_ALL;
+			break;
+
 		case T_CreateTrigStmt:
 			lev = LOGSTMT_DDL;
 			break;
@@ -2202,6 +2230,10 @@ GetCommandLogLevel(Node *parsetree)
 			break;
 
 		case T_DropPLangStmt:
+			lev = LOGSTMT_DDL;
+			break;
+
+		case T_CreateDomainStmt:
 			lev = LOGSTMT_DDL;
 			break;
 
@@ -2283,33 +2315,6 @@ GetCommandLogLevel(Node *parsetree)
 
 		case T_AlterTSConfigurationStmt:
 			lev = LOGSTMT_DDL;
-			break;
-
-		case T_PrepareStmt:
-			{
-				PrepareStmt *stmt = (PrepareStmt *) parsetree;
-
-				/* Look through a PREPARE to the contained stmt */
-				lev = GetCommandLogLevel(stmt->query);
-			}
-			break;
-
-		case T_ExecuteStmt:
-			{
-				ExecuteStmt *stmt = (ExecuteStmt *) parsetree;
-				PreparedStatement *ps;
-
-				/* Look through an EXECUTE to the referenced stmt */
-				ps = FetchPreparedStatement(stmt->name, false);
-				if (ps)
-					lev = GetCommandLogLevel(ps->plansource->raw_parse_tree);
-				else
-					lev = LOGSTMT_ALL;
-			}
-			break;
-
-		case T_DeallocateStmt:
-			lev = LOGSTMT_ALL;
 			break;
 
 			/* already-planned queries */

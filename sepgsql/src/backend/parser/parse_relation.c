@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/parser/parse_relation.c,v 1.136 2008/10/04 21:56:54 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/parser/parse_relation.c,v 1.139 2008/10/08 01:14:44 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -183,6 +183,61 @@ scanNameSpaceForRelid(ParseState *pstate, Oid relid, int location)
 }
 
 /*
+ * Search the query's CTE namespace for a CTE matching the given unqualified
+ * refname.  Return the CTE (and its levelsup count) if a match, or NULL
+ * if no match.  We need not worry about multiple matches, since parse_cte.c
+ * rejects WITH lists containing duplicate CTE names.
+ */
+CommonTableExpr *
+scanNameSpaceForCTE(ParseState *pstate, const char *refname,
+					Index *ctelevelsup)
+{
+	Index	levelsup;
+
+	for (levelsup = 0;
+		 pstate != NULL;
+		 pstate = pstate->parentParseState, levelsup++)
+	{
+		ListCell *lc;
+
+		foreach(lc, pstate->p_ctenamespace)
+		{
+			CommonTableExpr *cte = (CommonTableExpr *) lfirst(lc);
+
+			if (strcmp(cte->ctename, refname) == 0)
+			{
+				*ctelevelsup = levelsup;
+				return cte;
+			}
+		}
+	}
+	return NULL;
+}
+
+/*
+ * Search for a possible "future CTE", that is one that is not yet in scope
+ * according to the WITH scoping rules.  This has nothing to do with valid
+ * SQL semantics, but it's important for error reporting purposes.
+ */
+static bool
+isFutureCTE(ParseState *pstate, const char *refname)
+{
+	for (; pstate != NULL; pstate = pstate->parentParseState)
+	{
+		ListCell *lc;
+
+		foreach(lc, pstate->p_future_ctes)
+		{
+			CommonTableExpr *cte = (CommonTableExpr *) lfirst(lc);
+
+			if (strcmp(cte->ctename, refname) == 0)
+				return true;
+		}
+	}
+	return false;
+}
+
+/*
  * searchRangeTable
  *	  See if any RangeTblEntry could possibly match the RangeVar.
  *	  If so, return a pointer to the RangeTblEntry; else return NULL.
@@ -194,16 +249,32 @@ scanNameSpaceForRelid(ParseState *pstate, Oid relid, int location)
  * valid matches, but only one will be returned).  This must be used ONLY
  * as a heuristic in giving suitable error messages.  See warnAutoRange.
  *
- * Notice that we consider both matches on actual relation name and matches
- * on alias.
+ * Notice that we consider both matches on actual relation (or CTE) name
+ * and matches on alias.
  */
 static RangeTblEntry *
 searchRangeTable(ParseState *pstate, RangeVar *relation)
 {
-	Oid			relId = RangeVarGetRelid(relation, true);
-	char	   *refname = relation->relname;
+	const char *refname = relation->relname;
+	Oid			relId = InvalidOid;
+	CommonTableExpr *cte = NULL;
+	Index		ctelevelsup = 0;
+	Index		levelsup;
 
-	while (pstate != NULL)
+	/*
+	 * If it's an unqualified name, check for possible CTE matches.
+	 * A CTE hides any real relation matches.  If no CTE, look for
+	 * a matching relation.
+	 */
+	if (!relation->schemaname)
+		cte = scanNameSpaceForCTE(pstate, refname, &ctelevelsup);
+	if (!cte)
+		relId = RangeVarGetRelid(relation, true);
+
+	/* Now look for RTEs matching either the relation/CTE or the alias */
+	for (levelsup = 0;
+		 pstate != NULL;
+		 pstate = pstate->parentParseState, levelsup++)
 	{
 		ListCell   *l;
 
@@ -211,15 +282,18 @@ searchRangeTable(ParseState *pstate, RangeVar *relation)
 		{
 			RangeTblEntry *rte = (RangeTblEntry *) lfirst(l);
 
-			if (OidIsValid(relId) &&
-				rte->rtekind == RTE_RELATION &&
+			if (rte->rtekind == RTE_RELATION &&
+				OidIsValid(relId) &&
 				rte->relid == relId)
+				return rte;
+			if (rte->rtekind == RTE_CTE &&
+				cte != NULL &&
+				rte->ctelevelsup + levelsup == ctelevelsup &&
+				strcmp(rte->ctename, refname) == 0)
 				return rte;
 			if (strcmp(rte->eref->aliasname, refname) == 0)
 				return rte;
 		}
-
-		pstate = pstate->parentParseState;
 	}
 	return NULL;
 }
@@ -320,15 +394,23 @@ GetRTEByRangeTablePosn(ParseState *pstate,
 
 /*
  * Fetch the CTE for a CTE-reference RTE.
+ *
+ * rtelevelsup is the number of query levels above the given pstate that the
+ * RTE came from.  Callers that don't have this information readily available
+ * may pass -1 instead.
  */
 CommonTableExpr *
-GetCTEForRTE(ParseState *pstate, RangeTblEntry *rte)
+GetCTEForRTE(ParseState *pstate, RangeTblEntry *rte, int rtelevelsup)
 {
 	Index		levelsup;
 	ListCell   *lc;
 
+	/* Determine RTE's levelsup if caller didn't know it */
+	if (rtelevelsup < 0)
+		(void) RTERangeTablePosn(pstate, rte, &rtelevelsup);
+
 	Assert(rte->rtekind == RTE_CTE);
-	levelsup = rte->ctelevelsup;
+	levelsup = rte->ctelevelsup + rtelevelsup;
 	while (levelsup-- > 0)
 	{
 		pstate = pstate->parentParseState;
@@ -643,8 +725,9 @@ buildScalarFunctionAlias(Node *funcexpr, char *funcname,
 /*
  * Open a table during parse analysis
  *
- * This is essentially just the same as heap_openrv(), except that it
- * arranges to include the RangeVar's parse location in any resulting error.
+ * This is essentially just the same as heap_openrv(), except that it caters
+ * to some parser-specific error reporting needs, notably that it arranges
+ * to include the RangeVar's parse location in any resulting error.
  *
  * Note: properly, lockmode should be declared LOCKMODE not int, but that
  * would require importing storage/lock.h into parse_relation.h.  Since
@@ -657,7 +740,37 @@ parserOpenTable(ParseState *pstate, const RangeVar *relation, int lockmode)
 	ParseCallbackState pcbstate;
 
 	setup_parser_errposition_callback(&pcbstate, pstate, relation->location);
-	rel = heap_openrv(relation, lockmode);
+	rel = try_heap_openrv(relation, lockmode);
+	if (rel == NULL)
+	{
+		if (relation->schemaname)
+			ereport(ERROR,
+					(errcode(ERRCODE_UNDEFINED_TABLE),
+					 errmsg("relation \"%s.%s\" does not exist",
+							relation->schemaname, relation->relname)));
+		else
+		{
+			/*
+			 * An unqualified name might have been meant as a reference to
+			 * some not-yet-in-scope CTE.  The bare "does not exist" message
+			 * has proven remarkably unhelpful for figuring out such problems,
+			 * so we take pains to offer a specific hint.
+			 */
+			if (isFutureCTE(pstate, relation->relname))
+				ereport(ERROR,
+						(errcode(ERRCODE_UNDEFINED_TABLE),
+						 errmsg("relation \"%s\" does not exist",
+								relation->relname),
+						 errdetail("There is a WITH item named \"%s\", but it cannot be referenced from this part of the query.",
+								   relation->relname),
+						 errhint("Use WITH RECURSIVE, or re-order the WITH items to remove forward references.")));
+			else
+				ereport(ERROR,
+						(errcode(ERRCODE_UNDEFINED_TABLE),
+						 errmsg("relation \"%s\" does not exist",
+								relation->relname)));
+		}
+	}
 	cancel_parser_errposition_callback(&pcbstate);
 	return rel;
 }
@@ -1293,10 +1406,16 @@ addRTEtoQuery(ParseState *pstate, RangeTblEntry *rte,
 RangeTblEntry *
 addImplicitRTE(ParseState *pstate, RangeVar *relation)
 {
+	CommonTableExpr *cte = NULL;
+	Index		levelsup = 0;
 	RangeTblEntry *rte;
 
 	/* issue warning or error as needed */
 	warnAutoRange(pstate, relation);
+
+	/* if it is an unqualified name, it might be a CTE reference */
+	if (!relation->schemaname)
+		cte = scanNameSpaceForCTE(pstate, relation->relname, &levelsup);
 
 	/*
 	 * Note that we set inFromCl true, so that the RTE will be listed
@@ -1304,7 +1423,10 @@ addImplicitRTE(ParseState *pstate, RangeVar *relation)
 	 * provides a migration path for views/rules that were originally written
 	 * with implicit-RTE syntax.
 	 */
-	rte = addRangeTableEntry(pstate, relation, NULL, false, true);
+	if (cte)
+		rte = addRangeTableEntryForCTE(pstate, cte, levelsup, NULL, true);
+	else
+		rte = addRangeTableEntry(pstate, relation, NULL, false, true);
 	/* Add to joinlist and relnamespace, but not varnamespace */
 	addRTEtoQuery(pstate, rte, true, true, false);
 
@@ -2194,8 +2316,8 @@ warnAutoRange(ParseState *pstate, RangeVar *relation)
 		if (rte)
 			ereport(ERROR,
 					(errcode(ERRCODE_UNDEFINED_TABLE),
-			errmsg("invalid reference to FROM-clause entry for table \"%s\"",
-				   relation->relname),
+					 errmsg("invalid reference to FROM-clause entry for table \"%s\"",
+							relation->relname),
 					 (badAlias ?
 			errhint("Perhaps you meant to reference the table alias \"%s\".",
 					badAlias) :
@@ -2205,11 +2327,8 @@ warnAutoRange(ParseState *pstate, RangeVar *relation)
 		else
 			ereport(ERROR,
 					(errcode(ERRCODE_UNDEFINED_TABLE),
-					 (pstate->parentParseState ?
-			 errmsg("missing FROM-clause entry in subquery for table \"%s\"",
-					relation->relname) :
-					  errmsg("missing FROM-clause entry for table \"%s\"",
-							 relation->relname)),
+					 errmsg("missing FROM-clause entry for table \"%s\"",
+							relation->relname),
 					 parser_errposition(pstate, relation->location)));
 	}
 	else
@@ -2217,11 +2336,8 @@ warnAutoRange(ParseState *pstate, RangeVar *relation)
 		/* just issue a warning */
 		ereport(NOTICE,
 				(errcode(ERRCODE_UNDEFINED_TABLE),
-				 (pstate->parentParseState ?
-				  errmsg("adding missing FROM-clause entry in subquery for table \"%s\"",
-						 relation->relname) :
-				  errmsg("adding missing FROM-clause entry for table \"%s\"",
-						 relation->relname)),
+				 errmsg("adding missing FROM-clause entry for table \"%s\"",
+						relation->relname),
 				 (badAlias ?
 			errhint("Perhaps you meant to reference the table alias \"%s\".",
 					badAlias) :
