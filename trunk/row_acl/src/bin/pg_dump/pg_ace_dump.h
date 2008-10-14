@@ -6,8 +6,10 @@
 
 #define PG_ACE_FEATURE_NOTHING		0
 #define PG_ACE_FEATURE_SELINUX		1
+#define PG_ACE_FEATURE_ROW_ACL		2
 
 #define SELINUX_SYSATTR_NAME		"security_context"
+#define ROW_ACL_SYSATTR_NAME		"tuple_acl"
 
 /*
  * pg_ace_dumpCheckServerFeature
@@ -34,6 +36,14 @@ pg_ace_dumpCheckServerFeature(int feature, PGconn *conn)
 		if (strcmp(serv_feature, "selinux") != 0)
 		{
 			fprintf(stderr, "server does not have SELinux feature\n");
+			exit(1);
+		}
+	}
+	else if (feature == PG_ACE_FEATURE_ROW_ACL)
+	{
+		if (strcmp(serv_feature, "rowacl") != 0)
+		{
+			fprintf(stderr, "server does not have row-level database ACL [%s]\n", serv_feature);
 			exit(1);
 		}
 	}
@@ -84,6 +94,8 @@ pg_ace_dumpClassQuery(int feature)
 {
 	if (feature == PG_ACE_FEATURE_SELINUX)
 		return (",c." SELINUX_SYSATTR_NAME);
+	else if (feature == PG_ACE_FEATURE_ROW_ACL)
+		return (",c." ROW_ACL_SYSATTR_NAME);
 
 	return "";
 }
@@ -103,6 +115,20 @@ pg_ace_dumpClassPreserve(int feature, PGresult *res, int index)
 
 		return !relcontext ? NULL : strdup(relcontext);
 	}
+	else if (feature == PG_ACE_FEATURE_ROW_ACL)
+	{
+		int     attno = PQfnumber(res, ROW_ACL_SYSATTR_NAME);
+		char   *defacl;
+
+		if (attno < 0)
+			return NULL;
+
+		defacl = PQgetvalue(res, index, attno);
+		if (!defacl || defacl[0] == '\0')
+			return NULL;
+
+		return strdup(defacl);
+	}
 
 	return NULL;
 }
@@ -116,8 +142,13 @@ pg_ace_dumpClassPrint(int feature, PQExpBuffer buf, TableInfo *tbinfo)
 
 		if (relcontext)
 			appendPQExpBuffer(buf, " SECURITY_CONTEXT = '%s'", relcontext);
+	}
+	else if (feature == PG_ACE_FEATURE_ROW_ACL)
+	{
+		char   *defacl = tbinfo->relsecurity;
 
-		return;
+		if (defacl)
+			appendPQExpBuffer(buf, " DEFAULT_ACL = '%s'", defacl);
 	}
 }
 
@@ -174,7 +205,6 @@ pg_ace_dumpAttributePrint(int feature, PQExpBuffer buf,
 
 			appendPQExpBuffer(buf, " SECURITY_CONTEXT = '%s'", attcontext);
 		}
-		return;
 	}
 }
 
@@ -225,6 +255,8 @@ pg_ace_dumpTableDataQuery(int feature)
 {
 	if (feature == PG_ACE_FEATURE_SELINUX)
 		return ("," SELINUX_SYSATTR_NAME);
+	else if (feature == PG_ACE_FEATURE_ROW_ACL)
+		return ("," ROW_ACL_SYSATTR_NAME);
 
 	return "";
 }
@@ -242,6 +274,11 @@ pg_ace_dumpCopyColumnList(int feature, PQExpBuffer buf)
 	if (feature == PG_ACE_FEATURE_SELINUX)
 	{
 		appendPQExpBuffer(buf, SELINUX_SYSATTR_NAME);
+		return true;
+	}
+	else if (feature == PG_ACE_FEATURE_ROW_ACL)
+	{
+		appendPQExpBuffer(buf, ROW_ACL_SYSATTR_NAME);
 		return true;
 	}
 
