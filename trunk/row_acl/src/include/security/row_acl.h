@@ -5,8 +5,9 @@
 #ifndef ROW_ACL_H
 #define ROW_ACL_H
 
-
 extern bool rowaclIsEnabled(void);
+
+extern void rowaclInitialize(bool is_bootstrap);
 
 /******************************************************************
  * Row-level access controls
