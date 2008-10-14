@@ -15,7 +15,7 @@
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/nodes/copyfuncs.c,v 1.406 2008/10/04 21:56:53 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/nodes/copyfuncs.c,v 1.408 2008/10/07 19:27:04 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -195,6 +195,13 @@ _copyRecursiveUnion(RecursiveUnion *from)
 	 * copy remainder of node
 	 */
 	COPY_SCALAR_FIELD(wtParam);
+	COPY_SCALAR_FIELD(numCols);
+	if (from->numCols > 0)
+	{
+		COPY_POINTER_FIELD(dupColIdx, from->numCols * sizeof(AttrNumber));
+		COPY_POINTER_FIELD(dupOperators, from->numCols * sizeof(Oid));
+	}
+	COPY_SCALAR_FIELD(numGroups);
 
 	return newnode;
 }
@@ -1260,6 +1267,7 @@ _copyRowExpr(RowExpr *from)
 	COPY_NODE_FIELD(args);
 	COPY_SCALAR_FIELD(row_typeid);
 	COPY_SCALAR_FIELD(row_format);
+	COPY_NODE_FIELD(colnames);
 	COPY_LOCATION_FIELD(location);
 
 	return newnode;
