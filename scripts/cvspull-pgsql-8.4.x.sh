@@ -69,5 +69,5 @@ echo "svn update"
 echo
 echo "svn merge -c `expr ${SVNREV} + 2` ./sepgsql ./row_acl"
 echo "svn diff ./row_acl"
-echo "svn commit -m 'merge updates of ${SVNBRANCH}/sepgsql into ${SVNBRANCH}/row_acl at `env LANG=C date` ./row_acl"
+echo "svn commit -m 'merge updates of ${SVNBRANCH}/sepgsql into ${SVNBRANCH}/row_acl at `env LANG=C date`' ./row_acl"
 echo "svn update"
