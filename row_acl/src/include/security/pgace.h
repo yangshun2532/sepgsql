@@ -89,6 +89,9 @@ pgaceSecurityFeatureIdentity(void)
 #if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
 		return "selinux";
+#elif defined(HAVE_ROW_ACL)
+	if (rowaclIsEnabled())
+		return "rowacl";
 #endif
 	return "nothing";
 }
@@ -128,6 +131,9 @@ pgaceInitialize(bool is_bootstrap)
 #if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
 		sepgsqlInitialize(is_bootstrap);
+#elif defined(HAVE_ROW_ACL)
+	if (rowaclIsEnabled())
+		rowaclInitialize(is_bootstrap);
 #endif
 }
 

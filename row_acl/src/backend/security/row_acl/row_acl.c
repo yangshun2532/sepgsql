@@ -20,14 +20,17 @@
 #include "utils/array.h"
 #include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
+#include "utils/memutils.h"
 #include "utils/syscache.h"
 
 /*
- * static function declarations
+ * static declarations
  */
 static void  proxySubQuery(Query *query);
 static Acl  *rawAclTextToAclArray(char *raw_acl);
 static char *rawAclTextFromAclArray(Acl *acl);
+
+#define ROW_ACL_ALL_PRIVS	(ACL_SELECT | ACL_UPDATE | ACL_DELETE)
 
 /******************************************************************
  * Global system setting
@@ -156,6 +159,99 @@ List *rowaclProxyQuery(List *queryList)
 }
 
 /******************************************************************
+ * Row-level ACL result cache
+ ******************************************************************/
+
+static MemoryContext RowAclMemCtx;
+
+#define ROWACL_CACHE_SLOT_NUM		128
+static List *rowAclCacheSlot[ROWACL_CACHE_SLOT_NUM];
+
+static void rowAclCacheReset(void)
+{
+	int i;
+
+	MemoryContextReset(RowAclMemCtx);
+
+	for (i=0; i < ROWACL_CACHE_SLOT_NUM; i++)
+		rowAclCacheSlot[i] = NIL;
+}
+
+typedef struct {
+	Oid		relid;
+	Oid		userId;
+	Oid		securityId;
+	AclMode	privs;
+} rowAclCacheItem;
+
+static int rowAclCacheHash(Oid relid, Oid userId, Oid securityId)
+{
+	Oid keys[3] = { relid, userId, securityId };
+
+	return tag_hash(keys, sizeof(keys)) % ROWACL_CACHE_SLOT_NUM;
+}
+
+static void rowAclCacheInsert(Oid relid, Oid userId, Oid securityId, AclMode privs)
+{
+	MemoryContext oldctx;
+	rowAclCacheItem *aci;
+	int index = rowAclCacheHash(relid, userId, securityId);
+
+	oldctx = MemoryContextSwitchTo(RowAclMemCtx);
+
+	aci = palloc0(sizeof(rowAclCacheItem));
+	aci->relid = relid;
+	aci->userId = userId;
+	aci->securityId = securityId;
+	aci->privs = privs;
+
+	rowAclCacheSlot[index] = lappend(rowAclCacheSlot[index], aci);
+
+	MemoryContextSwitchTo(oldctx);
+}
+
+static bool rowAclCacheLookup(Oid relid, Oid userId, Oid securityId, AclMode *privs)
+{
+	ListCell *l;
+	int index = rowAclCacheHash(relid, userId, securityId);
+
+	foreach (l, rowAclCacheSlot[index])
+	{
+		rowAclCacheItem *aci = lfirst(l);
+
+		if (aci->relid == relid &&
+			aci->userId == userId &&
+			aci->securityId == securityId)
+		{
+			*privs = aci->privs;
+			return true;
+		}
+	}
+
+	return false;
+}
+
+static void
+rowaclRoleidCallback(Datum arg, int cacheid, ItemPointer tuplePtr)
+{
+	rowAclCacheReset();
+}
+
+void rowaclInitialize(bool is_bootstrap)
+{
+	RowAclMemCtx = AllocSetContextCreate(TopMemoryContext,
+										 "Row-level ACL result cache",
+										 ALLOCSET_DEFAULT_MINSIZE,
+										 ALLOCSET_DEFAULT_INITSIZE,
+										 ALLOCSET_DEFAULT_MAXSIZE);
+
+	CacheRegisterSyscacheCallback(AUTHOID,
+								  rowaclRoleidCallback, 0);
+
+	rowAclCacheReset();
+}
+
+/******************************************************************
  * Row-level access controls
  ******************************************************************/
 
@@ -204,7 +300,7 @@ static Acl *rowaclDefaultAclArray(Oid relid)
 	aidat = ACL_DAT(acl);
 	for (i = 0; i < ACL_NUM(acl); i++)
 	{
-		aidat[i].ai_privs &= (ACL_SELECT | ACL_UPDATE | ACL_DELETE);
+		aidat[i].ai_privs &= ROW_ACL_ALL_PRIVS;
 	}
 
 	return acl;
@@ -231,19 +327,22 @@ Datum rowaclBeginPerformCheckFK(Relation rel, bool is_primary, Oid save_userid)
 
 void rowaclEndPerformCheckFK(Relation rel, Datum save_pgace)
 {
-	rowaclUserInfo = DatumGetPointer(save_pgace);
+	rowaclUserInfo = (struct rowaclUserInfoType *) DatumGetPointer(save_pgace);
 }
 
-static bool rowaclCheckPermission(Relation rel, HeapTuple tuple, AclMode perms)
+static bool rowaclCheckPermission(Relation rel, HeapTuple tuple, AclMode required)
 {
-	Oid sid = HeapTupleGetSecurity(tuple);
-	Oid userId = GetUserId();
+	Oid relid = RelationGetRelid(rel);
 	Oid ownerId = RelationGetForm(rel)->relowner;
-	char *raw_acl;
-	Acl *acl;
+	Oid userId = GetUserId();
+	Oid securityId = HeapTupleGetSecurity(tuple);
+	AclMode privs;
+
+	Assert((required & ~ROW_ACL_ALL_PRIVS) == 0);
 
 	if (rowaclUserInfo)
 		userId = rowaclUserInfo->userId;
+
 	/*
 	 * ACL of pg_class means pre-configured default ACL
 	 * It does not used to access control
@@ -251,21 +350,27 @@ static bool rowaclCheckPermission(Relation rel, HeapTuple tuple, AclMode perms)
 	if (IsSystemRelation(rel))
 		return true;
 
-	/* Superusers bypass all permission checking */
-	if (superuser_arg(userId))
-		return true;
+	if (!rowAclCacheLookup(relid, userId, securityId, &privs))
+	{
+		/* Superusers bypass all permission checking */
+		if (superuser_arg(userId))
+		{
+			privs = ROW_ACL_ALL_PRIVS;
+		}
+		else
+		{
+			char *raw_acl = pgaceLookupSecurityLabel(securityId);
+			Acl *acl = rawAclTextToAclArray(raw_acl);
 
-	/*
-	 * TODO: looking up hash table with {userId, sid} to boost
-	 * row-level ACL checks
-	 */
-	raw_acl = pgaceLookupSecurityLabel(sid);
-	acl = rawAclTextToAclArray(raw_acl);
+			if (!acl)
+				acl = rowaclDefaultAclArray(relid);
 
-	if (!acl)
-		acl = rowaclDefaultAclArray(RelationGetRelid(rel));
+			privs = aclmask(acl, userId, ownerId, required, ACLMASK_ALL);
+		}
+		rowAclCacheInsert(relid, userId, securityId, privs);
+	}
 
-	if (aclmask(acl, userId, ownerId, perms, ACLMASK_ALL) == perms)
+	if ((privs & required) == required)
 		return true;
 
 	if (rowaclUserInfo && rowaclUserInfo->abort_on_error)
@@ -541,7 +646,7 @@ static Acl *rawAclTextToAclArray(char *raw_acl)
 static char *rawAclTextFromAclArray(Acl *acl)
 {
 	AclItem *aip;
-	AclMode mask = (ACL_SELECT | ACL_UPDATE | ACL_DELETE);
+	AclMode mask = ROW_ACL_ALL_PRIVS;
 	char *raw_acl;
 	int i, aclnum, ofs = 0;
 
