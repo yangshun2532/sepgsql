@@ -65,7 +65,7 @@ pg_ace_dumpDatabasePrint(int feature, PQExpBuffer buf,
 		int i_security = PQfnumber(res, SELINUX_SYSATTR_NAME);
 		char *dbsecurity = PQgetvalue(res, index, i_security);
 
-		if (dbsecurity)
+		if (dbsecurity && dbsecurity[0] != '\0')
 			appendPQExpBuffer(buf, " SECURITY_CONTEXT = '%s'", dbsecurity);
 	}
 }
@@ -101,7 +101,10 @@ pg_ace_dumpClassPreserve(int feature, PGresult *res, int index)
 
 		relcontext = PQgetvalue(res, index, attno);
 
-		return !relcontext ? NULL : strdup(relcontext);
+		if (!relcontext || relcontext[0] == '\0')
+			return NULL;
+
+		return strdup(relcontext);
 	}
 
 	return NULL;
@@ -149,8 +152,10 @@ pg_ace_dumpAttributePreserve(int feature, PGresult *res, int index)
 			return NULL;
 
 		attcontext = PQgetvalue(res, index, attno);
+		if (!attcontext || attcontext[0] == '\0')
+			return NULL;
 
-		return !attcontext ? NULL : strdup(attcontext);
+		return strdup(attcontext);
 	}
 
 	return NULL;
@@ -205,7 +210,7 @@ pg_ace_dumpProcPrint(int feature, PQExpBuffer buf,
 			return;
 
 		prosecurity = PQgetvalue(res, index, i_selinux);
-		if (prosecurity)
+		if (prosecurity && prosecurity[0] != '\0')
 			appendPQExpBuffer(buf, " SECURITY_CONTEXT = '%s'", prosecurity);
 	}
 }
