@@ -126,6 +126,7 @@ main(int argc, char *argv[])
 		{"use-set-session-authorization", no_argument, &use_setsessauth, 1},
 		{"lock-wait-timeout", required_argument, NULL, 2},
 		{"security-context", no_argument, &pg_ace_feature, PG_ACE_FEATURE_SELINUX},
+		{"row-level-acl", no_argument, &pg_ace_feature, PG_ACE_FEATURE_ROW_ACL},
 
 		{NULL, 0, NULL, 0}
 	};
@@ -300,6 +301,8 @@ main(int argc, char *argv[])
 					use_setsessauth = 1;
 				else if (strcmp(optarg, "security-context") == 0)
 					pg_ace_feature = PG_ACE_FEATURE_SELINUX;
+				else if (strcmp(optarg, "row-level-acl") == 0)
+					pg_ace_feature = PG_ACE_FEATURE_ROW_ACL;
 				else
 				{
 					fprintf(stderr,
@@ -335,6 +338,8 @@ main(int argc, char *argv[])
 		appendPQExpBuffer(pgdumpopts, " --use-set-session-authorization");
 	if (pg_ace_feature == PG_ACE_FEATURE_SELINUX)
 		appendPQExpBuffer(pgdumpopts, " --security-context");
+	else if (pg_ace_feature == PG_ACE_FEATURE_ROW_ACL)
+		appendPQExpBuffer(pgdumpopts, " --row-level-acl");
 
 	if (optind < argc)
 	{
@@ -528,6 +533,7 @@ help(void)
 			 "                           use SESSION AUTHORIZATION commands instead of\n"
 			 "                           OWNER TO commands\n"));
 	printf(_("  --security-context       enables to dump security context of SE-PostgreSQL\n"));
+	printf(_("  --row-level-acl             enable to dump row-level database ACL\n"));
 
 	printf(_("\nConnection options:\n"));
 	printf(_("  -h, --host=HOSTNAME      database server host or socket directory\n"));

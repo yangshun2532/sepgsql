@@ -19,6 +19,7 @@
 #include "utils/acl.h"
 #include "utils/array.h"
 #include "utils/fmgroids.h"
+#include "utils/inval.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
 #include "utils/syscache.h"
@@ -697,6 +698,9 @@ char *rowaclTranslateSecurityLabelIn(char *acl_string)
 {
 	FmgrInfo finfo;
 	Datum tmp;
+
+	if (!acl_string || acl_string[0] == '\0')
+		return NULL;
 
 	fmgr_info_cxt(F_ARRAY_IN, &finfo, CurrentMemoryContext);
 	tmp = FunctionCall3(&finfo,

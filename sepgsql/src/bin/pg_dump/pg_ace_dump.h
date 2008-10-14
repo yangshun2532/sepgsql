@@ -116,8 +116,6 @@ pg_ace_dumpClassPrint(int feature, PQExpBuffer buf, TableInfo *tbinfo)
 
 		if (relcontext)
 			appendPQExpBuffer(buf, " SECURITY_CONTEXT = '%s'", relcontext);
-
-		return;
 	}
 }
 
@@ -174,7 +172,6 @@ pg_ace_dumpAttributePrint(int feature, PQExpBuffer buf,
 
 			appendPQExpBuffer(buf, " SECURITY_CONTEXT = '%s'", attcontext);
 		}
-		return;
 	}
 }
 
