@@ -1,4 +1,4 @@
-<!-- $PostgreSQL: pgsql/doc/src/sgml/queries.sgml,v 1.46 2008/10/04 21:56:52 tgl Exp $ -->
+<!-- $PostgreSQL: pgsql/doc/src/sgml/queries.sgml,v 1.50 2008/10/14 00:41:34 tgl Exp $ -->
 
 <chapter id="queries">
  <title>Queries</title>
@@ -1519,7 +1519,8 @@ SELECT sum(n) FROM t;
 </programlisting>
 
    The general form of a recursive <literal>WITH</> query is always a
-   <firstterm>non-recursive term</>, then <literal>UNION ALL</>, then a
+   <firstterm>non-recursive term</>, then <literal>UNION</> (or
+   <literal>UNION ALL</>), then a
    <firstterm>recursive term</>, where only the recursive term can contain
    a reference to the query's own output.  Such a query is executed as
    follows:
@@ -1530,9 +1531,10 @@ SELECT sum(n) FROM t;
 
    <step performance="required">
     <para>
-     Evaluate the non-recursive term.  Include all its output rows in the
-     result of the recursive query, and also place them in a temporary
-     <firstterm>working table</>.
+     Evaluate the non-recursive term.  For <literal>UNION</> (but not
+     <literal>UNION ALL</>), discard duplicate rows.  Include all remaining
+     rows in the result of the recursive query, and also place them in a
+     temporary <firstterm>working table</>.
     </para>
    </step>
 
@@ -1544,9 +1546,11 @@ SELECT sum(n) FROM t;
      <step performance="required">
       <para>
        Evaluate the recursive term, substituting the current contents of
-       the working table for the recursive self-reference.  Include all its
-       output rows in the result of the recursive query, and also place them
-       in a temporary <firstterm>intermediate table</>.
+       the working table for the recursive self-reference.
+       For <literal>UNION</> (but not <literal>UNION ALL</>), discard
+       duplicate rows and rows that duplicate any previous result row.
+       Include all remaining rows in the result of the recursive query, and
+       also place them in a temporary <firstterm>intermediate table</>.
       </para>
      </step>
 
@@ -1598,10 +1602,99 @@ GROUP BY sub_part
   <para>
    When working with recursive queries it is important to be sure that
    the recursive part of the query will eventually return no tuples,
-   or else the query will loop indefinitely.  A useful trick for
-   development purposes is to place a <literal>LIMIT</> in the parent
-   query.  For example, this query would loop forever without the
-   <literal>LIMIT</>:
+   or else the query will loop indefinitely.  Sometimes, using
+   <literal>UNION</> instead of <literal>UNION ALL</> can accomplish this
+   by discarding rows that duplicate previous output rows.  However, often a
+   cycle does not involve output rows that are completely duplicate: it may be
+   necessary to check just one or a few fields to see if the same point has
+   been reached before.  The standard method for handling such situations is
+   to compute an array of the already-visited values.  For example, consider
+   the following query that searches a table <structname>graph</> using a
+   <structfield>link</> field:
+
+<programlisting>
+WITH RECURSIVE search_graph(id, link, data, depth) AS (
+        SELECT g.id, g.link, g.data, 1
+        FROM graph g
+      UNION ALL
+        SELECT g.id, g.link, g.data, sg.depth + 1
+        FROM graph g, search_graph sg
+        WHERE g.id = sg.link
+)
+SELECT * FROM search_graph;
+</programlisting>
+
+   This query will loop if the <structfield>link</> relationships contain
+   cycles.  Because we require a <quote>depth</> output, just changing
+   <literal>UNION ALL</> to <literal>UNION</> would not eliminate the looping.
+   Instead we need to recognize whether we have reached the same row again
+   while following a particular path of links.  We add two columns
+   <structfield>path</> and <structfield>cycle</> to the loop-prone query:
+
+<programlisting>
+WITH RECURSIVE search_graph(id, link, data, depth, path, cycle) AS (
+        SELECT g.id, g.link, g.data, 1,
+          ARRAY[g.id],
+          false
+        FROM graph g
+      UNION ALL
+        SELECT g.id, g.link, g.data, sg.depth + 1,
+          path || g.id,
+          g.id = ANY(path)
+        FROM graph g, search_graph sg
+        WHERE g.id = sg.link AND NOT cycle
+)
+SELECT * FROM search_graph;
+</programlisting>
+
+   Aside from preventing cycles, the array value is often useful in its own
+   right as representing the <quote>path</> taken to reach any particular row.
+  </para>
+
+  <para>
+   In the general case where more than one field needs to be checked to
+   recognize a cycle, use an array of rows.  For example, if we needed to
+   compare fields <structfield>f1</> and <structfield>f2</>:
+
+<programlisting>
+WITH RECURSIVE search_graph(id, link, data, depth, path, cycle) AS (
+        SELECT g.id, g.link, g.data, 1,
+          ARRAY[ROW(g.f1, g.f2)],
+          false
+        FROM graph g
+      UNION ALL
+        SELECT g.id, g.link, g.data, sg.depth + 1,
+          path || ROW(g.f1, g.f2),
+          ROW(g.f1, g.f2) = ANY(path)
+        FROM graph g, search_graph sg
+        WHERE g.id = sg.link AND NOT cycle
+)
+SELECT * FROM search_graph;
+</programlisting>
+  </para>
+
+  <tip>
+   <para>
+    Omit the <literal>ROW()</> syntax in the common case where only one field
+    needs to be checked to recognize a cycle.  This allows a simple array
+    rather than a composite-type array to be used, gaining efficiency.
+   </para>
+  </tip>
+
+  <tip>
+   <para>
+    The recursive query evaluation algorithm produces its output in
+    breadth-first search order.  You can display the results in depth-first
+    search order by making the outer query <literal>ORDER BY</> a
+    <quote>path</> column constructed in this way.
+   </para>
+  </tip>
+
+  <para>
+   A helpful trick for testing queries
+   when you are not certain if they might loop is to place a <literal>LIMIT</>
+   in the parent query.  For example, this query would loop forever without
+   the <literal>LIMIT</>:
 
 <programlisting>
 WITH RECURSIVE t(n) AS (
@@ -1614,8 +1707,10 @@ SELECT n FROM t LIMIT 100;
 
    This works because <productname>PostgreSQL</productname>'s implementation
    evaluates only as many rows of a <literal>WITH</> query as are actually
-   demanded by the parent query.  Using this trick in production is not
-   recommended, because other systems might work differently.
+   fetched by the parent query.  Using this trick in production is not
+   recommended, because other systems might work differently.  Also, it
+   usually won't work if you make the outer query sort the recursive query's
+   results or join them to some other table.
   </para>
 
   <para>
