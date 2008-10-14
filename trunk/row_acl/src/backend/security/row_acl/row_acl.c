@@ -36,12 +36,11 @@ static char *rawAclTextFromAclArray(Acl *acl);
  * Global system setting
  ******************************************************************/
 
+bool rowacl_is_enabled_mode = true;
+
 bool rowaclIsEnabled(void)
 {
-	/*
-	 * TODO: This parameter should be controled via GUC
-	 */
-	return true;
+	return rowacl_is_enabled_mode;
 }
 
 /******************************************************************

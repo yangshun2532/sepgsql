@@ -1210,6 +1210,17 @@ static struct config_bool ConfigureNamesBool[] =
 		&IgnoreSystemIndexes,
 		false, NULL, NULL
 	},
+#ifdef HAVE_ROW_ACL
+	{
+		{"row_acl_is_enabled", PGC_POSTMASTER, UNGROUPED,
+		 gettext_noop("Current row-level ACL working mode"),
+		 gettext_noop("valid values are TRUE or FALSE"),
+		 0,
+		},
+		&rowacl_is_enabled_mode,
+		true, NULL, NULL
+	},
+#endif
 
 	/* End-of-list marker */
 	{
