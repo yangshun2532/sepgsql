@@ -5,6 +5,8 @@
 #ifndef ROW_ACL_H
 #define ROW_ACL_H
 
+extern bool rowacl_is_enabled_mode;
+
 extern bool rowaclIsEnabled(void);
 
 extern void rowaclInitialize(bool is_bootstrap);
