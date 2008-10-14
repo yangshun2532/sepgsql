@@ -246,6 +246,8 @@ void rowaclInitialize(bool is_bootstrap)
 
 	CacheRegisterSyscacheCallback(AUTHOID,
 								  rowaclRoleidCallback, 0);
+	CacheRegisterSyscacheCallback(RELOID,
+								  rowaclRoleidCallback, 0);
 
 	rowAclCacheReset();
 }
