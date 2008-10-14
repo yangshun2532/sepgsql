@@ -30,7 +30,7 @@ static void  proxySubQuery(Query *query);
 static Acl  *rawAclTextToAclArray(char *raw_acl);
 static char *rawAclTextFromAclArray(Acl *acl);
 
-#define ROW_ACL_ALL_PRIVS	(ACL_SELECT | ACL_UPDATE | ACL_DELETE)
+#define ROW_ACL_ALL_PRIVS	(ACL_SELECT | ACL_UPDATE | ACL_DELETE | ACL_REFERENCES)
 
 /******************************************************************
  * Global system setting
@@ -342,7 +342,19 @@ static bool rowaclCheckPermission(Relation rel, HeapTuple tuple, AclMode require
 	Assert((required & ~ROW_ACL_ALL_PRIVS) == 0);
 
 	if (rowaclUserInfo)
+	{
 		userId = rowaclUserInfo->userId;
+
+		/*
+		 * If ACL_SELECT is given within FK constraint checks,
+		 * its privilege is replaced to ACL_REFERENCES.
+		 */
+		if (required & ACL_SELECT)
+		{
+			required &= ~ACL_SELECT;
+			required |= ACL_REFERENCES;
+		}
+	}
 
 	/*
 	 * ACL of pg_class means pre-configured default ACL
@@ -366,7 +378,7 @@ static bool rowaclCheckPermission(Relation rel, HeapTuple tuple, AclMode require
 			if (!acl)
 				acl = rowaclDefaultAclArray(relid);
 
-			privs = aclmask(acl, userId, ownerId, required, ACLMASK_ALL);
+			privs = aclmask(acl, userId, ownerId, ROW_ACL_ALL_PRIVS, ACLMASK_ALL);
 		}
 		rowAclCacheInsert(relid, userId, securityId, privs);
 	}
@@ -820,13 +832,15 @@ static Datum rowacl_grant_revoke(PG_FUNCTION_ARGS, bool grant, bool cascade)
 	for (tok = strtok(tmp, ","); tok; tok = strtok(NULL, ","))
 	{
 		if (strcasecmp(tok, "all") == 0)
-			privileges |= (ACL_SELECT | ACL_UPDATE | ACL_DELETE);
+			privileges |= ROW_ACL_ALL_PRIVS;
 		else if (strcasecmp(tok, "select") == 0)
 			privileges |= ACL_SELECT;
 		else if (strcasecmp(tok, "update") == 0)
             privileges |= ACL_UPDATE;
         else if (strcasecmp(tok, "delete") == 0)
             privileges |= ACL_DELETE;
+		else if (strcasecmp(tok, "references") == 0)
+			privileges |= ACL_REFERENCES;
         else
 			ereport(ERROR,
 					(errcode(ERRCODE_ROW_ACL_ERROR),
