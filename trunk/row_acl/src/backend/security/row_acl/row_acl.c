@@ -620,35 +620,42 @@ void rowaclGramAlterRelation(Relation rel, HeapTuple tuple, DefElem *defel)
  ******************************************************************/
 static Acl *rawAclTextToAclArray(char *raw_acl)
 {
-	Acl *acl = NULL;
-	AclItem ai;
-	int index;
-	char *copy, *tok;
+	Acl *acl;
+	char *copy, *tail;
 
-	if (!raw_acl || !strcmp(raw_acl, ROW_ACL_EMPTY_STRING))
+	if (raw_acl[0] == '\0')
 		return NULL;
 
-	index = 1;
-	copy = pstrdup(raw_acl);
-	for (tok = strtok(copy, ","); tok; tok = strtok(NULL, ","))
+	if (raw_acl[0] != '{')
+		elog(ERROR, "invalid raw acl text : '%s'", raw_acl);
+
+	copy = pstrdup(raw_acl + 1);
+	tail = strchr(copy, '}');
+	if (!tail || tail[1] != '\0')
+		elog(ERROR, "invalid raw acl text : '%s'", raw_acl);
+	*tail = '\0';
+
+	if (copy == tail)
+		acl = allocacl(0);
+	else
 	{
-		if (sscanf(tok, "%x:%x:%x",
-				   &ai.ai_grantee,
-				   &ai.ai_grantor,
-				   &ai.ai_privs) != 3)
-			continue;
+		AclItem *aip = palloc(strlen(copy) * sizeof(AclItem) / 4);
+		int aclnum;
+		char *tok;
 
-		if (!acl)
-			acl = construct_empty_array(ACLITEMOID);
+		for (tok = strtok(copy, ","); tok; tok = strtok(NULL, ","))
+		{
+			if (sscanf(tok, "%x:%x:%x",
+					   &aip[aclnum].ai_grantee,
+					   &aip[aclnum].ai_grantor,
+					   &aip[aclnum].ai_privs) != 3)
+				elog(ERROR, "invalid raw acl text : '%s'", raw_acl);
+			aclnum++;
+		}
+		acl = allocacl(aclnum);
+		memcpy(ACL_DAT(acl), aip, aclnum * sizeof(AclItem));
 
-		acl = array_set(acl, 1, &index,
-						PointerGetDatum(&ai),
-						false,
-						-1,
-						12,		/* typlen of aclitem */
-						false,	/* typbyval of aclitem */
-						'i');	/* typalign of aclitem */
-		index++;
+		pfree(aip);
 	}
 	pfree(copy);
 
@@ -662,34 +669,34 @@ static char *rawAclTextFromAclArray(Acl *acl)
 	AclItem *aip;
 	AclMode mask = ROW_ACL_ALL_PRIVS;
 	char *raw_acl;
-	int i, aclnum, ofs = 0;
+	int i, ofs = 0;
 
 	if (!acl)
-		return pstrdup(ROW_ACL_EMPTY_STRING);
-
-	aclnum = ACL_NUM(acl);
-	if (aclnum == 0)
-		return pstrdup(ROW_ACL_EMPTY_STRING);
+		return pstrdup("");
 
 	check_acl(acl);
 
-	raw_acl = palloc(aclnum * 30);	/* needed enough */
+	raw_acl = palloc(ACL_NUM(acl) * 30 + 10);	/* needed enough */
 
 	aip = ACL_DAT(acl);
-	for (i = 0; i < aclnum; i++)
+
+	ofs += sprintf(raw_acl + ofs, "{");
+	for (i = 0; i < ACL_NUM(acl); i++)
 	{
 		if ((aip[i].ai_privs & mask) != aip[i].ai_privs)
 			ereport(ERROR,
 					(errcode(ERRCODE_ROW_ACL_ERROR),
-					 errmsg("unsupported ACL: %04x", aip[i].ai_privs & ~mask)));
+					 errmsg("unsupported ACL: %04x",
+							aip[i].ai_privs & ~ROW_ACL_ALL_PRIVS)));
 
 		ofs += sprintf(raw_acl + ofs,
 					   "%s%x:%x:%x",
-					   (ofs == 0 ? "" : ","),
+					   (ofs == 1 ? "" : ","),
 					   aip[i].ai_grantee,
 					   aip[i].ai_grantor,
 					   aip[i].ai_privs);
 	}
+	ofs += sprintf(raw_acl + ofs, "}");
 
 	return raw_acl;
 }
@@ -697,17 +704,25 @@ static char *rawAclTextFromAclArray(Acl *acl)
 char *rowaclTranslateSecurityLabelIn(char *acl_string)
 {
 	FmgrInfo finfo;
-	Datum tmp;
+	Acl *acl;
 
-	if (!acl_string || acl_string[0] == '\0')
+	if (acl_string[0] == '\0')
 		return NULL;
 
 	fmgr_info_cxt(F_ARRAY_IN, &finfo, CurrentMemoryContext);
-	tmp = FunctionCall3(&finfo,
-						CStringGetDatum(acl_string),
-						ObjectIdGetDatum(ACLITEMOID),
-						Int32GetDatum(-1));
-	return rawAclTextFromAclArray(DatumGetAclP(tmp));
+	acl = DatumGetAclP(FunctionCall3(&finfo,
+									 CStringGetDatum(acl_string),
+									 ObjectIdGetDatum(ACLITEMOID),
+									 Int32GetDatum(-1)));
+	/*
+	 * Fixup ACL with no entries
+	 */
+	if (ARR_NDIM(acl) == 0)
+	{
+		pfree(acl);
+		acl = allocacl(0);
+	}
+	return rawAclTextFromAclArray(acl);
 }
 
 char *rowaclTranslateSecurityLabelOut(char *acl_string)
@@ -728,17 +743,23 @@ char *rowaclTranslateSecurityLabelOut(char *acl_string)
 	return DatumGetCString(tmp);
 }
 
-bool rowaclCheckValidSecurityLabel(char *seclabel)
+bool rowaclCheckValidSecurityLabel(char *aclstring)
 {
-	int c, phase = 1;
+	int c, phase = 0;
 
-	if (strcmp(seclabel, ROW_ACL_EMPTY_STRING) == 0)
+	if (*aclstring == '\0')
 		return true;
 
-	while ((c = *seclabel++) != '\0')
+	if (*aclstring++ != '{')
+		return false;
+
+	while ((c = *aclstring++) != '\0')
 	{
 		switch (phase)
 		{
+		case 0:
+			if (c == '}')
+				goto out;
 		case 1:		/* authid of grantee */
 			if (c == ':')
 				phase = 2;
@@ -754,12 +775,17 @@ bool rowaclCheckValidSecurityLabel(char *seclabel)
 		case 3:		/* privileges */
 			if (c == ',')
 				phase = 1;
+			else if (c == '}')
+				goto out;
 			else if (!isxdigit(c))
 				return false;
 			break;
 		}
 	}
-	if (phase != 3)
+	return false;
+
+out:
+	if (*aclstring != '\0')
 		return false;
 
 	return true;
@@ -767,7 +793,7 @@ bool rowaclCheckValidSecurityLabel(char *seclabel)
 
 char *rowaclUnlabeledSecurityLabel(void)
 {
-	return pstrdup(ROW_ACL_EMPTY_STRING);
+	return NULL;
 }
 
 /******************************************************************
@@ -805,6 +831,14 @@ static Datum rowacl_grant_revoke(PG_FUNCTION_ARGS, bool grant, bool cascade)
 										 CStringGetDatum(tmp),
 										 ObjectIdGetDatum(ACLITEMOID),
 										 Int32GetDatum(-1)));
+		/*
+		 * Fixup when an empty array is given
+		 */
+		if (ARR_NDIM(acl) == 0)
+		{
+			pfree(acl);
+			acl = allocacl(0);
+		}
 	}
 	/*
 	 * Extract usernames

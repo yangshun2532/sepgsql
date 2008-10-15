@@ -49,8 +49,6 @@ extern void rowaclGramAlterRelation(Relation rel, HeapTuple tuple, DefElem *defe
  * Security Label hooks
  ******************************************************************/
 
-#define ROW_ACL_EMPTY_STRING		"__no_acl__"
-
 extern bool rowaclSecurityAttributeNecessary(void);
 
 extern char *rowaclTranslateSecurityLabelIn(char *seclabel);

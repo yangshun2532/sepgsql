@@ -231,6 +231,7 @@ extern void select_best_grantor(Oid roleId, AclMode privileges,
 
 extern void initialize_acl(void);
 
+extern Acl *allocacl(int n);
 extern void check_acl(const Acl *acl);
 
 /*
