@@ -1291,8 +1291,12 @@ fetchWritableSystemAttribute(JunkFilter *junkfilter, TupleTableSlot *slot,
 	if (attno != InvalidAttrNumber)
 	{
 		datum = ExecGetJunkAttribute(slot, attno, &isnull);
-		if (!isnull)
-			*tts_security = datum;
+		if (isnull)
+			ereport(ERROR,
+					(errcode(ERRCODE_PGACE_ERROR),
+					 errmsg("null value in column \"%s\" violates not-null constraint",
+							SECURITY_SYSATTR_NAME)));
+		*tts_security = datum;
 	}
 #endif
 }
