@@ -57,10 +57,6 @@ extern char *rowaclTranslateSecurityLabelOut(char *seclabel);
 
 extern bool rowaclCheckValidSecurityLabel(char *seclabel);
 
-extern char *rowaclUnlabeledSecurityLabel(void);
-
-extern char *rowaclSecurityLabelOfLabel(void);
-
 /******************************************************************
  * SQL functions
  ******************************************************************/

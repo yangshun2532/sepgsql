@@ -1246,9 +1246,6 @@ pgaceUnlabeledSecurityLabel(void)
 #if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
 		return sepgsqlUnlabeledSecurityLabel();
-#elif defined(HAVE_ROW_ACL)
-	if (rowaclIsEnabled())
-		return rowaclUnlabeledSecurityLabel();
 #endif
 	return NULL;
 }
