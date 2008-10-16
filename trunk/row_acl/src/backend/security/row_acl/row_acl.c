@@ -28,8 +28,10 @@
  * static declarations
  */
 static void  proxySubQuery(Query *query);
-static void rawAclTextToAclArray(const char *raw_acl, Acl **acl, Acl **defacl);
+static void  rawAclTextToAclArray(const char *raw_acl, Acl **acl, Acl **defacl);
 static char *rawAclTextFromAclArray(Acl *acl, Acl *defacl);
+static void  aclArrayInput(const char *input, Acl **acl, Acl **defacl);
+static char *aclArrayOutput(Acl *acl, Acl *defacl);
 
 #define ROW_ACL_ALL_PRIVS	(ACL_SELECT | ACL_UPDATE | ACL_DELETE | ACL_REFERENCES)
 
@@ -257,53 +259,20 @@ void rowaclInitialize(bool is_bootstrap)
  * Row-level access controls
  ******************************************************************/
 
-static Acl *rowaclDefaultAclArray(Oid relid)
+static Acl *rowaclDefaultAclArray(Oid ownerId)
 {
-	HeapTuple tuple;
-	Form_pg_class classForm;
-	Oid ownerId;
-	Datum aclDatum;
-	bool isnull;
 	Acl *acl;
-	AclItem *aidat;
-	int i;
+	AclItem *aip;
 
 	/*
-	 * Get owner Id
+	 * All permissions to public in default
 	 */
-	tuple = SearchSysCache(RELOID,
-						   ObjectIdGetDatum(relid),
-						   0, 0, 0);
-	if (!HeapTupleIsValid(tuple))
-		ereport(ERROR,
-				(errcode(ERRCODE_ROW_ACL_ERROR),
-				 errmsg("cache lookup failed for relation: %u", relid)));
-	classForm = (Form_pg_class) GETSTRUCT(tuple);
-	ownerId = classForm->relowner;
 
-	aclDatum = SysCacheGetAttr(RELOID, tuple,
-							   Anum_pg_class_relacl, &isnull);
-	if (isnull)
-	{
-		acl = acldefault(classForm->relkind == RELKIND_SEQUENCE ?
-						 ACL_OBJECT_SEQUENCE : ACL_OBJECT_RELATION,
-						 ownerId);
-	}
-	else
-	{
-		acl = DatumGetAclPCopy(aclDatum);
-	}
-
-	ReleaseSysCache(tuple);
-
-	/*
-	 * Mask unsupported privileges
-	 */
-	aidat = ACL_DAT(acl);
-	for (i = 0; i < ACL_NUM(acl); i++)
-	{
-		aidat[i].ai_privs &= ROW_ACL_ALL_PRIVS;
-	}
+	acl = allocacl(1);
+	aip = ACL_DAT(acl);
+	aip->ai_grantee = ACL_ID_PUBLIC;
+	aip->ai_grantor = ownerId;
+	aip->ai_privs = ROW_ACL_ALL_PRIVS;
 
 	return acl;
 }
@@ -357,13 +326,6 @@ static bool rowaclCheckPermission(Relation rel, HeapTuple tuple, AclMode require
 		}
 	}
 
-	/*
-	 * ACL of pg_class means pre-configured default ACL
-	 * It does not used to access control
-	 */
-	if (IsSystemRelation(rel))
-		return true;
-
 	if (!rowAclCacheLookup(relid, userId, securityId, &privs))
 	{
 		/* Superusers bypass all permission checking */
@@ -378,7 +340,7 @@ static bool rowaclCheckPermission(Relation rel, HeapTuple tuple, AclMode require
 
 			rawAclTextToAclArray(raw_acl, &acl, &defacl);
 			if (!acl)
-				acl = rowaclDefaultAclArray(relid);
+				acl = rowaclDefaultAclArray(ownerId);
 
 			privs = aclmask(acl, userId, ownerId, ROW_ACL_ALL_PRIVS, ACLMASK_ALL);
 		}
@@ -418,62 +380,54 @@ bool rowaclCopyToTuple(Relation rel, List *attNumList, HeapTuple tuple)
 bool rowaclHeapTupleInsert(Relation rel, HeapTuple tuple,
 						   bool is_internal, bool with_returning)
 {
+	Acl *acl, *defacl;
+	char *rawacl;
+
 	if (HeapTupleGetSecurity(tuple) != InvalidOid)
 	{
-		/*
-		 * Explicit ACL case
-		 */
 		if (RelationGetForm(rel)->relkind != RELKIND_RELATION)
 			ereport(ERROR,
 					(errcode(ERRCODE_ROW_ACL_ERROR),
-					 errmsg("cannot set Row-level ACL to relation"
-							" with relkind:%c", RelationGetForm(rel)->relkind)));
-
-		if (is_internal && RelationGetRelid(rel) == RelationRelationId)
-		{
-			/*
-			 * Default ACL via CREATE TABLE
-			 */
-			Form_pg_class class_form = (Form_pg_class) GETSTRUCT(tuple);
-
-			if (class_form->relkind != RELKIND_RELATION)
-				ereport(ERROR,
-						(errcode(ERRCODE_ROW_ACL_ERROR),
-						 errmsg("cannot set default ACL to relation"
-								" with relkind:%c", class_form->relkind)));
-			if (IsSystemClass(class_form))
-				ereport(ERROR,
-						(errcode(ERRCODE_ROW_ACL_ERROR),
-						 errmsg("default ACL is unavailable for system catalog")));
-			if (!pg_class_ownercheck(class_form->relowner, GetUserId()))
-				ereport(ERROR,
-						(errcode(ERRCODE_ROW_ACL_ERROR),
-						 errmsg("Only owner or superuser can set default ACL")));
-		}
-		else if (IsSystemRelation(rel))
-			ereport(ERROR,
-					(errcode(ERRCODE_ROW_ACL_ERROR),
-					 errmsg("Row-level ACL is unavailable for system catalog")));
-		else if (!pg_class_ownercheck(RelationGetRelid(rel), GetUserId()))
+					 errmsg("only general relation can have row-level ACL")));
+		if (!is_internal &&
+			!pg_class_ownercheck(RelationGetRelid(rel), GetUserId()))
 			ereport(ERROR,
 					(errcode(ERRCODE_ROW_ACL_ERROR),
 					 errmsg("Only owner or superuser can set ACL")));
-	}
-	else if (!IsSystemRelation(rel))
-	{
 		/*
-		 * Set default ACL
+		 * validate ACL
 		 */
-		HeapTuple reltup
-			= SearchSysCache(RELOID,
-							 ObjectIdGetDatum(RelationGetRelid(rel)),
-							 0, 0, 0);
+		rawacl = pgaceLookupSecurityLabel(HeapTupleGetSecurity(tuple));
+		rawAclTextToAclArray(rawacl, &acl, &defacl);
+		if (defacl && RelationGetRelid(rel) != RelationRelationId)
+				ereport(ERROR,
+						(errcode(ERRCODE_ROW_ACL_ERROR),
+						 errmsg("only pg_class can have default ACL")));
+	}
+	else if (!IsBootstrapProcessingMode())
+	{
+		HeapTuple reltup;
+		Oid securityId;
+
+		reltup = SearchSysCache(RELOID,
+								ObjectIdGetDatum(RelationGetRelid(rel)),
+								0, 0, 0);
 		if (!HeapTupleIsValid(reltup))
 			elog(ERROR, "cache lookup failed for relation %s",
 				 RelationGetRelationName(rel));
+		if (HeapTupleGetSecurity(reltup) != InvalidOid)
+		{
+			rawacl = pgaceLookupSecurityLabel(HeapTupleGetSecurity(reltup));
+			rawAclTextToAclArray(rawacl, &acl, &defacl);
 
-		HeapTupleSetSecurity(tuple, HeapTupleGetSecurity(reltup));
+			if (defacl)
+			{
+				rawacl = rawAclTextFromAclArray(defacl, NULL);
+				securityId = pgaceLookupSecurityId(rawacl);
 
+				HeapTupleSetSecurity(tuple, securityId);
+			}
+		}
 		ReleaseSysCache(reltup);
 	}
 
@@ -522,43 +476,29 @@ bool rowaclHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple newtup,
 		/*
 		 * Preserve Old ACL
 		 */
-		Oid security_id = HeapTupleGetSecurity(oldtup);
+		Oid securityId = HeapTupleGetSecurity(oldtup);
 
-		HeapTupleSetSecurity(newtup, security_id);
+		HeapTupleSetSecurity(newtup, securityId);
 	}
 	else if (HeapTupleGetSecurity(newtup) != HeapTupleGetSecurity(oldtup))
 	{
-		if (is_internal && RelationGetRelid(rel) == RelationRelationId)
-		{
-			/*
-			 * Default ACL via ALTER TABLE
-			 */
-			Form_pg_class class_form = (Form_pg_class) GETSTRUCT(newtup);
+		Acl *acl, *defacl;
+		char *rawacl;
 
-			if (class_form->relkind != RELKIND_RELATION)
-				ereport(ERROR,
-						(errcode(ERRCODE_ROW_ACL_ERROR),
-						 errmsg("cannot set default ACL to relation"
-								" with relkind:%c", class_form->relkind)));
-			if (IsSystemClass(class_form))
-				ereport(ERROR,
-						(errcode(ERRCODE_ROW_ACL_ERROR),
-						 errmsg("default ACL is unavailable for system catalog")));
-			if (!pg_class_ownercheck(class_form->relowner, GetUserId()))
-				ereport(ERROR,
-						(errcode(ERRCODE_ROW_ACL_ERROR),
-						 errmsg("Only owner or superuser can set default ACL")));
-		}
-		else if (IsSystemRelation(rel))
-			ereport(ERROR,
-					(errcode(ERRCODE_ROW_ACL_ERROR),
-					 errmsg("Row-level ACL is unavailable for system catalog")));
-		else if (!pg_class_ownercheck(RelationGetRelid(rel), GetUserId()))
+		if (!is_internal &&
+			!pg_class_ownercheck(RelationGetRelid(rel), GetUserId()))
 			ereport(ERROR,
 					(errcode(ERRCODE_ROW_ACL_ERROR),
 					 errmsg("Only owner or superuser can set ACL")));
-	}
 
+		rawacl = pgaceLookupSecurityLabel(HeapTupleGetSecurity(newtup));
+		rawAclTextToAclArray(rawacl, &acl, &defacl);
+
+		if (defacl && RelationGetRelid(rel) != RelationRelationId)
+			ereport(ERROR,
+					(errcode(ERRCODE_ROW_ACL_ERROR),
+					 errmsg("only pg_class can have default ACL")));
+	}
 	return true;
 }
 
@@ -598,22 +538,50 @@ bool rowaclIsGramSecurityItem(DefElem *defel)
 
 void rowaclGramCreateRelation(Relation rel, HeapTuple tuple, DefElem *defel)
 {
-	if (defel)
-	{
-		Oid security_id = pgaceSecurityLabelToSid(strVal(defel->arg));
+	Acl *acl, *defacl;
+	char *defaclTxt;
+	Oid securityId;
 
-		HeapTupleSetSecurity(tuple, security_id);
-	}
+	if (!defel)
+		return;
+
+	aclArrayInput(strVal(defel->arg), &acl, &defacl);
+	if (!acl || defacl)
+		ereport(ERROR,
+				(errcode(ERRCODE_ROW_ACL_ERROR),
+				 errmsg("invalid default ACL : %s", strVal(defel->arg))));
+
+	defaclTxt = rawAclTextFromAclArray(NULL, acl);
+	securityId = pgaceLookupSecurityId(defaclTxt);
+
+	HeapTupleSetSecurity(tuple, securityId);
 }
 
 void rowaclGramAlterRelation(Relation rel, HeapTuple tuple, DefElem *defel)
 {
-	if (defel)
-	{
-		Oid security_id = pgaceSecurityLabelToSid(strVal(defel->arg));
+	HeapTuple oldtup;
+	Acl *acl, *defacl, *acl_old, *defacl_old;
+	char *rawacl, *defaclTxt;
+	Oid securityId;
 
-		HeapTupleSetSecurity(tuple, security_id);
-	}
+	if (!defel)
+		return;
+
+	aclArrayInput(strVal(defel->arg), &acl, &defacl);
+	if (!acl || defacl)
+		ereport(ERROR,
+				(errcode(ERRCODE_ROW_ACL_ERROR),
+				 errmsg("invalid default ACL : %s", strVal(defel->arg))));
+
+	/* lookup original one */
+	oldtup = getHeapTupleFromItemPointer(rel, &tuple->t_self);
+	rawacl = pgaceLookupSecurityLabel(HeapTupleGetSecurity(oldtup));
+	rawAclTextToAclArray(rawacl, &acl_old, &defacl_old);
+
+	defaclTxt = rawAclTextFromAclArray(acl_old, acl);
+	securityId = pgaceLookupSecurityId(defaclTxt);
+
+	HeapTupleSetSecurity(tuple, securityId);
 }
 
 /******************************************************************
@@ -627,7 +595,9 @@ static Acl *rawAclTokenToAclArray(char *rawacl)
 	int aclnum = 0;
 
 	aip = palloc(strlen(rawacl) * sizeof(AclItem) / 4);
-	for (tok = strtok_r(rawacl, ",", &sv); tok; tok = strtok_r(NULL, ",", &sv))
+	for (tok = strtok_r(rawacl, ",", &sv);
+		 tok;
+		 tok = strtok_r(NULL, ",", &sv))
 	{
 		if (sscanf(tok, "%x:%x:%x",
 				   &aip[aclnum].ai_grantee,
@@ -649,7 +619,7 @@ static Acl *rawAclTokenToAclArray(char *rawacl)
 static char *rawAclTokenFromAclArray(Acl *acl)
 {
 	AclItem *aip = ACL_DAT(acl);
-	char *rawacl = palloc(ACL_NUM(acl) * 30 + 10);
+	char *rawacl = palloc0(ACL_NUM(acl) * 30 + 10);
 	int i, ofs = 0;
 
 	for (i = 0; i < ACL_NUM(acl); i++)
@@ -678,7 +648,9 @@ static void rawAclTextToAclArray(const char *raw_acl, Acl **acl, Acl **defacl)
 	*acl = *defacl = NULL;
 
 	copy = pstrdup(raw_acl);
-	for (tok = strtok_r(copy, "/", &sv); tok; tok = strtok_r(NULL, "/", &sv))
+	for (tok = strtok_r(copy, "/", &sv);
+		 tok;
+		 tok = strtok_r(NULL, "/", &sv))
 	{
 		if (strncmp(tok, "acl=", 4) == 0)
 		{
@@ -739,7 +711,9 @@ static void aclArrayInput(const char *input, Acl **acl, Acl **defacl)
 
 	copy = pstrdup(input);
 	*acl = *defacl = NULL;
-	for (tok = strtok_r(copy, " ", &sv); tok; tok = strtok_r(NULL, " ", &sv))
+	for (tok = strtok_r(copy, " ", &sv);
+		 tok;
+		 tok = strtok_r(NULL, " ", &sv))
 	{
 		fmgr_info_cxt(F_ARRAY_IN, &finfo, CurrentMemoryContext);
 
@@ -820,7 +794,8 @@ char *rowaclTranslateSecurityLabelIn(char *acl_string)
 	Acl *acl, *defacl;
 
 	if (*acl_string == '\0')
-		return NULL;
+		return acl_string;
+
 	aclArrayInput(acl_string, &acl, &defacl);
 	return rawAclTextFromAclArray(acl, defacl);
 }
@@ -836,60 +811,37 @@ char *rowaclTranslateSecurityLabelOut(char *acl_string)
 
 bool rowaclCheckValidSecurityLabel(char *aclstring)
 {
-	char *copy, *tok;
-	int c, phase = 0;
+	char *copy, *tok, *sv, *ptr, *tok2, *sv2;
+	AclItem ai;
 
 	if (*aclstring == '\0')
 		return true;
 
-	return true;
-
-
-
-	if (*aclstring++ != '{')
-		return false;
-
-	while ((c = *aclstring++) != '\0')
+	copy = pstrdup(aclstring);
+	for (tok = strtok_r(copy, "/", &sv);
+		 tok;
+		 tok = strtok_r(NULL, "/", &sv))
 	{
-		switch (phase)
+		if (strncmp(tok, "acl=", 4) == 0)
+			ptr = tok + 4;
+		else if (strncmp(tok, "default=", 8) == 0)
+			ptr = tok + 8;
+		else
+			return false;
+
+		for (tok2 = strtok_r(ptr, ",", &sv2);
+			 tok2;
+			 tok2 = strtok_r(NULL, "/", &sv2))
 		{
-		case 0:
-			if (c == '}')
-				goto out;
-		case 1:		/* authid of grantee */
-			if (c == ':')
-				phase = 2;
-			else if (!isxdigit(c))
+			if (sscanf(ptr, "%x:%x:%x",
+					   &ai.ai_grantee,
+					   &ai.ai_grantor,
+					   &ai.ai_privs) != 3)
 				return false;
-			break;
-		case 2:		/* authid of grantor */
-			if (c == ':')
-				phase = 3;
-			else if (!isxdigit(c))
-				return false;
-			break;
-		case 3:		/* privileges */
-			if (c == ',')
-				phase = 1;
-			else if (c == '}')
-				goto out;
-			else if (!isxdigit(c))
-				return false;
-			break;
 		}
 	}
-	return false;
-
-out:
-	if (*aclstring != '\0')
-		return false;
 
 	return true;
-}
-
-char *rowaclUnlabeledSecurityLabel(void)
-{
-	return NULL;
 }
 
 /******************************************************************
@@ -903,10 +855,23 @@ char *rowaclUnlabeledSecurityLabel(void)
 static Datum rowacl_grant_revoke(PG_FUNCTION_ARGS, bool grant, bool cascade)
 {
 	char *input, *tok, *sv;
+	HeapTuple tuple;
 	Acl *acl, *defacl;
 	Oid ownerId;
 	List *grantees = NIL;
 	AclMode privileges = 0;
+
+	/*
+	 * Get owner Id;
+	 */
+	tuple = SearchSysCache(RELOID,
+						   PG_GETARG_DATUM(0), 0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "cache lookup failed for relation %u",
+			 PG_GETARG_OID(0));
+
+	ownerId = ((Form_pg_class) GETSTRUCT(tuple))->relowner;
+	ReleaseSysCache(tuple);
 
 	/*
 	 * Extract Acl array
@@ -914,13 +879,15 @@ static Datum rowacl_grant_revoke(PG_FUNCTION_ARGS, bool grant, bool cascade)
 	input = TextDatumGetCString(PG_GETARG_TEXT_P(1));
 	aclArrayInput(input, &acl, &defacl);
 	if (!acl)
-		acl = rowaclDefaultAclArray(PG_GETARG_OID(0));
+		acl = rowaclDefaultAclArray(ownerId);
 
 	/*
 	 * Extract usernames
 	 */
 	input = TextDatumGetCString(PG_GETARG_TEXT_P(2));
-	for (tok = strtok_r(input, ",", &sv); tok; tok = strtok_r(NULL, ",", &sv))
+	for (tok = strtok_r(input, ",", &sv);
+		 tok;
+		 tok = strtok_r(NULL, ",", &sv))
 	{
 		if (strcasecmp(tok, "public") == 0)
 			grantees = lappend_oid(grantees, ACL_ID_PUBLIC);
@@ -941,7 +908,9 @@ static Datum rowacl_grant_revoke(PG_FUNCTION_ARGS, bool grant, bool cascade)
 	 * Extract permission names
 	 */
 	input = TextDatumGetCString(PG_GETARG_TEXT_P(3));
-	for (tok = strtok_r(input, ",", &sv); tok; tok = strtok_r(NULL, ",", &sv))
+	for (tok = strtok_r(input, ",", &sv);
+		 tok;
+		 tok = strtok_r(NULL, ",", &sv))
 	{
 		if (strcasecmp(tok, "all") == 0)
 			privileges |= ROW_ACL_ALL_PRIVS;
