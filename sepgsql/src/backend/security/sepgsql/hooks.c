@@ -771,7 +771,10 @@ sepgsqlHeapTupleInsert(Relation rel, HeapTuple tuple,
 	 * default context for no explicit labeled tuple
 	 */
 	if (HeapTupleGetSecurity(tuple) == InvalidOid)
-		sepgsqlSetDefaultContext(rel, tuple);
+	{
+		if (HeapTupleHasSecurity(tuple))
+			sepgsqlSetDefaultContext(rel, tuple);
+	}
 	else if (!is_internal && RelationGetRelid(rel) == LargeObjectRelationId)
 		ereport(ERROR,
 				(errcode(ERRCODE_SELINUX_ERROR),
@@ -800,9 +803,10 @@ sepgsqlHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple newtup,
 
 	if (HeapTupleGetSecurity(newtup) == InvalidOid)
 	{
-		Oid		security_id = HeapTupleGetSecurity(oldtup);
+		Oid securityId = HeapTupleGetSecurity(oldtup);
 
-		HeapTupleSetSecurity(newtup, security_id);
+		if (HeapTupleHasSecurity(newtup))
+			HeapTupleSetSecurity(newtup, securityId);
 	}
 	else if (!is_internal && RelationGetRelid(rel) == LargeObjectRelationId)
 		ereport(ERROR,
