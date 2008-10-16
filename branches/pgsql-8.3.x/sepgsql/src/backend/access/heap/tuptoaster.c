@@ -590,7 +590,7 @@ toast_insert_or_update(Relation rel, HeapTuple newtup, HeapTuple oldtup,
 		hoff += BITMAPLEN(numAttrs);
 	if (newtup->t_data->t_infomask & HEAP_HASOID)
 		hoff += sizeof(Oid);
-	if (pgaceSecurityAttributeNecessary())
+	if (newtup->t_data->t_infomask & HEAP_HASSECURITY)
 		hoff += sizeof(Oid);
 	hoff = MAXALIGN(hoff);
 	Assert(hoff == newtup->t_data->t_hoff);
@@ -841,7 +841,7 @@ toast_insert_or_update(Relation rel, HeapTuple newtup, HeapTuple oldtup,
 			new_len += BITMAPLEN(numAttrs);
 		if (olddata->t_infomask & HEAP_HASOID)
 			new_len += sizeof(Oid);
-		if (pgaceSecurityAttributeNecessary())
+		if (olddata->t_infomask & HEAP_HASSECURITY)
 			new_len += sizeof(Oid);
 		new_len = MAXALIGN(new_len);
 		Assert(new_len == olddata->t_hoff);
@@ -994,7 +994,7 @@ toast_flatten_tuple_attribute(Datum value,
 		new_len += BITMAPLEN(numAttrs);
 	if (olddata->t_infomask & HEAP_HASOID)
 		new_len += sizeof(Oid);
-	if (pgaceSecurityAttributeNecessary())
+	if (olddata->t_infomask & HEAP_HASSECURITY)
 		new_len += sizeof(Oid);
 	new_len = MAXALIGN(new_len);
 	Assert(new_len == olddata->t_hoff);
