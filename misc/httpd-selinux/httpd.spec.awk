@@ -7,7 +7,7 @@
     print "# SELinux awared MPM";
     print "Patch99: httpd-mpm-selinux.patch";
     print "Source99: httpd-selinux.conf";
-    print "Source98: selinux_auth.conf";
+    print "Source98: selinux_basic.conf";
     print;
     next;
 }
@@ -79,7 +79,7 @@
     print "%files selinux"
     print "%{_sbindir}/httpd.selinux"
     print "%config(noreplace) %{_sysconfdir}/httpd/conf.d/httpd-selinux.conf"
-    print "%config(noreplace) %{contentdir}/selinux_auth.conf"
+    print "%config(noreplace) %{contentdir}/selinux_basic.conf"
     print "%{_datadir}/selinux/*/httpd-selinux.pp"
     print "";
     print;
