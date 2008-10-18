@@ -5,5 +5,5 @@ if test "$MPM_NAME" = "selinux" ; then
         APR_ADDTO(AP_LIBS, [-lselinux])
     ])
 
-    MODLIST="$MODLIST selinux_auth"
+    MODLIST="$MODLIST selinux_basic"
 fi

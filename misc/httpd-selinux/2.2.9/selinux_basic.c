@@ -76,7 +76,7 @@ static int selinux_basic_lookup_entry(request_rec *r, const char *filename, char
 		{
 			ap_log_error(APLOG_MARK, APLOG_NOTICE, 0, r->server,
 				     "syntax error at %s:%u", filename, lineno);
-			flose(filp);
+			fclose(filp);
 			return HTTP_INTERNAL_SERVER_ERROR;
 		}
 
