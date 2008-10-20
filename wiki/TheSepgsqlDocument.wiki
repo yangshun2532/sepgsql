@@ -57,7 +57,7 @@ It is the most significant purpose for security mechanisms to protect leaking cl
 
 SELinux is an operating system feature to apply a single unified security policy whole of the operating system with trapping system calls. It is a correct approach to enforce the policy with minimum cost, however, we have to keep in mind that several userspace object manager (like X-window, RDBMS, ...) can be used as a inter-process communication channel. The resources managed in userspace are invisible from the kernel, so we have two options. The one is traditional all-or-nothing policy which does not allow to share userspace objects, but unrealistic. The other is enhancement of userspace object manager which makes its access control decision based on a signle unified security policy of SELinux.
 
-http://sepgsql.googlecode.com/files/sepgsql_dfc.png
+http://sepgsql.googlecode.com/files/sepgsql-docs-figure.01.png
 
 The above figure shows the example of this kind of consistency called as data flow controls. It requires classified information does not leak to unclassified domain via inter-process communication channels, independent from the sort of them.
 
@@ -69,28 +69,46 @@ If user processes without clearance tries to read secret information stored with
 
 When the same actions are invoked on RDBMS, SE-PostgreSQL asks in-kernel SELinux whether the required operation is violated, or not. Then it applies the decision made by SELinux, so it means SELinux indirectly controls accesses in userspace.
 
-
-
-
-
-
-
-
-
-
-
-
-
-
+----------------------------------------
 
 
 = Architecture =
 
 This chapter introduces the architecture of SE-PostgreSQL.
 
+== Interactions between subsystems ==
+
+SE-PostgreSQL takes a hand in SQL query processing at two places.
+The first one is a phase just after query rewriting, the other is the head and during the executor running.
+
+http://sepgsql.googlecode.com/files/sepgsql-docs-figure.02.png
+
+At first, the client sends SQL queries in string format, it invokes all the following subsystems.
+Then, the given SQL queries are delivered to the query parser to split up the string into tree-structured tokens. Then, the tokens are delivered to the query analyzer to resolve identifier of object names and to confirm its existances. If views are used in the given queries, the query rewriter expand the views into raw expression described in `SELECT` statement.
+
+The first interposition of SE-PostgreSQL is here. It walks on the given query trees and picks up all appeared tables, columns and procedures to make a list of accessed objects to check privileges later.
+
+Then, the query trees are delivered to the optimizer to make execution plan tree. It is delivered to the executor and it accesses to databases to make a result set to be returned to user.
+
+The later interposition of SE-PostgreSQL is also here. It is invoked at the head of the executor to check access privileges to appeared database objects on the list. It makes access control decision with communicating to in-kernel SELinux, if necessary. If the given query contains access violation, the query execution process is aborted just before query execution.
+The rest of interposition is under scanning of the relations. The executor invokes SE-PostgreSQL for each fetched tuples to check whether it is allowed, or not. The reason why we implement row-level access controls as a filtering stuff is we cannot expect what tuples are fetched until the queries are executed.
+
+At the last, the result set is returned to the client.
+
+
+== PGACE security framework ==
+
+
+
 == Security context management ==
 
 === What is security context ? ===
+
+
+{{{
+<selinux user>:<role>:<type/domain>:<range>
+
+}}}
 
 
 === security_context system column ===
@@ -99,11 +117,6 @@ This chapter introduces the architecture of SE-PostgreSQL.
 === interaction with pg_security system catalog ===
 
 
-== Interactions between subsystems ==
-
-
-
-== PGACE security framework ==
 
 
 
@@ -124,6 +137,11 @@ This chapter introduces the architecture of SE-PostgreSQL.
 
 
 
+
+
+
+
+----
 
 = Specifications =
 
@@ -153,6 +171,7 @@ This chapter introduces the details of access controls in SE-PostgreSQL.
 
 
 
+----
 
 = SELinux overview =
 == Rerefence monitor model ==
@@ -163,6 +182,7 @@ This chapter introduces the details of access controls in SE-PostgreSQL.
 
 
 
+----
 
 = Administration =
 
@@ -172,6 +192,7 @@ This chapter introduces the details of access controls in SE-PostgreSQL.
 
 == Backup and restore ==
 
+----
 
 = References =
 
