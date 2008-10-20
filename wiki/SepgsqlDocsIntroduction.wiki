@@ -8,7 +8,7 @@ The Security-Enhanced PostgreSQL (SE-PostgreSQL) is a built-in enhancement of Po
 = Indexes =
 
  * [SepgsqlDocsIntroduction#Introduction Introduction]
-  * [SepgsqlDocsIntroduction#What_is_SE_PostgreSQL What is SE-PostgreSQL]
+  * [SepgsqlDocsIntroduction#What_is_SE-PostgreSQL What is SE-PostgreSQL]
   * [SepgsqlDocsIntroduction#Why_we_need_consistency_in_access_controls Why we need consistency in access controls]
  * [SepgsqlDocsArchitecture Architecture]
  * [SepgsqlDocsSpecification Specification]
