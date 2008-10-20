@@ -1,6 +1,4 @@
 #labels Phase-Design
-# TheSepgsqlDocsIntroduction
-
 http://sepgsql.googlecode.com/files/sepgsql_logo.png
 
 = The SE-PostgreSQL Documents =
@@ -70,5 +68,3 @@ In addition, it does not allow `SystemHigh` process to send messages to `SystemL
 If user processes without clearance tries to read secret information stored within objects managed by kernel, or user processes with clearance tries to write secret ones into unclassified object, in-kernel SELinux directly prevents these operation according to the security policy.
 
 When the same actions are invoked on RDBMS, SE-PostgreSQL asks in-kernel SELinux whether the required operation is violated, or not. Then it applies the decision made by SELinux, so it means SELinux indirectly controls accesses in userspace.
-
-
