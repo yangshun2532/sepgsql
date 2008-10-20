@@ -1,6 +1,4 @@
 #labels Phase-Design
-# TheSepgsqlDocsIntroduction
-
 http://sepgsql.googlecode.com/files/sepgsql_logo.png
 
 = The SE-PostgreSQL Documents =
@@ -10,6 +8,8 @@ The Security-Enhanced PostgreSQL (SE-PostgreSQL) is a built-in enhancement of Po
 = Indexes =
 
  * [SepgsqlDocsIntroduction#Introduction Introduction]
+  * [SepgsqlDocsIntroduction#What_is_SE_PostgreSQL What is SE-PostgreSQL]
+  * [SepgsqlDocsIntroduction#Why_we_need_consistency_in_access_controls Why we need consistency in access controls]
  * [SepgsqlDocsArchitecture Architecture]
  * [SepgsqlDocsSpecification Specification]
  * [SepgsqlDocsSELinuxDesign SELinux design]
