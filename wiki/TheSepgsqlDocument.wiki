@@ -86,19 +86,49 @@ http://sepgsql.googlecode.com/files/sepgsql-docs-figure.02.png
 At first, the client sends SQL queries in string format, it invokes all the following subsystems.
 Then, the given SQL queries are delivered to the query parser to split up the string into tree-structured tokens. Then, the tokens are delivered to the query analyzer to resolve identifier of object names and to confirm its existances. If views are used in the given queries, the query rewriter expand the views into raw expression described in `SELECT` statement.
 
-The first interposition of SE-PostgreSQL is here. It walks on the given query trees and picks up all appeared tables, columns and procedures to make a list of accessed objects to check privileges later.
+The first interposition of SE-PostgreSQL is here. It walks on the given query trees and picks up all appeared tables, columns and procedures to make a list of accessed objects to check privileges later. Please note that all views are already expanded at this moment. SE-PostgreSQL does not care about any views and all the access controls are applied on expanded relations, because it focuses on what relation is accessed, not how the relation is accessed.
 
 Then, the query trees are delivered to the optimizer to make execution plan tree. It is delivered to the executor and it accesses to databases to make a result set to be returned to user.
 
-The later interposition of SE-PostgreSQL is also here. It is invoked at the head of the executor to check access privileges to appeared database objects on the list. It makes access control decision with communicating to in-kernel SELinux, if necessary. If the given query contains access violation, the query execution process is aborted just before query execution.
-The rest of interposition is under scanning of the relations. The executor invokes SE-PostgreSQL for each fetched tuples to check whether it is allowed, or not. The reason why we implement row-level access controls as a filtering stuff is we cannot expect what tuples are fetched until the queries are executed.
-
+The later interposition of SE-PostgreSQL is also here. It is invoked at the head of the executor to check access privileges to appeared database objects on the list. It makes access control decision with communicating to in-kernel SELinux, if necessary. If the given query contains violated accesses to tables, columns and procedures, it raised an error to abort query execution. 
+The rest of interposition is invoked while the executor scanns required relations. When a tupls is fetched from relation, the executor invokes SE-PostgreSQL to check whether the client has proper privileges to tuple tuple, or not. If it is violated, the tuple is dropped from the result set, so it seems to client as if filtered tuples are not here. The reason why row-level access controls are applied in separating is we cannot know what tuples are fetched until the queries are executed.
 At the last, the result set is returned to the client.
 
 
 == PGACE security framework ==
 
+The core PostgreSQL invokes SE-PostgreSQL subsystem via series of wrapper functions called as PGACE (PostgreSQL Access Control Extention) security framework. It provides a few dozen of hooks deployed on strategic points of PostgreSQL. These hooks are declared as `static inline` functions, and they contain codes to invoke SE-PostgreSQL which is activated only when we give `--enable-selinux` option in configure scripts.
 
+The purpose of this architecture is minimization of impact to add a new security facility.
+SE-PostgreSQL is one of the options of enhanced security mechanisms, however, we can consider similar facilities based on different security design and philosophy. 
+
+The PGACE security framework is designed references from LSM (Linux Security Module). It enables to hide complexity of mixed enhanced security features to core implementation. We call implementations of enhanced security feature as the guest. The gust can put codes to invoke itself on PGACE hooks, enclosed by `#if ... #endif` block.
+
+Here is an example of PGACE hooks, which is invoked just before a new tuple is inserted into relation. SE-PostgreSQL need to be invoked to assign proper security context and to check the privileges of the client, so we put the following code on the `pgaceHeapTupleInsert()` hook.
+{{{
+     +---- ExecInsert() ----------------------------+
+     |              :                               |
+ +---|--O  if (!pgaceHeapTupleInsert(....))         |
+ |   |             return;    /* skip insertion */  |
+ |   |              :                               |
+ |   +----------------------------------------------+
+ |
+ |      at src/include/security/pgace.h
+ |    +---- pgaceHeapTupleInsert() -----------------------------------+
+ +--->|  #if defined(HAVE_SELINUX)                                    |
+      |  if (selinux_enabled) {                                       |
+      |      - attach default security attribute                      |
+      |      - check whether the client can insert the tuple, or not. |
+      |  }                                                            |
+      |  #endif                                                       |
+      |  return true;  /* default behavir of this hook */             |
+      +---------------------------------------------------------------+
+}}}
+
+This hook requires the guest returns `true` or `false` to decide whether the given tuple should be inserted, or not. When the SE-PostgreSQL feature is enables on build-time and run-time, this hook invokes SE-PostgreSQL subsystem to attach proper security attribute and to check client's privileges. If the security policy does not allow to insert, SE-PostgreSQL returns `false` to prevent the action.
+
+The default behavior does not change existing bahavior of core PostgreSQL implementation.
+If a new guest does not want to use all the hooks, it can remain these hooks unchanged. It remains existing behavior.
 
 == Security context management ==
 
@@ -141,7 +171,7 @@ At the last, the result set is returned to the client.
 
 
 
-----
+----------------------------------------
 
 = Specifications =
 
@@ -170,8 +200,7 @@ This chapter introduces the details of access controls in SE-PostgreSQL.
 === Loading shared library modules ===
 
 
-
-----
+----------------------------------------
 
 = SELinux overview =
 == Rerefence monitor model ==
@@ -179,10 +208,10 @@ This chapter introduces the details of access controls in SE-PostgreSQL.
 == Role Based Access Control ==
 == MLS and MCS ==
 == booleans ==
+== The default security policy ==
 
 
-
-----
+----------------------------------------
 
 = Administration =
 
@@ -192,13 +221,13 @@ This chapter introduces the details of access controls in SE-PostgreSQL.
 
 == Backup and restore ==
 
-----
+----------------------------------------
 
 = References =
 
 == Object classes and permission ==
 
-== Default security policy ==
+== Pre-defined object types ==
 
 == Enhanced SQL statement ==
 
