@@ -1,4 +1,3 @@
-
 /*
  * src/backend/security/sepgsql/proxy.c
  *	  proxy routines to pick up all appeared columns, functions, ...
@@ -1401,6 +1400,28 @@ sepgsqlCopyTable(Relation rel, List *attNumList, bool isFrom)
 void sepgsqlCopyFile(Relation rel, int fdesc, const char *filename, bool isFrom)
 {
 	security_context_t context;
+	security_class_t tclass;
+	struct stat stbuf;
+
+	if (fstat(fdesc, &stbuf) != 0)
+		ereport(ERROR,
+				(errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("SELinux: could not get file status of %s", filename)));
+
+	if (S_ISDIR(stbuf.st_mode))
+		tclass = SECCLASS_DIR;
+	else if (S_ISCHR(stbuf.st_mode))
+		tclass = SECCLASS_CHR_FILE;
+	else if (S_ISBLK(stbuf.st_mode))
+		tclass = SECCLASS_BLK_FILE;
+	else if (S_ISFIFO(stbuf.st_mode))
+		tclass = SECCLASS_FIFO_FILE;
+	else if (S_ISLNK(stbuf.st_mode))
+		tclass = SECCLASS_LNK_FILE;
+	else if (S_ISSOCK(stbuf.st_mode))
+		tclass = SECCLASS_SOCK_FILE;
+	else
+		tclass = SECCLASS_FILE;
 
 	if (fgetfilecon_raw(fdesc, &context) < 0)
 		ereport(ERROR,
@@ -1411,7 +1432,7 @@ void sepgsqlCopyFile(Relation rel, int fdesc, const char *filename, bool isFrom)
 	{
 		sepgsqlComputePermission(sepgsqlGetClientContext(),
 								 context,
-								 SECCLASS_FILE,
+								 tclass,
 								 isFrom ? FILE__READ : FILE__WRITE,
 								 filename);
 	}
