@@ -14,7 +14,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/optimizer/plan/planmain.c,v 1.110 2008/08/14 18:47:59 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/optimizer/plan/planmain.c,v 1.112 2008/10/22 20:17:51 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -23,6 +23,7 @@
 #include "optimizer/cost.h"
 #include "optimizer/pathnode.h"
 #include "optimizer/paths.h"
+#include "optimizer/placeholder.h"
 #include "optimizer/planmain.h"
 #include "optimizer/tlist.h"
 #include "utils/selfuncs.h"
@@ -144,6 +145,7 @@ query_planner(PlannerInfo *root, List *tlist,
 	root->right_join_clauses = NIL;
 	root->full_join_clauses = NIL;
 	root->join_info_list = NIL;
+	root->placeholder_list = NIL;
 	root->initial_rels = NIL;
 
 	/*
@@ -204,12 +206,6 @@ query_planner(PlannerInfo *root, List *tlist,
 	 * added to appropriate lists belonging to the mentioned relations.  We
 	 * also build EquivalenceClasses for provably equivalent expressions, and
 	 * form a target joinlist for make_one_rel() to work from.
-	 *
-	 * Note: all subplan nodes will have "flat" (var-only) tlists. This
-	 * implies that all expression evaluations are done at the root of the
-	 * plan tree. Once upon a time there was code to try to push expensive
-	 * function calls down to lower plan nodes, but that's dead code and has
-	 * been for a long time...
 	 */
 	build_base_rel_tlists(root, tlist);
 
@@ -239,6 +235,13 @@ query_planner(PlannerInfo *root, List *tlist,
 	root->group_pathkeys = canonicalize_pathkeys(root, root->group_pathkeys);
 	root->distinct_pathkeys = canonicalize_pathkeys(root, root->distinct_pathkeys);
 	root->sort_pathkeys = canonicalize_pathkeys(root, root->sort_pathkeys);
+
+	/*
+	 * Examine any "placeholder" expressions generated during subquery pullup.
+	 * Make sure that we know what level to evaluate them at, and that the
+	 * Vars they need are marked as needed.
+	 */
+	fix_placeholder_eval_levels(root);
 
 	/*
 	 * Ready to do the primary planning.
