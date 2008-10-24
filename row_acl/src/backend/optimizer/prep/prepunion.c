@@ -22,7 +22,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/optimizer/prep/prepunion.c,v 1.158 2008/10/07 19:27:04 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/optimizer/prep/prepunion.c,v 1.160 2008/10/22 20:17:52 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -1584,9 +1584,25 @@ adjust_appendrel_attrs_mutator(Node *node, AppendRelInfo *context)
 											 context->child_relid);
 		return (Node *) fslink;
 	}
-	/* Shouldn't need to handle SpecialJoinInfo or AppendRelInfo here */
+	if (IsA(node, PlaceHolderVar))
+	{
+		/* Copy the PlaceHolderVar node with correct mutation of subnodes */
+		PlaceHolderVar *phv;
+
+		phv = (PlaceHolderVar *) expression_tree_mutator(node,
+											  adjust_appendrel_attrs_mutator,
+														 (void *) context);
+		/* now fix PlaceHolderVar's relid sets */
+		if (phv->phlevelsup == 0)
+			phv->phrels = adjust_relid_set(phv->phrels,
+										   context->parent_relid,
+										   context->child_relid);
+		return (Node *) phv;
+	}
+	/* Shouldn't need to handle planner auxiliary nodes here */
 	Assert(!IsA(node, SpecialJoinInfo));
 	Assert(!IsA(node, AppendRelInfo));
+	Assert(!IsA(node, PlaceHolderInfo));
 
 	/*
 	 * We have to process RestrictInfo nodes specially.
