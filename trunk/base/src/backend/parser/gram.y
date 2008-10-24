@@ -11,7 +11,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/parser/gram.y,v 2.625 2008/10/04 21:56:54 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/parser/gram.y,v 2.628 2008/10/22 11:00:34 petere Exp $
  *
  * HISTORY
  *	  AUTHOR			DATE			MAJOR EVENT
@@ -304,10 +304,12 @@ static TypeName *TableFuncTypeName(List *columns);
 
 %type <boolean> copy_from
 
-%type <ival>	opt_column event cursor_options opt_hold
+%type <ival>	opt_column event cursor_options opt_hold opt_set_data
 %type <objtype>	reindex_type drop_type comment_type
 
 %type <node>	fetch_direction select_limit_value select_offset_value
+				select_offset_value2 opt_select_fetch_first_value
+%type <ival>	row_or_rows first_or_next
 
 %type <list>	OptSeqOptList SeqOptList
 %type <defelt>	SeqOptElem
@@ -407,7 +409,7 @@ static TypeName *TableFuncTypeName(List *columns);
 	CREATEROLE CREATEUSER CROSS CSV CTYPE CURRENT_P CURRENT_DATE CURRENT_ROLE
 	CURRENT_TIME CURRENT_TIMESTAMP CURRENT_USER CURSOR CYCLE
 
-	DATABASE DAY_P DEALLOCATE DEC DECIMAL_P DECLARE DEFAULT DEFAULTS
+	DATA_P DATABASE DAY_P DEALLOCATE DEC DECIMAL_P DECLARE DEFAULT DEFAULTS
 	DEFERRABLE DEFERRED DEFINER DELETE_P DELIMITER DELIMITERS DESC
 	DICTIONARY DISABLE_P DISCARD DISTINCT DO DOCUMENT_P DOMAIN_P DOUBLE_P DROP
 
@@ -1534,16 +1536,16 @@ alter_table_cmd:
 					$$ = (Node *)n;
 				}
 			/*
-			 * ALTER TABLE <name> ALTER [COLUMN] <colname> TYPE <typename>
+			 * ALTER TABLE <name> ALTER [COLUMN] <colname> [SET DATA] TYPE <typename>
 			 *		[ USING <expression> ]
 			 */
-			| ALTER opt_column ColId TYPE_P Typename alter_using
+			| ALTER opt_column ColId opt_set_data TYPE_P Typename alter_using
 				{
 					AlterTableCmd *n = makeNode(AlterTableCmd);
 					n->subtype = AT_AlterColumnType;
 					n->name = $3;
-					n->def = (Node *) $5;
-					n->transform = $6;
+					n->def = (Node *) $6;
+					n->transform = $7;
 					$$ = (Node *)n;
 				}
 			/* ALTER TABLE <name> ADD CONSTRAINT ... */
@@ -2185,7 +2187,7 @@ ConstraintAttr:
  * tables completely decoupled except for the original commonality in definitions.
  *
  * This is very similar to CREATE TABLE AS except for the INCLUDING DEFAULTS extension
- * which is a part of SQL 200N
+ * which is a part of SQL:2003.
  */
 TableLikeClause:
 			LIKE qualified_name TableLikeOptionList
@@ -4854,6 +4856,10 @@ opt_column: COLUMN									{ $$ = COLUMN; }
 			| /*EMPTY*/								{ $$ = 0; }
 		;
 
+opt_set_data: SET DATA_P									{ $$ = 1; }
+			| /*EMPTY*/								{ $$ = 0; }
+		;
+
 /*****************************************************************************
  *
  * ALTER THING name SET SCHEMA name
@@ -6575,6 +6581,13 @@ select_limit:
 							 errhint("Use separate LIMIT and OFFSET clauses."),
 							 scanner_errposition(@1)));
 				}
+			/* SQL:2008 syntax variants */
+			| OFFSET select_offset_value2 row_or_rows
+				{ $$ = list_make2($2, NULL); }
+			| FETCH first_or_next opt_select_fetch_first_value row_or_rows ONLY
+				{ $$ = list_make2(NULL, $3); }
+			| OFFSET select_offset_value2 row_or_rows FETCH first_or_next opt_select_fetch_first_value row_or_rows ONLY
+				{ $$ = list_make2($2, $6); }
 		;
 
 opt_select_limit:
@@ -6592,9 +6605,39 @@ select_limit_value:
 				}
 		;
 
+/*
+ * Allowing full expressions without parentheses causes various parsing
+ * problems with the trailing ROW/ROWS key words.  SQL only calls for
+ * constants, so we allow the rest only with parentheses.
+ */
+opt_select_fetch_first_value:
+			SignedIconst		{ $$ = makeIntConst($1, @1); }
+			| '(' a_expr ')'	{ $$ = $2; }
+			| /*EMPTY*/		{ $$ = makeIntConst(1, -1); }
+		;
+
 select_offset_value:
 			a_expr									{ $$ = $1; }
 		;
+
+/*
+ * Again, the trailing ROW/ROWS in this case prevent the full expression
+ * syntax.  c_expr is the best we can do.
+ */
+select_offset_value2:
+			c_expr									{ $$ = $1; }
+		;
+
+/* noise words */
+row_or_rows:
+			ROW		{ $$ = 0; }
+			| ROWS		{ $$ = 0; }
+
+/* noise words */
+first_or_next:
+			FIRST_P		{ $$ = 0; }
+			| NEXT		{ $$ = 0; }
+
 
 group_clause:
 			GROUP_P BY expr_list					{ $$ = $3; }
@@ -9214,6 +9257,7 @@ Sconst:		SCONST									{ $$ = $1; };
 RoleId:		ColId									{ $$ = $1; };
 
 SignedIconst: ICONST								{ $$ = $1; }
+			| '+' ICONST							{ $$ = + $2; }
 			| '-' ICONST							{ $$ = - $2; }
 		;
 
@@ -9317,6 +9361,7 @@ unreserved_keyword:
 			| CURRENT_P
 			| CURSOR
 			| CYCLE
+			| DATA_P
 			| DATABASE
 			| DAY_P
 			| DEALLOCATE
@@ -9346,7 +9391,6 @@ unreserved_keyword:
 			| EXPLAIN
 			| EXTERNAL
 			| FAMILY
-			| FETCH
 			| FIRST_P
 			| FORCE
 			| FORWARD
@@ -9636,6 +9680,7 @@ reserved_keyword:
 			| END_P
 			| EXCEPT
 			| FALSE_P
+			| FETCH
 			| FOR
 			| FOREIGN
 			| FROM

@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/optimizer/plan/planner.c,v 1.244 2008/10/04 21:56:53 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/optimizer/plan/planner.c,v 1.246 2008/10/22 20:17:51 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -141,6 +141,7 @@ standard_planner(Query *parse, int cursorOptions, ParamListInfo boundParams)
 	glob->finalrtable = NIL;
 	glob->relationOids = NIL;
 	glob->invalItems = NIL;
+	glob->lastPHId = 0;
 	glob->transientPlan = false;
 
 	/* Determine what fraction of the plan is likely to be scanned */
@@ -656,9 +657,13 @@ inheritance_planner(PlannerInfo *root)
 		subroot.parse = (Query *)
 			adjust_appendrel_attrs((Node *) parse,
 								   appinfo);
+		subroot.returningLists = NIL;
 		subroot.init_plans = NIL;
+		/* We needn't modify the child's append_rel_list */
 		/* There shouldn't be any OJ info to translate, as yet */
 		Assert(subroot.join_info_list == NIL);
+		/* and we haven't created PlaceHolderInfos, either */
+		Assert(subroot.placeholder_list == NIL);
 
 		/* Generate plan */
 		subplan = grouping_planner(&subroot, 0.0 /* retrieve all tuples */ );
@@ -2046,7 +2051,7 @@ make_subplanTargetList(PlannerInfo *root,
 	 * Vars; they will be replaced by Params later on).
 	 */
 	sub_tlist = flatten_tlist(tlist);
-	extravars = pull_var_clause(parse->havingQual, false);
+	extravars = pull_var_clause(parse->havingQual, true);
 	sub_tlist = add_to_flat_tlist(sub_tlist, extravars);
 	list_free(extravars);
 	*need_tlist_eval = false;	/* only eval if not flat tlist */
