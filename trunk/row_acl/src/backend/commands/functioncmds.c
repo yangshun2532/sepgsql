@@ -10,7 +10,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/commands/functioncmds.c,v 1.98 2008/07/18 03:32:52 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/commands/functioncmds.c,v 1.99 2008/10/21 10:38:51 petere Exp $
  *
  * DESCRIPTION
  *	  These routines take the parse tree and pick out the
@@ -1435,8 +1435,8 @@ CreateCast(CreateCastStmt *stmt)
 		ereport(ERROR,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 				 errmsg("must be owner of type %s or type %s",
-						TypeNameToString(stmt->sourcetype),
-						TypeNameToString(stmt->targettype))));
+						format_type_be(sourcetypeid),
+						format_type_be(targettypeid))));
 
 	if (stmt->func != NULL)
 	{
@@ -1577,8 +1577,8 @@ CreateCast(CreateCastStmt *stmt)
 		ereport(ERROR,
 				(errcode(ERRCODE_DUPLICATE_OBJECT),
 				 errmsg("cast from type %s to type %s already exists",
-						TypeNameToString(stmt->sourcetype),
-						TypeNameToString(stmt->targettype))));
+						format_type_be(sourcetypeid),
+						format_type_be(targettypeid))));
 
 	/* ready to go */
 	values[Anum_pg_cast_castsource - 1] = ObjectIdGetDatum(sourcetypeid);
@@ -1652,13 +1652,13 @@ DropCast(DropCastStmt *stmt)
 			ereport(ERROR,
 					(errcode(ERRCODE_UNDEFINED_OBJECT),
 					 errmsg("cast from type %s to type %s does not exist",
-							TypeNameToString(stmt->sourcetype),
-							TypeNameToString(stmt->targettype))));
+							format_type_be(sourcetypeid),
+							format_type_be(targettypeid))));
 		else
 			ereport(NOTICE,
 			 (errmsg("cast from type %s to type %s does not exist, skipping",
-					 TypeNameToString(stmt->sourcetype),
-					 TypeNameToString(stmt->targettype))));
+					 format_type_be(sourcetypeid),
+					 format_type_be(targettypeid))));
 
 		return;
 	}
@@ -1669,8 +1669,8 @@ DropCast(DropCastStmt *stmt)
 		ereport(ERROR,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 				 errmsg("must be owner of type %s or type %s",
-						TypeNameToString(stmt->sourcetype),
-						TypeNameToString(stmt->targettype))));
+						format_type_be(sourcetypeid),
+						format_type_be(targettypeid))));
 
 	/*
 	 * Do the deletion
