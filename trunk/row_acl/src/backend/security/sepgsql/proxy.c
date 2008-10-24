@@ -1313,10 +1313,8 @@ checkTruncateStmt(TruncateStmt *stmt)
 
 		while ((tuple = heap_getnext(scan, ForwardScanDirection)) != NULL)
 		{
-			sepgsqlClientHasPermission(HeapTupleGetSecurity(tuple),
-									   SECCLASS_DB_TUPLE,
-									   DB_TUPLE__DELETE,
-									   sepgsqlTupleName(RelationRelationId, tuple));
+			sepgsqlCheckTuplePerms(rel, tuple, NULL,
+								   SEPGSQL_PERMS_DELETE, true);
 		}
 		heap_endscan(scan);
 		heap_close(rel, AccessShareLock);
