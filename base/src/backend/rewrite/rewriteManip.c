@@ -7,7 +7,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/rewrite/rewriteManip.c,v 1.115 2008/10/06 17:39:26 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/rewrite/rewriteManip.c,v 1.117 2008/10/22 20:17:52 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -276,6 +276,17 @@ OffsetVarNodes_walker(Node *node, OffsetVarNodes_context *context)
 		}
 		/* fall through to examine children */
 	}
+	if (IsA(node, PlaceHolderVar))
+	{
+		PlaceHolderVar *phv = (PlaceHolderVar *) node;
+
+		if (phv->phlevelsup == context->sublevels_up)
+		{
+			phv->phrels = offset_relid_set(phv->phrels,
+										   context->offset);
+		}
+		/* fall through to examine children */
+	}
 	if (IsA(node, AppendRelInfo))
 	{
 		AppendRelInfo *appinfo = (AppendRelInfo *) node;
@@ -287,6 +298,10 @@ OffsetVarNodes_walker(Node *node, OffsetVarNodes_context *context)
 		}
 		/* fall through to examine children */
 	}
+	/* Shouldn't need to handle other planner auxiliary nodes here */
+	Assert(!IsA(node, SpecialJoinInfo));
+	Assert(!IsA(node, PlaceHolderInfo));
+
 	if (IsA(node, Query))
 	{
 		/* Recurse into subselects */
@@ -440,6 +455,18 @@ ChangeVarNodes_walker(Node *node, ChangeVarNodes_context *context)
 		}
 		/* fall through to examine children */
 	}
+	if (IsA(node, PlaceHolderVar))
+	{
+		PlaceHolderVar *phv = (PlaceHolderVar *) node;
+
+		if (phv->phlevelsup == context->sublevels_up)
+		{
+			phv->phrels = adjust_relid_set(phv->phrels,
+										   context->rt_index,
+										   context->new_index);
+		}
+		/* fall through to examine children */
+	}
 	if (IsA(node, AppendRelInfo))
 	{
 		AppendRelInfo *appinfo = (AppendRelInfo *) node;
@@ -453,6 +480,10 @@ ChangeVarNodes_walker(Node *node, ChangeVarNodes_context *context)
 		}
 		/* fall through to examine children */
 	}
+	/* Shouldn't need to handle other planner auxiliary nodes here */
+	Assert(!IsA(node, SpecialJoinInfo));
+	Assert(!IsA(node, PlaceHolderInfo));
+
 	if (IsA(node, Query))
 	{
 		/* Recurse into subselects */
@@ -585,6 +616,14 @@ IncrementVarSublevelsUp_walker(Node *node,
 			agg->agglevelsup += context->delta_sublevels_up;
 		/* fall through to recurse into argument */
 	}
+	if (IsA(node, PlaceHolderVar))
+	{
+		PlaceHolderVar *phv = (PlaceHolderVar *) node;
+
+		if (phv->phlevelsup >= context->min_sublevels_up)
+			phv->phlevelsup += context->delta_sublevels_up;
+		/* fall through to recurse into argument */
+	}
 	if (IsA(node, RangeTblEntry))
 	{
 		RangeTblEntry *rte = (RangeTblEntry *) node;
@@ -708,8 +747,10 @@ rangeTableEntry_used_walker(Node *node,
 	}
 	/* Shouldn't need to handle planner auxiliary nodes here */
 	Assert(!IsA(node, FlattenedSubLink));
+	Assert(!IsA(node, PlaceHolderVar));
 	Assert(!IsA(node, SpecialJoinInfo));
 	Assert(!IsA(node, AppendRelInfo));
+	Assert(!IsA(node, PlaceHolderInfo));
 
 	if (IsA(node, Query))
 	{
