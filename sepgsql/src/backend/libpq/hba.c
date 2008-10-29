@@ -10,7 +10,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/libpq/hba.c,v 1.169 2008/10/23 13:31:10 mha Exp $
+ *	  $PostgreSQL: pgsql/src/backend/libpq/hba.c,v 1.172 2008/10/28 12:10:43 mha Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -581,7 +581,7 @@ check_db(const char *dbname, const char *role, char *param_str)
 					optname, validmethods), \
 			 errcontext("line %d of configuration file \"%s\"", \
 					line_num, HbaFileName))); \
-	goto hba_other_error; \
+	return false; \
 } while (0);
 
 #define REQUIRE_AUTH_OPTION(methodval, optname, validmethods) do {\
@@ -597,7 +597,7 @@ check_db(const char *dbname, const char *role, char *param_str)
 						authname, argname), \
 				 errcontext("line %d of configuration file \"%s\"", \
 						line_num, HbaFileName))); \
-		goto hba_other_error; \
+		return false; \
 	} \
 } while (0);
 
@@ -637,8 +637,13 @@ parse_hba_line(List *line, int line_num, HbaLine *parsedline)
 #ifdef USE_SSL
 			parsedline->conntype = ctHostSSL;
 #else
-			/* We don't accept this keyword at all if no SSL support */
-			goto hba_syntax;
+			ereport(LOG,
+					(errcode(ERRCODE_CONFIG_FILE_ERROR),
+					 errmsg("hostssl not supported on this platform"),
+					 errhint("compile with --enable-ssl to use SSL connections"),
+					 errcontext("line %d of configuration file \"%s\"",
+							line_num, HbaFileName)));
+			return false;
 #endif
 		}
 #ifdef USE_SSL
@@ -654,18 +659,40 @@ parse_hba_line(List *line, int line_num, HbaLine *parsedline)
 		}
 	} /* record type */
 	else
-		goto hba_syntax;
+	{
+		ereport(LOG,
+				(errcode(ERRCODE_CONFIG_FILE_ERROR),
+				 errmsg("invalid connection type \"%s\"",
+						token),
+				 errcontext("line %d of configuration file \"%s\"",
+						line_num, HbaFileName)));
+		return false;
+	}
 
 	/* Get the database. */
 	line_item = lnext(line_item);
 	if (!line_item)
-		goto hba_syntax;
+	{
+		ereport(LOG,
+				(errcode(ERRCODE_CONFIG_FILE_ERROR),
+				 errmsg("end-of-line before database specification"),
+				 errcontext("line %d of configuration file \"%s\"",
+						line_num, HbaFileName)));
+		return false;
+	}
 	parsedline->database = pstrdup(lfirst(line_item));
 
 	/* Get the role. */
 	line_item = lnext(line_item);
 	if (!line_item)
-		goto hba_syntax;
+	{
+		ereport(LOG,
+				(errcode(ERRCODE_CONFIG_FILE_ERROR),
+				 errmsg("end-of-line before role specification"),
+				 errcontext("line %d of configuration file \"%s\"",
+						line_num, HbaFileName)));
+		return false;
+	}
 	parsedline->role = pstrdup(lfirst(line_item));
 
 	if (parsedline->conntype != ctLocal)
@@ -673,7 +700,14 @@ parse_hba_line(List *line, int line_num, HbaLine *parsedline)
 		/* Read the IP address field. (with or without CIDR netmask) */
 		line_item = lnext(line_item);
 		if (!line_item)
-			goto hba_syntax;
+		{
+			ereport(LOG,
+					(errcode(ERRCODE_CONFIG_FILE_ERROR),
+					 errmsg("end-of-line before ip address specification"),
+					 errcontext("line %d of configuration file \"%s\"",
+							line_num, HbaFileName)));
+			return false;
+		}
 		token = pstrdup(lfirst(line_item));
 
 		/* Check if it has a CIDR suffix and if so isolate it */
@@ -704,7 +738,7 @@ parse_hba_line(List *line, int line_num, HbaLine *parsedline)
 				*cidr_slash = '/';
 			if (gai_result)
 				pg_freeaddrinfo_all(hints.ai_family, gai_result);
-			goto hba_other_error;
+			return false;
 		}
 
 		if (cidr_slash)
@@ -718,14 +752,29 @@ parse_hba_line(List *line, int line_num, HbaLine *parsedline)
 		{
 			if (pg_sockaddr_cidr_mask(&parsedline->mask, cidr_slash + 1,
 									  parsedline->addr.ss_family) < 0)
-				goto hba_syntax;
+			{
+				ereport(LOG,
+						(errcode(ERRCODE_CONFIG_FILE_ERROR),
+						 errmsg("invalid CIDR mask in address \"%s\"",
+								token),
+						 errcontext("line %d of configuration file \"%s\"",
+							line_num, HbaFileName)));
+				return false;
+			}
 		}
 		else
 		{
 			/* Read the mask field. */
 			line_item = lnext(line_item);
 			if (!line_item)
-				goto hba_syntax;
+			{
+				ereport(LOG,
+						(errcode(ERRCODE_CONFIG_FILE_ERROR),
+						 errmsg("end-of-line before netmask specification"),
+						 errcontext("line %d of configuration file \"%s\"",
+								line_num, HbaFileName)));
+				return false;
+			}
 			token = lfirst(line_item);
 
 			ret = pg_getaddrinfo_all(token, NULL, &hints, &gai_result);
@@ -739,7 +788,7 @@ parse_hba_line(List *line, int line_num, HbaLine *parsedline)
 							line_num, HbaFileName)));
 				if (gai_result)
 					pg_freeaddrinfo_all(hints.ai_family, gai_result);
-				goto hba_other_error;
+				return false;
 			}
 
 			memcpy(&parsedline->mask, gai_result->ai_addr, gai_result->ai_addrlen);
@@ -751,7 +800,7 @@ parse_hba_line(List *line, int line_num, HbaLine *parsedline)
 						(errcode(ERRCODE_CONFIG_FILE_ERROR),
 						 errmsg("IP address and mask do not match in file \"%s\" line %d",
 								HbaFileName, line_num)));
-				goto hba_other_error;
+				return false;
 			}
 		}
 	} /* != ctLocal */
@@ -759,7 +808,14 @@ parse_hba_line(List *line, int line_num, HbaLine *parsedline)
 	/* Get the authentication method */
 	line_item = lnext(line_item);
 	if (!line_item)
-		goto hba_syntax;
+	{
+		ereport(LOG,
+				(errcode(ERRCODE_CONFIG_FILE_ERROR),
+				 errmsg("end-of-line before authentication method"),
+				 errcontext("line %d of configuration file \"%s\"",
+						line_num, HbaFileName)));
+		return false;
+	}
 	token = lfirst(line_item);
 
 	unsupauth = NULL;
@@ -791,8 +847,6 @@ parse_hba_line(List *line, int line_num, HbaLine *parsedline)
 		parsedline->auth_method = uaReject;
 	else if (strcmp(token, "md5") == 0)
 		parsedline->auth_method = uaMD5;
-	else if (strcmp(token, "crypt") == 0)
-		parsedline->auth_method = uaCrypt;
 	else if (strcmp(token, "pam") == 0)
 #ifdef USE_PAM
 		parsedline->auth_method = uaPAM;
@@ -813,7 +867,7 @@ parse_hba_line(List *line, int line_num, HbaLine *parsedline)
 						token),
 				 errcontext("line %d of configuration file \"%s\"",
 						line_num, HbaFileName)));
-		goto hba_other_error;
+		return false;
 	}
 
 	if (unsupauth)
@@ -824,7 +878,7 @@ parse_hba_line(List *line, int line_num, HbaLine *parsedline)
 						token),
 				 errcontext("line %d of configuration file \"%s\"",
 						line_num, HbaFileName)));
-		goto hba_other_error;
+		return false;
 	}
 
 	/* Invalid authentication combinations */
@@ -836,7 +890,7 @@ parse_hba_line(List *line, int line_num, HbaLine *parsedline)
 				 errmsg("krb5 authentication is not supported on local sockets"),
 				 errcontext("line %d of configuration file \"%s\"",
 						line_num, HbaFileName)));
-		goto hba_other_error;
+		return false;
 	}
 
 	/* Parse remaining arguments */
@@ -859,7 +913,7 @@ parse_hba_line(List *line, int line_num, HbaLine *parsedline)
 					 errmsg("authentication option not in name=value format: %s", token),
 					 errcontext("line %d of configuration file \"%s\"",
 								line_num, HbaFileName)));
-			goto hba_other_error;
+			return false;
 		}
 		else
 		{
@@ -902,7 +956,7 @@ parse_hba_line(List *line, int line_num, HbaLine *parsedline)
 							 errmsg("invalid ldap port '%s'", c),
 							 errcontext("line %d of configuration file \"%s\"",
 										line_num, HbaFileName)));
-					goto hba_other_error;
+					return false;
 				}
 			}
 			else if (strcmp(token, "ldapprefix") == 0)
@@ -922,7 +976,7 @@ parse_hba_line(List *line, int line_num, HbaLine *parsedline)
 						 errmsg("unknown authentication option name '%s'", token),
 						 errcontext("line %d of configuration file \"%s\"",
 									line_num, HbaFileName)));
-				goto hba_other_error;
+				return false;
 			}
 		}
 	}
@@ -937,25 +991,6 @@ parse_hba_line(List *line, int line_num, HbaLine *parsedline)
 	}
 	
 	return true;
-
-hba_syntax:
-	if (line_item)
-		ereport(LOG,
-				(errcode(ERRCODE_CONFIG_FILE_ERROR),
-				 errmsg("invalid token \"%s\"",
-						(char *) lfirst(line_item)),
-				 errcontext("line %d of configuration file \"%s\"",
-						line_num, HbaFileName)));
-	else
-		ereport(LOG,
-				(errcode(ERRCODE_CONFIG_FILE_ERROR),
-				 errmsg("missing field at end of line"),
-				 errcontext("line %d of configuration file \"%s\"",
-						line_num, HbaFileName)));
-
-	/* Come here if suitable message already logged */
-hba_other_error:
-	return false;
 }
 
 
