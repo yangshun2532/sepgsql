@@ -12,7 +12,7 @@
  * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/interfaces/libpq/libpq-int.h,v 1.134 2008/09/22 14:21:44 tgl Exp $
+ * $PostgreSQL: pgsql/src/interfaces/libpq/libpq-int.h,v 1.136 2008/10/28 12:10:44 mha Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -340,7 +340,6 @@ struct pg_conn
 	int			be_pid;			/* PID of backend --- needed for cancels */
 	int			be_key;			/* key of backend --- needed for cancels */
 	char		md5Salt[4];		/* password salt received from backend */
-	char		cryptSalt[2];	/* password salt received from backend */
 	pgParameterStatus *pstatus; /* ParameterStatus data */
 	int			client_encoding;	/* encoding id */
 	bool		std_strings;	/* standard_conforming_strings */
@@ -519,6 +518,7 @@ extern int	pqCheckInBufferSpace(size_t bytes_needed, PGconn *conn);
 extern int	pqGetc(char *result, PGconn *conn);
 extern int	pqPutc(char c, PGconn *conn);
 extern int	pqGets(PQExpBuffer buf, PGconn *conn);
+extern int	pqGets_append(PQExpBuffer buf, PGconn *conn);
 extern int	pqPuts(const char *s, PGconn *conn);
 extern int	pqGetnchar(char *s, size_t len, PGconn *conn);
 extern int	pqPutnchar(const char *s, size_t len, PGconn *conn);
