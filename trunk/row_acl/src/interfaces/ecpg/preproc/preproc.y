@@ -1,4 +1,4 @@
-/* $PostgreSQL: pgsql/src/interfaces/ecpg/preproc/preproc.y,v 1.377 2008/10/21 08:38:16 petere Exp $ */
+/* $PostgreSQL: pgsql/src/interfaces/ecpg/preproc/preproc.y,v 1.379 2008/10/28 14:09:45 petere Exp $ */
 
 /* Copyright comment */
 %{
@@ -423,12 +423,13 @@ add_typedef(char *name, char * dimension, char * length, enum ECPGttype type_enu
 	BACKWARD BEFORE BEGIN_P BETWEEN BIGINT BINARY BIT
 	BOOLEAN_P BOTH BY
 
-	CACHE CALLED CASCADE CASCADED CASE CAST CHAIN CHAR_P
+	CACHE CALLED CASCADE CASCADED CASE CAST CATALOG_P CHAIN CHAR_P
 	CHARACTER CHARACTERISTICS CHECK CHECKPOINT CLASS CLOSE
 	CLUSTER COALESCE COLLATE COLUMN COMMENT COMMIT
 	COMMITTED CONCURRENTLY CONFIGURATION CONNECTION CONSTRAINT CONSTRAINTS 
 	CONTENT_P CONTINUE_P CONVERSION_P COPY COST CREATE CREATEDB
-	CREATEROLE CREATEUSER CROSS CSV CTYPE CURRENT_P CURRENT_DATE CURRENT_ROLE
+	CREATEROLE CREATEUSER CROSS CSV CTYPE CURRENT_P
+	CURRENT_CATALOG CURRENT_DATE CURRENT_ROLE CURRENT_SCHEMA
 	CURRENT_TIME CURRENT_TIMESTAMP CURRENT_USER CURSOR CYCLE
 
 	DATA_P DATABASE DAY_P DEALLOCATE DEC DECIMAL_P DECLARE DEFAULT DEFAULTS
@@ -504,7 +505,7 @@ add_typedef(char *name, char * dimension, char * length, enum ECPGttype type_enu
  * list and so can never be entered directly.  The filter in parser.c
  * creates these tokens when required.
  */
-%token           NULLS_FIRST NULLS_LAST WITH_CASCADED WITH_LOCAL WITH_CHECK
+%token           NULLS_FIRST NULLS_LAST WITH_TIME
 
 /* Special token types, not actually keywords - see the "lex" file */
 %token <str>	IDENT SCONST Op CSTRING CVARIABLE CPP_LINE IP BCONST
@@ -1217,6 +1218,10 @@ set_rest:	/* Generic SET syntaxes: */
 			{ $$ = cat2_str(make_str("transaction"), $2); }
 		| SESSION CHARACTERISTICS AS TRANSACTION transaction_mode_list
 			{ $$ = cat2_str(make_str("session characteristics as transaction"), $5); }
+		| CATALOG_P Sconst
+			{ $$ = cat2_str(make_str("catalog"), $2); }
+		| SCHEMA Sconst
+			{ $$ = cat2_str(make_str("schema"), $2); }
 		| NAMES opt_encoding
 			{ $$ = cat2_str(make_str("names"), $2); }
 		| ROLE ColId_or_Sconst
@@ -3095,22 +3100,18 @@ ViewStmt:  CREATE OptTemp VIEW qualified_name opt_column_list AS SelectStmt opt_
 			{ $$ = cat_str(8, make_str("create or replace"), $4, make_str("view"), $6, $7, make_str("as"), $9, $10); }
 		;
 
-/*
- * We use merged tokens here to avoid creating shift/reduce conflicts against
- * a whole lot of other uses of WITH.
- */
 opt_check_option:
-                   WITH_CHECK OPTION
+                   WITH CHECK OPTION
 		   { 
 		   	mmerror(PARSE_ERROR, ET_ERROR, "WITH CHECK OPTION not implemented");
 			$$ = EMPTY;
 		   }
-                   | WITH_CASCADED CHECK OPTION
+                   | WITH CASCADED CHECK OPTION
 		   { 
 		   	mmerror(PARSE_ERROR, ET_ERROR, "WITH CHECK OPTION not implemented");
 			$$ = EMPTY;
 		   }
-		   | WITH_LOCAL CHECK OPTION
+		   | WITH LOCAL CHECK OPTION
 		   {
 		   	mmerror(PARSE_ERROR, ET_ERROR, "WITH CHECK OPTION not implemented");
 			$$ = EMPTY;
@@ -4150,7 +4151,7 @@ ConstInterval:	INTERVAL
 			{ $$ = make_str("interval"); }
 		;
 
-opt_timezone:  WITH TIME ZONE
+opt_timezone:  WITH_TIME ZONE
 			{ $$ = make_str("with time zone"); }
 		| WITHOUT TIME ZONE
 			{ $$ = make_str("without time zone"); }
@@ -4469,6 +4470,10 @@ func_expr:      func_name '(' ')'
 			{ $$ = make_str("session_user"); }
 		| USER
 			{ $$ = make_str("user"); }
+		| CURRENT_CATALOG
+			{ $$ = make_str("current_catalog"); }
+		| CURRENT_SCHEMA
+			{ $$ = make_str("current_schema"); }
 		| CAST '(' a_expr AS Typename ')'
 			{ $$ = cat_str(5, make_str("cast("), $3, make_str("as"), $5, make_str(")")); }
 		| EXTRACT '(' extract_list ')'
@@ -6867,10 +6872,12 @@ reserved_keyword:
 		| CONSTRAINT		{ $$ = make_str("constraint"); }
 		| CREATE			{ $$ = make_str("create"); }
 		| CURRENT_P                     { $$ = make_str("current"); }
+		| CURRENT_CATALOG	{ $$ = make_str("current_catalog"); }
 		| CURRENT_DATE		{ $$ = make_str("current_date"); }
 		| CURRENT_TIME		{ $$ = make_str("current_time"); }
 		| CURRENT_TIMESTAMP	{ $$ = make_str("current_timestamp"); }
 		| CURRENT_ROLE		{ $$ = make_str("current_role"); }
+		| CURRENT_SCHEMA	{ $$ = make_str("current_schema"); }
 		| CURRENT_USER		{ $$ = make_str("current_user"); }
 		| DEFAULT			{ $$ = make_str("default"); }
 		| DEFERRABLE		{ $$ = make_str("deferrable"); }
