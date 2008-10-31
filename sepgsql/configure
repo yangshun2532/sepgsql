@@ -1372,7 +1372,7 @@ Optional Features:
   --enable-thread-safety  make client libraries thread-safe
   --enable-thread-safety-force
                           force thread-safety despite thread test failure
-  --enable-selinux        build with NSA SELinux support
+  --enable-selinux        --enable-selinux build with NSA SELinux support
   --disable-float4-byval  disable float4 passed by value
   --disable-float8-byval  disable float8 passed by value
   --disable-largefile     omit support for large files
@@ -26918,7 +26918,6 @@ EGREP!$EGREP$ac_delim
 ELF_SYS!$ELF_SYS$ac_delim
 LDFLAGS_SL!$LDFLAGS_SL$ac_delim
 LD!$LD$ac_delim
-with_gnu_ld!$with_gnu_ld$ac_delim
 _ACEOF
 
   if test `sed -n "s/.*$ac_delim\$/X/p" conf$$subs.sed | grep -c X` = 97; then
@@ -26960,6 +26959,7 @@ _ACEOF
 ac_delim='%!_!# '
 for ac_last_try in false false false false false :; do
   cat >conf$$subs.sed <<_ACEOF
+with_gnu_ld!$with_gnu_ld$ac_delim
 ld_R_works!$ld_R_works$ac_delim
 RANLIB!$RANLIB$ac_delim
 STRIP!$STRIP$ac_delim
@@ -27015,7 +27015,7 @@ vpath_build!$vpath_build$ac_delim
 LTLIBOBJS!$LTLIBOBJS$ac_delim
 _ACEOF
 
-  if test `sed -n "s/.*$ac_delim\$/X/p" conf$$subs.sed | grep -c X` = 53; then
+  if test `sed -n "s/.*$ac_delim\$/X/p" conf$$subs.sed | grep -c X` = 54; then
     break
   elif $ac_last_try; then
     { { echo "$as_me:$LINENO: error: could not make $CONFIG_STATUS" >&5
