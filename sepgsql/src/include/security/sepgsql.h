@@ -212,6 +212,8 @@ sepgsqlComputeCreateContext(const security_context_t scontext,
  */
 extern const char *sepgsqlTupleName(Oid relid, HeapTuple tuple);
 
+extern security_class_t sepgsqlProperFileObjectClass(int fdesc, const char *filename);
+
 extern void sepgsqlSetDefaultContext(Relation rel, HeapTuple tuple);
 
 extern bool sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple,

@@ -470,6 +470,8 @@ void
 sepgsqlLargeObjectImport(Oid loid, int fdesc, const char *filename)
 {
 	security_context_t	tcontext;
+	security_class_t tclass
+		= sepgsqlProperFileObjectClass(fdesc, filename);
 
 	if (fgetfilecon_raw(fdesc, &tcontext) < 0)
 		ereport(ERROR,
@@ -479,7 +481,7 @@ sepgsqlLargeObjectImport(Oid loid, int fdesc, const char *filename)
 	{
 		sepgsqlComputePermission(sepgsqlGetClientContext(),
 								 tcontext,
-								 SECCLASS_FILE,
+								 tclass,
 								 FILE__READ,
 								 filename);
 	}
@@ -499,6 +501,8 @@ void
 sepgsqlLargeObjectExport(Oid loid, int fdesc, const char *filename)
 {
 	security_context_t	tcontext;
+	security_class_t tclass
+		= sepgsqlProperFileObjectClass(fdesc, filename);
 
 	if (fgetfilecon_raw(fdesc, &tcontext) < 0)
 		ereport(ERROR,
@@ -508,7 +512,7 @@ sepgsqlLargeObjectExport(Oid loid, int fdesc, const char *filename)
 	{
 		sepgsqlComputePermission(sepgsqlGetClientContext(),
 								 tcontext,
-								 SECCLASS_FILE,
+								 tclass,
 								 FILE__WRITE,
 								 filename);
 	}
