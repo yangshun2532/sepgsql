@@ -261,7 +261,14 @@ sepgsqlCallFunctionTrigger(FmgrInfo *finfo, TriggerData *tgdata)
 	HeapTuple	oldtup = NULL;
 
 	if (TRIGGER_FIRED_FOR_STATEMENT(tgdata->tg_event))
-		return true;			/* statement trigger does not contain any tuple */
+	{
+		/*
+		 * No need to check db_tuple:{select} for a statement trigger
+		 */
+		sepgsqlCallFunction(finfo, false);
+		return true;
+	}
+
 	if (TRIGGER_FIRED_BY_INSERT(tgdata->tg_event))
 	{
 		if (TRIGGER_FIRED_AFTER(tgdata->tg_event))
@@ -270,10 +277,13 @@ sepgsqlCallFunctionTrigger(FmgrInfo *finfo, TriggerData *tgdata)
 	else if (TRIGGER_FIRED_BY_UPDATE(tgdata->tg_event))
 	{
 		oldtup = tgdata->tg_trigtuple;
-		if (TRIGGER_FIRED_AFTER(tgdata->tg_event)
-			&& HeapTupleGetSecurity(oldtup) !=
-			HeapTupleGetSecurity(tgdata->tg_newtuple))
-			newtup = tgdata->tg_newtuple;
+		if (TRIGGER_FIRED_AFTER(tgdata->tg_event))
+		{
+			Oid securityId = HeapTupleGetSecurity(tgdata->tg_newtuple);
+
+			if (HeapTupleGetSecurity(oldtup) != securityId)
+				newtup = tgdata->tg_newtuple;
+		}
 	}
 	else if (TRIGGER_FIRED_BY_DELETE(tgdata->tg_event))
 	{
