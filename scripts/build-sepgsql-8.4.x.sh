@@ -3,7 +3,7 @@ export LANG=C
 
 # ---- build parametors
 SEPGSQL_MAJOR_VERSION="3"
-SEPGSQL_EXTENSION=".alpha"
+SEPGSQL_EXTENSION=".beta"
 SEPGSQL_BRANCH="/trunk"
 
 # -- SE-PostgreSQL repository
