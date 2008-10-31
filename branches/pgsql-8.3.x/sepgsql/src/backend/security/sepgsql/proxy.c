@@ -351,13 +351,23 @@ addEvalTriggerAccess(List *selist, Oid relid, bool is_inh, int cmdType)
 	{
 		Form_pg_trigger trigForm = (Form_pg_trigger) GETSTRUCT(tuple);
 
+		/*
+		 * Skip not-invoked triggers
+		 */
 		if (!trigForm->tgenabled)
 			continue;
-
-		if ((cmdType == CMD_INSERT && !TRIGGER_FOR_INSERT(trigForm->tgtype))
-			|| (cmdType == CMD_UPDATE && !TRIGGER_FOR_UPDATE(trigForm->tgtype))
-			|| (cmdType == CMD_DELETE && !TRIGGER_FOR_DELETE(trigForm->tgtype)))
+		if (cmdType == CMD_INSERT && !TRIGGER_FOR_INSERT(trigForm->tgtype))
 			continue;
+		if (cmdType == CMD_UPDATE && !TRIGGER_FOR_UPDATE(trigForm->tgtype))
+			continue;
+		if (cmdType == CMD_DELETE && !TRIGGER_FOR_DELETE(trigForm->tgtype))
+			continue;
+
+		/*
+		 * add db_procedure:{execute} permission
+		 */
+		selist = addEvalPgProc(selist, trigForm->tgfoid,
+							   DB_PROCEDURE__EXECUTE);
 
 		/*
 		 * per STATEMENT trigger cannot refer whole of a tuple
@@ -368,12 +378,10 @@ addEvalTriggerAccess(List *selist, Oid relid, bool is_inh, int cmdType)
 		/*
 		 * BEFORE-ROW-INSERT trigger cannot refer whole of a tuple
 		 */
-		if (TRIGGER_FOR_BEFORE(trigForm->tgtype)
-			&& TRIGGER_FOR_INSERT(trigForm->tgtype))
+		if (TRIGGER_FOR_BEFORE(trigForm->tgtype) &&
+			TRIGGER_FOR_INSERT(trigForm->tgtype))
 			continue;
 
-		selist = addEvalPgProc(selist, trigForm->tgfoid,
-							   DB_PROCEDURE__EXECUTE);
 		if (!checked)
 		{
 			HeapTuple	reltup;
