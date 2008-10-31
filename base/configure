@@ -686,6 +686,7 @@ CPPFLAGS
 ac_ct_CC
 EXEEXT
 OBJEXT
+SUN_STUDIO_CC
 CPP
 GCC
 TAS
@@ -1353,10 +1354,13 @@ if test -n "$ac_init_help"; then
 Optional Features:
   --disable-FEATURE       do not include FEATURE (same as --enable-FEATURE=no)
   --enable-FEATURE[=ARG]  include FEATURE [ARG=yes]
-  --disable-integer-datetimes  disable 64-bit integer date/time support
-  --enable-nls[=LANGUAGES]  enable Native Language Support
+  --disable-integer-datetimes
+                          disable 64-bit integer date/time support
+  --enable-nls[=LANGUAGES]
+                          enable Native Language Support
   --disable-shared        do not build shared libraries
-  --disable-rpath         do not embed shared library search path in executables
+  --disable-rpath         do not embed shared library search path in
+                          executables
   --disable-spinlocks     do not use spinlocks
   --enable-debug          build with debugging symbols (-g)
   --enable-profiling      build with profiling enabled
@@ -1365,7 +1369,8 @@ Optional Features:
   --enable-depend         turn on automatic dependency tracking
   --enable-cassert        enable assertion checks (for debugging)
   --enable-thread-safety  make client libraries thread-safe
-  --enable-thread-safety-force  force thread-safety despite thread test failure
+  --enable-thread-safety-force
+                          force thread-safety despite thread test failure
   --disable-float4-byval  disable float4 passed by value
   --disable-float8-byval  disable float8 passed by value
   --disable-largefile     omit support for large files
@@ -1373,32 +1378,40 @@ Optional Features:
 Optional Packages:
   --with-PACKAGE[=ARG]    use PACKAGE [ARG=yes]
   --without-PACKAGE       do not use PACKAGE (same as --with-PACKAGE=no)
-
+  --with-template=NAME    override operating system template
   --with-includes=DIRS    look for additional header files in DIRS
   --with-libraries=DIRS   look for additional libraries in DIRS
   --with-libs=DIRS        alternative spelling of --with-libraries
   --with-pgport=PORTNUM   set default port number [5432]
-  --with-blocksize=BLOCKSIZE  set table block size in kB [8]
+  --with-blocksize=BLOCKSIZE
+                          set table block size in kB [8]
   --with-segsize=SEGSIZE  set table segment size in GB [1]
-  --with-wal-blocksize=BLOCKSIZE  set WAL block size in kB [8]
-  --with-wal-segsize=SEGSIZE  set WAL segment size in MB [16]
+  --with-wal-blocksize=BLOCKSIZE
+                          set WAL block size in kB [8]
+  --with-wal-segsize=SEGSIZE
+                          set WAL segment size in MB [16]
+  --with-CC=CMD           set compiler (deprecated)
   --with-tcl              build Tcl modules (PL/Tcl)
   --with-tclconfig=DIR    tclConfig.sh is in DIR
   --with-perl             build Perl modules (PL/Perl)
   --with-python           build Python modules (PL/Python)
   --with-gssapi           build with GSSAPI support
   --with-krb5             build with Kerberos 5 support
-  --with-krb-srvnam=NAME  default service principal name in Kerberos [postgres]
+  --with-krb-srvnam=NAME  default service principal name in Kerberos
+                          [postgres]
   --with-pam              build with PAM support
   --with-ldap             build with LDAP support
   --with-bonjour          build with Bonjour support
   --with-openssl          build with OpenSSL support
   --without-readline      do not use GNU Readline nor BSD Libedit for editing
-  --with-libedit-preferred  prefer BSD Libedit over GNU Readline
-  --with-ossp-uuid        use OSSP UUID library when building contrib/uuid-ossp
+  --with-libedit-preferred
+                          prefer BSD Libedit over GNU Readline
+  --with-ossp-uuid        use OSSP UUID library when building
+                          contrib/uuid-ossp
   --with-libxml           build with XML support
   --with-libxslt          use XSLT support when building contrib/xml2
-  --with-system-tzdata=DIR  use system time zone data in DIR
+  --with-system-tzdata=DIR
+                          use system time zone data in DIR
   --without-zlib          do not use Zlib
   --with-gnu-ld           assume the C compiler uses GNU ld [default=no]
 
@@ -3745,6 +3758,54 @@ sed 's/^/| /' conftest.$ac_ext >&5
 fi
 
 rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
+
+# Check if it's Sun Studio compiler. We assume that
+# __SUNPRO_C will be defined for Sun Studio compilers
+cat >conftest.$ac_ext <<_ACEOF
+/* confdefs.h.  */
+_ACEOF
+cat confdefs.h >>conftest.$ac_ext
+cat >>conftest.$ac_ext <<_ACEOF
+/* end confdefs.h.  */
+
+int
+main ()
+{
+#ifndef __SUNPRO_C
+choke me
+#endif
+  ;
+  return 0;
+}
+_ACEOF
+rm -f conftest.$ac_objext
+if { (ac_try="$ac_compile"
+case "(($ac_try" in
+  *\"* | *\`* | *\\*) ac_try_echo=\$ac_try;;
+  *) ac_try_echo=$ac_try;;
+esac
+eval "echo \"\$as_me:$LINENO: $ac_try_echo\"") >&5
+  (eval "$ac_compile") 2>conftest.er1
+  ac_status=$?
+  grep -v '^ *+' conftest.er1 >conftest.err
+  rm -f conftest.er1
+  cat conftest.err >&5
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); } && {
+	 test -z "$ac_c_werror_flag" ||
+	 test ! -s conftest.err
+       } && test -s conftest.$ac_objext; then
+  SUN_STUDIO_CC=yes
+else
+  echo "$as_me: failed program was:" >&5
+sed 's/^/| /' conftest.$ac_ext >&5
+
+	SUN_STUDIO_CC=no
+fi
+
+rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
+
+
 
 unset CFLAGS
 
@@ -19126,8 +19187,9 @@ ac_compiler_gnu=$ac_cv_c_compiler_gnu
 
 	# set thread flags
 
-# Some platforms use these, so just defineed them.  They can't hurt if they
-# are not supported.
+# Some platforms use these, so just define them.  They can't hurt if they
+# are not supported.  For example, on Solaris -D_POSIX_PTHREAD_SEMANTICS
+# enables 5-arg getpwuid_r, among other things.
 PTHREAD_CFLAGS="$PTHREAD_CFLAGS -D_REENTRANT -D_THREAD_SAFE -D_POSIX_PTHREAD_SEMANTICS"
 
 
@@ -25795,7 +25857,7 @@ sed 's/^/| /' conftest.$ac_ext >&5
 { echo "$as_me:$LINENO: result: no" >&5
 echo "${ECHO_T}no" >&6; }
   { { echo "$as_me:$LINENO: error: thread test program failed
-This platform is not thread-safe.  Check the file 'config.log'for the
+This platform is not thread-safe.  Check the file 'config.log' for the
 exact reason.
 
 You can use the configure option --enable-thread-safety-force to force
@@ -25803,7 +25865,7 @@ threads to be enabled.  But you must then run the program in
 src/test/thread and add locking function calls to your applications to
 guarantee thread safety." >&5
 echo "$as_me: error: thread test program failed
-This platform is not thread-safe.  Check the file 'config.log'for the
+This platform is not thread-safe.  Check the file 'config.log' for the
 exact reason.
 
 You can use the configure option --enable-thread-safety-force to force
@@ -26714,6 +26776,7 @@ CPPFLAGS!$CPPFLAGS$ac_delim
 ac_ct_CC!$ac_ct_CC$ac_delim
 EXEEXT!$EXEEXT$ac_delim
 OBJEXT!$OBJEXT$ac_delim
+SUN_STUDIO_CC!$SUN_STUDIO_CC$ac_delim
 CPP!$CPP$ac_delim
 GCC!$GCC$ac_delim
 TAS!$TAS$ac_delim
@@ -26742,7 +26805,6 @@ ELF_SYS!$ELF_SYS$ac_delim
 LDFLAGS_SL!$LDFLAGS_SL$ac_delim
 LD!$LD$ac_delim
 with_gnu_ld!$with_gnu_ld$ac_delim
-ld_R_works!$ld_R_works$ac_delim
 _ACEOF
 
   if test `sed -n "s/.*$ac_delim\$/X/p" conf$$subs.sed | grep -c X` = 97; then
@@ -26784,6 +26846,7 @@ _ACEOF
 ac_delim='%!_!# '
 for ac_last_try in false false false false false :; do
   cat >conf$$subs.sed <<_ACEOF
+ld_R_works!$ld_R_works$ac_delim
 RANLIB!$RANLIB$ac_delim
 STRIP!$STRIP$ac_delim
 STRIP_STATIC_LIB!$STRIP_STATIC_LIB$ac_delim
@@ -26838,7 +26901,7 @@ vpath_build!$vpath_build$ac_delim
 LTLIBOBJS!$LTLIBOBJS$ac_delim
 _ACEOF
 
-  if test `sed -n "s/.*$ac_delim\$/X/p" conf$$subs.sed | grep -c X` = 52; then
+  if test `sed -n "s/.*$ac_delim\$/X/p" conf$$subs.sed | grep -c X` = 53; then
     break
   elif $ac_last_try; then
     { { echo "$as_me:$LINENO: error: could not make $CONFIG_STATUS" >&5
