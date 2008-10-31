@@ -136,6 +136,38 @@ sepgsqlTupleName(Oid relid, HeapTuple tuple)
 }
 
 /*
+ * sepgsqlProperFileObjectClass
+ *
+ * It returns proper object class of filesystem object already opened.
+ * It is necessary to check privileges voluntarily.
+ */
+security_class_t
+sepgsqlProperFileObjectClass(int fdesc, const char *filename)
+{
+	struct stat stbuf;
+
+	if (fstat(fdesc, &stbuf) != 0)
+		ereport(ERROR,
+				(errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("SELinux: could not get file status of %s", filename)));
+
+	if (S_ISDIR(stbuf.st_mode))
+		return SECCLASS_DIR;
+	else if (S_ISCHR(stbuf.st_mode))
+		return SECCLASS_CHR_FILE;
+	else if (S_ISBLK(stbuf.st_mode))
+		return SECCLASS_BLK_FILE;
+	else if (S_ISFIFO(stbuf.st_mode))
+		return SECCLASS_FIFO_FILE;
+	else if (S_ISLNK(stbuf.st_mode))
+		return SECCLASS_LNK_FILE;
+	else if (S_ISSOCK(stbuf.st_mode))
+		return SECCLASS_SOCK_FILE;
+
+	return SECCLASS_FILE;
+}
+
+/*
  * sepgsqlCheckTuplePerms 
  *
  * This function evaluates given permission set (SEPGSQL_PERMS_*) onto the
