@@ -1373,7 +1373,7 @@ Optional Features:
   --enable-thread-safety  make client libraries thread-safe
   --enable-thread-safety-force
                           force thread-safety despite thread test failure
-  --enable-selinux        --enable-selinux build with NSA SELinux support
+  --enable-selinux        --enable-selinux build with SELinux support
   --enable-row-acl        --enable-row-acl Row-level ACL support
   --disable-float4-byval  disable float4 passed by value
   --disable-float8-byval  disable float8 passed by value
@@ -5533,7 +5533,7 @@ fi
 
 
 #
-# NSA SELinux support
+# SELinux support
 #
 
 pgac_args="$pgac_args enable_selinux"
