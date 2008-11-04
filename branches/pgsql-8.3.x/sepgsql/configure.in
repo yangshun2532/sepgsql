@@ -626,10 +626,10 @@ PGAC_ARG_BOOL(with, zlib, yes,
 AC_SUBST(with_zlib)
 
 #
-# NSA SELinux support
+# SELinux support
 #
 PGAC_ARG_BOOL(enable, selinux, no,
-              [  --enable-selinux        build with NSA SELinux support])
+              [  --enable-selinux        build with SELinux support])
 if test "$enable_selinux" = yes; then
 	AC_CHECK_LIB(selinux, getpeercon,
 		     AC_DEFINE(SECURITY_SYSATTR_NAME, "security_context",
