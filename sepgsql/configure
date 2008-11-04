@@ -871,7 +871,7 @@ Optional Features:
   --enable-cassert        enable assertion checks (for debugging)
   --enable-thread-safety  make client libraries thread-safe
   --enable-thread-safety-force  force thread-safety despite thread test failure
-  --enable-selinux        build with NSA SELinux support
+  --enable-selinux        build with SELinux support
   --disable-largefile     omit support for large files
 
 Optional Packages:
@@ -4620,7 +4620,7 @@ fi;
 
 
 #
-# NSA SELinux support
+# SELinux support
 #
 
 pgac_args="$pgac_args enable_selinux"
