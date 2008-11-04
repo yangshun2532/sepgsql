@@ -235,6 +235,64 @@ fi
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
 
 %changelog
+* Fri Oct 31 2008 <kaigai@kaigai.gr.jp> - 8.4devel-3.1168
+- bugfix: incorrect object class for lo_export(xxx, '/dev/null')
+- bugfix: lack of permission checks for per-statement trigger
+- bugfix: trusted procedure invocation as per-statement trigger
+
+* Fri Oct 24 2008 <kaigai@kaigai.gr.jp> - 8.4devel-3.1148
+- bugfix: checks on TRUNCATE assumed SECCLASS_DB_TUPLE for any tuples
+- bugfix: incorrect object class for the target of COPY TO <file>
+
+* Thu Oct 16 2008 <kaigai@kaigai.gr.jp> - 8.4devel-3.1127
+- bugfix: theoritical matter on repeating enable<->disable the feature
+          and handling TOASTing data.
+- bugfix: add a not-NULL constraint for writable security system column.
+- cleanup: src/bin/pg_dump/pg_ace_dump.h
+
+* Fri Oct 10 2008 <kaigai@kaigai.gr.jp> - 8.4devel-3.1124
+- add a special care for FK constraint triggers. It does not require
+  permissions whole of columns on its invocation
+- cleanup: remove unused checkSelectFromExpr()
+- cleanup: src/backend/security/sepgsql/proxy.c
+
+* Thu Oct 9 2008 <kaigai@kaigai.gr.jp> - 8.4devel-3.1089
+- SECURITY_CONTEXT = 'xxx' extention got raised an error when no security
+  feature is enabled.
+- pgaceSecurityLabelOfLabel() and pgaceUnlabeledSecurityLabel() hooks are
+  allowed to return NULL.
+- WITH RECURSICE clause support
+
+* Wed Oct 1 2008 <kaigai@kaigai.gr.jp> - 8.4devel-3.1072
+- pgaceCopyFile() hook is added to check permission for files.
+- bugfix: incorrect audit message for non-cached decision making
+
+* Mon Sep 29 2008 <kaigai@kaigai.gr.jp> - 8.4devel-3.1065
+- add a feature to boost userspace avc. It enables to assume the context
+  of subject and switch the slot on domain transition, because most of
+  access control decision is checks for privileges of client.
+
+* Thu Sep 25 2008 <kaigai@kaigai.gr.jp> - 8.4devel-3.1056
+- pgaceValidateSecurityLabel() hook is separated to
+  pgaceCheckValidSecurityLabel() and pgaceUnlabeledSecurityLabel().
+- hooks got enclosed by #if defined(XXXX) ... #endif, instead of #ifdef
+
+* Mon Sep 22 2008 <kaigai@kaigai.gr.jp> - 8.4devel-3.1037
+- bugfix: insert a tuple on FK'ed table with invisible PK got succeeded
+- bugfix: Scan->pgaceTuplePerms is not copied at nodes/copyfuncs.c
+- Declarations of SE-PostgreSQL functions are moved to security/pgace.h
+  to kill warnings at build time.
+- bugfix: _equalSEvalItemProcedure() is terminated without 'return true'
+
+* Fri Sep 12 2008 <kaigai@kaigai.gr.jp> - 8.4devel-3.1003
+- add pgaceIsAllowExecutorRunHook() hook to prevent override executor.
+- add T_SEvalItemXXXX support to nodes/equalfuncs.c
+
+* Fri Aug 15 2008 <kaigai@kaigai.gr.jp> - 8.4devel-3.970
+- add a handling of T_SortGroupClause node at sepgsql/proxy.c
+- pgaceCallFunction() is moved to init_fcache()
+- bugfix: trusted procedure on OpExpr and so on
+
 * Fri Jul 11 2008 <kaigai@kaigai.gr.jp> - 8.4devel-3.952
 - Security policy modules updates.
 
