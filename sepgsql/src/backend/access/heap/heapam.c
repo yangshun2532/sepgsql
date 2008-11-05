@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/access/heap/heapam.c,v 1.266 2008/10/27 21:50:12 alvherre Exp $
+ *	  $PostgreSQL: pgsql/src/backend/access/heap/heapam.c,v 1.268 2008/10/31 19:40:26 heikki Exp $
  *
  *
  * INTERFACE ROUTINES
@@ -55,6 +55,7 @@
 #include "pgstat.h"
 #include "security/pgace.h"
 #include "storage/bufmgr.h"
+#include "storage/freespace.h"
 #include "storage/lmgr.h"
 #include "storage/procarray.h"
 #include "storage/smgr.h"
@@ -206,9 +207,8 @@ heapgetpage(HeapScanDesc scan, BlockNumber page)
 	}
 
 	/* read page using selected strategy */
-	scan->rs_cbuf = ReadBufferWithStrategy(scan->rs_rd,
-										   page,
-										   scan->rs_strategy);
+	scan->rs_cbuf = ReadBufferExtended(scan->rs_rd, MAIN_FORKNUM, page,
+									   RBM_NORMAL, scan->rs_strategy);
 	scan->rs_cblock = page;
 
 	if (!scan->rs_pageatatime)
@@ -4033,6 +4033,7 @@ heap_xlog_clean(XLogRecPtr lsn, XLogRecord *record, bool clean_move)
 	int			nredirected;
 	int			ndead;
 	int			nunused;
+	Size		freespace;
 
 	if (record->xl_info & XLR_BKP_BLOCK_1)
 		return;
@@ -4064,6 +4065,8 @@ heap_xlog_clean(XLogRecPtr lsn, XLogRecord *record, bool clean_move)
 							nowunused, nunused,
 							clean_move);
 
+	freespace = PageGetHeapFreeSpace(page); /* needed to update FSM below */
+
 	/*
 	 * Note: we don't worry about updating the page's prunability hints.
 	 * At worst this will cause an extra prune cycle to occur soon.
@@ -4073,6 +4076,15 @@ heap_xlog_clean(XLogRecPtr lsn, XLogRecord *record, bool clean_move)
 	PageSetTLI(page, ThisTimeLineID);
 	MarkBufferDirty(buffer);
 	UnlockReleaseBuffer(buffer);
+
+	/*
+	 * Update the FSM as well.
+	 *
+	 * XXX: We don't get here if the page was restored from full page image.
+	 * We don't bother to update the FSM in that case, it doesn't need to be
+	 * totally accurate anyway.
+	 */
+	XLogRecordPageWithFreeSpace(xlrec->node, xlrec->block, freespace);
 }
 
 static void
@@ -4216,15 +4228,17 @@ heap_xlog_insert(XLogRecPtr lsn, XLogRecord *record)
 	HeapTupleHeader htup;
 	xl_heap_header xlhdr;
 	uint32		newlen;
+	Size		freespace;
+	BlockNumber	blkno;
 
 	if (record->xl_info & XLR_BKP_BLOCK_1)
 		return;
 
+	blkno = ItemPointerGetBlockNumber(&(xlrec->target.tid));
+
 	if (record->xl_info & XLOG_HEAP_INIT_PAGE)
 	{
-		buffer = XLogReadBuffer(xlrec->target.node,
-							 ItemPointerGetBlockNumber(&(xlrec->target.tid)),
-								true);
+		buffer = XLogReadBuffer(xlrec->target.node, blkno, true);
 		Assert(BufferIsValid(buffer));
 		page = (Page) BufferGetPage(buffer);
 
@@ -4232,9 +4246,7 @@ heap_xlog_insert(XLogRecPtr lsn, XLogRecord *record)
 	}
 	else
 	{
-		buffer = XLogReadBuffer(xlrec->target.node,
-							 ItemPointerGetBlockNumber(&(xlrec->target.tid)),
-								false);
+		buffer = XLogReadBuffer(xlrec->target.node, blkno, false);
 		if (!BufferIsValid(buffer))
 			return;
 		page = (Page) BufferGetPage(buffer);
@@ -4272,10 +4284,25 @@ heap_xlog_insert(XLogRecPtr lsn, XLogRecord *record)
 	offnum = PageAddItem(page, (Item) htup, newlen, offnum, true, true);
 	if (offnum == InvalidOffsetNumber)
 		elog(PANIC, "heap_insert_redo: failed to add tuple");
+
+	freespace = PageGetHeapFreeSpace(page); /* needed to update FSM below */
+
 	PageSetLSN(page, lsn);
 	PageSetTLI(page, ThisTimeLineID);
 	MarkBufferDirty(buffer);
 	UnlockReleaseBuffer(buffer);
+
+	/*
+	 * If the page is running low on free space, update the FSM as well.
+	 * Arbitrarily, our definition of "low" is less than 20%. We can't do
+	 * much better than that without knowing the fill-factor for the table.
+	 *
+	 * XXX: We don't get here if the page was restored from full page image.
+	 * We don't bother to update the FSM in that case, it doesn't need to be
+	 * totally accurate anyway.
+	 */
+	if (freespace < BLCKSZ / 5)
+		XLogRecordPageWithFreeSpace(xlrec->target.node, blkno, freespace);
 }
 
 /*
@@ -4300,6 +4327,7 @@ heap_xlog_update(XLogRecPtr lsn, XLogRecord *record, bool move, bool hot_update)
 	xl_heap_header xlhdr;
 	int			hsize;
 	uint32		newlen;
+	Size		freespace;
 
 	if (record->xl_info & XLR_BKP_BLOCK_1)
 	{
@@ -4457,10 +4485,32 @@ newsame:;
 	offnum = PageAddItem(page, (Item) htup, newlen, offnum, true, true);
 	if (offnum == InvalidOffsetNumber)
 		elog(PANIC, "heap_update_redo: failed to add tuple");
+
+	freespace = PageGetHeapFreeSpace(page); /* needed to update FSM below */
+
 	PageSetLSN(page, lsn);
 	PageSetTLI(page, ThisTimeLineID);
 	MarkBufferDirty(buffer);
 	UnlockReleaseBuffer(buffer);
+
+	/*
+	 * If the page is running low on free space, update the FSM as well.
+	 * Arbitrarily, our definition of "low" is less than 20%. We can't do
+	 * much better than that without knowing the fill-factor for the table.
+	 *
+	 * However, don't update the FSM on HOT updates, because after crash
+	 * recovery, either the old or the new tuple will certainly be dead and
+	 * prunable. After pruning, the page will have roughly as much free space
+	 * as it did before the update, assuming the new tuple is about the same
+	 * size as the old one.
+	 *
+	 * XXX: We don't get here if the page was restored from full page image.
+	 * We don't bother to update the FSM in that case, it doesn't need to be
+	 * totally accurate anyway.
+	 */
+	if (!hot_update && freespace < BLCKSZ / 5)
+		XLogRecordPageWithFreeSpace(xlrec->target.node,
+					ItemPointerGetBlockNumber(&(xlrec->newtid)), freespace);
 }
 
 static void

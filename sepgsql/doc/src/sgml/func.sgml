@@ -1,4 +1,4 @@
-<!-- $PostgreSQL: pgsql/doc/src/sgml/func.sgml,v 1.451 2008/10/27 09:37:46 petere Exp $ -->
+<!-- $PostgreSQL: pgsql/doc/src/sgml/func.sgml,v 1.455 2008/11/04 14:49:11 petere Exp $ -->
 
  <chapter id="functions">
   <title>Functions and Operators</title>
@@ -9376,6 +9376,17 @@ SELECT NULLIF(value, '(none)') ...
        <row>
         <entry>
          <literal>
+          <function>array_ndims</function>(<type>anyarray</type>)
+         </literal>
+        </entry>
+        <entry><type>int</type></entry>
+        <entry>returns the number of dimensions of the array</entry>
+        <entry><literal>array_ndims(ARRAY[[1,2,3], [4,5,6]])</literal></entry>
+        <entry><literal>2</literal></entry>
+       </row>
+       <row>
+        <entry>
+         <literal>
           <function>array_dims</function>(<type>anyarray</type>)
          </literal>
         </entry>
@@ -11643,6 +11654,10 @@ SELECT pg_type_is_visible('myschema.widget'::regtype);
     <primary>pg_tablespace_databases</primary>
    </indexterm>
 
+   <indexterm>
+    <primary>pg_typeof</primary>
+   </indexterm>
+
   <para>
    <xref linkend="functions-info-catalog-table"> lists functions that
    extract information from the system catalogs.
@@ -11766,6 +11781,11 @@ SELECT pg_type_is_visible('myschema.widget'::regtype);
        <entry><type>setof oid</type></entry>
        <entry>get the set of database OIDs that have objects in the tablespace</entry>
       </row>
+      <row>
+       <entry><literal><function>pg_typeof</function>(<parameter>any</parameter>)</literal></entry>
+       <entry><type>regtype</type></entry>
+       <entry>get the data type of any value</entry>
+      </row>
      </tbody>
     </tgroup>
    </table>
@@ -11846,6 +11866,12 @@ SELECT pg_type_is_visible('myschema.widget'::regtype);
    tablespace, you will need to connect to the databases identified by
    <function>pg_tablespace_databases</function> and query their
    <structname>pg_class</> catalogs.
+  </para>
+
+  <para>
+   <function>pg_typeof</function> returns the OID of the data type of the
+   value that is passed to it.  This can be helpful for troubleshooting or
+   dynamically constructing SQL queries.
   </para>
 
    <indexterm>
@@ -12831,4 +12857,55 @@ SELECT (pg_stat_file('filename')).modification;
 
   </sect1>
 
+  <sect1 id="functions-trigger">
+   <title>Trigger Functions</title>
+
+   <indexterm>
+     <primary>suppress_redundant_updates_trigger</primary>
+   </indexterm>
+
+   <para>
+      Currently <productname>PostgreSQL</> provides one built in trigger
+      function, <function>suppress_redundant_updates_trigger</>, 
+      which will prevent any update
+      that does not actually change the data in the row from taking place, in
+      contrast to the normal behaviour which always performs the update
+      regardless of whether or not the data has changed. (This normal behaviour
+      makes updates run faster, since no checking is required, and is also
+      useful in certain cases.)
+    </para>
+
+    <para>
+      Ideally, you should normally avoid running updates that don't actually
+      change the data in the record. Redundant updates can cost considerable
+      unnecessary time, especially if there are lots of indexes to alter,
+      and space in dead rows that will eventually have to be vacuumed.
+      However, detecting such situations in client code is not
+      always easy, or even possible, and writing expressions to detect
+      them can be error-prone. An alternative is to use 
+      <function>suppress_redundant_updates_trigger</>, which will skip
+      updates that don't change the data. You should use this with care,
+      however. The trigger takes a small but non-trivial time for each record, 
+      so if most of the records affected by an update are actually changed,
+      use of this trigger will actually make the update run slower.
+    </para>
+
+    <para>
+      The <function>suppress_redundant_updates_trigger</> function can be 
+      added to a table like this:
+<programlisting>
+CREATE TRIGGER z_min_update 
+BEFORE UPDATE ON tablename
+FOR EACH ROW EXECUTE PROCEDURE suppress_redundant_updates_trigger();
+</programlisting>
+      In most cases, you would want to fire this trigger last for each row.
+      Bearing in mind that triggers fire in name order, you would then
+      choose a trigger name that comes after the name of any other trigger
+      you might have on the table.
+    </para>
+    <para>
+       For more information about creating triggers, see
+        <xref linkend="SQL-CREATETRIGGER">.
+    </para>
+  </sect1>
 </chapter>
