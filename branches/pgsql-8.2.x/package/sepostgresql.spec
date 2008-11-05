@@ -206,6 +206,9 @@ fi
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
 
 %changelog
+* Wed Nov  5 2008 <kaigai@kaigai.gr.jp> - 8.2.11-1.1182
+- upgrade base PostgreSQL 8.2.10 -> 8.2.11
+
 * Tue Sep 30 2008 <kaigai@kaigai.gr.jp> - 8.2.10-1.1067
 - upgrade base PostgreSQL 8.2.9 -> 8.2.10
 
