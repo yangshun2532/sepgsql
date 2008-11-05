@@ -8,7 +8,7 @@
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/storage/freespace/freespace.c,v 1.64 2008/10/01 14:59:23 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/storage/freespace/freespace.c,v 1.66 2008/10/31 19:40:27 heikki Exp $
  *
  *
  * NOTES:
@@ -200,6 +200,36 @@ RecordPageWithFreeSpace(Relation rel, BlockNumber heapBlk, Size spaceAvail)
 	addr = fsm_get_location(heapBlk, &slot);
 
 	fsm_set_and_search(rel, addr, slot, new_cat, 0);
+}
+
+/*
+ * XLogRecordPageWithFreeSpace - like RecordPageWithFreeSpace, for use in
+ *		WAL replay
+ */
+void
+XLogRecordPageWithFreeSpace(RelFileNode rnode, BlockNumber heapBlk,
+							Size spaceAvail)
+{
+	int			new_cat = fsm_space_avail_to_cat(spaceAvail);
+	FSMAddress	addr;
+	uint16		slot;
+	BlockNumber blkno;
+	Buffer		buf;
+	Page		page;
+
+	/* Get the location of the FSM byte representing the heap block */
+	addr = fsm_get_location(heapBlk, &slot);
+	blkno = fsm_logical_to_physical(addr);
+
+	/* If the page doesn't exist already, extend */
+	buf = XLogReadBufferExtended(rnode, FSM_FORKNUM, blkno, RBM_ZERO_ON_ERROR);
+	page = BufferGetPage(buf);
+	if (PageIsNew(page))
+		PageInit(page, BLCKSZ, 0);
+
+	if (fsm_set_avail(page, slot, new_cat))
+		MarkBufferDirty(buf);
+	UnlockReleaseBuffer(buf);
 }
 
 /*
@@ -504,6 +534,7 @@ static Buffer
 fsm_readbuf(Relation rel, FSMAddress addr, bool extend)
 {
 	BlockNumber blkno = fsm_logical_to_physical(addr);
+	Buffer buf;
 
 	RelationOpenSmgr(rel);
 
@@ -518,7 +549,18 @@ fsm_readbuf(Relation rel, FSMAddress addr, bool extend)
 		else
 			return InvalidBuffer;
 	}
-	return ReadBufferWithFork(rel, FSM_FORKNUM, blkno);
+
+	/*
+	 * Use ZERO_ON_ERROR mode, and initialize the page if necessary. The FSM
+	 * information is not accurate anyway, so it's better to clear corrupt
+	 * pages than error out. Since the FSM changes are not WAL-logged, the
+	 * so-called torn page problem on crash can lead to pages with corrupt
+	 * headers, for example.
+	 */
+	buf = ReadBufferExtended(rel, FSM_FORKNUM, blkno, RBM_ZERO_ON_ERROR, NULL);
+	if (PageIsNew(BufferGetPage(buf)))
+		PageInit(BufferGetPage(buf), BLCKSZ, 0);
+	return buf;
 }
 
 /*
@@ -779,22 +821,17 @@ fsm_redo_truncate(xl_fsm_truncate *xlrec)
 	 * replay of the smgr truncation record to remove completely unused
 	 * pages.
 	 */
-	buf = XLogReadBufferWithFork(xlrec->node, FSM_FORKNUM, fsmblk, false);
+	buf = XLogReadBufferExtended(xlrec->node, FSM_FORKNUM, fsmblk,
+								 RBM_ZERO_ON_ERROR);
 	if (BufferIsValid(buf))
 	{
-		fsm_truncate_avail(BufferGetPage(buf), first_removed_slot);
+		Page page = BufferGetPage(buf);
+
+		if (PageIsNew(page))
+			PageInit(page, BLCKSZ, 0);
+		fsm_truncate_avail(page, first_removed_slot);
 		MarkBufferDirty(buf);
 		UnlockReleaseBuffer(buf);
-	}
-	else
-	{
-		/*
-		 * The page doesn't exist. Because FSM extensions are not WAL-logged,
-		 * it's normal to have a truncation record for a page that doesn't
-		 * exist. Tell xlogutils.c not to PANIC at the end of recovery
-		 * because of the missing page
-		 */
-		XLogTruncateRelation(xlrec->node, FSM_FORKNUM, fsmblk);
 	}
 }
 
