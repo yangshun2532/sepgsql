@@ -7,7 +7,7 @@
  * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/utils/builtins.h,v 1.324 2008/10/13 16:25:20 tgl Exp $
+ * $PostgreSQL: pgsql/src/include/utils/builtins.h,v 1.326 2008/11/03 20:17:20 adunstan Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -404,6 +404,7 @@ extern Datum pg_tablespace_databases(PG_FUNCTION_ARGS);
 extern Datum pg_rotate_logfile(PG_FUNCTION_ARGS);
 extern Datum pg_sleep(PG_FUNCTION_ARGS);
 extern Datum pg_get_keywords(PG_FUNCTION_ARGS);
+extern Datum pg_typeof(PG_FUNCTION_ARGS);
 
 /* oid.c */
 extern Datum oidin(PG_FUNCTION_ARGS);
@@ -898,6 +899,9 @@ extern Datum RI_FKey_setnull_del(PG_FUNCTION_ARGS);
 extern Datum RI_FKey_setnull_upd(PG_FUNCTION_ARGS);
 extern Datum RI_FKey_setdefault_del(PG_FUNCTION_ARGS);
 extern Datum RI_FKey_setdefault_upd(PG_FUNCTION_ARGS);
+
+/* trigfuncs.c */
+extern Datum suppress_redundant_updates_trigger(PG_FUNCTION_ARGS);
 
 /* encoding support functions */
 extern Datum getdatabaseencoding(PG_FUNCTION_ARGS);

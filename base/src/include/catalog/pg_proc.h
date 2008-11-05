@@ -7,7 +7,7 @@
  * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/catalog/pg_proc.h,v 1.520 2008/10/14 17:12:33 tgl Exp $
+ * $PostgreSQL: pgsql/src/include/catalog/pg_proc.h,v 1.524 2008/11/04 14:49:11 petere Exp $
  *
  * NOTES
  *	  The script catalog/genbki.sh reads this file and generates .bki
@@ -985,6 +985,7 @@ DATA(insert OID = 393 (  array_le		   PGNSP PGUID 12 1 0 0 f f t f i 2 16 "2277 
 DESCR("array less than or equal");
 DATA(insert OID = 396 (  array_ge		   PGNSP PGUID 12 1 0 0 f f t f i 2 16 "2277 2277" _null_ _null_ _null_ array_ge _null_ _null_ _null_ ));
 DESCR("array greater than or equal");
+DATA(insert OID = 748 (  array_ndims	   PGNSP PGUID 12 1 0 0 f f t f i 1 23 "2277" _null_ _null_ _null_ array_ndims _null_ _null_ _null_ ));
 DATA(insert OID = 747 (  array_dims		   PGNSP PGUID 12 1 0 0 f f t f i 1 25 "2277" _null_ _null_ _null_ array_dims _null_ _null_ _null_ ));
 DESCR("array dimensions");
 DATA(insert OID = 750 (  array_in		   PGNSP PGUID 12 1 0 0 f f t f s 3 2277 "2275 26 23" _null_ _null_ _null_	array_in _null_ _null_ _null_ ));
@@ -1579,6 +1580,9 @@ DATA(insert OID = 1287 (  oid			   PGNSP PGUID 12 1 0 0 f f t f i 1 26 "20" _nul
 DESCR("convert int8 to oid");
 DATA(insert OID = 1288 (  int8			   PGNSP PGUID 12 1 0 0 f f t f i 1 20 "26" _null_ _null_ _null_	oidtoi8 _null_ _null_ _null_ ));
 DESCR("convert oid to int8");
+
+DATA(insert OID = 1291 (  suppress_redundant_updates_trigger	PGNSP PGUID 12 1 0 0 f f t f v 0 2279 "" _null_ _null_ _null_ suppress_redundant_updates_trigger _null_ _null_ _null_ ));
+DESCR("trigger to suppress updates when new and old records match");
 
 DATA(insert OID = 1292 ( tideq			   PGNSP PGUID 12 1 0 0 f f t f i 2 16 "27 27" _null_ _null_ _null_ tideq _null_ _null_ _null_ ));
 DESCR("equal");
@@ -2290,6 +2294,8 @@ DESCR("result type of a function");
 DATA(insert OID = 1686 (  pg_get_keywords		PGNSP PGUID 12 10 400 0 f f t t s 0 2249 "" "{25,18,25}" "{o,o,o}" "{word,catcode,catdesc}" pg_get_keywords _null_ _null_ _null_ ));
 DESCR("list of SQL keywords");
 
+DATA(insert OID = 1619 (  pg_typeof				PGNSP PGUID 12 1 0 0 f f f f s 1 2206  "2276" _null_ _null_ _null_  pg_typeof _null_ _null_ _null_ ));
+DESCR("returns the type of the argument");
 
 /* Generic referential integrity constraint triggers */
 DATA(insert OID = 1644 (  RI_FKey_check_ins		PGNSP PGUID 12 1 0 0 f f t f v 0 2279 "" _null_ _null_ _null_ RI_FKey_check_ins _null_ _null_ _null_ ));

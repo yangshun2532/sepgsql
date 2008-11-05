@@ -10,7 +10,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/commands/functioncmds.c,v 1.99 2008/10/21 10:38:51 petere Exp $
+ *	  $PostgreSQL: pgsql/src/backend/commands/functioncmds.c,v 1.101 2008/11/02 01:45:27 tgl Exp $
  *
  * DESCRIPTION
  *	  These routines take the parse tree and pick out the
@@ -1104,8 +1104,8 @@ AlterFunctionOwner_internal(Relation rel, HeapTuple tup, Oid newOwnerId)
 	if (procForm->proowner != newOwnerId)
 	{
 		Datum		repl_val[Natts_pg_proc];
-		char		repl_null[Natts_pg_proc];
-		char		repl_repl[Natts_pg_proc];
+		bool		repl_null[Natts_pg_proc];
+		bool		repl_repl[Natts_pg_proc];
 		Acl		   *newAcl;
 		Datum		aclDatum;
 		bool		isNull;
@@ -1131,10 +1131,10 @@ AlterFunctionOwner_internal(Relation rel, HeapTuple tup, Oid newOwnerId)
 							   get_namespace_name(procForm->pronamespace));
 		}
 
-		memset(repl_null, ' ', sizeof(repl_null));
-		memset(repl_repl, ' ', sizeof(repl_repl));
+		memset(repl_null, false, sizeof(repl_null));
+		memset(repl_repl, false, sizeof(repl_repl));
 
-		repl_repl[Anum_pg_proc_proowner - 1] = 'r';
+		repl_repl[Anum_pg_proc_proowner - 1] = true;
 		repl_val[Anum_pg_proc_proowner - 1] = ObjectIdGetDatum(newOwnerId);
 
 		/*
@@ -1148,11 +1148,11 @@ AlterFunctionOwner_internal(Relation rel, HeapTuple tup, Oid newOwnerId)
 		{
 			newAcl = aclnewowner(DatumGetAclP(aclDatum),
 								 procForm->proowner, newOwnerId);
-			repl_repl[Anum_pg_proc_proacl - 1] = 'r';
+			repl_repl[Anum_pg_proc_proacl - 1] = true;
 			repl_val[Anum_pg_proc_proacl - 1] = PointerGetDatum(newAcl);
 		}
 
-		newtuple = heap_modifytuple(tup, RelationGetDescr(rel), repl_val,
+		newtuple = heap_modify_tuple(tup, RelationGetDescr(rel), repl_val,
 									repl_null, repl_repl);
 
 		simple_heap_update(rel, &newtuple->t_self, newtuple);
@@ -1259,8 +1259,8 @@ AlterFunction(AlterFunctionStmt *stmt)
 		bool		isnull;
 		ArrayType  *a;
 		Datum		repl_val[Natts_pg_proc];
-		char		repl_null[Natts_pg_proc];
-		char		repl_repl[Natts_pg_proc];
+		bool		repl_null[Natts_pg_proc];
+		bool		repl_repl[Natts_pg_proc];
 
 		/* extract existing proconfig setting */
 		datum = SysCacheGetAttr(PROCOID, tup, Anum_pg_proc_proconfig, &isnull);
@@ -1270,21 +1270,21 @@ AlterFunction(AlterFunctionStmt *stmt)
 		a = update_proconfig_value(a, set_items);
 
 		/* update the tuple */
-		memset(repl_repl, ' ', sizeof(repl_repl));
-		repl_repl[Anum_pg_proc_proconfig - 1] = 'r';
+		memset(repl_repl, false, sizeof(repl_repl));
+		repl_repl[Anum_pg_proc_proconfig - 1] = true;
 
 		if (a == NULL)
 		{
 			repl_val[Anum_pg_proc_proconfig - 1] = (Datum) 0;
-			repl_null[Anum_pg_proc_proconfig - 1] = 'n';
+			repl_null[Anum_pg_proc_proconfig - 1] = true;
 		}
 		else
 		{
 			repl_val[Anum_pg_proc_proconfig - 1] = PointerGetDatum(a);
-			repl_null[Anum_pg_proc_proconfig - 1] = ' ';
+			repl_null[Anum_pg_proc_proconfig - 1] = false;
 		}
 
-		tup = heap_modifytuple(tup, RelationGetDescr(rel),
+		tup = heap_modify_tuple(tup, RelationGetDescr(rel),
 							   repl_val, repl_null, repl_repl);
 	}
 
@@ -1383,10 +1383,11 @@ CreateCast(CreateCastStmt *stmt)
 	Oid			funcid;
 	int			nargs;
 	char		castcontext;
+	char		castmethod;
 	Relation	relation;
 	HeapTuple	tuple;
 	Datum		values[Natts_pg_cast];
-	char		nulls[Natts_pg_cast];
+	bool		nulls[Natts_pg_cast];
 	ObjectAddress myself,
 				referenced;
 
@@ -1415,7 +1416,15 @@ CreateCast(CreateCastStmt *stmt)
 						format_type_be(sourcetypeid),
 						format_type_be(targettypeid))));
 
+	/* Detemine the cast method */
 	if (stmt->func != NULL)
+		castmethod = COERCION_METHOD_FUNCTION;
+	else if(stmt->inout)
+		castmethod = COERCION_METHOD_INOUT;
+	else
+		castmethod = COERCION_METHOD_BINARY;
+
+	if (castmethod == COERCION_METHOD_FUNCTION)
 	{
 		Form_pg_proc procstruct;
 
@@ -1476,16 +1485,18 @@ CreateCast(CreateCastStmt *stmt)
 	}
 	else
 	{
+		funcid = InvalidOid;
+		nargs = 0;
+	}
+
+	if (castmethod == COERCION_METHOD_BINARY)
+	{
 		int16		typ1len;
 		int16		typ2len;
 		bool		typ1byval;
 		bool		typ2byval;
 		char		typ1align;
 		char		typ2align;
-
-		/* indicates binary coercibility */
-		funcid = InvalidOid;
-		nargs = 0;
 
 		/*
 		 * Must be superuser to create binary-compatible casts, since
@@ -1562,10 +1573,11 @@ CreateCast(CreateCastStmt *stmt)
 	values[Anum_pg_cast_casttarget - 1] = ObjectIdGetDatum(targettypeid);
 	values[Anum_pg_cast_castfunc - 1] = ObjectIdGetDatum(funcid);
 	values[Anum_pg_cast_castcontext - 1] = CharGetDatum(castcontext);
+	values[Anum_pg_cast_castmethod - 1] = CharGetDatum(castmethod);
 
-	MemSet(nulls, ' ', Natts_pg_cast);
+	MemSet(nulls, false, sizeof(nulls));
 
-	tuple = heap_formtuple(RelationGetDescr(relation), values, nulls);
+	tuple = heap_form_tuple(RelationGetDescr(relation), values, nulls);
 
 	simple_heap_insert(relation, tuple);
 
