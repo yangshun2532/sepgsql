@@ -11,7 +11,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/parser/gram.y,v 2.632 2008/10/29 11:24:53 petere Exp $
+ *	  $PostgreSQL: pgsql/src/backend/parser/gram.y,v 2.634 2008/10/31 16:36:13 meskes Exp $
  *
  * HISTORY
  *	  AUTHOR			DATE			MAJOR EVENT
@@ -4590,6 +4590,7 @@ CreateCastStmt: CREATE CAST '(' Typename AS Typename ')'
 					n->targettype = $6;
 					n->func = $10;
 					n->context = (CoercionContext) $11;
+					n->inout = false;
 					$$ = (Node *)n;
 				}
 			| CREATE CAST '(' Typename AS Typename ')'
@@ -4600,6 +4601,18 @@ CreateCastStmt: CREATE CAST '(' Typename AS Typename ')'
 					n->targettype = $6;
 					n->func = NULL;
 					n->context = (CoercionContext) $10;
+					n->inout = false;
+					$$ = (Node *)n;
+				}
+			| CREATE CAST '(' Typename AS Typename ')'
+					WITH INOUT cast_context
+				{
+					CreateCastStmt *n = makeNode(CreateCastStmt);
+					n->sourcetype = $4;
+					n->targettype = $6;
+					n->func = NULL;
+					n->context = (CoercionContext) $10;
+					n->inout = true;
 					$$ = (Node *)n;
 				}
 		;
@@ -6655,12 +6668,13 @@ select_offset_value2:
 row_or_rows:
 			ROW		{ $$ = 0; }
 			| ROWS		{ $$ = 0; }
+			;
 
 /* noise words */
 first_or_next:
 			FIRST_P		{ $$ = 0; }
 			| NEXT		{ $$ = 0; }
-
+			;
 
 group_clause:
 			GROUP_P BY expr_list					{ $$ = $3; }
