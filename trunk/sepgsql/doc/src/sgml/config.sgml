@@ -1,4 +1,4 @@
-<!-- $PostgreSQL: pgsql/doc/src/sgml/config.sgml,v 1.191 2008/09/30 10:52:09 heikki Exp $ -->
+<!-- $PostgreSQL: pgsql/doc/src/sgml/config.sgml,v 1.193 2008/11/04 22:40:40 momjian Exp $ -->
 
 <chapter Id="runtime-config">
   <title>Server Configuration</title>
@@ -565,7 +565,8 @@ SET ENABLE_SEQSCAN TO OFF;
         Enables <acronym>SSL</> connections. Please read
         <xref linkend="ssl-tcp"> before using this. The default
         is <literal>off</>. This parameter can only be set at server
-        start.
+        start.  <acronym>SSL</> communication is only possible with
+        TCP/IP connections.
        </para>
       </listitem>
      </varlistentry>
@@ -3347,9 +3348,6 @@ COPY postgres_log FROM '/full/path/to/logfile.csv' WITH csv;
         improved performance.
         This parameter can only be set in the <filename>postgresql.conf</>
         file or on the server command line.
-        If this parameter is changed while the server is running, there is a
-        small window of time until the new statistics file has been written
-        during which the statistics functions might return no information.
        </para>
       </listitem>
      </varlistentry>
