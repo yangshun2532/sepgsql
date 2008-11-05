@@ -28,6 +28,8 @@
 #include "utils/syscache.h"
 #include "utils/tqual.h"
 
+#include <sys/stat.h>
+
 static access_vector_t
 sepgsql_perms_to_common_perms(uint32 perms)
 {
