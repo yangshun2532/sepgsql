@@ -214,11 +214,15 @@ fi
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
 
 %changelog
-* Thu Oct  2 2008 <kaigai@kaigai.gr.jp> - 8.3.3-2.1076
+* Wed Nov  5 2008 <kaigai@kaigai.gr.jp> - 8.3.5-2.1182
+- upgrade base PostgreSQL version 8.3.4->8.3.5
+- backport cumulative bugfixes from 8.4devel series
+
+* Thu Oct  2 2008 <kaigai@kaigai.gr.jp> - 8.3.4-2.1076
 - bugfix: "(null)" audit logs for non-cached decision making.
 - A hook is added for "COPY TO/FROM <file>" cases.
 
-* Sat Sep 27 2008 <kaigai@kaigai.gr.jp> - 8.3.3-2.1066
+* Sat Sep 27 2008 <kaigai@kaigai.gr.jp> - 8.3.4-2.1066
 - update base version to 8.3.4
 - sepostgresql.pp was marked as obsolute
 
