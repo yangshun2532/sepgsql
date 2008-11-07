@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/commands/copy.c,v 1.300 2008/11/02 01:45:27 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/commands/copy.c,v 1.301 2008/11/06 20:51:14 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -1729,8 +1729,8 @@ CopyFrom(CopyState cstate)
 	MemoryContext oldcontext = CurrentMemoryContext;
 	ErrorContextCallback errcontext;
 	CommandId	mycid = GetCurrentCommandId(true);
-	bool		use_wal = true; /* by default, use WAL logging */
-	bool		use_fsm = true; /* by default, use FSM for free space */
+	int			hi_options = 0;	/* start with default heap_insert options */
+	BulkInsertState bistate;
 
 	Assert(cstate->rel);
 
@@ -1783,9 +1783,9 @@ CopyFrom(CopyState cstate)
 	if (cstate->rel->rd_createSubid != InvalidSubTransactionId ||
 		cstate->rel->rd_newRelfilenodeSubid != InvalidSubTransactionId)
 	{
-		use_fsm = false;
+		hi_options |= HEAP_INSERT_SKIP_FSM;
 		if (!XLogArchivingActive())
-			use_wal = false;
+			hi_options |= HEAP_INSERT_SKIP_WAL;
 	}
 
 	if (pipe)
@@ -1983,6 +1983,8 @@ CopyFrom(CopyState cstate)
 	cstate->cur_lineno = 0;
 	cstate->cur_attname = NULL;
 	cstate->cur_attval = NULL;
+
+	bistate = GetBulkInsertState();
 
 	/* Set up callback to identify error line number */
 	errcontext.callback = copy_in_error_callback;
@@ -2263,7 +2265,7 @@ CopyFrom(CopyState cstate)
 				ExecConstraints(resultRelInfo, slot, estate);
 
 			/* OK, store the tuple and create index entries for it */
-			heap_insert(cstate->rel, tuple, mycid, use_wal, use_fsm);
+			heap_insert(cstate->rel, tuple, mycid, hi_options, bistate);
 
 			if (resultRelInfo->ri_NumIndices > 0)
 				ExecInsertIndexTuples(slot, &(tuple->t_self), estate, false);
@@ -2282,6 +2284,8 @@ CopyFrom(CopyState cstate)
 
 	/* Done, clean up */
 	error_context_stack = errcontext.previous;
+
+	FreeBulkInsertState(bistate);
 
 	MemoryContextSwitchTo(oldcontext);
 
@@ -2319,7 +2323,7 @@ CopyFrom(CopyState cstate)
 	 * If we skipped writing WAL, then we need to sync the heap (but not
 	 * indexes since those use WAL anyway)
 	 */
-	if (!use_wal)
+	if (hi_options & HEAP_INSERT_SKIP_WAL)
 		heap_sync(cstate->rel);
 }
 
