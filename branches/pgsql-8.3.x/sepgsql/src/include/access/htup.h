@@ -288,6 +288,9 @@ do { \
 	(tup)->t_choice.t_datum.datum_typmod = (typmod) \
 )
 
+#define HeapTupleHeaderHasOid(tup) \
+	((tup)->t_infomask & HEAP_HASOID)
+
 #define HeapTupleHeaderGetOid(tup) \
 ( \
 	((tup)->t_infomask & HEAP_HASOID) ? \
@@ -579,6 +582,9 @@ typedef HeapTupleData *HeapTuple;
 
 #define HeapTupleClearHeapOnly(tuple) \
 		HeapTupleHeaderClearHeapOnly((tuple)->t_data)
+
+#define HeapTupleHasOid(tuple) \
+		HeapTupleHeaderHasOid((tuple)->t_data)
 
 #define HeapTupleGetOid(tuple) \
 		HeapTupleHeaderGetOid((tuple)->t_data)
