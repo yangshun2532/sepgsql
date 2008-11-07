@@ -559,7 +559,6 @@ void rowaclGramCreateRelation(Relation rel, HeapTuple tuple, DefElem *defel)
 
 void rowaclGramAlterRelation(Relation rel, HeapTuple tuple, DefElem *defel)
 {
-	HeapTuple oldtup;
 	Acl *acl, *defacl, *acl_old, *defacl_old;
 	char *rawacl, *defaclTxt;
 	Oid securityId;
@@ -574,8 +573,7 @@ void rowaclGramAlterRelation(Relation rel, HeapTuple tuple, DefElem *defel)
 				 errmsg("invalid default ACL : %s", strVal(defel->arg))));
 
 	/* lookup original one */
-	oldtup = getHeapTupleFromItemPointer(rel, &tuple->t_self);
-	rawacl = pgaceLookupSecurityLabel(HeapTupleGetSecurity(oldtup));
+	rawacl = pgaceLookupSecurityLabel(HeapTupleGetSecurity(tuple));
 	rawAclTextToAclArray(rawacl, &acl_old, &defacl_old);
 
 	defaclTxt = rawAclTextFromAclArray(acl_old, acl);
