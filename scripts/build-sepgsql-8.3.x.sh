@@ -89,7 +89,7 @@ echo "CPY: sepostgresql.logrotate"
 cp package/sepostgresql.logrotate ${RPMSOURCE}
 
 # ---- build rpm package
-rpmbuild -ba ${RPMSOURCE}/sepostgresql.spec
+rpmbuild -bs ${RPMSOURCE}/sepostgresql.spec
 
 # ---- clean up
 rm -rf ${WORKDIR}

@@ -99,7 +99,7 @@ echo "CPY: sepostgresql-fedora-prefix.patch"
 cp package/sepostgresql-fedora-prefix.patch ${RPMSOURCE}
 
 # ---- build rpm package
-rpmbuild -ba ${RPMSOURCE}/sepostgresql.spec
+rpmbuild -bs ${RPMSOURCE}/sepostgresql.spec
 
 # ---- clean up
 rm -rf ${WORKDIR}
