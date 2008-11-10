@@ -34,6 +34,7 @@
 #include "storage/lock.h"
 #include "utils/array.h"
 #include "utils/fmgroids.h"
+#include "utils/fmgrtab.h"
 #include "utils/syscache.h"
 #include "utils/tqual.h"
 
@@ -465,7 +466,6 @@ walkVarHelper(sepgsqlWalkerContext *swc, Var *var)
 		swc->selist = addEvalAttributeRTE(swc->selist, rte, var->varattno,
 										  swc->is_internal_use
 										  ? DB_COLUMN__USE : DB_COLUMN__SELECT);
-
 	}
 	else if (rte->rtekind == RTE_JOIN)
 	{
@@ -477,24 +477,51 @@ walkVarHelper(sepgsqlWalkerContext *swc, Var *var)
 }
 
 static void
-walkOpExprHelper(sepgsqlWalkerContext *swc, Oid opid)
+walkFuncExprHelper(sepgsqlWalkerContext *swc, Oid funcid, Node *args)
+{
+	swc->selist = addEvalPgProc(swc->selist, funcid,
+								DB_PROCEDURE__EXECUTE);
+	/*
+	 * A malicious user defined function enables to leak given
+	 * arguments to others, so we have to force {select} perms
+	 * towards arguments on user defined functions.
+	 * Here is an assumption built-in functions are not malicious.
+	 */
+	if (!fmgr_isbuiltin(funcid))
+	{
+		bool is_internal_use_backup = swc->is_internal_use;
+
+		swc->is_internal_use = 0;
+		sepgsqlExprWalker(args, swc);
+		swc->is_internal_use = is_internal_use_backup;
+	}
+	else
+		sepgsqlExprWalker(args, swc);
+}
+
+static void
+walkOpExprHelper(sepgsqlWalkerContext *swc, Oid opid, Node *args)
 {
 	HeapTuple	tuple;
-	Form_pg_operator oprform;
+	Oid			oprcode;
+	Oid			oprrest;
+	Oid			oprjoin;
 
 	tuple = SearchSysCache(OPEROID, ObjectIdGetDatum(opid), 0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
 		elog(ERROR, "SELinux: cache lookup failed for operator %u", opid);
-	oprform = (Form_pg_operator) GETSTRUCT(tuple);
 
-	swc->selist = addEvalPgProc(swc->selist, oprform->oprcode,
-								DB_PROCEDURE__EXECUTE);
-	/*
-	 * NOTE: opr->oprrest and opr->oprjoin are internal use only
-	 * and have no effect onto the data references, so we don't
-	 * apply any checkings for them.
-	 */
+	oprcode = ((Form_pg_operator) GETSTRUCT(tuple))->oprcode;
+	oprrest = ((Form_pg_operator) GETSTRUCT(tuple))->oprrest;
+	oprjoin = ((Form_pg_operator) GETSTRUCT(tuple))->oprjoin;
+
 	ReleaseSysCache(tuple);
+
+	walkFuncExprHelper(swc, oprcode, args);
+	if (OidIsValid(oprrest))
+		walkFuncExprHelper(swc, oprrest, args);
+	if (OidIsValid(oprjoin))
+		walkFuncExprHelper(swc, oprjoin, args);
 }
 
 static bool
@@ -502,77 +529,85 @@ sepgsqlExprWalker(Node *node, sepgsqlWalkerContext *swc)
 {
 	if (node == NULL)
 		return false;
-
-	switch (nodeTag(node))
+	else if (IsA(node, Var))
+		walkVarHelper(swc, (Var *) node);
+	else if (IsA(node, FuncExpr))
 	{
-		case T_Var:
-			walkVarHelper(swc, (Var *) node);
-			break;
+		FuncExpr *ex = (FuncExpr *) node;
 
-		case T_FuncExpr:
-			swc->selist = addEvalPgProc(swc->selist,
-										((FuncExpr *) node)->funcid,
-										DB_PROCEDURE__EXECUTE);
-			break;
+		walkFuncExprHelper(swc, ex->funcid, (Node *)ex->args);
+		return false;
+	}
+	else if (IsA(node, Aggref))
+	{
+		Aggref *ex = (Aggref *) node;
 
-		case T_Aggref:
-			swc->selist = addEvalPgProc(swc->selist,
-										((Aggref *) node)->aggfnoid,
-										DB_PROCEDURE__EXECUTE);
-			break;
+		walkFuncExprHelper(swc, ex->aggfnoid, (Node *)ex->args);
+		return false;
+	}
+	else if (IsA(node, OpExpr) ||
+			 IsA(node, DistinctExpr) ||
+			 IsA(node, NullIfExpr))
+	{
+		OpExpr *ex = (OpExpr *) node;
 
-		case T_OpExpr:
-		case T_DistinctExpr:	/* typedef of OpExpr */
-		case T_NullIfExpr:		/* typedef of OpExpr */
-			walkOpExprHelper(swc, ((OpExpr *) node)->opno);
-			break;
+		walkOpExprHelper(swc, ex->opno, (Node *)ex->args);
+		return false;
+	}
+	else if (IsA(node, ScalarArrayOpExpr))
+	{
+		ScalarArrayOpExpr *ex = (ScalarArrayOpExpr *) node;
 
-		case T_ScalarArrayOpExpr:
-			walkOpExprHelper(swc, ((ScalarArrayOpExpr *) node)->opno);
-			break;
+		walkOpExprHelper(swc, ex->opno, (Node *)ex->args);
+		return false;
+	}
+	else if (IsA(node, Query))
+	{
+		/*
+		 * Subquery within SubLink or CommonTableExpr
+		 */
+		proxyRteSubQuery(swc, (Query *) node);
+	}
+	else if (IsA(node, ArrayCoerceExpr))
+	{
+		ArrayCoerceExpr *ex = (ArrayCoerceExpr *) node;
 
-		case T_Query:
-			/*
-			 * Subquery within SubLink or CommonTableExpr
-			 */
-			proxyRteSubQuery(swc, (Query *) node);
-			break;
+		if (OidIsValid(ex->elemfuncid))
+		{
+			walkFuncExprHelper(swc, ex->elemfuncid, (Node *)ex->arg);
+			return false;
+		}
+	}
+	else if (IsA(node, RowCompareExpr))
+	{
+		RowCompareExpr *ex = (RowCompareExpr *) node;
+		ListCell *l, *r;
+		int index = 0;
 
-		case T_ArrayCoerceExpr:
-			{
-				ArrayCoerceExpr *ace = (ArrayCoerceExpr *) node;
+		Assert(list_length(ex->opnos) == list_length(ex->largs));
+		Assert(list_length(ex->opnos) == list_length(ex->rargs));
 
-				if (ace->elemfuncid != InvalidOid)
-					swc->selist = addEvalPgProc(swc->selist,
-												ace->elemfuncid,
-												DB_PROCEDURE__EXECUTE);
-				break;
-			}
-		case T_RowCompareExpr:
-			{
-				RowCompareExpr *rce = (RowCompareExpr *) node;
-				ListCell   *l;
+		forboth(l, ex->largs, r, ex->rargs)
+		{
+			List *lst = list_make2(lfirst(l), lfirst(r));
 
-				foreach(l, rce->opnos) walkOpExprHelper(swc, lfirst_oid(l));
-				break;
-			}
-		case T_SortClause:
-		case T_GroupClause:
-			{
-				SortClause *sc = (SortClause *) node;
-				Query *q = swc->qstack->query;
-				TargetEntry *tle
-					= get_sortgroupref_tle(sc->tleSortGroupRef, q->targetList);
+			walkOpExprHelper(swc, list_nth_oid(ex->opnos, index++), (Node *)lst);
+			list_free(lst);
+		}
+		return false;
+	}
+	else if (IsA(node, SortClause) ||
+			 IsA(node, GroupClause))
+	{
+		SortClause *ex = (SortClause *) node;
+		Query *query = swc->qstack->query;
+		TargetEntry *tle
+			= get_sortgroupref_tle(ex->tleSortGroupRef, query->targetList);
 
-				Assert(IsA(tle, TargetEntry));
+		Assert(IsA(tle, TargetEntry));
+		walkOpExprHelper(swc, ex->sortop, (Node *)tle->expr);
 
-				walkOpExprHelper(swc, sc->sortop);
-				sepgsqlExprWalker((Node *)tle->expr, swc);
-			}
-			return false;	/* expression_tree_walker does not suppor them */
-
-		default:
-			break;
+		return false;
 	}
 
 	return expression_tree_walker(node, sepgsqlExprWalker, (void *) swc);
