@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/cache/relcache.c,v 1.274 2008/09/30 10:52:13 heikki Exp $
+ *	  $PostgreSQL: pgsql/src/backend/utils/cache/relcache.c,v 1.276 2008/11/10 00:49:37 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -722,6 +722,17 @@ RelationBuildRuleLock(Relation relation)
 	heap_close(rewrite_desc, AccessShareLock);
 
 	/*
+	 * there might not be any rules (if relhasrules is out-of-date)
+	 */
+	if (numlocks == 0)
+	{
+		relation->rd_rules = NULL;
+		relation->rd_rulescxt = NULL;
+		MemoryContextDelete(rulescxt);
+		return;
+	}
+
+	/*
 	 * form a RuleLock and insert into relation
 	 */
 	rulelock = (RuleLock *) MemoryContextAlloc(rulescxt, sizeof(RuleLock));
@@ -856,7 +867,7 @@ RelationBuildDesc(Oid targetRelId, Relation oldrelation)
 		relation->rd_rulescxt = NULL;
 	}
 
-	if (relation->rd_rel->reltriggers > 0)
+	if (relation->rd_rel->relhastriggers)
 		RelationBuildTriggers(relation);
 	else
 		relation->trigdesc = NULL;
@@ -2641,7 +2652,7 @@ RelationCacheInitializePhase2(void)
 		 */
 		if (relation->rd_rel->relhasrules && relation->rd_rules == NULL)
 			RelationBuildRuleLock(relation);
-		if (relation->rd_rel->reltriggers > 0 && relation->trigdesc == NULL)
+		if (relation->rd_rel->relhastriggers && relation->trigdesc == NULL)
 			RelationBuildTriggers(relation);
 	}
 
