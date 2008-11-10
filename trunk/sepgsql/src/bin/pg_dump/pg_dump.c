@@ -12,7 +12,7 @@
  *	by PostgreSQL
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/bin/pg_dump/pg_dump.c,v 1.503 2008/10/31 08:39:21 heikki Exp $
+ *	  $PostgreSQL: pgsql/src/bin/pg_dump/pg_dump.c,v 1.505 2008/11/09 21:24:32 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -575,6 +575,10 @@ main(int argc, char **argv)
 
 	/* Set the datestyle to ISO to ensure the dump's portability */
 	do_sql_command(g_conn, "SET DATESTYLE = ISO");
+
+	/* Likewise, avoid using sql_standard intervalstyle */
+	if (g_fout->remoteVersion >= 80400)
+		do_sql_command(g_conn, "SET INTERVALSTYLE = POSTGRES");
 
 	/*
 	 * If supported, set extra_float_digits so that we can dump float data
@@ -3079,7 +3083,7 @@ getTables(int *numTables)
 	int			i_relacl;
 	int			i_rolname;
 	int			i_relchecks;
-	int			i_reltriggers;
+	int			i_relhastriggers;
 	int			i_relhasindex;
 	int			i_relhasrules;
 	int			i_relhasoids;
@@ -3111,7 +3115,7 @@ getTables(int *numTables)
 	 * we cannot correctly identify inherited columns, owned sequences, etc.
 	 */
 
-	if (g_fout->remoteVersion >= 80200)
+	if (g_fout->remoteVersion >= 80400)
 	{
 		/*
 		 * Left join to pick up dependency info linking sequences to their
@@ -3121,7 +3125,7 @@ getTables(int *numTables)
 						  "SELECT c.tableoid, c.oid, relname, "
 						  "relacl, relkind, relnamespace, "
 						  "(%s relowner) as rolname, "
-						  "relchecks, reltriggers, "
+						  "relchecks, relhastriggers, "
 						  "relhasindex, relhasrules, relhasoids, "
 						  "d.refobjid as owning_tab, "
 						  "d.refobjsubid as owning_col, "
@@ -3142,6 +3146,35 @@ getTables(int *numTables)
 						  RELKIND_RELATION, RELKIND_SEQUENCE,
 						  RELKIND_VIEW, RELKIND_COMPOSITE_TYPE);
 	}
+	else if (g_fout->remoteVersion >= 80200)
+	{
+		/*
+		 * Left join to pick up dependency info linking sequences to their
+		 * owning column, if any (note this dependency is AUTO as of 8.2)
+		 */
+		appendPQExpBuffer(query,
+						  "SELECT c.tableoid, c.oid, relname, "
+						  "relacl, relkind, relnamespace, "
+						  "(%s relowner) as rolname, "
+						  "relchecks, (reltriggers <> 0) as relhastriggers, "
+						  "relhasindex, relhasrules, relhasoids, "
+						  "d.refobjid as owning_tab, "
+						  "d.refobjsubid as owning_col, "
+						  "(SELECT spcname FROM pg_tablespace t WHERE t.oid = c.reltablespace) AS reltablespace, "
+						  "array_to_string(c.reloptions, ', ') as reloptions "
+						  "from pg_class c "
+						  "left join pg_depend d on "
+						  "(c.relkind = '%c' and "
+						  "d.classid = c.tableoid and d.objid = c.oid and "
+						  "d.objsubid = 0 and "
+						  "d.refclassid = c.tableoid and d.deptype = 'a') "
+						  "where relkind in ('%c', '%c', '%c', '%c') "
+						  "order by c.oid",
+						  username_subquery,
+						  RELKIND_SEQUENCE,
+						  RELKIND_RELATION, RELKIND_SEQUENCE,
+						  RELKIND_VIEW, RELKIND_COMPOSITE_TYPE);
+	}
 	else if (g_fout->remoteVersion >= 80000)
 	{
 		/*
@@ -3152,7 +3185,7 @@ getTables(int *numTables)
 						  "SELECT c.tableoid, c.oid, relname, "
 						  "relacl, relkind, relnamespace, "
 						  "(%s relowner) as rolname, "
-						  "relchecks, reltriggers, "
+						  "relchecks, (reltriggers <> 0) as relhastriggers, "
 						  "relhasindex, relhasrules, relhasoids, "
 						  "d.refobjid as owning_tab, "
 						  "d.refobjsubid as owning_col, "
@@ -3181,7 +3214,7 @@ getTables(int *numTables)
 						  "SELECT c.tableoid, c.oid, relname, "
 						  "relacl, relkind, relnamespace, "
 						  "(%s relowner) as rolname, "
-						  "relchecks, reltriggers, "
+						  "relchecks, (reltriggers <> 0) as relhastriggers, "
 						  "relhasindex, relhasrules, relhasoids, "
 						  "d.refobjid as owning_tab, "
 						  "d.refobjsubid as owning_col, "
@@ -3206,7 +3239,7 @@ getTables(int *numTables)
 						  "SELECT tableoid, oid, relname, relacl, relkind, "
 						  "0::oid as relnamespace, "
 						  "(%s relowner) as rolname, "
-						  "relchecks, reltriggers, "
+						  "relchecks, (reltriggers <> 0) as relhastriggers, "
 						  "relhasindex, relhasrules, relhasoids, "
 						  "NULL::oid as owning_tab, "
 						  "NULL::int4 as owning_col, "
@@ -3225,7 +3258,7 @@ getTables(int *numTables)
 						  "SELECT tableoid, oid, relname, relacl, relkind, "
 						  "0::oid as relnamespace, "
 						  "(%s relowner) as rolname, "
-						  "relchecks, reltriggers, "
+						  "relchecks, (reltriggers <> 0) as relhastriggers, "
 						  "relhasindex, relhasrules, "
 						  "'t'::bool as relhasoids, "
 						  "NULL::oid as owning_tab, "
@@ -3255,7 +3288,7 @@ getTables(int *numTables)
 						  "ELSE relkind END AS relkind,"
 						  "0::oid as relnamespace, "
 						  "(%s relowner) as rolname, "
-						  "relchecks, reltriggers, "
+						  "relchecks, (reltriggers <> 0) as relhastriggers, "
 						  "relhasindex, relhasrules, "
 						  "'t'::bool as relhasoids, "
 						  "NULL::oid as owning_tab, "
@@ -3296,7 +3329,7 @@ getTables(int *numTables)
 	i_relkind = PQfnumber(res, "relkind");
 	i_rolname = PQfnumber(res, "rolname");
 	i_relchecks = PQfnumber(res, "relchecks");
-	i_reltriggers = PQfnumber(res, "reltriggers");
+	i_relhastriggers = PQfnumber(res, "relhastriggers");
 	i_relhasindex = PQfnumber(res, "relhasindex");
 	i_relhasrules = PQfnumber(res, "relhasrules");
 	i_relhasoids = PQfnumber(res, "relhasoids");
@@ -3334,9 +3367,9 @@ getTables(int *numTables)
 		tblinfo[i].relkind = *(PQgetvalue(res, i, i_relkind));
 		tblinfo[i].hasindex = (strcmp(PQgetvalue(res, i, i_relhasindex), "t") == 0);
 		tblinfo[i].hasrules = (strcmp(PQgetvalue(res, i, i_relhasrules), "t") == 0);
+		tblinfo[i].hastriggers = (strcmp(PQgetvalue(res, i, i_relhastriggers), "t") == 0);
 		tblinfo[i].hasoids = (strcmp(PQgetvalue(res, i, i_relhasoids), "t") == 0);
 		tblinfo[i].ncheck = atoi(PQgetvalue(res, i, i_relchecks));
-		tblinfo[i].ntrig = atoi(PQgetvalue(res, i, i_reltriggers));
 		if (PQgetisnull(res, i, i_owning_tab))
 		{
 			tblinfo[i].owning_tab = InvalidOid;
@@ -3791,7 +3824,7 @@ getConstraints(TableInfo tblinfo[], int numTables)
 	{
 		TableInfo  *tbinfo = &tblinfo[i];
 
-		if (tbinfo->ntrig == 0 || !tbinfo->dobj.dump)
+		if (!tbinfo->hastriggers || !tbinfo->dobj.dump)
 			continue;
 
 		if (g_verbose)
@@ -4102,7 +4135,7 @@ getTriggers(TableInfo tblinfo[], int numTables)
 	{
 		TableInfo  *tbinfo = &tblinfo[i];
 
-		if (tbinfo->ntrig == 0 || !tbinfo->dobj.dump)
+		if (!tbinfo->hastriggers || !tbinfo->dobj.dump)
 			continue;
 
 		if (g_verbose)
@@ -4189,16 +4222,6 @@ getTriggers(TableInfo tblinfo[], int numTables)
 
 		ntups = PQntuples(res);
 
-		/*
-		 * We may have less triggers than recorded due to having ignored
-		 * foreign-key triggers
-		 */
-		if (ntups > tbinfo->ntrig)
-		{
-			write_msg(NULL, "expected %d triggers on table \"%s\" but found %d\n",
-					  tbinfo->ntrig, tbinfo->dobj.name, ntups);
-			exit_nicely();
-		}
 		i_tableoid = PQfnumber(res, "tableoid");
 		i_oid = PQfnumber(res, "oid");
 		i_tgname = PQfnumber(res, "tgname");
