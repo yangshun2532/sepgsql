@@ -59,32 +59,32 @@ if [ ${GEN_PATCH_ONLY} -eq 0 ]; then
 fi
 
 echo "GEN: sepostgresql-row_acl-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch"
-diff -rpNU3 sepgsql row_acl				\
+diff -Nrpc sepgsql row_acl				\
     > ${RPMSOURCE}/sepostgresql-row_acl-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch
 
 echo "GEN: sepostgresql-pg_dump-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch"
-diff -rpNU3 base/src/bin sepgsql/src/bin		\
+diff -Nrpc base/src/bin sepgsql/src/bin		\
     > ${RPMSOURCE}/sepostgresql-pg_dump-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch
 rm -rf base/src/bin sepgsql/src/bin
 
 echo "GEN: sepostgresql-policy-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch"
-diff -rpNU3 base/src/backend/security/sepgsql/policy	\
-            sepgsql/src/backend/security/sepgsql/policy	\
+diff -Nrpc base/src/backend/security/sepgsql/policy	\
+           sepgsql/src/backend/security/sepgsql/policy	\
     > ${RPMSOURCE}/sepostgresql-policy-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch
 rm -rf sepgsql/src/backend/security/sepgsql/policy
 
 echo "GEN: sepostgresql-docs-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch"
-diff -rpNU3 base/doc sepgsql/doc			\
+diff -Nrpc base/doc sepgsql/doc			\
     > ${RPMSOURCE}/sepostgresql-docs-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch
 rm -rf base/doc sepgsql/doc
 
 echo "GEN: sepostgresql-tests-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch"
-diff -rpNU3 base/src/test sepgsql/src/test		\
+diff -Nrpc base/src/test sepgsql/src/test		\
     > ${RPMSOURCE}/sepostgresql-tests-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch
 rm -rf base/src/test sepgsql/src/test
 
 echo "GEN: sepostgresql-sepgsql-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch"
-diff -rpNU3 base sepgsql				\
+diff -Nrpc base sepgsql				\
     > ${RPMSOURCE}/sepostgresql-sepgsql-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch
 
 echo "GEN: sepostgresql.init"
