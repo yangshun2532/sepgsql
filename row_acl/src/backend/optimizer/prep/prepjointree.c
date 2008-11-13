@@ -16,7 +16,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/optimizer/prep/prepjointree.c,v 1.58 2008/10/22 20:17:52 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/optimizer/prep/prepjointree.c,v 1.60 2008/11/11 19:05:21 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -54,9 +54,8 @@ static Node *pull_up_simple_union_all(PlannerInfo *root, Node *jtnode,
 static void pull_up_union_leaf_queries(Node *setOp, PlannerInfo *root,
 						  int parentRTindex, Query *setOpQuery,
 						  int childRToffset);
-static void make_setop_translation_lists(Query *query,
-							 Index newvarno,
-							 List **col_mappings, List **translated_vars);
+static void make_setop_translation_list(Query *query, Index newvarno,
+							 List **translated_vars);
 static bool is_simple_subquery(Query *subquery);
 static bool is_simple_union_all(Query *subquery);
 static bool is_simple_union_all_recurse(Node *setOp, Query *setOpQuery,
@@ -710,10 +709,9 @@ pull_up_simple_subquery(PlannerInfo *root, Node *jtnode, RangeTblEntry *rte,
 	 * insert_targetlist_placeholders() will be adjusted, so having created
 	 * them with the subquery's varno is correct.
 	 *
-	 * Likewise, relids appearing in AppendRelInfo nodes have to be fixed (but
-	 * we took care of their translated_vars lists above).	We already checked
-	 * that this won't require introducing multiple subrelids into the
-	 * single-slot AppendRelInfo structs.
+	 * Likewise, relids appearing in AppendRelInfo nodes have to be fixed.
+	 * We already checked that this won't require introducing multiple
+	 * subrelids into the single-slot AppendRelInfo structs.
 	 */
 	if (parse->hasSubLinks || root->glob->lastPHId != 0 ||
 		root->append_rel_list)
@@ -839,9 +837,8 @@ pull_up_union_leaf_queries(Node *setOp, PlannerInfo *root, int parentRTindex,
 		appinfo->child_relid = childRTindex;
 		appinfo->parent_reltype = InvalidOid;
 		appinfo->child_reltype = InvalidOid;
-		make_setop_translation_lists(setOpQuery, childRTindex,
-									 &appinfo->col_mappings,
-									 &appinfo->translated_vars);
+		make_setop_translation_list(setOpQuery, childRTindex,
+									&appinfo->translated_vars);
 		appinfo->parent_reloid = InvalidOid;
 		root->append_rel_list = lappend(root->append_rel_list, appinfo);
 
@@ -874,17 +871,16 @@ pull_up_union_leaf_queries(Node *setOp, PlannerInfo *root, int parentRTindex,
 }
 
 /*
- * make_setop_translation_lists
- *	  Build the lists of translations from parent Vars to child Vars for
- *	  a UNION ALL member.  We need both a column number mapping list
- *	  and a list of Vars representing the child columns.
+ * make_setop_translation_list
+ *	  Build the list of translations from parent Vars to child Vars for
+ *	  a UNION ALL member.  (At this point it's just a simple list of
+ *	  referencing Vars, but if we succeed in pulling up the member
+ *	  subquery, the Vars will get replaced by pulled-up expressions.)
  */
 static void
-make_setop_translation_lists(Query *query,
-							 Index newvarno,
-							 List **col_mappings, List **translated_vars)
+make_setop_translation_list(Query *query, Index newvarno,
+							List **translated_vars)
 {
-	List	   *numbers = NIL;
 	List	   *vars = NIL;
 	ListCell   *l;
 
@@ -895,7 +891,6 @@ make_setop_translation_lists(Query *query,
 		if (tle->resjunk)
 			continue;
 
-		numbers = lappend_int(numbers, tle->resno);
 		vars = lappend(vars, makeVar(newvarno,
 									 tle->resno,
 									 exprType((Node *) tle->expr),
@@ -903,7 +898,6 @@ make_setop_translation_lists(Query *query,
 									 0));
 	}
 
-	*col_mappings = numbers;
 	*translated_vars = vars;
 }
 
@@ -1684,7 +1678,8 @@ substitute_multiple_relids(Node *node, int varno, Relids subrelids)
  *
  * When we pull up a subquery, any AppendRelInfo references to the subquery's
  * RT index have to be replaced by the substituted relid (and there had better
- * be only one).
+ * be only one).  We also need to apply substitute_multiple_relids to their
+ * translated_vars lists, since those might contain PlaceHolderVars.
  *
  * We assume we may modify the AppendRelInfo nodes in-place.
  */
@@ -1713,6 +1708,10 @@ fix_append_rel_relids(List *append_rel_list, int varno, Relids subrelids)
 				subvarno = bms_singleton_member(subrelids);
 			appinfo->child_relid = subvarno;
 		}
+
+		/* Also finish fixups for its translated vars */
+		substitute_multiple_relids((Node *) appinfo->translated_vars,
+								   varno, subrelids);
 	}
 }
 
