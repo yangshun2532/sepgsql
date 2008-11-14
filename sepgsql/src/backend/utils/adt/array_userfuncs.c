@@ -6,12 +6,13 @@
  * Copyright (c) 2003-2008, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/adt/array_userfuncs.c,v 1.23 2008/01/01 19:45:52 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/backend/utils/adt/array_userfuncs.c,v 1.26 2008/11/14 02:09:51 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
 #include "postgres.h"
 
+#include "nodes/execnodes.h"
 #include "utils/array.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
@@ -464,4 +465,55 @@ create_singleton_array(FunctionCallInfo fcinfo,
 
 	return construct_md_array(dvalues, NULL, ndims, dims, lbs, element_type,
 							  typlen, typbyval, typalign);
+}
+
+
+/*
+ * ARRAY_AGG aggregate function
+ */
+Datum
+array_agg_transfn(PG_FUNCTION_ARGS)
+{
+	Oid arg1_typeid = get_fn_expr_argtype(fcinfo->flinfo, 1);
+	ArrayBuildState *state;
+	Datum		elem;
+
+	if (arg1_typeid == InvalidOid)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("could not determine input data type")));
+
+	/* cannot be called directly because of internal-type argument */
+	Assert(fcinfo->context && IsA(fcinfo->context, AggState));
+
+	state = PG_ARGISNULL(0) ? NULL : (ArrayBuildState *) PG_GETARG_POINTER(0);
+	elem = PG_ARGISNULL(1) ? (Datum) 0 : PG_GETARG_DATUM(1);
+	state = accumArrayResult(state,
+							 elem,
+							 PG_ARGISNULL(1),
+							 arg1_typeid,
+							 ((AggState *) fcinfo->context)->aggcontext);
+
+	/*
+	 * The transition type for array_agg() is declared to be "internal",
+	 * which is a pass-by-value type the same size as a pointer.  So we
+	 * can safely pass the ArrayBuildState pointer through nodeAgg.c's
+	 * machinations.
+	 */
+	PG_RETURN_POINTER(state);
+}
+
+Datum
+array_agg_finalfn(PG_FUNCTION_ARGS)
+{
+	ArrayBuildState *state;
+
+	/* cannot be called directly because of internal-type argument */
+	Assert(fcinfo->context && IsA(fcinfo->context, AggState));
+
+	if (PG_ARGISNULL(0))
+		PG_RETURN_NULL();   /* returns null iff no input values */
+
+	state = (ArrayBuildState *) PG_GETARG_POINTER(0);
+	PG_RETURN_ARRAYTYPE_P(makeArrayResult(state, CurrentMemoryContext));
 }
