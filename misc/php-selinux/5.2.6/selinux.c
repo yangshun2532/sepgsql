@@ -223,7 +223,7 @@ static void do_selinux_getcon(INTERNAL_FUNCTION_PARAMETERS, int raw)
 	else
 		rc = getcon_raw(&context);
 
-	if (rc < 0)
+	if (rc < 0 || !context)
 		RETURN_FALSE;
 	RETVAL_STRING(context, 1);
 	freecon(context);
@@ -283,10 +283,10 @@ static void do_selinux_getpidcon(INTERNAL_FUNCTION_PARAMETERS, int raw)
 	else
 		rc = getpidcon_raw((pid_t) pid, &context);
 
-	if (rc < 0)
+	if (rc < 0 || !context)
 		RETURN_FALSE;
-        RETVAL_STRING(context, 1);
-        freecon(context);
+	RETVAL_STRING(context, 1);
+	freecon(context);
 }
 
 PHP_FUNCTION(selinux_getpidcon)
@@ -312,10 +312,10 @@ static void do_selinux_getprevcon(INTERNAL_FUNCTION_PARAMETERS, int raw)
 	else
 		rc = getprevcon_raw(&context);
 
-	if (rc < 0)
+	if (rc < 0 || !context)
 		RETURN_FALSE;
-        RETVAL_STRING(context, 1);
-        freecon(context);
+	RETVAL_STRING(context, 1);
+	freecon(context);
 }
 
 PHP_FUNCTION(selinux_getprevcon)
@@ -341,7 +341,7 @@ static void do_selinux_getexeccon(INTERNAL_FUNCTION_PARAMETERS, int raw)
 	else
 		rc = getexeccon_raw(&context);
 
-	if (rc < 0)
+	if (rc < 0 || !context)
 		RETURN_FALSE;
 	RETVAL_STRING(context, 1);
 	freecon(context);
@@ -401,7 +401,7 @@ static void do_selinux_getfscreatecon(INTERNAL_FUNCTION_PARAMETERS, int raw)
 	else
 		rc = getfscreatecon_raw(&context);
 
-	if (rc < 0)
+	if (rc < 0 || !context)
 		RETURN_FALSE;
 	RETVAL_STRING(context, 1);
 	freecon(context);
@@ -462,7 +462,7 @@ static void do_selinux_getkeycreatecon(INTERNAL_FUNCTION_PARAMETERS, int raw)
 	else
 		rc = getkeycreatecon_raw(&context);
 
-	if (rc < 0)
+	if (rc < 0 || !context)
 		RETURN_FALSE;
 	RETVAL_STRING(context, 1);
 	freecon(context);
@@ -523,7 +523,7 @@ static void do_selinux_getsockcreatecon(INTERNAL_FUNCTION_PARAMETERS, int raw)
 	else
 		rc = getsockcreatecon_raw(&context);
 
-	if (rc < 0)
+	if (rc < 0 || !context)
 		RETURN_FALSE;
 	RETVAL_STRING(context, 1);
 	freecon(context);
@@ -595,7 +595,7 @@ static void do_selinux_getfilecon(INTERNAL_FUNCTION_PARAMETERS, int raw, int lin
 		else
 			rc = lgetfilecon_raw(filename, &context);
 	}
-	if (rc < 0)
+	if (rc < 0 || !context)
 		RETURN_FALSE;
 	RETVAL_STRING(context, 1);
 	freecon(context);
@@ -644,7 +644,7 @@ static void do_selinux_fgetfilecon(INTERNAL_FUNCTION_PARAMETERS, int raw)
 	else
 		rc = fgetfilecon_raw(fd, &context);
 
-	if (rc < 0)
+	if (rc < 0 || !context)
 		RETURN_FALSE;
 	RETVAL_STRING(context, 1);
 	freecon(context);
@@ -715,10 +715,10 @@ static void do_selinux_fsetfilecon(INTERNAL_FUNCTION_PARAMETERS, int raw)
 	zval *z;
 	php_stream *stream;
 	security_context_t context;
-	int rc, fd;
+	int rc, fd, context_len;
 
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
-				  "zs", &z, &context) == FAILURE)
+							  "zs", &z, &context, &context_len) == FAILURE)
 		RETURN_FALSE;
 
 	php_stream_from_zval_no_verify(stream, &z);
@@ -1248,7 +1248,7 @@ PHP_FUNCTION(selinux_raw_to_trans_context)
 				  "s", &context, &length) == FAILURE)
 		RETURN_FALSE;
 
-	if (selinux_trans_to_raw_context(context, &trans_context) < 0)
+	if (selinux_raw_to_trans_context(context, &trans_context) < 0)
 		RETURN_FALSE;
 	RETVAL_STRING(trans_context, 1);
 	freecon(trans_context);
