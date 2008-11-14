@@ -116,11 +116,11 @@ pgaceRelationAttrList(CreateStmt *stmt)
 }
 
 void
-pgaceCreateRelationCommon(Relation rel, HeapTuple tuple, List *pgace_attr_list)
+pgaceCreateRelationCommon(Relation rel, HeapTuple tuple, List *pgaceAttrList)
 {
 	ListCell   *l;
 
-	foreach(l, pgace_attr_list)
+	foreach(l, pgaceAttrList)
 	{
 		DefElem    *defel = (DefElem *) lfirst(l);
 
@@ -135,12 +135,12 @@ pgaceCreateRelationCommon(Relation rel, HeapTuple tuple, List *pgace_attr_list)
 
 void
 pgaceCreateAttributeCommon(Relation rel, HeapTuple tuple,
-						   List *pgace_attr_list)
+						   List *pgaceAttrList)
 {
 	Form_pg_attribute attr = (Form_pg_attribute) GETSTRUCT(tuple);
 	ListCell   *l;
 
-	foreach(l, pgace_attr_list)
+	foreach(l, pgaceAttrList)
 	{
 		DefElem    *defel = lfirst(l);
 
