@@ -522,7 +522,8 @@ CheckAttributeType(const char *attname, Oid atttypid)
 void
 InsertPgAttributeTuple(Relation pg_attribute_rel,
 					   Form_pg_attribute new_attribute,
-					   CatalogIndexState indstate)
+					   CatalogIndexState indstate,
+					   List *pgaceAttrList)
 {
 	Datum		values[Natts_pg_attribute];
 	bool		nulls[Natts_pg_attribute];
@@ -552,6 +553,8 @@ InsertPgAttributeTuple(Relation pg_attribute_rel,
 
 	tup = heap_form_tuple(RelationGetDescr(pg_attribute_rel), values, nulls);
 
+	pgaceCreateAttributeCommon(pg_attribute_rel, tup, pgaceAttrList);
+
 	/* finally insert the new tuple, update the indexes, and clean up */
 	simple_heap_insert(pg_attribute_rel, tup);
 
@@ -575,7 +578,7 @@ AddNewAttributeTuples(Oid new_rel_oid,
 					  char relkind,
 					  bool oidislocal,
 					  int oidinhcount,
-					  List *pgace_attr_list)
+					  List *pgaceAttrList)
 {
 	Form_pg_attribute attr;
 	int			i;
@@ -605,8 +608,7 @@ AddNewAttributeTuples(Oid new_rel_oid,
 		attr->attstattarget = -1;
 		attr->attcacheoff = -1;
 
-		InsertPgAttributeTuple(rel, attr, indstate);
-		pgaceCreateAttributeCommon(rel, tup, pgace_attr_list);
+		InsertPgAttributeTuple(rel, attr, indstate, pgaceAttrList);
 
 		/* Add dependency info */
 		myself.classId = RelationRelationId;
@@ -646,7 +648,7 @@ AddNewAttributeTuples(Oid new_rel_oid,
 				attStruct.attinhcount = oidinhcount;
 			}
 
-			InsertPgAttributeTuple(rel, &attStruct, indstate);
+			InsertPgAttributeTuple(rel, &attStruct, indstate, pgaceAttrList);
 		}
 	}
 
@@ -675,7 +677,7 @@ InsertPgClassTuple(Relation pg_class_desc,
 				   Relation new_rel_desc,
 				   Oid new_rel_oid,
 				   Datum reloptions,
-				   List *pgace_attr_list)
+				   List *pgaceAttrList)
 {
 	Form_pg_class rd_rel = new_rel_desc->rd_rel;
 	Datum		values[Natts_pg_class];
@@ -722,7 +724,7 @@ InsertPgClassTuple(Relation pg_class_desc,
 	 * be embarrassing to do this sort of thing in polite company.
 	 */
 	HeapTupleSetOid(tup, new_rel_oid);
-	pgaceCreateRelationCommon(pg_class_desc, tup, pgace_attr_list);
+	pgaceCreateRelationCommon(pg_class_desc, tup, pgaceAttrList);
 
 	/* finally insert the new tuple, update the indexes, and clean up */
 	simple_heap_insert(pg_class_desc, tup);
@@ -750,7 +752,7 @@ AddNewRelationTuple(Relation pg_class_desc,
 					Oid relowner,
 					char relkind,
 					Datum reloptions,
-					List *pgace_attr_list)
+					List *pgaceAttrList)
 {
 	Form_pg_class new_rel_reltup;
 
@@ -810,7 +812,8 @@ AddNewRelationTuple(Relation pg_class_desc,
 	new_rel_desc->rd_att->tdtypeid = new_type_oid;
 
 	/* Now build and insert the tuple */
-	InsertPgClassTuple(pg_class_desc, new_rel_desc, new_rel_oid, reloptions, pgace_attr_list);
+	InsertPgClassTuple(pg_class_desc, new_rel_desc, new_rel_oid,
+					   reloptions, pgaceAttrList);
 }
 
 
