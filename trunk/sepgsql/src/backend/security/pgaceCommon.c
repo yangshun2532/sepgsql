@@ -329,7 +329,7 @@ pgacePostBootstrapingMode(void)
 	earlySeclabel *es, *_es;
 	Oid			meta_sid;
 	Datum		value;
-	char		isnull;
+	bool		isnull;
 
 	if (!earlySeclabelList)
 		return;
@@ -346,8 +346,8 @@ pgacePostBootstrapingMode(void)
 		_es = es->next;
 
 		value = DirectFunctionCall1(textin, CStringGetDatum(es->label));
-		isnull = ' ';
-		tuple = heap_formtuple(RelationGetDescr(rel), &value, &isnull);
+		isnull = false;
+		tuple = heap_form_tuple(RelationGetDescr(rel), &value, &isnull);
 
 		HeapTupleSetOid(tuple, es->sid);
 		HeapTupleSetSecurity(tuple, meta_sid);
@@ -414,7 +414,7 @@ pgaceLookupSecurityId(char *raw_label)
 		CatalogIndexState ind;
 		char	   *slabel;
 		Datum		labelTxt;
-		char		isnull;
+		bool		isnull;
 
 		rel = heap_open(SecurityRelationId, RowExclusiveLock);
 
@@ -438,9 +438,9 @@ pgaceLookupSecurityId(char *raw_label)
 		ind = CatalogOpenIndexes(rel);
 
 		labelTxt = CStringGetTextDatum(raw_label);
-		isnull = ' ';
-		tuple = heap_formtuple(RelationGetDescr(rel),
-							   &labelTxt, &isnull);
+		isnull = false;
+		tuple = heap_form_tuple(RelationGetDescr(rel),
+								&labelTxt, &isnull);
 		HeapTupleSetSecurity(tuple, labelSid);
 		HeapTupleSetOid(tuple, labelOid);
 
