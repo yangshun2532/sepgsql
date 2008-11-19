@@ -26,7 +26,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/executor/execMain.c,v 1.315 2008/11/06 20:51:14 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/executor/execMain.c,v 1.318 2008/11/19 01:10:23 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -61,8 +61,10 @@
 #include "utils/tqual.h"
 
 
-/* Hook for plugins to get control in ExecutorRun() */
-ExecutorRun_hook_type ExecutorRun_hook = NULL;
+/* Hooks for plugins to get control in ExecutorStart/Run/End() */
+ExecutorStart_hook_type	ExecutorStart_hook = NULL;
+ExecutorRun_hook_type	ExecutorRun_hook = NULL;
+ExecutorEnd_hook_type	ExecutorEnd_hook = NULL;
 
 typedef struct evalPlanQual
 {
@@ -130,10 +132,24 @@ static void intorel_destroy(DestReceiver *self);
  *
  * NB: the CurrentMemoryContext when this is called will become the parent
  * of the per-query context used for this Executor invocation.
+ *
+ * We provide a function hook variable that lets loadable plugins
+ * get control when ExecutorStart is called.  Such a plugin would
+ * normally call standard_ExecutorStart().
+ *
  * ----------------------------------------------------------------
  */
 void
 ExecutorStart(QueryDesc *queryDesc, int eflags)
+{
+	if (ExecutorStart_hook)
+		(*ExecutorStart_hook) (queryDesc, eflags);
+	else
+		standard_ExecutorStart(queryDesc, eflags);
+}
+
+void
+standard_ExecutorStart(QueryDesc *queryDesc, int eflags)
 {
 	EState	   *estate;
 	MemoryContext oldcontext;
@@ -266,6 +282,10 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 	 */
 	oldcontext = MemoryContextSwitchTo(estate->es_query_cxt);
 
+	/* Allow instrumentation of ExecutorRun overall runtime */
+	if (queryDesc->totaltime)
+		InstrStartNode(queryDesc->totaltime);
+
 	/*
 	 * extract information from the query descriptor and the query feature.
 	 */
@@ -301,6 +321,9 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 	if (sendTuples)
 		(*dest->rShutdown) (dest);
 
+	if (queryDesc->totaltime)
+		InstrStopNode(queryDesc->totaltime, estate->es_processed);
+
 	MemoryContextSwitchTo(oldcontext);
 }
 
@@ -309,10 +332,24 @@ standard_ExecutorRun(QueryDesc *queryDesc,
  *
  *		This routine must be called at the end of execution of any
  *		query plan
+ *
+ *		We provide a function hook variable that lets loadable plugins
+ *		get control when ExecutorEnd is called.  Such a plugin would
+ *		normally call standard_ExecutorEnd().
+ *
  * ----------------------------------------------------------------
  */
 void
 ExecutorEnd(QueryDesc *queryDesc)
+{
+	if (ExecutorEnd_hook)
+		(*ExecutorEnd_hook) (queryDesc);
+	else
+		standard_ExecutorEnd(queryDesc);
+}
+
+void
+standard_ExecutorEnd(QueryDesc *queryDesc)
 {
 	EState	   *estate;
 	MemoryContext oldcontext;
@@ -356,6 +393,7 @@ ExecutorEnd(QueryDesc *queryDesc)
 	queryDesc->tupDesc = NULL;
 	queryDesc->estate = NULL;
 	queryDesc->planstate = NULL;
+	queryDesc->totaltime = NULL;
 }
 
 /* ----------------------------------------------------------------
@@ -593,18 +631,26 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 	foreach(l, plannedstmt->rowMarks)
 	{
 		RowMarkClause *rc = (RowMarkClause *) lfirst(l);
-		Oid			relid = getrelid(rc->rti, rangeTable);
+		Oid			relid;
 		Relation	relation;
 		ExecRowMark *erm;
 
+		/* ignore "parent" rowmarks; they are irrelevant at runtime */
+		if (rc->isParent)
+			continue;
+
+		relid = getrelid(rc->rti, rangeTable);
 		relation = heap_open(relid, RowShareLock);
 		erm = (ExecRowMark *) palloc(sizeof(ExecRowMark));
 		erm->relation = relation;
 		erm->rti = rc->rti;
+		erm->prti = rc->prti;
 		erm->forUpdate = rc->forUpdate;
 		erm->noWait = rc->noWait;
-		/* We'll set up ctidAttno below */
+		/* We'll locate the junk attrs below */
 		erm->ctidAttNo = InvalidAttrNumber;
+		erm->toidAttNo = InvalidAttrNumber;
+		ItemPointerSetInvalid(&(erm->curCtid));
 		estate->es_rowMarks = lappend(estate->es_rowMarks, erm);
 	}
 
@@ -825,17 +871,29 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 						elog(ERROR, "could not find junk ctid column");
 				}
 
-				/* For SELECT FOR UPDATE/SHARE, find the ctid attrs now */
+				/* For SELECT FOR UPDATE/SHARE, find the junk attrs now */
 				foreach(l, estate->es_rowMarks)
 				{
 					ExecRowMark *erm = (ExecRowMark *) lfirst(l);
 					char		resname[32];
 
-					snprintf(resname, sizeof(resname), "ctid%u", erm->rti);
+					/* always need the ctid */
+					snprintf(resname, sizeof(resname), "ctid%u",
+							 erm->prti);
 					erm->ctidAttNo = ExecFindJunkAttribute(j, resname);
 					if (!AttributeNumberIsValid(erm->ctidAttNo))
 						elog(ERROR, "could not find junk \"%s\" column",
 							 resname);
+					/* if child relation, need tableoid too */
+					if (erm->rti != erm->prti)
+					{
+						snprintf(resname, sizeof(resname), "tableoid%u",
+								 erm->prti);
+						erm->toidAttNo = ExecFindJunkAttribute(j, resname);
+						if (!AttributeNumberIsValid(erm->toidAttNo))
+							elog(ERROR, "could not find junk \"%s\" column",
+								 resname);
+					}
 				}
 			}
 		}
@@ -1436,13 +1494,34 @@ lnext:	;
 					LockTupleMode lockmode;
 					HTSU_Result test;
 
+					/* if child rel, must check whether it produced this row */
+					if (erm->rti != erm->prti)
+					{
+						Oid		tableoid;
+
+						datum = ExecGetJunkAttribute(slot,
+													 erm->toidAttNo,
+													 &isNull);
+						/* shouldn't ever get a null result... */
+						if (isNull)
+							elog(ERROR, "tableoid is NULL");
+						tableoid = DatumGetObjectId(datum);
+
+						if (tableoid != RelationGetRelid(erm->relation))
+						{
+							/* this child is inactive right now */
+							ItemPointerSetInvalid(&(erm->curCtid));
+							continue;
+						}
+					}
+
+					/* okay, fetch the tuple by ctid */
 					datum = ExecGetJunkAttribute(slot,
 												 erm->ctidAttNo,
 												 &isNull);
 					/* shouldn't ever get a null result... */
 					if (isNull)
 						elog(ERROR, "ctid is NULL");
-
 					tuple.t_self = *((ItemPointer) DatumGetPointer(datum));
 
 					if (erm->forUpdate)
@@ -1495,6 +1574,9 @@ lnext:	;
 							elog(ERROR, "unrecognized heap_lock_tuple status: %u",
 								 test);
 					}
+
+					/* Remember tuple TID for WHERE CURRENT OF */
+					erm->curCtid = tuple.t_self;
 				}
 			}
 
@@ -2203,9 +2285,11 @@ EvalPlanQual(EState *estate, Index rti,
 		relation = NULL;
 		foreach(l, estate->es_rowMarks)
 		{
-			if (((ExecRowMark *) lfirst(l))->rti == rti)
+			ExecRowMark *erm = lfirst(l);
+
+			if (erm->rti == rti)
 			{
-				relation = ((ExecRowMark *) lfirst(l))->relation;
+				relation = erm->relation;
 				break;
 			}
 		}
