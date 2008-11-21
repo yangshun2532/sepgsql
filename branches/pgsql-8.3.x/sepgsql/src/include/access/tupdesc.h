@@ -75,13 +75,14 @@ typedef struct tupleDesc
 	Oid			tdtypeid;		/* composite type ID for tuple type */
 	int32		tdtypmod;		/* typmod for tuple type */
 	bool		tdhasoid;		/* tuple has oid attribute in its header */
+	bool		tdhassecurity;	/* tuple has security attribute in ite header */
 	int			tdrefcount;		/* reference count, or -1 if not counting */
 }	*TupleDesc;
 
 
-extern TupleDesc CreateTemplateTupleDesc(int natts, bool hasoid);
+extern TupleDesc CreateTemplateTupleDesc(int natts, bool hasoid, bool hassecurity);
 
-extern TupleDesc CreateTupleDesc(int natts, bool hasoid,
+extern TupleDesc CreateTupleDesc(int natts, bool hasoid, bool hassecurity,
 				Form_pg_attribute *attrs);
 
 extern TupleDesc CreateTupleDescCopy(TupleDesc tupdesc);

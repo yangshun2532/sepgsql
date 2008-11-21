@@ -1058,7 +1058,7 @@ ts_setup_firstcall(FunctionCallInfo fcinfo, FuncCallContext *funcctx,
 	memcpy(st->stat, stat, VARSIZE(stat));
 	funcctx->user_fctx = (void *) st;
 
-	tupdesc = CreateTemplateTupleDesc(3, false);
+	tupdesc = CreateTemplateTupleDesc(3, false, false);
 	TupleDescInitEntry(tupdesc, (AttrNumber) 1, "word",
 					   TEXTOID, -1, 0);
 	TupleDescInitEntry(tupdesc, (AttrNumber) 2, "ndoc",

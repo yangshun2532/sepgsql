@@ -923,7 +923,7 @@ heap_form_tuple(TupleDesc tupleDescriptor,
 	if (tupleDescriptor->tdhasoid)
 		len += sizeof(Oid);
 
-	if (pgaceSecurityAttributeNecessary())
+	if (tupleDescriptor->tdhassecurity)
 		len += sizeof(Oid);
 
 	hoff = len = MAXALIGN(len); /* align user data safely */
@@ -957,7 +957,7 @@ heap_form_tuple(TupleDesc tupleDescriptor,
 	if (tupleDescriptor->tdhasoid)		/* else leave infomask = 0 */
 		td->t_infomask = HEAP_HASOID;
 
-	if (pgaceSecurityAttributeNecessary())
+	if (tupleDescriptor->tdhassecurity)
 		td->t_infomask |= HEAP_HASSECURITY;
 
 	heap_fill_tuple(tupleDescriptor,
@@ -1040,7 +1040,7 @@ heap_formtuple(TupleDesc tupleDescriptor,
 	if (tupleDescriptor->tdhasoid)
 		len += sizeof(Oid);
 
-	if (pgaceSecurityAttributeNecessary())
+	if (tupleDescriptor->tdhassecurity)
 		len += sizeof(Oid);
 
 	hoff = len = MAXALIGN(len); /* align user data safely */
@@ -1074,7 +1074,7 @@ heap_formtuple(TupleDesc tupleDescriptor,
 	if (tupleDescriptor->tdhasoid)		/* else leave infomask = 0 */
 		td->t_infomask = HEAP_HASOID;
 
-	if (pgaceSecurityAttributeNecessary())
+	if (tupleDescriptor->tdhassecurity)
 		td->t_infomask |= HEAP_HASSECURITY;
 
 	DataFill(tupleDescriptor,
@@ -1877,7 +1877,7 @@ heap_form_minimal_tuple(TupleDesc tupleDescriptor,
 	if (tupleDescriptor->tdhasoid)
 		len += sizeof(Oid);
 
-	if (pgaceSecurityAttributeNecessary())
+	if (tupleDescriptor->tdhassecurity)
 		len += sizeof(Oid);
 
 	hoff = len = MAXALIGN(len); /* align user data safely */
@@ -1901,7 +1901,7 @@ heap_form_minimal_tuple(TupleDesc tupleDescriptor,
 	if (tupleDescriptor->tdhasoid)		/* else leave infomask = 0 */
 		tuple->t_infomask = HEAP_HASOID;
 
-	if (pgaceSecurityAttributeNecessary())
+	if (tupleDescriptor->tdhassecurity)
 		tuple->t_infomask |= HEAP_HASSECURITY;
 
 	heap_fill_tuple(tupleDescriptor,
@@ -2001,6 +2001,7 @@ minimal_tuple_from_heap_tuple(HeapTuple htup)
 HeapTuple
 heap_addheader(int natts,		/* max domain index */
 			   bool withoid,	/* reserve space for oid */
+			   bool withsecurity,	/* reserve space for security */
 			   Size structlen,	/* its length */
 			   void *structure) /* pointer to the struct */
 {
@@ -2016,7 +2017,7 @@ heap_addheader(int natts,		/* max domain index */
 	if (withoid)
 		hoff += sizeof(Oid);
 
-	if (pgaceSecurityAttributeNecessary())
+	if (withsecurity)
 		hoff += sizeof(Oid);
 
 	hoff = MAXALIGN(hoff);
@@ -2037,7 +2038,7 @@ heap_addheader(int natts,		/* max domain index */
 	if (withoid)				/* else leave infomask = 0 */
 		td->t_infomask = HEAP_HASOID;
 
-	if (pgaceSecurityAttributeNecessary())
+	if (withsecurity)
 		td->t_infomask |= HEAP_HASSECURITY;
 
 	memcpy((char *) td + hoff, structure, structlen);

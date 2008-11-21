@@ -86,7 +86,7 @@ pg_lock_status(PG_FUNCTION_ARGS)
 
 		/* build tupdesc for result tuples */
 		/* this had better match pg_locks view in system_views.sql */
-		tupdesc = CreateTemplateTupleDesc(14, false);
+		tupdesc = CreateTemplateTupleDesc(14, false, false);
 		TupleDescInitEntry(tupdesc, (AttrNumber) 1, "locktype",
 						   TEXTOID, -1, 0);
 		TupleDescInitEntry(tupdesc, (AttrNumber) 2, "database",

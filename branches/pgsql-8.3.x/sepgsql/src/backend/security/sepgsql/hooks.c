@@ -471,7 +471,7 @@ sepgsqlLargeObjectImport(Oid loid, int fdesc, const char *filename)
 {
 	security_context_t	tcontext;
 	security_class_t tclass
-		= sepgsqlProperFileObjectClass(fdesc, filename);
+		= sepgsqlFileObjectClass(fdesc, filename);
 
 	if (fgetfilecon_raw(fdesc, &tcontext) < 0)
 		ereport(ERROR,
@@ -502,7 +502,7 @@ sepgsqlLargeObjectExport(Oid loid, int fdesc, const char *filename)
 {
 	security_context_t	tcontext;
 	security_class_t tclass
-		= sepgsqlProperFileObjectClass(fdesc, filename);
+		= sepgsqlFileObjectClass(fdesc, filename);
 
 	if (fgetfilecon_raw(fdesc, &tcontext) < 0)
 		ereport(ERROR,
@@ -605,6 +605,22 @@ sepgsqlEndPerformCheckFK(Relation rel, Datum save_pgace)
 /*******************************************************************************
  * security_label hooks
  *******************************************************************************/
+bool
+sepgsqlTupleDescHasSecurity(Oid relid, char relkind)
+{
+	if (relkind != RELKIND_RELATION && relkind != RELKIND_SEQUENCE)
+		return false;
+
+	if (relid == DatabaseRelationId ||
+		relid == RelationRelationId ||
+		relid == AttributeRelationId ||
+		relid == ProcedureRelationId ||
+		relid == LargeObjectRelationId)
+		return true;
+
+	return sepostgresql_row_level;
+}
+
 char *
 sepgsqlTranslateSecurityLabelIn(const char *context)
 {

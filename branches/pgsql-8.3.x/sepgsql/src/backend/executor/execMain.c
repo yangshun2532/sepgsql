@@ -741,16 +741,20 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 				for (i = 0; i < as_nplans; i++)
 				{
 					PlanState  *subplan = appendplans[i];
+					Relation	resultRel = resultRelInfo->ri_RelationDesc;
+					bool		has_security;
 					JunkFilter *j;
 
 					if (operation == CMD_UPDATE)
-						ExecCheckPlanOutput(resultRelInfo->ri_RelationDesc,
-											subplan->plan->targetlist);
+						ExecCheckPlanOutput(resultRel, subplan->plan->targetlist);
 
+					has_security
+					 = pgaceTupleDescHasSecurity(RelationGetRelid(resultRel),
+												 RelationGetForm(resultRel)->relkind);
 					j = ExecInitJunkFilter(subplan->plan->targetlist,
-							resultRelInfo->ri_RelationDesc->rd_att->tdhasoid,
-								  ExecAllocTableSlot(estate->es_tupleTable));
-
+										   RelationGetDescr(resultRel)->tdhasoid,
+										   has_security,
+										   ExecAllocTableSlot(estate->es_tupleTable));
 					/*
 					 * Since it must be UPDATE/DELETE, there had better be a
 					 * "ctid" junk attribute in the tlist ... but ctid could
@@ -792,7 +796,7 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 										planstate->plan->targetlist);
 
 				j = ExecInitJunkFilter(planstate->plan->targetlist,
-									   tupType->tdhasoid,
+									   tupType->tdhasoid, tupType->tdhassecurity,
 								  ExecAllocTableSlot(estate->es_tupleTable));
 				estate->es_junkFilter = j;
 				if (estate->es_result_relation_info)
@@ -851,7 +855,7 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 		 * We assume all the sublists will generate the same output tupdesc.
 		 */
 		tupType = ExecTypeFromTL((List *) linitial(plannedstmt->returningLists),
-								 false);
+								 false, false);
 
 		/* Set up a slot for the output of the RETURNING projection(s) */
 		slot = ExecAllocTableSlot(estate->es_tupleTable);
@@ -1174,6 +1178,43 @@ ExecContextForcesOids(PlanState *planstate, bool *hasoids)
 	return false;
 }
 
+/*
+ * ExecContextForcesSecurity
+ *
+ * We need to ensure that result tuples have space for security attribute,
+ * if the security mechanism are going to be stored it into the given
+ * relation.
+ * The hook gives relation identifier and its kind as a hint. However,
+ * the relation identifer can be InvalidOid when the relation is to
+ * be newly created via SELECT INTO, because the creation of the relation
+ * will be done after invocation of the function.
+ */
+bool ExecContextForcesSecurity(PlanState *planstate, bool *hassecurity)
+{
+	if (planstate->state->es_select_into)
+	{
+		*hassecurity = pgaceTupleDescHasSecurity(InvalidOid,
+												 RELKIND_RELATION);
+		return true;
+	}
+	else
+	{
+		ResultRelInfo *ri = planstate->state->es_result_relation_info;
+
+		if (ri && ri->ri_RelationDesc)
+		{
+			Oid relid = RelationGetRelid(ri->ri_RelationDesc);
+			char relkind = RelationGetForm(ri->ri_RelationDesc)->relkind;
+
+			*hassecurity = pgaceTupleDescHasSecurity(relid, relkind);
+
+			return true;
+		}
+	}
+
+	return false;
+}
+
 /* ----------------------------------------------------------------
  *		ExecEndPlan
  *
@@ -1299,6 +1340,14 @@ storeWritableSystemAttribute(Relation rel, TupleTableSlot *slot, HeapTuple tuple
 			HeapTupleSetSecurity(tuple,
 								 pgaceSecurityLabelToSid(label));
 		}
+	}
+	else if (DatumGetPointer(slot->tts_security))
+	{
+		ereport(ERROR,
+				(errcode(ERRCODE_PGACE_ERROR),
+				 errmsg("enhanced security mechanism does not allocate "
+						"a field to store security attribute for relation: %s",
+						RelationGetRelationName(rel))));
 	}
 }
 

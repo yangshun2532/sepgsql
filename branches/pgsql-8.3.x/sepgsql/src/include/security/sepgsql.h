@@ -25,6 +25,7 @@
  * SE-PostgreSQL modes
  */
 extern char *sepostgresql_mode;
+extern bool sepostgresql_row_level;
 
 /*
  * Permission codes of internal representation
@@ -142,6 +143,8 @@ extern void sepgsqlLargeObjectGetSecurity(Relation rel, HeapTuple tuple);
 extern void sepgsqlLargeObjectSetSecurity(Relation rel, HeapTuple newtup, HeapTuple oldtup);
 
 /* Security Label hooks */
+extern bool  sepgsqlTupleDescHasSecurity(Oid relid, char relkind);
+
 extern char *sepgsqlTranslateSecurityLabelIn(const char *context);
 
 extern char *sepgsqlTranslateSecurityLabelOut(const char *context);
@@ -212,7 +215,9 @@ sepgsqlComputeCreateContext(const security_context_t scontext,
  */
 extern const char *sepgsqlTupleName(Oid relid, HeapTuple tuple);
 
-extern security_class_t sepgsqlProperFileObjectClass(int fdesc, const char *filename);
+extern security_class_t sepgsqlFileObjectClass(int fdesc, const char *filename);
+
+extern security_class_t sepgsqlTupleObjectClass(Oid relid, HeapTuple tuple);
 
 extern void sepgsqlSetDefaultContext(Relation rel, HeapTuple tuple);
 
