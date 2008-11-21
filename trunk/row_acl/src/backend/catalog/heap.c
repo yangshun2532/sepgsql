@@ -221,8 +221,7 @@ bool
 SystemAttributeIsWritable(AttrNumber attno, bool relhasoids)
 {
 #ifdef SECURITY_SYSATTR_NAME
-	if (pgaceSecurityAttributeNecessary()
-		&& attno == SecurityAttributeNumber)
+	if (attno == SecurityAttributeNumber)
 		return true;
 #endif
 	return false;
@@ -312,6 +311,11 @@ heap_create(const char *relname,
 	 */
 	if (reltablespace == MyDatabaseTableSpace)
 		reltablespace = InvalidOid;
+
+	/*
+	 * Fixup tupDesc->tdhassecurity
+	 */
+	tupDesc->tdhassecurity = pgaceTupleDescHasSecurity(relid, relkind);
 
 	/*
 	 * build the relcache entry.

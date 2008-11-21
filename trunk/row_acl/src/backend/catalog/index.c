@@ -135,7 +135,7 @@ ConstructTupleDescriptor(Relation heapRelation,
 	/*
 	 * allocate the new tuple descriptor
 	 */
-	indexTupDesc = CreateTemplateTupleDesc(numatts, false);
+	indexTupDesc = CreateTemplateTupleDesc(numatts, false, false);
 
 	/*
 	 * For simple index columns, we copy the pg_attribute row from the parent

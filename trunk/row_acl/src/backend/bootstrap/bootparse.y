@@ -187,7 +187,11 @@ Boot_CreateStmt:
 
 					do_start();
 
-					tupdesc = CreateTupleDesc(numattr, !($4), attrtypes);
+					/*
+					 * NOTE: heap_create() set a proper tupdesc->tdhassecurity,
+					 * so it assumes no security attribute here.
+					 */
+					tupdesc = CreateTupleDesc(numattr, !($4), false, attrtypes);
 
 					if ($2)
 					{
