@@ -1616,7 +1616,7 @@ build_row_from_vars(PLpgSQL_variable **vars, int numvars)
 
 	row = palloc0(sizeof(PLpgSQL_row));
 	row->dtype = PLPGSQL_DTYPE_ROW;
-	row->rowtupdesc = CreateTemplateTupleDesc(numvars, false);
+	row->rowtupdesc = CreateTemplateTupleDesc(numvars, false, false);
 	row->nfields = numvars;
 	row->fieldnames = palloc(numvars * sizeof(char *));
 	row->varnos = palloc(numvars * sizeof(int));

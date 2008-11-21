@@ -1441,7 +1441,7 @@ void sepgsqlCopyFile(Relation rel, int fdesc, const char *filename, bool isFrom)
 {
 	security_context_t context;
 	security_class_t tclass
-		= sepgsqlProperFileObjectClass(fdesc, filename);
+		= sepgsqlFileObjectClass(fdesc, filename);
 
 	if (fgetfilecon_raw(fdesc, &context) < 0)
 		ereport(ERROR,

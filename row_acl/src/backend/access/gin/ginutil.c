@@ -33,7 +33,7 @@ initGinState(GinState *state, Relation index)
 
 	for(i=0;i<index->rd_att->natts;i++)
 	{
-		state->tupdesc[i] = CreateTemplateTupleDesc(2,false);
+		state->tupdesc[i] = CreateTemplateTupleDesc(2, false, false);
 
 		TupleDescInitEntry( state->tupdesc[i], (AttrNumber) 1, NULL,
 							INT2OID, -1, 0);
