@@ -1218,6 +1218,17 @@ static struct config_bool ConfigureNamesBool[] =
 		&IgnoreSystemIndexes,
 		false, NULL, NULL
 	},
+#ifdef HAVE_SELINUX
+	{
+		{"sepostgresql_row_level", PGC_POSTMASTER, UNGROUPED,
+		 gettext_noop("Availability of row-level security in SE-PostgreSQL."),
+		 NULL,
+		 GUC_NOT_IN_SAMPLE,
+		},
+		&sepostgresql_row_level,
+		true, NULL, NULL
+	},
+#endif
 
 	/* End-of-list marker */
 	{
@@ -5963,7 +5974,7 @@ GetPGVariableResultDesc(const char *name)
 	if (guc_name_compare(name, "all") == 0)
 	{
 		/* need a tuple descriptor representing three TEXT columns */
-		tupdesc = CreateTemplateTupleDesc(3, false);
+		tupdesc = CreateTemplateTupleDesc(3, false, false);
 		TupleDescInitEntry(tupdesc, (AttrNumber) 1, "name",
 						   TEXTOID, -1, 0);
 		TupleDescInitEntry(tupdesc, (AttrNumber) 2, "setting",
@@ -5980,7 +5991,7 @@ GetPGVariableResultDesc(const char *name)
 		(void) GetConfigOptionByName(name, &varname);
 
 		/* need a tuple descriptor representing a single TEXT column */
-		tupdesc = CreateTemplateTupleDesc(1, false);
+		tupdesc = CreateTemplateTupleDesc(1, false, false);
 		TupleDescInitEntry(tupdesc, (AttrNumber) 1, varname,
 						   TEXTOID, -1, 0);
 	}
@@ -6003,7 +6014,7 @@ ShowGUCConfigOption(const char *name, DestReceiver *dest)
 	value = GetConfigOptionByName(name, &varname);
 
 	/* need a tuple descriptor representing a single TEXT column */
-	tupdesc = CreateTemplateTupleDesc(1, false);
+	tupdesc = CreateTemplateTupleDesc(1, false, false);
 	TupleDescInitEntry(tupdesc, (AttrNumber) 1, varname,
 					   TEXTOID, -1, 0);
 
@@ -6029,7 +6040,7 @@ ShowAllGUCConfig(DestReceiver *dest)
 	char	   *values[3];
 
 	/* need a tuple descriptor representing three TEXT columns */
-	tupdesc = CreateTemplateTupleDesc(3, false);
+	tupdesc = CreateTemplateTupleDesc(3, false, false);
 	TupleDescInitEntry(tupdesc, (AttrNumber) 1, "name",
 					   TEXTOID, -1, 0);
 	TupleDescInitEntry(tupdesc, (AttrNumber) 2, "setting",
@@ -6399,7 +6410,7 @@ show_all_settings(PG_FUNCTION_ARGS)
 		 * need a tuple descriptor representing NUM_PG_SETTINGS_ATTS columns
 		 * of the appropriate types
 		 */
-		tupdesc = CreateTemplateTupleDesc(NUM_PG_SETTINGS_ATTS, false);
+		tupdesc = CreateTemplateTupleDesc(NUM_PG_SETTINGS_ATTS, false, false);
 		TupleDescInitEntry(tupdesc, (AttrNumber) 1, "name",
 						   TEXTOID, -1, 0);
 		TupleDescInitEntry(tupdesc, (AttrNumber) 2, "setting",

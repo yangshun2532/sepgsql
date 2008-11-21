@@ -1083,18 +1083,21 @@ pgaceLargeObjectSetSecurity(Relation rel, HeapTuple newtup, HeapTuple oldtup)
  ******************************************************************/
 
 /*
- * pgaceSecurityAttributeNecessary
+ * pgaceTupleDescHasSecurity
  *
- * This hook provides a hint to the heap input/output subsystem.
- * If it returns true, sizeof(Oid) bytes are expanded in HeapTupleHeader
- * to store security identifier.
+ * This hook enables to control TupleDesc->tdhassecurity bit.
+ * If it returns true, sizeof(Oid) bytes are allocated at the header
+ * of HeapTupleHeader structure.
+ * The argument of 'relid' can be InvalidOid. It means the TupleDesc
+ * is for newly created table with SELECT INTO statement, because its
+ * relation identifier is not determined when invocation of the hook.
  */
 static inline bool
-pgaceSecurityAttributeNecessary(void)
+pgaceTupleDescHasSecurity(Oid relid, char relkind)
 {
 #if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
-		return true;
+		return sepgsqlTupleDescHasSecurity(relid, relkind);
 #endif
 	return false;
 }

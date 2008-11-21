@@ -350,7 +350,8 @@ pgacePostBootstrapingMode(void)
 		tuple = heap_form_tuple(RelationGetDescr(rel), &value, &isnull);
 
 		HeapTupleSetOid(tuple, es->sid);
-		HeapTupleSetSecurity(tuple, meta_sid);
+		if (HeapTupleHasSecurity(tuple))
+			HeapTupleSetSecurity(tuple, meta_sid);
 
 		simple_heap_insert(rel, tuple);
 		CatalogIndexInsert(ind, tuple);
@@ -441,7 +442,8 @@ pgaceLookupSecurityId(char *raw_label)
 		isnull = false;
 		tuple = heap_form_tuple(RelationGetDescr(rel),
 								&labelTxt, &isnull);
-		HeapTupleSetSecurity(tuple, labelSid);
+		if (HeapTupleHasSecurity(tuple))
+			HeapTupleSetSecurity(tuple, labelSid);
 		HeapTupleSetOid(tuple, labelOid);
 
 		simple_heap_insert(rel, tuple);

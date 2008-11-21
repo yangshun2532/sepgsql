@@ -1051,7 +1051,7 @@ init_fcache(Oid foid, FuncExprState *fcache,
 		else if (functypclass == TYPEFUNC_SCALAR)
 		{
 			/* Base data type, i.e. scalar */
-			tupdesc = CreateTemplateTupleDesc(1, false);
+			tupdesc = CreateTemplateTupleDesc(1, false, false);
 			TupleDescInitEntry(tupdesc,
 							   (AttrNumber) 1,
 							   NULL,
@@ -1923,7 +1923,7 @@ ExecMakeTableFunctionResult(ExprState *funcexpr,
 					/*
 					 * Scalar type, so make a single-column descriptor
 					 */
-					tupdesc = CreateTemplateTupleDesc(1, false);
+					tupdesc = CreateTemplateTupleDesc(1, false, false);
 					TupleDescInitEntry(tupdesc,
 									   (AttrNumber) 1,
 									   "column",

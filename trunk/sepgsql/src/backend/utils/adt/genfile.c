@@ -169,7 +169,7 @@ pg_stat_file(PG_FUNCTION_ARGS)
 	 * This record type had better match the output parameters declared for me
 	 * in pg_proc.h.
 	 */
-	tupdesc = CreateTemplateTupleDesc(6, false);
+	tupdesc = CreateTemplateTupleDesc(6, false, false);
 	TupleDescInitEntry(tupdesc, (AttrNumber) 1,
 					   "size", INT8OID, -1, 0);
 	TupleDescInitEntry(tupdesc, (AttrNumber) 2,

@@ -793,12 +793,21 @@ InsertOneTuple(Oid objectid)
 {
 	HeapTuple	tuple;
 	TupleDesc	tupDesc;
+	bool		has_security;
 	int			i;
 
 	elog(DEBUG4, "inserting row oid %u, %d columns", objectid, numattr);
 
+	/*
+	 * NOTE: heap_create() set RelationGetForm(boot_reldesc)->relkind
+	 * RELKIND_UNCATALOGED, but it is incorrect. We give RELKIND_RELATION
+	 * to pgaceTupleDescHasSecurity() for correct decision.
+	 */
+	has_security = pgaceTupleDescHasSecurity(RelationGetRelid(boot_reldesc),
+											 RELKIND_RELATION);
 	tupDesc = CreateTupleDesc(numattr,
 							  RelationGetForm(boot_reldesc)->relhasoids,
+							  has_security,
 							  attrtypes);
 	tuple = heap_form_tuple(tupDesc, values, Nulls);
 	if (objectid != (Oid) 0)
