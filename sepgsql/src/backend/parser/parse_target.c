@@ -1138,7 +1138,7 @@ expandRecordVariable(ParseState *pstate, Var *var, int levelsup)
 		expandRTE(rte, var->varno, 0, false,
 				  &names, &vars);
 
-		tupleDesc = CreateTemplateTupleDesc(list_length(vars), false);
+		tupleDesc = CreateTemplateTupleDesc(list_length(vars), false, false);
 		i = 1;
 		forboth(lname, names, lvar, vars)
 		{

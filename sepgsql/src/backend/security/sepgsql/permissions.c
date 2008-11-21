@@ -30,37 +30,11 @@
 
 #include <sys/stat.h>
 
-static access_vector_t
-sepgsql_perms_to_common_perms(uint32 perms)
-{
-	access_vector_t result = 0;
-
-	result |= (perms & SEPGSQL_PERMS_USE         ? COMMON_DATABASE__GETATTR : 0);
-	result |= (perms & SEPGSQL_PERMS_SELECT      ? COMMON_DATABASE__GETATTR : 0);
-	result |= (perms & SEPGSQL_PERMS_UPDATE      ? COMMON_DATABASE__SETATTR : 0);
-	result |= (perms & SEPGSQL_PERMS_INSERT      ? COMMON_DATABASE__CREATE : 0);
-	result |= (perms & SEPGSQL_PERMS_DELETE      ? COMMON_DATABASE__DROP : 0);
-	result |= (perms & SEPGSQL_PERMS_RELABELFROM ? COMMON_DATABASE__RELABELFROM : 0);
-	result |= (perms & SEPGSQL_PERMS_RELABELTO   ? COMMON_DATABASE__RELABELTO : 0);
-
-	return result;
-}
-
-static access_vector_t
-sepgsql_perms_to_tuple_perms(uint32 perms)
-{
-	access_vector_t result = 0;
-
-	result |= (perms & SEPGSQL_PERMS_USE         ? DB_TUPLE__USE : 0);
-	result |= (perms & SEPGSQL_PERMS_SELECT      ? DB_TUPLE__SELECT : 0);
-	result |= (perms & SEPGSQL_PERMS_UPDATE      ? DB_TUPLE__UPDATE : 0);
-	result |= (perms & SEPGSQL_PERMS_INSERT      ? DB_TUPLE__INSERT : 0);
-	result |= (perms & SEPGSQL_PERMS_DELETE      ? DB_TUPLE__DELETE : 0);
-	result |= (perms & SEPGSQL_PERMS_RELABELFROM ? DB_TUPLE__RELABELFROM : 0);
-	result |= (perms & SEPGSQL_PERMS_RELABELTO   ? DB_TUPLE__RELABELTO : 0);
-
-	return result;
-}
+/*
+ * It can be configured via a GUC variable to toggle
+ * row-level access controls.
+ */
+bool sepostgresql_row_level;
 
 const char *
 sepgsqlTupleName(Oid relid, HeapTuple tuple)
@@ -138,13 +112,13 @@ sepgsqlTupleName(Oid relid, HeapTuple tuple)
 }
 
 /*
- * sepgsqlProperFileObjectClass
+ * sepgsqlFileObjectClass
  *
  * It returns proper object class of filesystem object already opened.
  * It is necessary to check privileges voluntarily.
  */
 security_class_t
-sepgsqlProperFileObjectClass(int fdesc, const char *filename)
+sepgsqlFileObjectClass(int fdesc, const char *filename)
 {
 	struct stat stbuf;
 
@@ -170,6 +144,66 @@ sepgsqlProperFileObjectClass(int fdesc, const char *filename)
 }
 
 /*
+ * sepgsqlTupleObjectClass
+ *
+ * It returns proper object class of given tuple
+ */
+security_class_t
+sepgsqlTupleObjectClass(Oid relid, HeapTuple tuple)
+{
+	Form_pg_class clsForm;
+	Form_pg_attribute attForm;
+	HeapTuple reltup;
+
+	switch (relid)
+	{
+		case DatabaseRelationId:
+			return SECCLASS_DB_DATABASE;
+
+		case RelationRelationId:
+			clsForm = (Form_pg_class) GETSTRUCT(tuple);
+			if (clsForm->relkind == RELKIND_RELATION)
+				return SECCLASS_DB_TABLE;
+			break;
+
+		case AttributeRelationId:
+			attForm = (Form_pg_attribute) GETSTRUCT(tuple);
+			/*
+			 * To avoid a matter when very early phase
+			 */
+			if (attForm->attrelid == TypeRelationId ||
+				attForm->attrelid == ProcedureRelationId ||
+				attForm->attrelid == AttributeRelationId ||
+				attForm->attrelid == RelationRelationId)
+				return SECCLASS_DB_COLUMN;
+
+			reltup = SearchSysCache(RELOID,
+									ObjectIdGetDatum(attForm->attrelid),
+									0, 0, 0);
+			if (!HeapTupleIsValid(reltup))
+				elog(ERROR, "SELinux: cache lookup failed for relation %u",
+					 attForm->attrelid);
+
+			clsForm = (Form_pg_class) GETSTRUCT(reltup);
+			if (clsForm->relkind == RELKIND_RELATION)
+			{
+				ReleaseSysCache(reltup);
+				return SECCLASS_DB_COLUMN;
+			}
+			ReleaseSysCache(reltup);		
+			break;
+
+		case ProcedureRelationId:
+			return SECCLASS_DB_PROCEDURE;
+
+		case LargeObjectRelationId:
+			return SECCLASS_DB_BLOB;
+	}
+
+	return SECCLASS_DB_TUPLE;
+}
+
+/*
  * sepgsqlCheckTuplePerms 
  *
  * This function evaluates given permission set (SEPGSQL_PERMS_*) onto the
@@ -185,138 +219,95 @@ sepgsqlProperFileObjectClass(int fdesc, const char *filename)
  * Thus, checks for some of system catalog need to modify given permission
  * set at checkTuplePermsXXXX() functions.
  */
-
-static void
-checkTuplePermsAttribute(HeapTuple tuple, HeapTuple oldtup,
-						 access_vector_t *p_perms,
-						 security_class_t *p_tclass)
+static access_vector_t
+sepgsqlPermsToCommonAv(uint32 perms)
 {
-	Form_pg_attribute attForm, oldForm;
-	HeapTuple	reltup;
+	access_vector_t result = 0;
 
-	attForm = (Form_pg_attribute) GETSTRUCT(tuple);
-	switch (attForm->attrelid)
-	{
-		case TypeRelationId:
-		case ProcedureRelationId:
-		case AttributeRelationId:
-		case RelationRelationId:
-			/*
-			 * those are pure relation
-			 */
-			break;
-		default:
-			reltup = SearchSysCache(RELOID,
-									ObjectIdGetDatum(attForm->attrelid),
-									0, 0, 0);
-			if (!HeapTupleIsValid(reltup))
-				elog(ERROR, "SELinux: cache lookup failed for relation %u",
-					 attForm->attrelid);
-			if (RELKIND_RELATION !=
-				((Form_pg_class) GETSTRUCT(reltup))->relkind)
-			{
-				*p_tclass = SECCLASS_DB_TUPLE;
-				*p_perms = sepgsql_perms_to_tuple_perms(*p_perms);
-				ReleaseSysCache(reltup);
-				return;
-			}
-			ReleaseSysCache(reltup);
-			break;
-	}
-	*p_tclass = SECCLASS_DB_COLUMN;
-	*p_perms = sepgsql_perms_to_common_perms(*p_perms);
-	if (HeapTupleIsValid(oldtup))
-	{
-		oldForm = (Form_pg_attribute) GETSTRUCT(oldtup);
+	result |= (perms & SEPGSQL_PERMS_USE         ? COMMON_DATABASE__GETATTR : 0);
+	result |= (perms & SEPGSQL_PERMS_SELECT      ? COMMON_DATABASE__GETATTR : 0);
+	result |= (perms & SEPGSQL_PERMS_UPDATE      ? COMMON_DATABASE__SETATTR : 0);
+	result |= (perms & SEPGSQL_PERMS_INSERT      ? COMMON_DATABASE__CREATE : 0);
+	result |= (perms & SEPGSQL_PERMS_DELETE      ? COMMON_DATABASE__DROP : 0);
+	result |= (perms & SEPGSQL_PERMS_RELABELFROM ? COMMON_DATABASE__RELABELFROM : 0);
+	result |= (perms & SEPGSQL_PERMS_RELABELTO   ? COMMON_DATABASE__RELABELTO : 0);
 
-		if (oldForm->attisdropped != true && attForm->attisdropped == true)
-			*p_perms |= DB_COLUMN__DROP;
-	}
+	return result;
 }
 
-static void
-checkTuplePermsLargeObject(HeapTuple tuple, HeapTuple oldtup,
-						   access_vector_t *p_perms,
-						   security_class_t *p_tclass)
+static access_vector_t
+sepgsqlPermsToDatabaseAv(uint32 perms, HeapTuple tuple, HeapTuple oldtup)
 {
-	access_vector_t perms;
-
-	/*
-	 * NOTE: INSERT tuples into pg_largeobject has a possibility to create
-	 * a new largeobject, if the given loid is not exist on the current
-	 * pg_largeobject. Ditto for DELETE statement, it also has a possibility
-	 * to drop a largeobject, if it removes all tuples within a large object.
-	 *
-	 * db_blob:{create} and db_blob:{drop} should be evaluated for
-	 * creation/deletion of largeobject, but we have to check pg_largeobject
-	 * with SnapshotSelf whether there is one or more tuple having same loid,
-	 * or not, on each tuple insertion or deletion.
-	 *
-	 * So, we assume any INSERT means db_blob:{create}, any DELETE means
-	 * db_blob:{drop}.
-	 */
-	perms = sepgsql_perms_to_common_perms(*p_perms);
-	perms |= (*p_perms & SEPGSQL_PERMS_INSERT ? DB_BLOB__WRITE : 0);
-	perms |= (*p_perms & SEPGSQL_PERMS_DELETE ? DB_BLOB__WRITE : 0);
-	perms |= (*p_perms & SEPGSQL_PERMS_READ   ? DB_BLOB__READ  : 0);
-	perms |= (*p_perms & SEPGSQL_PERMS_WRITE  ? DB_BLOB__WRITE : 0);
-
-	*p_tclass = SECCLASS_DB_BLOB;
-	*p_perms = perms;
+	return sepgsqlPermsToCommonAv(perms);
 }
 
-static void
-checkTuplePermsProcedure(HeapTuple tuple, HeapTuple oldtup,
-						 access_vector_t *p_perms,
-						 security_class_t *p_tclass)
+static access_vector_t
+sepgsqlPermsToTableAv(uint32 perms, HeapTuple tuple, HeapTuple oldtup)
 {
-	access_vector_t perms = sepgsql_perms_to_common_perms(*p_perms);
+	return sepgsqlPermsToCommonAv(perms);
+}
+
+static access_vector_t
+sepgsqlPermsToProcedureAv(uint32 perms, HeapTuple tuple, HeapTuple oldtup)
+{
+	access_vector_t result = sepgsqlPermsToCommonAv(perms);
 	Form_pg_proc procForm = (Form_pg_proc) GETSTRUCT(tuple);
+	Datum newbin, oldbin;
+	bool isnull, need_check = false;
 
 	if (procForm->prolang == ClanguageId)
 	{
-		Datum		oldbin, newbin;
-		bool		isnull,	verify = false;
-
-		newbin = SysCacheGetAttr(PROCOID, tuple, Anum_pg_proc_probin, &isnull);
+		newbin = SysCacheGetAttr(PROCOID, tuple,
+								 Anum_pg_proc_probin,
+								 &isnull);
 		if (!isnull)
 		{
-			if (perms & DB_PROCEDURE__CREATE)
-			{
-				verify = true;
-			}
+			if (result & DB_PROCEDURE__CREATE)
+				need_check = true;
 			else if (HeapTupleIsValid(oldtup))
 			{
 				oldbin = SysCacheGetAttr(PROCOID, oldtup,
-										 Anum_pg_proc_probin, &isnull);
-				if (isnull ||
-					DatumGetBool(DirectFunctionCall2(textne, oldbin, newbin)))
-					verify = true;
+										 Anum_pg_proc_probin,
+										 &isnull);
+				if (isnull)
+					need_check = true;
+				else if (DatumGetBool(DirectFunctionCall2(byteane,
+														  oldbin, newbin)))
+					need_check = true;
 			}
 
-			if (verify)
+			if (need_check)
 			{
-				char	   *file_name;
+				HeapTuple dbtuple;
+				Form_pg_database datForm;
+				char *file_name;
 				security_context_t file_context;
-
 				/*
-				 * <client type> <-- database:module_install --> <database type>
+				 * (client) <-- db_database:module_install --> (database)
 				 */
-				sepgsqlClientHasPermission(sepgsqlGetDatabaseSecurityId(),
+				dbtuple = SearchSysCache(DATABASEOID,
+										 ObjectIdGetDatum(MyDatabaseId),
+										 0, 0, 0);
+				if (!HeapTupleIsValid(dbtuple))
+					elog(ERROR, "SELinux: cache lookup failed for database: %u",
+						 MyDatabaseId);
+
+				datForm = (Form_pg_database) GETSTRUCT(dbtuple);
+				sepgsqlClientHasPermission(HeapTupleGetSecurity(dbtuple),
 										   SECCLASS_DB_DATABASE,
 										   DB_DATABASE__INSTALL_MODULE,
-										   NULL);
+										   NameStr(datForm->datname));
+				ReleaseSysCache(dbtuple);
 
 				/*
-				 * <client type> <-- database:module_install --> <file type>
+				 * (client) <-- db_databse:module_install --> (*.so file)
 				 */
-				file_name = DatumGetCString(DirectFunctionCall1(textout, newbin));
+				file_name = TextDatumGetCString(newbin);
 				file_name = expand_dynamic_library_name(file_name);
 				if (getfilecon_raw(file_name, &file_context) < 0)
 					ereport(ERROR,
 							(errcode(ERRCODE_SELINUX_ERROR),
-							 errmsg("SELinux: could not get context of %s",
-									file_name)));
+							 errmsg("SELinux: could not get context: %s", file_name)));
 				PG_TRY();
 				{
 					sepgsqlComputePermission(sepgsqlGetClientContext(),
@@ -335,27 +326,67 @@ checkTuplePermsProcedure(HeapTuple tuple, HeapTuple oldtup,
 			}
 		}
 	}
-	*p_perms = perms;
-	*p_tclass = SECCLASS_DB_PROCEDURE;
+	return result;
 }
 
-static void
-checkTuplePermsRelation(HeapTuple tuple, HeapTuple oldtup,
-						access_vector_t *p_perms,
-						security_class_t *p_tclass)
+static access_vector_t
+sepgsqlPermsToColumnAv(uint32 perms, HeapTuple tuple, HeapTuple oldtup)
 {
-	Form_pg_class classForm = (Form_pg_class) GETSTRUCT(tuple);
+	access_vector_t result = sepgsqlPermsToCommonAv(perms);
 
-	if (classForm->relkind == RELKIND_RELATION)
+	if (HeapTupleIsValid(oldtup))
 	{
-		*p_tclass = SECCLASS_DB_TABLE;
-		*p_perms = sepgsql_perms_to_common_perms(*p_perms);
+		Form_pg_attribute newatt = (Form_pg_attribute) GETSTRUCT(tuple);
+		Form_pg_attribute oldatt = (Form_pg_attribute) GETSTRUCT(oldtup);
+
+		if (oldatt->attisdropped == false && newatt->attisdropped != false)
+			result |= DB_COLUMN__DROP;
 	}
-	else
-	{
-		*p_tclass = SECCLASS_DB_TUPLE;
-		*p_perms = sepgsql_perms_to_tuple_perms(*p_perms);
-	}
+
+	return result;
+}
+
+static access_vector_t
+sepgsqlPermsToTupleAv(uint32 perms, HeapTuple tuple, HeapTuple oldtup)
+{
+	access_vector_t result = 0;
+
+	result |= (perms & SEPGSQL_PERMS_USE         ? DB_TUPLE__USE : 0);
+	result |= (perms & SEPGSQL_PERMS_SELECT      ? DB_TUPLE__SELECT : 0);
+	result |= (perms & SEPGSQL_PERMS_UPDATE      ? DB_TUPLE__UPDATE : 0);
+	result |= (perms & SEPGSQL_PERMS_INSERT      ? DB_TUPLE__INSERT : 0);
+	result |= (perms & SEPGSQL_PERMS_DELETE      ? DB_TUPLE__DELETE : 0);
+	result |= (perms & SEPGSQL_PERMS_RELABELFROM ? DB_TUPLE__RELABELFROM : 0);
+	result |= (perms & SEPGSQL_PERMS_RELABELTO   ? DB_TUPLE__RELABELTO : 0);
+
+	return result;
+}
+
+static access_vector_t
+sepgsqlPermsToBlobAv(uint32 perms, HeapTuple tuple, HeapTuple oldtup)
+{
+	access_vector_t result = sepgsqlPermsToCommonAv(perms);
+
+	/*
+	 * NOTE: INSERT tuples into pg_largeobject has a possibility to create
+	 * a new largeobject, if the given loid is not exist on the current
+	 * pg_largeobject. Ditto for DELETE statement, it also has a possibility
+	 * to drop a largeobject, if it removes all tuples within a large object.
+	 *
+	 * db_blob:{create} and db_blob:{drop} should be evaluated for
+	 * creation/deletion of largeobject, but we have to check pg_largeobject
+	 * with SnapshotSelf whether there is one or more tuple having same loid,
+	 * or not, on each tuple insertion or deletion.
+	 *
+	 * So, we assume any INSERT means db_blob:{create}, any DELETE means
+	 * db_blob:{drop}.
+	 */
+	result |= (perms & SEPGSQL_PERMS_INSERT	? DB_BLOB__WRITE : 0);
+	result |= (perms & SEPGSQL_PERMS_DELETE	? DB_BLOB__WRITE : 0);
+	result |= (perms & SEPGSQL_PERMS_READ	? DB_BLOB__READ  : 0);
+	result |= (perms & SEPGSQL_PERMS_WRITE	? DB_BLOB__WRITE : 0);
+
+	return result;
 }
 
 bool
@@ -363,54 +394,57 @@ sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, HeapTuple oldtup,
 					   uint32 perms, bool abort)
 {
 	security_class_t tclass;
-	bool		rc = true;
+	access_vector_t av = 0;
+	bool rc = true;
 
-	Assert(tuple != NULL);
+	Assert(HeapTupleIsValid(tuple));
 
-	switch (RelationGetRelid(rel))
+	tclass = sepgsqlTupleObjectClass(RelationGetRelid(rel), tuple);
+
+	switch (tclass)
 	{
-		case DatabaseRelationId:		/* pg_datbase */
-			perms = sepgsql_perms_to_common_perms(perms);
-			tclass = SECCLASS_DB_DATABASE;
+		case SECCLASS_DB_DATABASE:
+			av = sepgsqlPermsToDatabaseAv(perms, tuple, oldtup);
 			break;
 
-		case RelationRelationId:		/* pg_class */
-			checkTuplePermsRelation(tuple, oldtup, &perms, &tclass);
+		case SECCLASS_DB_TABLE:
+			av = sepgsqlPermsToTableAv(perms, tuple, oldtup);
 			break;
 
-		case AttributeRelationId:		/* pg_attribute */
-			checkTuplePermsAttribute(tuple, oldtup, &perms, &tclass);
+		case SECCLASS_DB_PROCEDURE:
+			av = sepgsqlPermsToProcedureAv(perms, tuple, oldtup);
 			break;
 
-		case ProcedureRelationId:		/* pg_proc */
-			checkTuplePermsProcedure(tuple, oldtup, &perms, &tclass);
+		case SECCLASS_DB_COLUMN:
+			av = sepgsqlPermsToColumnAv(perms, tuple, oldtup);
 			break;
 
-		case LargeObjectRelationId:		/* pg_largeobject */
-			checkTuplePermsLargeObject(tuple, oldtup, &perms, &tclass);
+		case SECCLASS_DB_BLOB:
+			av = sepgsqlPermsToBlobAv(perms, tuple, oldtup);
 			break;
 
-		default:
-			perms = sepgsql_perms_to_tuple_perms(perms);
-			tclass = SECCLASS_DB_TUPLE;
+		default: /* SECCLASS_DB_TUPLE */
+			if (sepostgresql_row_level)
+				av = sepgsqlPermsToTupleAv(perms, tuple, oldtup);
 			break;
 	}
 
-	if (perms)
+	if (av)
 	{
 		const char *objname = sepgsqlTupleName(RelationGetRelid(rel), tuple);
 
 		if (abort)
 		{
 			sepgsqlClientHasPermission(HeapTupleGetSecurity(tuple),
-									   tclass, perms, objname);
+									   tclass, av, objname);
 		}
 		else
 		{
 			rc = sepgsqlClientHasPermissionNoAbort(HeapTupleGetSecurity(tuple),
-												   tclass, perms, objname);
+												   tclass, av, objname);
 		}
 	}
+
 	return rc;
 }
 
@@ -423,112 +457,131 @@ sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, HeapTuple oldtup,
  * However, we have several exception for some of system catalog. It come from
  * TYPE_TRANSITION rules in the security policy.
  */
-
-static void
-setDefaultContextDatabase(Relation rel, HeapTuple tuple)
+static Oid
+sepgsqlDefaultDatabaseContext(Relation rel, HeapTuple tuple)
 {
-	Oid security_id;
 	security_context_t newcon;
 
 	newcon = sepgsqlComputeCreateContext(sepgsqlGetClientContext(),
 										 sepgsqlGetClientContext(),
 										 SECCLASS_DB_DATABASE);
-	security_id = pgaceSecurityLabelToSid(newcon);
-	HeapTupleSetSecurity(tuple, security_id);
+	return pgaceSecurityLabelToSid(newcon);
 }
 
-static void
-setDefaultContextRelation(Relation rel, HeapTuple tuple)
+static Oid
+sepgsqlDefaultTableContext(Relation rel, HeapTuple tuple)
+{
+	return sepgsqlClientCreateSid(sepgsqlGetDatabaseSecurityId(),
+								  SECCLASS_DB_TABLE);
+}
+
+static Oid
+sepgsqlDefaultProcedureContext(Relation rel, HeapTuple tuple)
+{
+	return sepgsqlClientCreateSid(sepgsqlGetDatabaseSecurityId(),
+								  SECCLASS_DB_PROCEDURE);
+}
+
+static Oid
+sepgsqlDefaultColumnContext(Relation rel, HeapTuple tuple)
+{
+	Form_pg_attribute attForm;
+	Oid tblsid;
+
+	attForm = (Form_pg_attribute) GETSTRUCT(tuple);
+
+	if (IsBootstrapProcessingMode() &&
+		(attForm->attrelid == TypeRelationId ||
+		 attForm->attrelid == ProcedureRelationId ||
+		 attForm->attrelid == AttributeRelationId ||
+		 attForm->attrelid == RelationRelationId))
+	{
+		/*
+		 * We cannot access relation caches on very early phase
+		 * in bootstrap, so it assumes tables has default security
+		 * context and unlabeled by initdb.
+		 */
+		tblsid = sepgsqlClientCreateSid(sepgsqlGetDatabaseSecurityId(),
+										SECCLASS_DB_TABLE);
+	}
+	else
+	{
+		HeapTuple reltup
+			= SearchSysCache(RELOID,
+							 ObjectIdGetDatum(attForm->attrelid),
+							 0, 0, 0);
+		if (!HeapTupleIsValid(reltup))
+			elog(ERROR, "SELinux: cache lookup failed for relation: %u",
+				 attForm->attrelid);
+
+		tblsid = HeapTupleGetSecurity(reltup);
+
+		ReleaseSysCache(reltup);
+	}
+
+	return sepgsqlClientCreateSid(tblsid, SECCLASS_DB_COLUMN);
+}
+		
+static Oid
+sepgsqlDefaultTupleContext(Relation rel, HeapTuple tuple)
 {
 	Oid tblsid;
 
-	tblsid = sepgsqlClientCreateSid(sepgsqlGetDatabaseSecurityId(),
-									SECCLASS_DB_TABLE);
-	HeapTupleSetSecurity(tuple, tblsid);
-}
-
-static void
-setDefaultContextAttribute(Relation rel, HeapTuple tuple)
-{
-	HeapTuple reltup;
-	Oid security_id;
-	Form_pg_class clsForm;
-	Form_pg_attribute attForm
-		= (Form_pg_attribute) GETSTRUCT(tuple);
-
-	switch (attForm->attrelid)
+	if (IsBootstrapProcessingMode() &&
+		(RelationGetRelid(rel) == TypeRelationId ||
+		 RelationGetRelid(rel) == ProcedureRelationId ||
+		 RelationGetRelid(rel) == AttributeRelationId ||
+		 RelationGetRelid(rel) == RelationRelationId))
 	{
-	case TypeRelationId:
-	case ProcedureRelationId:
-	case AttributeRelationId:
-	case RelationRelationId:
 		/*
-		 * we cannot touch these relations at very early phase in bootstrap
+		 * We cannot access relation caches on very early phase
+		 * in bootstrap, so it assumes tables has default security
+		 * context and unlabeled by initdb.
 		 */
-		if (IsBootstrapProcessingMode())
-		{
-			Oid security_id;
-
-			security_id = sepgsqlClientCreateSid(sepgsqlGetDatabaseSecurityId(),
-												 SECCLASS_DB_TABLE);
-			HeapTupleSetSecurity(tuple, security_id);
-			break;
-		}
-	default:
-		reltup = SearchSysCache(RELOID,
-								ObjectIdGetDatum(attForm->attrelid),
-								0, 0, 0);
-		if (!HeapTupleIsValid(reltup))
-			elog(ERROR, "SELinux: cache lookup failed for relation %u",
-				 attForm->attrelid);
-		clsForm = (Form_pg_class) GETSTRUCT(reltup);
-
-		security_id = sepgsqlClientCreateSid(HeapTupleGetSecurity(reltup),
-											 (clsForm->relkind == RELKIND_RELATION
-											  ? SECCLASS_DB_COLUMN
-											  : SECCLASS_DB_TUPLE));
-		HeapTupleSetSecurity(tuple, security_id);
-		
-		ReleaseSysCache(reltup);
-		break;
+		tblsid = sepgsqlClientCreateSid(sepgsqlGetDatabaseSecurityId(),
+										SECCLASS_DB_TABLE);
 	}
-	return;
+	else
+	{
+		HeapTuple reltup
+			= SearchSysCache(RELOID,
+							 ObjectIdGetDatum(RelationGetRelid(rel)),
+							 0, 0, 0);
+		if (!HeapTupleIsValid(reltup))
+			elog(ERROR, "SELinux: cache lookup failed for relation: %u",
+				 RelationGetRelid(rel));
+
+		tblsid = HeapTupleGetSecurity(reltup);
+
+		ReleaseSysCache(reltup);
+	}
+
+	return sepgsqlClientCreateSid(tblsid, SECCLASS_DB_TUPLE);
 }
 
-static void
-setDefaultContextProcedure(Relation rel, HeapTuple tuple)
-{
-	Oid security_id;
-
-	security_id = sepgsqlClientCreateSid(sepgsqlGetDatabaseSecurityId(),
-										 SECCLASS_DB_PROCEDURE);
-	HeapTupleSetSecurity(tuple, security_id);
-}
-
-static void
-setDefaultContextLargeObject(Relation rel, HeapTuple tuple)
+static Oid
+sepgsqlDefaultBlobContext(Relation rel, HeapTuple tuple)
 {
 	/*
 	 * NOTE:
-	 * A new tuple to be inserted into pg_largeobject inheris
-	 * security context of tuple with same large object id.
-	 * We can scan it with SnapshotNow because lo_create invokes
-	 * CommandCounterIncrement() just after create a new large
-	 * object.
+	 * A new tuple to be inserted into pg_largeobject inherits
+	 * a security context of prior tuples of same large object.
+	 * The "SnapshotNow" is available for this purpose because
+	 * lo_create() invokes CommandCounterIncrement() just after
+	 * creation of a new large object.
 	 *
-	 * If no page found, it means this action is to insert the
-	 * first page, or user run INSERT INTO ... statement with
-	 * multiple tuples with same loid.
-	 * However, these newly inserted tuples are labeled by
-	 * TYPE_TRANSITION rules in both cases. So, there are
-	 * no differences.
+	 * If we can find no prior tuples, it means this action to
+	 * insert the first page, or client invokes INSERT INTO ...
+	 * with multiple tuples with same loid. However, these
+	 * tuples are labeled by same TYPE_TRANSITION rules in both
+	 * cases. So, there are no differences.
 	 */
 	Form_pg_largeobject loForm
 		= (Form_pg_largeobject) GETSTRUCT(tuple);
 	ScanKeyData		skey;
 	SysScanDesc		scan;
 	HeapTuple		lotup;
-	Oid				security_id = InvalidOid;
+	Oid				newsid = InvalidOid;
 
 	ScanKeyInit(&skey,
 				Anum_pg_largeobject_loid,
@@ -539,84 +592,52 @@ setDefaultContextLargeObject(Relation rel, HeapTuple tuple)
 							  SnapshotNow, 1, &skey);
 	while ((lotup = systable_getnext(scan)) != NULL)
 	{
-		security_id = HeapTupleGetSecurity(lotup);
-		if (security_id != InvalidOid)
+		newsid = HeapTupleGetSecurity(lotup);
+		if (OidIsValid(newsid))
 			break;
 	}
 	systable_endscan(scan);
 
-	if (security_id == InvalidOid)
+	if (!OidIsValid(newsid))
 	{
-		security_id = sepgsqlClientCreateSid(sepgsqlGetDatabaseSecurityId(),
-											 SECCLASS_DB_BLOB);
+		newsid = sepgsqlClientCreateSid(sepgsqlGetDatabaseSecurityId(),
+										SECCLASS_DB_BLOB);
 	}
-	HeapTupleSetSecurity(tuple, security_id);
+
+	return newsid;
 }
+
 
 void
 sepgsqlSetDefaultContext(Relation rel, HeapTuple tuple)
 {
-	HeapTuple reltup;
-	Oid security_id;
+	security_class_t tclass;
+	Oid newsid;
 
-	switch (RelationGetRelid(rel))
+	Assert(HeapTupleHasSecurity(tuple));
+	tclass = sepgsqlTupleObjectClass(RelationGetRelid(rel), tuple);
+
+	switch (tclass)
 	{
-		case DatabaseRelationId:
-			setDefaultContextDatabase(rel, tuple);
-			return;
-
-		case RelationRelationId:
-			{
-				Form_pg_class clsForm
-					= (Form_pg_class) GETSTRUCT(tuple);
-
-				if (clsForm->relkind == RELKIND_RELATION)
-				{
-					setDefaultContextRelation(rel, tuple);
-					return;
-				}
-			}
+		case SECCLASS_DB_DATABASE:
+			newsid = sepgsqlDefaultDatabaseContext(rel, tuple);
 			break;
-
-		case AttributeRelationId:
-			setDefaultContextAttribute(rel, tuple);
-			return;
-
-		case ProcedureRelationId:
-			setDefaultContextProcedure(rel, tuple);
-			return;
-
-		case LargeObjectRelationId:
-			setDefaultContextLargeObject(rel, tuple);
-			return;
-
-		case TypeRelationId:
-			if (IsBootstrapProcessingMode())
-			{
-				/*
-				 * we cannot touch system cache in very early phase
-				 */
-				security_id = sepgsqlClientCreateSid(sepgsqlGetDatabaseSecurityId(),
-													 SECCLASS_DB_TABLE);
-				HeapTupleSetSecurity(tuple, security_id);
-
-				return;
-			}
+		case SECCLASS_DB_TABLE:
+			newsid = sepgsqlDefaultTableContext(rel, tuple);
+			break;
+		case SECCLASS_DB_PROCEDURE:
+			newsid = sepgsqlDefaultProcedureContext(rel, tuple);
+			break;
+		case SECCLASS_DB_COLUMN:
+			newsid = sepgsqlDefaultColumnContext(rel, tuple);
+			break;
+		case SECCLASS_DB_BLOB:
+			newsid = sepgsqlDefaultBlobContext(rel, tuple);
+			break;
+		default: /* SECCLASS_DB_TUPLE */
+			newsid = sepgsqlDefaultTupleContext(rel, tuple);
 			break;
 	}
-	/*
-	 * normal or user defined relation
-	 */
-	reltup = SearchSysCache(RELOID,
-							ObjectIdGetDatum(RelationGetRelid(rel)),
-							0, 0, 0);
-	if (!HeapTupleIsValid(reltup))
-		elog(ERROR, "SELinux: cache lookup failed for relation %u",
-			 RelationGetRelid(rel));
 
-	security_id = sepgsqlClientCreateSid(HeapTupleGetSecurity(reltup),
-										 SECCLASS_DB_TUPLE);
-	HeapTupleSetSecurity(tuple, security_id);
-
-	ReleaseSysCache(reltup);
+	HeapTupleSetSecurity(tuple, newsid);
 }

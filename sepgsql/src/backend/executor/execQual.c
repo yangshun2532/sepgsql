@@ -1624,7 +1624,7 @@ ExecMakeTableFunctionResult(ExprState *funcexpr,
 					/*
 					 * Scalar type, so make a single-column descriptor
 					 */
-					tupdesc = CreateTemplateTupleDesc(1, false);
+					tupdesc = CreateTemplateTupleDesc(1, false, false);
 					TupleDescInitEntry(tupdesc,
 									   (AttrNumber) 1,
 									   "column",

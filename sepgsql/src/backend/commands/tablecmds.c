@@ -3041,6 +3041,7 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 	int32		typmod;
 	Form_pg_type tform;
 	Expr	   *defval;
+	bool		with_security;
 
 	attrdesc = heap_open(AttributeRelationId, RowExclusiveLock);
 
@@ -3125,6 +3126,7 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 
 	attributeTuple = heap_addheader(Natts_pg_attribute,
 									false,
+									RelationGetDescr(attrdesc)->tdhassecurity,
 									ATTRIBUTE_TUPLE_SIZE,
 									(void *) &attributeD);
 

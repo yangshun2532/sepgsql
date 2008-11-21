@@ -100,7 +100,7 @@
 
 
 static TupleDesc ExecTypeFromTLInternal(List *targetList,
-					   bool hasoid, bool skipjunk);
+					   bool hasoid, bool hassecurity, bool skipjunk);
 
 
 /* ----------------------------------------------------------------
@@ -921,9 +921,9 @@ ExecInitNullTupleSlot(EState *estate, TupleDesc tupType)
  * ----------------------------------------------------------------
  */
 TupleDesc
-ExecTypeFromTL(List *targetList, bool hasoid)
+ExecTypeFromTL(List *targetList, bool hasoid, bool hassecurity)
 {
-	return ExecTypeFromTLInternal(targetList, hasoid, false);
+	return ExecTypeFromTLInternal(targetList, hasoid, hassecurity, false);
 }
 
 /* ----------------------------------------------------------------
@@ -933,13 +933,14 @@ ExecTypeFromTL(List *targetList, bool hasoid)
  * ----------------------------------------------------------------
  */
 TupleDesc
-ExecCleanTypeFromTL(List *targetList, bool hasoid)
+ExecCleanTypeFromTL(List *targetList, bool hasoid, bool hassecurity)
 {
-	return ExecTypeFromTLInternal(targetList, hasoid, true);
+	return ExecTypeFromTLInternal(targetList, hasoid, hassecurity, true);
 }
 
 static TupleDesc
-ExecTypeFromTLInternal(List *targetList, bool hasoid, bool skipjunk)
+ExecTypeFromTLInternal(List *targetList,
+					   bool hasoid, bool hassecurity, bool skipjunk)
 {
 	TupleDesc	typeInfo;
 	ListCell   *l;
@@ -950,7 +951,7 @@ ExecTypeFromTLInternal(List *targetList, bool hasoid, bool skipjunk)
 		len = ExecCleanTargetListLength(targetList);
 	else
 		len = ExecTargetListLength(targetList);
-	typeInfo = CreateTemplateTupleDesc(len, hasoid);
+	typeInfo = CreateTemplateTupleDesc(len, hasoid, hassecurity);
 
 	foreach(l, targetList)
 	{
@@ -982,7 +983,7 @@ ExecTypeFromExprList(List *exprList)
 	int			cur_resno = 1;
 	char		fldname[NAMEDATALEN];
 
-	typeInfo = CreateTemplateTupleDesc(list_length(exprList), false);
+	typeInfo = CreateTemplateTupleDesc(list_length(exprList), false, false);
 
 	foreach(l, exprList)
 	{

@@ -208,8 +208,7 @@ bool
 SystemAttributeIsWritable(AttrNumber attno, bool relhasoids)
 {
 #ifdef SECURITY_SYSATTR_NAME
-	if (pgaceSecurityAttributeNecessary()
-		&& attno == SecurityAttributeNumber)
+	if (attno == SecurityAttributeNumber)
 		return true;
 #endif
 	return false;
@@ -299,6 +298,11 @@ heap_create(const char *relname,
 	 */
 	if (reltablespace == MyDatabaseTableSpace)
 		reltablespace = InvalidOid;
+
+	/*
+	 * Fixup tupDesc->tdhassecurity
+	 */
+	tupDesc->tdhassecurity = pgaceTupleDescHasSecurity(relid, relkind);
 
 	/*
 	 * build the relcache entry.
@@ -531,6 +535,7 @@ AddNewAttributeTuples(Oid new_rel_oid,
 
 		tup = heap_addheader(Natts_pg_attribute,
 							 false,
+							 RelationGetDescr(rel)->tdhassecurity,
 							 ATTRIBUTE_TUPLE_SIZE,
 							 (void *) *dpp);
 		pgaceCreateAttributeCommon(rel, tup, pgace_attr_list);
@@ -569,6 +574,7 @@ AddNewAttributeTuples(Oid new_rel_oid,
 
 				tup = heap_addheader(Natts_pg_attribute,
 									 false,
+									 RelationGetDescr(rel)->tdhassecurity,
 									 ATTRIBUTE_TUPLE_SIZE,
 									 (void *) *dpp);
 				attStruct = (Form_pg_attribute) GETSTRUCT(tup);

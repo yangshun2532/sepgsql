@@ -114,7 +114,7 @@ ConstructTupleDescriptor(Relation heapRelation,
 	/*
 	 * allocate the new tuple descriptor
 	 */
-	indexTupDesc = CreateTemplateTupleDesc(numatts, false);
+	indexTupDesc = CreateTemplateTupleDesc(numatts, false, false);
 
 	/*
 	 * For simple index columns, we copy the pg_attribute row from the parent
@@ -315,6 +315,7 @@ AppendAttributeTuples(Relation indexRelation, int numatts)
 
 		new_tuple = heap_addheader(Natts_pg_attribute,
 								   false,
+								   RelationGetDescr(pg_attribute)->tdhassecurity,
 								   ATTRIBUTE_TUPLE_SIZE,
 								   (void *) indexTupDesc->attrs[i]);
 
