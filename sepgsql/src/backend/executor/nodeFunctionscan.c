@@ -171,7 +171,7 @@ ExecInitFunctionScan(FunctionScan *node, EState *estate, int eflags)
 		/* Base data type, i.e. scalar */
 		char	   *attname = strVal(linitial(node->funccolnames));
 
-		tupdesc = CreateTemplateTupleDesc(1, false);
+		tupdesc = CreateTemplateTupleDesc(1, false, false);
 		TupleDescInitEntry(tupdesc,
 						   (AttrNumber) 1,
 						   attname,

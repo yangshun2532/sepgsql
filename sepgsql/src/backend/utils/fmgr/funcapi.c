@@ -1024,7 +1024,7 @@ build_function_result_tupdesc_d(Datum proallargtypes,
 	if (numoutargs < 2)
 		return NULL;
 
-	desc = CreateTemplateTupleDesc(numoutargs, false);
+	desc = CreateTemplateTupleDesc(numoutargs, false, false);
 	for (i = 0; i < numoutargs; i++)
 	{
 		TupleDescInitEntry(desc, i + 1,
@@ -1139,7 +1139,7 @@ TypeGetTupleDesc(Oid typeoid, List *colaliases)
 		/* OK, get the column alias */
 		attname = strVal(linitial(colaliases));
 
-		tupdesc = CreateTemplateTupleDesc(1, false);
+		tupdesc = CreateTemplateTupleDesc(1, false, false);
 		TupleDescInitEntry(tupdesc,
 						   (AttrNumber) 1,
 						   attname,

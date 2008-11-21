@@ -292,8 +292,7 @@ static bool CopyGetInt16(CopyState cstate, int16 *val);
  */
 #ifdef SECURITY_SYSATTR_NAME
 #define IsWritableSecurityAttribute(attnum)		\
-	((attnum) == SecurityAttributeNumber		\
-	 && pgaceSecurityAttributeNecessary())
+	((attnum) == SecurityAttributeNumber)
 #else
 #define IsWritableSecurityAttribute(attnum)		(false)
 #endif

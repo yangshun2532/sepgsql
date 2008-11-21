@@ -55,6 +55,7 @@
 #include "optimizer/prep.h"
 #include "optimizer/var.h"
 #include "rewrite/rewriteDefine.h"
+#include "security/pgace.h"
 #include "storage/fd.h"
 #include "storage/lmgr.h"
 #include "storage/smgr.h"
@@ -328,9 +329,14 @@ AllocateRelationDesc(Relation relation, Form_pg_class relp)
 	/* initialize relation tuple form */
 	relation->rd_rel = relationForm;
 
-	/* and allocate attribute tuple form storage */
+	/*
+	 * and allocate attribute tuple form storage
+	 *
+	 * Please note it assumes tdhassecurity is set to false, because it can
+	 * be fixed up at RelationBuildTupleDesc().
+	 */
 	relation->rd_att = CreateTemplateTupleDesc(relationForm->relnatts,
-											   relationForm->relhasoids);
+											   relationForm->relhasoids, false);
 	/* which we mark as a reference-counted tupdesc */
 	relation->rd_att->tdrefcount = 1;
 
@@ -430,6 +436,9 @@ RelationBuildTupleDesc(Relation relation)
 	relation->rd_att->tdtypeid = relation->rd_rel->reltype;
 	relation->rd_att->tdtypmod = -1;	/* unnecessary, but... */
 	relation->rd_att->tdhasoid = relation->rd_rel->relhasoids;
+	relation->rd_att->tdhassecurity
+		= pgaceTupleDescHasSecurity(RelationGetRelid(relation),
+									RelationGetForm(relation)->relkind);
 
 	constr = (TupleConstr *) MemoryContextAlloc(CacheMemoryContext,
 												sizeof(TupleConstr));
@@ -1370,6 +1379,7 @@ formrdesc(const char *relationName, Oid relationReltype,
 	Relation	relation;
 	int			i;
 	bool		has_not_null;
+	bool		has_security;
 
 	/*
 	 * allocate new relation desc, clear all fields of reldesc
@@ -1428,7 +1438,8 @@ formrdesc(const char *relationName, Oid relationReltype,
 	 * because it will never be replaced.  The input values must be correctly
 	 * defined by macros in src/include/catalog/ headers.
 	 */
-	relation->rd_att = CreateTemplateTupleDesc(natts, hasoids);
+	has_security = pgaceTupleDescHasSecurity(att[0].attrelid, RELKIND_RELATION);
+	relation->rd_att = CreateTemplateTupleDesc(natts, hasoids, has_security);
 	relation->rd_att->tdrefcount = 1;	/* mark as refcounted */
 
 	relation->rd_att->tdtypeid = relationReltype;
@@ -2687,7 +2698,8 @@ RelationCacheInitializePhase2(void)
  * extracting fields.
  */
 static TupleDesc
-BuildHardcodedDescriptor(int natts, Form_pg_attribute attrs, bool hasoids)
+BuildHardcodedDescriptor(int natts, Form_pg_attribute attrs,
+						 bool hasoids, bool hassecurity)
 {
 	TupleDesc	result;
 	MemoryContext oldcxt;
@@ -2695,7 +2707,7 @@ BuildHardcodedDescriptor(int natts, Form_pg_attribute attrs, bool hasoids)
 
 	oldcxt = MemoryContextSwitchTo(CacheMemoryContext);
 
-	result = CreateTemplateTupleDesc(natts, hasoids);
+	result = CreateTemplateTupleDesc(natts, hasoids, hassecurity);
 	result->tdtypeid = RECORDOID;		/* not right, but we don't care */
 	result->tdtypmod = -1;
 
@@ -2723,9 +2735,14 @@ GetPgClassDescriptor(void)
 
 	/* Already done? */
 	if (pgclassdesc == NULL)
+	{
+		bool has_security
+			= pgaceTupleDescHasSecurity(RelationRelationId,
+										RELKIND_RELATION);
 		pgclassdesc = BuildHardcodedDescriptor(Natts_pg_class,
 											   Desc_pg_class,
-											   true);
+											   true, has_security);
+	}
 
 	return pgclassdesc;
 }
@@ -2737,9 +2754,14 @@ GetPgIndexDescriptor(void)
 
 	/* Already done? */
 	if (pgindexdesc == NULL)
+	{
+		bool has_security
+			= pgaceTupleDescHasSecurity(IndexRelationId,
+										RELKIND_RELATION);
 		pgindexdesc = BuildHardcodedDescriptor(Natts_pg_index,
 											   Desc_pg_index,
-											   false);
+											   false, has_security);
+	}
 
 	return pgindexdesc;
 }
@@ -3378,6 +3400,7 @@ load_relcache_init_file(void)
 		Relation	rel;
 		Form_pg_class relform;
 		bool		has_not_null;
+		bool		has_security;
 
 		/* first read the relation descriptor length */
 		if ((nread = fread(&len, 1, sizeof(len), fp)) != sizeof(len))
@@ -3415,8 +3438,11 @@ load_relcache_init_file(void)
 		rel->rd_rel = relform;
 
 		/* initialize attribute tuple forms */
+		has_security = pgaceTupleDescHasSecurity(RelationGetRelid(rel),
+												 relform->relkind);
 		rel->rd_att = CreateTemplateTupleDesc(relform->relnatts,
-											  relform->relhasoids);
+											  relform->relhasoids,
+											  has_security);
 		rel->rd_att->tdrefcount = 1;	/* mark as refcounted */
 
 		rel->rd_att->tdtypeid = relform->reltype;
