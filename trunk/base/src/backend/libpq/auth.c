@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/libpq/auth.c,v 1.171 2008/11/18 13:10:20 petere Exp $
+ *	  $PostgreSQL: pgsql/src/backend/libpq/auth.c,v 1.174 2008/11/20 20:45:30 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -112,6 +112,14 @@ ULONG(*__ldap_start_tls_sA) (
 
 static int	CheckLDAPAuth(Port *port);
 #endif /* USE_LDAP */
+
+/*----------------------------------------------------------------
+ * Cert authentication
+ *----------------------------------------------------------------
+ */
+#ifdef USE_SSL
+static int	CheckCertAuth(Port *port);
+#endif
 
 
 /*----------------------------------------------------------------
@@ -275,6 +283,40 @@ ClientAuthentication(Port *port)
 				 errmsg("missing or erroneous pg_hba.conf file"),
 				 errhint("See server log for details.")));
 
+	/*
+	 * This is the first point where we have access to the hba record for
+	 * the current connection, so perform any verifications based on the
+	 * hba options field that should be done *before* the authentication
+	 * here.
+	 */
+	if (port->hba->clientcert)
+	{
+		/*
+		 * When we parse pg_hba.conf, we have already made sure that we have
+		 * been able to load a certificate store. Thus, if a certificate is
+		 * present on the client, it has been verified against our root
+		 * certificate store, and the connection would have been aborted
+		 * already if it didn't verify ok.
+		 */
+#ifdef USE_SSL
+		if (!port->peer)
+		{
+			ereport(FATAL,
+					(errcode(ERRCODE_INVALID_AUTHORIZATION_SPECIFICATION),
+					 errmsg("connection requires a valid client certificate")));
+		}
+#else
+		/*
+		 * hba.c makes sure hba->clientcert can't be set unless OpenSSL
+		 * is present.
+		 */
+		Assert(false);
+#endif
+	}
+
+	/*
+	 * Now proceed to do the actual authentication check
+	 */
 	switch (port->hba->auth_method)
 	{
 		case uaReject:
@@ -371,6 +413,10 @@ ClientAuthentication(Port *port)
 			break;
 
 		case uaMD5:
+			if (Db_user_namespace)
+				ereport(FATAL,
+						(errcode(ERRCODE_INVALID_AUTHORIZATION_SPECIFICATION),
+						 errmsg("MD5 authentication is not supported when \"db_user_namespace\" is enabled")));
 			sendAuthRequest(port, AUTH_REQ_MD5);
 			status = recv_and_check_password_packet(port);
 			break;
@@ -392,6 +438,14 @@ ClientAuthentication(Port *port)
 		case uaLDAP:
 #ifdef USE_LDAP
 			status = CheckLDAPAuth(port);
+#else
+			Assert(false);
+#endif
+			break;
+
+		case uaCert:
+#ifdef USE_SSL
+			status = CheckCertAuth(port);
 #else
 			Assert(false);
 #endif
@@ -2086,3 +2140,28 @@ CheckLDAPAuth(Port *port)
 }
 #endif   /* USE_LDAP */
 
+
+/*----------------------------------------------------------------
+ * SSL client certificate authentication
+ *----------------------------------------------------------------
+ */
+#ifdef USE_SSL
+static int
+CheckCertAuth(Port *port)
+{
+	Assert(port->ssl);
+
+	/* Make sure we have received a username in the certificate */
+	if (port->peer_cn == NULL ||
+		strlen(port->peer_cn) <= 0)
+	{
+		ereport(LOG,
+				(errmsg("Certificate login failed for user \"%s\": client certificate contains no username",
+						port->user_name)));
+		return STATUS_ERROR;
+	}
+
+	/* Just pass the certificate CN to the usermap check */
+	return check_usermap(port->hba->usermap, port->user_name, port->peer_cn, false);
+}
+#endif
