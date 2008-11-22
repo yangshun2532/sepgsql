@@ -10,7 +10,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/libpq/hba.c,v 1.172 2008/10/28 12:10:43 mha Exp $
+ *	  $PostgreSQL: pgsql/src/backend/libpq/hba.c,v 1.175 2008/11/20 20:45:30 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -846,7 +846,16 @@ parse_hba_line(List *line, int line_num, HbaLine *parsedline)
 	else if (strcmp(token, "reject") == 0)
 		parsedline->auth_method = uaReject;
 	else if (strcmp(token, "md5") == 0)
+	{
+		if (Db_user_namespace)
+		{
+			ereport(LOG,
+					(errcode(ERRCODE_CONFIG_FILE_ERROR),
+					 errmsg("MD5 authentication is not supported when \"db_user_namespace\" is enabled")));
+			return false;
+		}
 		parsedline->auth_method = uaMD5;
+	}
 	else if (strcmp(token, "pam") == 0)
 #ifdef USE_PAM
 		parsedline->auth_method = uaPAM;
@@ -858,6 +867,12 @@ parse_hba_line(List *line, int line_num, HbaLine *parsedline)
 		parsedline->auth_method = uaLDAP;
 #else
 		unsupauth = "ldap";
+#endif
+	else if (strcmp(token, "cert") == 0)
+#ifdef USE_SSL
+		parsedline->auth_method = uaCert;
+#else
+		unsupauth = "cert";
 #endif
 	else
 	{
@@ -893,6 +908,17 @@ parse_hba_line(List *line, int line_num, HbaLine *parsedline)
 		return false;
 	}
 
+	if (parsedline->conntype != ctHostSSL &&
+		parsedline->auth_method == uaCert)
+	{
+		ereport(LOG,
+				(errcode(ERRCODE_CONFIG_FILE_ERROR),
+				 errmsg("cert authentication is only supported on hostssl connections"),
+				 errcontext("line %d of configuration file \"%s\"",
+							line_num, HbaFileName)));
+		return false;
+	}
+
 	/* Parse remaining arguments */
 	while ((line_item = lnext(line_item)) != NULL)
 	{
@@ -923,9 +949,53 @@ parse_hba_line(List *line, int line_num, HbaLine *parsedline)
 				if (parsedline->auth_method != uaIdent &&
 					parsedline->auth_method != uaKrb5 &&
 					parsedline->auth_method != uaGSS &&
-					parsedline->auth_method != uaSSPI)
-					INVALID_AUTH_OPTION("map", "ident, krb5, gssapi and sspi");
+					parsedline->auth_method != uaSSPI &&
+					parsedline->auth_method != uaCert)
+					INVALID_AUTH_OPTION("map", "ident, krb5, gssapi, sspi and cert");
 				parsedline->usermap = pstrdup(c);
+			}
+			else if (strcmp(token, "clientcert") == 0)
+			{
+				/*
+				 * Since we require ctHostSSL, this really can never happen on non-SSL-enabled
+				 * builds, so don't bother checking for USE_SSL.
+				 */
+				if (parsedline->conntype != ctHostSSL)
+				{
+					ereport(LOG,
+							(errcode(ERRCODE_CONFIG_FILE_ERROR),
+							 errmsg("clientcert can only be configured for \"hostssl\" rows"),
+							 errcontext("line %d of configuration file \"%s\"",
+										line_num, HbaFileName)));
+					return false;
+				}
+				if (strcmp(c, "1") == 0)
+				{
+					if (!secure_loaded_verify_locations())
+					{
+						ereport(LOG,
+								(errcode(ERRCODE_CONFIG_FILE_ERROR),
+								 errmsg("client certificates can only be checked if a root certificate store is available"),
+								 errdetail("make sure the root certificate store is present and readable"),
+								 errcontext("line %d of configuration file \"%s\"",
+											line_num, HbaFileName)));
+						return false;
+					}
+					parsedline->clientcert = true;
+				}
+				else
+				{
+					if (parsedline->auth_method == uaCert)
+					{
+						ereport(LOG,
+								(errcode(ERRCODE_CONFIG_FILE_ERROR),
+								 errmsg("clientcert can not be set to 0 when using \"cert\" authentication"),
+								 errcontext("line %d of configuration file \"%s\"",
+											line_num, HbaFileName)));
+						return false;
+					}
+					parsedline->clientcert = false;
+				}
 			}
 			else if (strcmp(token, "pamservice") == 0)
 			{
@@ -988,6 +1058,14 @@ parse_hba_line(List *line, int line_num, HbaLine *parsedline)
 	if (parsedline->auth_method == uaLDAP)
 	{
 		MANDATORY_AUTH_ARG(parsedline->ldapserver, "ldapserver", "ldap");
+	}
+
+	/*
+	 * Enforce any parameters implied by other settings.
+	 */
+	if (parsedline->auth_method == uaCert)
+	{
+		parsedline->clientcert = true;
 	}
 	
 	return true;
