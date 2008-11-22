@@ -742,18 +742,14 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 				{
 					PlanState  *subplan = appendplans[i];
 					Relation	resultRel = resultRelInfo->ri_RelationDesc;
-					bool		has_security;
 					JunkFilter *j;
 
 					if (operation == CMD_UPDATE)
 						ExecCheckPlanOutput(resultRel, subplan->plan->targetlist);
 
-					has_security
-					 = pgaceTupleDescHasSecurity(RelationGetRelid(resultRel),
-												 RelationGetForm(resultRel)->relkind);
 					j = ExecInitJunkFilter(subplan->plan->targetlist,
 										   RelationGetDescr(resultRel)->tdhasoid,
-										   has_security,
+										   RelationGetDescr(resultRel)->tdhassecurity,
 										   ExecAllocTableSlot(estate->es_tupleTable));
 					/*
 					 * Since it must be UPDATE/DELETE, there had better be a
