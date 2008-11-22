@@ -2698,8 +2698,7 @@ RelationCacheInitializePhase2(void)
  * extracting fields.
  */
 static TupleDesc
-BuildHardcodedDescriptor(int natts, Form_pg_attribute attrs,
-						 bool hasoids, bool hassecurity)
+BuildHardcodedDescriptor(int natts, Form_pg_attribute attrs, bool hasoids)
 {
 	TupleDesc	result;
 	MemoryContext oldcxt;
@@ -2707,7 +2706,12 @@ BuildHardcodedDescriptor(int natts, Form_pg_attribute attrs,
 
 	oldcxt = MemoryContextSwitchTo(CacheMemoryContext);
 
-	result = CreateTemplateTupleDesc(natts, hasoids, hassecurity);
+	/*
+	 * NOTE: we assume the generated TupleDesc is not delivered to
+	 * heap_form_tuple(), so pgaceTupleDescHasSecurity() can be
+	 * omitted.
+	 */
+	result = CreateTemplateTupleDesc(natts, hasoids, false);
 	result->tdtypeid = RECORDOID;		/* not right, but we don't care */
 	result->tdtypmod = -1;
 
@@ -2735,14 +2739,9 @@ GetPgClassDescriptor(void)
 
 	/* Already done? */
 	if (pgclassdesc == NULL)
-	{
-		bool has_security
-			= pgaceTupleDescHasSecurity(RelationRelationId,
-										RELKIND_RELATION);
 		pgclassdesc = BuildHardcodedDescriptor(Natts_pg_class,
 											   Desc_pg_class,
-											   true, has_security);
-	}
+											   true);
 
 	return pgclassdesc;
 }
@@ -2754,14 +2753,9 @@ GetPgIndexDescriptor(void)
 
 	/* Already done? */
 	if (pgindexdesc == NULL)
-	{
-		bool has_security
-			= pgaceTupleDescHasSecurity(IndexRelationId,
-										RELKIND_RELATION);
 		pgindexdesc = BuildHardcodedDescriptor(Natts_pg_index,
 											   Desc_pg_index,
-											   false, has_security);
-	}
+											   false);
 
 	return pgindexdesc;
 }
