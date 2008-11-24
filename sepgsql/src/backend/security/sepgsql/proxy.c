@@ -1374,10 +1374,13 @@ sepgsqlProcessUtility(Node *parsetree, ParamListInfo params, bool isTopLevel)
 		case T_TruncateStmt:
 			checkTruncateStmt((TruncateStmt *) parsetree);
 			break;
+
+		case T_LoadStmt:
+			sepgsqlCheckModuleInstallPerms(((LoadStmt *)parsetree)->filename);
+			break;
+
 		default:
-			/*
-			 * do nothing
-			 */
+			/* do nothing */
 			break;
 	}
 }

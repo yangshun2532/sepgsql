@@ -231,4 +231,7 @@ extern void sepgsqlSetDefaultContext(Relation rel, HeapTuple tuple);
 
 extern bool sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple,
 								   HeapTuple oldtup, uint32 perms, bool abort);
+
+extern void sepgsqlCheckModuleInstallPerms(const char *filename);
+
 #endif   /* SEPGSQL_H */
