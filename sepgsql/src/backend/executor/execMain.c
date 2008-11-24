@@ -1261,8 +1261,11 @@ bool ExecContextForcesSecurity(PlanState *planstate, bool *hassecurity)
 {
 	if (planstate->state->es_select_into)
 	{
-		*hassecurity = pgaceTupleDescHasSecurity(InvalidOid,
-												 RELKIND_RELATION);
+		IntoClause *into = planstate->state->es_plannedstmt->intoClause;
+
+		Assert(into != NULL);
+
+		*hassecurity = pgaceTupleDescHasSecurity(NULL, into->options);
 		return true;
 	}
 	else
@@ -1271,11 +1274,7 @@ bool ExecContextForcesSecurity(PlanState *planstate, bool *hassecurity)
 
 		if (ri && ri->ri_RelationDesc)
 		{
-			Oid relid = RelationGetRelid(ri->ri_RelationDesc);
-			char relkind = RelationGetForm(ri->ri_RelationDesc)->relkind;
-
-			*hassecurity = pgaceTupleDescHasSecurity(relid, relkind);
-
+			*hassecurity = pgaceTupleDescHasSecurity(ri->ri_RelationDesc, NIL);
 			return true;
 		}
 	}

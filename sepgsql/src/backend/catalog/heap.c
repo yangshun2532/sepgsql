@@ -313,11 +313,6 @@ heap_create(const char *relname,
 		reltablespace = InvalidOid;
 
 	/*
-	 * Fixup tupDesc->tdhassecurity
-	 */
-	tupDesc->tdhassecurity = pgaceTupleDescHasSecurity(relid, relkind);
-
-	/*
 	 * build the relcache entry.
 	 */
 	rel = RelationBuildLocalRelation(relname,
@@ -1061,6 +1056,12 @@ heap_create_with_catalog(const char *relname,
 	 */
 	AddNewAttributeTuples(relid, new_rel_desc->rd_att, relkind,
 						  oidislocal, oidinhcount, pgace_attr_list);
+
+	/*
+	 * Fixup rel->rd_att->tdhassecurity
+	 */
+	new_rel_desc->rd_att->tdhassecurity
+		= pgaceTupleDescHasSecurity(new_rel_desc, NIL);
 
 	/*
 	 * Make a dependency link to force the relation to be deleted if its

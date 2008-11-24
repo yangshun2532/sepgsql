@@ -151,7 +151,7 @@ extern void sepgsqlLargeObjectGetSecurity(Relation rel, HeapTuple tuple);
 extern void sepgsqlLargeObjectSetSecurity(Relation rel, HeapTuple newtup, HeapTuple oldtup);
 
 /* Security Label hooks */
-extern bool  sepgsqlTupleDescHasSecurity(Oid relid, char relkind);
+extern bool  sepgsqlTupleDescHasSecurity(Relation rel, List *relopts);
 
 extern char *sepgsqlTranslateSecurityLabelIn(const char *context);
 

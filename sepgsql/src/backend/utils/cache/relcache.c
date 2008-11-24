@@ -332,11 +332,12 @@ AllocateRelationDesc(Relation relation, Form_pg_class relp)
 	/*
 	 * and allocate attribute tuple form storage
 	 *
-	 * Please note it assumes tdhassecurity is set to false, because it can
-	 * be fixed up at RelationBuildTupleDesc().
+	 * Please note that relation->rd_att->tdhassecurity should be fixed
+	 * up correctly at RelationBuildTupleDesc(), because security module
+	 * may need reloptions info to make its decision.
 	 */
 	relation->rd_att = CreateTemplateTupleDesc(relationForm->relnatts,
-											   relationForm->relhasoids, false);
+											   relationForm->relhasoids);
 	/* which we mark as a reference-counted tupdesc */
 	relation->rd_att->tdrefcount = 1;
 
@@ -436,9 +437,6 @@ RelationBuildTupleDesc(Relation relation)
 	relation->rd_att->tdtypeid = relation->rd_rel->reltype;
 	relation->rd_att->tdtypmod = -1;	/* unnecessary, but... */
 	relation->rd_att->tdhasoid = relation->rd_rel->relhasoids;
-	relation->rd_att->tdhassecurity
-		= pgaceTupleDescHasSecurity(RelationGetRelid(relation),
-									RelationGetForm(relation)->relkind);
 
 	constr = (TupleConstr *) MemoryContextAlloc(CacheMemoryContext,
 												sizeof(TupleConstr));
@@ -889,6 +887,10 @@ RelationBuildDesc(Oid targetRelId, Relation oldrelation)
 
 	/* extract reloptions if any */
 	RelationParseRelOptions(relation, pg_class_tuple);
+
+	/* fixup relation->rd_att->tdhassecurity */
+	relation->rd_att->tdhassecurity
+		= pgaceTupleDescHasSecurity(relation, NIL);
 
 	/*
 	 * initialize the relation lock manager information
@@ -1379,7 +1381,6 @@ formrdesc(const char *relationName, Oid relationReltype,
 	Relation	relation;
 	int			i;
 	bool		has_not_null;
-	bool		has_security;
 
 	/*
 	 * allocate new relation desc, clear all fields of reldesc
@@ -1438,8 +1439,7 @@ formrdesc(const char *relationName, Oid relationReltype,
 	 * because it will never be replaced.  The input values must be correctly
 	 * defined by macros in src/include/catalog/ headers.
 	 */
-	has_security = pgaceTupleDescHasSecurity(att[0].attrelid, RELKIND_RELATION);
-	relation->rd_att = CreateTemplateTupleDesc(natts, hasoids, has_security);
+	relation->rd_att = CreateTemplateTupleDesc(natts, hasoids);
 	relation->rd_att->tdrefcount = 1;	/* mark as refcounted */
 
 	relation->rd_att->tdtypeid = relationReltype;
@@ -1476,6 +1476,12 @@ formrdesc(const char *relationName, Oid relationReltype,
 	 */
 	RelationGetRelid(relation) = relation->rd_att->attrs[0]->attrelid;
 	relation->rd_rel->relfilenode = RelationGetRelid(relation);
+
+	/*
+	 * Fixup relation->rd_att->tdhassecurity
+	 */
+	RelationGetDescr(relation)->tdhassecurity
+		= pgaceTupleDescHasSecurity(relation, NIL);
 
 	/*
 	 * initialize the relation lock manager information
@@ -2707,11 +2713,13 @@ BuildHardcodedDescriptor(int natts, Form_pg_attribute attrs, bool hasoids)
 	oldcxt = MemoryContextSwitchTo(CacheMemoryContext);
 
 	/*
-	 * NOTE: we assume the generated TupleDesc is not delivered to
-	 * heap_form_tuple(), so pgaceTupleDescHasSecurity() can be
-	 * omitted.
+	 * NOTE: we assume the returned TupleDesc is only used for
+	 * references to toast'ed data, and it is not delivered to
+	 * heap_form_tuple(), so TupleDesc->tdhassecurity does not
+	 * give any effect.
+	 * We omit to invoke pgaceTupleDescHasSecurity() here.
 	 */
-	result = CreateTemplateTupleDesc(natts, hasoids, false);
+	result = CreateTemplateTupleDesc(natts, hasoids);
 	result->tdtypeid = RECORDOID;		/* not right, but we don't care */
 	result->tdtypmod = -1;
 
@@ -3394,7 +3402,6 @@ load_relcache_init_file(void)
 		Relation	rel;
 		Form_pg_class relform;
 		bool		has_not_null;
-		bool		has_security;
 
 		/* first read the relation descriptor length */
 		if ((nread = fread(&len, 1, sizeof(len), fp)) != sizeof(len))
@@ -3432,11 +3439,8 @@ load_relcache_init_file(void)
 		rel->rd_rel = relform;
 
 		/* initialize attribute tuple forms */
-		has_security = pgaceTupleDescHasSecurity(RelationGetRelid(rel),
-												 relform->relkind);
 		rel->rd_att = CreateTemplateTupleDesc(relform->relnatts,
-											  relform->relhasoids,
-											  has_security);
+											  relform->relhasoids);
 		rel->rd_att->tdrefcount = 1;	/* mark as refcounted */
 
 		rel->rd_att->tdtypeid = relform->reltype;
@@ -3471,6 +3475,12 @@ load_relcache_init_file(void)
 		{
 			rel->rd_options = NULL;
 		}
+
+		/*
+		 * fixup rel->rd_att->tdhassecurity
+		 */
+		rel->rd_att->tdhassecurity
+			= pgaceTupleDescHasSecurity(rel, NIL);
 
 		/* mark not-null status */
 		if (has_not_null)
