@@ -80,9 +80,9 @@ typedef struct tupleDesc
 }	*TupleDesc;
 
 
-extern TupleDesc CreateTemplateTupleDesc(int natts, bool hasoid, bool hassecurity);
+extern TupleDesc CreateTemplateTupleDesc(int natts, bool hasoid);
 
-extern TupleDesc CreateTupleDesc(int natts, bool hasoid, bool hassecurity,
+extern TupleDesc CreateTupleDesc(int natts, bool hasoid,
 				Form_pg_attribute *attrs);
 
 extern TupleDesc CreateTupleDescCopy(TupleDesc tupdesc);

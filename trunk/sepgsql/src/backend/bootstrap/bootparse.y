@@ -42,6 +42,7 @@
 #include "nodes/pg_list.h"
 #include "nodes/primnodes.h"
 #include "rewrite/prs2lock.h"
+#include "security/pgace.h"
 #include "storage/block.h"
 #include "storage/fd.h"
 #include "storage/ipc.h"
@@ -187,11 +188,7 @@ Boot_CreateStmt:
 
 					do_start();
 
-					/*
-					 * NOTE: heap_create() set a proper tupdesc->tdhassecurity,
-					 * so it assumes no security attribute here.
-					 */
-					tupdesc = CreateTupleDesc(numattr, !($4), false, attrtypes);
+					tupdesc = CreateTupleDesc(numattr, !($4), attrtypes);
 
 					if ($2)
 					{
@@ -209,6 +206,13 @@ Boot_CreateStmt:
 												   RELKIND_RELATION,
 												   $3,
 												   true);
+						/*
+						 * fixup boot_reldesc->rd_att->tdhassecurity
+						 */
+						boot_reldesc->rd_rel->relkind = RELKIND_RELATION;
+						boot_reldesc->rd_att->tdhassecurity
+						  = pgaceTupleDescHasSecurity(boot_reldesc, NIL);
+
 						elog(DEBUG4, "bootstrap relation created");
 					}
 					else
