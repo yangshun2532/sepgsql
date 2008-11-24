@@ -9,6 +9,7 @@
 #include "catalog/catalog.h"
 #include "catalog/pg_class.h"
 #include "catalog/pg_type.h"
+#include "commands/defrem.h"
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
@@ -19,6 +20,7 @@
 #include "utils/acl.h"
 #include "utils/array.h"
 #include "utils/fmgroids.h"
+#include "utils/guc.h"
 #include "utils/inval.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
@@ -28,12 +30,18 @@
  * static declarations
  */
 static void  proxySubQuery(Query *query);
-static void  rawAclTextToAclArray(const char *raw_acl, Acl **acl, Acl **defacl);
-static char *rawAclTextFromAclArray(Acl *acl, Acl *defacl);
-static void  aclArrayInput(const char *input, Acl **acl, Acl **defacl);
-static char *aclArrayOutput(Acl *acl, Acl *defacl);
+static Acl *rawAclTextToAclArray(const char *raw_acl);
+static char *rawAclTextFromAclArray(Acl *acl);
 
 #define ROW_ACL_ALL_PRIVS	(ACL_SELECT | ACL_UPDATE | ACL_DELETE | ACL_REFERENCES)
+
+#define RelationGetRowLevelAcl(relation)								\
+	((relation)->rd_options												\
+	 ? ((StdRdOptions *) (relation)->rd_options)->row_level_acl : false)
+
+#define RelationGetDefaultAcl(relation)									\
+	((relation)->rd_options												\
+	 ? ((StdRdOptions *) (relation)->rd_options)->default_row_acl : InvalidOid)
 
 /******************************************************************
  * Global system setting
@@ -267,7 +275,6 @@ static Acl *rowaclDefaultAclArray(Oid ownerId)
 	/*
 	 * All permissions to public in default
 	 */
-
 	acl = allocacl(1);
 	aip = ACL_DAT(acl);
 	aip->ai_grantee = ACL_ID_PUBLIC;
@@ -311,6 +318,13 @@ static bool rowaclCheckPermission(Relation rel, HeapTuple tuple, AclMode require
 
 	Assert((required & ~ROW_ACL_ALL_PRIVS) == 0);
 
+	/*
+	 * When the row-level permission is not available on scaned relation,
+	 * all ACLs are ignored.
+	 */
+	if (!RelationGetRowLevelAcl(rel))
+		return true;
+
 	if (rowaclUserInfo)
 	{
 		userId = rowaclUserInfo->userId;
@@ -336,9 +350,8 @@ static bool rowaclCheckPermission(Relation rel, HeapTuple tuple, AclMode require
 		else
 		{
 			char *raw_acl = pgaceLookupSecurityLabel(securityId);
-			Acl *acl, *defacl;
+			Acl *acl = rawAclTextToAclArray(raw_acl);
 
-			rawAclTextToAclArray(raw_acl, &acl, &defacl);
 			if (!acl)
 				acl = rowaclDefaultAclArray(ownerId);
 
@@ -380,10 +393,10 @@ bool rowaclCopyToTuple(Relation rel, List *attNumList, HeapTuple tuple)
 bool rowaclHeapTupleInsert(Relation rel, HeapTuple tuple,
 						   bool is_internal, bool with_returning)
 {
-	Acl *acl, *defacl;
-	char *rawacl;
+	if (!HeapTupleHasSecurity(tuple))
+		return true;
 
-	if (HeapTupleGetSecurity(tuple) != InvalidOid)
+	if (OidIsValid(HeapTupleGetSecurity(tuple)))
 	{
 		if (RelationGetForm(rel)->relkind != RELKIND_RELATION)
 			ereport(ERROR,
@@ -394,41 +407,11 @@ bool rowaclHeapTupleInsert(Relation rel, HeapTuple tuple,
 			ereport(ERROR,
 					(errcode(ERRCODE_ROW_ACL_ERROR),
 					 errmsg("Only owner or superuser can set ACL")));
-		/*
-		 * validate ACL
-		 */
-		rawacl = pgaceLookupSecurityLabel(HeapTupleGetSecurity(tuple));
-		rawAclTextToAclArray(rawacl, &acl, &defacl);
-		if (defacl && RelationGetRelid(rel) != RelationRelationId)
-				ereport(ERROR,
-						(errcode(ERRCODE_ROW_ACL_ERROR),
-						 errmsg("only pg_class can have default ACL")));
 	}
-	else if (!IsBootstrapProcessingMode())
+	else
 	{
-		HeapTuple reltup;
-		Oid securityId;
-
-		reltup = SearchSysCache(RELOID,
-								ObjectIdGetDatum(RelationGetRelid(rel)),
-								0, 0, 0);
-		if (!HeapTupleIsValid(reltup))
-			elog(ERROR, "cache lookup failed for relation %s",
-				 RelationGetRelationName(rel));
-		if (HeapTupleGetSecurity(reltup) != InvalidOid)
-		{
-			rawacl = pgaceLookupSecurityLabel(HeapTupleGetSecurity(reltup));
-			rawAclTextToAclArray(rawacl, &acl, &defacl);
-
-			if (defacl)
-			{
-				rawacl = rawAclTextFromAclArray(defacl, NULL);
-				securityId = pgaceLookupSecurityId(rawacl);
-
-				HeapTupleSetSecurity(tuple, securityId);
-			}
-		}
-		ReleaseSysCache(reltup);
+		/* set a default acl */
+		HeapTupleSetSecurity(tuple, RelationGetDefaultAcl(rel));
 	}
 
 	return true;
@@ -471,33 +454,21 @@ bool rowaclHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple newtup,
 {
 	HeapTuple oldtup = getHeapTupleFromItemPointer(rel, otid);
 
-	if (HeapTupleGetSecurity(newtup) == InvalidOid)
-	{
-		/*
-		 * Preserve Old ACL
-		 */
-		Oid securityId = HeapTupleGetSecurity(oldtup);
+	if (!HeapTupleHasSecurity(newtup))
+		return true;
 
-		HeapTupleSetSecurity(newtup, securityId);
+	if (!OidIsValid(HeapTupleGetSecurity(newtup)))
+	{
+		/* preserve old ACL */
+		HeapTupleSetSecurity(newtup, HeapTupleGetSecurity(oldtup));
 	}
 	else if (HeapTupleGetSecurity(newtup) != HeapTupleGetSecurity(oldtup))
 	{
-		Acl *acl, *defacl;
-		char *rawacl;
-
 		if (!is_internal &&
 			!pg_class_ownercheck(RelationGetRelid(rel), GetUserId()))
 			ereport(ERROR,
 					(errcode(ERRCODE_ROW_ACL_ERROR),
 					 errmsg("Only owner or superuser can set ACL")));
-
-		rawacl = pgaceLookupSecurityLabel(HeapTupleGetSecurity(newtup));
-		rawAclTextToAclArray(rawacl, &acl, &defacl);
-
-		if (defacl && RelationGetRelid(rel) != RelationRelationId)
-			ereport(ERROR,
-					(errcode(ERRCODE_ROW_ACL_ERROR),
-					 errmsg("only pg_class can have default ACL")));
 	}
 	return true;
 }
@@ -512,88 +483,81 @@ bool rowaclHeapTupleDelete(Relation rel, ItemPointer otid,
 }
 
 /******************************************************************
- * Default ACL support
+ * Security Label interfaces
  ******************************************************************/
 
-DefElem *rowaclGramSecurityItem(char *defname, char *value)
+bool rowaclGramRelationOption(const char *key, const char *value,
+							  StdRdOptions *result, bool validate)
 {
-	DefElem *node = NULL;
+	if (!value)
+		return false;	/* rowacl does not need default options */
 
-	if (strcmp(defname, "default_acl") == 0)
-		node = makeDefElem(pstrdup(defname),
-						   (Node *) makeString(value));
-	return node;
-}
+	if (pg_strcasecmp(key, "row_level_acl") == 0)
+	{
+		bool row_level_acl;
 
-bool rowaclIsGramSecurityItem(DefElem *defel)
-{
-	Assert(IsA(defel, DefElem));
+		if (!parse_bool(value, &row_level_acl))
+		{
+			if (validate)
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						 errmsg("row_level_acl must be a bool: \"%s\"", value)));
+			return false;
+		}
 
-	if (defel->defname &&
-		strcmp(defel->defname, "default_acl") == 0)
+		result->row_level_acl = row_level_acl;
 		return true;
+	}
+	else if (pg_strcasecmp(key, "default_row_acl") == 0)
+	{
+		Oid default_row_acl
+			= pgaceSecurityLabelToSid((char *)value);
+
+		if (!OidIsValid(default_row_acl))
+		{
+			if (validate)
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						 errmsg("default_row_acl must be a valid ACL: \"%s\"", value)));
+			return false;
+		}
+
+		result->default_row_acl = default_row_acl;
+		return true;
+	}
 
 	return false;
 }
 
-void rowaclGramCreateRelation(Relation rel, HeapTuple tuple, DefElem *defel)
+bool rowaclTupleDescHasSecurity(Relation rel, List *relopts)
 {
-	Acl *acl, *defacl;
-	char *defaclTxt;
-	Oid securityId;
+	ListCell *l;
 
-	if (!defel)
-		return;
+	if (rel)
+		return RelationGetRowLevelAcl(rel);
 
-	aclArrayInput(strVal(defel->arg), &acl, &defacl);
-	if (!acl || defacl)
-		ereport(ERROR,
-				(errcode(ERRCODE_ROW_ACL_ERROR),
-				 errmsg("invalid default ACL : %s", strVal(defel->arg))));
+	/* SELECT INTO case */
+	foreach (l, relopts)
+	{
+		DefElem *def = (DefElem *) lfirst(l);
 
-	defaclTxt = rawAclTextFromAclArray(NULL, acl);
-	securityId = pgaceLookupSecurityId(defaclTxt);
+		if (pg_strcasecmp(def->defname, "row_level_acl") == 0)
+			return defGetBoolean(def);
+	}
 
-	HeapTupleSetSecurity(tuple, securityId);
+	return false;	/* no 'row_level_acl' option */
 }
 
-void rowaclGramAlterRelation(Relation rel, HeapTuple tuple, DefElem *defel)
-{
-	Acl *acl, *defacl, *acl_old, *defacl_old;
-	char *rawacl, *defaclTxt;
-	Oid securityId;
-
-	if (!defel)
-		return;
-
-	aclArrayInput(strVal(defel->arg), &acl, &defacl);
-	if (!acl || defacl)
-		ereport(ERROR,
-				(errcode(ERRCODE_ROW_ACL_ERROR),
-				 errmsg("invalid default ACL : %s", strVal(defel->arg))));
-
-	/* lookup original one */
-	rawacl = pgaceLookupSecurityLabel(HeapTupleGetSecurity(tuple));
-	rawAclTextToAclArray(rawacl, &acl_old, &defacl_old);
-
-	defaclTxt = rawAclTextFromAclArray(acl_old, acl);
-	securityId = pgaceLookupSecurityId(defaclTxt);
-
-	HeapTupleSetSecurity(tuple, securityId);
-}
-
-/******************************************************************
- * Security Label interfaces
- ******************************************************************/
-static Acl *rawAclTokenToAclArray(char *rawacl)
+static Acl *rawAclTextToAclArray(const char *raw_acl)
 {
 	Acl *acl;
 	AclItem *aip;
-	char *tok, *sv;
+	char *copy, *tok, *sv = NULL;
 	int aclnum = 0;
 
-	aip = palloc(strlen(rawacl) * sizeof(AclItem) / 4);
-	for (tok = strtok_r(rawacl, ",", &sv);
+	copy = pstrdup(raw_acl);
+	aip = palloc(strlen(copy) * sizeof(AclItem) / 4);
+	for (tok = strtok_r(copy, ",", &sv);
 		 tok;
 		 tok = strtok_r(NULL, ",", &sv))
 	{
@@ -604,20 +568,25 @@ static Acl *rawAclTokenToAclArray(char *rawacl)
 			continue;
 		aclnum++;
 	}
+
+	if (aclnum == 0)
+		return NULL;
+
 	acl = allocacl(aclnum);
 	memcpy(ACL_DAT(acl), aip, aclnum * sizeof(AclItem));
 
 	pfree(aip);
+	pfree(copy);
 
 	check_acl(acl);
 
 	return acl;
 }
 
-static char *rawAclTokenFromAclArray(Acl *acl)
+static char *rawAclTextFromAclArray(Acl *acl)
 {
 	AclItem *aip = ACL_DAT(acl);
-	char *rawacl = palloc0(ACL_NUM(acl) * 30 + 10);
+	char *rawacl = palloc0(ACL_NUM(acl) * 30 + 10);	/* enough length */
 	int i, ofs = 0;
 
 	for (i = 0; i < ACL_NUM(acl); i++)
@@ -625,7 +594,7 @@ static char *rawAclTokenFromAclArray(Acl *acl)
 		if ((aip[i].ai_privs & ROW_ACL_ALL_PRIVS) != aip[i].ai_privs)
 			ereport(ERROR,
 					(errcode(ERRCODE_ROW_ACL_ERROR),
-					 errmsg("unsupported row-level ACL: %04x",
+					 errmsg("unsupported privileges in row_acl: %04x",
 							aip[i].ai_privs & ~ROW_ACL_ALL_PRIVS)));
 
 		ofs += sprintf(rawacl + ofs,
@@ -639,204 +608,79 @@ static char *rawAclTokenFromAclArray(Acl *acl)
 	return rawacl;
 }
 
-static void rawAclTextToAclArray(const char *raw_acl, Acl **acl, Acl **defacl)
-{
-	char *copy, *tok, *sv;
-
-	*acl = *defacl = NULL;
-
-	copy = pstrdup(raw_acl);
-	for (tok = strtok_r(copy, "/", &sv);
-		 tok;
-		 tok = strtok_r(NULL, "/", &sv))
-	{
-		if (strncmp(tok, "acl=", 4) == 0)
-		{
-			if (acl)
-				*acl = rawAclTokenToAclArray(tok + 4);
-		}
-		else if (strncmp(tok, "default=", 8) == 0)
-		{
-			if (defacl)
-				*defacl = rawAclTokenToAclArray(tok + 8);
-		}
-		else
-			elog(WARNING, "invalid row-level acl token: %s", tok);
-	}
-	pfree(copy);
-}
-
-static char *rawAclTextFromAclArray(Acl *acl, Acl *defacl)
-{
-	char *aclTxt = NULL;
-	char *defaclTxt = NULL;
-	char *result;
-	int ofs = 0, length = 0;
-
-	if (acl)
-	{
-		aclTxt = rawAclTokenFromAclArray(acl);
-		length += strlen(aclTxt) + 4;
-	}
-	if (defacl)
-	{
-		defaclTxt = rawAclTokenFromAclArray(defacl);
-		length += strlen(defaclTxt) + 8;
-	}
-
-	result = palloc(length + 2);
-	if (aclTxt)
-	{
-		ofs += sprintf(result + ofs, "%sacl=%s",
-					   (ofs==0 ? "" : "/"), aclTxt);
-		pfree(aclTxt);
-	}
-	if (defaclTxt)
-	{
-		ofs += sprintf(result + ofs, "%sdefault=%s",
-					   (ofs==0 ? "" : "/"), defaclTxt);
-		pfree(defaclTxt);
-	}
-
-	return result;
-}
-
-static void aclArrayInput(const char *input, Acl **acl, Acl **defacl)
+static Acl *aclArrayInput(char *acl_string)
 {
 	FmgrInfo finfo;
-	char *copy, *tok, *sv;
-	Datum tmp;
+	Acl *acl;
 
-	copy = pstrdup(input);
-	*acl = *defacl = NULL;
-	for (tok = strtok_r(copy, " ", &sv);
-		 tok;
-		 tok = strtok_r(NULL, " ", &sv))
+	if (acl_string[0] == '\0')
+		return NULL;
+
+	fmgr_info_cxt(F_ARRAY_IN, &finfo, CurrentMemoryContext);
+	acl = DatumGetAclP(FunctionCall3(&finfo,
+									 CStringGetDatum(acl_string),
+									 ObjectIdGetDatum(ACLITEMOID),
+									 Int32GetDatum(-1)));
+	if (ARR_NDIM(acl) == 0)
 	{
-		fmgr_info_cxt(F_ARRAY_IN, &finfo, CurrentMemoryContext);
-
-		if (strncmp(tok, "default=", 8) == 0)
-		{
-			tmp = FunctionCall3(&finfo,
-								CStringGetDatum(tok + 8),
-								ObjectIdGetDatum(ACLITEMOID),
-								Int32GetDatum(-1));
-			*defacl = DatumGetAclP(tmp);
-			if (ARR_NDIM(*defacl) == 0)
-			{
-				pfree(*defacl);
-				*defacl = allocacl(0);
-			}
-			check_acl(*defacl);
-		}
-		else
-		{
-			tmp = FunctionCall3(&finfo,
-                                CStringGetDatum(tok),
-                                ObjectIdGetDatum(ACLITEMOID),
-                                Int32GetDatum(-1));
-			*acl = DatumGetAclP(tmp);
-			if (ARR_NDIM(*acl) == 0)
-			{
-				pfree(*acl);
-				*acl = allocacl(0);
-			}
-			check_acl(*acl);
-		}
+		pfree(acl);
+		acl = allocacl(0);
 	}
+	check_acl(acl);
+
+	return acl;
 }
 
-static char *aclArrayOutput(Acl *acl, Acl *defacl)
+static char *aclArrayOutput(Acl *acl)
 {
 	FmgrInfo finfo;
-	char *aclTxt = NULL, *defaclTxt = NULL, *output;
-	int ofs = 0, length = 0;
+	Datum aclTxt;
 
-	if (acl)
-	{
-		fmgr_info_cxt(F_ARRAY_OUT, &finfo, CurrentMemoryContext);
-		aclTxt = DatumGetCString(FunctionCall3(&finfo,
-											   PointerGetDatum(acl),
-											   ObjectIdGetDatum(ACLITEMOID),
-											   Int32GetDatum(-1)));
-		length += strlen(aclTxt);
-	}
+	if (!acl)
+		return pstrdup("");
 
-	if (defacl)
-	{
-		fmgr_info_cxt(F_ARRAY_OUT, &finfo, CurrentMemoryContext);
-		defaclTxt = DatumGetCString(FunctionCall3(&finfo,
-												  PointerGetDatum(defacl),
-												  ObjectIdGetDatum(ACLITEMOID),
-												  Int32GetDatum(-1)));
-		length += strlen(defaclTxt) + 10;
-	}
-
-	output = palloc0(length + 2);
-	if (aclTxt)
-	{
-		ofs += sprintf(output + ofs, "%s", aclTxt);
-		pfree(aclTxt);
-	}
-	if (defaclTxt)
-	{
-		ofs += sprintf(output + ofs, "%sdefault=%s",
-					   (ofs == 0 ? "" : " "), defaclTxt);
-		pfree(defaclTxt);
-	}
-	return output;
+	fmgr_info_cxt(F_ARRAY_OUT, &finfo, CurrentMemoryContext);
+	aclTxt = FunctionCall3(&finfo,
+						   PointerGetDatum(acl),
+						   ObjectIdGetDatum(ACLITEMOID),
+						   Int32GetDatum(-1));
+	return DatumGetCString(aclTxt);
 }
 
 char *rowaclTranslateSecurityLabelIn(char *acl_string)
 {
-	Acl *acl, *defacl;
-
-	if (*acl_string == '\0')
-		return acl_string;
-
-	aclArrayInput(acl_string, &acl, &defacl);
-	return rawAclTextFromAclArray(acl, defacl);
+	Acl *acl = aclArrayInput(acl_string);
+	if (!acl)
+		return pstrdup("");
+	return rawAclTextFromAclArray(acl);
 }
 
 char *rowaclTranslateSecurityLabelOut(char *acl_string)
 {
-
-	Acl *acl, *defacl;
-
-	rawAclTextToAclArray(acl_string, &acl, &defacl);
-	return aclArrayOutput(acl, defacl);
+	Acl *acl = rawAclTextToAclArray(acl_string);
+	if (!acl)
+		return pstrdup("");
+	return aclArrayOutput(acl);
 }
 
 bool rowaclCheckValidSecurityLabel(char *aclstring)
 {
-	char *copy, *tok, *sv, *ptr, *tok2, *sv2;
+	char *copy, *tok, *sv = NULL;
 	AclItem ai;
 
 	if (*aclstring == '\0')
 		return true;
 
 	copy = pstrdup(aclstring);
-	for (tok = strtok_r(copy, "/", &sv);
+	for (tok = strtok_r(copy, ",", &sv);
 		 tok;
-		 tok = strtok_r(NULL, "/", &sv))
+		 tok = strtok_r(NULL, ",", &sv))
 	{
-		if (strncmp(tok, "acl=", 4) == 0)
-			ptr = tok + 4;
-		else if (strncmp(tok, "default=", 8) == 0)
-			ptr = tok + 8;
-		else
+		if (sscanf(tok, "%x:%x:%x",
+				   &ai.ai_grantee,
+				   &ai.ai_grantor,
+				   &ai.ai_privs) != 3)
 			return false;
-
-		for (tok2 = strtok_r(ptr, ",", &sv2);
-			 tok2;
-			 tok2 = strtok_r(NULL, "/", &sv2))
-		{
-			if (sscanf(ptr, "%x:%x:%x",
-					   &ai.ai_grantee,
-					   &ai.ai_grantor,
-					   &ai.ai_privs) != 3)
-				return false;
-		}
 	}
 
 	return true;
@@ -852,9 +696,9 @@ bool rowaclCheckValidSecurityLabel(char *aclstring)
  */
 static Datum rowacl_grant_revoke(PG_FUNCTION_ARGS, bool grant, bool cascade)
 {
-	char *input, *tok, *sv;
+	char *input, *tok, *sv = NULL;
 	HeapTuple tuple;
-	Acl *acl, *defacl;
+	Acl *acl;
 	Oid ownerId;
 	List *grantees = NIL;
 	AclMode privileges = 0;
@@ -874,8 +718,7 @@ static Datum rowacl_grant_revoke(PG_FUNCTION_ARGS, bool grant, bool cascade)
 	/*
 	 * Extract Acl array
 	 */
-	input = TextDatumGetCString(PG_GETARG_TEXT_P(1));
-	aclArrayInput(input, &acl, &defacl);
+	acl = aclArrayInput(TextDatumGetCString(PG_GETARG_TEXT_P(1)));
 	if (!acl)
 		acl = rowaclDefaultAclArray(ownerId);
 
@@ -933,7 +776,7 @@ static Datum rowacl_grant_revoke(PG_FUNCTION_ARGS, bool grant, bool cascade)
 							   grantees, privileges,
 							   GetUserId(), ownerId);
 
-	return CStringGetTextDatum(aclArrayOutput(acl, defacl));
+	return CStringGetTextDatum(aclArrayOutput(acl));
 }
 
 Datum
