@@ -285,36 +285,62 @@ bytea *
 default_reloptions(Datum reloptions, bool validate,
 				   int minFillfactor, int defaultFillfactor)
 {
-	static const char *const default_keywords[1] = {"fillfactor"};
-	char	   *values[1];
-	int32		fillfactor;
+	static const char *const default_keywords[] = {
+		"fillfactor",
+	};
+	char	   *values[lengthof(default_keywords)];
+	int			index;
+	bool		exist = false;
 	StdRdOptions *result;
 
-	parseRelOptions(reloptions, 1, default_keywords, values, validate);
+	parseRelOptions(reloptions,
+					lengthof(default_keywords), default_keywords,
+					values, validate);
 
+	result = (StdRdOptions *) palloc0(sizeof(StdRdOptions));
+	SET_VARSIZE(result, sizeof(StdRdOptions));
+
+	for (index = 0; index < lengthof(default_keywords); index++)
+	{
+		if (index == 0)		/* fillfactor */
+		{
+			char *ff_string = values[index];
+			int fillfactor;
+
+			if (!ff_string)
+				continue;
+
+			fillfactor = pg_atoi(ff_string, sizeof(int32), 0);
+			if (fillfactor < minFillfactor || fillfactor > 100)
+			{
+				if (validate)
+					ereport(ERROR,
+							(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+							 errmsg("fillfactor=%d is out of range (should be between %d and 100)",
+									fillfactor, minFillfactor)));
+				continue;
+			}
+
+			result->fillfactor = fillfactor;
+			exist = true;
+		}
+		else
+		{
+			if (pgaceGramRelationOption(default_keywords[index], values[index],
+										result, validate))
+				exist = true;
+		}
+	}
 	/*
 	 * If no options, we can just return NULL rather than doing anything.
 	 * (defaultFillfactor is thus not used, but we require callers to pass it
 	 * anyway since we would need it if more options were added.)
 	 */
-	if (values[0] == NULL)
-		return NULL;
-
-	fillfactor = pg_atoi(values[0], sizeof(int32), 0);
-	if (fillfactor < minFillfactor || fillfactor > 100)
+	if (exist == false)
 	{
-		if (validate)
-			ereport(ERROR,
-					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-					 errmsg("fillfactor=%d is out of range (should be between %d and 100)",
-							fillfactor, minFillfactor)));
+		pfree(result);
 		return NULL;
 	}
-
-	result = (StdRdOptions *) palloc(sizeof(StdRdOptions));
-	SET_VARSIZE(result, sizeof(StdRdOptions));
-
-	result->fillfactor = fillfactor;
 
 	return (bytea *) result;
 }

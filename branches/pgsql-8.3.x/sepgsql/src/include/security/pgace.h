@@ -654,6 +654,19 @@ pgaceGramAlterFunction(Relation rel, HeapTuple tuple, DefElem *defel)
 				 errmsg("security extention at ALTER FUNCTION: unavailable")));
 }
 
+/*
+ * pgaceGramRelationOption
+ *
+ * This hook is invoked to apply security feature specific relation options.
+ * If you can find any proper options, please return true, elsewhere false.
+ */
+static inline bool
+pgaceGramRelationOption(const char *key, const char *value,
+						StdRdOptions *result, bool validate)
+{
+	return false;
+}
+
 /******************************************************************
  * DATABASE related hooks
  ******************************************************************/
@@ -1063,19 +1076,24 @@ pgaceLargeObjectSetSecurity(Relation rel, HeapTuple newtup, HeapTuple oldtup)
 /*
  * pgaceTupleDescHasSecurity
  *
- * This hook enables to control TupleDesc->tdhassecurity bit.
+ * This hook enables to control the value in TupleDesc->tdhassecurity.
  * If it returns true, sizeof(Oid) bytes are allocated at the header
  * of HeapTupleHeader structure.
- * The argument of 'relid' can be InvalidOid. It means the TupleDesc
- * is for newly created table with SELECT INTO statement, because its
- * relation identifier is not determined when invocation of the hook.
+ *
+ * Don't trust Relation->rd_rel->relkind, because this hook can be
+ * invoked from heap_create(), but it does not initialize relkind
+ * member yet.
+ *
+ * The 'rel' argument can be NULL, when we make a decision for newly
+ * created relation via SELECT INTO/CREATE TABLE AS. In this case,
+ * relation options are delivered.
  */
 static inline bool
-pgaceTupleDescHasSecurity(Oid relid, char relkind)
+pgaceTupleDescHasSecurity(Relation rel, List *relopts)
 {
 #if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
-		return sepgsqlTupleDescHasSecurity(relid, relkind);
+		return sepgsqlTupleDescHasSecurity(rel, relopts);
 #endif
 	return false;
 }

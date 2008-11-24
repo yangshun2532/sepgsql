@@ -951,7 +951,8 @@ ExecTypeFromTLInternal(List *targetList,
 		len = ExecCleanTargetListLength(targetList);
 	else
 		len = ExecTargetListLength(targetList);
-	typeInfo = CreateTemplateTupleDesc(len, hasoid, hassecurity);
+	typeInfo = CreateTemplateTupleDesc(len, hasoid);
+	typeInfo->tdhassecurity = hassecurity;
 
 	foreach(l, targetList)
 	{
@@ -983,7 +984,7 @@ ExecTypeFromExprList(List *exprList)
 	int			cur_resno = 1;
 	char		fldname[NAMEDATALEN];
 
-	typeInfo = CreateTemplateTupleDesc(list_length(exprList), false, false);
+	typeInfo = CreateTemplateTupleDesc(list_length(exprList), false);
 
 	foreach(l, exprList)
 	{

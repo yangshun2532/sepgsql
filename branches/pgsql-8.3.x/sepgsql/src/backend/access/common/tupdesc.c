@@ -34,7 +34,7 @@
  * caller can overwrite this if needed.
  */
 TupleDesc
-CreateTemplateTupleDesc(int natts, bool hasoid, bool hassecurity)
+CreateTemplateTupleDesc(int natts, bool hasoid)
 {
 	TupleDesc	desc;
 	char	   *stg;
@@ -84,7 +84,7 @@ CreateTemplateTupleDesc(int natts, bool hasoid, bool hassecurity)
 	desc->tdtypeid = RECORDOID;
 	desc->tdtypmod = -1;
 	desc->tdhasoid = hasoid;
-	desc->tdhassecurity = hassecurity;
+	desc->tdhassecurity = false;	/* set a proper value, if necessary */
 	desc->tdrefcount = -1;		/* assume not reference-counted */
 
 	return desc;
@@ -102,8 +102,7 @@ CreateTemplateTupleDesc(int natts, bool hasoid, bool hassecurity)
  * caller can overwrite this if needed.
  */
 TupleDesc
-CreateTupleDesc(int natts, bool hasoid, bool hassecurity,
-				Form_pg_attribute *attrs)
+CreateTupleDesc(int natts, bool hasoid, Form_pg_attribute *attrs)
 {
 	TupleDesc	desc;
 
@@ -119,7 +118,7 @@ CreateTupleDesc(int natts, bool hasoid, bool hassecurity,
 	desc->tdtypeid = RECORDOID;
 	desc->tdtypmod = -1;
 	desc->tdhasoid = hasoid;
-	desc->tdhassecurity = hassecurity;
+	desc->tdhassecurity = false;	/* set a proper value, if necessary */
 	desc->tdrefcount = -1;		/* assume not reference-counted */
 
 	return desc;
@@ -138,8 +137,7 @@ CreateTupleDescCopy(TupleDesc tupdesc)
 	TupleDesc	desc;
 	int			i;
 
-	desc = CreateTemplateTupleDesc(tupdesc->natts,
-								   tupdesc->tdhasoid, tupdesc->tdhassecurity);
+	desc = CreateTemplateTupleDesc(tupdesc->natts, tupdesc->tdhasoid);
 
 	for (i = 0; i < desc->natts; i++)
 	{
@@ -150,6 +148,7 @@ CreateTupleDescCopy(TupleDesc tupdesc)
 
 	desc->tdtypeid = tupdesc->tdtypeid;
 	desc->tdtypmod = tupdesc->tdtypmod;
+	desc->tdhassecurity = tupdesc->tdhassecurity;
 
 	return desc;
 }
@@ -166,8 +165,7 @@ CreateTupleDescCopyConstr(TupleDesc tupdesc)
 	TupleConstr *constr = tupdesc->constr;
 	int			i;
 
-	desc = CreateTemplateTupleDesc(tupdesc->natts,
-								   tupdesc->tdhasoid, tupdesc->tdhassecurity);
+	desc = CreateTemplateTupleDesc(tupdesc->natts, tupdesc->tdhasoid);
 
 	for (i = 0; i < desc->natts; i++)
 	{
@@ -209,6 +207,7 @@ CreateTupleDescCopyConstr(TupleDesc tupdesc)
 
 	desc->tdtypeid = tupdesc->tdtypeid;
 	desc->tdtypmod = tupdesc->tdtypmod;
+	desc->tdhassecurity = tupdesc->tdhassecurity;
 
 	return desc;
 }
@@ -524,7 +523,7 @@ BuildDescForRelation(List *schema)
 	 * allocate a new tuple descriptor
 	 */
 	natts = list_length(schema);
-	desc = CreateTemplateTupleDesc(natts, false, false);
+	desc = CreateTemplateTupleDesc(natts, false);
 	constr->has_not_null = false;
 
 	attnum = 0;
@@ -632,7 +631,7 @@ BuildDescFromLists(List *names, List *types, List *typmods)
 	/*
 	 * allocate a new tuple descriptor
 	 */
-	desc = CreateTemplateTupleDesc(natts, false, false);
+	desc = CreateTemplateTupleDesc(natts, false);
 
 	attnum = 0;
 

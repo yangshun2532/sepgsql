@@ -606,16 +606,23 @@ sepgsqlEndPerformCheckFK(Relation rel, Datum save_pgace)
  * security_label hooks
  *******************************************************************************/
 bool
-sepgsqlTupleDescHasSecurity(Oid relid, char relkind)
+sepgsqlTupleDescHasSecurity(Relation rel, List *relopts)
 {
-	if (relkind != RELKIND_RELATION && relkind != RELKIND_SEQUENCE)
+	/*
+	 * Newly created table via SELECT INTO/CREATE TABLE AS
+	 */
+	if (rel == NULL)
+		return sepostgresql_row_level;
+
+	if (RelationGetForm(rel)->relkind != RELKIND_RELATION &&
+		RelationGetForm(rel)->relkind != RELKIND_SEQUENCE)
 		return false;
 
-	if (relid == DatabaseRelationId ||
-		relid == RelationRelationId ||
-		relid == AttributeRelationId ||
-		relid == ProcedureRelationId ||
-		relid == LargeObjectRelationId)
+	if (RelationGetRelid(rel) == DatabaseRelationId ||
+		RelationGetRelid(rel) == RelationRelationId ||
+		RelationGetRelid(rel) == AttributeRelationId ||
+		RelationGetRelid(rel) == ProcedureRelationId ||
+		RelationGetRelid(rel) == LargeObjectRelationId)
 		return true;
 
 	return sepostgresql_row_level;

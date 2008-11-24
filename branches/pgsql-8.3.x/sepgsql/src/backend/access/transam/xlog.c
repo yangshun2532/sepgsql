@@ -6845,7 +6845,7 @@ pg_xlogfile_name_offset(PG_FUNCTION_ARGS)
 	 * Construct a tuple descriptor for the result row.  This must match this
 	 * function's pg_proc entry!
 	 */
-	resultTupleDesc = CreateTemplateTupleDesc(2, false, false);
+	resultTupleDesc = CreateTemplateTupleDesc(2, false);
 	TupleDescInitEntry(resultTupleDesc, (AttrNumber) 1, "file_name",
 					   TEXTOID, -1, 0);
 	TupleDescInitEntry(resultTupleDesc, (AttrNumber) 2, "file_offset",

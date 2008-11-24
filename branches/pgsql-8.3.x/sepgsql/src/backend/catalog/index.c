@@ -45,6 +45,7 @@
 #include "optimizer/clauses.h"
 #include "optimizer/var.h"
 #include "parser/parse_expr.h"
+#include "security/pgace.h"
 #include "storage/procarray.h"
 #include "storage/smgr.h"
 #include "utils/builtins.h"
@@ -114,7 +115,7 @@ ConstructTupleDescriptor(Relation heapRelation,
 	/*
 	 * allocate the new tuple descriptor
 	 */
-	indexTupDesc = CreateTemplateTupleDesc(numatts, false, false);
+	indexTupDesc = CreateTemplateTupleDesc(numatts, false);
 
 	/*
 	 * For simple index columns, we copy the pg_attribute row from the parent
@@ -601,6 +602,12 @@ index_create(Oid heapRelationId,
 								allow_system_table_mods);
 
 	Assert(indexRelationId == RelationGetRelid(indexRelation));
+
+	/*
+	 * Fixup rel->rd_att->tdhassecurity
+	 */
+	indexRelation->rd_att->tdhassecurity
+		= pgaceTupleDescHasSecurity(indexRelation, NIL);
 
 	/*
 	 * Obtain exclusive lock on it.  Although no other backends can see it
