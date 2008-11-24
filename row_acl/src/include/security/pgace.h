@@ -483,9 +483,6 @@ pgaceGramSecurityItem(char *defname, char *value)
 #if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
 		return sepgsqlGramSecurityItem(defname, value);
-#elif defined(HAVE_ROW_ACL)
-	if (rowaclIsEnabled())
-		return rowaclGramSecurityItem(defname, value);
 #endif
 	return NULL;
 }
@@ -503,9 +500,6 @@ pgaceIsGramSecurityItem(DefElem *defel)
 #if defined(HAVE_SELINUX)
 	if (sepgsqlIsEnabled())
 		return sepgsqlIsGramSecurityItem(defel);
-#elif defined(HAVE_ROW_ACL)
-	if (rowaclIsEnabled())
-		return rowaclIsGramSecurityItem(defel);
 #endif
 	return false;
 }
@@ -534,12 +528,6 @@ pgaceGramCreateRelation(Relation rel, HeapTuple tuple, DefElem *defel)
 	if (sepgsqlIsEnabled())
 	{
 		sepgsqlGramCreateRelation(rel, tuple, defel);
-		return;
-	}
-#elif defined(HAVE_ROW_ACL)
-	if (rowaclIsEnabled())
-	{
-		rowaclGramCreateRelation(rel, tuple, defel);
 		return;
 	}
 #endif
@@ -590,12 +578,6 @@ pgaceGramAlterRelation(Relation rel, HeapTuple tuple, DefElem *defel)
 	if (sepgsqlIsEnabled())
 	{
 		sepgsqlGramAlterRelation(rel, tuple, defel);
-		return;
-	}
-#elif defined(HAVE_ROW_ACL)
-	if (rowaclIsEnabled())
-	{
-		rowaclGramAlterRelation(rel, tuple, defel);
 		return;
 	}
 #endif
@@ -740,6 +722,10 @@ static inline bool
 pgaceGramRelationOption(const char *key, const char *value,
 						StdRdOptions *result, bool validate)
 {
+#if defined(HAVE_ROW_ACL)
+	if (rowaclIsEnabled())
+		return rowaclGramRelationOption(key, value, result, validate);
+#endif
 	return false;
 }
 
@@ -1181,7 +1167,7 @@ pgaceTupleDescHasSecurity(Relation rel, List *relopts)
 		return sepgsqlTupleDescHasSecurity(rel, relopts);
 #elif defined(HAVE_ROW_ACL)
 	if (rowaclIsEnabled())
-		return true;
+		return rowaclTupleDescHasSecurity(rel, relopts);
 #endif
 	return false;
 }

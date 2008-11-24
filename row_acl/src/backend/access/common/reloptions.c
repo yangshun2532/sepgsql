@@ -19,6 +19,7 @@
 #include "catalog/pg_type.h"
 #include "commands/defrem.h"
 #include "nodes/makefuncs.h"
+#include "security/pgace.h"
 #include "utils/array.h"
 #include "utils/builtins.h"
 #include "utils/guc.h"
@@ -288,6 +289,10 @@ default_reloptions(Datum reloptions, bool validate,
 {
 	static const char *const default_keywords[] = {
 		"fillfactor",
+#ifdef HAVE_ROW_ACL
+		"row_level_acl",
+		"default_row_acl",
+#endif
 	};
 	char	   *values[lengthof(default_keywords)];
 	int			index;

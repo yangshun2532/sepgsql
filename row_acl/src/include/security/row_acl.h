@@ -34,22 +34,13 @@ extern Datum rowaclBeginPerformCheckFK(Relation rel, bool is_primary, Oid save_u
 extern void rowaclEndPerformCheckFK(Relation rel, Datum save_pgace);
 
 /******************************************************************
- * Default ACL support
- ******************************************************************/
-
-extern DefElem *rowaclGramSecurityItem(char *defname, char *value);
-
-extern bool rowaclIsGramSecurityItem(DefElem *defel);
-
-extern void rowaclGramCreateRelation(Relation rel, HeapTuple tuple, DefElem *defel);
-
-extern void rowaclGramAlterRelation(Relation rel, HeapTuple tuple, DefElem *defel);
-
-/******************************************************************
  * Security Label hooks
  ******************************************************************/
 
-extern bool rowaclSecurityAttributeNecessary(void);
+extern bool rowaclGramRelationOption(const char *key, const char *value,
+									 StdRdOptions *result, bool validate);
+
+extern bool rowaclTupleDescHasSecurity(Relation rel, List *relopts);
 
 extern char *rowaclTranslateSecurityLabelIn(char *seclabel);
 
