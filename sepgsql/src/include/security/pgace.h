@@ -173,27 +173,6 @@ pgaceProxyQuery(List *queryList)
 }
 
 /*
- * pgaceIsAllowPlannerHook
- *
- * The guest can control whether planner_hook is available, or not.
- * It returns false, if it is not allowed to apply planner_hook.
- *
- * The purpose of this hook is to make sure pgace opaque data are delivered
- * to PlannedStmt::pgaceItem and Scan::pgaceTuplePerms, because they are
- * copied in standard_planner(). Overriding planner_hook has a possibility
- * to prevent the guest works correctly.
- */
-static inline bool
-pgaceIsAllowPlannerHook(void)
-{
-#if defined(HAVE_SELINUX)
-	if (sepgsqlIsEnabled())
-		return false;
-#endif
-	return true;
-}
-
-/*
  * pgaceExecutorStart
  *
  * This hook is invoked on the head of ExecutorStart().
