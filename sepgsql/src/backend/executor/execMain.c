@@ -254,7 +254,7 @@ void
 ExecutorRun(QueryDesc *queryDesc,
 			ScanDirection direction, long count)
 {
-	if (ExecutorRun_hook && pgaceIsAllowExecutorRunHook())
+	if (ExecutorRun_hook)
 		(*ExecutorRun_hook) (queryDesc, direction, count);
 	else
 		standard_ExecutorRun(queryDesc, direction, count);
