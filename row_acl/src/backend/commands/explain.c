@@ -139,7 +139,7 @@ ExplainResultDesc(ExplainStmt *stmt)
 	TupleDesc	tupdesc;
 
 	/* need a tuple descriptor representing a single TEXT column */
-	tupdesc = CreateTemplateTupleDesc(1, false, false);
+	tupdesc = CreateTemplateTupleDesc(1, false);
 	TupleDescInitEntry(tupdesc, (AttrNumber) 1, "QUERY PLAN",
 					   TEXTOID, -1, 0);
 	return tupdesc;
