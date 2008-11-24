@@ -277,53 +277,7 @@ sepgsqlPermsToProcedureAv(uint32 perms, HeapTuple tuple, HeapTuple oldtup)
 			}
 
 			if (need_check)
-			{
-				HeapTuple dbtuple;
-				Form_pg_database datForm;
-				char *file_name;
-				security_context_t file_context;
-				/*
-				 * (client) <-- db_database:module_install --> (database)
-				 */
-				dbtuple = SearchSysCache(DATABASEOID,
-										 ObjectIdGetDatum(MyDatabaseId),
-										 0, 0, 0);
-				if (!HeapTupleIsValid(dbtuple))
-					elog(ERROR, "SELinux: cache lookup failed for database: %u",
-						 MyDatabaseId);
-
-				datForm = (Form_pg_database) GETSTRUCT(dbtuple);
-				sepgsqlClientHasPermission(HeapTupleGetSecurity(dbtuple),
-										   SECCLASS_DB_DATABASE,
-										   DB_DATABASE__INSTALL_MODULE,
-										   NameStr(datForm->datname));
-				ReleaseSysCache(dbtuple);
-
-				/*
-				 * (client) <-- db_databse:module_install --> (*.so file)
-				 */
-				file_name = TextDatumGetCString(newbin);
-				file_name = expand_dynamic_library_name(file_name);
-				if (getfilecon_raw(file_name, &file_context) < 0)
-					ereport(ERROR,
-							(errcode(ERRCODE_SELINUX_ERROR),
-							 errmsg("SELinux: could not get context: %s", file_name)));
-				PG_TRY();
-				{
-					sepgsqlComputePermission(sepgsqlGetClientContext(),
-											 file_context,
-											 SECCLASS_DB_DATABASE,
-											 DB_DATABASE__INSTALL_MODULE,
-											 file_name);
-				}
-				PG_CATCH();
-				{
-					freecon(file_context);
-					PG_RE_THROW();
-				}
-				PG_END_TRY();
-				freecon(file_context);
-			}
+				sepgsqlCheckModuleInstallPerms(TextDatumGetCString(newbin));
 		}
 	}
 	return result;
@@ -446,6 +400,57 @@ sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, HeapTuple oldtup,
 	}
 
 	return rc;
+}
+
+/*
+ * sepgsqlCheckModuleInstallPerms
+ *
+ * It checks client's privilege to install a new shared loadable file.
+ */
+void
+sepgsqlCheckModuleInstallPerms(const char *filename)
+{
+	security_context_t file_context;
+	Form_pg_database dbform;
+	HeapTuple dbtup;
+	char *fullpath;
+
+	/* (client) <-- db_database:module_install --> (database) */
+	dbtup = SearchSysCache(DATABASEOID,
+						   ObjectIdGetDatum(MyDatabaseId),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(dbtup))
+		elog(ERROR, "SELinux: cache lookup failed for database: %u", MyDatabaseId);
+
+	dbform = (Form_pg_database) GETSTRUCT(dbtup);
+	sepgsqlClientHasPermission(HeapTupleGetSecurity(dbtup),
+							   SECCLASS_DB_DATABASE,
+							   DB_DATABASE__INSTALL_MODULE,
+							   NameStr(dbform->datname));
+	ReleaseSysCache(dbtup);
+
+	/* (client) <-- db_databse:module_install --> (*.so file) */
+	fullpath = expand_dynamic_library_name(filename);
+	if (getfilecon_raw(fullpath, &file_context) < 0)
+		ereport(ERROR,
+				(errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("SELinux: could not get context: %s", fullpath)));
+
+	PG_TRY();
+	{
+		sepgsqlComputePermission(sepgsqlGetClientContext(),
+								 file_context,
+								 SECCLASS_DB_DATABASE,
+								 DB_DATABASE__INSTALL_MODULE,
+								 fullpath);
+	}
+	PG_CATCH();
+	{
+		freecon(file_context);
+		PG_RE_THROW();
+	}
+	PG_END_TRY();
+	freecon(file_context);
 }
 
 /*
@@ -606,7 +611,6 @@ sepgsqlDefaultBlobContext(Relation rel, HeapTuple tuple)
 
 	return newsid;
 }
-
 
 void
 sepgsqlSetDefaultContext(Relation rel, HeapTuple tuple)
