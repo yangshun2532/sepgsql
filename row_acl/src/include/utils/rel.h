@@ -227,9 +227,9 @@ typedef struct StdRdOptions
  * RelationGetFillFactor
  *		Returns the relation's fillfactor.  Note multiple eval of argument!
  */
-#define RelationGetFillFactor(relation, defaultff)						\
-	(((relation)->rd_options && ((StdRdOptions *) (relation)->rd_options)->fillfactor > 0) \
-	 ? ((StdRdOptions *) (relation)->rd_options)->fillfactor : (defaultff))
+#define RelationGetFillFactor(relation, defaultff) \
+	((relation)->rd_options ? \
+	 ((StdRdOptions *) (relation)->rd_options)->fillfactor : (defaultff))
 
 /*
  * RelationGetTargetPageUsage

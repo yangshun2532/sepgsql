@@ -279,6 +279,42 @@ parseRelOptions(Datum options, int numkeywords, const char *const * keywords,
 	}
 }
 
+static bool
+parse_fillfactor_reloption(const char *value, StdRdOptions *result, bool validate,
+						   int minFillfactor, int defaultFillfactor)
+{
+	int fillfactor;
+
+	/*
+	 * Set default option
+	 */
+	result->fillfactor = defaultFillfactor;
+	if (!value)
+		return false;	/* no options */
+
+	if (!parse_int(value, &fillfactor, 0, NULL))
+	{
+		if (validate)
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg("fillfactor must be an integer: \"%s\"", value)));
+		return false;
+	}
+
+	if (fillfactor < minFillfactor || fillfactor > 100)
+	{
+		if (validate)
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg("fillfactor=%d is out of range (should be between %d and 100)",
+							fillfactor, minFillfactor)));
+		return false;
+	}
+
+	result->fillfactor = fillfactor;
+
+	return true;
+}
 
 /*
  * Parse reloptions for anything using StdRdOptions (ie, fillfactor only)
@@ -308,47 +344,20 @@ default_reloptions(Datum reloptions, bool validate,
 
 	for (index = 0; index < lengthof(default_keywords); index++)
 	{
-		if (index == 0)		/* fillfactor */
+		if (strcmp("fillfactor", default_keywords[index]) == 0)
 		{
-			char *ff_string = values[index];
-			int fillfactor;
-
-			if (!ff_string)
-				continue;
-
-			if (!parse_int(ff_string, &fillfactor, 0, NULL))
-			{
-				if (validate)
-					ereport(ERROR,
-							(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-							 errmsg("fillfactor must be an integer: \"%s\"", ff_string)));
-				continue;
-			}
-
-			if (fillfactor < minFillfactor || fillfactor > 100)
-			{
-				if (validate)
-					ereport(ERROR,
-							(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-							 errmsg("fillfactor=%d is out of range (should be between %d and 100)",
-									fillfactor, minFillfactor)));
-				continue;
-			}
-
-			result->fillfactor = fillfactor;
-			exist = true;
-		}
-		else
-		{
-			if (pgaceGramRelationOption(default_keywords[index], values[index],
-										result, validate))
+			if (parse_fillfactor_reloption(values[index], result, validate,
+										   minFillfactor, defaultFillfactor))
 				exist = true;
+		}
+		else if (pgaceGramRelationOption(default_keywords[index],
+										 values[index], result, validate))
+		{
+			exist = true;
 		}
 	}
 	/*
 	 * If no options, we can just return NULL rather than doing anything.
-	 * (defaultFillfactor is thus not used, but we require callers to pass it
-	 * anyway since we would need it if more options were added.)
 	 */
 	if (exist == false)
 	{
