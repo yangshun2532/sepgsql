@@ -130,6 +130,13 @@ PHP_FUNCTION(selinux_raw_to_trans_context);
 PHP_FUNCTION(selinux_matchpathcon);
 PHP_FUNCTION(selinux_matchpathcon_raw);
 
+/*
+ * configuration files
+ */
+PHP_FUNCTION(selinux_getenforcemode);
+PHP_FUNCTION(selinux_getpolicytype);
+PHP_FUNCTION(selinux_policy_root);
+
 #else	/* HAVE_SELINUX */
 
 #define selinux_module_ptr NULL
