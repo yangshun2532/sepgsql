@@ -11,7 +11,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/parser/gram.y,v 2.640 2008/11/24 08:46:03 petere Exp $
+ *	  $PostgreSQL: pgsql/src/backend/parser/gram.y,v 2.641 2008/11/26 08:45:11 petere Exp $
  *
  * HISTORY
  *	  AUTHOR			DATE			MAJOR EVENT
@@ -133,6 +133,7 @@ static TypeName *TableFuncTypeName(List *columns);
 
 %}
 
+%expect 0
 %name-prefix="base_yy"
 %locations
 
