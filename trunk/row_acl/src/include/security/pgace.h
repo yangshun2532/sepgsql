@@ -673,9 +673,10 @@ pgaceGramAlterFunction(Relation rel, HeapTuple tuple, DefElem *defel)
 static inline void
 pgaceGramTransformRelOptions(DefElem *defel, bool isReset)
 {
-	/*
-	 * do nothing
-	 */
+#if defined(HAVE_ROW_ACL)
+	if (rowaclIsEnabled())
+		return rowaclGramTransformRelOptions(defel, isReset);
+#endif
 }
 
 /*
@@ -690,7 +691,7 @@ pgaceGramParseRelOptions(const char *key, const char *value,
 {
 #if defined(HAVE_ROW_ACL)
 	if (rowaclIsEnabled())
-		return rowaclGramRelationOption(key, value, result, validate);
+		return rowaclGramParseRelOptions(key, value, result, validate);
 #endif
 	return false;
 }
