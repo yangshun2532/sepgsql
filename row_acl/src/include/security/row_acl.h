@@ -37,8 +37,10 @@ extern void rowaclEndPerformCheckFK(Relation rel, Datum save_pgace);
  * Security Label hooks
  ******************************************************************/
 
-extern bool rowaclGramRelationOption(const char *key, const char *value,
-									 StdRdOptions *result, bool validate);
+extern void rowaclGramTransformRelOptions(DefElem *defel, bool isReset);
+
+extern bool rowaclGramParseRelOptions(const char *key, const char *value,
+									  StdRdOptions *result, bool validate);
 
 extern bool rowaclTupleDescHasSecurity(Relation rel, List *relopts);
 
