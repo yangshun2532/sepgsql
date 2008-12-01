@@ -342,8 +342,8 @@ static bool rowaclCheckPermission(Relation rel, HeapTuple tuple, AclMode require
 
 	if (!rowAclCacheLookup(relid, userId, securityId, &privs))
 	{
-		/* Superusers bypass all permission checking */
-		if (superuser_arg(userId))
+		/* Superusers/Owner bypass all permission checking */
+		if (superuser_arg(userId) || GetUserId() == ownerId)
 		{
 			privs = ROW_ACL_ALL_PRIVS;
 		}
