@@ -635,14 +635,28 @@ pgaceGramAlterFunction(Relation rel, HeapTuple tuple, DefElem *defel)
 }
 
 /*
+ * pgaceGramTransformRelOptions 
+ *
+ * This hook is invoked to transform the given relation options
+ * into a proper form.
+ */
+static inline void
+pgaceGramTransformRelOptions(DefElem *defel, bool isReset)
+{
+	/*
+	 * do nothing
+	 */
+}
+
+/*
  * pgaceGramRelationOption
  *
  * This hook is invoked to apply security feature specific relation options.
  * If you can find any proper options, please return true, elsewhere false.
  */
 static inline bool
-pgaceGramRelationOption(const char *key, const char *value,
-						StdRdOptions *result, bool validate)
+pgaceGramParseRelOptions(const char *key, const char *value,
+						 StdRdOptions *result, bool validate)
 {
 	return false;
 }
