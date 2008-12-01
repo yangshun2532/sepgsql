@@ -389,7 +389,6 @@ bool rowaclCopyToTuple(Relation rel, List *attNumList, HeapTuple tuple)
 /******************************************************************
  * Check appeared Query/Sub-Query
  ******************************************************************/
-
 bool rowaclHeapTupleInsert(Relation rel, HeapTuple tuple,
 						   bool is_internal, bool with_returning)
 {
@@ -485,9 +484,25 @@ bool rowaclHeapTupleDelete(Relation rel, ItemPointer otid,
 /******************************************************************
  * Security Label interfaces
  ******************************************************************/
+void rowaclGramTransformRelOptions(DefElem *defel, bool isReset)
+{
+	if (pg_strcasecmp(defel->defname, "default_row_acl") == 0)
+	{
+		Oid default_row_acl = InvalidOid;
+		char buffer[16];
 
-bool rowaclGramRelationOption(const char *key, const char *value,
-							  StdRdOptions *result, bool validate)
+		if (!isReset && defel->arg)
+		{
+			default_row_acl
+				= pgaceSecurityLabelToSid(strVal(defel->arg));
+		}
+		snprintf(buffer, sizeof(buffer), "%u", default_row_acl);
+		strVal(defel->arg) = pstrdup(buffer);
+	}
+}
+
+bool rowaclGramParseRelOptions(const char *key, const char *value,
+							   StdRdOptions *result, bool validate)
 {
 	if (!value)
 		return false;	/* rowacl does not need default options */
@@ -510,15 +525,14 @@ bool rowaclGramRelationOption(const char *key, const char *value,
 	}
 	else if (pg_strcasecmp(key, "default_row_acl") == 0)
 	{
-		Oid default_row_acl
-			= pgaceSecurityLabelToSid((char *)value);
+		Oid default_row_acl;
 
-		if (!OidIsValid(default_row_acl))
+		if (!parse_int(value, (int *) &default_row_acl, 0, NULL))
 		{
 			if (validate)
 				ereport(ERROR,
 						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-						 errmsg("default_row_acl must be a valid ACL: \"%s\"", value)));
+						 errmsg("row_level_acl must be a security identifier: \"%s\"", value)));
 			return false;
 		}
 
