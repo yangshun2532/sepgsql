@@ -107,6 +107,8 @@ transformRelOptions(Datum oldOptions, List *defList,
 	{
 		DefElem    *def = lfirst(cell);
 
+		pgaceGramTransformRelOptions(def, isReset);
+
 		if (isReset)
 		{
 			if (def->arg != NULL)
@@ -346,8 +348,8 @@ default_reloptions(Datum reloptions, bool validate,
 										   minFillfactor, defaultFillfactor))
 				exist = true;
 		}
-		else if (pgaceGramRelationOption(default_keywords[index],
-										 values[index], result, validate))
+		else if (pgaceGramParseRelOptions(default_keywords[index],
+										  values[index], result, validate))
 		{
 			exist = true;
 		}
