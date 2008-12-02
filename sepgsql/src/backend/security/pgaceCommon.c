@@ -660,76 +660,92 @@ lo_set_security(PG_FUNCTION_ARGS)
  * are not compiled and linked when it is disabled.
  * It can cause a build problem in other environments.
  */
+static Datum
+unavailable_function(const char *fn_name, int error_code)
+{
+	ereport(ERROR,
+			(errcode(error_code),
+			 errmsg("%s is not available", fn_name)));
+	PG_RETURN_VOID();
+}
 
 #ifndef HAVE_SELINUX
 
 static Datum
 sepgsql_is_disabled(const char *function)
 {
-	ereport(ERROR,
-			(errcode(ERRCODE_SELINUX_ERROR),
-			 errmsg("%s is not implemented", function)));
-	PG_RETURN_VOID();
+	return unavailable_function(__FUNCTION__,
+								ERRCODE_SELINUX_ERROR);
 }
 
 Datum
 sepgsql_getcon(PG_FUNCTION_ARGS)
 {
-	return sepgsql_is_disabled(__FUNCTION__);
+	return unavailable_function(__FUNCTION__,
+								ERRCODE_SELINUX_ERROR);
 }
 
 Datum
 sepgsql_getservcon(PG_FUNCTION_ARGS)
 {
-	return sepgsql_is_disabled(__FUNCTION__);
+	return unavailable_function(__FUNCTION__,
+								ERRCODE_SELINUX_ERROR);
 }
 
 Datum
 sepgsql_get_user(PG_FUNCTION_ARGS)
 {
-	return sepgsql_is_disabled(__FUNCTION__);
+	return unavailable_function(__FUNCTION__,
+								ERRCODE_SELINUX_ERROR);
 }
 
 Datum
 sepgsql_get_role(PG_FUNCTION_ARGS)
 {
-	return sepgsql_is_disabled(__FUNCTION__);
+	return unavailable_function(__FUNCTION__,
+								ERRCODE_SELINUX_ERROR);
 }
 
 Datum
 sepgsql_get_type(PG_FUNCTION_ARGS)
 {
-	return sepgsql_is_disabled(__FUNCTION__);
+	return unavailable_function(__FUNCTION__,
+								ERRCODE_SELINUX_ERROR);
 }
 
 Datum
 sepgsql_get_range(PG_FUNCTION_ARGS)
 {
-	return sepgsql_is_disabled(__FUNCTION__);
+	return unavailable_function(__FUNCTION__,
+								ERRCODE_SELINUX_ERROR);
 }
 
 Datum
 sepgsql_set_user(PG_FUNCTION_ARGS)
 {
-	return sepgsql_is_disabled(__FUNCTION__);
+	return unavailable_function(__FUNCTION__,
+								ERRCODE_SELINUX_ERROR);
 }
 
 Datum
 sepgsql_set_role(PG_FUNCTION_ARGS)
 {
-	return sepgsql_is_disabled(__FUNCTION__);
+	return unavailable_function(__FUNCTION__,
+								ERRCODE_SELINUX_ERROR);
 }
 
 Datum
 sepgsql_set_type(PG_FUNCTION_ARGS)
 {
-	return sepgsql_is_disabled(__FUNCTION__);
+	return unavailable_function(__FUNCTION__,
+								ERRCODE_SELINUX_ERROR);
 }
 
 Datum
 sepgsql_set_range(PG_FUNCTION_ARGS)
 {
-	return sepgsql_is_disabled(__FUNCTION__);
+	return unavailable_function(__FUNCTION__,
+								ERRCODE_SELINUX_ERROR);
 }
 
 #endif   /* HAVE_SELINUX */

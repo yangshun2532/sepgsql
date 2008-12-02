@@ -345,9 +345,9 @@
 
 /* Class SE - Security Error (PGACE/SE-PostgreSQL error class) */
 #define ERRCODE_PGACE_ERROR					MAKE_SQLSTATE('S','E', '0','0','0')
-#define ERRCODE_SELINUX_ERROR				MAKE_SQLSTATE('S','E', '0','0','1')
-#define ERRCODE_SELINUX_AUDIT				MAKE_SQLSTATE('S','E', '0','0','2')
-#define ERRCODE_SELINUX_INFO				MAKE_SQLSTATE('S','E', '0','0','3')
+#define ERRCODE_SELINUX_ERROR				MAKE_SQLSTATE('S','E', '0','1','1')
+#define ERRCODE_SELINUX_AUDIT				MAKE_SQLSTATE('S','E', '0','1','2')
+#define ERRCODE_SELINUX_INFO				MAKE_SQLSTATE('S','E', '0','1','3')
 
 /* Class XX - Internal Error (PostgreSQL-specific error class) */
 /* (this is for "can't-happen" conditions and software bugs) */
