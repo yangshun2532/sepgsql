@@ -50,14 +50,4 @@ extern char *rowaclTranslateSecurityLabelOut(char *seclabel);
 
 extern bool rowaclCheckValidSecurityLabel(char *seclabel);
 
-/******************************************************************
- * SQL functions
- ******************************************************************/
-
-extern Datum rowacl_grant(PG_FUNCTION_ARGS);
-
-extern Datum rowacl_revoke(PG_FUNCTION_ARGS);
-
-extern Datum rowacl_revoke_cascade(PG_FUNCTION_ARGS);
-
 #endif	/* ROW_ACL_H */

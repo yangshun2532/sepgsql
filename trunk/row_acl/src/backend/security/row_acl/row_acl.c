@@ -6,7 +6,9 @@
 
 #include "postgres.h"
 
+#include "access/reloptions.h"
 #include "catalog/catalog.h"
+#include "catalog/namespace.h"
 #include "catalog/pg_class.h"
 #include "catalog/pg_type.h"
 #include "commands/defrem.h"
@@ -814,4 +816,46 @@ Datum
 rowacl_revoke_cascade(PG_FUNCTION_ARGS)
 {
 	return rowacl_grant_revoke(fcinfo, false, true);
+}
+
+Datum
+rowacl_table_default(PG_FUNCTION_ARGS)
+{
+	char *ident, *tok, *tmp;
+	List *names = NIL;
+	RangeVar *rv;
+	HeapTuple reltup;
+	Oid relid;
+	Datum reloptions;
+	bool isnull;
+	StdRdOptions *rdopts;
+	char relkind;
+
+	ident = TextDatumGetCString(PG_GETARG_TEXT_P(0));
+	for (tok = strtok_r(ident, ".", &tmp);
+		 tok;
+		 tok = strtok_r(NULL, ".", &tmp))
+	{
+		names = lappend(names, makeString(tok));
+	}
+	rv = makeRangeVarFromNameList(names);
+	relid = RangeVarGetRelid(rv, true);
+
+	reltup = SearchSysCache(RELOID,
+							ObjectIdGetDatum(relid),
+							0, 0, 0);
+	if (!HeapTupleIsValid(reltup))
+		elog(ERROR, "cache lookup failed for relation %u", relid);
+	reloptions = SysCacheGetAttr(RELOID, reltup,
+								 Anum_pg_class_reloptions,
+								 &isnull);
+	relkind = ((Form_pg_class) GETSTRUCT(reltup))->relkind;
+	ReleaseSysCache(reltup);
+
+	if (isnull)
+		return CStringGetTextDatum("");
+
+	rdopts = (StdRdOptions *) heap_reloptions(relkind, reloptions, false);
+
+	return CStringGetTextDatum(pgaceSidToSecurityLabel(rdopts->default_row_acl));
 }
