@@ -735,8 +735,9 @@ sepgsql_set_range(PG_FUNCTION_ARGS)
 #endif   /* HAVE_SELINUX */
 
 #ifndef HAVE_ROW_ACL
+
 Datum
-row_acl_grant(PG_FUNCTION_ARGS)
+rowacl_grant(PG_FUNCTION_ARGS)
 {
 	ereport(ERROR,
 			(errcode(ERRCODE_ROW_ACL_ERROR),
@@ -745,7 +746,7 @@ row_acl_grant(PG_FUNCTION_ARGS)
 }
 
 Datum
-row_acl_revoke(PG_FUNCTION_ARGS)
+rowacl_revoke(PG_FUNCTION_ARGS)
 {
 	ereport(ERROR,
 			(errcode(ERRCODE_ROW_ACL_ERROR),
@@ -754,11 +755,20 @@ row_acl_revoke(PG_FUNCTION_ARGS)
 }
 
 Datum
-row_acl_revoke_cascade(PG_FUNCTION_ARGS)
+rowacl_revoke_cascade(PG_FUNCTION_ARGS)
 {
 	ereport(ERROR,
 			(errcode(ERRCODE_ROW_ACL_ERROR),
 			 errmsg("row_acl_revoke_cascade is unavailable")));
+	PG_RETURN_VOID();
+}
+
+Datum
+rowacl_table_default(PG_FUNCTION_ARGS)
+{
+	ereport(ERROR,
+			(errcode(ERRCODE_ROW_ACL_ERROR),
+			 errmsg("row_acl_table_default is unavailable")));
 	PG_RETURN_VOID();
 }
 

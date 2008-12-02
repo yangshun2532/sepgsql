@@ -1291,4 +1291,12 @@ extern Datum sepgsql_set_role(PG_FUNCTION_ARGS);
 extern Datum sepgsql_set_type(PG_FUNCTION_ARGS);
 extern Datum sepgsql_set_range(PG_FUNCTION_ARGS);
 
+/*
+ * Row-level ACL SQL FUNCTIONS
+ */
+extern Datum rowacl_grant(PG_FUNCTION_ARGS);
+extern Datum rowacl_revoke(PG_FUNCTION_ARGS);
+extern Datum rowacl_revoke_cascade(PG_FUNCTION_ARGS);
+extern Datum rowacl_table_default(PG_FUNCTION_ARGS);
+
 #endif // PGACE_H
