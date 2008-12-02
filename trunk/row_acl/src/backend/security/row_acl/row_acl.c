@@ -569,6 +569,9 @@ static Acl *rawAclTextToAclArray(const char *raw_acl)
 	char *copy, *tok, *sv = NULL;
 	int aclnum = 0;
 
+	if (strncmp(raw_acl, "acl=", 4) != 0)
+		return NULL;
+
 	copy = pstrdup(raw_acl);
 	aip = palloc(strlen(copy) * sizeof(AclItem) / 4);
 	for (tok = strtok_r(copy, ",", &sv);
@@ -582,9 +585,6 @@ static Acl *rawAclTextToAclArray(const char *raw_acl)
 			continue;
 		aclnum++;
 	}
-
-	if (aclnum == 0)
-		return NULL;
 
 	acl = allocacl(aclnum);
 	memcpy(ACL_DAT(acl), aip, aclnum * sizeof(AclItem));
@@ -601,7 +601,9 @@ static char *rawAclTextFromAclArray(Acl *acl)
 {
 	AclItem *aip = ACL_DAT(acl);
 	char *rawacl = palloc0(ACL_NUM(acl) * 30 + 10);	/* enough length */
-	int i, ofs = 0;
+	int i, ofs;
+
+	ofs = sprintf(rawacl, "acl=");
 
 	for (i = 0; i < ACL_NUM(acl); i++)
 	{
@@ -685,7 +687,10 @@ bool rowaclCheckValidSecurityLabel(char *aclstring)
 	if (*aclstring == '\0')
 		return true;
 
-	copy = pstrdup(aclstring);
+	if (strncmp(aclstring, "acl=", 4) != 0)
+		return false;
+
+	copy = pstrdup(aclstring+4);
 	for (tok = strtok_r(copy, ",", &sv);
 		 tok;
 		 tok = strtok_r(NULL, ",", &sv))
