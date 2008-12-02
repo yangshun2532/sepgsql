@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/tcop/pquery.c,v 1.125 2008/11/19 01:10:23 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/tcop/pquery.c,v 1.127 2008/12/01 17:06:21 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -18,6 +18,7 @@
 #include "access/xact.h"
 #include "commands/prepare.h"
 #include "commands/trigger.h"
+#include "executor/tstoreReceiver.h"
 #include "miscadmin.h"
 #include "pg_trace.h"
 #include "tcop/pquery.h"
@@ -1032,7 +1033,11 @@ FillPortalStore(Portal portal, bool isTopLevel)
 	char		completionTag[COMPLETION_TAG_BUFSIZE];
 
 	PortalCreateHoldStore(portal);
-	treceiver = CreateDestReceiver(DestTuplestore, portal);
+	treceiver = CreateDestReceiver(DestTuplestore);
+	SetTuplestoreDestReceiverParams(treceiver,
+									portal->holdStore,
+									portal->holdContext,
+									false);
 
 	completionTag[0] = '\0';
 

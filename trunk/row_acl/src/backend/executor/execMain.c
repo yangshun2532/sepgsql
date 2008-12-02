@@ -26,7 +26,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/executor/execMain.c,v 1.318 2008/11/19 01:10:23 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/executor/execMain.c,v 1.319 2008/11/30 20:51:25 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -2959,7 +2959,7 @@ OpenIntoRel(QueryDesc *queryDesc)
 	/*
 	 * Now replace the query's DestReceiver with one for SELECT INTO
 	 */
-	queryDesc->dest = CreateDestReceiver(DestIntoRel, NULL);
+	queryDesc->dest = CreateDestReceiver(DestIntoRel);
 	myState = (DR_intorel *) queryDesc->dest;
 	Assert(myState->pub.mydest == DestIntoRel);
 	myState->estate = estate;
@@ -3003,10 +3003,6 @@ CloseIntoRel(QueryDesc *queryDesc)
 
 /*
  * CreateIntoRelDestReceiver -- create a suitable DestReceiver object
- *
- * Since CreateDestReceiver doesn't accept the parameters we'd need,
- * we just leave the private fields zeroed here.  OpenIntoRel will
- * fill them in.
  */
 DestReceiver *
 CreateIntoRelDestReceiver(void)
@@ -3018,6 +3014,8 @@ CreateIntoRelDestReceiver(void)
 	self->pub.rShutdown = intorel_shutdown;
 	self->pub.rDestroy = intorel_destroy;
 	self->pub.mydest = DestIntoRel;
+
+	/* private fields will be set by OpenIntoRel */
 
 	return (DestReceiver *) self;
 }
