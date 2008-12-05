@@ -1377,7 +1377,9 @@ fetchWritableSystemAttribute(JunkFilter *junkfilter, TupleTableSlot *slot,
 	Datum datum;
 	bool isnull;
 
-#ifdef SECURITY_SYSATTR_NAME
+	/*
+	 * Fetch a junk value for security system attribute
+	 */
 	attno = ExecFindJunkAttribute(junkfilter, SECURITY_SYSATTR_NAME);
 	if (attno != InvalidAttrNumber)
 	{
@@ -1389,7 +1391,6 @@ fetchWritableSystemAttribute(JunkFilter *junkfilter, TupleTableSlot *slot,
 							SECURITY_SYSATTR_NAME)));
 		*tts_security = datum;
 	}
-#endif
 }
 
 static void
