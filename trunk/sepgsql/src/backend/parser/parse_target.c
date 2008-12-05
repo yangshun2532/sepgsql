@@ -518,9 +518,6 @@ updateTargetListEntry(ParseState *pstate,
 					  List *indirection,
 					  int location)
 {
-	bool	relhasoids
-		= RelationGetForm(pstate->p_target_relation)->relhasoids;
-
 	/* Fix up expression as needed */
 	tle->expr = transformAssignedExpr(pstate,
 									  tle->expr,
