@@ -11,7 +11,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/interfaces/libpq/fe-secure.c,v 1.109 2008/11/24 19:19:46 mha Exp $
+ *	  $PostgreSQL: pgsql/src/interfaces/libpq/fe-secure.c,v 1.113 2008/12/04 14:07:42 mha Exp $
  *
  * NOTES
  *
@@ -44,6 +44,7 @@
 #endif
 #include <arpa/inet.h>
 #endif
+
 #include <sys/stat.h>
 
 #ifdef ENABLE_THREAD_SAFETY
@@ -55,6 +56,7 @@
 #endif
 
 #ifdef USE_SSL
+
 #include <openssl/ssl.h>
 #include <openssl/bio.h>
 #if (SSLEAY_VERSION_NUMBER >= 0x00907000L)
@@ -64,16 +66,6 @@
 #include <openssl/engine.h>
 #endif
 
-/* fnmatch() needed for client certificate checking */
-#ifdef HAVE_FNMATCH
-#include <fnmatch.h>
-#else
-#include "fnmatchstub.h"
-#endif
-#endif   /* USE_SSL */
-
-
-#ifdef USE_SSL
 
 #ifndef WIN32
 #define USER_CERT_FILE		".postgresql/postgresql.crt"
@@ -98,19 +90,31 @@ static bool verify_peer_name_matches_certificate(PGconn *);
 static int	verify_cb(int ok, X509_STORE_CTX *ctx);
 static int	client_cert_cb(SSL *, X509 **, EVP_PKEY **);
 static int	init_ssl_system(PGconn *conn);
+static void destroy_ssl_system(void);
 static int	initialize_SSL(PGconn *);
-static void destroy_SSL(void);
+static void destroySSL(void);
 static PostgresPollingStatusType open_client_SSL(PGconn *);
 static void close_SSL(PGconn *);
 static char *SSLerrmessage(void);
 static void SSLerrfree(char *buf);
-#endif
 
-#ifdef USE_SSL
 static bool pq_initssllib = true;
-
 static SSL_CTX *SSL_context = NULL;
+
+#ifdef ENABLE_THREAD_SAFETY
+static int ssl_open_connections = 0;
+
+#ifndef WIN32
+static pthread_mutex_t ssl_config_mutex = PTHREAD_MUTEX_INITIALIZER;
+#else
+static pthread_mutex_t ssl_config_mutex = NULL;
+static long win32_ssl_create_mutex = 0;
 #endif
+
+#endif	/* ENABLE_THREAD_SAFETY */
+
+#endif /* SSL */
+
 
 /*
  * Macros to handle disabling and then restoring the state of SIGPIPE handling.
@@ -195,7 +199,7 @@ void
 pqsecure_destroy(void)
 {
 #ifdef USE_SSL
-	destroy_SSL();
+	destroySSL();
 #endif
 }
 
@@ -443,6 +447,51 @@ verify_cb(int ok, X509_STORE_CTX *ctx)
 	return ok;
 }
 
+
+/*
+ * Check if a wildcard certificate matches the server hostname.
+ *
+ * The rule for this is:
+ *  1. We only match the '*' character as wildcard
+ *  2. We match only wildcards at the start of the string
+ *  3. The '*' character does *not* match '.', meaning that we match only
+ *     a single pathname component.
+ *  4. We don't support more than one '*' in a single pattern.
+ *
+ * This is roughly in line with RFC2818, but contrary to what most browsers
+ * appear to be implementing (point 3 being the difference)
+ *
+ * Matching is always cone case-insensitive, since DNS is case insensitive.
+ */
+static int
+wildcard_certificate_match(const char *pattern, const char *string)
+{
+	int lenpat = strlen(pattern);
+	int lenstr = strlen(string);
+
+	/* If we don't start with a wildcard, it's not a match (rule 1 & 2) */
+	if (lenpat < 3 ||
+		pattern[0] != '*' ||
+		pattern[1] != '.')
+		return 0;
+
+	if (lenpat > lenstr)
+		/* If pattern is longer than the string, we can never match */
+		return 0;
+
+	if (pg_strcasecmp(pattern+1, string+lenstr-lenpat+1) != 0)
+		/* If string does not end in pattern (minus the wildcard), we don't match */
+		return 0;
+
+	if (strchr(string, '.') < string+lenstr-lenpat)
+		/* If there is a dot left of where the pattern started to match, we don't match (rule 3) */
+		return 0;
+
+	/* String ended with pattern, and didn't have a dot before, so we match */
+	return 1;
+}
+
+
 /*
  *	Verify that common name resolves to peer.
  */
@@ -472,7 +521,7 @@ verify_peer_name_matches_certificate(PGconn *conn)
 		if (pg_strcasecmp(conn->peer_cn, conn->pghost) == 0)
 			/* Exact name match */
 			return true;
-		else if (fnmatch(conn->peer_cn, conn->pghost, FNM_NOESCAPE/* | FNM_CASEFOLD*/) == 0)
+		else if (wildcard_certificate_match(conn->peer_cn, conn->pghost))
 			/* Matched wildcard certificate */
 			return true;
 		else
@@ -698,6 +747,9 @@ client_cert_cb(SSL *ssl, X509 **x509, EVP_PKEY **pkey)
 }
 
 #ifdef ENABLE_THREAD_SAFETY
+/*
+ *	Callback functions for OpenSSL internal locking
+ */
 
 static unsigned long
 pq_threadidcallback(void)
@@ -729,54 +781,74 @@ pq_lockingcallback(int mode, int n, const char *file, int line)
 #endif   /* ENABLE_THREAD_SAFETY */
 
 /*
- * Also see similar code in fe-connect.c, default_threadlock()
+ * Initialize SSL system. In threadsafe mode, this includes setting
+ * up OpenSSL callback functions to do thread locking.
+ *
+ * If the caller has told us (through PQinitSSL) that he's taking care
+ * of SSL, we expect that callbacks are already set, and won't try to
+ * override it.
+ *
+ * The conn parameter is only used to be able to pass back an error
+ * message - no connection local setup is made.
  */
 static int
 init_ssl_system(PGconn *conn)
 {
 #ifdef ENABLE_THREAD_SAFETY
-#ifndef WIN32
-	static pthread_mutex_t init_mutex = PTHREAD_MUTEX_INITIALIZER;
-#else
-	static pthread_mutex_t init_mutex = NULL;
-	static long mutex_initlock = 0;
-
-	if (init_mutex == NULL)
+#ifdef WIN32
+	/* Also see similar code in fe-connect.c, default_threadlock() */
+	if (ssl_config_mutex == NULL)
 	{
-		while (InterlockedExchange(&mutex_initlock, 1) == 1)
+		while (InterlockedExchange(&win32_ssl_create_mutex, 1) == 1)
 			 /* loop, another thread own the lock */ ;
-		if (init_mutex == NULL)
+		if (ssl_config_mutex == NULL)
 		{
-			if (pthread_mutex_init(&init_mutex, NULL))
+			if (pthread_mutex_init(&ssl_config_mutex, NULL))
 				return -1;
 		}
-		InterlockedExchange(&mutex_initlock, 0);
+		InterlockedExchange(&win32_ssl_create_mutex, 0);
 	}
 #endif
-	if (pthread_mutex_lock(&init_mutex))
+	if (pthread_mutex_lock(&ssl_config_mutex))
 		return -1;
 
-	if (pq_initssllib && pq_lockarray == NULL)
+	if (pq_initssllib)
 	{
-		int			i;
-
-		CRYPTO_set_id_callback(pq_threadidcallback);
-
-		pq_lockarray = malloc(sizeof(pthread_mutex_t) * CRYPTO_num_locks());
-		if (!pq_lockarray)
+		/*
+		 * If necessary, set up an array to hold locks for OpenSSL. OpenSSL will
+		 * tell us how big to make this array.
+		 */
+		if (pq_lockarray == NULL)
 		{
-			pthread_mutex_unlock(&init_mutex);
-			return -1;
-		}
-		for (i = 0; i < CRYPTO_num_locks(); i++)
-		{
-			if (pthread_mutex_init(&pq_lockarray[i], NULL))
+			int i;
+
+			pq_lockarray = malloc(sizeof(pthread_mutex_t) * CRYPTO_num_locks());
+			if (!pq_lockarray)
+			{
+				pthread_mutex_unlock(&ssl_config_mutex);
 				return -1;
+			}
+			for (i = 0; i < CRYPTO_num_locks(); i++)
+			{
+				if (pthread_mutex_init(&pq_lockarray[i], NULL))
+				{
+					free(pq_lockarray);
+					pq_lockarray = NULL;
+					pthread_mutex_unlock(&ssl_config_mutex);
+					return -1;
+				}
+			}
 		}
 
-		CRYPTO_set_locking_callback(pq_lockingcallback);
+		if (ssl_open_connections++ == 0)
+		{
+			/* These are only required for threaded SSL applications */
+			CRYPTO_set_id_callback(pq_threadidcallback);
+			CRYPTO_set_locking_callback(pq_lockingcallback);
+		}
 	}
-#endif
+#endif /* ENABLE_THREAD_SAFETY */
+
 	if (!SSL_context)
 	{
 		if (pq_initssllib)
@@ -797,19 +869,65 @@ init_ssl_system(PGconn *conn)
 							  err);
 			SSLerrfree(err);
 #ifdef ENABLE_THREAD_SAFETY
-			pthread_mutex_unlock(&init_mutex);
+			pthread_mutex_unlock(&ssl_config_mutex);
 #endif
 			return -1;
 		}
 	}
+
 #ifdef ENABLE_THREAD_SAFETY
-	pthread_mutex_unlock(&init_mutex);
+	pthread_mutex_unlock(&ssl_config_mutex);
 #endif
 	return 0;
 }
 
 /*
- *	Initialize global SSL context.
+ *	This function is needed because if the libpq library is unloaded
+ *	from the application, the callback functions will no longer exist when
+ *	SSL used by other parts of the system.  For this reason,
+ *	we unregister the SSL callback functions when the last libpq
+ *	connection is closed.
+ *
+ *	Callbacks are only set when we're compiled in threadsafe mode, so
+ *	we only need to remove them in this case.
+ */
+static void
+destroy_ssl_system(void)
+{
+#ifdef ENABLE_THREAD_SAFETY
+	/* Mutex is created in initialize_ssl_system() */
+	if (pthread_mutex_lock(&ssl_config_mutex))
+		return;
+
+	if (pq_initssllib)
+	{
+		if (ssl_open_connections > 0)
+			--ssl_open_connections;
+
+		if (ssl_open_connections == 0)
+		{
+			/* No connections left, unregister all callbacks */
+			CRYPTO_set_locking_callback(NULL);
+			CRYPTO_set_id_callback(NULL);
+
+			/*
+			 * We don't free the lock array. If we get another connection
+			 * from the same caller, we will just re-use it with the existing
+			 * mutexes.
+			 *
+			 * This means we leak a little memory on repeated load/unload
+			 * of the library.
+			 */
+		}
+	}
+
+	pthread_mutex_unlock(&ssl_config_mutex);
+#endif
+	return;
+}
+
+/*
+ *	Initialize SSL context.
  */
 static int
 initialize_SSL(PGconn *conn)
@@ -896,17 +1014,10 @@ initialize_SSL(PGconn *conn)
 	return 0;
 }
 
-/*
- *	Destroy global SSL context.
- */
 static void
-destroy_SSL(void)
+destroySSL(void)
 {
-	if (SSL_context)
-	{
-		SSL_CTX_free(SSL_context);
-		SSL_context = NULL;
-	}
+	destroy_ssl_system();
 }
 
 /*
@@ -1025,6 +1136,7 @@ close_SSL(PGconn *conn)
 		SSL_shutdown(conn->ssl);
 		SSL_free(conn->ssl);
 		conn->ssl = NULL;
+		pqsecure_destroy();
 		/* We have to assume we got EPIPE */
 		REMEMBER_EPIPE(true);
 		RESTORE_SIGPIPE();

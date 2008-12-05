@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/access/heap/heapam.c,v 1.270 2008/11/19 10:34:50 heikki Exp $
+ *	  $PostgreSQL: pgsql/src/backend/access/heap/heapam.c,v 1.271 2008/12/03 13:05:22 heikki Exp $
  *
  *
  * INTERFACE ROUTINES
@@ -47,6 +47,7 @@
 #include "access/transam.h"
 #include "access/tuptoaster.h"
 #include "access/valid.h"
+#include "access/visibilitymap.h"
 #include "access/xact.h"
 #include "access/xlogutils.h"
 #include "catalog/catalog.h"
@@ -196,6 +197,7 @@ heapgetpage(HeapScanDesc scan, BlockNumber page)
 	int			ntup;
 	OffsetNumber lineoff;
 	ItemId		lpp;
+	bool		all_visible;
 
 	Assert(page < scan->rs_nblocks);
 
@@ -234,20 +236,32 @@ heapgetpage(HeapScanDesc scan, BlockNumber page)
 	lines = PageGetMaxOffsetNumber(dp);
 	ntup = 0;
 
+	/*
+	 * If the all-visible flag indicates that all tuples on the page are
+	 * visible to everyone, we can skip the per-tuple visibility tests.
+	 */
+	all_visible = PageIsAllVisible(dp);
+
 	for (lineoff = FirstOffsetNumber, lpp = PageGetItemId(dp, lineoff);
 		 lineoff <= lines;
 		 lineoff++, lpp++)
 	{
 		if (ItemIdIsNormal(lpp))
 		{
-			HeapTupleData loctup;
 			bool		valid;
 
-			loctup.t_data = (HeapTupleHeader) PageGetItem((Page) dp, lpp);
-			loctup.t_len = ItemIdGetLength(lpp);
-			ItemPointerSet(&(loctup.t_self), page, lineoff);
+			if (all_visible)
+				valid = true;
+			else
+			{
+				HeapTupleData loctup;
 
-			valid = HeapTupleSatisfiesVisibility(&loctup, snapshot, buffer);
+				loctup.t_data = (HeapTupleHeader) PageGetItem((Page) dp, lpp);
+				loctup.t_len = ItemIdGetLength(lpp);
+				ItemPointerSet(&(loctup.t_self), page, lineoff);
+
+				valid = HeapTupleSatisfiesVisibility(&loctup, snapshot, buffer);
+			}
 			if (valid)
 				scan->rs_vistuples[ntup++] = lineoff;
 		}
@@ -1861,6 +1875,7 @@ heap_insert(Relation relation, HeapTuple tup, CommandId cid,
 	TransactionId xid = GetCurrentTransactionId();
 	HeapTuple	heaptup;
 	Buffer		buffer;
+	bool		all_visible_cleared = false;
 
 	if (relation->rd_rel->relhasoids)
 	{
@@ -1921,6 +1936,12 @@ heap_insert(Relation relation, HeapTuple tup, CommandId cid,
 
 	RelationPutHeapTuple(relation, buffer, heaptup);
 
+	if (PageIsAllVisible(BufferGetPage(buffer)))
+	{
+		all_visible_cleared = true;
+		PageClearAllVisible(BufferGetPage(buffer));
+	}
+
 	/*
 	 * XXX Should we set PageSetPrunable on this page ?
 	 *
@@ -1944,6 +1965,7 @@ heap_insert(Relation relation, HeapTuple tup, CommandId cid,
 		Page		page = BufferGetPage(buffer);
 		uint8		info = XLOG_HEAP_INSERT;
 
+		xlrec.all_visible_cleared = all_visible_cleared;
 		xlrec.target.node = relation->rd_node;
 		xlrec.target.tid = heaptup->t_self;
 		rdata[0].data = (char *) &xlrec;
@@ -1994,6 +2016,11 @@ heap_insert(Relation relation, HeapTuple tup, CommandId cid,
 	END_CRIT_SECTION();
 
 	UnlockReleaseBuffer(buffer);
+
+	/* Clear the bit in the visibility map if necessary */
+	if (all_visible_cleared)
+		visibilitymap_clear(relation, 
+							ItemPointerGetBlockNumber(&(heaptup->t_self)));
 
 	/*
 	 * If tuple is cachable, mark it for invalidation from the caches in case
@@ -2074,6 +2101,7 @@ heap_delete(Relation relation, ItemPointer tid,
 	Buffer		buffer;
 	bool		have_tuple_lock = false;
 	bool		iscombo;
+	bool		all_visible_cleared = false;
 
 	Assert(ItemPointerIsValid(tid));
 
@@ -2220,6 +2248,12 @@ l1:
 	 */
 	PageSetPrunable(page, xid);
 
+	if (PageIsAllVisible(page))
+	{
+		all_visible_cleared = true;
+		PageClearAllVisible(page);
+	}
+
 	/* store transaction information of xact deleting the tuple */
 	tp.t_data->t_infomask &= ~(HEAP_XMAX_COMMITTED |
 							   HEAP_XMAX_INVALID |
@@ -2241,6 +2275,7 @@ l1:
 		XLogRecPtr	recptr;
 		XLogRecData rdata[2];
 
+		xlrec.all_visible_cleared = all_visible_cleared;
 		xlrec.target.node = relation->rd_node;
 		xlrec.target.tid = tp.t_self;
 		rdata[0].data = (char *) &xlrec;
@@ -2284,6 +2319,10 @@ l1:
 	 * need to look at the contents of the tuple.
 	 */
 	CacheInvalidateHeapTuple(relation, &tp);
+
+	/* Clear the bit in the visibility map if necessary */
+	if (all_visible_cleared)
+		visibilitymap_clear(relation, BufferGetBlockNumber(buffer));
 
 	/* Now we can release the buffer */
 	ReleaseBuffer(buffer);
@@ -2395,6 +2434,8 @@ heap_update(Relation relation, ItemPointer otid, HeapTuple newtup,
 	bool		have_tuple_lock = false;
 	bool		iscombo;
 	bool		use_hot_update = false;
+	bool		all_visible_cleared = false;
+	bool		all_visible_cleared_new = false;
 
 	Assert(ItemPointerIsValid(otid));
 
@@ -2770,6 +2811,12 @@ l2:
 		MarkBufferDirty(newbuf);
 	MarkBufferDirty(buffer);
 
+	/*
+	 * Note: we mustn't clear PD_ALL_VISIBLE flags before writing the WAL
+	 * record, because log_heap_update looks at those flags to set the
+	 * corresponding flags in the WAL record.
+	 */
+
 	/* XLOG stuff */
 	if (!relation->rd_istemp)
 	{
@@ -2785,6 +2832,18 @@ l2:
 		PageSetTLI(BufferGetPage(buffer), ThisTimeLineID);
 	}
 
+	/* Clear PD_ALL_VISIBLE flags */
+	if (PageIsAllVisible(BufferGetPage(buffer)))
+	{
+		all_visible_cleared = true;
+		PageClearAllVisible(BufferGetPage(buffer));
+	}
+	if (newbuf != buffer && PageIsAllVisible(BufferGetPage(newbuf)))
+	{
+		all_visible_cleared_new = true;
+		PageClearAllVisible(BufferGetPage(newbuf));
+	}
+
 	END_CRIT_SECTION();
 
 	if (newbuf != buffer)
@@ -2797,6 +2856,12 @@ l2:
 	 * need to look at the contents of the tuple.
 	 */
 	CacheInvalidateHeapTuple(relation, &oldtup);
+
+	/* Clear bits in visibility map */
+	if (all_visible_cleared)
+		visibilitymap_clear(relation, BufferGetBlockNumber(buffer));
+	if (all_visible_cleared_new)
+		visibilitymap_clear(relation, BufferGetBlockNumber(newbuf));
 
 	/* Now we can release the buffer(s) */
 	if (newbuf != buffer)
@@ -3422,6 +3487,11 @@ l3:
 	LockBuffer(*buffer, BUFFER_LOCK_UNLOCK);
 
 	/*
+	 * Don't update the visibility map here. Locking a tuple doesn't
+	 * change visibility info.
+	 */
+
+	/*
 	 * Now that we have successfully marked the tuple as locked, we can
 	 * release the lmgr tuple lock, if we had it.
 	 */
@@ -3926,7 +3996,9 @@ log_heap_update(Relation reln, Buffer oldbuf, ItemPointerData from,
 
 	xlrec.target.node = reln->rd_node;
 	xlrec.target.tid = from;
+	xlrec.all_visible_cleared = PageIsAllVisible(BufferGetPage(oldbuf));
 	xlrec.newtid = newtup->t_self;
+	xlrec.new_all_visible_cleared = PageIsAllVisible(BufferGetPage(newbuf));
 
 	rdata[0].data = (char *) &xlrec;
 	rdata[0].len = SizeOfHeapUpdate;
@@ -4195,13 +4267,25 @@ heap_xlog_delete(XLogRecPtr lsn, XLogRecord *record)
 	OffsetNumber offnum;
 	ItemId		lp = NULL;
 	HeapTupleHeader htup;
+	BlockNumber	blkno;
+
+	blkno = ItemPointerGetBlockNumber(&(xlrec->target.tid));
+
+	/*
+	 * The visibility map always needs to be updated, even if the heap page
+	 * is already up-to-date.
+	 */
+	if (xlrec->all_visible_cleared)
+	{
+		Relation reln = CreateFakeRelcacheEntry(xlrec->target.node);
+		visibilitymap_clear(reln, blkno);
+		FreeFakeRelcacheEntry(reln);
+	}
 
 	if (record->xl_info & XLR_BKP_BLOCK_1)
 		return;
 
-	buffer = XLogReadBuffer(xlrec->target.node,
-							ItemPointerGetBlockNumber(&(xlrec->target.tid)),
-							false);
+	buffer = XLogReadBuffer(xlrec->target.node, blkno, false);
 	if (!BufferIsValid(buffer))
 		return;
 	page = (Page) BufferGetPage(buffer);
@@ -4233,6 +4317,9 @@ heap_xlog_delete(XLogRecPtr lsn, XLogRecord *record)
 	/* Mark the page as a candidate for pruning */
 	PageSetPrunable(page, record->xl_xid);
 
+	if (xlrec->all_visible_cleared)
+		PageClearAllVisible(page);
+
 	/* Make sure there is no forward chain link in t_ctid */
 	htup->t_ctid = xlrec->target.tid;
 	PageSetLSN(page, lsn);
@@ -4259,10 +4346,21 @@ heap_xlog_insert(XLogRecPtr lsn, XLogRecord *record)
 	Size		freespace;
 	BlockNumber	blkno;
 
+	blkno = ItemPointerGetBlockNumber(&(xlrec->target.tid));
+
+	/*
+	 * The visibility map always needs to be updated, even if the heap page
+	 * is already up-to-date.
+	 */
+	if (xlrec->all_visible_cleared)
+	{
+		Relation reln = CreateFakeRelcacheEntry(xlrec->target.node);
+		visibilitymap_clear(reln, blkno);
+		FreeFakeRelcacheEntry(reln);
+	}
+
 	if (record->xl_info & XLR_BKP_BLOCK_1)
 		return;
-
-	blkno = ItemPointerGetBlockNumber(&(xlrec->target.tid));
 
 	if (record->xl_info & XLOG_HEAP_INIT_PAGE)
 	{
@@ -4317,6 +4415,10 @@ heap_xlog_insert(XLogRecPtr lsn, XLogRecord *record)
 
 	PageSetLSN(page, lsn);
 	PageSetTLI(page, ThisTimeLineID);
+
+	if (xlrec->all_visible_cleared)
+		PageClearAllVisible(page);
+
 	MarkBufferDirty(buffer);
 	UnlockReleaseBuffer(buffer);
 
@@ -4356,6 +4458,18 @@ heap_xlog_update(XLogRecPtr lsn, XLogRecord *record, bool move, bool hot_update)
 	int			hsize;
 	uint32		newlen;
 	Size		freespace;
+
+	/*
+	 * The visibility map always needs to be updated, even if the heap page
+	 * is already up-to-date.
+	 */
+	if (xlrec->all_visible_cleared)
+	{
+		Relation reln = CreateFakeRelcacheEntry(xlrec->target.node);
+		visibilitymap_clear(reln,
+							ItemPointerGetBlockNumber(&xlrec->target.tid));
+		FreeFakeRelcacheEntry(reln);
+	}
 
 	if (record->xl_info & XLR_BKP_BLOCK_1)
 	{
@@ -4421,6 +4535,9 @@ heap_xlog_update(XLogRecPtr lsn, XLogRecord *record, bool move, bool hot_update)
 	/* Mark the page as a candidate for pruning */
 	PageSetPrunable(page, record->xl_xid);
 
+	if (xlrec->all_visible_cleared)
+		PageClearAllVisible(page);
+
 	/*
 	 * this test is ugly, but necessary to avoid thinking that insert change
 	 * is already applied
@@ -4435,6 +4552,17 @@ heap_xlog_update(XLogRecPtr lsn, XLogRecord *record, bool move, bool hot_update)
 	/* Deal with new tuple */
 
 newt:;
+
+	/*
+	 * The visibility map always needs to be updated, even if the heap page
+	 * is already up-to-date.
+	 */
+	if (xlrec->new_all_visible_cleared)
+	{
+		Relation reln = CreateFakeRelcacheEntry(xlrec->target.node);
+		visibilitymap_clear(reln, ItemPointerGetBlockNumber(&xlrec->newtid));
+		FreeFakeRelcacheEntry(reln);
+	}
 
 	if (record->xl_info & XLR_BKP_BLOCK_2)
 		return;
@@ -4513,6 +4641,9 @@ newsame:;
 	offnum = PageAddItem(page, (Item) htup, newlen, offnum, true, true);
 	if (offnum == InvalidOffsetNumber)
 		elog(PANIC, "heap_update_redo: failed to add tuple");
+
+	if (xlrec->new_all_visible_cleared)
+		PageClearAllVisible(page);
 
 	freespace = PageGetHeapFreeSpace(page); /* needed to update FSM below */
 
