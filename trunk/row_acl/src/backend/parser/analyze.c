@@ -714,7 +714,7 @@ transformSelectIntoSystemColumn(ParseState *pstate, Query *qry)
             continue;
 
 		attr = SystemAttributeByName(tle->resname, relhasoids);
-		if (attr && SystemAttributeIsWritable(attr->attnum, relhasoids))
+		if (attr && SystemAttributeIsWritable(attr->attnum))
 		{
 			uint32 mask = (1<<(-attr->attnum));
 
@@ -725,14 +725,15 @@ transformSelectIntoSystemColumn(ParseState *pstate, Query *qry)
 
 			if (exprType((Node *) tle->expr) != attr->atttypid)
 			{
-				tle->expr = (Expr *) coerce_to_target_type(pstate,
-														   (Node *) tle->expr,
-														   exprType((Node *) tle->expr),
-														   attr->atttypid,
-														   attr->atttypmod,
-														   COERCION_IMPLICIT,
-														   COERCE_IMPLICIT_CAST,
-														   -1);
+				tle->expr =
+					(Expr *) coerce_to_target_type(pstate,
+												   (Node *) tle->expr,
+												   exprType((Node *) tle->expr),
+												   attr->atttypid,
+												   attr->atttypmod,
+												   COERCION_IMPLICIT,
+												   COERCE_IMPLICIT_CAST,
+												   -1);
 			}
 			tle->resjunk = true;
 		}
