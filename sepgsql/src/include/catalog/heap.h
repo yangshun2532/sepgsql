@@ -98,7 +98,7 @@ extern Form_pg_attribute SystemAttributeDefinition(AttrNumber attno,
 extern Form_pg_attribute SystemAttributeByName(const char *attname,
 					  bool relhasoids);
 
-extern bool SystemAttributeIsWritable(AttrNumber attno, bool relhasoids);
+extern bool SystemAttributeIsWritable(AttrNumber attnum);
 
 extern void CheckAttributeNamesTypes(TupleDesc tupdesc, char relkind);
 

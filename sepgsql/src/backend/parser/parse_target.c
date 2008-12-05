@@ -343,22 +343,24 @@ transformAssignedExpr(ParseState *pstate,
 		attrtype = attnumTypeId(rd, attrno);
 		attrtypmod = rd->rd_att->attrs[attrno - 1]->atttypmod;
 	}
-	else if (SystemAttributeIsWritable(attrno, relhasoids))
-	{
-		Form_pg_attribute attr;
-
-		attr = SystemAttributeDefinition(attrno, relhasoids);
-		attrtype = attr->atttypid;
-		attrtypmod = attr->atttypmod;
-	}
 	else
 	{
-		ereport(ERROR,
-				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("cannot assign to system column \"%s\"",
-						colname),
-				 parser_errposition(pstate, location)));
-		return NULL;	/* compiler kindness */
+		Form_pg_attribute attr
+			= SystemAttributeDefinition(attrno, relhasoids);
+		if (attr && SystemAttributeIsWritable(attrno))
+		{
+			attrtype = attr->atttypid;
+			attrtypmod = attr->atttypmod;
+		}
+		else
+		{
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("cannot assign to system column \"%s\"",
+							colname),
+					 parser_errposition(pstate, location)));
+			return NULL;	/* compiler kindness */
+		}
 	}
 
 	/*
@@ -504,7 +506,7 @@ updateTargetListEntry(ParseState *pstate,
 	tle->resno = (AttrNumber) attrno;
 	tle->resname = colname;
 
-	if (SystemAttributeIsWritable(attrno, relhasoids))
+	if (SystemAttributeIsWritable(attrno))
 		tle->resjunk = true;
 }
 
@@ -793,10 +795,7 @@ checkInsertTargets(ParseState *pstate, List *cols, List **attrnos)
 			}
 			else if (attrno < 0)
 			{
-				bool    relhasoids
-					= RelationGetForm(pstate->p_target_relation)->relhasoids;
-
-				if (SystemAttributeIsWritable(attrno, relhasoids))
+				if (SystemAttributeIsWritable(attrno))
 				{
 					uint32	mask = (1<<(-attrno));
 
