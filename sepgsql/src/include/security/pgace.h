@@ -18,7 +18,7 @@
 #include "utils/builtins.h"
 #include "utils/rel.h"
 
-#ifdef HAVE_SELINUX
+#if defined(HAVE_SELINUX)
 #include "security/sepgsql.h"
 #endif
 
