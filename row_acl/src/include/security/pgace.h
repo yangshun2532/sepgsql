@@ -20,8 +20,7 @@
 
 #if defined(HAVE_SELINUX)
 #include "security/sepgsql.h"
-#endif
-#ifdef HAVE_ROW_ACL
+#elif defined (HAVE_ROW_ACL)
 #include "security/row_acl.h"
 #endif
 
@@ -93,7 +92,7 @@ pgaceSecurityFeatureIdentity(void)
 	if (rowaclIsEnabled())
 		return "rowacl";
 #endif
-	return "nothing";
+	return "unavailable";
 }
 
 /******************************************************************

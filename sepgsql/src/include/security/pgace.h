@@ -87,7 +87,7 @@ pgaceSecurityFeatureIdentity(void)
 	if (sepgsqlIsEnabled())
 		return "selinux";
 #endif
-	return "nothing";
+	return "unavailable";
 }
 
 /******************************************************************

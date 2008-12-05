@@ -13,8 +13,7 @@ OBJS := pgaceCommon.o
 ifeq ($(enable_selinux), yes)
 OBJS += sepgsql/avc.o sepgsql/core.o sepgsql/hooks.o		\
 	sepgsql/permissions.o sepgsql/proxy.o
-endif
-ifeq ($(enable_row_acl), yes)
+else
 OBJS += row_acl/row_acl.o
 endif
 
