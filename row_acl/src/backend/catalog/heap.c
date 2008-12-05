@@ -159,10 +159,10 @@ static FormData_pg_attribute a7 = {
 	true, 'p', 'i', true, false, false, true, 0
 };
 
-#ifdef SECURITY_SYSATTR_NAME
 /*
- * SECURITY_SYSATTR_NAME is defined at PGACE header file.
- * If SELinux is enabled, it is defined as "security_context"
+ * SECURITY_SYSATTR_NAME is the name of security system attribute used
+ * for enhanced-security mechanisms. In SE-PostgreSQL cases, it is defined
+ * as "security_context" in pg_config.h.
  */
 static FormData_pg_attribute a8 = {
 	0, {SECURITY_SYSATTR_NAME}, TEXTOID, 0, -1,
@@ -171,9 +171,6 @@ static FormData_pg_attribute a8 = {
 };
 
 static const Form_pg_attribute SysAtt[] = {&a1, &a2, &a3, &a4, &a5, &a6, &a7, &a8};
-#else
-static const Form_pg_attribute SysAtt[] = {&a1, &a2, &a3, &a4, &a5, &a6, &a7};
-#endif
 
 /*
  * This function returns a Form_pg_attribute pointer for a system attribute.
@@ -218,12 +215,11 @@ SystemAttributeByName(const char *attname, bool relhasoids)
  * system column. If not, returns false.
  */
 bool
-SystemAttributeIsWritable(AttrNumber attno, bool relhasoids)
+SystemAttributeIsWritable(AttrNumber attnum)
 {
-#ifdef SECURITY_SYSATTR_NAME
-	if (attno == SecurityAttributeNumber)
+	if (attnum == SecurityAttributeNumber)
 		return true;
-#endif
+
 	return false;
 }
 
