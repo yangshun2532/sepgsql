@@ -22,7 +22,7 @@
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/nodes/equalfuncs.c,v 1.338 2008/11/24 08:46:03 petere Exp $
+ *	  $PostgreSQL: pgsql/src/backend/nodes/equalfuncs.c,v 1.340 2008/12/04 17:51:26 petere Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -1168,6 +1168,7 @@ _equalFunctionParameter(FunctionParameter *a, FunctionParameter *b)
 	COMPARE_STRING_FIELD(name);
 	COMPARE_NODE_FIELD(argType);
 	COMPARE_SCALAR_FIELD(mode);
+	COMPARE_NODE_FIELD(defexpr);
 
 	return true;
 }
@@ -1439,6 +1440,7 @@ _equalVacuumStmt(VacuumStmt *a, VacuumStmt *b)
 	COMPARE_SCALAR_FIELD(analyze);
 	COMPARE_SCALAR_FIELD(verbose);
 	COMPARE_SCALAR_FIELD(freeze_min_age);
+	COMPARE_SCALAR_FIELD(scan_all);
 	COMPARE_NODE_FIELD(relation);
 	COMPARE_NODE_FIELD(va_cols);
 

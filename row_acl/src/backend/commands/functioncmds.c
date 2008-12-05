@@ -10,7 +10,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/commands/functioncmds.c,v 1.101 2008/11/02 01:45:27 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/commands/functioncmds.c,v 1.102 2008/12/04 17:51:26 petere Exp $
  *
  * DESCRIPTION
  *	  These routines take the parse tree and pick out the
@@ -49,8 +49,10 @@
 #include "commands/proclang.h"
 #include "miscadmin.h"
 #include "parser/parse_coerce.h"
+#include "parser/parse_expr.h"
 #include "parser/parse_func.h"
 #include "parser/parse_type.h"
+#include "parser/parse_utilcmd.h"
 #include "security/pgace.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
@@ -165,7 +167,9 @@ examine_parameter_list(List *parameters, Oid languageOid,
 					   ArrayType **allParameterTypes,
 					   ArrayType **parameterModes,
 					   ArrayType **parameterNames,
-					   Oid *requiredResultType)
+					   List **parameterDefaults,
+					   Oid *requiredResultType,
+					   const char *queryString)
 {
 	int			parameterCount = list_length(parameters);
 	Oid		   *inTypes;
@@ -178,6 +182,8 @@ examine_parameter_list(List *parameters, Oid languageOid,
 	bool		have_names = false;
 	ListCell   *x;
 	int			i;
+	bool		have_defaults = false;
+	ParseState *pstate;
 
 	*requiredResultType = InvalidOid;	/* default result */
 
@@ -185,6 +191,10 @@ examine_parameter_list(List *parameters, Oid languageOid,
 	allTypes = (Datum *) palloc(parameterCount * sizeof(Datum));
 	paramModes = (Datum *) palloc(parameterCount * sizeof(Datum));
 	paramNames = (Datum *) palloc0(parameterCount * sizeof(Datum));
+	*parameterDefaults = NIL;
+
+	pstate = make_parsestate(NULL);
+	pstate->p_sourcetext = queryString;
 
 	/* Scan the list and extract data into work arrays */
 	i = 0;
@@ -277,8 +287,32 @@ examine_parameter_list(List *parameters, Oid languageOid,
 			have_names = true;
 		}
 
+		if (fp->defexpr)
+		{
+			if (fp->mode != FUNC_PARAM_IN && fp->mode != FUNC_PARAM_INOUT)
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_FUNCTION_DEFINITION),
+						 errmsg("only IN and INOUT parameters can have default values")));
+
+			*parameterDefaults = lappend(*parameterDefaults,
+										 coerce_to_specific_type(NULL,
+																 transformExpr(pstate, fp->defexpr),
+																 toid,
+																 "DEFAULT"));
+			have_defaults = true;
+		}
+		else
+		{
+			if (have_defaults)
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_FUNCTION_DEFINITION),
+						 errmsg("parameter without default value specified after parameter with default value")));
+		}
+
 		i++;
 	}
+
+	free_parsestate(pstate);
 
 	/* Now construct the proper outputs as needed */
 	*parameterTypes = buildoidvector(inTypes, inCount);
@@ -663,7 +697,7 @@ interpret_AS_clause(Oid languageOid, const char *languageName,
  *	 Execute a CREATE FUNCTION utility statement.
  */
 void
-CreateFunction(CreateFunctionStmt *stmt)
+CreateFunction(CreateFunctionStmt *stmt, const char *queryString)
 {
 	char	   *probin_str;
 	char	   *prosrc_str;
@@ -690,7 +724,8 @@ CreateFunction(CreateFunctionStmt *stmt)
 	HeapTuple	languageTuple;
 	Form_pg_language languageStruct;
 	List	   *as_clause;
-	DefElem	   *pgaceItem = NULL;
+	List		*defaults = NULL;
+	DefElem    *pgaceItem = NULL;
 
 	/* Convert list of names to a name and namespace */
 	namespaceId = QualifiedNameGetCreationNamespace(stmt->funcname,
@@ -764,7 +799,9 @@ CreateFunction(CreateFunctionStmt *stmt)
 						   &allParameterTypes,
 						   &parameterModes,
 						   &parameterNames,
-						   &requiredResultType);
+						   &defaults,
+						   &requiredResultType,
+						   queryString);
 
 	if (stmt->returnType)
 	{
@@ -848,6 +885,7 @@ CreateFunction(CreateFunctionStmt *stmt)
 					PointerGetDatum(proconfig),
 					procost,
 					prorows,
+					defaults,
 					pgaceItem);
 }
 
