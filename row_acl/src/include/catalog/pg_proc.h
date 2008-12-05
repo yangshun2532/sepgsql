@@ -4284,10 +4284,10 @@ DATA(insert OID = 3458 ( sepgsql_get_range		PGNSP PGUID 12 1 0 0 f f t f v 1 0 2
 DATA(insert OID = 3459 ( sepgsql_set_range		PGNSP PGUID 12 1 0 0 f f t f v 2 0 25 "25 25" _null_ _null_ _null_ _null_ sepgsql_set_range _null_ _null_ _null_ ));
 
 /* Row-level ACL related function */
-DATA(insert OID = 3470 ( rowacl_grant	PGNSP PGUID 12 1 0 0 f f t f i 4 25 "26 25 25 25" _null_ _null_ _null_ rowacl_grant _null_ _null_ _null_ ));
-DATA(insert OID = 3471 ( rowacl_revoke	PGNSP PGUID 12 1 0 0 f f t f i 4 25 "26 25 25 25" _null_ _null_ _null_ rowacl_revoke _null_ _null_ _null_ ));
-DATA(insert OID = 3472 ( rowacl_revoke_cascade	PGNSP PGUID 12 1 0 0 f f t f i 4 25 "26 25 25 25" _null_ _null_ _null_ rowacl_revoke_cascade _null_ _null_ _null_ ));
-DATA(insert OID = 3473 ( rowacl_table_default	PGNSP PGUID 12 1 0 0 f f t f v 1 25 "25" _null_ _null_ _null_ rowacl_table_default _null_ _null_ _null_ ));
+DATA(insert OID = 3470 ( rowacl_grant			PGNSP PGUID 12 1 0 0 f f t f i 4 0 25 "26 25 25 25" _null_ _null_ _null_ _null_ rowacl_grant _null_ _null_ _null_ ));
+DATA(insert OID = 3471 ( rowacl_revoke			PGNSP PGUID 12 1 0 0 f f t f i 4 0 25 "26 25 25 25" _null_ _null_ _null_ _null_ rowacl_revoke _null_ _null_ _null_ ));
+DATA(insert OID = 3472 ( rowacl_revoke_cascade		PGNSP PGUID 12 1 0 0 f f t f i 4 0 25 "26 25 25 25" _null_ _null_ _null_ _null_ rowacl_revoke_cascade _null_ _null_ _null_ ));
+DATA(insert OID = 3473 ( rowacl_table_default		PGNSP PGUID 12 1 0 0 f f t f v 1 0 25 "25" _null_ _null_ _null_ _null_ rowacl_table_default _null_ _null_ _null_ ));
 
 /* enum related procs */
 DATA(insert OID = 3504 (  anyenum_in	PGNSP PGUID 12 1 0 0 f f t f i 1 0 3500 "2275" _null_ _null_ _null_ _null_ anyenum_in _null_ _null_ _null_ ));
