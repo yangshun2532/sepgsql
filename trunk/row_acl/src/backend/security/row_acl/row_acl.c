@@ -821,7 +821,7 @@ rowacl_revoke_cascade(PG_FUNCTION_ARGS)
 Datum
 rowacl_table_default(PG_FUNCTION_ARGS)
 {
-	char *ident, *tok, *tmp;
+	char *ident, *tok, *tmp = NULL;
 	List *names = NIL;
 	RangeVar *rv;
 	HeapTuple reltup;
