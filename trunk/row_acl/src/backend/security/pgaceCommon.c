@@ -671,13 +671,6 @@ unavailable_function(const char *fn_name, int error_code)
 
 #ifndef HAVE_SELINUX
 
-static Datum
-sepgsql_is_disabled(const char *function)
-{
-	return unavailable_function(__FUNCTION__,
-								ERRCODE_SELINUX_ERROR);
-}
-
 Datum
 sepgsql_getcon(PG_FUNCTION_ARGS)
 {
