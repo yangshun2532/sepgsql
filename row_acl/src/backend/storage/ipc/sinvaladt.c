@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/storage/ipc/sinvaladt.c,v 1.74 2008/07/18 14:45:48 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/storage/ipc/sinvaladt.c,v 1.76 2008/12/09 15:59:39 heikki Exp $
  *
  *-------------------------------------------------------------------------
  */
