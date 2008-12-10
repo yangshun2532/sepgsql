@@ -55,7 +55,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/postmaster/autovacuum.c,v 1.88 2008/12/04 11:42:24 heikki Exp $
+ *	  $PostgreSQL: pgsql/src/backend/postmaster/autovacuum.c,v 1.90 2008/12/09 15:59:39 heikki Exp $
  *
  *-------------------------------------------------------------------------
  */

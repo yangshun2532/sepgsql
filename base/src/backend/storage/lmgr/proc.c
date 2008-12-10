@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/storage/lmgr/proc.c,v 1.202 2008/11/02 21:24:52 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/storage/lmgr/proc.c,v 1.204 2008/12/09 15:59:39 heikki Exp $
  *
  *-------------------------------------------------------------------------
  */
