@@ -7,6 +7,7 @@ fi
 
 BASEDIR=`dirname "$0"` || exit 1
 PHPVERSION=`rpm -qp --queryformat %{version} "$1"` || exit 1
+PHPVERSION=`echo $PHPVERSION | sed 's/\.[0-9]\+$/.x/g'`
 # check dirname
 svn info ${BASEDIR}/${PHPVERSION} >& /dev/null || exit 1
 
