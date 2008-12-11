@@ -1,0 +1,236 @@
+--
+-- Initial setup of SE-PostgreSQL testcases
+--
+-- selinux_user: unconfined_u
+-- selinux_role: unconfined_r
+-- selinux_type: unconfined_t
+-- selinux_range: s0-s0:c0.c15
+-- -------------------------------------------------------
+-- Test B : Row-Level Access Control
+-- -------------------------------------------------------
+CREATE TABLE b1
+(
+	x	integer primary key,
+	y	text
+);
+psql:./A_testcases_setup.sql:17: NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "b1_pkey" for table "b1"
+CREATE TABLE b2
+(
+	a	integer primary key,
+	b	text
+);
+psql:./A_testcases_setup.sql:23: NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "b2_pkey" for table "b2"
+INSERT INTO b1 VALUES	(1, 'water'),  (2, 'coke'),  (3, 'juice'),
+			(4, 'coffee'), (5, 'beer'),  (6, 'wine');
+INSERT INTO b2 VALUES	(1, 'red'),    (2, 'blue'),  (3, 'green'),
+			(4, 'yellow'), (5, 'black'), (6, 'white');
+UPDATE b1 SET security_context = sepgsql_set_range(security_context, 's0:c1')
+	WHERE x IN (3, 4);
+UPDATE b1 SET security_context = sepgsql_set_type(security_context, 'sepgsql_fixed_table_t')
+	WHERE x IN (2, 3);
+UPDATE b2 SET security_context = sepgsql_set_range(security_context, 's0:c1')
+	WHERE a IN (4, 5);
+UPDATE b2 SET security_context = sepgsql_set_type(security_context, 'sepgsql_ro_table_t')
+	WHERE a IN (5, 6);
+SELECT security_context, * FROM b1;
+                 security_context                  | x |   y    
+---------------------------------------------------+---+--------
+ unconfined_u:object_r:sepgsql_table_t:s0          | 1 | water
+ unconfined_u:object_r:sepgsql_table_t:s0          | 5 | beer
+ unconfined_u:object_r:sepgsql_table_t:s0          | 6 | wine
+ unconfined_u:object_r:sepgsql_table_t:s0:c1       | 4 | coffee
+ unconfined_u:object_r:sepgsql_fixed_table_t:s0    | 2 | coke
+ unconfined_u:object_r:sepgsql_fixed_table_t:s0:c1 | 3 | juice
+(6 rows)
+
+SELECT security_context, * FROM b2;
+                security_context                | a |   b    
+------------------------------------------------+---+--------
+ unconfined_u:object_r:sepgsql_table_t:s0       | 1 | red
+ unconfined_u:object_r:sepgsql_table_t:s0       | 2 | blue
+ unconfined_u:object_r:sepgsql_table_t:s0       | 3 | green
+ unconfined_u:object_r:sepgsql_table_t:s0:c1    | 4 | yellow
+ unconfined_u:object_r:sepgsql_ro_table_t:s0:c1 | 5 | black
+ unconfined_u:object_r:sepgsql_ro_table_t:s0    | 6 | white
+(6 rows)
+
+-- -------------------------------------------------------
+-- Test C : Column-Level Access Control
+-- -------------------------------------------------------
+CREATE TABLE c1
+(
+	a  INTEGER
+	   SECURITY_CONTEXT = 'system_u:object_r:sepgsql_secret_table_t:s0',
+	b  TEXT,
+	c  TEXT
+) SECURITY_CONTEXT = 'system_u:object_r:sepgsql_ro_table_t:s0';
+SELECT security_context, relname FROM pg_class
+       WHERE relname ='c1' and relnamespace = 2200;
+            security_context             | relname 
+-----------------------------------------+---------
+ system_u:object_r:sepgsql_ro_table_t:s0 | c1
+(1 row)
+
+SELECT security_context, attname FROM pg_attribute
+       WHERE attrelid in (SELECT oid FROM pg_class WHERE relname ='c1' and relnamespace = 2200);
+              security_context               |     attname      
+---------------------------------------------+------------------
+ unconfined_u:object_r:sepgsql_ro_table_t:s0 | security_context
+ unconfined_u:object_r:sepgsql_ro_table_t:s0 | tableoid
+ unconfined_u:object_r:sepgsql_ro_table_t:s0 | cmax
+ unconfined_u:object_r:sepgsql_ro_table_t:s0 | xmax
+ unconfined_u:object_r:sepgsql_ro_table_t:s0 | cmin
+ unconfined_u:object_r:sepgsql_ro_table_t:s0 | xmin
+ unconfined_u:object_r:sepgsql_ro_table_t:s0 | ctid
+ system_u:object_r:sepgsql_secret_table_t:s0 | a
+ unconfined_u:object_r:sepgsql_ro_table_t:s0 | b
+ unconfined_u:object_r:sepgsql_ro_table_t:s0 | c
+(10 rows)
+
+CREATE TABLE c2
+(
+	a	TEXT,
+	b	TEXT,
+	c	TEXT,
+	d	TEXT
+);
+ALTER TABLE c2 ALTER b SECURITY_CONTEXT = 'system_u:object_r:sepgsql_ro_table_t:s0';
+ALTER TABLE c2 ALTER c SECURITY_CONTEXT = 'system_u:object_r:sepgsql_secret_table_t:s0';
+ALTER TABLE c2 ALTER d SECURITY_CONTEXT = 'system_u:object_r:sepgsql_fixed_table_t:s0';
+SELECT security_context, relname FROM pg_class
+       WHERE relname ='c2' and relnamespace = 2200;
+             security_context             | relname 
+------------------------------------------+---------
+ unconfined_u:object_r:sepgsql_table_t:s0 | c2
+(1 row)
+
+SELECT security_context, attname FROM pg_attribute
+       WHERE attrelid in (SELECT oid FROM pg_class WHERE relname ='c2' and relnamespace = 2200);
+              security_context               |     attname      
+---------------------------------------------+------------------
+ unconfined_u:object_r:sepgsql_table_t:s0    | security_context
+ unconfined_u:object_r:sepgsql_table_t:s0    | tableoid
+ unconfined_u:object_r:sepgsql_table_t:s0    | cmax
+ unconfined_u:object_r:sepgsql_table_t:s0    | xmax
+ unconfined_u:object_r:sepgsql_table_t:s0    | cmin
+ unconfined_u:object_r:sepgsql_table_t:s0    | xmin
+ unconfined_u:object_r:sepgsql_table_t:s0    | ctid
+ unconfined_u:object_r:sepgsql_table_t:s0    | a
+ system_u:object_r:sepgsql_ro_table_t:s0     | b
+ system_u:object_r:sepgsql_secret_table_t:s0 | c
+ system_u:object_r:sepgsql_fixed_table_t:s0  | d
+(11 rows)
+
+-- -------------------------------------------------------
+-- Test D : PK/FK constraint
+-- -------------------------------------------------------
+CREATE TABLE d1 (
+       id     integer primary key,
+       name   text
+);
+psql:./A_testcases_setup.sql:85: NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "d1_pkey" for table "d1"
+CREATE TABLE d2 (
+       id    integer references d1(id),
+       tag   text
+);
+INSERT INTO d1 VALUES (1, 'aaa'), (2, 'bbb'), (3, 'ccc'), (4, 'ddd');
+INSERT INTO d2 VALUES (2, 'xxx'), (3, 'yyy'), (4, 'zzz');
+UPDATE d1 SET security_context = sepgsql_set_range(security_context, 's0:c1')
+       WHERE id IN (2, 3);
+UPDATE d2 SET security_context = sepgsql_set_range(security_context, 's0:c1')
+       WHERE id IN (3, 4);
+-- -------------------------------------------------------
+-- Test E : Trusted Procedure
+-- -------------------------------------------------------
+CREATE TABLE e1 (
+       id    integer primary key,
+       tag   text
+       	     SECURITY_CONTEXT = 'system_u:object_r:sepgsql_secret_table_t:s0'
+);
+psql:./A_testcases_setup.sql:109: NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "e1_pkey" for table "e1"
+INSERT INTO e1 VALUES (10, 'abcd'), (20, 'efgh');
+CREATE OR REPLACE FUNCTION e2 (integer) RETURNS text
+       LANGUAGE 'sql'
+       SECURITY_CONTEXT = 'system_u:object_r:sepgsql_trusted_proc_exec_t:s0'
+       AS 'SELECT tag FROM e1 WHERE id = $1';
+CREATE OR REPLACE FUNCTION e3 () RETURNS text
+       LANGUAGE 'sql'
+       SECURITY_CONTEXT = 'system_u:object_r:sepgsql_trusted_proc_exec_t:s0'
+       AS 'SELECT sepgsql_getcon()';
+-- -------------------------------------------------------
+-- Test F : Large Object
+-- -------------------------------------------------------
+SELECT lo_import('/tmp/sepgsql_test_blob', 6001);
+ lo_import 
+-----------
+      6001
+(1 row)
+
+SELECT lo_import('/tmp/sepgsql_test_blob', 6002);
+ lo_import 
+-----------
+      6002
+(1 row)
+
+SELECT lo_import('/tmp/sepgsql_test_blob', 6003);
+ lo_import 
+-----------
+      6003
+(1 row)
+
+SELECT lo_set_security(6001, 'system_u:object_r:sepgsql_blob_t:s0');
+ lo_set_security 
+-----------------
+ t
+(1 row)
+
+SELECT lo_set_security(6002, 'system_u:object_r:sepgsql_ro_blob_t:s0');
+ lo_set_security 
+-----------------
+ t
+(1 row)
+
+SELECT lo_set_security(6003, 'system_u:object_r:sepgsql_secret_blob_t:s0');
+ lo_set_security 
+-----------------
+ t
+(1 row)
+
+-- -------------------------------------------------------
+-- Test G : Copy To/From
+-- -------------------------------------------------------
+CREATE TABLE g1 (
+       a     integer,
+       b     text
+);
+COPY g1 (security_context, a, b) FROM stdin;
+CREATE TABLE g2 (
+       x     integer,
+       y     text SECURITY_CONTEXT = 'system_u:object_r:sepgsql_ro_table_t:s0',
+       z     text SECURITY_CONTEXT = 'system_u:object_r:sepgsql_secret_table_t:s0'
+);
+COPY g2 FROM stdin;
+-- -------------------------------------------------------
+-- Test H : Set Operations/With Recursive
+-- -------------------------------------------------------
+CREATE TABLE h1 (
+	id	integer primary key,
+	pid	integer references h1(id),
+	name	text
+);
+psql:./A_testcases_setup.sql:174: NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "h1_pkey" for table "h1"
+CREATE TABLE h2 (
+	s	integer SECURITY_CONTEXT = 'system_u:object_r:sepgsql_secret_table_t:s0',
+	t	integer
+);
+CREATE TABLE h3 (
+	a	integer,
+	b	text
+);
+CREATE TABLE h4 (
+	x	integer,
+	y	text
+);
+COPY h1 (security_context,id,pid,name) FROM stdin;
+COPY h3 (security_context,a,b) FROM stdin;
+COPY h4 (security_context,x,y) FROM stdin;
