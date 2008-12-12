@@ -327,10 +327,8 @@ default_reloptions(Datum reloptions, bool validate,
 {
 	static const char *const default_keywords[] = {
 		"fillfactor",
-#ifdef HAVE_ROW_ACL
 		"row_level_acl",
 		"default_row_acl",
-#endif
 	};
 	char	   *values[lengthof(default_keywords)];
 	int			index;

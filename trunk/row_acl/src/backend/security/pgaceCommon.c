@@ -37,17 +37,8 @@
  *	 GUC Parameter Support
  *****************************************************************************/
 
-/*
- * pgaceShowsFeatureIdentifier
- *
- * It is invoked when 'pgace_feature' is refered, and it has to return
- * an identifier of the guest.
- */
-const char *
-pgaceShowSecurityFeature(void)
-{
-	return pgaceSecurityFeatureIdentity();
-}
+PgaceSecurityOpts pgace_security;
+
 
 /*****************************************************************************
  *	 Extended SQL statements support
@@ -742,35 +733,3 @@ sepgsql_set_range(PG_FUNCTION_ARGS)
 }
 
 #endif   /* HAVE_SELINUX */
-
-#ifndef HAVE_ROW_ACL
-
-Datum
-rowacl_grant(PG_FUNCTION_ARGS)
-{
-	return unavailable_function(__FUNCTION__,
-								ERRCODE_ROW_ACL_ERROR);
-}
-
-Datum
-rowacl_revoke(PG_FUNCTION_ARGS)
-{
-	return unavailable_function(__FUNCTION__,
-								ERRCODE_ROW_ACL_ERROR);
-}
-
-Datum
-rowacl_revoke_cascade(PG_FUNCTION_ARGS)
-{
-	return unavailable_function(__FUNCTION__,
-								ERRCODE_ROW_ACL_ERROR);
-}
-
-Datum
-rowacl_table_default(PG_FUNCTION_ARGS)
-{
-	return unavailable_function(__FUNCTION__,
-								ERRCODE_ROW_ACL_ERROR);
-}
-
-#endif	/* HAVE_ROW_ACL */

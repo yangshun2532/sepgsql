@@ -5565,7 +5565,7 @@ fi
 
 
 if test "$enable_selinux" = yes; then
-	{ echo "$as_me:$LINENO: checking for getpeercon in -lselinux" >&5
+    { echo "$as_me:$LINENO: checking for getpeercon in -lselinux" >&5
 echo $ECHO_N "checking for getpeercon in -lselinux... $ECHO_C" >&6; }
 if test "${ac_cv_lib_selinux_getpeercon+set}" = set; then
   echo $ECHO_N "(cached) $ECHO_C" >&6
@@ -5628,11 +5628,6 @@ fi
 echo "${ECHO_T}$ac_cv_lib_selinux_getpeercon" >&6; }
 if test $ac_cv_lib_selinux_getpeercon = yes; then
 
-cat >>confdefs.h <<\_ACEOF
-#define SECURITY_SYSATTR_NAME "security_context"
-_ACEOF
-
-
 cat >>confdefs.h <<_ACEOF
 #define HAVE_SELINUX 1
 _ACEOF
@@ -5643,26 +5638,6 @@ else
 echo "$as_me: error: \"--enable-selinux requires libselinux.\"" >&2;}
    { (exit 1); exit 1; }; }
 fi
-
-fi
-
-#
-# Row-level ACL support
-#
-
-if ! test "$enable_selinux" = yes; then
-	# This feature is automatically enabled when any other
-	# "enhanced-security" feature is activated.
-	# So, it does not have its own "--enable-xxx" option.
-
-cat >>confdefs.h <<\_ACEOF
-#define SECURITY_SYSATTR_NAME "tuple_acl"
-_ACEOF
-
-
-cat >>confdefs.h <<_ACEOF
-#define HAVE_ROW_ACL 1
-_ACEOF
 
 fi
 
