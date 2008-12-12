@@ -1308,7 +1308,7 @@ fetchWritableSystemAttribute(JunkFilter *junkfilter, TupleTableSlot *slot,
 	/*
 	 * Fetch a junk value for security system attribute
 	 */
-	attno = ExecFindJunkAttribute(junkfilter, SECURITY_SYSATTR_NAME);
+	attno = ExecFindJunkAttribute(junkfilter, SecurityAttributeName);
 	if (attno != InvalidAttrNumber)
 	{
 		datum = ExecGetJunkAttribute(slot, attno, &isnull);
@@ -1316,7 +1316,7 @@ fetchWritableSystemAttribute(JunkFilter *junkfilter, TupleTableSlot *slot,
 			ereport(ERROR,
 					(errcode(ERRCODE_PGACE_ERROR),
 					 errmsg("null value in column \"%s\" violates not-null constraint",
-							SECURITY_SYSATTR_NAME)));
+							SecurityAttributeName)));
 		*tts_security = datum;
 	}
 }
