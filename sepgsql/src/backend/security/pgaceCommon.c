@@ -37,17 +37,8 @@
  *	 GUC Parameter Support
  *****************************************************************************/
 
-/*
- * pgaceShowsFeatureIdentifier
- *
- * It is invoked when 'pgace_feature' is refered, and it has to return
- * an identifier of the guest.
- */
-const char *
-pgaceShowSecurityFeature(void)
-{
-	return pgaceSecurityFeatureIdentity();
-}
+PgaceSecurityOpts pgace_security;
+
 
 /*****************************************************************************
  *	 Extended SQL statements support

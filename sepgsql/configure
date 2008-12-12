@@ -4649,7 +4649,7 @@ else
 fi;
 
 if test "$enable_selinux" = yes; then
-	echo "$as_me:$LINENO: checking for getpeercon in -lselinux" >&5
+    echo "$as_me:$LINENO: checking for getpeercon in -lselinux" >&5
 echo $ECHO_N "checking for getpeercon in -lselinux... $ECHO_C" >&6
 if test "${ac_cv_lib_selinux_getpeercon+set}" = set; then
   echo $ECHO_N "(cached) $ECHO_C" >&6
@@ -4714,11 +4714,6 @@ fi
 echo "$as_me:$LINENO: result: $ac_cv_lib_selinux_getpeercon" >&5
 echo "${ECHO_T}$ac_cv_lib_selinux_getpeercon" >&6
 if test $ac_cv_lib_selinux_getpeercon = yes; then
-
-cat >>confdefs.h <<\_ACEOF
-#define SECURITY_SYSATTR_NAME "security_context"
-_ACEOF
-
 
 cat >>confdefs.h <<_ACEOF
 #define HAVE_SELINUX 1

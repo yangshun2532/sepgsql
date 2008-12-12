@@ -773,7 +773,7 @@ proxyRteSubQuery(sepgsqlWalkerContext *swc, Query *query)
 
 			if (tle->resjunk &&
 				tle->resname &&
-				strcmp(tle->resname, SECURITY_SYSATTR_NAME) == 0)
+				strcmp(tle->resname, SecurityAttributeName) == 0)
 				is_security = true;
 
 			/*

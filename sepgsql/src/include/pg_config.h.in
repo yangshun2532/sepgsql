@@ -640,9 +640,6 @@
    your system. */
 #undef PTHREAD_CREATE_JOINABLE
 
-/* The name of security attribute. */
-#undef SECURITY_SYSATTR_NAME
-
 /* The size of a `size_t', as computed by sizeof. */
 #undef SIZEOF_SIZE_T
 
