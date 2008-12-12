@@ -28,5 +28,9 @@
 #define SecurityAttributeNumber					(-8)
 #define FirstLowInvalidHeapAttributeNumber		(-9)
 
+/*
+ * Attribute names for the system-defined attributes
+ */
+#define SecurityAttributeName			"security_attr"
 
 #endif   /* SYSATTR_H */
