@@ -159,13 +159,8 @@ static FormData_pg_attribute a7 = {
 	true, 'p', 'i', true, false, false, true, 0
 };
 
-/*
- * SECURITY_SYSATTR_NAME is the name of security system attribute used
- * for enhanced-security mechanisms. In SE-PostgreSQL cases, it is defined
- * as "security_context" in pg_config.h.
- */
 static FormData_pg_attribute a8 = {
-	0, {SECURITY_SYSATTR_NAME}, TEXTOID, 0, -1,
+	0, {SecurityAttributeName}, TEXTOID, 0, -1,
 	SecurityAttributeNumber, 0, -1, -1,
 	false, 'x', 'i', true, false, false, true, 0
 };

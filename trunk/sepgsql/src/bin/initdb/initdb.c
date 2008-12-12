@@ -91,6 +91,7 @@ static bool debug = false;
 static bool noclean = false;
 static bool show_setting = false;
 static char *xlog_dir = "";
+static char *pgace_security = "none";
 
 
 /* internal vars */
@@ -1196,6 +1197,11 @@ setup_config(void)
 	conflines = replace_token(conflines,
 						 "#default_text_search_config = 'pg_catalog.simple'",
 							  repltok);
+
+	snprintf(repltok, sizeof(repltok),
+			 "pgace_security = '%s'", pgace_security);
+	conflines = replace_token(conflines,
+							  "#pgace_security = 'none'", repltok);
 
 	snprintf(path, sizeof(path), "%s/postgresql.conf", pg_data);
 
@@ -2436,6 +2442,7 @@ usage(const char *progname)
 	printf(_("  -U, --username=NAME       database superuser name\n"));
 	printf(_("  -W, --pwprompt            prompt for a password for the new superuser\n"));
 	printf(_("  --pwfile=FILE             read password for the new superuser from file\n"));
+	printf(_("  --pgace-security=FEATURE  specify an enhanced security feature\n"));
 	printf(_("  -?, --help                show this help, then exit\n"));
 	printf(_("  -V, --version             output version information, then exit\n"));
 	printf(_("\nLess commonly used options:\n"));
@@ -2470,6 +2477,7 @@ main(int argc, char *argv[])
 		{"auth", required_argument, NULL, 'A'},
 		{"pwprompt", no_argument, NULL, 'W'},
 		{"pwfile", required_argument, NULL, 9},
+		{"pgace-security", required_argument, NULL, 10},
 		{"username", required_argument, NULL, 'U'},
 		{"help", no_argument, NULL, '?'},
 		{"version", no_argument, NULL, 'V'},
@@ -2585,6 +2593,9 @@ main(int argc, char *argv[])
 				break;
 			case 9:
 				pwfilename = xstrdup(optarg);
+				break;
+			case 10:
+				pgace_security = xstrdup(optarg);
 				break;
 			case 's':
 				show_setting = true;

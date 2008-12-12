@@ -281,7 +281,7 @@ DATA(insert ( 1247 cmin				29 0  4  -4 0 -1 -1 t p i t f f t 0));
 DATA(insert ( 1247 xmax				28 0  4  -5 0 -1 -1 t p i t f f t 0));
 DATA(insert ( 1247 cmax				29 0  4  -6 0 -1 -1 t p i t f f t 0));
 DATA(insert ( 1247 tableoid			26 0  4  -7 0 -1 -1 t p i t f f t 0));
-DATA(insert ( 1247 SECURITY_SYSATTR_NAME 25 0 -1  -8 0 -1 -1 f x i t f f t 0));
+DATA(insert ( 1247 security_attr	25 0 -1  -8 0 -1 -1 f x i t f f t 0));
 
 /* ----------------
  *		pg_proc
@@ -344,7 +344,7 @@ DATA(insert ( 1255 cmin				29 0  4  -4 0 -1 -1 t p i t f f t 0));
 DATA(insert ( 1255 xmax				28 0  4  -5 0 -1 -1 t p i t f f t 0));
 DATA(insert ( 1255 cmax				29 0  4  -6 0 -1 -1 t p i t f f t 0));
 DATA(insert ( 1255 tableoid			26 0  4  -7 0 -1 -1 t p i t f f t 0));
-DATA(insert ( 1255 SECURITY_SYSATTR_NAME 25 0 -1  -8 0 -1 -1 f x i t f f t 0));
+DATA(insert ( 1255 security_attr	25 0 -1  -8 0 -1 -1 f x i t f f t 0));
 
 /* ----------------
  *		pg_attribute
@@ -393,7 +393,7 @@ DATA(insert ( 1249 cmin				29 0  4  -4 0 -1 -1 t p i t f f t 0));
 DATA(insert ( 1249 xmax				28 0  4  -5 0 -1 -1 t p i t f f t 0));
 DATA(insert ( 1249 cmax				29 0  4  -6 0 -1 -1 t p i t f f t 0));
 DATA(insert ( 1249 tableoid			26 0  4  -7 0 -1 -1 t p i t f f t 0));
-DATA(insert ( 1249 SECURITY_SYSATTR_NAME 25 0 -1  -8 0 -1 -1 f x i t f f t 0));
+DATA(insert ( 1249 security_attr	25 0 -1  -8 0 -1 -1 f x i t f f t 0));
 
 /* ----------------
  *		pg_class
@@ -456,7 +456,7 @@ DATA(insert ( 1259 cmin				29 0  4  -4 0 -1 -1 t p i t f f t 0));
 DATA(insert ( 1259 xmax				28 0  4  -5 0 -1 -1 t p i t f f t 0));
 DATA(insert ( 1259 cmax				29 0  4  -6 0 -1 -1 t p i t f f t 0));
 DATA(insert ( 1259 tableoid			26 0  4  -7 0 -1 -1 t p i t f f t 0));
-DATA(insert ( 1259 SECURITY_SYSATTR_NAME 25 0 -1 -8 0 -1 -1 f x i t f f t 0));
+DATA(insert ( 1259 security_attr	25 0 -1 -8 0 -1 -1 f x i t f f t 0));
 
 /* ----------------
  *		pg_index

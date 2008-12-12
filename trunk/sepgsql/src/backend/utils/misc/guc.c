@@ -295,13 +295,21 @@ static const struct config_enum_entry xmloption_options[] = {
 	{NULL, 0, false}
 };
 
+static const struct config_enum_entry pgace_security_options[] = {
+	{"none", PGACE_SECURITY_NONE, false},
+#ifdef HAVE_SELINUX
+	{"selinux", PGACE_SECURITY_SELINUX, false},
+#endif
+	{NULL, 0, false}
+};
+
 #ifdef HAVE_SELINUX
 static const struct config_enum_entry sepgsqloption_options[] = {
 	{"default", SEPGSQL_MODE_DEFAULT, false},
 	{"enforcing", SEPGSQL_MODE_ENFORCING, false},
 	{"permissive", SEPGSQL_MODE_PERMISSIVE, false},
 	{"disabled", SEPGSQL_MODE_DISABLED, false},
-	{NULL, 0, false},
+	{NULL, 0, false}
 };
 #endif
 
@@ -407,7 +415,6 @@ static int	segment_size;
 static int	wal_block_size;
 static int	wal_segment_size;
 static bool integer_datetimes;
-static char *pgace_security_feature;
 
 /* should be static, but commands/variable.c needs to get at these */
 char	   *role_string;
@@ -2516,16 +2523,6 @@ static struct config_string ConfigureNamesString[] =
 	},
 #endif   /* USE_SSL */
 
-	{
-		{"pgace_security_feature", PGC_INTERNAL, PRESET_OPTIONS,
-			gettext_noop("Shows the guest of PGACE security framework"),
-			NULL,
-			GUC_REPORT | GUC_NOT_IN_SAMPLE | GUC_DISALLOW_IN_FILE
-		},
-		&pgace_security_feature,
-		NULL, NULL, pgaceShowSecurityFeature,
-	},
-
 	/* End-of-list marker */
 	{
 		{NULL, 0, 0, NULL, NULL}, NULL, NULL, NULL, NULL
@@ -2678,12 +2675,19 @@ static struct config_enum ConfigureNamesEnum[] =
 		&xmloption,
 		XMLOPTION_CONTENT, xmloption_options, NULL, NULL
 	},
+	{
+		{"pgace_security", PGC_POSTMASTER, UNGROUPED,
+		 gettext_noop(""),
+		 NULL
+		},
+		&pgace_security,
+		PGACE_SECURITY_NONE, pgace_security_options, NULL, NULL
+	},
 #ifdef HAVE_SELINUX
 	{
 		{"sepostgresql", PGC_POSTMASTER, UNGROUPED,
-		 gettext_noop("SE-PostgreSQL working mode"),
-		 gettext_noop("Valid values are DEFAULT, PERMISSIVE, ENFORCING, DISABLED"),
-		 0,
+		 gettext_noop("SE-PostgreSQL mode (default|permissive|enforcing|disabled)"),
+		 NULL
 		},
 		&sepostgresql_mode,
 		SEPGSQL_MODE_DEFAULT, sepgsqloption_options, NULL, NULL
