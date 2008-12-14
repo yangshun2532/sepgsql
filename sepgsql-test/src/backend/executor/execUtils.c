@@ -504,7 +504,8 @@ void
 ExecAssignResultTypeFromTL(PlanState *planstate)
 {
 	bool		hasoid;
-	bool		hassecurity;
+	bool		hassecacl;
+	bool		hasseclabel;
 	TupleDesc	tupDesc;
 
 	if (ExecContextForcesOids(planstate, &hasoid))
@@ -517,15 +518,18 @@ ExecAssignResultTypeFromTL(PlanState *planstate)
 		hasoid = false;
 	}
 
-	if (!ExecContextForcesSecurity(planstate, &hassecurity))
-		hassecurity = false;
+	if (!ExecContextForcesSecurityAcl(planstate, &hassecacl))
+		hassecacl = false;
+	if (!ExecContextForcesSecurityLabel(planstate, &hasseclabel))
+		hasseclabel = false;
 
 	/*
 	 * ExecTypeFromTL needs the parse-time representation of the tlist, not a
 	 * list of ExprStates.	This is good because some plan nodes don't bother
 	 * to set up planstate->targetlist ...
 	 */
-	tupDesc = ExecTypeFromTL(planstate->plan->targetlist, hasoid, hassecurity);
+	tupDesc = ExecTypeFromTL(planstate->plan->targetlist,
+							 hasoid, hassecacl, hasseclabel);
 	ExecAssignResultType(planstate, tupDesc);
 }
 

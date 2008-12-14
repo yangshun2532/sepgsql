@@ -74,7 +74,7 @@ sepgsqlGetDatabaseContext(void)
 		if (!HeapTupleIsValid(tuple))
 			elog(ERROR, "SELinux: cache lookup failed for database: %u", MyDatabaseId);
 
-		dcontext = pgaceLookupSecurityLabel(HeapTupleGetSecurity(tuple));
+		dcontext = pgaceLookupSecurityLabel(HeapTupleGetSecLabel(tuple));
 
 		ReleaseSysCache(tuple);
 	}
@@ -85,14 +85,14 @@ sepgsqlGetDatabaseContext(void)
 Oid
 sepgsqlGetDatabaseSecurityId(void)
 {
-	Oid security_id;
+	Oid sid;
 
 	if (IsBootstrapProcessingMode())
 	{
 		security_context_t dcontext
 			= sepgsqlGetDatabaseContext();
 
-		security_id = pgaceSecurityLabelToSid(dcontext);
+		sid = pgaceSecurityLabelToSid(dcontext);
 	}
 	else
 	{
@@ -104,12 +104,12 @@ sepgsqlGetDatabaseSecurityId(void)
 		if (!HeapTupleIsValid(tuple))
 			elog(ERROR, "SELinux: cache lookup failed for database: %u", MyDatabaseId);
 
-		security_id = HeapTupleGetSecurity(tuple);
+		sid = HeapTupleGetSecLabel(tuple);
 
 		ReleaseSysCache(tuple);
 	}
 
-	return security_id;
+	return sid;
 }
 
 const security_context_t

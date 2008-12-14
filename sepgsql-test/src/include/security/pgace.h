@@ -14,6 +14,7 @@
 #include "commands/trigger.h"
 #include "executor/execdesc.h"
 #include "nodes/parsenodes.h"
+#include "security/rowacl.h"
 #include "storage/large_object.h"
 #include "utils/builtins.h"
 #include "utils/rel.h"
@@ -1395,7 +1396,7 @@ pgaceLargeObjectSetSecurity(Relation rel, HeapTuple newtup, HeapTuple oldtup)
 /*
  * pgaceTupleDescHasSecurity
  *
- * This hook enables to control the value in TupleDesc->tdhassecurity.
+ * This hook enables to control the value in TupleDesc->tdhasseclabel.
  * If it returns true, sizeof(Oid) bytes are allocated at the header
  * of HeapTupleHeader structure.
  *

@@ -800,7 +800,11 @@ InsertOneTuple(Oid objectid)
 	tupDesc = CreateTupleDesc(numattr,
 							  RelationGetForm(boot_reldesc)->relhasoids,
 							  attrtypes);
-	tupDesc->tdhassecurity = pgaceTupleDescHasSecurity(boot_reldesc, NIL);
+	tupDesc->tdhasrowacl
+		= rowaclTupleDescHasSecurity(boot_reldesc, NIL);
+	tupDesc->tdhasseclabel
+		= pgaceTupleDescHasSecurity(boot_reldesc, NIL);
+
 	tuple = heap_form_tuple(tupDesc, values, Nulls);
 	if (objectid != (Oid) 0)
 		HeapTupleSetOid(tuple, objectid);

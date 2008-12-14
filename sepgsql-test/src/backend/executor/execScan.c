@@ -215,7 +215,8 @@ tlist_matches_tupdesc(PlanState *ps, List *tlist, Index varno, TupleDesc tupdesc
 	int			numattrs = tupdesc->natts;
 	int			attrno;
 	bool		hasoid;
-	bool		hassecurity;
+	bool		hasrowacl;
+	bool		hasseclabel;
 	ListCell   *tlist_item = list_head(tlist);
 
 	/* Check the tlist attributes */
@@ -266,8 +267,12 @@ tlist_matches_tupdesc(PlanState *ps, List *tlist, Index varno, TupleDesc tupdesc
 		hasoid != tupdesc->tdhasoid)
 		return false;
 
-	if (ExecContextForcesSecurity(ps, &hassecurity) &&
-		hassecurity != tupdesc->tdhassecurity)
+	if (ExecContextForcesRowAcl(ps, &hasrowacl) &&
+		hasrowacl != tupdesc->tdhasrowacl)
+		return false;
+
+	if (ExecContextForcesSecurityLabel(ps, &hasseclabel) &&
+		hasseclabel != tupdesc->tdhasseclabel)
 		return false;
 
 	return true;
