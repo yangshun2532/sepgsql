@@ -208,11 +208,13 @@ Boot_CreateStmt:
 												   $3,
 												   true);
 						/*
-						 * fixup boot_reldesc->rd_att->tdhassecurity
+						 * fixup boot_reldesc->rd_att->tdhassec(acl|label) via PGACE
 						 */
 						boot_reldesc->rd_rel->relkind = RELKIND_RELATION;
-						boot_reldesc->rd_att->tdhassecurity
-						  = pgaceTupleDescHasSecurity(boot_reldesc, NIL);
+						boot_reldesc->rd_att->tdhasrowacl
+							= rowaclTupleDescHasSecurity(boot_reldesc, NIL);
+						boot_reldesc->rd_att->tdhasseclabel
+							= pgaceTupleDescHasSecurity(boot_reldesc, NIL);
 
 						elog(DEBUG4, "bootstrap relation created");
 					}

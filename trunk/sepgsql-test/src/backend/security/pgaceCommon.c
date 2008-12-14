@@ -341,8 +341,8 @@ pgacePostBootstrapingMode(void)
 		tuple = heap_form_tuple(RelationGetDescr(rel), &value, &isnull);
 
 		HeapTupleSetOid(tuple, es->sid);
-		if (HeapTupleHasSecurity(tuple))
-			HeapTupleSetSecurity(tuple, meta_sid);
+		if (HeapTupleHasSecLabel(tuple))
+			HeapTupleSetSecLabel(tuple, meta_sid);
 
 		simple_heap_insert(rel, tuple);
 		CatalogIndexInsert(ind, tuple);
@@ -433,8 +433,8 @@ pgaceLookupSecurityId(char *raw_label)
 		isnull = false;
 		tuple = heap_form_tuple(RelationGetDescr(rel),
 								&labelTxt, &isnull);
-		if (HeapTupleHasSecurity(tuple))
-			HeapTupleSetSecurity(tuple, labelSid);
+		if (HeapTupleHasSecLabel(tuple))
+			HeapTupleSetSecLabel(tuple, labelSid);
 		HeapTupleSetOid(tuple, labelOid);
 
 		simple_heap_insert(rel, tuple);
@@ -546,7 +546,7 @@ lo_get_security(PG_FUNCTION_ARGS)
 	ScanKeyData skey;
 	SysScanDesc scan;
 	HeapTuple	tuple;
-	Oid			security_id;
+	Oid			sid;
 
 	rel = heap_open(LargeObjectRelationId, AccessShareLock);
 
@@ -563,12 +563,12 @@ lo_get_security(PG_FUNCTION_ARGS)
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("large object %u does not exist", loid)));
 	pgaceLargeObjectGetSecurity(rel, tuple);
-	security_id = HeapTupleGetSecurity(tuple);
+	sid = HeapTupleGetSecLabel(tuple);
 
 	systable_endscan(scan);
 	heap_close(rel, AccessShareLock);
 
-	return CStringGetTextDatum(pgaceSidToSecurityLabel(security_id));
+	return CStringGetTextDatum(pgaceSidToSecurityLabel(sid));
 }
 
 /*
@@ -588,11 +588,11 @@ lo_set_security(PG_FUNCTION_ARGS)
 	SysScanDesc sd;
 	HeapTuple	oldtup, newtup;
 	CatalogIndexState indstate;
-	Oid			security_id;
+	Oid			sid;
 	List	   *okList = NIL;
 	bool		found = false;
 
-	security_id = pgaceSecurityLabelToSid(TextDatumGetCString(labelTxt));
+	sid = pgaceSecurityLabelToSid(TextDatumGetCString(labelTxt));
 
 	ScanKeyInit(&skey,
 				Anum_pg_largeobject_loid,
@@ -612,14 +612,14 @@ lo_set_security(PG_FUNCTION_ARGS)
 		ListCell *l;
 
 		newtup = heap_copytuple(oldtup);
-		HeapTupleSetSecurity(newtup, security_id);
+		HeapTupleSetSecLabel(newtup, sid);
 
 		foreach (l, okList)
 		{
-			if (HeapTupleGetSecurity(oldtup) == lfirst_oid(l))
+			if (HeapTupleGetSecLabel(oldtup) == lfirst_oid(l))
 				goto skip;		/* already checked */
 		}
-		okList = lappend_oid(okList, HeapTupleGetSecurity(oldtup));
+		okList = lappend_oid(okList, HeapTupleGetSecLabel(oldtup));
 
 		pgaceLargeObjectSetSecurity(rel, newtup, oldtup);
 	skip:
@@ -651,6 +651,8 @@ lo_set_security(PG_FUNCTION_ARGS)
  * are not compiled and linked when it is disabled.
  * It can cause a build problem in other environments.
  */
+#ifndef HAVE_SELINUX
+
 static Datum
 unavailable_function(const char *fn_name, int error_code)
 {
@@ -659,8 +661,6 @@ unavailable_function(const char *fn_name, int error_code)
 			 errmsg("%s is not available", fn_name)));
 	PG_RETURN_VOID();
 }
-
-#ifndef HAVE_SELINUX
 
 Datum
 sepgsql_getcon(PG_FUNCTION_ARGS)

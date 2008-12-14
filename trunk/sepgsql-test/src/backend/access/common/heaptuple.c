@@ -288,7 +288,8 @@ heap_attisnull(HeapTuple tup, int attnum)
 		case MinCommandIdAttributeNumber:
 		case MaxTransactionIdAttributeNumber:
 		case MaxCommandIdAttributeNumber:
-		case SecurityAttributeNumber:
+		case SecurityAclAttributeNumber:
+		case SecurityLabelAttributeNumber:
 			/* these are never null */
 			break;
 
@@ -601,12 +602,17 @@ heap_getsysattr(HeapTuple tup, int attnum, TupleDesc tupleDesc, bool *isnull)
 		case TableOidAttributeNumber:
 			result = ObjectIdGetDatum(tup->t_tableOid);
 			break;
-		case SecurityAttributeNumber: {
-			Oid security_id = HeapTupleGetSecurity(tup);
-			char *sec_label = pgaceSidToSecurityLabel(security_id);
+		case SecurityAclAttributeNumber: {
+			elog(ERROR, "TODO: we have to implement it (%s:%d)", __FUNCTION__, __LINE__);
+			result = 0;
+			break;
+		}
+		case SecurityLabelAttributeNumber: {
+			Oid sid = HeapTupleGetSecLabel(tup);
+			char *secLabel = pgaceSidToSecurityLabel(sid);
 
-			result = CStringGetTextDatum(sec_label);
-			pfree(sec_label);
+			result = CStringGetTextDatum(secLabel);
+			pfree(secLabel);
 			break;
 		}
 		default:
@@ -733,7 +739,10 @@ heap_form_tuple(TupleDesc tupleDescriptor,
 	if (tupleDescriptor->tdhasoid)
 		len += sizeof(Oid);
 
-	if (tupleDescriptor->tdhassecurity)
+	if (tupleDescriptor->tdhasrowacl)
+		len += sizeof(Oid);
+
+	if (tupleDescriptor->tdhasseclabel)
 		len += sizeof(Oid);
 
 	hoff = len = MAXALIGN(len); /* align user data safely */
@@ -767,8 +776,10 @@ heap_form_tuple(TupleDesc tupleDescriptor,
 	if (tupleDescriptor->tdhasoid)		/* else leave infomask = 0 */
 		td->t_infomask = HEAP_HASOID;
 
-	if (tupleDescriptor->tdhassecurity)
-		td->t_infomask |= HEAP_HASSECURITY;
+	if (tupleDescriptor->tdhasrowacl)
+		td->t_infomask2 |= HEAP_HAS_ROWACL;
+	if (tupleDescriptor->tdhasseclabel)
+		td->t_infomask2 |= HEAP_HAS_SECLABEL;
 
 	heap_fill_tuple(tupleDescriptor,
 					values,
@@ -880,8 +891,10 @@ heap_modify_tuple(HeapTuple tuple,
 	newTuple->t_tableOid = tuple->t_tableOid;
 	if (tupleDesc->tdhasoid)
 		HeapTupleSetOid(newTuple, HeapTupleGetOid(tuple));
-	if (HeapTupleHasSecurity(newTuple))
-		HeapTupleSetSecurity(newTuple, HeapTupleGetSecurity(tuple));
+	if (HeapTupleHasRowAcl(newTuple))
+		HeapTupleSetRowAcl(newTuple, HeapTupleGetRowAcl(tuple));
+	if (HeapTupleHasSecLabel(newTuple))
+		HeapTupleSetSecLabel(newTuple, HeapTupleGetSecLabel(tuple));
 
 	return newTuple;
 }
@@ -1493,7 +1506,10 @@ heap_form_minimal_tuple(TupleDesc tupleDescriptor,
 	if (tupleDescriptor->tdhasoid)
 		len += sizeof(Oid);
 
-	if (tupleDescriptor->tdhassecurity)
+	if (tupleDescriptor->tdhasrowacl)
+		len += sizeof(Oid);
+
+	if (tupleDescriptor->tdhasseclabel)
 		len += sizeof(Oid);
 
 	hoff = len = MAXALIGN(len); /* align user data safely */
@@ -1517,8 +1533,10 @@ heap_form_minimal_tuple(TupleDesc tupleDescriptor,
 	if (tupleDescriptor->tdhasoid)		/* else leave infomask = 0 */
 		tuple->t_infomask = HEAP_HASOID;
 
-	if (tupleDescriptor->tdhassecurity)
-		tuple->t_infomask |= HEAP_HASSECURITY;
+	if (tupleDescriptor->tdhasrowacl)
+		tuple->t_infomask2 |= HEAP_HAS_ROWACL;
+	if (tupleDescriptor->tdhasseclabel)
+		tuple->t_infomask2 |= HEAP_HAS_SECLABEL;
 
 	heap_fill_tuple(tupleDescriptor,
 					values,

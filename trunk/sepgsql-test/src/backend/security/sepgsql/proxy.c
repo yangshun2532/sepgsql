@@ -198,7 +198,7 @@ addEvalAttributeRTE(List *selist, RangeTblEntry *rte, AttrNumber attno, uint32 p
 	/*
 	 * for 'security_context'
 	 */
-	if (attno == SecurityAttributeNumber
+	if (attno == SecurityLabelAttributeNumber
 		&& (perms & (DB_COLUMN__UPDATE | DB_COLUMN__INSERT)))
 		rte->pgaceTuplePerms |= SEPGSQL_PERMS_RELABELFROM;
 
@@ -774,7 +774,7 @@ proxyRteSubQuery(sepgsqlWalkerContext *swc, Query *query)
 
 			if (tle->resjunk &&
 				tle->resname &&
-				strcmp(tle->resname, SecurityAttributeName) == 0)
+				strcmp(tle->resname, SecurityLabelAttributeName) == 0)
 				is_security = true;
 
 			/*
@@ -792,7 +792,7 @@ proxyRteSubQuery(sepgsqlWalkerContext *swc, Query *query)
 			if (cmdType != CMD_SELECT)
 			{
 				AttrNumber attno
-					= (is_security ? SecurityAttributeNumber : tle->resno);
+					= (is_security ? SecurityLabelAttributeNumber : tle->resno);
 				uint32 perms
 					= (cmdType == CMD_UPDATE ? DB_COLUMN__UPDATE : DB_COLUMN__INSERT);
 
@@ -936,7 +936,7 @@ verifyPgClassPerms(Oid relid, bool inh, uint32 perms)
 
 	if (((Form_pg_class) GETSTRUCT(tuple))->relkind == RELKIND_RELATION)
 	{
-		sepgsqlClientHasPermission(HeapTupleGetSecurity(tuple),
+		sepgsqlClientHasPermission(HeapTupleGetSecLabel(tuple),
 								   SECCLASS_DB_TABLE,
 								   (access_vector_t) perms,
 								   sepgsqlTupleName(RelationRelationId, tuple));
@@ -993,7 +993,7 @@ verifyPgAttributePerms(Oid relid, bool inh, AttrNumber attno, uint32 perms)
 			if (attForm->attisdropped || attForm->attnum < 1)
 				continue;
 
-			sepgsqlClientHasPermission(HeapTupleGetSecurity(tuple),
+			sepgsqlClientHasPermission(HeapTupleGetSecLabel(tuple),
 									   SECCLASS_DB_COLUMN,
 									   perms,
 									   sepgsqlTupleName(AttributeRelationId, tuple));
@@ -1013,7 +1013,7 @@ verifyPgAttributePerms(Oid relid, bool inh, AttrNumber attno, uint32 perms)
 		elog(ERROR, "SELinux: cache lookup failed for attribute %d of relation %u",
 			 attno, relid);
 
-	sepgsqlClientHasPermission(HeapTupleGetSecurity(tuple),
+	sepgsqlClientHasPermission(HeapTupleGetSecLabel(tuple),
 							   SECCLASS_DB_COLUMN,
 							   perms,
 							   sepgsqlTupleName(AttributeRelationId, tuple));
@@ -1037,7 +1037,7 @@ verifyPgProcPerms(Oid funcid, uint32 perms)
 	/*
 	 * check domain transition
 	 */
-	ncon = sepgsqlClientCreateContext(HeapTupleGetSecurity(tuple),
+	ncon = sepgsqlClientCreateContext(HeapTupleGetSecLabel(tuple),
 									  SECCLASS_PROCESS);
 	if (strcmp(sepgsqlGetClientContext(), ncon))
 	{
@@ -1054,7 +1054,7 @@ verifyPgProcPerms(Oid funcid, uint32 perms)
 	/*
 	 * check procedure executiong permission
 	 */
-	sepgsqlClientHasPermission(HeapTupleGetSecurity(tuple),
+	sepgsqlClientHasPermission(HeapTupleGetSecLabel(tuple),
 							   SECCLASS_DB_PROCEDURE,
 							   perms,
 							   sepgsqlTupleName(ProcedureRelationId, tuple));
@@ -1336,7 +1336,7 @@ checkTruncateStmt(TruncateStmt *stmt)
 		tuple = SearchSysCache(RELOID, ObjectIdGetDatum(relid), 0, 0, 0);
 		if (!HeapTupleIsValid(tuple))
 			elog(ERROR, "SELinux: cache lookup failed for relation %u", relid);
-		sepgsqlClientHasPermission(HeapTupleGetSecurity(tuple),
+		sepgsqlClientHasPermission(HeapTupleGetSecLabel(tuple),
 								   SECCLASS_DB_TABLE,
 								   DB_TABLE__DELETE,
 								   sepgsqlTupleName(RelationRelationId, tuple));

@@ -333,9 +333,9 @@ AllocateRelationDesc(Relation relation, Form_pg_class relp)
 	/*
 	 * and allocate attribute tuple form storage
 	 *
-	 * Please note that relation->rd_att->tdhassecurity should be fixed
-	 * up correctly at RelationBuildTupleDesc(), because security module
-	 * may need reloptions info to make its decision.
+	 * Please note that relation->rd_att->tdhasrowacl and tdhasseclabel
+	 * have to be fixed up correctly at RelationBuildTupleDesc(), because
+	 * security module may need reloptions info to make its decision.
 	 */
 	relation->rd_att = CreateTemplateTupleDesc(relationForm->relnatts,
 											   relationForm->relhasoids);
@@ -889,8 +889,10 @@ RelationBuildDesc(Oid targetRelId, Relation oldrelation)
 	/* extract reloptions if any */
 	RelationParseRelOptions(relation, pg_class_tuple);
 
-	/* fixup relation->rd_att->tdhassecurity */
-	relation->rd_att->tdhassecurity
+	/* fixup relation->rd_att->tdhassecacl and tdhasseclabel */
+	relation->rd_att->tdhasrowacl
+		= rowaclTupleDescHasSecurity(relation, NIL);
+	relation->rd_att->tdhasseclabel
 		= pgaceTupleDescHasSecurity(relation, NIL);
 
 	/*
@@ -1480,9 +1482,11 @@ formrdesc(const char *relationName, Oid relationReltype,
 	relation->rd_rel->relfilenode = RelationGetRelid(relation);
 
 	/*
-	 * Fixup relation->rd_att->tdhassecurity
+	 * Fixup relation->rd_att->tdhasrowacl and tdhasseclabel
 	 */
-	RelationGetDescr(relation)->tdhassecurity
+	RelationGetDescr(relation)->tdhasrowacl
+		= rowaclTupleDescHasSecurity(relation, NIL);
+	RelationGetDescr(relation)->tdhasseclabel
 		= pgaceTupleDescHasSecurity(relation, NIL);
 
 	/*
@@ -2723,8 +2727,8 @@ BuildHardcodedDescriptor(int natts, Form_pg_attribute attrs, bool hasoids)
 	/*
 	 * NOTE: we assume the returned TupleDesc is only used for
 	 * references to toast'ed data, and it is not delivered to
-	 * heap_form_tuple(), so TupleDesc->tdhassecurity does not
-	 * give any effect.
+	 * heap_form_tuple(), so TupleDesc->tdhasrowacl and tdhasseclabel
+	 * don't give us any effect.
 	 * We omit to invoke pgaceTupleDescHasSecurity() here.
 	 */
 	result = CreateTemplateTupleDesc(natts, hasoids);
@@ -3487,7 +3491,9 @@ load_relcache_init_file(void)
 		/*
 		 * fixup rel->rd_att->tdhassecurity
 		 */
-		rel->rd_att->tdhassecurity
+		rel->rd_att->tdhasrowacl
+			= rowaclTupleDescHasSecurity(rel, NIL);
+		rel->rd_att->tdhasseclabel
 			= pgaceTupleDescHasSecurity(rel, NIL);
 
 		/* mark not-null status */

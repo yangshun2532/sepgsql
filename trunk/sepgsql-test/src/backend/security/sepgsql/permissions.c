@@ -387,12 +387,12 @@ sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, HeapTuple oldtup,
 
 		if (abort)
 		{
-			sepgsqlClientHasPermission(HeapTupleGetSecurity(tuple),
+			sepgsqlClientHasPermission(HeapTupleGetSecLabel(tuple),
 									   tclass, av, objname);
 		}
 		else
 		{
-			rc = sepgsqlClientHasPermissionNoAbort(HeapTupleGetSecurity(tuple),
+			rc = sepgsqlClientHasPermissionNoAbort(HeapTupleGetSecLabel(tuple),
 												   tclass, av, objname);
 		}
 	}
@@ -421,7 +421,7 @@ sepgsqlCheckModuleInstallPerms(const char *filename)
 		elog(ERROR, "SELinux: cache lookup failed for database: %u", MyDatabaseId);
 
 	dbform = (Form_pg_database) GETSTRUCT(dbtup);
-	sepgsqlClientHasPermission(HeapTupleGetSecurity(dbtup),
+	sepgsqlClientHasPermission(HeapTupleGetSecLabel(dbtup),
 							   SECCLASS_DB_DATABASE,
 							   DB_DATABASE__INSTALL_MODULE,
 							   NameStr(dbform->datname));
@@ -517,7 +517,7 @@ sepgsqlDefaultColumnContext(Relation rel, HeapTuple tuple)
 			elog(ERROR, "SELinux: cache lookup failed for relation: %u",
 				 attForm->attrelid);
 
-		tblsid = HeapTupleGetSecurity(reltup);
+		tblsid = HeapTupleGetSecLabel(reltup);
 
 		ReleaseSysCache(reltup);
 	}
@@ -554,7 +554,7 @@ sepgsqlDefaultTupleContext(Relation rel, HeapTuple tuple)
 			elog(ERROR, "SELinux: cache lookup failed for relation: %u",
 				 RelationGetRelid(rel));
 
-		tblsid = HeapTupleGetSecurity(reltup);
+		tblsid = HeapTupleGetSecLabel(reltup);
 
 		ReleaseSysCache(reltup);
 	}
@@ -595,7 +595,7 @@ sepgsqlDefaultBlobContext(Relation rel, HeapTuple tuple)
 							  SnapshotNow, 1, &skey);
 	while ((lotup = systable_getnext(scan)) != NULL)
 	{
-		newsid = HeapTupleGetSecurity(lotup);
+		newsid = HeapTupleGetSecLabel(lotup);
 		if (OidIsValid(newsid))
 			break;
 	}
@@ -641,5 +641,5 @@ sepgsqlSetDefaultContext(Relation rel, HeapTuple tuple)
 			break;
 	}
 
-	HeapTupleSetSecurity(tuple, newsid);
+	HeapTupleSetSecLabel(tuple, newsid);
 }
