@@ -210,6 +210,7 @@ typedef struct
 /*
  * routines used internally
  */
+extern Acl *allocacl(int n);
 extern Acl *acldefault(GrantObjectType objtype, Oid ownerId);
 extern Acl *aclupdate(const Acl *old_acl, const AclItem *mod_aip,
 		  int modechg, Oid ownerId, DropBehavior behavior);
@@ -223,6 +224,7 @@ extern bool has_privs_of_role(Oid member, Oid role);
 extern bool is_member_of_role(Oid member, Oid role);
 extern bool is_member_of_role_nosuper(Oid member, Oid role);
 extern bool is_admin_of_role(Oid member, Oid role);
+extern void check_acl(const Acl *acl);
 extern void check_is_member_of_role(Oid member, Oid role);
 
 extern void select_best_grantor(Oid roleId, AclMode privileges,

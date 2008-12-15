@@ -75,6 +75,8 @@ sepgsqlGetDatabaseContext(void)
 			elog(ERROR, "SELinux: cache lookup failed for database: %u", MyDatabaseId);
 
 		dcontext = pgaceLookupSecurityLabel(HeapTupleGetSecLabel(tuple));
+		if (!dcontext || !pgaceCheckValidSecurityLabel(dcontext))
+			dcontext = pgaceUnlabeledSecurityLabel();
 
 		ReleaseSysCache(tuple);
 	}

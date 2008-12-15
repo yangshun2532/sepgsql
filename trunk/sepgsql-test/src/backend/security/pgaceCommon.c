@@ -369,20 +369,6 @@ pgaceLookupSecurityId(char *raw_label)
 	Oid			labelOid, labelSid;
 	HeapTuple	tuple;
 
-	if (!raw_label)
-	{
-		raw_label = pgaceUnlabeledSecurityLabel();
-		if (!raw_label)
-			return InvalidOid;
-	}
-
-	if (!pgaceCheckValidSecurityLabel(raw_label))
-	{
-		ereport(ERROR,
-				(errcode(ERRCODE_PGACE_ERROR),
-				 errmsg("%s: invalid security attribute", raw_label)));
-	}
-
 	if (IsBootstrapProcessingMode())
 		return earlySecurityLabelToSid(raw_label);
 
@@ -468,6 +454,11 @@ pgaceSecurityLabelToSid(char *label)
 {
 	char *raw_label = pgaceTranslateSecurityLabelIn(label);
 
+	if (!pgaceCheckValidSecurityLabel(raw_label))
+		ereport(ERROR,
+                (errcode(ERRCODE_PGACE_ERROR),
+                 errmsg("PGACE: invalid security label: %s", raw_label)));
+
 	return pgaceLookupSecurityId(raw_label);
 }
 
@@ -478,27 +469,24 @@ pgaceSecurityLabelToSid(char *label)
  * in raw-format, without cosmetic translation.
  */
 char *
-pgaceLookupSecurityLabel(Oid security_id)
+pgaceLookupSecurityLabel(Oid sid)
 {
 	HeapTuple	tuple;
 	Datum		labelTxt;
-	char	   *label, isnull;
+	char	   *label;
+	bool		isnull;
 
-	if (security_id == InvalidOid)
-		goto unlabeled;
+	if (!OidIsValid(sid))
+		return NULL;
 
 	if (IsBootstrapProcessingMode())
-	{
-		label = earlySidToSecurityLabel(security_id);
-		if (!label)
-			goto unlabeled;
-		return label;
-	}
+		return earlySidToSecurityLabel(sid);
 
 	tuple = SearchSysCache(SECURITYOID,
-						   ObjectIdGetDatum(security_id), 0, 0, 0);
+						   ObjectIdGetDatum(sid),
+						   0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
-		goto unlabeled;
+		return NULL;
 
 	labelTxt = SysCacheGetAttr(SECURITYOID,
 							   tuple, Anum_pg_security_seclabel, &isnull);
@@ -506,23 +494,32 @@ pgaceLookupSecurityLabel(Oid security_id)
 	label = TextDatumGetCString(labelTxt);
 	ReleaseSysCache(tuple);
 
-	if (pgaceCheckValidSecurityLabel(label))
-		return label;
-
-unlabeled:
-	label = pgaceUnlabeledSecurityLabel();
-	if (!label)
-		return pstrdup("");
-
 	return label;
 }
 
 char *
-pgaceSidToSecurityLabel(Oid security_id)
+pgaceSidToSecurityLabel(Oid sid)
 {
-	char *label = pgaceLookupSecurityLabel(security_id);
+	char *label;
+
+	label = pgaceLookupSecurityLabel(sid);
+	if (!label || !pgaceCheckValidSecurityLabel(label))
+		label = pgaceUnlabeledSecurityLabel();
 
 	return pgaceTranslateSecurityLabelOut(label);
+}
+
+Datum
+pgaceHeapGetSecurityLabelSysattr(HeapTuple tuple)
+{
+	Datum result;
+	char *label;
+
+	label = pgaceSidToSecurityLabel(HeapTupleGetSecLabel(tuple));
+	result = CStringGetTextDatum(label);
+	pfree(label);
+
+	return result;
 }
 
 /*****************************************************************************

@@ -2009,7 +2009,7 @@ ExecBRUpdateTriggers(EState *estate, ResultRelInfo *relinfo,
 
 	if (HeapTupleHasSecLabel(newtuple) &&
 		!OidIsValid(HeapTupleGetSecLabel(newtuple)))
-		HeapTupleSetSecLabel(newtuple, HeapTupleGetSecLabel(newtuple));
+		HeapTupleSetSecLabel(newtuple, HeapTupleGetSecLabel(trigtuple));
 
 	LocTriggerData.type = T_TriggerData;
 	LocTriggerData.tg_event = TRIGGER_EVENT_UPDATE |

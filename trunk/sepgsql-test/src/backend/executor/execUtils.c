@@ -518,9 +518,9 @@ ExecAssignResultTypeFromTL(PlanState *planstate)
 		hasoid = false;
 	}
 
-	if (!ExecContextForcesSecurityAcl(planstate, &hassecacl))
+	if (!ExecContextForcesRowAcl(planstate, &hassecacl))
 		hassecacl = false;
-	if (!ExecContextForcesSecurityLabel(planstate, &hasseclabel))
+	if (!ExecContextForcesSecLabel(planstate, &hasseclabel))
 		hasseclabel = false;
 
 	/*

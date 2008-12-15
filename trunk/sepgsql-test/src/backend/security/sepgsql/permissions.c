@@ -616,7 +616,7 @@ sepgsqlSetDefaultContext(Relation rel, HeapTuple tuple)
 	security_class_t tclass;
 	Oid newsid;
 
-	Assert(HeapTupleHasSecurity(tuple));
+	Assert(HeapTupleHasSecLabel(tuple));
 	tclass = sepgsqlTupleObjectClass(RelationGetRelid(rel), tuple);
 
 	switch (tclass)

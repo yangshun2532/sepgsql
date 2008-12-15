@@ -165,7 +165,7 @@ extern void InitResultRelInfo(ResultRelInfo *resultRelInfo,
 extern ResultRelInfo *ExecGetTriggerResultRel(EState *estate, Oid relid);
 extern bool ExecContextForcesOids(PlanState *planstate, bool *hasoids);
 extern bool ExecContextForcesRowAcl(PlanState *planstate, bool *hasrowacl);
-extern bool ExecContextForcesSecurityLabel(PlanState *planstate, bool *hasseclabel);
+extern bool ExecContextForcesSecLabel(PlanState *planstate, bool *hasseclabel);
 extern void ExecConstraints(ResultRelInfo *resultRelInfo,
 				TupleTableSlot *slot, EState *estate);
 extern TupleTableSlot *EvalPlanQual(EState *estate, Index rti,

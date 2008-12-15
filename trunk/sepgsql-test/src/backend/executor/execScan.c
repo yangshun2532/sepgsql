@@ -271,7 +271,7 @@ tlist_matches_tupdesc(PlanState *ps, List *tlist, Index varno, TupleDesc tupdesc
 		hasrowacl != tupdesc->tdhasrowacl)
 		return false;
 
-	if (ExecContextForcesSecurityLabel(ps, &hasseclabel) &&
+	if (ExecContextForcesSecLabel(ps, &hasseclabel) &&
 		hasseclabel != tupdesc->tdhasseclabel)
 		return false;
 
