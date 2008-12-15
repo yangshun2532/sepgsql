@@ -569,7 +569,6 @@ heap_getsysattr(HeapTuple tup, int attnum, TupleDesc tupleDesc, bool *isnull)
 
 	Assert(tup);
 
-	/* Currently, no sys attribute ever reads as NULL. */
 	if (isnull)
 		*isnull = false;
 
@@ -602,19 +601,16 @@ heap_getsysattr(HeapTuple tup, int attnum, TupleDesc tupleDesc, bool *isnull)
 		case TableOidAttributeNumber:
 			result = ObjectIdGetDatum(tup->t_tableOid);
 			break;
-		case SecurityAclAttributeNumber: {
-			elog(ERROR, "TODO: we have to implement it (%s:%d)", __FUNCTION__, __LINE__);
-			result = 0;
+		case SecurityAclAttributeNumber:
+			result = rowaclHeapGetSecurityAclSysattr(tup);
+			if (DatumGetPointer(result) == NULL)
+				*isnull = true;
 			break;
-		}
-		case SecurityLabelAttributeNumber: {
-			Oid sid = HeapTupleGetSecLabel(tup);
-			char *secLabel = pgaceSidToSecurityLabel(sid);
-
-			result = CStringGetTextDatum(secLabel);
-			pfree(secLabel);
+		case SecurityLabelAttributeNumber:
+			result = pgaceHeapGetSecurityLabelSysattr(tup);
+			if (DatumGetPointer(result) == NULL)
+				*isnull = true;
 			break;
-		}
 		default:
 			elog(ERROR, "invalid attnum: %d", attnum);
 			result = 0;			/* keep compiler quiet */

@@ -577,6 +577,8 @@ static avc_datum *avc_make_entry(Oid tsid, security_class_t tclass)
 
 	scontext = current_avc_page->scontext;
 	tcontext = pgaceLookupSecurityLabel(tsid);
+	if (!tcontext || !pgaceCheckValidSecurityLabel(tcontext))
+		tcontext = pgaceUnlabeledSecurityLabel();
 
 	LWLockAcquire(SepgsqlAvcLock, LW_SHARED);
 
@@ -742,7 +744,7 @@ sepgsqlClientCreateSid(Oid tsid, security_class_t tclass)
 	{
 		if (!cache)
 			cache = avc_make_entry(tsid, tclass);
-		cache->nsid = pgaceLookupSecurityId(cache->ncontext);
+		cache->nsid = pgaceSecurityLabelToSid(cache->ncontext);
 	}
 	return cache->nsid;
 }

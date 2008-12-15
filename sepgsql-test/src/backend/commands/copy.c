@@ -2307,14 +2307,14 @@ CopyFrom(CopyState cstate)
 
 		if (loaded_rowacl != PointerGetDatum(NULL))
 		{
-			elog(ERROR, "todo: we have to implement here (%s:%d)", __FUNCTION__, __LINE__);
+			Acl *acl = DatumGetAclP(loaded_rowacl);
+			HeapTupleSetRowAcl(tuple, rowaclSecurityAclToSid(acl));
 		}
 
 		if (loaded_seclabel != PointerGetDatum(NULL))
 		{
-			char *seclabel = TextDatumGetCString(loaded_seclabel);
-			Oid sid = pgaceSecurityLabelToSid(seclabel);
-			HeapTupleSetSecLabel(tuple, sid);
+			char *label = TextDatumGetCString(loaded_seclabel);
+			HeapTupleSetSecLabel(tuple, pgaceSecurityLabelToSid(label));
 		}
 
 		/* Triggers and stuff need to be invoked in query context. */

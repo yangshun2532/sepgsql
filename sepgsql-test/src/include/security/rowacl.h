@@ -5,11 +5,18 @@
 #ifndef ROWACL_H
 #define ROWACL_H
 
-/*
- * Functions for Management of security identifier/text representaion
- */
+#include "utils/acl.h"
 
+/*
+ * Management of row-level ACLs
+ */
 extern bool rowaclTupleDescHasSecurity(Relation rel, List *relopts);
+
+extern Acl *rowaclSidToSecurityAcl(Oid sid, Oid ownerId);
+
+extern Oid rowaclSecurityAclToSid(Acl *acl);
+
+extern Datum rowaclHeapGetSecurityAclSysattr(HeapTuple tuple);
 
 /*
  * Functions for Row-level access controls

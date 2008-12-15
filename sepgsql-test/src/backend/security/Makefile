@@ -8,10 +8,15 @@ subdir = src/backend/security
 top_builddir = ../../..
 include $(top_builddir)/src/Makefile.global
 
+# common facilities for enhanced security features
 OBJS := pgaceCommon.o
 
+# DAC feature : Row-level Database ACLs
+OBJS += rowacl/rowacl.o
+
+# MAC feature : Security-Enhanced PostgreSQL
 ifeq ($(enable_selinux), yes)
-OBJS += sepgsql/avc.o sepgsql/core.o sepgsql/hooks.o		\
+OBJS += sepgsql/avc.o sepgsql/core.o sepgsql/hooks.o	\
 	sepgsql/permissions.o sepgsql/proxy.o
 endif
 

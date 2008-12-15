@@ -736,6 +736,8 @@ sepgsqlSecurityLabelOfLabel(void)
 					SecurityRelationId);
 
 	table_context = pgaceLookupSecurityLabel(HeapTupleGetSecLabel(tuple));
+	if (!table_context || !pgaceCheckValidSecurityLabel(table_context))
+		table_context = pgaceUnlabeledSecurityLabel();
 
 	tuple_context = sepgsqlComputeCreateContext(sepgsqlGetServerContext(),
 												table_context, SECCLASS_DB_TUPLE);

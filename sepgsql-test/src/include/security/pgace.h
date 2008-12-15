@@ -798,48 +798,6 @@ pgaceGramAlterFunction(Relation rel, HeapTuple tuple, DefElem *defel)
 						"via ALTER FUNCTION")));
 }
 
-/*
- * pgaceGramTransformRelOptions 
- *
- * This hook is invoked to transform the given relation options
- * into a proper form.
- */
-static inline void
-pgaceGramTransformRelOptions(DefElem *defel, bool isReset)
-{
-	switch (pgace_security)
-	{
-#ifdef HAVE_SELINUX
-	case PGACE_SECURITY_SELINUX:
-		break;
-#endif
-	default:
-		break;
-	}
-}
-
-/*
- * pgaceGramRelationOption
- *
- * This hook is invoked to apply security feature specific relation options.
- * If you can find any proper options, please return true, elsewhere false.
- */
-static inline bool
-pgaceGramParseRelOptions(const char *key, const char *value,
-						 StdRdOptions *result, bool validate)
-{
-	switch (pgace_security)
-	{
-#ifdef HAVE_SELINUX
-	case PGACE_SECURITY_SELINUX:
-		break;
-#endif
-	default:
-		break;
-	}
-	return false;
-}
-
 /******************************************************************
  * DATABASE related hooks
  ******************************************************************/
@@ -1526,7 +1484,7 @@ pgaceUnlabeledSecurityLabel(void)
 	default:
 		break;
 	}
-	return NULL;
+	return pstrdup("");
 }
 
 /*
@@ -1575,6 +1533,8 @@ extern char *pgaceSidToSecurityLabel(Oid security_id);
 extern Oid pgaceLookupSecurityId(char *label);
 
 extern char *pgaceLookupSecurityLabel(Oid security_id);
+
+extern Datum pgaceHeapGetSecurityLabelSysattr(HeapTuple tuple);
 
 /* Extended SQL statements related */
 extern List *pgaceRelationAttrList(CreateStmt *stmt);

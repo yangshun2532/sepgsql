@@ -1279,12 +1279,12 @@ bool ExecContextForcesRowAcl(PlanState *planstate, bool *hasrowacl)
 }
 
 /*
- * ExecContextForcesSecurity
+ * ExecContextForcesSecLabel
  *
  * We need to ensure that result tuples have space for security label,
  * if the security feature need to store it within the given relation.
  */
-bool ExecContextForcesSecurityLabel(PlanState *planstate, bool *hassecurity)
+bool ExecContextForcesSecLabel(PlanState *planstate, bool *hassecurity)
 {
 	if (planstate->state->es_select_into)
 	{
@@ -1412,7 +1412,7 @@ fetchWritableSystemAttribute(JunkFilter *junkfilter, TupleTableSlot *slot,
 		if (isnull)
 			ereport(ERROR,
 					(errcode(ERRCODE_ROWACL_ERROR),
-					 errmsg("null value in column \"%s\" violates not-null constraint",
+					 errmsg("setting NULL on \"%s\" system column is not supported",
 							SecurityAclAttributeName)));
 		*tts_rowacl = datum;
 	}
@@ -1425,8 +1425,8 @@ fetchWritableSystemAttribute(JunkFilter *junkfilter, TupleTableSlot *slot,
 		if (isnull)
 			ereport(ERROR,
 					(errcode(ERRCODE_PGACE_ERROR),
-					 errmsg("null value in column \"%s\" violates not-null constraint",
-							SecurityLabelAttributeName)));
+					 errmsg("setting NULL on \"%s\" system column is not supported",
+                            SecurityLabelAttributeName)));
 		*tts_seclabel = datum;
 	}
 }
@@ -1441,8 +1441,8 @@ storeWritableSystemAttribute(Relation rel, TupleTableSlot *slot, HeapTuple tuple
 			HeapTupleSetRowAcl(tuple, InvalidOid);
 		else
 		{
-			/* TODO: fetch ACL and set it here */
-			elog(ERROR, "TODO: set ACL feature (%s:%d)", __FUNCTION__, __LINE__);
+			Acl *acl = DatumGetAclP(slot->tts_rowacl);
+			HeapTupleSetRowAcl(tuple, rowaclSecurityAclToSid(acl));
 		}
 	}
 	else if (DatumGetPointer(slot->tts_rowacl))
@@ -1460,9 +1460,8 @@ storeWritableSystemAttribute(Relation rel, TupleTableSlot *slot, HeapTuple tuple
 			HeapTupleSetSecLabel(tuple, InvalidOid);
 		else
 		{
-			char *secLabel = TextDatumGetCString(slot->tts_seclabel);
-
-			HeapTupleSetSecLabel(tuple, pgaceSecurityLabelToSid(secLabel));
+			char *label = TextDatumGetCString(slot->tts_seclabel);
+			HeapTupleSetSecLabel(tuple, pgaceSecurityLabelToSid(label));
 		}
 	}
 	else if (DatumGetPointer(slot->tts_seclabel))
