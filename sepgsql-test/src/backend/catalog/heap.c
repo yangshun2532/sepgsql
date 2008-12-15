@@ -1059,9 +1059,9 @@ heap_create_with_catalog(const char *relname,
 	 * Fixup rel->rd_att->tdhassecacl and el->rd_att->tdhasseclabel
 	 */
 	new_rel_desc->rd_att->tdhasrowacl
-		= rowaclTupleDescHasSecurity(new_rel_desc, NIL);
+		= pgaceTupleDescHasRowAcl(new_rel_desc, NIL);
 	new_rel_desc->rd_att->tdhasseclabel
-		= pgaceTupleDescHasSecurity(new_rel_desc, NIL);
+		= pgaceTupleDescHasSecLabel(new_rel_desc, NIL);
 
 	/*
 	 * Make a dependency link to force the relation to be deleted if its

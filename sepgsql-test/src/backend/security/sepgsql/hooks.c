@@ -607,7 +607,7 @@ sepgsqlEndPerformCheckFK(Relation rel, Datum save_pgace)
  * security_label hooks
  *******************************************************************************/
 bool
-sepgsqlTupleDescHasSecurity(Relation rel, List *relopts)
+sepgsqlTupleDescHasSecLabel(Relation rel, List *relopts)
 {
 	/*
 	 * Newly created table via SELECT INTO/CREATE TABLE AS

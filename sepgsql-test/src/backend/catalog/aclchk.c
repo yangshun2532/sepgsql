@@ -91,7 +91,7 @@ dumpacl(Acl *acl)
  *
  * NB: the original old_acl is pfree'd.
  */
-static Acl *
+Acl *
 merge_acl_with_grant(Acl *old_acl, bool is_grant,
 					 bool grant_option, DropBehavior behavior,
 					 List *grantees, AclMode privileges,

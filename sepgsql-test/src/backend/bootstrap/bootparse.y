@@ -212,9 +212,9 @@ Boot_CreateStmt:
 						 */
 						boot_reldesc->rd_rel->relkind = RELKIND_RELATION;
 						boot_reldesc->rd_att->tdhasrowacl
-							= rowaclTupleDescHasSecurity(boot_reldesc, NIL);
+							= pgaceTupleDescHasRowAcl(boot_reldesc, NIL);
 						boot_reldesc->rd_att->tdhasseclabel
-							= pgaceTupleDescHasSecurity(boot_reldesc, NIL);
+							= pgaceTupleDescHasSecLabel(boot_reldesc, NIL);
 
 						elog(DEBUG4, "bootstrap relation created");
 					}

@@ -506,6 +506,9 @@ pgaceSidToSecurityLabel(Oid sid)
 	if (!label || !pgaceCheckValidSecurityLabel(label))
 		label = pgaceUnlabeledSecurityLabel();
 
+	if (!label)
+		return NULL;
+
 	return pgaceTranslateSecurityLabelOut(label);
 }
 

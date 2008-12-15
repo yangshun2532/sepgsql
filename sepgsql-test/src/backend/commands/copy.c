@@ -1473,8 +1473,6 @@ CopyTo(CopyState cstate)
 		{
 			CHECK_FOR_INTERRUPTS();
 
-			if (!rowaclCopyToTuple(cstate->rel, cstate->attnumlist, tuple))
-				continue;
 			if (!pgaceCopyToTuple(cstate->rel, cstate->attnumlist, tuple))
 				continue;
 
@@ -1567,8 +1565,8 @@ CopyOneRowTo(CopyState cstate, Oid tupleOid, Oid rowAclId, Oid secLabelId,
 		switch (attnum)
 		{
 		case SecurityAclAttributeNumber:
-			elog(ERROR, "rowacl: to be implemented (%s:%d)", __FUNCTION__, __LINE__);
-			//value = ...
+			value = PointerGetDatum(rowaclSidToSecurityAcl(rowAclId,
+											RelationGetForm(cstate->rel)->relowner));
 			isnull = false;
 			force_quot = cstate->rowacl_force_quot;
 			out_fmgr = &cstate->rowacl_out_function;

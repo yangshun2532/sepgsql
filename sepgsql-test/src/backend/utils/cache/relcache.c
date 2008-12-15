@@ -891,9 +891,9 @@ RelationBuildDesc(Oid targetRelId, Relation oldrelation)
 
 	/* fixup relation->rd_att->tdhassecacl and tdhasseclabel */
 	relation->rd_att->tdhasrowacl
-		= rowaclTupleDescHasSecurity(relation, NIL);
+		= pgaceTupleDescHasRowAcl(relation, NIL);
 	relation->rd_att->tdhasseclabel
-		= pgaceTupleDescHasSecurity(relation, NIL);
+		= pgaceTupleDescHasSecLabel(relation, NIL);
 
 	/*
 	 * initialize the relation lock manager information
@@ -1485,9 +1485,9 @@ formrdesc(const char *relationName, Oid relationReltype,
 	 * Fixup relation->rd_att->tdhasrowacl and tdhasseclabel
 	 */
 	RelationGetDescr(relation)->tdhasrowacl
-		= rowaclTupleDescHasSecurity(relation, NIL);
+		= pgaceTupleDescHasRowAcl(relation, NIL);
 	RelationGetDescr(relation)->tdhasseclabel
-		= pgaceTupleDescHasSecurity(relation, NIL);
+		= pgaceTupleDescHasSecLabel(relation, NIL);
 
 	/*
 	 * initialize the relation lock manager information
@@ -3492,9 +3492,9 @@ load_relcache_init_file(void)
 		 * fixup rel->rd_att->tdhassecurity
 		 */
 		rel->rd_att->tdhasrowacl
-			= rowaclTupleDescHasSecurity(rel, NIL);
+			= pgaceTupleDescHasRowAcl(rel, NIL);
 		rel->rd_att->tdhasseclabel
-			= pgaceTupleDescHasSecurity(rel, NIL);
+			= pgaceTupleDescHasSecLabel(rel, NIL);
 
 		/* mark not-null status */
 		if (has_not_null)
