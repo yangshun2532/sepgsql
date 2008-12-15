@@ -3260,7 +3260,8 @@ ri_PerformCheck(RI_QueryKey *qkey, SPIPlanPtr qplan,
 	int			spi_result;
 	Oid			save_userid;
 	bool		save_secdefcxt;
-	Datum		save_pgace;
+	Datum		rowacl_private = 0;
+	Datum		pgace_private = 0;
 	Datum		vals[RI_MAX_NUMKEYS * 2];
 	char		nulls[RI_MAX_NUMKEYS * 2];
 
@@ -3343,7 +3344,8 @@ ri_PerformCheck(RI_QueryKey *qkey, SPIPlanPtr qplan,
 	GetUserIdAndContext(&save_userid, &save_secdefcxt);
 	SetUserIdAndContext(RelationGetForm(query_rel)->relowner, true);
 
-	save_pgace = pgaceBeginPerformCheckFK(query_rel, detectNewRows, save_userid);
+	pgaceBeginPerformCheckFK(query_rel, detectNewRows, save_userid,
+							 &rowacl_private, &pgace_private);
 	PG_TRY();
 	{
 		/* Finally we can run the query. */
@@ -3354,11 +3356,11 @@ ri_PerformCheck(RI_QueryKey *qkey, SPIPlanPtr qplan,
 	}
 	PG_CATCH();
 	{
-		pgaceEndPerformCheckFK(query_rel, save_pgace);
+		pgaceEndPerformCheckFK(query_rel, rowacl_private, pgace_private);
 		PG_RE_THROW();
 	}
 	PG_END_TRY();
-	pgaceEndPerformCheckFK(query_rel, save_pgace);
+	pgaceEndPerformCheckFK(query_rel, rowacl_private, pgace_private);
 
 	/* Restore UID */
 	SetUserIdAndContext(save_userid, save_secdefcxt);

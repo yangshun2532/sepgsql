@@ -19,6 +19,7 @@
 #include "catalog/pg_type.h"
 #include "commands/defrem.h"
 #include "nodes/makefuncs.h"
+#include "security/pgace.h"
 #include "utils/array.h"
 #include "utils/builtins.h"
 #include "utils/guc.h"
@@ -105,6 +106,8 @@ transformRelOptions(Datum oldOptions, List *defList,
 	foreach(cell, defList)
 	{
 		DefElem    *def = lfirst(cell);
+
+		pgaceGramTransformRelOptions(def, isReset);
 
 		if (isReset)
 		{
@@ -315,56 +318,6 @@ parse_fillfactor_reloption(const char *value, StdRdOptions *result, bool validat
 	return true;
 }
 
-static bool
-parse_row_level_acl_reloption(const char *value, StdRdOptions *result, bool validate)
-{
-	bool row_level_acl;
-
-	/* set a default value */
-	result->row_level_acl = false;
-	if (!value)
-		return false;
-
-	if (!parse_bool(value, &row_level_acl))
-	{
-		if (validate)
-			ereport(ERROR,
-					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-					 errmsg("row_level_acl must be a bool: \"%s\"", value)));
-		return false;
-	}
-	result->row_level_acl = row_level_acl;
-
-	return true;
-}
-
-static bool
-parse_default_row_acl_reloption(const char *value, StdRdOptions *result, bool validate)
-{
-	Oid default_row_acl;
-
-	/*
-	 * TODO: WITH(default_row_acl='{kaigai=rw/kaigai}') style
-	 */
-
-	/* set a default value */
-	result->default_row_acl = InvalidOid;
-	if (!value)
-		return false;
-
-	if (!parse_int(value, (int *) &default_row_acl, 0, NULL))
-	{
-		if (validate)
-			ereport(ERROR,
-					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-					 errmsg("row_level_acl must be a oid: \"%s\"", value)));
-		return false;
-	}
-
-	result->default_row_acl = default_row_acl;
-	return true;
-}
-
 /*
  * Parse reloptions for anything using StdRdOptions (ie, fillfactor only)
  */
@@ -378,6 +331,7 @@ default_reloptions(Datum reloptions, bool validate,
 		"default_row_acl",
 	};
 	char	   *values[lengthof(default_keywords)];
+	int			index;
 	bool		exist = true;
 	StdRdOptions *result;
 
@@ -389,13 +343,21 @@ default_reloptions(Datum reloptions, bool validate,
 	result = (StdRdOptions *) palloc0(sizeof(StdRdOptions));
 	SET_VARSIZE(result, sizeof(StdRdOptions));
 
-	if (parse_fillfactor_reloption(values[0], result, validate,
-								   minFillfactor, defaultFillfactor))
-		exist = true;
-	if (parse_row_level_acl_reloption(values[1], result, validate))
-		exist = true;
-	if (parse_default_row_acl_reloption(values[2], result, validate))
-		exist = true;
+	for (index = 0; index < lengthof(default_keywords); index++)
+	{
+		switch (index)
+		{
+		case 0:		/* fillfactor */
+			if (parse_fillfactor_reloption(values[0], result, validate,
+										   minFillfactor, defaultFillfactor))
+				exist = true;
+			break;
+		default:	/* PGACE */
+			if (pgaceGramParseRelOptions(default_keywords[index],
+										 values[index], result, validate))
+				exist = true;
+		}
+	}
 
 	/* no valid option here */
 	if (exist == false)

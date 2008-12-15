@@ -634,9 +634,9 @@ index_create(Oid heapRelationId,
 	 * Fixup rel->rd_att->tdhassecXXX
 	 */
 	indexRelation->rd_att->tdhasrowacl
-		= rowaclTupleDescHasSecurity(indexRelation, NIL);
+		= pgaceTupleDescHasRowAcl(indexRelation, NIL);
 	indexRelation->rd_att->tdhasseclabel
-		= pgaceTupleDescHasSecurity(indexRelation, NIL);
+		= pgaceTupleDescHasSecLabel(indexRelation, NIL);
 
 	/*
 	 * Obtain exclusive lock on it.  Although no other backends can see it

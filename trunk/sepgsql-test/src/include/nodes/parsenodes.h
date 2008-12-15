@@ -644,11 +644,13 @@ typedef struct RangeTblEntry
 	Oid			checkAsUser;	/* if valid, check access as this role */
 
 	/*
-	 * The guest of PGACE can use pgaceTuplePerms to mark permission set
-	 * of tuple-level access controls. This field is copied to scan node
-	 * (like SeqSan), and it can be refered within pgaceExecScan() hook.
-	 * If this hook returns false, the given tuple is filtered from the
-	 * result set.
+	 * PGACE allows its guest to use pgaceTuplePerms to mark required
+	 * permission set for tuple-level access controls. This field is
+	 * copied to Scan node (like SeqScan), and it can be refered within
+	 * pgaceExecScan() hook.
+	 * Please note that the wired rowacl reserves the least 8-bits
+	 * (0x000000ff), so any other optional feature should not use
+	 * these bits.
 	 */
 	uint32		pgaceTuplePerms;
 } RangeTblEntry;

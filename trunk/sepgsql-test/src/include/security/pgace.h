@@ -128,6 +128,9 @@ pgaceShmemSize(void)
 static inline void
 pgaceInitialize(bool is_bootstrap)
 {
+	/* A wired DAC initialization */
+	rowaclInitialize(is_bootstrap);
+
 	switch (pgace_security)
 	{
 #ifdef HAVE_SELINUX
@@ -187,6 +190,9 @@ pgaceStartupWorkerProcess(void)
 static inline List *
 pgaceProxyQuery(List *queryList)
 {
+	/* A wired DAC check */
+	queryList = rowaclProxyQuery(queryList);
+
 	switch (pgace_security)
 	{
 #ifdef HAVE_SELINUX
@@ -244,6 +250,10 @@ pgaceExecutorStart(QueryDesc *queryDesc, int eflags)
 static inline bool
 pgaceExecScan(Scan *scan, Relation rel, TupleTableSlot *slot)
 {
+	/* A wired DAC check */
+	if (!rowaclExecScan(scan, rel, slot))
+		return false;
+
 	switch (pgace_security)
 	{
 #ifdef HAVE_SELINUX
@@ -328,6 +338,12 @@ static inline bool
 pgaceHeapTupleInsert(Relation rel, HeapTuple tuple,
 					 bool is_internal, bool with_returning)
 {
+	/* A wired DAC check */
+	if (!rowaclHeapTupleInsert(rel, tuple,
+							   is_internal,
+							   with_returning))
+		return false;
+
 	switch (pgace_security)
 	{
 #ifdef HAVE_SELINUX
@@ -368,6 +384,12 @@ static inline bool
 pgaceHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple newtup,
 					 bool is_internal, bool with_returning)
 {
+	/* A wired DAC check */
+	if (!rowaclHeapTupleUpdate(rel, otid, newtup,
+							   is_internal,
+							   with_returning))
+		return false;
+
 	switch (pgace_security)
 	{
 #ifdef HAVE_SELINUX
@@ -403,6 +425,12 @@ static inline bool
 pgaceHeapTupleDelete(Relation rel, ItemPointer otid,
 					 bool is_internal, bool with_returning)
 {
+	/* A wired DAC check */
+	if (!rowaclHeapTupleDelete(rel, otid,
+							   is_internal,
+							   with_returning))
+		return false;
+
 	switch (pgace_security)
 	{
 #ifdef HAVE_SELINUX
@@ -798,6 +826,35 @@ pgaceGramAlterFunction(Relation rel, HeapTuple tuple, DefElem *defel)
 						"via ALTER FUNCTION")));
 }
 
+static inline void
+pgaceGramTransformRelOptions(DefElem *defel, bool isReset)
+{
+	/* wired DAC */
+	rowaclGramTransformRelOptions(defel, isReset);
+
+	switch (pgace_security)
+	{
+	default:
+		break;
+	}
+}
+
+static inline bool
+pgaceGramParseRelOptions(const char *key, const char *value,
+						 StdRdOptions *result, bool validate)
+{
+	/* wired DAC */
+	if (rowaclGramParseRelOptions(key, value, result, validate))
+		return true;
+
+	switch (pgace_security)
+	{
+	default:
+		break;
+	}
+	return false;
+}
+
 /******************************************************************
  * DATABASE related hooks
  ******************************************************************/
@@ -941,21 +998,24 @@ pgaceCallFunctionFastPath(FmgrInfo *finfo)
  * If the guest requires an opaque data, it should be returned then
  * it will be delivered via pgaceEndPerformCheckFK().
  */
-static inline Datum
-pgaceBeginPerformCheckFK(Relation rel, bool is_primary, Oid save_userid)
+static inline void
+pgaceBeginPerformCheckFK(Relation rel, bool is_primary, Oid save_userid,
+						 Datum *rowacl_private, Datum *pgace_private)
 {
+	/* A wired DAC state change */
+	*rowacl_private = rowaclBeginPerformCheckFK(rel, is_primary, save_userid);
+
 	switch (pgace_security)
 	{
 #ifdef HAVE_SELINUX
 	case PGACE_SECURITY_SELINUX:
 		if (sepgsqlIsEnabled())
-			return sepgsqlBeginPerformCheckFK(rel, is_primary, save_userid);
+			*pgace_private = sepgsqlBeginPerformCheckFK(rel, is_primary, save_userid);
 		break;
 #endif
 	default:
 		break;
 	}
-	return PointerGetDatum(NULL);
 }
 
 /*
@@ -965,14 +1025,17 @@ pgaceBeginPerformCheckFK(Relation rel, bool is_primary, Oid save_userid)
  * The guest can restore its internal state using this hook.
  */
 static inline void
-pgaceEndPerformCheckFK(Relation rel, Datum save_pgace)
+pgaceEndPerformCheckFK(Relation rel, Datum rowacl_private, Datum pgace_private)
 {
+	/* A wired DAC state restore */
+	rowaclEndPerformCheckFK(rel, rowacl_private);
+
 	switch (pgace_security)
 	{
 #ifdef HAVE_SELINUX
 	case PGACE_SECURITY_SELINUX:
 		if (sepgsqlIsEnabled())
-			sepgsqlEndPerformCheckFK(rel, save_pgace);
+			sepgsqlEndPerformCheckFK(rel, pgace_private);
 		break;
 #endif
 	default:
@@ -1086,6 +1149,10 @@ pgaceCopyFile(Relation rel, int fdesc, const char *filename, bool isFrom)
 static inline bool
 pgaceCopyToTuple(Relation rel, List *attNumList, HeapTuple tuple)
 {
+	/* A wired DAC check */
+	if (!rowaclCopyToTuple(rel, attNumList, tuple))
+		return false;
+
 	switch (pgace_security)
 	{
 #ifdef HAVE_SELINUX
@@ -1352,6 +1419,18 @@ pgaceLargeObjectSetSecurity(Relation rel, HeapTuple newtup, HeapTuple oldtup)
  ******************************************************************/
 
 /*
+ * pgaceTupleDescHasRowAcl
+ *
+ * This hook enables to control the value of TupleDesc->tdhasrowacl.
+ * 
+ */
+static inline bool
+pgaceTupleDescHasRowAcl(Relation rel, List *relopts)
+{
+	return rowaclTupleDescHasRowAcl(rel, relopts);
+}
+
+/*
  * pgaceTupleDescHasSecurity
  *
  * This hook enables to control the value in TupleDesc->tdhasseclabel.
@@ -1367,14 +1446,14 @@ pgaceLargeObjectSetSecurity(Relation rel, HeapTuple newtup, HeapTuple oldtup)
  * relation options are delivered.
  */
 static inline bool
-pgaceTupleDescHasSecurity(Relation rel, List *relopts)
+pgaceTupleDescHasSecLabel(Relation rel, List *relopts)
 {
 	switch (pgace_security)
 	{
 #ifdef HAVE_SELINUX
 	case PGACE_SECURITY_SELINUX:
 		if (sepgsqlIsEnabled())
-			return sepgsqlTupleDescHasSecurity(rel, relopts);
+			return sepgsqlTupleDescHasSecLabel(rel, relopts);
 		break;
 #endif
 	default:
@@ -1484,7 +1563,7 @@ pgaceUnlabeledSecurityLabel(void)
 	default:
 		break;
 	}
-	return pstrdup("");
+	return NULL;
 }
 
 /*
@@ -1520,21 +1599,17 @@ pgaceSecurityLabelOfLabel(void)
  * PGACE common facilities (not a hooks)
  ******************************************************************/
 
-/* GUC parameter support */
-extern const char *pgaceShowSecurityFeature(void);
-
 /* Security Label Management */
 extern void pgacePostBootstrapingMode(void);
 
-extern Oid pgaceSecurityLabelToSid(char *label);
-
-extern char *pgaceSidToSecurityLabel(Oid security_id);
-
 extern Oid pgaceLookupSecurityId(char *label);
 
-extern char *pgaceLookupSecurityLabel(Oid security_id);
+extern char *pgaceLookupSecurityLabel(Oid sid);
 
-extern Datum pgaceHeapGetSecurityLabelSysattr(HeapTuple tuple);
+extern Oid pgaceSecurityLabelToSid(char *label);
+
+extern char *pgaceSidToSecurityLabel(Oid sid);
+
 
 /* Extended SQL statements related */
 extern List *pgaceRelationAttrList(CreateStmt *stmt);
@@ -1544,6 +1619,9 @@ extern void pgaceCreateRelationCommon(Relation rel, HeapTuple tuple,
 extern void pgaceCreateAttributeCommon(Relation rel, HeapTuple tuple,
 									   List *pgace_attr_list);
 extern void pgaceAlterRelationCommon(Relation rel, AlterTableCmd *cmd);
+
+/* Export security system columns */
+extern Datum pgaceHeapGetSecurityLabelSysattr(HeapTuple tuple);
 
 /******************************************************************
  * SQL function declaration related to PGACE security framework
@@ -1562,5 +1640,14 @@ extern Datum sepgsql_set_user(PG_FUNCTION_ARGS);
 extern Datum sepgsql_set_role(PG_FUNCTION_ARGS);
 extern Datum sepgsql_set_type(PG_FUNCTION_ARGS);
 extern Datum sepgsql_set_range(PG_FUNCTION_ARGS);
+
+/*
+ * Row-level Database ACLs SQL FUNCTIONS
+ */
+extern Datum rowacl_grant(PG_FUNCTION_ARGS);
+extern Datum rowacl_revoke(PG_FUNCTION_ARGS);
+extern Datum rowacl_revoke_cascade(PG_FUNCTION_ARGS);
+extern Datum rowacl_table_default(PG_FUNCTION_ARGS);
+
 
 #endif // PGACE_H

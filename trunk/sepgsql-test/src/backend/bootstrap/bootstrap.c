@@ -801,9 +801,9 @@ InsertOneTuple(Oid objectid)
 							  RelationGetForm(boot_reldesc)->relhasoids,
 							  attrtypes);
 	tupDesc->tdhasrowacl
-		= rowaclTupleDescHasSecurity(boot_reldesc, NIL);
+		= rowaclTupleDescHasRowAcl(boot_reldesc, NIL);
 	tupDesc->tdhasseclabel
-		= pgaceTupleDescHasSecurity(boot_reldesc, NIL);
+		= pgaceTupleDescHasSecLabel(boot_reldesc, NIL);
 
 	tuple = heap_form_tuple(tupDesc, values, Nulls);
 	if (objectid != (Oid) 0)

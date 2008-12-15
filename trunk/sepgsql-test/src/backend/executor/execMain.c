@@ -1261,7 +1261,7 @@ bool ExecContextForcesRowAcl(PlanState *planstate, bool *hasrowacl)
 
 		Assert(into != NULL);
 
-		*hasrowacl = rowaclTupleDescHasSecurity(NULL, into->options);
+		*hasrowacl = pgaceTupleDescHasRowAcl(NULL, into->options);
 		return true;
 	}
 	else
@@ -1270,7 +1270,7 @@ bool ExecContextForcesRowAcl(PlanState *planstate, bool *hasrowacl)
 
 		if (ri && ri->ri_RelationDesc)
 		{
-			*hasrowacl = rowaclTupleDescHasSecurity(ri->ri_RelationDesc, NIL);
+			*hasrowacl = pgaceTupleDescHasSecLabel(ri->ri_RelationDesc, NIL);
 			return true;
 		}
 	}
@@ -1292,7 +1292,7 @@ bool ExecContextForcesSecLabel(PlanState *planstate, bool *hassecurity)
 
 		Assert(into != NULL);
 
-		*hassecurity = pgaceTupleDescHasSecurity(NULL, into->options);
+		*hassecurity = pgaceTupleDescHasSecLabel(NULL, into->options);
 		return true;
 	}
 	else
@@ -1301,7 +1301,7 @@ bool ExecContextForcesSecLabel(PlanState *planstate, bool *hassecurity)
 
 		if (ri && ri->ri_RelationDesc)
 		{
-			*hassecurity = pgaceTupleDescHasSecurity(ri->ri_RelationDesc, NIL);
+			*hassecurity = pgaceTupleDescHasSecLabel(ri->ri_RelationDesc, NIL);
 			return true;
 		}
 	}

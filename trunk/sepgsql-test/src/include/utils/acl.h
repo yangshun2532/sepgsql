@@ -271,6 +271,11 @@ extern AclResult pg_language_aclcheck(Oid lang_oid, Oid roleid, AclMode mode);
 extern AclResult pg_namespace_aclcheck(Oid nsp_oid, Oid roleid, AclMode mode);
 extern AclResult pg_tablespace_aclcheck(Oid spc_oid, Oid roleid, AclMode mode);
 
+extern Acl *merge_acl_with_grant(Acl *old_acl, bool is_grant,
+								 bool grant_option, DropBehavior behavior,
+								 List *grantees, AclMode privileges,
+								 Oid grantorId, Oid ownerId);
+
 extern void aclcheck_error(AclResult aclerr, AclObjectKind objectkind,
 			   const char *objectname);
 

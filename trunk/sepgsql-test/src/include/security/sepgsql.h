@@ -37,16 +37,17 @@ extern bool sepostgresql_row_level;
 
 /*
  * Permission codes of internal representation
+ * Please note that 0x000000ff are reserved by rowacl
  */
-#define SEPGSQL_PERMS_USE				(1UL << 0)
-#define SEPGSQL_PERMS_SELECT			(1UL << 1)
-#define SEPGSQL_PERMS_UPDATE			(1UL << 2)
-#define SEPGSQL_PERMS_INSERT			(1UL << 3)
-#define SEPGSQL_PERMS_DELETE			(1UL << 4)
-#define SEPGSQL_PERMS_RELABELFROM		(1UL << 5)
-#define SEPGSQL_PERMS_RELABELTO			(1UL << 6)
-#define SEPGSQL_PERMS_READ				(1UL << 7)
-#define SEPGSQL_PERMS_WRITE				(1UL << 8)
+#define SEPGSQL_PERMS_USE				(1UL <<  8)
+#define SEPGSQL_PERMS_SELECT			(1UL <<  9)
+#define SEPGSQL_PERMS_UPDATE			(1UL << 10)
+#define SEPGSQL_PERMS_INSERT			(1UL << 11)
+#define SEPGSQL_PERMS_DELETE			(1UL << 12)
+#define SEPGSQL_PERMS_RELABELFROM		(1UL << 13)
+#define SEPGSQL_PERMS_RELABELTO			(1UL << 14)
+#define SEPGSQL_PERMS_READ				(1UL << 15)
+#define SEPGSQL_PERMS_WRITE				(1UL << 16)
 
 /*
  * The implementation of PGACE/SE-PostgreSQL hooks
@@ -151,7 +152,7 @@ extern void sepgsqlLargeObjectGetSecurity(Relation rel, HeapTuple tuple);
 extern void sepgsqlLargeObjectSetSecurity(Relation rel, HeapTuple newtup, HeapTuple oldtup);
 
 /* Security Label hooks */
-extern bool  sepgsqlTupleDescHasSecurity(Relation rel, List *relopts);
+extern bool  sepgsqlTupleDescHasSecLabel(Relation rel, List *relopts);
 
 extern char *sepgsqlTranslateSecurityLabelIn(const char *context);
 

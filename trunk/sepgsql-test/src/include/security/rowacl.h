@@ -7,23 +7,17 @@
 
 #include "utils/acl.h"
 
-/*
- * Management of row-level ACLs
- */
-extern bool rowaclTupleDescHasSecurity(Relation rel, List *relopts);
+extern void rowaclInitialize(bool is_bootstrap);
 
-extern Acl *rowaclSidToSecurityAcl(Oid sid, Oid ownerId);
-
-extern Oid rowaclSecurityAclToSid(Acl *acl);
-
-extern Datum rowaclHeapGetSecurityAclSysattr(HeapTuple tuple);
-
-/*
- * Functions for Row-level access controls
- */
 extern List *rowaclProxyQuery(List *queryList);
 
+extern Datum rowaclBeginPerformCheckFK(Relation rel, bool is_primary, Oid userid_saved);
+
+extern void rowaclEndPerformCheckFK(Relation rel, Datum rowacl_private);
+
 extern bool rowaclExecScan(Scan *scan, Relation rel, TupleTableSlot *slot);
+
+extern bool rowaclCopyToTuple(Relation rel, List *attNumList, HeapTuple tuple);
 
 extern bool rowaclHeapTupleInsert(Relation rel, HeapTuple tuple,
 								  bool is_internal, bool with_returning);
@@ -34,14 +28,22 @@ extern bool rowaclHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple newt
 extern bool rowaclHeapTupleDelete(Relation rel, ItemPointer otid,
 								  bool is_internal, bool with_returning);
 
-extern bool rowaclCopyToTuple(Relation rel, List *attNumList, HeapTuple tuple);
+extern void rowaclGramTransformRelOptions(DefElem *defel, bool isReset);
 
-extern Datum rowaclBeginPerformCheckFK(Relation rel, bool is_primary, Oid save_userid);
+extern bool rowaclGramParseRelOptions(const char *key, const char *value,
+									  StdRdOptions *result, bool validate);
 
-extern void rowaclEndPerformCheckFK(Relation rel, Datum save_pgace);
+extern bool rowaclTupleDescHasRowAcl(Relation rel, List *relopts);
+
+extern Acl *rowaclSidToSecurityAcl(Oid sid, Oid ownerId);
+
+extern Oid rowaclSecurityAclToSid(Acl *acl);
+
+extern Datum rowaclHeapGetSecurityAclSysattr(HeapTuple tuple);
+
+/*
+ * SQL Functions
+ */
+
 
 #endif  /* ROWACL_H */
-
-
-
-
