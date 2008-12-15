@@ -515,14 +515,13 @@ pgaceSidToSecurityLabel(Oid sid)
 Datum
 pgaceHeapGetSecurityLabelSysattr(HeapTuple tuple)
 {
-	Datum result;
 	char *label;
 
 	label = pgaceSidToSecurityLabel(HeapTupleGetSecLabel(tuple));
-	result = CStringGetTextDatum(label);
-	pfree(label);
+	if (!label)
+		return PointerGetDatum(label);
 
-	return result;
+	return CStringGetTextDatum(label);
 }
 
 /*****************************************************************************
