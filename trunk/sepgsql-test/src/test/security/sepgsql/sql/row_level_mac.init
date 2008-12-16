@@ -6,6 +6,7 @@ SELECT sepgsql_getcon();
 -- cleanup previous tests
 SET client_min_messages TO 'error';
 
+DROP TABLE IF EXISTS t2;
 DROP TABLE IF EXISTS t1;
 
 RESET client_min_messages;
@@ -16,16 +17,22 @@ CREATE TABLE t1
 	b	text
 );
 
-INSERT INTO t1(security_label, a, b) VALUES
+CREATE TABLE t2
+(
+	x	int references t1(a),
+	y	text
+);
+
+INSERT INTO t1 (security_label, a, b) VALUES
        ('system_u:object_r:sepgsql_table_t:s0',            1, 'aaa'),
        ('system_u:object_r:sepgsql_table_t:s0:c0',         2, 'bbb'),
        ('system_u:object_r:sepgsql_table_t:s0:c1',         3, 'ccc'),
        ('system_u:object_r:sepgsql_ro_table_t:s0',         4, 'ddd'),
        ('system_u:object_r:sepgsql_ro_table_t:s0:c0',      5, 'eee'),
-       ('system_u:object_r:sepgsql_ro_table_t:s0:c1',      6, 'fff'),
-       ('system_u:object_r:sepgsql_fixed_table_t:s0',      7, 'ggg'),
-       ('system_u:object_r:sepgsql_fixed_table_t:s0:c0',   8, 'hhh'),
-       ('system_u:object_r:sepgsql_fixed_table_t:s0:c1',   9, 'iii'),
-       ('system_u:object_r:sepgsql_secret_table_t:s0',    10, 'aaa'),
-       ('system_u:object_r:sepgsql_secret_table_t:s0:c0', 11, 'aaa'),
-       ('system_u:object_r:sepgsql_secret_table_t:s0:c1', 12, 'aaa');
+       ('system_u:object_r:sepgsql_ro_table_t:s0:c1',      6, 'fff');
+
+INSERT INTO t2 (x, y) VALUES
+       (1, 'red'), (2, 'blue'), (3, 'yellow'),
+       (4, 'green'), (5, 'orange'), (6, 'white');
+UPDATE t2 SET security_label = sepgsql_set_range(security_label, 's0:c1')
+       WHERE x IN (1, 3, 4)
