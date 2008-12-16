@@ -30,23 +30,15 @@
 /*******************************************************************************
  * Extended SQL statement hooks
  *******************************************************************************/
-DefElem *
-sepgsqlGramSecurityItem(char *defname, char *value)
-{
-	DefElem    *n = NULL;
-
-	if (strcmp(defname, "security_context") == 0)
-		n = makeDefElem(pstrdup(defname), (Node *) makeString(value));
-	return n;
-}
-
 bool
 sepgsqlIsGramSecurityItem(DefElem *defel)
 {
 	Assert(IsA(defel, DefElem));
 
-	if (defel->defname && strcmp(defel->defname, "security_context") == 0)
+	if (defel->defname &&
+		strcmp(defel->defname, SecurityLabelAttributeName) == 0)
 		return true;
+
 	return false;
 }
 

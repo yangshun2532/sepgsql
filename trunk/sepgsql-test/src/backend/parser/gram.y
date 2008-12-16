@@ -9256,10 +9256,12 @@ OptSecurityItem:
 SecurityItem:
 			IDENT '=' Sconst
 				{
-					DefElem *n = pgaceGramSecurityItem($1, $3);
-					if (n == NULL)
+					DefElem *node = makeDefElem($1, (Node *) makeString($3));
+
+					if (!pgaceIsGramSecurityItem(node))
 						yyerror("syntax error");
-					$$ = n;
+
+					$$ = node;
 				}
 			;
 

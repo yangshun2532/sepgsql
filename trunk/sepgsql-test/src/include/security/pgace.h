@@ -37,11 +37,6 @@ typedef enum
 extern PgaceSecurityOpts pgace_security;
 
 /*
- * The name of security system column
- */
-#define SECURITY_SYSATTR_NAME	"security_attr"
-
-/*
  * The definitions of PGACE hooks are follows:
  *
  * These are declared as static inline functions which give us no effect
@@ -505,31 +500,7 @@ pgaceHeapTupleDelete(Relation rel, ItemPointer otid,
  * To return NULL means that "This clause is not a security attribute
  * modifier", then it makes an error.
  */
-static inline DefElem *
-pgaceGramSecurityItem(char *defname, char *value)
-{
-	switch (pgace_security)
-	{
-#ifdef HAVE_SELINUX
-	case PGACE_SECURITY_SELINUX:
-		if (sepgsqlIsEnabled())
-			return sepgsqlGramSecurityItem(defname, value);
-		break;
-#endif
-	default:
-		break;
-	}
-	return NULL;
-}
-
-/*
- * pgaceIsGramSecurityItem
- *
- * This hook checks whether the given DefElem object means security
- * attribute modifier generated at pgaceGramSecurityItem(), or not.
- * If OK, it returns true.
- */
-static inline bool
+static bool
 pgaceIsGramSecurityItem(DefElem *defel)
 {
 	switch (pgace_security)
