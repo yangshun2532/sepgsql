@@ -558,7 +558,7 @@ rowaclCheckValidSecurityAcl(const char *raw_acl)
 	if (strncmp(raw_acl, "acl:", 4) != 0)
 		return false;
 
-	copy = pstrdup(raw_acl);
+	copy = pstrdup(raw_acl + 4);
 	for (tok = strtok_r(copy, ",", &sv);
 		 tok;
 		 tok = strtok_r(NULL, ",", &sv))
