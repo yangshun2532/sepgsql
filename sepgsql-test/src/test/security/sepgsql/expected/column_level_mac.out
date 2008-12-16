@@ -1,0 +1,123 @@
+-- Basic column-level access controls
+-- ==================================
+SELECT sepgsql_getcon();
+                   sepgsql_getcon                    
+-----------------------------------------------------
+ unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c15
+(1 row)
+
+-- cleanup previous tests
+SET client_min_messages TO 'error';
+DROP TABLE IF EXISTS t1;
+DROP FUNCTION IF EXISTS f1(integer);
+RESET client_min_messages;
+CREATE TABLE t1
+(
+	a	int,
+	b	text
+		SECURITY_LABEL = 'system_u:object_r:sepgsql_ro_table_t:s0',
+	c	text
+		SECURITY_LABEL = 'system_u:object_r:sepgsql_secret_table_t:s0'
+);
+INSERT INTO t1 VALUES (1, 'aaa', '0000-1111-2222'),
+       (2, 'bbb', '3333-4444-5555'),
+       (3, 'ccc', '6666-7777-8888');
+SELECT security_label, attname FROM pg_attribute
+       WHERE attrelid IN (SELECT tableoid FROM t1);
+               security_label                |    attname     
+---------------------------------------------+----------------
+ unconfined_u:object_r:sepgsql_table_t:s0    | security_label
+ unconfined_u:object_r:sepgsql_table_t:s0    | security_acl
+ unconfined_u:object_r:sepgsql_table_t:s0    | tableoid
+ unconfined_u:object_r:sepgsql_table_t:s0    | cmax
+ unconfined_u:object_r:sepgsql_table_t:s0    | xmax
+ unconfined_u:object_r:sepgsql_table_t:s0    | cmin
+ unconfined_u:object_r:sepgsql_table_t:s0    | xmin
+ unconfined_u:object_r:sepgsql_table_t:s0    | ctid
+ unconfined_u:object_r:sepgsql_table_t:s0    | a
+ system_u:object_r:sepgsql_ro_table_t:s0     | b
+ system_u:object_r:sepgsql_secret_table_t:s0 | c
+(11 rows)
+
+CREATE OR REPLACE FUNCTION f1(integer) RETURNS TEXT
+       LANGUAGE 'sql'
+       SECURITY_LABEL = 'system_u:object_r:sepgsql_trusted_proc_exec_t:s0'
+       AS 'SELECT substring(c FROM ''^[0-9]+-'') || ''xxxx-xxxx'' FROM t1 WHERE a = $1';
+-- Basic column-level access controls
+-- ==================================
+SELECT sepgsql_getcon();
+                  sepgsql_getcon                   
+---------------------------------------------------
+ unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0
+(1 row)
+
+SELECT * FROM t1;	-- to be failed
+psql:sql/column_level_mac.sql:6: ERROR:  SELinux: denied { select } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=system_u:object_r:sepgsql_secret_table_t:s0 tclass=db_column name=t1.c
+SELECT a, b FROM t1;
+ a |  b  
+---+-----
+ 1 | aaa
+ 2 | bbb
+ 3 | ccc
+(3 rows)
+
+SELECT a, b FROM t1 WHERE c = 'abc';	-- to be failed
+psql:sql/column_level_mac.sql:10: ERROR:  SELinux: denied { use } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=system_u:object_r:sepgsql_secret_table_t:s0 tclass=db_column name=t1.c
+SELECT a, b FROM t1 WHERE c is null;	-- to be failed
+psql:sql/column_level_mac.sql:12: ERROR:  SELinux: denied { use } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=system_u:object_r:sepgsql_secret_table_t:s0 tclass=db_column name=t1.c
+SELECT a, b FROM t1 ORDER BY c;		-- to be failed
+psql:sql/column_level_mac.sql:14: ERROR:  SELinux: denied { use } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=system_u:object_r:sepgsql_secret_table_t:s0 tclass=db_column name=t1.c
+UPDATE t1 SET a = 4, b = 'ddd', c = '1234-5678-9012';	-- to be failed
+psql:sql/column_level_mac.sql:16: ERROR:  SELinux: denied { update } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=system_u:object_r:sepgsql_ro_table_t:s0 tclass=db_column name=t1.b
+UPDATE t1 SET a = 4, b = 'ddd';		-- to be failed
+psql:sql/column_level_mac.sql:18: ERROR:  SELinux: denied { update } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=system_u:object_r:sepgsql_ro_table_t:s0 tclass=db_column name=t1.b
+UPDATE t1 SET a = 4 WHERE b = 'bbb';
+SELECT security_label, * FROM t1;
+psql:sql/column_level_mac.sql:22: ERROR:  SELinux: denied { select } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=system_u:object_r:sepgsql_secret_table_t:s0 tclass=db_column name=t1.c
+INSERT INTO t1 (a, b, c) VALUES (5, 'eee', '1234-5678-9012');	-- to be failed
+psql:sql/column_level_mac.sql:24: ERROR:  SELinux: denied { insert } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=system_u:object_r:sepgsql_ro_table_t:s0 tclass=db_column name=t1.b
+INSERT INTO t1 (a, b) VALUES (5, 'eee');	-- to be failed
+psql:sql/column_level_mac.sql:26: ERROR:  SELinux: denied { insert } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=system_u:object_r:sepgsql_ro_table_t:s0 tclass=db_column name=t1.b
+INSERT INTO t1 (a) VALUES (5);
+SELECT security_label, a, b FROM t1;
+              security_label              | a |  b  
+------------------------------------------+---+-----
+ unconfined_u:object_r:sepgsql_table_t:s0 | 1 | aaa
+ unconfined_u:object_r:sepgsql_table_t:s0 | 3 | ccc
+ unconfined_u:object_r:sepgsql_table_t:s0 | 4 | bbb
+ unconfined_u:object_r:sepgsql_table_t:s0 | 5 | 
+(4 rows)
+
+DELETE FROM t1 RETURNING a, b, c;		-- to be failed
+psql:sql/column_level_mac.sql:32: ERROR:  SELinux: denied { select } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=system_u:object_r:sepgsql_secret_table_t:s0 tclass=db_column name=t1.c
+BEGIN;
+DELETE FROM t1 RETURNING a, b;
+ a |  b  
+---+-----
+ 1 | aaa
+ 3 | ccc
+ 4 | bbb
+ 5 | 
+(4 rows)
+
+ABORT;
+BEGIN;
+DELETE FROM t1 RETURNING a;
+ a 
+---
+ 1
+ 3
+ 4
+ 5
+(4 rows)
+
+ABORT;
+SELECT a, b, f1(a) FROM t1;
+ a |  b  |       f1       
+---+-----+----------------
+ 1 | aaa | 0000-xxxx-xxxx
+ 3 | ccc | 6666-xxxx-xxxx
+ 4 | bbb | 3333-xxxx-xxxx
+ 5 |     | 
+(4 rows)
+
