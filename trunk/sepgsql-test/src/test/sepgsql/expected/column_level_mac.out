@@ -8,7 +8,7 @@ SELECT sepgsql_getcon();
 
 -- cleanup previous tests
 SET client_min_messages TO 'error';
-DROP TABLE IF EXISTS t1;
+DROP TABLE IF EXISTS t1 CASCADE;
 DROP FUNCTION IF EXISTS f1(integer);
 RESET client_min_messages;
 CREATE TABLE t1
