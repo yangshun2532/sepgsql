@@ -12,7 +12,7 @@ test: clean run_test
 clean:
 	@rm -f results/*.out results/*.diff
 
-run_test: environment $(TESTCASES:.sql=.test)
+run_test: environment filesystem $(TESTCASES:.sql=.test)
 
 %.test: sql/%.sql
 	@touch results/$*.out
@@ -21,6 +21,13 @@ run_test: environment $(TESTCASES:.sql=.test)
 	@test -r sql/$*.fini && $(RUN_DBA) -f sql/$*.fini >> results/$*.out 2>&1 || :
 	@diff -u expected/$*.out results/$*.out > results/$*.diff 2>/dev/null && echo -n "PASS: " || echo -n "FAIL: "
 	@echo $@
+
+filesystem:
+	@test -e /tmp/sepgsql_test_copy && rm -f /tmp/sepgsql_test_copy || :
+	@test -e /tmp/sepgsql_test_blob && rm -f /tmp/sepgsql_test_blob || :
+	@touch /tmp/sepgsql_test_copy
+	@dd if=/dev/zero of=/tmp/sepgsql_test_blob bs=1024 count=20 >& /dev/null
+	@chcon -t postgresql_db_t -l s0 /tmp/sepgsql_test_*
 
 environment:
 	@test -x $(PSQL) || (echo "$(PSQL) is not available"; exit 1)
