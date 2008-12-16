@@ -1,6 +1,8 @@
 -- COPY TO/FROM statement
 -- ======================
 
+SELECT sepgsql_getcon();
+
 COPY t1 TO stdout;
 COPY t2 TO stdout;	-- to be failed
 
