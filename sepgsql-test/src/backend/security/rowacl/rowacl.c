@@ -322,7 +322,7 @@ bool rowaclExecScan(Scan *scan, Relation rel, TupleTableSlot *slot)
 	AclMode required = scan->pgaceTuplePerms & ROWACL_ALL_PRIVS;
 	HeapTuple tuple;
 
-	if (!RelationHasRowLevelAcl(rel) || required == 0)
+	if (required==0 || !RelationHasRowLevelAcl(rel))
 		return true;
 
 	tuple = ExecMaterializeSlot(slot);
