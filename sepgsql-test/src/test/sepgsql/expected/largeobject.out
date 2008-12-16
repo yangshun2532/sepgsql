@@ -206,8 +206,8 @@ SELECT lo_close(0);
 
 COMMIT;
 -- import/export large object
-SELECT lo_import('/tmp/sepgsql_test_blob');
-psql:sql/largeobject.sql:62: ERROR:  SELinux: denied { import } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=unconfined_u:object_r:sepgsql_blob_t:s0 tclass=db_blob name=loid:28654
+SELECT lo_import('/tmp/sepgsql_test_blob', 6005);
+psql:sql/largeobject.sql:62: ERROR:  SELinux: denied { import } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=unconfined_u:object_r:sepgsql_blob_t:s0 tclass=db_blob name=loid:6005
 SELECT lo_export(6001, '/tmp/sepgsql_test_blob');
 psql:sql/largeobject.sql:64: ERROR:  SELinux: denied { export } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=system_u:object_r:sepgsql_blob_t:s0 tclass=db_blob name=loid:6001
 -- check result

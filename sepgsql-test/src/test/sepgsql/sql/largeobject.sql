@@ -59,7 +59,7 @@ SELECT lo_close(0);
 COMMIT;
 
 -- import/export large object
-SELECT lo_import('/tmp/sepgsql_test_blob');
+SELECT lo_import('/tmp/sepgsql_test_blob', 6005);
 
 SELECT lo_export(6001, '/tmp/sepgsql_test_blob');
 
