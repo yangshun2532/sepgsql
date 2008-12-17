@@ -27,7 +27,6 @@ int			optreset;
 #endif
 
 #include "dumputils.h"
-#include "pg_ace_dump.h"
 
 
 /* version string we expect back from pg_dump */
@@ -68,8 +67,8 @@ static int	no_tablespaces = 0;
 static int	use_setsessauth = 0;
 static int	server_version;
 
-/* flag to turn on/off security attribute support */
-static int	pg_ace_feature = PG_ACE_FEATURE_NOTHING;
+static int	security_acl = 0;
+static int	security_label = 0;
 
 static FILE *OPF;
 static char *filename = NULL;
@@ -125,7 +124,8 @@ main(int argc, char *argv[])
 		{"no-tablespaces", no_argument, &no_tablespaces, 1},
 		{"use-set-session-authorization", no_argument, &use_setsessauth, 1},
 		{"lock-wait-timeout", required_argument, NULL, 2},
-		{"security-context", no_argument, &pg_ace_feature, PG_ACE_FEATURE_SELINUX},
+		{"security-acl", no_argument, &security_acl, 1},
+		{"security-label", no_argument, &security_label, 1},
 
 		{NULL, 0, NULL, 0}
 	};
@@ -298,8 +298,10 @@ main(int argc, char *argv[])
 					no_tablespaces = 1;
 				else if (strcmp(optarg, "use-set-session-authorization") == 0)
 					use_setsessauth = 1;
-				else if (strcmp(optarg, "security-context") == 0)
-					pg_ace_feature = PG_ACE_FEATURE_SELINUX;
+				else if (strcmp(optarg, "security-acl") == 0)
+					security_acl = 1;
+				else if (strcmp(optarg, "security-label") == 0)
+					security_label = 1;
 				else
 				{
 					fprintf(stderr,
@@ -333,8 +335,10 @@ main(int argc, char *argv[])
 		appendPQExpBuffer(pgdumpopts, " --no-tablespaces");
 	if (use_setsessauth)
 		appendPQExpBuffer(pgdumpopts, " --use-set-session-authorization");
-	if (pg_ace_feature == PG_ACE_FEATURE_SELINUX)
-		appendPQExpBuffer(pgdumpopts, " --security-context");
+	if (security_acl)
+		appendPQExpBuffer(pgdumpopts, " --security-acl");
+	if (security_label)
+		appendPQExpBuffer(pgdumpopts, " --security-label");
 
 	if (optind < argc)
 	{
@@ -410,7 +414,28 @@ main(int argc, char *argv[])
 		}
 	}
 
-	pg_ace_dumpCheckServerFeature(pg_ace_feature, conn);
+	if (security_acl > 0)
+	{
+		if (server_version < 80400)
+		{
+			fprintf(stderr, "Row-level Database ACLs are not available.\n");
+			exit(1);
+		}
+	}
+
+	if (security_label > 0)
+	{
+		PGresult *res;
+		
+		res = PQexec(conn, "SHOW pgace_feature");
+		if (PQresultStatus(res) != PGRES_TUPLES_OK ||
+			PQntuples(res) != 1 ||
+			strcmp(PQgetvalue(res, 0, 0), "none") == 0)
+		{
+			fprintf(stderr, "No enhanced security feature is available.");
+			exit(1);
+		}
+	}
 
 	/*
 	 * Open the output file if required, otherwise use stdout
@@ -527,7 +552,6 @@ help(void)
 	printf(_("  --use-set-session-authorization\n"
 			 "                           use SESSION AUTHORIZATION commands instead of\n"
 			 "                           OWNER TO commands\n"));
-	printf(_("  --security-context       enables to dump security context of SE-PostgreSQL\n"));
 
 	printf(_("\nConnection options:\n"));
 	printf(_("  -h, --host=HOSTNAME      database server host or socket directory\n"));
@@ -938,17 +962,16 @@ dumpCreateDB(PGconn *conn)
 	fprintf(OPF, "--\n-- Database creation\n--\n\n");
 
 	if (server_version >= 80400)
-		appendPQExpBuffer(buf,
+		res = executeQuery(conn,
 						   "SELECT datname, "
 						   "coalesce(rolname, (select rolname from pg_authid where oid=(select datdba from pg_database where datname='template0'))), "
 						   "pg_encoding_to_char(d.encoding), "
 						   "datcollate, datctype, "
 						   "datistemplate, datacl, datconnlimit, "
-						   "(SELECT spcname FROM pg_tablespace t WHERE t.oid = d.dattablespace) AS dattablespace "
-						   "%s "
+						   "(SELECT spcname FROM pg_tablespace t WHERE t.oid = d.dattablespace) AS dattablespace, "
+						   "d.security_label "
 			  "FROM pg_database d LEFT JOIN pg_authid u ON (datdba = u.oid) "
-						   "WHERE datallowconn ORDER BY 1",
-						   pg_ace_dumpDatabaseQuery(pg_ace_feature));
+						   "WHERE datallowconn ORDER BY 1");
 	else if (server_version >= 80100)
 		res = executeQuery(conn,
 						   "SELECT datname, "
@@ -956,31 +979,34 @@ dumpCreateDB(PGconn *conn)
 						   "pg_encoding_to_char(d.encoding), "
 						   "null::text AS datcollate, null::text AS datctype, "
 						   "datistemplate, datacl, datconnlimit, "
-						   "(SELECT spcname FROM pg_tablespace t WHERE t.oid = d.dattablespace) AS dattablespace "
+						   "(SELECT spcname FROM pg_tablespace t WHERE t.oid = d.dattablespace) AS dattablespace, "
+						   "null::text AS security_label "
 			  "FROM pg_database d LEFT JOIN pg_authid u ON (datdba = u.oid) "
 						   "WHERE datallowconn ORDER BY 1");
 	else if (server_version >= 80000)
-		appendPQExpBuffer(buf,
+		res = executeQuery(conn,
 						   "SELECT datname, "
 						   "coalesce(usename, (select usename from pg_shadow where usesysid=(select datdba from pg_database where datname='template0'))), "
 						   "pg_encoding_to_char(d.encoding), "
 						   "null::text AS datcollate, null::text AS datctype, "
 						   "datistemplate, datacl, -1 as datconnlimit, "
-						   "(SELECT spcname FROM pg_tablespace t WHERE t.oid = d.dattablespace) AS dattablespace "
+						   "(SELECT spcname FROM pg_tablespace t WHERE t.oid = d.dattablespace) AS dattablespace, "
+						   "null::text AS security_label "
 		   "FROM pg_database d LEFT JOIN pg_shadow u ON (datdba = usesysid) "
 						   "WHERE datallowconn ORDER BY 1");
 	else if (server_version >= 70300)
-		appendPQExpBuffer(buf,
+		res = executeQuery(conn,
 						   "SELECT datname, "
 						   "coalesce(usename, (select usename from pg_shadow where usesysid=(select datdba from pg_database where datname='template0'))), "
 						   "pg_encoding_to_char(d.encoding), "
 						   "null::text AS datcollate, null::text AS datctype, "
 						   "datistemplate, datacl, -1 as datconnlimit, "
-						   "'pg_default' AS dattablespace "
+						   "'pg_default' AS dattablespace, "
+						   "null::text AS security_label "
 		   "FROM pg_database d LEFT JOIN pg_shadow u ON (datdba = usesysid) "
 						   "WHERE datallowconn ORDER BY 1");
 	else if (server_version >= 70100)
-		appendPQExpBuffer(buf,
+		res = executeQuery(conn,
 						   "SELECT datname, "
 						   "coalesce("
 					"(select usename from pg_shadow where usesysid=datdba), "
@@ -988,7 +1014,8 @@ dumpCreateDB(PGconn *conn)
 						   "pg_encoding_to_char(d.encoding), "
 						   "null::text AS datcollate, null::text AS datctype, "
 						   "datistemplate, '' as datacl, -1 as datconnlimit, "
-						   "'pg_default' AS dattablespace "
+						   "'pg_default' AS dattablespace, "
+						   "null::text AS security_label "
 						   "FROM pg_database d "
 						   "WHERE datallowconn ORDER BY 1");
 	else
@@ -997,18 +1024,18 @@ dumpCreateDB(PGconn *conn)
 		 * Note: 7.0 fails to cope with sub-select in COALESCE, so just deal
 		 * with getting a NULL by not printing any OWNER clause.
 		 */
-		appendPQExpBuffer(buf,
+		res = executeQuery(conn,
 						   "SELECT datname, "
 					"(select usename from pg_shadow where usesysid=datdba), "
 						   "pg_encoding_to_char(d.encoding), "
 						   "null::text AS datcollate, null::text AS datctype, "
 						   "'f' as datistemplate, "
 						   "'' as datacl, -1 as datconnlimit, "
-						   "'pg_default' AS dattablespace "
+						   "'pg_default' AS dattablespace, "
+						   "null::text AS security_label "
 						   "FROM pg_database d "
 						   "ORDER BY 1");
 	}
-	res = executeQuery(conn, buf->data);
 
 	for (i = 0; i < PQntuples(res); i++)
 	{
@@ -1021,6 +1048,7 @@ dumpCreateDB(PGconn *conn)
 		char	   *dbacl = PQgetvalue(res, i, 6);
 		char	   *dbconnlimit = PQgetvalue(res, i, 7);
 		char	   *dbtablespace = PQgetvalue(res, i, 8);
+		char	   *dbseclabel = PQgetvalue(res, i, 9);
 		char	   *fdbname;
 
 		fdbname = strdup(fmtId(dbname));
@@ -1076,7 +1104,8 @@ dumpCreateDB(PGconn *conn)
 				appendPQExpBuffer(buf, " CONNECTION LIMIT = %s",
 								  dbconnlimit);
 
-			pg_ace_dumpDatabasePrint(pg_ace_feature, buf, res, i);
+			if (security_label > 0 && strlen(dbseclabel) > 0)
+				appendPQExpBuffer(buf, " SECURITY_LABEL = '%s'", dbseclabel);
 
 			appendPQExpBuffer(buf, ";\n");
 
