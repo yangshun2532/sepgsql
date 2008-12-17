@@ -24,17 +24,17 @@
 #endif
 
 /*
- * pgace_security : a parameter to choose a security feature
+ * pgace_feature : a parameter to choose an enhanced security feature
  */
 typedef enum
 {
-	PGACE_SECURITY_NONE,
+	PGACE_FEATURE_NONE,
 #ifdef HAVE_SELINUX
-	PGACE_SECURITY_SELINUX,
+	PGACE_FEATURE_SELINUX,
 #endif
-} PgaceSecurityOpts;
+} PgaceFeatureOpts;
 
-extern PgaceSecurityOpts pgace_security;
+extern PgaceFeatureOpts pgace_feature;
 
 /*
  * The definitions of PGACE hooks are follows:
@@ -97,10 +97,10 @@ extern PgaceSecurityOpts pgace_security;
 static inline Size
 pgaceShmemSize(void)
 {
-	switch (pgace_security)
+	switch (pgace_feature)
 	{
 #ifdef HAVE_SELINUX
-	case PGACE_SECURITY_SELINUX:
+	case PGACE_FEATURE_SELINUX:
 		if (sepgsqlIsEnabled())
 			return sepgsqlShmemSize();
 		break;
@@ -126,10 +126,10 @@ pgaceInitialize(bool is_bootstrap)
 	/* A wired DAC initialization */
 	rowaclInitialize(is_bootstrap);
 
-	switch (pgace_security)
+	switch (pgace_feature)
 	{
 #ifdef HAVE_SELINUX
-	case PGACE_SECURITY_SELINUX:
+	case PGACE_FEATURE_SELINUX:
 		if (sepgsqlIsEnabled())
 			sepgsqlInitialize(is_bootstrap);
 		break;
@@ -154,10 +154,10 @@ pgaceInitialize(bool is_bootstrap)
 static inline pid_t
 pgaceStartupWorkerProcess(void)
 {
-	switch (pgace_security)
+	switch (pgace_feature)
 	{
 #ifdef HAVE_SELINUX
-	case PGACE_SECURITY_SELINUX:
+	case PGACE_FEATURE_SELINUX:
 		if (sepgsqlIsEnabled())
 			return sepgsqlStartupWorkerProcess();
 		break;
@@ -188,10 +188,10 @@ pgaceProxyQuery(List *queryList)
 	/* A wired DAC check */
 	queryList = rowaclProxyQuery(queryList);
 
-	switch (pgace_security)
+	switch (pgace_feature)
 	{
 #ifdef HAVE_SELINUX
-	case PGACE_SECURITY_SELINUX:
+	case PGACE_FEATURE_SELINUX:
 		if (sepgsqlIsEnabled())
 			return sepgsqlProxyQuery(queryList);
 		break;
@@ -214,10 +214,10 @@ pgaceProxyQuery(List *queryList)
 static inline void
 pgaceExecutorStart(QueryDesc *queryDesc, int eflags)
 {
-	switch (pgace_security)
+	switch (pgace_feature)
 	{
 #ifdef HAVE_SELINUX
-	case PGACE_SECURITY_SELINUX:
+	case PGACE_FEATURE_SELINUX:
 		if (sepgsqlIsEnabled())
 			sepgsqlVerifyQuery(queryDesc->plannedstmt, eflags);
 		break;
@@ -249,10 +249,10 @@ pgaceExecScan(Scan *scan, Relation rel, TupleTableSlot *slot)
 	if (!rowaclExecScan(scan, rel, slot))
 		return false;
 
-	switch (pgace_security)
+	switch (pgace_feature)
 	{
 #ifdef HAVE_SELINUX
-	case PGACE_SECURITY_SELINUX:
+	case PGACE_FEATURE_SELINUX:
 		if (sepgsqlIsEnabled())
 			return sepgsqlExecScan(scan, rel, slot);
 		break;
@@ -271,10 +271,10 @@ pgaceExecScan(Scan *scan, Relation rel, TupleTableSlot *slot)
 static inline void
 pgaceProcessUtility(Node *parsetree, ParamListInfo params, bool isTopLevel)
 {
-	switch (pgace_security)
+	switch (pgace_feature)
 	{
 #ifdef HAVE_SELINUX
-	case PGACE_SECURITY_SELINUX:
+	case PGACE_FEATURE_SELINUX:
 		if (sepgsqlIsEnabled())
 			sepgsqlProcessUtility(parsetree, params, isTopLevel);
 		break;
@@ -293,10 +293,10 @@ pgaceProcessUtility(Node *parsetree, ParamListInfo params, bool isTopLevel)
 static inline void
 pgaceEvaluateParams(List *params)
 {
-	switch (pgace_security)
+	switch (pgace_feature)
 	{
 #ifdef HAVE_SELINUX
-	case PGACE_SECURITY_SELINUX:
+	case PGACE_FEATURE_SELINUX:
 		if (sepgsqlIsEnabled())
 			sepgsqlEvaluateParams(params);
 		break;
@@ -339,10 +339,10 @@ pgaceHeapTupleInsert(Relation rel, HeapTuple tuple,
 							   with_returning))
 		return false;
 
-	switch (pgace_security)
+	switch (pgace_feature)
 	{
 #ifdef HAVE_SELINUX
-	case PGACE_SECURITY_SELINUX:
+	case PGACE_FEATURE_SELINUX:
 		if (sepgsqlIsEnabled())
 			return sepgsqlHeapTupleInsert(rel, tuple,
 										  is_internal,
@@ -385,10 +385,10 @@ pgaceHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple newtup,
 							   with_returning))
 		return false;
 
-	switch (pgace_security)
+	switch (pgace_feature)
 	{
 #ifdef HAVE_SELINUX
-	case PGACE_SECURITY_SELINUX:
+	case PGACE_FEATURE_SELINUX:
 		if (sepgsqlIsEnabled())
 			return sepgsqlHeapTupleUpdate(rel, otid, newtup,
 										  is_internal,
@@ -426,10 +426,10 @@ pgaceHeapTupleDelete(Relation rel, ItemPointer otid,
 							   with_returning))
 		return false;
 
-	switch (pgace_security)
+	switch (pgace_feature)
 	{
 #ifdef HAVE_SELINUX
-	case PGACE_SECURITY_SELINUX:
+	case PGACE_FEATURE_SELINUX:
 		if (sepgsqlIsEnabled())
 			return sepgsqlHeapTupleDelete(rel, otid,
 										  is_internal,
@@ -500,13 +500,13 @@ pgaceHeapTupleDelete(Relation rel, ItemPointer otid,
  * To return NULL means that "This clause is not a security attribute
  * modifier", then it makes an error.
  */
-static bool
+static inline bool
 pgaceIsGramSecurityItem(DefElem *defel)
 {
-	switch (pgace_security)
+	switch (pgace_feature)
 	{
 #ifdef HAVE_SELINUX
-	case PGACE_SECURITY_SELINUX:
+	case PGACE_FEATURE_SELINUX:
 		if (sepgsqlIsEnabled())
 			return sepgsqlIsGramSecurityItem(defel);
 		break;
@@ -537,10 +537,10 @@ pgaceIsGramSecurityItem(DefElem *defel)
 static inline void
 pgaceGramCreateRelation(Relation rel, HeapTuple tuple, DefElem *defel)
 {
-	switch (pgace_security)
+	switch (pgace_feature)
 	{
 #ifdef HAVE_SELINUX
-	case PGACE_SECURITY_SELINUX:
+	case PGACE_FEATURE_SELINUX:
 		if (sepgsqlIsEnabled())
 		{
 			sepgsqlGramCreateRelation(rel, tuple, defel);
@@ -571,10 +571,10 @@ pgaceGramCreateRelation(Relation rel, HeapTuple tuple, DefElem *defel)
 static inline void
 pgaceGramCreateAttribute(Relation rel, HeapTuple tuple, DefElem *defel)
 {
-	switch (pgace_security)
+	switch (pgace_feature)
 	{
 #ifdef HAVE_SELINUX
-	case PGACE_SECURITY_SELINUX:
+	case PGACE_FEATURE_SELINUX:
 		if (sepgsqlIsEnabled())
 		{
 			sepgsqlGramCreateAttribute(rel, tuple, defel);
@@ -605,10 +605,10 @@ pgaceGramCreateAttribute(Relation rel, HeapTuple tuple, DefElem *defel)
 static inline void
 pgaceGramAlterRelation(Relation rel, HeapTuple tuple, DefElem *defel)
 {
-	switch (pgace_security)
+	switch (pgace_feature)
 	{
 #ifdef HAVE_SELINUX
-	case PGACE_SECURITY_SELINUX:
+	case PGACE_FEATURE_SELINUX:
 		if (sepgsqlIsEnabled())
 		{
 			sepgsqlGramAlterRelation(rel, tuple, defel);
@@ -639,10 +639,10 @@ pgaceGramAlterRelation(Relation rel, HeapTuple tuple, DefElem *defel)
 static inline void
 pgaceGramAlterAttribute(Relation rel, HeapTuple tuple, DefElem *defel)
 {
-	switch (pgace_security)
+	switch (pgace_feature)
 	{
 #ifdef HAVE_SELINUX
-	case PGACE_SECURITY_SELINUX:
+	case PGACE_FEATURE_SELINUX:
 		if (sepgsqlIsEnabled())
 		{
 			sepgsqlGramAlterAttribute(rel, tuple, defel);
@@ -673,10 +673,10 @@ pgaceGramAlterAttribute(Relation rel, HeapTuple tuple, DefElem *defel)
 static inline void
 pgaceGramCreateDatabase(Relation rel, HeapTuple tuple, DefElem *defel)
 {
-	switch (pgace_security)
+	switch (pgace_feature)
 	{
 #ifdef HAVE_SELINUX
-	case PGACE_SECURITY_SELINUX:
+	case PGACE_FEATURE_SELINUX:
 		if (sepgsqlIsEnabled())
 		{
 			sepgsqlGramCreateDatabase(rel, tuple, defel);
@@ -707,10 +707,10 @@ pgaceGramCreateDatabase(Relation rel, HeapTuple tuple, DefElem *defel)
 static inline void
 pgaceGramAlterDatabase(Relation rel, HeapTuple tuple, DefElem *defel)
 {
-	switch (pgace_security)
+	switch (pgace_feature)
 	{
 #ifdef HAVE_SELINUX
-	case PGACE_SECURITY_SELINUX:
+	case PGACE_FEATURE_SELINUX:
 		if (sepgsqlIsEnabled())
 		{
 			sepgsqlGramAlterDatabase(rel, tuple, defel);
@@ -741,10 +741,10 @@ pgaceGramAlterDatabase(Relation rel, HeapTuple tuple, DefElem *defel)
 static inline void
 pgaceGramCreateFunction(Relation rel, HeapTuple tuple, DefElem *defel)
 {
-	switch (pgace_security)
+	switch (pgace_feature)
 	{
 #ifdef HAVE_SELINUX
-	case PGACE_SECURITY_SELINUX:
+	case PGACE_FEATURE_SELINUX:
 		if (sepgsqlIsEnabled())
 		{
 			sepgsqlGramCreateFunction(rel, tuple, defel);
@@ -775,10 +775,10 @@ pgaceGramCreateFunction(Relation rel, HeapTuple tuple, DefElem *defel)
 static inline void
 pgaceGramAlterFunction(Relation rel, HeapTuple tuple, DefElem *defel)
 {
-	switch (pgace_security)
+	switch (pgace_feature)
 	{
 #ifdef HAVE_SELINUX
-	case PGACE_SECURITY_SELINUX:
+	case PGACE_FEATURE_SELINUX:
 		if (sepgsqlIsEnabled())
 		{
 			sepgsqlGramAlterFunction(rel, tuple, defel);
@@ -803,7 +803,7 @@ pgaceGramTransformRelOptions(DefElem *defel, bool isReset)
 	/* wired DAC */
 	rowaclGramTransformRelOptions(defel, isReset);
 
-	switch (pgace_security)
+	switch (pgace_feature)
 	{
 	default:
 		break;
@@ -818,7 +818,7 @@ pgaceGramParseRelOptions(const char *key, const char *value,
 	if (rowaclGramParseRelOptions(key, value, result, validate))
 		return true;
 
-	switch (pgace_security)
+	switch (pgace_feature)
 	{
 	default:
 		break;
@@ -844,10 +844,10 @@ pgaceGramParseRelOptions(const char *key, const char *value,
 static inline void
 pgaceSetDatabaseParam(const char *name, char *argstring)
 {
-	switch (pgace_security)
+	switch (pgace_feature)
 	{
 #ifdef HAVE_SELINUX
-	case PGACE_SECURITY_SELINUX:
+	case PGACE_FEATURE_SELINUX:
 		if (sepgsqlIsEnabled())
 			sepgsqlSetDatabaseParam(name, argstring);
 		break;
@@ -868,10 +868,10 @@ pgaceSetDatabaseParam(const char *name, char *argstring)
 static inline void
 pgaceGetDatabaseParam(const char *name)
 {
-	switch (pgace_security)
+	switch (pgace_feature)
 	{
 #ifdef HAVE_SELINUX
-	case PGACE_SECURITY_SELINUX:
+	case PGACE_FEATURE_SELINUX:
 		if (sepgsqlIsEnabled())
 			sepgsqlGetDatabaseParam(name);
 		break;
@@ -896,10 +896,10 @@ pgaceGetDatabaseParam(const char *name)
 static inline void
 pgaceCallFunction(FmgrInfo *finfo)
 {
-	switch (pgace_security)
+	switch (pgace_feature)
 	{
 #ifdef HAVE_SELINUX
-	case PGACE_SECURITY_SELINUX:
+	case PGACE_FEATURE_SELINUX:
 		if (sepgsqlIsEnabled())
 			sepgsqlCallFunction(finfo, false);
 		break;
@@ -923,10 +923,10 @@ pgaceCallFunction(FmgrInfo *finfo)
 static inline bool
 pgaceCallFunctionTrigger(FmgrInfo *finfo, TriggerData *tgdata)
 {
-	switch (pgace_security)
+	switch (pgace_feature)
 	{
 #ifdef HAVE_SELINUX
-	case PGACE_SECURITY_SELINUX:
+	case PGACE_FEATURE_SELINUX:
 		if (sepgsqlIsEnabled())
 			return sepgsqlCallFunctionTrigger(finfo, tgdata);
 		break;
@@ -946,10 +946,10 @@ pgaceCallFunctionTrigger(FmgrInfo *finfo, TriggerData *tgdata)
 static inline void
 pgaceCallFunctionFastPath(FmgrInfo *finfo)
 {
-	switch (pgace_security)
+	switch (pgace_feature)
 	{
 #ifdef HAVE_SELINUX
-	case PGACE_SECURITY_SELINUX:
+	case PGACE_FEATURE_SELINUX:
 		if (sepgsqlIsEnabled())
 			sepgsqlCallFunction(finfo, true);
 		break;
@@ -976,10 +976,10 @@ pgaceBeginPerformCheckFK(Relation rel, bool is_primary, Oid save_userid,
 	/* A wired DAC state change */
 	*rowacl_private = rowaclBeginPerformCheckFK(rel, is_primary, save_userid);
 
-	switch (pgace_security)
+	switch (pgace_feature)
 	{
 #ifdef HAVE_SELINUX
-	case PGACE_SECURITY_SELINUX:
+	case PGACE_FEATURE_SELINUX:
 		if (sepgsqlIsEnabled())
 			*pgace_private = sepgsqlBeginPerformCheckFK(rel, is_primary, save_userid);
 		break;
@@ -1001,10 +1001,10 @@ pgaceEndPerformCheckFK(Relation rel, Datum rowacl_private, Datum pgace_private)
 	/* A wired DAC state restore */
 	rowaclEndPerformCheckFK(rel, rowacl_private);
 
-	switch (pgace_security)
+	switch (pgace_feature)
 	{
 #ifdef HAVE_SELINUX
-	case PGACE_SECURITY_SELINUX:
+	case PGACE_FEATURE_SELINUX:
 		if (sepgsqlIsEnabled())
 			sepgsqlEndPerformCheckFK(rel, pgace_private);
 		break;
@@ -1027,10 +1027,10 @@ pgaceEndPerformCheckFK(Relation rel, Datum rowacl_private, Datum pgace_private)
 static inline void
 pgaceLockTable(Oid relid)
 {
-	switch (pgace_security)
+	switch (pgace_feature)
 	{
 #ifdef HAVE_SELINUX
-	case PGACE_SECURITY_SELINUX:
+	case PGACE_FEATURE_SELINUX:
 		if (sepgsqlIsEnabled())
 			sepgsqlLockTable(relid);
 		break;
@@ -1059,10 +1059,10 @@ pgaceLockTable(Oid relid)
 static inline void
 pgaceCopyTable(Relation rel, List *attNumList, bool isFrom)
 {
-	switch (pgace_security)
+	switch (pgace_feature)
 	{
 #ifdef HAVE_SELINUX
-	case PGACE_SECURITY_SELINUX:
+	case PGACE_FEATURE_SELINUX:
 		if (sepgsqlIsEnabled())
 			sepgsqlCopyTable(rel, attNumList, isFrom);
 		break;
@@ -1089,10 +1089,10 @@ pgaceCopyTable(Relation rel, List *attNumList, bool isFrom)
 static inline void
 pgaceCopyFile(Relation rel, int fdesc, const char *filename, bool isFrom)
 {
-	switch (pgace_security)
+	switch (pgace_feature)
 	{
 #ifdef HAVE_SELINUX
-	case PGACE_SECURITY_SELINUX:
+	case PGACE_FEATURE_SELINUX:
 		if (sepgsqlIsEnabled())
 			sepgsqlCopyFile(rel, fdesc, filename, isFrom);
 		break;
@@ -1124,10 +1124,10 @@ pgaceCopyToTuple(Relation rel, List *attNumList, HeapTuple tuple)
 	if (!rowaclCopyToTuple(rel, attNumList, tuple))
 		return false;
 
-	switch (pgace_security)
+	switch (pgace_feature)
 	{
 #ifdef HAVE_SELINUX
-	case PGACE_SECURITY_SELINUX:
+	case PGACE_FEATURE_SELINUX:
 		if (sepgsqlIsEnabled())
 			return sepgsqlCopyToTuple(rel, attNumList, tuple);
 		break;
@@ -1155,10 +1155,10 @@ pgaceCopyToTuple(Relation rel, List *attNumList, HeapTuple tuple)
 static inline void
 pgaceLoadSharedModule(const char *filename)
 {
-	switch (pgace_security)
+	switch (pgace_feature)
 	{
 #ifdef HAVE_SELINUX
-	case PGACE_SECURITY_SELINUX:
+	case PGACE_FEATURE_SELINUX:
 		if (sepgsqlIsEnabled())
 			sepgsqlLoadSharedModule(filename);
 		break;
@@ -1184,10 +1184,10 @@ pgaceLoadSharedModule(const char *filename)
 static inline void
 pgaceLargeObjectCreate(Relation rel, HeapTuple tuple)
 {
-	switch (pgace_security)
+	switch (pgace_feature)
 	{
 #ifdef HAVE_SELINUX
-	case PGACE_SECURITY_SELINUX:
+	case PGACE_FEATURE_SELINUX:
 		if (sepgsqlIsEnabled())
 			sepgsqlLargeObjectCreate(rel, tuple);
 		break;
@@ -1209,10 +1209,10 @@ pgaceLargeObjectCreate(Relation rel, HeapTuple tuple)
 static inline void
 pgaceLargeObjectDrop(Relation rel, HeapTuple tuple, void **pgaceItem)
 {
-	switch (pgace_security)
+	switch (pgace_feature)
 	{
 #ifdef HAVE_SELINUX
-	case PGACE_SECURITY_SELINUX:
+	case PGACE_FEATURE_SELINUX:
 		if (sepgsqlIsEnabled())
 			sepgsqlLargeObjectDrop(rel, tuple, pgaceItem);
 		break;
@@ -1233,10 +1233,10 @@ pgaceLargeObjectDrop(Relation rel, HeapTuple tuple, void **pgaceItem)
 static inline void
 pgaceLargeObjectRead(LargeObjectDesc *lodesc, int length)
 {
-	switch (pgace_security)
+	switch (pgace_feature)
 	{
 #ifdef HAVE_SELINUX
-	case PGACE_SECURITY_SELINUX:
+	case PGACE_FEATURE_SELINUX:
 		if (sepgsqlIsEnabled())
 			sepgsqlLargeObjectRead(lodesc, length);
 		break;
@@ -1254,10 +1254,10 @@ pgaceLargeObjectRead(LargeObjectDesc *lodesc, int length)
 static inline void
 pgaceLargeObjectWrite(LargeObjectDesc *lodesc, int length)
 {
-	switch (pgace_security)
+	switch (pgace_feature)
 	{
 #ifdef HAVE_SELINUX
-	case PGACE_SECURITY_SELINUX:
+	case PGACE_FEATURE_SELINUX:
 		if (sepgsqlIsEnabled())
 			sepgsqlLargeObjectWrite(lodesc, length);
 		break;
@@ -1275,10 +1275,10 @@ pgaceLargeObjectWrite(LargeObjectDesc *lodesc, int length)
 static inline void
 pgaceLargeObjectTruncate(LargeObjectDesc *lodesc, int offset)
 {
-	switch (pgace_security)
+	switch (pgace_feature)
 	{
 #ifdef HAVE_SELINUX
-	case PGACE_SECURITY_SELINUX:
+	case PGACE_FEATURE_SELINUX:
 		if (sepgsqlIsEnabled())
 			sepgsqlLargeObjectTruncate(lodesc, offset);
 		break;
@@ -1296,10 +1296,10 @@ pgaceLargeObjectTruncate(LargeObjectDesc *lodesc, int offset)
 static inline void
 pgaceLargeObjectImport(Oid loid, int fdesc, const char *filename)
 {
-	switch (pgace_security)
+	switch (pgace_feature)
 	{
 #ifdef HAVE_SELINUX
-	case PGACE_SECURITY_SELINUX:
+	case PGACE_FEATURE_SELINUX:
 		if (sepgsqlIsEnabled())
 			sepgsqlLargeObjectImport(loid, fdesc, filename);
 		break;
@@ -1317,10 +1317,10 @@ pgaceLargeObjectImport(Oid loid, int fdesc, const char *filename)
 static inline void
 pgaceLargeObjectExport(Oid loid, int fdesc, const char *filename)
 {
-	switch (pgace_security)
+	switch (pgace_feature)
 	{
 #ifdef HAVE_SELINUX
-	case PGACE_SECURITY_SELINUX:
+	case PGACE_FEATURE_SELINUX:
 		if (sepgsqlIsEnabled())
 			sepgsqlLargeObjectExport(loid, fdesc, filename);
 		break;
@@ -1340,10 +1340,10 @@ pgaceLargeObjectExport(Oid loid, int fdesc, const char *filename)
 static inline void
 pgaceLargeObjectGetSecurity(Relation rel, HeapTuple tuple)
 {
-	switch (pgace_security)
+	switch (pgace_feature)
 	{
 #ifdef HAVE_SELINUX
-	case PGACE_SECURITY_SELINUX:
+	case PGACE_FEATURE_SELINUX:
 		if (sepgsqlIsEnabled())
 		{
 			sepgsqlLargeObjectGetSecurity(rel, tuple);
@@ -1368,10 +1368,10 @@ pgaceLargeObjectGetSecurity(Relation rel, HeapTuple tuple)
 static inline void
 pgaceLargeObjectSetSecurity(Relation rel, HeapTuple newtup, HeapTuple oldtup)
 {
-	switch (pgace_security)
+	switch (pgace_feature)
 	{
 #ifdef HAVE_SELINUX
-	case PGACE_SECURITY_SELINUX:
+	case PGACE_FEATURE_SELINUX:
 		if (sepgsqlIsEnabled())
 		{
 			sepgsqlLargeObjectSetSecurity(rel, newtup, oldtup);
@@ -1419,10 +1419,10 @@ pgaceTupleDescHasRowAcl(Relation rel, List *relopts)
 static inline bool
 pgaceTupleDescHasSecLabel(Relation rel, List *relopts)
 {
-	switch (pgace_security)
+	switch (pgace_feature)
 	{
 #ifdef HAVE_SELINUX
-	case PGACE_SECURITY_SELINUX:
+	case PGACE_FEATURE_SELINUX:
 		if (sepgsqlIsEnabled())
 			return sepgsqlTupleDescHasSecLabel(rel, relopts);
 		break;
@@ -1451,10 +1451,10 @@ pgaceTupleDescHasSecLabel(Relation rel, List *relopts)
 static inline char *
 pgaceTranslateSecurityLabelIn(char *seclabel)
 {
-	switch (pgace_security)
+	switch (pgace_feature)
 	{
 #ifdef HAVE_SELINUX
-	case PGACE_SECURITY_SELINUX:
+	case PGACE_FEATURE_SELINUX:
 		if (sepgsqlIsEnabled())
 			return sepgsqlTranslateSecurityLabelIn(seclabel);
 		break;
@@ -1475,10 +1475,10 @@ pgaceTranslateSecurityLabelIn(char *seclabel)
 static inline char *
 pgaceTranslateSecurityLabelOut(char *seclabel)
 {
-	switch (pgace_security)
+	switch (pgace_feature)
 	{
 #ifdef HAVE_SELINUX
-	case PGACE_SECURITY_SELINUX:
+	case PGACE_FEATURE_SELINUX:
 		if (sepgsqlIsEnabled())
 			return sepgsqlTranslateSecurityLabelOut(seclabel);
 		break;
@@ -1499,10 +1499,10 @@ pgaceTranslateSecurityLabelOut(char *seclabel)
 static inline bool
 pgaceCheckValidSecurityLabel(char *seclabel)
 {
-	switch (pgace_security)
+	switch (pgace_feature)
 	{
 #ifdef HAVE_SELINUX
-	case PGACE_SECURITY_SELINUX:
+	case PGACE_FEATURE_SELINUX:
 		if (sepgsqlIsEnabled())
 			return sepgsqlCheckValidSecurityLabel(seclabel);
 		break;
@@ -1523,10 +1523,10 @@ pgaceCheckValidSecurityLabel(char *seclabel)
 static inline char *
 pgaceUnlabeledSecurityLabel(void)
 {
-	switch (pgace_security)
+	switch (pgace_feature)
 	{
 #ifdef HAVE_SELINUX
-	case PGACE_SECURITY_SELINUX:
+	case PGACE_FEATURE_SELINUX:
 		if (sepgsqlIsEnabled())
 			return sepgsqlUnlabeledSecurityLabel();
 		break;
@@ -1552,10 +1552,10 @@ pgaceUnlabeledSecurityLabel(void)
 static inline char *
 pgaceSecurityLabelOfLabel(void)
 {
-	switch (pgace_security)
+	switch (pgace_feature)
 	{
 #ifdef HAVE_SELINUX
-	case PGACE_SECURITY_SELINUX:
+	case PGACE_FEATURE_SELINUX:
 		if (sepgsqlIsEnabled())
 			return sepgsqlSecurityLabelOfLabel();
 		break;
