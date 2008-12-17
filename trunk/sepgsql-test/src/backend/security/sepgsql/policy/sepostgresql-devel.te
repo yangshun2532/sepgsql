@@ -1,4 +1,4 @@
-policy_module(sepostgresql-devel, 3.14)
+policy_module(sepostgresql-devel, 3.15)
 
 gen_require(`
 	class db_database all_db_database_perms;
@@ -61,10 +61,6 @@ allow sepgsql_test_t tmpfile : file rw_file_perms;
 
 postgresql_stream_connect(sepgsql_test_t)
 postgresql_unpriv_client(sepgsql_test_t)
-
-optional_policy(`
-	nscd_shm_use(sepgsql_test_t)
-')
 
 #################################
 #
