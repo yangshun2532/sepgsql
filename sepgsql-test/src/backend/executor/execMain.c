@@ -1270,7 +1270,7 @@ bool ExecContextForcesRowAcl(PlanState *planstate, bool *hasrowacl)
 
 		if (ri && ri->ri_RelationDesc)
 		{
-			*hasrowacl = pgaceTupleDescHasSecLabel(ri->ri_RelationDesc, NIL);
+			*hasrowacl = pgaceTupleDescHasRowAcl(ri->ri_RelationDesc, NIL);
 			return true;
 		}
 	}
