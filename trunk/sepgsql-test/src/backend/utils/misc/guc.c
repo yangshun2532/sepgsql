@@ -295,10 +295,10 @@ static const struct config_enum_entry xmloption_options[] = {
 	{NULL, 0, false}
 };
 
-static const struct config_enum_entry pgace_security_options[] = {
-	{"none", PGACE_SECURITY_NONE, false},
+static const struct config_enum_entry pgace_feature_options[] = {
+	{"none", PGACE_FEATURE_NONE, false},
 #ifdef HAVE_SELINUX
-	{"selinux", PGACE_SECURITY_SELINUX, false},
+	{"selinux", PGACE_FEATURE_SELINUX, false},
 #endif
 	{NULL, 0, false}
 };
@@ -2676,12 +2676,13 @@ static struct config_enum ConfigureNamesEnum[] =
 		XMLOPTION_CONTENT, xmloption_options, NULL, NULL
 	},
 	{
-		{"pgace_security", PGC_POSTMASTER, UNGROUPED,
-		 gettext_noop(""),
+		{"pgace_feature", PGC_POSTMASTER, UNGROUPED,
+		 gettext_noop("A option to choose an enhanced security feature which is "
+					  "a guest of PGACE security framework"),
 		 NULL
 		},
-		&pgace_security,
-		PGACE_SECURITY_NONE, pgace_security_options, NULL, NULL
+		&pgace_feature,
+		PGACE_FEATURE_NONE, pgace_feature_options, NULL, NULL
 	},
 #ifdef HAVE_SELINUX
 	{

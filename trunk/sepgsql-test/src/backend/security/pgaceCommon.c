@@ -37,8 +37,7 @@
  *	 GUC Parameter Support
  *****************************************************************************/
 
-PgaceSecurityOpts pgace_security;
-
+PgaceFeatureOpts pgace_feature;
 
 /*****************************************************************************
  *	 Extended SQL statements support
