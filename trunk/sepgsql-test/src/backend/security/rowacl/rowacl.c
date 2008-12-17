@@ -445,7 +445,10 @@ void rowaclGramTransformRelOptions(DefElem *defel, bool isReset)
 	if (pg_strcasecmp(defel->defname, "default_row_acl") != 0)
 		return;
 
-	if (!isReset && defel->arg)
+	if (isReset)
+		return;
+
+	if (defel->arg)
 	{
 		FmgrInfo finfo;
 		Datum acldat;
