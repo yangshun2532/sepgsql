@@ -29,7 +29,7 @@ Source1: sepostgresql.init
 Source2: sepostgresql.8
 Source3: sepostgresql.logrotate
 Patch0: sepostgresql-sepgsql-%%__base_postgresql_version__%%-%%__sepgsql_major_version__%%.patch
-Patch1: sepostgresql-pg_dump-%%__base_postgresql_version__%%-%%__sepgsql_major_version__%%.patch
+Patch1: sepostgresql-utils-%%__base_postgresql_version__%%-%%__sepgsql_major_version__%%.patch
 Patch2: sepostgresql-policy-%%__base_postgresql_version__%%-%%__sepgsql_major_version__%%.patch
 Patch3: sepostgresql-docs-%%__base_postgresql_version__%%-%%__sepgsql_major_version__%%.patch
 Patch4: sepostgresql-tests-%%__base_postgresql_version__%%-%%__sepgsql_major_version__%%.patch

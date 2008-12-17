@@ -165,7 +165,7 @@ do_initdb() {
 	test -x /sbin/restorecon && /sbin/restorecon -R "${SEPGSQL_DATA}"
 	# Initialize the database
         cd ${SEPGSQL_BIN}
-	/sbin/runuser -- sepgsql -c "./initdb.sepgsql -A 'ident sameuser' ${SEPGSQL_DATA}" \
+	/sbin/runuser -- sepgsql -c "./initdb.sepgsql --pgace-feature=selinux -A 'ident sameuser' ${SEPGSQL_DATA}" \
 	    >> "${SEPGSQL_STARTUP_LOG}" 2>&1 < /dev/null
 	if [ -f "${SEPGSQL_DATA}/PG_VERSION" ]; then
 	    echo_success
