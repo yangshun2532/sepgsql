@@ -12,7 +12,7 @@
  * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/c.h,v 1.230 2008/10/09 22:23:46 tgl Exp $
+ * $PostgreSQL: pgsql/src/include/c.h,v 1.233 2008/12/11 10:25:17 petere Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -715,6 +715,32 @@ typedef NameData *Name;
 #define STATUS_WAITING			(2)
 
 
+/* gettext domain name mangling */
+
+/*
+ * To better support parallel installations of major PostgeSQL
+ * versions as well as parallel installations of major library soname
+ * versions, we mangle the gettext domain name by appending those
+ * version numbers.  The coding rule ought to be that whereever the
+ * domain name is mentioned as a literal, it must be wrapped into
+ * PG_TEXTDOMAIN().  The macros below do not work on non-literals; but
+ * that is somewhat intentional because it avoids having to worry
+ * about multiple states of premangling and postmangling as the values
+ * are being passed around.
+ *
+ * Make sure this matches the installation rules in nls-global.mk.
+ */
+
+/* need a second indirection because we want to stringize the macro value, not the name */
+#define CppAsString2(x) CppAsString(x)
+
+#ifdef SO_MAJOR_VERSION
+# define PG_TEXTDOMAIN(domain) (domain CppAsString2(SO_MAJOR_VERSION) "-" PG_MAJORVERSION)
+#else
+# define PG_TEXTDOMAIN(domain) (domain "-" PG_MAJORVERSION)
+#endif
+
+
 /* ----------------------------------------------------------------
  *				Section 8: system-specific hacks
  *
@@ -742,13 +768,6 @@ typedef NameData *Name;
 #define PG_BINARY_R "r"
 #define PG_BINARY_W "w"
 #endif
-
-#if defined(sun) && defined(__sparc__) && !defined(__SVR4)
-#include <unistd.h>
-#endif
-
-/* These are for things that are one way on Unix and another on NT */
-#define NULL_DEV		"/dev/null"
 
 /*
  * Provide prototypes for routines not present in a particular machine's
