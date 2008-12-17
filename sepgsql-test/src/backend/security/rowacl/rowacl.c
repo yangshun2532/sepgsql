@@ -293,7 +293,7 @@ rowaclCheckPermission(Relation rel, HeapTuple tuple, AclMode required)
 	if (!rowaclCacheLookup(relid, userid, aclid, &privs))
 	{
 		/* Superusers/Owner bypass all permission checking */
-		if (superuser_arg(userid) || GetUserId() == ownerid)
+		if (superuser_arg(userid) || userid == ownerid)
 		{
 			privs = ROWACL_ALL_PRIVS;
 		}
