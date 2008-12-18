@@ -4,46 +4,516 @@
  <abstract>
    <para>
      This chapter introduces enhanced security features built in core
-     PostgreSQL, which includes mandatory access controls, row and column
-     level access controls, security policy integration between database
-     management system and operating system and so on.
+     PostgreSQL and its framework. These feature can provide mandatory
+     access controls, fine-grained access controls, integration of security
+     policy between operating system and database management system,
+     and so on.
    </para>
 
    <para>
-     SE-PostgreSQL (Security Enhanced PostgreSQL) provides an additional
-     access control mechanism, collaborating with SELinux and its security
-     policy.
-
-     The security policy of SELinux is a set of rules to control accesses
-     to describe who can access what objects comprehensively.
-
-     The key concept of SE-PostgreSQL is to share a single unified security
-     policy with operating system, and apply it on accesses to database
-     objects (like tables, columns, ...) based on same rules, as if client
-     accesses to filesystem objects.
-
-     In addition, SE-PostgreSQL applies its access control decision for
-     any query come from any clients including privileged database roles,
-     and provides maximum flexibility in configuration using row and column
-     level access controls.
-
-     These feature enables to protect information leaks and manipulation
-     from malicious insider and to reduce damages from SQL injection and
-     application bugs.
+     The current version of PostgreSQL have two of enhanced security
+     features. The one is SE-PostgreSQL (Security Enhanced PostgreSQL),
+     and the other is Row-level Database ACLs.
+     Both of them are implemented on the common security framework named
+     as PGACE (PostgreSQL Access Control Extensions). It provides basic
+     facilities to manage security attribute of database objects and
+     hooks to acquire controls on some of strategic points. It enables
+     to implement enhanced security features with minimum impact for
+     the core PostgreSQL.
    </para>
 
    <para>
-     PostgreSQL provides a security framework named as PGACE (PostgreSQL
-     Access Control Extension). It is consist of a series of hooks and
-     facilities to manage security attribute of each database objects.
+     SE-PostgreSQL provides additional fine-grained mandatory access
+     controls on accesses to database objects via SQL. It makes a
+     decision whether the given request come from clients should be
+     allowed, or not, in communicating with in-kernel SELinux.
 
-     It enables to minimize impacts to add a new security feature like
-     SE-PostgreSQL, and provide basic facilities to make a decision.
+     SELinux holds its security policy which is a set of white listed
+     rules, and provides its access control decisions to the kernel
+     and userspace object manager.
+
+     The key concept of SE-PostgreSQL is integration of access controls
+     between operating system and database management systems.
+     It makes and applies its access control decision based on a single
+     unified security policy of operating system. It applies the security
+     context of peer process as privileges of client, independent from
+     database authentication.
+
+     Its providing access controls are not bypassable for any clients
+     even if they are privileged database user, so it is called as a
+     MAC (Mandatory Access Controls) feature.
+
+     It enables to prevent information leaks and manipulation from
+     malicious insider, reduce damages from SQL injection and application
+     bugs.
+   </para>
+
+   <para>
+     The Row-level Database ACLs enables to apply existing DAC
+     (Discretionary Access Control) policy in row-level granuality.
+
+     It enables to set permissions for <command>SELECT</command>,
+     <command>UPDATE</command> and <command>DELETE</command>.
+     This facility filteres violated tuples from the result set,
+     and user shows as if these are not exist here.
+   </para>
+
+   <para>
+     The PGACE security framework allows to host two security
+     features simultaneously. The DAC feature is hardcoded
+     as Row-level Database ACLs, but MAC feature is selectable
+     by users.
+
+     SE-PostgreSQL is a candidate of MAC features, and we need
+     to enable it explicitly.
+     It need to specify <option>--enable-selinux</option> option
+     at <command>configure</command> script,
+     and <option>--pgace-feature=selinux</option> at
+     <command>initdb</command>.
+<screen>
+<prompt>$ </prompt><userinput>./configure --enable-selinux</userinput>
+<prompt>$ </prompt><userinput>make install</userinput>
+<prompt>$ </prompt><userinput>initdb --pgace-feature=selinux</userinput>
+</screen>
+
+     The Row-level Database ACLs feature is always enabled in
+     default build.
    </para>
  </abstract>
 
- <sect1 id="security-sepgsql-setup">
-   <title>SE-PostgreSQL Installation and Setup</title>
+ <sect1 id="security-sepgsql-features">
+   <title>SE-PostgreSQL Features</title>
+
+   <sect2 id="security-sepgsql-single-unified-security-policy">
+     <title>Single unified security policy</title>
+
+     <para>
+       We can find out that filesystem and database have similar
+       capabilities which enables to store our information assets,
+       and have to apply its access controls to keep confidentiality
+       and integrity, when it got a request from users.
+     </para>
+     <para>
+       In case of filesystem, user invokes a proper system call
+       to access filesystem objects, like <command>write(2)</command>
+       invocation for <filename>~/.bashrc</filename>.
+
+       Meanwhile, he can also make a request to database objects
+       via SQL queries.
+     </para>
+     <para>
+       Both of filesystem and database have its access control
+       feature. The UNIX permission is well known semantics
+       with long history, and the database ACLs are also well
+       knows based on SQL standards.
+
+       However, unfortunately, they works independently each other,
+       so we have a possibility either of subsystem makes inconsistent
+       decison, even if they can store same information asset.
+
+       Please note that the differences between filesystem and database
+       is the way to store or access our information asset, not a
+       differences in confidentiality, values and so on.
+     </para>
+     <para>
+       Now we have SELinux on some of Linux distributions, which can
+       be a reliable foundation for comprehensive and integrated
+       security.
+
+       SE-PostgreSQL makes its access control decision based on the
+       security policy of SELinux, so we can get always consistent
+       results in access controls.
+
+       For example, when we store an information labeled as
+       <literal>Classified</literal>, it does not allow users without
+       proper privileges to refer it independent from whether it is
+       stored in filesystem, or database.
+     </para>
+     <para>
+       This characterisct gives us another benefit. The step to make
+       decision works independently from the existing access controls
+       in databases, so it enables to apply mandatory access control
+       policy, even if user is a database superuser.
+
+       It is similar that SELinux restricts privileges of
+       <literal>root</literal> user on operating system.
+     </para>
+
+     <sect3 id="security-sepgsql-security-context">
+       <title>Security Context</title>
+       <para>
+	 The security policy of SELinux is a set of access controls
+	 rules which show who is allowed to do what kind of accesses
+	 on what objects.
+
+	 Any rules are described as a relationship of two entities
+	 identified by common format called as security context.
+       </para>
+       <para>
+	 The security context is a formatted string independent from
+	 sort of objects, like:
+	 <synopsis>system_u:object_r:postgresql_db_t:SystemHigh</synopsis>.
+
+	 It is generally assigned to files of database cluster managed
+	 by PostgreSQL, however, please note that it does not use any
+	 filesystem specific attribute, like path-name.
+
+	 In SELinux, it assigns a security context for any processes,
+	 files, sockets and other resources, and makes its decision 
+	 based on these security contexts.
+
+	 It typically checks whether the policy has an allowed relationship
+	 between a security context of process and the one of resource,
+	 or not.
+       </para>
+       <para>
+	 For example, when a process labeled as
+	 <literal>system_u:system_r:postgresql_t:s0</literal> tries to
+	 write a log message to <filename>/var/log/postgresql.log</filename>
+	 labeled as <literal>system_u:object_r:postgresql_log_t:s0</literal>,
+	 <literal>write(2)</literal> ystem call is hooked in the kernel and
+	 SELinux search its security policy to find out an entry of
+	 relationship of the two security contexts.
+
+	 If founded entry allows the process to write it, SELinux does
+	 nothing any more. Otherwise, SELinux prevent it.
+       </para>
+
+       <para>
+	 Any object managers which want a decision come from SELinux
+	 (including kernel) should have a capability to manage security
+	 context of its objects.
+
+	 For example, most of major filesystems support xattr (Extended
+	 Attributes) facilities which allows to store individual security
+	 context of files.
+
+	 SE-PostgreSQL also provides a facility to manage security context
+	 of database objects. We can import/export them via
+	 <literal>security_label</literal> system column.
+       </para>
+     </sect3>
+
+     <sect3 id="security-sepgsql-client-privileges">
+       <title>Client Privileges</title>
+       <para>
+	 The privileges of client is a significant factor also.
+
+	 Operating system assigns a process its user/group identifiers
+	 and security context. These attributes are used in access
+	 controls either of DAC and MAC.
+
+	 Database management system also manages privileges of client.
+	 It assigns authenticated database roles and applies its
+	 access controls based on database ACLs.
+
+	 Please note that here is no relationships between the attributes
+	 of processes on operating system and client of databases.
+       </para>
+       <para>
+	 One of the purpose in SE-PostgreSQL is to apply its access controls
+	 on database objects, as if client accesses to filesystem objects.
+
+	 It requires we have to apply the security context of client process
+	 to make a decision in access controls. It is independently given
+	 from the authenticated database roles.
+
+	 Thus, SE-PostgreSQL need to know the security context of the
+	 connected client process.
+       </para>
+
+       <para>
+	 SELinux provides an interesting API named as
+	 <literal>getpeercon()</literal>. It enables to obtain a security
+	 context of the peer process connected via given socket descriptor.
+
+	 We can see what security context is applied as the security
+	 context of client, using <literal>sepgsql_getcon()</literal>
+	 on SE-PostgreSQL as follows:
+<screen>
+<prompt>$ </prompt><userinput>id -Z</userinput>
+unconfined_u:unconfined_r:unconfined_t:Classified
+<prompt>$ </prompt><userinput>psql -q</userinput>
+<prompt>postgres=# </prompt><userinput>SELECT sepgsql_getcon();</userinput>
+                  sepgsql_getcon
+---------------------------------------------------
+ unconfined_u:unconfined_r:unconfined_t:Classified
+(1 row)
+</screen>
+       </para>
+
+       <para>
+	 We don't need any special configuration when we connect to
+	 SE-PostgreSQL via UNIX domain socket (local connection).
+
+	 However, when we connect to SE-PostgreSQL via TCP/IP socket
+	 (remote connection), it is necessary to set up labeled networking.
+	 See <xref linkend="security-sepgsql-labeled-networks"> for more
+	   defails.
+       </para>
+     </sect3>
+
+     <sect3 id="security-sepgsql-mac">
+       <title>Mandatory Access Controls</title>
+       <para>
+	 MAC (Mandatory Access Controls) is a kind of security designs,
+	 and has a few significant characteristics compared to DAC
+	 (Discreational Access Controls) design, like filesystem
+	 permissions, database ACLs and so on.
+       </para>
+       <para>
+	 At first, MAC design requires to apply its access control
+	 policy on all the accesses for managed objects without any
+	 exception, including <literal>root</literal> and similar
+	 concepts.
+
+	 Next, any subject and object have to be identified by security
+	 labels, and MAC policy is described as a set of relationship
+	 between two labels. The security context of SELinux is a
+	 sort of label, but is includes a bit more identifiers than
+	 traditional trusted-operating system.
+
+	 Finally, it should not allow resource owners to change its
+	 access control rights arbitrarily. DAC design allows us
+	 to change them using <command>chmod</command> or
+	 <command>GRANT</command>. But security policy restricts
+	 them in MAC design.
+       </para>
+       <para>
+	 SELinux is a MAC feature in operating system, so it applies
+	 MAC policy for accesses to resources managed by operating
+	 system like files, sockets and so on.
+       </para>
+       <para>
+	 SE-PostgreSQL is a symmetric feature in database management
+	 system. It also applies MAC policy for accesses to any
+	 database objects, managed by database management system
+	 as a literal.
+       </para>
+     </sect3>
+   </sect2>
+
+   <sect2 id="security-sepgsql-functionality">
+     <title>The functionality of SE-PostgreSQL</title>
+
+     <sect3 id="security-sepgsql-security-label">
+       <title>security_label system column</title>
+       <para>
+	 SE-PostgreSQL enables to import/export security context of
+	 tuples via <literal>security_label</literal> system column
+	 which is available v8.4, or later.
+       </para>
+       <para>
+	 The following example shows a case when we export security
+	 context of tuples and its data via <command>SELECT</command>.
+       </para>
+<screen>
+<prompt>postgres=# </prompt><userinput>SELECT security_label, * FROM drink;</userinput>
+                security_label                | id | name  | price
+----------------------------------------------+----+-------+-------
+ system_u:object_r:sepgsql_table_t            |  1 | water |   100
+ system_u:object_r:sepgsql_table_t            |  2 | coke  |   120
+ system_u:object_r:sepgsql_table_t            |  3 | juice |   130
+ system_u:object_r:sepgsql_table_t            |  4 | cofee |   180
+ system_u:object_r:sepgsql_table_t:Classified |  5 | beer  |   240
+ system_u:object_r:sepgsql_table_t:Classified |  6 | sake  |   320
+(6 rows)
+</screen>
+       <para>
+	 The security policy has rules to determine what security context
+	 should be applied on newly inserted tuples.
+	 SE-PostgreSQL assigns a proper security context for them according
+	 to the rules in default.
+       </para>
+       <para>
+	 However, we can explicitly specify a security context of a new
+	 tuple with <literal>INSERT</literal> statement including
+	 <literal>security_label</literal> system column as a target.
+       </para>
+<screen>
+<prompt># </prompt><userinput>INSERT INTO drink (security_label, id, name, price)
+     VALUES('system_u:object_r:sepgsql_ro_table_t', 7, 'tea', 130);</userinput>	 
+</screen>
+       <para>
+	 We can also change security context of tuples using
+	 <literal>UPDATE</literal> statement, as <literal>INSERT</literal>
+	 doing.
+       </para>
+<screen>
+<prompt># </prompt><userinput>UPDATE drink SET security_label = 'system_u:object_r:sepgsql_ro_table_t' WHERE id < 4;</userinput>
+</screen>
+       <para>
+	 No need to say, client has to have privileges to insert or update
+	 security context of tuples. If not so, SE-PostgreSQL prevents to
+	 change them.
+       </para>
+       <para>
+	 Please note that PostgreSQL uses system catalogs to represent
+	 metadata of tables, columns and so on.
+	 SE-PostgreSQL considers tuples within these system catalogs
+	 show the security context of them.
+	 For example, security context of tuples within
+	 <literal>pg_class</literal> is considered as the one of table.
+       </para>
+     </sect3>
+
+     <sect3>
+       <title>Access controls in Row-level</title>
+       <para>
+	 SE-PostgreSQL applies its access controls for each tuple.
+
+	 If client tries to select, update or delete violated tuples,
+	 these tuples are filtered from the result set or ignored from
+	 the target of updates/deletions, as if they are not exist
+	 on the table.
+       </para>
+       <para>
+	 The following example shows the case when two users with different
+	 security context tries to <command>SELECT</command> same table
+	 with same SQL.
+	 A <literal>Classified</literal> user can whole of the table.
+	 But <literal>Classified</literal> tuples are invisible from
+	 other users.
+       </para>
+<screen>
+<prompt>$ </prompt><userinput>id -Z</userinput>
+unconfined_u:unconfined_r:unconfined_t:Classified
+<prompt>$ </prompt><userinput>psql -q postgres</userinput>
+<prompt>postgres=# </prompt><userinput>SELECT security_label, * FROM drink;</userinput>
+                security_label                | id | name  | price
+----------------------------------------------+----+-------+-------
+ system_u:object_r:sepgsql_table_t            |  1 | water |   100
+ system_u:object_r:sepgsql_table_t            |  2 | coke  |   120
+ system_u:object_r:sepgsql_table_t            |  3 | juice |   130
+ system_u:object_r:sepgsql_table_t            |  4 | cofee |   180
+ system_u:object_r:sepgsql_table_t:Classified |  5 | beer  |   240
+ system_u:object_r:sepgsql_table_t:Classified |  6 | sake  |   320
+(6 rows)
+</screen>
+       <para>
+	 It shows the <literal>Classified</literal> user got 6 tuples
+	 with unconditional <command>SELECT</command> on drink table.
+
+	 However, the unclassified (not labeled) user got 4 tuples
+	 with same SQL, because of filtering violated tuples.
+       </para>
+<screen>
+<prompt>$ </prompt><userinput>id -Z</userinput>
+unconfined_u:unconfined_r:unconfined_t
+<prompt>$ </prompt><userinput>psql -q postgres</userinput>
+<prompt>postgres=# </prompt><userinput>SELECT security_label, * FROM drink;</userinput>
+postgres=# SELECT security_label, * FROM drink;
+          security_label           | id | name  | price
+-----------------------------------+----+-------+-------
+ system_u:object_r:sepgsql_table_t |  1 | water |   100
+ system_u:object_r:sepgsql_table_t |  2 | coke  |   120
+ system_u:object_r:sepgsql_table_t |  3 | juice |   130
+ system_u:object_r:sepgsql_table_t |  4 | cofee |   180
+(4 rows)
+</screen>
+     </sect3>
+
+     <sect3>
+       <title>Access controls for other stuffs</title>
+       <para>
+	 SE-PostgreSQL also enables to set up access permissions on
+	 per-column granularity. It walks on the given query trees
+	 to pick up all appeared column.
+	 If it contains one or more violated columns, SE-PostgreSQL
+	 abort query execution and returns an error to users.
+	 This behavior is different from tuple-level access controls.
+       </para>
+       <para>
+	 The following example shows a case when we declared
+	 <literal>ccredit</literal> column to store credit card numbers
+	 as a secret column from unclassified users.
+	 The following SQL is declaration of table and initial records.
+       </para>
+<screen>
+CREATE TABLE customer (
+    cid     integer primary key,
+    cname   varchar(32),
+    credit  varchar(32)
+        SECURITY_LABEL = 'system_u:object_r:sepgsql_secret_table_t'
+);
+GRANT ALL ON customer TO PUBLIC;
+
+INSERT INTO customer (cid, cname, credit)
+    VALUES ( 10, 'jack', '1111-2222-3333-4444'),
+           ( 13, 'adam', '5555-6666-7777-8888'),
+           ( 14, 'liza', '9876-5432-1098-7654');
+</screen>
+       <para>
+	 In the first query, he tries to select all columns but SE-PostgreSQL
+	 detect accesses on <literal>ccredit</literal> column, then it is aborted
+	 with an audit records.
+	 In the second query, he tries to select rest of column except
+	 for <literal>ccredit</literal> column, then the query is executed
+	 correctly, because violated column is not appeared in this query.
+       </para>
+<screen>
+$ id -Z
+staff_u:staff_r:staff_t
+$ psql -q postgres
+postgres=# SELECT * FROM customer;
+ERROR:  SELinux: denied { select } \
+	scontext=staff_u:staff_r:staff_t \
+	tcontext=system_u:object_r:sepgsql_secret_table_t \
+	tclass=db_column name=customer.credit
+postgres=# SELECT cid, cname FROM customer;
+ cid | cname
+-----+-------
+  10 | jack
+  13 | adam
+  14 | liza
+(3 rows)
+</screen>
+       <para>
+	 SE-PostgreSQL also checks clients' permission to access tables,
+	 to invoke funcion and to read/write large objects in same way.
+
+	 If clients does not have enough permissions on these objects,
+	 SE-PostgreSQL aborts query execution and raises an error.
+       </para>
+     </sect3>
+   </sect2>
+
+   <sect2>
+     <title>The limitation</title>
+     <para>
+       SE-PostgreSQL dose not care about information leaks via covert channels.
+       It is a technical term used in security evaluation, and means a possibility
+       of inference to invisible data via illicit flows.
+     </para>
+     <para>
+       It had been originally required at upper B2 class of TCSEC, and evaluated
+       products had to declare explicit maximum bandwidth of covert channels.
+       It is now inherited to ISO/IEC15408 knows as CC (Common Criteria).
+     </para>
+     <para>
+       If your requirements contains elimination of covert channels, we don't
+       recommend to apply SE-PostgreSQL. However, it is generally considered
+       as a requirement of extreame condidential military region.
+     </para>
+     <para>
+       An example of covert channels are here.
+
+       When a man tries to update or delete a tuple with primary key refered by
+       one or more invisible foreign keys, SE-PostgreSQL prevent the action to
+       keep its reference integrity, even if he cannot see the key.
+
+       This error gives him a side-channel information which is an existance
+       of invisible foreign key. Such a behavior is called as covert channel.
+     </para>
+     <para>
+       An actual avoidance for the matter is to apply non-natural primary and
+       foreign keys. It enables to be impossible he infer any meaningful data.
+     </para>
+   </sect2>
+</sect1>
+
+<sect1 id="security-sepgsql-admin">
+   <title>Administration of SE-PostgreSQL</title>
 
    <sect2>
      <title>Requirements</title>
@@ -259,396 +729,7 @@
        </variablelist>
      </sect3>
    </sect2>
- </sect1>
 
- <sect1 id="security-sepgsql-features">
-   <title>SE-PostgreSQL Features</title>
-
-   <sect2>
-     <title>A single unified security policy</title>
-
-     <para>
-       It is the most significant concept of SE-PostgreSQL to apply
-       its access controls based on a single unified security policy
-       on both OS and RDBMS.
-
-       Filesystem and RDBMS have common property which can store
-       our information asset and apply its permission checks on
-       accesses come from users via system-calls or SQL-queries.
-       On system-calls, filesystem permissions are checked, at the
-       same time database ACLs are checked on SQL-queries.
-
-       However, they works independently in general, thus, there is
-       a possibility to be inconsistent even if they can store same
-       information asset.
-
-       A single unified security policy means we can always apply
-       same access control rules on both OS and RDBMS, and make
-       sure its consistency.
-     </para>
-
-     <sect3>
-       <title>Security Context</title>
-       <para>
-	 The security policy of SELinux is described as a set of relationships
-	 between two security contexts.
-
-	 Security context is a formatted string as follows:
-	 <synopsis>
- system_u:object_r:postgresql_db_t:SystemHigh
-	 </synopsis>
-	 
-	 In SELinux'ed platform, any process and any resources (like file,
-	 socket, shared memory segment, ...) have its security context,
-	 and these are used to make a decision by SELinux.
-       </para>
-
-       <para>
-	 For example, when a process with a security context of
-	 <literal>system_u:system_r:postgresql_t:s0</literal> tries to write
-	 a log record to <filename>/var/log/postgresql.log</filename> labeled
-	 as <literal>system_u:object_r:postgresql_log_t:s0</literal>,
-	 write(2) system call is hooked in the kernel and SELinux looks up
-	 its security policy to find out an entry which has a relationship
-	 between these two security context.
-
-	 If the entry allows the process to write, SELinux does nothing
-	 any more. Otherwise, SELinux prevents it to write a log record
-	 on the given file.
-       </para>
-
-       <para>
-	 It shows us any resource checked by SELinux have to be labeled
-	 with a security context in same format as operating system doing.
-
-	 SE-PostgreSQL associates a tuple with a security context, and
-	 we can refer it using <literal>security_context</literal> system
-	 column as follows:
-       </para>
-
-<screen>
-<prompt># </prompt><userinput>SELECT security_context, * FROM drink;</userinput>
-                 security_context                 | id | name  | price
---------------------------------------------------+----+-------+-------
- unconfined_u:object_r:sepgsql_table_t            |  1 | water |   100
- unconfined_u:object_r:sepgsql_table_t            |  2 | coke  |   120
- unconfined_u:object_r:sepgsql_table_t            |  3 | juice |   130
- unconfined_u:object_r:sepgsql_table_t            |  4 | coffee|   180
- unconfined_u:object_r:sepgsql_table_t:Classified |  5 | beer  |   240
- unconfined_u:object_r:sepgsql_table_t:Classified |  6 | sake  |   320
-(6 rows)
-</screen>
-
-       <para>
-	 The security policy also has rules to decide the security context
-	 of newly inserted tuple. When a tuple in inserted, SE-PostgreSQL
-	 associate it on the new tuple in the default.
-       </para>
-
-       <para>
-	 However, users can explicitly specifies a security context of
-	 a new tuple, using <literal>INSERT</literal> statement with
-	 <literal>security_context</literal> system column as a target,
-	 like as:
-       </para>
-
-<screen>
-<prompt># </prompt><userinput>INSERT INTO drink (security_context, id, name, price)
-     VALUES('system_u:object_r:sepgsql_table_t:SystemHigh', 7, 'tea', 130);</userinput>	 
-</screen>
-
-       <para>
-	 We can also change security context of tuples using
-	 <literal>UPDATE</literal> statement as <literal>INSERT</literal>
-	 doing.
-       </para>
-
-<screen>
-<prompt># </prompt><userinput>UPDATE drink SET security_context
-			= 'unconfined_u:object_r:sepgsql_secret_table_t';</userinput>
-</screen>
-
-       <para>
-	 No need to say, users have to have permission to insert a tuple
-	 with specified security context.
-       </para>
-
-       <para>
-	 SE-PostgreSQL also checks permission on using tables, columns
-	 and so on. These are represented as a tuple within system catalogs
-	 in PostgreSQL, and SE-PostgreSQL uses the security context of
-	 these tuples as security context of tables, columns and so on.
-
-	 For example, a tuple within <literal>pg_attribute</literal> shows
-	 definition of a column, and its security context also means
-	 column's one.
-       </para>
-     </sect3>
-
-     <sect3>
-       <title>Client Authority</title>
-       <para>
-	 Another significant factor in access controls is authorities of subject.
-
-	 In operating system, a process has user/group identifiers and its
-	 security context. These are used for access controls in the kernel.
-       </para>
-
-       <para>
-	 One of the goals in SE-PostgreSQL is to apply its access controls on
-	 database objects, as if client process accesses to filesystem objects.
-
-	 This concept requires the security context of client process to make
-	 its decision, not only security contexts of database objects.
-
-	 However, the server process works with its security context as a
-	 server process, not a security context of client process.
-
-	 Therefore, SE-PostgreSQL need to know the security context of the
-	 connected client process.
-       </para>
-
-       <para>
-	 SELinux provides a API named as <literal>getpeercon()</literal>.
-	 It enables to obtain a security context of the peer process
-	 connected via given socket file descriptor.
-
-	 SE-PostgreSQL uses this API to know the security context of
-	 the client process, independent from the database authentication
-	 facilities of PostgreSQL.
-
-	 We can confirm it using <literal>sepgsql_getcon()</literal>
-	 function on SE-PostgreSQL, as follows:
-<screen>
-<prompt>[kaigai@saba ~]$ </prompt><userinput>id -Z</userinput>
-unconfined_u:unconfined_r:unconfined_t:Classified
-<prompt>[kaigai@saba ~]$ </prompt><userinput>psql -q</userinput>
-<prompt>kaigai=# </prompt><userinput>SELECT sepgsql_getcon();</userinput>
-                  sepgsql_getcon
----------------------------------------------------
- unconfined_u:unconfined_r:unconfined_t:Classified
-(1 row)
-</screen>
-       </para>
-
-       <para>
-	 Any special configuration is not necessary when clients connect
-	 to SE-PostgreSQL via UNIX domain socket (local connection).
-
-	 However, we need to set up labeled networking when clients connect
-	 to SE-PostgreSQL via TCP/IP socket (remote connection).
-	 See the <xref linkend="security-sepgsql-labeled-networks"> for
-	 more information.
-       </para>
-     </sect3>
-   </sect2>
-
-   <sect2>
-     <title>Mandatory access controls</title>
-     <para>
-       SE-PostgreSQL provides MAC (Mandatory Access Controls) features.
-
-       By contrast, filesystem permission and database ACLs are called
-       as DAC (Discreational Access Controls), not a MAC.
-     </para>
-
-     <para>
-       There are two characteristic differences betwee MAC and DAC.
-     </para>
-
-     <para>
-       The one is a property of "always invoked".
-
-       MAC feature is applied on all accesses from users/clients, even if
-       it come from privileged users, like <literal>root</literal> on
-       operating system.
-
-       PostgreSQL also has a concept of database super users, and 
-       they can bypass checks in database ACLs. MAC features does
-       not admit any exception, including queries come from
-       database super users.
-     </para>
-
-     <para>
-       The other is controllability by the resource owner.
-
-       DAC feature allows the resource owner to change its access control
-       rules, like a owner can invoke <command>GRANT</command> statement
-       on his tables.
-
-       On the other hand, MAC feature restrict users including resource
-       owner to change access control rules of resources without explicit
-       allowing by the policy.
-
-       In SE-PostgreSQL, it means attaching/changing security context
-       of database objects. So, user cannot specify it arbitrarily.
-     </para>
-   </sect2>
-
-   <sect2>
-     <title>Tuple-level access controls</title>
-     <para>
-       SE-PostgreSQL applies its access controls for each tuple.
-
-       If client tries to select, update or delete violated tuples,
-       these tuples are filtered from the result set or ignored from
-       the target of updates/deletions, as if they are not exist
-       on the table.
-     </para>
-
-     <para>
-       The following example shows the case when two users with different
-       security context tries to <command>SELECT</command> same table
-       with same SQL.
-
-       A <literal>Classified</literal> user can whole of the table.
-       But <literal>Classified</literal> tuples are invisible from
-       other users.
-     </para>
-<screen>
-<prompt>[kaigai@saba ~]$ </prompt><userinput>id -Z</userinput>
-unconfined_u:unconfined_r:unconfined_t:Classified
-<prompt>[kaigai@saba ~]$ </prompt><userinput>psql -q postgres</userinput>
-postgres=# SELECT security_context, * FROM drink;
-                 security_context                 | id | name  | price
---------------------------------------------------+----+-------+-------
- unconfined_u:object_r:sepgsql_table_t            |  1 | water |   100
- unconfined_u:object_r:sepgsql_table_t            |  2 | coke  |   120
- unconfined_u:object_r:sepgsql_table_t            |  3 | juice |   130
- unconfined_u:object_r:sepgsql_table_t            |  4 | cofee |   180
- unconfined_u:object_r:sepgsql_table_t:Classified |  5 | beer  |   240
- unconfined_u:object_r:sepgsql_table_t:Classified |  6 | sake  |   320
-(6 rows)
-</screen>
-     <para>
-       It shows the <literal>Classified</literal> user got 6 tuples
-       with unconditional <command>SELECT</command> on drink table.
-
-       However, the unclassified (not labeled) user got 4 tuples
-       with same SQL, because of filtering violated tuples.
-     </para>
-<screen>
-<prompt>[ymj@saba ~]$ </prompt><userinput>id -Z</userinput>
-unconfined_u:unconfined_r:unconfined_t
-<prompt>[ymj@saba ~]$ </prompt><userinput>psql -q postgres</userinput>
-postgres=# SELECT security_context, * FROM drink;
-           security_context            | id | name  | price
----------------------------------------+----+-------+-------
- unconfined_u:object_r:sepgsql_table_t |  1 | water |   100
- unconfined_u:object_r:sepgsql_table_t |  2 | coke  |   120
- unconfined_u:object_r:sepgsql_table_t |  3 | juice |   130
- unconfined_u:object_r:sepgsql_table_t |  4 | cofee |   180
-(4 rows)
-</screen>
-   </sect2>
-
-   <sect2>
-     <title>Column-level access controls</title>
-     <para>
-       SE-PostgreSQL also enables to set up access permissions on
-       per-column granularity. It walks on the given query trees
-       to pick up all appeared column.
-
-       If it contains one or more violated columns, SE-PostgreSQL
-       abort query execution and returns an error to users.
-       This behavior is different from tuple-level access controls.
-     </para>
-
-     <para>
-       The following example shows a case when we declared
-       <literal>ccredit</literal> column to store credit card numbers
-       as a secret column from unclassified users.
-
-       The following SQL is declaration of table and initial records.
-     </para>
-<screen>
-CREATE TABLE customer (
-    cid     integer primary key,
-    cname   varchar(32),
-    credit  varchar(32)  SECURITY_CONTEXT = 'system_u:object_r:sepgsql_secret_table_t'
-);
-GRANT ALL ON customer TO PUBLIC;
-
-INSERT INTO customer (cid, cname, credit)
-    VALUES ( 10, 'jack', '1111-2222-3333-4444'),
-           ( 13, 'adam', '5555-6666-7777-8888'),
-           ( 14, 'liza', '9876-5432-1098-7654');
-</screen>
-     <para>
-       In the first query, he tries to select all columns but SE-PostgreSQL
-       detect accesses on <literal>ccredit</literal> column, then it is aborted
-       with an audit records.
-
-       In the second query, he tries to select rest of column except
-       for <literal>ccredit</literal> column, then the query is executed
-       correctly, because violated column is not appeared in this query.
-     </para>
-<screen>
-[tak@saba ~]$ id -Z
-staff_u:staff_r:staff_t
-[tak@saba ~]$ psql -q postgres
-postgres=# SELECT * FROM customer;
-ERROR:  SELinux: denied { select } \
-	scontext=staff_u:staff_r:staff_t \
-	tcontext=system_u:object_r:sepgsql_secret_table_t \
-	tclass=db_column name=customer.credit
-postgres=# SELECT cid, cname FROM customer;
- cid | cname
------+-------
-  10 | jack
-  13 | adam
-  14 | liza
-(3 rows)
-</screen>
-     <para>
-       SE-PostgreSQL also checks clients' permission to access tables,
-       to invoke funcion and to read/write large objects in same way.
-
-       If clients does not have enough permissions on these objects,
-       SE-PostgreSQL aborts query execution and raises an error.
-     </para>
-   </sect2>
-
-   <sect2>
-     <title>The limitation</title>
-     <para>
-       SE-PostgreSQL dose not care about information leaks via covert channels.
-       It is a technical term used in security evaluation, and means a possibility
-       of inference to invisible data via illicit flows.
-     </para>
-     <para>
-       It had been originally required at upper B2 class of TCSEC, and evaluated
-       products had to declare explicit maximum bandwidth of covert channels.
-       It is now inherited to ISO/IEC15408 knows as CC (Common Criteria).
-     </para>
-     <para>
-       If your requirements contains elimination of covert channels, we don't
-       recommend to apply SE-PostgreSQL. However, it is generally considered
-       as a requirement of extreame condidential military region.
-     </para>
-     <para>
-       An example of covert channels are here.
-
-       When a man tries to update or delete a tuple with primary key refered by
-       one or more invisible foreign keys, SE-PostgreSQL prevent the action to
-       keep its reference integrity, even if he cannot see the key.
-
-       This error gives him a side-channel information which is an existance
-       of invisible foreign key. Such a behavior is called as covert channel.
-     </para>
-     <para>
-       An actual avoidance for the matter is to apply non-natural primary and
-       foreign keys. It enables to be impossible he infer any meaningful data.
-     </para>
-   </sect2>
- </sect1>
-
- <sect1 id="security-sepgsql-admin">
-   <title>SE-PostgreSQL Administration</title>
-   <para>
-     This chapter introduces methods to backup/restore with security
-     context, and to apply security context of remote processes.
-   </para>
    <sect2>
      <title>Backup and Restore</title>
      <para>
@@ -931,6 +1012,263 @@ remote 192.168.1.200
        </para>
      </sect3>
    </sect2>
+ </sect1>
+
+ <sect1 id="security-row-level-acl">
+   <title>Row-level Database ACL</title>
+   <para>
+     This chapter introduces design and implementation of row-level database acl in
+     PostgreSQL. It enables us to assign individual acls for each tuples, and works
+     as a supplemental facility of existing database acls applied to table, column
+     and so on.
+   </para>
+
+   <sect2>
+     <title>Design</title>
+     <para>
+       The design of row-level database acl feature is inherited from the existing
+       access control mechanism. For example, it is a sort of discretionary access
+       control mechanism, so it allows the resource owners to change its access
+       control rights, and it does not prevent any actions invoked from database
+       superusers.
+     </para>
+     <para>
+       This feature is implemented as a guest of the PGACE Security Framework,
+       so we can activate it exclusively for any other enhanced security features
+       like SE-PostgreSQL.
+     </para>
+     <para>
+       It works as if there is a filter to drop violated tuples between tables
+       and database clients. Per-tuple acl is checked when the executor scans
+       target relations, and the feature makes decision whether the fetched
+       tuple should be returned, or not.
+
+       We provides four permission for tuples. These are <literal>SELECT</literal>,
+       <literal>UPDATE</literal>, <literal>DELETE</literal> and
+       <literal>REFERENCES</literal>. Please note that <literal>INSERT</literal>
+       permission is not provided, because the target does not exist when it should
+       be checked. You have to control insertion of tuples by the table level
+       database acls.
+     </para>
+     <para>
+       PostgreSQL implements foreign key constraint as built-in trigger functions,
+       and it invokes another query to keep referential integrities.
+       It is an exception case of the filtering behavior. If the query tries to
+       fetch a violated tuple, it raises an error to abort the current transaction,
+       not a simple filter for them.
+
+       It helps referential integrities, but, please note that there is a possibility
+       unprivileged client infer existance of one or more invisible tuples.
+     </para>
+     <para>
+       We can confirm or setup the per-tuple acl via <literal>tuple_acl</literal>
+       system attribute newly added. We can modify it via <literal>UPDATE</literal>
+       statement, and insert a tuple with specified per-tuple acl via
+       <literal>INSERT</literal> statement.
+     </para>
+     <para>
+       It assigns a default acl newly inserted tuples. If no special configuration
+       here, it allows world to do anything for compatible behavior. However, we
+       can specify the default acl using enhanced <command>CREATE TABLE</command>
+       or <command>ALTER TABLE</command> statement with <literal>DEFAULT_ACL</literal>
+       option.
+     </para>
+   </sect2>
+
+   <sect2>
+     <title>Installation</title>
+     <para>
+       You have to give a <literal>--enable-row-acl</literal> option to configure
+       script, but rest of installation processes are unchanged.
+<screen>
+<prompt>$ </prompt><userinput>./configure --enable-row-acl</userinput>
+<prompt>$ </prompt><userinput>make</userinput>
+<prompt>$ </prompt><userinput>su</userinput>
+<prompt># </prompt><userinput>make install</userinput>
+</screen>
+     </para>
+     <para>
+       Make a new directory to store the database cluster, and change its ownership
+       to the server process which you intend it to work.
+       Then, kick the <command>initdb</command> and <command>pg_ctl start</command>.
+     </para>
+
+     <para>
+       It adds a guc parameter to turn on/off the feature.
+       The <literal>row_acl_is_enabled</literal> can have a boolean value, and
+       it disables the row-level database acl feature when the server process
+       is started up with <literal>false</literal> in this guc.
+
+       It does not allow to change the variable in runtime, so you have to
+       put an entry on <literal>$PGDATA/postgresql.conf</literal>.
+       When omitted, this feature is enabled.
+     </para>
+   </sect2>
+
+   <sect2>
+     <title>Administration</title>
+     <sect3>
+       <title>Set up per-tuple acls</title>
+       <para>
+	 The per-tuples acls are configured vid <literal>tuple_acl</literal> system
+	 attribute which is writable.
+	 We can use the column as an entity of the target list of <literal>UPDATE</literal>,
+	 <literal>INSERT</literal> or <literal>COPY FROM</literal> statement.
+	 It also provides helpful functions to edit acl strings, like
+	 <literal>rowacl_grant()</literal> and so on.
+<screen>
+<prompt>postgres=# </prompt><userinput>UPDATE drink SET tuple_acl = '{=r/kaigai}' WHERE id in (3,4,5);</userinput>
+UPDATE 3
+<prompt>postgres=# </prompt><userinput>SELECT tuple_acl, * FROM drink order by id;</userinput>
+           tuple_acl            | id | name  | price
+--------------------------------+----+-------+-------
+ {kaigai=rwd/kaigai}            |  1 | water |   100
+ {kaigai=rwd/kaigai}            |  2 | coke  |   120
+ {=r/kaigai}                    |  3 | juice |   130
+ {=r/kaigai}                    |  4 | cofee |   180
+ {=r/kaigai}                    |  5 | beer  |   240
+ {kaigai=r/kaigai,ymj=r/kaigai} |  6 | sake  |   320
+(6 rows)
+</screen>
+       </para>
+
+       <para>
+	 The client must have ownership of the relation or privileges of database
+	 superuser, whenever he tries to update the <literal>tuple_acl</literal>.
+	 Please note that the feature considers the owner of table is the owner
+	 of tuples stored in, not a person who inserted the tuple.
+       </para>
+
+       <para>
+	 The <command>CREATE TABLE</command> or <command>ALTER TABLE</command> with
+	 <literal>DEFAULT_ACL</literal> option enables to put individual default
+	 acl for the table. The default acl is assigned to newly inserted tuples
+	 without explicit acls. If no default acl is configured to the table,
+	 it assigns a acl which allows anything to world.
+       </para>
+     </sect3>
+
+     <sect3>
+       <title>backup and restore</title>
+       <para>
+	 The <command>pg_dump</command> and <command>pg_dumpall</command> got a new
+	 option of <literal>--row-level-acl</literal>. This option enables to backup
+	 the contents of tables with its individual acls.
+	 The dumped data can be restored via <command>pg_restore</command>.
+       </para>
+
+       <para>
+	 Example:
+<screen>
+<prompt>$ </prompt><userinput>pg_dump --row-level-acl postgres</userinput>
+          :
+--
+-- Name: drink; Type: TABLE; Schema: public; Owner: kaigai; Tablespace:
+--
+
+CREATE TABLE drink (
+    id integer NOT NULL,
+    name character varying(48),
+    price integer
+) DEFAULT_ACL = 'default={kaigai=rwd/kaigai}';
+          :
+--
+-- Data for Name: t1; Type: TABLE DATA; Schema: public; Owner: kaigai
+--
+
+COPY t1 (tuple_acl, id, name, price) FROM stdin;
+{kaigai=rwd/kaigai}     1       water   100
+{kaigai=rwd/kaigai}     2       coke    120
+{kaigai=rwd/kaigai,ymj=r/kaigai}        3       juice   130
+{kaigai=rwd/kaigai,ymj=r/kaigai}        4       cofee   180
+{kaigai=r/kaigai,ymj=r/kaigai}  5       beer    240
+{kaigai=r/kaigai,ymj=r/kaigai}  6       sake    320
+{kaigai=r/kaigai}       7       wine    380
+{kaigai=r/kaigai}       8       tea     140
+\.
+          :
+</screen>
+       </para>
+     </sect3>
+
+     <sect3>
+       <title>related functions</title>
+
+       <variablelist>
+	 <varlistentry>
+	   <term><literal>Text rowacl_grant(Oid tableoid, Text tuple_acl, Text users, Text permissions)</literal></term>
+	   <listitem>
+	     <para>
+	       This function compute a new acl string which is a combination of
+	       the given acl string and newly granted permissions.
+	       We can use the result of the function as a new value of
+	       <literal>tuple_acl</literal> to be given.
+	     </para>
+	     <para>
+	       We can enumerate user names and permissions separated by comma.
+	       The permissions have to be some of <literal>select</literal>,
+	       <literal>update</literal>, <literal>delete</literal>,
+	       <literal>references</literal> and <literal>all</literal>.
+	       The <literal>all</literal> is extracted to the other four
+	       permissions.
+	     </para>
+	     <para>
+<screen>
+<prompt>postgres=# </prompt><userinput>SELECT rowacl_grant(tableoid, tuple_acl, 'tak', 'select'), * FROM tbl;</userinput>
+               rowacl_grant                | x |  y
+-------------------------------------------+---+-----
+ {=rwdx/kaigai,ymj=d/kaigai,tak=r/kaigai}  | 1 | aaa
+ {=rwdx/kaigai,tak=rw/kaigai,ymj=d/kaigai} | 2 | bbb
+ {=rwdx/kaigai,tak=rw/kaigai}              | 3 | ccc
+ {=rwdx/kaigai,tak=r/kaigai}               | 4 | ddd
+(4 rows)
+
+<prompt>postgres=# </prompt><userinput>UPDATE tbl SET tuple_acl = rowacl_grant(tableoid, tuple_acl, 'tak', 'select') WHERE x in (2,4);</userinput>
+UPDATE 2
+
+<prompt>postgres=# </prompt><userinput>SELECT tuple_acl, * FROM tbl;</userinput>
+                 tuple_acl                 | x |  y
+-------------------------------------------+---+-----
+ {=rwdx/kaigai,ymj=d/kaigai}               | 1 | aaa
+ {=rwdx/kaigai,tak=rw/kaigai,ymj=d/kaigai} | 2 | bbb
+ {=rwdx/kaigai,tak=w/kaigai}               | 3 | ccc
+ {=rwdx/kaigai,tak=r/kaigai}               | 4 | ddd
+(4 rows)
+</screen>
+	     </para>
+	   </listitem>
+	 </varlistentry>
+
+	 <varlistentry>
+	   <term><literal>Text rowacl_revoke(Oid tableoid, Text tuple_acl, Text users, Text permissions)</literal></term>
+	   <listitem>
+	     <para>
+	       This function also compute a new acl as a residual of the given acl
+	       on subtraction with newly revoked permissions.
+	       We can use the result of the function as a new value of
+	       <literal>tuple_acl</literal>.
+	     </para>
+	   </listitem>
+	 </varlistentry>
+
+	 <varlistentry>
+	   <term><literal>Text rowacl_revoke_cascade(Oid tableoid, Text tuple_acl, Text users, Text permissions)</literal></term>
+	   <listitem>
+	     <para>
+	       This function also compute a new acl as a residual of the given acl
+	       on subtraction with newly revoked permissions, as the
+	       <literal>rowacl_revoke()</literal> doing.
+
+	       The only difference is this function revokes permission in
+	       cascading mode.
+	     </para>
+	   </listitem>
+	 </varlistentry>
+
+       </variablelist>
+     </sect3>
+   </sect2>
+
  </sect1>
 
  <sect1 id="security-pgace-framework">
