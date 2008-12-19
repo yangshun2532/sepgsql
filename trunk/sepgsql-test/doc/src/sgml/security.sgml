@@ -348,6 +348,26 @@ unconfined_u:unconfined_r:unconfined_t:Classified
 	 change them.
        </para>
        <para>
+	 <command>SELECT INTO</command> or <command>CREATE TABLE AS</command>
+	 including <literal>security_label</literal> system column as a target
+	 is considered as an iteration of <literal>INSERT</literal> with an
+	 explicit security context.
+       </para>
+<screen>
+<prompt># </prompt><userinput>SELECT security_label, id, name, price / 2 AS price INTO discount FROM drink;</userinput>
+SELECT
+postgres=# SELECT security_label, * FROM discount;
+                security_label                | id | name  | price
+----------------------------------------------+----+-------+-------
+ system_u:object_r:sepgsql_table_t            |  1 | water |    50
+ system_u:object_r:sepgsql_table_t            |  2 | coke  |    60
+ system_u:object_r:sepgsql_table_t            |  3 | juice |    65
+ system_u:object_r:sepgsql_table_t            |  4 | cofee |    90
+ system_u:object_r:sepgsql_table_t:Classified |  5 | beer  |   120
+ system_u:object_r:sepgsql_table_t:Classified |  6 | sake  |   160
+(6 rows)
+</screen>
+       <para>
 	 Please note that PostgreSQL uses system catalogs to represent
 	 metadata of tables, columns and so on.
 	 SE-PostgreSQL considers tuples within these system catalogs
@@ -358,7 +378,7 @@ unconfined_u:unconfined_r:unconfined_t:Classified
      </sect3>
 
      <sect3>
-       <title>Access controls in Row-level</title>
+       <title>Access controls on Tuples</title>
        <para>
 	 SE-PostgreSQL applies its access controls for each tuple.
 
@@ -414,14 +434,17 @@ postgres=# SELECT security_label, * FROM drink;
      </sect3>
 
      <sect3>
-       <title>Access controls for other stuffs</title>
+       <title>Access controls on Tables and Columns</title>
        <para>
-	 SE-PostgreSQL also enables to set up access permissions on
-	 per-column granularity. It walks on the given query trees
-	 to pick up all appeared column.
-	 If it contains one or more violated columns, SE-PostgreSQL
-	 abort query execution and returns an error to users.
-	 This behavior is different from tuple-level access controls.
+	 SE-PostgreSQL also enables to apply its access controls on
+	 tables and columns. It prevents clients to access violated
+	 objects, but it has a difference from ones in row-leve.
+       </para>
+       <para>
+	 When client gives a query tree, SE-PostgreSQL walks on the
+	 given one to pick up all appeared tables and columns.
+	 If it contains one or more violated objects, SE-PostgreSQL
+	 aborts query execution and returns an error to the client.
        </para>
        <para>
 	 The following example shows a case when we declared
@@ -443,14 +466,7 @@ INSERT INTO customer (cid, cname, credit)
            ( 13, 'adam', '5555-6666-7777-8888'),
            ( 14, 'liza', '9876-5432-1098-7654');
 </screen>
-       <para>
-	 In the first query, he tries to select all columns but SE-PostgreSQL
-	 detect accesses on <literal>ccredit</literal> column, then it is aborted
-	 with an audit records.
-	 In the second query, he tries to select rest of column except
-	 for <literal>ccredit</literal> column, then the query is executed
-	 correctly, because violated column is not appeared in this query.
-       </para>
+
 <screen>
 $ id -Z
 staff_u:staff_r:staff_t
@@ -469,12 +485,89 @@ postgres=# SELECT cid, cname FROM customer;
 (3 rows)
 </screen>
        <para>
-	 SE-PostgreSQL also checks clients' permission to access tables,
-	 to invoke funcion and to read/write large objects in same way.
+	 At the first query, he tried to refer all the columns, but
+	 SE-PostgreSQL prevents query execution because it contains
+	 a reference to <literal>ccredit</literal> column which is
+	 labeled as <literal>sepgsql_secret_table_t</literal>.
 
-	 If clients does not have enough permissions on these objects,
-	 SE-PostgreSQL aborts query execution and raises an error.
+	 Then, he tried to refer rest of columns expect for the
+	 <literal>ccredit</literal> column, so SE-PostgreSQL allows
+	 to execute the query, because it does not contains any
+	 violater tables and columns.
        </para>
+     </sect3>
+     <sect3>
+       <title>Access Controls on Function</title>
+       <para>
+	 SE-PostgreSQL also picks up invocations of function during
+	 walks on the given query tree. It prevent clients to invoke
+	 functions without proper privileges.
+       </para>
+       <para>
+	 In the current default security policy, a function declared by
+	 administrative users (like <literal>unconfined_t</literal> domain)
+	 is labeled as <literal>sepgsql_proc_t</literal>. But, ones declared
+	 by normal users (like <literal>staff_t</literal> domain) are labeled
+	 as <literal>staff_sepgsql_proc_exec_t</literal> which does not allow
+	 administrative users to invoke.
+
+	 Its purpose is to prevent administrative users to invoke malicious
+	 function by mistake. They have to confirm its declaration and
+	 relabel its security context to <literal>sepgsql_proc_t</literal>.
+       </para>
+       <para>
+	 SE-PostgreSQL allows clients to change its privileges during
+	 execution of specific functions called as trusted-procedures.
+	 It has a similar concept to Set-uid program, security invoker
+	 and so on.
+
+	 In the current default security policy, trusted procedures are
+	 functions labeled as <literal>sepgsql_trusted_proc_exec_t</literal>.
+	 It enables to execute these functions with administrative privileges,
+	 so gives us a secure method to access confidential objects.
+
+	 It provides simplest all or nothing policy, however, it has
+	 a capability to apply more flexible control, if you install your
+	 own security policy module.
+       </para>
+       <para>
+	 The following example declares a trusted procedure of
+	 <literal>show_credit</literal> to expose information stored in
+	 <literal>customer.credit</literal> with turned letter.
+
+	 At first, a client within <literal>staff_t</literal> domain
+	 does not access <literal>credit</literal> column. But, it
+	 can be accessed via trusted procedure, because the sub-queries
+	 come from the procedure is handled as an administrative domain.
+       </para>
+<screen>
+# CREATE OR REPLACE FUNCTION show_credit (integer) RETURNS text
+    LANGUAGE 'sql'
+    SECURITY_LABEL = 'system_u:object_r:sepgsql_trusted_proc_exec_t'
+    AS 'SELECT substring(credit from ''^[0-9]+-'') || ''xxxx-xxxx-xxxx''
+            FROM customer WHERE CID = $1';
+CREATE FUNCTION
+# \q
+</screen>
+<screen>
+$ id -Z
+staff_u:staff_r:staff_t
+$ psql postgres
+postgres=# SELECT * FROM customer;
+ERROR:  SELinux: denied { select }      \
+    scontext=staff_u:staff_r:staff_t    \
+    tcontext=system_u:object_r:sepgsql_secret_table_t   \
+    tclass=db_column name=customer.credit
+postgres=# SELECT cid, cname, show_credit(cid) FROM customer;
+ cid | cname |     show_credit
+-----+-------+---------------------
+  10 | jack  | 1111-xxxx-xxxx-xxxx
+  13 | adam  | 5555-xxxx-xxxx-xxxx
+  14 | liza  | 9876-xxxx-xxxx-xxxx
+(3 rows)
+
+postgres=#
+</screen>
      </sect3>
    </sect2>
 
@@ -1275,7 +1368,20 @@ UPDATE 2
    <title>PGACE Security Framework</title>
    <para>
      This chapter introduces the design of PGACE (PostgreSQL Access
-     Control Extension) Security Framework.
+     Control Extension) security framework.
+
+     It enables to host various kind of enhanced security features
+     based on different security design, different platforms and
+     so on.
+
+     
+     
+
+
+     It enables to add various kind of enhanced security mechanism
+     and a hardwired DAC mechanism (Row-level Database ACLs) with
+     mini
+
 
      It enables to add various kind of security subsystems based on
      different access control models and platforms (we call it as
@@ -1335,12 +1441,25 @@ static inline bool
 pgaceHeapTupleInsert(Relation rel, HeapTuple tuple,
                      bool is_internal, bool with_returning)
 {
-#if defined(HAVE_SELINUX)
-    if (sepgsqlIsEnabled())
-        return sepgsqlHeapTupleInsert(rel, tuple,
-                                      is_internal,
-                                      with_returning);
+    /* A wired DAC check */
+    if (!rowaclHeapTupleInsert(rel, tuple,
+                               is_internal,
+                               with_returning))
+        return false;
+
+    switch (pgace_feature)
+    {
+#ifdef HAVE_SELINUX
+    case PGACE_FEATURE_SELINUX:
+        if (sepgsqlIsEnabled())
+            return sepgsqlHeapTupleInsert(rel, tuple,
+                                          is_internal,
+                                          with_returning);
+        break;
 #endif
+    default:
+        break;
+    }
     return true;
 }
 </programlisting>
@@ -1370,17 +1489,32 @@ static inline bool
 pgaceHeapTupleInsert(Relation rel, HeapTuple tuple,
                      bool is_internal, bool with_returning)
 {
-#if defined(HAVE_SELINUX)
-    if (sepgsqlIsEnabled())
-        return sepgsqlHeapTupleInsert(rel, tuple,
-                                      is_internal,
-                                      with_returning);
-#elif define(HAVE_FOO_SECURITY)
-    if (fooSecurityIsEnabled())
+    /* A wired DAC check */
+    if (!rowaclHeapTupleInsert(rel, tuple,
+                               is_internal,
+                               with_returning))
+        return false;
+
+    switch (pgace_feature)
+    {
+#ifdef HAVE_SELINUX
+    case PGACE_FEATURE_SELINUX:
+        if (sepgsqlIsEnabled())
+            return sepgsqlHeapTupleInsert(rel, tuple,
+                                          is_internal,
+                                          with_returning);
+        break;
+#endif
+#ifdef HAVE_FOO_SECURITY
+    case PGACE_FEATURE_FOO_SECURITY:
         return fooSecurityHeapTupleInsert(rel, tuple,
                                           is_internal,
                                           with_returning);
+        break;
 #endif
+    default:
+        break;
+    }
     return true;
 }
 </programlisting>
@@ -1406,7 +1540,7 @@ pgaceHeapTupleInsert(Relation rel, HeapTuple tuple,
    </sect2>
 
    <sect2>
-     <title>Security Attribute Management</title>
+     <title>Management of Security Label</title>
 
      <para>
        Security id of tuples are stored in the padding area of
