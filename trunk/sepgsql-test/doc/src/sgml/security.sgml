@@ -1337,69 +1337,47 @@ UPDATE 2
    <para>
      This chapter introduces the design of PGACE (PostgreSQL Access
      Control Extension) security framework.
-
+   </para>
+   <para>
      It enables to host various kind of enhanced security features
-     based on different security design, different platforms and
-     so on.
+     based on different security design, granularity and platforms.
 
-     
-     
-
-
-     It enables to add various kind of enhanced security mechanism
-     and a hardwired DAC mechanism (Row-level Database ACLs) with
-     mini
-
-
-     It enables to add various kind of security subsystems based on
-     different access control models and platforms (we call it as
-     "the guest") with minimun impact toward core PostgreSQL.
+     The Row-level Database ACLs feature is always enabled as
+     a common DAC policy on databses, and it also gives users
+     a chance to choose one or no MAC features.
    </para>
-
    <para>
-     PGACE provides two major facilities.
+     It allows users to choose a MAC feature via a GUC parameter of
+     <literal>pgace_feature</literal> at
+     <filename>$PGDATA/postgresql.conf</filename>.
+     Its default is <literal>none</literal>, and currently we have
+     <literal>selinux</literal> as a candidate.
    </para>
-
-   <para>     
-     One is a set of security hooks injected into several strategic points
-     within core PostgreSQL. The guest can utilize these hooks to invoke
-     itself, and make a its decision on the strategic point.
-
-     Any PGACE hooks are declared at
-     <filename>src/include/security/pgace.h</filename>, as inline
-     functions with short descriptions.
-
-     The guest can extend these hooks to invoke its implementation
-     when it is activated.
-     Any platform dependency have to be put in the guest implementation,
-     because PGACE hooks are declared completely platform independent
-     hooks.
-   </para>
-
    <para>
-     The other is a facility to manage security attribute of each tuple.
-     It enables the guest to make its decision based on a security
-     attribute with minimum storage comsumption.
-
-     In the most cases, security attribute has a text representation
-     but massive object shares one or several attributes.
-
-     PGACE utilize this characteristic to reduce storage comsumption
-     using an alternate key called as security id.
-
-     The security id is an integer value with <literal>sizeof(Oid)</literal>
-     width, and can be used to indicate <literal>oid</literal> attribute
-     of <structname>pg_security</structname> which hold a text representation.
-
-     PGACE provides utility functions to translate between a security id
-     and text representation for internal use.
+     PGACE consists of two major facilities.
+     The one is a set of security hooks injected to some of strategic
+     points in the core PostgreSQL. It enables to implement new
+     enhanced security feature with minimum impact to the core code.
+     The other is management of security attribute.
+     Well-known security model requires that objects should have
+     proper security attribute (like a security context). It enables
+     to avoid duplication of code between several security features.
    </para>
 
    <sect2>
      <title>Security Hooks</title>
-
      <para>
-       The following hooks is invoked just before insertion of a new tuple.
+       The security hooks are declared at
+       <filename>src/include/security/pgace.h</filename>,
+       as a set of inline functions with short descriptions about
+       its specifications.
+
+       The guest of PGACE can put a code to invoke itself within
+       the inline functions. The following example shows the
+       step to enhance PGACE security framework.
+     </para>
+     <para>
+       The following hooks is invoked just before inserting a new tuple.
 
        When the hooks returns <literal>false</literal> to the caller,
        insertion of a new tuple is skipped. Otherwise, the rest of steps
@@ -1506,6 +1484,60 @@ pgaceHeapTupleInsert(Relation rel, HeapTuple tuple,
      </para>
 
    </sect2>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+   <para>     
+     One is a set of security hooks injected into several strategic points
+     within core PostgreSQL. The guest can utilize these hooks to invoke
+     itself, and make a its decision on the strategic point.
+
+     Any PGACE hooks are declared at
+     <filename>src/include/security/pgace.h</filename>, as inline
+     functions with short descriptions.
+
+     The guest can extend these hooks to invoke its implementation
+     when it is activated.
+     Any platform dependency have to be put in the guest implementation,
+     because PGACE hooks are declared completely platform independent
+     hooks.
+   </para>
+
+   <para>
+     The other is a facility to manage security attribute of each tuple.
+     It enables the guest to make its decision based on a security
+     attribute with minimum storage comsumption.
+
+     In the most cases, security attribute has a text representation
+     but massive object shares one or several attributes.
+
+     PGACE utilize this characteristic to reduce storage comsumption
+     using an alternate key called as security id.
+
+     The security id is an integer value with <literal>sizeof(Oid)</literal>
+     width, and can be used to indicate <literal>oid</literal> attribute
+     of <structname>pg_security</structname> which hold a text representation.
+
+     PGACE provides utility functions to translate between a security id
+     and text representation for internal use.
+   </para>
+
 
    <sect2>
      <title>Management of Security Label</title>
