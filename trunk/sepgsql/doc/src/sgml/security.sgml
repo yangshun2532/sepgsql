@@ -606,7 +606,7 @@ postgres=#
 </sect1>
 
 <sect1 id="security-sepgsql-admin">
-   <title>Administration of SE-PostgreSQL</title>
+   <title>SE-PostgreSQL Administration</title>
 
    <sect2>
      <title>Build and Installation</title>
@@ -1076,112 +1076,106 @@ remote 192.168.1.200
  </sect1>
 
  <sect1 id="security-row-level-acl">
-   <title>Row-level Database ACL</title>
+   <title>Row-level Database ACLs</title>
    <para>
-     This chapter introduces design and implementation of row-level database acl in
-     PostgreSQL. It enables us to assign individual acls for each tuples, and works
-     as a supplemental facility of existing database acls applied to table, column
-     and so on.
+     This chapter introduces design and implementation of the Row-level
+     Database ACLs in PostgreSQL. It enables to assign indivisual ACLs
+     for each tuples, and works as a supplemental facility of existing
+     database ACLs applied to tables, columns and so on.
    </para>
 
    <sect2>
      <title>Design</title>
      <para>
-       The design of row-level database acl feature is inherited from the existing
-       access control mechanism. For example, it is a sort of discretionary access
-       control mechanism, so it allows the resource owners to change its access
-       control rights, and it does not prevent any actions invoked from database
-       superusers.
+       The design of Row-level Aatabase ACLs feature inherits many things
+       from existing access control mechanism. For example, it is a sort
+       of discretionary access control mechanism, so it allows owner of
+       resources to change its access control rights. It does not prevent
+       anything invoked from database superusers.
      </para>
      <para>
-       This feature is implemented as a guest of the PGACE Security Framework,
-       so we can activate it exclusively for any other enhanced security features
-       like SE-PostgreSQL.
+       This feature is implemented as a guest of PGACE security framework,
+       but wired feature, not a selectable one.
      </para>
      <para>
-       It works as if there is a filter to drop violated tuples between tables
-       and database clients. Per-tuple acl is checked when the executor scans
-       target relations, and the feature makes decision whether the fetched
-       tuple should be returned, or not.
+       It works as if here is a filter to drop violated tuples on scanning
+       the relation. Just before the executor scans relation, tables and
+       columns level ACLs are also checked, and the feature makes decision
+       whether the tuple should be returned, ot not.
+     </para>
+     <para>
+       We provides four kind of permissions on tuples.
+       These are <literal>SELECT</literal>, <literal>UPDATE</literal>,
+       <literal>DELETE</literal> and <literal>REFERENCES</literal>.
 
-       We provides four permission for tuples. These are <literal>SELECT</literal>,
-       <literal>UPDATE</literal>, <literal>DELETE</literal> and
-       <literal>REFERENCES</literal>. Please note that <literal>INSERT</literal>
-       permission is not provided, because the target does not exist when it should
-       be checked. You have to control insertion of tuples by the table level
-       database acls.
+       Please note that <literal>INSERT</literal> permission is not available,
+       because the target does not exist when it should be checked.
+
+       You should control insertion of tuples via table-level ACLs.
      </para>
      <para>
-       PostgreSQL implements foreign key constraint as built-in trigger functions,
+       PostgreSQL has foreign key constrint as built-in trigger functions,
        and it invokes another query to keep referential integrities.
-       It is an exception case of the filtering behavior. If the query tries to
-       fetch a violated tuple, it raises an error to abort the current transaction,
-       not a simple filter for them.
+       It is an exception case of the filtering. In this case, it raises
+       an error to abort current transation, if the query tries to fetch
+       a violated tuple.
+       It helps referential integrities from global viewpoint, but,
+       please note that it has a possibility unprivilged users infer
+       existance of one or more invisible tuples.
+     </para>
+     <para>
+       This feature is activated via table option of
+       <literal>row_level_acl</literal>. It can heve either of
+       <literal>on</literal> or <literal>off</literal> in the default.
 
-       It helps referential integrities, but, please note that there is a possibility
-       unprivileged client infer existance of one or more invisible tuples.
-     </para>
-     <para>
-       We can confirm or setup the per-tuple acl via <literal>tuple_acl</literal>
-       system attribute newly added. We can modify it via <literal>UPDATE</literal>
-       statement, and insert a tuple with specified per-tuple acl via
-       <literal>INSERT</literal> statement.
-     </para>
-     <para>
-       It assigns a default acl newly inserted tuples. If no special configuration
-       here, it allows world to do anything for compatible behavior. However, we
-       can specify the default acl using enhanced <command>CREATE TABLE</command>
-       or <command>ALTER TABLE</command> statement with <literal>DEFAULT_ACL</literal>
-       option.
+       It enables us to refer or set per-tuple ACLs via
+       <literal>security_acl</literal> system column newly added.
+       We can modify it via <literal>UPDATE</literal>, <literal>INSERT</literal>
+       with explict ACLs on the system column.
+
+       A feature to set default ACLs is also available.
+       A new table option of <literal>default_row_acl</literal> enables to
+       specify a default ACLs of tuples, when no explicit ACLs are given
+       from users on its insertion.
      </para>
    </sect2>
 
    <sect2>
      <title>Installation</title>
      <para>
-       You have to give a <literal>--enable-row-acl</literal> option to configure
-       script, but rest of installation processes are unchanged.
-<screen>
-<prompt>$ </prompt><userinput>./configure --enable-row-acl</userinput>
-<prompt>$ </prompt><userinput>make</userinput>
-<prompt>$ </prompt><userinput>su</userinput>
-<prompt># </prompt><userinput>make install</userinput>
-</screen>
-     </para>
-     <para>
-       Make a new directory to store the database cluster, and change its ownership
-       to the server process which you intend it to work.
-       Then, kick the <command>initdb</command> and <command>pg_ctl start</command>.
-     </para>
-
-     <para>
-       It adds a guc parameter to turn on/off the feature.
-       The <literal>row_acl_is_enabled</literal> can have a boolean value, and
-       it disables the row-level database acl feature when the server process
-       is started up with <literal>false</literal> in this guc.
-
-       It does not allow to change the variable in runtime, so you have to
-       put an entry on <literal>$PGDATA/postgresql.conf</literal>.
-       When omitted, this feature is enabled.
+       We don't need anything to install.
+       The Row-level Database ACLs are compiled in the default.
      </para>
    </sect2>
 
    <sect2>
      <title>Administration</title>
      <sect3>
-       <title>Set up per-tuple acls</title>
+       <title>Setup Row-level ACLs</title>
        <para>
-	 The per-tuples acls are configured vid <literal>tuple_acl</literal> system
-	 attribute which is writable.
-	 We can use the column as an entity of the target list of <literal>UPDATE</literal>,
-	 <literal>INSERT</literal> or <literal>COPY FROM</literal> statement.
-	 It also provides helpful functions to edit acl strings, like
-	 <literal>rowacl_grant()</literal> and so on.
+	 We need to add <literal>row_level_acl</literal> table option on
+	 <literal>CREATE TABLE</literal> or <literal>ALTER TABLE</literal>
+	 to activate the Row-level Database ACLs.
+       </para>
 <screen>
-<prompt>postgres=# </prompt><userinput>UPDATE drink SET tuple_acl = '{=r/kaigai}' WHERE id in (3,4,5);</userinput>
+<prompt># </prompt><userinput>CREATE TABLE drink (
+      id      int primary key,
+      name    text,
+      price   int
+  ) WITH (row_level_acl=on);</userinput>
+NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "drink_pkey" for table "drink"
+CREATE TABLE
+</screen>
+       <para>
+	 We can set Row-level ACLs via <literal>security_acl</literal>
+	 system column which is writable.
+	 The following queries are example to set up them.
+       </para>
+<screen>
+<prompt># </prompt><userinput>UPDATE drink SET security_acl = '{=r/postgres}' WHERE id in (3,4,5);</userinput>
 UPDATE 3
-<prompt>postgres=# </prompt><userinput>SELECT tuple_acl, * FROM drink order by id;</userinput>
-           tuple_acl            | id | name  | price
+<prompt># </prompt><userinput>SELECT security_acl, * FROM drink order by id;</userinput>
+         security_acl           | id | name  | price
 --------------------------------+----+-------+-------
  {kaigai=rwd/kaigai}            |  1 | water |   100
  {kaigai=rwd/kaigai}            |  2 | coke  |   120
@@ -1191,145 +1185,54 @@ UPDATE 3
  {kaigai=r/kaigai,ymj=r/kaigai} |  6 | sake  |   320
 (6 rows)
 </screen>
-       </para>
-
        <para>
-	 The client must have ownership of the relation or privileges of database
-	 superuser, whenever he tries to update the <literal>tuple_acl</literal>.
-	 Please note that the feature considers the owner of table is the owner
-	 of tuples stored in, not a person who inserted the tuple.
-       </para>
+	 The database user must have ownership of the relation or privileges
+	 of database superuser, whenever we tries to update the
+	 <literal>security_acl</literal>.
 
-       <para>
-	 The <command>CREATE TABLE</command> or <command>ALTER TABLE</command> with
-	 <literal>DEFAULT_ACL</literal> option enables to put individual default
-	 acl for the table. The default acl is assigned to newly inserted tuples
-	 without explicit acls. If no default acl is configured to the table,
-	 it assigns a acl which allows anything to world.
+	 Please note that the feature considers the owner of table is the
+	 owner of tuples stored in, not a man who inserted the tuple.
        </para>
      </sect3>
 
      <sect3>
-       <title>backup and restore</title>
+       <title>Backup and Restore</title>
        <para>
-	 The <command>pg_dump</command> and <command>pg_dumpall</command> got a new
-	 option of <literal>--row-level-acl</literal>. This option enables to backup
-	 the contents of tables with its individual acls.
-	 The dumped data can be restored via <command>pg_restore</command>.
+	 The <command>pg_dump</command> and <command>pg_dumpall</command>
+	 has a option to dump tables with Row-level ACLs, which is
+	 <literal>--security-acl</literal>.
        </para>
-
        <para>
-	 Example:
+	 It enables to contain <literal>security_acl</literal> system
+	 column if Row-level ALCs feature is enabled on the target
+	 table.
+       </para>
 <screen>
-<prompt>$ </prompt><userinput>pg_dump --row-level-acl postgres</userinput>
+<prompt>$ </prompt><userinput>pg_dump --security-acl postgres</userinput>
           :
---
--- Name: drink; Type: TABLE; Schema: public; Owner: kaigai; Tablespace:
---
-
 CREATE TABLE drink (
     id integer NOT NULL,
-    name character varying(48),
+    name text,
     price integer
-) DEFAULT_ACL = 'default={kaigai=rwd/kaigai}';
+)
+WITH (row_level_acl=on);
           :
 --
--- Data for Name: t1; Type: TABLE DATA; Schema: public; Owner: kaigai
+-- Data for Name: drink; Type: TABLE DATA; Schema: public; Owner: kaigai
 --
 
-COPY t1 (tuple_acl, id, name, price) FROM stdin;
+COPY drink (security_acl, id, name, price) FROM stdin;
 {kaigai=rwd/kaigai}     1       water   100
 {kaigai=rwd/kaigai}     2       coke    120
-{kaigai=rwd/kaigai,ymj=r/kaigai}        3       juice   130
-{kaigai=rwd/kaigai,ymj=r/kaigai}        4       cofee   180
-{kaigai=r/kaigai,ymj=r/kaigai}  5       beer    240
-{kaigai=r/kaigai,ymj=r/kaigai}  6       sake    320
-{kaigai=r/kaigai}       7       wine    380
-{kaigai=r/kaigai}       8       tea     140
+{=r/kaigai}     3       juice   130
+{=r/kaigai}     4       coffee  180
+{=r/kaigai}     5       beer    240
+{kaigai=r/kaigai,ymj=rw/kaigai} 6       sake    320
 \.
           :
 </screen>
-       </para>
-     </sect3>
-
-     <sect3>
-       <title>related functions</title>
-
-       <variablelist>
-	 <varlistentry>
-	   <term><literal>Text rowacl_grant(Oid tableoid, Text tuple_acl, Text users, Text permissions)</literal></term>
-	   <listitem>
-	     <para>
-	       This function compute a new acl string which is a combination of
-	       the given acl string and newly granted permissions.
-	       We can use the result of the function as a new value of
-	       <literal>tuple_acl</literal> to be given.
-	     </para>
-	     <para>
-	       We can enumerate user names and permissions separated by comma.
-	       The permissions have to be some of <literal>select</literal>,
-	       <literal>update</literal>, <literal>delete</literal>,
-	       <literal>references</literal> and <literal>all</literal>.
-	       The <literal>all</literal> is extracted to the other four
-	       permissions.
-	     </para>
-	     <para>
-<screen>
-<prompt>postgres=# </prompt><userinput>SELECT rowacl_grant(tableoid, tuple_acl, 'tak', 'select'), * FROM tbl;</userinput>
-               rowacl_grant                | x |  y
--------------------------------------------+---+-----
- {=rwdx/kaigai,ymj=d/kaigai,tak=r/kaigai}  | 1 | aaa
- {=rwdx/kaigai,tak=rw/kaigai,ymj=d/kaigai} | 2 | bbb
- {=rwdx/kaigai,tak=rw/kaigai}              | 3 | ccc
- {=rwdx/kaigai,tak=r/kaigai}               | 4 | ddd
-(4 rows)
-
-<prompt>postgres=# </prompt><userinput>UPDATE tbl SET tuple_acl = rowacl_grant(tableoid, tuple_acl, 'tak', 'select') WHERE x in (2,4);</userinput>
-UPDATE 2
-
-<prompt>postgres=# </prompt><userinput>SELECT tuple_acl, * FROM tbl;</userinput>
-                 tuple_acl                 | x |  y
--------------------------------------------+---+-----
- {=rwdx/kaigai,ymj=d/kaigai}               | 1 | aaa
- {=rwdx/kaigai,tak=rw/kaigai,ymj=d/kaigai} | 2 | bbb
- {=rwdx/kaigai,tak=w/kaigai}               | 3 | ccc
- {=rwdx/kaigai,tak=r/kaigai}               | 4 | ddd
-(4 rows)
-</screen>
-	     </para>
-	   </listitem>
-	 </varlistentry>
-
-	 <varlistentry>
-	   <term><literal>Text rowacl_revoke(Oid tableoid, Text tuple_acl, Text users, Text permissions)</literal></term>
-	   <listitem>
-	     <para>
-	       This function also compute a new acl as a residual of the given acl
-	       on subtraction with newly revoked permissions.
-	       We can use the result of the function as a new value of
-	       <literal>tuple_acl</literal>.
-	     </para>
-	   </listitem>
-	 </varlistentry>
-
-	 <varlistentry>
-	   <term><literal>Text rowacl_revoke_cascade(Oid tableoid, Text tuple_acl, Text users, Text permissions)</literal></term>
-	   <listitem>
-	     <para>
-	       This function also compute a new acl as a residual of the given acl
-	       on subtraction with newly revoked permissions, as the
-	       <literal>rowacl_revoke()</literal> doing.
-
-	       The only difference is this function revokes permission in
-	       cascading mode.
-	     </para>
-	   </listitem>
-	 </varlistentry>
-
-       </variablelist>
      </sect3>
    </sect2>
-
  </sect1>
 
  <sect1 id="security-pgace-framework">
@@ -1355,33 +1258,36 @@ UPDATE 2
    </para>
    <para>
      PGACE consists of two major facilities.
-     The one is a set of security hooks injected to some of strategic
-     points in the core PostgreSQL. It enables to implement new
-     enhanced security feature with minimum impact to the core code.
-     The other is management of security attribute.
-     Well-known security model requires that objects should have
-     proper security attribute (like a security context). It enables
-     to avoid duplication of code between several security features.
+     The one is a set of security hooks deployed on some of strategic
+     points in the core PostgreSQL. It enables to implement new enhanced
+     security features with minimum impact to the core code.
+     The other is facilities to manage security attribute which can be
+     used to make a decision in access controls.
    </para>
 
    <sect2>
      <title>Security Hooks</title>
      <para>
-       The security hooks are declared at
-       <filename>src/include/security/pgace.h</filename>,
-       as a set of inline functions with short descriptions about
-       its specifications.
+       All the security hooks are declared as inline functions at
+       <filename>src/include/security/pgace.h</filename>.
 
-       The guest of PGACE can put a code to invoke itself within
-       the inline functions. The following example shows the
-       step to enhance PGACE security framework.
+       The security hooks have entry points to invoke an enhanced security
+       feature chosen by users, so invoked one can return its decision on
+       the source strategic point.
      </para>
      <para>
-       The following hooks is invoked just before inserting a new tuple.
+       For example, the following <literal>pgaceHeapTupleInsert</literal>
+       is invoked just before inserting a new tuple into a relation.
 
-       When the hooks returns <literal>false</literal> to the caller,
-       insertion of a new tuple is skipped. Otherwise, the rest of steps
-       are done normally.
+       If the hook returns <literal>false</literal> to the caller,
+       this insertion will be skipped. Otherwise, rest of steps will be
+       done notmally.
+
+       The enhanced security feature can make its decision based on the
+       given arguments which shows context in the invocation of hook.
+       The <literal>rel</literal> and <literal>tuple</literal> show
+       the target relation and tuple in this example.
+     </para>
 <programlisting>
 static inline bool
 pgaceHeapTupleInsert(Relation rel, HeapTuple tuple,
@@ -1409,27 +1315,25 @@ pgaceHeapTupleInsert(Relation rel, HeapTuple tuple,
     return true;
 }
 </programlisting>
-     </para>
-
      <para>
-       The author of the security subsystem has to keep the default
-       behavior when his module is disabled.
+       This example shows a wired security feature (Row-level Database
+       ACLs) and one or no selectable feature are invoked on a tuple
+       insertion.
 
-       In this example, SELinux related function is enclosed by
-       <literal>#ifdef</literal> block, and invoked only when
-       it isactivated. (<function>sepgsqlIsEnabled()</function>
-       returns <literal>true</literal> only when SE-PostgreSQL
-       is enabled.)
+       It allows users to choose one of enhanced security feature from
+       candidates via a GUC parameter of <literal>pgace_feature</literal>.
+       In this case, SE-PostgreSQL is an only candidate when the binary
+       is compiled with <option>--enable-selinux</option> option.
      </para>
-
      <para>
-       If you add a new security subsystem, add a new
-       <literal>#ifdef</literal> block to enclose invocation
-       code to avoid conflicts.
+       If you add a new security feature, you should add a new case
+       branch in the <literal>switch</literal> statement and an option
+       to the GUC parameter, for users selection.
 
-       The following example shows a case when you add a new security
-       subsystem activated witth <literal>HAVE_FOO_SECURITY</literal>.
-
+       The following example shows a case when someone add a new security
+       feature compiled when <literal>HAVE_FOO_SECURITY</literal> is
+       defined on build-time.
+     </para>
 <programlisting>
 static inline bool
 pgaceHeapTupleInsert(Relation rel, HeapTuple tuple,
@@ -1464,130 +1368,88 @@ pgaceHeapTupleInsert(Relation rel, HeapTuple tuple,
     return true;
 }
 </programlisting>
-     </para>
-
      <para>
-       Note that two or more security subsystem cannot be activated
-       in build time (also in run time, no need to say).
-       These are mutually exclusive, because we don't provide
-       a framework to associate several security attributes
-       within a tuple and cannot be shared.
+       Please note that individual specifications of security hooks are
+       described in <filename>src/include/security/pgace.h</filename>
+       as comment. It will help you to understand.
+
+       If a part of given hooks are unnecessary for your security design,
+       keep it as is.
      </para>
-
-     <para>
-       Some of hooks are declared as <literal>void</literal> typed
-       functions.
-
-       If your security subsystem decide the required is not allowed
-       in these hooks, it can generate an error to abort the series
-       of steps.
-     </para>
-
    </sect2>
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-   <para>     
-     One is a set of security hooks injected into several strategic points
-     within core PostgreSQL. The guest can utilize these hooks to invoke
-     itself, and make a its decision on the strategic point.
-
-     Any PGACE hooks are declared at
-     <filename>src/include/security/pgace.h</filename>, as inline
-     functions with short descriptions.
-
-     The guest can extend these hooks to invoke its implementation
-     when it is activated.
-     Any platform dependency have to be put in the guest implementation,
-     because PGACE hooks are declared completely platform independent
-     hooks.
-   </para>
-
-   <para>
-     The other is a facility to manage security attribute of each tuple.
-     It enables the guest to make its decision based on a security
-     attribute with minimum storage comsumption.
-
-     In the most cases, security attribute has a text representation
-     but massive object shares one or several attributes.
-
-     PGACE utilize this characteristic to reduce storage comsumption
-     using an alternate key called as security id.
-
-     The security id is an integer value with <literal>sizeof(Oid)</literal>
-     width, and can be used to indicate <literal>oid</literal> attribute
-     of <structname>pg_security</structname> which hold a text representation.
-
-     PGACE provides utility functions to translate between a security id
-     and text representation for internal use.
-   </para>
-
-
    <sect2>
-     <title>Management of Security Label</title>
-
+     <title>Security Label Management</title>
      <para>
-       Security id of tuples are stored in the padding area of
-       <structname>HeapTupleHeader</structname>.
-
-       The guest can get or set the security id of given tuple using
-       <function>HeapTupleGetSecurity()</function> and
-       <function>HeapTupleSetSecurity()</function> macros.
-
-       When the tuple does not have its security id, it returns
-       <literal>InvalidOid</literal> and the guest have to handle it.
+       The security label is a human readable security attribute which
+       can be export/import via <literal>security_label</literal> system
+       column.
+       PGACE provides a common facility to manage the security label of
+       tuples for various kind of security features.
+       It enables an enhanced security feature chosen to store and featch
+       a security label of tuples, and allows it to make a decision in
+       access controls based on the label.
      </para>
-
      <para>
-       PGACE provides an internal API to translate between
-       security id and text representation.
+       We can export/import the security labels in text format, but
+       they are handled as an alternative identifier internally.
 
-       The <function>pgaceLookupSecurityLabel()</function> returns
-       a text representation for the given security id.
-
-       On the other hand, <function>pgaceLookupSecurityId()</function>
-       returns a security id for the given text representation.
-       When the given text representation was not found on
-       <structname>pg_security</structname>, it insert a new entry
-       automatically.
-
-       Thus, the guest subsystem should pay attention not to invoke
-       <function>pgaceLookupSecurityId()</function> in read-only
-       transaction.
+       We call it as a security identifier (sid), and it has a length
+       of <literal>sizeof(Oid)</literal>. The sid references to
+       an entry within <literal>pg_security</literal> system catalog,
+       and the entry holds a human readable text representation.
      </para>
-
      <para>
-       A constant of <literal>SECURITY_SYSATTR_NAME</literal> defines
-       the name of security system column. It provides a way to expose
-       the security attribute of each tuple in text representation.
+       We can have the sid on the padding field of
+       <literal>HeapTupleHeader</literal>, as if oid doing.
+       We can fetch it with <literal>HeapTupleGetSecLabel()</literal>.
 
-       The system column has a characteristic, that is writable.
+       If <literal>pgaceTupleDescHasSecLabel()</literal> hook returns
+       <literal>true</literal> for the given relation, it indicates
+       to allocate sid field on the tuples within the relation.
+       In this case, we can set a sid using
+       <literal>HeapTupleSetSecLabel()</literal> macro.
+     </para>
+     <para>
+       PGACE provides a few utility functions.
 
-       The security system column is declared as a TEXT type attribute,
-       and user can specify the target of <command>UPDATE</command> or
-       <command>INSERT</command>.
+       <literal>pgaceLookupSecurityId()</literal> returns a sid
+       towards given security label in text format. If it is not on
+       <literal>pg_security</literal>, it automatically inserts a new
+       entry and returns its sid.
 
-       PGACE internally translates the specified text representation
-       into a security id, and stores it within a new tuple.
+       <literal>pgaceLookupSecurityLabel()</literal> returns a security
+       label for the given sid.
+       If it is not on <literal>pg_security</literal>, it returns
+       <literal>NULL</literal>, so the guest should handler it as a
+       something like default or unlabeled.
+     </para>
+     <para>
+       The <literal>security_label</literal> system column allows users
+       to input a security label in text format on <command>INSERT</command>,
+       <command>UPDATE</command>, <command>COPY</command> and so on.
 
-       If the guest uses the feature of security attribute,
-       it has to be able to handle these translation.
+       The given security label is translated into sid automatically, and
+       put on the security field of tuples. If user provides nothing as
+       a security label, it is initialized as <literal>InvalidOid</literal>.
+
+       The <literal>pgaceHeapTupleInsert()</literal> or others are invoked
+       later, so the enhanced security feature can know whether user gives
+       a proper security label or not. If no security label is given, it
+       can assign a default security label. If violated security label is
+       given, it can raise an error.
+
+       Vice versa, when user refers <literal>security_label</literal>,
+       the sid of tuples are automatically translated into text format.
+       If the sid is invalid, the enhanced security feature can return
+       an alternative string using
+       <literal>pgaceUnlabeledSecurityLabel()</literal> hook.
+     </para>
+     <para>
+       The Row-level Database ACLs uses the facility to manage security
+       labels to store its ACLs. Tules have a capability to store both
+       of sids simultaneously, and enhanced security features should
+       not touch them.
      </para>
    </sect2>
  </sect1>
