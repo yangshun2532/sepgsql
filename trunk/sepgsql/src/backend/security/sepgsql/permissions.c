@@ -431,9 +431,9 @@ sepgsqlCheckModuleInstallPerms(const char *filename)
 	fullpath = expand_dynamic_library_name(filename);
 	if (getfilecon_raw(fullpath, &file_context) < 0)
 		ereport(ERROR,
-				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("SELinux: could not get context: %s", fullpath)));
-
+				(errcode_for_file_access(),
+				 errmsg("SELinux: could not get security context \"%s\": %m",
+						fullpath)));
 	PG_TRY();
 	{
 		sepgsqlComputePermission(sepgsqlGetClientContext(),

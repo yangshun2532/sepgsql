@@ -310,8 +310,9 @@ sepgsqlLoadSharedModule(const char *filename)
 
 	if (getfilecon_raw(filename, &filecon) < 0)
 		ereport(ERROR,
-				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("SELinux: could not get context of %s", filename)));
+				(errcode_for_file_access(),
+				 errmsg("SELinux: could not get security context \"%s\": %m",
+						filename)));
 	PG_TRY();
 	{
 		sepgsqlComputePermission(sepgsqlGetDatabaseContext(),
@@ -468,8 +469,9 @@ sepgsqlLargeObjectImport(Oid loid, int fdesc, const char *filename)
 
 	if (fgetfilecon_raw(fdesc, &tcontext) < 0)
 		ereport(ERROR,
-				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("SELinux: could not get context of %s", filename)));
+				(errcode_for_file_access(),
+				 errmsg("SELinux: could not get security context \"%s\": %m",
+						filename)));
 	PG_TRY();
 	{
 		sepgsqlComputePermission(sepgsqlGetClientContext(),
@@ -499,8 +501,9 @@ sepgsqlLargeObjectExport(Oid loid, int fdesc, const char *filename)
 
 	if (fgetfilecon_raw(fdesc, &tcontext) < 0)
 		ereport(ERROR,
-				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("SELinux: could not get context of %s", filename)));
+				(errcode_for_file_access(),
+				 errmsg("SELinux: could not security context \"%s\": %m",
+						filename)));
 	PG_TRY();
 	{
 		sepgsqlComputePermission(sepgsqlGetClientContext(),
