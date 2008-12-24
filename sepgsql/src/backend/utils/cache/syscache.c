@@ -588,7 +588,7 @@ static const struct cachedesc cacheinfo[] = {
 	{SecurityRelationId,		/*SECURITYOID */
 		SecurityOidIndexId,
 		0,
-		1                
+		1,
 		{
 			ObjectIdAttributeNumber,
 			0,
