@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/catalog/pg_proc.c,v 1.155 2008/12/04 17:51:26 petere Exp $
+ *	  $PostgreSQL: pgsql/src/backend/catalog/pg_proc.c,v 1.157 2008/12/19 18:25:19 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -27,6 +27,7 @@
 #include "funcapi.h"
 #include "mb/pg_wchar.h"
 #include "miscadmin.h"
+#include "nodes/nodeFuncs.h"
 #include "parser/parse_type.h"
 #include "security/pgace.h"
 #include "tcop/pquery.h"
@@ -74,10 +75,10 @@ ProcedureCreate(const char *procedureName,
 				Datum allParameterTypes,
 				Datum parameterModes,
 				Datum parameterNames,
+				List *parameterDefaults,
 				Datum proconfig,
 				float4 procost,
 				float4 prorows,
-				List *parameterDefaults,
 				void *pgaceItem)
 {
 	Oid			retval;
@@ -293,6 +294,8 @@ ProcedureCreate(const char *procedureName,
 	values[Anum_pg_proc_prorows - 1] = Float4GetDatum(prorows);
 	values[Anum_pg_proc_provariadic - 1] = ObjectIdGetDatum(variadicType);
 	values[Anum_pg_proc_proisagg - 1] = BoolGetDatum(isAgg);
+	/* XXX we don't currently have a way to make new window functions */
+	values[Anum_pg_proc_proiswindow - 1] = BoolGetDatum(false);
 	values[Anum_pg_proc_prosecdef - 1] = BoolGetDatum(security_definer);
 	values[Anum_pg_proc_proisstrict - 1] = BoolGetDatum(isStrict);
 	values[Anum_pg_proc_proretset - 1] = BoolGetDatum(returnsSet);
@@ -313,11 +316,8 @@ ProcedureCreate(const char *procedureName,
 		values[Anum_pg_proc_proargnames - 1] = parameterNames;
 	else
 		nulls[Anum_pg_proc_proargnames - 1] = true;
-	if (parameterDefaults != PointerGetDatum(NULL))
-	{
-		Assert(list_length(parameterDefaults) > 0);
+	if (parameterDefaults != NIL)
 		values[Anum_pg_proc_proargdefaults - 1] = CStringGetTextDatum(nodeToString(parameterDefaults));
-	}
 	else
 		nulls[Anum_pg_proc_proargdefaults - 1] = true;
 	values[Anum_pg_proc_prosrc - 1] = CStringGetTextDatum(prosrc);
@@ -389,6 +389,57 @@ ProcedureCreate(const char *procedureName,
 					errmsg("cannot change return type of existing function"),
 				errdetail("Row type defined by OUT parameters is different."),
 						 errhint("Use DROP FUNCTION first.")));
+		}
+
+		/*
+		 * If there are existing defaults, check compatibility: redefinition
+		 * must not remove any defaults nor change their types.  (Removing
+		 * a default might cause a function to fail to satisfy an existing
+		 * call.  Changing type would only be possible if the associated
+		 * parameter is polymorphic, and in such cases a change of default
+		 * type might alter the resolved output type of existing calls.)
+		 */
+		if (oldproc->pronargdefaults != 0)
+		{
+			Datum		proargdefaults;
+			bool		isnull;
+			List	   *oldDefaults;
+			ListCell   *oldlc;
+			ListCell   *newlc;
+
+			if (list_length(parameterDefaults) < oldproc->pronargdefaults)
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_FUNCTION_DEFINITION),
+						 errmsg("cannot remove parameter defaults from existing function"),
+						 errhint("Use DROP FUNCTION first.")));
+
+			proargdefaults = SysCacheGetAttr(PROCNAMEARGSNSP, oldtup,
+											 Anum_pg_proc_proargdefaults,
+											 &isnull);
+			Assert(!isnull);
+			oldDefaults = (List *) stringToNode(TextDatumGetCString(proargdefaults));
+			Assert(IsA(oldDefaults, List));
+			Assert(list_length(oldDefaults) == oldproc->pronargdefaults);
+
+			/* new list can have more defaults than old, advance over 'em */
+			newlc = list_head(parameterDefaults);
+			for (i = list_length(parameterDefaults) - oldproc->pronargdefaults;
+				 i > 0;
+				 i--)
+				newlc = lnext(newlc);
+
+			foreach(oldlc, oldDefaults)
+			{
+				Node   *oldDef = (Node *) lfirst(oldlc);
+				Node   *newDef = (Node *) lfirst(newlc);
+
+				if (exprType(oldDef) != exprType(newDef))
+					ereport(ERROR,
+							(errcode(ERRCODE_INVALID_FUNCTION_DEFINITION),
+							 errmsg("cannot change data type of existing parameter default value"),
+							 errhint("Use DROP FUNCTION first.")));
+				newlc = lnext(newlc);
+			}
 		}
 
 		/* Can't change aggregate status, either */
