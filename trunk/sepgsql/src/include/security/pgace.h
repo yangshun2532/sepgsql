@@ -1586,9 +1586,9 @@ extern char *pgaceSidToSecurityLabel(Oid sid);
 extern List *pgaceRelationAttrList(CreateStmt *stmt);
 
 extern void pgaceCreateRelationCommon(Relation rel, HeapTuple tuple,
-									  List *pgace_attr_list);
+									  List *pgaceAttrList);
 extern void pgaceCreateAttributeCommon(Relation rel, HeapTuple tuple,
-									   List *pgace_attr_list);
+									   List *pgaceAttrList);
 extern void pgaceAlterRelationCommon(Relation rel, AlterTableCmd *cmd);
 
 /* Export security system columns */
