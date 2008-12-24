@@ -76,7 +76,7 @@ static void AddNewRelationTuple(Relation pg_class_desc,
 					Oid relowner,
 					char relkind,
 					Datum reloptions,
-					List *pgace_attr_list);
+					List *pgaceAttrList);
 static Oid AddNewRelationType(const char *typeName,
 				   Oid typeNamespace,
 				   Oid new_rel_oid,
@@ -872,7 +872,7 @@ heap_create_with_catalog(const char *relname,
 						 OnCommitAction oncommit,
 						 Datum reloptions,
 						 bool allow_system_table_mods,
-						 List *pgace_attr_list)
+						 List *pgaceAttrList)
 {
 	Relation	pg_class_desc;
 	Relation	new_rel_desc;
@@ -1047,13 +1047,13 @@ heap_create_with_catalog(const char *relname,
 						ownerid,
 						relkind,
 						reloptions,
-						pgace_attr_list);
+						pgaceAttrList);
 
 	/*
 	 * now add tuples to pg_attribute for the attributes in our new relation.
 	 */
 	AddNewAttributeTuples(relid, new_rel_desc->rd_att, relkind,
-						  oidislocal, oidinhcount, pgace_attr_list);
+						  oidislocal, oidinhcount, pgaceAttrList);
 
 	/*
 	 * Fixup rel->rd_att->tdhassecacl and el->rd_att->tdhasseclabel
