@@ -569,6 +569,7 @@ heap_getsysattr(HeapTuple tup, int attnum, TupleDesc tupleDesc, bool *isnull)
 
 	Assert(tup);
 
+	/* Currently, no sys attribute ever reads as NULL. */
 	if (isnull)
 		*isnull = false;
 
