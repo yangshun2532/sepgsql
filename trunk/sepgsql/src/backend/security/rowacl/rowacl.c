@@ -687,6 +687,9 @@ Datum rowaclHeapGetSecurityAclSysattr(HeapTuple tuple)
 	acl = rowaclSidToSecurityAcl(HeapTupleGetRowAcl(tuple), rform->relowner);
 
 out:
+	if (!acl)
+		acl = allocacl(0);
+
 	ReleaseSysCache(rtup);
 
 	return PointerGetDatum(acl);

@@ -603,13 +603,9 @@ heap_getsysattr(HeapTuple tup, int attnum, TupleDesc tupleDesc, bool *isnull)
 			break;
 		case SecurityAclAttributeNumber:
 			result = rowaclHeapGetSecurityAclSysattr(tup);
-			if (DatumGetPointer(result) == NULL)
-				*isnull = true;
 			break;
 		case SecurityLabelAttributeNumber:
 			result = pgaceHeapGetSecurityLabelSysattr(tup);
-			if (DatumGetPointer(result) == NULL)
-				*isnull = true;
 			break;
 		default:
 			elog(ERROR, "invalid attnum: %d", attnum);
