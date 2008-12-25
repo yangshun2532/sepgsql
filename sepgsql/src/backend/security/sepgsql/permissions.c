@@ -122,8 +122,8 @@ sepgsqlFileObjectClass(int fdesc, const char *filename)
 
 	if (fstat(fdesc, &stbuf) != 0)
 		ereport(ERROR,
-				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("SELinux: could not get file status of %s", filename)));
+				(errcode_for_file_access(),
+				 errmsg("could not stat file \"%s\": %m", filename)));
 
 	if (S_ISDIR(stbuf.st_mode))
 		return SECCLASS_DIR;
@@ -410,8 +410,7 @@ sepgsqlCheckModuleInstallPerms(const char *filename)
 	if (getfilecon_raw(fullpath, &file_context) < 0)
 		ereport(ERROR,
 				(errcode_for_file_access(),
-				 errmsg("SELinux: could not get security context \"%s\": %m",
-						fullpath)));
+				 errmsg("could not access file \"%s\": %m", fullpath)));
 	PG_TRY();
 	{
 		sepgsqlComputePermission(sepgsqlGetClientContext(),
