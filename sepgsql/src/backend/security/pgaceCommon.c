@@ -506,7 +506,7 @@ pgaceSidToSecurityLabel(Oid sid)
 		label = pgaceUnlabeledSecurityLabel();
 
 	if (!label)
-		return NULL;
+		return pstrdup("");
 
 	return pgaceTranslateSecurityLabelOut(label);
 }
@@ -514,13 +514,9 @@ pgaceSidToSecurityLabel(Oid sid)
 Datum
 pgaceHeapGetSecurityLabelSysattr(HeapTuple tuple)
 {
-	char *label;
+	Oid sid = HeapTupleGetSecLabel(tuple);
 
-	label = pgaceSidToSecurityLabel(HeapTupleGetSecLabel(tuple));
-	if (!label)
-		label = "";
-
-	return CStringGetTextDatum(label);
+	return CStringGetTextDatum(pgaceSidToSecurityLabel(sid));
 }
 
 /*****************************************************************************
