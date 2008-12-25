@@ -434,84 +434,6 @@ bool rowaclHeapTupleDelete(Relation rel, ItemPointer otid,
 }
 
 /******************************************************************
- * Table options hooks
- ******************************************************************/
-
-void rowaclGramTransformRelOptions(DefElem *defel, bool isReset)
-{
-	Oid defacl = InvalidOid;
-	char buffer[16];
-
-	if (pg_strcasecmp(defel->defname, "default_row_acl") != 0)
-		return;
-
-	if (isReset)
-		return;
-
-	if (defel->arg)
-	{
-		FmgrInfo finfo;
-		Datum acldat;
-
-		fmgr_info_cxt(F_ARRAY_IN, &finfo, CurrentMemoryContext);
-		acldat = FunctionCall3(&finfo,
-							   CStringGetDatum(strVal(defel->arg)),
-							   ObjectIdGetDatum(ACLITEMOID),
-							   Int32GetDatum(-1));
-		defacl = rowaclSecurityAclToSid(DatumGetAclP(acldat));
-	}
-	snprintf(buffer, sizeof(buffer), "%u", defacl);
-	strVal(defel->arg) = pstrdup(buffer);
-}
-
-bool rowaclGramParseRelOptions(const char *key, const char *value,
-							   StdRdOptions *result, bool validate)
-{
-	if (pg_strcasecmp(key, "row_level_acl") == 0)
-	{
-		bool row_level_acl;
-
-		result->row_level_acl = false;	/* set default */
-
-		if (!value)
-			return false;
-
-		if (!parse_bool(value, &row_level_acl))
-		{
-			if (validate)
-				ereport(ERROR,
-						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-						 errmsg("row_level_acl must be a bool: \"%s\"", value)));
-			return false;
-		}
-		result->row_level_acl = row_level_acl;
-		return true;
-	}
-	else if (pg_strcasecmp(key, "default_row_acl") == 0)
-	{
-		Oid defacl;
-
-		result->default_row_acl = InvalidOid;	/* set default */
-
-		if (!value)
-			return false;
-
-		if (!parse_int(value, (int *) &defacl, 0, NULL))
-		{
-			if (validate)
-				ereport(ERROR,
-						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-						 errmsg("row_level_acl must be a oid: \"%s\"", value)));
-			return false;
-		}
-		result->default_row_acl = defacl;
-		return true;
-	}
-
-	return false;
-}
-
-/******************************************************************
  * Row-level ACLs management
  ******************************************************************/
 
@@ -690,6 +612,54 @@ Datum rowaclHeapGetSecurityAclSysattr(HeapTuple tuple)
 	ReleaseSysCache(rtup);
 
 	return PointerGetDatum(rowaclSidToSecurityAcl(rowaclSid, relowner));
+}
+
+/******************************************************************
+ * Table options
+ ******************************************************************/
+
+bool rawaclParseRelOptsRowLevelAcl(const char *value,
+								   StdRdOptions *result, bool validate)
+{
+	bool row_level_acl;
+
+	result->row_level_acl = false;	/* set default */
+
+	if (!value)
+		return false;
+
+	if (!parse_bool(value, &row_level_acl))
+	{
+		if (validate)
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg("row_level_acl must be a bool: \"%s\"", value)));
+		return false;
+	}
+	result->row_level_acl = row_level_acl;
+	return true;
+}
+
+bool rawaclParseRelOptsDefaultRowAcl(const char *value,
+									 StdRdOptions *result, bool validate)
+{
+	FmgrInfo finfo;
+	Datum aclDat;
+
+	result->default_row_acl = InvalidOid;   /* set default */
+
+	if (!value)
+		return false;
+
+	fmgr_info_cxt(F_ARRAY_IN, &finfo, CurrentMemoryContext);
+	aclDat = FunctionCall3(&finfo,
+						   CStringGetDatum(value),
+						   ObjectIdGetDatum(ACLITEMOID),
+						   Int32GetDatum(-1));
+	result->default_row_acl
+		= rowaclSecurityAclToSid(DatumGetAclP(aclDat));
+
+	return true;
 }
 
 /******************************************************************

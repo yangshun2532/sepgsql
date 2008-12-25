@@ -797,35 +797,6 @@ pgaceGramAlterFunction(Relation rel, HeapTuple tuple, DefElem *defel)
 						"via ALTER FUNCTION")));
 }
 
-static inline void
-pgaceGramTransformRelOptions(DefElem *defel, bool isReset)
-{
-	/* wired DAC */
-	rowaclGramTransformRelOptions(defel, isReset);
-
-	switch (pgace_feature)
-	{
-	default:
-		break;
-	}
-}
-
-static inline bool
-pgaceGramParseRelOptions(const char *key, const char *value,
-						 StdRdOptions *result, bool validate)
-{
-	/* wired DAC */
-	if (rowaclGramParseRelOptions(key, value, result, validate))
-		return true;
-
-	switch (pgace_feature)
-	{
-	default:
-		break;
-	}
-	return false;
-}
-
 /******************************************************************
  * DATABASE related hooks
  ******************************************************************/

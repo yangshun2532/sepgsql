@@ -107,8 +107,6 @@ transformRelOptions(Datum oldOptions, List *defList,
 	{
 		DefElem    *def = lfirst(cell);
 
-		pgaceGramTransformRelOptions(def, isReset);
-
 		if (isReset)
 		{
 			if (def->arg != NULL)
@@ -352,10 +350,14 @@ default_reloptions(Datum reloptions, bool validate,
 										   minFillfactor, defaultFillfactor))
 				exist = true;
 			break;
-		default:	/* PGACE */
-			if (pgaceGramParseRelOptions(default_keywords[index],
-										 values[index], result, validate))
+		case 1:		/* row_level_acl */
+			if (rawaclParseRelOptsRowLevelAcl(values[1], result, validate))
 				exist = true;
+			break;
+		case 2:		/* default_row_acl */
+			if (rawaclParseRelOptsDefaultRowAcl(values[2], result, validate))
+				exist = true;
+			break;
 		}
 	}
 
