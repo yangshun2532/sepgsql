@@ -518,7 +518,7 @@ pgaceHeapGetSecurityLabelSysattr(HeapTuple tuple)
 
 	label = pgaceSidToSecurityLabel(HeapTupleGetSecLabel(tuple));
 	if (!label)
-		return PointerGetDatum(label);
+		label = "";
 
 	return CStringGetTextDatum(label);
 }
