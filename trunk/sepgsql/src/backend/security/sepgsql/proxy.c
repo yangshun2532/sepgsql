@@ -122,14 +122,10 @@ static List *
 addEvalRelationRTE(List *selist, RangeTblEntry *rte, uint32 perms)
 {
 	rte->pgaceTuplePerms |= (perms & DB_TABLE__USE ? SEPGSQL_PERMS_USE : 0);
-	rte->pgaceTuplePerms |=
-		(perms & DB_TABLE__SELECT ? SEPGSQL_PERMS_SELECT : 0);
-	rte->pgaceTuplePerms |=
-		(perms & DB_TABLE__INSERT ? SEPGSQL_PERMS_INSERT : 0);
-	rte->pgaceTuplePerms |=
-		(perms & DB_TABLE__UPDATE ? SEPGSQL_PERMS_UPDATE : 0);
-	rte->pgaceTuplePerms |=
-		(perms & DB_TABLE__DELETE ? SEPGSQL_PERMS_DELETE : 0);
+	rte->pgaceTuplePerms |=	(perms & DB_TABLE__SELECT ? SEPGSQL_PERMS_SELECT : 0);
+	rte->pgaceTuplePerms |=	(perms & DB_TABLE__INSERT ? SEPGSQL_PERMS_INSERT : 0);
+	rte->pgaceTuplePerms |=	(perms & DB_TABLE__UPDATE ? SEPGSQL_PERMS_UPDATE : 0);
+	rte->pgaceTuplePerms |=	(perms & DB_TABLE__DELETE ? SEPGSQL_PERMS_DELETE : 0);
 
 	/*
 	 * for 'pg_largeobject'
@@ -196,11 +192,19 @@ addEvalAttributeRTE(List *selist, RangeTblEntry *rte, AttrNumber attno, uint32 p
 	selist = addEvalRelationRTE(selist, rte, t_perms);
 
 	/*
-	 * for 'security_context'
+	 * Please note that updating a value on *.security_label, pg_class.relkind
+	 * and pg_attribute.attkind have a possibility to change both/either of
+	 * its security label or object class.
 	 */
-	if (attno == SecurityLabelAttributeNumber
-		&& (perms & (DB_COLUMN__UPDATE | DB_COLUMN__INSERT)))
-		rte->pgaceTuplePerms |= SEPGSQL_PERMS_RELABELFROM;
+	if (perms & DB_COLUMN__UPDATE)
+	{
+		if (attno == SecurityLabelAttributeNumber
+			|| (rte->relid == RelationRelationId
+				&& attno == Anum_pg_class_relkind)
+			|| (rte->relid == AttributeRelationId
+				&& attno == Anum_pg_attribute_attkind))
+			rte->pgaceTuplePerms |= SEPGSQL_PERMS_RELABELFROM;
+	}
 
 	/*
 	 * for 'pg_largeobject'
