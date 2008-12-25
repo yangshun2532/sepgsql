@@ -28,12 +28,13 @@ extern bool rowaclHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple newt
 extern bool rowaclHeapTupleDelete(Relation rel, ItemPointer otid,
 								  bool is_internal, bool with_returning);
 
-extern void rowaclGramTransformRelOptions(DefElem *defel, bool isReset);
-
-extern bool rowaclGramParseRelOptions(const char *key, const char *value,
-									  StdRdOptions *result, bool validate);
-
 extern bool rowaclTupleDescHasRowAcl(Relation rel, List *relopts);
+
+extern bool rawaclParseRelOptsRowLevelAcl(const char *value,
+										  StdRdOptions *result, bool validate);
+
+extern bool rawaclParseRelOptsDefaultRowAcl(const char *value,
+											StdRdOptions *result, bool validate);
 
 extern Acl *rowaclSidToSecurityAcl(Oid sid, Oid ownerId);
 
