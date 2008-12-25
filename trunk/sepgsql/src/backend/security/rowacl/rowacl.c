@@ -661,11 +661,11 @@ Oid rowaclSecurityAclToSid(Acl *acl)
 Datum rowaclHeapGetSecurityAclSysattr(HeapTuple tuple)
 {
 	HeapTuple rtup;
-	Form_pg_class rform;
-	Datum rOpts;
-	StdRdOptions *RdOpts;
-	bool isnull;
-	Acl *acl = NULL;
+	Oid		rowaclSid = InvalidOid;
+	Oid		relowner;
+	char	relkind;
+	Datum	reloptions;
+	bool	isnull;
 
 	rtup = SearchSysCache(RELOID,
 						  ObjectIdGetDatum(tuple->t_tableOid),
@@ -673,26 +673,23 @@ Datum rowaclHeapGetSecurityAclSysattr(HeapTuple tuple)
 	if (!HeapTupleIsValid(rtup))
 		elog(ERROR, "cache lookup failed for relation %u", tuple->t_tableOid);
 
-	rform = (Form_pg_class) GETSTRUCT(rtup);
-	rOpts = SysCacheGetAttr(RELOID, rtup,
-							Anum_pg_class_reloptions,
-							&isnull);
-	if (isnull)
-		goto out;
+	relowner = ((Form_pg_class) GETSTRUCT(rtup))->relowner;
+	relkind = ((Form_pg_class) GETSTRUCT(rtup))->relkind;
+	reloptions = SysCacheGetAttr(RELOID, rtup,
+								 Anum_pg_class_reloptions,
+								 &isnull);
+	if (!isnull)
+	{
+		StdRdOptions *RdOpts
+			= (StdRdOptions *) heap_reloptions(relkind, reloptions, false);
 
-	RdOpts = (StdRdOptions *) heap_reloptions(rform->relkind, rOpts, false);
-	if (!RdOpts || !RdOpts->row_level_acl)
-		goto out;
-
-	acl = rowaclSidToSecurityAcl(HeapTupleGetRowAcl(tuple), rform->relowner);
-
-out:
-	if (!acl)
-		acl = allocacl(0);
+		if (RdOpts && RdOpts->row_level_acl)
+			rowaclSid = HeapTupleGetRowAcl(tuple);
+	}
 
 	ReleaseSysCache(rtup);
 
-	return PointerGetDatum(acl);
+	return PointerGetDatum(rowaclSidToSecurityAcl(rowaclSid, relowner));
 }
 
 /******************************************************************
