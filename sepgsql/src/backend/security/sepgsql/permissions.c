@@ -151,7 +151,6 @@ sepgsqlTupleObjectClass(Oid relid, HeapTuple tuple)
 {
 	Form_pg_class clsForm;
 	Form_pg_attribute attForm;
-	HeapTuple reltup;
 
 	switch (relid)
 	{
@@ -166,29 +165,8 @@ sepgsqlTupleObjectClass(Oid relid, HeapTuple tuple)
 
 		case AttributeRelationId:
 			attForm = (Form_pg_attribute) GETSTRUCT(tuple);
-			/*
-			 * To avoid a matter when very early phase
-			 */
-			if (attForm->attrelid == TypeRelationId ||
-				attForm->attrelid == ProcedureRelationId ||
-				attForm->attrelid == AttributeRelationId ||
-				attForm->attrelid == RelationRelationId)
+			if (attForm->attkind == RELKIND_RELATION)
 				return SECCLASS_DB_COLUMN;
-
-			reltup = SearchSysCache(RELOID,
-									ObjectIdGetDatum(attForm->attrelid),
-									0, 0, 0);
-			if (!HeapTupleIsValid(reltup))
-				elog(ERROR, "SELinux: cache lookup failed for relation %u",
-					 attForm->attrelid);
-
-			clsForm = (Form_pg_class) GETSTRUCT(reltup);
-			if (clsForm->relkind == RELKIND_RELATION)
-			{
-				ReleaseSysCache(reltup);
-				return SECCLASS_DB_COLUMN;
-			}
-			ReleaseSysCache(reltup);		
 			break;
 
 		case ProcedureRelationId:

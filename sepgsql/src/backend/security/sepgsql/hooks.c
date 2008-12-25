@@ -813,8 +813,8 @@ sepgsqlHeapTupleInsert(Relation rel, HeapTuple tuple,
 	else if (!is_internal && RelationGetRelid(rel) == LargeObjectRelationId)
 		ereport(ERROR,
 				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("SELinux: not allowed to insert into "
-						"pg_largeobject.security_context")));
+				 errmsg("SELinux: unable to insert "
+						"pg_largeobject.security_label")));
 
 	if (isTrustedRelation(rel, is_internal))
 		return true;
@@ -830,9 +830,11 @@ bool
 sepgsqlHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple newtup,
 					   bool is_internal, bool with_returning)
 {
+	Oid			relid = RelationGetRelid(rel);
 	HeapTuple	oldtup;
 	uint32		perms;
 	bool		rc = true;
+	bool		relabel = false;
 
 	oldtup = getHeapTupleFromItemPointer(rel, otid);
 
@@ -846,16 +848,20 @@ sepgsqlHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple newtup,
 	else if (!is_internal && RelationGetRelid(rel) == LargeObjectRelationId)
 		ereport(ERROR,
 				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("SELinux: not allowed to update "
-						"pg_largeobject.security_context")));
+				 errmsg("SELinux: unable to update "
+						"pg_largeobject.security_label")));
 
 	if (isTrustedRelation(rel, is_internal))
 		return true;
 
+	if (HeapTupleGetSecLabel(newtup) != HeapTupleGetSecLabel(oldtup) ||
+		sepgsqlTupleObjectClass(relid, newtup) != sepgsqlTupleObjectClass(relid, oldtup))
+		relabel = true;
+
 	if (is_internal)
 	{
 		perms = SEPGSQL_PERMS_UPDATE;
-		if (HeapTupleGetSecLabel(newtup) != HeapTupleGetSecLabel(oldtup))
+		if (relabel)
 			perms |= SEPGSQL_PERMS_RELABELFROM;
 		else if (with_returning)
 			perms |= SEPGSQL_PERMS_SELECT;
@@ -864,7 +870,7 @@ sepgsqlHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple newtup,
 			goto out;
 	}
 
-	if (HeapTupleGetSecLabel(newtup) != HeapTupleGetSecLabel(oldtup))
+	if (relabel)
 	{
 		perms = SEPGSQL_PERMS_RELABELTO;
 		if (with_returning)
