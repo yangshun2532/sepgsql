@@ -37,7 +37,7 @@ environment:
 	@test -x $(RUNCON) || (echo "$(RUNCON) is not available"; exit 1)
 	@$(PSQL) -qt -c '' -d $(DBNAME) || \
 		(echo "HINT: connection to $(DBNAME) is not available"; exit 1)
-	@$(PSQL) -qt -c 'SHOW pgace_security' -d $(DBNAME) | grep -q selinux || \
+	@$(PSQL) -qt -c 'SHOW pgace_feature' -d $(DBNAME) | grep -q selinux || \
 		(echo "HINT: daemon is not SE-PostgreSQL"; exit 1)
 	@/usr/sbin/selinuxenabled || \
 		(echo "HINT: SELinux is disabled!"; exit 1)
@@ -46,5 +46,6 @@ environment:
 	@$(RUN_USER) -c 'SELECT sepgsql_getcon()' >& /dev/null || \
 		(echo "HINT: do /sbin/restorecon -R and restart"; exit 1)
 	@/etc/init.d/mcstrans status > /dev/null && \
-		(echo "HINT: stop 'mcstrans' daemon!"; exit 1) || :
+		(echo "HINT: stop 'mcstrans' daemon!"; exit 1) || \
+		(test $$? -eq 3 && exit 0 || exit 1)
 	@echo "PASS: platform environment for the test"
