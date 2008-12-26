@@ -38,6 +38,7 @@
 #include "parser/parse_coerce.h"
 #include "parser/parse_func.h"
 #include "rewrite/rewriteManip.h"
+#include "security/pgace.h"
 #include "tcop/tcopprot.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
@@ -3410,6 +3411,9 @@ inline_function(Oid funcid, Oid result_type, List *args,
 	if (pg_proc_aclcheck(funcid, GetUserId(), ACL_EXECUTE) != ACLCHECK_OK)
 		return NULL;
 
+	if (!pgaceAllowFunctionInlined(funcid, func_tuple))
+		return NULL;
+
 	/*
 	 * Setup error traceback support for ereport().  This is so that we can
 	 * finger the function that bad information came from.
@@ -3861,6 +3865,7 @@ inline_set_returning_function(PlannerInfo *root, RangeTblEntry *rte)
 		funcform->prosecdef ||
 		!funcform->proretset ||
 		!heap_attisnull(func_tuple, Anum_pg_proc_proconfig) ||
+		!pgaceAllowFunctionInlined(fexpr->funcid, func_tuple) ||
 		funcform->pronargs != list_length(fexpr->args))
 	{
 		ReleaseSysCache(func_tuple);
