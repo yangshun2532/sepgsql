@@ -284,29 +284,6 @@ pgaceProcessUtility(Node *parsetree, ParamListInfo params, bool isTopLevel)
 	}
 }
 
-/*
- * pgaceEvaluateParams
- *
- * This hook is invoked just before parameter lists are evaluated
- * at EvaluateParams().
- */
-static inline void
-pgaceEvaluateParams(List *params)
-{
-	switch (pgace_feature)
-	{
-#ifdef HAVE_SELINUX
-	case PGACE_FEATURE_SELINUX:
-		if (sepgsqlIsEnabled())
-			sepgsqlEvaluateParams(params);
-		break;
-#endif
-	default:
-		break;
-	}
-}
-
-
 /******************************************************************
  * HeapTuple modification hooks
  ******************************************************************/

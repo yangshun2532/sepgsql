@@ -834,28 +834,6 @@ sepgsqlProxyQuery(List *queryList)
 }
 
 /*
- * sepgsqlEvaluateParams
- *
- * It checks permissions to execute functions just before
- * parameter list is generated.
- */
-void
-sepgsqlEvaluateParams(List *params)
-{
-	sepgsqlWalkerContext swcData;
-
-	queryStack	qsData;
-
-	memset(&qsData, 0, sizeof(queryStack));
-	memset(&swcData, 0, sizeof(sepgsqlWalkerContext));
-	swcData.qstack = &qsData;
-
-	sepgsqlExprWalkerFlags((Node *) params, &swcData, false);
-
-	execVerifyQuery(swcData.selist);
-}
-
-/*
  * verityXXXX()
  *
  * These functions are invoked from execVerifyQuery, to evaluate
