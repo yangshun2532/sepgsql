@@ -221,39 +221,6 @@ addEvalAttributeRTE(List *selist, RangeTblEntry *rte, AttrNumber attno, uint32 p
 }
 
 /*
- * addEvalPgProc
- *
- * This function adds a given procedure into selist, if it is not
- * contained yet.
- */
-static List *
-addEvalPgProc(List *selist, Oid funcid, uint32 perms)
-{
-	SEvalItemProcedure *sep;
-
-	ListCell   *l;
-
-	foreach(l, selist)
-	{
-		sep = (SEvalItemProcedure *) lfirst(l);
-		if (IsA(sep, SEvalItemProcedure)
-			&& sep->funcid == funcid)
-		{
-			sep->perms |= perms;
-			return selist;
-		}
-	}
-	/*
-	 * not found
-	 */
-	sep = makeNode(SEvalItemProcedure);
-	sep->perms = perms;
-	sep->funcid = funcid;
-
-	return lappend(selist, sep);
-}
-
-/*
  * addEvalForeignKeyConstraint
  *
  * This function add special case handling for PK/FK constraints.
@@ -341,11 +308,6 @@ addEvalTriggerAccess(List *selist, Oid relid, bool is_inh, int cmdType)
 	SysScanDesc scan;
 	ScanKeyData skey;
 	HeapTuple	tuple;
-	bool		checked = false;
-
-	Assert(cmdType == CMD_INSERT
-		   || cmdType == CMD_UPDATE
-		   || cmdType == CMD_DELETE);
 
 	rel = heap_open(TriggerRelationId, AccessShareLock);
 	ScanKeyInit(&skey,
@@ -356,6 +318,8 @@ addEvalTriggerAccess(List *selist, Oid relid, bool is_inh, int cmdType)
 	while (HeapTupleIsValid((tuple = systable_getnext(scan))))
 	{
 		Form_pg_trigger trigForm = (Form_pg_trigger) GETSTRUCT(tuple);
+		Form_pg_class relForm;
+		HeapTuple reltup;
 
 		/*
 		 * Skip not-invoked triggers
@@ -370,12 +334,6 @@ addEvalTriggerAccess(List *selist, Oid relid, bool is_inh, int cmdType)
 			continue;
 
 		/*
-		 * add db_procedure:{execute} permission
-		 */
-		selist = addEvalPgProc(selist, trigForm->tgfoid,
-							   DB_PROCEDURE__EXECUTE);
-
-		/*
 		 * per STATEMENT trigger cannot refer whole of a tuple
 		 */
 		if (!TRIGGER_FOR_ROW(trigForm->tgtype))
@@ -388,25 +346,19 @@ addEvalTriggerAccess(List *selist, Oid relid, bool is_inh, int cmdType)
 			TRIGGER_FOR_INSERT(trigForm->tgtype))
 			continue;
 
-		if (!checked)
-		{
-			HeapTuple	reltup;
-			Form_pg_class classForm;
+		reltup = SearchSysCache(RELOID,
+								ObjectIdGetDatum(relid),
+								0, 0, 0);
+		relForm = (Form_pg_class) GETSTRUCT(reltup);
 
-			reltup = SearchSysCache(RELOID, ObjectIdGetDatum(relid), 0, 0, 0);
-			classForm = (Form_pg_class) GETSTRUCT(reltup);
+		selist = addEvalRelation(selist, relid, false, DB_TABLE__SELECT);
 
-			selist = addEvalRelation(selist, relid, false, DB_TABLE__SELECT);
-
-			if (triggerIsForeignKeyConstraint(trigForm))
-				selist = addEvalForeignKeyConstraint(selist, trigForm);
-			else
-				selist = addEvalAttribute(selist, relid, false,
-										  0, DB_COLUMN__SELECT);
-			ReleaseSysCache(reltup);
-
-			checked = true;
-		}
+		if (triggerIsForeignKeyConstraint(trigForm))
+			selist = addEvalForeignKeyConstraint(selist, trigForm);
+		else
+			selist = addEvalAttribute(selist, relid, false,
+									  0, DB_COLUMN__SELECT);
+		ReleaseSysCache(reltup);
 	}
 	systable_endscan(scan);
 	heap_close(rel, AccessShareLock);
@@ -484,24 +436,22 @@ walkVarHelper(sepgsqlWalkerContext *swc, Var *var)
 static void
 walkFuncExprHelper(sepgsqlWalkerContext *swc, Oid funcid, Node *args)
 {
-	swc->selist = addEvalPgProc(swc->selist, funcid,
-								DB_PROCEDURE__EXECUTE);
-	/*
-	 * A malicious user defined function enables to leak given
-	 * arguments to others, so we have to force {select} perms
-	 * towards arguments on user defined functions.
-	 * Here is an assumption built-in functions are not malicious.
-	 */
-	if (!fmgr_isbuiltin(funcid))
+	if (fmgr_isbuiltin(funcid))
+		sepgsqlExprWalker(args, swc);
+	else
 	{
-		bool is_internal_use_backup = swc->is_internal_use;
+		/*
+		 * When the given function has a possibility to leak
+		 * given arguments to others, it isn't proper behavior
+		 * to apply {use} permission for arguments.
+		 * Our assumption is built-in functions are trustable.
+		 */
+		bool is_internal_use_local = swc->is_internal_use;
 
 		swc->is_internal_use = 0;
 		sepgsqlExprWalker(args, swc);
-		swc->is_internal_use = is_internal_use_backup;
+		swc->is_internal_use = is_internal_use_local;
 	}
-	else
-		sepgsqlExprWalker(args, swc);
 }
 
 static void
@@ -1025,47 +975,6 @@ verifyPgAttributePerms(Oid relid, bool inh, AttrNumber attno, uint32 perms)
 }
 
 /*
- * verifyPgProcedurePerms
- *
- * It evaluates SEvalItemProcedure object to access tables.
- */
-static void
-verifyPgProcPerms(Oid funcid, uint32 perms)
-{
-	HeapTuple	tuple;
-	security_context_t ncon;
-
-	tuple = SearchSysCache(PROCOID, ObjectIdGetDatum(funcid), 0, 0, 0);
-	if (!HeapTupleIsValid(tuple))
-		elog(ERROR, "SELinux: cache lookup failed for procedure %d", funcid);
-	/*
-	 * check domain transition
-	 */
-	ncon = sepgsqlClientCreateContext(HeapTupleGetSecLabel(tuple),
-									  SECCLASS_PROCESS);
-	if (strcmp(sepgsqlGetClientContext(), ncon))
-	{
-		perms |= DB_PROCEDURE__ENTRYPOINT;
-
-		sepgsqlComputePermission(sepgsqlGetClientContext(),
-								 ncon,
-								 SECCLASS_PROCESS,
-								 PROCESS__TRANSITION,
-								 NULL);
-	}
-	pfree(ncon);
-
-	/*
-	 * check procedure executiong permission
-	 */
-	sepgsqlClientHasPermission(HeapTupleGetSecLabel(tuple),
-							   SECCLASS_DB_PROCEDURE,
-							   perms,
-							   sepgsqlTupleName(ProcedureRelationId, tuple));
-	ReleaseSysCache(tuple);
-}
-
-/*
  * expandSEvalItemInheritance
  *
  * When a request to table/column is inheritable, we have to expand
@@ -1208,38 +1117,26 @@ expandSEvalItemInheritance(List *selist)
 static void
 execVerifyQuery(List *selist)
 {
-	SEvalItemRelation *ser;
-	SEvalItemAttribute *sea;
-	SEvalItemProcedure *sep;
 	ListCell   *l;
 
 	foreach(l, selist)
 	{
 		Node	   *node = lfirst(l);
 
-		switch (nodeTag(node))
+		if (IsA(node, SEvalItemRelation))
 		{
-			case T_SEvalItemRelation:
-				ser = (SEvalItemRelation *) node;
-				verifyPgClassPerms(ser->relid, ser->inh, ser->perms);
-				break;
-
-			case T_SEvalItemAttribute:
-				sea = (SEvalItemAttribute *) node;
-				verifyPgAttributePerms(sea->relid, sea->inh, sea->attno,
-									   sea->perms);
-				break;
-
-			case T_SEvalItemProcedure:
-				sep = (SEvalItemProcedure *) node;
-				verifyPgProcPerms(sep->funcid, sep->perms);
-				break;
-
-			default:
-				elog(ERROR, "SELinux: Invalid node type (%d) in SEvalItemList",
-					 nodeTag(node));
-				break;
+			SEvalItemRelation *ser
+				= (SEvalItemRelation *) node;
+			verifyPgClassPerms(ser->relid, ser->inh, ser->perms);
 		}
+		else if (IsA(node, SEvalItemAttribute))
+		{
+			SEvalItemAttribute *sea
+				= (SEvalItemAttribute *) node;
+			verifyPgAttributePerms(sea->relid, sea->inh, sea->attno, sea->perms);
+		}
+		else
+			elog(ERROR, "SELinux: unexpected node type (%d)", nodeTag(node));
 	}
 }
 

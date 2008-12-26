@@ -355,7 +355,7 @@ HandleFunctionRequest(StringInfo msgBuf)
 	 */
 	InitFunctionCallInfoData(fcinfo, &fip->flinfo, 0, NULL, NULL);
 
-	pgaceCallFunctionFastPath(fcinfo.flinfo);
+	pgaceCallFunction(fcinfo.flinfo);
 
 	if (PG_PROTOCOL_MAJOR(FrontendProtocol) >= 3)
 		rformat = parse_fcall_arguments(msgBuf, fip, &fcinfo);

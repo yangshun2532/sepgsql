@@ -872,7 +872,28 @@ pgaceCallFunction(FmgrInfo *finfo)
 #ifdef HAVE_SELINUX
 	case PGACE_FEATURE_SELINUX:
 		if (sepgsqlIsEnabled())
-			sepgsqlCallFunction(finfo, false);
+			sepgsqlCallFunction(finfo);
+		break;
+#endif
+	default:
+		break;
+	}
+}
+
+/*
+ * pgaceCallAggFunction
+ *
+ *
+ */
+static inline void
+pgaceCallAggFunction(HeapTuple aggTuple)
+{
+	switch (pgace_feature)
+	{
+#ifdef HAVE_SELINUX
+	case PGACE_FEATURE_SELINUX:
+		if (sepgsqlIsEnabled())
+			sepgsqlCallAggFunction(aggTuple);
 		break;
 #endif
 	default:
@@ -906,28 +927,6 @@ pgaceCallFunctionTrigger(FmgrInfo *finfo, TriggerData *tgdata)
 		break;
 	}
 	return true;
-}
-
-/*
- * pgaceCallFunctionFastPath
- *
- * This hook is invoked just before executing a function in
- * fast path.
- */
-static inline void
-pgaceCallFunctionFastPath(FmgrInfo *finfo)
-{
-	switch (pgace_feature)
-	{
-#ifdef HAVE_SELINUX
-	case PGACE_FEATURE_SELINUX:
-		if (sepgsqlIsEnabled())
-			sepgsqlCallFunction(finfo, true);
-		break;
-#endif
-	default:
-		break;
-	}
 }
 
 /*

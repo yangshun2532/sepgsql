@@ -2289,16 +2289,6 @@ _outSEvalItemAttribute(StringInfo str, SEvalItemAttribute *node)
 	WRITE_INT_FIELD(attno);
 }
 
-static void
-_outSEvalItemProcedure(StringInfo str, SEvalItemProcedure *node)
-{
-	WRITE_NODE_TYPE("SEVALITEMPROCEDURE");
-
-	WRITE_UINT_FIELD(perms);
-
-	WRITE_OID_FIELD(funcid);
-}
-
 /*
  * _outNode -
  *	  converts a Node into ascii string and append it to 'str'
@@ -2735,9 +2725,6 @@ _outNode(StringInfo str, void *obj)
 				break;
 			case T_SEvalItemAttribute:
 				_outSEvalItemAttribute(str, obj);
-				break;
-			case T_SEvalItemProcedure:
-				_outSEvalItemProcedure(str, obj);
 				break;
 
 			default:

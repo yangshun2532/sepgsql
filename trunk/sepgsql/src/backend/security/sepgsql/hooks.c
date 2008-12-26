@@ -12,6 +12,7 @@
 #include "access/genam.h"
 #include "access/skey.h"
 #include "catalog/indexing.h"
+#include "catalog/pg_aggregate.h"
 #include "catalog/pg_database.h"
 #include "catalog/pg_largeobject.h"
 #include "catalog/pg_proc.h"
@@ -199,7 +200,7 @@ invokeTrustedProcedure(PG_FUNCTION_ARGS)
 }
 
 void
-sepgsqlCallFunction(FmgrInfo *finfo, bool with_perm_check)
+sepgsqlCallFunction(FmgrInfo *finfo)
 {
 	MemoryContext		oldctx;
 	HeapTuple			tuple;
@@ -235,14 +236,35 @@ sepgsqlCallFunction(FmgrInfo *finfo, bool with_perm_check)
 
 	MemoryContextSwitchTo(oldctx);
 
-	if (with_perm_check)
-	{
-		sepgsqlClientHasPermission(HeapTupleGetSecLabel(tuple),
-								   SECCLASS_DB_PROCEDURE,
-								   perms,
-								   sepgsqlTupleName(ProcedureRelationId, tuple));
-	}
+	sepgsqlClientHasPermission(HeapTupleGetSecLabel(tuple),
+							   SECCLASS_DB_PROCEDURE,
+							   perms,
+							   sepgsqlTupleName(ProcedureRelationId, tuple));
 
+	ReleaseSysCache(tuple);
+}
+
+void
+sepgsqlCallAggFunction(HeapTuple aggTuple)
+{
+	Form_pg_aggregate aggForm
+		= (Form_pg_aggregate) GETSTRUCT(aggTuple);
+	HeapTuple tuple;
+	const char *audit_name;
+
+	/* check pg_proc.oid = pg_aggregate.aggfnoid */
+	tuple = SearchSysCache(PROCOID,
+						   ObjectIdGetDatum(aggForm->aggfnoid),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "SELinux: cache lookup failed for procedure %u",
+			 aggForm->aggfnoid);
+
+	audit_name = sepgsqlTupleName(ProcedureRelationId, tuple);
+	sepgsqlClientHasPermission(HeapTupleGetSecLabel(tuple),
+							   SECCLASS_DB_PROCEDURE,
+							   DB_PROCEDURE__EXECUTE,
+							   audit_name);
 	ReleaseSysCache(tuple);
 }
 
@@ -258,7 +280,7 @@ sepgsqlCallFunctionTrigger(FmgrInfo *finfo, TriggerData *tgdata)
 		/*
 		 * No need to check db_tuple:{select} for a statement trigger
 		 */
-		sepgsqlCallFunction(finfo, false);
+		sepgsqlCallFunction(finfo);
 		return true;
 	}
 
@@ -295,7 +317,7 @@ sepgsqlCallFunctionTrigger(FmgrInfo *finfo, TriggerData *tgdata)
 										  SEPGSQL_PERMS_SELECT, false))
 		return false;
 
-	sepgsqlCallFunction(finfo, false);
+	sepgsqlCallFunction(finfo);
 
 	return true;
 }
