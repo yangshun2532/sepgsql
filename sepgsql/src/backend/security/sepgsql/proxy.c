@@ -36,6 +36,7 @@
 #include "utils/array.h"
 #include "utils/fmgroids.h"
 #include "utils/fmgrtab.h"
+#include "utils/lsyscache.h"
 #include "utils/syscache.h"
 #include "utils/tqual.h"
 
@@ -848,6 +849,7 @@ sepgsqlProxyQuery(List *queryList)
 static void
 verifyPgClassPerms(Oid relid, bool inh, uint32 perms)
 {
+	Form_pg_class relForm;
 	HeapTuple	tuple;
 
 	/*
@@ -866,12 +868,14 @@ verifyPgClassPerms(Oid relid, bool inh, uint32 perms)
 	if (!HeapTupleIsValid(tuple))
 		elog(ERROR, "SELinux: cache lookup failed for relation: %u", relid);
 
-	if (((Form_pg_class) GETSTRUCT(tuple))->relkind == RELKIND_RELATION)
+	relForm = (Form_pg_class) GETSTRUCT(tuple);
+	if (relForm->relkind == RELKIND_RELATION)
 	{
+		const char *audit_name = sepgsqlTupleName(RelationRelationId, tuple);
 		sepgsqlClientHasPermission(HeapTupleGetSecLabel(tuple),
 								   SECCLASS_DB_TABLE,
 								   (access_vector_t) perms,
-								   sepgsqlTupleName(RelationRelationId, tuple));
+								   audit_name);
 	}
 	ReleaseSysCache(tuple);
 }
@@ -884,72 +888,58 @@ verifyPgClassPerms(Oid relid, bool inh, uint32 perms)
 static void
 verifyPgAttributePerms(Oid relid, bool inh, AttrNumber attno, uint32 perms)
 {
-	Form_pg_class clsForm;
-	HeapTuple	tuple;
+	Form_pg_class relForm;
+	Form_pg_attribute attForm;
+	HeapTuple reltup, atttup;
 
-	tuple = SearchSysCache(RELOID, ObjectIdGetDatum(relid), 0, 0, 0);
-	if (!HeapTupleIsValid(tuple))
+	reltup = SearchSysCache(RELOID,
+							ObjectIdGetDatum(relid),
+							0, 0, 0);
+	if (!HeapTupleIsValid(reltup))
 		elog(ERROR, "SELinux: cache lookup failed for relation: %u", relid);
+	relForm = (Form_pg_class) GETSTRUCT(reltup);
+	if (relForm->relkind != RELKIND_RELATION)
+		goto out;
 
-	clsForm = (Form_pg_class) GETSTRUCT(tuple);
-	if (clsForm->relkind != RELKIND_RELATION)
-	{
-		ReleaseSysCache(tuple);
-		return;
-	}
-	ReleaseSysCache(tuple);
-
-	/*
-	 * 2. verify column perms
-	 */
 	if (attno == 0)
 	{
-		/*
-		 * RECORD type permission check
-		 */
-		Relation	rel;
-		ScanKeyData skey;
-		SysScanDesc scan;
-
-		ScanKeyInit(&skey,
-					Anum_pg_attribute_attrelid,
-					BTEqualStrategyNumber, F_OIDEQ, ObjectIdGetDatum(relid));
-
-		rel = heap_open(AttributeRelationId, AccessShareLock);
-		scan = systable_beginscan(rel, AttributeRelidNumIndexId,
-								  true, SnapshotNow, 1, &skey);
-		while ((tuple = systable_getnext(scan)) != NULL)
+		for (attno = 1; attno <= relForm->relnatts; attno++)
 		{
-			Form_pg_attribute attForm = (Form_pg_attribute) GETSTRUCT(tuple);
-
-			if (attForm->attisdropped || attForm->attnum < 1)
+			atttup = SearchSysCache(ATTNUM,
+									ObjectIdGetDatum(relid),
+									Int16GetDatum(attno),
+									0, 0);
+			if (!HeapTupleIsValid(atttup))
 				continue;
-
-			sepgsqlClientHasPermission(HeapTupleGetSecLabel(tuple),
-									   SECCLASS_DB_COLUMN,
-									   perms,
-									   sepgsqlTupleName(AttributeRelationId, tuple));
+			attForm = (Form_pg_attribute) GETSTRUCT(atttup);
+			if (!attForm->attisdropped)
+			{
+				sepgsqlClientHasPermission(HeapTupleGetSecLabel(atttup),
+										   SECCLASS_DB_COLUMN,
+										   perms,
+										   sepgsqlTupleName(AttributeRelationId, atttup));
+			}
+			ReleaseSysCache(atttup);
 		}
-		systable_endscan(scan);
-		heap_close(rel, AccessShareLock);
-
-		return;
 	}
-	/*
-	 * check required column's permission 
-	 */
-	tuple = SearchSysCache(ATTNUM,
-						   ObjectIdGetDatum(relid),
-						   Int16GetDatum(attno), 0, 0);
-	if (!HeapTupleIsValid(tuple))
-		elog(ERROR, "SELinux: cache lookup failed for attribute %d of relation %u",
-			 attno, relid);
+	else
+	{
+		atttup = SearchSysCache(ATTNUM,
+								ObjectIdGetDatum(relid),
+								Int16GetDatum(attno),
+								0, 0);
+		if (!HeapTupleIsValid(atttup))
+			elog(ERROR, "SELinux: cache lookup failed for attribute %d of relation %u",
+				 attno, relid);
 
-	sepgsqlClientHasPermission(HeapTupleGetSecLabel(tuple),
-							   SECCLASS_DB_COLUMN,
-							   perms,
-							   sepgsqlTupleName(AttributeRelationId, tuple));
-	ReleaseSysCache(tuple);
+		sepgsqlClientHasPermission(HeapTupleGetSecLabel(atttup),
+								   SECCLASS_DB_COLUMN,
+								   perms,
+								   sepgsqlTupleName(AttributeRelationId, atttup));
+		ReleaseSysCache(atttup);
+	}
+out:
+	ReleaseSysCache(reltup);
 }
 
 /*
@@ -973,8 +963,10 @@ expandRelationInheritance(List *selist, Oid relid, uint32 perms)
 	ListCell   *l;
 
 	foreach(l, inherits)
-		selist = addEvalRelation(selist, lfirst_oid(l), false, perms);
-
+	{
+		if (lfirst_oid(l) != relid)
+			selist = addEvalRelation(selist, lfirst_oid(l), false, perms);
+	}
 	return selist;
 }
 
@@ -987,27 +979,21 @@ expandAttributeInheritance(List *selist, Oid relid, char *attname,
 
 	foreach(l, inherits)
 	{
-		Form_pg_attribute attr;
+		Form_pg_attribute attForm;
+		HeapTuple atttup;
 
-		HeapTuple	tuple;
-
-		if (!attname)
-		{
-			selist = addEvalAttribute(selist, lfirst_oid(l), false, 0, perms);
+		if (lfirst_oid(l) == relid)
 			continue;
-		}
 
-		tuple = SearchSysCacheAttName(lfirst_oid(l), attname);
-		if (!HeapTupleIsValid(tuple))
-			elog(ERROR,
-				 "SELinux: cache lookup failed for attribute %s of relation %u",
+		atttup = SearchSysCacheAttName(lfirst_oid(l), attname);
+		if (!HeapTupleIsValid(atttup))
+			elog(ERROR, "SELinux: cache lookup failed for attribute %s of relation %u",
 				 attname, lfirst_oid(l));
 
-		attr = (Form_pg_attribute) GETSTRUCT(tuple);
+		attForm = (Form_pg_attribute) GETSTRUCT(atttup);
 		selist = addEvalAttribute(selist, lfirst_oid(l), false,
-								  attr->attnum, perms);
-
-		ReleaseSysCache(tuple);
+								  attForm->attnum, perms);
+		ReleaseSysCache(atttup);
 	}
 
 	return selist;
@@ -1016,8 +1002,6 @@ expandAttributeInheritance(List *selist, Oid relid, char *attname,
 static List *
 expandSEvalItemInheritance(List *selist)
 {
-	SEvalItemRelation *ser;
-	SEvalItemAttribute *sea;
 	List	   *result = NIL;
 	ListCell   *l;
 
@@ -1026,62 +1010,73 @@ expandSEvalItemInheritance(List *selist)
 		Node	   *node = lfirst(l);
 
 		result = lappend(result, node);
-		switch (nodeTag(node))
+
+		if (IsA(node, SEvalItemRelation))
 		{
-			case T_SEvalItemRelation:
-				ser = (SEvalItemRelation *) node;
-				if (ser->inh)
-				{
-					ser->inh = false;
-					result = expandRelationInheritance(result,
-													   ser->relid, ser->perms);
-				}
-				break;
+			SEvalItemRelation *ser = (SEvalItemRelation *) node;
 
-			case T_SEvalItemAttribute:
-				sea = (SEvalItemAttribute *) node;
-				if (sea->inh)
-				{
-					Form_pg_attribute attr;
-					HeapTuple	tuple;
+			if (!ser->inh)
+				continue;
 
-					sea->inh = false;
-					if (sea->attno == 0)
-					{
-						result = expandAttributeInheritance(result,
-															sea->relid,
-															NULL, sea->perms);
-						break;
-					}
-
-					tuple = SearchSysCache(ATTNUM,
-										   ObjectIdGetDatum(sea->relid),
-										   Int16GetDatum(sea->attno), 0, 0);
-					if (!HeapTupleIsValid(tuple))
-						elog(ERROR,
-							 "SELinux: cache lookup failed for attribute %d of relation %u",
-							 sea->attno, sea->relid);
-					attr = (Form_pg_attribute) GETSTRUCT(tuple);
-
-					result = expandAttributeInheritance(result,
-														sea->relid,
-														NameStr(attr->attname),
-														sea->perms);
-					ReleaseSysCache(tuple);
-				}
-				break;
-
-			case T_SEvalItemProcedure:
-				/*
-				 * do nothing
-				 */
-				break;
-
-			default:
-				elog(ERROR, "SELinux: Invalid node type (%d) in SEvalItemList",
-					 nodeTag(node));
-				break;
+			result = expandRelationInheritance(result, ser->relid, ser->perms);
 		}
+		else if (IsA(node, SEvalItemAttribute))
+		{
+			SEvalItemAttribute *sea = (SEvalItemAttribute *) node;
+
+			if (!sea->inh)
+				continue;
+
+			if (sea->attno == 0)
+			{
+				HeapTuple reltup, atttup;
+				Form_pg_class relForm;
+				Form_pg_attribute attForm;
+				AttrNumber attno;
+
+				reltup = SearchSysCache(RELOID,
+										ObjectIdGetDatum(sea->relid),
+										0, 0, 0);
+				if (!HeapTupleIsValid(reltup))
+					elog(ERROR, "SELinux: cache lookup failed for relation: %u", sea->relid);
+				relForm = (Form_pg_class) GETSTRUCT(reltup);
+
+				for (attno = 1; attno <= relForm->relnatts; attno++)
+				{
+					atttup = SearchSysCache(ATTNUM,
+											ObjectIdGetDatum(sea->relid),
+											Int16GetDatum(attno),
+											0, 0);
+					if (!HeapTupleIsValid(atttup))
+						continue;
+					attForm = (Form_pg_attribute) GETSTRUCT(atttup);
+					if (!attForm->attisdropped)
+					{
+						result =
+							expandAttributeInheritance(result,
+													   sea->relid,
+													   NameStr(attForm->attname),
+													   sea->perms);
+					}
+					ReleaseSysCache(atttup);
+				}
+				ReleaseSysCache(reltup);
+			}
+			else
+			{
+				char *attname = get_attname(sea->relid, sea->attno);
+
+				if (!attname)
+					elog(ERROR, "cache lookup failed for attribute %d of relation %u",
+						 sea->attno, sea->relid);
+				result = expandAttributeInheritance(result,
+													sea->relid,
+													attname,
+													sea->perms);
+			}
+		}
+		else
+			elog(ERROR, "SELinux: unexpected node type (%u)", nodeTag(node));
 	}
 	return result;
 }
