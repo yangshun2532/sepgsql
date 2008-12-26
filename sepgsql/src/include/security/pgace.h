@@ -985,6 +985,29 @@ pgaceEndPerformCheckFK(Relation rel, Datum rowacl_private, Datum pgace_private)
 	}
 }
 
+/*
+ * pgaceAllowInlineFunction
+ *
+ * This hook gives guest a chance to make decision just before
+ * a set-returning function is inlined.
+ */
+static inline bool
+pgaceAllowFunctionInlined(Oid fnoid, HeapTuple func_tuple)
+{
+	switch (pgace_feature)
+	{
+#ifdef HAVE_SELINUX
+	case PGACE_FEATURE_SELINUX:
+		if (sepgsqlIsEnabled())
+			return sepgsqlAllowFunctionInlined(fnoid, func_tuple);
+		break;
+#endif
+	default:
+		break;
+	}
+	return true;
+}
+
 /******************************************************************
  * TABLE related hooks
  ******************************************************************/

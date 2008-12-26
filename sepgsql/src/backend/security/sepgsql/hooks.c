@@ -300,6 +300,29 @@ sepgsqlCallFunctionTrigger(FmgrInfo *finfo, TriggerData *tgdata)
 	return true;
 }
 
+bool sepgsqlAllowFunctionInlined(Oid fnoid, HeapTuple func_tuple)
+{
+	security_context_t	newcon;
+	const char *audit_name;
+
+	/*
+	 * If function is defined as trusted procedure, we always should
+	 * not allow it to be inlined, and actual permission checks are
+	 * done later phase.
+	 */
+	newcon = sepgsqlClientCreateContext(HeapTupleGetSecLabel(func_tuple),
+										SECCLASS_PROCESS);
+	if (strcmp(newcon, sepgsqlGetClientContext()) != 0)
+		return false;
+
+	audit_name = sepgsqlTupleName(ProcedureRelationId, func_tuple);
+	sepgsqlClientHasPermission(HeapTupleGetSecLabel(func_tuple),
+							   SECCLASS_DB_PROCEDURE,
+							   DB_PROCEDURE__EXECUTE,
+							   audit_name);
+	return true;
+}
+
 /*******************************************************************************
  * LOAD shared library module hook
  *******************************************************************************/

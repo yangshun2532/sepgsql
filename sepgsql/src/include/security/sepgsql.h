@@ -117,6 +117,8 @@ extern Datum sepgsqlBeginPerformCheckFK(Relation rel, bool is_primary, Oid save_
 
 extern void sepgsqlEndPerformCheckFK(Relation rel, Datum save_pgace);
 
+extern bool sepgsqlAllowFunctionInlined(Oid fnoid, HeapTuple func_tuple);
+
 /* TABLE related hooks */
 extern void sepgsqlLockTable(Oid relid);
 
