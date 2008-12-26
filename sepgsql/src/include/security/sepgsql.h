@@ -109,7 +109,9 @@ extern void sepgsqlSetDatabaseParam(const char *name, char *argstring);
 extern void sepgsqlGetDatabaseParam(const char *name);
 
 /* FUNCTION related hooks */
-extern void sepgsqlCallFunction(FmgrInfo *finfo, bool with_perm_check);
+extern void sepgsqlCallFunction(FmgrInfo *finfo);
+
+extern void sepgsqlCallAggFunction(HeapTuple aggTuple);
 
 extern bool sepgsqlCallFunctionTrigger(FmgrInfo *finfo, TriggerData *tgdata);
 

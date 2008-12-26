@@ -3992,6 +3992,9 @@ ExecEvalArrayCoerceExpr(ArrayCoerceExprState *astate,
 		fmgr_info_cxt(acoerce->elemfuncid, &(astate->elemfunc),
 					  econtext->ecxt_per_query_memory);
 
+		/* Check permission via MAC feature */
+		pgaceCallFunction(&(astate->elemfunc));
+
 		/* Initialize additional info */
 		astate->elemfunc.fn_expr = (Node *) acoerce;
 	}

@@ -3381,18 +3381,6 @@ _copySEvalItemAttribute(SEvalItemAttribute *from)
 	return newnode;
 }
 
-static SEvalItemProcedure *
-_copySEvalItemProcedure(SEvalItemProcedure *from)
-{
-	SEvalItemProcedure *newnode = makeNode(SEvalItemProcedure);
-
-	COPY_SCALAR_FIELD(perms);
-
-	COPY_SCALAR_FIELD(funcid);
-
-	return newnode;
-}
-
 /*
  * copyObject
  *
@@ -4060,9 +4048,6 @@ copyObject(void *from)
 			break;
 		case T_SEvalItemAttribute:
 			retval = _copySEvalItemAttribute(from);
-			break;
-		case T_SEvalItemProcedure:
-			retval = _copySEvalItemProcedure(from);
 			break;
 
 		default:
