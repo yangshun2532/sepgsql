@@ -382,7 +382,6 @@ sepgsql_av_perm_to_string(security_class_t tclass, access_vector_t perm)
  *
  * This function clears all current avc entries, and update its version.
  */
-
 static void
 sepgsql_avc_reset(void)
 {
@@ -391,14 +390,21 @@ sepgsql_avc_reset(void)
 	LWLockAcquire(SepgsqlAvcLock, LW_SHARED);
 
 	avc_version = selinux_state->version;
-	if (!strcmp(sepostgresql_mode, "default"))
+	switch (sepostgresql_mode)
+	{
+	case SEPGSQL_MODE_DEFAULT:
 		avc_enforcing = selinux_state->enforcing;
-	else if (!strcmp(sepostgresql_mode, "permissive"))
+		break;
+	case SEPGSQL_MODE_PERMISSIVE:
 		avc_enforcing = false;
-	else if (!strcmp(sepostgresql_mode, "enforcing"))
-		avc_enforcing = true;
-	else
-		elog(FATAL, "SELinux: undefined state (sepostgresql = %s)", sepostgresql_mode);
+		break;
+	case SEPGSQL_MODE_ENFORCING:
+		avc_enforcing = false;
+		break;
+	default:
+		elog(FATAL, "SELinux: undefined state in SE-PostgreSQL");
+		break;
+	}
 
 	current_avc_page = NULL;
 
@@ -571,6 +577,8 @@ static avc_datum *avc_make_entry(Oid tsid, security_class_t tclass)
 
 	scontext = current_avc_page->scontext;
 	tcontext = pgaceLookupSecurityLabel(tsid);
+	if (!tcontext || !pgaceCheckValidSecurityLabel(tcontext))
+		tcontext = pgaceUnlabeledSecurityLabel();
 
 	LWLockAcquire(SepgsqlAvcLock, LW_SHARED);
 
@@ -736,7 +744,7 @@ sepgsqlClientCreateSid(Oid tsid, security_class_t tclass)
 	{
 		if (!cache)
 			cache = avc_make_entry(tsid, tclass);
-		cache->nsid = pgaceLookupSecurityId(cache->ncontext);
+		cache->nsid = pgaceSecurityLabelToSid(cache->ncontext);
 	}
 	return cache->nsid;
 }

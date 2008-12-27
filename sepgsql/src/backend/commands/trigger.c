@@ -1988,9 +1988,9 @@ ExecBRUpdateTriggers(EState *estate, ResultRelInfo *relinfo,
 		!OidIsValid(HeapTupleGetOid(newtuple)))
 		HeapTupleSetOid(newtuple, HeapTupleGetOid(trigtuple));
 
-	if (HeapTupleHasSecurity(newtuple) &&
-		!OidIsValid(HeapTupleGetSecurity(newtuple)))
-		HeapTupleSetSecurity(newtuple, HeapTupleGetSecurity(trigtuple));
+	if (HeapTupleHasSecLabel(newtuple) &&
+		!OidIsValid(HeapTupleGetSecLabel(newtuple)))
+		HeapTupleSetSecLabel(newtuple, HeapTupleGetSecLabel(trigtuple));
 
 	LocTriggerData.type = T_TriggerData;
 	LocTriggerData.tg_event = TRIGGER_EVENT_UPDATE |

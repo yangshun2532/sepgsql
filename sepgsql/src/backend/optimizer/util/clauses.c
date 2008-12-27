@@ -39,6 +39,7 @@
 #include "parser/parse_coerce.h"
 #include "parser/parse_expr.h"
 #include "tcop/tcopprot.h"
+#include "security/pgace.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/datum.h"
@@ -3055,6 +3056,9 @@ inline_function(Oid funcid, Oid result_type, List *args,
 
 	/* Check permission to call function (fail later, if not) */
 	if (pg_proc_aclcheck(funcid, GetUserId(), ACL_EXECUTE) != ACLCHECK_OK)
+		return NULL;
+
+	if (!pgaceAllowFunctionInlined(funcid, func_tuple))
 		return NULL;
 
 	/*

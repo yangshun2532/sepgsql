@@ -98,6 +98,7 @@
 #include "executor/execdefs.h"
 #include "executor/nodeMergejoin.h"
 #include "miscadmin.h"
+#include "security/pgace.h"
 #include "utils/acl.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
@@ -221,6 +222,9 @@ MJExamineQuals(List *mergeclauses,
 
 		/* Set up the fmgr lookup information */
 		fmgr_info(cmpproc, &(clause->cmpfinfo));
+
+		/* apply MAC policy to call cmp function */
+		pgaceCallFunction(&(clause->cmpfinfo));
 
 		/* Fill the additional comparison-strategy flags */
 		if (opstrategy == BTLessStrategyNumber)

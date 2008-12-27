@@ -859,8 +859,8 @@ copy_heap_data(Oid OIDNewHeap, Oid OIDOldHeap, Oid OIDOldIndex)
 			HeapTupleSetOid(copiedTuple, HeapTupleGetOid(tuple));
 
 		/* Preserve SID, if any */
-		if (HeapTupleHasSecurity(tuple))
-			HeapTupleSetSecurity(copiedTuple, HeapTupleGetSecurity(tuple));
+		if (HeapTupleHasSecLabel(tuple))
+			HeapTupleSetSecLabel(copiedTuple, HeapTupleGetSecLabel(tuple));
 
 		/* The heap rewrite module does the rest */
 		rewrite_heap_tuple(rwstate, tuple, copiedTuple);

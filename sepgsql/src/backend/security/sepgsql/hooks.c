@@ -12,6 +12,7 @@
 #include "access/genam.h"
 #include "access/skey.h"
 #include "catalog/indexing.h"
+#include "catalog/pg_aggregate.h"
 #include "catalog/pg_database.h"
 #include "catalog/pg_largeobject.h"
 #include "catalog/pg_proc.h"
@@ -29,23 +30,15 @@
 /*******************************************************************************
  * Extended SQL statement hooks
  *******************************************************************************/
-DefElem *
-sepgsqlGramSecurityItem(char *defname, char *value)
-{
-	DefElem    *n = NULL;
-
-	if (strcmp(defname, "security_context") == 0)
-		n = makeDefElem(pstrdup(defname), (Node *) makeString(value));
-	return n;
-}
-
 bool
 sepgsqlIsGramSecurityItem(DefElem *defel)
 {
 	Assert(IsA(defel, DefElem));
 
-	if (defel->defname && strcmp(defel->defname, "security_context") == 0)
+	if (defel->defname &&
+		strcmp(defel->defname, SecurityLabelAttributeName) == 0)
 		return true;
+
 	return false;
 }
 
@@ -54,9 +47,9 @@ putExplicitContext(HeapTuple tuple, DefElem *defel)
 {
 	if (defel)
 	{
-		Oid		security_id = pgaceSecurityLabelToSid(strVal(defel->arg));
+		Oid sid  = pgaceSecurityLabelToSid(strVal(defel->arg));
 
-		HeapTupleSetSecurity(tuple, security_id);
+		HeapTupleSetSecLabel(tuple, sid);
 	}
 }
 
@@ -123,7 +116,7 @@ sepgsqlGetDatabaseParam(const char *name)
 		elog(ERROR, "SELinux: cache lookup failed for database %u",
 			 MyDatabaseId);
 
-	sepgsqlClientHasPermission(HeapTupleGetSecurity(tuple),
+	sepgsqlClientHasPermission(HeapTupleGetSecLabel(tuple),
 							   SECCLASS_DB_DATABASE,
 							   DB_DATABASE__GET_PARAM,
 							   sepgsqlTupleName(DatabaseRelationId, tuple));
@@ -141,7 +134,7 @@ sepgsqlSetDatabaseParam(const char *name, char *argstring)
 		elog(ERROR, "SELinux: cache lookup failed for database %u",
 			 MyDatabaseId);
 
-	sepgsqlClientHasPermission(HeapTupleGetSecurity(tuple),
+	sepgsqlClientHasPermission(HeapTupleGetSecLabel(tuple),
 							   SECCLASS_DB_DATABASE,
 							   DB_DATABASE__SET_PARAM,
 							   sepgsqlTupleName(DatabaseRelationId, tuple));
@@ -161,7 +154,7 @@ sepgsqlLockTable(Oid relid)
 		elog(ERROR, "SELinux: cache lookup failed for relation %u", relid);
 
 	if (((Form_pg_class) GETSTRUCT(tuple))->relkind == RELKIND_RELATION)
-		sepgsqlClientHasPermission(HeapTupleGetSecurity(tuple),
+		sepgsqlClientHasPermission(HeapTupleGetSecLabel(tuple),
 								   SECCLASS_DB_TABLE,
 								   DB_TABLE__LOCK,
 								   sepgsqlTupleName(RelationRelationId, tuple));
@@ -206,7 +199,7 @@ invokeTrustedProcedure(PG_FUNCTION_ARGS)
 }
 
 void
-sepgsqlCallFunction(FmgrInfo *finfo, bool with_perm_check)
+sepgsqlCallFunction(FmgrInfo *finfo)
 {
 	MemoryContext		oldctx;
 	HeapTuple			tuple;
@@ -223,7 +216,7 @@ sepgsqlCallFunction(FmgrInfo *finfo, bool with_perm_check)
 	/*
 	 * check trusted procedure
 	 */
-	newcon = sepgsqlClientCreateContext(HeapTupleGetSecurity(tuple),
+	newcon = sepgsqlClientCreateContext(HeapTupleGetSecLabel(tuple),
 										SECCLASS_PROCESS);
 	if (strcmp(newcon, sepgsqlGetClientContext()) != 0)
 	{
@@ -242,14 +235,35 @@ sepgsqlCallFunction(FmgrInfo *finfo, bool with_perm_check)
 
 	MemoryContextSwitchTo(oldctx);
 
-	if (with_perm_check)
-	{
-		sepgsqlClientHasPermission(HeapTupleGetSecurity(tuple),
-								   SECCLASS_DB_PROCEDURE,
-								   perms,
-								   sepgsqlTupleName(ProcedureRelationId, tuple));
-	}
+	sepgsqlClientHasPermission(HeapTupleGetSecLabel(tuple),
+							   SECCLASS_DB_PROCEDURE,
+							   perms,
+							   sepgsqlTupleName(ProcedureRelationId, tuple));
 
+	ReleaseSysCache(tuple);
+}
+
+void
+sepgsqlCallAggFunction(HeapTuple aggTuple)
+{
+	Form_pg_aggregate aggForm
+		= (Form_pg_aggregate) GETSTRUCT(aggTuple);
+	HeapTuple tuple;
+	const char *audit_name;
+
+	/* check pg_proc.oid = pg_aggregate.aggfnoid */
+	tuple = SearchSysCache(PROCOID,
+						   ObjectIdGetDatum(aggForm->aggfnoid),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "SELinux: cache lookup failed for procedure %u",
+			 aggForm->aggfnoid);
+
+	audit_name = sepgsqlTupleName(ProcedureRelationId, tuple);
+	sepgsqlClientHasPermission(HeapTupleGetSecLabel(tuple),
+							   SECCLASS_DB_PROCEDURE,
+							   DB_PROCEDURE__EXECUTE,
+							   audit_name);
 	ReleaseSysCache(tuple);
 }
 
@@ -265,7 +279,7 @@ sepgsqlCallFunctionTrigger(FmgrInfo *finfo, TriggerData *tgdata)
 		/*
 		 * No need to check db_tuple:{select} for a statement trigger
 		 */
-		sepgsqlCallFunction(finfo, false);
+		sepgsqlCallFunction(finfo);
 		return true;
 	}
 
@@ -279,9 +293,9 @@ sepgsqlCallFunctionTrigger(FmgrInfo *finfo, TriggerData *tgdata)
 		oldtup = tgdata->tg_trigtuple;
 		if (TRIGGER_FIRED_AFTER(tgdata->tg_event))
 		{
-			Oid securityId = HeapTupleGetSecurity(tgdata->tg_newtuple);
+			Oid securityId = HeapTupleGetSecLabel(tgdata->tg_newtuple);
 
-			if (HeapTupleGetSecurity(oldtup) != securityId)
+			if (HeapTupleGetSecLabel(oldtup) != securityId)
 				newtup = tgdata->tg_newtuple;
 		}
 	}
@@ -302,8 +316,31 @@ sepgsqlCallFunctionTrigger(FmgrInfo *finfo, TriggerData *tgdata)
 										  SEPGSQL_PERMS_SELECT, false))
 		return false;
 
-	sepgsqlCallFunction(finfo, false);
+	sepgsqlCallFunction(finfo);
 
+	return true;
+}
+
+bool sepgsqlAllowFunctionInlined(Oid fnoid, HeapTuple func_tuple)
+{
+	security_context_t	newcon;
+	const char *audit_name;
+
+	/*
+	 * If function is defined as trusted procedure, we always should
+	 * not allow it to be inlined, and actual permission checks are
+	 * done later phase.
+	 */
+	newcon = sepgsqlClientCreateContext(HeapTupleGetSecLabel(func_tuple),
+										SECCLASS_PROCESS);
+	if (strcmp(newcon, sepgsqlGetClientContext()) != 0)
+		return false;
+
+	audit_name = sepgsqlTupleName(ProcedureRelationId, func_tuple);
+	sepgsqlClientHasPermission(HeapTupleGetSecLabel(func_tuple),
+							   SECCLASS_DB_PROCEDURE,
+							   DB_PROCEDURE__EXECUTE,
+							   audit_name);
 	return true;
 }
 
@@ -317,8 +354,8 @@ sepgsqlLoadSharedModule(const char *filename)
 
 	if (getfilecon_raw(filename, &filecon) < 0)
 		ereport(ERROR,
-				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("SELinux: could not get context of %s", filename)));
+				(errcode_for_file_access(),
+				 errmsg("could not access file \"%s\": %m", filename)));
 	PG_TRY();
 	{
 		sepgsqlComputePermission(sepgsqlGetDatabaseContext(),
@@ -345,7 +382,7 @@ sepgsqlLargeObjectCreate(Relation rel, HeapTuple tuple)
 {
 	sepgsqlSetDefaultContext(rel, tuple);
 
-	sepgsqlClientHasPermission(HeapTupleGetSecurity(tuple),
+	sepgsqlClientHasPermission(HeapTupleGetSecLabel(tuple),
 							   SECCLASS_DB_BLOB,
 							   DB_BLOB__CREATE,
 							   sepgsqlTupleName(RelationGetRelid(rel), tuple));
@@ -354,7 +391,7 @@ sepgsqlLargeObjectCreate(Relation rel, HeapTuple tuple)
 void
 sepgsqlLargeObjectDrop(Relation rel, HeapTuple tuple, void **pgaceItem)
 {
-	Oid			security_id = HeapTupleGetSecurity(tuple);
+	Oid			security_id = HeapTupleGetSecLabel(tuple);
 	List	   *okList = (List *) (*pgaceItem);
 	ListCell   *l;
 
@@ -414,7 +451,7 @@ checkLargeObjectPages(Oid loid, Snapshot snapshot,
 		if (end_pageno >= 0 && loForm->pageno > end_pageno)
 			break;
 
-		security_id = HeapTupleGetSecurity(tuple);
+		security_id = HeapTupleGetSecLabel(tuple);
 
 		foreach (l, okList)
 		{
@@ -475,8 +512,8 @@ sepgsqlLargeObjectImport(Oid loid, int fdesc, const char *filename)
 
 	if (fgetfilecon_raw(fdesc, &tcontext) < 0)
 		ereport(ERROR,
-				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("SELinux: could not get context of %s", filename)));
+				(errcode_for_file_access(),
+				 errmsg("could not get security context \"%s\": %m", filename)));
 	PG_TRY();
 	{
 		sepgsqlComputePermission(sepgsqlGetClientContext(),
@@ -506,8 +543,8 @@ sepgsqlLargeObjectExport(Oid loid, int fdesc, const char *filename)
 
 	if (fgetfilecon_raw(fdesc, &tcontext) < 0)
 		ereport(ERROR,
-				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("SELinux: could not get context of %s", filename)));
+				(errcode_for_file_access(),
+				 errmsg("could not security context \"%s\": %m", filename)));
 	PG_TRY();
 	{
 		sepgsqlComputePermission(sepgsqlGetClientContext(),
@@ -531,7 +568,7 @@ sepgsqlLargeObjectExport(Oid loid, int fdesc, const char *filename)
 void
 sepgsqlLargeObjectGetSecurity(Relation rel, HeapTuple tuple)
 {
-	sepgsqlClientHasPermission(HeapTupleGetSecurity(tuple),
+	sepgsqlClientHasPermission(HeapTupleGetSecLabel(tuple),
 							   SECCLASS_DB_BLOB,
 							   DB_BLOB__GETATTR,
 							   sepgsqlTupleName(RelationGetRelid(rel), tuple));
@@ -540,17 +577,17 @@ sepgsqlLargeObjectGetSecurity(Relation rel, HeapTuple tuple)
 void
 sepgsqlLargeObjectSetSecurity(Relation rel, HeapTuple newtup, HeapTuple oldtup)
 {
-	if (HeapTupleGetSecurity(newtup) == HeapTupleGetSecurity(oldtup))
+	if (HeapTupleGetSecLabel(newtup) == HeapTupleGetSecLabel(oldtup))
 		return;
 
-	sepgsqlClientHasPermission(HeapTupleGetSecurity(oldtup),
+	sepgsqlClientHasPermission(HeapTupleGetSecLabel(oldtup),
 							   SECCLASS_DB_BLOB,
 							   DB_BLOB__SETATTR | DB_BLOB__RELABELFROM,
 							   sepgsqlTupleName(RelationGetRelid(rel), oldtup));
 	/*
 	 * check db_blob:{setattr relabelto}
 	 */
-	sepgsqlClientHasPermission(HeapTupleGetSecurity(newtup),
+	sepgsqlClientHasPermission(HeapTupleGetSecLabel(newtup),
 							   SECCLASS_DB_BLOB,
 							   DB_BLOB__RELABELTO,
 							   sepgsqlTupleName(RelationGetRelid(rel), newtup));
@@ -606,7 +643,7 @@ sepgsqlEndPerformCheckFK(Relation rel, Datum save_pgace)
  * security_label hooks
  *******************************************************************************/
 bool
-sepgsqlTupleDescHasSecurity(Relation rel, List *relopts)
+sepgsqlTupleDescHasSecLabel(Relation rel, List *relopts)
 {
 	/*
 	 * Newly created table via SELECT INTO/CREATE TABLE AS
@@ -734,7 +771,9 @@ sepgsqlSecurityLabelOfLabel(void)
 		elog(ERROR, "SELinux: cache lookup failed for relation %u",
 					SecurityRelationId);
 
-	table_context = pgaceLookupSecurityLabel(HeapTupleGetSecurity(tuple));
+	table_context = pgaceLookupSecurityLabel(HeapTupleGetSecLabel(tuple));
+	if (!table_context || !pgaceCheckValidSecurityLabel(table_context))
+		table_context = pgaceUnlabeledSecurityLabel();
 
 	tuple_context = sepgsqlComputeCreateContext(sepgsqlGetServerContext(),
 												table_context, SECCLASS_DB_TUPLE);
@@ -807,15 +846,15 @@ sepgsqlHeapTupleInsert(Relation rel, HeapTuple tuple,
 	/*
 	 * default context for no explicit labeled tuple
 	 */
-	if (HeapTupleGetSecurity(tuple) == InvalidOid)
+	if (!OidIsValid(HeapTupleGetSecLabel(tuple)))
 	{
-		if (HeapTupleHasSecurity(tuple))
+		if (HeapTupleHasSecLabel(tuple))
 			sepgsqlSetDefaultContext(rel, tuple);
 	}
 	else if (!is_internal && RelationGetRelid(rel) == LargeObjectRelationId)
 		ereport(ERROR,
 				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("SELinux: not allowed to insert into "
+				 errmsg("SELinux: unable to insert "
 						"pg_largeobject.security_context")));
 
 	if (isTrustedRelation(rel, is_internal))
@@ -832,46 +871,53 @@ bool
 sepgsqlHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple newtup,
 					   bool is_internal, bool with_returning)
 {
+	Oid			relid = RelationGetRelid(rel);
 	HeapTuple	oldtup;
 	uint32		perms;
 	bool		rc = true;
+	bool		relabel = false;
 
 	oldtup = getHeapTupleFromItemPointer(rel, otid);
 
-	if (HeapTupleGetSecurity(newtup) == InvalidOid)
+	if (!OidIsValid(HeapTupleGetSecLabel(newtup)))
 	{
-		Oid securityId = HeapTupleGetSecurity(oldtup);
+		Oid sid = HeapTupleGetSecLabel(oldtup);
 
-		if (HeapTupleHasSecurity(newtup))
-			HeapTupleSetSecurity(newtup, securityId);
+		if (HeapTupleHasSecLabel(newtup))
+			HeapTupleSetSecLabel(newtup, sid);
 	}
 	else if (!is_internal && RelationGetRelid(rel) == LargeObjectRelationId)
 		ereport(ERROR,
 				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("SELinux: not allowed to update "
+				 errmsg("SELinux: unable to update "
 						"pg_largeobject.security_context")));
 
 	if (isTrustedRelation(rel, is_internal))
 		return true;
 
+	if (HeapTupleGetSecLabel(newtup) != HeapTupleGetSecLabel(oldtup) ||
+		sepgsqlTupleObjectClass(relid, newtup) != sepgsqlTupleObjectClass(relid, oldtup))
+		relabel = true;
+
+	perms = 0;
 	if (is_internal)
 	{
-		perms = SEPGSQL_PERMS_UPDATE;
-		if (HeapTupleGetSecurity(newtup) != HeapTupleGetSecurity(oldtup))
-			perms |= SEPGSQL_PERMS_RELABELFROM;
-		else if (with_returning)
+		perms |= SEPGSQL_PERMS_UPDATE;
+		if (with_returning)
 			perms |= SEPGSQL_PERMS_SELECT;
-		rc = sepgsqlCheckTuplePerms(rel, oldtup, NULL, perms, is_internal);
-		if (!rc)
-			goto out;
 	}
+	if (relabel)
+		perms |= SEPGSQL_PERMS_RELABELFROM;
+	rc = sepgsqlCheckTuplePerms(rel, oldtup, newtup, perms, is_internal);
+	if (!rc)
+		goto out;
 
-	if (HeapTupleGetSecurity(newtup) != HeapTupleGetSecurity(oldtup))
+	if (relabel)
 	{
 		perms = SEPGSQL_PERMS_RELABELTO;
 		if (with_returning)
 			perms |= SEPGSQL_PERMS_SELECT;
-		rc = sepgsqlCheckTuplePerms(rel, newtup, oldtup, perms, is_internal);
+		rc = sepgsqlCheckTuplePerms(rel, newtup, NULL, perms, is_internal);
 	}
   out:
 	heap_freetuple(oldtup);
@@ -883,18 +929,20 @@ sepgsqlHeapTupleDelete(Relation rel, ItemPointer otid,
 					   bool is_internal, bool with_returning)
 {
 	HeapTuple	oldtup;
-	uint32		perms = SEPGSQL_PERMS_DELETE;
+	uint32		perms = 0;
 	bool		rc;
 
-	if (!is_internal)
-		return true;
+	if (is_internal)
+	{
+		perms |= SEPGSQL_PERMS_DELETE;
+		if (with_returning)
+			perms |= SEPGSQL_PERMS_SELECT;
+	}
 
 	if (isTrustedRelation(rel, is_internal))
 		return true;
 
 	oldtup = getHeapTupleFromItemPointer(rel, otid);
-	if (with_returning)
-		perms |= SEPGSQL_PERMS_SELECT;
 	rc = sepgsqlCheckTuplePerms(rel, oldtup, NULL, perms, is_internal);
 	heap_freetuple(oldtup);
 

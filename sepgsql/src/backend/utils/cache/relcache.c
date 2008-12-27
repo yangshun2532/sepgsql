@@ -328,7 +328,7 @@ AllocateRelationDesc(Relation relation, Form_pg_class relp)
 	/*
 	 * and allocate attribute tuple form storage
 	 *
-	 * Please note that relation->rd_att->tdhassecurity should be fixed
+	 * Please note that relation->rd_att->tdhasseclabel should be fixed
 	 * up correctly at RelationBuildTupleDesc(), because security module
 	 * may need reloptions info to make its decision.
 	 */
@@ -882,9 +882,9 @@ RelationBuildDesc(Oid targetRelId, Relation oldrelation)
 	/* extract reloptions if any */
 	RelationParseRelOptions(relation, pg_class_tuple);
 
-	/* fixup relation->rd_att->tdhassecurity */
-	relation->rd_att->tdhassecurity
-		= pgaceTupleDescHasSecurity(relation, NIL);
+	/* fixup relation->rd_att->tdhasseclabel */
+	relation->rd_att->tdhasseclabel
+		= pgaceTupleDescHasSecLabel(relation, NIL);
 
 	/*
 	 * initialize the relation lock manager information
@@ -1471,10 +1471,10 @@ formrdesc(const char *relationName, Oid relationReltype,
 	relation->rd_rel->relfilenode = RelationGetRelid(relation);
 
 	/*
-	 * Fixup relation->rd_att->tdhassecurity
+	 * Fixup relation->rd_att->tdhasseclabel
 	 */
-	RelationGetDescr(relation)->tdhassecurity
-		= pgaceTupleDescHasSecurity(relation, NIL);
+	RelationGetDescr(relation)->tdhasseclabel
+		= pgaceTupleDescHasSecLabel(relation, NIL);
 
 	/*
 	 * initialize the relation lock manager information
@@ -2705,7 +2705,7 @@ BuildHardcodedDescriptor(int natts, Form_pg_attribute attrs, bool hasoids)
 	/*
 	 * NOTE: we assume the returned TupleDesc is only used for
 	 * references to toast'ed data, and it is not delivered to
-	 * heap_form_tuple(), so TupleDesc->tdhassecurity does not
+	 * heap_form_tuple(), so TupleDesc->tdhasseclabel does not
 	 * give any effect.
 	 * We omit to invoke pgaceTupleDescHasSecurity() here.
 	 */
@@ -3469,10 +3469,10 @@ load_relcache_init_file(void)
 		}
 
 		/*
-		 * fixup rel->rd_att->tdhassecurity
+		 * fixup rel->rd_att->tdhasseclabel
 		 */
-		rel->rd_att->tdhassecurity
-			= pgaceTupleDescHasSecurity(rel, NIL);
+		rel->rd_att->tdhasseclabel
+			= pgaceTupleDescHasSecLabel(rel, NIL);
 
 		/* mark not-null status */
 		if (has_not_null)

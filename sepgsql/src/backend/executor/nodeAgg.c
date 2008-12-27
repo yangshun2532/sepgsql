@@ -80,6 +80,7 @@
 #include "parser/parse_coerce.h"
 #include "parser/parse_expr.h"
 #include "parser/parse_oper.h"
+#include "security/pgace.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
@@ -1398,6 +1399,8 @@ ExecInitAgg(Agg *node, EState *estate, int eflags)
 			aclcheck_error(aclresult, ACL_KIND_PROC,
 						   get_func_name(aggref->aggfnoid));
 
+		pgaceCallAggFunction(aggTuple);
+
 		peraggstate->transfn_oid = transfn_oid = aggform->aggtransfn;
 		peraggstate->finalfn_oid = finalfn_oid = aggform->aggfinalfn;
 
@@ -1460,11 +1463,13 @@ ExecInitAgg(Agg *node, EState *estate, int eflags)
 								&finalfnexpr);
 
 		fmgr_info(transfn_oid, &peraggstate->transfn);
+		pgaceCallFunction(&peraggstate->transfn);
 		peraggstate->transfn.fn_expr = (Node *) transfnexpr;
 
 		if (OidIsValid(finalfn_oid))
 		{
 			fmgr_info(finalfn_oid, &peraggstate->finalfn);
+			pgaceCallFunction(&peraggstate->finalfn);
 			peraggstate->finalfn.fn_expr = (Node *) finalfnexpr;
 		}
 
@@ -1538,6 +1543,7 @@ ExecInitAgg(Agg *node, EState *estate, int eflags)
 			 */
 			eq_function = equality_oper_funcid(inputTypes[0]);
 			fmgr_info(eq_function, &(peraggstate->equalfn));
+			pgaceCallFunction(&(peraggstate->equalfn));
 			peraggstate->sortOperator = ordering_oper_opid(inputTypes[0]);
 			peraggstate->sortstate = NULL;
 		}

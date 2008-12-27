@@ -749,7 +749,7 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 
 					j = ExecInitJunkFilter(subplan->plan->targetlist,
 										   RelationGetDescr(resultRel)->tdhasoid,
-										   RelationGetDescr(resultRel)->tdhassecurity,
+										   RelationGetDescr(resultRel)->tdhasseclabel,
 										   ExecAllocTableSlot(estate->es_tupleTable));
 					/*
 					 * Since it must be UPDATE/DELETE, there had better be a
@@ -792,7 +792,7 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 										planstate->plan->targetlist);
 
 				j = ExecInitJunkFilter(planstate->plan->targetlist,
-									   tupType->tdhasoid, tupType->tdhassecurity,
+									   tupType->tdhasoid, tupType->tdhasseclabel,
 								  ExecAllocTableSlot(estate->es_tupleTable));
 				estate->es_junkFilter = j;
 				if (estate->es_result_relation_info)
@@ -1175,7 +1175,7 @@ ExecContextForcesOids(PlanState *planstate, bool *hasoids)
 }
 
 /*
- * ExecContextForcesSecurity
+ * ExecContextForcesSecLabel
  *
  * We need to ensure that result tuples have space for security attribute,
  * if the security mechanism are going to be stored it into the given
@@ -1185,7 +1185,7 @@ ExecContextForcesOids(PlanState *planstate, bool *hasoids)
  * be newly created via SELECT INTO, because the creation of the relation
  * will be done after invocation of the function.
  */
-bool ExecContextForcesSecurity(PlanState *planstate, bool *hassecurity)
+bool ExecContextForcesSecLabel(PlanState *planstate, bool *hasseclabel)
 {
 	if (planstate->state->es_select_into)
 	{
@@ -1193,7 +1193,7 @@ bool ExecContextForcesSecurity(PlanState *planstate, bool *hassecurity)
 
 		Assert(into != NULL);
 
-		*hassecurity = pgaceTupleDescHasSecurity(NULL, into->options);
+		*hasseclabel = pgaceTupleDescHasSecLabel(NULL, into->options);
 		return true;
 	}
 	else
@@ -1202,7 +1202,7 @@ bool ExecContextForcesSecurity(PlanState *planstate, bool *hassecurity)
 
 		if (ri && ri->ri_RelationDesc)
 		{
-			*hassecurity = pgaceTupleDescHasSecurity(ri->ri_RelationDesc, NIL);
+			*hasseclabel = pgaceTupleDescHasSecLabel(ri->ri_RelationDesc, NIL);
 			return true;
 		}
 	}
@@ -1299,16 +1299,14 @@ ExecEndPlan(PlanState *planstate, EState *estate)
  */
 static void
 fetchWritableSystemAttribute(JunkFilter *junkfilter, TupleTableSlot *slot,
-							 Datum *tts_security)
+							 Datum *tts_seclabel)
 {
 	AttrNumber attno;
 	Datum datum;
 	bool isnull;
 
-	/*
-	 * Fetch a junk value for security system attribute
-	 */
-	attno = ExecFindJunkAttribute(junkfilter, SecurityAttributeName);
+	/* for Security Label */
+	attno = ExecFindJunkAttribute(junkfilter, SecurityLabelAttributeName);
 	if (attno != InvalidAttrNumber)
 	{
 		datum = ExecGetJunkAttribute(slot, attno, &isnull);
@@ -1316,8 +1314,8 @@ fetchWritableSystemAttribute(JunkFilter *junkfilter, TupleTableSlot *slot,
 			ereport(ERROR,
 					(errcode(ERRCODE_PGACE_ERROR),
 					 errmsg("null value in column \"%s\" violates not-null constraint",
-							SecurityAttributeName)));
-		*tts_security = datum;
+							SecurityLabelAttributeName)));
+		*tts_seclabel = datum;
 	}
 }
 
@@ -1325,19 +1323,19 @@ static void
 storeWritableSystemAttribute(Relation rel, TupleTableSlot *slot, HeapTuple tuple)
 {
 	/* for security attribute */
-	if (HeapTupleHasSecurity(tuple))
+	if (HeapTupleHasSecLabel(tuple))
 	{
-		if (!DatumGetPointer(slot->tts_security))
-			HeapTupleSetSecurity(tuple, InvalidOid);
+		if (!DatumGetPointer(slot->tts_seclabel))
+			HeapTupleSetSecLabel(tuple, InvalidOid);
 		else
 		{
-			char   *label = TextDatumGetCString(slot->tts_security);
+			char   *label = TextDatumGetCString(slot->tts_seclabel);
 
-			HeapTupleSetSecurity(tuple,
+			HeapTupleSetSecLabel(tuple,
 								 pgaceSecurityLabelToSid(label));
 		}
 	}
-	else if (DatumGetPointer(slot->tts_security))
+	else if (DatumGetPointer(slot->tts_seclabel))
 	{
 		ereport(ERROR,
 				(errcode(ERRCODE_PGACE_ERROR),
@@ -1414,7 +1412,7 @@ ExecutePlan(EState *estate,
 
 	for (;;)
 	{
-		Datum tts_security = PointerGetDatum(NULL);
+		Datum tts_seclabel = PointerGetDatum(NULL);
 
 		/* Reset the per-output-tuple exprcontext */
 		ResetPerTupleExprContext(estate);
@@ -1542,7 +1540,7 @@ lnext:	;
 			/*
 			 * extract writable system attribute
 			 */
-			fetchWritableSystemAttribute(junkfilter, slot, &tts_security);
+			fetchWritableSystemAttribute(junkfilter, slot, &tts_seclabel);
 
 			/*
 			 * extract the 'ctid' junk attribute.
@@ -1571,7 +1569,7 @@ lnext:	;
 			if (operation != CMD_DELETE)
 				slot = ExecFilterJunk(junkfilter, slot);
 		}
-		slot->tts_security = tts_security;
+		slot->tts_seclabel = tts_seclabel;
 
 		/*
 		 * now that we have a tuple, do the appropriate thing with it.. either

@@ -316,7 +316,7 @@ AppendAttributeTuples(Relation indexRelation, int numatts)
 
 		new_tuple = heap_addheader(Natts_pg_attribute,
 								   false,
-								   RelationGetDescr(pg_attribute)->tdhassecurity,
+								   RelationGetDescr(pg_attribute)->tdhasseclabel,
 								   ATTRIBUTE_TUPLE_SIZE,
 								   (void *) indexTupDesc->attrs[i]);
 
@@ -604,10 +604,10 @@ index_create(Oid heapRelationId,
 	Assert(indexRelationId == RelationGetRelid(indexRelation));
 
 	/*
-	 * Fixup rel->rd_att->tdhassecurity
+	 * Fixup rel->rd_att->tdhasseclabel
 	 */
-	indexRelation->rd_att->tdhassecurity
-		= pgaceTupleDescHasSecurity(indexRelation, NIL);
+	indexRelation->rd_att->tdhasseclabel
+		= pgaceTupleDescHasSecLabel(indexRelation, NIL);
 
 	/*
 	 * Obtain exclusive lock on it.  Although no other backends can see it

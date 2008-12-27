@@ -17,6 +17,9 @@
 #include "utils/syscache.h"
 #include <selinux/context.h>
 
+SepgsqlModeType sepostgresql_mode;
+char *sepostgresql_mode_string;
+
 static security_context_t serverContext = NULL;
 static security_context_t clientContext = NULL;
 static security_context_t unlabeledContext = NULL;
@@ -72,7 +75,9 @@ sepgsqlGetDatabaseContext(void)
 		if (!HeapTupleIsValid(tuple))
 			elog(ERROR, "SELinux: cache lookup failed for database: %u", MyDatabaseId);
 
-		dcontext = pgaceLookupSecurityLabel(HeapTupleGetSecurity(tuple));
+		dcontext = pgaceLookupSecurityLabel(HeapTupleGetSecLabel(tuple));
+		if (!dcontext || !pgaceCheckValidSecurityLabel(dcontext))
+			dcontext = pgaceUnlabeledSecurityLabel();
 
 		ReleaseSysCache(tuple);
 	}
@@ -83,14 +88,14 @@ sepgsqlGetDatabaseContext(void)
 Oid
 sepgsqlGetDatabaseSecurityId(void)
 {
-	Oid security_id;
+	Oid sid;
 
 	if (IsBootstrapProcessingMode())
 	{
 		security_context_t dcontext
 			= sepgsqlGetDatabaseContext();
 
-		security_id = pgaceSecurityLabelToSid(dcontext);
+		sid = pgaceSecurityLabelToSid(dcontext);
 	}
 	else
 	{
@@ -102,12 +107,12 @@ sepgsqlGetDatabaseSecurityId(void)
 		if (!HeapTupleIsValid(tuple))
 			elog(ERROR, "SELinux: cache lookup failed for database: %u", MyDatabaseId);
 
-		security_id = HeapTupleGetSecurity(tuple);
+		sid = HeapTupleGetSecLabel(tuple);
 
 		ReleaseSysCache(tuple);
 	}
 
-	return security_id;
+	return sid;
 }
 
 const security_context_t
@@ -264,6 +269,27 @@ sepgsqlInitialize(bool bootstrap)
  * - disabled   : It disables SE-PostgreSQL feature. It works as if
  *                original PostgreSQL
  */
+const char *sepgsqlAssignModeString(const char *value, bool doit, GucSource source)
+{
+	SepgsqlModeType config_mode = SEPGSQL_MODE_DEFAULT;
+
+	if (strcmp(value, "default") == 0)
+		config_mode = SEPGSQL_MODE_DEFAULT;
+	else if (strcmp(value, "enforcing") == 0)
+		config_mode = SEPGSQL_MODE_ENFORCING;
+	else if (strcmp(value, "permissive") == 0)
+		config_mode = SEPGSQL_MODE_PERMISSIVE;
+	else if (strcmp(value, "disabled") == 0)
+		config_mode = SEPGSQL_MODE_DISABLED;
+	else
+		ereport(GUC_complaint_elevel(source),
+                (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 "SELinux: unexpected mode: %s", value));
+	if (doit)
+		sepostgresql_mode = config_mode;
+
+	return value;
+}
 
 bool
 sepgsqlIsEnabled(void)
@@ -272,30 +298,18 @@ sepgsqlIsEnabled(void)
 
 	if (enabled < 0)
 	{
-		if (strcmp(sepostgresql_mode, "disabled") == 0)
+		if (sepostgresql_mode == SEPGSQL_MODE_DISABLED)
 			enabled = 0;
 		else
 		{
-			int rc = is_selinux_enabled();
-
-			if (strcmp(sepostgresql_mode, "default") == 0)
-				enabled = rc;
-			else if (strcmp(sepostgresql_mode, "permissice") == 0
-					 || strcmp(sepostgresql_mode, "enforcing") == 0)
-			{
-				if (rc == 0)
-					ereport(FATAL,
-							(errcode(ERRCODE_SELINUX_ERROR),
-							 errmsg("SELinux: disabled in kernel, but sepostgresql = %s",
-									sepostgresql_mode)));
-				enabled = 1;
-			}
-			else
+			enabled = is_selinux_enabled();
+			if (enabled == 0	/* in-kernel SELinux is disabled */
+				&& sepostgresql_mode != SEPGSQL_MODE_DEFAULT)
 			{
 				ereport(FATAL,
 						(errcode(ERRCODE_SELINUX_ERROR),
-						 errmsg("SELinux: unknown state sepostgresql = %s",
-								sepostgresql_mode)));
+						 errmsg("SELinux: disabled in kernel, but sepostgresql = %s",
+								SEPGSQL_MODE_ENFORCING ? "enforcing" : "permissive")));
 			}
 		}
 	}

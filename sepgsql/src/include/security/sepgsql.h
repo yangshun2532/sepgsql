@@ -24,21 +24,34 @@
 /*
  * SE-PostgreSQL modes
  */
-extern char *sepostgresql_mode;
+typedef enum
+{
+	SEPGSQL_MODE_DEFAULT,
+	SEPGSQL_MODE_ENFORCING,
+	SEPGSQL_MODE_PERMISSIVE,
+	SEPGSQL_MODE_DISABLED,
+} SepgsqlModeType;
+
+extern SepgsqlModeType sepostgresql_mode;
+extern char *sepostgresql_mode_string;
+
 extern bool sepostgresql_row_level;
+
+extern const char *sepgsqlAssignModeString(const char *value, bool doit, GucSource source);
 
 /*
  * Permission codes of internal representation
+ * Please note that 0x000000ff are reserved by rowacl
  */
-#define SEPGSQL_PERMS_USE				(1UL << 0)
-#define SEPGSQL_PERMS_SELECT			(1UL << 1)
-#define SEPGSQL_PERMS_UPDATE			(1UL << 2)
-#define SEPGSQL_PERMS_INSERT			(1UL << 3)
-#define SEPGSQL_PERMS_DELETE			(1UL << 4)
-#define SEPGSQL_PERMS_RELABELFROM		(1UL << 5)
-#define SEPGSQL_PERMS_RELABELTO			(1UL << 6)
-#define SEPGSQL_PERMS_READ				(1UL << 7)
-#define SEPGSQL_PERMS_WRITE				(1UL << 8)
+#define SEPGSQL_PERMS_USE				(1UL <<  8)
+#define SEPGSQL_PERMS_SELECT			(1UL <<  9)
+#define SEPGSQL_PERMS_UPDATE			(1UL << 10)
+#define SEPGSQL_PERMS_INSERT			(1UL << 11)
+#define SEPGSQL_PERMS_DELETE			(1UL << 12)
+#define SEPGSQL_PERMS_RELABELFROM		(1UL << 13)
+#define SEPGSQL_PERMS_RELABELTO			(1UL << 14)
+#define SEPGSQL_PERMS_READ				(1UL << 15)
+#define SEPGSQL_PERMS_WRITE				(1UL << 16)
 
 /*
  * The implementation of PGACE/SE-PostgreSQL hooks
@@ -100,13 +113,17 @@ extern void sepgsqlSetDatabaseParam(const char *name, char *argstring);
 extern void sepgsqlGetDatabaseParam(const char *name);
 
 /* FUNCTION related hooks */
-extern void sepgsqlCallFunction(FmgrInfo *finfo, bool with_perm_check);
+extern void sepgsqlCallFunction(FmgrInfo *finfo);
+
+extern void sepgsqlCallAggFunction(HeapTuple aggTuple);
 
 extern bool sepgsqlCallFunctionTrigger(FmgrInfo *finfo, TriggerData *tgdata);
 
 extern Datum sepgsqlBeginPerformCheckFK(Relation rel, bool is_primary, Oid save_userid);
 
 extern void sepgsqlEndPerformCheckFK(Relation rel, Datum save_pgace);
+
+extern bool sepgsqlAllowFunctionInlined(Oid fnoid, HeapTuple func_tuple);
 
 /* TABLE related hooks */
 extern void sepgsqlLockTable(Oid relid);
@@ -143,7 +160,7 @@ extern void sepgsqlLargeObjectGetSecurity(Relation rel, HeapTuple tuple);
 extern void sepgsqlLargeObjectSetSecurity(Relation rel, HeapTuple newtup, HeapTuple oldtup);
 
 /* Security Label hooks */
-extern bool  sepgsqlTupleDescHasSecurity(Relation rel, List *relopts);
+extern bool  sepgsqlTupleDescHasSecLabel(Relation rel, List *relopts);
 
 extern char *sepgsqlTranslateSecurityLabelIn(const char *context);
 
@@ -221,8 +238,8 @@ extern security_class_t sepgsqlTupleObjectClass(Oid relid, HeapTuple tuple);
 
 extern void sepgsqlSetDefaultContext(Relation rel, HeapTuple tuple);
 
-extern bool sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple,
-								   HeapTuple oldtup, uint32 perms, bool abort);
+extern bool sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, HeapTuple newtup,
+								   uint32 perms, bool abort);
 
 extern void sepgsqlCheckModuleInstallPerms(const char *filename);
 

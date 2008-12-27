@@ -19,7 +19,6 @@
 #include "catalog/pg_type.h"
 #include "commands/defrem.h"
 #include "nodes/makefuncs.h"
-#include "security/pgace.h"
 #include "utils/array.h"
 #include "utils/builtins.h"
 #include "utils/rel.h"
@@ -105,8 +104,6 @@ transformRelOptions(Datum oldOptions, List *defList,
 	foreach(cell, defList)
 	{
 		DefElem    *def = lfirst(cell);
-
-		pgaceGramTransformRelOptions(def, isReset);
 
 		if (isReset)
 		{
@@ -280,34 +277,6 @@ parseRelOptions(Datum options, int numkeywords, const char *const * keywords,
 	}
 }
 
-static bool
-parse_fillfactor_reloption(const char *value, StdRdOptions *result, bool validate,
-						   int minFillfactor, int defaultFillfactor)
-{
-	int fillfactor;
-
-	/*
-	 * Set default option
-	 */
-	result->fillfactor = defaultFillfactor;
-	if (!value)
-		return false;	/* no options */
-
-	fillfactor = pg_atoi(value, sizeof(int32), 0);
-	if (fillfactor < minFillfactor || fillfactor > 100)
-	{
-		if (validate)
-			ereport(ERROR,
-					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-					 errmsg("fillfactor=%d is out of range (should be between %d and 100)",
-							fillfactor, minFillfactor)));
-		return false;
-	}
-
-	result->fillfactor = fillfactor;
-
-	return true;
-}
 
 /*
  * Parse reloptions for anything using StdRdOptions (ie, fillfactor only)
@@ -316,43 +285,36 @@ bytea *
 default_reloptions(Datum reloptions, bool validate,
 				   int minFillfactor, int defaultFillfactor)
 {
-	static const char *const default_keywords[] = {
-		"fillfactor",
-	};
-	char	   *values[lengthof(default_keywords)];
-	int			index;
-	bool		exist = false;
+	static const char *const default_keywords[1] = {"fillfactor"};
+	char	   *values[1];
+	int32		fillfactor;
 	StdRdOptions *result;
 
-	parseRelOptions(reloptions,
-					lengthof(default_keywords), default_keywords,
-					values, validate);
+	parseRelOptions(reloptions, 1, default_keywords, values, validate);
 
-	result = (StdRdOptions *) palloc0(sizeof(StdRdOptions));
-	SET_VARSIZE(result, sizeof(StdRdOptions));
-
-	for (index = 0; index < lengthof(default_keywords); index++)
-	{
-		if (strcmp("fillfactor", default_keywords[index]) == 0)
-		{
-			if (parse_fillfactor_reloption(values[index], result, validate,
-										   minFillfactor, defaultFillfactor))
-				exist = true;
-		}
-		else if (pgaceGramParseRelOptions(default_keywords[index],
-										  values[index], result, validate))
-		{
-			exist = true;
-		}
-	}
 	/*
 	 * If no options, we can just return NULL rather than doing anything.
+	 * (defaultFillfactor is thus not used, but we require callers to pass it
+	 * anyway since we would need it if more options were added.)
 	 */
-	if (exist == false)
+	if (values[0] == NULL)
+		return NULL;
+
+	fillfactor = pg_atoi(values[0], sizeof(int32), 0);
+	if (fillfactor < minFillfactor || fillfactor > 100)
 	{
-		pfree(result);
+		if (validate)
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg("fillfactor=%d is out of range (should be between %d and 100)",
+							fillfactor, minFillfactor)));
 		return NULL;
 	}
+
+	result = (StdRdOptions *) palloc(sizeof(StdRdOptions));
+	SET_VARSIZE(result, sizeof(StdRdOptions));
+
+	result->fillfactor = fillfactor;
 
 	return (bytea *) result;
 }

@@ -147,8 +147,8 @@ static FormData_pg_attribute a7 = {
 };
 
 static FormData_pg_attribute a8 = {
-	0, {SecurityAttributeName}, TEXTOID, 0, -1,
-	SecurityAttributeNumber, 0, -1, -1,
+	0, {SecurityLabelAttributeName}, TEXTOID, 0, -1,
+	SecurityLabelAttributeNumber, 0, -1, -1,
 	false, 'x', 'i', true, false, false, true, 0
 };
 
@@ -199,7 +199,7 @@ SystemAttributeByName(const char *attname, bool relhasoids)
 bool
 SystemAttributeIsWritable(AttrNumber attnum)
 {
-	if (attnum == SecurityAttributeNumber)
+	if (attnum == SecurityLabelAttributeNumber)
 		return true;
 
 	return false;
@@ -521,7 +521,7 @@ AddNewAttributeTuples(Oid new_rel_oid,
 
 		tup = heap_addheader(Natts_pg_attribute,
 							 false,
-							 RelationGetDescr(rel)->tdhassecurity,
+							 RelationGetDescr(rel)->tdhasseclabel,
 							 ATTRIBUTE_TUPLE_SIZE,
 							 (void *) *dpp);
 		pgaceCreateAttributeCommon(rel, tup, pgace_attr_list);
@@ -560,7 +560,7 @@ AddNewAttributeTuples(Oid new_rel_oid,
 
 				tup = heap_addheader(Natts_pg_attribute,
 									 false,
-									 RelationGetDescr(rel)->tdhassecurity,
+									 RelationGetDescr(rel)->tdhasseclabel,
 									 ATTRIBUTE_TUPLE_SIZE,
 									 (void *) *dpp);
 				attStruct = (Form_pg_attribute) GETSTRUCT(tup);
@@ -1004,10 +1004,10 @@ heap_create_with_catalog(const char *relname,
 						  oidislocal, oidinhcount, pgace_attr_list);
 
 	/*
-	 * Fixup rel->rd_att->tdhassecurity
+	 * Fixup rel->rd_att->tdhasseclabel
 	 */
-	new_rel_desc->rd_att->tdhassecurity
-		= pgaceTupleDescHasSecurity(new_rel_desc, NIL);
+	new_rel_desc->rd_att->tdhasseclabel
+		= pgaceTupleDescHasSecLabel(new_rel_desc, NIL);
 
 	/*
 	 * Make a dependency link to force the relation to be deleted if its

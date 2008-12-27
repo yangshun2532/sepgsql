@@ -120,7 +120,7 @@ typedef struct TupleTableSlot
 	long		tts_off;		/* saved state for slot_deform_tuple */
 
 	/* temporary storage variables for writable system column */
-	Datum		tts_security;	/* for security attribute */
+	Datum		tts_seclabel;	/* for security label */
 } TupleTableSlot;
 
 /*

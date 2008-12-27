@@ -42,17 +42,4 @@ typedef struct SEvalItemAttribute {
 	AttrNumber attno;
 } SEvalItemAttribute;
 
-/*
- * SEvalItemProcedure
- *
- * SE-PostgreSQL permission evaluation item for a procedure
- */
-typedef struct SEvalItemProcedure {
-	NodeTag type;
-
-	uint32 perms;
-
-	Oid funcid;
-} SEvalItemProcedure;
-
 #endif	/* NODES_SECURITY_H */
