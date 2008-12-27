@@ -519,7 +519,7 @@ ExecAssignResultTypeFromTL(PlanState *planstate)
 		hasoid = false;
 	}
 
-	if (!ExecContextForcesSecurity(planstate, &hassecurity))
+	if (!ExecContextForcesSecLabel(planstate, &hassecurity))
 		hassecurity = false;
 
 	/*

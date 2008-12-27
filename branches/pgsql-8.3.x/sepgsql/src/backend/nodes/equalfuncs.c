@@ -1952,15 +1952,6 @@ _equalSEvalItemAttribute(SEvalItemAttribute *a, SEvalItemAttribute *b)
 	return true;
 }
 
-static bool
-_equalSEvalItemProcedure(SEvalItemProcedure *a, SEvalItemProcedure *b)
-{
-	COMPARE_SCALAR_FIELD(perms);
-	COMPARE_SCALAR_FIELD(funcid);
-
-	return true;
-}
-
 /*
  * Stuff from pg_list.h
  */
@@ -2569,9 +2560,6 @@ equal(void *a, void *b)
 			break;
 		case T_SEvalItemAttribute:
 			retval = _equalSEvalItemAttribute(a, b);
-			break;
-		case T_SEvalItemProcedure:
-			retval = _equalSEvalItemProcedure(a, b);
 			break;
 
 		default:

@@ -140,7 +140,7 @@ extern void ExecutorEnd(QueryDesc *queryDesc);
 extern void ExecutorRewind(QueryDesc *queryDesc);
 extern ResultRelInfo *ExecGetTriggerResultRel(EState *estate, Oid relid);
 extern bool ExecContextForcesOids(PlanState *planstate, bool *hasoids);
-extern bool ExecContextForcesSecurity(PlanState *planstate, bool *hasoids);
+extern bool ExecContextForcesSecLabel(PlanState *planstate, bool *hasseclabel);
 extern void ExecConstraints(ResultRelInfo *resultRelInfo,
 				TupleTableSlot *slot, EState *estate);
 extern TupleTableSlot *EvalPlanQual(EState *estate, Index rti,
@@ -200,8 +200,8 @@ extern void ExecInitScanTupleSlot(EState *estate, ScanState *scanstate);
 extern TupleTableSlot *ExecInitExtraTupleSlot(EState *estate);
 extern TupleTableSlot *ExecInitNullTupleSlot(EState *estate,
 					  TupleDesc tupType);
-extern TupleDesc ExecTypeFromTL(List *targetList, bool hasoid, bool hassecurity);
-extern TupleDesc ExecCleanTypeFromTL(List *targetList, bool hasoid, bool hassecurity);
+extern TupleDesc ExecTypeFromTL(List *targetList, bool hasoid, bool hasseclabel);
+extern TupleDesc ExecCleanTypeFromTL(List *targetList, bool hasoid, bool hasseclabel);
 extern TupleDesc ExecTypeFromExprList(List *exprList);
 extern void UpdateChangedParamSet(PlanState *node, Bitmapset *newchg);
 

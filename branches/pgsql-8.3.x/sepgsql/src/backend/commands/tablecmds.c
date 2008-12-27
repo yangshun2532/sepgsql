@@ -2603,8 +2603,8 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap)
 				heap_deform_tuple(tuple, oldTupDesc, values, isnull);
 				if (oldTupDesc->tdhasoid)
 					tupOid = HeapTupleGetOid(tuple);
-				if (HeapTupleHasSecurity(tuple))
-					tupSid = HeapTupleGetSecurity(tuple);
+				if (HeapTupleHasSecLabel(tuple))
+					tupSid = HeapTupleGetSecLabel(tuple);
 
 				/* Set dropped attributes to null in new tuple */
 				foreach(lc, dropped_attrs)
@@ -2638,7 +2638,7 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap)
 					HeapTupleSetOid(tuple, tupOid);
 				/* Preserve Security ID, if any */
 				if (tupSid != InvalidOid)
-					HeapTupleSetSecurity(tuple, tupSid);
+					HeapTupleSetSecLabel(tuple, tupSid);
 			}
 
 			/* Now check any constraints on the possibly-changed tuple */
@@ -3041,7 +3041,6 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 	int32		typmod;
 	Form_pg_type tform;
 	Expr	   *defval;
-	bool		with_security;
 
 	attrdesc = heap_open(AttributeRelationId, RowExclusiveLock);
 
@@ -3126,7 +3125,7 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 
 	attributeTuple = heap_addheader(Natts_pg_attribute,
 									false,
-									RelationGetDescr(attrdesc)->tdhassecurity,
+									RelationGetDescr(attrdesc)->tdhasseclabel,
 									ATTRIBUTE_TUPLE_SIZE,
 									(void *) &attributeD);
 

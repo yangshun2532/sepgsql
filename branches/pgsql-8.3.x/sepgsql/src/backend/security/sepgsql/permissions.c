@@ -25,6 +25,7 @@
 #include "miscadmin.h"
 #include "security/pgace.h"
 #include "utils/fmgroids.h"
+#include "utils/lsyscache.h"
 #include "utils/syscache.h"
 #include "utils/tqual.h"
 
@@ -34,7 +35,7 @@
  * It can be configured via a GUC variable to toggle
  * row-level access controls.
  */
-bool sepostgresql_row_level;
+bool sepostgresql_row_level = true;
 
 const char *
 sepgsqlTupleName(Oid relid, HeapTuple tuple)
@@ -44,30 +45,24 @@ sepgsqlTupleName(Oid relid, HeapTuple tuple)
 	switch (relid)
 	{
 		case AttributeRelationId:
+			if (!IsBootstrapProcessingMode())
 			{
 				Form_pg_attribute attForm
 					= (Form_pg_attribute) GETSTRUCT(tuple);
+				char *relname = get_rel_name(attForm->attrelid);
 
-				if (!IsBootstrapProcessingMode())
+				if (relname)
 				{
-					HeapTuple	exttup = SearchSysCache(RELOID,
-														ObjectIdGetDatum
-														(attForm->attrelid),
-														0, 0, 0);
-
-					if (HeapTupleIsValid(exttup))
-					{
-						snprintf(buffer, sizeof(buffer), "%s.%s",
-								 NameStr(((Form_pg_class) GETSTRUCT(exttup))->relname),
-								 NameStr(((Form_pg_attribute) GETSTRUCT(tuple))->attname));
-						ReleaseSysCache(exttup);
-						break;
-					}
+					snprintf(buffer, sizeof(buffer), "%s.%s",
+							 relname, NameStr(attForm->attname));
+					pfree(relname);
+					break;
 				}
-				snprintf(buffer, sizeof(buffer), "%s",
-						 NameStr(((Form_pg_attribute) GETSTRUCT(tuple))->attname));
-				break;
 			}
+			snprintf(buffer, sizeof(buffer), "%s",
+					 NameStr(((Form_pg_attribute) GETSTRUCT(tuple))->attname));
+			break;
+
 		case AuthIdRelationId:
 			snprintf(buffer, sizeof(buffer), "%s",
 					 NameStr(((Form_pg_authid) GETSTRUCT(tuple))->rolname));
@@ -124,8 +119,8 @@ sepgsqlFileObjectClass(int fdesc, const char *filename)
 
 	if (fstat(fdesc, &stbuf) != 0)
 		ereport(ERROR,
-				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("SELinux: could not get file status of %s", filename)));
+				(errcode_for_file_access(),
+				 errmsg("could not stat file \"%s\": %m", filename)));
 
 	if (S_ISDIR(stbuf.st_mode))
 		return SECCLASS_DIR;
@@ -153,7 +148,6 @@ sepgsqlTupleObjectClass(Oid relid, HeapTuple tuple)
 {
 	Form_pg_class clsForm;
 	Form_pg_attribute attForm;
-	HeapTuple reltup;
 
 	switch (relid)
 	{
@@ -168,29 +162,13 @@ sepgsqlTupleObjectClass(Oid relid, HeapTuple tuple)
 
 		case AttributeRelationId:
 			attForm = (Form_pg_attribute) GETSTRUCT(tuple);
-			/*
-			 * To avoid a matter when very early phase
-			 */
+
 			if (attForm->attrelid == TypeRelationId ||
 				attForm->attrelid == ProcedureRelationId ||
 				attForm->attrelid == AttributeRelationId ||
-				attForm->attrelid == RelationRelationId)
+				attForm->attrelid == RelationRelationId ||
+				get_rel_relkind(attForm->attrelid) == RELKIND_RELATION)
 				return SECCLASS_DB_COLUMN;
-
-			reltup = SearchSysCache(RELOID,
-									ObjectIdGetDatum(attForm->attrelid),
-									0, 0, 0);
-			if (!HeapTupleIsValid(reltup))
-				elog(ERROR, "SELinux: cache lookup failed for relation %u",
-					 attForm->attrelid);
-
-			clsForm = (Form_pg_class) GETSTRUCT(reltup);
-			if (clsForm->relkind == RELKIND_RELATION)
-			{
-				ReleaseSysCache(reltup);
-				return SECCLASS_DB_COLUMN;
-			}
-			ReleaseSysCache(reltup);		
 			break;
 
 		case ProcedureRelationId:
@@ -236,72 +214,96 @@ sepgsqlPermsToCommonAv(uint32 perms)
 }
 
 static access_vector_t
-sepgsqlPermsToDatabaseAv(uint32 perms, HeapTuple tuple, HeapTuple oldtup)
+sepgsqlPermsToDatabaseAv(uint32 perms, HeapTuple tuple, HeapTuple newtup)
 {
 	return sepgsqlPermsToCommonAv(perms);
 }
 
 static access_vector_t
-sepgsqlPermsToTableAv(uint32 perms, HeapTuple tuple, HeapTuple oldtup)
+sepgsqlPermsToTableAv(uint32 perms, HeapTuple tuple, HeapTuple newtup)
 {
 	return sepgsqlPermsToCommonAv(perms);
 }
 
 static access_vector_t
-sepgsqlPermsToProcedureAv(uint32 perms, HeapTuple tuple, HeapTuple oldtup)
+sepgsqlPermsToProcedureAv(uint32 perms, HeapTuple tuple, HeapTuple newtup)
 {
 	access_vector_t result = sepgsqlPermsToCommonAv(perms);
-	Form_pg_proc procForm = (Form_pg_proc) GETSTRUCT(tuple);
-	Datum newbin, oldbin;
-	bool isnull, need_check = false;
+	Form_pg_proc proForm;
+	HeapTuple protup;
+	Datum probin;
+	bool isnull;
 
-	if (procForm->prolang == ClanguageId)
+	/*
+	 * Check permission for loadable module installation
+	 */
+	protup = HeapTupleIsValid(newtup) ? newtup : tuple;
+	proForm = (Form_pg_proc) GETSTRUCT(protup);
+
+	if (proForm->prolang == ClanguageId)
 	{
-		newbin = SysCacheGetAttr(PROCOID, tuple,
+		bool need_check = false;
+
+		probin = SysCacheGetAttr(PROCOID, protup,
 								 Anum_pg_proc_probin,
 								 &isnull);
 		if (!isnull)
 		{
 			if (result & DB_PROCEDURE__CREATE)
 				need_check = true;
-			else if (HeapTupleIsValid(oldtup))
+			else if (HeapTupleIsValid(newtup))
 			{
-				oldbin = SysCacheGetAttr(PROCOID, oldtup,
-										 Anum_pg_proc_probin,
-										 &isnull);
-				if (isnull)
+				Form_pg_proc oldForm = (Form_pg_proc) GETSTRUCT(tuple);
+
+				if (oldForm->prolang != proForm->prolang)
 					need_check = true;
-				else if (DatumGetBool(DirectFunctionCall2(byteane,
-														  oldbin, newbin)))
-					need_check = true;
+				else
+				{
+					Datum oldbin = SysCacheGetAttr(PROCOID, tuple,
+												   Anum_pg_proc_probin,
+												   &isnull);
+					if (isnull)
+						need_check = true;
+					else
+					{
+						Datum comp = DirectFunctionCall2(byteane, oldbin, probin);
+						need_check = DatumGetBool(comp);
+					}
+				}
 			}
 
 			if (need_check)
-				sepgsqlCheckModuleInstallPerms(TextDatumGetCString(newbin));
+			{
+				char *filename = TextDatumGetCString(probin);
+
+				sepgsqlCheckModuleInstallPerms(filename);
+			}
 		}
 	}
+
 	return result;
 }
 
 static access_vector_t
-sepgsqlPermsToColumnAv(uint32 perms, HeapTuple tuple, HeapTuple oldtup)
+sepgsqlPermsToColumnAv(uint32 perms, HeapTuple tuple, HeapTuple newtup)
 {
 	access_vector_t result = sepgsqlPermsToCommonAv(perms);
 
-	if (HeapTupleIsValid(oldtup))
+	if (HeapTupleIsValid(newtup))
 	{
-		Form_pg_attribute newatt = (Form_pg_attribute) GETSTRUCT(tuple);
-		Form_pg_attribute oldatt = (Form_pg_attribute) GETSTRUCT(oldtup);
+		Form_pg_attribute oldatt = (Form_pg_attribute) GETSTRUCT(tuple);
+		Form_pg_attribute newatt = (Form_pg_attribute) GETSTRUCT(newtup);
 
-		if (oldatt->attisdropped == false && newatt->attisdropped != false)
+		if (!oldatt->attisdropped && newatt->attisdropped)
 			result |= DB_COLUMN__DROP;
+		if (oldatt->attisdropped && !newatt->attisdropped)
+			result |= DB_COLUMN__CREATE;
 	}
-
 	return result;
 }
 
 static access_vector_t
-sepgsqlPermsToTupleAv(uint32 perms, HeapTuple tuple, HeapTuple oldtup)
+sepgsqlPermsToTupleAv(uint32 perms, HeapTuple tuple, HeapTuple newtup)
 {
 	access_vector_t result = 0;
 
@@ -317,7 +319,7 @@ sepgsqlPermsToTupleAv(uint32 perms, HeapTuple tuple, HeapTuple oldtup)
 }
 
 static access_vector_t
-sepgsqlPermsToBlobAv(uint32 perms, HeapTuple tuple, HeapTuple oldtup)
+sepgsqlPermsToBlobAv(uint32 perms, HeapTuple tuple, HeapTuple newtup)
 {
 	access_vector_t result = sepgsqlPermsToCommonAv(perms);
 
@@ -344,7 +346,7 @@ sepgsqlPermsToBlobAv(uint32 perms, HeapTuple tuple, HeapTuple oldtup)
 }
 
 bool
-sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, HeapTuple oldtup,
+sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, HeapTuple newtup,
 					   uint32 perms, bool abort)
 {
 	security_class_t tclass;
@@ -358,28 +360,28 @@ sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, HeapTuple oldtup,
 	switch (tclass)
 	{
 		case SECCLASS_DB_DATABASE:
-			av = sepgsqlPermsToDatabaseAv(perms, tuple, oldtup);
+			av = sepgsqlPermsToDatabaseAv(perms, tuple, newtup);
 			break;
 
 		case SECCLASS_DB_TABLE:
-			av = sepgsqlPermsToTableAv(perms, tuple, oldtup);
+			av = sepgsqlPermsToTableAv(perms, tuple, newtup);
 			break;
 
 		case SECCLASS_DB_PROCEDURE:
-			av = sepgsqlPermsToProcedureAv(perms, tuple, oldtup);
+			av = sepgsqlPermsToProcedureAv(perms, tuple, newtup);
 			break;
 
 		case SECCLASS_DB_COLUMN:
-			av = sepgsqlPermsToColumnAv(perms, tuple, oldtup);
+			av = sepgsqlPermsToColumnAv(perms, tuple, newtup);
 			break;
 
 		case SECCLASS_DB_BLOB:
-			av = sepgsqlPermsToBlobAv(perms, tuple, oldtup);
+			av = sepgsqlPermsToBlobAv(perms, tuple, newtup);
 			break;
 
 		default: /* SECCLASS_DB_TUPLE */
 			if (sepostgresql_row_level)
-				av = sepgsqlPermsToTupleAv(perms, tuple, oldtup);
+				av = sepgsqlPermsToTupleAv(perms, tuple, newtup);
 			break;
 	}
 
@@ -389,12 +391,12 @@ sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, HeapTuple oldtup,
 
 		if (abort)
 		{
-			sepgsqlClientHasPermission(HeapTupleGetSecurity(tuple),
+			sepgsqlClientHasPermission(HeapTupleGetSecLabel(tuple),
 									   tclass, av, objname);
 		}
 		else
 		{
-			rc = sepgsqlClientHasPermissionNoAbort(HeapTupleGetSecurity(tuple),
+			rc = sepgsqlClientHasPermissionNoAbort(HeapTupleGetSecLabel(tuple),
 												   tclass, av, objname);
 		}
 	}
@@ -423,7 +425,7 @@ sepgsqlCheckModuleInstallPerms(const char *filename)
 		elog(ERROR, "SELinux: cache lookup failed for database: %u", MyDatabaseId);
 
 	dbform = (Form_pg_database) GETSTRUCT(dbtup);
-	sepgsqlClientHasPermission(HeapTupleGetSecurity(dbtup),
+	sepgsqlClientHasPermission(HeapTupleGetSecLabel(dbtup),
 							   SECCLASS_DB_DATABASE,
 							   DB_DATABASE__INSTALL_MODULE,
 							   NameStr(dbform->datname));
@@ -433,9 +435,8 @@ sepgsqlCheckModuleInstallPerms(const char *filename)
 	fullpath = expand_dynamic_library_name(filename);
 	if (getfilecon_raw(fullpath, &file_context) < 0)
 		ereport(ERROR,
-				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("SELinux: could not get context: %s", fullpath)));
-
+				(errcode_for_file_access(),
+				 errmsg("could not access file \"%s\": %m", fullpath)));
 	PG_TRY();
 	{
 		sepgsqlComputePermission(sepgsqlGetClientContext(),
@@ -519,7 +520,7 @@ sepgsqlDefaultColumnContext(Relation rel, HeapTuple tuple)
 			elog(ERROR, "SELinux: cache lookup failed for relation: %u",
 				 attForm->attrelid);
 
-		tblsid = HeapTupleGetSecurity(reltup);
+		tblsid = HeapTupleGetSecLabel(reltup);
 
 		ReleaseSysCache(reltup);
 	}
@@ -556,7 +557,7 @@ sepgsqlDefaultTupleContext(Relation rel, HeapTuple tuple)
 			elog(ERROR, "SELinux: cache lookup failed for relation: %u",
 				 RelationGetRelid(rel));
 
-		tblsid = HeapTupleGetSecurity(reltup);
+		tblsid = HeapTupleGetSecLabel(reltup);
 
 		ReleaseSysCache(reltup);
 	}
@@ -597,7 +598,7 @@ sepgsqlDefaultBlobContext(Relation rel, HeapTuple tuple)
 							  SnapshotNow, 1, &skey);
 	while ((lotup = systable_getnext(scan)) != NULL)
 	{
-		newsid = HeapTupleGetSecurity(lotup);
+		newsid = HeapTupleGetSecLabel(lotup);
 		if (OidIsValid(newsid))
 			break;
 	}
@@ -618,7 +619,7 @@ sepgsqlSetDefaultContext(Relation rel, HeapTuple tuple)
 	security_class_t tclass;
 	Oid newsid;
 
-	Assert(HeapTupleHasSecurity(tuple));
+	Assert(HeapTupleHasSecLabel(tuple));
 	tclass = sepgsqlTupleObjectClass(RelationGetRelid(rel), tuple);
 
 	switch (tclass)
@@ -643,5 +644,5 @@ sepgsqlSetDefaultContext(Relation rel, HeapTuple tuple)
 			break;
 	}
 
-	HeapTupleSetSecurity(tuple, newsid);
+	HeapTupleSetSecLabel(tuple, newsid);
 }

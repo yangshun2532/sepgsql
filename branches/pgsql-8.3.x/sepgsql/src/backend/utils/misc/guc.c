@@ -269,12 +269,10 @@ static int	max_index_keys;
 static int	max_identifier_length;
 static int	block_size;
 static bool integer_datetimes;
-static char *pgace_security_feature;
 
 /* should be static, but commands/variable.c needs to get at these */
 char	   *role_string;
 char	   *session_authorization_string;
-char	   *sepostgresql_mode;
 
 /*
  * Displayable names for context types (enum GucContext)
@@ -1093,17 +1091,6 @@ static struct config_bool ConfigureNamesBool[] =
 		&IgnoreSystemIndexes,
 		false, NULL, NULL
 	},
-#ifdef HAVE_SELINUX
-	{
-		{"sepostgresql_row_level", PGC_POSTMASTER, UNGROUPED,
-		 gettext_noop("Availability of row-level security in SE-PostgreSQL."),
-		 NULL,
-		 GUC_NOT_IN_SAMPLE,
-		},
-		&sepostgresql_row_level,
-		true, NULL, NULL
-	},
-#endif
 
 	/* End-of-list marker */
 	{
@@ -2474,23 +2461,22 @@ static struct config_string ConfigureNamesString[] =
 #endif   /* USE_SSL */
 
 	{
-		{"pgace_security_feature", PGC_INTERNAL, PRESET_OPTIONS,
-			gettext_noop("Shows the guest of PGACE security framework"),
-			NULL,
-			GUC_REPORT | GUC_NOT_IN_SAMPLE | GUC_DISALLOW_IN_FILE
+		{"pgace_feature", PGC_POSTMASTER, UNGROUPED,
+		 gettext_noop("A option to choose an enhanced security feature which is "
+					  "a guest of PGACE security framework"),
+		 NULL,
 		},
-		&pgace_security_feature,
-		NULL, NULL, pgaceShowSecurityFeature,
+		&pgace_feature_string,
+		"none", pgaceAssignFeatureString, NULL,
 	},
 #ifdef HAVE_SELINUX
 	{
 		{"sepostgresql", PGC_POSTMASTER, PRESET_OPTIONS,
-			gettext_noop("SE-PostgreSQL working mode"),
-			gettext_noop("Valid values are DEFAULT, PERMISSIVE, ENFORCING, DISABLED"),
-			0,
+		 gettext_noop("SE-PostgreSQL mode (default|permissive|enforcing|disabled)"),
+		 NULL,
 		},
-		 &sepostgresql_mode,
-		 "default", NULL, NULL,
+		&sepostgresql_mode_string,
+		"default", sepgsqlAssignModeString, NULL,
 	},
 #endif
 

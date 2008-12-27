@@ -37,8 +37,34 @@
  *	 GUC Parameter Support
  *****************************************************************************/
 
-PgaceSecurityOpts pgace_security;
+PgaceFeatureOpts pgace_feature;
+char *pgace_feature_string;
 
+const char *
+pgaceAssignFeatureString(const char *value, bool doit, GucSource source)
+{
+	char *result;
+
+	if (strcmp(value, "none") == 0)
+	{
+		pgace_feature = PGACE_FEATURE_NONE;
+		result = strdup(value);
+	}
+#ifdef HAVE_SELINUX
+	else if (strcmp(value, "selinux") == 0)
+	{
+		pgace_feature = PGACE_FEATURE_SELINUX;
+		result = strdup(value);
+	}
+#endif
+	else
+	{
+		pgace_feature = PGACE_FEATURE_NONE;
+		value = strdup("none");
+	}
+
+	return result;
+}
 
 /*****************************************************************************
  *	 Extended SQL statements support
@@ -107,11 +133,11 @@ pgaceRelationAttrList(CreateStmt *stmt)
 }
 
 void
-pgaceCreateRelationCommon(Relation rel, HeapTuple tuple, List *pgace_attr_list)
+pgaceCreateRelationCommon(Relation rel, HeapTuple tuple, List *pgaceAttrList)
 {
 	ListCell   *l;
 
-	foreach(l, pgace_attr_list)
+	foreach(l, pgaceAttrList)
 	{
 		DefElem    *defel = (DefElem *) lfirst(l);
 
@@ -126,12 +152,12 @@ pgaceCreateRelationCommon(Relation rel, HeapTuple tuple, List *pgace_attr_list)
 
 void
 pgaceCreateAttributeCommon(Relation rel, HeapTuple tuple,
-						   List *pgace_attr_list)
+						   List *pgaceAttrList)
 {
 	Form_pg_attribute attr = (Form_pg_attribute) GETSTRUCT(tuple);
 	ListCell   *l;
 
-	foreach(l, pgace_attr_list)
+	foreach(l, pgaceAttrList)
 	{
 		DefElem    *defel = lfirst(l);
 
@@ -341,8 +367,8 @@ pgacePostBootstrapingMode(void)
 		tuple = heap_form_tuple(RelationGetDescr(rel), &value, &isnull);
 
 		HeapTupleSetOid(tuple, es->sid);
-		if (HeapTupleHasSecurity(tuple))
-			HeapTupleSetSecurity(tuple, meta_sid);
+		if (HeapTupleHasSecLabel(tuple))
+			HeapTupleSetSecLabel(tuple, meta_sid);
 
 		simple_heap_insert(rel, tuple);
 		CatalogIndexInsert(ind, tuple);
@@ -368,20 +394,6 @@ pgaceLookupSecurityId(char *raw_label)
 {
 	Oid			labelOid, labelSid;
 	HeapTuple	tuple;
-
-	if (!raw_label)
-	{
-		raw_label = pgaceUnlabeledSecurityLabel();
-		if (!raw_label)
-			elog(ERROR, "unlabeled security attribute is unavailable");
-	}
-
-	if (!pgaceCheckValidSecurityLabel(raw_label))
-	{
-		ereport(ERROR,
-				(errcode(ERRCODE_PGACE_ERROR),
-				 errmsg("%s: invalid security attribute", raw_label)));
-	}
 
 	if (IsBootstrapProcessingMode())
 		return earlySecurityLabelToSid(raw_label);
@@ -412,7 +424,12 @@ pgaceLookupSecurityId(char *raw_label)
 
 		slabel = pgaceSecurityLabelOfLabel();
 
-		if (!strcmp(raw_label, slabel))
+		if (!slabel)
+		{
+			labelSid = InvalidOid;
+			labelOid = GetNewOid(rel);
+		}
+		else if (!strcmp(raw_label, slabel))
 		{
 			labelOid = labelSid = GetNewOid(rel);
 		}
@@ -428,8 +445,8 @@ pgaceLookupSecurityId(char *raw_label)
 		isnull = false;
 		tuple = heap_form_tuple(RelationGetDescr(rel),
 								&labelTxt, &isnull);
-		if (HeapTupleHasSecurity(tuple))
-			HeapTupleSetSecurity(tuple, labelSid);
+		if (HeapTupleHasSecLabel(tuple))
+			HeapTupleSetSecLabel(tuple, labelSid);
 		HeapTupleSetOid(tuple, labelOid);
 
 		simple_heap_insert(rel, tuple);
@@ -463,6 +480,11 @@ pgaceSecurityLabelToSid(char *label)
 {
 	char *raw_label = pgaceTranslateSecurityLabelIn(label);
 
+	if (!pgaceCheckValidSecurityLabel(raw_label))
+		ereport(ERROR,
+                (errcode(ERRCODE_PGACE_ERROR),
+                 errmsg("PGACE: invalid security label: %s", raw_label)));
+
 	return pgaceLookupSecurityId(raw_label);
 }
 
@@ -473,27 +495,24 @@ pgaceSecurityLabelToSid(char *label)
  * in raw-format, without cosmetic translation.
  */
 char *
-pgaceLookupSecurityLabel(Oid security_id)
+pgaceLookupSecurityLabel(Oid sid)
 {
 	HeapTuple	tuple;
 	Datum		labelTxt;
-	char	   *label, isnull;
+	char	   *label;
+	bool		isnull;
 
-	if (security_id == InvalidOid)
-		goto unlabeled;
+	if (!OidIsValid(sid))
+		return NULL;
 
 	if (IsBootstrapProcessingMode())
-	{
-		label = earlySidToSecurityLabel(security_id);
-		if (!label)
-			goto unlabeled;
-		return label;
-	}
+		return earlySidToSecurityLabel(sid);
 
 	tuple = SearchSysCache(SECURITYOID,
-						   ObjectIdGetDatum(security_id), 0, 0, 0);
+						   ObjectIdGetDatum(sid),
+						   0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
-		goto unlabeled;
+		return NULL;
 
 	labelTxt = SysCacheGetAttr(SECURITYOID,
 							   tuple, Anum_pg_security_seclabel, &isnull);
@@ -501,23 +520,30 @@ pgaceLookupSecurityLabel(Oid security_id)
 	label = TextDatumGetCString(labelTxt);
 	ReleaseSysCache(tuple);
 
-	if (pgaceCheckValidSecurityLabel(label))
-		return label;
-
-unlabeled:
-	label = pgaceUnlabeledSecurityLabel();
-	if (!label)
-		elog(ERROR, "unlabeled security attribute is unavailable");
-
 	return label;
 }
 
 char *
-pgaceSidToSecurityLabel(Oid security_id)
+pgaceSidToSecurityLabel(Oid sid)
 {
-	char *label = pgaceLookupSecurityLabel(security_id);
+	char *label;
+
+	label = pgaceLookupSecurityLabel(sid);
+	if (!label || !pgaceCheckValidSecurityLabel(label))
+		label = pgaceUnlabeledSecurityLabel();
+
+	if (!label)
+		return pstrdup("");
 
 	return pgaceTranslateSecurityLabelOut(label);
+}
+
+Datum
+pgaceHeapGetSecurityLabelSysattr(HeapTuple tuple)
+{
+	Oid sid = HeapTupleGetSecLabel(tuple);
+
+	return CStringGetTextDatum(pgaceSidToSecurityLabel(sid));
 }
 
 /*****************************************************************************
@@ -541,7 +567,7 @@ lo_get_security(PG_FUNCTION_ARGS)
 	ScanKeyData skey;
 	SysScanDesc scan;
 	HeapTuple	tuple;
-	Oid			security_id;
+	Oid			sid;
 
 	rel = heap_open(LargeObjectRelationId, AccessShareLock);
 
@@ -558,12 +584,12 @@ lo_get_security(PG_FUNCTION_ARGS)
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("large object %u does not exist", loid)));
 	pgaceLargeObjectGetSecurity(rel, tuple);
-	security_id = HeapTupleGetSecurity(tuple);
+	sid = HeapTupleGetSecLabel(tuple);
 
 	systable_endscan(scan);
 	heap_close(rel, AccessShareLock);
 
-	return CStringGetTextDatum(pgaceSidToSecurityLabel(security_id));
+	return CStringGetTextDatum(pgaceSidToSecurityLabel(sid));
 }
 
 /*
@@ -583,11 +609,11 @@ lo_set_security(PG_FUNCTION_ARGS)
 	SysScanDesc sd;
 	HeapTuple	oldtup, newtup;
 	CatalogIndexState indstate;
-	Oid			security_id;
+	Oid			sid;
 	List	   *okList = NIL;
 	bool		found = false;
 
-	security_id = pgaceSecurityLabelToSid(TextDatumGetCString(labelTxt));
+	sid = pgaceSecurityLabelToSid(TextDatumGetCString(labelTxt));
 
 	ScanKeyInit(&skey,
 				Anum_pg_largeobject_loid,
@@ -607,14 +633,14 @@ lo_set_security(PG_FUNCTION_ARGS)
 		ListCell *l;
 
 		newtup = heap_copytuple(oldtup);
-		HeapTupleSetSecurity(newtup, security_id);
+		HeapTupleSetSecLabel(newtup, sid);
 
 		foreach (l, okList)
 		{
-			if (HeapTupleGetSecurity(oldtup) == lfirst_oid(l))
+			if (HeapTupleGetSecLabel(oldtup) == lfirst_oid(l))
 				goto skip;		/* already checked */
 		}
-		okList = lappend_oid(okList, HeapTupleGetSecurity(oldtup));
+		okList = lappend_oid(okList, HeapTupleGetSecLabel(oldtup));
 
 		pgaceLargeObjectSetSecurity(rel, newtup, oldtup);
 	skip:
@@ -704,6 +730,8 @@ security_label_to_text(PG_FUNCTION_ARGS)
  * are not compiled and linked when it is disabled.
  * It can cause a build problem in other environments.
  */
+#ifndef HAVE_SELINUX
+
 static Datum
 unavailable_function(const char *fn_name, int error_code)
 {
@@ -712,8 +740,6 @@ unavailable_function(const char *fn_name, int error_code)
 			 errmsg("%s is not available", fn_name)));
 	PG_RETURN_VOID();
 }
-
-#ifndef HAVE_SELINUX
 
 Datum
 sepgsql_getcon(PG_FUNCTION_ARGS)

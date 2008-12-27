@@ -84,7 +84,7 @@ CreateTemplateTupleDesc(int natts, bool hasoid)
 	desc->tdtypeid = RECORDOID;
 	desc->tdtypmod = -1;
 	desc->tdhasoid = hasoid;
-	desc->tdhassecurity = false;	/* set a proper value, if necessary */
+	desc->tdhasseclabel = false;	/* set a proper value, if necessary */
 	desc->tdrefcount = -1;		/* assume not reference-counted */
 
 	return desc;
@@ -118,7 +118,7 @@ CreateTupleDesc(int natts, bool hasoid, Form_pg_attribute *attrs)
 	desc->tdtypeid = RECORDOID;
 	desc->tdtypmod = -1;
 	desc->tdhasoid = hasoid;
-	desc->tdhassecurity = false;	/* set a proper value, if necessary */
+	desc->tdhasseclabel = false;	/* set a proper value, if necessary */
 	desc->tdrefcount = -1;		/* assume not reference-counted */
 
 	return desc;
@@ -148,7 +148,7 @@ CreateTupleDescCopy(TupleDesc tupdesc)
 
 	desc->tdtypeid = tupdesc->tdtypeid;
 	desc->tdtypmod = tupdesc->tdtypmod;
-	desc->tdhassecurity = tupdesc->tdhassecurity;
+	desc->tdhasseclabel = tupdesc->tdhasseclabel;
 
 	return desc;
 }
@@ -207,7 +207,7 @@ CreateTupleDescCopyConstr(TupleDesc tupdesc)
 
 	desc->tdtypeid = tupdesc->tdtypeid;
 	desc->tdtypmod = tupdesc->tdtypmod;
-	desc->tdhassecurity = tupdesc->tdhassecurity;
+	desc->tdhasseclabel = tupdesc->tdhasseclabel;
 
 	return desc;
 }
@@ -314,7 +314,7 @@ equalTupleDescs(TupleDesc tupdesc1, TupleDesc tupdesc2)
 		return false;
 	if (tupdesc1->tdhasoid != tupdesc2->tdhasoid)
 		return false;
-	if (tupdesc1->tdhassecurity != tupdesc2->tdhassecurity)
+	if (tupdesc1->tdhasseclabel != tupdesc2->tdhasseclabel)
 		return false;
 
 	for (i = 0; i < tupdesc1->natts; i++)

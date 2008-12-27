@@ -1040,18 +1040,6 @@ _readSEvalItemAttribute(void)
 	READ_DONE();
 }
 
-static SEvalItemProcedure *
-_readSEvalItemProcedure(void)
-{
-	READ_LOCALS(SEvalItemProcedure);
-
-	READ_UINT_FIELD(perms);
-
-	READ_OID_FIELD(funcid);
-
-	READ_DONE();
-}
-
 /*
  * parseNodeString
  *
@@ -1172,8 +1160,6 @@ parseNodeString(void)
 		return_value = _readSEvalItemRelation();
 	else if (MATCH("SEVALITEMATTRIBUTE", 18))
 		return_value = _readSEvalItemAttribute();
-	else if (MATCH("SEVALITEMPROCEDURE", 18))
-		return_value = _readSEvalItemProcedure();
 	else
 	{
 		elog(ERROR, "badly formatted node string \"%.32s\"...", token);
