@@ -193,28 +193,20 @@ addEvalAttributeRTE(List *selist, RangeTblEntry *rte, AttrNumber attno, uint32 p
 	selist = addEvalRelationRTE(selist, rte, t_perms);
 
 	/*
-	 * Please note that updating a value on *.security_label, pg_class.relkind
-	 * and pg_attribute.attkind have a possibility to change both/either of
-	 * its security label or object class.
+	 * UPDATE on *.security_label
 	 */
-	if (perms & DB_COLUMN__UPDATE)
-	{
-		if (attno == SecurityLabelAttributeNumber
-			|| (rte->relid == RelationRelationId
-				&& attno == Anum_pg_class_relkind)
-			|| (rte->relid == AttributeRelationId
-				&& attno == Anum_pg_attribute_attkind))
-			rte->pgaceTuplePerms |= SEPGSQL_PERMS_RELABELFROM;
-	}
+	if ((perms & DB_COLUMN__UPDATE) && attno == SecurityLabelAttributeNumber)
+		rte->pgaceTuplePerms |= SEPGSQL_PERMS_RELABELFROM;
 
 	/*
 	 * for 'pg_largeobject'
 	 */
-	if (rte->relid == LargeObjectRelationId)
+	if (rte->relid == LargeObjectRelationId
+		&& attno == Anum_pg_largeobject_data)
 	{
-		if ((perms & DB_COLUMN__SELECT) && attno == Anum_pg_largeobject_data)
+		if (perms & DB_COLUMN__SELECT)
 			rte->pgaceTuplePerms |= SEPGSQL_PERMS_READ;
-		if ((perms & DB_COLUMN__UPDATE) && attno == Anum_pg_largeobject_data)
+		if (perms & DB_COLUMN__UPDATE)
 			rte->pgaceTuplePerms |= SEPGSQL_PERMS_WRITE;
 	}
 

@@ -234,8 +234,8 @@ extern security_class_t sepgsqlTupleObjectClass(Oid relid, HeapTuple tuple);
 
 extern void sepgsqlSetDefaultContext(Relation rel, HeapTuple tuple);
 
-extern bool sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple,
-								   HeapTuple oldtup, uint32 perms, bool abort);
+extern bool sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, HeapTuple newtup,
+								   uint32 perms, bool abort);
 
 extern void sepgsqlCheckModuleInstallPerms(const char *filename);
 

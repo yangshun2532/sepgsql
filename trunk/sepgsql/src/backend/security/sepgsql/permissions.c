@@ -212,72 +212,96 @@ sepgsqlPermsToCommonAv(uint32 perms)
 }
 
 static access_vector_t
-sepgsqlPermsToDatabaseAv(uint32 perms, HeapTuple tuple, HeapTuple oldtup)
+sepgsqlPermsToDatabaseAv(uint32 perms, HeapTuple tuple, HeapTuple newtup)
 {
 	return sepgsqlPermsToCommonAv(perms);
 }
 
 static access_vector_t
-sepgsqlPermsToTableAv(uint32 perms, HeapTuple tuple, HeapTuple oldtup)
+sepgsqlPermsToTableAv(uint32 perms, HeapTuple tuple, HeapTuple newtup)
 {
 	return sepgsqlPermsToCommonAv(perms);
 }
 
 static access_vector_t
-sepgsqlPermsToProcedureAv(uint32 perms, HeapTuple tuple, HeapTuple oldtup)
+sepgsqlPermsToProcedureAv(uint32 perms, HeapTuple tuple, HeapTuple newtup)
 {
 	access_vector_t result = sepgsqlPermsToCommonAv(perms);
-	Form_pg_proc procForm = (Form_pg_proc) GETSTRUCT(tuple);
-	Datum newbin, oldbin;
-	bool isnull, need_check = false;
+	Form_pg_proc proForm;
+	HeapTuple protup;
+	Datum probin;
+	bool isnull;
 
-	if (procForm->prolang == ClanguageId)
+	/*
+	 * Check permission for loadable module installation
+	 */
+	protup = HeapTupleIsValid(newtup) ? newtup : tuple;
+	proForm = (Form_pg_proc) GETSTRUCT(protup);
+
+	if (proForm->prolang == ClanguageId)
 	{
-		newbin = SysCacheGetAttr(PROCOID, tuple,
+		bool need_check = false;
+
+		probin = SysCacheGetAttr(PROCOID, protup,
 								 Anum_pg_proc_probin,
 								 &isnull);
 		if (!isnull)
 		{
 			if (result & DB_PROCEDURE__CREATE)
 				need_check = true;
-			else if (HeapTupleIsValid(oldtup))
+			else if (HeapTupleIsValid(newtup))
 			{
-				oldbin = SysCacheGetAttr(PROCOID, oldtup,
-										 Anum_pg_proc_probin,
-										 &isnull);
-				if (isnull)
+				Form_pg_proc oldForm = (Form_pg_proc) GETSTRUCT(tuple);
+
+				if (oldForm->prolang != proForm->prolang)
 					need_check = true;
-				else if (DatumGetBool(DirectFunctionCall2(byteane,
-														  oldbin, newbin)))
-					need_check = true;
+				else
+				{
+					Datum oldbin = SysCacheGetAttr(PROCOID, tuple,
+												   Anum_pg_proc_probin,
+												   &isnull);
+					if (isnull)
+						need_check = true;
+					else
+					{
+						Datum comp = DirectFunctionCall2(byteane, oldbin, probin);
+						need_check = DatumGetBool(comp);
+					}
+				}
 			}
 
 			if (need_check)
-				sepgsqlCheckModuleInstallPerms(TextDatumGetCString(newbin));
+			{
+				char *filename = TextDatumGetCString(probin);
+
+				sepgsqlCheckModuleInstallPerms(filename);
+			}
 		}
 	}
+
 	return result;
 }
 
 static access_vector_t
-sepgsqlPermsToColumnAv(uint32 perms, HeapTuple tuple, HeapTuple oldtup)
+sepgsqlPermsToColumnAv(uint32 perms, HeapTuple tuple, HeapTuple newtup)
 {
 	access_vector_t result = sepgsqlPermsToCommonAv(perms);
 
-	if (HeapTupleIsValid(oldtup))
+	if (HeapTupleIsValid(newtup))
 	{
-		Form_pg_attribute newatt = (Form_pg_attribute) GETSTRUCT(tuple);
-		Form_pg_attribute oldatt = (Form_pg_attribute) GETSTRUCT(oldtup);
+		Form_pg_attribute oldatt = (Form_pg_attribute) GETSTRUCT(tuple);
+		Form_pg_attribute newatt = (Form_pg_attribute) GETSTRUCT(newtup);
 
-		if (oldatt->attisdropped == false && newatt->attisdropped != false)
+		if (!oldatt->attisdropped && newatt->attisdropped)
 			result |= DB_COLUMN__DROP;
+		if (oldatt->attisdropped && !newatt->attisdropped)
+			result |= DB_COLUMN__CREATE;
 	}
-
 	return result;
 }
 
 static access_vector_t
-sepgsqlPermsToTupleAv(uint32 perms, HeapTuple tuple, HeapTuple oldtup)
+sepgsqlPermsToTupleAv(uint32 perms, HeapTuple tuple, HeapTuple newtup)
 {
 	access_vector_t result = 0;
 
@@ -293,7 +317,7 @@ sepgsqlPermsToTupleAv(uint32 perms, HeapTuple tuple, HeapTuple oldtup)
 }
 
 static access_vector_t
-sepgsqlPermsToBlobAv(uint32 perms, HeapTuple tuple, HeapTuple oldtup)
+sepgsqlPermsToBlobAv(uint32 perms, HeapTuple tuple, HeapTuple newtup)
 {
 	access_vector_t result = sepgsqlPermsToCommonAv(perms);
 
@@ -320,7 +344,7 @@ sepgsqlPermsToBlobAv(uint32 perms, HeapTuple tuple, HeapTuple oldtup)
 }
 
 bool
-sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, HeapTuple oldtup,
+sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, HeapTuple newtup,
 					   uint32 perms, bool abort)
 {
 	security_class_t tclass;
@@ -334,28 +358,28 @@ sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, HeapTuple oldtup,
 	switch (tclass)
 	{
 		case SECCLASS_DB_DATABASE:
-			av = sepgsqlPermsToDatabaseAv(perms, tuple, oldtup);
+			av = sepgsqlPermsToDatabaseAv(perms, tuple, newtup);
 			break;
 
 		case SECCLASS_DB_TABLE:
-			av = sepgsqlPermsToTableAv(perms, tuple, oldtup);
+			av = sepgsqlPermsToTableAv(perms, tuple, newtup);
 			break;
 
 		case SECCLASS_DB_PROCEDURE:
-			av = sepgsqlPermsToProcedureAv(perms, tuple, oldtup);
+			av = sepgsqlPermsToProcedureAv(perms, tuple, newtup);
 			break;
 
 		case SECCLASS_DB_COLUMN:
-			av = sepgsqlPermsToColumnAv(perms, tuple, oldtup);
+			av = sepgsqlPermsToColumnAv(perms, tuple, newtup);
 			break;
 
 		case SECCLASS_DB_BLOB:
-			av = sepgsqlPermsToBlobAv(perms, tuple, oldtup);
+			av = sepgsqlPermsToBlobAv(perms, tuple, newtup);
 			break;
 
 		default: /* SECCLASS_DB_TUPLE */
 			if (sepostgresql_row_level)
-				av = sepgsqlPermsToTupleAv(perms, tuple, oldtup);
+				av = sepgsqlPermsToTupleAv(perms, tuple, newtup);
 			break;
 	}
 
