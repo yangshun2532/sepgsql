@@ -900,24 +900,25 @@ sepgsqlHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple newtup,
 		sepgsqlTupleObjectClass(relid, newtup) != sepgsqlTupleObjectClass(relid, oldtup))
 		relabel = true;
 
+	perms = 0;
 	if (is_internal)
 	{
-		perms = SEPGSQL_PERMS_UPDATE;
-		if (relabel)
-			perms |= SEPGSQL_PERMS_RELABELFROM;
-		else if (with_returning)
+		perms |= SEPGSQL_PERMS_UPDATE;
+		if (with_returning)
 			perms |= SEPGSQL_PERMS_SELECT;
-		rc = sepgsqlCheckTuplePerms(rel, oldtup, NULL, perms, is_internal);
-		if (!rc)
-			goto out;
 	}
+	if (relabel)
+		perms |= SEPGSQL_PERMS_RELABELFROM;
+	rc = sepgsqlCheckTuplePerms(rel, oldtup, newtup, perms, is_internal);
+	if (!rc)
+		goto out;
 
 	if (relabel)
 	{
 		perms = SEPGSQL_PERMS_RELABELTO;
 		if (with_returning)
 			perms |= SEPGSQL_PERMS_SELECT;
-		rc = sepgsqlCheckTuplePerms(rel, newtup, oldtup, perms, is_internal);
+		rc = sepgsqlCheckTuplePerms(rel, newtup, NULL, perms, is_internal);
 	}
   out:
 	heap_freetuple(oldtup);
@@ -929,18 +930,20 @@ sepgsqlHeapTupleDelete(Relation rel, ItemPointer otid,
 					   bool is_internal, bool with_returning)
 {
 	HeapTuple	oldtup;
-	uint32		perms = SEPGSQL_PERMS_DELETE;
+	uint32		perms = 0;
 	bool		rc;
 
-	if (!is_internal)
-		return true;
+	if (is_internal)
+	{
+		perms |= SEPGSQL_PERMS_DELETE;
+		if (with_returning)
+			perms |= SEPGSQL_PERMS_SELECT;
+	}
 
 	if (isTrustedRelation(rel, is_internal))
 		return true;
 
 	oldtup = getHeapTupleFromItemPointer(rel, otid);
-	if (with_returning)
-		perms |= SEPGSQL_PERMS_SELECT;
 	rc = sepgsqlCheckTuplePerms(rel, oldtup, NULL, perms, is_internal);
 	heap_freetuple(oldtup);
 
