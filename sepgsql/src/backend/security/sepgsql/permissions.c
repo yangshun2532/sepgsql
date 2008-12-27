@@ -42,30 +42,24 @@ sepgsqlTupleName(Oid relid, HeapTuple tuple)
 	switch (relid)
 	{
 		case AttributeRelationId:
+			if (!IsBootstrapProcessingMode())
 			{
 				Form_pg_attribute attForm
 					= (Form_pg_attribute) GETSTRUCT(tuple);
+				char *relname = get_rel_name(attForm->attrelid);
 
-				if (!IsBootstrapProcessingMode())
+				if (relname)
 				{
-					HeapTuple	exttup = SearchSysCache(RELOID,
-														ObjectIdGetDatum
-														(attForm->attrelid),
-														0, 0, 0);
-
-					if (HeapTupleIsValid(exttup))
-					{
-						snprintf(buffer, sizeof(buffer), "%s.%s",
-								 NameStr(((Form_pg_class) GETSTRUCT(exttup))->relname),
-								 NameStr(((Form_pg_attribute) GETSTRUCT(tuple))->attname));
-						ReleaseSysCache(exttup);
-						break;
-					}
+					snprintf(buffer, sizeof(buffer), "%s.%s",
+							 relname, NameStr(attForm->attname));
+					pfree(relname);
+					break;
 				}
-				snprintf(buffer, sizeof(buffer), "%s",
-						 NameStr(((Form_pg_attribute) GETSTRUCT(tuple))->attname));
-				break;
 			}
+			snprintf(buffer, sizeof(buffer), "%s",
+					 NameStr(((Form_pg_attribute) GETSTRUCT(tuple))->attname));
+			break;
+
 		case AuthIdRelationId:
 			snprintf(buffer, sizeof(buffer), "%s",
 					 NameStr(((Form_pg_authid) GETSTRUCT(tuple))->rolname));
