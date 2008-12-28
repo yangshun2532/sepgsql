@@ -32,7 +32,7 @@ typedef enum
 	SEPGSQL_MODE_DISABLED,
 } SepgsqlModeType;
 
-extern int sepostgresql_mode;
+extern SepgsqlModeType sepostgresql_mode;
 extern bool sepostgresql_row_level;
 
 /*
@@ -63,9 +63,7 @@ extern pid_t sepgsqlStartupWorkerProcess(void);
 /* SQL proxy hooks */
 extern List *sepgsqlProxyQuery(List *queryList);
 
-extern void sepgsqlVerifyQuery(PlannedStmt *pstmt, int eflags);
-
-extern void sepgsqlEvaluateParams(List *params);
+extern void sepgsqlExecutorStart(QueryDesc *queryDesc, int eflags);
 
 extern void sepgsqlProcessUtility(Node *parsetree, ParamListInfo params, bool isTopLevel);
 
@@ -82,8 +80,6 @@ extern bool sepgsqlHeapTupleDelete(Relation rel, ItemPointer otid,
 								   bool is_internal, bool with_returning);
 
 /*	Extended SQL statement hooks */
-extern DefElem *sepgsqlGramSecurityItem(char *defname, char *value);
-
 extern bool sepgsqlIsGramSecurityItem(DefElem *defel);
 
 extern void sepgsqlGramCreateRelation(Relation rel, HeapTuple tuple,

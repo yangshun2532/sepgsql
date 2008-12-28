@@ -17,7 +17,7 @@
 #include "utils/syscache.h"
 #include <selinux/context.h>
 
-int sepostgresql_mode;
+SepgsqlModeType sepostgresql_mode;
 
 static security_context_t serverContext = NULL;
 static security_context_t clientContext = NULL;

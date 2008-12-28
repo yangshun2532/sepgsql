@@ -37,50 +37,67 @@ typedef enum
 extern PgaceFeatureOpts pgace_feature;
 
 /*
- * The definitions of PGACE hooks are follows:
+ * The definitions of PGACE security hooks
  *
- * These are declared as static inline functions which give us no effect
- * in the default (no security modules are enabled), and independent from
- * its platform.
+ * PGACE is PostgreSQL Access Control Extension.
+ * These hooks are declared as static inline functions to give a guest
+ * feature chances to make its decision on access controls.
+ * Its purpose is to implement enhanced security features with minimum
+ * impact to the core PostgreSQL codes. In generally, different security
+ * feature has its own access control model, policy and granuality, but
+ * they can share some of facilities.
+ * The one is hooks injected on strategic points, and the other is 
+ * management of security attribute of database objects.
  *
- * The purpose of PGACE framework is to provide a security subsystems
- * common hooks to apply its access controls, and minimize the impact
- * to add a new security subsystem.
- *
- * (*) We calls the security subsystem implemented on PGACE framework
- *     as "the guest", in this comment.
- *
- * When a security module uses this framework, is has to add a #if .. #endif
- * block into the needed hooks, as follows:
+ * This header files declares security hooks. When you add your security
+ * design, you should add its entry to "pgace_feature" option which can
+ * be choosen by users, and update the hooks as follows:
  * 
  * ------------
  * static inline bool
  * pgaceHeapTupleInsert(Relation rel, HeapTuple tuple,
  *                      bool is_internal, bool with_returning)
  * {
- * #if defined(HAVE_SELINUX)
- *     if (sepgsqlIsEnabled())
- *         return sepgsqlHeapTupleInsert(rel, tuple,
- *                                       is_internal,
- *                                       with_returning);
- * #elif defined(HAVE_FOO_SECURITY)
- *     if (fooIsEnabled())
- *         return fooHeapTupleInsert(rel, tuple,
- *                                   is_internal,
- *                                   with_returning);
+ *     if (!rowaclHeapTupleInsert(rel, tuple,
+ * 	                              is_internal,
+ *                                with_returning))
+ *         return false;
+ * 
+ *     switch (pgace_feature)
+ *     {
+ * #ifdef HAVE_SELINUX
+ *     case PGACE_FEATURE_SELINUX:
+ *         if (sepgsqlIsEnabled())
+ *             return sepgsqlHeapTupleInsert(rel, tuple,
+ *                                           is_internal,
+ *                                           with_returning);
+ *     break;
  * #endif
- *     return true;
+ * #ifdef HAVE_FOO_SECURITY
+ *     case PGACE_FEATURE_FOO_SECURITY:
+ *         return fooSecurityHeapTupleInsert(rel, tuple,
+ *                                           is_internal,
+ *                                           with_returning);
+ *     break;
+ * #endif
+ *     default:
+ *         break;
+ *     }
+ * return true;
  * }
- * ____________
+ * ------------
  *
- * It can invokes specific security subsystem and the callee makes
- * its decision whether the required access it allowed, or not.
- * When no security module is available, these hooks have to keep
- * the default behaivior to keep compatibility.
- * In this case,  pgaceHeapTupleInsert() has to return 'true'.
- *
- * Any hook has a comment to show the purpose of itself.
- * Please look at this one to understand each hooks.
+ * The Row-level Database ACLs feature is hardwired. It is a traditional
+ * DAC policy in row level.
+ * In addition, we allows users to choose an enhanced security feature
+ * via GUC option "pgace_feature" on startup time.
+ * If you add your implementation, its invocation should be deployed
+ * as an option of switches. In this example, we add a new feature named
+ * as "FOO_SECURITY". Its code is invoked on a new tuple is inserted into
+ * relations.
+ * We provides variable kind of hooks. If your security model does not
+ * need anything on some of hooks, keep it as is. It does not give any
+ * affects to the vanilla behavior.
  */
 
 /******************************************************************
@@ -219,7 +236,7 @@ pgaceExecutorStart(QueryDesc *queryDesc, int eflags)
 #ifdef HAVE_SELINUX
 	case PGACE_FEATURE_SELINUX:
 		if (sepgsqlIsEnabled())
-			sepgsqlVerifyQuery(queryDesc->plannedstmt, eflags);
+			sepgsqlExecutorStart(queryDesc, eflags);
 		break;
 #endif
 	default:
@@ -424,58 +441,25 @@ pgaceHeapTupleDelete(Relation rel, ItemPointer otid,
  ******************************************************************/
 
 /*
- * PGACE framework provides its guest facilities to manage security
- * attribute of database object, using an extended SQL statement.
+ * pgaceIsGramSecurityItem
+ *
+ * PGACE framework provides its guest to manage security attribute
+ * for some kind of database obejcts, using an enhanced SQL statement.
  *
  * For example:
  *   CREATE TABLE tbl (
  *       x  integer,
  *       y  text
- *   ) CONTEXT = 'system_u:object_r:sepgsql_ro_table_t:Classified',
+ *   ) security_label = 'system_u:object_r:sepgsql_table_t:Classified';
  *
- * In SE-PostgreSQL, this statement enables to create a new table
- * with explicitly specified security attribute by CONTEXT = 'xxx'
- * clause. We call the clause as a "security attribute modifier".
- *
- * The series of hooks enables the guest to handle the given
- * security attribute and apply it on the specified database
- * object.
- * 
- * The guest can apply this feature on the following statement:
- *
- * CREATE DATABASE <database>
- * ALTER DATABASE <database>
- * CREATE TABLE <table>
- * ALTER TABLE <table>
- * ALTER TABLE <table> ALTER <column>
- * CREATE FUNCTION <function>
- * ALTER FUNCTION <function>
- */
-
-/*
- * pgaceGramSecurityItem
- *
- * This hook is invoked during parsing a give query from parser/gram.y,
- * and it generates a DefElem object which holds explicitly specified
- * security attribute. If the guest support the feature of security
- * attribute modifier, this hook has to check whether the given clause
- * is appropriate, or not.
- * 
- * In the following exmaple case:
- *   CREATE TABLE tbl (
- *       x  integer,
- *       y  text
- *   ) CONTEXT = 'system_u:object_r:sepgsql_ro_table_t:Classified',
- *
- * This hook is invoked with "context" as an argument of defname
- * and "system_u:object_r:sepgsql_ro_table_t:Classified" as an
- * argument of value, and has to check whether it is appropriate
- * as a security attribute modifier, or not.
- * If OK, the hook generates a DefElem object which contains
- * the given context, and returns it.
- *
- * To return NULL means that "This clause is not a security attribute
- * modifier", then it makes an error.
+ * This hook is invoked during parsing given queries at parser/gram.y.
+ * It generates a DefElem object which holds explicitly specified
+ * security attribute. If working guest support the feature and the
+ * given DefElem has correct pair of defname and argument string,
+ * this hook should return true.
+ * In ths above example, the given DefElem has "security_label" as
+ * defname, and "system_u:object_r:sepgsql_table_t:Classified" as
+ * its argument string.
  */
 static inline bool
 pgaceIsGramSecurityItem(DefElem *defel)
@@ -498,8 +482,7 @@ pgaceIsGramSecurityItem(DefElem *defel)
  * The series of following hooks has three arguments.
  * - rel is an opened relation of the target system catalog.
  * - tuple is a new tuple to be inserted/updated.
- * - defel is a security attribute modifier generated at
- *   pgaceGramSecurityItem().
+ * - defel is a DefElem object checked in pgaceIsGramSecurityItem().
  */
 
 /*
@@ -836,9 +819,9 @@ pgaceGetDatabaseParam(const char *name)
 /*
  * pgaceCallFunction
  *
- * This hook is invoked just before execute a function as a part
- * of the query. It provides a FmgrInfo object used to execute
- * function, and the guest can store an opaque data within
+ * This hook is invoked when a function is invoked as a part
+ * of the given query. It provides a FmgrInfo object of the
+ * function, so the guest can store its opaque data within
  * FmgrInfo::fn_pgaceItem.
  */
 static inline void
@@ -860,7 +843,13 @@ pgaceCallFunction(FmgrInfo *finfo)
 /*
  * pgaceCallAggFunction
  *
+ * This hook is invoked when an aggregate function is invoked
+ * in the given query. pgaceCallFunction() is also invoked for
+ * its transate function and finalize function.
  *
+ * arguments:
+ * - aggTuple is the tuple of target aggregate function stored
+ *   in pg_aggregate system catalog.
  */
 static inline void
 pgaceCallAggFunction(HeapTuple aggTuple)
@@ -966,6 +955,10 @@ pgaceEndPerformCheckFK(Relation rel, Datum rowacl_private, Datum pgace_private)
  *
  * This hook gives guest a chance to make decision just before
  * a set-returning function is inlined.
+ *
+ * arguments:
+ * - fnoid is oid of the function to be inlined.
+ * - func_tuple is tuple of the function stored in pg_proc.
  */
 static inline bool
 pgaceAllowFunctionInlined(Oid fnoid, HeapTuple func_tuple)
@@ -1378,13 +1371,9 @@ pgaceTupleDescHasRowAcl(Relation rel, List *relopts)
  * If it returns true, sizeof(Oid) bytes are allocated at the header
  * of HeapTupleHeader structure.
  *
- * Don't trust Relation->rd_rel->relkind, because this hook can be
- * invoked from heap_create(), but it does not initialize relkind
- * member yet.
- *
  * The 'rel' argument can be NULL, when we make a decision for newly
  * created relation via SELECT INTO/CREATE TABLE AS. In this case,
- * relation options are delivered.
+ * unparsed relation options are delivered.
  */
 static inline bool
 pgaceTupleDescHasSecLabel(Relation rel, List *relopts)
@@ -1463,8 +1452,7 @@ pgaceTranslateSecurityLabelOut(char *seclabel)
  * pgaceValidateSecurityLabel
  *
  * This hook enables the guest to validate the given security attribute
- * in raw-internal format. If it is not available, the hook has to
- * return an alternative security attribute.
+ * in raw-internal format.
  */
 static inline bool
 pgaceCheckValidSecurityLabel(char *seclabel)
