@@ -1115,8 +1115,9 @@ execVerifyQuery(List *selist)
  * to execute trigger functions, if necessary.
  */
 void
-sepgsqlVerifyQuery(PlannedStmt *pstmt, int eflags)
+sepgsqlExecutorStart(QueryDesc *queryDesc, int eflags)
 {
+	PlannedStmt *pstmt = queryDesc->plannedstmt;
 	RangeTblEntry *rte;
 	List	   *selist;
 	ListCell   *l;
