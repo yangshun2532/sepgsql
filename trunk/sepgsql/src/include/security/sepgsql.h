@@ -32,7 +32,7 @@ typedef enum
 	SEPGSQL_MODE_DISABLED,
 } SepgsqlModeType;
 
-extern SepgsqlModeType sepostgresql_mode;
+extern int sepostgresql_mode;
 extern bool sepostgresql_row_level;
 
 /*
@@ -109,7 +109,7 @@ extern void sepgsqlCallFunction(FmgrInfo *finfo);
 
 extern void sepgsqlCallAggFunction(HeapTuple aggTuple);
 
-extern bool sepgsqlCallFunctionTrigger(FmgrInfo *finfo, TriggerData *tgdata);
+extern bool sepgsqlCallTriggerFunction(TriggerData *tgdata);
 
 extern Datum sepgsqlBeginPerformCheckFK(Relation rel, bool is_primary, Oid save_userid);
 
