@@ -372,13 +372,13 @@ addEvalTriggerAccess(List *selist, Oid relid, bool is_inh, int cmdType)
 /*
  * sepgsqlExprWalker
  *
- * This function walks on the given node tree recursively, to pick up 
- * all appeared tables, columns and functions. Their identifiers are
- * chained swc->selist, and evaluated later.
+ * This function recursively walks on the given node tree to pick up
+ * all the appeared tables and columns. Their identifiers are chained
+ * on swc->selist and evaluated later.
  *
- * walkVarHelper and walkOpExprHelper are used to simplify its
- * implementation. If swx->is_internal_use is true, it add a "use"
- * permission to be evaluate, or a "select" permission otherwise.
+ * walkVarHelper marks appeared column and its belonging table.
+ * When swc->is_internal_use is true, it marks "use" permission to
+ * to be evaluated. Otherwise, it applys "select" permission.
  */
 static void
 walkVarHelper(sepgsqlWalkerContext *swc, Var *var)
@@ -426,52 +426,6 @@ walkVarHelper(sepgsqlWalkerContext *swc, Var *var)
 	}
 }
 
-static void
-walkFuncExprHelper(sepgsqlWalkerContext *swc, Oid funcid, Node *args)
-{
-	if (fmgr_isbuiltin(funcid))
-		sepgsqlExprWalker(args, swc);
-	else
-	{
-		/*
-		 * When the given function has a possibility to leak
-		 * given arguments to others, it isn't proper behavior
-		 * to apply {use} permission for arguments.
-		 * Our assumption is built-in functions are trustable.
-		 */
-		bool is_internal_use_local = swc->is_internal_use;
-
-		swc->is_internal_use = 0;
-		sepgsqlExprWalker(args, swc);
-		swc->is_internal_use = is_internal_use_local;
-	}
-}
-
-static void
-walkOpExprHelper(sepgsqlWalkerContext *swc, Oid opid, Node *args)
-{
-	HeapTuple	tuple;
-	Oid			oprcode;
-	Oid			oprrest;
-	Oid			oprjoin;
-
-	tuple = SearchSysCache(OPEROID, ObjectIdGetDatum(opid), 0, 0, 0);
-	if (!HeapTupleIsValid(tuple))
-		elog(ERROR, "SELinux: cache lookup failed for operator %u", opid);
-
-	oprcode = ((Form_pg_operator) GETSTRUCT(tuple))->oprcode;
-	oprrest = ((Form_pg_operator) GETSTRUCT(tuple))->oprrest;
-	oprjoin = ((Form_pg_operator) GETSTRUCT(tuple))->oprjoin;
-
-	ReleaseSysCache(tuple);
-
-	walkFuncExprHelper(swc, oprcode, args);
-	if (OidIsValid(oprrest))
-		walkFuncExprHelper(swc, oprrest, args);
-	if (OidIsValid(oprjoin))
-		walkFuncExprHelper(swc, oprjoin, args);
-}
-
 static bool
 sepgsqlExprWalker(Node *node, sepgsqlWalkerContext *swc)
 {
@@ -479,73 +433,17 @@ sepgsqlExprWalker(Node *node, sepgsqlWalkerContext *swc)
 		return false;
 	else if (IsA(node, Var))
 		walkVarHelper(swc, (Var *) node);
-	else if (IsA(node, FuncExpr))
-	{
-		FuncExpr *ex = (FuncExpr *) node;
-
-		walkFuncExprHelper(swc, ex->funcid, (Node *)ex->args);
-		return false;
-	}
-	else if (IsA(node, Aggref))
-	{
-		Aggref *ex = (Aggref *) node;
-
-		walkFuncExprHelper(swc, ex->aggfnoid, (Node *)ex->args);
-		return false;
-	}
-	else if (IsA(node, OpExpr) ||
-			 IsA(node, DistinctExpr) ||
-			 IsA(node, NullIfExpr))
-	{
-		OpExpr *ex = (OpExpr *) node;
-
-		walkOpExprHelper(swc, ex->opno, (Node *)ex->args);
-		return false;
-	}
-	else if (IsA(node, ScalarArrayOpExpr))
-	{
-		ScalarArrayOpExpr *ex = (ScalarArrayOpExpr *) node;
-
-		walkOpExprHelper(swc, ex->opno, (Node *)ex->args);
-		return false;
-	}
 	else if (IsA(node, Query))
 	{
-		/*
-		 * Subquery within SubLink or CommonTableExpr
-		 */
+		/* Subquery within SubLink or CommonTableExpr */
 		proxyRteSubQuery(swc, (Query *) node);
-	}
-	else if (IsA(node, ArrayCoerceExpr))
-	{
-		ArrayCoerceExpr *ex = (ArrayCoerceExpr *) node;
-
-		if (OidIsValid(ex->elemfuncid))
-		{
-			walkFuncExprHelper(swc, ex->elemfuncid, (Node *)ex->arg);
-			return false;
-		}
-	}
-	else if (IsA(node, RowCompareExpr))
-	{
-		RowCompareExpr *ex = (RowCompareExpr *) node;
-		ListCell *l, *r;
-		int index = 0;
-
-		Assert(list_length(ex->opnos) == list_length(ex->largs));
-		Assert(list_length(ex->opnos) == list_length(ex->rargs));
-
-		forboth(l, ex->largs, r, ex->rargs)
-		{
-			List *lst = list_make2(lfirst(l), lfirst(r));
-
-			walkOpExprHelper(swc, list_nth_oid(ex->opnos, index++), (Node *)lst);
-			list_free(lst);
-		}
-		return false;
 	}
 	else if (IsA(node, SortGroupClause))
 	{
+		/*
+		 * Now expression_tree_walker() does not support
+		 * T_SortGroupClause node type.
+		 */
 		SortGroupClause *ex = (SortGroupClause *) node;
 		Query *query = swc->qstack->query;
 		TargetEntry *tle
@@ -553,9 +451,8 @@ sepgsqlExprWalker(Node *node, sepgsqlWalkerContext *swc)
 								   query->targetList);
 
 		Assert(IsA(tle, TargetEntry));
-		walkOpExprHelper(swc, ex->eqop, (Node *)tle->expr);
-		if (OidIsValid(ex->sortop))
-			walkOpExprHelper(swc, ex->sortop, (Node *)tle->expr);
+		sepgsqlExprWalker((Node *)tle->expr, swc);
+
 		return false;
 	}
 	return expression_tree_walker(node, sepgsqlExprWalker, (void *) swc);
