@@ -651,7 +651,7 @@ bool rawaclParseRelOptsDefaultRowAcl(const char *value,
 	if (!value)
 		return false;
 
-	fmgr_info_cxt(F_ARRAY_IN, &finfo, CurrentMemoryContext);
+	fmgr_info(F_ARRAY_IN, &finfo);
 	aclDat = FunctionCall3(&finfo,
 						   CStringGetDatum(value),
 						   ObjectIdGetDatum(ACLITEMOID),

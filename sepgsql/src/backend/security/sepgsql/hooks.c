@@ -207,9 +207,13 @@ sepgsqlCallFunction(FmgrInfo *finfo)
 	security_context_t	newcon;
 	access_vector_t		perms = DB_PROCEDURE__EXECUTE;
 
+	if (IsBootstrapProcessingMode())
+		return;		/* under initialization of pg_proc */
+
 	tuple = SearchSysCache(PROCOID,
 						   ObjectIdGetDatum(finfo->fn_oid),
 						   0, 0, 0);
+	Assert(HeapTupleIsValid(tuple));
 	if (!HeapTupleIsValid(tuple))
 		elog(ERROR, "SELinux: cache lookup failed for procedure %u", finfo->fn_oid);
 
@@ -269,20 +273,18 @@ sepgsqlCallAggFunction(HeapTuple aggTuple)
 }
 
 bool
-sepgsqlCallFunctionTrigger(FmgrInfo *finfo, TriggerData *tgdata)
+sepgsqlCallTriggerFunction(TriggerData *tgdata)
 {
 	Relation	rel = tgdata->tg_relation;
 	HeapTuple	newtup = NULL;
 	HeapTuple	oldtup = NULL;
 
+	/*
+	 * We don't need to check tuple permissions for
+	 * statement triggers
+	 */
 	if (TRIGGER_FIRED_FOR_STATEMENT(tgdata->tg_event))
-	{
-		/*
-		 * No need to check db_tuple:{select} for a statement trigger
-		 */
-		sepgsqlCallFunction(finfo);
 		return true;
-	}
 
 	if (TRIGGER_FIRED_BY_INSERT(tgdata->tg_event))
 	{
@@ -316,8 +318,6 @@ sepgsqlCallFunctionTrigger(FmgrInfo *finfo, TriggerData *tgdata)
 	if (newtup && !sepgsqlCheckTuplePerms(rel, newtup, NULL,
 										  SEPGSQL_PERMS_SELECT, false))
 		return false;
-
-	sepgsqlCallFunction(finfo);
 
 	return true;
 }

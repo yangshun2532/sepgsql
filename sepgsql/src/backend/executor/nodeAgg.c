@@ -1495,13 +1495,11 @@ ExecInitAgg(Agg *node, EState *estate, int eflags)
 								&finalfnexpr);
 
 		fmgr_info(transfn_oid, &peraggstate->transfn);
-		pgaceCallFunction(&peraggstate->transfn);
 		peraggstate->transfn.fn_expr = (Node *) transfnexpr;
 
 		if (OidIsValid(finalfn_oid))
 		{
 			fmgr_info(finalfn_oid, &peraggstate->finalfn);
-			pgaceCallFunction(&peraggstate->finalfn);
 			peraggstate->finalfn.fn_expr = (Node *) finalfnexpr;
 		}
 
@@ -1578,7 +1576,6 @@ ExecInitAgg(Agg *node, EState *estate, int eflags)
 									 true, true, false,
 									 &lt_opr, &eq_opr, NULL);
 			fmgr_info(get_opcode(eq_opr), &(peraggstate->equalfn));
-			pgaceCallFunction(&(peraggstate->equalfn));
 			peraggstate->sortOperator = lt_opr;
 			peraggstate->sortstate = NULL;
 		}

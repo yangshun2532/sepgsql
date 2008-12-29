@@ -1024,7 +1024,7 @@ sepgsqlExecutorStart(QueryDesc *queryDesc, int eflags)
 	/*
 	 * EXPLAIN statement does not access any object.
 	 */
-	if ((eflags & EXEC_FLAG_EXPLAIN_ONLY) != 0)
+	if (eflags & EXEC_FLAG_EXPLAIN_ONLY)
 		return;
 	if (!pstmt->pgaceItem)
 		return;
