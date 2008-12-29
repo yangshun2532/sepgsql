@@ -22,6 +22,7 @@
 #include "executor/functions.h"
 #include "miscadmin.h"
 #include "parser/parse_expr.h"
+#include "security/pgace.h"
 #include "utils/builtins.h"
 #include "utils/fmgrtab.h"
 #include "utils/guc.h"
@@ -160,6 +161,17 @@ fmgr_info(Oid functionId, FmgrInfo *finfo)
  */
 void
 fmgr_info_cxt(Oid functionId, FmgrInfo *finfo, MemoryContext mcxt)
+{
+	fmgr_info_cxt_security(functionId, finfo, mcxt, false);
+	pgaceCallFunction(finfo);
+}
+
+/*
+ * This function is same as fmgr_info_cxt() except for it does not
+ * invoke pgaceCallFunction()
+ */
+void
+fmgr_info_trusted(Oid functionId, FmgrInfo *finfo, MemoryContext mcxt)
 {
 	fmgr_info_cxt_security(functionId, finfo, mcxt, false);
 }

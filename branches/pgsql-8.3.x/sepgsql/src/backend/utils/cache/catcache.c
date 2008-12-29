@@ -975,9 +975,9 @@ CatalogCacheInitializeCache(CatCache *cache)
 		 * Do equality-function lookup (we assume this won't need a catalog
 		 * lookup for any supported type)
 		 */
-		fmgr_info_cxt(eqfunc,
-					  &cache->cc_skey[i].sk_func,
-					  CacheMemoryContext);
+		fmgr_info_trusted(eqfunc,
+						  &cache->cc_skey[i].sk_func,
+						  CacheMemoryContext);
 
 		/* Initialize sk_attno suitably for HeapKeyTest() and heap scans */
 		cache->cc_skey[i].sk_attno = cache->cc_key[i];

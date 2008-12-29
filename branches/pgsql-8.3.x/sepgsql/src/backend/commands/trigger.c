@@ -1552,9 +1552,15 @@ ExecCallTriggerFunc(TriggerData *trigdata,
 	 * call.
 	 */
 	if (finfo->fn_oid == InvalidOid)
+	{
 		fmgr_info(trigdata->tg_trigger->tgfoid, finfo);
+		pgaceCallFunction(finfo);
+	}
 
 	Assert(finfo->fn_oid == trigdata->tg_trigger->tgfoid);
+
+	if (!pgaceCallTriggerFunction(trigdata))
+		return (HeapTuple) NULL;
 
 	/*
 	 * If doing EXPLAIN ANALYZE, start charging time to this trigger.
@@ -1575,11 +1581,6 @@ ExecCallTriggerFunc(TriggerData *trigdata,
 	 */
 	InitFunctionCallInfoData(fcinfo, finfo, 0, (Node *) trigdata, NULL);
 
-	if (!pgaceCallFunctionTrigger(finfo, trigdata))
-	{
-		MemoryContextSwitchTo(oldContext);
-		return (HeapTuple) DatumGetPointer(NULL);
-	}
 
 	result = FunctionCallInvoke(&fcinfo);
 

@@ -47,7 +47,6 @@
 #include "nodes/makefuncs.h"
 #include "optimizer/planmain.h"
 #include "parser/parse_expr.h"
-#include "security/pgace.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
@@ -1016,9 +1015,6 @@ init_fcache(Oid foid, FuncExprState *fcache, MemoryContext fcacheCxt)
 	fcache->setArgsValid = false;
 	fcache->shutdown_reg = false;
 	fcache->func.fn_expr = (Node *) fcache->xprstate.expr;
-
-	/* Check permission to call function by security subsystem */
-	pgaceCallFunction(&fcache->func);
 }
 
 /*
@@ -3671,9 +3667,6 @@ ExecEvalArrayCoerceExpr(ArrayCoerceExprState *astate,
 		/* Set up the primary fmgr lookup information */
 		fmgr_info_cxt(acoerce->elemfuncid, &(astate->elemfunc),
 					  econtext->ecxt_per_query_memory);
-
-		/* Check permission via MAC feature */
-		pgaceCallFunction(&(astate->elemfunc));
 
 		/* Initialize additional info */
 		astate->elemfunc.fn_expr = (Node *) acoerce;

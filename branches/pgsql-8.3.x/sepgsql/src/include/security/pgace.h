@@ -33,7 +33,7 @@ typedef enum
 #endif
 } PgaceFeatureOpts;
 
-extern PgaceFeatureOpts pgace_feature;
+extern int pgace_feature;
 extern char *pgace_feature_string;
 
 /*
@@ -851,19 +851,16 @@ pgaceCallAggFunction(HeapTuple aggTuple)
  * If it returns false, the trigger function is not invoked and
  * caller receives a NULL tuple as a result.
  * (It also means skip to update/delete the tuple in BR-triggers.)
- *
- * The guest can refer FmgrInfo and TriggerData object to make
- * its decision.
  */
 static inline bool
-pgaceCallFunctionTrigger(FmgrInfo *finfo, TriggerData *tgdata)
+pgaceCallTriggerFunction(TriggerData *tgdata)
 {
 	switch (pgace_feature)
 	{
 #ifdef HAVE_SELINUX
 	case PGACE_FEATURE_SELINUX:
 		if (sepgsqlIsEnabled())
-			return sepgsqlCallFunctionTrigger(finfo, tgdata);
+			return sepgsqlCallTriggerFunction(tgdata);
 		break;
 #endif
 	default:
