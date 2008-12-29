@@ -462,16 +462,16 @@ INSERT INTO ratbl_p (security_acl, a, b)
        VALUES ('{rausr_y=rx/rausr_o}', 42, 'baz');	-- to be failed
 ERROR:  Row-level ACLs are unavailable for relation: ratbl_p
 SELECT security_acl, * FROM ratbl_p;
- security_acl | a  |  b  
---------------+----+-----
-              |  1 | aaa
-              |  2 | bbb
-              |  5 | eee
-              |  6 | fff
-              |  7 | ggg
-              |  8 | hhh
-              | 40 | foo
-              | 41 | var
+  security_acl   | a  |  b  
+-----------------+----+-----
+ {=rwdx/rausr_o} |  1 | aaa
+ {=rwdx/rausr_o} |  2 | bbb
+ {=rwdx/rausr_o} |  5 | eee
+ {=rwdx/rausr_o} |  6 | fff
+ {=rwdx/rausr_o} |  7 | ggg
+ {=rwdx/rausr_o} |  8 | hhh
+ {=rwdx/rausr_o} | 40 | foo
+ {=rwdx/rausr_o} | 41 | var
 (8 rows)
 
 ALTER TABLE ratbl_p SET (row_level_acl=on);
@@ -491,25 +491,24 @@ SELECT security_acl, * FROM ratbl_p;
  {rausr_y=rx/rausr_o} | 42 | baz
 (9 rows)
 
-ALTER TABLE ratbl_p SET (default_row_acl='{rausr_x=rd/rausr_o,rausr_y=rw}');
-WARNING:  defaulting grantor to user ID 10
+ALTER TABLE ratbl_p SET (default_row_acl='{rausr_x=rd/rausr_o,rausr_y=rw/rausr_o}');
 INSERT INTO ratbl_p VALUES (50, 'coffee');
 INSERT INTO ratbl_p (security_acl, a, b)
        VALUES ('{rausr_x=r/rausr_o}', 51, 'juice');
 SELECT security_acl, * FROM ratbl_p;
-              security_acl              | a  |   b    
-----------------------------------------+----+--------
- {=rwdx/rausr_o}                        |  1 | aaa
- {rausr_x=r/rausr_o}                    |  2 | bbb
- {rausr_x=rx/rausr_o}                   |  5 | eee
- {rausr_x=x/rausr_o}                    |  6 | fff
- {rausr_x=wx/rausr_o}                   |  7 | ggg
- {rausr_x=dx/rausr_o}                   |  8 | hhh
- {=rwdx/rausr_o}                        | 40 | foo
- {=rwdx/rausr_o}                        | 41 | var
- {rausr_y=rx/rausr_o}                   | 42 | baz
- {rausr_x=rd/rausr_o,rausr_y=rw/kaigai} | 50 | coffee
- {rausr_x=r/rausr_o}                    | 51 | juice
+              security_acl               | a  |   b    
+-----------------------------------------+----+--------
+ {=rwdx/rausr_o}                         |  1 | aaa
+ {rausr_x=r/rausr_o}                     |  2 | bbb
+ {rausr_x=rx/rausr_o}                    |  5 | eee
+ {rausr_x=x/rausr_o}                     |  6 | fff
+ {rausr_x=wx/rausr_o}                    |  7 | ggg
+ {rausr_x=dx/rausr_o}                    |  8 | hhh
+ {=rwdx/rausr_o}                         | 40 | foo
+ {=rwdx/rausr_o}                         | 41 | var
+ {rausr_y=rx/rausr_o}                    | 42 | baz
+ {rausr_x=rd/rausr_o,rausr_y=rw/rausr_o} | 50 | coffee
+ {rausr_x=r/rausr_o}                     | 51 | juice
 (11 rows)
 
 ALTER TABLE ratbl_p RESET (default_row_acl);
@@ -517,21 +516,21 @@ INSERT INTO ratbl_p VALUES (52, 'coke');
 INSERT INTO ratbl_p (security_acl, a, b)
        VALUES ('{rausr_x=rwd/rausr_o}', 53, 'red tea');	-- to be failed
 SELECT security_acl, * FROM ratbl_p;
-              security_acl              | a  |    b    
-----------------------------------------+----+---------
- {=rwdx/rausr_o}                        |  1 | aaa
- {rausr_x=r/rausr_o}                    |  2 | bbb
- {rausr_x=rx/rausr_o}                   |  5 | eee
- {rausr_x=x/rausr_o}                    |  6 | fff
- {rausr_x=wx/rausr_o}                   |  7 | ggg
- {rausr_x=dx/rausr_o}                   |  8 | hhh
- {=rwdx/rausr_o}                        | 40 | foo
- {=rwdx/rausr_o}                        | 41 | var
- {rausr_y=rx/rausr_o}                   | 42 | baz
- {rausr_x=rd/rausr_o,rausr_y=rw/kaigai} | 50 | coffee
- {rausr_x=r/rausr_o}                    | 51 | juice
- {=rwdx/rausr_o}                        | 52 | coke
- {rausr_x=rwd/rausr_o}                  | 53 | red tea
+              security_acl               | a  |    b    
+-----------------------------------------+----+---------
+ {=rwdx/rausr_o}                         |  1 | aaa
+ {rausr_x=r/rausr_o}                     |  2 | bbb
+ {rausr_x=rx/rausr_o}                    |  5 | eee
+ {rausr_x=x/rausr_o}                     |  6 | fff
+ {rausr_x=wx/rausr_o}                    |  7 | ggg
+ {rausr_x=dx/rausr_o}                    |  8 | hhh
+ {=rwdx/rausr_o}                         | 40 | foo
+ {=rwdx/rausr_o}                         | 41 | var
+ {rausr_y=rx/rausr_o}                    | 42 | baz
+ {rausr_x=rd/rausr_o,rausr_y=rw/rausr_o} | 50 | coffee
+ {rausr_x=r/rausr_o}                     | 51 | juice
+ {=rwdx/rausr_o}                         | 52 | coke
+ {rausr_x=rwd/rausr_o}                   | 53 | red tea
 (13 rows)
 
 \c -

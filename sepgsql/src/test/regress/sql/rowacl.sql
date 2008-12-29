@@ -206,7 +206,7 @@ INSERT INTO ratbl_p (security_acl, a, b)
 
 SELECT security_acl, * FROM ratbl_p;
 
-ALTER TABLE ratbl_p SET (default_row_acl='{rausr_x=rd/rausr_o,rausr_y=rw}');
+ALTER TABLE ratbl_p SET (default_row_acl='{rausr_x=rd/rausr_o,rausr_y=rw/rausr_o}');
 
 INSERT INTO ratbl_p VALUES (50, 'coffee');
 INSERT INTO ratbl_p (security_acl, a, b)
