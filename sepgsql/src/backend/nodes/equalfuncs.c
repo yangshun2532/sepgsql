@@ -22,7 +22,7 @@
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/nodes/equalfuncs.c,v 1.341 2008/12/19 16:25:17 petere Exp $
+ *	  $PostgreSQL: pgsql/src/backend/nodes/equalfuncs.c,v 1.342 2008/12/28 18:53:56 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -187,6 +187,20 @@ _equalAggref(Aggref *a, Aggref *b)
 	COMPARE_SCALAR_FIELD(agglevelsup);
 	COMPARE_SCALAR_FIELD(aggstar);
 	COMPARE_SCALAR_FIELD(aggdistinct);
+	COMPARE_LOCATION_FIELD(location);
+
+	return true;
+}
+
+static bool
+_equalWindowFunc(WindowFunc *a, WindowFunc *b)
+{
+	COMPARE_SCALAR_FIELD(winfnoid);
+	COMPARE_SCALAR_FIELD(wintype);
+	COMPARE_NODE_FIELD(args);
+	COMPARE_SCALAR_FIELD(winref);
+	COMPARE_SCALAR_FIELD(winstar);
+	COMPARE_SCALAR_FIELD(winagg);
 	COMPARE_LOCATION_FIELD(location);
 
 	return true;
@@ -840,6 +854,7 @@ _equalQuery(Query *a, Query *b)
 	COMPARE_SCALAR_FIELD(resultRelation);
 	COMPARE_NODE_FIELD(intoClause);
 	COMPARE_SCALAR_FIELD(hasAggs);
+	COMPARE_SCALAR_FIELD(hasWindowFuncs);
 	COMPARE_SCALAR_FIELD(hasSubLinks);
 	COMPARE_SCALAR_FIELD(hasDistinctOn);
 	COMPARE_SCALAR_FIELD(hasRecursive);
@@ -850,6 +865,7 @@ _equalQuery(Query *a, Query *b)
 	COMPARE_NODE_FIELD(returningList);
 	COMPARE_NODE_FIELD(groupClause);
 	COMPARE_NODE_FIELD(havingQual);
+	COMPARE_NODE_FIELD(windowClause);
 	COMPARE_NODE_FIELD(distinctClause);
 	COMPARE_NODE_FIELD(sortClause);
 	COMPARE_NODE_FIELD(limitOffset);
@@ -905,6 +921,7 @@ _equalSelectStmt(SelectStmt *a, SelectStmt *b)
 	COMPARE_NODE_FIELD(whereClause);
 	COMPARE_NODE_FIELD(groupClause);
 	COMPARE_NODE_FIELD(havingClause);
+	COMPARE_NODE_FIELD(windowClause);
 	COMPARE_NODE_FIELD(withClause);
 	COMPARE_NODE_FIELD(valuesLists);
 	COMPARE_NODE_FIELD(sortClause);
@@ -1897,6 +1914,7 @@ _equalFuncCall(FuncCall *a, FuncCall *b)
 	COMPARE_SCALAR_FIELD(agg_star);
 	COMPARE_SCALAR_FIELD(agg_distinct);
 	COMPARE_SCALAR_FIELD(func_variadic);
+	COMPARE_NODE_FIELD(over);
 	COMPARE_LOCATION_FIELD(location);
 
 	return true;
@@ -1978,6 +1996,18 @@ _equalSortBy(SortBy *a, SortBy *b)
 	COMPARE_SCALAR_FIELD(sortby_dir);
 	COMPARE_SCALAR_FIELD(sortby_nulls);
 	COMPARE_NODE_FIELD(useOp);
+	COMPARE_LOCATION_FIELD(location);
+
+	return true;
+}
+
+static bool
+_equalWindowDef(WindowDef *a, WindowDef *b)
+{
+	COMPARE_STRING_FIELD(name);
+	COMPARE_STRING_FIELD(refname);
+	COMPARE_NODE_FIELD(partitionClause);
+	COMPARE_NODE_FIELD(orderClause);
 	COMPARE_LOCATION_FIELD(location);
 
 	return true;
@@ -2106,6 +2136,19 @@ _equalSortGroupClause(SortGroupClause *a, SortGroupClause *b)
 	COMPARE_SCALAR_FIELD(eqop);
 	COMPARE_SCALAR_FIELD(sortop);
 	COMPARE_SCALAR_FIELD(nulls_first);
+
+	return true;
+}
+
+static bool
+_equalWindowClause(WindowClause *a, WindowClause *b)
+{
+	COMPARE_STRING_FIELD(name);
+	COMPARE_STRING_FIELD(refname);
+	COMPARE_NODE_FIELD(partitionClause);
+	COMPARE_NODE_FIELD(orderClause);
+	COMPARE_SCALAR_FIELD(winref);
+	COMPARE_SCALAR_FIELD(copiedOrder);
 
 	return true;
 }
@@ -2338,6 +2381,9 @@ equal(void *a, void *b)
 			break;
 		case T_Aggref:
 			retval = _equalAggref(a, b);
+			break;
+		case T_WindowFunc:
+			retval = _equalWindowFunc(a, b);
 			break;
 		case T_ArrayRef:
 			retval = _equalArrayRef(a, b);
@@ -2797,6 +2843,9 @@ equal(void *a, void *b)
 		case T_SortBy:
 			retval = _equalSortBy(a, b);
 			break;
+		case T_WindowDef:
+			retval = _equalWindowDef(a, b);
+			break;
 		case T_RangeSubselect:
 			retval = _equalRangeSubselect(a, b);
 			break;
@@ -2829,6 +2878,9 @@ equal(void *a, void *b)
 			break;
 		case T_SortGroupClause:
 			retval = _equalSortGroupClause(a, b);
+			break;
+		case T_WindowClause:
+			retval = _equalWindowClause(a, b);
 			break;
 		case T_RowMarkClause:
 			retval = _equalRowMarkClause(a, b);
