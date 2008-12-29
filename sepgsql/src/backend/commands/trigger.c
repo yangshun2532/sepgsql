@@ -1564,10 +1564,7 @@ ExecCallTriggerFunc(TriggerData *trigdata,
 	 * call.
 	 */
 	if (finfo->fn_oid == InvalidOid)
-	{
 		fmgr_info(trigdata->tg_trigger->tgfoid, finfo);
-		pgaceCallFunction(finfo);
-	}
 
 	Assert(finfo->fn_oid == trigdata->tg_trigger->tgfoid);
 
