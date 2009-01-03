@@ -3,12 +3,12 @@
  * copy.c
  *		Implements the COPY utility command
  *
- * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/commands/copy.c,v 1.302 2008/11/30 20:51:25 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/commands/copy.c,v 1.304 2009/01/02 20:42:00 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -1054,7 +1054,8 @@ DoCopy(const CopyStmt *stmt, const char *queryString)
 		((DR_copy *) dest)->cstate = cstate;
 
 		/* Create a QueryDesc requesting no output */
-		cstate->queryDesc = CreateQueryDesc(plan, GetActiveSnapshot(),
+		cstate->queryDesc = CreateQueryDesc(plan, queryString,
+											GetActiveSnapshot(),
 											InvalidSnapshot,
 											dest, NULL, false);
 
