@@ -3,12 +3,12 @@
  * relcache.c
  *	  POSTGRES relation descriptor cache code
  *
- * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/cache/relcache.c,v 1.278 2008/12/03 13:05:22 heikki Exp $
+ *	  $PostgreSQL: pgsql/src/backend/utils/cache/relcache.c,v 1.280 2009/01/01 17:23:50 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -776,6 +776,8 @@ equalRuleLocks(RuleLock *rlock1, RuleLock *rlock2)
 			if (rule1->event != rule2->event)
 				return false;
 			if (rule1->attrno != rule2->attrno)
+				return false;
+			if (rule1->enabled != rule2->enabled)
 				return false;
 			if (rule1->isInstead != rule2->isInstead)
 				return false;
