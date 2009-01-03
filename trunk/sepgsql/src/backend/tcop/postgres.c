@@ -3,12 +3,12 @@
  * postgres.c
  *	  POSTGRES C Backend Interface
  *
- * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/tcop/postgres.c,v 1.562 2008/12/13 02:29:21 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/tcop/postgres.c,v 1.564 2009/01/01 17:23:48 momjian Exp $
  *
  * NOTES
  *	  this is the "main" module of the postgres backend and
@@ -1718,12 +1718,11 @@ exec_bind_message(StringInfo input_message)
 		cplan = NULL;
 	}
 
-	/* Done with the snapshot used for parameter I/O and parsing/planning */
-	if (snapshot_set)
-		PopActiveSnapshot();
-
 	/*
-	 * Define portal and start execution.
+	 * Now we can define the portal.
+	 *
+	 * DO NOT put any code that could possibly throw an error between the
+	 * above "RevalidateCachedPlan(psrc, false)" call and here.
 	 */
 	PortalDefineQuery(portal,
 					  saved_stmt_name,
@@ -1732,6 +1731,13 @@ exec_bind_message(StringInfo input_message)
 					  plan_list,
 					  cplan);
 
+	/* Done with the snapshot used for parameter I/O and parsing/planning */
+	if (snapshot_set)
+		PopActiveSnapshot();
+
+	/*
+	 * And we're ready to start portal execution.
+	 */
 	PortalStart(portal, params, InvalidSnapshot);
 
 	/*

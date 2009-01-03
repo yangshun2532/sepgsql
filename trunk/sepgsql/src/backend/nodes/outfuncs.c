@@ -3,12 +3,12 @@
  * outfuncs.c
  *	  Output functions for Postgres tree nodes.
  *
- * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/nodes/outfuncs.c,v 1.347 2008/12/28 18:53:56 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/nodes/outfuncs.c,v 1.349 2009/01/01 17:23:43 momjian Exp $
  *
  * NOTES
  *	  Every node type that can appear in stored rules' parsetrees *must*
@@ -578,6 +578,7 @@ _outWindowAgg(StringInfo str, WindowAgg *node)
 
 	_outPlanInfo(str, (Plan *) node);
 
+	WRITE_UINT_FIELD(winref);
 	WRITE_INT_FIELD(partNumCols);
 
 	appendStringInfo(str, " :partColIdx");
@@ -597,6 +598,8 @@ _outWindowAgg(StringInfo str, WindowAgg *node)
 	appendStringInfo(str, " :ordOperations");
 	for (i = 0; i < node->ordNumCols; i++)
 		appendStringInfo(str, " %u", node->ordOperators[i]);
+
+	WRITE_INT_FIELD(frameOptions);
 }
 
 static void
@@ -1960,6 +1963,7 @@ _outWindowClause(StringInfo str, WindowClause *node)
 	WRITE_STRING_FIELD(refname);
 	WRITE_NODE_FIELD(partitionClause);
 	WRITE_NODE_FIELD(orderClause);
+	WRITE_INT_FIELD(frameOptions);
 	WRITE_UINT_FIELD(winref);
 	WRITE_BOOL_FIELD(copiedOrder);
 }
@@ -2250,6 +2254,7 @@ _outWindowDef(StringInfo str, WindowDef *node)
 	WRITE_STRING_FIELD(refname);
 	WRITE_NODE_FIELD(partitionClause);
 	WRITE_NODE_FIELD(orderClause);
+	WRITE_INT_FIELD(frameOptions);
 	WRITE_LOCATION_FIELD(location);
 }
 

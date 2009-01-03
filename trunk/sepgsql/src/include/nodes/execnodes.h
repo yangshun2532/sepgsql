@@ -4,10 +4,10 @@
  *	  definitions for executor state nodes
  *
  *
- * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/nodes/execnodes.h,v 1.197 2008/12/28 18:54:00 tgl Exp $
+ * $PostgreSQL: pgsql/src/include/nodes/execnodes.h,v 1.199 2009/01/01 17:23:59 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -1533,12 +1533,14 @@ typedef struct WindowAggState
 									 * have been spooled into tuplestore */
 	bool		more_partitions;	/* true if there's more partitions after
 									 * this one */
+	bool		frametail_valid;	/* true if frametailpos is known up to date
+									 * for current row */
 
 	TupleTableSlot *first_part_slot;	/* first tuple of current or next
 										 * partition */
 
 	/* temporary slots for tuples fetched back from tuplestore */
-	TupleTableSlot *first_peer_slot;
+	TupleTableSlot *agg_row_slot;
 	TupleTableSlot *temp_slot_1;
 	TupleTableSlot *temp_slot_2;
 } WindowAggState;
