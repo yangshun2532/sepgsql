@@ -4,7 +4,7 @@
  *	  pg_dump is a utility for dumping out a postgres database
  *	  into a script file.
  *
- * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *	pg_dump will read the system catalogs in a database and dump out a
@@ -12,7 +12,7 @@
  *	by PostgreSQL
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/bin/pg_dump/pg_dump.c,v 1.509 2008/12/19 16:25:18 petere Exp $
+ *	  $PostgreSQL: pgsql/src/bin/pg_dump/pg_dump.c,v 1.511 2009/01/01 17:23:54 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -7046,6 +7046,7 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 	char	   *proallargtypes;
 	char	   *proargmodes;
 	char	   *proargnames;
+	char	   *proiswindow;
 	char	   *provolatile;
 	char	   *proisstrict;
 	char	   *prosecdef;
@@ -7087,7 +7088,7 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 						  "pg_catalog.pg_get_function_arguments(oid) as funcargs, "
 						  "pg_catalog.pg_get_function_identity_arguments(oid) as funciargs, "
 						  "pg_catalog.pg_get_function_result(oid) as funcresult, "
-						  "provolatile, proisstrict, prosecdef, "
+						  "proiswindow, provolatile, proisstrict, prosecdef, "
 						  "proconfig, procost, prorows, "
 						  "security_label, "
 						  "(SELECT lanname FROM pg_catalog.pg_language WHERE oid = prolang) as lanname "
@@ -7100,6 +7101,7 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 		appendPQExpBuffer(query,
 						  "SELECT proretset, prosrc, probin, "
 						  "proallargtypes, proargmodes, proargnames, "
+						  "false as proiswindow, "
 						  "provolatile, proisstrict, prosecdef, "
 						  "proconfig, procost, prorows, "
 						  "null as security_label, "
@@ -7113,6 +7115,7 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 		appendPQExpBuffer(query,
 						  "SELECT proretset, prosrc, probin, "
 						  "proallargtypes, proargmodes, proargnames, "
+						  "false as proiswindow, "
 						  "provolatile, proisstrict, prosecdef, "
 						  "null as proconfig, 0 as procost, 0 as prorows, "
 						  "null as security_label, "
@@ -7128,6 +7131,7 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 						  "null as proallargtypes, "
 						  "null as proargmodes, "
 						  "proargnames, "
+						  "false as proiswindow, "
 						  "provolatile, proisstrict, prosecdef, "
 						  "null as proconfig, 0 as procost, 0 as prorows, "
 						  "null as security_label, "
@@ -7143,6 +7147,7 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 						  "null as proallargtypes, "
 						  "null as proargmodes, "
 						  "null as proargnames, "
+						  "false as proiswindow, "
 						  "provolatile, proisstrict, prosecdef, "
 						  "null as proconfig, 0 as procost, 0 as prorows, "
 						  "null as security_label, "
@@ -7158,9 +7163,10 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 						  "null as proallargtypes, "
 						  "null as proargmodes, "
 						  "null as proargnames, "
+						  "false as proiswindow, "
 			 "case when proiscachable then 'i' else 'v' end as provolatile, "
 						  "proisstrict, "
-						  "'f'::boolean as prosecdef, "
+						  "false as prosecdef, "
 						  "null as proconfig, 0 as procost, 0 as prorows, "
 						  "null as security_label, "
 		  "(SELECT lanname FROM pg_language WHERE oid = prolang) as lanname "
@@ -7175,9 +7181,10 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 						  "null as proallargtypes, "
 						  "null as proargmodes, "
 						  "null as proargnames, "
+						  "false as proiswindow, "
 			 "case when proiscachable then 'i' else 'v' end as provolatile, "
-						  "'f'::boolean as proisstrict, "
-						  "'f'::boolean as prosecdef, "
+						  "false as proisstrict, "
+						  "false as prosecdef, "
 						  "null as proconfig, 0 as procost, 0 as prorows, "
 						  "null as security_label, "
 		  "(SELECT lanname FROM pg_language WHERE oid = prolang) as lanname "
@@ -7215,6 +7222,7 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 		proargnames = PQgetvalue(res, 0, PQfnumber(res, "proargnames"));
 		funcargs = funciargs = funcresult = NULL;
 	}
+	proiswindow = PQgetvalue(res, 0, PQfnumber(res, "proiswindow"));
 	provolatile = PQgetvalue(res, 0, PQfnumber(res, "provolatile"));
 	proisstrict = PQgetvalue(res, 0, PQfnumber(res, "proisstrict"));
 	prosecdef = PQgetvalue(res, 0, PQfnumber(res, "prosecdef"));
@@ -7356,6 +7364,10 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 	}
 
 	appendPQExpBuffer(q, "\n    LANGUAGE %s", fmtId(lanname));
+
+	if (proiswindow[0] == 't')
+		appendPQExpBuffer(q, " WINDOW");
+
 	if (provolatile[0] != PROVOLATILE_VOLATILE)
 	{
 		if (provolatile[0] == PROVOLATILE_IMMUTABLE)

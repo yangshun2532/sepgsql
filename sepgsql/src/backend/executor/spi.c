@@ -3,12 +3,12 @@
  * spi.c
  *				Server Programming Interface
  *
- * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/executor/spi.c,v 1.202 2008/12/13 02:29:21 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/executor/spi.c,v 1.204 2009/01/02 20:42:00 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -1795,6 +1795,7 @@ _SPI_execute_plan(SPIPlanPtr plan, ParamListInfo paramLI,
 					snap = InvalidSnapshot;
 
 				qdesc = CreateQueryDesc((PlannedStmt *) stmt,
+										plansource->query_string,
 										snap, crosscheck_snapshot,
 										dest,
 										paramLI, false);
