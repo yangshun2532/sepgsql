@@ -326,7 +326,6 @@ default_reloptions(Datum reloptions, bool validate,
 	static const char *const default_keywords[] = {
 		"fillfactor",
 		"row_level_acl",
-		"default_row_acl",
 	};
 	char	   *values[lengthof(default_keywords)];
 	int			index;
@@ -352,10 +351,6 @@ default_reloptions(Datum reloptions, bool validate,
 			break;
 		case 1:		/* row_level_acl */
 			if (rawaclParseRelOptsRowLevelAcl(values[1], result, validate))
-				exist = true;
-			break;
-		case 2:		/* default_row_acl */
-			if (rawaclParseRelOptsDefaultRowAcl(values[2], result, validate))
 				exist = true;
 			break;
 		}

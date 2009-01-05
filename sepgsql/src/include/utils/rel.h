@@ -219,7 +219,6 @@ typedef struct StdRdOptions
 	int32		vl_len_;		/* varlena header (do not touch directly!) */
 	int			fillfactor;		/* page fill factor in percent (0..100) */
 	bool		row_level_acl;	/* availability of row-level ACLs */
-	Oid			default_row_acl;/* a default value of row-level ACLs */
 } StdRdOptions;
 
 #define HEAP_MIN_FILLFACTOR			10
