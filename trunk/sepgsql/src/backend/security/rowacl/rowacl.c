@@ -1,9 +1,10 @@
 /*
- * Row-level Database ACLs support
- *   enables to set up DAC based access control policy for each
- *   tuples and to filter violated tupled from the result set.
+ * src/backend/rowacl/rowacl.c
+ *   Row-level Database ACLs support
+ *
+ * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1994, Regents of the University of California
  */
-
 #include "postgres.h"
 
 #include "access/reloptions.h"

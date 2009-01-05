@@ -1,11 +1,9 @@
-
 /*
  * src/backend/security/sepgsql/permissions.c
  *	 applies SE-PostgreSQL permission checks
  *
- * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
- *
  */
 #include "postgres.h"
 
