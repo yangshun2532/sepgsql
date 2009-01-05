@@ -4308,7 +4308,6 @@ DATA(insert OID = 3411 ( lo_set_security		PGNSP PGUID 12 1 0 0 f f f t f v 2 0 1
 DATA(insert OID = 3430 ( rowacl_grant			PGNSP PGUID 12 1 0 0 f f f t f v 4 0 1034 "26 1034 25 25" _null_ _null_ _null_ _null_ rowacl_grant _null_ _null_ _null_));
 DATA(insert OID = 3431 ( rowacl_revoke			PGNSP PGUID 12 1 0 0 f f f t f v 4 0 1034 "26 1034 25 25" _null_ _null_ _null_ _null_ rowacl_revoke _null_ _null_ _null_));
 DATA(insert OID = 3432 ( rowacl_revoke_cascade		PGNSP PGUID 12 1 0 0 f f f t f v 4 0 1034 "26 1034 25 25" _null_ _null_ _null_ _null_ rowacl_revoke_cascade _null_ _null_ _null_));
-DATA(insert OID = 3433 ( rowacl_table_default	PGNSP PGUID 12 1 0 0 f f f t f v 1 0 1034 "25" _null_ _null_ _null_ _null_ rowacl_table_default _null_ _null_ _null_));
 
 /* SE-PostgreSQL related function */
 DATA(insert OID = 3450 ( sepgsql_getcon			PGNSP PGUID 12 1 0 0 f f f t f v 0 0 25 "" _null_ _null_ _null_ _null_ sepgsql_getcon _null_ _null_ _null_ ));

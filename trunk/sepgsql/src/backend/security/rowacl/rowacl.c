@@ -25,8 +25,6 @@
 #define ROWACL_ALL_PRIVS	(ACL_SELECT | ACL_UPDATE | ACL_DELETE | ACL_REFERENCES)
 #define RelationHasRowLevelAcl(rel)				\
 	((rel)->rd_options ? ((StdRdOptions *)(rel)->rd_options)->row_level_acl : false)
-#define RelationGetDefaultAcl(rel)				\
-	((rel)->rd_options ? ((StdRdOptions *)(rel)->rd_options)->default_row_acl : InvalidOid)
 
 static void proxySubQuery(Query *query);
 
@@ -361,8 +359,13 @@ bool rowaclHeapTupleInsert(Relation rel, HeapTuple tuple,
 	}
 	else
 	{
-		/* set a default acl */
-		HeapTupleSetRowAcl(tuple, RelationGetDefaultAcl(rel));
+		/*
+		 * TODO:
+		 * If user does not specify an explicit ACLs, it assigns
+		 * a default ACLs configured by relation-option.
+		 * Currently it is under reworking by Alvaro Herrera,
+		 * so the default ACLs feature is updated later.
+		 */
 	}
 
 	return true;
@@ -640,28 +643,6 @@ bool rawaclParseRelOptsRowLevelAcl(const char *value,
 	return true;
 }
 
-bool rawaclParseRelOptsDefaultRowAcl(const char *value,
-									 StdRdOptions *result, bool validate)
-{
-	FmgrInfo finfo;
-	Datum aclDat;
-
-	result->default_row_acl = InvalidOid;   /* set default */
-
-	if (!value)
-		return false;
-
-	fmgr_info_trusted(F_ARRAY_IN, &finfo, CurrentMemoryContext);
-	aclDat = FunctionCall3(&finfo,
-						   CStringGetDatum(value),
-						   ObjectIdGetDatum(ACLITEMOID),
-						   Int32GetDatum(-1));
-	result->default_row_acl
-		= rowaclSecurityAclToSid(DatumGetAclP(aclDat));
-
-	return true;
-}
-
 /******************************************************************
  * SQL functions
  ******************************************************************/
@@ -764,50 +745,4 @@ Datum
 rowacl_revoke_cascade(PG_FUNCTION_ARGS)
 {
     return rowacl_grant_revoke(fcinfo, false, true);
-}
-
-Datum
-rowacl_table_default(PG_FUNCTION_ARGS)
-{
-	char *ident, *tok, *sv = NULL;
-	List *names = NIL;
-	RangeVar *rv;
-	HeapTuple rtup;
-	Oid relid;
-	Datum ropts;
-	bool isnull;
-	StdRdOptions *rdopts;
-	char relkind;
-	Oid relowner;
-
-	ident = TextDatumGetCString(PG_GETARG_TEXT_P(0));
-	for (tok = strtok_r(ident, ".", &sv);
-		 tok;
-		 tok = strtok_r(NULL, ".", &sv))
-		names = lappend(names, makeString(tok));
-
-	rv = makeRangeVarFromNameList(names);
-	relid = RangeVarGetRelid(rv, true);
-
-	rtup = SearchSysCache(RELOID,
-						  ObjectIdGetDatum(relid),
-						  0, 0, 0);
-	if (!HeapTupleIsValid(rtup))
-		elog(ERROR, "cache lookup failed for relation %u", relid);
-	ropts = SysCacheGetAttr(RELOID, rtup,
-							Anum_pg_class_reloptions,
-							&isnull);
-	relkind = ((Form_pg_class) GETSTRUCT(rtup))->relkind;
-	relowner = ((Form_pg_class) GETSTRUCT(rtup))->relowner;
-	ReleaseSysCache(rtup);
-
-	if (isnull)
-		PG_RETURN_NULL();
-
-	rdopts = (StdRdOptions *) heap_reloptions(relkind, ropts, false);
-
-	if (!rdopts || !rdopts->row_level_acl)
-		PG_RETURN_NULL();
-
-	PG_RETURN_POINTER(rowaclSidToSecurityAcl(rdopts->default_row_acl, relowner));
 }
