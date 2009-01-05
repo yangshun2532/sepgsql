@@ -1,11 +1,9 @@
 /*
  * src/backend/security/sepgsql/proxy.c
- *	  proxy routines to pick up all appeared columns, functions, ...
- *	  within given queries, and apply mandatory access controls.
+ *    Proxying the given Query trees via SE-PostgreSQL
  *
- * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
- *
  */
 #include "postgres.h"
 
