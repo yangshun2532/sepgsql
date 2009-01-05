@@ -665,6 +665,7 @@ proxyRteSubQuery(sepgsqlWalkerContext *swc, Query *query)
 	sepgsqlExprWalkerFlags((Node *) query->sortClause, swc, true);
 	sepgsqlExprWalkerFlags((Node *) query->groupClause, swc, true);
 	sepgsqlExprWalkerFlags((Node *) query->cteList, swc, true);
+	sepgsqlExprWalkerFlags((Node *) query->windowClause, swc, true);
 
 	proxySetOperations(swc, query->setOperations);
 
