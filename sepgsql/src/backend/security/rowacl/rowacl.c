@@ -24,8 +24,6 @@
 #include "utils/syscache.h"
 
 #define ROWACL_ALL_PRIVS	(ACL_SELECT | ACL_UPDATE | ACL_DELETE | ACL_REFERENCES)
-#define RelationHasRowLevelAcl(rel)				\
-	((rel)->rd_options ? ((StdRdOptions *)(rel)->rd_options)->row_level_acl : false)
 
 static void proxySubQuery(Query *query);
 
@@ -321,7 +319,7 @@ bool rowaclExecScan(Scan *scan, Relation rel, TupleTableSlot *slot)
 	AclMode required = scan->pgaceTuplePerms & ROWACL_ALL_PRIVS;
 	HeapTuple tuple;
 
-	if (required==0 || !RelationHasRowLevelAcl(rel))
+	if (required==0 || !RelationGetRowLevelAcl(rel))
 		return true;
 
 	tuple = ExecMaterializeSlot(slot);
@@ -331,7 +329,7 @@ bool rowaclExecScan(Scan *scan, Relation rel, TupleTableSlot *slot)
 
 bool rowaclCopyToTuple(Relation rel, List *attNumList, HeapTuple tuple)
 {
-	if (!RelationHasRowLevelAcl(rel))
+	if (!RelationGetRowLevelAcl(rel))
 		return true;
 
 	return rowaclCheckPermission(rel, tuple, ACL_SELECT);
@@ -360,13 +358,22 @@ bool rowaclHeapTupleInsert(Relation rel, HeapTuple tuple,
 	}
 	else
 	{
-		/*
-		 * TODO:
-		 * If user does not specify an explicit ACLs, it assigns
-		 * a default ACLs configured by relation-option.
-		 * Currently it is under reworking by Alvaro Herrera,
-		 * so the default ACLs feature is updated later.
-		 */
+		char *default_row_acl = RelationGetDefaultRowAcl(rel);
+
+		if (default_row_acl)
+		{
+			FmgrInfo finfo;
+			Datum aclDat;
+			Oid sid;
+
+			fmgr_info(F_ARRAY_IN, &finfo);
+			aclDat = FunctionCall3(&finfo,
+								   CStringGetDatum(default_row_acl),
+								   ObjectIdGetDatum(ACLITEMOID),
+								   Int32GetDatum(-1));
+			sid = rowaclSecurityAclToSid(DatumGetAclP(aclDat));
+			HeapTupleSetRowAcl(tuple, sid);
+		}
 	}
 
 	return true;
@@ -446,7 +453,7 @@ bool rowaclTupleDescHasRowAcl(Relation rel, List *relopts)
 	ListCell *l;
 
 	if (rel)
-		return RelationHasRowLevelAcl(rel);
+		return RelationGetRowLevelAcl(rel);
 
 	/* SELECT INTO cases */
 	foreach (l, relopts)
@@ -616,32 +623,6 @@ Datum rowaclHeapGetSecurityAclSysattr(HeapTuple tuple)
 	ReleaseSysCache(rtup);
 
 	return PointerGetDatum(rowaclSidToSecurityAcl(rowaclSid, relowner));
-}
-
-/******************************************************************
- * Table options
- ******************************************************************/
-
-bool rawaclParseRelOptsRowLevelAcl(const char *value,
-								   StdRdOptions *result, bool validate)
-{
-	bool row_level_acl;
-
-	result->row_level_acl = false;	/* set default */
-
-	if (!value)
-		return false;
-
-	if (!parse_bool(value, &row_level_acl))
-	{
-		if (validate)
-			ereport(ERROR,
-					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-					 errmsg("row_level_acl must be a bool: \"%s\"", value)));
-		return false;
-	}
-	result->row_level_acl = row_level_acl;
-	return true;
 }
 
 /******************************************************************
