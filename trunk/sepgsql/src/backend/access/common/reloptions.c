@@ -47,6 +47,14 @@
 
 static relopt_bool boolRelOpts[] =
 {
+	{
+		{
+			"row_level_acl",
+			"Row-level ACLs validator",
+			RELOPT_KIND_HEAP
+		},
+		false,
+	},
 	/* list terminator */
 	{ { NULL } }
 };
@@ -97,6 +105,14 @@ static relopt_real realRelOpts[] =
 
 static relopt_string stringRelOpts[] = 
 {
+	{
+		{
+			"default_row_acl",
+			"Default Row-level ACLs",
+			RELOPT_KIND_HEAP
+		},
+		0, true, "",	/* NULL is its default */
+	},
 	/* list terminator */
 	{ { NULL } }
 };
@@ -754,9 +770,9 @@ default_reloptions(Datum reloptions, bool validate, relopt_kind kind)
 {
 	relopt_value   *options;
 	StdRdOptions   *rdopts;
-	StdRdOptions	lopts;
 	int				numoptions;
 	int				len;
+	int				offset;
 	int				i;
 
 	options = parseRelOptions(reloptions, validate, kind, &numoptions);
@@ -765,19 +781,24 @@ default_reloptions(Datum reloptions, bool validate, relopt_kind kind)
 	if (numoptions == 0)
 		return NULL;
 
-	MemSet(&lopts, 0, sizeof(StdRdOptions));
+	/* compute total size of chunk */
+	len = offset = sizeof(StdRdOptions);
+	for (i = 0; i < numoptions; i++)
+	{
+		if (HAVE_RELOPTION("default_row_acl", options[i]) && options[i].isset)
+			len += strlen(options[i].values.string_val) + 1;
+	}
+	rdopts = palloc0(len);
 
 	for (i = 0; i < numoptions; i++)
 	{
-		HANDLE_INT_RELOPTION("fillfactor", lopts.fillfactor, options[i]);
+		HANDLE_INT_RELOPTION("fillfactor", rdopts->fillfactor, options[i]);
+		HANDLE_BOOL_RELOPTION("row_level_acl", rdopts->row_level_acl, options[i]);
+		HANDLE_STRING_RELOPTION("default_row_acl", rdopts->default_row_acl, options[i], rdopts, offset);
 	}
-
 	pfree(options);
 
-	len = sizeof(StdRdOptions);
-	rdopts = palloc(len);
-	memcpy(rdopts, &lopts, len);
-	SET_VARSIZE(rdopts, len);
+	SET_VARSIZE(rdopts, offset);
 
 	return (bytea *) rdopts;
 }

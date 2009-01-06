@@ -146,18 +146,33 @@ typedef struct relopt_string
 		}															\
 	} while (0)
 
-/* Note that this assumes that the variable is already allocated! */
-#define HANDLE_STRING_RELOPTION(optname, var, option) 				\
+/*
+ * Note that this assumes that the variable is already allocated at
+ * the tail of reloptions structure (like StdRdOptions).
+ * In addition, it assumes the 4th argument (base) is a pointer of
+ * the reloptions structure, and the 5th argument (offset) is an
+ * integer variable initialized as sizeof(reloptions structure).
+ */
+#define HANDLE_STRING_RELOPTION(optname, var, option, base, offset)	\
 	do {															\
 		if (HAVE_RELOPTION(optname, option))						\
 		{															\
 			relopt_string *optstring = (relopt_string *) option.gen;\
-			if (optstring->default_isnull)							\
-				var[0] = '\0';										\
+			char *string_val = NULL;								\
+																	\
+			if (option.isset)										\
+				string_val = option.values.string_val;				\
+			else if (!optstring->default_isnull)					\
+				string_val = optstring->default_val;				\
+																	\
+			if (!string_val)										\
+				var = 0;											\
 			else													\
-				strcpy(var,											\
-					   option.isset ? option.values.string_val : 	\
-					   optstring->default_val);						\
+			{														\
+				strcpy((char *)(base) + (offset), string_val);		\
+				var = (offset);										\
+				(offset) += strlen(string_val) + 1;					\
+			}														\
 			continue;												\
 		}															\
 	} while (0)
