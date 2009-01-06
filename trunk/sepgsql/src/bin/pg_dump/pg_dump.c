@@ -12,7 +12,7 @@
  *	by PostgreSQL
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/bin/pg_dump/pg_dump.c,v 1.511 2009/01/01 17:23:54 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/bin/pg_dump/pg_dump.c,v 1.512 2009/01/05 16:54:37 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -230,6 +230,7 @@ main(int argc, char **argv)
 	bool		outputBlobs = false;
 	int			outputNoOwner = 0;
 	char	   *outputSuperuser = NULL;
+	char	   *use_role = NULL;
 	int			my_version;
 	int			optindex;
 	RestoreOptions *ropt;
@@ -277,6 +278,7 @@ main(int argc, char **argv)
 		{"disable-triggers", no_argument, &disable_triggers, 1},
 		{"lock-wait-timeout", required_argument, NULL, 2},
 		{"no-tablespaces", no_argument, &outputNoTablespaces, 1},
+		{"role", required_argument, NULL, 3},
 		{"use-set-session-authorization", no_argument, &use_setsessauth, 1},
 		{"security-acl", no_argument, &security_acl, 1},
 		{"security-label", no_argument, &security_label, 1},
@@ -456,9 +458,12 @@ main(int argc, char **argv)
 				/* This covers the long options equivalent to -X xxx. */
 				break;
 
-			case 2:
-				/* lock-wait-timeout */
+			case 2:				/* lock-wait-timeout */
 				lockWaitTimeout = optarg;
+				break;
+
+			case 3:				/* SET ROLE */
+				use_role = optarg;
 				break;
 
 			default:
@@ -603,6 +608,16 @@ main(int argc, char **argv)
 			write_msg(NULL, "No enhanced security feature is available.");
 			exit(1);
 		}
+	}
+
+	/* Set the role if requested */
+	if (use_role && g_fout->remoteVersion >= 80100)
+	{
+		PQExpBuffer query = createPQExpBuffer();
+
+		appendPQExpBuffer(query, "SET ROLE %s", fmtId(use_role));
+		do_sql_command(g_conn, query->data);
+		destroyPQExpBuffer(query);
 	}
 
 	/* Set the datestyle to ISO to ensure the dump's portability */
@@ -842,6 +857,7 @@ help(const char *progname)
 	printf(_("  --disable-dollar-quoting    disable dollar quoting, use SQL standard quoting\n"));
 	printf(_("  --disable-triggers          disable triggers during data-only restore\n"));
 	printf(_("  --no-tablespaces            do not dump tablespace assignments\n"));
+	printf(_("  --role=ROLENAME             do SET ROLE before dump\n"));
 	printf(_("  --use-set-session-authorization\n"
 			 "                              use SESSION AUTHORIZATION commands instead of\n"
 	"                              ALTER OWNER commands to set ownership\n"));
