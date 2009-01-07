@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/access/common/reloptions.c,v 1.15 2009/01/06 03:15:51 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/backend/access/common/reloptions.c,v 1.16 2009/01/06 14:47:37 alvherre Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -792,9 +792,12 @@ default_reloptions(Datum reloptions, bool validate, relopt_kind kind)
 
 	for (i = 0; i < numoptions; i++)
 	{
-		HANDLE_INT_RELOPTION("fillfactor", rdopts->fillfactor, options[i]);
-		HANDLE_BOOL_RELOPTION("row_level_acl", rdopts->row_level_acl, options[i]);
-		HANDLE_STRING_RELOPTION("default_row_acl", rdopts->default_row_acl, options[i], rdopts, offset);
+		HANDLE_INT_RELOPTION("fillfactor", rdopts->fillfactor, options[i],
+							 (char *) NULL);
+		HANDLE_BOOL_RELOPTION("row_level_acl", rdopts->row_level_acl, options[i],
+							 (char *) NULL);
+		HANDLE_STRING_RELOPTION("default_row_acl", rdopts->default_row_acl, options[i],
+							 rdopts, offset, (char *) NULL);
 	}
 	pfree(options);
 
