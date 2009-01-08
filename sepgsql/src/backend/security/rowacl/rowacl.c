@@ -25,7 +25,7 @@
 
 #define ROWACL_ALL_PRIVS	(ACL_SELECT | ACL_UPDATE | ACL_DELETE | ACL_REFERENCES)
 
-static void proxySubQuery(Query *query);
+static void walkOnQueryTree(Query *query);
 
 /******************************************************************
  * Mark appeared Query/Sub-Query
@@ -36,9 +36,24 @@ static bool walkOnNodeTree(Node *node, Query *query)
 	if (!node)
 		return false;
 
-	if (IsA(node, Query))
+	if (IsA(node, RangeTblRef))
 	{
-		proxySubQuery((Query *) node);
+		RangeTblRef *rtr = (RangeTblRef *) node;
+		RangeTblEntry *rte = rt_fetch(rtr->rtindex, query->rtable);
+
+		if (rte->rtekind == RTE_RELATION &&
+			rtr->rtindex != query->resultRelation)
+		{
+			rte->pgaceTuplePerms |= ACL_SELECT;
+		}
+		else if (rte->rtekind == RTE_SUBQUERY)
+		{
+			walkOnQueryTree(rte->subquery);
+		}
+	}
+	else if (IsA(node, Query))
+	{
+		walkOnQueryTree((Query *) node);
 	}
 	else if (IsA(node, SortGroupClause))
 	{
@@ -53,48 +68,7 @@ static bool walkOnNodeTree(Node *node, Query *query)
 	return expression_tree_walker(node, walkOnNodeTree, (void *) query);
 }
 
-static void walkOnJoinTree(Query *query, Node *node)
-{
-	if (!node)
-		return;
-
-	if (IsA(node, RangeTblRef))
-	{
-		RangeTblRef *rtr = (RangeTblRef *) node;
-		RangeTblEntry *rte = rt_fetch(rtr->rtindex, query->rtable);
-
-		if (rte->rtekind == RTE_RELATION &&
-			rtr->rtindex != query->resultRelation)
-		{
-			rte->pgaceTuplePerms |= ACL_SELECT;
-		}
-		else if (rte->rtekind == RTE_SUBQUERY)
-		{
-			proxySubQuery(rte->subquery);
-		}
-	}
-	else if (IsA(node, JoinExpr))
-	{
-		JoinExpr *join = (JoinExpr *) node;
-
-		walkOnNodeTree(join->quals, query);
-		walkOnJoinTree(query, join->larg);
-		walkOnJoinTree(query, join->rarg);
-	}
-	else if (IsA(node, FromExpr))
-	{
-		FromExpr *from = (FromExpr *) node;
-		ListCell *l;
-
-		walkOnNodeTree(from->quals, query);
-		foreach (l, from->fromlist)
-			walkOnJoinTree(query, lfirst(l));
-	}
-	else
-		elog(ERROR, "unexpected node type (%d) on fromlist", nodeTag(node));
-}
-
-static void proxySubQuery(Query *query)
+static void walkOnQueryTree(Query *query)
 {
 	RangeTblEntry *rte;
 
@@ -112,14 +86,9 @@ static void proxySubQuery(Query *query)
 		if (query->returningList)
 			rte->pgaceTuplePerms |= ACL_SELECT;
 	}
-	walkOnJoinTree(query, (Node *) query->jointree);
-
-	walkOnNodeTree((Node *) query->targetList, query);
-	walkOnNodeTree((Node *) query->returningList, query);
-	walkOnNodeTree((Node *) query->havingQual,  query);
-	walkOnNodeTree((Node *) query->sortClause,  query);
-	walkOnNodeTree((Node *) query->groupClause, query);
-	walkOnNodeTree((Node *) query->cteList, query);
+	query_tree_walker(query,
+					  walkOnNodeTree,
+					  (void *) query, 0);
 }
 
 List *rowaclProxyQuery(List *queryList)
@@ -135,7 +104,7 @@ List *rowaclProxyQuery(List *queryList)
 		if (query->commandType == CMD_SELECT ||
 			query->commandType == CMD_UPDATE ||
 			query->commandType == CMD_DELETE)
-			proxySubQuery(query);
+			walkOnQueryTree(query);
 	}
 
 	return queryList;
