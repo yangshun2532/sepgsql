@@ -1,11 +1,9 @@
 /*
  * src/backend/security/sepgsql/proxy.c
- *	  proxy routines to pick up all appeared columns, functions, ...
- *	  within given queries, and apply mandatory access controls.
+ *    Proxying the given Query trees via SE-PostgreSQL
  *
- * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
- *
  */
 #include "postgres.h"
 
@@ -40,44 +38,22 @@
 #include "utils/tqual.h"
 
 /*
- * queryStack
- *
- * This structure represents a hierarchical relationshipt
- * between subqueries. When a Var node has positive varlevelsup,
- * it refers upper level Query structure using the chain of
- * queryStack.
- */
-typedef struct queryStack
-{
-	struct queryStack *parent;
-	Query	   *query;
-} queryStack;
-
-/*
  * sepgsqlWalkerContext
  *
  * This structure holds a context during analyzing a given query.
  * selist is a list of SEvalItemXXX objects to enumerate appared
- * tables, columns and functions. It is evaluated later, just
- * before executing query.
+ * tables and columns. These are evaluated later, just before
+ * executing query.
  * is_internal_use shows the current state whether the current
  * Node is chained with target list, or conditional clause.
  */
 typedef struct sepgsqlWalkerContext
 {
-	List	   *selist;			/* List of SEvalItem */
-
-	struct queryStack *qstack;
-
-	bool		is_internal_use;
+	struct sepgsqlWalkerContext *parent;
+	Query  *query;	/* Query structure of current layer */
+	List   *selist;	/* list of SEvalItemXXX */
+	bool	is_internal_use;
 } sepgsqlWalkerContext;
-
-/* static definitions for proxy functions */
-static void proxyRteSubQuery(sepgsqlWalkerContext *swc, Query *query);
-
-static bool sepgsqlExprWalker(Node *node, sepgsqlWalkerContext *swc);
-
-static void execVerifyQuery(List *selist);
 
 /*
  * addEvalRelation
@@ -371,38 +347,45 @@ addEvalTriggerAccess(List *selist, Oid relid, bool is_inh, int cmdType)
 /*
  * sepgsqlExprWalker
  *
- * This function recursively walks on the given node tree to pick up
- * all the appeared tables and columns. Their identifiers are chained
- * on swc->selist and evaluated later.
+ * This function walks on the given expression tree to pick up
+ * all the appeared tables and columns. Their identifiers are
+ * chains on swc->selist to evaluate permissions on them later.
  *
- * walkVarHelper marks appeared column and its belonging table.
- * When swc->is_internal_use is true, it marks "use" permission to
- * to be evaluated. Otherwise, it applys "select" permission.
+ * walkVarHelper picks up an accessed column and its contained
+ * table, and chains them on swc->selist.
+ * When swc->is_internal_use is true, it means this reference
+ * is checked as "use" permission because its contents are
+ * consumed internally, and not to be returned to client directly.
+ * Otherwise, "select" permission is applied.
+ *
+ * walkQueryHelper walks on Query structure.
+ * The reason why we don't use query_tree_walker() is that
+ * SE-PostgreSQL need to apply different permission between
+ * targetList and havingQual, for example.
  */
+
+static bool
+sepgsqlExprWalker(Node *node, sepgsqlWalkerContext *swc);
+
 static void
-walkVarHelper(sepgsqlWalkerContext *swc, Var *var)
+sepgsqlExprWalkerFlags(Node *node, sepgsqlWalkerContext *swc,
+					   bool is_internal_use);
+static void
+walkVarHelper(Var *var, sepgsqlWalkerContext *swc)
 {
-	RangeTblEntry *rte;
-	queryStack *qstack;
-	Query	   *query;
-	int			lv;
+	sepgsqlWalkerContext *cur = swc;
+	Query		   *query;
+	RangeTblEntry  *rte;
+	int				lv;
 
 	Assert(IsA(var, Var));
 
-	/*
-	 * resolve external Var reference
-	 */
-	qstack = swc->qstack;
-	lv = var->varlevelsup;
-	while (lv > 0)
+	for (lv = var->varlevelsup; lv > 0; lv--)
 	{
-		Assert(!!qstack->parent);
-		qstack = qstack->parent;
-		lv--;
+		Assert(cur->parent != NULL);
+		cur = cur->parent;
 	}
-	query = qstack->query;
-	if (!query)
-		elog(ERROR, "SELinux: could not walk T_Var node in this context");
+	query = cur->query;
 
 	rte = rt_fetch(var->varno, query->rtable);
 	Assert(IsA(rte, RangeTblEntry));
@@ -425,190 +408,22 @@ walkVarHelper(sepgsqlWalkerContext *swc, Var *var)
 	}
 }
 
-static bool
-sepgsqlExprWalker(Node *node, sepgsqlWalkerContext *swc)
+static List *
+walkQueryHelper(Query *query, sepgsqlWalkerContext *swc)
 {
-	if (node == NULL)
-		return false;
-	else if (IsA(node, Var))
-		walkVarHelper(swc, (Var *) node);
-	else if (IsA(node, Query))
+	sepgsqlWalkerContext swcData;
+	RangeTblEntry *rte;
+
+	memset(&swcData, 0, sizeof(swcData));
+	swcData.parent = swc;
+	swcData.selist = (!swc ? NIL : swc->selist);
+	swcData.query = query;
+
+	if (query->commandType != CMD_DELETE)
 	{
-		/* Subquery within SubLink or CommonTableExpr */
-		proxyRteSubQuery(swc, (Query *) node);
-	}
-	else if (IsA(node, SortClause) ||
-			 IsA(node, GroupClause))
-	{
-		/*
-		 * Now expression_tree_walker() does not support
-		 * T_SortClause node type.
-		 */
-		SortClause *ex = (SortClause *) node;
-		Query *query = swc->qstack->query;
-		TargetEntry *tle
-			= get_sortgroupref_tle(ex->tleSortGroupRef,
-								   query->targetList);
-
-		Assert(IsA(tle, TargetEntry));
-		sepgsqlExprWalker((Node *)tle->expr, swc);
-		return false;
-	}
-	return expression_tree_walker(node, sepgsqlExprWalker, (void *) swc);
-}
-
-static bool
-sepgsqlExprWalkerFlags(Node *node, sepgsqlWalkerContext *swc, bool is_internal_use)
-{
-	bool		saved_is_internal_use = swc->is_internal_use;
-	bool		rc;
-
-	swc->is_internal_use = is_internal_use;
-	rc = sepgsqlExprWalker(node, swc);
-	swc->is_internal_use = saved_is_internal_use;
-
-	return rc;
-}
-
-/*
- * proxyJoinTree
- *
- * It appends SEvalItem of WHERE/JOIN ON clause, nodes in VALUE
- * clause or function which returns a relation, or invokes
- * proxyRteSubQuery recursively.
- */
-static void
-proxyJoinTree(sepgsqlWalkerContext *swc, Node *node)
-{
-	Query	   *query = swc->qstack->query;
-
-	if (node == NULL)
-		return;
-
-	if (IsA(node, RangeTblRef))
-	{
-		RangeTblRef *rtr = (RangeTblRef *) node;
-		RangeTblEntry *rte = rt_fetch(rtr->rtindex, query->rtable);
-
-		Assert(IsA(rte, RangeTblEntry));
-
-		switch (rte->rtekind)
-		{
-		case RTE_RELATION:
-			if (rtr->rtindex != query->resultRelation)
-			{
-				swc->selist = addEvalRelationRTE(swc->selist, rte,
-												 DB_TABLE__SELECT);
-			}
-			break;
-
-		case RTE_SUBQUERY:
-			proxyRteSubQuery(swc, rte->subquery);
-			break;
-
-		case RTE_FUNCTION:
-			sepgsqlExprWalkerFlags(rte->funcexpr, swc, false);
-			break;
-
-		case RTE_VALUES:
-			sepgsqlExprWalkerFlags((Node *) rte->values_lists, swc, false);
-			break;
-
-		default:
-			break;
-		}
-	}
-	else if (IsA(node, FromExpr))
-	{
-		FromExpr *from = (FromExpr *) node;
 		ListCell *l;
 
-		sepgsqlExprWalkerFlags(from->quals, swc, true);
-		foreach(l, from->fromlist)
-			proxyJoinTree(swc, lfirst(l));
-	}
-	else if (IsA(node, JoinExpr))
-	{
-		JoinExpr *join = (JoinExpr *) node;
-
-		sepgsqlExprWalkerFlags(join->quals, swc, true);
-		proxyJoinTree(swc, join->larg);
-		proxyJoinTree(swc, join->rarg);
-	}
-	else
-	{
-		elog(ERROR, "SELinux: unexpected node type (%d)", nodeTag(node));
-	}
-}
-
-/*
- * proxySetOperations
- *
- * It walks on a query tree recursively when set operations
- * (UNION, INTERSECT, EXCEPT) are used.
- *
- */
-static void
-proxySetOperations(sepgsqlWalkerContext *swc, Node *node)
-{
-	Query	   *query = swc->qstack->query;
-
-	if (node == NULL)
-		return;
-
-	if (IsA(node, RangeTblRef))
-	{
-		RangeTblRef *rtr = (RangeTblRef *) node;
-		RangeTblEntry *rte = rt_fetch(rtr->rtindex, query->rtable);
-
-		Assert(IsA(rte, RangeTblEntry)
-			   && rte->rtekind == RTE_SUBQUERY);
-		proxyRteSubQuery(swc, rte->subquery);
-	}
-	else if (IsA(node, SetOperationStmt))
-	{
-		SetOperationStmt *sop = (SetOperationStmt *) node;
-
-		proxySetOperations(swc, sop->larg);
-		proxySetOperations(swc, sop->rarg);
-	}
-	else
-	{
-		elog(ERROR, "SELinux: unexpected node (%d)", nodeTag(node));
-	}
-}
-
-/*
- * proxyRteSubQuery
- *
- * It walks on the given DML Query to enumerate all appeared tables,
- * columns and functions which include implementations of operator.
- * While its walking, it generates a list of SEvalItemXXXX object
- * to be evaluated later, and marks required permission on
- * RangeTblEntry->pgaceTuplePerms. The swc->selist is copied to
- * PlannedStmt->pgaceItem and evaluated on the hook invoked from
- * the executor. RangeTblEntry->pgaceTuplePerms is copied to 
- * Scan->pgaceTuplePerms and it can be refered at sepgsqlExecScan()
- * hook to apply tuple-level access controls.
- */
-static void
-proxyRteSubQuery(sepgsqlWalkerContext *swc, Query *query)
-{
-	CmdType		cmdType = query->commandType;
-	RangeTblEntry *rte = NULL;
-	struct queryStack qsData;
-	ListCell   *l;
-
-	/*
-	 * push a query to queryStack
-	 */
-	qsData.parent = swc->qstack;
-	qsData.query = query;
-	swc->qstack = &qsData;
-
-	if (cmdType != CMD_DELETE)
-	{
-		foreach(l, query->targetList)
+		foreach (l, query->targetList)
 		{
 			TargetEntry *tle = lfirst(l);
 			bool is_security = false;
@@ -620,73 +435,157 @@ proxyRteSubQuery(sepgsqlWalkerContext *swc, Query *query)
 				strcmp(tle->resname, SecurityLabelAttributeName) == 0)
 				is_security = true;
 
-			/*
-			 * contents of junk target is not exposed to users,
-			 * so it should be evaluated as "use" permission.
-			 */
 			if (tle->resjunk && !is_security)
 			{
-				sepgsqlExprWalkerFlags((Node *) tle->expr, swc, true);
+				sepgsqlExprWalkerFlags((Node *) tle->expr, &swcData, true);
 				continue;
 			}
 
-			sepgsqlExprWalkerFlags((Node *) tle->expr, swc, false);
+			sepgsqlExprWalkerFlags((Node *) tle->expr, &swcData, false);
 
-			if (cmdType != CMD_SELECT)
+			if (query->commandType != CMD_SELECT)
 			{
-				AttrNumber attno
-					= (is_security ? SecurityLabelAttributeNumber : tle->resno);
-				uint32 perms
-					= (cmdType == CMD_UPDATE ? DB_COLUMN__UPDATE : DB_COLUMN__INSERT);
+				AttrNumber attno = tle->resno;
+				uint32 perms;
+
+				if (is_security)
+					attno = SecurityLabelAttributeNumber;
+
+				if (query->commandType == CMD_UPDATE)
+					perms = DB_COLUMN__UPDATE;
+				else
+					perms = DB_COLUMN__INSERT;
 
 				rte = rt_fetch(query->resultRelation, query->rtable);
 				Assert(IsA(rte, RangeTblEntry));
 
-				swc->selist = addEvalAttributeRTE(swc->selist, rte, attno, perms);
+				swcData.selist
+					= addEvalAttributeRTE(swcData.selist, rte, attno, perms);
 			}
 		}
 	}
 	else
 	{
-		/*
-		 * NOTE: column level checks are not necessary for normal DELETE
-		 */
+		/* no need to check column-level permission for DELETE */
 		rte = rt_fetch(query->resultRelation, query->rtable);
 		Assert(IsA(rte, RangeTblEntry));
 
-		swc->selist = addEvalRelationRTE(swc->selist, rte, DB_TABLE__DELETE);
+		swcData.selist
+			= addEvalRelationRTE(swcData.selist, rte, DB_TABLE__DELETE);
 	}
 
-	proxyJoinTree(swc, (Node *) query->jointree);
+	sepgsqlExprWalkerFlags((Node *) query->returningList, &swcData, false);
+	sepgsqlExprWalkerFlags((Node *) query->jointree, &swcData, true);
+	sepgsqlExprWalkerFlags((Node *) query->setOperations, &swcData, true);
+	sepgsqlExprWalkerFlags((Node *) query->havingQual, &swcData, true);
+	sepgsqlExprWalkerFlags((Node *) query->sortClause, &swcData, true);
+	sepgsqlExprWalkerFlags((Node *) query->groupClause, &swcData, true);
+	sepgsqlExprWalkerFlags((Node *) query->limitOffset, &swcData, true);
+	sepgsqlExprWalkerFlags((Node *) query->limitCount, &swcData, true);
+	sepgsqlExprWalkerFlags((Node *) query->cteList, &swcData, true);
+	sepgsqlExprWalkerFlags((Node *) query->windowClause, &swcData, true);
 
-	sepgsqlExprWalkerFlags((Node *) query->returningList, swc, false);
-	sepgsqlExprWalkerFlags((Node *) query->havingQual, swc, true);
-	sepgsqlExprWalkerFlags((Node *) query->sortClause, swc, true);
-	sepgsqlExprWalkerFlags((Node *) query->groupClause, swc, true);
+	return swcData.selist;
+}
 
-	proxySetOperations(swc, query->setOperations);
+static void
+walkRangeTblRefHelper(RangeTblRef *rtr, sepgsqlWalkerContext *swc)
+{
+	Query *query = swc->query;
+	RangeTblEntry *rte = rt_fetch(rtr->rtindex, query->rtable);
 
-	/*
-	 * pop a query to queryStack
-	 */
-	swc->qstack = qsData.parent;
+	Assert(IsA(rte, RangeTblEntry));
+
+	switch (rte->rtekind)
+	{
+	case RTE_RELATION:
+		if (rtr->rtindex != query->resultRelation)
+			swc->selist = addEvalRelationRTE(swc->selist, rte,
+											 DB_TABLE__SELECT);
+		break;
+
+	case RTE_SUBQUERY:
+		swc->selist = walkQueryHelper(rte->subquery, swc);
+		break;
+
+	case RTE_FUNCTION:
+		sepgsqlExprWalker(rte->funcexpr, swc);
+		break;
+
+	case RTE_VALUES:
+		sepgsqlExprWalker((Node *) rte->values_lists, swc);
+		break;
+
+	default:
+		/* do nothing */
+		break;
+	}
+}
+
+static void
+walkSortClauseHelper(SortClause *sc, sepgsqlWalkerContext *swc)
+{
+	Query *query = swc->query;
+	TargetEntry *tle
+		= get_sortgroupref_tle(sc->tleSortGroupRef,
+							   query->targetList);
+
+	Assert(IsA(tle, TargetEntry));
+
+	sepgsqlExprWalker((Node *) tle->expr, swc);
+}
+
+static bool
+sepgsqlExprWalker(Node *node, sepgsqlWalkerContext *swc)
+{
+	if (node == NULL)
+		return false;
+	else if (IsA(node, Var))
+		walkVarHelper((Var *) node, swc);
+	else if (IsA(node, RangeTblRef))
+		walkRangeTblRefHelper((RangeTblRef *) node, swc);
+	else if (IsA(node, Query))
+	{
+		swc->selist
+			= walkQueryHelper((Query *) node, swc);
+	}
+	else if (IsA(node, SortClause) ||
+			 IsA(node, GroupClause))
+	{
+		walkSortClauseHelper((SortClause *) node, swc);
+
+		return false;
+	}
+	return expression_tree_walker(node, sepgsqlExprWalker, (void *) swc);
+}
+
+static void
+sepgsqlExprWalkerFlags(Node *node, sepgsqlWalkerContext *swc,
+					   bool is_internal_use)
+{
+	bool		saved_is_internal_use = swc->is_internal_use;
+
+	swc->is_internal_use = is_internal_use;
+	sepgsqlExprWalker(node, swc);
+	swc->is_internal_use = saved_is_internal_use;
 }
 
 /*
  * sepgsqlProxyQuery
  *
- * This function is invoked just after the given queries rewritten
- * by the query rewriter. It invokes proxyRteSubQuery() for any
- * DML queries to pick up all appeared database object and stores
- * the list of them into Query->pgaceItem to evaluate later.
+ * This function is invoked just after given queries are rewritten
+ * via query-rewritter phase. It walks on given query trees to
+ * picks up all appeared tables and columns, and to chains the list
+ * of them on query->pgaceItem.
+ * This list is used to evaluate permissions later, just before
+ * the query execution.
  *
- * It does not do anything for DDL queries because it is processed
- * on sepgsqlProcessUtility() hook.
+ * It do nothing for DDL queries, because these are processed in
+ * sepgsqlProcessUtility() hook.
  */
 List *
 sepgsqlProxyQuery(List *queryList)
 {
-	List	   *newList = NIL;
 	ListCell   *l;
 
 	foreach (l, queryList)
@@ -695,38 +594,18 @@ sepgsqlProxyQuery(List *queryList)
 
 		Assert(IsA(query, Query));
 
-		switch (query->commandType)
+		if (query->commandType == CMD_SELECT ||
+			query->commandType == CMD_UPDATE ||
+			query->commandType == CMD_INSERT ||
+			query->commandType == CMD_DELETE)
 		{
-		case CMD_SELECT:
-		case CMD_UPDATE:
-		case CMD_INSERT:
-		case CMD_DELETE:
-			{
-				sepgsqlWalkerContext swcData;
-
-				memset(&swcData, 0, sizeof(swcData));
-
-				proxyRteSubQuery(&swcData, query);
-				query->pgaceItem = (Node *) swcData.selist;
-
-				newList = lappend(newList, query);
-			}
-			break;
-		default:
-			newList = lappend(newList, query);
-			break;
+			query->pgaceItem
+				= (Node *) walkQueryHelper(query, NULL);
 		}
 	}
 
-	return newList;
+	return queryList;
 }
-
-/*
- * verityXXXX()
- *
- * These functions are invoked from execVerifyQuery, to evaluate
- * SEvalItemXXXX objects generated at sepgsqlProxyQuery().
- */
 
 /*
  * verifyPgClassPerms
@@ -778,6 +657,7 @@ verifyPgAttributePerms(Oid relid, bool inh, AttrNumber attno, uint32 perms)
 	Form_pg_class relForm;
 	Form_pg_attribute attForm;
 	HeapTuple reltup, atttup;
+	const char *audit_name;
 
 	reltup = SearchSysCache(RELOID,
 							ObjectIdGetDatum(relid),
@@ -801,10 +681,11 @@ verifyPgAttributePerms(Oid relid, bool inh, AttrNumber attno, uint32 perms)
 			attForm = (Form_pg_attribute) GETSTRUCT(atttup);
 			if (!attForm->attisdropped)
 			{
+				audit_name = sepgsqlTupleName(AttributeRelationId, atttup);
 				sepgsqlClientHasPermission(HeapTupleGetSecLabel(atttup),
 										   SECCLASS_DB_COLUMN,
 										   perms,
-										   sepgsqlTupleName(AttributeRelationId, atttup));
+										   audit_name);
 			}
 			ReleaseSysCache(atttup);
 		}
@@ -819,10 +700,11 @@ verifyPgAttributePerms(Oid relid, bool inh, AttrNumber attno, uint32 perms)
 			elog(ERROR, "SELinux: cache lookup failed for attribute %d of relation %u",
 				 attno, relid);
 
+		audit_name = sepgsqlTupleName(AttributeRelationId, atttup);
 		sepgsqlClientHasPermission(HeapTupleGetSecLabel(atttup),
 								   SECCLASS_DB_COLUMN,
 								   perms,
-								   sepgsqlTupleName(AttributeRelationId, atttup));
+								   audit_name);
 		ReleaseSysCache(atttup);
 	}
 out:
