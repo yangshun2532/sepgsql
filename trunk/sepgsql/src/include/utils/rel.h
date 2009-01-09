@@ -246,11 +246,8 @@ typedef struct StdRdOptions
  *		Returns the relations's default Row-level ACLs in text
  */
 #define RelationGetDefaultRowAcl(relation)								\
-	((relation)->rd_options &&											\
-	 ((StdRdOptions *) (relation)->rd_options)->default_row_acl > 0		\
-	 ? ((((char *) (relation)->rd_options) +							\
-		 ((StdRdOptions *) (relation)->rd_options)->default_row_acl))	\
-	 : NULL)
+	((relation)->rd_options ?											\
+	 GET_STRING_RELOPTION(((StdRdOptions *) (relation)->rd_options), default_row_acl) : NULL)
 
 /*
  * RelationGetTargetPageUsage

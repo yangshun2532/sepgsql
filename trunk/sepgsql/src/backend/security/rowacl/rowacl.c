@@ -414,6 +414,28 @@ bool rowaclHeapTupleDelete(Relation rel, ItemPointer otid,
 }
 
 /******************************************************************
+ * Relation Options
+ ******************************************************************/
+void
+rawaclReloptsDefaultRowAclValidator(char *value, bool validate)
+{
+	if (validate)
+	{
+		/*
+		 * It raises an error, if a given default_row_acl does
+		 * not have valid format.
+		 */
+		FmgrInfo finfo;
+
+		fmgr_info(F_ARRAY_IN, &finfo);
+		FunctionCall3(&finfo,
+					  CStringGetDatum(value),
+					  ObjectIdGetDatum(ACLITEMOID),
+					  Int32GetDatum(-1));
+	}
+}
+
+/******************************************************************
  * Row-level ACLs management
  ******************************************************************/
 
