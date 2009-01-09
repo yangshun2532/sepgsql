@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/executor/spi.c,v 1.204 2009/01/02 20:42:00 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/executor/spi.c,v 1.206 2009/01/07 20:38:56 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -16,12 +16,20 @@
 
 #include "access/printtup.h"
 #include "access/sysattr.h"
+#include "access/xact.h"
 #include "catalog/heap.h"
+#include "catalog/pg_type.h"
 #include "commands/trigger.h"
+#include "executor/executor.h"
 #include "executor/spi_priv.h"
+#include "tcop/pquery.h"
+#include "tcop/utility.h"
+#include "utils/builtins.h"
+#include "utils/datum.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
 #include "utils/snapmgr.h"
+#include "utils/syscache.h"
 #include "utils/typcache.h"
 
 
@@ -294,6 +302,31 @@ void
 SPI_pop(void)
 {
 	_SPI_curid--;
+}
+
+/* Conditional push: push only if we're inside a SPI procedure */
+bool
+SPI_push_conditional(void)
+{
+	bool	pushed = (_SPI_curid != _SPI_connected);
+
+	if (pushed)
+	{
+		_SPI_curid++;
+		/* We should now be in a state where SPI_connect would succeed */
+		Assert(_SPI_curid == _SPI_connected);
+	}
+	return pushed;
+}
+
+/* Conditional pop: pop only if SPI_push_conditional pushed */
+void
+SPI_pop_conditional(bool pushed)
+{
+	/* We should be in a state where SPI_connect would succeed */
+	Assert(_SPI_curid == _SPI_connected);
+	if (pushed)
+		_SPI_curid--;
 }
 
 /* Restore state of SPI stack after aborting a subtransaction */

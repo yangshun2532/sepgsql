@@ -1,4 +1,4 @@
-<!-- $PostgreSQL: pgsql/doc/src/sgml/config.sgml,v 1.201 2009/01/02 10:33:19 mha Exp $ -->
+<!-- $PostgreSQL: pgsql/doc/src/sgml/config.sgml,v 1.203 2009/01/07 22:40:48 tgl Exp $ -->
 
 <chapter Id="runtime-config">
   <title>Server Configuration</title>
@@ -621,7 +621,9 @@ SET ENABLE_SEQSCAN TO OFF;
        <para>
         Sets the realm to match Kerberos, GSSAPI and SSPI user names against.
         See <xref linkend="kerberos-auth">, <xref linkend="gssapi-auth"> or
-        <xref linkend="sspi-auth"> for details.
+        <xref linkend="sspi-auth"> for details. This parameter can only be 
+        set in the <filename>postgresql.conf</> file or on the server 
+        command line.
        </para>
       </listitem>
      </varlistentry>
@@ -635,7 +637,8 @@ SET ENABLE_SEQSCAN TO OFF;
        <para>
         Sets the location of the Kerberos server key file. See
         <xref linkend="kerberos-auth"> or <xref linkend="gssapi-auth"> 
-        for details.
+        for details. This parameter can only be set in the
+        <filename>postgresql.conf</> file or on the server command line.
        </para>
       </listitem>
      </varlistentry>
@@ -648,7 +651,8 @@ SET ENABLE_SEQSCAN TO OFF;
       <listitem>
        <para>
         Sets the Kerberos service name. See <xref linkend="kerberos-auth">
-        for details.
+        for details. This parameter can only be set in the
+        <filename>postgresql.conf</> file or on the server command line.
        </para>
       </listitem>
      </varlistentry>
@@ -665,7 +669,8 @@ SET ENABLE_SEQSCAN TO OFF;
         the complete service principal, that is
         <varname>krb_srvname</><literal>/</><varname>krb_server_hostname</><literal>@</>REALM.
         If not set, the default is the server host name.  See <xref linkend="kerberos-auth">
-        for details.
+        for details. This parameter can only be set in the <filename>postgresql.conf</>
+        file or on the server command line.
        </para>
       </listitem>
      </varlistentry>
@@ -679,7 +684,8 @@ SET ENABLE_SEQSCAN TO OFF;
        <para>
         Sets whether Kerberos and GSSAPI user names should be treated
         case-insensitively.
-        The default is <literal>off</> (case sensitive).
+        The default is <literal>off</> (case sensitive). This parameter can only be 
+        set in the <filename>postgresql.conf</> file or on the server command line.
        </para>
       </listitem>
      </varlistentry>
@@ -2139,7 +2145,7 @@ archive_command = 'copy "%p" "C:\\server\\archivedir\\%f"'  # Windows
      </varlistentry>
 
      <varlistentry id="guc-constraint-exclusion" xreflabel="constraint_exclusion">
-      <term><varname>constraint_exclusion</varname> (<type>boolean</type>)</term>
+      <term><varname>constraint_exclusion</varname> (<type>enum</type>)</term>
       <indexterm>
        <primary>constraint exclusion</primary>
       </indexterm>
@@ -2149,14 +2155,20 @@ archive_command = 'copy "%p" "C:\\server\\archivedir\\%f"'  # Windows
       <listitem>
        <para>
         Enables or disables the query planner's use of table constraints to
-        optimize queries.  The default is <literal>off</>.
+        optimize queries.
+        The allowed values of <varname>constraint_exclusion</> are
+        <literal>on</> (examine constraints for all tables),
+        <literal>off</> (never examine constraints), and
+        <literal>partition</> (examine constraints only for inheritance child
+        tables and <literal>UNION ALL</> subqueries).
+        <literal>partition</> is the default setting.
        </para>
 
        <para>
-        When this parameter is <literal>on</>, the planner compares
-        query conditions with table <literal>CHECK</> constraints, and
-        omits scanning tables for which the conditions contradict the
-        constraints.  For example:
+        When this parameter allows it for a particular table, the planner
+        compares query conditions with the table's <literal>CHECK</>
+        constraints, and omits scanning tables for which the conditions
+        contradict the constraints.  For example:
 
 <programlisting>
 CREATE TABLE parent(key integer, ...);
@@ -2173,17 +2185,17 @@ SELECT * FROM parent WHERE key = 2400;
        </para>
 
        <para>
-        Currently, <varname>constraint_exclusion</> is disabled by
-        default because the constraint checks are relatively
-        expensive, and in many circumstances will yield no savings.
-        It is recommended to turn this on only if you are actually
-        using partitioned tables designed to take advantage of the
-        feature.
+        Currently, constraint exclusion is enabled by default
+        only for cases that are often used to implement table partitioning.
+        Turning it on for all tables imposes extra planning overhead that is
+        quite noticeable on simple queries, and most often will yield no
+        benefit for simple queries.  If you have no partitioned tables
+        you might prefer to turn it off entirely.
        </para>
 
        <para>
-        Refer to <xref linkend="ddl-partitioning"> for more information
-        on using constraint exclusion and partitioning.
+        Refer to <xref linkend="ddl-partitioning-constraint-exclusion"> for
+        more information on using constraint exclusion and partitioning.
        </para>
       </listitem>
      </varlistentry>
