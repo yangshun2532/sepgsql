@@ -234,6 +234,19 @@ PostgreSQL documentation
        </para>
       </listitem>
      </varlistentry>
+
+     <varlistentry>
+      <term><option>--pgace-feature=<replaceable>FEATURE</></option></term>
+      <listitem>
+       <para>
+        Selects an enhanced security feature, and write it out on the
+	<filename>postgresql.conf</filename>.
+        This default is <literal>none</literal> which means no enhanced
+        security feature is activated on <command>initdb</command>.
+        The following options are available now: <literal>selinux</literal>.
+       </para>
+      </listitem>
+     </varlistentry>
     </variablelist>
    </para>
 
