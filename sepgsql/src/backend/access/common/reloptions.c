@@ -22,6 +22,7 @@
 #include "catalog/pg_type.h"
 #include "commands/defrem.h"
 #include "nodes/makefuncs.h"
+#include "security/pgace.h"
 #include "utils/array.h"
 #include "utils/builtins.h"
 #include "utils/guc.h"
@@ -111,7 +112,7 @@ static relopt_string stringRelOpts[] =
 			"Default Row-level ACLs",
 			RELOPT_KIND_HEAP
 		},
-		0, true, "",	/* NULL is its default */
+		0, true, rawaclReloptsDefaultRowAclValidator, "",
 	},
 	/* list terminator */
 	{ { NULL } }
@@ -801,8 +802,8 @@ default_reloptions(Datum reloptions, bool validate, relopt_kind kind)
 	len = offset = sizeof(StdRdOptions);
 	for (i = 0; i < numoptions; i++)
 	{
-		if (HAVE_RELOPTION("default_row_acl", options[i]) && options[i].isset)
-			len += strlen(options[i].values.string_val) + 1;
+		if (HAVE_RELOPTION("default_row_acl", options[i]))
+			len += GET_STRING_RELOPTION_LEN(options[i]) + 1;
 	}
 	rdopts = palloc0(len);
 
