@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/adt/misc.c,v 1.67 2009/01/01 17:23:49 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/backend/utils/adt/misc.c,v 1.70 2009/01/08 00:13:22 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -55,10 +55,12 @@ current_database(PG_FUNCTION_ARGS)
 /*
  * current_query()
  *  Expose the current query to the user (useful in stored procedures)
+ *  We might want to use ActivePortal->sourceText someday. 
  */
 Datum
 current_query(PG_FUNCTION_ARGS)
 {
+	/* there is no easy way to access the more concise 'query_string' */
 	if (debug_query_string)
 		PG_RETURN_TEXT_P(cstring_to_text(debug_query_string));
 	else
