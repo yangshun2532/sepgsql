@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/libpq/auth.c,v 1.175 2009/01/01 17:23:42 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/backend/libpq/auth.c,v 1.177 2009/01/07 13:09:21 mha Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -611,7 +611,7 @@ recv_and_check_password_packet(Port *port)
 #ifdef KRB5
 
 static int
-pg_krb5_init(void)
+pg_krb5_init(Port *port)
 {
 	krb5_error_code retval;
 	char	   *khostname;
@@ -645,7 +645,10 @@ pg_krb5_init(void)
 	 * If no hostname was specified, pg_krb_server_hostname is already NULL.
 	 * If it's set to blank, force it to NULL.
 	 */
-	khostname = pg_krb_server_hostname;
+	if (port->hba->krb_server_hostname)
+		khostname = port->hba->krb_server_hostname;
+	else
+		khostname = pg_krb_server_hostname;
 	if (khostname && khostname[0] == '\0')
 		khostname = NULL;
 
@@ -691,11 +694,12 @@ pg_krb5_recvauth(Port *port)
 	krb5_ticket *ticket;
 	char	   *kusername;
 	char	   *cp;
+	char	   *realmmatch;
 
 	if (get_role_line(port->user_name) == NULL)
 		return STATUS_ERROR;
 
-	ret = pg_krb5_init();
+	ret = pg_krb5_init(port);
 	if (ret != STATUS_OK)
 		return ret;
 
@@ -736,25 +740,36 @@ pg_krb5_recvauth(Port *port)
 		return STATUS_ERROR;
 	}
 
+	if (port->hba->krb_realm)
+		realmmatch = port->hba->krb_realm;
+	else
+		realmmatch = pg_krb_realm;
+
 	cp = strchr(kusername, '@');
 	if (cp)
 	{
-		*cp = '\0';
+		/*
+		 * If we are not going to include the realm in the username that is passed
+		 * to the ident map, destructively modify it here to remove the realm. Then
+		 * advance past the separator to check the realm.
+		 */
+		if (!port->hba->include_realm)
+			*cp = '\0';
 		cp++;
 
-		if (pg_krb_realm != NULL && strlen(pg_krb_realm))
+		if (realmmatch != NULL && strlen(realmmatch))
 		{
 			/* Match realm against configured */
 			if (pg_krb_caseins_users)
-				ret = pg_strcasecmp(pg_krb_realm, cp);
+				ret = pg_strcasecmp(realmmatch, cp);
 			else
-				ret = strcmp(pg_krb_realm, cp);
+				ret = strcmp(realmmatch, cp);
 
 			if (ret)
 			{
 				elog(DEBUG2,
 					 "krb5 realm (%s) and configured realm (%s) don't match",
-					 cp, pg_krb_realm);
+					 cp, realmmatch);
 
 				krb5_free_ticket(pg_krb5_context, ticket);
 				krb5_auth_con_free(pg_krb5_context, auth_context);
@@ -762,7 +777,7 @@ pg_krb5_recvauth(Port *port)
 			}
 		}
 	}
-	else if (pg_krb_realm && strlen(pg_krb_realm))
+	else if (realmmatch && strlen(realmmatch))
 	{
 		elog(DEBUG2,
 			 "krb5 did not return realm but realm matching was requested");
@@ -859,6 +874,7 @@ pg_GSS_recvauth(Port *port)
 	int			ret;
 	StringInfoData buf;
 	gss_buffer_desc gbuf;
+	char	   *realmmatch;
 
 	/*
 	 * GSS auth is not supported for protocol versions before 3, because it
@@ -1018,6 +1034,11 @@ pg_GSS_recvauth(Port *port)
 					 gettext_noop("retrieving GSS user name failed"),
 					 maj_stat, min_stat);
 
+	if (port->hba->krb_realm)
+		realmmatch = port->hba->krb_realm;
+	else
+		realmmatch = pg_krb_realm;
+
 	/*
 	 * Split the username at the realm separator
 	 */
@@ -1025,31 +1046,37 @@ pg_GSS_recvauth(Port *port)
 	{
 		char	   *cp = strchr(gbuf.value, '@');
 
-		*cp = '\0';
+		/*
+		 * If we are not going to include the realm in the username that is passed
+		 * to the ident map, destructively modify it here to remove the realm. Then
+		 * advance past the separator to check the realm.
+		 */
+		if (!port->hba->include_realm)
+			*cp = '\0';
 		cp++;
 
-		if (pg_krb_realm != NULL && strlen(pg_krb_realm))
+		if (realmmatch != NULL && strlen(realmmatch))
 		{
 			/*
 			 * Match the realm part of the name first
 			 */
 			if (pg_krb_caseins_users)
-				ret = pg_strcasecmp(pg_krb_realm, cp);
+				ret = pg_strcasecmp(realmmatch, cp);
 			else
-				ret = strcmp(pg_krb_realm, cp);
+				ret = strcmp(realmmatch, cp);
 
 			if (ret)
 			{
 				/* GSS realm does not match */
 				elog(DEBUG2,
 				   "GSSAPI realm (%s) and configured realm (%s) don't match",
-					 cp, pg_krb_realm);
+					 cp, realmmatch);
 				gss_release_buffer(&lmin_s, &gbuf);
 				return STATUS_ERROR;
 			}
 		}
 	}
-	else if (pg_krb_realm && strlen(pg_krb_realm))
+	else if (realmmatch && strlen(realmmatch))
 	{
 		elog(DEBUG2,
 			 "GSSAPI did not return realm but realm matching was requested");
@@ -1113,6 +1140,7 @@ pg_SSPI_recvauth(Port *port)
 	SID_NAME_USE accountnameuse;
 	HMODULE		secur32;
 	QUERY_SECURITY_CONTEXT_TOKEN_FN _QuerySecurityContextToken;
+	char	   *realmmatch;
 
 	/*
 	 * SSPI auth is not supported for protocol versions before 3, because it
@@ -1325,13 +1353,18 @@ pg_SSPI_recvauth(Port *port)
 	 * Compare realm/domain if requested. In SSPI, always compare case
 	 * insensitive.
 	 */
-	if (pg_krb_realm && strlen(pg_krb_realm))
+	if (port->hba->krb_realm)
+		realmmatch = port->hba->krb_realm;
+	else
+		realmmatch = pg_krb_realm;
+
+	if (realmmatch && strlen(realmmatch))
 	{
-		if (pg_strcasecmp(pg_krb_realm, domainname))
+		if (pg_strcasecmp(realmmatch, domainname))
 		{
 			elog(DEBUG2,
 				 "SSPI domain (%s) and configured domain (%s) don't match",
-				 domainname, pg_krb_realm);
+				 domainname, realmmatch);
 
 			return STATUS_ERROR;
 		}
@@ -1340,8 +1373,22 @@ pg_SSPI_recvauth(Port *port)
 	/*
 	 * We have the username (without domain/realm) in accountname, compare to
 	 * the supplied value. In SSPI, always compare case insensitive.
+	 *
+	 * If set to include realm, append it in <username>@<realm> format.
 	 */
-	return check_usermap(port->hba->usermap, port->user_name, accountname, true);
+	if (port->hba->include_realm)
+	{
+		char   *namebuf;
+		int		retval;
+
+		namebuf = palloc(strlen(accountname) + strlen(domainname) + 2);
+		sprintf(namebuf, "%s@%s", accountname, domainname);
+		retval = check_usermap(port->hba->usermap, port->user_name, namebuf, true);
+		pfree(namebuf);
+		return retval;
+	}
+	else
+		return check_usermap(port->hba->usermap, port->user_name, accountname, true);
 }
 #endif   /* ENABLE_SSPI */
 
