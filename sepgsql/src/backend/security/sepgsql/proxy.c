@@ -482,8 +482,6 @@ walkQueryHelper(Query *query, sepgsqlWalkerContext *swc)
 	sepgsqlExprWalkerFlags((Node *) query->groupClause, &swcData, true);
 	sepgsqlExprWalkerFlags((Node *) query->limitOffset, &swcData, true);
 	sepgsqlExprWalkerFlags((Node *) query->limitCount, &swcData, true);
-	sepgsqlExprWalkerFlags((Node *) query->cteList, &swcData, true);
-	sepgsqlExprWalkerFlags((Node *) query->windowClause, &swcData, true);
 
 	return swcData.selist;
 }
