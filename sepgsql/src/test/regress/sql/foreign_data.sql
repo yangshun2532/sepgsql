@@ -126,7 +126,6 @@ CREATE SERVER s3 TYPE 'oracle' FOREIGN DATA WRAPPER foo;
 CREATE SERVER s4 TYPE 'oracle' FOREIGN DATA WRAPPER foo OPTIONS (host 'a', dbname 'b');
 CREATE SERVER s5 VERSION '15.0' FOREIGN DATA WRAPPER foo;
 CREATE SERVER s6 VERSION '16.0' FOREIGN DATA WRAPPER foo OPTIONS (host 'a', dbname 'b');
-CREATE SERVER "S6" FOREIGN DATA WRAPPER foo OPTIONS (mixed_case_names 'true');
 CREATE SERVER s7 TYPE 'oracle' VERSION '17.0' FOREIGN DATA WRAPPER foo OPTIONS (host 'a', dbname 'b');
 CREATE SERVER s8 FOREIGN DATA WRAPPER postgresql OPTIONS (foo '1'); -- ERROR
 CREATE SERVER s8 FOREIGN DATA WRAPPER postgresql OPTIONS (host 'localhost', dbname 's8db');
@@ -224,7 +223,6 @@ CREATE USER MAPPING FOR current_user SERVER s6 OPTIONS (username 'test');
 CREATE USER MAPPING FOR current_user SERVER s7;             -- ERROR
 CREATE USER MAPPING FOR public SERVER s8;                   -- ERROR
 RESET ROLE;
-CREATE USER MAPPING FOR current_user SERVER "S6" OPTIONS (username 'test_mixed_case');
 
 ALTER SERVER st1 OWNER TO regress_test_indirect;
 SET ROLE regress_test_role;
@@ -266,8 +264,8 @@ SELECT * FROM information_schema.foreign_data_wrappers ORDER BY 1, 2;
 SELECT * FROM information_schema.foreign_data_wrapper_options ORDER BY 1, 2, 3;
 SELECT * FROM information_schema.foreign_servers ORDER BY 1, 2;
 SELECT * FROM information_schema.foreign_server_options ORDER BY 1, 2, 3;
-SELECT * FROM information_schema.user_mappings ORDER BY 1, 2, 3;
-SELECT * FROM information_schema.user_mapping_options ORDER BY 1, 2, 3, 4;
+SELECT * FROM information_schema.user_mappings ORDER BY lower(authorization_identifier), 2, 3;
+SELECT * FROM information_schema.user_mapping_options ORDER BY lower(authorization_identifier), 2, 3, 4;
 SELECT * FROM information_schema.usage_privileges WHERE object_type LIKE 'FOREIGN%' ORDER BY 1, 2, 3, 4, 5;
 SELECT * FROM information_schema.role_usage_grants WHERE object_type LIKE 'FOREIGN%' ORDER BY 1, 2, 3, 4, 5;
 SET ROLE regress_test_role;

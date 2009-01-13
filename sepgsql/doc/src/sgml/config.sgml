@@ -1,4 +1,4 @@
-<!-- $PostgreSQL: pgsql/doc/src/sgml/config.sgml,v 1.203 2009/01/07 22:40:48 tgl Exp $ -->
+<!-- $PostgreSQL: pgsql/doc/src/sgml/config.sgml,v 1.205 2009/01/12 05:10:44 tgl Exp $ -->
 
 <chapter Id="runtime-config">
   <title>Server Configuration</title>
@@ -612,22 +612,6 @@ SET ENABLE_SEQSCAN TO OFF;
       </listitem>
      </varlistentry>
 
-     <varlistentry id="guc-krb-realm" xreflabel="krb_realm">
-      <term><varname>krb_realm</varname> (<type>string</type>)</term>
-      <indexterm>
-       <primary><varname>krb_realm</> configuration parameter</primary>
-      </indexterm>
-      <listitem>
-       <para>
-        Sets the realm to match Kerberos, GSSAPI and SSPI user names against.
-        See <xref linkend="kerberos-auth">, <xref linkend="gssapi-auth"> or
-        <xref linkend="sspi-auth"> for details. This parameter can only be 
-        set in the <filename>postgresql.conf</> file or on the server 
-        command line.
-       </para>
-      </listitem>
-     </varlistentry>
-
      <varlistentry id="guc-krb-server-keyfile" xreflabel="krb_server_keyfile">
       <term><varname>krb_server_keyfile</varname> (<type>string</type>)</term>
       <indexterm>
@@ -653,24 +637,6 @@ SET ENABLE_SEQSCAN TO OFF;
         Sets the Kerberos service name. See <xref linkend="kerberos-auth">
         for details. This parameter can only be set in the
         <filename>postgresql.conf</> file or on the server command line.
-       </para>
-      </listitem>
-     </varlistentry>
-
-     <varlistentry id="guc-krb-server-hostname" xreflabel="krb_server_hostname">
-      <term><varname>krb_server_hostname</varname> (<type>string</type>)</term>
-      <indexterm>
-       <primary><varname>krb_server_hostname</> configuration parameter</primary>
-      </indexterm>
-      <listitem>
-       <para>
-        Sets the host name part of the service principal.
-        This, combined with <varname>krb_srvname</>, is used to generate
-        the complete service principal, that is
-        <varname>krb_srvname</><literal>/</><varname>krb_server_hostname</><literal>@</>REALM.
-        If not set, the default is the server host name.  See <xref linkend="kerberos-auth">
-        for details. This parameter can only be set in the <filename>postgresql.conf</>
-        file or on the server command line.
        </para>
       </listitem>
      </varlistentry>
@@ -1236,6 +1202,55 @@ SET ENABLE_SEQSCAN TO OFF;
       processes will have to issue writes for themselves, delaying interactive
       queries.
      </para>
+    </sect2>
+
+    <sect2 id="runtime-config-resource-async-behavior">
+     <title>Asynchronous Behavior</title>
+
+     <variablelist>
+      <varlistentry id="guc-effective-io-concurrency" xreflabel="effective_io_concurrency">
+       <term><varname>effective_io_concurrency</varname> (<type>integer</type>)</term>
+       <indexterm>
+        <primary><varname>effective_io_concurrency</> configuration parameter</primary>
+       </indexterm>
+       <listitem>
+        <para>
+         Sets the number of concurrent disk I/O operations that
+         <productname>PostgreSQL</> expects can be executed
+         simultaneously.  Raising this value will increase the number of I/O
+         operations that any individual <productname>PostgreSQL</> session
+         attempts to initiate in parallel.  The allowed range is 1 to 1000,
+         or zero to disable issuance of asynchronous I/O requests.
+        </para>
+
+        <para>
+         A good starting point for this setting is the number of separate
+         drives comprising a RAID 0 stripe or RAID 1 mirror being used for the
+         database.  (For RAID 5 the parity drive should not be counted.)
+         However, if the database is often busy with multiple queries issued in
+         concurrent sessions, lower values may be sufficient to keep the disk
+         array busy.  A value higher than needed to keep the disks busy will
+         only result in extra CPU overhead.
+        </para>
+
+        <para>
+         For more exotic systems, such as memory-based storage or a RAID array
+         that is limited by bus bandwidth, the correct value might be the
+         number of I/O paths available.  Some experimentation may be needed
+         to find the best value.
+        </para>
+
+        <para>
+         Asynchronous I/O depends on an effective <function>posix_fadvise</>
+         function, which some operating systems lack.  If the function is not
+         present then setting this parameter to anything but zero will result
+         in an error.  On some operating systems the function is present but
+         does not actually do anything.  On such systems setting a nonzero
+         value will add CPU overhead without improving performance.
+        </para>
+       </listitem>
+      </varlistentry>
+     </variablelist>
     </sect2>
    </sect1>
 
