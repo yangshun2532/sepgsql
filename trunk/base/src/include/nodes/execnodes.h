@@ -7,7 +7,7 @@
  * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/nodes/execnodes.h,v 1.199 2009/01/01 17:23:59 momjian Exp $
+ * $PostgreSQL: pgsql/src/include/nodes/execnodes.h,v 1.201 2009/01/12 05:10:45 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -1152,7 +1152,11 @@ typedef struct BitmapIndexScanState
  *
  *		bitmapqualorig	   execution state for bitmapqualorig expressions
  *		tbm				   bitmap obtained from child index scan(s)
+ *		tbmiterator		   iterator for scanning current pages
  *		tbmres			   current-page data
+ *		prefetch_iterator  iterator for prefetching ahead of current page
+ *		prefetch_pages	   # pages prefetch iterator is ahead of current
+ *		prefetch_target	   target prefetch distance
  * ----------------
  */
 typedef struct BitmapHeapScanState
@@ -1160,7 +1164,11 @@ typedef struct BitmapHeapScanState
 	ScanState	ss;				/* its first field is NodeTag */
 	List	   *bitmapqualorig;
 	TIDBitmap  *tbm;
+	TBMIterator *tbmiterator;
 	TBMIterateResult *tbmres;
+	TBMIterator *prefetch_iterator;
+	int			prefetch_pages;
+	int			prefetch_target;
 } BitmapHeapScanState;
 
 /* ----------------

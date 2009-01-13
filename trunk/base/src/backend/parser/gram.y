@@ -11,7 +11,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/parser/gram.y,v 2.652 2009/01/07 22:54:45 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/backend/parser/gram.y,v 2.654 2009/01/12 09:38:30 petere Exp $
  *
  * HISTORY
  *	  AUTHOR			DATE			MAJOR EVENT
@@ -284,6 +284,7 @@ static TypeName *TableFuncTypeName(List *columns);
 				execute_param_clause using_clause returning_clause
 				enum_val_list table_func_column_list
 				create_generic_options alter_generic_options
+				relation_expr_list
 
 %type <range>	OptTempTableName
 %type <into>	into_clause create_as_target
@@ -1502,7 +1503,7 @@ AlterTableStmt:
 					n->relkind = OBJECT_TABLE;
 					$$ = (Node *)n;
 				}
-		|	ALTER INDEX relation_expr alter_table_cmds
+		|	ALTER INDEX qualified_name alter_table_cmds
 				{
 					AlterTableStmt *n = makeNode(AlterTableStmt);
 					n->relation = $3;
@@ -1510,7 +1511,7 @@ AlterTableStmt:
 					n->relkind = OBJECT_INDEX;
 					$$ = (Node *)n;
 				}
-		|	ALTER SEQUENCE relation_expr alter_table_cmds
+		|	ALTER SEQUENCE qualified_name alter_table_cmds
 				{
 					AlterTableStmt *n = makeNode(AlterTableStmt);
 					n->relation = $3;
@@ -1518,7 +1519,7 @@ AlterTableStmt:
 					n->relkind = OBJECT_SEQUENCE;
 					$$ = (Node *)n;
 				}
-		|	ALTER VIEW relation_expr alter_table_cmds
+		|	ALTER VIEW qualified_name alter_table_cmds
 				{
 					AlterTableStmt *n = makeNode(AlterTableStmt);
 					n->relation = $3;
@@ -2547,7 +2548,7 @@ CreateSeqStmt:
 		;
 
 AlterSeqStmt:
-			ALTER SEQUENCE relation_expr SeqOptList
+			ALTER SEQUENCE qualified_name SeqOptList
 				{
 					AlterSeqStmt *n = makeNode(AlterSeqStmt);
 					n->sequence = $3;
@@ -3794,7 +3795,7 @@ attrs:		'.' attr_name
  *****************************************************************************/
 
 TruncateStmt:
-			TRUNCATE opt_table qualified_name_list opt_restart_seqs opt_drop_behavior
+			TRUNCATE opt_table relation_expr_list opt_restart_seqs opt_drop_behavior
 				{
 					TruncateStmt *n = makeNode(TruncateStmt);
 					n->relations = $3;
@@ -5184,7 +5185,7 @@ RenameStmt: ALTER AGGREGATE func_name aggr_args RENAME TO name
 					n->newname = $6;
 					$$ = (Node *)n;
 				}
-			| ALTER SEQUENCE relation_expr RENAME TO name
+			| ALTER SEQUENCE qualified_name RENAME TO name
 				{
 					RenameStmt *n = makeNode(RenameStmt);
 					n->renameType = OBJECT_SEQUENCE;
@@ -5193,7 +5194,7 @@ RenameStmt: ALTER AGGREGATE func_name aggr_args RENAME TO name
 					n->newname = $6;
 					$$ = (Node *)n;
 				}
-			| ALTER VIEW relation_expr RENAME TO name
+			| ALTER VIEW qualified_name RENAME TO name
 				{
 					RenameStmt *n = makeNode(RenameStmt);
 					n->renameType = OBJECT_VIEW;
@@ -5202,7 +5203,7 @@ RenameStmt: ALTER AGGREGATE func_name aggr_args RENAME TO name
 					n->newname = $6;
 					$$ = (Node *)n;
 				}
-			| ALTER INDEX relation_expr RENAME TO name
+			| ALTER INDEX qualified_name RENAME TO name
 				{
 					RenameStmt *n = makeNode(RenameStmt);
 					n->renameType = OBJECT_INDEX;
@@ -5220,7 +5221,7 @@ RenameStmt: ALTER AGGREGATE func_name aggr_args RENAME TO name
 					n->newname = $8;
 					$$ = (Node *)n;
 				}
-			| ALTER TRIGGER name ON relation_expr RENAME TO name
+			| ALTER TRIGGER name ON qualified_name RENAME TO name
 				{
 					RenameStmt *n = makeNode(RenameStmt);
 					n->renameType = OBJECT_TRIGGER;
@@ -5344,7 +5345,7 @@ AlterObjectSchemaStmt:
 					n->newschema = $6;
 					$$ = (Node *)n;
 				}
-			| ALTER SEQUENCE relation_expr SET SCHEMA name
+			| ALTER SEQUENCE qualified_name SET SCHEMA name
 				{
 					AlterObjectSchemaStmt *n = makeNode(AlterObjectSchemaStmt);
 					n->objectType = OBJECT_SEQUENCE;
@@ -5352,7 +5353,7 @@ AlterObjectSchemaStmt:
 					n->newschema = $6;
 					$$ = (Node *)n;
 				}
-			| ALTER VIEW relation_expr SET SCHEMA name
+			| ALTER VIEW qualified_name SET SCHEMA name
 				{
 					AlterObjectSchemaStmt *n = makeNode(AlterObjectSchemaStmt);
 					n->objectType = OBJECT_VIEW;
@@ -6558,7 +6559,15 @@ using_clause:
 			| /*EMPTY*/								{ $$ = NIL; }
 		;
 
-LockStmt:	LOCK_P opt_table qualified_name_list opt_lock opt_nowait
+
+/*****************************************************************************
+ *
+ *		QUERY:
+ *				LOCK TABLE
+ *
+ *****************************************************************************/
+
+LockStmt:	LOCK_P opt_table relation_expr_list opt_lock opt_nowait
 				{
 					LockStmt *n = makeNode(LockStmt);
 
@@ -7484,6 +7493,12 @@ relation_expr:
 					$$->inhOpt = INH_NO;
 					$$->alias = NULL;
 				}
+		;
+
+
+relation_expr_list:
+			relation_expr							{ $$ = list_make1($1); }
+			| relation_expr_list ',' relation_expr	{ $$ = lappend($1, $3); }
 		;
 
 
