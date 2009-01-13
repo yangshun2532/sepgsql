@@ -81,10 +81,7 @@
 # Kerberos and GSSAPI
 #krb_server_keyfile = ''
 #krb_srvname = 'postgres'		# (Kerberos only)
-#krb_server_hostname = ''		# empty string matches any keytab entry
-					# (Kerberos only)
 #krb_caseins_users = off
-#krb_realm = ''
 
 # - TCP Keepalives -
 # see "man 7 tcp" for details
@@ -133,6 +130,10 @@
 #bgwriter_delay = 200ms			# 10-10000ms between rounds
 #bgwriter_lru_maxpages = 100		# 0-1000 max buffers written/round
 #bgwriter_lru_multiplier = 2.0		# 0-10.0 multipler on buffers scanned/round
+
+# - Asynchronous Behavior -
+
+#effective_io_concurrency = 1		# 1-1000, or 0 to disable prefetching
 
 
 #------------------------------------------------------------------------------
