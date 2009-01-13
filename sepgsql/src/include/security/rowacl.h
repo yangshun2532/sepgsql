@@ -30,17 +30,12 @@ extern bool rowaclHeapTupleDelete(Relation rel, ItemPointer otid,
 
 extern bool rowaclTupleDescHasRowAcl(Relation rel, List *relopts);
 
-extern void rawaclReloptsDefaultRowAclValidator(char *value, bool validate);
-
 extern Acl *rowaclSidToSecurityAcl(Oid sid, Oid ownerId);
 
 extern Oid rowaclSecurityAclToSid(Acl *acl);
 
 extern Datum rowaclHeapGetSecurityAclSysattr(HeapTuple tuple);
 
-/*
- * SQL Functions
- */
-
+extern void rawaclValidateDefaultRowAclRelopt(const char *value);
 
 #endif  /* ROWACL_H */

@@ -113,7 +113,8 @@ static relopt_string stringRelOpts[] =
 			"Default Row-level ACLs",
 			RELOPT_KIND_HEAP
 		},
-		0. true, rawaclReloptsDefaultRowAclValidator, "",
+		0, true, rawaclValidateDefaultRowAclRelopt,
+		"",
 	},
 	/* list terminator */
 	{ { NULL } }
