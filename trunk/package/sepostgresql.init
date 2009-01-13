@@ -38,7 +38,7 @@ export SEPGSQL_FALLBACK_CONTEXT
 
 # Check that networking is up.
 test "${NETWORKING}" = "no" && exit 0
-test -f "${SEPGSQL_BIN}/postmaster" || exit 1
+test -f "${SEPGSQL_BIN}/sepostgresql" || exit 1
 
 script_result=0
 
@@ -165,7 +165,7 @@ do_initdb() {
 	test -x /sbin/restorecon && /sbin/restorecon -R "${SEPGSQL_DATA}"
 	# Initialize the database
         cd ${SEPGSQL_BIN}
-	/sbin/runuser -- sepgsql -c "./initdb.sepgsql --pgace-feature=selinux ${SEPGSQL_DATA}" \
+	/sbin/runuser -- sepgsql -c "./initdb.sepgsql --pgace-feature=selinux -D ${SEPGSQL_DATA}" \
 	    >> "${SEPGSQL_STARTUP_LOG}" 2>&1 < /dev/null
 	if [ -f "${SEPGSQL_DATA}/PG_VERSION" ]; then
 	    echo_success
