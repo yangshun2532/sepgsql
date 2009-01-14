@@ -1227,7 +1227,11 @@ toast_save_datum(Relation rel, Datum value, int options)
 		toasttup = heap_form_tuple(toasttupDesc, t_values, t_isnull);
 
 		if (!pgaceHeapTupleInsert(toastrel, toasttup, true, false))
-			elog(ERROR, "failed to insert TOAST tuple due to security reason");
+			ereport(ERROR,
+					(errcode(ERRCODE_PGACE_ERROR),
+					 errmsg("could not insert tuple \"%s\" due to pgace security",
+							RelationGetRelationName(toastrel))));
+
 		heap_insert(toastrel, toasttup, mycid, options, NULL);
 
 		/*
