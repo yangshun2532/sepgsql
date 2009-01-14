@@ -9,7 +9,7 @@ top_builddir = ../../..
 include $(top_builddir)/src/Makefile.global
 
 
-OBJS := pgaceCommon.o
+OBJS := pgaceCommon.o pgaceHooks.o
 
 ifeq ($(enable_selinux), yes)
 OBJS += sepgsql/avc.o sepgsql/core.o sepgsql/hooks.o	\

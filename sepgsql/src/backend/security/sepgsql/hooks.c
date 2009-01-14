@@ -16,6 +16,7 @@
 #include "catalog/pg_database.h"
 #include "catalog/pg_largeobject.h"
 #include "catalog/pg_proc.h"
+#include "catalog/pg_security.h"
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
 #include "security/pgace.h"
