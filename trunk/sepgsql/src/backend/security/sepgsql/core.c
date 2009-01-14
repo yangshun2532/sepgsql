@@ -12,6 +12,7 @@
 #include "libpq/libpq.h"
 #include "miscadmin.h"
 #include "security/pgace.h"
+#include "utils/builtins.h"
 #include "utils/syscache.h"
 #include <selinux/context.h>
 

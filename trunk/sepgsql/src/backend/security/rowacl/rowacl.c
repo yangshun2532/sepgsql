@@ -16,6 +16,7 @@
 #include "parser/parsetree.h"
 #include "security/pgace.h"
 #include "storage/bufmgr.h"
+#include "utils/builtins.h"
 #include "utils/fmgroids.h"
 #include "utils/guc.h"
 #include "utils/inval.h"

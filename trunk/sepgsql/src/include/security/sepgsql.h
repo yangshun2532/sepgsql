@@ -9,14 +9,6 @@
 #ifndef SEPGSQL_H
 #define SEPGSQL_H
 
-/* system catalogs */
-#include "catalog/pg_security.h"
-#include "lib/stringinfo.h"
-#include "nodes/execnodes.h"
-#include "nodes/nodes.h"
-#include "nodes/params.h"
-#include "nodes/parsenodes.h"
-
 #include <selinux/selinux.h>
 #include <selinux/flask.h>
 #include <selinux/av_permissions.h>
