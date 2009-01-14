@@ -9,7 +9,7 @@ top_builddir = ../../..
 include $(top_builddir)/src/Makefile.global
 
 # common facilities for enhanced security features
-OBJS := pgaceCommon.o
+OBJS := pgaceCommon.o pgaceHooks.o
 
 # DAC feature : Row-level Database ACLs
 OBJS += rowacl/rowacl.o

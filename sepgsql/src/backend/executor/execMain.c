@@ -34,6 +34,7 @@
 
 #include "access/heapam.h"
 #include "access/reloptions.h"
+#include "access/sysattr.h"
 #include "access/transam.h"
 #include "access/xact.h"
 #include "catalog/heap.h"
