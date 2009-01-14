@@ -60,7 +60,7 @@ pgaceAssignFeatureString(const char *value, bool doit, GucSource source)
 	else
 	{
 		pgace_feature = PGACE_FEATURE_NONE;
-		value = strdup("none");
+		result = strdup("none");
 	}
 
 	return result;
