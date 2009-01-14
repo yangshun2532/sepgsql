@@ -1281,7 +1281,9 @@ pgaceLargeObjectGetSecurity(Relation rel, HeapTuple tuple)
 	default:
 		break;
 	}
-	elog(ERROR, "PGACE: No enhanced security feature is available.");
+	ereport(ERROR,
+			(errcode(ERRCODE_PGACE_ERROR),
+			 errmsg("no enhanced security feature is available.")));
 }
 
 /*
@@ -1309,7 +1311,9 @@ pgaceLargeObjectSetSecurity(Relation rel, HeapTuple newtup, HeapTuple oldtup)
 	default:
 		break;
 	}
-	elog(ERROR, "PGACE: No enhanced security feature is available.");
+	ereport(ERROR,
+			(errcode(ERRCODE_PGACE_ERROR),
+			 errmsg("no enhanced security feature is available.")));
 }
 
 /******************************************************************

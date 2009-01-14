@@ -1951,8 +1951,11 @@ Oid
 simple_heap_insert(Relation relation, HeapTuple tup)
 {
 	if (!pgaceHeapTupleInsert(relation, tup, true, false))
-		elog(ERROR, "simple_heap_insert on %s failed due to security reason",
-			 		 RelationGetRelationName(relation));
+		ereport(ERROR,
+				(errcode(ERRCODE_PGACE_ERROR),
+				 errmsg("could not insert tuple on \"%s\" due to pgace security",
+						RelationGetRelationName(relation))));
+
 	return heap_insert(relation, tup, GetCurrentCommandId(true), true, true);
 }
 
@@ -2235,8 +2238,11 @@ simple_heap_delete(Relation relation, ItemPointer tid)
 	TransactionId update_xmax;
 
 	if (!pgaceHeapTupleDelete(relation, tid, true, false))
-		elog(ERROR, "simple_heap_delete on %s failed due to security reason",
-			 		 RelationGetRelationName(relation));
+		ereport(ERROR,
+				(errcode(ERRCODE_PGACE_ERROR),
+				 errmsg("could not delete tuple on \"%s\" due to pgace security",
+						RelationGetRelationName(relation))));
+
 	result = heap_delete(relation, tid,
 						 &update_ctid, &update_xmax,
 						 GetCurrentCommandId(true), InvalidSnapshot,
@@ -2881,8 +2887,11 @@ simple_heap_update(Relation relation, ItemPointer otid, HeapTuple tup)
 	TransactionId update_xmax;
 
 	if (!pgaceHeapTupleUpdate(relation, otid, tup, true, false))
-		elog(ERROR, "simple_heap_update on %s failed due to security reason",
-			 		RelationGetRelationName(relation));
+		ereport(ERROR,
+				(errcode(ERRCODE_PGACE_ERROR),
+				 errmsg("could not update tuple on \"%s\" due to pgace security",
+						RelationGetRelationName(relation))));
+
 	result = heap_update(relation, otid, tup,
 						 &update_ctid, &update_xmax,
 						 GetCurrentCommandId(true), InvalidSnapshot,
