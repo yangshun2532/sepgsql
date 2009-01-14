@@ -19,6 +19,7 @@
 #include "catalog/pg_largeobject.h"
 #include "catalog/pg_operator.h"
 #include "catalog/pg_proc.h"
+#include "catalog/pg_security.h"
 #include "catalog/pg_trigger.h"
 #include "catalog/pg_type.h"
 #include "executor/executor.h"
