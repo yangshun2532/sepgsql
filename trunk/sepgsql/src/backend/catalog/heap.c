@@ -1059,7 +1059,7 @@ heap_create_with_catalog(const char *relname,
 						  oidislocal, oidinhcount, pgaceAttrList);
 
 	/*
-	 * Fixup rel->rd_att->tdhassecacl and el->rd_att->tdhasseclabel
+	 * Fixup rel->rd_att->tdhassecacl and rel->rd_att->tdhasseclabel
 	 */
 	new_rel_desc->rd_att->tdhasrowacl
 		= pgaceTupleDescHasRowAcl(new_rel_desc, NIL);
