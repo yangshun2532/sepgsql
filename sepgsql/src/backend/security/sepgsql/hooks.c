@@ -717,7 +717,7 @@ sepgsqlTranslateSecurityLabelOut(const char *context)
 }
 
 /*
- * sepgsqlCheckValidateSecurityLabel() checks whether the given
+ * sepgsqlCheckValidSecurityLabel() checks whether the given
  * security context is valid on the current working security
  * policy, or not.
  * If it's invalid, sepgsqlUnlabeledSecurityLabel() is invoked
