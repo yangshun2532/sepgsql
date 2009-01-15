@@ -198,28 +198,6 @@ addEvalAttributeRTE(List *selist, RangeTblEntry *rte, AttrNumber attno, uint32 p
  * invoke trigger function requires to access rights for all attribute
  *
  */
-static bool
-triggerIsForeignKeyConstraint(Form_pg_trigger trigger)
-{
-	switch (trigger->tgfoid)
-	{
-	case F_RI_FKEY_CHECK_INS:
-	case F_RI_FKEY_CHECK_UPD:
-	case F_RI_FKEY_CASCADE_DEL:
-	case F_RI_FKEY_CASCADE_UPD:
-	case F_RI_FKEY_RESTRICT_DEL:
-	case F_RI_FKEY_RESTRICT_UPD:
-	case F_RI_FKEY_SETNULL_DEL:
-	case F_RI_FKEY_SETNULL_UPD:
-	case F_RI_FKEY_SETDEFAULT_DEL:
-	case F_RI_FKEY_SETDEFAULT_UPD:
-	case F_RI_FKEY_NOACTION_DEL:
-	case F_RI_FKEY_NOACTION_UPD:
-		return true;
-	}
-	return false;
-}
-
 static List *
 addEvalForeignKeyConstraint(List *selist, Form_pg_trigger trigger)
 {
@@ -324,7 +302,7 @@ addEvalTriggerAccess(List *selist, Oid relid, bool is_inh, int cmdType)
 
 		selist = addEvalRelation(selist, relid, false, DB_TABLE__SELECT);
 
-		if (triggerIsForeignKeyConstraint(trigForm))
+		if (RI_FKey_trigger_type(trigForm->tgfoid) != RI_TRIGGER_NONE)
 			selist = addEvalForeignKeyConstraint(selist, trigForm);
 		else
 			selist = addEvalAttribute(selist, relid, false,
