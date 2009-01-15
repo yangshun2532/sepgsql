@@ -39,29 +39,23 @@ sepgsqlGetClientContext(void)
 const security_context_t
 sepgsqlGetDatabaseContext(void)
 {
-	security_context_t dcontext;
+	security_context_t result;
 
 	if (IsBootstrapProcessingMode())
 	{
-		security_context_t tmp;
+		static security_context_t dbcontext = NULL;
 
-        if (security_compute_create_raw(sepgsqlGetClientContext(),
-										sepgsqlGetClientContext(),
-										SECCLASS_DB_DATABASE, &tmp) < 0)
-			ereport(ERROR,
-					(errcode(ERRCODE_SELINUX_ERROR),
-					 errmsg("SELinux: could not get database context")));
-        PG_TRY();
-        {
-			dcontext = pstrdup(tmp);
-        }
-        PG_CATCH();
-        {
-			freecon(tmp);
-			PG_RE_THROW();
-        }
-        PG_END_TRY();
-        freecon(tmp);
+		if (!dbcontext)
+		{
+			if (security_compute_create_raw(sepgsqlGetClientContext(),
+											sepgsqlGetClientContext(),
+											SECCLASS_DB_DATABASE,
+											&dbcontext) < 0)
+				ereport(ERROR,
+						(errcode(ERRCODE_SELINUX_ERROR),
+						 errmsg("SELinux: could not get database context")));
+		}
+		result = pstrdup(dbcontext);
 	}
 	else
 	{
@@ -73,14 +67,14 @@ sepgsqlGetDatabaseContext(void)
 		if (!HeapTupleIsValid(tuple))
 			elog(ERROR, "SELinux: cache lookup failed for database: %u", MyDatabaseId);
 
-		dcontext = pgaceLookupSecurityLabel(HeapTupleGetSecLabel(tuple));
-		if (!dcontext || !pgaceCheckValidSecurityLabel(dcontext))
-			dcontext = pgaceUnlabeledSecurityLabel();
+		result = pgaceLookupSecurityLabel(HeapTupleGetSecLabel(tuple));
+		if (!result || !pgaceCheckValidSecurityLabel(result))
+			result = pgaceUnlabeledSecurityLabel();
 
 		ReleaseSysCache(tuple);
 	}
 
-	return dcontext;
+	return result;
 }
 
 Oid
