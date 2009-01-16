@@ -94,7 +94,7 @@ do { \
 		RegProcedure	procOid = indexRelation->rd_am->pname; \
 		if (!RegProcedureIsValid(procOid)) \
 			elog(ERROR, "invalid %s regproc", CppAsString(pname)); \
-		fmgr_info_trusted(procOid, procedure, indexRelation->rd_indexcxt); \
+		fmgr_info_cxt(procOid, procedure, indexRelation->rd_indexcxt); \
 	} \
 } while(0)
 
@@ -106,7 +106,7 @@ do { \
 		RegProcedure	procOid = scan->indexRelation->rd_am->pname; \
 		if (!RegProcedureIsValid(procOid)) \
 			elog(ERROR, "invalid %s regproc", CppAsString(pname)); \
-		fmgr_info_trusted(procOid, procedure, scan->indexRelation->rd_indexcxt); \
+		fmgr_info_cxt(procOid, procedure, scan->indexRelation->rd_indexcxt); \
 	} \
 } while(0)
 
@@ -874,7 +874,7 @@ index_getprocinfo(Relation irel,
 			elog(ERROR, "missing support function %d for attribute %d of index \"%s\"",
 				 procnum, attnum, RelationGetRelationName(irel));
 
-		fmgr_info_trusted(procId, locinfo, irel->rd_indexcxt);
+		fmgr_info_cxt(procId, locinfo, irel->rd_indexcxt);
 	}
 
 	return locinfo;
