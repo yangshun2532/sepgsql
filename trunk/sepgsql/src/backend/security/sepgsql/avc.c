@@ -406,6 +406,8 @@ sepgsql_avc_reset(void)
 
 	current_avc_page = NULL;
 
+	avc_datum_count = 0;
+
 	LWLockRelease(SepgsqlAvcLock);
 
 	sepgsqlAvcSwitchClientContext(sepgsqlGetClientContext());
@@ -622,6 +624,8 @@ static avc_datum *avc_make_entry(Oid tsid, security_class_t tclass)
 
 	current_avc_page->slot[index]
 		= lcons(cache, current_avc_page->slot[index]);
+
+	avc_datum_count++;
 
 	MemoryContextSwitchTo(oldctx);
 
