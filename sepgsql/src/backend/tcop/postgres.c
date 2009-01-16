@@ -53,7 +53,6 @@
 #include "parser/parser.h"
 #include "postmaster/autovacuum.h"
 #include "rewrite/rewriteHandler.h"
-#include "security/pgace.h"
 #include "storage/freespace.h"
 #include "storage/ipc.h"
 #include "storage/proc.h"
@@ -630,9 +629,6 @@ pg_rewrite_query(Query *query)
 	{
 		/* don't rewrite utilities, just dump 'em into result list */
 		querytree_list = list_make1(query);
-
-		/* PGACE rewrite utility query, if necessary */
-		querytree_list = pgaceProxyQuery(querytree_list);
 	}
 	else
 	{
