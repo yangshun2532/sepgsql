@@ -47,6 +47,7 @@
 #include "nodes/nodeFuncs.h"
 #include "optimizer/planner.h"
 #include "pgstat.h"
+#include "security/pgace.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
@@ -1047,6 +1048,7 @@ init_fcache(Oid foid, FuncExprState *fcache,
 	/* Set up the primary fmgr lookup information */
 	fmgr_info_cxt(foid, &(fcache->func), fcacheCxt);
 	fcache->func.fn_expr = (Node *) fcache->xprstate.expr;
+	pgaceCallFunction(&fcache->func);
 
 	/* If function returns set, prepare expected tuple descriptor */
 	if (fcache->func.fn_retset && needDescForSets)
@@ -4014,6 +4016,8 @@ ExecEvalArrayCoerceExpr(ArrayCoerceExprState *astate,
 
 		/* Initialize additional info */
 		astate->elemfunc.fn_expr = (Node *) acoerce;
+
+		pgaceCallFunction(&astate->elemfunc);
 	}
 
 	/*
