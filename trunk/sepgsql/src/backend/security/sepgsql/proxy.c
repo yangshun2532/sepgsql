@@ -177,6 +177,14 @@ addEvalAttributeRTE(List *selist, RangeTblEntry *rte, AttrNumber attno, uint32 p
 		rte->pgaceTuplePerms |= SEPGSQL_PERMS_RELABELFROM;
 
 	/*
+	 * UPDATE on pg_class.relkind and pg_attribute.attkind
+	 */
+	if ((perms & DB_COLUMN__UPDATE) &&
+		((rte->relid == RelationRelationId && attno == Anum_pg_class_relkind) ||
+		 (rte->relid == AttributeRelationId && attno == Anum_pg_attribute_attkind)))
+		rte->pgaceTuplePerms |= SEPGSQL_PERMS_RELABELFROM;
+
+	/*
 	 * for 'pg_largeobject'
 	 */
 	if (rte->relid == LargeObjectRelationId
