@@ -907,12 +907,12 @@ sepgsqlHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple newtup,
 		perms |= SEPGSQL_PERMS_UPDATE;
 		if (with_returning)
 			perms |= SEPGSQL_PERMS_SELECT;
+		if (relabel)
+			perms |= SEPGSQL_PERMS_RELABELFROM;
+		rc = sepgsqlCheckTuplePerms(rel, oldtup, newtup, perms, is_internal);
+		if (!rc)
+			goto out;
 	}
-	if (relabel)
-		perms |= SEPGSQL_PERMS_RELABELFROM;
-	rc = sepgsqlCheckTuplePerms(rel, oldtup, newtup, perms, is_internal);
-	if (!rc)
-		goto out;
 
 	if (relabel)
 	{
