@@ -56,7 +56,7 @@ extern void sepgsqlInitialize(bool is_bootstrap);
 extern pid_t sepgsqlStartupWorkerProcess(void);
 
 /* SQL proxy hooks */
-extern List *sepgsqlProxyQuery(List *queryList);
+extern List *sepgsqlPostQueryRewrite(List *queryList);
 
 extern void sepgsqlExecutorStart(QueryDesc *queryDesc, int eflags);
 
