@@ -189,7 +189,7 @@ pgaceStartupWorkerProcess(void)
  ******************************************************************/
 
 /*
- * pgaceProxyQuery
+ * pgacePostQueryRewrite
  *
  * This hook is invoked just after query is rewritten.
  *
@@ -198,17 +198,17 @@ pgaceStartupWorkerProcess(void)
  * queryList is a list of Query object processes by rewriter.
  */
 List *
-pgaceProxyQuery(List *queryList)
+pgacePostQueryRewrite(List *queryList)
 {
 	/* Hardwired DAC checks */
-	queryList = rowaclProxyQuery(queryList);
+	queryList = rowaclPostQueryRewrite(queryList);
 
 	switch (pgace_feature)
 	{
 #ifdef HAVE_SELINUX
 	case PGACE_FEATURE_SELINUX:
 		if (sepgsqlIsEnabled())
-			return sepgsqlProxyQuery(queryList);
+			return sepgsqlPostQueryRewrite(queryList);
 		break;
 #endif
 	default:

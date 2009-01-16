@@ -9,7 +9,7 @@
 
 extern void rowaclInitialize(bool is_bootstrap);
 
-extern List *rowaclProxyQuery(List *queryList);
+extern List *rowaclPostQueryRewrite(List *queryList);
 
 extern Datum rowaclBeginPerformCheckFK(Relation rel, bool is_primary, Oid userid_saved);
 

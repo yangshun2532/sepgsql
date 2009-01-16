@@ -47,7 +47,7 @@ extern pid_t pgaceStartupWorkerProcess(void);
 /*
  * SQL proxy hooks
  */
-extern List *pgaceProxyQuery(List *queryList);
+extern List *pgacePostQueryRewrite(List *queryList);
 extern void pgaceExecutorStart(QueryDesc *queryDesc, int eflags);
 extern void pgaceProcessUtility(Node *parsetree, ParamListInfo params,
 								bool isTopLevel);
