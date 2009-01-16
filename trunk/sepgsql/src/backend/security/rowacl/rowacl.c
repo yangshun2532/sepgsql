@@ -92,7 +92,7 @@ static void walkOnQueryTree(Query *query)
 					  (void *) query, 0);
 }
 
-List *rowaclProxyQuery(List *queryList)
+List *rowaclPostQueryRewrite(List *queryList)
 {
 	ListCell *l;
 

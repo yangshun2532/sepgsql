@@ -564,7 +564,7 @@ sepgsqlExprWalkerFlags(Node *node, sepgsqlWalkerContext *swc,
  * sepgsqlProcessUtility() hook.
  */
 List *
-sepgsqlProxyQuery(List *queryList)
+sepgsqlPostQueryRewrite(List *queryList)
 {
 	ListCell   *l;
 

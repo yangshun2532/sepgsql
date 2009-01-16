@@ -1969,7 +1969,5 @@ QueryRewrite(Query *parsetree)
 	if (!foundOriginalQuery && lastInstead != NULL)
 		lastInstead->canSetTag = true;
 
-	results = pgaceProxyQuery(results);
-
-	return results;
+	return pgacePostQueryRewrite(results);
 }
