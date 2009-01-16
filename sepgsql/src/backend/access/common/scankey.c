@@ -42,7 +42,7 @@ ScanKeyEntryInitialize(ScanKey entry,
 	entry->sk_subtype = subtype;
 	entry->sk_argument = argument;
 	if (RegProcedureIsValid(procedure))
-		fmgr_info_trusted(procedure, &entry->sk_func, CurrentMemoryContext);
+		fmgr_info(procedure, &entry->sk_func);
 	else
 	{
 		Assert(flags & SK_SEARCHNULL);
@@ -75,7 +75,7 @@ ScanKeyInit(ScanKey entry,
 	entry->sk_strategy = strategy;
 	entry->sk_subtype = InvalidOid;
 	entry->sk_argument = argument;
-	fmgr_info_trusted(procedure, &entry->sk_func, CurrentMemoryContext);
+	fmgr_info(procedure, &entry->sk_func);
 }
 
 /*

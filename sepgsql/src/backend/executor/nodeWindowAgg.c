@@ -43,6 +43,7 @@
 #include "optimizer/clauses.h"
 #include "parser/parse_agg.h"
 #include "parser/parse_coerce.h"
+#include "security/pgace.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/datum.h"
@@ -1231,6 +1232,7 @@ ExecInitWindowAgg(WindowAgg *node, EState *estate, int eflags)
 		fmgr_info_cxt(wfunc->winfnoid, &perfuncstate->flinfo,
 					  tmpcontext->ecxt_per_query_memory);
 		perfuncstate->flinfo.fn_expr = (Node *) wfunc;
+		pgaceCallFunction(&perfuncstate->flinfo);
 		get_typlenbyval(wfunc->wintype,
 						&perfuncstate->resulttypeLen,
 						&perfuncstate->resulttypeByVal);
@@ -1457,11 +1459,13 @@ initialize_peragg(WindowAggState *winstate, WindowFunc *wfunc,
 
 	fmgr_info(transfn_oid, &peraggstate->transfn);
 	peraggstate->transfn.fn_expr = (Node *) transfnexpr;
+	pgaceCallFunction(&peraggstate->transfn);
 
 	if (OidIsValid(finalfn_oid))
 	{
 		fmgr_info(finalfn_oid, &peraggstate->finalfn);
 		peraggstate->finalfn.fn_expr = (Node *) finalfnexpr;
+		pgaceCallFunction(&peraggstate->finalfn);
 	}
 
 	get_typlenbyval(wfunc->wintype,
