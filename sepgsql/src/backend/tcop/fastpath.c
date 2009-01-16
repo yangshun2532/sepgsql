@@ -28,6 +28,7 @@
 #include "miscadmin.h"
 #include "tcop/fastpath.h"
 #include "tcop/tcopprot.h"
+#include "security/pgace.h"
 #include "utils/acl.h"
 #include "utils/lsyscache.h"
 #include "utils/syscache.h"
@@ -347,6 +348,7 @@ HandleFunctionRequest(StringInfo msgBuf)
 	if (aclresult != ACLCHECK_OK)
 		aclcheck_error(aclresult, ACL_KIND_PROC,
 					   get_func_name(fid));
+	pgaceCallFunction(&fip->flinfo);
 
 	/*
 	 * Prepare function call info block and insert arguments.

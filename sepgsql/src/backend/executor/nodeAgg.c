@@ -1464,11 +1464,13 @@ ExecInitAgg(Agg *node, EState *estate, int eflags)
 
 		fmgr_info(transfn_oid, &peraggstate->transfn);
 		peraggstate->transfn.fn_expr = (Node *) transfnexpr;
+		pgaceCallFunction(&peraggstate->transfn);
 
 		if (OidIsValid(finalfn_oid))
 		{
 			fmgr_info(finalfn_oid, &peraggstate->finalfn);
 			peraggstate->finalfn.fn_expr = (Node *) finalfnexpr;
+			pgaceCallFunction(&peraggstate->finalfn);
 		}
 
 		get_typlenbyval(aggref->aggtype,

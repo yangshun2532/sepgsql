@@ -47,6 +47,7 @@
 #include "nodes/makefuncs.h"
 #include "optimizer/planmain.h"
 #include "parser/parse_expr.h"
+#include "security/pgace.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
@@ -1010,6 +1011,7 @@ init_fcache(Oid foid, FuncExprState *fcache, MemoryContext fcacheCxt)
 
 	/* Set up the primary fmgr lookup information */
 	fmgr_info_cxt(foid, &(fcache->func), fcacheCxt);
+	pgaceCallFunction(&fcache->func);
 
 	/* Initialize additional info */
 	fcache->setArgsValid = false;
@@ -3670,6 +3672,8 @@ ExecEvalArrayCoerceExpr(ArrayCoerceExprState *astate,
 
 		/* Initialize additional info */
 		astate->elemfunc.fn_expr = (Node *) acoerce;
+
+		pgaceCallFunction(&astate->elemfunc);
 	}
 
 	/*

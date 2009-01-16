@@ -85,13 +85,6 @@ extern void fmgr_info_cxt(Oid functionId, FmgrInfo *finfo,
 			  MemoryContext mcxt);
 
 /*
- * This function is same as fmgr_info_cxt() except for it does not
- * invoke pgaceCallFunction()
- */
-extern void fmgr_info_trusted(Oid functionId, FmgrInfo *finfo,
-			  MemoryContext mcxt);
-
-/*
  * Copy an FmgrInfo struct
  */
 extern void fmgr_info_copy(FmgrInfo *dstinfo, FmgrInfo *srcinfo,
