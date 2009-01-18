@@ -38,7 +38,7 @@ export SEPGSQL_FALLBACK_CONTEXT
 
 # Check that networking is up.
 test "${NETWORKING}" = "no" && exit 0
-test -f "${SEPGSQL_BIN}/postmaster" || exit 1
+test -f "${SEPGSQL_BIN}/sepostgres" || exit 1
 
 script_result=0
 
