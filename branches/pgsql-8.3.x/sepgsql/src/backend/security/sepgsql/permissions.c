@@ -424,7 +424,7 @@ sepgsqlCheckEmbeddedProcedure(Relation rel, HeapTuple tuple, HeapTuple newtup)
 		CHECK_EMBEDDED_PROC_HANDLER(pg_am, aminsert, tuple, newtup);
 		CHECK_EMBEDDED_PROC_HANDLER(pg_am, ambeginscan, tuple, newtup);
 		CHECK_EMBEDDED_PROC_HANDLER(pg_am, amgettuple, tuple, newtup);
-		CHECK_EMBEDDED_PROC_HANDLER(pg_am, amgetbitmap, tuple, newtup);
+		CHECK_EMBEDDED_PROC_HANDLER(pg_am, amgetmulti, tuple, newtup);
 		CHECK_EMBEDDED_PROC_HANDLER(pg_am, amrescan, tuple, newtup);
 		CHECK_EMBEDDED_PROC_HANDLER(pg_am, amendscan, tuple, newtup);
 		CHECK_EMBEDDED_PROC_HANDLER(pg_am, ammarkpos, tuple, newtup);
