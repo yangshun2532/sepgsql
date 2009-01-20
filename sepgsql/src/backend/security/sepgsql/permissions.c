@@ -338,6 +338,10 @@ sepgsqlPermsToBlobAv(uint32 perms, HeapTuple tuple, HeapTuple newtup)
 	 * pg_largeobject. Ditto for DELETE statement, it also has a possibility
 	 * to drop a largeobject, if it removes all tuples within a large object.
 	 *
+	 * UPDATE pg_largeobject.loid has a possibility to create and drop
+	 * a largeobject in same time, so we need to check it when loid is
+	 * changed.
+	 *
 	 * db_blob:{create} and db_blob:{drop} should be evaluated for
 	 * creation/deletion of largeobject, but we have to check pg_largeobject
 	 * with SnapshotSelf whether there is one or more tuple having same loid,
@@ -347,15 +351,22 @@ sepgsqlPermsToBlobAv(uint32 perms, HeapTuple tuple, HeapTuple newtup)
 	 * db_blob:{drop}.
 	 */
 	result |= (perms & SEPGSQL_PERMS_INSERT	? DB_BLOB__WRITE : 0);
+	if (perms & SEPGSQL_PERMS_UPDATE)
+	{
+		result |= DB_BLOB__WRITE;
+
+		if (((Form_pg_largeobject) GETSTRUCT(tuple))->loid !=
+			((Form_pg_largeobject) GETSTRUCT(newtup))->loid)
+			result |= (DB_BLOB__CREATE | DB_BLOB__DROP);
+	}
 	result |= (perms & SEPGSQL_PERMS_DELETE	? DB_BLOB__WRITE : 0);
 	result |= (perms & SEPGSQL_PERMS_READ	? DB_BLOB__READ  : 0);
-	result |= (perms & SEPGSQL_PERMS_WRITE	? DB_BLOB__WRITE : 0);
 
 	return result;
 }
 
 static void
-checkEmbeddedProcedure(Oid proc_oid)
+checkProcedureInstall(Oid proc_oid)
 {
 	if (!OidIsValid(proc_oid))
 		return;
@@ -372,7 +383,7 @@ checkEmbeddedProcedure(Oid proc_oid)
 									 SECCLASS_DB_PROCEDURE);
 		sepgsqlClientHasPermission(proc_sid,
 								   SECCLASS_DB_PROCEDURE,
-								   DB_PROCEDURE__EXECUTE,
+								   DB_PROCEDURE__INSTALL,
 								   NULL);
 	}
 	else
@@ -389,23 +400,23 @@ checkEmbeddedProcedure(Oid proc_oid)
 		audit_name = sepgsqlTupleName(ProcedureRelationId, protup);
 		sepgsqlClientHasPermission(HeapTupleGetSecLabel(protup),
 								   SECCLASS_DB_PROCEDURE,
-								   DB_PROCEDURE__EXECUTE,
+								   DB_PROCEDURE__INSTALL,
 								   audit_name);
 		ReleaseSysCache(protup);
 	}
 }
 
-#define CHECK_EMBEDDED_PROC_HANDLER(catalog,member,tuple,newtup)		\
+#define CHECK_PROC_INSTALL_HANDLER(catalog,member,tuple,newtup)			\
 	do {																\
 		if (!HeapTupleIsValid(newtup))									\
-			checkEmbeddedProcedure(((CppConcat(Form_,catalog)) GETSTRUCT(tuple))->member); \
+			checkProcedureInstall(((CppConcat(Form_,catalog)) GETSTRUCT(tuple))->member); \
 		else if (((CppConcat(Form_,catalog)) GETSTRUCT(tuple))->member	\
 				 != ((CppConcat(Form_,catalog)) GETSTRUCT(newtup))->member) \
-			checkEmbeddedProcedure(((CppConcat(Form_,catalog)) GETSTRUCT(newtup))->member); \
+			checkProcedureInstall(((CppConcat(Form_,catalog)) GETSTRUCT(newtup))->member); \
 	} while(0)
 
 static void
-sepgsqlCheckEmbeddedProcedure(Relation rel, HeapTuple tuple, HeapTuple newtup)
+sepgsqlCheckProcedureInstall(Relation rel, HeapTuple tuple, HeapTuple newtup)
 {
 	/*
 	 * Some of system catalog can be configured to invoke functions
@@ -415,75 +426,75 @@ sepgsqlCheckEmbeddedProcedure(Relation rel, HeapTuple tuple, HeapTuple newtup)
 	switch (RelationGetRelid(rel))
 	{
 	case AggregateRelationId:
-		CHECK_EMBEDDED_PROC_HANDLER(pg_aggregate, aggfnoid, tuple, newtup);
-		CHECK_EMBEDDED_PROC_HANDLER(pg_aggregate, aggtransfn, tuple, newtup);
-		CHECK_EMBEDDED_PROC_HANDLER(pg_aggregate, aggfinalfn, tuple, newtup);
+		CHECK_PROC_INSTALL_HANDLER(pg_aggregate, aggfnoid, tuple, newtup);
+		CHECK_PROC_INSTALL_HANDLER(pg_aggregate, aggtransfn, tuple, newtup);
+		CHECK_PROC_INSTALL_HANDLER(pg_aggregate, aggfinalfn, tuple, newtup);
 		break;
 
 	case AccessMethodRelationId:
-		CHECK_EMBEDDED_PROC_HANDLER(pg_am, aminsert, tuple, newtup);
-		CHECK_EMBEDDED_PROC_HANDLER(pg_am, ambeginscan, tuple, newtup);
-		CHECK_EMBEDDED_PROC_HANDLER(pg_am, amgettuple, tuple, newtup);
-		CHECK_EMBEDDED_PROC_HANDLER(pg_am, amgetmulti, tuple, newtup);
-		CHECK_EMBEDDED_PROC_HANDLER(pg_am, amrescan, tuple, newtup);
-		CHECK_EMBEDDED_PROC_HANDLER(pg_am, amendscan, tuple, newtup);
-		CHECK_EMBEDDED_PROC_HANDLER(pg_am, ammarkpos, tuple, newtup);
-		CHECK_EMBEDDED_PROC_HANDLER(pg_am, amrestrpos, tuple, newtup);
-		CHECK_EMBEDDED_PROC_HANDLER(pg_am, ambuild, tuple, newtup);
-		CHECK_EMBEDDED_PROC_HANDLER(pg_am, ambulkdelete, tuple, newtup);
-		CHECK_EMBEDDED_PROC_HANDLER(pg_am, amvacuumcleanup, tuple, newtup);
-		CHECK_EMBEDDED_PROC_HANDLER(pg_am, amcostestimate, tuple, newtup);
-		CHECK_EMBEDDED_PROC_HANDLER(pg_am, amoptions, tuple, newtup);
+		CHECK_PROC_INSTALL_HANDLER(pg_am, aminsert, tuple, newtup);
+		CHECK_PROC_INSTALL_HANDLER(pg_am, ambeginscan, tuple, newtup);
+		CHECK_PROC_INSTALL_HANDLER(pg_am, amgettuple, tuple, newtup);
+		CHECK_PROC_INSTALL_HANDLER(pg_am, amgetmulti, tuple, newtup);
+		CHECK_PROC_INSTALL_HANDLER(pg_am, amrescan, tuple, newtup);
+		CHECK_PROC_INSTALL_HANDLER(pg_am, amendscan, tuple, newtup);
+		CHECK_PROC_INSTALL_HANDLER(pg_am, ammarkpos, tuple, newtup);
+		CHECK_PROC_INSTALL_HANDLER(pg_am, amrestrpos, tuple, newtup);
+		CHECK_PROC_INSTALL_HANDLER(pg_am, ambuild, tuple, newtup);
+		CHECK_PROC_INSTALL_HANDLER(pg_am, ambulkdelete, tuple, newtup);
+		CHECK_PROC_INSTALL_HANDLER(pg_am, amvacuumcleanup, tuple, newtup);
+		CHECK_PROC_INSTALL_HANDLER(pg_am, amcostestimate, tuple, newtup);
+		CHECK_PROC_INSTALL_HANDLER(pg_am, amoptions, tuple, newtup);
 		break;
 
 	case AccessMethodProcedureRelationId:
-		CHECK_EMBEDDED_PROC_HANDLER(pg_amproc, amproc, tuple, newtup);
+		CHECK_PROC_INSTALL_HANDLER(pg_amproc, amproc, tuple, newtup);
 		break;
 
 	case CastRelationId:
-		CHECK_EMBEDDED_PROC_HANDLER(pg_cast, castfunc, tuple, newtup);
+		CHECK_PROC_INSTALL_HANDLER(pg_cast, castfunc, tuple, newtup);
 		break;
 
 	case ConversionRelationId:
-		CHECK_EMBEDDED_PROC_HANDLER(pg_conversion, conproc, tuple, newtup);
+		CHECK_PROC_INSTALL_HANDLER(pg_conversion, conproc, tuple, newtup);
 		break;
 
 	case LanguageRelationId:
-		CHECK_EMBEDDED_PROC_HANDLER(pg_language, lanplcallfoid, tuple, newtup);
-		CHECK_EMBEDDED_PROC_HANDLER(pg_language, lanvalidator, tuple, newtup);
+		CHECK_PROC_INSTALL_HANDLER(pg_language, lanplcallfoid, tuple, newtup);
+		CHECK_PROC_INSTALL_HANDLER(pg_language, lanvalidator, tuple, newtup);
 		break;
 
 	case OperatorRelationId:
-		CHECK_EMBEDDED_PROC_HANDLER(pg_operator, oprcode, tuple, newtup);
-		CHECK_EMBEDDED_PROC_HANDLER(pg_operator, oprrest, tuple, newtup);
-		CHECK_EMBEDDED_PROC_HANDLER(pg_operator, oprjoin, tuple, newtup);
+		CHECK_PROC_INSTALL_HANDLER(pg_operator, oprcode, tuple, newtup);
+		CHECK_PROC_INSTALL_HANDLER(pg_operator, oprrest, tuple, newtup);
+		CHECK_PROC_INSTALL_HANDLER(pg_operator, oprjoin, tuple, newtup);
 		break;
 
 	case TriggerRelationId:
-		CHECK_EMBEDDED_PROC_HANDLER(pg_trigger, tgfoid, tuple, newtup);
+		CHECK_PROC_INSTALL_HANDLER(pg_trigger, tgfoid, tuple, newtup);
 		break;
 
 	case TSParserRelationId:
-		CHECK_EMBEDDED_PROC_HANDLER(pg_ts_parser, prsstart, tuple, newtup);
-		CHECK_EMBEDDED_PROC_HANDLER(pg_ts_parser, prstoken, tuple, newtup);
-		CHECK_EMBEDDED_PROC_HANDLER(pg_ts_parser, prsend, tuple, newtup);
-		CHECK_EMBEDDED_PROC_HANDLER(pg_ts_parser, prsheadline, tuple, newtup);
-		CHECK_EMBEDDED_PROC_HANDLER(pg_ts_parser, prslextype, tuple, newtup);
+		CHECK_PROC_INSTALL_HANDLER(pg_ts_parser, prsstart, tuple, newtup);
+		CHECK_PROC_INSTALL_HANDLER(pg_ts_parser, prstoken, tuple, newtup);
+		CHECK_PROC_INSTALL_HANDLER(pg_ts_parser, prsend, tuple, newtup);
+		CHECK_PROC_INSTALL_HANDLER(pg_ts_parser, prsheadline, tuple, newtup);
+		CHECK_PROC_INSTALL_HANDLER(pg_ts_parser, prslextype, tuple, newtup);
 		break;
 
 	case TSTemplateRelationId:
-		CHECK_EMBEDDED_PROC_HANDLER(pg_ts_template, tmplinit, tuple, newtup);
-		CHECK_EMBEDDED_PROC_HANDLER(pg_ts_template, tmpllexize, tuple, newtup);
+		CHECK_PROC_INSTALL_HANDLER(pg_ts_template, tmplinit, tuple, newtup);
+		CHECK_PROC_INSTALL_HANDLER(pg_ts_template, tmpllexize, tuple, newtup);
 		break;
 
 	case TypeRelationId:
-		CHECK_EMBEDDED_PROC_HANDLER(pg_type, typinput, tuple, newtup);
-		CHECK_EMBEDDED_PROC_HANDLER(pg_type, typoutput, tuple, newtup);
-		CHECK_EMBEDDED_PROC_HANDLER(pg_type, typreceive, tuple, newtup);
-		CHECK_EMBEDDED_PROC_HANDLER(pg_type, typsend, tuple, newtup);
-		CHECK_EMBEDDED_PROC_HANDLER(pg_type, typmodin, tuple, newtup);
-		CHECK_EMBEDDED_PROC_HANDLER(pg_type, typmodout, tuple, newtup);
-		CHECK_EMBEDDED_PROC_HANDLER(pg_type, typanalyze, tuple, newtup);
+		CHECK_PROC_INSTALL_HANDLER(pg_type, typinput, tuple, newtup);
+		CHECK_PROC_INSTALL_HANDLER(pg_type, typoutput, tuple, newtup);
+		CHECK_PROC_INSTALL_HANDLER(pg_type, typreceive, tuple, newtup);
+		CHECK_PROC_INSTALL_HANDLER(pg_type, typsend, tuple, newtup);
+		CHECK_PROC_INSTALL_HANDLER(pg_type, typmodin, tuple, newtup);
+		CHECK_PROC_INSTALL_HANDLER(pg_type, typmodout, tuple, newtup);
+		CHECK_PROC_INSTALL_HANDLER(pg_type, typanalyze, tuple, newtup);
 		break;
 	}
 }
@@ -499,7 +510,7 @@ sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, HeapTuple newtup,
 	Assert(HeapTupleIsValid(tuple));
 
 	if ((perms & (SEPGSQL_PERMS_INSERT | SEPGSQL_PERMS_UPDATE)) != 0)
-		sepgsqlCheckEmbeddedProcedure(rel, tuple, newtup);
+		sepgsqlCheckProcedureInstall(rel, tuple, newtup);
 
 	tclass = sepgsqlTupleObjectClass(RelationGetRelid(rel), tuple);
 

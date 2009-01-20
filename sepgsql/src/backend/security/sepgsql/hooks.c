@@ -603,7 +603,7 @@ bool
 sepgsqlExecScan(Scan *scan, Relation rel, TupleTableSlot *slot)
 {
 	HeapTuple	tuple;
-	uint32		perms = scan->pgaceTuplePerms;
+	uint32		perms = (scan->pgaceTuplePerms & SEPGSQL_PERMS_MASK);
 
 	if (perms == 0)
 		return true;
@@ -849,6 +849,10 @@ sepgsqlHeapTupleInsert(Relation rel, HeapTuple tuple,
 	 */
 	if (!OidIsValid(HeapTupleGetSecLabel(tuple)))
 	{
+		/*
+		 * If user gives no valid security context,
+		 * it assigns a default one on the new tuple.
+		 */
 		if (HeapTupleHasSecLabel(tuple))
 			sepgsqlSetDefaultContext(rel, tuple);
 	}
@@ -882,6 +886,11 @@ sepgsqlHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple newtup,
 
 	if (!OidIsValid(HeapTupleGetSecLabel(newtup)))
 	{
+		/*
+		 * If user does not specify new security context
+		 * explicitly, it preserves a security context of
+		 * older tuple.
+		 */
 		Oid sid = HeapTupleGetSecLabel(oldtup);
 
 		if (HeapTupleHasSecLabel(newtup))
@@ -900,13 +909,7 @@ sepgsqlHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple newtup,
 		sepgsqlTupleObjectClass(relid, newtup) != sepgsqlTupleObjectClass(relid, oldtup))
 		relabel = true;
 
-	perms = 0;
-	if (is_internal)
-	{
-		perms |= SEPGSQL_PERMS_UPDATE;
-		if (with_returning)
-			perms |= SEPGSQL_PERMS_SELECT;
-	}
+	perms = SEPGSQL_PERMS_UPDATE;
 	if (relabel)
 		perms |= SEPGSQL_PERMS_RELABELFROM;
 	rc = sepgsqlCheckTuplePerms(rel, oldtup, newtup, perms, is_internal);
@@ -930,15 +933,8 @@ sepgsqlHeapTupleDelete(Relation rel, ItemPointer otid,
 					   bool is_internal, bool with_returning)
 {
 	HeapTuple	oldtup;
-	uint32		perms = 0;
+	uint32		perms = SEPGSQL_PERMS_DELETE;
 	bool		rc;
-
-	if (is_internal)
-	{
-		perms |= SEPGSQL_PERMS_DELETE;
-		if (with_returning)
-			perms |= SEPGSQL_PERMS_SELECT;
-	}
 
 	if (isTrustedRelation(rel, is_internal))
 		return true;

@@ -31,8 +31,10 @@ extern bool sepostgresql_row_level;
 extern const char *sepgsqlAssignModeString(const char *value, bool doit, GucSource source);
 
 /*
- * Permission codes of internal representation
- * Please note that 0x000000ff are reserved by rowacl
+ * Permission bits delivered to sepgsqlCheckTuplePerms().
+ * Please note that 0x000000ff of RangeTblEntry->pgaceTuplePerms
+ * are reserved by rowacl. These bits are also stored within
+ * pgaceTuplePerms, we have to avoid to use the lower bits.
  */
 #define SEPGSQL_PERMS_USE				(1UL <<  8)
 #define SEPGSQL_PERMS_SELECT			(1UL <<  9)
@@ -42,7 +44,7 @@ extern const char *sepgsqlAssignModeString(const char *value, bool doit, GucSour
 #define SEPGSQL_PERMS_RELABELFROM		(1UL << 13)
 #define SEPGSQL_PERMS_RELABELTO			(1UL << 14)
 #define SEPGSQL_PERMS_READ				(1UL << 15)
-#define SEPGSQL_PERMS_WRITE				(1UL << 16)
+#define SEPGSQL_PERMS_MASK				(0xffffff00)
 
 /*
  * The implementation of PGACE/SE-PostgreSQL hooks
@@ -229,5 +231,12 @@ extern bool sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, HeapTuple newt
 								   uint32 perms, bool abort);
 
 extern void sepgsqlCheckModuleInstallPerms(const char *filename);
+
+/*
+ * workaround for older libselinux
+ */
+#ifndef DB_PROCEDURE__INSTALL
+#define DB_PROCEDURE__INSTALL		0x00000100UL
+#endif
 
 #endif   /* SEPGSQL_H */
