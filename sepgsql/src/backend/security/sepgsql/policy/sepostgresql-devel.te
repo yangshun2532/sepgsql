@@ -1,4 +1,4 @@
-policy_module(sepostgresql-devel, 3.18)
+policy_module(sepostgresql-devel, 3.22)
 
 gen_require(`
 	class db_database all_db_database_perms;
@@ -8,7 +8,6 @@ gen_require(`
 	class db_tuple all_db_tuple_perms;
 	class db_blob all_db_blob_perms;
 
-	attribute domain, user_home_type, tmpfile;
 	attribute sepgsql_client_type;
 	attribute sepgsql_unconfined_type;
 
@@ -19,8 +18,15 @@ gen_require(`
 	attribute sepgsql_blob_type;
 	attribute sepgsql_module_type;
 
+	# regression test
+	type unconfined_t;
+	role unconfined_r;
+
 	type bin_t;
+	type user_home_t;
 	type sepgsql_trusted_proc_t;
+
+	attribute tmpfile;
 ')
 
 #################################
@@ -28,39 +34,22 @@ gen_require(`
 # Domain for Testcases
 #
 
-type sepgsql_test_t;
-domain_type(sepgsql_test_t)
+role sepgsql_test_r;
 
-optional_policy(`
-	gen_require(`
-		role unconfined_r;
-		type unconfined_t;
-	')
-	allow unconfined_t sepgsql_test_t : process transition;
-	role unconfined_r types sepgsql_test_t;
-	role unconfined_r types sepgsql_trusted_proc_t;
+userdom_unpriv_user_template(sepgsql_test)
+
+ifdef(`postgresql_role', `
+	postgresql_role(sepgsql_test_r, sepgsql_test_t)
+',`
+	postgresql_userdom_template(sepgsql_test, sepgsql_test_t, sepgsql_test_r)
 ')
-
-corecmd_exec_bin(sepgsql_test_t)
-allow sepgsql_test_t bin_t : file { entrypoint };
-
-files_read_usr_files(sepgsql_test_t)
-files_read_etc_files(sepgsql_test_t)
-libs_use_ld_so(sepgsql_test_t)
-libs_use_shared_libs(sepgsql_test_t)
-
-term_use_all_terms(sepgsql_test_t)
-
-files_search_home(sepgsql_test_t)
-allow sepgsql_test_t user_home_type : file rw_file_perms;
-allow sepgsql_test_t user_home_type : dir search_dir_perms;
-miscfiles_read_localization(sepgsql_test_t)
 
 allow sepgsql_test_t tmpfile : dir search_dir_perms;
 allow sepgsql_test_t tmpfile : file rw_file_perms;
 
-postgresql_stream_connect(sepgsql_test_t)
-postgresql_unpriv_client(sepgsql_test_t)
+allow unconfined_t sepgsql_test_t : process transition;
+role unconfined_r types sepgsql_test_t;
+role unconfined_r types sepgsql_trusted_proc_t;
 
 #################################
 #
@@ -120,7 +109,7 @@ tunable_policy(`! sepgsql_enable_auditdeny',`
 # SE-PostgreSQL regression test mode switch
 #
 tunable_policy(`sepgsql_regression_test_mode',`
-	allow sepgsql_client_type       user_home_type : db_database { install_module };
-	allow sepgsql_unconfined_type   user_home_type : db_database { install_module };
-	allow sepgsql_database_type     user_home_type : db_database { load_module };
+	allow sepgsql_client_type       user_home_t : db_database { install_module };
+	allow sepgsql_unconfined_type   user_home_t : db_database { install_module };
+	allow sepgsql_database_type     user_home_t : db_database { load_module };
 ')
