@@ -28,9 +28,10 @@ extern int sepostgresql_mode;
 extern bool sepostgresql_row_level;
 
 /*
- * Permission code set on RangeTblEntry->pgaceTuplePerms.
- * Please note that 0x000000ff are reserved by rowacl, so
- * we can use upper 24bits only.
+ * Permission bits delivered to sepgsqlCheckTuplePerms().
+ * Please note that 0x000000ff of RangeTblEntry->pgaceTuplePerms
+ * are reserved by rowacl. These bits are also stored within
+ * pgaceTuplePerms, we have to avoid to use the lower bits.
  */
 #define SEPGSQL_PERMS_USE				(1UL <<  8)
 #define SEPGSQL_PERMS_SELECT			(1UL <<  9)
@@ -40,7 +41,7 @@ extern bool sepostgresql_row_level;
 #define SEPGSQL_PERMS_RELABELFROM		(1UL << 13)
 #define SEPGSQL_PERMS_RELABELTO			(1UL << 14)
 #define SEPGSQL_PERMS_READ				(1UL << 15)
-#define SEPGSQL_PERMS_WRITE				(1UL << 16)
+#define SEPGSQL_PERMS_MASK				(0xffffff00)
 
 /*
  * The implementation of PGACE/SE-PostgreSQL hooks
