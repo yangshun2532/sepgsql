@@ -329,6 +329,10 @@ sepgsqlPermsToBlobAv(uint32 perms, HeapTuple tuple, HeapTuple newtup)
 	 * pg_largeobject. Ditto for DELETE statement, it also has a possibility
 	 * to drop a largeobject, if it removes all tuples within a large object.
 	 *
+	 * UPDATE pg_largeobject.loid has a possibility to create and drop
+	 * a largeobject in same time, so we need to check it when loid is
+	 * changed.
+	 *
 	 * db_blob:{create} and db_blob:{drop} should be evaluated for
 	 * creation/deletion of largeobject, but we have to check pg_largeobject
 	 * with SnapshotSelf whether there is one or more tuple having same loid,
@@ -338,9 +342,16 @@ sepgsqlPermsToBlobAv(uint32 perms, HeapTuple tuple, HeapTuple newtup)
 	 * db_blob:{drop}.
 	 */
 	result |= (perms & SEPGSQL_PERMS_INSERT	? DB_BLOB__WRITE : 0);
+	if (perms & SEPGSQL_PERMS_UPDATE)
+	{
+		result |= DB_BLOB__WRITE;
+
+		if (((Form_pg_largeobject) GETSTRUCT(tuple))->loid !=
+			((Form_pg_largeobject) GETSTRUCT(newtup))->loid)
+			result |= (DB_BLOB__CREATE | DB_BLOB__DROP);
+	}
 	result |= (perms & SEPGSQL_PERMS_DELETE	? DB_BLOB__WRITE : 0);
 	result |= (perms & SEPGSQL_PERMS_READ	? DB_BLOB__READ  : 0);
-	result |= (perms & SEPGSQL_PERMS_WRITE	? DB_BLOB__WRITE : 0);
 
 	return result;
 }
