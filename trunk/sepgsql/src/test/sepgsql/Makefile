@@ -10,7 +10,7 @@ TESTCASES = $(notdir $(wildcard sql/*.sql))
 test: clean run_test
 
 clean:
-	@rm -f results/*.out results/*.diff
+	@rm -f whole_results.diff results/*.out results/*.diff
 
 run_test: environment filesystem $(TESTCASES:.sql=.test)
 
@@ -21,6 +21,7 @@ run_test: environment filesystem $(TESTCASES:.sql=.test)
 	@test -r sql/$*.fini && $(RUN_DBA) -f sql/$*.fini >> results/$*.out 2>&1 || :
 	@diff -u expected/$*.out results/$*.out > results/$*.diff 2>/dev/null && echo -n "PASS: " || echo -n "FAIL: "
 	@echo $@
+	@cat results/$*.diff >> whole_results.diff
 
 filesystem:
 	@test -e /tmp/sepgsql_test_copy_1 && rm -f /tmp/sepgsql_test_copy_1 || :
@@ -43,8 +44,12 @@ environment:
 		(echo "HINT: SELinux is disabled!"; exit 1)
 	@$(RUNCON) -t sepgsql_test_t -l s0-s0:c0.c15 id -Z > /dev/null || \
 		(echo "HINT: install sepostgresql-devel.pp"; exit 1)
-	@$(RUN_USER) -c 'SELECT sepgsql_getcon()' >& /dev/null || \
+	@$(RUN_DBA) -c 'SELECT sepgsql_getcon()' >& /dev/null || \
 		(echo "HINT: do /sbin/restorecon -R and restart"; exit 1)
+	@$(RUN_USER) -c 'SELECT sepgsql_getcon()' >& /dev/null || \
+		(echo "HINT: do /sbin/restorecon -R and restart"; \
+		 echo "HINT: do /usr/sbin/setsebool -P allow_user_postgresql_connect=1"; \
+		 exit 1)
 	@/etc/init.d/mcstrans status > /dev/null && \
 		(echo "HINT: stop 'mcstrans' daemon!"; exit 1) || \
 		(test $$? -eq 3 && exit 0 || exit 1)
