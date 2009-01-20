@@ -100,15 +100,6 @@ addEvalRelationRTE(List *selist, RangeTblEntry *rte, uint32 perms)
 {
 	rte->pgaceTuplePerms |= (perms & DB_TABLE__USE ? SEPGSQL_PERMS_USE : 0);
 	rte->pgaceTuplePerms |=	(perms & DB_TABLE__SELECT ? SEPGSQL_PERMS_SELECT : 0);
-	rte->pgaceTuplePerms |=	(perms & DB_TABLE__INSERT ? SEPGSQL_PERMS_INSERT : 0);
-	rte->pgaceTuplePerms |=	(perms & DB_TABLE__UPDATE ? SEPGSQL_PERMS_UPDATE : 0);
-	rte->pgaceTuplePerms |=	(perms & DB_TABLE__DELETE ? SEPGSQL_PERMS_DELETE : 0);
-
-	/*
-	 * for 'pg_largeobject'
-	 */
-	if (rte->relid == LargeObjectRelationId && (perms & DB_TABLE__DELETE))
-		rte->pgaceTuplePerms |= SEPGSQL_PERMS_WRITE;
 
 	return addEvalRelation(selist, rte->relid, rte->inh, perms);
 }
@@ -157,34 +148,21 @@ addEvalAttribute(List *selist, Oid relid, bool inh, AttrNumber attno, uint32 per
 static List *
 addEvalAttributeRTE(List *selist, RangeTblEntry *rte, AttrNumber attno, uint32 perms)
 {
-	uint32		t_perms = 0;
+	uint32		tbl_perms = 0;
+
+	tbl_perms |= (perms & DB_COLUMN__USE ? DB_TABLE__USE : 0);
+	tbl_perms |= (perms & DB_COLUMN__SELECT ? DB_TABLE__SELECT : 0);
+	tbl_perms |= (perms & DB_COLUMN__INSERT ? DB_TABLE__INSERT : 0);
+	tbl_perms |= (perms & DB_COLUMN__UPDATE ? DB_TABLE__UPDATE : 0);
+	selist = addEvalRelationRTE(selist, rte, tbl_perms);
 
 	/*
-	 * for table:{ ... } permission
+	 * Special care for pg_largeobject.data
 	 */
-	t_perms |= (perms & DB_COLUMN__USE ? DB_TABLE__USE : 0);
-	t_perms |= (perms & DB_COLUMN__SELECT ? DB_TABLE__SELECT : 0);
-	t_perms |= (perms & DB_COLUMN__INSERT ? DB_TABLE__INSERT : 0);
-	t_perms |= (perms & DB_COLUMN__UPDATE ? DB_TABLE__UPDATE : 0);
-	selist = addEvalRelationRTE(selist, rte, t_perms);
-
-	/*
-	 * UPDATE on *.security_context
-	 */
-	if ((perms & DB_COLUMN__UPDATE) && attno == SecurityLabelAttributeNumber)
-		rte->pgaceTuplePerms |= SEPGSQL_PERMS_RELABELFROM;
-
-	/*
-	 * for 'pg_largeobject'
-	 */
-	if (rte->relid == LargeObjectRelationId
-		&& attno == Anum_pg_largeobject_data)
-	{
-		if (perms & DB_COLUMN__SELECT)
-			rte->pgaceTuplePerms |= SEPGSQL_PERMS_READ;
-		if (perms & DB_COLUMN__UPDATE)
-			rte->pgaceTuplePerms |= SEPGSQL_PERMS_WRITE;
-	}
+	if ((perms & DB_COLUMN__SELECT) != 0 &&
+		rte->relid == LargeObjectRelationId &&
+		attno == Anum_pg_largeobject_data)
+		rte->pgaceTuplePerms |= SEPGSQL_PERMS_READ;
 
 	return addEvalAttribute(selist, rte->relid, rte->inh, attno, perms);
 }

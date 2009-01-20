@@ -120,6 +120,7 @@ static struct
 			{ "relabelto",		DB_PROCEDURE__RELABELTO },
 			{ "execute",		DB_PROCEDURE__EXECUTE },
 			{ "entrypoint",		DB_PROCEDURE__ENTRYPOINT },
+			{ "install",		DB_PROCEDURE__INSTALL },
 			{ NULL, 0UL },
 		}
 	},
@@ -169,8 +170,6 @@ static struct
 		}
 	},
 };
-
-#define NUM_SELINUX_CATALOG (sizeof(selinux_catalog) / sizeof(selinux_catalog[0]))
 
 static MemoryContext AvcMemCtx;
 
@@ -254,7 +253,7 @@ struct
 			access_vector_t internal;
 			access_vector_t external;
 		} av_perms[sizeof(access_vector_t) * 8];
-	} catalog[NUM_SELINUX_CATALOG];
+	} catalog[lengthof(selinux_catalog)];
 }	*selinux_state = NULL;
 
 Size
@@ -273,30 +272,24 @@ sepgsqlShmemSize(void)
 static void
 load_class_av_mapping(void)
 {
-	security_class_t tclass;
-	access_vector_t av_perms;
 	int			i, j;
 
-	for (i = 0; i < NUM_SELINUX_CATALOG; i++)
-	{
-		tclass = string_to_security_class(selinux_catalog[i].tclass.name);
-		if (!tclass)
-			tclass = selinux_catalog[i].tclass.internal;
+	memset(selinux_state->catalog, 0, sizeof(selinux_state->catalog));
 
+	for (i = 0; i < lengthof(selinux_catalog); i++)
+	{
 		selinux_state->catalog[i].tclass.internal
 			= selinux_catalog[i].tclass.internal;
-		selinux_state->catalog[i].tclass.external = tclass;
+		selinux_state->catalog[i].tclass.external
+			= string_to_security_class(selinux_catalog[i].tclass.name);
 
 		for (j = 0; selinux_catalog[i].av_perms[j].name; j++)
 		{
-			av_perms =
-				string_to_av_perm(tclass, selinux_catalog[i].av_perms[j].name);
-			if (!av_perms)
-				av_perms = selinux_catalog[i].av_perms[j].internal;
-
 			selinux_state->catalog[i].av_perms[j].internal
 				= selinux_catalog[i].av_perms[j].internal;
-			selinux_state->catalog[i].av_perms[j].external = av_perms;
+			selinux_state->catalog[i].av_perms[j].external
+				= string_to_av_perm(selinux_state->catalog[i].tclass.external,
+									selinux_catalog[i].av_perms[j].name);
 		}
 	}
 }
@@ -307,7 +300,7 @@ trans_to_external_tclass(security_class_t i_tclass)
 	/* have to hold SepgsqlAvcLock with LW_SHARED */
 	int			i;
 
-	for (i = 0; i < NUM_SELINUX_CATALOG; i++)
+	for (i = 0; i < lengthof(selinux_catalog); i++)
 	{
 		if (selinux_state->catalog[i].tclass.internal == i_tclass)
 			return selinux_state->catalog[i].tclass.external;
@@ -316,21 +309,32 @@ trans_to_external_tclass(security_class_t i_tclass)
 }
 
 static access_vector_t
-trans_to_internal_perms(security_class_t e_tclass, access_vector_t e_perms)
+trans_to_internal_perms(security_class_t e_tclass, access_vector_t e_perms,
+						bool set_if_undefined)
 {
 	/* have to hold SepgsqlAvcLock with LW_SHARED */
 	access_vector_t i_perms = 0UL;
+	access_vector_t undef_mask = 0UL;
 	int			i, j;
 
-	for (i = 0; i < NUM_SELINUX_CATALOG; i++)
+	for (i = 0; i < lengthof(selinux_catalog); i++)
 	{
 		if (selinux_state->catalog[i].tclass.external != e_tclass)
 			continue;
+
 		for (j = 0; j < sizeof(access_vector_t) * 8; j++)
 		{
-			if ((selinux_state->catalog[i].av_perms[j].external & e_perms) != 0)
+			if (selinux_state->catalog[i].av_perms[j].external == 0)
+				undef_mask |= (1UL << j);
+			else if (selinux_state->catalog[i].av_perms[j].external & e_perms)
 				i_perms |= selinux_state->catalog[i].av_perms[j].internal;
 		}
+
+		if (set_if_undefined)
+			i_perms |= undef_mask;
+		else
+			i_perms &= ~undef_mask;
+
 		return i_perms;
 	}
 	return e_perms;				/* use it as is for kernel classes */
@@ -341,7 +345,7 @@ sepgsql_class_to_string(security_class_t tclass)
 {
 	int			i;
 
-	for (i = 0; i < NUM_SELINUX_CATALOG; i++)
+	for (i = 0; i < lengthof(selinux_catalog); i++)
 	{
 		if (selinux_catalog[i].tclass.internal == tclass)
 			return selinux_catalog[i].tclass.name;
@@ -357,7 +361,7 @@ sepgsql_av_perm_to_string(security_class_t tclass, access_vector_t perm)
 {
 	int			i, j;
 
-	for (i = 0; i < NUM_SELINUX_CATALOG; i++)
+	for (i = 0; i < lengthof(selinux_catalog); i++)
 	{
 		if (selinux_catalog[i].tclass.internal == tclass)
 		{
@@ -593,6 +597,12 @@ static avc_datum *avc_make_entry(Oid tsid, security_class_t tclass)
 						"scontext=%s tcontext=%s tclass=%s",
 						scontext, tcontext, sepgsql_class_to_string(tclass))));
 
+	cache->allowed = trans_to_internal_perms(e_tclass, avd.allowed, true);
+	cache->decided = trans_to_internal_perms(e_tclass, avd.decided, false);
+	cache->auditallow = trans_to_internal_perms(e_tclass, avd.auditallow, false);
+	cache->auditdeny = trans_to_internal_perms(e_tclass, avd.auditdeny, false);
+	cache->hot_cache = true;
+
 	if (security_compute_create_raw(scontext, tcontext, e_tclass, &ncontext) < 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_SELINUX_ERROR),
@@ -600,12 +610,6 @@ static avc_datum *avc_make_entry(Oid tsid, security_class_t tclass)
 						"scontext=%s tcontext=%s tclass=%s",
 						scontext, tcontext, sepgsql_class_to_string(tclass))));
 	pfree(tcontext);
-
-	cache->allowed = trans_to_internal_perms(e_tclass, avd.allowed);
-	cache->decided = trans_to_internal_perms(e_tclass, avd.decided);
-	cache->auditallow = trans_to_internal_perms(e_tclass, avd.auditallow);
-	cache->auditdeny = trans_to_internal_perms(e_tclass, avd.auditdeny);
-	cache->hot_cache = true;
 
 	LWLockRelease(SepgsqlAvcLock);
 
@@ -842,10 +846,10 @@ sepgsqlComputePermission(const security_context_t scontext,
 						svcon, tvcon, security_class_to_string(e_tclass))));
 
 	cache.tclass = tclass;
-	cache.allowed = trans_to_internal_perms(e_tclass, avd.allowed);
-	cache.decided = trans_to_internal_perms(e_tclass, avd.decided);
-	cache.auditallow = trans_to_internal_perms(e_tclass, avd.auditallow);
-	cache.auditdeny = trans_to_internal_perms(e_tclass, avd.auditdeny);
+	cache.allowed = trans_to_internal_perms(e_tclass, avd.allowed, true);
+	cache.decided = trans_to_internal_perms(e_tclass, avd.decided, false);
+	cache.auditallow = trans_to_internal_perms(e_tclass, avd.auditallow, false);
+	cache.auditdeny = trans_to_internal_perms(e_tclass, avd.auditdeny, false);
 	LWLockRelease(SepgsqlAvcLock);
 
 	rc = avc_permission_common(&cache, perms, true, svcon, tvcon, objname);
