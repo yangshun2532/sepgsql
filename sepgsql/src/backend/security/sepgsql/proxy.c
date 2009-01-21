@@ -340,12 +340,20 @@ sepgsqlExprWalkerFlags(Node *node, sepgsqlWalkerContext *swc,
  *
  * EXAMPLE:
  *   SELECT t4 FROM (t1 JOIN (t2 JOIN t3 USING (a)) USING (b)) AS t4;
+ *
+ * Because RangeTblEntry with RTE_JOIN does not have any identifiers
+ * of its source relations, we have to scan Query->jointree again to
+ * look up sources again. :(
  */
 typedef struct
 {
 	Query *query;
 	int rtindex;
-
+	/*
+	 * rtindex == 0 means we are now walking on the required JoinExpr
+	 * or its leafs, so we need to pick up all the appeared relations
+	 * under the JoinExpr in this case.
+	 */
 	List *selist;
 	uint32 perms;
 } wholeRefJoinWalkerContext;
@@ -380,16 +388,6 @@ wholeRefJoinWalker(Node *node, wholeRefJoinWalkerContext *jwc)
 		if (rte->rtekind == RTE_RELATION)
 		{
 			jwc->selist = addEvalAttributeRTE(jwc->selist, rte, 0, jwc->perms);
-		}
-		else if (rte->rtekind == RTE_JOIN)
-		{
-			bool rc;
-
-			jwc->rtindex = rtr->rtindex;
-			rc = expression_tree_walker(node, wholeRefJoinWalker, jwc);
-			jwc->rtindex = 0;	/* restore */
-
-			return rc;
 		}
 	}
 	return expression_tree_walker(node, wholeRefJoinWalker, jwc);
