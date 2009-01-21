@@ -14,32 +14,27 @@
 #include "nodes/nodes.h"
 
 /*
- * SEvalItemRelation
+ * SelinuxEvalItem
  *
- * SE-PostgreSQL permission evaluation item for a relation
- */
-typedef struct SEvalItemRelation {
-	NodeTag type;
-
-	uint32 perms;
-
-	Oid relid;
-	bool inh;
-} SEvalItemRelation;
-
-/*
- * SEvalItemAttribute
+ * Required permissions on tables/columns used by SE-PostgreSQL.
+ * It is constracted just after query rewriter phase, then its
+ * list is checked based on the security policy of operating
+ * system.
  *
- * SE-PostgreSQL permission evaluation item for an attribute
+ * NOTE: attperms array can contains system attributes and
+ * whole-row-reference, so it is indexed as
+ *   attperms[(attnum) + FirstLowInvalidHeapAttributeNumber - 1]
  */
-typedef struct SEvalItemAttribute {
-	NodeTag type;
+typedef struct SelinuxEvalItem
+{
+	NodeTag		type;
 
-	uint32 perms;
+	Oid			relid;		/* relation id */
+	bool		inh;		/* flags to inheritable/only */
 
-	Oid relid;
-	bool inh;
-	AttrNumber attno;
-} SEvalItemAttribute;
+	uint32		relperms;	/* required permissions on table */
+	uint32		nattrs;		/* length of attperms */
+	uint32	   *attperms;	/* required permissions on columns */
+} SelinuxEvalItem;
 
 #endif	/* NODES_SECURITY_H */

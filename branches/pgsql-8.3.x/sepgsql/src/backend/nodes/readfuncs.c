@@ -1013,29 +1013,38 @@ _readRangeTblEntry(void)
 /*
  * Stuff from nodes/security.h
  */
-static SEvalItemRelation *
-_readSEvalItemRelation(void)
+static SelinuxEvalItem *
+_readSelinuxEvalItem(void)
 {
-	READ_LOCALS(SEvalItemRelation);
+	int i;
 
-	READ_UINT_FIELD(perms);
+	READ_LOCALS(SelinuxEvalItem);
 
 	READ_OID_FIELD(relid);
 	READ_BOOL_FIELD(inh);
 
-	READ_DONE();
-}
+	READ_UINT_FIELD(relperms);
+	READ_UINT_FIELD(nattrs);
 
-static SEvalItemAttribute *
-_readSEvalItemAttribute(void)
-{
-	READ_LOCALS(SEvalItemAttribute);
+	/*
+	 * TODO: This part should be moved to readArray() ?
+	 */
+	local_node->attperms = palloc0(local_node->nattrs * sizeof(uint32));
 
-	READ_UINT_FIELD(perms);
-
-	READ_OID_FIELD(relid);
-	READ_BOOL_FIELD(inh);
-	READ_INT_FIELD(attno);
+	token = pg_strtok(&length);	/* skip :attperms */
+	token = pg_strtok(&length);	/* read '[' */
+	if (token == NULL || strcmp(token, "[") != 0)
+		elog(ERROR, "expected \"[\" to start array, but got \"%s\"",
+			 token ? (const char *) token : "[NULL]");
+	for (i = 0; i < local_node->nattrs; i++)
+	{
+		token = pg_strtok(&length);
+		local_node->attperms[i] = atoui(token);
+	}
+	token = pg_strtok(&length);	/* read ']' */
+	if (token == NULL || strcmp(token, "[") != 0)
+		elog(ERROR, "expected \"[\" to end array, but got \"%s\"",
+			 token ? (const char *) token : "[NULL]");
 
 	READ_DONE();
 }
@@ -1156,10 +1165,8 @@ parseNodeString(void)
 		return_value = _readNotifyStmt();
 	else if (MATCH("DECLARECURSOR", 13))
 		return_value = _readDeclareCursorStmt();
-	else if (MATCH("SEVALITEMRELATION", 17))
-		return_value = _readSEvalItemRelation();
-	else if (MATCH("SEVALITEMATTRIBUTE", 18))
-		return_value = _readSEvalItemAttribute();
+	else if (MATCH("SELINUXEVALITEM", 15))
+		return_value = _readSelinuxEvalItem();
 	else
 	{
 		elog(ERROR, "badly formatted node string \"%.32s\"...", token);

@@ -56,6 +56,12 @@ typedef struct sepgsqlWalkerContext
 	bool	is_internal_use;
 } sepgsqlWalkerContext;
 
+#define seitem_index_to_attno(index)			\
+	((index) + FirstLowInvalidHeapAttributeNumber + 1)
+#define seitem_attno_to_index(attno)			\
+	((attno) - FirstLowInvalidHeapAttributeNumber - 1)
+
+
 /*
  * addEvalRelation
  * addEvalRelationRTE
@@ -69,30 +75,41 @@ typedef struct sepgsqlWalkerContext
 static List *
 addEvalRelation(List *selist, Oid relid, bool inh, uint32 perms)
 {
-	SEvalItemRelation *ser;
+	SelinuxEvalItem *seitem;
+	Form_pg_class relForm;
+	HeapTuple tuple;
+	ListCell *l;
 
-	ListCell   *l;
-
-	foreach(l, selist)
+	foreach (l, selist)
 	{
-		ser = (SEvalItemRelation *) lfirst(l);
-		if (IsA(ser, SEvalItemRelation)
-			&& ser->relid == relid
-			&& ser->inh == inh)
+		seitem = (SelinuxEvalItem *) lfirst(l);
+		Assert(IsA(seitem, SelinuxEvalItem));
+
+		if (seitem->relid == relid && seitem->inh == inh)
 		{
-			ser->perms |= perms;
+			seitem->relperms |= perms;
 			return selist;
 		}
 	}
-	/*
-	 * not found
-	 */
-	ser = makeNode(SEvalItemRelation);
-	ser->perms = perms;
-	ser->relid = relid;
-	ser->inh = inh;
 
-	return lappend(selist, ser);
+	/* not found, so create a new one */
+	tuple = SearchSysCache(RELOID,
+                           ObjectIdGetDatum(relid),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "cache lookup failed for relation %u", relid);
+	relForm = (Form_pg_class) GETSTRUCT(tuple);
+
+	seitem = makeNode(SelinuxEvalItem);
+	seitem->relid = relid;
+	seitem->inh = inh;
+	seitem->relperms = perms;
+	seitem->nattrs = seitem_attno_to_index(relForm->relnatts) + 1;
+	seitem->attperms = palloc0(seitem->nattrs * sizeof(uint32));
+
+	ReleaseSysCache(tuple);
+
+	return lappend(selist, seitem);
 }
 
 static List *
@@ -117,32 +134,87 @@ addEvalRelationRTE(List *selist, RangeTblEntry *rte, uint32 perms)
 static List *
 addEvalAttribute(List *selist, Oid relid, bool inh, AttrNumber attno, uint32 perms)
 {
-	SEvalItemAttribute *sea;
+	SelinuxEvalItem *seitem;
+	Form_pg_class relForm;
+	HeapTuple tuple;
+	ListCell *l;
+	int index = seitem_attno_to_index(attno);
 
-	ListCell   *l;
-
-	foreach(l, selist)
+	foreach (l, selist)
 	{
-		sea = (SEvalItemAttribute *) lfirst(l);
-		if (IsA(sea, SEvalItemAttribute)
-			&& sea->relid == relid
-			&& sea->inh == inh
-			&& sea->attno == attno)
+		seitem = (SelinuxEvalItem *) lfirst(l);
+		Assert(IsA(seitem, SelinuxEvalItem));
+
+		if (seitem->relid == relid && seitem->inh == inh)
 		{
-			sea->perms |= perms;
+			if (index >= seitem->nattrs)
+			{
+				uint32 *attperms, nattrs;
+
+				/*
+				 * NOTE: the following step has a possibility that
+				 * index number overs seitem->nattrs
+				 *
+				 * 1. PREPARE p AS SELECT t FROM t;
+				 * 2. ALTER TABLE t ADD COLUMN x int;
+				 * 3. EXECUTE p;
+				 *
+				 * Because whole-row-reference is extracted to
+				 * references to all the user columns, so table
+				 * may have different number of columns between
+				 * state.1 and state.3.
+				 * In this case, we need to rebuild seitem->attperms
+				 */
+
+				tuple = SearchSysCache(RELOID,
+									   ObjectIdGetDatum(relid),
+									   0, 0, 0);
+				if (!HeapTupleIsValid(tuple))
+					elog(ERROR, "cache lookup failed for relation %u", relid);
+				relForm = (Form_pg_class) GETSTRUCT(tuple);
+
+				nattrs = seitem_attno_to_index(relForm->relnatts) + 1;
+				attperms = palloc0(nattrs * sizeof(uint32));
+				memcpy(attperms, seitem->attperms,
+					   seitem->nattrs * sizeof(uint32));
+				seitem->nattrs = nattrs;
+				seitem->attperms = attperms;
+
+				ReleaseSysCache(tuple);
+			}
+
+			if (index < 0 || index >= seitem->nattrs)
+				elog(ERROR, "SELinux: invalid attribute number: %d at relation: %u",
+					 attno, relid);
+
+			seitem->attperms[index] |= perms;
+
 			return selist;
 		}
 	}
-	/*
-	 * not found
-	 */
-	sea = makeNode(SEvalItemAttribute);
-	sea->perms = perms;
-	sea->relid = relid;
-	sea->inh = inh;
-	sea->attno = attno;
 
-	return lappend(selist, sea);
+	/* not found, so create a new one */
+	tuple = SearchSysCache(RELOID,
+						   ObjectIdGetDatum(relid),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "cache lookup failed for relation %u", relid);
+	relForm = (Form_pg_class) GETSTRUCT(tuple);
+
+	seitem = makeNode(SelinuxEvalItem);
+	seitem->relid = relid;
+	seitem->inh = inh;
+	seitem->relperms = 0;
+	seitem->nattrs = seitem_attno_to_index(relForm->relnatts) + 1;
+	seitem->attperms = palloc0(seitem->nattrs * sizeof(uint32));
+	if (index < 0 || index >= seitem->nattrs)
+		elog(ERROR, "SELinux: invalid attribute number: %d at relation: %u",
+			 attno, relid);
+	seitem->attperms[index] |= perms;
+
+	ReleaseSysCache(tuple);
+
+	return lappend(selist, seitem);
 }
 
 static List *
@@ -219,7 +291,7 @@ addEvalForeignKeyConstraint(List *selist, Form_pg_trigger trigger)
 }
 
 /*
- * addEvalTriggerAccess
+ * addEvalTriggerFunction
  *
  * This function adds needed items into selist, to execute a trigger
  * function. At least, it requires permission set to execute a function
@@ -227,7 +299,7 @@ addEvalForeignKeyConstraint(List *selist, Form_pg_trigger trigger)
  * because whole of a tuple is delivered to trigger functions.
  */
 static List *
-addEvalTriggerAccess(List *selist, Oid relid, bool is_inh, int cmdType)
+addEvalTriggerFunction(List *selist, Oid relid, int cmdType)
 {
 	Relation	rel;
 	SysScanDesc scan;
@@ -287,16 +359,6 @@ addEvalTriggerAccess(List *selist, Oid relid, bool is_inh, int cmdType)
 	}
 	systable_endscan(scan);
 	heap_close(rel, AccessShareLock);
-
-	if (is_inh)
-	{
-		List	   *child_list = find_inheritance_children(relid);
-		ListCell   *l;
-
-		foreach(l, child_list)
-			selist = addEvalTriggerAccess(selist, lfirst_oid(l),
-										  is_inh, cmdType);
-	}
 
 	return selist;
 }
@@ -604,7 +666,7 @@ sepgsqlExprWalkerFlags(Node *node, sepgsqlWalkerContext *swc,
 }
 
 /*
- * sepgsqlProxyQuery
+ * sepgsqlPostQueryRewrite
  *
  * This function is invoked just after given queries are rewritten
  * via query-rewritter phase. It walks on given query trees to
@@ -641,290 +703,184 @@ sepgsqlPostQueryRewrite(List *queryList)
 }
 
 /*
- * verifyPgClassPerms
- *
- * It evaluates SEvalItemRelation object to access tables.
+ * checkSelinuxEvalItem
+ *   checks give SelinuxEvalItem object based on the security
+ *   policy of SELinux.
  */
 static void
-verifyPgClassPerms(Oid relid, bool inh, uint32 perms)
+checkSelinuxEvalItem(SelinuxEvalItem *seitem)
 {
-	Form_pg_class relForm;
-	HeapTuple	tuple;
+	const char *audit_name;
+	HeapTuple tuple;
+	AttrNumber attno;
+	int index;
+
+	Assert(IsA(seitem, SelinuxEvalItem));
 
 	/*
-	 * prevent to modify pg_security directly
+	 * Prevent to write pg_security by hand
 	 */
-	if (relid == SecurityRelationId
-		&& (perms & (DB_TABLE__UPDATE | DB_TABLE__INSERT | DB_TABLE__DELETE)))
+	if (seitem->relid == SecurityRelationId &&
+		(seitem->relperms & (DB_TABLE__UPDATE | DB_TABLE__INSERT | DB_TABLE__DELETE)))
 		ereport(ERROR,
 				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("SELinux: user cannot modify pg_security directly")));
+				 errmsg("SELinux: could not modify pg_security by hand")));
 
 	/*
-	 * check table:{required permissions}
+	 * Permission checks on table
 	 */
-	tuple = SearchSysCache(RELOID, ObjectIdGetDatum(relid), 0, 0, 0);
+	tuple = SearchSysCache(RELOID,
+						   ObjectIdGetDatum(seitem->relid),
+						   0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
-		elog(ERROR, "SELinux: cache lookup failed for relation: %u", relid);
-
-	relForm = (Form_pg_class) GETSTRUCT(tuple);
-	if (relForm->relkind == RELKIND_RELATION)
+		elog(ERROR, "SELinux: cache lookup failed for relation: %u",
+			 seitem->relid);
+	if (((Form_pg_class) GETSTRUCT(tuple))->relkind != RELKIND_RELATION)
 	{
-		const char *audit_name = sepgsqlTupleName(RelationRelationId, tuple);
-		sepgsqlClientHasPermission(HeapTupleGetSecLabel(tuple),
-								   SECCLASS_DB_TABLE,
-								   (access_vector_t) perms,
-								   audit_name);
+		ReleaseSysCache(tuple);
+		return;
 	}
+
+	audit_name = sepgsqlTupleName(RelationRelationId, tuple);
+	sepgsqlClientHasPermission(HeapTupleGetSecLabel(tuple),
+							   SECCLASS_DB_TABLE,
+							   seitem->relperms,
+							   audit_name);
 	ReleaseSysCache(tuple);
-}
 
-/*
- * verifyPgAttributePerms
- *
- * It evaluates SEvalItemAttribute to access columns.
- */
-static void
-verifyPgAttributePerms(Oid relid, bool inh, AttrNumber attno, uint32 perms)
-{
-	Form_pg_class relForm;
-	Form_pg_attribute attForm;
-	HeapTuple reltup, atttup;
-	const char *audit_name;
-
-	reltup = SearchSysCache(RELOID,
-							ObjectIdGetDatum(relid),
-							0, 0, 0);
-	if (!HeapTupleIsValid(reltup))
-		elog(ERROR, "SELinux: cache lookup failed for relation: %u", relid);
-	relForm = (Form_pg_class) GETSTRUCT(reltup);
-	if (relForm->relkind != RELKIND_RELATION)
-		goto out;
-
-	if (attno == 0)
+	/*
+	 * Permission checks on columns
+	 */
+	for (index = 0; index < seitem->nattrs; index++)
 	{
-		for (attno = 1; attno <= relForm->relnatts; attno++)
-		{
-			atttup = SearchSysCache(ATTNUM,
-									ObjectIdGetDatum(relid),
-									Int16GetDatum(attno),
-									0, 0);
-			if (!HeapTupleIsValid(atttup))
-				continue;
-			attForm = (Form_pg_attribute) GETSTRUCT(atttup);
-			if (!attForm->attisdropped)
-			{
-				audit_name = sepgsqlTupleName(AttributeRelationId, atttup);
-				sepgsqlClientHasPermission(HeapTupleGetSecLabel(atttup),
-										   SECCLASS_DB_COLUMN,
-										   perms,
-										   audit_name);
-			}
-			ReleaseSysCache(atttup);
-		}
-	}
-	else
-	{
-		atttup = SearchSysCache(ATTNUM,
-								ObjectIdGetDatum(relid),
-								Int16GetDatum(attno),
-								0, 0);
-		if (!HeapTupleIsValid(atttup))
-			elog(ERROR, "SELinux: cache lookup failed for attribute %d of relation %u",
-				 attno, relid);
-
-		audit_name = sepgsqlTupleName(AttributeRelationId, atttup);
-		sepgsqlClientHasPermission(HeapTupleGetSecLabel(atttup),
-								   SECCLASS_DB_COLUMN,
-								   perms,
-								   audit_name);
-		ReleaseSysCache(atttup);
-	}
-out:
-	ReleaseSysCache(reltup);
-}
-
-/*
- * expandSEvalItemInheritance
- *
- * When a request to table/column is inheritable, we have to expand
- * the target to child relations, because accessing a column within
- * parent table also means accessing a column within child relation
- * in same time.
- *
- * For example, when t2 and t3 inherits t1, we have to check permission
- * on t2.x and t3.x for the request to t1.x.
- * It is impossible to be done before, because we have a chance to
- * change inheritance relationships between PREPARE and EXECUTE.
- * So, we have to check it in execution phase.
- */
-static List *
-expandRelationInheritance(List *selist, Oid relid, uint32 perms)
-{
-	List	   *inherits = find_all_inheritors(relid);
-	ListCell   *l;
-
-	foreach(l, inherits)
-	{
-		if (lfirst_oid(l) != relid)
-			selist = addEvalRelation(selist, lfirst_oid(l), false, perms);
-	}
-	return selist;
-}
-
-static List *
-expandAttributeInheritance(List *selist, Oid relid, char *attname,
-						   uint32 perms)
-{
-	List	   *inherits = find_all_inheritors(relid);
-	ListCell   *l;
-
-	foreach(l, inherits)
-	{
-		Form_pg_attribute attForm;
-		HeapTuple atttup;
-
-		if (lfirst_oid(l) == relid)
+		if (seitem->attperms[index] == 0)
 			continue;
 
-		atttup = SearchSysCacheAttName(lfirst_oid(l), attname);
-		if (!HeapTupleIsValid(atttup))
-			elog(ERROR, "SELinux: cache lookup failed for attribute %s of relation %u",
-				 attname, lfirst_oid(l));
-
-		attForm = (Form_pg_attribute) GETSTRUCT(atttup);
-		selist = addEvalAttribute(selist, lfirst_oid(l), false,
-								  attForm->attnum, perms);
-		ReleaseSysCache(atttup);
+		attno = seitem_index_to_attno(index);
+		tuple = SearchSysCache(ATTNUM,
+							   ObjectIdGetDatum(seitem->relid),
+							   Int16GetDatum(attno),
+							   0, 0);
+		if (!HeapTupleIsValid(tuple))
+			elog(ERROR, "SELinux: cache lookup failed for attribute %d of relation %u",
+				 attno, seitem->relid);
+		audit_name = sepgsqlTupleName(AttributeRelationId, tuple);
+		sepgsqlClientHasPermission(HeapTupleGetSecLabel(tuple),
+                                   SECCLASS_DB_COLUMN,
+								   seitem->attperms[index],
+								   audit_name);
+		ReleaseSysCache(tuple);
 	}
-
-	return selist;
 }
 
 static List *
-expandSEvalItemInheritance(List *selist)
+expandEvalItemInheritance(List *selist)
 {
 	List	   *result = NIL;
-	ListCell   *l;
+	List	   *inherits;
+	ListCell   *l, *i;
+	int index;
 
-	foreach(l, selist)
+	foreach (l, selist)
 	{
-		Node	   *node = lfirst(l);
+		SelinuxEvalItem *seitem = lfirst(l);
 
-		result = lappend(result, node);
+		Assert(IsA(seitem, SelinuxEvalItem));
 
-		if (IsA(node, SEvalItemRelation))
+		if (!seitem->inh)
 		{
-			SEvalItemRelation *ser = (SEvalItemRelation *) node;
-
-			if (!ser->inh)
-				continue;
-
-			result = expandRelationInheritance(result, ser->relid, ser->perms);
+			result = lappend(result, seitem);
+			continue;
 		}
-		else if (IsA(node, SEvalItemAttribute))
+		
+		inherits = find_all_inheritors(seitem->relid);
+		foreach (i, inherits)
 		{
-			SEvalItemAttribute *sea = (SEvalItemAttribute *) node;
-
-			if (!sea->inh)
-				continue;
-
-			if (sea->attno == 0)
+			result = addEvalRelation(result, lfirst_oid(i), false,
+									 seitem->relperms);
+			for (index = 0; index < seitem->nattrs; index++)
 			{
-				HeapTuple reltup, atttup;
-				Form_pg_class relForm;
-				Form_pg_attribute attForm;
+				Oid relid_inh = lfirst_oid(i);
 				AttrNumber attno;
 
-				reltup = SearchSysCache(RELOID,
-										ObjectIdGetDatum(sea->relid),
-										0, 0, 0);
-				if (!HeapTupleIsValid(reltup))
-					elog(ERROR, "SELinux: cache lookup failed for relation: %u", sea->relid);
-				relForm = (Form_pg_class) GETSTRUCT(reltup);
+				if (seitem->attperms[index] == 0)
+					continue;
 
-				for (attno = 1; attno <= relForm->relnatts; attno++)
+				attno = seitem_index_to_attno(index);
+				if (attno < 1 || seitem->relid == relid_inh)
 				{
-					atttup = SearchSysCache(ATTNUM,
-											ObjectIdGetDatum(sea->relid),
-											Int16GetDatum(attno),
-											0, 0);
-					if (!HeapTupleIsValid(atttup))
-						continue;
-					attForm = (Form_pg_attribute) GETSTRUCT(atttup);
-					if (!attForm->attisdropped)
-					{
-						result =
-							expandAttributeInheritance(result,
-													   sea->relid,
-													   NameStr(attForm->attname),
-													   sea->perms);
-					}
-					ReleaseSysCache(atttup);
+					/*
+					 * If attribute is system-column or whole-row-reference,
+					 * or inherit relation is itself, we don't need to fix up
+					 * attribute number.
+					 */
+					result = addEvalAttribute(result, relid_inh, false,
+											  attno, seitem->attperms[index]);
+					continue;
 				}
-				ReleaseSysCache(reltup);
-			}
-			else
-			{
-				char *attname = get_attname(sea->relid, sea->attno);
+				else
+				{
+					char *attname = get_attname(seitem->relid, attno);
 
-				if (!attname)
-					elog(ERROR, "cache lookup failed for attribute %d of relation %u",
-						 sea->attno, sea->relid);
-				result = expandAttributeInheritance(result,
-													sea->relid,
-													attname,
-													sea->perms);
+					if (!attname)
+						elog(ERROR, "cache lookup failed for attribute %d of relation %u",
+							 attno, seitem->relid);
+
+					attno = get_attnum(relid_inh, attname);
+					if (attno == InvalidAttrNumber)
+						elog(ERROR, "cache lookup failed for attribute %s of relation %u",
+							 attname, relid_inh);
+
+					result = addEvalAttribute(result, relid_inh, false,
+											  attno, seitem->attperms[index]);
+					pfree(attname);
+				}
 			}
 		}
-		else
-			elog(ERROR, "SELinux: unexpected node type (%u)", nodeTag(node));
 	}
 	return result;
 }
 
-/*
- * execVerifyQuery
- *
- * This function scans the given list, and invokes proper function
- * to evaluate it.
- */
-static void
-execVerifyQuery(List *selist)
+static List *
+expandEvalItemWholeRowRefs(List *selist)
 {
-	ListCell   *l;
+	ListCell *l;
+	int i, rindex;
 
-	foreach(l, selist)
+	rindex = seitem_attno_to_index(InvalidAttrNumber);
+
+	foreach (l, selist)
 	{
-		Node	   *node = lfirst(l);
+		SelinuxEvalItem *seitem = (SelinuxEvalItem *) lfirst(l);
+		uint32 perms;
 
-		if (IsA(node, SEvalItemRelation))
-		{
-			SEvalItemRelation *ser
-				= (SEvalItemRelation *) node;
-			verifyPgClassPerms(ser->relid, ser->inh, ser->perms);
-		}
-		else if (IsA(node, SEvalItemAttribute))
-		{
-			SEvalItemAttribute *sea
-				= (SEvalItemAttribute *) node;
-			verifyPgAttributePerms(sea->relid, sea->inh, sea->attno, sea->perms);
-		}
-		else
-			elog(ERROR, "SELinux: unexpected node type (%d)", nodeTag(node));
+		Assert(IsA(seitem, SelinuxEvalItem));
+
+		perms = seitem->attperms[rindex];
+		if (perms == 0)
+			continue;	/* it does not contain whole-row-ref */
+
+		for (i = rindex + 1; i < seitem->nattrs; i++)
+			seitem->attperms[i] |= perms;
+
+		seitem->attperms[rindex] = 0;
 	}
+
+	return selist;
 }
 
 /*
- * sepgsqlVerifyQuery
+ * sepgsqlExecutorStart
  *
  * This function is invoked at the head of ExecutorStart, to evaluate
  * permissions to access appeared object within the given query.
- * Query->pgaceItem is a list of SEvalItemXXXX objects generated in
+ * Query->pgaceItem is a list of SelinuxEvalItem objects generated in
  * previous phase, and it is copied to PlannedStmt->pgaceItem in the
  * optimizer.
- * sepgsqlVerifyQuery expand relations/columns and append permissions
- * to execute trigger functions, if necessary.
+ * This functions expand given selist based on table inheritance,
+ * adds additional permissions related to trigger functions, and
+ * expands whole-row-references. Then, these items are evaluated
+ * based on the security policy of SELinux.
  */
 void
 sepgsqlExecutorStart(QueryDesc *queryDesc, int eflags)
@@ -939,6 +895,7 @@ sepgsqlExecutorStart(QueryDesc *queryDesc, int eflags)
 	 */
 	if (eflags & EXEC_FLAG_EXPLAIN_ONLY)
 		return;
+
 	if (!pstmt->pgaceItem)
 		return;
 
@@ -948,7 +905,7 @@ sepgsqlExecutorStart(QueryDesc *queryDesc, int eflags)
 	/*
 	 * expand table inheritances
 	 */
-	selist = expandSEvalItemInheritance(selist);
+	selist = expandEvalItemInheritance(selist);
 
 	/*
 	 * add checks for access via trigger function
@@ -960,10 +917,20 @@ sepgsqlExecutorStart(QueryDesc *queryDesc, int eflags)
 		rte = rt_fetch(rindex, pstmt->rtable);
 		Assert(IsA(rte, RangeTblEntry));
 
-		selist = addEvalTriggerAccess(selist, rte->relid, rte->inh,
-									  pstmt->commandType);
+		selist = addEvalTriggerFunction(selist, rte->relid,
+										pstmt->commandType);
 	}
-	execVerifyQuery(selist);
+
+	/*
+	 * Expand whole-row-references
+	 */
+	selist = expandEvalItemWholeRowRefs(selist);
+
+	/*
+	 * Check SelinuxEvalItem
+	 */
+	foreach (l, selist)
+		checkSelinuxEvalItem((SelinuxEvalItem *) lfirst(l));
 }
 
 /*
@@ -1105,10 +1072,10 @@ sepgsqlCopyTable(Relation rel, List *attNumList, bool isFrom)
 	 * check call trigger function
 	 */
 	if (isFrom)
-		selist = addEvalTriggerAccess(selist, RelationGetRelid(rel),
-									  false, CMD_INSERT);
+		selist = addEvalTriggerFunction(selist, RelationGetRelid(rel), CMD_INSERT);
 
-	execVerifyQuery(selist);
+	foreach (l, selist)
+		checkSelinuxEvalItem((SelinuxEvalItem *) lfirst(l));
 }
 
 /*
