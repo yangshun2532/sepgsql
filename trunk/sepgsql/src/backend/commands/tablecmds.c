@@ -857,6 +857,8 @@ ExecuteTruncate(TruncateStmt *stmt)
 		heap_truncate_check_FKs(rels, false);
 #endif
 
+	pgaceExecTruncate(rels);
+
 	/*
 	 * If we are asked to restart sequences, find all the sequences,
 	 * lock them (we only need AccessShareLock because that's all that

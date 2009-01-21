@@ -943,69 +943,6 @@ sepgsqlExecutorStart(QueryDesc *queryDesc, int eflags)
  */
 
 /*
- * checkTruncateStmt
- *
- * This function checks permissions of tuples within the given
- * tables before TRUNCATE them. Because its meanings are same
- * as unconditional DELETE logically, SE-PostgreSQL attempt to
- * apply same permission for them operation.
- * If there is a violated tuple at most, it stops to execute 
- * TRUNCATE and abort current trunsaction.
- */
-static void
-checkTruncateStmt(TruncateStmt *stmt)
-{
-	Relation	rel;
-	HeapScanDesc scan;
-	HeapTuple	tuple;
-	List	   *relidList = NIL;
-	ListCell   *l;
-
-	foreach(l, stmt->relations)
-	{
-		RangeVar   *rv = lfirst(l);
-
-		relidList = lappend_oid(relidList, RangeVarGetRelid(rv, false));
-	}
-
-	if (stmt->behavior == DROP_CASCADE)
-	{
-		relidList = list_concat(relidList, heap_truncate_find_FKs(relidList));
-	}
-
-	foreach(l, relidList)
-	{
-		Oid			relid = lfirst_oid(l);
-
-		/*
-		 * 1. db_table:{delete}
-		 */
-		tuple = SearchSysCache(RELOID, ObjectIdGetDatum(relid), 0, 0, 0);
-		if (!HeapTupleIsValid(tuple))
-			elog(ERROR, "SELinux: cache lookup failed for relation %u", relid);
-		sepgsqlClientHasPermission(HeapTupleGetSecLabel(tuple),
-								   SECCLASS_DB_TABLE,
-								   DB_TABLE__DELETE,
-								   sepgsqlTupleName(RelationRelationId, tuple));
-		ReleaseSysCache(tuple);
-
-		/*
-		 * 2. db_tuple:{delete}
-		 */
-		rel = heap_open(relid, AccessShareLock);
-		scan = heap_beginscan(rel, SnapshotNow, 0, NULL);
-
-		while ((tuple = heap_getnext(scan, ForwardScanDirection)) != NULL)
-		{
-			sepgsqlCheckTuplePerms(rel, tuple, NULL,
-								   SEPGSQL_PERMS_DELETE, true);
-		}
-		heap_endscan(scan);
-		heap_close(rel, AccessShareLock);
-	}
-}
-
-/*
  * sepgsqlProcessUtility
  *
  * This function is invoked from the head of ProcessUtility(), and
@@ -1018,10 +955,6 @@ sepgsqlProcessUtility(Node *parsetree, ParamListInfo params, bool isTopLevel)
 {
 	switch (nodeTag(parsetree))
 	{
-		case T_TruncateStmt:
-			checkTruncateStmt((TruncateStmt *) parsetree);
-			break;
-
 		case T_LoadStmt:
 			sepgsqlCheckModuleInstallPerms(((LoadStmt *)parsetree)->filename);
 			break;

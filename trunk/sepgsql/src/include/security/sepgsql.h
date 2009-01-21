@@ -114,6 +114,8 @@ extern bool sepgsqlAllowFunctionInlined(Oid fnoid, HeapTuple func_tuple);
 /* TABLE related hooks */
 extern void sepgsqlLockTable(Oid relid);
 
+extern void sepgsqlExecTruncate(List *trunc_rels);
+
 extern bool sepgsqlAlterTable(Relation rel, AlterTableCmd *cmd);
 
 /* COPY TO/COPY FROM statement hooks */
