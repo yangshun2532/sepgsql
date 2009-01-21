@@ -2346,26 +2346,22 @@ _outFkConstraint(StringInfo str, FkConstraint *node)
  *
  *****************************************************************************/
 static void
-_outSEvalItemRelation(StringInfo str, SEvalItemRelation *node)
+_outSelinuxEvalItem(StringInfo str, SelinuxEvalItem *node)
 {
-	WRITE_NODE_TYPE("SEVALITEMRELATION");
+	int i;
 
-	WRITE_UINT_FIELD(perms);
+	WRITE_NODE_TYPE("SELINUXEVALITEM");
 
 	WRITE_OID_FIELD(relid);
 	WRITE_BOOL_FIELD(inh);
-}
 
-static void
-_outSEvalItemAttribute(StringInfo str, SEvalItemAttribute *node)
-{
-	WRITE_NODE_TYPE("SEVALITEMATTRIBUTE");
+	WRITE_UINT_FIELD(relperms);
+	WRITE_UINT_FIELD(nattrs);
 
-	WRITE_UINT_FIELD(perms);
-
-	WRITE_OID_FIELD(relid);
-	WRITE_BOOL_FIELD(inh);
-	WRITE_INT_FIELD(attno);
+	appendStringInfo(str, " :attperms [");
+	for (i = 0; i < node->nattrs; i++)
+		appendStringInfo(str, " %u", node->attperms[i]);
+	appendStringInfo(str, " ]");
 }
 
 /*
@@ -2811,11 +2807,8 @@ _outNode(StringInfo str, void *obj)
 			case T_XmlSerialize:
 				_outXmlSerialize(str, obj);
 				break;
-			case T_SEvalItemRelation:
-				_outSEvalItemRelation(str, obj);
-				break;
-			case T_SEvalItemAttribute:
-				_outSEvalItemAttribute(str, obj);
+			case T_SelinuxEvalItem:
+				_outSelinuxEvalItem(str, obj);
 				break;
 
 			default:

@@ -391,8 +391,7 @@ typedef enum NodeTag
 	T_ReturnSetInfo,			/* in nodes/execnodes.h */
 	T_WindowObjectData,			/* private in nodeWindowAgg.c */
 	T_TIDBitmap,					/* in nodes/tidbitmap.h */
-	T_SEvalItemRelation,		/* in nodes/security.h */
-	T_SEvalItemAttribute,		/* in nodes/security.h */
+	T_SelinuxEvalItem,			/* in nodes/security.h */
 } NodeTag;
 
 /*

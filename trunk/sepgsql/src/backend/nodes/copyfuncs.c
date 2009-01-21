@@ -3436,29 +3436,18 @@ _copyValue(Value *from)
  *					nodes/security.h copy functions
  * ****************************************************************
  */
-static SEvalItemRelation *
-_copySEvalItemRelation(SEvalItemRelation *from)
+static SelinuxEvalItem *
+_copySelinuxEvalItem(SelinuxEvalItem *from)
 {
-	SEvalItemRelation *newnode = makeNode(SEvalItemRelation);
-
-	COPY_SCALAR_FIELD(perms);
+	SelinuxEvalItem *newnode = makeNode(SelinuxEvalItem);
+	int n;
 
 	COPY_SCALAR_FIELD(relid);
 	COPY_SCALAR_FIELD(inh);
 
-	return newnode;
-}
-
-static SEvalItemAttribute *
-_copySEvalItemAttribute(SEvalItemAttribute *from)
-{
-	SEvalItemAttribute *newnode = makeNode(SEvalItemAttribute);
-
-	COPY_SCALAR_FIELD(perms);
-
-	COPY_SCALAR_FIELD(relid);
-	COPY_SCALAR_FIELD(inh);
-	COPY_SCALAR_FIELD(attno);
+	COPY_SCALAR_FIELD(relperms);
+	COPY_SCALAR_FIELD(nattrs);
+	COPY_POINTER_FIELD(attperms, from->nattrs * sizeof(uint32));
 
 	return newnode;
 }
@@ -4137,11 +4126,8 @@ copyObject(void *from)
 		case T_XmlSerialize:
 			retval = _copyXmlSerialize(from);
 			break;
-		case T_SEvalItemRelation:
-			retval = _copySEvalItemRelation(from);
-			break;
-		case T_SEvalItemAttribute:
-			retval = _copySEvalItemAttribute(from);
+		case T_SelinuxEvalItem:
+			retval = _copySelinuxEvalItem(from);
 			break;
 
 		default:
