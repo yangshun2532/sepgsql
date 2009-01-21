@@ -1932,22 +1932,13 @@ _equalXmlSerialize(XmlSerialize *a, XmlSerialize *b)
  * Stuff from nodes/security.h
  */
 static bool
-_equalSEvalItemRelation(SEvalItemRelation *a, SEvalItemRelation *b)
+_equalSelinuxEvalItem(SelinuxEvalItem *a, SelinuxEvalItem *b)
 {
-	COMPARE_SCALAR_FIELD(perms);
 	COMPARE_SCALAR_FIELD(relid);
 	COMPARE_SCALAR_FIELD(inh);
-
-	return true;
-}
-
-static bool
-_equalSEvalItemAttribute(SEvalItemAttribute *a, SEvalItemAttribute *b)
-{
-	COMPARE_SCALAR_FIELD(perms);
-	COMPARE_SCALAR_FIELD(relid);
-	COMPARE_SCALAR_FIELD(inh);
-	COMPARE_SCALAR_FIELD(attno);
+	COMPARE_SCALAR_FIELD(relperms);
+	COMPARE_SCALAR_FIELD(nattrs);
+	COMPARE_POINTER_FIELD(attperms, a->nattrs * sizeof(uint32));
 
 	return true;
 }
@@ -2555,11 +2546,8 @@ equal(void *a, void *b)
 		case T_XmlSerialize:
 			retval = _equalXmlSerialize(a, b);
 			break;
-		case T_SEvalItemRelation:
-			retval = _equalSEvalItemRelation(a, b);
-			break;
-		case T_SEvalItemAttribute:
-			retval = _equalSEvalItemAttribute(a, b);
+		case T_SelinuxEvalItem:
+			retval = _equalSelinuxEvalItem(a, b);
 			break;
 
 		default:
