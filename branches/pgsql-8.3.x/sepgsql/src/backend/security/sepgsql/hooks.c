@@ -162,6 +162,52 @@ sepgsqlLockTable(Oid relid)
 	ReleaseSysCache(tuple);
 }
 
+void
+sepgsqlExecTruncate(List *trunc_rels)
+{
+	ListCell *l;
+
+	foreach (l, trunc_rels)
+	{
+		const char *audit_name;
+		HeapTuple tuple;
+		HeapScanDesc scan;
+		Relation rel = (Relation) lfirst(l);
+
+		if (RelationGetForm(rel)->relkind != RELKIND_RELATION)
+			continue;
+
+		/*
+		 * check db_table:{delete}
+		 */
+		tuple = SearchSysCache(RELOID,
+							   ObjectIdGetDatum(RelationGetRelid(rel)),
+							   0, 0, 0);
+		if (!HeapTupleIsValid(tuple))
+			elog(ERROR, "SELinux: cache lookup failed for relation %u",
+				 RelationGetRelid(rel));
+
+		audit_name = sepgsqlTupleName(RelationRelationId, tuple);
+		sepgsqlClientHasPermission(HeapTupleGetSecLabel(tuple),
+								   SECCLASS_DB_TABLE,
+								   DB_TABLE__DELETE,
+								   audit_name);
+		ReleaseSysCache(tuple);
+
+		/*
+		 * check db_tuple:{delete}
+		 */
+		scan = heap_beginscan(rel, SnapshotNow, 0, NULL);
+
+		while ((tuple = heap_getnext(scan, ForwardScanDirection)) != NULL)
+		{
+			sepgsqlCheckTuplePerms(rel, tuple, NULL,
+								   SEPGSQL_PERMS_DELETE, true);
+		}
+		heap_endscan(scan);
+	}
+}
+
 /*******************************************************************************
  * PROCEDURE related hooks
  *******************************************************************************/

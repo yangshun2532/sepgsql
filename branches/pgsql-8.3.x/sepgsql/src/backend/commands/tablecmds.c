@@ -600,6 +600,8 @@ ExecuteTruncate(TruncateStmt *stmt)
 		heap_truncate_check_FKs(rels, false);
 #endif
 
+	pgaceExecTruncate(rels);
+
 	/*
 	 * OK, truncate each table.
 	 */
