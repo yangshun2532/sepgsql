@@ -327,6 +327,70 @@ sepgsqlExprWalker(Node *node, sepgsqlWalkerContext *swc);
 static void
 sepgsqlExprWalkerFlags(Node *node, sepgsqlWalkerContext *swc,
 					   bool is_internal_use);
+
+/*
+ * wholeRefJoinWalker
+ *
+ * A corner case need to invoke this walker function.
+ * When we use whole-row-reference on RTE_JOIN relation,
+ * it should be extracted to whole-row-references on
+ * sources relations.
+ *
+ * EXAMPLE:
+ *   SELECT t4 FROM (t1 JOIN (t2 JOIN t3 USING (a)) USING (b)) AS t4;
+ *
+ * Because RangeTblEntry with RTE_JOIN does not have any identifiers
+ * of its source relations, we have to scan Query->jointree again to
+ * look up sources again. :(
+ */
+typedef struct
+{
+	Query *query;
+	int rtindex;
+	/*
+	 * rtindex == 0 means we are now walking on the required JoinExpr
+	 * or its leafs, so we need to pick up all the appeared relations
+	 * under the JoinExpr in this case.
+	 */
+	List *selist;
+	uint32 perms;
+} wholeRefJoinWalkerContext;
+
+static bool
+wholeRefJoinWalker(Node *node, wholeRefJoinWalkerContext *jwc)
+{
+	if (!node)
+		return false;
+
+	if (IsA(node, JoinExpr))
+	{
+		JoinExpr *j = (JoinExpr *) node;
+
+		if (j->rtindex == jwc->rtindex)
+		{
+			int rtindex_backup = jwc->rtindex;
+			bool rc;
+
+			jwc->rtindex = 0;
+			rc = expression_tree_walker(node, wholeRefJoinWalker, jwc);
+			jwc->rtindex = rtindex_backup;
+
+			return rc;
+		}
+	}
+	else if (IsA(node, RangeTblRef) && jwc->rtindex == 0)
+	{
+		RangeTblRef *rtr = (RangeTblRef *) node;
+		RangeTblEntry *rte = rt_fetch(rtr->rtindex,
+									  jwc->query->rtable);
+		if (rte->rtekind == RTE_RELATION)
+		{
+			jwc->selist = addEvalAttributeRTE(jwc->selist, rte, 0, jwc->perms);
+		}
+	}
+	return expression_tree_walker(node, wholeRefJoinWalker, jwc);
+}
+
 static void
 walkVarHelper(Var *var, sepgsqlWalkerContext *swc)
 {
@@ -349,19 +413,33 @@ walkVarHelper(Var *var, sepgsqlWalkerContext *swc)
 
 	if (rte->rtekind == RTE_RELATION)
 	{
-		/*
-		 * table:{select/use} and column:{select/use}
-		 */
-		swc->selist = addEvalAttributeRTE(swc->selist, rte, var->varattno,
-										  swc->is_internal_use
-										  ? DB_COLUMN__USE : DB_COLUMN__SELECT);
+		uint32 perms = swc->is_internal_use
+			? DB_COLUMN__USE : DB_COLUMN__SELECT;
+
+		swc->selist = addEvalAttributeRTE(swc->selist, rte,
+										  var->varattno, perms);
 	}
 	else if (rte->rtekind == RTE_JOIN)
 	{
-		Node	   *node = list_nth(rte->joinaliasvars,
-									var->varattno - 1);
+		if (var->varattno == 0)
+		{
+			wholeRefJoinWalkerContext jwcData;
 
-		sepgsqlExprWalker(node, swc);
+			jwcData.query = query;
+			jwcData.rtindex = var->varno;
+			jwcData.selist = swc->selist;
+			jwcData.perms = swc->is_internal_use
+				? DB_COLUMN__USE : DB_COLUMN__SELECT;
+
+			wholeRefJoinWalker((Node *)query->jointree, &jwcData);
+			swc->selist = jwcData.selist;
+		}
+		else
+		{
+			Node *node = list_nth(rte->joinaliasvars,
+								  var->varattno - 1);
+			sepgsqlExprWalker(node, swc);
+		}
 	}
 }
 
