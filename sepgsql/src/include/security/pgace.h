@@ -91,6 +91,7 @@ extern bool pgaceAllowFunctionInlined(Oid fnoid, HeapTuple func_tuple);
  */
 extern void pgaceSetDatabaseParam(const char *name, char *argstring);
 extern void pgaceGetDatabaseParam(const char *name);
+extern void pgaceExecTruncate(List *trunc_rels);
 extern void pgaceLockTable(Oid relid);
 
 /*

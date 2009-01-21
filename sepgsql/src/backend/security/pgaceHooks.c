@@ -998,6 +998,29 @@ pgaceLockTable(Oid relid)
 	}
 }
 
+/*
+ * pgaceExecTruncate
+ *
+ * This hook is invoked just before it truncate tables.
+ * The argument is a list of already opened relations with
+ * AccessExclusiveLock.
+ */
+void
+pgaceExecTruncate(List *trunk_rels)
+{
+	switch (pgace_feature)
+	{
+#ifdef HAVE_SELINUX
+	case PGACE_FEATURE_SELINUX:
+		if (sepgsqlIsEnabled())
+			sepgsqlExecTruncate(trunk_rels);
+		break;
+#endif
+	default:
+		break;
+	}
+}
+
 /******************************************************************
  * COPY TO/COPY FROM statement hooks
  ******************************************************************/
