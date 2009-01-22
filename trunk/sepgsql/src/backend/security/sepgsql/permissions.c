@@ -336,6 +336,14 @@ sepgsqlPermsToBlobAv(uint32 perms, HeapTuple tuple, HeapTuple newtup)
 	return result;
 }
 
+/*
+ * sepgsqlCheckProcedureInstall
+ *   checks permission: db_procedure:{install}, when client tries to modify
+ *   a system catalog which contains procedure id to invoke it later.
+ *   Because these functions are invoked internally, to search a table with
+ *   a special index algorithm for example, the security policy has to prevent
+ *   malicious user-defined functions to be installed.
+ */
 static void
 checkProcedureInstall(Oid proc_oid)
 {
