@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/access/heap/heapam.c,v 1.273 2009/01/01 17:23:35 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/backend/access/heap/heapam.c,v 1.274 2009/01/20 18:59:36 heikki Exp $
  *
  *
  * INTERFACE ROUTINES
@@ -4796,6 +4796,8 @@ heap_redo(XLogRecPtr lsn, XLogRecord *record)
 {
 	uint8		info = record->xl_info & ~XLR_INFO_MASK;
 
+	RestoreBkpBlocks(lsn, record, false);
+
 	switch (info & XLOG_HEAP_OPMASK)
 	{
 		case XLOG_HEAP_INSERT:
@@ -4835,12 +4837,15 @@ heap2_redo(XLogRecPtr lsn, XLogRecord *record)
 	switch (info & XLOG_HEAP_OPMASK)
 	{
 		case XLOG_HEAP2_FREEZE:
+			RestoreBkpBlocks(lsn, record, false);
 			heap_xlog_freeze(lsn, record);
 			break;
 		case XLOG_HEAP2_CLEAN:
+			RestoreBkpBlocks(lsn, record, true);
 			heap_xlog_clean(lsn, record, false);
 			break;
 		case XLOG_HEAP2_CLEAN_MOVE:
+			RestoreBkpBlocks(lsn, record, true);
 			heap_xlog_clean(lsn, record, true);
 			break;
 		default:
