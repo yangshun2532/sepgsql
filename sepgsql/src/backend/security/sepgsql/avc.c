@@ -292,6 +292,11 @@ load_class_av_mapping(void)
 	}
 }
 
+/*
+ * trans_to_external_tclass
+ *   translates internal object class number into external one
+ *   needed to communicate with in-kernel SELinux.
+ */
 static security_class_t
 trans_to_external_tclass(security_class_t i_tclass)
 {
@@ -306,6 +311,14 @@ trans_to_external_tclass(security_class_t i_tclass)
 	return i_tclass;			/* use it as is for kernel classes */
 }
 
+/*
+ * trans_to_internal_perms
+ *   translates external permission bits into internal ones
+ *   needed to understand the answer from in-kernel SELinux.
+ *   If in-kernel SELinux doesn't define required permissions,
+ *   it sets/clears undefined bits based on caller's preference.
+ *   It enables SE-PostgreSQL to work on legacy security policy.
+ */
 static access_vector_t
 trans_to_internal_perms(security_class_t e_tclass, access_vector_t e_perms,
 						bool set_if_undefined)
@@ -338,6 +351,14 @@ trans_to_internal_perms(security_class_t e_tclass, access_vector_t e_perms,
 	return e_perms;				/* use it as is for kernel classes */
 }
 
+/*
+ * sepgsql_class_to_string
+ * sepgsql_av_perm_to_string
+ *   returns string representation of given object class and permission.
+ *   Please note that given code have internal ones, so we cannot use
+ *   libselinux's facility, because it assumes 'external code'.
+ *   (Kernel object classes are ABI, so these are stable.)
+ */
 static const char *
 sepgsql_class_to_string(security_class_t tclass)
 {
@@ -349,7 +370,7 @@ sepgsql_class_to_string(security_class_t tclass)
 			return selinux_catalog[i].tclass.name;
 	}
 	/*
-	 * tclass is always same as external one, for kernel object classes
+	 * tclass is stable for kernel object classes.
 	 */
 	return security_class_to_string(tclass);
 }
@@ -374,15 +395,14 @@ sepgsql_av_perm_to_string(security_class_t tclass, access_vector_t perm)
 		}
 	}
 	/*
-	 * tclass is always same as external one, for kernel object classes
+	 * tclass/perms are stable for kernel object classes.
 	 */
 	return security_av_perm_to_string(tclass, perm);
 }
 
 /*
  * sepgsql_avc_reset
- *
- * This function clears all current avc entries, and update its version.
+ *   clears all uAVC entries and update its version.
  */
 static void
 sepgsql_avc_reset(void)
@@ -419,9 +439,8 @@ sepgsql_avc_reset(void)
 
 /*
  * sepgsql_avc_reclaim
- *
- * This function reclaims recently not-used avc entries,
- * when the number of caches overs AVC_HASH_NUM_NODES
+ *   reclaims recently unused uAVC entries, when the number of
+ *   caches overs AVC_HASH_NUM_NODES.
  */
 static void
 sepgsql_avc_reclaim(void)
@@ -461,10 +480,8 @@ sepgsql_avc_reclaim(void)
 
 /*
  * avc_audit_common
- *
- * This function makes an audit message on the given Cstring buffer,
- * based on the given av_decision (which is the result of permission
- * checks).
+ *   generates an audit message on the give string buffer based on
+ *   the given av_decision which means the resutl of permission checks.
  */
 static bool
 avc_audit_common(char *buffer, uint32 buflen,
@@ -513,6 +530,12 @@ avc_audit_common(char *buffer, uint32 buflen,
 	return true;
 }
 
+/*
+ * avc_permission_common
+ *   makes decision and output audit messages based on given avc_datum.
+ *   If required permissions are not completely allowed, it raises an
+ *   error or returns 'false' when permissive mode.
+ */
 static bool
 avc_permission_common(avc_datum *cache, access_vector_t perms, bool abort,
 					  const char *scontext, const char *tcontext, const char *objname)
@@ -555,14 +578,15 @@ avc_permission_common(avc_datum *cache, access_vector_t perms, bool abort,
 }
 
 /*
- * sepgsql_avc_compute
- *
- * This function compute an avc_decision cache for the given subject/target
- * context and object class, based on results of inquiries to SELinux.
+ * avc_make_entry
+ *   makes a query to in-kernel SELinux and an avc_datum object to
+ *   cache the result of SELinux's decision for access rights and
+ *   default security context.
  */
 #define avc_hash_key(tsid,tclass)	((tsid) ^ ((tclass) << 2))
 
-static avc_datum *avc_make_entry(Oid tsid, security_class_t tclass)
+static avc_datum *
+avc_make_entry(Oid tsid, security_class_t tclass)
 {
 	security_context_t scontext, tcontext, ncontext;
 	security_class_t e_tclass;
@@ -670,8 +694,26 @@ static avc_datum *avc_lookup(Oid tsid, security_class_t tclass)
 
 /*
  * sepgsqlAvcSwitchClientContext()
+ *   switches current avc_page.
  *
- * This function switchs avc_page for given context
+ * NOTE: In most cases, SE-PostgreSQL checks whether client is allowed
+ * to do required actions (like SELECT, UPDATE, ...) on the targets.
+ * Both of client and targets have its security context, and all rules
+ * are described as relationship between security context of a client,
+ * a target and kind of actions.
+ * However, the security context of client is unchanged in SE-PostgreSQL
+ * (an exception is invocation of trusted procedure), so we can omit
+ * to compare security context of client with entries of uAVC.
+ * The avc_page is a set of avc_datum sorted out by the security context
+ * of client, so we can lookup correct avc_datum on currently focued
+ * avc_page without comparing the security context of client.
+ * The reason why we don't not use a unique uAVC is the security context
+ * of client does not have its security identifier on pg_security, so
+ * it requires strcmp() for each entries, but it is heavier than integer
+ * comparisons.
+ * Thus we have to switch current avc_page, whenever the security context
+ * of client changes (via trusted procedure). It makes performance well
+ * in most cases.
  */
 void sepgsqlAvcSwitchClientContext(security_context_t newcontext)
 {
@@ -715,6 +757,11 @@ void sepgsqlAvcSwitchClientContext(security_context_t newcontext)
 	current_avc_page = avp;
 }
 
+/*
+ * sepgsqlClientHasPermission
+ *   checks client's privileges on given objects via uAVC.
+ *   It raised an error, if required actions are violated.
+ */
 void
 sepgsqlClientHasPermission(Oid tsid, security_class_t tclass,
 						   access_vector_t perms,
@@ -728,6 +775,11 @@ sepgsqlClientHasPermission(Oid tsid, security_class_t tclass,
 	avc_permission_common(cache, perms, true, NULL, NULL, objname);
 }
 
+/*
+ * sepgsqlClientHasPermissionNoAbort
+ *   checks client's privileges on given objects via uAVC.
+ *   It returns false, if required actions are violated.
+ */
 bool
 sepgsqlClientHasPermissionNoAbort(Oid tsid, security_class_t tclass,
 								  access_vector_t perms,
@@ -741,6 +793,14 @@ sepgsqlClientHasPermissionNoAbort(Oid tsid, security_class_t tclass,
 	return avc_permission_common(cache, perms, false, NULL, NULL, objname);
 }
 
+/*
+ * sepgsqlClientCreateSid
+ *   returns security identifier of newly created database object.
+ *   Please note that you don't have to invoke this function for
+ *   object classes except for database objects. It have a possibility
+ *   to make an entry on pg_security via pgaceSecurityLabelToSid(),
+ *   but it should be restricted to database object.
+ */
 Oid
 sepgsqlClientCreateSid(Oid tsid, security_class_t tclass)
 {
@@ -755,6 +815,12 @@ sepgsqlClientCreateSid(Oid tsid, security_class_t tclass)
 	return cache->nsid;
 }
 
+/*
+ * sepgsqlClientCreateContext
+ *   returns security context (string representation) of newly
+ *   created object. It is available for any kind of object
+ *   classes.
+ */
 security_context_t
 sepgsqlClientCreateContext(Oid tsid, security_class_t tclass)
 {
@@ -767,9 +833,8 @@ sepgsqlClientCreateContext(Oid tsid, security_class_t tclass)
 }
 
 /*
- * sepgsqlAvcInit
- *
- * Initialize local memory context and assign shared memory segment
+ * sepgsql_shmem_init
+ *   attaches shared memory segment.
  */
 static void
 sepgsql_shmem_init(void)
@@ -793,6 +858,10 @@ sepgsql_shmem_init(void)
 	}
 }
 
+/*
+ * sepgsqlAvcInit
+ *   initialize local uAVC facility.
+ */
 void
 sepgsqlAvcInit(void)
 {
@@ -813,7 +882,16 @@ sepgsqlAvcInit(void)
 }
 
 /*
- * No cached interfaces
+ * sepgsqlComputePermission
+ * sepgsqlComputeCreateContext
+ *
+ * The following two functions make a query to in-kernel SELinux
+ * without userspace caches, due to some reasons.
+ * The uAVC can cover most of cases, but some of corner cases are
+ * not suitable for uAVC structure, so we need uncached interfaces.
+ * For example, uAVC is unavailable when we tries to load a shared
+ * library module, because security context of the library does not
+ * have its security identifier, so we cannot put it on uAVC.
  */
 bool
 sepgsqlComputePermission(const security_context_t scontext,
