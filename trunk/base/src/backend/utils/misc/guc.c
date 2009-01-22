@@ -10,7 +10,7 @@
  * Written by Peter Eisentraut <peter_e@gmx.net>.
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/misc/guc.c,v 1.493 2009/01/12 05:10:44 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/utils/misc/guc.c,v 1.495 2009/01/21 09:28:26 mha Exp $
  *
  *--------------------------------------------------------------------
  */
@@ -1544,7 +1544,16 @@ static struct config_int ConfigureNamesInt[] =
 			NULL
 		},
 		&vacuum_freeze_min_age,
-		100000000, 0, 1000000000, NULL, NULL
+		50000000, 0, 1000000000, NULL, NULL
+	},
+
+	{
+		{"vacuum_freeze_table_age", PGC_USERSET, CLIENT_CONN_STATEMENT,
+			gettext_noop("Age at which VACUUM should scan whole table to freeze tuples."),
+			NULL
+		},
+		&vacuum_freeze_table_age,
+		150000000, 0, 2000000000, NULL, NULL
 	},
 
 	{
@@ -4792,7 +4801,7 @@ set_config_option(const char *name, const char *value,
 								(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 						 errmsg("invalid value for parameter \"%s\": \"%s\"",
 								name, value),
-								 hintmsg ? errhint("%s", hintmsg) : 0));
+								 hintmsg ? errhint("%s", _(hintmsg)) : 0));
 						return false;
 					}
 					if (newval < conf->min || newval > conf->max)
@@ -5060,7 +5069,7 @@ set_config_option(const char *name, const char *value,
 								(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 								 errmsg("invalid value for parameter \"%s\": \"%s\"",
 										name, value),
-								 hintmsg ? errhint("%s", hintmsg) : 0));
+								 hintmsg ? errhint("%s", _(hintmsg)) : 0));
 
 						if (hintmsg)
 							pfree(hintmsg);
