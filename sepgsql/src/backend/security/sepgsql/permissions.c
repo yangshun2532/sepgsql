@@ -42,73 +42,60 @@
  */
 bool sepostgresql_row_level;
 
+/*
+ * sepgsqlTupleName
+ *   returns an identifier string to generate audit record for
+ *   the given tuple. Please note that its results can indicate
+ *   an address within the given tuple, so we should not refer
+ *   the returned pointer after HeapTuple is released.
+ */
 const char *
 sepgsqlTupleName(Oid relid, HeapTuple tuple)
 {
-	static char buffer[NAMEDATALEN * 3];
+	static char buffer[NAMEDATALEN * 2 + 10];
 
 	switch (relid)
 	{
-		case AttributeRelationId:
-			if (!IsBootstrapProcessingMode())
+	case DatabaseRelationId:
+		return NameStr(((Form_pg_database) GETSTRUCT(tuple))->datname);
+
+	case RelationRelationId:
+		return NameStr(((Form_pg_class) GETSTRUCT(tuple))->relname);
+
+	case AttributeRelationId:
+		if (!IsBootstrapProcessingMode())
+		{
+			static Oid last_relid = InvalidOid;
+			static char *last_relname[NAMEDATALEN];
+			Form_pg_attribute attForm
+				= (Form_pg_attribute) GETSTRUCT(tuple);
+
+			if (last_relid != attForm->attrelid)
 			{
-				Form_pg_attribute attForm
-					= (Form_pg_attribute) GETSTRUCT(tuple);
 				char *relname = get_rel_name(attForm->attrelid);
 
-				if (relname)
-				{
-					snprintf(buffer, sizeof(buffer), "%s.%s",
-							 relname, NameStr(attForm->attname));
-					pfree(relname);
-					break;
-				}
+				if (!relname)
+					return NameStr(attForm->attname);
+				strncpy(last_relname, relname, sizeof(last_relname));
+				last_relname[NAMEDATALEN - 1] = '\0';
+				last_relid = attForm->attrelid;
+				pfree(relname);
 			}
-			snprintf(buffer, sizeof(buffer), "%s",
-					 NameStr(((Form_pg_attribute) GETSTRUCT(tuple))->attname));
-			break;
+			snprintf(buffer, sizeof(buffer), "%s.%s",
+					 last_relname, NameStr(attForm->attname));
+			return buffer;
+		}
+		return NameStr(((Form_pg_attribute) GETSTRUCT(tuple))->attname);
 
-		case AuthIdRelationId:
-			snprintf(buffer, sizeof(buffer), "%s",
-					 NameStr(((Form_pg_authid) GETSTRUCT(tuple))->rolname));
-			break;
+	case ProcedureRelationId:
+		return NameStr(((Form_pg_proc) GETSTRUCT(tuple))->proname);
 
-		case RelationRelationId:
-			snprintf(buffer, sizeof(buffer), "%s",
-					 NameStr(((Form_pg_class) GETSTRUCT(tuple))->relname));
-			break;
-
-		case DatabaseRelationId:
-			snprintf(buffer, sizeof(buffer), "%s",
-					 NameStr(((Form_pg_database) GETSTRUCT(tuple))->datname));
-			break;
-
-		case LargeObjectRelationId:
-			snprintf(buffer, sizeof(buffer), "loid:%u",
-					 ((Form_pg_largeobject) GETSTRUCT(tuple))->loid);
-			break;
-
-		case ProcedureRelationId:
-			snprintf(buffer, sizeof(buffer), "%s",
-					 NameStr(((Form_pg_proc) GETSTRUCT(tuple))->proname));
-			break;
-
-		case TriggerRelationId:
-			snprintf(buffer, sizeof(buffer), "%s",
-					 NameStr(((Form_pg_trigger) GETSTRUCT(tuple))->tgname));
-			break;
-
-		case TypeRelationId:
-			snprintf(buffer, sizeof(buffer), "pg_type::%s",
-					 NameStr(((Form_pg_type) GETSTRUCT(tuple))->typname));
-			break;
-		default:
-			/*
-			 * this tuple has no name
-			 */
-			return NULL;
+	case LargeObjectRelationId:
+		snprintf(buffer, sizeof(buffer), "loid:%u",
+				 ((Form_pg_largeobject) GETSTRUCT(tuple))->loid);
+		return buffer;
 	}
-	return buffer;
+	return NULL;	/* No tuple name for audit record */
 }
 
 /*
@@ -535,17 +522,18 @@ sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, HeapTuple newtup,
 
 	if (av)
 	{
-		const char *objname = sepgsqlTupleName(RelationGetRelid(rel), tuple);
+		const char *audit_name
+			= sepgsqlTupleName(RelationGetRelid(rel), tuple);
 
 		if (abort)
 		{
 			sepgsqlClientHasPermission(HeapTupleGetSecLabel(tuple),
-									   tclass, av, objname);
+									   tclass, av, audit_name);
 		}
 		else
 		{
 			rc = sepgsqlClientHasPermissionNoAbort(HeapTupleGetSecLabel(tuple),
-												   tclass, av, objname);
+												   tclass, av, audit_name);
 		}
 	}
 
