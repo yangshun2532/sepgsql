@@ -955,13 +955,33 @@ sepgsqlProcessUtility(Node *parsetree, ParamListInfo params, bool isTopLevel)
 {
 	switch (nodeTag(parsetree))
 	{
-		case T_LoadStmt:
-			sepgsqlCheckModuleInstallPerms(((LoadStmt *)parsetree)->filename);
-			break;
+	case T_LoadStmt:
+		{
+			LoadStmt *load = (LoadStmt *)parsetree;
+			sepgsqlCheckModuleInstallPerms(load->filename);
+		}
+		break;
 
-		default:
-			/* do nothing */
-			break;
+	case T_CreateFdwStmt:
+		{
+			CreateFdwStmt *createFdw = (CreateFdwStmt *)parsetree;
+			sepgsqlCheckModuleInstallPerms(createFdw->library);
+		}
+		break;
+
+	case T_AlterFdwStmt:
+		{
+			AlterFdwStmt *alterFdw = (AlterFdwStmt *)parsetree;
+			if (alterFdw->library)
+				sepgsqlCheckModuleInstallPerms(alterFdw->library);
+		}
+		break;
+
+	default:
+		/*
+		 * do nothing here
+		 */
+		break;
 	}
 }
 
