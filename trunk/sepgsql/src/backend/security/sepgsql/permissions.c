@@ -65,25 +65,18 @@ sepgsqlTupleName(Oid relid, HeapTuple tuple)
 	case AttributeRelationId:
 		if (!IsBootstrapProcessingMode())
 		{
-			static Oid last_relid = InvalidOid;
-			static char *last_relname[NAMEDATALEN];
 			Form_pg_attribute attForm
 				= (Form_pg_attribute) GETSTRUCT(tuple);
+			char *relname
+				= get_rel_name(attForm->attrelid);
 
-			if (last_relid != attForm->attrelid)
+			if (relname)
 			{
-				char *relname = get_rel_name(attForm->attrelid);
-
-				if (!relname)
-					return NameStr(attForm->attname);
-				strncpy(last_relname, relname, sizeof(last_relname));
-				last_relname[NAMEDATALEN - 1] = '\0';
-				last_relid = attForm->attrelid;
+				snprintf(buffer, sizeof(buffer), "%s.%s",
+						 relname, NameStr(attForm->attname));
 				pfree(relname);
+				return buffer;
 			}
-			snprintf(buffer, sizeof(buffer), "%s.%s",
-					 last_relname, NameStr(attForm->attname));
-			return buffer;
 		}
 		return NameStr(((Form_pg_attribute) GETSTRUCT(tuple))->attname);
 
