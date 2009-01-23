@@ -1007,6 +1007,11 @@ sepgsqlCopyTable(Relation rel, List *attNumList, bool isFrom)
 	if (isFrom)
 		selist = addEvalTriggerFunction(selist, RelationGetRelid(rel), CMD_INSERT);
 
+	/*
+	 * Expand whole-row-references
+	 */
+	selist = expandEvalItemWholeRowRefs(selist);
+
 	foreach (l, selist)
 		checkSelinuxEvalItem((SelinuxEvalItem *) lfirst(l));
 }
