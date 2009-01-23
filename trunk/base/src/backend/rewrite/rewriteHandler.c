@@ -7,7 +7,7 @@
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/rewrite/rewriteHandler.c,v 1.182 2009/01/01 17:23:47 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/backend/rewrite/rewriteHandler.c,v 1.184 2009/01/22 20:16:06 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -1178,9 +1178,13 @@ ApplyRetrieveRule(Query *parsetree,
 	Assert(subrte->relid == relation->rd_id);
 	subrte->requiredPerms = rte->requiredPerms;
 	subrte->checkAsUser = rte->checkAsUser;
+	subrte->selectedCols = rte->selectedCols;
+	subrte->modifiedCols = rte->modifiedCols;
 
 	rte->requiredPerms = 0;		/* no permission check on subquery itself */
 	rte->checkAsUser = InvalidOid;
+	rte->selectedCols = NULL;
+	rte->modifiedCols = NULL;
 
 	/*
 	 * FOR UPDATE/SHARE of view?
@@ -1895,20 +1899,20 @@ QueryRewrite(Query *parsetree)
 				{
 					case CMD_INSERT:
 						ereport(ERROR,
-								(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-								 errmsg("cannot insert into a view"),
+								(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+								 errmsg("view is not updatable"),
 								 errhint("You need an unconditional ON INSERT DO INSTEAD rule.")));
 						break;
 					case CMD_UPDATE:
 						ereport(ERROR,
-								(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-								 errmsg("cannot update a view"),
+								(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+								 errmsg("view is not updatable"),
 								 errhint("You need an unconditional ON UPDATE DO INSTEAD rule.")));
 						break;
 					case CMD_DELETE:
 						ereport(ERROR,
-								(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-								 errmsg("cannot delete from a view"),
+								(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+								 errmsg("view is not updatable"),
 								 errhint("You need an unconditional ON DELETE DO INSTEAD rule.")));
 						break;
 					default:
