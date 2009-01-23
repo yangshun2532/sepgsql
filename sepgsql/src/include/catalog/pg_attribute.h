@@ -370,12 +370,13 @@ DATA(insert ( 1255 security_label	25 0 -1  -9 0 -1 -1 f x i r t f f t 0 _null_))
 { 1249, {"attbyval"},	  16, -1,	1, 10, 0, -1, -1, true, 'p', 'c', 'r', true, false, false, true, 0, { 0 } }, \
 { 1249, {"attstorage"},   18, -1,	1, 11, 0, -1, -1, true, 'p', 'c', 'r', true, false, false, true, 0, { 0 } }, \
 { 1249, {"attalign"},	  18, -1,	1, 12, 0, -1, -1, true, 'p', 'c', 'r', true, false, false, true, 0, { 0 } }, \
-{ 1249, {"attnotnull"},   16, -1,	1, 13, 0, -1, -1, true, 'p', 'c', 'r', true, false, false, true, 0, { 0 } }, \
-{ 1249, {"atthasdef"},	  16, -1,	1, 14, 0, -1, -1, true, 'p', 'c', 'r', true, false, false, true, 0, { 0 } }, \
-{ 1249, {"attisdropped"}, 16, -1,	1, 15, 0, -1, -1, true, 'p', 'c', 'r', true, false, false, true, 0, { 0 } }, \
-{ 1249, {"attislocal"},   16, -1,	1, 16, 0, -1, -1, true, 'p', 'c', 'r', true, false, false, true, 0, { 0 } }, \
-{ 1249, {"attinhcount"},  23, -1,	4, 17, 0, -1, -1, true, 'p', 'i', 'r', true, false, false, true, 0, { 0 } }, \
-{ 1249, {"attacl"},     1034, -1,  -1, 18, 1, -1, -1, false, 'x', 'i', 'r', false, false, false, true, 0, { 0 } }
+{ 1249, {"attkind"},	  18, -1,	1, 13, 0, -1, -1, true, 'p', 'c', 'r', true, false, false, true, 0, { 0 } }, \
+{ 1249, {"attnotnull"},   16, -1,	1, 14, 0, -1, -1, true, 'p', 'c', 'r', true, false, false, true, 0, { 0 } }, \
+{ 1249, {"atthasdef"},	  16, -1,	1, 15, 0, -1, -1, true, 'p', 'c', 'r', true, false, false, true, 0, { 0 } }, \
+{ 1249, {"attisdropped"}, 16, -1,	1, 16, 0, -1, -1, true, 'p', 'c', 'r', true, false, false, true, 0, { 0 } }, \
+{ 1249, {"attislocal"},   16, -1,	1, 17, 0, -1, -1, true, 'p', 'c', 'r', true, false, false, true, 0, { 0 } }, \
+{ 1249, {"attinhcount"},  23, -1,	4, 18, 0, -1, -1, true, 'p', 'i', 'r', true, false, false, true, 0, { 0 } }, \
+{ 1249, {"attacl"},     1034, -1,  -1, 19, 1, -1, -1, false, 'x', 'i', 'r', false, false, false, true, 0, { 0 } }
 
 DATA(insert ( 1249 attrelid			26 -1  4   1 0 -1 -1 t p i r t f f t 0 _null_));
 DATA(insert ( 1249 attname			19 -1 NAMEDATALEN  2 0 -1 -1 f p c r t f f t 0 _null_));
@@ -389,12 +390,13 @@ DATA(insert ( 1249 atttypmod		23 -1  4   9 0 -1 -1 t p i r t f f t 0 _null_));
 DATA(insert ( 1249 attbyval			16 -1  1  10 0 -1 -1 t p c r t f f t 0 _null_));
 DATA(insert ( 1249 attstorage		18 -1  1  11 0 -1 -1 t p c r t f f t 0 _null_));
 DATA(insert ( 1249 attalign			18 -1  1  12 0 -1 -1 t p c r t f f t 0 _null_));
-DATA(insert ( 1249 attnotnull		16 -1  1  13 0 -1 -1 t p c r t f f t 0 _null_));
-DATA(insert ( 1249 atthasdef		16 -1  1  14 0 -1 -1 t p c r t f f t 0 _null_));
-DATA(insert ( 1249 attisdropped		16 -1  1  15 0 -1 -1 t p c r t f f t 0 _null_));
-DATA(insert ( 1249 attislocal		16 -1  1  16 0 -1 -1 t p c r t f f t 0 _null_));
-DATA(insert ( 1249 attinhcount		23 -1  4  17 0 -1 -1 t p i r t f f t 0 _null_));
-DATA(insert ( 1249 attacl		  1034 -1 -1  18 1 -1 -1 f x i r f f f t 0 _null_));
+DATA(insert ( 1249 attkind			18 -1  1  13 0 -1 -1 t p c r t f f t 0 _null_));
+DATA(insert ( 1249 attnotnull		16 -1  1  14 0 -1 -1 t p c r t f f t 0 _null_));
+DATA(insert ( 1249 atthasdef		16 -1  1  15 0 -1 -1 t p c r t f f t 0 _null_));
+DATA(insert ( 1249 attisdropped		16 -1  1  16 0 -1 -1 t p c r t f f t 0 _null_));
+DATA(insert ( 1249 attislocal		16 -1  1  17 0 -1 -1 t p c r t f f t 0 _null_));
+DATA(insert ( 1249 attinhcount		23 -1  4  18 0 -1 -1 t p i r t f f t 0 _null_));
+DATA(insert ( 1249 attacl		  1034 -1 -1  19 1 -1 -1 f x i r f f f t 0 _null_));
 DATA(insert ( 1249 ctid				27 0  6  -1 0 -1 -1 f p s r t f f t 0 _null_));
 /* no OIDs in pg_attribute */
 DATA(insert ( 1249 xmin				28 0  4  -3 0 -1 -1 t p i r t f f t 0 _null_));
