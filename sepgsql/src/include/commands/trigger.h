@@ -6,7 +6,7 @@
  * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/commands/trigger.h,v 1.70 2009/01/01 17:23:58 momjian Exp $
+ * $PostgreSQL: pgsql/src/include/commands/trigger.h,v 1.72 2009/01/22 20:16:09 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -95,12 +95,17 @@ typedef struct TriggerData
 #define SESSION_REPLICATION_ROLE_LOCAL		2
 extern PGDLLIMPORT int	SessionReplicationRole;
 
+/*
+ * States at which a trigger can be fired. These are the
+ * possible values for pg_trigger.tgenabled.
+ */
 #define TRIGGER_FIRES_ON_ORIGIN				'O'
 #define TRIGGER_FIRES_ALWAYS				'A'
 #define TRIGGER_FIRES_ON_REPLICA			'R'
 #define TRIGGER_DISABLED					'D'
 
-extern Oid	CreateTrigger(CreateTrigStmt *stmt, Oid constraintOid);
+extern Oid	CreateTrigger(CreateTrigStmt *stmt, Oid constraintOid,
+						  bool checkPermissions);
 
 extern void DropTrigger(Oid relid, const char *trigname,
 			DropBehavior behavior, bool missing_ok);

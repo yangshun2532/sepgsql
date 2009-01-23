@@ -22,7 +22,7 @@
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/nodes/equalfuncs.c,v 1.345 2009/01/16 13:27:23 heikki Exp $
+ *	  $PostgreSQL: pgsql/src/backend/nodes/equalfuncs.c,v 1.346 2009/01/22 20:16:03 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -1011,6 +1011,15 @@ _equalFuncWithArgs(FuncWithArgs *a, FuncWithArgs *b)
 {
 	COMPARE_NODE_FIELD(funcname);
 	COMPARE_NODE_FIELD(funcargs);
+
+	return true;
+}
+
+static bool
+_equalAccessPriv(AccessPriv *a, AccessPriv *b)
+{
+	COMPARE_STRING_FIELD(priv_name);
+	COMPARE_NODE_FIELD(cols);
 
 	return true;
 }
@@ -2126,6 +2135,8 @@ _equalRangeTblEntry(RangeTblEntry *a, RangeTblEntry *b)
 	COMPARE_SCALAR_FIELD(inFromCl);
 	COMPARE_SCALAR_FIELD(requiredPerms);
 	COMPARE_SCALAR_FIELD(checkAsUser);
+	COMPARE_BITMAPSET_FIELD(selectedCols);
+	COMPARE_BITMAPSET_FIELD(modifiedCols);
 
 	return true;
 }
@@ -2892,6 +2903,9 @@ equal(void *a, void *b)
 			break;
 		case T_FuncWithArgs:
 			retval = _equalFuncWithArgs(a, b);
+			break;
+		case T_AccessPriv:
+			retval = _equalAccessPriv(a, b);
 			break;
 		case T_XmlSerialize:
 			retval = _equalXmlSerialize(a, b);
