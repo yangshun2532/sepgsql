@@ -713,9 +713,11 @@ sepgsqlPostQueryRewrite(List *queryList)
 static void
 checkSelinuxEvalItem(SelinuxEvalItem *seitem)
 {
-	const char *audit_name;
+	Form_pg_class relForm;
+	Form_pg_attribute attForm;
 	HeapTuple tuple;
 	AttrNumber attno;
+	const char *audit_name;
 	int index;
 
 	Assert(IsA(seitem, SelinuxEvalItem));
@@ -738,7 +740,8 @@ checkSelinuxEvalItem(SelinuxEvalItem *seitem)
 	if (!HeapTupleIsValid(tuple))
 		elog(ERROR, "SELinux: cache lookup failed for relation: %u",
 			 seitem->relid);
-	if (((Form_pg_class) GETSTRUCT(tuple))->relkind != RELKIND_RELATION)
+	relForm = (Form_pg_class) GETSTRUCT(tuple);
+	if (relForm->relkind != RELKIND_RELATION)
 	{
 		ReleaseSysCache(tuple);
 		return;
@@ -750,6 +753,19 @@ checkSelinuxEvalItem(SelinuxEvalItem *seitem)
 							   seitem->relperms,
 							   audit_name);
 	ReleaseSysCache(tuple);
+
+	/*
+	 * Expand whole-row-reference
+	 */
+	index = seitem_attno_to_index(InvalidAttrNumber);
+	if (seitem->attperms[index] != 0)
+	{
+		uint32 perms = seitem->attperms[index];
+
+		seitem->attperms[index] = 0;
+		for (index++; index < seitem->nattrs; index++)
+			seitem->attperms[index] |= perms;
+	}
 
 	/*
 	 * Permission checks on columns
@@ -767,9 +783,21 @@ checkSelinuxEvalItem(SelinuxEvalItem *seitem)
 		if (!HeapTupleIsValid(tuple))
 			elog(ERROR, "SELinux: cache lookup failed for attribute %d of relation %u",
 				 attno, seitem->relid);
+		attForm = (Form_pg_attribute) GETSTRUCT(tuple);
+		/*
+		 * NOTE: When user uses whole-row-reference on a table
+		 * which has already dropped column, the column can have
+		 * non-zero required permissions, but being ignorable.
+		 */
+		if (attForm->attisdropped)
+		{
+			ReleaseSysCache(tuple);
+			continue;
+		}
+
 		audit_name = sepgsqlTupleName(AttributeRelationId, tuple);
 		sepgsqlClientHasPermission(HeapTupleGetSecLabel(tuple),
-                                   SECCLASS_DB_COLUMN,
+								   SECCLASS_DB_COLUMN,
 								   seitem->attperms[index],
 								   audit_name);
 		ReleaseSysCache(tuple);
@@ -844,34 +872,6 @@ expandEvalItemInheritance(List *selist)
 	return result;
 }
 
-static List *
-expandEvalItemWholeRowRefs(List *selist)
-{
-	ListCell *l;
-	int i, rindex;
-
-	rindex = seitem_attno_to_index(InvalidAttrNumber);
-
-	foreach (l, selist)
-	{
-		SelinuxEvalItem *seitem = (SelinuxEvalItem *) lfirst(l);
-		uint32 perms;
-
-		Assert(IsA(seitem, SelinuxEvalItem));
-
-		perms = seitem->attperms[rindex];
-		if (perms == 0)
-			continue;	/* it does not contain whole-row-ref */
-
-		for (i = rindex + 1; i < seitem->nattrs; i++)
-			seitem->attperms[i] |= perms;
-
-		seitem->attperms[rindex] = 0;
-	}
-
-	return selist;
-}
-
 /*
  * sepgsqlExecutorStart
  *
@@ -923,11 +923,6 @@ sepgsqlExecutorStart(QueryDesc *queryDesc, int eflags)
 		selist = addEvalTriggerFunction(selist, rte->relid,
 										pstmt->commandType);
 	}
-
-	/*
-	 * Expand whole-row-references
-	 */
-	selist = expandEvalItemWholeRowRefs(selist);
 
 	/*
 	 * Check SelinuxEvalItem
@@ -1029,11 +1024,6 @@ sepgsqlCopyTable(Relation rel, List *attNumList, bool isFrom)
 	 */
 	if (isFrom)
 		selist = addEvalTriggerFunction(selist, RelationGetRelid(rel), CMD_INSERT);
-
-	/*
-	 * Expand whole-row-references
-	 */
-	selist = expandEvalItemWholeRowRefs(selist);
 
 	foreach (l, selist)
 		checkSelinuxEvalItem((SelinuxEvalItem *) lfirst(l));
