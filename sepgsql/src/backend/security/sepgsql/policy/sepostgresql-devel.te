@@ -24,7 +24,7 @@ gen_require(`
 	type sepgsql_trusted_proc_t;
 
 	attribute tmpfile;
-	attribute user_ptynode;
+	attribute ptynode;
 ')
 
 #################################
@@ -44,14 +44,18 @@ ifdef(`postgresql_role', `
 
 allow sepgsql_test_t tmpfile : dir search_dir_perms;
 allow sepgsql_test_t tmpfile : file rw_file_perms;
-allow sepgsql_test_t user_ptynode : chr_file rw_file_perms;
+allow sepgsql_test_t ptynode : chr_file rw_file_perms;
 
 optional_policy(`
 	gen_require(`
 		type unconfined_t;
 		role unconfined_r;
 	')
-	allow unconfined_t sepgsql_test_t : process transition;
+
+	tunable_policy(`sepgsql_regression_test_mode',`
+		allow unconfined_t sepgsql_test_t : process transition;
+	')
+	allow sepgsql_test_t unconfined_t : fifo_file read_file_perms;
 	role unconfined_r types sepgsql_test_t;
 	role unconfined_r types sepgsql_trusted_proc_t;
 ')
