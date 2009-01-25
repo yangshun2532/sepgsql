@@ -707,9 +707,9 @@ SET ENABLE_SEQSCAN TO OFF;
      </varlistentry>
 
      <varlistentry id="guc-pgace-feature" xreflabel="pgace-feature">
-      <term><varname>pgace-feature</varname> (<type>string</type>)</term>
+      <term><varname>pgace_feature</varname> (<type>string</type>)</term>
       <indexterm>
-       <primary><varname>pgace-feature</> configuration parameter</primary>
+       <primary><varname>pgace_feature</> configuration parameter</primary>
       </indexterm>
       <listitem>
        <para>
