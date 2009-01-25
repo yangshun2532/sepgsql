@@ -8,20 +8,26 @@ SELECT sepgsql_getcon();
 
 -- cleanup previous tests
 SET client_min_messages TO 'error';
+SET
 DROP TABLE IF EXISTS t2 CASCADE;
+DROP TABLE
 DROP TABLE IF EXISTS t1 CASCADE;
+DROP TABLE
 RESET client_min_messages;
+RESET
 CREATE TABLE t1
 (
 	a	int primary key,
 	b	text
 );
-psql:sql/row_level_mac.init:18: NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "t1_pkey" for table "t1"
+NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "t1_pkey" for table "t1"
+CREATE TABLE
 CREATE TABLE t2
 (
 	x	int references t1(a),
 	y	text
 );
+CREATE TABLE
 INSERT INTO t1 (security_label, a, b) VALUES
        ('system_u:object_r:sepgsql_table_t:s0',            1, 'aaa'),
        ('system_u:object_r:sepgsql_table_t:s0:c0',         2, 'bbb'),
@@ -29,13 +35,14 @@ INSERT INTO t1 (security_label, a, b) VALUES
        ('system_u:object_r:sepgsql_ro_table_t:s0',         4, 'ddd'),
        ('system_u:object_r:sepgsql_ro_table_t:s0:c0',      5, 'eee'),
        ('system_u:object_r:sepgsql_ro_table_t:s0:c1',      6, 'fff');
+INSERT 0 6
 INSERT INTO t2 (x, y) VALUES
        (1, 'red'), (2, 'blue'), (3, 'yellow'),
        (4, 'green'), (5, 'orange'), (6, 'white');
+INSERT 0 6
 UPDATE t2 SET security_label = sepgsql_set_range(security_label, 's0:c1')
        WHERE x IN (1, 3, 4)
--- Basic Row-level Access Controls
--- ====================================
+UPDATE 3
 SELECT sepgsql_getcon();
                   sepgsql_getcon                   
 ---------------------------------------------------
@@ -76,7 +83,9 @@ SELECT t1.security_label, t2.security_label, * FROM t1 JOIN t2 ON t1.a = t2.x;
 (2 rows)
 
 BEGIN;
+BEGIN
 UPDATE t1 SET b = b || '_updt';
+UPDATE 2
 SELECT security_label, * FROM t1;
                security_label               | a |    b     
 --------------------------------------------+---+----------
@@ -87,7 +96,9 @@ SELECT security_label, * FROM t1;
 (4 rows)
 
 ABORT;
+ROLLBACK
 BEGIN;
+BEGIN
 DELETE FROM t2 RETURNING *;
  x |   y    
 ---+--------
@@ -96,9 +107,11 @@ DELETE FROM t2 RETURNING *;
  6 | white
 (3 rows)
 
+DELETE 3
 ABORT;
+ROLLBACK
 INSERT INTO t1 VALUES (6, 'fff');	-- to be failed
-psql:sql/row_level_mac.sql:23: ERROR:  duplicate key value violates unique constraint "t1_pkey"
+ERROR:  duplicate key value violates unique constraint "t1_pkey"
 DELETE FROM t1 WHERE a = 1;		-- to be failed
-psql:sql/row_level_mac.sql:24: ERROR:  SELinux: security policy violation
+ERROR:  SELinux: security policy violation
 CONTEXT:  SQL statement "SELECT 1 FROM ONLY "public"."t2" x WHERE $1 OPERATOR(pg_catalog.=) "x" FOR SHARE OF x"
