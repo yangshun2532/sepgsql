@@ -239,11 +239,11 @@ PostgreSQL documentation
       <term><option>--pgace-feature=<replaceable>FEATURE</></option></term>
       <listitem>
        <para>
-        Selects an enhanced security feature, and write it out on the
-	<filename>postgresql.conf</filename>.
-        This default is <literal>none</literal> which means no enhanced
-        security feature is activated on <command>initdb</command>.
-        The following options are available now: <literal>selinux</literal>.
+        Selects an enhanced security feature, and writes it to
+        <filename>postgresql.conf</filename>.
+        The default is <literal>none</literal> which means no enhanced
+        security feature is activated.  Currently, the only available
+        enhanced security feature is <literal>selinux</literal>.
        </para>
       </listitem>
      </varlistentry>
