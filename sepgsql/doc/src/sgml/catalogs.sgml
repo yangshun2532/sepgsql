@@ -4217,35 +4217,24 @@
    </indexterm>
 
    <para>
-     The catalog <structname>pg_security</structname> stores text representation
-     of security attributes managed by PGACE framework.
+     The catalog <structname>pg_security</structname> stores text
+     representations of security attributes managed by the PGACE framework.
    </para>
 
    <para>
-     When a security module is enabled on PGACE framework and it utilizes security
-     attribute to make its decision, we have to associate a security attribute with
-     a tuple. In generally, security attribute is a formatted string and massive
-     objects tend to share same attribute. So, it is not efficient to store it
-     as a text for each object. The number of security attribute is much less
-     than the number of object, in other word.
+     Security modules managed by the PGACE framework can associate security
+     attributes with individual tuples.  Because the same security attribute
+     value is typically associated with many individual objects, all values
+     known to the system are stored here and referenced by OID.  This OID is
+     called a <literal>security id</literal> and is part of the tuple header.
    </para>
 
    <para>
-     PGACE provides a facility to associate them effectively,
-     using <structname>pg_security</structname> system catalog.
-
-     It enables a security module to put an object identifier into padding area
-     of tuple header, called as <literal>security id</literal>.
-   </para>
-
-   <para>
-     <literal>security id</literal> means an object identifier (oid) of a tuple
-     within <structname>pg_security</structname> system catalog, which contains
-     a text representation.
-     So, we can translate security id to text representation on exporting, and
-     vice versa. When a new text representation is given, a new tuple is added
-     to <structname>pg_security</structname> and a new <literal>security id</literal>
-     is assigned by PGACE.
+     When an new security attribute is given to the system, a new tuple is
+     added to <structname>pg_security</structname> and a new <literal>security
+     id</literal> is assigned by PGACE.  On output, a
+     <literal>security id</literal> can be rendered as text using this
+     system catalog as a lookup table.
    </para>
 
    <para>

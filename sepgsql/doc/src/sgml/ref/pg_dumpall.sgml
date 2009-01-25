@@ -338,8 +338,9 @@ PostgreSQL documentation
       <term><option>--security-acl</option></term>
       <listitem>
        <para>
-        Dumps Row-level ACLs with table contents.
-        It can be restored via writable system column <literal>security_acl</literal>.
+        Dumps row-level ACLs with table contents.
+        ACLs can be restored via writable system column
+        <literal>security_acl</literal>.
        </para>
       </listitem>
      </varlistentry>
@@ -350,7 +351,8 @@ PostgreSQL documentation
        <para>
         Dumps security labels managed by available enhanced security feature
         with table contents.
-        It can be restored via writable system column <literal>security_label</literal>.
+        Labels can be restored via writable system column
+        <literal>security_label</literal>.
        </para>
       </listitem>
      </varlistentry>
