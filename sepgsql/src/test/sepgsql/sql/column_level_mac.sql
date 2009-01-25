@@ -1,5 +1,38 @@
--- Basic column-level access controls
--- ==================================
+:SECURITY_CONTEXT=unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c15
+
+SELECT sepgsql_getcon();
+
+-- cleanup previous tests
+SET client_min_messages TO 'error';
+
+DROP TABLE IF EXISTS t1 CASCADE;
+DROP FUNCTION IF EXISTS f1(integer);
+
+RESET client_min_messages;
+
+CREATE TABLE t1
+(
+	a	int,
+	b	text
+		SECURITY_LABEL = 'system_u:object_r:sepgsql_ro_table_t:s0',
+	c	text
+		SECURITY_LABEL = 'system_u:object_r:sepgsql_secret_table_t:s0'
+);
+
+INSERT INTO t1 VALUES (1, 'aaa', '0000-1111-2222'),
+       (2, 'bbb', '3333-4444-5555'),
+       (3, 'ccc', '6666-7777-8888');
+
+SELECT security_label, attname FROM pg_attribute
+       WHERE attrelid IN (SELECT tableoid FROM t1);
+
+CREATE OR REPLACE FUNCTION f1(integer) RETURNS TEXT
+       LANGUAGE 'sql'
+       SECURITY_LABEL = 'system_u:object_r:sepgsql_trusted_proc_exec_t:s0'
+       AS 'SELECT substring(c FROM ''^[0-9]+-'') || ''xxxx-xxxx'' FROM t1 WHERE a = $1';
+
+
+:SECURITY_CONTEXT=unconfined_u:unconfined_r:sepgsql_test_t:s0:c0
 
 SELECT sepgsql_getcon();
 

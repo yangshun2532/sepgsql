@@ -1,5 +1,3 @@
--- COPY TO/FROM statement
--- ======================
 SELECT sepgsql_getcon();
                    sepgsql_getcon                    
 -----------------------------------------------------
@@ -8,14 +6,19 @@ SELECT sepgsql_getcon();
 
 -- cleanup previous tests
 SET client_min_messages TO 'error';
+SET
 DROP TABLE IF EXISTS t1 CASCADE;
+DROP TABLE
 DROP TABLE IF EXISTS t2 CASCADE;
+DROP TABLE
 RESET client_min_messages;
+RESET
 CREATE TABLE t1
 (
 	a	int,
 	b	text
 );
+CREATE TABLE
 COPY t1 (security_label, a, b) FROM stdin;
 COPY t1 (security_label, a, b) TO stdout;
 system_u:object_r:sepgsql_table_t:s0	1	aaa
@@ -25,7 +28,9 @@ system_u:object_r:sepgsql_table_t:s0	4	ddd
 system_u:object_r:sepgsql_table_t:s0:c0	5	eee
 system_u:object_r:sepgsql_table_t:s0:c1	6	fff
 COPY t1 (security_label, a, b) TO '/tmp/sepgsql_test_copy_1';
+COPY 6
 COPY t1 (security_label, a, b) TO '/tmp/sepgsql_test_copy_2';
+COPY 6
 CREATE TABLE t2
 (
 	x	int,
@@ -34,9 +39,8 @@ CREATE TABLE t2
 	z	text
 		SECURITY_LABEL = 'system_u:object_r:sepgsql_secret_table_t:s0'
 );
+CREATE TABLE
 COPY t2 FROM stdin;
--- COPY TO/FROM statement
--- ======================
 SELECT sepgsql_getcon();
                   sepgsql_getcon                   
 ---------------------------------------------------
@@ -49,7 +53,7 @@ COPY t1 TO stdout;
 4	ddd
 5	eee
 COPY t2 TO stdout;	-- to be failed
-psql:sql/copy_stmt.sql:7: ERROR:  SELinux: denied { select } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=system_u:object_r:sepgsql_secret_table_t:s0 tclass=db_column name=t2.z
+ERROR:  SELinux: denied { select } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=system_u:object_r:sepgsql_secret_table_t:s0 tclass=db_column name=t2.z
 COPY t1 (security_label, a, b) TO stdout;
 system_u:object_r:sepgsql_table_t:s0	1	aaa
 system_u:object_r:sepgsql_table_t:s0:c0	2	bbb
@@ -60,14 +64,15 @@ unconfined_u:object_r:sepgsql_table_t:s0	1	xxx
 unconfined_u:object_r:sepgsql_table_t:s0	2	yyy
 unconfined_u:object_r:sepgsql_table_t:s0	3	zzz
 COPY t2 (security_label, y, z) TO stdout;	-- to be failed
-psql:sql/copy_stmt.sql:11: ERROR:  SELinux: denied { select } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=system_u:object_r:sepgsql_secret_table_t:s0 tclass=db_column name=t2.z
+ERROR:  SELinux: denied { select } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=system_u:object_r:sepgsql_secret_table_t:s0 tclass=db_column name=t2.z
 COPY t1 FROM stdin;
 COPY t1 (security_label, a, b) FROM stdin;
 COPY t2 (security_label, x, y) FROM stdin;	-- to be failed
-psql:sql/copy_stmt.sql:21: ERROR:  SELinux: denied { insert } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=system_u:object_r:sepgsql_ro_table_t:s0 tclass=db_column name=t2.y
+ERROR:  SELinux: denied { insert } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=system_u:object_r:sepgsql_ro_table_t:s0 tclass=db_column name=t2.y
 COPY t1 (security_label, a, b) FROM '/tmp/sepgsql_test_copy_1';	-- to be failed
-psql:sql/copy_stmt.sql:23: ERROR:  SELinux: denied { read } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=unconfined_u:object_r:postgresql_db_t:s0 tclass=file name=/tmp/sepgsql_test_copy_1
+ERROR:  SELinux: denied { read } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=unconfined_u:object_r:postgresql_db_t:s0 tclass=file name=/tmp/sepgsql_test_copy_1
 COPY t1 (security_label, a, b) FROM '/tmp/sepgsql_test_copy_2';	-- partial success
+COPY 4
 COPY t1 (security_label, a, b) TO stdout;
 system_u:object_r:sepgsql_table_t:s0	1	aaa
 system_u:object_r:sepgsql_table_t:s0:c0	2	bbb

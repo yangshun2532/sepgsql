@@ -1,5 +1,18 @@
+:SECURITY_CONTEXT=unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c15
 -- Binary Large Object
 -- ===================
+
+SELECT sepgsql_getcon();
+
+SELECT lo_import('/tmp/sepgsql_test_blob', 6001);
+SELECT lo_import('/tmp/sepgsql_test_blob', 6002);
+SELECT lo_import('/tmp/sepgsql_test_blob', 6003);
+
+SELECT lo_set_security(6001, 'system_u:object_r:sepgsql_blob_t:s0');
+SELECT lo_set_security(6002, 'system_u:object_r:sepgsql_ro_blob_t:s0');
+SELECT lo_set_security(6003, 'system_u:object_r:sepgsql_secret_blob_t:s0');
+
+:SECURITY_CONTEXT=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0
 
 SELECT sepgsql_getcon();
 
@@ -66,3 +79,12 @@ SELECT lo_export(6001, '/tmp/sepgsql_test_blob');
 -- check result
 SELECT security_label, loid, COUNT(*) FROM pg_largeobject
        GROUP BY security_label, loid;
+
+:SECURITY_CONTEXT=unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c15
+SELECT sepgsql_getcon();
+
+SELECT lo_unlink(6001);
+SELECT lo_unlink(6002);
+SELECT lo_unlink(6003);
+SELECT lo_unlink(6004);
+SELECT lo_unlink(6005);

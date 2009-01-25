@@ -1,9 +1,0 @@
--- Binary Large Object
--- ===================
-
-SELECT sepgsql_getcon();
-
-SELECT lo_unlink(6001);
-SELECT lo_unlink(6002);
-SELECT lo_unlink(6003);
-SELECT lo_unlink(6004);

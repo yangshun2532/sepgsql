@@ -42,8 +42,6 @@ SELECT lo_set_security(6003, 'system_u:object_r:sepgsql_secret_blob_t:s0');
  t
 (1 row)
 
--- Binary Large Object
--- ===================
 SELECT sepgsql_getcon();
                   sepgsql_getcon                   
 ---------------------------------------------------
@@ -79,6 +77,7 @@ SELECT security_label, loid, COUNT(*) FROM pg_largeobject
 
 -- read large object
 BEGIN;
+BEGIN
 SELECT lo_open(6001, x'40000'::int);
  lo_open 
 ---------
@@ -92,7 +91,9 @@ SELECT loread(0, 24);
 (1 row)
 
 ROLLBACK;
+ROLLBACK
 BEGIN;
+BEGIN
 SELECT lo_open(6002, x'40000'::int);
  lo_open 
 ---------
@@ -106,7 +107,9 @@ SELECT loread(0, 24);
 (1 row)
 
 ROLLBACK;
+ROLLBACK
 BEGIN;
+BEGIN
 SELECT lo_open(6003, x'40000'::int);
  lo_open 
 ---------
@@ -114,10 +117,12 @@ SELECT lo_open(6003, x'40000'::int);
 (1 row)
 
 SELECT loread(0, 24);			-- to be failed
-psql:sql/largeobject.sql:26: ERROR:  SELinux: denied { read } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=system_u:object_r:sepgsql_secret_blob_t:s0 tclass=db_blob name=loid:6003
+ERROR:  SELinux: denied { read } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=system_u:object_r:sepgsql_secret_blob_t:s0 tclass=db_blob name=loid:6003
 ROLLBACK;
+ROLLBACK
 -- write large object
 BEGIN;
+BEGIN
 SELECT lo_open(6001, x'20000'::int);
  lo_open 
 ---------
@@ -131,7 +136,9 @@ SELECT lowrite(0, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ');
 (1 row)
 
 COMMIT;
+COMMIT
 BEGIN;
+BEGIN
 SELECT lo_open(6002, x'20000'::int);
  lo_open 
 ---------
@@ -139,9 +146,11 @@ SELECT lo_open(6002, x'20000'::int);
 (1 row)
 
 SELECT lowrite(0, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ');	-- to be failed
-psql:sql/largeobject.sql:37: ERROR:  SELinux: denied { write } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=system_u:object_r:sepgsql_ro_blob_t:s0 tclass=db_blob name=loid:6002
+ERROR:  SELinux: denied { write } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=system_u:object_r:sepgsql_ro_blob_t:s0 tclass=db_blob name=loid:6002
 COMMIT;
+ROLLBACK
 BEGIN;
+BEGIN
 SELECT lo_open(6003, x'20000'::int);
  lo_open 
 ---------
@@ -149,10 +158,12 @@ SELECT lo_open(6003, x'20000'::int);
 (1 row)
 
 SELECT lowrite(0, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ');	-- to be failed
-psql:sql/largeobject.sql:42: ERROR:  SELinux: denied { write } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=system_u:object_r:sepgsql_secret_blob_t:s0 tclass=db_blob name=loid:6003
+ERROR:  SELinux: denied { write } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=system_u:object_r:sepgsql_secret_blob_t:s0 tclass=db_blob name=loid:6003
 COMMIT;
+ROLLBACK
 -- create large object
 BEGIN;
+BEGIN
 SELECT lo_create(6004);
  lo_create 
 -----------
@@ -178,8 +189,10 @@ SELECT lo_close(0);
 (1 row)
 
 COMMIT;
+COMMIT
 -- append large object
 BEGIN;
+BEGIN
 SELECT lo_open(6001, x'60000'::int);
  lo_open 
 ---------
@@ -205,11 +218,12 @@ SELECT lo_close(0);
 (1 row)
 
 COMMIT;
+COMMIT
 -- import/export large object
 SELECT lo_import('/tmp/sepgsql_test_blob', 6005);
-psql:sql/largeobject.sql:62: ERROR:  SELinux: denied { import } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=unconfined_u:object_r:sepgsql_test_sepgsql_blob_t:s0 tclass=db_blob name=loid:6005
+ERROR:  SELinux: denied { import } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=unconfined_u:object_r:sepgsql_test_sepgsql_blob_t:s0 tclass=db_blob name=loid:6005
 SELECT lo_export(6001, '/tmp/sepgsql_test_blob');
-psql:sql/largeobject.sql:64: ERROR:  SELinux: denied { export } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=system_u:object_r:sepgsql_blob_t:s0 tclass=db_blob name=loid:6001
+ERROR:  SELinux: denied { export } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=system_u:object_r:sepgsql_blob_t:s0 tclass=db_blob name=loid:6001
 -- check result
 SELECT security_label, loid, COUNT(*) FROM pg_largeobject
        GROUP BY security_label, loid;
@@ -221,8 +235,6 @@ SELECT security_label, loid, COUNT(*) FROM pg_largeobject
  system_u:object_r:sepgsql_blob_t:s0                  | 6001 |    11
 (4 rows)
 
--- Binary Large Object
--- ===================
 SELECT sepgsql_getcon();
                    sepgsql_getcon                    
 -----------------------------------------------------
@@ -253,3 +265,5 @@ SELECT lo_unlink(6004);
          1
 (1 row)
 
+SELECT lo_unlink(6005);
+ERROR:  large object 6005 does not exist
