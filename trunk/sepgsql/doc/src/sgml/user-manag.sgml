@@ -502,4 +502,154 @@ DROP ROLE <replaceable>name</replaceable>;
   </para>
  </sect1>
 
+ <sect1 id="row-level-database-acls">
+   <title>Row-level Database ACLs</title>
+   <para>
+     This section introduces design and implementation of the Row-level
+     Database ACLs in PostgreSQL. It makes it possible to assign ACLs
+     to each individual tuple, and works as a supplemental facility to
+     existing database ACLs applied to tables and columns.
+   </para>
+
+   <sect2>
+     <title>Design</title>
+     <para>
+       The design of Row-level Database ACLs feature inherits many things
+       from existing access control mechanism. For example, it is a sort
+       of discretionary access control mechanism, so it allows the owner of
+       a resource to change its access control rights, and does not affect
+       database superusers.
+     </para>
+     <para>
+       This feature is implemented as a guest of PGACE security framework,
+       but wired feature, not a selectable one.
+     </para>
+     <para>
+       It works as if there is a filter to drop inaccessible tuples on scanning
+       the relation. Just before the executor scans relation, tables and
+       columns level ACLs are also checked, and the feature makes a decision
+       as to whether the tuple should be returned, ot not.
+     </para>
+     <para>
+       We provides four kind of permissions on tuples.
+       These are <literal>SELECT</literal>, <literal>UPDATE</literal>,
+       <literal>DELETE</literal> and <literal>REFERENCES</literal>.
+
+       An <literal>INSERT</literal> permission would not make sense,
+       because the target does not exist when it should be checked.
+
+       You should control insertion of tuples via table-level ACLs.
+     </para>
+     <para>
+       PostgreSQL implements foreign key constraints as built-in trigger
+       functions, and it invokes another query to maintain referential
+       integrity.
+
+       It is an exception case of the filtering. In this case, it raises
+       an error to abort current transation, if the query tries to fetch
+       an inaccessible tuple.
+
+       As with SE-PostgreSQL, unprivileged users may be able to infer
+       information about tuples they cannot access directly.
+     </para>
+     <para>
+       This feature is activated via table option of
+       <literal>row_level_acl</literal>. It can heve either of
+       <literal>on</literal> or <literal>off</literal> in the default.
+
+       It enables us to refer or set per-tuple ACLs via the
+       <literal>security_acl</literal> system column.
+       We can modify it via <literal>UPDATE</literal>,
+       <literal>INSERT</literal> with explict ACLs on the system column.
+
+       A feature to set default ACLs is also available.
+       A new table option of <literal>default_row_acl</literal> enables to
+       specify a default ACLs of for newly inserted tuples.
+     </para>
+   </sect2>
+
+   <sect2>
+     <title>Administration</title>
+     <sect3>
+       <title>Setup Row-level ACLs</title>
+       <para>
+	 The <literal>row_level_acl</literal> table option on
+	 <literal>CREATE TABLE</literal> or <literal>ALTER TABLE</literal>
+	 is used to activate the Row-level Database ACLs.
+       </para>
+<screen>
+<prompt># </prompt><userinput>CREATE TABLE drink (
+      id      int primary key,
+      name    text,
+      price   int
+  ) WITH (row_level_acl=on);</userinput>
+NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "drink_pkey" for table "drink"
+CREATE TABLE
+</screen>
+       <para>
+	 We can set Row-level ACLs via <literal>security_acl</literal>
+	 system column.  For example:
+       </para>
+<screen>
+<prompt># </prompt><userinput>UPDATE drink SET security_acl = '{=r/postgres}' WHERE id in (3,4,5);</userinput>
+UPDATE 3
+<prompt># </prompt><userinput>SELECT security_acl, * FROM drink order by id;</userinput>
+         security_acl           | id | name  | price
+--------------------------------+----+-------+-------
+ {kaigai=rwd/kaigai}            |  1 | water |   100
+ {kaigai=rwd/kaigai}            |  2 | coke  |   120
+ {=r/kaigai}                    |  3 | juice |   130
+ {=r/kaigai}                    |  4 | cofee |   180
+ {=r/kaigai}                    |  5 | beer  |   240
+ {kaigai=r/kaigai,ymj=r/kaigai} |  6 | sake  |   320
+(6 rows)
+</screen>
+       <para>
+	 The database user must have ownership of the relation or privileges
+	 of database superuser in order to update
+	 <literal>security_acl</literal>.
+
+	 Please note that this feature considers the owner of a tuple to be
+	 the owner of the table in which they are stored, rather than the
+	 client who inserted the tuple.
+       </para>
+     </sect3>
+
+     <sect3>
+       <title>Backup and Restore</title>
+       <para>
+	 The <literal>--security-acl</literal> option to
+	 <command>pg_dump</command> and <command>pg_dumpall</command>
+	 can be used to dump tables with row-level ACLs.  With this option,
+	 the output will contain the <literal>security_acl</literal> system
+	 column if the row-level ACLs feature is enabled on the target
+	 table.
+       </para>
+<screen>
+<prompt>$ </prompt><userinput>pg_dump --security-acl postgres</userinput>
+          :
+CREATE TABLE drink (
+    id integer NOT NULL,
+    name text,
+    price integer
+)
+WITH (row_level_acl=on);
+          :
+--
+-- Data for Name: drink; Type: TABLE DATA; Schema: public; Owner: kaigai
+--
+
+COPY drink (security_acl, id, name, price) FROM stdin;
+{kaigai=rwd/kaigai}     1       water   100
+{kaigai=rwd/kaigai}     2       coke    120
+{=r/kaigai}     3       juice   130
+{=r/kaigai}     4       coffee  180
+{=r/kaigai}     5       beer    240
+{kaigai=r/kaigai,ymj=rw/kaigai} 6       sake    320
+\.
+          :
+</screen>
+     </sect3>
+   </sect2>
+ </sect1>
 </chapter>

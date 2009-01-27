@@ -148,6 +148,7 @@
   &config;
   &client-auth;
   &user-manag;
+  &sepgsql;
   &manage-ag;
   &charset;
   &maintenance;
@@ -242,6 +243,7 @@
   &storage;
   &bki;
   &planstats;
+  &pgace;
 
  </part>
 
@@ -254,7 +256,6 @@
   &features;
   &release;
   &contrib;
-  &security;
   &external-projects;
   &cvs;
   &docguide;

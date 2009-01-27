@@ -45,6 +45,7 @@
 <!entity runtime       SYSTEM "runtime.sgml">
 <!entity config        SYSTEM "config.sgml">
 <!entity user-manag    SYSTEM "user-manag.sgml">
+<!entity sepgsql       SYSTEM "sepgsql.sgml">
 <!entity wal           SYSTEM "wal.sgml">
 
 <!-- programmer's guide -->
@@ -84,6 +85,7 @@
 <!entity planstats    SYSTEM "planstats.sgml">
 <!entity indexam    SYSTEM "indexam.sgml">
 <!entity nls        SYSTEM "nls.sgml">
+<!entity pgace      SYSTEM "pgace.sgml">
 <!entity plhandler  SYSTEM "plhandler.sgml">
 <!entity protocol   SYSTEM "protocol.sgml">
 <!entity sources    SYSTEM "sources.sgml">
@@ -139,7 +141,6 @@
 <!entity keywords   SYSTEM "keywords.sgml">
 <!entity release    SYSTEM "release.sgml">
 <!entity acronyms   SYSTEM "acronyms.sgml">
-<!entity security   SYSTEM "security.sgml">
 
 <!entity features-supported   SYSTEM "features-supported.sgml">
 <!entity features-unsupported SYSTEM "features-unsupported.sgml">
