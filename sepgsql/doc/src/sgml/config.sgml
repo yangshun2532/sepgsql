@@ -715,7 +715,7 @@ SET ENABLE_SEQSCAN TO OFF;
        <para>
 	An identifier name of current working enhanced security feature on
 	PGACE security framework.
-	(see <xref linkend="security"> for more information)
+	(see <xref linkend="pgace-security-framework"> for more information)
 	This parameter can only be set at server start.
        </para>
        <para>
@@ -750,7 +750,9 @@ SET ENABLE_SEQSCAN TO OFF;
         specified mode, independent from kernel setting. Please note
         that those configuration requires in-kernel SELinux is not
         disabled. The <literal>disabled</literal> disables SE-PostgreSQL.
-	This parameter can only be set at server start.
+	This parameter is available on a binary with SELinux support
+	(<literal>--enable-selinux</literal>), and can only be set at
+	server start.
        </para>
       </listitem>
      </varlistentry>
@@ -770,7 +772,9 @@ SET ENABLE_SEQSCAN TO OFF;
 	  for saving storage consumption.
 	  The default is <literal>on</literal> which means row-level access
 	  controls are available.
-	  This parameter can only be set at server start.
+	  This parameter is available on a binary with SELinux support
+	  (<literal>--enable-selinux</literal>), and can only be set at
+	  server start.
 	 </para>
        </listitem>
      </varlistentry>

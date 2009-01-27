@@ -4238,7 +4238,7 @@
    </para>
 
    <para>
-     See <xref linkend="security"> for more information.
+     See <xref linkend="pgace-security-label"> for more information.
    </para>
 
    <table>
