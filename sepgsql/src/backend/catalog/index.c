@@ -60,6 +60,7 @@
 #include "utils/relcache.h"
 #include "utils/syscache.h"
 #include "utils/tuplesort.h"
+#include "utils/sepgsql.h"
 #include "utils/snapmgr.h"
 #include "utils/tqual.h"
 
@@ -315,7 +316,10 @@ InitializeAttributeOids(Relation indexRelation,
 	tupleDescriptor = RelationGetDescr(indexRelation);
 
 	for (i = 0; i < numatts; i += 1)
+	{
 		tupleDescriptor->attrs[i]->attrelid = indexoid;
+		tupleDescriptor->attrs[i]->attkind = RELKIND_INDEX;
+	}
 }
 
 /* ----------------------------------------------------------------
@@ -351,7 +355,7 @@ AppendAttributeTuples(Relation indexRelation, int numatts)
 		Assert(indexTupDesc->attrs[i]->attnum == i + 1);
 		Assert(indexTupDesc->attrs[i]->attcacheoff == -1);
 
-		InsertPgAttributeTuple(pg_attribute, indexTupDesc->attrs[i], indstate);
+		InsertPgAttributeTuple(pg_attribute, indexTupDesc->attrs[i], indstate, NIL);
 	}
 
 	CatalogCloseIndexes(indstate);
@@ -630,6 +634,12 @@ index_create(Oid heapRelationId,
 	Assert(indexRelationId == RelationGetRelid(indexRelation));
 
 	/*
+	 * Fixup rel->rd_att->tdhasseclabel
+	 */
+	indexRelation->rd_att->tdhasseclabel
+		= pgaceTupleDescHasSecLabel(indexRelation, NIL);
+
+	/*
 	 * Obtain exclusive lock on it.  Although no other backends can see it
 	 * until we commit, this prevents deadlock-risk complaints from lock
 	 * manager in cases such as CLUSTER.
@@ -652,7 +662,7 @@ index_create(Oid heapRelationId,
 	 */
 	InsertPgClassTuple(pg_class, indexRelation,
 					   RelationGetRelid(indexRelation),
-					   reloptions);
+					   reloptions, NIL);
 
 	/* done with pg_class */
 	heap_close(pg_class, RowExclusiveLock);

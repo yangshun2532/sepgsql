@@ -32,6 +32,7 @@
 #include "storage/procarray.h"
 #include "storage/sinvaladt.h"
 #include "storage/spin.h"
+#include "utils/sepgsql.h"
 
 
 shmem_startup_hook_type shmem_startup_hook = NULL;
@@ -118,6 +119,7 @@ CreateSharedMemoryAndSemaphores(bool makePrivate, int port)
 #ifdef EXEC_BACKEND
 		size = add_size(size, ShmemBackendArraySize());
 #endif
+		size = add_size(size, sepgsqlShmemSize());
 
 		/* freeze the addin request size and include it */
 		addin_request_allowed = false;

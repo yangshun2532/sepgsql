@@ -47,6 +47,7 @@
 #include "utils/plancache.h"
 #include "utils/portal.h"
 #include "utils/relcache.h"
+#include "utils/sepgsql.h"
 #include "utils/snapmgr.h"
 #include "utils/syscache.h"
 #include "utils/tqual.h"
@@ -644,6 +645,9 @@ InitPostgres(const char *in_dbname, Oid dboid, const char *username,
 	/* report this backend in the PgBackendStatus array */
 	if (!bootstrap)
 		pgstat_bestart();
+
+	/* initialize mandatory access control facilities */
+	sepgsqlInitialize();
 
 	/* close the transaction we started above */
 	if (!bootstrap)

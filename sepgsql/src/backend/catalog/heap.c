@@ -64,6 +64,7 @@
 #include "utils/inval.h"
 #include "utils/lsyscache.h"
 #include "utils/relcache.h"
+#include "utils/sepgsql.h"
 #include "utils/snapmgr.h"
 #include "utils/syscache.h"
 #include "utils/tqual.h"
@@ -74,7 +75,8 @@ static void AddNewRelationTuple(Relation pg_class_desc,
 					Oid new_rel_oid, Oid new_type_oid,
 					Oid relowner,
 					char relkind,
-					Datum reloptions);
+					Datum reloptions,
+					List *secLabelList);
 static Oid AddNewRelationType(const char *typeName,
 				   Oid typeNamespace,
 				   Oid new_rel_oid,
@@ -486,7 +488,8 @@ CheckAttributeType(const char *attname, Oid atttypid)
 void
 InsertPgAttributeTuple(Relation pg_attribute_rel,
 					   Form_pg_attribute new_attribute,
-					   CatalogIndexState indstate)
+					   CatalogIndexState indstate,
+					   List *secLabelList))
 {
 	Datum		values[Natts_pg_attribute];
 	bool		nulls[Natts_pg_attribute];
@@ -508,6 +511,7 @@ InsertPgAttributeTuple(Relation pg_attribute_rel,
 	values[Anum_pg_attribute_attbyval - 1] = BoolGetDatum(new_attribute->attbyval);
 	values[Anum_pg_attribute_attstorage - 1] = CharGetDatum(new_attribute->attstorage);
 	values[Anum_pg_attribute_attalign - 1] = CharGetDatum(new_attribute->attalign);
+	values[Anum_pg_attribute_attkind - 1] = CharGetDatum(new_attribute->attkind);
 	values[Anum_pg_attribute_attnotnull - 1] = BoolGetDatum(new_attribute->attnotnull);
 	values[Anum_pg_attribute_atthasdef - 1] = BoolGetDatum(new_attribute->atthasdef);
 	values[Anum_pg_attribute_attisdropped - 1] = BoolGetDatum(new_attribute->attisdropped);
@@ -518,6 +522,8 @@ InsertPgAttributeTuple(Relation pg_attribute_rel,
 	nulls[Anum_pg_attribute_attacl - 1] = true;
 
 	tup = heap_form_tuple(RelationGetDescr(pg_attribute_rel), values, nulls);
+
+	sepgsqlSetGivenSecLabelList(pg_attribute_rel, tup, secLabelList);
 
 	/* finally insert the new tuple, update the indexes, and clean up */
 	simple_heap_insert(pg_attribute_rel, tup);
@@ -541,7 +547,8 @@ AddNewAttributeTuples(Oid new_rel_oid,
 					  TupleDesc tupdesc,
 					  char relkind,
 					  bool oidislocal,
-					  int oidinhcount)
+					  int oidinhcount,
+					  List *secLabelList)
 {
 	Form_pg_attribute attr;
 	int			i;
@@ -565,13 +572,14 @@ AddNewAttributeTuples(Oid new_rel_oid,
 	for (i = 0; i < natts; i++)
 	{
 		attr = tupdesc->attrs[i];
-		/* Fill in the correct relation OID */
+		/* Fill in the correct relation OID and relkind */
 		attr->attrelid = new_rel_oid;
+		attr->attkind = relkind;
 		/* Make sure these are OK, too */
 		attr->attstattarget = -1;
 		attr->attcacheoff = -1;
 
-		InsertPgAttributeTuple(rel, attr, indstate);
+		InsertPgAttributeTuple(rel, attr, indstate, secLabelList);
 
 		/* Add dependency info */
 		myself.classId = RelationRelationId;
@@ -601,8 +609,9 @@ AddNewAttributeTuples(Oid new_rel_oid,
 
 			memcpy(&attStruct, (char *) SysAtt[i], sizeof(FormData_pg_attribute));
 
-			/* Fill in the correct relation OID in the copied tuple */
+			/* Fill in the correct relation OID/relkind in the copied tuple */
 			attStruct.attrelid = new_rel_oid;
+			attStruct.attkind = relkind;
 
 			/* Fill in correct inheritance info for the OID column */
 			if (attStruct.attnum == ObjectIdAttributeNumber)
@@ -611,7 +620,7 @@ AddNewAttributeTuples(Oid new_rel_oid,
 				attStruct.attinhcount = oidinhcount;
 			}
 
-			InsertPgAttributeTuple(rel, &attStruct, indstate);
+			InsertPgAttributeTuple(rel, &attStruct, indstate, secLabelList);
 		}
 	}
 
@@ -639,7 +648,8 @@ void
 InsertPgClassTuple(Relation pg_class_desc,
 				   Relation new_rel_desc,
 				   Oid new_rel_oid,
-				   Datum reloptions)
+				   Datum reloptions,
+				   List *secLabelList)
 {
 	Form_pg_class rd_rel = new_rel_desc->rd_rel;
 	Datum		values[Natts_pg_class];
@@ -686,11 +696,15 @@ InsertPgClassTuple(Relation pg_class_desc,
 	 * be embarrassing to do this sort of thing in polite company.
 	 */
 	HeapTupleSetOid(tup, new_rel_oid);
+	sepgsqlSetGivenSecLabelList(pg_class_desc, tup, secLabelList);
 
 	/* finally insert the new tuple, update the indexes, and clean up */
 	simple_heap_insert(pg_class_desc, tup);
 
 	CatalogUpdateIndexes(pg_class_desc, tup);
+
+	/* temporary use for this tuple */
+	InsertSysCache(RelationGetRelid(pg_class_desc), tup);
 
 	heap_freetuple(tup);
 }
@@ -709,7 +723,8 @@ AddNewRelationTuple(Relation pg_class_desc,
 					Oid new_type_oid,
 					Oid relowner,
 					char relkind,
-					Datum reloptions)
+					Datum reloptions,
+					List *secLabelList)
 {
 	Form_pg_class new_rel_reltup;
 
@@ -769,7 +784,8 @@ AddNewRelationTuple(Relation pg_class_desc,
 	new_rel_desc->rd_att->tdtypeid = new_type_oid;
 
 	/* Now build and insert the tuple */
-	InsertPgClassTuple(pg_class_desc, new_rel_desc, new_rel_oid, reloptions);
+	InsertPgClassTuple(pg_class_desc, new_rel_desc, new_rel_oid,
+					   reloptions, secLabelList);
 }
 
 
@@ -838,7 +854,8 @@ heap_create_with_catalog(const char *relname,
 						 int oidinhcount,
 						 OnCommitAction oncommit,
 						 Datum reloptions,
-						 bool allow_system_table_mods)
+						 bool allow_system_table_mods,
+						 List *secLabelList)
 {
 	Relation	pg_class_desc;
 	Relation	new_rel_desc;
@@ -1012,13 +1029,20 @@ heap_create_with_catalog(const char *relname,
 						new_type_oid,
 						ownerid,
 						relkind,
-						reloptions);
+						reloptions,
+						secLabelList);
 
 	/*
 	 * now add tuples to pg_attribute for the attributes in our new relation.
 	 */
 	AddNewAttributeTuples(relid, new_rel_desc->rd_att, relkind,
-						  oidislocal, oidinhcount);
+						  oidislocal, oidinhcount, secLabelList);
+
+	/*
+	 * Fixup rel->rd_att->tdhassecacl and rel->rd_att->tdhasseclabel
+	 */
+	new_rel_desc->rd_att->tdhasseclabel
+		= sepgsqlTupleDescHasSecLabel(new_rel_desc);
 
 	/*
 	 * Make a dependency link to force the relation to be deleted if its

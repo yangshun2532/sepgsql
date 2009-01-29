@@ -57,6 +57,7 @@
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
+#include "utils/sepgsql.h"
 #include "utils/snapmgr.h"
 #include "utils/tqual.h"
 
@@ -157,6 +158,8 @@ standard_ExecutorStart(QueryDesc *queryDesc, int eflags)
 	/* sanity checks: queryDesc must not be started already */
 	Assert(queryDesc != NULL);
 	Assert(queryDesc->estate == NULL);
+
+	sepgsqlExecutorStart(queryDesc, eflags);
 
 	/*
 	 * If the transaction is read-only, we need to check if any writes are
@@ -901,16 +904,16 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 				for (i = 0; i < as_nplans; i++)
 				{
 					PlanState  *subplan = appendplans[i];
+					Relation	resultRel = resultRelInfo->ri_RelationDesc;
 					JunkFilter *j;
 
 					if (operation == CMD_UPDATE)
-						ExecCheckPlanOutput(resultRelInfo->ri_RelationDesc,
-											subplan->plan->targetlist);
+						ExecCheckPlanOutput(resultRel, subplan->plan->targetlist);
 
 					j = ExecInitJunkFilter(subplan->plan->targetlist,
-							resultRelInfo->ri_RelationDesc->rd_att->tdhasoid,
-								  ExecAllocTableSlot(estate->es_tupleTable));
-
+										   RelationGetDescr(resultRel)->tdhasoid,
+										   RelationGetDescr(resultRel)->tdhasseclabel,
+										   ExecAllocTableSlot(estate->es_tupleTable));
 					/*
 					 * Since it must be UPDATE/DELETE, there had better be a
 					 * "ctid" junk attribute in the tlist ... but ctid could
@@ -952,8 +955,8 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 										planstate->plan->targetlist);
 
 				j = ExecInitJunkFilter(planstate->plan->targetlist,
-									   tupType->tdhasoid,
-								  ExecAllocTableSlot(estate->es_tupleTable));
+									   tupType->tdhasoid, tupType->tdhasseclabel,
+									   ExecAllocTableSlot(estate->es_tupleTable));
 				estate->es_junkFilter = j;
 				if (estate->es_result_relation_info)
 					estate->es_result_relation_info->ri_junkFilter = j;
@@ -1023,7 +1026,7 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 		 * We assume all the sublists will generate the same output tupdesc.
 		 */
 		tupType = ExecTypeFromTL((List *) linitial(plannedstmt->returningLists),
-								 false);
+								 false, false);
 
 		/* Set up a slot for the output of the RETURNING projection(s) */
 		slot = ExecAllocTableSlot(estate->es_tupleTable);
@@ -1340,6 +1343,33 @@ ExecContextForcesOids(PlanState *planstate, bool *hasoids)
 				*hasoids = rel->rd_rel->relhasoids;
 				return true;
 			}
+		}
+	}
+
+	return false;
+}
+
+/*
+ * ExecContextForcesSecLabel
+ *
+ * We need to ensure that result tuples have space for security label,
+ * if the security feature need to store it within the given relation.
+ */
+bool ExecContextForcesSecLabel(PlanState *planstate, bool *hassecurity)
+{
+	if (planstate->state->es_select_into)
+	{
+		*hassecurity = sepgsqlTupleDescHasSecLabel(NULL);
+		return true;
+	}
+	else
+	{
+		ResultRelInfo *ri = planstate->state->es_result_relation_info;
+
+		if (ri && ri->ri_RelationDesc)
+		{
+			*hassecurity = sepgsqlTupleDescHasSecLabel(ri->ri_RelationDesc);
+			return true;
 		}
 	}
 
@@ -1802,6 +1832,13 @@ ExecInsert(TupleTableSlot *slot,
 		ExecConstraints(resultRelInfo, slot, estate);
 
 	/*
+	 * Mandatory access controls of the tuple
+	 */
+	if (!sepgsqlHeapTupleInsert(resultRelationDesc, tuple,
+								false, !!resultRelInfo->ri_projectReturning))
+		return;
+
+	/*
 	 * insert the tuple
 	 *
 	 * Note: heap_insert returns the tid (location) of the new tuple in the
@@ -1866,6 +1903,10 @@ ExecDelete(ItemPointer tupleid,
 		if (!dodelete)			/* "do nothing" */
 			return;
 	}
+
+	if (!sepgsqlHeapTupleDelete(resultRelationDesc, tupleid,
+								false, !!resultRelInfo->ri_projectReturning))
+		return;
 
 	/*
 	 * delete the tuple
@@ -2045,6 +2086,13 @@ ExecUpdate(TupleTableSlot *slot,
 lreplace:;
 	if (resultRelationDesc->rd_att->constr)
 		ExecConstraints(resultRelInfo, slot, estate);
+
+	/*
+	 * Mandatory access controls of the tuple
+	 */
+	if (!sepgsqlHeapTupleUpdate(resultRelationDesc, tupleid, tuple,
+								false, !!resultRelInfo->ri_projectReturning))
+		return;
 
 	/*
 	 * replace the heap tuple
@@ -2911,7 +2959,8 @@ OpenIntoRel(QueryDesc *queryDesc)
 											  0,
 											  into->onCommit,
 											  reloptions,
-											  allowSystemTableMods);
+											  allowSystemTableMods,
+											  NIL);
 
 	FreeTupleDesc(tupdesc);
 

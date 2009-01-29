@@ -73,6 +73,7 @@
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
 #include "utils/relcache.h"
+#include "utils/sepgsql.h"
 #include "utils/snapmgr.h"
 #include "utils/syscache.h"
 #include "utils/tqual.h"
@@ -348,6 +349,7 @@ DefineRelation(CreateStmt *stmt, char relkind)
 	int			parentOidCount;
 	List	   *rawDefaults;
 	List	   *cookedDefaults;
+	List	   *secLabelList;
 	Datum		reloptions;
 	ListCell   *listptr;
 	AttrNumber	attnum;
@@ -491,6 +493,11 @@ DefineRelation(CreateStmt *stmt, char relkind)
 	}
 
 	/*
+	 * Fetch security_label = '...' option
+	 */
+	secLabelList = sepgsqlRelationGivenSecLabelList(stmt);
+
+	/*
 	 * Create the relation.  Inherited defaults and constraints are passed
 	 * in for immediate handling --- since they don't need parsing, they
 	 * can be stored immediately.
@@ -509,7 +516,8 @@ DefineRelation(CreateStmt *stmt, char relkind)
 										  parentOidCount,
 										  stmt->oncommit,
 										  reloptions,
-										  allowSystemTableMods);
+										  allowSystemTableMods,
+										  secLabelList);
 
 	StoreCatalogInheritance(relationId, inheritOids);
 
@@ -855,6 +863,8 @@ ExecuteTruncate(TruncateStmt *stmt)
 	if (stmt->behavior == DROP_RESTRICT)
 		heap_truncate_check_FKs(rels, false);
 #endif
+
+	sepgsqlExecTruncate(rels);
 
 	/*
 	 * If we are asked to restart sequences, find all the sequences,
@@ -2491,6 +2501,7 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 		case AT_DisableRule:
 		case AT_AddInherit:		/* INHERIT / NO INHERIT */
 		case AT_DropInherit:
+		case AT_SetSecurityLabel:
 			ATSimplePermissions(rel, false);
 			/* These commands never recurse */
 			/* No command-specific prep needed */
@@ -2717,6 +2728,9 @@ ATExecCmd(List **wqueue, AlteredTableInfo *tab, Relation rel,
 			break;
 		case AT_DropInherit:
 			ATExecDropInherit(rel, (RangeVar *) cmd->def);
+			break;
+		case AT_SetSecurityLabel:
+			ATExecSetSecurityLabel(rel, (DefElem *) cmd->def);
 			break;
 		default:				/* oops */
 			elog(ERROR, "unrecognized alter table type: %d",
@@ -3056,11 +3070,14 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap)
 			if (newrel)
 			{
 				Oid			tupOid = InvalidOid;
+				Oid			tupSecLabel = InvalidOid;
 
 				/* Extract data from old tuple */
 				heap_deform_tuple(tuple, oldTupDesc, values, isnull);
 				if (oldTupDesc->tdhasoid)
 					tupOid = HeapTupleGetOid(tuple);
+				if (HeapTupleHasSecLabel(tuple))
+					tupSecLabel = HeapTupleGetSecLabel(tuple);
 
 				/* Set dropped attributes to null in new tuple */
 				foreach(lc, dropped_attrs)
@@ -3092,6 +3109,9 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap)
 				/* Preserve OID, if any */
 				if (newTupDesc->tdhasoid)
 					HeapTupleSetOid(tuple, tupOid);
+				/* Preserve SecLabel, if any */
+				if (HeapTupleHasSecLabel(tuple))
+					HeapTupleSetSecLabel(tuple, tupSecLabel);
 			}
 
 			/* Now check any constraints on the possibly-changed tuple */
@@ -3585,6 +3605,7 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 	attribute.attndims = list_length(colDef->typename->arrayBounds);
 	attribute.attstorage = tform->typstorage;
 	attribute.attalign = tform->typalign;
+	attribute.attkind = relkind;
 	attribute.attnotnull = colDef->is_not_null;
 	attribute.atthasdef = false;
 	attribute.attisdropped = false;
@@ -3594,7 +3615,7 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 
 	ReleaseSysCache(typeTuple);
 
-	InsertPgAttributeTuple(attrdesc, &attribute, NULL);
+	InsertPgAttributeTuple(attrdesc, &attribute, NULL, NIL);
 
 	heap_close(attrdesc, RowExclusiveLock);
 

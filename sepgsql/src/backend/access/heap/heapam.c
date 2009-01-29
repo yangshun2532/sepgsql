@@ -63,6 +63,7 @@
 #include "utils/inval.h"
 #include "utils/lsyscache.h"
 #include "utils/relcache.h"
+#include "utils/sepgsql.h"
 #include "utils/snapmgr.h"
 #include "utils/syscache.h"
 #include "utils/tqual.h"
@@ -2056,6 +2057,12 @@ heap_insert(Relation relation, HeapTuple tup, CommandId cid,
 Oid
 simple_heap_insert(Relation relation, HeapTuple tup)
 {
+	if (!sepgsqlHeapTupleInsert(relation, tup, true, false))
+		ereport(ERROR,
+				(errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("could not insert tuple on \"%s\"",
+						RelationGetRelationName(relation))));
+
 	return heap_insert(relation, tup, GetCurrentCommandId(true), 0, NULL);
 }
 
@@ -2348,6 +2355,12 @@ simple_heap_delete(Relation relation, ItemPointer tid)
 	HTSU_Result result;
 	ItemPointerData update_ctid;
 	TransactionId update_xmax;
+
+	if (!sepgsqlHeapTupleDelete(relation, tid, true, false))
+		ereport(ERROR,
+				(errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("could not delete tuple on \"%s\"",
+						RelationGetRelationName(relation))));
 
 	result = heap_delete(relation, tid,
 						 &update_ctid, &update_xmax,
@@ -3017,6 +3030,12 @@ simple_heap_update(Relation relation, ItemPointer otid, HeapTuple tup)
 	HTSU_Result result;
 	ItemPointerData update_ctid;
 	TransactionId update_xmax;
+
+	if (!sepgsqlHeapTupleUpdate(relation, otid, tup, true, false))
+		ereport(ERROR,
+				(errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("could not update tuple on \"%s\"",
+						RelationGetRelationName(relation))));
 
 	result = heap_update(relation, otid, tup,
 						 &update_ctid, &update_xmax,

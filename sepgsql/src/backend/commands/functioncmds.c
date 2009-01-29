@@ -59,6 +59,7 @@
 #include "utils/guc.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
+#include "utils/sepgsql.h"
 #include "utils/syscache.h"
 #include "utils/tqual.h"
 
@@ -399,7 +400,8 @@ compute_common_attribute(DefElem *defel,
 						 DefElem **security_item,
 						 List **set_items,
 						 DefElem **cost_item,
-						 DefElem **rows_item)
+						 DefElem **rows_item,
+						 DefElem **seclabel_item)
 {
 	if (strcmp(defel->defname, "volatility") == 0)
 	{
@@ -439,6 +441,13 @@ compute_common_attribute(DefElem *defel,
 			goto duplicate_error;
 
 		*rows_item = defel;
+	}
+	else if (strcmp(defel->defname, "security_label") == 0)
+	{
+		if (*seclabel_item)
+			goto duplicate_error;
+
+		*seclabel_item = defel;
 	}
 	else
 		return false;
@@ -517,7 +526,8 @@ compute_attributes_sql_style(List *options,
 							 bool *security_definer,
 							 ArrayType **proconfig,
 							 float4 *procost,
-							 float4 *prorows)
+							 float4 *prorows,
+							 Oid *secLabelId)
 {
 	ListCell   *option;
 	DefElem    *as_item = NULL;
@@ -529,6 +539,7 @@ compute_attributes_sql_style(List *options,
 	List	   *set_items = NIL;
 	DefElem    *cost_item = NULL;
 	DefElem    *rows_item = NULL;
+	DefElem	   *seclabel_item = NULL;
 
 	foreach(option, options)
 	{
@@ -564,7 +575,8 @@ compute_attributes_sql_style(List *options,
 										  &security_item,
 										  &set_items,
 										  &cost_item,
-										  &rows_item))
+										  &rows_item,
+										  &seclabel_item))
 		{
 			/* recognized common option */
 			continue;
@@ -622,6 +634,8 @@ compute_attributes_sql_style(List *options,
 					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 					 errmsg("ROWS must be positive")));
 	}
+	if (seclabel_item)
+		secLabelId = ""; /* FIXME label translation function here */
 }
 
 
@@ -765,6 +779,7 @@ CreateFunction(CreateFunctionStmt *stmt, const char *queryString)
 	HeapTuple	languageTuple;
 	Form_pg_language languageStruct;
 	List	   *as_clause;
+	Oid			secLabelId;
 
 	/* Convert list of names to a name and namespace */
 	namespaceId = QualifiedNameGetCreationNamespace(stmt->funcname,
@@ -784,13 +799,14 @@ CreateFunction(CreateFunctionStmt *stmt, const char *queryString)
 	proconfig = NULL;
 	procost = -1;				/* indicates not set */
 	prorows = -1;				/* indicates not set */
+	secLabelId = InvalidOid;
 
 	/* override attributes from explicit list */
 	compute_attributes_sql_style(stmt->options,
 								 &as_clause, &language,
 								 &isWindowFunc, &volatility,
 								 &isStrict, &security,
-								 &proconfig, &procost, &prorows);
+								 &proconfig, &procost, &prorows, &secLabelId);
 
 	/* Convert language name to canonical case */
 	languageName = case_translate_language_name(language);
@@ -926,7 +942,8 @@ CreateFunction(CreateFunctionStmt *stmt, const char *queryString)
 					parameterDefaults,
 					PointerGetDatum(proconfig),
 					procost,
-					prorows);
+					prorows,
+					secLabelId);
 }
 
 
@@ -1276,6 +1293,7 @@ AlterFunction(AlterFunctionStmt *stmt)
 	List	   *set_items = NIL;
 	DefElem    *cost_item = NULL;
 	DefElem    *rows_item = NULL;
+	DefElem	   *seclabel_item = NULL;
 
 	rel = heap_open(ProcedureRelationId, RowExclusiveLock);
 
@@ -1313,7 +1331,8 @@ AlterFunction(AlterFunctionStmt *stmt)
 									 &security_def_item,
 									 &set_items,
 									 &cost_item,
-									 &rows_item) == false)
+									 &rows_item,
+									 &seclabel_item) == false)
 			elog(ERROR, "option \"%s\" not recognized", defel->defname);
 	}
 
@@ -1377,6 +1396,8 @@ AlterFunction(AlterFunctionStmt *stmt)
 		tup = heap_modify_tuple(tup, RelationGetDescr(rel),
 							   repl_val, repl_null, repl_repl);
 	}
+
+	sepgsqlSetGivenSecLabel(rel, tup, seclabel_item);
 
 	/* Do the update */
 	simple_heap_update(rel, &tup->t_self, tup);

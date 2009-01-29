@@ -710,6 +710,7 @@ with_libxml
 with_libxslt
 with_system_tzdata
 with_zlib
+enable_selinux
 GREP
 EGREP
 ELF_SYS
@@ -1378,6 +1379,7 @@ Optional Features:
   --enable-thread-safety  make client libraries thread-safe
   --enable-thread-safety-force
                           force thread-safety despite thread test failure
+  --enable-selinux        enable to build with SELinux support
   --disable-float4-byval  disable float4 passed by value
   --disable-float8-byval  disable float8 passed by value
   --disable-largefile     omit support for large files
@@ -5529,6 +5531,112 @@ fi
 
 
 
+
+#
+# SELinux support
+#
+
+pgac_args="$pgac_args enable_selinux"
+
+# Check whether --enable-selinux was given.
+if test "${enable_selinux+set}" = set; then
+  enableval=$enable_selinux;
+  case $enableval in
+    yes)
+      :
+      ;;
+    no)
+      :
+      ;;
+    *)
+      { { echo "$as_me:$LINENO: error: no argument expected for --enable-selinux option" >&5
+echo "$as_me: error: no argument expected for --enable-selinux option" >&2;}
+   { (exit 1); exit 1; }; }
+      ;;
+  esac
+
+else
+  enable_selinux=no
+
+fi
+
+
+if test "$enable_selinux" = yes; then
+    { echo "$as_me:$LINENO: checking for getpeercon in -lselinux" >&5
+echo $ECHO_N "checking for getpeercon in -lselinux... $ECHO_C" >&6; }
+if test "${ac_cv_lib_selinux_getpeercon+set}" = set; then
+  echo $ECHO_N "(cached) $ECHO_C" >&6
+else
+  ac_check_lib_save_LIBS=$LIBS
+LIBS="-lselinux  $LIBS"
+cat >conftest.$ac_ext <<_ACEOF
+/* confdefs.h.  */
+_ACEOF
+cat confdefs.h >>conftest.$ac_ext
+cat >>conftest.$ac_ext <<_ACEOF
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char getpeercon ();
+int
+main ()
+{
+return getpeercon ();
+  ;
+  return 0;
+}
+_ACEOF
+rm -f conftest.$ac_objext conftest$ac_exeext
+if { (ac_try="$ac_link"
+case "(($ac_try" in
+  *\"* | *\`* | *\\*) ac_try_echo=\$ac_try;;
+  *) ac_try_echo=$ac_try;;
+esac
+eval "echo \"\$as_me:$LINENO: $ac_try_echo\"") >&5
+  (eval "$ac_link") 2>conftest.er1
+  ac_status=$?
+  grep -v '^ *+' conftest.er1 >conftest.err
+  rm -f conftest.er1
+  cat conftest.err >&5
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); } && {
+	 test -z "$ac_c_werror_flag" ||
+	 test ! -s conftest.err
+       } && test -s conftest$ac_exeext &&
+       $as_test_x conftest$ac_exeext; then
+  ac_cv_lib_selinux_getpeercon=yes
+else
+  echo "$as_me: failed program was:" >&5
+sed 's/^/| /' conftest.$ac_ext >&5
+
+	ac_cv_lib_selinux_getpeercon=no
+fi
+
+rm -f core conftest.err conftest.$ac_objext conftest_ipa8_conftest.oo \
+      conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS
+fi
+{ echo "$as_me:$LINENO: result: $ac_cv_lib_selinux_getpeercon" >&5
+echo "${ECHO_T}$ac_cv_lib_selinux_getpeercon" >&6; }
+if test $ac_cv_lib_selinux_getpeercon = yes; then
+
+cat >>confdefs.h <<_ACEOF
+#define HAVE_SELINUX 1
+_ACEOF
+
+
+else
+  { { echo "$as_me:$LINENO: error: \"--enable-selinux requires libselinux.\"" >&5
+echo "$as_me: error: \"--enable-selinux requires libselinux.\"" >&2;}
+   { (exit 1); exit 1; }; }
+fi
+
+fi
 
 #
 # Elf
@@ -27803,11 +27911,11 @@ with_libxml!$with_libxml$ac_delim
 with_libxslt!$with_libxslt$ac_delim
 with_system_tzdata!$with_system_tzdata$ac_delim
 with_zlib!$with_zlib$ac_delim
+enable_selinux!$enable_selinux$ac_delim
 GREP!$GREP$ac_delim
 EGREP!$EGREP$ac_delim
 ELF_SYS!$ELF_SYS$ac_delim
 LDFLAGS_SL!$LDFLAGS_SL$ac_delim
-LD!$LD$ac_delim
 _ACEOF
 
   if test `sed -n "s/.*$ac_delim\$/X/p" conf$$subs.sed | grep -c X` = 97; then
@@ -27849,6 +27957,7 @@ _ACEOF
 ac_delim='%!_!# '
 for ac_last_try in false false false false false :; do
   cat >conf$$subs.sed <<_ACEOF
+LD!$LD$ac_delim
 with_gnu_ld!$with_gnu_ld$ac_delim
 ld_R_works!$ld_R_works$ac_delim
 RANLIB!$RANLIB$ac_delim
@@ -27911,7 +28020,7 @@ vpath_build!$vpath_build$ac_delim
 LTLIBOBJS!$LTLIBOBJS$ac_delim
 _ACEOF
 
-  if test `sed -n "s/.*$ac_delim\$/X/p" conf$$subs.sed | grep -c X` = 60; then
+  if test `sed -n "s/.*$ac_delim\$/X/p" conf$$subs.sed | grep -c X` = 61; then
     break
   elif $ac_last_try; then
     { { echo "$as_me:$LINENO: error: could not make $CONFIG_STATUS" >&5

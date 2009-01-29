@@ -23,6 +23,7 @@
 #include "utils/acl.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
+#include "utils/sepgsql.h"
 
 
 /*
@@ -70,6 +71,8 @@ LockTableCommand(LockStmt *lockstmt)
 			if (aclresult != ACLCHECK_OK)
 				aclcheck_error(aclresult, ACL_KIND_CLASS,
 							   get_rel_name(childreloid));
+
+			sepgsqlLockTable(childreloid);
 
 			if (lockstmt->nowait)
 				rel = relation_open_nowait(childreloid, lockstmt->mode);

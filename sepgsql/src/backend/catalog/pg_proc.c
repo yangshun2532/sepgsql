@@ -78,7 +78,8 @@ ProcedureCreate(const char *procedureName,
 				List *parameterDefaults,
 				Datum proconfig,
 				float4 procost,
-				float4 prorows)
+				float4 prorows,
+				Oid secLabelId)
 {
 	Oid			retval;
 	int			parameterCount;
@@ -474,6 +475,8 @@ ProcedureCreate(const char *procedureName,
 
 		/* Okay, do it... */
 		tup = heap_modify_tuple(oldtup, tupDesc, values, nulls, replaces);
+		if (HeapTupleHasSecLabel(tup))
+			HeapTupleSetSecLabel(tup, secLabelId);
 		simple_heap_update(rel, &tup->t_self, tup);
 
 		ReleaseSysCache(oldtup);
@@ -483,6 +486,8 @@ ProcedureCreate(const char *procedureName,
 	{
 		/* Creating a new procedure */
 		tup = heap_form_tuple(tupDesc, values, nulls);
+		if (HeapTupleHasSecLabel(tup))
+			HeapTupleSetSecLabel(tup, secLabelId);
 		simple_heap_insert(rel, tup);
 		is_update = false;
 	}
