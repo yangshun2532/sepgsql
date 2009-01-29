@@ -201,12 +201,9 @@ CheckMyDatabase(const char *name, bool am_superuser)
 					name)));
 
 		/*
-		 * Check privilege to connect to the database.	(The am_superuser test
-		 * is redundant, but since we have the flag, might as well check it
-		 * and save a few cycles.)
+		 * Check privilege to connect to the database.
 		 */
-		if (!am_superuser &&
-			pg_database_aclcheck(MyDatabaseId, GetUserId(),
+		if (pg_database_aclcheck(MyDatabaseId, GetUserId(),
 								 ACL_CONNECT) != ACLCHECK_OK)
 			ereport(FATAL,
 					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
