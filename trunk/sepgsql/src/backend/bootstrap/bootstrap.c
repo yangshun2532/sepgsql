@@ -41,6 +41,7 @@
 #include "utils/fmgroids.h"
 #include "utils/memutils.h"
 #include "utils/ps_status.h"
+#include "utils/sepgsql.h"
 #include "utils/tqual.h"
 
 extern int	optind;
@@ -500,6 +501,11 @@ BootstrapModeMain(void)
 	 */
 	boot_yyparse();
 
+	/*
+	 * Flush all the appeared security label
+	 */
+	sepgsqlPostBootstrapingMode();
+
 	/* Perform a checkpoint to ensure everything's down to disk */
 	SetProcessingMode(NormalProcessing);
 	CreateCheckPoint(CHECKPOINT_IS_SHUTDOWN | CHECKPOINT_IMMEDIATE);
@@ -797,6 +803,9 @@ InsertOneTuple(Oid objectid)
 	tupDesc = CreateTupleDesc(numattr,
 							  RelationGetForm(boot_reldesc)->relhasoids,
 							  attrtypes);
+	tupDesc->tdhasseclabel
+		= sepgsqlTupleDescHasSecLabel(boot_reldesc);
+
 	tuple = heap_form_tuple(tupDesc, values, Nulls);
 	if (objectid != (Oid) 0)
 		HeapTupleSetOid(tuple, objectid);

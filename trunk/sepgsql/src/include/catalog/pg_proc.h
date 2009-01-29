@@ -4300,6 +4300,14 @@ DESCR("I/O");
 DATA(insert OID = 2963 (  uuid_hash		   PGNSP PGUID 12 1 0 0 f f f t f i 1 0 23 "2950" _null_ _null_ _null_ _null_ uuid_hash _null_ _null_ _null_ ));
 DESCR("hash");
 
+/* SE-PostgreSQL related stuffs */
+DATA(insert OID = 3403 ( sepgsql_getcon				PGNSP PGUID 12 1 0 0 f f f t f v 0 0 25 "" _null_ _null_ _null_ _null_ sepgsql_getcon _null_ _null_ _null_ ));
+DATA(insert OID = 3404 ( sepgsql_server_getcon		PGNSP PGUID 12 1 0 0 f f f t f v 0 0 25 "" _null_ _null_ _null_ _null_ sepgsql_server_getcon _null_ _null_ _null_ ));
+DATA(insert OID = 3405 ( sepgsql_database_getcon	PGNSP PGUID 12 1 0 0 f f f t f v 1 0 25 "19" _null_ _null_ _null_ _null_ sepgsql_database_getcon _null_ _null_ _null_ ));
+DATA(insert OID = 3406 ( sepgsql_table_getcon		PGNSP PGUID 12 1 0 0 f f f t f v 1 0 25 "2205" _null_ _null_ _null_ _null_ sepgsql_table_getcon _null_ _null_ _null_ ));
+DATA(insert OID = 3407 ( sepgsql_column_getcon		PGNSP PGUID 12 1 0 0 f f f t f v 2 0 25 "2205 19" _null_ _null_ _null_ _null_ sepgsql_column_getcon _null_ _null_ _null_ ));
+DATA(insert OID = 3408 ( sepgsql_procedure_getcon	PGNSP PGUID 12 1 0 0 f f f t f v 1 0 25 "24" _null_ _null_ _null_ _null_ sepgsql_procedure_getcon _null_ _null_ _null_ ));
+
 /* enum related procs */
 DATA(insert OID = 3504 (  anyenum_in	PGNSP PGUID 12 1 0 0 f f f t f i 1 0 3500 "2275" _null_ _null_ _null_ _null_ anyenum_in _null_ _null_ _null_ ));
 DESCR("I/O");

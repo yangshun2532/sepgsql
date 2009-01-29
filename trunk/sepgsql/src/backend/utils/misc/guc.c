@@ -67,6 +67,7 @@
 #include "utils/plancache.h"
 #include "utils/portal.h"
 #include "utils/ps_status.h"
+#include "utils/sepgsql.h"
 #include "utils/tzparser.h"
 #include "utils/xml.h"
 
@@ -295,6 +296,16 @@ static const struct config_enum_entry xmloption_options[] = {
 	{"document", XMLOPTION_DOCUMENT, false},
 	{NULL, 0, false}
 };
+
+#ifdef HAVE_SELINUX
+static const struct config_enum_entry sepgsqloption_options[] = {
+	{"default", SEPGSQL_MODE_DEFAULT, false},
+	{"enforcing", SEPGSQL_MODE_ENFORCING, false},
+	{"permissive", SEPGSQL_MODE_PERMISSIVE, false},
+	{"disabled", SEPGSQL_MODE_DISABLED, false},
+	{NULL, 0, false}
+};
+#endif
 
 /*
  * Although only "on", "off", and "safe_encoding" are documented, we
@@ -2671,6 +2682,16 @@ static struct config_enum ConfigureNamesEnum[] =
 		&xmloption,
 		XMLOPTION_CONTENT, xmloption_options, NULL, NULL
 	},
+#ifdef HAVE_SELINUX
+	{
+		{"sepostgresql", PGC_POSTMASTER, UNGROUPED,
+		 gettext_noop("SE-PostgreSQL mode (default|permissive|enforcing|disabled)"),
+		 NULL
+		},
+		&sepostgresql_mode,
+		SEPGSQL_MODE_DEFAULT, sepgsqloption_options, NULL, NULL
+	},
+#endif
 
 
 	/* End-of-list marker */
@@ -3550,6 +3571,8 @@ void
 ResetAllOptions(void)
 {
 	int			i;
+
+	sepgsqlSetDatabaseParam("all", NULL);
 
 	for (i = 0; i < num_guc_variables; i++)
 	{
@@ -5476,6 +5499,7 @@ ExecSetVariableStmt(VariableSetStmt *stmt)
 	{
 		case VAR_SET_VALUE:
 		case VAR_SET_CURRENT:
+			sepgsqlSetDatabaseParam(stmt->name, ExtractSetVariableArgs(stmt));
 			set_config_option(stmt->name,
 							  ExtractSetVariableArgs(stmt),
 							  (superuser() ? PGC_SUSET : PGC_USERSET),
@@ -5533,6 +5557,7 @@ ExecSetVariableStmt(VariableSetStmt *stmt)
 			break;
 		case VAR_SET_DEFAULT:
 		case VAR_RESET:
+			sepgsqlSetDatabaseParam(stmt->name, NULL);
 			set_config_option(stmt->name,
 							  NULL,
 							  (superuser() ? PGC_SUSET : PGC_USERSET),
@@ -5956,6 +5981,9 @@ EmitWarningsOnPlaceholders(const char *className)
 void
 GetPGVariable(const char *name, DestReceiver *dest)
 {
+	/* Check get param permissions */
+	sepgsqlGetDatabaseParam(name);
+
 	if (guc_name_compare(name, "all") == 0)
 		ShowAllGUCConfig(dest);
 	else

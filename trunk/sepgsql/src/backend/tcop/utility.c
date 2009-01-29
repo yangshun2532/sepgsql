@@ -54,6 +54,7 @@
 #include "tcop/utility.h"
 #include "utils/acl.h"
 #include "utils/guc.h"
+#include "utils/sepgsql.h"
 #include "utils/syscache.h"
 
 
@@ -257,6 +258,8 @@ ProcessUtility(Node *parsetree,
 
 	if (completionTag)
 		completionTag[0] = '\0';
+
+	sepgsqlProcessUtility(parsetree, params, isTopLevel);
 
 	switch (nodeTag(parsetree))
 	{

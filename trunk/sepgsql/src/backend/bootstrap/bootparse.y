@@ -50,6 +50,7 @@
 #include "storage/smgr.h"
 #include "tcop/dest.h"
 #include "utils/rel.h"
+#include "utils/sepgsql.h"
 
 #define atooid(x)	((Oid) strtoul((x), NULL, 10))
 
@@ -206,6 +207,13 @@ Boot_CreateStmt:
 												   RELKIND_RELATION,
 												   $3,
 												   true);
+						/*
+						 * fixup boot_reldesc->rd_att->tdhasseclabel
+						 */
+						boot_reldesc->rd_rel->relkind = RELKIND_RELATION;
+						boot_reldesc->rd_att->tdhasseclabel
+							= sepgsqlTupleDescHasSecLabel(boot_reldesc);
+
 						elog(DEBUG4, "bootstrap relation created");
 					}
 					else
@@ -225,7 +233,8 @@ Boot_CreateStmt:
 													  0,
 													  ONCOMMIT_NOOP,
 													  (Datum) 0,
-													  true);
+													  true,
+													  NIL);
 						elog(DEBUG4, "relation created with oid %u", id);
 					}
 					do_end();

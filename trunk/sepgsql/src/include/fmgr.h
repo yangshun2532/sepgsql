@@ -53,6 +53,15 @@ typedef struct FmgrInfo
 	void	   *fn_extra;		/* extra space for use by handler */
 	MemoryContext fn_mcxt;		/* memory context to store fn_extra in */
 	fmNodePtr	fn_expr;		/* expression parse tree for call, or NULL */
+
+#ifdef HAVE_SELINUX
+	/*
+	 * Note: SELinux allows to switch the security context of client
+	 * inside the specific functions labeled as trusted procedure.
+	 */
+	PGFunction	sepgsql_addr;	/* address of original pointer */
+	char	   *sepgsql_label;	/* temporary security context */
+#endif
 } FmgrInfo;
 
 /*
@@ -524,6 +533,7 @@ extern bool get_call_expr_arg_stable(fmNodePtr expr, int argnum);
  */
 extern char *Dynamic_library_path;
 
+extern char *expand_dynamic_library_name(const char *name);
 extern PGFunction load_external_function(char *filename, char *funcname,
 					   bool signalNotFound, void **filehandle);
 extern PGFunction lookup_external_function(void *filehandle, char *funcname);
