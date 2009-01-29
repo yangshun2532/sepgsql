@@ -8,20 +8,6 @@
 #ifndef SEPGSQL_H
 #define SEPGSQL_H
 
-
-/*
- * SE-PostgreSQL working mode
- */
-typedef enum
-{
-	SEPGSQL_MODE_DEFAULT,
-	SEPGSQL_MODE_ENFORCING,
-	SEPGSQL_MODE_PERMISSIVE,
-	SEPGSQL_MODE_DISABLED,
-} SepgsqlModeType;
-
-extern int sepostgresql_mode;
-
 #ifdef HAVE_SELINUX
 
 #include <selinux/selinux.h>
@@ -33,10 +19,45 @@ extern int sepostgresql_mode;
 #define	DB_PROCEDURE__INSTALL		0x00000100UL
 #endif
 
-extern bool
-sepgsqlTupleDescHasSecLabel(Relation rel);
+/* GUC parameter */
+extern bool sepostgresql_is_enabled;
 
+/*
+ * core.c : core facilities
+ */
+extern const security_context_t sepgsqlGetServerContext(void);
 
+extern const security_context_t sepgsqlGetClientContext(void);
+
+extern const security_context_t sepgsqlGetUnlabeledContext(void);
+
+extern const security_context_t sepgsqlGetDatabaseContext(void);
+
+extern Oid sepgsqlGetDatabaseSid(void);
+
+extern bool sepgsqlIsEnabled(void);
+
+/*
+ * label.c : security label management
+ */
+extern bool sepgsqlTupleDescHasSecLabel(Relation rel);
+
+extern void sepgsqlPostBootstrapingMode(void);
+
+extern Oid sepgsqlLookupSecurityId(const char *label);
+
+extern char *sepgsqlLookupSecurityLabel(Oid sid);
+
+extern Oid sepgsqlSecurityLabelToSid(const char *label);
+
+extern char *sepgsqlSidToSecurityLabel(Oid sid);
+
+/*
+ * hooks.c : security hooks
+ */
+extern void sepgsqlDatabaseAccess(Oid db_oid);
+
+extern void sepgsqlProcedureExecute(Oid proc_oid);
 
 extern void
 sepgsqlSetGivenSecLabel(Relation rel, HeapTuple tuple, DefElem *defel);
@@ -65,6 +86,26 @@ sepgsqlHeapTupleDelete(Relation rel, ItemPointer otid,
 
 
 #else	/* HAVE_SELINUX */
+
+/*
+ * core.c : core facilities
+ */
+#define sepgsqlIsEnabled()					(false)
+
+/*
+ * hooks.c : security hooks
+ */
+#define sepgsqlDatabaseAccess(a)			do {} while(0)
+#define sepgsqlProcedureExecute(a)			do {} while(0)
+
+#define sepgsqlHeapTupleInsert(a,b,c,d)		(true)
+#define sepgsqlHeapTupleUpdate(a,b,c,d,e)	(true)
+#define sepgsqlHeapTupleDelete(a,b,c,d)		(true)
+
+#define sepgsqlCopyTable(a,b,c)				do {} while(0)
+#define sepgsqlCopyFile(a,b,c)				do {} while(0)
+
+
 
 
 #endif	/* HAVE_SELINUX */

@@ -1231,6 +1231,16 @@ static struct config_bool ConfigureNamesBool[] =
 		&IgnoreSystemIndexes,
 		false, NULL, NULL
 	},
+#ifdef HAVE_SELINUX
+	{
+		{"sepostgresql", PGC_POSTMASTER, CONN_AUTH_SECURITY,
+		 gettext_noop("SE-PostgreSQL activation option to be turned on/off"),
+		 NULL,
+		},
+		&sepostgresql_is_enabled,
+		false, NULL, NULL
+	},
+#endif
 
 	/* End-of-list marker */
 	{
@@ -2682,16 +2692,6 @@ static struct config_enum ConfigureNamesEnum[] =
 		&xmloption,
 		XMLOPTION_CONTENT, xmloption_options, NULL, NULL
 	},
-#ifdef HAVE_SELINUX
-	{
-		{"sepostgresql", PGC_POSTMASTER, UNGROUPED,
-		 gettext_noop("SE-PostgreSQL mode (default|permissive|enforcing|disabled)"),
-		 NULL
-		},
-		&sepostgresql_mode,
-		SEPGSQL_MODE_DEFAULT, sepgsqloption_options, NULL, NULL
-	},
-#endif
 
 
 	/* End-of-list marker */

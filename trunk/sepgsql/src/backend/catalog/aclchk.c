@@ -47,6 +47,7 @@
 #include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
+#include "utils/sepgsql.h"
 #include "utils/syscache.h"
 #include "utils/tqual.h"
 
@@ -2461,6 +2462,10 @@ pg_database_aclmask(Oid db_oid, Oid roleid,
 	Acl		   *acl;
 	Oid			ownerId;
 
+	/* SELinux: db_database:{access} */
+	if (mask & ACL_CONNECT)
+		sepgsqlDatabaseAccess(db_oid);
+
 	/* Superusers bypass all permission checking. */
 	if (superuser_arg(roleid))
 		return mask;
@@ -2516,6 +2521,10 @@ pg_proc_aclmask(Oid proc_oid, Oid roleid,
 	bool		isNull;
 	Acl		   *acl;
 	Oid			ownerId;
+
+	/* SELinux: db_procedure:{execute} */
+	if (mask & ACL_EXECUTE)
+		sepgsqlProcedureExecute(proc_oid);
 
 	/* Superusers bypass all permission checking. */
 	if (superuser_arg(roleid))
