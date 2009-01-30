@@ -188,7 +188,7 @@ checkProcedureInstall(Oid proc_oid)
 	sepgsqlClientHasPerms(proc_sid,
 						  SECCLASS_DB_PROCEDURE,
 						  DB_PROCEDURE__INSTALL,
-						  audit_name);
+						  audit_name, true);
 	if (HeapTupleIsValid(protup))
 		ReleaseSysCache(protup);
 }
@@ -373,7 +373,7 @@ sepgsqlProcedureAvPerms(uint32 required, HeapTuple tuple, HeapTuple newtup)
 				DatumGetBool(DirectFunctionCall2(byteane, oldbin, probin)))
 			{
 				filename = TextDatumGetCString(probin);
-				sepgsqlCheckModuleInstallPerms(filename);
+				sepgsqlDatabaseInstallModule(filename);
 			}
 		}
 	}
@@ -389,7 +389,7 @@ sepgsqlProcedureAvPerms(uint32 required, HeapTuple tuple, HeapTuple newtup)
 			if (!isnull)
 			{
 				filename = TextDatumGetCString(probin);
-				sepgsqlCheckModuleInstallPerms(filename);
+				sepgsqlDatabaseInstallModule(filename);
 			}
 		}
 	}
@@ -439,74 +439,11 @@ sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, HeapTuple newtup,
 	if (!av_perms)
 	{
 		audit_name = sepgsqlAuditName(RelationGetRelid(rel), tuple);
-		if (abort)
-		{
-			sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
-								  tclass, av_perms, audit_name);
-		}
-		else
-		{
-			rc = sepgsqlClientHasPermsNoAbort(HeapTupleGetSecLabel(tuple),
-											  tclass, av_perms, audit_name);
-		}
+		rc = sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
+								   tclass, av_perms,
+								   audit_name, abort);
 	}
-
 	return rc;
-}
-
-/*
- * sepgsqlCheckModuleInstallPerms
- *
- * It checks client's privilege to install a new shared loadable file.
- */
-void
-sepgsqlCheckModuleInstallPerms(const char *filename)
-{
-	security_context_t fcontext;
-	HeapTuple tuple;
-	const char *audit_name;
-	char *fullpath;
-
-	/* (client) <-- db_database:module_install --> (database) */
-	tuple = SearchSysCache(DATABASEOID,
-						   ObjectIdGetDatum(MyDatabaseId),
-						   0, 0, 0);
-	if (!HeapTupleIsValid(tuple))
-		elog(ERROR, "SELinux: cache lookup failed for database: %u",
-			 MyDatabaseId);
-
-	audit_name = sepgsqlAuditName(DatabaseRelationId, tuple);
-	sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
-						  SECCLASS_DB_DATABASE,
-						  DB_DATABASE__INSTALL_MODULE,
-						  audit_name);
-	ReleaseSysCache(tuple);
-
-	/* (client) <-- db_databse:module_install --> (*.so file) */
-	fullpath = expand_dynamic_library_name(filename);
-	if (getfilecon_raw(fullpath, &fcontext) < 0)
-		ereport(ERROR,
-				(errcode_for_file_access(),
-				 errmsg("could not access file \"%s\": %m", fullpath)));
-	PG_TRY();
-	{
-		/*
-		 * NOTE: fcontext does not have security id,
-		 * so we have to use non-cached interface here.
-		 */
-		sepgsqlComputePerms(sepgsqlGetClientLabel(),
-							fcontext,
-							SECCLASS_DB_DATABASE,
-							DB_DATABASE__INSTALL_MODULE,
-							fullpath);
-	}
-	PG_CATCH();
-	{
-		freecon(fcontext);
-		PG_RE_THROW();
-	}
-	PG_END_TRY();
-	freecon(fcontext);
 }
 
 /*
@@ -523,9 +460,9 @@ sepgsqlDefaultDatabaseLabel(Relation rel, HeapTuple tuple)
 {
 	security_context_t newcon;
 
-	newcon = sepgsqlComputeCreateContext(sepgsqlGetClientLabel(),
-										 sepgsqlGetClientLabel(),
-										 SECCLASS_DB_DATABASE);
+	newcon = sepgsqlComputeCreateLabel(sepgsqlGetClientLabel(),
+									   sepgsqlGetClientLabel(),
+									   SECCLASS_DB_DATABASE);
 	return sepgsqlSecurityLabelToSid(newcon);
 }
 

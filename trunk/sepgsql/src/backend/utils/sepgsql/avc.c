@@ -474,7 +474,9 @@ sepgsql_avc_reclaim(void)
 static bool
 avc_audit_common(char *buffer, uint32 buflen,
 				 avc_datum *cache, access_vector_t perms,
-				 const char *scontext, const char *tcontext, const char *objname)
+				 security_context_t scontext,
+				 security_context_t tcontext,
+				 const char *audit_name)
 {
 	access_vector_t denied, audited, mask;
 	security_context_t svcon, tvcon;
@@ -512,8 +514,8 @@ avc_audit_common(char *buffer, uint32 buflen,
 
 	pfree(svcon);
 	pfree(tvcon);
-	if (objname)
-		ofs += snprintf(buffer + ofs, buflen - ofs, " name=%s", objname);
+	if (audit_name)
+		ofs += snprintf(buffer + ofs, buflen - ofs, " name=%s", audit_name);
 
 	return true;
 }
@@ -525,8 +527,10 @@ avc_audit_common(char *buffer, uint32 buflen,
  *   error or returns 'false' when permissive mode.
  */
 static bool
-avc_permission_common(avc_datum *cache, access_vector_t perms, bool abort,
-					  const char *scontext, const char *tcontext, const char *objname)
+avc_permission_common(avc_datum *cache, access_vector_t perms,
+					  security_context_t scontext,
+					  security_context_t tcontext,
+					  const char *audit_name, bool abort)
 {
 	char audit_buffer[2048];
 	access_vector_t denied;
@@ -534,7 +538,7 @@ avc_permission_common(avc_datum *cache, access_vector_t perms, bool abort,
 	bool rc = true;
 
 	audit = avc_audit_common(audit_buffer, sizeof(audit_buffer),
-							 cache, perms, scontext, tcontext, objname);
+							 cache, perms, scontext, tcontext, audit_name);
 
 	denied = perms & ~cache->allowed;
 	if (!perms || denied)
@@ -749,39 +753,21 @@ sepgsqlAvcSwitchClientLabel(void)
 }
 
 /*
- * sepgsqlClientHasPermission
+ * sepgsqlClientHasPerms
  *   checks client's privileges on given objects via uAVC.
- *   It raised an error, if required actions are violated.
- */
-void
-sepgsqlClientHasPerms(Oid tsid, security_class_t tclass,
-					  access_vector_t perms,
-					  const char *audit_name)
-{
-	avc_datum *cache = avc_lookup(tsid, tclass);
-
-	if (!cache)
-		cache = avc_make_entry(tsid, tclass);
-
-	avc_permission_common(cache, perms, true, NULL, NULL, audit_name);
-}
-
-/*
- * sepgsqlClientHasPermissionNoAbort
- *   checks client's privileges on given objects via uAVC.
- *   It returns false, if required actions are violated.
  */
 bool
-sepgsqlClientHasPermsNoAbort(Oid tsid, security_class_t tclass,
-							 access_vector_t perms,
-							 const char *audit_name)
+sepgsqlClientHasPerms(Oid tsid, security_class_t tclass,
+					  access_vector_t perms,
+					  const char *audit_name, bool abort)
 {
 	avc_datum *cache = avc_lookup(tsid, tclass);
 
 	if (!cache)
 		cache = avc_make_entry(tsid, tclass);
 
-	return avc_permission_common(cache, perms, false, NULL, NULL, audit_name);
+	return avc_permission_common(cache, perms, NULL, NULL,
+								 audit_name, abort);
 }
 
 /*
@@ -873,8 +859,8 @@ sepgsqlAvcInit(void)
 }
 
 /*
- * sepgsqlComputePermission
- * sepgsqlComputeCreateContext
+ * sepgsqlComputePerms
+ * sepgsqlComputeCreateLabel
  *
  * The following two functions make a query to in-kernel SELinux
  * without userspace caches, due to some reasons.
@@ -919,7 +905,8 @@ sepgsqlComputePerms(security_context_t scontext,
 	cache.auditdeny = trans_to_internal_perms(e_tclass, avd.auditdeny, false);
 	LWLockRelease(SepgsqlAvcLock);
 
-	rc = avc_permission_common(&cache, perms, true, svcon, tvcon, audit_name);
+	rc = avc_permission_common(&cache, perms, svcon, tvcon,
+							   audit_name, true);
 
 	if (svcon != scontext)
 		pfree(svcon);
@@ -930,9 +917,9 @@ sepgsqlComputePerms(security_context_t scontext,
 }
 
 security_context_t
-sepgsqlComputeCreateContext(security_context_t scontext,
-							security_context_t tcontext,
-							security_class_t tclass)
+sepgsqlComputeCreateLabel(security_context_t scontext,
+						  security_context_t tcontext,
+						  security_class_t tclass)
 {
 	security_context_t svcon, tvcon, nwcon, copy;
 	security_class_t e_tclass;
@@ -1174,6 +1161,9 @@ pid_t
 sepgsqlStartupWorkerProcess(void)
 {
 	pid_t		chld;
+
+	if (!sepgsqlIsEnabled())
+		return (pid_t) 0;
 
 	chld = fork();
 	if (chld == 0)
