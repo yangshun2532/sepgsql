@@ -297,16 +297,6 @@ static const struct config_enum_entry xmloption_options[] = {
 	{NULL, 0, false}
 };
 
-#ifdef HAVE_SELINUX
-static const struct config_enum_entry sepgsqloption_options[] = {
-	{"default", SEPGSQL_MODE_DEFAULT, false},
-	{"enforcing", SEPGSQL_MODE_ENFORCING, false},
-	{"permissive", SEPGSQL_MODE_PERMISSIVE, false},
-	{"disabled", SEPGSQL_MODE_DISABLED, false},
-	{NULL, 0, false}
-};
-#endif
-
 /*
  * Although only "on", "off", and "safe_encoding" are documented, we
  * accept all the likely variants of "on" and "off".
@@ -3572,7 +3562,7 @@ ResetAllOptions(void)
 {
 	int			i;
 
-	sepgsqlSetDatabaseParam("all", NULL);
+	sepgsqlDatabaseSetParam("all");
 
 	for (i = 0; i < num_guc_variables; i++)
 	{
@@ -5499,7 +5489,7 @@ ExecSetVariableStmt(VariableSetStmt *stmt)
 	{
 		case VAR_SET_VALUE:
 		case VAR_SET_CURRENT:
-			sepgsqlSetDatabaseParam(stmt->name, ExtractSetVariableArgs(stmt));
+			sepgsqlDatabaseSetParam(stmt->name);
 			set_config_option(stmt->name,
 							  ExtractSetVariableArgs(stmt),
 							  (superuser() ? PGC_SUSET : PGC_USERSET),
@@ -5557,7 +5547,7 @@ ExecSetVariableStmt(VariableSetStmt *stmt)
 			break;
 		case VAR_SET_DEFAULT:
 		case VAR_RESET:
-			sepgsqlSetDatabaseParam(stmt->name, NULL);
+			sepgsqlDatabaseSetParam(stmt->name);
 			set_config_option(stmt->name,
 							  NULL,
 							  (superuser() ? PGC_SUSET : PGC_USERSET),
@@ -5982,7 +5972,7 @@ void
 GetPGVariable(const char *name, DestReceiver *dest)
 {
 	/* Check get param permissions */
-	sepgsqlGetDatabaseParam(name);
+	sepgsqlDatabaseGetParam(name);
 
 	if (guc_name_compare(name, "all") == 0)
 		ShowAllGUCConfig(dest);

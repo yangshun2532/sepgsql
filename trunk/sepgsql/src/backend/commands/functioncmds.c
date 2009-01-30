@@ -635,7 +635,7 @@ compute_attributes_sql_style(List *options,
 					 errmsg("ROWS must be positive")));
 	}
 	if (seclabel_item)
-		secLabelId = ""; /* FIXME label translation function here */
+		*secLabelId = sepgsqlSecurityLabelToSid(strVal(seclabel_item->arg));
 }
 
 

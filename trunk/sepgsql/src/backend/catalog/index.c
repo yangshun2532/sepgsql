@@ -637,7 +637,7 @@ index_create(Oid heapRelationId,
 	 * Fixup rel->rd_att->tdhasseclabel
 	 */
 	indexRelation->rd_att->tdhasseclabel
-		= pgaceTupleDescHasSecLabel(indexRelation, NIL);
+		= sepgsqlTupleDescHasSecLabel(indexRelation);
 
 	/*
 	 * Obtain exclusive lock on it.  Although no other backends can see it

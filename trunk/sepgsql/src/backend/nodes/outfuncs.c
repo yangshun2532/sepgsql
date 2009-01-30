@@ -26,7 +26,6 @@
 #include "lib/stringinfo.h"
 #include "nodes/plannodes.h"
 #include "nodes/relation.h"
-#include "nodes/security.h"
 #include "utils/datum.h"
 
 
@@ -1528,7 +1527,6 @@ _outRelOptInfo(StringInfo str, RelOptInfo *node)
 	WRITE_BOOL_FIELD(has_eclass_joins);
 	WRITE_BITMAPSET_FIELD(index_outer_relids);
 	WRITE_NODE_FIELD(index_inner_paths);
-	WRITE_UINT_FIELD(selinuxItems);
 }
 
 static void
@@ -2338,11 +2336,9 @@ _outFkConstraint(StringInfo str, FkConstraint *node)
 	WRITE_BOOL_FIELD(skip_validation);
 }
 
-/*****************************************************************************
- *
- *	Stuff from nodes/security.h
- *
- *****************************************************************************/
+/*
+ * SE-PostgreSQL related stuff
+ */
 static void
 _outSelinuxEvalItem(StringInfo str, SelinuxEvalItem *node)
 {
