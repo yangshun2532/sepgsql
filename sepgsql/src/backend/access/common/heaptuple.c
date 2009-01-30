@@ -870,8 +870,6 @@ heap_modify_tuple(HeapTuple tuple,
 	newTuple->t_tableOid = tuple->t_tableOid;
 	if (tupleDesc->tdhasoid)
 		HeapTupleSetOid(newTuple, HeapTupleGetOid(tuple));
-	if (HeapTupleHasRowAcl(newTuple))
-		HeapTupleSetRowAcl(newTuple, HeapTupleGetRowAcl(tuple));
 	if (HeapTupleHasSecLabel(newTuple))
 		HeapTupleSetSecLabel(newTuple, HeapTupleGetSecLabel(tuple));
 

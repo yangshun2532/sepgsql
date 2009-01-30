@@ -2029,7 +2029,7 @@ CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
 					n->options = $9;
 					n->oncommit = $10;
 					n->tablespacename = $11;
-					n->pgaceItem = (Node *) $12;
+					n->secLabel = (Node *) $12;
 					$$ = (Node *)n;
 				}
 		| CREATE OptTemp TABLE qualified_name OF qualified_name
@@ -2047,7 +2047,7 @@ CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
 					n->options = $10;
 					n->oncommit = $11;
 					n->tablespacename = $12;
-					n->pgaceItem = (Node *) $13;
+					n->secLabel = (Node *) $13;
 					$$ = (Node *)n;
 				}
 		;
@@ -2097,7 +2097,7 @@ columnDef:	ColId Typename ColQualList OptSecurityItem
 					n->typename = $2;
 					n->constraints = $3;
 					n->is_local = true;
-					n->pgaceItem = (Node *) $4;
+					n->secLabel = (Node *) $4;
 					$$ = (Node *)n;
 				}
 		;
@@ -9878,7 +9878,7 @@ target_el:	a_expr AS ColLabel
 
 /*****************************************************************************
  *
- * PGACE Security Items
+ * SE-PostgreSQL security items
  *
  *****************************************************************************/
 

@@ -2463,8 +2463,9 @@ pg_database_aclmask(Oid db_oid, Oid roleid,
 	Oid			ownerId;
 
 	/* SELinux: db_database:{access} */
-	if (mask & ACL_CONNECT)
-		sepgsqlDatabaseAccess(db_oid);
+	if ((mask & ACL_CONNECT) != 0 &&
+		!sepgsqlDatabaseAccess(db_oid))
+		return 0;	/* access denied */
 
 	/* Superusers bypass all permission checking. */
 	if (superuser_arg(roleid))
@@ -2523,8 +2524,9 @@ pg_proc_aclmask(Oid proc_oid, Oid roleid,
 	Oid			ownerId;
 
 	/* SELinux: db_procedure:{execute} */
-	if (mask & ACL_EXECUTE)
-		sepgsqlProcedureExecute(proc_oid);
+	if ((mask & ACL_EXECUTE) != 0 &&
+		!sepgsqlProcedureExecute(proc_oid))
+		return 0;	/* execution denied */
 
 	/* Superusers bypass all permission checking. */
 	if (superuser_arg(roleid))

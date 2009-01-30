@@ -864,7 +864,7 @@ RelationBuildDesc(Oid targetRelId, Relation oldrelation)
 
 	/* fixup relation->rd_att->tdhassecacl and tdhasseclabel */
 	relation->rd_att->tdhasseclabel
-		= pgaceTupleDescHasSecLabel(relation, NIL);
+		= sepgsqlTupleDescHasSecLabel(relation);
 
 	/*
 	 * initialize the relation lock manager information
@@ -1456,7 +1456,7 @@ formrdesc(const char *relationName, Oid relationReltype,
 	 * Fixup relation->rd_att->tdhasseclabel
 	 */
 	RelationGetDescr(relation)->tdhasseclabel
-		= pgaceTupleDescHasSecLabel(relation, NIL);
+		= sepgsqlTupleDescHasSecLabel(relation);
 
 	/*
 	 * initialize the relation lock manager information
@@ -3461,7 +3461,7 @@ load_relcache_init_file(void)
 		 * fixup rel->rd_att->tdhassecurity
 		 */
 		rel->rd_att->tdhasseclabel
-			= pgaceTupleDescHasSecLabel(rel, NIL);
+			= sepgsqlTupleDescHasSecLabel(rel);
 
 		/* mark not-null status */
 		if (has_not_null)

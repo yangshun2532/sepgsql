@@ -40,6 +40,7 @@
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
+#include "utils/sepgsql.h"
 #include "utils/snapmgr.h"
 
 
@@ -1245,7 +1246,8 @@ DoCopyTo(CopyState cstate)
 					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
 					 errmsg("\"%s\" is a directory", cstate->filename)));
 
-		sepgsqlCopyFile(cstate->rel, cstate->filename, false);
+		sepgsqlCopyFile(cstate->rel, fileno(cstate->copy_file),
+						cstate->filename, false);
 	}
 
 	PG_TRY();
@@ -1742,7 +1744,8 @@ CopyFrom(CopyState cstate)
 					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
 					 errmsg("\"%s\" is a directory", cstate->filename)));
 
-		sepgsqlCopyFile(cstate->rel, cstate->filename, true);
+		sepgsqlCopyFile(cstate->rel, fileno(cstate->copy_file),
+						cstate->filename, true);
 	}
 
 	tupDesc = RelationGetDescr(cstate->rel);
