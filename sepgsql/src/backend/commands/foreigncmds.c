@@ -29,6 +29,7 @@
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
+#include "utils/sepgsql.h"
 #include "utils/syscache.h"
 
 
@@ -332,6 +333,9 @@ CreateForeignDataWrapper(CreateFdwStmt *stmt)
 						stmt->fdwname),
 				 errhint("Must be superuser to create a foreign-data wrapper.")));
 
+	/* SELinux checks db_database:{install_module} priv */
+	sepgsqlDatabaseInstallModule(stmt->library);
+
 	/* For now the owner cannot be specified on create. Use effective user ID. */
 	ownerId = GetUserId();
 
@@ -427,6 +431,9 @@ AlterForeignDataWrapper(AlterFdwStmt *stmt)
 
 	if (stmt->library)
 	{
+		/* SELinux checks db_database:{install_module} for new library */
+		sepgsqlDatabaseInstallModule(stmt->library);
+
 		/*
 		 * New library specified -- load to see if valid.
 		 */

@@ -699,7 +699,7 @@ sepgsqlCheckSelinuxEvalItem(SelinuxEvalItem *seitem)
 	sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
 						  SECCLASS_DB_TABLE,
 						  seitem->relperms,
-						  audit_name);
+						  audit_name, true);
 	ReleaseSysCache(tuple);
 
 	/*
@@ -747,7 +747,7 @@ sepgsqlCheckSelinuxEvalItem(SelinuxEvalItem *seitem)
 		sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
 							  SECCLASS_DB_COLUMN,
 							  seitem->attperms[index],
-							  audit_name);
+							  audit_name, true);
 		ReleaseSysCache(tuple);
 	}
 }

@@ -38,10 +38,10 @@ bool sepgsqlDatabaseAccess(Oid db_oid)
 		elog(ERROR, "SELinux: cache lookup failed for database: %u", db_oid);
 
 	audit_name = sepgsqlAuditName(DatabaseRelationId, tuple);
-	rc = sepgsqlClientHasPermsNoAbort(HeapTupleGetSecLabel(tuple),
-									  SECCLASS_DB_DATABASE,
-									  DB_DATABASE__ACCESS,
-									  audit_name);
+	rc = sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
+							   SECCLASS_DB_DATABASE,
+							   DB_DATABASE__ACCESS,
+							   audit_name, false);
 	ReleaseSysCache(tuple);
 
 	return rc;
@@ -57,6 +57,9 @@ sepgsqlDatabaseGetParam(const char *name)
 	const char *audit_name;
 	HeapTuple   tuple;
 
+	if (!sepgsqlIsEnabled())
+		return;
+
 	tuple = SearchSysCache(DATABASEOID,
 						   ObjectIdGetDatum(MyDatabaseId),
 						   0, 0, 0);
@@ -68,7 +71,7 @@ sepgsqlDatabaseGetParam(const char *name)
 	sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
 						  SECCLASS_DB_DATABASE,
 						  DB_DATABASE__GET_PARAM,
-						  audit_name);
+						  audit_name, true);
 	ReleaseSysCache(tuple);
 }
 
@@ -82,6 +85,9 @@ sepgsqlDatabaseSetParam(const char *name)
 	const char *audit_name;
 	HeapTuple   tuple;
 
+	if (!sepgsqlIsEnabled())
+		return;
+
 	tuple = SearchSysCache(DATABASEOID,
 						   ObjectIdGetDatum(MyDatabaseId),
 						   0, 0, 0);
@@ -93,12 +99,104 @@ sepgsqlDatabaseSetParam(const char *name)
 	sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
 						  SECCLASS_DB_DATABASE,
 						  DB_DATABASE__SET_PARAM,
-						  audit_name);
+						  audit_name, true);
 	ReleaseSysCache(tuple);
 }
 
 /*
- * Table related permission checks
+ * sepgsqlDatabaseInstallModule
+ *   checks db_database:{install_module} permission on
+ *   the current database and a given loadable module.
+ */
+void
+sepgsqlDatabaseInstallModule(const char *filename)
+{
+	security_context_t fcontext;
+	HeapTuple tuple;
+	const char *audit_name;
+	char *fullpath;
+
+	if (!sepgsqlIsEnabled())
+		return;
+
+	/* (client) <-- db_database:module_install --> (database) */
+	tuple = SearchSysCache(DATABASEOID,
+						   ObjectIdGetDatum(MyDatabaseId),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "SELinux: cache lookup failed for database: %u",
+			 MyDatabaseId);
+
+	audit_name = sepgsqlAuditName(DatabaseRelationId, tuple);
+	sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
+						  SECCLASS_DB_DATABASE,
+						  DB_DATABASE__INSTALL_MODULE,
+						  audit_name, true);
+	ReleaseSysCache(tuple);
+
+	/* (client) <-- db_databse:module_install --> (*.so file) */
+	fullpath = expand_dynamic_library_name(filename);
+	if (getfilecon_raw(fullpath, &fcontext) < 0)
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 errmsg("could not access file \"%s\": %m", fullpath)));
+	PG_TRY();
+	{
+		/*
+		 * NOTE: fcontext does not have security id,
+		 * so we have to use non-cached interface here.
+		 */
+		sepgsqlComputePerms(sepgsqlGetClientLabel(),
+							fcontext,
+							SECCLASS_DB_DATABASE,
+							DB_DATABASE__INSTALL_MODULE,
+							fullpath);
+	}
+	PG_CATCH();
+	{
+		freecon(fcontext);
+		PG_RE_THROW();
+	}
+	PG_END_TRY();
+	freecon(fcontext);
+}
+
+/*
+ * sepgsqlDatabaseLoadModule
+ *   checks capability of database to load a specific library
+ */
+void
+sepgsqlDatabaseLoadModule(const char *filename)
+{
+	security_context_t filecon;
+
+	if (!sepgsqlIsEnabled())
+		return;
+
+	if (getfilecon_raw(filename, &filecon) < 0)
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 errmsg("could not access file \"%s\": %m", filename)));
+	PG_TRY();
+	{
+		sepgsqlComputePerms(sepgsqlGetDatabaseLabel(),
+							filecon,
+							SECCLASS_DB_DATABASE,
+							DB_DATABASE__LOAD_MODULE,
+							filename);
+	}
+	PG_CATCH();
+	{
+		freecon(filecon);
+		PG_RE_THROW();
+	}
+	PG_END_TRY();
+	freecon(filecon);
+}
+
+/*
+ * sepgsqlTableLock
+ *   checks db_table:{lock} permission for explicit table lock
  */
 bool
 sepgsqlTableLock(Oid relid)
@@ -124,16 +222,20 @@ sepgsqlTableLock(Oid relid)
 	if (classForm->relkind == RELKIND_RELATION)
 	{
 		audit_name = sepgsqlAuditName(RelationRelationId, tuple);
-		rc = sepgsqlClientHasPermsNoAbort(HeapTupleGetSecLabel(tuple),
-										  SECCLASS_DB_TABLE,
-										  DB_TABLE__LOCK,
-										  audit_name);
+		rc = sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
+								   SECCLASS_DB_TABLE,
+								   DB_TABLE__LOCK,
+								   audit_name, false);
 	}
 	ReleaseSysCache(tuple);
 
 	return rc;
 }
 
+/*
+ * sepgsqlTableTruncate
+ *   checks db_table:{delete} permission
+ */
 bool
 sepgsqlTableTruncate(Relation rel)
 {
@@ -158,10 +260,10 @@ sepgsqlTableTruncate(Relation rel)
 			 RelationGetRelationName(rel));
 
 	audit_name = sepgsqlAuditName(RelationRelationId, tuple);
-	rc = sepgsqlClientHasPermsNoAbort(HeapTupleGetSecLabel(tuple),
-									  SECCLASS_DB_TABLE,
-									  DB_TABLE__DELETE,
-									  audit_name);
+	rc = sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
+							   SECCLASS_DB_TABLE,
+							   DB_TABLE__DELETE,
+							   audit_name, false);
 	ReleaseSysCache(tuple);
 
 	return rc;
@@ -189,10 +291,10 @@ bool sepgsqlProcedureExecute(Oid proc_oid)
 		elog(ERROR, "SELinux: cache lookup failed for procedure: %u", proc_oid);
 
 	audit_name = sepgsqlAuditName(ProcedureRelationId, tuple);
-	rc = sepgsqlClientHasPermsNoAbort(HeapTupleGetSecLabel(tuple),
-									  SECCLASS_DB_PROCEDURE,
-									  DB_PROCEDURE__EXECUTE,
-									  audit_name);
+	rc = sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
+							   SECCLASS_DB_PROCEDURE,
+							   DB_PROCEDURE__EXECUTE,
+							   audit_name, false);
 	ReleaseSysCache(tuple);
 
 	return rc;
@@ -235,7 +337,6 @@ sepgsqlProcedureSetup(FmgrInfo *finfo, HeapTuple protup)
 
 	if (!sepgsqlIsEnabled())
 		return;
-
 	/*
 	 * NOTE: built-in trusted procedure is not supported currently,
 	 * because SearchSysCache(PROCOID, ...) invokes another built-in
@@ -260,7 +361,7 @@ sepgsqlProcedureSetup(FmgrInfo *finfo, HeapTuple protup)
 	sepgsqlClientHasPerms(HeapTupleGetSecLabel(protup),
 						  SECCLASS_DB_PROCEDURE,
 						  DB_PROCEDURE__ENTRYPOINT,
-						  audit_name);
+						  audit_name, true);
 
 	/* process:{transition} */
 	sepgsqlComputePerms(sepgsqlGetClientLabel(),
@@ -276,43 +377,6 @@ sepgsqlProcedureSetup(FmgrInfo *finfo, HeapTuple protup)
 
 	MemoryContextSwitchTo(oldctx);
 }
-
-/*
- * Load a shared library module
- */
-void
-sepgsqlLoadSharedModule(const char *filename)
-{
-	security_context_t filecon;
-
-	if (getfilecon_raw(filename, &filecon) < 0)
-		ereport(ERROR,
-				(errcode_for_file_access(),
-				 errmsg("could not access file \"%s\": %m", filename)));
-	PG_TRY();
-	{
-		sepgsqlComputePerms(sepgsqlGetDatabaseLabel(),
-							filecon,
-							SECCLASS_DB_DATABASE,
-							DB_DATABASE__LOAD_MODULE,
-							filename);
-	}
-	PG_CATCH();
-	{
-		freecon(filecon);
-		PG_RE_THROW();
-	}
-	PG_END_TRY();
-	freecon(filecon);
-}
-
-
-
-
-
-
-
-
 
 /*
  * HeapTuple INSERT/UPDATE/DELETE
@@ -441,49 +505,6 @@ sepgsqlHeapTupleDelete(Relation rel, ItemPointer otid,
 	return rc;
 }
 
-
-
-
-/*
- * sepgsqlProcessUtility
- *
- * This function is invoked from the head of ProcessUtility(), and
- * checks given DDL queries.
- * SE-PostgreSQL catch most of DDL actions on sepgsqlHeapTupleXXXX hooks.
- * Exception is loadable module installation.
- */
-void
-sepgsqlProcessUtility(Node *parsetree, ParamListInfo params, bool isTopLevel)
-{
-	switch (nodeTag(parsetree))
-	{
-	case T_LoadStmt:
-		{
-			LoadStmt *load = (LoadStmt *)parsetree;
-			sepgsqlCheckModuleInstallPerms(load->filename);
-		}
-		break;
-
-	case T_CreateFdwStmt:
-		{
-			CreateFdwStmt *createFdw = (CreateFdwStmt *)parsetree;
-			sepgsqlCheckModuleInstallPerms(createFdw->library);
-		}
-		break;
-
-	case T_AlterFdwStmt:
-		{
-			AlterFdwStmt *alterFdw = (AlterFdwStmt *)parsetree;
-			if (alterFdw->library)
-				sepgsqlCheckModuleInstallPerms(alterFdw->library);
-		}
-		break;
-
-	default:
-		break;
-	}
-}
-
 /*
  * sepgsqlCopyTable
  *
@@ -496,6 +517,9 @@ sepgsqlCopyTable(Relation rel, List *attNumList, bool isFrom)
 {
 	List	   *selist = NIL;
 	ListCell   *l;
+
+	if (!sepgsqlIsEnabled())
+		return;
 
 	/*
 	 * on 'COPY FROM SELECT ...' cases, any checkings are done in select.c
@@ -538,8 +562,12 @@ sepgsqlCopyTable(Relation rel, List *attNumList, bool isFrom)
 void sepgsqlCopyFile(Relation rel, int fdesc, const char *filename, bool isFrom)
 {
 	security_context_t context;
-	security_class_t tclass
-		= sepgsqlFileObjectClass(fdesc);
+	security_class_t tclass;
+
+	if (!sepgsqlIsEnabled())
+		return;
+
+	tclass = sepgsqlFileObjectClass(fdesc);
 
 	if (fgetfilecon_raw(fdesc, &context) < 0)
 		ereport(ERROR,

@@ -57,7 +57,7 @@ sepgsqlGetClientLabel(void)
 		if (getpeercon_raw(MyProcPort->sock, &clientLabel) < 0)
 			ereport(ERROR,
 					(errcode(ERRCODE_SELINUX_ERROR),
-					 errmsg("SELinux: could not get client label")));
+					 errmsg("SELinux: could not obtain client label")));
 	}
 
 	return clientLabel;
@@ -196,13 +196,19 @@ sepgsqlIsEnabled(void)
 	return enabled > 0 ? true : false;
 }
 
+/*
+ * sepgsqlInitialize
+ */
+void
+sepgsqlInitialize(void)
+{
+	if (!sepgsqlIsEnabled())
+		return;
 
+	sepgsqlGetClientLabel();
 
-
-
-
-
-
+	sepgsqlAvcInit();
+}
 
 /*
  * SE-PostgreSQL specific functions

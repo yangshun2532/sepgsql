@@ -104,8 +104,8 @@ sepgsqlComputeMetaLabel(void)
 	if (!tlabel || !sepgsqlCheckValidSecurityLabel(tlabel))
 		tlabel = sepgsqlGetUnlabeledLabel();
 
-	mlabel = sepgsqlComputeCreateContext(sepgsqlGetServerLabel(),
-										 tlabel, SECCLASS_DB_TUPLE);
+	mlabel = sepgsqlComputeCreateLabel(sepgsqlGetServerLabel(),
+									   tlabel, SECCLASS_DB_TUPLE);
 	ReleaseSysCache(tuple);
 
 	return mlabel;
@@ -129,7 +129,7 @@ static List *earlySecLabelList = NIL;
  *   on bootstraping mode.
  */
 static Oid
-earlySecurityLabelToSid(char *label)
+earlySecurityLabelToSid(security_context_t label)
 {
 	MemoryContext oldctx;
 	ListCell *l;
@@ -339,9 +339,7 @@ sepgsqlSecurityLabelToSid(char *label)
 	char   *raw_label;
 
 	if (!sepgsqlIsEnabled())
-		ereport(ERROR,
-				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("SELinux: not available now")));
+		return InvalidOid;
 
 	raw_label = sepgsqlSecurityLabelTransIn(label);
 
@@ -399,9 +397,7 @@ sepgsqlSidToSecurityLabel(Oid sid)
 	char   *raw_label;
 
 	if (!sepgsqlIsEnabled())
-		ereport(ERROR,
-				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("SELinux: not available now")));
+		return pstrdup("");
 
 	raw_label = sepgsqlLookupSecurityLabel(sid);
 	if (!raw_label || !sepgsqlCheckValidSecurityLabel(raw_label))
@@ -414,10 +410,10 @@ sepgsqlSidToSecurityLabel(Oid sid)
  * sepgsqlSecurityLabelTransIn()
  *   translate external security label into internal one
  */
-char *
-sepgsqlSecurityLabelTransIn(const char *context)
+security_context_t
+sepgsqlSecurityLabelTransIn(security_context_t context)
 {
-	char *raw_context, *result;
+	security_context_t raw_context, result;
 
 	if (selinux_trans_to_raw_context(context, &raw_context) < 0)
 		ereport(ERROR,
@@ -443,10 +439,10 @@ sepgsqlSecurityLabelTransIn(const char *context)
  * sepgsqlSecurityLabelTransOut()
  *   translate internal security label into external one
  */
-char *
-sepgsqlSecurityLabelTransOut(const char *context)
+security_context_t
+sepgsqlSecurityLabelTransOut(security_context_t context)
 {
-	char *trans_context, *result;
+	security_context_t trans_context, result;
 
 	if (selinux_raw_to_trans_context(context, &trans_context) < 0)
 		ereport(ERROR,
@@ -473,7 +469,7 @@ sepgsqlSecurityLabelTransOut(const char *context)
  *   checks whether the given security context is a valid one, or not
  */
 bool
-sepgsqlCheckValidSecurityLabel(char *context)
+sepgsqlCheckValidSecurityLabel(security_context_t context)
 {
 	if (security_check_context_raw(context) < 0)
 		return false;

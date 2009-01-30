@@ -109,8 +109,8 @@ load_external_function(char *filename, char *funcname,
 	/* Expand the possibly-abbreviated filename to an exact path name */
 	fullname = expand_dynamic_library_name(filename);
 
-	/* Check whether the shared library should be loaded, or not */
-	sepgsqlLoadSharedModule(fullname);
+	/* SELinux checks db_database:{load_module} permission */
+	sepgsqlDatabaseLoadModule(fullname);
 
 	/* Load the shared library, unless we already did */
 	lib_handle = internal_load_library(fullname);
@@ -152,8 +152,8 @@ load_file(const char *filename, bool restricted)
 	/* Expand the possibly-abbreviated filename to an exact path name */
 	fullname = expand_dynamic_library_name(filename);
 
-	/* Check whether the library should be loaded, or not */
-	sepgsqlLoadSharedModule(fullname);
+	/* SELinux checks db_database:{load_module} */
+	sepgsqlDatabaseLoadModule(fullname);
 
 	/* Unload the library if currently loaded */
 	internal_unload_library(fullname);
