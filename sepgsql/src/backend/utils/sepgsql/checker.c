@@ -780,40 +780,38 @@ expandEvalItemInheritance(List *selist)
 			for (index = 0; index < seitem->nattrs; index++)
 			{
 				Oid relid_inh = lfirst_oid(i);
-				AttrNumber attno;
+				AttrNumber attno = seitem_index_to_attno(index);
 
 				if (seitem->attperms[index] == 0)
 					continue;
 
-				attno = seitem_index_to_attno(index);
-				if (attno < 0 || seitem->relid == relid_inh)
+				/*
+				 * No need to assign attribute number for itself
+				 */
+				if (seitem->relid == relid_inh)
 				{
-					/*
-					 * If attribute is system column or relation is itself,
-					 * we don't need to fix up attribute number here.
-					 */
 					result = sepgsqlAddEvalColumn(result, relid_inh, false,
 												  attno, seitem->attperms[index]);
 					continue;
 				}
-				else if (attno == InvalidAttrNumber)
+
+				if (attno == InvalidAttrNumber)
 				{
+					/* whole-row-reference */
 					int nattrs = seitem_index_to_attno(seitem->nattrs);
 					int pos;
 
-					for (pos = 1; pos < nattrs; pos++);
+					for (pos = 1; pos < nattrs; pos++)
 					{
 						char *attname = get_attname(seitem->relid, pos);
 
 						if (!attname)
 							elog(ERROR, "SELinux: cache lookup failed for "
-								 "attribute %d of relation %u", seitem->relid, pos);
+								 "attribute %d of relation %u", pos, seitem->relid);
 
 						attno = get_attnum(relid_inh, attname);
 						if (attno == InvalidAttrNumber)
-							elog(ERROR, "cache lookup failed for "
-								 "attribute %s of relation %u",
-								 attname, relid_inh);
+							continue;	/* already dropped? */
 
 						result = sepgsqlAddEvalColumn(result, relid_inh, false,
 													  attno, seitem->attperms[index]);
@@ -831,8 +829,7 @@ expandEvalItemInheritance(List *selist)
 					attno = get_attnum(relid_inh, attname);
 					if (attno == InvalidAttrNumber)
 						elog(ERROR, "cache lookup failed for "
-							 "attribute %s of relation %u",
-							 attname, relid_inh);
+							 "attribute %s of relation %u", attname, relid_inh);
 
 					result = sepgsqlAddEvalColumn(result, relid_inh, false,
 												  attno, seitem->attperms[index]);
