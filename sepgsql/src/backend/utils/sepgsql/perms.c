@@ -436,7 +436,7 @@ sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, HeapTuple newtup,
 		break;
 	}
 
-	if (!av_perms)
+	if (av_perms)
 	{
 		audit_name = sepgsqlAuditName(RelationGetRelid(rel), tuple);
 		rc = sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
