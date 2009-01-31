@@ -28,6 +28,7 @@
 #include "utils/fmgrtab.h"
 #include "utils/guc.h"
 #include "utils/lsyscache.h"
+#include "utils/sepgsql.h"
 #include "utils/syscache.h"
 
 
@@ -202,6 +203,7 @@ fmgr_info_cxt_security(Oid functionId, FmgrInfo *finfo, MemoryContext mcxt,
 		finfo->fn_stats = TRACK_FUNC_ALL;	/* ie, never track */
 		finfo->fn_addr = fbp->func;
 		finfo->fn_oid = functionId;
+		sepgsqlProcedureSetup(finfo, NULL);
 		return;
 	}
 
@@ -237,6 +239,7 @@ fmgr_info_cxt_security(Oid functionId, FmgrInfo *finfo, MemoryContext mcxt,
 		finfo->fn_addr = fmgr_security_definer;
 		finfo->fn_stats = TRACK_FUNC_ALL;	/* ie, never track */
 		finfo->fn_oid = functionId;
+		sepgsqlProcedureSetup(finfo, procedureTuple);
 		ReleaseSysCache(procedureTuple);
 		return;
 	}
@@ -289,6 +292,7 @@ fmgr_info_cxt_security(Oid functionId, FmgrInfo *finfo, MemoryContext mcxt,
 	}
 
 	finfo->fn_oid = functionId;
+	sepgsqlProcedureSetup(finfo, procedureTuple);
 	ReleaseSysCache(procedureTuple);
 }
 

@@ -8,7 +8,7 @@ top_builddir = ../../../..
 include $(top_builddir)/src/Makefile.global
 
 ifeq ($(enable_selinux), yes)
-OBJS = core.o label.o avc.o hooks.o analyze.o perms.o
+OBJS = avc.o checker.o core.o hooks.o label.o perms.o
 else
 OBJS = dummy.o
 endif
