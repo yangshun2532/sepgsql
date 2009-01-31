@@ -1,6 +1,6 @@
 /*
- * src/backend/security/sepgsql/proxy.c
- *    Proxying the given Query trees via SE-PostgreSQL
+ * src/backend/utils/sepgsql/checker.c
+ *    walks on given Query tree and applies checks
  *
  * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
