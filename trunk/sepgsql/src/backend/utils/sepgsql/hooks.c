@@ -676,6 +676,7 @@ sepgsqlRelationGivenSecLabelList(CreateStmt *stmt)
 
 			newel = makeDefElem(pstrdup(cdef->colname),
 								copyObject(defel->arg));
+			result = lappend(result, newel);
 		}
 	}
 

@@ -198,10 +198,10 @@ sepgsqlPostBootstrapingMode(void)
 	if (!sepgsqlIsEnabled())
 		return;
 
+	StartTransactionCommand();
+
 	metaLabel = sepgsqlComputeMetaLabel();
 	metaSid = earlySecurityLabelToSid(metaLabel);
-
-	StartTransactionCommand();
 
 	rel = heap_open(SecurityRelationId, RowExclusiveLock);
 	ind = CatalogOpenIndexes(rel);

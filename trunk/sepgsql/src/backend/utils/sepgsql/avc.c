@@ -598,7 +598,7 @@ avc_make_entry(Oid tsid, security_class_t tclass)
 	scontext = current_avc_page->scontext;
 	tcontext = sepgsqlLookupSecurityLabel(tsid);
 	if (!tcontext || !sepgsqlCheckValidSecurityLabel(tcontext))
-		tcontext = sepgsqlGetUnlabeledLabel();
+		tcontext = pstrdup(sepgsqlGetUnlabeledLabel());
 
 	LWLockAcquire(SepgsqlAvcLock, LW_SHARED);
 
