@@ -599,6 +599,9 @@ InitPostgres(const char *in_dbname, Oid dboid, const char *username,
 	/* set up ACL framework (so CheckMyDatabase can check permissions) */
 	initialize_acl();
 
+	/* initialize SE-PostgreSQL feature */
+	sepgsqlInitialize();
+
 	/*
 	 * Read the real pg_database row for our database, check permissions and
 	 * set up database-specific GUC settings.  We can't do this until all the
@@ -642,9 +645,6 @@ InitPostgres(const char *in_dbname, Oid dboid, const char *username,
 	/* report this backend in the PgBackendStatus array */
 	if (!bootstrap)
 		pgstat_bestart();
-
-	/* initialize mandatory access control facilities */
-	sepgsqlInitialize();
 
 	/* close the transaction we started above */
 	if (!bootstrap)

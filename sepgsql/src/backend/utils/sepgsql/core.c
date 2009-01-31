@@ -270,6 +270,7 @@ sepgsql_database_getcon(PG_FUNCTION_ARGS)
 	sid = HeapTupleGetSecLabel(tuple);
 
 	systable_endscan(scan);
+	heap_close(rel, AccessShareLock);
 
 	return CStringGetTextDatum(sepgsqlSidToSecurityLabel(sid));
 }
