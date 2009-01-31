@@ -93,11 +93,7 @@
 #tcp_keepalives_count = 0		# TCP_KEEPCNT;
 					# 0 selects the system default
 
-#sepostgresql = 'disabled'		# SE-PostgreSQL support
-					# default    : apply system setting
-					# enforcing  : always enforcing mode
-					# permissive : always permissive mode
-					# disabled   : always disabled
+#sepostgresql = off			# SE-PostgreSQL support
 
 #------------------------------------------------------------------------------
 # RESOURCE USAGE (except WAL)

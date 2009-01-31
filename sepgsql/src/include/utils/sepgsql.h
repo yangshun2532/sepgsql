@@ -29,21 +29,6 @@
 extern bool sepostgresql_is_enabled;
 
 /*
- * analyze.c : Query structure analyzer
- */
-extern List *sepgsqlAddEvalTable(List *selist, Oid relid, bool inh,
-								 uint32 perms);
-extern List *sepgsqlAddEvalColumn(List *selist, Oid relid, bool inh,
-								  AttrNumber attno, uint32 perms);
-extern List *sepgsqlAddEvalTriggerFunc(List *selist, Oid relid, int cmdType);
-
-extern void sepgsqlCheckSelinuxEvalItem(SelinuxEvalItem *seitem);
-
-extern void sepgsqlPostQueryRewrite(List *queryList);
-
-extern void sepgsqlExecutorStart(QueryDesc *queryDesc, int eflags);
-
-/*
  * avc.c : userspace access vector cache
  */
 extern Size sepgsqlShmemSize(void);
@@ -74,6 +59,20 @@ extern security_context_t
 sepgsqlComputeCreateLabel(security_context_t scontext,
 						  security_context_t tcontext,
 						  security_class_t tclass);
+/*
+ * checker.c : pick up all the appeared objects and apply checks
+ */
+extern List *sepgsqlAddEvalTable(List *selist, Oid relid, bool inh,
+								 uint32 perms);
+extern List *sepgsqlAddEvalColumn(List *selist, Oid relid, bool inh,
+								  AttrNumber attno, uint32 perms);
+extern List *sepgsqlAddEvalTriggerFunc(List *selist, Oid relid, int cmdType);
+
+extern void sepgsqlCheckSelinuxEvalItem(SelinuxEvalItem *seitem);
+
+extern void sepgsqlPostQueryRewrite(List *queryList);
+
+extern void sepgsqlExecutorStart(QueryDesc *queryDesc, int eflags);
 
 /*
  * core.c : core facilities
@@ -194,16 +193,15 @@ extern void sepgsqlSetDefaultLabel(Relation rel, HeapTuple tuple);
 
 #else	/* HAVE_SELINUX */
 
-// analyze.c
-#define sepgsqlPostQueryRewrite(a)				do {} while(0)
-#define sepgsqlExecutorStart(a,b)				do {} while(0)
 // avc.c
 #define sepgsqlShmemSize()						(0)
 #define sepgsqlStartupWorkerProcess()			(0)
+// checker.c
+#define sepgsqlPostQueryRewrite(a)				do {} while(0)
+#define sepgsqlExecutorStart(a,b)				do {} while(0)
 // core.c
 #define sepgsqlIsEnabled()						(false)
 #define sepgsqlInitialize()						do {} while(0)
-
 // hooks.c
 #define sepgsqlDatabaseAccess(a)				(true)
 #define sepgsqlDatabaseSetParam(a)				do {} while(0)
