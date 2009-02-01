@@ -234,6 +234,17 @@ PostgreSQL documentation
        </para>
       </listitem>
      </varlistentry>
+
+     <varlistentry>
+       <term><option>--enable-selinux</option></term>
+       <listitem>
+	 <para>
+	   Enables SE-PostgreSQL on startup time and writes its configuration
+	   on <filename>postgresql.conf</filename>.
+         </para>
+       </listitem>
+     </varlistentry>
+
     </variablelist>
    </para>
 
