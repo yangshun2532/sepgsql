@@ -182,7 +182,7 @@ checkProcedureInstall(Oid proc_oid)
 			return;
 
 		audit_name = sepgsqlAuditName(ProcedureRelationId, protup);
-		proc_sid = HeapTupleGetSecLabel(protup);
+		proc_sid = HeapTupleGetSecLabel(ProcedureRelationId, protup);
 	}
 
 	sepgsqlClientHasPerms(proc_sid,
@@ -439,7 +439,7 @@ sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, HeapTuple newtup,
 	if (av_perms)
 	{
 		audit_name = sepgsqlAuditName(RelationGetRelid(rel), tuple);
-		rc = sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
+		rc = sepgsqlClientHasPerms(HeapTupleGetSecLabel(RelationGetRelid(rel), tuple),
 								   tclass, av_perms,
 								   audit_name, abort);
 	}
@@ -497,20 +497,20 @@ sepgsqlDefaultColumnLabel(Relation rel, HeapTuple tuple)
 	}
 	else
 	{
-        HeapTuple reltup
-            = SearchSysCache(RELOID,
-                             ObjectIdGetDatum(attForm->attrelid),
-                             0, 0, 0);
-        if (!HeapTupleIsValid(reltup))
-            elog(ERROR, "SELinux: cache lookup failed for relation: %u",
-                 attForm->attrelid);
+		HeapTuple reltup
+			= SearchSysCache(RELOID,
+							 ObjectIdGetDatum(attForm->attrelid),
+							 0, 0, 0);
+		if (!HeapTupleIsValid(reltup))
+			elog(ERROR, "SELinux: cache lookup failed for relation: %u",
+				 attForm->attrelid);
 
-        tblsid = HeapTupleGetSecLabel(reltup);
+		tblsid = HeapTupleGetSecLabel(RelationRelationId, reltup);
 
-        ReleaseSysCache(reltup);
-    }
+		ReleaseSysCache(reltup);
+	}
 
-    return sepgsqlClientCreateSid(tblsid, SECCLASS_DB_COLUMN);
+	return sepgsqlClientCreateSid(tblsid, SECCLASS_DB_COLUMN);
 }
 
 static Oid
@@ -526,7 +526,7 @@ sepgsqlSetDefaultLabel(Relation rel, HeapTuple tuple)
 	security_class_t tclass;
 	Oid newsid;
 
-	Assert(HeapTupleHasSecLabel(tuple));
+	Assert(HeapTupleHasSecLabel(RelationGetRelid(rel), tuple));
 	tclass = sepgsqlTupleObjectClass(RelationGetRelid(rel), tuple);
 
 	switch (tclass)
@@ -548,6 +548,6 @@ sepgsqlSetDefaultLabel(Relation rel, HeapTuple tuple)
 		break;
     }
 
-    HeapTupleSetSecLabel(tuple, newsid);
+    HeapTupleSetSecLabel(RelationGetRelid(rel), tuple, newsid);
 }
 

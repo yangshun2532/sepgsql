@@ -64,7 +64,6 @@
 #include "utils/memutils.h"
 #include "utils/relcache.h"
 #include "utils/resowner.h"
-#include "utils/sepgsql.h"
 #include "utils/syscache.h"
 #include "utils/tqual.h"
 #include "utils/typcache.h"
@@ -862,10 +861,6 @@ RelationBuildDesc(Oid targetRelId, Relation oldrelation)
 	/* extract reloptions if any */
 	RelationParseRelOptions(relation, pg_class_tuple);
 
-	/* fixup relation->rd_att->tdhassecacl and tdhasseclabel */
-	relation->rd_att->tdhasseclabel
-		= sepgsqlTupleDescHasSecLabel(relation);
-
 	/*
 	 * initialize the relation lock manager information
 	 */
@@ -1451,12 +1446,6 @@ formrdesc(const char *relationName, Oid relationReltype,
 	 */
 	RelationGetRelid(relation) = relation->rd_att->attrs[0]->attrelid;
 	relation->rd_rel->relfilenode = RelationGetRelid(relation);
-
-	/*
-	 * Fixup relation->rd_att->tdhasseclabel
-	 */
-	RelationGetDescr(relation)->tdhasseclabel
-		= sepgsqlTupleDescHasSecLabel(relation);
 
 	/*
 	 * initialize the relation lock manager information
@@ -2693,13 +2682,6 @@ BuildHardcodedDescriptor(int natts, Form_pg_attribute attrs, bool hasoids)
 
 	oldcxt = MemoryContextSwitchTo(CacheMemoryContext);
 
-	/*
-	 * NOTE: we assume the returned TupleDesc is only used for
-	 * references to toast'ed data, and it is not delivered to
-	 * heap_form_tuple(), so TupleDesc->tdhasseclabel
-	 * don't give us any effect.
-	 * We omit to invoke sepgsqlTupleDescHasSecLabel() here.
-	 */
 	result = CreateTemplateTupleDesc(natts, hasoids);
 	result->tdtypeid = RECORDOID;		/* not right, but we don't care */
 	result->tdtypmod = -1;
@@ -3456,12 +3438,6 @@ load_relcache_init_file(void)
 		{
 			rel->rd_options = NULL;
 		}
-
-		/*
-		 * fixup rel->rd_att->tdhassecurity
-		 */
-		rel->rd_att->tdhasseclabel
-			= sepgsqlTupleDescHasSecLabel(rel);
 
 		/* mark not-null status */
 		if (has_not_null)

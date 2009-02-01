@@ -803,8 +803,6 @@ InsertOneTuple(Oid objectid)
 	tupDesc = CreateTupleDesc(numattr,
 							  RelationGetForm(boot_reldesc)->relhasoids,
 							  attrtypes);
-	tupDesc->tdhasseclabel
-		= sepgsqlTupleDescHasSecLabel(boot_reldesc);
 
 	tuple = heap_form_tuple(tupDesc, values, Nulls);
 	if (objectid != (Oid) 0)

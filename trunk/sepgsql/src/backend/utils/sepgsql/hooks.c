@@ -38,7 +38,7 @@ bool sepgsqlDatabaseAccess(Oid db_oid)
 		elog(ERROR, "SELinux: cache lookup failed for database: %u", db_oid);
 
 	audit_name = sepgsqlAuditName(DatabaseRelationId, tuple);
-	rc = sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
+	rc = sepgsqlClientHasPerms(HeapTupleGetSecLabel(DatabaseRelationId, tuple),
 							   SECCLASS_DB_DATABASE,
 							   DB_DATABASE__ACCESS,
 							   audit_name, false);
@@ -68,7 +68,7 @@ sepgsqlDatabaseGetParam(const char *name)
 			 MyDatabaseId);
 
 	audit_name = sepgsqlAuditName(DatabaseRelationId, tuple);
-	sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
+	sepgsqlClientHasPerms(HeapTupleGetSecLabel(DatabaseRelationId, tuple),
 						  SECCLASS_DB_DATABASE,
 						  DB_DATABASE__GET_PARAM,
 						  audit_name, true);
@@ -96,7 +96,7 @@ sepgsqlDatabaseSetParam(const char *name)
 			 MyDatabaseId);
 
 	audit_name = sepgsqlAuditName(DatabaseRelationId, tuple);
-	sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
+	sepgsqlClientHasPerms(HeapTupleGetSecLabel(DatabaseRelationId, tuple),
 						  SECCLASS_DB_DATABASE,
 						  DB_DATABASE__SET_PARAM,
 						  audit_name, true);
@@ -128,7 +128,7 @@ sepgsqlDatabaseInstallModule(const char *filename)
 			 MyDatabaseId);
 
 	audit_name = sepgsqlAuditName(DatabaseRelationId, tuple);
-	sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
+	sepgsqlClientHasPerms(HeapTupleGetSecLabel(DatabaseRelationId, tuple),
 						  SECCLASS_DB_DATABASE,
 						  DB_DATABASE__INSTALL_MODULE,
 						  audit_name, true);
@@ -168,7 +168,7 @@ sepgsqlDatabaseInstallModule(const char *filename)
 void
 sepgsqlDatabaseLoadModule(const char *filename)
 {
-	security_context_t filecon;
+	security_context_t datcon, filecon;
 
 	if (!sepgsqlIsEnabled())
 		return;
@@ -222,7 +222,7 @@ sepgsqlTableLock(Oid relid)
 	if (classForm->relkind == RELKIND_RELATION)
 	{
 		audit_name = sepgsqlAuditName(RelationRelationId, tuple);
-		rc = sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
+		rc = sepgsqlClientHasPerms(HeapTupleGetSecLabel(RelationRelationId, tuple),
 								   SECCLASS_DB_TABLE,
 								   DB_TABLE__LOCK,
 								   audit_name, false);
@@ -260,7 +260,7 @@ sepgsqlTableTruncate(Relation rel)
 			 RelationGetRelationName(rel));
 
 	audit_name = sepgsqlAuditName(RelationRelationId, tuple);
-	rc = sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
+	rc = sepgsqlClientHasPerms(HeapTupleGetSecLabel(RelationRelationId, tuple),
 							   SECCLASS_DB_TABLE,
 							   DB_TABLE__DELETE,
 							   audit_name, false);
@@ -291,7 +291,7 @@ bool sepgsqlProcedureExecute(Oid proc_oid)
 		elog(ERROR, "SELinux: cache lookup failed for procedure: %u", proc_oid);
 
 	audit_name = sepgsqlAuditName(ProcedureRelationId, tuple);
-	rc = sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
+	rc = sepgsqlClientHasPerms(HeapTupleGetSecLabel(ProcedureRelationId, tuple),
 							   SECCLASS_DB_PROCEDURE,
 							   DB_PROCEDURE__EXECUTE,
 							   audit_name, false);
@@ -349,7 +349,7 @@ sepgsqlProcedureSetup(FmgrInfo *finfo, HeapTuple protup)
 
 	oldctx = MemoryContextSwitchTo(finfo->fn_mcxt);
 
-	newcon = sepgsqlClientCreateLabel(HeapTupleGetSecLabel(protup),
+	newcon = sepgsqlClientCreateLabel(HeapTupleGetSecLabel(ProcedureRelationId, protup),
 									  SECCLASS_PROCESS);
 	if (strcmp(newcon, sepgsqlGetClientLabel()) == 0)
 	{
@@ -358,7 +358,7 @@ sepgsqlProcedureSetup(FmgrInfo *finfo, HeapTuple protup)
 	}
 	/* db_procedure:{entrypoint} */
 	audit_name = sepgsqlAuditName(ProcedureRelationId, protup);
-	sepgsqlClientHasPerms(HeapTupleGetSecLabel(protup),
+	sepgsqlClientHasPerms(HeapTupleGetSecLabel(ProcedureRelationId, protup),
 						  SECCLASS_DB_PROCEDURE,
 						  DB_PROCEDURE__ENTRYPOINT,
 						  audit_name, true);
@@ -419,13 +419,13 @@ sepgsqlHeapTupleInsert(Relation rel, HeapTuple tuple,
 	if (!sepgsqlIsEnabled())
 		return true;
 
-	if (!OidIsValid(HeapTupleGetSecLabel(tuple)))
+	if (!OidIsValid(HeapTupleGetSecLabel(RelationGetRelid(rel), tuple)))
 	{
 		/*
 		 * A default security label is assigned,
 		 * if user provides no valid one.
 		 */
-		if (HeapTupleHasSecLabel(tuple))
+		if (HeapTupleHasSecLabel(RelationGetRelid(rel), tuple))
 			sepgsqlSetDefaultLabel(rel, tuple);
 	}
 
@@ -451,17 +451,19 @@ sepgsqlHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple newtup,
 
 	oldtup = getHeapTupleFromItemPointer(rel, otid);
 
-	if (!OidIsValid(HeapTupleGetSecLabel(newtup)))
+	if (!OidIsValid(HeapTupleGetSecLabel(RelationGetRelid(rel), newtup)))
 	{
 		/* preserve security label */
-		Oid sid = HeapTupleGetSecLabel(oldtup);
+		Oid sid = HeapTupleGetSecLabel(RelationGetRelid(rel), oldtup);
 
-		if (HeapTupleHasSecLabel(newtup))
-			HeapTupleSetSecLabel(newtup, sid);
+		if (HeapTupleHasSecLabel(RelationGetRelid(rel), newtup))
+			HeapTupleSetSecLabel(RelationGetRelid(rel), newtup, sid);
 	}
 
-	if (HeapTupleGetSecLabel(newtup) != HeapTupleGetSecLabel(oldtup) ||
-		sepgsqlTupleObjectClass(relid, newtup) != sepgsqlTupleObjectClass(relid, oldtup))
+	if (HeapTupleGetSecLabel(RelationGetRelid(rel), newtup)
+			!= HeapTupleGetSecLabel(RelationGetRelid(rel), oldtup) ||
+		sepgsqlTupleObjectClass(relid, newtup)
+			!= sepgsqlTupleObjectClass(relid, oldtup))
 		relabel = true;
 
 	perms = SEPGSQL_PERMS_UPDATE;
@@ -501,6 +503,8 @@ sepgsqlHeapTupleDelete(Relation rel, ItemPointer otid,
 	rc = sepgsqlCheckTuplePerms(rel, oldtup, NULL,
 								required, internal);
 	heap_freetuple(oldtup);
+
+	Assert(rc == true);
 
 	return rc;
 }
@@ -608,10 +612,11 @@ sepgsqlSetGivenSecLabel(Relation rel, HeapTuple tuple, DefElem *defel)
 		ereport(ERROR,
 				(errcode(ERRCODE_SELINUX_ERROR),
 				 errmsg("SELinux: disabled now")));
+	if (!HeapTupleHasSecLabel(RelationGetRelid(rel), tuple))
+		return;
 
 	sid = sepgsqlSecurityLabelToSid(strVal(defel->arg));
-
-	HeapTupleSetSecLabel(tuple, sid);
+	HeapTupleSetSecLabel(RelationGetRelid(rel), tuple, sid);
 }
 
 void

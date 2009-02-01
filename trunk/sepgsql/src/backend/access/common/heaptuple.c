@@ -61,7 +61,6 @@
 #include "access/sysattr.h"
 #include "access/tuptoaster.h"
 #include "executor/tuptable.h"
-#include "utils/sepgsql.h"
 
 
 /* Does att's datatype allow packing into the 1-byte-header varlena format? */
@@ -724,9 +723,6 @@ heap_form_tuple(TupleDesc tupleDescriptor,
 	if (tupleDescriptor->tdhasoid)
 		len += sizeof(Oid);
 
-	if (tupleDescriptor->tdhasseclabel)
-		len += sizeof(Oid);
-
 	hoff = len = MAXALIGN(len); /* align user data safely */
 
 	data_len = heap_compute_data_size(tupleDescriptor, values, isnull);
@@ -757,8 +753,6 @@ heap_form_tuple(TupleDesc tupleDescriptor,
 
 	if (tupleDescriptor->tdhasoid)		/* else leave infomask = 0 */
 		td->t_infomask = HEAP_HASOID;
-	if (tupleDescriptor->tdhasseclabel)
-		td->t_infomask |= HEAP_HAS_SECLABEL;
 
 	heap_fill_tuple(tupleDescriptor,
 					values,
@@ -870,8 +864,6 @@ heap_modify_tuple(HeapTuple tuple,
 	newTuple->t_tableOid = tuple->t_tableOid;
 	if (tupleDesc->tdhasoid)
 		HeapTupleSetOid(newTuple, HeapTupleGetOid(tuple));
-	if (HeapTupleHasSecLabel(newTuple))
-		HeapTupleSetSecLabel(newTuple, HeapTupleGetSecLabel(tuple));
 
 	return newTuple;
 }
@@ -1483,9 +1475,6 @@ heap_form_minimal_tuple(TupleDesc tupleDescriptor,
 	if (tupleDescriptor->tdhasoid)
 		len += sizeof(Oid);
 
-	if (tupleDescriptor->tdhasseclabel)
-		len += sizeof(Oid);
-
 	hoff = len = MAXALIGN(len); /* align user data safely */
 
 	data_len = heap_compute_data_size(tupleDescriptor, values, isnull);
@@ -1506,8 +1495,6 @@ heap_form_minimal_tuple(TupleDesc tupleDescriptor,
 
 	if (tupleDescriptor->tdhasoid)		/* else leave infomask = 0 */
 		tuple->t_infomask = HEAP_HASOID;
-	if (tupleDescriptor->tdhasseclabel)
-		tuple->t_infomask |= HEAP_HAS_SECLABEL;
 
 	heap_fill_tuple(tupleDescriptor,
 					values,

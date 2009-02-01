@@ -1984,20 +1984,6 @@ ExecBRUpdateTriggers(EState *estate, ResultRelInfo *relinfo,
 	if (newSlot != NULL)
 		intuple = newtuple = ExecRemoveJunk(estate->es_junkFilter, newSlot);
 
-	/*
-	 * The before-row-triggers are fired prior to transcribing system
-	 * attributes from the old tuple to the new one. When no explicit
-	 * new values are given, we have to preserve them, so the following
-	 * code do it to avoid to make triggers get confusion.
-	 */
-	if (HeapTupleHasOid(newtuple) &&
-		!OidIsValid(HeapTupleGetOid(newtuple)))
-		HeapTupleSetOid(newtuple, HeapTupleGetOid(trigtuple));
-
-	if (HeapTupleHasSecLabel(newtuple) &&
-		!OidIsValid(HeapTupleGetSecLabel(newtuple)))
-		HeapTupleSetSecLabel(newtuple, HeapTupleGetSecLabel(trigtuple));
-
 	LocTriggerData.type = T_TriggerData;
 	LocTriggerData.tg_event = TRIGGER_EVENT_UPDATE |
 		TRIGGER_EVENT_ROW |

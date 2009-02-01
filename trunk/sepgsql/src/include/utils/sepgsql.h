@@ -142,7 +142,13 @@ sepgsqlHeapTupleDelete(Relation rel, ItemPointer otid,
  * label.c : security label management
  */
 extern bool
-sepgsqlTupleDescHasSecLabel(Relation rel);
+HeapTupleHasSecLabel(Oid relid, HeapTuple tuple);
+
+extern Oid
+HeapTupleGetSecLabel(Oid relid, HeapTuple tuple);
+
+extern void
+HeapTupleSetSecLabel(Oid relid, HeapTuple tuple, Oid sid);
 
 extern void
 sepgsqlPostBootstrapingMode(void);
