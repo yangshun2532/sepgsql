@@ -696,7 +696,7 @@ sepgsqlCheckSelinuxEvalItem(SelinuxEvalItem *seitem)
 		return;
 	}
 	audit_name = sepgsqlAuditName(RelationRelationId, tuple);
-	sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
+	sepgsqlClientHasPerms(HeapTupleGetSecLabel(RelationRelationId, tuple),
 						  SECCLASS_DB_TABLE,
 						  seitem->relperms,
 						  audit_name, true);
@@ -744,7 +744,7 @@ sepgsqlCheckSelinuxEvalItem(SelinuxEvalItem *seitem)
 		}
 
 		audit_name = sepgsqlAuditName(AttributeRelationId, tuple);
-		sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
+		sepgsqlClientHasPerms(HeapTupleGetSecLabel(AttributeRelationId, tuple),
 							  SECCLASS_DB_COLUMN,
 							  seitem->attperms[index],
 							  audit_name, true);

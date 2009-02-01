@@ -907,12 +907,6 @@ sepgsqlComputePerms(security_context_t scontext,
 
 	rc = avc_permission_common(&cache, perms, svcon, tvcon,
 							   audit_name, true);
-
-	if (svcon != scontext)
-		pfree(svcon);
-	if (tvcon != tcontext)
-		pfree(tvcon);
-
 	return rc;
 }
 

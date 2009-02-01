@@ -1039,12 +1039,6 @@ heap_create_with_catalog(const char *relname,
 						  oidislocal, oidinhcount, secLabelList);
 
 	/*
-	 * Fixup rel->rd_att->tdhassecacl and rel->rd_att->tdhasseclabel
-	 */
-	new_rel_desc->rd_att->tdhasseclabel
-		= sepgsqlTupleDescHasSecLabel(new_rel_desc);
-
-	/*
 	 * Make a dependency link to force the relation to be deleted if its
 	 * namespace is.  Also make a dependency link to its owner.
 	 *

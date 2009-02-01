@@ -904,16 +904,16 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 				for (i = 0; i < as_nplans; i++)
 				{
 					PlanState  *subplan = appendplans[i];
-					Relation	resultRel = resultRelInfo->ri_RelationDesc;
 					JunkFilter *j;
 
 					if (operation == CMD_UPDATE)
-						ExecCheckPlanOutput(resultRel, subplan->plan->targetlist);
+						ExecCheckPlanOutput(resultRelInfo->ri_RelationDesc,
+											subplan->plan->targetlist);
 
 					j = ExecInitJunkFilter(subplan->plan->targetlist,
-										   RelationGetDescr(resultRel)->tdhasoid,
-										   RelationGetDescr(resultRel)->tdhasseclabel,
-										   ExecAllocTableSlot(estate->es_tupleTable));
+							resultRelInfo->ri_RelationDesc->rd_att->tdhasoid,
+								  ExecAllocTableSlot(estate->es_tupleTable));
+
 					/*
 					 * Since it must be UPDATE/DELETE, there had better be a
 					 * "ctid" junk attribute in the tlist ... but ctid could
@@ -955,8 +955,8 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 										planstate->plan->targetlist);
 
 				j = ExecInitJunkFilter(planstate->plan->targetlist,
-									   tupType->tdhasoid, tupType->tdhasseclabel,
-									   ExecAllocTableSlot(estate->es_tupleTable));
+									   tupType->tdhasoid,
+								  ExecAllocTableSlot(estate->es_tupleTable));
 				estate->es_junkFilter = j;
 				if (estate->es_result_relation_info)
 					estate->es_result_relation_info->ri_junkFilter = j;
@@ -1026,7 +1026,7 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 		 * We assume all the sublists will generate the same output tupdesc.
 		 */
 		tupType = ExecTypeFromTL((List *) linitial(plannedstmt->returningLists),
-								 false, false);
+								 false);
 
 		/* Set up a slot for the output of the RETURNING projection(s) */
 		slot = ExecAllocTableSlot(estate->es_tupleTable);
@@ -1343,33 +1343,6 @@ ExecContextForcesOids(PlanState *planstate, bool *hasoids)
 				*hasoids = rel->rd_rel->relhasoids;
 				return true;
 			}
-		}
-	}
-
-	return false;
-}
-
-/*
- * ExecContextForcesSecLabel
- *
- * We need to ensure that result tuples have space for security label,
- * if the security feature need to store it within the given relation.
- */
-bool ExecContextForcesSecLabel(PlanState *planstate, bool *hassecurity)
-{
-	if (planstate->state->es_select_into)
-	{
-		*hassecurity = sepgsqlTupleDescHasSecLabel(NULL);
-		return true;
-	}
-	else
-	{
-		ResultRelInfo *ri = planstate->state->es_result_relation_info;
-
-		if (ri && ri->ri_RelationDesc)
-		{
-			*hassecurity = sepgsqlTupleDescHasSecLabel(ri->ri_RelationDesc);
-			return true;
 		}
 	}
 
@@ -1834,8 +1807,8 @@ ExecInsert(TupleTableSlot *slot,
 	/*
 	 * Mandatory access controls of the tuple
 	 */
-	if (!sepgsqlHeapTupleInsert(resultRelationDesc, tuple,
-								false, !!resultRelInfo->ri_projectReturning))
+	if (!sepgsqlHeapTupleInsert(resultRelationDesc, tuple, false,
+								!!resultRelInfo->ri_projectReturning))
 		return;
 
 	/*
@@ -1904,8 +1877,11 @@ ExecDelete(ItemPointer tupleid,
 			return;
 	}
 
-	if (!sepgsqlHeapTupleDelete(resultRelationDesc, tupleid,
-								false, !!resultRelInfo->ri_projectReturning))
+	/*
+	 * Mandatory access controls of the tuple
+	 */
+	if (!sepgsqlHeapTupleDelete(resultRelationDesc, tupleid, false,
+								!!resultRelInfo->ri_projectReturning))
 		return;
 
 	/*
@@ -2090,8 +2066,8 @@ lreplace:;
 	/*
 	 * Mandatory access controls of the tuple
 	 */
-	if (!sepgsqlHeapTupleUpdate(resultRelationDesc, tupleid, tuple,
-								false, !!resultRelInfo->ri_projectReturning))
+	if (!sepgsqlHeapTupleUpdate(resultRelationDesc, tupleid, tuple, false,
+								!!resultRelInfo->ri_projectReturning))
 		return;
 
 	/*

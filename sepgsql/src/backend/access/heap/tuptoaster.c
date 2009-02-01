@@ -38,7 +38,6 @@
 #include "utils/fmgroids.h"
 #include "utils/pg_lzcompress.h"
 #include "utils/rel.h"
-#include "utils/sepgsql.h"
 #include "utils/typcache.h"
 #include "utils/tqual.h"
 
@@ -592,8 +591,6 @@ toast_insert_or_update(Relation rel, HeapTuple newtup, HeapTuple oldtup,
 		hoff += BITMAPLEN(numAttrs);
 	if (newtup->t_data->t_infomask & HEAP_HASOID)
 		hoff += sizeof(Oid);
-	if (HeapTupleHasSecLabel(newtup))
-		hoff += sizeof(Oid);
 	hoff = MAXALIGN(hoff);
 	Assert(hoff == newtup->t_data->t_hoff);
 	/* now convert to a limit on the tuple data size */
@@ -867,8 +864,6 @@ toast_insert_or_update(Relation rel, HeapTuple newtup, HeapTuple oldtup,
 			new_len += BITMAPLEN(numAttrs);
 		if (olddata->t_infomask & HEAP_HASOID)
 			new_len += sizeof(Oid);
-		if (HeapTupleHeaderHasSecLabel(olddata))
-			new_len += sizeof(Oid);
 		new_len = MAXALIGN(new_len);
 		Assert(new_len == olddata->t_hoff);
 		new_data_len = heap_compute_data_size(tupleDesc,
@@ -1019,8 +1014,6 @@ toast_flatten_tuple_attribute(Datum value,
 	if (has_nulls)
 		new_len += BITMAPLEN(numAttrs);
 	if (olddata->t_infomask & HEAP_HASOID)
-		new_len += sizeof(Oid);
-	if (HeapTupleHeaderHasSecLabel(olddata))
 		new_len += sizeof(Oid);
 	new_len = MAXALIGN(new_len);
 	Assert(new_len == olddata->t_hoff);
@@ -1219,12 +1212,6 @@ toast_save_datum(Relation rel, Datum value, int options)
 		SET_VARSIZE(&chunk_data, chunk_size + VARHDRSZ);
 		memcpy(VARDATA(&chunk_data), data_p, chunk_size);
 		toasttup = heap_form_tuple(toasttupDesc, t_values, t_isnull);
-
-		if (!sepgsqlHeapTupleInsert(toastrel, toasttup, true, false))
-			ereport(ERROR,
-					(errcode(ERRCODE_SELINUX_ERROR),
-					 errmsg("could not insert tuple \"%s\"",
-							RelationGetRelationName(toastrel))));
 
 		heap_insert(toastrel, toasttup, mycid, options, NULL);
 

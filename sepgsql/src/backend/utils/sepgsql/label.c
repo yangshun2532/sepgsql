@@ -64,26 +64,73 @@
  */
 
 /*
- * sepgsqlTupleDescHasSecLabel()
- *   makes a decision whether it is necessary to allocate a fiels to
- *   store security id within a tuple on the given relation
+ * HeapTupleHasSecLabel
+ * HeapTupleGetSecLabel
+ * HeapTupleSetSecLabel
+ *
+ * These are workaround facilities to manage security attribute of
+ * tuples. The current version assumes security identifier is assigned
+ * to tuples within pg_database, pg_class, pg_attribute and pg_proc.
+ * A specific column of these system columns are used to store it.
  */
 bool
-sepgsqlTupleDescHasSecLabel(Relation rel)
+HeapTupleHasSecLabel(Oid relid, HeapTuple tuple)
 {
-	if (!sepgsqlIsEnabled())
-		return false;
+	security_class_t tclass
+		= sepgsqlTupleObjectClass(relid, tuple);
 
-	if (!rel)
-		return false;	/* SELECT INTO new relation */
-
-	if (RelationGetRelid(rel) == DatabaseRelationId ||
-		RelationGetRelid(rel) == RelationRelationId ||
-		RelationGetRelid(rel) == AttributeRelationId ||
-		RelationGetRelid(rel) == ProcedureRelationId)
+	if (tclass == SECCLASS_DB_DATABASE ||
+		tclass == SECCLASS_DB_TABLE ||
+		tclass == SECCLASS_DB_COLUMN ||
+		tclass == SECCLASS_DB_PROCEDURE)
 		return true;
 
 	return false;
+}
+
+Oid
+HeapTupleGetSecLabel(Oid relid, HeapTuple tuple)
+{
+	security_class_t tclass
+		= sepgsqlTupleObjectClass(relid, tuple);
+
+	switch (tclass)
+	{
+	case SECCLASS_DB_DATABASE:
+		return ((Form_pg_database) GETSTRUCT(tuple))->datsecid;
+	case SECCLASS_DB_TABLE:
+		return ((Form_pg_class) GETSTRUCT(tuple))->relsecid;
+	case SECCLASS_DB_COLUMN:
+		return ((Form_pg_attribute) GETSTRUCT(tuple))->attsecid;
+	case SECCLASS_DB_PROCEDURE:
+		return ((Form_pg_proc) GETSTRUCT(tuple))->prosecid;
+	}
+	return InvalidOid;
+}
+
+void
+HeapTupleSetSecLabel(Oid relid, HeapTuple tuple, Oid secid)
+{
+	security_class_t tclass
+		= sepgsqlTupleObjectClass(relid, tuple);
+
+	Assert(HeapTupleHasSecLabel(relid, tuple));
+
+	switch (tclass)
+	{
+	case SECCLASS_DB_DATABASE:
+		((Form_pg_database) GETSTRUCT(tuple))->datsecid = secid;
+		break;
+	case SECCLASS_DB_TABLE:
+		((Form_pg_class) GETSTRUCT(tuple))->relsecid = secid;
+		break;
+	case SECCLASS_DB_COLUMN:
+		((Form_pg_attribute) GETSTRUCT(tuple))->attsecid = secid;
+		break;
+	case SECCLASS_DB_PROCEDURE:
+		((Form_pg_proc) GETSTRUCT(tuple))->prosecid = secid;
+		break;
+	}
 }
 
 /*
@@ -103,7 +150,7 @@ sepgsqlComputeMetaLabel(void)
 		elog(ERROR, "SELinux: cache lookup failed for relation %u",
 			 SecurityRelationId);
 
-	tlabel = sepgsqlLookupSecurityLabel(HeapTupleGetSecLabel(tuple));
+	tlabel = sepgsqlLookupSecurityLabel(HeapTupleGetSecLabel(RelationRelationId, tuple));
 	if (!tlabel || !sepgsqlCheckValidSecurityLabel(tlabel))
 		tlabel = sepgsqlGetUnlabeledLabel();
 
@@ -221,8 +268,8 @@ sepgsqlPostBootstrapingMode(void)
 								value, isnull);
 
 		HeapTupleSetOid(tuple, es->sid);
-		if (HeapTupleHasSecLabel(tuple))
-			HeapTupleSetSecLabel(tuple, metaSid);
+		if (HeapTupleHasSecLabel(RelationGetRelid(rel), tuple))
+			HeapTupleSetSecLabel(RelationGetRelid(rel), tuple, metaSid);
 
 		simple_heap_insert(rel, tuple);
 		CatalogIndexInsert(ind, tuple);
@@ -300,8 +347,8 @@ sepgsqlLookupSecurityId(char *raw_label)
 	tuple = heap_form_tuple(RelationGetDescr(rel),
 							value, isnull);
 	HeapTupleSetOid(tuple, labelOid);
-	if (HeapTupleHasSecLabel(tuple))
-		HeapTupleSetSecLabel(tuple, labelSid);
+	if (HeapTupleHasSecLabel(RelationGetRelid(rel), tuple))
+		HeapTupleSetSecLabel(RelationGetRelid(rel), tuple, labelSid);
 
 	simple_heap_insert(rel, tuple);
 	CatalogIndexInsert(ind, tuple);

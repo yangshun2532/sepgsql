@@ -60,7 +60,6 @@
 #include "utils/relcache.h"
 #include "utils/syscache.h"
 #include "utils/tuplesort.h"
-#include "utils/sepgsql.h"
 #include "utils/snapmgr.h"
 #include "utils/tqual.h"
 
@@ -632,12 +631,6 @@ index_create(Oid heapRelationId,
 								allow_system_table_mods);
 
 	Assert(indexRelationId == RelationGetRelid(indexRelation));
-
-	/*
-	 * Fixup rel->rd_att->tdhasseclabel
-	 */
-	indexRelation->rd_att->tdhasseclabel
-		= sepgsqlTupleDescHasSecLabel(indexRelation);
 
 	/*
 	 * Obtain exclusive lock on it.  Although no other backends can see it

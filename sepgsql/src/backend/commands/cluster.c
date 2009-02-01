@@ -44,6 +44,7 @@
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
 #include "utils/relcache.h"
+#include "utils/sepgsql.h"
 #include "utils/snapmgr.h"
 #include "utils/syscache.h"
 #include "utils/tqual.h"
@@ -906,10 +907,6 @@ copy_heap_data(Oid OIDNewHeap, Oid OIDOldHeap, Oid OIDOldIndex)
 		/* Preserve OID, if any */
 		if (NewHeap->rd_rel->relhasoids)
 			HeapTupleSetOid(copiedTuple, HeapTupleGetOid(tuple));
-
-		/* Preserve SecLabel, if any */
-		if (HeapTupleHasSecLabel(copiedTuple))
-			HeapTupleSetSecLabel(copiedTuple, HeapTupleGetSecLabel(tuple));
 
 		/* The heap rewrite module does the rest */
 		rewrite_heap_tuple(rwstate, tuple, copiedTuple);

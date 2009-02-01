@@ -9,6 +9,7 @@
 
 #include "catalog/indexing.h"
 #include "catalog/pg_database.h"
+#include "catalog/pg_proc.h"
 #include "libpq/libpq-be.h"
 #include "miscadmin.h"
 #include "utils/builtins.h"
@@ -103,6 +104,7 @@ sepgsqlGetDatabaseLabel(void)
 {
 	security_context_t result;
 	HeapTuple tuple;
+	Oid sid;
 
 	if (IsBootstrapProcessingMode())
 	{
@@ -125,7 +127,7 @@ sepgsqlGetDatabaseLabel(void)
 						(errcode(ERRCODE_SELINUX_ERROR),
 						 errmsg("SELinux: could not get database label")));
 		}
-		return pstrdup(dlabel);
+		return dlabel;
 	}
 
 	tuple = SearchSysCache(DATABASEOID,
@@ -134,7 +136,8 @@ sepgsqlGetDatabaseLabel(void)
 	if (!HeapTupleIsValid(tuple))
 		elog(ERROR, "SELinux: cache lookup failed for database: %u", MyDatabaseId);
 
-	result = sepgsqlLookupSecurityLabel(HeapTupleGetSecLabel(tuple));
+	sid = HeapTupleGetSecLabel(DatabaseRelationId, tuple);
+	result = sepgsqlLookupSecurityLabel(sid);
 	if (!result || !sepgsqlCheckValidSecurityLabel(result))
 		result = sepgsqlGetUnlabeledLabel();
 
@@ -163,7 +166,7 @@ sepgsqlGetDatabaseSid(void)
 	if (!HeapTupleIsValid(tuple))
 		elog(ERROR, "SELinux: cache lookup failed for database: %u", MyDatabaseId);
 
-	sid = HeapTupleGetSecLabel(tuple);
+	sid = HeapTupleGetSecLabel(DatabaseRelationId, tuple);
 
 	ReleaseSysCache(tuple);
 
@@ -216,23 +219,29 @@ sepgsqlInitialize(void)
 Datum
 sepgsql_getcon(PG_FUNCTION_ARGS)
 {
+	security_context_t context;
+
 	if (!sepgsqlIsEnabled())
 		ereport(ERROR,
 				(errcode(ERRCODE_SELINUX_ERROR),
 				 errmsg("SELinux: disabled now")));
 
-	return CStringGetTextDatum(sepgsqlGetClientLabel());
+	context = sepgsqlGetClientLabel();
+	return CStringGetTextDatum(sepgsqlSecurityLabelTransOut(context));
 }
 
 Datum
 sepgsql_server_getcon(PG_FUNCTION_ARGS)
 {
+	security_context_t context;
+
 	if (!sepgsqlIsEnabled())
 		ereport(ERROR,
 				(errcode(ERRCODE_SELINUX_ERROR),
 				 errmsg("SELinux: disabled now")));
 
-	return CStringGetTextDatum(sepgsqlGetServerLabel());
+	context = sepgsqlGetServerLabel();
+	return CStringGetTextDatum(sepgsqlSecurityLabelTransOut(context));
 }
 
 Datum
@@ -267,7 +276,7 @@ sepgsql_database_getcon(PG_FUNCTION_ARGS)
 				 errmsg("SELinux: database \"%s\" not found",
 						NameStr(*dbname))));
 
-	sid = HeapTupleGetSecLabel(tuple);
+	sid = HeapTupleGetSecLabel(RelationGetRelid(rel), tuple);
 
 	systable_endscan(scan);
 	heap_close(rel, AccessShareLock);
@@ -295,7 +304,7 @@ sepgsql_table_getcon(PG_FUNCTION_ARGS)
                 (errcode(ERRCODE_UNDEFINED_TABLE),
 				 errmsg("SELinux: cache lookup failed for relation: %u", relid)));
 
-	sid = HeapTupleGetSecLabel(tuple);
+	sid = HeapTupleGetSecLabel(RelationRelationId, tuple);
 
 	ReleaseSysCache(tuple);
 
@@ -326,7 +335,7 @@ sepgsql_column_getcon(PG_FUNCTION_ARGS)
 						"for attribute: \"%s\", relation: %u",
 						NameStr(*attname), relid)));
 
-	sid = HeapTupleGetSecLabel(tuple);
+	sid = HeapTupleGetSecLabel(AttributeRelationId, tuple);
 
 	ReleaseSysCache(tuple);
 
@@ -353,7 +362,7 @@ sepgsql_procedure_getcon(PG_FUNCTION_ARGS)
 				(errcode(ERRCODE_UNDEFINED_FUNCTION),
 				 errmsg("SELinux: cache lookup failed for procedure: %u", proid)));
 
-	sid = HeapTupleGetSecLabel(tuple);
+	sid = HeapTupleGetSecLabel(ProcedureRelationId, tuple);
 
 	ReleaseSysCache(tuple);
 
