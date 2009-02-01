@@ -74,6 +74,9 @@ sepgsqlTupleDescHasSecLabel(Relation rel)
 	if (!sepgsqlIsEnabled())
 		return false;
 
+	if (!rel)
+		return false;	/* SELECT INTO new relation */
+
 	if (RelationGetRelid(rel) == DatabaseRelationId ||
 		RelationGetRelid(rel) == RelationRelationId ||
 		RelationGetRelid(rel) == AttributeRelationId ||
