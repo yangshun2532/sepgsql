@@ -10,6 +10,3 @@
 
 %%__libdir__%%(/.*)?			--	gen_context(system_u:object_r:lib_t,s0)
 
-/var/lib/sepgsql(/.*)?				gen_context(system_u:object_r:postgresql_db_t,s0)
-/var/lib/sepgsql/pgstartup\.log			gen_context(system_u:object_r:postgresql_log_t,s0)
-/var/log/sepostgresql\.log.*		--	gen_context(system_u:object_r:postgresql_log_t,s0)
