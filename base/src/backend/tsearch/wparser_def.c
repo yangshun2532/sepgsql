@@ -7,7 +7,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/tsearch/wparser_def.c,v 1.14.2.1 2008/10/17 17:32:59 teodor Exp $
+ *	  $PostgreSQL: pgsql/src/backend/tsearch/wparser_def.c,v 1.14.2.3 2009/01/15 17:06:03 teodor Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -1587,10 +1587,11 @@ prsd_end(PG_FUNCTION_ARGS)
 #define COMPLEXTOKEN(x) ( (x)==URL_T || (x)==NUMHWORD || (x)==ASCIIHWORD || (x)==HWORD )
 #define ENDPUNCTOKEN(x) ( (x)==SPACE )
 
-#define TS_IDIGNORE(x) ( (x)==TAG_T || (x)==PROTOCOL || (x)==SPACE || (x)==XMLENTITY )
-#define HLIDIGNORE(x) ( (x)==URL_T || (x)==TAG_T || (x)==NUMHWORD || (x)==ASCIIHWORD || (x)==HWORD )
-#define XMLHLIDIGNORE(x) ( (x)==URL_T || (x)==NUMHWORD || (x)==ASCIIHWORD || (x)==HWORD )
-#define NONWORDTOKEN(x) ( (x)==SPACE || HLIDIGNORE(x) )
+#define TS_IDIGNORE(x)  ( (x)==TAG_T || (x)==PROTOCOL || (x)==SPACE || (x)==XMLENTITY )
+#define HLIDREPLACE(x)  ( (x)==TAG_T )
+#define HLIDSKIP(x)     ( (x)==URL_T || (x)==NUMHWORD || (x)==ASCIIHWORD || (x)==HWORD )
+#define XMLHLIDSKIP(x)  ( (x)==URL_T || (x)==NUMHWORD || (x)==ASCIIHWORD || (x)==HWORD )
+#define NONWORDTOKEN(x) ( (x)==SPACE || HLIDREPLACE(x) || HLIDSKIP(x) )
 #define NOENDTOKEN(x)	( NONWORDTOKEN(x) || (x)==SCIENTIFIC || (x)==VERSIONNUMBER || (x)==DECIMAL || (x)==SIGNEDINT || (x)==UNSIGNEDINT || TS_IDIGNORE(x) )
 
 typedef struct
@@ -1799,12 +1800,14 @@ prsd_headline(PG_FUNCTION_ARGS)
 				if (curlen < min_words && i >= prs->curwords)
 				{				/* got end of text and our cover is shoter
 								 * than min_words */
-					for (i = p; i >= 0; i--)
+					for (i = p - 1; i >= 0; i--)
 					{
 						if (!NONWORDTOKEN(prs->words[i].type))
 							curlen++;
 						if (prs->words[i].item && !prs->words[i].repeated)
 							poslen++;
+						if ( curlen >= max_words )
+							break;
 						if (NOENDTOKEN(prs->words[i].type) || prs->words[i].len <= shortword)
 							continue;
 						if (curlen >= min_words)
@@ -1865,13 +1868,15 @@ prsd_headline(PG_FUNCTION_ARGS)
 			prs->words[i].selected = 1;
 		if (highlight == 0)
 		{
-			if (HLIDIGNORE(prs->words[i].type))
+			if (HLIDREPLACE(prs->words[i].type))
 				prs->words[i].replace = 1;
+			else if ( HLIDSKIP(prs->words[i].type) )
+				prs->words[i].skip = 1;
 		}
 		else
 		{
-			if (XMLHLIDIGNORE(prs->words[i].type))
-				prs->words[i].replace = 1;
+			if (XMLHLIDSKIP(prs->words[i].type))
+				prs->words[i].skip = 1;
 		}
 
 		prs->words[i].in = (prs->words[i].repeated) ? 0 : 1;
