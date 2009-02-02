@@ -53,12 +53,13 @@ extern bool
 sepgsqlComputePerms(security_context_t scontext,
 					security_context_t tcontext,
 					security_class_t tclass,
-					access_vector_t perms, const char *audit_name);
+					access_vector_t perms,
+					const char *audit_name);
 
 extern security_context_t
-sepgsqlComputeCreateLabel(security_context_t scontext,
-						  security_context_t tcontext,
-						  security_class_t tclass);
+sepgsqlComputeCreate(security_context_t scontext,
+					 security_context_t tcontext,
+					 security_class_t tclass);
 /*
  * checker.c : pick up all the appeared objects and apply checks
  */

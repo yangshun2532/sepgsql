@@ -168,7 +168,7 @@ sepgsqlDatabaseInstallModule(const char *filename)
 void
 sepgsqlDatabaseLoadModule(const char *filename)
 {
-	security_context_t datcon, filecon;
+	security_context_t filecon;
 
 	if (!sepgsqlIsEnabled())
 		return;
