@@ -154,8 +154,8 @@ sepgsqlComputeMetaLabel(void)
 	if (!tlabel || !sepgsqlCheckValidSecurityLabel(tlabel))
 		tlabel = sepgsqlGetUnlabeledLabel();
 
-	mlabel = sepgsqlComputeCreateLabel(sepgsqlGetServerLabel(),
-									   tlabel, SECCLASS_DB_TUPLE);
+	mlabel = sepgsqlComputeCreate(sepgsqlGetServerLabel(),
+								  tlabel, SECCLASS_DB_TUPLE);
 	ReleaseSysCache(tuple);
 
 	return mlabel;

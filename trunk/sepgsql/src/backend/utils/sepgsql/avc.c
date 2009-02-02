@@ -911,9 +911,9 @@ sepgsqlComputePerms(security_context_t scontext,
 }
 
 security_context_t
-sepgsqlComputeCreateLabel(security_context_t scontext,
-						  security_context_t tcontext,
-						  security_class_t tclass)
+sepgsqlComputeCreate(security_context_t scontext,
+					 security_context_t tcontext,
+					 security_class_t tclass)
 {
 	security_context_t svcon, tvcon, nwcon, copy;
 	security_class_t e_tclass;

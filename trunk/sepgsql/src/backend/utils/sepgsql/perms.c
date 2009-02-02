@@ -460,9 +460,9 @@ sepgsqlDefaultDatabaseLabel(Relation rel, HeapTuple tuple)
 {
 	security_context_t newcon;
 
-	newcon = sepgsqlComputeCreateLabel(sepgsqlGetClientLabel(),
-									   sepgsqlGetClientLabel(),
-									   SECCLASS_DB_DATABASE);
+	newcon = sepgsqlComputeCreate(sepgsqlGetClientLabel(),
+								  sepgsqlGetClientLabel(),
+								  SECCLASS_DB_DATABASE);
 	return sepgsqlSecurityLabelToSid(newcon);
 }
 
