@@ -991,6 +991,13 @@
      </row>
 
      <row>
+       <entry><structfield>attsecid</structfield></entry>
+       <entry><type>oid</type></entry>
+       <entry><literal><link linkend="catalog-pg-security"><structname>pg_security</structname></link>.oid</literal></entry>
+       <entry>Security label of the attribute</entry>
+     </row>
+
+     <row>
       <entry><structfield>attnotnull</structfield></entry>
       <entry><type>bool</type></entry>
       <entry></entry>
@@ -1758,6 +1765,13 @@
      </row>
 
      <row>
+       <entry><structfield>relsecid</structfield></entry>
+       <entry><type>Oid</type></entry>
+       <entry><literal><link linkend="catalog-pg-security"><structname>pg_security</structname></link>.oid</literal></entry>
+       <entry>Security label of the relation</entry>
+     </row>
+
+     <row>
       <entry><structfield>relhasoids</structfield></entry>
       <entry><type>bool</type></entry>
       <entry></entry>
@@ -2289,6 +2303,13 @@
        will be stored in this tablespace; in particular, all the non-shared
        system catalogs will be there
       </entry>
+     </row>
+
+     <row>
+       <entry><structfield>datsecid</structfield></entry>
+       <entry><type>oid</type></entry>
+       <entry><literal><link linkend="catalog-pg-security"><structname>pg_security</structname></link>.oid</literal></entry>
+       <entry>Security label of the database</entry>
      </row>
 
      <row>
@@ -3939,6 +3960,13 @@
        for functions with side-effects, so that calls to them cannot get
        optimized away.)
       </entry>
+     </row>
+
+     <row>
+       <entry><structfield>prosecid</structfield></entry>
+       <entry><type>oid</type></entry>
+       <entry><literal><link linkend="catalog-pg-security"><structname>pg_security</structname></link>.oid</literal></entry>
+       <entry>Security label of procedure</entry>
      </row>
 
      <row>
