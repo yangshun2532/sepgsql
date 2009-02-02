@@ -10,12 +10,13 @@
 
   <para>
     The current version of <productname>PostgreSQL</productname>
-    has an enhanced SE-PostgreSQL (Security Enhanced PostgreSQL).
+    has an enhanced security facility named as SE-PostgreSQL
+    (Security Enhanced PostgreSQL).
 
     SE-PostgreSQL provides additional fine-grained mandatory access
     controls on accesses to database objects via SQL. It makes a
-    decision whether a given client request should be
-    allowed, or not, by communicating with in-kernel SELinux.
+    decision whether a given client-request should be allowed, or not,
+    with communicating with in-kernel SELinux.
 
     SELinux holds its security policy which is a set of white listed
     rules, and provides its access control decisions to the kernel
@@ -32,7 +33,7 @@
     by privileged database users, making it an implementation of
     MAC (Mandatory Access Control).  This enables it to prevent information
     leaks and manipulation from a hypothetical malicious insider and reduced
-    the risks posed by SQL injection or other application-level bugs.
+    the risks invoked by SQL injection or other application-level bugs.
   </para>
 
   <para>
@@ -101,7 +102,7 @@
 	</para>
 	<para>
 	  The security context is a formatted string independent of 
-	  the type of object being labeled, such as:
+	  the kind of object being labeled, such as:
 	  <synopsis>system_u:object_r:postgresql_db_t:SystemHigh</synopsis>.
 
 	  Security contexts are used to label files, sockets, and other
@@ -132,8 +133,8 @@
 	  context of files.
 
 	  SE-PostgreSQL also provides a facility to manage security context
-	  of database objects. We can import/export them via
-	  <literal>security_label</literal> system column.
+	  of a few kind of database objects (databases, tables, columns and
+	  procedures). We can set up them via enhanced DDL statement.
 	</para>
       </sect3>
 
@@ -217,138 +218,6 @@ unconfined_u:unconfined_r:unconfined_t:Classified
 
     <sect2 id="sepostgresql-functionality">
       <title>The functionality of SE-PostgreSQL</title>
-
-      <sect3 id="sepostgresql-security-label">
-       <title>security_label system column</title>
-       <para>
-	 SE-PostgreSQL enables to import/export security context of
-	 tuples via <literal>security_label</literal> system column
-	 which is available v8.4, or later.
-       </para>
-       <para>
-	 The following example shows a case when we export security
-	 context of tuples and its data via <command>SELECT</command>.
-       </para>
-<screen>
-<prompt>postgres=# </prompt><userinput>SELECT security_label, * FROM drink;</userinput>
-                security_label                | id | name  | price
-----------------------------------------------+----+-------+-------
- system_u:object_r:sepgsql_table_t            |  1 | water |   100
- system_u:object_r:sepgsql_table_t            |  2 | coke  |   120
- system_u:object_r:sepgsql_table_t            |  3 | juice |   130
- system_u:object_r:sepgsql_table_t            |  4 | cofee |   180
- system_u:object_r:sepgsql_table_t:Classified |  5 | beer  |   240
- system_u:object_r:sepgsql_table_t:Classified |  6 | sake  |   320
-(6 rows)
-</screen>
-       <para>
-	 The security policy has rules to determine what security context
-	 should be applied on newly inserted tuples.  SE-PostgreSQL applies
-	 these rules unless a different context is explicitly specified by
-	 including the <literal>security_label</literal> system column as
-	 a target.
-       </para>
-<screen>
-<prompt># </prompt><userinput>INSERT INTO drink (security_label, id, name, price)
-     VALUES('system_u:object_r:sepgsql_ro_table_t', 7, 'tea', 130);</userinput>	 
-</screen>
-       <para>
-	 We can also change security context of tuples using
-	 <literal>UPDATE</literal> statement.
-       </para>
-<screen>
-<prompt># </prompt><userinput>UPDATE drink SET security_label = 'system_u:object_r:sepgsql_ro_table_t' WHERE id < 4;</userinput>
-</screen>
-       <para>
-	 To use this feature, the client must have privileges to insert or
-	 update the security context of tuples.  Otherwise, SE-PostgreSQL
-	 will block any attempt to change them.
-       </para>
-       <para>
-	 <command>SELECT INTO</command> or <command>CREATE TABLE AS</command>
-	 including <literal>security_label</literal> system column as a target
-	 is handled like a series of <literal>INSERT</literal> statements with
-	 explicit security contexts.
-       </para>
-<screen>
-<prompt># </prompt><userinput>SELECT security_label, id, name, price / 2 AS price INTO discount FROM drink;</userinput>
-SELECT
-postgres=# SELECT security_label, * FROM discount;
-                security_label                | id | name  | price
-----------------------------------------------+----+-------+-------
- system_u:object_r:sepgsql_table_t            |  1 | water |    50
- system_u:object_r:sepgsql_table_t            |  2 | coke  |    60
- system_u:object_r:sepgsql_table_t            |  3 | juice |    65
- system_u:object_r:sepgsql_table_t            |  4 | cofee |    90
- system_u:object_r:sepgsql_table_t:Classified |  5 | beer  |   120
- system_u:object_r:sepgsql_table_t:Classified |  6 | sake  |   160
-(6 rows)
-</screen>
-       <para>
-	 Please note that PostgreSQL uses system catalogs to represent
-	 metadata of tables, columns and so on.
-	 SE-PostgreSQL considers tuples within the system catalogs
-	 show the security context of them.
-	 For example, security context of tuples within
-	 <literal>pg_class</literal> is considered as the one of table.
-       </para>
-     </sect3>
-
-     <sect3>
-       <title>Access controls on Tuples</title>
-       <para>
-	 SE-PostgreSQL applies its access controls for each tuple.
-
-	 If client tries to select, update or delete violated tuples,
-	 these tuples are filtered from the result set or ignored from
-	 the target of updates/deletions, as if they are not exist
-	 on the table.
-       </para>
-       <para>
-	 The following example shows the case when two users with different
-	 security contexts try to <command>SELECT</command> the same table
-	 with same SQL.
-	 A <literal>Classified</literal> user can whole of the table.
-	 But <literal>Classified</literal> tuples are invisible from
-	 other users.
-       </para>
-<screen>
-<prompt>$ </prompt><userinput>id -Z</userinput>
-unconfined_u:unconfined_r:unconfined_t:Classified
-<prompt>$ </prompt><userinput>psql -q postgres</userinput>
-<prompt>postgres=# </prompt><userinput>SELECT security_label, * FROM drink;</userinput>
-                security_label                | id | name  | price
-----------------------------------------------+----+-------+-------
- system_u:object_r:sepgsql_table_t            |  1 | water |   100
- system_u:object_r:sepgsql_table_t            |  2 | coke  |   120
- system_u:object_r:sepgsql_table_t            |  3 | juice |   130
- system_u:object_r:sepgsql_table_t            |  4 | cofee |   180
- system_u:object_r:sepgsql_table_t:Classified |  5 | beer  |   240
- system_u:object_r:sepgsql_table_t:Classified |  6 | sake  |   320
-(6 rows)
-</screen>
-       <para>
-	 It shows the <literal>Classified</literal> user got 6 tuples
-	 with unconditional <command>SELECT</command> on drink table.
-
-	 However, the unclassified (not labeled) user got 4 tuples
-	 with same SQL, because 2 tuples were filtered out by SE-PostgreSQL.
-       </para>
-<screen>
-<prompt>$ </prompt><userinput>id -Z</userinput>
-unconfined_u:unconfined_r:unconfined_t
-<prompt>$ </prompt><userinput>psql -q postgres</userinput>
-<prompt>postgres=# </prompt><userinput>SELECT security_label, * FROM drink;</userinput>
-postgres=# SELECT security_label, * FROM drink;
-          security_label           | id | name  | price
------------------------------------+----+-------+-------
- system_u:object_r:sepgsql_table_t |  1 | water |   100
- system_u:object_r:sepgsql_table_t |  2 | coke  |   120
- system_u:object_r:sepgsql_table_t |  3 | juice |   130
- system_u:object_r:sepgsql_table_t |  4 | cofee |   180
-(4 rows)
-</screen>
-     </sect3>
 
      <sect3>
        <title>Access controls on Tables and Columns</title>
@@ -743,23 +612,6 @@ CREATE TABLE drink (
     name character varying(48),
     price integer
 ) SECURITY_LABEL = 'system_u:object_r:sepgsql_table_t';
-	:
-      (snip)
-	:
---
--- Data for Name: drink; Type: TABLE DATA; Schema: public; Owner: kaigai
---
-
-COPY drink (security_label, id, name, price) FROM stdin;
-system_u:object_r:sepgsql_table_t       1       water   100
-system_u:object_r:sepgsql_table_t       2       coke    120
-system_u:object_r:sepgsql_table_t       3       juice   130
-system_u:object_r:sepgsql_table_t       4       cofee   180
-system_u:object_r:sepgsql_table_t:Classified    5       beer    240
-system_u:object_r:sepgsql_table_t:Classified    6       sake    320
-\.
-	:
-      (snip)
 	:
 </screen>
       <para>
