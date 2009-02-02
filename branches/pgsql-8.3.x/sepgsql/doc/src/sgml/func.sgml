@@ -1,4 +1,4 @@
-<!-- $PostgreSQL: pgsql/doc/src/sgml/func.sgml,v 1.419.2.3 2008/07/07 15:55:28 petere Exp $ -->
+<!-- $PostgreSQL: pgsql/doc/src/sgml/func.sgml,v 1.419.2.5 2009/01/15 18:23:17 heikki Exp $ -->
 
  <chapter id="functions">
   <title>Functions and Operators</title>
@@ -8262,7 +8262,7 @@ SELECT xmlroot(xmlparse(document '<?xml version="1.1"?><content>abc</content>'),
 
     <para>
      The function <function>xmlagg</function> is, unlike the other
-     functions below, an aggregate function.  It concatenates the
+     functions described here, an aggregate function.  It concatenates the
      input values to the aggregate function call,
      like <function>xmlconcat</function> does.
      See <xref linkend="functions-aggregate"> for general information
@@ -12004,10 +12004,10 @@ postgres=# select pg_start_backup('label_goes_here');
    <para>
     <function>pg_switch_xlog</> moves to the next transaction log file, allowing the 
     current file to be archived (assuming you are using continuous archiving).
-    The result is the ending transaction log location within the just-completed transaction log file.
+    The result is the ending transaction log location + 1 within the just-completed transaction log file.
     If there has been no transaction log activity since the last transaction log switch,
-    <function>pg_switch_xlog</> does nothing and returns the end location
-    of the previous transaction log file.
+    <function>pg_switch_xlog</> does nothing and returns the start location
+    of the transaction log file currently in use.
    </para>
 
    <para>
