@@ -65,10 +65,10 @@ diff -Nrpc base/src/bin sepgsql/src/bin		\
 rm -rf base/src/bin sepgsql/src/bin
 
 echo "GEN: sepostgresql-policy-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch"
-diff -Nrpc base/src/backend/security/sepgsql/policy	\
-           sepgsql/src/backend/security/sepgsql/policy	\
+diff -Nrpc base/src/backend/utils/sepgsql/policy	\
+           sepgsql/src/backend/utils/sepgsql/policy	\
     > ${RPMSOURCE}/sepostgresql-policy-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch
-rm -rf sepgsql/src/backend/security/sepgsql/policy
+rm -rf sepgsql/src/backend/utils/sepgsql/policy
 
 echo "GEN: sepostgresql-docs-${BASE_VERSION}-${SEPGSQL_MAJOR_VERSION}.patch"
 diff -Nrpc base/doc sepgsql/doc			\
