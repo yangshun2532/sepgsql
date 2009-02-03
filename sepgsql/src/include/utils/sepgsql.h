@@ -37,7 +37,9 @@ extern void sepgsqlAvcInit(void);
 
 extern pid_t sepgsqlStartupWorkerProcess(void);
 
-extern void sepgsqlAvcSwitchClientLabel(void);
+extern void sepgsqlAvcSwitchClient(void);
+
+extern void sepgsqlAvcSwitchServer(void);
 
 extern bool
 sepgsqlClientHasPerms(Oid tsid, security_class_t tclass,

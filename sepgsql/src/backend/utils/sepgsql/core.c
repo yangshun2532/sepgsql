@@ -73,7 +73,7 @@ sepgsqlSwitchClientLabel(security_context_t new_label)
 
 	PG_TRY();
 	{
-		sepgsqlAvcSwitchClientLabel();
+		sepgsqlAvcSwitchClient();
 	}
 	PG_CATCH();
 	{
