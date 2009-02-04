@@ -350,7 +350,7 @@ DefineRelation(CreateStmt *stmt, char relkind)
 	int			parentOidCount;
 	List	   *rawDefaults;
 	List	   *cookedDefaults;
-	List	   *secLabelList;
+	List	   *selblList;
 	Datum		reloptions;
 	ListCell   *listptr;
 	AttrNumber	attnum;
@@ -494,9 +494,9 @@ DefineRelation(CreateStmt *stmt, char relkind)
 	}
 
 	/*
-	 * Fetch security_label = '...' option
+	 * SELinux: fetch SECURITY_LABEL = '...' from CREATE TABLE statement
 	 */
-	secLabelList = sepgsqlRelationGivenSecLabelList(stmt);
+	selblList = sepgsqlInputGivenSecLabelRelation(stmt);
 
 	/*
 	 * Create the relation.  Inherited defaults and constraints are passed
@@ -518,7 +518,7 @@ DefineRelation(CreateStmt *stmt, char relkind)
 										  stmt->oncommit,
 										  reloptions,
 										  allowSystemTableMods,
-										  secLabelList);
+										  selblList);
 
 	StoreCatalogInheritance(relationId, inheritOids);
 
@@ -1037,7 +1037,7 @@ truncate_check_rel(Relation rel)
 	aclresult = pg_class_aclcheck(RelationGetRelid(rel), GetUserId(),
 								  ACL_TRUNCATE);
 	if (aclresult != ACLCHECK_OK ||
-		!sepgsqlTableTruncate(rel));
+		!sepgsqlCheckTableTruncate(rel));
 		aclcheck_error(aclresult, ACL_KIND_CLASS,
 					   RelationGetRelationName(rel));
 
@@ -3609,7 +3609,7 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 
 	ReleaseSysCache(typeTuple);
 
-	InsertPgAttributeTuple(attrdesc, &attribute, NULL, NIL);
+	InsertPgAttributeTuple(attrdesc, &attribute, NULL, PointerGetDatum(NULL));
 
 	heap_close(attrdesc, RowExclusiveLock);
 
@@ -7361,6 +7361,12 @@ ATExecSetSecurityLabel(Relation rel, const char *attr_name, DefElem *defel)
 
 	if (!attr_name)
 	{
+		Datum	values[Natts_pg_class];
+		bool	nulls[Natts_pg_class];
+		bool	replaces[Natts_pg_class];
+
+		memset(replaces, false, sizeof(replaces));
+
 		class_rel = heap_open(RelationRelationId, RowExclusiveLock);
 
 		tuple = SearchSysCacheCopy(RELOID,
@@ -7370,9 +7376,16 @@ ATExecSetSecurityLabel(Relation rel, const char *attr_name, DefElem *defel)
 			elog(ERROR, "SELinux: cache lookup failed for relation: \"%s\"",
 				 RelationGetRelationName(rel));
 
-		sepgsqlSetGivenSecLabel(class_rel, tuple, defel);
+		values[Anum_pg_class_relselabel - 1]
+			= sepgsqlInputGivenSecLabel(defel);
+		nulls[Anum_pg_class_relselabel - 1] = false;
+		replaces[Anum_pg_class_relselabel - 1] = true;
+
+		tuple = heap_modify_tuple(tuple, RelationGetDescr(class_rel),
+								  values, nulls, replaces);
 
 		simple_heap_update(class_rel, &tuple->t_self, tuple);
+
 		CatalogUpdateIndexes(class_rel, tuple);
 
 		heap_freetuple(tuple);
@@ -7380,6 +7393,10 @@ ATExecSetSecurityLabel(Relation rel, const char *attr_name, DefElem *defel)
 	}
 	else
 	{
+		Datum	values[Natts_pg_attribute];
+		bool	nulls[Natts_pg_attribute];
+		bool	replaces[Natts_pg_attribute];
+
 		attr_rel = heap_open(AttributeRelationId, RowExclusiveLock);
 
 		tuple = SearchSysCacheCopyAttName(RelationGetRelid(rel),
@@ -7388,9 +7405,16 @@ ATExecSetSecurityLabel(Relation rel, const char *attr_name, DefElem *defel)
 			elog(ERROR, "SELinux: cache lookup failed for column \"%s.%s\"",
 				 RelationGetRelationName(rel), attr_name);
 
-		sepgsqlSetGivenSecLabel(attr_rel, tuple, defel);
+		values[Anum_pg_attribute_attselabel - 1]
+			= sepgsqlInputGivenSecLabel(defel);
+		nulls[Anum_pg_attribute_attselabel - 1] = false;
+		replaces[Anum_pg_attribute_attselabel - 1] = true;
+
+		tuple = heap_modify_tuple(tuple, RelationGetDescr(attr_rel),
+								  values, nulls, replaces);
 
 		simple_heap_update(attr_rel, &tuple->t_self, tuple);
+
 		CatalogUpdateIndexes(attr_rel, tuple);
 
 		heap_freetuple(tuple);

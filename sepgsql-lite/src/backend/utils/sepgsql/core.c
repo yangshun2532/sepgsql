@@ -65,11 +65,11 @@ sepgsqlGetClientLabel(void)
 }
 
 security_context_t
-sepgsqlSwitchClientLabel(security_context_t new_label)
+sepgsqlSwitchClient(security_context_t new_client)
 {
-	char *old_label = sepgsqlGetClientLabel();
+	char *old_client = sepgsqlGetClientLabel();
 
-	clientLabel = new_label;
+	clientLabel = new_client;
 
 	PG_TRY();
 	{
@@ -77,12 +77,12 @@ sepgsqlSwitchClientLabel(security_context_t new_label)
 	}
 	PG_CATCH();
 	{
-		clientLabel = old_label;
+		clientLabel = old_client;
 		PG_RE_THROW();
 	}
 	PG_END_TRY();
 
-	return old_label;
+	return new_client;
 }
 
 security_context_t
@@ -104,30 +104,16 @@ sepgsqlGetDatabaseLabel(void)
 {
 	security_context_t result;
 	HeapTuple tuple;
-	Oid sid;
 
 	if (IsBootstrapProcessingMode())
 	{
-		static security_context_t dlabel = NULL;
-
-		if (!dlabel)
-		{
-			security_class_t tclass
-				= string_to_security_class("db_database");
-
-			if (tclass == 0)
-				ereport(ERROR,
-						(errcode(ERRCODE_SELINUX_ERROR),
-						 errmsg("SELinux: db_database class is not installed")));
-
-			if (security_compute_create_raw(sepgsqlGetClientLabel(),
-											sepgsqlGetClientLabel(),
-											tclass, &dlabel) < 0)
-				ereport(ERROR,
-						(errcode(ERRCODE_SELINUX_ERROR),
-						 errmsg("SELinux: could not get database label")));
-		}
-		return dlabel;
+		/*
+		 * We assume no one change security context
+		 * during bootstraping processing mode
+		 */
+		return sepgsqlComputeCreate(sepgsqlGetClientLabel(),
+									sepgsqlGetClientLabel(),
+									SECCLASS_DB_DATABASE);
 	}
 
 	tuple = SearchSysCache(DATABASEOID,
@@ -136,8 +122,7 @@ sepgsqlGetDatabaseLabel(void)
 	if (!HeapTupleIsValid(tuple))
 		elog(ERROR, "SELinux: cache lookup failed for database: %u", MyDatabaseId);
 
-	sid = HeapTupleGetSecLabel(DatabaseRelationId, tuple);
-	result = sepgsqlLookupSecurityLabel(sid);
+	result = HeapTupleGetSecLabel(DatabaseRelationId, tuple);
 	if (!result || !sepgsqlCheckValidSecurityLabel(result))
 		result = sepgsqlGetUnlabeledLabel();
 
@@ -146,31 +131,13 @@ sepgsqlGetDatabaseLabel(void)
 	return result;
 }
 
-Oid
+sepgsql_sid_t
 sepgsqlGetDatabaseSid(void)
 {
-	HeapTuple tuple;
-	Oid sid;
-
-	if (IsBootstrapProcessingMode())
-	{
-		security_context_t dlabel
-			= sepgsqlGetDatabaseLabel();
-
-		return sepgsqlSecurityLabelToSid(dlabel);
-	}
-
-	tuple = SearchSysCache(DATABASEOID,
-						   ObjectIdGetDatum(MyDatabaseId),
-						   0, 0, 0);
-	if (!HeapTupleIsValid(tuple))
-		elog(ERROR, "SELinux: cache lookup failed for database: %u", MyDatabaseId);
-
-	sid = HeapTupleGetSecLabel(DatabaseRelationId, tuple);
-
-	ReleaseSysCache(tuple);
-
-	return sid;
+	/*
+	 * currently, sepgsql_sid_t is an alias of security_context_t
+	 */
+	return sepgsqlGetDatabaseLabel();
 }
 
 /*
@@ -227,7 +194,8 @@ sepgsql_getcon(PG_FUNCTION_ARGS)
 				 errmsg("SELinux: disabled now")));
 
 	context = sepgsqlGetClientLabel();
-	return CStringGetTextDatum(sepgsqlSecurityLabelTransOut(context));
+	context = sepgsqlSecurityLabelTransOut(context);
+	return CStringGetTextDatum(context);
 }
 
 Datum
@@ -241,130 +209,18 @@ sepgsql_server_getcon(PG_FUNCTION_ARGS)
 				 errmsg("SELinux: disabled now")));
 
 	context = sepgsqlGetServerLabel();
-	return CStringGetTextDatum(sepgsqlSecurityLabelTransOut(context));
+	context = sepgsqlSecurityLabelTransOut(context);
+	return CStringGetTextDatum(context);
 }
 
 Datum
-sepgsql_database_getcon(PG_FUNCTION_ARGS)
+sepgsql_mcstrans(PG_FUNCTION_ARGS)
 {
-	Name		dbname = PG_GETARG_NAME(0);
-	Relation	rel;
-	ScanKeyData	skey;
-	SysScanDesc	scan;
-	HeapTuple	tuple;
-	Oid			sid;
+	security_context_t context;
+	text   *labelTxt = PG_GETARG_TEXT_P(0);
 
-	if (!sepgsqlIsEnabled())
-		ereport(ERROR,
-				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("SELinux: disabled now")));
+	context = text_to_cstring(labelTxt);
+	context = sepgsqlSecurityLabelTransOut(context);
 
-	rel = heap_open(DatabaseRelationId, AccessShareLock);
-	ScanKeyInit(&skey,
-				Anum_pg_database_datname,
-				BTEqualStrategyNumber, F_NAMEEQ,
-				NameGetDatum(dbname));
-
-	scan = systable_beginscan(rel, DatabaseNameIndexId, true,
-							  SnapshotNow, 1, &skey);
-
-	tuple = systable_getnext(scan);
-
-	if (!HeapTupleIsValid(tuple))
-		ereport(ERROR,
-				(errcode(ERRCODE_UNDEFINED_DATABASE),
-				 errmsg("SELinux: database \"%s\" not found",
-						NameStr(*dbname))));
-
-	sid = HeapTupleGetSecLabel(RelationGetRelid(rel), tuple);
-
-	systable_endscan(scan);
-	heap_close(rel, AccessShareLock);
-
-	return CStringGetTextDatum(sepgsqlSidToSecurityLabel(sid));
-}
-
-Datum
-sepgsql_table_getcon(PG_FUNCTION_ARGS)
-{
-	Oid			relid = PG_GETARG_OID(0);
-	Oid			sid;
-	HeapTuple	tuple;
-
-	if (!sepgsqlIsEnabled())
-		ereport(ERROR,
-				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("SELinux: disabled now")));
-
-	tuple = SearchSysCache(RELOID,
-						   ObjectIdGetDatum(relid),
-						   0, 0, 0);
-	if (!HeapTupleIsValid(tuple))
-		ereport(ERROR,
-                (errcode(ERRCODE_UNDEFINED_TABLE),
-				 errmsg("SELinux: cache lookup failed for relation: %u", relid)));
-
-	sid = HeapTupleGetSecLabel(RelationRelationId, tuple);
-
-	ReleaseSysCache(tuple);
-
-	return CStringGetTextDatum(sepgsqlSidToSecurityLabel(sid));
-}
-
-Datum
-sepgsql_column_getcon(PG_FUNCTION_ARGS)
-{
-	Oid			relid = PG_GETARG_OID(0);
-	Name		attname = PG_GETARG_NAME(1);
-	HeapTuple	tuple;
-	Oid			sid;
-
-	if (!sepgsqlIsEnabled())
-		ereport(ERROR,
-				(errcode(ERRCODE_UNDEFINED_COLUMN),
-				 errmsg("SELinux: disabled now")));
-
-	tuple = SearchSysCache(ATTNAME,
-						   ObjectIdGetDatum(relid),
-						   CStringGetDatum(NameStr(*attname)),
-						   0, 0);
-	if (!HeapTupleIsValid(tuple))
-        ereport(ERROR,
-                (errcode(ERRCODE_SELINUX_ERROR),
-                 errmsg("SELinux: cache lookup failed "
-						"for attribute: \"%s\", relation: %u",
-						NameStr(*attname), relid)));
-
-	sid = HeapTupleGetSecLabel(AttributeRelationId, tuple);
-
-	ReleaseSysCache(tuple);
-
-	return CStringGetTextDatum(sepgsqlSidToSecurityLabel(sid));
-}
-
-Datum
-sepgsql_procedure_getcon(PG_FUNCTION_ARGS)
-{
-	Oid			proid = PG_GETARG_OID(0);
-	HeapTuple	tuple;
-	Oid			sid;
-
-	if (!sepgsqlIsEnabled())
-		ereport(ERROR,
-				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("SELinux: disabled now")));
-
-	tuple =  SearchSysCache(PROCOID,
-							ObjectIdGetDatum(proid),
-							0, 0, 0);
-	if (!HeapTupleIsValid(tuple))
-		ereport(ERROR,
-				(errcode(ERRCODE_UNDEFINED_FUNCTION),
-				 errmsg("SELinux: cache lookup failed for procedure: %u", proid)));
-
-	sid = HeapTupleGetSecLabel(ProcedureRelationId, tuple);
-
-	ReleaseSysCache(tuple);
-
-	return CStringGetTextDatum(sepgsqlSidToSecurityLabel(sid));
+	return CStringGetTextDatum(context);
 }

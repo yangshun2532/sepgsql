@@ -354,7 +354,8 @@ AppendAttributeTuples(Relation indexRelation, int numatts)
 		Assert(indexTupDesc->attrs[i]->attnum == i + 1);
 		Assert(indexTupDesc->attrs[i]->attcacheoff == -1);
 
-		InsertPgAttributeTuple(pg_attribute, indexTupDesc->attrs[i], indstate, NIL);
+		InsertPgAttributeTuple(pg_attribute, indexTupDesc->attrs[i],
+							   indstate, PointerGetDatum(NULL));
 	}
 
 	CatalogCloseIndexes(indstate);
@@ -655,7 +656,7 @@ index_create(Oid heapRelationId,
 	 */
 	InsertPgClassTuple(pg_class, indexRelation,
 					   RelationGetRelid(indexRelation),
-					   reloptions, NIL);
+					   reloptions, PointerGetDatum(NULL));
 
 	/* done with pg_class */
 	heap_close(pg_class, RowExclusiveLock);

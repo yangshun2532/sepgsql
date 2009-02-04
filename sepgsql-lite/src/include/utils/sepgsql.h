@@ -20,12 +20,18 @@
 #include <selinux/flask.h>
 #include <selinux/av_permissions.h>
 
-/* workaround for older av_permissions.h */
+/* workaround for older libselinux */
 #ifndef	DB_PROCEDURE__INSTALL
 #define	DB_PROCEDURE__INSTALL		0x00000100UL
 #endif
 
-/* GUC parameter */
+/*
+ * In this version, SE-PostgreSQL uses text formed security
+ * context, not an object identifier.
+ */
+typedef security_context_t sepgsql_sid_t;
+
+/* GUC parameter to turn on/off SE-PostgreSQL */
 extern bool sepostgresql_is_enabled;
 
 /*
@@ -39,107 +45,122 @@ extern pid_t sepgsqlStartupWorkerProcess(void);
 
 extern void sepgsqlAvcSwitchClient(void);
 
-extern void sepgsqlAvcSwitchServer(void);
-
 extern bool
-sepgsqlClientHasPerms(Oid tsid, security_class_t tclass,
-					  access_vector_t perms,
+sepgsqlClientHasPerms(sepgsql_sid_t tcontext,
+					  security_class_t tclass,
+					  access_vector_t required,
 					  const char *audit_name, bool abort);
-extern Oid
-sepgsqlClientCreateSid(Oid tsid, security_class_t tclass);
+extern sepgsql_sid_t
+sepgsqlClientCreate(sepgsql_sid_t tcontext, security_class_t tclass);
 
 extern security_context_t
-sepgsqlClientCreateLabel(Oid tsid, security_class_t tclass);
+sepgsqlClientCreateLabel(sepgsql_sid_t tcontext, security_class_t tclass);
 
 extern bool
 sepgsqlComputePerms(security_context_t scontext,
 					security_context_t tcontext,
 					security_class_t tclass,
-					access_vector_t perms,
-					const char *audit_name);
+					access_vector_t required,
+					const char *audit_name, bool abort);
 
 extern security_context_t
 sepgsqlComputeCreate(security_context_t scontext,
 					 security_context_t tcontext,
 					 security_class_t tclass);
+
 /*
  * checker.c : pick up all the appeared objects and apply checks
  */
-extern List *sepgsqlAddEvalTable(List *selist, Oid relid, bool inh,
+extern List *
+sepgsqlAddEvalTable(List *selist, Oid relid, bool inh,
 								 uint32 perms);
-extern List *sepgsqlAddEvalColumn(List *selist, Oid relid, bool inh,
+extern List *
+sepgsqlAddEvalColumn(List *selist, Oid relid, bool inh,
 								  AttrNumber attno, uint32 perms);
-extern List *sepgsqlAddEvalTriggerFunc(List *selist, Oid relid, int cmdType);
+extern List *
+sepgsqlAddEvalTriggerFunc(List *selist, Oid relid, int cmdType);
 
-extern void sepgsqlCheckSelinuxEvalItem(SelinuxEvalItem *seitem);
+extern void
+sepgsqlCheckSelinuxEvalItem(SelinuxEvalItem *seitem);
 
-extern void sepgsqlPostQueryRewrite(List *queryList);
+extern void
+sepgsqlPostQueryRewrite(List *queryList);
 
-extern void sepgsqlExecutorStart(QueryDesc *queryDesc, int eflags);
+extern void
+sepgsqlExecutorStart(QueryDesc *queryDesc, int eflags);
 
 /*
  * core.c : core facilities
  */
-extern security_context_t sepgsqlGetServerLabel(void);
+extern security_context_t
+sepgsqlGetServerLabel(void);
 
-extern security_context_t sepgsqlGetClientLabel(void);
+extern security_context_t
+sepgsqlGetClientLabel(void);
 
-extern security_context_t sepgsqlSwitchClientLabel(security_context_t new_label);
+extern security_context_t
+sepgsqlGetUnlabeledLabel(void);
 
-extern security_context_t sepgsqlGetUnlabeledLabel(void);
+extern security_context_t
+sepgsqlGetDatabaseLabel(void);
 
-extern security_context_t sepgsqlGetDatabaseLabel(void);
+extern sepgsql_sid_t
+sepgsqlGetDatabaseSid(void);
 
-extern Oid	sepgsqlGetDatabaseSid(void);
+extern security_context_t
+sepgsqlSwitchClient(security_context_t new_client);
 
-extern bool	sepgsqlIsEnabled(void);
+extern bool
+sepgsqlIsEnabled(void);
 
-extern void sepgsqlInitialize(void);
+extern void
+sepgsqlInitialize(void);
 
 /*
  * hooks.c : security hooks
  */
-extern bool sepgsqlDatabaseAccess(Oid db_oid);
-
-extern void sepgsqlDatabaseSetParam(const char *name);
-
-extern void sepgsqlDatabaseGetParam(const char *name);
-
-extern void sepgsqlDatabaseInstallModule(const char *filename);
-
-extern void sepgsqlDatabaseLoadModule(const char *filename);
-
-extern bool sepgsqlProcedureExecute(Oid proc_oid);
-
-extern void sepgsqlProcedureSetup(FmgrInfo *finfo, HeapTuple protup);
-
-extern bool sepgsqlTableLock(Oid relid);
-
-extern bool sepgsqlTableTruncate(Relation rel);
+extern bool
+sepgsqlCheckDatabaseAccess(Oid db_oid);
 
 extern void
-sepgsqlSetGivenSecLabel(Relation rel, HeapTuple tuple, DefElem *defel);
-extern void
-sepgsqlSetGivenSecLabelList(Relation rel, HeapTuple tuple, List *secLabelList);
-extern List *
-sepgsqlRelationGivenSecLabelList(CreateStmt *stmt);
+sepgsqlCheckDatabaseSetParam(const char *name);
 
-// COPY TO/FROM
+extern void
+sepgsqlCheckDatabaseGetParam(const char *name);
+
+extern void
+sepgsqlCheckDatabaseInstallModule(const char *filename);
+
+extern void
+sepgsqlCheckDatabaseLoadModule(const char *filename);
+
+extern bool
+sepgsqlCheckProcedureExecute(Oid proc_oid);
+
+extern void
+sepgsqlCheckProcedureEntrypoint(FmgrInfo *finfo, HeapTuple protup);
+
+extern bool
+sepgsqlCheckTableLock(Oid relid);
+
+extern bool
+sepgsqlCheckTableTruncate(Relation rel);
+
+// HeapTuple INSERT/UPDATE/DELETE
+extern HeapTuple
+sepgsqlHeapTupleInsert(Relation rel, HeapTuple tuple, bool internal);
+
+extern void
+sepgsqlHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple tuple, bool internal);
+
+extern void
+sepgsqlHeapTupleDelete(Relation rel, ItemPointer otid, bool internal);
+
+// COPY TO/FROM statement
 extern void
 sepgsqlCopyTable(Relation rel, List *attNumList, bool isFrom);
 extern void
 sepgsqlCopyFile(Relation rel, int fdesc, const char *filename, bool isFrom);
-
-// HeapTuple INSERT/UPDATE/DELETE
-extern bool
-sepgsqlHeapTupleInsert(Relation rel, HeapTuple tuple,
-					   bool internal, bool returning);
-extern bool
-sepgsqlHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple newtup,
-					   bool internal, bool returning);
-extern bool
-sepgsqlHeapTupleDelete(Relation rel, ItemPointer otid,
-					   bool internal, bool returning);
 
 /*
  * label.c : security label management
@@ -147,35 +168,26 @@ sepgsqlHeapTupleDelete(Relation rel, ItemPointer otid,
 extern bool
 HeapTupleHasSecLabel(Oid relid, HeapTuple tuple);
 
-extern Oid
+extern sepgsql_sid_t
 HeapTupleGetSecLabel(Oid relid, HeapTuple tuple);
 
-extern void
-HeapTupleSetSecLabel(Oid relid, HeapTuple tuple, Oid sid);
+extern Datum
+sepgsqlInputGivenSecLabel(DefElem *defel);
+
+extern List *
+sepgsqlInputGivenSecLabelRelation(CreateStmt *stmt);
 
 extern void
-sepgsqlPostBootstrapingMode(void);
-
-extern Oid
-sepgsqlLookupSecurityId(security_context_t label);
-
-extern security_context_t
-sepgsqlLookupSecurityLabel(Oid sid);
-
-extern Oid
-sepgsqlSecurityLabelToSid(security_context_t label);
-
-extern security_context_t
-sepgsqlSidToSecurityLabel(Oid sid);
-
-extern bool
-sepgsqlCheckValidSecurityLabel(security_context_t label);
+sepgsqlSetDefaultSecLabel(Oid relid, Datum *values, bool *nulls, Datum given);
 
 extern security_context_t
 sepgsqlSecurityLabelTransIn(security_context_t label);
 
 extern security_context_t
 sepgsqlSecurityLabelTransOut(security_context_t label);
+
+extern bool
+sepgsqlCheckValidSecurityLabel(security_context_t label);
 
 /*
  * perms.c : SE-PostgreSQL permission checks
@@ -195,10 +207,8 @@ extern security_class_t sepgsqlFileObjectClass(int fdesc);
 
 extern security_class_t sepgsqlTupleObjectClass(Oid relid, HeapTuple tuple);
 
-extern bool sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, HeapTuple newtup,
-								   uint32 required, bool abort);
-
-extern void sepgsqlSetDefaultLabel(Relation rel, HeapTuple tuple);
+extern bool sepgsqlCheckObjectPerms(Relation rel, HeapTuple tuple, HeapTuple newtup,
+									uint32 required, bool abort);
 
 #else	/* HAVE_SELINUX */
 
@@ -221,9 +231,17 @@ extern void sepgsqlSetDefaultLabel(Relation rel, HeapTuple tuple);
 #define sepgsqlProcedureSetup(a)				do {} while(0)
 #define sepgsqlTableLock(a)						(true)
 #define sepgsqlTableTruncate(a)					(true)
-#define sepgsqlSetGivenSecLabel(a,b,c)			do {} while(0)
-#define sepgsqlSetGivenSecLabelList(a,b,c)		do {} while(0)
-#define sepgsqlRelationGivenSecLabelList(a)		(NIL)
+
+
+#define sepgsqlInputGivenSecLabel(a)			(PointerGetDatum(NULL))
+#define sepgsqlInputGivenSecLabelRelation(a)	(NIL)
+#define sepgsqlSetDefaultSecLabel(a,b,c,d)		do {} while(0)
+
+
+
+
+
+
 #define sepgsqlCopyTable(a,b,c)					do {} while(0)
 #define sepgsqlCopyFile(a,b,c,d)				do {} while(0)
 #define sepgsqlHeapTupleInsert(a,b,c,d)			(true)
@@ -239,9 +257,6 @@ extern void sepgsqlSetDefaultLabel(Relation rel, HeapTuple tuple);
 
 extern Datum sepgsql_getcon(PG_FUNCTION_ARGS);
 extern Datum sepgsql_server_getcon(PG_FUNCTION_ARGS);
-extern Datum sepgsql_database_getcon(PG_FUNCTION_ARGS);
-extern Datum sepgsql_table_getcon(PG_FUNCTION_ARGS);
-extern Datum sepgsql_column_getcon(PG_FUNCTION_ARGS);
-extern Datum sepgsql_procedure_getcon(PG_FUNCTION_ARGS);
+extern Datum sepgsql_mcstrans(PG_FUNCTION_ARGS);
 
 #endif	/* SEPGSQL_H */

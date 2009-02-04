@@ -21,14 +21,14 @@
 #include <unistd.h>
 
 /*
- * uAVC: userspace Access Vector Cache
+ * AVC: userspace Access Vector Cache
  *
  * SE-PostgreSQL makes inqueries for SELinux to check whether the security
  * policy allows the required action, or not. However, it need to invoke
  * system call because SELinux is a kernel feature and it hold its security
  * policy in the kernel memory.
  *
- * uAVC enables to reduce the number of kernel invocation, with caching
+ * AVC enables to reduce the number of kernel invocation, with caching
  * the result of inquiries. When we have to make a decision based on the
  * security policy of SELinux, it tries to find up an appropriate cache
  * entry on the uAVC. If exist, we don't need to invoke a system call
@@ -172,27 +172,25 @@ static struct
 static MemoryContext AvcMemCtx;
 
 #define AVC_HASH_NUM_SLOTS		256
-#define AVC_HASH_NUM_NODES		600
+#define AVC_HASH_NUM_NODES		180
 
 static sig_atomic_t avc_version;
 static bool avc_enforcing;
 
 typedef struct
 {
-	uint32	hash_key;
+	uint32				hash_key;
 
-	security_class_t tclass;
-	Oid		tsid;	/* target security context */
+	security_class_t	tclass;
+	sepgsql_sid_t		tcontext;
+	sepgsql_sid_t		ncontext;
 
-	security_context_t ncontext;	/* newcontext */
-	Oid		nsid;	/* newly created security context */
+	access_vector_t		allowed;
+	access_vector_t		decided;
+	access_vector_t		auditallow;
+	access_vector_t		auditdeny;
 
-	access_vector_t allowed;
-	access_vector_t decided;
-	access_vector_t auditallow;
-	access_vector_t auditdeny;
-
-	bool	hot_cache;
+	bool				hot_cache;
 } avc_datum;
 
 typedef struct avc_page
@@ -208,7 +206,6 @@ typedef struct avc_page
 } avc_page;
 
 static avc_page *client_avc_page = NULL;
-static avc_page *server_avc_page = NULL;
 
 /*
  * selinux_state
@@ -417,12 +414,10 @@ sepgsql_avc_reset(void)
 	avc_version = selinux_state->version;
 	avc_enforcing = selinux_state->enforcing;
 	client_avc_page = NULL;
-	server_avc_page = NULL;
 
 	LWLockRelease(SepgsqlAvcLock);
 
 	sepgsqlAvcSwitchClient();
-	sepgsqlAvcSwitchServer();
 }
 
 /*
@@ -493,96 +488,36 @@ avc_audit_common(char *buffer, uint32 buflen,
 }
 
 /*
- * avc_permission_common
- *   makes decision and output audit messages based on given avc_datum.
- *   If required permissions are not completely allowed, it raises an
- *   error or returns 'false' when permissive mode.
- */
-static bool
-avc_permission_common(avc_page *page, avc_datum *cache,
-					  access_vector_t required,
-					  const char *audit_name, bool abort)
-{
-	char audit_buffer[2048];
-	access_vector_t denied;
-	access_vector_t audited;
-	bool rc = true;
-
-	denied = required & ~cache->allowed;
-	audited = denied ? (denied & cache->auditdeny) : (required & cache->auditallow);
-
-	if (audited != 0)
-	{
-		security_context_t scontext, tcontext;
-
-		scontext = sepgsqlSecurityLabelTransOut(page->scontext);
-		tcontext = sepgsqlSidToSecurityLabel(cache->tsid);
-
-		avc_audit_common(audit_buffer, sizeof(audit_buffer),
-						 scontext, tcontext, cache->tclass,
-						 audited, !!denied, audit_name);
-		pfree(scontext);
-		pfree(tcontext);
-	}
-
-	if (!required || denied)
-	{
-		if (avc_enforcing)
-			rc = false;
-		else
-		{
-			/*
-			 * In permissive mode, once denied permissions are
-			 * allowed to avoid a flood of denied logs.
-			 */
-			cache->allowed |= required;
-		}
-	}
-
-	if (audited)
-	{
-		ereport((!rc && abort) ? ERROR : NOTICE,
-				(errcode(ERRCODE_SELINUX_AUDIT),
-				 errmsg("SELinux: %s", audit_buffer)));
-	}
-	else if (!rc && abort)
-		ereport(ERROR,
-				(errcode(ERRCODE_SELINUX_AUDIT),
-				 errmsg("SELinux: security policy violation")));
-
-	return rc;
-}
-
-/*
  * avc_make_entry
  *   makes a query to in-kernel SELinux and an avc_datum object to
  *   cache the result of SELinux's decision for access rights and
  *   default security context.
  */
-#define avc_hash_key(tsid,tclass)	((tsid) ^ ((tclass) << 2))
+#define avc_hash_key(tcontext, tclass)								\
+	(DatumGetUInt32(hash_any((unsigned char *)tcontext, strlen(tcontext)) ^ tclass))
 
 static avc_datum *
-avc_make_entry(avc_page *page, Oid tsid, security_class_t tclass)
+avc_make_entry(avc_page *page, sepgsql_sid_t tcontext, security_class_t tclass)
 {
-	security_context_t scontext, tcontext, ncontext;
+	security_context_t scontext, ncontext;
 	security_class_t e_tclass;
-	MemoryContext oldctx = MemoryContextSwitchTo(AvcMemCtx);
+	MemoryContext oldctx;
 	struct av_decision avd;
 	avc_datum *cache;
 	uint32 hash_key, index;
 
-	hash_key = avc_hash_key(tsid, tclass);
+	hash_key = avc_hash_key(tcontext, tclass);
 	index = hash_key % AVC_HASH_NUM_SLOTS;
 
+	oldctx = MemoryContextSwitchTo(AvcMemCtx);
 	cache = palloc0(sizeof(avc_datum));
 	cache->hash_key = hash_key;
-	cache->tsid = tsid;
+	cache->tcontext = pstrdup(tcontext);
 	cache->tclass = tclass;
 
 	scontext = page->scontext;
-	tcontext = sepgsqlLookupSecurityLabel(tsid);
 	if (!tcontext || !sepgsqlCheckValidSecurityLabel(tcontext))
-		tcontext = pstrdup(sepgsqlGetUnlabeledLabel());
+		tcontext = sepgsqlGetUnlabeledLabel();
 
 	LWLockAcquire(SepgsqlAvcLock, LW_SHARED);
 
@@ -607,7 +542,6 @@ avc_make_entry(avc_page *page, Oid tsid, security_class_t tclass)
 				 errmsg("SELinux: could not compute new context: "
 						"scontext=%s tcontext=%s tclass=%s",
 						scontext, tcontext, sepgsql_class_to_string(tclass))));
-	pfree(tcontext);
 
 	LWLockRelease(SepgsqlAvcLock);
 
@@ -636,22 +570,18 @@ avc_make_entry(avc_page *page, Oid tsid, security_class_t tclass)
 }
 
 static avc_datum *
-avc_lookup(avc_page *page, Oid tsid, security_class_t tclass)
+avc_lookup(avc_page *page, sepgsql_sid_t tcontext, security_class_t tclass)
 {
 	avc_datum *cache = NULL;
 	uint32 hash_key, index;
 	ListCell *l;
 
-	/*
-	 * check avc invalidation
-	 */
+	/* check avc invalidation */
 	if (avc_version != selinux_state->version)
 		sepgsql_avc_reset();
 
-	/*
-	 * lookup avc entry
-	 */
-	hash_key = avc_hash_key(tsid, tclass);
+	/* lookup avc entry */
+	hash_key = avc_hash_key(tcontext, tclass);
 	index = hash_key % AVC_HASH_NUM_SLOTS;
 
 	foreach (l, page->slot[index])
@@ -659,7 +589,7 @@ avc_lookup(avc_page *page, Oid tsid, security_class_t tclass)
 		cache = lfirst(l);
 		if (cache->hash_key == hash_key
 			&& cache->tclass == tclass
-			&& cache->tsid == tsid)
+			&& strcmp(cache->tcontext, tcontext) == 0)
 		{
 			cache->hot_cache = true;
 			return cache;
@@ -738,68 +668,99 @@ sepgsqlAvcSwitchClient(void)
 									   sepgsqlGetClientLabel());
 }
 
-void
-sepgsqlAvcSwitchServer(void)
-{
-	server_avc_page = sepgsqlAvcSwitch(server_avc_page,
-									   sepgsqlGetServerLabel());
-}
-
 /*
  * sepgsqlClientHasPerms
  *   checks client's privileges on given objects via uAVC.
  */
 bool
-sepgsqlClientHasPerms(Oid tsid, security_class_t tclass,
+sepgsqlClientHasPerms(sepgsql_sid_t tcontext,
+					  security_class_t tclass,
 					  access_vector_t required,
 					  const char *audit_name, bool abort)
 {
-	avc_datum *cache = avc_lookup(client_avc_page, tsid, tclass);
+	char audit_buffer[2048];
+	access_vector_t denied, audited;
+	avc_datum *cache;
+	bool rc = true;
 
+	if (!tcontext)
+		tcontext = sepgsqlGetUnlabeledLabel();
+
+	cache = avc_lookup(client_avc_page, tcontext, tclass);
 	if (!cache)
-		cache = avc_make_entry(client_avc_page, tsid, tclass);
+		cache = avc_make_entry(client_avc_page, tcontext, tclass);
 
-	return avc_permission_common(client_avc_page, cache,
-								 required, audit_name, abort);
+	denied = required & ~cache->allowed;
+	audited = denied ? (denied & cache->auditdeny)
+					 : (required & cache->auditallow);
+	if (audited)
+	{
+		security_context_t scon, tcon;
+
+		scon = sepgsqlSecurityLabelTransOut(client_avc_page->scontext);
+		tcon = sepgsqlSecurityLabelTransOut(tcontext);
+
+		avc_audit_common(audit_buffer, sizeof(audit_buffer),
+						 scon, tcon, cache->tclass,
+						 audited, !!denied, audit_name);
+
+		pfree(scon);
+		pfree(tcon);
+	}
+
+	if (!required || denied)
+	{
+		if (avc_enforcing)
+			rc = false;
+		else
+			cache->allowed |= required;		/* prevent flood of audit log */
+	}
+
+	if (audited)
+		ereport((!rc && abort) ? ERROR : NOTICE,
+				(errcode(ERRCODE_SELINUX_AUDIT),
+				 errmsg("SELinux: %s", audit_buffer)));
+	else if (!rc && abort)
+		ereport(ERROR,
+				(errcode(ERRCODE_SELINUX_AUDIT),
+				 errmsg("SELinux: security policy violation")));
+
+	return rc;
 }
 
 /*
- * sepgsqlClientCreateSid
+ * sepgsqlClientCreate
  *   returns security identifier of newly created database object.
  *   Please note that you don't have to invoke this function for
  *   object classes except for database objects. It have a possibility
  *   to make an entry on pg_security via pgaceSecurityLabelToSid(),
  *   but it should be restricted to database object.
  */
-Oid
-sepgsqlClientCreateSid(Oid tsid, security_class_t tclass)
+sepgsql_sid_t
+sepgsqlClientCreate(sepgsql_sid_t tcontext, security_class_t tclass)
 {
-	avc_datum *cache = avc_lookup(client_avc_page, tsid, tclass);
+	avc_datum *cache;
 
-	if (!cache || cache->nsid == InvalidOid)
-	{
-		if (!cache)
-			cache = avc_make_entry(client_avc_page, tsid, tclass);
-		cache->nsid = sepgsqlSecurityLabelToSid(cache->ncontext);
-	}
-	return cache->nsid;
+	if (!tcontext)
+		tcontext = sepgsqlGetUnlabeledLabel();
+
+	cache = avc_lookup(client_avc_page, tcontext, tclass);
+
+	if (!cache)
+		cache = avc_make_entry(client_avc_page, tcontext, tclass);
+
+	return cache->ncontext;
 }
 
 /*
- * sepgsqlClientCreateContext
- *   returns security context (string representation) of newly
- *   created object. It is available for any kind of object
- *   classes.
+ * sepgsqlClientCreateLabel
+ *   returns security context in text form of newly created object.
+ *   In the current version, it is same as sepgsqlClientCreate()
  */
 security_context_t
-sepgsqlClientCreateLabel(Oid tsid, security_class_t tclass)
+sepgsqlClientCreateLabel(sepgsql_sid_t tcontext, security_class_t tclass)
 {
-	avc_datum *cache = avc_lookup(client_avc_page, tsid, tclass);
-
-	if (!cache)
-		cache = avc_make_entry(client_avc_page, tsid, tclass);
-
-	return pstrdup(cache->ncontext);
+	return sepgsqlClientCreate(tcontext, tclass);
 }
 
 /*
@@ -815,7 +776,7 @@ sepgsql_shmem_init(void)
 									sepgsqlShmemSize(), &found);
 	if (!found)
 	{
-		int			enforcing = security_getenforce();
+		int enforcing = security_getenforce();
 
 		Assert(enforcing == 0 || enforcing == 1);
 
@@ -853,22 +814,22 @@ sepgsqlAvcInit(void)
 
 /*
  * sepgsqlComputePerms
- * sepgsqlComputeCreateLabel
+ * sepgsqlComputeCreate
  *
  * The following two functions make a query to in-kernel SELinux
  * without userspace caches, due to some reasons.
- * The uAVC can cover most of cases, but some of corner cases are
- * not suitable for uAVC structure, so we need uncached interfaces.
- * For example, uAVC is unavailable when we tries to load a shared
+ * The AVC can cover most of cases, but some of corner cases are
+ * not suitable for AVC structure, so we need uncached interfaces.
+ * For example, AVC is unavailable when we tries to load a shared
  * library module, because security context of the library does not
- * have its security identifier, so we cannot put it on uAVC.
+ * have its security identifier, so we cannot put it on AVC.
  */
 bool
 sepgsqlComputePerms(security_context_t scontext,
 					security_context_t tcontext,
 					security_class_t tclass,
 					access_vector_t required,
-					const char *audit_name)
+					const char *audit_name, bool abort)
 {
 	access_vector_t denied, audited;
 	security_class_t eclass;
@@ -899,26 +860,36 @@ sepgsqlComputePerms(security_context_t scontext,
 
 	denied = required & ~avd.allowed;
 	audited = denied ? (denied & avd.auditdeny) : (required & avd.auditallow);
-	if (audited != 0)
+	if (audited)
 	{
+		security_context_t scon, tcon;
+
+		scon = sepgsqlSecurityLabelTransOut(scontext);
+		tcon = sepgsqlSecurityLabelTransOut(tcontext);
+
 		avc_audit_common(audit_buffer, sizeof(audit_buffer),
-						 scontext, tcontext, tclass,
+						 scon, tcon, tclass,
 						 audited, !!denied, audit_name);
 	}
 
-	if (avc_enforcing && (!required || denied))
-		rc = false;
+	if (!required || denied)
+	{
+		if (avc_enforcing)
+			rc = false;
+	}
 
 	if (audited)
 	{
-		ereport(!rc ? ERROR : NOTICE,
+		ereport((!rc && abort) ? ERROR : NOTICE,
 				(errcode(ERRCODE_SELINUX_AUDIT),
 				 errmsg("SELinux: %s", audit_buffer)));
 	}
-	else if (!rc)
+	else if (!rc && abort)
 		ereport(ERROR,
 				(errcode(ERRCODE_SELINUX_AUDIT),
 				 errmsg("SELinux: security policy violation")));
+
+	return rc;
 }
 
 security_context_t
@@ -926,7 +897,7 @@ sepgsqlComputeCreate(security_context_t scontext,
 					 security_context_t tcontext,
 					 security_class_t tclass)
 {
-	security_context_t newcontext, result;
+	security_context_t ncontext, result;
 	security_class_t eclass;
 
 	scontext = (!security_check_context_raw(scontext)
@@ -936,28 +907,26 @@ sepgsqlComputeCreate(security_context_t scontext,
 
 	LWLockAcquire(SepgsqlAvcLock, LW_SHARED);
 	eclass = trans_to_external_tclass(tclass);
+	LWLockRelease(SepgsqlAvcLock);
 
-	if (security_compute_create_raw(scontext, tcontext, eclass, &newcontext) < 0)
+	if (security_compute_create_raw(scontext, tcontext, eclass, &ncontext) < 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_SELINUX_ERROR),
 				 errmsg("SELinux: could not compute a default context"
 						" scontext=%s tcontext=%s tclass=%s",
 						scontext, tcontext, security_class_to_string(eclass))));
-
-	LWLockRelease(SepgsqlAvcLock);
-
 	PG_TRY();
 	{
-		result = pstrdup(newcontext);
+		result = pstrdup(ncontext);
 	}
 	PG_CATCH();
 	{
-		freecon(newcontext);
+		freecon(ncontext);
 		PG_RE_THROW();
 	}
 	PG_END_TRY();
 
-	freecon(newcontext);
+	freecon(ncontext);
 
 	return result;
 }

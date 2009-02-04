@@ -501,11 +501,6 @@ BootstrapModeMain(void)
 	 */
 	boot_yyparse();
 
-	/*
-	 * Flush all the appeared security label
-	 */
-	sepgsqlPostBootstrapingMode();
-
 	/* Perform a checkpoint to ensure everything's down to disk */
 	SetProcessingMode(NormalProcessing);
 	CreateCheckPoint(CHECKPOINT_IS_SHUTDOWN | CHECKPOINT_IMMEDIATE);
@@ -803,7 +798,8 @@ InsertOneTuple(Oid objectid)
 	tupDesc = CreateTupleDesc(numattr,
 							  RelationGetForm(boot_reldesc)->relhasoids,
 							  attrtypes);
-
+	sepgsqlSetDefaultSecLabel(RelationGetRelid(boot_reldesc),
+							  values, Nulls, DatumGetPointer(NULL));
 	tuple = heap_form_tuple(tupDesc, values, Nulls);
 	if (objectid != (Oid) 0)
 		HeapTupleSetOid(tuple, objectid);

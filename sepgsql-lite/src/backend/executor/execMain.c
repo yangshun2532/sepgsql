@@ -1805,11 +1805,10 @@ ExecInsert(TupleTableSlot *slot,
 		ExecConstraints(resultRelInfo, slot, estate);
 
 	/*
-	 * Mandatory access controls of the tuple
+	 * SELinux: assign a default security context and
+	 * check db_xxx:{create} permission
 	 */
-	if (!sepgsqlHeapTupleInsert(resultRelationDesc, tuple, false,
-								!!resultRelInfo->ri_projectReturning))
-		return;
+	tuple = sepgsqlHeapTupleInsert(resultRelationDesc, tuple, false);
 
 	/*
 	 * insert the tuple
@@ -1878,11 +1877,9 @@ ExecDelete(ItemPointer tupleid,
 	}
 
 	/*
-	 * Mandatory access controls of the tuple
+	 * SELinux: check db_xxx:{drop} permission
 	 */
-	if (!sepgsqlHeapTupleDelete(resultRelationDesc, tupleid, false,
-								!!resultRelInfo->ri_projectReturning))
-		return;
+	sepgsqlHeapTupleDelete(resultRelationDesc, tupleid, false);
 
 	/*
 	 * delete the tuple
@@ -2064,11 +2061,9 @@ lreplace:;
 		ExecConstraints(resultRelInfo, slot, estate);
 
 	/*
-	 * Mandatory access controls of the tuple
+	 * SELinux: check db_xxx:{setattr} permission
 	 */
-	if (!sepgsqlHeapTupleUpdate(resultRelationDesc, tupleid, tuple, false,
-								!!resultRelInfo->ri_projectReturning))
-		return;
+	sepgsqlHeapTupleUpdate(resultRelationDesc, tupleid, tuple, false);
 
 	/*
 	 * replace the heap tuple

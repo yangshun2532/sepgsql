@@ -110,7 +110,7 @@ load_external_function(char *filename, char *funcname,
 	fullname = expand_dynamic_library_name(filename);
 
 	/* SELinux checks db_database:{load_module} permission */
-	sepgsqlDatabaseLoadModule(fullname);
+	sepgsqlCheckDatabaseLoadModule(fullname);
 
 	/* Load the shared library, unless we already did */
 	lib_handle = internal_load_library(fullname);
@@ -153,7 +153,7 @@ load_file(const char *filename, bool restricted)
 	fullname = expand_dynamic_library_name(filename);
 
 	/* SELinux checks db_database:{load_module} */
-	sepgsqlDatabaseLoadModule(fullname);
+	sepgsqlCheckDatabaseLoadModule(fullname);
 
 	/* Unload the library if currently loaded */
 	internal_unload_library(fullname);
