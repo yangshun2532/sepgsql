@@ -69,7 +69,7 @@ LockTableCommand(LockStmt *lockstmt)
 											  ACL_UPDATE | ACL_DELETE | ACL_TRUNCATE);
 
 			if (aclresult != ACLCHECK_OK ||
-				!sepgsqlTableLock(childreloid))
+				!sepgsqlCheckTableLock(childreloid))
 				aclcheck_error(aclresult, ACL_KIND_CLASS,
 							   get_rel_name(childreloid));
 

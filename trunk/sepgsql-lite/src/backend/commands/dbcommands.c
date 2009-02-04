@@ -120,7 +120,7 @@ createdb(const CreatedbStmt *stmt)
 	DefElem    *dcollate = NULL;
 	DefElem    *dctype = NULL;
 	DefElem    *dconnlimit = NULL;
-	DefElem	   *dseclabel = NULL;
+	DefElem	   *dselabel = NULL;
 	char	   *dbname = stmt->dbname;
 	char	   *dbowner = NULL;
 	const char *dbtemplate = NULL;
@@ -204,11 +204,11 @@ createdb(const CreatedbStmt *stmt)
 		}
 		else if (strcmp(defel->defname, "security_label") == 0)
 		{
-			if (dseclabel)
+			if (dselabel)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
 						 errmsg("conflicting or redundant options")));
-			dseclabel = defel;
+			dselabel = defel;
 		}
 		else
 			elog(ERROR, "option \"%s\" not recognized",
@@ -544,11 +544,16 @@ createdb(const CreatedbStmt *stmt)
 	new_record_nulls[Anum_pg_database_datconfig - 1] = true;
 	new_record_nulls[Anum_pg_database_datacl - 1] = true;
 
+	/* SELinux: set a default/given security context */
+	new_record_nulls[Anum_pg_database_datselabel - 1] = true;
+	sepgsqlSetDefaultSecLabel(RelationGetRelid(pg_database_rel),
+							  new_record, new_record_nulls,
+							  sepgsqlInputGivenSecLabel(dselabel));
+
 	tuple = heap_form_tuple(RelationGetDescr(pg_database_rel),
 						   new_record, new_record_nulls);
 
 	HeapTupleSetOid(tuple, dboid);
-	sepgsqlSetGivenSecLabel(pg_database_rel, tuple, dseclabel);
 
 	simple_heap_insert(pg_database_rel, tuple);
 
@@ -1295,7 +1300,7 @@ AlterDatabase(AlterDatabaseStmt *stmt, bool isTopLevel)
 	int			connlimit = -1;
 	DefElem    *dconnlimit = NULL;
 	DefElem    *dtablespace = NULL;
-	DefElem	   *dseclabel = NULL;
+	DefElem	   *dselabel = NULL;
 	Datum		new_record[Natts_pg_database];
 	bool		new_record_nulls[Natts_pg_database];
 	bool		new_record_repl[Natts_pg_database];
@@ -1323,11 +1328,11 @@ AlterDatabase(AlterDatabaseStmt *stmt, bool isTopLevel)
 		}
 		else if (strcmp(defel->defname, "security_label") == 0)
 		{
-			if (dseclabel)
+			if (dselabel)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
 						 errmsg("conflicting or redundant options")));
-			dseclabel = defel;
+			dselabel = defel;
 		}
 		else
 			elog(ERROR, "option \"%s\" not recognized",
@@ -1388,9 +1393,16 @@ AlterDatabase(AlterDatabaseStmt *stmt, bool isTopLevel)
 		new_record_repl[Anum_pg_database_datconnlimit - 1] = true;
 	}
 
+	/* SELinux: set a given security context */
+	if (dselabel)
+	{
+		new_record[Anum_pg_database_datselabel - 1]
+			= sepgsqlInputGivenSecLabel(dselabel);
+		new_record_repl[Anum_pg_database_datselabel - 1] = true;
+	}
+
 	newtuple = heap_modify_tuple(tuple, RelationGetDescr(rel), new_record,
 								new_record_nulls, new_record_repl);
-	sepgsqlSetGivenSecLabel(rel, newtuple, dseclabel);
 	simple_heap_update(rel, &tuple->t_self, newtuple);
 
 	/* Update indexes */

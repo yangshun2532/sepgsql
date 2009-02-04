@@ -203,7 +203,7 @@ fmgr_info_cxt_security(Oid functionId, FmgrInfo *finfo, MemoryContext mcxt,
 		finfo->fn_stats = TRACK_FUNC_ALL;	/* ie, never track */
 		finfo->fn_addr = fbp->func;
 		finfo->fn_oid = functionId;
-		sepgsqlProcedureSetup(finfo, NULL);
+		sepgsqlCheckProcedureEntrypoint(finfo, NULL);
 		return;
 	}
 
@@ -239,7 +239,7 @@ fmgr_info_cxt_security(Oid functionId, FmgrInfo *finfo, MemoryContext mcxt,
 		finfo->fn_addr = fmgr_security_definer;
 		finfo->fn_stats = TRACK_FUNC_ALL;	/* ie, never track */
 		finfo->fn_oid = functionId;
-		sepgsqlProcedureSetup(finfo, procedureTuple);
+		sepgsqlCheckProcedureEntrypoint(finfo, procedureTuple);
 		ReleaseSysCache(procedureTuple);
 		return;
 	}
@@ -292,7 +292,7 @@ fmgr_info_cxt_security(Oid functionId, FmgrInfo *finfo, MemoryContext mcxt,
 	}
 
 	finfo->fn_oid = functionId;
-	sepgsqlProcedureSetup(finfo, procedureTuple);
+	sepgsqlCheckProcedureEntrypoint(finfo, procedureTuple);
 	ReleaseSysCache(procedureTuple);
 }
 

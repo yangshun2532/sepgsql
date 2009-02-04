@@ -10,7 +10,6 @@
 #include "access/sysattr.h"
 #include "catalog/indexing.h"
 #include "catalog/pg_constraint.h"
-#include "catalog/pg_security.h"
 #include "catalog/pg_trigger.h"
 #include "catalog/pg_type.h"
 #include "commands/trigger.h"
@@ -672,14 +671,6 @@ sepgsqlCheckSelinuxEvalItem(SelinuxEvalItem *seitem)
 
 	Assert(IsA(seitem, SelinuxEvalItem));
 
-	/*
-	 * Prevent to write pg_security by hand
-	 */
-	if (seitem->relid == SecurityRelationId &&
-		(seitem->relperms & (DB_TABLE__UPDATE | DB_TABLE__INSERT | DB_TABLE__DELETE)))
-		ereport(ERROR,
-				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("SELinux: unable to modify pg_security directly")));
 	/*
 	 * Permission checks on table
 	 */

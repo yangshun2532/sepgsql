@@ -21,7 +21,6 @@
 #include "catalog/pg_largeobject.h"
 #include "catalog/pg_operator.h"
 #include "catalog/pg_proc.h"
-#include "catalog/pg_security.h"
 #include "catalog/pg_trigger.h"
 #include "catalog/pg_ts_parser.h"
 #include "catalog/pg_ts_template.h"
@@ -156,9 +155,9 @@ sepgsqlTupleObjectClass(Oid relid, HeapTuple tuple)
 static void
 checkProcedureInstall(Oid proc_oid)
 {
-	Oid			proc_sid;
-	HeapTuple	protup = NULL;
-	const char *audit_name = NULL;
+	sepgsql_sid_t	prosid;
+	HeapTuple		protup = NULL;
+	const char	   *audit_name = NULL;
 
 	if (!OidIsValid(proc_oid))
 		return;
@@ -170,8 +169,8 @@ checkProcedureInstall(Oid proc_oid)
 		 * during bootstraptin mode, because no one
 		 * tries to relabel anything.
 		 */
-		proc_sid  = sepgsqlClientCreateSid(sepgsqlGetDatabaseSid(),
-										   SECCLASS_DB_PROCEDURE);
+		prosid  = sepgsqlClientCreate(sepgsqlGetDatabaseSid(),
+									  SECCLASS_DB_PROCEDURE);
 	}
 	else
 	{
@@ -182,10 +181,10 @@ checkProcedureInstall(Oid proc_oid)
 			return;
 
 		audit_name = sepgsqlAuditName(ProcedureRelationId, protup);
-		proc_sid = HeapTupleGetSecLabel(ProcedureRelationId, protup);
+		prosid = HeapTupleGetSecLabel(ProcedureRelationId, protup);
 	}
 
-	sepgsqlClientHasPerms(proc_sid,
+	sepgsqlClientHasPerms(prosid,
 						  SECCLASS_DB_PROCEDURE,
 						  DB_PROCEDURE__INSTALL,
 						  audit_name, true);
@@ -287,6 +286,11 @@ sepgsqlCheckProcedureInstall(Relation rel, HeapTuple tuple, HeapTuple newtup)
 	}
 }
 
+/*
+ * sepgsqlxxxxAvPerms
+ *    translate generic required permissions into per object
+ *    class permission bits.
+ */
 static access_vector_t
 sepgsqlCommonAvPerms(uint32 required)
 {
@@ -310,7 +314,7 @@ sepgsqlCommonAvPerms(uint32 required)
 }
 
 static access_vector_t
-sepgsqlDatavaseAvPerms(uint32 required, HeapTuple tuple, HeapTuple newtup)
+sepgsqlDatabaseAvPerms(uint32 required, HeapTuple tuple, HeapTuple newtup)
 {
 	return sepgsqlCommonAvPerms(required);
 }
@@ -356,7 +360,7 @@ sepgsqlProcedureAvPerms(uint32 required, HeapTuple tuple, HeapTuple newtup)
 	 */
 	if (HeapTupleIsValid(newtup))
 	{
-		/* SEPGSQL_PERMS_UPDATE */
+		Assert(required & SEPGSQL_PERMS_UPDATE);
 
 		proForm = (Form_pg_proc) GETSTRUCT(newtup);
 		oldForm = (Form_pg_proc) GETSTRUCT(tuple);
@@ -373,7 +377,7 @@ sepgsqlProcedureAvPerms(uint32 required, HeapTuple tuple, HeapTuple newtup)
 				DatumGetBool(DirectFunctionCall2(byteane, oldbin, probin)))
 			{
 				filename = TextDatumGetCString(probin);
-				sepgsqlDatabaseInstallModule(filename);
+				sepgsqlCheckDatabaseInstallModule(filename);
 			}
 		}
 	}
@@ -389,7 +393,7 @@ sepgsqlProcedureAvPerms(uint32 required, HeapTuple tuple, HeapTuple newtup)
 			if (!isnull)
 			{
 				filename = TextDatumGetCString(probin);
-				sepgsqlDatabaseInstallModule(filename);
+				sepgsqlCheckDatabaseInstallModule(filename);
 			}
 		}
 	}
@@ -397,157 +401,58 @@ sepgsqlProcedureAvPerms(uint32 required, HeapTuple tuple, HeapTuple newtup)
 	return av_perms;
 }
 
+/*
+ * sepgsqlCheckObjectPerms
+ *   checks permission of the given object (tuple).
+ */
 bool
-sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, HeapTuple newtup,
-                       uint32 required, bool abort)
+sepgsqlCheckObjectPerms(Relation rel, HeapTuple tuple, HeapTuple newtup,
+						uint32 required, bool abort)
 {
-	security_class_t tclass;
-	access_vector_t av_perms;
-	const char *audit_name;
-	bool rc = true;
+	Oid relid = RelationGetRelid(rel);
+	sepgsql_sid_t		sid;
+	security_class_t	tclass;
+	access_vector_t		av_perms;
+	const char		   *audit_name;
+	bool				rc = true;
 
 	Assert(HeapTupleIsValid(tuple));
+	Assert(!HeapTupleIsValid(newtup) ||
+		   (required & SEPGSQL_PERMS_UPDATE));
 
 	if (required & (SEPGSQL_PERMS_INSERT | SEPGSQL_PERMS_UPDATE))
 		sepgsqlCheckProcedureInstall(rel, tuple, newtup);
 
-	tclass = sepgsqlTupleObjectClass(RelationGetRelid(rel), tuple);
-
+	tclass = sepgsqlTupleObjectClass(relid, tuple);
 	switch (tclass)
 	{
 	case SECCLASS_DB_DATABASE:
-		av_perms = sepgsqlDatavaseAvPerms(required, tuple, newtup);
+		av_perms = sepgsqlDatabaseAvPerms(required, tuple, newtup);
 		break;
-
 	case SECCLASS_DB_TABLE:
 		av_perms = sepgsqlTableAvPerms(required, tuple, newtup);
 		break;
-
 	case SECCLASS_DB_COLUMN:
 		av_perms = sepgsqlColumnAvPerms(required, tuple, newtup);
 		break;
-
 	case SECCLASS_DB_PROCEDURE:
 		av_perms = sepgsqlProcedureAvPerms(required, tuple, newtup);
 		break;
-
-	default:	/* Row-level permission is upcoming */
+	default:
+		/*
+		 * Currently, row-level access control is not
+		 * implement, so it skipps all the checks on
+		 * db_tuple class obejcts.
+		 */
 		av_perms = 0;
 		break;
 	}
-
 	if (av_perms)
 	{
-		audit_name = sepgsqlAuditName(RelationGetRelid(rel), tuple);
-		rc = sepgsqlClientHasPerms(HeapTupleGetSecLabel(RelationGetRelid(rel), tuple),
-								   tclass, av_perms,
+		audit_name = sepgsqlAuditName(relid, tuple);
+		sid = HeapTupleGetSecLabel(relid, tuple);
+		rc = sepgsqlClientHasPerms(sid, tclass, required,
 								   audit_name, abort);
 	}
 	return rc;
 }
-
-/*
- * sepgsqlSetDefaultLabel
- *
- * This function assign a proper security context for a newly inserted tuple,
- * refering the security policy.
- * In the default, any tuple inherits the security context of its table.
- * However, we have several exception for some of system catalog. It come from
- * TYPE_TRANSITION rules in the security policy.
- */
-static Oid
-sepgsqlDefaultDatabaseLabel(Relation rel, HeapTuple tuple)
-{
-	security_context_t newcon;
-
-	newcon = sepgsqlComputeCreate(sepgsqlGetClientLabel(),
-								  sepgsqlGetClientLabel(),
-								  SECCLASS_DB_DATABASE);
-	return sepgsqlSecurityLabelToSid(newcon);
-}
-
-static Oid
-sepgsqlDefaultTableLabel(Relation rel, HeapTuple tuple)
-{
-	return sepgsqlClientCreateSid(sepgsqlGetDatabaseSid(),
-								  SECCLASS_DB_TABLE);
-}
-
-static Oid
-sepgsqlDefaultColumnLabel(Relation rel, HeapTuple tuple)
-{
-	Form_pg_attribute attForm;
-	Oid tblsid;
-
-	attForm = (Form_pg_attribute) GETSTRUCT(tuple);
-
-	if (IsBootstrapProcessingMode() &&
-		(attForm->attrelid == TypeRelationId ||
-		 attForm->attrelid == ProcedureRelationId ||
-		 attForm->attrelid == AttributeRelationId ||
-		 attForm->attrelid == RelationRelationId))
-	{
-		/*
-		 * We cannot access relation caches on very early phase
-		 * in bootstrap, so it assumes tables has default security
-		 * context and unlabeled by initdb.
-		 */
-		tblsid = sepgsqlClientCreateSid(sepgsqlGetDatabaseSid(),
-										SECCLASS_DB_TABLE);
-	}
-	else
-	{
-		HeapTuple reltup
-			= SearchSysCache(RELOID,
-							 ObjectIdGetDatum(attForm->attrelid),
-							 0, 0, 0);
-		if (!HeapTupleIsValid(reltup))
-			elog(ERROR, "SELinux: cache lookup failed for relation: %u",
-				 attForm->attrelid);
-
-		tblsid = HeapTupleGetSecLabel(RelationRelationId, reltup);
-
-		ReleaseSysCache(reltup);
-	}
-
-	return sepgsqlClientCreateSid(tblsid, SECCLASS_DB_COLUMN);
-}
-
-static Oid
-sepgsqlDefaultProcedureLabel(Relation rel, HeapTuple tuple)
-{
-	return sepgsqlClientCreateSid(sepgsqlGetDatabaseSid(),
-								  SECCLASS_DB_PROCEDURE);
-}
-
-void
-sepgsqlSetDefaultLabel(Relation rel, HeapTuple tuple)
-{
-	security_class_t tclass;
-	Oid newsid;
-
-	Assert(HeapTupleHasSecLabel(RelationGetRelid(rel), tuple));
-	tclass = sepgsqlTupleObjectClass(RelationGetRelid(rel), tuple);
-
-	switch (tclass)
-	{
-	case SECCLASS_DB_DATABASE:
-		newsid = sepgsqlDefaultDatabaseLabel(rel, tuple);
-		break;
-	case SECCLASS_DB_TABLE:
-		newsid = sepgsqlDefaultTableLabel(rel, tuple);
-		break;
-	case SECCLASS_DB_COLUMN:
-		newsid = sepgsqlDefaultColumnLabel(rel, tuple);
-		break;
-	case SECCLASS_DB_PROCEDURE:
-		newsid = sepgsqlDefaultProcedureLabel(rel, tuple);
-		break;
-	default:
-		newsid = InvalidOid;
-		break;
-    }
-
-    HeapTupleSetSecLabel(RelationGetRelid(rel), tuple, newsid);
-}
-

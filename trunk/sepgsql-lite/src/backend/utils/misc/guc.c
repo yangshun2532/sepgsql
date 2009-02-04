@@ -3562,7 +3562,7 @@ ResetAllOptions(void)
 {
 	int			i;
 
-	sepgsqlDatabaseSetParam("all");
+	sepgsqlCheckDatabaseSetParam("all");
 
 	for (i = 0; i < num_guc_variables; i++)
 	{
@@ -5489,7 +5489,7 @@ ExecSetVariableStmt(VariableSetStmt *stmt)
 	{
 		case VAR_SET_VALUE:
 		case VAR_SET_CURRENT:
-			sepgsqlDatabaseSetParam(stmt->name);
+			sepgsqlCheckDatabaseSetParam(stmt->name);
 			set_config_option(stmt->name,
 							  ExtractSetVariableArgs(stmt),
 							  (superuser() ? PGC_SUSET : PGC_USERSET),
@@ -5547,7 +5547,7 @@ ExecSetVariableStmt(VariableSetStmt *stmt)
 			break;
 		case VAR_SET_DEFAULT:
 		case VAR_RESET:
-			sepgsqlDatabaseSetParam(stmt->name);
+			sepgsqlCheckDatabaseSetParam(stmt->name);
 			set_config_option(stmt->name,
 							  NULL,
 							  (superuser() ? PGC_SUSET : PGC_USERSET),
@@ -5972,7 +5972,7 @@ void
 GetPGVariable(const char *name, DestReceiver *dest)
 {
 	/* Check get param permissions */
-	sepgsqlDatabaseGetParam(name);
+	sepgsqlCheckDatabaseGetParam(name);
 
 	if (guc_name_compare(name, "all") == 0)
 		ShowAllGUCConfig(dest);

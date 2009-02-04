@@ -878,7 +878,7 @@ ProcessUtility(Node *parsetree,
 				closeAllVfds(); /* probably not necessary... */
 
 				/* SELinux checks db_database:{install_module} priv */
-				sepgsqlDatabaseInstallModule(stmt->filename);
+				sepgsqlCheckDatabaseInstallModule(stmt->filename);
 
 				/* Allowed names are restricted if you're not superuser */
 				load_file(stmt->filename, !superuser());

@@ -80,7 +80,7 @@ ProcedureCreate(const char *procedureName,
 				Datum proconfig,
 				float4 procost,
 				float4 prorows,
-				Oid secLabelId)
+				Datum proselabel)
 {
 	Oid			retval;
 	int			parameterCount;
@@ -332,6 +332,11 @@ ProcedureCreate(const char *procedureName,
 	/* start out with empty permissions */
 	nulls[Anum_pg_proc_proacl - 1] = true;
 
+	/* SELinux: set a given/default security context */
+	nulls[Anum_pg_proc_proselabel - 1] = true;
+	sepgsqlSetDefaultSecLabel(ProcedureRelationId,
+							  values, nulls, proselabel);
+
 	rel = heap_open(ProcedureRelationId, RowExclusiveLock);
 	tupDesc = RelationGetDescr(rel);
 
@@ -476,8 +481,6 @@ ProcedureCreate(const char *procedureName,
 
 		/* Okay, do it... */
 		tup = heap_modify_tuple(oldtup, tupDesc, values, nulls, replaces);
-		if (HeapTupleHasSecLabel(RelationGetRelid(rel), tup))
-			HeapTupleSetSecLabel(RelationGetRelid(rel), tup, secLabelId);
 		simple_heap_update(rel, &tup->t_self, tup);
 
 		ReleaseSysCache(oldtup);
@@ -487,8 +490,6 @@ ProcedureCreate(const char *procedureName,
 	{
 		/* Creating a new procedure */
 		tup = heap_form_tuple(tupDesc, values, nulls);
-		if (HeapTupleHasSecLabel(RelationGetRelid(rel), tup))
-			HeapTupleSetSecLabel(RelationGetRelid(rel), tup, secLabelId);
 		simple_heap_insert(rel, tup);
 		is_update = false;
 	}
