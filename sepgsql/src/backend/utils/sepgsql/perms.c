@@ -451,7 +451,7 @@ sepgsqlCheckObjectPerms(Relation rel, HeapTuple tuple, HeapTuple newtup,
 	{
 		audit_name = sepgsqlAuditName(relid, tuple);
 		sid = HeapTupleGetSecLabel(relid, tuple);
-		rc = sepgsqlClientHasPerms(sid, tclass, required,
+		rc = sepgsqlClientHasPerms(sid, tclass, av_perms,
 								   audit_name, abort);
 	}
 	return rc;
