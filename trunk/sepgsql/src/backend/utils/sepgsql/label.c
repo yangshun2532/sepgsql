@@ -94,6 +94,11 @@ sepgsqlInputGivenSecLabel(DefElem *defel)
 
 	context = sepgsqlSecurityLabelTransIn(strVal(defel->arg));
 
+	if (!sepgsqlCheckValidSecurityLabel(context))
+		ereport(ERROR,
+				(errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("SELinux: \"%s\" is not a valid security context", context)));
+
 	return CStringGetTextDatum(context);
 }
 
