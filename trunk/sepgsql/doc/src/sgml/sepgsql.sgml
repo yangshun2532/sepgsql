@@ -57,7 +57,7 @@
       <para>
 	Because files and databases have similar capabilities to store
 	information assets, similar access controls are needed to maintain
-	confidentiality and data integrity.  Information stored in the
+	confidentiality and data integrity. Information stored in the
 	filesystem is accessed through system calls, such as
 	<command>write(2)</command>, while database objects are accessed
 	via SQL queries.
@@ -557,14 +557,14 @@ postgres=#
         <para>
 	  Then, we need to run <command>initdb</command> to initialize
 	  the database cluster. It is necessary to specify an option of
-	  <option>--pgace-feature=selinux</option> which enables to initialize
+	  <option>--enable-selinux</option> which enables to initialize
 	  database cluster with proper security context.
 
-	  Without this option, no enhanced security feature will be activated
-	  for the database cluster.
+	  Please note that SE-PostgreSQL is not activated in the defaul,
+	  without this option.
 	</para>
 <screen>
-<prompt>$ </prompt><userinput>initdb --pgace-feature=selinux</userinput>
+<prompt>$ </prompt><userinput>initdb --enable-selinux</userinput>
 <prompt>$ </prompt><userinput>pg_ctl start</userinput>
 </screen>
       </sect3>
