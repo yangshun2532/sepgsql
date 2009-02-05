@@ -31,25 +31,7 @@ sepgsql_server_getcon(PG_FUNCTION_ARGS)
 }
 
 Datum
-sepgsql_database_getcon(PG_FUNCTION_ARGS)
-{
-	return unavailable_function(__FUNCTION__);
-}
-
-Datum
-sepgsql_table_getcon(PG_FUNCTION_ARGS)
-{
-	return unavailable_function(__FUNCTION__);
-}
-
-Datum
-sepgsql_column_getcon(PG_FUNCTION_ARGS)
-{
-	return unavailable_function(__FUNCTION__);
-}
-
-Datum
-sepgsql_procedure_getcon(PG_FUNCTION_ARGS)
+sepgsql_mcstrans(PG_FUNCTION_ARGS)
 {
 	return unavailable_function(__FUNCTION__);
 }
