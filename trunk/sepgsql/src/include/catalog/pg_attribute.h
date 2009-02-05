@@ -315,7 +315,7 @@ DATA(insert ( 1247 tableoid			26 0  4  -7 0 -1 -1 t p i r t f f t 0 _null_ _null
 { 1255, {"probin"},				17, -1, -1, 23, 0, -1, -1, false, 'x', 'i', 'r', false, false, false, true, 0, { 0 }, {{0}} }, \
 { 1255, {"proconfig"},		  1009, -1, -1, 24, 1, -1, -1, false, 'x', 'i', 'r', false, false, false, true, 0, { 0 }, {{0}} }, \
 { 1255, {"proacl"},			  1034, -1, -1, 25, 1, -1, -1, false, 'x', 'i', 'r', false, false, false, true, 0, { 0 }, {{0}} }, \
-{ 1255, {"proseclabel"},		25, -1, -1, 26, 0, -1, -1, false, 'x', 'i', 'r', false, false, false, true, 0, { 0 }, {{0}} }
+{ 1255, {"proselabel"},		25, -1, -1, 26, 0, -1, -1, false, 'x', 'i', 'r', false, false, false, true, 0, { 0 }, {{0}} }
 
 DATA(insert ( 1255 proname			19 -1 NAMEDATALEN	1 0 -1 -1 f p c r t f f t 0 _null_ _null_));
 DATA(insert ( 1255 pronamespace		26 -1 4   2 0 -1 -1 t p i r t f f t 0 _null_ _null_));
@@ -342,7 +342,7 @@ DATA(insert ( 1255 prosrc			25 -1 -1 22 0 -1 -1 f x i r f f f t 0 _null_ _null_)
 DATA(insert ( 1255 probin			17 -1 -1 23 0 -1 -1 f x i r f f f t 0 _null_ _null_));
 DATA(insert ( 1255 proconfig	  1009 -1 -1 24 1 -1 -1 f x i r f f f t 0 _null_ _null_));
 DATA(insert ( 1255 proacl		  1034 -1 -1 25 1 -1 -1 f x i r f f f t 0 _null_ _null_));
-DATA(insert ( 1255 proseclabel		25 -1 -1 26 0 -1 -1 f x i r f f f t 0 _null_ _null_));
+DATA(insert ( 1255 proselabel		25 -1 -1 26 0 -1 -1 f x i r f f f t 0 _null_ _null_));
 DATA(insert ( 1255 ctid				27 0  6  -1 0 -1 -1 f p s r t f f t 0 _null_ _null_));
 DATA(insert ( 1255 oid				26 0  4  -2 0 -1 -1 t p i r t f f t 0 _null_ _null_));
 DATA(insert ( 1255 xmin				28 0  4  -3 0 -1 -1 t p i r t f f t 0 _null_ _null_));
@@ -375,7 +375,7 @@ DATA(insert ( 1255 tableoid			26 0  4  -7 0 -1 -1 t p i r t f f t 0 _null_ _null
 { 1249, {"attislocal"},   16, -1,	1, 17, 0, -1, -1, true, 'p', 'c', 'r', true, false, false, true, 0, { 0 }, {{0}} }, \
 { 1249, {"attinhcount"},  23, -1,	4, 18, 0, -1, -1, true, 'p', 'i', 'r', true, false, false, true, 0, { 0 }, {{0}} }, \
 { 1249, {"attacl"},     1034, -1,  -1, 19, 1, -1, -1, false, 'x', 'i', 'r', false, false, false, true, 0, { 0 }, {{0}} }, \
-{ 1249, {"attseclabel"},  25, -1,  -1, 20, 0, -1, -1, false, 'x', 'i', 'r', false, false, false, true, 0, { 0 }, {{0}} }
+{ 1249, {"attselabel"},  25, -1,  -1, 20, 0, -1, -1, false, 'x', 'i', 'r', false, false, false, true, 0, { 0 }, {{0}} }
 
 DATA(insert ( 1249 attrelid			26 -1  4   1 0 -1 -1 t p i r t f f t 0 _null_ _null_));
 DATA(insert ( 1249 attname			19 -1 NAMEDATALEN  2 0 -1 -1 f p c r t f f t 0 _null_ _null_));
@@ -396,7 +396,7 @@ DATA(insert ( 1249 attisdropped		16 -1  1  16 0 -1 -1 t p c r t f f t 0 _null_ _
 DATA(insert ( 1249 attislocal		16 -1  1  17 0 -1 -1 t p c r t f f t 0 _null_ _null_));
 DATA(insert ( 1249 attinhcount		23 -1  4  18 0 -1 -1 t p i r t f f t 0 _null_ _null_));
 DATA(insert ( 1249 attacl		  1034 -1 -1  19 1 -1 -1 f x i r f f f t 0 _null_ _null_));
-DATA(insert ( 1249 attseclabel		25 -1 -1  20 0 -1 -1 f x i r f f f t 0 _null_ _null_));
+DATA(insert ( 1249 attselabel		25 -1 -1  20 0 -1 -1 f x i r f f f t 0 _null_ _null_));
 DATA(insert ( 1249 ctid				27 0  6  -1 0 -1 -1 f p s r t f f t 0 _null_ _null_));
 /* no OIDs in pg_attribute */
 DATA(insert ( 1249 xmin				28 0  4  -3 0 -1 -1 t p i r t f f t 0 _null_ _null_));
@@ -434,7 +434,7 @@ DATA(insert ( 1249 tableoid			26 0  4  -7 0 -1 -1 t p i r t f f t 0 _null_ _null
 { 1259, {"relfrozenxid"},  28, -1,	4, 22, 0, -1, -1, true, 'p', 'i', 'r', true, false, false, true, 0, { 0 }, {{0}} }, \
 { 1259, {"relacl"},		 1034, -1, -1, 23, 1, -1, -1, false, 'x', 'i', 'r', false, false, false, true, 0, { 0 }, {{0}} }, \
 { 1259, {"reloptions"},  1009, -1, -1, 24, 1, -1, -1, false, 'x', 'i', 'r', false, false, false, true, 0, { 0 }, {{0}} }, \
-{ 1249, {"relseclabel"},   25, -1, -1, 25, 0, -1, -1, false, 'x', 'i', 'r', false, false, false, true, 0, { 0 }, {{0}} }
+{ 1249, {"relselabel"},   25, -1, -1, 25, 0, -1, -1, false, 'x', 'i', 'r', false, false, false, true, 0, { 0 }, {{0}} }
 
 DATA(insert ( 1259 relname			19 -1 NAMEDATALEN	1 0 -1 -1 f p c r t f f t 0 _null_ _null_));
 DATA(insert ( 1259 relnamespace		26 -1 4   2 0 -1 -1 t p i r t f f t 0 _null_ _null_));
@@ -460,7 +460,7 @@ DATA(insert ( 1259 relhassubclass	16 -1 1  21 0 -1 -1 t p c r t f f t 0 _null_ _
 DATA(insert ( 1259 relfrozenxid		28 -1 4  22 0 -1 -1 t p i r t f f t 0 _null_ _null_));
 DATA(insert ( 1259 relacl		  1034 -1 -1 23 1 -1 -1 f x i r f f f t 0 _null_ _null_));
 DATA(insert ( 1259 reloptions	  1009 -1 -1 24 1 -1 -1 f x i r f f f t 0 _null_ _null_));
-DATA(insert ( 1259 relseclabel		25 -1 -1 25 0 -1 -1 f x i r f f f t 0 _null_ _null_));
+DATA(insert ( 1259 relselabel		25 -1 -1 25 0 -1 -1 f x i r f f f t 0 _null_ _null_));
 DATA(insert ( 1259 ctid				27 0  6  -1 0 -1 -1 f p s r t f f t 0 _null_ _null_));
 DATA(insert ( 1259 oid				26 0  4  -2 0 -1 -1 t p i r t f f t 0 _null_ _null_));
 DATA(insert ( 1259 xmin				28 0  4  -3 0 -1 -1 t p i r t f f t 0 _null_ _null_));
