@@ -204,11 +204,6 @@
      </row>
 
      <row>
-       <entry><link linkend="catalog-pg-security"><structname>pg_security</structname></link></entry>
-       <entry>text representation of security label</entry>
-     </row>
-
-     <row>
       <entry><link linkend="catalog-pg-shdepend"><structname>pg_shdepend</structname></link></entry>
       <entry>dependencies on shared objects</entry>
      </row>
@@ -991,13 +986,6 @@
      </row>
 
      <row>
-       <entry><structfield>attsecid</structfield></entry>
-       <entry><type>oid</type></entry>
-       <entry><literal><link linkend="catalog-pg-security"><structname>pg_security</structname></link>.oid</literal></entry>
-       <entry>Security label of the attribute</entry>
-     </row>
-
-     <row>
       <entry><structfield>attnotnull</structfield></entry>
       <entry><type>bool</type></entry>
       <entry></entry>
@@ -1057,6 +1045,13 @@
        Column-level access privileges, if any have been granted specifically
        on this column
       </entry>
+     </row>
+
+     <row>
+       <entry><structfield>attselabel</structfield></entry>
+       <entry><type>text</type></entry>
+       <entry></entry>
+       <entry>Text formed security context of the attribute</entry>
      </row>
 
     </tbody>
@@ -1765,13 +1760,6 @@
      </row>
 
      <row>
-       <entry><structfield>relsecid</structfield></entry>
-       <entry><type>Oid</type></entry>
-       <entry><literal><link linkend="catalog-pg-security"><structname>pg_security</structname></link>.oid</literal></entry>
-       <entry>Security label of the relation</entry>
-     </row>
-
-     <row>
       <entry><structfield>relhasoids</structfield></entry>
       <entry><type>bool</type></entry>
       <entry></entry>
@@ -1848,6 +1836,13 @@
       <entry>
        Access-method-specific options, as <quote>keyword=value</> strings
       </entry>
+     </row>
+
+     <row>
+       <entry><structfield>relselabel</structfield></entry>
+       <entry><type>text</type></entry>
+       <entry></entry>
+       <entry>Text formed security context of the relation</entry>
      </row>
     </tbody>
    </tgroup>
@@ -2306,13 +2301,6 @@
      </row>
 
      <row>
-       <entry><structfield>datsecid</structfield></entry>
-       <entry><type>oid</type></entry>
-       <entry><literal><link linkend="catalog-pg-security"><structname>pg_security</structname></link>.oid</literal></entry>
-       <entry>Security label of the database</entry>
-     </row>
-
-     <row>
       <entry><structfield>datconfig</structfield></entry>
       <entry><type>text[]</type></entry>
       <entry></entry>
@@ -2329,6 +2317,13 @@
        <xref linkend="sql-revoke" endterm="sql-revoke-title">
        for details
       </entry>
+     </row>
+
+     <row>
+       <entry><structfield>datselabel</structfield></entry>
+       <entry><type>text</type></entry>
+       <entry></entry>
+       <entry>Text formed security context of the database</entry>
      </row>
     </tbody>
    </tgroup>
@@ -3963,13 +3958,6 @@
      </row>
 
      <row>
-       <entry><structfield>prosecid</structfield></entry>
-       <entry><type>oid</type></entry>
-       <entry><literal><link linkend="catalog-pg-security"><structname>pg_security</structname></link>.oid</literal></entry>
-       <entry>Security label of procedure</entry>
-     </row>
-
-     <row>
       <entry><structfield>pronargs</structfield></entry>
       <entry><type>int2</type></entry>
       <entry></entry>
@@ -4101,6 +4089,13 @@
        for details
       </entry>
      </row>
+
+     <row>
+       <entry><structfield>proselabel</structfield></entry>
+       <entry><type>text</type></entry>
+       <entry></entry>
+       <entry>Text formed security context of the procedure</entry>
+     </row>
     </tbody>
    </tgroup>
   </table>
@@ -4228,69 +4223,6 @@
    </para>
   </note>
 
- </sect1>
-
- <sect1 id="catalog-pg-security">
-   <title><structname>pg_security</structname></title>
-
-   <indexterm zone="catalog-pg-security">
-     <primary>pg_security</primary>
-   </indexterm>
-
-   <para>
-     The catalog <structname>pg_security</structname> stores security
-     label in text form managed by SE-PostgreSQL feature.
-   </para>
-
-   <para>
-     SE-PostgreSQL enables to assign a security label on a tuple.
-     Security label is a security identifier represented in human readable
-     text form, and SELinux makes its decision based on security policy
-     (a set of rules) and security label of objects accessed.
-   </para>
-   <para>
-     Security label has a characteristic that massive objects tend to share
-     a few number of security label. The <structname>pg_security</structname>
-     enables to translate between a security label and an alternative
-     identifier, called as <literal>security id</literal>.
-     The <literal>security id</literal> is an <literal>oid</literal> of
-     a tuple within this catalog, and it has a one-to-one relationship
-     to security label. Any labeled tuples have its security label as
-     a <literal>security id</literal>.
-   </para>
-   <para>
-     When user gives a new security label to the system, it does not have
-     its <literal>security id</literal> yet, SE-PostgreSQL adds a new
-     entry into <structname>pg_security</structname> automatically, and
-     its <literal>oid</literal> is applied.
-   </para>
-
-   <para>
-     See <xref linkend="enhanced-security-and-sepostgresql"> for more information.
-   </para>
-   <table>
-     <title><structname>pg_security</structname>Columns</title>
-
-     <tgroup cols=4>
-       <thead>
-         <row>
-           <entry>Name</entry>
-           <entry>Type</entry>
-           <entry>References</entry>
-           <entry>Description</entry>
-         </row>
-       </thead>
-
-       <tbody>
-         <row>
-           <entry><structfield>seclabel</structfield></entry>
-           <entry><type>text</type></entry>
-           <entry></entry>
-           <entry>Text representation of security attribute</entry>
-         </row>
-       </tbody>
-     </tgroup>
-   </table>
  </sect1>
 
  <sect1 id="catalog-pg-shdepend">
