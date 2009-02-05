@@ -7397,6 +7397,8 @@ ATExecSetSecurityLabel(Relation rel, const char *attr_name, DefElem *defel)
 		bool	nulls[Natts_pg_attribute];
 		bool	replaces[Natts_pg_attribute];
 
+		memset(replaces, false, sizeof(replaces));
+
 		attr_rel = heap_open(AttributeRelationId, RowExclusiveLock);
 
 		tuple = SearchSysCacheCopyAttName(RelationGetRelid(rel),
