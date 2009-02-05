@@ -411,23 +411,22 @@ getHeapTupleFromItemPointer(Relation rel, ItemPointer tid)
 HeapTuple
 sepgsqlHeapTupleInsert(Relation rel, HeapTuple tuple, bool internal)
 {
-	uint32 perms = SEPGSQL_PERMS_INSERT;
+	Oid			relid = RelationGetRelid(rel);
+	uint32		perms = SEPGSQL_PERMS_INSERT;
 
 	if (!sepgsqlIsEnabled())
 		return tuple;
 
-	/*
-	 * Set a default security context, if unlabeled
-	 */
-	if (HeapTupleHasSecLabel(RelationGetRelid(rel), tuple) &&
-		!HeapTupleGetSecLabel(RelationGetRelid(rel), tuple))
+	if (HeapTupleHasSecLabel(relid, tuple) &&
+		!HeapTupleGetSecLabel(relid, tuple))
 	{
 		Datum  *values;
 		bool   *nulls;
-		int		natts = RelationGetNumberOfAttributes(rel);
+		int		natts;
 
 		Assert(!internal);
 
+		natts = RelationGetNumberOfAttributes(rel);
 		values = (Datum *) palloc(natts * sizeof(Datum));
 		nulls = (bool *) palloc(natts * sizeof(bool));
 
@@ -447,10 +446,10 @@ sepgsqlHeapTupleUpdate(Relation rel, ItemPointer otid,
 					   HeapTuple newtup, bool internal)
 {
 	Oid				relid = RelationGetRelid(rel);
+	uint32			perms = SEPGSQL_PERMS_UPDATE;
 	HeapTuple		oldtup;
 	sepgsql_sid_t	newsid;
 	sepgsql_sid_t	oldsid;
-	uint32			perms;
 
 	if (!sepgsqlIsEnabled())
 		return;
@@ -460,7 +459,6 @@ sepgsqlHeapTupleUpdate(Relation rel, ItemPointer otid,
 	newsid = HeapTupleGetSecLabel(RelationGetRelid(rel), newtup);
 	oldsid = HeapTupleGetSecLabel(RelationGetRelid(rel), oldtup);
 
-	perms = SEPGSQL_PERMS_UPDATE;
 	if ((oldsid == NULL && newsid != NULL) ||
 		(oldsid != NULL && newsid == NULL) ||
 		(oldsid != NULL && newsid != NULL && strcmp(oldsid, newsid) != 0) ||
@@ -481,18 +479,18 @@ sepgsqlHeapTupleUpdate(Relation rel, ItemPointer otid,
 void
 sepgsqlHeapTupleDelete(Relation rel, ItemPointer otid, bool internal)
 {
-	HeapTuple	oldtup;
-	uint32		perms;
+	Oid			relid = RelationGetRelid(rel);
+	uint32		perms = SEPGSQL_PERMS_DELETE;
+	HeapTuple	tuple;
 
 	if (!sepgsqlIsEnabled())
 		return;
 
-	oldtup = getHeapTupleFromItemPointer(rel, otid);
-	perms = SEPGSQL_PERMS_DELETE;
+	tuple = getHeapTupleFromItemPointer(rel, otid);
 
-	sepgsqlCheckObjectPerms(rel, oldtup, NULL, perms, true);
+	sepgsqlCheckObjectPerms(rel, tuple, NULL, perms, true);
 
-	heap_freetuple(oldtup);
+	heap_freetuple(tuple);
 }
 
 /*
