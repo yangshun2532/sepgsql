@@ -236,7 +236,7 @@ sepgsqlCheckObjectPerms(Relation rel, HeapTuple tuple, HeapTuple newtup,
 #define sepgsqlCheckTableLock(a)				(true)
 #define sepgsqlCheckTableTruncate(a)			(true)
 
-#define sepgsqlHeapTupleInsert(a,tup,c)			(tup)
+#define sepgsqlHeapTupleInsert(a,b,c)			(b)
 #define sepgsqlHeapTupleUpdate(a,b,c,d)			do {} while(0)
 #define sepgsqlHeapTupleDelete(a,b,c)			do {} while(0)
 

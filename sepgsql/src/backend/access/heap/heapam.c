@@ -2057,7 +2057,10 @@ heap_insert(Relation relation, HeapTuple tup, CommandId cid,
 Oid
 simple_heap_insert(Relation relation, HeapTuple tup)
 {
-	HeapTuple dummy = sepgsqlHeapTupleInsert(relation, tup, true);
+	/* SELinux: check db_xxx:{create} permission */
+	HeapTuple dummy
+		= sepgsqlHeapTupleInsert(relation, tup, true);
+	Assert(dummy == tup);	/* never assigns default label in this context */
 
 	return heap_insert(relation, tup, GetCurrentCommandId(true), 0, NULL);
 }
@@ -2352,6 +2355,7 @@ simple_heap_delete(Relation relation, ItemPointer tid)
 	ItemPointerData update_ctid;
 	TransactionId update_xmax;
 
+	/* SELinux: check db_xxx:{drop} permission */
 	sepgsqlHeapTupleDelete(relation, tid, true);
 
 	result = heap_delete(relation, tid,
@@ -3023,6 +3027,7 @@ simple_heap_update(Relation relation, ItemPointer otid, HeapTuple tup)
 	ItemPointerData update_ctid;
 	TransactionId update_xmax;
 
+	/* SELinux: check db_xxx:{setattr} permission */
 	sepgsqlHeapTupleUpdate(relation, otid, tup, true);
 
 	result = heap_update(relation, otid, tup,
