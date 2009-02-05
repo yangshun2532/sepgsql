@@ -958,7 +958,7 @@ dumpCreateDB(PGconn *conn)
 						   "%s AS security_label "
 			  "FROM pg_database d LEFT JOIN pg_authid u ON (datdba = u.oid) "
 						   "WHERE datallowconn ORDER BY 1",
-			  security_label ? "sepgsql_database_getcon(datname)" : "null::text");
+			  security_label ? "sepgsql_mcstrans(datselabel)" : "null::text");
 	else if (server_version >= 80100)
 		appendPQExpBuffer(buf, "SELECT datname, "
 						   "coalesce(rolname, (select rolname from pg_authid where oid=(select datdba from pg_database where datname='template0'))), "
