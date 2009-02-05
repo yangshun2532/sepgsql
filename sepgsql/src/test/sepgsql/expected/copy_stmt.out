@@ -34,8 +34,8 @@ CREATE TABLE t2
          SECURITY_LABEL = 'unconfined_u:object_r:sepgsql_secret_table_t:s0'
 );
 CREATE TABLE
-SELECT sepgsql_column_getcon('t2','y');
-              sepgsql_column_getcon              
+SELECT attselabel from pg_attribute where attrelid = 't2'::regclass and attname = 'y';
+                   attselabel                    
 -------------------------------------------------
  unconfined_u:object_r:sepgsql_secret_table_t:s0
 (1 row)
