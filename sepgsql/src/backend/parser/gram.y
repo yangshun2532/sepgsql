@@ -9888,7 +9888,7 @@ OptSecurityItem:
 			;
 
 SecurityItem:
-			IDENT '=' Sconst
+			IDENT opt_equal Sconst
 				{
 					if (!sepgsqlIsEnabled() ||
 						strcmp("security_label", $1) != 0)
