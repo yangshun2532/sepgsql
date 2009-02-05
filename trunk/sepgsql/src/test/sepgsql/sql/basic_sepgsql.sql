@@ -40,9 +40,10 @@ CREATE TABLE t3
 
 --@SECURITY_CONTEXT=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0
 
-SELECT * FROM t1;		-- to be denied
+SELECT * FROM t1;			-- to be denied
 SELECT a, b FROM t1;
-UPDATE t1 SET b = 'ccc';	-- to be denied
+SELECT COUNT(*) FROM t1 WHERE c;	-- to be denied
+UPDATE t1 SET b = 'ccc';		-- to be denied
 UPDATE t1 SET a = a + 2;
 INSERT INTO t1 VALUES (5, 'eee', true);	-- to be denied
 INSERT INTO t1 VALUES (5);
