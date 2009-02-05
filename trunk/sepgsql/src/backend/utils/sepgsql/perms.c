@@ -213,9 +213,11 @@ sepgsqlCheckProcedureInstall(Relation rel, HeapTuple tuple, HeapTuple newtup)
 	switch (RelationGetRelid(rel))
 	{
 	case AggregateRelationId:
-		CHECK_PROC_INSTALL_PERM(pg_aggregate, aggfnoid, tuple, newtup);
-		CHECK_PROC_INSTALL_PERM(pg_aggregate, aggtransfn, tuple, newtup);
-		CHECK_PROC_INSTALL_PERM(pg_aggregate, aggfinalfn, tuple, newtup);
+		/*
+		 * db_procedure:{execute} is checked when we invoke aggfnoid,
+		 * aggtransfn and aggfinalfn, so we can omit to check
+		 * db_procedure:{install} here (these are not internal used).
+		 */
 		break;
 
 	case AccessMethodRelationId:
