@@ -2057,7 +2057,7 @@ heap_insert(Relation relation, HeapTuple tup, CommandId cid,
 Oid
 simple_heap_insert(Relation relation, HeapTuple tup)
 {
-	sepgsqlHeapTupleInsert(relation, tup, true);
+	HeapTuple dummy = sepgsqlHeapTupleInsert(relation, tup, true);
 
 	return heap_insert(relation, tup, GetCurrentCommandId(true), 0, NULL);
 }

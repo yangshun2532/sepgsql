@@ -201,14 +201,18 @@ sepgsqlCheckValidSecurityLabel(security_context_t label);
 #define SEPGSQL_PERMS_RELABELTO		(1UL<<6)
 #define SEPGSQL_PERMS_MASK			(0x0000007f)
 
-extern const char *sepgsqlAuditName(Oid relid, HeapTuple tuple);
+extern const char *
+sepgsqlAuditName(Oid relid, HeapTuple tuple);
 
-extern security_class_t sepgsqlFileObjectClass(int fdesc);
+extern security_class_t
+sepgsqlFileObjectClass(int fdesc);
 
-extern security_class_t sepgsqlTupleObjectClass(Oid relid, HeapTuple tuple);
+extern security_class_t
+sepgsqlTupleObjectClass(Oid relid, HeapTuple tuple);
 
-extern bool sepgsqlCheckObjectPerms(Relation rel, HeapTuple tuple, HeapTuple newtup,
-									uint32 required, bool abort);
+extern bool
+sepgsqlCheckObjectPerms(Relation rel, HeapTuple tuple, HeapTuple newtup,
+						uint32 required, bool abort);
 
 #else	/* HAVE_SELINUX */
 
@@ -222,36 +226,27 @@ extern bool sepgsqlCheckObjectPerms(Relation rel, HeapTuple tuple, HeapTuple new
 #define sepgsqlIsEnabled()						(false)
 #define sepgsqlInitialize()						do {} while(0)
 // hooks.c
-#define sepgsqlDatabaseAccess(a)				(true)
-#define sepgsqlDatabaseSetParam(a)				do {} while(0)
-#define sepgsqlDatabaseGetParam(a)				do {} while(0)
-#define sepgsqlDatabaseInstallModule(a)			do {} while(0)
-#define sepgsqlDatabaseLoadModule(a)			do {} while(0)
-#define sepgsqlProcedureExecute(a)				(true)
-#define sepgsqlProcedureSetup(a)				do {} while(0)
-#define sepgsqlTableLock(a)						(true)
-#define sepgsqlTableTruncate(a)					(true)
+#define sepgsqlCheckDatabaseAccess(a)			(true)
+#define sepgsqlCheckDatabaseSetParam(a)			do {} while(0)
+#define sepgsqlCheckDatabaseGetParam(a)			do {} while(0)
+#define sepgsqlCheckDatabaseInstallModule(a)	do {} while(0)
+#define sepgsqlCheckDatabaseLoadModule(a)		do {} while(0)
+#define sepgsqlCheckProcedureExecute(a)			(true)
+#define sepgsqlCheckProcedureEntrypoint(a,b)	do {} while(0)
+#define sepgsqlCheckTableLock(a)				(true)
+#define sepgsqlCheckTableTruncate(a)			(true)
 
-
-#define sepgsqlInputGivenSecLabel(a)			(PointerGetDatum(NULL))
-#define sepgsqlInputGivenSecLabelRelation(a)	(NIL)
-#define sepgsqlSetDefaultSecLabel(a,b,c,d)		do {} while(0)
-
-
-
-
-
+#define sepgsqlHeapTupleInsert(a,tup,c)			(tup)
+#define sepgsqlHeapTupleUpdate(a,b,c,d)			do {} while(0)
+#define sepgsqlHeapTupleDelete(a,b,c)			do {} while(0)
 
 #define sepgsqlCopyTable(a,b,c)					do {} while(0)
 #define sepgsqlCopyFile(a,b,c,d)				do {} while(0)
-#define sepgsqlHeapTupleInsert(a,b,c,d)			(true)
-#define sepgsqlHeapTupleUpdate(a,b,c,d,e)		(true)
-#define sepgsqlHeapTupleDelete(a,b,c,d)			(true)
+
 // label.c
-#define sepgsqlTupleDescHasSecLabel(a)			(false)
-#define sepgsqlPostBootstrapingMode()			do {} while(0)
-#define sepgsqlSecurityLabelToSid(a)			(InvalidOid)
-#define sepgsqlSidToSecurityLabel(a)			(pstrdup(""))
+#define sepgsqlInputGivenSecLabel(a)			(PointerGetDatum(NULL))
+#define sepgsqlInputGivenSecLabelRelation(a)	(NIL)
+#define sepgsqlSetDefaultSecLabel(a,b,c,d)		do {} while(0)
 
 #endif	/* HAVE_SELINUX */
 
