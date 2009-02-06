@@ -41,6 +41,7 @@
 #include "utils/inval.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
+#include "utils/sepgsql.h"
 #include "utils/snapmgr.h"
 #include "utils/syscache.h"
 #include "utils/tqual.h"
@@ -1560,7 +1561,12 @@ ExecCallTriggerFunc(TriggerData *trigdata,
 	 * call.
 	 */
 	if (finfo->fn_oid == InvalidOid)
+	{
+		if (!sepgsqlCheckProcedureExecute(trigdata->tg_trigger->tgfoid))
+			aclcheck_error(ACLCHECK_NO_PRIV, ACL_KIND_PROC,
+						   get_func_name(trigdata->tg_trigger->tgfoid));
 		fmgr_info(trigdata->tg_trigger->tgfoid, finfo);
+	}
 
 	Assert(finfo->fn_oid == trigdata->tg_trigger->tgfoid);
 
