@@ -280,8 +280,6 @@ sepgsqlAddEvalTriggerFunc(List *selist, Oid relid, int cmdType)
 	while (HeapTupleIsValid((tuple = systable_getnext(scan))))
 	{
 		Form_pg_trigger trigForm = (Form_pg_trigger) GETSTRUCT(tuple);
-		Form_pg_class relForm;
-		HeapTuple reltup;
 
 		/*
 		 * Skip not-invoked triggers
