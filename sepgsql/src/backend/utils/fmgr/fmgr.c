@@ -24,11 +24,11 @@
 #include "miscadmin.h"
 #include "nodes/nodeFuncs.h"
 #include "pgstat.h"
+#include "security/sepgsql.h"
 #include "utils/builtins.h"
 #include "utils/fmgrtab.h"
 #include "utils/guc.h"
 #include "utils/lsyscache.h"
-#include "utils/sepgsql.h"
 #include "utils/syscache.h"
 
 

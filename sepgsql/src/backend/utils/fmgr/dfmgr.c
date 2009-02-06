@@ -23,9 +23,9 @@
 #endif
 #include "lib/stringinfo.h"
 #include "miscadmin.h"
+#include "security/sepgsql.h"
 #include "utils/dynamic_loader.h"
 #include "utils/hsearch.h"
-#include "utils/sepgsql.h"
 
 
 /* signatures for PostgreSQL-specific library init/fini functions */

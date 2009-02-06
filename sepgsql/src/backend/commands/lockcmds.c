@@ -20,10 +20,10 @@
 #include "miscadmin.h"
 #include "optimizer/prep.h"
 #include "parser/parse_clause.h"
+#include "security/sepgsql.h"
 #include "utils/acl.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
-#include "utils/sepgsql.h"
 
 
 /*

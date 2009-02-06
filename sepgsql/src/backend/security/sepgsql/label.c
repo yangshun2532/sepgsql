@@ -17,9 +17,9 @@
 #include "catalog/pg_type.h"
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
+#include "security/sepgsql.h"
 #include "utils/builtins.h"
 #include "utils/memutils.h"
-#include "utils/sepgsql.h"
 #include "utils/syscache.h"
 
 bool
