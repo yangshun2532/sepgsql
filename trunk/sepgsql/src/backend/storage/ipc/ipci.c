@@ -25,6 +25,7 @@
 #include "postmaster/autovacuum.h"
 #include "postmaster/bgwriter.h"
 #include "postmaster/postmaster.h"
+#include "security/sepgsql.h"
 #include "storage/bufmgr.h"
 #include "storage/ipc.h"
 #include "storage/pg_shmem.h"
@@ -32,7 +33,6 @@
 #include "storage/procarray.h"
 #include "storage/sinvaladt.h"
 #include "storage/spin.h"
-#include "utils/sepgsql.h"
 
 
 shmem_startup_hook_type shmem_startup_hook = NULL;

@@ -12,9 +12,9 @@
 #include "catalog/pg_proc.h"
 #include "libpq/libpq-be.h"
 #include "miscadmin.h"
+#include "security/sepgsql.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
-#include "utils/sepgsql.h"
 #include "utils/syscache.h"
 #include "utils/tqual.h"
 

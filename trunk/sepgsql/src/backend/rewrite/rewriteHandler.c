@@ -23,9 +23,9 @@
 #include "rewrite/rewriteDefine.h"
 #include "rewrite/rewriteHandler.h"
 #include "rewrite/rewriteManip.h"
+#include "security/sepgsql.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
-#include "utils/sepgsql.h"
 #include "commands/trigger.h"
 
 

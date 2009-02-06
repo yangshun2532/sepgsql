@@ -7,7 +7,7 @@
  */
 #include "postgres.h"
 
-#include "utils/sepgsql.h"
+#include "security/sepgsql.h"
 
 static Datum
 unavailable_function(const char *fn_name)

@@ -12,8 +12,8 @@
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
 #include "nodes/nodes.h"
+#include "security/sepgsql.h"
 #include "storage/bufmgr.h"
-#include "utils/sepgsql.h"
 #include "utils/syscache.h"
 
 /*

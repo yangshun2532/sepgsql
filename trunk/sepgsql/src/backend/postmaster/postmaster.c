@@ -108,6 +108,7 @@
 #include "postmaster/pgarch.h"
 #include "postmaster/postmaster.h"
 #include "postmaster/syslogger.h"
+#include "security/sepgsql.h"
 #include "storage/fd.h"
 #include "storage/ipc.h"
 #include "storage/pg_shmem.h"
@@ -118,7 +119,6 @@
 #include "utils/datetime.h"
 #include "utils/memutils.h"
 #include "utils/ps_status.h"
-#include "utils/sepgsql.h"
 
 #ifdef EXEC_BACKEND
 #include "storage/spin.h"

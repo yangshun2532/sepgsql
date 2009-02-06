@@ -56,6 +56,7 @@
 #include "postmaster/syslogger.h"
 #include "postmaster/walwriter.h"
 #include "regex/regex.h"
+#include "security/sepgsql.h"
 #include "storage/bufmgr.h"
 #include "storage/fd.h"
 #include "tcop/tcopprot.h"
@@ -67,7 +68,6 @@
 #include "utils/plancache.h"
 #include "utils/portal.h"
 #include "utils/ps_status.h"
-#include "utils/sepgsql.h"
 #include "utils/tzparser.h"
 #include "utils/xml.h"
 

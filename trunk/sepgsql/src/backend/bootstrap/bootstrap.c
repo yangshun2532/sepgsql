@@ -32,6 +32,7 @@
 #include "nodes/makefuncs.h"
 #include "postmaster/bgwriter.h"
 #include "postmaster/walwriter.h"
+#include "security/sepgsql.h"
 #include "storage/bufmgr.h"
 #include "storage/ipc.h"
 #include "storage/proc.h"
@@ -41,7 +42,6 @@
 #include "utils/fmgroids.h"
 #include "utils/memutils.h"
 #include "utils/ps_status.h"
-#include "utils/sepgsql.h"
 #include "utils/tqual.h"
 
 extern int	optind;

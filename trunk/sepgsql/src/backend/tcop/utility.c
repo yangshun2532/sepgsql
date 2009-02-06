@@ -49,12 +49,12 @@
 #include "postmaster/bgwriter.h"
 #include "rewrite/rewriteDefine.h"
 #include "rewrite/rewriteRemove.h"
+#include "security/sepgsql.h"
 #include "storage/fd.h"
 #include "tcop/pquery.h"
 #include "tcop/utility.h"
 #include "utils/acl.h"
 #include "utils/guc.h"
-#include "utils/sepgsql.h"
 #include "utils/syscache.h"
 
 

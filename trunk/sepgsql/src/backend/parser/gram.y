@@ -57,11 +57,11 @@
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
 #include "parser/gramparse.h"
+#include "security/sepgsql.h"
 #include "storage/lmgr.h"
 #include "utils/date.h"
 #include "utils/datetime.h"
 #include "utils/numeric.h"
-#include "utils/sepgsql.h"
 #include "utils/xml.h"
 
 

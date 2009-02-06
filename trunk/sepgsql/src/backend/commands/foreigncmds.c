@@ -25,11 +25,11 @@
 #include "commands/defrem.h"
 #include "foreign/foreign.h"
 #include "miscadmin.h"
+#include "security/sepgsql.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
-#include "utils/sepgsql.h"
 #include "utils/syscache.h"
 
 

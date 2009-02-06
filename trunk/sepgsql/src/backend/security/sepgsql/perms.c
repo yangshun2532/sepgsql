@@ -26,9 +26,9 @@
 #include "catalog/pg_ts_template.h"
 #include "catalog/pg_type.h"
 #include "miscadmin.h"
+#include "security/sepgsql.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
-#include "utils/sepgsql.h"
 #include "utils/syscache.h"
 
 /*

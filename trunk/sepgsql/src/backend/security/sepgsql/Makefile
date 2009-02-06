@@ -3,7 +3,7 @@
 #    Makefile for utils/sepgsql : SE-PostgreSQL
 #
 
-subdir = src/backend/utils/sepgsql
+subdir = src/backend/security/sepgsql
 top_builddir = ../../../..
 include $(top_builddir)/src/Makefile.global
 

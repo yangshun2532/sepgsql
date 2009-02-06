@@ -10,10 +10,10 @@
 #include "access/hash.h"
 #include "libpq/pqsignal.h"
 #include "postmaster/postmaster.h"
+#include "security/sepgsql.h"
 #include "storage/ipc.h"
 #include "storage/lwlock.h"
 #include "utils/memutils.h"
-#include "utils/sepgsql.h"
 #include "utils/syscache.h"
 #include <linux/netlink.h>
 #include <linux/selinux_netlink.h>
