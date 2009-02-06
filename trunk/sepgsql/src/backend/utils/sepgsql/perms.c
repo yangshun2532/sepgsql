@@ -214,9 +214,10 @@ sepgsqlCheckProcedureInstall(Relation rel, HeapTuple tuple, HeapTuple newtup)
 	{
 	case AggregateRelationId:
 		/*
-		 * db_procedure:{execute} is checked when we invoke aggfnoid,
-		 * aggtransfn and aggfinalfn, so we can omit to check
-		 * db_procedure:{install} here (these are not internal used).
+		 * db_procedure:{execute} is checked on invocations of:
+		 *   pg_aggregate.aggfnoid
+		 *   pg_aggregate.aggtransfn
+		 *   pg_aggregate.aggfinalfn
 		 */
 		break;
 
@@ -260,7 +261,10 @@ sepgsqlCheckProcedureInstall(Relation rel, HeapTuple tuple, HeapTuple newtup)
 		break;
 
 	case TriggerRelationId:
-		CHECK_PROC_INSTALL_PERM(pg_trigger, tgfoid, tuple, newtup);
+		/*
+		 * db_procedure:{execute} is checked on invocations of:
+		 *    pg_trigger.tgfoid
+		 */
 		break;
 
 	case TSParserRelationId:
