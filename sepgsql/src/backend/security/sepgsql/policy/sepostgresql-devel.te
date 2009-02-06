@@ -36,10 +36,14 @@ role sepgsql_test_r;
 
 userdom_unpriv_user_template(sepgsql_test)
 
-ifdef(`postgresql_role', `
-	postgresql_role(sepgsql_test_r, sepgsql_test_t)
-',`
-	postgresql_userdom_template(sepgsql_test, sepgsql_test_t, sepgsql_test_r)
+ifndef(`sepgsql_test_sepgsql_table_t',`
+	# In Fedora 9, userdom_unpriv_user_template internally uses
+	# postgresql_userdom_template().
+	ifdef(`postgresql_role', `
+		postgresql_role(sepgsql_test_r, sepgsql_test_t)
+	',`
+		postgresql_userdom_template(sepgsql_test, sepgsql_test_t, sepgsql_test_r)
+	')
 ')
 
 allow sepgsql_test_t tmpfile : dir search_dir_perms;
