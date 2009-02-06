@@ -214,6 +214,14 @@ fi
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
 
 %changelog
+* Fri Feb  6 2009 <kaigai@kaigai.gr.jp> - 8.3.6-2.1520
+- upgrade base PostgreSQL version 8.3.5->8.3.6
+- backport features from 8.4devel tree
+- security policy fix for Fedora 9
+
+* Sat Jan 17 2009 Tomas Mraz <tmraz@redhat.com> - 8.3.5-2.1183
+- rebuild with new openssl
+
 * Wed Nov  5 2008 <kaigai@kaigai.gr.jp> - 8.3.5-2.1182
 - upgrade base PostgreSQL version 8.3.4->8.3.5
 - backport cumulative bugfixes from 8.4devel series
