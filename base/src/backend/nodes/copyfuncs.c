@@ -15,7 +15,7 @@
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/nodes/copyfuncs.c,v 1.421 2009/01/22 20:16:03 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/nodes/copyfuncs.c,v 1.423 2009/02/06 23:43:23 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -1606,7 +1606,8 @@ _copyRestrictInfo(RestrictInfo *from)
 	/* EquivalenceClasses are never copied, so shallow-copy the pointers */
 	COPY_SCALAR_FIELD(parent_ec);
 	COPY_SCALAR_FIELD(eval_cost);
-	COPY_SCALAR_FIELD(this_selec);
+	COPY_SCALAR_FIELD(norm_selec);
+	COPY_SCALAR_FIELD(outer_selec);
 	COPY_NODE_FIELD(mergeopfamilies);
 	/* EquivalenceClasses are never copied, so shallow-copy the pointers */
 	COPY_SCALAR_FIELD(left_ec);
@@ -2121,6 +2122,18 @@ _copyOptionDefElem(OptionDefElem *from)
 
 	COPY_SCALAR_FIELD(alter_op);
 	COPY_NODE_FIELD(def);
+
+	return newnode;
+}
+
+static ReloptElem *
+_copyReloptElem(ReloptElem *from)
+{
+	ReloptElem	   *newnode = makeNode(ReloptElem);
+
+	COPY_STRING_FIELD(optname);
+	COPY_STRING_FIELD(nmspc);
+	COPY_NODE_FIELD(arg);
 
 	return newnode;
 }
@@ -4078,6 +4091,9 @@ copyObject(void *from)
 			break;
 		case T_OptionDefElem:
 			retval = _copyOptionDefElem(from);
+			break;
+		case T_ReloptElem:
+			retval = _copyReloptElem(from);
 			break;
 		case T_LockingClause:
 			retval = _copyLockingClause(from);
