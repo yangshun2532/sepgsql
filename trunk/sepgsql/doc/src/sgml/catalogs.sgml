@@ -1,4 +1,4 @@
-<!-- $PostgreSQL: pgsql/doc/src/sgml/catalogs.sgml,v 2.192 2009/01/27 12:40:14 petere Exp $ -->
+<!-- $PostgreSQL: pgsql/doc/src/sgml/catalogs.sgml,v 2.196 2009/02/07 19:27:25 momjian Exp $ -->
 <!--
  Documentation of the system catalogs, directed toward PostgreSQL developers
  -->
@@ -292,7 +292,7 @@
   <table>
    <title><structname>pg_aggregate</> Columns</title>
 
-   <tgroup cols=4>
+   <tgroup cols="4">
     <thead>
      <row>
       <entry>Name</entry>
@@ -375,7 +375,7 @@
   <table>
    <title><structname>pg_am</> Columns</title>
 
-   <tgroup cols=4>
+   <tgroup cols="4">
     <thead>
      <row>
       <entry>Name</entry>
@@ -596,7 +596,7 @@
   <table>
    <title><structname>pg_amop</> Columns</title>
 
-   <tgroup cols=4>
+   <tgroup cols="4">
     <thead>
      <row>
       <entry>Name</entry>
@@ -682,7 +682,7 @@
   <table>
    <title><structname>pg_amproc</structname> Columns</title>
 
-   <tgroup cols=4>
+   <tgroup cols="4">
     <thead>
      <row>
       <entry>Name</entry>
@@ -765,7 +765,7 @@
   <table>
    <title><structname>pg_attrdef</> Columns</title>
 
-   <tgroup cols=4>
+   <tgroup cols="4">
     <thead>
      <row>
       <entry>Name</entry>
@@ -842,7 +842,7 @@
   <table>
    <title><structname>pg_attribute</> Columns</title>
 
-   <tgroup cols=4>
+   <tgroup cols="4">
     <thead>
      <row>
       <entry>Name</entry>
@@ -1110,7 +1110,7 @@
   <table>
    <title><structname>pg_authid</> Columns</title>
 
-   <tgroup cols=3>
+   <tgroup cols="3">
     <thead>
      <row>
       <entry>Name</entry>
@@ -1226,7 +1226,7 @@
   <table>
    <title><structname>pg_auth_members</> Columns</title>
 
-   <tgroup cols=4>
+   <tgroup cols="4">
     <thead>
      <row>
       <entry>Name</entry>
@@ -1304,7 +1304,7 @@
   <table>
    <title><structname>pg_autovacuum</> Columns</title>
 
-   <tgroup cols=4>
+   <tgroup cols="4">
     <thead>
      <row>
       <entry>Name</entry>
@@ -1472,7 +1472,7 @@
   <table>
    <title><structname>pg_cast</> Columns</title>
 
-   <tgroup cols=4>
+   <tgroup cols="4">
     <thead>
      <row>
       <entry>Name</entry>
@@ -1587,7 +1587,7 @@
   <table>
    <title><structname>pg_class</> Columns</title>
 
-   <tgroup cols=4>
+   <tgroup cols="4">
     <thead>
      <row>
       <entry>Name</entry>
@@ -1754,7 +1754,7 @@
       <entry><type>int2</type></entry>
       <entry></entry>
       <entry>
-       Number of check constraints on the table; see
+       Number of <literal>CHECK</> constraints on the table; see
        <link linkend="catalog-pg-constraint"><structname>pg_constraint</structname></link> catalog
       </entry>
      </row>
@@ -1871,7 +1871,7 @@
   <table>
    <title><structname>pg_constraint</> Columns</title>
 
-   <tgroup cols=4>
+   <tgroup cols="4">
     <thead>
      <row>
       <entry>Name</entry>
@@ -2006,7 +2006,7 @@
       <entry><structfield>conkey</structfield></entry>
       <entry><type>int2[]</type></entry>
       <entry><literal><link linkend="catalog-pg-attribute"><structname>pg_attribute</structname></link>.attnum</></entry>
-      <entry>If a table constraint, list of columns which the constraint constrains</entry>
+      <entry>If a table constraint (including a foreign key), list of the constrained columns</entry>
      </row>
 
      <row>
@@ -2090,7 +2090,7 @@
   <table>
    <title><structname>pg_conversion</> Columns</title>
 
-   <tgroup cols=4>
+   <tgroup cols="4">
     <thead>
      <row>
       <entry>Name</entry>
@@ -2183,7 +2183,7 @@
   <table>
    <title><structname>pg_database</> Columns</title>
 
-   <tgroup cols=4>
+   <tgroup cols="4">
     <thead>
      <row>
       <entry>Name</entry>
@@ -2355,7 +2355,7 @@
   <table>
    <title><structname>pg_depend</> Columns</title>
 
-   <tgroup cols=4>
+   <tgroup cols="4">
     <thead>
      <row>
       <entry>Name</entry>
@@ -2530,7 +2530,7 @@
   <table>
    <title><structname>pg_description</> Columns</title>
 
-   <tgroup cols=4>
+   <tgroup cols="4">
     <thead>
      <row>
       <entry>Name</entry>
@@ -2600,7 +2600,7 @@
   <table>
    <title><structname>pg_enum</> Columns</title>
 
-   <tgroup cols=4>
+   <tgroup cols="4">
     <thead>
      <row>
       <entry>Name</entry>
@@ -2647,7 +2647,7 @@
   <table>
    <title><structname>pg_foreign_data_wrapper</> Columns</title>
 
-   <tgroup cols=4>
+   <tgroup cols="4">
     <thead>
      <row>
       <entry>Name</entry>
@@ -2722,7 +2722,7 @@
   <table>
    <title><structname>pg_foreign_server</> Columns</title>
 
-   <tgroup cols=4>
+   <tgroup cols="4">
     <thead>
      <row>
       <entry>Name</entry>
@@ -2794,65 +2794,6 @@
  </sect1>
 
 
- <sect1 id="catalog-pg-user-mapping">
-  <title><structname>pg_user_mapping</structname></title>
-
-  <indexterm zone="catalog-pg-user-mapping">
-   <primary>pg_user_mapping</primary>
-  </indexterm>
-
-  <para>
-   The catalog <structname>pg_user_mapping</structname> stores
-   the mappings from local user to remote.  Access to this catalog is
-   restricted from normal users, use the view
-   <link linkend="view-pg-user-mappings"><structname>pg_user_mappings</structname></link>
-   instead.
-  </para>
-
-  <table>
-   <title><structname>pg_user_mapping</> Columns</title>
-
-   <tgroup cols=4>
-    <thead>
-     <row>
-      <entry>Name</entry>
-      <entry>Type</entry>
-      <entry>References</entry>
-      <entry>Description</entry>
-     </row>
-    </thead>
-
-    <tbody>
-     <row>
-      <entry><structfield>umuser</structfield></entry>
-      <entry><type>oid</type></entry>
-      <entry><literal><link linkend="catalog-pg-authid"><structname>pg_authid</structname></link>.oid</literal></entry>
-      <entry>OID of the local role being mapped, 0 if the user mapping is public</entry>
-     </row>
-
-     <row>
-      <entry><structfield>umserver</structfield></entry>
-      <entry><type>oid</type></entry>
-      <entry><literal><link linkend="catalog-pg-foreign-server"><structname>pg_foreign_server</structname></link>.oid</literal></entry>
-      <entry>
-       The OID of the foreign server that contains this mapping
-      </entry>
-     </row>
-
-     <row>
-      <entry><structfield>umoptions</structfield></entry>
-      <entry><type>text[]</type></entry>
-      <entry></entry>
-      <entry>
-       User mapping specific options, as <quote>keyword=value</> strings.
-      </entry>
-     </row>
-    </tbody>
-   </tgroup>
-  </table>
- </sect1>
-
-
  <sect1 id="catalog-pg-index">
   <title><structname>pg_index</structname></title>
 
@@ -2869,7 +2810,7 @@
   <table>
    <title><structname>pg_index</> Columns</title>
 
-   <tgroup cols=4>
+   <tgroup cols="4">
     <thead>
      <row>
       <entry>Name</entry>
@@ -3037,7 +2978,7 @@
   <table>
    <title><structname>pg_inherits</> Columns</title>
 
-   <tgroup cols=4>
+   <tgroup cols="4">
     <thead>
      <row>
       <entry>Name</entry>
@@ -3100,7 +3041,7 @@
   <table>
    <title><structname>pg_language</> Columns</title>
 
-   <tgroup cols=4>
+   <tgroup cols="4">
     <thead>
      <row>
       <entry>Name</entry>
@@ -3211,7 +3152,7 @@
   <table>
    <title><structname>pg_largeobject</> Columns</title>
 
-   <tgroup cols=3>
+   <tgroup cols="3">
     <thead>
      <row>
       <entry>Name</entry>
@@ -3280,7 +3221,7 @@
   <table>
    <title><structname>pg_listener</> Columns</title>
 
-   <tgroup cols=4>
+   <tgroup cols="4">
     <thead>
      <row>
       <entry>Name</entry>
@@ -3338,7 +3279,7 @@
   <table>
    <title><structname>pg_namespace</> Columns</title>
 
-   <tgroup cols=4>
+   <tgroup cols="4">
     <thead>
      <row>
       <entry>Name</entry>
@@ -3406,7 +3347,7 @@
   <table>
    <title><structname>pg_opclass</> Columns</title>
 
-   <tgroup cols=4>
+   <tgroup cols="4">
     <thead>
      <row>
       <entry>Name</entry>
@@ -3504,7 +3445,7 @@
   <table>
    <title><structname>pg_operator</> Columns</title>
 
-   <tgroup cols=4>
+   <tgroup cols="4">
     <thead>
      <row>
       <entry>Name</entry>
@@ -3654,7 +3595,7 @@
   <table>
    <title><structname>pg_opfamily</> Columns</title>
 
-   <tgroup cols=4>
+   <tgroup cols="4">
     <thead>
      <row>
       <entry>Name</entry>
@@ -3735,7 +3676,7 @@
   <table>
    <title><structname>pg_pltemplate</> Columns</title>
 
-   <tgroup cols=3>
+   <tgroup cols="3">
     <thead>
      <row>
       <entry>Name</entry>
@@ -3831,7 +3772,7 @@
   <table>
    <title><structname>pg_proc</> Columns</title>
 
-   <tgroup cols=4>
+   <tgroup cols="4">
     <thead>
      <row>
       <entry>Name</entry>
@@ -4126,7 +4067,7 @@
   <table>
    <title><structname>pg_rewrite</> Columns</title>
 
-   <tgroup cols=4>
+   <tgroup cols="4">
     <thead>
      <row>
       <entry>Name</entry>
@@ -4256,7 +4197,7 @@
   <table>
    <title><structname>pg_shdepend</> Columns</title>
 
-   <tgroup cols=4>
+   <tgroup cols="4">
     <thead>
      <row>
       <entry>Name</entry>
@@ -4409,7 +4350,7 @@
   <table>
    <title><structname>pg_shdescription</> Columns</title>
 
-   <tgroup cols=4>
+   <tgroup cols="4">
     <thead>
      <row>
       <entry>Name</entry>
@@ -4499,7 +4440,7 @@
   <table>
    <title><structname>pg_statistic</> Columns</title>
 
-   <tgroup cols=4>
+   <tgroup cols="4">
     <thead>
      <row>
       <entry>Name</entry>
@@ -4628,7 +4569,7 @@
   <table>
    <title><structname>pg_tablespace</> Columns</title>
 
-   <tgroup cols=4>
+   <tgroup cols="4">
     <thead>
      <row>
       <entry>Name</entry>
@@ -4693,7 +4634,7 @@
   <table>
    <title><structname>pg_trigger</> Columns</title>
 
-   <tgroup cols=4>
+   <tgroup cols="4">
     <thead>
      <row>
       <entry>Name</entry>
@@ -4859,7 +4800,7 @@
   <table>
    <title><structname>pg_ts_config</> Columns</title>
 
-   <tgroup cols=4>
+   <tgroup cols="4">
     <thead>
      <row>
       <entry>Name</entry>
@@ -4927,7 +4868,7 @@
   <table>
    <title><structname>pg_ts_config_map</> Columns</title>
 
-   <tgroup cols=4>
+   <tgroup cols="4">
     <thead>
      <row>
       <entry>Name</entry>
@@ -4998,7 +4939,7 @@
   <table>
    <title><structname>pg_ts_dict</> Columns</title>
 
-   <tgroup cols=4>
+   <tgroup cols="4">
     <thead>
      <row>
       <entry>Name</entry>
@@ -5074,7 +5015,7 @@
   <table>
    <title><structname>pg_ts_parser</> Columns</title>
 
-   <tgroup cols=4>
+   <tgroup cols="4">
     <thead>
      <row>
       <entry>Name</entry>
@@ -5164,7 +5105,7 @@
   <table>
    <title><structname>pg_ts_template</> Columns</title>
 
-   <tgroup cols=4>
+   <tgroup cols="4">
     <thead>
      <row>
       <entry>Name</entry>
@@ -5231,7 +5172,7 @@
   <table>
    <title><structname>pg_type</> Columns</title>
 
-   <tgroup cols=4>
+   <tgroup cols="4">
     <thead>
      <row>
       <entry>Name</entry>
@@ -5613,7 +5554,7 @@
   <table id="catalog-typcategory-table">
    <title><structfield>typcategory</> Codes</title>
 
-   <tgroup cols=2>
+   <tgroup cols="2">
     <thead>
      <row>
       <entry>Code</entry>
@@ -5683,6 +5624,66 @@
   </table>
 
  </sect1>
+
+
+ <sect1 id="catalog-pg-user-mapping">
+  <title><structname>pg_user_mapping</structname></title>
+
+  <indexterm zone="catalog-pg-user-mapping">
+   <primary>pg_user_mapping</primary>
+  </indexterm>
+
+  <para>
+   The catalog <structname>pg_user_mapping</structname> stores
+   the mappings from local user to remote.  Access to this catalog is
+   restricted from normal users, use the view
+   <link linkend="view-pg-user-mappings"><structname>pg_user_mappings</structname></link>
+   instead.
+  </para>
+
+  <table>
+   <title><structname>pg_user_mapping</> Columns</title>
+
+   <tgroup cols="4">
+    <thead>
+     <row>
+      <entry>Name</entry>
+      <entry>Type</entry>
+      <entry>References</entry>
+      <entry>Description</entry>
+     </row>
+    </thead>
+
+    <tbody>
+     <row>
+      <entry><structfield>umuser</structfield></entry>
+      <entry><type>oid</type></entry>
+      <entry><literal><link linkend="catalog-pg-authid"><structname>pg_authid</structname></link>.oid</literal></entry>
+      <entry>OID of the local role being mapped, 0 if the user mapping is public</entry>
+     </row>
+
+     <row>
+      <entry><structfield>umserver</structfield></entry>
+      <entry><type>oid</type></entry>
+      <entry><literal><link linkend="catalog-pg-foreign-server"><structname>pg_foreign_server</structname></link>.oid</literal></entry>
+      <entry>
+       The OID of the foreign server that contains this mapping
+      </entry>
+     </row>
+
+     <row>
+      <entry><structfield>umoptions</structfield></entry>
+      <entry><type>text[]</type></entry>
+      <entry></entry>
+      <entry>
+       User mapping specific options, as <quote>keyword=value</> strings.
+      </entry>
+     </row>
+    </tbody>
+   </tgroup>
+  </table>
+ </sect1>
+
 
  <sect1 id="views-overview">
   <title>System Views</title>
@@ -5865,7 +5866,7 @@
   <table>
    <title><structname>pg_cursors</> Columns</title>
 
-   <tgroup cols=3>
+   <tgroup cols="3">
     <thead>
      <row>
       <entry>Name</entry>
@@ -5951,7 +5952,7 @@
   <table>
    <title><structname>pg_group</> Columns</title>
 
-   <tgroup cols=4>
+   <tgroup cols="4">
     <thead>
      <row>
       <entry>Name</entry>
@@ -6003,7 +6004,7 @@
   <table>
    <title><structname>pg_indexes</> Columns</title>
 
-   <tgroup cols=4>
+   <tgroup cols="4">
     <thead>
      <row>
       <entry>Name</entry>
@@ -6087,7 +6088,7 @@
   <table>
    <title><structname>pg_locks</> Columns</title>
 
-   <tgroup cols=4>
+   <tgroup cols="4">
     <thead>
      <row>
       <entry>Name</entry>
@@ -6338,7 +6339,7 @@
   <table>
    <title><structname>pg_prepared_statements</> Columns</title>
 
-   <tgroup cols=3>
+   <tgroup cols="3">
     <thead>
      <row>
       <entry>Name</entry>
@@ -6425,7 +6426,7 @@
   <table>
    <title><structname>pg_prepared_xacts</> Columns</title>
 
-   <tgroup cols=4>
+   <tgroup cols="4">
     <thead>
      <row>
       <entry>Name</entry>
@@ -6514,7 +6515,7 @@
   <table>
    <title><structname>pg_roles</> Columns</title>
 
-   <tgroup cols=4>
+   <tgroup cols="4">
     <thead>
      <row>
       <entry>Name</entry>
@@ -6640,7 +6641,7 @@
   <table>
    <title><structname>pg_rules</> Columns</title>
 
-   <tgroup cols=4>
+   <tgroup cols="4">
     <thead>
      <row>
       <entry>Name</entry>
@@ -6705,7 +6706,7 @@
   <table>
    <title><structname>pg_settings</> Columns</title>
 
-   <tgroup cols=3>
+   <tgroup cols="3">
     <thead>
      <row>
       <entry>Name</entry>
@@ -6853,7 +6854,7 @@
   <table>
    <title><structname>pg_shadow</> Columns</title>
 
-   <tgroup cols=4>
+   <tgroup cols="4">
     <thead>
      <row>
       <entry>Name</entry>
@@ -6955,7 +6956,7 @@
   <table>
    <title><structname>pg_stats</> Columns</title>
 
-   <tgroup cols=4>
+   <tgroup cols="4">
     <thead>
      <row>
       <entry>Name</entry>
@@ -7099,7 +7100,7 @@
   <table>
    <title><structname>pg_tables</> Columns</title>
 
-   <tgroup cols=4>
+   <tgroup cols="4">
     <thead>
      <row>
       <entry>Name</entry>
@@ -7174,7 +7175,7 @@
   <table>
    <title><structname>pg_timezone_abbrevs</> Columns</title>
 
-   <tgroup cols=3>
+   <tgroup cols="3">
     <thead>
      <row>
       <entry>Name</entry>
@@ -7226,7 +7227,7 @@
   <table>
    <title><structname>pg_timezone_names</> Columns</title>
 
-   <tgroup cols=3>
+   <tgroup cols="3">
     <thead>
      <row>
       <entry>Name</entry>
@@ -7279,7 +7280,7 @@
   <table>
    <title><structname>pg_user</> Columns</title>
 
-   <tgroup cols=3>
+   <tgroup cols="3">
     <thead>
      <row>
       <entry>Name</entry>
@@ -7363,7 +7364,7 @@
   <table>
    <title><structname>pg_user_mappings</> Columns</title>
 
-   <tgroup cols=3>
+   <tgroup cols="3">
     <thead>
      <row>
       <entry>Name</entry>
@@ -7444,7 +7445,7 @@
   <table>
    <title><structname>pg_views</> Columns</title>
 
-   <tgroup cols=4>
+   <tgroup cols="4">
     <thead>
      <row>
       <entry>Name</entry>
