@@ -88,21 +88,24 @@ CXXFLAGS="${CXXFLAGS:-%optflags}" ; export CXXFLAGS
 
 # parallel build, if possible
 make %{?_smp_mflags}
-# to create empty .fc file
+%if !%{fedora9}
 touch src/backend/security/sepgsql/policy/sepostgresql-devel.fc
 make -C src/backend/security/sepgsql/policy
+%endif
 
 %install
 rm -rf %{buildroot}
 
 make DESTDIR=%{buildroot} install
 
+%if !%{fedora9}
 for store in %{selinux_policy_stores}
 do
     install -d %{buildroot}%{_datadir}/selinux/${store}
     install -p -m 644 src/backend/security/sepgsql/policy/sepostgresql-devel.pp.${store} \
                %{buildroot}%{_datadir}/selinux/${store}/sepostgresql-devel.pp
 done
+%endif
 
 # avoid to conflict with native postgresql package
 mv %{buildroot}%{_bindir}  %{buildroot}%{_bindir}.orig
@@ -152,6 +155,7 @@ exit 0
 /sbin/chkconfig --add %{name}
 /sbin/ldconfig
 
+%if !%{fedora9}
 for store in %{selinux_policy_stores}
 do
     %{_sbindir}/semodule -s ${store} -r sepostgresql >& /dev/null || :
@@ -160,6 +164,7 @@ do
             -i %{_datadir}/selinux/${store}/sepostgresql-devel.pp >& /dev/null || :
     fi
 done
+%endif
 
 # Fix up non-standard file contexts
 /sbin/fixfiles -R %{name} restore || :
@@ -208,13 +213,15 @@ fi
 %{_datadir}/sepgsql/conversion_create.sql
 %{_datadir}/sepgsql/information_schema.sql
 %{_datadir}/sepgsql/sql_features.txt
+%if !%{fedora9}
 %attr(644,root,root) %{_datadir}/selinux/*/sepostgresql-devel.pp
+%endif
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/data
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
 
 %changelog
-* Fri Feb  6 2009 <kaigai@kaigai.gr.jp> - 8.3.6-2.1520
+* Fri Feb  6 2009 <kaigai@kaigai.gr.jp> - 8.3.6-2.1523
 - upgrade base PostgreSQL version 8.3.5->8.3.6
 - backport features from 8.4devel tree
 - security policy fix for Fedora 9
