@@ -4340,7 +4340,7 @@ DESCR("hash");
 
 /* SE-PostgreSQL related functions */
 DATA(insert OID = 3403 (  sepgsql_getcon	PGNSP PGUID 12 1 0 0 f f f t f v 0 0 25 "" _null_ _null_ _null_ _null_ sepgsql_getcon _null_ _null_ _null_ _null_ ));
-DATA(insert OID = 3404 (  sepgsql_server_getcon	PGNSP PGUID 12 1 0 0 f f f t f v 0 0 25 "" _null_ _null_ _null_ _null_ sepgsql_getcon _null_ _null_ _null_ _null_ ));
+DATA(insert OID = 3404 (  sepgsql_server_getcon	PGNSP PGUID 12 1 0 0 f f f t f v 0 0 25 "" _null_ _null_ _null_ _null_ sepgsql_server_getcon _null_ _null_ _null_ _null_ ));
 DATA(insert OID = 3405 (  sepgsql_mcstrans	PGNSP PGUID 12 1 0 0 f f f t f v 1 0 25 "25" _null_ _null_ _null_ _null_ sepgsql_mcstrans _null_ _null_ _null_ _null_ ));
 
 /* enum related procs */
