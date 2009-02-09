@@ -1,0 +1,5 @@
+LTLIBRARY_NAME    = libselinux.la
+LTLIBRARY_SOURCES = selinux.c selinux_basic.c
+
+include $(top_srcdir)/build/ltlib.mk
+
