@@ -651,7 +651,7 @@ transformInsertStmt(ParseState *pstate, InsertStmt *stmt)
 		tle = makeTargetEntry(expr,
 							  attr_num,
 							  col->name,
-							  false);
+							  attr_num < 0 ? true : false);
 		qry->targetList = lappend(qry->targetList, tle);
 
 		rte->modifiedCols = bms_add_member(rte->modifiedCols,
@@ -766,6 +766,47 @@ transformInsertRow(ParseState *pstate, List *exprlist,
 	return result;
 }
 
+static void
+transformSelectIntoSystemColumn(ParseState *pstate, Query *qry)
+{
+	ListCell *l;
+	uint32 system_attrs = 0;
+	bool relhasoids
+		= interpretOidsOption(qry->intoClause->options);
+
+	foreach (l, qry->targetList) {
+		Form_pg_attribute attr;
+	    TargetEntry *tle = lfirst(l);
+
+		if (tle->resjunk)
+			continue;
+
+		attr = SystemAttributeByName(tle->resname, relhasoids);
+		if (attr && SystemAttributeIsWritable(attr->attnum))
+		{
+			uint32 mask = (1<<(-attr->attnum));
+
+			/* duplication checks */
+			if (system_attrs & mask)
+				continue;
+			system_attrs |= mask;
+
+			if (exprType((Node *) tle->expr) != attr->atttypid)
+	        {
+				tle->expr =
+					(Expr *) coerce_to_target_type(pstate,
+												   (Node *) tle->expr,
+												   exprType((Node *) tle->expr),
+												   attr->atttypid,
+												   attr->atttypmod,
+												   COERCION_IMPLICIT,
+												   COERCE_IMPLICIT_CAST,
+												   -1);
+			}
+			tle->resjunk = true;
+		}
+	}
+}
 
 /*
  * transformSelectStmt -
@@ -869,6 +910,7 @@ transformSelectStmt(ParseState *pstate, SelectStmt *stmt)
 	if (stmt->intoClause)
 	{
 		qry->intoClause = stmt->intoClause;
+		transformSelectIntoSystemColumn(pstate, qry);
 		if (stmt->intoClause->colNames)
 			applyColumnNames(qry->targetList, stmt->intoClause->colNames);
 	}
