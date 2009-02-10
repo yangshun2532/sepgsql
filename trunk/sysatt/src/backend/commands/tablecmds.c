@@ -3058,11 +3058,17 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap)
 			if (newrel)
 			{
 				Oid			tupOid = InvalidOid;
+				Oid			tupRowAcl = InvalidOid;
+				Oid			tupSecLabel = InvalidOid;
 
 				/* Extract data from old tuple */
 				heap_deform_tuple(tuple, oldTupDesc, values, isnull);
 				if (oldTupDesc->tdhasoid)
 					tupOid = HeapTupleGetOid(tuple);
+				if (HeapTupleHasRowAcl(tuple))
+					tupRowAcl = HeapTupleGetRowAcl(tuple);
+				if (HeapTupleHasSecLabel(tuple))
+					tupSecLabel = HeapTupleGetSecLabel(tuple);
 
 				/* Set dropped attributes to null in new tuple */
 				foreach(lc, dropped_attrs)
@@ -3094,6 +3100,12 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap)
 				/* Preserve OID, if any */
 				if (newTupDesc->tdhasoid)
 					HeapTupleSetOid(tuple, tupOid);
+				/* Preserve RowAcl, if any */
+				if (HeapTupleHasRowAcl(tuple))
+					HeapTupleSetRowAcl(tuple, tupRowAcl);
+				/* Preserve SecLabel, if any */
+				if (HeapTupleHasSecLabel(tuple))
+					HeapTupleSetSecLabel(tuple, tupSecLabel);
 			}
 
 			/* Now check any constraints on the possibly-changed tuple */
