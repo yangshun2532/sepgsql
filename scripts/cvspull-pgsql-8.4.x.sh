@@ -79,5 +79,5 @@ echo "svn update"
 echo
 echo "svn merge -c `expr ${SVNREV} + 4` ./sysatt ./rowlv"
 echo "svn diff ./sysatt"
-echo "svn commit -m 'merge updates of ${SVNBRANCH}/sysatt into ${SVNBRANCH}/rowacl at r`expr ${SVNREV} + 1`' ./rowlv"
+echo "svn commit -m 'merge updates of ${SVNBRANCH}/sysatt into ${SVNBRANCH}/rowacl at r`expr ${SVNREV} + 4`' ./rowlv"
 echo "svn update"
