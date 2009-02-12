@@ -9,6 +9,7 @@
 #define PG_SECURITY_H
 
 #include "access/htup.h"
+#include "nodes/parsenodes.h"
 #include "utils/acl.h"
 #include "utils/relcache.h"
 
@@ -72,12 +73,12 @@ extern Oid
 securityTransRowAclIn(const Acl *acl);
 
 extern Acl *
-securityTransRowAclOut(Oid secid);
+securityTransRowAclOut(Oid secid, Oid relowner);
 
 extern Datum
-securityHeapGetSecurityAclSysattr(HeapTuple tuple);
+securityHeapGetRowAclSysattr(HeapTuple tuple);
 
 extern Datum
-securityHeapGetSecurityLabelSysattr(HeapTuple tuple);
+securityHeapGetSecLabelSysattr(HeapTuple tuple);
 
 #endif   /* PG_SELINUX_H */
