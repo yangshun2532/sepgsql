@@ -26,7 +26,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/executor/execMain.c,v 1.321 2009/01/22 20:16:03 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/executor/execMain.c,v 1.323 2009/02/08 18:02:27 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -1927,6 +1927,21 @@ ExecInsert(TupleTableSlot *slot,
 	resultRelInfo = estate->es_result_relation_info;
 	resultRelationDesc = resultRelInfo->ri_RelationDesc;
 
+	/*
+	 * If the result relation has OIDs, force the tuple's OID to zero so that
+	 * heap_insert will assign a fresh OID.  Usually the OID already will be
+	 * zero at this point, but there are corner cases where the plan tree can
+	 * return a tuple extracted literally from some table with the same
+	 * rowtype.
+	 *
+	 * XXX if we ever wanted to allow users to assign their own OIDs to new
+	 * rows, this'd be the place to do it.  For the moment, we make a point
+	 * of doing this before calling triggers, so that a user-supplied trigger
+	 * could hack the OID if desired.
+	 */
+	if (resultRelationDesc->rd_rel->relhasoids)
+		HeapTupleSetOid(tuple, InvalidOid);
+
 	storeWritableSystemAttribute(resultRelationDesc, slot, tuple);
 
 	/* BEFORE ROW INSERT Triggers */
@@ -3015,6 +3030,7 @@ OpenIntoRel(QueryDesc *queryDesc)
 	Oid			intoRelationId;
 	TupleDesc	tupdesc;
 	DR_intorel *myState;
+	static char	   *validnsps[] = HEAP_RELOPT_NAMESPACES;
 
 	Assert(into);
 
@@ -3073,6 +3089,8 @@ OpenIntoRel(QueryDesc *queryDesc)
 	/* Parse and validate any reloptions */
 	reloptions = transformRelOptions((Datum) 0,
 									 into->options,
+									 NULL,
+									 validnsps,
 									 true,
 									 false);
 	(void) heap_reloptions(RELKIND_RELATION, reloptions, true);
@@ -3110,7 +3128,16 @@ OpenIntoRel(QueryDesc *queryDesc)
 	 * AlterTableCreateToastTable ends with CommandCounterIncrement(), so that
 	 * the TOAST table will be visible for insertion.
 	 */
-	AlterTableCreateToastTable(intoRelationId);
+	reloptions = transformRelOptions((Datum) 0,
+									 into->options,
+									 "toast",
+									 validnsps,
+									 true,
+									 false);
+
+	(void) heap_reloptions(RELKIND_TOASTVALUE, reloptions, true);
+
+	AlterTableCreateToastTable(intoRelationId, reloptions);
 
 	/*
 	 * And open the constructed table for writing.
@@ -3204,6 +3231,12 @@ intorel_receive(TupleTableSlot *slot, DestReceiver *self)
 	 * writable copy
 	 */
 	tuple = ExecMaterializeSlot(slot);
+
+	/*
+	 * force assignment of new OID (see comments in ExecInsert)
+	 */
+	if (myState->rel->rd_rel->relhasoids)
+		HeapTupleSetOid(tuple, InvalidOid);
 
 	storeWritableSystemAttribute(myState->rel, slot, tuple);
 	if (!pgaceHeapTupleInsert(myState->rel, tuple, false, false))

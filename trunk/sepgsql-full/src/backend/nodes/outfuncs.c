@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/nodes/outfuncs.c,v 1.350 2009/01/22 20:16:04 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/nodes/outfuncs.c,v 1.352 2009/02/06 23:43:23 tgl Exp $
  *
  * NOTES
  *	  Every node type that can appear in stored rules' parsetrees *must*
@@ -1613,7 +1613,8 @@ _outRestrictInfo(StringInfo str, RestrictInfo *node)
 	WRITE_BITMAPSET_FIELD(right_relids);
 	WRITE_NODE_FIELD(orclause);
 	/* don't write parent_ec, leads to infinite recursion in plan tree dump */
-	WRITE_FLOAT_FIELD(this_selec, "%.4f");
+	WRITE_FLOAT_FIELD(norm_selec, "%.4f");
+	WRITE_FLOAT_FIELD(outer_selec, "%.4f");
 	WRITE_NODE_FIELD(mergeopfamilies);
 	/* don't write left_ec, leads to infinite recursion in plan tree dump */
 	/* don't write right_ec, leads to infinite recursion in plan tree dump */
@@ -1806,6 +1807,16 @@ _outDefElem(StringInfo str, DefElem *node)
 	WRITE_NODE_TYPE("DEFELEM");
 
 	WRITE_STRING_FIELD(defname);
+	WRITE_NODE_FIELD(arg);
+}
+
+static void
+_outReloptElem(StringInfo str, ReloptElem *node)
+{
+	WRITE_NODE_TYPE("RELOPTELEM");
+
+	WRITE_STRING_FIELD(nmspc);
+	WRITE_STRING_FIELD(optname);
 	WRITE_NODE_FIELD(arg);
 }
 
@@ -2800,6 +2811,9 @@ _outNode(StringInfo str, void *obj)
 				break;
 			case T_DefElem:
 				_outDefElem(str, obj);
+				break;
+			case T_ReloptElem:
+				_outReloptElem(str, obj);
 				break;
 			case T_LockingClause:
 				_outLockingClause(str, obj);
