@@ -7,17 +7,31 @@
  */
 #include "postgres.h"
 
+#include "access/heapam.h"
+#include "access/xact.h"
+#include "catalog/catalog.h"
+#include "catalog/indexing.h"
+#include "catalog/pg_security.h"
+#include "miscadmin.h"
+#include "utils/builtins.h"
+#include "utils/memutils.h"
+#include "utils/rel.h"
+#include "utils/syscache.h"
+
 bool
 securityTupleDescHasRowAcl(Relation rel)
 {
-	return false;
+	/*
+	 * TODO: check reloption ("row_level_acl") here
+	 */
+	return true;
 }
 
 bool
 securityTupleDescHasSecLabel(Relation rel)
 {
 	/*
-	 * TODO: add sepgsqlXXXX() invocation here
+	 * TODO: check availability of SELinux here
 	 */
 	return true;
 }
@@ -43,7 +57,7 @@ static earlySecLabel *earlySecLabelList = NULL;
 static Oid
 earlyLookupSecurityId(const char *seclabel)
 {
-	earlySeclabel  *es;
+	earlySecLabel  *es;
 	Oid				minsecid = SecurityRelationId;
 
 	for (es = earlySecLabelList; es; es = es->next)
@@ -57,10 +71,10 @@ earlyLookupSecurityId(const char *seclabel)
 	/* not found */
 	es = MemoryContextAllocZero(TopMemoryContext,
 								sizeof(*es) + strlen(seclabel));
-	es->next = earlySeclabelList;
+	es->next = earlySecLabelList;
 	es->secid = minsecid - 1;
 	strcpy(es->seclabel, seclabel);
-	earlySeclabelList = es;
+	earlySecLabelList = es;
 
 	return es->secid;
 }
@@ -68,7 +82,7 @@ earlyLookupSecurityId(const char *seclabel)
 static char *
 earlyLookupSecurityLabel(Oid secid)
 {
-	earlySeclabel  *es;
+	earlySecLabel  *es;
 
 	for (es = earlySecLabelList; es; es = es->next)
 	{
@@ -85,7 +99,7 @@ securityPostBootstrapingMode(void)
 	Relation			rel;
 	CatalogIndexState	ind;
 	HeapTuple			tuple;
-	earlySeclabel	   *es;
+	earlySecLabel	   *es;
 	Oid					labelSid;
 	Datum				values[Natts_pg_security];
 	bool				nulls[Natts_pg_security];
@@ -233,7 +247,7 @@ securityLookupSecurityLabel(Oid secid)
 	char	   *label;
 	bool		isnull;
 
-	if (!OidIsValid(sid))
+	if (!OidIsValid(secid))
 		return NULL;
 
 	if (IsBootstrapProcessingMode())
@@ -255,26 +269,128 @@ securityLookupSecurityLabel(Oid secid)
 	return label;
 }
 
-Oid
-securityTransSecurityLabelIn(const char *seclabel)
-{}
-
-char *
-securityTransSecurityLabelOut(Oid secid)
-{}
-
+/*
+ * "security_acl" system column related stuffs
+ */
 Oid
 securityTransRowAclIn(const Acl *acl)
-{}
+{
+	AclItem	   *aip = ACL_DAT(acl);
+	char	   *rawacl = palloc0(ACL_NUM(acl) * 30 + 10);
+	int			i, ofs;
+	Oid			secid;
+
+	ofs = sprintf(rawacl, "acl:");
+
+	for (i=0; i < ACL_NUM(acl); i++)
+	{
+		if ((aip[i].ai_privs & ACL_ALL_RIGHTS_TUPLE) != aip[i].ai_privs)
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("unsupported privileges for tuple: %04x",
+							aip[i].ai_privs & ~ACL_ALL_RIGHTS_TUPLE)));
+
+		ofs += sprintf(rawacl + ofs, "%s%x=%x/%x",
+					   (i == 0 ? "" : ","),
+					   aip[i].ai_grantee,
+					   aip[i].ai_privs,
+					   aip[i].ai_grantor);
+	}
+
+	secid = securityLookupSecurityId(rawacl);
+
+	pfree(rawacl);
+
+	return secid;
+}
 
 Acl *
-securityTransRowAclOut(Oid secid)
-{}
+securityTransRowAclOut(Oid secid, Oid relowner)
+{
+	Acl		   *acl = NULL;
+	char	   *rawacl = securityLookupSecurityLabel(secid);
+
+	if (rawacl && strncmp(rawacl, "acl:", 4) == 0)
+	{
+		AclItem	   *aip;
+		char	   *tok, *sv = NULL;
+		int			index = 0;
+
+		aip = palloc(strlen(rawacl) * sizeof(AclItem) / 4);
+		for (tok = strtok_r(rawacl + 4, ",", &sv);
+			 tok;
+			 tok = strtok_r(NULL, ",", &sv))
+		{
+			if (sscanf(tok, "%x=%x/%x",
+					   &aip[index].ai_grantee,
+					   &aip[index].ai_privs,
+					   &aip[index].ai_grantor) != 3)
+				continue;
+			index++;
+		}
+		acl = allocacl(index);
+		memcpy(ACL_DAT(acl), aip, index * sizeof(AclItem));
+
+		pfree(aip);
+	}
+
+	if (!acl)
+		acl = acldefault(ACL_OBJECT_TUPLE, relowner);
+
+	return acl;
+}
 
 Datum
-securityHeapGetSecurityAclSysattr(HeapTuple tuple)
-{}
+securityHeapGetRowAclSysattr(HeapTuple tuple)
+{
+	HeapTuple	classTup;
+	Oid			secid;
+	Oid			relowner;
+	char	   *rawacl;
+
+	classTup = SearchSysCache(RELOID,
+							  ObjectIdGetDatum(tuple->t_tableOid),
+							  0, 0, 0);
+	if (!HeapTupleIsValid(classTup))
+		elog(ERROR, "cache lookup failed for relation: %u", tuple->t_tableOid);
+
+	relowner = ((Form_pg_class) GETSTRUCT(classTup))->relowner;
+
+	ReleaseSysCache(classTup);
+
+	secid = HeapTupleGetRowAcl(tuple);
+
+	return PointerGetDatum(securityTransRowAclOut(secid, relowner));
+}
+
+/*
+ * "security_label" system column related stuffs
+ */
+Oid
+securityTransSecLabelIn(const char *seclabel)
+{
+	/*
+	 * TODO: add a hook to translate external label into
+	 * raw label, and validation checks
+	 */
+	return securityLookupSecurityId(seclabel);
+}
+
+char *
+securityTransSecLabelOut(Oid secid)
+{
+	char *seclabel = securityLookupSecurityLabel(secid);
+
+	if (!seclabel)
+		seclabel = pstrdup("unlabeled");
+
+	return seclabel;
+}
 
 Datum
-securityHeapGetSecurityLabelSysattr(HeapTuple tuple)
-{}
+securityHeapGetSecLabelSysattr(HeapTuple tuple)
+{
+	Oid	secid = HeapTupleGetSecLabel(tuple);
+
+	return CStringGetTextDatum(securityTransSecLabelOut(secid));
+}

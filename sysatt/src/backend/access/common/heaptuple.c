@@ -60,6 +60,7 @@
 #include "access/heapam.h"
 #include "access/sysattr.h"
 #include "access/tuptoaster.h"
+#include "catalog/pg_security.h"
 #include "executor/tuptable.h"
 
 
@@ -602,10 +603,10 @@ heap_getsysattr(HeapTuple tup, int attnum, TupleDesc tupleDesc, bool *isnull)
 			result = ObjectIdGetDatum(tup->t_tableOid);
 			break;
 		case SecurityAclAttributeNumber:
-			result = securityHeapGetSecurityAclSysattr(tup);
+			result = securityHeapGetRowAclSysattr(tup);
 			break;
 		case SecurityLabelAttributeNumber:
-			result = securityHeapGetSecurityLabelSysattr(tup);
+			result = securityHeapGetSecLabelSysattr(tup);
 			break;
 		default:
 			elog(ERROR, "invalid attnum: %d", attnum);

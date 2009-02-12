@@ -39,6 +39,7 @@
 #include "access/xact.h"
 #include "catalog/heap.h"
 #include "catalog/namespace.h"
+#include "catalog/pg_security.h"
 #include "catalog/toasting.h"
 #include "commands/tablespace.h"
 #include "commands/trigger.h"
@@ -1360,11 +1361,10 @@ bool ExecContextForcesRowAcl(PlanState *planstate, bool *hasrowacl)
 	if (planstate->state->es_select_into)
 	{
 		/*
-		 * TODO:
-		 * add planstate->state->es_into_rowacl bool
+		 * TODO: we need to check "row_level_acl" options
 		 */
 		// *hasrowacl = planstate->state->es_into_rowacl;
-		*hasrowacl = false;
+		*hasrowacl = true;
 		return true;
 	}
 	else
@@ -1372,8 +1372,8 @@ bool ExecContextForcesRowAcl(PlanState *planstate, bool *hasrowacl)
 		ResultRelInfo *ri = planstate->state->es_result_relation_info;
 
 		if (ri && ri->ri_RelationDesc)
-	    {
-			*hasrowacl = pgaceTupleDescHasRowAcl(ri->ri_RelationDesc, NIL);
+		{
+			*hasrowacl = securityTupleDescHasRowAcl(ri->ri_RelationDesc);
 			return true;
 		}
 	}
@@ -1509,7 +1509,7 @@ fetchWritableSystemAttribute(JunkFilter *junkfilter, TupleTableSlot *slot,
 		datum = ExecGetJunkAttribute(slot, attno, &isnull);
 		if (isnull)
 			ereport(ERROR,
-					(errcode(ERRCODE_ROWACL_ERROR),
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 					 errmsg("setting NULL on \"%s\" system column is not supported",
 							SecurityAclAttributeName)));
 		*tts_rowacl = securityTransRowAclIn(DatumGetAclP(datum));
@@ -1522,7 +1522,7 @@ fetchWritableSystemAttribute(JunkFilter *junkfilter, TupleTableSlot *slot,
 		datum = ExecGetJunkAttribute(slot, attno, &isnull);
 		if (isnull)
 			ereport(ERROR,
-					(errcode(ERRCODE_PGACE_ERROR),
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 					 errmsg("setting NULL on \"%s\" system column is not supported",
 							SecurityLabelAttributeName)));
 		*tts_seclabel = securityTransSecLabelIn(TextDatumGetCString(datum));

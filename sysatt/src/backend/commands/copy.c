@@ -23,6 +23,7 @@
 #include "access/heapam.h"
 #include "access/sysattr.h"
 #include "access/xact.h"
+#include "catalog/heap.h"
 #include "catalog/namespace.h"
 #include "catalog/pg_security.h"
 #include "catalog/pg_type.h"
@@ -1577,14 +1578,14 @@ CopyOneRowTo(CopyState cstate, Oid tupleOid, Oid rowAclId, Oid secLabelId,
 		{
 		case SecurityAclAttributeNumber:
 			value = PointerGetDatum(securityTransRowAclOut(rowAclId,
-								   RelationGetForm(cstate->rel)->relowner));
+								RelationGetForm(cstate->rel)->relowner));
 			isnull = false;
 			force_quot = cstate->rowacl_force_quot;
 			out_fmgr = &cstate->rowacl_out_function;
 			break;
 
 		case SecurityLabelAttributeNumber:
-			value = CStringGetTextDatum(securityTransSecurityLabelOut(secLabelId));
+			value = CStringGetTextDatum(securityTransSecLabelOut(secLabelId));
 			isnull = false;
 			force_quot = cstate->seclabel_force_quot;
 			out_fmgr = &cstate->seclabel_out_function;
@@ -1620,7 +1621,7 @@ CopyOneRowTo(CopyState cstate, Oid tupleOid, Oid rowAclId, Oid secLabelId,
 			{
 				bytea	   *outputbytes;
 
-				outputbytes = SendFunctionCall(&out_fmgr, value);
+				outputbytes = SendFunctionCall(out_fmgr, value);
 				CopySendInt32(cstate, VARSIZE(outputbytes) - VARHDRSZ);
 				CopySendData(cstate, VARDATA(outputbytes),
 							 VARSIZE(outputbytes) - VARHDRSZ);
@@ -1762,7 +1763,6 @@ CopyFrom(CopyState cstate)
 	Oid			seclabel_typioparam;
 	int			attnum;
 	int			i;
-	ListCell   *l;
 	Oid			in_func_oid;
 	Datum	   *values;
 	bool	   *nulls;
@@ -2244,7 +2244,7 @@ CopyFrom(CopyState cstate)
 				else
 					attForm = attr[m];
 
-				cstate->cur_attname = NameStr(attForm);
+				cstate->cur_attname = NameStr(attForm->attname);
 				i++;
 
 				switch (attnum)
