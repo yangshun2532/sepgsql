@@ -9,6 +9,7 @@
 
 #include "access/reloptions.h"
 #include "catalog/namespace.h"
+#include "catalog/pg_authid.h"
 #include "catalog/pg_type.h"
 #include "commands/defrem.h"
 #include "miscadmin.h"
@@ -308,6 +309,57 @@ bool rowaclCopyToTuple(Relation rel, List *attNumList, HeapTuple tuple)
 /******************************************************************
  * Check ownership of tuples
  ******************************************************************/
+static char *
+formalizeDefaultRowAcl(const char *defacl)
+{
+	char   *result;
+	int		i, len, ofs;
+
+	for (i=0, len=0; defacl[i] != '\0'; i++)
+	{
+		if (defacl[i] == '%')
+			len += NAMEDATALEN;
+		else
+			len++;
+	}
+
+	result = palloc0(len);
+	for (i=0, ofs=0; defacl[i] != '\0'; i++)
+	{
+		if (defacl[i] == '%')
+		{
+			int code = defacl[++i];
+
+			if (code == 'u')
+			{
+				Form_pg_authid	authForm;
+				HeapTuple		utup;
+
+				utup = SearchSysCache(AUTHOID,
+									  ObjectIdGetDatum(GetUserId()),
+									  0, 0, 0);
+				if (!HeapTupleIsValid(utup))
+					elog(ERROR, "cache lookup failed for user: %u", GetUserId());
+
+				authForm = (Form_pg_authid) GETSTRUCT(utup);
+				strcpy(result + ofs, NameStr(authForm->rolname));
+				ofs += strlen(NameStr(authForm->rolname));
+				ReleaseSysCache(utup);
+			}
+			else
+			{
+				ereport(ERROR,
+						(errcode(ERRCODE_ROWACL_ERROR),
+						 errmsg("invalid replacement character '%c'", code)));
+			}
+		}
+		else
+			result[ofs++] = defacl[i];
+	}
+
+	return result;
+}
+
 bool rowaclHeapTupleInsert(Relation rel, HeapTuple tuple,
 						   bool is_internal, bool with_returning)
 {
@@ -335,6 +387,8 @@ bool rowaclHeapTupleInsert(Relation rel, HeapTuple tuple,
 			FmgrInfo finfo;
 			Datum aclDat;
 			Oid sid;
+
+			default_row_acl = formalizeDefaultRowAcl(default_row_acl);
 
 			fmgr_info(F_ARRAY_IN, &finfo);
 			aclDat = FunctionCall3(&finfo,
@@ -420,8 +474,9 @@ bool rowaclHeapTupleDelete(Relation rel, ItemPointer otid,
 void
 rawaclValidateDefaultRowAclRelopt(const char *value)
 {
-	FmgrInfo finfo;
-	Datum acldat;
+	FmgrInfo	finfo;
+	Datum		acldat;
+	char	   *defacl = formalizeDefaultRowAcl(value);
 
 	/*
 	 * If given default row-acl in reloptions is not valid,
@@ -429,7 +484,7 @@ rawaclValidateDefaultRowAclRelopt(const char *value)
 	 */
 	fmgr_info(F_ARRAY_IN, &finfo);
 	acldat = FunctionCall3(&finfo,
-						   CStringGetDatum(value),
+						   CStringGetDatum(defacl),
 						   ObjectIdGetDatum(ACLITEMOID),
 						   Int32GetDatum(-1));
 	pfree(DatumGetAclP(acldat));
