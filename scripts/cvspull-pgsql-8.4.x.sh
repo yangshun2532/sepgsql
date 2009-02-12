@@ -64,5 +64,20 @@ echo "svn update"
 echo
 echo "svn merge -c `expr ${SVNREV} + 1` ./base ./sepgsql"
 echo "svn diff ./sepgsql"
-echo "svn commit -m 'merge updates of ${SVNBRANCH}/base into ${SVNBRANCH}/sepgsql at `env LANG=C date`' ./sepgsql"
+echo "svn commit -m 'merge updates of ${SVNBRANCH}/base into ${SVNBRANCH}/sepgsql at r`expr ${SVNREV} + 1`' ./sepgsql"
+echo "svn update"
+echo
+echo "svn merge -c `expr ${SVNREV} + 1` ./base ./sepgsql-full"
+echo "svn diff ./sepgsql-full"
+echo "svn commit -m 'merge updates of ${SVNBRANCH}/base into ${SVNBRANCH}/sepgsql-full at r`expr ${SVNREV} + 1`' ./sepgsql-full"
+echo "svn update"
+echo
+echo "svn merge -c `expr ${SVNREV} + 1` ./base ./sysatt"
+echo "svn diff ./sysatt"
+echo "svn commit -m 'merge updates of ${SVNBRANCH}/base into ${SVNBRANCH}/sysatt at r`expr ${SVNREV} + 1`' ./sysatt"
+echo "svn update"
+echo
+echo "svn merge -c `expr ${SVNREV} + 4` ./sysatt ./rowlv"
+echo "svn diff ./sysatt"
+echo "svn commit -m 'merge updates of ${SVNBRANCH}/sysatt into ${SVNBRANCH}/rowacl at r`expr ${SVNREV} + 1`' ./rowlv"
 echo "svn update"
