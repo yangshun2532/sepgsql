@@ -11,7 +11,7 @@
  * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/test/regress/pg_regress.c,v 1.57 2009/01/08 20:09:06 momjian Exp $
+ * $PostgreSQL: pgsql/src/test/regress/pg_regress.c,v 1.59 2009/01/28 15:32:21 mha Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -1333,9 +1333,9 @@ wait_for_tests(PID_TYPE *pids, int *statuses, char **names, int num_tests)
 	while (tests_left > 0)
 	{
 		PID_TYPE	p;
-		int			exit_status;
 
 #ifndef WIN32
+		int			exit_status;
 		p = wait(&exit_status);
 
 		if (p == INVALID_PID)
@@ -1345,6 +1345,7 @@ wait_for_tests(PID_TYPE *pids, int *statuses, char **names, int num_tests)
 			exit_nicely(2);
 		}
 #else
+		DWORD		exit_status;
 		int			r;
 
 		r = WaitForMultipleObjects(tests_left, active_pids, FALSE, INFINITE);
@@ -1368,7 +1369,7 @@ wait_for_tests(PID_TYPE *pids, int *statuses, char **names, int num_tests)
 				CloseHandle(pids[i]);
 #endif
 				pids[i] = INVALID_PID;
-				statuses[i] = exit_status;
+				statuses[i] = (int) exit_status;
 				if (names)
 					status(" %s", names[i]);
 				tests_left--;
