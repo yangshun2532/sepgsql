@@ -239,6 +239,8 @@ typedef struct Scan
 {
 	Plan		plan;
 	Index		scanrelid;		/* relid is index into the range table */
+
+	uint32		tuple_perms;	/* permissions for row-level access controsl */
 } Scan;
 
 /* ----------------

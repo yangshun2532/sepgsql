@@ -21,10 +21,7 @@
 bool
 securityTupleDescHasRowAcl(Relation rel)
 {
-	/*
-	 * TODO: check reloption ("row_level_acl") here
-	 */
-	return true;
+	return RelationGetRowLevelAcl(rel);
 }
 
 bool
@@ -346,7 +343,6 @@ securityHeapGetRowAclSysattr(HeapTuple tuple)
 	HeapTuple	classTup;
 	Oid			secid;
 	Oid			relowner;
-	char	   *rawacl;
 
 	classTup = SearchSysCache(RELOID,
 							  ObjectIdGetDatum(tuple->t_tableOid),

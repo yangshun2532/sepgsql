@@ -1972,5 +1972,8 @@ QueryRewrite(Query *parsetree)
 	if (!foundOriginalQuery && lastInstead != NULL)
 		lastInstead->canSetTag = true;
 
+	/* Row-level ACLs walks on extracted query tree */
+	rowaclPostQueryRewrite(results);
+
 	return results;
 }

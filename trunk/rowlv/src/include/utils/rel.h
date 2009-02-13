@@ -14,6 +14,7 @@
 #ifndef REL_H
 #define REL_H
 
+#include "access/reloptions.h"
 #include "access/tupdesc.h"
 #include "catalog/pg_am.h"
 #include "catalog/pg_class.h"
@@ -234,6 +235,8 @@ typedef struct StdRdOptions
 	int32		vl_len_;		/* varlena header (do not touch directly!) */
 	int			fillfactor;		/* page fill factor in percent (0..100) */
 	AutoVacOpts autovacuum;     /* autovacuum-related options */
+	bool		row_level_acl;	/* validator of Row-level ACLs */
+	int			default_row_acl;	/* dafault Row-level ACLs in text form */
 } StdRdOptions;
 
 #define HEAP_MIN_FILLFACTOR			10
@@ -260,6 +263,22 @@ typedef struct StdRdOptions
  */
 #define RelationGetTargetPageFreeSpace(relation, defaultff) \
 	(BLCKSZ * (100 - RelationGetFillFactor(relation, defaultff)) / 100)
+
+/*
+ * RelationGetRowLevelAcl
+ *        Returns the relations's avairability of Row-level ACLs.
+ */
+#define RelationGetRowLevelAcl(relation)								\
+	((relation)->rd_options ?											\
+	 ((StdRdOptions *) (relation)->rd_options)->row_level_acl : false)
+
+/*
+ * RelationGetDefaultAcl
+ *        Returns the relations's default Row-level ACLs in text
+ */
+#define RelationGetDefaultRowAcl(relation)								\
+	((relation)->rd_options ?                                           \
+	 GET_STRING_RELOPTION(((StdRdOptions *) (relation)->rd_options), default_row_acl) : NULL)
 
 /*
  * RelationIsValid

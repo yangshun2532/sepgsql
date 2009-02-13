@@ -33,6 +33,7 @@
 #include "access/xact.h"
 #include "catalog/pg_constraint.h"
 #include "catalog/pg_operator.h"
+#include "catalog/pg_security.h"
 #include "catalog/pg_type.h"
 #include "commands/trigger.h"
 #include "executor/spi.h"
@@ -3264,6 +3265,7 @@ ri_PerformCheck(RI_QueryKey *qkey, SPIPlanPtr qplan,
 	int			spi_result;
 	Oid			save_userid;
 	bool		save_secdefcxt;
+	bool		save_rowlv_stg;
 	Datum		vals[RI_MAX_NUMKEYS * 2];
 	char		nulls[RI_MAX_NUMKEYS * 2];
 
@@ -3346,11 +3348,32 @@ ri_PerformCheck(RI_QueryKey *qkey, SPIPlanPtr qplan,
 	GetUserIdAndContext(&save_userid, &save_secdefcxt);
 	SetUserIdAndContext(RelationGetForm(query_rel)->relowner, true);
 
-	/* Finally we can run the query. */
-	spi_result = SPI_execute_snapshot(qplan,
-									  vals, nulls,
-									  test_snapshot, crosscheck_snapshot,
-									  false, false, limit);
+	/*
+	 * Switch internal state of row-level security features
+	 *
+	 * NOTE: when a user tries to update/delete a PK which
+	 * is refered by invisible FKs, it need to be aborted
+	 * due to the referencial integrity.
+	 */
+	save_rowlv_stg = securitySetRowLevelStrategy(detectNewRows);
+
+	PG_TRY();
+	{
+		/* Finally we can run the query. */
+		spi_result = SPI_execute_snapshot(qplan,
+										  vals, nulls,
+										  test_snapshot, crosscheck_snapshot,
+										  false, false, limit);
+	}
+	PG_CATCH();
+	{
+		securitySetRowLevelStrategy(save_rowlv_stg);
+		PG_RE_THROW();
+	}
+	PG_END_TRY();
+
+	/* Restore internal state of row-level security features */
+	securitySetRowLevelStrategy(save_rowlv_stg);
 
 	/* Restore UID */
 	SetUserIdAndContext(save_userid, save_secdefcxt);

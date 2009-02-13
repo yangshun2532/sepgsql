@@ -1955,6 +1955,12 @@ ExecInsert(TupleTableSlot *slot,
 		ExecConstraints(resultRelInfo, slot, estate);
 
 	/*
+	 * Check row-level permission on the tuple
+	 */
+	if (!securityHeapTupleInsert(resultRelationDesc, tuple, false))
+		return;
+
+	/*
 	 * insert the tuple
 	 *
 	 * Note: heap_insert returns the tid (location) of the new tuple in the
@@ -2019,6 +2025,12 @@ ExecDelete(ItemPointer tupleid,
 		if (!dodelete)			/* "do nothing" */
 			return;
 	}
+
+	/*
+	 * Check row-level permission on the tuple
+	 */
+	if (!securityHeapTupleDelete(resultRelationDesc, tupleid, false))
+		return;
 
 	/*
 	 * delete the tuple
@@ -2200,6 +2212,12 @@ ExecUpdate(TupleTableSlot *slot,
 lreplace:;
 	if (resultRelationDesc->rd_att->constr)
 		ExecConstraints(resultRelInfo, slot, estate);
+
+	/*
+	 * Check row-level permission on the tuple
+	 */
+	if (!securityHeapTupleUpdate(resultRelationDesc, tupleid, tuple, false))
+		return;
 
 	/*
 	 * replace the heap tuple
@@ -3195,6 +3213,8 @@ intorel_receive(TupleTableSlot *slot, DestReceiver *self)
 		HeapTupleSetOid(tuple, InvalidOid);
 
 	storeWritableSystemAttribute(myState->rel, slot, tuple);
+	if (!securityHeapTupleInsert(myState->rel, tuple, false))
+		return;
 
 	heap_insert(myState->rel,
 				tuple,
