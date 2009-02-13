@@ -9,7 +9,9 @@
 #define PG_SECURITY_H
 
 #include "access/htup.h"
+#include "executor/tuptable.h"
 #include "nodes/parsenodes.h"
+#include "nodes/plannodes.h"
 #include "utils/acl.h"
 #include "utils/relcache.h"
 
@@ -80,5 +82,26 @@ securityHeapGetRowAclSysattr(HeapTuple tuple);
 
 extern Datum
 securityHeapGetSecLabelSysattr(HeapTuple tuple);
+
+/*
+ * Functions for common stuffs in row-level security features
+ */
+extern bool
+securityGetRowLevelStrategy(void);
+
+extern bool
+securitySetRowLevelStrategy(bool new_strategy);
+
+extern bool
+securityExecScan(Scan *scan, Relation relation, TupleTableSlot *slot);
+
+extern bool
+securityHeapTupleInsert(Relation rel, HeapTuple newtup, bool internal);
+
+extern bool
+securityHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple newtup, bool internal);
+
+extern bool
+securityHeapTupleDelete(Relation rel, ItemPointer otid, bool internal);
 
 #endif   /* PG_SELINUX_H */

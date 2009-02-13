@@ -2327,6 +2327,9 @@ CopyFrom(CopyState cstate)
 			}
 		}
 
+		if (!skip_tuple && !securityHeapTupleInsert(cstate->rel, tuple, false))
+			skip_tuple = true;
+
 		if (!skip_tuple)
 		{
 			/* Place tuple in tuple slot */

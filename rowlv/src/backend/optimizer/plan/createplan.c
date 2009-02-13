@@ -302,6 +302,11 @@ create_scan_plan(PlannerInfo *root, Path *best_path)
 	}
 
 	/*
+	 * Copies row-level permissions
+	 */
+	((Scan *)plan)->tuple_perms = rel->tuple_perms;
+
+	/*
 	 * If there are any pseudoconstant clauses attached to this node, insert a
 	 * gating Result node that evaluates the pseudoconstants as one-time
 	 * quals.

@@ -18,6 +18,7 @@
  */
 #include "postgres.h"
 
+#include "catalog/pg_security.h"
 #include "executor/executor.h"
 #include "miscadmin.h"
 #include "utils/memutils.h"
@@ -53,6 +54,7 @@ ExecScan(ScanState *node,
 	ProjectionInfo *projInfo;
 	ExprDoneCond isDone;
 	TupleTableSlot *resultSlot;
+	Scan	   *scan = (Scan *)node->ps.plan;
 
 	/*
 	 * Fetch data from node
@@ -64,7 +66,7 @@ ExecScan(ScanState *node,
 	 * If we have neither a qual to check nor a projection to do, just skip
 	 * all the overhead and return the raw scan tuple.
 	 */
-	if (!qual && !projInfo)
+	if (!qual && !projInfo && !scan->tuple_perms)
 		return (*accessMtd) (node);
 
 	/*
@@ -128,7 +130,8 @@ ExecScan(ScanState *node,
 		 * when the qual is nil ... saves only a few cycles, but they add up
 		 * ...
 		 */
-		if (!qual || ExecQual(qual, econtext, false))
+		if ((!qual || ExecQual(qual, econtext, false)) &&
+			securityExecScan(scan, node->ss_currentRelation, slot))
 		{
 			/*
 			 * Found a satisfactory scan tuple.

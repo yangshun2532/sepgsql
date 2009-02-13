@@ -728,6 +728,17 @@ typedef struct RangeTblEntry
 	Oid			checkAsUser;	/* if valid, check access as this role */
 	Bitmapset  *selectedCols;	/* columns needing SELECT permission */
 	Bitmapset  *modifiedCols;	/* columns needing INSERT/UPDATE permission */
+
+	/*
+	 * The tuple_perms is a bitmask of required permissions in row-level
+	 * access controls (both DAC and MAC). It is initialized as zero, but
+	 * enhanced security features set its required bit on the variable.
+	 * This bitmask is finally copied to Scan->tuple_perms and used to
+	 * filter out violated tuples on ExecScan().
+	 * Please note that the tuple_perms with non-zero value may prevent
+	 * optimization because it is similar to conditional table scans.
+	 */
+	uint32		tuple_perms;
 } RangeTblEntry;
 
 /*
