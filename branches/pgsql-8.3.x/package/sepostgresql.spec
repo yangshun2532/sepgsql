@@ -158,8 +158,9 @@ exit 0
 %if !%{fedora9}
 for store in %{selinux_policy_stores}
 do
+    # clean up legacy policy module (now it is unnecessary)
     %{_sbindir}/semodule -s ${store} -r sepostgresql >& /dev/null || :
-    if %{_sbindir}/semodule -s ${store} -l | grep -Eq "^sepostgresql-devel"; then
+    if %{_sbindir}/semodule -s ${store} -l 2>/dev/null | grep -Eq "^sepostgresql-devel"; then
         %{_sbindir}/semodule -s ${store}    \
             -i %{_datadir}/selinux/${store}/sepostgresql-devel.pp >& /dev/null || :
     fi
