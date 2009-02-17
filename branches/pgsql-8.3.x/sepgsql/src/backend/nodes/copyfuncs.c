@@ -3013,7 +3013,6 @@ static SelinuxEvalItem *
 _copySelinuxEvalItem(SelinuxEvalItem *from)
 {
 	SelinuxEvalItem *newnode = makeNode(SelinuxEvalItem);
-	int n;
 
 	COPY_SCALAR_FIELD(relid);
 	COPY_SCALAR_FIELD(inh);
