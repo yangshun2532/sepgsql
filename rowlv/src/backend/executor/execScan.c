@@ -130,8 +130,8 @@ ExecScan(ScanState *node,
 		 * when the qual is nil ... saves only a few cycles, but they add up
 		 * ...
 		 */
-		if ((!qual || ExecQual(qual, econtext, false)) &&
-			securityExecScan(scan, node->ss_currentRelation, slot))
+		if (securityExecScan(scan, node->ss_currentRelation, slot)
+			&& (!qual || ExecQual(qual, econtext, false)))
 		{
 			/*
 			 * Found a satisfactory scan tuple.
