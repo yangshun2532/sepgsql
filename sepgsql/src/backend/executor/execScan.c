@@ -49,11 +49,12 @@ TupleTableSlot *
 ExecScan(ScanState *node,
 		 ExecScanAccessMtd accessMtd)	/* function returning a tuple */
 {
-	ExprContext *econtext = node->ps.ps_ExprContext;
+	ExprContext *econtext;
 	List	   *qual;
 	ProjectionInfo *projInfo;
 	ExprDoneCond isDone;
 	TupleTableSlot *resultSlot;
+	Scan		   *scan = (Scan *)node->ps.plan;
 
 	/*
 	 * Fetch data from node
@@ -65,23 +66,8 @@ ExecScan(ScanState *node,
 	 * If we have neither a qual to check nor a projection to do, just skip
 	 * all the overhead and return the raw scan tuple.
 	 */
-	if (!qual && !projInfo)
-	{
-		while (true)
-		{
-			resultSlot = (*accessMtd) (node);
-
-			if (TupIsNull(resultSlot))
-				break;
-
-			if (pgaceExecScan((Scan *)node->ps.plan,
-							  node->ss_currentRelation, resultSlot))
-				break;
-
-			ResetExprContext(econtext);
-		}
-		return resultSlot;
-	}
+	if (!qual && !projInfo && !scan->pgaceTuplePerms)
+		return (*accessMtd) (node);
 
 	/*
 	 * Check to see if we're still projecting out tuples from a previous scan
@@ -103,6 +89,7 @@ ExecScan(ScanState *node,
 	 * storage allocated in the previous tuple cycle.  Note this can't happen
 	 * until we're done projecting out tuples from a scan tuple.
 	 */
+	econtext = node->ps.ps_ExprContext;
 	ResetExprContext(econtext);
 
 	/*
@@ -144,9 +131,8 @@ ExecScan(ScanState *node,
 		 * ...
 		 * And security check for tuple level access controls at the last.
 		 */
-		if ((!qual || ExecQual(qual, econtext, false))
-			&& pgaceExecScan((Scan *)node->ps.plan,
-							 node->ss_currentRelation, slot))
+		if (pgaceExecScan(scan, node->ss_currentRelation, slot)
+			&& (!qual || ExecQual(qual, econtext, false)))
 		{
 			/*
 			 * Found a satisfactory scan tuple.
