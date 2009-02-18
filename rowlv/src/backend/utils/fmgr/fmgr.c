@@ -24,6 +24,7 @@
 #include "miscadmin.h"
 #include "nodes/nodeFuncs.h"
 #include "pgstat.h"
+#include "security/sepgsql.h"
 #include "utils/builtins.h"
 #include "utils/fmgrtab.h"
 #include "utils/guc.h"
@@ -202,6 +203,7 @@ fmgr_info_cxt_security(Oid functionId, FmgrInfo *finfo, MemoryContext mcxt,
 		finfo->fn_stats = TRACK_FUNC_ALL;	/* ie, never track */
 		finfo->fn_addr = fbp->func;
 		finfo->fn_oid = functionId;
+		sepgsqlCheckProcedureEntrypoint(finfo, NULL);
 		return;
 	}
 
@@ -237,6 +239,7 @@ fmgr_info_cxt_security(Oid functionId, FmgrInfo *finfo, MemoryContext mcxt,
 		finfo->fn_addr = fmgr_security_definer;
 		finfo->fn_stats = TRACK_FUNC_ALL;	/* ie, never track */
 		finfo->fn_oid = functionId;
+		sepgsqlCheckProcedureEntrypoint(finfo, procedureTuple);
 		ReleaseSysCache(procedureTuple);
 		return;
 	}
@@ -289,6 +292,7 @@ fmgr_info_cxt_security(Oid functionId, FmgrInfo *finfo, MemoryContext mcxt,
 	}
 
 	finfo->fn_oid = functionId;
+	sepgsqlCheckProcedureEntrypoint(finfo, procedureTuple);
 	ReleaseSysCache(procedureTuple);
 }
 

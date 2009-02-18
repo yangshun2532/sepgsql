@@ -151,7 +151,8 @@ CreateProceduralLanguage(CreatePLangStmt *stmt)
 										 NIL,
 										 PointerGetDatum(NULL),
 										 1,
-										 0);
+										 0,
+										 PointerGetDatum(NULL));
 		}
 
 		/*
@@ -186,7 +187,8 @@ CreateProceduralLanguage(CreatePLangStmt *stmt)
 										 NIL,
 										 PointerGetDatum(NULL),
 										 1,
-										 0);
+										 0,
+										 PointerGetDatum(NULL));
 			}
 		}
 		else

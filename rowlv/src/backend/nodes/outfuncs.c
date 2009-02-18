@@ -255,6 +255,7 @@ _outPlannedStmt(StringInfo str, PlannedStmt *node)
 	WRITE_NODE_FIELD(relationOids);
 	WRITE_NODE_FIELD(invalItems);
 	WRITE_INT_FIELD(nParamExec);
+	WRITE_NODE_FIELD(selinuxItems);
 }
 
 /*
@@ -1721,6 +1722,7 @@ _outCreateStmt(StringInfo str, CreateStmt *node)
 	WRITE_NODE_FIELD(options);
 	WRITE_ENUM_FIELD(oncommit, OnCommitAction);
 	WRITE_STRING_FIELD(tablespacename);
+	WRITE_NODE_FIELD(secLabel);
 }
 
 static void
@@ -1851,6 +1853,7 @@ _outColumnDef(StringInfo str, ColumnDef *node)
 	WRITE_NODE_FIELD(raw_default);
 	WRITE_STRING_FIELD(cooked_default);
 	WRITE_NODE_FIELD(constraints);
+	WRITE_NODE_FIELD(secLabel);
 }
 
 static void
@@ -1945,6 +1948,7 @@ _outQuery(StringInfo str, Query *node)
 	WRITE_NODE_FIELD(limitCount);
 	WRITE_NODE_FIELD(rowMarks);
 	WRITE_NODE_FIELD(setOperations);
+	WRITE_NODE_FIELD(selinuxItems);
 }
 
 static void
@@ -2346,6 +2350,27 @@ _outFkConstraint(StringInfo str, FkConstraint *node)
 	WRITE_BOOL_FIELD(skip_validation);
 }
 
+/*
+ * SE-PostgreSQL related stuff
+ */
+static void
+_outSelinuxEvalItem(StringInfo str, SelinuxEvalItem *node)
+{
+	int i;
+
+	WRITE_NODE_TYPE("SELINUXEVALITEM");
+
+	WRITE_OID_FIELD(relid);
+	WRITE_BOOL_FIELD(inh);
+
+	WRITE_UINT_FIELD(relperms);
+	WRITE_UINT_FIELD(nattrs);
+
+	appendStringInfo(str, " :attperms [");
+	for (i = 0; i < node->nattrs; i++)
+		appendStringInfo(str, " %u", node->attperms[i]);
+	appendStringInfo(str, " ]");
+}
 
 /*
  * _outNode -
@@ -2792,6 +2817,9 @@ _outNode(StringInfo str, void *obj)
 				break;
 			case T_XmlSerialize:
 				_outXmlSerialize(str, obj);
+				break;
+			case T_SelinuxEvalItem:
+				_outSelinuxEvalItem(str, obj);
 				break;
 
 			default:

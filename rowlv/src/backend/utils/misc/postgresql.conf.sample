@@ -48,7 +48,7 @@
 
 
 #------------------------------------------------------------------------------
-# CONNECTIONS AND AUTHENTICATION
+# CONNECTIONS, AUTHENTICATION AND SECURITY
 #------------------------------------------------------------------------------
 
 # - Connection Settings -
@@ -93,6 +93,7 @@
 #tcp_keepalives_count = 0		# TCP_KEEPCNT;
 					# 0 selects the system default
 
+#sepostgresql = off			# SE-PostgreSQL support
 
 #------------------------------------------------------------------------------
 # RESOURCE USAGE (except WAL)

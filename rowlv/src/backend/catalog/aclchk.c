@@ -43,6 +43,7 @@
 #include "foreign/foreign.h"
 #include "miscadmin.h"
 #include "parser/parse_func.h"
+#include "security/sepgsql.h"
 #include "utils/acl.h"
 #include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
@@ -2469,6 +2470,11 @@ pg_database_aclmask(Oid db_oid, Oid roleid,
 	Acl		   *acl;
 	Oid			ownerId;
 
+	/* SELinux: db_database:{access} */
+	if ((mask & ACL_CONNECT) != 0 &&
+		!sepgsqlCheckDatabaseAccess(db_oid))
+		return 0;	/* access denied */
+
 	/* Superusers bypass all permission checking. */
 	if (superuser_arg(roleid))
 		return mask;
@@ -2524,6 +2530,11 @@ pg_proc_aclmask(Oid proc_oid, Oid roleid,
 	bool		isNull;
 	Acl		   *acl;
 	Oid			ownerId;
+
+	/* SELinux: db_procedure:{execute} */
+	if ((mask & ACL_EXECUTE) != 0 &&
+		!sepgsqlCheckProcedureExecute(proc_oid))
+		return 0;	/* execution denied */
 
 	/* Superusers bypass all permission checking. */
 	if (superuser_arg(roleid))

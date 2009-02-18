@@ -51,6 +51,7 @@
 #include "optimizer/clauses.h"
 #include "parser/parse_clause.h"
 #include "parser/parsetree.h"
+#include "security/sepgsql.h"
 #include "storage/bufmgr.h"
 #include "storage/lmgr.h"
 #include "storage/smgr.h"
@@ -158,6 +159,8 @@ standard_ExecutorStart(QueryDesc *queryDesc, int eflags)
 	/* sanity checks: queryDesc must not be started already */
 	Assert(queryDesc != NULL);
 	Assert(queryDesc->estate == NULL);
+
+	sepgsqlExecutorStart(queryDesc, eflags);
 
 	/*
 	 * If the transaction is read-only, we need to check if any writes are
@@ -3087,7 +3090,8 @@ OpenIntoRel(QueryDesc *queryDesc)
 											  0,
 											  into->onCommit,
 											  reloptions,
-											  allowSystemTableMods);
+											  allowSystemTableMods,
+											  NIL);
 
 	FreeTupleDesc(tupdesc);
 
