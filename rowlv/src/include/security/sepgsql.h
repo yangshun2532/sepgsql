@@ -147,13 +147,16 @@ sepgsqlCheckTableTruncate(Relation rel);
 
 // HeapTuple INSERT/UPDATE/DELETE
 extern bool
-sepgsqlHeapTupleInsert(Relation rel, HeapTuple tuple, bool internal);
+sepgsqlExecScan(Relation rel, HeapTuple tuple, AclMode required, bool abort);
 
 extern bool
-sepgsqlHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple tuple, bool internal);
+sepgsqlHeapTupleInsert(Relation rel, HeapTuple newtup, bool internal);
 
 extern bool
-sepgsqlHeapTupleDelete(Relation rel, ItemPointer otid, bool internal);
+sepgsqlHeapTupleUpdate(Relation rel, HeapTuple newtup, HeapTuple oldtup, bool internal);
+
+extern bool
+sepgsqlHeapTupleDelete(Relation rel, HeapTuple oldtup, bool internal);
 
 // COPY TO/FROM statement
 extern void
@@ -185,14 +188,14 @@ sepgsqlCheckValidSecurityLabel(security_context_t label);
 /*
  * perms.c : SE-PostgreSQL permission checks
  */
-#define SEPGSQL_PERMS_USE			(1UL<<0)
-#define SEPGSQL_PERMS_SELECT		(1UL<<1)
-#define SEPGSQL_PERMS_INSERT		(1UL<<2)
-#define SEPGSQL_PERMS_UPDATE		(1UL<<3)
-#define SEPGSQL_PERMS_DELETE		(1UL<<4)
-#define SEPGSQL_PERMS_RELABELFROM	(1UL<<5)
-#define SEPGSQL_PERMS_RELABELTO		(1UL<<6)
-#define SEPGSQL_PERMS_MASK			(0x0000007f)
+#define SEPGSQL_PERMS_USE			(1UL<<(N_ACL_RIGHTS+0))
+#define SEPGSQL_PERMS_SELECT		(1UL<<(N_ACL_RIGHTS+1))
+#define SEPGSQL_PERMS_INSERT		(1UL<<(N_ACL_RIGHTS+2))
+#define SEPGSQL_PERMS_UPDATE		(1UL<<(N_ACL_RIGHTS+3))
+#define SEPGSQL_PERMS_DELETE		(1UL<<(N_ACL_RIGHTS+4))
+#define SEPGSQL_PERMS_RELABELFROM	(1UL<<(N_ACL_RIGHTS+5))
+#define SEPGSQL_PERMS_RELABELTO		(1UL<<(N_ACL_RIGHTS+6))
+#define SEPGSQL_PERMS_MASK			(~ACL_ALL_RIGHTS)
 
 extern const char *
 sepgsqlAuditName(Oid relid, HeapTuple tuple);

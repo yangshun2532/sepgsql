@@ -18,9 +18,9 @@
  */
 #include "postgres.h"
 
-#include "catalog/pg_security.h"
 #include "executor/executor.h"
 #include "miscadmin.h"
+#include "security/rowlevel.h"
 #include "utils/memutils.h"
 
 
@@ -66,7 +66,7 @@ ExecScan(ScanState *node,
 	 * If we have neither a qual to check nor a projection to do, just skip
 	 * all the overhead and return the raw scan tuple.
 	 */
-	if (!qual && !projInfo && !scan->tuple_perms)
+	if (!qual && !projInfo && !scan->tuplePerms)
 		return (*accessMtd) (node);
 
 	/*
@@ -130,9 +130,16 @@ ExecScan(ScanState *node,
 		 * when the qual is nil ... saves only a few cycles, but they add up
 		 * ...
 		 */
-		if (securityExecScan(scan, node->ss_currentRelation, slot)
+		if (rowlvExecScan(scan, node->ss_currentRelation, slot, false)
 			&& (!qual || ExecQual(qual, econtext, false)))
 		{
+			/*
+			 * NOTE: The purpose of rowlvExecScan() with abort = true is
+			 * to ensure FK check works correctly. See also the comments
+			 * at src/backend/security/rowlevel.c
+			 */
+			rowlvExecScan(scan, node->ss_currentRelation, slot, true);
+
 			/*
 			 * Found a satisfactory scan tuple.
 			 */

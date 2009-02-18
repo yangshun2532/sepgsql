@@ -52,10 +52,9 @@
 #include "access/xlogutils.h"
 #include "catalog/catalog.h"
 #include "catalog/namespace.h"
-#include "catalog/pg_security.h"
 #include "miscadmin.h"
 #include "pgstat.h"
-#include "security/sepgsql.h"
+#include "security/rowlevel.h"
 #include "storage/bufmgr.h"
 #include "storage/freespace.h"
 #include "storage/lmgr.h"
@@ -2058,7 +2057,7 @@ heap_insert(Relation relation, HeapTuple tup, CommandId cid,
 Oid
 simple_heap_insert(Relation relation, HeapTuple tup)
 {
-	securityHeapTupleInsert(relation, tup, true);
+	rowlvHeapTupleInsert(relation, tup, true);
 
 	return heap_insert(relation, tup, GetCurrentCommandId(true), 0, NULL);
 }
@@ -2353,7 +2352,7 @@ simple_heap_delete(Relation relation, ItemPointer tid)
 	ItemPointerData update_ctid;
 	TransactionId update_xmax;
 
-	securityHeapTupleDelete(relation, tid, true);
+	rowlvHeapTupleDelete(relation, tid, true);
 
 	result = heap_delete(relation, tid,
 						 &update_ctid, &update_xmax,
@@ -3024,7 +3023,7 @@ simple_heap_update(Relation relation, ItemPointer otid, HeapTuple tup)
 	ItemPointerData update_ctid;
 	TransactionId update_xmax;
 
-	securityHeapTupleUpdate(relation, otid, tup, true);
+	rowlvHeapTupleUpdate(relation, otid, tup, true);
 
 	result = heap_update(relation, otid, tup,
 						 &update_ctid, &update_xmax,

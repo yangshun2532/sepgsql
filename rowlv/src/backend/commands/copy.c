@@ -37,6 +37,7 @@
 #include "optimizer/planner.h"
 #include "parser/parse_relation.h"
 #include "rewrite/rewriteHandler.h"
+#include "security/rowlevel.h"
 #include "security/sepgsql.h"
 #include "storage/fd.h"
 #include "tcop/tcopprot.h"
@@ -2336,7 +2337,7 @@ CopyFrom(CopyState cstate)
 			}
 		}
 
-		if (!skip_tuple && !securityHeapTupleInsert(cstate->rel, tuple, false))
+		if (!skip_tuple && !rowlvHeapTupleInsert(cstate->rel, tuple, false))
 			skip_tuple = true;
 
 		if (!skip_tuple)

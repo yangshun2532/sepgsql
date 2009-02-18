@@ -384,14 +384,14 @@ typedef struct RelOptInfo
 	 * similar outer relations.  See comments for InnerIndexscanInfo.
 	 */
 
-	uint32		tuple_perms;
 	/*
-	 * Row-level access controls (both DAC and MAC) requires tuple_perms
+	 * Row-level access controls (both DAC and MAC) requires tuplePerms
 	 * holds proper required permissions for each fetched tuples. It is
 	 * similar to conditional scan on relations so, optimizar have to
-	 * check whether tuple_perms is zero, or not. The tuple_perms == 0
+	 * check whether tuplePerms is zero, or not. The tuplePerms with zero
 	 * means we have no row-level security in this relation.
 	 */
+	AclMode		tuplePerms;
 } RelOptInfo;
 
 /*

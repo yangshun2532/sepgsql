@@ -16,6 +16,7 @@
 
 #include "access/sdir.h"
 #include "nodes/bitmapset.h"
+#include "nodes/parsenodes.h"
 #include "nodes/primnodes.h"
 #include "storage/itemptr.h"
 
@@ -242,7 +243,7 @@ typedef struct Scan
 	Plan		plan;
 	Index		scanrelid;		/* relid is index into the range table */
 
-	uint32		tuple_perms;	/* permissions for row-level access controsl */
+	AclMode		tuplePerms;		/* permissions in row-level access controls */
 } Scan;
 
 /* ----------------
