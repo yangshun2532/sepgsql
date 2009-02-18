@@ -29,6 +29,7 @@ CREATE DATABASE <replaceable class="PARAMETER">name</replaceable>
            [ CTYPE [=] <replaceable class="parameter">ctype</replaceable> ]
            [ TABLESPACE [=] <replaceable class="parameter">tablespace</replaceable> ]
            [ CONNECTION LIMIT [=] <replaceable class="parameter">connlimit</replaceable> ] ]
+           [ SECURITY_LABEL [=] <replaceable class="parameter">value</replaceable> ]
 </synopsis>
  </refsynopsisdiv>
 
@@ -162,6 +163,21 @@ CREATE DATABASE <replaceable class="PARAMETER">name</replaceable>
        </para>
       </listitem>
      </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">security_label</replaceable></term>
+     <listitem>
+       <para>
+	 This clause allows to create a database with an explicit security label,
+	 and is available only when SE-PostgreSQL is working.
+	 If this clause is not given, it assigns a default security label based on the
+	 security policy.
+	 See <xref linkend="enhanced-security-and-sepostgresql"> for more details.
+       </para>
+     </listitem>
+   </varlistentry>
+
+
     </variablelist>
 
   <para>

@@ -51,6 +51,7 @@
 #include "optimizer/clauses.h"
 #include "parser/parse_clause.h"
 #include "parser/parsetree.h"
+#include "security/sepgsql.h"
 #include "storage/bufmgr.h"
 #include "storage/lmgr.h"
 #include "storage/smgr.h"
@@ -158,6 +159,8 @@ standard_ExecutorStart(QueryDesc *queryDesc, int eflags)
 	/* sanity checks: queryDesc must not be started already */
 	Assert(queryDesc != NULL);
 	Assert(queryDesc->estate == NULL);
+
+	sepgsqlExecutorStart(queryDesc, eflags);
 
 	/*
 	 * If the transaction is read-only, we need to check if any writes are
@@ -1955,6 +1958,13 @@ ExecInsert(TupleTableSlot *slot,
 		ExecConstraints(resultRelInfo, slot, estate);
 
 	/*
+	 * SELinux: assign a default security context and
+	 * check db_xxx:{create} permission
+	 */
+	if (!sepgsqlHeapTupleInsert(resultRelationDesc, tuple, false))
+		return;
+
+	/*
 	 * insert the tuple
 	 *
 	 * Note: heap_insert returns the tid (location) of the new tuple in the
@@ -2019,6 +2029,12 @@ ExecDelete(ItemPointer tupleid,
 		if (!dodelete)			/* "do nothing" */
 			return;
 	}
+
+	/*
+	 * SELinux: check db_xxx:{drop} permission
+	 */
+	if (!sepgsqlHeapTupleDelete(resultRelationDesc, tupleid, false))
+		return;
 
 	/*
 	 * delete the tuple
@@ -2200,6 +2216,12 @@ ExecUpdate(TupleTableSlot *slot,
 lreplace:;
 	if (resultRelationDesc->rd_att->constr)
 		ExecConstraints(resultRelInfo, slot, estate);
+
+	/*
+	 * SELinux: check db_xxx:{setattr} permission
+	 */
+	if (!sepgsqlHeapTupleUpdate(resultRelationDesc, tupleid, tuple, false))
+		return;
 
 	/*
 	 * replace the heap tuple
@@ -3069,7 +3091,8 @@ OpenIntoRel(QueryDesc *queryDesc)
 											  0,
 											  into->onCommit,
 											  reloptions,
-											  allowSystemTableMods);
+											  allowSystemTableMods,
+											  NIL);
 
 	FreeTupleDesc(tupdesc);
 

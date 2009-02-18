@@ -1027,7 +1027,6 @@ InitCatCachePhase2(CatCache *cache, bool touch_index)
 	}
 }
 
-
 /*
  *		IndexScanOK
  *

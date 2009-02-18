@@ -346,6 +346,11 @@
 #define ERRCODE_NO_DATA_FOUND				MAKE_SQLSTATE('P','0', '0','0','2')
 #define ERRCODE_TOO_MANY_ROWS				MAKE_SQLSTATE('P','0', '0','0','3')
 
+/* Class SE - SE-PostgreSQL Error */
+#define ERRCODE_SELINUX_ERROR				MAKE_SQLSTATE('S','E', '0','0','1')
+#define ERRCODE_SELINUX_AUDIT				MAKE_SQLSTATE('S','E', '0','0','2')
+#define ERRCODE_SELINUX_INFO				MAKE_SQLSTATE('S','E', '0','0','3')
+
 /* Class XX - Internal Error (PostgreSQL-specific error class) */
 /* (this is for "can't-happen" conditions and software bugs) */
 #define ERRCODE_INTERNAL_ERROR				MAKE_SQLSTATE('X','X', '0','0','0')

@@ -63,6 +63,7 @@
 #include "parser/parser.h"
 #include "rewrite/rewriteDefine.h"
 #include "rewrite/rewriteHandler.h"
+#include "security/sepgsql.h"
 #include "storage/bufmgr.h"
 #include "storage/lmgr.h"
 #include "storage/smgr.h"
@@ -324,6 +325,7 @@ static void ATExecEnableDisableRule(Relation rel, char *rulename,
 						char fires_when);
 static void ATExecAddInherit(Relation rel, RangeVar *parent);
 static void ATExecDropInherit(Relation rel, RangeVar *parent);
+static void ATExecSetSecurityLabel(Relation rel, const char *name, DefElem *defel);
 static void copy_relation_data(SMgrRelation rel, SMgrRelation dst,
 							   ForkNumber forkNum, bool istemp);
 
@@ -351,6 +353,7 @@ DefineRelation(CreateStmt *stmt, char relkind)
 	int			parentOidCount;
 	List	   *rawDefaults;
 	List	   *cookedDefaults;
+	List	   *selblList;
 	Datum		reloptions;
 	ListCell   *listptr;
 	AttrNumber	attnum;
@@ -496,6 +499,11 @@ DefineRelation(CreateStmt *stmt, char relkind)
 	}
 
 	/*
+	 * SELinux: fetch SECURITY_LABEL = '...' from CREATE TABLE statement
+	 */
+	selblList = sepgsqlInputGivenSecLabelRelation(stmt);
+
+	/*
 	 * Create the relation.  Inherited defaults and constraints are passed
 	 * in for immediate handling --- since they don't need parsing, they
 	 * can be stored immediately.
@@ -514,7 +522,8 @@ DefineRelation(CreateStmt *stmt, char relkind)
 										  parentOidCount,
 										  stmt->oncommit,
 										  reloptions,
-										  allowSystemTableMods);
+										  allowSystemTableMods,
+										  selblList);
 
 	StoreCatalogInheritance(relationId, inheritOids);
 
@@ -1032,7 +1041,8 @@ truncate_check_rel(Relation rel)
 	/* Permissions checks */
 	aclresult = pg_class_aclcheck(RelationGetRelid(rel), GetUserId(),
 								  ACL_TRUNCATE);
-	if (aclresult != ACLCHECK_OK)
+	if (aclresult != ACLCHECK_OK ||
+		!sepgsqlCheckTableTruncate(rel));
 		aclcheck_error(aclresult, ACL_KIND_CLASS,
 					   RelationGetRelationName(rel));
 
@@ -2503,6 +2513,7 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 		case AT_DisableRule:
 		case AT_AddInherit:		/* INHERIT / NO INHERIT */
 		case AT_DropInherit:
+		case AT_SetSecurityLabel:
 			ATSimplePermissions(rel, false);
 			/* These commands never recurse */
 			/* No command-specific prep needed */
@@ -2736,6 +2747,9 @@ ATExecCmd(List **wqueue, AlteredTableInfo *tab, Relation rel,
 			break;
 		case AT_DropInherit:
 			ATExecDropInherit(rel, (RangeVar *) cmd->def);
+			break;
+		case AT_SetSecurityLabel:
+			ATExecSetSecurityLabel(rel, cmd->name, (DefElem *) cmd->def);
 			break;
 		default:				/* oops */
 			elog(ERROR, "unrecognized alter table type: %d",
@@ -3627,6 +3641,7 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 	attribute.attndims = list_length(colDef->typename->arrayBounds);
 	attribute.attstorage = tform->typstorage;
 	attribute.attalign = tform->typalign;
+	attribute.attkind = relkind;
 	attribute.attnotnull = colDef->is_not_null;
 	attribute.atthasdef = false;
 	attribute.attisdropped = false;
@@ -3636,7 +3651,7 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 
 	ReleaseSysCache(typeTuple);
 
-	InsertPgAttributeTuple(attrdesc, &attribute, NULL);
+	InsertPgAttributeTuple(attrdesc, &attribute, NULL, PointerGetDatum(NULL));
 
 	heap_close(attrdesc, RowExclusiveLock);
 
@@ -7464,6 +7479,60 @@ ATExecDropInherit(Relation rel, RangeVar *parent)
 	heap_close(parent_rel, NoLock);
 }
 
+void
+ATExecSetSecurityLabel(Relation rel, const char *attr_name, DefElem *defel)
+{
+	Relation	class_rel;
+	Relation	attr_rel;
+	HeapTuple	tuple;
+
+	if (!sepgsqlIsEnabled())
+		ereport(ERROR,
+				(errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("SELinux: disabled now")));
+
+	Assert(IsA(defel, DefElem));
+
+	if (!attr_name)
+	{
+		class_rel = heap_open(RelationRelationId, RowExclusiveLock);
+
+		tuple = SearchSysCacheCopy(RELOID,
+								   ObjectIdGetDatum(RelationGetRelid(rel)),
+								   0, 0, 0);
+		if (!HeapTupleIsValid(tuple))
+			elog(ERROR, "SELinux: cache lookup failed for relation: \"%s\"",
+				 RelationGetRelationName(rel));
+
+		HeapTupleSetSecLabel(tuple, sepgsqlInputGivenSecLabel(defel));
+
+		simple_heap_update(class_rel, &tuple->t_self, tuple);
+
+		CatalogUpdateIndexes(class_rel, tuple);
+
+		heap_freetuple(tuple);
+		heap_close(class_rel, RowExclusiveLock);
+	}
+	else
+	{
+		attr_rel = heap_open(AttributeRelationId, RowExclusiveLock);
+
+		tuple = SearchSysCacheCopyAttName(RelationGetRelid(rel),
+										  attr_name);
+		if (!HeapTupleIsValid(tuple))
+			elog(ERROR, "SELinux: cache lookup failed for column \"%s.%s\"",
+				 RelationGetRelationName(rel), attr_name);
+
+		HeapTupleSetSecLabel(tuple, sepgsqlInputGivenSecLabel(defel));
+
+		simple_heap_update(attr_rel, &tuple->t_self, tuple);
+
+		CatalogUpdateIndexes(attr_rel, tuple);
+
+		heap_freetuple(tuple);
+		heap_close(attr_rel, RowExclusiveLock);
+	}
+}
 
 /*
  * Execute ALTER TABLE SET SCHEMA

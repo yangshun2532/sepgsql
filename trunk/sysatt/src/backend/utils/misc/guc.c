@@ -56,6 +56,7 @@
 #include "postmaster/syslogger.h"
 #include "postmaster/walwriter.h"
 #include "regex/regex.h"
+#include "security/sepgsql.h"
 #include "storage/bufmgr.h"
 #include "storage/fd.h"
 #include "tcop/tcopprot.h"
@@ -1220,6 +1221,16 @@ static struct config_bool ConfigureNamesBool[] =
 		&IgnoreSystemIndexes,
 		false, NULL, NULL
 	},
+#ifdef HAVE_SELINUX
+	{
+		{"sepostgresql", PGC_POSTMASTER, CONN_AUTH_SECURITY,
+		 gettext_noop("SE-PostgreSQL activation option to be turned on/off"),
+		 NULL,
+		},
+		&sepostgresql_is_enabled,
+		false, NULL, NULL
+	},
+#endif
 
 	/* End-of-list marker */
 	{
@@ -3551,6 +3562,8 @@ ResetAllOptions(void)
 {
 	int			i;
 
+	sepgsqlCheckDatabaseSetParam("all");
+
 	for (i = 0; i < num_guc_variables; i++)
 	{
 		struct config_generic *gconf = guc_variables[i];
@@ -5476,6 +5489,7 @@ ExecSetVariableStmt(VariableSetStmt *stmt)
 	{
 		case VAR_SET_VALUE:
 		case VAR_SET_CURRENT:
+			sepgsqlCheckDatabaseSetParam(stmt->name);
 			set_config_option(stmt->name,
 							  ExtractSetVariableArgs(stmt),
 							  (superuser() ? PGC_SUSET : PGC_USERSET),
@@ -5533,6 +5547,7 @@ ExecSetVariableStmt(VariableSetStmt *stmt)
 			break;
 		case VAR_SET_DEFAULT:
 		case VAR_RESET:
+			sepgsqlCheckDatabaseSetParam(stmt->name);
 			set_config_option(stmt->name,
 							  NULL,
 							  (superuser() ? PGC_SUSET : PGC_USERSET),
@@ -5956,6 +5971,9 @@ EmitWarningsOnPlaceholders(const char *className)
 void
 GetPGVariable(const char *name, DestReceiver *dest)
 {
+	/* Check get param permissions */
+	sepgsqlCheckDatabaseGetParam(name);
+
 	if (guc_name_compare(name, "all") == 0)
 		ShowAllGUCConfig(dest);
 	else

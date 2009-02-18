@@ -20,6 +20,7 @@
 #include "miscadmin.h"
 #include "optimizer/prep.h"
 #include "parser/parse_clause.h"
+#include "security/sepgsql.h"
 #include "utils/acl.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
@@ -67,7 +68,8 @@ LockTableCommand(LockStmt *lockstmt)
 				aclresult = pg_class_aclcheck(childreloid, GetUserId(),
 											  ACL_UPDATE | ACL_DELETE | ACL_TRUNCATE);
 
-			if (aclresult != ACLCHECK_OK)
+			if (aclresult != ACLCHECK_OK ||
+				!sepgsqlCheckTableLock(childreloid))
 				aclcheck_error(aclresult, ACL_KIND_CLASS,
 							   get_rel_name(childreloid));
 

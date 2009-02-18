@@ -53,6 +53,7 @@
 #include "parser/parse_expr.h"
 #include "parser/parse_func.h"
 #include "parser/parse_type.h"
+#include "security/sepgsql.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
@@ -399,7 +400,8 @@ compute_common_attribute(DefElem *defel,
 						 DefElem **security_item,
 						 List **set_items,
 						 DefElem **cost_item,
-						 DefElem **rows_item)
+						 DefElem **rows_item,
+						 DefElem **selabel_item)
 {
 	if (strcmp(defel->defname, "volatility") == 0)
 	{
@@ -439,6 +441,13 @@ compute_common_attribute(DefElem *defel,
 			goto duplicate_error;
 
 		*rows_item = defel;
+	}
+	else if (strcmp(defel->defname, "security_label") == 0)
+	{
+		if (*selabel_item)
+			goto duplicate_error;
+
+		*selabel_item = defel;
 	}
 	else
 		return false;
@@ -517,7 +526,8 @@ compute_attributes_sql_style(List *options,
 							 bool *security_definer,
 							 ArrayType **proconfig,
 							 float4 *procost,
-							 float4 *prorows)
+							 float4 *prorows,
+							 Oid *proselabel)
 {
 	ListCell   *option;
 	DefElem    *as_item = NULL;
@@ -529,6 +539,7 @@ compute_attributes_sql_style(List *options,
 	List	   *set_items = NIL;
 	DefElem    *cost_item = NULL;
 	DefElem    *rows_item = NULL;
+	DefElem	   *selabel_item = NULL;
 
 	foreach(option, options)
 	{
@@ -564,7 +575,8 @@ compute_attributes_sql_style(List *options,
 										  &security_item,
 										  &set_items,
 										  &cost_item,
-										  &rows_item))
+										  &rows_item,
+										  &selabel_item))
 		{
 			/* recognized common option */
 			continue;
@@ -622,6 +634,8 @@ compute_attributes_sql_style(List *options,
 					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 					 errmsg("ROWS must be positive")));
 	}
+	if (selabel_item)
+		*proselabel = sepgsqlInputGivenSecLabel(selabel_item);
 }
 
 
@@ -762,6 +776,7 @@ CreateFunction(CreateFunctionStmt *stmt, const char *queryString)
 	ArrayType  *proconfig;
 	float4		procost;
 	float4		prorows;
+	Oid			proselabel;
 	HeapTuple	languageTuple;
 	Form_pg_language languageStruct;
 	List	   *as_clause;
@@ -784,13 +799,14 @@ CreateFunction(CreateFunctionStmt *stmt, const char *queryString)
 	proconfig = NULL;
 	procost = -1;				/* indicates not set */
 	prorows = -1;				/* indicates not set */
+	proselabel = InvalidOid;	/* follows default labeling behavior */
 
 	/* override attributes from explicit list */
 	compute_attributes_sql_style(stmt->options,
 								 &as_clause, &language,
 								 &isWindowFunc, &volatility,
 								 &isStrict, &security,
-								 &proconfig, &procost, &prorows);
+								 &proconfig, &procost, &prorows, &proselabel);
 
 	/* Convert language name to canonical case */
 	languageName = case_translate_language_name(language);
@@ -926,7 +942,8 @@ CreateFunction(CreateFunctionStmt *stmt, const char *queryString)
 					parameterDefaults,
 					PointerGetDatum(proconfig),
 					procost,
-					prorows);
+					prorows,
+					proselabel);
 }
 
 
@@ -1276,6 +1293,7 @@ AlterFunction(AlterFunctionStmt *stmt)
 	List	   *set_items = NIL;
 	DefElem    *cost_item = NULL;
 	DefElem    *rows_item = NULL;
+	DefElem	   *selabel_item = NULL;
 
 	rel = heap_open(ProcedureRelationId, RowExclusiveLock);
 
@@ -1313,7 +1331,8 @@ AlterFunction(AlterFunctionStmt *stmt)
 									 &security_def_item,
 									 &set_items,
 									 &cost_item,
-									 &rows_item) == false)
+									 &rows_item,
+									 &selabel_item) == false)
 			elog(ERROR, "option \"%s\" not recognized", defel->defname);
 	}
 
@@ -1352,6 +1371,8 @@ AlterFunction(AlterFunctionStmt *stmt)
 		bool		repl_null[Natts_pg_proc];
 		bool		repl_repl[Natts_pg_proc];
 
+		memset(repl_repl, false, sizeof(repl_repl));
+
 		/* extract existing proconfig setting */
 		datum = SysCacheGetAttr(PROCOID, tup, Anum_pg_proc_proconfig, &isnull);
 		a = isnull ? NULL : DatumGetArrayTypeP(datum);
@@ -1360,7 +1381,6 @@ AlterFunction(AlterFunctionStmt *stmt)
 		a = update_proconfig_value(a, set_items);
 
 		/* update the tuple */
-		memset(repl_repl, false, sizeof(repl_repl));
 		repl_repl[Anum_pg_proc_proconfig - 1] = true;
 
 		if (a == NULL)
@@ -1375,8 +1395,10 @@ AlterFunction(AlterFunctionStmt *stmt)
 		}
 
 		tup = heap_modify_tuple(tup, RelationGetDescr(rel),
-							   repl_val, repl_null, repl_repl);
+								repl_val, repl_null, repl_repl);
 	}
+
+	HeapTupleSetSecLabel(tup, sepgsqlInputGivenSecLabel(selabel_item));
 
 	/* Do the update */
 	simple_heap_update(rel, &tup->t_self, tup);
