@@ -191,3 +191,19 @@ rowlvHeapTupleDelete(Relation rel, ItemPointer otid, bool internal)
 
 	return true;
 }
+
+/*
+ * rowlvCopyToTuple
+ *   checks permission on fetched tuple
+ */
+bool
+rowlvCopyToTuple(Relation rel, List *attNumList, HeapTuple tuple)
+{
+	if (!rowaclCopyToTuple(rel, attNumList, tuple))
+		return false;
+
+	if (!sepgsqlCopyToTuple(rel, attNumList, tuple))
+		return false;
+
+	return true;
+}

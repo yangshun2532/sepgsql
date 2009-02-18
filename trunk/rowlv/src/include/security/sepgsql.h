@@ -33,6 +33,9 @@ typedef Oid	sepgsql_sid_t;
 /* GUC parameter to turn on/off SE-PostgreSQL */
 extern bool sepostgresql_is_enabled;
 
+/* GUC parameter to turn on/off Row-level controls */
+extern bool sepostgresql_row_level;
+
 /*
  * avc.c : userspace access vector cache
  */
@@ -161,14 +164,21 @@ sepgsqlHeapTupleDelete(Relation rel, HeapTuple oldtup, bool internal);
 // COPY TO/FROM statement
 extern void
 sepgsqlCopyTable(Relation rel, List *attNumList, bool isFrom);
+
 extern void
 sepgsqlCopyFile(Relation rel, int fdesc, const char *filename, bool isFrom);
+
+extern bool
+sepgsqlCopyToTuple(Relation rel, List *attNumList, HeapTuple tuple);
 
 /*
  * label.c : security label management
  */
 extern bool
 sepgsqlTupleDescHasSecLabel(Relation rel);
+
+extern char *
+sepgsqlMetaSecurityLabel(void);
 
 extern sepgsql_sid_t
 sepgsqlInputGivenSecLabel(DefElem *defel);
@@ -235,15 +245,19 @@ sepgsqlSetDefaultSecLabel(Relation rel, HeapTuple tuple);
 #define sepgsqlCheckTableLock(a)				(true)
 #define sepgsqlCheckTableTruncate(a)			(true)
 
+#define sepgsqlExecScan(a,b,c,d)				(true)
 #define sepgsqlHeapTupleInsert(a,b,c)			(true)
 #define sepgsqlHeapTupleUpdate(a,b,c,d)			(true)
 #define sepgsqlHeapTupleDelete(a,b,c)			(true)
 
 #define sepgsqlCopyTable(a,b,c)					do {} while(0)
 #define sepgsqlCopyFile(a,b,c,d)				do {} while(0)
+#define sepgsqlCopyToTuple(a,b,c)				(true)
 
 // label.c
-#define sepgsqlInputGivenSecLabel(a)			(PointerGetDatum(NULL))
+#define sepgsqlTupleDescHasSecLabel(a)			(false)
+#define sepgsqlMetaSecurityLabel()				(NULL)
+#define sepgsqlInputGivenSecLabel(a)			(InvalidOid)
 #define sepgsqlInputGivenSecLabelRelation(a)	(NIL)
 #define sepgsqlSecurityLabelTransIn(a)			(a)
 #define sepgsqlSecurityLabelTransOut(a)			(a)

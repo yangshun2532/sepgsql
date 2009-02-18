@@ -22,6 +22,8 @@
  * sepgsqlTupleDescHasSecLabel
  *   controls TupleDesc->tdhasseclabel
  */
+bool sepostgresql_row_level;
+
 bool
 sepgsqlTupleDescHasSecLabel(Relation rel)
 {
@@ -29,7 +31,7 @@ sepgsqlTupleDescHasSecLabel(Relation rel)
 	 * Newly created regular table with SELECT INTO.
 	 */
 	if (rel == NULL)
-		return false;
+		return sepostgresql_row_level;
 
 	/*
 	 * Currently, we don't support row-level controls
@@ -40,7 +42,37 @@ sepgsqlTupleDescHasSecLabel(Relation rel)
 		RelationGetRelid(rel) == ProcedureRelationId)
 		return true;
 
-	return false;
+	return sepostgresql_row_level;
+}
+
+/*
+ * sepgsqlMetaSecurityLabel
+ *   returns a security context of tuples within pg_security
+ */
+char *
+sepgsqlMetaSecurityLabel(void)
+{
+	security_context_t	tcontext;
+	sepgsql_sid_t		tsid;
+	HeapTuple			tuple;
+
+	tuple = SearchSysCache(RELOID,
+						   ObjectIdGetDatum(SecurityRelationId),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "SELinux: cache lookup failed for relation %u",
+			 SecurityRelationId);
+
+	tsid = HeapTupleGetSecLabel(tuple);
+
+	ReleaseSysCache(tuple);
+
+	tcontext = securityLookupSecurityLabel(tsid);
+	if (!tcontext || !sepgsqlCheckValidSecurityLabel(tcontext))
+		tcontext = sepgsqlGetUnlabeledLabel();
+
+	return sepgsqlComputeCreate(sepgsqlGetServerLabel(),
+								tcontext, SECCLASS_DB_TUPLE);
 }
 
 /*

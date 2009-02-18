@@ -1230,6 +1230,14 @@ static struct config_bool ConfigureNamesBool[] =
 		&sepostgresql_is_enabled,
 		false, NULL, NULL
 	},
+	{
+		{"sepostgresql_row_level", PGC_POSTMASTER, CONN_AUTH_SECURITY,
+		 gettext_noop("Row-level access controls on SE-PostgreSQL"),
+		 NULL,
+		},
+		&sepostgresql_row_level,
+		true, NULL, NULL
+	},
 #endif
 
 	/* End-of-list marker */

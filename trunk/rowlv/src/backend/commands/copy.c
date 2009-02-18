@@ -1495,6 +1495,10 @@ CopyTo(CopyState cstate)
 		{
 			CHECK_FOR_INTERRUPTS();
 
+			/* Row-level controls on the fetched tuple */
+			if (!rowlvCopyToTuple(cstate->rel, cstate->attnumlist, tuple))
+				continue;
+
 			/* Deconstruct the tuple ... faster than repeated heap_getattr */
 			heap_deform_tuple(tuple, tupDesc, values, nulls);
 

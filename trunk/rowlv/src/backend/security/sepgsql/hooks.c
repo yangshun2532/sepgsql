@@ -15,6 +15,7 @@
 #include "security/sepgsql.h"
 #include "storage/bufmgr.h"
 #include "utils/syscache.h"
+#include "utils/tqual.h"
 
 /*
  * sepgsqlDatabaseAccess
@@ -237,6 +238,7 @@ sepgsqlCheckTableTruncate(Relation rel)
 {
 	const char *audit_name;
 	HeapTuple	tuple;
+	HeapScanDesc	scan;
 	bool		rc;
 
 	if (!sepgsqlIsEnabled())
@@ -261,6 +263,20 @@ sepgsqlCheckTableTruncate(Relation rel)
 							   DB_TABLE__DELETE,
 							   audit_name, false);
 	ReleaseSysCache(tuple);
+
+	/*
+	 * check db_tuple:{delete} permission on whole of the table
+	 */
+	scan = heap_beginscan(rel, SnapshotNow, 0, NULL);
+
+	while ((tuple = heap_getnext(scan, ForwardScanDirection)) != NULL)
+	{
+		rc = sepgsqlCheckObjectPerms(rel, tuple, NULL,
+									 SEPGSQL_PERMS_DELETE, false);
+		if (!rc)
+			break;
+	}
+	heap_endscan(scan);
 
 	return rc;
 }
@@ -444,7 +460,6 @@ sepgsqlHeapTupleUpdate(Relation rel, HeapTuple oldtup,
 		perms = SEPGSQL_PERMS_RELABELTO;
 		rc = sepgsqlCheckObjectPerms(rel, newtup, NULL, perms, true);
 	}
-	heap_freetuple(oldtup);
 
 	return rc;
 }
@@ -459,8 +474,6 @@ sepgsqlHeapTupleDelete(Relation rel, HeapTuple oldtup, bool internal)
 		return true;
 
 	rc = sepgsqlCheckObjectPerms(rel, oldtup, NULL, perms, true);
-
-	heap_freetuple(oldtup);
 
 	return rc;
 }
@@ -548,4 +561,12 @@ void sepgsqlCopyFile(Relation rel, int fdesc, const char *filename, bool isFrom)
 	}
 	PG_END_TRY();
 	freecon(context);
+}
+
+bool
+sepgsqlCopyToTuple(Relation rel, List *attNumList, HeapTuple tuple)
+{
+	uint32		perms = SEPGSQL_PERMS_SELECT;
+
+	return sepgsqlCheckObjectPerms(rel, tuple, NULL, perms, false);
 }
