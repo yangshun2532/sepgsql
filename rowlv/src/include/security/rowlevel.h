@@ -28,4 +28,7 @@ rowlvHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple newtup, bool inte
 extern bool
 rowlvHeapTupleDelete(Relation rel, ItemPointer otid, bool internal);
 
+extern bool
+rowlvCopyToTuple(Relation rel, List *attNumList, HeapTuple tuple);
+
 #endif   /* PG_SELINUX_H */

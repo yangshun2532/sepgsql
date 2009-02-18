@@ -34,10 +34,7 @@ securityTupleDescHasSecLabel(Relation rel)
 static char *
 securityMetaSecurityLabel(void)
 {
-	/*
-	 * TODO: add sepgsqlXXXX() invocation here
-	 */
-	return NULL;
+	return sepgsqlMetaSecurityLabel();
 }
 
 typedef struct earlySecLabel

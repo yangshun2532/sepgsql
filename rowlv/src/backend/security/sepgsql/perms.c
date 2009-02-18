@@ -471,7 +471,8 @@ sepgsqlCheckObjectPerms(Relation rel, HeapTuple tuple, HeapTuple newtup,
 	case SECCLASS_DB_BLOB:
 		/* Currently, we consider blobs as a set of vanilla tuples. */
 	default:
-		av_perms = sepgsqlTupleAvPerms(required, tuple, newtup);
+		av_perms = (sepostgresql_row_level ?
+					sepgsqlTupleAvPerms(required, tuple, newtup) : 0);
 		break;
 	}
 	if (av_perms)
@@ -509,7 +510,6 @@ defaultTableSecLabel(Relation rel, HeapTuple tuple)
 {
 	return sepgsqlClientCreate(sepgsqlGetDatabaseSid(),
 							   SECCLASS_DB_TABLE);
-
 }
 
 static sepgsql_sid_t
