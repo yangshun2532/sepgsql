@@ -104,7 +104,6 @@ security_context_t
 sepgsqlGetDatabaseLabel(void)
 {
 	HeapTuple			tuple;
-	sepgsql_sid_t		dbsid;
 	security_context_t	dbcon;
 
 	if (IsBootstrapProcessingMode())
@@ -133,13 +132,11 @@ sepgsqlGetDatabaseLabel(void)
 		elog(ERROR, "SELinux: cache lookup failed for database: %u",
 			 MyDatabaseId);
 
-	dbsid = HeapTupleGetSecLabel(tuple);
-
-	ReleaseSysCache(tuple);
-
-	dbcon = securityLookupSecurityLabel(dbsid);
+	dbcon = securityLookupSecurityLabel(HeapTupleGetSecLabel(tuple));
 	if (!dbcon || !sepgsqlCheckValidSecurityLabel(dbcon))
 		dbcon = pstrdup(sepgsqlGetUnlabeledLabel());
+
+	ReleaseSysCache(tuple);
 
 	return dbcon;
 }

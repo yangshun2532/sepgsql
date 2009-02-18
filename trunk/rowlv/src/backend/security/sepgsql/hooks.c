@@ -417,9 +417,9 @@ sepgsqlHeapTupleInsert(Relation rel, HeapTuple newtup, bool internal)
 	if (!OidIsValid(HeapTupleGetSecLabel(newtup)))
 	{
 		/*
-         * When no explicit security label is given,
+		 * When no explicit security label is given,
 		 * it assigns a default one.
-         */
+		 */
 		if (HeapTupleHasSecLabel(newtup))
 			sepgsqlSetDefaultSecLabel(rel, newtup);
 	}

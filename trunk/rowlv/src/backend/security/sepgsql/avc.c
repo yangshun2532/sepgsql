@@ -744,7 +744,10 @@ sepgsqlClientCreate(sepgsql_sid_t tsid, security_class_t tclass)
 	if (!cache)
 		cache = avc_make_entry(client_avc_page, tsid, tclass);
 
-	return securityLookupSecurityId(cache->ncontext);
+	if (cache->nsid == InvalidOid)
+		cache->nsid = securityLookupSecurityId(cache->ncontext);
+
+	return cache->nsid;
 }
 
 /*
