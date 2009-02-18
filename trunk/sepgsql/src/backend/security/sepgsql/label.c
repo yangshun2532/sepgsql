@@ -71,6 +71,9 @@ HeapTupleGetSecLabel(Oid relid, HeapTuple tuple)
 								Anum_pg_proc_proselabel,
 								&isnull);
 		break;
+	default:
+		isnull = true;
+		break;
 	}
 
 	if (isnull)
@@ -79,6 +82,12 @@ HeapTupleGetSecLabel(Oid relid, HeapTuple tuple)
 	return TextDatumGetCString(datum);
 }
 
+/*
+ * sepgsqlInputGivenSecLabel
+ *   translate a given security label in text form into a security
+ *   identifier. It can raise an error, if its format is violated,
+ *   but permission checks are done later.
+ */
 Datum
 sepgsqlInputGivenSecLabel(DefElem *defel)
 {
@@ -102,6 +111,13 @@ sepgsqlInputGivenSecLabel(DefElem *defel)
 	return CStringGetTextDatum(context);
 }
 
+/*
+ * sepgsqlInputGivenSecLabelRelation
+ *   organize a set of given security labels on CREATE TABLE statement.
+ *   User can specify a security label for individual table/columns.
+ *   It returns a list of DefElem. !defel->defname means a specified one
+ *   for the table, rest of them means one for columns.
+ */
 List *
 sepgsqlInputGivenSecLabelRelation(CreateStmt *stmt)
 {

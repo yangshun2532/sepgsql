@@ -416,7 +416,6 @@ sepgsqlCheckObjectPerms(Relation rel, HeapTuple tuple, HeapTuple newtup,
 						uint32 required, bool abort)
 {
 	Oid relid = RelationGetRelid(rel);
-	sepgsql_sid_t		sid;
 	security_class_t	tclass;
 	access_vector_t		av_perms;
 	const char		   *audit_name;
@@ -456,8 +455,8 @@ sepgsqlCheckObjectPerms(Relation rel, HeapTuple tuple, HeapTuple newtup,
 	if (av_perms)
 	{
 		audit_name = sepgsqlAuditName(relid, tuple);
-		sid = HeapTupleGetSecLabel(relid, tuple);
-		rc = sepgsqlClientHasPerms(sid, tclass, av_perms,
+		rc = sepgsqlClientHasPerms(HeapTupleGetSecLabel(relid, tuple),
+								   tclass, av_perms,
 								   audit_name, abort);
 	}
 	return rc;
