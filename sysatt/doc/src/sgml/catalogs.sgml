@@ -972,6 +972,15 @@
      </row>
 
      <row>
+       <entry><structfield>attkind</structfield></entry>
+       <entry><type>char</type></entry>
+       <entry></entry>
+       <entry>
+         A copy of <literal>pg_class.relkind</> of this columns's relation
+       </entry>
+     </row>
+
+     <row>
       <entry><structfield>attnotnull</structfield></entry>
       <entry><type>bool</type></entry>
       <entry></entry>
@@ -1031,6 +1040,13 @@
        Column-level access privileges, if any have been granted specifically
        on this column
       </entry>
+     </row>
+
+     <row>
+       <entry><structfield>attselabel</structfield></entry>
+       <entry><type>text</type></entry>
+       <entry></entry>
+       <entry>Text formed security context of the attribute</entry>
      </row>
 
     </tbody>
@@ -1644,6 +1660,13 @@
        Access-method-specific options, as <quote>keyword=value</> strings
       </entry>
      </row>
+
+     <row>
+       <entry><structfield>relselabel</structfield></entry>
+       <entry><type>text</type></entry>
+       <entry></entry>
+       <entry>Text formed security context of the relation</entry>
+     </row>
     </tbody>
    </tgroup>
   </table>
@@ -2117,6 +2140,13 @@
        <xref linkend="sql-revoke" endterm="sql-revoke-title">
        for details
       </entry>
+     </row>
+
+     <row>
+       <entry><structfield>datselabel</structfield></entry>
+       <entry><type>text</type></entry>
+       <entry></entry>
+       <entry>Text formed security context of the database</entry>
      </row>
     </tbody>
    </tgroup>
@@ -3823,6 +3853,13 @@
        for details
       </entry>
      </row>
+
+     <row>
+       <entry><structfield>proselabel</structfield></entry>
+       <entry><type>text</type></entry>
+       <entry></entry>
+       <entry>Text formed security context of the procedure</entry>
+     </row>
     </tbody>
    </tgroup>
   </table>
@@ -3951,7 +3988,6 @@
   </note>
 
  </sect1>
-
 
  <sect1 id="catalog-pg-shdepend">
   <title><structname>pg_shdepend</structname></title>

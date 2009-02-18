@@ -67,6 +67,7 @@ CATALOG(pg_class,1259) BKI_BOOTSTRAP
 
 	aclitem		relacl[1];		/* access permissions */
 	text		reloptions[1];	/* access-method-specific options */
+	text		relselabel;		/* security context of the table (not in use) */
 } FormData_pg_class;
 
 /* Size of fixed part of pg_class tuples, not counting var-length fields */
@@ -85,7 +86,7 @@ typedef FormData_pg_class *Form_pg_class;
  * ----------------
  */
 
-#define Natts_pg_class					24
+#define Natts_pg_class					25
 #define Anum_pg_class_relname			1
 #define Anum_pg_class_relnamespace		2
 #define Anum_pg_class_reltype			3
@@ -110,6 +111,7 @@ typedef FormData_pg_class *Form_pg_class;
 #define Anum_pg_class_relfrozenxid		22
 #define Anum_pg_class_relacl			23
 #define Anum_pg_class_reloptions		24
+#define Anum_pg_class_relselabel		25
 
 /* ----------------
  *		initial contents of pg_class
@@ -121,13 +123,13 @@ typedef FormData_pg_class *Form_pg_class;
  */
 
 /* Note: "3" in the relfrozenxid column stands for FirstNormalTransactionId */
-DATA(insert OID = 1247 (  pg_type		PGNSP 71 PGUID 0 1247 0 0 0 0 0 f f r 28 0 t f f f f 3 _null_ _null_ ));
+DATA(insert OID = 1247 (  pg_type		PGNSP 71 PGUID 0 1247 0 0 0 0 0 f f r 28 0 t f f f f 3 _null_ _null_ _null_));
 DESCR("");
-DATA(insert OID = 1249 (  pg_attribute	PGNSP 75 PGUID 0 1249 0 0 0 0 0 f f r 18 0 f f f f f 3 _null_ _null_ ));
+DATA(insert OID = 1249 (  pg_attribute	PGNSP 75 PGUID 0 1249 0 0 0 0 0 f f r 20 0 f f f f f 3 _null_ _null_ _null_));
 DESCR("");
-DATA(insert OID = 1255 (  pg_proc		PGNSP 81 PGUID 0 1255 0 0 0 0 0 f f r 25 0 t f f f f 3 _null_ _null_ ));
+DATA(insert OID = 1255 (  pg_proc		PGNSP 81 PGUID 0 1255 0 0 0 0 0 f f r 26 0 t f f f f 3 _null_ _null_ _null_));
 DESCR("");
-DATA(insert OID = 1259 (  pg_class		PGNSP 83 PGUID 0 1259 0 0 0 0 0 f f r 24 0 t f f f f 3 _null_ _null_ ));
+DATA(insert OID = 1259 (  pg_class		PGNSP 83 PGUID 0 1259 0 0 0 0 0 f f r 25 0 t f f f f 3 _null_ _null_ _null_));
 DESCR("");
 
 #define		  RELKIND_INDEX			  'i'		/* secondary index */

@@ -13,6 +13,7 @@
 #include "catalog/indexing.h"
 #include "catalog/pg_security.h"
 #include "miscadmin.h"
+#include "security/sepgsql.h"
 #include "utils/builtins.h"
 #include "utils/memutils.h"
 #include "utils/rel.h"
@@ -24,16 +25,13 @@ securityTupleDescHasRowAcl(Relation rel)
 	/*
 	 * TODO: check reloption ("row_level_acl") here
 	 */
-	return true;
+	return false;
 }
 
 bool
 securityTupleDescHasSecLabel(Relation rel)
 {
-	/*
-	 * TODO: check availability of SELinux here
-	 */
-	return true;
+	return sepgsqlTupleDescHasSecLabel(rel);
 }
 
 static char *
@@ -273,7 +271,7 @@ securityLookupSecurityLabel(Oid secid)
  * "security_acl" system column related stuffs
  */
 Oid
-securityTransRowAclIn(const Acl *acl)
+securityTransRowAclIn(Acl *acl)
 {
 	AclItem	   *aip = ACL_DAT(acl);
 	char	   *rawacl = palloc0(ACL_NUM(acl) * 30 + 10);
@@ -366,24 +364,30 @@ securityHeapGetRowAclSysattr(HeapTuple tuple)
  * "security_label" system column related stuffs
  */
 Oid
-securityTransSecLabelIn(const char *seclabel)
+securityTransSecLabelIn(char *seclabel)
 {
-	/*
-	 * TODO: add a hook to translate external label into
-	 * raw label, and validation checks
-	 */
-	return securityLookupSecurityId(seclabel);
+	char *rawlabel = sepgsqlSecurityLabelTransIn(seclabel);
+
+	if (!sepgsqlCheckValidSecurityLabel(rawlabel))
+		ereport(ERROR,
+				(errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("invalid security label: %s", rawlabel)));
+
+	return securityLookupSecurityId(rawlabel);
 }
 
 char *
 securityTransSecLabelOut(Oid secid)
 {
-	char *seclabel = securityLookupSecurityLabel(secid);
+	char *rawlabel = securityLookupSecurityLabel(secid);
 
-	if (!seclabel)
-		seclabel = pstrdup("unlabeled");
+	if (!rawlabel || !sepgsqlCheckValidSecurityLabel(rawlabel))
+		rawlabel = sepgsqlGetUnlabeledLabel();
 
-	return seclabel;
+	if (!rawlabel)
+		rawlabel = pstrdup("unlabeled");
+
+	return sepgsqlSecurityLabelTransOut(rawlabel);
 }
 
 Datum
