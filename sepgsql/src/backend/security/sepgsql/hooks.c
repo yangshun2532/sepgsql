@@ -329,7 +329,6 @@ sepgsqlCheckProcedureEntrypoint(FmgrInfo *finfo, HeapTuple protup)
 {
 	MemoryContext		oldctx;
 	security_context_t	newcon;
-	sepgsql_sid_t		prosid;
 	const char		   *audit_name;
 
 	if (!sepgsqlIsEnabled())
@@ -355,8 +354,7 @@ sepgsqlCheckProcedureEntrypoint(FmgrInfo *finfo, HeapTuple protup)
 	}
 	/* db_procedure:{entrypoint} */
 	audit_name = sepgsqlAuditName(ProcedureRelationId, protup);
-	prosid = HeapTupleGetSecLabel(ProcedureRelationId, protup);
-	sepgsqlClientHasPerms(prosid,
+	sepgsqlClientHasPerms(HeapTupleGetSecLabel(ProcedureRelationId, protup),
 						  SECCLASS_DB_PROCEDURE,
 						  DB_PROCEDURE__ENTRYPOINT,
 						  audit_name, true);
@@ -409,16 +407,16 @@ getHeapTupleFromItemPointer(Relation rel, ItemPointer tid)
 }
 
 HeapTuple
-sepgsqlHeapTupleInsert(Relation rel, HeapTuple tuple, bool internal)
+sepgsqlHeapTupleInsert(Relation rel, HeapTuple newtup, bool internal)
 {
 	Oid			relid = RelationGetRelid(rel);
 	uint32		perms = SEPGSQL_PERMS_INSERT;
 
 	if (!sepgsqlIsEnabled())
-		return tuple;
+		return newtup;
 
-	if (HeapTupleHasSecLabel(relid, tuple) &&
-		!HeapTupleGetSecLabel(relid, tuple))
+	if (HeapTupleHasSecLabel(relid, newtup) &&
+		!HeapTupleGetSecLabel(relid, newtup))
 	{
 		Datum  *values;
 		bool   *nulls;
@@ -430,15 +428,15 @@ sepgsqlHeapTupleInsert(Relation rel, HeapTuple tuple, bool internal)
 		values = (Datum *) palloc(natts * sizeof(Datum));
 		nulls = (bool *) palloc(natts * sizeof(bool));
 
-		heap_deform_tuple(tuple, RelationGetDescr(rel), values, nulls);
+		heap_deform_tuple(newtup, RelationGetDescr(rel), values, nulls);
 		sepgsqlSetDefaultSecLabel(RelationGetRelid(rel),
 								  values, nulls, PointerGetDatum(NULL));
-		tuple = heap_form_tuple(RelationGetDescr(rel), values, nulls);
+		newtup = heap_form_tuple(RelationGetDescr(rel), values, nulls);
 	}
 
-	sepgsqlCheckObjectPerms(rel, tuple, NULL, perms, true);
+	sepgsqlCheckObjectPerms(rel, newtup, NULL, perms, true);
 
-	return tuple;
+	return newtup;
 }
 
 void
@@ -479,18 +477,17 @@ sepgsqlHeapTupleUpdate(Relation rel, ItemPointer otid,
 void
 sepgsqlHeapTupleDelete(Relation rel, ItemPointer otid, bool internal)
 {
-	Oid			relid = RelationGetRelid(rel);
 	uint32		perms = SEPGSQL_PERMS_DELETE;
-	HeapTuple	tuple;
+	HeapTuple	oldtup;
 
 	if (!sepgsqlIsEnabled())
 		return;
 
-	tuple = getHeapTupleFromItemPointer(rel, otid);
+	oldtup = getHeapTupleFromItemPointer(rel, otid);
 
-	sepgsqlCheckObjectPerms(rel, tuple, NULL, perms, true);
+	sepgsqlCheckObjectPerms(rel, oldtup, NULL, perms, true);
 
-	heap_freetuple(tuple);
+	heap_freetuple(oldtup);
 }
 
 /*

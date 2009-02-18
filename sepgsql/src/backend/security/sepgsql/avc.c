@@ -182,8 +182,9 @@ typedef struct
 	uint32				hash_key;
 
 	security_class_t	tclass;
-	sepgsql_sid_t		tcontext;
-	sepgsql_sid_t		ncontext;
+	sepgsql_sid_t		tsid;
+	sepgsql_sid_t		nsid;
+	security_context_t	ncontext;
 
 	access_vector_t		allowed;
 	access_vector_t		decided;
@@ -497,25 +498,26 @@ avc_audit_common(char *buffer, uint32 buflen,
 	(DatumGetUInt32(hash_any((unsigned char *)tcontext, strlen(tcontext)) ^ tclass))
 
 static avc_datum *
-avc_make_entry(avc_page *page, sepgsql_sid_t tcontext, security_class_t tclass)
+avc_make_entry(avc_page *page, sepgsql_sid_t tsid, security_class_t tclass)
 {
-	security_context_t scontext, ncontext;
+	security_context_t scontext, tcontext, ncontext;
 	security_class_t e_tclass;
 	MemoryContext oldctx;
 	struct av_decision avd;
 	avc_datum *cache;
 	uint32 hash_key, index;
 
-	hash_key = avc_hash_key(tcontext, tclass);
+	hash_key = avc_hash_key(tsid, tclass);
 	index = hash_key % AVC_HASH_NUM_SLOTS;
 
 	oldctx = MemoryContextSwitchTo(AvcMemCtx);
 	cache = palloc0(sizeof(avc_datum));
 	cache->hash_key = hash_key;
-	cache->tcontext = pstrdup(tcontext);
+	cache->tsid = pstrdup(tsid);
 	cache->tclass = tclass;
 
 	scontext = page->scontext;
+	tcontext = (security_context_t) tsid;
 	if (!tcontext || !sepgsqlCheckValidSecurityLabel(tcontext))
 		tcontext = sepgsqlGetUnlabeledLabel();
 
@@ -570,7 +572,7 @@ avc_make_entry(avc_page *page, sepgsql_sid_t tcontext, security_class_t tclass)
 }
 
 static avc_datum *
-avc_lookup(avc_page *page, sepgsql_sid_t tcontext, security_class_t tclass)
+avc_lookup(avc_page *page, sepgsql_sid_t tsid, security_class_t tclass)
 {
 	avc_datum *cache = NULL;
 	uint32 hash_key, index;
@@ -581,7 +583,7 @@ avc_lookup(avc_page *page, sepgsql_sid_t tcontext, security_class_t tclass)
 		sepgsql_avc_reset();
 
 	/* lookup avc entry */
-	hash_key = avc_hash_key(tcontext, tclass);
+	hash_key = avc_hash_key(tsid, tclass);
 	index = hash_key % AVC_HASH_NUM_SLOTS;
 
 	foreach (l, page->slot[index])
@@ -589,7 +591,7 @@ avc_lookup(avc_page *page, sepgsql_sid_t tcontext, security_class_t tclass)
 		cache = lfirst(l);
 		if (cache->hash_key == hash_key
 			&& cache->tclass == tclass
-			&& strcmp(cache->tcontext, tcontext) == 0)
+			&& strcmp(cache->tsid, tsid) == 0)
 		{
 			cache->hot_cache = true;
 			return cache;
@@ -673,7 +675,7 @@ sepgsqlAvcSwitchClient(void)
  *   checks client's privileges on given objects via uAVC.
  */
 bool
-sepgsqlClientHasPerms(sepgsql_sid_t tcontext,
+sepgsqlClientHasPerms(sepgsql_sid_t tsid,
 					  security_class_t tclass,
 					  access_vector_t required,
 					  const char *audit_name, bool abort)
@@ -683,12 +685,12 @@ sepgsqlClientHasPerms(sepgsql_sid_t tcontext,
 	avc_datum *cache;
 	bool rc = true;
 
-	if (!tcontext)
-		tcontext = sepgsqlGetUnlabeledLabel();
+	if (!tsid)
+		tsid = sepgsqlGetUnlabeledLabel();
 
-	cache = avc_lookup(client_avc_page, tcontext, tclass);
+	cache = avc_lookup(client_avc_page, tsid, tclass);
 	if (!cache)
-		cache = avc_make_entry(client_avc_page, tcontext, tclass);
+		cache = avc_make_entry(client_avc_page, tsid, tclass);
 
 	denied = required & ~cache->allowed;
 	audited = denied ? (denied & cache->auditdeny)
@@ -698,7 +700,7 @@ sepgsqlClientHasPerms(sepgsql_sid_t tcontext,
 		security_context_t scon, tcon;
 
 		scon = sepgsqlSecurityLabelTransOut(client_avc_page->scontext);
-		tcon = sepgsqlSecurityLabelTransOut(tcontext);
+		tcon = sepgsqlSecurityLabelTransOut(tsid);
 
 		avc_audit_common(audit_buffer, sizeof(audit_buffer),
 						 scon, tcon, cache->tclass,
@@ -737,19 +739,21 @@ sepgsqlClientHasPerms(sepgsql_sid_t tcontext,
  *   but it should be restricted to database object.
  */
 sepgsql_sid_t
-sepgsqlClientCreate(sepgsql_sid_t tcontext, security_class_t tclass)
+sepgsqlClientCreate(sepgsql_sid_t tsid, security_class_t tclass)
 {
 	avc_datum *cache;
 
-	if (!tcontext)
-		tcontext = sepgsqlGetUnlabeledLabel();
+	if (!tsid)
+		tsid = sepgsqlGetUnlabeledLabel();
 
-	cache = avc_lookup(client_avc_page, tcontext, tclass);
-
+	cache = avc_lookup(client_avc_page, tsid, tclass);
 	if (!cache)
-		cache = avc_make_entry(client_avc_page, tcontext, tclass);
+		cache = avc_make_entry(client_avc_page, tsid, tclass);
 
-	return cache->ncontext;
+	if (!cache->nsid)
+		cache->nsid = (sepgsql_sid_t) cache->ncontext;
+
+	return cache->nsid;
 }
 
 /*
@@ -758,9 +762,12 @@ sepgsqlClientCreate(sepgsql_sid_t tcontext, security_class_t tclass)
  *   In the current version, it is same as sepgsqlClientCreate()
  */
 security_context_t
-sepgsqlClientCreateLabel(sepgsql_sid_t tcontext, security_class_t tclass)
+sepgsqlClientCreateLabel(sepgsql_sid_t tsid, security_class_t tclass)
 {
-	return sepgsqlClientCreate(tcontext, tclass);
+	/*
+	 * Currently, sepgsql_sid_t is an alias of security_context_t
+	 */
+	return (security_context_t) sepgsqlClientCreate(tsid, tclass);
 }
 
 /*

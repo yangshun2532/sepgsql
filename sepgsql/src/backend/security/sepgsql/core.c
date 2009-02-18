@@ -102,33 +102,42 @@ sepgsqlGetUnlabeledLabel(void)
 security_context_t
 sepgsqlGetDatabaseLabel(void)
 {
-	security_context_t result;
-	HeapTuple tuple;
+	HeapTuple			tuple;
+	security_context_t	dbcon;
 
 	if (IsBootstrapProcessingMode())
 	{
-		/*
-		 * We assume no one change security context
-		 * during bootstraping processing mode
-		 */
-		return sepgsqlComputeCreate(sepgsqlGetClientLabel(),
-									sepgsqlGetClientLabel(),
-									SECCLASS_DB_DATABASE);
+		static security_context_t	databaseLabel = NULL;
+
+		if (!databaseLabel)
+		{
+			security_class_t	tclass
+				= string_to_security_class("db_database");
+
+			if (security_compute_create_raw(sepgsqlGetClientLabel(),
+											sepgsqlGetClientLabel(),
+											tclass, &databaseLabel) < 0)
+				ereport(ERROR,
+						(errcode(ERRCODE_SELINUX_ERROR),
+						 errmsg("SELinux: unable to compute database context")));
+		}
+		return pstrdup(databaseLabel);
 	}
 
 	tuple = SearchSysCache(DATABASEOID,
 						   ObjectIdGetDatum(MyDatabaseId),
 						   0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
-		elog(ERROR, "SELinux: cache lookup failed for database: %u", MyDatabaseId);
+		elog(ERROR, "SELinux: cache lookup failed for database: %u",
+			 MyDatabaseId);
 
-	result = HeapTupleGetSecLabel(DatabaseRelationId, tuple);
-	if (!result || !sepgsqlCheckValidSecurityLabel(result))
-		result = sepgsqlGetUnlabeledLabel();
+	dbcon = HeapTupleGetSecLabel(DatabaseRelationId, tuple);
+	if (!dbcon || !sepgsqlCheckValidSecurityLabel(dbcon))
+		dbcon = pstrdup(sepgsqlGetUnlabeledLabel());
 
 	ReleaseSysCache(tuple);
 
-	return result;
+	return dbcon;
 }
 
 sepgsql_sid_t
@@ -137,7 +146,7 @@ sepgsqlGetDatabaseSid(void)
 	/*
 	 * currently, sepgsql_sid_t is an alias of security_context_t
 	 */
-	return sepgsqlGetDatabaseLabel();
+	return (sepgsql_sid_t) sepgsqlGetDatabaseLabel();
 }
 
 /*
