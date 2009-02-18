@@ -55,6 +55,7 @@
 #include "catalog/pg_security.h"
 #include "miscadmin.h"
 #include "pgstat.h"
+#include "security/sepgsql.h"
 #include "storage/bufmgr.h"
 #include "storage/freespace.h"
 #include "storage/lmgr.h"

@@ -90,6 +90,7 @@ _copyPlannedStmt(PlannedStmt *from)
 	COPY_NODE_FIELD(relationOids);
 	COPY_NODE_FIELD(invalItems);
 	COPY_SCALAR_FIELD(nParamExec);
+	COPY_NODE_FIELD(selinuxItems);
 
 	return newnode;
 }
@@ -2086,6 +2087,7 @@ _copyColumnDef(ColumnDef *from)
 	COPY_NODE_FIELD(raw_default);
 	COPY_STRING_FIELD(cooked_default);
 	COPY_NODE_FIELD(constraints);
+	COPY_NODE_FIELD(secLabel);
 
 	return newnode;
 }
@@ -2195,6 +2197,7 @@ _copyQuery(Query *from)
 	COPY_NODE_FIELD(limitCount);
 	COPY_NODE_FIELD(rowMarks);
 	COPY_NODE_FIELD(setOperations);
+	COPY_NODE_FIELD(selinuxItems);
 
 	return newnode;
 }
@@ -2446,6 +2449,7 @@ _copyCreateStmt(CreateStmt *from)
 	COPY_NODE_FIELD(options);
 	COPY_SCALAR_FIELD(oncommit);
 	COPY_STRING_FIELD(tablespacename);
+	COPY_NODE_FIELD(secLabel);
 
 	return newnode;
 }
@@ -3454,6 +3458,24 @@ _copyValue(Value *from)
 }
 
 /*
+ * Copy function for SE-PostgreSQL
+ */
+static SelinuxEvalItem *
+_copySelinuxEvalItem(SelinuxEvalItem *from)
+{
+	SelinuxEvalItem *newnode = makeNode(SelinuxEvalItem);
+
+	COPY_SCALAR_FIELD(relid);
+	COPY_SCALAR_FIELD(inh);
+
+	COPY_SCALAR_FIELD(relperms);
+	COPY_SCALAR_FIELD(nattrs);
+	COPY_POINTER_FIELD(attperms, from->nattrs * sizeof(uint32));
+
+	return newnode;
+}
+
+/*
  * copyObject
  *
  * Create a copy of a Node tree or list.  This is a "deep" copy: all
@@ -4132,6 +4154,9 @@ copyObject(void *from)
 			break;
 		case T_XmlSerialize:
 			retval = _copyXmlSerialize(from);
+			break;
+		case T_SelinuxEvalItem:
+			retval = _copySelinuxEvalItem(from);
 			break;
 
 		default:

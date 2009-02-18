@@ -37,6 +37,7 @@
 #include "optimizer/planner.h"
 #include "parser/parse_relation.h"
 #include "rewrite/rewriteHandler.h"
+#include "security/sepgsql.h"
 #include "storage/fd.h"
 #include "tcop/tcopprot.h"
 #include "utils/acl.h"
@@ -1100,6 +1101,8 @@ DoCopy(const CopyStmt *stmt, const char *queryString)
 	/* Generate or convert list of attributes to process */
 	cstate->attnumlist = CopyGetAttnums(tupDesc, cstate->rel, attnamelist);
 
+	sepgsqlCopyTable(cstate->rel, cstate->attnumlist, is_from);
+
 	num_phys_attrs = tupDesc->natts;
 
 	/* Convert FORCE QUOTE name list to per-column flags, check validity */
@@ -1308,6 +1311,9 @@ DoCopyTo(CopyState cstate)
 			ereport(ERROR,
 					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
 					 errmsg("\"%s\" is a directory", cstate->filename)));
+
+		sepgsqlCopyFile(cstate->rel, fileno(cstate->copy_file),
+						cstate->filename, false);
 	}
 
 	PG_TRY();
@@ -1863,6 +1869,9 @@ CopyFrom(CopyState cstate)
 			ereport(ERROR,
 					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
 					 errmsg("\"%s\" is a directory", cstate->filename)));
+
+		sepgsqlCopyFile(cstate->rel, fileno(cstate->copy_file),
+						cstate->filename, true);
 	}
 
 	tupDesc = RelationGetDescr(cstate->rel);

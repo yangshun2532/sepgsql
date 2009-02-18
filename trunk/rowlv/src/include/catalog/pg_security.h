@@ -66,13 +66,13 @@ extern char *
 securityLookupSecurityLabel(Oid secid);
 
 extern Oid
-securityTransSecLabelIn(const char *seclabel);
+securityTransSecLabelIn(char *seclabel);
 
 extern char *
 securityTransSecLabelOut(Oid secid);
 
 extern Oid
-securityTransRowAclIn(const Acl *acl);
+securityTransRowAclIn(Acl *acl);
 
 extern Acl *
 securityTransRowAclOut(Oid secid, Oid relowner);

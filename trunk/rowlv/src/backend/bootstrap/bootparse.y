@@ -43,6 +43,7 @@
 #include "nodes/pg_list.h"
 #include "nodes/primnodes.h"
 #include "rewrite/prs2lock.h"
+#include "security/sepgsql.h"
 #include "storage/block.h"
 #include "storage/fd.h"
 #include "storage/ipc.h"
@@ -234,7 +235,8 @@ Boot_CreateStmt:
 													  0,
 													  ONCOMMIT_NOOP,
 													  (Datum) 0,
-													  true);
+													  true,
+													  NIL);
 						elog(DEBUG4, "relation created with oid %u", id);
 					}
 					do_end();
