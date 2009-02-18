@@ -375,37 +375,19 @@ sepgsqlCheckProcedureEntrypoint(FmgrInfo *finfo, HeapTuple protup)
 }
 
 /*
- * HeapTuple INSERT/UPDATE/DELETE
+ * Row-level decision making
  */
-static HeapTuple
-getHeapTupleFromItemPointer(Relation rel, ItemPointer tid)
+bool
+sepgsqlExecScan(Relation rel, HeapTuple tuple, AclMode required, bool abort)
 {
-	Buffer			buffer;
-	PageHeader		dp;
-	ItemId			lp;
-	HeapTupleData	tuple;
-	HeapTuple		oldtup;
+	Assert((required & SEPGSQL_PERMS_MASK) == required);
 
-	buffer = ReadBuffer(rel, ItemPointerGetBlockNumber(tid));
-	LockBuffer(buffer, BUFFER_LOCK_SHARE);
-
-	dp = (PageHeader) BufferGetPage(buffer);
-	lp = PageGetItemId(dp, ItemPointerGetOffsetNumber(tid));
-
-	Assert(ItemIdIsNormal(lp));
-
-	tuple.t_data = (HeapTupleHeader) PageGetItem((Page) dp, lp);
-	tuple.t_len = ItemIdGetLength(lp);
-	tuple.t_self = *tid;
-	tuple.t_tableOid = RelationGetRelid(rel);
-	oldtup = heap_copytuple(&tuple);
-
-	LockBuffer(buffer, BUFFER_LOCK_UNLOCK);
-	ReleaseBuffer(buffer);
-
-	return oldtup;
+	return sepgsqlCheckObjectPerms(rel, tuple, NULL, required, abort);
 }
 
+/*
+ * HeapTuple INSERT/UPDATE/DELETE
+ */
 bool
 sepgsqlHeapTupleInsert(Relation rel, HeapTuple newtup, bool internal)
 {
@@ -428,18 +410,15 @@ sepgsqlHeapTupleInsert(Relation rel, HeapTuple newtup, bool internal)
 }
 
 bool
-sepgsqlHeapTupleUpdate(Relation rel, ItemPointer otid,
+sepgsqlHeapTupleUpdate(Relation rel, HeapTuple oldtup,
 					   HeapTuple newtup, bool internal)
 {
 	Oid				relid = RelationGetRelid(rel);
 	uint32			perms = SEPGSQL_PERMS_UPDATE;
-	HeapTuple		oldtup;
 	bool			rc;
 
 	if (!sepgsqlIsEnabled())
 		return true;
-
-	oldtup = getHeapTupleFromItemPointer(rel, otid);
 
 	if (!OidIsValid(HeapTupleGetSecLabel(newtup)))
 	{
@@ -471,16 +450,13 @@ sepgsqlHeapTupleUpdate(Relation rel, ItemPointer otid,
 }
 
 bool
-sepgsqlHeapTupleDelete(Relation rel, ItemPointer otid, bool internal)
+sepgsqlHeapTupleDelete(Relation rel, HeapTuple oldtup, bool internal)
 {
 	uint32		perms = SEPGSQL_PERMS_DELETE;
-	HeapTuple	oldtup;
 	bool		rc;
 
 	if (!sepgsqlIsEnabled())
 		return true;
-
-	oldtup = getHeapTupleFromItemPointer(rel, otid);
 
 	rc = sepgsqlCheckObjectPerms(rel, oldtup, NULL, perms, true);
 

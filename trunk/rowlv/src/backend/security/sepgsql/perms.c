@@ -409,6 +409,29 @@ sepgsqlProcedureAvPerms(uint32 required, HeapTuple tuple, HeapTuple newtup)
 	return av_perms;
 }
 
+static access_vector_t
+sepgsqlTupleAvPerms(uint32 required, HeapTuple tuple, HeapTuple newtup)
+{
+	access_vector_t av_perms = 0;
+
+	av_perms |= (required & SEPGSQL_PERMS_USE
+				 ? DB_TUPLE__USE : 0);
+	av_perms |= (required & SEPGSQL_PERMS_SELECT
+				 ? DB_TUPLE__SELECT : 0);
+	av_perms |= (required & SEPGSQL_PERMS_UPDATE
+				 ? DB_TUPLE__UPDATE : 0);
+	av_perms |= (required & SEPGSQL_PERMS_INSERT
+				 ? DB_TUPLE__INSERT : 0);
+	av_perms |= (required & SEPGSQL_PERMS_DELETE
+				 ? DB_TUPLE__DELETE : 0);
+	av_perms |= (required & SEPGSQL_PERMS_RELABELFROM
+				 ? DB_TUPLE__RELABELFROM : 0);
+	av_perms |= (required & SEPGSQL_PERMS_RELABELTO
+				 ? DB_TUPLE__RELABELTO : 0);
+
+	return av_perms;
+}
+
 /*
  * sepgsqlCheckObjectPerms
  *   checks permission of the given object (tuple).
@@ -445,13 +468,10 @@ sepgsqlCheckObjectPerms(Relation rel, HeapTuple tuple, HeapTuple newtup,
 	case SECCLASS_DB_PROCEDURE:
 		av_perms = sepgsqlProcedureAvPerms(required, tuple, newtup);
 		break;
+	case SECCLASS_DB_BLOB:
+		/* Currently, we consider blobs as a set of vanilla tuples. */
 	default:
-		/*
-		 * Currently, row-level access control is not
-		 * implement, so it skipps all the checks on
-		 * db_tuple class obejcts.
-		 */
-		av_perms = 0;
+		av_perms = sepgsqlTupleAvPerms(required, tuple, newtup);
 		break;
 	}
 	if (av_perms)

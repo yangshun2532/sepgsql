@@ -44,7 +44,7 @@ walkOnNodeTree(Node *node, Query *query)
 		if (rte->rtekind == RTE_RELATION &&
 			rtr->rtindex != query->resultRelation)
 		{
-			rte->tuple_perms |= ACL_SELECT;
+			rte->tuplePerms |= ACL_SELECT;
 		}
 		else if (rte->rtekind == RTE_SUBQUERY)
 		{
@@ -67,16 +67,16 @@ walkOnQueryTree(Query *query)
 	if (query->commandType == CMD_UPDATE)
 	{
 		rte = rt_fetch(query->resultRelation, query->rtable);
-		rte->tuple_perms |= ACL_UPDATE;
+		rte->tuplePerms |= ACL_UPDATE;
 		if (query->returningList)
-			rte->tuple_perms |= ACL_SELECT;
+			rte->tuplePerms |= ACL_SELECT;
 	}
 	else if (query->commandType == CMD_DELETE)
 	{
 		rte = rt_fetch(query->resultRelation, query->rtable);
-		rte->tuple_perms |= ACL_DELETE;
+		rte->tuplePerms |= ACL_DELETE;
 		if (query->returningList)
-			rte->tuple_perms |= ACL_SELECT;
+			rte->tuplePerms |= ACL_SELECT;
 	}
 	query_tree_walker(query, walkOnNodeTree, (void *) query, 0);
 }
@@ -204,7 +204,8 @@ rowaclInitialize(void)
  ******************************************************************/
 
 static bool
-rowaclCheckPermission(Relation rel, HeapTuple tuple, AclMode required)
+rowaclCheckPermission(Relation rel, HeapTuple tuple,
+					  AclMode required, bool abort)
 {
 	Oid relid = RelationGetRelid(rel);
 	Oid ownerid = RelationGetForm(rel)->relowner;
@@ -230,7 +231,7 @@ rowaclCheckPermission(Relation rel, HeapTuple tuple, AclMode required)
 	if ((privs & required) == required)
 		return true;
 
-	if (securityGetRowLevelStrategy())
+	if (abort)
 		ereport(ERROR,
 				(errcode(ERRCODE_ROWACL_ERROR),
 				 errmsg("access violation on Row-level ACLs")));
@@ -239,14 +240,14 @@ rowaclCheckPermission(Relation rel, HeapTuple tuple, AclMode required)
 }
 
 bool
-rowaclExecScan(Relation rel, HeapTuple tuple, AclMode required)
+rowaclExecScan(Relation rel, HeapTuple tuple, AclMode required, bool abort)
 {
 	Assert((required & ACL_ALL_RIGHTS_TUPLE) == required);
 
 	if (!required || !RelationGetRowLevelAcl(rel))
 		return true;
 
-	return rowaclCheckPermission(rel, tuple, required);
+	return rowaclCheckPermission(rel, tuple, required, abort);
 }
 
 bool
@@ -255,7 +256,7 @@ rowaclCopyToTuple(Relation rel, List *attNumList, HeapTuple tuple)
 	if (!RelationGetRowLevelAcl(rel))
 		return true;
 
-	return rowaclCheckPermission(rel, tuple, ACL_SELECT);
+	return rowaclCheckPermission(rel, tuple, ACL_SELECT, false);
 }
 
 /******************************************************************

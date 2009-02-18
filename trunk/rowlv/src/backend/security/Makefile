@@ -1,4 +1,3 @@
-<<<<<<< .working
 #
 # Makefile for the enhanced security subsystem
 #
@@ -9,6 +8,6 @@ include $(top_builddir)/src/Makefile.global
 
 SUBDIRS = rowacl sepgsql
 
-OBJS = common.o
+OBJS = rowlevel.o
 
 include $(top_srcdir)/src/backend/common.mk

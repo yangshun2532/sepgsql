@@ -304,7 +304,7 @@ create_scan_plan(PlannerInfo *root, Path *best_path)
 	/*
 	 * Copies row-level permissions
 	 */
-	((Scan *)plan)->tuple_perms = rel->tuple_perms;
+	((Scan *)plan)->tuplePerms = rel->tuplePerms;
 
 	/*
 	 * If there are any pseudoconstant clauses attached to this node, insert a

@@ -51,6 +51,7 @@
 #include "optimizer/clauses.h"
 #include "parser/parse_clause.h"
 #include "parser/parsetree.h"
+#include "security/rowlevel.h"
 #include "security/sepgsql.h"
 #include "storage/bufmgr.h"
 #include "storage/lmgr.h"
@@ -1960,7 +1961,7 @@ ExecInsert(TupleTableSlot *slot,
 	/*
 	 * Check row-level permission on the tuple
 	 */
-	if (!securityHeapTupleInsert(resultRelationDesc, tuple, false))
+	if (!rowlvHeapTupleInsert(resultRelationDesc, tuple, false))
 		return;
 
 	/*
@@ -2032,7 +2033,7 @@ ExecDelete(ItemPointer tupleid,
 	/*
 	 * Check row-level permission on the tuple
 	 */
-	if (!securityHeapTupleDelete(resultRelationDesc, tupleid, false))
+	if (!rowlvHeapTupleDelete(resultRelationDesc, tupleid, false))
 		return;
 
 	/*
@@ -2219,7 +2220,7 @@ lreplace:;
 	/*
 	 * Check row-level permission on the tuple
 	 */
-	if (!securityHeapTupleUpdate(resultRelationDesc, tupleid, tuple, false))
+	if (!rowlvHeapTupleUpdate(resultRelationDesc, tupleid, tuple, false))
 		return;
 
 	/*
@@ -3217,7 +3218,7 @@ intorel_receive(TupleTableSlot *slot, DestReceiver *self)
 		HeapTupleSetOid(tuple, InvalidOid);
 
 	storeWritableSystemAttribute(myState->rel, slot, tuple);
-	if (!securityHeapTupleInsert(myState->rel, tuple, false))
+	if (!rowlvHeapTupleInsert(myState->rel, tuple, false))
 		return;
 
 	heap_insert(myState->rel,

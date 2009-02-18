@@ -81,6 +81,7 @@ typedef uint32 AclMode;			/* a bitmask of privilege bits */
 #define ACL_CONNECT		(1<<11) /* for databases */
 #define N_ACL_RIGHTS	12		/* 1 plus the last 1<<x */
 #define ACL_NO_RIGHTS	0
+#define ACL_ALL_RIGHTS	((1<<N_ACL_RIGHTS) - 1)
 /* Currently, SELECT ... FOR UPDATE/FOR SHARE requires UPDATE privileges */
 #define ACL_SELECT_FOR_UPDATE	ACL_UPDATE
 
@@ -732,15 +733,16 @@ typedef struct RangeTblEntry
 	Bitmapset  *modifiedCols;	/* columns needing INSERT/UPDATE permission */
 
 	/*
-	 * The tuple_perms is a bitmask of required permissions in row-level
+	 * The tuplePerms is a bitmask of required permissions in row-level
 	 * access controls (both DAC and MAC). It is initialized as zero, but
 	 * enhanced security features set its required bit on the variable.
-	 * This bitmask is finally copied to Scan->tuple_perms and used to
+	 * This bitmask is finally copied to Scan->tuplePerms and used to
 	 * filter out violated tuples on ExecScan().
-	 * Please note that the tuple_perms with non-zero value may prevent
-	 * optimization because it is similar to conditional table scans.
+	 * Please note that the tuplePerms with non-zero value may prevent
+	 * optimization because it also means conditional table scan with
+	 * a condition of volatile function.
 	 */
-	uint32		tuple_perms;
+	AclMode		tuplePerms;
 } RangeTblEntry;
 
 /*

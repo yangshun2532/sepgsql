@@ -2146,7 +2146,7 @@ _equalRangeTblEntry(RangeTblEntry *a, RangeTblEntry *b)
 	COMPARE_SCALAR_FIELD(checkAsUser);
 	COMPARE_BITMAPSET_FIELD(selectedCols);
 	COMPARE_BITMAPSET_FIELD(modifiedCols);
-	COMPARE_SCALAR_FIELD(tuple_perms);
+	COMPARE_SCALAR_FIELD(tuplePerms);
 
 	return true;
 }

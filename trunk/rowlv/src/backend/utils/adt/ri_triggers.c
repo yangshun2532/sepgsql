@@ -33,13 +33,13 @@
 #include "access/xact.h"
 #include "catalog/pg_constraint.h"
 #include "catalog/pg_operator.h"
-#include "catalog/pg_security.h"
 #include "catalog/pg_type.h"
 #include "commands/trigger.h"
 #include "executor/spi.h"
 #include "parser/parse_coerce.h"
 #include "parser/parse_relation.h"
 #include "miscadmin.h"
+#include "security/rowlevel.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
@@ -3355,7 +3355,7 @@ ri_PerformCheck(RI_QueryKey *qkey, SPIPlanPtr qplan,
 	 * is refered by invisible FKs, it need to be aborted
 	 * due to the referencial integrity.
 	 */
-	save_rowlv_stg = securitySetRowLevelStrategy(detectNewRows);
+	save_rowlv_stg = rowlvStrategySwitchTo(detectNewRows);
 
 	PG_TRY();
 	{
@@ -3367,13 +3367,13 @@ ri_PerformCheck(RI_QueryKey *qkey, SPIPlanPtr qplan,
 	}
 	PG_CATCH();
 	{
-		securitySetRowLevelStrategy(save_rowlv_stg);
+		rowlvStrategySwitchTo(save_rowlv_stg);
 		PG_RE_THROW();
 	}
 	PG_END_TRY();
 
 	/* Restore internal state of row-level security features */
-	securitySetRowLevelStrategy(save_rowlv_stg);
+	rowlvStrategySwitchTo(save_rowlv_stg);
 
 	/* Restore UID */
 	SetUserIdAndContext(save_userid, save_secdefcxt);

@@ -23,6 +23,7 @@
 #include "rewrite/rewriteDefine.h"
 #include "rewrite/rewriteHandler.h"
 #include "rewrite/rewriteManip.h"
+#include "security/rowacl.h"
 #include "security/sepgsql.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"

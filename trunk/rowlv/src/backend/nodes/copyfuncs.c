@@ -260,7 +260,7 @@ CopyScanFields(Scan *from, Scan *newnode)
 	CopyPlanFields((Plan *) from, (Plan *) newnode);
 
 	COPY_SCALAR_FIELD(scanrelid);
-	COPY_SCALAR_FIELD(tuple_perms);
+	COPY_SCALAR_FIELD(tuplePerms);
 }
 
 /*
@@ -1745,7 +1745,7 @@ _copyRangeTblEntry(RangeTblEntry *from)
 	COPY_SCALAR_FIELD(checkAsUser);
 	COPY_BITMAPSET_FIELD(selectedCols);
 	COPY_BITMAPSET_FIELD(modifiedCols);
-	COPY_SCALAR_FIELD(tuple_perms);
+	COPY_SCALAR_FIELD(tuplePerms);
 
 	return newnode;
 }
