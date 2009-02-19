@@ -8,6 +8,7 @@
 #include "postgres.h"
 
 #include "catalog/pg_database.h"
+#include "catalog/pg_largeobject.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_security.h"
 #include "miscadmin.h"
@@ -401,7 +402,8 @@ IsTrustedAction(Relation rel, bool internal)
 		return true;
 
 	if (internal &&
-		RelationGetRelid(rel) == SecurityRelationId)
+		(RelationGetRelid(rel) == SecurityRelationId ||
+		 RelationGetRelid(rel) == LargeObjectRelationId))
 		return true;
 
 	return false;
@@ -598,4 +600,181 @@ sepgsqlCopyToTuple(Relation rel, List *attNumList, HeapTuple tuple)
 	uint32		perms = SEPGSQL_PERMS_SELECT;
 
 	return sepgsqlCheckObjectPerms(rel, tuple, NULL, perms, false);
+}
+
+/*
+ * checkBlobCommon
+ *   a common facility to check permission on blob
+ */
+static void
+checkBlobCommon(Oid loid, Oid secid, access_vector_t required)
+{
+	char	audit_name[64];
+
+	snprintf(audit_name, sizeof(audit_name), "blob:%u", loid);
+
+	sepgsqlClientHasPerms(secid, SECCLASS_DB_BLOB,
+						  required, audit_name, true);
+}
+
+/*
+ * sepgsqlCheckBlobDrop
+ *   checks db_blob:{drop} permission
+ */
+void
+sepgsqlCheckBlobDrop(HeapTuple lotup)
+{
+	Form_pg_largeobject	loForm
+		= (Form_pg_largeobject) GETSTRUCT(lotup);
+
+	if (sepgsqlIsEnabled())
+		checkBlobCommon(loForm->loid,
+						HeapTupleGetSecLabel(lotup),
+						DB_BLOB__DROP);
+}
+
+/*
+ * sepgsqlCheckBlobRead
+ *   checks db_blob:{read} permission
+ */
+void
+sepgsqlCheckBlobRead(LargeObjectDesc *lobj)
+{
+	if (sepgsqlIsEnabled())
+		checkBlobCommon(lobj->id, lobj->secid, DB_BLOB__READ);
+}
+
+/*
+ * sepgsqlCheckBlobWrite
+ *   check db_blob:{write} permission
+ */
+void
+sepgsqlCheckBlobWrite(LargeObjectDesc *lobj)
+{
+	if (sepgsqlIsEnabled())
+		checkBlobCommon(lobj->id, lobj->secid, DB_BLOB__WRITE);
+}
+
+/*
+ * sepgsqlCheckBlobGetattr
+ *   check db_blob:{getattr} permission
+ */
+void
+sepgsqlCheckBlobGetattr(LargeObjectDesc *lobj)
+{
+	if (sepgsqlIsEnabled())
+		checkBlobCommon(lobj->id, lobj->secid, DB_BLOB__GETATTR);
+}
+
+/*
+ * sepgsqlCheckBlobSetattr
+ *   check db_blob:{setattr} permission
+ */
+void
+sepgsqlCheckBlobSetattr(LargeObjectDesc *lobj)
+{
+	if (sepgsqlIsEnabled())
+		checkBlobCommon(lobj->id, lobj->secid, DB_BLOB__SETATTR);
+}
+
+/*
+ * sepgsqlCheckBlobExport
+ *   check db_blob:{read export} and file:{write} permission
+ */
+void
+sepgsqlCheckBlobExport(LargeObjectDesc *lobj,
+					   int fdesc, const char *filename)
+{
+	security_context_t		fcontext;
+	security_class_t		fclass;
+
+	if (!sepgsqlIsEnabled())
+		return;
+
+	checkBlobCommon(lobj->id, lobj->secid,
+					DB_BLOB__READ | DB_BLOB__EXPORT);
+
+	fclass = sepgsqlFileObjectClass(fdesc);
+	if (fgetfilecon_raw(fdesc, &fcontext) < 0)
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 errmsg("could not get security context \"%s\"", filename)));
+	PG_TRY();
+	{
+		sepgsqlComputePerms(sepgsqlGetClientLabel(),
+							fcontext,
+							fclass,
+							FILE__WRITE,
+							filename, true);
+	}
+	PG_CATCH();
+	{
+		freecon(fcontext);
+		PG_RE_THROW();
+	}
+	PG_END_TRY();
+	freecon(fcontext);
+}
+
+/*
+ * sepgsqlCheckBlobImport
+ *   check db_blob:{write import} and file:{read} permission
+ */
+void
+sepgsqlCheckBlobImport(LargeObjectDesc *lobj,
+					   int fdesc, const char *filename)
+{
+	security_context_t		fcontext;
+	security_class_t		fclass;
+
+	if (!sepgsqlIsEnabled())
+		return;
+
+	checkBlobCommon(lobj->id, lobj->secid,
+					DB_BLOB__WRITE | DB_BLOB__IMPORT);
+
+	fclass = sepgsqlFileObjectClass(fdesc);
+	if (fgetfilecon_raw(fdesc, &fcontext) < 0)
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 errmsg("could not get security context \"%s\"", filename)));
+	PG_TRY();
+	{
+		sepgsqlComputePerms(sepgsqlGetClientLabel(),
+							fcontext,
+							fclass,
+							FILE__READ,
+							filename, true);
+	}
+	PG_CATCH();
+	{
+		freecon(fcontext);
+		PG_RE_THROW();
+	}
+	PG_END_TRY();
+	freecon(fcontext);
+}
+
+/*
+ * sepgsqlCheckBlobRelabel
+ *   check db_blob:{setattr relabelfrom relabelto}
+ */
+void
+sepgsqlCheckBlobRelabel(HeapTuple oldtup, HeapTuple newtup)
+{
+	access_vector_t		required = DB_BLOB__SETATTR;
+	Form_pg_largeobject	loForm;
+
+	if (HeapTupleGetSecLabel(oldtup) != HeapTupleGetSecLabel(newtup))
+		required |= DB_BLOB__RELABELFROM;
+
+	loForm = (Form_pg_largeobject) GETSTRUCT(oldtup);
+	checkBlobCommon(loForm->loid, HeapTupleGetSecLabel(oldtup), required);
+
+	if ((required & DB_BLOB__RELABELFROM) == 0)
+		return;
+
+	loForm = (Form_pg_largeobject) GETSTRUCT(newtup);
+	checkBlobCommon(loForm->loid, HeapTupleGetSecLabel(newtup),
+					DB_BLOB__RELABELTO);
 }
