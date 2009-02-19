@@ -12,6 +12,7 @@
 #include "executor/execdesc.h"
 #include "fmgr.h"
 #include "nodes/parsenodes.h"
+#include "storage/large_object.h"
 #include "utils/relcache.h"
 
 #ifdef HAVE_SELINUX
@@ -148,6 +149,30 @@ sepgsqlCheckTableLock(Oid relid);
 extern bool
 sepgsqlCheckTableTruncate(Relation rel);
 
+extern void
+sepgsqlCheckBlobDrop(HeapTuple lotup);
+
+extern void
+sepgsqlCheckBlobRead(LargeObjectDesc *lobj);
+
+extern void
+sepgsqlCheckBlobWrite(LargeObjectDesc *lobj);
+
+extern void
+sepgsqlCheckBlobGetattr(LargeObjectDesc *lobj);
+
+extern void
+sepgsqlCheckBlobSetattr(LargeObjectDesc *lobj);
+
+extern void
+sepgsqlCheckBlobExport(LargeObjectDesc *lobj, int fdesc, const char *filename);
+
+extern void
+sepgsqlCheckBlobImport(LargeObjectDesc *lobj, int fdesc, const char *filename);
+
+extern void
+sepgsqlCheckBlobRelabel(HeapTuple oldtup, HeapTuple newtup);
+
 // HeapTuple INSERT/UPDATE/DELETE
 extern bool
 sepgsqlExecScan(Relation rel, HeapTuple tuple, AclMode required, bool abort);
@@ -244,6 +269,14 @@ sepgsqlSetDefaultSecLabel(Relation rel, HeapTuple tuple);
 #define sepgsqlCheckProcedureEntrypoint(a,b)	do {} while(0)
 #define sepgsqlCheckTableLock(a)				(true)
 #define sepgsqlCheckTableTruncate(a)			(true)
+#define sepgsqlCheckBlobDrop(a)					do {} while(0)
+#define sepgsqlCheckBlobRead(a)					do {} while(0)
+#define sepgsqlCheckBlobWrite(a)				do {} while(0)
+#define sepgsqlCheckBlobGetattr(a)				do {} while(0)
+#define sepgsqlCheckBlobSetattr(a)				do {} while(0)
+#define sepgsqlCheckBlobExport(a,b,c)			do {} while(0)
+#define sepgsqlCheckBlobImport(a,b,c)			do {} while(0)
+#define sepgsqlCheckBlobRelabel(a,b)			do {} while(0)
 
 #define sepgsqlExecScan(a,b,c,d)				(true)
 #define sepgsqlHeapTupleInsert(a,b,c)			(true)

@@ -410,6 +410,16 @@ sepgsqlProcedureAvPerms(uint32 required, HeapTuple tuple, HeapTuple newtup)
 }
 
 static access_vector_t
+sepgsqlBlobAvPerms(uint32 required, HeapTuple tuple, HeapTuple newtup)
+{
+	access_vector_t av_perms = 0;
+
+	// TO BE IMPLEMENTED LATER
+
+	return av_perms;
+}
+
+static access_vector_t
 sepgsqlTupleAvPerms(uint32 required, HeapTuple tuple, HeapTuple newtup)
 {
 	access_vector_t av_perms = 0;
@@ -469,7 +479,8 @@ sepgsqlCheckObjectPerms(Relation rel, HeapTuple tuple, HeapTuple newtup,
 		av_perms = sepgsqlProcedureAvPerms(required, tuple, newtup);
 		break;
 	case SECCLASS_DB_BLOB:
-		/* Currently, we consider blobs as a set of vanilla tuples. */
+		av_perms = sepgsqlBlobAvPerms(required, tuple, newtup);
+		break;
 	default:
 		av_perms = (sepostgresql_row_level ?
 					sepgsqlTupleAvPerms(required, tuple, newtup) : 0);
@@ -560,6 +571,48 @@ defaultColumnSecLabel(Relation rel, HeapTuple tuple)
 }
 
 static sepgsql_sid_t
+defaultBlobSecLabel(Relation rel, HeapTuple tuple)
+{
+	sepgsql_sid_t	losid;
+	char			audit_name[64];
+	Form_pg_largeobject	loForm
+		= (Form_pg_largeobject) GETSTRUCT(tuple);
+	/*
+	 * NOTE:
+	 * A object within db_blob class has a characteristic.
+	 * It does not have one-to-one mapping on a object and
+	 * a tuple, in other word, a large object consists of
+	 * multiple tuples. In most cases, user accesses them
+	 * via several certain interfaces, like loread().
+	 * So, we assume user don't touch pg_largeobject system
+	 * catalog by hand, and it does not give us any degradation
+	 * at interface incompatibility.
+	 * 
+	 * Thus, all the tuples modified are come from internal
+	 * interfaces, like simple_heap_insert(). The backend
+	 * implementation has to set correct security context
+	 * prior to insert a tuple. A security context of
+	 * largeobject is cached on LargeObjectDesc->secid
+	 * The only exception is inv_create(). It invoked
+	 * simple_heap_insert() with no security context to
+	 * assign a default one here.
+	 *
+	 * We also check db_blob:{create} permission here,
+	 * because only one path come from inv_create()
+	 * go through here.
+	 */
+	losid = sepgsqlClientCreate(sepgsqlGetDatabaseSid(),
+								SECCLASS_DB_BLOB);
+
+	snprintf(audit_name, sizeof(audit_name), "blob:%u", loForm->loid);
+	sepgsqlClientHasPerms(losid,
+						  SECCLASS_DB_BLOB,
+						  DB_BLOB__CREATE,
+						  audit_name, true);
+	return losid;
+}
+
+static sepgsql_sid_t
 defaultTupleSecLabel(Relation rel, HeapTuple tuple)
 {
 	HeapTuple           reltup;
@@ -624,7 +677,9 @@ sepgsqlSetDefaultSecLabel(Relation rel, HeapTuple tuple)
 		break;
 
 	case SECCLASS_DB_BLOB:
-		// It performs as a normal tuple now
+		newsid = defaultBlobSecLabel(rel, tuple);
+		break;
+
 	default:	/* SECCLASS_DB_TUPLE */
 		newsid = defaultTupleSecLabel(rel, tuple);
 		break;

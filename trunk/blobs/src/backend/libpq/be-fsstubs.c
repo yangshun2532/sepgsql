@@ -42,9 +42,11 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "catalog/pg_security.h"
 #include "libpq/be-fsstubs.h"
 #include "libpq/libpq-fs.h"
 #include "miscadmin.h"
+#include "security/sepgsql.h"
 #include "storage/fd.h"
 #include "storage/large_object.h"
 #include "utils/builtins.h"
@@ -156,6 +158,11 @@ lo_read(int fd, char *buf, int len)
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("invalid large-object descriptor: %d", fd)));
 
+	/*
+	 * SELinux: check db_blob:{read}
+	 */
+	sepgsqlCheckBlobRead(cookies[fd]);
+
 	status = inv_read(cookies[fd], buf, len);
 
 	return status;
@@ -176,6 +183,10 @@ lo_write(int fd, const char *buf, int len)
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 			  errmsg("large object descriptor %d was not opened for writing",
 					 fd)));
+	/*
+	 * SELinux: check db_blob:{write} permission
+	 */
+	sepgsqlCheckBlobWrite(cookies[fd]);
 
 	status = inv_write(cookies[fd], buf, len);
 
@@ -195,6 +206,10 @@ lo_lseek(PG_FUNCTION_ARGS)
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("invalid large-object descriptor: %d", fd)));
+	/*
+	 * SELinux: checl db_blob:{setattr} permission
+	 */
+	sepgsqlCheckBlobSetattr(cookies[fd]);
 
 	status = inv_seek(cookies[fd], offset, whence);
 
@@ -242,6 +257,10 @@ lo_tell(PG_FUNCTION_ARGS)
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("invalid large-object descriptor: %d", fd)));
+	/*
+	 * SELinux: check db_blob:{getattr}
+	 */
+	sepgsqlCheckBlobGetattr(cookies[fd]);
 
 	PG_RETURN_INT32(inv_tell(cookies[fd]));
 }
@@ -381,6 +400,11 @@ lo_import_internal(text *filename, Oid lobjOid)
 	 */
 	lobj = inv_open(oid, INV_WRITE, fscxt);
 
+	/*
+	 * SELinux: check db_blob:{write import} and file:{read} permission
+	 */
+	sepgsqlCheckBlobImport(lobj, fd, fnamebuf);
+
 	while ((nbytes = FileRead(fd, buf, BUFSIZE)) > 0)
 	{
 		tmp = inv_write(lobj, buf, nbytes);
@@ -449,6 +473,11 @@ lo_export(PG_FUNCTION_ARGS)
 						fnamebuf)));
 
 	/*
+	 * SELinux: check db_blob:{read export} and file:{write}
+	 */
+	sepgsqlCheckBlobExport(lobj, fd, fnamebuf);
+
+	/*
 	 * read in from the inversion file and write to the filesystem
 	 */
 	while ((nbytes = inv_read(lobj, buf, BUFSIZE)) > 0)
@@ -482,9 +511,80 @@ lo_truncate(PG_FUNCTION_ARGS)
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("invalid large-object descriptor: %d", fd)));
 
+	/*
+	 * SELinux: check db_blob:{write} permission
+	 */
+	sepgsqlCheckBlobWrite(cookies[fd]);
+
 	inv_truncate(cookies[fd], len);
 
 	PG_RETURN_INT32(0);
+}
+
+/*
+ * lo_get_seclabel
+ *    get a security label of large object
+ */
+Datum
+lo_get_seclabel(PG_FUNCTION_ARGS)
+{
+	LargeObjectDesc	   *lobj;
+	char			   *seclabel;
+
+	if (!sepgsqlIsEnabled())
+		ereport(ERROR,
+				(errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("SELinux: disabled now")));
+
+	lobj = inv_open(PG_GETARG_OID(0), INV_READ, fscxt);
+
+	/*
+	 * SELinux: check db_blob:{getattr}
+	 */
+	sepgsqlCheckBlobGetattr(lobj);
+
+	seclabel = securityTransSecLabelOut(lobj->secid);
+
+	inv_close(lobj);
+
+	return CStringGetTextDatum(seclabel);
+}
+
+/*
+ * lo_set_seclabel
+ *    set a security label of large object
+ */
+Datum
+lo_set_seclabel(PG_FUNCTION_ARGS)
+{
+	Oid		loid = PG_GETARG_OID(0);
+	char   *seclabel = TextDatumGetCString(PG_GETARG_DATUM(1));
+	Oid		secid;
+
+	if (!sepgsqlIsEnabled())
+		ereport(ERROR,
+				(errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("SELinux: disabled now")));
+
+	secid = securityTransSecLabelIn(seclabel);
+
+	inv_set_seclabel(loid, secid);
+
+	/*
+	 * Also on memory caches to be updated
+	 */
+	if (fscxt != NULL)
+    {
+		int         i;
+
+		for (i = 0; i < cookies_size; i++)
+		{
+			if (cookies[i] != NULL && cookies[i]->id == loid)
+				cookies[i]->secid = secid;
+		}
+	}
+
+	PG_RETURN_BOOL(true);
 }
 
 /*
