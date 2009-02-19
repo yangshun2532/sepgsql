@@ -1,0 +1,90 @@
+--@SECURITY_CONTEXT=unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c15
+SELECT sepgsql_getcon();
+                   sepgsql_getcon                    
+-----------------------------------------------------
+ unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c15
+(1 row)
+
+-- cleanup previous tests
+SET client_min_messages TO 'error';
+SET
+DROP TABLE IF EXISTS t3 CASCADE;
+DROP TABLE
+DROP TABLE IF EXISTS t2 CASCADE;
+DROP TABLE
+DROP TABLE IF EXISTS t1 CASCADE;
+DROP TABLE
+DROP FUNCTION IF EXISTS f1(int) CASCADE;
+DROP FUNCTION
+RESET client_min_messages;
+RESET
+-- setup tables
+CREATE TABLE t1
+(
+    a    int,
+    b    text
+);
+CREATE TABLE
+INSERT INTO t1 VALUES (1, 'aaa'), (2, 'bbb');
+INSERT 0 2
+CREATE TABLE t2
+(
+    x    int,
+    y    text
+         SECURITY_LABEL = 'unconfined_u:object_r:sepgsql_secret_table_t:s0'
+);
+CREATE TABLE
+SELECT attselabel from pg_attribute where attrelid = 't2'::regclass and attname = 'y';
+                   attselabel                    
+-------------------------------------------------
+ unconfined_u:object_r:sepgsql_secret_table_t:s0
+(1 row)
+
+INSERT INTO t2 VALUES (1, 'xxx'), (2, 'yyy');
+INSERT 0 2
+CREATE TABLE t3	      -- read only table
+(
+    s    int,
+    t    text
+) SECURITY_LABEL = 'unconfined_u:object_r:sepgsql_ro_table_t:s0';
+CREATE TABLE
+INSERT INTO t2 VALUES (1, 'sss'), (2, 'ttt');
+INSERT 0 2
+--@SECURITY_CONTEXT=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0
+SELECT sepgsql_getcon();
+                  sepgsql_getcon                   
+---------------------------------------------------
+ unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0
+(1 row)
+
+COPY t1 TO stdout;
+1	aaa
+2	bbb
+COPY t1 FROM stdin;
+COPY t1 TO '/tmp/sepgsql_test_copy_1';
+COPY 4
+COPY t1 TO '/tmp/sepgsql_test_copy_2';	-- to be denied
+ERROR:  SELinux: denied { write } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=unconfined_u:object_r:postgresql_db_t:s0 tclass=file name=/tmp/sepgsql_test_copy_2
+COPY t2 TO stdout;	-- to be denied
+ERROR:  SELinux: denied { select } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=unconfined_u:object_r:sepgsql_secret_table_t:s0 tclass=db_column name=t2.y
+COPY t2 FROM stdin;	-- to be denied
+ERROR:  SELinux: denied { insert } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=unconfined_u:object_r:sepgsql_secret_table_t:s0 tclass=db_column name=t2.y
+COPY t2 (x) TO stdout;
+1
+2
+1
+2
+COPY t3 TO stdout;
+COPY t3 FROM '/tmp/sepgsql_test_copy_1';	-- to be denied
+ERROR:  SELinux: denied { insert } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=unconfined_u:object_r:sepgsql_ro_table_t:s0 tclass=db_table name=t3
+COPY t1 FROM '/tmp/sepgsql_test_copy_1';
+COPY 4
+COPY t1 TO stdout;
+1	aaa
+2	bbb
+3	ccc
+4	ddd
+1	aaa
+2	bbb
+3	ccc
+4	ddd
