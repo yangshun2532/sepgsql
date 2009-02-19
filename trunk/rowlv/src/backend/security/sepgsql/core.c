@@ -255,3 +255,192 @@ sepgsql_mcstrans(PG_FUNCTION_ARGS)
 
 	return CStringGetTextDatum(context);
 }
+
+/*
+ * sepgsql_(get|set)_(user|role|type|range)
+ *   get/set a component of security context.
+ */
+static void
+parse_security_context(security_context_t context,
+					   char **user, char **role, char **type, char **range)
+{
+	security_context_t	raw_context;
+
+	if (!sepgsqlIsEnabled())
+		ereport(ERROR,
+				(errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("SELinux: disabled now")));
+
+	if (selinux_trans_to_raw_context(context, &raw_context) < 0)
+		ereport(ERROR,
+				(errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("SELinux: could not translate mls label: %s", context)));
+
+	PG_TRY();
+	{
+		char	   *tok;
+
+		tok = strtok(raw_context, ":");
+		if (user)
+			*user = (!tok ? NULL : pstrdup(tok));
+
+		tok = strtok(NULL, ":");
+		if (role)
+			*role = (!tok ? NULL : pstrdup(tok));
+
+		tok = strtok(NULL, ":");
+		if (type)
+			*type = (!tok ? NULL : pstrdup(tok));
+
+		tok = strtok(NULL, "\0");
+		if (range)
+			*range = (!tok ? NULL : pstrdup(tok));
+	}
+	PG_CATCH();
+	{
+		freecon(raw_context);
+		PG_RE_THROW();
+	}
+	PG_END_TRY();
+	freecon(raw_context);
+}
+
+Datum
+sepgsql_get_user(PG_FUNCTION_ARGS)
+{
+	char	   *user;
+
+	parse_security_context(TextDatumGetCString(PG_GETARG_TEXT_P(0)),
+						   &user, NULL, NULL, NULL);
+	PG_RETURN_TEXT_P(CStringGetTextDatum(user));
+}
+
+Datum
+sepgsql_get_role(PG_FUNCTION_ARGS)
+{
+	char	   *role;
+
+	parse_security_context(TextDatumGetCString(PG_GETARG_TEXT_P(0)),
+						   NULL, &role, NULL, NULL);
+	PG_RETURN_TEXT_P(CStringGetTextDatum(role));
+}
+
+Datum
+sepgsql_get_type(PG_FUNCTION_ARGS)
+{
+	char	   *type;
+
+	parse_security_context(TextDatumGetCString(PG_GETARG_TEXT_P(0)),
+						   NULL, NULL, &type, NULL);
+	PG_RETURN_TEXT_P(CStringGetTextDatum(type));
+}
+
+Datum
+sepgsql_get_range(PG_FUNCTION_ARGS)
+{
+	char	   *range;
+
+	parse_security_context(TextDatumGetCString(PG_GETARG_TEXT_P(0)),
+						   NULL, NULL, NULL, &range);
+	PG_RETURN_TEXT_P(CStringGetTextDatum(range));
+}
+
+Datum
+sepgsql_set_user(PG_FUNCTION_ARGS)
+{
+	security_context_t	newcon, result;
+	char	   *user, *role, *type, *range;
+	int			length;
+
+	user = TextDatumGetCString(PG_GETARG_TEXT_P(1));
+	parse_security_context(TextDatumGetCString(PG_GETARG_TEXT_P(0)),
+						   NULL, &role, &type, &range);
+
+	length = (!user ? 0 : strlen(user)) + (!role ? 0 : strlen(role))
+		+ (!type ? 0 : strlen(type)) + (!range ? 0 : strlen(range)) + 4;
+	newcon = palloc(length);
+
+	if (!range)
+		snprintf(newcon, length, "%s:%s:%s", user, role, type);
+	else
+		snprintf(newcon, length, "%s:%s:%s:%s", user, role, type, range);
+
+	result = sepgsqlSecurityLabelTransOut(newcon);
+
+	PG_RETURN_TEXT_P(CStringGetTextDatum(result));
+}
+
+Datum
+sepgsql_set_role(PG_FUNCTION_ARGS)
+{
+	security_context_t	newcon, result;
+	char	   *user, *role, *type, *range;
+	int			length;
+
+	role = TextDatumGetCString(PG_GETARG_TEXT_P(1));
+	parse_security_context(TextDatumGetCString(PG_GETARG_TEXT_P(0)),
+						   &user, NULL, &type, &range);
+
+	length = (!user ? 0 : strlen(user)) + (!role ? 0 : strlen(role))
+		+ (!type ? 0 : strlen(type)) + (!range ? 0 : strlen(range)) + 4;
+	newcon = palloc(length);
+
+	if (!range)
+		snprintf(newcon, length, "%s:%s:%s", user, role, type);
+	else
+		snprintf(newcon, length, "%s:%s:%s:%s", user, role, type, range);
+
+	result = sepgsqlSecurityLabelTransOut(newcon);
+
+	PG_RETURN_TEXT_P(CStringGetTextDatum(result));
+}
+
+Datum
+sepgsql_set_type(PG_FUNCTION_ARGS)
+{
+	security_context_t	newcon, result;
+	char	   *user, *role, *type, *range;
+	int			length;
+
+	type = TextDatumGetCString(PG_GETARG_TEXT_P(1));
+	parse_security_context(TextDatumGetCString(PG_GETARG_TEXT_P(0)),
+						   &user, &role, NULL, &range);
+
+	length = (!user ? 0 : strlen(user)) + (!role ? 0 : strlen(role))
+		+ (!type ? 0 : strlen(type)) + (!range ? 0 : strlen(range)) + 4;
+	newcon = palloc(length);
+
+	if (!range)
+		snprintf(newcon, length, "%s:%s:%s", user, role, type);
+	else
+		snprintf(newcon, length, "%s:%s:%s:%s", user, role, type, range);
+
+	result = sepgsqlSecurityLabelTransOut(newcon);
+
+	PG_RETURN_TEXT_P(CStringGetTextDatum(result));
+}
+
+Datum
+sepgsql_set_range(PG_FUNCTION_ARGS)
+{
+	security_context_t	newcon, result;
+	char	   *user, *role, *type, *range;
+	int			length;
+
+	range = TextDatumGetCString(PG_GETARG_TEXT_P(1));
+	parse_security_context(TextDatumGetCString(PG_GETARG_TEXT_P(0)),
+						   &user, &role, &type, NULL);
+
+	length = (!user ? 0 : strlen(user)) + (!role ? 0 : strlen(role))
+		+ (!type ? 0 : strlen(type)) + (!range ? 0 : strlen(range)) + 4;
+	newcon = palloc(length);
+
+	if (!range)
+		snprintf(newcon, length, "%s:%s:%s", user, role, type);
+	else
+		snprintf(newcon, length, "%s:%s:%s:%s", user, role, type, range);
+
+	result = sepgsqlSecurityLabelTransOut(newcon);
+
+	PG_RETURN_TEXT_P(CStringGetTextDatum(result));
+}

@@ -35,3 +35,51 @@ sepgsql_mcstrans(PG_FUNCTION_ARGS)
 {
 	return unavailable_function(__FUNCTION__);
 }
+
+Datum
+sepgsql_get_user(PG_FUNCTION_ARGS)
+{
+	return unavailable_function(__FUNCTION__);
+}
+
+Datum
+sepgsql_get_role(PG_FUNCTION_ARGS)
+{
+	return unavailable_function(__FUNCTION__);
+}
+
+Datum
+sepgsql_get_type(PG_FUNCTION_ARGS)
+{
+	return unavailable_function(__FUNCTION__);
+}
+
+Datum
+sepgsql_get_range(PG_FUNCTION_ARGS)
+{
+	return unavailable_function(__FUNCTION__);
+}
+
+Datum
+sepgsql_set_user(PG_FUNCTION_ARGS)
+{
+	return unavailable_function(__FUNCTION__);
+}
+
+Datum
+sepgsql_set_role(PG_FUNCTION_ARGS)
+{
+	return unavailable_function(__FUNCTION__);
+}
+
+Datum
+sepgsql_set_type(PG_FUNCTION_ARGS)
+{
+	return unavailable_function(__FUNCTION__);
+}
+
+Datum
+sepgsql_set_range(PG_FUNCTION_ARGS)
+{
+	return unavailable_function(__FUNCTION__);
+}

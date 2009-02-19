@@ -268,5 +268,13 @@ sepgsqlSetDefaultSecLabel(Relation rel, HeapTuple tuple);
 extern Datum sepgsql_getcon(PG_FUNCTION_ARGS);
 extern Datum sepgsql_server_getcon(PG_FUNCTION_ARGS);
 extern Datum sepgsql_mcstrans(PG_FUNCTION_ARGS);
+extern Datum sepgsql_get_user(PG_FUNCTION_ARGS);
+extern Datum sepgsql_get_role(PG_FUNCTION_ARGS);
+extern Datum sepgsql_get_type(PG_FUNCTION_ARGS);
+extern Datum sepgsql_get_range(PG_FUNCTION_ARGS);
+extern Datum sepgsql_set_user(PG_FUNCTION_ARGS);
+extern Datum sepgsql_set_role(PG_FUNCTION_ARGS);
+extern Datum sepgsql_set_type(PG_FUNCTION_ARGS);
+extern Datum sepgsql_set_range(PG_FUNCTION_ARGS);
 
 #endif	/* SEPGSQL_H */
