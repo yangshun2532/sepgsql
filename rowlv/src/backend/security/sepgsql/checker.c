@@ -98,6 +98,9 @@ sepgsqlAddEvalTable(List *selist, Oid relid, bool inh, uint32 perms)
 static List *
 sepgsqlAddEvalTableRTE(List *selist, RangeTblEntry *rte, uint32 perms)
 {
+	rte->tuplePerms |= (perms & DB_TABLE__USE ? SEPGSQL_PERMS_USE : 0);
+	rte->tuplePerms |= (perms & DB_TABLE__SELECT ? SEPGSQL_PERMS_SELECT : 0);
+
 	return sepgsqlAddEvalTable(selist, rte->relid, rte->inh, perms);
 }
 
