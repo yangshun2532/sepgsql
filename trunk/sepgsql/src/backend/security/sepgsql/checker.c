@@ -1,5 +1,5 @@
 /*
- * src/backend/utils/sepgsql/checker.c
+ * src/backend/security/sepgsql/checker.c
  *    walks on given Query tree and applies checks
  *
  * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
@@ -497,7 +497,7 @@ walkQueryHelper(Query *query, sepgsqlWalkerContext *swc)
 
 		foreach (l, query->targetList)
 		{
-			TargetEntry *tle = lfirst(l);
+			TargetEntry	   *tle = lfirst(l);
 
 			Assert(IsA(tle, TargetEntry));
 
@@ -513,8 +513,8 @@ walkQueryHelper(Query *query, sepgsqlWalkerContext *swc)
 
 			if (query->commandType != CMD_SELECT)
 			{
-				AttrNumber attno = tle->resno;
-				uint32 perms;
+				AttrNumber	attno = tle->resno;
+				uint32		perms;
 
 				if (query->commandType == CMD_UPDATE)
 					perms = DB_COLUMN__UPDATE;
