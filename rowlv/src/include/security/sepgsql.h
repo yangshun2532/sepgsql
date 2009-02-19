@@ -156,7 +156,7 @@ extern bool
 sepgsqlHeapTupleInsert(Relation rel, HeapTuple newtup, bool internal);
 
 extern bool
-sepgsqlHeapTupleUpdate(Relation rel, HeapTuple newtup, HeapTuple oldtup, bool internal);
+sepgsqlHeapTupleUpdate(Relation rel, HeapTuple oldtup, HeapTuple newtup, bool internal);
 
 extern bool
 sepgsqlHeapTupleDelete(Relation rel, HeapTuple oldtup, bool internal);

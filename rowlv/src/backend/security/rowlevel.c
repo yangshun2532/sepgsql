@@ -165,10 +165,10 @@ rowlvHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple newtup, bool inte
 {
 	HeapTuple	oldtup = get_older_tuple(rel, otid);
 
-	if (!rowaclHeapTupleUpdate(rel, newtup, oldtup, internal))
+	if (!rowaclHeapTupleUpdate(rel, oldtup, newtup, internal))
 		return false;
 
-	if (!sepgsqlHeapTupleUpdate(rel, newtup, oldtup, internal))
+	if (!sepgsqlHeapTupleUpdate(rel, oldtup, newtup, internal))
 		return false;
 
 	return true;

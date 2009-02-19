@@ -432,7 +432,7 @@ rowaclHeapTupleInsert(Relation rel, HeapTuple newtup, bool internal)
 }
 
 bool
-rowaclHeapTupleUpdate(Relation rel, HeapTuple newtup, HeapTuple oldtup, bool internal)
+rowaclHeapTupleUpdate(Relation rel, HeapTuple oldtup, HeapTuple newtup, bool internal)
 {
 	if (!HeapTupleHasRowAcl(newtup))
 		return true;

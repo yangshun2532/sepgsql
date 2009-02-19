@@ -27,22 +27,21 @@ bool sepostgresql_row_level;
 bool
 sepgsqlTupleDescHasSecLabel(Relation rel)
 {
-	/*
-	 * Newly created regular table with SELECT INTO.
-	 */
-	if (rel == NULL)
-		return sepostgresql_row_level;
+	if (!sepgsqlIsEnabled())
+		return false;
 
-	/*
-	 * Currently, we don't support row-level controls
-	 */
-	if (RelationGetRelid(rel) == DatabaseRelationId ||
-		RelationGetRelid(rel) == RelationRelationId ||
-		RelationGetRelid(rel) == AttributeRelationId ||
-		RelationGetRelid(rel) == ProcedureRelationId)
+	if (rel != NULL &&
+		RelationGetForm(rel)->relkind != RELKIND_RELATION)
+		return false;
+
+	if (rel != NULL &&
+		(RelationGetRelid(rel) == DatabaseRelationId ||		/* for db_database class */
+		 RelationGetRelid(rel) == RelationRelationId ||		/* for db_table class */
+		 RelationGetRelid(rel) == AttributeRelationId ||	/* for db_column class */
+		 RelationGetRelid(rel) == ProcedureRelationId))		/* for db_procedure class  */
 		return true;
 
-	return sepostgresql_row_level;
+	return sepostgresql_row_level;	/* db_tuple class depends on a GUC parameter */
 }
 
 /*
