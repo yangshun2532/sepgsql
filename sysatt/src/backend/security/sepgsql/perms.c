@@ -489,7 +489,6 @@ defaultTableSecLabel(Relation rel, HeapTuple tuple)
 {
 	return sepgsqlClientCreate(sepgsqlGetDatabaseSid(),
 							   SECCLASS_DB_TABLE);
-
 }
 
 static sepgsql_sid_t

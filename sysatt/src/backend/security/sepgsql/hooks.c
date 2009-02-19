@@ -447,7 +447,7 @@ sepgsqlHeapTupleUpdate(Relation rel, ItemPointer otid,
 		 * When no explicit security label is given,
 		 * it preserves an older security label.
 		 */
-		sepgsql_sid_t	newsid = HeapTupleGetSecLabel(oldtup);
+		sepgsql_sid_t	oldsid = HeapTupleGetSecLabel(oldtup);
 
 		if (HeapTupleHasSecLabel(newtup))
 			HeapTupleSetSecLabel(newtup, newsid);
