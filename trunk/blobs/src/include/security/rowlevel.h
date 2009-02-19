@@ -14,7 +14,7 @@
 #include "utils/relcache.h"
 
 extern bool
-rowlvStrategySwitchTo(bool new_strategy);
+rowlvBehaviorSwitchTo(bool new_abort);
 
 extern bool
 rowlvExecScan(Scan *scan, Relation rel, TupleTableSlot *slot, bool abort);
