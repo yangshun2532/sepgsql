@@ -9,6 +9,7 @@
 
 #include "catalog/pg_database.h"
 #include "catalog/pg_proc.h"
+#include "catalog/pg_security.h"
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
 #include "nodes/nodes.h"
@@ -391,12 +392,31 @@ sepgsqlCheckProcedureEntrypoint(FmgrInfo *finfo, HeapTuple protup)
 }
 
 /*
+ * 
+ */
+static bool
+IsTrustedAction(Relation rel, bool internal)
+{
+	if (RelationGetForm(rel)->relkind != RELKIND_RELATION)
+		return true;
+
+	if (internal &&
+		RelationGetRelid(rel) == SecurityRelationId)
+		return true;
+
+	return false;
+}
+
+/*
  * Row-level decision making
  */
 bool
 sepgsqlExecScan(Relation rel, HeapTuple tuple, AclMode required, bool abort)
 {
 	Assert((required & SEPGSQL_PERMS_MASK) == required);
+
+	if (IsTrustedAction(rel, false))
+		return true;
 
 	return sepgsqlCheckObjectPerms(rel, tuple, NULL, required, abort);
 }
@@ -422,6 +442,9 @@ sepgsqlHeapTupleInsert(Relation rel, HeapTuple newtup, bool internal)
 			sepgsqlSetDefaultSecLabel(rel, newtup);
 	}
 
+	if (IsTrustedAction(rel, internal))
+		return true;
+
 	return sepgsqlCheckObjectPerms(rel, newtup, NULL, perms, internal);
 }
 
@@ -442,11 +465,14 @@ sepgsqlHeapTupleUpdate(Relation rel, HeapTuple oldtup,
 		 * When no explicit security label is given,
 		 * it preserves an older security label.
 		 */
-		sepgsql_sid_t	newsid = HeapTupleGetSecLabel(oldtup);
+		sepgsql_sid_t	oldsid = HeapTupleGetSecLabel(oldtup);
 
 		if (HeapTupleHasSecLabel(newtup))
-			HeapTupleSetSecLabel(newtup, newsid);
+			HeapTupleSetSecLabel(newtup, oldsid);
 	}
+
+	if (IsTrustedAction(rel, internal))
+		return true;
 
 	if (HeapTupleGetSecLabel(oldtup) != HeapTupleGetSecLabel(newtup) ||
 		sepgsqlTupleObjectClass(relid, newtup)
@@ -458,7 +484,7 @@ sepgsqlHeapTupleUpdate(Relation rel, HeapTuple oldtup,
 	if (rc && perms & SEPGSQL_PERMS_RELABELFROM)
 	{
 		perms = SEPGSQL_PERMS_RELABELTO;
-		rc = sepgsqlCheckObjectPerms(rel, newtup, NULL, perms, true);
+		rc = sepgsqlCheckObjectPerms(rel, newtup, NULL, perms, internal);
 	}
 
 	return rc;
@@ -473,7 +499,10 @@ sepgsqlHeapTupleDelete(Relation rel, HeapTuple oldtup, bool internal)
 	if (!sepgsqlIsEnabled())
 		return true;
 
-	rc = sepgsqlCheckObjectPerms(rel, oldtup, NULL, perms, true);
+	if (IsTrustedAction(rel, internal))
+		return true;
+
+	rc = sepgsqlCheckObjectPerms(rel, oldtup, NULL, perms, internal);
 
 	return rc;
 }
