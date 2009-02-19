@@ -38,7 +38,7 @@ sepgsqlTupleDescHasSecLabel(Relation rel)
 		(RelationGetRelid(rel) == DatabaseRelationId ||		/* for db_database class */
 		 RelationGetRelid(rel) == RelationRelationId ||		/* for db_table class */
 		 RelationGetRelid(rel) == AttributeRelationId ||	/* for db_column class */
-		 RelationGetRelid(rel) == ProcedureRelationId))		/* for db_procedure class  */
+		 RelationGetRelid(rel) == ProcedureRelationId))		/* for db_procedure class */
 		return true;
 
 	return sepostgresql_row_level;	/* db_tuple class depends on a GUC parameter */

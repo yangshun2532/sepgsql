@@ -1226,12 +1226,7 @@ toast_save_datum(Relation rel, Datum value, int options)
 		memcpy(VARDATA(&chunk_data), data_p, chunk_size);
 		toasttup = heap_form_tuple(toasttupDesc, t_values, t_isnull);
 
-		/*
-		 * NOTE: we currently have no enhanced security feature which
-		 * enables to assign security attributes and control accesses
-		 * on individual tuples within toast tables.
-		 */
-		// rowlvHeapTupleInsert(toastrel, toasttup, true);
+		rowlvHeapTupleInsert(toastrel, toasttup, true);
 
 		heap_insert(toastrel, toasttup, mycid, options, NULL);
 
