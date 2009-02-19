@@ -220,14 +220,13 @@ sepgsqlAddEvalColumnRTE(List *selist, RangeTblEntry *rte, AttrNumber attno, uint
 static List *
 sepgsqlAddEvalForeignKey(List *selist, Form_pg_trigger trigger)
 {
-	HeapTuple contup;
-	Datum attdat;
-	ArrayType *attrs;
-	int index;
-	int16 *attnum;
-	bool isnull;
-
-	Assert(RI_FKey_trigger_type(trigger->tgfoid) == RI_TRIGGER_PK);
+	HeapTuple		contup;
+	AttrNumber		attkeys;
+	Datum			conkeys;
+	ArrayType	   *attrs;
+	int16		   *attnum;
+	int				index;
+	bool			isnull;
 
 	contup = SearchSysCache(CONSTROID,
 							ObjectIdGetDatum(trigger->tgconstraint),
@@ -236,18 +235,21 @@ sepgsqlAddEvalForeignKey(List *selist, Form_pg_trigger trigger)
 		elog(ERROR, "SELinux: cache lookup failed for constraint %u",
 			 trigger->tgconstrrelid);
 
-	attdat = SysCacheGetAttr(CONSTROID, contup,
-							 Anum_pg_constraint_confkey, &isnull);
+	if (RI_FKey_trigger_type(trigger->tgfoid) == RI_TRIGGER_PK)
+		attkeys = Anum_pg_constraint_confkey;
+	else
+		attkeys = Anum_pg_constraint_conkey;
+
+	conkeys = SysCacheGetAttr(CONSTROID, contup, attkeys, &isnull);
 	if (isnull)
-		elog(ERROR, "SELinux: null columns for constraint: %u",
-			 trigger->tgconstrrelid);
-	attrs = DatumGetArrayTypeP(attdat);
+		elog(ERROR, "SELinux: no columns constrainted");
+
+	attrs = DatumGetArrayTypeP(conkeys);
 
 	if (ARR_NDIM(attrs) != 1 ||
 		ARR_HASNULL(attrs) ||
 		ARR_ELEMTYPE(attrs) != INT2OID)
-		elog(ERROR, "SELinux: unexpected constraint format: %u",
-			 trigger->tgconstrrelid);
+		elog(ERROR, "SELinux: unexpected constraint format");
 
 	attnum = (int16 *) ARR_DATA_PTR(attrs);
 	for (index = 0; index < ARR_DIMS(attrs)[0]; index++)
@@ -312,23 +314,21 @@ sepgsqlAddEvalTriggerFunc(List *selist, Oid relid, int cmdType)
 		switch (RI_FKey_trigger_type(trigForm->tgfoid))
 		{
 			/*
-			 * NOTE: we can ensure that built-in FK triggers on
-			 * PK side does not refer on unconstrainted columns,
-			 * so it does not need to apply permission checks on
-			 * whole of columns. The ones on FK side does not
-			 * refer older version tuple, so we don't need to
-			 * check anything here.
-			 * Elsewhere, whole of tuple is delivered to triggers,
-			 * so we have to checl SELECT permission for them.
+			 * NOTE: we can make sure build-in FK trigger functions
+			 * are not necessary to refer whole of the columns.
+			 * It only refers constrainted columns, so we can omit
+			 * check rest of columns. This special care enables to
+			 * set up FK constraint on a table which has partially
+			 * visible columns.
+			 * Elsewhere, we don't have any knowledge on user defined
+			 * trigger functions, so it is necessary to check permission
+			 * to refer whole of the columns.
 			 */
-
 		case RI_TRIGGER_PK:
+		case RI_TRIGGER_FK:
 			selist = sepgsqlAddEvalTable(selist, relid, false,
 										 DB_TABLE__SELECT);
 			selist = sepgsqlAddEvalForeignKey(selist, trigForm);
-			break;
-
-		case RI_TRIGGER_FK:
 			break;
 
 		default:	/* RI_TRIGGER_NONE */
