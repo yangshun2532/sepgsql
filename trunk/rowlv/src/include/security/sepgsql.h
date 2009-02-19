@@ -9,6 +9,7 @@
 #define SEPGSQL_H
 
 #include "access/htup.h"
+#include "commands/trigger.h"
 #include "executor/execdesc.h"
 #include "fmgr.h"
 #include "nodes/parsenodes.h"
@@ -147,6 +148,9 @@ sepgsqlCheckTableLock(Oid relid);
 
 extern bool
 sepgsqlCheckTableTruncate(Relation rel);
+
+extern bool
+sepgsqlCheckTupleSelectOnTrigger(TriggerData *tgdata);
 
 // HeapTuple INSERT/UPDATE/DELETE
 extern bool

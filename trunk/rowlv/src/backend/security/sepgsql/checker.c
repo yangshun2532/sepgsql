@@ -1,5 +1,5 @@
 /*
- * src/backend/utils/sepgsql/checker.c
+ * src/backend/security/sepgsql/checker.c
  *    walks on given Query tree and applies checks
  *
  * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
@@ -10,6 +10,7 @@
 #include "access/sysattr.h"
 #include "catalog/indexing.h"
 #include "catalog/pg_constraint.h"
+#include "catalog/pg_security.h"
 #include "catalog/pg_trigger.h"
 #include "catalog/pg_type.h"
 #include "commands/trigger.h"
@@ -500,11 +501,18 @@ walkQueryHelper(Query *query, sepgsqlWalkerContext *swc)
 
 		foreach (l, query->targetList)
 		{
-			TargetEntry *tle = lfirst(l);
+			TargetEntry	   *tle = lfirst(l);
+			bool			is_security = false;
 
 			Assert(IsA(tle, TargetEntry));
 
-			if (tle->resjunk)
+			if (tle->resjunk &&
+				tle->resname &&
+				strcmp(tle->resname, SecurityLabelAttributeName) == 0)
+				is_security = true;
+
+
+			if (tle->resjunk && !is_security)
 			{
 				swcData.internal_use = true;
 				sepgsqlExprWalker((Node *) tle->expr, &swcData);
@@ -516,8 +524,8 @@ walkQueryHelper(Query *query, sepgsqlWalkerContext *swc)
 
 			if (query->commandType != CMD_SELECT)
 			{
-				AttrNumber attno = tle->resno;
-				uint32 perms;
+				AttrNumber	attno = tle->resno;
+				uint32		perms;
 
 				if (query->commandType == CMD_UPDATE)
 					perms = DB_COLUMN__UPDATE;
@@ -683,6 +691,18 @@ sepgsqlCheckSelinuxEvalItem(SelinuxEvalItem *seitem)
 	int index;
 
 	Assert(IsA(seitem, SelinuxEvalItem));
+
+	/*
+	 * NOTE: it is hardwiredly denied to apply writer operations
+	 * on pg_security system catalog.
+	 */
+	if (seitem->relid == SecurityRelationId &&
+		(seitem->relperms & (DB_TABLE__UPDATE |
+							 DB_TABLE__INSERT |
+							 DB_TABLE__DELETE)))
+		ereport(ERROR,
+				(errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("SELinux: could not write pg_security by hand")));
 
 	/*
 	 * Permission checks on table

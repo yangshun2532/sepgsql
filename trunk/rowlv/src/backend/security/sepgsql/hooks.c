@@ -392,6 +392,61 @@ sepgsqlCheckProcedureEntrypoint(FmgrInfo *finfo, HeapTuple protup)
 }
 
 /*
+ * sepgsqlCheckTupleSelectOnTrigger
+ *   checks db_tuple:{select} permission on fetched tuple
+ *   on per-tuple trigger
+ */
+bool
+sepgsqlCheckTupleSelectOnTrigger(TriggerData *tgdata)
+{
+	Relation	rel = tgdata->tg_relation;
+	HeapTuple	newtup = NULL;
+	HeapTuple	oldtup = NULL;
+
+	/* no need to check for statement triggers */
+	if (TRIGGER_FIRED_FOR_STATEMENT(tgdata->tg_event))
+		return true;
+
+	if (TRIGGER_FIRED_BY_INSERT(tgdata->tg_event))
+	{
+		if (TRIGGER_FIRED_AFTER(tgdata->tg_event))
+			newtup = tgdata->tg_trigtuple;
+	}
+	else if (TRIGGER_FIRED_BY_UPDATE(tgdata->tg_event))
+	{
+		oldtup = tgdata->tg_trigtuple;
+		if (TRIGGER_FIRED_AFTER(tgdata->tg_event))
+		{
+			sepgsql_sid_t	sid = HeapTupleGetSecLabel(oldtup);
+			if (HeapTupleGetSecLabel(tgdata->tg_newtuple) != sid)
+				newtup = tgdata->tg_newtuple;
+		}
+	}
+	else if (TRIGGER_FIRED_BY_DELETE(tgdata->tg_event))
+	{
+		if (TRIGGER_FIRED_AFTER(tgdata->tg_event))
+			oldtup = tgdata->tg_trigtuple;
+	}
+	else
+	{
+		elog(ERROR, "SELinux: unexpected trigger event: %u",
+			 tgdata->tg_event);
+	}
+
+	if (HeapTupleIsValid(oldtup) &&
+		!sepgsqlCheckObjectPerms(rel, oldtup, NULL,
+								 SEPGSQL_PERMS_SELECT, false))
+		return false;
+
+	if (HeapTupleIsValid(newtup) &&
+		!sepgsqlCheckObjectPerms(rel, newtup, NULL,
+								 SEPGSQL_PERMS_SELECT, false))
+		return false;
+
+	return true;
+}
+
+/*
  * 
  */
 static bool
