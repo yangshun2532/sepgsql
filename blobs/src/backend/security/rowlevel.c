@@ -16,7 +16,7 @@
 #include "utils/rel.h"
 
 /*
- * rowlvStrategySwitchTo
+ * rowlvBehaviorSwitchTo
  *
  *   switches current behavior of the row level access control features.
  *   In the default, it works as a filter to skip fetching violated tuples
@@ -48,16 +48,16 @@
  *   Elsewhere, we should apply filtering strategy, as far as we cannot
  *   ensure a malicious function is injected on WHERE clause.
  */
-static bool rowlvCurrentStrategy = false;
+static bool rowlvAbortBehavior = false;
 
 bool
-rowlvStrategySwitchTo(bool new_stg)
+rowlvBehaviorSwitchTo(bool new_abort)
 {
-	bool	old_stg = rowlvCurrentStrategy;
+	bool	old_abort = rowlvAbortBehavior;
 
-	rowlvCurrentStrategy = new_stg;
+	rowlvAbortBehavior = new_abort;
 
-	return old_stg;
+	return old_abort;
 }
 
 /*
@@ -70,8 +70,8 @@ rowlvExecScan(Scan *scan, Relation rel, TupleTableSlot *slot, bool abort)
 	HeapTuple		tuple;
 	AclMode			required;
 
-	if (rowlvCurrentStrategy != abort)
-		return true;
+	if (rowlvAbortBehavior != abort)
+		return true;	/* It is not a time to make a decision */
 
 	/*
 	 * If no permissions are required to be checked, it always allow
@@ -147,10 +147,16 @@ bool
 rowlvHeapTupleInsert(Relation rel, HeapTuple newtup, bool internal)
 {
 	if (!rowaclHeapTupleInsert(rel, newtup, internal))
+	{
+		Assert(!internal);
 		return false;
+	}
 
 	if (!sepgsqlHeapTupleInsert(rel, newtup, internal))
+	{
+		Assert(!internal);
 		return false;
+	}
 
 	return true;
 }
@@ -166,10 +172,16 @@ rowlvHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple newtup, bool inte
 	HeapTuple	oldtup = get_older_tuple(rel, otid);
 
 	if (!rowaclHeapTupleUpdate(rel, oldtup, newtup, internal))
+	{
+		Assert(!internal);
 		return false;
+	}
 
 	if (!sepgsqlHeapTupleUpdate(rel, oldtup, newtup, internal))
+	{
+		Assert(!internal);
 		return false;
+	}
 
 	return true;
 }
@@ -184,10 +196,16 @@ rowlvHeapTupleDelete(Relation rel, ItemPointer otid, bool internal)
 	HeapTuple	oldtup = get_older_tuple(rel, otid);
 
 	if (!rowaclHeapTupleDelete(rel, oldtup, internal))
+	{
+		Assert(!internal);
 		return false;
+	}
 
 	if (!sepgsqlHeapTupleDelete(rel, oldtup, internal))
+	{
+		Assert(!internal);
 		return false;
+	}
 
 	return true;
 }
@@ -199,6 +217,12 @@ rowlvHeapTupleDelete(Relation rel, ItemPointer otid, bool internal)
 bool
 rowlvCopyToTuple(Relation rel, List *attNumList, HeapTuple tuple)
 {
+	/*
+	 * NOTE:
+	 * rowlvCopyToTuple() isn't invoked in the context with
+	 * rowlvAbortBehavior is "true".
+	 */
+
 	if (!rowaclCopyToTuple(rel, attNumList, tuple))
 		return false;
 
