@@ -799,7 +799,7 @@ InsertOneTuple(Oid objectid)
 							  RelationGetForm(boot_reldesc)->relhasoids,
 							  attrtypes);
 	sepgsqlSetDefaultSecLabel(RelationGetRelid(boot_reldesc),
-							  values, Nulls, DatumGetPointer(NULL));
+							  values, Nulls, PointerGetDatum(NULL));
 	tuple = heap_form_tuple(tupDesc, values, Nulls);
 	if (objectid != (Oid) 0)
 		HeapTupleSetOid(tuple, objectid);
