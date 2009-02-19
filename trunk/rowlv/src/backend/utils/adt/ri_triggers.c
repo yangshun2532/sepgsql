@@ -3265,7 +3265,7 @@ ri_PerformCheck(RI_QueryKey *qkey, SPIPlanPtr qplan,
 	int			spi_result;
 	Oid			save_userid;
 	bool		save_secdefcxt;
-	bool		save_rowlv_stg;
+	bool		save_rowlv_bahavior;
 	Datum		vals[RI_MAX_NUMKEYS * 2];
 	char		nulls[RI_MAX_NUMKEYS * 2];
 
@@ -3355,7 +3355,7 @@ ri_PerformCheck(RI_QueryKey *qkey, SPIPlanPtr qplan,
 	 * is refered by invisible FKs, it need to be aborted
 	 * due to the referencial integrity.
 	 */
-	save_rowlv_stg = rowlvStrategySwitchTo(detectNewRows);
+	save_rowlv_bahavior = rowlvBehaviorSwitchTo(detectNewRows);
 
 	PG_TRY();
 	{
@@ -3367,13 +3367,13 @@ ri_PerformCheck(RI_QueryKey *qkey, SPIPlanPtr qplan,
 	}
 	PG_CATCH();
 	{
-		rowlvStrategySwitchTo(save_rowlv_stg);
+		rowlvBehaviorSwitchTo(save_rowlv_bahavior);
 		PG_RE_THROW();
 	}
 	PG_END_TRY();
 
 	/* Restore internal state of row-level security features */
-	rowlvStrategySwitchTo(save_rowlv_stg);
+	rowlvBehaviorSwitchTo(save_rowlv_bahavior);
 
 	/* Restore UID */
 	SetUserIdAndContext(save_userid, save_secdefcxt);
