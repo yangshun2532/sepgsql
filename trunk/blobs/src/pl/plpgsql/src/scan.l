@@ -9,7 +9,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/pl/plpgsql/src/scan.l,v 1.65 2009/01/01 17:24:04 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/pl/plpgsql/src/scan.l,v 1.67 2009/02/18 11:33:04 petere Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -254,7 +254,7 @@ dump			{ return O_DUMP;			}
 				plpgsql_error_lineno = start_lineno;
 				ereport(ERROR,
 						(errcode(ERRCODE_DATATYPE_MISMATCH),
-						 errmsg("unterminated comment")));
+						 errmsg("unterminated /* comment")));
 			}
 
     /* ----------
@@ -293,7 +293,7 @@ dump			{ return O_DUMP;			}
 				plpgsql_error_lineno = start_lineno;
 				ereport(ERROR,
 						(errcode(ERRCODE_DATATYPE_MISMATCH),
-						 errmsg("unterminated string")));
+						 errmsg("unterminated quoted string")));
 			}
 
 {dolqdelim}		{
@@ -392,7 +392,7 @@ plpgsql_yyerror(const char *message)
 		ereport(ERROR,
 				(errcode(ERRCODE_SYNTAX_ERROR),
 				 /* translator: %s is typically "syntax error" */
-				 errmsg("%s at end of input", message),
+				 errmsg("%s at end of input", _(message)),
 				 internalerrposition(cursorpos),
 				 internalerrquery(scanstr)));
 	}
@@ -401,7 +401,7 @@ plpgsql_yyerror(const char *message)
 		ereport(ERROR,
 				(errcode(ERRCODE_SYNTAX_ERROR),
 				 /* translator: first %s is typically "syntax error" */
-				 errmsg("%s at or near \"%s\"", message, loc),
+				 errmsg("%s at or near \"%s\"", _(message), loc),
 				 internalerrposition(cursorpos),
 				 internalerrquery(scanstr)));
 	}
