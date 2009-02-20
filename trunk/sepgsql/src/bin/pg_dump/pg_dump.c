@@ -12,7 +12,7 @@
  *	by PostgreSQL
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/bin/pg_dump/pg_dump.c,v 1.521 2009/02/16 23:06:55 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/bin/pg_dump/pg_dump.c,v 1.524 2009/02/18 12:07:07 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -98,6 +98,8 @@ static SimpleOidList table_exclude_oids = {NULL, NULL};
 
 /* default, if no "inclusion" switches appear, is to dump everything */
 static bool include_everything = true;
+
+static int	binary_upgrade = 0;
 
 char		g_opaque_type[10];	/* name for the opaque type */
 
@@ -238,7 +240,8 @@ main(int argc, char **argv)
 	static int  outputNoTablespaces = 0;
 	static int	use_setsessauth = 0;
 
-	static struct option long_options[] = {
+	struct option long_options[] = {
+		{"binary-upgrade", no_argument, &binary_upgrade, 1},	/* not documented */
 		{"data-only", no_argument, NULL, 'a'},
 		{"blobs", no_argument, NULL, 'b'},
 		{"clean", no_argument, NULL, 'c'},
@@ -1603,8 +1606,6 @@ dumpDatabase(Archive *AH)
 				i_encoding,
 				i_collate,
 				i_ctype,
-				i_tablespace,
-				i_seclabel;
 	CatalogId	dbCatId;
 	DumpId		dbDumpId;
 	const char *datname,
@@ -1614,6 +1615,7 @@ dumpDatabase(Archive *AH)
 			   *ctype,
 			   *tablespace,
 			   *seclabel;
+	uint32		frozenxid;
 
 	datname = PQdb(g_conn);
 
@@ -1629,7 +1631,7 @@ dumpDatabase(Archive *AH)
 		appendPQExpBuffer(dbQry, "SELECT tableoid, oid, "
 						  "(%s datdba) AS dba, "
 						  "pg_encoding_to_char(encoding) AS encoding, "
-						  "datcollate, datctype, "
+						  "datcollate, datctype, datfrozenxid, "
 						  "(SELECT spcname FROM pg_tablespace t WHERE t.oid = dattablespace) AS tablespace, "
 					  "shobj_description(oid, 'pg_database') AS description, "
 						  "%s as security_label "
@@ -1644,7 +1646,7 @@ dumpDatabase(Archive *AH)
 		appendPQExpBuffer(dbQry, "SELECT tableoid, oid, "
 						  "(%s datdba) AS dba, "
 						  "pg_encoding_to_char(encoding) AS encoding, "
-						  "NULL AS datcollate, NULL AS datctype, "
+						  "NULL AS datcollate, NULL AS datctype, datfrozenxid, "
 						  "(SELECT spcname FROM pg_tablespace t WHERE t.oid = dattablespace) AS tablespace, "
 					  "shobj_description(oid, 'pg_database') AS description, "
 						  "NULL as security_label "
@@ -1658,7 +1660,7 @@ dumpDatabase(Archive *AH)
 		appendPQExpBuffer(dbQry, "SELECT tableoid, oid, "
 						  "(%s datdba) AS dba, "
 						  "pg_encoding_to_char(encoding) AS encoding, "
-						  "NULL AS datcollate, NULL AS datctype, "
+						  "NULL AS datcollate, NULL AS datctype, datfrozenxid, "
 						  "(SELECT spcname FROM pg_tablespace t WHERE t.oid = dattablespace) AS tablespace, "
 						  "NULL as security_label "
 						  "FROM pg_database "
@@ -1672,8 +1674,9 @@ dumpDatabase(Archive *AH)
 						  "(%s datdba) AS dba, "
 						  "pg_encoding_to_char(encoding) AS encoding, "
 						  "NULL AS datcollate, NULL AS datctype, "
+						  "0 AS datfrozenxid, "
 						  "NULL AS tablespace, "
-						  "NULL as security_label "
+						  "NULL AS security_label "
 						  "FROM pg_database "
 						  "WHERE datname = ",
 						  username_subquery);
@@ -1687,6 +1690,7 @@ dumpDatabase(Archive *AH)
 						  "(%s datdba) AS dba, "
 						  "pg_encoding_to_char(encoding) AS encoding, "
 						  "NULL AS datcollate, NULL AS datctype, "
+						  "0 AS datfrozenxid, "
 						  "NULL AS tablespace, "
 						  "NULL as security_label "
 						  "FROM pg_database "
@@ -1720,6 +1724,7 @@ dumpDatabase(Archive *AH)
 	i_encoding = PQfnumber(res, "encoding");
 	i_collate = PQfnumber(res, "datcollate");
 	i_ctype = PQfnumber(res, "datctype");
+	i_frozenxid = PQfnumber(res, "datfrozenxid");
 	i_tablespace = PQfnumber(res, "tablespace");
 	i_seclabel = PQfnumber(res, "security_label");
 
@@ -1729,6 +1734,7 @@ dumpDatabase(Archive *AH)
 	encoding = PQgetvalue(res, 0, i_encoding);
 	collate = PQgetvalue(res, 0, i_collate);
 	ctype = PQgetvalue(res, 0, i_ctype);
+	frozenxid = atooid(PQgetvalue(res, 0, i_frozenxid));
 	tablespace = PQgetvalue(res, 0, i_tablespace);
 	seclabel = PQgetvalue(res, 0, i_seclabel);
 
@@ -1757,6 +1763,15 @@ dumpDatabase(Archive *AH)
 
 	appendPQExpBuffer(creaQry, ";\n");
 
+	if (binary_upgrade)
+	{
+		appendPQExpBuffer(creaQry, "\n-- For binary upgrade, set datfrozenxid.\n");
+		appendPQExpBuffer(creaQry, "UPDATE pg_database\n"
+							 "SET datfrozenxid = '%u'\n"
+							 "WHERE	datname = '%s';\n",
+							 frozenxid, datname);
+	}
+	
 	appendPQExpBuffer(delQry, "DROP DATABASE %s;\n",
 					  fmtId(datname));
 
@@ -3143,6 +3158,7 @@ getTables(int *numTables)
 	int			i_relhasindex;
 	int			i_relhasrules;
 	int			i_relhasoids;
+	int			i_relfrozenxid;
 	int			i_owning_tab;
 	int			i_owning_col;
 	int			i_reltablespace;
@@ -3185,6 +3201,7 @@ getTables(int *numTables)
 						  "(%s c.relowner) AS rolname, "
 						  "c.relchecks, c.relhastriggers, "
 						  "c.relhasindex, c.relhasrules, c.relhasoids, "
+						  "c.relfrozenxid, "
 						  "d.refobjid AS owning_tab, "
 						  "d.refobjsubid AS owning_col, "
 						  "(SELECT spcname FROM pg_tablespace t WHERE t.oid = c.reltablespace) AS reltablespace, "
@@ -3218,6 +3235,7 @@ getTables(int *numTables)
 						  "(%s relowner) AS rolname, "
 						  "relchecks, (reltriggers <> 0) AS relhastriggers, "
 						  "relhasindex, relhasrules, relhasoids, "
+						  "relfrozenxid, "
 						  "d.refobjid AS owning_tab, "
 						  "d.refobjsubid AS owning_col, "
 						  "(SELECT spcname FROM pg_tablespace t WHERE t.oid = c.reltablespace) AS reltablespace, "
@@ -3249,6 +3267,7 @@ getTables(int *numTables)
 						  "(%s relowner) AS rolname, "
 						  "relchecks, (reltriggers <> 0) AS relhastriggers, "
 						  "relhasindex, relhasrules, relhasoids, "
+						  "0 AS relfrozenxid, "
 						  "d.refobjid AS owning_tab, "
 						  "d.refobjsubid AS owning_col, "
 						  "(SELECT spcname FROM pg_tablespace t WHERE t.oid = c.reltablespace) AS reltablespace, "
@@ -3280,6 +3299,7 @@ getTables(int *numTables)
 						  "(%s relowner) AS rolname, "
 						  "relchecks, (reltriggers <> 0) AS relhastriggers, "
 						  "relhasindex, relhasrules, relhasoids, "
+						  "0 AS relfrozenxid, "
 						  "d.refobjid AS owning_tab, "
 						  "d.refobjsubid AS owning_col, "
 						  "NULL AS reltablespace, "
@@ -3307,6 +3327,7 @@ getTables(int *numTables)
 						  "(%s relowner) AS rolname, "
 						  "relchecks, (reltriggers <> 0) AS relhastriggers, "
 						  "relhasindex, relhasrules, relhasoids, "
+						  "0 AS relfrozenxid, "
 						  "NULL::oid AS owning_tab, "
 						  "NULL::int4 AS owning_col, "
 						  "NULL AS reltablespace, "
@@ -3329,6 +3350,7 @@ getTables(int *numTables)
 						  "relchecks, (reltriggers <> 0) AS relhastriggers, "
 						  "relhasindex, relhasrules, "
 						  "'t'::bool AS relhasoids, "
+						  "0 AS relfrozenxid, "
 						  "NULL::oid AS owning_tab, "
 						  "NULL::int4 AS owning_col, "
 						  "NULL AS reltablespace, "
@@ -3361,6 +3383,7 @@ getTables(int *numTables)
 						  "relchecks, (reltriggers <> 0) AS relhastriggers, "
 						  "relhasindex, relhasrules, "
 						  "'t'::bool AS relhasoids, "
+						  "0 as relfrozenxid, "
 						  "NULL::oid AS owning_tab, "
 						  "NULL::int4 AS owning_col, "
 						  "NULL AS reltablespace, "
@@ -3405,6 +3428,7 @@ getTables(int *numTables)
 	i_relhasindex = PQfnumber(res, "relhasindex");
 	i_relhasrules = PQfnumber(res, "relhasrules");
 	i_relhasoids = PQfnumber(res, "relhasoids");
+	i_relfrozenxid = PQfnumber(res, "relfrozenxid");
 	i_owning_tab = PQfnumber(res, "owning_tab");
 	i_owning_col = PQfnumber(res, "owning_col");
 	i_reltablespace = PQfnumber(res, "reltablespace");
@@ -3443,6 +3467,7 @@ getTables(int *numTables)
 		tblinfo[i].hasrules = (strcmp(PQgetvalue(res, i, i_relhasrules), "t") == 0);
 		tblinfo[i].hastriggers = (strcmp(PQgetvalue(res, i, i_relhastriggers), "t") == 0);
 		tblinfo[i].hasoids = (strcmp(PQgetvalue(res, i, i_relhasoids), "t") == 0);
+		tblinfo[i].frozenxid = atooid(PQgetvalue(res, i, i_relfrozenxid));
 		tblinfo[i].ncheck = atoi(PQgetvalue(res, i, i_relchecks));
 		if (PQgetisnull(res, i, i_owning_tab))
 		{
@@ -4654,6 +4679,8 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 	int			i_attnotnull;
 	int			i_atthasdef;
 	int			i_attisdropped;
+	int			i_attlen;
+	int			i_attalign;
 	int			i_attislocal;
 	int			i_attseclabel;
 	PGresult   *res;
@@ -4699,7 +4726,7 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 			appendPQExpBuffer(q, "SELECT a.attnum, a.attname, a.atttypmod, "
 								 "a.attstattarget, a.attstorage, t.typstorage, "
 				  				 "a.attnotnull, a.atthasdef, a.attisdropped, "
-								 "a.attislocal, "
+				  				 "a.attlen, a.attalign, a.attislocal, "
 				   "pg_catalog.format_type(t.oid,a.atttypmod) AS atttypname, "
 								 "%s as security_label "
 			 "FROM pg_catalog.pg_attribute a LEFT JOIN pg_catalog.pg_type t "
@@ -4720,7 +4747,8 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 			appendPQExpBuffer(q, "SELECT a.attnum, a.attname, "
 							  "a.atttypmod, -1 AS attstattarget, a.attstorage, "
 							  "t.typstorage, a.attnotnull, a.atthasdef, "
-							  "false AS attisdropped, false AS attislocal, "
+							  "false AS attisdropped, 0 AS attlen, "
+							  "' ' AS attalign, false AS attislocal, "
 							  "format_type(t.oid,a.atttypmod) AS atttypname, "
 							  "NULL as security_label "
 							  "FROM pg_attribute a LEFT JOIN pg_type t "
@@ -4737,7 +4765,8 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 							  "-1 AS attstattarget, attstorage, "
 							  "attstorage AS typstorage, "
 							  "attnotnull, atthasdef, false AS attisdropped, "
-							  "false AS attislocal, "
+							  "0 AS attlen, ' ' AS attalign, "
+ 							  "false AS attislocal, "
 							  "(SELECT typname FROM pg_type WHERE oid = atttypid) AS atttypname, "
 							  "NULL as security_label "
 							  "FROM pg_attribute a "
@@ -4762,6 +4791,8 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 		i_attnotnull = PQfnumber(res, "attnotnull");
 		i_atthasdef = PQfnumber(res, "atthasdef");
 		i_attisdropped = PQfnumber(res, "attisdropped");
+		i_attlen = PQfnumber(res, "attlen");
+		i_attalign = PQfnumber(res, "attalign");
 		i_attislocal = PQfnumber(res, "attislocal");
 		i_attseclabel = PQfnumber(res, "security_label");
 
@@ -4773,6 +4804,8 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 		tbinfo->attstorage = (char *) malloc(ntups * sizeof(char));
 		tbinfo->typstorage = (char *) malloc(ntups * sizeof(char));
 		tbinfo->attisdropped = (bool *) malloc(ntups * sizeof(bool));
+		tbinfo->attlen = (int *) malloc(ntups * sizeof(int));
+		tbinfo->attalign = (char *) malloc(ntups * sizeof(char));
 		tbinfo->attislocal = (bool *) malloc(ntups * sizeof(bool));
 		tbinfo->attseclabel = (char **) malloc(ntups * sizeof(char *));
 		tbinfo->notnull = (bool *) malloc(ntups * sizeof(bool));
@@ -4797,6 +4830,8 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 			tbinfo->attstorage[j] = *(PQgetvalue(res, j, i_attstorage));
 			tbinfo->typstorage[j] = *(PQgetvalue(res, j, i_typstorage));
 			tbinfo->attisdropped[j] = (PQgetvalue(res, j, i_attisdropped)[0] == 't');
+			tbinfo->attlen[j] = atoi(PQgetvalue(res, j, i_attlen));
+			tbinfo->attalign[j] = *(PQgetvalue(res, j, i_attalign));
 			tbinfo->attislocal[j] = (PQgetvalue(res, j, i_attislocal)[0] == 't');
 			tbinfo->attseclabel[j] = strdup(PQgetvalue(res, j, i_attseclabel));
 			tbinfo->notnull[j] = (PQgetvalue(res, j, i_attnotnull)[0] == 't');
@@ -4811,6 +4846,21 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 
 		PQclear(res);
 
+
+		/*
+		 *	ALTER TABLE DROP COLUMN clears pg_attribute.atttypid, so we
+		 *	set the column data type to 'TEXT;  we will later drop the
+		 *	column.
+		 */
+		if (binary_upgrade)
+		{
+			for (j = 0; j < ntups; j++)
+			{
+				if (tbinfo->attisdropped[j])
+					tbinfo->atttypnames[j] = strdup("TEXT");
+			}
+		}
+			
 		/*
 		 * Get info about column defaults
 		 */
@@ -9744,7 +9794,8 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 		for (j = 0; j < tbinfo->numatts; j++)
 		{
 			/* Is this one of the table's own attrs, and not dropped ? */
-			if (!tbinfo->inhAttrs[j] && !tbinfo->attisdropped[j])
+			if (!tbinfo->inhAttrs[j] &&
+				(!tbinfo->attisdropped[j] || binary_upgrade))
 			{
 				/* Format properly if not first attr */
 				if (actual_atts > 0)
@@ -9862,6 +9913,62 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 
 		appendPQExpBuffer(q, ";\n");
 
+		/*
+		 * For binary-compatible heap files, we create dropped columns
+		 * above and drop them here.
+		 */
+		if (binary_upgrade)
+		{
+			for (j = 0; j < tbinfo->numatts; j++)
+			{
+				if (tbinfo->attisdropped[j])
+				{
+					appendPQExpBuffer(q, "ALTER TABLE ONLY %s ",
+									  fmtId(tbinfo->dobj.name));
+					appendPQExpBuffer(q, "DROP COLUMN %s;\n",
+									  fmtId(tbinfo->attnames[j]));
+
+					/*
+					 *	ALTER TABLE DROP COLUMN clears pg_attribute.atttypid,
+					 *	so we have to set pg_attribute.attlen and
+					 *	pg_attribute.attalign values because that is what
+					 *	is used to skip over dropped columns in the heap tuples.
+					 *	We have atttypmod, but it seems impossible to know the
+					 *	correct data type that will yield pg_attribute values
+					 *	that match the old installation.
+					 *	See comment in backend/catalog/heap.c::RemoveAttributeById()
+					 */
+					appendPQExpBuffer(q, "\n-- For binary upgrade, recreate dropped column's length and alignment.\n");
+					appendPQExpBuffer(q, "UPDATE pg_attribute\n"
+										 "SET attlen = %d, "
+										 "attalign = '%c'\n"
+										 "WHERE	attname = '%s'\n"
+										 "	AND attrelid = \n"
+										 "	(\n"
+										 "		SELECT oid\n"
+										 "		FROM pg_class\n"
+										 "		WHERE	relnamespace = "
+										 "(SELECT oid FROM pg_namespace "
+										 "WHERE nspname = CURRENT_SCHEMA)\n"
+										 "			AND relname = '%s'\n"
+										 "	);\n",
+										 tbinfo->attlen[j],
+										 tbinfo->attalign[j],
+										 tbinfo->attnames[j],
+										 tbinfo->dobj.name);
+				}
+			}
+			appendPQExpBuffer(q, "\n-- For binary upgrade, set relfrozenxid.\n");
+			appendPQExpBuffer(q, "UPDATE pg_class\n"
+								 "SET relfrozenxid = '%u'\n"
+								 "WHERE	relname = '%s'\n"
+								 "	AND relnamespace = "
+								 "(SELECT oid FROM pg_namespace "
+								 "WHERE nspname = CURRENT_SCHEMA);\n",
+								 tbinfo->frozenxid,
+								 tbinfo->dobj.name);
+		}
+	
 		/* Loop dumping statistics and storage statements */
 		for (j = 0; j < tbinfo->numatts; j++)
 		{
