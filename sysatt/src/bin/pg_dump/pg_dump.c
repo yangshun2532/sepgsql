@@ -1606,6 +1606,9 @@ dumpDatabase(Archive *AH)
 				i_encoding,
 				i_collate,
 				i_ctype,
+				i_frozenxid,
+				i_tablespace,
+				i_seclabel;
 	CatalogId	dbCatId;
 	DumpId		dbDumpId;
 	const char *datname,
