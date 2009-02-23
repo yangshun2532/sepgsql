@@ -536,6 +536,8 @@ lo_get_seclabel(PG_FUNCTION_ARGS)
 				(errcode(ERRCODE_SELINUX_ERROR),
 				 errmsg("SELinux: disabled now")));
 
+	CreateFSContext();
+
 	lobj = inv_open(PG_GETARG_OID(0), INV_READ, fscxt);
 
 	/*
