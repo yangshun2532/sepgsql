@@ -8,18 +8,14 @@
 %define selinux_policy_stores      targeted mls
 %define policy_module_name         sepostgresql-devel
 
-%%__sepgsql_extension__%%
-
-%{!?ssl:%define ssl 1}
-%{!?sepgsql_standalone:%define sepgsql_standalone 1}
-
 # Optional features
+%{!?standalone:%define standalone 1}
 %{!?ssl:%define ssl 1}
 
 Summary: Security Enhanced PostgreSQL
 Name: sepostgresql
-Version: %%__base_postgresql_version__%%
-Release: %%__sepgsql_version__%%%{?sepgsql_extension}%{?dist}
+Version: %%__base_version__%%
+Release: %%__sepgsql_revision__%%%{?dist}
 License: BSD
 Group: Applications/Databases
 Url: http://code.google.com/p/sepgsql/
@@ -28,12 +24,15 @@ Source0: ftp://ftp.postgresql.org/pub/source/v%{version}/postgresql-%{version}.t
 Source1: sepostgresql.init
 Source2: sepostgresql.8
 Source3: sepostgresql.logrotate
-Patch0: sepostgresql-sepgsql-%%__base_postgresql_version__%%-%%__sepgsql_major_version__%%.patch
-Patch1: sepostgresql-utils-%%__base_postgresql_version__%%-%%__sepgsql_major_version__%%.patch
-Patch2: sepostgresql-policy-%%__base_postgresql_version__%%-%%__sepgsql_major_version__%%.patch
-Patch3: sepostgresql-docs-%%__base_postgresql_version__%%-%%__sepgsql_major_version__%%.patch
-Patch4: sepostgresql-tests-%%__base_postgresql_version__%%-%%__sepgsql_major_version__%%.patch
-Patch5: sepostgresql-fedora-prefix.patch
+Patch0: sepgsql-core-%{version}.patch
+Patch1: sepgsql-utils-%{version}.patch
+Patch2: sepgsql-policy-%{version}.patch
+Patch3: sepgsql-docs-%{version}.patch
+Patch4: sepgsql-tests-%{version}.patch
+Patch5: sepgsql-sysatt-%{version}.patch
+Patch6: sepgsql-rowlv-%{version}.patch
+Patch7: sepgsql-blobs-%{version}.patch
+Patch8: sepgsql-fedora-prefix.patch
 BuildRequires: perl glibc-devel bison flex readline-devel zlib-devel >= 1.0.4
 Buildrequires: checkpolicy libselinux-devel >= 2.0.43 selinux-policy >= 3.4.2
 %if %{ssl}
@@ -43,7 +42,7 @@ Requires(pre): shadow-utils
 Requires(post): policycoreutils /sbin/chkconfig
 Requires(preun): /sbin/chkconfig /sbin/service
 Requires(postun): policycoreutils
-%if !%{sepgsql_standalone}
+%if !%{standalone}
 Requires: postgresql-server = %{version}
 %endif
 Requires: policycoreutils >= 2.0.16 libselinux >= 2.0.43 selinux-policy >= 3.4.2
@@ -68,6 +67,9 @@ reference monitor to check any SQL query.
 %patch3 -p1
 %patch4 -p1
 %patch5 -p1
+%patch6 -p1
+%patch7 -p1
+%patch8 -p1
 
 %build
 CFLAGS="${CFLAGS:-%optflags}" ; export CFLAGS
@@ -78,7 +80,7 @@ CXXFLAGS="${CXXFLAGS:-%optflags}" ; export CXXFLAGS
                 --enable-selinux                \
                 --enable-debug                  \
                 --enable-cassert                \
-%if %{sepgsql_standalone}
+%if %{standalone}
                 --libdir=%{_libdir}/sepgsql     \
 %else
                 --libdir=%{_libdir}/pgsql       \
@@ -117,7 +119,7 @@ mv %{buildroot}%{_bindir}.orig/pg_dumpall    %{buildroot}%{_bindir}/sepg_dumpall
 rm -rf %{buildroot}%{_bindir}.orig
 
 # shared library files if neeced
-%if %{sepgsql_standalone}
+%if %{standalone}
 mv %{buildroot}%{_libdir}/sepgsql  %{buildroot}%{_libdir}/sepgsql.orig
 install -d %{buildroot}%{_libdir}/sepgsql
 mv %{buildroot}%{_libdir}/sepgsql.orig/plpgsql.so   \
@@ -223,7 +225,7 @@ fi
 %{_datadir}/sepgsql/conversion_create.sql
 %{_datadir}/sepgsql/information_schema.sql
 %{_datadir}/sepgsql/sql_features.txt
-%if %{sepgsql_standalone}
+%if %{standalone}
 %dir %{_libdir}/sepgsql
 %{_libdir}/sepgsql/plpgsql.so
 %{_libdir}/sepgsql/*_and_*.so

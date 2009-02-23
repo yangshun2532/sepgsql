@@ -7,9 +7,8 @@
 # pidfile: /var/run/postmaster.pid
 #---------------------------------------------------------------------
 
-PGVERSION="%%__base_postgresql_version__%%"
+PGVERSION="%%__base_version__%%"
 PGMAJORVERSION=`echo "$PGVERSION" | sed 's/^\([0-9]*\.[0-9]*\).*$/\1/'`
-SEPGVERSION="%%__sepgsql_version__%%"
 
 # source function library
 . /etc/rc.d/init.d/functions
@@ -29,12 +28,9 @@ SEPGSQL_DATA="/var/lib/sepgsql/data"
 SEPGSQL_OPTS="-i -p 5432"
 SEPGSQL_STARTUP_LOG="/var/lib/sepgsql/pgstartup.log"
 SEPGSQL_LOG="/var/log/sepostgresql.log"
-SEPGSQL_FALLBACK_CONTEXT="user_u:user_r:user_t"
 
 # override defaults from /etc/sysconfig/sepostgresql
 test -f /etc/sysconfig/${NAME} && . /etc/sysconfig/${NAME}
-
-export SEPGSQL_FALLBACK_CONTEXT
 
 # Check that networking is up.
 test "${NETWORKING}" = "no" && exit 0
