@@ -28,14 +28,14 @@ CREATE TABLE t1 (
        b text
 );
 CREATE TABLE
-SELECT relname, relselabel FROM pg_class WHERE oid = 't1'::regclass;
- relname |                relselabel                
+SELECT relname, security_label FROM pg_class WHERE oid = 't1'::regclass;
+ relname |              security_label              
 ---------+------------------------------------------
  t1      | unconfined_u:object_r:sepgsql_table_t:s0
 (1 row)
 
-SELECT attname, attselabel FROM pg_attribute WHERE attrelid = 't1'::regclass and attnum > 0;
- attname |                attselabel                
+SELECT attname, security_label FROM pg_attribute WHERE attrelid = 't1'::regclass and attnum > 0;
+ attname |              security_label              
 ---------+------------------------------------------
  a       | unconfined_u:object_r:sepgsql_table_t:s0
  b       | unconfined_u:object_r:sepgsql_table_t:s0
@@ -46,14 +46,14 @@ CREATE TABLE t2 (
        b text
 ) SECURITY_LABEL = 'unconfined_u:object_r:sepgsql_ro_table_t:s0';
 CREATE TABLE
-SELECT relname, relselabel FROM pg_class WHERE oid = 't2'::regclass;
- relname |                 relselabel                  
+SELECT relname, security_label FROM pg_class WHERE oid = 't2'::regclass;
+ relname |               security_label                
 ---------+---------------------------------------------
  t2      | unconfined_u:object_r:sepgsql_ro_table_t:s0
 (1 row)
 
-SELECT attname, attselabel FROM pg_attribute WHERE attrelid = 't2'::regclass and attnum > 0;
- attname |                 attselabel                  
+SELECT attname, security_label FROM pg_attribute WHERE attrelid = 't2'::regclass and attnum > 0;
+ attname |               security_label                
 ---------+---------------------------------------------
  a       | unconfined_u:object_r:sepgsql_ro_table_t:s0
  b       | unconfined_u:object_r:sepgsql_ro_table_t:s0
@@ -66,14 +66,14 @@ CREATE TABLE t3 (
        d int
 ) SECURITY_LABEL = 'unconfined_u:object_r:sepgsql_table_t:s0:c0';
 CREATE TABLE
-SELECT relname, relselabel FROM pg_class WHERE oid = 't3'::regclass;
- relname |                 relselabel                  
+SELECT relname, security_label FROM pg_class WHERE oid = 't3'::regclass;
+ relname |               security_label                
 ---------+---------------------------------------------
  t3      | unconfined_u:object_r:sepgsql_table_t:s0:c0
 (1 row)
 
-SELECT attname, attselabel FROM pg_attribute WHERE attrelid = 't3'::regclass and attnum > 0;
- attname |                   attselabel                    
+SELECT attname, security_label FROM pg_attribute WHERE attrelid = 't3'::regclass and attnum > 0;
+ attname |                 security_label                  
 ---------+-------------------------------------------------
  a       | unconfined_u:object_r:sepgsql_table_t:s0
  b       | unconfined_u:object_r:sepgsql_fixed_table_t:s0
@@ -96,14 +96,14 @@ ALTER TABLE t2 SECURITY_LABEL = 'unconfined_u:object_r:sepgsql_secret_table_t:s0
 ALTER TABLE
 ALTER TABLE t2 ADD COLUMN c bool;	-- it inherits table's one
 ALTER TABLE
-SELECT relname, relselabel FROM pg_class WHERE oid = 't2'::regclass;
- relname |                   relselabel                    
+SELECT relname, security_label FROM pg_class WHERE oid = 't2'::regclass;
+ relname |                 security_label                  
 ---------+-------------------------------------------------
  t2      | unconfined_u:object_r:sepgsql_secret_table_t:s0
 (1 row)
 
-SELECT attname, attselabel FROM pg_attribute WHERE attrelid = 't2'::regclass and attnum > 0;
- attname |                   attselabel                    
+SELECT attname, security_label FROM pg_attribute WHERE attrelid = 't2'::regclass and attnum > 0;
+ attname |                 security_label                  
 ---------+-------------------------------------------------
  a       | unconfined_u:object_r:sepgsql_ro_table_t:s0
  b       | unconfined_u:object_r:sepgsql_ro_table_t:s0
@@ -112,14 +112,14 @@ SELECT attname, attselabel FROM pg_attribute WHERE attrelid = 't2'::regclass and
 
 ALTER TABLE t3 ALTER b SECURITY_LABEL = 'unconfined_u:object_r:sepgsql_table_t:s0';
 ALTER TABLE
-SELECT relname, relselabel FROM pg_class WHERE oid = 't3'::regclass;
- relname |                 relselabel                  
+SELECT relname, security_label FROM pg_class WHERE oid = 't3'::regclass;
+ relname |               security_label                
 ---------+---------------------------------------------
  t3      | unconfined_u:object_r:sepgsql_table_t:s0:c0
 (1 row)
 
-SELECT attname, attselabel FROM pg_attribute WHERE attrelid = 't3'::regclass and attnum > 0;
- attname |                   attselabel                    
+SELECT attname, security_label FROM pg_attribute WHERE attrelid = 't3'::regclass and attnum > 0;
+ attname |                 security_label                  
 ---------+-------------------------------------------------
  a       | unconfined_u:object_r:sepgsql_table_t:s0
  b       | unconfined_u:object_r:sepgsql_table_t:s0
@@ -133,8 +133,8 @@ CREATE FUNCTION f1 (int) RETURNS int
        SECURITY_LABEL = 'unconfined_u:object_r:sepgsql_proc_t:s0:c0'
        AS 'SELECT $1 * 2';
 CREATE FUNCTION
-SELECT proname, proselabel FROM pg_proc WHERE oid = 'f1'::regproc;
- proname |                 proselabel                 
+SELECT proname, security_label FROM pg_proc WHERE oid = 'f1'::regproc;
+ proname |               security_label               
 ---------+--------------------------------------------
  f1      | unconfined_u:object_r:sepgsql_proc_t:s0:c0
 (1 row)
@@ -153,8 +153,8 @@ CREATE FUNCTION f2 (int) RETURNS int
        LANGUAGE 'sql'
        AS 'SELECT $1 + $1';
 CREATE FUNCTION
-SELECT proname, proselabel FROM pg_proc WHERE oid = 'f2'::regproc;
- proname |               proselabel                
+SELECT proname, security_label FROM pg_proc WHERE oid = 'f2'::regproc;
+ proname |             security_label              
 ---------+-----------------------------------------
  f2      | unconfined_u:object_r:sepgsql_proc_t:s0
 (1 row)
@@ -163,8 +163,8 @@ SELECT proname, proselabel FROM pg_proc WHERE oid = 'f2'::regproc;
 ALTER FUNCTION f1(int)
       SECURITY_LABEL = 'unconfined_u:object_r:sepgsql_proc_t:s0:c1';
 ALTER FUNCTION
-SELECT proname, proselabel FROM pg_proc WHERE oid = 'f1'::regproc;
- proname |                 proselabel                 
+SELECT proname, security_label FROM pg_proc WHERE oid = 'f1'::regproc;
+ proname |               security_label               
 ---------+--------------------------------------------
  f1      | unconfined_u:object_r:sepgsql_proc_t:s0:c1
 (1 row)
@@ -172,8 +172,8 @@ SELECT proname, proselabel FROM pg_proc WHERE oid = 'f1'::regproc;
 ALTER FUNCTION f2(int)
       SECURITY_LABEL = 'unconfined_u:object_r:sepgsql_proc_t:s0:c16';	-- to be denied
 ERROR:  SELinux: denied { relabelto } scontext=unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c15 tcontext=unconfined_u:object_r:sepgsql_proc_t:s0:c16 tclass=db_procedure name=f2
-SELECT proname, proselabel FROM pg_proc WHERE oid = 'f2'::regproc;
- proname |               proselabel                
+SELECT proname, security_label FROM pg_proc WHERE oid = 'f2'::regproc;
+ proname |             security_label              
 ---------+-----------------------------------------
  f2      | unconfined_u:object_r:sepgsql_proc_t:s0
 (1 row)
