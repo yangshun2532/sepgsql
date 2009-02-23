@@ -27,7 +27,7 @@ CREATE TABLE t2
     y    text
          SECURITY_LABEL = 'unconfined_u:object_r:sepgsql_secret_table_t:s0'
 );
-SELECT attselabel from pg_attribute where attrelid = 't2'::regclass and attname = 'y';
+SELECT security_label from pg_attribute where attrelid = 't2'::regclass and attname = 'y';
 INSERT INTO t2 VALUES (1, 'xxx'), (2, 'yyy');
 
 CREATE TABLE t3	      -- read only table
