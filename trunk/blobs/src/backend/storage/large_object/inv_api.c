@@ -903,18 +903,12 @@ inv_set_seclabel(Oid loid, Oid secid)
 
 	while (HeapTupleIsValid(oldtup = systable_getnext(scan)))
 	{
-		Datum	values[Natts_pg_largeobject];
-		bool	nulls[Natts_pg_largeobject];
+		newtup = heap_copytuple(oldtup);
 
-		heap_deform_tuple(oldtup, RelationGetDescr(rel),
-						  values, nulls);
-		newtup = heap_form_tuple(RelationGetDescr(rel),
-								 values, nulls);
 		if (!HeapTupleHasSecLabel(newtup))
 			ereport(ERROR,
 					(errcode(ERRCODE_SELINUX_ERROR),
 					 errmsg("unable to store security label")));
-
 		HeapTupleSetSecLabel(newtup, secid);
 
 		/*
