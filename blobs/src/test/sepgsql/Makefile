@@ -32,12 +32,12 @@ results/%.diff: sql/%.sql
 	@echo $(notdir $(@:.diff=))
 
 setup: launch_psql
-	@test -e /tmp/sepgsql_test_copy_1 && rm -f /tmp/sepgsql_test_copy_1 || :
-	@test -e /tmp/sepgsql_test_copy_2 && rm -f /tmp/sepgsql_test_copy_2 || :
-	@touch /tmp/sepgsql_test_copy_1
-	@touch /tmp/sepgsql_test_copy_2
+	@cp -f /dev/null /tmp/sepgsql_test_copy_1
+	@cp -f /dev/null /tmp/sepgsql_test_copy_2
 	@chcon -t postgresql_tmp_t -l s0 /tmp/sepgsql_test_copy_1
-	@chcon -t postgresql_db_t -l s0 /tmp/sepgsql_test_copy_2
+	@chcon -t postgresql_db_t  -l s0 /tmp/sepgsql_test_copy_2
+	@dd if=/dev/zero of=/tmp/sepgsql_test_blob bs=1024 count=20 >& /dev/null
+	@chcon -t postgresql_tmp_t -l s0 /tmp/sepgsql_test_blob
 	@echo "PASS: setup filesystem objects"
 
 check:
