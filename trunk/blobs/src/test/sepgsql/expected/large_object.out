@@ -1,0 +1,319 @@
+--@SECURITY_CONTEXT=unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c15
+SELECT sepgsql_getcon();
+                   sepgsql_getcon                    
+-----------------------------------------------------
+ unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c15
+(1 row)
+
+SELECT lo_import('/tmp/sepgsql_test_blob', 6001);
+ lo_import 
+-----------
+      6001
+(1 row)
+
+SELECT lo_import('/tmp/sepgsql_test_blob', 6002);
+ lo_import 
+-----------
+      6002
+(1 row)
+
+SELECT lo_import('/tmp/sepgsql_test_blob', 6003);
+ lo_import 
+-----------
+      6003
+(1 row)
+
+SELECT lo_set_seclabel(6001, 'system_u:object_r:sepgsql_blob_t:s0');
+ lo_set_seclabel 
+-----------------
+ t
+(1 row)
+
+SELECT lo_set_seclabel(6002, 'system_u:object_r:sepgsql_ro_blob_t:s0');
+ lo_set_seclabel 
+-----------------
+ t
+(1 row)
+
+SELECT lo_set_seclabel(6003, 'system_u:object_r:sepgsql_secret_blob_t:s0');
+ lo_set_seclabel 
+-----------------
+ t
+(1 row)
+
+--@SECURITY_CONTEXT=unconfined_u:unconfined_r:sepgsql_test_t:s0:c0
+SELECT sepgsql_getcon();
+                 sepgsql_getcon                 
+------------------------------------------------
+ unconfined_u:unconfined_r:sepgsql_test_t:s0:c0
+(1 row)
+
+SELECT lo_get_seclabel(6001);
+           lo_get_seclabel           
+-------------------------------------
+ system_u:object_r:sepgsql_blob_t:s0
+(1 row)
+
+SELECT lo_get_seclabel(6002);
+            lo_get_seclabel             
+----------------------------------------
+ system_u:object_r:sepgsql_ro_blob_t:s0
+(1 row)
+
+SELECT lo_get_seclabel(6003);
+              lo_get_seclabel               
+--------------------------------------------
+ system_u:object_r:sepgsql_secret_blob_t:s0
+(1 row)
+
+SELECT security_label, loid, COUNT(*) FROM pg_largeobject
+       GROUP BY security_label, loid;
+               security_label               | loid | count 
+--------------------------------------------+------+-------
+ system_u:object_r:sepgsql_blob_t:s0        | 6001 |    10
+ system_u:object_r:sepgsql_ro_blob_t:s0     | 6002 |    10
+ system_u:object_r:sepgsql_secret_blob_t:s0 | 6003 |    10
+(3 rows)
+
+-- read large object
+BEGIN;
+BEGIN
+SELECT lo_open(6001, x'40000'::int);
+ lo_open 
+---------
+       0
+(1 row)
+
+SELECT loread(0, 32);
+                                                              loread                                                              
+----------------------------------------------------------------------------------------------------------------------------------
+ \000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000
+(1 row)
+
+ROLLBACK;
+ROLLBACK
+BEGIN;
+BEGIN
+SELECT lo_open(6002, x'40000'::int);
+ lo_open 
+---------
+       0
+(1 row)
+
+SELECT loread(0, 32);
+                                                              loread                                                              
+----------------------------------------------------------------------------------------------------------------------------------
+ \000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000
+(1 row)
+
+ROLLBACK;
+ROLLBACK
+BEGIN;
+BEGIN
+SELECT lo_open(6003, x'40000'::int);	-- to be denied
+ lo_open 
+---------
+       0
+(1 row)
+
+SELECT loread(0, 32);
+ERROR:  SELinux: denied { read } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0:c0 tcontext=system_u:object_r:sepgsql_secret_blob_t:s0 tclass=db_blob name=blob:6003
+ROLLBACK;
+ROLLBACK
+-- write large object
+BEGIN;
+BEGIN
+SELECT lo_open(6001, x'20000'::int);
+ lo_open 
+---------
+       0
+(1 row)
+
+SELECT lowrite(0, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ');
+ lowrite 
+---------
+      26
+(1 row)
+
+ROLLBACK;
+ROLLBACK
+BEGIN;
+BEGIN
+SELECT lo_open(6002, x'20000'::int);
+ lo_open 
+---------
+       0
+(1 row)
+
+SELECT lowrite(0, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ');	-- to be denied
+ERROR:  SELinux: denied { write } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0:c0 tcontext=system_u:object_r:sepgsql_ro_blob_t:s0 tclass=db_blob name=blob:6002
+ROLLBACK;
+ROLLBACK
+BEGIN;
+BEGIN
+SELECT lo_open(6003, x'20000'::int);
+ lo_open 
+---------
+       0
+(1 row)
+
+SELECT lowrite(0, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ');	-- to be denied
+ERROR:  SELinux: denied { write } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0:c0 tcontext=system_u:object_r:sepgsql_secret_blob_t:s0 tclass=db_blob name=blob:6003
+ROLLBACK;
+ROLLBACK
+-- create large object
+BEGIN;
+BEGIN
+SELECT lo_create(6004);
+ lo_create 
+-----------
+      6004
+(1 row)
+
+SELECT lo_open(6004, x'20000'::int);
+ lo_open 
+---------
+       0
+(1 row)
+
+SELECT lowrite(0, 'abcdefghijklmnopqrstuvwxyz');
+ lowrite 
+---------
+      26
+(1 row)
+
+SELECT lo_close(0);
+ lo_close 
+----------
+        0
+(1 row)
+
+COMMIT;
+COMMIT
+-- getattr/setattr
+BEGIN;
+BEGIN
+SELECT lo_open(6004, x'20000'::int);
+ lo_open 
+---------
+       0
+(1 row)
+
+SELECT lo_lseek(0, 0, 2);	-- seek to end
+ lo_lseek 
+----------
+       26
+(1 row)
+
+SELECT lowrite(0, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ');
+ lowrite 
+---------
+      26
+(1 row)
+
+SELECT lo_tell(0);
+ lo_tell 
+---------
+      52
+(1 row)
+
+SELECT lo_lseek(0, 0, 0);	-- seek to head
+ lo_lseek 
+----------
+        0
+(1 row)
+
+SELECT loread(0, 50);
+                       loread                       
+----------------------------------------------------
+ abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWX
+(1 row)
+
+SELECT lo_close(0);
+ lo_close 
+----------
+        0
+(1 row)
+
+COMMIT;
+COMMIT
+--@SECURITY_CONTEXT=unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c15
+SELECT sepgsql_getcon();
+                   sepgsql_getcon                    
+-----------------------------------------------------
+ unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c15
+(1 row)
+
+-- import/export large object
+SELECT lo_import('/tmp/sepgsql_test_blob', 6005);
+ lo_import 
+-----------
+      6005
+(1 row)
+
+SELECT lo_export(6001, '/tmp/sepgsql_test_blob');
+ lo_export 
+-----------
+         1
+(1 row)
+
+-- change security label
+BEGIN;
+BEGIN
+SELECT lo_open(6001, x'40000'::int);	-- a seed of trouble
+ lo_open 
+---------
+       0
+(1 row)
+
+SELECT lo_set_seclabel(6001, 'system_u:object_r:sepgsql_blob_t:s0:c4');
+ lo_set_seclabel 
+-----------------
+ t
+(1 row)
+
+SELECT lo_get_seclabel(6001);
+            lo_get_seclabel             
+----------------------------------------
+ system_u:object_r:sepgsql_blob_t:s0:c4
+(1 row)
+
+SELECT security_label, loid, count(*) FROM pg_largeobject WHERE loid = 6001
+	GROUP BY security_label, loid;
+             security_label             | loid | count 
+----------------------------------------+------+-------
+ system_u:object_r:sepgsql_blob_t:s0:c4 | 6001 |    10
+(1 row)
+
+ROLLBACK;
+ROLLBACK
+SELECT lo_unlink(6001);
+ lo_unlink 
+-----------
+         1
+(1 row)
+
+SELECT lo_unlink(6002);
+ lo_unlink 
+-----------
+         1
+(1 row)
+
+SELECT lo_unlink(6003);
+ lo_unlink 
+-----------
+         1
+(1 row)
+
+SELECT lo_unlink(6004);
+ lo_unlink 
+-----------
+         1
+(1 row)
+
+SELECT lo_unlink(6005);
+ lo_unlink 
+-----------
+         1
+(1 row)
+
