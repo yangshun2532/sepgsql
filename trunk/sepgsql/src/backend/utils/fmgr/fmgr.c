@@ -203,7 +203,6 @@ fmgr_info_cxt_security(Oid functionId, FmgrInfo *finfo, MemoryContext mcxt,
 		finfo->fn_stats = TRACK_FUNC_ALL;	/* ie, never track */
 		finfo->fn_addr = fbp->func;
 		finfo->fn_oid = functionId;
-		sepgsqlCheckProcedureEntrypoint(finfo, NULL);
 		return;
 	}
 
@@ -239,8 +238,13 @@ fmgr_info_cxt_security(Oid functionId, FmgrInfo *finfo, MemoryContext mcxt,
 		finfo->fn_addr = fmgr_security_definer;
 		finfo->fn_stats = TRACK_FUNC_ALL;	/* ie, never track */
 		finfo->fn_oid = functionId;
-		sepgsqlCheckProcedureEntrypoint(finfo, procedureTuple);
 		ReleaseSysCache(procedureTuple);
+		/*
+		 * NOTE: It is not necessary to set up Trusted Procedure
+		 * here, because fmgr_security_definer() invokes this
+		 * function with ignore_security=true again. It is set up
+		 * later.
+		 */
 		return;
 	}
 
