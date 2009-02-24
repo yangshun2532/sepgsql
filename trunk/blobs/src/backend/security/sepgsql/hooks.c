@@ -704,7 +704,7 @@ sepgsqlCheckBlobExport(LargeObjectDesc *lobj,
 		sepgsqlComputePerms(sepgsqlGetClientLabel(),
 							fcontext,
 							fclass,
-							FILE__WRITE,
+							COMMON_FILE__WRITE,
 							filename, true);
 	}
 	PG_CATCH();
@@ -743,7 +743,7 @@ sepgsqlCheckBlobImport(LargeObjectDesc *lobj,
 		sepgsqlComputePerms(sepgsqlGetClientLabel(),
 							fcontext,
 							fclass,
-							FILE__READ,
+							COMMON_FILE__READ,
 							filename, true);
 	}
 	PG_CATCH();
