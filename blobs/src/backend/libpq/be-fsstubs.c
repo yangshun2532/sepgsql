@@ -403,7 +403,7 @@ lo_import_internal(text *filename, Oid lobjOid)
 	/*
 	 * SELinux: check db_blob:{write import} and file:{read} permission
 	 */
-	sepgsqlCheckBlobImport(lobj, fd, fnamebuf);
+	sepgsqlCheckBlobImport(lobj, FileRawDescriptor(fd), fnamebuf);
 
 	while ((nbytes = FileRead(fd, buf, BUFSIZE)) > 0)
 	{
@@ -475,7 +475,7 @@ lo_export(PG_FUNCTION_ARGS)
 	/*
 	 * SELinux: check db_blob:{read export} and file:{write}
 	 */
-	sepgsqlCheckBlobExport(lobj, fd, fnamebuf);
+	sepgsqlCheckBlobExport(lobj, FileRawDescriptor(fd), fnamebuf);
 
 	/*
 	 * read in from the inversion file and write to the filesystem

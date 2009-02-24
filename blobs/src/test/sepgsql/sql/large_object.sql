@@ -1,8 +1,8 @@
 --@SECURITY_CONTEXT=unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c15
 
-SELECT lo_import('/tmp/sepgsql_test_blob', 6001);
-SELECT lo_import('/tmp/sepgsql_test_blob', 6002);
-SELECT lo_import('/tmp/sepgsql_test_blob', 6003);
+SELECT lo_import('/tmp/sepgsql_test_blob1', 6001);
+SELECT lo_import('/tmp/sepgsql_test_blob1', 6002);
+SELECT lo_import('/tmp/sepgsql_test_blob1', 6003);
 
 SELECT lo_set_seclabel(6001, 'system_u:object_r:sepgsql_blob_t:s0');
 SELECT lo_set_seclabel(6002, 'system_u:object_r:sepgsql_ro_blob_t:s0');
@@ -68,23 +68,23 @@ SELECT loread(0, 50);
 SELECT lo_close(0);
 COMMIT;
 
---@SECURITY_CONTEXT=unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c15
-
 -- import/export large object
-SELECT lo_import('/tmp/sepgsql_test_blob', 6005);
-SELECT lo_export(6001, '/tmp/sepgsql_test_blob');
+SELECT lo_import('/tmp/sepgsql_test_blob2', 6005);	-- to be failed
+SELECT lo_import('/tmp/sepgsql_test_blob1', 6005);
+
+SELECT lo_export(6001, '/tmp/sepgsql_test_blob2');	-- to be failed
+SELECT lo_export(6001, '/tmp/sepgsql_test_blob1');	-- to be failed
+SELECT lo_export(6005, '/tmp/sepgsql_test_blob1');
+SELECT lo_export(6005, '/dev/null');
+
+--@SECURITY_CONTEXT=unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c15
 
 -- change security label
 BEGIN;
 SELECT lo_open(6001, x'40000'::int);	-- a seed of trouble
 SELECT lo_set_seclabel(6001, 'system_u:object_r:sepgsql_blob_t:s0:c4');
 SELECT lo_get_seclabel(6001);
-SELECT security_label, loid, count(*) FROM pg_largeobject WHERE loid = 6001
-	GROUP BY security_label, loid;
+SELECT security_label, loid, count(*) FROM pg_largeobject
+       WHERE loid = 6001
+       GROUP BY security_label, loid;
 ROLLBACK;
-
-SELECT lo_unlink(6001);
-SELECT lo_unlink(6002);
-SELECT lo_unlink(6003);
-SELECT lo_unlink(6004);
-SELECT lo_unlink(6005);
