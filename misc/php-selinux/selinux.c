@@ -3,9 +3,6 @@
 #endif
 
 #include "php.h"
-
-#if HAVE_SELINUX
-
 #include "php_selinux.h"
 
 #include <stdlib.h>
@@ -111,7 +108,7 @@ zend_module_entry selinux_module_entry = {
 	STANDARD_MODULE_PROPERTIES,
 };
 
-#ifdef COMPILE_DL_SYSVSEM
+#ifdef COMPILE_DL_SELINUX
 ZEND_GET_MODULE(selinux)
 #endif
 
@@ -942,5 +939,3 @@ PHP_FUNCTION(selinux_policy_root)
 		ZEND_WRONG_PARAM_COUNT();
 	RETVAL_STRING(root, 1);
 }
-
-#endif	/* HAVE_SELINUX */

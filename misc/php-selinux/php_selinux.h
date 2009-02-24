@@ -1,10 +1,8 @@
 #ifndef PHP_SELINUX_H
 #define PHP_SELINUX_H
 
-#ifdef HAVE_SELINUX
-
-extern zend_module_entry selinux_module_entry;
-#define selinux_module_ptr &selinux_module_entry
+extern zend_module_entry		selinux_module_entry;
+#define phpext_selinux_ptr		&selinux_module_entry
 
 PHP_RSHUTDOWN_FUNCTION(selinux);
 
@@ -108,13 +106,5 @@ PHP_FUNCTION(selinux_matchpathcon);
 PHP_FUNCTION(selinux_getenforcemode);
 PHP_FUNCTION(selinux_getpolicytype);
 PHP_FUNCTION(selinux_policy_root);
-
-#else	/* HAVE_SELINUX */
-
-#define selinux_module_ptr NULL
-
-#endif	/* HAVE_SELINUX */
-
-#define phpext_selinux_ptr selinux_module_ptr
 
 #endif	/* PHP_SELINUX_H */
