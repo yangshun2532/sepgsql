@@ -1,201 +1,141 @@
 = What is the PHP/SELinux binding =
 
-This is a wrapper function set of libselinux for PHP environment.
+It is a set of interfaces to libselinux API which enables to manage SELinux from applications.
 
-= The steps to build PHP/SELinux binding =
+== Steps to build it ==
 
 {{{
-$ wget http://<One of Fedora mirrors>/path/to/php-5.2.6-4.src.rpm
-$ vi ~/.rpmmacros   # set a proper %_topdir
 $ svn checkout http://sepgsql.googlecode.com/svn/misc/php-selinux
-$ ./php-selinux/build-php-selinux.sh  ./php-5.2.6-4.src.rpm
+$ wget http://site.of.a.fedora.mirror/path/to/php-5.2.x-y.src.rpm
+$ ./php-selinux/build-php-selinux.sh ./php-5.2.x-y.src.rpm
 }}}
 
-= The PHP/SELinux binding reference manual =
+= Reference manual =
 
-== Global state API ==
+== Global SELinux state ==
 
-=== bool selinux_is_enabled(void) ===
-This function is a wrapper of `is_selinux_enabled`.
-It returns `true` if SELinux is running or `false` if it is not.
+=== `bool selinux_is_enabled(void)` ===
+It returns `true` if SELinux is running, or `false` if it is not.
 
-=== bool selinux_mls_is_enabled(void) ===
-This function is a wrapper of `is_selinux_mls_enabled`.
-It returns `true` if we are running on a SELinux MLS kernel, or `false` otherwise.
+=== `bool selinux_mls_is_enabled(void)` ===
+It returns `true` if SELinux us running in MLS more, or `false` if it is not.
 
-=== int selinux_getenforce(void) ===
-This function is a wrapper of `security_getenforce`.
-It returns 0 if SELinux is running in permissive mode, 1 if it is running in enforcing mode, and -1 on error.
+=== `int selinux_getenforce(void)` ===
+It returns `0` if SELinux is running in permissive mode, `1` if it is running in enforcing mode, and `-1` on error.
+=== `bool selinux_setenforce(int $mode)` ===
+It sets SELinux to enforcing mode if the value `1` is passed in, and sets it to permissive mode if `0` is passed in.
+On success `0` is returned, on error `-1` is returned.
 
-=== bool selinux_setenforce(int $mode) ===
-This function is a wrapper of `security_setenforce`.
-It sets SELinux to enforcing mode if the 1 is passed in, and sets it to permissive mode if 0 is passed in.
-On success `true` is returned, on error `false` is returned.
+=== `int selinux_policyvers(void)` ===
+It returns the version of the policy (a positive integer) on success, or `-1` on error.
 
-=== int selinux_policyvers(void) ===
-This function is a wrapper of `security_policyvers`.
-It returns the version of the policy (a positive integer) on success, or `false` on error.
+== Get/Set security attributes of processes ==
 
-== Wrappers for the /proc/<pid>/attr API ==
-
-=== string selinux_getcon(void) ===
-This function is a wrapper of `getcon`.
+=== `string selinux_getcon(void)` ===
 It retrieves the context of the current process, or `false` on error.
 
-It also has a *raw* version API named as `selinux_getcon_raw`.
+=== `bool selinux_setcon(string $context)` ===
+It sets the current security context of the process to a new value.
+Note that use of this function requires that the entire application be trusted to maintain any desired separation between the old and new security contexts, unlike exec-based transitions performed via `selinux_setexeccon()`.
+When possible, decompose your applicaiton and use `selinux_setexeccon()` and `pcntl_exec()` instead.
 
-=== bool selinux_setcon(string $context) ===
-This function is a wrapper of `setcon`.
-It sets the current security context of the process to the `$context`.
-Note that use of this function requires that the entire application be
-trusted to maintain any desired separation between the old and new security
-contexts, unlike exec-based transitions performed via `selinux_setexeccon`.
+=== `string selinux_getpidcon(int $pid)` ===
+It returns the process context for the specified PID.
 
-It also has a *raw* version API named as `selinux_setcon_raw`.
+=== `string selinux_getprevcon(void)` ===
+It is same as getcon but gets the context before the last exec.
 
-=== string selinux_getpidcon(int $pid) ===
-This function is a wrapper of `getpidcon`.
-It returns the process context for the specified PID, or `false` on error.
-
-It also has a *raw* version API named as `selinux_getpidcon_raw`.
-
-=== string selinux_getprevcon(void) ===
-This function is a wrapper of `getprevcon`.
-It same as `selinux_getcon` but gets the context before the last exec.
-
-It also has a *raw* version API named as `selinux_getprevcon_raw`.
-
-=== string selinux_getexeccon(void) ===
-This function is a wrapper of `getexeccon`.
+=== `string selinux_getexeccon(void)` ===
 It retrieves the context used for executing a new process, or `false` on error.
-The returned value can be an empty string. It means here is no explicit configuration.
+The returned value can be an empty string which means no exec context has been explicitly set by the program (i.e. using the default policy behavior).
 
-It also has a *raw* version API named as `selinux_getexeccon_raw`.
-
-=== bool selinux_setexeccon(string $context) ===
-This function is a wrapper of `setexeccon`.
+=== `bool selinux_setexeccon(string $context)` ===
 It sets the context used for the next execve call.
-NULL can be passed to `selinux_setexeccon` to reset to the default policy behavior.
-The exec context is automatically reset after the next execve, so a program doesn't
-need to explicitly sanitize it upon startup.
+An empty string can be passed to reset to the default policy behavior. The exec context is automatically reset after the next `execve(2)`, so a program doesn't need to explicitly sanitize it upon startup.
 
-It also has a *raw* version API named as `selinux_setexeccon_raw`.
+This configured context can be applied prior to library functions that internally perform an execve, e.g. execl*, execv*, popen, in order to set an exec context for that operation.
 
-=== string selinux_getfscreatecon(void) ===
-This function is a wrapper of `getfscreatecon`.
-It retrieves the context used for creating a new file system object.
-The returned value can be an empty string. It means here is no explicit configuration.
+Note: Signal handlers that perform a `selinux_setexecon` must take care to save, reset, and restore the exec context to avoid unexpected behavior.
 
-It also has a *raw* version API named as `selinux_getfscreatecon_raw`.
+=== `string selinux_getfscreatecon(void)` ===
+It retrieves the context used for creating a new file system object, or `false` on error.
+The returned value can be an empty string which means no fscreate context has been explicitly set by  the program (i.e. using the default policy behavior).
 
-=== bool selinux_setfscreatecon(string $context) ===
-This function is a wrapper of `setfscreatecon`.
+=== `bool selinux_setfscreatecon(string $context)` ===
 It sets the context used for creating a new file system object.
-NULL can be passed to `selinux_setfscreatecon` to reset to the default policy behavior.
-The fscreate context is automatically reset after the next execve, so a program doesn't
-need to explicitly sanitize it upon startup.
-`selinux_setfscreatecon` can be applied prior to library functions that internally
-perform an file creation, in order to set an file context on the objects.
+An empty string can be passed to reset to the default policy behavior.
+The fscreate context is automatically reset after the next `execve(2)`, so a program doesn't need to explicitly sanitize it upon startup.
 
-It also has a *raw* version API named as `selinux_setfscreatecon_raw`.
+This configured context can be applied prior to library functions that internally perform an file creation, in order to set an file context on the objects.
 
-=== string selinux_getkeycreatecon(void) ===
-This function is a wrapper of `getkeycreatecon`.
-It retrieves the context used for creating a new keyring object.
-The returned value can be an empty string. It means here is no explicit configuration.
-It also has a *raw* version API named as `selinux_getkeycreatecon_raw`.
+Note:  Signal handlers that perform a `selinux_setfscreate` must take care to save, reset, and restore the fscreate context to avoid unexpected behavior.
 
-=== bool selinux_setkeycreatecon(string $context) ===
-This function is a wrapper of `setkeycreatecon`.
-It sets the context used for creating a new keyring object.
-NULL can be passed to `selinux_setkeycreatecon` to reset to the default policy behavior.
-The keycreate context is automatically reset after the next execve, so a program doesn't
-need to explicitly sanitize it upon startup.
+=== `string selinux_getkeycreatecon(void)` ===
+It retrieves the context used for creating a new kernel keyring, or `false` on error.
+The returned value can be an empty string which means no keycreate context has been explicitly set by the program (i.e. using the default policy behavior).
 
-It also has *_raw* version API named as `selinux_setkeycreatecon_raw`.
+=== `bool selinux_setkeycreatecon(string $context)` ===
+It sets the context used for creating a new kernel keyring.
+An empty string can be passed to reset to the default policy behavior.
+The keycreate context is automatically reset after the next `execve(2)`, so a program doesn't need to explicitly sanitize it upon startup.
 
-=== string selinux_getsockcreatecon(void) ===
-This function is a wrapper of `getsockcreatecon`.
-It retrieves the context used for creating a new socket object.
-The returned value can be an empty string. It means here is no explicit configuration.
+This configured context can be applied prior to library functions that internally perform a keyring creation, in order to set a keyring context on the objects.
 
-It also has *raw* version API named as `selinux_getsockcreatecon_raw`.
+Note: Signal handlers that perform a `selinux_setkeycreate` must take care to save, reset, and restore the keycreate context to avoid unexpected behavior.
 
-=== bool selinux_setsockcreatecon(string $context) ===
-This function is a wrapper of `setsockcreatecon`.
-It sets the context used for creating a new socket object.
-NULL can be passed to `selinux_setsockcreatecon` to reset to the default policy behavior.
-The keycreate context is automatically reset after the next execve, so a program doesn't
-need to explicitly sanitize it upon startup.
+=== `string selinux_getsockcreatecon(void)` ===
+It retrieves the context used for creating a new socket object, or `false` on error.
+The returned value can be an empty string which means no sockcreate context has been explicitly set by the program (i.e. using the default policy behavior).
 
-It also has a *raw* version API named as `selinux_setsockcreatecon_raw`.
+=== `bool selinux_setsockcreatecon(string $context)` ===
+It sets the context used for creating a new labeled network sockets.
+An empty string can be passed to reset the default policy behavior.
+The sockcreate context is automatically reset after the next `execve(2)`, so a program doesn't need to explicitly sanitize it upon startup.
+
+This configured context can be applied prior to library functions that internally perform a socket creation, in order to set a socket context on the objects.
+
+Note: Signal handlers that perform `selinux_setsockcreate` must take care to save, reset, and restore the sockcreate context to avoid unexpected behavior.
 
 == Get/Set file context API ==
 
-=== string selinux_getfilecon(string $path) ===
-This function is a wrapper of `getfilecon`.
+=== `string selinux_getfilecon(string $path)` ===
 It retrieves the context associated with the given path in the file system, or `false` on error.
 
-It also has a *raw* version API named as `selinux_getfilecon_raw`.
+=== `string selinux_lgetfilecon(string $path)` ===
+It is identical to `selinux_getfilecon`, except in the case of a symbolic link, where the link itself is interrogated, not the file that it refers to.
 
-=== string selinux_lgetfilecon(string $path) ===
-This function is a wrapper of `lgetfilecon`.
-It is identical to `selinux_getfilecon`, except in the case of a symbolic link,
-where the link itself is interrogated, not the file that it refers to.
+=== `string selinux_fgetfilecon(resource $stream)` ===
+It is identical to `selinux_getfilecon`, only the open file pointed to by `$stream` (as returned by `fopen()`) is interrogated in place of path.
 
-It also has a *raw* version API named as `selinux_lgetfilecon_raw`.
+=== `bool selinux_setfilecon(string $path, string $context)` ===
+It sets the security context of the file system object and returns `true`, or `false` on error.
 
-=== string selinux_fgetfilecon(resource $stream) ===
-This function is a wrapper of `fgetfilecon`.
-It is identical to `selinux_getfilecon`, only the open file pointed to by `$stream`
-(as returned by `fopen()`)is interrogated in place of path.
-
-It also has a *raw* version API named as `selinux_fgetfilecon_raw`.
-
-=== bool selinux_setfilecon(string $path, string $context) ===
-This function is a wrapper of `setfilecon`.
-It sets the security context of the file system object and returns `true` on success, or `false` on error.
-
-It also has a *raw* version API named as `selinux_setfilecon_raw`.
-
-=== bool selinux_lsetfilecon(string $path, string $context) ===
-This function is a wrapper of `lsetfilecon`.
+=== `bool selinux_lsetfilecon(string $path, string $context)` ===
 It is identical to `selinux_setfilecon`, except in the case of a symbolic link,
 where the link itself is interrogated, not the file that it refers to.
 
-It also has a *raw* version API named as `selinux_lsetfilecon_raw`.
-
-=== bool selinux_fsetfilecon(resource $stream, string $context) ===
-This function is a wrapper of `fsetfilecon`.
+=== `bool selinux_fsetfilecon(resource $stream, string $context)` ===
 It is identical to `selinux_setfilecon`, only the open file pointed to by `$stream`
 (as returned by `fopen()`)is interrogated in place of path.
 
-It also has a *raw* version API named as `selinux_fsetfilecon_raw`.
-
 == Labeled Networking ==
-=== string selinux_getpeercon(resource $stream) ===
-This function is a wrapper of `getpeercon`.
+=== `string selinux_getpeercon(resource $stream)` ===
 It retrieves context of peer socket which is given by `$stream` (opened by stream_socket API).
 
-It also has *_raw* version API named as `selinux_getpeercon_raw`.
+== Communication to in-kernel security policy ==
+=== `array selinux_compute_av(string $scontext, string $tcontext, int $tclass)` ===
+It queries whether the policy permits the source context `$scontext` to access the target context `$tcontext` via class `$tclass` with the requested access vector. See the cron source for a usage example, and returns an associative array which contains access vector decision, or `false` on error.
 
-== security_compute_XXXX() wrappers ==
-=== array selinux_compute_av(string $scontext, string $tcontext, int $tclass) ===
-This function is a wrapper of `security_compute_av`.
-It queries whether the policy permits the source context `$scontext` to access the target context `$tcontext` via class `$tclass`, and returns an associative array which contains access vector decision, or `false` on error.
-The returned array contains *allowed*, *decided*, *auditallow*, *auditdeny* and *seqno* members in integer representation.
-
-*usage:*
+The returned contains `allowed`, `decided`, `auditallow`, `auditdeny` and `seqno` members in integer representation, as follows:
 {{{
-$ ./sapi/cli/php -r \
-      '$tclass = selinux_string_to_class("file");
-       $avd = selinux_compute_av("unconfined_u:unconfined_r:unconfined_t",
-                                 "system_u:object_r:var_log_t",
-                                 $tclass);
-       var_dump($avd);'
+$ php -r '$tclass = selinux_string_to_class("file");
+          $avd = selinux_compute_av("staff_u:staff_r:staff_t:s0",
+                                    "system_u:object_r:etc_t:s0",
+                                    $tclass);
+          var_dump($avd);'
 array(5) {
   ["allowed"]=>
-  int(-524289)
+  int(139347)
   ["decided"]=>
   int(-1)
   ["auditallow"]=>
@@ -203,120 +143,84 @@ array(5) {
   ["auditdeny"]=>
   int(-17)
   ["seqno"]=>
-  int(10)
+  int(4)
 }
 }}}
 
-It also has a *raw* version API named as `selinux_compute_av_raw`.
+=== `string selinux_compute_create(string $scontext, string $tcontext, int $tclass)` ===
+It is used to compute a context to use for labeling a new object in a particular class based on a pair of security contexts.
 
-=== string selinux_compute_create(string $scontext, string $tcontext, int $tclass) ===
-This function is a wrapper of `security_compute_create`.
-It is used to compute a context to use for labeling a new object in a particular class based on a security context pair.
+=== `string selinux_compute_relabel(string $scontext, string $tcontext, int $tclass)` ===
+It is used to compute the new context to use when relabeling an object, it is used in the pam_selinux.so source and the newrole source to determine the correct label for the tty at login time, but can be used for other things.
 
-It also has a *raw* version API named as `selinux_compute_create_raw`.
-
-=== string selinux_compute_relabel(string $scontext, string $tcontext, int $tclass) ===
-This function is a wrapper of `security_compute_relabel`.
-It is used to compute the new context to use when relabeling an object.
-It is used in the pam_selinux.so source and the newrole  source to determine
-the correct label for the tty at login time, but can be used for other things.
-
-It also has a *raw* version API named as `selinux_compute_relabel_raw`.
-
-=== string selinux_compute_member(string $scontext, string $tcontext, int $tclass) ===
-This function is a wrapper of `security_compute_member`.
+=== `string selinux_compute_member(string $scontext, string $tcontext, int $tclass)` ===
 It is used to compute the context to use when labeling a polyinstantiated object instance.
 
-It also has a *raw* version API named as `selinux_compute_member_raw`.
+=== `array selinux_compute_user(string $scontext, string $username)` ===
+It is used to determine the set of user contexts that can  be reached from a source context. Is mainly used by `get_ordered_context_list`.
 
-=== array selinux_compute_user(string $scontext, string $username) ===
-This function is a wrapper of `security_compute_user`.
-It is used to determine the set of user contexts that can be reached from a source context.
+== Initial security context support ==
 
-It also has a *raw* version API named as `security_compute_user_raw`.
-
-== Get initial context ==
-=== string selinux_get_initial_context(string $init_name) ===
-This function is a wrapper of `security_get_initial_context`.
-It is used to get the context of a kernel initial security identifier specified by `$init_name`.
-
-It also has a *raw* version API named as `string selinux_get_initial_context_raw`.
+=== `string selinux_get_initial_context(string $name)` ===
+It is used to get the context of a kernel initial security identifier specified by `$name`.
 
 == Sanity checks for security context ==
-=== bool selinux_check_context(string $context) ===
-This function is a wrapper of `security_check_context`.
+
+=== `bool selinux_check_context(string $context)` ===
 It returns `true` if SELinux is running and the `$context` is valid, otherwise it returns `false`.
 
-It also has a *raw* version API named as `selinux_check_context_raw`.
-
-=== string selinux_canonicalize_context(string $context) ===
-This function is a wrapper of `security_canonicalize_context`.
+=== `string selinux_canonicalize_context(string $context)` ===
 It returns canonicalized security context if the `$context` is valid, otherwise it returns `false`.
 
-It also has a *raw* version API named as `selinux_canonicalize_context_raw`.
-
 == Booleans ==
-=== array selinux_get_boolean_names(void) ===
-This function is a wrapper of `security_get_boolean_names`.
+=== `array selinux_get_boolean_names(void)` ===
 It returns a list of boolean names, currently supported by the loaded policy.
 
-=== bool selinux_get_boolean_pending(string $bool_name) ===
-This function is a wrapper of `security_get_boolean_pending`.
-It returns pending value for boolean specified by `$bool_name`, or `false` on error.
+=== `int selinux_get_boolean_pending(string $bool_name)` ===
+It returns pending value (`0` or `1`) for boolean specified by `$bool_name`, or `-1` on error.
 
-=== bool selinux_get_boolean_active(string $bool_name) ===
-This function is a wrapper of `security_get_boolean_active`.
-It returns active value for boolean specified by `$bool_name`, or `false` on error.
+=== `int selinux_get_boolean_active(string $bool_name)` ===
+It returns active value (`0` or `1`) for boolean specified by `$bool_name`, or `-1` on error.
 
-=== bool selinux_set_boolean(string $bool_name, bool $bool_value) ===
-This function is a wrapper of `security_set_boolean`.
+=== `bool selinux_set_boolean(string $bool_name, bool $bool_value)` ===
 It sets the pending value (`$bool_value`) for boolean specified by `$bool_name`.
 
-=== bool selinux_commit_booleans(void) ===
-This function is a wrapper of `security_commit_booleans`.
+=== `bool selinux_commit_booleans(void)` ===
 It commit all pending values for the booleans.
 
 == security class/access vector mapping ==
-=== int selinux_string_to_class(string $class_name) ===
-This function is a wrapper of `string_to_security_class`.
-It returns the class value corresponding to the string `$class_name`, or `false` if no such class exists.
 
-=== string selinux_class_to_string(int $tclass) ===
-This function is a wrapper of `security_class_to_string`.
-It returns a string name for class `$tclass`, or `false` if no such class exists.
+=== `int selinux_string_to_class(string $class_name)` ===
+It returns the class value corresponding to the string `$class_name`, or `false` on error.
 
-=== int selinux_string_to_av_perm(int $tclass, string $av_name) ===
-This function is a wrapper of `string_to_av_perm`.
-It returns the access vector bit corresponding to the string `$av_name` and security class `$tclass`,
-or `false` if no such value exists.
+=== `string selinux_class_to_string(int $tclass)` ===
+It returns a string name for class `$tclass`, or `false` on error.
 
-=== string selinux_av_perm_to_string(int $tclass, int $av_perm) ===
-This function is a wrapper of `security_av_perm_to_string`.
-It returns a string name for the access vector bit `$av_perm` of class `$tclass`,
-or `false` if either argument is invalid.
+=== `int selinux_string_to_av_perm(int $tclass, string $av_name)` ===
+It returns the access vector bit corresponding to the string `$av_name` and security class `$tclass`, or `false` on error.
 
-=== string selinux_av_string(int $tclass, int $av_perms) ===
-This function is a wrapper of `security_av_string`.
-It returns a full access vector string representation using `$tclass` and `$av_perms`,
-which may have multiple bits set.
+=== `string selinux_av_perm_to_string(int $tclass, int $av_perm)` ===
+It returns a string name for the access vector bit `$av_perm` of class `$tclass`, or `false` on error.
 
-== mcstrans ==
-=== string selinux_trans_to_raw_context(string $context) ===
-This function is a wrapper of `selinux_trans_to_raw_context`.
+=== `string selinux_av_string(int $tclass, int $av_perms)` ===
+It returns a full access vector string representation using `$tclass` and `$av_perms` which can contain a set of access vector bits.
+
+== Mcstrans support ==
+
+=== `string selinux_trans_to_raw_context(string $context)` ===
 It performs context translation from the human-readable format ("translated")
 to the internal system format ("raw"),
 and returns the raw format string, or `false` on error.
 
-=== string selinux_raw_to_trans_context(string $context) ===
-This function is a wrapper of `selinux_raw_to_trans_context`.
+=== `string selinux_raw_to_trans_context(string $context)` ===
 It performs context translation from the internal system format ("raw")
 to the human-readable format ("translated"),
 and returns the human-readable format string, or `false` on error.
 
-== matchpathcon ==
-=== string selinux_matchpathcon(string $path [,int $mode [,bool $baseonly [,bool $validate]]]) ===
+== Matchpathcon support ==
+=== `string selinux_matchpathcon(string $path [,int $mode [,bool $baseonly [,bool $validate]]])` ===
 This function matches the specified pathname and mode against the file contexts configuration and returns an appropriate security context, or `false` on error.
-The optional `$mode` is used to enable mode matching, and its typical input is the result of `lstat()` for the target path. If omitted or 0 is given, it disables mode matching. But should be provided whenever possible, as it may affect the matching.
+The optional `$mode` is used to enable mode matching, and its typical input is the result of `lstat()` for the target path. If omitted or 0 is given, it disables mode matching. But should be provided whenever possible for more correctness.
 If the optional `$baseonly` is true, it makes this function ignore local defined file contexts. The default is `false`.
 If the optional `$validate` is true, sanity checks for security context is enabled. The default is `false`
 
@@ -330,8 +234,6 @@ $ php -r \
 system_u:object_r:shadow_t
 }}}
 
-It also has a *raw* version API named as `selinux_matchpathcon_raw`.
-
-=== bool selinux_lsetfilecon_default(string $path) ===
-This function is a wrapper of `selinux_lsetfilecon_default`.
+=== `bool selinux_lsetfilecon_default(string $path)` ===
 It sets the file context on to the system defaults and returns `true` on success, or `false` on error.
+
