@@ -1571,6 +1571,12 @@ ExecCallTriggerFunc(TriggerData *trigdata,
 	Assert(finfo->fn_oid == trigdata->tg_trigger->tgfoid);
 
 	/*
+	 * SELinux: check db_tuple:{select} on per-tuple triggers
+	 */
+	if (!sepgsqlCheckTupleSelectOnTrigger(trigdata))
+		return NULL;
+
+	/*
 	 * If doing EXPLAIN ANALYZE, start charging time to this trigger.
 	 */
 	if (instr)

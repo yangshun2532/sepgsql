@@ -9,6 +9,7 @@
 #define SEPGSQL_H
 
 #include "access/htup.h"
+#include "commands/trigger.h"
 #include "executor/execdesc.h"
 #include "fmgr.h"
 #include "nodes/parsenodes.h"
@@ -149,6 +150,9 @@ sepgsqlCheckTableLock(Oid relid);
 extern bool
 sepgsqlCheckTableTruncate(Relation rel);
 
+extern bool
+sepgsqlCheckTupleSelectOnTrigger(TriggerData *tgdata);
+
 extern void
 sepgsqlCheckBlobDrop(HeapTuple lotup);
 
@@ -269,6 +273,7 @@ sepgsqlSetDefaultSecLabel(Relation rel, HeapTuple tuple);
 #define sepgsqlCheckProcedureEntrypoint(a,b)	do {} while(0)
 #define sepgsqlCheckTableLock(a)				(true)
 #define sepgsqlCheckTableTruncate(a)			(true)
+#define sepgsqlCheckTupleSelectOnTrigger(a)		(true)
 #define sepgsqlCheckBlobDrop(a)					do {} while(0)
 #define sepgsqlCheckBlobRead(a)					do {} while(0)
 #define sepgsqlCheckBlobWrite(a)				do {} while(0)
