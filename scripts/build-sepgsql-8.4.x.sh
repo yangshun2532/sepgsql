@@ -14,6 +14,7 @@ BASE_VERSION=`grep AC_INIT ${SEPGSQL_REPOSITORY}${SEPGSQL_BRANCH}/base/configure
     | head -1 \
     | sed -e 's/,/ /g' -e 's/\[//g' -e 's/\]//g' \
     | awk '{print $2}'`
+NEXT_VERSION="8.5devel"	# workaround
 
 svn update ${SEPGSQL_REPOSITORY} || exit 1
 SEPGSQL_REVISION=`svn info ${SEPGSQL_REPOSITORY} | egrep '^Revision:' | awk '{print $2}'`
@@ -123,21 +124,21 @@ mv ${RPMSOURCE}/sepgsql-docs-${BASE_VERSION}.patch	\
 mv ${RPMSOURCE}/sepgsql-tests-${BASE_VERSION}.patch	\
     ${RPMSOURCE}/sepgsql-tests-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch
 mv ${RPMSOURCE}/sepgsql-sysatt-${BASE_VERSION}.patch	\
-    ${RPMSOURCE}/sepgsql-sysatt-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch
+    ${RPMSOURCE}/sepgsql-sysatt-${NEXT_VERSION}-r${SEPGSQL_REVISION}.patch
 mv ${RPMSOURCE}/sepgsql-rowlv-${BASE_VERSION}.patch	\
-    ${RPMSOURCE}/sepgsql-rowlv-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch
+    ${RPMSOURCE}/sepgsql-rowlv-${NEXT_VERSION}-r${SEPGSQL_REVISION}.patch
 mv ${RPMSOURCE}/sepgsql-blobs-${BASE_VERSION}.patch	\
-    ${RPMSOURCE}/sepgsql-blobs-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch
+    ${RPMSOURCE}/sepgsql-blobs-${NEXT_VERSION}-r${SEPGSQL_REVISION}.patch
 
 echo "---- LIST OF GENERATED PATCHES ----"
-echo "${RPMSOURCE}/sepgsql-core-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch"
-echo "${RPMSOURCE}/sepgsql-utils-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch"
-echo "${RPMSOURCE}/sepgsql-policy-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch"
-echo "${RPMSOURCE}/sepgsql-docs-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch"
-echo "${RPMSOURCE}/sepgsql-tests-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch"
-echo "${RPMSOURCE}/sepgsql-sysatt-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch"
-echo "${RPMSOURCE}/sepgsql-rowlv-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch"
-echo "${RPMSOURCE}/sepgsql-blobs-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch"
+echo "[1/5] ${RPMSOURCE}/sepgsql-core-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch"
+echo "[2/5] ${RPMSOURCE}/sepgsql-utils-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch"
+echo "[3/5] ${RPMSOURCE}/sepgsql-policy-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch"
+echo "[4/5] ${RPMSOURCE}/sepgsql-docs-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch"
+echo "[5/5] ${RPMSOURCE}/sepgsql-tests-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch"
+echo "[6/5] ${RPMSOURCE}/sepgsql-sysatt-${NEXT_VERSION}-r${SEPGSQL_REVISION}.patch"
+echo "[7/5] ${RPMSOURCE}/sepgsql-rowlv-${NEXT_VERSION}-r${SEPGSQL_REVISION}.patch"
+echo "[8/5] ${RPMSOURCE}/sepgsql-blobs-${NEXT_VERSION}-r${SEPGSQL_REVISION}.patch"
 
 # ---- clean up
 rm -rf ${WORKDIR}
