@@ -351,15 +351,15 @@ sepgsqlCheckProcedureEntrypoint(FmgrInfo *finfo, HeapTuple protup)
 
 	if (!sepgsqlIsEnabled())
 		return;
+
 	/*
-	 * NOTE: built-in trusted procedure is not supported currently,
-	 * because SearchSysCache(PROCOID, ...) invokes another built-in
-	 * function to fetch a tuple from system catalog, then it makes
-	 * infinite function invocation.
-	 * It can be fixed later.
+	 * NOTE: It is not available to set up builtin functions as
+	 * trusted procedure now, because it needs to invoke builtin
+	 * functions to search system caches, then it also invokes
+	 * fmgr_info_cxt_security() and makes infinite function call.
+	 * This limitation should be fixed later.
+	 * (It is same as security definer also)
 	 */
-	if (!HeapTupleIsValid(protup))
-		return;
 
 	oldctx = MemoryContextSwitchTo(finfo->fn_mcxt);
 
@@ -370,14 +370,14 @@ sepgsqlCheckProcedureEntrypoint(FmgrInfo *finfo, HeapTuple protup)
 		MemoryContextSwitchTo(oldctx);
 		return;
 	}
-	/* db_procedure:{entrypoint} */
+	/* db_procedure:{entrypoint}, if trusted procedure */
 	audit_name = sepgsqlAuditName(ProcedureRelationId, protup);
 	sepgsqlClientHasPerms(HeapTupleGetSecLabel(protup),
 						  SECCLASS_DB_PROCEDURE,
 						  DB_PROCEDURE__ENTRYPOINT,
 						  audit_name, true);
 
-	/* process:{transition} */
+	/* process:{transition}, if trusted procedure */
 	sepgsqlComputePerms(sepgsqlGetClientLabel(),
 						newcon,
 						SECCLASS_PROCESS,
