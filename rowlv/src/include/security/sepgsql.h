@@ -248,6 +248,7 @@ sepgsqlSetDefaultSecLabel(Relation rel, HeapTuple tuple);
 #define sepgsqlCheckProcedureEntrypoint(a,b)	do {} while(0)
 #define sepgsqlCheckTableLock(a)				(true)
 #define sepgsqlCheckTableTruncate(a)			(true)
+#define sepgsqlCheckTupleSelectOnTrigger(a)		(true)
 
 #define sepgsqlExecScan(a,b,c,d)				(true)
 #define sepgsqlHeapTupleInsert(a,b,c)			(true)
