@@ -698,10 +698,9 @@ PHP_FUNCTION(selinux_get_boolean_pending)
 
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s",
 				  &bool_name, &length) == FAILURE)
-		RETURN_FALSE;
+		RETURN_LONG(-1);
 
 	value = security_get_boolean_pending(bool_name);
-
 	RETURN_LONG(value);
 }
 
@@ -713,10 +712,9 @@ PHP_FUNCTION(selinux_get_boolean_active)
 
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s",
 				  &bool_name, &length) == FAILURE)
-		RETURN_FALSE;
+		RETURN_LONG(-1);
 
 	value = security_get_boolean_active(bool_name);
-
 	RETURN_LONG(value);
 }
 
