@@ -1,7 +1,7 @@
 Summary: SELinux binding for PHP scripting language
 Name: php-selinux
-Version: 1.0
-Release: r%%__revision__%%%{?dist}
+Version: %%__version__%%
+Release: %%__release__%%%{?dist}
 License: PHP
 Group: Development/Languages
 URL: http://code.google.com/p/sepgsql/
