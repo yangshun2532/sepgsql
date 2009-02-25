@@ -131,9 +131,12 @@ ExecScan(ScanState *node,
 		 * ...
 		 * And security check for tuple level access controls at the last.
 		 */
-		if (pgaceExecScan(scan, node->ss_currentRelation, slot)
+		if (pgaceExecScan(scan, node->ss_currentRelation, slot, false)
 			&& (!qual || ExecQual(qual, econtext, false)))
 		{
+			/* special care for FK checks */
+			pgaceExecScan(scan, node->ss_currentRelation, slot, true);
+
 			/*
 			 * Found a satisfactory scan tuple.
 			 */

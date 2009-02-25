@@ -230,6 +230,27 @@ pgaceExecutorStart(QueryDesc *queryDesc, int eflags)
 }
 
 /*
+ * pgaceRowlvBehaviorSwitchTo
+ *   changes internal state during FK constraint checks
+ */
+bool
+pgaceRowlvBehaviorSwitchTo(bool new_abort)
+{
+	switch (pgace_feature)
+	{
+#ifdef HAVE_SELINUX
+	case PGACE_FEATURE_SELINUX:
+		if (sepgsqlIsEnabled())
+			return sepgsqlRowlvBehaviorSwitchTo(new_abort);
+		break;
+#endif
+	default:
+		break;
+	}
+	return new_abort;
+}
+
+/*
  * pgaceExecScan
  *
  * This hook is invoked on ExecScan for each tuple fetched.
@@ -245,14 +266,14 @@ pgaceExecutorStart(QueryDesc *queryDesc, int eflags)
  * required to scanned tuples.
  */
 bool
-pgaceExecScan(Scan *scan, Relation rel, TupleTableSlot *slot)
+pgaceExecScan(Scan *scan, Relation rel, TupleTableSlot *slot, bool abort)
 {
 	switch (pgace_feature)
 	{
 #ifdef HAVE_SELINUX
 	case PGACE_FEATURE_SELINUX:
 		if (sepgsqlIsEnabled())
-			return sepgsqlExecScan(scan, rel, slot);
+			return sepgsqlExecScan(scan, rel, slot, abort);
 		break;
 #endif
 	default:
@@ -853,55 +874,6 @@ pgaceCallTriggerFunction(TriggerData *tgdata)
 		break;
 	}
 	return true;
-}
-
-/*
- * pgaceBeginPerformCheckFK
- *
- * This hook is invoked just before performing FK constraint checks.
- * The guest can change its internal state during the checks.
- * The major purpose of this function is to prevent violation of
- * integrity consistentency violation due to row-level access control.
- * If the guest requires an opaque data, it should be returned then
- * it will be delivered via pgaceEndPerformCheckFK().
- */
-void
-pgaceBeginPerformCheckFK(Relation rel, bool is_primary, Oid save_userid,
-						 Datum *pgace_private)
-{
-	switch (pgace_feature)
-	{
-#ifdef HAVE_SELINUX
-	case PGACE_FEATURE_SELINUX:
-		if (sepgsqlIsEnabled())
-			*pgace_private = sepgsqlBeginPerformCheckFK(rel, is_primary, save_userid);
-		break;
-#endif
-	default:
-		break;
-	}
-}
-
-/*
- * pgaceEndPerformCheckFK
- *
- * This hook is invoked just after performing FK constraint checks.
- * The guest can restore its internal state using this hook.
- */
-void
-pgaceEndPerformCheckFK(Relation rel, Datum pgace_private)
-{
-	switch (pgace_feature)
-	{
-#ifdef HAVE_SELINUX
-	case PGACE_FEATURE_SELINUX:
-		if (sepgsqlIsEnabled())
-			sepgsqlEndPerformCheckFK(rel, pgace_private);
-		break;
-#endif
-	default:
-		break;
-	}
 }
 
 /*

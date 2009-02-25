@@ -671,10 +671,23 @@ sepgsqlLargeObjectSetSecurity(Relation rel, HeapTuple newtup, HeapTuple oldtup)
 static bool abort_on_violated_tuple = false;
 
 bool
-sepgsqlExecScan(Scan *scan, Relation rel, TupleTableSlot *slot)
+sepgsqlRowlvBehaviorSwitchTo(bool new_abort)
+{
+	bool	old_abort = abort_on_violated_tuple;
+
+	abort_on_violated_tuple = new_abort;
+
+	return old_abort;
+}
+
+bool
+sepgsqlExecScan(Scan *scan, Relation rel, TupleTableSlot *slot, bool abort)
 {
 	HeapTuple	tuple;
 	uint32		perms = (scan->pgaceTuplePerms & SEPGSQL_PERMS_MASK);
+
+	if (abort_on_violated_tuple != abort)
+		return true;	/* no need to do here */
 
 	if (perms == 0)
 		return true;
@@ -683,32 +696,6 @@ sepgsqlExecScan(Scan *scan, Relation rel, TupleTableSlot *slot)
 
 	return sepgsqlCheckTuplePerms(rel, tuple, NULL, perms,
 								  abort_on_violated_tuple);
-}
-
-/* ----------------------------------------------------------
- * special cases for Foreign Key constraint
- * ---------------------------------------------------------- */
-Datum
-sepgsqlBeginPerformCheckFK(Relation rel, bool is_primary, Oid save_userid)
-{
-	Datum save_pgace = BoolGetDatum(abort_on_violated_tuple);
-
-	/*
-	 * NOTE: when a tuple is inserted/updated on FK relation, all we should
-	 * do is simply filtering violated tuples on PK relation, as normal
-	 * row-level access controls doing.
-	 * At the result, INSERT/UPDATE with invisible tuple will be failed.
-	 */
-	if (is_primary)
-		abort_on_violated_tuple = true;
-
-	return save_pgace;
-}
-
-void
-sepgsqlEndPerformCheckFK(Relation rel, Datum save_pgace)
-{
-	abort_on_violated_tuple = DatumGetBool(save_pgace);
 }
 
 /*******************************************************************************

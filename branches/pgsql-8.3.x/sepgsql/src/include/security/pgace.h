@@ -60,7 +60,8 @@ extern void pgaceProcessUtility(Node *parsetree, ParamListInfo params,
 /*
  * HeapTuple input/output hooks
  */
-extern bool pgaceExecScan(Scan *scan, Relation rel, TupleTableSlot *slot);
+extern bool pgaceRowlvBehaviorSwitchTo(bool new_abort);
+extern bool pgaceExecScan(Scan *scan, Relation rel, TupleTableSlot *slot, bool abort);
 extern bool pgaceHeapTupleInsert(Relation rel, HeapTuple tuple,
 								 bool is_internal, bool with_returning);
 extern bool pgaceHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple newtup,
@@ -86,9 +87,6 @@ extern void pgaceGramAlterFunction(Relation rel, HeapTuple tuple, DefElem *defel
 extern void pgaceCallFunction(FmgrInfo *finfo);
 extern void pgaceCallAggFunction(HeapTuple aggTuple);
 extern bool pgaceCallTriggerFunction(TriggerData *tgdata);
-extern void pgaceBeginPerformCheckFK(Relation rel, bool is_primary, Oid save_userid,
-									 Datum *pgace_private);
-extern void pgaceEndPerformCheckFK(Relation rel, Datum pgace_private);
 extern bool pgaceAllowFunctionInlined(Oid fnoid, HeapTuple func_tuple);
 
 /*
