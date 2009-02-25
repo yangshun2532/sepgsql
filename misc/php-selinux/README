@@ -304,3 +304,14 @@ string selinux_matchpathcon(string $path [,int $mode [,bool $baseonly
 bool selinux_lsetfilecon_default(string $path)
   It sets the file context on to the system defaults and returns true on
   success, or false on error.
+
+* Configuration files
+
+string selinux_getenforcemode(void)
+  It returns the initial state on the system, configured in /etc/selinux/config.
+
+string selinux_getpolicytype(void)
+  It returns the default policy type on the system, configured in /etc/selinux/config.
+
+string selinux_policy_root(void)
+  It returns the directory path which stores the policy and context configuration.
