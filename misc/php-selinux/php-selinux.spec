@@ -24,7 +24,7 @@ translate between raw and readable format and so on.
 %build
 %{_bindir}/phpize --clean
 %{_bindir}/phpize
-%configure
+%configure	--enable-selinux
 make %{?_smp_mflags}
 
 %install

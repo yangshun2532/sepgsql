@@ -3,6 +3,9 @@
 #endif
 
 #include "php.h"
+
+#if HAVE_SELINUX
+
 #include "php_selinux.h"
 
 #include <stdlib.h>
@@ -122,9 +125,8 @@ PHP_RSHUTDOWN_FUNCTION(selinux)
 	return SUCCESS;
 }
 
-/*
- * Global state APIs
- */
+/* {{{ proto bool selinux_is_enabled(void)
+   Returns 'true' if SELinux is working on the host. */
 PHP_FUNCTION(selinux_is_enabled)
 {
 	if (ZEND_NUM_ARGS() != 0)
@@ -134,7 +136,10 @@ PHP_FUNCTION(selinux_is_enabled)
 		RETURN_TRUE;
 	RETURN_FALSE;
 }
+/* }}} */
 
+/* {{{ proto bool selinux_mls_is_enabled(void)
+   Returns 'true' if SELinux is working with MLS policy. */
 PHP_FUNCTION(selinux_mls_is_enabled)
 {
 	if (ZEND_NUM_ARGS() != 0)
@@ -144,19 +149,21 @@ PHP_FUNCTION(selinux_mls_is_enabled)
 		RETURN_TRUE;
 	RETURN_FALSE;
 }
+/* }}} */
 
+/* {{{ proto int selinux_getenforce(void)
+   Returns the current state of SELinux enforcing/permissive mode */
 PHP_FUNCTION(selinux_getenforce)
 {
-	int rc;
-
 	if (ZEND_NUM_ARGS() != 0)
 		ZEND_WRONG_PARAM_COUNT();
 
-	rc = security_getenforce();
-
-	RETURN_LONG(rc);
+	RETURN_LONG(security_getenforce());
 }
+/* }}} */
 
+/* {{{ proto bool selinux_setenforce(int mode)
+   Sets the state of SELinux enforcing/permissive mode */
 PHP_FUNCTION(selinux_setenforce)
 {
 	long mode;
@@ -169,51 +176,60 @@ PHP_FUNCTION(selinux_setenforce)
 		RETURN_FALSE;
 	RETURN_TRUE;
 }
+/* }}} */
 
+/* {{{ proto int selinux_policyvers(void)
+   Returns the version of the security policy in the kernel. */
 PHP_FUNCTION(selinux_policyvers)
 {
-	int policyvers;
-
 	if (ZEND_NUM_ARGS() != 0)
 		ZEND_WRONG_PARAM_COUNT();
 
-	policyvers = security_policyvers();
-
-	RETURN_LONG(policyvers);
+	RETURN_LONG(security_policyvers());
 }
+/* }}} */
 
-/*
- * Wrappers for the /proc/pid/attr API.
- */
+/* {{{ proto string selinux_getcon(void)
+   Returns the context of the current process. */
 PHP_FUNCTION(selinux_getcon)
 {
 	security_context_t context;
-	int rc;
 
 	if (ZEND_NUM_ARGS() != 0)
 		ZEND_WRONG_PARAM_COUNT();
 
 	if (getcon(&context) < 0)
 		RETURN_FALSE;
-	RETVAL_STRING(!context ? "" : context, 1);
+
+	if (!context)
+		RETURN_EMPTY_STRING();
+	RETVAL_STRING(context, 1);
 	freecon(context);
 }
+/* }}} */
 
+/* {{{ proto bool selinux_setcon(string context)
+   Sets the context of the current process. */
 PHP_FUNCTION(selinux_setcon)
 {
-	char *context;
+	security_context_t context;
 	int length;
 
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
 				  "s", &context, &length) == FAILURE)
 		RETURN_FALSE;
+
 	if (length == 0)
 		context = NULL;
+
 	if (setcon(context) < 0)
 		RETURN_FALSE;
 	RETURN_TRUE;
 }
+/* }}} */
 
+/* {{{ proto string selinux_getpidcon(long pid)
+   Returns the context of the process for the specified PID. */
 PHP_FUNCTION(selinux_getpidcon)
 {
 	security_context_t context;
@@ -225,24 +241,35 @@ PHP_FUNCTION(selinux_getpidcon)
 
 	if (getpidcon((pid_t) pid, &context) < 0)
 		RETURN_FALSE;
-	RETVAL_STRING(!context ? "" : context, 1);
+
+	if (!context)
+		RETURN_EMPTY_STRING();
+	RETVAL_STRING(context, 1);
 	freecon(context);
 }
+/* }}} */
 
+/* {{{ proto string selinux_getprevcon(void)
+   Returns the context of the process before the last execve(2). */
 PHP_FUNCTION(selinux_getprevcon)
 {
 	security_context_t context;
-	int rc;
 
 	if (ZEND_NUM_ARGS() != 0)
 		ZEND_WRONG_PARAM_COUNT();
 
 	if (getprevcon(&context) < 0)
 		RETURN_FALSE;
-	RETVAL_STRING(!context ? "" : context, 1);
+
+	if (!context)
+		RETURN_EMPTY_STRING();
+	RETVAL_STRING(context, 1);
 	freecon(context);
 }
+/* }}} */
 
+/* {{{ proto string selinux_getexeccon(void)
+   Returns the context used for executing a new program. */
 PHP_FUNCTION(selinux_getexeccon)
 {
 	security_context_t context;
@@ -252,25 +279,36 @@ PHP_FUNCTION(selinux_getexeccon)
 
 	if (getexeccon(&context) < 0)
 		RETURN_FALSE;
-	RETVAL_STRING(!context ? "" : context, 1);
+
+	if (!context)
+		RETURN_EMPTY_STRING();
+	RETVAL_STRING(context, 1);
 	freecon(context);
 }
+/* }}} */
 
+/* {{{ proto bool selinux_setexeccon(string context)
+   Sets the context used for executing a new program. */
 PHP_FUNCTION(selinux_setexeccon)
 {
-	char *context;
+	security_context_t context;
 	int length;
 
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
 				  "s", &context, &length) == FAILURE)
 		RETURN_FALSE;
+
 	if (length == 0)
 		context = NULL;
+
 	if (setexeccon(context) < 0)
 		RETURN_FALSE;
 	RETURN_TRUE;
 }
+/* }}} */
 
+/* {{{ proto string selinux_getfscreatecon(void)
+   Returns the context used for executing a new program. */
 PHP_FUNCTION(selinux_getfscreatecon)
 {
 	security_context_t context;
@@ -280,10 +318,16 @@ PHP_FUNCTION(selinux_getfscreatecon)
 
 	if (getfscreatecon(&context) < 0)
 		RETURN_FALSE;
-	RETVAL_STRING(!context ? "" : context, 1);
+
+	if (!context)
+		RETURN_EMPTY_STRING();
+	RETVAL_STRING(context, 1);
 	freecon(context);
 }
+/* }}} */
 
+/* {{{ proto bool selinux_setfscreatecon(string context)
+   Sets the context used for creating a new file system object. */
 PHP_FUNCTION(selinux_setfscreatecon)
 {
 	char *context;
@@ -292,25 +336,37 @@ PHP_FUNCTION(selinux_setfscreatecon)
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
 				  "s", &context, &length) == FAILURE)
 		RETURN_FALSE;
+
 	if (length == 0)
 		context = NULL;
+
 	if (setfscreatecon(context) < 0)
 		RETURN_FALSE;
 	RETURN_TRUE;
 }
+/* }}} */
 
+/* {{{ proto string selinux_getkeycreatecon(void)
+   Returns the context used for creating a new kernel keyring. */
 PHP_FUNCTION(selinux_getkeycreatecon)
 {
 	security_context_t context;
 
 	if (ZEND_NUM_ARGS() != 0)
 		ZEND_WRONG_PARAM_COUNT();
-	if (getkeycreatecon(&context) < 0 || !context)
+
+	if (getkeycreatecon(&context) < 0)
 		RETURN_FALSE;
-	RETVAL_STRING(!context ? "" : context, 1);
+
+	if (!context)
+		RETURN_EMPTY_STRING();
+	RETVAL_STRING(context, 1);
 	freecon(context);
 }
+/* }}} */
 
+/* {{{ proto bool selinux_setkeycreatecon(string context)
+   Sets the context used for creating a new kernel keyring. */
 PHP_FUNCTION(selinux_setkeycreatecon)
 {
 	char *context;
@@ -319,85 +375,110 @@ PHP_FUNCTION(selinux_setkeycreatecon)
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
 				  "s", &context, &length) == FAILURE)
 		RETURN_FALSE;
+
 	if (length == 0)
 		context = NULL;
+
 	if (setkeycreatecon(context) < 0)
 		RETURN_FALSE;
 	RETURN_TRUE;
 }
+/* }}} */
 
+/* {{{ proto string selinux_getsockcreatecon(void)
+   Returns the context used for creating a new socket object. */
 PHP_FUNCTION(selinux_getsockcreatecon)
 {
 	security_context_t context;
 
 	if (ZEND_NUM_ARGS() != 0)
 		ZEND_WRONG_PARAM_COUNT();
+
 	if (getsockcreatecon(&context) < 0)
 		RETURN_FALSE;
-	RETVAL_STRING(!context ? "" : context, 1);
+
+	if (!context)
+		RETURN_EMPTY_STRING();
+	RETVAL_STRING(context, 1);
 	freecon(context);
 }
+/* }}} */
 
-
+/* {{{ proto bool selinux_setsockcreatecon(string context)
+   Sets the context used for creating a new socket object. */
 PHP_FUNCTION(selinux_setsockcreatecon)
 {
-	char *context;
+	security_context_t context;
 	int length;
 
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
 				  "s", &context, &length) == FAILURE)
 		RETURN_FALSE;
+
 	if (length == 0)
 		context = NULL;
+
 	if (setsockcreatecon(context) < 0)
 		RETURN_FALSE;
 	RETURN_TRUE;
 }
+/* }}} */
 
-/*
- * Get file context
- */
-static void do_selinux_getfilecon(INTERNAL_FUNCTION_PARAMETERS, int link)
+/* {{{ proto string selinux_getfilecon(string filename)
+   Returns the context associated with the given filename. */
+PHP_FUNCTION(selinux_getfilecon)
 {
+	security_context_t context;
 	char *filename;
 	int length;
-	security_context_t context;
 
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
 				  "s", &filename, &length) == FAILURE)
 		RETURN_FALSE;
 	if (length == 0)
 		RETURN_FALSE;
-	if (link == 0)
-	{
-		if (getfilecon(filename, &context) < 0)
-			RETURN_FALSE;
-	} else {
-		if (lgetfilecon(filename, &context) < 0)
-			RETURN_FALSE;
-	}
-	RETVAL_STRING(!context ? "" : context, 1);
+
+	if (getfilecon(filename, &context) < 0 || !context)
+		RETURN_FALSE;
+
+	RETVAL_STRING(context, 1);
 	freecon(context);
 }
+/* }}} */
 
-PHP_FUNCTION(selinux_getfilecon)
-{
-	do_selinux_getfilecon(INTERNAL_FUNCTION_PARAM_PASSTHRU, 0);
-}
-
+/* {{{ proto string selinux_lgetfilecon(string filename)
+   Identical to selinux_getfilecon, except in the case of a symbolic link. */
 PHP_FUNCTION(selinux_lgetfilecon)
 {
-	do_selinux_getfilecon(INTERNAL_FUNCTION_PARAM_PASSTHRU, 1);
-}
+	security_context_t context;
+	char *filename;
+	int length;
 
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
+				  "s", &filename, &length) == FAILURE)
+		RETURN_FALSE;
+	if (length == 0)
+		RETURN_FALSE;
+
+	if (lgetfilecon(filename, &context) < 0 || !context)
+		RETURN_FALSE;
+
+	RETVAL_STRING(context, 1);
+	freecon(context);
+}
+/* }}} */
+
+/* {{{ proto string selinux_fgetfilecon(resource stream)
+   Identical to selinux_getfilecon,  only the open file pointed to by stream. */
 PHP_FUNCTION(selinux_fgetfilecon)
 {
 	zval *z;
 	php_stream *stream;
 	security_context_t context;
-	int rc, fd;
+	int fdesc;
 
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "z", &z) == FAILURE)
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
+				  "z", &z) == FAILURE)
 		RETURN_FALSE;
 	php_stream_from_zval_no_verify(stream, &z);
 
@@ -405,59 +486,65 @@ PHP_FUNCTION(selinux_fgetfilecon)
 		RETURN_FALSE;
 
 	if (php_stream_cast(stream, PHP_STREAM_AS_FD,
-			    (void **) &fd, REPORT_ERRORS) != SUCCESS)
+			    (void **) &fdesc, REPORT_ERRORS) != SUCCESS)
 		RETURN_FALSE;
 
-	if (fgetfilecon(fd, &context) < 0)
+	if (fgetfilecon(fdesc, &context) < 0)
 		RETURN_FALSE;
-	RETVAL_STRING(!context ? "" : context, 1);
+
+	RETVAL_STRING(context, 1);
 	freecon(context);
 }
+/* }}} */
 
-/*
- * Set file context
- */
-static void do_selinux_setfilecon(INTERNAL_FUNCTION_PARAMETERS, int link)
+/* {{{ proto bool selinux_setfilecon(string filename, string context)
+   Sets the security context of the file system object. */
+PHP_FUNCTION(selinux_setfilecon)
 {
 	char *filename, *context;
-	int rc, filename_len, context_len;
+	int filename_len, context_len;
 
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "ss",
 				  &filename, &filename_len,
 				  &context, &context_len) == FAILURE)
 		RETURN_FALSE;
-	if (filename_len == 0)
+	if (filename_len == 0 || context_len == 0)
 		RETURN_FALSE;
-	if (context_len == 0)
-		context = NULL;
-	if (link == 0)
-	{
-		if (setfilecon(filename, context) < 0)
-			RETURN_FALSE;
-	} else {
-		if (lsetfilecon(filename, context) < 0)
-			RETURN_FALSE;
-	}
+
+	if (setfilecon(filename, context) < 0)
+		RETURN_FALSE;
 	RETURN_TRUE;
 }
+/* }}} */
 
-PHP_FUNCTION(selinux_setfilecon)
-{
-	do_selinux_setfilecon(INTERNAL_FUNCTION_PARAM_PASSTHRU, 0);
-}
-
-
+/* {{{ proto bool selinux_lsetfilecon(string filename, string context)
+   Identical to selinux_setfilecon, except in the case of a symbolic link. */
 PHP_FUNCTION(selinux_lsetfilecon)
 {
-	do_selinux_setfilecon(INTERNAL_FUNCTION_PARAM_PASSTHRU, 1);
-}
+	char *filename, *context;
+	int filename_len, context_len;
 
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "ss",
+				  &filename, &filename_len,
+				  &context, &context_len) == FAILURE)
+		RETURN_FALSE;
+	if (filename_len == 0 || context_len == 0)
+		RETURN_FALSE;
+
+	if (lsetfilecon(filename, context) < 0)
+			RETURN_FALSE;
+	RETURN_TRUE;
+}
+/* }}} */
+
+/* {{{ proto bool selinux_fsetfilecon(resource stream, string context)
+   Identical to selinux_setfilecon, only the open file pointed to by stream. */
 PHP_FUNCTION(selinux_fsetfilecon)
 {
 	zval *z;
 	php_stream *stream;
 	security_context_t context;
-	int rc, fd, context_len;
+	int fdesc, context_len;
 
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
 				  "zs", &z, &context, &context_len) == FAILURE)
@@ -468,23 +555,22 @@ PHP_FUNCTION(selinux_fsetfilecon)
 		RETURN_FALSE;
 
 	if (php_stream_cast(stream, PHP_STREAM_AS_FD,
-			    (void **) &fd, REPORT_ERRORS) != SUCCESS)
+			    (void **) &fdesc, REPORT_ERRORS) != SUCCESS)
 		RETURN_FALSE;
 
-	if (fsetfilecon(fd, context) < 0)
+	if (fsetfilecon(fdesc, context) < 0)
 		RETURN_FALSE;
 	RETURN_TRUE;
 }
 
-/*
- * Labeled Networking
- */
+/* proto string selinux_getpeercon(resource stream)
+   Returns the context of the peer socket of given stream. */
 PHP_FUNCTION(selinux_getpeercon)
 {
 	zval *z;
 	php_stream *stream;
 	security_context_t context;
-	int rc, sockfd;
+	int sockfd;
 
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "z", &z) == FAILURE)
 		RETURN_FALSE;
@@ -501,14 +587,14 @@ PHP_FUNCTION(selinux_getpeercon)
 	RETVAL_STRING(context, 1);
 	freecon(context);
 }
+/* }}} */
 
-/*
- * security_compute_XXXX() wrappers
- */
+/* {{{ proto array selinux_compute_av(string scon, string tcon, int tclass)
+   Retutns the access vector for the given scon, tcon and tclass. */
 PHP_FUNCTION(selinux_compute_av)
 {
 	char *scon, *tcon;
-	int rc, scon_len, tcon_len;
+	int scon_len, tcon_len;
 	long tclass;
 	struct av_decision avd;
 
@@ -528,12 +614,15 @@ PHP_FUNCTION(selinux_compute_av)
 	add_assoc_long(return_value, "auditdeny",  avd.auditdeny);
 	add_assoc_long(return_value, "seqno",      avd.seqno);
 }
+/* }}} */
 
+/* {{{ proto string selinux_compute_create(string scon, string tcon, int tclass)
+   Returns the context for a new object in a particular class and contexts. */
 PHP_FUNCTION(selinux_compute_create)
 {
 	security_context_t context;
 	char *scon, *tcon;
-	int rc, scon_len, tcon_len;
+	int scon_len, tcon_len;
 	long tclass;
 
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "ssl",
@@ -544,15 +633,18 @@ PHP_FUNCTION(selinux_compute_create)
 		RETURN_FALSE;
 	if (security_compute_create(scon, tcon, tclass, &context) < 0)
 		RETURN_FALSE;
-	RETVAL_STRING(!context ? "" : context, 1);
+	RETVAL_STRING(context, 1);
 	freecon(context);
 }
+/* }}} */
 
+/* {{{ proto string selinux_compute_relabel(string scon, string tcon, int tclass)
+   Returns the context used when an object is relabeled. */
 PHP_FUNCTION(selinux_compute_relabel)
 {
 	security_context_t context;
 	char *scon, *tcon;
-	int rc, scon_len, tcon_len;
+	int scon_len, tcon_len;
 	long tclass;
 
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "ssl",
@@ -563,15 +655,18 @@ PHP_FUNCTION(selinux_compute_relabel)
 		RETURN_FALSE;
 	if (security_compute_relabel(scon, tcon, tclass, &context) < 0)
 		RETURN_FALSE;
-	RETVAL_STRING(!context ? "" : context, 1);
+	RETVAL_STRING(context, 1);
 	freecon(context);
 }
+/* }}} */
 
+/* {{{ proto string selinux_compute_member(string scon, string tcon, int tclass)
+   Returns the context to use when labeling a polyinstantiated object instance. */
 PHP_FUNCTION(selinux_compute_member)
 {
 	security_context_t context;
 	char *scon, *tcon;
-	int rc, scon_len, tcon_len;
+	int scon_len, tcon_len;
 	long tclass;
 
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "ssl",
@@ -585,13 +680,15 @@ PHP_FUNCTION(selinux_compute_member)
 	RETVAL_STRING(context, 1);
 	freecon(context);
 }
+/* }}} */
 
+/* {{{ proto array selinux_compute_user(string scon, string username)
+   Returns a set of user contexts that can be reached from a source context. */
 PHP_FUNCTION(selinux_compute_user)
 {
 	security_context_t *contexts;
 	char *scon, *username;
-	int i, rc, scon_len, username_len;
-	long tclass;
+	int i, scon_len, username_len;
 
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "ss",
 				  &scon, &scon_len,
@@ -609,30 +706,33 @@ PHP_FUNCTION(selinux_compute_user)
 	}
 	freeconary(contexts);
 }
+/* }}} */
 
-/*
- * get initial context
- */
+/* {{{ proto string selinux_get_initial_context(string name)
+   Returns the context of a kernel initial security identifier specified by name.*/
 PHP_FUNCTION(selinux_get_initial_context)
 {
 	char *name;
-	int rc, length;
+	int length;
 	security_context_t context;
 
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
 				  "s", &name, &length) == FAILURE)
 		RETURN_FALSE;
+
 	if (length == 0)
 		RETURN_FALSE;
+
 	if (security_get_initial_context(name, &context) < 0)
 		RETURN_FALSE;
-	RETVAL_STRING(!context ? "" : context, 1);
+
+	RETVAL_STRING(context, 1);
 	freecon(context);
 }
+/* }}} */
 
-/*
- * sanity check in security context
- */
+/* {{{ proto bool selinux_check_context(string context)
+   Checks whether the given context is valid, or not. */
 PHP_FUNCTION(selinux_check_context)
 {
 	char *context;
@@ -641,13 +741,18 @@ PHP_FUNCTION(selinux_check_context)
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
 				  "s", &context, &length) == FAILURE)
 		RETURN_FALSE;
+
 	if (length == 0)
 		RETURN_FALSE;
+
 	if (security_check_context(context) < 0)
 		RETURN_FALSE;
 	RETURN_TRUE;
 }
+/* }}} */
 
+/* {{{ proto string selinux_canonicalize_context(string context)
+   Returns canonicalized context if the given one is valid. */
 PHP_FUNCTION(selinux_canonicalize_context)
 {
 	security_context_t canonicalized;
@@ -657,36 +762,42 @@ PHP_FUNCTION(selinux_canonicalize_context)
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
 				  "s", &context, &length) == FAILURE)
 		RETURN_FALSE;
+
 	if (length == 0)
 		RETURN_FALSE;
+
 	if (security_canonicalize_context(context, &canonicalized) < 0)
 		RETURN_FALSE;
-	RETVAL_STRING(!context ? "" : context, 1);
-        freecon(context);
-}
 
-/*
- * booleans
- */
+	RETVAL_STRING(canonicalized, 1);
+        freecon(canonicalized);
+}
+/* }}} */
+
+/* {{{ proto array selinux_get_boolean_names(void)
+   Returns a list of boolean name, supported by the working policy. */
 PHP_FUNCTION(selinux_get_boolean_names)
 {
 	char **bool_names;
-	int i, len;
+	int i, length;
 
 	if (ZEND_NUM_ARGS() != 0)
 		ZEND_WRONG_PARAM_COUNT();
 
-	if (security_get_boolean_names(&bool_names, &len) < 0)
+	if (security_get_boolean_names(&bool_names, &length) < 0)
 		RETURN_FALSE;
 
 	array_init(return_value);
-	for (i=0; i < len; i++) {
+	for (i=0; i < length; i++) {
 		add_next_index_string(return_value, bool_names[i], 1);
 		free(bool_names[i]);
 	}
 	free(bool_names);
 }
+/* }}} */
 
+/* {{{ proto int selinux_get_boolean_pending(string bool_name)
+   Returns a pending value for boolean specified in bool_name. */
 PHP_FUNCTION(selinux_get_boolean_pending)
 {
 	char *bool_name;
@@ -700,7 +811,10 @@ PHP_FUNCTION(selinux_get_boolean_pending)
 	value = security_get_boolean_pending(bool_name);
 	RETURN_LONG(value);
 }
+/* }}} */
 
+/* {{{ proto int selinux_get_boolean_active(string bool_name)
+   Returns an active value for boolean specified in bool_name. */
 PHP_FUNCTION(selinux_get_boolean_active)
 {
 	char *bool_name;
@@ -714,7 +828,10 @@ PHP_FUNCTION(selinux_get_boolean_active)
 	value = security_get_boolean_active(bool_name);
 	RETURN_LONG(value);
 }
+/* }}} */
 
+/* {{{ proto bool selinux_set_boolean(string bool_name, bool value)
+   Sets the pending value for boolean specified in bool_name.*/
 PHP_FUNCTION(selinux_set_boolean)
 {
 	char *bool_name;
@@ -729,17 +846,20 @@ PHP_FUNCTION(selinux_set_boolean)
 		RETURN_FALSE;
 	RETURN_TRUE;
 }
+/* }}} */
 
+/* {{{ proto bool selinux_commit_booleans(void)
+   Commits all the pending values for booleans. */
 PHP_FUNCTION(selinux_commit_booleans)
 {
 	if (security_commit_booleans() < 0)
 		RETURN_FALSE;
 	RETURN_TRUE;
 }
+/* }}} */
 
-/*
- * security class/access vector mapping
- */
+/* {{{ proto int selinux_string_to_class(string tclass)
+   Returns security class value for the given class name. */
 PHP_FUNCTION(selinux_string_to_class)
 {
 	security_class_t tclass;
@@ -755,7 +875,10 @@ PHP_FUNCTION(selinux_string_to_class)
 		RETURN_FALSE;
 	RETURN_LONG(tclass);
 }
+/* }}} */
 
+/* {{{ proto string selinux_class_to_string(int tclass)
+   Returns security class name for the given class value. */
 PHP_FUNCTION(selinux_class_to_string)
 {
 	long tclass;
@@ -770,7 +893,10 @@ PHP_FUNCTION(selinux_class_to_string)
 		RETURN_FALSE;
 	RETURN_STRING((char *)tclass_name, 1);
 }
+/* }}} */
 
+/* {{{ proto int selinux_string_to_av_perm(int tclass, string av_perm)
+   Returns an access vector permission code for the given name. */
 PHP_FUNCTION(selinux_string_to_av_perm)
 {
 	long tclass;
@@ -786,7 +912,10 @@ PHP_FUNCTION(selinux_string_to_av_perm)
 		RETURN_FALSE;
 	RETURN_LONG(av_perm);
 }
+/* }}} */
 
+/* {{{ proto string selinux_av_perm_to_string(int tclass, int av_perm)
+   Returns an access vector permission name for the given code. */
 PHP_FUNCTION(selinux_av_perm_to_string)
 {
 	long tclass, av_perm;
@@ -801,7 +930,10 @@ PHP_FUNCTION(selinux_av_perm_to_string)
 		RETURN_FALSE;
 	RETURN_STRING((char *)av_perm_name, 1);
 }
+/* }}} */
 
+/* {{{ proto string selinux_av_string(int tclass, int av_perms)
+   Returns an access vector permissions in a string representation. */
 PHP_FUNCTION(selinux_av_string)
 {
 	long tclass, av_perms;
@@ -817,10 +949,10 @@ PHP_FUNCTION(selinux_av_string)
 	RETVAL_STRING(av_string, 1);
 	free(av_string);
 }
+/* }}} */
 
-/*
- * mcstrans
- */
+/* {{{ proto string selinux_trans_to_raw_context(string context)
+   Translate a human-readable context into internal system format.*/
 PHP_FUNCTION(selinux_trans_to_raw_context)
 {
 	security_context_t raw_context;
@@ -830,13 +962,17 @@ PHP_FUNCTION(selinux_trans_to_raw_context)
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
 				  "s", &context, &length) == FAILURE)
 		RETURN_FALSE;
-
-	if (selinux_trans_to_raw_context(context, &raw_context) < 0)
+	if (length == 0)
+		RETURN_FALSE;
+	if (selinux_trans_to_raw_context(context, &raw_context) < 0 || !raw_context)
 		RETURN_FALSE;
 	RETVAL_STRING(raw_context, 1);
 	freecon(raw_context);
 }
+/* }}} */
 
+/* {{{ proto string selinux_raw_to_trans_context(string context)
+   Translate a human-readable context from internal system format. */
 PHP_FUNCTION(selinux_raw_to_trans_context)
 {
 	security_context_t trans_context;
@@ -846,16 +982,20 @@ PHP_FUNCTION(selinux_raw_to_trans_context)
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
 				  "s", &context, &length) == FAILURE)
 		RETURN_FALSE;
-
+	if (length == 0)
+		RETURN_FALSE;
 	if (selinux_raw_to_trans_context(context, &trans_context) < 0)
 		RETURN_FALSE;
 	RETVAL_STRING(trans_context, 1);
 	freecon(trans_context);
 }
+/* }}} */
 
-/*
- * matchpathcon
- */
+/* {{{ string selinux_matchpathcon(string path [, int mode
+                                               [, bool base_only
+                                               [, bool validate]]])
+   Returns the security context configured on the given path.
+*/
 PHP_FUNCTION(selinux_matchpathcon)
 {
 	security_context_t context;
@@ -885,7 +1025,10 @@ PHP_FUNCTION(selinux_matchpathcon)
 	RETVAL_STRING(context, 1);
 	freecon(context);
 }
+/* }}} */
 
+/* {{{ proto bool selinux_lsetfilecon_default(string filename)
+   Sets the file context on to the system defaults. */
 PHP_FUNCTION(selinux_lsetfilecon_default)
 {
 	char *filename;
@@ -900,7 +1043,10 @@ PHP_FUNCTION(selinux_lsetfilecon_default)
 		RETURN_FALSE;
 	RETURN_TRUE;
 }
+/* }}} */
 
+/* {{{ proto string selinux_getenforcemode(void)
+   Returns the initial state on the system, configured in /etc/selinux/config. */
 PHP_FUNCTION(selinux_getenforcemode)
 {
 	int enforce;
@@ -918,7 +1064,10 @@ PHP_FUNCTION(selinux_getenforcemode)
 		RETVAL_STRING("permissive", 1);
 	}
 }
+/* }}} */
 
+/* {{{ proto string selinux_getpolicytype(void)
+   Returns the default policy type on the system, configured in /etc/selinux/config. */
 PHP_FUNCTION(selinux_getpolicytype)
 {
 	char *policytype;
@@ -927,10 +1076,13 @@ PHP_FUNCTION(selinux_getpolicytype)
 		ZEND_WRONG_PARAM_COUNT();
 	if (selinux_getpolicytype(&policytype) < 0)
 		RETURN_FALSE;
-	RETVAL_STRING(!policytype ? "" : policytype, 1);
+	RETVAL_STRING(policytype, 1);
 	free(policytype);
 }
+/* }}} */
 
+/* {{{ proto string selinux_policy_root(void)
+   Returns the directory path which stores the policy and context configuration. */
 PHP_FUNCTION(selinux_policy_root)
 {
 	const char *root = selinux_policy_root();
@@ -939,3 +1091,6 @@ PHP_FUNCTION(selinux_policy_root)
 		ZEND_WRONG_PARAM_COUNT();
 	RETVAL_STRING(root, 1);
 }
+/* }}} */
+
+#endif	/* HAVE_SELINUX */
