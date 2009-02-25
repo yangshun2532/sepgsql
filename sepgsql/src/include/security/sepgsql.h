@@ -65,7 +65,9 @@ extern void sepgsqlExecutorStart(QueryDesc *queryDesc, int eflags);
 extern void sepgsqlProcessUtility(Node *parsetree, ParamListInfo params, bool isTopLevel);
 
 /* ExecScan hooks */
-extern bool sepgsqlExecScan(Scan *scan, Relation rel, TupleTableSlot *slot);
+extern bool sepgsqlExecScan(Scan *scan, Relation rel, TupleTableSlot *slot, bool abort);
+
+extern bool sepgsqlRowlvBehaviorSwitchTo(bool new_abort);
 
 /* HeapTuple modification hooks */
 extern bool sepgsqlHeapTupleInsert(Relation rel, HeapTuple tuple,
@@ -107,10 +109,6 @@ extern void sepgsqlCallFunction(FmgrInfo *finfo);
 extern void sepgsqlCallAggFunction(HeapTuple aggTuple);
 
 extern bool sepgsqlCallTriggerFunction(TriggerData *tgdata);
-
-extern Datum sepgsqlBeginPerformCheckFK(Relation rel, bool is_primary, Oid save_userid);
-
-extern void sepgsqlEndPerformCheckFK(Relation rel, Datum save_pgace);
 
 extern bool sepgsqlAllowFunctionInlined(Oid fnoid, HeapTuple func_tuple);
 
