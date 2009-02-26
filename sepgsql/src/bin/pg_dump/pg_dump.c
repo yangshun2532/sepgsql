@@ -12,7 +12,7 @@
  *	by PostgreSQL
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/bin/pg_dump/pg_dump.c,v 1.524 2009/02/18 12:07:07 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/bin/pg_dump/pg_dump.c,v 1.526 2009/02/25 13:03:06 petere Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -836,11 +836,10 @@ help(const char *progname)
 	printf(_("  -n, --schema=SCHEMA         dump the named schema(s) only\n"));
 	printf(_("  -N, --exclude-schema=SCHEMA do NOT dump the named schema(s)\n"));
 	printf(_("  -o, --oids                  include OIDs in dump\n"));
-	printf(_("  -O, --no-owner              skip restoration of object ownership\n"
-			 "                              in plain text format\n"));
+	printf(_("  -O, --no-owner              skip restoration of object ownership in\n"
+		 "                              plain-text format\n"));
 	printf(_("  -s, --schema-only           dump only the schema, no data\n"));
-	printf(_("  -S, --superuser=NAME        specify the superuser user name to use in\n"
-			 "                              plain text format\n"));
+	printf(_("  -S, --superuser=NAME        superuser user name to use in plain-text format\n"));
 	printf(_("  -t, --table=TABLE           dump the named table(s) only\n"));
 	printf(_("  -T, --exclude-table=TABLE   do NOT dump the named table(s)\n"));
 	printf(_("  -x, --no-privileges         do not dump privileges (grant/revoke)\n"));
@@ -849,8 +848,8 @@ help(const char *progname)
 	printf(_("  --no-tablespaces            do not dump tablespace assignments\n"));
 	printf(_("  --role=ROLENAME             do SET ROLE before dump\n"));
 	printf(_("  --use-set-session-authorization\n"
-			 "                              use SESSION AUTHORIZATION commands instead of\n"
-	"                              ALTER OWNER commands to set ownership\n"));
+		 "                              use SET SESSION AUTHORIZATION commands instead of\n"
+		 "                              ALTER OWNER commands to set ownership\n"));
 	printf(_("  --security-label            dump SE-PostgreSQL security labels\n"));
 
 	printf(_("\nConnection options:\n"));
@@ -5445,7 +5444,7 @@ getForeignDataWrappers(int *numForeignDataWrappers)
 	int			i_oid;
 	int			i_fdwname;
 	int			i_rolname;
-	int			i_fdwlibrary;
+	int			i_fdwvalidator;
 	int			i_fdwacl;
 	int			i_fdwoptions;
 
@@ -5460,7 +5459,7 @@ getForeignDataWrappers(int *numForeignDataWrappers)
 	selectSourceSchema("pg_catalog");
 
 	appendPQExpBuffer(query, "SELECT oid, fdwname, "
-					  "(%s fdwowner) AS rolname, fdwlibrary, fdwacl,"
+					  "(%s fdwowner) AS rolname, fdwvalidator::pg_catalog.regproc, fdwacl,"
 					  "array_to_string(ARRAY("
 					  "		SELECT option_name || ' ' || quote_literal(option_value) "
 					  "		FROM pg_options_to_table(fdwoptions)), ', ') AS fdwoptions "
@@ -5478,7 +5477,7 @@ getForeignDataWrappers(int *numForeignDataWrappers)
 	i_oid = PQfnumber(res, "oid");
 	i_fdwname = PQfnumber(res, "fdwname");
 	i_rolname = PQfnumber(res, "rolname");
-	i_fdwlibrary = PQfnumber(res, "fdwlibrary");
+	i_fdwvalidator = PQfnumber(res, "fdwvalidator");
 	i_fdwacl = PQfnumber(res, "fdwacl");
 	i_fdwoptions = PQfnumber(res, "fdwoptions");
 
@@ -5490,7 +5489,7 @@ getForeignDataWrappers(int *numForeignDataWrappers)
 		fdwinfo[i].dobj.name = strdup(PQgetvalue(res, i, i_fdwname));
 		fdwinfo[i].dobj.namespace = NULL;
 		fdwinfo[i].rolname = strdup(PQgetvalue(res, i, i_rolname));
-		fdwinfo[i].fdwlibrary = strdup(PQgetvalue(res, i, i_fdwlibrary));
+		fdwinfo[i].fdwvalidator = strdup(PQgetvalue(res, i, i_fdwvalidator));
 		fdwinfo[i].fdwoptions = strdup(PQgetvalue(res, i, i_fdwoptions));
 		fdwinfo[i].fdwacl = strdup(PQgetvalue(res, i, i_fdwacl));
 
@@ -9372,8 +9371,13 @@ dumpForeignDataWrapper(Archive *fout, FdwInfo *fdwinfo)
 	q = createPQExpBuffer();
 	delq = createPQExpBuffer();
 
-	appendPQExpBuffer(q, "CREATE FOREIGN DATA WRAPPER %s LIBRARY '%s' LANGUAGE C",
-					  fmtId(fdwinfo->dobj.name), fdwinfo->fdwlibrary);
+	appendPQExpBuffer(q, "CREATE FOREIGN DATA WRAPPER %s",
+					  fmtId(fdwinfo->dobj.name));
+
+	if (fdwinfo->fdwvalidator && strcmp(fdwinfo->fdwvalidator, "-") != 0)
+		appendPQExpBuffer(q, " VALIDATOR %s",
+						  fdwinfo->fdwvalidator);
+
 	if (fdwinfo->fdwoptions && strlen(fdwinfo->fdwoptions) > 0)
 		appendPQExpBuffer(q, " OPTIONS (%s)", fdwinfo->fdwoptions);
 
