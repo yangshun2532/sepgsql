@@ -24,7 +24,7 @@ translate between raw and readable format and so on.
 %build
 %{_bindir}/phpize --clean
 %{_bindir}/phpize
-%configure	--enable-selinux
+%configure  --enable-selinux
 make %{?_smp_mflags}
 
 %install
@@ -42,6 +42,5 @@ rm -rf $RPM_BUILD_ROOT
 %{php_extdir}/selinux.so
 
 %changelog
-* Tue Feb 24 2009  <kaigai@kaigai.gr.jp> - 0.1-1
+* Tue Feb 24 2009  <kaigai@kaigai.gr.jp> - 0.1616-beta
 - Initial package
-

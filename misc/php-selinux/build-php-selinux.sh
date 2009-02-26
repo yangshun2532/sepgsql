@@ -4,9 +4,14 @@ export LANG=C
 
 BASEDIR=`dirname "$0"` || exit 1
 WKDIR=`mktemp -d` || exit 1
-
-MAJOR_VERSION=1
-MINOR_VERSION=`svn info ${BASEDIR}/selinux.c | grep ^Revision: | awk '{print $2}'`
+MAJOR_VERSION=0
+MINOR_VERSION=`find ${BASEDIR} -type f | \
+    while read filename;	\
+    do				\
+        env LANG=C svn info ${filename} 2>/dev/null	\
+        | grep '^Last Changed Rev:'			\
+        | awk '{print $4}';	\
+    done | sort -n | tail -1`
 VERSION="${MAJOR_VERSION}.${MINOR_VERSION}"
 RELEASE="beta"
 
