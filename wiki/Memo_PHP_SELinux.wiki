@@ -2,12 +2,13 @@
 
 It is a set of interfaces to libselinux API which enables to manage SELinux from applications.
 
-== Steps to build it ==
+== Steps to set up ==
 
 {{{
 $ svn checkout http://sepgsql.googlecode.com/svn/misc/php-selinux
-$ wget http://site.of.a.fedora.mirror/path/to/php-5.2.x-y.src.rpm
-$ ./php-selinux/build-php-selinux.sh ./php-5.2.x-y.src.rpm
+$ ./php-selinux/build-php-selinux.sh
+# su
+# rpm -Uvh /path/to/package/php-selinux-0.xxxx-beta.fc10.i386.rpm
 }}}
 
 = Reference manual =
@@ -236,4 +237,3 @@ system_u:object_r:shadow_t
 
 === `bool selinux_lsetfilecon_default(string $path)` ===
 It sets the file context on to the system defaults and returns `true` on success, or `false` on error.
-
