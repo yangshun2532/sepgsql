@@ -8,7 +8,7 @@ It is a set of interfaces to libselinux API which enables to manage SELinux from
 $ svn checkout http://sepgsql.googlecode.com/svn/misc/php-selinux
 $ ./php-selinux/build-php-selinux.sh
 # su
-# rpm -Uvh /path/to/package/php-selinux-0.xxxx-beta.fc10.i386.rpm
+# rpm -Uvh /path/to/package/php-selinux-0.1626-beta.fc10.i386.rpm
 }}}
 
 = Reference manual =
@@ -240,11 +240,11 @@ It sets the file context on to the system defaults and returns `true` on success
 
 == SELinux configuration files ==
 
-=== string selinux_getenforcemode(void) ===
+=== `string selinux_getenforcemode(void)` ===
 It returns the initial state on the system, configured in `/etc/selinux/config`.
 
-=== string selinux_getpolicytype(void) ===
+=== `string selinux_getpolicytype(void)` ===
 It returns the default policy type on the system, configured in `/etc/selinux/config`.
 
-=== string selinux_policy_root(void) ===
+=== `string selinux_policy_root(void)` ===
 It returns the directory path which stores the policy and context configuration.
