@@ -12,23 +12,10 @@
 #include "access/heapam.h"
 #include "access/genam.h"
 #include "catalog/indexing.h"
-#include "catalog/pg_aggregate.h"
-#include "catalog/pg_am.h"
-#include "catalog/pg_amproc.h"
-#include "catalog/pg_attribute.h"
-#include "catalog/pg_authid.h"
-#include "catalog/pg_cast.h"
-#include "catalog/pg_class.h"
-#include "catalog/pg_conversion.h"
 #include "catalog/pg_database.h"
 #include "catalog/pg_language.h"
 #include "catalog/pg_largeobject.h"
-#include "catalog/pg_operator.h"
 #include "catalog/pg_proc.h"
-#include "catalog/pg_security.h"
-#include "catalog/pg_trigger.h"
-#include "catalog/pg_ts_parser.h"
-#include "catalog/pg_ts_template.h"
 #include "catalog/pg_type.h"
 #include "miscadmin.h"
 #include "security/pgace.h"
@@ -345,148 +332,6 @@ sepgsqlPermsToBlobAv(uint32 perms, HeapTuple tuple, HeapTuple newtup)
 	return result;
 }
 
-/*
- * sepgsqlCheckProcedureInstall
- *   checks permission: db_procedure:{install}, when client tries to modify
- *   a system catalog which contains procedure id to invoke it later.
- *   Because these functions are invoked internally, to search a table with
- *   a special index algorithm for example, the security policy has to prevent
- *   malicious user-defined functions to be installed.
- */
-static void
-checkProcedureInstall(Oid proc_oid)
-{
-	if (!OidIsValid(proc_oid))
-		return;
-
-	if (IsBootstrapProcessingMode())
-	{
-		/*
-		 * We assume all procedures have same security context
-		 * in bootstrap processing mode, because no one can
-		 * relabel it.
-		 */
-		Oid proc_sid
-			= sepgsqlClientCreateSid(sepgsqlGetDatabaseSecurityId(),
-									 SECCLASS_DB_PROCEDURE);
-		sepgsqlClientHasPermission(proc_sid,
-								   SECCLASS_DB_PROCEDURE,
-								   DB_PROCEDURE__INSTALL,
-								   NULL);
-	}
-	else
-	{
-		HeapTuple protup;
-		const char *audit_name;
-
-		protup = SearchSysCache(PROCOID,
-								ObjectIdGetDatum(proc_oid),
-								0, 0, 0);
-		if (!HeapTupleIsValid(protup))
-			return;
-
-		audit_name = sepgsqlTupleName(ProcedureRelationId, protup);
-		sepgsqlClientHasPermission(HeapTupleGetSecLabel(protup),
-								   SECCLASS_DB_PROCEDURE,
-								   DB_PROCEDURE__INSTALL,
-								   audit_name);
-		ReleaseSysCache(protup);
-	}
-}
-
-#define CHECK_PROC_INSTALL_HANDLER(catalog,member,tuple,newtup)			\
-	do {																\
-		if (!HeapTupleIsValid(newtup))									\
-			checkProcedureInstall(((CppConcat(Form_,catalog)) GETSTRUCT(tuple))->member); \
-		else if (((CppConcat(Form_,catalog)) GETSTRUCT(tuple))->member	\
-				 != ((CppConcat(Form_,catalog)) GETSTRUCT(newtup))->member) \
-			checkProcedureInstall(((CppConcat(Form_,catalog)) GETSTRUCT(newtup))->member); \
-	} while(0)
-
-static void
-sepgsqlCheckProcedureInstall(Relation rel, HeapTuple tuple, HeapTuple newtup)
-{
-	/*
-	 * Some of system catalog can be configured to invoke functions
-	 * implicitly. It checks permission to prevent implicit invocation
-	 * of malicious functions.
-	 */
-	switch (RelationGetRelid(rel))
-	{
-	case AggregateRelationId:
-		CHECK_PROC_INSTALL_HANDLER(pg_aggregate, aggfnoid, tuple, newtup);
-		CHECK_PROC_INSTALL_HANDLER(pg_aggregate, aggtransfn, tuple, newtup);
-		CHECK_PROC_INSTALL_HANDLER(pg_aggregate, aggfinalfn, tuple, newtup);
-		break;
-
-	case AccessMethodRelationId:
-		CHECK_PROC_INSTALL_HANDLER(pg_am, aminsert, tuple, newtup);
-		CHECK_PROC_INSTALL_HANDLER(pg_am, ambeginscan, tuple, newtup);
-		CHECK_PROC_INSTALL_HANDLER(pg_am, amgettuple, tuple, newtup);
-		CHECK_PROC_INSTALL_HANDLER(pg_am, amgetmulti, tuple, newtup);
-		CHECK_PROC_INSTALL_HANDLER(pg_am, amrescan, tuple, newtup);
-		CHECK_PROC_INSTALL_HANDLER(pg_am, amendscan, tuple, newtup);
-		CHECK_PROC_INSTALL_HANDLER(pg_am, ammarkpos, tuple, newtup);
-		CHECK_PROC_INSTALL_HANDLER(pg_am, amrestrpos, tuple, newtup);
-		CHECK_PROC_INSTALL_HANDLER(pg_am, ambuild, tuple, newtup);
-		CHECK_PROC_INSTALL_HANDLER(pg_am, ambulkdelete, tuple, newtup);
-		CHECK_PROC_INSTALL_HANDLER(pg_am, amvacuumcleanup, tuple, newtup);
-		CHECK_PROC_INSTALL_HANDLER(pg_am, amcostestimate, tuple, newtup);
-		CHECK_PROC_INSTALL_HANDLER(pg_am, amoptions, tuple, newtup);
-		break;
-
-	case AccessMethodProcedureRelationId:
-		CHECK_PROC_INSTALL_HANDLER(pg_amproc, amproc, tuple, newtup);
-		break;
-
-	case CastRelationId:
-		CHECK_PROC_INSTALL_HANDLER(pg_cast, castfunc, tuple, newtup);
-		break;
-
-	case ConversionRelationId:
-		CHECK_PROC_INSTALL_HANDLER(pg_conversion, conproc, tuple, newtup);
-		break;
-
-	case LanguageRelationId:
-		CHECK_PROC_INSTALL_HANDLER(pg_language, lanplcallfoid, tuple, newtup);
-		CHECK_PROC_INSTALL_HANDLER(pg_language, lanvalidator, tuple, newtup);
-		break;
-
-	case OperatorRelationId:
-		CHECK_PROC_INSTALL_HANDLER(pg_operator, oprcode, tuple, newtup);
-		CHECK_PROC_INSTALL_HANDLER(pg_operator, oprrest, tuple, newtup);
-		CHECK_PROC_INSTALL_HANDLER(pg_operator, oprjoin, tuple, newtup);
-		break;
-
-	case TriggerRelationId:
-		CHECK_PROC_INSTALL_HANDLER(pg_trigger, tgfoid, tuple, newtup);
-		break;
-
-	case TSParserRelationId:
-		CHECK_PROC_INSTALL_HANDLER(pg_ts_parser, prsstart, tuple, newtup);
-		CHECK_PROC_INSTALL_HANDLER(pg_ts_parser, prstoken, tuple, newtup);
-		CHECK_PROC_INSTALL_HANDLER(pg_ts_parser, prsend, tuple, newtup);
-		CHECK_PROC_INSTALL_HANDLER(pg_ts_parser, prsheadline, tuple, newtup);
-		CHECK_PROC_INSTALL_HANDLER(pg_ts_parser, prslextype, tuple, newtup);
-		break;
-
-	case TSTemplateRelationId:
-		CHECK_PROC_INSTALL_HANDLER(pg_ts_template, tmplinit, tuple, newtup);
-		CHECK_PROC_INSTALL_HANDLER(pg_ts_template, tmpllexize, tuple, newtup);
-		break;
-
-	case TypeRelationId:
-		CHECK_PROC_INSTALL_HANDLER(pg_type, typinput, tuple, newtup);
-		CHECK_PROC_INSTALL_HANDLER(pg_type, typoutput, tuple, newtup);
-		CHECK_PROC_INSTALL_HANDLER(pg_type, typreceive, tuple, newtup);
-		CHECK_PROC_INSTALL_HANDLER(pg_type, typsend, tuple, newtup);
-		CHECK_PROC_INSTALL_HANDLER(pg_type, typmodin, tuple, newtup);
-		CHECK_PROC_INSTALL_HANDLER(pg_type, typmodout, tuple, newtup);
-		CHECK_PROC_INSTALL_HANDLER(pg_type, typanalyze, tuple, newtup);
-		break;
-	}
-}
-
 bool
 sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, HeapTuple newtup,
 					   uint32 perms, bool abort)
@@ -496,9 +341,6 @@ sepgsqlCheckTuplePerms(Relation rel, HeapTuple tuple, HeapTuple newtup,
 	bool rc = true;
 
 	Assert(HeapTupleIsValid(tuple));
-
-	if ((perms & (SEPGSQL_PERMS_INSERT | SEPGSQL_PERMS_UPDATE)) != 0)
-		sepgsqlCheckProcedureInstall(rel, tuple, newtup);
 
 	tclass = sepgsqlTupleObjectClass(RelationGetRelid(rel), tuple);
 
