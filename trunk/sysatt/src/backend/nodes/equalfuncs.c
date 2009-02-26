@@ -22,7 +22,7 @@
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/nodes/equalfuncs.c,v 1.347 2009/02/02 19:31:39 alvherre Exp $
+ *	  $PostgreSQL: pgsql/src/backend/nodes/equalfuncs.c,v 1.349 2009/02/25 03:30:37 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -762,17 +762,6 @@ _equalRestrictInfo(RestrictInfo *a, RestrictInfo *b)
 	 * We ignore all the remaining fields, since they may not be set yet, and
 	 * should be derivable from the clause anyway.
 	 */
-
-	return true;
-}
-
-static bool
-_equalFlattenedSubLink(FlattenedSubLink *a, FlattenedSubLink *b)
-{
-	COMPARE_SCALAR_FIELD(jointype);
-	COMPARE_BITMAPSET_FIELD(lefthand);
-	COMPARE_BITMAPSET_FIELD(righthand);
-	COMPARE_NODE_FIELD(quals);
 
 	return true;
 }
@@ -1550,7 +1539,7 @@ static bool
 _equalCreateFdwStmt(CreateFdwStmt *a, CreateFdwStmt *b)
 {
 	COMPARE_STRING_FIELD(fdwname);
-	COMPARE_STRING_FIELD(library);
+	COMPARE_NODE_FIELD(validator);
 	COMPARE_NODE_FIELD(options);
 
 	return true;
@@ -1560,7 +1549,8 @@ static bool
 _equalAlterFdwStmt(AlterFdwStmt *a, AlterFdwStmt *b)
 {
 	COMPARE_STRING_FIELD(fdwname);
-	COMPARE_STRING_FIELD(library);
+	COMPARE_NODE_FIELD(validator);
+	COMPARE_SCALAR_FIELD(change_validator);
 	COMPARE_NODE_FIELD(options);
 
 	return true;
@@ -2512,9 +2502,6 @@ equal(void *a, void *b)
 			break;
 		case T_RestrictInfo:
 			retval = _equalRestrictInfo(a, b);
-			break;
-		case T_FlattenedSubLink:
-			retval = _equalFlattenedSubLink(a, b);
 			break;
 		case T_PlaceHolderVar:
 			retval = _equalPlaceHolderVar(a, b);
