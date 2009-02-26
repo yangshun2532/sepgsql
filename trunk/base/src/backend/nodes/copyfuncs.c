@@ -15,7 +15,7 @@
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/nodes/copyfuncs.c,v 1.423 2009/02/06 23:43:23 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/nodes/copyfuncs.c,v 1.425 2009/02/25 03:30:37 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -1625,22 +1625,6 @@ _copyRestrictInfo(RestrictInfo *from)
 }
 
 /*
- * _copyFlattenedSubLink
- */
-static FlattenedSubLink *
-_copyFlattenedSubLink(FlattenedSubLink *from)
-{
-	FlattenedSubLink *newnode = makeNode(FlattenedSubLink);
-
-	COPY_SCALAR_FIELD(jointype);
-	COPY_BITMAPSET_FIELD(lefthand);
-	COPY_BITMAPSET_FIELD(righthand);
-	COPY_NODE_FIELD(quals);
-
-	return newnode;
-}
-
-/*
  * _copyPlaceHolderVar
  */
 static PlaceHolderVar *
@@ -2994,7 +2978,7 @@ _copyCreateFdwStmt(CreateFdwStmt *from)
 	CreateFdwStmt *newnode = makeNode(CreateFdwStmt);
 
 	COPY_STRING_FIELD(fdwname);
-	COPY_STRING_FIELD(library);
+	COPY_NODE_FIELD(validator);
 	COPY_NODE_FIELD(options);
 
 	return newnode;
@@ -3006,7 +2990,8 @@ _copyAlterFdwStmt(AlterFdwStmt *from)
 	AlterFdwStmt *newnode = makeNode(AlterFdwStmt);
 
 	COPY_STRING_FIELD(fdwname);
-	COPY_STRING_FIELD(library);
+	COPY_NODE_FIELD(validator);
+	COPY_SCALAR_FIELD(change_validator);
 	COPY_NODE_FIELD(options);
 
 	return newnode;
@@ -3708,9 +3693,6 @@ copyObject(void *from)
 			break;
 		case T_RestrictInfo:
 			retval = _copyRestrictInfo(from);
-			break;
-		case T_FlattenedSubLink:
-			retval = _copyFlattenedSubLink(from);
 			break;
 		case T_PlaceHolderVar:
 			retval = _copyPlaceHolderVar(from);
