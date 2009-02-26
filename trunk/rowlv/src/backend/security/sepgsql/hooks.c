@@ -7,9 +7,21 @@
  */
 #include "postgres.h"
 
+#include "catalog/pg_aggregate.h"
+#include "catalog/pg_amproc.h"
+#include "catalog/pg_cast.h"
+#include "catalog/pg_conversion.h"
 #include "catalog/pg_database.h"
+#include "catalog/pg_foreign_data_wrapper.h"
+#include "catalog/pg_language.h"
+#include "catalog/pg_operator.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_security.h"
+#include "catalog/pg_trigger.h"
+#include "catalog/pg_ts_parser.h"
+#include "catalog/pg_ts_template.h"
+#include "catalog/pg_ts_template.h"
+#include "catalog/pg_type.h"
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
 #include "nodes/nodes.h"
@@ -392,6 +404,158 @@ sepgsqlCheckProcedureEntrypoint(FmgrInfo *finfo, HeapTuple protup)
 }
 
 /*
+ * sepgsqlCheckProcedureInstall
+ *   checks permission: db_procedure:{install}, when client tries to modify
+ *   a system catalog which contains procedure id to invoke it later.
+ *   Because these functions are invoked internally, to search a table with
+ *   a special index algorithm for example, the security policy has to prevent
+ *   malicious user-defined functions to be installed.
+ */
+static void
+checkProcedureInstall(Oid proc_oid)
+{
+	sepgsql_sid_t	prosid;
+	HeapTuple		protup = NULL;
+	const char	   *audit_name = NULL;
+
+	if (!OidIsValid(proc_oid))
+		return;
+
+	if (IsBootstrapProcessingMode())
+	{
+		/*
+		 * Assumption: security label is unchanged
+		 * during bootstraptin mode, because no one
+		 * tries to relabel anything.
+		 */
+		prosid  = sepgsqlClientCreate(sepgsqlGetDatabaseSid(),
+									  SECCLASS_DB_PROCEDURE);
+	}
+	else
+	{
+		protup = SearchSysCache(PROCOID,
+								ObjectIdGetDatum(proc_oid),
+								0, 0, 0);
+		if (!HeapTupleIsValid(protup))
+			return;
+
+		audit_name = sepgsqlAuditName(ProcedureRelationId, protup);
+		prosid = HeapTupleGetSecLabel(protup);
+	}
+
+	sepgsqlClientHasPerms(prosid,
+						  SECCLASS_DB_PROCEDURE,
+						  DB_PROCEDURE__INSTALL,
+						  audit_name, true);
+	if (HeapTupleIsValid(protup))
+		ReleaseSysCache(protup);
+}
+
+#define CHECK_PROC_INSTALL_PERM(catalog,member,newtup,oldtup)			\
+	do {																\
+		if (!HeapTupleIsValid(oldtup))									\
+			checkProcedureInstall(((Form_##catalog) GETSTRUCT(newtup))->member); \
+		else if (((Form_##catalog) GETSTRUCT(newtup))->member			\
+				 != ((Form_##catalog) GETSTRUCT(oldtup))->member)		\
+			checkProcedureInstall(((Form_##catalog) GETSTRUCT(newtup))->member); \
+	} while(0)
+
+static void
+sepgsqlCheckProcedureInstall(Relation rel, HeapTuple newtup, HeapTuple oldtup)
+{
+	/*
+	 * db_procedure:{install} check prevent a malicious functions
+	 * to be installed, as a part of system catalogs.
+	 * It is necessary to prevent other person implicitly to invoke
+	 * malicious functions.
+	 */
+	switch (RelationGetRelid(rel))
+	{
+	case AggregateRelationId:
+		/*
+		 * db_procedure:{execute} is checked on invocations of:
+		 *   pg_aggregate.aggfnoid
+		 *   pg_aggregate.aggtransfn
+		 *   pg_aggregate.aggfinalfn
+		 */
+		break;
+
+	case AccessMethodRelationId:
+		CHECK_PROC_INSTALL_PERM(pg_am, aminsert, newtup, oldtup);
+		CHECK_PROC_INSTALL_PERM(pg_am, ambeginscan, newtup, oldtup);
+		CHECK_PROC_INSTALL_PERM(pg_am, amgettuple, newtup, oldtup);
+		CHECK_PROC_INSTALL_PERM(pg_am, amgetbitmap, newtup, oldtup);
+		CHECK_PROC_INSTALL_PERM(pg_am, amrescan, newtup, oldtup);
+		CHECK_PROC_INSTALL_PERM(pg_am, amendscan, newtup, oldtup);
+		CHECK_PROC_INSTALL_PERM(pg_am, ammarkpos, newtup, oldtup);
+		CHECK_PROC_INSTALL_PERM(pg_am, amrestrpos, newtup, oldtup);
+		CHECK_PROC_INSTALL_PERM(pg_am, ambuild, newtup, oldtup);
+		CHECK_PROC_INSTALL_PERM(pg_am, ambulkdelete, newtup, oldtup);
+		CHECK_PROC_INSTALL_PERM(pg_am, amvacuumcleanup, newtup, oldtup);
+		CHECK_PROC_INSTALL_PERM(pg_am, amcostestimate, newtup, oldtup);
+		CHECK_PROC_INSTALL_PERM(pg_am, amoptions, newtup, oldtup);
+		break;
+
+	case AccessMethodProcedureRelationId:
+		CHECK_PROC_INSTALL_PERM(pg_amproc, amproc, newtup, oldtup);
+		break;
+
+	case CastRelationId:
+		CHECK_PROC_INSTALL_PERM(pg_cast, castfunc, newtup, oldtup);
+		break;
+
+	case ConversionRelationId:
+		CHECK_PROC_INSTALL_PERM(pg_conversion, conproc, newtup, oldtup);
+		break;
+
+	case ForeignDataWrapperRelationId:
+		CHECK_PROC_INSTALL_PERM(pg_foreign_data_wrapper, fdwvalidator, newtup, oldtup);
+		break;
+
+	case LanguageRelationId:
+		CHECK_PROC_INSTALL_PERM(pg_language, lanplcallfoid, newtup, oldtup);
+		CHECK_PROC_INSTALL_PERM(pg_language, lanvalidator, newtup, oldtup);
+		break;
+
+	case OperatorRelationId:
+		CHECK_PROC_INSTALL_PERM(pg_operator, oprcode, newtup, oldtup);
+		CHECK_PROC_INSTALL_PERM(pg_operator, oprrest, newtup, oldtup);
+		CHECK_PROC_INSTALL_PERM(pg_operator, oprjoin, newtup, oldtup);
+		break;
+
+	case TriggerRelationId:
+		/*
+		 * db_procedure:{execute} is checked on invocations of:
+		 *    pg_trigger.tgfoid
+		 */
+		break;
+
+	case TSParserRelationId:
+		CHECK_PROC_INSTALL_PERM(pg_ts_parser, prsstart, newtup, oldtup);
+		CHECK_PROC_INSTALL_PERM(pg_ts_parser, prstoken, newtup, oldtup);
+		CHECK_PROC_INSTALL_PERM(pg_ts_parser, prsend, newtup, oldtup);
+		CHECK_PROC_INSTALL_PERM(pg_ts_parser, prsheadline, newtup, oldtup);
+		CHECK_PROC_INSTALL_PERM(pg_ts_parser, prslextype, newtup, oldtup);
+		break;
+
+	case TSTemplateRelationId:
+		CHECK_PROC_INSTALL_PERM(pg_ts_template, tmplinit, newtup, oldtup);
+		CHECK_PROC_INSTALL_PERM(pg_ts_template, tmpllexize, newtup, oldtup);
+		break;
+
+	case TypeRelationId:
+		CHECK_PROC_INSTALL_PERM(pg_type, typinput, newtup, oldtup);
+		CHECK_PROC_INSTALL_PERM(pg_type, typoutput, newtup, oldtup);
+		CHECK_PROC_INSTALL_PERM(pg_type, typreceive, newtup, oldtup);
+		CHECK_PROC_INSTALL_PERM(pg_type, typsend, newtup, oldtup);
+		CHECK_PROC_INSTALL_PERM(pg_type, typmodin, newtup, oldtup);
+		CHECK_PROC_INSTALL_PERM(pg_type, typmodout, newtup, oldtup);
+		CHECK_PROC_INSTALL_PERM(pg_type, typanalyze, newtup, oldtup);
+		break;
+	}
+}
+
+/*
  * sepgsqlCheckTupleSelectOnTrigger
  *   checks db_tuple:{select} permission on fetched tuple
  *   on per-tuple trigger
@@ -447,7 +611,9 @@ sepgsqlCheckTupleSelectOnTrigger(TriggerData *tgdata)
 }
 
 /*
- * 
+ * IsTrustedAction
+ *   makes a decision whether we should apply access controls
+ *   on the given relation, or not.
  */
 static bool
 IsTrustedAction(Relation rel, bool internal)
@@ -487,6 +653,11 @@ sepgsqlHeapTupleInsert(Relation rel, HeapTuple newtup, bool internal)
 	if (!sepgsqlIsEnabled())
 		return true;
 
+	/*
+	 * check db_procedure:{install}, if necessary
+	 */
+	sepgsqlCheckProcedureInstall(rel, newtup, NULL);
+
 	if (!OidIsValid(HeapTupleGetSecLabel(newtup)))
 	{
 		/*
@@ -508,11 +679,15 @@ sepgsqlHeapTupleUpdate(Relation rel, HeapTuple oldtup,
 					   HeapTuple newtup, bool internal)
 {
 	Oid				relid = RelationGetRelid(rel);
-	uint32			perms = SEPGSQL_PERMS_UPDATE;
-	bool			rc;
+	uint32			perms = 0;
 
 	if (!sepgsqlIsEnabled())
 		return true;
+
+	/*
+	 * check db_procedure:{install}, if necessary
+	 */
+	sepgsqlCheckProcedureInstall(rel, newtup, oldtup);
 
 	if (!OidIsValid(HeapTupleGetSecLabel(newtup)))
 	{
@@ -529,27 +704,29 @@ sepgsqlHeapTupleUpdate(Relation rel, HeapTuple oldtup,
 	if (IsTrustedAction(rel, internal))
 		return true;
 
+	if (internal)
+		perms |= SEPGSQL_PERMS_UPDATE;
+
 	if (HeapTupleGetSecLabel(oldtup) != HeapTupleGetSecLabel(newtup) ||
 		sepgsqlTupleObjectClass(relid, newtup)
 			!= sepgsqlTupleObjectClass(relid, oldtup))
 		perms |= SEPGSQL_PERMS_RELABELFROM;
 
-	rc = sepgsqlCheckObjectPerms(rel, oldtup, newtup, perms, internal);
+	if (!sepgsqlCheckObjectPerms(rel, oldtup, newtup, perms, internal))
+		return false;
 
-	if (rc && perms & SEPGSQL_PERMS_RELABELFROM)
-	{
-		perms = SEPGSQL_PERMS_RELABELTO;
-		rc = sepgsqlCheckObjectPerms(rel, newtup, NULL, perms, internal);
-	}
+	if ((perms & SEPGSQL_PERMS_RELABELFROM) != 0 &&
+		!sepgsqlCheckObjectPerms(rel, newtup, NULL,
+								 SEPGSQL_PERMS_RELABELTO, internal))
+		return false;
 
-	return rc;
+	return true;
 }
 
 bool
 sepgsqlHeapTupleDelete(Relation rel, HeapTuple oldtup, bool internal)
 {
-	uint32		perms = SEPGSQL_PERMS_DELETE;
-	bool		rc;
+	uint32		perms = 0;
 
 	if (!sepgsqlIsEnabled())
 		return true;
@@ -557,9 +734,10 @@ sepgsqlHeapTupleDelete(Relation rel, HeapTuple oldtup, bool internal)
 	if (IsTrustedAction(rel, internal))
 		return true;
 
-	rc = sepgsqlCheckObjectPerms(rel, oldtup, NULL, perms, internal);
+	if (internal)
+		perms |= SEPGSQL_PERMS_DELETE;
 
-	return rc;
+	return sepgsqlCheckObjectPerms(rel, oldtup, NULL, perms, internal);
 }
 
 /*
