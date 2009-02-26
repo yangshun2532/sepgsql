@@ -17,6 +17,7 @@
 #include "catalog/pg_class.h"
 #include "catalog/pg_conversion.h"
 #include "catalog/pg_database.h"
+#include "catalog/pg_foreign_data_wrapper.h"
 #include "catalog/pg_language.h"
 #include "catalog/pg_largeobject.h"
 #include "catalog/pg_operator.h"
@@ -247,6 +248,10 @@ sepgsqlCheckProcedureInstall(Relation rel, HeapTuple tuple, HeapTuple newtup)
 
 	case ConversionRelationId:
 		CHECK_PROC_INSTALL_PERM(pg_conversion, conproc, tuple, newtup);
+		break;
+
+	case ForeignDataWrapperRelationId:
+		CHECK_PROC_INSTALL_PERM(pg_foreign_data_wrapper, fdwvalidator, tuple, newtup);
 		break;
 
 	case LanguageRelationId:
