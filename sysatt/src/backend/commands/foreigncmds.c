@@ -27,7 +27,6 @@
 #include "foreign/foreign.h"
 #include "miscadmin.h"
 #include "parser/parse_func.h"
-#include "security/sepgsql.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
@@ -353,9 +352,6 @@ CreateForeignDataWrapper(CreateFdwStmt *stmt)
 						stmt->fdwname),
 				 errhint("Must be superuser to create a foreign-data wrapper.")));
 
-	/* SELinux checks db_database:{install_module} priv */
-	sepgsqlCheckDatabaseInstallModule(stmt->library);
-
 	/* For now the owner cannot be specified on create. Use effective user ID. */
 	ownerId = GetUserId();
 
@@ -467,19 +463,9 @@ AlterForeignDataWrapper(AlterFdwStmt *stmt)
 
 	if (stmt->change_validator)
 	{
-<<<<<<< .working
-		/* SELinux checks db_database:{install_module} for new library */
-		sepgsqlCheckDatabaseInstallModule(stmt->library);
-
-		/*
-		 * New library specified -- load to see if valid.
-		 */
-		fdwlib = GetForeignDataWrapperLibrary(stmt->library);
-=======
 		fdwvalidator = stmt->validator ? lookup_fdw_validator_func(stmt->validator) : InvalidOid;
 		repl_val[Anum_pg_foreign_data_wrapper_fdwvalidator - 1] = ObjectIdGetDatum(fdwvalidator);
 		repl_repl[Anum_pg_foreign_data_wrapper_fdwvalidator - 1] = true;
->>>>>>> .merge-right.r1618
 
 		/*
 		 * It could be that the options for the FDW, SERVER and USER MAPPING
