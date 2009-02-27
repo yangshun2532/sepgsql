@@ -1,394 +1,273 @@
-
 /*
- * src/backend/security/sepgsqlCore.c
- *	 SE-PostgreSQL core facilities
+ * src/backend/utils/sepgsql/core.c
+ *    The core facility of SE-PostgreSQL
  *
- * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
- *
  */
 #include "postgres.h"
 
+#include "catalog/indexing.h"
 #include "catalog/pg_database.h"
+#include "catalog/pg_proc.h"
 #include "catalog/pg_security.h"
-#include "libpq/libpq.h"
+#include "libpq/libpq-be.h"
 #include "miscadmin.h"
-#include "security/pgace.h"
+#include "security/sepgsql.h"
 #include "utils/builtins.h"
+#include "utils/fmgroids.h"
 #include "utils/syscache.h"
-#include <selinux/context.h>
+#include "utils/tqual.h"
 
-int sepostgresql_mode;
-char *sepostgresql_mode_string;
+static security_context_t clientLabel = NULL;
+static security_context_t serverLabel = NULL;
+static security_context_t unlabeledLabel = NULL;
 
-static security_context_t serverContext = NULL;
-static security_context_t clientContext = NULL;
-static security_context_t unlabeledContext = NULL;
-
-const security_context_t
-sepgsqlGetServerContext(void)
+security_context_t
+sepgsqlGetServerLabel(void)
 {
-	Assert(serverContext != NULL);
-	return serverContext;
-}
-
-const security_context_t
-sepgsqlGetClientContext(void)
-{
-	Assert(clientContext != NULL);
-	return clientContext;
-}
-
-const security_context_t
-sepgsqlGetDatabaseContext(void)
-{
-	security_context_t result;
-
-	if (IsBootstrapProcessingMode())
+	if (!serverLabel)
 	{
-		static security_context_t dbcontext = NULL;
-
-		if (!dbcontext)
-		{
-			if (security_compute_create_raw(sepgsqlGetClientContext(),
-											sepgsqlGetClientContext(),
-											SECCLASS_DB_DATABASE,
-											&dbcontext) < 0)
-				ereport(ERROR,
-						(errcode(ERRCODE_SELINUX_ERROR),
-						 errmsg("SELinux: could not get database context")));
-		}
-		result = pstrdup(dbcontext);
+		if (getcon_raw(&serverLabel) < 0)
+			ereport(ERROR,
+					(errcode(ERRCODE_SELINUX_ERROR),
+					 errmsg("SELinux: could not get server label")));
 	}
-	else
-	{
-		HeapTuple tuple;
-
-		tuple = SearchSysCache(DATABASEOID,
-							   ObjectIdGetDatum(MyDatabaseId),
-							   0, 0, 0);
-		if (!HeapTupleIsValid(tuple))
-			elog(ERROR, "SELinux: cache lookup failed for database: %u", MyDatabaseId);
-
-		result = pgaceLookupSecurityLabel(HeapTupleGetSecLabel(tuple));
-		if (!result || !pgaceCheckValidSecurityLabel(result))
-			result = pgaceUnlabeledSecurityLabel();
-
-		ReleaseSysCache(tuple);
-	}
-
-	return result;
+	return serverLabel;
 }
 
-Oid
-sepgsqlGetDatabaseSecurityId(void)
+security_context_t
+sepgsqlGetClientLabel(void)
 {
-	Oid sid;
-
-	if (IsBootstrapProcessingMode())
-	{
-		security_context_t dcontext
-			= sepgsqlGetDatabaseContext();
-
-		sid = pgaceSecurityLabelToSid(dcontext);
-	}
-	else
-	{
-		HeapTuple tuple;
-
-		tuple = SearchSysCache(DATABASEOID,
-							   ObjectIdGetDatum(MyDatabaseId),
-							   0, 0, 0);
-		if (!HeapTupleIsValid(tuple))
-			elog(ERROR, "SELinux: cache lookup failed for database: %u", MyDatabaseId);
-
-		sid = HeapTupleGetSecLabel(tuple);
-
-		ReleaseSysCache(tuple);
-	}
-
-	return sid;
-}
-
-const security_context_t
-sepgsqlGetUnlabeledContext(void)
-{
-	if (unlabeledContext)
-		return unlabeledContext;
-
-	if (security_get_initial_context_raw("unlabeled", &unlabeledContext) < 0)
-		ereport(ERROR,
-				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("SELinux: could not get unlabeled context")));
-
-	return unlabeledContext;
-}
-
-const security_context_t
-sepgsqlSwitchClientContext(security_context_t new_context)
-{
-	security_context_t original_context = clientContext;
-
-	clientContext = new_context;
-
-	sepgsqlAvcSwitchClientContext(new_context);
-
-	return original_context;
-}
-
-static void
-initContexts(void)
-{
-	/*
-	 * server context
-	 */
-	if (getcon_raw(&serverContext) < 0)
-		ereport(ERROR,
-				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("SELinux: could not get server process context")));
-
-	/*
-	 * client context
-	 */
-	if (!MyProcPort)
+	if (!clientLabel)
 	{
 		/*
-		 * When the proces is not invoked as a backend of clietnt,
+		 * When the process is not invoked as a backend of client,
 		 * it works as a server process and as a client process
 		 * in same time.
 		 */
-		clientContext = serverContext;
-	}
-	else
-	{
-		if (getpeercon_raw(MyProcPort->sock, &clientContext) < 0)
-		{
-			/*
-			 * fallbacked security context
-			 *
-			 * When getpeercon() API does not obtain the context of
-			 * peer process, SEPGSQL_FALLBACK_CONTEXT environment
-			 * variable is used as an alternative security context
-			 * of the peer.
-			 *
-			 * getpeercon() needs the following condition to fail:
-			 * - Connection come from remote host,
-			 * - and, there is no labeled ipsec configuration between
-			 *   localhost and remote host.
-			 * - and, there is no static fallbacked context configuration
-			 *   for the remote host.
-			 */
-			char	   *fallback = getenv("SEPGSQL_FALLBACK_CONTEXT");
+		if (!MyProcPort)
+			return sepgsqlGetServerLabel();
 
-			if (!fallback)
-				ereport(ERROR,
-						(errcode(ERRCODE_SELINUX_ERROR),
-						 errmsg
-						 ("SELinux: could not get client process context")));
-
-			if (security_check_context(fallback) < 0
-				|| selinux_trans_to_raw_context(fallback, &clientContext) < 0)
-				ereport(ERROR,
-						(errcode(ERRCODE_SELINUX_ERROR),
-						 errmsg("SELinux: %s is not a valid context",
-								fallback)));
-		}
+		/*
+		 * SELinux provides getpeercon(3) which enables to obtain
+		 * the security context of peer process.
+		 * If MyProcPort->sock is unix domain socket, no special
+		 * configuration is necessary. If it is tcp/ip socket,
+		 * labeled IPsec or fallback context to be configured.
+		 */
+		if (getpeercon_raw(MyProcPort->sock, &clientLabel) < 0)
+			ereport(ERROR,
+					(errcode(ERRCODE_SELINUX_ERROR),
+					 errmsg("SELinux: could not obtain client label")));
 	}
+
+	return clientLabel;
 }
 
-/*
- * sepgsqlInitialize
- *
- * It initializes SE-PostgreSQL itself including assignment of shared
- * memory segment, reset of AVC, obtaining the client/server security
- * context and checks whether the client can access the required database,
- * or not.
- */
-void
-sepgsqlInitialize(bool bootstrap)
+security_context_t
+sepgsqlSwitchClient(security_context_t new_client)
 {
-	char	   *dbname;
+	char *old_client = sepgsqlGetClientLabel();
 
-	initContexts();
+	clientLabel = new_client;
 
-	sepgsqlAvcInit();
+	PG_TRY();
+	{
+		sepgsqlAvcSwitchClient();
+	}
+	PG_CATCH();
+	{
+		clientLabel = old_client;
+		PG_RE_THROW();
+	}
+	PG_END_TRY();
 
-	/*
-	 * check db_database:{ access }
-	 */
+	return new_client;
+}
+
+security_context_t
+sepgsqlGetUnlabeledLabel(void)
+{
+	if (!unlabeledLabel)
+	{
+		if (security_get_initial_context_raw("unlabeled",
+											 &unlabeledLabel) < 0)
+			ereport(ERROR,
+					(errcode(ERRCODE_SELINUX_ERROR),
+					 errmsg("SELinux: could not get unlabeled label")));
+	}
+	return unlabeledLabel;
+}
+
+security_context_t
+sepgsqlGetDatabaseLabel(void)
+{
+	HeapTuple			tuple;
+	security_context_t	dbcon;
+
 	if (IsBootstrapProcessingMode())
-		dbname = "template1";
+	{
+		static security_context_t	databaseLabel = NULL;
+
+		if (!databaseLabel)
+		{
+			security_class_t	tclass
+				= string_to_security_class("db_database");
+
+			if (security_compute_create_raw(sepgsqlGetClientLabel(),
+											sepgsqlGetClientLabel(),
+											tclass, &databaseLabel) < 0)
+				ereport(ERROR,
+						(errcode(ERRCODE_SELINUX_ERROR),
+						 errmsg("SELinux: unable to compute database context")));
+		}
+		return pstrdup(databaseLabel);
+	}
+
+	tuple = SearchSysCache(DATABASEOID,
+						   ObjectIdGetDatum(MyDatabaseId),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "SELinux: cache lookup failed for database: %u",
+			 MyDatabaseId);
+
+	dbcon = securityLookupSecurityLabel(HeapTupleGetSecLabel(tuple));
+	if (!dbcon || !sepgsqlCheckValidSecurityLabel(dbcon))
+		dbcon = pstrdup(sepgsqlGetUnlabeledLabel());
+
+	ReleaseSysCache(tuple);
+
+	return dbcon;
+}
+
+sepgsql_sid_t
+sepgsqlGetDatabaseSid(void)
+{
+	HeapTuple		tuple;
+	sepgsql_sid_t	dbsid;
+
+	if (IsBootstrapProcessingMode())
+	{
+		security_context_t	dbcon
+			= sepgsqlGetDatabaseLabel();
+
+		dbsid = securityLookupSecurityId(dbcon);
+	}
 	else
 	{
-		Form_pg_database dbForm;
-		HeapTuple	tuple;
-
 		tuple = SearchSysCache(DATABASEOID,
-							   ObjectIdGetDatum(MyDatabaseId), 0, 0, 0);
+							   ObjectIdGetDatum(MyDatabaseId),
+							   0, 0, 0);
 		if (!HeapTupleIsValid(tuple))
-			elog(ERROR, "SELinux: cache lookup failed for database %u",
+			elog(ERROR, "SELinux: cache lookup failed for database: %u",
 				 MyDatabaseId);
-		dbForm = (Form_pg_database) GETSTRUCT(tuple);
 
-		dbname = pstrdup(NameStr(dbForm->datname));
+		dbsid = HeapTupleGetSecLabel(tuple);
 
 		ReleaseSysCache(tuple);
 	}
 
-	sepgsqlComputePermission(sepgsqlGetClientContext(),
-							 sepgsqlGetDatabaseContext(),
-							 SECCLASS_DB_DATABASE,
-							 DB_DATABASE__ACCESS,
-							 dbname);
+	return dbsid;
 }
 
 /*
- * sepgsqlIsEnabled
+ * sepgsqlIsEnabled()
  *
- * This function returns the state of SE-PostgreSQL when PGACE hooks
- * are invoked, to prevent to call sepgsqlXXXX() functions when
- * SE-PostgreSQL is disabled.
- *
- * We can config the state of SE-PostgreSQL in $PGDATA/postgresql.conf.
- * The GUC option "sepostgresql" can have the following four parameter.
- *
- * - default    : It always follows the in-kernel SELinux state. When it
- *                works in Enforcing mode, SE-PostgreSQL also works in
- *                Enforcing mode. Changes of in-kernel state are delivered
- *                to userspace SE-PostgreSQL soon, and SELinux state 
- *                monitoring process updates it rapidly.
- * - enforcing  : It always works in Enforcing mode. In-kernel SELinux
- *                has to be enabled.
- * - permissive : It always works in Permissive mode. In-kernel SELinux
- *                has to be enabled.
- * - disabled   : It disables SE-PostgreSQL feature. It works as if
- *                original PostgreSQL
+ *   returns the state of SE-PostgreSQL whether enabled, or not.
+ *   When functions under src/backend/utils/ are invoked, they have to
+ *   be checked on the head.
+ *   This status is decided with two factors. The one is GUC parameter
+ *   of "sepostgresql=on/off", and the other is is_selinux_enabled().
+ *   Both of them have to be true, when SE-PostgreSQL is activated.
  */
-const char *sepgsqlAssignModeString(const char *value, bool doit, GucSource source)
-{
-	SepgsqlModeType config_mode = SEPGSQL_MODE_DEFAULT;
-
-	if (strcmp(value, "default") == 0)
-		config_mode = SEPGSQL_MODE_DEFAULT;
-	else if (strcmp(value, "enforcing") == 0)
-		config_mode = SEPGSQL_MODE_ENFORCING;
-	else if (strcmp(value, "permissive") == 0)
-		config_mode = SEPGSQL_MODE_PERMISSIVE;
-	else if (strcmp(value, "disabled") == 0)
-		config_mode = SEPGSQL_MODE_DISABLED;
-	else
-		ereport(GUC_complaint_elevel(source),
-                (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 "SELinux: unexpected mode: %s", value));
-	if (doit)
-		sepostgresql_mode = config_mode;
-
-	return value;
-}
+bool sepostgresql_is_enabled;	/* default is false */
 
 bool
 sepgsqlIsEnabled(void)
 {
-	static int	enabled = -1;
+	static int enabled = -1;	/* unchecked */
+
+	if (!sepostgresql_is_enabled)
+		return false;
 
 	if (enabled < 0)
-	{
-		if (sepostgresql_mode == SEPGSQL_MODE_DISABLED)
-			enabled = 0;
-		else
-		{
-			enabled = is_selinux_enabled();
-			if (enabled == 0	/* in-kernel SELinux is disabled */
-				&& sepostgresql_mode != SEPGSQL_MODE_DEFAULT)
-			{
-				ereport(FATAL,
-						(errcode(ERRCODE_SELINUX_ERROR),
-						 errmsg("SELinux: disabled in kernel, but sepostgresql = %s",
-								SEPGSQL_MODE_ENFORCING ? "enforcing" : "permissive")));
-			}
-		}
-	}
+		enabled = is_selinux_enabled();
 
 	return enabled > 0 ? true : false;
 }
 
 /*
- * sepgsql_getcon(void)
- *
- * It returns security context of client
+ * sepgsqlInitialize
+ */
+void
+sepgsqlInitialize(void)
+{
+	if (!sepgsqlIsEnabled())
+		return;
+
+	sepgsqlGetClientLabel();
+
+	sepgsqlAvcInit();
+}
+
+/*
+ * SE-PostgreSQL specific functions
  */
 Datum
 sepgsql_getcon(PG_FUNCTION_ARGS)
 {
 	security_context_t context;
-	Datum		labelTxt;
 
-	if (pgace_feature != PGACE_FEATURE_SELINUX || !sepgsqlIsEnabled())
+	if (!sepgsqlIsEnabled())
 		ereport(ERROR,
 				(errcode(ERRCODE_SELINUX_ERROR),
 				 errmsg("SELinux: disabled now")));
 
-	if (selinux_raw_to_trans_context(clientContext, &context) < 0)
+	context = sepgsqlGetClientLabel();
+	context = sepgsqlSecurityLabelTransOut(context);
+	return CStringGetTextDatum(context);
+}
+
+Datum
+sepgsql_server_getcon(PG_FUNCTION_ARGS)
+{
+	security_context_t context;
+
+	if (!sepgsqlIsEnabled())
 		ereport(ERROR,
 				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("SELinux: could not translate mls label")));
-	PG_TRY();
-	{
-		labelTxt = CStringGetTextDatum(context);
-	}
-	PG_CATCH();
-	{
-		freecon(context);
-		PG_RE_THROW();
-	}
-	PG_END_TRY();
-	freecon(context);
+				 errmsg("SELinux: disabled now")));
 
-	PG_RETURN_DATUM(labelTxt);
+	context = sepgsqlGetServerLabel();
+	context = sepgsqlSecurityLabelTransOut(context);
+	return CStringGetTextDatum(context);
+}
+
+Datum
+sepgsql_mcstrans(PG_FUNCTION_ARGS)
+{
+	security_context_t context;
+	text   *labelTxt = PG_GETARG_TEXT_P(0);
+
+	context = text_to_cstring(labelTxt);
+	context = sepgsqlSecurityLabelTransOut(context);
+
+	return CStringGetTextDatum(context);
 }
 
 /*
- * sepgsql_getcon(void)
- *
- * It returns security context of server process
+ * sepgsql_(get|set)_(user|role|type|range)
+ *   get/set a component of security context.
  */
-Datum
-sepgsql_getservcon(PG_FUNCTION_ARGS)
-{
-	security_context_t context;
-	Datum		labelTxt;
-
-	if (pgace_feature != PGACE_FEATURE_SELINUX || !sepgsqlIsEnabled())
-		ereport(ERROR,
-				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("SELinux: disabled now")));
-
-	if (selinux_raw_to_trans_context(serverContext, &context) < 0)
-		ereport(ERROR,
-				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("SELinux: could not translate mls label")));
-	PG_TRY();
-	{
-		labelTxt = CStringGetTextDatum(context);
-	}
-	PG_CATCH();
-	{
-		freecon(context);
-		PG_RE_THROW();
-	}
-	PG_END_TRY();
-	freecon(context);
-
-	PG_RETURN_DATUM(labelTxt);
-}
-
 static void
-parse_to_context(security_context_t context,
-				 char **user, char **role, char **type, char **range)
+parse_security_context(security_context_t context,
+					   char **user, char **role, char **type, char **range)
 {
-	security_context_t raw_context;
+	security_context_t	raw_context;
+	char	   *tok;
 
-	if (pgace_feature != PGACE_FEATURE_SELINUX || !sepgsqlIsEnabled())
+	if (!sepgsqlIsEnabled())
 		ereport(ERROR,
 				(errcode(ERRCODE_SELINUX_ERROR),
 				 errmsg("SELinux: disabled now")));
@@ -396,28 +275,25 @@ parse_to_context(security_context_t context,
 	if (selinux_trans_to_raw_context(context, &raw_context) < 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("SELinux: could not translate mls label")));
+				 errmsg("SELinux: could not translate mls label: %s", context)));
+
 	PG_TRY();
 	{
-		char	   *tmp;
-
-		tmp = pstrdup(strtok(raw_context, ":"));
+		tok = strtok(raw_context, ":");
 		if (user)
-			*user = tmp;
-		tmp = pstrdup(strtok(NULL, ":"));
+			*user = (!tok ? NULL : pstrdup(tok));
+
+		tok = strtok(NULL, ":");
 		if (role)
-			*role = tmp;
-		tmp = pstrdup(strtok(NULL, ":"));
+			*role = (!tok ? NULL : pstrdup(tok));
+
+		tok = strtok(NULL, ":");
 		if (type)
-			*type = tmp;
-		if (is_selinux_mls_enabled())
-		{
-			tmp = pstrdup(strtok(NULL, "\0"));
-			if (range)
-				*range = tmp;
-		}
-		else if (range)
-			*range = NULL;
+			*type = (!tok ? NULL : pstrdup(tok));
+
+		tok = strtok(NULL, "\0");
+		if (range)
+			*range = (!tok ? NULL : pstrdup(tok));
 	}
 	PG_CATCH();
 	{
@@ -428,245 +304,121 @@ parse_to_context(security_context_t context,
 	freecon(raw_context);
 }
 
-/*
- * text sepgsql_get_user(text)
- *
- * It picks up the USER field of given security context.
- */
 Datum
 sepgsql_get_user(PG_FUNCTION_ARGS)
 {
+	char	   *context = TextDatumGetCString(PG_GETARG_TEXT_P(0));
 	char	   *user;
 
-	parse_to_context(TextDatumGetCString(PG_GETARG_TEXT_P(0)),
-					 &user, NULL, NULL, NULL);
+	parse_security_context(context, &user, NULL, NULL, NULL);
+	if (!user)
+		ereport(ERROR,
+				(errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("SELinux: could not extract user of \"%s\"", context)));
+
 	PG_RETURN_TEXT_P(CStringGetTextDatum(user));
 }
 
-/*
- * text sepgsql_set_user(text, text)
- *
- * It replaces the USER field of given security context by the second argument.
- */
-Datum
-sepgsql_set_user(PG_FUNCTION_ARGS)
-{
-	char	   *user, *role, *type, *range;
-	char		buffer[1024];
-	security_context_t newcon;
-	Datum		result;
-
-	parse_to_context(TextDatumGetCString(PG_GETARG_TEXT_P(0)),
-					 &user, &role, &type, &range);
-	if (range)
-		snprintf(buffer, sizeof(buffer), "%s:%s:%s:%s",
-				 TextDatumGetCString(PG_GETARG_TEXT_P(1)), role, type, range);
-	else
-		snprintf(buffer, sizeof(buffer), "%s:%s:%s",
-				 TextDatumGetCString(PG_GETARG_TEXT_P(1)), role, type);
-	if (selinux_raw_to_trans_context((security_context_t) buffer, &newcon) < 0)
-		ereport(ERROR,
-				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("SELinux: could not set a new user")));
-	PG_TRY();
-	{
-		result = CStringGetTextDatum(newcon);
-	}
-	PG_CATCH();
-	{
-		freecon(newcon);
-		PG_RE_THROW();
-	}
-	PG_END_TRY();
-	freecon(newcon);
-
-	PG_RETURN_DATUM(result);
-}
-
-/*
- * text sepgsql_get_role(text)
- *
- * It picks up the ROLE field of given security context.
- */
 Datum
 sepgsql_get_role(PG_FUNCTION_ARGS)
 {
+	char	   *context = TextDatumGetCString(PG_GETARG_TEXT_P(0));
 	char	   *role;
 
-	parse_to_context(TextDatumGetCString(PG_GETARG_TEXT_P(0)),
-					 NULL, &role, NULL, NULL);
+	parse_security_context(context, NULL, &role, NULL, NULL);
+	if (!role)
+		ereport(ERROR,
+				(errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("SELinux: could not extract role of \"%s\"", context)));
+
 	PG_RETURN_TEXT_P(CStringGetTextDatum(role));
 }
 
-/*
- * text sepgsql_set_user(text, text)
- *
- * It replaces the ROLE field of given security context by the second argument.
- */
-Datum
-sepgsql_set_role(PG_FUNCTION_ARGS)
-{
-	char	   *user, *role, *type, *range;
-	char		buffer[1024];
-	security_context_t newcon;
-	Datum		result;
-
-	parse_to_context(TextDatumGetCString(PG_GETARG_TEXT_P(0)),
-					 &user, &role, &type, &range);
-	if (range)
-		snprintf(buffer, sizeof(buffer), "%s:%s:%s:%s",
-				 user, TextDatumGetCString(PG_GETARG_TEXT_P(1)), type, range);
-	else
-		snprintf(buffer, sizeof(buffer), "%s:%s:%s",
-				 user, TextDatumGetCString(PG_GETARG_TEXT_P(1)), type);
-	if (selinux_raw_to_trans_context((security_context_t) buffer, &newcon) < 0)
-		ereport(ERROR,
-				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("SELinux: could not set a new role")));
-	PG_TRY();
-	{
-		result = CStringGetTextDatum(newcon);
-	}
-	PG_CATCH();
-	{
-		freecon(newcon);
-		PG_RE_THROW();
-	}
-	PG_END_TRY();
-	freecon(newcon);
-
-	PG_RETURN_DATUM(result);
-}
-
-/*
- * text sepgsql_get_type(text)
- *
- * It picks up the TYPE field of given security context.
- */
 Datum
 sepgsql_get_type(PG_FUNCTION_ARGS)
 {
+	char	   *context = TextDatumGetCString(PG_GETARG_TEXT_P(0));
 	char	   *type;
 
-	parse_to_context(TextDatumGetCString(PG_GETARG_TEXT_P(0)),
-					 NULL, NULL, &type, NULL);
+	parse_security_context(context, NULL, NULL, &type, NULL);
+	if (!type)
+		ereport(ERROR,
+				(errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("SELinux: could not extract type of \"%s\"", context)));
+
 	PG_RETURN_TEXT_P(CStringGetTextDatum(type));
 }
 
-/*
- * text sepgsql_set_user(text, text)
- *
- * It replaces the TYPE field of given security context by the second argument.
- */
-Datum
-sepgsql_set_type(PG_FUNCTION_ARGS)
-{
-	char	   *user, *role, *type, *range;
-	char		buffer[1024];
-	security_context_t newcon;
-	Datum		result;
-
-	parse_to_context(TextDatumGetCString(PG_GETARG_TEXT_P(0)),
-					 &user, &role, &type, &range);
-	if (range)
-		snprintf(buffer, sizeof(buffer), "%s:%s:%s:%s",
-				 user, role, TextDatumGetCString(PG_GETARG_TEXT_P(1)), range);
-	else
-		snprintf(buffer, sizeof(buffer), "%s:%s:%s",
-				 user, role, TextDatumGetCString(PG_GETARG_TEXT_P(1)));
-	if (selinux_raw_to_trans_context((security_context_t) buffer, &newcon) < 0)
-		ereport(ERROR,
-				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("SELinux: could not set a new type")));
-	PG_TRY();
-	{
-		result = CStringGetTextDatum(newcon);
-	}
-	PG_CATCH();
-	{
-		freecon(newcon);
-		PG_RE_THROW();
-	}
-	PG_END_TRY();
-	freecon(newcon);
-
-	PG_RETURN_DATUM(result);
-}
-
-/*
- * text sepgsql_get_range(text)
- *
- * It picks up the RANGE field of given security context.
- */
 Datum
 sepgsql_get_range(PG_FUNCTION_ARGS)
 {
+	char	   *context = TextDatumGetCString(PG_GETARG_TEXT_P(0));
 	char	   *range;
 
-	parse_to_context(TextDatumGetCString(PG_GETARG_TEXT_P(0)),
-					 NULL, NULL, NULL, &range);
+	parse_security_context(context, NULL, NULL, NULL, &range);
+	if (!range)
+		ereport(ERROR,
+				(errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("SELinux: could not extract range of \"%s\"", context)));
+
 	PG_RETURN_TEXT_P(CStringGetTextDatum(range));
 }
 
-/*
- * text sepgsql_set_user(text, text)
- *
- * It replaces the RANGE field of given security context by the second argument.
- */
+static Datum
+sepgsql_set_common(char *context, char *user, char *role, char *type, char *range)
+{
+	StringInfoData		newcon;
+
+	parse_security_context(context,
+						   !user	? &user : NULL,
+						   !role	? &role : NULL,
+						   !type	? &type : NULL,
+						   !range	? &range : NULL);
+	if (!user || !role || !type)
+		ereport(ERROR,
+				(errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("SELinux: invalid security context: \"%s\"", context)));
+
+	initStringInfo(&newcon);
+	appendStringInfo(&newcon, "%s:%s:%s", user, role, type);
+	if (range)
+		appendStringInfo(&newcon, ":%s", range);
+
+	return CStringGetTextDatum(sepgsqlSecurityLabelTransOut(newcon.data));
+}
+
+Datum
+sepgsql_set_user(PG_FUNCTION_ARGS)
+{
+	char	   *context = TextDatumGetCString(PG_GETARG_TEXT_P(0));
+	char	   *user	= TextDatumGetCString(PG_GETARG_TEXT_P(1));
+
+	return sepgsql_set_common(context, user, NULL, NULL, NULL);
+}
+
+Datum
+sepgsql_set_role(PG_FUNCTION_ARGS)
+{
+	char	   *context	= TextDatumGetCString(PG_GETARG_TEXT_P(0));
+	char	   *role	= TextDatumGetCString(PG_GETARG_TEXT_P(1));
+
+	return sepgsql_set_common(context, NULL, role, NULL, NULL);
+}
+
+Datum
+sepgsql_set_type(PG_FUNCTION_ARGS)
+{
+	char	   *context	= TextDatumGetCString(PG_GETARG_TEXT_P(0));
+	char	   *type	= TextDatumGetCString(PG_GETARG_TEXT_P(1));
+
+	return sepgsql_set_common(context, NULL, NULL, type, NULL);
+}
+
 Datum
 sepgsql_set_range(PG_FUNCTION_ARGS)
 {
-	char	   *user, *role, *type, *range;
-	char		buffer[1024];
-	security_context_t newcon;
-	Datum		result;
+	char	   *context	= TextDatumGetCString(PG_GETARG_TEXT_P(0));
+	char	   *range	= TextDatumGetCString(PG_GETARG_TEXT_P(1));
 
-	parse_to_context(TextDatumGetCString(PG_GETARG_TEXT_P(0)),
-					 &user, &role, &type, &range);
-	if (range)
-		snprintf(buffer, sizeof(buffer), "%s:%s:%s:%s",
-				 user, role, type, TextDatumGetCString(PG_GETARG_TEXT_P(1)));
-	else
-		snprintf(buffer, sizeof(buffer), "%s:%s:%s", user, role, type);
-	if (selinux_raw_to_trans_context((security_context_t) buffer, &newcon) < 0)
-		ereport(ERROR,
-				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("SELinux: could not set a new range")));
-	PG_TRY();
-	{
-		result = CStringGetTextDatum(newcon);
-	}
-	PG_CATCH();
-	{
-		freecon(newcon);
-		PG_RE_THROW();
-	}
-	PG_END_TRY();
-	freecon(newcon);
-
-	PG_RETURN_DATUM(result);
-}
-
-/*
- * SE-PostgreSQL legacy function support
- */
-Datum sepgsql_tuple_perms(PG_FUNCTION_ARGS);
-Datum sepgsql_tuple_perms_abort(PG_FUNCTION_ARGS);
-
-Datum
-sepgsql_tuple_perms(PG_FUNCTION_ARGS)
-{
-	ereport(ERROR,
-			(errcode(ERRCODE_SELINUX_ERROR),
-			 errmsg("%s is no longer supported", __FUNCTION__)));
-	PG_RETURN_VOID();
-}
-
-Datum
-sepgsql_tuple_perms_abort(PG_FUNCTION_ARGS)
-{
-	ereport(ERROR,
-			(errcode(ERRCODE_SELINUX_ERROR),
-			 errmsg("%s is no longer supported", __FUNCTION__)));
-	PG_RETURN_VOID();
+	return sepgsql_set_common(context, NULL, NULL, NULL, range);
 }
