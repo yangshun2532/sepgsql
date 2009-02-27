@@ -142,7 +142,7 @@ PHP_FUNCTION(selinux_is_enabled)
 	if (ZEND_NUM_ARGS() != 0)
 		ZEND_WRONG_PARAM_COUNT();
 
-	if (is_selinux_enabled())
+	if (is_selinux_enabled() > 0)
 		RETURN_TRUE;
 	RETURN_FALSE;
 }
@@ -155,7 +155,7 @@ PHP_FUNCTION(selinux_mls_is_enabled)
 	if (ZEND_NUM_ARGS() != 0)
 		ZEND_WRONG_PARAM_COUNT();
 
-	if (is_selinux_mls_enabled())
+	if (is_selinux_mls_enabled() > 0)
 		RETURN_TRUE;
 	RETURN_FALSE;
 }
@@ -180,11 +180,11 @@ PHP_FUNCTION(selinux_setenforce)
 
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
                                   "l", &mode) == FAILURE)
-                RETURN_FALSE;
+		return;
 
-	if (security_setenforce(mode))
-		RETURN_FALSE;
-	RETURN_TRUE;
+	if (!security_setenforce(mode))
+		RETURN_TRUE;
+	RETURN_FALSE;
 }
 /* }}} */
 
@@ -192,10 +192,15 @@ PHP_FUNCTION(selinux_setenforce)
    Returns the version of the security policy in the kernel. */
 PHP_FUNCTION(selinux_policyvers)
 {
+	int policyvers;
+
 	if (ZEND_NUM_ARGS() != 0)
 		ZEND_WRONG_PARAM_COUNT();
 
-	RETURN_LONG(security_policyvers());
+	policyvers = security_policyvers();
+	if (policyvers < 0)
+		RETURN_FALSE;
+	RETURN_LONG(policyvers);
 }
 /* }}} */
 
@@ -225,9 +230,9 @@ PHP_FUNCTION(selinux_setcon)
 	security_context_t context;
 	int length;
 
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
-				  "s", &context, &length) == FAILURE)
-		RETURN_FALSE;
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s",
+				  &context, &length) == FAILURE)
+		return;
 
 	if (length == 0)
 		context = NULL;
@@ -245,9 +250,9 @@ PHP_FUNCTION(selinux_getpidcon)
 	security_context_t context;
 	long pid;
 
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
-				  "l", &pid) == FAILURE)
-		RETURN_FALSE;
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "l",
+				  &pid) == FAILURE)
+		return;
 
 	if (getpidcon((pid_t) pid, &context) < 0)
 		RETURN_FALSE;
@@ -304,9 +309,9 @@ PHP_FUNCTION(selinux_setexeccon)
 	security_context_t context;
 	int length;
 
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
-				  "s", &context, &length) == FAILURE)
-		RETURN_FALSE;
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s",
+				  &context, &length) == FAILURE)
+		return;
 
 	if (length == 0)
 		context = NULL;
@@ -343,9 +348,9 @@ PHP_FUNCTION(selinux_setfscreatecon)
 	char *context;
 	int length;
 
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
-				  "s", &context, &length) == FAILURE)
-		RETURN_FALSE;
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s",
+				  &context, &length) == FAILURE)
+		return;
 
 	if (length == 0)
 		context = NULL;
@@ -382,9 +387,9 @@ PHP_FUNCTION(selinux_setkeycreatecon)
 	char *context;
 	int length;
 
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
-				  "s", &context, &length) == FAILURE)
-		RETURN_FALSE;
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s",
+				  &context, &length) == FAILURE)
+		return;
 
 	if (length == 0)
 		context = NULL;
@@ -421,9 +426,9 @@ PHP_FUNCTION(selinux_setsockcreatecon)
 	security_context_t context;
 	int length;
 
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
-				  "s", &context, &length) == FAILURE)
-		RETURN_FALSE;
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s",
+				  &context, &length) == FAILURE)
+		return;
 
 	if (length == 0)
 		context = NULL;
@@ -442,9 +447,9 @@ PHP_FUNCTION(selinux_getfilecon)
 	char *filename;
 	int length;
 
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
-				  "s", &filename, &length) == FAILURE)
-		RETURN_FALSE;
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s",
+				  &filename, &length) == FAILURE)
+		return;
 	if (length == 0)
 		RETURN_FALSE;
 
@@ -464,9 +469,9 @@ PHP_FUNCTION(selinux_lgetfilecon)
 	char *filename;
 	int length;
 
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
-				  "s", &filename, &length) == FAILURE)
-		RETURN_FALSE;
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s",
+				  &filename, &length) == FAILURE)
+		return;
 	if (length == 0)
 		RETURN_FALSE;
 
@@ -489,7 +494,7 @@ PHP_FUNCTION(selinux_fgetfilecon)
 
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
 				  "z", &z) == FAILURE)
-		RETURN_FALSE;
+		return;
 	php_stream_from_zval_no_verify(stream, &z);
 
 	if (!stream)
@@ -517,7 +522,7 @@ PHP_FUNCTION(selinux_setfilecon)
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "ss",
 				  &filename, &filename_len,
 				  &context, &context_len) == FAILURE)
-		RETURN_FALSE;
+		return;
 	if (filename_len == 0 || context_len == 0)
 		RETURN_FALSE;
 
@@ -537,7 +542,7 @@ PHP_FUNCTION(selinux_lsetfilecon)
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "ss",
 				  &filename, &filename_len,
 				  &context, &context_len) == FAILURE)
-		RETURN_FALSE;
+		return;
 	if (filename_len == 0 || context_len == 0)
 		RETURN_FALSE;
 
@@ -556,9 +561,9 @@ PHP_FUNCTION(selinux_fsetfilecon)
 	security_context_t context;
 	int fdesc, context_len;
 
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
-				  "zs", &z, &context, &context_len) == FAILURE)
-		RETURN_FALSE;
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "zs",
+				  &z, &context, &context_len) == FAILURE)
+		return;
 
 	php_stream_from_zval_no_verify(stream, &z);
 	if (!stream)
@@ -582,8 +587,9 @@ PHP_FUNCTION(selinux_getpeercon)
 	security_context_t context;
 	int sockfd;
 
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "z", &z) == FAILURE)
-		RETURN_FALSE;
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
+				  "z", &z) == FAILURE)
+		return;
 
 	php_stream_from_zval_no_verify(stream, &z);
 	if (!stream)
@@ -740,7 +746,8 @@ PHP_FUNCTION(selinux_compute_user)
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "ss",
 				  &scontext, &scontext_len,
 				  &username, &username_len) == FAILURE)
-		RETURN_FALSE;
+		return;
+
 	if (scontext_len == 0 || username_len == 0)
 		RETURN_FALSE;
 	if (security_compute_user(scontext, username, &contexts) < 0)
@@ -765,7 +772,7 @@ PHP_FUNCTION(selinux_get_initial_context)
 
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
 				  "s", &name, &length) == FAILURE)
-		RETURN_FALSE;
+		return;
 
 	if (length == 0)
 		RETURN_FALSE;
@@ -787,7 +794,7 @@ PHP_FUNCTION(selinux_check_context)
 
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
 				  "s", &context, &length) == FAILURE)
-		RETURN_FALSE;
+		return;
 
 	if (length == 0)
 		RETURN_FALSE;
@@ -808,7 +815,7 @@ PHP_FUNCTION(selinux_canonicalize_context)
 
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
 				  "s", &context, &length) == FAILURE)
-		RETURN_FALSE;
+		return;
 
 	if (length == 0)
 		RETURN_FALSE;
@@ -887,7 +894,7 @@ PHP_FUNCTION(selinux_set_boolean)
 
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "sb",
 				  &bool_name, &length, &new_value) == FAILURE)
-		RETURN_FALSE;
+		return;
 
 	if (security_set_boolean(bool_name, new_value) < 0)
 		RETURN_FALSE;
@@ -899,6 +906,9 @@ PHP_FUNCTION(selinux_set_boolean)
    Commits all the pending values for booleans. */
 PHP_FUNCTION(selinux_commit_booleans)
 {
+	if (ZEND_NUM_ARGS() != 0)
+		ZEND_WRONG_PARAM_COUNT();
+
 	if (security_commit_booleans() < 0)
 		RETURN_FALSE;
 	RETURN_TRUE;
@@ -915,7 +925,8 @@ PHP_FUNCTION(selinux_trans_to_raw_context)
 
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
 				  "s", &context, &length) == FAILURE)
-		RETURN_FALSE;
+		return;
+
 	if (length == 0)
 		RETURN_FALSE;
 	if (selinux_trans_to_raw_context(context, &raw_context) < 0 || !raw_context)
@@ -935,7 +946,8 @@ PHP_FUNCTION(selinux_raw_to_trans_context)
 
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
 				  "s", &context, &length) == FAILURE)
-		RETURN_FALSE;
+		return;
+
 	if (length == 0)
 		RETURN_FALSE;
 	if (selinux_raw_to_trans_context(context, &trans_context) < 0)
@@ -963,7 +975,7 @@ PHP_FUNCTION(selinux_matchpathcon)
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s|lbb",
 				  &path, &length,
 				  &mode, &baseonly, &validate) == FAILURE)
-		RETURN_FALSE;
+		return;
 	if (length == 0)
 		RETURN_FALSE;
 	if (baseonly)
@@ -990,7 +1002,8 @@ PHP_FUNCTION(selinux_lsetfilecon_default)
 
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s",
 				  &filename, &length) == FAILURE)
-		RETURN_FALSE;
+		return;
+
 	if (length == 0)
 		RETURN_FALSE;
 	if (selinux_lsetfilecon_default(filename) < 0)
@@ -1039,10 +1052,14 @@ PHP_FUNCTION(selinux_getpolicytype)
    Returns the directory path which stores the policy and context configuration. */
 PHP_FUNCTION(selinux_policy_root)
 {
-	const char *root = selinux_policy_root();
+	char *root;
 
 	if (ZEND_NUM_ARGS() != 0)
 		ZEND_WRONG_PARAM_COUNT();
+
+	root = selinux_policy_root();
+	if (!root)
+		RETURN_FALSE;
 	RETVAL_STRING(root, 1);
 }
 /* }}} */
