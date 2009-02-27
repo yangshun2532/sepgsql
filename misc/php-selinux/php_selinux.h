@@ -81,15 +81,6 @@ PHP_FUNCTION(selinux_set_boolean);
 PHP_FUNCTION(selinux_commit_booleans);
 
 /*
- * security class/access vector mapping
- */
-PHP_FUNCTION(selinux_string_to_class);
-PHP_FUNCTION(selinux_class_to_string);
-PHP_FUNCTION(selinux_av_perm_to_string);
-PHP_FUNCTION(selinux_string_to_av_perm);
-PHP_FUNCTION(selinux_av_string);
-
-/*
  * mcstrans
  */
 PHP_FUNCTION(selinux_trans_to_raw_context);
