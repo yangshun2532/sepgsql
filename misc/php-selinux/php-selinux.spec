@@ -47,6 +47,7 @@ rm -rf $RPM_BUILD_ROOT
   described in human readable text.
 - add selinux_(file|media)_lookup()
 - remove deprecated matchpathcon() wrapper
+- update README file
 
 * Tue Feb 24 2009 KaiGai Kohei <kaigai@kaigai.gr.jp> - 0.1616-beta
 - Initial package

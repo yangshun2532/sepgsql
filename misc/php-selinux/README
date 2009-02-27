@@ -165,45 +165,51 @@ string selinux_getpeercon(resource $stream)
 
 * Communication to in-kernel security policy
 
-array selinux_compute_av(string $scontext, string $tcontext, int $tclass)
+array selinux_compute_av(string $scontext, string $tcontext, string $tclass)
+
   It queries whether the policy permits the source context $scontext to
   access the target context $tcontext via class $tclass with the requested
   access vector. See the cron source for a usage example, and returns an
   associative array which contains access vector decision, or false on error.
 
-  The returned contains allowed, decided, auditallow, auditdeny and seqno
-  members in integer representation, as follows:
+  The returns array contains seqno and three sub-arrays (allowed, auditallow
+  and auditdeny) which have permission-names as associative index to show us
+  what permission is allowed, or not.
 
-  EXAMPLE)
-    $ php -r '$tclass = selinux_string_to_class("file");
-              $avd = selinux_compute_av("staff_u:staff_r:staff_t:s0",
-                                        "system_u:object_r:etc_t:s0",
-                                        $tclass);
-              var_dump($avd);'
-    array(5) {
-      ["allowed"]=>
-      int(139347)
-      ["decided"]=>
-      int(-1)
-      ["auditallow"]=>
-      int(0)
-      ["auditdeny"]=>
-      int(-17)
-      ["seqno"]=>
-      int(4)
+    $ php -r '$scontext = "staff_u:staff_r:staff_t:s0";
+              $tcontext = "system_u:object_r:etc_t:s0";
+              $avd = selinux_compute_av($scontext, $tcontext, "file");
+              var_dump($avd["allowed"]);'
+    array(21) {
+      ["ioctl"]=>
+      bool(true)
+      ["read"]=>
+      bool(true)
+      ["write"]=>
+      bool(false)
+      ["create"]=>
+      bool(false)
+         :
+      ["execmod"]=>
+      bool(false)
+      ["open"]=>
+      bool(false)
     }
 
-string selinux_compute_create(string $scontext, string $tcontext, int $tclass)
+string selinux_compute_create(string $scontext, string $tcontext,
+                              string $tclass)
   It is used to compute a context to use for labeling a new object in a
   particular class based on a pair of security contexts.
 
-string selinux_compute_relabel(string $scontext, string $tcontext, int $tclass)
+string selinux_compute_relabel(string $scontext, string $tcontext,
+                               string $tclass)
   It is used to compute the new context to use when relabeling an object,
   it is used in the pam_selinux.so source and the newrole source to determine
   the correct label for the tty at login time, but can be used for other
   things.
 
-string selinux_compute_member(string $scontext, string $tcontext, int $tclass)
+string selinux_compute_member(string $scontext, string $tcontext,
+                              string $tclass)
   It is used to compute the context to use when labeling a polyinstantiated
   object instance.
 
@@ -247,27 +253,6 @@ bool selinux_set_boolean(string $bool_name, bool $bool_value)
 bool selinux_commit_booleans(void)
   It commit all pending values for the booleans.
 
-* security class/access vector mapping
-
-int selinux_string_to_class(string $class_name)
-  It returns the class value corresponding to the string $class_name,
-  or false on error.
-
-string selinux_class_to_string(int $tclass)
-  It returns a string name for class $tclass, or false on error.
-
-int selinux_string_to_av_perm(int $tclass, string $av_name)
-  It returns the access vector bit corresponding to the string $av_name
-  and security class $tclass, or false on error.
-
-string selinux_av_perm_to_string(int $tclass, int $av_perm)
-  It returns a string name for the access vector bit $av_perm of class
-  $tclass, or false on error.
-
-string selinux_av_string(int $tclass, int $av_perms)
-  It returns a full access vector string representation using $tclass and
-  $av_perms which can contain a set of access vector bits.
-
 * Mcstrans support
 
 string selinux_trans_to_raw_context(string $context)
@@ -280,38 +265,37 @@ string selinux_raw_to_trans_context(string $context)
   to the human-readable format ("translated"), and returns the human-readable
   format string, or false on error.
 
-* Matchpathcon support
+* selabel wrappers
 
-string selinux_matchpathcon(string $path [,int $mode [,bool $baseonly
-                                         [,bool $validate]]])
-  This function matches the specified pathname and mode against the file
-  contexts configuration and returns an appropriate security context,
-  or false on error. The optional $mode is used to enable mode matching,
-  and its typical input is the result of lstat() for the target path.
-  If omitted or 0 is given, it disables mode matching. But should be
-  provided whenever possible for more correctness.
-  If the optional $baseonly is true, it makes this function ignore local
-  defined file contexts. The default is false.
-  If the optional $validate is true, sanity checks for security context
-  is enabled. The default is false
+string selinux_file_label_lookup(string $pathname, int $mode
+                                 [, bool $validate [, bool $baseonly
+                                 [, string $subset [, string $specfile]]]])
+  It returns an expected security context for the given $pathname and $mode
+  based on the security policy configuration, or false on errors. We assume
+  the result of lstat is delivered as $mode. The optional $validate is used
+  to enable validation check for security contexts, and its default is false.
+  The optional $baseonly is used to ignore local configuration, and its
+  default is false. The optional $subset enables to restrict prefix of
+  target files, and its default is null which means no restriction.
+  The optional $specfile enables to specify own mapping, and its default
+  is apply system default.
 
-  EXAMPLE)
-    $ php -r '$fname = "/etc/shadow";
-              $st = lstat($fname);
-              echo selinux_matchpathcon($fname, $st['mode'])."\n";'
-    system_u:object_r:shadow_t
-
-bool selinux_lsetfilecon_default(string $path)
-  It sets the file context on to the system defaults and returns true on
-  success, or false on error.
+string selinux_media_label_lookup(string device [, bool validate
+                                  [, string specfile]])
+  It returns an expected security context for the given $device, such as
+  "cdrom" or "floppy". Optional arguments have same meanings to
+  selinux_file_label_lookup().
 
 * Configuration files
 
 string selinux_getenforcemode(void)
-  It returns the initial state on the system, configured in /etc/selinux/config.
+  It returns the initial state on the system, configured
+  in /etc/selinux/config.
 
 string selinux_getpolicytype(void)
-  It returns the default policy type on the system, configured in /etc/selinux/config.
+  It returns the default policy type on the system, configured
+  in /etc/selinux/config.
 
 string selinux_policy_root(void)
-  It returns the directory path which stores the policy and context configuration.
+  It returns the directory path which stores the policy and context
+  configuration.
