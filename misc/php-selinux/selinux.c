@@ -442,10 +442,8 @@ PHP_FUNCTION(selinux_getfilecon)
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s",
 				  &filename, &length) == FAILURE)
 		return;
-	if (length == 0)
-		RETURN_FALSE;
 
-	if (getfilecon(filename, &context) < 0 || !context)
+	if (getfilecon(filename, &context) < 0)
 		RETURN_FALSE;
 
 	RETVAL_STRING(context, 1);
@@ -464,10 +462,8 @@ PHP_FUNCTION(selinux_lgetfilecon)
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s",
 				  &filename, &length) == FAILURE)
 		return;
-	if (length == 0)
-		RETURN_FALSE;
 
-	if (lgetfilecon(filename, &context) < 0 || !context)
+	if (lgetfilecon(filename, &context) < 0)
 		RETURN_FALSE;
 
 	RETVAL_STRING(context, 1);
@@ -515,8 +511,6 @@ PHP_FUNCTION(selinux_setfilecon)
 				  &filename, &filename_len,
 				  &context, &context_len) == FAILURE)
 		return;
-	if (filename_len == 0 || context_len == 0)
-		RETURN_FALSE;
 
 	if (setfilecon(filename, context) < 0)
 		RETURN_FALSE;
@@ -535,8 +529,6 @@ PHP_FUNCTION(selinux_lsetfilecon)
 				  &filename, &filename_len,
 				  &context, &context_len) == FAILURE)
 		return;
-	if (filename_len == 0 || context_len == 0)
-		RETURN_FALSE;
 
 	if (lsetfilecon(filename, context) < 0)
 			RETURN_FALSE;
@@ -614,9 +606,6 @@ PHP_FUNCTION(selinux_compute_av)
 				  &tclass_name, &tclass_len) == FAILURE)
 		return;
 
-	if (scontext_len == 0 || tcontext_len == 0 || tclass_len == 0)
-		RETURN_FALSE;
-
 	tclass = string_to_security_class(tclass_name);
 	if (security_compute_av(scontext, tcontext, tclass, -1, &avd) < 0)
 		RETURN_FALSE;
@@ -667,8 +656,6 @@ PHP_FUNCTION(selinux_compute_create)
 				  &tclass_name, &tclass_len) == FAILURE)
 		return;
 
-	if (scontext_len == 0 || tcontext_len == 0 || tclass_len == 0)
-		RETURN_FALSE;
 	tclass = string_to_security_class(tclass_name);
 	if (security_compute_create(scontext, tcontext, tclass, &context) < 0)
 		RETURN_FALSE;
@@ -692,8 +679,6 @@ PHP_FUNCTION(selinux_compute_relabel)
 				  &tclass_name, &tclass_len) == FAILURE)
 		return;
 
-	if (scontext_len == 0 || tcontext_len == 0 || tclass_len == 0)
-		RETURN_FALSE;
 	tclass = string_to_security_class(tclass_name);
 	if (security_compute_relabel(scontext, tcontext, tclass, &context) < 0)
 		RETURN_FALSE;
@@ -717,8 +702,6 @@ PHP_FUNCTION(selinux_compute_member)
 				  &tclass_name, &tclass_len) == FAILURE)
 		return;
 
-	if (scontext_len == 0 || tcontext_len == 0 || tclass_len == 0)
-		RETURN_FALSE;
 	tclass = string_to_security_class(tclass_name);
 	if (security_compute_member(scontext, tcontext, tclass, &context) < 0)
 		RETURN_FALSE;
@@ -741,8 +724,6 @@ PHP_FUNCTION(selinux_compute_user)
 				  &username, &username_len) == FAILURE)
 		return;
 
-	if (scontext_len == 0 || username_len == 0)
-		RETURN_FALSE;
 	if (security_compute_user(scontext, username, &contexts) < 0)
 		RETURN_FALSE;
 
@@ -767,9 +748,6 @@ PHP_FUNCTION(selinux_get_initial_context)
 				  "s", &name, &length) == FAILURE)
 		return;
 
-	if (length == 0)
-		RETURN_FALSE;
-
 	if (security_get_initial_context(name, &context) < 0)
 		RETURN_FALSE;
 
@@ -789,9 +767,6 @@ PHP_FUNCTION(selinux_check_context)
 				  "s", &context, &length) == FAILURE)
 		return;
 
-	if (length == 0)
-		RETURN_FALSE;
-
 	if (security_check_context(context) < 0)
 		RETURN_FALSE;
 	RETURN_TRUE;
@@ -809,9 +784,6 @@ PHP_FUNCTION(selinux_canonicalize_context)
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
 				  "s", &context, &length) == FAILURE)
 		return;
-
-	if (length == 0)
-		RETURN_FALSE;
 
 	if (security_canonicalize_context(context, &canonicalized) < 0)
 		RETURN_FALSE;
@@ -920,8 +892,6 @@ PHP_FUNCTION(selinux_trans_to_raw_context)
 				  "s", &context, &length) == FAILURE)
 		return;
 
-	if (length == 0)
-		RETURN_FALSE;
 	if (selinux_trans_to_raw_context(context, &raw_context) < 0 || !raw_context)
 		RETURN_FALSE;
 	RETVAL_STRING(raw_context, 1);
@@ -941,8 +911,6 @@ PHP_FUNCTION(selinux_raw_to_trans_context)
 				  "s", &context, &length) == FAILURE)
 		return;
 
-	if (length == 0)
-		RETURN_FALSE;
 	if (selinux_raw_to_trans_context(context, &trans_context) < 0)
 		RETURN_FALSE;
 	RETVAL_STRING(trans_context, 1);
@@ -950,43 +918,7 @@ PHP_FUNCTION(selinux_raw_to_trans_context)
 }
 /* }}} */
 
-/* {{{ string selinux_matchpathcon(string path [, int mode
-                                               [, bool base_only
-                                               [, bool validate]]])
-   Returns the security context configured on the given path.
-*/
-PHP_FUNCTION(selinux_matchpathcon)
-{
-	security_context_t context;
-	char *path;
-	int length;
-	long mode = 0;
-	zend_bool baseonly = 0;
-	zend_bool validate = 0;
-	unsigned int flags = 0;
-
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s|lbb",
-				  &path, &length,
-				  &mode, &baseonly, &validate) == FAILURE)
-		return;
-	if (length == 0)
-		RETURN_FALSE;
-	if (baseonly)
-		flags |= MATCHPATHCON_BASEONLY;
-	if (validate)
-		flags |= MATCHPATHCON_VALIDATE;
-
-	set_matchpathcon_flags(flags);
-
-	mode &= S_IFMT;
-	if (matchpathcon(path, mode, &context) < 0)
-		RETURN_FALSE;
-	RETVAL_STRING(context, 1);
-	freecon(context);
-}
-/* }}} */
-
-/* {{{ proto string selinux_file_label_lookup(string path, int mode
+/* {{{ proto string selinux_file_label_lookup(string pathname, int mode
                                               [, bool validate
                                               [, bool baseonly
                                               [, string subset
@@ -994,9 +926,12 @@ PHP_FUNCTION(selinux_matchpathcon)
    Returns the expected security context for given pathname/mode */
 PHP_FUNCTION(selinux_file_label_lookup)
 {
-	char *path, *subset = NULL, *specfile = NULL;
-	int path_len, subset_len, specfile_len, mode;
-	zend_bool validate = 0, baseonly = 0;
+	char *pathname;
+	char *subset = NULL;
+	char *specfile = NULL;
+	zend_bool validate = 0;
+	zend_bool baseonly = 0;
+	int pathname_len, subset_len, specfile_len, mode;
 	security_context_t context;
 	struct selabel_handle *hnd;
 	struct selinux_opt opts[4] = {
@@ -1007,7 +942,7 @@ PHP_FUNCTION(selinux_file_label_lookup)
 	};
 
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "sl|bbss",
-				  &path, &path_len, &mode,
+				  &pathname, &pathname_len, &mode,
 				  &validate, &baseonly,
 				  &subset, &subset_len,
 				  &specfile, &specfile_len) == FAILURE)
@@ -1023,7 +958,7 @@ PHP_FUNCTION(selinux_file_label_lookup)
 	if (!hnd)
 		RETURN_FALSE;
 
-	if (selabel_lookup(hnd, &context, path, mode) < 0)
+	if (selabel_lookup(hnd, &context, pathname, mode) < 0)
 	{
 		selabel_close(hnd);
 		RETURN_FALSE;
@@ -1038,9 +973,10 @@ PHP_FUNCTION(selinux_file_label_lookup)
    Returns the expected security context for given device */
 PHP_FUNCTION(selinux_media_label_lookup)
 {
-	char *device, *specfile = NULL;
-	int device_len, specfile_len;
+	char *device;
+	char *specfile = NULL;
 	zend_bool validate = 0;
+	int device_len, specfile_len;
 	security_context_t context;
 	struct selabel_handle *hnd;
 	struct selinux_opt opts[2] = {
