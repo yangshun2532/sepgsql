@@ -1,0 +1,82 @@
+policy_module(sepostgresql-devel, 3.11)
+
+gen_require(`
+	class db_database all_db_database_perms;
+	class db_table all_db_table_perms;
+	class db_procedure all_db_procedure_perms;
+	class db_column all_db_column_perms;
+	class db_tuple all_db_tuple_perms;
+	class db_blob all_db_blob_perms;
+
+	attribute domain, home_type;
+	attribute sepgsql_client_type;
+	attribute sepgsql_unconfined_type;
+
+	attribute sepgsql_database_type;
+	attribute sepgsql_table_type;
+	attribute sepgsql_sysobj_table_type;
+	attribute sepgsql_procedure_type;
+	attribute sepgsql_blob_type;
+	attribute sepgsql_module_type;
+')
+
+#################################
+#
+# SE-PostgreSQL Declarations
+#
+
+## <desc>
+## <p>
+## Allow to generate auditallow logs
+## </p>
+## </desc>
+gen_tunable(sepgsql_enable_auditallow, false)
+
+## <desc>
+## <p>
+## Allow to generate auditdeny logs
+## </p>
+## </desc>
+gen_tunable(sepgsql_enable_auditdeny,  true)
+
+## <desc>
+## <p>
+## Allow widespread permissions for regression test
+## Don't set TRUE on operation phase
+## </p>
+## </desc>
+gen_tunable(sepgsql_regression_test_mode, false)
+
+########################################
+#
+# SE-PostgreSQL audit switch for debugging
+#
+tunable_policy(`sepgsql_enable_auditallow',`
+	auditallow domain sepgsql_database_type  : db_database *;
+	auditallow domain sepgsql_table_type     : db_table *;
+	auditallow domain sepgsql_table_type     : db_column *;
+	auditallow domain sepgsql_procedure_type : db_procedure *;
+	auditallow domain sepgsql_blob_type      : db_blob *;
+	auditallow domain sepgsql_module_type    : db_database { install_module };
+	auditallow sepgsql_database_type sepgsql_module_type : db_database { load_module };
+')
+
+tunable_policy(`! sepgsql_enable_auditdeny',`
+	dontaudit domain sepgsql_database_type   : db_database *;
+	dontaudit domain sepgsql_table_type      : db_table *;
+	dontaudit domain sepgsql_table_type      : db_column *;
+	dontaudit domain sepgsql_procedure_type  : db_procedure *;
+	dontaudit domain sepgsql_blob_type       : db_blob *;
+	dontaudit domain sepgsql_module_type     : db_database { install_module };
+	dontaudit sepgsql_database_type sepgsql_module_type : db_database { load_module };
+')
+
+########################################
+#
+# SE-PostgreSQL regression test mode switch
+#
+tunable_policy(`sepgsql_regression_test_mode',`
+	allow sepgsql_client_type       home_type : db_database { install_module };
+	allow sepgsql_unconfined_type   home_type : db_database { install_module };
+	allow sepgsql_database_type     home_type : db_database { load_module };
+')
