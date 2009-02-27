@@ -42,5 +42,11 @@ rm -rf $RPM_BUILD_ROOT
 %{php_extdir}/selinux.so
 
 %changelog
-* Tue Feb 24 2009  <kaigai@kaigai.gr.jp> - 0.1616-beta
+* Fri Feb 27 2009 KaiGai Kohei <kaigai@kaigai.gr.jp> - 0.1641-beta
+- selinux_compute_av() got understand object class ans access vector
+  described in human readable text.
+- add selinux_(file|media)_lookup()
+- remove deprecated matchpathcon() wrapper
+
+* Tue Feb 24 2009 KaiGai Kohei <kaigai@kaigai.gr.jp> - 0.1616-beta
 - Initial package
