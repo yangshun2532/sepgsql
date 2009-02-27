@@ -30,6 +30,7 @@
 #include <errno.h>
 
 #include <selinux/selinux.h>
+#include <selinux/label.h>
 
 /*
  * SELinux functions
@@ -93,9 +94,10 @@ zend_function_entry selinux_functions[] = {
 	PHP_FE(selinux_trans_to_raw_context,	NULL)
 	PHP_FE(selinux_raw_to_trans_context,	NULL)
 
-	/* matchpathcon */
-	PHP_FE(selinux_matchpathcon,		NULL)
-	PHP_FE(selinux_lsetfilecon_default,	NULL)
+	/* selabel wrappers */
+	PHP_FE(selinux_file_label_lookup,	NULL)
+	PHP_FE(selinux_media_label_lookup,	NULL)
+	//PHP_FE(selinux_x_label_lookup,	NULL)
 
 	/* configuration files */
 	PHP_FE(selinux_getenforcemode,		NULL)
@@ -115,7 +117,7 @@ zend_module_entry selinux_module_entry = {
 	NULL,			/* module_startup_func */
 	NULL,			/* module_shutdown_func */
 	NULL,			/* request_startup_func */
-	PHP_RSHUTDOWN(selinux),	/* request_shutdown_func */
+	NULL,			/* request_shutdown_func */
 	NULL,			/* info_func */
 	NO_VERSION_YET,
 	STANDARD_MODULE_PROPERTIES,
@@ -124,16 +126,6 @@ zend_module_entry selinux_module_entry = {
 #ifdef COMPILE_DL_SELINUX
 ZEND_GET_MODULE(selinux)
 #endif
-
-/*
- * SELinux module cleanups
- */
-PHP_RSHUTDOWN_FUNCTION(selinux)
-{
-	matchpathcon_fini();
-
-	return SUCCESS;
-}
 
 /* {{{ proto bool selinux_is_enabled(void)
    Returns 'true' if SELinux is working on the host. */
@@ -638,7 +630,8 @@ PHP_FUNCTION(selinux_compute_av)
 
 	for (perm = 1; perm; perm <<= 1)
 	{
-		char *perm_name = security_av_perm_to_string(tclass, perm);
+		char *perm_name
+			= (char *) security_av_perm_to_string(tclass, perm);
 
 		if (!perm_name)
 			continue;
@@ -993,24 +986,91 @@ PHP_FUNCTION(selinux_matchpathcon)
 }
 /* }}} */
 
-/* {{{ proto bool selinux_lsetfilecon_default(string filename)
-   Sets the file context on to the system defaults. */
-PHP_FUNCTION(selinux_lsetfilecon_default)
+/* {{{ proto string selinux_file_label_lookup(string path, int mode
+                                              [, bool validate
+                                              [, bool baseonly
+                                              [, string subset
+                                              [, string specfile ]]]])
+   Returns the expected security context for given pathname/mode */
+PHP_FUNCTION(selinux_file_label_lookup)
 {
-	char *filename;
-	int length;
+	char *path, *subset = NULL, *specfile = NULL;
+	int path_len, subset_len, specfile_len, mode;
+	zend_bool validate = 0, baseonly = 0;
+	security_context_t context;
+	struct selabel_handle *hnd;
+	struct selinux_opt opts[4] = {
+		{ SELABEL_OPT_VALIDATE, NULL },
+		{ SELABEL_OPT_BASEONLY, NULL },
+		{ SELABEL_OPT_SUBSET, NULL },
+		{ SELABEL_OPT_PATH, NULL }
+	};
 
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s",
-				  &filename, &length) == FAILURE)
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "sl|bbss",
+				  &path, &path_len, &mode,
+				  &validate, &baseonly,
+				  &subset, &subset_len,
+				  &specfile, &specfile_len) == FAILURE)
 		return;
 
-	if (length == 0)
+	/* set options */
+	opts[0].value = (validate ? (char *) 1 : (char *) 0);
+	opts[1].value = (baseonly ? (char *) 1 : (char *) 0);
+	opts[2].value = subset;
+	opts[3].value = specfile;
+
+	hnd = selabel_open(SELABEL_CTX_FILE, opts, 4);
+	if (!hnd)
 		RETURN_FALSE;
-	if (selinux_lsetfilecon_default(filename) < 0)
+
+	if (selabel_lookup(hnd, &context, path, mode) < 0)
+	{
+		selabel_close(hnd);
 		RETURN_FALSE;
-	RETURN_TRUE;
+	}
+	selabel_close(hnd);
+	RETVAL_STRING(context, 1);
+	freecon(context);
 }
-/* }}} */
+
+/* {{{ proto string selinux_media_label_lookup(string device_name
+                                               [, bool validate [, string specfile]])
+   Returns the expected security context for given device */
+PHP_FUNCTION(selinux_media_label_lookup)
+{
+	char *device, *specfile = NULL;
+	int device_len, specfile_len;
+	zend_bool validate = 0;
+	security_context_t context;
+	struct selabel_handle *hnd;
+	struct selinux_opt opts[2] = {
+		{ SELABEL_OPT_VALIDATE, NULL },
+		{ SELABEL_OPT_PATH, NULL }
+	};
+
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s|bs",
+				  &device, &device_len,
+				  &validate,
+				  &specfile, &specfile_len) == FAILURE)
+		return;
+
+	/* set option */
+	opts[0].value = (validate ? (char *) 1 : (char *) 0);
+	opts[1].value = specfile;
+
+	hnd = selabel_open(SELABEL_CTX_MEDIA, opts, 2);
+	if (!hnd)
+		RETURN_FALSE;
+
+	if (selabel_lookup(hnd, &context, device, 0) < 0)
+	{
+		selabel_close(hnd);
+		RETURN_FALSE;
+	}
+	selabel_close(hnd);
+	RETVAL_STRING(context, 1);
+	freecon(context);
+}
 
 /* {{{ proto string selinux_getenforcemode(void)
    Returns the initial state on the system, configured in /etc/selinux/config. */
@@ -1057,7 +1117,7 @@ PHP_FUNCTION(selinux_policy_root)
 	if (ZEND_NUM_ARGS() != 0)
 		ZEND_WRONG_PARAM_COUNT();
 
-	root = selinux_policy_root();
+	root = (char *) selinux_policy_root();
 	if (!root)
 		RETURN_FALSE;
 	RETVAL_STRING(root, 1);

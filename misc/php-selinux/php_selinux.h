@@ -87,9 +87,11 @@ PHP_FUNCTION(selinux_trans_to_raw_context);
 PHP_FUNCTION(selinux_raw_to_trans_context);
 
 /*
- * matchpathcon
+ * selabel wrappers
  */
-PHP_FUNCTION(selinux_matchpathcon);
+PHP_FUNCTION(selinux_file_label_lookup);
+PHP_FUNCTION(selinux_media_label_lookup);
+//PHP_FUNCTION(selinux_x_label_lookup);
 
 /*
  * configuration files
