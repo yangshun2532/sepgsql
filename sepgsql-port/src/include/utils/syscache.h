@@ -64,18 +64,20 @@
 #define RELNAMENSP			33
 #define RELOID				34
 #define RULERELNAME			35
-#define STATRELATT			36
-#define TSCONFIGMAP			37
-#define TSCONFIGNAMENSP		38
-#define TSCONFIGOID			39
-#define TSDICTNAMENSP		40
-#define TSDICTOID			41
-#define TSPARSERNAMENSP		42
-#define TSPARSEROID			43
-#define TSTEMPLATENAMENSP	44
-#define TSTEMPLATEOID		45
-#define TYPENAMENSP			46
-#define TYPEOID				47
+#define SECURITYOID			36
+#define SECURITYLABEL		37
+#define STATRELATT			38
+#define TSCONFIGMAP			39
+#define TSCONFIGNAMENSP		40
+#define TSCONFIGOID			41
+#define TSDICTNAMENSP		42
+#define TSDICTOID			43
+#define TSPARSERNAMENSP		44
+#define TSPARSEROID			45
+#define TSTEMPLATENAMENSP	46
+#define TSTEMPLATEOID		47
+#define TYPENAMENSP			48
+#define TYPEOID				49
 
 extern void InitCatalogCache(void);
 extern void InitCatalogCachePhase2(void);
@@ -83,6 +85,8 @@ extern void InitCatalogCachePhase2(void);
 extern HeapTuple SearchSysCache(int cacheId,
 			   Datum key1, Datum key2, Datum key3, Datum key4);
 extern void ReleaseSysCache(HeapTuple tuple);
+
+extern void InsertSysCache(Oid relid, HeapTuple tuple);
 
 /* convenience routines */
 extern HeapTuple SearchSysCacheCopy(int cacheId,

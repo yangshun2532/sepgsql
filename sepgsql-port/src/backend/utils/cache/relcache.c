@@ -46,6 +46,7 @@
 #include "catalog/pg_opclass.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_rewrite.h"
+#include "catalog/pg_security.h"
 #include "catalog/pg_type.h"
 #include "commands/trigger.h"
 #include "miscadmin.h"
@@ -324,7 +325,13 @@ AllocateRelationDesc(Relation relation, Form_pg_class relp)
 	/* initialize relation tuple form */
 	relation->rd_rel = relationForm;
 
-	/* and allocate attribute tuple form storage */
+	/*
+	 * and allocate attribute tuple form storage
+	 *
+	 * Please note that relation->rd_att->tdhasrowacl and tdhasseclabel
+	 * have to be fixed up correctly at RelationBuildTupleDesc(), because
+	 * security module may need reloptions info to make its decision.
+	 */
 	relation->rd_att = CreateTemplateTupleDesc(relationForm->relnatts,
 											   relationForm->relhasoids);
 	/* which we mark as a reference-counted tupdesc */
@@ -876,6 +883,10 @@ RelationBuildDesc(Oid targetRelId, Relation oldrelation)
 
 	/* extract reloptions if any */
 	RelationParseRelOptions(relation, pg_class_tuple);
+
+	/* fixup relation->rd_att->tdhasseclabel */
+	relation->rd_att->tdhasseclabel
+		= securityTupleDescHasSecLabel(relation);
 
 	/*
 	 * initialize the relation lock manager information
@@ -1460,6 +1471,12 @@ formrdesc(const char *relationName, Oid relationReltype,
 	 */
 	RelationGetRelid(relation) = relation->rd_att->attrs[0]->attrelid;
 	relation->rd_rel->relfilenode = RelationGetRelid(relation);
+
+	/*
+	 * Fixup relation->rd_att->tdhasrowacl and tdhasseclabel
+	 */
+	RelationGetDescr(relation)->tdhasseclabel
+		= securityTupleDescHasSecLabel(relation);
 
 	/*
 	 * initialize the relation lock manager information
@@ -2687,6 +2704,13 @@ BuildHardcodedDescriptor(int natts, Form_pg_attribute attrs, bool hasoids)
 
 	oldcxt = MemoryContextSwitchTo(CacheMemoryContext);
 
+	/*
+	 * NOTE: we assume the returned TupleDesc is only used for
+	 * references to toast'ed data, and it is not delivered to
+	 * heap_form_tuple(), so TupleDesc->tdhasrowacl and tdhasseclabel
+	 * don't give us any effect.
+	 * We omit to invoke securityTupleDescHasSecLabel() here.
+	 */
 	result = CreateTemplateTupleDesc(natts, hasoids);
 	result->tdtypeid = RECORDOID;		/* not right, but we don't care */
 	result->tdtypmod = -1;
@@ -3445,6 +3469,12 @@ load_relcache_init_file(void)
 		{
 			rel->rd_options = NULL;
 		}
+
+		/*
+		 * fixup rel->rd_att->tdhassecurity
+		 */
+		rel->rd_att->tdhasseclabel
+			= securityTupleDescHasSecLabel(rel);
 
 		/* mark not-null status */
 		if (has_not_null)

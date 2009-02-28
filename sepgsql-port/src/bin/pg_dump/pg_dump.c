@@ -118,6 +118,8 @@ static int	g_numNamespaces;
 /* flag to turn on/off dollar quoting */
 static int	disable_dollar_quoting = 0;
 
+/* flag to turn on/off security context support */
+static int	enable_selinux = 0;
 
 static void help(const char *progname);
 static void expand_schema_name_patterns(SimpleStringList *patterns,
@@ -267,6 +269,7 @@ main(int argc, char **argv)
 		{"disable-dollar-quoting", no_argument, &disable_dollar_quoting, 1},
 		{"disable-triggers", no_argument, &disable_triggers, 1},
 		{"use-set-session-authorization", no_argument, &use_setsessauth, 1},
+		{"security-context", no_argument, &enable_selinux, 1},
 
 		{NULL, 0, NULL, 0}
 	};
@@ -419,6 +422,8 @@ main(int argc, char **argv)
 					disable_triggers = 1;
 				else if (strcmp(optarg, "use-set-session-authorization") == 0)
 					use_setsessauth = 1;
+				else if (strcmp(optarg, "security-context") == 0)
+					enable_selinux = 1;
 				else
 				{
 					fprintf(stderr,
@@ -548,6 +553,24 @@ main(int argc, char **argv)
 
 	std_strings = PQparameterStatus(g_conn, "standard_conforming_strings");
 	g_fout->std_strings = (std_strings && strcmp(std_strings, "on") == 0);
+
+	/* check availability of SE-PostgreSQL */
+	if (enable_selinux > 0)
+	{
+		const char *sepostgresql
+			= PQparameterStatus(g_conn, "sepostgresql");
+
+		if (!sepostgresql)
+		{
+			write_msg(NULL, "could not obtain server status.");
+			exit(1);
+		}
+		if (strcmp(sepostgresql, "on") != 0)
+		{
+			write_msg(NULL, "SE-PostgreSQL is not available now.");
+			exit(1);
+		}
+	}
 
 	/* Set the datestyle to ISO to ensure the dump's portability */
 	do_sql_command(g_conn, "SET DATESTYLE = ISO");
@@ -771,6 +794,7 @@ help(const char *progname)
 	printf(_("  --use-set-session-authorization\n"
 			 "                              use SESSION AUTHORIZATION commands instead of\n"
 	"                              ALTER OWNER commands to set ownership\n"));
+	printf(_("  --security-context          enable to dump security context of SE-PostgreSQL\n"));
 
 	printf(_("\nConnection options:\n"));
 	printf(_("  -h, --host=HOSTNAME      database server host or socket directory\n"));
@@ -1171,7 +1195,8 @@ dumpTableData_insert(Archive *fout, void *dcontext)
 	if (fout->remoteVersion >= 70100)
 	{
 		appendPQExpBuffer(q, "DECLARE _pg_dump_cursor CURSOR FOR "
-						  "SELECT * FROM ONLY %s",
+						  "SELECT %s * FROM ONLY %s",
+						  (enable_selinux > 0 ? "security_context," : ""),
 						  fmtQualifiedId(tbinfo->dobj.namespace->dobj.name,
 										 classname));
 	}
@@ -1785,11 +1810,29 @@ dumpBlobComments(Archive *AH, void *arg)
 			Oid			blobOid;
 			char	   *comment;
 
+			blobOid = atooid(PQgetvalue(res, i, 0));
+			if (enable_selinux > 0)
+			{
+				char		query[256];
+				PGresult   *sres;
+
+				snprintf(query, sizeof(query),
+						 "SELECT lo_get_security(%u)", blobOid);
+				sres = PQexec(g_conn, query);
+				if (sres)
+				{
+					if (PQresultStatus(res) == PGRES_TUPLES_OK
+						&& PQntuples(res) == 1)
+						archprintf(AH, "SELECT lo_set_security(%u, '%s');\n",
+								   blobOid, PQgetvalue(sres, 0, 0));
+					PQclear(sres);
+				}
+			}
+
 			/* ignore blobs without comments */
 			if (PQgetisnull(res, i, 1))
 				continue;
 
-			blobOid = atooid(PQgetvalue(res, i, 0));
 			comment = PQgetvalue(res, i, 1);
 
 			printfPQExpBuffer(commentcmd, "COMMENT ON LARGE OBJECT %u IS ",
@@ -2887,6 +2930,7 @@ getTables(int *numTables)
 	int			i_owning_col;
 	int			i_reltablespace;
 	int			i_reloptions;
+	int			i_relseclabel;
 
 	/* Make sure we are in proper schema */
 	selectSourceSchema("pg_catalog");
@@ -2926,7 +2970,8 @@ getTables(int *numTables)
 						  "d.refobjid as owning_tab, "
 						  "d.refobjsubid as owning_col, "
 						  "(SELECT spcname FROM pg_tablespace t WHERE t.oid = c.reltablespace) AS reltablespace, "
-						  "array_to_string(c.reloptions, ', ') as reloptions "
+						  "array_to_string(c.reloptions, ', ') as reloptions, "
+						  "%s as security_label "
 						  "from pg_class c "
 						  "left join pg_depend d on "
 						  "(c.relkind = '%c' and "
@@ -2936,6 +2981,7 @@ getTables(int *numTables)
 						  "where relkind in ('%c', '%c', '%c', '%c') "
 						  "order by c.oid",
 						  username_subquery,
+						  (enable_selinux > 0 ? "c.security_context" : "NULL"),
 						  RELKIND_SEQUENCE,
 						  RELKIND_RELATION, RELKIND_SEQUENCE,
 						  RELKIND_VIEW, RELKIND_COMPOSITE_TYPE);
@@ -2955,7 +3001,8 @@ getTables(int *numTables)
 						  "d.refobjid as owning_tab, "
 						  "d.refobjsubid as owning_col, "
 						  "(SELECT spcname FROM pg_tablespace t WHERE t.oid = c.reltablespace) AS reltablespace, "
-						  "NULL as reloptions "
+						  "NULL as reloptions, "
+						  "NULL as security_label "
 						  "from pg_class c "
 						  "left join pg_depend d on "
 						  "(c.relkind = '%c' and "
@@ -2984,7 +3031,8 @@ getTables(int *numTables)
 						  "d.refobjid as owning_tab, "
 						  "d.refobjsubid as owning_col, "
 						  "NULL as reltablespace, "
-						  "NULL as reloptions "
+						  "NULL as reloptions, "
+						  "NULL as security_label, "
 						  "from pg_class c "
 						  "left join pg_depend d on "
 						  "(c.relkind = '%c' and "
@@ -3009,7 +3057,8 @@ getTables(int *numTables)
 						  "NULL::oid as owning_tab, "
 						  "NULL::int4 as owning_col, "
 						  "NULL as reltablespace, "
-						  "NULL as reloptions "
+						  "NULL as reloptions, "
+						  "NULL as security_label, "
 						  "from pg_class "
 						  "where relkind in ('%c', '%c', '%c') "
 						  "order by oid",
@@ -3029,7 +3078,8 @@ getTables(int *numTables)
 						  "NULL::oid as owning_tab, "
 						  "NULL::int4 as owning_col, "
 						  "NULL as reltablespace, "
-						  "NULL as reloptions "
+						  "NULL as reloptions, "
+						  "NULL as security_label "
 						  "from pg_class "
 						  "where relkind in ('%c', '%c', '%c') "
 						  "order by oid",
@@ -3059,7 +3109,8 @@ getTables(int *numTables)
 						  "NULL::oid as owning_tab, "
 						  "NULL::int4 as owning_col, "
 						  "NULL as reltablespace, "
-						  "NULL as reloptions "
+						  "NULL as reloptions, "
+						  "NULL as security_label "
 						  "from pg_class c "
 						  "where relkind in ('%c', '%c') "
 						  "order by oid",
@@ -3102,6 +3153,7 @@ getTables(int *numTables)
 	i_owning_col = PQfnumber(res, "owning_col");
 	i_reltablespace = PQfnumber(res, "reltablespace");
 	i_reloptions = PQfnumber(res, "reloptions");
+	i_relseclabel = PQfnumber(res, "security_label");
 
 	for (i = 0; i < ntups; i++)
 	{
@@ -3132,6 +3184,7 @@ getTables(int *numTables)
 		}
 		tblinfo[i].reltablespace = strdup(PQgetvalue(res, i, i_reltablespace));
 		tblinfo[i].reloptions = strdup(PQgetvalue(res, i, i_reloptions));
+		tblinfo[i].relseclabel = strdup(PQgetvalue(res, i, i_relseclabel));
 
 		/* other fields were zeroed above */
 
@@ -4320,6 +4373,7 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 	int			i_atthasdef;
 	int			i_attisdropped;
 	int			i_attislocal;
+	int			i_attseclabel;
 	PGresult   *res;
 	int			ntups;
 	bool		hasdefaults;
@@ -4362,12 +4416,14 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 			/* need left join here to not fail on dropped columns ... */
 			appendPQExpBuffer(q, "SELECT a.attnum, a.attname, a.atttypmod, a.attstattarget, a.attstorage, t.typstorage, "
 				  "a.attnotnull, a.atthasdef, a.attisdropped, a.attislocal, "
-				   "pg_catalog.format_type(t.oid,a.atttypmod) as atttypname "
+				   "pg_catalog.format_type(t.oid,a.atttypmod) as atttypname, "
+							  "%s as security_label "
 			 "from pg_catalog.pg_attribute a left join pg_catalog.pg_type t "
 							  "on a.atttypid = t.oid "
 							  "where a.attrelid = '%u'::pg_catalog.oid "
 							  "and a.attnum > 0::pg_catalog.int2 "
 							  "order by a.attrelid, a.attnum",
+							  (enable_selinux > 0 ? "a.security_context" : "NULL"),
 							  tbinfo->dobj.catId.oid);
 		}
 		else if (g_fout->remoteVersion >= 70100)
@@ -4379,7 +4435,8 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 			 */
 			appendPQExpBuffer(q, "SELECT a.attnum, a.attname, a.atttypmod, -1 as attstattarget, a.attstorage, t.typstorage, "
 							  "a.attnotnull, a.atthasdef, false as attisdropped, false as attislocal, "
-							  "format_type(t.oid,a.atttypmod) as atttypname "
+							  "format_type(t.oid,a.atttypmod) as atttypname, "
+							  "NULL as security_label "
 							  "from pg_attribute a left join pg_type t "
 							  "on a.atttypid = t.oid "
 							  "where a.attrelid = '%u'::oid "
@@ -4392,7 +4449,8 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 			/* format_type not available before 7.1 */
 			appendPQExpBuffer(q, "SELECT attnum, attname, atttypmod, -1 as attstattarget, attstorage, attstorage as typstorage, "
 							  "attnotnull, atthasdef, false as attisdropped, false as attislocal, "
-							  "(select typname from pg_type where oid = atttypid) as atttypname "
+							  "(select typname from pg_type where oid = atttypid) as atttypname, "
+							  "NULL as security_label "
 							  "from pg_attribute a "
 							  "where attrelid = '%u'::oid "
 							  "and attnum > 0::int2 "
@@ -4416,6 +4474,7 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 		i_atthasdef = PQfnumber(res, "atthasdef");
 		i_attisdropped = PQfnumber(res, "attisdropped");
 		i_attislocal = PQfnumber(res, "attislocal");
+		i_attseclabel = PQfnumber(res, "attseclabel");
 
 		tbinfo->numatts = ntups;
 		tbinfo->attnames = (char **) malloc(ntups * sizeof(char *));
@@ -4426,6 +4485,7 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 		tbinfo->typstorage = (char *) malloc(ntups * sizeof(char));
 		tbinfo->attisdropped = (bool *) malloc(ntups * sizeof(bool));
 		tbinfo->attislocal = (bool *) malloc(ntups * sizeof(bool));
+		tbinfo->attseclabel = (char **) malloc(ntups * sizeof(char *));
 		tbinfo->notnull = (bool *) malloc(ntups * sizeof(bool));
 		tbinfo->attrdefs = (AttrDefInfo **) malloc(ntups * sizeof(AttrDefInfo *));
 		tbinfo->inhAttrs = (bool *) malloc(ntups * sizeof(bool));
@@ -4449,6 +4509,7 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 			tbinfo->typstorage[j] = *(PQgetvalue(res, j, i_typstorage));
 			tbinfo->attisdropped[j] = (PQgetvalue(res, j, i_attisdropped)[0] == 't');
 			tbinfo->attislocal[j] = (PQgetvalue(res, j, i_attislocal)[0] == 't');
+			tbinfo->attseclabel[j] = strdup(PQgetvalue(res, j, i_attseclabel));
 			tbinfo->notnull[j] = (PQgetvalue(res, j, i_attnotnull)[0] == 't');
 			tbinfo->attrdefs[j] = NULL; /* fix below */
 			if (PQgetvalue(res, j, i_atthasdef)[0] == 't')
@@ -6430,6 +6491,7 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 	char	   *procost;
 	char	   *prorows;
 	char	   *lanname;
+	char	   *proseclabel;
 	char	   *rettypename;
 	int			nallargs;
 	char	  **allargtypes = NULL;
@@ -6459,9 +6521,11 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 						  "proallargtypes, proargmodes, proargnames, "
 						  "provolatile, proisstrict, prosecdef, "
 						  "proconfig, procost, prorows, "
-						  "(SELECT lanname FROM pg_catalog.pg_language WHERE oid = prolang) as lanname "
+						  "(SELECT lanname FROM pg_catalog.pg_language WHERE oid = prolang) as lanname, "
+						  "%s as security_label "
 						  "FROM pg_catalog.pg_proc "
 						  "WHERE oid = '%u'::pg_catalog.oid",
+						  (enable_selinux > 0 ? "security_context" : "NULL"),
 						  finfo->dobj.catId.oid);
 	}
 	else if (g_fout->remoteVersion >= 80100)
@@ -6471,7 +6535,8 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 						  "proallargtypes, proargmodes, proargnames, "
 						  "provolatile, proisstrict, prosecdef, "
 						  "null as proconfig, 0 as procost, 0 as prorows, "
-						  "(SELECT lanname FROM pg_catalog.pg_language WHERE oid = prolang) as lanname "
+						  "(SELECT lanname FROM pg_catalog.pg_language WHERE oid = prolang) as lanname, "
+						  "NULL as security_label "
 						  "FROM pg_catalog.pg_proc "
 						  "WHERE oid = '%u'::pg_catalog.oid",
 						  finfo->dobj.catId.oid);
@@ -6485,7 +6550,8 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 						  "proargnames, "
 						  "provolatile, proisstrict, prosecdef, "
 						  "null as proconfig, 0 as procost, 0 as prorows, "
-						  "(SELECT lanname FROM pg_catalog.pg_language WHERE oid = prolang) as lanname "
+						  "(SELECT lanname FROM pg_catalog.pg_language WHERE oid = prolang) as lanname, "
+						  "NULL as security_label "
 						  "FROM pg_catalog.pg_proc "
 						  "WHERE oid = '%u'::pg_catalog.oid",
 						  finfo->dobj.catId.oid);
@@ -6499,7 +6565,8 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 						  "null as proargnames, "
 						  "provolatile, proisstrict, prosecdef, "
 						  "null as proconfig, 0 as procost, 0 as prorows, "
-						  "(SELECT lanname FROM pg_catalog.pg_language WHERE oid = prolang) as lanname "
+						  "(SELECT lanname FROM pg_catalog.pg_language WHERE oid = prolang) as lanname, "
+						  "NULL as security_label "
 						  "FROM pg_catalog.pg_proc "
 						  "WHERE oid = '%u'::pg_catalog.oid",
 						  finfo->dobj.catId.oid);
@@ -6515,7 +6582,8 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 						  "proisstrict, "
 						  "'f'::boolean as prosecdef, "
 						  "null as proconfig, 0 as procost, 0 as prorows, "
-		  "(SELECT lanname FROM pg_language WHERE oid = prolang) as lanname "
+		  "(SELECT lanname FROM pg_language WHERE oid = prolang) as lanname, "
+						  "NULL as security_label "
 						  "FROM pg_proc "
 						  "WHERE oid = '%u'::oid",
 						  finfo->dobj.catId.oid);
@@ -6531,7 +6599,8 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 						  "'f'::boolean as proisstrict, "
 						  "'f'::boolean as prosecdef, "
 						  "null as proconfig, 0 as procost, 0 as prorows, "
-		  "(SELECT lanname FROM pg_language WHERE oid = prolang) as lanname "
+		  "(SELECT lanname FROM pg_language WHERE oid = prolang) as lanname, "
+						  "NULL as security_label "
 						  "FROM pg_proc "
 						  "WHERE oid = '%u'::oid",
 						  finfo->dobj.catId.oid);
@@ -6562,6 +6631,7 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 	procost = PQgetvalue(res, 0, PQfnumber(res, "procost"));
 	prorows = PQgetvalue(res, 0, PQfnumber(res, "prorows"));
 	lanname = PQgetvalue(res, 0, PQfnumber(res, "lanname"));
+	proseclabel = PQgetvalue(res, 0, PQfnumber(res, "security_label"));
 
 	/*
 	 * See backend/commands/define.c for details of how the 'AS' clause is
@@ -6698,6 +6768,9 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 
 	if (prosecdef[0] == 't')
 		appendPQExpBuffer(q, " SECURITY DEFINER");
+
+	if (proseclabel[0] != '\0')
+		appendPQExpBuffer(q, " SECURITY_CONTEXT = '%s'", proseclabel);
 
 	/*
 	 * COST and ROWS are emitted only if present and not default, so as not to
@@ -8780,6 +8853,10 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 				if (tbinfo->notnull[j] && !tbinfo->inhNotNull[j])
 					appendPQExpBuffer(q, " NOT NULL");
 
+				if (tbinfo->attseclabel[j] != '\0' &&
+					strcmp(tbinfo->attseclabel[j], tbinfo->relseclabel) != 0)
+					appendPQExpBuffer(q, " SECURITY_CONTEXT = '%s'", tbinfo->attseclabel[j]);
+
 				actual_atts++;
 			}
 		}
@@ -8826,6 +8903,9 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 
 		if (tbinfo->reloptions && strlen(tbinfo->reloptions) > 0)
 			appendPQExpBuffer(q, "\nWITH (%s)", tbinfo->reloptions);
+
+		if (tbinfo->relseclabel[0] != '\0')
+			appendPQExpBuffer(q, " SECURITY_CONTEXT = '%s'", tbinfo->relseclabel);
 
 		appendPQExpBuffer(q, ";\n");
 
@@ -10244,6 +10324,13 @@ fmtCopyColumnList(const TableInfo *ti)
 
 	appendPQExpBuffer(q, "(");
 	needComma = false;
+
+	if (enable_selinux > 0)
+	{
+		appendPQExpBuffer(q, "%s", "security_context");
+		needComma = true;
+	}
+
 	for (i = 0; i < numatts; i++)
 	{
 		if (attisdropped[i])

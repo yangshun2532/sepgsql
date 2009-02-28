@@ -40,6 +40,7 @@
 #include "miscadmin.h"
 #include "pgstat.h"
 #include "postmaster/bgwriter.h"
+#include "security/sepgsql.h"
 #include "storage/freespace.h"
 #include "storage/ipc.h"
 #include "storage/procarray.h"
@@ -100,6 +101,7 @@ createdb(const CreatedbStmt *stmt)
 	DefElem    *dtemplate = NULL;
 	DefElem    *dencoding = NULL;
 	DefElem    *dconnlimit = NULL;
+	DefElem	   *dselabel = NULL;
 	char	   *dbname = stmt->dbname;
 	char	   *dbowner = NULL;
 	const char *dbtemplate = NULL;
@@ -159,6 +161,14 @@ createdb(const CreatedbStmt *stmt)
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 					 errmsg("LOCATION is not supported anymore"),
 					 errhint("Consider using tablespaces instead.")));
+		}
+		else if (strcmp(defel->defname, "security_context") == 0)
+		{
+			if (dselabel)
+				ereport(ERROR,
+						(errcode(ERRCODE_SYNTAX_ERROR),
+						 errmsg("conflicting or redundant options")));
+			dselabel = defel;
 		}
 		else
 			elog(ERROR, "option \"%s\" not recognized",
@@ -433,7 +443,11 @@ createdb(const CreatedbStmt *stmt)
 						   new_record, new_record_nulls);
 
 	HeapTupleSetOid(tuple, dboid);
-
+	if (dselabel)
+	{
+		Oid		secid = sepgsqlInputGivenSecLabel(dselabel);
+		HeapTupleSetSecLabel(tuple, secid);
+	}
 	simple_heap_insert(pg_database_rel, tuple);
 
 	/* Update indexes */
@@ -858,6 +872,7 @@ AlterDatabase(AlterDatabaseStmt *stmt)
 	ListCell   *option;
 	int			connlimit = -1;
 	DefElem    *dconnlimit = NULL;
+	DefElem	   *dselabel = NULL;
 	Datum		new_record[Natts_pg_database];
 	char		new_record_nulls[Natts_pg_database];
 	char		new_record_repl[Natts_pg_database];
@@ -874,6 +889,14 @@ AlterDatabase(AlterDatabaseStmt *stmt)
 						(errcode(ERRCODE_SYNTAX_ERROR),
 						 errmsg("conflicting or redundant options")));
 			dconnlimit = defel;
+		}
+		else if (strcmp(defel->defname, "security_context") == 0)
+		{
+			if (dselabel)
+				ereport(ERROR,
+						(errcode(ERRCODE_SYNTAX_ERROR),
+						 errmsg("conflicting or redundant options")));
+			dselabel = defel;
 		}
 		else
 			elog(ERROR, "option \"%s\" not recognized",
@@ -920,6 +943,11 @@ AlterDatabase(AlterDatabaseStmt *stmt)
 
 	newtuple = heap_modifytuple(tuple, RelationGetDescr(rel), new_record,
 								new_record_nulls, new_record_repl);
+	if (dselabel)
+	{
+		Oid		secid = sepgsqlInputGivenSecLabel(dselabel);
+		HeapTupleSetSecLabel(newtuple, secid);
+	}
 	simple_heap_update(rel, &tuple->t_self, newtuple);
 
 	/* Update indexes */

@@ -24,6 +24,7 @@
 #include "rewrite/rewriteDefine.h"
 #include "rewrite/rewriteHandler.h"
 #include "rewrite/rewriteManip.h"
+#include "security/sepgsql.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
 #include "commands/trigger.h"
@@ -1918,6 +1919,11 @@ QueryRewrite(Query *parsetree)
 
 	if (!foundOriginalQuery && lastInstead != NULL)
 		lastInstead->canSetTag = true;
+
+	/*
+	 * make Query->selinuxItems
+	 */
+	sepgsqlPostQueryRewrite(results);
 
 	return results;
 }

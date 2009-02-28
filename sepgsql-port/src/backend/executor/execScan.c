@@ -20,6 +20,7 @@
 
 #include "executor/executor.h"
 #include "miscadmin.h"
+#include "security/rowlevel.h"
 #include "utils/memutils.h"
 
 
@@ -53,6 +54,7 @@ ExecScan(ScanState *node,
 	ProjectionInfo *projInfo;
 	ExprDoneCond isDone;
 	TupleTableSlot *resultSlot;
+	Scan	   *scan = (Scan *)node->ps.plan;
 
 	/*
 	 * Fetch data from node
@@ -64,7 +66,7 @@ ExecScan(ScanState *node,
 	 * If we have neither a qual to check nor a projection to do, just skip
 	 * all the overhead and return the raw scan tuple.
 	 */
-	if (!qual && !projInfo)
+	if (!qual && !projInfo && !scan->tuplePerms)
 		return (*accessMtd) (node);
 
 	/*
@@ -128,8 +130,16 @@ ExecScan(ScanState *node,
 		 * when the qual is nil ... saves only a few cycles, but they add up
 		 * ...
 		 */
-		if (!qual || ExecQual(qual, econtext, false))
+		if (rowlvExecScan(scan, node->ss_currentRelation, slot, false)
+			&& (!qual || ExecQual(qual, econtext, false)))
 		{
+			/*
+			 * NOTE: The purpose of rowlvExecScan() with abort = true is
+			 * to ensure FK check works correctly. See also the comments
+			 * at src/backend/security/rowlevel.c
+			 */
+			rowlvExecScan(scan, node->ss_currentRelation, slot, true);
+
 			/*
 			 * Found a satisfactory scan tuple.
 			 */
@@ -197,6 +207,7 @@ tlist_matches_tupdesc(PlanState *ps, List *tlist, Index varno, TupleDesc tupdesc
 	int			numattrs = tupdesc->natts;
 	int			attrno;
 	bool		hasoid;
+	bool		hasseclabel;
 	ListCell   *tlist_item = list_head(tlist);
 
 	/* Check the tlist attributes */
@@ -240,11 +251,16 @@ tlist_matches_tupdesc(PlanState *ps, List *tlist, Index varno, TupleDesc tupdesc
 		return false;			/* tlist too long */
 
 	/*
-	 * If the plan context requires a particular hasoid setting, then that has
+	 * If the plan context requires a particular hasoid, hasseclabel
+	 * setting, then that has
 	 * to match, too.
 	 */
 	if (ExecContextForcesOids(ps, &hasoid) &&
 		hasoid != tupdesc->tdhasoid)
+		return false;
+
+	if (ExecContextForcesSecLabel(ps, &hasseclabel) &&
+		hasseclabel != tupdesc->tdhasseclabel)
 		return false;
 
 	return true;

@@ -34,6 +34,7 @@
 #include "commands/trigger.h"
 #include "commands/vacuum.h"
 #include "miscadmin.h"
+#include "security/sepgsql.h"
 #include "storage/procarray.h"
 #include "utils/acl.h"
 #include "utils/fmgroids.h"
@@ -666,7 +667,8 @@ make_new_heap(Oid OIDOldHeap, const char *NewName, Oid NewTableSpace)
 										  0,
 										  ONCOMMIT_NOOP,
 										  reloptions,
-										  allowSystemTableMods);
+										  allowSystemTableMods,
+										  NIL);
 
 	ReleaseSysCache(tuple);
 
@@ -856,6 +858,9 @@ copy_heap_data(Oid OIDNewHeap, Oid OIDOldHeap, Oid OIDOldIndex)
 		/* Preserve OID, if any */
 		if (NewHeap->rd_rel->relhasoids)
 			HeapTupleSetOid(copiedTuple, HeapTupleGetOid(tuple));
+		/* Preserve SecLabel, if any */
+		if (HeapTupleHasSecLabel(copiedTuple))
+			HeapTupleSetSecLabel(copiedTuple, HeapTupleGetSecLabel(tuple));
 
 		/* The heap rewrite module does the rest */
 		rewrite_heap_tuple(rwstate, tuple, copiedTuple);

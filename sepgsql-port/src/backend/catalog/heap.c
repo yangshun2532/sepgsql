@@ -42,6 +42,7 @@
 #include "catalog/pg_constraint.h"
 #include "catalog/pg_inherits.h"
 #include "catalog/pg_namespace.h"
+#include "catalog/pg_security.h"
 #include "catalog/pg_statistic.h"
 #include "catalog/pg_tablespace.h"
 #include "catalog/pg_type.h"
@@ -53,6 +54,7 @@
 #include "parser/parse_coerce.h"
 #include "parser/parse_expr.h"
 #include "parser/parse_relation.h"
+#include "security/sepgsql.h"
 #include "storage/smgr.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
@@ -67,7 +69,8 @@ static void AddNewRelationTuple(Relation pg_class_desc,
 					Oid new_rel_oid, Oid new_type_oid,
 					Oid relowner,
 					char relkind,
-					Datum reloptions);
+					Datum reloptions,
+					List *selblList);
 static Oid AddNewRelationType(const char *typeName,
 				   Oid typeNamespace,
 				   Oid new_rel_oid,
@@ -144,7 +147,16 @@ static FormData_pg_attribute a7 = {
 	true, 'p', 'i', true, false, false, true, 0
 };
 
-static const Form_pg_attribute SysAtt[] = {&a1, &a2, &a3, &a4, &a5, &a6, &a7};
+/*
+ * System columns for enhanced security features
+ */
+static FormData_pg_attribute a8 = {
+	0, {SecurityLabelAttributeName}, TEXTOID, 0, -1,
+	SecurityLabelAttributeNumber, 0, -1, -1,
+	false, 'x', 'i', true, false, false, true, 0
+};
+
+static const Form_pg_attribute SysAtt[] = {&a1, &a2, &a3, &a4, &a5, &a6, &a7, &a8};
 
 /*
  * This function returns a Form_pg_attribute pointer for a system attribute.
@@ -184,6 +196,18 @@ SystemAttributeByName(const char *attname, bool relhasoids)
 	return NULL;
 }
 
+/*
+ * This function returns true, if the given attribute number is writable
+ * system column. If not, returns false.
+ */
+bool
+SystemAttributeIsWritable(AttrNumber attnum)
+{
+	if (attnum == SecurityLabelAttributeNumber)
+		return true;
+
+	return false;
+}
 
 /* ----------------------------------------------------------------
  *				XXX END OF UGLY HARD CODED BADNESS XXX
@@ -467,7 +491,8 @@ AddNewAttributeTuples(Oid new_rel_oid,
 					  TupleDesc tupdesc,
 					  char relkind,
 					  bool oidislocal,
-					  int oidinhcount)
+					  int oidinhcount,
+					  List *selblList)
 {
 	const Form_pg_attribute *dpp;
 	int			i;
@@ -492,16 +517,34 @@ AddNewAttributeTuples(Oid new_rel_oid,
 	dpp = tupdesc->attrs;
 	for (i = 0; i < natts; i++)
 	{
+		ListCell *l;
+		Oid attselabel = InvalidOid;
+
 		/* Fill in the correct relation OID */
 		(*dpp)->attrelid = new_rel_oid;
 		/* Make sure these are OK, too */
 		(*dpp)->attstattarget = -1;
 		(*dpp)->attcacheoff = -1;
 
+		/* SELinux: extract a given security context */
+		foreach (l, selblList)
+		{
+			DefElem *defel = lfirst(l);
+
+			if (defel->defname &&
+				strcmp(defel->defname, NameStr((*dpp)->attname)) == 0)
+			{
+				attselabel = sepgsqlInputGivenSecLabel(defel);
+				break;
+			}
+		}
+
 		tup = heap_addheader(Natts_pg_attribute,
 							 false,
 							 ATTRIBUTE_TUPLE_SIZE,
 							 (void *) *dpp);
+		if (HeapTupleHasSecLabel(tup))
+			HeapTupleSetSecLabel(tup, attselabel);
 
 		simple_heap_insert(rel, tup);
 
@@ -592,7 +635,8 @@ void
 InsertPgClassTuple(Relation pg_class_desc,
 				   Relation new_rel_desc,
 				   Oid new_rel_oid,
-				   Datum reloptions)
+				   Datum reloptions,
+				   Oid relselabel)
 {
 	Form_pg_class rd_rel = new_rel_desc->rd_rel;
 	Datum		values[Natts_pg_class];
@@ -643,10 +687,16 @@ InsertPgClassTuple(Relation pg_class_desc,
 	 */
 	HeapTupleSetOid(tup, new_rel_oid);
 
+	if (HeapTupleHasSecLabel(tup))
+		HeapTupleSetSecLabel(tup, relselabel);
+
 	/* finally insert the new tuple, update the indexes, and clean up */
 	simple_heap_insert(pg_class_desc, tup);
 
 	CatalogUpdateIndexes(pg_class_desc, tup);
+
+	/* temporary use for this tuple */
+	InsertSysCache(RelationGetRelid(pg_class_desc), tup);
 
 	heap_freetuple(tup);
 }
@@ -665,9 +715,12 @@ AddNewRelationTuple(Relation pg_class_desc,
 					Oid new_type_oid,
 					Oid relowner,
 					char relkind,
-					Datum reloptions)
+					Datum reloptions,
+					List *selblList)
 {
 	Form_pg_class new_rel_reltup;
+	Oid relselabel = InvalidOid;
+	ListCell *l;
 
 	/*
 	 * first we update some of the information in our uncataloged relation's
@@ -724,8 +777,21 @@ AddNewRelationTuple(Relation pg_class_desc,
 
 	new_rel_desc->rd_att->tdtypeid = new_type_oid;
 
+	/* SELinux: extract a given security context */
+	foreach (l, selblList)
+	{
+		DefElem *defel = lfirst(l);
+
+		if (!defel->defname)
+		{
+			relselabel = sepgsqlInputGivenSecLabel(defel);
+			break;
+		}
+	}
+
 	/* Now build and insert the tuple */
-	InsertPgClassTuple(pg_class_desc, new_rel_desc, new_rel_oid, reloptions);
+	InsertPgClassTuple(pg_class_desc, new_rel_desc, new_rel_oid,
+					   reloptions, relselabel);
 }
 
 
@@ -791,7 +857,8 @@ heap_create_with_catalog(const char *relname,
 						 int oidinhcount,
 						 OnCommitAction oncommit,
 						 Datum reloptions,
-						 bool allow_system_table_mods)
+						 bool allow_system_table_mods,
+						 List *selblList)
 {
 	Relation	pg_class_desc;
 	Relation	new_rel_desc;
@@ -963,13 +1030,20 @@ heap_create_with_catalog(const char *relname,
 						new_type_oid,
 						ownerid,
 						relkind,
-						reloptions);
+						reloptions,
+						selblList);
 
 	/*
 	 * now add tuples to pg_attribute for the attributes in our new relation.
 	 */
 	AddNewAttributeTuples(relid, new_rel_desc->rd_att, relkind,
-						  oidislocal, oidinhcount);
+						  oidislocal, oidinhcount, selblList);
+
+	/*
+	 * Fixup rel->rd_att->tdhassecacl and rel->rd_att->tdhasseclabel
+	 */
+	new_rel_desc->rd_att->tdhasseclabel
+		= securityTupleDescHasSecLabel(new_rel_desc);
 
 	/*
 	 * Make a dependency link to force the relation to be deleted if its

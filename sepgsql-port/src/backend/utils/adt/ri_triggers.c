@@ -37,6 +37,7 @@
 #include "parser/parse_coerce.h"
 #include "parser/parse_relation.h"
 #include "miscadmin.h"
+#include "security/rowlevel.h"
 #include "utils/acl.h"
 #include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
@@ -3256,6 +3257,7 @@ ri_PerformCheck(RI_QueryKey *qkey, SPIPlanPtr qplan,
 	int			spi_result;
 	Oid			save_userid;
 	bool		save_secdefcxt;
+	bool		save_rowlv_bahavior;
 	Datum		vals[RI_MAX_NUMKEYS * 2];
 	char		nulls[RI_MAX_NUMKEYS * 2];
 
@@ -3336,11 +3338,29 @@ ri_PerformCheck(RI_QueryKey *qkey, SPIPlanPtr qplan,
 	GetUserIdAndContext(&save_userid, &save_secdefcxt);
 	SetUserIdAndContext(RelationGetForm(query_rel)->relowner, true);
 
-	/* Finally we can run the query. */
-	spi_result = SPI_execute_snapshot(qplan,
-									  vals, nulls,
-									  test_snapshot, crosscheck_snapshot,
-									  false, false, limit);
+	/*
+	 * Switch internal state of row-level security features
+	 *
+	 * NOTE: when a user tries to update/delete a PK which
+	 * is refered by invisible FKs, it need to be aborted
+	 * due to the referencial integrity.
+	 */
+	save_rowlv_bahavior = rowlvBehaviorSwitchTo(detectNewRows);
+
+	PG_TRY();
+	{
+		/* Finally we can run the query. */
+		spi_result = SPI_execute_snapshot(qplan,
+										  vals, nulls,
+										  test_snapshot, crosscheck_snapshot,
+										  false, false, limit);
+	}
+	PG_CATCH();
+	{
+		rowlvBehaviorSwitchTo(save_rowlv_bahavior);
+		PG_RE_THROW();
+	}
+	PG_END_TRY();
 
 	/* Restore UID */
 	SetUserIdAndContext(save_userid, save_secdefcxt);

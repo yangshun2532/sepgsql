@@ -154,6 +154,7 @@ _readQuery(void)
 	READ_NODE_FIELD(limitCount);
 	READ_NODE_FIELD(rowMarks);
 	READ_NODE_FIELD(setOperations);
+	READ_NODE_FIELD(selinuxItems);
 
 	READ_DONE();
 }
@@ -1003,10 +1004,49 @@ _readRangeTblEntry(void)
 	READ_BOOL_FIELD(inFromCl);
 	READ_UINT_FIELD(requiredPerms);
 	READ_OID_FIELD(checkAsUser);
+	READ_UINT_FIELD(tuplePerms);
 
 	READ_DONE();
 }
 
+/*
+ * Stuff for SE-PostgreSQL
+ */
+static SelinuxEvalItem *
+_readSelinuxEvalItem(void)
+{
+	int	i;
+
+	READ_LOCALS(SelinuxEvalItem);
+
+	READ_OID_FIELD(relid);
+	READ_BOOL_FIELD(inh);
+
+	READ_UINT_FIELD(relperms);
+	READ_UINT_FIELD(nattrs);
+
+	/*
+	 * TODO: This part should be moved to readArray() ?
+	 */
+	local_node->attperms = palloc0(local_node->nattrs * sizeof(uint32));
+
+	token = pg_strtok(&length); /* skip :attperms */
+	token = pg_strtok(&length); /* read '[' */
+	if (token == NULL || strcmp(token, "[") != 0)
+		elog(ERROR, "expected \"[\" to start array, but got \"%s\"",
+			 token ? (const char *) token : "[NULL]");
+	for (i = 0; i < local_node->nattrs; i++)
+	{
+		token = pg_strtok(&length);
+		local_node->attperms[i] = atoui(token);
+	}
+	token = pg_strtok(&length); /* read ']' */
+	if (token == NULL || strcmp(token, "[") != 0)
+		elog(ERROR, "expected \"[\" to end array, but got \"%s\"",
+			 token ? (const char *) token : "[NULL]");
+
+	READ_DONE();
+}
 
 /*
  * parseNodeString
@@ -1124,6 +1164,8 @@ parseNodeString(void)
 		return_value = _readNotifyStmt();
 	else if (MATCH("DECLARECURSOR", 13))
 		return_value = _readDeclareCursorStmt();
+	else if (MATCH("SELINUXEVALITEM", 15))
+		return_value = _readSelinuxEvalItem();
 	else
 	{
 		elog(ERROR, "badly formatted node string \"%.32s\"...", token);
