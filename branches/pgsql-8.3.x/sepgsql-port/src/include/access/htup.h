@@ -161,7 +161,7 @@ typedef HeapTupleHeaderData *HeapTupleHeader;
 #define HEAP_HASVARWIDTH		0x0002	/* has variable-width attribute(s) */
 #define HEAP_HASEXTERNAL		0x0004	/* has external stored attribute(s) */
 #define HEAP_HASOID				0x0008	/* has an object-id field */
-/* bit 0x0010 is available */
+#define HEAP_HAS_SECLABEL		0x0010	/* has an security label field */
 #define HEAP_COMBOCID			0x0020	/* t_cid is a combo cid */
 #define HEAP_XMAX_EXCL_LOCK		0x0040	/* xmax is exclusive locker */
 #define HEAP_XMAX_SHARED_LOCK	0x0080	/* xmax is shared locker */
@@ -288,6 +288,9 @@ do { \
 	(tup)->t_choice.t_datum.datum_typmod = (typmod) \
 )
 
+#define HeapTupleHeaderHasOid(tup) \
+	((tup)->t_infomask & HEAP_HASOID)
+
 #define HeapTupleHeaderGetOid(tup) \
 ( \
 	((tup)->t_infomask & HEAP_HASOID) ? \
@@ -347,6 +350,34 @@ do { \
 	(tup)->t_infomask2 = ((tup)->t_infomask2 & ~HEAP_NATTS_MASK) | (natts) \
 )
 
+#define HeapTupleHeaderHasSecLabel(tup)			\
+	((tup)->t_infomask & HEAP_HAS_SECLABEL)
+
+#define HeapTupleHeaderGetSecLabel(tup)									\
+	(																	\
+		HeapTupleHeaderHasSecLabel(tup)									\
+		? (*((Oid *)((char *)(tup) + (tup)->t_hoff						\
+					 - (HeapTupleHeaderHasOid(tup) ? sizeof(Oid) : 0)	\
+					 - sizeof(Oid))))									\
+		: InvalidOid													\
+	)
+
+#define HeapTupleHeaderSetSecLabel(tup, seclabel)						\
+	do {																\
+		Assert(HeapTupleHeaderHasSecLabel(tup));						\
+		*((Oid *)((char *)(tup) + (tup)->t_hoff							\
+				  - (HeapTupleHeaderHasOid(tup) ? sizeof(Oid) : 0)		\
+				  - sizeof(Oid))) = (seclabel);							\
+	} while(0)
+
+#define HeapTupleHasSecLabel(tuple)				\
+	HeapTupleHeaderHasSecLabel((tuple)->t_data)
+
+#define HeapTupleGetSecLabel(tuple)				\
+	HeapTupleHeaderGetSecLabel((tuple)->t_data)
+
+#define HeapTupleSetSecLabel(tuple, seclabel)	\
+	HeapTupleHeaderSetSecLabel((tuple)->t_data, (seclabel))
 
 /*
  * BITMAPLEN(NATTS) -
@@ -402,8 +433,13 @@ do { \
 #define MaxTransactionIdAttributeNumber			(-5)
 #define MaxCommandIdAttributeNumber				(-6)
 #define TableOidAttributeNumber					(-7)
-#define FirstLowInvalidHeapAttributeNumber		(-8)
+#define SecurityLabelAttributeNumber			(-8)
+#define FirstLowInvalidHeapAttributeNumber		(-9)
 
+/*
+ * Attribute names for the system-defined attributes
+ */
+#define SecurityLabelAttributeName				"security_context"
 
 /*
  * MinimalTuple is an alternative representation that is used for transient
@@ -547,6 +583,9 @@ typedef HeapTupleData *HeapTuple;
 
 #define HeapTupleClearHeapOnly(tuple) \
 		HeapTupleHeaderClearHeapOnly((tuple)->t_data)
+
+#define HeapTupleHasOid(tuple) \
+		HeapTupleHeaderHasOid((tuple)->t_data)
 
 #define HeapTupleGetOid(tuple) \
 		HeapTupleHeaderGetOid((tuple)->t_data)

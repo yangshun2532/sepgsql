@@ -358,7 +358,8 @@ typedef enum NodeTag
 	 */
 	T_TriggerData = 950,		/* in commands/trigger.h */
 	T_ReturnSetInfo,			/* in nodes/execnodes.h */
-	T_TIDBitmap					/* in nodes/tidbitmap.h */
+	T_TIDBitmap,				/* in nodes/tidbitmap.h */
+	T_SelinuxEvalItem,			/* in nodes/security.h */
 } NodeTag;
 
 /*

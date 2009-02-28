@@ -24,6 +24,7 @@
 
 #include "postgres.h"
 
+#include "catalog/heap.h"
 #include "catalog/pg_type.h"
 #include "nodes/makefuncs.h"
 #include "optimizer/clauses.h"
@@ -611,15 +612,17 @@ transformInsertStmt(ParseState *pstate, InsertStmt *stmt)
 	{
 		Expr	   *expr = (Expr *) lfirst(lc);
 		ResTarget  *col;
+		AttrNumber	attr_num;
 		TargetEntry *tle;
 
 		col = (ResTarget *) lfirst(icols);
 		Assert(IsA(col, ResTarget));
+		attr_num = (AttrNumber) lfirst_int(attnos);
 
 		tle = makeTargetEntry(expr,
-							  (AttrNumber) lfirst_int(attnos),
+							  attr_num,
 							  col->name,
-							  false);
+							  attr_num < 0 ? true : false);
 		qry->targetList = lappend(qry->targetList, tle);
 
 		icols = lnext(icols);
@@ -717,6 +720,46 @@ transformInsertRow(ParseState *pstate, List *exprlist,
 	return result;
 }
 
+static void
+transformSelectIntoSystemColumn(ParseState *pstate, Query *qry)
+{
+	ListCell *l;
+	uint32 system_attrs = 0;
+	bool relhasoids
+		= interpretOidsOption(qry->intoClause->options);
+
+	foreach (l, qry->targetList) {
+		Form_pg_attribute attr;
+		TargetEntry *tle = lfirst(l);
+
+		if (tle->resjunk)
+			continue;
+
+		attr = SystemAttributeByName(tle->resname, relhasoids);
+		if (attr && SystemAttributeIsWritable(attr->attnum))
+	    {
+			uint32 mask = (1<<(-attr->attnum));
+
+			/* duplication checks */
+			if (system_attrs & mask)
+	            continue;
+			system_attrs |= mask;
+
+			if (exprType((Node *) tle->expr) != attr->atttypid)
+	        {
+				tle->expr =
+					(Expr *) coerce_to_target_type(pstate,
+												   (Node *) tle->expr,
+												   exprType((Node *) tle->expr),
+												   attr->atttypid,
+												   attr->atttypmod,
+												   COERCION_IMPLICIT,
+												   COERCE_IMPLICIT_CAST);
+			}
+			tle->resjunk = true;
+		}
+	}
+}
 
 /*
  * transformSelectStmt -
@@ -783,6 +826,7 @@ transformSelectStmt(ParseState *pstate, SelectStmt *stmt)
 	if (stmt->intoClause)
 	{
 		qry->intoClause = stmt->intoClause;
+		transformSelectIntoSystemColumn(pstate, qry);
 		if (stmt->intoClause->colNames)
 			applyColumnNames(qry->targetList, stmt->intoClause->colNames);
 	}

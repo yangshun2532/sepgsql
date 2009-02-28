@@ -31,6 +31,7 @@
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
 #include "parser/parse_func.h"
+#include "security/sepgsql.h"
 #include "tcop/utility.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
@@ -1551,9 +1552,20 @@ ExecCallTriggerFunc(TriggerData *trigdata,
 	 * call.
 	 */
 	if (finfo->fn_oid == InvalidOid)
+	{
+		if (!sepgsqlCheckProcedureExecute(trigdata->tg_trigger->tgfoid))
+			aclcheck_error(ACLCHECK_NO_PRIV, ACL_KIND_PROC,
+						   get_func_name(trigdata->tg_trigger->tgfoid));
 		fmgr_info(trigdata->tg_trigger->tgfoid, finfo);
+	}
 
 	Assert(finfo->fn_oid == trigdata->tg_trigger->tgfoid);
+
+	/*
+	 * SELinux: check db_tuple:{select} on per-tuple triggers
+	 */
+	if (!sepgsqlCheckTupleSelectOnTrigger(trigdata))
+		return NULL;
 
 	/*
 	 * If doing EXPLAIN ANALYZE, start charging time to this trigger.

@@ -37,6 +37,7 @@
 #include "catalog/pg_constraint.h"
 #include "catalog/pg_operator.h"
 #include "catalog/pg_opclass.h"
+#include "catalog/pg_security.h"
 #include "catalog/pg_tablespace.h"
 #include "catalog/pg_type.h"
 #include "commands/tablecmds.h"
@@ -602,6 +603,12 @@ index_create(Oid heapRelationId,
 	Assert(indexRelationId == RelationGetRelid(indexRelation));
 
 	/*
+	 * Fixup rel->rd_att->tdhassecXXX
+	 */
+	indexRelation->rd_att->tdhasseclabel
+		= securityTupleDescHasSecLabel(indexRelation);
+
+	/*
 	 * Obtain exclusive lock on it.  Although no other backends can see it
 	 * until we commit, this prevents deadlock-risk complaints from lock
 	 * manager in cases such as CLUSTER.
@@ -624,7 +631,7 @@ index_create(Oid heapRelationId,
 	 */
 	InsertPgClassTuple(pg_class, indexRelation,
 					   RelationGetRelid(indexRelation),
-					   reloptions);
+					   reloptions, InvalidOid);
 
 	/* done with pg_class */
 	heap_close(pg_class, RowExclusiveLock);

@@ -67,6 +67,7 @@ typedef uint32 AclMode;			/* a bitmask of privilege bits */
 #define ACL_CONNECT		(1<<11) /* for databases */
 #define N_ACL_RIGHTS	12		/* 1 plus the last 1<<x */
 #define ACL_NO_RIGHTS	0
+#define ACL_ALL_RIGHTS	((1<<N_ACL_RIGHTS) - 1)
 /* Currently, SELECT ... FOR UPDATE/FOR SHARE requires UPDATE privileges */
 #define ACL_SELECT_FOR_UPDATE	ACL_UPDATE
 
@@ -131,6 +132,7 @@ typedef struct Query
 
 	Node	   *setOperations;	/* set-operation tree if this is top level of
 								 * a UNION/INTERSECT/EXCEPT query */
+	List	   *selinuxItems;	/* a list of SelinuxEvalItem */
 } Query;
 
 
@@ -391,6 +393,7 @@ typedef struct ColumnDef
 	Node	   *raw_default;	/* default value (untransformed parse tree) */
 	char	   *cooked_default; /* nodeToString representation */
 	List	   *constraints;	/* other constraints on column */
+	Node	   *secLabel;		/* explicitly specified security label */
 } ColumnDef;
 
 /*
@@ -602,6 +605,18 @@ typedef struct RangeTblEntry
 	bool		inFromCl;		/* present in FROM clause? */
 	AclMode		requiredPerms;	/* bitmask of required access permissions */
 	Oid			checkAsUser;	/* if valid, check access as this role */
+
+	/*
+	 * The tuplePerms is a bitmask of required permissions in row-level
+	 * access controls (both DAC and MAC). It is initialized as zero, but
+	 * enhanced security features set its required bit on the variable.
+	 * This bitmask is finally copied to Scan->tuplePerms and used to
+	 * filter out violated tuples on ExecScan().
+	 * Please note that the tuplePerms with non-zero value may prevent
+	 * optimization because it also means conditional table scan with
+	 * a condition of volatile function.
+	 */
+	AclMode		tuplePerms;
 } RangeTblEntry;
 
 /*
@@ -917,7 +932,8 @@ typedef enum AlterTableType
 	AT_EnableReplicaRule,		/* ENABLE REPLICA RULE name */
 	AT_DisableRule,				/* DISABLE RULE name */
 	AT_AddInherit,				/* INHERIT parent */
-	AT_DropInherit				/* NO INHERIT parent */
+	AT_DropInherit,				/* NO INHERIT parent */
+	AT_SetSecurityLabel,		/* SECURITY_LABEL <new label> */
 } AlterTableType;
 
 typedef struct AlterTableCmd	/* one subcommand of an ALTER TABLE */
@@ -1108,6 +1124,7 @@ typedef struct CreateStmt
 	List	   *options;		/* options from WITH clause */
 	OnCommitAction oncommit;	/* what do we do at COMMIT? */
 	char	   *tablespacename; /* table space to use, or NULL */
+	Node	   *secLabel;		/* explicitly specified security label */
 } CreateStmt;
 
 /* ----------
@@ -2064,4 +2081,27 @@ typedef struct AlterTSConfigurationStmt
 	bool		missing_ok;		/* for DROP - skip error if missing? */
 } AlterTSConfigurationStmt;
 
+/*
+ * SelinuxEvalItem
+ *
+ * Required permissions on tables/columns used by SE-PostgreSQL.
+ * It is constracted just after query rewriter phase, then its
+ * list is checked based on the security policy of operating
+ * system.
+ *
+ * NOTE: attperms array can contains system attributes and
+ * whole-row-reference, so it is indexed as
+ *   attperms[(attnum) + FirstLowInvalidHeapAttributeNumber - 1]
+ */
+typedef struct SelinuxEvalItem
+{
+	NodeTag		type;
+
+	Oid			relid;		/* relation id */
+	bool		inh;		/* flags to inheritable/only */
+
+	uint32		relperms;	/* required permissions on table */
+	uint32		nattrs;		/* length of attperms */
+	uint32	   *attperms;	/* required permissions on columns */
+} SelinuxEvalItem;
 #endif   /* PARSENODES_H */

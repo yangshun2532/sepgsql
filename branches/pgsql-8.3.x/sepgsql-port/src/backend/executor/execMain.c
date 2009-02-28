@@ -38,6 +38,7 @@
 #include "access/xact.h"
 #include "catalog/heap.h"
 #include "catalog/namespace.h"
+#include "catalog/pg_security.h"
 #include "catalog/toasting.h"
 #include "commands/tablespace.h"
 #include "commands/trigger.h"
@@ -49,6 +50,8 @@
 #include "parser/parse_clause.h"
 #include "parser/parse_expr.h"
 #include "parser/parsetree.h"
+#include "security/rowlevel.h"
+#include "security/sepgsql.h"
 #include "storage/smgr.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
@@ -138,6 +141,8 @@ ExecutorStart(QueryDesc *queryDesc, int eflags)
 	/* sanity checks: queryDesc must not be started already */
 	Assert(queryDesc != NULL);
 	Assert(queryDesc->estate == NULL);
+
+	sepgsqlExecutorStart(queryDesc, eflags);
 
 	/*
 	 * If the transaction is read-only, we need to check if any writes are
@@ -738,15 +743,16 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 				for (i = 0; i < as_nplans; i++)
 				{
 					PlanState  *subplan = appendplans[i];
+					Relation	resultRel = resultRelInfo->ri_RelationDesc;
 					JunkFilter *j;
 
 					if (operation == CMD_UPDATE)
-						ExecCheckPlanOutput(resultRelInfo->ri_RelationDesc,
-											subplan->plan->targetlist);
+						ExecCheckPlanOutput(resultRel, subplan->plan->targetlist);
 
 					j = ExecInitJunkFilter(subplan->plan->targetlist,
-							resultRelInfo->ri_RelationDesc->rd_att->tdhasoid,
-								  ExecAllocTableSlot(estate->es_tupleTable));
+										   RelationGetDescr(resultRel)->tdhasoid,
+										   RelationGetDescr(resultRel)->tdhasseclabel,
+										   ExecAllocTableSlot(estate->es_tupleTable));
 
 					/*
 					 * Since it must be UPDATE/DELETE, there had better be a
@@ -790,6 +796,7 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 
 				j = ExecInitJunkFilter(planstate->plan->targetlist,
 									   tupType->tdhasoid,
+									   tupType->tdhasseclabel,
 								  ExecAllocTableSlot(estate->es_tupleTable));
 				estate->es_junkFilter = j;
 				if (estate->es_result_relation_info)
@@ -848,7 +855,7 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 		 * We assume all the sublists will generate the same output tupdesc.
 		 */
 		tupType = ExecTypeFromTL((List *) linitial(plannedstmt->returningLists),
-								 false);
+								 false, false);
 
 		/* Set up a slot for the output of the RETURNING projection(s) */
 		slot = ExecAllocTableSlot(estate->es_tupleTable);
@@ -1171,6 +1178,33 @@ ExecContextForcesOids(PlanState *planstate, bool *hasoids)
 	return false;
 }
 
+/*
+ * ExecContextForcesSecLabel
+ *
+ * We need to ensure that result tuples have space for security label,
+ * if the security feature need to store it within the given relation.
+ */
+bool ExecContextForcesSecLabel(PlanState *planstate, bool *hassecurity)
+{
+	if (planstate->state->es_select_into)
+	{
+		*hassecurity = securityTupleDescHasSecLabel(NULL);
+		return true;
+	}
+	else
+	{
+		ResultRelInfo *ri = planstate->state->es_result_relation_info;
+
+		if (ri && ri->ri_RelationDesc)
+		{
+			*hassecurity = securityTupleDescHasSecLabel(ri->ri_RelationDesc);
+			return true;
+		}
+	}
+
+	return false;
+}
+
 /* ----------------------------------------------------------------
  *		ExecEndPlan
  *
@@ -1251,6 +1285,47 @@ ExecEndPlan(PlanState *planstate, EState *estate)
 	}
 }
 
+/*
+ * fetchWritableSystemAttribute() fetches writable system column data
+ * using Junkfilter, and saves them at TupleTableSlot temporary.
+ *
+ * storeWritableSystemAttribute() copies these fetched data into
+ * header structure of HeapTuple.
+ */
+static void
+fetchWritableSystemAttribute(JunkFilter *junkfilter, TupleTableSlot *slot, Oid *tts_seclabel)
+{
+	AttrNumber attno;
+	Datum datum;
+	bool isnull;
+
+	/* for Security Label */
+	attno = ExecFindJunkAttribute(junkfilter, SecurityLabelAttributeName);
+	if (attno != InvalidAttrNumber)
+	{
+		datum = ExecGetJunkAttribute(slot, attno, &isnull);
+		if (isnull)
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("setting NULL on \"%s\" system column is not supported",
+							SecurityLabelAttributeName)));
+		*tts_seclabel = securityTransSecLabelIn(TextDatumGetCString(datum));
+	}
+}
+
+static void
+storeWritableSystemAttribute(Relation rel, TupleTableSlot *slot, HeapTuple tuple)
+{
+	/* "security_label" */
+	if (HeapTupleHasSecLabel(tuple))
+		HeapTupleSetSecLabel(tuple, slot->tts_seclabel);
+	else if (slot->tts_seclabel != InvalidOid)
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("Unable to assign security label on \"%s\"",
+						RelationGetRelationName(rel))));
+}
+
 /* ----------------------------------------------------------------
  *		ExecutePlan
  *
@@ -1318,6 +1393,8 @@ ExecutePlan(EState *estate,
 
 	for (;;)
 	{
+		Oid		tts_seclabel = InvalidOid;
+
 		/* Reset the per-output-tuple exprcontext */
 		ResetPerTupleExprContext(estate);
 
@@ -1442,6 +1519,11 @@ lnext:	;
 			}
 
 			/*
+			 * extract writable system attribute
+			 */
+			fetchWritableSystemAttribute(junkfilter, slot, &tts_seclabel);
+
+			/*
 			 * extract the 'ctid' junk attribute.
 			 */
 			if (operation == CMD_UPDATE || operation == CMD_DELETE)
@@ -1468,6 +1550,7 @@ lnext:	;
 			if (operation != CMD_DELETE)
 				slot = ExecFilterJunk(junkfilter, slot);
 		}
+		slot->tts_seclabel = tts_seclabel;
 
 		/*
 		 * now that we have a tuple, do the appropriate thing with it.. either
@@ -1588,6 +1671,8 @@ ExecInsert(TupleTableSlot *slot,
 	resultRelInfo = estate->es_result_relation_info;
 	resultRelationDesc = resultRelInfo->ri_RelationDesc;
 
+	storeWritableSystemAttribute(resultRelationDesc, slot, tuple);
+
 	/* BEFORE ROW INSERT Triggers */
 	if (resultRelInfo->ri_TrigDesc &&
 		resultRelInfo->ri_TrigDesc->n_before_row[TRIGGER_EVENT_INSERT] > 0)
@@ -1622,6 +1707,12 @@ ExecInsert(TupleTableSlot *slot,
 	 */
 	if (resultRelationDesc->rd_att->constr)
 		ExecConstraints(resultRelInfo, slot, estate);
+
+	/*
+	 * Check row-level permission on the tuple
+	 */
+	if (!rowlvHeapTupleInsert(resultRelationDesc, tuple, false))
+		return;
 
 	/*
 	 * insert the tuple
@@ -1689,6 +1780,12 @@ ExecDelete(ItemPointer tupleid,
 		if (!dodelete)			/* "do nothing" */
 			return;
 	}
+
+	/*
+	 * Check row-level permission on the tuple
+	 */
+	if (!rowlvHeapTupleDelete(resultRelationDesc, tupleid, false))
+		return;
 
 	/*
 	 * delete the tuple
@@ -1826,6 +1923,8 @@ ExecUpdate(TupleTableSlot *slot,
 	resultRelInfo = estate->es_result_relation_info;
 	resultRelationDesc = resultRelInfo->ri_RelationDesc;
 
+	storeWritableSystemAttribute(resultRelationDesc, slot, tuple);
+
 	/* BEFORE ROW UPDATE Triggers */
 	if (resultRelInfo->ri_TrigDesc &&
 		resultRelInfo->ri_TrigDesc->n_before_row[TRIGGER_EVENT_UPDATE] > 0)
@@ -1868,6 +1967,12 @@ ExecUpdate(TupleTableSlot *slot,
 lreplace:;
 	if (resultRelationDesc->rd_att->constr)
 		ExecConstraints(resultRelInfo, slot, estate);
+
+	/*
+	 * Check row-level permission on the tuple
+	 */
+	if (!rowlvHeapTupleUpdate(resultRelationDesc, tupleid, tuple, false))
+		return;
 
 	/*
 	 * replace the heap tuple
@@ -2733,7 +2838,8 @@ OpenIntoRel(QueryDesc *queryDesc)
 											  0,
 											  into->onCommit,
 											  reloptions,
-											  allowSystemTableMods);
+											  allowSystemTableMods,
+											  NIL);
 
 	FreeTupleDesc(tupdesc);
 
@@ -2838,6 +2944,10 @@ intorel_receive(TupleTableSlot *slot, DestReceiver *self)
 	HeapTuple	tuple;
 
 	tuple = ExecCopySlotTuple(slot);
+
+	storeWritableSystemAttribute(estate->es_into_relation_descriptor, slot, tuple);
+	if (!rowlvHeapTupleInsert(estate->es_into_relation_descriptor, tuple, false))
+		return;
 
 	heap_insert(estate->es_into_relation_descriptor,
 				tuple,

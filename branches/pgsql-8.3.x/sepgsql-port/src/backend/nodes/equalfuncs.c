@@ -768,6 +768,7 @@ _equalQuery(Query *a, Query *b)
 	COMPARE_NODE_FIELD(limitCount);
 	COMPARE_NODE_FIELD(rowMarks);
 	COMPARE_NODE_FIELD(setOperations);
+	COMPARE_NODE_FIELD(selinuxItems);
 
 	return true;
 }
@@ -970,6 +971,7 @@ _equalCreateStmt(CreateStmt *a, CreateStmt *b)
 	COMPARE_NODE_FIELD(options);
 	COMPARE_SCALAR_FIELD(oncommit);
 	COMPARE_STRING_FIELD(tablespacename);
+	COMPARE_NODE_FIELD(secLabel);
 
 	return true;
 }
@@ -1818,6 +1820,7 @@ _equalColumnDef(ColumnDef *a, ColumnDef *b)
 	COMPARE_NODE_FIELD(raw_default);
 	COMPARE_STRING_FIELD(cooked_default);
 	COMPARE_NODE_FIELD(constraints);
+	COMPARE_NODE_FIELD(secLabel);
 
 	return true;
 }
@@ -1873,6 +1876,7 @@ _equalRangeTblEntry(RangeTblEntry *a, RangeTblEntry *b)
 	COMPARE_SCALAR_FIELD(inFromCl);
 	COMPARE_SCALAR_FIELD(requiredPerms);
 	COMPARE_SCALAR_FIELD(checkAsUser);
+	COMPARE_SCALAR_FIELD(tuplePerms);
 
 	return true;
 }
@@ -1920,6 +1924,21 @@ _equalXmlSerialize(XmlSerialize *a, XmlSerialize *b)
 	COMPARE_SCALAR_FIELD(xmloption);
 	COMPARE_NODE_FIELD(expr);
 	COMPARE_NODE_FIELD(typename);
+
+	return true;
+}
+
+/*
+ * Stuff for SE-PostgreSQL
+ */
+static bool
+_equalSelinuxEvalItem(SelinuxEvalItem *a, SelinuxEvalItem *b)
+{
+	COMPARE_SCALAR_FIELD(relid);
+	COMPARE_SCALAR_FIELD(inh);
+	COMPARE_SCALAR_FIELD(relperms);
+	COMPARE_SCALAR_FIELD(nattrs);
+	COMPARE_POINTER_FIELD(attperms, a->nattrs * sizeof(uint32));
 
 	return true;
 }
@@ -2526,6 +2545,9 @@ equal(void *a, void *b)
 			break;
 		case T_XmlSerialize:
 			retval = _equalXmlSerialize(a, b);
+			break;
+		case T_SelinuxEvalItem:
+			retval = _equalSelinuxEvalItem(a, b);
 			break;
 
 		default:
