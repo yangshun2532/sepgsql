@@ -1,4 +1,4 @@
-policy_module(sepostgresql-devel, 3.25)
+policy_module(sepostgresql-devel, 3.26)
 
 gen_require(`
 	class db_database all_db_database_perms;
@@ -44,6 +44,7 @@ ifdef(`postgresql_role', `
 
 # workaround for sepgsql tests
 allow sepgsql_test_t sepgsql_test_sepgsql_blob_t : db_blob { import export };
+dontaudit sepgsql_test_t sepgsql_blob_type : db_blob *; 
 
 allow sepgsql_test_t tmpfile : dir search_dir_perms;
 allow sepgsql_test_t tmpfile : file rw_file_perms;
