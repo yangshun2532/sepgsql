@@ -879,51 +879,92 @@ inv_truncate(LargeObjectDesc *obj_desc, int len)
 	CommandCounterIncrement();
 }
 
-void
-inv_set_seclabel(Oid loid, Oid secid)
+Oid
+inv_get_security(Oid loid)
 {
 	Relation		rel;
 	ScanKeyData		skey;
-    SysScanDesc		scan;
-	HeapTuple		oldtup, newtup;
-	CatalogIndexState	ind;
-	bool			found = false;
-
-	rel = heap_open(LargeObjectRelationId, RowExclusiveLock);
-
-	ind = CatalogOpenIndexes(rel);
+	SysScanDesc		scan;
+	HeapTuple		tuple;
+	Oid				secid = InvalidOid;
 
 	ScanKeyInit(&skey,
 				Anum_pg_largeobject_loid,
 				BTEqualStrategyNumber,
 				F_OIDEQ, ObjectIdGetDatum(loid));
 
+	rel = heap_open(LargeObjectRelationId, AccessShareLock);
+
 	scan = systable_beginscan(rel, LargeObjectLOidPNIndexId, true,
 							  SnapshotNow, 1, &skey);
+	tuple = systable_getnext(scan);
 
-	while (HeapTupleIsValid(oldtup = systable_getnext(scan)))
+	if (HeapTupleIsValid(tuple))
 	{
-		newtup = heap_copytuple(oldtup);
+		/*
+		 * SELinux: check db_blob:{getattr}
+		 */
+		sepgsqlCheckBlobGetattr(tuple);
+		secid = HeapTupleGetSecLabel(tuple);
+	}
+	systable_endscan(scan);
 
-		if (!HeapTupleHasSecLabel(newtup))
-			ereport(ERROR,
-					(errcode(ERRCODE_SELINUX_ERROR),
-					 errmsg("unable to store security label")));
-		HeapTupleSetSecLabel(newtup, secid);
+	heap_close(rel, AccessShareLock);
+
+	return secid;
+}
+
+void
+inv_set_security(Oid loid, Oid secid)
+{
+	Relation		rel;
+	ScanKeyData		skey;
+    SysScanDesc		scan;
+	HeapTuple		tuple;
+	CatalogIndexState	ind;
+	bool			found = false;
+
+	ScanKeyInit(&skey,
+				Anum_pg_largeobject_loid,
+				BTEqualStrategyNumber,
+				F_OIDEQ, ObjectIdGetDatum(loid));
+
+	rel = heap_open(LargeObjectRelationId, RowExclusiveLock);
+
+	ind = CatalogOpenIndexes(rel);
+
+	scan = systable_beginscan(rel, LargeObjectLOidPNIndexId, true,
+							  SnapshotNow, 1, &skey);
+	while (HeapTupleIsValid(tuple = systable_getnext(scan)))
+	{
+		HeapTuple	newtuple;
+		Datum		values[Natts_pg_largeobject];
+		bool		nulls[Natts_pg_largeobject];
+		bool		replaces[Natts_pg_largeobject];
+
+		memset(replaces, false, sizeof(replaces));
+
+		newtuple = heap_modify_tuple(tuple, RelationGetDescr(rel),
+									 values, nulls, replaces);
+		if (!HeapTupleHasSecLabel(newtuple))
+			elog(ERROR, "Unable to assign security label on \"%s\"",
+				 RelationGetRelationName(rel));
+		HeapTupleSetSecLabel(newtuple, secid);
 
 		/*
 		 * SELinux: check db_blob:{setattr relabelfrom relabelto}
 		 */
 		if (!found)
-			sepgsqlCheckBlobRelabel(oldtup, newtup);
+			sepgsqlCheckBlobRelabel(tuple, newtuple);
 
-		simple_heap_update(rel, &newtup->t_self, newtup);
-		CatalogUpdateIndexes(rel, newtup);
+		simple_heap_update(rel, &tuple->t_self, newtuple);
+		CatalogUpdateIndexes(rel, newtuple);
 		found = true;
 	}
-
 	systable_endscan(scan);
+
 	CatalogCloseIndexes(ind);
+
 	heap_close(rel, RowExclusiveLock);
 
 	CommandCounterIncrement();

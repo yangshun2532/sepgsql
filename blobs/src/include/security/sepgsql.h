@@ -163,10 +163,10 @@ extern void
 sepgsqlCheckBlobWrite(LargeObjectDesc *lobj);
 
 extern void
-sepgsqlCheckBlobGetattr(LargeObjectDesc *lobj);
+sepgsqlCheckBlobGetattr(HeapTuple tuple);
 
 extern void
-sepgsqlCheckBlobSetattr(LargeObjectDesc *lobj);
+sepgsqlCheckBlobSetattr(HeapTuple tuple);
 
 extern void
 sepgsqlCheckBlobExport(LargeObjectDesc *lobj, int fdesc, const char *filename);
