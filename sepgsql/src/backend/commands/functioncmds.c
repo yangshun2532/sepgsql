@@ -776,7 +776,7 @@ CreateFunction(CreateFunctionStmt *stmt, const char *queryString)
 	ArrayType  *proconfig;
 	float4		procost;
 	float4		prorows;
-	Datum		proselbl;
+	Datum		proselabel;
 	HeapTuple	languageTuple;
 	Form_pg_language languageStruct;
 	List	   *as_clause;
@@ -799,14 +799,14 @@ CreateFunction(CreateFunctionStmt *stmt, const char *queryString)
 	proconfig = NULL;
 	procost = -1;				/* indicates not set */
 	prorows = -1;				/* indicates not set */
-	proselbl = PointerGetDatum(NULL);
+	proselabel = PointerGetDatum(NULL);
 
 	/* override attributes from explicit list */
 	compute_attributes_sql_style(stmt->options,
 								 &as_clause, &language,
 								 &isWindowFunc, &volatility,
 								 &isStrict, &security,
-								 &proconfig, &procost, &prorows, &proselbl);
+								 &proconfig, &procost, &prorows, &proselabel);
 
 	/* Convert language name to canonical case */
 	languageName = case_translate_language_name(language);
@@ -943,7 +943,7 @@ CreateFunction(CreateFunctionStmt *stmt, const char *queryString)
 					PointerGetDatum(proconfig),
 					procost,
 					prorows,
-					proselbl);
+					proselabel);
 }
 
 

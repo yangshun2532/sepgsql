@@ -7472,7 +7472,7 @@ ATExecSetSecurityLabel(Relation rel, const char *attr_name, DefElem *defel)
 {
 	Relation	class_rel;
 	Relation	attr_rel;
-	HeapTuple	tuple;
+	HeapTuple	tuple, newtup;
 
 	if (!sepgsqlIsEnabled())
 		ereport(ERROR,
@@ -7491,9 +7491,9 @@ ATExecSetSecurityLabel(Relation rel, const char *attr_name, DefElem *defel)
 
 		class_rel = heap_open(RelationRelationId, RowExclusiveLock);
 
-		tuple = SearchSysCacheCopy(RELOID,
-								   ObjectIdGetDatum(RelationGetRelid(rel)),
-								   0, 0, 0);
+		tuple = SearchSysCache(RELOID,
+							   ObjectIdGetDatum(RelationGetRelid(rel)),
+							   0, 0, 0);
 		if (!HeapTupleIsValid(tuple))
 			elog(ERROR, "SELinux: cache lookup failed for relation: \"%s\"",
 				 RelationGetRelationName(rel));
@@ -7503,14 +7503,14 @@ ATExecSetSecurityLabel(Relation rel, const char *attr_name, DefElem *defel)
 		nulls[Anum_pg_class_relselabel - 1] = false;
 		replaces[Anum_pg_class_relselabel - 1] = true;
 
-		tuple = heap_modify_tuple(tuple, RelationGetDescr(class_rel),
-								  values, nulls, replaces);
+		newtup = heap_modify_tuple(tuple, RelationGetDescr(class_rel),
+								   values, nulls, replaces);
 
-		simple_heap_update(class_rel, &tuple->t_self, tuple);
+		simple_heap_update(class_rel, &tuple->t_self, newtup);
 
-		CatalogUpdateIndexes(class_rel, tuple);
+		CatalogUpdateIndexes(class_rel, newtup);
 
-		heap_freetuple(tuple);
+		ReleaseSysCache(tuple);
 		heap_close(class_rel, RowExclusiveLock);
 	}
 	else
@@ -7523,8 +7523,8 @@ ATExecSetSecurityLabel(Relation rel, const char *attr_name, DefElem *defel)
 
 		attr_rel = heap_open(AttributeRelationId, RowExclusiveLock);
 
-		tuple = SearchSysCacheCopyAttName(RelationGetRelid(rel),
-										  attr_name);
+		tuple = SearchSysCacheAttName(RelationGetRelid(rel),
+									  attr_name);
 		if (!HeapTupleIsValid(tuple))
 			elog(ERROR, "SELinux: cache lookup failed for column \"%s.%s\"",
 				 RelationGetRelationName(rel), attr_name);
@@ -7534,14 +7534,14 @@ ATExecSetSecurityLabel(Relation rel, const char *attr_name, DefElem *defel)
 		nulls[Anum_pg_attribute_attselabel - 1] = false;
 		replaces[Anum_pg_attribute_attselabel - 1] = true;
 
-		tuple = heap_modify_tuple(tuple, RelationGetDescr(attr_rel),
-								  values, nulls, replaces);
+		newtup = heap_modify_tuple(tuple, RelationGetDescr(attr_rel),
+								   values, nulls, replaces);
 
-		simple_heap_update(attr_rel, &tuple->t_self, tuple);
+		simple_heap_update(attr_rel, &tuple->t_self, newtup);
 
-		CatalogUpdateIndexes(attr_rel, tuple);
+		CatalogUpdateIndexes(attr_rel, newtup);
 
-		heap_freetuple(tuple);
+		ReleaseSysCache(tuple);
 		heap_close(attr_rel, RowExclusiveLock);
 	}
 }
