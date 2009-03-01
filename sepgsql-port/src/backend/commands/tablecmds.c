@@ -3135,6 +3135,7 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 
 	attributeTuple = heap_addheader(Natts_pg_attribute,
 									false,
+									RelationGetDescr(attrdesc)->tdhasseclabel,
 									ATTRIBUTE_TUPLE_SIZE,
 									(void *) &attributeD);
 

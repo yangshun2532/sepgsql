@@ -304,8 +304,7 @@ sepgsqlSetDefaultSecLabel(Relation rel, HeapTuple tuple);
 #endif	/* HAVE_SELINUX */
 
 extern Datum sepgsql_getcon(PG_FUNCTION_ARGS);
-extern Datum sepgsql_server_getcon(PG_FUNCTION_ARGS);
-extern Datum sepgsql_mcstrans(PG_FUNCTION_ARGS);
+extern Datum sepgsql_getservcon(PG_FUNCTION_ARGS);
 extern Datum sepgsql_get_user(PG_FUNCTION_ARGS);
 extern Datum sepgsql_get_role(PG_FUNCTION_ARGS);
 extern Datum sepgsql_get_type(PG_FUNCTION_ARGS);

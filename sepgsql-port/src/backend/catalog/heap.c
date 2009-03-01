@@ -541,6 +541,7 @@ AddNewAttributeTuples(Oid new_rel_oid,
 
 		tup = heap_addheader(Natts_pg_attribute,
 							 false,
+							 RelationGetDescr(rel)->tdhasseclabel,
 							 ATTRIBUTE_TUPLE_SIZE,
 							 (void *) *dpp);
 		if (OidIsValid(attselabel))
@@ -585,6 +586,7 @@ AddNewAttributeTuples(Oid new_rel_oid,
 
 				tup = heap_addheader(Natts_pg_attribute,
 									 false,
+									 RelationGetDescr(rel)->tdhasseclabel,
 									 ATTRIBUTE_TUPLE_SIZE,
 									 (void *) *dpp);
 				attStruct = (Form_pg_attribute) GETSTRUCT(tup);

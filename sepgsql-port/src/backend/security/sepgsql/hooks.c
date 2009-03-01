@@ -669,6 +669,8 @@ sepgsqlHeapTupleInsert(Relation rel, HeapTuple newtup, bool internal)
 	if (IsTrustedAction(rel, internal))
 		return true;
 
+	Assert(HeapTupleHasSecLabel(newtup));
+
 	return sepgsqlCheckObjectPerms(rel, newtup, NULL, perms, internal);
 }
 
