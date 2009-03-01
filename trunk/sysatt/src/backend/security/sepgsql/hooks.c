@@ -423,7 +423,7 @@ checkProcedureInstall(Oid proc_oid)
 			return;
 
 		audit_name = sepgsqlAuditName(ProcedureRelationId, protup);
-		prosid = HeapTupleGetSecLabel(ProcedureRelationId, protup);
+		prosid = HeapTupleGetSecLabel(protup);
 	}
 
 	sepgsqlClientHasPerms(prosid,
@@ -623,7 +623,7 @@ sepgsqlHeapTupleUpdate(Relation rel, ItemPointer otid,
 		sepgsql_sid_t	oldsid = HeapTupleGetSecLabel(oldtup);
 
 		if (HeapTupleHasSecLabel(newtup))
-			HeapTupleSetSecLabel(newtup, newsid);
+			HeapTupleSetSecLabel(newtup, oldsid);
 	}
 
 	if (HeapTupleGetSecLabel(oldtup) != HeapTupleGetSecLabel(newtup) ||
