@@ -543,8 +543,13 @@ AddNewAttributeTuples(Oid new_rel_oid,
 							 false,
 							 ATTRIBUTE_TUPLE_SIZE,
 							 (void *) *dpp);
-		if (HeapTupleHasSecLabel(tup))
+		if (OidIsValid(attselabel))
+		{
+			if (!HeapTupleHasSecLabel(tup))
+				elog(ERROR, "Unable to assign security label on \"%s\"",
+					 RelationGetRelationName(rel));
 			HeapTupleSetSecLabel(tup, attselabel);
+		}
 
 		simple_heap_insert(rel, tup);
 
@@ -687,8 +692,14 @@ InsertPgClassTuple(Relation pg_class_desc,
 	 */
 	HeapTupleSetOid(tup, new_rel_oid);
 
-	if (HeapTupleHasSecLabel(tup))
+	/* set explicit security label */
+	if (OidIsValid(relselabel))
+	{
+		if (!HeapTupleHasSecLabel(tup))
+			elog(ERROR, "Unable to assign security label on \"%s\"",
+				 RelationGetRelationName(pg_class_desc));
 		HeapTupleSetSecLabel(tup, relselabel);
+	}
 
 	/* finally insert the new tuple, update the indexes, and clean up */
 	simple_heap_insert(pg_class_desc, tup);

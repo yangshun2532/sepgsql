@@ -1237,7 +1237,7 @@ AlterFunction(AlterFunctionStmt *stmt)
 					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 					 errmsg("ROWS is not applicable when function does not return a set")));
 	}
-	if (set_items)
+	if (set_items || selabel_item)
 	{
 		Datum		datum;
 		bool		isnull;
@@ -1246,36 +1246,41 @@ AlterFunction(AlterFunctionStmt *stmt)
 		char		repl_null[Natts_pg_proc];
 		char		repl_repl[Natts_pg_proc];
 
-		/* extract existing proconfig setting */
-		datum = SysCacheGetAttr(PROCOID, tup, Anum_pg_proc_proconfig, &isnull);
-		a = isnull ? NULL : DatumGetArrayTypeP(datum);
-
-		/* update according to each SET or RESET item, left to right */
-		a = update_proconfig_value(a, set_items);
-
-		/* update the tuple */
-		memset(repl_repl, ' ', sizeof(repl_repl));
-		repl_repl[Anum_pg_proc_proconfig - 1] = 'r';
-
-		if (a == NULL)
+		if (set_items)
 		{
-			repl_val[Anum_pg_proc_proconfig - 1] = (Datum) 0;
-			repl_null[Anum_pg_proc_proconfig - 1] = 'n';
-		}
-		else
-		{
-			repl_val[Anum_pg_proc_proconfig - 1] = PointerGetDatum(a);
-			repl_null[Anum_pg_proc_proconfig - 1] = ' ';
-		}
+			/* extract existing proconfig setting */
+			datum = SysCacheGetAttr(PROCOID, tup, Anum_pg_proc_proconfig, &isnull);
+			a = isnull ? NULL : DatumGetArrayTypeP(datum);
 
+			/* update according to each SET or RESET item, left to right */
+			a = update_proconfig_value(a, set_items);
+
+			/* update the tuple */
+			memset(repl_repl, ' ', sizeof(repl_repl));
+			repl_repl[Anum_pg_proc_proconfig - 1] = true;
+
+			if (a == NULL)
+			{
+				repl_val[Anum_pg_proc_proconfig - 1] = (Datum) 0;
+				repl_null[Anum_pg_proc_proconfig - 1] = 'n';
+			}
+			else
+			{
+				repl_val[Anum_pg_proc_proconfig - 1] = PointerGetDatum(a);
+				repl_null[Anum_pg_proc_proconfig - 1] = ' ';
+			}
+		}
 		tup = heap_modifytuple(tup, RelationGetDescr(rel),
-							   repl_val, repl_null, repl_repl);
-	}
+						   repl_val, repl_null, repl_repl);
+		if (selabel_item)
+		{
+			Oid		secid = sepgsqlInputGivenSecLabel(selabel_item);
 
-	if (selabel_item && HeapTupleHasSecLabel(tup))
-	{
-		Oid		secid = sepgsqlInputGivenSecLabel(selabel_item);
-		HeapTupleSetSecLabel(tup, secid);
+			if (!HeapTupleHasSecLabel(tup))
+				elog(ERROR, "Unable to assign security label on \"%s\"",
+					 RelationGetRelationName(rel));
+			HeapTupleSetSecLabel(tup, secid);
+		}
 	}
 
 	/* Do the update */

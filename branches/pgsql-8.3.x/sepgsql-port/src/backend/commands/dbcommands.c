@@ -446,6 +446,10 @@ createdb(const CreatedbStmt *stmt)
 	if (dselabel)
 	{
 		Oid		secid = sepgsqlInputGivenSecLabel(dselabel);
+
+		if (!HeapTupleHasSecLabel(tuple))
+			elog(ERROR, "Unable to assign security label on \"%s\"",
+				 RelationGetRelationName(pg_database_rel));
 		HeapTupleSetSecLabel(tuple, secid);
 	}
 	simple_heap_insert(pg_database_rel, tuple);
@@ -946,6 +950,10 @@ AlterDatabase(AlterDatabaseStmt *stmt)
 	if (dselabel)
 	{
 		Oid		secid = sepgsqlInputGivenSecLabel(dselabel);
+
+		if (!HeapTupleHasSecLabel(newtuple))
+			elog(ERROR, "Unable to assign security label on \"%s\"",
+				 RelationGetRelationName(rel));
 		HeapTupleSetSecLabel(newtuple, secid);
 	}
 	simple_heap_update(rel, &tuple->t_self, newtuple);
