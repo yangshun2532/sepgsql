@@ -316,6 +316,7 @@ AppendAttributeTuples(Relation indexRelation, int numatts)
 
 		new_tuple = heap_addheader(Natts_pg_attribute,
 								   false,
+								   RelationGetDescr(pg_attribute)->tdhasseclabel,
 								   ATTRIBUTE_TUPLE_SIZE,
 								   (void *) indexTupDesc->attrs[i]);
 

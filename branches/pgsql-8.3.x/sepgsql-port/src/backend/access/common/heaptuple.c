@@ -1028,6 +1028,8 @@ heap_formtuple(TupleDesc tupleDescriptor,
 
 	if (tupleDescriptor->tdhasoid)
 		len += sizeof(Oid);
+	if (tupleDescriptor->tdhasseclabel)
+		len += sizeof(Oid);
 
 	hoff = len = MAXALIGN(len); /* align user data safely */
 
@@ -1059,6 +1061,8 @@ heap_formtuple(TupleDesc tupleDescriptor,
 
 	if (tupleDescriptor->tdhasoid)		/* else leave infomask = 0 */
 		td->t_infomask = HEAP_HASOID;
+	if (tupleDescriptor->tdhasseclabel)
+		td->t_infomask |= HEAP_HAS_SECLABEL;
 
 	DataFill(tupleDescriptor,
 			 values,
@@ -1212,6 +1216,8 @@ heap_modifytuple(HeapTuple tuple,
 	newTuple->t_tableOid = tuple->t_tableOid;
 	if (tupleDesc->tdhasoid)
 		HeapTupleSetOid(newTuple, HeapTupleGetOid(tuple));
+	if (HeapTupleHasSecLabel(newTuple))
+		HeapTupleSetSecLabel(newTuple, HeapTupleGetSecLabel(tuple));
 
 	return newTuple;
 }
@@ -1980,6 +1986,7 @@ minimal_tuple_from_heap_tuple(HeapTuple htup)
 HeapTuple
 heap_addheader(int natts,		/* max domain index */
 			   bool withoid,	/* reserve space for oid */
+			   bool withseclabel,	/* reserve space for security */
 			   Size structlen,	/* its length */
 			   void *structure) /* pointer to the struct */
 {
@@ -1993,6 +2000,8 @@ heap_addheader(int natts,		/* max domain index */
 	/* header needs no null bitmap */
 	hoff = offsetof(HeapTupleHeaderData, t_bits);
 	if (withoid)
+		hoff += sizeof(Oid);
+	if (withseclabel)
 		hoff += sizeof(Oid);
 	hoff = MAXALIGN(hoff);
 	len = hoff + structlen;
@@ -2011,6 +2020,8 @@ heap_addheader(int natts,		/* max domain index */
 
 	if (withoid)				/* else leave infomask = 0 */
 		td->t_infomask = HEAP_HASOID;
+	if (withseclabel)
+		td->t_infomask |= HEAP_HAS_SECLABEL;
 
 	memcpy((char *) td + hoff, structure, structlen);
 

@@ -64,8 +64,8 @@
 #define RELNAMENSP			33
 #define RELOID				34
 #define RULERELNAME			35
-#define SECURITYOID			36
-#define SECURITYLABEL		37
+#define SECURITYLABEL		36
+#define SECURITYOID			37
 #define STATRELATT			38
 #define TSCONFIGMAP			39
 #define TSCONFIGNAMENSP		40

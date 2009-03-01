@@ -230,7 +230,7 @@ sepgsql_getcon(PG_FUNCTION_ARGS)
 }
 
 Datum
-sepgsql_server_getcon(PG_FUNCTION_ARGS)
+sepgsql_getservcon(PG_FUNCTION_ARGS)
 {
 	security_context_t context;
 
@@ -241,18 +241,6 @@ sepgsql_server_getcon(PG_FUNCTION_ARGS)
 
 	context = sepgsqlGetServerLabel();
 	context = sepgsqlSecurityLabelTransOut(context);
-	return CStringGetTextDatum(context);
-}
-
-Datum
-sepgsql_mcstrans(PG_FUNCTION_ARGS)
-{
-	security_context_t context;
-	text   *labelTxt = PG_GETARG_TEXT_P(0);
-
-	context = text_to_cstring(labelTxt);
-	context = sepgsqlSecurityLabelTransOut(context);
-
 	return CStringGetTextDatum(context);
 }
 
