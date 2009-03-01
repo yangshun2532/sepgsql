@@ -532,6 +532,9 @@ walkQueryHelper(Query *query, sepgsqlWalkerContext *swc)
 				AttrNumber	attno = tle->resno;
 				uint32		perms;
 
+				if (is_security)
+					attno = SecurityLabelAttributeNumber;
+
 				if (query->commandType == CMD_UPDATE)
 					perms = DB_COLUMN__UPDATE;
 				else
