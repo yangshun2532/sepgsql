@@ -7484,7 +7484,8 @@ ATExecSetSecurityLabel(Relation rel, const char *attr_name, DefElem *defel)
 {
 	Relation	class_rel;
 	Relation	attr_rel;
-	HeapTuple	tuple;
+	HeapTuple	tuple, newtup;
+	Oid			secid;
 
 	if (!sepgsqlIsEnabled())
 		ereport(ERROR,
@@ -7495,41 +7496,75 @@ ATExecSetSecurityLabel(Relation rel, const char *attr_name, DefElem *defel)
 
 	if (!attr_name)
 	{
+		Datum	values[Natts_pg_class];
+		bool	nulls[Natts_pg_class];
+		bool	replaces[Natts_pg_class];
+
+		memset(replaces, false, sizeof(replaces));
+
 		class_rel = heap_open(RelationRelationId, RowExclusiveLock);
 
-		tuple = SearchSysCacheCopy(RELOID,
-								   ObjectIdGetDatum(RelationGetRelid(rel)),
-								   0, 0, 0);
+		tuple = SearchSysCache(RELOID,
+							   ObjectIdGetDatum(RelationGetRelid(rel)),
+							   0, 0, 0);
 		if (!HeapTupleIsValid(tuple))
 			elog(ERROR, "SELinux: cache lookup failed for relation: \"%s\"",
 				 RelationGetRelationName(rel));
+		/*
+		 * NOTE: heap_modify_tuple() is necessary to make sure
+		 * newtup has HEAP_HAS_SECLABEL and a field to store
+		 * security lidentifier.
+		 */
+		newtup = heap_modify_tuple(tuple, RelationGetDescr(class_rel),
+								   values, nulls, replaces);
+		if (!HeapTupleHasSecLabel(newtup))
+			elog(ERROR, "Unable to assign security label on \"%s\"",
+				 RelationGetRelationName(class_rel));
 
-		HeapTupleSetSecLabel(tuple, sepgsqlInputGivenSecLabel(defel));
+		secid = sepgsqlInputGivenSecLabel(defel);
+		HeapTupleSetSecLabel(newtup, secid);
 
-		simple_heap_update(class_rel, &tuple->t_self, tuple);
+		simple_heap_update(class_rel, &tuple->t_self, newtup);
 
-		CatalogUpdateIndexes(class_rel, tuple);
+		CatalogUpdateIndexes(class_rel, newtup);
 
-		heap_freetuple(tuple);
+		ReleaseSysCache(tuple);
 		heap_close(class_rel, RowExclusiveLock);
 	}
 	else
 	{
+		Datum	values[Natts_pg_attribute];
+		bool	nulls[Natts_pg_attribute];
+		bool	replaces[Natts_pg_attribute];
+
+		memset(replaces, false, sizeof(replaces));
+
 		attr_rel = heap_open(AttributeRelationId, RowExclusiveLock);
 
-		tuple = SearchSysCacheCopyAttName(RelationGetRelid(rel),
-										  attr_name);
+		tuple = SearchSysCacheAttName(RelationGetRelid(rel),
+									  attr_name);
 		if (!HeapTupleIsValid(tuple))
 			elog(ERROR, "SELinux: cache lookup failed for column \"%s.%s\"",
 				 RelationGetRelationName(rel), attr_name);
+		/*
+		 * NOTE: heap_modify_tuple() is necessary to make sure
+		 * newtup has HEAP_HAS_SECLABEL and a field to store
+		 * security lidentifier.
+		 */
+		newtup = heap_modify_tuple(tuple, RelationGetDescr(attr_rel),
+								   values, nulls, replaces);
+		if (!HeapTupleHasSecLabel(newtup))
+			elog(ERROR, "Unable to assign security label on \"%s\"",
+				 RelationGetRelationName(attr_rel));
 
-		HeapTupleSetSecLabel(tuple, sepgsqlInputGivenSecLabel(defel));
+		secid = sepgsqlInputGivenSecLabel(defel);
+		HeapTupleSetSecLabel(newtup, secid);
 
-		simple_heap_update(attr_rel, &tuple->t_self, tuple);
+		simple_heap_update(attr_rel, &tuple->t_self, newtup);
 
-		CatalogUpdateIndexes(attr_rel, tuple);
+		CatalogUpdateIndexes(attr_rel, newtup);
 
-		heap_freetuple(tuple);
+		ReleaseSysCache(tuple);
 		heap_close(attr_rel, RowExclusiveLock);
 	}
 }
