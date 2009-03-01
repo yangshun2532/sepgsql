@@ -80,6 +80,7 @@ extern int	inv_tell(LargeObjectDesc *obj_desc);
 extern int	inv_read(LargeObjectDesc *obj_desc, char *buf, int nbytes);
 extern int	inv_write(LargeObjectDesc *obj_desc, const char *buf, int nbytes);
 extern void inv_truncate(LargeObjectDesc *obj_desc, int len);
-extern void inv_set_seclabel(Oid loid, Oid secid);
+extern Oid	inv_get_security(Oid loid);
+extern void inv_set_security(Oid loid, Oid secid);
 
 #endif   /* LARGE_OBJECT_H */

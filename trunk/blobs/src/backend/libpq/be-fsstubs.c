@@ -206,10 +206,6 @@ lo_lseek(PG_FUNCTION_ARGS)
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("invalid large-object descriptor: %d", fd)));
-	/*
-	 * SELinux: checl db_blob:{setattr} permission
-	 */
-	sepgsqlCheckBlobSetattr(cookies[fd]);
 
 	status = inv_seek(cookies[fd], offset, whence);
 
@@ -257,10 +253,6 @@ lo_tell(PG_FUNCTION_ARGS)
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("invalid large-object descriptor: %d", fd)));
-	/*
-	 * SELinux: check db_blob:{getattr}
-	 */
-	sepgsqlCheckBlobGetattr(cookies[fd]);
 
 	PG_RETURN_INT32(inv_tell(cookies[fd]));
 }
@@ -526,30 +518,14 @@ lo_truncate(PG_FUNCTION_ARGS)
  *    get a security label of large object
  */
 Datum
-lo_get_seclabel(PG_FUNCTION_ARGS)
+lo_get_security(PG_FUNCTION_ARGS)
 {
-	LargeObjectDesc	   *lobj;
-	char			   *seclabel;
+	Oid		loid = PG_GETARG_OID(0);
+	Oid		secid;
 
-	if (!sepgsqlIsEnabled())
-		ereport(ERROR,
-				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("SELinux: disabled now")));
+	secid = inv_get_security(loid);
 
-	CreateFSContext();
-
-	lobj = inv_open(PG_GETARG_OID(0), INV_READ, fscxt);
-
-	/*
-	 * SELinux: check db_blob:{getattr}
-	 */
-	sepgsqlCheckBlobGetattr(lobj);
-
-	seclabel = securityTransSecLabelOut(lobj->secid);
-
-	inv_close(lobj);
-
-	return CStringGetTextDatum(seclabel);
+	return CStringGetTextDatum(securityTransSecLabelOut(secid));
 }
 
 /*
@@ -557,20 +533,15 @@ lo_get_seclabel(PG_FUNCTION_ARGS)
  *    set a security label of large object
  */
 Datum
-lo_set_seclabel(PG_FUNCTION_ARGS)
+lo_set_security(PG_FUNCTION_ARGS)
 {
 	Oid		loid = PG_GETARG_OID(0);
 	char   *seclabel = TextDatumGetCString(PG_GETARG_DATUM(1));
 	Oid		secid;
 
-	if (!sepgsqlIsEnabled())
-		ereport(ERROR,
-				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("SELinux: disabled now")));
-
 	secid = securityTransSecLabelIn(seclabel);
 
-	inv_set_seclabel(loid, secid);
+	inv_set_security(loid, secid);
 
 	/*
 	 * Also on memory caches to be updated

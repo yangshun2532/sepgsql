@@ -4,15 +4,15 @@ SELECT lo_import('/tmp/sepgsql_test_blob1', 6001);
 SELECT lo_import('/tmp/sepgsql_test_blob1', 6002);
 SELECT lo_import('/tmp/sepgsql_test_blob1', 6003);
 
-SELECT lo_set_seclabel(6001, 'system_u:object_r:sepgsql_blob_t:s0');
-SELECT lo_set_seclabel(6002, 'system_u:object_r:sepgsql_ro_blob_t:s0');
-SELECT lo_set_seclabel(6003, 'system_u:object_r:sepgsql_secret_blob_t:s0');
+SELECT lo_set_security(6001, 'system_u:object_r:sepgsql_blob_t:s0');
+SELECT lo_set_security(6002, 'system_u:object_r:sepgsql_ro_blob_t:s0');
+SELECT lo_set_security(6003, 'system_u:object_r:sepgsql_secret_blob_t:s0');
 
 --@SECURITY_CONTEXT=unconfined_u:unconfined_r:sepgsql_test_t:s0:c0
 
-SELECT lo_get_seclabel(6001);
-SELECT lo_get_seclabel(6002);
-SELECT lo_get_seclabel(6003);
+SELECT lo_get_security(6001);
+SELECT lo_get_security(6002);
+SELECT lo_get_security(6003);
 
 SELECT security_label, loid, COUNT(*) FROM pg_largeobject
        GROUP BY security_label, loid;
@@ -82,8 +82,8 @@ SELECT lo_export(6005, '/dev/null');
 -- change security label
 BEGIN;
 SELECT lo_open(6001, x'40000'::int);	-- a seed of trouble
-SELECT lo_set_seclabel(6001, 'system_u:object_r:sepgsql_blob_t:s0:c4');
-SELECT lo_get_seclabel(6001);
+SELECT lo_set_security(6001, 'system_u:object_r:sepgsql_blob_t:s0:c4');
+SELECT lo_get_security(6001);
 SELECT security_label, loid, count(*) FROM pg_largeobject
        WHERE loid = 6001
        GROUP BY security_label, loid;

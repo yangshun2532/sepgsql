@@ -1539,7 +1539,7 @@ storeWritableSystemAttribute(Relation rel, TupleTableSlot *slot, HeapTuple tuple
 	/* "security_acl" */
 	if (HeapTupleHasRowAcl(tuple))
 		HeapTupleSetRowAcl(tuple, slot->tts_rowacl);
-	else if (slot->tts_rowacl != InvalidOid)
+	else if (OidIsValid(slot->tts_rowacl))
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("Unable to assign Row-level ACLs on \"%s\"",
@@ -1548,7 +1548,7 @@ storeWritableSystemAttribute(Relation rel, TupleTableSlot *slot, HeapTuple tuple
 	/* "security_label" */
 	if (HeapTupleHasSecLabel(tuple))
 		HeapTupleSetSecLabel(tuple, slot->tts_seclabel);
-	else if (slot->tts_seclabel != InvalidOid)
+	else if (OidIsValid(slot->tts_seclabel))
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("Unable to assign security label on \"%s\"",

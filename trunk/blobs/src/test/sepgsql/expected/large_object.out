@@ -23,20 +23,20 @@ SELECT lo_import('/tmp/sepgsql_test_blob1', 6003);
       6003
 (1 row)
 
-SELECT lo_set_seclabel(6001, 'system_u:object_r:sepgsql_blob_t:s0');
- lo_set_seclabel 
+SELECT lo_set_security(6001, 'system_u:object_r:sepgsql_blob_t:s0');
+ lo_set_security 
 -----------------
  t
 (1 row)
 
-SELECT lo_set_seclabel(6002, 'system_u:object_r:sepgsql_ro_blob_t:s0');
- lo_set_seclabel 
+SELECT lo_set_security(6002, 'system_u:object_r:sepgsql_ro_blob_t:s0');
+ lo_set_security 
 -----------------
  t
 (1 row)
 
-SELECT lo_set_seclabel(6003, 'system_u:object_r:sepgsql_secret_blob_t:s0');
- lo_set_seclabel 
+SELECT lo_set_security(6003, 'system_u:object_r:sepgsql_secret_blob_t:s0');
+ lo_set_security 
 -----------------
  t
 (1 row)
@@ -48,20 +48,20 @@ SELECT sepgsql_getcon();
  unconfined_u:unconfined_r:sepgsql_test_t:s0:c0
 (1 row)
 
-SELECT lo_get_seclabel(6001);
-           lo_get_seclabel           
+SELECT lo_get_security(6001);
+           lo_get_security           
 -------------------------------------
  system_u:object_r:sepgsql_blob_t:s0
 (1 row)
 
-SELECT lo_get_seclabel(6002);
-            lo_get_seclabel             
+SELECT lo_get_security(6002);
+            lo_get_security             
 ----------------------------------------
  system_u:object_r:sepgsql_ro_blob_t:s0
 (1 row)
 
-SELECT lo_get_seclabel(6003);
-              lo_get_seclabel               
+SELECT lo_get_security(6003);
+              lo_get_security               
 --------------------------------------------
  system_u:object_r:sepgsql_secret_blob_t:s0
 (1 row)
@@ -278,14 +278,14 @@ SELECT lo_open(6001, x'40000'::int);	-- a seed of trouble
        0
 (1 row)
 
-SELECT lo_set_seclabel(6001, 'system_u:object_r:sepgsql_blob_t:s0:c4');
- lo_set_seclabel 
+SELECT lo_set_security(6001, 'system_u:object_r:sepgsql_blob_t:s0:c4');
+ lo_set_security 
 -----------------
  t
 (1 row)
 
-SELECT lo_get_seclabel(6001);
-            lo_get_seclabel             
+SELECT lo_get_security(6001);
+            lo_get_security             
 ----------------------------------------
  system_u:object_r:sepgsql_blob_t:s0:c4
 (1 row)

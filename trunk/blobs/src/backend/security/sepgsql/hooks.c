@@ -893,10 +893,12 @@ sepgsqlCheckBlobWrite(LargeObjectDesc *lobj)
  *   check db_blob:{getattr} permission
  */
 void
-sepgsqlCheckBlobGetattr(LargeObjectDesc *lobj)
+sepgsqlCheckBlobGetattr(HeapTuple tuple)
 {
 	if (sepgsqlIsEnabled())
-		checkBlobCommon(lobj->id, lobj->secid, DB_BLOB__GETATTR);
+		checkBlobCommon(((Form_pg_largeobject) GETSTRUCT(tuple))->loid,
+						HeapTupleGetSecLabel(tuple),
+						DB_BLOB__GETATTR);
 }
 
 /*
@@ -904,10 +906,12 @@ sepgsqlCheckBlobGetattr(LargeObjectDesc *lobj)
  *   check db_blob:{setattr} permission
  */
 void
-sepgsqlCheckBlobSetattr(LargeObjectDesc *lobj)
+sepgsqlCheckBlobSetattr(HeapTuple tuple)
 {
 	if (sepgsqlIsEnabled())
-		checkBlobCommon(lobj->id, lobj->secid, DB_BLOB__SETATTR);
+		checkBlobCommon(((Form_pg_largeobject) GETSTRUCT(tuple))->loid,
+						HeapTupleGetSecLabel(tuple),
+						DB_BLOB__SETATTR);
 }
 
 /*
