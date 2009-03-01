@@ -634,7 +634,7 @@ sepgsqlExprWalker(Node *node, sepgsqlWalkerContext *swc)
 		swc->selist
 			= walkQueryHelper((Query *) node, swc);
 	}
-	else if (IsA(node, SortClause))
+	else if (IsA(node, SortClause) || IsA(node, GroupClause))
 	{
 		walkSortClauseHelper((SortClause *) node, swc);
 

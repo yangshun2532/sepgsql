@@ -8787,7 +8787,7 @@ SecurityItem:
 			IDENT opt_equal Sconst
 				{
 					if (!sepgsqlIsEnabled() ||
-						strcmp("security_label", $1) != 0)
+						strcmp("security_context", $1) != 0)
 						yyerror("syntax error");
 
 					$$ = makeDefElem($1, (Node *) makeString($3));

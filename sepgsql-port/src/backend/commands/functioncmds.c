@@ -1246,6 +1246,8 @@ AlterFunction(AlterFunctionStmt *stmt)
 		char		repl_null[Natts_pg_proc];
 		char		repl_repl[Natts_pg_proc];
 
+		memset(repl_repl, ' ', sizeof(repl_repl));
+
 		if (set_items)
 		{
 			/* extract existing proconfig setting */
@@ -1256,8 +1258,7 @@ AlterFunction(AlterFunctionStmt *stmt)
 			a = update_proconfig_value(a, set_items);
 
 			/* update the tuple */
-			memset(repl_repl, ' ', sizeof(repl_repl));
-			repl_repl[Anum_pg_proc_proconfig - 1] = true;
+			repl_repl[Anum_pg_proc_proconfig - 1] = 'r';
 
 			if (a == NULL)
 			{
