@@ -5,7 +5,7 @@
  * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/bin/scripts/createuser.c,v 1.41 2009/02/25 13:03:07 petere Exp $
+ * $PostgreSQL: pgsql/src/bin/scripts/createuser.c,v 1.43 2009/02/26 16:20:55 petere Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -17,13 +17,6 @@
 
 static void help(const char *progname);
 
-enum trivalue
-{
-	TRI_DEFAULT,
-	TRI_NO,
-	TRI_YES
-};
-
 int
 main(int argc, char *argv[])
 {
@@ -31,9 +24,9 @@ main(int argc, char *argv[])
 		{"host", required_argument, NULL, 'h'},
 		{"port", required_argument, NULL, 'p'},
 		{"username", required_argument, NULL, 'U'},
+		{"no-password", no_argument, NULL, 'w'},
 		{"password", no_argument, NULL, 'W'},
 		{"echo", no_argument, NULL, 'e'},
-		{"quiet", no_argument, NULL, 'q'},
 		{"createdb", no_argument, NULL, 'd'},
 		{"no-createdb", no_argument, NULL, 'D'},
 		{"superuser", no_argument, NULL, 's'},
@@ -61,7 +54,7 @@ main(int argc, char *argv[])
 	char	   *host = NULL;
 	char	   *port = NULL;
 	char	   *username = NULL;
-	bool		password = false;
+	enum trivalue prompt_password = TRI_DEFAULT;
 	bool		echo = false;
 	char	   *conn_limit = NULL;
 	bool		pwprompt = false;
@@ -85,7 +78,7 @@ main(int argc, char *argv[])
 
 	handle_help_version_opts(argc, argv, "createuser", help);
 
-	while ((c = getopt_long(argc, argv, "h:p:U:WeqdDsSaArRiIlLc:PEN",
+	while ((c = getopt_long(argc, argv, "h:p:U:wWedDsSaArRiIlLc:PEN",
 							long_options, &optindex)) != -1)
 	{
 		switch (c)
@@ -99,14 +92,14 @@ main(int argc, char *argv[])
 			case 'U':
 				username = optarg;
 				break;
+			case 'w':
+				prompt_password = TRI_NO;
+				break;
 			case 'W':
-				password = true;
+				prompt_password = TRI_YES;
 				break;
 			case 'e':
 				echo = true;
-				break;
-			case 'q':
-				/* obsolete; remove in 8.4 */
 				break;
 			case 'd':
 				createdb = TRI_YES;
@@ -228,7 +221,7 @@ main(int argc, char *argv[])
 	if (login == 0)
 		login = TRI_YES;
 
-	conn = connectDatabase("postgres", host, port, username, password, progname);
+	conn = connectDatabase("postgres", host, port, username, prompt_password, progname);
 
 	initPQExpBuffer(&sql);
 
@@ -329,6 +322,7 @@ help(const char *progname)
 	printf(_("  -h, --host=HOSTNAME       database server host or socket directory\n"));
 	printf(_("  -p, --port=PORT           database server port\n"));
 	printf(_("  -U, --username=USERNAME   user name to connect as (not the one to create)\n"));
+	printf(_("  -w, --no-password         never prompt for password\n"));
 	printf(_("  -W, --password            force password prompt\n"));
 	printf(_("\nIf one of -d, -D, -r, -R, -s, -S, and ROLENAME is not specified, you will\n"
 			 "be prompted interactively.\n"));
