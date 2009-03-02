@@ -20,9 +20,6 @@
 #endif
 
 #include "php.h"
-
-#if HAVE_SELINUX
-
 #include "php_selinux.h"
 
 #include <stdlib.h>
@@ -33,76 +30,303 @@
 #include <selinux/label.h>
 
 /*
+ * SELinux arginfo
+ */
+static
+ZEND_BEGIN_ARG_INFO(arginfo_selinux_is_enabled, 0)
+ZEND_END_ARG_INFO()
+
+static
+ZEND_BEGIN_ARG_INFO(arginfo_selinux_mls_is_enabled, 0)
+ZEND_END_ARG_INFO()
+
+static
+ZEND_BEGIN_ARG_INFO(arginfo_selinux_getenforce, 0)
+ZEND_END_ARG_INFO()
+
+static
+ZEND_BEGIN_ARG_INFO(arginfo_selinux_setenforce, 0)
+	ZEND_ARG_INFO(0, mode)
+ZEND_END_ARG_INFO()
+
+static
+ZEND_BEGIN_ARG_INFO(arginfo_selinux_policyvers, 0)
+ZEND_END_ARG_INFO()
+
+static
+ZEND_BEGIN_ARG_INFO(arginfo_selinux_getcon, 0)
+ZEND_END_ARG_INFO()
+
+static
+ZEND_BEGIN_ARG_INFO(arginfo_selinux_setcon, 0)
+	ZEND_ARG_INFO(0, context)
+ZEND_END_ARG_INFO()
+
+static
+ZEND_BEGIN_ARG_INFO(arginfo_selinux_getpidcon, 0)
+	ZEND_ARG_INFO(0, pid)
+ZEND_END_ARG_INFO()
+
+static
+ZEND_BEGIN_ARG_INFO(arginfo_selinux_getprevcon, 0)
+ZEND_END_ARG_INFO()
+
+static
+ZEND_BEGIN_ARG_INFO(arginfo_selinux_getexeccon, 0)
+ZEND_END_ARG_INFO()
+
+static
+ZEND_BEGIN_ARG_INFO(arginfo_selinux_setexeccon, 0)
+	ZEND_ARG_INFO(0, context)
+ZEND_END_ARG_INFO()
+
+static
+ZEND_BEGIN_ARG_INFO(arginfo_selinux_getfscreatecon, 0)
+ZEND_END_ARG_INFO()
+
+static
+ZEND_BEGIN_ARG_INFO(arginfo_selinux_setfscreatecon, 0)
+	ZEND_ARG_INFO(0, context)
+ZEND_END_ARG_INFO()
+
+static
+ZEND_BEGIN_ARG_INFO(arginfo_selinux_getkeycreatecon, 0)
+ZEND_END_ARG_INFO()
+
+static
+ZEND_BEGIN_ARG_INFO(arginfo_selinux_setkeycreatecon, 0)
+	ZEND_ARG_INFO(0, context)
+ZEND_END_ARG_INFO()
+
+static
+ZEND_BEGIN_ARG_INFO(arginfo_selinux_getsockcreatecon, 0)
+ZEND_END_ARG_INFO()
+
+static
+ZEND_BEGIN_ARG_INFO(arginfo_selinux_setsockcreatecon, 0)
+	ZEND_ARG_INFO(0, context)
+ZEND_END_ARG_INFO()
+
+static
+ZEND_BEGIN_ARG_INFO(arginfo_selinux_getfilecon, 0)
+	ZEND_ARG_INFO(0, filename)
+ZEND_END_ARG_INFO()
+
+static
+ZEND_BEGIN_ARG_INFO(arginfo_selinux_lgetfilecon, 0)
+	ZEND_ARG_INFO(0, filename)
+ZEND_END_ARG_INFO()
+
+static
+ZEND_BEGIN_ARG_INFO(arginfo_selinux_fgetfilecon, 0)
+	ZEND_ARG_INFO(0, stream)
+ZEND_END_ARG_INFO()
+
+static
+ZEND_BEGIN_ARG_INFO(arginfo_selinux_setfilecon, 0)
+	ZEND_ARG_INFO(0, filename)
+	ZEND_ARG_INFO(0, context)
+ZEND_END_ARG_INFO()
+
+static
+ZEND_BEGIN_ARG_INFO(arginfo_selinux_lsetfilecon, 0)
+	ZEND_ARG_INFO(0, filename)
+	ZEND_ARG_INFO(0, context)
+ZEND_END_ARG_INFO()
+
+static
+ZEND_BEGIN_ARG_INFO(arginfo_selinux_fsetfilecon, 0)
+	ZEND_ARG_INFO(0, stream)
+	ZEND_ARG_INFO(0, context)
+ZEND_END_ARG_INFO()
+
+static
+ZEND_BEGIN_ARG_INFO(arginfo_selinux_getpeercon, 0)
+	ZEND_ARG_INFO(0, stream)
+ZEND_END_ARG_INFO()
+
+static
+ZEND_BEGIN_ARG_INFO(arginfo_selinux_compute_av, 0)
+	ZEND_ARG_INFO(0, scontext)
+	ZEND_ARG_INFO(0, tcontext)
+	ZEND_ARG_INFO(0, tclass)
+ZEND_END_ARG_INFO()
+
+static
+ZEND_BEGIN_ARG_INFO(arginfo_selinux_compute_create, 0)
+	ZEND_ARG_INFO(0, scontext)
+	ZEND_ARG_INFO(0, tcontext)
+	ZEND_ARG_INFO(0, tclass)
+ZEND_END_ARG_INFO()
+
+static
+ZEND_BEGIN_ARG_INFO(arginfo_selinux_compute_relabel, 0)
+	ZEND_ARG_INFO(0, scontext)
+	ZEND_ARG_INFO(0, tcontext)
+	ZEND_ARG_INFO(0, tclass)
+ZEND_END_ARG_INFO()
+
+static
+ZEND_BEGIN_ARG_INFO(arginfo_selinux_compute_member, 0)
+	ZEND_ARG_INFO(0, scontext)
+	ZEND_ARG_INFO(0, tcontext)
+	ZEND_ARG_INFO(0, tclass)
+ZEND_END_ARG_INFO()
+
+static
+ZEND_BEGIN_ARG_INFO(arginfo_selinux_compute_user, 0)
+	ZEND_ARG_INFO(0, scontext)
+	ZEND_ARG_INFO(0, username)
+ZEND_END_ARG_INFO()
+
+static
+ZEND_BEGIN_ARG_INFO(arginfo_selinux_get_initial_context, 0)
+	ZEND_ARG_INFO(0, name)
+ZEND_END_ARG_INFO()
+
+static
+ZEND_BEGIN_ARG_INFO(arginfo_selinux_check_context, 0)
+	ZEND_ARG_INFO(0, context)
+ZEND_END_ARG_INFO()
+
+static
+ZEND_BEGIN_ARG_INFO(arginfo_selinux_canonicalize_context, 0)
+	ZEND_ARG_INFO(0, context)
+ZEND_END_ARG_INFO()
+
+static
+ZEND_BEGIN_ARG_INFO(arginfo_selinux_get_boolean_names, 0)
+ZEND_END_ARG_INFO()
+
+static
+ZEND_BEGIN_ARG_INFO(arginfo_selinux_get_boolean_pending, 0)
+	ZEND_ARG_INFO(0, bool_name)
+ZEND_END_ARG_INFO()
+
+static
+ZEND_BEGIN_ARG_INFO(arginfo_selinux_get_boolean_active, 0)
+	ZEND_ARG_INFO(0, bool_name)
+ZEND_END_ARG_INFO()
+
+static
+ZEND_BEGIN_ARG_INFO(arginfo_selinux_set_boolean, 0)
+	ZEND_ARG_INFO(0, bool_name)
+	ZEND_ARG_INFO(0, bool_value)
+ZEND_END_ARG_INFO()
+
+static
+ZEND_BEGIN_ARG_INFO(arginfo_selinux_commit_booleans, 0)
+ZEND_END_ARG_INFO()
+
+static
+ZEND_BEGIN_ARG_INFO(arginfo_selinux_trans_to_raw_context, 0)
+	ZEND_ARG_INFO(0, context)
+ZEND_END_ARG_INFO()
+
+static
+ZEND_BEGIN_ARG_INFO(arginfo_selinux_raw_to_trans_context, 0)
+	ZEND_ARG_INFO(0, context)
+ZEND_END_ARG_INFO()
+
+static
+ZEND_BEGIN_ARG_INFO_EX(arginfo_selinux_file_label_lookup, 0, 0, 2)
+	ZEND_ARG_INFO(0, pathname)
+	ZEND_ARG_INFO(0, mode)
+	ZEND_ARG_INFO(0, validate)
+	ZEND_ARG_INFO(0, baseonly)
+	ZEND_ARG_INFO(0, subset)
+	ZEND_ARG_INFO(0, specfile)
+ZEND_END_ARG_INFO()
+
+static
+ZEND_BEGIN_ARG_INFO_EX(arginfo_selinux_media_label_lookup, 0, 0, 1)
+	ZEND_ARG_INFO(0, device_name)
+	ZEND_ARG_INFO(0, validate)
+	ZEND_ARG_INFO(0, specfile)
+ZEND_END_ARG_INFO()
+
+static
+ZEND_BEGIN_ARG_INFO(arginfo_selinux_getenforcemode, 0)
+ZEND_END_ARG_INFO()
+
+static
+ZEND_BEGIN_ARG_INFO(arginfo_selinux_getpolicytype, 0)
+ZEND_END_ARG_INFO()
+
+static
+ZEND_BEGIN_ARG_INFO(arginfo_selinux_policy_root, 0)
+ZEND_END_ARG_INFO()
+
+/*
  * SELinux functions
  */
 zend_function_entry selinux_functions[] = {
 	/* global state API */
-	PHP_FE(selinux_is_enabled,		NULL)
-	PHP_FE(selinux_mls_is_enabled,		NULL)
-	PHP_FE(selinux_getenforce,		NULL)
-	PHP_FE(selinux_setenforce,		NULL)
-	PHP_FE(selinux_policyvers,		NULL)
+	PHP_FE(selinux_is_enabled,		arginfo_selinux_is_enabled)
+	PHP_FE(selinux_mls_is_enabled,		arginfo_selinux_mls_is_enabled)
+	PHP_FE(selinux_getenforce,		arginfo_selinux_getenforce)
+	PHP_FE(selinux_setenforce,		arginfo_selinux_setenforce)
+	PHP_FE(selinux_policyvers,		arginfo_selinux_policyvers)
 
 	/*  wrappers for the /proc/pid/attr API */
-	PHP_FE(selinux_getcon,			NULL)
-	PHP_FE(selinux_setcon,			NULL)
-	PHP_FE(selinux_getpidcon,		NULL)
-	PHP_FE(selinux_getprevcon,		NULL)
-	PHP_FE(selinux_getexeccon,		NULL)
-	PHP_FE(selinux_setexeccon,		NULL)
-	PHP_FE(selinux_getfscreatecon,		NULL)
-	PHP_FE(selinux_setfscreatecon,		NULL)
-	PHP_FE(selinux_getkeycreatecon,		NULL)
-	PHP_FE(selinux_setkeycreatecon,		NULL)
-	PHP_FE(selinux_getsockcreatecon,	NULL)
-	PHP_FE(selinux_setsockcreatecon,	NULL)
+	PHP_FE(selinux_getcon,			arginfo_selinux_getcon)
+	PHP_FE(selinux_setcon,			arginfo_selinux_setcon)
+	PHP_FE(selinux_getpidcon,		arginfo_selinux_getpidcon)
+	PHP_FE(selinux_getprevcon,		arginfo_selinux_getprevcon)
+	PHP_FE(selinux_getexeccon,		arginfo_selinux_getexeccon)
+	PHP_FE(selinux_setexeccon,		arginfo_selinux_setexeccon)
+	PHP_FE(selinux_getfscreatecon,		arginfo_selinux_getfscreatecon)
+	PHP_FE(selinux_setfscreatecon,		arginfo_selinux_setfscreatecon)
+	PHP_FE(selinux_getkeycreatecon,		arginfo_selinux_getkeycreatecon)
+	PHP_FE(selinux_setkeycreatecon,		arginfo_selinux_setkeycreatecon)
+	PHP_FE(selinux_getsockcreatecon,	arginfo_selinux_getsockcreatecon)
+	PHP_FE(selinux_setsockcreatecon,	arginfo_selinux_setsockcreatecon)
 
 	/* get/set file context */
-	PHP_FE(selinux_getfilecon,		NULL)
-	PHP_FE(selinux_lgetfilecon,		NULL)
-	PHP_FE(selinux_fgetfilecon,		NULL)
+	PHP_FE(selinux_getfilecon,		arginfo_selinux_getfilecon)
+	PHP_FE(selinux_lgetfilecon,		arginfo_selinux_lgetfilecon)
+	PHP_FE(selinux_fgetfilecon,		arginfo_selinux_fgetfilecon)
 
-	PHP_FE(selinux_setfilecon,		NULL)
-	PHP_FE(selinux_lsetfilecon,		NULL)
-	PHP_FE(selinux_fsetfilecon,		NULL)
+	PHP_FE(selinux_setfilecon,		arginfo_selinux_setfilecon)
+	PHP_FE(selinux_lsetfilecon,		arginfo_selinux_lsetfilecon)
+	PHP_FE(selinux_fsetfilecon,		arginfo_selinux_fsetfilecon)
 
 	/* labeled networking  */
-	PHP_FE(selinux_getpeercon,		NULL)
+	PHP_FE(selinux_getpeercon,		arginfo_selinux_getpeercon)
 
 	/* security_compute_XXXX() wrappers */
-	PHP_FE(selinux_compute_av,		NULL)
-	PHP_FE(selinux_compute_create,		NULL)
-	PHP_FE(selinux_compute_relabel,		NULL)
-	PHP_FE(selinux_compute_member,		NULL)
-	PHP_FE(selinux_compute_user,		NULL)
+	PHP_FE(selinux_compute_av,		arginfo_selinux_compute_av)
+	PHP_FE(selinux_compute_create,		arginfo_selinux_compute_create)
+	PHP_FE(selinux_compute_relabel,		arginfo_selinux_compute_relabel)
+	PHP_FE(selinux_compute_member,		arginfo_selinux_compute_member)
+	PHP_FE(selinux_compute_user,		arginfo_selinux_compute_user)
 
 	/* get initial context */
-	PHP_FE(selinux_get_initial_context,	NULL)
+	PHP_FE(selinux_get_initial_context,	arginfo_selinux_get_initial_context)
 
 	/* sanity check in security context */
-	PHP_FE(selinux_check_context,		NULL)
-	PHP_FE(selinux_canonicalize_context,	NULL)
+	PHP_FE(selinux_check_context,		arginfo_selinux_check_context)
+	PHP_FE(selinux_canonicalize_context,	arginfo_selinux_canonicalize_context)
 
 	/* booleans */
-	PHP_FE(selinux_get_boolean_names,	NULL)
-	PHP_FE(selinux_get_boolean_pending,	NULL)
-	PHP_FE(selinux_get_boolean_active,	NULL)
-	PHP_FE(selinux_set_boolean,		NULL)
-	PHP_FE(selinux_commit_booleans,		NULL)
+	PHP_FE(selinux_get_boolean_names,	arginfo_selinux_get_boolean_names)
+	PHP_FE(selinux_get_boolean_pending,	arginfo_selinux_get_boolean_pending)
+	PHP_FE(selinux_get_boolean_active,	arginfo_selinux_get_boolean_active)
+	PHP_FE(selinux_set_boolean,		arginfo_selinux_set_boolean)
+	PHP_FE(selinux_commit_booleans,		arginfo_selinux_commit_booleans)
 
 	/* mcstrans */
-	PHP_FE(selinux_trans_to_raw_context,	NULL)
-	PHP_FE(selinux_raw_to_trans_context,	NULL)
+	PHP_FE(selinux_trans_to_raw_context,	arginfo_selinux_trans_to_raw_context)
+	PHP_FE(selinux_raw_to_trans_context,	arginfo_selinux_raw_to_trans_context)
 
 	/* selabel wrappers */
-	PHP_FE(selinux_file_label_lookup,	NULL)
-	PHP_FE(selinux_media_label_lookup,	NULL)
-	//PHP_FE(selinux_x_label_lookup,	NULL)
+	PHP_FE(selinux_file_label_lookup,	arginfo_selinux_file_label_lookup)
+	PHP_FE(selinux_media_label_lookup,	arginfo_selinux_media_label_lookup)
 
 	/* configuration files */
-	PHP_FE(selinux_getenforcemode,		NULL)
-	PHP_FE(selinux_getpolicytype,		NULL)
-	PHP_FE(selinux_policy_root,		NULL)
+	PHP_FE(selinux_getenforcemode,		arginfo_selinux_getenforcemode)
+	PHP_FE(selinux_getpolicytype,		arginfo_selinux_getpolicytype)
+	PHP_FE(selinux_policy_root,		arginfo_selinux_policy_root)
 
 	{NULL, NULL, NULL},
 };
@@ -1059,5 +1283,3 @@ PHP_FUNCTION(selinux_policy_root)
 	RETVAL_STRING(root, 1);
 }
 /* }}} */
-
-#endif	/* HAVE_SELINUX */
