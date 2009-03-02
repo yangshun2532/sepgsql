@@ -6,7 +6,7 @@
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
- * $PostgreSQL: pgsql/src/bin/pg_dump/pg_dumpall.c,v 1.117 2009/02/25 13:24:40 petere Exp $
+ * $PostgreSQL: pgsql/src/bin/pg_dump/pg_dumpall.c,v 1.118 2009/02/26 16:02:38 petere Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -52,7 +52,7 @@ static void doShellQuoting(PQExpBuffer buf, const char *str);
 
 static int	runPgDump(const char *dbname);
 static PGconn *connectDatabase(const char *dbname, const char *pghost, const char *pgport,
-			  const char *pguser, bool require_password, bool fail_on_error);
+			  const char *pguser, enum trivalue prompt_password, bool fail_on_error);
 static PGresult *executeQuery(PGconn *conn, const char *query);
 static void executeCommand(PGconn *conn, const char *query);
 
@@ -83,7 +83,7 @@ main(int argc, char *argv[])
 	char	   *pguser = NULL;
 	char	   *pgdb = NULL;
 	char	   *use_role = NULL;
-	bool		force_password = false;
+	enum trivalue prompt_password = TRI_DEFAULT;
 	bool		data_only = false;
 	bool		globals_only = false;
 	bool		roles_only = false;
@@ -116,6 +116,7 @@ main(int argc, char *argv[])
 		{"tablespaces-only", no_argument, NULL, 't'},
 		{"username", required_argument, NULL, 'U'},
 		{"verbose", no_argument, NULL, 'v'},
+		{"no-password", no_argument, NULL, 'w'},
 		{"password", no_argument, NULL, 'W'},
 		{"no-privileges", no_argument, NULL, 'x'},
 		{"no-acl", no_argument, NULL, 'x'},
@@ -180,7 +181,7 @@ main(int argc, char *argv[])
 
 	pgdumpopts = createPQExpBuffer();
 
-	while ((c = getopt_long(argc, argv, "acdDf:gh:il:oOp:rsS:tU:vWxX:", long_options, &optindex)) != -1)
+	while ((c = getopt_long(argc, argv, "acdDf:gh:il:oOp:rsS:tU:vwWxX:", long_options, &optindex)) != -1)
 	{
 		switch (c)
 		{
@@ -265,8 +266,13 @@ main(int argc, char *argv[])
 				appendPQExpBuffer(pgdumpopts, " -v");
 				break;
 
+			case 'w':
+				prompt_password = TRI_NO;
+				appendPQExpBuffer(pgdumpopts, " -w");
+				break;
+
 			case 'W':
-				force_password = true;
+				prompt_password = TRI_YES;
 				appendPQExpBuffer(pgdumpopts, " -W");
 				break;
 
@@ -377,7 +383,7 @@ main(int argc, char *argv[])
 	if (pgdb)
 	{
 		conn = connectDatabase(pgdb, pghost, pgport, pguser,
-							   force_password, false);
+							   prompt_password, false);
 
 		if (!conn)
 		{
@@ -389,10 +395,10 @@ main(int argc, char *argv[])
 	else
 	{
 		conn = connectDatabase("postgres", pghost, pgport, pguser,
-							   force_password, false);
+							   prompt_password, false);
 		if (!conn)
 			conn = connectDatabase("template1", pghost, pgport, pguser,
-								   force_password, true);
+								   prompt_password, true);
 
 		if (!conn)
 		{
@@ -548,6 +554,7 @@ help(void)
 	printf(_("  -l, --database=DBNAME    alternative default database\n"));
 	printf(_("  -p, --port=PORT          database server port number\n"));
 	printf(_("  -U, --username=NAME      connect as specified database user\n"));
+	printf(_("  -w, --no-password        never prompt for password\n"));
 	printf(_("  -W, --password           force password prompt (should happen automatically)\n"));
 
 	printf(_("\nIf -f/--file is not used, then the SQL script will be written to the standard\n"
@@ -1357,7 +1364,7 @@ runPgDump(const char *dbname)
  */
 static PGconn *
 connectDatabase(const char *dbname, const char *pghost, const char *pgport,
-				const char *pguser, bool require_password, bool fail_on_error)
+				const char *pguser, enum trivalue prompt_password, bool fail_on_error)
 {
 	PGconn	   *conn;
 	bool		new_pass;
@@ -1365,7 +1372,7 @@ connectDatabase(const char *dbname, const char *pghost, const char *pgport,
 	int			my_version;
 	static char *password = NULL;
 
-	if (require_password && !password)
+	if (prompt_password == TRI_YES && !password)
 		password = simple_prompt("Password: ", 100, false);
 
 	/*
@@ -1386,7 +1393,8 @@ connectDatabase(const char *dbname, const char *pghost, const char *pgport,
 
 		if (PQstatus(conn) == CONNECTION_BAD &&
 			PQconnectionNeedsPassword(conn) &&
-			password == NULL)
+			password == NULL &&
+			prompt_password != TRI_NO)
 		{
 			PQfinish(conn);
 			password = simple_prompt("Password: ", 100, false);
