@@ -36,6 +36,7 @@ setup: launch_psql
 	@cp -f /dev/null /tmp/sepgsql_test_copy_2
 	@chcon -t postgresql_tmp_t -l s0 /tmp/sepgsql_test_copy_1
 	@chcon -t postgresql_db_t  -l s0 /tmp/sepgsql_test_copy_2
+	@chmod 0666 /tmp/sepgsql_test_*
 	@echo "PASS: setup filesystem objects"
 
 check:

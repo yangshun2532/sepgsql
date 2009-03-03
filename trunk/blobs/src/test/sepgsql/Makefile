@@ -40,6 +40,7 @@ setup: launch_psql
 	@dd if=/dev/zero of=/tmp/sepgsql_test_blob2 bs=1024 count=20 >& /dev/null
 	@chcon -t postgresql_tmp_t -l s0 /tmp/sepgsql_test_blob1
 	@chcon -t postgresql_db_t  -l s0 /tmp/sepgsql_test_blob2
+	@chmod 0666 /tmp/sepgsql_test_*
 	@echo "PASS: setup filesystem objects"
 
 check:
