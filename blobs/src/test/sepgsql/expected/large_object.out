@@ -5,37 +5,46 @@ SELECT sepgsql_getcon();
  unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c15
 (1 row)
 
-SELECT lo_import('/tmp/sepgsql_test_blob1', 6001);
- lo_import 
------------
-      6001
-(1 row)
-
-SELECT lo_import('/tmp/sepgsql_test_blob1', 6002);
- lo_import 
------------
-      6002
-(1 row)
-
-SELECT lo_import('/tmp/sepgsql_test_blob1', 6003);
- lo_import 
------------
-      6003
-(1 row)
-
-SELECT lo_set_security(6001, 'system_u:object_r:sepgsql_blob_t:s0');
+-- cleanup previous tests
+SET client_min_messages TO 'error';
+SET
+DROP TABLE IF EXISTS lolabel CASCADE;
+DROP TABLE
+DROP FUNCTION IF EXISTS lo_label(oid) CASCADE;
+DROP FUNCTION
+RESET client_min_messages;
+RESET
+CREATE TABLE lolabel(
+       loid	oid,
+       label	text
+);
+CREATE TABLE
+CREATE OR REPLACE FUNCTION lo_label(oid)
+       RETURNS TEXT LANGUAGE 'sql'
+       AS 'SELECT label FROM lolabel WHERE loid = $1';
+CREATE FUNCTION
+INSERT INTO lolabel (SELECT lo_import('/tmp/sepgsql_test_blob1'), 'normal');
+INSERT 0 1
+INSERT INTO lolabel (SELECT lo_import('/tmp/sepgsql_test_blob1'), 'readonly');
+INSERT 0 1
+INSERT INTO lolabel (SELECT lo_import('/tmp/sepgsql_test_blob1'), 'secret');
+INSERT 0 1
+SELECT lo_set_security(loid, 'system_u:object_r:sepgsql_blob_t:s0')
+       FROM lolabel WHERE label = 'normal';
  lo_set_security 
 -----------------
  t
 (1 row)
 
-SELECT lo_set_security(6002, 'system_u:object_r:sepgsql_ro_blob_t:s0');
+SELECT lo_set_security(loid, 'system_u:object_r:sepgsql_ro_blob_t:s0')
+       FROM lolabel WHERE label = 'readonly';
  lo_set_security 
 -----------------
  t
 (1 row)
 
-SELECT lo_set_security(6003, 'system_u:object_r:sepgsql_secret_blob_t:s0');
+SELECT lo_set_security(loid, 'system_u:object_r:sepgsql_secret_blob_t:s0')
+       FROM lolabel WHERE label = 'secret';
  lo_set_security 
 -----------------
  t
@@ -48,37 +57,27 @@ SELECT sepgsql_getcon();
  unconfined_u:unconfined_r:sepgsql_test_t:s0:c0
 (1 row)
 
-SELECT lo_get_security(6001);
-           lo_get_security           
--------------------------------------
- system_u:object_r:sepgsql_blob_t:s0
-(1 row)
-
-SELECT lo_get_security(6002);
-            lo_get_security             
-----------------------------------------
- system_u:object_r:sepgsql_ro_blob_t:s0
-(1 row)
-
-SELECT lo_get_security(6003);
+SELECT lo_get_security(loid) FROM lolabel;
               lo_get_security               
 --------------------------------------------
+ system_u:object_r:sepgsql_blob_t:s0
+ system_u:object_r:sepgsql_ro_blob_t:s0
  system_u:object_r:sepgsql_secret_blob_t:s0
-(1 row)
+(3 rows)
 
-SELECT security_label, loid, COUNT(*) FROM pg_largeobject
-       GROUP BY security_label, loid;
-               security_label               | loid | count 
---------------------------------------------+------+-------
- system_u:object_r:sepgsql_secret_blob_t:s0 | 6003 |    10
- system_u:object_r:sepgsql_blob_t:s0        | 6001 |    10
- system_u:object_r:sepgsql_ro_blob_t:s0     | 6002 |    10
+SELECT security_label, lo_label(loid) AS label, COUNT(*)
+       FROM pg_largeobject GROUP BY security_label, loid ORDER by label;
+               security_label               |  label   | count 
+--------------------------------------------+----------+-------
+ system_u:object_r:sepgsql_blob_t:s0        | normal   |    10
+ system_u:object_r:sepgsql_ro_blob_t:s0     | readonly |    10
+ system_u:object_r:sepgsql_secret_blob_t:s0 | secret   |    10
 (3 rows)
 
 -- read large object
 BEGIN;
 BEGIN
-SELECT lo_open(6001, x'40000'::int);
+SELECT lo_open(loid, x'40000'::int) FROM lolabel WHERE label = 'normal';
  lo_open 
 ---------
        0
@@ -94,7 +93,7 @@ ROLLBACK;
 ROLLBACK
 BEGIN;
 BEGIN
-SELECT lo_open(6002, x'40000'::int);
+SELECT lo_open(loid, x'40000'::int) FROM lolabel WHERE label = 'readonly';
  lo_open 
 ---------
        0
@@ -110,20 +109,20 @@ ROLLBACK;
 ROLLBACK
 BEGIN;
 BEGIN
-SELECT lo_open(6003, x'40000'::int);	-- to be denied
+SELECT lo_open(loid, x'40000'::int) FROM lolabel WHERE label = 'secret';
  lo_open 
 ---------
        0
 (1 row)
 
-SELECT loread(0, 32);
-ERROR:  SELinux: denied { read } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0:c0 tcontext=system_u:object_r:sepgsql_secret_blob_t:s0 tclass=db_blob name=blob:6003
+SELECT loread(0, 32);           -- to be denied
+ERROR:  SELinux: security policy violation
 ROLLBACK;
 ROLLBACK
 -- write large object
 BEGIN;
 BEGIN
-SELECT lo_open(6001, x'20000'::int);
+SELECT lo_open(loid, x'20000'::int) FROM lolabel WHERE label = 'normal';
  lo_open 
 ---------
        0
@@ -139,38 +138,34 @@ ROLLBACK;
 ROLLBACK
 BEGIN;
 BEGIN
-SELECT lo_open(6002, x'20000'::int);
+SELECT lo_open(loid, x'20000'::int) FROM lolabel WHERE label = 'readonly';
  lo_open 
 ---------
        0
 (1 row)
 
-SELECT lowrite(0, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ');	-- to be denied
-ERROR:  SELinux: denied { write } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0:c0 tcontext=system_u:object_r:sepgsql_ro_blob_t:s0 tclass=db_blob name=blob:6002
+SELECT lowrite(0, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ');        -- to be denied
+ERROR:  SELinux: security policy violation
 ROLLBACK;
 ROLLBACK
 BEGIN;
 BEGIN
-SELECT lo_open(6003, x'20000'::int);
+SELECT lo_open(loid, x'20000'::int) FROM lolabel WHERE label = 'secret';
  lo_open 
 ---------
        0
 (1 row)
 
-SELECT lowrite(0, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ');	-- to be denied
-ERROR:  SELinux: denied { write } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0:c0 tcontext=system_u:object_r:sepgsql_secret_blob_t:s0 tclass=db_blob name=blob:6003
+SELECT lowrite(0, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ');        -- to be denied
+ERROR:  SELinux: security policy violation
 ROLLBACK;
 ROLLBACK
 -- create large object
 BEGIN;
 BEGIN
-SELECT lo_create(6004);
- lo_create 
------------
-      6004
-(1 row)
-
-SELECT lo_open(6004, x'20000'::int);
+INSERT INTO lolabel (SELECT lo_create(6004), 'local');
+INSERT 0 1
+SELECT lo_open(loid, x'20000'::int) FROM lolabel WHERE label = 'local';
  lo_open 
 ---------
        0
@@ -193,7 +188,7 @@ COMMIT
 -- getattr/setattr
 BEGIN;
 BEGIN
-SELECT lo_open(6004, x'20000'::int);
+SELECT lo_open(loid, x'20000'::int) FROM lolabel WHERE label = 'local';
  lo_open 
 ---------
        0
@@ -237,31 +232,6 @@ SELECT lo_close(0);
 
 COMMIT;
 COMMIT
--- import/export large object
-SELECT lo_import('/tmp/sepgsql_test_blob2', 6005);	-- to be failed
-ERROR:  SELinux: denied { read } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0:c0 tcontext=unconfined_u:object_r:postgresql_db_t:s0 tclass=file name=/tmp/sepgsql_test_blob2
-SELECT lo_import('/tmp/sepgsql_test_blob1', 6005);
- lo_import 
------------
-      6005
-(1 row)
-
-SELECT lo_export(6001, '/tmp/sepgsql_test_blob2');	-- to be failed
-ERROR:  SELinux: denied { export } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0:c0 tcontext=system_u:object_r:sepgsql_blob_t:s0 tclass=db_blob name=blob:6001
-SELECT lo_export(6001, '/tmp/sepgsql_test_blob1');	-- to be failed
-ERROR:  SELinux: denied { export } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0:c0 tcontext=system_u:object_r:sepgsql_blob_t:s0 tclass=db_blob name=blob:6001
-SELECT lo_export(6005, '/tmp/sepgsql_test_blob1');
- lo_export 
------------
-         1
-(1 row)
-
-SELECT lo_export(6005, '/dev/null');
- lo_export 
------------
-         1
-(1 row)
-
 --@SECURITY_CONTEXT=unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c15
 SELECT sepgsql_getcon();
                    sepgsql_getcon                    
@@ -272,31 +242,52 @@ SELECT sepgsql_getcon();
 -- change security label
 BEGIN;
 BEGIN
-SELECT lo_open(6001, x'40000'::int);	-- a seed of trouble
+SELECT lo_open(loid, x'40000'::int) FROM lolabel;    -- a seed of trouble
  lo_open 
 ---------
        0
-(1 row)
+       1
+       2
+       3
+(4 rows)
 
-SELECT lo_set_security(6001, 'system_u:object_r:sepgsql_blob_t:s0:c4');
+SELECT lo_set_security(loid, 'system_u:object_r:sepgsql_blob_t:s0:c4')
+	FROM lolabel WHERE label in ('normal', 'readonly');
  lo_set_security 
 -----------------
  t
-(1 row)
+ t
+(2 rows)
 
-SELECT lo_get_security(6001);
-            lo_get_security             
-----------------------------------------
+SELECT lo_get_security(loid) FROM lolabel;
+                     lo_get_security                     
+---------------------------------------------------------
  system_u:object_r:sepgsql_blob_t:s0:c4
-(1 row)
+ system_u:object_r:sepgsql_blob_t:s0:c4
+ system_u:object_r:sepgsql_secret_blob_t:s0
+ unconfined_u:object_r:sepgsql_test_sepgsql_blob_t:s0:c0
+(4 rows)
 
-SELECT security_label, loid, count(*) FROM pg_largeobject
-       WHERE loid = 6001
-       GROUP BY security_label, loid;
-             security_label             | loid | count 
-----------------------------------------+------+-------
- system_u:object_r:sepgsql_blob_t:s0:c4 | 6001 |    10
-(1 row)
+SELECT security_label, lo_label(loid) AS label, count(*)
+	FROM pg_largeobject WHERE loid in (SELECT loid FROM lolabel)
+	GROUP BY security_label, loid ORDER BY label;
+                     security_label                      |  label   | count 
+---------------------------------------------------------+----------+-------
+ unconfined_u:object_r:sepgsql_test_sepgsql_blob_t:s0:c0 | local    |     1
+ system_u:object_r:sepgsql_blob_t:s0:c4                  | normal   |    10
+ system_u:object_r:sepgsql_blob_t:s0:c4                  | readonly |    10
+ system_u:object_r:sepgsql_secret_blob_t:s0              | secret   |    10
+(4 rows)
 
 ROLLBACK;
 ROLLBACK
+-- cleanup
+SELECT lo_unlink(loid) FROM lolabel;
+ lo_unlink 
+-----------
+         1
+         1
+         1
+         1
+(4 rows)
+
