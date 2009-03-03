@@ -290,7 +290,7 @@ DATA(insert ( 1247 tableoid			26 0  4  -7 0 -1 -1 t p i r t f f t 0 _null_ _null
  * ----------------
  */
 #define Schema_pg_proc \
-	{ 1255, {"proname"},			19, -1, NAMEDATALEN,  1, 0, -1, -1, false, 'p', 'c', 'r', true, false, false, true, 0, { 0 }, {{0}} }, \
+{ 1255, {"proname"},			19, -1, NAMEDATALEN,  1, 0, -1, -1, false, 'p', 'c', 'r', true, false, false, true, 0, { 0 }, {{0}} }, \
 { 1255, {"pronamespace"},		26, -1, 4,	2, 0, -1, -1, true, 'p', 'i', 'r', true, false, false, true, 0, { 0 }, {{0}} }, \
 { 1255, {"proowner"},			26, -1, 4,	3, 0, -1, -1, true, 'p', 'i', 'r', true, false, false, true, 0, { 0 }, {{0}} }, \
 { 1255, {"prolang"},			26, -1, 4,	4, 0, -1, -1, true, 'p', 'i', 'r', true, false, false, true, 0, { 0 }, {{0}} }, \
