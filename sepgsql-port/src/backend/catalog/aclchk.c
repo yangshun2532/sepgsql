@@ -1650,11 +1650,6 @@ pg_database_aclmask(Oid db_oid, Oid roleid,
 	Acl		   *acl;
 	Oid			ownerId;
 
-	/* SELinux: db_database:{access} */
-	if ((mask & ACL_CONNECT) != 0 &&
-		!sepgsqlCheckDatabaseAccess(db_oid))
-		return 0;	/* access denied */
-
 	/* Superusers bypass all permission checking. */
 	if (superuser_arg(roleid))
 		return mask;
@@ -1710,11 +1705,6 @@ pg_proc_aclmask(Oid proc_oid, Oid roleid,
 	bool		isNull;
 	Acl		   *acl;
 	Oid			ownerId;
-
-	/* SELinux: db_procedure:{execute} */
-	if ((mask & ACL_EXECUTE) != 0 &&
-		!sepgsqlCheckProcedureExecute(proc_oid))
-		return 0;	/* execution denied */
 
 	/* Superusers bypass all permission checking. */
 	if (superuser_arg(roleid))
@@ -1990,7 +1980,14 @@ AclResult
 pg_database_aclcheck(Oid db_oid, Oid roleid, AclMode mode)
 {
 	if (pg_database_aclmask(db_oid, roleid, mode, ACLMASK_ANY) != 0)
+	{
+		/* SELinux: db_database:{access} permission */
+		if ((mode & ACL_CONNECT) != 0
+			&& !sepgsqlCheckDatabaseAccess(db_oid))
+			return ACLCHECK_NO_PRIV;
+
 		return ACLCHECK_OK;
+	}
 	else
 		return ACLCHECK_NO_PRIV;
 }
@@ -2002,7 +1999,14 @@ AclResult
 pg_proc_aclcheck(Oid proc_oid, Oid roleid, AclMode mode)
 {
 	if (pg_proc_aclmask(proc_oid, roleid, mode, ACLMASK_ANY) != 0)
+	{
+		/* SELinux: db_procedure:{execute} permission */
+		if ((mode & ACL_EXECUTE) != 0
+			&& !sepgsqlCheckProcedureExecute(proc_oid))
+			return ACLCHECK_NO_PRIV;
+
 		return ACLCHECK_OK;
+	}
 	else
 		return ACLCHECK_NO_PRIV;
 }
