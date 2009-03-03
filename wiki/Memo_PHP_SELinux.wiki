@@ -5,10 +5,10 @@ It is a set of interfaces to libselinux API which enables to manage SELinux from
 == Steps to set up ==
 
 {{{
-$ svn checkout http://sepgsql.googlecode.com/svn/misc/php-selinux
-$ ./php-selinux/build-php-selinux.sh
-# su
-# rpm -Uvh /path/to/package/php-selinux-0.1639-beta.fc10.i386.rpm
+# su -
+# wget http://sepgsql.googlecode.com/files/php-selinux-0.1.2-devel.fc10.src.rpm
+# rpmbuild --rebuild php-selinux-0.1.2-devel.fc10.src.rpm
+# rpm -Uvh /root/rpmbuild/RPMS/i386/php-selinux-0.1.2-devel.fc10.i386.rpm
 }}}
 
 = Reference manual =
