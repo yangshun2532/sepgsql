@@ -171,9 +171,10 @@ exit 0
 
 for store in %{selinux_policy_stores}
 do
-    if %{_sbindir}/semodule -s ${store} -l | egrep -q "^%{policy_module_name}"; then
+    if %{_sbindir}/semodule -s ${store} -l 2>/dev/null | egrep -q "^%{policy_module_name}";
+    then
        %{_sbindir}/semodule -s ${store}	   \
-           -u %{_datadir}/selinux/${store}/%{policy_module_name}.pp >& /dev/null || :
+           -u %{_datadir}/selinux/${store}/%{policy_module_name}.pp &> /dev/null || :
     fi
 done
 
@@ -195,7 +196,7 @@ fi
 if [ $1 -eq 0 ]; then           # rpm -e case
     for store in %{selinux_policy_stores}
     do
-        %{_sbindir}/semodule -s ${store} -r %{policy_module_name} >& /dev/null || :
+        %{_sbindir}/semodule -s ${store} -r %{policy_module_name} &> /dev/null || :
     done
     /sbin/fixfiles -R %{name} restore || :
     test -d %{_localstatedir}/lib/sepgsql \
