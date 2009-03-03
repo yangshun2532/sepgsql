@@ -44,7 +44,7 @@ ifdef(`postgresql_role', `
 
 # workaround for sepgsql tests
 allow sepgsql_test_t sepgsql_test_sepgsql_blob_t : db_blob { import export };
-dontaudit sepgsql_test_t sepgsql_blob_type : db_blob *; 
+dontaudit sepgsql_test_t sepgsql_blob_type : db_blob *;
 
 allow sepgsql_test_t tmpfile : dir search_dir_perms;
 allow sepgsql_test_t tmpfile : file rw_file_perms;
