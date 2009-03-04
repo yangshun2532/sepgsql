@@ -1015,3 +1015,32 @@ sepgsqlCheckBlobRelabel(HeapTuple oldtup, HeapTuple newtup)
 	checkBlobCommon(loForm->loid, HeapTupleGetSecLabel(newtup),
 					DB_BLOB__RELABELTO);
 }
+
+/*
+ * sepgsqlAllowFunctionInlined
+ *   It provides the optimizer a hint whether the given SQL function
+ *   can be inlined, or not. If it can be configured as a trusted
+ *   procedure, we should not allow it inlined.
+ */
+bool
+sepgsqlAllowFunctionInlined(HeapTuple proc_tuple)
+{
+	security_context_t	context;
+
+	if (!sepgsqlIsEnabled())
+		return true;
+
+	context = sepgsqlClientCreateLabel(HeapTupleGetSecLabel(proc_tuple),
+									   SECCLASS_PROCESS);
+	/*
+	 * If the security context of client is unchange
+	 * before or after invocation of the functions,
+	 * it is not a trusted procedure, so it can be
+	 * inlined due to performance purpose.
+	 */
+	if (strcmp(sepgsqlGetClientLabel(), context) == 0)
+		return true;
+
+	return false;
+}
+
