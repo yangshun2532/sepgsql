@@ -175,6 +175,10 @@ sepgsqlCopyFile(Relation rel, int fdesc, const char *filename, bool isFrom);
 extern bool
 sepgsqlCopyToTuple(Relation rel, List *attNumList, HeapTuple tuple);
 
+// Hint for optimizer
+extern bool
+sepgsqlAllowFunctionInlined(HeapTuple protup);
+
 /*
  * label.c : security label management
  */
@@ -258,6 +262,8 @@ sepgsqlSetDefaultSecLabel(Relation rel, HeapTuple tuple);
 #define sepgsqlCopyTable(a,b,c)					do {} while(0)
 #define sepgsqlCopyFile(a,b,c,d)				do {} while(0)
 #define sepgsqlCopyToTuple(a,b,c)				(true)
+
+#define sepgsqlAllowFunctionInlined(a)			(true)
 
 // label.c
 #define sepgsqlTupleDescHasSecLabel(a)			(false)
