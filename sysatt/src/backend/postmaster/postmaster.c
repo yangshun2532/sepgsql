@@ -37,7 +37,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/postmaster/postmaster.c,v 1.574 2009/02/25 11:07:43 heikki Exp $
+ *	  $PostgreSQL: pgsql/src/backend/postmaster/postmaster.c,v 1.576 2009/03/04 13:56:40 heikki Exp $
  *
  * NOTES
  *
@@ -1955,6 +1955,8 @@ SIGHUP_handler(SIGNAL_ARGS)
 				(errmsg("received SIGHUP, reloading configuration files")));
 		ProcessConfigFile(PGC_SIGHUP);
 		SignalChildren(SIGHUP);
+		if (StartupPID != 0)
+			signal_child(StartupPID, SIGHUP);
 		if (BgWriterPID != 0)
 			signal_child(BgWriterPID, SIGHUP);
 		if (WalWriterPID != 0)
@@ -2526,7 +2528,7 @@ HandleChildCrash(int pid, int exitstatus, const char *procname)
 				(errmsg_internal("sending %s to process %d",
 								 (SendStop ? "SIGSTOP" : "SIGQUIT"),
 								 (int) StartupPID)));
-		signal_child(BgWriterPID, (SendStop ? SIGSTOP : SIGQUIT));
+		signal_child(StartupPID, (SendStop ? SIGSTOP : SIGQUIT));
 	}
 
 	/* Take care of the bgwriter too */
