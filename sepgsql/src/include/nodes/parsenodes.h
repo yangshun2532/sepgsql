@@ -152,7 +152,6 @@ typedef struct Query
 
 	Node	   *setOperations;	/* set-operation tree if this is top level of
 								 * a UNION/INTERSECT/EXCEPT query */
-	List	   *selinuxItems;	/* a list of SelinuxEvalItem */
 } Query;
 
 
@@ -2404,29 +2403,5 @@ typedef struct AlterTSConfigurationStmt
 	bool		replace;		/* if true - replace dictionary by another */
 	bool		missing_ok;		/* for DROP - skip error if missing? */
 } AlterTSConfigurationStmt;
-
-/*
- * SelinuxEvalItem
- *
- * Required permissions on tables/columns used by SE-PostgreSQL.
- * It is constracted just after query rewriter phase, then its
- * list is checked based on the security policy of operating
- * system.
- *
- * NOTE: attperms array can contains system attributes and
- * whole-row-reference, so it is indexed as
- *   attperms[(attnum) + FirstLowInvalidHeapAttributeNumber - 1]
- */
-typedef struct SelinuxEvalItem
-{
-	NodeTag		type;
-
-	Oid			relid;		/* relation id */
-	bool		inh;		/* flags to inheritable/only */
-
-	uint32		relperms;	/* required permissions on table */
-	uint32		nattrs;		/* length of attperms */
-	uint32	   *attperms;	/* required permissions on columns */
-} SelinuxEvalItem;
 
 #endif   /* PARSENODES_H */

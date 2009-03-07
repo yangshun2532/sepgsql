@@ -18,6 +18,173 @@
 #include "utils/lsyscache.h"
 #include "utils/syscache.h"
 
+static struct
+{
+	const char		   *class_name;
+	security_class_t	class_code;
+	struct
+	{
+		const char	   *perm_name;
+		access_vector_t	perm_code;
+	} av[sizeof(access_vector_t) * 8];
+} selinux_permissions[] = {
+	{
+		"process",				SEPGCLASS_PROCESS,
+		{
+			{"translation",		SEPG_PROCESS__TRANSITION },
+			{NULL, 0}
+		}
+	},
+	{
+		"file",					SEPGCLASS_FILE,
+		{
+			{"read",			SEPG_FILE__READ },
+			{"write",			SEPG_FILE__WRITE },
+			{NULL, 0}
+		}
+	},
+	{
+		"dir",					SEPGCLASS_DIR,
+		{
+			{"read",			SEPG_DIR__READ },
+			{"write",			SEPG_DIR__WRITE },
+			{NULL,0}
+		}
+	},
+	{
+		"lnk_file",				SEPGCLASS_LNK_FILE,
+		{
+			{"read",			SEPG_LNK_FILE__READ },
+			{"write",			SEPG_LNK_FILE__WRITE },
+			{NULL,0}
+		}
+	},
+	{
+		"chr_file",				SEPGCLASS_CHR_FILE,
+		{
+			{"read",			SEPG_CHR_FILE__READ },
+			{"write",			SEPG_CHR_FILE__WRITE },
+			{NULL,0}
+		}
+	},
+	{
+		"blk_file",				SEPGCLASS_BLK_FILE,
+		{
+			{"read",			SEPG_BLK_FILE__READ },
+			{"write",			SEPG_BLK_FILE__WRITE },
+			{NULL,0}
+		}
+	},
+	{
+		"sock_file",			SEPGCLASS_SOCK_FILE,
+		{
+			{"read",			SEPG_SOCK_FILE__READ },
+			{"write",			SEPG_SOCK_FILE__WRITE },
+			{NULL,0}
+		}
+	},
+	{
+		"fifo_file",			SEPGCLASS_FIFO_FILE,
+		{
+			{"read",			SEPG_FIFO_FILE__READ },
+			{"write",			SEPG_FIFO_FILE__WRITE },
+			{NULL,0}
+		}
+	},
+	{
+		"db_database",			SEPGCLASS_DB_DATABASE,
+		{
+			{ "create",			SEPG_DB_DATABASE__CREATE },
+			{ "drop",			SEPG_DB_DATABASE__DROP },
+			{ "getattr",		SEPG_DB_DATABASE__GETATTR },
+			{ "setattr",		SEPG_DB_DATABASE__SETATTR },
+			{ "relabelfrom",	SEPG_DB_DATABASE__RELABELFROM },
+			{ "relabelto",		SEPG_DB_DATABASE__RELABELTO },
+			{ "access",			SEPG_DB_DATABASE__ACCESS },
+			{ "install_module",	SEPG_DB_DATABASE__INSTALL_MODULE },
+			{ "load_module",	SEPG_DB_DATABASE__LOAD_MODULE },
+			{ "get_param",		SEPG_DB_DATABASE__GET_PARAM },
+			{ "set_param",		SEPG_DB_DATABASE__SET_PARAM },
+			{ NULL, 0UL },
+		}
+	},
+	{
+		"db_table",				SEPGCLASS_DB_TABLE,
+		{
+			{ "create",			SEPG_DB_TABLE__CREATE },
+			{ "drop",			SEPG_DB_TABLE__DROP },
+			{ "getattr",		SEPG_DB_TABLE__GETATTR },
+			{ "setattr",		SEPG_DB_TABLE__SETATTR },
+			{ "relabelfrom",	SEPG_DB_TABLE__RELABELFROM },
+			{ "relabelto",		SEPG_DB_TABLE__RELABELTO },
+			{ "select",			SEPG_DB_TABLE__SELECT },
+			{ "update",			SEPG_DB_TABLE__UPDATE },
+			{ "insert",			SEPG_DB_TABLE__INSERT },
+			{ "delete",			SEPG_DB_TABLE__DELETE },
+			{ "lock",			SEPG_DB_TABLE__LOCK },
+			{ NULL, 0UL },
+		}
+	},
+	{
+		"db_procedure",		SECCLASS_DB_PROCEDURE,
+		{
+			{ "create",			SEPG_DB_PROCEDURE__CREATE },
+			{ "drop",			SEPG_DB_PROCEDURE__DROP },
+			{ "getattr",		SEPG_DB_PROCEDURE__GETATTR },
+			{ "setattr",		SEPG_DB_PROCEDURE__SETATTR },
+			{ "relabelfrom",	SEPG_DB_PROCEDURE__RELABELFROM },
+			{ "relabelto",		SEPG_DB_PROCEDURE__RELABELTO },
+			{ "execute",		SEPG_DB_PROCEDURE__EXECUTE },
+			{ "entrypoint",		SEPG_DB_PROCEDURE__ENTRYPOINT },
+			{ "install",		SEPG_DB_PROCEDURE__INSTALL },
+			{ NULL, 0UL },
+		}
+	},
+	{
+		"db_column",		SECCLASS_DB_COLUMN,
+		{
+			{ "create",			SEPG_DB_COLUMN__CREATE },
+			{ "drop",			SEPG_DB_COLUMN__DROP },
+			{ "getattr",		SEPG_DB_COLUMN__GETATTR },
+			{ "setattr",		SEPG_DB_COLUMN__SETATTR },
+			{ "relabelfrom",	SEPG_DB_COLUMN__RELABELFROM },
+			{ "relabelto",		SEPG_DB_COLUMN__RELABELTO },
+			{ "select",			SEPG_DB_COLUMN__SELECT },
+			{ "update",			SEPG_DB_COLUMN__UPDATE },
+			{ "insert",			SEPG_DB_COLUMN__INSERT },
+			{ NULL, 0UL },
+		}
+	},
+	{
+		"db_tuple",			SECCLASS_DB_TUPLE,
+		{
+			{ "relabelfrom",	SEPG_DB_TUPLE__RELABELFROM},
+			{ "relabelto",		SEPG_DB_TUPLE__RELABELTO},
+			{ "select",			SEPG_DB_TUPLE__SELECT},
+			{ "update",			SEPG_DB_TUPLE__UPDATE},
+			{ "insert",			SEPG_DB_TUPLE__INSERT},
+			{ "delete",			SEPG_DB_TUPLE__DELETE},
+			{ NULL, 0UL},
+		}
+	},
+	{
+		"db_blob",			SECCLASS_DB_BLOB,
+		{
+			{ "create",			SEPG_DB_BLOB__CREATE},
+			{ "drop",			SEPG_DB_BLOB__DROP},
+			{ "getattr",		SEPG_DB_BLOB__GETATTR},
+			{ "setattr",		SEPG_DB_BLOB__SETATTR},
+			{ "relabelfrom",	SEPG_DB_BLOB__RELABELFROM},
+			{ "relabelto",		SEPG_DB_BLOB__RELABELTO},
+			{ "read",			SEPG_DB_BLOB__READ},
+			{ "write",			SEPG_DB_BLOB__WRITE},
+			{ "import",			SEPG_DB_BLOB__IMPORT},
+			{ "export",			SEPG_DB_BLOB__EXPORT},
+			{ NULL, 0UL},
+		}
+	}
+};
+
 /*
  * sepgsqlAuditName
  *   returns an identifier string to generate audit record for

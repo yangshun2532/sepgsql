@@ -34,6 +34,110 @@ typedef security_context_t sepgsql_sid_t;
 /* GUC parameter to turn on/off SE-PostgreSQL */
 extern bool sepostgresql_is_enabled;
 
+/* Objject classes and permissions internally used */
+enum SepgsqlClasses
+{
+	SEPGCLASS_PROCESS = 1,
+	SEPGCLASS_FILE,
+	SEPGCLASS_DIR,
+	SEPGCLASS_LNK_FILE,
+	SEPGCLASS_CHR_FILE,
+	SEPGCLASS_BLK_FILE,
+	SEPGCLASS_SOCK_FILE,
+	SEPGCLASS_FIFO_FILE,
+	SEPGCLASS_DB_DATABASE,
+	SEPGCLASS_DB_TABLE,
+	SEPGCLASS_DB_PROCEDURE,
+	SEPGCLASS_DB_COLUMN,
+	SEPGCLASS_DB_TUPLE,
+	SEPGCLASS_DB_BLOB,
+};
+
+#define SEPG_PROCESS__TRANSITION			(1<<0)
+
+#define SEPG_FILE__READ						(1<<0)
+#define SEPG_FILE__WRITE					(1<<1)
+
+#define SEPG_DIR__READ						(SEPG_FILE__READ)
+#define SEPG_DIR__WRITE						(SEPG_FILE__WRITE)
+
+#define SEPG_LNK_FILE__READ					(SEPG_FILE__READ)
+#define SEPG_LNK_FILE__WRITE				(SEPG_FILE__WRITE)
+
+#define SEPG_CHR_FILE__READ					(SEPG_FILE__READ)
+#define SEPG_CHR_FILE__WRITE				(SEPG_FILE__WRITE)
+
+#define SEPG_BLK_FILE__READ					(SEPG_FILE__READ)
+#define SEPG_BLK_FILE__WRITE				(SEPG_FILE__WRITE)
+
+#define SEPG_SOCK_FILE__READ				(SEPG_FILE__READ)
+#define SEPG_SOCK_FILE__WRITE				(SEPG_FILE__WRITE)
+
+#define SEPG_FIFO_FILE__READ				(SEPG_FILE__READ)
+#define SEPG_FIFO_FILE__WRITE				(SEPG_FILE__WRITE)
+
+#define SEPG_DB_DATABASE__CREATE			(1<<0)
+#define SEPG_DB_DATABASE__DROP				(1<<1)
+#define SEPG_DB_DATABASE__GETATTR			(1<<2)
+#define SEPG_DB_DATABASE__SETATTR			(1<<3)
+#define SEPG_DB_DATABASE__RELABELFROM		(1<<4)
+#define SEPG_DB_DATABASE__RELABELTO			(1<<5)
+#define SEPG_DB_DATABASE__ACCESS			(1<<6)
+#define SEPG_DB_DATABASE__INSTALL_MODULE	(1<<7)
+#define SEPG_DB_DATABASE__LOAD_MODULE		(1<<8)
+#define SEPG_DB_DATABASE__GET_PARAM			(1<<9)
+#define SEPG_DB_DATABASE__SET_PARAM			(1<<10)
+
+#define SEPG_DB_TABLE__CREATE				(SEPG_DB_DATABASE__CREATE)
+#define SEPG_DB_TABLE__DROP					(SEPG_DB_DATABASE__DROP)
+#define SEPG_DB_TABLE__GETATTR				(SEPG_DB_DATABASE__GETATTR)
+#define SEPG_DB_TABLE__SETATTR				(SEPG_DB_DATABASE__SETATTR)
+#define SEPG_DB_TABLE__RELABELFROM			(SEPG_DB_DATABASE__RELABELFROM)
+#define SEPG_DB_TABLE__RELABELTO			(SEPG_DB_DATABASE__RELABELTO)
+#define SEPG_DB_TABLE__SELECT				(1<<6)
+#define SEPG_DB_TABLE__UPDATE				(1<<7)
+#define SEPG_DB_TABLE__INSERT				(1<<8)
+#define SEPG_DB_TABLE__DELETE				(1<<9)
+#define SEPG_DB_TABLE__LOCK					(1<<10)
+
+#define SEPG_DB_PROCEDURE__CREATE			(SEPG_DB_DATABASE__CREATE)
+#define SEPG_DB_PROCEDURE__DROP				(SEPG_DB_DATABASE__DROP)
+#define SEPG_DB_PROCEDURE__GETATTR			(SEPG_DB_DATABASE__GETATTR)
+#define SEPG_DB_PROCEDURE__SETATTR			(SEPG_DB_DATABASE__SETATTR)
+#define SEPG_DB_PROCEDURE__RELABELFROM		(SEPG_DB_DATABASE__RELABELFROM)
+#define SEPG_DB_PROCEDURE__RELABELTO		(SEPG_DB_DATABASE__RELABELTO)
+#define SEPG_DB_PROCEDURE__EXECUTE			(1<<6)
+#define SEPG_DB_PROCEDURE__ENTRYPOINT		(1<<7)
+#define SEPG_DB_PROCEDURE__INSTALL			(1<<8)
+
+#define SEPG_DB_COLUMN__CREATE				(SEPG_DB_DATABASE__CREATE)
+#define SEPG_DB_COLUMN__DROP				(SEPG_DB_DATABASE__DROP)
+#define SEPG_DB_COLUMN__GETATTR				(SEPG_DB_DATABASE__GETATTR)
+#define SEPG_DB_COLUMN__SETATTR				(SEPG_DB_DATABASE__SETATTR)
+#define SEPG_DB_COLUMN__RELABELFROM			(SEPG_DB_DATABASE__RELABELFROM)
+#define SEPG_DB_COLUMN__RELABELTO			(SEPG_DB_DATABASE__RELABELTO)
+#define SEPG_DB_COLUMN__SELECT				(1<<6)
+#define SEPG_DB_COLUMN__UPDATE				(1<<7)
+#define SEPG_DB_COLUMN__INSERT				(1<<8)
+
+#define SEPG_DB_TUPLE__RELABELFROM			(SEPG_DB_DATABASE__RELABELFROM)
+#define SEPG_DB_TUPLE__RELABELTO			(SEPG_DB_DATABASE__RELABELTO)
+#define SEPG_DB_TUPLE__SELECT				(SEPG_DB_DATABASE__GETATTR)
+#define SEPG_DB_TUPLE__UPDATE				(SEPG_DB_DATABASE__SETATTR)
+#define SEPG_DB_TUPLE__INSERT				(SEPG_DB_DATABASE__CREATE)
+#define SEPG_DB_TUPLE__DELETE				(SEPG_DB_DATABASE__DROP)
+
+#define SEPG_DB_BLOB__CREATE				(SEPG_DB_DATABASE__CREATE)
+#define SEPG_DB_BLOB__DROP					(SEPG_DB_DATABASE__DROP)
+#define SEPG_DB_BLOB__GETATTR				(SEPG_DB_DATABASE__GETATTR)
+#define SEPG_DB_BLOB__SETATTR				(SEPG_DB_DATABASE__SETATTR)
+#define SEPG_DB_BLOB__RELABELFROM			(SEPG_DB_DATABASE__RELABELFROM)
+#define SEPG_DB_BLOB__RELABELTO				(SEPG_DB_DATABASE__RELABELTO)
+#define SEPG_DB_BLOB__READ					(1<<6)
+#define SEPG_DB_BLOB__WRITE					(1<<7)
+#define SEPG_DB_BLOB__IMPORT				(1<<8)
+#define SEPG_DB_BLOB__EXPORT				(1<<9)
+
 /*
  * avc.c : userspace access vector cache
  */
@@ -69,25 +173,25 @@ sepgsqlComputeCreate(security_context_t scontext,
 					 security_class_t tclass);
 
 /*
- * checker.c : pick up all the appeared objects and apply checks
+ * checker.c : check permission on given queries
  */
-extern List *
-sepgsqlAddEvalTable(List *selist, Oid relid, bool inh,
-								 uint32 perms);
-extern List *
-sepgsqlAddEvalColumn(List *selist, Oid relid, bool inh,
-								  AttrNumber attno, uint32 perms);
-extern List *
-sepgsqlAddEvalTriggerFunc(List *selist, Oid relid, int cmdType);
+extern void
+sepgsqlCheckQueryPerms(CmdType cmd, EState *estate);
 
 extern void
-sepgsqlCheckSelinuxEvalItem(SelinuxEvalItem *seitem);
+sepgsqlCheckCopyTable(Relation rel, List *attnumlist, bool is_from);
 
 extern void
-sepgsqlPostQueryRewrite(List *queryList);
+sepgsqlCheckSelectInto(Relation rel);
+
+extern HeapTuple
+sepgsqlHeapTupleInsert(Relation rel, HeapTuple tuple, bool internal);
 
 extern void
-sepgsqlExecutorStart(QueryDesc *queryDesc, int eflags);
+sepgsqlHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple tuple, bool internal);
+
+extern void
+sepgsqlHeapTupleDelete(Relation rel, ItemPointer otid, bool internal);
 
 /*
  * core.c : core facilities
@@ -117,7 +221,7 @@ extern void
 sepgsqlInitialize(void);
 
 /*
- * hooks.c : security hooks
+ * hooks.c : test certain permissions
  */
 extern bool
 sepgsqlCheckDatabaseAccess(Oid db_oid);
@@ -140,27 +244,20 @@ sepgsqlCheckProcedureExecute(Oid proc_oid);
 extern void
 sepgsqlCheckProcedureEntrypoint(FmgrInfo *finfo, HeapTuple protup);
 
+void
+sepgsqlCheckProcedureInstall(Relation rel, HeapTuple newtup, HeapTuple oldtup);
+
 extern bool
 sepgsqlCheckTableLock(Oid relid);
 
 extern bool
 sepgsqlCheckTableTruncate(Relation rel);
 
-// HeapTuple INSERT/UPDATE/DELETE
-extern HeapTuple
-sepgsqlHeapTupleInsert(Relation rel, HeapTuple tuple, bool internal);
+extern void
+sepgsqlCheckFileRead(int fdesc, const char *filename);
 
 extern void
-sepgsqlHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple tuple, bool internal);
-
-extern void
-sepgsqlHeapTupleDelete(Relation rel, ItemPointer otid, bool internal);
-
-// COPY TO/FROM statement
-extern void
-sepgsqlCopyTable(Relation rel, List *attNumList, bool isFrom);
-extern void
-sepgsqlCopyFile(Relation rel, int fdesc, const char *filename, bool isFrom);
+sepgsqlCheckFileWrite(int fdesc, const char *filename);
 
 // Hint for optimizer
 extern bool
