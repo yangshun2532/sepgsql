@@ -230,7 +230,6 @@ standard_planner(Query *parse, int cursorOptions, ParamListInfo boundParams)
 	result->relationOids = glob->relationOids;
 	result->invalItems = glob->invalItems;
 	result->nParamExec = list_length(glob->paramlist);
-	result->selinuxItems = parse->selinuxItems;
 
 	return result;
 }
