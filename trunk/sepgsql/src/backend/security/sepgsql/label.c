@@ -28,10 +28,10 @@ HeapTupleHasSecLabel(Oid relid, HeapTuple tuple)
 	security_class_t tclass
 		= sepgsqlTupleObjectClass(relid, tuple);
 
-	if (tclass == SECCLASS_DB_DATABASE ||
-		tclass == SECCLASS_DB_TABLE ||
-		tclass == SECCLASS_DB_COLUMN ||
-		tclass == SECCLASS_DB_PROCEDURE)
+	if (tclass == SEPG_CLASS_DB_DATABASE ||
+		tclass == SEPG_CLASS_DB_TABLE ||
+		tclass == SEPG_CLASS_DB_COLUMN ||
+		tclass == SEPG_CLASS_DB_PROCEDURE)
 		return true;
 
 	return false;
@@ -48,25 +48,25 @@ HeapTupleGetSecLabel(Oid relid, HeapTuple tuple)
 
 	switch (tclass)
 	{
-	case SECCLASS_DB_DATABASE:
+	case SEPG_CLASS_DB_DATABASE:
 		datum = SysCacheGetAttr(DATABASEOID, tuple,
 								Anum_pg_database_datselabel,
 								&isnull);
 		break;
 
-	case SECCLASS_DB_TABLE:
+	case SEPG_CLASS_DB_TABLE:
 		datum = SysCacheGetAttr(RELOID, tuple,
 								Anum_pg_class_relselabel,
 								&isnull);
 		break;
 
-	case SECCLASS_DB_COLUMN:
+	case SEPG_CLASS_DB_COLUMN:
 		datum = SysCacheGetAttr(ATTNUM, tuple,
 								Anum_pg_attribute_attselabel,
 								&isnull);
 		break;
 
-	case SECCLASS_DB_PROCEDURE:
+	case SEPG_CLASS_DB_PROCEDURE:
 		datum = SysCacheGetAttr(PROCOID, tuple,
 								Anum_pg_proc_proselabel,
 								&isnull);
@@ -184,7 +184,7 @@ sepgsqlSetDefaultSecLabel(Oid relid, Datum *values, bool *nulls, Datum given)
 		{
 			ncontext = sepgsqlComputeCreate(sepgsqlGetClientLabel(),
 											sepgsqlGetClientLabel(),
-											SECCLASS_DB_DATABASE);
+											SEPG_CLASS_DB_DATABASE);
 			nulls[Anum_pg_database_datselabel - 1] = false;
 			values[Anum_pg_database_datselabel - 1]
 				= CStringGetTextDatum(ncontext);
@@ -209,7 +209,7 @@ sepgsqlSetDefaultSecLabel(Oid relid, Datum *values, bool *nulls, Datum given)
 			else
 			{
 				ncontext = sepgsqlClientCreate(sepgsqlGetDatabaseSid(),
-											   SECCLASS_DB_TABLE);
+											   SEPG_CLASS_DB_TABLE);
 				values[Anum_pg_class_relselabel - 1]
 					= CStringGetTextDatum(ncontext);
 			}
@@ -248,7 +248,7 @@ sepgsqlSetDefaultSecLabel(Oid relid, Datum *values, bool *nulls, Datum given)
 					 attrelid == RelationRelationId))
 				{
 					tblsid = sepgsqlClientCreate(sepgsqlGetDatabaseSid(),
-												 SECCLASS_DB_TABLE);
+												 SEPG_CLASS_DB_TABLE);
 				}
 				else
 				{
@@ -261,7 +261,7 @@ sepgsqlSetDefaultSecLabel(Oid relid, Datum *values, bool *nulls, Datum given)
 					tblsid = HeapTupleGetSecLabel(RelationRelationId, reltup);
 					ReleaseSysCache(reltup);
 				}
-				ncontext = sepgsqlClientCreate(tblsid, SECCLASS_DB_COLUMN);
+				ncontext = sepgsqlClientCreate(tblsid, SEPG_CLASS_DB_COLUMN);
 				values[Anum_pg_attribute_attselabel - 1]
 					= CStringGetTextDatum(ncontext);
 			}
@@ -280,7 +280,7 @@ sepgsqlSetDefaultSecLabel(Oid relid, Datum *values, bool *nulls, Datum given)
 		else
 		{
 			ncontext = sepgsqlClientCreate(sepgsqlGetDatabaseSid(),
-										   SECCLASS_DB_PROCEDURE);
+										   SEPG_CLASS_DB_PROCEDURE);
 			values[Anum_pg_proc_proselabel - 1]
 				= CStringGetTextDatum(ncontext);
 		}

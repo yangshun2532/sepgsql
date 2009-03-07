@@ -17,13 +17,6 @@
 #ifdef HAVE_SELINUX
 
 #include <selinux/selinux.h>
-#include <selinux/flask.h>
-#include <selinux/av_permissions.h>
-
-/* workaround for older libselinux */
-#ifndef	DB_PROCEDURE__INSTALL
-#define	DB_PROCEDURE__INSTALL		0x00000100UL
-#endif
 
 /*
  * In this version, SE-PostgreSQL uses text formed security
@@ -37,20 +30,21 @@ extern bool sepostgresql_is_enabled;
 /* Objject classes and permissions internally used */
 enum SepgsqlClasses
 {
-	SEPGCLASS_PROCESS = 1,
-	SEPGCLASS_FILE,
-	SEPGCLASS_DIR,
-	SEPGCLASS_LNK_FILE,
-	SEPGCLASS_CHR_FILE,
-	SEPGCLASS_BLK_FILE,
-	SEPGCLASS_SOCK_FILE,
-	SEPGCLASS_FIFO_FILE,
-	SEPGCLASS_DB_DATABASE,
-	SEPGCLASS_DB_TABLE,
-	SEPGCLASS_DB_PROCEDURE,
-	SEPGCLASS_DB_COLUMN,
-	SEPGCLASS_DB_TUPLE,
-	SEPGCLASS_DB_BLOB,
+	SEPG_CLASS_PROCESS = 0,
+	SEPG_CLASS_FILE,
+	SEPG_CLASS_DIR,
+	SEPG_CLASS_LNK_FILE,
+	SEPG_CLASS_CHR_FILE,
+	SEPG_CLASS_BLK_FILE,
+	SEPG_CLASS_SOCK_FILE,
+	SEPG_CLASS_FIFO_FILE,
+	SEPG_CLASS_DB_DATABASE,
+	SEPG_CLASS_DB_TABLE,
+	SEPG_CLASS_DB_PROCEDURE,
+	SEPG_CLASS_DB_COLUMN,
+	SEPG_CLASS_DB_TUPLE,
+	SEPG_CLASS_DB_BLOB,
+	SEPG_CLASS_MAX,
 };
 
 #define SEPG_PROCESS__TRANSITION			(1<<0)
@@ -155,10 +149,12 @@ sepgsqlClientHasPerms(sepgsql_sid_t tcontext,
 					  access_vector_t required,
 					  const char *audit_name, bool abort);
 extern sepgsql_sid_t
-sepgsqlClientCreate(sepgsql_sid_t tcontext, security_class_t tclass);
+sepgsqlClientCreate(sepgsql_sid_t tcontext,
+					security_class_t tclass);
 
 extern security_context_t
-sepgsqlClientCreateLabel(sepgsql_sid_t tcontext, security_class_t tclass);
+sepgsqlClientCreateLabel(sepgsql_sid_t tcontext,
+						 security_class_t tclass);
 
 extern bool
 sepgsqlComputePerms(security_context_t scontext,
@@ -184,7 +180,7 @@ sepgsqlCheckCopyTable(Relation rel, List *attnumlist, bool is_from);
 extern void
 sepgsqlCheckSelectInto(Relation rel);
 
-extern HeapTuple
+extern void
 sepgsqlHeapTupleInsert(Relation rel, HeapTuple tuple, bool internal);
 
 extern void
@@ -291,17 +287,8 @@ extern bool
 sepgsqlCheckValidSecurityLabel(security_context_t label);
 
 /*
- * perms.c : SE-PostgreSQL permission checks
+ * perms.c : SELinux permission related stuff
  */
-#define SEPGSQL_PERMS_USE			(1UL<<0)
-#define SEPGSQL_PERMS_SELECT		(1UL<<1)
-#define SEPGSQL_PERMS_INSERT		(1UL<<2)
-#define SEPGSQL_PERMS_UPDATE		(1UL<<3)
-#define SEPGSQL_PERMS_DELETE		(1UL<<4)
-#define SEPGSQL_PERMS_RELABELFROM	(1UL<<5)
-#define SEPGSQL_PERMS_RELABELTO		(1UL<<6)
-#define SEPGSQL_PERMS_MASK			(0x0000007f)
-
 extern const char *
 sepgsqlAuditName(Oid relid, HeapTuple tuple);
 
@@ -311,19 +298,35 @@ sepgsqlFileObjectClass(int fdesc);
 extern security_class_t
 sepgsqlTupleObjectClass(Oid relid, HeapTuple tuple);
 
+extern security_class_t
+sepgsqlTransToExternalClass(security_class_t tclass_in);
+
+extern void
+sepgsqlTransToInternalPerms(security_class_t tclass_ex, struct av_decision *avd);
+
+extern const char *
+sepgsqlGetClassString(security_class_t tclass);
+
+extern const char *
+sepgsqlGetPermissionString(security_class_t tclass, access_vector_t av);
+
 extern bool
-sepgsqlCheckObjectPerms(Relation rel, HeapTuple tuple, HeapTuple newtup,
-						uint32 required, bool abort);
+sepgsqlCheckObjectPerms(Relation rel, HeapTuple tuple,
+						access_vector_t required, bool abort);
 
 #else	/* HAVE_SELINUX */
 
-// avc.c
+/* avc.c */
 #define sepgsqlShmemSize()						(0)
 #define sepgsqlStartupWorkerProcess()			(0)
-// checker.c
-#define sepgsqlPostQueryRewrite(a)				do {} while(0)
-#define sepgsqlExecutorStart(a,b)				do {} while(0)
-// core.c
+/* checker.c */
+#define sepgsqlCheckQueryPerms(a,b)				do {} while(0)
+#define sepgsqlCheckCopyTable(a,b,c)			do {} while(0)
+#define sepgsqlCheckSelectInto(a)				do {} while(0)
+#define sepgsqlHeapTupleInsert(a,b,c)			do {} while(0)
+#define sepgsqlHeapTupleUpdate(a,b,c,d)			do {} while(0)
+#define sepgsqlHeapTupleDelete(a,b,c)			do {} while(0)
+/* core.c */
 #define sepgsqlIsEnabled()						(false)
 #define sepgsqlInitialize()						do {} while(0)
 // hooks.c
@@ -336,14 +339,8 @@ sepgsqlCheckObjectPerms(Relation rel, HeapTuple tuple, HeapTuple newtup,
 #define sepgsqlCheckProcedureEntrypoint(a,b)	do {} while(0)
 #define sepgsqlCheckTableLock(a)				(true)
 #define sepgsqlCheckTableTruncate(a)			(true)
-
-#define sepgsqlHeapTupleInsert(a,b,c)			(b)
-#define sepgsqlHeapTupleUpdate(a,b,c,d)			do {} while(0)
-#define sepgsqlHeapTupleDelete(a,b,c)			do {} while(0)
-
-#define sepgsqlCopyTable(a,b,c)					do {} while(0)
-#define sepgsqlCopyFile(a,b,c,d)				do {} while(0)
-
+#define sepgsqlCheckFileRead(a,b)				do {} while(0)
+#define sepgsqlCheckFileWrite(a,b)				do {} while(0)
 #define sepgsqlAllowFunctionInlined(a)			(true)
 
 // label.c
@@ -355,6 +352,7 @@ sepgsqlCheckObjectPerms(Relation rel, HeapTuple tuple, HeapTuple newtup,
 
 extern Datum sepgsql_getcon(PG_FUNCTION_ARGS);
 extern Datum sepgsql_server_getcon(PG_FUNCTION_ARGS);
-extern Datum sepgsql_mcstrans(PG_FUNCTION_ARGS);
+extern Datum sepgsql_raw_to_trans(PG_FUNCTION_ARGS);
+extern Datum sepgsql_trans_to_raw(PG_FUNCTION_ARGS);
 
 #endif	/* SEPGSQL_H */

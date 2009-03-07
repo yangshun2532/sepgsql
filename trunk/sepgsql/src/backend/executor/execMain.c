@@ -1818,16 +1818,15 @@ ExecInsert(TupleTableSlot *slot,
 	}
 
 	/*
+	 * SELinux: check db_xxx:{create} permission
+	 */
+	sepgsqlHeapTupleInsert(resultRelationDesc, tuple, false);
+
+	/*
 	 * Check the constraints of the tuple
 	 */
 	if (resultRelationDesc->rd_att->constr)
 		ExecConstraints(resultRelInfo, slot, estate);
-
-	/*
-	 * SELinux: assign a default security context and
-	 * check db_xxx:{create} permission
-	 */
-	tuple = sepgsqlHeapTupleInsert(resultRelationDesc, tuple, false);
 
 	/*
 	 * insert the tuple
@@ -2067,6 +2066,11 @@ ExecUpdate(TupleTableSlot *slot,
 	}
 
 	/*
+	 * SELinux: check db_xxx:{setattr} permission
+	 */
+	sepgsqlHeapTupleUpdate(resultRelationDesc, tupleid, tuple, false);
+
+	/*
 	 * Check the constraints of the tuple
 	 *
 	 * If we generate a new candidate tuple after EvalPlanQual testing, we
@@ -2078,11 +2082,6 @@ ExecUpdate(TupleTableSlot *slot,
 lreplace:;
 	if (resultRelationDesc->rd_att->constr)
 		ExecConstraints(resultRelInfo, slot, estate);
-
-	/*
-	 * SELinux: check db_xxx:{setattr} permission
-	 */
-	sepgsqlHeapTupleUpdate(resultRelationDesc, tupleid, tuple, false);
 
 	/*
 	 * replace the heap tuple
