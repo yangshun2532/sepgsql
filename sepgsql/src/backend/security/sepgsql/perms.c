@@ -18,6 +18,14 @@
 #include "utils/lsyscache.h"
 #include "utils/syscache.h"
 
+
+/*
+ * Dynamic object class/permissions mapping
+ *
+ * SELinux exports the list of object classes and permissions at
+ * /selinux/class. The libselinux provides an interface to translate
+ * between their names and codes.
+ */
 static struct
 {
 	const char		   *class_name;
@@ -27,16 +35,16 @@ static struct
 		const char	   *perm_name;
 		access_vector_t	perm_code;
 	} av[sizeof(access_vector_t) * 8];
-} selinux_permissions[] = {
+} selinux_catalog[] = {
 	{
-		"process",				SEPGCLASS_PROCESS,
+		"process",				SEPG_CLASS_PROCESS,
 		{
 			{"translation",		SEPG_PROCESS__TRANSITION },
 			{NULL, 0}
 		}
 	},
 	{
-		"file",					SEPGCLASS_FILE,
+		"file",					SEPG_CLASS_FILE,
 		{
 			{"read",			SEPG_FILE__READ },
 			{"write",			SEPG_FILE__WRITE },
@@ -44,7 +52,7 @@ static struct
 		}
 	},
 	{
-		"dir",					SEPGCLASS_DIR,
+		"dir",					SEPG_CLASS_DIR,
 		{
 			{"read",			SEPG_DIR__READ },
 			{"write",			SEPG_DIR__WRITE },
@@ -52,7 +60,7 @@ static struct
 		}
 	},
 	{
-		"lnk_file",				SEPGCLASS_LNK_FILE,
+		"lnk_file",				SEPG_CLASS_LNK_FILE,
 		{
 			{"read",			SEPG_LNK_FILE__READ },
 			{"write",			SEPG_LNK_FILE__WRITE },
@@ -60,7 +68,7 @@ static struct
 		}
 	},
 	{
-		"chr_file",				SEPGCLASS_CHR_FILE,
+		"chr_file",				SEPG_CLASS_CHR_FILE,
 		{
 			{"read",			SEPG_CHR_FILE__READ },
 			{"write",			SEPG_CHR_FILE__WRITE },
@@ -68,7 +76,7 @@ static struct
 		}
 	},
 	{
-		"blk_file",				SEPGCLASS_BLK_FILE,
+		"blk_file",				SEPG_CLASS_BLK_FILE,
 		{
 			{"read",			SEPG_BLK_FILE__READ },
 			{"write",			SEPG_BLK_FILE__WRITE },
@@ -76,7 +84,7 @@ static struct
 		}
 	},
 	{
-		"sock_file",			SEPGCLASS_SOCK_FILE,
+		"sock_file",			SEPG_CLASS_SOCK_FILE,
 		{
 			{"read",			SEPG_SOCK_FILE__READ },
 			{"write",			SEPG_SOCK_FILE__WRITE },
@@ -84,7 +92,7 @@ static struct
 		}
 	},
 	{
-		"fifo_file",			SEPGCLASS_FIFO_FILE,
+		"fifo_file",			SEPG_CLASS_FIFO_FILE,
 		{
 			{"read",			SEPG_FIFO_FILE__READ },
 			{"write",			SEPG_FIFO_FILE__WRITE },
@@ -92,7 +100,7 @@ static struct
 		}
 	},
 	{
-		"db_database",			SEPGCLASS_DB_DATABASE,
+		"db_database",			SEPG_CLASS_DB_DATABASE,
 		{
 			{ "create",			SEPG_DB_DATABASE__CREATE },
 			{ "drop",			SEPG_DB_DATABASE__DROP },
@@ -109,7 +117,7 @@ static struct
 		}
 	},
 	{
-		"db_table",				SEPGCLASS_DB_TABLE,
+		"db_table",				SEPG_CLASS_DB_TABLE,
 		{
 			{ "create",			SEPG_DB_TABLE__CREATE },
 			{ "drop",			SEPG_DB_TABLE__DROP },
@@ -126,7 +134,7 @@ static struct
 		}
 	},
 	{
-		"db_procedure",		SECCLASS_DB_PROCEDURE,
+		"db_procedure",			SEPG_CLASS_DB_PROCEDURE,
 		{
 			{ "create",			SEPG_DB_PROCEDURE__CREATE },
 			{ "drop",			SEPG_DB_PROCEDURE__DROP },
@@ -141,7 +149,7 @@ static struct
 		}
 	},
 	{
-		"db_column",		SECCLASS_DB_COLUMN,
+		"db_column",			SEPG_CLASS_DB_COLUMN,
 		{
 			{ "create",			SEPG_DB_COLUMN__CREATE },
 			{ "drop",			SEPG_DB_COLUMN__DROP },
@@ -156,7 +164,7 @@ static struct
 		}
 	},
 	{
-		"db_tuple",			SECCLASS_DB_TUPLE,
+		"db_tuple",				SEPG_CLASS_DB_TUPLE,
 		{
 			{ "relabelfrom",	SEPG_DB_TUPLE__RELABELFROM},
 			{ "relabelto",		SEPG_DB_TUPLE__RELABELTO},
@@ -168,7 +176,7 @@ static struct
 		}
 	},
 	{
-		"db_blob",			SECCLASS_DB_BLOB,
+		"db_blob",				SEPG_CLASS_DB_BLOB,
 		{
 			{ "create",			SEPG_DB_BLOB__CREATE},
 			{ "drop",			SEPG_DB_BLOB__DROP},
@@ -184,6 +192,102 @@ static struct
 		}
 	}
 };
+
+/*
+ * sepgsqlTransToExternalClass
+ *   It translate the given class code (defined as SEPGCLASS_(class)) into
+ *   external code which is necessary to communicate in-kernel SELinux
+ */
+extern security_class_t
+sepgsqlTransToExternalClass(security_class_t tclass)
+{
+	security_class_t	tclass_ex;
+
+	Assert(tclass < SEPG_CLASS_MAX);
+
+	tclass_ex = string_to_security_class(selinux_catalog[tclass].class_name);
+	if (!tclass_ex)
+		ereport(FATAL,
+				(errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("SELinux: \"%s\" class is not defined in the policy",
+						selinux_catalog[tclass].class_name)));
+	return tclass_ex;
+}
+
+/*
+ * sepgsqlTransToInternalPerms
+ *   It translate the given permission masks into internal representation
+ *   defined as SEPG_(class)_(permission).
+ */
+extern void
+sepgsqlTransToInternalPerms(security_class_t tclass, struct av_decision *avd)
+{
+	security_class_t tclass_ex;
+	struct av_decision i_avd;
+	int i;
+
+	Assert(tclass < SEPG_CLASS_MAX);
+
+	memset(&i_avd, 0, sizeof(struct av_decision));
+
+	tclass_ex = sepgsqlTransToExternalClass(tclass);
+	for (i=0; selinux_catalog[tclass].av[i].perm_name; i++)
+	{
+		const char	   *perm_name = selinux_catalog[tclass].av[i].perm_name;
+		access_vector_t	perm_code = selinux_catalog[tclass].av[i].perm_code;
+		access_vector_t	perm_code_ex;
+
+		perm_code_ex = string_to_av_perm(tclass_ex, perm_name);
+		if (!perm_code_ex)
+		{
+			/* permission is undefined */
+			i_avd.allowed |= perm_code;
+			continue;
+		}
+
+		if (avd->allowed & perm_code_ex)
+			i_avd.allowed |= perm_code;
+		if (avd->decided & perm_code_ex)
+			i_avd.decided |= perm_code;
+		if (avd->auditallow & perm_code_ex)
+			i_avd.auditallow |= perm_code;
+		if (avd->auditdeny & perm_code_ex)
+			i_avd.auditdeny |= perm_code;
+	}
+
+	avd->allowed = i_avd.allowed;
+	avd->decided = i_avd.decided;
+	avd->auditallow = i_avd.auditallow;
+	avd->auditdeny = i_avd.auditdeny;
+}
+
+/*
+ * sepgsqlGetClassString
+ * sepgsqlGetPermissionString
+ *   It returns text representation of object classes/permissions
+ */
+const char *
+sepgsqlGetClassString(security_class_t tclass)
+{
+	Assert(tclass < SEPG_CLASS_MAX);
+
+	return selinux_catalog[tclass].class_name;
+}
+
+const char *
+sepgsqlGetPermissionString(security_class_t tclass, access_vector_t av)
+{
+	int		i;
+
+	Assert(tclass < SEPG_CLASS_MAX);
+
+	for (i=0; selinux_catalog[tclass].av[i].perm_name; i++)
+	{
+		if (selinux_catalog[tclass].av[i].perm_code == av)
+			return selinux_catalog[tclass].av[i].perm_name;
+	}
+	return NULL;
+}
 
 /*
  * sepgsqlAuditName
@@ -246,19 +350,19 @@ sepgsqlFileObjectClass(int fdesc)
 				 errmsg("could not stat file descriptor: %d", fdesc)));
 
 	if (S_ISDIR(stbuf.st_mode))
-		return SECCLASS_DIR;
+		return SEPG_CLASS_DIR;
 	else if (S_ISCHR(stbuf.st_mode))
-		return SECCLASS_CHR_FILE;
+		return SEPG_CLASS_CHR_FILE;
 	else if (S_ISBLK(stbuf.st_mode))
-		return SECCLASS_BLK_FILE;
+		return SEPG_CLASS_BLK_FILE;
 	else if (S_ISFIFO(stbuf.st_mode))
-		return SECCLASS_FIFO_FILE;
+		return SEPG_CLASS_FIFO_FILE;
 	else if (S_ISLNK(stbuf.st_mode))
-		return SECCLASS_LNK_FILE;
+		return SEPG_CLASS_LNK_FILE;
 	else if (S_ISSOCK(stbuf.st_mode))
-		return SECCLASS_SOCK_FILE;
+		return SEPG_CLASS_SOCK_FILE;
 
-	return SECCLASS_FILE;
+	return SEPG_CLASS_FILE;
 }
 
 /*
@@ -275,188 +379,22 @@ sepgsqlTupleObjectClass(Oid relid, HeapTuple tuple)
 	switch (relid)
 	{
 	case DatabaseRelationId:
-		return SECCLASS_DB_DATABASE;
+		return SEPG_CLASS_DB_DATABASE;
 
 	case RelationRelationId:
 		clsForm = (Form_pg_class) GETSTRUCT(tuple);
 		if (clsForm->relkind == RELKIND_RELATION)
-			return SECCLASS_DB_TABLE;
+			return SEPG_CLASS_DB_TABLE;
 		break;
 
 	case AttributeRelationId:
 		attForm = (Form_pg_attribute) GETSTRUCT(tuple);
 		if (attForm->attkind == RELKIND_RELATION)
-			return SECCLASS_DB_COLUMN;
+			return SEPG_CLASS_DB_COLUMN;
 		break;
 
 	case ProcedureRelationId:
-		return SECCLASS_DB_PROCEDURE;
-	
-	case LargeObjectRelationId:
-		return SECCLASS_DB_BLOB;
+		return SEPG_CLASS_DB_PROCEDURE;
 	}
-	return SECCLASS_DB_TUPLE;
-}
-
-/*
- * sepgsqlxxxxAvPerms
- *    translate generic required permissions into per object
- *    class permission bits.
- */
-static access_vector_t
-sepgsqlCommonAvPerms(uint32 required)
-{
-	access_vector_t av_perms = 0;
-
-	av_perms |= (required & SEPGSQL_PERMS_USE
-				 ? COMMON_DATABASE__GETATTR : 0);
-	av_perms |= (required & SEPGSQL_PERMS_SELECT
-				 ? COMMON_DATABASE__GETATTR : 0);
-	av_perms |= (required & SEPGSQL_PERMS_UPDATE
-				 ? COMMON_DATABASE__SETATTR : 0);
-	av_perms |= (required & SEPGSQL_PERMS_INSERT
-				 ? COMMON_DATABASE__CREATE : 0);
-	av_perms |= (required & SEPGSQL_PERMS_DELETE
-				 ? COMMON_DATABASE__DROP : 0);
-	av_perms |= (required & SEPGSQL_PERMS_RELABELFROM
-				 ? COMMON_DATABASE__RELABELFROM : 0);
-	av_perms |= (required & SEPGSQL_PERMS_RELABELTO
-				 ? COMMON_DATABASE__RELABELTO : 0);
-	return av_perms;
-}
-
-static access_vector_t
-sepgsqlDatabaseAvPerms(uint32 required, HeapTuple tuple, HeapTuple newtup)
-{
-	return sepgsqlCommonAvPerms(required);
-}
-
-static access_vector_t
-sepgsqlTableAvPerms(uint32 required, HeapTuple tuple, HeapTuple newtup)
-{
-	return sepgsqlCommonAvPerms(required);
-}
-
-static access_vector_t
-sepgsqlColumnAvPerms(uint32 required, HeapTuple tuple, HeapTuple newtup)
-{
-	access_vector_t av_perms = sepgsqlCommonAvPerms(required);
-
-	if (HeapTupleIsValid(newtup))
-	{
-		Form_pg_attribute oldatt = (Form_pg_attribute) GETSTRUCT(tuple);
-		Form_pg_attribute newatt = (Form_pg_attribute) GETSTRUCT(newtup);
-
-		if (!oldatt->attisdropped && newatt->attisdropped)
-			av_perms |= DB_COLUMN__DROP;
-		if (oldatt->attisdropped && !newatt->attisdropped)
-			av_perms |= DB_COLUMN__CREATE;
-	}
-
-	return av_perms;
-}
-
-static access_vector_t
-sepgsqlProcedureAvPerms(uint32 required, HeapTuple tuple, HeapTuple newtup)
-{
-	access_vector_t av_perms = sepgsqlCommonAvPerms(required);
-	Form_pg_proc proForm;
-	Form_pg_proc oldForm;
-	char *filename = NULL;
-	Datum probin;
-	Datum oldbin;
-	bool isnull;
-
-	/*
-	 * check permission for loadable module installation
-	 */
-	if (HeapTupleIsValid(newtup))
-	{
-		Assert(required & SEPGSQL_PERMS_UPDATE);
-
-		proForm = (Form_pg_proc) GETSTRUCT(newtup);
-		oldForm = (Form_pg_proc) GETSTRUCT(tuple);
-		probin = SysCacheGetAttr(PROCOID, newtup,
-								 Anum_pg_proc_probin,
-								 &isnull);
-		if (!isnull)
-		{
-			oldbin = SysCacheGetAttr(PROCOID, tuple,
-									 Anum_pg_proc_probin,
-									 &isnull);
-			if (isnull ||
-				oldForm->prolang != proForm->prolang ||
-				DatumGetBool(DirectFunctionCall2(byteane, oldbin, probin)))
-			{
-				filename = TextDatumGetCString(probin);
-				sepgsqlCheckDatabaseInstallModule(filename);
-			}
-		}
-	}
-	else if (required & SEPGSQL_PERMS_INSERT)
-	{
-		proForm = (Form_pg_proc) GETSTRUCT(tuple);
-
-		if (proForm->prolang == ClanguageId)
-		{
-			probin = SysCacheGetAttr(PROCOID, tuple,
-									 Anum_pg_proc_probin,
-									 &isnull);
-			if (!isnull)
-			{
-				filename = TextDatumGetCString(probin);
-				sepgsqlCheckDatabaseInstallModule(filename);
-			}
-		}
-	}
-
-	return av_perms;
-}
-
-/*
- * sepgsqlCheckObjectPerms
- *   checks permission of the given object (tuple).
- */
-bool
-sepgsqlCheckObjectPerms(Relation rel, HeapTuple tuple, HeapTuple newtup,
-						uint32 required, bool abort)
-{
-	Oid relid = RelationGetRelid(rel);
-	security_class_t	tclass;
-	access_vector_t		av_perms;
-	const char		   *audit_name;
-	bool				rc = true;
-
-	tclass = sepgsqlTupleObjectClass(relid, tuple);
-	switch (tclass)
-	{
-	case SECCLASS_DB_DATABASE:
-		av_perms = sepgsqlDatabaseAvPerms(required, tuple, newtup);
-		break;
-	case SECCLASS_DB_TABLE:
-		av_perms = sepgsqlTableAvPerms(required, tuple, newtup);
-		break;
-	case SECCLASS_DB_COLUMN:
-		av_perms = sepgsqlColumnAvPerms(required, tuple, newtup);
-		break;
-	case SECCLASS_DB_PROCEDURE:
-		av_perms = sepgsqlProcedureAvPerms(required, tuple, newtup);
-		break;
-	default:
-		/*
-		 * Currently, row-level access control is not
-		 * implement, so it skipps all the checks on
-		 * db_tuple class obejcts.
-		 */
-		av_perms = 0;
-		break;
-	}
-	if (av_perms)
-	{
-		audit_name = sepgsqlAuditName(relid, tuple);
-		rc = sepgsqlClientHasPerms(HeapTupleGetSecLabel(relid, tuple),
-								   tclass, av_perms,
-								   audit_name, abort);
-	}
-	return rc;
+	return SEPG_CLASS_DB_TUPLE;
 }

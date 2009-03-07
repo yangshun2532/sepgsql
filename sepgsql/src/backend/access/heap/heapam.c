@@ -2058,9 +2058,7 @@ Oid
 simple_heap_insert(Relation relation, HeapTuple tup)
 {
 	/* SELinux: check db_xxx:{create} permission */
-	HeapTuple dummy
-		= sepgsqlHeapTupleInsert(relation, tup, true);
-	Assert(dummy == tup);	/* never assigns default label in this context */
+	sepgsqlHeapTupleInsert(relation, tup, true);
 
 	return heap_insert(relation, tup, GetCurrentCommandId(true), 0, NULL);
 }

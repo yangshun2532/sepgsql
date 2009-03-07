@@ -8,12 +8,15 @@
 #include "postgres.h"
 
 #include "access/sysattr.h"
+#include "catalog/pg_language.h"
+#include "catalog/pg_proc.h"
 #include "catalog/pg_rewrite.h"
 #include "catalog/pg_trigger.h"
 #include "commands/trigger.h"
 #include "security/sepgsql.h"
 #include "storage/bufmgr.h"
-#include "utils/lsyscache.h"
+#include "utils/builtins.h"
+#include "utils/fmgroids.h"
 #include "utils/syscache.h"
 #include "utils/tqual.h"
 
@@ -112,7 +115,7 @@ checkTabelColumnPerms(Oid relid, Bitmapset *selected, Bitmapset *modified,
 	if (!HeapTupleIsValid(tuple))
 		elog(ERROR, "SELinux: cache lookup failed for relation %u", relid);
 
-	if (sepgsqlTupleObjectClass(RelationRelationId, tuple) != SECCLASS_DB_TABLE)
+	if (sepgsqlTupleObjectClass(RelationRelationId, tuple) != SEPG_CLASS_DB_TABLE)
 	{
 		ReleaseSysCache(tuple);
 		return;
@@ -120,7 +123,7 @@ checkTabelColumnPerms(Oid relid, Bitmapset *selected, Bitmapset *modified,
 
 	audit_name = sepgsqlAuditName(RelationRelationId, tuple);
 	sepgsqlClientHasPerms(HeapTupleGetSecLabel(RelationRelationId, tuple),
-						  SECCLASS_DB_TABLE,
+						  SEPG_CLASS_DB_TABLE,
 						  required,
 						  audit_name, true);
 
@@ -138,13 +141,13 @@ checkTabelColumnPerms(Oid relid, Bitmapset *selected, Bitmapset *modified,
 		access_vector_t		attperms = 0;
 
 		if (bms_is_member(attno, selected))
-			attperms |= DB_COLUMN__SELECT;
+			attperms |= SEPG_DB_COLUMN__SELECT;
 		if (bms_is_member(attno, modified))
 		{
-			if (required & DB_TABLE__UPDATE)
-				attperms |= DB_COLUMN__UPDATE;
-			if (required & DB_TABLE__INSERT)
-				attperms |= DB_COLUMN__INSERT;
+			if (required & SEPG_DB_TABLE__UPDATE)
+				attperms |= SEPG_DB_COLUMN__UPDATE;
+			if (required & SEPG_DB_TABLE__INSERT)
+				attperms |= SEPG_DB_COLUMN__INSERT;
 		}
 		if (attperms == 0)
 			continue;
@@ -162,7 +165,7 @@ checkTabelColumnPerms(Oid relid, Bitmapset *selected, Bitmapset *modified,
 		 *
 		 * So, SE-PostgreSQL peremptorily prevent to modify them
 		 */
-		if ((attperms & (DB_COLUMN__UPDATE | DB_COLUMN__INSERT))
+		if ((attperms & (SEPG_DB_COLUMN__UPDATE | SEPG_DB_COLUMN__INSERT))
 			&& relid == RewriteRelationId
 			&& attno == Anum_pg_rewrite_ev_action)
 			ereport(ERROR,
@@ -183,7 +186,7 @@ checkTabelColumnPerms(Oid relid, Bitmapset *selected, Bitmapset *modified,
 
 		audit_name = sepgsqlAuditName(AttributeRelationId, tuple);
 		sepgsqlClientHasPerms(HeapTupleGetSecLabel(AttributeRelationId, tuple),
-							  SECCLASS_DB_COLUMN,
+							  SEPG_CLASS_DB_COLUMN,
 							  attperms,
 							  audit_name, true);
 		ReleaseSysCache(tuple);
@@ -217,13 +220,13 @@ sepgsqlCheckQueryPerms(CmdType cmd, EState *estate)
 			continue;
 
 		if (rte->requiredPerms & ACL_SELECT)
-			required = DB_TABLE__SELECT;
+			required = SEPG_DB_TABLE__SELECT;
 		if (rte->requiredPerms & ACL_INSERT)
-			required = DB_TABLE__INSERT;
+			required = SEPG_DB_TABLE__INSERT;
 		if (rte->requiredPerms & ACL_UPDATE)
-			required = DB_TABLE__UPDATE;
+			required = SEPG_DB_TABLE__UPDATE;
 		if (rte->requiredPerms & ACL_DELETE)
-			required = DB_TABLE__DELETE;
+			required = SEPG_DB_TABLE__DELETE;
 
 		if (required == 0)
 			continue;
@@ -288,9 +291,13 @@ sepgsqlCheckCopyTable(Relation rel, List *attnumlist, bool is_from)
 		selected = fixupSelectedColsByTrigger(CMD_INSERT, rel, selected);
 
 	checkTabelColumnPerms(RelationGetRelid(rel), selected, modified,
-						  is_from ? DB_TABLE__INSERT : DB_TABLE__SELECT);
+						  is_from ? SEPG_DB_TABLE__INSERT : SEPG_DB_TABLE__SELECT);
 }
 
+/*
+ * sepgsqlCheckSelectInto
+ *   It checks db_table:{insert} permission for a table newly created
+ */
 void
 sepgsqlCheckSelectInto(Relation rel)
 {
@@ -305,59 +312,175 @@ sepgsqlCheckSelectInto(Relation rel)
 					InvalidAttrNumber - FirstLowInvalidHeapAttributeNumber);
 
 	checkTabelColumnPerms(RelationGetRelid(rel),
-						  selected, modified, DB_TABLE__INSERT);
+						  selected, modified, SEPG_DB_TABLE__INSERT);
+}
+
+/*
+ * fixupColumnAvPerms
+ *   To change pg_attribute.attisdropped means dropping a column,
+ *   although this operation done by update, so it need to change
+ *   required permmision in this special case.
+ */
+static access_vector_t
+fixupColumnAvPerms(access_vector_t required, HeapTuple newtup, HeapTuple oldtup)
+{
+	Form_pg_attribute	oldatt = (Form_pg_attribute) GETSTRUCT(oldtup);
+	Form_pg_attribute	newatt = (Form_pg_attribute) GETSTRUCT(newtup);
+	Datum				olddat, newdat;
+	bool				oldnull, newnull;
+	int					length;
+
+	if (oldatt->attisdropped == newatt->attisdropped)
+		return required;
+
+	if (!oldatt->attisdropped && newatt->attisdropped)
+		required |= SEPG_DB_COLUMN__DROP;
+	if (oldatt->attisdropped && !newatt->attisdropped)
+		required |= SEPG_DB_COLUMN__CREATE;
+
+	/*
+	 * Compare oldtup/newtup.
+	 * If they don't differ expect for attisdropped,
+	 * drop SEPG_DB_COLUMN__SETATTR
+	 */
+	length = offsetof(FormData_pg_attribute, attisdropped);
+	if (memcmp(oldatt, newatt, length) != 0)
+		return required;
+	if (oldatt->attinhcount != newatt->attinhcount)
+		return required;
+
+	newdat = SysCacheGetAttr(ATTNUM, newtup,
+							 Anum_pg_attribute_attacl, &newnull);
+	olddat = SysCacheGetAttr(ATTNUM, oldtup,
+							 Anum_pg_attribute_attacl, &oldnull);
+	if (newnull != oldnull)
+		return required;
+	if (newnull && DatumGetBool(OidFunctionCall2(F_ARRAY_NE, newdat, olddat)))
+		return required;
+
+	newdat = SysCacheGetAttr(ATTNUM, newtup,
+							 Anum_pg_attribute_attselabel, &newnull);
+	olddat = SysCacheGetAttr(ATTNUM, oldtup,
+							 Anum_pg_attribute_attselabel, &oldnull);
+	if (newnull != oldnull)
+		return required;
+	if (newnull && DatumGetBool(OidFunctionCall2(F_TEXTNE, newdat, olddat)))
+		return required;
+
+	return (required & ~SEPG_DB_COLUMN__SETATTR);
+}
+
+/*
+ * checkCLibraryInstallation
+ *   It checks the correctness of C-library when user tries to
+ *   create / replace C-functions.
+ */
+static void
+checkCLibraryInstallation(HeapTuple newtup, HeapTuple oldtup)
+{
+	Form_pg_proc	oldpro, newpro;
+	Datum			oldbin, newbin;
+	char		   *filename;
+	bool			isnull;
+
+	if (HeapTupleIsValid(oldtup))
+	{
+		newpro = (Form_pg_proc) GETSTRUCT(newtup);
+		oldpro = (Form_pg_proc) GETSTRUCT(oldtup);
+		if (newpro->prolang != ClanguageId)
+			return;
+
+		newbin = SysCacheGetAttr(PROCOID, newtup,
+								 Anum_pg_proc_probin, &isnull);
+		if (!isnull)
+		{
+			oldbin = SysCacheGetAttr(PROCOID, oldtup,
+									 Anum_pg_proc_probin, &isnull);
+			if (isnull ||
+				oldpro->prolang != newpro->prolang ||
+				DatumGetBool(DirectFunctionCall2(byteane, oldbin, newbin)))
+			{
+				filename = TextDatumGetCString(newbin);
+				sepgsqlCheckDatabaseInstallModule(filename);
+			}
+		}
+	}
+	else
+	{
+		newpro = (Form_pg_proc) GETSTRUCT(newtup);
+		if (newpro->prolang == ClanguageId)
+		{
+			newbin = SysCacheGetAttr(PROCOID, newtup,
+									 Anum_pg_proc_probin, &isnull);
+			if (!isnull)
+			{
+				filename = TextDatumGetCString(newbin);
+				sepgsqlCheckDatabaseInstallModule(filename);
+			}
+		}
+	}
 }
 
 /*
  * HeapTuple INSERT/UPDATE/DELETE
  */
-HeapTuple
+void
 sepgsqlHeapTupleInsert(Relation rel, HeapTuple newtup, bool internal)
 {
-	Oid			relid = RelationGetRelid(rel);
-	uint32		perms = SEPGSQL_PERMS_INSERT;
+	Oid					relid = RelationGetRelid(rel);
+	security_class_t	tclass;
+	const char		   *audit_name;
 
 	if (!sepgsqlIsEnabled())
-		return newtup;
+		return;
 
-	/*
-	 * check db_procedure:{install}, if necessary
-	 */
+	/* check C-Function installation */
+	if (relid == ProcedureRelationId)
+		checkCLibraryInstallation(newtup, NULL);
+
+	/* check db_procedure:{install}, if necessary */
 	sepgsqlCheckProcedureInstall(rel, newtup, NULL);
 
+	/*
+	 * NOTE: we should assign a default security label here,
+	 * but only a few relation has a capability to hold
+	 * security label in this version.
+	 * In addition, it should be assigned via enhanced
+	 * DDL statement (SECURITY_LABEL = 'xxx') in the normal
+	 * way. Using INSERT statement to add a new entry to
+	 * system catalog is a quite corner case, so it simply
+	 * raises an error.
+	 */
 	if (HeapTupleHasSecLabel(relid, newtup) &&
 		!HeapTupleGetSecLabel(relid, newtup))
-	{
-		Datum  *values;
-		bool   *nulls;
-		int		natts;
+		ereport(ERROR,
+				(errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("No security label specified")));
 
-		Assert(!internal);
+	tclass = sepgsqlTupleObjectClass(relid, newtup);
+	if (tclass == SEPG_CLASS_DB_TUPLE)
+		return;		/* Now, row-level stuff not provided */
 
-		natts = RelationGetNumberOfAttributes(rel);
-		values = (Datum *) palloc(natts * sizeof(Datum));
-		nulls = (bool *) palloc(natts * sizeof(bool));
-
-		heap_deform_tuple(newtup, RelationGetDescr(rel), values, nulls);
-		sepgsqlSetDefaultSecLabel(RelationGetRelid(rel),
-								  values, nulls, PointerGetDatum(NULL));
-		newtup = heap_form_tuple(RelationGetDescr(rel), values, nulls);
-	}
-	sepgsqlCheckObjectPerms(rel, newtup, NULL, perms, true);
-
-	return newtup;
+	audit_name = sepgsqlAuditName(relid, newtup);
+	sepgsqlClientHasPerms(HeapTupleGetSecLabel(relid, newtup),
+						  tclass,
+						  SEPG_DB_TUPLE__INSERT,
+						  audit_name, true);
 }
 
 void
 sepgsqlHeapTupleUpdate(Relation rel, ItemPointer otid,
 					   HeapTuple newtup, bool internal)
 {
-	Oid				relid = RelationGetRelid(rel);
-	uint32			perms = SEPGSQL_PERMS_UPDATE;
-	HeapTupleData	oldtup;
-	Buffer			oldbuf;
-	sepgsql_sid_t	newsid;
-	sepgsql_sid_t	oldsid;
+	Oid					relid = RelationGetRelid(rel);
+	access_vector_t		required = SEPG_DB_TUPLE__UPDATE;
+	HeapTupleData		oldtup;
+	Buffer				oldbuf;
+	security_class_t	newclass;
+	security_class_t	oldclass;
+	sepgsql_sid_t		newsid;
+	sepgsql_sid_t		oldsid;
+	const char		   *audit_name;
 
 	if (!sepgsqlIsEnabled())
 		return;
@@ -366,27 +489,46 @@ sepgsqlHeapTupleUpdate(Relation rel, ItemPointer otid,
 	if (!heap_fetch(rel, SnapshotAny, &oldtup, &oldbuf, false, NULL))
 		elog(ERROR, "SELinux: failed to fetch a tuple for sepgsqlHeapTupleDelete");
 
-	/*
-	 * check db_procedure:{install}, if necessary
-	 */
+	/* special case in column create/drop */
+	if (relid == AttributeRelationId)
+		required = fixupColumnAvPerms(required, newtup, &oldtup);
+
+	/* check C-Function installation */
+	if (relid == ProcedureRelationId)
+		checkCLibraryInstallation(newtup, &oldtup);
+
+	/* check db_procedure:{install}, if necessary */
 	sepgsqlCheckProcedureInstall(rel, newtup, &oldtup);
 
-	newsid = HeapTupleGetSecLabel(RelationGetRelid(rel), newtup);
-	oldsid = HeapTupleGetSecLabel(RelationGetRelid(rel), &oldtup);
+	newclass = sepgsqlTupleObjectClass(relid, newtup);
+	oldclass = sepgsqlTupleObjectClass(relid, &oldtup);
+	newsid = HeapTupleGetSecLabel(relid, newtup);
+	oldsid = HeapTupleGetSecLabel(relid, &oldtup);
 
-	if ((oldsid == NULL && newsid != NULL) ||
+	if ((newclass != oldclass) ||
+		(oldsid == NULL && newsid != NULL) ||
 		(oldsid != NULL && newsid == NULL) ||
-		(oldsid != NULL && newsid != NULL && strcmp(oldsid, newsid) != 0) ||
-		(sepgsqlTupleObjectClass(relid, newtup)
-			!= sepgsqlTupleObjectClass(relid, &oldtup)))
-		perms |= SEPGSQL_PERMS_RELABELFROM;
+		(oldsid != NULL && newsid != NULL && strcmp(oldsid, newsid) != 0))
+		required |= SEPG_DB_TUPLE__RELABELFROM;
 
-	sepgsqlCheckObjectPerms(rel, &oldtup, newtup, perms, true);
-
-	if (perms & SEPGSQL_PERMS_RELABELFROM)
+	/* Now, row-level stuff not provided */
+	if (oldclass != SEPG_CLASS_DB_TUPLE)
 	{
-		perms = SEPGSQL_PERMS_RELABELTO;
-		sepgsqlCheckObjectPerms(rel, newtup, NULL, perms, true);
+		audit_name = sepgsqlAuditName(relid, newtup);
+		sepgsqlClientHasPerms(oldsid,
+							  oldclass,
+							  required,
+							  audit_name, true);
+	}
+
+	if ((required & SEPG_DB_TUPLE__RELABELFROM) &&
+		newclass != SEPG_CLASS_DB_TUPLE)
+	{
+		audit_name = sepgsqlAuditName(relid, &oldtup);
+		sepgsqlClientHasPerms(newsid,
+							  newclass,
+							  SEPG_DB_TUPLE__RELABELTO,
+							  audit_name, true);
 	}
 	ReleaseBuffer(oldbuf);
 }
@@ -394,9 +536,11 @@ sepgsqlHeapTupleUpdate(Relation rel, ItemPointer otid,
 void
 sepgsqlHeapTupleDelete(Relation rel, ItemPointer otid, bool internal)
 {
-	access_vector_t	required = SEPGSQL_PERMS_DELETE;
-	HeapTupleData	oldtup;
-	Buffer			oldbuf;
+	Oid					relid = RelationGetRelid(rel);
+	security_class_t	tclass;
+	HeapTupleData		oldtup;
+	Buffer				oldbuf;
+	const char		   *audit_name;
 
 	if (!sepgsqlIsEnabled())
 		return;
@@ -405,7 +549,14 @@ sepgsqlHeapTupleDelete(Relation rel, ItemPointer otid, bool internal)
 	if (!heap_fetch(rel, SnapshotAny, &oldtup, &oldbuf, false, NULL))
 		elog(ERROR, "SELinux: failed to fetch a tuple for sepgsqlHeapTupleDelete");
 
-	sepgsqlCheckObjectPerms(rel, &oldtup, NULL, required, true);
-
+	tclass = sepgsqlTupleObjectClass(relid, &oldtup);
+	if (tclass != SEPG_CLASS_DB_TUPLE)
+	{
+		audit_name = sepgsqlAuditName(relid, &oldtup);
+		sepgsqlClientHasPerms(HeapTupleGetSecLabel(relid, &oldtup),
+							  tclass,
+							  SEPG_DB_TUPLE__DELETE,
+							  audit_name, true);
+	}
 	ReleaseBuffer(oldbuf);
 }
