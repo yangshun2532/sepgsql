@@ -21,6 +21,277 @@
 #include "utils/lsyscache.h"
 #include "utils/syscache.h"
 
+
+/*
+ * Dynamic object class/permissions mapping
+ *
+ * SELinux exports the list of object classes and permissions at
+ * /selinux/class. The libselinux provides an interface to translate
+ * between their names and codes.
+ */
+static struct
+{
+	const char		   *class_name;
+	security_class_t	class_code;
+	struct
+	{
+		const char	   *perm_name;
+		access_vector_t	perm_code;
+	} av[sizeof(access_vector_t) * 8];
+} selinux_catalog[] = {
+	{
+		"process",				SEPG_CLASS_PROCESS,
+		{
+			{"translation",		SEPG_PROCESS__TRANSITION },
+			{NULL, 0}
+		}
+	},
+	{
+		"file",					SEPG_CLASS_FILE,
+		{
+			{"read",			SEPG_FILE__READ },
+			{"write",			SEPG_FILE__WRITE },
+			{NULL, 0}
+		}
+	},
+	{
+		"dir",					SEPG_CLASS_DIR,
+		{
+			{"read",			SEPG_DIR__READ },
+			{"write",			SEPG_DIR__WRITE },
+			{NULL,0}
+		}
+	},
+	{
+		"lnk_file",				SEPG_CLASS_LNK_FILE,
+		{
+			{"read",			SEPG_LNK_FILE__READ },
+			{"write",			SEPG_LNK_FILE__WRITE },
+			{NULL,0}
+		}
+	},
+	{
+		"chr_file",				SEPG_CLASS_CHR_FILE,
+		{
+			{"read",			SEPG_CHR_FILE__READ },
+			{"write",			SEPG_CHR_FILE__WRITE },
+			{NULL,0}
+		}
+	},
+	{
+		"blk_file",				SEPG_CLASS_BLK_FILE,
+		{
+			{"read",			SEPG_BLK_FILE__READ },
+			{"write",			SEPG_BLK_FILE__WRITE },
+			{NULL,0}
+		}
+	},
+	{
+		"sock_file",			SEPG_CLASS_SOCK_FILE,
+		{
+			{"read",			SEPG_SOCK_FILE__READ },
+			{"write",			SEPG_SOCK_FILE__WRITE },
+			{NULL,0}
+		}
+	},
+	{
+		"fifo_file",			SEPG_CLASS_FIFO_FILE,
+		{
+			{"read",			SEPG_FIFO_FILE__READ },
+			{"write",			SEPG_FIFO_FILE__WRITE },
+			{NULL,0}
+		}
+	},
+	{
+		"db_database",			SEPG_CLASS_DB_DATABASE,
+		{
+			{ "create",			SEPG_DB_DATABASE__CREATE },
+			{ "drop",			SEPG_DB_DATABASE__DROP },
+			{ "getattr",		SEPG_DB_DATABASE__GETATTR },
+			{ "setattr",		SEPG_DB_DATABASE__SETATTR },
+			{ "relabelfrom",	SEPG_DB_DATABASE__RELABELFROM },
+			{ "relabelto",		SEPG_DB_DATABASE__RELABELTO },
+			{ "access",			SEPG_DB_DATABASE__ACCESS },
+			{ "install_module",	SEPG_DB_DATABASE__INSTALL_MODULE },
+			{ "load_module",	SEPG_DB_DATABASE__LOAD_MODULE },
+			{ "get_param",		SEPG_DB_DATABASE__GET_PARAM },
+			{ "set_param",		SEPG_DB_DATABASE__SET_PARAM },
+			{ NULL, 0UL },
+		}
+	},
+	{
+		"db_table",				SEPG_CLASS_DB_TABLE,
+		{
+			{ "create",			SEPG_DB_TABLE__CREATE },
+			{ "drop",			SEPG_DB_TABLE__DROP },
+			{ "getattr",		SEPG_DB_TABLE__GETATTR },
+			{ "setattr",		SEPG_DB_TABLE__SETATTR },
+			{ "relabelfrom",	SEPG_DB_TABLE__RELABELFROM },
+			{ "relabelto",		SEPG_DB_TABLE__RELABELTO },
+			{ "select",			SEPG_DB_TABLE__SELECT },
+			{ "update",			SEPG_DB_TABLE__UPDATE },
+			{ "insert",			SEPG_DB_TABLE__INSERT },
+			{ "delete",			SEPG_DB_TABLE__DELETE },
+			{ "lock",			SEPG_DB_TABLE__LOCK },
+			{ NULL, 0UL },
+		}
+	},
+	{
+		"db_procedure",			SEPG_CLASS_DB_PROCEDURE,
+		{
+			{ "create",			SEPG_DB_PROCEDURE__CREATE },
+			{ "drop",			SEPG_DB_PROCEDURE__DROP },
+			{ "getattr",		SEPG_DB_PROCEDURE__GETATTR },
+			{ "setattr",		SEPG_DB_PROCEDURE__SETATTR },
+			{ "relabelfrom",	SEPG_DB_PROCEDURE__RELABELFROM },
+			{ "relabelto",		SEPG_DB_PROCEDURE__RELABELTO },
+			{ "execute",		SEPG_DB_PROCEDURE__EXECUTE },
+			{ "entrypoint",		SEPG_DB_PROCEDURE__ENTRYPOINT },
+			{ "install",		SEPG_DB_PROCEDURE__INSTALL },
+			{ NULL, 0UL },
+		}
+	},
+	{
+		"db_column",			SEPG_CLASS_DB_COLUMN,
+		{
+			{ "create",			SEPG_DB_COLUMN__CREATE },
+			{ "drop",			SEPG_DB_COLUMN__DROP },
+			{ "getattr",		SEPG_DB_COLUMN__GETATTR },
+			{ "setattr",		SEPG_DB_COLUMN__SETATTR },
+			{ "relabelfrom",	SEPG_DB_COLUMN__RELABELFROM },
+			{ "relabelto",		SEPG_DB_COLUMN__RELABELTO },
+			{ "select",			SEPG_DB_COLUMN__SELECT },
+			{ "update",			SEPG_DB_COLUMN__UPDATE },
+			{ "insert",			SEPG_DB_COLUMN__INSERT },
+			{ NULL, 0UL },
+		}
+	},
+	{
+		"db_tuple",				SEPG_CLASS_DB_TUPLE,
+		{
+			{ "relabelfrom",	SEPG_DB_TUPLE__RELABELFROM},
+			{ "relabelto",		SEPG_DB_TUPLE__RELABELTO},
+			{ "select",			SEPG_DB_TUPLE__SELECT},
+			{ "update",			SEPG_DB_TUPLE__UPDATE},
+			{ "insert",			SEPG_DB_TUPLE__INSERT},
+			{ "delete",			SEPG_DB_TUPLE__DELETE},
+			{ NULL, 0UL},
+		}
+	},
+	{
+		"db_blob",				SEPG_CLASS_DB_BLOB,
+		{
+			{ "create",			SEPG_DB_BLOB__CREATE},
+			{ "drop",			SEPG_DB_BLOB__DROP},
+			{ "getattr",		SEPG_DB_BLOB__GETATTR},
+			{ "setattr",		SEPG_DB_BLOB__SETATTR},
+			{ "relabelfrom",	SEPG_DB_BLOB__RELABELFROM},
+			{ "relabelto",		SEPG_DB_BLOB__RELABELTO},
+			{ "read",			SEPG_DB_BLOB__READ},
+			{ "write",			SEPG_DB_BLOB__WRITE},
+			{ "import",			SEPG_DB_BLOB__IMPORT},
+			{ "export",			SEPG_DB_BLOB__EXPORT},
+			{ NULL, 0UL},
+		}
+	}
+};
+
+/*
+ * sepgsqlTransToExternalClass
+ *   It translate the given class code (defined as SEPGCLASS_(class)) into
+ *   external code which is necessary to communicate in-kernel SELinux
+ */
+extern security_class_t
+sepgsqlTransToExternalClass(security_class_t tclass)
+{
+	security_class_t	tclass_ex;
+
+	Assert(tclass < SEPG_CLASS_MAX);
+
+	tclass_ex = string_to_security_class(selinux_catalog[tclass].class_name);
+	if (!tclass_ex)
+		ereport(FATAL,
+				(errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("SELinux: \"%s\" class is not defined in the policy",
+						selinux_catalog[tclass].class_name)));
+	return tclass_ex;
+}
+
+/*
+ * sepgsqlTransToInternalPerms
+ *   It translate the given permission masks into internal representation
+ *   defined as SEPG_(class)_(permission).
+ */
+extern void
+sepgsqlTransToInternalPerms(security_class_t tclass, struct av_decision *avd)
+{
+	security_class_t tclass_ex;
+	struct av_decision i_avd;
+	int i;
+
+	Assert(tclass < SEPG_CLASS_MAX);
+
+	memset(&i_avd, 0, sizeof(struct av_decision));
+
+	tclass_ex = sepgsqlTransToExternalClass(tclass);
+	for (i=0; selinux_catalog[tclass].av[i].perm_name; i++)
+	{
+		const char	   *perm_name = selinux_catalog[tclass].av[i].perm_name;
+		access_vector_t	perm_code = selinux_catalog[tclass].av[i].perm_code;
+		access_vector_t	perm_code_ex;
+
+		perm_code_ex = string_to_av_perm(tclass_ex, perm_name);
+		if (!perm_code_ex)
+		{
+			/* permission is undefined */
+			i_avd.allowed |= perm_code;
+			continue;
+		}
+
+		if (avd->allowed & perm_code_ex)
+			i_avd.allowed |= perm_code;
+		if (avd->decided & perm_code_ex)
+			i_avd.decided |= perm_code;
+		if (avd->auditallow & perm_code_ex)
+			i_avd.auditallow |= perm_code;
+		if (avd->auditdeny & perm_code_ex)
+			i_avd.auditdeny |= perm_code;
+	}
+
+	avd->allowed = i_avd.allowed;
+	avd->decided = i_avd.decided;
+	avd->auditallow = i_avd.auditallow;
+	avd->auditdeny = i_avd.auditdeny;
+}
+
+/*
+ * sepgsqlGetClassString
+ * sepgsqlGetPermissionString
+ *   It returns text representation of object classes/permissions
+ */
+const char *
+sepgsqlGetClassString(security_class_t tclass)
+{
+	Assert(tclass < SEPG_CLASS_MAX);
+
+	return selinux_catalog[tclass].class_name;
+}
+
+const char *
+sepgsqlGetPermissionString(security_class_t tclass, access_vector_t av)
+{
+	int		i;
+
+	Assert(tclass < SEPG_CLASS_MAX);
+
+	for (i=0; selinux_catalog[tclass].av[i].perm_name; i++)
+	{
+		if (selinux_catalog[tclass].av[i].perm_code == av)
+			return selinux_catalog[tclass].av[i].perm_name;
+	}
+	return NULL;
+}
+
 /*
  * sepgsqlAuditName
  *   returns an identifier string to generate audit record for
@@ -82,19 +353,19 @@ sepgsqlFileObjectClass(int fdesc)
 				 errmsg("could not stat file descriptor: %d", fdesc)));
 
 	if (S_ISDIR(stbuf.st_mode))
-		return SECCLASS_DIR;
+		return SEPG_CLASS_DIR;
 	else if (S_ISCHR(stbuf.st_mode))
-		return SECCLASS_CHR_FILE;
+		return SEPG_CLASS_CHR_FILE;
 	else if (S_ISBLK(stbuf.st_mode))
-		return SECCLASS_BLK_FILE;
+		return SEPG_CLASS_BLK_FILE;
 	else if (S_ISFIFO(stbuf.st_mode))
-		return SECCLASS_FIFO_FILE;
+		return SEPG_CLASS_FIFO_FILE;
 	else if (S_ISLNK(stbuf.st_mode))
-		return SECCLASS_LNK_FILE;
+		return SEPG_CLASS_LNK_FILE;
 	else if (S_ISSOCK(stbuf.st_mode))
-		return SECCLASS_SOCK_FILE;
+		return SEPG_CLASS_SOCK_FILE;
 
-	return SECCLASS_FILE;
+	return SEPG_CLASS_FILE;
 }
 
 /*
@@ -111,336 +382,22 @@ sepgsqlTupleObjectClass(Oid relid, HeapTuple tuple)
 	switch (relid)
 	{
 	case DatabaseRelationId:
-		return SECCLASS_DB_DATABASE;
+		return SEPG_CLASS_DB_DATABASE;
 
 	case RelationRelationId:
 		clsForm = (Form_pg_class) GETSTRUCT(tuple);
 		if (clsForm->relkind == RELKIND_RELATION)
-			return SECCLASS_DB_TABLE;
+			return SEPG_CLASS_DB_TABLE;
 		break;
 
 	case AttributeRelationId:
 		attForm = (Form_pg_attribute) GETSTRUCT(tuple);
 		if (attForm->attkind == RELKIND_RELATION)
-			return SECCLASS_DB_COLUMN;
+			return SEPG_CLASS_DB_COLUMN;
 		break;
 
 	case ProcedureRelationId:
-		return SECCLASS_DB_PROCEDURE;
-	
-	case LargeObjectRelationId:
-		return SECCLASS_DB_BLOB;
+		return SEPG_CLASS_DB_PROCEDURE;
 	}
-	return SECCLASS_DB_TUPLE;
-}
-
-/*
- * sepgsqlxxxxAvPerms
- *    translate generic required permissions into per object
- *    class permission bits.
- */
-static access_vector_t
-sepgsqlCommonAvPerms(uint32 required)
-{
-	access_vector_t av_perms = 0;
-
-	av_perms |= (required & SEPGSQL_PERMS_USE
-				 ? COMMON_DATABASE__GETATTR : 0);
-	av_perms |= (required & SEPGSQL_PERMS_SELECT
-				 ? COMMON_DATABASE__GETATTR : 0);
-	av_perms |= (required & SEPGSQL_PERMS_UPDATE
-				 ? COMMON_DATABASE__SETATTR : 0);
-	av_perms |= (required & SEPGSQL_PERMS_INSERT
-				 ? COMMON_DATABASE__CREATE : 0);
-	av_perms |= (required & SEPGSQL_PERMS_DELETE
-				 ? COMMON_DATABASE__DROP : 0);
-	av_perms |= (required & SEPGSQL_PERMS_RELABELFROM
-				 ? COMMON_DATABASE__RELABELFROM : 0);
-	av_perms |= (required & SEPGSQL_PERMS_RELABELTO
-				 ? COMMON_DATABASE__RELABELTO : 0);
-	return av_perms;
-}
-
-static access_vector_t
-sepgsqlDatabaseAvPerms(uint32 required, HeapTuple tuple, HeapTuple newtup)
-{
-	return sepgsqlCommonAvPerms(required);
-}
-
-static access_vector_t
-sepgsqlTableAvPerms(uint32 required, HeapTuple tuple, HeapTuple newtup)
-{
-	return sepgsqlCommonAvPerms(required);
-}
-
-static access_vector_t
-sepgsqlColumnAvPerms(uint32 required, HeapTuple tuple, HeapTuple newtup)
-{
-	access_vector_t av_perms = sepgsqlCommonAvPerms(required);
-
-	if (HeapTupleIsValid(newtup))
-	{
-		Form_pg_attribute oldatt = (Form_pg_attribute) GETSTRUCT(tuple);
-		Form_pg_attribute newatt = (Form_pg_attribute) GETSTRUCT(newtup);
-
-		if (!oldatt->attisdropped && newatt->attisdropped)
-			av_perms |= DB_COLUMN__DROP;
-		if (oldatt->attisdropped && !newatt->attisdropped)
-			av_perms |= DB_COLUMN__CREATE;
-	}
-
-	return av_perms;
-}
-
-static access_vector_t
-sepgsqlProcedureAvPerms(uint32 required, HeapTuple tuple, HeapTuple newtup)
-{
-	access_vector_t av_perms = sepgsqlCommonAvPerms(required);
-	Form_pg_proc proForm;
-	Form_pg_proc oldForm;
-	char *filename = NULL;
-	Datum probin;
-	Datum oldbin;
-	bool isnull;
-
-	/*
-	 * check permission for loadable module installation
-	 */
-	if (HeapTupleIsValid(newtup))
-	{
-		Assert(required & SEPGSQL_PERMS_UPDATE);
-
-		proForm = (Form_pg_proc) GETSTRUCT(newtup);
-		oldForm = (Form_pg_proc) GETSTRUCT(tuple);
-		probin = SysCacheGetAttr(PROCOID, newtup,
-								 Anum_pg_proc_probin,
-								 &isnull);
-		if (!isnull)
-		{
-			oldbin = SysCacheGetAttr(PROCOID, tuple,
-									 Anum_pg_proc_probin,
-									 &isnull);
-			if (isnull ||
-				oldForm->prolang != proForm->prolang ||
-				DatumGetBool(DirectFunctionCall2(byteane, oldbin, probin)))
-			{
-				filename = TextDatumGetCString(probin);
-				sepgsqlCheckDatabaseInstallModule(filename);
-			}
-		}
-	}
-	else if (required & SEPGSQL_PERMS_INSERT)
-	{
-		proForm = (Form_pg_proc) GETSTRUCT(tuple);
-
-		if (proForm->prolang == ClanguageId)
-		{
-			probin = SysCacheGetAttr(PROCOID, tuple,
-									 Anum_pg_proc_probin,
-									 &isnull);
-			if (!isnull)
-			{
-				filename = TextDatumGetCString(probin);
-				sepgsqlCheckDatabaseInstallModule(filename);
-			}
-		}
-	}
-
-	return av_perms;
-}
-
-/*
- * sepgsqlCheckObjectPerms
- *   checks permission of the given object (tuple).
- */
-bool
-sepgsqlCheckObjectPerms(Relation rel, HeapTuple tuple, HeapTuple newtup,
-						uint32 required, bool abort)
-{
-	Oid relid = RelationGetRelid(rel);
-	security_class_t	tclass;
-	access_vector_t		av_perms;
-	const char		   *audit_name;
-	bool				rc = true;
-
-	tclass = sepgsqlTupleObjectClass(relid, tuple);
-	switch (tclass)
-	{
-	case SECCLASS_DB_DATABASE:
-		av_perms = sepgsqlDatabaseAvPerms(required, tuple, newtup);
-		break;
-	case SECCLASS_DB_TABLE:
-		av_perms = sepgsqlTableAvPerms(required, tuple, newtup);
-		break;
-	case SECCLASS_DB_COLUMN:
-		av_perms = sepgsqlColumnAvPerms(required, tuple, newtup);
-		break;
-	case SECCLASS_DB_PROCEDURE:
-		av_perms = sepgsqlProcedureAvPerms(required, tuple, newtup);
-		break;
-	default:
-		/*
-		 * Currently, row-level access control is not
-		 * implement, so it skipps all the checks on
-		 * db_tuple class obejcts.
-		 */
-		av_perms = 0;
-		break;
-	}
-	if (av_perms)
-	{
-		audit_name = sepgsqlAuditName(relid, tuple);
-		rc = sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
-								   tclass, av_perms,
-								   audit_name, abort);
-	}
-	return rc;
-}
-
-/*
- * sepgsqlSetDefaultSecLabel
- *
- * This function attach a correct security label for a newly created tuple
- * according to the security policy.
- * In the default, any tuple inherits the security context of its table.
- * However, we have several exception for some of system catalog. It come from
- * TYPE_TRANSITION rules in the security policy.
- */
-static sepgsql_sid_t
-defaultDatabaseSecLabel(Relation rel, HeapTuple tuple)
-{
-	security_context_t	newcon;
-
-	newcon = sepgsqlComputeCreate(sepgsqlGetClientLabel(),
-								  sepgsqlGetClientLabel(),
-								  SECCLASS_DB_DATABASE);
-	return securityTransSecLabelIn(newcon);
-}
-
-static sepgsql_sid_t
-defaultTableSecLabel(Relation rel, HeapTuple tuple)
-{
-	return sepgsqlClientCreate(sepgsqlGetDatabaseSid(),
-							   SECCLASS_DB_TABLE);
-}
-
-static sepgsql_sid_t
-defaultProcedureSecLabel(Relation rel, HeapTuple tuple)
-{
-	return sepgsqlClientCreate(sepgsqlGetDatabaseSid(),
-							   SECCLASS_DB_PROCEDURE);
-}
-
-static sepgsql_sid_t
-defaultColumnSecLabel(Relation rel, HeapTuple tuple)
-{
-	Form_pg_attribute	attForm;
-	HeapTuple			reltup;
-	sepgsql_sid_t		relsid;
-
-	attForm = (Form_pg_attribute) GETSTRUCT(tuple);
-
-	if (IsBootstrapProcessingMode() &&
-		(attForm->attrelid == TypeRelationId ||
-		 attForm->attrelid == ProcedureRelationId ||
-		 attForm->attrelid == AttributeRelationId ||
-		 attForm->attrelid == RelationRelationId))
-	{
-		/*
-		 * we cannot refer relation cache on the very early phase
-		 * in bootstraping mode. we assumes tables has a default
-		 * security context as is, and nobody relabel it.
-		 */
-		relsid = sepgsqlClientCreate(sepgsqlGetDatabaseSid(),
-									 SECCLASS_DB_TABLE);
-	}
-	else
-	{
-		reltup = SearchSysCache(RELOID,
-								ObjectIdGetDatum(attForm->attrelid),
-								0, 0, 0);
-		if (!HeapTupleIsValid(reltup))
-			elog(ERROR, "SELinux: cache lookup failed for relation: %u",
-				 attForm->attrelid);
-
-		relsid = HeapTupleGetSecLabel(reltup);
-
-		ReleaseSysCache(reltup);
-	}
-
-	return sepgsqlClientCreate(relsid, SECCLASS_DB_COLUMN);
-}
-
-static sepgsql_sid_t
-defaultTupleSecLabel(Relation rel, HeapTuple tuple)
-{
-	HeapTuple           reltup;
-	sepgsql_sid_t       relsid;
-
-	if (IsBootstrapProcessingMode() &&
-		(RelationGetRelid(rel) == TypeRelationId ||
-		 RelationGetRelid(rel) == ProcedureRelationId ||
-		 RelationGetRelid(rel) == AttributeRelationId ||
-		 RelationGetRelid(rel) == RelationRelationId))
-	{
-		/*
-		 * we cannot refer relation cache on the very early phase
-		 * in bootstraping mode. we assumes tables has a default
-		 * security context as is, and nobody relabel it.
-		 */
-		relsid = sepgsqlClientCreate(sepgsqlGetDatabaseSid(),
-									 SECCLASS_DB_TABLE);
-	}
-	else
-    {
-		reltup = SearchSysCache(RELOID,
-								ObjectIdGetDatum(RelationGetRelid(rel)),
-								0, 0, 0);
-		if (!HeapTupleIsValid(reltup))
-			elog(ERROR, "SELinux: cache lookup failed for relation: %u",
-				 RelationGetRelid(rel));
-
-		relsid = HeapTupleGetSecLabel(reltup);
-
-		ReleaseSysCache(reltup);
-	}
-
-	return sepgsqlClientCreate(relsid, SECCLASS_DB_TUPLE);
-}
-
-void
-sepgsqlSetDefaultSecLabel(Relation rel, HeapTuple tuple)
-{
-	security_class_t	tclass;
-	sepgsql_sid_t		newsid;
-
-	Assert(HeapTupleHasSecLabel(tuple));
-	tclass = sepgsqlTupleObjectClass(RelationGetRelid(rel), tuple);
-
-	switch (tclass)
-	{
-	case SECCLASS_DB_DATABASE:
-		newsid = defaultDatabaseSecLabel(rel, tuple);
-		break;
-
-	case SECCLASS_DB_TABLE:
-		newsid = defaultTableSecLabel(rel, tuple);
-		break;
-
-	case SECCLASS_DB_PROCEDURE:
-		newsid = defaultProcedureSecLabel(rel, tuple);
-		break;
-
-	case SECCLASS_DB_COLUMN:
-		newsid = defaultColumnSecLabel(rel, tuple);
-		break;
-
-	case SECCLASS_DB_BLOB:
-		// It performs as a normal tuple now
-	default:	/* SECCLASS_DB_TUPLE */
-		newsid = defaultTupleSecLabel(rel, tuple);
-		break;
-	}
-
-	HeapTupleSetSecLabel(tuple, newsid);
+	return SEPG_CLASS_DB_TUPLE;
 }
