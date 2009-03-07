@@ -443,7 +443,7 @@ checkProcedureInstall(Oid proc_oid)
 			checkProcedureInstall(((Form_##catalog) GETSTRUCT(newtup))->member); \
 	} while(0)
 
-static void
+void
 sepgsqlCheckProcedureInstall(Relation rel, HeapTuple newtup, HeapTuple oldtup)
 {
 	/*
@@ -539,187 +539,17 @@ sepgsqlCheckProcedureInstall(Relation rel, HeapTuple newtup, HeapTuple oldtup)
 }
 
 /*
- * HeapTuple INSERT/UPDATE/DELETE
- */
-static HeapTuple
-getHeapTupleFromItemPointer(Relation rel, ItemPointer tid)
-{
-	Buffer			buffer;
-	PageHeader		dp;
-	ItemId			lp;
-	HeapTupleData	tuple;
-	HeapTuple		oldtup;
-
-	buffer = ReadBuffer(rel, ItemPointerGetBlockNumber(tid));
-	LockBuffer(buffer, BUFFER_LOCK_SHARE);
-
-	dp = (PageHeader) BufferGetPage(buffer);
-	lp = PageGetItemId(dp, ItemPointerGetOffsetNumber(tid));
-
-	Assert(ItemIdIsNormal(lp));
-
-	tuple.t_data = (HeapTupleHeader) PageGetItem((Page) dp, lp);
-	tuple.t_len = ItemIdGetLength(lp);
-	tuple.t_self = *tid;
-	tuple.t_tableOid = RelationGetRelid(rel);
-	oldtup = heap_copytuple(&tuple);
-
-	LockBuffer(buffer, BUFFER_LOCK_UNLOCK);
-	ReleaseBuffer(buffer);
-
-	return oldtup;
-}
-
-HeapTuple
-sepgsqlHeapTupleInsert(Relation rel, HeapTuple newtup, bool internal)
-{
-	Oid			relid = RelationGetRelid(rel);
-	uint32		perms = SEPGSQL_PERMS_INSERT;
-
-	if (!sepgsqlIsEnabled())
-		return newtup;
-
-	/*
-	 * check db_procedure:{install}, if necessary
-	 */
-	sepgsqlCheckProcedureInstall(rel, newtup, NULL);
-
-	if (HeapTupleHasSecLabel(relid, newtup) &&
-		!HeapTupleGetSecLabel(relid, newtup))
-	{
-		Datum  *values;
-		bool   *nulls;
-		int		natts;
-
-		Assert(!internal);
-
-		natts = RelationGetNumberOfAttributes(rel);
-		values = (Datum *) palloc(natts * sizeof(Datum));
-		nulls = (bool *) palloc(natts * sizeof(bool));
-
-		heap_deform_tuple(newtup, RelationGetDescr(rel), values, nulls);
-		sepgsqlSetDefaultSecLabel(RelationGetRelid(rel),
-								  values, nulls, PointerGetDatum(NULL));
-		newtup = heap_form_tuple(RelationGetDescr(rel), values, nulls);
-	}
-	sepgsqlCheckObjectPerms(rel, newtup, NULL, perms, true);
-
-	return newtup;
-}
-
-void
-sepgsqlHeapTupleUpdate(Relation rel, ItemPointer otid,
-					   HeapTuple newtup, bool internal)
-{
-	Oid				relid = RelationGetRelid(rel);
-	uint32			perms = SEPGSQL_PERMS_UPDATE;
-	HeapTuple		oldtup;
-	sepgsql_sid_t	newsid;
-	sepgsql_sid_t	oldsid;
-
-	if (!sepgsqlIsEnabled())
-		return;
-
-	oldtup = getHeapTupleFromItemPointer(rel, otid);
-	/*
-	 * check db_procedure:{install}, if necessary
-	 */
-	sepgsqlCheckProcedureInstall(rel, newtup, oldtup);
-
-	newsid = HeapTupleGetSecLabel(RelationGetRelid(rel), newtup);
-	oldsid = HeapTupleGetSecLabel(RelationGetRelid(rel), oldtup);
-
-	if ((oldsid == NULL && newsid != NULL) ||
-		(oldsid != NULL && newsid == NULL) ||
-		(oldsid != NULL && newsid != NULL && strcmp(oldsid, newsid) != 0) ||
-		(sepgsqlTupleObjectClass(relid, newtup)
-			!= sepgsqlTupleObjectClass(relid, oldtup)))
-		perms |= SEPGSQL_PERMS_RELABELFROM;
-
-	sepgsqlCheckObjectPerms(rel, oldtup, newtup, perms, true);
-
-	if (perms & SEPGSQL_PERMS_RELABELFROM)
-	{
-		perms = SEPGSQL_PERMS_RELABELTO;
-		sepgsqlCheckObjectPerms(rel, newtup, NULL, perms, true);
-	}
-	heap_freetuple(oldtup);
-}
-
-void
-sepgsqlHeapTupleDelete(Relation rel, ItemPointer otid, bool internal)
-{
-	uint32		perms = SEPGSQL_PERMS_DELETE;
-	HeapTuple	oldtup;
-
-	if (!sepgsqlIsEnabled())
-		return;
-
-	oldtup = getHeapTupleFromItemPointer(rel, otid);
-
-	sepgsqlCheckObjectPerms(rel, oldtup, NULL, perms, true);
-
-	heap_freetuple(oldtup);
-}
-
-/*
- * sepgsqlCopyTable
+ * sepgsqlCheckFileRead
+ * sepgsqlCheckFileWrite
  *
- * This function checks permission on the target table and columns
- * of COPY statement. We don't place it at sepgsql/hooks.c because
- * it internally uses addEvalXXXX() interface statically declared.
+ *   These functions check file:{read} or file:{write} permission on
+ *   the given file descriptor
  */
-void
-sepgsqlCopyTable(Relation rel, List *attNumList, bool isFrom)
+static void
+checkFileReadWrite(int fdesc, const char *filename, bool is_read)
 {
-	List	   *selist = NIL;
-	ListCell   *l;
-
-	if (!sepgsqlIsEnabled())
-		return;
-
-	/*
-	 * on 'COPY FROM SELECT ...' cases, any checkings are done in select.c
-	 */
-	if (rel == NULL)
-		return;
-
-	/*
-	 * no need to check non-table relation
-	 */
-	if (RelationGetForm(rel)->relkind != RELKIND_RELATION)
-		return;
-
-	selist = sepgsqlAddEvalTable(selist, RelationGetRelid(rel), false,
-								 isFrom ? DB_TABLE__INSERT : DB_TABLE__SELECT);
-	foreach(l, attNumList)
-	{
-		AttrNumber	attnum = lfirst_int(l);
-
-		selist = sepgsqlAddEvalColumn(selist, RelationGetRelid(rel), false, attnum,
-									  isFrom ? DB_COLUMN__INSERT : DB_COLUMN__SELECT);
-	}
-
-	/*
-	 * check call trigger function
-	 */
-	if (isFrom)
-		selist = sepgsqlAddEvalTriggerFunc(selist, RelationGetRelid(rel), CMD_INSERT);
-
-	foreach (l, selist)
-		sepgsqlCheckSelinuxEvalItem((SelinuxEvalItem *) lfirst(l));
-}
-
-/*
- * sepgsqlCopyFile
- *
- * This function check permission whether the client can
- * read from/write to the given file.
- */
-void sepgsqlCopyFile(Relation rel, int fdesc, const char *filename, bool isFrom)
-{
-	security_context_t context;
-	security_class_t tclass;
+	security_context_t	context;
+	security_class_t	tclass;
 
 	if (!sepgsqlIsEnabled())
 		return;
@@ -735,7 +565,7 @@ void sepgsqlCopyFile(Relation rel, int fdesc, const char *filename, bool isFrom)
 		sepgsqlComputePerms(sepgsqlGetClientLabel(),
 							context,
 							tclass,
-							isFrom ? FILE__READ : FILE__WRITE,
+							is_read ? FILE__READ : FILE__WRITE,
 							filename, true);
 	}
 	PG_CATCH();
@@ -745,6 +575,18 @@ void sepgsqlCopyFile(Relation rel, int fdesc, const char *filename, bool isFrom)
 	}
 	PG_END_TRY();
 	freecon(context);
+}
+
+void
+sepgsqlCheckFileRead(int fdesc, const char *filename)
+{
+	checkFileReadWrite(fdesc, filename, true);
+}
+
+void
+sepgsqlCheckFileWrite(int fdesc, const char *filename)
+{
+	checkFileReadWrite(fdesc, filename, false);
 }
 
 /*
