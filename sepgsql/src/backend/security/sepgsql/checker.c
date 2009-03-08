@@ -107,6 +107,7 @@ checkTabelColumnPerms(Oid relid, Bitmapset *selected, Bitmapset *modified,
 	AttrNumber		attno;
 	int				nattrs;
 	const char	   *audit_name;
+	access_vector_t	mask;
 
 	/* db_table:{...} permissions */
 	tuple = SearchSysCache(RELOID,
@@ -114,6 +115,26 @@ checkTabelColumnPerms(Oid relid, Bitmapset *selected, Bitmapset *modified,
 						   0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
 		elog(ERROR, "SELinux: cache lookup failed for relation %u", relid);
+
+	/*
+	 * NOTE: HARDWIRED POLICY IN SE-POSTGRESQL
+	 * - User cannot modify pg_rewrite.* by hand, because it holds
+	 *   a parsed Query tree which includes requiredPerms and
+	 *   RangeTblEntry with selectedCols/modifiedCols.
+	 *   The correctness of access controls depends on these data
+	 *   are protected from unexpected manipulation..
+	 *
+	 * SE-PostgreSQL always prevent user's query tries to modify
+	 * these system catalogs by hand. Please use approariate
+	 * interfaces.
+	 */
+	mask = SEPG_DB_TABLE__UPDATE | SEPG_DB_TABLE__INSERT | SEPG_DB_TABLE__DELETE;
+	if ((required & mask) != 0 && (relid == RewriteRelationId))
+		ereport(ERROR,
+				(errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("SE-PostgreSQL peremptorily prevent to modify "
+						"\"%s\" system catalog by hand",
+						NameStr(((Form_pg_class)GETSTRUCT(tuple))->relname))));
 
 	if (sepgsqlTupleObjectClass(RelationRelationId, tuple) != SEPG_CLASS_DB_TABLE)
 	{
@@ -154,24 +175,6 @@ checkTabelColumnPerms(Oid relid, Bitmapset *selected, Bitmapset *modified,
 
 		/* remove the attribute number offset */
 		attno += FirstLowInvalidHeapAttributeNumber;
-
-		/*
-		 * NOTE: HARDWIRED POLICY OF SE-POSTGRESQL
-		 * - User cannot modify pg_rewrite.ev_action by hand, because
-		 *   it stores a parsed Query tree which includes requiredPerms
-		 *   and RangeTblEntry with selectedCols/modifiedCols.
-		 *   The correctness of access controls depends on these data
-		 *   are not manipulated unexpectedly.
-		 *
-		 * So, SE-PostgreSQL peremptorily prevent to modify them
-		 */
-		if ((attperms & (SEPG_DB_COLUMN__UPDATE | SEPG_DB_COLUMN__INSERT))
-			&& relid == RewriteRelationId
-			&& attno == Anum_pg_rewrite_ev_action)
-			ereport(ERROR,
-					(errcode(ERRCODE_SELINUX_ERROR),
-					 errmsg("SE-PostgreSQL peremptorily prevent to modify "
-							"\"pg_rewrite.ev_action\" by hand")));
 
 		tuple = SearchSysCache(ATTNUM,
 							   ObjectIdGetDatum(relid),
