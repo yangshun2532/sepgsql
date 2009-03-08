@@ -108,6 +108,7 @@ checkTabelColumnPerms(Oid relid, Bitmapset *selected, Bitmapset *modified,
 	AttrNumber		attno;
 	int				nattrs;
 	const char	   *audit_name;
+	access_vector_t	mask;
 
 	/* db_table:{...} permissions */
 	tuple = SearchSysCache(RELOID,
@@ -118,9 +119,9 @@ checkTabelColumnPerms(Oid relid, Bitmapset *selected, Bitmapset *modified,
 
 	/*
 	 * NOTE: HARDWIRED POLICY IN SE-POSTGRESQL
-	 * - User cannot modify pg_rewrite.ev_action by hand, because
-	 *   it stores a parsed Query tree which includes requiredPerms
-	 *   and RangeTblEntry with selectedCols/modifiedCols.
+	 * - User cannot modify pg_rewrite.* by hand, because it holds
+	 *   a parsed Query tree which includes requiredPerms and
+	 *   RangeTblEntry with selectedCols/modifiedCols.
 	 *   The correctness of access controls depends on these data
 	 *   are protected from unexpected manipulation..
 	 * - User cannot modify pg_security.* by hand, because it holds
@@ -137,10 +138,10 @@ checkTabelColumnPerms(Oid relid, Bitmapset *selected, Bitmapset *modified,
 	 * these system catalogs by hand. Please use approariate
 	 * interfaces.
 	 */
-	if ((required & (SEPG_DB_TABLE__UPDATE | SEPG_DB_TABLE__INSERT | SEPG_DB_TABLE__DELETE))
-		&& (relid == RewriteRelationId ||
-			relid == SecurityRelationId ||
-			relid == LargeObjectRelationId))
+	mask = SEPG_DB_TABLE__UPDATE | SEPG_DB_TABLE__INSERT | SEPG_DB_TABLE__DELETE;
+	if ((required & mask) != 0 && (relid == RewriteRelationId ||
+								   relid == SecurityRelationId ||
+								   relid == LargeObjectRelationId))
 		ereport(ERROR,
 				(errcode(ERRCODE_SELINUX_ERROR),
 				 errmsg("SE-PostgreSQL peremptorily prevent to modify "
