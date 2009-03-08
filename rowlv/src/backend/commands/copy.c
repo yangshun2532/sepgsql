@@ -1102,7 +1102,7 @@ DoCopy(const CopyStmt *stmt, const char *queryString)
 	/* Generate or convert list of attributes to process */
 	cstate->attnumlist = CopyGetAttnums(tupDesc, cstate->rel, attnamelist);
 
-	sepgsqlCopyTable(cstate->rel, cstate->attnumlist, is_from);
+	sepgsqlCheckCopyTable(cstate->rel, cstate->attnumlist, is_from);
 
 	num_phys_attrs = tupDesc->natts;
 
@@ -1313,8 +1313,7 @@ DoCopyTo(CopyState cstate)
 					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
 					 errmsg("\"%s\" is a directory", cstate->filename)));
 
-		sepgsqlCopyFile(cstate->rel, fileno(cstate->copy_file),
-						cstate->filename, false);
+		sepgsqlCheckFileWrite(fileno(cstate->copy_file), cstate->filename);
 	}
 
 	PG_TRY();
@@ -1496,7 +1495,7 @@ CopyTo(CopyState cstate)
 			CHECK_FOR_INTERRUPTS();
 
 			/* Row-level controls on the fetched tuple */
-			if (!rowlvCopyToTuple(cstate->rel, cstate->attnumlist, tuple))
+			if (!rowlvCopyToTuple(cstate->rel, tuple))
 				continue;
 
 			/* Deconstruct the tuple ... faster than repeated heap_getattr */
@@ -1875,8 +1874,7 @@ CopyFrom(CopyState cstate)
 					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
 					 errmsg("\"%s\" is a directory", cstate->filename)));
 
-		sepgsqlCopyFile(cstate->rel, fileno(cstate->copy_file),
-						cstate->filename, true);
+		sepgsqlCheckFileRead(fileno(cstate->copy_file), cstate->filename);
 	}
 
 	tupDesc = RelationGetDescr(cstate->rel);

@@ -8,923 +8,626 @@
 #include "postgres.h"
 
 #include "access/sysattr.h"
-#include "catalog/indexing.h"
-#include "catalog/pg_constraint.h"
+#include "catalog/pg_language.h"
+#include "catalog/pg_proc.h"
+#include "catalog/pg_rewrite.h"
 #include "catalog/pg_security.h"
 #include "catalog/pg_trigger.h"
-#include "catalog/pg_type.h"
 #include "commands/trigger.h"
-#include "executor/executor.h"
-#include "nodes/nodeFuncs.h"
-#include "optimizer/prep.h"
-#include "optimizer/tlist.h"
-#include "parser/parsetree.h"
 #include "security/sepgsql.h"
-#include "utils/array.h"
+#include "storage/bufmgr.h"
+#include "utils/builtins.h"
 #include "utils/fmgroids.h"
-#include "utils/lsyscache.h"
 #include "utils/syscache.h"
-#include "utils/tqual.h"
 
 /*
- * sepgsqlWalkerContext
- *
- * This structure holds a context during analyzing a given query.
- * selist is a list of SEvalItemXXX objects to enumerate appared
- * tables and columns. These are evaluated later, just before
- * executing query.
- * internal_use shows the current state whether the current
- * Node is chained with target list, or conditional clause.
+ * fixupSelectedColsByTrigger
  */
-typedef struct sepgsqlWalkerContext
+static Bitmapset *
+fixupSelectedColsByTrigger(CmdType cmd, Relation rel, Bitmapset *selected)
 {
-	struct sepgsqlWalkerContext *parent;
-	Query  *query;		/* Query of current layer */
-	List   *selist;		/* list of SelinuxEvalItem */
-	bool	internal_use;
-} sepgsqlWalkerContext;
+	TriggerDesc	   *trigdesc = rel->trigdesc;
+	Trigger		   *trigger;
+	int				i;
 
-#define seitem_index_to_attno(index)			\
-	((index) + FirstLowInvalidHeapAttributeNumber + 1)
-#define seitem_attno_to_index(attno)			\
-	((attno) - FirstLowInvalidHeapAttributeNumber - 1)
+	if (!trigdesc)
+		return selected;
 
-/*
- * sepgsqlAddEvalTable
- * sepgsqlAddEvalTableRTE
- *
- * These function marks required permissions for a given relation
- * on selist. If is is not chained yet, it makes a new one.
- */
-List *
-sepgsqlAddEvalTable(List *selist, Oid relid, bool inh, uint32 perms)
-{
-	SelinuxEvalItem *seitem;
-	Form_pg_class relForm;
-	HeapTuple tuple;
-	ListCell *l;
-
-	foreach (l, selist)
+	for (i=0; i < trigdesc->numtriggers; i++)
 	{
-		seitem = (SelinuxEvalItem *) lfirst(l);
-		Assert(IsA(seitem, SelinuxEvalItem));
+		/*
+		 * NOTE: Row-UPDATE/DELETE trigger invocation implicitly
+		 * delivers a whole-row-reference to user defined functions,
+		 * so it is necessary to check "db_column:{select}" permission
+		 * on whole of regular columns.
+		 */
+		trigger = &trigdesc->triggers[i];
 
-		if (seitem->relid == relid && seitem->inh == inh)
+		if (trigger->tgenabled &&
+			TRIGGER_FOR_ROW(trigger->tgtype) &&
+			RI_FKey_trigger_type(trigger->tgfoid) == RI_TRIGGER_NONE &&
+			((cmd == CMD_UPDATE && TRIGGER_FOR_UPDATE(trigger->tgtype)) ||
+			 (cmd == CMD_DELETE && TRIGGER_FOR_DELETE(trigger->tgtype))))
 		{
-			seitem->relperms |= perms;
-			return selist;
+			selected = bms_add_member(selected, InvalidAttrNumber
+								- FirstLowInvalidHeapAttributeNumber);
 		}
 	}
 
-	/* not found, so create a new one */
-	tuple = SearchSysCache(RELOID,
-                           ObjectIdGetDatum(relid),
-						   0, 0, 0);
-	if (!HeapTupleIsValid(tuple))
-		elog(ERROR, "cache lookup failed for relation %u", relid);
-	relForm = (Form_pg_class) GETSTRUCT(tuple);
-
-	seitem = makeNode(SelinuxEvalItem);
-	seitem->relid = relid;
-	seitem->inh = inh;
-	seitem->relperms = perms;
-	seitem->nattrs = seitem_attno_to_index(relForm->relnatts) + 1;
-	seitem->attperms = palloc0(seitem->nattrs * sizeof(uint32));
-
-	ReleaseSysCache(tuple);
-
-	return lappend(selist, seitem);
-}
-
-static List *
-sepgsqlAddEvalTableRTE(List *selist, RangeTblEntry *rte, uint32 perms)
-{
-	rte->tuplePerms |= (perms & DB_TABLE__USE ? SEPGSQL_PERMS_USE : 0);
-	rte->tuplePerms |= (perms & DB_TABLE__SELECT ? SEPGSQL_PERMS_SELECT : 0);
-	rte->tuplePerms |= (perms & DB_TABLE__UPDATE ? SEPGSQL_PERMS_UPDATE : 0);
-	rte->tuplePerms |= (perms & DB_TABLE__DELETE ? SEPGSQL_PERMS_DELETE : 0);
-
-	return sepgsqlAddEvalTable(selist, rte->relid, rte->inh, perms);
+	return selected;
 }
 
 /*
- * sepgsqlAddEvalColumn
- * sepgsqlAddEvalColumnRTE
- *
- * These function marks required permissions for a given column
- * on selist. If is is not chained yet, it makes a new one.
+ * fixupWholeRowReference
  */
-List *
-sepgsqlAddEvalColumn(List *selist, Oid relid, bool inh, AttrNumber attno, uint32 perms)
+static Bitmapset *
+fixupWholeRowReference(Oid relid, int nattrs, Bitmapset *columns)
 {
-	SelinuxEvalItem *seitem;
-	Form_pg_class relForm;
-	HeapTuple tuple;
-	ListCell *l;
-	int index = seitem_attno_to_index(attno);
+	Bitmapset  *result;
+	AttrNumber	attno;
 
-	foreach (l, selist)
+	attno = InvalidAttrNumber - FirstLowInvalidHeapAttributeNumber;
+
+	if (!bms_is_member(attno, columns))
+		return columns;		/* no need to fixup */
+
+	result = bms_copy(columns);
+	result = bms_del_member(result, attno);
+
+	for (attno=1; attno <= nattrs; attno++)
 	{
-		seitem = (SelinuxEvalItem *) lfirst(l);
-		Assert(IsA(seitem, SelinuxEvalItem));
+		Form_pg_attribute	attform;
+		HeapTuple			atttup;
 
-		if (seitem->relid == relid && seitem->inh == inh)
+		atttup = SearchSysCache(ATTNUM,
+								ObjectIdGetDatum(relid),
+								Int16GetDatum(attno),
+								0, 0);
+		if (!HeapTupleIsValid(atttup))
+			continue;
+
+		attform = (Form_pg_attribute) GETSTRUCT(atttup);
+		if (!attform->attisdropped)
 		{
-			if (index >= seitem->nattrs)
-			{
-				uint32 *attperms, nattrs;
-
-				/*
-				 * NOTE: the following step has a possibility that
-				 * index number overs seitem->nattrs
-				 *
-				 * 1. PREPARE p AS SELECT t FROM t;
-				 * 2. ALTER TABLE t ADD COLUMN x int;
-				 * 3. EXECUTE p;
-				 *
-				 * Because whole-row-reference is extracted to
-				 * references to all the user columns, so table
-				 * may have different number of columns between
-				 * state.1 and state.3.
-				 * In this case, we need to rebuild seitem->attperms
-				 */
-
-				tuple = SearchSysCache(RELOID,
-									   ObjectIdGetDatum(relid),
-									   0, 0, 0);
-				if (!HeapTupleIsValid(tuple))
-					elog(ERROR, "cache lookup failed for relation %u", relid);
-				relForm = (Form_pg_class) GETSTRUCT(tuple);
-
-				nattrs = seitem_attno_to_index(relForm->relnatts) + 1;
-				attperms = palloc0(nattrs * sizeof(uint32));
-				memcpy(attperms, seitem->attperms,
-					   seitem->nattrs * sizeof(uint32));
-				seitem->nattrs = nattrs;
-				seitem->attperms = attperms;
-
-				ReleaseSysCache(tuple);
-			}
-
-			if (index < 0 || index >= seitem->nattrs)
-				elog(ERROR, "SELinux: invalid attribute number: %d at relation: %u",
-					 attno, relid);
-
-			seitem->attperms[index] |= perms;
-
-			return selist;
+			int		cindex = attno - FirstLowInvalidHeapAttributeNumber;
+			result = bms_add_member(result, cindex);
 		}
+		ReleaseSysCache(atttup);
 	}
 
-	/* not found, so create a new one */
+	return result;
+}
+
+static void
+checkTabelColumnPerms(Oid relid, Bitmapset *selected, Bitmapset *modified,
+					  access_vector_t required)
+{
+	HeapTuple		tuple;
+	Bitmapset	   *columns;
+	AttrNumber		attno;
+	int				nattrs;
+	const char	   *audit_name;
+
+	/* db_table:{...} permissions */
 	tuple = SearchSysCache(RELOID,
 						   ObjectIdGetDatum(relid),
 						   0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
-		elog(ERROR, "cache lookup failed for relation %u", relid);
-	relForm = (Form_pg_class) GETSTRUCT(tuple);
+		elog(ERROR, "SELinux: cache lookup failed for relation %u", relid);
 
-	seitem = makeNode(SelinuxEvalItem);
-	seitem->relid = relid;
-	seitem->inh = inh;
-	seitem->relperms = 0;
-	seitem->nattrs = seitem_attno_to_index(relForm->relnatts) + 1;
-	seitem->attperms = palloc0(seitem->nattrs * sizeof(uint32));
-	if (index < 0 || index >= seitem->nattrs)
-		elog(ERROR, "SELinux: invalid attribute number: %d at relation: %u",
-			 attno, relid);
-	seitem->attperms[index] |= perms;
-
-	ReleaseSysCache(tuple);
-
-	return lappend(selist, seitem);
-}
-
-static List *
-sepgsqlAddEvalColumnRTE(List *selist, RangeTblEntry *rte, AttrNumber attno, uint32 perms)
-{
-	uint32	t_perms = 0;
-
-	t_perms |= (perms & DB_COLUMN__USE    ? DB_TABLE__USE    : 0);
-	t_perms |= (perms & DB_COLUMN__SELECT ? DB_TABLE__SELECT : 0);
-	t_perms |= (perms & DB_COLUMN__INSERT ? DB_TABLE__INSERT : 0);
-	t_perms |= (perms & DB_COLUMN__UPDATE ? DB_TABLE__UPDATE : 0);
-	selist = sepgsqlAddEvalTableRTE(selist, rte, t_perms);
-
-	return sepgsqlAddEvalColumn(selist, rte->relid, rte->inh, attno, perms);
-}
-
-/*
- * addEvalForeignKeyConstraint
- *
- * This function cares special case handling for built-in FK constraints.
- * It adds minimum required permissions to refer columns.
- */
-static List *
-sepgsqlAddEvalForeignKey(List *selist, Form_pg_trigger trigger)
-{
-	HeapTuple		contup;
-	AttrNumber		attkeys;
-	Datum			conkeys;
-	ArrayType	   *attrs;
-	int16		   *attnum;
-	int				index;
-	bool			isnull;
-
-	contup = SearchSysCache(CONSTROID,
-							ObjectIdGetDatum(trigger->tgconstraint),
-							0, 0, 0);
-	if (!HeapTupleIsValid(contup))
-		elog(ERROR, "SELinux: cache lookup failed for constraint %u",
-			 trigger->tgconstrrelid);
-
-	if (RI_FKey_trigger_type(trigger->tgfoid) == RI_TRIGGER_PK)
-		attkeys = Anum_pg_constraint_confkey;
-	else
-		attkeys = Anum_pg_constraint_conkey;
-
-	conkeys = SysCacheGetAttr(CONSTROID, contup, attkeys, &isnull);
-	if (isnull)
-		elog(ERROR, "SELinux: no columns constrainted");
-
-	attrs = DatumGetArrayTypeP(conkeys);
-
-	if (ARR_NDIM(attrs) != 1 ||
-		ARR_HASNULL(attrs) ||
-		ARR_ELEMTYPE(attrs) != INT2OID)
-		elog(ERROR, "SELinux: unexpected constraint format");
-
-	attnum = (int16 *) ARR_DATA_PTR(attrs);
-	for (index = 0; index < ARR_DIMS(attrs)[0]; index++)
-		selist = sepgsqlAddEvalColumn(selist, trigger->tgrelid, false,
-									  attnum[index], DB_COLUMN__SELECT);
-	ReleaseSysCache(contup);
-
-	return selist;
-}
-
-/*
- * sepgsqlAddEvalTriggerFunc
- *
- * This function adds needed items into selist, to execute a trigger
- * function. At least, it requires permission set to execute a function
- * configured as a trigger, to select a table and whole of columns
- * because whole of a tuple is delivered to trigger functions.
- */
-List *
-sepgsqlAddEvalTriggerFunc(List *selist, Oid relid, int cmdType)
-{
-	Relation	rel;
-	SysScanDesc scan;
-	ScanKeyData skey;
-	HeapTuple	tuple;
-
-	rel = heap_open(TriggerRelationId, AccessShareLock);
-	ScanKeyInit(&skey,
-				Anum_pg_trigger_tgrelid,
-				BTEqualStrategyNumber, F_OIDEQ, ObjectIdGetDatum(relid));
-	scan = systable_beginscan(rel, TriggerRelidNameIndexId,
-							  true, SnapshotNow, 1, &skey);
-	while (HeapTupleIsValid((tuple = systable_getnext(scan))))
-	{
-		Form_pg_trigger trigForm = (Form_pg_trigger) GETSTRUCT(tuple);
-
-		/*
-		 * Skip not-invoked triggers
-		 */
-		if (!trigForm->tgenabled)
-			continue;
-		if (cmdType == CMD_INSERT && !TRIGGER_FOR_INSERT(trigForm->tgtype))
-			continue;
-		if (cmdType == CMD_UPDATE && !TRIGGER_FOR_UPDATE(trigForm->tgtype))
-			continue;
-		if (cmdType == CMD_DELETE && !TRIGGER_FOR_DELETE(trigForm->tgtype))
-			continue;
-
-		/*
-		 * per STATEMENT trigger cannot refer whole of a tuple
-		 */
-		if (!TRIGGER_FOR_ROW(trigForm->tgtype))
-			continue;
-
-		/*
-		 * BEFORE-ROW-INSERT trigger cannot refer whole of a tuple
-		 */
-		if (TRIGGER_FOR_BEFORE(trigForm->tgtype) &&
-			TRIGGER_FOR_INSERT(trigForm->tgtype))
-			continue;
-
-		switch (RI_FKey_trigger_type(trigForm->tgfoid))
-		{
-			/*
-			 * NOTE: we can make sure build-in FK trigger functions
-			 * are not necessary to refer whole of the columns.
-			 * It only refers constrainted columns, so we can omit
-			 * check rest of columns. This special care enables to
-			 * set up FK constraint on a table which has partially
-			 * visible columns.
-			 * Elsewhere, we don't have any knowledge on user defined
-			 * trigger functions, so it is necessary to check permission
-			 * to refer whole of the columns.
-			 */
-		case RI_TRIGGER_PK:
-		case RI_TRIGGER_FK:
-			selist = sepgsqlAddEvalTable(selist, relid, false,
-										 DB_TABLE__SELECT);
-			selist = sepgsqlAddEvalForeignKey(selist, trigForm);
-			break;
-
-		default:	/* RI_TRIGGER_NONE */
-			selist = sepgsqlAddEvalTable(selist, relid, false,
-										 DB_TABLE__SELECT);
-			selist = sepgsqlAddEvalColumn(selist, relid, false, 0,
-										  DB_COLUMN__SELECT);
-			break;
-		}
-	}
-	systable_endscan(scan);
-	heap_close(rel, AccessShareLock);
-
-	return selist;
-}
-
-/*
- * sepgsqlExprWalker
- *
- * This function walks on the given expression tree to pick up
- * all the appeared tables and columns. Their identifiers are
- * chains on swc->selist to evaluate permissions on them later.
- *
- * walkVarHelper picks up an accessed column and its contained
- * table, and chains them on swc->selist.
- * When swc->internal_use is true, it means this reference
- * is checked as "use" permission because its contents are
- * consumed internally, and not to be returned to client directly.
- * Otherwise, "select" permission is applied.
- *
- * walkQueryHelper walks on Query structure.
- * The reason why we don't use query_tree_walker() is that
- * SE-PostgreSQL need to apply different permission between
- * targetList and havingQual, for example.
- */
-
-static bool
-sepgsqlExprWalker(Node *node, sepgsqlWalkerContext *swc);
-
-/*
- * wholeRefJoinWalker
- *
- * A corner case need to invoke this walker function.
- * When we use whole-row-reference on RTE_JOIN relation,
- * it should be extracted to whole-row-references on
- * sources relations.
- *
- * EXAMPLE:
- *   SELECT t4 FROM (t1 JOIN (t2 JOIN t3 USING (a)) USING (b)) AS t4;
- *
- * Because RangeTblEntry with RTE_JOIN does not have any identifiers
- * of its source relations, we have to scan Query->jointree again to
- * look up sources again. :(
- */
-typedef struct
-{
-	Query *query;
-	int rtindex;
-	/*
-	 * rtindex == 0 means we are now walking on the required JoinExpr
-	 * or its leafs, so we need to pick up all the appeared relations
-	 * under the JoinExpr in this case.
-	 */
-	List *selist;
-	uint32 perms;
-} wholeRefJoinWalkerContext;
-
-static bool
-wholeRefJoinWalker(Node *node, wholeRefJoinWalkerContext *jwc)
-{
-	if (!node)
-		return false;
-
-	if (IsA(node, JoinExpr))
-	{
-		JoinExpr *j = (JoinExpr *) node;
-
-		if (j->rtindex == jwc->rtindex)
-		{
-			int rtindex_backup = jwc->rtindex;
-			bool rc;
-
-			jwc->rtindex = 0;
-			rc = expression_tree_walker(node, wholeRefJoinWalker, jwc);
-			jwc->rtindex = rtindex_backup;
-
-			return rc;
-		}
-	}
-	else if (IsA(node, RangeTblRef) && jwc->rtindex == 0)
-	{
-		RangeTblRef *rtr = (RangeTblRef *) node;
-		RangeTblEntry *rte = rt_fetch(rtr->rtindex,
-									  jwc->query->rtable);
-		if (rte->rtekind == RTE_RELATION)
-		{
-			jwc->selist = sepgsqlAddEvalColumnRTE(jwc->selist, rte, 0, jwc->perms);
-		}
-	}
-	return expression_tree_walker(node, wholeRefJoinWalker, jwc);
-}
-
-static void
-walkVarHelper(Var *var, sepgsqlWalkerContext *swc)
-{
-	sepgsqlWalkerContext *cur = swc;
-	Query		   *query;
-	RangeTblEntry  *rte;
-	int				lv;
-
-	Assert(IsA(var, Var));
-
-	for (lv = var->varlevelsup; lv > 0; lv--)
-	{
-		Assert(cur->parent != NULL);
-		cur = cur->parent;
-	}
-	query = cur->query;
-
-	rte = rt_fetch(var->varno, query->rtable);
-	Assert(IsA(rte, RangeTblEntry));
-
-	if (rte->rtekind == RTE_RELATION)
-	{
-		uint32 perms = swc->internal_use
-			? DB_COLUMN__USE : DB_COLUMN__SELECT;
-
-		swc->selist = sepgsqlAddEvalColumnRTE(swc->selist, rte,
-											  var->varattno, perms);
-	}
-	else if (rte->rtekind == RTE_JOIN)
-	{
-		if (var->varattno == 0)
-		{
-			wholeRefJoinWalkerContext jwcData;
-
-			jwcData.query = query;
-			jwcData.rtindex = var->varno;
-			jwcData.selist = swc->selist;
-			jwcData.perms = swc->internal_use
-				? DB_COLUMN__USE : DB_COLUMN__SELECT;
-
-			wholeRefJoinWalker((Node *)query->jointree, &jwcData);
-			swc->selist = jwcData.selist;
-		}
-		else
-		{
-			Node *node = list_nth(rte->joinaliasvars,
-								  var->varattno - 1);
-			sepgsqlExprWalker(node, swc);
-		}
-	}
-}
-
-static List *
-walkQueryHelper(Query *query, sepgsqlWalkerContext *swc)
-{
-	sepgsqlWalkerContext swcData;
-	RangeTblEntry *rte;
-
-	memset(&swcData, 0, sizeof(swcData));
-	swcData.parent = swc;
-	swcData.selist = (!swc ? NIL : swc->selist);
-	swcData.query = query;
-
-	if (query->commandType != CMD_DELETE)
-	{
-		ListCell *l;
-
-		foreach (l, query->targetList)
-		{
-			TargetEntry	   *tle = lfirst(l);
-			bool			is_security = false;
-
-			Assert(IsA(tle, TargetEntry));
-
-			if (tle->resjunk &&
-				tle->resname &&
-				strcmp(tle->resname, SecurityLabelAttributeName) == 0)
-				is_security = true;
-
-
-			if (tle->resjunk && !is_security)
-			{
-				swcData.internal_use = true;
-				sepgsqlExprWalker((Node *) tle->expr, &swcData);
-				continue;
-			}
-
-			swcData.internal_use = false;
-			sepgsqlExprWalker((Node *) tle->expr, &swcData);
-
-			if (query->commandType != CMD_SELECT)
-			{
-				AttrNumber	attno = tle->resno;
-				uint32		perms;
-
-				if (is_security)
-					attno = SecurityLabelAttributeNumber;
-
-				if (query->commandType == CMD_UPDATE)
-					perms = DB_COLUMN__UPDATE;
-				else
-					perms = DB_COLUMN__INSERT;
-
-				rte = rt_fetch(query->resultRelation, query->rtable);
-				Assert(IsA(rte, RangeTblEntry));
-
-				swcData.selist
-					= sepgsqlAddEvalColumnRTE(swcData.selist, rte, attno, perms);
-			}
-		}
-	}
-	else
-	{
-		/* no need to check column-level permission for DELETE */
-		rte = rt_fetch(query->resultRelation, query->rtable);
-		Assert(IsA(rte, RangeTblEntry));
-
-		swcData.selist
-			= sepgsqlAddEvalTableRTE(swcData.selist, rte, DB_TABLE__DELETE);
-	}
-
-	swcData.internal_use = false;
-	sepgsqlExprWalker((Node *) query->returningList, &swcData);
-
-	swcData.internal_use = true;
-	sepgsqlExprWalker((Node *) query->jointree, &swcData);
-	sepgsqlExprWalker((Node *) query->setOperations, &swcData);
-	sepgsqlExprWalker((Node *) query->havingQual, &swcData);
-	sepgsqlExprWalker((Node *) query->sortClause, &swcData);
-	sepgsqlExprWalker((Node *) query->groupClause, &swcData);
-	sepgsqlExprWalker((Node *) query->limitOffset, &swcData);
-	sepgsqlExprWalker((Node *) query->limitCount, &swcData);
-	sepgsqlExprWalker((Node *) query->cteList, &swcData);
-	sepgsqlExprWalker((Node *) query->windowClause, &swcData);
-
-	return swcData.selist;
-}
-
-static void
-walkRangeTblRefHelper(RangeTblRef *rtr, sepgsqlWalkerContext *swc)
-{
-	Query *query = swc->query;
-	RangeTblEntry *rte = rt_fetch(rtr->rtindex, query->rtable);
-
-	Assert(IsA(rte, RangeTblEntry));
-
-	switch (rte->rtekind)
-	{
-	case RTE_RELATION:
-		if (rtr->rtindex != query->resultRelation)
-			swc->selist = sepgsqlAddEvalTableRTE(swc->selist, rte,
-												 DB_TABLE__SELECT);
-		break;
-
-	case RTE_SUBQUERY:
-		swc->selist = walkQueryHelper(rte->subquery, swc);
-		break;
-
-	case RTE_FUNCTION:
-		sepgsqlExprWalker(rte->funcexpr, swc);
-		break;
-
-	case RTE_VALUES:
-		sepgsqlExprWalker((Node *) rte->values_lists, swc);
-		break;
-
-	default:
-		/* do nothing */
-		break;
-	}
-}
-
-static void
-walkSortGroupClauseHelper(SortGroupClause *sgc, sepgsqlWalkerContext *swc)
-{
-	Query *query = swc->query;
-	TargetEntry *tle
-		= get_sortgroupref_tle(sgc->tleSortGroupRef,
-							   query->targetList);
-
-	Assert(IsA(tle, TargetEntry));
-
-	sepgsqlExprWalker((Node *) tle->expr, swc);
-}
-
-static bool
-sepgsqlExprWalker(Node *node, sepgsqlWalkerContext *swc)
-{
-	if (node == NULL)
-		return false;
-	else if (IsA(node, Var))
-		walkVarHelper((Var *) node, swc);
-	else if (IsA(node, RangeTblRef))
-		walkRangeTblRefHelper((RangeTblRef *) node, swc);
-	else if (IsA(node, Query))
-	{
-		swc->selist
-			= walkQueryHelper((Query *) node, swc);
-	}
-	else if (IsA(node, SortGroupClause))
-	{
-		walkSortGroupClauseHelper((SortGroupClause *) node, swc);
-
-		return false;
-	}
-	return expression_tree_walker(node, sepgsqlExprWalker, (void *) swc);
-}
-
-/*
- * sepgsqlPostQueryRewrite
- *
- * This function is invoked just after given queries are rewritten
- * via query-rewritter phase. It walks on given query trees to
- * picks up all appeared tables and columns, and to chains the list
- * of them on query->selinuxItems.
- * This list is used to evaluate permissions later, just before
- * the query execution.
- *
- * It do nothing for DDL queries, because these are processed in
- * sepgsqlProcessUtility() hook.
- */
-void
-sepgsqlPostQueryRewrite(List *queryList)
-{
-	ListCell   *l;
-
-	if (!sepgsqlIsEnabled())
-		return;
-
-	foreach (l, queryList)
-	{
-		Query  *query = (Query *) lfirst(l);
-
-		Assert(IsA(query, Query));
-
-		if (query->commandType == CMD_SELECT ||
-			query->commandType == CMD_UPDATE ||
-			query->commandType == CMD_INSERT ||
-			query->commandType == CMD_DELETE)
-		{
-			query->selinuxItems
-				= walkQueryHelper(query, NULL);
-		}
-	}
-}
-
-/*
- * checkSelinuxEvalItem
- *   checks give SelinuxEvalItem object based on the security
- *   policy of SELinux.
- */
-void
-sepgsqlCheckSelinuxEvalItem(SelinuxEvalItem *seitem)
-{
-	Form_pg_class relForm;
-	Form_pg_attribute attForm;
-	HeapTuple tuple;
-	AttrNumber attno;
-	const char *audit_name;
-	int index;
-
-	Assert(IsA(seitem, SelinuxEvalItem));
-
-	/*
-	 * NOTE: it is hardwiredly denied to apply writer operations
-	 * on pg_security system catalog.
-	 */
-	if (seitem->relid == SecurityRelationId &&
-		(seitem->relperms & (DB_TABLE__UPDATE |
-							 DB_TABLE__INSERT |
-							 DB_TABLE__DELETE)))
-		ereport(ERROR,
-				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("SELinux: could not write pg_security by hand")));
-
-	/*
-	 * Permission checks on table
-	 */
-	tuple = SearchSysCache(RELOID,
-						   ObjectIdGetDatum(seitem->relid),
-						   0, 0, 0);
-	if (!HeapTupleIsValid(tuple))
-		elog(ERROR, "SELinux: cache lookup failed for relation: %u",
-			 seitem->relid);
-	relForm = (Form_pg_class) GETSTRUCT(tuple);
-	if (relForm->relkind != RELKIND_RELATION)
+	if (sepgsqlTupleObjectClass(RelationRelationId, tuple) != SEPG_CLASS_DB_TABLE)
 	{
 		ReleaseSysCache(tuple);
 		return;
 	}
+
 	audit_name = sepgsqlAuditName(RelationRelationId, tuple);
 	sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
-						  SECCLASS_DB_TABLE,
-						  seitem->relperms,
+						  SEPG_CLASS_DB_TABLE,
+						  required,
 						  audit_name, true);
+
+	nattrs = ((Form_pg_class) GETSTRUCT(tuple))->relnatts;
+
 	ReleaseSysCache(tuple);
 
-	/*
-	 * Expand whole-row-reference
-	 */
-	index = seitem_attno_to_index(InvalidAttrNumber);
-	if (seitem->attperms[index] != 0)
+	/* db_column:{...} permissions */
+	selected = fixupWholeRowReference(relid, nattrs, selected);
+	modified = fixupWholeRowReference(relid, nattrs, modified);
+	columns = bms_union(selected, modified);
+	while ((attno = bms_first_member(columns)) >= 0)
 	{
-		uint32 perms = seitem->attperms[index];
+		Form_pg_attribute	attForm;
+		access_vector_t		attperms = 0;
 
-		seitem->attperms[index] = 0;
-		for (index++; index < seitem->nattrs; index++)
-			seitem->attperms[index] |= perms;
-	}
-
-	/*
-	 * Permission checks on columns
-	 */
-	for (index = 0; index < seitem->nattrs; index++)
-	{
-		if (seitem->attperms[index] == 0)
+		if (bms_is_member(attno, selected))
+			attperms |= SEPG_DB_COLUMN__SELECT;
+		if (bms_is_member(attno, modified))
+		{
+			if (required & SEPG_DB_TABLE__UPDATE)
+				attperms |= SEPG_DB_COLUMN__UPDATE;
+			if (required & SEPG_DB_TABLE__INSERT)
+				attperms |= SEPG_DB_COLUMN__INSERT;
+		}
+		if (attperms == 0)
 			continue;
 
-		attno = seitem_index_to_attno(index);
+		/* remove the attribute number offset */
+		attno += FirstLowInvalidHeapAttributeNumber;
+
+		/*
+		 * NOTE: HARDWIRED POLICY OF SE-POSTGRESQL
+		 * - User cannot modify pg_rewrite.ev_action by hand, because
+		 *   it stores a parsed Query tree which includes requiredPerms
+		 *   and RangeTblEntry with selectedCols/modifiedCols.
+		 *   The correctness of access controls depends on these data
+		 *   are not manipulated unexpectedly.
+		 *
+		 * So, SE-PostgreSQL peremptorily prevent to modify them
+		 */
+		if ((attperms & (SEPG_DB_COLUMN__UPDATE | SEPG_DB_COLUMN__INSERT))
+			&& relid == RewriteRelationId
+			&& attno == Anum_pg_rewrite_ev_action)
+			ereport(ERROR,
+					(errcode(ERRCODE_SELINUX_ERROR),
+					 errmsg("SE-PostgreSQL peremptorily prevent to modify "
+							"\"pg_rewrite.ev_action\" by hand")));
+
 		tuple = SearchSysCache(ATTNUM,
-							   ObjectIdGetDatum(seitem->relid),
+							   ObjectIdGetDatum(relid),
 							   Int16GetDatum(attno),
 							   0, 0);
 		if (!HeapTupleIsValid(tuple))
-			elog(ERROR, "SELinux: cache lookup failed for attribute %d of relation %u",
-				 attno, seitem->relid);
+			elog(ERROR, "cache lookup failed for attribute %d of relation %u", attno, relid);
+
 		attForm = (Form_pg_attribute) GETSTRUCT(tuple);
-		/*
-		 * NOTE: When user uses whole-row-reference on a table
-		 * which has already dropped column, the column can have
-		 * non-zero required permissions, but being ignorable.
-		 */
 		if (attForm->attisdropped)
-		{
-			ReleaseSysCache(tuple);
-			continue;
-		}
+			elog(ERROR, "attribute %d of relation %u does not exist", attno, relid);
 
 		audit_name = sepgsqlAuditName(AttributeRelationId, tuple);
 		sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
-							  SECCLASS_DB_COLUMN,
-							  seitem->attperms[index],
+							  SEPG_CLASS_DB_COLUMN,
+							  attperms,
 							  audit_name, true);
 		ReleaseSysCache(tuple);
 	}
 }
 
-static List *
-expandEvalItemInheritance(List *selist)
-{
-	List	   *result = NIL;
-	List	   *inherits;
-	ListCell   *l, *i;
-	int index;
-
-	foreach (l, selist)
-	{
-		SelinuxEvalItem *seitem = lfirst(l);
-
-		Assert(IsA(seitem, SelinuxEvalItem));
-
-		if (!seitem->inh)
-		{
-			result = lappend(result, seitem);
-			continue;
-		}
-		
-		inherits = find_all_inheritors(seitem->relid);
-		foreach (i, inherits)
-		{
-			result = sepgsqlAddEvalTable(result, lfirst_oid(i), false,
-										 seitem->relperms);
-			for (index = 0; index < seitem->nattrs; index++)
-			{
-				Oid relid_inh = lfirst_oid(i);
-				AttrNumber attno = seitem_index_to_attno(index);
-
-				if (seitem->attperms[index] == 0)
-					continue;
-
-				/*
-				 * No need to assign attribute number for itself
-				 */
-				if (seitem->relid == relid_inh)
-				{
-					result = sepgsqlAddEvalColumn(result, relid_inh, false,
-												  attno, seitem->attperms[index]);
-					continue;
-				}
-
-				if (attno == InvalidAttrNumber)
-				{
-					/* whole-row-reference */
-					int nattrs = seitem_index_to_attno(seitem->nattrs);
-					int pos;
-
-					for (pos = 1; pos < nattrs; pos++)
-					{
-						char *attname = get_attname(seitem->relid, pos);
-
-						if (!attname)
-							elog(ERROR, "SELinux: cache lookup failed for "
-								 "attribute %d of relation %u", pos, seitem->relid);
-
-						attno = get_attnum(relid_inh, attname);
-						if (attno == InvalidAttrNumber)
-							continue;	/* already dropped? */
-
-						result = sepgsqlAddEvalColumn(result, relid_inh, false,
-													  attno, seitem->attperms[index]);
-						pfree(attname);
-					}
-				}
-				else
-				{
-					char   *attname = get_attname(seitem->relid, attno);
-
-					if (!attname)
-						elog(ERROR, "cache lookup failed for "
-							 "attribute %d of relation %u", attno, seitem->relid);
-
-					attno = get_attnum(relid_inh, attname);
-					if (attno == InvalidAttrNumber)
-						elog(ERROR, "cache lookup failed for "
-							 "attribute %s of relation %u", attname, relid_inh);
-
-					result = sepgsqlAddEvalColumn(result, relid_inh, false,
-												  attno, seitem->attperms[index]);
-					pfree(attname);
-				}
-			}
-		}
-	}
-	return result;
-}
-
 /*
- * sepgsqlExecutorStart
- *
- * This function is invoked at the head of ExecutorStart, to evaluate
- * permissions to access appeared object within the given query.
- * Query->pgaceItem is a list of SelinuxEvalItem objects generated in
- * previous phase, and it is copied to PlannedStmt->pgaceItem in the
- * optimizer.
- * This functions expand given selist based on table inheritance,
- * adds additional permissions related to trigger functions, and
- * expands whole-row-references. Then, these items are evaluated
- * based on the security policy of SELinux.
+ * sepgsqlCheckQueryPerms
+ *   It checks permission for all the required tables/columns on
+ *   generic DML queries.
  */
 void
-sepgsqlExecutorStart(QueryDesc *queryDesc, int eflags)
+sepgsqlCheckQueryPerms(CmdType cmd, EState *estate)
 {
-	PlannedStmt *pstmt = queryDesc->plannedstmt;
-	RangeTblEntry *rte;
-	List	   *selist;
+	Index		index = 0;
 	ListCell   *l;
 
 	if (!sepgsqlIsEnabled())
 		return;
 
-	if (eflags & EXEC_FLAG_EXPLAIN_ONLY)
-		return;
-
-	if (!pstmt->selinuxItems)
-		return;
-
-	Assert(IsA(pstmt->selinuxItems, List));
-	selist = copyObject(pstmt->selinuxItems);
-
-	/*
-	 * expand table inheritances
-	 */
-	selist = expandEvalItemInheritance(selist);
-
-	/*
-	 * add checks for access via trigger function
-	 */
-	foreach(l, pstmt->resultRelations)
+	foreach (l, estate->es_range_table)
 	{
-		Index		rindex = lfirst_int(l);
+		RangeTblEntry	   *rte = (RangeTblEntry *) lfirst(l);
+		access_vector_t		required = 0;
+		Bitmapset		   *selected;
+		Bitmapset		   *modified;
 
-		rte = rt_fetch(rindex, pstmt->rtable);
-		Assert(IsA(rte, RangeTblEntry));
+		index++;
 
-		selist = sepgsqlAddEvalTriggerFunc(selist, rte->relid,
-										   pstmt->commandType);
+		if (rte->rtekind != RTE_RELATION)
+			continue;
+
+		if (rte->requiredPerms & ACL_SELECT)
+			required = SEPG_DB_TABLE__SELECT;
+		if (rte->requiredPerms & ACL_INSERT)
+			required = SEPG_DB_TABLE__INSERT;
+		if (rte->requiredPerms & ACL_UPDATE)
+			required = SEPG_DB_TABLE__UPDATE;
+		if (rte->requiredPerms & ACL_DELETE)
+			required = SEPG_DB_TABLE__DELETE;
+
+		if (required == 0)
+			continue;
+
+		selected = rte->selectedCols;
+		modified = rte->modifiedCols;
+
+		if (estate->es_result_relations)
+		{
+			ResultRelInfo  *rinfo = estate->es_result_relations;
+			int				i;
+
+			for (i=0; i < estate->es_num_result_relations; i++)
+			{
+				if (index == rinfo[i].ri_RangeTableIndex)
+				{
+					Relation	rel = rinfo[i].ri_RelationDesc;
+
+					selected = bms_copy(selected);
+					selected = fixupSelectedColsByTrigger(cmd, rel, selected);
+				}
+			}
+		}
+		checkTabelColumnPerms(rte->relid, selected, modified, required);
+	}
+}
+
+/*
+ * sepgsqlCheckCopyTable
+ *   It checks permissions on the target table/columns on COPY statement.
+ */
+void
+sepgsqlCheckCopyTable(Relation rel, List *attnumlist, bool is_from)
+{
+	Bitmapset	   *selected = NULL;
+	Bitmapset	   *modified = NULL;
+	ListCell	   *l;
+
+	if (!sepgsqlIsEnabled())
+		return;
+
+	/* all checkes are done in sepgsqlCheckQueryPerms */
+	if (!rel)
+		return;
+
+	/* no need to check on non-regular relation */
+	if (RelationGetForm(rel)->relkind != RELKIND_RELATION)
+		return;
+
+	foreach (l, attnumlist)
+	{
+		AttrNumber	attno = lfirst_int(l);
+
+		attno -= FirstLowInvalidHeapAttributeNumber;
+		if (is_from)
+			modified = bms_add_member(modified, attno);
+		else
+			selected = bms_add_member(selected, attno);
 	}
 
+	if (is_from)
+		selected = fixupSelectedColsByTrigger(CMD_INSERT, rel, selected);
+
+	checkTabelColumnPerms(RelationGetRelid(rel), selected, modified,
+						  is_from ? SEPG_DB_TABLE__INSERT : SEPG_DB_TABLE__SELECT);
+}
+
+/*
+ * sepgsqlCheckSelectInto
+ *   It checks db_table:{insert} permission for a table newly created
+ */
+void
+sepgsqlCheckSelectInto(Relation rel)
+{
+	Bitmapset	   *selected = NULL;
+	Bitmapset	   *modified = NULL;
+
+	if (!sepgsqlIsEnabled())
+		return;
+
+	selected = fixupSelectedColsByTrigger(CMD_INSERT, rel, selected);
+	modified = bms_add_member(modified,
+					InvalidAttrNumber - FirstLowInvalidHeapAttributeNumber);
+
+	checkTabelColumnPerms(RelationGetRelid(rel),
+						  selected, modified, SEPG_DB_TABLE__INSERT);
+}
+
+/*
+ * fixupColumnAvPerms
+ *   To change pg_attribute.attisdropped means dropping a column,
+ *   although this operation done by update, so it need to change
+ *   required permmision in this special case.
+ */
+static access_vector_t
+fixupColumnAvPerms(access_vector_t required, HeapTuple newtup, HeapTuple oldtup)
+{
+	Form_pg_attribute	oldatt = (Form_pg_attribute) GETSTRUCT(oldtup);
+	Form_pg_attribute	newatt = (Form_pg_attribute) GETSTRUCT(newtup);
+	Datum				olddat, newdat;
+	bool				oldnull, newnull;
+	int					length;
+
+	if (oldatt->attisdropped == newatt->attisdropped)
+		return required;
+
+	if (!oldatt->attisdropped && newatt->attisdropped)
+		required |= SEPG_DB_COLUMN__DROP;
+	if (oldatt->attisdropped && !newatt->attisdropped)
+		required |= SEPG_DB_COLUMN__CREATE;
+
 	/*
-	 * Check SelinuxEvalItem
+	 * Compare oldtup/newtup.
+	 * If they don't differ expect for attisdropped,
+	 * drop SEPG_DB_COLUMN__SETATTR
 	 */
-	foreach (l, selist)
-		sepgsqlCheckSelinuxEvalItem((SelinuxEvalItem *) lfirst(l));
+	length = offsetof(FormData_pg_attribute, attisdropped);
+	if (memcmp(oldatt, newatt, length) != 0)
+		return required;
+	if (oldatt->attinhcount != newatt->attinhcount)
+		return required;
+
+	newdat = SysCacheGetAttr(ATTNUM, newtup,
+							 Anum_pg_attribute_attacl, &newnull);
+	olddat = SysCacheGetAttr(ATTNUM, oldtup,
+							 Anum_pg_attribute_attacl, &oldnull);
+	if (newnull != oldnull)
+		return required;
+	if (newnull && DatumGetBool(OidFunctionCall2(F_ARRAY_NE, newdat, olddat)))
+		return required;
+
+	newdat = SysCacheGetAttr(ATTNUM, newtup,
+							 Anum_pg_attribute_attselabel, &newnull);
+	olddat = SysCacheGetAttr(ATTNUM, oldtup,
+							 Anum_pg_attribute_attselabel, &oldnull);
+	if (newnull != oldnull)
+		return required;
+	if (newnull && DatumGetBool(OidFunctionCall2(F_TEXTNE, newdat, olddat)))
+		return required;
+
+	return (required & ~SEPG_DB_COLUMN__SETATTR);
+}
+
+/*
+ * fixupRowTriggerPerms
+ *   It adds db_tuple:{select}, if Before/After-Row-Trigger configured.
+ */
+static access_vector_t
+fixupRowTriggerPerms(CmdType cmd, Relation rel, bool before)
+{
+	TriggerDesc	   *trigdesc = rel->trigdesc;
+	Trigger		   *trigger;
+	int				i;
+
+	if (!trigdesc)
+		return 0;
+
+	for (i=0; i < trigdesc->numtriggers; i++)
+	{
+		trigger = &trigdesc->triggers[i];
+
+		if (trigger->tgenabled &&
+			TRIGGER_FOR_ROW(trigger->tgtype) &&
+			((before && TRIGGER_FOR_BEFORE(trigger->tgtype)) ||
+			 (!before && !TRIGGER_FOR_BEFORE(trigger->tgtype))) &&
+			((cmd == CMD_UPDATE && TRIGGER_FOR_UPDATE(trigger->tgtype)) ||
+			 (cmd == CMD_DELETE && TRIGGER_FOR_DELETE(trigger->tgtype))))
+			return SEPG_DB_TUPLE__SELECT;
+	}
+
+	return 0;
+}
+
+/*
+ * checkCLibraryInstallation
+ *   It checks the correctness of C-library when user tries to
+ *   create / replace C-functions.
+ */
+static void
+checkCLibraryInstallation(HeapTuple newtup, HeapTuple oldtup)
+{
+	Form_pg_proc	oldpro, newpro;
+	Datum			oldbin, newbin;
+	char		   *filename;
+	bool			isnull;
+
+	if (HeapTupleIsValid(oldtup))
+	{
+		newpro = (Form_pg_proc) GETSTRUCT(newtup);
+		oldpro = (Form_pg_proc) GETSTRUCT(oldtup);
+		if (newpro->prolang != ClanguageId)
+			return;
+
+		newbin = SysCacheGetAttr(PROCOID, newtup,
+								 Anum_pg_proc_probin, &isnull);
+		if (!isnull)
+		{
+			oldbin = SysCacheGetAttr(PROCOID, oldtup,
+									 Anum_pg_proc_probin, &isnull);
+			if (isnull ||
+				oldpro->prolang != newpro->prolang ||
+				DatumGetBool(DirectFunctionCall2(byteane, oldbin, newbin)))
+			{
+				filename = TextDatumGetCString(newbin);
+				sepgsqlCheckDatabaseInstallModule(filename);
+			}
+		}
+	}
+	else
+	{
+		newpro = (Form_pg_proc) GETSTRUCT(newtup);
+		if (newpro->prolang == ClanguageId)
+		{
+			newbin = SysCacheGetAttr(PROCOID, newtup,
+									 Anum_pg_proc_probin, &isnull);
+			if (!isnull)
+			{
+				filename = TextDatumGetCString(newbin);
+				sepgsqlCheckDatabaseInstallModule(filename);
+			}
+		}
+	}
+}
+
+/*
+ * Row-level decision making
+ */
+bool
+sepgsqlExecScan(Relation rel, HeapTuple tuple, AclMode required, bool abort)
+{
+	security_class_t	tclass;
+	access_vector_t		permissions = 0;
+	const char		   *audit_name;
+
+	if (RelationGetForm(rel)->relkind != RELKIND_RELATION)
+		return true;
+
+	if (required & ACL_SELECT)
+		permissions |= SEPG_DB_TUPLE__SELECT;
+	if (required & ACL_UPDATE)
+		permissions |= (SEPG_DB_TUPLE__UPDATE |
+						fixupRowTriggerPerms(CMD_UPDATE, rel, true));
+	if (required & ACL_DELETE)
+		permissions |= (SEPG_DB_TUPLE__DELETE |
+						fixupRowTriggerPerms(CMD_DELETE, rel, true));
+	if (permissions == 0)
+		return true;
+
+	audit_name = sepgsqlAuditName(RelationGetRelid(rel), tuple);
+	tclass = sepgsqlTupleObjectClass(RelationGetRelid(rel), tuple);
+	return sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
+								 tclass,
+								 permissions,
+								 audit_name, abort);
+}
+
+/*
+ * checkTrustedAction
+ */
+static bool
+checkTrustedAction(Relation rel, bool internal)
+{
+	if (RelationGetForm(rel)->relkind != RELKIND_RELATION)
+		return true;
+
+	if (!internal)
+		return false;
+
+	if (RelationGetRelid(rel) == SecurityRelationId)
+		return true;
+
+	return false;
+}
+
+/*
+ * HeapTuple INSERT/UPDATE/DELETE
+ */
+bool
+sepgsqlHeapTupleInsert(Relation rel, HeapTuple newtup, bool internal)
+{
+	Oid					relid = RelationGetRelid(rel);
+	security_class_t	tclass;
+	const char		   *audit_name;
+
+	if (!sepgsqlIsEnabled() || checkTrustedAction(rel, internal))
+		return true;
+
+	/* check C-Function installation */
+	if (relid == ProcedureRelationId)
+		checkCLibraryInstallation(newtup, NULL);
+
+	/* check db_procedure:{install}, if necessary */
+	sepgsqlCheckProcedureInstall(rel, newtup, NULL);
+
+	/* set default security context */
+	if (!OidIsValid(HeapTupleGetSecLabel(newtup)))
+	{
+		if (HeapTupleHasSecLabel(newtup))
+			sepgsqlSetDefaultSecLabel(rel, newtup);
+	}
+
+	audit_name = sepgsqlAuditName(relid, newtup);
+	tclass = sepgsqlTupleObjectClass(relid, newtup);
+	return sepgsqlClientHasPerms(HeapTupleGetSecLabel(newtup),
+								 tclass,
+								 SEPG_DB_TUPLE__INSERT,
+								 audit_name, internal);
+}
+
+bool
+sepgsqlHeapTupleUpdate(Relation rel, HeapTuple oldtup,
+					   HeapTuple newtup, bool internal)
+{
+	Oid					relid = RelationGetRelid(rel);
+	access_vector_t		required = 0;
+	security_class_t	newclass;
+	security_class_t	oldclass;
+	const char		   *audit_name;
+	bool				rc;
+
+	if (!sepgsqlIsEnabled() || checkTrustedAction(rel, internal))
+		return true;
+
+	/* preserve security label, if unchanged */
+	if (!OidIsValid(HeapTupleGetSecLabel(newtup)))
+	{
+		sepgsql_sid_t	oldsid = HeapTupleGetSecLabel(oldtup);
+
+		if (HeapTupleHasSecLabel(newtup))
+			HeapTupleSetSecLabel(newtup, oldsid);
+	}
+
+	/* user's query is already checked in ExecScan */
+	if (internal)
+		required |= SEPG_DB_TUPLE__UPDATE;
+	/* special case in column create/drop */
+	if (relid == AttributeRelationId)
+		required = fixupColumnAvPerms(required, newtup, oldtup);
+	/* special case for After-Row-Update trigger */
+	if (!internal)
+		required |= fixupRowTriggerPerms(CMD_UPDATE, rel, false);
+	/* check binary library installation */
+	if (relid == ProcedureRelationId)
+		checkCLibraryInstallation(newtup, oldtup);
+	/* check db_procedure:{install}, if necessary */
+	sepgsqlCheckProcedureInstall(rel, newtup, oldtup);
+
+	newclass = sepgsqlTupleObjectClass(relid, newtup);
+	oldclass = sepgsqlTupleObjectClass(relid, oldtup);
+
+	/* relabeled? */
+	if (newclass != oldclass ||
+		HeapTupleGetSecLabel(newtup) != HeapTupleGetSecLabel(oldtup))
+		required |= SEPG_DB_TUPLE__RELABELFROM;
+
+	if (required)
+	{
+		audit_name = sepgsqlAuditName(relid, oldtup);
+		rc = sepgsqlClientHasPerms(HeapTupleGetSecLabel(oldtup),
+								   oldclass,
+								   required,
+								   audit_name, internal);
+		if (!rc)
+			return false;
+	}
+
+	if (required & SEPG_DB_TUPLE__RELABELFROM)
+	{
+		audit_name = sepgsqlAuditName(relid, newtup);
+		rc = sepgsqlClientHasPerms(HeapTupleGetSecLabel(newtup),
+								   newclass,
+								   SEPG_DB_TUPLE__RELABELTO,
+								   audit_name, internal);
+		if (!rc)
+			return false;
+	}
+
+	return true;
+}
+
+bool
+sepgsqlHeapTupleDelete(Relation rel, HeapTuple oldtup, bool internal)
+{
+	Oid					relid = RelationGetRelid(rel);
+	access_vector_t		required = 0;
+	security_class_t	tclass;
+	const char		   *audit_name;
+
+	if (!sepgsqlIsEnabled() || checkTrustedAction(rel, internal))
+		return true;
+
+	/* user's query is already checked in ExecScan */
+	if (internal)
+		required |= SEPG_DB_TUPLE__DELETE;
+	if (!internal)
+		required |= fixupRowTriggerPerms(CMD_DELETE, rel, false);
+
+	tclass = sepgsqlTupleObjectClass(relid, oldtup);
+	audit_name = sepgsqlAuditName(relid, oldtup);
+	return sepgsqlClientHasPerms(HeapTupleGetSecLabel(oldtup),
+								 tclass,
+								 SEPG_DB_TUPLE__DELETE,
+								 audit_name, internal);
 }

@@ -55,6 +55,7 @@ INSERT INTO t1 VALUES (3, 'ccc');	-- to be failed
 INSERT INTO t1 VALUES (7, 'ggg');
 INSERT INTO t2 VALUES (3, 'XXX');	-- to be failed
 INSERT INTO t2 VALUES (4, 'XXX');
+SELECT security_label, * FROM t1;
 
 DELETE FROM t1;		-- to be failed
 DELETE FROM t1 WHERE a not in (SELECT x FROM t2);	-- to be failed

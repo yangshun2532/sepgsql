@@ -66,7 +66,7 @@ ExecScan(ScanState *node,
 	 * If we have neither a qual to check nor a projection to do, just skip
 	 * all the overhead and return the raw scan tuple.
 	 */
-	if (!qual && !projInfo && !scan->tuplePerms)
+	if (!qual && !projInfo && !scan->requiredPerms)
 		return (*accessMtd) (node);
 
 	/*
