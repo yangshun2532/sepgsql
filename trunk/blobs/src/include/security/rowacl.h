@@ -5,7 +5,8 @@
 
 extern void rowaclPostQueryRewrite(List *queryList);
 extern void rowaclInitialize(void);
-extern bool rowaclExecScan(Relation rel, HeapTuple tuple, AclMode required, bool abort);
+extern bool rowaclExecScan(Relation rel, HeapTuple tuple,
+						   AclMode required, Oid checkAsUser, bool abort);
 extern bool rowaclCopyToTuple(Relation rel, List *attNumList, HeapTuple tuple);
 extern void rowaclValidateDefaultRowAclRelopt(char *value);
 extern bool rowaclTupleDescHasRowAcl(Relation rel);

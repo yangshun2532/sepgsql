@@ -45,138 +45,10 @@
  * If it is not match the latest one, updated by the policy state
  * monitoring process, uAVC has to be reseted.
  */
-
-/*
- * Dynamic object class/access vector mapping
- *
- * SELinux exports the list of object classes (it means kind of object, like
- * file or table) and access vectors (it means permission set, like read,
- * select, ...) under /selinux/class.
- * It enables to provide userspace object managers a interface to get what
- * codes should be used to ask SELinux.
- *
- * libselinux provides an API to translate a string expression and a code
- * used by the loaded security policy. These correspondences are not assured
- * over the bound of policy loading, so we have to reload the mapping after
- * in-kernel policy is reloaded, or its state is changed.
- */
-static struct
-{
-	struct
-	{
-		const char *name;
-		security_class_t internal;
-	} tclass;
-	struct
-	{
-		char	   *name;
-		access_vector_t internal;
-	} av_perms[sizeof(access_vector_t) * 8];
-} selinux_catalog[] = {
-	{
-		{ "db_database", SECCLASS_DB_DATABASE},
-		{
-			{ "create",			DB_DATABASE__CREATE },
-			{ "drop",			DB_DATABASE__DROP },
-			{ "getattr",		DB_DATABASE__GETATTR },
-			{ "setattr",		DB_DATABASE__SETATTR },
-			{ "relabelfrom",	DB_DATABASE__RELABELFROM },
-			{ "relabelto",		DB_DATABASE__RELABELTO },
-			{ "access",			DB_DATABASE__ACCESS },
-			{ "install_module",	DB_DATABASE__INSTALL_MODULE },
-			{ "load_module",	DB_DATABASE__LOAD_MODULE },
-			{ "get_param",		DB_DATABASE__GET_PARAM },
-			{ "set_param",		DB_DATABASE__SET_PARAM },
-			{ NULL, 0UL },
-		}
-	},
-	{
-		{ "db_table", SECCLASS_DB_TABLE},
-		{
-			{ "create",			DB_TABLE__CREATE },
-			{ "drop",			DB_TABLE__DROP },
-			{ "getattr",		DB_TABLE__GETATTR },
-			{ "setattr",		DB_TABLE__SETATTR },
-			{ "relabelfrom",	DB_TABLE__RELABELFROM },
-			{ "relabelto",		DB_TABLE__RELABELTO },
-			{ "use",   			DB_TABLE__USE },
-			{ "select",			DB_TABLE__SELECT },
-			{ "update",			DB_TABLE__UPDATE },
-			{ "insert",			DB_TABLE__INSERT },
-			{ "delete",			DB_TABLE__DELETE },
-			{ "lock",			DB_TABLE__LOCK },
-			{ NULL, 0UL },
-		}
-	},
-	{
-		{ "db_procedure", SECCLASS_DB_PROCEDURE},
-		{
-			{ "create",			DB_PROCEDURE__CREATE },
-			{ "drop",			DB_PROCEDURE__DROP },
-			{ "getattr",		DB_PROCEDURE__GETATTR },
-			{ "setattr",		DB_PROCEDURE__SETATTR },
-			{ "relabelfrom",	DB_PROCEDURE__RELABELFROM },
-			{ "relabelto",		DB_PROCEDURE__RELABELTO },
-			{ "execute",		DB_PROCEDURE__EXECUTE },
-			{ "entrypoint",		DB_PROCEDURE__ENTRYPOINT },
-			{ "install",		DB_PROCEDURE__INSTALL },
-			{ NULL, 0UL },
-		}
-	},
-	{
-		{ "db_column", SECCLASS_DB_COLUMN},
-		{
-			{ "create",			DB_COLUMN__CREATE },
-			{ "drop",			DB_COLUMN__DROP },
-			{ "getattr",		DB_COLUMN__GETATTR },
-			{ "setattr",		DB_COLUMN__SETATTR },
-			{ "relabelfrom",	DB_COLUMN__RELABELFROM },
-			{ "relabelto",		DB_COLUMN__RELABELTO },
-			{ "use",			DB_COLUMN__USE },
-			{ "select",			DB_COLUMN__SELECT },
-			{ "update",			DB_COLUMN__UPDATE },
-			{ "insert",			DB_COLUMN__INSERT },
-			{ NULL, 0UL },
-		}
-	},
-	{
-		{ "db_tuple", SECCLASS_DB_TUPLE },
-		{
-			{ "relabelfrom",	DB_TUPLE__RELABELFROM},
-			{ "relabelto",		DB_TUPLE__RELABELTO},
-			{ "use",			DB_TUPLE__USE},
-			{ "select",			DB_TUPLE__SELECT},
-			{ "update",			DB_TUPLE__UPDATE},
-			{ "insert",			DB_TUPLE__INSERT},
-			{ "delete",			DB_TUPLE__DELETE},
-			{ NULL, 0UL},
-		}
-	},
-	{
-		{ "db_blob", SECCLASS_DB_BLOB },
-		{
-			{ "create",			DB_BLOB__CREATE},
-			{ "drop",			DB_BLOB__DROP},
-			{ "getattr",		DB_BLOB__GETATTR},
-			{ "setattr",		DB_BLOB__SETATTR},
-			{ "relabelfrom",	DB_BLOB__RELABELFROM},
-			{ "relabelto",		DB_BLOB__RELABELTO},
-			{ "read",			DB_BLOB__READ},
-			{ "write",			DB_BLOB__WRITE},
-			{ "import",			DB_BLOB__IMPORT},
-			{ "export",			DB_BLOB__EXPORT},
-			{ NULL, 0UL},
-		}
-	},
-};
-
 static MemoryContext AvcMemCtx;
 
 #define AVC_HASH_NUM_SLOTS		256
 #define AVC_HASH_NUM_NODES		180
-
-static sig_atomic_t avc_version;
-static bool avc_enforcing;
 
 typedef struct
 {
@@ -199,6 +71,10 @@ typedef struct avc_page
 {
 	struct avc_page *next;
 
+	int		avc_version;	/* copied from global state */
+
+	bool	avc_enforcing;	/* copied from global state */
+
 	security_context_t	scontext;
 
 	List *slot[AVC_HASH_NUM_SLOTS];
@@ -215,42 +91,26 @@ static avc_page *client_avc_page = NULL;
  * This structure shows the global state of SELinux and its security
  * policy, and it is assigned on shared memory region.
  *
- * The most significant variable is selinux_state->version.
- * Any instance can refer this variable to confirm current sequence
- * number of policy state, without locking.
- * 
- * The only process able to update this variable is policy state
- * monitoring process forked by postmaster. It can receive notifications
- * from the kernel via netlink socket, and it update selinux_state->version
- * to encourage any instance to reflush its uAVC.
+ * The selinux_state->version should be checked prior to any avc
+ * accesses. If avc_page->avc_version is not matched with the
+ * global state, it means security policy is reloaded, system booleans
+ * are changed, or working mode (enforcing/permissive) is changed.
+ * The selinux_state->enforcing means current working mode. If it it
+ * true, it works in enforcing mode, elsewhere permissive mode.
  *
- * When we read rest of variable, we have to hold SepgsqlAvcLock LWlock
- * as a reader. enforceing shows the current SELinux working mode.
- * catalog shows the mapping set of security classes and access vectors.
+ * The only process able to update these variable are policy state
+ * monitoring process forked by postmaster. It enables to receive
+ * notifications from the kernwl via netlink socket.
+ *
+ * These global state is protected by SepgsqlAvcLock LWlock, so
+ * we need to acquire this lock when it is refered.
  */
 struct
 {
-	/*
-	 * only state monitoring process can update version.
-	 * any other process can read it without locks.
-	 */
-	volatile sig_atomic_t version;
+	int			version;
 
 	bool		enforcing;
 
-	struct
-	{
-		struct
-		{
-			security_class_t internal;
-			security_class_t external;
-		} tclass;
-		struct
-		{
-			access_vector_t internal;
-			access_vector_t external;
-		} av_perms[sizeof(access_vector_t) * 8];
-	} catalog[lengthof(selinux_catalog)];
 }	*selinux_state = NULL;
 
 Size
@@ -263,168 +123,23 @@ sepgsqlShmemSize(void)
 }
 
 /*
- * load_class_av_mapping
- *
- * This function rebuild the mapping set of security classes and access
- * vectors on selinux_state. It has to be invoked by the policy state
- * monitoring process with SepgsqlAvcLock in LW_EXCLUSIVE.
- */
-static void
-load_class_av_mapping(void)
-{
-	int			i, j;
-
-	memset(selinux_state->catalog, 0, sizeof(selinux_state->catalog));
-
-	for (i = 0; i < lengthof(selinux_catalog); i++)
-	{
-		selinux_state->catalog[i].tclass.internal
-			= selinux_catalog[i].tclass.internal;
-		selinux_state->catalog[i].tclass.external
-			= string_to_security_class(selinux_catalog[i].tclass.name);
-
-		for (j = 0; selinux_catalog[i].av_perms[j].name; j++)
-		{
-			selinux_state->catalog[i].av_perms[j].internal
-				= selinux_catalog[i].av_perms[j].internal;
-			selinux_state->catalog[i].av_perms[j].external
-				= string_to_av_perm(selinux_state->catalog[i].tclass.external,
-									selinux_catalog[i].av_perms[j].name);
-		}
-	}
-}
-
-/*
- * trans_to_external_tclass
- *   translates internal object class number into external one
- *   needed to communicate with in-kernel SELinux.
- */
-static security_class_t
-trans_to_external_tclass(security_class_t i_tclass)
-{
-	/* have to hold SepgsqlAvcLock with LW_SHARED */
-	int			i;
-
-	for (i = 0; i < lengthof(selinux_catalog); i++)
-	{
-		if (selinux_state->catalog[i].tclass.internal == i_tclass)
-			return selinux_state->catalog[i].tclass.external;
-	}
-	return i_tclass;			/* use it as is for kernel classes */
-}
-
-/*
- * trans_to_internal_perms
- *   translates external permission bits into internal ones
- *   needed to understand the answer from in-kernel SELinux.
- *   If in-kernel SELinux doesn't define required permissions,
- *   it sets/clears undefined bits based on caller's preference.
- *   It enables SE-PostgreSQL to work on legacy security policy.
- */
-static access_vector_t
-trans_to_internal_perms(security_class_t e_tclass, access_vector_t e_perms,
-						bool set_if_undefined)
-{
-	/* have to hold SepgsqlAvcLock with LW_SHARED */
-	access_vector_t i_perms = 0UL;
-	access_vector_t undef_mask = 0UL;
-	int			i, j;
-
-	for (i = 0; i < lengthof(selinux_catalog); i++)
-	{
-		if (selinux_state->catalog[i].tclass.external != e_tclass)
-			continue;
-
-		for (j = 0; j < sizeof(access_vector_t) * 8; j++)
-		{
-			if (selinux_state->catalog[i].av_perms[j].external == 0)
-				undef_mask |= (1UL << j);
-			else if (selinux_state->catalog[i].av_perms[j].external & e_perms)
-				i_perms |= selinux_state->catalog[i].av_perms[j].internal;
-		}
-
-		if (set_if_undefined)
-			i_perms |= undef_mask;
-		else
-			i_perms &= ~undef_mask;
-
-		return i_perms;
-	}
-	return e_perms;				/* use it as is for kernel classes */
-}
-
-/*
- * sepgsql_class_to_string
- * sepgsql_av_perm_to_string
- *   returns string representation of given object class and permission.
- *   Please note that given code have internal ones, so we cannot use
- *   libselinux's facility, because it assumes 'external code'.
- *   (Kernel object classes are ABI, so these are stable.)
- */
-static const char *
-sepgsql_class_to_string(security_class_t tclass)
-{
-	int			i;
-
-	for (i = 0; i < lengthof(selinux_catalog); i++)
-	{
-		if (selinux_catalog[i].tclass.internal == tclass)
-			return selinux_catalog[i].tclass.name;
-	}
-	/*
-	 * tclass is stable for kernel object classes.
-	 */
-	return security_class_to_string(tclass);
-}
-
-static const char *
-sepgsql_av_perm_to_string(security_class_t tclass, access_vector_t perm)
-{
-	int			i, j;
-
-	for (i = 0; i < lengthof(selinux_catalog); i++)
-	{
-		if (selinux_catalog[i].tclass.internal == tclass)
-		{
-			char	   *perm_name;
-
-			for (j = 0; (perm_name = selinux_catalog[i].av_perms[j].name); j++)
-			{
-				if (selinux_catalog[i].av_perms[j].internal == perm)
-					return perm_name;
-			}
-			return "unknown";
-		}
-	}
-	/*
-	 * tclass/perms are stable for kernel object classes.
-	 */
-	return security_av_perm_to_string(tclass, perm);
-}
-
-/*
  * sepgsql_avc_reset
- *   clears all uAVC entries and update its version.
+ *   clears all AVC entries and update its version.
+ *   caller need to hold SepgsqlAvcLock
  */
 static void
 sepgsql_avc_reset(void)
 {
 	MemoryContextReset(AvcMemCtx);
 
-	LWLockAcquire(SepgsqlAvcLock, LW_SHARED);
-
-	avc_version = selinux_state->version;
-	avc_enforcing = selinux_state->enforcing;
 	client_avc_page = NULL;
-
-	LWLockRelease(SepgsqlAvcLock);
 
 	sepgsqlAvcSwitchClient();
 }
 
 /*
  * sepgsql_avc_reclaim
- *   reclaims recently unused uAVC entries, when the number of
+ *   reclaims recently unused AVC entries, when the number of
  *   caches overs AVC_HASH_NUM_NODES.
  */
 static void
@@ -475,7 +190,7 @@ avc_audit_common(char *buffer, uint32 buflen,
 	{
 		if (audited & mask)
 			ofs += snprintf(buffer + ofs, buflen - ofs, " %s",
-							sepgsql_av_perm_to_string(tclass, mask));
+							sepgsqlGetPermissionString(tclass, mask));
 		audited &= ~mask;
 	}
 	ofs += snprintf(buffer + ofs, buflen - ofs, " } ");
@@ -483,7 +198,7 @@ avc_audit_common(char *buffer, uint32 buflen,
 	ofs += snprintf(buffer + ofs, buflen - ofs,
 					"scontext=%s tcontext=%s tclass=%s",
 					scontext, tcontext,
-					sepgsql_class_to_string(tclass));
+					sepgsqlGetClassString(tclass));
 
 	if (audit_name)
 		ofs += snprintf(buffer + ofs, buflen - ofs, " name=%s", audit_name);
@@ -501,7 +216,7 @@ static avc_datum *
 avc_make_entry(avc_page *page, sepgsql_sid_t tsid, security_class_t tclass)
 {
 	security_context_t scontext, tcontext, ncontext;
-	security_class_t e_tclass;
+	security_class_t tclass_ex;
 	MemoryContext oldctx;
 	struct av_decision avd;
 	avc_datum *cache;
@@ -521,31 +236,28 @@ avc_make_entry(avc_page *page, sepgsql_sid_t tsid, security_class_t tclass)
 	if (!tcontext || !sepgsqlCheckValidSecurityLabel(tcontext))
 		tcontext = sepgsqlGetUnlabeledLabel();
 
-	LWLockAcquire(SepgsqlAvcLock, LW_SHARED);
+	tclass_ex = sepgsqlTransToExternalClass(tclass);
 
-	e_tclass = trans_to_external_tclass(tclass);
-
-	if (security_compute_av_raw(scontext, tcontext, e_tclass, 0, &avd) < 0)
+	if (security_compute_av_raw(scontext, tcontext, tclass_ex, 0, &avd) < 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_SELINUX_ERROR),
 				 errmsg("SELinux: could not compute av_decision: "
 						"scontext=%s tcontext=%s tclass=%s",
-						scontext, tcontext, sepgsql_class_to_string(tclass))));
+						scontext, tcontext, sepgsqlGetClassString(tclass))));
+	sepgsqlTransToInternalPerms(tclass, &avd);
 
-	cache->allowed = trans_to_internal_perms(e_tclass, avd.allowed, true);
-	cache->decided = trans_to_internal_perms(e_tclass, avd.decided, false);
-	cache->auditallow = trans_to_internal_perms(e_tclass, avd.auditallow, false);
-	cache->auditdeny = trans_to_internal_perms(e_tclass, avd.auditdeny, false);
+	cache->allowed = avd.allowed;
+	cache->decided = avd.decided;
+	cache->auditallow = avd.auditallow;
+	cache->auditdeny = avd.auditdeny;
 	cache->hot_cache = true;
 
-	if (security_compute_create_raw(scontext, tcontext, e_tclass, &ncontext) < 0)
+	if (security_compute_create_raw(scontext, tcontext, tclass_ex, &ncontext) < 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_SELINUX_ERROR),
 				 errmsg("SELinux: could not compute new context: "
 						"scontext=%s tcontext=%s tclass=%s",
-						scontext, tcontext, sepgsql_class_to_string(tclass))));
-
-	LWLockRelease(SepgsqlAvcLock);
+						scontext, tcontext, sepgsqlGetClassString(tclass))));
 
 	PG_TRY();
 	{
@@ -571,6 +283,11 @@ avc_make_entry(avc_page *page, sepgsql_sid_t tsid, security_class_t tclass)
 	return cache;
 }
 
+/*
+ * avc_lookup
+ *   It lookups required avc entry. Because it also checks avc_version
+ *   on the global state, the caller has to hold SepgsqlAvcLock.
+ */
 static avc_datum *
 avc_lookup(avc_page *page, sepgsql_sid_t tsid, security_class_t tclass)
 {
@@ -579,7 +296,7 @@ avc_lookup(avc_page *page, sepgsql_sid_t tsid, security_class_t tclass)
 	ListCell *l;
 
 	/* check avc invalidation */
-	if (avc_version != selinux_state->version)
+	if (page->avc_version != selinux_state->version)
 		sepgsql_avc_reset();
 
 	/* lookup avc entry */
@@ -650,6 +367,10 @@ sepgsqlAvcSwitch(avc_page *old_page, security_context_t scontext)
 	for (i=0; i < AVC_HASH_NUM_SLOTS; i++)
 		new_page->slot[i] = NIL;
 
+	/* copy the global state of SELinux */
+	new_page->avc_version = selinux_state->version;
+	new_page->avc_enforcing = selinux_state->enforcing;
+
 	if (!old_page)
 	{
 		new_page->next = new_page;
@@ -666,8 +387,10 @@ sepgsqlAvcSwitch(avc_page *old_page, security_context_t scontext)
 void
 sepgsqlAvcSwitchClient(void)
 {
+	LWLockAcquire(SepgsqlAvcLock, LW_SHARED);
 	client_avc_page = sepgsqlAvcSwitch(client_avc_page,
 									   sepgsqlGetClientLabel());
+	LWLockRelease(SepgsqlAvcLock);
 }
 
 /*
@@ -685,9 +408,11 @@ sepgsqlClientHasPerms(sepgsql_sid_t tsid,
 	avc_datum *cache;
 	bool rc = true;
 
+	LWLockAcquire(SepgsqlAvcLock, LW_SHARED);
 	cache = avc_lookup(client_avc_page, tsid, tclass);
 	if (!cache)
 		cache = avc_make_entry(client_avc_page, tsid, tclass);
+	LWLockRelease(SepgsqlAvcLock);
 
 	denied = required & ~cache->allowed;
 	audited = denied ? (denied & cache->auditdeny)
@@ -702,14 +427,13 @@ sepgsqlClientHasPerms(sepgsql_sid_t tsid,
 		avc_audit_common(audit_buffer, sizeof(audit_buffer),
 						 scon, tcon, cache->tclass,
 						 audited, !!denied, audit_name);
-
 		pfree(scon);
 		pfree(tcon);
 	}
 
 	if (!required || denied)
 	{
-		if (avc_enforcing)
+		if (client_avc_page->avc_enforcing)
 			rc = false;
 		else
 			cache->allowed |= required;		/* prevent flood of audit log */
@@ -729,40 +453,39 @@ sepgsqlClientHasPerms(sepgsql_sid_t tsid,
 
 /*
  * sepgsqlClientCreate
- *   returns security identifier of newly created database object.
- *   Please note that you don't have to invoke this function for
- *   object classes except for database objects. It have a possibility
- *   to make an entry on pg_security via pgaceSecurityLabelToSid(),
- *   but it should be restricted to database object.
+ * sepgsqlClientCreateLabel
+ *   It returns security label of database object newly created.
+ *   sepgsqlClientCreate() returns it as sepgsql_sid_t, and
+ *   sepgsqlClientCreateLabel() returns it as security_context_t.
+ *   Please note that these types are not different in this version,
+ *   but sepgsql_sid_t is planned to replace by an identifier.
  */
 sepgsql_sid_t
 sepgsqlClientCreate(sepgsql_sid_t tsid, security_class_t tclass)
 {
 	avc_datum *cache;
 
+	LWLockAcquire(SepgsqlAvcLock, LW_SHARED);
 	cache = avc_lookup(client_avc_page, tsid, tclass);
 	if (!cache)
 		cache = avc_make_entry(client_avc_page, tsid, tclass);
+	LWLockRelease(SepgsqlAvcLock);
 
 	if (cache->nsid == InvalidOid)
 		cache->nsid = securityLookupSecurityId(cache->ncontext);
 
 	return cache->nsid;
 }
-
-/*
- * sepgsqlClientCreateLabel
- *   returns security context in text form of newly created object.
- *   In the current version, it is same as sepgsqlClientCreate()
- */
 security_context_t
 sepgsqlClientCreateLabel(sepgsql_sid_t tsid, security_class_t tclass)
 {
 	avc_datum *cache;
 
+	LWLockAcquire(SepgsqlAvcLock, LW_SHARED);
 	cache = avc_lookup(client_avc_page, tsid, tclass);
 	if (!cache)
 		cache = avc_make_entry(client_avc_page, tsid, tclass);
+	LWLockRelease(SepgsqlAvcLock);
 
 	return pstrdup(cache->ncontext);
 }
@@ -780,14 +503,10 @@ sepgsql_shmem_init(void)
 									sepgsqlShmemSize(), &found);
 	if (!found)
 	{
-		int enforcing = security_getenforce();
-
-		Assert(enforcing == 0 || enforcing == 1);
-
 		LWLockAcquire(SepgsqlAvcLock, LW_EXCLUSIVE);
+
 		selinux_state->version = 0;
-		selinux_state->enforcing = enforcing;
-		load_class_av_mapping();
+		selinux_state->enforcing = (security_getenforce() > 0);
 
 		LWLockRelease(SepgsqlAvcLock);
 	}
@@ -836,7 +555,7 @@ sepgsqlComputePerms(security_context_t scontext,
 					const char *audit_name, bool abort)
 {
 	access_vector_t denied, audited;
-	security_class_t eclass;
+	security_class_t tclass_ex;
 	struct av_decision avd;
 	char audit_buffer[2048];
 	bool rc = true;
@@ -846,21 +565,14 @@ sepgsqlComputePerms(security_context_t scontext,
 	tcontext = (!security_check_context_raw(tcontext)
 				? tcontext : sepgsqlGetUnlabeledLabel());
 
-	LWLockAcquire(SepgsqlAvcLock, LW_SHARED);
-	eclass = trans_to_external_tclass(tclass);
-
-	if (security_compute_av_raw(scontext, tcontext, eclass, 0, &avd) < 0)
+	tclass_ex = sepgsqlTransToExternalClass(tclass);
+	if (security_compute_av_raw(scontext, tcontext, tclass_ex, 0, &avd) < 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_SELINUX_ERROR),
 				 errmsg("SELinux: could not compute an av_decision"
 						" scontext=%s tcontext=%s tclass=%s",
-						scontext, tcontext, security_class_to_string(eclass))));
-
-	avd.allowed = trans_to_internal_perms(eclass, avd.allowed, true);
-	avd.decided = trans_to_internal_perms(eclass, avd.decided, false);
-	avd.auditallow = trans_to_internal_perms(eclass, avd.auditallow, false);
-	avd.auditdeny = trans_to_internal_perms(eclass, avd.auditdeny, false);
-	LWLockRelease(SepgsqlAvcLock);
+						scontext, tcontext, sepgsqlGetClassString(tclass))));
+	sepgsqlTransToInternalPerms(tclass, &avd);
 
 	denied = required & ~avd.allowed;
 	audited = denied ? (denied & avd.auditdeny) : (required & avd.auditallow);
@@ -878,16 +590,14 @@ sepgsqlComputePerms(security_context_t scontext,
 
 	if (!required || denied)
 	{
-		if (avc_enforcing)
+		if (security_getenforce() > 0)
 			rc = false;
 	}
 
 	if (audited)
-	{
 		ereport((!rc && abort) ? ERROR : NOTICE,
 				(errcode(ERRCODE_SELINUX_AUDIT),
 				 errmsg("SELinux: %s", audit_buffer)));
-	}
 	else if (!rc && abort)
 		ereport(ERROR,
 				(errcode(ERRCODE_SELINUX_AUDIT),
@@ -902,23 +612,20 @@ sepgsqlComputeCreate(security_context_t scontext,
 					 security_class_t tclass)
 {
 	security_context_t ncontext, result;
-	security_class_t eclass;
+	security_class_t tclass_ex;
 
 	scontext = (!security_check_context_raw(scontext)
 				? scontext : sepgsqlGetUnlabeledLabel());
 	tcontext = (!security_check_context_raw(tcontext)
 				? tcontext : sepgsqlGetUnlabeledLabel());
 
-	LWLockAcquire(SepgsqlAvcLock, LW_SHARED);
-	eclass = trans_to_external_tclass(tclass);
-	LWLockRelease(SepgsqlAvcLock);
-
-	if (security_compute_create_raw(scontext, tcontext, eclass, &ncontext) < 0)
+	tclass_ex = sepgsqlTransToExternalClass(tclass);
+	if (security_compute_create_raw(scontext, tcontext, tclass_ex, &ncontext) < 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_SELINUX_ERROR),
 				 errmsg("SELinux: could not compute a default context"
 						" scontext=%s tcontext=%s tclass=%s",
-						scontext, tcontext, security_class_to_string(eclass))));
+						scontext, tcontext, sepgsqlGetClassString(tclass))));
 	PG_TRY();
 	{
 		result = pstrdup(ncontext);
@@ -944,18 +651,6 @@ sepgsqlComputeCreate(security_context_t scontext,
  * structure assigned on shared memory region to make any instance reset
  * its AVC soon.
  */
-
-static bool sepgsqlStateMonitorAlive = true;
-
-static void
-sepgsqlStateMonitorSIGHUP(SIGNAL_ARGS)
-{
-	ereport(NOTICE,
-			(errcode(ERRCODE_SELINUX_INFO),
-			 errmsg("SELinux: invalidate userspace avc")));
-	selinux_state->version = selinux_state->version + 1;
-}
-
 static int
 sepgsqlStateMonitorMain()
 {
@@ -974,7 +669,7 @@ sepgsqlStateMonitorMain()
 	 * setup the signal handler
 	 */
 	pqinitmask();
-	pqsignal(SIGHUP, sepgsqlStateMonitorSIGHUP);
+	pqsignal(SIGHUP, SIG_IGN);
 	pqsignal(SIGINT, SIG_IGN);
 	pqsignal(SIGTERM, exit);
 	pqsignal(SIGQUIT, exit);
@@ -1012,7 +707,7 @@ sepgsqlStateMonitorMain()
 	/*
 	 * waiting loop
 	 */
-	while (sepgsqlStateMonitorAlive)
+	while (true)
 	{
 		addrlen = sizeof(addr);
 		rc = recvfrom(nl_sockfd, buffer, sizeof(buffer), 0,
@@ -1074,16 +769,10 @@ sepgsqlStateMonitorMain()
 							(errcode(ERRCODE_SELINUX_INFO),
 							 errmsg("SELinux: setenforce notifier"
 									" (enforcing=%d)", msg->val)));
-
+					/* switch enforcing/permissive */
 					LWLockAcquire(SepgsqlAvcLock, LW_EXCLUSIVE);
-					load_class_av_mapping();
-
-					/*
-					 * userspace avc invalidation
-					 */
 					selinux_state->version = selinux_state->version + 1;
 					selinux_state->enforcing = msg->val ? true : false;
-
 					LWLockRelease(SepgsqlAvcLock);
 					break;
 				}
@@ -1096,13 +785,9 @@ sepgsqlStateMonitorMain()
 							 errmsg("policyload notifier (seqno=%d)",
 									msg->seqno)));
 
+					/* security policy reloaded */
 					LWLockAcquire(SepgsqlAvcLock, LW_EXCLUSIVE);
-					load_class_av_mapping();
-					/*
-					 * userspace avc invalidation
-					 */
 					selinux_state->version = selinux_state->version + 1;
-
 					LWLockRelease(SepgsqlAvcLock);
 					break;
 				}

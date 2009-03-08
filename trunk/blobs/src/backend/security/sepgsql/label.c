@@ -11,6 +11,7 @@
 #include "catalog/pg_database.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_security.h"
+#include "catalog/pg_type.h"
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
 #include "security/sepgsql.h"
@@ -45,6 +46,139 @@ sepgsqlTupleDescHasSecLabel(Relation rel)
 }
 
 /*
+ * sepgsqlSetDefaultSecLabel
+ *
+ *   It assigns a default security label on a tuple newly created.
+ *   The default security label depends on the security policy, and
+ *   its object class.
+ *   The db_class and db_tuple class inherits the parent table's one,
+ *   but we cannot refer system cache in very early phase, so it assumes
+ *   nobody relabels the default one during initdb.
+ */
+void
+sepgsqlSetDefaultSecLabel(Relation rel, HeapTuple tuple)
+{
+	Form_pg_attribute	attform;
+	security_context_t	context;
+	security_class_t	tclass;
+	sepgsql_sid_t		newsid, table_sid;
+	HeapTuple			reltup;
+	const char		   *audit_name;
+
+	Assert(HeapTupleHasSecLabel(tuple));
+	tclass = sepgsqlTupleObjectClass(RelationGetRelid(rel), tuple);
+
+	switch (tclass)
+	{
+	case SEPG_CLASS_DB_DATABASE:
+		context = sepgsqlComputeCreate(sepgsqlGetClientLabel(),
+									   sepgsqlGetClientLabel(),
+									   SEPG_CLASS_DB_DATABASE);
+		newsid = securityTransSecLabelIn(context);
+		break;
+
+	case SEPG_CLASS_DB_TABLE:
+		newsid = sepgsqlClientCreate(sepgsqlGetDatabaseSid(),
+									 SEPG_CLASS_DB_TABLE);
+		break;
+
+	case SEPG_CLASS_DB_PROCEDURE:
+		newsid = sepgsqlClientCreate(sepgsqlGetDatabaseSid(),
+									 SEPG_CLASS_DB_PROCEDURE);
+		break;
+
+	case SEPG_CLASS_DB_COLUMN:
+		attform = (Form_pg_attribute) GETSTRUCT(tuple);
+		if (IsBootstrapProcessingMode() &&
+			(attform->attrelid == TypeRelationId ||
+			 attform->attrelid == ProcedureRelationId ||
+			 attform->attrelid == AttributeRelationId ||
+			 attform->attrelid == RelationRelationId))
+		{
+			table_sid = sepgsqlClientCreate(sepgsqlGetDatabaseSid(),
+											SEPG_CLASS_DB_TABLE);
+		}
+		else
+		{
+			reltup = SearchSysCache(RELOID,
+									ObjectIdGetDatum(attform->attrelid),
+									0, 0, 0);
+			if (!HeapTupleIsValid(reltup))
+				elog(ERROR, "SELinux: cache lookup failed fro relation: %u",
+					 attform->attrelid);
+
+			table_sid = HeapTupleGetSecLabel(reltup);
+
+			ReleaseSysCache(reltup);
+		}
+		newsid = sepgsqlClientCreate(table_sid, SEPG_CLASS_DB_COLUMN);
+		break;
+
+	case SEPG_CLASS_DB_BLOB:
+		/*
+		 * NOTE:
+		 * A object within db_blob class has a characteristic.
+		 * It does not have one-to-one mapping on a object and
+		 * a tuple, in other word, a large object consists of
+		 * multiple tuples. In most cases, user accesses them
+		 * via several certain interfaces, like loread().
+		 * So, we assume user don't touch pg_largeobject system
+		 * catalog by hand, and it does not give us any degradation
+		 * at interface incompatibility.
+		 * 
+		 * Thus, all the tuples modified are come from internal
+		 * interfaces, like simple_heap_insert(). The backend
+		 * implementation has to set correct security context
+		 * prior to insert a tuple. A security context of
+		 * largeobject is cached on LargeObjectDesc->secid
+		 * The only exception is inv_create(). It invoked
+		 * simple_heap_insert() with no security context to
+		 * assign a default one here.
+		 *
+		 * We also check db_blob:{create} permission here,
+		 * because only one path come from inv_create()
+		 * go through here.
+		 */
+		newsid = sepgsqlClientCreate(sepgsqlGetDatabaseSid(),
+									 SEPG_CLASS_DB_BLOB);
+		audit_name = sepgsqlAuditName(RelationGetRelid(rel), tuple);
+		sepgsqlClientHasPerms(newsid,
+							  SEPG_CLASS_DB_BLOB,
+							  SEPG_DB_BLOB__CREATE,
+							  audit_name, true);
+		break;
+
+	default:
+		if (IsBootstrapProcessingMode() &&
+			(RelationGetRelid(rel) == TypeRelationId ||
+			 RelationGetRelid(rel) == ProcedureRelationId ||
+			 RelationGetRelid(rel) == AttributeRelationId ||
+			 RelationGetRelid(rel) == RelationRelationId))
+		{
+			table_sid = sepgsqlClientCreate(sepgsqlGetDatabaseSid(),
+											SEPG_CLASS_DB_TABLE);
+		}
+		else
+		{
+			reltup = SearchSysCache(RELOID,
+									ObjectIdGetDatum(RelationGetRelid(rel)),
+									0, 0, 0);
+			if (!HeapTupleIsValid(reltup))
+				elog(ERROR, "SELinux: cache lookup failed fro relation: %u",
+					 RelationGetRelid(rel));
+
+			table_sid = HeapTupleGetSecLabel(reltup);
+
+			ReleaseSysCache(reltup);
+		}
+		newsid = sepgsqlClientCreate(table_sid, SEPG_CLASS_DB_TUPLE);
+		break;
+	}
+
+	HeapTupleSetSecLabel(tuple, newsid);
+}
+
+/*
  * sepgsqlMetaSecurityLabel
  *   returns a security context of tuples within pg_security
  */
@@ -71,7 +205,8 @@ sepgsqlMetaSecurityLabel(void)
 		tcontext = sepgsqlGetUnlabeledLabel();
 
 	return sepgsqlComputeCreate(sepgsqlGetServerLabel(),
-								tcontext, SECCLASS_DB_TUPLE);
+								tcontext,
+								SEPG_CLASS_DB_TUPLE);
 }
 
 /*
