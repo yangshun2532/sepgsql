@@ -23,83 +23,6 @@
 #include "utils/rel.h"
 #include "utils/syscache.h"
 
-
-/******************************************************************
- * Mark appeared Query/Sub-Query
- ******************************************************************/
-
-static void walkOnQueryTree(Query *query);
-
-static bool
-walkOnNodeTree(Node *node, Query *query)
-{
-	if (!node)
-		return false;
-
-	if (IsA(node, RangeTblRef))
-	{
-		RangeTblRef	   *rtr = (RangeTblRef *) node;
-		RangeTblEntry  *rte = rt_fetch(rtr->rtindex, query->rtable);
-
-		if (rte->rtekind == RTE_RELATION &&
-			rtr->rtindex != query->resultRelation)
-		{
-			rte->tuplePerms |= ACL_SELECT;
-		}
-		else if (rte->rtekind == RTE_SUBQUERY)
-		{
-			walkOnQueryTree(rte->subquery);
-		}
-	}
-	else if (IsA(node, Query))
-	{
-		walkOnQueryTree((Query *) node);
-	}
-
-	return expression_tree_walker(node, walkOnNodeTree, (void *) query);
-}
-
-static void
-walkOnQueryTree(Query *query)
-{
-	RangeTblEntry *rte;
-
-	if (query->commandType == CMD_UPDATE)
-	{
-		rte = rt_fetch(query->resultRelation, query->rtable);
-		rte->tuplePerms |= ACL_UPDATE;
-		if (query->returningList)
-			rte->tuplePerms |= ACL_SELECT;
-	}
-	else if (query->commandType == CMD_DELETE)
-	{
-		rte = rt_fetch(query->resultRelation, query->rtable);
-		rte->tuplePerms |= ACL_DELETE;
-		if (query->returningList)
-			rte->tuplePerms |= ACL_SELECT;
-	}
-	query_tree_walker(query, walkOnNodeTree, (void *) query, 0);
-}
-
-void
-rowaclPostQueryRewrite(List *queryList)
-{
-	ListCell *l;
-
-	foreach (l, queryList)
-	{
-		Query *query = (Query *) lfirst(l);
-
-		Assert(IsA(query, Query));
-
-		if (query->commandType == CMD_SELECT ||
-			query->commandType == CMD_UPDATE ||
-			query->commandType == CMD_INSERT ||
-			query->commandType == CMD_DELETE)
-			walkOnQueryTree(query);
-	}
-}
-
 /******************************************************************
  * Cache boost row-level ACLs checks
  ******************************************************************/
@@ -202,14 +125,13 @@ rowaclInitialize(void)
 /******************************************************************
  * Row-level access controls
  ******************************************************************/
-
 static bool
 rowaclCheckPermission(Relation rel, HeapTuple tuple,
-					  AclMode required, bool abort)
+					  AclMode required, Oid checkAsUser, bool abort)
 {
 	Oid relid = RelationGetRelid(rel);
 	Oid ownerid = RelationGetForm(rel)->relowner;
-	Oid userid = GetUserId();
+	Oid userid = OidIsValid(checkAsUser) ? checkAsUser : GetUserId();
 	Oid aclid = HeapTupleGetRowAcl(tuple);
 	AclMode privs;
 
@@ -240,23 +162,15 @@ rowaclCheckPermission(Relation rel, HeapTuple tuple,
 }
 
 bool
-rowaclExecScan(Relation rel, HeapTuple tuple, AclMode required, bool abort)
+rowaclExecScan(Relation rel, HeapTuple tuple,
+			   AclMode required, Oid checkAsUser, bool abort)
 {
 	Assert((required & ACL_ALL_RIGHTS_TUPLE) == required);
 
 	if (!required || !RelationGetRowLevelAcl(rel))
 		return true;
 
-	return rowaclCheckPermission(rel, tuple, required, abort);
-}
-
-bool
-rowaclCopyToTuple(Relation rel, List *attNumList, HeapTuple tuple)
-{
-	if (!RelationGetRowLevelAcl(rel))
-		return true;
-
-	return rowaclCheckPermission(rel, tuple, ACL_SELECT, false);
+	return rowaclCheckPermission(rel, tuple, required, checkAsUser, abort);
 }
 
 /******************************************************************

@@ -14,6 +14,7 @@
 #include "storage/bufmgr.h"
 #include "storage/bufpage.h"
 #include "utils/rel.h"
+#include "utils/tqual.h"
 
 /*
  * rowlvBehaviorSwitchTo
@@ -68,74 +69,26 @@ bool
 rowlvExecScan(Scan *scan, Relation rel, TupleTableSlot *slot, bool abort)
 {
 	HeapTuple		tuple;
-	AclMode			required;
+	AclMode			required = scan->requiredPerms;
+	Oid				checkAsUser = scan->checkAsUser;
 
+	/* It is not a time to make a decision */
 	if (rowlvAbortBehavior != abort)
-		return true;	/* It is not a time to make a decision */
+		return true;
 
-	/*
-	 * If no permissions are required to be checked, it always allow
-	 * to fetch the given tuples.
-	 */
-	if (!scan->tuplePerms)
+	/* skip row-level controls on virtual relation */
+	if (!rel)
 		return true;
 
 	tuple = ExecMaterializeSlot(slot);
 
-	/*
-	 * Row-level database ACLs (DAC feature)
-	 */
-	required = (scan->tuplePerms & ACL_ALL_RIGHTS);
-	if (required && !rowaclExecScan(rel, tuple, required, abort))
-	{
-		Assert(abort == false);
+	if (!rowaclExecScan(rel, tuple, required, checkAsUser, abort))
 		return false;
-	}
 
-	/*
-	 * SE-PostgreSQL (MAC feature)
-	 */
-	required = (scan->tuplePerms & ~ACL_ALL_RIGHTS);
-	if (required && !sepgsqlExecScan(rel, tuple, required, abort))
-	{
-		Assert(abort == false);
+	if (!sepgsqlExecScan(rel, tuple, required, abort))
 		return false;
-	}
 
 	return true;
-}
-
-/*
- * get_older_tuple
- *   returns a copied HeapTuple required by ItemPointer
- */
-static HeapTuple
-get_older_tuple(Relation rel, ItemPointer otid)
-{
-	Buffer			buffer;
-	PageHeader		dp;
-	ItemId			lp;
-	HeapTupleData	tuple;
-	HeapTuple		oldtup;
-
-	buffer = ReadBuffer(rel, ItemPointerGetBlockNumber(otid));
-	LockBuffer(buffer, BUFFER_LOCK_SHARE);
-
-	dp = (PageHeader) BufferGetPage(buffer);
-	lp = PageGetItemId(dp, ItemPointerGetOffsetNumber(otid));
-
-	Assert(ItemIdIsNormal(lp));
-
-	tuple.t_data = (HeapTupleHeader) PageGetItem((Page) dp, lp);
-	tuple.t_len = ItemIdGetLength(lp);
-	tuple.t_self = *otid;
-	tuple.t_tableOid = RelationGetRelid(rel);
-	oldtup = heap_copytuple(&tuple);
-
-	LockBuffer(buffer, BUFFER_LOCK_UNLOCK);
-	ReleaseBuffer(buffer);
-
-	return oldtup;
 }
 
 /*
@@ -169,20 +122,26 @@ rowlvHeapTupleInsert(Relation rel, HeapTuple newtup, bool internal)
 bool
 rowlvHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple newtup, bool internal)
 {
-	HeapTuple	oldtup = get_older_tuple(rel, otid);
+	HeapTupleData	oldtup;
+	Buffer			oldbuf;
 
-	if (!rowaclHeapTupleUpdate(rel, oldtup, newtup, internal))
+	ItemPointerCopy(otid, &oldtup.t_self);
+	if (!heap_fetch(rel, SnapshotAny, &oldtup, &oldbuf, false, NULL))
+		elog(ERROR, "failed to fetch a tuple for row-level access controls");
+
+	if (!rowaclHeapTupleUpdate(rel, &oldtup, newtup, internal))
 	{
-		Assert(!internal);
+		ReleaseBuffer(oldbuf);
 		return false;
 	}
 
-	if (!sepgsqlHeapTupleUpdate(rel, oldtup, newtup, internal))
+	if (!sepgsqlHeapTupleUpdate(rel, &oldtup, newtup, internal))
 	{
-		Assert(!internal);
+		ReleaseBuffer(oldbuf);
 		return false;
 	}
 
+	ReleaseBuffer(oldbuf);
 	return true;
 }
 
@@ -193,20 +152,26 @@ rowlvHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple newtup, bool inte
 bool
 rowlvHeapTupleDelete(Relation rel, ItemPointer otid, bool internal)
 {
-	HeapTuple	oldtup = get_older_tuple(rel, otid);
+	HeapTupleData	oldtup;
+	Buffer			oldbuf;
 
-	if (!rowaclHeapTupleDelete(rel, oldtup, internal))
+	ItemPointerCopy(otid, &oldtup.t_self);
+	if (!heap_fetch(rel, SnapshotAny, &oldtup, &oldbuf, false, NULL))
+		elog(ERROR, "failed to fetch a tuple for row-level access controls");
+
+	if (!rowaclHeapTupleDelete(rel, &oldtup, internal))
 	{
-		Assert(!internal);
+		ReleaseBuffer(oldbuf);
 		return false;
 	}
 
-	if (!sepgsqlHeapTupleDelete(rel, oldtup, internal))
+	if (!sepgsqlHeapTupleDelete(rel, &oldtup, internal))
 	{
-		Assert(!internal);
+		ReleaseBuffer(oldbuf);
 		return false;
 	}
 
+	ReleaseBuffer(oldbuf);
 	return true;
 }
 
@@ -215,18 +180,14 @@ rowlvHeapTupleDelete(Relation rel, ItemPointer otid, bool internal)
  *   checks permission on fetched tuple
  */
 bool
-rowlvCopyToTuple(Relation rel, List *attNumList, HeapTuple tuple)
+rowlvCopyToTuple(Relation rel, HeapTuple tuple)
 {
-	/*
-	 * NOTE:
-	 * rowlvCopyToTuple() isn't invoked in the context with
-	 * rowlvAbortBehavior is "true".
-	 */
+	AclMode		required = ACL_SELECT;
 
-	if (!rowaclCopyToTuple(rel, attNumList, tuple))
+	if (!rowaclExecScan(rel, tuple, required, InvalidOid, false))
 		return false;
 
-	if (!sepgsqlCopyToTuple(rel, attNumList, tuple))
+	if (!sepgsqlExecScan(rel, tuple, required, false))
 		return false;
 
 	return true;

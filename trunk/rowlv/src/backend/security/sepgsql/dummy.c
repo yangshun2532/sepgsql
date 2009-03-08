@@ -31,7 +31,13 @@ sepgsql_server_getcon(PG_FUNCTION_ARGS)
 }
 
 Datum
-sepgsql_mcstrans(PG_FUNCTION_ARGS)
+sepgsql_raw_to_trans(PG_FUNCTION_ARGS)
+{
+	return unavailable_function(__FUNCTION__);
+}
+
+Datum
+sepgsql_trans_to_raw(PG_FUNCTION_ARGS)
 {
 	return unavailable_function(__FUNCTION__);
 }
