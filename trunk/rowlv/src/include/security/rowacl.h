@@ -3,7 +3,6 @@
 
 #include "catalog/pg_security.h"
 
-extern void rowaclPostQueryRewrite(List *queryList);
 extern void rowaclInitialize(void);
 extern bool rowaclExecScan(Relation rel, HeapTuple tuple,
 						   AclMode required, Oid checkAsUser, bool abort);
