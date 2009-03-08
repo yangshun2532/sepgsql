@@ -29,6 +29,6 @@ extern bool
 rowlvHeapTupleDelete(Relation rel, ItemPointer otid, bool internal);
 
 extern bool
-rowlvCopyToTuple(Relation rel, List *attNumList, HeapTuple tuple);
+rowlvCopyToTuple(Relation rel, HeapTuple tuple);
 
 #endif   /* PG_SELINUX_H */

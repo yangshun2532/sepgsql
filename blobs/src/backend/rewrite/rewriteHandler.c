@@ -23,8 +23,6 @@
 #include "rewrite/rewriteDefine.h"
 #include "rewrite/rewriteHandler.h"
 #include "rewrite/rewriteManip.h"
-#include "security/rowacl.h"
-#include "security/sepgsql.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
 #include "commands/trigger.h"
@@ -1973,16 +1971,6 @@ QueryRewrite(Query *parsetree)
 
 	if (!foundOriginalQuery && lastInstead != NULL)
 		lastInstead->canSetTag = true;
-
-	/*
-	 * Row-level ACLs walks on extracted query tree
-	 */
-	rowaclPostQueryRewrite(results);
-
-	/*
-	 * make Query->selinuxItems
-	 */
-	sepgsqlPostQueryRewrite(results);
 
 	return results;
 }

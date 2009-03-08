@@ -74,7 +74,7 @@ SELECT a, b, y FROM t1 JOIN t2 ON a = x;
 (5 rows)
 
 SELECT a, b, y FROM t1 JOIN t2 ON c = x;	-- to be denied
-ERROR:  SELinux: denied { use } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=unconfined_u:object_r:sepgsql_secret_table_t:s0 tclass=db_column name=t1.c
+ERROR:  SELinux: denied { select } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=unconfined_u:object_r:sepgsql_secret_table_t:s0 tclass=db_column name=t1.c
 SELECT COUNT(*) FROM t1 JOIN t2 ON a = x;
  count 
 -------

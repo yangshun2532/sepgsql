@@ -54,8 +54,8 @@ bool sepgsqlCheckDatabaseAccess(Oid db_oid)
 
 	audit_name = sepgsqlAuditName(DatabaseRelationId, tuple);
 	rc = sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
-							   SECCLASS_DB_DATABASE,
-							   DB_DATABASE__ACCESS,
+							   SEPG_CLASS_DB_DATABASE,
+							   SEPG_DB_DATABASE__ACCESS,
 							   audit_name, false);
 	ReleaseSysCache(tuple);
 
@@ -84,8 +84,8 @@ sepgsqlCheckDatabaseGetParam(const char *name)
 
 	audit_name = sepgsqlAuditName(DatabaseRelationId, tuple);
 	sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
-						  SECCLASS_DB_DATABASE,
-						  DB_DATABASE__GET_PARAM,
+						  SEPG_CLASS_DB_DATABASE,
+						  SEPG_DB_DATABASE__GET_PARAM,
 						  audit_name, true);
 	ReleaseSysCache(tuple);
 }
@@ -112,8 +112,8 @@ sepgsqlCheckDatabaseSetParam(const char *name)
 
 	audit_name = sepgsqlAuditName(DatabaseRelationId, tuple);
 	sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
-						  SECCLASS_DB_DATABASE,
-						  DB_DATABASE__SET_PARAM,
+						  SEPG_CLASS_DB_DATABASE,
+						  SEPG_DB_DATABASE__SET_PARAM,
 						  audit_name, true);
 	ReleaseSysCache(tuple);
 }
@@ -144,8 +144,8 @@ sepgsqlCheckDatabaseInstallModule(const char *filename)
 
 	audit_name = sepgsqlAuditName(DatabaseRelationId, tuple);
 	sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
-						  SECCLASS_DB_DATABASE,
-						  DB_DATABASE__INSTALL_MODULE,
+						  SEPG_CLASS_DB_DATABASE,
+						  SEPG_DB_DATABASE__INSTALL_MODULE,
 						  audit_name, true);
 	ReleaseSysCache(tuple);
 
@@ -159,8 +159,8 @@ sepgsqlCheckDatabaseInstallModule(const char *filename)
 	{
 		sepgsqlComputePerms(sepgsqlGetClientLabel(),
 							fcontext,
-							SECCLASS_DB_DATABASE,
-							DB_DATABASE__INSTALL_MODULE,
+							SEPG_CLASS_DB_DATABASE,
+							SEPG_DB_DATABASE__INSTALL_MODULE,
 							fullpath, true);
 	}
 	PG_CATCH();
@@ -192,8 +192,8 @@ sepgsqlCheckDatabaseLoadModule(const char *filename)
 	{
 		sepgsqlComputePerms(sepgsqlGetDatabaseLabel(),
 							filecon,
-							SECCLASS_DB_DATABASE,
-							DB_DATABASE__LOAD_MODULE,
+							SEPG_CLASS_DB_DATABASE,
+							SEPG_DB_DATABASE__LOAD_MODULE,
 							filename, true);
 	}
 	PG_CATCH();
@@ -234,8 +234,8 @@ sepgsqlCheckTableLock(Oid relid)
 	{
 		audit_name = sepgsqlAuditName(RelationRelationId, tuple);
 		rc = sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
-								   SECCLASS_DB_TABLE,
-								   DB_TABLE__LOCK,
+								   SEPG_CLASS_DB_TABLE,
+								   SEPG_DB_TABLE__LOCK,
 								   audit_name, false);
 	}
 	ReleaseSysCache(tuple);
@@ -250,10 +250,11 @@ sepgsqlCheckTableLock(Oid relid)
 bool
 sepgsqlCheckTableTruncate(Relation rel)
 {
-	const char *audit_name;
-	HeapTuple	tuple;
-	HeapScanDesc	scan;
-	bool		rc;
+	security_class_t	tclass;
+	HeapScanDesc		scan;
+	HeapTuple			tuple;
+	const char		   *audit_name;
+	bool				rc;
 
 	if (!sepgsqlIsEnabled())
 		return true;
@@ -273,26 +274,50 @@ sepgsqlCheckTableTruncate(Relation rel)
 
 	audit_name = sepgsqlAuditName(RelationRelationId, tuple);
 	rc = sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
-							   SECCLASS_DB_TABLE,
-							   DB_TABLE__DELETE,
+							   SEPG_CLASS_DB_TABLE,
+							   SEPG_DB_TABLE__DELETE,
 							   audit_name, false);
 	ReleaseSysCache(tuple);
+	if (!rc)
+		return false;
 
 	/*
 	 * check db_tuple:{delete} permission on whole of the table
 	 */
+	tclass = sepgsqlTupleObjectClass(RelationGetRelid(rel), tuple);
+
 	scan = heap_beginscan(rel, SnapshotNow, 0, NULL);
 
 	while ((tuple = heap_getnext(scan, ForwardScanDirection)) != NULL)
 	{
-		rc = sepgsqlCheckObjectPerms(rel, tuple, NULL,
-									 SEPGSQL_PERMS_DELETE, false);
+		rc = sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
+								   tclass,
+								   SEPG_DB_TUPLE__DELETE,
+								   audit_name, false);
 		if (!rc)
 			break;
 	}
 	heap_endscan(scan);
 
 	return rc;
+}
+
+/*
+ * sepgsqlCheckTupleSelect
+ */
+bool
+sepgsqlCheckTupleSelect(Relation rel, HeapTuple tuple)
+{
+	security_class_t	tclass;
+	const char		   *audit_name;
+
+	tclass = sepgsqlTupleObjectClass(RelationGetRelid(rel), tuple);
+
+	audit_name = sepgsqlAuditName(RelationGetRelid(rel), tuple);
+	return sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
+								 tclass,
+								 SEPG_DB_TUPLE__SELECT,
+								 audit_name, false);
 }
 
 /*
@@ -318,8 +343,8 @@ bool sepgsqlCheckProcedureExecute(Oid proc_oid)
 
 	audit_name = sepgsqlAuditName(ProcedureRelationId, tuple);
 	rc = sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
-							   SECCLASS_DB_PROCEDURE,
-							   DB_PROCEDURE__EXECUTE,
+							   SEPG_CLASS_DB_PROCEDURE,
+							   SEPG_DB_PROCEDURE__EXECUTE,
 							   audit_name, false);
 	ReleaseSysCache(tuple);
 
@@ -376,7 +401,7 @@ sepgsqlCheckProcedureEntrypoint(FmgrInfo *finfo, HeapTuple protup)
 	oldctx = MemoryContextSwitchTo(finfo->fn_mcxt);
 
 	newcon = sepgsqlClientCreateLabel(HeapTupleGetSecLabel(protup),
-									  SECCLASS_PROCESS);
+									  SEPG_CLASS_PROCESS);
 	if (strcmp(newcon, sepgsqlGetClientLabel()) == 0)
 	{
 		MemoryContextSwitchTo(oldctx);
@@ -385,15 +410,15 @@ sepgsqlCheckProcedureEntrypoint(FmgrInfo *finfo, HeapTuple protup)
 	/* db_procedure:{entrypoint}, if trusted procedure */
 	audit_name = sepgsqlAuditName(ProcedureRelationId, protup);
 	sepgsqlClientHasPerms(HeapTupleGetSecLabel(protup),
-						  SECCLASS_DB_PROCEDURE,
-						  DB_PROCEDURE__ENTRYPOINT,
+						  SEPG_CLASS_DB_PROCEDURE,
+						  SEPG_DB_PROCEDURE__ENTRYPOINT,
 						  audit_name, true);
 
 	/* process:{transition}, if trusted procedure */
 	sepgsqlComputePerms(sepgsqlGetClientLabel(),
 						newcon,
-						SECCLASS_PROCESS,
-						PROCESS__TRANSITION,
+						SEPG_CLASS_PROCESS,
+						SEPG_PROCESS__TRANSITION,
 						NULL, true);
 
 	/* trusted procedure invocation */
@@ -430,7 +455,7 @@ checkProcedureInstall(Oid proc_oid)
 		 * tries to relabel anything.
 		 */
 		prosid  = sepgsqlClientCreate(sepgsqlGetDatabaseSid(),
-									  SECCLASS_DB_PROCEDURE);
+									  SEPG_CLASS_DB_PROCEDURE);
 	}
 	else
 	{
@@ -445,8 +470,8 @@ checkProcedureInstall(Oid proc_oid)
 	}
 
 	sepgsqlClientHasPerms(prosid,
-						  SECCLASS_DB_PROCEDURE,
-						  DB_PROCEDURE__INSTALL,
+						  SEPG_CLASS_DB_PROCEDURE,
+						  SEPG_DB_PROCEDURE__INSTALL,
 						  audit_name, true);
 	if (HeapTupleIsValid(protup))
 		ReleaseSysCache(protup);
@@ -461,7 +486,7 @@ checkProcedureInstall(Oid proc_oid)
 			checkProcedureInstall(((Form_##catalog) GETSTRUCT(newtup))->member); \
 	} while(0)
 
-static void
+void
 sepgsqlCheckProcedureInstall(Relation rel, HeapTuple newtup, HeapTuple oldtup)
 {
 	/*
@@ -557,249 +582,17 @@ sepgsqlCheckProcedureInstall(Relation rel, HeapTuple newtup, HeapTuple oldtup)
 }
 
 /*
- * sepgsqlCheckTupleSelectOnTrigger
- *   checks db_tuple:{select} permission on fetched tuple
- *   on per-tuple trigger
- */
-bool
-sepgsqlCheckTupleSelectOnTrigger(TriggerData *tgdata)
-{
-	Relation	rel = tgdata->tg_relation;
-	HeapTuple	newtup = NULL;
-	HeapTuple	oldtup = NULL;
-
-	/* no need to check for statement triggers */
-	if (TRIGGER_FIRED_FOR_STATEMENT(tgdata->tg_event))
-		return true;
-
-	if (TRIGGER_FIRED_BY_INSERT(tgdata->tg_event))
-	{
-		if (TRIGGER_FIRED_AFTER(tgdata->tg_event))
-			newtup = tgdata->tg_trigtuple;
-	}
-	else if (TRIGGER_FIRED_BY_UPDATE(tgdata->tg_event))
-	{
-		oldtup = tgdata->tg_trigtuple;
-		if (TRIGGER_FIRED_AFTER(tgdata->tg_event))
-		{
-			sepgsql_sid_t	sid = HeapTupleGetSecLabel(oldtup);
-			if (HeapTupleGetSecLabel(tgdata->tg_newtuple) != sid)
-				newtup = tgdata->tg_newtuple;
-		}
-	}
-	else if (TRIGGER_FIRED_BY_DELETE(tgdata->tg_event))
-	{
-		if (TRIGGER_FIRED_AFTER(tgdata->tg_event))
-			oldtup = tgdata->tg_trigtuple;
-	}
-	else
-	{
-		elog(ERROR, "SELinux: unexpected trigger event: %u",
-			 tgdata->tg_event);
-	}
-
-	if (HeapTupleIsValid(oldtup) &&
-		!sepgsqlCheckObjectPerms(rel, oldtup, NULL,
-								 SEPGSQL_PERMS_SELECT, false))
-		return false;
-
-	if (HeapTupleIsValid(newtup) &&
-		!sepgsqlCheckObjectPerms(rel, newtup, NULL,
-								 SEPGSQL_PERMS_SELECT, false))
-		return false;
-
-	return true;
-}
-
-/*
- * IsTrustedAction
- *   makes a decision whether we should apply access controls
- *   on the given relation, or not.
- */
-static bool
-IsTrustedAction(Relation rel, bool internal)
-{
-	if (RelationGetForm(rel)->relkind != RELKIND_RELATION)
-		return true;
-
-	if (internal &&
-		(RelationGetRelid(rel) == SecurityRelationId ||
-		 RelationGetRelid(rel) == LargeObjectRelationId))
-		return true;
-
-	return false;
-}
-
-/*
- * Row-level decision making
- */
-bool
-sepgsqlExecScan(Relation rel, HeapTuple tuple, AclMode required, bool abort)
-{
-	Assert((required & SEPGSQL_PERMS_MASK) == required);
-
-	if (IsTrustedAction(rel, false))
-		return true;
-
-	return sepgsqlCheckObjectPerms(rel, tuple, NULL, required, abort);
-}
-
-/*
- * HeapTuple INSERT/UPDATE/DELETE
- */
-bool
-sepgsqlHeapTupleInsert(Relation rel, HeapTuple newtup, bool internal)
-{
-	uint32		perms = SEPGSQL_PERMS_INSERT;
-
-	if (!sepgsqlIsEnabled())
-		return true;
-
-	/*
-	 * check db_procedure:{install}, if necessary
-	 */
-	sepgsqlCheckProcedureInstall(rel, newtup, NULL);
-
-	if (!OidIsValid(HeapTupleGetSecLabel(newtup)))
-	{
-		/*
-		 * When no explicit security label is given,
-		 * it assigns a default one.
-		 */
-		if (HeapTupleHasSecLabel(newtup))
-			sepgsqlSetDefaultSecLabel(rel, newtup);
-	}
-
-	if (IsTrustedAction(rel, internal))
-		return true;
-
-	return sepgsqlCheckObjectPerms(rel, newtup, NULL, perms, internal);
-}
-
-bool
-sepgsqlHeapTupleUpdate(Relation rel, HeapTuple oldtup,
-					   HeapTuple newtup, bool internal)
-{
-	Oid				relid = RelationGetRelid(rel);
-	uint32			perms = 0;
-
-	if (!sepgsqlIsEnabled())
-		return true;
-
-	/*
-	 * check db_procedure:{install}, if necessary
-	 */
-	sepgsqlCheckProcedureInstall(rel, newtup, oldtup);
-
-	if (!OidIsValid(HeapTupleGetSecLabel(newtup)))
-	{
-		/*
-		 * When no explicit security label is given,
-		 * it preserves an older security label.
-		 */
-		sepgsql_sid_t	oldsid = HeapTupleGetSecLabel(oldtup);
-
-		if (HeapTupleHasSecLabel(newtup))
-			HeapTupleSetSecLabel(newtup, oldsid);
-	}
-
-	if (IsTrustedAction(rel, internal))
-		return true;
-
-	if (internal)
-		perms |= SEPGSQL_PERMS_UPDATE;
-
-	if (HeapTupleGetSecLabel(oldtup) != HeapTupleGetSecLabel(newtup) ||
-		sepgsqlTupleObjectClass(relid, newtup)
-			!= sepgsqlTupleObjectClass(relid, oldtup))
-		perms |= SEPGSQL_PERMS_RELABELFROM;
-
-	if (!sepgsqlCheckObjectPerms(rel, oldtup, newtup, perms, internal))
-		return false;
-
-	if ((perms & SEPGSQL_PERMS_RELABELFROM) != 0 &&
-		!sepgsqlCheckObjectPerms(rel, newtup, NULL,
-								 SEPGSQL_PERMS_RELABELTO, internal))
-		return false;
-
-	return true;
-}
-
-bool
-sepgsqlHeapTupleDelete(Relation rel, HeapTuple oldtup, bool internal)
-{
-	uint32		perms = 0;
-
-	if (!sepgsqlIsEnabled())
-		return true;
-
-	if (IsTrustedAction(rel, internal))
-		return true;
-
-	if (internal)
-		perms |= SEPGSQL_PERMS_DELETE;
-
-	return sepgsqlCheckObjectPerms(rel, oldtup, NULL, perms, internal);
-}
-
-/*
- * sepgsqlCopyTable
+ * sepgsqlCheckFileRead
+ * sepgsqlCheckFileWrite
  *
- * This function checks permission on the target table and columns
- * of COPY statement. We don't place it at sepgsql/hooks.c because
- * it internally uses addEvalXXXX() interface statically declared.
+ *   These functions check file:{read} or file:{write} permission on
+ *   the given file descriptor
  */
-void
-sepgsqlCopyTable(Relation rel, List *attNumList, bool isFrom)
+static void
+checkFileReadWrite(int fdesc, const char *filename, bool is_read)
 {
-	List	   *selist = NIL;
-	ListCell   *l;
-
-	if (!sepgsqlIsEnabled())
-		return;
-
-	/*
-	 * on 'COPY FROM SELECT ...' cases, any checkings are done in select.c
-	 */
-	if (rel == NULL)
-		return;
-
-	/*
-	 * no need to check non-table relation
-	 */
-	if (RelationGetForm(rel)->relkind != RELKIND_RELATION)
-		return;
-
-	selist = sepgsqlAddEvalTable(selist, RelationGetRelid(rel), false,
-								 isFrom ? DB_TABLE__INSERT : DB_TABLE__SELECT);
-	foreach(l, attNumList)
-	{
-		AttrNumber	attnum = lfirst_int(l);
-
-		selist = sepgsqlAddEvalColumn(selist, RelationGetRelid(rel), false, attnum,
-									  isFrom ? DB_COLUMN__INSERT : DB_COLUMN__SELECT);
-	}
-
-	/*
-	 * check call trigger function
-	 */
-	if (isFrom)
-		selist = sepgsqlAddEvalTriggerFunc(selist, RelationGetRelid(rel), CMD_INSERT);
-
-	foreach (l, selist)
-		sepgsqlCheckSelinuxEvalItem((SelinuxEvalItem *) lfirst(l));
-}
-
-/*
- * sepgsqlCopyFile
- *
- * This function check permission whether the client can
- * read from/write to the given file.
- */
-void sepgsqlCopyFile(Relation rel, int fdesc, const char *filename, bool isFrom)
-{
-	security_context_t context;
-	security_class_t tclass;
+	security_context_t	context;
+	security_class_t	tclass;
 
 	if (!sepgsqlIsEnabled())
 		return;
@@ -815,7 +608,7 @@ void sepgsqlCopyFile(Relation rel, int fdesc, const char *filename, bool isFrom)
 		sepgsqlComputePerms(sepgsqlGetClientLabel(),
 							context,
 							tclass,
-							isFrom ? FILE__READ : FILE__WRITE,
+							is_read ? SEPG_FILE__READ : SEPG_FILE__WRITE,
 							filename, true);
 	}
 	PG_CATCH();
@@ -827,27 +620,16 @@ void sepgsqlCopyFile(Relation rel, int fdesc, const char *filename, bool isFrom)
 	freecon(context);
 }
 
-bool
-sepgsqlCopyToTuple(Relation rel, List *attNumList, HeapTuple tuple)
+void
+sepgsqlCheckFileRead(int fdesc, const char *filename)
 {
-	uint32		perms = SEPGSQL_PERMS_SELECT;
-
-	return sepgsqlCheckObjectPerms(rel, tuple, NULL, perms, false);
+	checkFileReadWrite(fdesc, filename, true);
 }
 
-/*
- * checkBlobCommon
- *   a common facility to check permission on blob
- */
-static void
-checkBlobCommon(Oid loid, Oid secid, access_vector_t required)
+void
+sepgsqlCheckFileWrite(int fdesc, const char *filename)
 {
-	char	audit_name[64];
-
-	snprintf(audit_name, sizeof(audit_name), "blob:%u", loid);
-
-	sepgsqlClientHasPerms(secid, SECCLASS_DB_BLOB,
-						  required, audit_name, true);
+	checkFileReadWrite(fdesc, filename, false);
 }
 
 /*
@@ -857,13 +639,16 @@ checkBlobCommon(Oid loid, Oid secid, access_vector_t required)
 void
 sepgsqlCheckBlobDrop(HeapTuple lotup)
 {
-	Form_pg_largeobject	loForm
-		= (Form_pg_largeobject) GETSTRUCT(lotup);
+	const char	   *audit_name;
 
-	if (sepgsqlIsEnabled())
-		checkBlobCommon(loForm->loid,
-						HeapTupleGetSecLabel(lotup),
-						DB_BLOB__DROP);
+	if (!sepgsqlIsEnabled())
+		return;
+
+	audit_name = sepgsqlAuditName(LargeObjectRelationId, lotup);
+	sepgsqlClientHasPerms(HeapTupleGetSecLabel(lotup),
+						  SEPG_CLASS_DB_BLOB,
+						  SEPG_DB_BLOB__DROP,
+						  audit_name, true);
 }
 
 /*
@@ -873,8 +658,16 @@ sepgsqlCheckBlobDrop(HeapTuple lotup)
 void
 sepgsqlCheckBlobRead(LargeObjectDesc *lobj)
 {
-	if (sepgsqlIsEnabled())
-		checkBlobCommon(lobj->id, lobj->secid, DB_BLOB__READ);
+	char	audit_name[NAMEDATALEN];
+
+	if (!sepgsqlIsEnabled())
+		return;
+
+	snprintf(audit_name, sizeof(audit_name), "blob:%u", lobj->id);
+	sepgsqlClientHasPerms(lobj->secid,
+						  SEPG_CLASS_DB_BLOB,
+						  SEPG_DB_BLOB__READ,
+						  audit_name, true);
 }
 
 /*
@@ -884,8 +677,16 @@ sepgsqlCheckBlobRead(LargeObjectDesc *lobj)
 void
 sepgsqlCheckBlobWrite(LargeObjectDesc *lobj)
 {
-	if (sepgsqlIsEnabled())
-		checkBlobCommon(lobj->id, lobj->secid, DB_BLOB__WRITE);
+	char	audit_name[NAMEDATALEN];
+
+	if (!sepgsqlIsEnabled())
+		return;
+
+	snprintf(audit_name, sizeof(audit_name), "blob:%u", lobj->id);
+	sepgsqlClientHasPerms(lobj->secid,
+						  SEPG_CLASS_DB_BLOB,
+						  SEPG_DB_BLOB__WRITE,
+						  audit_name, true);
 }
 
 /*
@@ -895,10 +696,16 @@ sepgsqlCheckBlobWrite(LargeObjectDesc *lobj)
 void
 sepgsqlCheckBlobGetattr(HeapTuple tuple)
 {
-	if (sepgsqlIsEnabled())
-		checkBlobCommon(((Form_pg_largeobject) GETSTRUCT(tuple))->loid,
-						HeapTupleGetSecLabel(tuple),
-						DB_BLOB__GETATTR);
+	const char	   *audit_name;
+
+	if (!sepgsqlIsEnabled())
+		return;
+
+	audit_name = sepgsqlAuditName(LargeObjectRelationId, tuple);
+	sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
+						  SEPG_CLASS_DB_BLOB,
+						  SEPG_DB_BLOB__GETATTR,
+						  audit_name, true);
 }
 
 /*
@@ -908,10 +715,16 @@ sepgsqlCheckBlobGetattr(HeapTuple tuple)
 void
 sepgsqlCheckBlobSetattr(HeapTuple tuple)
 {
-	if (sepgsqlIsEnabled())
-		checkBlobCommon(((Form_pg_largeobject) GETSTRUCT(tuple))->loid,
-						HeapTupleGetSecLabel(tuple),
-						DB_BLOB__SETATTR);
+	const char	   *audit_name;
+
+	if (!sepgsqlIsEnabled())
+		return;
+
+	audit_name = sepgsqlAuditName(LargeObjectRelationId, tuple);
+	sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
+						  SEPG_CLASS_DB_BLOB,
+						  SEPG_DB_BLOB__SETATTR,
+						  audit_name, true);
 }
 
 /*
@@ -924,12 +737,16 @@ sepgsqlCheckBlobExport(LargeObjectDesc *lobj,
 {
 	security_context_t		fcontext;
 	security_class_t		fclass;
+	char					audit_name[NAMEDATALEN];
 
 	if (!sepgsqlIsEnabled())
 		return;
 
-	checkBlobCommon(lobj->id, lobj->secid,
-					DB_BLOB__READ | DB_BLOB__EXPORT);
+	snprintf(audit_name, sizeof(audit_name), "blob:%u", lobj->id);
+	sepgsqlClientHasPerms(lobj->secid,
+						  SEPG_CLASS_DB_BLOB,
+						  SEPG_DB_BLOB__READ | SEPG_DB_BLOB__EXPORT,
+						  audit_name, true);
 
 	fclass = sepgsqlFileObjectClass(fdesc);
 	if (fgetfilecon_raw(fdesc, &fcontext) < 0)
@@ -941,7 +758,7 @@ sepgsqlCheckBlobExport(LargeObjectDesc *lobj,
 		sepgsqlComputePerms(sepgsqlGetClientLabel(),
 							fcontext,
 							fclass,
-							COMMON_FILE__WRITE,
+							SEPG_FILE__WRITE,
 							filename, true);
 	}
 	PG_CATCH();
@@ -963,12 +780,16 @@ sepgsqlCheckBlobImport(LargeObjectDesc *lobj,
 {
 	security_context_t		fcontext;
 	security_class_t		fclass;
+	char					audit_name[NAMEDATALEN];
 
 	if (!sepgsqlIsEnabled())
 		return;
 
-	checkBlobCommon(lobj->id, lobj->secid,
-					DB_BLOB__WRITE | DB_BLOB__IMPORT);
+	snprintf(audit_name, sizeof(audit_name), "blob:%u", lobj->id);
+	sepgsqlClientHasPerms(lobj->secid,
+						  SEPG_CLASS_DB_BLOB,
+						  SEPG_DB_BLOB__WRITE | SEPG_DB_BLOB__IMPORT,
+						  audit_name, true);
 
 	fclass = sepgsqlFileObjectClass(fdesc);
 	if (fgetfilecon_raw(fdesc, &fcontext) < 0)
@@ -980,7 +801,7 @@ sepgsqlCheckBlobImport(LargeObjectDesc *lobj,
 		sepgsqlComputePerms(sepgsqlGetClientLabel(),
 							fcontext,
 							fclass,
-							COMMON_FILE__READ,
+							SEPG_FILE__READ,
 							filename, true);
 	}
 	PG_CATCH();
@@ -999,21 +820,25 @@ sepgsqlCheckBlobImport(LargeObjectDesc *lobj,
 void
 sepgsqlCheckBlobRelabel(HeapTuple oldtup, HeapTuple newtup)
 {
-	access_vector_t		required = DB_BLOB__SETATTR;
-	Form_pg_largeobject	loForm;
+	access_vector_t		required = SEPG_DB_BLOB__SETATTR;
+	const char		   *audit_name;
 
 	if (HeapTupleGetSecLabel(oldtup) != HeapTupleGetSecLabel(newtup))
-		required |= DB_BLOB__RELABELFROM;
+		required |= SEPG_DB_BLOB__RELABELFROM;
 
-	loForm = (Form_pg_largeobject) GETSTRUCT(oldtup);
-	checkBlobCommon(loForm->loid, HeapTupleGetSecLabel(oldtup), required);
-
-	if ((required & DB_BLOB__RELABELFROM) == 0)
+	audit_name = sepgsqlAuditName(LargeObjectRelationId, oldtup);
+	sepgsqlClientHasPerms(HeapTupleGetSecLabel(oldtup),
+						  SEPG_CLASS_DB_BLOB,
+						  required,
+						  audit_name, true);
+	if ((required & SEPG_DB_BLOB__RELABELFROM) == 0)
 		return;
 
-	loForm = (Form_pg_largeobject) GETSTRUCT(newtup);
-	checkBlobCommon(loForm->loid, HeapTupleGetSecLabel(newtup),
-					DB_BLOB__RELABELTO);
+	audit_name = sepgsqlAuditName(LargeObjectRelationId, newtup);
+	sepgsqlClientHasPerms(HeapTupleGetSecLabel(newtup),
+						  SEPG_CLASS_DB_BLOB,
+						  SEPG_DB_BLOB__RELABELTO,
+						  audit_name, true);
 }
 
 /*
@@ -1031,7 +856,7 @@ sepgsqlAllowFunctionInlined(HeapTuple proc_tuple)
 		return true;
 
 	context = sepgsqlClientCreateLabel(HeapTupleGetSecLabel(proc_tuple),
-									   SECCLASS_PROCESS);
+									   SEPG_CLASS_PROCESS);
 	/*
 	 * If the security context of client is unchange
 	 * before or after invocation of the functions,

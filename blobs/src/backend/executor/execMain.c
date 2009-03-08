@@ -161,8 +161,6 @@ standard_ExecutorStart(QueryDesc *queryDesc, int eflags)
 	Assert(queryDesc != NULL);
 	Assert(queryDesc->estate == NULL);
 
-	sepgsqlExecutorStart(queryDesc, eflags);
-
 	/*
 	 * If the transaction is read-only, we need to check if any writes are
 	 * planned to non-temporary tables.  EXPLAIN is considered read-only.
@@ -714,6 +712,12 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 		estate->es_num_result_relations = 0;
 		estate->es_result_relation_info = NULL;
 	}
+
+	/*
+	 * SELinux : mandatory permission checks
+	 */
+	if ((eflags & EXEC_FLAG_EXPLAIN_ONLY) == 0)
+		sepgsqlCheckQueryPerms(operation, estate);
 
 	/*
 	 * Detect whether we're doing SELECT INTO.  If so, set the es_into_oids
@@ -1953,16 +1957,16 @@ ExecInsert(TupleTableSlot *slot,
 	}
 
 	/*
-	 * Check the constraints of the tuple
-	 */
-	if (resultRelationDesc->rd_att->constr)
-		ExecConstraints(resultRelInfo, slot, estate);
-
-	/*
 	 * Check row-level permission on the tuple
 	 */
 	if (!rowlvHeapTupleInsert(resultRelationDesc, tuple, false))
 		return;
+
+	/*
+	 * Check the constraints of the tuple
+	 */
+	if (resultRelationDesc->rd_att->constr)
+		ExecConstraints(resultRelInfo, slot, estate);
 
 	/*
 	 * insert the tuple
@@ -2205,6 +2209,12 @@ ExecUpdate(TupleTableSlot *slot,
 	}
 
 	/*
+	 * Check row-level permission on the tuple
+	 */
+	if (!rowlvHeapTupleUpdate(resultRelationDesc, tupleid, tuple, false))
+		return;
+
+	/*
 	 * Check the constraints of the tuple
 	 *
 	 * If we generate a new candidate tuple after EvalPlanQual testing, we
@@ -2216,12 +2226,6 @@ ExecUpdate(TupleTableSlot *slot,
 lreplace:;
 	if (resultRelationDesc->rd_att->constr)
 		ExecConstraints(resultRelInfo, slot, estate);
-
-	/*
-	 * Check row-level permission on the tuple
-	 */
-	if (!rowlvHeapTupleUpdate(resultRelationDesc, tupleid, tuple, false))
-		return;
 
 	/*
 	 * replace the heap tuple
@@ -3122,6 +3126,11 @@ OpenIntoRel(QueryDesc *queryDesc)
 	 * And open the constructed table for writing.
 	 */
 	intoRelationDesc = heap_open(intoRelationId, AccessExclusiveLock);
+
+	/*
+	 * SELinux checks db_table/db_column:{insert} permission
+	 */
+	sepgsqlCheckSelectInto(intoRelationDesc);
 
 	/*
 	 * Now replace the query's DestReceiver with one for SELECT INTO

@@ -385,13 +385,11 @@ typedef struct RelOptInfo
 	 */
 
 	/*
-	 * Row-level access controls (both DAC and MAC) requires tuplePerms
-	 * holds proper required permissions for each fetched tuples. It is
-	 * similar to conditional scan on relations so, optimizar have to
-	 * check whether tuplePerms is zero, or not. The tuplePerms with zero
-	 * means we have no row-level security in this relation.
+	 * Row-level access controls (both DAC and MAC) needs requiredPerms
+	 * and checkAsUser copied to ExecScan phase.
 	 */
-	AclMode		tuplePerms;
+	AclMode		requiredPerms;
+	Oid			checkAsUser;
 } RelOptInfo;
 
 /*
