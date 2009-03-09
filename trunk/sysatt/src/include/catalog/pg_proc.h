@@ -62,7 +62,7 @@ CATALOG(pg_proc,1255) BKI_BOOTSTRAP
 	bytea		probin;			/* secondary procedure info (can be NULL) */
 	text		proconfig[1];	/* procedure-local GUC settings */
 	aclitem		proacl[1];		/* access permissions */
-	text		proselabal;		/* security context of the procedure (not in use) */
+	text		proselabel;		/* security context of the procedure (not in use) */
 } FormData_pg_proc;
 
 /* ----------------
