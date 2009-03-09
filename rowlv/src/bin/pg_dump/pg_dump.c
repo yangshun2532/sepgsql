@@ -1646,7 +1646,7 @@ dumpDatabase(Archive *AH)
 						  "FROM pg_database "
 						  "WHERE datname = ",
 						  username_subquery,
-						  security_label ? "sepgsql_mcstrans(datselabel)" : "null");
+						  security_label ? "sepgsql_raw_to_trans(datselabel)" : "null");
 		appendStringLiteralAH(dbQry, datname, AH);
 	}
 	else if (g_fout->remoteVersion >= 80200)
@@ -3226,7 +3226,7 @@ getTables(int *numTables)
 						  "WHERE c.relkind in ('%c', '%c', '%c', '%c') "
 						  "ORDER BY c.oid",
 						  username_subquery,
-						  security_label ? "sepgsql_mcstrans(c.relselabel)" : "NULL",
+						  security_label ? "sepgsql_raw_to_trans(c.relselabel)" : "NULL",
 						  RELKIND_SEQUENCE,
 						  RELKIND_RELATION, RELKIND_SEQUENCE,
 						  RELKIND_VIEW, RELKIND_COMPOSITE_TYPE);
@@ -4742,7 +4742,7 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 							  "WHERE a.attrelid = '%u'::pg_catalog.oid "
 							  "AND a.attnum > 0::pg_catalog.int2 "
 							  "ORDER BY a.attrelid, a.attnum",
-							  security_label ? "sepgsql_mcstrans(a.attselabel)" : NULL,
+							  security_label ? "sepgsql_raw_to_trans(a.attselabel)" : NULL,
 							  tbinfo->dobj.catId.oid);
 		}
 		else if (g_fout->remoteVersion >= 70100)
@@ -7140,7 +7140,7 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 						  "%s as security_label "
 						  "FROM pg_catalog.pg_proc "
 						  "WHERE oid = '%u'::pg_catalog.oid",
-						  security_label ? "sepgsql_mcstrans(proselabel)" : "NULL",
+						  security_label ? "sepgsql_raw_to_trans(proselabel)" : "NULL",
 						  finfo->dobj.catId.oid);
 	}
 	else if (g_fout->remoteVersion >= 80300)
