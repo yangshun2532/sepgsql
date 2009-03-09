@@ -8,8 +8,6 @@ SELECT sepgsql_getcon();
 -- cleanup previous tests
 SET client_min_messages TO 'error';
 SET
-DROP TABLE IF EXISTS t4 CASCADE;
-DROP TABLE
 DROP TABLE IF EXISTS t3 CASCADE;
 DROP TABLE
 DROP TABLE IF EXISTS t2 CASCADE;
@@ -20,22 +18,22 @@ DROP FUNCTION IF EXISTS f1(int) CASCADE;
 DROP FUNCTION
 DROP FUNCTION IF EXISTS f2(int) CASCADE;
 DROP FUNCTION
+DROP FUNCTION IF EXISTS f3() CASCADE;
+DROP FUNCTION
 RESET client_min_messages;
 RESET
 -- SETUP
 CREATE TABLE t1
 (
-    a   int primary key,
-    b   text,
-    c   bool
+    a   int,
+    b   text
 );
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "t1_pkey" for table "t1"
 CREATE TABLE
 CREATE TABLE t2
 (
-    x   int references t1(a)
-        SECURITY_LABEL = 'system_u:object_r:sepgsql_secret_table_t:s0',
+    x   int,
     y   text
+        SECURITY_LABEL = 'system_u:object_r:sepgsql_secret_table_t:s0'
 );
 CREATE TABLE
 CREATE TABLE t3
@@ -43,13 +41,13 @@ CREATE TABLE t3
     uid     int,
     uname   text,
     ucredit text
-    SECURITY_LABEL = 'system_u:object_r:sepgsql_secret_table_t:s0'
+            SECURITY_LABEL = 'system_u:object_r:sepgsql_secret_table_t:s0'
 );
 CREATE TABLE
-INSERT INTO t1 VALUES (1, 'aaa', true), (2, 'bbb', false), (3, 'ccc', null);
+INSERT INTO t1 VALUES (1, 'aaa'), (2, 'bbb'), (3, 'ccc');
 INSERT 0 3
-INSERT INTO t2 VALUES (2, 'xxx'), (3, 'yyy');
-INSERT 0 2
+INSERT INTO t2 VALUES (7, 'xxx'), (8, 'yyy'), (9, 'zzz');
+INSERT 0 3
 INSERT INTO t3 VALUES (10, 'red',   '1111-2222-3333'),
                       (11, 'blue',  '4444-5555-6666'),
                       (12, 'green', '7777-8888-9999');
@@ -64,6 +62,16 @@ CREATE OR REPLACE FUNCTION f2 (int) RETURNS text
     SECURITY_LABEL = 'system_u:object_r:sepgsql_trusted_proc_exec_t:s0'
     AS 'SELECT regexp_replace(ucredit, ''-[0-9]+'', ''-xxxx'', ''g'') FROM t3 WHERE uid = $1';
 CREATE FUNCTION
+CREATE OR REPLACE FUNCTION f3() RETURNS trigger
+    LANGUAGE 'plpgsql'
+    AS 'BEGIN RAISE INFO ''OLD TUPLE: %'', OLD; RETURN NEW; end';
+CREATE FUNCTION
+CREATE TRIGGER tg1 BEFORE UPDATE OR DELETE ON t1
+    FOR EACH ROW EXECUTE PROCEDURE f3();
+CREATE TRIGGER
+CREATE TRIGGER tg2 BEFORE UPDATE OR DELETE ON t2
+    FOR EACH ROW EXECUTE PROCEDURE f3();
+CREATE TRIGGER
 -- TEST
 SELECT f1(3);	-- to be denied
 NOTICE:  SELinux: denied { execute } scontext=unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c15 tcontext=system_u:object_r:user_sepgsql_proc_exec_t:s0 tclass=db_procedure name=f1
@@ -86,23 +94,41 @@ SELECT sepgsql_getcon();
 (1 row)
 
 SELECT * FROM t1;
- a |  b  | c 
----+-----+---
- 1 | aaa | t
- 2 | bbb | f
- 3 | ccc | 
+ a |  b  
+---+-----
+ 1 | aaa
+ 2 | bbb
+ 3 | ccc
 (3 rows)
 
 SELECT * FROM t2;	-- to be denied
-ERROR:  SELinux: denied { select } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=system_u:object_r:sepgsql_secret_table_t:s0 tclass=db_column name=t2.x
-INSERT INTO t1 VALUES (4, 'ddd');
+ERROR:  SELinux: denied { select } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=system_u:object_r:sepgsql_secret_table_t:s0 tclass=db_column name=t2.y
+SELECT x FROM t2;
+ x 
+---
+ 7
+ 8
+ 9
+(3 rows)
+
+UPDATE t1 SET a = a;
+INFO:  OLD TUPLE: (1,aaa)
+INFO:  OLD TUPLE: (2,bbb)
+INFO:  OLD TUPLE: (3,ccc)
+UPDATE 3
+UPDATE t2 SET x = x;	-- to be denied
+ERROR:  SELinux: denied { select } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=system_u:object_r:sepgsql_secret_table_t:s0 tclass=db_column name=t2.y
+INSERT INTO t1 VALUES (99, 'XXX');
 INSERT 0 1
-UPDATE t1 SET a = 5 WHERE a = 4;	-- to be denied
-ERROR:  SELinux: denied { use } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=system_u:object_r:sepgsql_secret_table_t:s0 tclass=db_column name=t2.x
-CONTEXT:  SQL statement "SELECT 1 FROM ONLY "public"."t2" x WHERE $1 OPERATOR(pg_catalog.=) "x" FOR SHARE OF x"
-DELETE FROM t1 WHERE a = 4;		-- to be denied
-ERROR:  SELinux: denied { use } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=system_u:object_r:sepgsql_secret_table_t:s0 tclass=db_column name=t2.x
-CONTEXT:  SQL statement "SELECT 1 FROM ONLY "public"."t2" x WHERE $1 OPERATOR(pg_catalog.=) "x" FOR SHARE OF x"
+INSERT INTO t2 VALUES (98, 'YYY');	-- to be denied
+ERROR:  SELinux: denied { insert } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=system_u:object_r:sepgsql_secret_table_t:s0 tclass=db_column name=t2.y
+INSERT INTO t2 VALUES (97);
+INSERT 0 1
+DELETE FROM t1 WHERE a > 10;
+INFO:  OLD TUPLE: (99,XXX)
+DELETE 0
+DELETE FROM t2 WHERE x > 10;	-- to be denied
+ERROR:  SELinux: denied { select } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=system_u:object_r:sepgsql_secret_table_t:s0 tclass=db_column name=t2.y
 SELECT * FROM t3;	-- to be denied
 ERROR:  SELinux: denied { select } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=system_u:object_r:sepgsql_secret_table_t:s0 tclass=db_column name=t3.ucredit
 SELECT uid, uname FROM t3;
@@ -128,12 +154,8 @@ SELECT sepgsql_getcon();
  unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c15
 (1 row)
 
-ALTER TABLE t1 ALTER a
-    SECURITY_LABEL = 'system_u:object_r:sepgsql_secret_table_t:s0';
-ALTER TABLE
-ALTER TABLE t2 ALTER x
-    SECURITY_LABEL = 'system_u:object_r:sepgsql_table_t:s0';
-ALTER TABLE
+DROP TRIGGER IF EXISTS tg2 ON t2;
+DROP TRIGGER
 --@SECURITY_CONTEXT=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0
 SELECT sepgsql_getcon();
                   sepgsql_getcon                   
@@ -141,17 +163,9 @@ SELECT sepgsql_getcon();
  unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0
 (1 row)
 
-SELECT * FROM t1;	-- to be denied
-ERROR:  SELinux: denied { select } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=system_u:object_r:sepgsql_secret_table_t:s0 tclass=db_column name=t1.a
-SELECT * FROM t2;
- x |  y  
----+-----
- 2 | xxx
- 3 | yyy
-(2 rows)
-
-UPDATE t1 SET b = b || '_upd';		-- to be denied
-ERROR:  SELinux: denied { select } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=system_u:object_r:sepgsql_secret_table_t:s0 tclass=db_column name=t1.a
-INSERT INTO t2 VALUES (3, 'zzz');	-- to be denied
-ERROR:  SELinux: denied { use } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=system_u:object_r:sepgsql_secret_table_t:s0 tclass=db_column name=t1.a
-CONTEXT:  SQL statement "SELECT 1 FROM ONLY "public"."t1" x WHERE "a" OPERATOR(pg_catalog.=) $1 FOR SHARE OF x"
+UPDATE t2 SET x = x;
+UPDATE 4
+INSERT INTO t2 VALUES (98, 'YYY');	-- to be denied
+ERROR:  SELinux: denied { insert } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=system_u:object_r:sepgsql_secret_table_t:s0 tclass=db_column name=t2.y
+DELETE FROM t2 WHERE x > 10;
+DELETE 1

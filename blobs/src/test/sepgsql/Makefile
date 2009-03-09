@@ -32,6 +32,7 @@ results/%.diff: sql/%.sql
 	@echo $(notdir $(@:.diff=))
 
 setup: launch_psql
+	@createlang plpgsql $(DBNAME) || :
 	@cp -f /dev/null /tmp/sepgsql_test_copy_1
 	@cp -f /dev/null /tmp/sepgsql_test_copy_2
 	@chcon -t postgresql_tmp_t -l s0 /tmp/sepgsql_test_copy_1

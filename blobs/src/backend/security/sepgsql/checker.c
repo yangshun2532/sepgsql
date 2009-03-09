@@ -127,7 +127,7 @@ checkTabelColumnPerms(Oid relid, Bitmapset *selected, Bitmapset *modified,
 		elog(ERROR, "SELinux: cache lookup failed for relation %u", relid);
 
 	/* ignore, if the relation is not general relation */
-	if (((Form_pg_class) GETSTRUCT(tuple))->relkind != SEPG_CLASS_DB_TABLE)
+	if (((Form_pg_class) GETSTRUCT(tuple))->relkind != RELKIND_RELATION)
 	{
 		ReleaseSysCache(tuple);
 		return;
