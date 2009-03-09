@@ -9,23 +9,23 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/parser/keywords.c,v 1.212 2009/03/08 16:53:30 alvherre Exp $
+ *	  $PostgreSQL: pgsql/src/bin/pg_dump/keywords.c,v 1.2 2009/03/08 16:53:30 alvherre Exp $
  *
  *-------------------------------------------------------------------------
  */
-#include "postgres.h"
+#include "postgres_fe.h"
 
-#include "nodes/nodes.h"
-#include "nodes/parsenodes.h"
 #include "parser/keywords.h"
-#include "parser/gram.h"
 
-#define PG_KEYWORD(a,b,c) {a,b,c},
-
+/*
+ * We don't need the token number, so leave it out to avoid requiring other 
+ * backend headers.
+ */
+#define PG_KEYWORD(a,b,c) {a,0,c},
 
 const ScanKeyword ScanKeywords[] = {
 #include "parser/kwlist.h"
 };
 
-/* End of ScanKeywords, for use in kwlookup.c and elsewhere */
+/* End of ScanKeywords, for use in kwlookup.c */
 const ScanKeyword *LastScanKeyword = endof(ScanKeywords);
