@@ -44,7 +44,7 @@ fixupSelectedColsByTrigger(CmdType cmd, Relation rel, Bitmapset *selected)
 		 */
 		trigger = &trigdesc->triggers[i];
 
-		if (trigger->tgenabled &&
+		if (trigger->tgenabled != TRIGGER_DISABLED &&
 			TRIGGER_FOR_ROW(trigger->tgtype) &&
 			RI_FKey_trigger_type(trigger->tgfoid) == RI_TRIGGER_NONE &&
 			((cmd == CMD_UPDATE && TRIGGER_FOR_UPDATE(trigger->tgtype)) ||
