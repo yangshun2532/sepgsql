@@ -1,17 +1,8 @@
-= What is the PHP/SELinux binding =
+= SELinux binding for PHP / Reference manual =
+
+== What is the PHP/SELinux binding ==
 
 It is a set of interfaces to libselinux API which enables to manage SELinux from applications.
-
-== Steps to set up ==
-
-{{{
-# su -
-# wget http://sepgsql.googlecode.com/files/php-selinux-0.1.2-devel.fc10.src.rpm
-# rpmbuild --rebuild php-selinux-0.1.2-devel.fc10.src.rpm
-# rpm -Uvh /root/rpmbuild/RPMS/i386/php-selinux-0.1.2-devel.fc10.i386.rpm
-}}}
-
-= Reference manual =
 
 == Global SELinux state ==
 
