@@ -568,6 +568,11 @@ InitPostgres(const char *in_dbname, Oid dboid, const char *username,
 	RelationCacheInitializePhase2();
 
 	/*
+	 * Initialize SE-PostgreSQL access vector cache
+	 */
+	sepgsqlInitialize();
+
+	/*
 	 * Figure out our postgres user id, and see if we are a superuser.
 	 *
 	 * In standalone mode and in the autovacuum process, we use a fixed id,
@@ -598,9 +603,6 @@ InitPostgres(const char *in_dbname, Oid dboid, const char *username,
 
 	/* set up ACL framework (so CheckMyDatabase can check permissions) */
 	initialize_acl();
-
-	/* initialize SE-PostgreSQL feature */
-	sepgsqlInitialize();
 
 	/*
 	 * Read the real pg_database row for our database, check permissions and
