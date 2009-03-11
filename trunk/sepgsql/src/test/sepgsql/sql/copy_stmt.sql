@@ -56,3 +56,5 @@ COPY t3 FROM '/tmp/sepgsql_test_copy_1';	-- to be denied
 
 COPY t1 FROM '/tmp/sepgsql_test_copy_1';
 COPY t1 TO stdout;
+
+SELECT pg_read_file('pg_ident.conf', 0, 1);	-- to be denied

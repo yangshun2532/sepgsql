@@ -88,3 +88,5 @@ COPY t1 TO stdout;
 2	bbb
 3	ccc
 4	ddd
+SELECT pg_read_file('pg_ident.conf', 0, 1);	-- to be denied
+ERROR:  SELinux: denied { read } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=unconfined_u:object_r:postgresql_db_t:s0 tclass=file name=pg_ident.conf
