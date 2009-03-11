@@ -96,7 +96,7 @@ static struct
 		{
 			{"read",			SEPG_FIFO_FILE__READ },
 			{"write",			SEPG_FIFO_FILE__WRITE },
-			{NULL,0}
+			{NULL, 0UL }
 		}
 	},
 	{
@@ -111,8 +111,7 @@ static struct
 			{ "access",			SEPG_DB_DATABASE__ACCESS },
 			{ "install_module",	SEPG_DB_DATABASE__INSTALL_MODULE },
 			{ "load_module",	SEPG_DB_DATABASE__LOAD_MODULE },
-			{ "get_param",		SEPG_DB_DATABASE__GET_PARAM },
-			{ "set_param",		SEPG_DB_DATABASE__SET_PARAM },
+			{ "superuser",		SEPG_DB_DATABASE__SUPERUSER },
 			{ NULL, 0UL },
 		}
 	},
@@ -166,29 +165,29 @@ static struct
 	{
 		"db_tuple",				SEPG_CLASS_DB_TUPLE,
 		{
-			{ "relabelfrom",	SEPG_DB_TUPLE__RELABELFROM},
-			{ "relabelto",		SEPG_DB_TUPLE__RELABELTO},
-			{ "select",			SEPG_DB_TUPLE__SELECT},
-			{ "update",			SEPG_DB_TUPLE__UPDATE},
-			{ "insert",			SEPG_DB_TUPLE__INSERT},
-			{ "delete",			SEPG_DB_TUPLE__DELETE},
-			{ NULL, 0UL},
+			{ "relabelfrom",	SEPG_DB_TUPLE__RELABELFROM },
+			{ "relabelto",		SEPG_DB_TUPLE__RELABELTO },
+			{ "select",			SEPG_DB_TUPLE__SELECT },
+			{ "update",			SEPG_DB_TUPLE__UPDATE },
+			{ "insert",			SEPG_DB_TUPLE__INSERT },
+			{ "delete",			SEPG_DB_TUPLE__DELETE },
+			{ NULL, 0UL },
 		}
 	},
 	{
 		"db_blob",				SEPG_CLASS_DB_BLOB,
 		{
-			{ "create",			SEPG_DB_BLOB__CREATE},
-			{ "drop",			SEPG_DB_BLOB__DROP},
-			{ "getattr",		SEPG_DB_BLOB__GETATTR},
-			{ "setattr",		SEPG_DB_BLOB__SETATTR},
-			{ "relabelfrom",	SEPG_DB_BLOB__RELABELFROM},
-			{ "relabelto",		SEPG_DB_BLOB__RELABELTO},
-			{ "read",			SEPG_DB_BLOB__READ},
-			{ "write",			SEPG_DB_BLOB__WRITE},
-			{ "import",			SEPG_DB_BLOB__IMPORT},
-			{ "export",			SEPG_DB_BLOB__EXPORT},
-			{ NULL, 0UL},
+			{ "create",			SEPG_DB_BLOB__CREATE },
+			{ "drop",			SEPG_DB_BLOB__DROP },
+			{ "getattr",		SEPG_DB_BLOB__GETATTR },
+			{ "setattr",		SEPG_DB_BLOB__SETATTR },
+			{ "relabelfrom",	SEPG_DB_BLOB__RELABELFROM },
+			{ "relabelto",		SEPG_DB_BLOB__RELABELTO },
+			{ "read",			SEPG_DB_BLOB__READ },
+			{ "write",			SEPG_DB_BLOB__WRITE },
+			{ "import",			SEPG_DB_BLOB__IMPORT },
+			{ "export",			SEPG_DB_BLOB__EXPORT },
+			{ NULL, 0UL },
 		}
 	}
 };

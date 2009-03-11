@@ -79,8 +79,7 @@ enum SepgsqlClasses
 #define SEPG_DB_DATABASE__ACCESS			(1<<6)
 #define SEPG_DB_DATABASE__INSTALL_MODULE	(1<<7)
 #define SEPG_DB_DATABASE__LOAD_MODULE		(1<<8)
-#define SEPG_DB_DATABASE__GET_PARAM			(1<<9)
-#define SEPG_DB_DATABASE__SET_PARAM			(1<<10)
+#define SEPG_DB_DATABASE__SUPERUSER			(1<<9)
 
 #define SEPG_DB_TABLE__CREATE				(SEPG_DB_DATABASE__CREATE)
 #define SEPG_DB_TABLE__DROP					(SEPG_DB_DATABASE__DROP)
@@ -220,34 +219,22 @@ sepgsqlInitialize(void);
  * hooks.c : test certain permissions
  */
 extern bool
-sepgsqlCheckDatabaseAccess(Oid db_oid);
+sepgsqlCheckDatabaseAccess(Oid database_oid);
 
-extern void
-sepgsqlCheckDatabaseSetParam(const char *name);
+extern bool
+sepgsqlCheckDatabaseSuperuser(void);
 
-extern void
-sepgsqlCheckDatabaseGetParam(const char *name);
+extern bool
+sepgsqlCheckTableLock(Oid table_oid);
 
-extern void
-sepgsqlCheckDatabaseInstallModule(const char *filename);
-
-extern void
-sepgsqlCheckDatabaseLoadModule(const char *filename);
+extern bool
+sepgsqlCheckTableTruncate(Relation rel);
 
 extern bool
 sepgsqlCheckProcedureExecute(Oid proc_oid);
 
 extern void
 sepgsqlCheckProcedureEntrypoint(FmgrInfo *finfo, HeapTuple protup);
-
-void
-sepgsqlCheckProcedureInstall(Relation rel, HeapTuple newtup, HeapTuple oldtup);
-
-extern bool
-sepgsqlCheckTableLock(Oid relid);
-
-extern bool
-sepgsqlCheckTableTruncate(Relation rel);
 
 extern void
 sepgsqlCheckFileRead(int fdesc, const char *filename);
@@ -331,18 +318,14 @@ sepgsqlCheckObjectPerms(Relation rel, HeapTuple tuple,
 #define sepgsqlInitialize()						do {} while(0)
 // hooks.c
 #define sepgsqlCheckDatabaseAccess(a)			(true)
-#define sepgsqlCheckDatabaseSetParam(a)			do {} while(0)
-#define sepgsqlCheckDatabaseGetParam(a)			do {} while(0)
-#define sepgsqlCheckDatabaseInstallModule(a)	do {} while(0)
-#define sepgsqlCheckDatabaseLoadModule(a)		do {} while(0)
-#define sepgsqlCheckProcedureExecute(a)			(true)
-#define sepgsqlCheckProcedureEntrypoint(a,b)	do {} while(0)
+#define sepgsqlCheckDatabaseSuperuser()			(true)
 #define sepgsqlCheckTableLock(a)				(true)
 #define sepgsqlCheckTableTruncate(a)			(true)
+#define sepgsqlCheckProcedureExecute(a)			(true)
+#define sepgsqlCheckProcedureEntrypoint(a,b)	do {} while(0)
 #define sepgsqlCheckFileRead(a,b)				do {} while(0)
 #define sepgsqlCheckFileWrite(a,b)				do {} while(0)
 #define sepgsqlAllowFunctionInlined(a)			(true)
-
 // label.c
 #define sepgsqlInputGivenSecLabel(a)			(PointerGetDatum(NULL))
 #define sepgsqlInputGivenSecLabelRelation(a)	(NIL)
