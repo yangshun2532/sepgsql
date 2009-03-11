@@ -349,42 +349,6 @@ fixupColumnAvPerms(HeapTuple newtup, HeapTuple oldtup)
 }
 
 /*
- * checkCLibraryInstallation
- *   It checks the correctness of C-library when user tries to
- *   create / replace C-functions.
- */
-static void
-checkCLibraryInstallation(HeapTuple newtup, HeapTuple oldtup)
-{
-	Form_pg_proc	oldpro, newpro;
-	Datum			oldbin, newbin;
-	char		   *filename;
-	bool			isnull;
-
-	newpro = (Form_pg_proc) GETSTRUCT(newtup);
-	if (newpro->prolang != ClanguageId)
-		return;
-
-	newbin = SysCacheGetAttr(PROCOID, newtup,
-							 Anum_pg_proc_probin, &isnull);
-	if (isnull)
-		return;
-
-	if (HeapTupleIsValid(oldtup))
-	{
-		oldpro = (Form_pg_proc) GETSTRUCT(oldtup);
-		oldbin = SysCacheGetAttr(PROCOID, oldtup,
-								 Anum_pg_proc_probin, &isnull);
-		if (!isnull &&
-			oldpro->prolang == newpro->prolang &&
-			DatumGetBool(DirectFunctionCall2(byteaeq, oldbin, newbin)))
-			return;		/* no need to check, if unchanged */
-	}
-	filename = TextDatumGetCString(newbin);
-	sepgsqlCheckDatabaseInstallModule(filename);
-}
-
-/*
  * checkTrustedAction
  *   It returns true, if we can ignore access controls for create/alter/drop
  *   on the given database objects.
@@ -413,12 +377,6 @@ sepgsqlHeapTupleInsert(Relation rel, HeapTuple newtup, bool internal)
 
 	if (!sepgsqlIsEnabled() || checkTrustedAction(rel, internal))
 		return;
-
-	/* check binary library installation */
-	if (relid == ProcedureRelationId)
-		checkCLibraryInstallation(newtup, NULL);
-	/* check db_procedure:{install}, if necessary */
-	sepgsqlCheckProcedureInstall(rel, newtup, NULL);
 
 	/*
 	 * NOTE: we should assign a default security label here,
@@ -471,11 +429,6 @@ sepgsqlHeapTupleUpdate(Relation rel, ItemPointer otid,
 	/* special case in column create/drop */
 	if (relid == AttributeRelationId)
 		required |= fixupColumnAvPerms(newtup, &oldtup);
-	/* check binary library installation */
-	if (relid == ProcedureRelationId)
-		checkCLibraryInstallation(newtup, &oldtup);
-	/* check db_procedure:{install}, if necessary */
-	sepgsqlCheckProcedureInstall(rel, newtup, &oldtup);
 
 	newclass = sepgsqlTupleObjectClass(relid, newtup);
 	oldclass = sepgsqlTupleObjectClass(relid, &oldtup);
