@@ -1,5 +1,5 @@
 /*
- * src/backend/utils/hooks.c
+ * src/backend/security/sepgsql/hooks.c
  *    SE-PostgreSQL security hooks
  *
  * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
@@ -30,9 +30,12 @@
 
 /*
  * sepgsqlCheckDatabaseAccess
+ *   checks db_database:{access} permission when the client logs-in
+ *   the given database.
+ *
  * sepgsqlCheckDatabaseSuperuser
- *
- *
+ *   checks db_database:{superuser} permission when the client tries
+ *   to perform as a superuser on the given databse.
  */
 static bool
 checkDatabaseCommon(Oid database_oid, access_vector_t perms)
@@ -79,9 +82,12 @@ sepgsqlCheckDatabaseSuperuser(void)
 
 /*
  * sepgsqlCheckTableLock
+ *   checks db_table:{lock} permission when the client tries to
+ *   aquire explicit lock on the given relation.
+ *
  * sepgsqlCheckTableTruncate
- *   They check db_table:{lock} and db_table:{delete} permission
- *   for the given relation.
+ *   checks db_table:{delete} permission when the client tries to
+ *   truncate the given relation.
  */
 static bool
 checkTableCommon(Oid table_oid, access_vector_t perms)
@@ -129,7 +135,9 @@ sepgsqlCheckTableTruncate(Relation rel)
 }
 
 /*
- * Function related hooks
+ * sepgsqlCheckProcedureExecute
+ *   checks db_procedure:{execute} permission when the client tries
+ *   to invoke the given SQL function.
  */
 bool sepgsqlCheckProcedureExecute(Oid proc_oid)
 {
@@ -159,6 +167,12 @@ bool sepgsqlCheckProcedureExecute(Oid proc_oid)
 	return rc;
 }
 
+/*
+ * sepgsqlCheckProcedureEntrypoint
+ *   checks whether the given function call causes domain transition,
+ *   or not. If it needs a domain transition, it injects a wrapper
+ *   function to invoke it under new domain.
+ */
 static Datum
 sepgsqlTrustedProcInvoker(PG_FUNCTION_ARGS)
 {
@@ -241,12 +255,11 @@ sepgsqlCheckProcedureEntrypoint(FmgrInfo *finfo, HeapTuple protup)
 /*
  * sepgsqlCheckFileRead
  * sepgsqlCheckFileWrite
- *
- *   These functions check file:{read} or file:{write} permission on
- *   the given file descriptor
+ *   check file:{read} or file:{write} permission on the given file,
+ *   and raises an error if violated.
  */
 static void
-checkFileReadWrite(int fdesc, const char *filename, bool is_read)
+checkFileCommon(int fdesc, const char *filename, access_vector_t perms)
 {
 	security_context_t	context;
 	security_class_t	tclass;
@@ -265,7 +278,7 @@ checkFileReadWrite(int fdesc, const char *filename, bool is_read)
 		sepgsqlComputePerms(sepgsqlGetClientLabel(),
 							context,
 							tclass,
-							is_read ? SEPG_FILE__READ : SEPG_FILE__WRITE,
+							perms,
 							filename, true);
 	}
 	PG_CATCH();
@@ -280,13 +293,13 @@ checkFileReadWrite(int fdesc, const char *filename, bool is_read)
 void
 sepgsqlCheckFileRead(int fdesc, const char *filename)
 {
-	checkFileReadWrite(fdesc, filename, true);
+	checkFileCommon(fdesc, filename, SEPG_FILE__READ);
 }
 
 void
 sepgsqlCheckFileWrite(int fdesc, const char *filename)
 {
-	checkFileReadWrite(fdesc, filename, false);
+	checkFileCommon(fdesc, filename, SEPG_FILE__WRITE);
 }
 
 /*
