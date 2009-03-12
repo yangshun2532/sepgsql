@@ -12,51 +12,12 @@
 #include "catalog/pg_language.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_rewrite.h"
-#include "catalog/pg_trigger.h"
-#include "commands/trigger.h"
 #include "security/sepgsql.h"
 #include "storage/bufmgr.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
 #include "utils/syscache.h"
 #include "utils/tqual.h"
-
-/*
- * fixupSelectedColsByTrigger
- */
-static Bitmapset *
-fixupSelectedColsByTrigger(CmdType cmd, Relation rel, Bitmapset *selected)
-{
-	TriggerDesc	   *trigdesc = rel->trigdesc;
-	Trigger		   *trigger;
-	int				i;
-
-	if (!trigdesc)
-		return selected;
-
-	for (i=0; i < trigdesc->numtriggers; i++)
-	{
-		/*
-		 * NOTE: Row-UPDATE/DELETE trigger invocation implicitly
-		 * delivers a whole-row-reference to user defined functions,
-		 * so it is necessary to check "db_column:{select}" permission
-		 * on whole of regular columns.
-		 */
-		trigger = &trigdesc->triggers[i];
-
-		if (trigger->tgenabled != TRIGGER_DISABLED &&
-			TRIGGER_FOR_ROW(trigger->tgtype) &&
-			RI_FKey_trigger_type(trigger->tgfoid) == RI_TRIGGER_NONE &&
-			((cmd == CMD_UPDATE && TRIGGER_FOR_UPDATE(trigger->tgtype)) ||
-			 (cmd == CMD_DELETE && TRIGGER_FOR_DELETE(trigger->tgtype))))
-		{
-			selected = bms_add_member(selected, InvalidAttrNumber
-								- FirstLowInvalidHeapAttributeNumber);
-		}
-	}
-
-	return selected;
-}
 
 /*
  * fixupWholeRowReference
@@ -111,26 +72,13 @@ static void
 checkTabelColumnPerms(Oid relid, Bitmapset *selected, Bitmapset *modified,
 					  access_vector_t required)
 {
-	HeapTuple		tuple;
-	Bitmapset	   *columns;
-	AttrNumber		attno;
-	int				nattrs;
-	const char	   *audit_name;
-	access_vector_t	mask;
-
-	/* db_table:{...} permissions */
-	tuple = SearchSysCache(RELOID,
-						   ObjectIdGetDatum(relid),
-						   0, 0, 0);
-	if (!HeapTupleIsValid(tuple))
-		elog(ERROR, "SELinux: cache lookup failed for relation %u", relid);
-
-	/* ignore, if the relation is not general relation */
-	if (((Form_pg_class) GETSTRUCT(tuple))->relkind != RELKIND_RELATION)
-	{
-		ReleaseSysCache(tuple);
-		return;
-	}
+	Bitmapset		   *columns;
+	Bitmapset		   *selected_ex;
+	Bitmapset		   *modified_ex;
+	HeapTuple			tuple;
+	AttrNumber			attno;
+	int					nattrs;
+	const char		   *audit_name;
 
 	/*
 	 * NOTE: HARDWIRED POLICY IN SE-POSTGRESQL
@@ -144,13 +92,31 @@ checkTabelColumnPerms(Oid relid, Bitmapset *selected, Bitmapset *modified,
 	 * these system catalogs by hand. Please use approariate
 	 * interfaces.
 	 */
-	mask = SEPG_DB_TABLE__UPDATE | SEPG_DB_TABLE__INSERT | SEPG_DB_TABLE__DELETE;
-	if ((required & mask) != 0 && (relid == RewriteRelationId))
+	if ((required & (SEPG_DB_TABLE__UPDATE
+					 | SEPG_DB_TABLE__INSERT
+					 | SEPG_DB_TABLE__DELETE)) != 0 &&
+		(relid == RewriteRelationId))
 		ereport(ERROR,
 				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("SE-PostgreSQL peremptorily prevent to modify "
-						"\"%s\" system catalog by hand",
-						NameStr(((Form_pg_class)GETSTRUCT(tuple))->relname))));
+				 errmsg("SE-PostgreSQL peremptorily prevent to modify \"%s\" "
+						"system catalog by hand", NameStr(relForm->relname))));
+
+	/*
+	 * Check db_table:{...} permissions
+	 */
+	tuple = SearchSysCache(RELOID,
+						   ObjectIdGetDatum(relid),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "SELinux: cache lookup failed for relation %u", relid);
+
+	/* ignore, if the relation is not db_table class */
+	if (sepgsqlTupleObjectClass(RelationRelationId, tuple)
+			!= SEPG_CLASS_DB_TABLE)
+	{
+		ReleaseSysCache(tuple);
+		return;
+	}
 
 	audit_name = sepgsqlAuditName(RelationRelationId, tuple);
 	sepgsqlClientHasPerms(HeapTupleGetSecLabel(RelationRelationId, tuple),
@@ -162,18 +128,21 @@ checkTabelColumnPerms(Oid relid, Bitmapset *selected, Bitmapset *modified,
 
 	ReleaseSysCache(tuple);
 
-	/* db_column:{...} permissions */
-	selected = fixupWholeRowReference(relid, nattrs, selected);
-	modified = fixupWholeRowReference(relid, nattrs, modified);
-	columns = bms_union(selected, modified);
+	/*
+	 * Check db_column:{...} permissions
+	 */
+	selected_ex = fixupWholeRowReference(relid, nattrs, selected);
+	modified_ex = fixupWholeRowReference(relid, nattrs, modified);
+	columns = bms_union(selected_ex, modified_ex);
+
 	while ((attno = bms_first_member(columns)) >= 0)
 	{
 		Form_pg_attribute	attForm;
 		access_vector_t		attperms = 0;
 
-		if (bms_is_member(attno, selected))
+		if (bms_is_member(attno, selected_ex))
 			attperms |= SEPG_DB_COLUMN__SELECT;
-		if (bms_is_member(attno, modified))
+		if (bms_is_member(attno, modified_ex))
 		{
 			if (required & SEPG_DB_TABLE__UPDATE)
 				attperms |= SEPG_DB_COLUMN__UPDATE;
@@ -185,17 +154,18 @@ checkTabelColumnPerms(Oid relid, Bitmapset *selected, Bitmapset *modified,
 
 		/* remove the attribute number offset */
 		attno += FirstLowInvalidHeapAttributeNumber;
-
 		tuple = SearchSysCache(ATTNUM,
 							   ObjectIdGetDatum(relid),
 							   Int16GetDatum(attno),
 							   0, 0);
 		if (!HeapTupleIsValid(tuple))
-			elog(ERROR, "cache lookup failed for attribute %d of relation %u", attno, relid);
+			elog(ERROR, "cache lookup failed for attribute %d of relation %u",
+				 attno, relid);
 
 		attForm = (Form_pg_attribute) GETSTRUCT(tuple);
 		if (attForm->attisdropped)
-			elog(ERROR, "attribute %d of relation %u does not exist", attno, relid);
+			elog(ERROR, "attribute %d of relation %u does not exist",
+				 attno, relid);
 
 		audit_name = sepgsqlAuditName(AttributeRelationId, tuple);
 		sepgsqlClientHasPerms(HeapTupleGetSecLabel(AttributeRelationId, tuple),
@@ -204,6 +174,14 @@ checkTabelColumnPerms(Oid relid, Bitmapset *selected, Bitmapset *modified,
 							  audit_name, true);
 		ReleaseSysCache(tuple);
 	}
+
+	if (selected_ex != selected)
+		bms_free(selected_ex);
+
+	if (modified_ex != modified)
+		bms_free(modified_ex);
+
+	bms_free(column);
 }
 
 /*
@@ -212,59 +190,35 @@ checkTabelColumnPerms(Oid relid, Bitmapset *selected, Bitmapset *modified,
  *   generic user queries.
  */
 void
-sepgsqlCheckQueryPerms(CmdType cmd, EState *estate)
+sepgsqlCheckRTEPerms(RangeTblEntry *rte)
 {
-	Index		index = 0;
-	ListCell   *l;
+	access_vector_t		required = 0;
 
 	if (!sepgsqlIsEnabled())
 		return;
 
-	foreach (l, estate->es_range_table)
-	{
-		RangeTblEntry	   *rte = (RangeTblEntry *) lfirst(l);
-		access_vector_t		required = 0;
-		Bitmapset		   *selected;
-		Bitmapset		   *modified;
+	if (rte->rtekind != RTE_RELATION)
+		return;
 
-		index++;
+	if (rte->requiredPerms & ACL_SELECT)
+		required |= SEPG_DB_TABLE__SELECT;
+	if (rte->requiredPerms & ACL_INSERT)
+		required |= SEPG_DB_TABLE__INSERT;
+	if (rte->requiredPerms & ACL_UPDATE)
+		required |= SEPG_DB_TABLE__UPDATE;
+	if (rte->requiredPerms & ACL_DELETE)
+		required |= SEPG_DB_TABLE__DELETE;
+	/*
+	 * TODO: we should add SEPG_DB_TABLE__LOCK here,
+	 * but ACL_SELECT_FOR_UPDATE has same value now.
+	 */
+	if (required == 0)
+		return;
 
-		if (rte->rtekind != RTE_RELATION)
-			continue;
-
-		if (rte->requiredPerms & ACL_SELECT)
-			required |= SEPG_DB_TABLE__SELECT;
-		if (rte->requiredPerms & ACL_INSERT)
-			required |= SEPG_DB_TABLE__INSERT;
-		if (rte->requiredPerms & ACL_UPDATE)
-			required |= SEPG_DB_TABLE__UPDATE;
-		if (rte->requiredPerms & ACL_DELETE)
-			required |= SEPG_DB_TABLE__DELETE;
-
-		if (required == 0)
-			continue;
-
-		selected = rte->selectedCols;
-		modified = rte->modifiedCols;
-
-		if (estate->es_result_relations)
-		{
-			ResultRelInfo  *rinfo = estate->es_result_relations;
-			int				i;
-
-			for (i=0; i < estate->es_num_result_relations; i++)
-			{
-				if (index == rinfo[i].ri_RangeTableIndex)
-				{
-					Relation	rel = rinfo[i].ri_RelationDesc;
-
-					selected = bms_copy(selected);
-					selected = fixupSelectedColsByTrigger(cmd, rel, selected);
-				}
-			}
-		}
-		checkTabelColumnPerms(rte->relid, selected, modified, required);
-	}
+	checkTabelColumnPerms(rte->relid,
+						  rte->selectedCols,
+						  rte->modifiedCols,
+						  required);
 }
 
 /*
@@ -281,12 +235,8 @@ sepgsqlCheckCopyTable(Relation rel, List *attnumlist, bool is_from)
 	if (!sepgsqlIsEnabled())
 		return;
 
-	/* all checkes are done in sepgsqlCheckQueryPerms */
+	/* all checkes are done in sepgsqlCheckRTEPerms */
 	if (!rel)
-		return;
-
-	/* no need to check on non-regular relation */
-	if (RelationGetForm(rel)->relkind != RELKIND_RELATION)
 		return;
 
 	foreach (l, attnumlist)
@@ -300,11 +250,10 @@ sepgsqlCheckCopyTable(Relation rel, List *attnumlist, bool is_from)
 			selected = bms_add_member(selected, attno);
 	}
 
-	if (is_from)
-		selected = fixupSelectedColsByTrigger(CMD_INSERT, rel, selected);
-
-	checkTabelColumnPerms(RelationGetRelid(rel), selected, modified,
-						  is_from ? SEPG_DB_TABLE__INSERT : SEPG_DB_TABLE__SELECT);
+	checkTabelColumnPerms(RelationGetRelid(rel),
+						  selected, modified,
+						  is_from ? SEPG_DB_TABLE__INSERT
+								  : SEPG_DB_TABLE__SELECT);
 }
 
 /*
@@ -312,20 +261,18 @@ sepgsqlCheckCopyTable(Relation rel, List *attnumlist, bool is_from)
  *   It checks db_table/db_column:{insert} on the table newly created
  */
 void
-sepgsqlCheckSelectInto(Relation rel)
+sepgsqlCheckSelectInto(Oid relationId)
 {
-	Bitmapset	   *selected = NULL;
 	Bitmapset	   *modified = NULL;
 
 	if (!sepgsqlIsEnabled())
 		return;
 
-	selected = fixupSelectedColsByTrigger(CMD_INSERT, rel, selected);
-	modified = bms_add_member(modified,
-					InvalidAttrNumber - FirstLowInvalidHeapAttributeNumber);
+	modified = bms_add_member(modified, InvalidAttrNumber
+					- FirstLowInvalidHeapAttributeNumber);
 
-	checkTabelColumnPerms(RelationGetRelid(rel),
-						  selected, modified, SEPG_DB_TABLE__INSERT);
+	checkTabelColumnPerms(relationId, NULL, modified,
+						  SEPG_DB_TABLE__INSERT);
 }
 
 /*
