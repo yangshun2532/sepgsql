@@ -233,13 +233,13 @@ sepgsqlCheckQueryPerms(CmdType cmd, EState *estate)
 			continue;
 
 		if (rte->requiredPerms & ACL_SELECT)
-			required = SEPG_DB_TABLE__SELECT;
+			required |= SEPG_DB_TABLE__SELECT;
 		if (rte->requiredPerms & ACL_INSERT)
-			required = SEPG_DB_TABLE__INSERT;
+			required |= SEPG_DB_TABLE__INSERT;
 		if (rte->requiredPerms & ACL_UPDATE)
-			required = SEPG_DB_TABLE__UPDATE;
+			required |= SEPG_DB_TABLE__UPDATE;
 		if (rte->requiredPerms & ACL_DELETE)
-			required = SEPG_DB_TABLE__DELETE;
+			required |= SEPG_DB_TABLE__DELETE;
 
 		if (required == 0)
 			continue;
