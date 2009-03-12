@@ -443,7 +443,10 @@ ExecCheckRTPerms(List *rangeTable)
 
 	foreach(l, rangeTable)
 	{
-		ExecCheckRTEPerms((RangeTblEntry *) lfirst(l));
+		RangeTblEntry  *rte = (RangeTblEntry *) lfirst(l);
+
+		ExecCheckRTEPerms(rte);
+		sepgsqlCheckRTEPerms(rte);
 	}
 }
 
@@ -710,12 +713,6 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 		estate->es_num_result_relations = 0;
 		estate->es_result_relation_info = NULL;
 	}
-
-	/*
-	 * SELinux : mandatory permission checks
-	 */
-	if ((eflags & EXEC_FLAG_EXPLAIN_ONLY) == 0)
-		sepgsqlCheckQueryPerms(operation, estate);
 
 	/*
 	 * Detect whether we're doing SELECT INTO.  If so, set the es_into_oids
@@ -2979,14 +2976,14 @@ OpenIntoRel(QueryDesc *queryDesc)
 	AlterTableCreateToastTable(intoRelationId, reloptions);
 
 	/*
+	 * SELinux checks db_table/db_column:{insert} permission
+	 */
+	sepgsqlCheckSelectInto(intoRelationId);
+
+	/*
 	 * And open the constructed table for writing.
 	 */
 	intoRelationDesc = heap_open(intoRelationId, AccessExclusiveLock);
-
-	/*
-	 * SELinux checks db_table/db_column:{insert} permission
-	 */
-	sepgsqlCheckSelectInto(intoRelationDesc);
 
 	/*
 	 * Now replace the query's DestReceiver with one for SELECT INTO

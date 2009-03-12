@@ -171,13 +171,13 @@ sepgsqlComputeCreate(security_context_t scontext,
  * checker.c : check permission on given queries
  */
 extern void
-sepgsqlCheckQueryPerms(CmdType cmd, EState *estate);
+sepgsqlCheckRTEPerms(RangeTblEntry *rte);
 
 extern void
 sepgsqlCheckCopyTable(Relation rel, List *attnumlist, bool is_from);
 
 extern void
-sepgsqlCheckSelectInto(Relation rel);
+sepgsqlCheckSelectInto(Oid relaionId);
 
 extern void
 sepgsqlHeapTupleInsert(Relation rel, HeapTuple tuple, bool internal);
@@ -307,7 +307,7 @@ sepgsqlCheckObjectPerms(Relation rel, HeapTuple tuple,
 #define sepgsqlShmemSize()						(0)
 #define sepgsqlStartupWorkerProcess()			(0)
 /* checker.c */
-#define sepgsqlCheckQueryPerms(a,b)				do {} while(0)
+#define sepgsqlCheckRTEPerms(a)					do {} while(0)
 #define sepgsqlCheckCopyTable(a,b,c)			do {} while(0)
 #define sepgsqlCheckSelectInto(a)				do {} while(0)
 #define sepgsqlHeapTupleInsert(a,b,c)			do {} while(0)
