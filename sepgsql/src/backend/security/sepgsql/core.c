@@ -1,5 +1,5 @@
 /*
- * src/backend/utils/sepgsql/core.c
+ * src/backend/security/sepgsql/core.c
  *    The core facility of SE-PostgreSQL
  *
  * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
