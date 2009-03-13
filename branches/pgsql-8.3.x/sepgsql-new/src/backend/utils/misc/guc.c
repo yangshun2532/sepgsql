@@ -54,6 +54,7 @@
 #include "postmaster/postmaster.h"
 #include "postmaster/syslogger.h"
 #include "postmaster/walwriter.h"
+#include "security/sepgsql.h"
 #include "storage/fd.h"
 #include "storage/freespace.h"
 #include "tcop/tcopprot.h"
@@ -1091,6 +1092,24 @@ static struct config_bool ConfigureNamesBool[] =
 		&IgnoreSystemIndexes,
 		false, NULL, NULL
 	},
+#ifdef HAVE_SELINUX
+	{
+		{"sepostgresql", PGC_POSTMASTER, CONN_AUTH_SECURITY,
+		 gettext_noop("SE-PostgreSQL activation option to be turned on/off"),
+		 NULL,
+		},
+		&sepostgresql_is_enabled,
+		false, NULL, NULL
+	},
+	{
+		{"sepostgresql_row_level", PGC_POSTMASTER, CONN_AUTH_SECURITY,
+		 gettext_noop("Row-level access controls on SE-PostgreSQL"),
+		 NULL,
+		},
+		&sepostgresql_row_level,
+		true, NULL, NULL
+	},
+#endif
 
 	/* End-of-list marker */
 	{

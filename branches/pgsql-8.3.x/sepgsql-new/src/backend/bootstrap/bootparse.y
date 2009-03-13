@@ -33,6 +33,7 @@
 #include "catalog/pg_class.h"
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_tablespace.h"
+#include "catalog/pg_security.h"
 #include "catalog/toasting.h"
 #include "commands/defrem.h"
 #include "miscadmin.h"
@@ -42,6 +43,7 @@
 #include "nodes/pg_list.h"
 #include "nodes/primnodes.h"
 #include "rewrite/prs2lock.h"
+#include "security/sepgsql.h"
 #include "storage/block.h"
 #include "storage/fd.h"
 #include "storage/ipc.h"
@@ -194,6 +196,12 @@ Boot_CreateStmt:
 												   RELKIND_RELATION,
 												   $3,
 												   true);
+						/*
+						 * fixup boot_reldesc->rd_att->tdhassecXXXX
+						 */
+						boot_reldesc->rd_rel->relkind = RELKIND_RELATION;
+						boot_reldesc->rd_att->tdhasseclabel
+							= securityTupleDescHasSecLabel(boot_reldesc);
 						elog(DEBUG4, "bootstrap relation created");
 					}
 					else
@@ -212,7 +220,8 @@ Boot_CreateStmt:
 													  0,
 													  ONCOMMIT_NOOP,
 													  (Datum) 0,
-													  true);
+													  true,
+													  NIL);
 						elog(DEBUG4, "relation created with oid %u", id);
 					}
 					do_end();

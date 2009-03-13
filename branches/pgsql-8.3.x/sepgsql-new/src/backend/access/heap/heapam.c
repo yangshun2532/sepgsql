@@ -50,6 +50,7 @@
 #include "catalog/namespace.h"
 #include "miscadmin.h"
 #include "pgstat.h"
+#include "security/rowlevel.h"
 #include "storage/procarray.h"
 #include "storage/smgr.h"
 #include "utils/datum.h"
@@ -1949,6 +1950,8 @@ heap_insert(Relation relation, HeapTuple tup, CommandId cid,
 Oid
 simple_heap_insert(Relation relation, HeapTuple tup)
 {
+	rowlvHeapTupleInsert(relation, tup, true);
+
 	return heap_insert(relation, tup, GetCurrentCommandId(true), true, true);
 }
 
@@ -2229,6 +2232,8 @@ simple_heap_delete(Relation relation, ItemPointer tid)
 	HTSU_Result result;
 	ItemPointerData update_ctid;
 	TransactionId update_xmax;
+
+	rowlvHeapTupleDelete(relation, tid, true);
 
 	result = heap_delete(relation, tid,
 						 &update_ctid, &update_xmax,
@@ -2873,6 +2878,8 @@ simple_heap_update(Relation relation, ItemPointer otid, HeapTuple tup)
 	HTSU_Result result;
 	ItemPointerData update_ctid;
 	TransactionId update_xmax;
+
+	rowlvHeapTupleUpdate(relation, otid, tup, true);
 
 	result = heap_update(relation, otid, tup,
 						 &update_ctid, &update_xmax,

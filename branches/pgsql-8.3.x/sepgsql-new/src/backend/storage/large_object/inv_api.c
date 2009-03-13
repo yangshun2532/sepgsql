@@ -39,6 +39,7 @@
 #include "catalog/pg_largeobject.h"
 #include "commands/comment.h"
 #include "libpq/libpq-fs.h"
+#include "security/sepgsql.h"
 #include "storage/large_object.h"
 #include "utils/fmgroids.h"
 #include "utils/resowner.h"
@@ -134,12 +135,13 @@ close_lo_relation(bool isCommit)
  * read with can be specified.
  */
 static bool
-myLargeObjectExists(Oid loid, Snapshot snapshot)
+myLargeObjectExists(LargeObjectDesc *lobj)
 {
 	bool		retval = false;
 	Relation	pg_largeobject;
 	ScanKeyData skey[1];
 	SysScanDesc sd;
+	HeapTuple	tuple;
 
 	/*
 	 * See if we can find any tuples belonging to the specified LO
@@ -147,15 +149,19 @@ myLargeObjectExists(Oid loid, Snapshot snapshot)
 	ScanKeyInit(&skey[0],
 				Anum_pg_largeobject_loid,
 				BTEqualStrategyNumber, F_OIDEQ,
-				ObjectIdGetDatum(loid));
+				ObjectIdGetDatum(lobj->id));
 
 	pg_largeobject = heap_open(LargeObjectRelationId, AccessShareLock);
 
 	sd = systable_beginscan(pg_largeobject, LargeObjectLOidPNIndexId, true,
-							snapshot, 1, skey);
+							lobj->snapshot, 1, skey);
 
-	if (systable_getnext(sd) != NULL)
+	tuple = systable_getnext(sd);
+	if (HeapTupleIsValid(tuple))
+	{
 		retval = true;
+		lobj->secid = HeapTupleGetSecLabel(tuple);
+	}
 
 	systable_endscan(sd);
 
@@ -254,7 +260,7 @@ inv_open(Oid lobjId, int flags, MemoryContext mcxt)
 		elog(ERROR, "invalid flags: %d", flags);
 
 	/* Can't use LargeObjectExists here because it always uses SnapshotNow */
-	if (!myLargeObjectExists(lobjId, retval->snapshot))
+	if (!myLargeObjectExists(retval))
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("large object %u does not exist", lobjId)));
@@ -676,6 +682,8 @@ inv_write(LargeObjectDesc *obj_desc, const char *buf, int nbytes)
 			values[Anum_pg_largeobject_pageno - 1] = Int32GetDatum(pageno);
 			values[Anum_pg_largeobject_data - 1] = PointerGetDatum(&workbuf);
 			newtup = heap_formtuple(lo_heap_r->rd_att, values, nulls);
+			if (HeapTupleHasSecLabel(newtup))
+				HeapTupleSetSecLabel(newtup, obj_desc->secid);
 			simple_heap_insert(lo_heap_r, newtup);
 			CatalogIndexInsert(indstate, newtup);
 			heap_freetuple(newtup);
@@ -836,6 +844,8 @@ inv_truncate(LargeObjectDesc *obj_desc, int len)
 		values[Anum_pg_largeobject_pageno - 1] = Int32GetDatum(pageno);
 		values[Anum_pg_largeobject_data - 1] = PointerGetDatum(&workbuf);
 		newtup = heap_formtuple(lo_heap_r->rd_att, values, nulls);
+		if (HeapTupleHasSecLabel(newtup))
+			HeapTupleSetSecLabel(newtup, obj_desc->secid);
 		simple_heap_insert(lo_heap_r, newtup);
 		CatalogIndexInsert(indstate, newtup);
 		heap_freetuple(newtup);
@@ -858,4 +868,100 @@ inv_truncate(LargeObjectDesc *obj_desc, int len)
 	 * large-object operations in this transaction.
 	 */
 	CommandCounterIncrement();
+}
+
+Oid
+inv_get_security(Oid loid)
+{
+	Relation		rel;
+	ScanKeyData		skey;
+	SysScanDesc		scan;
+	HeapTuple		tuple;
+	Oid				secid = InvalidOid;
+
+	ScanKeyInit(&skey,
+				Anum_pg_largeobject_loid,
+				BTEqualStrategyNumber,
+				F_OIDEQ, ObjectIdGetDatum(loid));
+
+	rel = heap_open(LargeObjectRelationId, AccessShareLock);
+
+	scan = systable_beginscan(rel, LargeObjectLOidPNIndexId, true,
+							  SnapshotNow, 1, &skey);
+	tuple = systable_getnext(scan);
+
+	if (HeapTupleIsValid(tuple))
+	{
+		/*
+		 * SELinux: check db_blob:{getattr}
+		 */
+		sepgsqlCheckBlobGetattr(tuple);
+		secid = HeapTupleGetSecLabel(tuple);
+	}
+	systable_endscan(scan);
+
+	heap_close(rel, AccessShareLock);
+
+	return secid;
+}
+
+void
+inv_set_security(Oid loid, Oid secid)
+{
+	Relation		rel;
+	ScanKeyData		skey;
+	SysScanDesc		scan;
+	HeapTuple		tuple;
+	CatalogIndexState	ind;
+	bool			found = false;
+
+	ScanKeyInit(&skey,
+				Anum_pg_largeobject_loid,
+				BTEqualStrategyNumber,
+				F_OIDEQ, ObjectIdGetDatum(loid));
+
+	rel = heap_open(LargeObjectRelationId, RowExclusiveLock);
+
+	ind = CatalogOpenIndexes(rel);
+
+	scan = systable_beginscan(rel, LargeObjectLOidPNIndexId, true,
+							  SnapshotNow, 1, &skey);
+	while (HeapTupleIsValid(tuple = systable_getnext(scan)))
+	{
+		HeapTuple	newtuple;
+		Datum		values[Natts_pg_largeobject];
+		bool		nulls[Natts_pg_largeobject];
+		bool		replaces[Natts_pg_largeobject];
+
+		memset(replaces, false, sizeof(replaces));
+
+		newtuple = heap_modify_tuple(tuple, RelationGetDescr(rel),
+									 values, nulls, replaces);
+		if (!HeapTupleHasSecLabel(newtuple))
+			elog(ERROR, "Unable to assign security label on \"%s\"",
+				 RelationGetRelationName(rel));
+		HeapTupleSetSecLabel(newtuple, secid);
+
+		/*
+		 * SELinux: check db_blob:{setattr relabelfrom relabelto}
+		 */
+		if (!found)
+			sepgsqlCheckBlobRelabel(tuple, newtuple);
+
+		simple_heap_update(rel, &tuple->t_self, newtuple);
+		CatalogUpdateIndexes(rel, newtuple);
+		found = true;
+	}
+	systable_endscan(scan);
+
+	CatalogCloseIndexes(ind);
+
+	heap_close(rel, RowExclusiveLock);
+
+	CommandCounterIncrement();
+
+	if (!found)
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_OBJECT),
+				 errmsg("large object %u does not exist", loid)));
 }

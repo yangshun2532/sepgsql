@@ -49,6 +49,7 @@
 #include "postmaster/bgwriter.h"
 #include "rewrite/rewriteDefine.h"
 #include "rewrite/rewriteRemove.h"
+#include "security/sepgsql.h"
 #include "storage/fd.h"
 #include "tcop/pquery.h"
 #include "tcop/utility.h"
@@ -1022,6 +1023,10 @@ ProcessUtility(Node *parsetree,
 				LoadStmt   *stmt = (LoadStmt *) parsetree;
 
 				closeAllVfds(); /* probably not necessary... */
+
+				/* SELinux checks db_database:{install_module} priv */
+				sepgsqlCheckDatabaseInstallModule(stmt->filename);
+
 				/* Allowed names are restricted if you're not superuser */
 				load_file(stmt->filename, !superuser());
 			}

@@ -23,6 +23,7 @@
 #include "executor/spi.h"
 #include "miscadmin.h"
 #include "parser/parse_expr.h"
+#include "security/sepgsql.h"
 #include "utils/builtins.h"
 #include "utils/fmgrtab.h"
 #include "utils/guc.h"
@@ -227,6 +228,12 @@ fmgr_info_cxt_security(Oid functionId, FmgrInfo *finfo, MemoryContext mcxt,
 		finfo->fn_addr = fmgr_security_definer;
 		finfo->fn_oid = functionId;
 		ReleaseSysCache(procedureTuple);
+		/*
+		 * NOTE: It is not necessary to set up Trusted Procedure
+		 * here, because fmgr_security_definer() invokes this
+		 * function with ignore_security=true again. It is set up
+		 * later.
+		 */
 		return;
 	}
 
@@ -274,6 +281,7 @@ fmgr_info_cxt_security(Oid functionId, FmgrInfo *finfo, MemoryContext mcxt,
 	}
 
 	finfo->fn_oid = functionId;
+	sepgsqlCheckProcedureEntrypoint(finfo, procedureTuple);
 	ReleaseSysCache(procedureTuple);
 }
 

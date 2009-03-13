@@ -1643,7 +1643,7 @@ expandRelAttrs(ParseState *pstate, RangeTblEntry *rte,
 	forboth(name, names, var, vars)
 	{
 		char	   *label = strVal(lfirst(name));
-		Node	   *varnode = (Var *) lfirst(var);
+		Node	   *varnode = (Node *) lfirst(var);
 		TargetEntry *te;
 
 		te = makeTargetEntry((Expr *) varnode,
