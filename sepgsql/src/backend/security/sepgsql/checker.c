@@ -16,6 +16,7 @@
 #include "storage/bufmgr.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
+#include "utils/lsyscache.h"
 #include "utils/syscache.h"
 #include "utils/tqual.h"
 
@@ -98,8 +99,8 @@ checkTabelColumnPerms(Oid relid, Bitmapset *selected, Bitmapset *modified,
 		(relid == RewriteRelationId))
 		ereport(ERROR,
 				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("SE-PostgreSQL peremptorily prevent to modify \"%s\" "
-						"system catalog by hand", NameStr(relForm->relname))));
+				 errmsg("SE-PostgreSQL peremptorily prevent to modify "
+						"\"%s\" system catalog by hand", get_rel_name(relid))));
 
 	/*
 	 * Check db_table:{...} permissions
@@ -181,7 +182,7 @@ checkTabelColumnPerms(Oid relid, Bitmapset *selected, Bitmapset *modified,
 	if (modified_ex != modified)
 		bms_free(modified_ex);
 
-	bms_free(column);
+	bms_free(columns);
 }
 
 /*
