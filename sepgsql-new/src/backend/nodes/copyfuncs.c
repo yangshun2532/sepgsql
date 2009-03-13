@@ -1523,6 +1523,8 @@ _copyRangeTblEntry(RangeTblEntry *from)
 	COPY_SCALAR_FIELD(inFromCl);
 	COPY_SCALAR_FIELD(requiredPerms);
 	COPY_SCALAR_FIELD(checkAsUser);
+	COPY_BITMAPSET_FIELD(selectedCols);
+	COPY_BITMAPSET_FIELD(modifiedCols);
 
 	return newnode;
 }

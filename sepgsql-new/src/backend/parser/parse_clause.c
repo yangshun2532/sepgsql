@@ -46,6 +46,7 @@ static void extractRemainingColumns(List *common_colnames,
 						List *src_colnames, List *src_colvars,
 						List **res_colnames, List **res_colvars);
 static Node *transformJoinUsingClause(ParseState *pstate,
+						 RangeTblEntry *leftRTE, RangeTblEntry *rightRTE,
 						 List *leftVars, List *rightVars);
 static Node *transformJoinOnClause(ParseState *pstate, JoinExpr *j,
 					  RangeTblEntry *l_rte,
@@ -286,7 +287,9 @@ extractRemainingColumns(List *common_colnames,
  *	  Result is a transformed qualification expression.
  */
 static Node *
-transformJoinUsingClause(ParseState *pstate, List *leftVars, List *rightVars)
+transformJoinUsingClause(ParseState *pstate,
+						 RangeTblEntry *leftRTE, RangeTblEntry *rightRTE,
+						 List *leftVars, List *rightVars)
 {
 	Node	   *result = NULL;
 	ListCell   *lvars,
@@ -302,6 +305,10 @@ transformJoinUsingClause(ParseState *pstate, List *leftVars, List *rightVars)
 		Node	   *lvar = (Node *) lfirst(lvars);
 		Node	   *rvar = (Node *) lfirst(rvars);
 		A_Expr	   *e;
+
+		/* Require read access to the join variables */
+		markVarForSelectPriv(pstate, lvar, leftRTE);
+		markVarForSelectPriv(pstate, rvar, rightRTE);
 
 		e = makeSimpleA_Expr(AEXPR_OP, "=",
 							 copyObject(lvar), copyObject(rvar),
@@ -665,6 +672,7 @@ transformFromClauseItem(ParseState *pstate, Node *n,
 				   *r_colvars,
 				   *res_colvars;
 		RangeTblEntry *rte;
+		int			k;
 
 		/*
 		 * Recursively process the left and right subtrees
@@ -849,6 +857,8 @@ transformFromClauseItem(ParseState *pstate, Node *n,
 			}
 
 			j->quals = transformJoinUsingClause(pstate,
+												l_rte,
+												r_rte,
 												l_usingvars,
 												r_usingvars);
 		}
@@ -908,6 +918,12 @@ transformFromClauseItem(ParseState *pstate, Node *n,
 
 		*top_rte = rte;
 		*top_rti = j->rtindex;
+
+		/* make a matching link to the JoinExpr for later use */
+		for (k = list_length(pstate->p_joinexprs) + 1; k < j->rtindex; k++)
+			pstate->p_joinexprs = lappend(pstate->p_joinexprs, NULL);
+		pstate->p_joinexprs = lappend(pstate->p_joinexprs, j);
+		Assert(list_length(pstate->p_joinexprs) == j->rtindex);
 
 		/*
 		 * Prepare returned namespace list.  If the JOIN has an alias then it

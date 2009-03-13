@@ -1764,6 +1764,9 @@ transformWholeRowRef(ParseState *pstate, char *schemaname, char *relname,
 			break;
 	}
 
+	/* mark relation as requiring whole-row SELECT access */
+	markVarForSelectPriv(pstate, (Var *) result, rte);
+
 	return result;
 }
 

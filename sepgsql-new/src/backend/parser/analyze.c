@@ -24,6 +24,7 @@
 
 #include "postgres.h"
 
+#include "access/htup.h"
 #include "catalog/pg_type.h"
 #include "nodes/makefuncs.h"
 #include "optimizer/clauses.h"
@@ -423,6 +424,7 @@ transformInsertStmt(ParseState *pstate, InsertStmt *stmt)
 		 * bugs of just that nature...)
 		 */
 		sub_pstate->p_rtable = sub_rtable;
+		sub_pstate->p_joinexprs = NIL;			/* sub_rtable has no joins */
 		sub_pstate->p_relnamespace = sub_relnamespace;
 		sub_pstate->p_varnamespace = sub_varnamespace;
 
@@ -604,6 +606,7 @@ transformInsertStmt(ParseState *pstate, InsertStmt *stmt)
 	/*
 	 * Generate query's target list using the computed list of expressions.
 	 */
+	rte = pstate->p_target_rangetblentry;
 	qry->targetList = NIL;
 	icols = list_head(icolumns);
 	attnos = list_head(attrnos);
@@ -611,16 +614,21 @@ transformInsertStmt(ParseState *pstate, InsertStmt *stmt)
 	{
 		Expr	   *expr = (Expr *) lfirst(lc);
 		ResTarget  *col;
+		AttrNumber	attr_num;
 		TargetEntry *tle;
 
 		col = (ResTarget *) lfirst(icols);
 		Assert(IsA(col, ResTarget));
+		attr_num = (AttrNumber) lfirst_int(attnos);
 
 		tle = makeTargetEntry(expr,
 							  (AttrNumber) lfirst_int(attnos),
 							  col->name,
 							  false);
 		qry->targetList = lappend(qry->targetList, tle);
+
+		rte->modifiedCols = bms_add_member(rte->modifiedCols,
+								attr_num - FirstLowInvalidHeapAttributeNumber);
 
 		icols = lnext(icols);
 		attnos = lnext(attnos);
@@ -1474,6 +1482,7 @@ static Query *
 transformUpdateStmt(ParseState *pstate, UpdateStmt *stmt)
 {
 	Query	   *qry = makeNode(Query);
+	RangeTblEntry *target_rte;
 	Node	   *qual;
 	ListCell   *origTargetList;
 	ListCell   *tl;
@@ -1523,6 +1532,7 @@ transformUpdateStmt(ParseState *pstate, UpdateStmt *stmt)
 		pstate->p_next_resno = pstate->p_target_relation->rd_rel->relnatts + 1;
 
 	/* Prepare non-junk columns for assignment to target table */
+	target_rte = pstate->p_target_rangetblentry;
 	origTargetList = list_head(stmt->targetList);
 
 	foreach(tl, qry->targetList)
@@ -1562,6 +1572,10 @@ transformUpdateStmt(ParseState *pstate, UpdateStmt *stmt)
 							  attrno,
 							  origTarget->indirection,
 							  origTarget->location);
+
+		/* Mark the target column as requiring update permissions */
+		target_rte->modifiedCols = bms_add_member(target_rte->modifiedCols,
+								attrno - FirstLowInvalidHeapAttributeNumber);
 
 		origTargetList = lnext(origTargetList);
 	}

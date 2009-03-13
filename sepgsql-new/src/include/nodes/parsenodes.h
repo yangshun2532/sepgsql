@@ -14,6 +14,7 @@
 #ifndef PARSENODES_H
 #define PARSENODES_H
 
+#include "nodes/bitmapset.h"
 #include "nodes/primnodes.h"
 #include "nodes/value.h"
 
@@ -602,6 +603,8 @@ typedef struct RangeTblEntry
 	bool		inFromCl;		/* present in FROM clause? */
 	AclMode		requiredPerms;	/* bitmask of required access permissions */
 	Oid			checkAsUser;	/* if valid, check access as this role */
+	Bitmapset  *selectedCols;	/* columns needing SELECT permission */
+	Bitmapset  *modifiedCols;	/* columns needing INSERT/UPDATE permission */
 } RangeTblEntry;
 
 /*
