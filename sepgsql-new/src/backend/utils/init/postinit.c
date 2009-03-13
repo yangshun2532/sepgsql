@@ -31,6 +31,7 @@
 #include "pgstat.h"
 #include "postmaster/autovacuum.h"
 #include "postmaster/postmaster.h"
+#include "security/sepgsql.h"
 #include "storage/backendid.h"
 #include "storage/fd.h"
 #include "storage/ipc.h"
@@ -194,12 +195,9 @@ CheckMyDatabase(const char *name, bool am_superuser)
 					name)));
 
 		/*
-		 * Check privilege to connect to the database.	(The am_superuser test
-		 * is redundant, but since we have the flag, might as well check it
-		 * and save a few cycles.)
+		 * Check privilege to connect to the database.
 		 */
-		if (!am_superuser &&
-			pg_database_aclcheck(MyDatabaseId, GetUserId(),
+		if (pg_database_aclcheck(MyDatabaseId, GetUserId(),
 								 ACL_CONNECT) != ACLCHECK_OK)
 			ereport(FATAL,
 					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
@@ -540,6 +538,9 @@ InitPostgres(const char *in_dbname, Oid dboid, const char *username,
 	 * least the minimum set of "nailed-in" cache entries.
 	 */
 	RelationCacheInitializePhase2();
+
+	/* initialize SE-PostgreSQL feature */
+	sepgsqlInitialize();
 
 	/*
 	 * Figure out our postgres user id, and see if we are a superuser.

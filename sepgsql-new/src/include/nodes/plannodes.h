@@ -16,6 +16,7 @@
 
 #include "access/sdir.h"
 #include "nodes/bitmapset.h"
+#include "nodes/parsenodes.h"
 #include "nodes/primnodes.h"
 
 
@@ -73,6 +74,8 @@ typedef struct PlannedStmt
 	List	   *relationOids;	/* OIDs of relations the plan depends on */
 
 	int			nParamExec;		/* number of PARAM_EXEC Params used */
+
+	List	   *selinuxItems;	/* list of SelinuxEvalItem */
 } PlannedStmt;
 
 /* macro for fetching the Plan associated with a SubPlan node */
@@ -216,6 +219,8 @@ typedef struct Scan
 {
 	Plan		plan;
 	Index		scanrelid;		/* relid is index into the range table */
+
+	AclMode		requiredPerms;	/* permissions in row-level access controls */
 } Scan;
 
 /* ----------------

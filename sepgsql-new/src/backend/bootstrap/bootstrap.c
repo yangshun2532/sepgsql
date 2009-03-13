@@ -25,6 +25,7 @@
 #include "access/xact.h"
 #include "bootstrap/bootstrap.h"
 #include "catalog/index.h"
+#include "catalog/pg_security.h"
 #include "catalog/pg_type.h"
 #include "libpq/pqsignal.h"
 #include "miscadmin.h"
@@ -499,6 +500,11 @@ BootstrapModeMain(void)
 	 */
 	boot_yyparse();
 
+	/*
+	 * Flush all the cached security label
+	 */
+	securityPostBootstrapingMode();
+
 	/* Perform a checkpoint to ensure everything's down to disk */
 	SetProcessingMode(NormalProcessing);
 	CreateCheckPoint(CHECKPOINT_IS_SHUTDOWN | CHECKPOINT_IMMEDIATE);
@@ -796,6 +802,8 @@ InsertOneTuple(Oid objectid)
 	tupDesc = CreateTupleDesc(numattr,
 							  RelationGetForm(boot_reldesc)->relhasoids,
 							  attrtypes);
+	tupDesc->tdhasseclabel
+		= securityTupleDescHasSecLabel(boot_reldesc);
 	tuple = heap_formtuple(tupDesc, values, Blanks);
 	if (objectid != (Oid) 0)
 		HeapTupleSetOid(tuple, objectid);

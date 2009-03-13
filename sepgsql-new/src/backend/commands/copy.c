@@ -22,7 +22,9 @@
 
 #include "access/heapam.h"
 #include "access/xact.h"
+#include "catalog/heap.h"
 #include "catalog/namespace.h"
+#include "catalog/pg_security.h"
 #include "catalog/pg_type.h"
 #include "commands/copy.h"
 #include "commands/trigger.h"
@@ -34,6 +36,8 @@
 #include "optimizer/planner.h"
 #include "parser/parse_relation.h"
 #include "rewrite/rewriteHandler.h"
+#include "security/rowlevel.h"
+#include "security/sepgsql.h"
 #include "storage/fd.h"
 #include "tcop/tcopprot.h"
 #include "utils/acl.h"
@@ -159,6 +163,10 @@ typedef struct CopyStateData
 	char	   *raw_buf;
 	int			raw_buf_index;	/* next byte to process */
 	int			raw_buf_len;	/* total # of bytes stored */
+
+	/* dump/restore support for security_label */
+	FmgrInfo	seclabel_out_function;
+	bool		seclabel_force_quot;
 } CopyStateData;
 
 typedef CopyStateData *CopyState;
@@ -242,7 +250,7 @@ static const char BinarySignature[11] = "PGCOPY\n\377\r\n\0";
 /* non-export function prototypes */
 static void DoCopyTo(CopyState cstate);
 static void CopyTo(CopyState cstate);
-static void CopyOneRowTo(CopyState cstate, Oid tupleOid,
+static void CopyOneRowTo(CopyState cstate, Oid tupleOid, Oid secLabelId,
 			 Datum *values, bool *nulls);
 static void CopyFrom(CopyState cstate);
 static bool CopyReadLine(CopyState cstate);
@@ -1073,6 +1081,9 @@ DoCopy(const CopyStmt *stmt, const char *queryString)
 	/* Generate or convert list of attributes to process */
 	cstate->attnumlist = CopyGetAttnums(tupDesc, cstate->rel, attnamelist);
 
+	/* SELinux checks table/column level permissions */
+	sepgsqlCheckCopyTable(cstate->rel, cstate->attnumlist, is_from);
+
 	num_phys_attrs = tupDesc->natts;
 
 	/* Convert FORCE QUOTE name list to per-column flags, check validity */
@@ -1089,11 +1100,32 @@ DoCopy(const CopyStmt *stmt, const char *queryString)
 			int			attnum = lfirst_int(cur);
 
 			if (!list_member_int(cstate->attnumlist, attnum))
+			{
+				Form_pg_attribute	attForm;
+
+				if (SystemAttributeIsWritable(attnum))
+					attForm = SystemAttributeDefinition(attnum, true);
+				else
+					attForm = tupDesc->attrs[attnum - 1];
+
+				Assert(attForm != NULL);
+
 				ereport(ERROR,
 						(errcode(ERRCODE_INVALID_COLUMN_REFERENCE),
 				   errmsg("FORCE QUOTE column \"%s\" not referenced by COPY",
-						  NameStr(tupDesc->attrs[attnum - 1]->attname))));
-			cstate->force_quote_flags[attnum - 1] = true;
+						  NameStr(attForm->attname))));
+			}
+
+			switch (attnum)
+			{
+			case SecurityLabelAttributeNumber:
+				cstate->seclabel_force_quot = true;
+				break;
+
+			default:
+				cstate->force_quote_flags[attnum - 1] = true;
+				break;
+			}
 		}
 	}
 
@@ -1111,10 +1143,23 @@ DoCopy(const CopyStmt *stmt, const char *queryString)
 			int			attnum = lfirst_int(cur);
 
 			if (!list_member_int(cstate->attnumlist, attnum))
+			{
+				Form_pg_attribute	attForm;
+
+				if (SystemAttributeIsWritable(attnum))
+					attForm = SystemAttributeDefinition(attnum, true);
+				else
+					attForm = tupDesc->attrs[attnum - 1];
+
+				Assert(attForm != NULL);
+
 				ereport(ERROR,
 						(errcode(ERRCODE_INVALID_COLUMN_REFERENCE),
 				errmsg("FORCE NOT NULL column \"%s\" not referenced by COPY",
-					   NameStr(tupDesc->attrs[attnum - 1]->attname))));
+					   NameStr(attForm->attname))));
+			}
+			if (SystemAttributeIsWritable(attnum))
+				continue;	/* ignore, if specified */
 			cstate->force_notnull_flags[attnum - 1] = true;
 		}
 	}
@@ -1242,6 +1287,9 @@ DoCopyTo(CopyState cstate)
 			ereport(ERROR,
 					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
 					 errmsg("\"%s\" is a directory", cstate->filename)));
+
+		/* SELinux: check file:{write} permission */
+		sepgsqlCheckFileWrite(fileno(cstate->copy_file), cstate->filename);
 	}
 
 	PG_TRY();
@@ -1305,16 +1353,31 @@ CopyTo(CopyState cstate)
 		int			attnum = lfirst_int(cur);
 		Oid			out_func_oid;
 		bool		isvarlena;
+		FmgrInfo   *out_fmgr;
+		Form_pg_attribute	attForm;
+
+		switch (attnum)
+		{
+		case SecurityLabelAttributeNumber:
+			attForm = SystemAttributeDefinition(attnum, true);
+			out_fmgr = &cstate->seclabel_out_function;
+			break;
+
+		default:
+			attForm = attr[attnum - 1];
+			out_fmgr = &cstate->out_functions[attnum - 1];
+			break;
+		}
 
 		if (cstate->binary)
-			getTypeBinaryOutputInfo(attr[attnum - 1]->atttypid,
+			getTypeBinaryOutputInfo(attForm->atttypid,
 									&out_func_oid,
 									&isvarlena);
 		else
-			getTypeOutputInfo(attr[attnum - 1]->atttypid,
+			getTypeOutputInfo(attForm->atttypid,
 							  &out_func_oid,
 							  &isvarlena);
-		fmgr_info(out_func_oid, &cstate->out_functions[attnum - 1]);
+		fmgr_info(out_func_oid, out_fmgr);
 	}
 
 	/*
@@ -1369,7 +1432,14 @@ CopyTo(CopyState cstate)
 					CopySendChar(cstate, cstate->delim[0]);
 				hdr_delim = true;
 
-				colname = NameStr(attr[attnum - 1]->attname);
+				if (SystemAttributeIsWritable(attnum))
+				{
+					Form_pg_attribute attForm
+						= SystemAttributeDefinition(attnum, true);
+					colname = NameStr(attForm->attname);
+				}
+				else
+					colname = NameStr(attr[attnum - 1]->attname);
 
 				CopyAttributeOutCSV(cstate, colname, false,
 									list_length(cstate->attnumlist) == 1);
@@ -1395,11 +1465,18 @@ CopyTo(CopyState cstate)
 		{
 			CHECK_FOR_INTERRUPTS();
 
+			/* Row-level controls on the fetched tuple */
+			if (!rowlvCopyToTuple(cstate->rel, tuple))
+				continue;
+
 			/* Deconstruct the tuple ... faster than repeated heap_getattr */
 			heap_deform_tuple(tuple, tupDesc, values, nulls);
 
 			/* Format and send the data */
-			CopyOneRowTo(cstate, HeapTupleGetOid(tuple), values, nulls);
+			CopyOneRowTo(cstate,
+						 HeapTupleGetOid(tuple),
+						 HeapTupleGetSecLabel(tuple),
+						 values, nulls);
 		}
 
 		heap_endscan(scandesc);
@@ -1425,7 +1502,7 @@ CopyTo(CopyState cstate)
  * Emit one row during CopyTo().
  */
 static void
-CopyOneRowTo(CopyState cstate, Oid tupleOid, Datum *values, bool *nulls)
+CopyOneRowTo(CopyState cstate, Oid tupleOid, Oid secLabelId, Datum *values, bool *nulls)
 {
 	bool		need_delim = false;
 	FmgrInfo   *out_functions = cstate->out_functions;
@@ -1464,14 +1541,33 @@ CopyOneRowTo(CopyState cstate, Oid tupleOid, Datum *values, bool *nulls)
 	foreach(cur, cstate->attnumlist)
 	{
 		int			attnum = lfirst_int(cur);
-		Datum		value = values[attnum - 1];
-		bool		isnull = nulls[attnum - 1];
+		Datum		value;
+		bool		isnull;
+		bool		force_quot;
+		FmgrInfo   *out_fmgr;
 
 		if (!cstate->binary)
 		{
 			if (need_delim)
 				CopySendChar(cstate, cstate->delim[0]);
 			need_delim = true;
+		}
+
+		switch (attnum)
+		{
+		case SecurityLabelAttributeNumber:
+			value = CStringGetTextDatum(securityTransSecLabelOut(secLabelId));
+			isnull = false;
+			force_quot = cstate->seclabel_force_quot;
+			out_fmgr = &cstate->seclabel_out_function;
+			break;
+
+		default:
+			value = values[attnum - 1];
+			isnull = nulls[attnum - 1];
+			force_quot = cstate->force_quote_flags[attnum - 1];
+			out_fmgr = &out_functions[attnum - 1];
+			break;
 		}
 
 		if (isnull)
@@ -1485,11 +1581,9 @@ CopyOneRowTo(CopyState cstate, Oid tupleOid, Datum *values, bool *nulls)
 		{
 			if (!cstate->binary)
 			{
-				string = OutputFunctionCall(&out_functions[attnum - 1],
-											value);
+				string = OutputFunctionCall(out_fmgr, value);
 				if (cstate->csv_mode)
-					CopyAttributeOutCSV(cstate, string,
-										cstate->force_quote_flags[attnum - 1],
+					CopyAttributeOutCSV(cstate, string, force_quot,
 										list_length(cstate->attnumlist) == 1);
 				else
 					CopyAttributeOutText(cstate, string);
@@ -1498,8 +1592,7 @@ CopyOneRowTo(CopyState cstate, Oid tupleOid, Datum *values, bool *nulls)
 			{
 				bytea	   *outputbytes;
 
-				outputbytes = SendFunctionCall(&out_functions[attnum - 1],
-											   value);
+				outputbytes = SendFunctionCall(out_fmgr, value);
 				CopySendInt32(cstate, VARSIZE(outputbytes) - VARHDRSZ);
 				CopySendData(cstate, VARDATA(outputbytes),
 							 VARSIZE(outputbytes) - VARHDRSZ);
@@ -1633,8 +1726,10 @@ CopyFrom(CopyState cstate)
 				num_defaults;
 	FmgrInfo   *in_functions;
 	FmgrInfo	oid_in_function;
+	FmgrInfo	seclabel_in_function;
 	Oid		   *typioparams;
 	Oid			oid_typioparam;
+	Oid			seclabel_typioparam;
 	int			attnum;
 	int			i;
 	Oid			in_func_oid;
@@ -1737,6 +1832,9 @@ CopyFrom(CopyState cstate)
 			ereport(ERROR,
 					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
 					 errmsg("\"%s\" is a directory", cstate->filename)));
+
+		/* SELinux checks file:{read} permission */
+		sepgsqlCheckFileRead(fileno(cstate->copy_file), cstate->filename);
 	}
 
 	tupDesc = RelationGetDescr(cstate->rel);
@@ -1872,6 +1970,18 @@ CopyFrom(CopyState cstate)
 		fmgr_info(in_func_oid, &oid_in_function);
 	}
 
+	if (list_member_int(cstate->attnumlist,
+						SecurityLabelAttributeNumber))
+	{
+		if (!cstate->binary)
+			getTypeInputInfo(TEXTOID,
+							 &in_func_oid, &seclabel_typioparam);
+		else
+			getTypeBinaryInputInfo(TEXTOID,
+								   &in_func_oid, &seclabel_typioparam);
+		fmgr_info(in_func_oid, &seclabel_in_function);
+	}
+
 	values = (Datum *) palloc(num_phys_attrs * sizeof(Datum));
 	nulls = (char *) palloc(num_phys_attrs * sizeof(char));
 
@@ -1904,6 +2014,7 @@ CopyFrom(CopyState cstate)
 	{
 		bool		skip_tuple;
 		Oid			loaded_oid = InvalidOid;
+		Oid			loaded_seclabel = InvalidOid;
 
 		CHECK_FOR_INTERRUPTS();
 
@@ -1975,31 +2086,55 @@ CopyFrom(CopyState cstate)
 			/* Loop to read the user attributes on the line. */
 			foreach(cur, cstate->attnumlist)
 			{
+				Form_pg_attribute	attForm;
+				Datum		dat;
 				int			attnum = lfirst_int(cur);
 				int			m = attnum - 1;
+
+				if (SystemAttributeIsWritable(attnum))
+					attForm = SystemAttributeDefinition(attnum, true);
+				else
+					attForm = attr[m];
 
 				if (fieldno >= fldct)
 					ereport(ERROR,
 							(errcode(ERRCODE_BAD_COPY_FILE_FORMAT),
 							 errmsg("missing data for column \"%s\"",
-									NameStr(attr[m]->attname))));
+									NameStr(attForm->attname))));
 				string = field_strings[fieldno++];
 
-				if (cstate->csv_mode && string == NULL &&
-					cstate->force_notnull_flags[m])
-				{
-					/* Go ahead and read the NULL string */
-					string = cstate->null_print;
-				}
-
-				cstate->cur_attname = NameStr(attr[m]->attname);
+				cstate->cur_attname = NameStr(attForm->attname);
 				cstate->cur_attval = string;
-				values[m] = InputFunctionCall(&in_functions[m],
-											  string,
-											  typioparams[m],
-											  attr[m]->atttypmod);
-				if (string != NULL)
-					nulls[m] = ' ';
+
+				switch (attnum)
+				{
+				case SecurityLabelAttributeNumber:
+					if (!string)
+						break;
+
+					dat = InputFunctionCall(&seclabel_in_function,
+											string,
+											seclabel_typioparam,
+											attForm->atttypmod);
+					loaded_seclabel
+						= securityTransSecLabelIn(TextDatumGetCString(dat));
+					break;
+
+				default:
+					if (cstate->csv_mode && string == NULL &&
+						cstate->force_notnull_flags[m])
+					{
+						/* Go ahead and read the NULL string */
+						string = cstate->null_print;
+					}
+
+					values[m] = InputFunctionCall(&in_functions[m],
+												  string,
+												  typioparams[m],
+												  attForm->atttypmod);
+					if (string != NULL)
+						nulls[m] = ' ';
+				}
 				cstate->cur_attname = NULL;
 				cstate->cur_attval = NULL;
 			}
@@ -2045,18 +2180,41 @@ CopyFrom(CopyState cstate)
 			i = 0;
 			foreach(cur, cstate->attnumlist)
 			{
+				Form_pg_attribute	attForm;
+				Datum		dat;
 				int			attnum = lfirst_int(cur);
 				int			m = attnum - 1;
 
-				cstate->cur_attname = NameStr(attr[m]->attname);
+				if (SystemAttributeIsWritable(attnum))
+					attForm = SystemAttributeDefinition(attnum, false);
+				else
+					attForm = attr[m];
+
+				cstate->cur_attname = NameStr(attForm->attname);
 				i++;
-				values[m] = CopyReadBinaryAttribute(cstate,
-													i,
-													&in_functions[m],
-													typioparams[m],
-													attr[m]->atttypmod,
-													&isnull);
-				nulls[m] = isnull ? 'n' : ' ';
+
+				switch (attnum)
+				{
+				case SecurityLabelAttributeNumber:
+					dat = CopyReadBinaryAttribute(cstate, i,
+												  &seclabel_in_function,
+												  seclabel_typioparam,
+												  attForm->atttypmod,
+												  &isnull);
+					if (!isnull)
+						loaded_seclabel
+							= securityTransSecLabelIn(TextDatumGetCString(dat));
+					break;
+
+				default:
+					values[m] = CopyReadBinaryAttribute(cstate, i,
+														&in_functions[m],
+														typioparams[m],
+														attr[m]->atttypmod,
+														&isnull);
+					nulls[m] = isnull ? 'n' : ' ';
+					break;
+				}
 				cstate->cur_attname = NULL;
 			}
 		}
@@ -2080,6 +2238,9 @@ CopyFrom(CopyState cstate)
 		if (cstate->oids && file_has_oids)
 			HeapTupleSetOid(tuple, loaded_oid);
 
+		if (HeapTupleHasSecLabel(tuple))
+			HeapTupleSetSecLabel(tuple, loaded_seclabel);
+
 		/* Triggers and stuff need to be invoked in query context. */
 		MemoryContextSwitchTo(oldcontext);
 
@@ -2101,6 +2262,9 @@ CopyFrom(CopyState cstate)
 				tuple = newtuple;
 			}
 		}
+
+		if (!skip_tuple && !rowlvHeapTupleInsert(cstate->rel, tuple, false))
+			skip_tuple = true;
 
 		if (!skip_tuple)
 		{
@@ -3366,6 +3530,13 @@ CopyGetAttnums(TupleDesc tupDesc, Relation rel, List *attnamelist)
 			}
 			if (attnum == InvalidAttrNumber)
 			{
+				Form_pg_attribute attForm
+					= SystemAttributeByName(name, tupDesc->tdhasoid);
+				if (attForm && SystemAttributeIsWritable(attForm->attnum))
+					attnum = attForm->attnum;
+			}
+			if (attnum == InvalidAttrNumber)
+			{
 				if (rel != NULL)
 					ereport(ERROR,
 							(errcode(ERRCODE_UNDEFINED_COLUMN),
@@ -3413,7 +3584,8 @@ copy_dest_receive(TupleTableSlot *slot, DestReceiver *self)
 	slot_getallattrs(slot);
 
 	/* And send the data */
-	CopyOneRowTo(cstate, InvalidOid, slot->tts_values, slot->tts_isnull);
+	CopyOneRowTo(cstate, InvalidOid, InvalidOid,
+				 slot->tts_values, slot->tts_isnull);
 }
 
 /*

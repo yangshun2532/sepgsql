@@ -307,8 +307,8 @@ transformJoinUsingClause(ParseState *pstate,
 		A_Expr	   *e;
 
 		/* Require read access to the join variables */
-		markVarForSelectPriv(pstate, lvar, leftRTE);
-		markVarForSelectPriv(pstate, rvar, rightRTE);
+		markVarForSelectPriv(pstate, (Var *) lvar, leftRTE);
+		markVarForSelectPriv(pstate, (Var *) rvar, rightRTE);
 
 		e = makeSimpleA_Expr(AEXPR_OP, "=",
 							 copyObject(lvar), copyObject(rvar),
