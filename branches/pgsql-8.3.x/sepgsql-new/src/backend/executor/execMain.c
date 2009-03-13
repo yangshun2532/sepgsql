@@ -408,21 +408,6 @@ ExecCheckRTEPerms(RangeTblEntry *rte)
 	if (rte->rtekind != RTE_RELATION)
 		return;
 
-	elog(NOTICE, "relname: %s relkind: %c required: %04x checkAsUser: %u",
-		 get_rel_name(rte->relid), get_rel_relkind(rte->relid),
-		 rte->requiredPerms, rte->checkAsUser);
-	columns = bms_union(rte->selectedCols, rte->modifiedCols);
-	while ((col = bms_first_member(columns)) >= 0)
-	{
-		AttrNumber attno = col + FirstLowInvalidHeapAttributeNumber;
-		elog(NOTICE, "colname: %s.%s (%s%s)",
-			 get_rel_name(rte->relid),
-			 !attno ? get_rel_name(rte->relid) : get_attname(rte->relid, attno),
-			 bms_is_member(col, rte->selectedCols) ? "r" : "",
-			 bms_is_member(col, rte->modifiedCols) ? "w" : "");
-	}
-	bms_free(columns);
-
 	/*
 	 * No work if requiredPerms is empty.
 	 */
