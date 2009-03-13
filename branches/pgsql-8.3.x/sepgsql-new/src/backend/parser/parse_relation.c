@@ -335,6 +335,7 @@ scanRTEForColumn(ParseState *pstate, RangeTblEntry *rte, char *colname,
 {
 	Node	   *result = NULL;
 	int			attnum = 0;
+	Var		   *var;
 	ListCell   *c;
 
 	/*
@@ -361,9 +362,10 @@ scanRTEForColumn(ParseState *pstate, RangeTblEntry *rte, char *colname,
 						 errmsg("column reference \"%s\" is ambiguous",
 								colname),
 						 parser_errposition(pstate, location)));
-			result = (Node *) make_var(pstate, rte, attnum);
-			/* Require read access */
-			rte->requiredPerms |= ACL_SELECT;
+			var = make_var(pstate, rte, attnum);
+			/* Require read access to the column */
+			markVarForSelectPriv(pstate, var, rte);
+			result = (Node *) var;
 		}
 	}
 
@@ -389,9 +391,10 @@ scanRTEForColumn(ParseState *pstate, RangeTblEntry *rte, char *colname,
 									 Int16GetDatum(attnum),
 									 0, 0))
 			{
-				result = (Node *) make_var(pstate, rte, attnum);
-				/* Require read access */
-				rte->requiredPerms |= ACL_SELECT;
+				var = make_var(pstate, rte, attnum);
+				/* Require read access to the column */
+				markVarForSelectPriv(pstate, var, rte);
+				result = (Node *) var;
 			}
 		}
 	}
@@ -476,6 +479,122 @@ qualifiedNameToVar(ParseState *pstate,
 	}
 
 	return scanRTEForColumn(pstate, rte, colname, location);
+}
+
+/*
+ * markRTEForSelectPriv
+ *     Mark the specified column of an RTE as requiring SELECT privilege
+ *
+ * col == InvalidAttrNumber means a "whole row" reference
+ *
+ * The caller should pass the actual RTE if it has it handy; otherwise pass
+ * NULL, and we'll look it up here.  (This uglification of the API is
+ * worthwhile because nearly all external callers have the RTE at hand.)
+ */
+static void
+markRTEForSelectPriv(ParseState *pstate, RangeTblEntry *rte,
+					 int rtindex, AttrNumber col)
+{
+	if (rte == NULL)
+		rte = rt_fetch(rtindex, pstate->p_rtable);
+
+	if (rte->rtekind == RTE_RELATION)
+	{
+		/* Make sure the rel as a whole is marked for SELECT access */
+		rte->requiredPerms |= ACL_SELECT;
+		/* Must offset the attnum to fit in a bitmapset */
+		rte->selectedCols = bms_add_member(rte->selectedCols,
+										   col - FirstLowInvalidHeapAttributeNumber);
+	}
+	else if (rte->rtekind == RTE_JOIN)
+	{
+		if (col == InvalidAttrNumber)
+		{
+			/*
+			 * A whole-row reference to a join has to be treated as
+			 * whole-row references to the two inputs.
+			 */
+			JoinExpr   *j;
+
+			if (rtindex > 0 && rtindex <= list_length(pstate->p_joinexprs))
+				j = (JoinExpr *) list_nth(pstate->p_joinexprs, rtindex - 1);
+			else
+				j = NULL;
+			if (j == NULL)
+				elog(ERROR, "could not find JoinExpr for whole-row reference");
+			Assert(IsA(j, JoinExpr));
+
+			/* Note: we can't see FromExpr here */
+			if (IsA(j->larg, RangeTblRef))
+			{
+				int		varno = ((RangeTblRef *) j->larg)->rtindex;
+
+				markRTEForSelectPriv(pstate, NULL, varno, InvalidAttrNumber);
+			}
+			else if (IsA(j->larg, JoinExpr))
+			{
+				int		varno = ((JoinExpr *) j->larg)->rtindex;
+
+				markRTEForSelectPriv(pstate, NULL, varno, InvalidAttrNumber);
+			}
+			else
+				elog(ERROR, "unrecognized node type: %d",
+					 (int) nodeTag(j->larg));
+			if (IsA(j->rarg, RangeTblRef))
+			{
+				int		varno = ((RangeTblRef *) j->rarg)->rtindex;
+
+				markRTEForSelectPriv(pstate, NULL, varno, InvalidAttrNumber);
+			}
+			else if (IsA(j->rarg, JoinExpr))
+			{
+				int		varno = ((JoinExpr *) j->rarg)->rtindex;
+
+				markRTEForSelectPriv(pstate, NULL, varno, InvalidAttrNumber);
+			}
+			else
+				elog(ERROR, "unrecognized node type: %d",
+					 (int) nodeTag(j->rarg));
+		}
+		else
+		{
+			/*
+			 * Regular join attribute, look at the alias-variable list.
+			 *
+			 * The aliasvar could be either a Var or a COALESCE expression,
+			 * but in the latter case we should already have marked the two
+			 * referent variables as being selected, due to their use in the
+			 * JOIN clause.  So we need only be concerned with the simple
+			 * Var case.
+			 */
+			Var	   *aliasvar;
+
+			Assert(col > 0 && col <= list_length(rte->joinaliasvars));
+			aliasvar = (Var *) list_nth(rte->joinaliasvars, col - 1);
+			if (IsA(aliasvar, Var))
+				markVarForSelectPriv(pstate, aliasvar, NULL);
+		}
+	}
+	/* other RTE types don't require privilege marking */
+}
+
+/*
+ * markVarForSelectPriv
+ *     Mark the RTE referenced by a Var as requiring SELECT privilege
+ *
+ * The caller should pass the Var's referenced RTE if it has it handy
+ * (nearly all do); otherwise pass NULL.
+ */
+void
+markVarForSelectPriv(ParseState *pstate, Var *var, RangeTblEntry *rte)
+{
+	Index	lv;
+
+	Assert(IsA(var, Var));
+	/* Find the appropriate pstate if it's an uplevel Var */
+	for (lv = 0; lv < var->varlevelsup; lv++)
+		pstate = pstate->parentParseState;
+	markRTEForSelectPriv(pstate, rte, var->varno, var->varattno);
 }
 
 /*
@@ -669,6 +788,8 @@ addRangeTableEntry(ParseState *pstate,
 
 	rte->requiredPerms = ACL_SELECT;
 	rte->checkAsUser = InvalidOid;		/* not set-uid by default, either */
+	rte->selectedCols = NULL;
+	rte->modifiedCols = NULL;
 
 	/*
 	 * Add completed RTE to pstate's range table list, but not to join list
@@ -722,6 +843,8 @@ addRangeTableEntryForRelation(ParseState *pstate,
 
 	rte->requiredPerms = ACL_SELECT;
 	rte->checkAsUser = InvalidOid;		/* not set-uid by default, either */
+	rte->selectedCols = NULL;
+	rte->modifiedCols = NULL;
 
 	/*
 	 * Add completed RTE to pstate's range table list, but not to join list
@@ -800,6 +923,8 @@ addRangeTableEntryForSubquery(ParseState *pstate,
 
 	rte->requiredPerms = 0;
 	rte->checkAsUser = InvalidOid;
+	rte->selectedCols = NULL;
+	rte->modifiedCols = NULL;
 
 	/*
 	 * Add completed RTE to pstate's range table list, but not to join list
@@ -928,6 +1053,8 @@ addRangeTableEntryForFunction(ParseState *pstate,
 
 	rte->requiredPerms = 0;
 	rte->checkAsUser = InvalidOid;
+	rte->selectedCols = NULL;
+	rte->modifiedCols = NULL;
 
 	/*
 	 * Add completed RTE to pstate's range table list, but not to join list
@@ -997,6 +1124,8 @@ addRangeTableEntryForValues(ParseState *pstate,
 	rte->inFromCl = inFromCl;
 	rte->requiredPerms = 0;
 	rte->checkAsUser = InvalidOid;
+	rte->selectedCols = NULL;
+	rte->modifiedCols = NULL;
 
 	/*
 	 * Add completed RTE to pstate's range table list, but not to join list
@@ -1066,6 +1195,8 @@ addRangeTableEntryForJoin(ParseState *pstate,
 
 	rte->requiredPerms = 0;
 	rte->checkAsUser = InvalidOid;
+	rte->selectedCols = NULL;
+	rte->modifiedCols = NULL;
 
 	/*
 	 * Add completed RTE to pstate's range table list, but not to join list
@@ -1512,7 +1643,7 @@ expandRelAttrs(ParseState *pstate, RangeTblEntry *rte,
 	forboth(name, names, var, vars)
 	{
 		char	   *label = strVal(lfirst(name));
-		Node	   *varnode = (Node *) lfirst(var);
+		Node	   *varnode = (Var *) lfirst(var);
 		TargetEntry *te;
 
 		te = makeTargetEntry((Expr *) varnode,
@@ -1520,6 +1651,9 @@ expandRelAttrs(ParseState *pstate, RangeTblEntry *rte,
 							 label,
 							 false);
 		te_list = lappend(te_list, te);
+
+		/* Require read access to each column */
+		markVarForSelectPriv(pstate, (Var *) varnode, rte);
 	}
 
 	Assert(name == NULL && var == NULL);		/* lists not the same length? */

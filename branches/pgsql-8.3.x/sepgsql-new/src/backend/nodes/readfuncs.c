@@ -102,6 +102,10 @@
 	token = pg_strtok(&length);		/* skip :fldname */ \
 	local_node->fldname = nodeRead(NULL, 0)
 
+#define READ_BITMAPSET_FIELD(fldname) \
+	token = pg_strtok(&length);		/* skip :fldname */ \
+	local_node->fldname = _readBitmapset()
+
 /* Routine exit */
 #define READ_DONE() \
 	return local_node
@@ -124,6 +128,46 @@
 
 
 static Datum readDatum(bool typbyval);
+
+/*
+ * _readBitmapset
+ */
+static Bitmapset *
+_readBitmapset(void)
+{
+	Bitmapset *result = NULL;
+	READ_TEMP_LOCALS();
+
+	token = pg_strtok(&length);
+	if (token == NULL)
+		elog(ERROR, "incomplete Bitmapset structure");
+	if (length != 1 || token[0] != '(')
+		elog(ERROR, "unrecognized token: \"%.*s\"", length, token);
+
+	token = pg_strtok(&length);
+	if (token == NULL)
+		elog(ERROR, "incomplete Bitmapset structure");
+	if (length != 1 || token[0] != 'b')
+		elog(ERROR, "unrecognized token: \"%.*s\"", length, token);
+
+	for (;;)
+	{
+		int		val;
+		char   *endptr;
+
+		token = pg_strtok(&length);
+		if (token == NULL)
+			elog(ERROR, "unterminated Bitmapset structure");
+		if (length == 1 && token[0] == ')')
+			break;
+		val = (int) strtol(token, &endptr, 10);
+		if (endptr != token + length)
+			elog(ERROR, "unrecognized integer: \"%.*s\"", length, token);
+		result = bms_add_member(result, val);
+	}
+
+	return result;
+}
 
 
 /*
@@ -1003,6 +1047,8 @@ _readRangeTblEntry(void)
 	READ_BOOL_FIELD(inFromCl);
 	READ_UINT_FIELD(requiredPerms);
 	READ_OID_FIELD(checkAsUser);
+	READ_BITMAPSET_FIELD(selectedCols);
+	READ_BITMAPSET_FIELD(modifiedCols);
 
 	READ_DONE();
 }

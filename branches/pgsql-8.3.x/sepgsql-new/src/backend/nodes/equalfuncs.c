@@ -1873,6 +1873,8 @@ _equalRangeTblEntry(RangeTblEntry *a, RangeTblEntry *b)
 	COMPARE_SCALAR_FIELD(inFromCl);
 	COMPARE_SCALAR_FIELD(requiredPerms);
 	COMPARE_SCALAR_FIELD(checkAsUser);
+	COMPARE_BITMAPSET_FIELD(selectedCols);
+	COMPARE_BITMAPSET_FIELD(modifiedCols);
 
 	return true;
 }

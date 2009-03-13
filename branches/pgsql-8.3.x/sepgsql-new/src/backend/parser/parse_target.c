@@ -902,9 +902,25 @@ ExpandColumnRefStar(ParseState *pstate, ColumnRef *cref,
 		else
 		{
 			List	   *vars;
+			ListCell   *l;
 
 			expandRTE(rte, rtindex, sublevels_up, false,
 					  NULL, &vars);
+			/*
+			 * Require read access to the table.  This is normally redundant
+			 * with the markVarForSelectPriv calls below, but not if the table
+			 * has zero columns.
+			 */
+			rte->requiredPerms |= ACL_SELECT;
+
+			/* Require read access to each column */
+			foreach(l, vars)
+			{
+				Var    *var = (Var *) lfirst(l);
+
+				markVarForSelectPriv(pstate, var, rte);
+			}
+
 			return vars;
 		}
 	}
