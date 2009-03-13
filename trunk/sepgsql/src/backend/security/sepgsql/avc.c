@@ -1,5 +1,5 @@
 /*
- * src/backend/utils/sepgsql/avc.c
+ * src/backend/security/sepgsql/avc.c
  *	  SE-PostgreSQL userspace access vector cache
  *
  * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group

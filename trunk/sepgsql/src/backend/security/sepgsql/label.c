@@ -1,5 +1,5 @@
 /*
- * src/backend/utils/sepgsql/label.c
+ * src/backend/security/sepgsql/label.c
  *    SE-PostgreSQL security label management
  *
  * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
