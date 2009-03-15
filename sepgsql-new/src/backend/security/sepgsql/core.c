@@ -10,6 +10,7 @@
 #include "catalog/indexing.h"
 #include "catalog/pg_database.h"
 #include "catalog/pg_proc.h"
+#include "catalog/pg_security.h"
 #include "libpq/libpq-be.h"
 #include "miscadmin.h"
 #include "security/sepgsql.h"

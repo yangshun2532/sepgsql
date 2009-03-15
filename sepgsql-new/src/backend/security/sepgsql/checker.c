@@ -430,7 +430,7 @@ skip:
 	return sepgsqlClientHasPerms(HeapTupleGetSecLabel(newtup),
 								 tclass,
 								 SEPG_DB_TUPLE__INSERT,
-								 audit_name, true);
+								 audit_name, internal);
 }
 
 bool
@@ -519,5 +519,5 @@ sepgsqlHeapTupleDelete(Relation rel, HeapTuple oldtup, bool internal)
 	return sepgsqlClientHasPerms(HeapTupleGetSecLabel(oldtup),
 								 tclass,
 								 SEPG_DB_TUPLE__DELETE,
-								 audit_name, true);
+								 audit_name, internal);
 }
