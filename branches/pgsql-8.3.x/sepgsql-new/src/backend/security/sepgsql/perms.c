@@ -402,6 +402,9 @@ sepgsqlTupleObjectClass(Oid relid, HeapTuple tuple)
 
 	case ProcedureRelationId:
 		return SEPG_CLASS_DB_PROCEDURE;
+
+	case LargeObjectRelationId:
+		return SEPG_CLASS_DB_BLOB;
 	}
 	return SEPG_CLASS_DB_TUPLE;
 }
