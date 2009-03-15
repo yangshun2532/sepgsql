@@ -416,6 +416,13 @@ ExecCheckRTEPerms(RangeTblEntry *rte)
 	 * No work if requiredPerms is empty.
 	 */
 	requiredPerms = rte->requiredPerms;
+
+	/* fixup ACL_SELECT_FOR_UPDATE */
+	if (requiredPerms & ACL_SELECT_FOR_UPDATE)
+	{
+		requiredPerms &= ~ACL_SELECT_FOR_UPDATE;
+		requiredPerms |= ACL_UPDATE;
+	}
 	if (requiredPerms == 0)
 		return;
 
