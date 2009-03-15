@@ -2,7 +2,7 @@
 
 # This script pulls the PostgreSQL tree from CVS.
 # ---- parametors ----
-CVSTAG="REL8_3_6"
+CVSTAG="REL8_3_7"
 SVNBRANCH="/branches/pgsql-8.3.x"
 
 SEPGSQL_REPOSITORY=`(cd \`dirname $0\`/..; pwd)`
@@ -64,6 +64,10 @@ echo "svn update"
 echo
 echo "svn merge -c `expr ${SVNREV} + 1` ./base ./sepgsql"
 echo "svn diff ./sepgsql"
-echo "svn commit -m 'merge updates of ${SVNBRANCH}/base into ${SVNBRANCH}/sepgsql at `env LANG=C date`' ./sepgsql"
+echo "svn commit -m 'merge updates of ${SVNBRANCH}/base into ${SVNBRANCH}/sepgsql at `expr ${SVNREV} + 1`' ./sepgsql"
 echo "svn update"
-
+echo
+echo "svn merge -c `expr ${SVNREV} + 1` ./base ./sepgsql-new"
+echo "svn diff ./sepgsql-new"
+echo "svn commit -m 'merge updates of ${SVNBRANCH}/base into ${SVNBRANCH}/sepgsql-new at `expr ${SVNREV} + 1`' ./sepgsql-new"
+echo "svn update"
