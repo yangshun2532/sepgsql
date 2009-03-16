@@ -24,14 +24,14 @@ Source0: ftp://ftp.postgresql.org/pub/source/v%{version}/postgresql-%{version}.t
 Source1: sepostgresql.init
 Source2: sepostgresql.8
 Source3: sepostgresql.logrotate
-Patch0: sepgsql-core-%{version}.patch
-Patch1: sepgsql-utils-%{version}.patch
-Patch2: sepgsql-policy-%{version}.patch
-Patch3: sepgsql-docs-%{version}.patch
-Patch4: sepgsql-tests-%{version}.patch
-Patch5: sepgsql-sysatt-%{version}.patch
-Patch6: sepgsql-rowlv-%{version}.patch
-Patch7: sepgsql-blobs-%{version}.patch
+Patch0: sepgsql-core-%%__base_major_version__%%.patch
+Patch1: sepgsql-utils-%%__base_major_version__%%.patch
+Patch2: sepgsql-policy-%%__base_major_version__%%.patch
+Patch3: sepgsql-docs-%%__base_major_version__%%.patch
+Patch4: sepgsql-tests-%%__base_major_version__%%.patch
+Patch5: sepgsql-sysatt-%%__base_major_version__%%.patch
+Patch6: sepgsql-rowlv-%%__base_major_version__%%.patch
+Patch7: sepgsql-blobs-%%__base_major_version__%%.patch
 Patch8: sepgsql-fedora-prefix.patch
 BuildRequires: perl glibc-devel bison flex readline-devel zlib-devel >= 1.0.4
 Buildrequires: checkpolicy libselinux-devel >= 2.0.43 selinux-policy >= 3.4.2
