@@ -25,7 +25,21 @@
 #define MaxTransactionIdAttributeNumber			(-5)
 #define MaxCommandIdAttributeNumber				(-6)
 #define TableOidAttributeNumber					(-7)
-#define FirstLowInvalidHeapAttributeNumber		(-8)
+#define SecurityAclAttributeNumber				(-8)
+#define SecurityLabelAttributeNumber			(-9)
+#define FirstLowInvalidHeapAttributeNumber		(-10)
 
+/*
+ * Attribute names for the system-defined attributes
+ */
+#define SelfItemPointerAttributeName			"ctid"
+#define ObjectIdAttributeName					"oid"
+#define MinTransactionIdAttributeName			"xmin"
+#define MinCommandIdAttributeName				"cmin"
+#define MaxTransactionIdAttributeName			"xmax"
+#define MaxCommandIdAttributeName				"cmax"
+#define TableOidAttributeName					"tableoid"
+#define SecurityAclAttributeName				"security_acl"
+#define SecurityLabelAttributeName				"security_label"
 
 #endif   /* SYSATTR_H */

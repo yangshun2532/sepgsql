@@ -143,6 +143,7 @@ typedef ArrayType Acl;
 /*
  * Bitmasks defining "all rights" for each supported object type
  */
+#define ACL_ALL_RIGHTS_TUPLE		(ACL_SELECT|ACL_UPDATE|ACL_DELETE)
 #define ACL_ALL_RIGHTS_COLUMN		(ACL_INSERT|ACL_SELECT|ACL_UPDATE|ACL_REFERENCES)
 #define ACL_ALL_RIGHTS_RELATION		(ACL_INSERT|ACL_SELECT|ACL_UPDATE|ACL_DELETE|ACL_TRUNCATE|ACL_REFERENCES|ACL_TRIGGER)
 #define ACL_ALL_RIGHTS_SEQUENCE		(ACL_USAGE|ACL_SELECT|ACL_UPDATE)
@@ -222,6 +223,7 @@ typedef struct
 /*
  * routines used internally
  */
+extern Acl *allocacl(int n);
 extern Acl *acldefault(GrantObjectType objtype, Oid ownerId);
 extern Acl *aclupdate(const Acl *old_acl, const AclItem *mod_aip,
 		  int modechg, Oid ownerId, DropBehavior behavior);
