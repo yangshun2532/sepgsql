@@ -91,6 +91,7 @@ static bool debug = false;
 static bool noclean = false;
 static bool show_setting = false;
 static char *xlog_dir = "";
+static bool enable_selinux = false;
 
 
 /* internal vars */
@@ -1196,6 +1197,13 @@ setup_config(void)
 	conflines = replace_token(conflines,
 						 "#default_text_search_config = 'pg_catalog.simple'",
 							  repltok);
+
+	if (enable_selinux)
+	{
+		strcpy(repltok, "sepostgresql = on");
+		conflines = replace_token(conflines,
+								  "#sepostgresql = off", repltok);
+	}
 
 	snprintf(path, sizeof(path), "%s/postgresql.conf", pg_data);
 
@@ -2435,6 +2443,7 @@ usage(const char *progname)
 	printf(_("  -U, --username=NAME       database superuser name\n"));
 	printf(_("  -W, --pwprompt            prompt for a password for the new superuser\n"));
 	printf(_("  -X, --xlogdir=XLOGDIR     location for the transaction log directory\n"));
+	printf(_("  --enable-selinux          enables SELinux support, if compiled\n"));
 	printf(_("\nLess commonly used options:\n"));
 	printf(_("  -d, --debug               generate lots of debugging output\n"));
 	printf(_("  -L DIRECTORY              where to find the input files\n"));
@@ -2470,6 +2479,7 @@ main(int argc, char *argv[])
 		{"auth", required_argument, NULL, 'A'},
 		{"pwprompt", no_argument, NULL, 'W'},
 		{"pwfile", required_argument, NULL, 9},
+		{"enable-selinux", no_argument, NULL, 10},
 		{"username", required_argument, NULL, 'U'},
 		{"help", no_argument, NULL, '?'},
 		{"version", no_argument, NULL, 'V'},
@@ -2585,6 +2595,9 @@ main(int argc, char *argv[])
 				break;
 			case 9:
 				pwfilename = xstrdup(optarg);
+				break;
+			case 10:
+				enable_selinux = true;
 				break;
 			case 's':
 				show_setting = true;

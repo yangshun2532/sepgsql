@@ -108,6 +108,7 @@
 #include "postmaster/pgarch.h"
 #include "postmaster/postmaster.h"
 #include "postmaster/syslogger.h"
+#include "security/sepgsql.h"
 #include "storage/fd.h"
 #include "storage/ipc.h"
 #include "storage/pg_shmem.h"
@@ -215,7 +216,8 @@ static pid_t StartupPID = 0,
 			AutoVacPID = 0,
 			PgArchPID = 0,
 			PgStatPID = 0,
-			SysLoggerPID = 0;
+			SysLoggerPID = 0,
+			sepgsqlWorkerPID = 0;
 
 /* Startup/shutdown state */
 #define			NoShutdown		0
@@ -1355,6 +1357,10 @@ ServerLoop(void)
 		if (PgStatPID == 0 && pmState == PM_RUN)
 			PgStatPID = pgstat_start();
 
+		/* If we have lost the sepgsql worker (if needed), try to start a new one */
+		if (sepgsqlWorkerPID == 0 && pmState == PM_RUN)
+			sepgsqlWorkerPID = sepgsqlStartupWorkerProcess();
+
 		/*
 		 * Touch the socket and lock file every 58 minutes, to ensure that
 		 * they are not removed by overzealous /tmp-cleaning tasks.  We assume
@@ -1963,6 +1969,8 @@ SIGHUP_handler(SIGNAL_ARGS)
 			signal_child(SysLoggerPID, SIGHUP);
 		if (PgStatPID != 0)
 			signal_child(PgStatPID, SIGHUP);
+		if (sepgsqlWorkerPID != 0)
+			signal_child(sepgsqlWorkerPID, SIGHUP);
 
 		/* Reload authentication config files too */
 		if (!load_hba())
@@ -2023,6 +2031,9 @@ pmdie(SIGNAL_ARGS)
 				/* and the walwriter too */
 				if (WalWriterPID != 0)
 					signal_child(WalWriterPID, SIGTERM);
+				/* and the sepgsql worker too */
+				if (sepgsqlWorkerPID != 0)
+					signal_child(sepgsqlWorkerPID, SIGTERM);
 				pmState = PM_WAIT_BACKUP;
 			}
 
@@ -2069,6 +2080,9 @@ pmdie(SIGNAL_ARGS)
 				/* and the walwriter too */
 				if (WalWriterPID != 0)
 					signal_child(WalWriterPID, SIGTERM);
+				/* and the sepgsqlWorker too */
+				if (sepgsqlWorkerPID != 0)
+					signal_child(sepgsqlWorkerPID, SIGTERM);
 				pmState = PM_WAIT_BACKENDS;
 			}
 
@@ -2102,6 +2116,8 @@ pmdie(SIGNAL_ARGS)
 				signal_child(PgArchPID, SIGQUIT);
 			if (PgStatPID != 0)
 				signal_child(PgStatPID, SIGQUIT);
+			if (sepgsqlWorkerPID != 0)
+				signal_child(sepgsqlWorkerPID, SIGQUIT);
 			ExitPostmaster(0);
 			break;
 	}
@@ -2362,6 +2378,16 @@ reaper(SIGNAL_ARGS)
 			continue;
 		}
 
+		/* Was it the sepgsql worker process? */
+		if (pid == sepgsqlWorkerPID)
+		{
+			sepgsqlWorkerPID = 0;
+			if (!EXIT_STATUS_0(exitstatus))
+				LogChildExit(LOG, _("SE-PostgreSQL worker process"),
+							 pid, exitstatus);
+			continue;
+		}
+
 		/*
 		 * Else do standard backend child cleanup.
 		 */
@@ -2541,6 +2567,18 @@ HandleChildCrash(int pid, int exitstatus, const char *procname)
 		signal_child(AutoVacPID, (SendStop ? SIGSTOP : SIGQUIT));
 	}
 
+	/* Take care of the sepgsql worker too */
+	if (pid == sepgsqlWorkerPID)
+		sepgsqlWorkerPID = 0;
+	else if (sepgsqlWorkerPID != 0 && !FatalError)
+	{
+		ereport(DEBUG2,
+				(errmsg_internal("sending %s to process %d",
+								 (SendStop ? "SIGSTOP" : "SIGQUIT"),
+								 (int) sepgsqlWorkerPID)));
+		signal_child(sepgsqlWorkerPID, (SendStop ? SIGSTOP : SIGQUIT));
+	}
+
 	/*
 	 * Force a power-cycle of the pgarch process too.  (This isn't absolutely
 	 * necessary, but it seems like a good idea for robustness, and it
@@ -2673,7 +2711,8 @@ PostmasterStateMachine(void)
 			StartupPID == 0 &&
 			(BgWriterPID == 0 || !FatalError) &&
 			WalWriterPID == 0 &&
-			AutoVacPID == 0)
+			AutoVacPID == 0 &&
+			sepgsqlWorkerPID == 0)
 		{
 			if (FatalError)
 			{

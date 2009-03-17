@@ -63,6 +63,7 @@
 #include "parser/parser.h"
 #include "rewrite/rewriteDefine.h"
 #include "rewrite/rewriteHandler.h"
+#include "security/sepgsql.h"
 #include "storage/bufmgr.h"
 #include "storage/lmgr.h"
 #include "storage/smgr.h"
@@ -324,6 +325,7 @@ static void ATExecEnableDisableRule(Relation rel, char *rulename,
 						char fires_when);
 static void ATExecAddInherit(Relation rel, RangeVar *parent);
 static void ATExecDropInherit(Relation rel, RangeVar *parent);
+static void ATExecSetSecurityLabel(Relation rel, const char *name, DefElem *defel);
 static void copy_relation_data(SMgrRelation rel, SMgrRelation dst,
 							   ForkNumber forkNum, bool istemp);
 
@@ -352,6 +354,7 @@ DefineRelation(CreateStmt *stmt, char relkind)
 	List	   *rawDefaults;
 	List	   *cookedDefaults;
 	Datum		reloptions;
+	List	   *seclabelList;
 	ListCell   *listptr;
 	AttrNumber	attnum;
 	static char	   *validnsps[] = HEAP_RELOPT_NAMESPACES;
@@ -496,6 +499,11 @@ DefineRelation(CreateStmt *stmt, char relkind)
 	}
 
 	/*
+	 * SELinux: fetch SECURITY_LABEL = '...' from CREATE TABLE
+	 */
+	seclabelList = sepgsqlInputGivenSecLabelRelation(stmt);
+
+	/*
 	 * Create the relation.  Inherited defaults and constraints are passed
 	 * in for immediate handling --- since they don't need parsing, they
 	 * can be stored immediately.
@@ -514,7 +522,8 @@ DefineRelation(CreateStmt *stmt, char relkind)
 										  parentOidCount,
 										  stmt->oncommit,
 										  reloptions,
-										  allowSystemTableMods);
+										  allowSystemTableMods,
+										  seclabelList);
 
 	StoreCatalogInheritance(relationId, inheritOids);
 
@@ -1041,6 +1050,9 @@ truncate_check_rel(Relation rel)
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 				 errmsg("permission denied: \"%s\" is a system catalog",
 						RelationGetRelationName(rel))));
+
+	/* SELinux: check db_table:{delete} permission */
+	sepgsqlCheckTableTruncate(rel);
 
 	/*
 	 * We can never allow truncation of shared or nailed-in-cache relations,
@@ -2503,6 +2515,7 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 		case AT_DisableRule:
 		case AT_AddInherit:		/* INHERIT / NO INHERIT */
 		case AT_DropInherit:
+		case AT_SetSecurityLabel:
 			ATSimplePermissions(rel, false);
 			/* These commands never recurse */
 			/* No command-specific prep needed */
@@ -2736,6 +2749,9 @@ ATExecCmd(List **wqueue, AlteredTableInfo *tab, Relation rel,
 			break;
 		case AT_DropInherit:
 			ATExecDropInherit(rel, (RangeVar *) cmd->def);
+			break;
+		case AT_SetSecurityLabel:
+			ATExecSetSecurityLabel(rel, cmd->name, (DefElem *) cmd->def);
 			break;
 		default:				/* oops */
 			elog(ERROR, "unrecognized alter table type: %d",
@@ -3627,6 +3643,7 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 	attribute.attndims = list_length(colDef->typename->arrayBounds);
 	attribute.attstorage = tform->typstorage;
 	attribute.attalign = tform->typalign;
+	attribute.attkind = relkind;
 	attribute.attnotnull = colDef->is_not_null;
 	attribute.atthasdef = false;
 	attribute.attisdropped = false;
@@ -3636,7 +3653,7 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 
 	ReleaseSysCache(typeTuple);
 
-	InsertPgAttributeTuple(attrdesc, &attribute, NULL);
+	InsertPgAttributeTuple(attrdesc, &attribute, NULL, InvalidOid);
 
 	heap_close(attrdesc, RowExclusiveLock);
 
@@ -7464,6 +7481,98 @@ ATExecDropInherit(Relation rel, RangeVar *parent)
 	heap_close(parent_rel, NoLock);
 }
 
+/*
+ * Execute ALTER TABLE ... SECURITY_LABEL = 'xxxx'
+ */
+void
+ATExecSetSecurityLabel(Relation rel, const char *attr_name, DefElem *defel)
+{
+	Relation    class_rel;
+	Relation    attr_rel;
+	HeapTuple   tuple, newtup;
+
+	if (!sepgsqlIsEnabled())
+		ereport(ERROR,
+				(errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("SELinux: disabled now")));
+
+	Assert(IsA(defel, DefElem));
+
+	if (!attr_name)
+	{
+		Datum   values[Natts_pg_class];
+		bool    nulls[Natts_pg_class];
+		bool    replaces[Natts_pg_class];
+		Oid		rel_secid;
+
+		memset(replaces, false, sizeof(replaces));
+
+		class_rel = heap_open(RelationRelationId, RowExclusiveLock);
+
+		tuple = SearchSysCache(RELOID,
+							   ObjectIdGetDatum(RelationGetRelid(rel)),
+							   0, 0, 0);
+		if (!HeapTupleIsValid(tuple))
+	        elog(ERROR, "SELinux: cache lookup failed for relation: \"%s\"",
+				 RelationGetRelationName(rel));
+		/*
+		 * NOTE: heap_modify_tuple() is necessary to make sure
+		 * newtup has HEAP_HAS_SECLABEL and a field to store
+		 * security lidentifier.
+		 */
+		newtup = heap_modify_tuple(tuple, RelationGetDescr(class_rel),
+								   values, nulls, replaces);
+		if (!HeapTupleHasSecLabel(newtup))
+			elog(ERROR, "Unable to assign security label on \"%s\"",
+				 RelationGetRelationName(class_rel));
+
+		rel_secid = sepgsqlInputGivenSecLabel(defel);
+		HeapTupleSetSecLabel(newtup, rel_secid);
+
+		simple_heap_update(class_rel, &tuple->t_self, newtup);
+
+		CatalogUpdateIndexes(class_rel, newtup);
+
+		ReleaseSysCache(tuple);
+		heap_close(class_rel, RowExclusiveLock);
+	}
+	else
+    {
+		Datum	values[Natts_pg_attribute];
+		bool	nulls[Natts_pg_attribute];
+		bool	replaces[Natts_pg_attribute];
+		Oid		att_secid;
+
+		memset(replaces, false, sizeof(replaces));
+
+		attr_rel = heap_open(AttributeRelationId, RowExclusiveLock);
+
+		tuple = SearchSysCacheAttName(RelationGetRelid(rel), attr_name);
+		if (!HeapTupleIsValid(tuple))
+			elog(ERROR, "SELinux: cache lookup failed for column \"%s.%s\"",
+				 RelationGetRelationName(rel), attr_name);
+		/*
+		 * NOTE: heap_modify_tuple() is necessary to make sure
+		 * newtup has HEAP_HAS_SECLABEL and a field to store
+		 * security lidentifier.
+		 */
+		newtup = heap_modify_tuple(tuple, RelationGetDescr(attr_rel),
+								   values, nulls, replaces);
+		if (!HeapTupleHasSecLabel(newtup))
+			elog(ERROR, "Unable to assign security label on \"%s\"",
+				 RelationGetRelationName(attr_rel));
+
+		att_secid = sepgsqlInputGivenSecLabel(defel);
+		HeapTupleSetSecLabel(newtup, att_secid);
+
+		simple_heap_update(attr_rel, &tuple->t_self, newtup);
+
+		CatalogUpdateIndexes(attr_rel, newtup);
+
+		ReleaseSysCache(tuple);
+		heap_close(attr_rel, RowExclusiveLock);
+	}
+}
 
 /*
  * Execute ALTER TABLE SET SCHEMA

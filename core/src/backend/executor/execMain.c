@@ -51,6 +51,7 @@
 #include "optimizer/clauses.h"
 #include "parser/parse_clause.h"
 #include "parser/parsetree.h"
+#include "security/sepgsql.h"
 #include "storage/bufmgr.h"
 #include "storage/lmgr.h"
 #include "storage/smgr.h"
@@ -443,7 +444,10 @@ ExecCheckRTPerms(List *rangeTable)
 
 	foreach(l, rangeTable)
 	{
-		ExecCheckRTEPerms((RangeTblEntry *) lfirst(l));
+		RangeTblEntry  *rte = (RangeTblEntry *) lfirst(l);
+
+		ExecCheckRTEPerms(rte);
+		sepgsqlCheckRTEPerms(rte);
 	}
 }
 
@@ -1869,6 +1873,9 @@ ExecInsert(TupleTableSlot *slot,
 		}
 	}
 
+	/* SELinux: check db_xxx:{create} permission */
+	sepgsqlHeapTupleInsert(resultRelationDesc, tuple, false);
+
 	/*
 	 * Check the constraints of the tuple
 	 */
@@ -1940,6 +1947,9 @@ ExecDelete(ItemPointer tupleid,
 		if (!dodelete)			/* "do nothing" */
 			return;
 	}
+
+	/* SELinux: check db_xxx:{drop} permission */
+	sepgsqlHeapTupleDelete(resultRelationDesc, tupleid, false);
 
 	/*
 	 * delete the tuple
@@ -2106,6 +2116,9 @@ ExecUpdate(TupleTableSlot *slot,
 			tuple = newtuple;
 		}
 	}
+
+	/* SELinux: check db_xxx:{setattr} permission */
+	sepgsqlHeapTupleUpdate(resultRelationDesc, tupleid, tuple, false);
 
 	/*
 	 * Check the constraints of the tuple
@@ -2988,7 +3001,8 @@ OpenIntoRel(QueryDesc *queryDesc)
 											  0,
 											  into->onCommit,
 											  reloptions,
-											  allowSystemTableMods);
+											  allowSystemTableMods,
+											  NIL);
 
 	FreeTupleDesc(tupdesc);
 
@@ -3013,6 +3027,11 @@ OpenIntoRel(QueryDesc *queryDesc)
 	(void) heap_reloptions(RELKIND_TOASTVALUE, reloptions, true);
 
 	AlterTableCreateToastTable(intoRelationId, reloptions);
+
+	/*
+	 * SELinux: checks db_table/column:{insert} permission
+	 */
+	sepgsqlCheckSelectInto(intoRelationId);
 
 	/*
 	 * And open the constructed table for writing.

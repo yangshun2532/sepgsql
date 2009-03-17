@@ -20,6 +20,7 @@
 #include "miscadmin.h"
 #include "optimizer/prep.h"
 #include "parser/parse_clause.h"
+#include "security/sepgsql.h"
 #include "utils/acl.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
@@ -70,6 +71,9 @@ LockTableCommand(LockStmt *lockstmt)
 			if (aclresult != ACLCHECK_OK)
 				aclcheck_error(aclresult, ACL_KIND_CLASS,
 							   get_rel_name(childreloid));
+
+			/* SELinux: check db_table:{lock} permission */
+			sepgsqlCheckTableLock(childreloid);
 
 			if (lockstmt->nowait)
 				rel = relation_open_nowait(childreloid, lockstmt->mode);

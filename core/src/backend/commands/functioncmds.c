@@ -53,6 +53,7 @@
 #include "parser/parse_expr.h"
 #include "parser/parse_func.h"
 #include "parser/parse_type.h"
+#include "security/sepgsql.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
@@ -399,7 +400,8 @@ compute_common_attribute(DefElem *defel,
 						 DefElem **security_item,
 						 List **set_items,
 						 DefElem **cost_item,
-						 DefElem **rows_item)
+						 DefElem **rows_item,
+						 DefElem **seclabel_item)
 {
 	if (strcmp(defel->defname, "volatility") == 0)
 	{
@@ -439,6 +441,13 @@ compute_common_attribute(DefElem *defel,
 			goto duplicate_error;
 
 		*rows_item = defel;
+	}
+	else if (strcmp(defel->defname, "security_label") == 0)
+	{
+		if (*seclabel_item)
+			goto duplicate_error;
+
+		*seclabel_item = defel;
 	}
 	else
 		return false;
@@ -517,7 +526,8 @@ compute_attributes_sql_style(List *options,
 							 bool *security_definer,
 							 ArrayType **proconfig,
 							 float4 *procost,
-							 float4 *prorows)
+							 float4 *prorows,
+							 Oid *pro_secid)
 {
 	ListCell   *option;
 	DefElem    *as_item = NULL;
@@ -529,6 +539,7 @@ compute_attributes_sql_style(List *options,
 	List	   *set_items = NIL;
 	DefElem    *cost_item = NULL;
 	DefElem    *rows_item = NULL;
+	DefElem	   *seclabel_item = NULL;
 
 	foreach(option, options)
 	{
@@ -564,7 +575,8 @@ compute_attributes_sql_style(List *options,
 										  &security_item,
 										  &set_items,
 										  &cost_item,
-										  &rows_item))
+										  &rows_item,
+										  &seclabel_item))
 		{
 			/* recognized common option */
 			continue;
@@ -622,6 +634,8 @@ compute_attributes_sql_style(List *options,
 					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 					 errmsg("ROWS must be positive")));
 	}
+	if (seclabel_item)
+		*pro_secid = sepgsqlInputGivenSecLabel(seclabel_item);
 }
 
 
@@ -762,6 +776,7 @@ CreateFunction(CreateFunctionStmt *stmt, const char *queryString)
 	ArrayType  *proconfig;
 	float4		procost;
 	float4		prorows;
+	Oid			pro_secid;
 	HeapTuple	languageTuple;
 	Form_pg_language languageStruct;
 	List	   *as_clause;
@@ -784,13 +799,14 @@ CreateFunction(CreateFunctionStmt *stmt, const char *queryString)
 	proconfig = NULL;
 	procost = -1;				/* indicates not set */
 	prorows = -1;				/* indicates not set */
+	pro_secid = InvalidOid;		/* indicates not set */
 
 	/* override attributes from explicit list */
 	compute_attributes_sql_style(stmt->options,
 								 &as_clause, &language,
 								 &isWindowFunc, &volatility,
 								 &isStrict, &security,
-								 &proconfig, &procost, &prorows);
+								 &proconfig, &procost, &prorows, &pro_secid);
 
 	/* Convert language name to canonical case */
 	languageName = case_translate_language_name(language);
@@ -926,7 +942,8 @@ CreateFunction(CreateFunctionStmt *stmt, const char *queryString)
 					parameterDefaults,
 					PointerGetDatum(proconfig),
 					procost,
-					prorows);
+					prorows,
+					pro_secid);
 }
 
 
@@ -1276,6 +1293,7 @@ AlterFunction(AlterFunctionStmt *stmt)
 	List	   *set_items = NIL;
 	DefElem    *cost_item = NULL;
 	DefElem    *rows_item = NULL;
+	DefElem	   *seclabel_item = NULL;
 
 	rel = heap_open(ProcedureRelationId, RowExclusiveLock);
 
@@ -1313,7 +1331,8 @@ AlterFunction(AlterFunctionStmt *stmt)
 									 &security_def_item,
 									 &set_items,
 									 &cost_item,
-									 &rows_item) == false)
+									 &rows_item,
+									 &seclabel_item) == false)
 			elog(ERROR, "option \"%s\" not recognized", defel->defname);
 	}
 
@@ -1343,7 +1362,7 @@ AlterFunction(AlterFunctionStmt *stmt)
 					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 					 errmsg("ROWS is not applicable when function does not return a set")));
 	}
-	if (set_items)
+	if (set_items || seclabel_item)
 	{
 		Datum		datum;
 		bool		isnull;
@@ -1352,30 +1371,50 @@ AlterFunction(AlterFunctionStmt *stmt)
 		bool		repl_null[Natts_pg_proc];
 		bool		repl_repl[Natts_pg_proc];
 
-		/* extract existing proconfig setting */
-		datum = SysCacheGetAttr(PROCOID, tup, Anum_pg_proc_proconfig, &isnull);
-		a = isnull ? NULL : DatumGetArrayTypeP(datum);
-
-		/* update according to each SET or RESET item, left to right */
-		a = update_proconfig_value(a, set_items);
-
-		/* update the tuple */
 		memset(repl_repl, false, sizeof(repl_repl));
-		repl_repl[Anum_pg_proc_proconfig - 1] = true;
 
-		if (a == NULL)
+		if (set_items)
 		{
-			repl_val[Anum_pg_proc_proconfig - 1] = (Datum) 0;
-			repl_null[Anum_pg_proc_proconfig - 1] = true;
-		}
-		else
-		{
-			repl_val[Anum_pg_proc_proconfig - 1] = PointerGetDatum(a);
-			repl_null[Anum_pg_proc_proconfig - 1] = false;
+			/* extract existing proconfig setting */
+			datum = SysCacheGetAttr(PROCOID, tup, Anum_pg_proc_proconfig, &isnull);
+			a = isnull ? NULL : DatumGetArrayTypeP(datum);
+
+			/* update according to each SET or RESET item, left to right */
+			a = update_proconfig_value(a, set_items);
+
+			/* update the tuple */
+			repl_repl[Anum_pg_proc_proconfig - 1] = true;
+
+			if (a == NULL)
+			{
+				repl_val[Anum_pg_proc_proconfig - 1] = (Datum) 0;
+				repl_null[Anum_pg_proc_proconfig - 1] = true;
+			}
+			else
+			{
+				repl_val[Anum_pg_proc_proconfig - 1] = PointerGetDatum(a);
+				repl_null[Anum_pg_proc_proconfig - 1] = false;
+			}
 		}
 
+		/*
+		 * NOTE: we need to invoke heap_modify_tuple(), even if only
+		 * seclabel_item is specified by users, to make ensure the
+		 * tuple has a field to store security label.
+		 * We have a possibility that tuples inserted/updated when
+		 * SELinux is disabled does not have the field.
+		 */
 		tup = heap_modify_tuple(tup, RelationGetDescr(rel),
-							   repl_val, repl_null, repl_repl);
+								repl_val, repl_null, repl_repl);
+		if (seclabel_item)
+		{
+			Oid		pro_secid = sepgsqlInputGivenSecLabel(seclabel_item);
+
+			if (!HeapTupleHasSecLabel(tup))
+				elog(ERROR, "Unable to assign security label on \"%s\"",
+					 RelationGetRelationName(rel));
+			HeapTupleSetSecLabel(tup, pro_secid);
+		}
 	}
 
 	/* Do the update */

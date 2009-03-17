@@ -13,6 +13,7 @@
 #include "catalog/indexing.h"
 #include "catalog/pg_security.h"
 #include "miscadmin.h"
+#include "security/sepgsql.h"
 #include "utils/builtins.h"
 #include "utils/memutils.h"
 #include "utils/rel.h"
@@ -30,10 +31,7 @@ securityTupleDescHasRowAcl(Relation rel)
 bool
 securityTupleDescHasSecLabel(Relation rel)
 {
-	/*
-	 * TODO: check SE-PostgreSQL's state here
-	 */
-	return false;
+	return sepgsqlTupleDescHasSecLabel(rel);
 }
 
 static char *
@@ -361,18 +359,22 @@ securityHeapGetRowAclSysattr(HeapTuple tuple)
 Oid
 securityTransSecLabelIn(char *seclabel)
 {
-	return securityLookupSecurityId(seclabel);
+	char   *rawlabel = sepgsqlSecurityLabelTransIn(seclabel);
+
+	return securityLookupSecurityId(rawlabel);
 }
 
 char *
 securityTransSecLabelOut(Oid secid)
 {
 	char   *rawlabel = securityLookupSecurityLabel(secid);
+	char   *seclabel;
 
-	if (!rawlabel)
-		rawlabel = pstrdup("unlabeled");
+	seclabel = sepgsqlSecurityLabelTransOut(rawlabel);
+	if (!seclabel)
+		seclabel = pstrdup("unlabeled");
 
-	return rawlabel;
+	return seclabel;
 }
 
 Datum

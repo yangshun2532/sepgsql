@@ -43,6 +43,7 @@
 #include "foreign/foreign.h"
 #include "miscadmin.h"
 #include "parser/parse_func.h"
+#include "security/sepgsql.h"
 #include "utils/acl.h"
 #include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
@@ -3044,7 +3045,13 @@ AclResult
 pg_database_aclcheck(Oid db_oid, Oid roleid, AclMode mode)
 {
 	if (pg_database_aclmask(db_oid, roleid, mode, ACLMASK_ANY) != 0)
+	{
+		/* SELinux: db_database:{access} permission */
+		if ((mode & ACL_CONNECT) && !sepgsqlCheckDatabaseAccess(db_oid))
+			return ACLCHECK_NO_PRIV;
+
 		return ACLCHECK_OK;
+	}
 	else
 		return ACLCHECK_NO_PRIV;
 }
@@ -3056,7 +3063,13 @@ AclResult
 pg_proc_aclcheck(Oid proc_oid, Oid roleid, AclMode mode)
 {
 	if (pg_proc_aclmask(proc_oid, roleid, mode, ACLMASK_ANY) != 0)
+	{
+		/* SELinux: db_procedure:{execute} permission */
+		if ((mode & ACL_EXECUTE) && !sepgsqlCheckProcedureExecute(proc_oid))
+			return ACLCHECK_NO_PRIV;
+
 		return ACLCHECK_OK;
+	}
 	else
 		return ACLCHECK_NO_PRIV;
 }
