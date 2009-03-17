@@ -118,6 +118,10 @@ typedef struct TupleTableSlot
 	MinimalTuple tts_mintuple;	/* set if it's a minimal tuple, else NULL */
 	HeapTupleData tts_minhdr;	/* workspace if it's a minimal tuple */
 	long		tts_off;		/* saved state for slot_deform_tuple */
+
+	/* temporary storages for writable system columns */
+	Oid			tts_rowacl;
+	Oid			tts_seclabel;
 } TupleTableSlot;
 
 /*
