@@ -228,6 +228,7 @@ typedef struct _tableInfo
 	bool		hasoids;		/* does it have OIDs? */
 	uint32		frozenxid;		/* for restore frozen xid */
 	int			ncheck;			/* # of CHECK expressions */
+	char	   *relseclabel;	/* security labels of relation */
 	/* these two are set only if table is a sequence owned by a column: */
 	Oid			owning_tab;		/* OID of table owning sequence */
 	int			owning_col;		/* attr # of column owning sequence */
@@ -249,6 +250,7 @@ typedef struct _tableInfo
 	int		   *attlen;			/* attribute length, used by binary_upgrade */
 	char	   *attalign;		/* attribute align, used by binary_upgrade */
 	bool	   *attislocal;		/* true if attr has local definition */
+	char	  **attseclabel;	/* security labels of attributes */
 
 	/*
 	 * Note: we need to store per-attribute notnull, default, and constraint
