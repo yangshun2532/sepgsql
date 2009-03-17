@@ -216,6 +216,18 @@ SystemAttributeByName(const char *attname, bool relhasoids)
 	return NULL;
 }
 
+/*
+ * If the given attribute number is writable, returns true.
+ */
+bool
+SystemAttributeIsWritable(AttrNumber attnum)
+{
+	if (attnum == SecurityAclAttributeNumber ||
+		attnum == SecurityLabelAttributeNumber)
+		return true;
+
+	return false;
+}
 
 /* ----------------------------------------------------------------
  *				XXX END OF UGLY HARD CODED BADNESS XXX

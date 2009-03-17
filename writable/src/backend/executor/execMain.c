@@ -1489,6 +1489,70 @@ ExecEndPlan(PlanState *planstate, EState *estate)
 	}
 }
 
+/*
+ * fetchWritableSystemAttribute() fetches writable system column data
+ * using Junkfilter, and saves them at TupleTableSlot temporary.
+ *
+ * storeWritableSystemAttribute() copies these fetched data into
+ * header structure of HeapTuple.
+ */
+static void
+fetchWritableSystemAttribute(JunkFilter *junkfilter, TupleTableSlot *slot,
+							 Oid *tts_rowacl, Oid *tts_seclabel)
+{
+	AttrNumber	attno;
+	Datum		datum;
+	bool		isnull;
+
+	/* for Row-level ACLs */
+	attno = ExecFindJunkAttribute(junkfilter, SecurityAclAttributeName);
+	if (attno != InvalidAttrNumber)
+	{
+		datum = ExecGetJunkAttribute(slot, attno, &isnull);
+		if (isnull)
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("setting NULL on \"%s\" system column is not supported",
+							SecurityAclAttributeName)));
+		*tts_rowacl = securityTransRowAclIn(DatumGetAclP(datum));
+	}
+
+	/* for Security Label */
+	attno = ExecFindJunkAttribute(junkfilter, SecurityLabelAttributeName);
+	if (attno != InvalidAttrNumber)
+	{
+		datum = ExecGetJunkAttribute(slot, attno, &isnull);
+		if (isnull)
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("setting NULL on \"%s\" system column is not supported",
+							SecurityLabelAttributeName)));
+		*tts_seclabel = securityTransSecLabelIn(TextDatumGetCString(datum));
+	}
+}
+
+static void
+storeWritableSystemAttribute(Relation rel, TupleTableSlot *slot, HeapTuple tuple)
+{
+	/* "security_acl" */
+	if (HeapTupleHasRowAcl(tuple))
+		HeapTupleSetRowAcl(tuple, slot->tts_rowacl);
+	else if (OidIsValid(slot->tts_rowacl))
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("Unable to assign Row-level ACLs on \"%s\"",
+						RelationGetRelationName(rel))));
+
+	/* "security_label" */
+	if (HeapTupleHasSecLabel(tuple))
+		HeapTupleSetSecLabel(tuple, slot->tts_seclabel);
+	else if (OidIsValid(slot->tts_seclabel))
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("Unable to assign security label on \"%s\"",
+						RelationGetRelationName(rel))));
+}
+
 /* ----------------------------------------------------------------
  *		ExecutePlan
  *
@@ -1550,6 +1614,9 @@ ExecutePlan(EState *estate,
 	 */
 	for (;;)
 	{
+		Oid		tts_rowacl = InvalidOid;
+		Oid		tts_seclabel = InvalidOid;
+
 		/* Reset the per-output-tuple exprcontext */
 		ResetPerTupleExprContext(estate);
 
@@ -1694,6 +1761,12 @@ lnext:	;
 			}
 
 			/*
+			 * extract writable system attribute
+			 */
+			fetchWritableSystemAttribute(junkfilter, slot,
+										 &tts_rowacl, &tts_seclabel);
+
+			/*
 			 * extract the 'ctid' junk attribute.
 			 */
 			if (operation == CMD_UPDATE || operation == CMD_DELETE)
@@ -1720,6 +1793,8 @@ lnext:	;
 			if (operation != CMD_DELETE)
 				slot = ExecFilterJunk(junkfilter, slot);
 		}
+		slot->tts_rowacl = tts_rowacl;
+		slot->tts_seclabel = tts_seclabel;
 
 		/*
 		 * now that we have a tuple, do the appropriate thing with it.. either
@@ -1843,6 +1918,8 @@ ExecInsert(TupleTableSlot *slot,
 	 */
 	if (resultRelationDesc->rd_rel->relhasoids)
 		HeapTupleSetOid(tuple, InvalidOid);
+
+	storeWritableSystemAttribute(resultRelationDesc, slot, tuple);
 
 	/* BEFORE ROW INSERT Triggers */
 	if (resultRelInfo->ri_TrigDesc &&
@@ -2086,6 +2163,8 @@ ExecUpdate(TupleTableSlot *slot,
 	 */
 	resultRelInfo = estate->es_result_relation_info;
 	resultRelationDesc = resultRelInfo->ri_RelationDesc;
+
+	storeWritableSystemAttribute(resultRelationDesc, slot, tuple);
 
 	/* BEFORE ROW UPDATE Triggers */
 	if (resultRelInfo->ri_TrigDesc &&
@@ -3131,6 +3210,8 @@ intorel_receive(TupleTableSlot *slot, DestReceiver *self)
 	 */
 	if (myState->rel->rd_rel->relhasoids)
 		HeapTupleSetOid(tuple, InvalidOid);
+
+	storeWritableSystemAttribute(myState->rel, slot, tuple);
 
 	heap_insert(myState->rel,
 				tuple,
