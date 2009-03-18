@@ -79,11 +79,10 @@ typedef uint32 AclMode;			/* a bitmask of privilege bits */
 #define ACL_CREATE		(1<<9)	/* for namespaces and databases */
 #define ACL_CREATE_TEMP (1<<10) /* for databases */
 #define ACL_CONNECT		(1<<11) /* for databases */
-#define N_ACL_RIGHTS	12		/* 1 plus the last 1<<x */
-#define ACL_NO_RIGHTS	0
 /* Currently, SELECT ... FOR UPDATE/FOR SHARE requires UPDATE privileges */
-#define ACL_SELECT_FOR_UPDATE	ACL_UPDATE
-
+#define ACL_SELECT_FOR_UPDATE	(1<<12)
+#define N_ACL_RIGHTS	13		/* 1 plus the last 1<<x */
+#define ACL_NO_RIGHTS	0
 
 /*****************************************************************************
  *	Query Tree

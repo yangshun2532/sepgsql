@@ -1311,6 +1311,9 @@ DoCopyTo(CopyState cstate)
 			ereport(ERROR,
 					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
 					 errmsg("\"%s\" is a directory", cstate->filename)));
+
+		/* SELinux checks file:{write} permission */
+		sepgsqlCheckFileWrite(fileno(cstate->copy_file), cstate->filename);
 	}
 
 	PG_TRY();
@@ -1870,6 +1873,9 @@ CopyFrom(CopyState cstate)
 			ereport(ERROR,
 					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
 					 errmsg("\"%s\" is a directory", cstate->filename)));
+
+		/* SELinux checks file:{read} permission */
+		sepgsqlCheckFileRead(fileno(cstate->copy_file), cstate->filename);
 	}
 
 	tupDesc = RelationGetDescr(cstate->rel);

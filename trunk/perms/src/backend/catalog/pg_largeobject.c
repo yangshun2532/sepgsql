@@ -18,6 +18,7 @@
 #include "access/heapam.h"
 #include "catalog/indexing.h"
 #include "catalog/pg_largeobject.h"
+#include "security/sepgsql.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
 #include "utils/rel.h"
@@ -59,6 +60,9 @@ LargeObjectCreate(Oid loid)
 
 	ntup = heap_form_tuple(pg_largeobject->rd_att, values, nulls);
 
+	/* SELinux checks db_blob:{create} */
+	sepgsqlCheckBlobCreate(ntup);
+
 	/*
 	 * Insert it
 	 */
@@ -93,6 +97,9 @@ LargeObjectDrop(Oid loid)
 
 	while ((tuple = systable_getnext(sd)) != NULL)
 	{
+		/* SELinux checks db_blob:{drop} */
+		if (!found)
+			sepgsqlCheckBlobDrop(tuple);
 		simple_heap_delete(pg_largeobject, &tuple->t_self);
 		found = true;
 	}

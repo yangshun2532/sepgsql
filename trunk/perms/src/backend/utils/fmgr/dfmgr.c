@@ -23,6 +23,7 @@
 #endif
 #include "lib/stringinfo.h"
 #include "miscadmin.h"
+#include "security/sepgsql.h"
 #include "utils/dynamic_loader.h"
 #include "utils/hsearch.h"
 
@@ -76,7 +77,6 @@ static void incompatible_module_error(const char *libname,
 									const Pg_magic_struct *module_magic_data);
 static void internal_unload_library(const char *libname);
 static bool file_exists(const char *name);
-static char *expand_dynamic_library_name(const char *name);
 static void check_restricted_library_name(const char *name);
 static char *substitute_libpath_macro(const char *name);
 static char *find_in_dynamic_libpath(const char *basename);
@@ -108,6 +108,9 @@ load_external_function(char *filename, char *funcname,
 
 	/* Expand the possibly-abbreviated filename to an exact path name */
 	fullname = expand_dynamic_library_name(filename);
+
+	/* SELinux checks db_database:{load_module} */
+	sepgsqlCheckDatabaseLoadModule(fullname);
 
 	/* Load the shared library, unless we already did */
 	lib_handle = internal_load_library(fullname);
@@ -148,6 +151,9 @@ load_file(const char *filename, bool restricted)
 
 	/* Expand the possibly-abbreviated filename to an exact path name */
 	fullname = expand_dynamic_library_name(filename);
+
+	/* SELinux checks db_database:{load_module} */
+	sepgsqlCheckDatabaseLoadModule(fullname);
 
 	/* Unload the library if currently loaded */
 	internal_unload_library(fullname);
@@ -470,7 +476,7 @@ file_exists(const char *name)
  *
  * The result will always be freshly palloc'd.
  */
-static char *
+char *
 expand_dynamic_library_name(const char *name)
 {
 	bool		have_slash;

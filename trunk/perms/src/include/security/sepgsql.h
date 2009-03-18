@@ -12,6 +12,7 @@
 #include "executor/execdesc.h"
 #include "fmgr.h"
 #include "nodes/parsenodes.h"
+#include "storage/large_object.h"
 #include "utils/relcache.h"
 
 #ifdef HAVE_SELINUX
@@ -223,6 +224,12 @@ extern bool
 sepgsqlCheckDatabaseSuperuser(void);
 
 extern void
+sepgsqlCheckDatabaseInstallModule(const char *filename);
+
+extern void
+sepgsqlCheckDatabaseLoadModule(const char *filename);
+
+extern void
 sepgsqlCheckTableLock(Oid table_oid);
 
 extern void
@@ -233,6 +240,42 @@ sepgsqlCheckProcedureExecute(Oid proc_oid);
 
 extern void
 sepgsqlCheckProcedureEntrypoint(FmgrInfo *finfo, HeapTuple protup);
+
+extern void
+sepgsqlCheckProcedureInstall(Relation rel, HeapTuple newtup, HeapTuple oldtup);
+
+extern void
+sepgsqlCheckBlobCreate(HeapTuple lotup);
+
+extern void
+sepgsqlCheckBlobDrop(HeapTuple lotup);
+
+extern void
+sepgsqlCheckBlobRead(LargeObjectDesc *lobj);
+
+extern void
+sepgsqlCheckBlobWrite(LargeObjectDesc *lobj);
+
+extern void
+sepgsqlCheckBlobGetattr(HeapTuple tuple);
+
+extern void
+sepgsqlCheckBlobSetattr(HeapTuple tuple);
+
+extern void
+sepgsqlCheckBlobExport(LargeObjectDesc *lobj,
+					   int fdesc, const char *filename);
+extern void
+sepgsqlCheckBlobImport(LargeObjectDesc *lobj,
+					   int fdesc, const char *filename);
+extern void
+sepgsqlCheckBlobRelabel(HeapTuple oldtup, HeapTuple newtup);
+
+extern void
+sepgsqlCheckFileRead(int fdesc, const char *filename);
+
+extern void
+sepgsqlCheckFileWrite(int fdesc, const char *filename);
 
 // Hint for optimizer
 extern bool
@@ -313,6 +356,15 @@ sepgsqlCheckObjectPerms(Relation rel, HeapTuple tuple,
 #define sepgsqlCheckTableTruncate(a)			do {} while(0)
 #define sepgsqlCheckProcedureExecute(a)			(true)
 #define sepgsqlCheckProcedureEntrypoint(a,b)	do {} while(0)
+#define sepgsqlCheckBlobCreate(a)				do {} while(0)
+#define sepgsqlCheckBlobDrop(a)					do {} while(0)
+#define sepgsqlCheckBlobRead(a)					do {} while(0)
+#define sepgsqlCheckBlobWrite(a)				do {} while(0)
+#define sepgsqlCheckBlobGetattr(a)				do {} while(0)
+#define sepgsqlCheckBlobSetattr(a)				do {} while(0)
+#define sepgsqlCheckBlobExport(a,b,c)			do {} while(0)
+#define sepgsqlCheckBlobImport(a,b,c)			do {} while(0)
+#define sepgsqlCheckBlobRelabel(a,b)			do {} while(0)
 #define sepgsqlAllowFunctionInlined(a)			(true)
 // label.c
 #define sepgsqlTupleDescHasSecLabel(a)			(false)

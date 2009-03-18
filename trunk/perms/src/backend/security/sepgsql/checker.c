@@ -10,6 +10,7 @@
 #include "access/sysattr.h"
 #include "catalog/pg_database.h"
 #include "catalog/pg_language.h"
+#include "catalog/pg_largeobject.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_rewrite.h"
 #include "catalog/pg_security.h"
@@ -96,6 +97,12 @@ checkTabelColumnPerms(Oid relid, Bitmapset *selected, Bitmapset *modified,
      *   correctness of access controls depends on these data are
      *   protected from unexpected manipulation.
 	 *
+	 * - User cannot modify pg_largeobject.* by hand, because we
+	 *   assumes largeobjects are accessed via certain functions
+	 *   such as lowrite(), so the correctness of access controls
+	 *   depends on these data are protected from unexpected
+	 *   manipulation.
+	 *
 	 * SE-PostgreSQL always prevent user's query tries to modify
 	 * these system catalogs by hand. Please use approariate
 	 * interfaces.
@@ -104,7 +111,8 @@ checkTabelColumnPerms(Oid relid, Bitmapset *selected, Bitmapset *modified,
 					 | SEPG_DB_TABLE__INSERT
 					 | SEPG_DB_TABLE__DELETE)) != 0
 		&& (relid == RewriteRelationId ||
-			relid == SecurityRelationId))
+			relid == SecurityRelationId ||
+			relid == LargeObjectRelationId))
 		ereport(ERROR,
 				(errcode(ERRCODE_SELINUX_ERROR),
 				 errmsg("SE-PostgreSQL peremptorily prevent to modify "
@@ -217,10 +225,8 @@ sepgsqlCheckRTEPerms(RangeTblEntry *rte)
 		required |= SEPG_DB_TABLE__UPDATE;
 	if (rte->requiredPerms & ACL_DELETE)
 		required |= SEPG_DB_TABLE__DELETE;
-	/*
-	 * TODO: we should add SEPG_DB_TABLE__LOCK here,
-	 * but ACL_SELECT_FOR_UPDATE has same value now.
-	 */
+	if (rte->requiredPerms & ACL_SELECT_FOR_UPDATE)
+		required |= SEPG_DB_TABLE__LOCK;
 	if (required == 0)
 		return;
 
@@ -315,6 +321,9 @@ sepgsqlExecScan(Relation rel, HeapTuple tuple, AclMode required, bool abort)
 	access_vector_t		permissions = 0;
 	const char		   *audit_name;
 
+	if (!sepgsqlIsEnabled())
+		return true;
+
 	if (RelationGetForm(rel)->relkind != RELKIND_RELATION)
 		return true;
 
@@ -333,6 +342,42 @@ sepgsqlExecScan(Relation rel, HeapTuple tuple, AclMode required, bool abort)
 								 tclass,
 								 permissions,
 								 audit_name, abort);
+}
+
+/*
+ * checkCLibraryInstallation
+ *   It checks the correctness of C-library when user tries to
+ *   create / replace C-functions.
+ */
+static void
+checkCLibraryInstallation(HeapTuple newtup, HeapTuple oldtup)
+{
+	Form_pg_proc    oldpro, newpro;
+	Datum           oldbin, newbin;
+	char           *filename;
+	bool            isnull;
+
+	newpro = (Form_pg_proc) GETSTRUCT(newtup);
+	if (newpro->prolang != ClanguageId)
+		return;
+
+	newbin = SysCacheGetAttr(PROCOID, newtup,
+							 Anum_pg_proc_probin, &isnull);
+	if (isnull)
+		return;
+
+	if (HeapTupleIsValid(oldtup))
+	{
+		oldpro = (Form_pg_proc) GETSTRUCT(oldtup);
+		oldbin = SysCacheGetAttr(PROCOID, oldtup,
+								 Anum_pg_proc_probin, &isnull);
+		if (!isnull &&
+			oldpro->prolang == newpro->prolang &&
+			DatumGetBool(DirectFunctionCall2(byteaeq, oldbin, newbin)))
+			return;		/* no need to check, if unchanged */
+	}
+	filename = TextDatumGetCString(newbin);
+	sepgsqlCheckDatabaseInstallModule(filename);
 }
 
 /*
@@ -381,7 +426,13 @@ sepgsqlHeapTupleInsert(Relation rel, HeapTuple newtup, bool internal)
 
 	if (checkTrustedAction(rel, internal))
 		return true;
+	/* check binary library installation */
+	if (relid == ProcedureRelationId)
+		checkCLibraryInstallation(newtup, NULL);
+	/* check db_procedure:{install} */
+	sepgsqlCheckProcedureInstall(rel, newtup, NULL);
 
+skip:	/* A case for special care of db_blob:{create} */
 	tclass = sepgsqlTupleObjectClass(relid, newtup);
 	audit_name = sepgsqlAuditName(relid, newtup);
 	return sepgsqlClientHasPerms(HeapTupleGetSecLabel(newtup),
@@ -426,6 +477,11 @@ sepgsqlHeapTupleUpdate(Relation rel, HeapTuple oldtup,
 	if (oldclass != newclass ||
 		HeapTupleGetSecLabel(oldtup) != HeapTupleGetSecLabel(newtup))
 		required |= SEPG_DB_TUPLE__RELABELFROM;
+	/* check binary library installation */
+	if (relid == ProcedureRelationId)
+		checkCLibraryInstallation(newtup, oldtup);
+	/* check db_procedure:{install}, if necessary */
+	sepgsqlCheckProcedureInstall(rel, newtup, oldtup);
 
 	audit_name = sepgsqlAuditName(relid, newtup);
 	if (required != 0)
