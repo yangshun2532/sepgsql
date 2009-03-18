@@ -7,20 +7,8 @@
  */
 #include "postgres.h"
 
-#include "catalog/pg_aggregate.h"
-#include "catalog/pg_amproc.h"
-#include "catalog/pg_cast.h"
-#include "catalog/pg_conversion.h"
 #include "catalog/pg_database.h"
-#include "catalog/pg_foreign_data_wrapper.h"
-#include "catalog/pg_language.h"
-#include "catalog/pg_operator.h"
 #include "catalog/pg_proc.h"
-#include "catalog/pg_trigger.h"
-#include "catalog/pg_ts_parser.h"
-#include "catalog/pg_ts_template.h"
-#include "catalog/pg_ts_template.h"
-#include "catalog/pg_type.h"
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
 #include "nodes/nodes.h"
@@ -87,16 +75,15 @@ sepgsqlCheckDatabaseSuperuser(void)
  *   checks db_table:{delete} permission when the client tries to
  *   truncate the given relation.
  */
-static bool
+static void
 checkTableCommon(Oid table_oid, access_vector_t perms)
 {
 	const char		   *audit_name;
 	security_class_t	tclass;
 	HeapTuple			tuple;
-	bool				rc = true;
 
 	if (!sepgsqlIsEnabled())
-		return true;
+		return;
 
 	tuple = SearchSysCache(RELOID,
 						   ObjectIdGetDatum(table_oid),
@@ -106,31 +93,28 @@ checkTableCommon(Oid table_oid, access_vector_t perms)
 
 	tclass = sepgsqlTupleObjectClass(RelationRelationId, tuple);
 	if (tclass == SEPG_CLASS_DB_TABLE)
-		goto skip;
-
-	audit_name = sepgsqlAuditName(RelationRelationId, tuple);
-	rc = sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
-							   SEPG_CLASS_DB_TABLE,
-							   perms,
-							   audit_name, true);
-skip:
+	{
+		audit_name = sepgsqlAuditName(RelationRelationId, tuple);
+		sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
+							  SEPG_CLASS_DB_TABLE,
+							  perms,
+							  audit_name, true);
+	}
 	ReleaseSysCache(tuple);
-
-	return rc;
 }
 
-bool
+void
 sepgsqlCheckTableLock(Oid table_oid)
 {
-	return checkTableCommon(table_oid,
-							SEPG_DB_TABLE__LOCK);
+	/* check db_table:{lock} permission */
+	checkTableCommon(table_oid, SEPG_DB_TABLE__LOCK);
 }
 
-bool
+void
 sepgsqlCheckTableTruncate(Relation rel)
 {
-	return checkTableCommon(RelationGetRelid(rel),
-							SEPG_DB_TABLE__DELETE);
+	/* check db_table:{delete} permission */
+	checkTableCommon(RelationGetRelid(rel), SEPG_DB_TABLE__DELETE);
 }
 
 /*
