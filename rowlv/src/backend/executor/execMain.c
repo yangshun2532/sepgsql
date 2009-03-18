@@ -51,6 +51,7 @@
 #include "optimizer/clauses.h"
 #include "parser/parse_clause.h"
 #include "parser/parsetree.h"
+#include "security/rowlevel.h"
 #include "security/sepgsql.h"
 #include "storage/bufmgr.h"
 #include "storage/lmgr.h"
@@ -1950,8 +1951,11 @@ ExecInsert(TupleTableSlot *slot,
 		}
 	}
 
-	/* SELinux: check db_xxx:{create} permission */
-	sepgsqlHeapTupleInsert(resultRelationDesc, tuple, false);
+	/*
+	 * check Row-level permission on the tuple
+	 */
+	if (!rowlvHeapTupleInsert(resultRelationDesc, tuple, false))
+		return;
 
 	/*
 	 * Check the constraints of the tuple
@@ -2025,8 +2029,11 @@ ExecDelete(ItemPointer tupleid,
 			return;
 	}
 
-	/* SELinux: check db_xxx:{drop} permission */
-	sepgsqlHeapTupleDelete(resultRelationDesc, tupleid, false);
+	/*
+	 * check Row-level permission on the tuple
+	 */
+	if (!rowlvHeapTupleDelete(resultRelationDesc, tupleid, false))
+		return;
 
 	/*
 	 * delete the tuple
@@ -2196,8 +2203,11 @@ ExecUpdate(TupleTableSlot *slot,
 		}
 	}
 
-	/* SELinux: check db_xxx:{setattr} permission */
-	sepgsqlHeapTupleUpdate(resultRelationDesc, tupleid, tuple, false);
+	/*
+	 * check Row-level permission on the tuple
+	 */
+	if (!rowlvHeapTupleUpdate(resultRelationDesc, tupleid, tuple, false))
+		return;
 
 	/*
 	 * Check the constraints of the tuple
@@ -3212,6 +3222,8 @@ intorel_receive(TupleTableSlot *slot, DestReceiver *self)
 		HeapTupleSetOid(tuple, InvalidOid);
 
 	storeWritableSystemAttribute(myState->rel, slot, tuple);
+	if (!rowlvHeapTupleInsert(myState->rel, tuple, false))
+		return;
 
 	heap_insert(myState->rel,
 				tuple,

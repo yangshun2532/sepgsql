@@ -21,6 +21,9 @@
 /* GUC parameter to turn on/off SE-PostgreSQL */
 extern bool sepostgresql_is_enabled;
 
+/* GUC parameter to turn on/off Row-level controls */
+extern bool sepostgresql_row_level;
+
 /* Objject classes and permissions internally used */
 enum SepgsqlClasses
 {
@@ -171,14 +174,17 @@ sepgsqlCheckCopyTable(Relation rel, List *attnumlist, bool is_from);
 extern void
 sepgsqlCheckSelectInto(Oid relaionId);
 
-extern void
-sepgsqlHeapTupleInsert(Relation rel, HeapTuple tuple, bool internal);
+extern bool
+sepgsqlExecScan(Relation rel, HeapTuple tuple, AclMode required, bool abort);
 
-extern void
-sepgsqlHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple tuple, bool internal);
+extern bool
+sepgsqlHeapTupleInsert(Relation rel, HeapTuple newtup, bool internal);
 
-extern void
-sepgsqlHeapTupleDelete(Relation rel, ItemPointer otid, bool internal);
+extern bool
+sepgsqlHeapTupleUpdate(Relation rel, HeapTuple oldtup, HeapTuple newtup, bool internal);
+
+extern bool
+sepgsqlHeapTupleDelete(Relation rel, HeapTuple oldtup, bool internal);
 
 /*
  * core.c : core facilities
@@ -241,6 +247,9 @@ sepgsqlTupleDescHasSecLabel(Relation rel);
 extern void
 sepgsqlSetDefaultSecLabel(Relation rel, HeapTuple tuple);
 
+extern security_context_t
+sepgsqlMetaSecurityLabel(void);
+
 extern Oid
 sepgsqlInputGivenSecLabel(DefElem *defel);
 
@@ -290,9 +299,10 @@ sepgsqlCheckObjectPerms(Relation rel, HeapTuple tuple,
 #define sepgsqlCheckRTEPerms(a)					do {} while(0)
 #define sepgsqlCheckCopyTable(a,b,c)			do {} while(0)
 #define sepgsqlCheckSelectInto(a)				do {} while(0)
-#define sepgsqlHeapTupleInsert(a,b,c)			do {} while(0)
-#define sepgsqlHeapTupleUpdate(a,b,c,d)			do {} while(0)
-#define sepgsqlHeapTupleDelete(a,b,c)			do {} while(0)
+#define sepgsqlExecScan(a,b,c,d)				(true)
+#define sepgsqlHeapTupleInsert(a,b,c)			(true)
+#define sepgsqlHeapTupleUpdate(a,b,c,d)			(true)
+#define sepgsqlHeapTupleDelete(a,b,c)			(true)
 /* core.c */
 #define sepgsqlIsEnabled()						(false)
 #define sepgsqlInitialize()						do {} while(0)
@@ -305,6 +315,7 @@ sepgsqlCheckObjectPerms(Relation rel, HeapTuple tuple,
 #define sepgsqlCheckProcedureEntrypoint(a,b)	do {} while(0)
 #define sepgsqlAllowFunctionInlined(a)			(true)
 // label.c
+#define sepgsqlMetaSecurityLabel()				(NULL)
 #define sepgsqlInputGivenSecLabel(a)			(PointerGetDatum(NULL))
 #define sepgsqlInputGivenSecLabelRelation(a)	(NIL)
 #define sepgsqlSetDefaultSecLabel(a,b,c,d)		do {} while(0)
@@ -315,5 +326,13 @@ extern Datum sepgsql_getcon(PG_FUNCTION_ARGS);
 extern Datum sepgsql_server_getcon(PG_FUNCTION_ARGS);
 extern Datum sepgsql_raw_to_trans(PG_FUNCTION_ARGS);
 extern Datum sepgsql_trans_to_raw(PG_FUNCTION_ARGS);
+extern Datum sepgsql_get_user(PG_FUNCTION_ARGS);
+extern Datum sepgsql_get_role(PG_FUNCTION_ARGS);
+extern Datum sepgsql_get_type(PG_FUNCTION_ARGS);
+extern Datum sepgsql_get_range(PG_FUNCTION_ARGS);
+extern Datum sepgsql_set_user(PG_FUNCTION_ARGS);
+extern Datum sepgsql_set_role(PG_FUNCTION_ARGS);
+extern Datum sepgsql_set_type(PG_FUNCTION_ARGS);
+extern Datum sepgsql_set_range(PG_FUNCTION_ARGS);
 
 #endif	/* SEPGSQL_H */

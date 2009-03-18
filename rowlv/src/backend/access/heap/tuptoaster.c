@@ -35,6 +35,7 @@
 #include "access/tuptoaster.h"
 #include "access/xact.h"
 #include "catalog/catalog.h"
+#include "security/rowlevel.h"
 #include "utils/fmgroids.h"
 #include "utils/pg_lzcompress.h"
 #include "utils/rel.h"
@@ -1224,6 +1225,8 @@ toast_save_datum(Relation rel, Datum value, int options)
 		SET_VARSIZE(&chunk_data, chunk_size + VARHDRSZ);
 		memcpy(VARDATA(&chunk_data), data_p, chunk_size);
 		toasttup = heap_form_tuple(toasttupDesc, t_values, t_isnull);
+
+		rowlvHeapTupleInsert(toastrel, toasttup, true);
 
 		heap_insert(toastrel, toasttup, mycid, options, NULL);
 

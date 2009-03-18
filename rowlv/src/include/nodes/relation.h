@@ -383,6 +383,14 @@ typedef struct RelOptInfo
 	 * list just to avoid recomputing the best inner indexscan repeatedly for
 	 * similar outer relations.  See comments for InnerIndexscanInfo.
 	 */
+
+	/*
+	 * Row-level access controls (both of DAC and MAC) needs to copy
+	 * requiredPerms and checkAsUser from RangeTblEntry
+	 */
+	AclMode		requiredPerms;
+
+	Oid			checkAsUser;
 } RelOptInfo;
 
 /*

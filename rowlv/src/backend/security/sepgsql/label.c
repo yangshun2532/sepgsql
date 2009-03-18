@@ -23,6 +23,9 @@
 #include "utils/memutils.h"
 #include "utils/syscache.h"
 
+/* GUC: to turn on/off row level controls in SE-PostgreSQL */
+bool sepostgresql_row_level;
+
 /*
  * sepgsqlTupleDescHasSecLabel
  *
@@ -38,7 +41,7 @@ sepgsqlTupleDescHasSecLabel(Relation rel)
 		RelationGetRelid(rel) == ProcedureRelationId)
 		return true;
 
-	return false;
+	return sepostgresql_row_level;
 }
 
 /*
@@ -129,6 +132,38 @@ sepgsqlSetDefaultSecLabel(Relation rel, HeapTuple tuple)
 	}
 
 	HeapTupleSetSecLabel(tuple, newsid);
+}
+
+/*
+ * sepgsqlMetaSecurityLabel
+ *   It returns a security label of tuples within pg_security system
+ *   catalog. The purpose of this special handling is to avoid infinite
+ *   function invocations to insert new entry for meta security labels.
+ */
+char *
+sepgsqlMetaSecurityLabel(void)
+{
+	HeapTuple			tuple;
+	security_context_t	tcontext;
+	Oid					tsecid;
+
+	tuple = SearchSysCache(RELOID,
+						   ObjectIdGetDatum(SecurityRelationId),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "SELinux: cache lookup failed for relation: pg_security");
+
+	tsecid = HeapTupleGetSecLabel(tuple);
+
+	ReleaseSysCache(tuple);
+
+	tcontext = securityLookupSecurityLabel(tsecid);
+	if (!tcontext || security_check_context(tcontext) < 0)
+		tcontext = sepgsqlGetUnlabeledLabel();
+
+	return sepgsqlComputeCreate(sepgsqlGetServerLabel(),
+								tcontext,
+								SEPG_CLASS_DB_TUPLE);
 }
 
 /*
