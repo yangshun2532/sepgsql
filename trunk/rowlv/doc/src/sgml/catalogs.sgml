@@ -199,6 +199,11 @@
      </row>
 
      <row>
+       <entry><link linkend="catalog-pg-security"><structname>pg_security</structname></link></entry>
+       <entry>text representation of security attribute</entry>
+     </row>
+
+     <row>
       <entry><link linkend="catalog-pg-shdepend"><structname>pg_shdepend</structname></link></entry>
       <entry>dependencies on shared objects</entry>
      </row>
@@ -3958,6 +3963,68 @@
 
  </sect1>
 
+ <sect1 id="catalog-pg-security">
+   <title><structname>pg_security</structname></title>
+
+   <indexterm zone="catalog-pg-security">
+     <primary>pg_security</primary>
+   </indexterm>
+
+   <para>
+     The catalog <structname>pg_security</structname> enables to store
+     text representations of security attributes, and every tuples have
+     its object identifier called as security identifier.
+   </para>
+
+   <para>
+     Enhanced security features, such as SE-PostgreSQL, need to assign
+     a security attribute on a database object, but it is not a good
+     strategy to assign it as a human readable form on individual tuples,
+     because it consumes about 20 - 40 bytes of strage for each tuples,
+     makes hard to tune performance for permission checks and more complex
+     its implementation.
+   </para>
+   <para>
+     The security identifier consumes only 4-byte storage for each tuples,
+     and it indicates an entry within <structname>pg_security</structname>
+     which contains text representation of security attribute.
+   </para>
+   <para>
+     It assumes enhanced security feature assigns a limited number of
+     security attributes on massive number of tuples, as generic security
+     mechanism doing. It enables to store the text representations and
+     associate it and security identifiers effectively.
+   </para>
+   <para>
+     When a new security attribute is given to the system, the backend
+     adds an entry to <structname>pg_security</structname> and its
+     object id is newly used to security identifier.
+   </para>
+
+   <table>
+     <title><structname>pg_security</>Columns</title>
+
+     <tgroup cols=4>
+       <thead>
+         <row>
+           <entry>Name</entry>
+           <entry>Type</entry>
+           <entry>References</entry>
+           <entry>Description</entry>
+         </row>
+       </thead>
+
+       <tbody>
+         <row>
+           <entry><structfield>seclabel</structfield></entry>
+           <entry><type>text</type></entry>
+           <entry></entry>
+           <entry>Text representation of security attribute</entry>
+         </row>
+       </tbody>
+     </tgroup>
+   </table>
+ </sect1>
 
  <sect1 id="catalog-pg-shdepend">
   <title><structname>pg_shdepend</structname></title>
