@@ -1228,6 +1228,10 @@ DATA(insert OID = 958 (  lo_tell		   PGNSP PGUID 12 1 0 0 f f f t f v 1 0 23 "23
 DESCR("large object position");
 DATA(insert OID = 1004 (  lo_truncate	   PGNSP PGUID 12 1 0 0 f f f t f v 2 0 23 "23 23" _null_ _null_ _null_ _null_ lo_truncate _null_ _null_ _null_ ));
 DESCR("truncate large object");
+DATA(insert OID = 1029 (  lo_get_security  PGNSP PGUID 12 1 0 0 f f f t f v 1 0 25 "26" _null_ _null_ _null_ _null_ lo_get_security _null_ _null_ _null_ ));
+DESCR("get security label of large object");
+DATA(insert OID = 1030 (  lo_set_security  PGNSP PGUID 12 1 0 0 f f f t f v 2 0 16 "26 25" _null_ _null_ _null_ _null_ lo_set_security _null_ _null_ _null_ ));
+DESCR("set security label of large object");
 
 DATA(insert OID = 959 (  on_pl			   PGNSP PGUID 12 1 0 0 f f f t f i 2 0 16 "600 628" _null_ _null_ _null_ _null_	on_pl _null_ _null_ _null_ ));
 DESCR("point on line?");

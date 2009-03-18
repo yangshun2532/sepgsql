@@ -44,6 +44,7 @@ typedef struct LargeObjectDesc
 #define IFS_RDLOCK		(1 << 0)
 #define IFS_WRLOCK		(1 << 1)
 
+	Oid			secid;			/* security identifier of largeobject */
 } LargeObjectDesc;
 
 
@@ -79,5 +80,7 @@ extern int	inv_tell(LargeObjectDesc *obj_desc);
 extern int	inv_read(LargeObjectDesc *obj_desc, char *buf, int nbytes);
 extern int	inv_write(LargeObjectDesc *obj_desc, const char *buf, int nbytes);
 extern void inv_truncate(LargeObjectDesc *obj_desc, int len);
+extern Oid	inv_get_security(Oid loid);
+extern void	inv_set_security(Oid loid, Oid secid);
 
 #endif   /* LARGE_OBJECT_H */

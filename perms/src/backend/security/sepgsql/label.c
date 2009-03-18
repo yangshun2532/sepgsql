@@ -110,7 +110,32 @@ sepgsqlSetDefaultSecLabel(Relation rel, HeapTuple tuple)
 			ReleaseSysCache(reltup);
 		}
 		newsid = sepgsqlClientCreate(table_sid, SEPG_CLASS_DB_COLUMN);
-       break;
+		break;
+
+	case SEPG_CLASS_DB_BLOB:
+		/*
+		 * NOTE:
+		 * A object within db_blob class has a characteristic.
+		 * It does not have one-to-one mapping on a object and
+		 * a tuple, in other word, a large object consists of
+		 * multiple tuples. In most cases, user accesses them
+		 * via several certain interfaces, like loread().
+		 * So, we assume user don't touch pg_largeobject system
+		 * catalog by hand, and it does not give us any degradation
+		 * at interface incompatibility.
+		 *
+		 * Thus, all the tuples modified are come from internal
+		 * interfaces, like simple_heap_insert(). The backend
+		 * implementation has to set correct security context
+		 * prior to insert a tuple. A security context of
+		 * largeobject is cached on LargeObjectDesc->secid
+		 * The only exception is inv_create(). It invoked
+		 * simple_heap_insert() with no security context to
+		 * assign a default one here.
+		 */
+		newsid = sepgsqlClientCreate(sepgsqlGetDatabaseSid(),
+									 SEPG_CLASS_DB_BLOB);
+		break;
 
 	default:	/* SEPG_CLASS_DB_TUPLE */
 		if (IsBootstrapProcessingMode() &&
