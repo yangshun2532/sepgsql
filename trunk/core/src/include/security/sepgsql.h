@@ -216,10 +216,10 @@ sepgsqlCheckDatabaseAccess(Oid database_oid);
 extern bool
 sepgsqlCheckDatabaseSuperuser(void);
 
-extern bool
+extern void
 sepgsqlCheckTableLock(Oid table_oid);
 
-extern bool
+extern void
 sepgsqlCheckTableTruncate(Relation rel);
 
 extern bool
@@ -299,21 +299,21 @@ sepgsqlCheckObjectPerms(Relation rel, HeapTuple tuple,
 // hooks.c
 #define sepgsqlCheckDatabaseAccess(a)			(true)
 #define sepgsqlCheckDatabaseSuperuser()			(true)
-#define sepgsqlCheckTableLock(a)				(true)
-#define sepgsqlCheckTableTruncate(a)			(true)
+#define sepgsqlCheckTableLock(a)				do {} while(0)
+#define sepgsqlCheckTableTruncate(a)			do {} while(0)
 #define sepgsqlCheckProcedureExecute(a)			(true)
 #define sepgsqlCheckProcedureEntrypoint(a,b)	do {} while(0)
 #define sepgsqlAllowFunctionInlined(a)			(true)
 // label.c
-#define sepgsqlInputGivenSecLabel(a)			(PointerGetDatum(NULL))
+#define sepgsqlTupleDescHasSecLabel(a)			(false)
+#define sepgsqlInputGivenSecLabel(a)			(InvalidOid)
 #define sepgsqlInputGivenSecLabelRelation(a)	(NIL)
-#define sepgsqlSetDefaultSecLabel(a,b,c,d)		do {} while(0)
+#define sepgsqlSecurityLabelTransIn(a)			(a)
+#define sepgsqlSecurityLabelTransOut(a)			(a)
 
 #endif	/* HAVE_SELINUX */
 
 extern Datum sepgsql_getcon(PG_FUNCTION_ARGS);
 extern Datum sepgsql_server_getcon(PG_FUNCTION_ARGS);
-extern Datum sepgsql_raw_to_trans(PG_FUNCTION_ARGS);
-extern Datum sepgsql_trans_to_raw(PG_FUNCTION_ARGS);
 
 #endif	/* SEPGSQL_H */
