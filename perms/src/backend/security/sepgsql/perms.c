@@ -328,11 +328,6 @@ sepgsqlAuditName(Oid relid, HeapTuple tuple)
 
 	case ProcedureRelationId:
 		return NameStr(((Form_pg_proc) GETSTRUCT(tuple))->proname);
-
-	case LargeObjectRelationId:
-		snprintf(buffer, sizeof(buffer), "blob:%u",
-				 ((Form_pg_largeobject) GETSTRUCT(tuple))->loid);
-		return buffer;
 	}
 	return NULL;
 }
