@@ -110,7 +110,7 @@ sepgsqlSetDefaultSecLabel(Relation rel, HeapTuple tuple)
 			ReleaseSysCache(reltup);
 		}
 		newsid = sepgsqlClientCreate(table_sid, SEPG_CLASS_DB_COLUMN);
-       break;
+		break;
 
 	default:	/* SEPG_CLASS_DB_TUPLE */
 		if (IsBootstrapProcessingMode() &&
