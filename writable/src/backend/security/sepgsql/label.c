@@ -32,6 +32,12 @@
 bool
 sepgsqlTupleDescHasSecLabel(Relation rel)
 {
+	if (!sepgsqlIsEnabled())
+		return false;
+
+	if (rel == NULL)
+		return false;	/* target of SELECT INTO */
+
 	if (RelationGetRelid(rel) == DatabaseRelationId  ||
 		RelationGetRelid(rel) == RelationRelationId  ||
 		RelationGetRelid(rel) == AttributeRelationId ||
@@ -213,6 +219,9 @@ sepgsqlSecurityLabelTransIn(security_context_t seclabel)
 	security_context_t	rawlabel;
 	security_context_t	result;
 
+	if (!sepgsqlIsEnabled())
+		return seclabel;
+
 	if (selinux_trans_to_raw_context(seclabel, &rawlabel) < 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_SELINUX_ERROR),
@@ -242,6 +251,9 @@ sepgsqlSecurityLabelTransOut(security_context_t rawlabel)
 {
 	security_context_t	seclabel;
 	security_context_t	result;
+
+	if (!sepgsqlIsEnabled())
+		return rawlabel;
 
 	if (selinux_raw_to_trans_context(rawlabel, &seclabel) < 0)
 		ereport(ERROR,
