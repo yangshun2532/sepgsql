@@ -725,7 +725,28 @@ SET ENABLE_SEQSCAN TO OFF;
        </listitem>
      </varlistentry>
 
-    </variablelist>
+     <varlistentry id="guc-sepostgresql-row-level" xreflabel="sepostgresql-row-level">
+       <term><varname>sepostgresql_row_level</varname> (<type>boolean</type>)</term>
+       <indexterm>
+         <primary><varname>sepostgresql_row_level</> configuration parameter</primary>
+       </indexterm>
+       <listitem>
+        <para>
+          Enables to turn on/off row-level access controls via SE-PostgreSQL.
+          The row-level access control feature requires additional 4-bytes
+          field for each tuples, so setting it <literal>off</literal> enables
+          to save the storage consumption, in return for the row-level granularity.
+          But we don't recommend it, unless you faces extremely severe requirements
+          for saving storage consumption.
+          The default is <literal>on</literal> which means row-level access
+          controls are available.
+          This parameter is available on a binary with SELinux support
+          (<literal>--enable-selinux</literal>), and can only be set at
+          server start.
+        </para>
+       </listitem>
+      </varlistentry>
+     </variablelist>
     </sect2>
    </sect1>
 
