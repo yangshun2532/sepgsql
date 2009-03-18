@@ -58,38 +58,32 @@ if [ ${GEN_PATCH_ONLY} -eq 0 ]; then
     mv postgresql-${BASE_VERSION} base
 fi
 
-echo "GEN: sepgsql-sysatt-${BASE_VERSION}.patch"
-diff -Nrpc sepgsql sysatt	> ${RPMSOURCE}/sepgsql-sysatt-${BASE_MAJOR}.patch
+echo "GEN: sepgsql-08-docs-${BASE_VERSION}.patch"
+diff -Nrpc base/doc perms/doc	> ${RPMSOURCE}/sepgsql-08-docs-${BASE_VERSION}.patch
+rm -rf ./*/doc
 
-echo "GEN: sepgsql-rowlv-${BASE_VERSION}.patch"
-diff -Nrpc sysatt rowlv		> ${RPMSOURCE}/sepgsql-rowlv-${BASE_MAJOR}.patch
+echo "GEN: sepgsql-07-tests-${BASE_VERSION}.patch"
+diff -Nrpc base/src/test perms/src/test	> ${RPMSOURCE}/sepgsql-07-tests-${BASE_VERSION}.patch
+rm -rf ./*/src/test
 
-echo "GEN: sepgsql-blobs-${BASE_VERSION}.patch"
-diff -Nrpc rowlv blobs		> ${RPMSOURCE}/sepgsql-blobs-${BASE_MAJOR}.patch
+echo "GEN: sepgsql-06-utils-${BASE_VERSION}.patch"
+diff -Nrpc base/src/bin perms/src/bin	> ${RPMSOURCE}/sepgsql-06-utils-${BASE_VERSION}.patch
+rm -rf ./*/src/bin
 
-echo "GEN: sepgsql-utils-${BASE_VERSION}.patch"
-diff -Nrpc base/src/bin sepgsql/src/bin	> ${RPMSOURCE}/sepgsql-utils-${BASE_MAJOR}.patch
-rm -rf base/src/bin sepgsql/src/bin
+echo "GEN: sepgsql-01-sysatt-${BASE_VERSION}.patch"
+diff -Nrpc base sysatt	> ${RPMSOURCE}/sepgsql-01-sysatt-${BASE_VERSION}.patch
 
-echo "GEN: sepgsql-policy-${BASE_VERSION}.patch"
-diff -Nrpc base/src/backend/security/sepgsql/policy	\
-           sepgsql/src/backend/security/sepgsql/policy	\
-    > ${RPMSOURCE}/sepgsql-policy-${BASE_MAJOR}.patch
-rm -rf sepgsql/src/backend/security/sepgsql/policy
+echo "GEN: sepgsql-02-core-${BASE_VERSION}.patch"
+diff -Nrpc sysatt core	> ${RPMSOURCE}/sepgsql-02-core-${BASE_VERSION}.patch
 
-echo "GEN: sepgsql-docs-${BASE_VERSION}.patch"
-diff -Nrpc base/doc sepgsql/doc				\
-    > ${RPMSOURCE}/sepgsql-docs-${BASE_MAJOR}.patch
-rm -rf base/doc sepgsql/doc
+echo "GEN: sepgsql-03-writable-${BASE_VERSION}.patch"
+diff -Nrpc core writable	> ${RPMSOURCE}/sepgsql-03-writable-${BASE_VERSION}.patch
 
-echo "GEN: sepgsql-tests-${BASE_VERSION}.patch"
-diff -Nrpc base/src/test sepgsql/src/test		\
-    > ${RPMSOURCE}/sepgsql-tests-${BASE_MAJOR}.patch
-rm -rf base/src/test sepgsql/src/test
+echo "GEN: sepgsql-04-rowlevel-${BASE_VERSION}.patch"
+diff -Nrpc writable rowlv	> ${RPMSOURCE}/sepgsql-04-rowlevel-${BASE_VERSION}.patch
 
-echo "GEN: sepgsql-core-${BASE_VERSION}.patch"
-diff -Nrpc base sepgsql					\
-    > ${RPMSOURCE}/sepgsql-core-${BASE_MAJOR}.patch
+echo "GEN: sephsql-05-perms-${BASE_VERSION}.patch"
+diff -Nrpc rowlv perms	> ${RPMSOURCE}/sephsql-05-perms-${BASE_VERSION}.patch
 
 echo "GEN: sepostgresql.init"
 cat package/sepostgresql.init					\
@@ -117,32 +111,32 @@ if [ ${GEN_PATCH_ONLY} -eq 0 ]; then
     rpmbuild -ba ${RPMSOURCE}/sepostgresql.spec
 fi
 
-mv ${RPMSOURCE}/sepgsql-core-${BASE_MAJOR}.patch	\
-    ${RPMSOURCE}/sepgsql-core-${BASE_MAJOR}-r${SEPGSQL_REVISION}.patch
-mv ${RPMSOURCE}/sepgsql-utils-${BASE_MAJOR}.patch	\
-    ${RPMSOURCE}/sepgsql-utils-${BASE_MAJOR}-r${SEPGSQL_REVISION}.patch
-mv ${RPMSOURCE}/sepgsql-policy-${BASE_MAJOR}.patch	\
-    ${RPMSOURCE}/sepgsql-policy-${BASE_MAJOR}-r${SEPGSQL_REVISION}.patch
-mv ${RPMSOURCE}/sepgsql-docs-${BASE_MAJOR}.patch	\
-    ${RPMSOURCE}/sepgsql-docs-${BASE_MAJOR}-r${SEPGSQL_REVISION}.patch
-mv ${RPMSOURCE}/sepgsql-tests-${BASE_MAJOR}.patch	\
-    ${RPMSOURCE}/sepgsql-tests-${BASE_MAJOR}-r${SEPGSQL_REVISION}.patch
-mv ${RPMSOURCE}/sepgsql-sysatt-${BASE_MAJOR}.patch	\
-    ${RPMSOURCE}/sepgsql-sysatt-${NEXT_MAJOR}-r${SEPGSQL_REVISION}.patch
-mv ${RPMSOURCE}/sepgsql-rowlv-${BASE_MAJOR}.patch	\
-    ${RPMSOURCE}/sepgsql-rowlv-${NEXT_MAJOR}-r${SEPGSQL_REVISION}.patch
-mv ${RPMSOURCE}/sepgsql-blobs-${BASE_MAJOR}.patch	\
-    ${RPMSOURCE}/sepgsql-blobs-${NEXT_MAJOR}-r${SEPGSQL_REVISION}.patch
+mv ${RPMSOURCE}/sepgsql-01-sysatt-${BASE_VERSION}.patch	\
+    ${RPMSOURCE}/sepgsql-01-sysatt-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch
+mv ${RPMSOURCE}/sepgsql-02-core-${BASE_VERSION}.patch	\
+    ${RPMSOURCE}/sepgsql-02-core-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch
+mv ${RPMSOURCE}/sepgsql-03-writable-${BASE_VERSION}.patch	\
+    ${RPMSOURCE}/sepgsql-03-writable-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch
+mv ${RPMSOURCE}/sepgsql-04-rowlevel-${BASE_VERSION}.patch	\
+    ${RPMSOURCE}/sepgsql-04-rowlevel-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch
+mv ${RPMSOURCE}/sephsql-05-perms-${BASE_VERSION}.patch	\
+    ${RPMSOURCE}/sephsql-05-perms-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch
+mv ${RPMSOURCE}/sepgsql-06-utils-${BASE_VERSION}.patch	\
+    ${RPMSOURCE}/sepgsql-06-utils-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch
+mv ${RPMSOURCE}/sepgsql-07-tests-${BASE_VERSION}.patch	\
+    ${RPMSOURCE}/sepgsql-07-tests-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch
+mv ${RPMSOURCE}/sepgsql-08-docs-${BASE_VERSION}.patch	\
+    ${RPMSOURCE}/sepgsql-08-docs-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch
 
 echo "---- LIST OF GENERATED PATCHES ----"
-echo "[1/5] ${RPMSOURCE}/sepgsql-core-${BASE_MAJOR}-r${SEPGSQL_REVISION}.patch"
-echo "[2/5] ${RPMSOURCE}/sepgsql-utils-${BASE_MAJOR}-r${SEPGSQL_REVISION}.patch"
-echo "[3/5] ${RPMSOURCE}/sepgsql-policy-${BASE_MAJOR}-r${SEPGSQL_REVISION}.patch"
-echo "[4/5] ${RPMSOURCE}/sepgsql-docs-${BASE_MAJOR}-r${SEPGSQL_REVISION}.patch"
-echo "[5/5] ${RPMSOURCE}/sepgsql-tests-${BASE_MAJOR}-r${SEPGSQL_REVISION}.patch"
-echo "[6/5] ${RPMSOURCE}/sepgsql-sysatt-${NEXT_MAJOR}-r${SEPGSQL_REVISION}.patch"
-echo "[7/5] ${RPMSOURCE}/sepgsql-rowlv-${NEXT_MAJOR}-r${SEPGSQL_REVISION}.patch"
-echo "[8/5] ${RPMSOURCE}/sepgsql-blobs-${NEXT_MAJOR}-r${SEPGSQL_REVISION}.patch"
+echo "[1/8] ${RPMSOURCE}/sepgsql-01-sysatt-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch"
+echo "[2/8] ${RPMSOURCE}/sepgsql-02-core-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch"
+echo "[3/8] ${RPMSOURCE}/sepgsql-03-writable-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch"
+echo "[4/8] ${RPMSOURCE}/sepgsql-04-rowlevel-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch"
+echo "[5/8] ${RPMSOURCE}/sephsql-05-perms-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch"
+echo "[6/8] ${RPMSOURCE}/sepgsql-06-utils-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch"
+echo "[7/8] ${RPMSOURCE}/sepgsql-07-tests-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch"
+echo "[8/8] ${RPMSOURCE}/sepgsql-08-docs-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch"
 
 # ---- clean up
 rm -rf ${WORKDIR}
