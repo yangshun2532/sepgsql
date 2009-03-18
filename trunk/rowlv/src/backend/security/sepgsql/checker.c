@@ -91,14 +91,20 @@ checkTabelColumnPerms(Oid relid, Bitmapset *selected, Bitmapset *modified,
 	 *   The correctness of access controls depends on these data
 	 *   are protected from unexpected manipulation..
 	 *
+	 * - User cannot modify pg_security.* by hand, because it holds
+     *   all the pairs of security identifier and label, so the
+     *   correctness of access controls depends on these data are
+     *   protected from unexpected manipulation.
+	 *
 	 * SE-PostgreSQL always prevent user's query tries to modify
 	 * these system catalogs by hand. Please use approariate
 	 * interfaces.
 	 */
 	if ((required & (SEPG_DB_TABLE__UPDATE
 					 | SEPG_DB_TABLE__INSERT
-					 | SEPG_DB_TABLE__DELETE)) != 0 &&
-		(relid == RewriteRelationId))
+					 | SEPG_DB_TABLE__DELETE)) != 0
+		&& (relid == RewriteRelationId ||
+			relid == SecurityRelationId))
 		ereport(ERROR,
 				(errcode(ERRCODE_SELINUX_ERROR),
 				 errmsg("SE-PostgreSQL peremptorily prevent to modify "
