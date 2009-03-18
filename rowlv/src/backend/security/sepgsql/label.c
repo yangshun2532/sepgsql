@@ -195,8 +195,7 @@ sepgsqlInputGivenSecLabel(DefElem *defel)
 	if (security_check_context(context) < 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("SELinux: not a valid security context: \"%s\"",
-						context)));
+				 errmsg("Not a valid security context: \"%s\"", context)));
 
 	return securityTransSecLabelIn(context);
 }
@@ -257,6 +256,9 @@ sepgsqlSecurityLabelTransIn(security_context_t seclabel)
 	if (!sepgsqlIsEnabled())
 		return seclabel;
 
+	if (!seclabel || security_check_context(seclabel) < 0)
+		seclabel = sepgsqlGetUnlabeledLabel();
+
 	if (selinux_trans_to_raw_context(seclabel, &rawlabel) < 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_SELINUX_ERROR),
@@ -289,6 +291,9 @@ sepgsqlSecurityLabelTransOut(security_context_t rawlabel)
 
 	if (!sepgsqlIsEnabled())
 		return rawlabel;
+
+	if (!rawlabel || security_check_context(rawlabel) < 0)
+		rawlabel = sepgsqlGetUnlabeledLabel();
 
 	if (selinux_raw_to_trans_context(rawlabel, &seclabel) < 0)
 		ereport(ERROR,
