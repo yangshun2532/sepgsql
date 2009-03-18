@@ -245,10 +245,10 @@ extern void
 sepgsqlCheckProcedureInstall(Relation rel, HeapTuple newtup, HeapTuple oldtup);
 
 extern void
-sepgsqlCheckBlobCreate(HeapTuple lotup);
+sepgsqlCheckBlobCreate(Relation rel, HeapTuple lotup);
 
 extern void
-sepgsqlCheckBlobDrop(HeapTuple lotup);
+sepgsqlCheckBlobDrop(Relation rel, HeapTuple lotup);
 
 extern void
 sepgsqlCheckBlobRead(LargeObjectDesc *lobj);
@@ -356,8 +356,8 @@ sepgsqlCheckObjectPerms(Relation rel, HeapTuple tuple,
 #define sepgsqlCheckTableTruncate(a)			do {} while(0)
 #define sepgsqlCheckProcedureExecute(a)			(true)
 #define sepgsqlCheckProcedureEntrypoint(a,b)	do {} while(0)
-#define sepgsqlCheckBlobCreate(a)				do {} while(0)
-#define sepgsqlCheckBlobDrop(a)					do {} while(0)
+#define sepgsqlCheckBlobCreate(a,b)				do {} while(0)
+#define sepgsqlCheckBlobDrop(a,b)				do {} while(0)
 #define sepgsqlCheckBlobRead(a)					do {} while(0)
 #define sepgsqlCheckBlobWrite(a)				do {} while(0)
 #define sepgsqlCheckBlobGetattr(a)				do {} while(0)

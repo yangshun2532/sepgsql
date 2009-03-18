@@ -512,12 +512,15 @@ sepgsqlCheckProcedureInstall(Relation rel, HeapTuple newtup, HeapTuple oldtup)
  *   assigns a default security label and checks db_blob:{create}
  */
 void
-sepgsqlCheckBlobCreate(HeapTuple lotup)
+sepgsqlCheckBlobCreate(Relation rel, HeapTuple lotup)
 {
 	const char	   *audit_name;
 
 	if (!sepgsqlIsEnabled())
 		return;
+
+	/* set a default security context */
+	sepgsqlSetDefaultSecLabel(rel, lotup);
 
 	audit_name = sepgsqlAuditName(LargeObjectRelationId, lotup);
 	sepgsqlClientHasPerms(HeapTupleGetSecLabel(lotup),
@@ -531,7 +534,7 @@ sepgsqlCheckBlobCreate(HeapTuple lotup)
  *   checks db_blob:{drop} permission
  */
 void
-sepgsqlCheckBlobDrop(HeapTuple lotup)
+sepgsqlCheckBlobDrop(Relation rel, HeapTuple lotup)
 {
 	const char	   *audit_name;
 
