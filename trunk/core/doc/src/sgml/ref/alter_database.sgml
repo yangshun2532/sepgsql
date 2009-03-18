@@ -26,6 +26,7 @@ ALTER DATABASE <replaceable class="PARAMETER">name</replaceable> [ [ WITH ] <rep
 where <replaceable class="PARAMETER">option</replaceable> can be:
 
     CONNECTION LIMIT <replaceable class="PARAMETER">connlimit</replaceable>
+    SECURITY_LABEL [=] <replaceable class="PARAMETER">new_seclabel</replaceable>
 
 ALTER DATABASE <replaceable class="PARAMETER">name</replaceable> RENAME TO <replaceable>newname</replaceable>
 
@@ -166,6 +167,20 @@ ALTER DATABASE <replaceable class="PARAMETER">name</replaceable> RESET ALL
        </para>
       </listitem>
      </varlistentry>
+
+     <varlistentry>
+       <term><literal>SECURITY_LABEL</literal></term>
+       <listitem>
+         <para>
+	   The <literal>SECURITY_LABEL</literal> forms allows user to replace
+	   the current security label of database by
+	   <replaceable class="PARAMETER">new_seclabel</replaceable>.
+	   This form is available only when SE-PostgreSQL is working.
+	   See <xref linkend="enhanced-security-and-sepostgresql"> for more details.
+         </para>
+       </listitem>
+     </varlistentry>
+
   </variablelist>
  </refsect1>
 

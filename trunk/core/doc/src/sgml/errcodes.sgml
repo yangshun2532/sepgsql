@@ -1426,6 +1426,27 @@
 <entry>too_many_rows</entry>
 </row>
 
+<row>
+  <entry spanname="span13"><emphasis role="bold">Class SE &mdash; Enhanced Security Error</></entry>
+</row>
+
+<row>
+  <entry><literal>SE001</literal></entry>
+  <entry>SELINUX ERROR</entry>
+  <entry>errors_in_sepostgresql</entry>
+</row>
+
+<row>
+  <entry><literal>SE002</literal></entry>
+  <entry>SELINUX AUDIT</entry>
+  <entry>audit_records_of_sepostgresql</entry>
+</row>
+
+<row>
+  <entry><literal>SE003</literal></entry>
+  <entry>SELINUX INFO</entry>
+  <entry>information_from_sepostgresql</entry>
+</row>
 
 <row>
 <entry spanname="span13"><emphasis role="bold">Class XX &mdash; Internal Error</></entry>
