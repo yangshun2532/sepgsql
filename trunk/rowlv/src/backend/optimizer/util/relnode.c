@@ -91,6 +91,8 @@ build_simple_rel(PlannerInfo *root, int relid, RelOptKind reloptkind)
 	rel->has_eclass_joins = false;
 	rel->index_outer_relids = NULL;
 	rel->index_inner_paths = NIL;
+	rel->requiredPerms = rte->requiredPerms;
+	rel->checkAsUser = rte->checkAsUser;
 
 	/* Check type of rtable entry */
 	switch (rte->rtekind)

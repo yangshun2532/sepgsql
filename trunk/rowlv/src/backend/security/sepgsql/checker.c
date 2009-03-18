@@ -12,6 +12,7 @@
 #include "catalog/pg_language.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_rewrite.h"
+#include "catalog/pg_security.h"
 #include "security/sepgsql.h"
 #include "storage/bufmgr.h"
 #include "utils/builtins.h"
@@ -298,6 +299,37 @@ fixupColumnAvPerms(HeapTuple oldtup, HeapTuple newtup)
 }
 
 /*
+ * sepgsqlExecScan
+ *   makes a decision on the given tuple.
+ */
+bool
+sepgsqlExecScan(Relation rel, HeapTuple tuple, AclMode required, bool abort)
+{
+	security_class_t	tclass;
+	access_vector_t		permissions = 0;
+	const char		   *audit_name;
+
+	if (RelationGetForm(rel)->relkind != RELKIND_RELATION)
+		return true;
+
+	if (required & ACL_SELECT)
+		permissions |= SEPG_DB_TUPLE__SELECT;
+	if (required & ACL_UPDATE)
+		permissions |= SEPG_DB_TUPLE__UPDATE;
+	if (required & ACL_DELETE)
+		permissions |= SEPG_DB_TUPLE__DELETE;
+	if (permissions == 0)
+		return true;
+
+	audit_name = sepgsqlAuditName(RelationGetRelid(rel), tuple);
+	tclass = sepgsqlTupleObjectClass(RelationGetRelid(rel), tuple);
+	return sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
+								 tclass,
+								 permissions,
+								 audit_name, abort);
+}
+
+/*
  * checkTrustedAction
  *   It returns true, if we can ignore access controls for create/alter/drop
  *   on the given database objects.
@@ -305,19 +337,26 @@ fixupColumnAvPerms(HeapTuple oldtup, HeapTuple newtup)
 static bool
 checkTrustedAction(Relation rel, bool internal)
 {
+	if (RelationGetForm(rel)->relkind != RELKIND_RELATION)
+		return true;
+
+	if (internal &&
+		(RelationGetRelid(rel) == SecurityRelationId))
+		return true;
+
 	if (RelationGetRelid(rel) == DatabaseRelationId ||
 		RelationGetRelid(rel) == RelationRelationId ||
 		RelationGetRelid(rel) == AttributeRelationId ||
 		RelationGetRelid(rel) == ProcedureRelationId)
 		return false;
 
-	return true;
+	return !sepostgresql_row_level;
 }
 
 /*
  * HeapTuple INSERT/UPDATE/DELETE
  */
-void
+bool
 sepgsqlHeapTupleInsert(Relation rel, HeapTuple newtup, bool internal)
 {
 	Oid					relid = RelationGetRelid(rel);
@@ -325,7 +364,7 @@ sepgsqlHeapTupleInsert(Relation rel, HeapTuple newtup, bool internal)
 	const char		   *audit_name;
 
 	if (!sepgsqlIsEnabled())
-		return;
+		return true;
 
 	/* set a default security context */
 	if (!OidIsValid(HeapTupleGetSecLabel(newtup)))
@@ -335,110 +374,105 @@ sepgsqlHeapTupleInsert(Relation rel, HeapTuple newtup, bool internal)
 	}
 
 	if (checkTrustedAction(rel, internal))
-		return;
+		return true;
 
 	tclass = sepgsqlTupleObjectClass(relid, newtup);
-	if (tclass != SEPG_CLASS_DB_TUPLE)
-	{
-		audit_name = sepgsqlAuditName(relid, newtup);
-		sepgsqlClientHasPerms(HeapTupleGetSecLabel(newtup),
-							  tclass,
-							  SEPG_DB_TUPLE__INSERT,
-							  audit_name, true);
-	}
+	audit_name = sepgsqlAuditName(relid, newtup);
+	return sepgsqlClientHasPerms(HeapTupleGetSecLabel(newtup),
+								 tclass,
+								 SEPG_DB_TUPLE__INSERT,
+								 audit_name, internal);
 }
 
-void
-sepgsqlHeapTupleUpdate(Relation rel, ItemPointer otid,
+bool
+sepgsqlHeapTupleUpdate(Relation rel, HeapTuple oldtup,
 					   HeapTuple newtup, bool internal)
 {
 	Oid					relid = RelationGetRelid(rel);
-	access_vector_t		required = SEPG_DB_TUPLE__UPDATE;
-	HeapTupleData		oldtup;
-	Buffer				oldbuf;
+	access_vector_t		required = 0;
 	security_class_t	newclass;
 	security_class_t	oldclass;
 	const char		   *audit_name;
 
 	if (!sepgsqlIsEnabled())
-		return;
-
-	ItemPointerCopy(otid, &oldtup.t_self);
-	if (!heap_fetch(rel, SnapshotAny, &oldtup, &oldbuf, false, NULL))
-		elog(ERROR, "SELinux: failed to fetch a tuple");
+		return true;
 
 	/* preserve security label, if unchanged */
 	if (!OidIsValid(HeapTupleGetSecLabel(newtup)))
 	{
 		if (HeapTupleHasSecLabel(newtup))
-			HeapTupleSetSecLabel(newtup, HeapTupleGetSecLabel(&oldtup));
+			HeapTupleSetSecLabel(newtup, HeapTupleGetSecLabel(oldtup));
 	}
 
 	if (checkTrustedAction(rel, internal))
-	{
-		ReleaseBuffer(oldbuf);
-		return;
-	}
-
-	if (relid == AttributeRelationId)
-		required |= fixupColumnAvPerms(&oldtup, newtup);
+		return true;
 
 	newclass = sepgsqlTupleObjectClass(relid, newtup);
-	oldclass = sepgsqlTupleObjectClass(relid, &oldtup);
+	oldclass = sepgsqlTupleObjectClass(relid, oldtup);
 
+	/* already checked at ExecScan? */
+	if (internal)
+		required |= SEPG_DB_TUPLE__UPDATE;
+	/* special case for pg_attribute */
+	if (relid == AttributeRelationId)
+		required |= fixupColumnAvPerms(oldtup, newtup);
 	/* relabeled? */
 	if (oldclass != newclass ||
-		HeapTupleGetSecLabel(&oldtup) != HeapTupleGetSecLabel(newtup))
+		HeapTupleGetSecLabel(oldtup) != HeapTupleGetSecLabel(newtup))
 		required |= SEPG_DB_TUPLE__RELABELFROM;
 
-	if (oldclass != SEPG_CLASS_DB_TUPLE)
+	audit_name = sepgsqlAuditName(relid, newtup);
+	if (required != 0)
 	{
-		audit_name = sepgsqlAuditName(relid, newtup);
-		sepgsqlClientHasPerms(HeapTupleGetSecLabel(&oldtup),
-							  oldclass,
-							  required,
-							  audit_name, true);
+		audit_name = sepgsqlAuditName(relid, oldtup);
+		if (!sepgsqlClientHasPerms(HeapTupleGetSecLabel(oldtup),
+								   oldclass,
+								   required,
+								   audit_name, internal))
+			return false;
 	}
 
-	if (oldclass != SEPG_CLASS_DB_TUPLE &&
-		(required & SEPG_DB_TUPLE__RELABELFROM) != 0)
+	if ((required & SEPG_DB_TUPLE__RELABELFROM) != 0)
 	{
 		audit_name = sepgsqlAuditName(relid, newtup);
-		sepgsqlClientHasPerms(HeapTupleGetSecLabel(newtup),
-							  newclass,
-							  SEPG_DB_TUPLE__RELABELTO,
-                              audit_name, true);
+		if (!sepgsqlClientHasPerms(HeapTupleGetSecLabel(newtup),
+								   newclass,
+								   SEPG_DB_TUPLE__RELABELTO,
+								   audit_name, internal))
+			return false;
 	}
-	ReleaseBuffer(oldbuf);
+
+	return true;
 }
 
-void
-sepgsqlHeapTupleDelete(Relation rel, ItemPointer otid, bool internal)
+bool
+sepgsqlHeapTupleDelete(Relation rel, HeapTuple oldtup, bool internal)
 {
 	Oid					relid = RelationGetRelid(rel);
 	security_class_t	tclass;
-	HeapTupleData		oldtup;
-	Buffer				oldbuf;
+	access_vector_t		required = 0;
 	const char		   *audit_name;
 
 	if (!sepgsqlIsEnabled())
-		return;
+		return true;
 
 	if (checkTrustedAction(rel, internal))
-		return;
+		return true;
 
-	ItemPointerCopy(otid, &(oldtup.t_self));
-	if (!heap_fetch(rel, SnapshotAny, &oldtup, &oldbuf, false, NULL))
-		elog(ERROR, "SELinux: failed to fetch a tuple");
+	/* already checked at ExecScan? */
+	if (internal)
+		required |= SEPG_DB_TUPLE__DELETE;
 
-	tclass = sepgsqlTupleObjectClass(relid, &oldtup);
-	if (tclass != SEPG_CLASS_DB_TUPLE)
+	if (required != 0)
 	{
-		audit_name = sepgsqlAuditName(relid, &oldtup);
-		sepgsqlClientHasPerms(HeapTupleGetSecLabel(&oldtup),
-							  tclass,
-							  SEPG_DB_TUPLE__DELETE,
-							  audit_name, true);
+		tclass = sepgsqlTupleObjectClass(relid, oldtup);
+		audit_name = sepgsqlAuditName(relid, oldtup);
+		if (sepgsqlClientHasPerms(HeapTupleGetSecLabel(oldtup),
+								  tclass,
+								  SEPG_DB_TUPLE__DELETE,
+								  audit_name, internal))
+			return false;
 	}
-	ReleaseBuffer(oldbuf);
+
+	return true;
 }

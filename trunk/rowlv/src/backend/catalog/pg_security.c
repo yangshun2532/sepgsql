@@ -22,10 +22,7 @@
 bool
 securityTupleDescHasRowAcl(Relation rel)
 {
-	/*
-	 * TODO: check "row_level_acl" reloption here
-	 */
-	return false;
+	return RelationGetRowLevelAcl(rel);
 }
 
 bool
@@ -37,11 +34,7 @@ securityTupleDescHasSecLabel(Relation rel)
 static char *
 securityMetaSecurityLabel(void)
 {
-	/*
-	 * It returns the security label of tuples within
-	 * pg_security system catalog
-	 */
-	return NULL;
+	return sepgsqlMetaSecurityLabel();
 }
 
 typedef struct earlySecLabel

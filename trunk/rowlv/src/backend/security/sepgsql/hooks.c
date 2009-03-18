@@ -27,6 +27,7 @@
 #include "security/sepgsql.h"
 #include "storage/bufmgr.h"
 #include "utils/syscache.h"
+#include "utils/tqual.h"
 
 /*
  * sepgsqlCheckDatabaseAccess
@@ -129,8 +130,26 @@ sepgsqlCheckTableLock(Oid table_oid)
 bool
 sepgsqlCheckTableTruncate(Relation rel)
 {
+	HeapScanDesc		scan;
+	HeapTuple			tuple;
+	security_class_t	tclass;
+	const char		   *audit_name;
+
 	return checkTableCommon(RelationGetRelid(rel),
 							SEPG_DB_TABLE__DELETE);
+
+	scan = heap_beginscan(rel, SnapshotNow, 0, NULL);
+
+	while ((tuple = heap_getnext(scan, ForwardScanDirection)) != NULL)
+	{
+		tclass = sepgsqlTupleObjectClass(RelationGetRelid(rel), tuple);
+		audit_name = sepgsqlAuditName(RelationGetRelid(rel), tuple);
+		sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
+							  tclass,
+							  SEPG_DB_TUPLE__DELETE,
+							  audit_name, true);
+	}
+	heap_endscan(scan);
 }
 
 /*
