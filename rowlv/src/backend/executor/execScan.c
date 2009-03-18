@@ -20,6 +20,7 @@
 
 #include "executor/executor.h"
 #include "miscadmin.h"
+#include "security/rowlevel.h"
 #include "utils/memutils.h"
 
 
@@ -53,6 +54,7 @@ ExecScan(ScanState *node,
 	ProjectionInfo *projInfo;
 	ExprDoneCond isDone;
 	TupleTableSlot *resultSlot;
+	Scan		   *scan = (Scan *)node->ps.plan;
 
 	/*
 	 * Fetch data from node
@@ -64,7 +66,7 @@ ExecScan(ScanState *node,
 	 * If we have neither a qual to check nor a projection to do, just skip
 	 * all the overhead and return the raw scan tuple.
 	 */
-	if (!qual && !projInfo)
+	if (!qual && !projInfo && !scan->requiredPerms)
 		return (*accessMtd) (node);
 
 	/*
@@ -128,8 +130,17 @@ ExecScan(ScanState *node,
 		 * when the qual is nil ... saves only a few cycles, but they add up
 		 * ...
 		 */
-		if (!qual || ExecQual(qual, econtext, false))
+		if (rowlvExecScan(scan, node->ss_currentRelation, slot, false)
+			&& (!qual || ExecQual(qual, econtext, false)))
 		{
+			/*
+			 * NOTE: when we check FK constraints using secondary queries,
+			 * it is necessary to abort the current transaction if violated
+			 * tuple is refered. In this case, rowlvExecScan() should be
+			 * invoked after all the all the 'qual' is evaluated.
+			 */
+			rowlvExecScan(scan, node->ss_currentRelation, slot, true);
+
 			/*
 			 * Found a satisfactory scan tuple.
 			 */
