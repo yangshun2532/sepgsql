@@ -977,6 +977,15 @@
      </row>
 
      <row>
+       <entry><structfield>attkind</structfield></entry>
+       <entry><type>char</type></entry>
+       <entry></entry>
+       <entry>
+         A copy of <literal>pg_class.relkind</> of this columns's relation
+       </entry>
+     </row>
+
+     <row>
       <entry><structfield>attnotnull</structfield></entry>
       <entry><type>bool</type></entry>
       <entry></entry>

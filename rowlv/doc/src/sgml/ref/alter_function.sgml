@@ -41,6 +41,7 @@ where <replaceable class="PARAMETER">action</replaceable> is one of:
     SET <replaceable class="parameter">configuration_parameter</replaceable> FROM CURRENT
     RESET <replaceable class="parameter">configuration_parameter</replaceable>
     RESET ALL
+    SECURITY_LABEL [=] <replaceable class="parameter">new_seclabel</replaceable>
 </synopsis>
  </refsynopsisdiv>
   
@@ -251,6 +252,20 @@ where <replaceable class="PARAMETER">action</replaceable> is one of:
      </para>
     </listitem>
    </varlistentry>
+
+   <varlistentry>
+     <term><literal>SECURITY_LABEL</literal></term>
+     <listitem>
+       <para>
+	 The <literal>SECURITY_LABEL</literal> forms allows user to replace
+	 the current security label of procedure by
+	 <replaceable class="PARAMETER">new_seclabel</replaceable>.
+	 This form is available only when SE-PostgreSQL is working.
+	 See <xref linkend="enhanced-security-and-sepostgresql"> for more details.
+       </para>
+     </listitem>
+   </varlistentry>
+
   </variablelist>
  </refsect1>
 

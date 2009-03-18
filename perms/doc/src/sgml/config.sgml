@@ -706,6 +706,25 @@ SET ENABLE_SEQSCAN TO OFF;
       </listitem>
      </varlistentry>
 
+     <varlistentry id="guc-sepostgresql" xreflabel="sepostgresql">
+       <term><varname>sepostgresql</varname> (<type>boolean</type>)</term>
+       <indexterm>
+         <primary><varname>sepostgresql</varname> configuration parameter</primary>
+       </indexterm>
+       <listitem>
+         <para>
+	   Enabled to turn on/off the SE-PostgreSQL feature.
+	   It is off by default. This parameter can only be set in
+	   the <filename>postgresql.conf</filename> file or on the
+	   server command line.
+	   Please note that SE-PostgreSQL requires SELinux is enabled
+	   on its running operating system.
+	   This parameter is only available on a binary with SELinux
+	   support (<literal>--enable-selinux</literal>).
+	 </para>
+       </listitem>
+     </varlistentry>
+
     </variablelist>
     </sect2>
    </sect1>

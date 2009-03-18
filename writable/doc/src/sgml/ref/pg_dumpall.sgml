@@ -346,6 +346,15 @@ PostgreSQL documentation
       </listitem>
      </varlistentry>
 
+     <varlistentry>
+       <term><option>--security-label</option></term>
+       <listitem>
+         <para>
+	   Dumps security label of tables, columns, procedures.
+         </para>
+       </listitem>
+     </varlistentry>
+
     </variablelist>
    </para>
 
