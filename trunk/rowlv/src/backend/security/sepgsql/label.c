@@ -39,7 +39,7 @@ sepgsqlTupleDescHasSecLabel(Relation rel)
 		return false;
 
 	if (rel == NULL)
-		return false;	/* target of SELECT INTO */
+		return sepostgresql_row_level;	/* target of SELECT INTO */
 
 	if (RelationGetRelid(rel) == DatabaseRelationId  ||
 		RelationGetRelid(rel) == RelationRelationId  ||

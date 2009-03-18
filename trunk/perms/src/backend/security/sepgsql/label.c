@@ -39,7 +39,7 @@ sepgsqlTupleDescHasSecLabel(Relation rel)
 		return false;
 
 	if (rel == NULL)
-		return false;	/* target of SELECT INTO */
+		return sepostgresql_row_level;	/* target of SELECT INTO */
 
 	if (RelationGetRelid(rel) == DatabaseRelationId  ||
 		RelationGetRelid(rel) == RelationRelationId  ||
@@ -282,13 +282,14 @@ sepgsqlSecurityLabelTransIn(security_context_t seclabel)
 		return seclabel;
 
 	if (!seclabel || security_check_context(seclabel) < 0)
-		seclabel = sepgsqlGetUnlabeledLabel();
+		ereport(ERROR,
+				(errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("Not a valid security context: \"%s\"", seclabel)));
 
 	if (selinux_trans_to_raw_context(seclabel, &rawlabel) < 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("SELinux: failed to translate \"%s\" to raw format",
-						seclabel)));
+				 errmsg("Failed to translate \"%s\" to raw format", seclabel)));
 	PG_TRY();
 	{
 		result = pstrdup(rawlabel);
@@ -323,8 +324,8 @@ sepgsqlSecurityLabelTransOut(security_context_t rawlabel)
 	if (selinux_raw_to_trans_context(rawlabel, &seclabel) < 0)
 		ereport(ERROR,
                 (errcode(ERRCODE_SELINUX_ERROR),
-                 errmsg("SELinux: failed to translate \"%s\" to readable format",
-                        rawlabel)));
+                 errmsg("Failed to translate \"%s\" to readable format", rawlabel)));
+
 	PG_TRY();
 	{
 		result = pstrdup(seclabel);

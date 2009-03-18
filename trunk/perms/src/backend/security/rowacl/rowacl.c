@@ -165,9 +165,8 @@ bool
 rowaclExecScan(Relation rel, HeapTuple tuple,
 			   AclMode required, Oid checkAsUser, bool abort)
 {
-	Assert((required & ACL_ALL_RIGHTS_TUPLE) == required);
-
-	if (!required || !RelationGetRowLevelAcl(rel))
+	if (!RelationGetRowLevelAcl(rel) ||
+		(required & ACL_ALL_RIGHTS_TUPLE) == 0)
 		return true;
 
 	return rowaclCheckPermission(rel, tuple, required, checkAsUser, abort);
