@@ -83,9 +83,6 @@ checkTableCommon(Oid table_oid, access_vector_t perms)
 	security_class_t	tclass;
 	HeapTuple			tuple;
 
-	if (!sepgsqlIsEnabled())
-		return;
-
 	tuple = SearchSysCache(RELOID,
 						   ObjectIdGetDatum(table_oid),
 						   0, 0, 0);
@@ -107,6 +104,9 @@ checkTableCommon(Oid table_oid, access_vector_t perms)
 void
 sepgsqlCheckTableLock(Oid table_oid)
 {
+	if (!sepgsqlIsEnabled())
+		return;
+
 	/* check db_table:{lock} permission */
 	checkTableCommon(table_oid, SEPG_DB_TABLE__LOCK);
 }
@@ -118,6 +118,9 @@ sepgsqlCheckTableTruncate(Relation rel)
 	HeapTuple			tuple;
 	security_class_t	tclass;
 	const char		   *audit_name;
+
+	if (!sepgsqlIsEnabled())
+		return;
 
 	/* check db_table:{delete} permission */
 	checkTableCommon(RelationGetRelid(rel), SEPG_DB_TABLE__DELETE);

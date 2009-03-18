@@ -315,6 +315,9 @@ sepgsqlExecScan(Relation rel, HeapTuple tuple, AclMode required, bool abort)
 	access_vector_t		permissions = 0;
 	const char		   *audit_name;
 
+	if (!sepgsqlIsEnabled())
+		return true;
+
 	if (RelationGetForm(rel)->relkind != RELKIND_RELATION)
 		return true;
 
