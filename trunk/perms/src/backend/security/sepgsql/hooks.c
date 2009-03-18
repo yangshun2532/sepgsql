@@ -514,19 +514,15 @@ sepgsqlCheckProcedureInstall(Relation rel, HeapTuple newtup, HeapTuple oldtup)
 void
 sepgsqlCheckBlobCreate(Relation rel, HeapTuple lotup)
 {
-	const char	   *audit_name;
-
 	if (!sepgsqlIsEnabled())
 		return;
 
 	/* set a default security context */
 	sepgsqlSetDefaultSecLabel(rel, lotup);
-
-	audit_name = sepgsqlAuditName(LargeObjectRelationId, lotup);
 	sepgsqlClientHasPerms(HeapTupleGetSecLabel(lotup),
 						  SEPG_CLASS_DB_BLOB,
 						  SEPG_DB_BLOB__CREATE,
-						  audit_name, true);
+						  NULL, true);
 }
 
 /*
@@ -536,16 +532,13 @@ sepgsqlCheckBlobCreate(Relation rel, HeapTuple lotup)
 void
 sepgsqlCheckBlobDrop(Relation rel, HeapTuple lotup)
 {
-	const char	   *audit_name;
-
 	if (!sepgsqlIsEnabled())
 		return;
 
-	audit_name = sepgsqlAuditName(LargeObjectRelationId, lotup);
 	sepgsqlClientHasPerms(HeapTupleGetSecLabel(lotup),
 						  SEPG_CLASS_DB_BLOB,
 						  SEPG_DB_BLOB__DROP,
-						  audit_name, true);
+						  NULL, true);
 }
 
 /*
@@ -555,16 +548,13 @@ sepgsqlCheckBlobDrop(Relation rel, HeapTuple lotup)
 void
 sepgsqlCheckBlobRead(LargeObjectDesc *lobj)
 {
-	char	audit_name[NAMEDATALEN];
-
 	if (!sepgsqlIsEnabled())
 		return;
 
-	snprintf(audit_name, sizeof(audit_name), "blob:%u", lobj->id);
 	sepgsqlClientHasPerms(lobj->secid,
 						  SEPG_CLASS_DB_BLOB,
 						  SEPG_DB_BLOB__READ,
-						  audit_name, true);
+						  NULL, true);
 }
 
 /*
@@ -574,16 +564,13 @@ sepgsqlCheckBlobRead(LargeObjectDesc *lobj)
 void
 sepgsqlCheckBlobWrite(LargeObjectDesc *lobj)
 {
-	char    audit_name[NAMEDATALEN];
-
 	if (!sepgsqlIsEnabled())
 		return;
 
-	snprintf(audit_name, sizeof(audit_name), "blob:%u", lobj->id);
 	sepgsqlClientHasPerms(lobj->secid,
 						  SEPG_CLASS_DB_BLOB,
 						  SEPG_DB_BLOB__WRITE,
-						  audit_name, true);
+						  NULL, true);
 }
 
 /*
@@ -593,16 +580,13 @@ sepgsqlCheckBlobWrite(LargeObjectDesc *lobj)
 void
 sepgsqlCheckBlobGetattr(HeapTuple tuple)
 {
-	const char	   *audit_name;
-
 	if (!sepgsqlIsEnabled())
 		return;
 
-	audit_name = sepgsqlAuditName(LargeObjectRelationId, tuple);
 	sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
 						  SEPG_CLASS_DB_BLOB,
 						  SEPG_DB_BLOB__GETATTR,
-						  audit_name, true);
+						  NULL, true);
 }
 
 /*
@@ -612,16 +596,13 @@ sepgsqlCheckBlobGetattr(HeapTuple tuple)
 void
 sepgsqlCheckBlobSetattr(HeapTuple tuple)
 {
-	const char	   *audit_name;
-
 	if (!sepgsqlIsEnabled())
 		return;
 
-	audit_name = sepgsqlAuditName(LargeObjectRelationId, tuple);
 	sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
 						  SEPG_CLASS_DB_BLOB,
 						  SEPG_DB_BLOB__SETATTR,
-						  audit_name, true);
+						  NULL, true);
 }
 
 /*
@@ -634,16 +615,14 @@ sepgsqlCheckBlobExport(LargeObjectDesc *lobj,
 {
 	security_context_t	fcontext;
 	security_class_t	fclass;
-	char				audit_name[NAMEDATALEN];
 
 	if (!sepgsqlIsEnabled())
 		return;
 
-	snprintf(audit_name, sizeof(audit_name), "blob:%u", lobj->id);
 	sepgsqlClientHasPerms(lobj->secid,
 						  SEPG_CLASS_DB_BLOB,
 						  SEPG_DB_BLOB__READ | SEPG_DB_BLOB__EXPORT,
-						  audit_name, true);
+						  NULL, true);
 
 	fclass = sepgsqlFileObjectClass(fdesc);
 	if (fgetfilecon_raw(fdesc, &fcontext) < 0)
@@ -677,16 +656,14 @@ sepgsqlCheckBlobImport(LargeObjectDesc *lobj,
 {
 	security_context_t      fcontext;
 	security_class_t        fclass;
-	char                    audit_name[NAMEDATALEN];
 
 	if (!sepgsqlIsEnabled())
 		return;
 
-	snprintf(audit_name, sizeof(audit_name), "blob:%u", lobj->id);
 	sepgsqlClientHasPerms(lobj->secid,
 						  SEPG_CLASS_DB_BLOB,
 						  SEPG_DB_BLOB__WRITE | SEPG_DB_BLOB__IMPORT,
-						  audit_name, true);
+						  NULL, true);
 
 	fclass = sepgsqlFileObjectClass(fdesc);
 	if (fgetfilecon_raw(fdesc, &fcontext) < 0)
@@ -718,24 +695,21 @@ void
 sepgsqlCheckBlobRelabel(HeapTuple oldtup, HeapTuple newtup)
 {
 	access_vector_t     required = SEPG_DB_BLOB__SETATTR;
-	const char         *audit_name;
 
 	if (HeapTupleGetSecLabel(oldtup) != HeapTupleGetSecLabel(newtup))
 		required |= SEPG_DB_BLOB__RELABELFROM;
 
-	audit_name = sepgsqlAuditName(LargeObjectRelationId, oldtup);
 	sepgsqlClientHasPerms(HeapTupleGetSecLabel(oldtup),
 						  SEPG_CLASS_DB_BLOB,
 						  required,
-						  audit_name, true);
+						  NULL, true);
 	if ((required & SEPG_DB_BLOB__RELABELFROM) == 0)
 		return;
 
-	audit_name = sepgsqlAuditName(LargeObjectRelationId, newtup);
 	sepgsqlClientHasPerms(HeapTupleGetSecLabel(newtup),
 						  SEPG_CLASS_DB_BLOB,
 						  SEPG_DB_BLOB__RELABELTO,
-						  audit_name, true);
+						  NULL, true);
 }
 
 /*

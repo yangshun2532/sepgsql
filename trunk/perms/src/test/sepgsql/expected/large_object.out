@@ -116,7 +116,7 @@ SELECT lo_open(loid, x'40000'::int) FROM lolabel WHERE label = 'secret';
 (1 row)
 
 SELECT loread(0, 32);           -- to be denied
-ERROR:  SELinux: security policy violation
+ERROR:  SELinux: denied { read } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0:c0 tcontext=system_u:object_r:sepgsql_secret_blob_t:s0 tclass=db_blob
 ROLLBACK;
 ROLLBACK
 -- write large object
@@ -145,7 +145,7 @@ SELECT lo_open(loid, x'20000'::int) FROM lolabel WHERE label = 'readonly';
 (1 row)
 
 SELECT lowrite(0, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ');        -- to be denied
-ERROR:  SELinux: security policy violation
+ERROR:  SELinux: denied { write } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0:c0 tcontext=system_u:object_r:sepgsql_ro_blob_t:s0 tclass=db_blob
 ROLLBACK;
 ROLLBACK
 BEGIN;
@@ -157,7 +157,7 @@ SELECT lo_open(loid, x'20000'::int) FROM lolabel WHERE label = 'secret';
 (1 row)
 
 SELECT lowrite(0, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ');        -- to be denied
-ERROR:  SELinux: security policy violation
+ERROR:  SELinux: denied { write } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0:c0 tcontext=system_u:object_r:sepgsql_secret_blob_t:s0 tclass=db_blob
 ROLLBACK;
 ROLLBACK
 -- create large object

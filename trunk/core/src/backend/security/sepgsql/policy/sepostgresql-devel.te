@@ -1,4 +1,4 @@
-policy_module(sepostgresql-devel, 3.24)
+policy_module(sepostgresql-devel, 3.25)
 
 gen_require(`
 	class db_database all_db_database_perms;
@@ -45,6 +45,14 @@ ifdef(`postgresql_role', `
 allow sepgsql_test_t tmpfile : dir search_dir_perms;
 allow sepgsql_test_t tmpfile : file rw_file_perms;
 allow sepgsql_test_t ptynode : chr_file rw_file_perms;
+
+# workaround for table:{lock} pwemission
+optional_policy(`
+	gen_require(`
+		attribute sepgsql_table_type;
+	')
+	allow sepgsql_test_t sepgsql_table_type : db_table { lock };
+')
 
 optional_policy(`
 	gen_require(`
