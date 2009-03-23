@@ -87,8 +87,3 @@ echo "svn diff ./perms"
 echo "svn commit -m 'merge updates of ${SVNBRANCH}/rowlv into ${SVNBRANCH}/perms at r`expr ${SVNREV} + 5`' ./perms"
 echo "svn update"
 echo
-echo "svn merge -c `expr ${SVNREV} + 6` ./perms ./audit"
-echo "svn diff ./audit"
-echo "svn commit -m 'merge updates of ${SVNBRANCH}/perms into ${SVNBRANCH}/audit at r`expr ${SVNREV} + 6`' ./audit"
-echo "svn update"
-echo
