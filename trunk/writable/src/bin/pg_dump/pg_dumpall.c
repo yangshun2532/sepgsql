@@ -6,7 +6,7 @@
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
- * $PostgreSQL: pgsql/src/bin/pg_dump/pg_dumpall.c,v 1.119 2009/03/04 11:57:00 petere Exp $
+ * $PostgreSQL: pgsql/src/bin/pg_dump/pg_dumpall.c,v 1.120 2009/03/22 16:44:26 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -62,8 +62,11 @@ static bool output_clean = false;
 static bool skip_acls = false;
 static bool verbose = false;
 
+static int	binary_upgrade = 0;
+static int	column_inserts = 0;
 static int	disable_dollar_quoting = 0;
 static int	disable_triggers = 0;
+static int	inserts = 0;
 static int	no_tablespaces = 0;
 static int	use_setsessauth = 0;
 static int	server_version;
@@ -73,7 +76,6 @@ static int	security_label = 0;
 static FILE *OPF;
 static char *filename = NULL;
 
-static int	binary_upgrade = 0;
 
 int
 main(int argc, char *argv[])
@@ -96,12 +98,8 @@ main(int argc, char *argv[])
 				ret;
 
 	struct option long_options[] = {
-		{"binary-upgrade", no_argument, &binary_upgrade, 1},	/* not documented */
 		{"data-only", no_argument, NULL, 'a'},
 		{"clean", no_argument, NULL, 'c'},
-		{"inserts", no_argument, NULL, 'd'},
-		{"attribute-inserts", no_argument, NULL, 'D'},
-		{"column-inserts", no_argument, NULL, 'D'},
 		{"file", required_argument, NULL, 'f'},
 		{"globals-only", no_argument, NULL, 'g'},
 		{"host", required_argument, NULL, 'h'},
@@ -124,8 +122,12 @@ main(int argc, char *argv[])
 		/*
 		 * the following options don't have an equivalent short option letter
 		 */
+		{"attribute-inserts", no_argument, &column_inserts, 1},
+		{"binary-upgrade", no_argument, &binary_upgrade, 1},
+		{"column-inserts", no_argument, &column_inserts, 1},
 		{"disable-dollar-quoting", no_argument, &disable_dollar_quoting, 1},
 		{"disable-triggers", no_argument, &disable_triggers, 1},
+		{"inserts", no_argument, &inserts, 1},
 		{"lock-wait-timeout", required_argument, NULL, 2},
 		{"no-tablespaces", no_argument, &no_tablespaces, 1},
 		{"role", required_argument, NULL, 3},
@@ -181,7 +183,7 @@ main(int argc, char *argv[])
 
 	pgdumpopts = createPQExpBuffer();
 
-	while ((c = getopt_long(argc, argv, "acdDf:gh:il:oOp:rsS:tU:vwWxX:", long_options, &optindex)) != -1)
+	while ((c = getopt_long(argc, argv, "acf:gh:il:oOp:rsS:tU:vwWxX:", long_options, &optindex)) != -1)
 	{
 		switch (c)
 		{
@@ -192,11 +194,6 @@ main(int argc, char *argv[])
 
 			case 'c':
 				output_clean = true;
-				break;
-
-			case 'd':
-			case 'D':
-				appendPQExpBuffer(pgdumpopts, " -%c", c);
 				break;
 
 			case 'f':
@@ -326,10 +323,14 @@ main(int argc, char *argv[])
 	/* Add long options to the pg_dump argument list */
 	if (binary_upgrade)
 		appendPQExpBuffer(pgdumpopts, " --binary-upgrade");
+	if (column_inserts)
+		appendPQExpBuffer(pgdumpopts, " --column-inserts");
 	if (disable_dollar_quoting)
 		appendPQExpBuffer(pgdumpopts, " --disable-dollar-quoting");
 	if (disable_triggers)
 		appendPQExpBuffer(pgdumpopts, " --disable-triggers");
+	if (inserts)
+		appendPQExpBuffer(pgdumpopts, " --inserts");
 	if (no_tablespaces)
 		appendPQExpBuffer(pgdumpopts, " --no-tablespaces");
 	if (use_setsessauth)
@@ -531,8 +532,6 @@ help(void)
 	printf(_("\nOptions controlling the output content:\n"));
 	printf(_("  -a, --data-only             dump only the data, not the schema\n"));
 	printf(_("  -c, --clean                 clean (drop) databases before recreating\n"));
-	printf(_("  -d, --inserts               dump data as INSERT commands, rather than COPY\n"));
-	printf(_("  -D, --column-inserts        dump data as INSERT commands with column names\n"));
 	printf(_("  -g, --globals-only          dump only global objects, no databases\n"));
 	printf(_("  -o, --oids                  include OIDs in dump\n"));
 	printf(_("  -O, --no-owner              skip restoration of object ownership\n"));
@@ -542,6 +541,8 @@ help(void)
 	printf(_("  -t, --tablespaces-only      dump only tablespaces, no databases or roles\n"));
 	printf(_("  -x, --no-privileges         do not dump privileges (grant/revoke)\n"));
 	printf(_("  --binary-upgrade            for use by upgrade utilities only\n"));
+	printf(_("  --inserts                   dump data as INSERT commands, rather than COPY\n"));
+	printf(_("  --column-inserts            dump data as INSERT commands with column names\n"));
 	printf(_("  --disable-dollar-quoting    disable dollar quoting, use SQL standard quoting\n"));
 	printf(_("  --disable-triggers          disable triggers during data-only restore\n"));
 	printf(_("  --no-tablespaces            do not dump tablespace assignments\n"));
