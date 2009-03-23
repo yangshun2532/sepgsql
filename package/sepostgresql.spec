@@ -24,15 +24,15 @@ Source0: ftp://ftp.postgresql.org/pub/source/v%{version}/postgresql-%{version}.t
 Source1: sepostgresql.init
 Source2: sepostgresql.8
 Source3: sepostgresql.logrotate
-Patch0: sepgsql-core-%%__base_major_version__%%.patch
-Patch1: sepgsql-utils-%%__base_major_version__%%.patch
-Patch2: sepgsql-policy-%%__base_major_version__%%.patch
-Patch3: sepgsql-docs-%%__base_major_version__%%.patch
-Patch4: sepgsql-tests-%%__base_major_version__%%.patch
-Patch5: sepgsql-sysatt-%%__base_major_version__%%.patch
-Patch6: sepgsql-rowlv-%%__base_major_version__%%.patch
-Patch7: sepgsql-blobs-%%__base_major_version__%%.patch
-Patch8: sepgsql-fedora-prefix.patch
+Patch1: sepgsql-01-sysatt-%%__base_major_version__%%.patch
+Patch2: sepgsql-02-core-%%__base_major_version__%%.patch
+Patch3: sepgsql-03-writable-%%__base_major_version__%%.patch
+Patch4: sepgsql-04-rowlevel-%%__base_major_version__%%.patch
+Patch5: sepgsql-05-perms-%%__base_major_version__%%.patch
+Patch6: sepgsql-06-utils-%%__base_major_version__%%.patch
+Patch7: sepgsql-07-tests-%%__base_major_version__%%.patch
+Patch8: sepgsql-08-docs-%%__base_major_version__%%.patch
+Patch9: sepgsql-fedora-prefix.patch
 BuildRequires: perl glibc-devel bison flex readline-devel zlib-devel >= 1.0.4
 Buildrequires: checkpolicy libselinux-devel >= 2.0.43 selinux-policy >= 3.4.2
 %if %{ssl}
@@ -61,7 +61,6 @@ reference monitor to check any SQL query.
 
 %prep
 %setup -q -n postgresql-%{version}
-%patch0 -p1
 %patch1 -p1
 %patch2 -p1
 %patch3 -p1
@@ -70,6 +69,7 @@ reference monitor to check any SQL query.
 %patch6 -p1
 %patch7 -p1
 %patch8 -p1
+%patch9 -p1
 
 %build
 CFLAGS="${CFLAGS:-%optflags}" ; export CFLAGS
