@@ -15,7 +15,7 @@
  *
  *
  * IDENTIFICATION
- *		$PostgreSQL: pgsql/src/bin/pg_dump/pg_backup_archiver.c,v 1.165 2009/03/05 14:51:10 petere Exp $
+ *		$PostgreSQL: pgsql/src/bin/pg_dump/pg_backup_archiver.c,v 1.168 2009/03/20 09:21:08 petere Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -354,7 +354,7 @@ RestoreArchive(Archive *AHX, RestoreOptions *ropt)
 	 *
 	 * In parallel mode, turn control over to the parallel-restore logic.
 	 */
-	if (ropt->number_of_threads > 1 && ropt->useDB)
+	if (ropt->number_of_jobs > 1 && ropt->useDB)
 		restore_toc_entries_parallel(AH);
 	else
 	{
@@ -3061,7 +3061,7 @@ static void
 restore_toc_entries_parallel(ArchiveHandle *AH)
 {
 	RestoreOptions *ropt = AH->ropt;
-	int			n_slots = ropt->number_of_threads;
+	int			n_slots = ropt->number_of_jobs;
 	ParallelSlot *slots;
 	int			work_status;
 	int			next_slot;
@@ -3467,12 +3467,20 @@ parallel_restore(RestoreArgs *args)
 
 	/*
 	 * Close and reopen the input file so we have a private file pointer
-	 * that doesn't stomp on anyone else's file pointer.
+	 * that doesn't stomp on anyone else's file pointer, if we're actually 
+	 * going to need to read from the file. Otherwise, just close it
+	 * except on Windows, where it will possibly be needed by other threads.
 	 *
-	 * Note: on Windows, since we are using threads not processes, this
-	 * *doesn't* close the original file pointer but just open a new one.
+	 * Note: on Windows, since we are using threads not processes, the
+	 * reopen call *doesn't* close the original file pointer but just open 
+	 * a new one.
 	 */
-	(AH->ReopenPtr) (AH);
+	if (te->section == SECTION_DATA )
+		(AH->ReopenPtr) (AH);
+#ifndef WIN32
+	else
+		(AH->ClosePtr) (AH);
+#endif
 
 	/*
 	 * We need our own database connection, too
@@ -3490,7 +3498,9 @@ parallel_restore(RestoreArgs *args)
 	PQfinish(AH->connection);
 	AH->connection = NULL;
 
-	(AH->ClosePtr) (AH);
+	/* If we reopened the file, we are done with it, so close it now */
+	if (te->section == SECTION_DATA )
+		(AH->ClosePtr) (AH);
 
 	if (retval == 0 && AH->public.n_errors)
 		retval = WORKER_IGNORED_ERRORS;
@@ -3722,8 +3732,11 @@ identify_locking_dependencies(TocEntry *te, TocEntry **tocsByDumpId)
 		return;
 
 	/*
-	 * We assume the item requires exclusive lock on each TABLE item
-	 * listed among its dependencies.
+	 * We assume the item requires exclusive lock on each TABLE DATA item
+	 * listed among its dependencies.  (This was originally a dependency
+	 * on the TABLE, but fix_dependencies repointed it to the data item.
+	 * Note that all the entry types we are interested in here are POST_DATA,
+	 * so they will all have been changed this way.)
 	 */
 	lockids = (DumpId *) malloc(te->nDeps * sizeof(DumpId));
 	nlockids = 0;
@@ -3732,7 +3745,7 @@ identify_locking_dependencies(TocEntry *te, TocEntry **tocsByDumpId)
 		DumpId	depid = te->dependencies[i];
 
 		if (tocsByDumpId[depid - 1] &&
-			strcmp(tocsByDumpId[depid - 1]->desc, "TABLE") == 0)
+			strcmp(tocsByDumpId[depid - 1]->desc, "TABLE DATA") == 0)
 			lockids[nlockids++] = depid;
 	}
 
