@@ -62,23 +62,28 @@ echo "svn diff ./base"
 echo "svn commit -m 'CVS pull -r ${CVSTAG} at `env LANG=C date`' ./base"
 echo "svn update"
 echo
-echo "svn merge -c `expr ${SVNREV} + 1` ./base ./sepgsql"
-echo "svn diff ./sepgsql"
-echo "svn commit -m 'merge updates of ${SVNBRANCH}/base into ${SVNBRANCH}/sepgsql at r`expr ${SVNREV} + 1`' ./sepgsql"
-echo "svn update"
-echo
-echo "svn merge -c `expr ${SVNREV} + 2` ./sepgsql ./sysatt"
+echo "svn merge -c `expr ${SVNREV} + 1` ./base ./sysatt"
 echo "svn diff ./sysatt"
-echo "svn commit -m 'merge updates of ${SVNBRANCH}/sepgsql into ${SVNBRANCH}/sysatt at r`expr ${SVNREV} + 2`' ./sysatt"
+echo "svn commit -m 'merge updates of ${SVNBRANCH}/base into ${SVNBRANCH}/sysatt at r`expr ${SVNREV} + 1`' ./sysatt"
 echo "svn update"
 echo
-echo "svn merge -c `expr ${SVNREV} + 3` ./sysatt ./rowlv"
+echo "svn merge -c `expr ${SVNREV} + 2` ./sysatt ./core"
+echo "svn diff ./core"
+echo "svn commit -m 'merge updates of ${SVNBRANCH}/sysatt into ${SVNBRANCH}/core at r`expr ${SVNREV} + 2`' ./core"
+echo "svn update"
+echo
+echo "svn merge -c `expr ${SVNREV} + 3` ./core ./writable"
+echo "svn diff ./writable"
+echo "svn commit -m 'merge updates of ${SVNBRANCH}/core into ${SVNBRANCH}/sysatt at r`expr ${SVNREV} + 3`' ./writable"
+echo "svn update"
+echo
+echo "svn merge -c `expr ${SVNREV} + 4` ./writable ./rowlv"
 echo "svn diff ./rowlv"
-echo "svn commit -m 'merge updates of ${SVNBRANCH}/sysatt into ${SVNBRANCH}/rowlv at r`expr ${SVNREV} + 3`' ./rowlv"
+echo "svn commit -m 'merge updates of ${SVNBRANCH}/writable into ${SVNBRANCH}/rowlv at r`expr ${SVNREV} + 4`' ./rowlv"
 echo "svn update"
 echo
-echo "svn merge -c `expr ${SVNREV} + 4` ./rowlv ./blobs"
-echo "svn diff ./blobs"
-echo "svn commit -m 'merge updates of ${SVNBRANCH}/rowlv into ${SVNBRANCH}/blobs at r`expr ${SVNREV} + 4`' ./blobs"
+echo "svn merge -c `expr ${SVNREV} + 5` ./rowlv ./perms"
+echo "svn diff ./perms"
+echo "svn commit -m 'merge updates of ${SVNBRANCH}/rowlv into ${SVNBRANCH}/perms at r`expr ${SVNREV} + 5`' ./perms"
 echo "svn update"
-echo 
+echo
