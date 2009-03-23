@@ -82,8 +82,8 @@ diff -Nrpc core writable	> ${RPMSOURCE}/sepgsql-03-writable-${BASE_VERSION}.patc
 echo "GEN: sepgsql-04-rowlevel-${BASE_VERSION}.patch"
 diff -Nrpc writable rowlv	> ${RPMSOURCE}/sepgsql-04-rowlevel-${BASE_VERSION}.patch
 
-echo "GEN: sephsql-05-perms-${BASE_VERSION}.patch"
-diff -Nrpc rowlv perms	> ${RPMSOURCE}/sephsql-05-perms-${BASE_VERSION}.patch
+echo "GEN: sepgsql-05-perms-${BASE_VERSION}.patch"
+diff -Nrpc rowlv perms	> ${RPMSOURCE}/sepgsql-05-perms-${BASE_VERSION}.patch
 
 echo "GEN: sepostgresql.init"
 cat package/sepostgresql.init					\
@@ -119,8 +119,8 @@ mv ${RPMSOURCE}/sepgsql-03-writable-${BASE_VERSION}.patch	\
     ${RPMSOURCE}/sepgsql-03-writable-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch
 mv ${RPMSOURCE}/sepgsql-04-rowlevel-${BASE_VERSION}.patch	\
     ${RPMSOURCE}/sepgsql-04-rowlevel-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch
-mv ${RPMSOURCE}/sephsql-05-perms-${BASE_VERSION}.patch	\
-    ${RPMSOURCE}/sephsql-05-perms-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch
+mv ${RPMSOURCE}/sepgsql-05-perms-${BASE_VERSION}.patch	\
+    ${RPMSOURCE}/sepgsql-05-perms-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch
 mv ${RPMSOURCE}/sepgsql-06-utils-${BASE_VERSION}.patch	\
     ${RPMSOURCE}/sepgsql-06-utils-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch
 mv ${RPMSOURCE}/sepgsql-07-tests-${BASE_VERSION}.patch	\
@@ -133,7 +133,7 @@ echo "[1/8] ${RPMSOURCE}/sepgsql-01-sysatt-${BASE_VERSION}-r${SEPGSQL_REVISION}.
 echo "[2/8] ${RPMSOURCE}/sepgsql-02-core-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch"
 echo "[3/8] ${RPMSOURCE}/sepgsql-03-writable-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch"
 echo "[4/8] ${RPMSOURCE}/sepgsql-04-rowlevel-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch"
-echo "[5/8] ${RPMSOURCE}/sephsql-05-perms-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch"
+echo "[5/8] ${RPMSOURCE}/sepgsql-05-perms-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch"
 echo "[6/8] ${RPMSOURCE}/sepgsql-06-utils-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch"
 echo "[7/8] ${RPMSOURCE}/sepgsql-07-tests-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch"
 echo "[8/8] ${RPMSOURCE}/sepgsql-08-docs-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch"
