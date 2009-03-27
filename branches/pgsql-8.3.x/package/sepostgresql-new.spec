@@ -172,7 +172,7 @@ fi
 
 %files
 %defattr(-,root,root,-)
-%doc COPYRIGHT README HISTORY
+%doc COPYRIGHT README
 %{_initrddir}/sepostgresql
 %{_sysconfdir}/logrotate.d/sepostgresql
 %{_bindir}/initdb.sepgsql
