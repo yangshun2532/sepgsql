@@ -7,7 +7,7 @@
  * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/backend/utils/adt/xml.c,v 1.83 2009/01/07 13:44:37 tgl Exp $
+ * $PostgreSQL: pgsql/src/backend/utils/adt/xml.c,v 1.85 2009/03/27 18:56:57 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -1627,7 +1627,8 @@ map_sql_value_to_xml_value(Datum value, Oid type)
 					if (DATE_NOT_FINITE(date))
 						ereport(ERROR,
 								(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
-								 errmsg("date out of range")));
+								 errmsg("date out of range"),
+								 errdetail("XML does not support infinite date values.")));
 					j2date(date + POSTGRES_EPOCH_JDATE,
 						   &(tm.tm_year), &(tm.tm_mon), &(tm.tm_mday));
 					EncodeDateOnly(&tm, USE_XSD_DATES, buf);
@@ -1649,7 +1650,8 @@ map_sql_value_to_xml_value(Datum value, Oid type)
 					if (TIMESTAMP_NOT_FINITE(timestamp))
 						ereport(ERROR,
 								(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
-								 errmsg("timestamp out of range")));
+								 errmsg("timestamp out of range"),
+								 errdetail("XML does not support infinite timestamp values.")));
 					else if (timestamp2tm(timestamp, NULL, &tm, &fsec, NULL, NULL) == 0)
 						EncodeDateTime(&tm, fsec, NULL, &tzn, USE_XSD_DATES, buf);
 					else
@@ -1675,7 +1677,8 @@ map_sql_value_to_xml_value(Datum value, Oid type)
 					if (TIMESTAMP_NOT_FINITE(timestamp))
 						ereport(ERROR,
 								(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
-								 errmsg("timestamp out of range")));
+								 errmsg("timestamp out of range"),
+								 errdetail("XML does not support infinite timestamp values.")));
 					else if (timestamp2tm(timestamp, &tz, &tm, &fsec, &tzn, NULL) == 0)
 						EncodeDateTime(&tm, fsec, &tz, &tzn, USE_XSD_DATES, buf);
 					else
@@ -3182,8 +3185,9 @@ xml_xmlnodetoxmltype(xmlNodePtr cur)
  * to be the most useful one (array of XML functions plays a role of
  * some kind of substitution for XQuery sequences).
  *
- * Workaround here: we parse XML data in different way to allow XPath for
- * fragments (see "XPath for fragment" TODO comment inside).
+ * It is up to the user to ensure that the XML passed is in fact
+ * an XML document - XPath doesn't work easily on fragments without
+ * a context node being known.
  */
 Datum
 xpath(PG_FUNCTION_ARGS)
@@ -3258,41 +3262,13 @@ xpath(PG_FUNCTION_ARGS)
 
 	xml_init();
 
-	/*
-	 * To handle both documents and fragments, regardless of the fact whether
-	 * the XML datum has a single root (XML well-formedness), we wrap the XML
-	 * datum in a dummy element (<x>...</x>) and extend the XPath expression
-	 * accordingly.  To do it, throw away the XML prolog, if any.
-	 */
-	if (len >= 5 &&
-		xmlStrncmp((xmlChar *) datastr, (xmlChar *) "<?xml", 5) == 0)
-	{
-		i = 5;
-		while (i < len &&
-			   !(datastr[i - 1] == '?' && datastr[i] == '>'))
-			i++;
+	string = (xmlChar *) palloc((len + 1) * sizeof(xmlChar));
+	memcpy(string, datastr, len);
+	string[len] = '\0';
 
-		if (i == len)
-			xml_ereport(ERROR, ERRCODE_INTERNAL_ERROR,
-						"could not parse XML data");
-
-		++i;
-
-		datastr += i;
-		len -= i;
-	}
-
-	string = (xmlChar *) palloc((len + 8) * sizeof(xmlChar));
-	memcpy(string, "<x>", 3);
-	memcpy(string + 3, datastr, len);
-	memcpy(string + 3 + len, "</x>", 5);
-	len += 7;
-
-	xpath_expr = (xmlChar *) palloc((xpath_len + 3) * sizeof(xmlChar));
-	memcpy(xpath_expr, "/x", 2);
-	memcpy(xpath_expr + 2, VARDATA(xpath_expr_text), xpath_len);
-	xpath_expr[xpath_len + 2] = '\0';
-	xpath_len += 2;
+	xpath_expr = (xmlChar *) palloc((xpath_len +1) * sizeof(xmlChar));
+	memcpy(xpath_expr, VARDATA(xpath_expr_text), xpath_len);
+	xpath_expr[xpath_len] = '\0';
 
 	xmlInitParser();
 
@@ -3307,7 +3283,7 @@ xpath(PG_FUNCTION_ARGS)
 	doc = xmlCtxtReadMemory(ctxt, (char *) string, len, NULL, NULL, 0);
 	if (doc == NULL)
 		xml_ereport(ERROR, ERRCODE_INVALID_XML_DOCUMENT,
-					"could not parse XML data");
+					"could not parse XML document");
 	xpathctx = xmlXPathNewContext(doc);
 	if (xpathctx == NULL)
 		xml_ereport(ERROR, ERRCODE_OUT_OF_MEMORY,
