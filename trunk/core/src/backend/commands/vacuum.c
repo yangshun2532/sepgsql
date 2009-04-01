@@ -13,7 +13,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/commands/vacuum.c,v 1.385 2009/01/16 13:27:23 heikki Exp $
+ *	  $PostgreSQL: pgsql/src/backend/commands/vacuum.c,v 1.387 2009/03/31 22:12:48 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -1147,7 +1147,7 @@ vacuum_rel(Oid relid, VacuumStmt *vacstmt, bool do_toast, bool for_wraparound,
 	 * warning here; it would just lead to chatter during a database-wide
 	 * VACUUM.)
 	 */
-	if (isOtherTempNamespace(RelationGetNamespace(onerel)))
+	if (RELATION_IS_OTHER_TEMP(onerel))
 	{
 		relation_close(onerel, lmode);
 		PopActiveSnapshot();
@@ -3388,6 +3388,7 @@ scan_index(Relation indrel, double num_tuples)
 
 	ivinfo.index = indrel;
 	ivinfo.vacuum_full = true;
+	ivinfo.analyze_only = false;
 	ivinfo.message_level = elevel;
 	ivinfo.num_heap_tuples = num_tuples;
 	ivinfo.strategy = vac_strategy;
@@ -3454,6 +3455,7 @@ vacuum_index(VacPageList vacpagelist, Relation indrel,
 
 	ivinfo.index = indrel;
 	ivinfo.vacuum_full = true;
+	ivinfo.analyze_only = false;
 	ivinfo.message_level = elevel;
 	ivinfo.num_heap_tuples = num_tuples + keep_tuples;
 	ivinfo.strategy = vac_strategy;

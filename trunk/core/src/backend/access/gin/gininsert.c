@@ -8,7 +8,7 @@
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
- *			$PostgreSQL: pgsql/src/backend/access/gin/gininsert.c,v 1.18 2009/01/01 17:23:34 momjian Exp $
+ *			$PostgreSQL: pgsql/src/backend/access/gin/gininsert.c,v 1.20 2009/03/24 22:06:03 tgl Exp $
  *-------------------------------------------------------------------------
  */
 
@@ -138,9 +138,11 @@ addItemPointersToTuple(Relation index, GinState *ginstate, GinBtreeStack *stack,
 /*
  * Inserts only one entry to the index, but it can add more than 1 ItemPointer.
  */
-static void
-ginEntryInsert(Relation index, GinState *ginstate, OffsetNumber attnum, Datum value, 
-				ItemPointerData *items, uint32 nitem, bool isBuild)
+void
+ginEntryInsert(Relation index, GinState *ginstate,
+			   OffsetNumber attnum, Datum value,
+			   ItemPointerData *items, uint32 nitem,
+			   bool isBuild)
 {
 	GinBtreeData btree;
 	GinBtreeStack *stack;
@@ -243,7 +245,9 @@ ginBuildCallback(Relation index, HeapTuple htup, Datum *values,
 														&htup->t_self);
 
 	/* If we've maxed out our available memory, dump everything to the index */
-	if (buildstate->accum.allocatedMemory >= maintenance_work_mem * 1024L)
+	/* Also dump if the tree seems to be getting too unbalanced */
+	if (buildstate->accum.allocatedMemory >= maintenance_work_mem * 1024L ||
+		buildstate->accum.maxdepth > GIN_MAX_TREE_DEPTH)
 	{
 		ItemPointerData *list;
 		Datum		entry;
@@ -273,7 +277,7 @@ ginbuild(PG_FUNCTION_ARGS)
 	IndexBuildResult *result;
 	double		reltuples;
 	GinBuildState buildstate;
-	Buffer		buffer;
+	Buffer		RootBuffer, MetaBuffer;
 	ItemPointerData *list;
 	Datum		entry;
 	uint32		nlist;
@@ -286,11 +290,17 @@ ginbuild(PG_FUNCTION_ARGS)
 
 	initGinState(&buildstate.ginstate, index);
 
+	/* initialize the meta page */
+	MetaBuffer = GinNewBuffer(index);
+
 	/* initialize the root page */
-	buffer = GinNewBuffer(index);
+	RootBuffer = GinNewBuffer(index);
+
 	START_CRIT_SECTION();
-	GinInitBuffer(buffer, GIN_LEAF);
-	MarkBufferDirty(buffer);
+	GinInitMetabuffer(MetaBuffer);
+	MarkBufferDirty(MetaBuffer);
+	GinInitBuffer(RootBuffer, GIN_LEAF);
+	MarkBufferDirty(RootBuffer);
 
 	if (!index->rd_istemp)
 	{
@@ -303,16 +313,19 @@ ginbuild(PG_FUNCTION_ARGS)
 		rdata.len = sizeof(RelFileNode);
 		rdata.next = NULL;
 
-		page = BufferGetPage(buffer);
-
-
 		recptr = XLogInsert(RM_GIN_ID, XLOG_GIN_CREATE_INDEX, &rdata);
+		
+		page = BufferGetPage(RootBuffer);
 		PageSetLSN(page, recptr);
 		PageSetTLI(page, ThisTimeLineID);
 
+		page = BufferGetPage(MetaBuffer);
+		PageSetLSN(page, recptr);
+		PageSetTLI(page, ThisTimeLineID);
 	}
 
-	UnlockReleaseBuffer(buffer);
+	UnlockReleaseBuffer(MetaBuffer);
+	UnlockReleaseBuffer(RootBuffer);
 	END_CRIT_SECTION();
 
 	/* build the index */
@@ -417,9 +430,26 @@ gininsert(PG_FUNCTION_ARGS)
 
 	initGinState(&ginstate, index);
 
-	for(i=0; i<ginstate.origTupdesc->natts;i++)
-		if ( !isnull[i] )
-			res += ginHeapTupleInsert(index, &ginstate, (OffsetNumber)(i+1), values[i], ht_ctid);
+	if ( GinGetUseFastUpdate(index) )
+	{
+		GinTupleCollector	collector;
+
+		memset(&collector, 0, sizeof(GinTupleCollector));
+		for(i=0; i<ginstate.origTupdesc->natts;i++)
+			if ( !isnull[i] )
+				res += ginHeapTupleFastCollect(index, &ginstate, &collector,
+												(OffsetNumber)(i+1), values[i], ht_ctid);
+
+		ginHeapTupleFastInsert(index, &ginstate, &collector);
+	}
+	else
+	{
+		for(i=0; i<ginstate.origTupdesc->natts;i++)
+			if ( !isnull[i] ) 
+				res += ginHeapTupleInsert(index, &ginstate, 
+												(OffsetNumber)(i+1), values[i], ht_ctid);
+
+	}
 
 	MemoryContextSwitchTo(oldCtx);
 	MemoryContextDelete(insertCtx);
