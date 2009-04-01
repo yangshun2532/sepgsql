@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/catalog/index.c,v 1.312 2009/01/22 20:16:01 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/catalog/index.c,v 1.315 2009/03/31 22:12:46 tgl Exp $
  *
  *
  * INTERFACE ROUTINES
@@ -1949,6 +1949,7 @@ validate_index(Oid heapId, Oid indexId, Snapshot snapshot)
 	 */
 	ivinfo.index = indexRelation;
 	ivinfo.vacuum_full = false;
+	ivinfo.analyze_only = false;
 	ivinfo.message_level = DEBUG2;
 	ivinfo.num_heap_tuples = -1;
 	ivinfo.strategy = NULL;
@@ -2253,6 +2254,7 @@ reindex_index(Oid indexId)
 				pg_index;
 	Oid			heapId;
 	bool		inplace;
+	IndexInfo  *indexInfo;
 	HeapTuple	indexTuple;
 	Form_pg_index indexForm;
 
@@ -2273,7 +2275,7 @@ reindex_index(Oid indexId)
 	 * Don't allow reindex on temp tables of other backends ... their local
 	 * buffer manager is not going to cope.
 	 */
-	if (isOtherTempNamespace(RelationGetNamespace(iRel)))
+	if (RELATION_IS_OTHER_TEMP(iRel))
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot reindex temporary tables of other sessions")));
@@ -2303,8 +2305,6 @@ reindex_index(Oid indexId)
 
 	PG_TRY();
 	{
-		IndexInfo  *indexInfo;
-
 		/* Suppress use of the target index while rebuilding it */
 		SetReindexProcessing(heapId, indexId);
 
@@ -2343,6 +2343,10 @@ reindex_index(Oid indexId)
 	 * If the index is marked invalid or not ready (ie, it's from a failed
 	 * CREATE INDEX CONCURRENTLY), we can now mark it valid.  This allows
 	 * REINDEX to be used to clean up in such cases.
+	 *
+	 * We can also reset indcheckxmin, because we have now done a
+	 * non-concurrent index build, *except* in the case where index_build
+	 * found some still-broken HOT chains.
 	 */
 	pg_index = heap_open(IndexRelationId, RowExclusiveLock);
 
@@ -2353,10 +2357,13 @@ reindex_index(Oid indexId)
 		elog(ERROR, "cache lookup failed for index %u", indexId);
 	indexForm = (Form_pg_index) GETSTRUCT(indexTuple);
 
-	if (!indexForm->indisvalid || !indexForm->indisready)
+	if (!indexForm->indisvalid || !indexForm->indisready ||
+		(indexForm->indcheckxmin && !indexInfo->ii_BrokenHotChain))
 	{
 		indexForm->indisvalid = true;
 		indexForm->indisready = true;
+		if (!indexInfo->ii_BrokenHotChain)
+			indexForm->indcheckxmin = false;
 		simple_heap_update(pg_index, &indexTuple->t_self, indexTuple);
 		CatalogUpdateIndexes(pg_index, indexTuple);
 	}
