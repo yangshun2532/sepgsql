@@ -8,7 +8,7 @@
  *
  * Copyright (c) 2000-2009, PostgreSQL Global Development Group
  *
- * $PostgreSQL: pgsql/src/bin/psql/describe.c,v 1.201 2009/02/24 10:06:34 petere Exp $
+ * $PostgreSQL: pgsql/src/bin/psql/describe.c,v 1.203 2009/03/26 22:26:07 petere Exp $
  */
 #include "postgres_fe.h"
 
@@ -1891,10 +1891,8 @@ describeRoles(const char *pattern, bool verbose)
 
 			if (conns == 0)
 				appendPQExpBuffer(&buf, _("No connections"));
-			else if (conns == 1)
-				appendPQExpBuffer(&buf, _("1 connection"));
 			else
-				appendPQExpBuffer(&buf, _("%d connections"), conns);
+				appendPQExpBuffer(&buf, ngettext("1 connection", "%d connections", conns), conns);
 		}
 
 		attr[i] = pg_strdup(buf.data);
@@ -2933,7 +2931,7 @@ listForeignDataWrappers(const char *pattern, bool verbose)
 /*
  * \des
  *
- * Describes foreign-data servers.
+ * Describes foreign servers.
  */
 bool
 listForeignServers(const char *pattern, bool verbose)
@@ -2944,7 +2942,7 @@ listForeignServers(const char *pattern, bool verbose)
 
 	if (pset.sversion < 80400)
 	{
-		fprintf(stderr, _("The server (version %d.%d) does not support foreign-data servers.\n"),
+		fprintf(stderr, _("The server (version %d.%d) does not support foreign servers.\n"),
 				pset.sversion / 10000, (pset.sversion / 100) % 100);
 		return true;
 	}
@@ -3010,7 +3008,7 @@ listUserMappings(const char *pattern, bool verbose)
 
 	if (pset.sversion < 80400)
 	{
-		fprintf(stderr, _("The server (version %d.%d) does not support foreign-data user mappings.\n"),
+		fprintf(stderr, _("The server (version %d.%d) does not support user mappings.\n"),
 				pset.sversion / 10000, (pset.sversion / 100) % 100);
 		return true;
 	}
@@ -3020,7 +3018,7 @@ listUserMappings(const char *pattern, bool verbose)
 					  "SELECT um.srvname AS \"%s\",\n"
 					  "  um.usename AS \"%s\"",
 					  gettext_noop("Server"),
-					  gettext_noop("Username"));
+					  gettext_noop("User name"));
 
 	if (verbose)
 		appendPQExpBuffer(&buf,
