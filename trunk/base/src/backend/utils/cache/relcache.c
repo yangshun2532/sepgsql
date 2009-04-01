@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/cache/relcache.c,v 1.284 2009/01/27 12:40:15 petere Exp $
+ *	  $PostgreSQL: pgsql/src/backend/utils/cache/relcache.c,v 1.286 2009/03/31 22:12:48 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -829,7 +829,11 @@ RelationBuildDesc(Oid targetRelId, Relation oldrelation)
 	relation->rd_isnailed = false;
 	relation->rd_createSubid = InvalidSubTransactionId;
 	relation->rd_newRelfilenodeSubid = InvalidSubTransactionId;
-	relation->rd_istemp = isTempOrToastNamespace(relation->rd_rel->relnamespace);
+	relation->rd_istemp = relation->rd_rel->relistemp;
+	if (relation->rd_istemp)
+		relation->rd_islocaltemp = isTempOrToastNamespace(relation->rd_rel->relnamespace);
+	else
+		relation->rd_islocaltemp = false;
 
 	/*
 	 * initialize the tuple descriptor (relation->rd_att).
@@ -1375,6 +1379,7 @@ formrdesc(const char *relationName, Oid relationReltype,
 	relation->rd_createSubid = InvalidSubTransactionId;
 	relation->rd_newRelfilenodeSubid = InvalidSubTransactionId;
 	relation->rd_istemp = false;
+	relation->rd_islocaltemp = false;
 
 	/*
 	 * initialize relation tuple form
@@ -1395,6 +1400,12 @@ formrdesc(const char *relationName, Oid relationReltype,
 	 * present, all relations that formrdesc is used for are not shared.
 	 */
 	relation->rd_rel->relisshared = false;
+
+	/*
+	 * Likewise, we must know if a relation is temp ... but formrdesc is
+	 * not used for any temp relations.
+	 */
+	relation->rd_rel->relistemp = false;
 
 	relation->rd_rel->relpages = 1;
 	relation->rd_rel->reltuples = 1;
@@ -2349,8 +2360,9 @@ RelationBuildLocalRelation(const char *relname,
 	/* must flag that we have rels created in this transaction */
 	need_eoxact_work = true;
 
-	/* is it a temporary relation? */
+	/* it is temporary if and only if it is in my temp-table namespace */
 	rel->rd_istemp = isTempOrToastNamespace(relnamespace);
+	rel->rd_islocaltemp = rel->rd_istemp;
 
 	/*
 	 * create a new tuple descriptor from the one passed in.  We do this
@@ -2397,6 +2409,7 @@ RelationBuildLocalRelation(const char *relname,
 	 * as the logical ID (OID).
 	 */
 	rel->rd_rel->relisshared = shared_relation;
+	rel->rd_rel->relistemp = rel->rd_istemp;
 
 	RelationGetRelid(rel) = relid;
 
