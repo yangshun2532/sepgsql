@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/commands/copy.c,v 1.305 2009/02/06 21:15:11 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/commands/copy.c,v 1.307 2009/03/31 22:12:46 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -867,11 +867,11 @@ DoCopy(const CopyStmt *stmt, const char *queryString)
 			cstate->escape = cstate->quote;
 	}
 
-	/* Only single-character delimiter strings are supported. */
+	/* Only single-byte delimiter strings are supported. */
 	if (strlen(cstate->delim) != 1)
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("COPY delimiter must be a single ASCII character")));
+				 errmsg("COPY delimiter must be a single one-byte character")));
 
 	/* Disallow end-of-line characters */
 	if (strchr(cstate->delim, '\r') != NULL ||
@@ -918,7 +918,7 @@ DoCopy(const CopyStmt *stmt, const char *queryString)
 	if (cstate->csv_mode && strlen(cstate->quote) != 1)
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("COPY quote must be a single ASCII character")));
+				 errmsg("COPY quote must be a single one-byte character")));
 
 	if (cstate->csv_mode && cstate->delim[0] == cstate->quote[0])
 		ereport(ERROR,
@@ -934,7 +934,7 @@ DoCopy(const CopyStmt *stmt, const char *queryString)
 	if (cstate->csv_mode && strlen(cstate->escape) != 1)
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("COPY escape must be a single ASCII character")));
+				 errmsg("COPY escape must be a single one-byte character")));
 
 	/* Check force_quote */
 	if (!cstate->csv_mode && force_quote != NIL)
@@ -1013,8 +1013,7 @@ DoCopy(const CopyStmt *stmt, const char *queryString)
 		}
 
 		/* check read-only transaction */
-		if (XactReadOnly && is_from &&
-			!isTempNamespace(RelationGetNamespace(cstate->rel)))
+		if (XactReadOnly && is_from && !cstate->rel->rd_islocaltemp)
 			ereport(ERROR,
 					(errcode(ERRCODE_READ_ONLY_SQL_TRANSACTION),
 					 errmsg("transaction is read-only")));
