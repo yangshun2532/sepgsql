@@ -222,6 +222,9 @@ fi
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
 
 %changelog
+* Fri Mar 27 2009 KaiGai Kohei <kaigai@kaigai.gr.jp> - 8.3.7-2.1770
+- upgrade base PostgreSQL version 8.3.6->8.3.7
+
 * Thu Feb 26 2009 KaiGai Kohei <kaigai@kaigai.gr.jp> - 8.3.6-2.1635
 - bugfix: possible information leak by the order of permission checks
   in row level permission checks.
