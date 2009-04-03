@@ -1,0 +1,180 @@
+--@SECURITY_CONTEXT=unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c15
+SELECT sepgsql_getcon();
+                   sepgsql_getcon                    
+-----------------------------------------------------
+ unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c15
+(1 row)
+
+-- cleanup previous tests
+SET client_min_messages TO 'error';
+SET
+DROP TABLE IF EXISTS t4 CASCADE;
+DROP TABLE
+DROP TABLE IF EXISTS t3 CASCADE;
+DROP TABLE
+DROP TABLE IF EXISTS t2 CASCADE;
+DROP TABLE
+DROP TABLE IF EXISTS t1 CASCADE;
+DROP TABLE
+DROP FUNCTION IF EXISTS f1(int) CASCADE;
+DROP FUNCTION
+DROP FUNCTION IF EXISTS f2(int) CASCADE;
+DROP FUNCTION
+RESET client_min_messages;
+RESET
+-- CREATE TABLE with SECURITY_LABEL clause
+CREATE TABLE t1 (
+       a int,
+       b text
+);
+CREATE TABLE
+SELECT security_label, relname FROM pg_class WHERE oid = 't1'::regclass;
+              security_label              | relname 
+------------------------------------------+---------
+ unconfined_u:object_r:sepgsql_table_t:s0 | t1
+(1 row)
+
+SELECT security_label, attname FROM pg_attribute WHERE attrelid = 't1'::regclass and attnum > 0;
+              security_label              | attname 
+------------------------------------------+---------
+ unconfined_u:object_r:sepgsql_table_t:s0 | a
+ unconfined_u:object_r:sepgsql_table_t:s0 | b
+(2 rows)
+
+CREATE TABLE t2 (
+       a int,
+       b text
+) SECURITY_LABEL = 'unconfined_u:object_r:sepgsql_ro_table_t:s0';
+CREATE TABLE
+SELECT security_label, relname FROM pg_class WHERE oid = 't2'::regclass;
+               security_label                | relname 
+---------------------------------------------+---------
+ unconfined_u:object_r:sepgsql_ro_table_t:s0 | t2
+(1 row)
+
+SELECT security_label, attname FROM pg_attribute WHERE attrelid = 't2'::regclass and attnum > 0;
+               security_label                | attname 
+---------------------------------------------+---------
+ unconfined_u:object_r:sepgsql_ro_table_t:s0 | a
+ unconfined_u:object_r:sepgsql_ro_table_t:s0 | b
+(2 rows)
+
+CREATE TABLE t3 (
+       a int,
+       b text SECURITY_LABEL = 'unconfined_u:object_r:sepgsql_fixed_table_t:s0',
+       c bool SECURITY_LABEL = 'unconfined_u:object_r:sepgsql_secret_table_t:s0',
+       d int
+) SECURITY_LABEL = 'unconfined_u:object_r:sepgsql_table_t:s0:c0';
+CREATE TABLE
+SELECT security_label, relname FROM pg_class WHERE oid = 't3'::regclass;
+               security_label                | relname 
+---------------------------------------------+---------
+ unconfined_u:object_r:sepgsql_table_t:s0:c0 | t3
+(1 row)
+
+SELECT security_label, attname FROM pg_attribute WHERE attrelid = 't3'::regclass and attnum > 0;
+                 security_label                  | attname 
+-------------------------------------------------+---------
+ unconfined_u:object_r:sepgsql_table_t:s0        | a
+ unconfined_u:object_r:sepgsql_fixed_table_t:s0  | b
+ unconfined_u:object_r:sepgsql_secret_table_t:s0 | c
+ unconfined_u:object_r:sepgsql_table_t:s0        | d
+(4 rows)
+
+CREATE TABLE t4 (
+       a int,
+       b text
+) SECURITY_LABEL = 'unconfined_u:object_r:invalid_label_t:s0';	-- to be failed
+ERROR:  Not a valid security context: "unconfined_u:object_r:invalid_label_t:s0"
+CREATE TABLE t4 (
+       a int,
+       b text
+) SECURITY_LABEL = 'unconfined_u:object_r:sepgsql_proc_t:s0';	-- to be denied
+ERROR:  SELinux: denied { create } scontext=unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c15 tcontext=unconfined_u:object_r:sepgsql_proc_t:s0 tclass=db_table name=t4
+-- ALTER TABLE with SECURITY_LABEL clause
+ALTER TABLE t2 SECURITY_LABEL = 'unconfined_u:object_r:sepgsql_secret_table_t:s0';
+ALTER TABLE
+ALTER TABLE t2 ADD COLUMN c bool;	-- it inherits table's one
+ALTER TABLE
+SELECT security_label, relname FROM pg_class WHERE oid = 't2'::regclass;
+                 security_label                  | relname 
+-------------------------------------------------+---------
+ unconfined_u:object_r:sepgsql_secret_table_t:s0 | t2
+(1 row)
+
+SELECT security_label, attname FROM pg_attribute WHERE attrelid = 't2'::regclass and attnum > 0;
+                 security_label                  | attname 
+-------------------------------------------------+---------
+ unconfined_u:object_r:sepgsql_ro_table_t:s0     | a
+ unconfined_u:object_r:sepgsql_ro_table_t:s0     | b
+ unconfined_u:object_r:sepgsql_secret_table_t:s0 | c
+(3 rows)
+
+ALTER TABLE t3 ALTER b SECURITY_LABEL = 'unconfined_u:object_r:sepgsql_table_t:s0';
+ALTER TABLE
+SELECT security_label, relname FROM pg_class WHERE oid = 't3'::regclass;
+               security_label                | relname 
+---------------------------------------------+---------
+ unconfined_u:object_r:sepgsql_table_t:s0:c0 | t3
+(1 row)
+
+SELECT security_label, attname FROM pg_attribute WHERE attrelid = 't3'::regclass and attnum > 0;
+                 security_label                  | attname 
+-------------------------------------------------+---------
+ unconfined_u:object_r:sepgsql_table_t:s0        | a
+ unconfined_u:object_r:sepgsql_table_t:s0        | b
+ unconfined_u:object_r:sepgsql_secret_table_t:s0 | c
+ unconfined_u:object_r:sepgsql_table_t:s0        | d
+(4 rows)
+
+-- CREATE FUNCTION with SECURITY_LABEL clause
+CREATE FUNCTION f1 (int) RETURNS int
+       LANGUAGE 'sql'
+       SECURITY_LABEL = 'unconfined_u:object_r:sepgsql_proc_t:s0:c0'
+       AS 'SELECT $1 * 2';
+CREATE FUNCTION
+SELECT security_label, proname FROM pg_proc WHERE oid = 'f1'::regproc;
+               security_label               | proname 
+--------------------------------------------+---------
+ unconfined_u:object_r:sepgsql_proc_t:s0:c0 | f1
+(1 row)
+
+CREATE FUNCTION f2 (int) RETURNS int
+       LANGUAGE 'sql'
+       SECURITY_LABEL = 'unconfined_u:object_r:invalid_label_t:s0'
+       AS 'SELECT $1 + $1';	 -- to be failed
+ERROR:  Not a valid security context: "unconfined_u:object_r:invalid_label_t:s0"
+CREATE FUNCTION f2 (int) RETURNS int
+       LANGUAGE 'sql'
+       SECURITY_LABEL = 'unconfined_u:object_r:sepgsql_proc_t:s0:c16'
+       AS 'SELECT $1 + $1';	 -- to be denied
+ERROR:  SELinux: denied { create } scontext=unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c15 tcontext=unconfined_u:object_r:sepgsql_proc_t:s0:c16 tclass=db_procedure name=f2
+CREATE FUNCTION f2 (int) RETURNS int
+       LANGUAGE 'sql'
+       AS 'SELECT $1 + $1';
+CREATE FUNCTION
+SELECT security_label, proname FROM pg_proc WHERE oid = 'f2'::regproc;
+             security_label              | proname 
+-----------------------------------------+---------
+ unconfined_u:object_r:sepgsql_proc_t:s0 | f2
+(1 row)
+
+-- ALTER FUNCTION with SECURITY_LABEL clause
+ALTER FUNCTION f1(int)
+      SECURITY_LABEL = 'unconfined_u:object_r:sepgsql_proc_t:s0:c1';
+ALTER FUNCTION
+SELECT security_label, proname FROM pg_proc WHERE oid = 'f1'::regproc;
+               security_label               | proname 
+--------------------------------------------+---------
+ unconfined_u:object_r:sepgsql_proc_t:s0:c1 | f1
+(1 row)
+
+ALTER FUNCTION f2(int)
+      SECURITY_LABEL = 'unconfined_u:object_r:sepgsql_proc_t:s0:c16';	-- to be denied
+ERROR:  SELinux: denied { relabelto } scontext=unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c15 tcontext=unconfined_u:object_r:sepgsql_proc_t:s0:c16 tclass=db_procedure name=f2
+SELECT security_label, proname FROM pg_proc WHERE oid = 'f2'::regproc;
+             security_label              | proname 
+-----------------------------------------+---------
+ unconfined_u:object_r:sepgsql_proc_t:s0 | f2
+(1 row)
+
