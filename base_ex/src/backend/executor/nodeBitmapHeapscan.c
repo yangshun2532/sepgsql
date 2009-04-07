@@ -41,6 +41,7 @@
 #include "executor/execdebug.h"
 #include "executor/nodeBitmapHeapscan.h"
 #include "pgstat.h"
+#include "security/rowlevel.h"
 #include "storage/bufmgr.h"
 #include "utils/memutils.h"
 #include "utils/snapmgr.h"
@@ -608,6 +609,9 @@ ExecInitBitmapHeapScan(BitmapHeapScan *node, EState *estate, int eflags)
 	currentRelation = ExecOpenScanRelation(estate, node->scan.scanrelid);
 
 	scanstate->ss.ss_currentRelation = currentRelation;
+
+	/* apply row-level security policy */
+	rowlvSetScanPolicy((ScanState *)scanstate, estate);
 
 	/*
 	 * Even though we aren't going to do a conventional seqscan, it is useful

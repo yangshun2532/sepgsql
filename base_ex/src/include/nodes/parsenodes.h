@@ -1132,6 +1132,7 @@ typedef enum AlterTableType
 	AT_SetTableSpace,			/* SET TABLESPACE */
 	AT_SetRelOptions,			/* SET (...) -- AM specific parameters */
 	AT_ResetRelOptions,			/* RESET (...) -- AM specific parameters */
+	AT_RowLevelSecurity,		/* SET SECURITY WHERE ... or RESET SECURITY */
 	AT_EnableTrig,				/* ENABLE TRIGGER name */
 	AT_EnableAlwaysTrig,		/* ENABLE ALWAYS TRIGGER name */
 	AT_EnableReplicaTrig,		/* ENABLE REPLICA TRIGGER name */

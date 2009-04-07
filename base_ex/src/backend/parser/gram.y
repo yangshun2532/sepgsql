@@ -1806,6 +1806,23 @@ alter_table_cmd:
 					n->def = (Node *)$2;
 					$$ = (Node *)n;
 				}
+			/* ALTER TABLE <name> SET SECURITY WHERE ... */
+			| SET SECURITY where_clause
+				{
+					AlterTableCmd *n = makeNode(AlterTableCmd);
+					n->subtype = AT_RowLevelSecurity;
+					n->def = (Node *)$3;
+					if (!n->def)
+						yyerror("syntax error");
+					$$ = (Node *)n;
+				}
+			| RESET SECURITY
+				{
+					AlterTableCmd *n = makeNode(AlterTableCmd);
+					n->subtype = AT_RowLevelSecurity;
+					n->def = NULL;
+					$$ = (Node *)n;
+				}
 		;
 
 alter_column_default:
