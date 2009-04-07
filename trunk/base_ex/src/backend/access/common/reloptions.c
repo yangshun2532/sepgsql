@@ -64,6 +64,14 @@ static relopt_bool boolRelOpts[] =
 		},
 		true
 	},
+	{
+		{
+			"row_level_dac",
+			"Row-level discretionary access control validator",
+			RELOPT_KIND_HEAP
+		},
+		true
+	},
 	/* list terminator */
 	{ { NULL } }
 };
@@ -185,6 +193,14 @@ static relopt_real realRelOpts[] =
 
 static relopt_string stringRelOpts[] =
 {
+	{
+		{
+			"row_level_policy",
+			"Row-level discretionary access control policy",
+			RELOPT_KIND_HEAP
+		},
+		0, true, NULL
+	},
 	/* list terminator */
 	{ { NULL } }
 };
@@ -1072,6 +1088,8 @@ default_reloptions(Datum reloptions, bool validate, relopt_kind kind)
 	int				numoptions;
 	static const relopt_parse_elt tab[] = {
 		{"fillfactor", RELOPT_TYPE_INT, offsetof(StdRdOptions, fillfactor)},
+		{"row_level_dac", RELOPT_TYPE_BOOL, offsetof(StdRdOptions, row_level_dac)},
+		{"row_level_policy", RELOPT_TYPE_STRING, offsetof(StdRdOptions, row_level_policy)},
 		{"autovacuum_enabled", RELOPT_TYPE_BOOL,
 			offsetof(StdRdOptions, autovacuum) + offsetof(AutoVacOpts, enabled)},
 		{"autovacuum_vacuum_threshold", RELOPT_TYPE_INT,

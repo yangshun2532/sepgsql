@@ -30,6 +30,7 @@
 #include "executor/execdebug.h"
 #include "executor/nodeIndexscan.h"
 #include "optimizer/clauses.h"
+#include "security/rowlevel.h"
 #include "utils/array.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
@@ -534,6 +535,9 @@ ExecInitIndexScan(IndexScan *node, EState *estate, int eflags)
 
 	indexstate->ss.ss_currentRelation = currentRelation;
 	indexstate->ss.ss_currentScanDesc = NULL;	/* no heap scan here */
+
+	/* apply row-level security policy */
+	rowlvSetScanPolicy((ScanState *)indexstate, estate);
 
 	/*
 	 * get the scan type from the relation descriptor.

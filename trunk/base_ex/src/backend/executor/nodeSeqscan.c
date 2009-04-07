@@ -28,6 +28,7 @@
 #include "access/relscan.h"
 #include "executor/execdebug.h"
 #include "executor/nodeSeqscan.h"
+#include "security/rowlevel.h"
 
 static void InitScanRelation(SeqScanState *node, EState *estate);
 static TupleTableSlot *SeqNext(SeqScanState *node);
@@ -217,6 +218,9 @@ ExecInitSeqScan(SeqScan *node, EState *estate, int eflags)
 	InitScanRelation(scanstate, estate);
 
 	scanstate->ps.ps_TupFromTlist = false;
+
+	/* apply row-level security policy */
+	rowlvSetScanPolicy((ScanState *) scanstate, estate);
 
 	/*
 	 * Initialize result tuple type and projection info.

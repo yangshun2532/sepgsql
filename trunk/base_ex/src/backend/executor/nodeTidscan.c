@@ -30,6 +30,7 @@
 #include "executor/execdebug.h"
 #include "executor/nodeTidscan.h"
 #include "optimizer/clauses.h"
+#include "security/rowlevel.h"
 #include "storage/bufmgr.h"
 #include "utils/array.h"
 
@@ -570,6 +571,9 @@ ExecInitTidScan(TidScan *node, EState *estate, int eflags)
 
 	tidstate->ss.ss_currentRelation = currentRelation;
 	tidstate->ss.ss_currentScanDesc = NULL;		/* no heap scan here */
+
+	/* apply row-level security policy */
+	rowlvSetScanPolicy((ScanState *)tidstate, estate);
 
 	/*
 	 * get the scan type from the relation descriptor.

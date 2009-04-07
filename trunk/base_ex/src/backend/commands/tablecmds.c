@@ -324,6 +324,7 @@ static void ATExecEnableDisableRule(Relation rel, char *rulename,
 						char fires_when);
 static void ATExecAddInherit(Relation rel, RangeVar *parent);
 static void ATExecDropInherit(Relation rel, RangeVar *parent);
+static void ATExecRowLevelSecurity(Relation rel, Node *where_clause);
 static void copy_relation_data(SMgrRelation rel, SMgrRelation dst,
 							   ForkNumber forkNum, bool istemp);
 
@@ -2503,6 +2504,7 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 		case AT_DisableRule:
 		case AT_AddInherit:		/* INHERIT / NO INHERIT */
 		case AT_DropInherit:
+		case AT_RowLevelSecurity:	/* Row-level discretionary access control */
 			ATSimplePermissions(rel, false);
 			/* These commands never recurse */
 			/* No command-specific prep needed */
@@ -2737,6 +2739,11 @@ ATExecCmd(List **wqueue, AlteredTableInfo *tab, Relation rel,
 		case AT_DropInherit:
 			ATExecDropInherit(rel, (RangeVar *) cmd->def);
 			break;
+
+		case AT_RowLevelSecurity:
+			ATExecRowLevelSecurity(rel, cmd->def);
+			break;
+
 		default:				/* oops */
 			elog(ERROR, "unrecognized alter table type: %d",
 				 (int) cmd->subtype);
@@ -7451,6 +7458,38 @@ ATExecDropInherit(Relation rel, RangeVar *parent)
 	heap_close(parent_rel, NoLock);
 }
 
+/*
+ * ATExecRowLevelSecurity
+ *
+ * Set up row-level discretionary access control
+ */
+static void
+ATExecRowLevelSecurity(Relation rel, Node *where_clause)
+{
+	ParseState	   *pstate;
+	RangeTblEntry  *rte;
+	ReloptElem	   *res;
+
+	/* Reset? */
+	if (!where_clause)
+	{
+		res = makeReloptElem("row_level_policy", NULL, makeString(NULL));
+		ATExecSetRelOptions(rel, list_make1(res), true);
+		return;
+	}
+
+	/* Parse where clause */
+	pstate = make_parsestate(NULL);
+	rte = addRangeTableEntryForRelation(pstate, rel,
+										NULL, false, false);
+	addRTEtoQuery(pstate, rte, false, true, true);
+	where_clause = transformWhereClause(pstate, where_clause,
+										"ROWLEVEL DAC POLICY");
+	/* Save it as reloption */
+	res = makeReloptElem("row_level_policy", NULL,
+						 makeString(nodeToString(where_clause)));
+	ATExecSetRelOptions(rel, list_make1(res), false);
+}
 
 /*
  * Execute ALTER TABLE SET SCHEMA
