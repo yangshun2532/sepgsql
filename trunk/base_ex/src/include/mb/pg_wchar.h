@@ -6,7 +6,7 @@
  * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/mb/pg_wchar.h,v 1.87 2009/03/09 00:01:32 alvherre Exp $
+ * $PostgreSQL: pgsql/src/include/mb/pg_wchar.h,v 1.89 2009/04/08 09:50:48 heikki Exp $
  *
  *	NOTES
  *		This is used both by the backend and by libpq, but should not be
@@ -383,7 +383,6 @@ extern size_t wchar2char(char *to, const wchar_t *from, size_t tolen);
 extern size_t char2wchar(wchar_t *to, size_t tolen, const char *from, size_t fromlen);
 #endif
 
-extern void SetDefaultClientEncoding(void);
 extern int	SetClientEncoding(int encoding, bool doit);
 extern void InitializeClientEncoding(void);
 extern int	pg_get_client_encoding(void);
@@ -392,7 +391,7 @@ extern const char *pg_get_client_encoding_name(void);
 extern void SetDatabaseEncoding(int encoding);
 extern int	GetDatabaseEncoding(void);
 extern const char *GetDatabaseEncodingName(void);
-extern void pg_bind_textdomain_codeset(const char *domainname, int encoding);
+extern void pg_bind_textdomain_codeset(const char *domainname);
 
 extern int	pg_valid_client_encoding(const char *name);
 extern int	pg_valid_server_encoding(const char *name);

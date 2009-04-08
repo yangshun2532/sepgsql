@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/executor/nodeLimit.c,v 1.36 2009/03/04 10:55:00 petere Exp $
+ *	  $PostgreSQL: pgsql/src/backend/executor/nodeLimit.c,v 1.38 2009/04/02 20:59:10 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */

@@ -6,7 +6,7 @@
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
- * $PostgreSQL: pgsql/src/bin/pg_dump/pg_dumpall.c,v 1.120 2009/03/22 16:44:26 tgl Exp $
+ * $PostgreSQL: pgsql/src/bin/pg_dump/pg_dumpall.c,v 1.122 2009/04/06 08:42:53 heikki Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -21,10 +21,6 @@
 #endif
 
 #include "getopt_long.h"
-
-#ifndef HAVE_INT_OPTRESET
-int			optreset;
-#endif
 
 #include "dumputils.h"
 #include "pg_backup.h"
@@ -1052,13 +1048,13 @@ dumpCreateDB(PGconn *conn)
 
 			if (strlen(dbcollate) != 0)
 			{
-				appendPQExpBuffer(buf, " COLLATE = ");
+				appendPQExpBuffer(buf, " LC_COLLATE = ");
 				appendStringLiteralConn(buf, dbcollate, conn);
 			}
 
 			if (strlen(dbctype) != 0)
 			{
-				appendPQExpBuffer(buf, " CTYPE = ");
+				appendPQExpBuffer(buf, " LC_CTYPE = ");
 				appendStringLiteralConn(buf, dbctype, conn);
 			}
 
