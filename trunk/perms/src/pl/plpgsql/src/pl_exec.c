@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/pl/plpgsql/src/pl_exec.c,v 1.236 2009/03/26 22:26:08 petere Exp $
+ *	  $PostgreSQL: pgsql/src/pl/plpgsql/src/pl_exec.c,v 1.239 2009/04/02 20:16:30 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -3284,7 +3284,7 @@ exec_stmt_fetch(PLpgSQL_execstate *estate, PLpgSQL_stmt_fetch *stmt)
 	SPITupleTable *tuptab;
 	Portal		portal;
 	char	   *curname;
-	int			n;
+	uint32		n;
 
 	/* ----------
 	 * Get the portal of the cursor by name
@@ -3342,19 +3342,13 @@ exec_stmt_fetch(PLpgSQL_execstate *estate, PLpgSQL_stmt_fetch *stmt)
 		n = SPI_processed;
 
 		/* ----------
-		 * Set the target and the global FOUND variable appropriately.
+		 * Set the target appropriately.
 		 * ----------
 		 */
 		if (n == 0)
-		{
 			exec_move_row(estate, rec, row, NULL, tuptab->tupdesc);
-			exec_set_found(estate, false);
-		}
 		else
-		{
 			exec_move_row(estate, rec, row, tuptab->vals[0], tuptab->tupdesc);
-			exec_set_found(estate, true);
-		}
 
 		SPI_freetuptable(tuptab);
 	}
@@ -3363,10 +3357,11 @@ exec_stmt_fetch(PLpgSQL_execstate *estate, PLpgSQL_stmt_fetch *stmt)
 		/* Move the cursor */
 		SPI_scroll_cursor_move(portal, stmt->direction, how_many);
 		n = SPI_processed;
-
-		/* Set the global FOUND variable appropriately. */
-		exec_set_found(estate, n != 0);
 	}
+
+	/* Set the ROW_COUNT and the global FOUND variable appropriately. */
+	estate->eval_processed = n;
+	exec_set_found(estate, n != 0);
 
 	return PLPGSQL_RC_OK;
 }
@@ -4754,26 +4749,23 @@ exec_simple_cast_value(Datum value, Oid valtype,
 					   Oid reqtype, int32 reqtypmod,
 					   bool isnull)
 {
-	if (!isnull)
+	if (valtype != reqtype || reqtypmod != -1)
 	{
-		if (valtype != reqtype || reqtypmod != -1)
-		{
-			Oid			typinput;
-			Oid			typioparam;
-			FmgrInfo	finfo_input;
+		Oid			typinput;
+		Oid			typioparam;
+		FmgrInfo	finfo_input;
 
-			getTypeInputInfo(reqtype, &typinput, &typioparam);
+		getTypeInputInfo(reqtype, &typinput, &typioparam);
 
-			fmgr_info(typinput, &finfo_input);
+		fmgr_info(typinput, &finfo_input);
 
-			value = exec_cast_value(value,
-									valtype,
-									reqtype,
-									&finfo_input,
-									typioparam,
-									reqtypmod,
-									isnull);
-		}
+		value = exec_cast_value(value,
+								valtype,
+								reqtype,
+								&finfo_input,
+								typioparam,
+								reqtypmod,
+								isnull);
 	}
 
 	return value;
