@@ -16,7 +16,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/executor/nodeUnique.c,v 1.58 2009/01/01 17:23:42 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/backend/executor/nodeUnique.c,v 1.60 2009/04/02 20:59:10 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
