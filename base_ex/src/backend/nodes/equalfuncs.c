@@ -22,7 +22,7 @@
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/nodes/equalfuncs.c,v 1.350 2009/03/10 22:09:25 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/nodes/equalfuncs.c,v 1.352 2009/04/05 19:59:40 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -341,6 +341,7 @@ _equalSubPlan(SubPlan *a, SubPlan *b)
 	COMPARE_NODE_FIELD(testexpr);
 	COMPARE_NODE_FIELD(paramIds);
 	COMPARE_SCALAR_FIELD(plan_id);
+	COMPARE_STRING_FIELD(plan_name);
 	COMPARE_SCALAR_FIELD(firstColType);
 	COMPARE_SCALAR_FIELD(firstColTypmod);
 	COMPARE_SCALAR_FIELD(useHashTable);
@@ -2074,27 +2075,10 @@ _equalConstraint(Constraint *a, Constraint *b)
 static bool
 _equalDefElem(DefElem *a, DefElem *b)
 {
+	COMPARE_STRING_FIELD(defnamespace);
 	COMPARE_STRING_FIELD(defname);
 	COMPARE_NODE_FIELD(arg);
-
-	return true;
-}
-
-static bool
-_equalOptionDefElem(OptionDefElem *a, OptionDefElem *b)
-{
-	COMPARE_SCALAR_FIELD(alter_op);
-	COMPARE_NODE_FIELD(def);
-
-	return true;
-}
-
-static bool
-_equalReloptElem(ReloptElem *a, ReloptElem *b)
-{
-	COMPARE_STRING_FIELD(nmspc);
-	COMPARE_STRING_FIELD(optname);
-	COMPARE_NODE_FIELD(arg);
+	COMPARE_SCALAR_FIELD(defaction);
 
 	return true;
 }
@@ -2849,12 +2833,6 @@ equal(void *a, void *b)
 			break;
 		case T_DefElem:
 			retval = _equalDefElem(a, b);
-			break;
-		case T_OptionDefElem:
-			retval = _equalOptionDefElem(a, b);
-			break;
-		case T_ReloptElem:
-			retval = _equalReloptElem(a, b);
 			break;
 		case T_LockingClause:
 			retval = _equalLockingClause(a, b);

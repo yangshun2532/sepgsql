@@ -12,7 +12,7 @@
  *	by PostgreSQL
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/bin/pg_dump/pg_dump.c,v 1.531 2009/03/26 22:26:07 petere Exp $
+ *	  $PostgreSQL: pgsql/src/bin/pg_dump/pg_dump.c,v 1.534 2009/04/06 08:42:53 heikki Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -29,10 +29,6 @@
 #endif
 
 #include "getopt_long.h"
-
-#ifndef HAVE_INT_OPTRESET
-int			optreset;
-#endif
 
 #include "access/attnum.h"
 #include "access/sysattr.h"
@@ -1720,12 +1716,12 @@ dumpDatabase(Archive *AH)
 	}
 	if (strlen(collate) > 0)
 	{
-		appendPQExpBuffer(creaQry, " COLLATE = ");
+		appendPQExpBuffer(creaQry, " LC_COLLATE = ");
 		appendStringLiteralAH(creaQry, collate, AH);
 	}
 	if (strlen(ctype) > 0)
 	{
-		appendPQExpBuffer(creaQry, " CTYPE = ");
+		appendPQExpBuffer(creaQry, " LC_CTYPE = ");
 		appendStringLiteralAH(creaQry, ctype, AH);
 	}
 	if (strlen(tablespace) > 0 && strcmp(tablespace, "pg_default") != 0)
@@ -1995,7 +1991,13 @@ dumpBlobComments(Archive *AH, void *arg)
 	selectSourceSchema("pg_catalog");
 
 	/* Cursor to get all BLOB comments */
-	if (AH->remoteVersion >= 70200)
+	if (AH->remoteVersion >= 70300)
+		blobQry = "DECLARE blobcmt CURSOR FOR SELECT loid, "
+				  "obj_description(loid, 'pg_largeobject') "
+				  "FROM (SELECT DISTINCT loid FROM "
+				  "pg_description d JOIN pg_largeobject l ON (objoid = loid) "
+				  "WHERE classoid = 'pg_largeobject'::regclass) ss";
+	else if (AH->remoteVersion >= 70200)
 		blobQry = "DECLARE blobcmt CURSOR FOR SELECT loid, "
 				  "obj_description(loid, 'pg_largeobject') "
 				  "FROM (SELECT DISTINCT loid FROM pg_largeobject) ss";

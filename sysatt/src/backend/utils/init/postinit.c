@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/init/postinit.c,v 1.188 2009/02/18 15:58:41 heikki Exp $
+ *	  $PostgreSQL: pgsql/src/backend/utils/init/postinit.c,v 1.190 2009/04/08 13:08:09 heikki Exp $
  *
  *
  *-------------------------------------------------------------------------
@@ -264,6 +264,11 @@ CheckMyDatabase(const char *name, bool am_superuser)
 	/* Make the locale settings visible as GUC variables, too */
 	SetConfigOption("lc_collate", collate, PGC_INTERNAL, PGC_S_OVERRIDE);
 	SetConfigOption("lc_ctype", ctype, PGC_INTERNAL, PGC_S_OVERRIDE);
+
+	/* Use the right encoding in translated messages */
+#ifdef ENABLE_NLS
+	pg_bind_textdomain_codeset(textdomain(NULL));
+#endif
 
 	/*
 	 * Lastly, set up any database-specific configuration variables.
