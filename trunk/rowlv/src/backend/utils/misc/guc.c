@@ -10,7 +10,7 @@
  * Written by Peter Eisentraut <peter_e@gmx.net>.
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/misc/guc.c,v 1.497 2009/03/09 14:34:34 petere Exp $
+ *	  $PostgreSQL: pgsql/src/backend/utils/misc/guc.c,v 1.502 2009/04/07 23:27:34 momjian Exp $
  *
  *--------------------------------------------------------------------
  */
@@ -1732,7 +1732,13 @@ static struct config_int ConfigureNamesInt[] =
 	},
 
 	{
-		{"effective_io_concurrency", PGC_USERSET, RESOURCES,
+		{"effective_io_concurrency",
+#ifdef USE_PREFETCH
+		PGC_USERSET,
+#else
+		PGC_INTERNAL,
+#endif
+		RESOURCES,
 			gettext_noop("Number of simultaneous requests that can be handled efficiently by the disk subsystem."),
 			gettext_noop("For RAID arrays, this should be approximately the number of drive spindles in the array.")
 		},
@@ -3597,7 +3603,8 @@ ResetAllOptions(void)
 					if (conf->assign_hook)
 						if (!(*conf->assign_hook) (conf->reset_val, true,
 												   PGC_S_SESSION))
-							elog(ERROR, "failed to reset %s", conf->gen.name);
+							elog(ERROR, "failed to reset %s to %d",
+								 conf->gen.name, (int) conf->reset_val);
 					*conf->variable = conf->reset_val;
 					break;
 				}
@@ -3608,7 +3615,8 @@ ResetAllOptions(void)
 					if (conf->assign_hook)
 						if (!(*conf->assign_hook) (conf->reset_val, true,
 												   PGC_S_SESSION))
-							elog(ERROR, "failed to reset %s", conf->gen.name);
+							elog(ERROR, "failed to reset %s to %d",
+								 conf->gen.name, conf->reset_val);
 					*conf->variable = conf->reset_val;
 					break;
 				}
@@ -3619,7 +3627,8 @@ ResetAllOptions(void)
 					if (conf->assign_hook)
 						if (!(*conf->assign_hook) (conf->reset_val, true,
 												   PGC_S_SESSION))
-							elog(ERROR, "failed to reset %s", conf->gen.name);
+							elog(ERROR, "failed to reset %s to %g",
+								 conf->gen.name, conf->reset_val);
 					*conf->variable = conf->reset_val;
 					break;
 				}
@@ -3638,7 +3647,8 @@ ResetAllOptions(void)
 						newstr = (*conf->assign_hook) (str, true,
 													   PGC_S_SESSION);
 						if (newstr == NULL)
-							elog(ERROR, "failed to reset %s", conf->gen.name);
+							elog(ERROR, "failed to reset %s to \"%s\"",
+								 conf->gen.name, str);
 						else if (newstr != str)
 						{
 							/*
@@ -3658,7 +3668,9 @@ ResetAllOptions(void)
 					if (conf->assign_hook)
 						if (!(*conf->assign_hook) (conf->reset_val, true,
 												   PGC_S_SESSION))
-							elog(ERROR, "failed to reset %s", conf->gen.name);
+							elog(ERROR, "failed to reset %s to %s",
+								 conf->gen.name,
+								 config_enum_lookup_by_value(conf, conf->reset_val));
 					*conf->variable = conf->reset_val;
 					break;
 				}
@@ -3929,8 +3941,8 @@ AtEOXact_GUC(bool isCommit, int nestLevel)
 								if (conf->assign_hook)
 									if (!(*conf->assign_hook) (newval,
 													   true, PGC_S_OVERRIDE))
-										elog(LOG, "failed to commit %s",
-											 conf->gen.name);
+										elog(LOG, "failed to commit %s as %d",
+											 conf->gen.name, (int) newval);
 								*conf->variable = newval;
 								changed = true;
 							}
@@ -3946,8 +3958,8 @@ AtEOXact_GUC(bool isCommit, int nestLevel)
 								if (conf->assign_hook)
 									if (!(*conf->assign_hook) (newval,
 													   true, PGC_S_OVERRIDE))
-										elog(LOG, "failed to commit %s",
-											 conf->gen.name);
+										elog(LOG, "failed to commit %s as %d",
+											 conf->gen.name, newval);
 								*conf->variable = newval;
 								changed = true;
 							}
@@ -3963,8 +3975,8 @@ AtEOXact_GUC(bool isCommit, int nestLevel)
 								if (conf->assign_hook)
 									if (!(*conf->assign_hook) (newval,
 													   true, PGC_S_OVERRIDE))
-										elog(LOG, "failed to commit %s",
-											 conf->gen.name);
+										elog(LOG, "failed to commit %s as %g",
+											 conf->gen.name, newval);
 								*conf->variable = newval;
 								changed = true;
 							}
@@ -3984,8 +3996,8 @@ AtEOXact_GUC(bool isCommit, int nestLevel)
 									newstr = (*conf->assign_hook) (newval, true,
 															 PGC_S_OVERRIDE);
 									if (newstr == NULL)
-										elog(LOG, "failed to commit %s",
-											 conf->gen.name);
+										elog(LOG, "failed to commit %s as \"%s\"",
+											 conf->gen.name, newval);
 									else if (newstr != newval)
 									{
 										/*
@@ -4023,8 +4035,9 @@ AtEOXact_GUC(bool isCommit, int nestLevel)
 								if (conf->assign_hook)
 									if (!(*conf->assign_hook) (newval,
 															   true, PGC_S_OVERRIDE))
-										elog(LOG, "failed to commit %s",
-											 conf->gen.name);
+										elog(LOG, "failed to commit %s as %s",
+											 conf->gen.name,
+											 config_enum_lookup_by_value(conf, newval));
 								*conf->variable = newval;
 								changed = true;
 							}
