@@ -85,5 +85,5 @@ fi
 %{_datadir}/selinux/*/%{name}.pp
 
 %changelog
-* Sun Apr 12 2009 KaiGai Kohei <kaigai@kaigai.gr.jp> 2.xxxx
+* Sun Apr 12 2009 KaiGai Kohei <kaigai@kaigai.gr.jp> 2.1792
 - Initial build
