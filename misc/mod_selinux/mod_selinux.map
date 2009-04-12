@@ -1,0 +1,32 @@
+#
+# Apache/SELinux plud configuration
+#
+# SELinux context mapping with http identifications
+# =================================================
+
+# (Format)
+# <http user>           <domain>:<range>
+# <network address>     <domain>:<range>
+#
+# (Example)
+# foo                   httpd_php_t:s0:c0
+# bar                   httpd_php_t:s0:c1
+# baz                   httpd_php_t:s0:c2
+#
+# 127.0.0.1/8           *:s0:c0.c15
+# 192.168.1.0/24        *:s0
+#
+# (Note)
+# - <domain> has to be bounded by httpd_t
+# - '*' means this part is unchanged
+# - The configuration directives of
+#   selinuxDefaultDomain enables us to specify
+#   the default domain/range, if no matched one.
+#
+
+foo			*:s0:c1
+var			*:s0:c2
+baz			*:s0:c3
+
+127.0.0.1/8		*:s0:c0
+192.168.1.0/24		*:s0:c0
