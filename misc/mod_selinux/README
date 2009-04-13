@@ -1,0 +1,73 @@
+Apache/SELinux plus module
+==========================
+
+* PURPOSE
+
+The mod_selinux module enables to launch web-application instance
+with individual security context based on the result of http
+authentication and so on.
+
+This module override the process_connection hook, then it spawns
+a one-time thread for each request to handle it as the standard
+one (ap_process_http_connection) doing. The module also uses the
+fixups hooks to assign the current thread an appropriate privilege
+based on authentications and so on.
+
+* BUILD and INSTALLATION
+
+ % tar zxvf mod_selinux-2.2.xxxx.tgz
+ % cd mod_selinux-2.2.xxxx
+ % make
+ % su
+ # make install
+
+ Please confirm httpd-devel package is installed correctly.
+
+* CONFIGURATION
+
+This module provides the following two directives:
+
+ - selinuxConfigFile <filename>
+  It specifies the name of configuration file which defines
+  the associations between identification and security context.
+
+ - selinuxDefaultDomain (<domain>:<range>|auth-module)
+  It specified the fallbacked security context for any request
+  when it does not match to given entries.
+
+The configuration file has the following format:
+
+ (<http username>|<network address>)  <domain>:<range>
+ (<http username>|<network address>)  auth-module
+
+ The left-hand is an identifier of the given request.
+ If it matched, the right-hand will be applied.
+
+ If a pair of <domain>:<range> is specified, this module tries
+ to replace the domain and range of the current thread.
+ The "*" means it keep the current value as is.
+ If the term of "auth-module" is specified, it allows (upcoming)
+ SELinux aware authentication module to specify a security
+ context to be worked on.
+
+ Example)
+ # mod_selinux.so
+ # --------------
+ #   user/privilege mapping
+ foo			*:s0:c0
+ var			unpriv_webapp_t:s0
+ baz			auth-module
+ 192.168.1.0/24		*:s0:c1
+ 192.168.2.0/24		*:s0:c2
+ # -----------------------------------
+
+* CONTACT
+
+ - KaiGai Kohei <kaigai@ak.jp.nec.com>
+
+* COPYRIGHT
+
+ Copyright (c) 2009 NEC Corporation
+
+ This is free software, available under the terms of the Apache Software
+ License 2.0. See the file LICENSE for details.
