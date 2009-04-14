@@ -92,7 +92,7 @@ fi
 %{_datadir}/selinux/*/%{name}.pp
 
 %changelog
-* Tue Apr 14 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 2.2.1794
+* Tue Apr 14 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 2.2.1795
 - bugfix: install script didn't work correctly.
 - update: add some of inline source comments.
 - update: specfile improvement.
