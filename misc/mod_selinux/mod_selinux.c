@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 #include "httpd.h"
 
 #include "apr_strings.h"
@@ -23,6 +22,7 @@
 #include "http_config.h"
 #include "http_connection.h"
 #include "http_core.h"
+#include "http_request.h"
 #include "http_log.h"
 #include "http_protocol.h"
 #include "http_request.h"
@@ -31,201 +31,263 @@
 #include <selinux/selinux.h>
 #include <selinux/context.h>
 
-struct selinux_config_t
+typedef struct
 {
-    const char *dirname;
-    const char *map_file;
-    const char *default_domain;
-};
-typedef struct selinux_config_t selinux_config;
+    char *dirname;
+    char *config_file;
+    char *default_domain;
+} selinux_config;
 
 module AP_MODULE_DECLARE_DATA selinux_module;
 
-static char *selinux_lookup_entry(request_rec *r, const char *filename)
+/*
+ * selinux_lookup_entry
+ *
+ *   It lookups a matched entry from the given configuration file,
+ *   and returns it as a cstring allocated on r->pool, if found.
+ *   Otherwise, it returns NULL.
+ */
+static char *
+selinux_lookup_entry(request_rec *r, const char *filename)
 {
-    const char *white_space = " \t\n\r";
-    char buffer[1024], *ident, *entry, *mask, *tmp;
-    int negative, lineno = 0;
+    const char *white_space = " \t\r\n";
+    ap_configfile_t *filp;
+    char buffer[MAX_STRING_LEN];
+    apr_status_t status;
+    char *ident, *entry, *mask, *pos;
     apr_ipsubnet_t *ipsub;
-    FILE *filp;
+    int negative, lineno = 0;
 
-    filp = fopen(filename, "rb");
-    if (!filp) {
-        ap_log_error(APLOG_MARK, APLOG_ERR, errno, r->server,
-                     "selinux: unable to open map file: %s",
-                     strerror(errno));
+    status = ap_pcfg_openfile(&filp, r->pool, filename);
+    if (status != APR_SUCCESS) {
+        ap_log_rerror(APLOG_MARK, LOG_WARNING, status, r,
+                      "Unable to open: %s", filename);
         return NULL;
     }
 
-    while (fgets(buffer, sizeof(buffer), filp))
-    {
+    while (ap_cfg_getline(buffer, sizeof(buffer), filp) == 0) {
         negative = 0;
+        lineno++;
 
-        tmp = strchr(buffer, '#');
-        if (tmp)
-            *tmp = '\0';
+        /* skip empty line */
+        pos = strchr(buffer, '#');
+        if (pos)
+            *pos = '\0';
 
-        ident = strtok_r(buffer, white_space, &tmp);
+        ident = strtok_r(buffer, white_space, &pos);
         if (!ident)
             continue;
 
+        /* if the line begins with '!', it means negative. */
         if (*ident == '!') {
             ident++;
             negative = 1;
         }
 
-        entry = strtok_r(NULL, white_space, &tmp);
-        if (!entry || strtok_r(NULL, white_space, &tmp))
-        {
-            ap_log_error(APLOG_MARK, APLOG_ERR, 0, r->server,
-                         "syntax error at %s:%u", filename, lineno);
+        /* fetch domain and range */
+        entry = strtok_r(NULL, white_space, &pos);
+        if (!entry || strtok_r(NULL, white_space, &pos)) {
+            ap_log_rerror(APLOG_MARK, LOG_WARNING, 0, r,
+                          "syntax error at %s:%d", filename, lineno);
             continue;
         }
 
+        /* ident is network address? or username? */
         mask = strchr(ident, '/');
         if (mask)
             *mask++ = '\0';
 
-        if (apr_ipsubnet_create(&ipsub, ident, mask, r->pool) == APR_SUCCESS)
-        {
-            if (apr_ipsubnet_test(ipsub, r->connection->remote_addr))
-            {
+        if (apr_ipsubnet_create(&ipsub, ident, mask, r->pool) == APR_SUCCESS) {
+            if (apr_ipsubnet_test(ipsub, r->connection->remote_addr)) {
                 if (!negative)
                     goto found;
-            }
-            else if (negative)
+            } else if (negative)
                 goto found;
         }
-        else if (r->user != NULL)
-        {
+        else if (r->user) {
             if (mask)
-                *--mask = '/';  /* fixup identifier */
-            if (strcmp(r->user, ident) == 0)
-            {
+                *--mask = '/';  /* fixup assumption of network address */
+            if (strcmp(r->user, ident) == 0) {
                 if (!negative)
                     goto found;
-            }
-            else if (negative)
+            } else if (negative)
                 goto found;
         }
     }
-    entry = NULL;   /* not found */
+    /* not found */
+    ap_cfg_closefile(filp);
+    return NULL;
 
 found:
-    fclose(filp);
-
-    if (entry)
-        entry = apr_pstrdup(r->pool, entry);
-
-    return entry;
+    ap_cfg_closefile(filp);
+    return apr_pstrdup(r->pool, entry);
 }
 
-static int selinux_fixup_context(request_rec *r, const char *entry)
+/*
+ * selinux_post_read_request
+ *
+ *   It disables the contents caches implemented on quick_handler,
+ *   because it enables to bypass access controls.
+ */
+static int selinux_post_read_request(request_rec *r)
 {
-    security_context_t newcon, oldcon;
-    context_t context;
-    char *domain, *range;
-
-    domain = apr_pstrdup(r->pool, entry);
-    range = strchr(domain, ':');
-    if (range)
-        *range++ = '\0';
-
-    if (domain && !strcmp(domain, "*"))
-        domain = NULL;
-    if (range && !strcmp(range, "*"))
-        range = NULL;
-
-    if (getcon_raw(&oldcon) < 0)
-    {
-        ap_log_error(APLOG_MARK, APLOG_ERR, errno, r->server,
-                     "selinux: getcon_raw() failed");
-        return HTTP_INTERNAL_SERVER_ERROR;
-    }
-
-    context = context_new(oldcon);
-    if (!context)
-    {
-        ap_log_error(APLOG_MARK, APLOG_ERR, errno, r->server,
-                     "selinux: context_new() failed");
-        freecon(oldcon);
-
-        return HTTP_INTERNAL_SERVER_ERROR;
-    }
-
-    if (domain)
-        context_type_set(context, domain);
-    if (range)
-        context_range_set(context, range);
-
-    newcon = context_str(context);
-    if (!newcon)
-    {
-        ap_log_error(APLOG_MARK, APLOG_ERR, errno, r->server,
-                     "selinux: context_str() failed");
-        freecon(oldcon);
-        context_free(context);
-
-        return HTTP_INTERNAL_SERVER_ERROR;
-    }
-
-    if (setcon_raw(newcon) < 0)
-    {
-        ap_log_error(APLOG_MARK, APLOG_ERR, errno, r->server,
-                     "selinux: unable to translate security context: "
-                     "%s -> %s (user: %s, remote: %s)",
-                     oldcon, newcon, r->user, r->connection->remote_ip);
-        freecon(oldcon);
-        context_free(context);
-
-        return HTTP_INTERNAL_SERVER_ERROR;
-    }
-
-    ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server,
-                 "selinux: translate security context: "
-                 "%s -> %s (user: %s, remote: %s)",
-                 oldcon, newcon, r->user, r->connection->remote_ip);
-    freecon(oldcon);
-    context_free(context);
+    selinux_config *sconf
+        = ap_get_module_config(r->per_dir_config,
+                               &selinux_module);
+    /*
+     * If mod_selinux is available on the given request,
+     * it does not allow to cache the contents to keep
+     * consistency of access controls.
+     */
+    if (sconf && is_selinux_enabled() == 1)
+        r->no_cache = 1;
 
     return DECLINED;
 }
 
-
+/*
+ * selinux_fixups
+ *
+ *   It assigns an appropriate security context on the current
+ *   working thread based on attributes of the given request.
+ */
 static int selinux_fixups(request_rec *r)
 {
     selinux_config *sconf;
-    const char *entry = NULL;
+    security_context_t old_context;
+    security_context_t new_context;
+    security_context_t tmp_context;
+    char *entry = NULL;
+
+    sconf = ap_get_module_config(r->per_dir_config,
+                                 &selinux_module);
+    if (!sconf)
+        return DECLINED;
 
     if (is_selinux_enabled() < 1)
         return DECLINED;
 
-    sconf = ap_get_module_config(r->per_dir_config, &selinux_module);
-    if (!sconf)
-        return DECLINED;
-
-    entry = selinux_lookup_entry(r, sconf->map_file);
+    /*
+     * Is there any matched entry or default domain
+     * configured? If not, this module does not anything.
+     */
+    if (sconf->config_file)
+        entry = selinux_lookup_entry(r, sconf->config_file);
     if (!entry)
-        return DECLINED;
+        entry = apr_pstrdup(r->pool, sconf->default_domain);
+    if (!entry)
+        return DECLINED;  /* no matched and default domain */
 
-    return selinux_fixup_context(r, entry);
+    /*
+     * Get the current security context
+     */
+    if (getcon_raw(&tmp_context) < 0) {
+        ap_log_error(APLOG_MARK, APLOG_ERR, errno, r->server,
+                     "SELinux: getcon_raw() failed");
+        return HTTP_INTERNAL_SERVER_ERROR;
+    }
+    old_context = apr_pstrdup(r->pool, tmp_context);
+    freecon(tmp_context);
+
+    /*
+     * Compute a new security context
+     */
+    if (!strcasecmp(entry, "auth-module")) {
+        new_context = (security_context_t )apr_table_get(r->notes,
+                                                         "auth-security-context");
+        if (!new_context) {
+            ap_log_rerror(APLOG_MARK, APLOG_ERR, errno, r,
+                          "No SELinux aware authentication module");
+            return HTTP_INTERNAL_SERVER_ERROR;
+        }
+    } else {
+        context_t context;
+        char *domain = entry;
+        char *range = NULL;
+
+        range = strchr(domain, ':');
+        if (range)
+            *range++ = '\0';
+
+        context = context_new(old_context);
+        if (!context) {
+            ap_log_rerror(APLOG_MARK, APLOG_ERR, errno, r,
+                          "context_new('%s') failed", old_context);
+            return HTTP_INTERNAL_SERVER_ERROR;
+        }
+        if (domain && strcmp(domain, "*") != 0)
+            context_type_set(context, domain);
+        if (range  && strcmp(range, "*") != 0)
+            context_range_set(context, range);
+
+        tmp_context = context_str(context);
+        if (!tmp_context) {
+            ap_log_rerror(APLOG_MARK, APLOG_ERR, errno, r,
+                          "context_str() failed");
+            context_free(context);
+            return HTTP_INTERNAL_SERVER_ERROR;
+        }
+        new_context = apr_pstrdup(r->pool, tmp_context);
+        freecon(tmp_context);
+    }
+
+    /*
+     * If old_context == new_context, we don't need to do anything.
+     */
+    if (strcmp(old_context, new_context) == 0) {
+        ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r,
+                      "no need to set security context: %s "
+                      "(uri=%s dir=%s user=%s remote=%s)",
+                      old_context,
+                      r->uri, sconf->dirname, r->user,
+                      r->connection->remote_ip);
+        return DECLINED;
+    }
+
+    if (setcon_raw(new_context) < 0) {
+        ap_log_rerror(APLOG_MARK, APLOG_ERR, errno, r,
+                      "setcon_raw('%s') failed", new_context);
+        return HTTP_INTERNAL_SERVER_ERROR;
+    }
+
+    ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r,
+                  "set security context: %s -> %s "
+                  "(uri=%s dir=%s user=%s remote=%s)",
+                  old_context, new_context,
+                  r->uri, sconf->dirname, r->user,
+                  r->connection->remote_ip);
+    return DECLINED;
 }
 
+/*
+ * selinux_process_request
+ *
+ *   It is an entry point to invoke ap_process_request()
+ *   in a separate worker thread.
+ */
 static void * APR_THREAD_FUNC
 selinux_process_request(apr_thread_t *thd, void *datap)
 {
     request_rec *r = datap;
 
     ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server,
-                 "selinux: one-time-thread launched for "
-                 "(uri:%s, user:%s, remote-ip:%s)",
-                 r->uri, r->user, r->connection->remote_ip);
+                 "selinux: one-time-thread launched for uri=%s", r->uri);
 
     ap_process_request(r);
+
+    apr_thread_exit(thd, 0);
 
     return NULL;
 }
 
+/*
+ * selinux_process_connection
+ *
+ *   It overrides the default process_connection behavior, and
+ *   launches a one-time worker thread for each requests.
+ *   It enables selinux_fixups() to assign individual restrictive
+ *   privileges prior to invocations of contents handlers.
+ */
 static int selinux_process_connection(conn_rec *c)
 {
     /*
@@ -293,8 +355,9 @@ static void selinux_hooks(apr_pool_t *p)
 {
     ap_hook_process_connection(selinux_process_connection,
                                NULL, NULL, APR_HOOK_MIDDLE);
-    ap_hook_fixups(selinux_fixups,
-                   NULL, NULL, APR_HOOK_MIDDLE);
+    ap_hook_post_read_request(selinux_post_read_request,
+                              NULL, NULL, APR_HOOK_MIDDLE);
+    ap_hook_fixups(selinux_fixups, NULL, NULL, APR_HOOK_MIDDLE);
 }
 
 static void *selinux_create_dir(apr_pool_t *p, char *dirname)
@@ -306,23 +369,23 @@ static void *selinux_create_dir(apr_pool_t *p, char *dirname)
                  "selinux: create dir config at %s", dirname);
 
     sconf->dirname = apr_pstrdup(p, dirname);
-    sconf->map_file = NULL;
+    sconf->config_file = NULL;
     sconf->default_domain = NULL;
 
     return sconf;
 }
 
-static const char *set_ident_map_file(cmd_parms *cmd,
-                                      void *mconfig, const char *v1)
+static const char *set_config_file(cmd_parms *cmd,
+								   void *mconfig, const char *v1)
 {
     selinux_config *sconf
         = ap_get_module_config(cmd->context, &selinux_module);
 
     ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, cmd->server,
-                 "selinux: selinuxIdentMapFile = %s at %s",
+                 "selinux: selinuxConfigFile = %s at %s",
                  v1, sconf->dirname);
 
-    sconf->map_file = apr_pstrdup(cmd->pool, v1);
+    sconf->config_file = apr_pstrdup(cmd->pool, v1);
 
     return NULL;
 }
@@ -343,18 +406,18 @@ static const char *set_default_domain(cmd_parms *cmd,
 }
 
 static const command_rec selinux_cmds[] = {
-    AP_INIT_TAKE1("selinuxIdentMapFile",
-                  set_ident_map_file, NULL, OR_OPTIONS,
-                  "Apache/SELinux plus identification map file"),
+    AP_INIT_TAKE1("selinuxConfigFile",
+                  set_config_file, NULL, OR_OPTIONS,
+                  "Apache/SELinux plus configuration file"),
     AP_INIT_TAKE1("selinuxDefaultDomain",
                   set_default_domain, NULL, OR_OPTIONS,
-                  "Apache/SELinux plus default domain/range"),
+                  "Apache/SELinux plus default security context"),
     {NULL}
 };
 
 module AP_MODULE_DECLARE_DATA selinux_module = {
-	STANDARD20_MODULE_STUFF,
-	selinux_create_dir,     /* create per-directory config */
+    STANDARD20_MODULE_STUFF,
+    selinux_create_dir,     /* create per-directory config */
     NULL,                   /* merge per-directory config */
     NULL,                   /* server config creator */
     NULL,                   /* server config merger */
