@@ -7,7 +7,7 @@ Summary: Apache/SELinux plus (module)
 Group: System Environment/Daemons
 License: ASL 2.0
 URL: http://code.google.com/p/sepgsql/
-Source0: %{name}-%{version}.tgz
+Source0: http://sepgsql.googlecode.com/files/%{name}-%{version}.tgz
 Source1: %{name}.conf
 Source2: %{name}.map
 BuildRequires: httpd-devel >= 2.2.0 libselinux-devel checkpolicy selinux-policy
@@ -92,7 +92,7 @@ fi
 %{_datadir}/selinux/*/%{name}.pp
 
 %changelog
-* Wed Apr 15 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 2.2.1798
+* Wed Apr 15 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 2.2.1800
 - rework: worker was redesigned to use a process, instead of thread,
           on process_connection hook.
 - rework: "selinuxAllowCaches" and "selinuxAllowKeepAlive" were added.

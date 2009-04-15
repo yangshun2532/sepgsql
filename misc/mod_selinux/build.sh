@@ -30,3 +30,5 @@ cp -f ${BASEDIR}/${NAME}.conf	${RPMSOURCE}
 cp -f ${BASEDIR}/${NAME}.map	${RPMSOURCE}
 
 rpmbuild -ba ${RPMSOURCE}/${NAME}.spec
+
+echo "tarball: ${RPMSOURCE}/${NAME}-${VERSION}.tgz"
