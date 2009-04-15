@@ -20,15 +20,10 @@
 #include "ap_listen.h"
 #include "ap_mpm.h"
 
-#define CORE_PRIVATE
-#include "http_config.h"
 #include "http_connection.h"
-#include "http_core.h"
 #include "http_request.h"
 #include "http_log.h"
 #include "http_protocol.h"
-#include "http_request.h"
-#include "scoreboard.h"
 
 #include <unistd.h>
 #include <selinux/selinux.h>
@@ -352,8 +347,10 @@ static int selinux_process_connection(conn_rec *c)
     {
         int status;
 
-        /* no need to hold client socket */
-        ap_lingering_close(c);
+        /*
+         * No need to hold client socket here,
+         * but it will be closed later.
+         */
 
         /* wait for child termination */
         while (waitpid(worker, &status, 0) < 0 && errno == EINTR);
