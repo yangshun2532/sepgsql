@@ -1,11 +1,10 @@
-policy_module(mod_selinux, 1.1)
+policy_module(mod_selinux, 1.2)
 
 gen_require(`
 	type httpd_t;
 ')
 
-selinux_compute_create_context(httpd_t)
-allow httpd_t self : process { setexec };
+allow httpd_t self : process { setcurrent };
 
 ifdef(`enable_mcs',`
 	gen_require(`
