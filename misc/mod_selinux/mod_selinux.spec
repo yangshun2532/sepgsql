@@ -10,8 +10,8 @@ URL: http://code.google.com/p/sepgsql/
 Source0: %{name}-%{version}.tgz
 Source1: %{name}.conf
 Source2: %{name}.map
-BuildRequires: httpd-devel checkpolicy selinux-policy
-Requires: httpd >= 2.2.0 policycoreutils selinux-policy
+BuildRequires: httpd-devel >= 2.2.0 libselinux-devel checkpolicy selinux-policy
+Requires: httpd >= 2.2.0 libselinux policycoreutils selinux-policy
 BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root
 
 %description
@@ -92,6 +92,11 @@ fi
 %{_datadir}/selinux/*/%{name}.pp
 
 %changelog
+* Wed Apr 15 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 2.2.1796
+- rework: worker was redesigned to use a process, instead of thread,
+          on process_connection hook.
+- rework: "selinuxAllowCaches" and "selinuxAllowKeepAlive" were added.
+
 * Tue Apr 14 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 2.2.1795
 - bugfix: install script didn't work correctly.
 - update: add some of inline source comments.
