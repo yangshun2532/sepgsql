@@ -92,10 +92,11 @@ fi
 %{_datadir}/selinux/*/%{name}.pp
 
 %changelog
-* Wed Apr 15 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 2.2.1796
+* Wed Apr 15 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 2.2.1797
 - rework: worker was redesigned to use a process, instead of thread,
           on process_connection hook.
 - rework: "selinuxAllowCaches" and "selinuxAllowKeepAlive" were added.
+- rework: README was revised
 
 * Tue Apr 14 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 2.2.1795
 - bugfix: install script didn't work correctly.

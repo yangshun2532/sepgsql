@@ -1,73 +1,196 @@
-Apache/SELinux plus module
-==========================
+Apache/SELinux plus documentation
+=================================
 
-* PURPOSE
+OVERVIEW
+--------
+The Apache/SELinux plus is the name of this package which contains
+the following modules:
 
-The mod_selinux module enables to launch web-application instance
-with individual security context based on the result of http
-authentication and so on.
+ * mod_selinux.so
+ * mod_selinux.pp (targeted and mls)
 
-This module override the process_connection hook, then it spawns
-a one-time thread for each request to handle it as the standard
-one (ap_process_http_connection) doing. The module also uses the
-fixups hooks to assign the current thread an appropriate privilege
-based on authentications and so on.
+Some of (SELinux aware) authentication modules will be upcoming.
 
-* BUILD and INSTALLATION
+The mod_selinux.so is a third-party module for apache/httpd.
+It enables to launch web-application instances with individual
+security context based on the result of http-authentications.
+Internally, it forks a one-time process for each connections
+from client, as if traditional client-server model did, and
+assigns a security context on the worker prior to the invocation
+of web-applications.
+
+In the past days, we had a headache issue that all the requests
+to the web-server handled under a uniformed set of privileges
+with few exceptions such as CGI.
+From the viewpoint of operating system, it meant we cannot
+discriminate all the web-application instances and cannot apply
+valid access controls.
+
+For example, the apache/httpd is typically working under httpd_t
+domain, and it accepts and handles all the http requests, but
+all the instance shares or inherits httpd_t.
+
+The mod_selinux.so intends to resolve the issue.
+
+REQUIREMENTS
+------------
+
+It needs the following packages:
+
+ - httpd and httpd-devel (>= 2.2.0)
+ - libselinux and libselinux-devel
+ - selinux-policy
+ - checkpolicy
+ - policycoreutils
+
+BUILD and INSTALLATION
+----------------------
+
+* RPM Installation (preferable)
+
+ # rpm -Uvh mod_selinux-2.2.xxxx-x.xxx.<arch>.rpm
+
+ It installs the modules and configurations on the standard path,
+ and it also installs its security policy module.
+
+* Build from the tarball
 
  % tar zxvf mod_selinux-2.2.xxxx.tgz
  % cd mod_selinux-2.2.xxxx
  % make
+ % make -f /usr/share/selinux/deve/Makefile
  % su
  # make install
+ # semodule -i mod_selinux.pp
 
- Please confirm httpd-devel package is installed correctly.
 
-* CONFIGURATION
+CONFIGURATION (mod_selinux.so)
+------------------------------
 
-This module provides the following two directives:
+The mod_selinux.so has the following four configurations:
 
- - selinuxConfigFile <filename>
-  It specifies the name of configuration file which defines
-  the associations between identification and security context.
+ * selinuxMappingFile <filename>
+  It specifies the name of mapping file which allow us to defines
+  the relationship between an identification and a security context.
+  When we omit the configuration, the security context specified in
+  the selinuxDefaultContext will be applied.
+  The detailed file-format is described bellow.
 
- - selinuxDefaultDomain (<domain>:<range>|auth-module)
-  It specified the fallbacked security context for any request
-  when it does not match to given entries.
+    example)
+      selinuxMappingFile       /var/www/mod_selinux.map
 
-The configuration file has the following format:
+ * selinuxDefaultContext <entry>
+  It specifies a fallback security context when we don't have the
+  configuration of selinuxMappingFile or cannot find a matched
+  entry from the mapping file.
+  If we don't have the configuration and could not find a matched
+  entry, the mod_selinux.so does not change the security context.
 
- (<http username>|<network address>)  <domain>:<range>
- (<http username>|<network address>)  auth-module
+    example)
+      selinuxDefaultContext    unpriv_webapp_t:s0
 
- The left-hand is an identifier of the given request.
- If it matched, the right-hand will be applied.
+ * selinuxAllowCaches (On|Off)
+  As the apache/httpd official documentation noted, it checks
+  contents caches prior to authentications and domain transition,
+  so it may allow users to bypass access controls.
+  The mod_selinux.so disables contents caches as far as the
+  configuration is not explicitly set.
+  Please understand the risk to use contents caches, before you
+  enables it.
 
- If a pair of <domain>:<range> is specified, this module tries
- to replace the domain and range of the current thread.
- The "*" means it keep the current value as is.
- If the term of "auth-module" is specified, it allows (upcoming)
- SELinux aware authentication module to specify a security
- context to be worked on.
+    example)
+      selinuxAllowCaches        On
 
- Example)
- # mod_selinux.so
- # --------------
- #   user/privilege mapping
- foo			*:s0:c0
- var			unpriv_webapp_t:s0
- baz			auth-module
- 192.168.1.0/24		*:s0:c1
- 192.168.2.0/24		*:s0:c2
- # -----------------------------------
+ * selinuxAllowKeepAlive (On|Off)
+  The keep-alive connections allows to accept multiple requests
+  within a single connection, to improve performance.
+  But it also means the mod_selinux.so may need to assign a different
+  security context for each request and some of them are impossible
+  to assign due to lack of permissions.
+  In the default, the mod_selinux.so unconditionally close the
+  connection after one request is handled, as far as the configuration
+  is not explicitly set.
+  If we got a fail at setcon(), the mod_selinux.so returns an internal
+  server error (500). Please understand here is a possibility we cannot
+  assign a security context on a keep-alive connection.
 
-* CONTACT
+    example)
+      selinuxAllowKeepAlive     On
 
- - KaiGai Kohei <kaigai@ak.jp.nec.com>
 
-* COPYRIGHT
+CONFIGURATION (mapping files)
+-----------------------------
 
- Copyright (c) 2009 NEC Corporation
+The mapping file can hold a relationship between an identifier and
+a security context to be assigned for each lines.
+Currently, we can use http-authenticated username or remote address
+as the identifier. When '!' is on the head of literal, it means a
+negative condition which matches all unmatched entries.
+The security context is a pair of a domain and a range, or a special
+term which enables to collaborate upcoming SELinux aware authentication
+modules.
+The mod_selinux.so checks entries from the head sequencially, and
+the first matched one will be applied.
 
- This is free software, available under the terms of the Apache Software
- License 2.0. See the file LICENSE for details.
+  Examples)
+  kaigai            unpriv_webapp_t:s0
+  # It matches the authenticated "kaigai", and "unpriv_webapp_t:s0"
+  # will be assigned on.
+
+  himainu           *:s0:c0
+  # It matches the authenticated "himainu", and "s0:c0" will be
+  # assigned on, but the domain will be unchanged.
+
+  !guest            staff_webapp_t:s0
+  # It matches the authenticated users expect for "guest", and
+  # "staff_webapp_t:s0" will be assigned on.
+
+  192.168.1.0/24    *:s0:c1
+  # It matches all the request come from "192.168.1.0/24", and
+  # "s0:c0" will be assigned on the range.
+
+  !192.168.2.0/24   *:s0:c2
+  # It matched all the request come from anywhere except for
+  # "192.168.2.0/24", and "s0:c2" will be assigned on the range.
+
+
+TIPS (virtual-host based separation)
+------------------------------------
+
+Please note that the selinuxDefaultContext will be applied,
+if we have no selinuxMappingFile. If we intentionally omit the
+selinuxMappingFile, the configuration of selinuxDefaultContext
+will be applied unconditionally.
+
+If we put the configuration within <VirtualHost> tags, it also
+means all the web-applications works under the specified security
+context.
+
+  Example)
+
+  NameVirtualHost *:80
+  
+  <VirtualHost *:80>
+  DocumentRoot          /var/www/html
+  ServerName            dog.example.com
+  selinuxDefaultContext *:s0:c1
+  </VirtualHost>
+
+  <VirtualHost *:80>
+  DocumentRoot          /var/www/html
+  ServerName            cat.example.com
+  selinuxDefaultContext *:s0:c2
+  </VirtualHost>
+
+CONTACT
+-------
+
+Author: KaiGai Kohei <kaigai@ak.jp.nec.com>
+
+
+COPYRIGHT and LICENSE
+---------------------
+Copyright (c) 2009 NEC Corporation
+
+This is free software, available under the terms of the Apache Software
+License 2.0. See the file LICENSE for details.
