@@ -62,7 +62,7 @@ SELECT sepgsql_getcon();
 (1 row)
 
 SELECT * FROM t1 JOIN t2 ON a = x;		-- to be denied
-ERROR:  SELinux: denied { select } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=unconfined_u:object_r:sepgsql_secret_table_t:s0 tclass=db_column name=t1.c
+ERROR:  SELinux: security policy violation
 SELECT a, b, y FROM t1 JOIN t2 ON a = x;
  a |  b  |  y  
 ---+-----+-----
@@ -74,7 +74,7 @@ SELECT a, b, y FROM t1 JOIN t2 ON a = x;
 (5 rows)
 
 SELECT a, b, y FROM t1 JOIN t2 ON c = x;	-- to be denied
-ERROR:  SELinux: denied { select } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=unconfined_u:object_r:sepgsql_secret_table_t:s0 tclass=db_column name=t1.c
+ERROR:  SELinux: security policy violation
 SELECT COUNT(*) FROM t1 JOIN t2 ON a = x;
  count 
 -------
@@ -82,4 +82,4 @@ SELECT COUNT(*) FROM t1 JOIN t2 ON a = x;
 (1 row)
 
 SELECT j FROM (t1 JOIN t2 ON a = x) AS j;	-- to be denied
-ERROR:  SELinux: denied { select } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=unconfined_u:object_r:sepgsql_secret_table_t:s0 tclass=db_column name=t1.c
+ERROR:  SELinux: security policy violation
