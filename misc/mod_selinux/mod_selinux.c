@@ -17,6 +17,7 @@
 
 #include "apr_signal.h"
 #include "apr_strings.h"
+#include "apr_thread_proc.h"
 #include "ap_listen.h"
 #include "ap_mpm.h"
 
@@ -265,109 +266,62 @@ static int selinux_fixups(request_rec *r)
 
 #ifndef WITH_MPM_SECURITY
 
-static pid_t volatile worker = 0;
-
-static apr_sigfunc_t * volatile default_sig_hup = SIG_DFL;
-static apr_sigfunc_t * volatile default_sig_term = SIG_DFL;
-
-/*
- * selinux_sig_handler
- *   It also send SIGKILL to the worker process (if working),
- *   when it receives SIGHUP or SIGTERM. Then it also send
- *   the same signal to myself again after restoring signal
- *   handlers. It is necessary to ensure killing the worker
- *   process.
- */
-static void selinux_sig_handler(int sig)
-{
-    /*
-     * Anyway, worker process should be aborted immediately.
-     */
-    if (worker > 0)
-        kill(worker, SIGKILL);
-
-    switch (sig) {
-    case SIGHUP:
-        apr_signal(SIGHUP, default_sig_hup);
-        kill(getpid(), SIGHUP);
-        break;
-
-    case SIGTERM:
-        apr_signal(SIGTERM, default_sig_term);
-        kill(getpid(), SIGTERM);
-        break;
-
-    default:
-        /* ??? */
-        break;
-    }
-}
-
-static void selinux_child_init(apr_pool_t *p, server_rec *s)
-{
-    default_sig_hup = apr_signal(SIGHUP, selinux_sig_handler);
-    default_sig_term = apr_signal(SIGTERM, selinux_sig_handler);
-}
-
 /*
  * selinux_process_connection
  *
  *   It overrides the default handler (ap_process_http_connection)
- *   and launches a one-time process to invoke the default one.
+ *   and launches a one-time thread to invoke the default one.
  */
+static int __thread volatile is_worker = 0;
+
+static void * APR_THREAD_FUNC
+selinux_worker_process_connection(apr_thread_t *thread, void *dummy)
+{
+    conn_rec *c = (conn_rec *) dummy;
+
+    /* marks as the current context is worker thread */
+    is_worker = 1;
+
+    ap_run_process_connection(c);
+
+    apr_thread_exit(thread, 0);
+
+    return NULL;
+}
+
 static int selinux_process_connection(conn_rec *c)
 {
-    static int skip = 0;
+    apr_threadattr_t *thread_attr;
+    apr_thread_t *thread;
+    apr_status_t rv, thread_rv;
 
-    if (skip || is_selinux_enabled() < 1)
+    /*
+     * If the hook is invoked under the worker context,
+     * we simply skips it.
+     */
+    if (is_worker)
         return DECLINED;
 
-    worker = fork();
-    if (worker < 0) {
+    apr_threadattr_create(&thread_attr, c->pool);
+    /* 0 means PTHREAD_CREATE_JOINABLE */
+    apr_threadattr_detach_set(thread_attr, 0);
+
+    rv = apr_thread_create(&thread, thread_attr,
+                           selinux_worker_process_connection,
+                           c, c->pool);
+    if (rv != APR_SUCCESS) {
         ap_log_cerror(APLOG_MARK, APLOG_ERR, errno, c,
-                      "Unable to fork a new one-time process");
+                      "Unable to launch a one-time thread");
+        c->aborted = 1;
         return DONE;
     }
 
-    if (worker == 0) {
-        /* no need to hold server sockets */
-        ap_close_listeners();
-
-        /* mark this process as worker */
-        skip = 1;
-
-        /* TODO: setrlimit() here, like as CGI doing? */
-
-        /* invokes process_connection hook again */
-        ap_run_process_connection(c);
-
-        exit(c->aborted);
-    }
-    else
-    {
-        int status;
-
-        /*
-         * No need to hold client socket here,
-         * but it will be closed later.
-         */
-
-        /* wait for child termination */
-        while (waitpid(worker, &status, 0) < 0 && errno == EINTR);
-
-        if (!WIFEXITED(status)) {
-            ap_log_cerror(APLOG_MARK, APLOG_ERR, errno, c,
-                          "Worker process exit abnormally (%08x)", status);
-            c->aborted = 1;
-        }
-        else
-        {
-            ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, c,
-                          "Worker process exit normally (%08x)", status);
-            c->aborted = WEXITSTATUS(status);
-        }
-
-        worker = 0;    /* reset for next request */
+    rv = apr_thread_join(&thread_rv, thread);
+    if (rv != APR_SUCCESS) {
+        ap_log_cerror(APLOG_MARK, APLOG_ERR, errno, c,
+                      "Unable to join the worker thread");
+        c->aborted = 1;
+        return DONE;
     }
 
     return OK;
@@ -379,19 +333,18 @@ static int selinux_process_connection(conn_rec *c)
  */
 static void selinux_hooks(apr_pool_t *p)
 {
-    if (is_selinux_enabled() > 0) {
+	if (is_selinux_enabled() < 1)
+		return;
+
 #ifndef WITH_MPM_SECURITY
-        ap_hook_child_init(selinux_child_init,
-                           NULL, NULL, APR_HOOK_MIDDLE);
-        ap_hook_process_connection(selinux_process_connection,
-                                   NULL, NULL, APR_HOOK_FIRST);
+	ap_hook_process_connection(selinux_process_connection,
+							   NULL, NULL, APR_HOOK_FIRST);
 #endif
-        ap_hook_post_read_request(selinux_disable_cache,
-                                  NULL, NULL, APR_HOOK_MIDDLE);
-        ap_hook_log_transaction(selinux_disable_keep_alive,
-                                NULL, NULL, APR_HOOK_MIDDLE);
-        ap_hook_fixups(selinux_fixups, NULL, NULL, APR_HOOK_MIDDLE);
-    }
+	ap_hook_post_read_request(selinux_disable_cache,
+							  NULL, NULL, APR_HOOK_MIDDLE);
+	ap_hook_log_transaction(selinux_disable_keep_alive,
+							NULL, NULL, APR_HOOK_MIDDLE);
+	ap_hook_fixups(selinux_fixups, NULL, NULL, APR_HOOK_MIDDLE);
 }
 
 static void *selinux_create_dir(apr_pool_t *p, char *dirname)
