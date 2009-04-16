@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/adt/arrayfuncs.c,v 1.154 2009/04/05 22:28:59 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/utils/adt/arrayfuncs.c,v 1.156 2009/04/15 23:30:33 alvherre Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -1664,28 +1664,6 @@ array_length(PG_FUNCTION_ARGS)
 	dimv = ARR_DIMS(v);
 
 	result = dimv[reqdim - 1];
-
-	PG_RETURN_INT32(result);
-}
-
-/*
- * array_cardinality :
- *		SQL-spec alias for array_length(v, 1)
- */
-Datum
-array_cardinality(PG_FUNCTION_ARGS)
-{
-	ArrayType  *v = PG_GETARG_ARRAYTYPE_P(0);
-	int		   *dimv;
-	int			result;
-
-	/* Sanity check: does it look like an array at all? */
-	if (ARR_NDIM(v) <= 0 || ARR_NDIM(v) > MAXDIM)
-		PG_RETURN_NULL();
-
-	dimv = ARR_DIMS(v);
-
-	result = dimv[0];
 
 	PG_RETURN_INT32(result);
 }
@@ -4514,7 +4492,7 @@ array_fill_internal(ArrayType *dims, ArrayType *lbs,
 	if (ARR_LBOUND(dims)[0] != 1)
 		ereport(ERROR,
 			    (errcode(ERRCODE_ARRAY_SUBSCRIPT_ERROR),
-			     errmsg("wrong range of array_subscripts"),
+			     errmsg("wrong range of array subscripts"),
 			     errdetail("Lower bound of dimension array must be one.")));
 
 	if (ARR_HASNULL(dims))
@@ -4546,7 +4524,7 @@ array_fill_internal(ArrayType *dims, ArrayType *lbs,
 		if (ARR_LBOUND(lbs)[0] != 1)
 			ereport(ERROR,
 				(errcode(ERRCODE_ARRAY_SUBSCRIPT_ERROR),
-			         errmsg("wrong range of array_subscripts"),
+			         errmsg("wrong range of array subscripts"),
 			    	 errdetail("Lower bound of dimension array must be one.")));
 
 		if (ARR_HASNULL(lbs))
@@ -4557,7 +4535,7 @@ array_fill_internal(ArrayType *dims, ArrayType *lbs,
 		if (ARR_DIMS(lbs)[0] != ndims)
 			ereport(ERROR,
 				    (errcode(ERRCODE_ARRAY_SUBSCRIPT_ERROR),
-				     errmsg("wrong number of array_subscripts"),
+				     errmsg("wrong number of array subscripts"),
 				     errdetail("Low bound array has different size than dimensions array.")));
 
 		lbsv = (int *) ARR_DATA_PTR(lbs);
