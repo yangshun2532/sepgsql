@@ -92,6 +92,10 @@ fi
 %{_datadir}/selinux/*/%{name}.pp
 
 %changelog
+* Thu Apr 16 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 2.2.1803
+- rework: reverted to multi-threading design
+- bugfix: security policy didn't allow prosess:{setcurrent}
+
 * Wed Apr 15 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 2.2.1800
 - rework: worker was redesigned to use a process, instead of thread,
           on process_connection hook.
