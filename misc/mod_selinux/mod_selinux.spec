@@ -11,7 +11,7 @@ Source0: http://sepgsql.googlecode.com/files/%{name}-%{version}.tgz
 Source1: %{name}.conf
 Source2: %{name}.map
 BuildRequires: httpd-devel >= 2.2.0 libselinux-devel checkpolicy selinux-policy
-Requires: httpd >= 2.2.0 libselinux policycoreutils selinux-policy
+Requires: kernel >= 2.6.28 httpd >= 2.2.0 libselinux policycoreutils selinux-policy
 BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root
 
 %description
@@ -92,6 +92,9 @@ fi
 %{_datadir}/selinux/*/%{name}.pp
 
 %changelog
+* Fri Apr 17 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 2.2.1817
+- bugfix: add kernel >= 2.6.28 because of typebounds feature
+
 * Thu Apr 16 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 2.2.1803
 - rework: reverted to multi-threading design
 - bugfix: security policy didn't allow prosess:{setcurrent}
