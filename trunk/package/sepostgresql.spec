@@ -34,7 +34,7 @@ Patch7: sepgsql-07-tests-%%__base_major_version__%%.patch
 Patch8: sepgsql-08-docs-%%__base_major_version__%%.patch
 Patch9: sepgsql-fedora-prefix.patch
 BuildRequires: perl glibc-devel bison flex readline-devel zlib-devel >= 1.0.4
-Buildrequires: checkpolicy libselinux-devel >= 2.0.43 selinux-policy >= 3.4.2
+Buildrequires: checkpolicy libselinux-devel >= 2.0.80 selinux-policy >= 3.4.2
 %if %{ssl}
 BuildRequires: openssl-devel
 %endif
@@ -45,7 +45,7 @@ Requires(postun): policycoreutils
 %if !%{standalone}
 Requires: postgresql-server = %{version}
 %endif
-Requires: policycoreutils >= 2.0.16 libselinux >= 2.0.43 selinux-policy >= 3.4.2
+Requires: policycoreutils >= 2.0.16 libselinux >= 2.0.80 selinux-policy >= 3.4.2
 Requires: tzdata logrotate
 %if %ssl
 BuildRequires: openssl-devel
@@ -238,6 +238,11 @@ fi
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
 
 %changelog
+* Thu Apr 16 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 8.4devel-1811
+- rework: add libselinux-2.0.80 features (permissive domain, deny_unknown,
+          avc_netlink_loop)
+- update: merge a series of development from v8.4 tree.
+
 * Fri Oct 31 2008 <kaigai@kaigai.gr.jp> - 8.4devel-3.1168
 - bugfix: incorrect object class for lo_export(xxx, '/dev/null')
 - bugfix: lack of permission checks for per-statement trigger
