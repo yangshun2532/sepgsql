@@ -1,4 +1,4 @@
-<!-- $PostgreSQL: pgsql/doc/src/sgml/libpq.sgml,v 1.281 2009/03/31 01:41:27 tgl Exp $ -->
+<!-- $PostgreSQL: pgsql/doc/src/sgml/libpq.sgml,v 1.285 2009/04/15 13:03:11 momjian Exp $ -->
 
 <chapter id="libpq">
  <title><application>libpq</application> - C Library</title>
@@ -254,23 +254,56 @@
           <para>
            This option determines whether or with what priority a
            <acronym>SSL</> TCP/IP connection will be negotiated with the
-           server. There are four modes: <literal>disable</> will attempt
-           only an unencrypted <acronym>SSL</> connection;
-           <literal>allow</> will negotiate, trying first a
-           non-<acronym>SSL</> connection, then if that fails, trying an
-           <acronym>SSL</> connection; <literal>prefer</> (the default)
-           will negotiate, trying first an <acronym>SSL</> connection,
-           then if that fails, trying a regular non-<acronym>SSL</>
-           connection; <literal>require</> will try only an
-           <acronym>SSL</> connection.  <literal>sslmode</> is ignored
-           for Unix domain socket communication.
+           server. There are four modes:
           </para>
 
+          <table id="libpq-connect-sslmode-options">
+           <title><literal>sslmode</literal> options</title>
+           <tgroup cols="2">
+            <thead>
+             <row>
+              <entry>Option</entry>
+              <entry>Description</entry>
+             </row>
+            </thead>
+        
+            <tbody>
+        
+             <row>
+              <entry><literal>disable</></entry>
+              <entry>only try a non-<acronym>SSL</> connection</entry>
+             </row>
+        
+             <row>
+              <entry><literal>allow</></entry>
+              <entry>first try a non-<acronym>SSL</>
+               connection;  if that fails, try an <acronym>SSL</>
+               connection</entry>
+             </row>
+        
+             <row>
+              <entry><literal>prefer</> (default)</entry>
+              <entry>first try an <acronym>SSL</> connection;  if
+              that fails, try a non-<acronym>SSL</>
+              connection</entry>
+             </row>
+        
+             <row>
+              <entry><literal>require</></entry>
+              <entry>only try an <acronym>SSL</> connection</entry>
+             </row>
+        
+            </tbody>
+           </tgroup>
+          </table>
+
           <para>
+           <literal>sslmode</> is ignored for Unix domain socket
+           communication.
            If <productname>PostgreSQL</> is compiled without SSL support,
            using option <literal>require</> will cause an error, while
            options <literal>allow</> and <literal>prefer</> will be
-           accepted but <application>libpq</> will not in fact attempt
+           accepted but <application>libpq</> will not actually attempt
            an <acronym>SSL</>
            connection.<indexterm><primary>SSL</><secondary
            sortas="libpq">with libpq</></indexterm>
@@ -6131,16 +6164,16 @@ myEventProc(PGEventId evtId, void *evtInfo, void *passThrough)
 
   <para>
    When the <literal>sslverify</> parameter is set to <literal>cn</> or
-   <literal>cert</>, libpq will verify that the server certificate is
-   trustworthy by checking the certificate chain up to a <acronym>CA</>.
-   For this to work, place the certificate of a trusted <acronym>CA</>
+   <literal>cert</>, libpq requires a trustworthy server certificate by
+   checking the certificate chain up to a <acronym>CA</>.
+   To allow verification, place the certificate of a trusted <acronym>CA</>
    in the file <filename>~/.postgresql/root.crt</> in the user's home directory.
    (On Microsoft Windows the file is named
    <filename>%APPDATA%\postgresql\root.crt</filename>.)
    <application>libpq</application> will then verify that the server's
    certificate is signed by one of the trusted certificate authorities.
-   The SSL connection will fail if the server does not present a trusted
-   certificate.  Certificate Revocation List (CRL) entries are also checked
+   The SSL connection will fail if the server certificate cannot be verified.
+   Certificate Revocation List (CRL) entries are also checked
    if the file <filename>~/.postgresql/root.crl</filename> exists
    (<filename>%APPDATA%\postgresql\root.crl</filename> on Microsoft
    Windows).
