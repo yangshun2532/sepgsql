@@ -239,8 +239,11 @@ sepgsqlTransToInternalPerms(security_class_t tclass, struct av_decision *avd)
 		perm_code_ex = string_to_av_perm(tclass_ex, perm_name);
 		if (!perm_code_ex)
 		{
-			/* permission is undefined */
-			i_avd.allowed |= perm_code;
+			/* fill up undefined permission */
+			if (!security_deny_unknown())
+				i_avd.allowed |= perm_code;
+			i_avd.decided |= perm_code;
+			i_avd.auditdeny |= perm_code;
 			continue;
 		}
 

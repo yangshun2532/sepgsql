@@ -59,7 +59,9 @@ check:
 		(echo "HINT: /sbin/restorecon -R <prefix> and restart"; \
 		 echo "HINT: user shell should have 's0-s0:c0.c15' range, at least"; \
 		 echo "      semanage enables to set up it"; exit 1)
-	@test -x /etc/init.d/mcstrans && /etc/init.d/mcstrans status >& /dev/null && \
-		(echo "HINT: stop mcstrans daemon"; exit 1) || \
-		(test $$? -eq 3 && exit 0 || exit 1)
+	@if test -x /etc/init.d/mcstrans; then			\
+		/etc/init.d/mcstrans status >& /dev/null &&	\
+		(echo "HINT: stop mcstrans daemon"; exit 1) ||	\
+		(test $$? -eq 3 && exit 0 || exit 1)		\
+	fi
 	@echo "PASS: check runtime environment"
