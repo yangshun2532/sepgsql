@@ -222,6 +222,9 @@ fi
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
 
 %changelog
+* Fri Apr 17 2009 KaiGai Kohei <kaigai@kaigai.gr.jp> - 8.3.7-1772
+- bugfix: /etc/init.d/sepostgresql initdb didn't work correctly
+
 * Fri Mar 27 2009 KaiGai Kohei <kaigai@kaigai.gr.jp> - 8.3.7-2.1770
 - upgrade base PostgreSQL version 8.3.6->8.3.7
 
