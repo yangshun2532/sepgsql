@@ -56,7 +56,7 @@ echo "GEN: sepostgresql-core-${BASE_MAJOR}.patch"
 diff -rpNU3 base sepgsql-new > ${RPMSOURCE}/sepostgresql-core-${BASE_MAJOR}.patch
 
 echo "GEN: sepostgresql.init"
-cat package/sepostgresql.init					\
+cat package/sepostgresql-new.init				\
     | sed "s/%%__base_postgresql_version__%%/${BASE_VERSION}/g"	\
     | sed "s/%%__sepgsql_version__%%/${SEPGSQL_VERSION}/g"	\
     > ${RPMSOURCE}/sepostgresql.init
