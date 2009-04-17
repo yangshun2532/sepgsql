@@ -116,7 +116,7 @@ SELECT lo_open(loid, x'40000'::int) FROM lolabel WHERE label = 'secret';
 (1 row)
 
 SELECT loread(0, 32);           -- to be denied
-ERROR:  SELinux: denied { read } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0:c0 tcontext=system_u:object_r:sepgsql_secret_blob_t:s0 tclass=db_blob
+ERROR:  SELinux: security policy violation
 ROLLBACK;
 ROLLBACK
 -- write large object
@@ -145,7 +145,7 @@ SELECT lo_open(loid, x'20000'::int) FROM lolabel WHERE label = 'readonly';
 (1 row)
 
 SELECT lowrite(0, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ');        -- to be denied
-ERROR:  SELinux: denied { write } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0:c0 tcontext=system_u:object_r:sepgsql_ro_blob_t:s0 tclass=db_blob
+ERROR:  SELinux: security policy violation
 ROLLBACK;
 ROLLBACK
 BEGIN;
@@ -157,7 +157,7 @@ SELECT lo_open(loid, x'20000'::int) FROM lolabel WHERE label = 'secret';
 (1 row)
 
 SELECT lowrite(0, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ');        -- to be denied
-ERROR:  SELinux: denied { write } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0:c0 tcontext=system_u:object_r:sepgsql_secret_blob_t:s0 tclass=db_blob
+ERROR:  SELinux: security policy violation
 ROLLBACK;
 ROLLBACK
 -- create large object
@@ -260,23 +260,23 @@ SELECT lo_set_security(loid, 'system_u:object_r:sepgsql_blob_t:s0:c4')
 (2 rows)
 
 SELECT lo_get_security(loid) FROM lolabel;
-                     lo_get_security                     
----------------------------------------------------------
+                 lo_get_security                 
+-------------------------------------------------
  system_u:object_r:sepgsql_blob_t:s0:c4
  system_u:object_r:sepgsql_blob_t:s0:c4
  system_u:object_r:sepgsql_secret_blob_t:s0
- unconfined_u:object_r:sepgsql_test_sepgsql_blob_t:s0:c0
+ unconfined_u:object_r:user_sepgsql_blob_t:s0:c0
 (4 rows)
 
 SELECT security_label, lo_label(loid) AS label, count(*)
 	FROM pg_largeobject WHERE loid in (SELECT loid FROM lolabel)
 	GROUP BY security_label, loid ORDER BY label;
-                     security_label                      |  label   | count 
----------------------------------------------------------+----------+-------
- unconfined_u:object_r:sepgsql_test_sepgsql_blob_t:s0:c0 | local    |     1
- system_u:object_r:sepgsql_blob_t:s0:c4                  | normal   |    10
- system_u:object_r:sepgsql_blob_t:s0:c4                  | readonly |    10
- system_u:object_r:sepgsql_secret_blob_t:s0              | secret   |    10
+                 security_label                  |  label   | count 
+-------------------------------------------------+----------+-------
+ unconfined_u:object_r:user_sepgsql_blob_t:s0:c0 | local    |     1
+ system_u:object_r:sepgsql_blob_t:s0:c4          | normal   |    10
+ system_u:object_r:sepgsql_blob_t:s0:c4          | readonly |    10
+ system_u:object_r:sepgsql_secret_blob_t:s0      | secret   |    10
 (4 rows)
 
 ROLLBACK;
