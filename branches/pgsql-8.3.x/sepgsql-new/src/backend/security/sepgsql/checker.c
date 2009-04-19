@@ -209,13 +209,23 @@ sepgsqlCheckRTEPerms(RangeTblEntry *rte)
 	if (rte->requiredPerms & ACL_INSERT)
 		required |= SEPG_DB_TABLE__INSERT;
 	if (rte->requiredPerms & ACL_UPDATE)
-		required |= SEPG_DB_TABLE__UPDATE;
+	{
+		/*
+		 * ACL_SELECT_FOR_UPDATE is defined as an aliase of ACL_UPDATE,
+		 * so we cannot determine whether the given relation is accessed
+		 * with UPDATE statement or SELECT FOR SHARE/UPDATE immediately.
+		 * UPDATE statements set a bit on rte->modifiedCols at least,
+		 * so we use it as a watermark.
+		 */
+
+		if (!bms_is_empty(rte->modifiedCols))
+			required |= SEPG_DB_TABLE__UPDATE;
+		else
+			required |= SEPG_DB_TABLE__LOCK;
+	}
 	if (rte->requiredPerms & ACL_DELETE)
 		required |= SEPG_DB_TABLE__DELETE;
-	/*
-	 * TODO: we should add SEPG_DB_TABLE__LOCK here,
-	 * but ACL_SELECT_FOR_UPDATE has same value now.
-	 */
+
 	if (required == 0)
 		return;
 
