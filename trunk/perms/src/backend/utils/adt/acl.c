@@ -1144,16 +1144,11 @@ aclmask(const Acl *acl, Oid roleid, Oid ownerId,
 	for (i = 0; i < num; i++)
 	{
 		AclItem    *aidata = &aidat[i];
-		AclMode		aiprivs = aidata->ai_privs;
-
-		/* fixup ACL_SELECT_FOR_UPDATE */
-		if (aiprivs & ACL_UPDATE)
-			aiprivs |= ACL_SELECT_FOR_UPDATE;
 
 		if (aidata->ai_grantee == ACL_ID_PUBLIC ||
 			aidata->ai_grantee == roleid)
 		{
-			result |= aiprivs & mask;
+			result |= aidata->ai_privs & mask;
 			if ((how == ACLMASK_ALL) ? (result == mask) : (result != 0))
 				return result;
 		}
@@ -1170,20 +1165,15 @@ aclmask(const Acl *acl, Oid roleid, Oid ownerId,
 	for (i = 0; i < num; i++)
 	{
 		AclItem    *aidata = &aidat[i];
-		AclMode		aiprivs = aidata->ai_privs;
 
 		if (aidata->ai_grantee == ACL_ID_PUBLIC ||
 			aidata->ai_grantee == roleid)
 			continue;			/* already checked it */
 
-		/* fixup ACL_SELECT_FOR_UPDATE */
-		if (aiprivs & ACL_UPDATE)
-			aiprivs |= ACL_SELECT_FOR_UPDATE;
-
 		if ((aidata->ai_privs & remaining) &&
 			has_privs_of_role(roleid, aidata->ai_grantee))
 		{
-			result |= aiprivs & mask;
+			result |= aidata->ai_privs & mask;
 			if ((how == ACLMASK_ALL) ? (result == mask) : (result != 0))
 				return result;
 			remaining = mask & ~result;
