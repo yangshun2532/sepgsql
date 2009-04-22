@@ -73,10 +73,8 @@ typedef uint32 AclMode;			/* a bitmask of privilege bits */
 #define ACL_CONNECT		(1<<11) /* for databases */
 #define N_ACL_RIGHTS	12		/* 1 plus the last 1<<x */
 #define ACL_NO_RIGHTS	0
-/* Currently, SELECT ... FOR UPDATE required UPDATE privileges */
+/* Currently, SELECT ... FOR UPDATE/FOR SHARE requires UPDATE privileges */
 #define ACL_SELECT_FOR_UPDATE	ACL_UPDATE
-/* Currently, SELECT ... FOR SHARE requires SELECT privileges */
-#define ACL_SELECT_FOR_SHARE	ACL_SELECT
 
 
 /*****************************************************************************
