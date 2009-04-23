@@ -16,6 +16,7 @@ VERSION=`rpm -q --queryformat='%{version}\n' --specfile ${RPMSOURCE}/${NAME}.spe
 mkdir -p ${WORKDIR}/${NAME}-${VERSION} || exit 1
 cp -f ${BASEDIR}/${NAME}.c	\
       ${BASEDIR}/${NAME}.te	\
+      ${BASEDIR}/${NAME}.if	\
       ${BASEDIR}/Makefile	\
       ${BASEDIR}/modules.mk	\
       ${BASEDIR}/.deps		\
