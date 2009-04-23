@@ -13,6 +13,7 @@
 #include "catalog/pg_attribute.h"
 #include "catalog/pg_class.h"
 #include "catalog/pg_database.h"
+#include "catalog/pg_namespace.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_security.h"
 #include "catalog/pg_type.h"
@@ -39,6 +40,7 @@ sepgsqlTupleDescHasSecLabel(Relation rel)
 		return false;	/* target of SELECT INTO */
 
 	if (RelationGetRelid(rel) == DatabaseRelationId  ||
+		RelationGetRelid(rel) == NamespaceRelationId ||
 		RelationGetRelid(rel) == RelationRelationId  ||
 		RelationGetRelid(rel) == AttributeRelationId ||
 		RelationGetRelid(rel) == ProcedureRelationId)
@@ -73,9 +75,19 @@ sepgsqlSetDefaultSecLabel(Relation rel, HeapTuple tuple)
 		newsid = securityLookupSecurityId(context);
 		break;
 
+	case SEPG_CLASS_DB_SCHEMA:
+		context = sepgsqlClientCreate(sepgsqlGetDatabaseSid(),
+									  SEPG_CLASS_DB_SCHEMA);
+		break;
+
 	case SEPG_CLASS_DB_TABLE:
 		newsid = sepgsqlClientCreate(sepgsqlGetDatabaseSid(),
 									 SEPG_CLASS_DB_TABLE);
+		break;
+
+	case SEPG_CLASS_DB_SEQUENCE:
+		newsid = sepgsqlClientCreate(sepgsqlGetDatabaseSid(),
+									 SEPG_CLASS_DB_SEQUENCE);
 		break;
 
 	case SEPG_CLASS_DB_PROCEDURE:

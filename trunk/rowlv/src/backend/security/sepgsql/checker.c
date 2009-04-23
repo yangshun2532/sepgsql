@@ -111,7 +111,7 @@ checkTabelColumnPerms(Oid relid, Bitmapset *selected, Bitmapset *modified,
 						"\"%s\" system catalog by hand", get_rel_name(relid))));
 
 	/*
-	 * Check db_table:{...} permissions
+	 * Check db_table:{...} or db_sequence permissions
 	 */
 	tuple = SearchSysCache(RELOID,
 						   ObjectIdGetDatum(relid),
@@ -119,10 +119,29 @@ checkTabelColumnPerms(Oid relid, Bitmapset *selected, Bitmapset *modified,
 	if (!HeapTupleIsValid(tuple))
 		elog(ERROR, "SELinux: cache lookup failed for relation %u", relid);
 
-	/* ignore, if the relation is not db_table class */
 	tclass = sepgsqlTupleObjectClass(RelationRelationId, tuple);
+
 	if (tclass != SEPG_CLASS_DB_TABLE)
 	{
+		/* check db_sequence:{xxx} permission */
+		if (tclass == SEPG_CLASS_DB_SEQUENCE)
+		{
+			access_vector_t seq_perms = 0;
+
+			if (required & SEPG_DB_TABLE__SELECT)
+				seq_perms |= SEPG_DB_SEQUENCE__GET_VALUE;
+			/*
+			 * Now we cannot modify sequence by INSERT/UPDATE/DELETE
+			 */
+			if (seq_perms != 0)
+			{
+				audit_name = sepgsqlAuditName(RelationRelationId, tuple);
+				sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
+									  SEPG_CLASS_DB_SEQUENCE,
+									  seq_perms,
+									  audit_name, true);
+			}
+		}
 		ReleaseSysCache(tuple);
 		return;
 	}
