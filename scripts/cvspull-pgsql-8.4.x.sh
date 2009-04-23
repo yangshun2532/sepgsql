@@ -87,3 +87,8 @@ echo "svn diff ./perms"
 echo "svn commit -m 'merge updates of ${SVNBRANCH}/rowlv into ${SVNBRANCH}/perms at r`expr ${SVNREV} + 5`' ./perms"
 echo "svn update"
 echo
+echo "svn merge -c `expr ${SVNREV} + 6` ./perms ./sepgsql"
+echo "svn diff ./sepgsql"
+echo "svn commit -m 'merge updates of ${SVNBRANCH}/perms into ${SVNBRANCH}/sepgsql at r`expr ${SVNREV} + 6`' ./sepgsql
+echo "svn update"
+
