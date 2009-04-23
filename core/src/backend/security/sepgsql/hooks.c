@@ -121,6 +121,46 @@ sepgsqlCheckTableTruncate(Relation rel)
 }
 
 /*
+ * sepgsqlCheckSequenceXXXX
+ *
+ *   It checks permissions on db_sequence objects.
+ */
+static void
+sepgsqlCheckSequenceCommon(Oid seqid, access_vector_t required)
+{
+	const char *audit_name;
+	HeapTuple tuple;
+
+	tuple = SearchSysCache(RELOID,
+                           ObjectIdGetDatum(seqid),
+                           0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "cache lookup failed for sequence: %u", seqid);
+
+	audit_name = sepgsqlAuditName(RelationRelationId, tuple);
+	sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
+						  SEPG_CLASS_DB_SEQUENCE,
+						  required,
+						  audit_name, true);
+	ReleaseSysCache(tuple);
+}
+
+void sepgsqlCheckSequenceGetValue(Oid seqid)
+{
+	sepgsqlCheckSequenceCommon(seqid, SEPG_DB_SEQUENCE__GET_VALUE);
+}
+
+void sepgsqlCheckSequenceNextValue(Oid seqid)
+{
+	sepgsqlCheckSequenceCommon(seqid, SEPG_DB_SEQUENCE__NEXT_VALUE);
+}
+
+void sepgsqlCheckSequenceSetValue(Oid seqid)
+{
+	sepgsqlCheckSequenceCommon(seqid, SEPG_DB_SEQUENCE__SET_VALUE);
+}
+
+/*
  * sepgsqlCheckProcedureExecute
  *   checks db_procedure:{execute} permission when the client tries
  *   to invoke the given SQL function.
