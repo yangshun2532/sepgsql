@@ -26,6 +26,7 @@ install: install-modules-yes
 #   cleanup
 clean:
 	-rm -f mod_selinux.o mod_selinux.lo mod_selinux.slo mod_selinux.la
+	test -e /usr/share/selinux/devel/Makefile && $(MAKE) -f /usr/share/selinux/devel/Makefile clean
 
 #   simple test
 test: reload

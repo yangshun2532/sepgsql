@@ -1,0 +1,76 @@
+## <summary>Apache/SELinux plus</summary>
+
+########################################
+## <summary>
+##      Assigns minimum privileges to perform web-application
+## </summary>
+## <param name="domain">
+##      <summary>
+##      The domain to be a web application
+##      </summary>
+## </param>
+#
+interface(`webapp_base_domain',`
+	gen_require(`
+		type httpd_t;
+		attribute webapp_type;
+	')
+
+	typeattribute $1 webapp_type;
+	typebounds httpd_t $1;
+
+	role system_r types $1;
+	allow httpd_t $1:process { dyntransition };
+')
+
+########################################
+## <summary>
+##      Assigns privileges to prefixed context types
+## </summary>
+## <param name="prefix">
+##      <summary>
+##      The prefix to be used for deriving type names.
+##      </summary>
+## </param>
+## <param name="domain">
+##      <summary>
+##      The domain to be a web application
+##      </summary>
+## </param>
+#
+interface(`webapp_content_template',`
+	gen_require(`
+		type httpd_$1_content_t;
+		type httpd_$1_htaccess_t;
+		type httpd_$1_script_t;
+		type httpd_$1_script_exec_t;
+		type httpd_$1_script_ro_t;
+		type httpd_$1_script_rw_t;
+		type httpd_$1_script_ra_t;
+	')
+
+	# .htaccess files
+	allow $2 httpd_$1_htaccess_t:file read_file_perms;
+
+	# httpd_builtin_scripting controls them
+	manage_dirs_pattern($2, httpd_$1_script_rw_t, httpd_$1_script_rw_t)
+	manage_files_pattern($2, httpd_$1_script_rw_t, httpd_$1_script_rw_t)
+	manage_lnk_files_pattern($2, httpd_$1_script_rw_t, httpd_$1_script_rw_t)
+	rw_sock_files_pattern($2, httpd_$1_script_rw_t, httpd_$1_script_rw_t)
+
+	allow $2 httpd_$1_script_ra_t:dir { list_dir_perms add_entry_dir_perms };
+	read_files_pattern($2, httpd_$1_script_ra_t, httpd_$1_script_ra_t)
+	append_files_pattern($2, httpd_$1_script_ra_t, httpd_$1_script_ra_t)
+	read_lnk_files_pattern($2, httpd_$1_script_ra_t, httpd_$1_script_ra_t)
+
+	allow $2 httpd_$1_script_ro_t:dir list_dir_perms;
+	read_files_pattern($2, httpd_$1_script_ro_t, httpd_$1_script_ro_t)
+	read_lnk_files_pattern($2, httpd_$1_script_ro_t, httpd_$1_script_ro_t)
+
+	allow $2 httpd_$1_content_t:dir list_dir_perms;
+	read_files_pattern($2, httpd_$1_content_t, httpd_$1_content_t)
+	read_lnk_files_pattern($2, httpd_$1_content_t, httpd_$1_content_t)
+
+	# httpd_enable_cgi controls them
+	domtrans_pattern($2, httpd_$1_script_exec_t, httpd_$1_script_t)
+')
