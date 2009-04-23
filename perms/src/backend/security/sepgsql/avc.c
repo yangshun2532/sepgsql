@@ -270,10 +270,10 @@ avc_make_entry(avc_page *page, Oid tsid, security_class_t tclass)
 	}
 	else
 	{
-		/* fill it up as unknown class */
+		/* fill it up as undefined class */
 		avd.allowed = (security_deny_unknown() ? 0 : ~0UL);
 		avd.decided = ~0UL;
-		avd.auditallow = 0;
+		avd.auditallow = ~0UL;
 		avd.auditdeny = ~0UL;
 		avd.flags = 0;
 	}
@@ -615,18 +615,18 @@ sepgsqlComputePerms(security_context_t scontext,
 										  tclass_ex, 0, &avd) < 0)
 			ereport(ERROR,
 					(errcode(ERRCODE_SELINUX_ERROR),
-					 errmsg("SELinux: could not compute an av_decision"
-							" scontext=%s tcontext=%s tclass=%s",
+					 errmsg("SELinux: could not compute av_decision: "
+							"scontext=%s tcontext=%s tclass=%s",
 							scontext, tcontext,
 							sepgsqlGetClassString(tclass))));
 		sepgsqlTransToInternalPerms(tclass, &avd);
 	}
 	else
 	{
-		/* fill up it as undefined class */
+		/* fill it up as undefined class */
 		avd.allowed = (security_deny_unknown() ? 0 : ~0UL);
 		avd.decided = ~0UL;
-		avd.auditallow = 0UL;
+		avd.auditallow = ~0UL;
 		avd.auditdeny = ~0UL;
 		avd.flags = 0;
 	}

@@ -37,7 +37,9 @@ enum SepgsqlClasses
 	SEPG_CLASS_SOCK_FILE,
 	SEPG_CLASS_FIFO_FILE,
 	SEPG_CLASS_DB_DATABASE,
+	SEPG_CLASS_DB_SCHEMA,
 	SEPG_CLASS_DB_TABLE,
+	SEPG_CLASS_DB_SEQUENCE,
 	SEPG_CLASS_DB_PROCEDURE,
 	SEPG_CLASS_DB_COLUMN,
 	SEPG_CLASS_DB_TUPLE,
@@ -79,6 +81,16 @@ enum SepgsqlClasses
 #define SEPG_DB_DATABASE__LOAD_MODULE		(1<<8)
 #define SEPG_DB_DATABASE__SUPERUSER			(1<<9)
 
+#define SEPG_DB_SCHEMA__CREATE				(SEPG_DB_DATABASE__CREATE)
+#define SEPG_DB_SCHEMA__DROP				(SEPG_DB_DATABASE__DROP)
+#define SEPG_DB_SCHEMA__GETATTR				(SEPG_DB_DATABASE__GETATTR)
+#define SEPG_DB_SCHEMA__SETATTR				(SEPG_DB_DATABASE__SETATTR)
+#define SEPG_DB_SCHEMA__RELABELFROM			(SEPG_DB_DATABASE__RELABELFROM)
+#define SEPG_DB_SCHEMA__RELABELTO			(SEPG_DB_DATABASE__RELABELTO)
+#define SEPG_DB_SCHEMA__SEARCH				(1<<6)
+#define SEPG_DB_SCHEMA__ADD_OBJECT			(1<<7)
+#define SEPG_DB_SCHEMA__REMOVE_OBJECT		(1<<8)
+
 #define SEPG_DB_TABLE__CREATE				(SEPG_DB_DATABASE__CREATE)
 #define SEPG_DB_TABLE__DROP					(SEPG_DB_DATABASE__DROP)
 #define SEPG_DB_TABLE__GETATTR				(SEPG_DB_DATABASE__GETATTR)
@@ -90,6 +102,16 @@ enum SepgsqlClasses
 #define SEPG_DB_TABLE__INSERT				(1<<8)
 #define SEPG_DB_TABLE__DELETE				(1<<9)
 #define SEPG_DB_TABLE__LOCK					(1<<10)
+
+#define SEPG_DB_SEQUENCE__CREATE			(SEPG_DB_DATABASE__CREATE)
+#define SEPG_DB_SEQUENCE__DROP				(SEPG_DB_DATABASE__DROP)
+#define SEPG_DB_SEQUENCE__GETATTR			(SEPG_DB_DATABASE__GETATTR)
+#define SEPG_DB_SEQUENCE__SETATTR			(SEPG_DB_DATABASE__SETATTR)
+#define SEPG_DB_SEQUENCE__RELABELFROM		(SEPG_DB_DATABASE__RELABELFROM)
+#define SEPG_DB_SEQUENCE__RELABELTO			(SEPG_DB_DATABASE__RELABELTO)
+#define SEPG_DB_SEQUENCE__GET_VALUE			(1<<6)
+#define SEPG_DB_SEQUENCE__NEXT_VALUE		(1<<7)
+#define SEPG_DB_SEQUENCE__SET_VALUE			(1<<8)
 
 #define SEPG_DB_PROCEDURE__CREATE			(SEPG_DB_DATABASE__CREATE)
 #define SEPG_DB_PROCEDURE__DROP				(SEPG_DB_DATABASE__DROP)
@@ -235,6 +257,15 @@ sepgsqlCheckTableLock(Oid table_oid);
 extern void
 sepgsqlCheckTableTruncate(Relation rel);
 
+extern void
+sepgsqlCheckSequenceGetValue(Oid seqid);
+
+extern void
+sepgsqlCheckSequenceNextValue(Oid seqid);
+
+extern void
+sepgsqlCheckSequenceSetValue(Oid seqid);
+
 extern bool
 sepgsqlCheckProcedureExecute(Oid proc_oid);
 
@@ -354,6 +385,9 @@ sepgsqlCheckObjectPerms(Relation rel, HeapTuple tuple,
 #define sepgsqlCheckDatabaseSuperuser()			(true)
 #define sepgsqlCheckTableLock(a)				do {} while(0)
 #define sepgsqlCheckTableTruncate(a)			do {} while(0)
+#define sepgsqlCheckSequenceGetValue(a)			do {} while(0)
+#define sepgsqlCheckSequenceNextValue(a)		do {} while(0)
+#define sepgsqlCheckSequenceSetValue(a)			do {} while(0)
 #define sepgsqlCheckProcedureExecute(a)			(true)
 #define sepgsqlCheckProcedureEntrypoint(a,b)	do {} while(0)
 #define sepgsqlCheckBlobCreate(a,b)				do {} while(0)
