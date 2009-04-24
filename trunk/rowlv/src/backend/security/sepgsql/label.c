@@ -57,95 +57,200 @@ sepgsqlTupleDescHasSecLabel(Relation rel)
  *
  *   assigns a default security context for the newly inserted tuple.
  */
+static Oid
+defaultDatabaseSecLabel(const char *datname)
+{
+	security_context_t	context;
+
+	context = sepgsqlComputeCreate(sepgsqlGetClientLabel(),
+								   sepgsqlGetClientLabel(),
+								   SEPG_CLASS_DB_DATABASE);
+	return securityLookupSecurityId(context);
+}
+
+static Oid
+defaultSchemaSecLabel(const char *nspname)
+{
+	HeapTuple	tuple;
+	Oid			newsid;
+
+	if (IsBootstrapProcessingMode())
+	{
+		static Oid cached = InvalidOid;
+
+		if (!OidIsValid(cached))
+		{
+			const char *datname = "template1";
+			cached = sepgsqlClientCreate(defaultDatabaseSecLabel(datname),
+										 SEPG_CLASS_DB_SCHEMA);
+		}
+		return cached;
+	}
+
+	tuple = SearchSysCache(DATABASEOID,
+						   ObjectIdGetDatum(MyDatabaseId),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "cache lookup failed for database: %u", MyDatabaseId);
+
+	newsid = sepgsqlClientCreate(HeapTupleGetSecLabel(tuple),
+								 SEPG_CLASS_DB_SCHEMA);
+	ReleaseSysCache(tuple);
+
+	return newsid;
+}
+
+static Oid
+defaultSecLabelWithSchema(Oid nspoid, security_class_t tclass)
+{
+	HeapTuple	tuple;
+	Oid			newsid;
+
+	if (IsBootstrapProcessingMode())
+	{
+		Oid nspsid = defaultSchemaSecLabel("pg_catalog");
+
+		return sepgsqlClientCreate(nspsid, tclass);
+	}
+
+	tuple = SearchSysCache(NAMESPACEOID,
+						   ObjectIdGetDatum(nspoid),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "cache lookup failed for namespace: %u", nspoid);
+
+	newsid = sepgsqlClientCreate(HeapTupleGetSecLabel(tuple), tclass);
+
+	ReleaseSysCache(tuple);
+
+	return newsid;
+}
+
+static Oid
+defaultTableSecLabel(Oid nspoid, const char *relname)
+{
+	/* TODO: selabel_lookup(3) here */
+	return defaultSecLabelWithSchema(nspoid, SEPG_CLASS_DB_TABLE);
+}
+
+static Oid
+defaultSequenceSecLabel(Oid nspoid, const char *relname)
+{
+	/* TODO: selabel_lookup(3) here */
+	return defaultSecLabelWithSchema(nspoid, SEPG_CLASS_DB_SEQUENCE);
+}
+
+static Oid
+defaultProcedureSecLabel(Oid nspoid, const char *proname)
+{
+	/* TODO: selabel_lookup(3) here */
+	return defaultSecLabelWithSchema(nspoid, SEPG_CLASS_DB_PROCEDURE);
+}
+
+static Oid
+defaultSecLabelWithTable(Oid relid, security_class_t tclass)
+{
+	HeapTuple	tuple;
+	Oid			relsid = InvalidOid;
+
+	if (IsBootstrapProcessingMode())
+	{
+		switch (relid)
+		{
+		case TypeRelationId:
+			relsid = defaultTableSecLabel(PG_CATALOG_NAMESPACE, "pg_type");
+			break;
+		case ProcedureRelationId:
+			relsid = defaultTableSecLabel(PG_CATALOG_NAMESPACE, "pg_proc");
+			break;
+		case AttributeRelationId:
+			relsid = defaultTableSecLabel(PG_CATALOG_NAMESPACE, "pg_attribute");
+			break;
+		case RelationRelationId:
+			relsid = defaultTableSecLabel(PG_CATALOG_NAMESPACE, "pg_class");
+			break;
+		}
+	}
+
+	if (!OidIsValid(relsid))
+	{
+		tuple = SearchSysCache(RELOID,
+							   ObjectIdGetDatum(relid),
+							   0, 0, 0);
+		if (!HeapTupleIsValid(tuple))
+			elog(ERROR, "cache lookup failed for relation: %u", relid);
+
+		relsid = HeapTupleGetSecLabel(tuple);
+
+		ReleaseSysCache(tuple);
+	}
+
+	return sepgsqlClientCreate(relsid, tclass);
+}
+
+static Oid
+defaultColumnSecLabel(Oid relid, const char *attname)
+{
+	return defaultSecLabelWithTable(relid, SEPG_CLASS_DB_COLUMN);
+}
+
+static Oid
+defaultTupleSecLabel(Oid relid)
+{
+	return defaultSecLabelWithTable(relid, SEPG_CLASS_DB_TUPLE);
+}
+
 extern void
 sepgsqlSetDefaultSecLabel(Relation rel, HeapTuple tuple)
 {
-	security_class_t	tclass;
-	security_context_t	context;
+	Form_pg_database	datForm;
+	Form_pg_namespace	nspForm;
+	Form_pg_class		clsForm;
+	Form_pg_proc		proForm;
 	Form_pg_attribute	attForm;
-	HeapTuple			reltup;
-	Oid					newsid, table_sid;
+	Oid		relid = RelationGetRelid(rel);
+	Oid		newsid;
 
 	Assert(HeapTupleHasSecLabel(tuple));
-	tclass = sepgsqlTupleObjectClass(RelationGetRelid(rel), tuple);
 
-	switch (tclass)
+	switch (sepgsqlTupleObjectClass(relid, tuple))
 	{
 	case SEPG_CLASS_DB_DATABASE:
-		context = sepgsqlComputeCreate(sepgsqlGetClientLabel(),
-									   sepgsqlGetClientLabel(),
-									   SEPG_CLASS_DB_DATABASE);
-		newsid = securityLookupSecurityId(context);
+		datForm = (Form_pg_database) GETSTRUCT(tuple);
+		newsid = defaultDatabaseSecLabel(NameStr(datForm->datname));
 		break;
 
 	case SEPG_CLASS_DB_SCHEMA:
-		context = sepgsqlClientCreate(sepgsqlGetDatabaseSid(),
-									  SEPG_CLASS_DB_SCHEMA);
+		nspForm = (Form_pg_namespace) GETSTRUCT(tuple);
+		newsid = defaultSchemaSecLabel(NameStr(nspForm->nspname));
 		break;
 
 	case SEPG_CLASS_DB_TABLE:
-		newsid = sepgsqlClientCreate(sepgsqlGetDatabaseSid(),
-									 SEPG_CLASS_DB_TABLE);
+		clsForm = (Form_pg_class) GETSTRUCT(tuple);
+		newsid = defaultTableSecLabel(clsForm->relnamespace,
+									  NameStr(clsForm->relname));
 		break;
 
 	case SEPG_CLASS_DB_SEQUENCE:
-		newsid = sepgsqlClientCreate(sepgsqlGetDatabaseSid(),
-									 SEPG_CLASS_DB_SEQUENCE);
+		clsForm = (Form_pg_class) GETSTRUCT(tuple);
+		newsid = defaultSequenceSecLabel(clsForm->relnamespace,
+										 NameStr(clsForm->relname));
 		break;
 
 	case SEPG_CLASS_DB_PROCEDURE:
-		newsid = sepgsqlClientCreate(sepgsqlGetDatabaseSid(),
-									 SEPG_CLASS_DB_PROCEDURE);
+		proForm = (Form_pg_proc) GETSTRUCT(tuple);
+		newsid = defaultProcedureSecLabel(proForm->pronamespace,
+										  NameStr(proForm->proname));
 		break;
 
 	case SEPG_CLASS_DB_COLUMN:
 		attForm = (Form_pg_attribute) GETSTRUCT(tuple);
-		if (IsBootstrapProcessingMode() &&
-			(attForm->attrelid == TypeRelationId ||
-			 attForm->attrelid == ProcedureRelationId ||
-			 attForm->attrelid == AttributeRelationId ||
-			 attForm->attrelid == RelationRelationId))
-		{
-			table_sid = sepgsqlClientCreate(sepgsqlGetDatabaseSid(),
-											SEPG_CLASS_DB_TABLE);
-		}
-		else
-		{
-			reltup = SearchSysCache(RELOID,
-									ObjectIdGetDatum(attForm->attrelid),
-									0, 0, 0);
-			if (!HeapTupleIsValid(reltup))
-				elog(ERROR, "SELinux: cache lookup failed fro relation: %u",
-					 attForm->attrelid);
-			
-			table_sid = HeapTupleGetSecLabel(reltup);
-			ReleaseSysCache(reltup);
-		}
-		newsid = sepgsqlClientCreate(table_sid, SEPG_CLASS_DB_COLUMN);
+		newsid = defaultColumnSecLabel(attForm->attrelid,
+									   NameStr(attForm->attname));
 		break;
 
-	default:	/* SEPG_CLASS_DB_TUPLE */
-		if (IsBootstrapProcessingMode() &&
-			(RelationGetRelid(rel) == TypeRelationId ||
-			 RelationGetRelid(rel) == ProcedureRelationId ||
-			 RelationGetRelid(rel) == AttributeRelationId ||
-			 RelationGetRelid(rel) == RelationRelationId))
-		{
-			table_sid = sepgsqlClientCreate(sepgsqlGetDatabaseSid(),
-											SEPG_CLASS_DB_TABLE);
-		}
-		else
-		{
-			reltup = SearchSysCache(RELOID,
-									ObjectIdGetDatum(RelationGetRelid(rel)),
-									0, 0, 0);
-			if (!HeapTupleIsValid(reltup))
-				elog(ERROR, "SELinux: cache lookup failed fro relation: %u",
-					 RelationGetRelid(rel));
-			table_sid = HeapTupleGetSecLabel(reltup);
-			ReleaseSysCache(reltup);
-		}
-		newsid = sepgsqlClientCreate(table_sid, SEPG_CLASS_DB_TUPLE);
+	default: /* SEPG_CLASS_DB_TUPLE */
+		newsid = defaultTupleSecLabel(relid);
 		break;
 	}
 

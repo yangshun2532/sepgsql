@@ -8,6 +8,7 @@
 #include "postgres.h"
 
 #include "catalog/pg_database.h"
+#include "catalog/pg_namespace.h"
 #include "catalog/pg_proc.h"
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
@@ -65,6 +66,43 @@ sepgsqlCheckDatabaseSuperuser(void)
 {
 	return checkDatabaseCommon(MyDatabaseId,
 							   SEPG_DB_DATABASE__SUPERUSER);
+}
+
+/*
+ * sepgsqlCheckSchemaSearch
+ *   checks db_schema:{search} permission when the given namespace
+ *   is searched.
+ *
+ *   db_schema:{add_object remove_object} permissions is not now
+ *   implemented.
+ */
+static bool
+sepgsqlCheckSchemaCommon(Oid nsid, access_vector_t required)
+{
+	const char *audit_name;
+	HeapTuple tuple;
+	bool rc;
+
+	tuple = SearchSysCache(NAMESPACEOID,
+						   ObjectIdGetDatum(nsid),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "cache lookup failed for namespace: %u", nsid);
+
+	audit_name = sepgsqlAuditName(NamespaceRelationId, tuple);
+	elog(NOTICE, "%s for %s", __FUNCTION__, audit_name);
+	rc = sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
+							   SEPG_CLASS_DB_SCHEMA,
+							   required,
+							   audit_name, false);
+	ReleaseSysCache(tuple);
+
+	return rc;
+}
+
+bool sepgsqlCheckSchemaSearch(Oid nsid)
+{
+	return sepgsqlCheckSchemaCommon(nsid, SEPG_DB_SCHEMA__SEARCH);
 }
 
 /*
