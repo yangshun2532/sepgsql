@@ -17,6 +17,7 @@
 #include "catalog/pg_foreign_data_wrapper.h"
 #include "catalog/pg_language.h"
 #include "catalog/pg_largeobject.h"
+#include "catalog/pg_namespace.h"
 #include "catalog/pg_operator.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_trigger.h"
@@ -142,18 +143,35 @@ sepgsqlCheckDatabaseInstallModule(const char *filename)
 void
 sepgsqlCheckDatabaseLoadModule(const char *filename)
 {
+	HeapTuple		tuple;
 	security_context_t filecon;
+	security_context_t dbcon;
 
 	if (!sepgsqlIsEnabled())
 		return;
 
+	/* Get database context */
+	tuple = SearchSysCache(DATABASEOID,
+						   ObjectIdGetDatum(MyDatabaseId),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "cache lookup failed for database: %u", MyDatabaseId);
+
+	dbcon = securityLookupSecurityLabel(HeapTupleGetSecLabel(tuple));
+
+	ReleaseSysCache(tuple);
+
+	if (!dbcon || security_check_context(dbcon) < 0)
+		dbcon = sepgsqlGetUnlabeledLabel();
+
+	/* Get library context */
 	if (getfilecon_raw(filename, &filecon) < 0)
 		ereport(ERROR,
 				(errcode_for_file_access(),
 				 errmsg("could not access file \"%s\": %m", filename)));
 	PG_TRY();
 	{
-		sepgsqlComputePerms(sepgsqlGetDatabaseLabel(),
+		sepgsqlComputePerms(dbcon,
 							filecon,
 							SEPG_CLASS_DB_DATABASE,
 							SEPG_DB_DATABASE__LOAD_MODULE,
@@ -166,6 +184,43 @@ sepgsqlCheckDatabaseLoadModule(const char *filename)
     }
 	PG_END_TRY();
 	freecon(filecon);
+}
+
+/*
+ * sepgsqlCheckSchemaSearch
+ *   checks db_schema:{search} permission when the given namespace
+ *   is searched.
+ *
+ *   db_schema:{add_object remove_object} permissions is not now
+ *   implemented.
+ */
+static bool
+sepgsqlCheckSchemaCommon(Oid nsid, access_vector_t required)
+{
+	const char *audit_name;
+	HeapTuple tuple;
+	bool rc;
+
+	tuple = SearchSysCache(NAMESPACEOID,
+						   ObjectIdGetDatum(nsid),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "cache lookup failed for namespace: %u", nsid);
+
+	audit_name = sepgsqlAuditName(NamespaceRelationId, tuple);
+	elog(NOTICE, "%s for %s", __FUNCTION__, audit_name);
+	rc = sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
+							   SEPG_CLASS_DB_SCHEMA,
+							   required,
+							   audit_name, false);
+	ReleaseSysCache(tuple);
+
+	return rc;
+}
+
+bool sepgsqlCheckSchemaSearch(Oid nsid)
+{
+	return sepgsqlCheckSchemaCommon(nsid, SEPG_DB_SCHEMA__SEARCH);
 }
 
 /*
@@ -409,38 +464,27 @@ sepgsqlCheckProcedureEntrypoint(FmgrInfo *flinfo, HeapTuple protup)
 static void
 checkProcedureInstall(Oid proc_oid)
 {
-	const char *audit_name = NULL;
-	Oid			prosid;
+	const char *audit_name;
+	HeapTuple	tuple;
 
 	if (!OidIsValid(proc_oid))
 		return;
 
+	/*
+	 * NOTE: we assume all the function installed
+	 * during bootstraping mode can be trusted.
+	 */
 	if (IsBootstrapProcessingMode())
-	{
-		/*
-		 * Assumption: security label is unchanged
-		 * during bootstraptin mode, because no one
-		 * tries to relabel anything.
-		 */
-		prosid  = sepgsqlClientCreate(sepgsqlGetDatabaseSid(),
-									  SEPG_CLASS_DB_PROCEDURE);
-	}
-	else
-	{
-		HeapTuple	protup;
+		return;
 
-		protup = SearchSysCache(PROCOID,
-								ObjectIdGetDatum(proc_oid),
-								0, 0, 0);
-		if (!HeapTupleIsValid(protup))
-			return;
+	tuple = SearchSysCache(PROCOID,
+						   ObjectIdGetDatum(proc_oid),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		return;
 
-		audit_name = sepgsqlAuditName(ProcedureRelationId, protup);
-		prosid = HeapTupleGetSecLabel(protup);
-
-		ReleaseSysCache(protup);
-	}
-	sepgsqlClientHasPerms(prosid,
+	audit_name = sepgsqlAuditName(ProcedureRelationId, tuple);
+	sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
 						  SEPG_CLASS_DB_PROCEDURE,
 						  SEPG_DB_PROCEDURE__INSTALL,
 						  audit_name, true);
