@@ -10,6 +10,7 @@
 #include "access/sysattr.h"
 #include "catalog/pg_database.h"
 #include "catalog/pg_language.h"
+#include "catalog/pg_namespace.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_rewrite.h"
 #include "catalog/pg_security.h"
@@ -341,6 +342,7 @@ static bool
 checkTrustedAction(Relation rel, bool internal)
 {
 	if (RelationGetRelid(rel) == DatabaseRelationId ||
+		RelationGetRelid(rel) == NamespaceRelationId ||
 		RelationGetRelid(rel) == RelationRelationId ||
 		RelationGetRelid(rel) == AttributeRelationId ||
 		RelationGetRelid(rel) == ProcedureRelationId)

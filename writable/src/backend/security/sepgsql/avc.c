@@ -273,7 +273,7 @@ avc_make_entry(avc_page *page, Oid tsid, security_class_t tclass)
 		/* fill it up as undefined class */
 		avd.allowed = (security_deny_unknown() ? 0 : ~0UL);
 		avd.decided = ~0UL;
-		avd.auditallow = ~0UL;
+		avd.auditallow = 0UL;
 		avd.auditdeny = ~0UL;
 		avd.flags = 0;
 	}
@@ -287,7 +287,6 @@ avc_make_entry(avc_page *page, Oid tsid, security_class_t tclass)
                  errmsg("SELinux: could not compute new context: "
                         "scontext=%s tcontext=%s tclass=%s",
                         scontext, tcontext, sepgsqlGetClassString(tclass))));
-
 	/*
 	 * Copy them to avc_datum
 	 */
@@ -626,7 +625,7 @@ sepgsqlComputePerms(security_context_t scontext,
 		/* fill it up as undefined class */
 		avd.allowed = (security_deny_unknown() ? 0 : ~0UL);
 		avd.decided = ~0UL;
-		avd.auditallow = ~0UL;
+		avd.auditallow = 0UL;
 		avd.auditdeny = ~0UL;
 		avd.flags = 0;
 	}

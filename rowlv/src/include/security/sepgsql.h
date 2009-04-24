@@ -221,12 +221,6 @@ extern security_context_t
 sepgsqlGetUnlabeledLabel(void);
 
 extern security_context_t
-sepgsqlGetDatabaseLabel(void);
-
-extern Oid
-sepgsqlGetDatabaseSid(void);
-
-extern security_context_t
 sepgsqlSwitchClient(security_context_t new_client);
 
 extern bool
@@ -243,6 +237,9 @@ sepgsqlCheckDatabaseAccess(Oid database_oid);
 
 extern bool
 sepgsqlCheckDatabaseSuperuser(void);
+
+extern bool
+sepgsqlCheckSchemaSearch(Oid nsid);
 
 extern void
 sepgsqlCheckTableLock(Oid table_oid);
@@ -340,6 +337,7 @@ sepgsqlCheckObjectPerms(Relation rel, HeapTuple tuple,
 // hooks.c
 #define sepgsqlCheckDatabaseAccess(a)			(true)
 #define sepgsqlCheckDatabaseSuperuser()			(true)
+#define sepgsqlCheckSchemaSearch(a)				(true)
 #define sepgsqlCheckTableLock(a)				do {} while(0)
 #define sepgsqlCheckTableTruncate(a)			do {} while(0)
 #define sepgsqlCheckSequenceGetValue(a)			do {} while(0)

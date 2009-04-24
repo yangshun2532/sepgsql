@@ -268,7 +268,6 @@ sepgsqlTransToInternalPerms(security_class_t tclass, struct av_decision *avd)
 			if (!deny_unknown)
 				i_avd.allowed |= perm_code;
 			i_avd.decided |= perm_code;
-			i_avd.auditallow |= perm_code;	/* for debugging */
 			i_avd.auditdeny |= perm_code;
 			continue;
 		}
