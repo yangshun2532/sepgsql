@@ -7,6 +7,7 @@
  */
 #include "postgres.h"
 
+#include "access/heapam.h"
 #include "catalog/pg_authid.h"
 #include "catalog/pg_class.h"
 #include "catalog/pg_security.h"
@@ -126,12 +127,11 @@ rowaclInitialize(void)
  * Row-level access controls
  ******************************************************************/
 static bool
-rowaclCheckPermission(Relation rel, HeapTuple tuple,
-					  AclMode required, Oid checkAsUser, bool abort)
+rowaclCheckPermission(Relation rel, HeapTuple tuple, AclMode required)
 {
 	Oid relid = RelationGetRelid(rel);
 	Oid ownerid = RelationGetForm(rel)->relowner;
-	Oid userid = OidIsValid(checkAsUser) ? checkAsUser : GetUserId();
+	Oid userid = GetUserId();
 	Oid aclid = HeapTupleGetRowAcl(tuple);
 	AclMode privs;
 
@@ -153,23 +153,40 @@ rowaclCheckPermission(Relation rel, HeapTuple tuple,
 	if ((privs & required) == required)
 		return true;
 
-	if (abort)
-		ereport(ERROR,
-				(errcode(ERRCODE_ROWACL_ERROR),
-				 errmsg("access violation on Row-level ACLs")));
-
 	return false;
 }
 
 bool
-rowaclExecScan(Relation rel, HeapTuple tuple,
-			   AclMode required, Oid checkAsUser, bool abort)
+rowaclExecScan(Relation rel, HeapTuple tuple, uint32 required)
 {
-	if (!RelationGetRowLevelAcl(rel) ||
-		(required & ACL_ALL_RIGHTS_TUPLE) == 0)
+	if (!RelationGetRowLevelAcl(rel) || !required)
 		return true;
 
-	return rowaclCheckPermission(rel, tuple, required, checkAsUser, abort);
+	return rowaclCheckPermission(rel, tuple, required);
+}
+
+uint32
+rowaclSetupTuplePerms(RangeTblEntry *rte)
+{
+	AclMode		mask = (ACL_SELECT | ACL_UPDATE | ACL_DELETE);
+	Relation	relation;
+
+	if (rte->rtekind != RTE_RELATION)
+		return 0;
+
+	/*
+	 * we need not lock the relation since it was already locked.
+	 * If the row_level_acl reloption is disabled, we don't need
+	 * to apply row-level acls on the relation.
+	 */
+	relation = heap_open(rte->relid, NoLock);
+
+	if (!RelationGetRowLevelAcl(relation))
+		mask = 0;
+
+	heap_close(relation, NoLock);
+
+	return rte->rtekind & mask;
 }
 
 /******************************************************************
