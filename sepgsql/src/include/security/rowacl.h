@@ -16,8 +16,10 @@ extern void
 rowaclInitialize(void);
 
 extern bool
-rowaclExecScan(Relation rel, HeapTuple tuple,
-			   AclMode required, Oid checkAsUser, bool abort);
+rowaclExecScan(Relation rel, HeapTuple tuple, uint32 required);
+
+extern uint32
+rowaclSetupTuplePerms(RangeTblEntry *rte);
 
 extern void
 rowaclReloptDefaultRowAcl(char *value);

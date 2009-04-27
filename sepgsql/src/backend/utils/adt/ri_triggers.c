@@ -39,7 +39,7 @@
 #include "parser/parse_coerce.h"
 #include "parser/parse_relation.h"
 #include "miscadmin.h"
-#include "security/rowlevel.h"
+#include "security/sepgsql.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
@@ -3265,7 +3265,7 @@ ri_PerformCheck(RI_QueryKey *qkey, SPIPlanPtr qplan,
 	int			spi_result;
 	Oid			save_userid;
 	bool		save_secdefcxt;
-	bool		save_rowlevel;
+	bool		save_sepgsql;
 	Datum		vals[RI_MAX_NUMKEYS * 2];
 	char		nulls[RI_MAX_NUMKEYS * 2];
 
@@ -3348,31 +3348,17 @@ ri_PerformCheck(RI_QueryKey *qkey, SPIPlanPtr qplan,
 	GetUserIdAndContext(&save_userid, &save_secdefcxt);
 	SetUserIdAndContext(RelationGetForm(query_rel)->relowner, true);
 
-	/*
-	 * Switch internal state of Row-level access control stuff.
-	 * When a user tries to update/delete a PK refered by invisible
-	 * FKs, it is necessary to abort the query execution to keep
-	 * the correctness of referencial integrity.
-	 */
-	save_rowlevel = rowlvBehaviorSwitchTo(detectNewRows);
+	/* SE-PostgreSQL temporary performs as permissive mode */
+	save_sepgsql = sepgsqlSetLocalEnforcing(false);
 
-	PG_TRY();
-	{
-		/* Finally we can run the query. */
-		spi_result = SPI_execute_snapshot(qplan,
-										  vals, nulls,
-										  test_snapshot, crosscheck_snapshot,
-										  false, false, limit);
-	}
-	PG_CATCH();
-	{
-		rowlvBehaviorSwitchTo(save_rowlevel);
-		PG_RE_THROW();
-	}
-	PG_END_TRY();
+	/* Finally we can run the query. */
+	spi_result = SPI_execute_snapshot(qplan,
+									  vals, nulls,
+									  test_snapshot, crosscheck_snapshot,
+									  false, false, limit);
 
-	/* Restore the state of Row-level access control stuff */
-	rowlvBehaviorSwitchTo(save_rowlevel);
+	/* Restore SE-PostgreSQL mode */
+	sepgsqlSetLocalEnforcing(save_sepgsql);
 
 	/* Restore UID */
 	SetUserIdAndContext(save_userid, save_secdefcxt);
