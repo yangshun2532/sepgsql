@@ -3265,7 +3265,7 @@ ri_PerformCheck(RI_QueryKey *qkey, SPIPlanPtr qplan,
 	int			spi_result;
 	Oid			save_userid;
 	bool		save_secdefcxt;
-	bool		save_sepgsql;
+	int			save_selinux;
 	Datum		vals[RI_MAX_NUMKEYS * 2];
 	char		nulls[RI_MAX_NUMKEYS * 2];
 
@@ -3349,7 +3349,7 @@ ri_PerformCheck(RI_QueryKey *qkey, SPIPlanPtr qplan,
 	SetUserIdAndContext(RelationGetForm(query_rel)->relowner, true);
 
 	/* SE-PostgreSQL temporary performs as permissive mode */
-	save_sepgsql = sepgsqlSetLocalEnforcing(false);
+	save_selinux = sepgsqlSetLocalEnforcing(0);
 
 	/* Finally we can run the query. */
 	spi_result = SPI_execute_snapshot(qplan,
@@ -3358,7 +3358,7 @@ ri_PerformCheck(RI_QueryKey *qkey, SPIPlanPtr qplan,
 									  false, false, limit);
 
 	/* Restore SE-PostgreSQL mode */
-	sepgsqlSetLocalEnforcing(save_sepgsql);
+	sepgsqlSetLocalEnforcing(save_selinux);
 
 	/* Restore UID */
 	SetUserIdAndContext(save_userid, save_secdefcxt);
