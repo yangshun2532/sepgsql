@@ -152,6 +152,10 @@ enum SepgsqlClasses
  */
 extern Size sepgsqlShmemSize(void);
 
+extern int	sepgsqlSetLocalEnforcing(int enforce);
+
+extern int	sepgsqlGetLocalEnforcing(void);
+
 extern void sepgsqlAvcInit(void);
 
 extern pid_t sepgsqlStartupWorkerProcess(void);
@@ -314,6 +318,8 @@ sepgsqlCheckObjectPerms(Relation rel, HeapTuple tuple,
 /* avc.c */
 #define sepgsqlShmemSize()						(0)
 #define sepgsqlStartupWorkerProcess()			(0)
+#define sepgsqlSetLocalEnforcing(a)				(0)
+#define sepgsqlGetLocalEnforcing()				(0)
 /* checker.c */
 #define sepgsqlCheckRTEPerms(a)					do {} while(0)
 #define sepgsqlCheckCopyTable(a,b,c)			do {} while(0)
