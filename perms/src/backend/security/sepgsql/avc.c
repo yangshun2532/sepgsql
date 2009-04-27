@@ -72,10 +72,6 @@ typedef struct avc_page
 {
 	struct avc_page *next;
 
-	int		avc_version;	/* copied from global state */
-
-	bool	avc_enforcing;	/* copied from global state */
-
 	security_context_t	scontext;
 
 	List *slot[AVC_HASH_NUM_SLOTS];
@@ -85,6 +81,14 @@ typedef struct avc_page
 } avc_page;
 
 static avc_page *client_avc_page = NULL;
+
+static int	avc_version;
+
+static bool	avc_enforcing;
+
+static int	local_enforcing = -1;
+
+#define	is_enforcing()	(local_enforcing > 0 ? local_enforcing : avc_enforcing)
 
 /*
  * selinux_state
@@ -123,6 +127,20 @@ sepgsqlShmemSize(void)
 	return sizeof(*selinux_state);
 }
 
+int sepgsqlGetLocalEnforcing(void)
+{
+	return local_enforcing;
+}
+
+int sepgsqlSetLocalEnforcing(int new_enforce)
+{
+	int		old_enforcing = local_enforcing;
+
+	local_enforcing = new_enforce;
+
+	return old_enforcing;
+}
+
 /*
  * sepgsql_avc_check_valid
  *   returns false, if the given avc_page is already obsolete.
@@ -133,7 +151,7 @@ sepgsql_avc_check_valid(avc_page *page)
 	bool result = true;
 
 	LWLockAcquire(SepgsqlAvcLock, LW_SHARED);
-	if (page->avc_version != selinux_state->version)
+	if (avc_version != selinux_state->version)
 		result = false;
 	LWLockRelease(SepgsqlAvcLock);
 
@@ -152,6 +170,11 @@ sepgsql_avc_reset(void)
 	MemoryContextReset(AvcMemCtx);
 
 	client_avc_page = NULL;
+
+	LWLockAcquire(SepgsqlAvcLock, LW_SHARED);
+	avc_version = selinux_state->version;
+	avc_enforcing = selinux_state->enforcing;
+	LWLockRelease(SepgsqlAvcLock);
 
 	sepgsqlAvcSwitchClient();
 }
@@ -413,10 +436,6 @@ sepgsqlAvcSwitch(avc_page *old_page, security_context_t scontext)
 	for (i=0; i < AVC_HASH_NUM_SLOTS; i++)
 		new_page->slot[i] = NIL;
 
-	/* copy the global state of SELinux */
-	new_page->avc_version = selinux_state->version;
-	new_page->avc_enforcing = selinux_state->enforcing;
-
 	if (!old_page)
 	{
 		new_page->next = new_page;
@@ -476,7 +495,7 @@ retry:
 
 	if (denied)
 	{
-		if (!client_avc_page->avc_enforcing || cache->permissive)
+		if (!is_enforcing() || cache->permissive)
 			cache->allowed |= required;		/* prevent flood of audit log */
 		else
 			result = false;
@@ -598,7 +617,6 @@ sepgsqlComputePerms(security_context_t scontext,
 	access_vector_t denied, audited;
 	security_class_t tclass_ex;
 	struct av_decision avd;
-	bool result = true;
 
 	Assert(required != 0);
 
@@ -640,18 +658,17 @@ sepgsqlComputePerms(security_context_t scontext,
 						 tclass, !!denied, audited, audit_name);
 	}
 
-	if (denied)
+	if (denied && is_enforcing() &&
+		(avd.flags & SELINUX_AVD_FLAGS_PERMISSIVE) == 0)
 	{
-		if (security_getenforce() > 0 &&
-			(avd.flags & SELINUX_AVD_FLAGS_PERMISSIVE) == 0)
-			result = false;
+		if (abort)
+			ereport(ERROR,
+					(errcode(ERRCODE_SELINUX_ERROR),
+					 errmsg("SELinux: security policy violation")));
+		return false;
 	}
 
-	if (abort && !result)
-		ereport(ERROR,
-				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("SELinux: security policy violation")));
-	return result;
+	return true;
 }
 
 security_context_t
