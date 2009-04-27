@@ -346,33 +346,43 @@ fixupColumnAvPerms(HeapTuple oldtup, HeapTuple newtup)
  *   makes a decision on the given tuple.
  */
 bool
-sepgsqlExecScan(Relation rel, HeapTuple tuple, AclMode required, bool abort)
+sepgsqlExecScan(Relation rel, HeapTuple tuple, uint32 required)
 {
 	security_class_t	tclass;
-	access_vector_t		permissions = 0;
 	const char		   *audit_name;
 
-	if (!sepgsqlIsEnabled())
-		return true;
-
-	if (RelationGetForm(rel)->relkind != RELKIND_RELATION)
-		return true;
-
-	if (required & ACL_SELECT)
-		permissions |= SEPG_DB_TUPLE__SELECT;
-	if (required & ACL_UPDATE)
-		permissions |= SEPG_DB_TUPLE__UPDATE;
-	if (required & ACL_DELETE)
-		permissions |= SEPG_DB_TUPLE__DELETE;
-	if (permissions == 0)
+	if (!sepgsqlIsEnabled() ||
+		!required ||
+		RelationGetForm(rel)->relkind != RELKIND_RELATION)
 		return true;
 
 	audit_name = sepgsqlAuditName(RelationGetRelid(rel), tuple);
 	tclass = sepgsqlTupleObjectClass(RelationGetRelid(rel), tuple);
 	return sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
 								 tclass,
-								 permissions,
-								 audit_name, abort);
+								 required,
+								 audit_name, false);
+}
+
+uint32
+sepgsqlSetupTuplePerms(RangeTblEntry *rte)
+{
+	AclMode		perms = 0;
+
+	if (!sepgsqlIsEnabled())
+		return 0;
+
+	if (rte->rtekind != RTE_RELATION)
+		return 0;
+
+	if (rte->requiredPerms & ACL_SELECT)
+		perms |= SEPG_DB_TUPLE__SELECT;
+	if (rte->requiredPerms & ACL_UPDATE && !bms_is_empty(rte->modifiedCols))
+		perms |= SEPG_DB_TUPLE__UPDATE;
+	if (rte->requiredPerms & ACL_DELETE)
+		perms |= SEPG_DB_TUPLE__DELETE;
+
+	return perms;
 }
 
 /*

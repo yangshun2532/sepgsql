@@ -158,6 +158,10 @@ extern Size sepgsqlShmemSize(void);
 
 extern void sepgsqlAvcInit(void);
 
+#define sepgsqlSetLocalEnforcing(a)				(true)
+
+#define sepgsqlResetLocalEnforcing()			do{}while(0)
+
 extern pid_t sepgsqlStartupWorkerProcess(void);
 
 extern void sepgsqlAvcSwitchClient(void);
@@ -198,7 +202,10 @@ extern void
 sepgsqlCheckSelectInto(Oid relaionId);
 
 extern bool
-sepgsqlExecScan(Relation rel, HeapTuple tuple, AclMode required, bool abort);
+sepgsqlExecScan(Relation rel, HeapTuple tuple, uint32 required);
+
+extern uint32
+sepgsqlSetupTuplePerms(RangeTblEntry *rte);
 
 extern bool
 sepgsqlHeapTupleInsert(Relation rel, HeapTuple newtup, bool internal);
@@ -366,10 +373,13 @@ sepgsqlCheckObjectPerms(Relation rel, HeapTuple tuple,
 /* avc.c */
 #define sepgsqlShmemSize()						(0)
 #define sepgsqlStartupWorkerProcess()			(0)
+#define sepgsqlSetLocalEnforcing(a)				(true)
+#define sepgsqlResetLocalEnforcing()			do {} while(0)
 /* checker.c */
 #define sepgsqlCheckRTEPerms(a)					do {} while(0)
 #define sepgsqlCheckCopyTable(a,b,c)			do {} while(0)
 #define sepgsqlCheckSelectInto(a)				do {} while(0)
+#define sepgsqlSetupTuplePerms(a)				(0)
 #define sepgsqlExecScan(a,b,c,d)				(true)
 #define sepgsqlHeapTupleInsert(a,b,c)			(true)
 #define sepgsqlHeapTupleUpdate(a,b,c,d)			(true)

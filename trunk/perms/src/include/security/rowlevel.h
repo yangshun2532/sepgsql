@@ -13,11 +13,11 @@
 #include "nodes/plannodes.h"
 #include "utils/relcache.h"
 
-extern bool
-rowlvBehaviorSwitchTo(bool new_abort);
+extern AclMode
+rowlvSetupPermissions(RangeTblEntry *rte);
 
 extern bool
-rowlvExecScan(Scan *scan, Relation rel, TupleTableSlot *slot, bool abort);
+rowlvExecScan(Scan *scan, Relation rel, TupleTableSlot *slot);
 
 extern bool
 rowlvHeapTupleInsert(Relation rel, HeapTuple newtup, bool internal);

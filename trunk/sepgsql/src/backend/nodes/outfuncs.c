@@ -285,8 +285,7 @@ _outScanInfo(StringInfo str, Scan *node)
 	_outPlanInfo(str, (Plan *) node);
 
 	WRITE_UINT_FIELD(scanrelid);
-	WRITE_UINT_FIELD(requiredPerms);
-	WRITE_UINT_FIELD(checkAsUser);
+	WRITE_UINT_FIELD(rowlvPerms);
 }
 
 /*
@@ -1536,8 +1535,7 @@ _outRelOptInfo(StringInfo str, RelOptInfo *node)
 	WRITE_BOOL_FIELD(has_eclass_joins);
 	WRITE_BITMAPSET_FIELD(index_outer_relids);
 	WRITE_NODE_FIELD(index_inner_paths);
-	WRITE_UINT_FIELD(requiredPerms);
-	WRITE_UINT_FIELD(checkAsUser);
+	WRITE_UINT_FIELD(rowlvPerms);
 }
 
 static void
