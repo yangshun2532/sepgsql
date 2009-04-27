@@ -16,8 +16,8 @@
 
 #include "access/sdir.h"
 #include "nodes/bitmapset.h"
-#include "nodes/params.h"
 #include "nodes/parsenodes.h"
+#include "nodes/params.h"
 #include "storage/block.h"
 
 
@@ -385,12 +385,13 @@ typedef struct RelOptInfo
 	 */
 
 	/*
-	 * Row-level access controls (both of DAC and MAC) needs to copy
-	 * requiredPerms and checkAsUser from RangeTblEntry
+	 * Permissions used in Row-level access control features both of DAC
+	 * and MAC. The lower 16bit is used for DAC, and rest of upper bits
+	 * are used for MAC. When rowlvPerms is zero, so it means we don't need
+	 * to apply the row-level stuff on the relation in both of levels.
+	 * It can be used as a hint for optimization stuff.
 	 */
-	AclMode		requiredPerms;
-
-	Oid			checkAsUser;
+	uint32		rowlvPerms;
 } RelOptInfo;
 
 /*

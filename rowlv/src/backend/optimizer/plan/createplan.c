@@ -305,11 +305,8 @@ create_scan_plan(PlannerInfo *root, Path *best_path)
 			break;
 	}
 
-	/*
-	 * Copies row-level permissions
-	 */
-	((Scan *)plan)->requiredPerms = rel->requiredPerms;
-	((Scan *)plan)->checkAsUser = rel->checkAsUser;
+	/* Copy of row-level permissions to Scan node */
+	((Scan *)plan)->rowlvPerms = rel->rowlvPerms;
 
 	/*
 	 * If there are any pseudoconstant clauses attached to this node, insert a
