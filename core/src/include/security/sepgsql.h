@@ -152,6 +152,10 @@ enum SepgsqlClasses
  */
 extern Size sepgsqlShmemSize(void);
 
+extern int	sepgsqlSetLocalEnforcing(int enforce);
+
+extern int	sepgsqlGetLocalEnforcing(void);
+
 extern void sepgsqlAvcInit(void);
 
 extern pid_t sepgsqlStartupWorkerProcess(void);
