@@ -1,4 +1,4 @@
-<!-- $PostgreSQL: pgsql/doc/src/sgml/runtime.sgml,v 1.425 2009/01/09 13:37:18 petere Exp $ -->
+<!-- $PostgreSQL: pgsql/doc/src/sgml/runtime.sgml,v 1.428 2009/04/27 16:27:36 momjian Exp $ -->
 
 <chapter Id="runtime">
  <title>Server Setup and Operation</title>
@@ -76,7 +76,7 @@
    linkend="app-initdb">,<indexterm><primary>initdb</></> which is
    installed with <productname>PostgreSQL</productname>. The desired
    file system location of your database cluster is indicated by the
-   <option>-D</option> option, for example
+   <option>-D</option> option, for example:
 <screen>
 <prompt>$</> <userinput>initdb -D /usr/local/pgsql/data</userinput>
 </screen>
@@ -382,7 +382,7 @@ FATAL:  could not create TCP/IP listen socket
     </para>
 
     <para>
-     A message like
+     A message like:
 <screen>
 FATAL:  could not create shared memory segment: Invalid argument
 DETAIL:  Failed system call was shmget(key=5440001, size=4011376640, 03600).
@@ -401,7 +401,7 @@ DETAIL:  Failed system call was shmget(key=5440001, size=4011376640, 03600).
     </para>
 
     <para>
-     An error like
+     An error like:
 <screen>
 FATAL:  could not create semaphores: No space left on device
 DETAIL:  Failed system call was semget(5440126, 17, 03600).
@@ -1392,7 +1392,7 @@ $ <userinput>kill -INT `head -1 /usr/local/pgsql/data/postmaster.pid`</userinput
 
   <para>
    While the server is running, it is not possible for a malicious user
-   to interfere with client/server communications.  However, when the
+   to take the place of the normal database server.  However, when the
    server is down it is possible for a local user to spoof the normal
    server by starting their own server.  The spoof server could read
    passwords and queries sent by clients, but could not return any data
@@ -1422,8 +1422,8 @@ $ <userinput>kill -INT `head -1 /usr/local/pgsql/data/postmaster.pid`</userinput
    <filename>server.key</filename> (key) and
    <filename>server.crt</filename> (certificate) files (<xref
    linkend="ssl-tcp">). The TCP client must connect using
-   <literal>sslmode='require'</>, specify <literal>sslverify='cn'</>
-   or <literal>sslverify='cert'</> and have the required certificate
+   <literal>sslmode='verify-ca'</> or
+   <literal>'verify-full'</> and have the required certificate
    files present (<xref linkend="libpq-connect">).
   </para>
  </sect1>
