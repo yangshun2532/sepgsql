@@ -12,15 +12,19 @@
 #include "catalog/pg_amop.h"
 #include "catalog/pg_amproc.h"
 #include "catalog/pg_cast.h"
+#include "catalog/pg_constraint.h"
 #include "catalog/pg_conversion.h"
 #include "catalog/pg_database.h"
 #include "catalog/pg_foreign_data_wrapper.h"
 #include "catalog/pg_language.h"
 #include "catalog/pg_largeobject.h"
 #include "catalog/pg_namespace.h"
+#include "catalog/pg_opclass.h"
 #include "catalog/pg_operator.h"
+#include "catalog/pg_opfamily.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_trigger.h"
+#include "catalog/pg_ts_dict.h"
 #include "catalog/pg_ts_parser.h"
 #include "catalog/pg_ts_template.h"
 #include "catalog/pg_type.h"
@@ -221,6 +225,77 @@ sepgsqlCheckSchemaCommon(Oid nsid, access_vector_t required)
 bool sepgsqlCheckSchemaSearch(Oid nsid)
 {
 	return sepgsqlCheckSchemaCommon(nsid, SEPG_DB_SCHEMA__SEARCH);
+}
+
+static void
+checkSchemaAddRemove(Oid nsid, bool remove)
+{
+	if (IsBootstrapProcessingMode() || !OidIsValid(nsid))
+		return;
+
+	if (!sepgsqlCheckSchemaCommon(nsid, !remove
+								  ? SEPG_DB_SCHEMA__ADD_OBJECT
+								  : SEPG_DB_SCHEMA__REMOVE_OBJECT))
+		ereport(ERROR,
+				(errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("SELinux: security policy violation")));
+}
+
+#define CHECK_SCHEMA_ADD_REMOVE(catalog,member,newtup,oldtup)			\
+	do {																\
+		Oid nsid_new = !HeapTupleIsValid(newtup) ? InvalidOid			\
+			: (((Form_##catalog) GETSTRUCT(newtup))->member);			\
+		Oid nsid_old = !HeapTupleIsValid(oldtup) ? InvalidOid			\
+			: (((Form_##catalog) GETSTRUCT(oldtup))->member);			\
+		if (nsid_new != nsid_old)										\
+		{																\
+			checkSchemaAddRemove(nsid_old, true);						\
+			checkSchemaAddRemove(nsid_new, false);						\
+		}																\
+	} while(0)															\
+
+void
+sepgsqlCheckSchemaAddRemove(Relation rel, HeapTuple newtup, HeapTuple oldtup)
+{
+	switch (RelationGetRelid(rel))
+	{
+	case RelationRelationId:
+		CHECK_SCHEMA_ADD_REMOVE(pg_class,relnamespace,newtup,oldtup);
+		break;
+	case ConstraintRelationId:
+		CHECK_SCHEMA_ADD_REMOVE(pg_constraint,connamespace,newtup,oldtup);
+		break;
+	case ConversionRelationId:
+		CHECK_SCHEMA_ADD_REMOVE(pg_conversion,connamespace,newtup,oldtup);
+		break;
+	case OperatorClassRelationId:
+		CHECK_SCHEMA_ADD_REMOVE(pg_opclass,opcnamespace,newtup,oldtup);
+		break;
+	case OperatorRelationId:
+		CHECK_SCHEMA_ADD_REMOVE(pg_operator,oprnamespace,newtup,oldtup);
+		break;
+	case OperatorFamilyRelationId:
+		CHECK_SCHEMA_ADD_REMOVE(pg_opfamily,opfnamespace,newtup,oldtup);
+		break;
+	case ProcedureRelationId:
+		CHECK_SCHEMA_ADD_REMOVE(pg_proc,pronamespace,newtup,oldtup);
+		break;
+	case TSDictionaryRelationId:
+		CHECK_SCHEMA_ADD_REMOVE(pg_ts_dict,dictnamespace,newtup,oldtup);
+		break;
+	case TSParserRelationId:
+		CHECK_SCHEMA_ADD_REMOVE(pg_ts_parser,prsnamespace,newtup,oldtup);
+		break;
+	case TSTemplateRelationId:
+		CHECK_SCHEMA_ADD_REMOVE(pg_ts_template,tmplnamespace,newtup,oldtup);
+		break;
+	case TypeRelationId:
+		CHECK_SCHEMA_ADD_REMOVE(pg_type,typnamespace,newtup,oldtup);
+		break;
+	default:
+		/* do nothing */
+		break;
+	}
 }
 
 /*
@@ -488,6 +563,7 @@ checkProcedureInstall(Oid proc_oid)
 						  SEPG_CLASS_DB_PROCEDURE,
 						  SEPG_DB_PROCEDURE__INSTALL,
 						  audit_name, true);
+	ReleaseSysCache(tuple);
 }
 
 #define CHECK_PROC_INSTALL_PERM(catalog,member,newtup,oldtup)			\
