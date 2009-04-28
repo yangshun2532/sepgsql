@@ -250,6 +250,9 @@ extern bool
 sepgsqlCheckSchemaSearch(Oid nsid);
 
 extern void
+sepgsqlCheckSchemaAddRemove(Relation rel, HeapTuple newtup, HeapTuple oldtup);
+
+extern void
 sepgsqlCheckDatabaseInstallModule(const char *filename);
 
 extern void
