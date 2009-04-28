@@ -471,6 +471,8 @@ sepgsqlHeapTupleInsert(Relation rel, HeapTuple newtup, bool internal)
 	/* check binary library installation */
 	if (relid == ProcedureRelationId)
 		checkCLibraryInstallation(newtup, NULL);
+	/* check db_schema:{add_object}, if necessary */
+	sepgsqlCheckSchemaAddRemove(rel, newtup, NULL);
 	/* check db_procedure:{install} */
 	sepgsqlCheckProcedureInstall(rel, newtup, NULL);
 
@@ -522,6 +524,8 @@ sepgsqlHeapTupleUpdate(Relation rel, HeapTuple oldtup,
 	/* check binary library installation */
 	if (relid == ProcedureRelationId)
 		checkCLibraryInstallation(newtup, oldtup);
+	/* check db_schema:{add_object remove_object}, if necessary */
+	sepgsqlCheckSchemaAddRemove(rel, newtup, oldtup);
 	/* check db_procedure:{install}, if necessary */
 	sepgsqlCheckProcedureInstall(rel, newtup, oldtup);
 
@@ -562,6 +566,9 @@ sepgsqlHeapTupleDelete(Relation rel, HeapTuple oldtup, bool internal)
 
 	if (checkTrustedAction(rel, internal))
 		return true;
+
+	/* check db_schema:{remove_object}, if necessary */
+	sepgsqlCheckSchemaAddRemove(rel, NULL, oldtup);
 
 	/* already checked at ExecScan? */
 	if (internal)
