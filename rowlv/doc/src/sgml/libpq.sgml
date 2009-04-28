@@ -1,4 +1,4 @@
-<!-- $PostgreSQL: pgsql/doc/src/sgml/libpq.sgml,v 1.285 2009/04/15 13:03:11 momjian Exp $ -->
+<!-- $PostgreSQL: pgsql/doc/src/sgml/libpq.sgml,v 1.288 2009/04/27 16:27:36 momjian Exp $ -->
 
 <chapter id="libpq">
  <title><application>libpq</application> - C Library</title>
@@ -254,7 +254,7 @@
           <para>
            This option determines whether or with what priority a
            <acronym>SSL</> TCP/IP connection will be negotiated with the
-           server. There are four modes:
+           server. There are six modes:
           </para>
 
           <table id="libpq-connect-sslmode-options">
@@ -292,10 +292,29 @@
               <entry><literal>require</></entry>
               <entry>only try an <acronym>SSL</> connection</entry>
              </row>
-        
+
+             <row>
+              <entry><literal>verify-ca</></entry>
+              <entry>only try an <acronym>SSL</> connection, and verify that
+              the server certificate is issued by a trusted <acronym>CA</>.
+              </entry>
+             </row>
+
+             <row>
+              <entry><literal>verify-full</></entry>
+              <entry>only try an <acronym>SSL</> connection, verify that
+              the server certificate is issued by a trusted <acronym>CA</> and
+              that the server hostname matches that in the certificate.</entry>
+             </row>
+
             </tbody>
            </tgroup>
           </table>
+
+          <para>
+           See <xref linkend="libpq-ssl"> for a detailed description of how
+           these options work.
+          </para>
 
           <para>
            <literal>sslmode</> is ignored for Unix domain socket
@@ -307,43 +326,6 @@
            an <acronym>SSL</>
            connection.<indexterm><primary>SSL</><secondary
            sortas="libpq">with libpq</></indexterm>
-          </para>
-         </listitem>
-        </varlistentry>
-
-        <varlistentry id="libpq-connect-sslverify" xreflabel="sslverify">
-         <term><literal>sslverify</literal></term>
-         <listitem>
-          <para>
-           This option controls how libpq verifies the certificate on the
-           server when performing an <acronym>SSL</> connection. There are
-           three options: <literal>none</> disables verification completely
-           (not recommended); <literal>cert</> enables verification that
-           the server certificate chains to a known certificate
-           authority (CA); <literal>cn</> will both verify that the
-           certificate chains to a known CA and that the <literal>cn</>
-           attribute of the server certificate matches the server's
-           hostname (default).
-          </para>
-
-          <para>
-           It is always recommended to use the <literal>cn</> value for
-           this parameter, since this is the only option that prevents
-           man-in-the-middle attacks. Note that this requires the server
-           name on the certificate to match exactly with the host name
-           used for the connection, and therefore does not support connections
-           to aliased names. It can be used with pure IP address connections
-           only if the certificate also has just the IP address in the
-           <literal>cn</> field.
-          </para>
-
-          <para>
-           If the <literal>cn</> attribute in the certificate sent by the
-           server starts with an asterisk (<literal>*</>), it will be treated
-           as a wildcard. This wildcard can only be present at the start of
-           the value, and will match all characters <emphasis>except</> a
-           dot (<literal>.</>). This means the certificate will not match
-           subdomains.
           </para>
          </listitem>
         </varlistentry>
@@ -5803,16 +5785,6 @@ myEventProc(PGEventId evtId, void *evtInfo, void *passThrough)
     <listitem>
      <para>
       <indexterm>
-       <primary><envar>PGSSLVERIFY</envar></primary>
-      </indexterm>
-      <envar>PGSSLVERIFY</envar> behaves the same as <xref
-      linkend="libpq-connect-sslverify"> connection parameter.
-     </para>
-    </listitem>
-
-    <listitem>
-     <para>
-      <indexterm>
        <primary><envar>PGREQUIRESSL</envar></primary>
       </indexterm>
       <envar>PGREQUIRESSL</envar> behaves the same as <xref
@@ -6162,25 +6134,60 @@ myEventProc(PGEventId evtId, void *evtInfo, void *passThrough)
    file.
   </para>
 
+ <sect2 id="libq-ssl-certificates">
+  <title>Certificate verification</title>
+
   <para>
-   When the <literal>sslverify</> parameter is set to <literal>cn</> or
-   <literal>cert</>, libpq requires a trustworthy server certificate by
-   checking the certificate chain up to a <acronym>CA</>.
-   To allow verification, place the certificate of a trusted <acronym>CA</>
-   in the file <filename>~/.postgresql/root.crt</> in the user's home directory.
-   (On Microsoft Windows the file is named
+   By default, <productname>PostgreSQL</> will not perform any verification of
+   the server certificate. This means that it is possible to spoof the server
+   identity (for example by modifying a DNS record or by taking over the server
+   IP address) without the client knowing. In order to prevent this,
+   <acronym>SSL</> certificate verification must be used.
+  </para>
+
+  <para>
+   If the parameter <literal>sslmode</> is set to <literal>verify-ca</>
+   libpq will verify that the server is trustworthy by checking the certificate
+   chain up to a trusted <acronym>CA</>. If <literal>sslmode</> is set to
+   <literal>verify-full</>, libpq will <emphasis>also</> verify that the server
+   hostname matches that of the certificate. The SSL connection will fail if
+   the server certificate cannot be verified. <literal>verify-full</> is
+   recommended in most security sensitive environments.
+  </para>
+
+  <para>
+   In <literal>verify-full</> mode, the <literal>cn</> attribute of the
+   certificate is matched against the hostname. If the <literal>cn</>
+   attribute starts with an asterisk (<literal>*</>), it will be treated as
+   a wildcard, and will match all characters <emphasis>except</> a dot
+   (<literal>.</>). This means the certificate will not match subdomains.
+   If the connection is made using an IP address instead of a hostname, the
+   IP address will be matched (without doing any DNS lookups).
+  </para>
+
+  <para>
+   To allow verification, the certificate of a trusted <acronym>CA</> must be
+   placed in the file <filename>~/.postgresql/root.crt</> in the user's home
+   directory. (On Microsoft Windows the file is named
    <filename>%APPDATA%\postgresql\root.crt</filename>.)
-   <application>libpq</application> will then verify that the server's
-   certificate is signed by one of the trusted certificate authorities.
-   The SSL connection will fail if the server certificate cannot be verified.
+  </para>
+
+  <para>
    Certificate Revocation List (CRL) entries are also checked
    if the file <filename>~/.postgresql/root.crl</filename> exists
    (<filename>%APPDATA%\postgresql\root.crl</filename> on Microsoft
    Windows).
+  </para>
+
+  <para>
    The location of the root certificate store and the CRL can be overridden
    by the connection parameters <literal>sslrootcert</> and <literal>sslcrl</>
    or the environment variables <envar>PGSSLROOTCERT</> and <envar>PGSSLCRL</>.
   </para>
+ </sect2>
+
+ <sect2 id="libpq-ssl-clientcert">
+  <title>Client certificates</title>
 
   <para>
    If the server requests a trusted client certificate,
@@ -6201,6 +6208,183 @@ myEventProc(PGEventId evtId, void *evtInfo, void *passThrough)
    environment variables <envar>PGSSLCERT</> and <envar>PGSSLKEY</>.
   </para>
 
+ </sect2>
+
+ <sect2 id="libpq-ssl-protection">
+  <title>Protection provided in different modes</title>
+
+  <para>
+   The different values for the <literal>sslmode</> parameter provide different
+   levels of protection, in different environments. SSL itself provides
+   protection against three different types of attacks:
+  </para>
+  <table id="libpq-ssl-protect-attacks">
+   <title>SSL attacks</title>
+   <tgroup cols="2">
+    <thead>
+     <row>
+      <entry>Type</entry>
+      <entry>Description</entry>
+     </row>
+    </thead>
+
+    <tbody>
+     <row>
+      <entry>Eavesdropping</entry>
+      <entry>If a third party can listen to the network traffic between the
+       client and the server, it can read both connection information (including
+       the username and password) and the data that is passed. <acronym>SSL</>
+       uses encryption to prevent this.
+      </entry>
+     </row>
+
+     <row>
+      <entry>Man in the middle (<acronym>MITM</>)</entry>
+      <entry>If a third party can modify the data while passing between the
+       client and server, it can pretend to be the server and therefore see and
+       modify data <emphasis>even if it is encrypted</>. The third party can then
+       forward the connection information and data to the original server,
+       making it impossible to detect this attack. Common vectors to do this
+       include DNS poisoning and address hijacking, whereby the client is directed
+       to a different server than intended. There are also several other
+       attack methods that can accomplish this. <acronym>SSL</> uses certificate
+       verification to prevent this, by authenticating the server to the client.
+      </entry>
+     </row>
+
+     <row>
+      <entry>Impersonation</entry>
+      <entry>If a third party can pretend to be an authorized client, it can
+       simply access data it should not have access to. Typically this can
+       happen through insecure password management. <acronym>SSL</> uses
+       client certificates to prevent this, by making sure that only holders
+       of valid certificates can access the server.
+      </entry>
+     </row>
+    </tbody>
+   </tgroup>
+  </table>
+
+  <para>
+   For a connection to be known secure, the two first of these have to be
+   set up on <emphasis>both the client and the server</> before the connection
+   is made. If it is only configured on the server, the client may end up
+   sending sensitive information (e.g. passwords) before
+   it knows that the server requires high security. In libpq, this is controlled
+   by setting the <literal>sslmode</> parameter to <literal>verify-full</> or
+   <literal>verify-ca</>, and providing the system with a root certificate to
+   verify against. This is analogous to using a <literal>https</>
+   <acronym>URL</> for encrypted web browsing.
+  </para>
+
+  <para>
+   Once the server has been authenticated, the client can pass sensitive data.
+   This means that up until this point, the client does not need to know if
+   certificates will be used for authentication, making it safe to specify this
+   only in the server configuration.
+  </para>
+
+  <para>
+   All <acronym>SSL</> options carry overhead in the form of encryption and
+   key-exchange, and it is a tradeoff that has to be made between performance
+   and security. The following table illustrates the risks the different
+   <literal>sslmode</> values protect against, and what statement they make
+   about security and overhead:
+  </para>
+
+  <table id="libpq-ssl-sslmode-statements">
+   <title>SSL mode descriptions</title>
+   <tgroup cols="4">
+    <thead>
+     <row>
+      <entry><literal>sslmode</></entry>
+      <entry>Eavesdropping protection</entry>
+      <entry><acronym>MITM</> protection</entry>
+      <entry>Statement</entry>
+     </row>
+    </thead>
+
+    <tbody>
+     <row>
+      <entry><literal>disabled</></entry>
+      <entry>No</entry>
+      <entry>No</entry>
+      <entry>I don't care about security, and I don't want to pay the overhead
+       of encryption.
+      </entry>
+     </row>
+
+     <row>
+      <entry><literal>allow</></entry>
+      <entry>Maybe</entry>
+      <entry>No</entry>
+      <entry>I don't care about security, but I will pay the overhead of
+       encryption if the server insists on it.
+      </entry>
+     </row>
+
+     <row>
+      <entry><literal>prefer</></entry>
+      <entry>Maybe</entry>
+      <entry>No</entry>
+      <entry>I don't care about encryption, but I wish to pay the overhead of
+       encryption if the server supports it.
+      </entry>
+     </row>
+
+     <row>
+      <entry><literal>require</></entry>
+      <entry>Yes</entry>
+      <entry>No</entry>
+      <entry>I want my data to be encrypted, and I accept the overhead. I trust
+       that the network will make sure I always connect to the server I want.
+      </entry>
+     </row>
+
+     <row>
+      <entry><literal>verify-ca</></entry>
+      <entry>Yes</entry>
+      <entry><literal>Depends on CA</>-policy</entry>
+      <entry>I want my data encrypted, and I accept the overhead. I want to be
+       sure that I connect to a server that I trust.
+      </entry>
+     </row>
+
+     <row>
+      <entry><literal>verify-full</></entry>
+       <entry>Yes</entry>
+       <entry>Yes</entry>
+       <entry>I want my data encrypted, and I accept the overhead. I want to be
+        sure that I connect to a server I trust, and that it's the one I
+        specify.
+       </entry>
+      </row>
+
+    </tbody>
+   </tgroup>
+  </table>
+
+  <para>
+   The difference between <literal>verify-ca</> and <literal>verify-full</>
+   depends on the policy of the root <acronym>CA</>. If a public
+   <acronym>CA</> is used, <literal>verify-ca</> allows connections to a server
+   that <emphasis>somebody else</> may have registered with the <acronym>CA</>
+   to succeed. In this case, <literal>verify-full</> should always be used. If
+   a local <acronym>CA</> is used, or even a self-signed certificate, using
+   <literal>verify-ca</> often provides enough protection.
+  </para>
+
+  <para>
+   The default value for <literal>sslmode</> is <literal>prefer</>. As is shown
+   in the table, this makes no sense from a security point of view, and it only
+   promises performance overhead if possible. It is only provided as the default
+   for backwards compatiblity, and not recommended in secure deployments.
+  </para>
+
+ </sect2>
+
+ <sect2 id="libpq-ssl-fileusage">
+  <title>SSL File Usage</title>
   <table id="libpq-ssl-file-usage">
    <title>Libpq/Client SSL File Usage</title>
    <tgroup cols="3">
@@ -6243,6 +6427,10 @@ myEventProc(PGEventId evtId, void *evtInfo, void *passThrough)
     </tbody>
    </tgroup>
   </table>
+ </sect2>
+
+ <sect2 id="libpq-ssl-initialize">
+  <title>SSL library initialization</title>
 
   <para>
    If your application initializes <literal>libssl</> and/or
@@ -6330,6 +6518,7 @@ myEventProc(PGEventId evtId, void *evtInfo, void *passThrough)
     </varlistentry>
    </variablelist>
   </para>
+ </sect2>
 
  </sect1>
 
@@ -6444,7 +6633,7 @@ myEventProc(PGEventId evtId, void *evtInfo, void *passThrough)
 #include &lt;libpq-fe.h&gt;
 </programlisting>
       If you failed to do that then you will normally get error messages
-      from your compiler similar to
+      from your compiler similar to:
 <screen>
 foo.c: In function `main':
 foo.c:34: `PGconn' undeclared (first use in this function)
@@ -6490,7 +6679,7 @@ CPPFLAGS += -I/usr/local/pgsql/include
 
      <para>
       Failure to specify the correct option to the compiler will
-      result in an error message such as
+      result in an error message such as:
 <screen>
 testlibpq.c:8:22: libpq-fe.h: No such file or directory
 </screen>
@@ -6524,7 +6713,7 @@ cc -o testprog testprog1.o testprog2.o -L/usr/local/pgsql/lib -lpq
 
      <para>
       Error messages that point to problems in this area could look like
-      the following.
+      the following:
 <screen>
 testlibpq.o: In function `main':
 testlibpq.o(.text+0x60): undefined reference to `PQsetdbLogin'
