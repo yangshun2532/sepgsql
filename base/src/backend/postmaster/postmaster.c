@@ -37,7 +37,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/postmaster/postmaster.c,v 1.577 2009/04/05 04:19:58 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/postmaster/postmaster.c,v 1.581 2009/05/05 19:59:00 tgl Exp $
  *
  * NOTES
  *
@@ -135,28 +135,22 @@
  * Also, "dead_end" children are in it: these are children launched just
  * for the purpose of sending a friendly rejection message to a would-be
  * client.	We must track them because they are attached to shared memory,
- * but we know they will never become live backends.
+ * but we know they will never become live backends.  dead_end children are
+ * not assigned a PMChildSlot.
  */
 typedef struct bkend
 {
 	pid_t		pid;			/* process id of backend */
 	long		cancel_key;		/* cancel key for cancels for this backend */
+	int			child_slot;		/* PMChildSlot for this backend, if any */
 	bool		is_autovacuum;	/* is it an autovacuum process? */
 	bool		dead_end;		/* is it going to send an error and quit? */
+	Dlelem		elem;			/* list link in BackendList */
 } Backend;
 
 static Dllist *BackendList;
 
 #ifdef EXEC_BACKEND
-/*
- * Number of entries in the shared-memory backend table.  This table is used
- * only for sending cancels, and therefore only includes children we allow
- * cancels on: regular backends and autovac workers.  In particular we exclude
- * dead_end children, allowing the table to have a known maximum size, to wit
- * the same too-many-children limit enforced by canAcceptConnections().
- */
-#define NUM_BACKENDARRAY_ELEMS (2*MaxBackends)
-
 static Backend *ShmemBackendArray;
 #endif
 
@@ -315,6 +309,7 @@ extern int	optreset;			/* might not be declared by system headers */
 /*
  * postmaster.c - function prototypes
  */
+static void getInstallationPaths(const char *argv0);
 static void checkDataDir(void);
 
 #ifdef USE_BONJOUR
@@ -402,6 +397,7 @@ typedef struct
 	char		DataDir[MAXPGPATH];
 	int			ListenSocket[MAXLISTEN];
 	long		MyCancelKey;
+	int			MyPMChildSlot;
 	unsigned long UsedShmemSegID;
 	void	   *UsedShmemSegAddr;
 	slock_t    *ShmemLock;
@@ -411,6 +407,7 @@ typedef struct
 	slock_t    *ProcStructLock;
 	PROC_HDR   *ProcGlobal;
 	PGPROC	   *AuxiliaryProcs;
+	PMSignalData *PMSignalState;
 	InheritableSocket pgStatSock;
 	pid_t		PostmasterPid;
 	TimestampTz PgStartTime;
@@ -441,7 +438,7 @@ static bool save_backend_variables(BackendParameters * param, Port *port,
 #endif
 
 static void ShmemBackendArrayAdd(Backend *bn);
-static void ShmemBackendArrayRemove(pid_t pid);
+static void ShmemBackendArrayRemove(Backend *bn);
 #endif   /* EXEC_BACKEND */
 
 #define StartupDataBase()		StartChildProcess(StartupProcess)
@@ -493,11 +490,8 @@ PostmasterMain(int argc, char *argv[])
 											  ALLOCSET_DEFAULT_MAXSIZE);
 	MemoryContextSwitchTo(PostmasterContext);
 
-	if (find_my_exec(argv[0], my_exec_path) < 0)
-		elog(FATAL, "%s: could not locate my own executable path",
-			 argv[0]);
-
-	get_pkglib_path(my_exec_path, pkglib_path);
+	/* Initialize paths to installation files */
+	getInstallationPaths(argv[0]);
 
 	/*
 	 * Options setup
@@ -689,15 +683,6 @@ PostmasterMain(int argc, char *argv[])
 					 progname);
 		ExitPostmaster(1);
 	}
-
-#ifdef EXEC_BACKEND
-	/* Locate executable backend before we change working directory */
-	if (find_other_exec(argv[0], "postgres", PG_BACKEND_VERSIONSTR,
-						postgres_exec_path) < 0)
-		ereport(FATAL,
-				(errmsg("%s: could not locate matching postgres executable",
-						progname)));
-#endif
 
 	/*
 	 * Locate the proper configuration files and data directory, and read
@@ -1059,6 +1044,58 @@ PostmasterMain(int argc, char *argv[])
 	ExitPostmaster(status != STATUS_OK);
 
 	return 0;					/* not reached */
+}
+
+
+/*
+ * Compute and check the directory paths to files that are part of the
+ * installation (as deduced from the postgres executable's own location)
+ */
+static void
+getInstallationPaths(const char *argv0)
+{
+	DIR		   *pdir;
+
+	/* Locate the postgres executable itself */
+	if (find_my_exec(argv0, my_exec_path) < 0)
+		elog(FATAL, "%s: could not locate my own executable path", argv0);
+
+#ifdef EXEC_BACKEND
+	/* Locate executable backend before we change working directory */
+	if (find_other_exec(argv0, "postgres", PG_BACKEND_VERSIONSTR,
+						postgres_exec_path) < 0)
+		ereport(FATAL,
+				(errmsg("%s: could not locate matching postgres executable",
+						argv0)));
+#endif
+
+	/*
+	 * Locate the pkglib directory --- this has to be set early in case we try
+	 * to load any modules from it in response to postgresql.conf entries.
+	 */
+	get_pkglib_path(my_exec_path, pkglib_path);
+
+	/*
+	 * Verify that there's a readable directory there; otherwise the
+	 * Postgres installation is incomplete or corrupt.  (A typical cause
+	 * of this failure is that the postgres executable has been moved or
+	 * hardlinked to some directory that's not a sibling of the installation
+	 * lib/ directory.)
+	 */
+	pdir = AllocateDir(pkglib_path);
+	if (pdir == NULL)
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 errmsg("could not open directory \"%s\": %m",
+						pkglib_path),
+				 errhint("This may indicate an incomplete PostgreSQL installation, or that the file \"%s\" has been moved away from its proper location.",
+						 my_exec_path)));
+	FreeDir(pdir);
+
+	/*
+	 * XXX is it worth similarly checking the share/ directory?  If the
+	 * lib/ directory is there, then share/ probably is too.
+	 */
 }
 
 
@@ -1729,7 +1766,7 @@ processCancelRequest(Port *port, void *pkt)
 	{
 		bp = (Backend *) DLE_VAL(curr);
 #else
-	for (i = 0; i < NUM_BACKENDARRAY_ELEMS; i++)
+	for (i = MaxLivePostmasterChildren() - 1; i >= 0; i--)
 	{
 		bp = (Backend *) &ShmemBackendArray[i];
 #endif
@@ -1794,10 +1831,10 @@ canAcceptConnections(void)
 	 * MaxBackends limit is enforced when a new backend tries to join the
 	 * shared-inval backend array.
 	 *
-	 * In the EXEC_BACKEND case, the limit here must match the size of the
-	 * ShmemBackendArray, since all these processes will have cancel codes.
+	 * The limit here must match the sizes of the per-child-process arrays;
+	 * see comments for MaxLivePostmasterChildren().
 	 */
-	if (CountChildren() >= 2 * MaxBackends)
+	if (CountChildren() >= MaxLivePostmasterChildren())
 		return CAC_TOOMANY;
 
 	return CAC_OK;
@@ -2397,8 +2434,8 @@ CleanupBackend(int pid,
 	/*
 	 * If a backend dies in an ugly way then we must signal all other backends
 	 * to quickdie.  If exit status is zero (normal) or one (FATAL exit), we
-	 * assume everything is all right and simply remove the backend from the
-	 * active backend list.
+	 * assume everything is all right and proceed to remove the backend from
+	 * the active backend list.
 	 */
 	if (!EXIT_STATUS_0(exitstatus) && !EXIT_STATUS_1(exitstatus))
 	{
@@ -2412,13 +2449,23 @@ CleanupBackend(int pid,
 
 		if (bp->pid == pid)
 		{
-#ifdef EXEC_BACKEND
 			if (!bp->dead_end)
-				ShmemBackendArrayRemove(pid);
+			{
+				if (!ReleasePostmasterChildSlot(bp->child_slot))
+				{
+					/*
+					 * Uh-oh, the child failed to clean itself up.  Treat
+					 * as a crash after all.
+					 */
+					HandleChildCrash(pid, exitstatus, _("server process"));
+					return;
+				}
+#ifdef EXEC_BACKEND
+				ShmemBackendArrayRemove(bp);
 #endif
+			}
 			DLRemove(curr);
 			free(bp);
-			DLFreeElem(curr);
 			break;
 		}
 	}
@@ -2459,13 +2506,15 @@ HandleChildCrash(int pid, int exitstatus, const char *procname)
 			/*
 			 * Found entry for freshly-dead backend, so remove it.
 			 */
-#ifdef EXEC_BACKEND
 			if (!bp->dead_end)
-				ShmemBackendArrayRemove(pid);
+			{
+				(void) ReleasePostmasterChildSlot(bp->child_slot);
+#ifdef EXEC_BACKEND
+				ShmemBackendArrayRemove(bp);
 #endif
+			}
 			DLRemove(curr);
 			free(bp);
-			DLFreeElem(curr);
 			/* Keep looping so we can signal remaining backends */
 		}
 		else
@@ -2891,14 +2940,7 @@ BackendStartup(Port *port)
 	pid_t		pid;
 
 	/*
-	 * Compute the cancel key that will be assigned to this backend. The
-	 * backend will have its own copy in the forked-off process' value of
-	 * MyCancelKey, so that it can transmit the key to the frontend.
-	 */
-	MyCancelKey = PostmasterRandom();
-
-	/*
-	 * Make room for backend data structure.  Better before the fork() so we
+	 * Create backend data structure.  Better before the fork() so we
 	 * can handle failure cleanly.
 	 */
 	bn = (Backend *) malloc(sizeof(Backend));
@@ -2910,8 +2952,26 @@ BackendStartup(Port *port)
 		return STATUS_ERROR;
 	}
 
+	/*
+	 * Compute the cancel key that will be assigned to this backend. The
+	 * backend will have its own copy in the forked-off process' value of
+	 * MyCancelKey, so that it can transmit the key to the frontend.
+	 */
+	MyCancelKey = PostmasterRandom();
+	bn->cancel_key = MyCancelKey;
+
 	/* Pass down canAcceptConnections state */
 	port->canAcceptConnections = canAcceptConnections();
+	bn->dead_end = (port->canAcceptConnections != CAC_OK &&
+					port->canAcceptConnections != CAC_WAITBACKUP);
+
+	/*
+	 * Unless it's a dead_end child, assign it a child slot number
+	 */
+	if (!bn->dead_end)
+		bn->child_slot = MyPMChildSlot = AssignPostmasterChildSlot();
+	else
+		bn->child_slot = 0;
 
 #ifdef EXEC_BACKEND
 	pid = backend_forkexec(port);
@@ -2969,11 +3029,9 @@ BackendStartup(Port *port)
 	 * of backends.
 	 */
 	bn->pid = pid;
-	bn->cancel_key = MyCancelKey;
 	bn->is_autovacuum = false;
-	bn->dead_end = (port->canAcceptConnections != CAC_OK &&
-					port->canAcceptConnections != CAC_WAITBACKUP);
-	DLAddHead(BackendList, DLNewElem(bn));
+	DLInitElem(&bn->elem, bn);
+	DLAddHead(BackendList, &bn->elem);
 #ifdef EXEC_BACKEND
 	if (!bn->dead_end)
 		ShmemBackendArrayAdd(bn);
@@ -4230,24 +4288,28 @@ StartAutovacuumWorker(void)
 	 */
 	if (canAcceptConnections() == CAC_OK)
 	{
-		/*
-		 * Compute the cancel key that will be assigned to this session. We
-		 * probably don't need cancel keys for autovac workers, but we'd
-		 * better have something random in the field to prevent unfriendly
-		 * people from sending cancels to them.
-		 */
-		MyCancelKey = PostmasterRandom();
-
 		bn = (Backend *) malloc(sizeof(Backend));
 		if (bn)
 		{
+			/*
+			 * Compute the cancel key that will be assigned to this session. We
+			 * probably don't need cancel keys for autovac workers, but we'd
+			 * better have something random in the field to prevent unfriendly
+			 * people from sending cancels to them.
+			 */
+			MyCancelKey = PostmasterRandom();
+			bn->cancel_key = MyCancelKey;
+
+			/* Autovac workers are not dead_end and need a child slot */
+			bn->dead_end = false;
+			bn->child_slot = MyPMChildSlot = AssignPostmasterChildSlot();
+
 			bn->pid = StartAutoVacWorker();
 			if (bn->pid > 0)
 			{
-				bn->cancel_key = MyCancelKey;
 				bn->is_autovacuum = true;
-				bn->dead_end = false;
-				DLAddHead(BackendList, DLNewElem(bn));
+				DLInitElem(&bn->elem, bn);
+				DLAddHead(BackendList, &bn->elem);
 #ifdef EXEC_BACKEND
 				ShmemBackendArrayAdd(bn);
 #endif
@@ -4311,6 +4373,24 @@ CreateOptsFile(int argc, char *argv[], char *fullprogname)
 }
 
 
+/*
+ * MaxLivePostmasterChildren
+ *
+ * This reports the number of entries needed in per-child-process arrays
+ * (the PMChildFlags array, and if EXEC_BACKEND the ShmemBackendArray).
+ * These arrays include regular backends and autovac workers, but not special
+ * children nor dead_end children.  This allows the arrays to have a fixed
+ * maximum size, to wit the same too-many-children limit enforced by
+ * canAcceptConnections().  The exact value isn't too critical as long as
+ * it's more than MaxBackends.
+ */
+int
+MaxLivePostmasterChildren(void)
+{
+	return 2 * MaxBackends;
+}
+
+
 #ifdef EXEC_BACKEND
 
 /*
@@ -4322,6 +4402,7 @@ extern LWLock *LWLockArray;
 extern slock_t *ProcStructLock;
 extern PROC_HDR *ProcGlobal;
 extern PGPROC *AuxiliaryProcs;
+extern PMSignalData *PMSignalState;
 extern int	pgStatSock;
 
 #ifndef WIN32
@@ -4353,6 +4434,7 @@ save_backend_variables(BackendParameters * param, Port *port,
 	memcpy(&param->ListenSocket, &ListenSocket, sizeof(ListenSocket));
 
 	param->MyCancelKey = MyCancelKey;
+	param->MyPMChildSlot = MyPMChildSlot;
 
 	param->UsedShmemSegID = UsedShmemSegID;
 	param->UsedShmemSegAddr = UsedShmemSegAddr;
@@ -4365,6 +4447,7 @@ save_backend_variables(BackendParameters * param, Port *port,
 	param->ProcStructLock = ProcStructLock;
 	param->ProcGlobal = ProcGlobal;
 	param->AuxiliaryProcs = AuxiliaryProcs;
+	param->PMSignalState = PMSignalState;
 	write_inheritable_socket(&param->pgStatSock, pgStatSock, childPid);
 
 	param->PostmasterPid = PostmasterPid;
@@ -4559,6 +4642,7 @@ restore_backend_variables(BackendParameters * param, Port *port)
 	memcpy(&ListenSocket, &param->ListenSocket, sizeof(ListenSocket));
 
 	MyCancelKey = param->MyCancelKey;
+	MyPMChildSlot = param->MyPMChildSlot;
 
 	UsedShmemSegID = param->UsedShmemSegID;
 	UsedShmemSegAddr = param->UsedShmemSegAddr;
@@ -4571,6 +4655,7 @@ restore_backend_variables(BackendParameters * param, Port *port)
 	ProcStructLock = param->ProcStructLock;
 	ProcGlobal = param->ProcGlobal;
 	AuxiliaryProcs = param->AuxiliaryProcs;
+	PMSignalState = param->PMSignalState;
 	read_inheritable_socket(&pgStatSock, &param->pgStatSock);
 
 	PostmasterPid = param->PostmasterPid;
@@ -4600,7 +4685,7 @@ restore_backend_variables(BackendParameters * param, Port *port)
 Size
 ShmemBackendArraySize(void)
 {
-	return mul_size(NUM_BACKENDARRAY_ELEMS, sizeof(Backend));
+	return mul_size(MaxLivePostmasterChildren(), sizeof(Backend));
 }
 
 void
@@ -4616,41 +4701,23 @@ ShmemBackendArrayAllocation(void)
 static void
 ShmemBackendArrayAdd(Backend *bn)
 {
-	int			i;
+	/* The array slot corresponding to my PMChildSlot should be free */
+	int			i = bn->child_slot - 1;
 
-	/* Find an empty slot */
-	for (i = 0; i < NUM_BACKENDARRAY_ELEMS; i++)
-	{
-		if (ShmemBackendArray[i].pid == 0)
-		{
-			ShmemBackendArray[i] = *bn;
-			return;
-		}
-	}
-
-	ereport(FATAL,
-			(errmsg_internal("no free slots in shmem backend array")));
+	Assert(ShmemBackendArray[i].pid == 0);
+	ShmemBackendArray[i] = *bn;
 }
 
 static void
-ShmemBackendArrayRemove(pid_t pid)
+ShmemBackendArrayRemove(Backend *bn)
 {
-	int			i;
+	int			i = bn->child_slot - 1;
 
-	for (i = 0; i < NUM_BACKENDARRAY_ELEMS; i++)
-	{
-		if (ShmemBackendArray[i].pid == pid)
-		{
-			/* Mark the slot as empty */
-			ShmemBackendArray[i].pid = 0;
-			return;
-		}
-	}
-
-	ereport(WARNING,
-			(errmsg_internal("could not find backend entry with pid %d",
-							 (int) pid)));
+	Assert(ShmemBackendArray[i].pid == bn->pid);
+	/* Mark the slot as empty */
+	ShmemBackendArray[i].pid = 0;
 }
+
 #endif   /* EXEC_BACKEND */
 
 
