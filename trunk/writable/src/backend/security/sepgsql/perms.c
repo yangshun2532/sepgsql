@@ -132,6 +132,21 @@ static struct
 		}
 	},
 	{
+		"db_schema_temp",		SEPG_CLASS_DB_SCHEMA_TEMP,
+		{
+			{ "create",			SEPG_DB_SCHEMA_TEMP__CREATE },
+			{ "drop",			SEPG_DB_SCHEMA_TEMP__DROP},
+			{ "getattr",		SEPG_DB_SCHEMA_TEMP__GETATTR },
+			{ "setattr",		SEPG_DB_SCHEMA_TEMP__SETATTR },
+			{ "relabelfrom",	SEPG_DB_SCHEMA_TEMP__RELABELFROM },
+			{ "relabelto",		SEPG_DB_SCHEMA_TEMP__RELABELTO },
+			{ "search",			SEPG_DB_SCHEMA_TEMP__SEARCH },
+			{ "add_object",		SEPG_DB_SCHEMA_TEMP__ADD_OBJECT },
+			{ "remove_object",	SEPG_DB_SCHEMA_TEMP__REMOVE_OBJECT },
+			{ NULL, 0UL },
+		}
+	},
+	{
 		"db_table",				SEPG_CLASS_DB_TABLE,
 		{
 			{ "create",			SEPG_DB_TABLE__CREATE },
@@ -403,6 +418,7 @@ sepgsqlFileObjectClass(int fdesc)
 security_class_t
 sepgsqlTupleObjectClass(Oid relid, HeapTuple tuple)
 {
+	Form_pg_namespace nspForm;
 	Form_pg_class clsForm;
 	Form_pg_attribute attForm;
 
@@ -412,6 +428,10 @@ sepgsqlTupleObjectClass(Oid relid, HeapTuple tuple)
 		return SEPG_CLASS_DB_DATABASE;
 
 	case NamespaceRelationId:
+		nspForm = (Form_pg_namespace) GETSTRUCT(tuple);
+		if (strncmp(NameStr(nspForm->nspname), "pg_temp_", 8) == 0 ||
+			strncmp(NameStr(nspForm->nspname), "pg_toast_temp_", 14) == 0)
+			return SEPG_CLASS_DB_SCHEMA_TEMP;
 		return SEPG_CLASS_DB_SCHEMA;
 
 	case RelationRelationId:

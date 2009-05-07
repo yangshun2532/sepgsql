@@ -20,6 +20,7 @@
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
 #include "security/sepgsql.h"
+#include "storage/fd.h"
 #include "utils/builtins.h"
 #include "utils/memutils.h"
 #include "utils/syscache.h"
@@ -55,10 +56,48 @@ sepgsqlTupleDescHasSecLabel(Relation rel)
  *   assigns a default security context for the newly inserted tuple.
  */
 static Oid
-defaultDatabaseSecLabel(const char *datname)
+defaultDatabaseSecLabel(void)
 {
-	security_context_t	context;
+	security_context_t context;
+	char		filename[MAXPGPATH];
+	char		buffer[512], *ptype, *tmp;
+	FILE	   *filp;
 
+	/*
+	 * NOTE: A special handling is necessary to determine the default
+	 * label for db_database obejct class because it does not have
+	 * its parent object, so we cannot apply normal type transition
+	 * here. At first, it tries to fetch the default context from the
+	 * configuration file of selinux-policy. If it is invalid, we 
+	 * determine it based on only the context of client (compatible
+	 * behavior).
+	 */
+	if (selinux_getpolicytype(&ptype) < 0)
+		goto fallback;
+
+	snprintf(filename, sizeof(filename),
+			 "%s%s/contexts/sepgsql_context", selinux_path(), ptype);
+	filp = AllocateFile(filename, PG_BINARY_R);
+	if (!filp)
+		goto fallback;
+
+	while (fgets(buffer, sizeof(buffer), filp) != NULL)
+	{
+		tmp = strchr(buffer, '#');
+		if (tmp)
+			*tmp = '\0';
+
+		context = strtok(buffer, " \t\n\r");
+		if (!context)
+			continue;
+
+		/* An entry found */
+		FreeFile(filp);
+		return securityLookupSecurityId(context);
+	}
+	FreeFile(filp);
+
+fallback:
 	context = sepgsqlComputeCreate(sepgsqlGetClientLabel(),
 								   sepgsqlGetClientLabel(),
 								   SEPG_CLASS_DB_DATABASE);
@@ -66,7 +105,7 @@ defaultDatabaseSecLabel(const char *datname)
 }
 
 static Oid
-defaultSchemaSecLabel(const char *nspname)
+defaultSchemaSecLabelCommon(security_class_t tclass)
 {
 	HeapTuple	tuple;
 	Oid			newsid;
@@ -76,11 +115,8 @@ defaultSchemaSecLabel(const char *nspname)
 		static Oid cached = InvalidOid;
 
 		if (!OidIsValid(cached))
-		{
-			const char *datname = "template1";
-			cached = sepgsqlClientCreate(defaultDatabaseSecLabel(datname),
-										 SEPG_CLASS_DB_SCHEMA);
-		}
+			cached = sepgsqlClientCreate(defaultDatabaseSecLabel(), tclass);
+
 		return cached;
 	}
 
@@ -90,11 +126,25 @@ defaultSchemaSecLabel(const char *nspname)
 	if (!HeapTupleIsValid(tuple))
 		elog(ERROR, "cache lookup failed for database: %u", MyDatabaseId);
 
-	newsid = sepgsqlClientCreate(HeapTupleGetSecLabel(tuple),
-								 SEPG_CLASS_DB_SCHEMA);
+	newsid = sepgsqlClientCreate(HeapTupleGetSecLabel(tuple), tclass);
+
 	ReleaseSysCache(tuple);
 
 	return newsid;
+
+
+}
+
+static Oid
+defaultSchemaSecLabel(void)
+{
+	return defaultSchemaSecLabelCommon(SEPG_CLASS_DB_SCHEMA);
+}
+
+static Oid
+defaultSchemaTempSecLabel(void)
+{
+	return defaultSchemaSecLabelCommon(SEPG_CLASS_DB_SCHEMA_TEMP);
 }
 
 static Oid
@@ -105,9 +155,12 @@ defaultSecLabelWithSchema(Oid nspoid, security_class_t tclass)
 
 	if (IsBootstrapProcessingMode())
 	{
-		Oid nspsid = defaultSchemaSecLabel("pg_catalog");
+		static Oid cached  = InvalidOid;
 
-		return sepgsqlClientCreate(nspsid, tclass);
+		if (!OidIsValid(cached))
+			cached = defaultSchemaSecLabel();
+
+		return sepgsqlClientCreate(cached, tclass);
 	}
 
 	tuple = SearchSysCache(NAMESPACEOID,
@@ -124,23 +177,20 @@ defaultSecLabelWithSchema(Oid nspoid, security_class_t tclass)
 }
 
 static Oid
-defaultTableSecLabel(Oid nspoid, const char *relname)
+defaultTableSecLabel(Oid nspoid)
 {
-	/* TODO: selabel_lookup(3) here */
 	return defaultSecLabelWithSchema(nspoid, SEPG_CLASS_DB_TABLE);
 }
 
 static Oid
-defaultSequenceSecLabel(Oid nspoid, const char *relname)
+defaultSequenceSecLabel(Oid nspoid)
 {
-	/* TODO: selabel_lookup(3) here */
 	return defaultSecLabelWithSchema(nspoid, SEPG_CLASS_DB_SEQUENCE);
 }
 
 static Oid
-defaultProcedureSecLabel(Oid nspoid, const char *proname)
+defaultProcedureSecLabel(Oid nspoid)
 {
-	/* TODO: selabel_lookup(3) here */
 	return defaultSecLabelWithSchema(nspoid, SEPG_CLASS_DB_PROCEDURE);
 }
 
@@ -148,28 +198,21 @@ static Oid
 defaultSecLabelWithTable(Oid relid, security_class_t tclass)
 {
 	HeapTuple	tuple;
-	Oid			relsid = InvalidOid;
+	Oid			relsid;
 
-	if (IsBootstrapProcessingMode())
+	if (IsBootstrapProcessingMode()
+		&& (relid == TypeRelationId ||
+			relid == ProcedureRelationId ||
+			relid == AttributeRelationId ||
+			relid == RelationRelationId))
 	{
-		switch (relid)
-		{
-		case TypeRelationId:
-			relsid = defaultTableSecLabel(PG_CATALOG_NAMESPACE, "pg_type");
-			break;
-		case ProcedureRelationId:
-			relsid = defaultTableSecLabel(PG_CATALOG_NAMESPACE, "pg_proc");
-			break;
-		case AttributeRelationId:
-			relsid = defaultTableSecLabel(PG_CATALOG_NAMESPACE, "pg_attribute");
-			break;
-		case RelationRelationId:
-			relsid = defaultTableSecLabel(PG_CATALOG_NAMESPACE, "pg_class");
-			break;
-		}
-	}
+		static Oid cached = InvalidOid;
 
-	if (!OidIsValid(relsid))
+		if (!OidIsValid(cached))
+			cached = defaultTableSecLabel(PG_CATALOG_NAMESPACE);
+		relsid = cached;
+	}
+	else
 	{
 		tuple = SearchSysCache(RELOID,
 							   ObjectIdGetDatum(relid),
@@ -186,7 +229,7 @@ defaultSecLabelWithTable(Oid relid, security_class_t tclass)
 }
 
 static Oid
-defaultColumnSecLabel(Oid relid, const char *attname)
+defaultColumnSecLabel(Oid relid)
 {
 	return defaultSecLabelWithTable(relid, SEPG_CLASS_DB_COLUMN);
 }
@@ -200,8 +243,6 @@ defaultTupleSecLabel(Oid relid)
 extern void
 sepgsqlSetDefaultSecLabel(Relation rel, HeapTuple tuple)
 {
-	Form_pg_database	datForm;
-	Form_pg_namespace	nspForm;
 	Form_pg_class		clsForm;
 	Form_pg_proc		proForm;
 	Form_pg_attribute	attForm;
@@ -213,37 +254,35 @@ sepgsqlSetDefaultSecLabel(Relation rel, HeapTuple tuple)
 	switch (sepgsqlTupleObjectClass(relid, tuple))
 	{
 	case SEPG_CLASS_DB_DATABASE:
-		datForm = (Form_pg_database) GETSTRUCT(tuple);
-		newsid = defaultDatabaseSecLabel(NameStr(datForm->datname));
+		newsid = defaultDatabaseSecLabel();
 		break;
 
 	case SEPG_CLASS_DB_SCHEMA:
-		nspForm = (Form_pg_namespace) GETSTRUCT(tuple);
-		newsid = defaultSchemaSecLabel(NameStr(nspForm->nspname));
+		newsid = defaultSchemaSecLabel();
+		break;
+
+	case SEPG_CLASS_DB_SCHEMA_TEMP:
+		newsid = defaultSchemaTempSecLabel();
 		break;
 
 	case SEPG_CLASS_DB_TABLE:
 		clsForm = (Form_pg_class) GETSTRUCT(tuple);
-		newsid = defaultTableSecLabel(clsForm->relnamespace,
-									  NameStr(clsForm->relname));
+		newsid = defaultTableSecLabel(clsForm->relnamespace);
 		break;
 
 	case SEPG_CLASS_DB_SEQUENCE:
 		clsForm = (Form_pg_class) GETSTRUCT(tuple);
-		newsid = defaultSequenceSecLabel(clsForm->relnamespace,
-										 NameStr(clsForm->relname));
+		newsid = defaultSequenceSecLabel(clsForm->relnamespace);
 		break;
 
 	case SEPG_CLASS_DB_PROCEDURE:
 		proForm = (Form_pg_proc) GETSTRUCT(tuple);
-		newsid = defaultProcedureSecLabel(proForm->pronamespace,
-										  NameStr(proForm->proname));
+		newsid = defaultProcedureSecLabel(proForm->pronamespace);
 		break;
 
 	case SEPG_CLASS_DB_COLUMN:
 		attForm = (Form_pg_attribute) GETSTRUCT(tuple);
-		newsid = defaultColumnSecLabel(attForm->attrelid,
-									   NameStr(attForm->attname));
+		newsid = defaultColumnSecLabel(attForm->attrelid);
 		break;
 
 	default: /* SEPG_CLASS_DB_TUPLE */
