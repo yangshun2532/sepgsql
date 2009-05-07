@@ -77,10 +77,11 @@ sepgsqlCheckDatabaseSuperuser(void)
  *   implemented.
  */
 static bool
-sepgsqlCheckSchemaCommon(Oid nsid, access_vector_t required)
+sepgsqlCheckSchemaCommon(Oid nsid, access_vector_t required, bool abort)
 {
-	const char *audit_name;
-	HeapTuple tuple;
+	const char		   *audit_name;
+	security_class_t	tclass;
+	HeapTuple			tuple;
 	bool rc;
 
 	tuple = SearchSysCache(NAMESPACEOID,
@@ -90,9 +91,9 @@ sepgsqlCheckSchemaCommon(Oid nsid, access_vector_t required)
 		elog(ERROR, "cache lookup failed for namespace: %u", nsid);
 
 	audit_name = sepgsqlAuditName(NamespaceRelationId, tuple);
-	elog(NOTICE, "%s for %s", __FUNCTION__, audit_name);
+	tclass = sepgsqlTupleObjectClass(NamespaceRelationId, tuple);
 	rc = sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
-							   SEPG_CLASS_DB_SCHEMA,
+							   tclass,
 							   required,
 							   audit_name, false);
 	ReleaseSysCache(tuple);
@@ -102,7 +103,7 @@ sepgsqlCheckSchemaCommon(Oid nsid, access_vector_t required)
 
 bool sepgsqlCheckSchemaSearch(Oid nsid)
 {
-	return sepgsqlCheckSchemaCommon(nsid, SEPG_DB_SCHEMA__SEARCH);
+	return sepgsqlCheckSchemaCommon(nsid, SEPG_DB_SCHEMA__SEARCH, false);
 }
 
 /*
