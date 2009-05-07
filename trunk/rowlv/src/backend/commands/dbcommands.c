@@ -13,7 +13,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/commands/dbcommands.c,v 1.222 2009/04/23 17:39:21 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/commands/dbcommands.c,v 1.224 2009/05/06 16:15:21 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -342,10 +342,12 @@ createdb(const CreatedbStmt *stmt)
 				 errmsg("invalid locale name %s", dbctype)));
 
 	/*
-	 * Check whether encoding matches server locale settings.  We allow
-	 * mismatch in three cases:
+	 * Check whether chosen encoding matches chosen locale settings.  This
+	 * restriction is necessary because libc's locale-specific code usually
+	 * fails when presented with data in an encoding it's not expecting.
+	 * We allow mismatch in three cases:
 	 *
-	 * 1. ctype_encoding = SQL_ASCII, which means either that the locale is
+	 * 1. locale encoding = SQL_ASCII, which means either that the locale is
 	 * C/POSIX which works with any encoding, or that we couldn't determine
 	 * the locale's encoding and have to trust the user to get it right.
 	 *
@@ -369,7 +371,8 @@ createdb(const CreatedbStmt *stmt)
 #endif
 		  (encoding == PG_SQL_ASCII && superuser())))
 		ereport(ERROR,
-				(errmsg("encoding %s does not match locale %s",
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("encoding %s does not match locale %s",
 						pg_encoding_to_char(encoding),
 						dbctype),
 			 errdetail("The chosen LC_CTYPE setting requires encoding %s.",
@@ -382,29 +385,45 @@ createdb(const CreatedbStmt *stmt)
 #endif
 		  (encoding == PG_SQL_ASCII && superuser())))
 		ereport(ERROR,
-				(errmsg("encoding %s does not match locale %s",
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("encoding %s does not match locale %s",
 						pg_encoding_to_char(encoding),
 						dbcollate),
 			 errdetail("The chosen LC_COLLATE setting requires encoding %s.",
 					   pg_encoding_to_char(collate_encoding))));
 
 	/*
-	 * Check that the new locale is compatible with the source database.
+	 * Check that the new encoding and locale settings match the source
+	 * database.  We insist on this because we simply copy the source data ---
+	 * any non-ASCII data would be wrongly encoded, and any indexes sorted
+	 * according to the source locale would be wrong.
 	 *
-	 * We know that template0 doesn't contain any indexes that depend on
-	 * collation or ctype, so template0 can be used as template for
-	 * any locale.
+	 * However, we assume that template0 doesn't contain any non-ASCII data
+	 * nor any indexes that depend on collation or ctype, so template0 can be
+	 * used as template for creating a database with any encoding or locale.
 	 */
 	if (strcmp(dbtemplate, "template0") != 0)
 	{
+		if (encoding != src_encoding)
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg("new encoding (%s) is incompatible with the encoding of the template database (%s)",
+							pg_encoding_to_char(encoding),
+							pg_encoding_to_char(src_encoding)),
+					 errhint("Use the same encoding as in the template database, or use template0 as template.")));
+
 		if (strcmp(dbcollate, src_collate) != 0)
 			ereport(ERROR,
-					(errmsg("new collation is incompatible with the collation of the template database (%s)", src_collate),
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg("new collation (%s) is incompatible with the collation of the template database (%s)",
+							dbcollate, src_collate),
 					 errhint("Use the same collation as in the template database, or use template0 as template.")));
 
 		if (strcmp(dbctype, src_ctype) != 0)
 			ereport(ERROR,
-					(errmsg("new LC_CTYPE is incompatible with LC_CTYPE of the template database (%s)", src_ctype),
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg("new LC_CTYPE (%s) is incompatible with the LC_CTYPE of the template database (%s)",
+							dbctype, src_ctype),
 					 errhint("Use the same LC_CTYPE as in the template database, or use template0 as template.")));
 	}
 
@@ -1118,7 +1137,8 @@ movedb(const char *dbname, const char *tblspcname)
 				continue;
 
 			ereport(ERROR,
-					(errmsg("some relations of database \"%s\" are already in tablespace \"%s\"",
+					(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+					 errmsg("some relations of database \"%s\" are already in tablespace \"%s\"",
 							dbname, tblspcname),
 					 errhint("You must move them back to the database's default tablespace before using this command.")));
 		}
