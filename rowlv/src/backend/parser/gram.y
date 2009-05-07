@@ -11,7 +11,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/parser/gram.y,v 2.662 2009/04/06 08:42:52 heikki Exp $
+ *	  $PostgreSQL: pgsql/src/backend/parser/gram.y,v 2.663 2009/04/28 09:09:41 heikki Exp $
  *
  * HISTORY
  *	  AUTHOR			DATE			MAJOR EVENT
@@ -10367,7 +10367,6 @@ unreserved_keyword:
 			| ROWS
 			| RULE
 			| SAVEPOINT
-			| SERVER
 			| SCHEMA
 			| SCROLL
 			| SEARCH
@@ -10375,6 +10374,7 @@ unreserved_keyword:
 			| SECURITY
 			| SEQUENCE
 			| SERIALIZABLE
+			| SERVER
 			| SESSION
 			| SET
 			| SHARE
