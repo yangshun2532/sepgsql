@@ -1,4 +1,4 @@
-policy_module(mod_selinux, 2.0)
+policy_module(mod_selinux, 2.2)
 
 # ------------------------------------------
 # Apache/SELinux plus security policy module
@@ -9,25 +9,19 @@ policy_module(mod_selinux, 2.0)
 # Declarations
 #
 
-gen_require(`
-	type httpd_t;
-	type httpd_config_t;
-	type httpd_log_t;
-	type httpd_sys_content_t;
-')
+# domains to perform as a web server process
+attribute httpd_server_domains;
 
-attribute webapp_type;
-
-# Anonymous web-application handler
+# domains for unauthorized clients
 type anon_webapp_t;
 domain_type(anon_webapp_t)
-webapp_base_domain(anon_webapp_t)
+apache_base_webapp(anon_webapp_t)
 
-# Authenticated web-application handler
+# domains for authorized clients
 type user_webapp_t;
 domain_type(user_webapp_t)
-webapp_base_domain(user_webapp_t)
-webapp_content_template(user, user_webapp_t)
+apache_base_webapp(user_webapp_t)
+apache_user_webapp(user, user_webapp_t)
 
 ########################################
 #
@@ -35,7 +29,13 @@ webapp_content_template(user, user_webapp_t)
 #  (todo: it should be moved to apache.te)
 #
 
+gen_require(`
+	type httpd_t;
+')
+
 allow httpd_t self : process { setcurrent };
+
+typeattribute httpd_t httpd_server_domains;
 
 optional_policy(`
 	mcs_process_set_categories(httpd_t)
@@ -44,90 +44,3 @@ optional_policy(`
 optional_policy(`
 	mls_process_set_level(httpd_t)
 ')
-
-########################################
-#
-# Local policy for minimum set of privs
-#
-
-allow webapp_type self:process ~{ ptrace setcurrent setexec setfscreate setrlimit execmem execstack execheap };
-allow webapp_type { httpd_t self }:fd use;
-allow webapp_type { httpd_t self }:sock_file read_sock_file_perms;
-allow webapp_type { httpd_t self }:fifo_file rw_fifo_file_perms;
-allow webapp_type { httpd_t self }:shm create_shm_perms;
-allow webapp_type { httpd_t self }:msgq create_msgq_perms;
-allow webapp_type { httpd_t self }:msg { send receive };
-allow webapp_type { httpd_t self }:unix_dgram_socket { create_socket_perms sendto };
-allow webapp_type { httpd_t self }:unix_stream_socket { create_socket_perms connectto };
-allow webapp_type { httpd_t self }:tcp_socket create_socket_perms;
-allow webapp_type { httpd_t self }:udp_socket create_socket_perms;
-
-# Allow the webapp_type to read the web servers config files
-allow webapp_type httpd_config_t:dir list_dir_perms;
-read_files_pattern(webapp_type, httpd_config_t, httpd_config_t)
-read_lnk_files_pattern(webapp_type, httpd_config_t, httpd_config_t)
-
-# Allow the webapp_type to append the load file
-allow webapp_type httpd_log_t:dir setattr;
-append_files_pattern(webapp_type, httpd_log_t, httpd_log_t)
-read_files_pattern(webapp_type, httpd_log_t, httpd_log_t)
-read_lnk_files_pattern(webapp_type, httpd_log_t, httpd_log_t)
-
-# Core-network stuff
-corenet_all_recvfrom_unlabeled(webapp_type)
-corenet_all_recvfrom_netlabel(webapp_type)
-corenet_tcp_sendrecv_generic_if(webapp_type)
-corenet_udp_sendrecv_generic_if(webapp_type)
-corenet_tcp_sendrecv_generic_node(webapp_type)
-corenet_udp_sendrecv_generic_node(webapp_type)
-corenet_tcp_sendrecv_all_ports(webapp_type)
-corenet_udp_sendrecv_all_ports(webapp_type)
-corenet_tcp_bind_generic_node(webapp_type)
-corenet_tcp_bind_http_port(webapp_type)
-corenet_tcp_bind_http_cache_port(webapp_type)
-corenet_sendrecv_http_server_packets(webapp_type)
-# Signal self for shutdown
-corenet_tcp_connect_http_port(webapp_type)
-
-# Pseudo file systems
-search_dirs_pattern(webapp_type,httpd_t,httpd_t)
-kernel_read_kernel_sysctls(webapp_type)
-kernel_read_system_state(webapp_type)
-dev_read_sysfs(webapp_type)
-dev_read_rand(webapp_type)
-dev_read_urand(webapp_type)
-dev_rw_crypto(webapp_type)
-
-# Basuc file system
-files_read_usr_files(webapp_type)
-files_list_mnt(webapp_type)
-files_search_spool(webapp_type)
-files_read_var_lib_files(webapp_type)
-files_search_home(webapp_type)
-files_getattr_home_dir(webapp_type)
-# for modules that want to access /etc/mtab
-files_read_etc_runtime_files(webapp_type)
-# Allow httpd_t to have access to files such as nisswitch.conf
-files_read_etc_files(webapp_type)
-# for tomcat
-files_read_var_lib_symlinks(webapp_type)
-
-libs_read_lib_files(webapp_type)
-
-logging_send_syslog_msg(webapp_type)
-
-miscfiles_read_localization(webapp_type)
-miscfiles_read_fonts(webapp_type)
-miscfiles_read_public_files(webapp_type)
-miscfiles_read_certs(webapp_type)
-
-seutil_dontaudit_search_config(webapp_type)
-
-userdom_use_unpriv_users_fds(webapp_type)
-
-#
-# Read access to httpd_sys_content_t
-#
-allow webapp_type httpd_sys_content_t:dir list_dir_perms;
-read_files_pattern(webapp_type, httpd_sys_content_t, httpd_sys_content_t)
-read_lnk_files_pattern(webapp_type, httpd_sys_content_t, httpd_sys_content_t)
