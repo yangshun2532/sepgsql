@@ -26,6 +26,7 @@ install: install-modules-yes
 #   cleanup
 clean:
 	-rm -f mod_selinux.o mod_selinux.lo mod_selinux.slo mod_selinux.la
+	-rm -f mod_authn_sepgsql.o mod_authn_sepgsql.lo mod_authn_sepgsql.slo mod_authn_sepgsql.la
 	test -e /usr/share/selinux/devel/Makefile && $(MAKE) -f /usr/share/selinux/devel/Makefile clean
 
 #   simple test
