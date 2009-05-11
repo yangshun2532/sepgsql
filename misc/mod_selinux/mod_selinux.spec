@@ -88,7 +88,7 @@ fi
 %doc LICENSE README
 %config(noreplace) %{_sysconfdir}/httpd/conf.d/%{name}.conf
 %config(noreplace) %{_var}/www/%{name}.map
-%{_libdir}/httpd/modules/%{name}.so
+%{_libdir}/httpd/modules/mod_*.so
 %{_datadir}/selinux/*/%{name}.pp
 
 %changelog

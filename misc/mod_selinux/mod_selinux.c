@@ -30,44 +30,54 @@
 #include <selinux/selinux.h>
 #include <selinux/context.h>
 
-typedef struct
+#define SELINUX_MAP_CONTEXT     1
+#define SELINUX_ENV_CONTEXT     2
+#define SELINUX_SET_CONTEXT     3
+
+typedef struct selinux_list selinux_list;
+struct selinux_list
 {
-    char *dirname;
-    char *mapping_file;
-    char *default_context;
-    int   allow_caches;
-    int   allow_keep_alive;
-} selinux_config;
+    selinux_list   *next;
+
+    int             method;
+    char            value[1];
+};
+
+typedef struct selinux_config selinux_config;
+struct selinux_config
+{
+    const char     *dirname;
+    selinux_list   *list;
+    int             allow_caches;
+    int             allow_keep_alive;
+};
 
 module AP_MODULE_DECLARE_DATA selinux_module;
 
 /*
- * selinux_lookup_entry
+ * selinux_map_fixups
  *
  *   It lookups a matched entry from the given configuration file,
- *   and returns it as a cstring allocated on r->pool, if found.
- *   Otherwise, it returns NULL.
+ *   and returns 1 with a copied cstring, if found. Otherwise, it returns 0.
  */
-static char *
-selinux_lookup_entry(request_rec *r, const char *filename)
+static int
+selinux_map_fixups(request_rec *r, const char *filename, char **domain)
 {
     const char *white_space = " \t\r\n";
     ap_configfile_t *filp;
     char buffer[MAX_STRING_LEN];
     apr_status_t status;
-    char *ident, *entry, *mask, *pos;
-    apr_ipsubnet_t *ipsub;
-    int negative, lineno = 0;
+    char *user, *context, *pos;
+    int lineno = 0;
 
     status = ap_pcfg_openfile(&filp, r->pool, filename);
     if (status != APR_SUCCESS) {
         ap_log_rerror(APLOG_MARK, LOG_WARNING, status, r,
                       "Unable to open: %s", filename);
-        return NULL;
+        return -1;
     }
 
     while (ap_cfg_getline(buffer, sizeof(buffer), filp) == 0) {
-        negative = 0;
         lineno++;
 
         /* skip empty line */
@@ -75,83 +85,61 @@ selinux_lookup_entry(request_rec *r, const char *filename)
         if (pos)
             *pos = '\0';
 
-        ident = strtok_r(buffer, white_space, &pos);
-        if (!ident)
+        user = strtok_r(buffer, white_space, &pos);
+        if (!user)
             continue;
-
-        /* if the line begins with '!', it means negative. */
-        if (*ident == '!') {
-            ident++;
-            negative = 1;
-        }
-
-        /* fetch domain and range */
-        entry = strtok_r(NULL, white_space, &pos);
-        if (!entry || strtok_r(NULL, white_space, &pos)) {
+        context = strtok_r(NULL, white_space, &pos);
+        if (!context || strtok_r(NULL, white_space, &pos)) {
             ap_log_rerror(APLOG_MARK, LOG_WARNING, 0, r,
                           "syntax error at %s:%d", filename, lineno);
             continue;
         }
 
-        /* ident is network address? or username? */
-        mask = strchr(ident, '/');
-        if (mask)
-            *mask++ = '\0';
+        if (!strcmp(user, "*") ||
+            (r->user && !strcmp(user, r->user)) ||
+            (!r->user && !strcmp(user, "__anonymous__")))
+        {
+            *domain = apr_pstrdup(r->pool, context);
+            ap_cfg_closefile(filp);
 
-        if (apr_ipsubnet_create(&ipsub, ident, mask, r->pool) == APR_SUCCESS) {
-            if (apr_ipsubnet_test(ipsub, r->connection->remote_addr)) {
-                if (!negative)
-                    goto found;
-            } else if (negative)
-                goto found;
-        }
-        else if (r->user) {
-            if (mask)
-                *--mask = '/';  /* fixup assumption of network address */
-            if (strcmp(r->user, ident) == 0) {
-                if (!negative)
-                    goto found;
-            } else if (negative)
-                goto found;
+            return 1;
         }
     }
     /* not found */
     ap_cfg_closefile(filp);
-    return NULL;
-
-found:
-    ap_cfg_closefile(filp);
-    return apr_pstrdup(r->pool, entry);
+    return 0;
 }
 
 /*
- * selinux_disable_cache
- *   It disables contents caches, if not allowed explicitly.
+ * selinux_env_fixups
+ *
+ *   It returns 1 and copies the required environment variable to the
+ *   caller, if it is already defined. Otherwise, it returns 0.
  */
-static int selinux_disable_cache(request_rec *r)
+static int
+selinux_env_fixups(request_rec *r, const char *envname, char **domain)
 {
-    selinux_config *sconf
-        = ap_get_module_config(r->per_dir_config, &selinux_module);
+    const char *envval
+        = apr_table_get(r->subprocess_env, envname);
 
-    if (sconf && !sconf->allow_caches)
-        r->no_cache = 1;
-
-    return DECLINED;
+    if (envval) {
+        *domain = apr_pstrdup(r->pool, envval);
+        return 1;
+    }
+    return 0;
 }
 
 /*
- * selinux_disable_keep_alive
- *   It disables keep-alive connection, if not allowed explicitly.
+ * selinux_set_fixups
+ *
+ *   It always returns 1 and a copy of the given context. We can use
+ *   it as a default when map/env cannot find any entries.
  */
-static int selinux_disable_keep_alive(request_rec *r)
+static int
+selinux_set_fixups(request_rec *r, const char *context, char **domain)
 {
-    selinux_config *sconf
-        = ap_get_module_config(r->per_dir_config, &selinux_module);
-
-    if (sconf && !sconf->allow_keep_alive)
-        r->connection->keepalive = AP_CONN_CLOSE;
-
-    return DECLINED;
+    *domain = apr_pstrdup(r->pool, context);
+    return 1;
 }
 
 /*
@@ -162,29 +150,42 @@ static int selinux_disable_keep_alive(request_rec *r)
  */
 static int selinux_fixups(request_rec *r)
 {
-    selinux_config *sconf;
     security_context_t old_context;
     security_context_t new_context;
     security_context_t tmp_context;
-    context_t context;
-    const char *entry = NULL;
-    char *domain, *range;
+    context_t          context;
+    selinux_config *sconf;
+    selinux_list   *entry;
+    char           *domain, *range;
+    int             rc = 0;
 
     sconf = ap_get_module_config(r->per_dir_config,
                                  &selinux_module);
-    if (!sconf)
+    if (!sconf || !sconf->list)
         return DECLINED;
 
-    /*
-     * Is there any matched entry or default domain
-     * configured? If not, this module does not anything.
-     */
-    if (sconf->mapping_file)
-        entry = selinux_lookup_entry(r, sconf->mapping_file);
-    if (!entry)
-        entry = sconf->default_context;
-    if (!entry)
-        return DECLINED;  /* no matched and default domain */
+    for (entry = sconf->list; !rc && entry; entry = entry->next)
+    {
+        switch (entry->method)
+        {
+        case SELINUX_MAP_CONTEXT:
+            rc = selinux_map_fixups(r, entry->value, &domain);
+            break;
+        case SELINUX_ENV_CONTEXT:
+            rc = selinux_env_fixups(r, entry->value, &domain);
+            break;
+        default: /* SELINUX_SET_CONTEXT */
+            rc = selinux_set_fixups(r, entry->value, &domain);
+            break;
+        }
+
+        if (rc < 0)
+            return HTTP_INTERNAL_SERVER_ERROR;
+    }
+
+    /* no matched entry */
+    if (rc == 0)
+        return DECLINED;
 
     /*
      * Get the current security context
@@ -200,16 +201,6 @@ static int selinux_fixups(request_rec *r)
     /*
      * Compute a new security context
      */
-    if (!strcasecmp(entry, "auth-module")) {
-        entry = apr_table_get(r->notes, "auth-security-context");
-        if (!entry) {
-            ap_log_rerror(APLOG_MARK, APLOG_ERR, errno, r,
-                          "No \"auth-security-context\" setting");
-            return HTTP_INTERNAL_SERVER_ERROR;
-        }
-    }
-
-    domain = apr_pstrdup(r->pool, entry);
     range = strchr(domain, ':');
     if (range)
         *range++ = '\0';
@@ -264,7 +255,35 @@ static int selinux_fixups(request_rec *r)
     return DECLINED;
 }
 
-#ifndef WITH_MPM_SECURITY
+/*
+ * selinux_disable_cache
+ *   It disables contents caches, if not allowed explicitly.
+ */
+static int selinux_disable_cache(request_rec *r)
+{
+    selinux_config *sconf
+        = ap_get_module_config(r->per_dir_config, &selinux_module);
+
+    if (sconf && !sconf->allow_caches)
+        r->no_cache = 1;
+
+    return DECLINED;
+}
+
+/*
+ * selinux_disable_keep_alive
+ *   It disables keep-alive connection, if not allowed explicitly.
+ */
+static int selinux_disable_keep_alive(request_rec *r)
+{
+    selinux_config *sconf
+        = ap_get_module_config(r->per_dir_config, &selinux_module);
+
+    if (sconf && !sconf->allow_keep_alive)
+        r->connection->keepalive = AP_CONN_CLOSE;
+
+    return DECLINED;
+}
 
 /*
  * selinux_process_connection
@@ -326,9 +345,8 @@ static int selinux_process_connection(conn_rec *c)
 
     return OK;
 }
-#endif /* WITH_MPM_SECURITY */
 
-/* ****************************************
+/* ---------------------------------------
  * Apache/SELinux plus API routines
  */
 static void selinux_hooks(apr_pool_t *p)
@@ -336,10 +354,8 @@ static void selinux_hooks(apr_pool_t *p)
 	if (is_selinux_enabled() < 1)
 		return;
 
-#ifndef WITH_MPM_SECURITY
 	ap_hook_process_connection(selinux_process_connection,
 							   NULL, NULL, APR_HOOK_FIRST);
-#endif
 	ap_hook_post_read_request(selinux_disable_cache,
 							  NULL, NULL, APR_HOOK_MIDDLE);
 	ap_hook_log_transaction(selinux_disable_keep_alive,
@@ -356,8 +372,7 @@ static void *selinux_create_dir(apr_pool_t *p, char *dirname)
                  "selinux: create dir config at %s", dirname);
 
     sconf->dirname = apr_pstrdup(p, dirname);
-	sconf->mapping_file = NULL;
-	sconf->default_context = NULL;
+    sconf->list = NULL;
 	sconf->allow_caches = 0;
     sconf->allow_keep_alive = 0;
 
@@ -365,43 +380,57 @@ static void *selinux_create_dir(apr_pool_t *p, char *dirname)
 }
 
 static const char *
-set_mapping_file(cmd_parms *cmd, void *mconfig, const char *v1)
+set_method_context(cmd_parms *cmd, void *mconfig,
+                   int method, const char *v1)
 {
-	selinux_config *sconf
-		= ap_get_module_config(cmd->context, &selinux_module);
+    selinux_config *sconf = mconfig;
+    selinux_list   *entry, *cur;
 
-	sconf->mapping_file = apr_pstrdup(cmd->pool, v1);
+    entry = apr_palloc(cmd->pool, sizeof(selinux_list) + strlen(v1));
+    entry->next = NULL;
+    entry->method = method;
+    strcpy(entry->value, v1);
 
-	ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, cmd->server,
-				 "selinuxMappingFile = '%s' at '%s'",
-				 v1, sconf->dirname);
-	return NULL;
+    if (!sconf->list)
+    {
+        sconf->list = entry;
+        return NULL;
+    }
+
+    for (cur = sconf->list; cur->next; cur = cur->next);
+
+    cur->next = entry;
+
+    return NULL;
 }
 
 static const char *
-set_default_context(cmd_parms *cmd, void *mconfig, const char *v1)
+set_map_context(cmd_parms *cmd, void *mconfig, const char *v1)
 {
-	selinux_config *sconf
-		= ap_get_module_config(cmd->context, &selinux_module);
+    return set_method_context(cmd, mconfig, SELINUX_MAP_CONTEXT, v1);
+}
 
-	sconf->default_context = apr_pstrdup(cmd->pool, v1);
+static const char *
+set_env_context(cmd_parms *cmd, void *mconfig, const char *v1)
+{
+    return set_method_context(cmd, mconfig, SELINUX_ENV_CONTEXT, v1);
+}
 
-	ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, cmd->server,
-				 "selinuxDefaultContext = '%s' at '%s'",
-				 v1, sconf->dirname);
-	return NULL;
+static const char *
+set_set_context(cmd_parms *cmd, void *mconfig, const char *v1)
+{
+    return set_method_context(cmd, mconfig, SELINUX_SET_CONTEXT, v1);
 }
 
 static const char *
 set_allow_caches(cmd_parms *cmd, void *mconfig, int flag)
 {
-    selinux_config *sconf
-        = ap_get_module_config(cmd->context, &selinux_module);
+    selinux_config *sconf = mconfig;
 
     sconf->allow_caches = flag;
 
     ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, cmd->server,
-                 "selinuxForceCacheDisable = %s at '%s'",
+                 "selinuxAllowCaches = %s at '%s'",
                  flag ? "On" : "Off", sconf->dirname);
     return NULL;
 }
@@ -409,24 +438,26 @@ set_allow_caches(cmd_parms *cmd, void *mconfig, int flag)
 static const char *
 set_allow_keep_alive(cmd_parms *cmd, void *mconfig, int flag)
 {
-    selinux_config *sconf
-        = ap_get_module_config(cmd->context, &selinux_module);
+    selinux_config *sconf = mconfig;
 
     sconf->allow_keep_alive = flag;
 
     ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, cmd->server,
-                 "selinuxForceKeepAliveDisable = %s at '%s'",
+                 "selinuxAllowKeepAlive = %s at '%s'",
                  flag ? "On" : "Off", sconf->dirname);
     return NULL;
 }
 
 static const command_rec selinux_cmds[] = {
-    AP_INIT_TAKE1("selinuxMappingFile",
-                  set_mapping_file, NULL, OR_OPTIONS,
-                  "Apache/SELinux plus mapping file"),
-    AP_INIT_TAKE1("selinuxDefaultContext",
-                  set_default_context, NULL, OR_OPTIONS,
-                  "Apache/SELinux plus default security context"),
+    AP_INIT_TAKE1("selinuxMapContext",
+                  set_map_context, NULL, OR_OPTIONS,
+                  "Set the security context using user/group mapping file"),
+    AP_INIT_TAKE1("selinuxEnvContext",
+                  set_env_context, NULL, OR_OPTIONS,
+                  "Set the security context using environment variable"),
+    AP_INIT_TAKE1("selinuxSetContext",
+                  set_set_context, NULL, OR_OPTIONS,
+                  "Set the security context to perform"),
     AP_INIT_FLAG("selinuxAllowCaches",
                  set_allow_caches, NULL, OR_OPTIONS,
                  "Enables to control availability of contents caches"),

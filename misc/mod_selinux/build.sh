@@ -14,14 +14,15 @@ cat ${BASEDIR}/${NAME}.spec				\
 VERSION=`rpm -q --queryformat='%{version}\n' --specfile ${RPMSOURCE}/${NAME}.spec | head -1`
 
 mkdir -p ${WORKDIR}/${NAME}-${VERSION} || exit 1
-cp -f ${BASEDIR}/${NAME}.c	\
-      ${BASEDIR}/${NAME}.te	\
-      ${BASEDIR}/${NAME}.if	\
-      ${BASEDIR}/Makefile	\
-      ${BASEDIR}/modules.mk	\
-      ${BASEDIR}/.deps		\
-      ${BASEDIR}/LICENSE        \
-      ${BASEDIR}/README		\
+cp -f ${BASEDIR}/mod_selinux.c		\
+      ${BASEDIR}/mod_authn_sepgsql.c	\
+      ${BASEDIR}/mod_selinux.te		\
+      ${BASEDIR}/mod_selinux.if		\
+      ${BASEDIR}/Makefile		\
+      ${BASEDIR}/modules.mk		\
+      ${BASEDIR}/.deps			\
+      ${BASEDIR}/LICENSE        	\
+      ${BASEDIR}/README			\
       ${WORKDIR}/${NAME}-${VERSION}
 (cd ${WORKDIR}; tar zc ${NAME}-${VERSION}) > ${RPMSOURCE}/${NAME}-${VERSION}.tgz
 
