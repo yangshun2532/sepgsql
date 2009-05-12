@@ -30,9 +30,9 @@
 #include <selinux/selinux.h>
 #include <selinux/context.h>
 
-#define SELINUX_MAP_CONTEXT     1
-#define SELINUX_ENV_CONTEXT     2
-#define SELINUX_SET_CONTEXT     3
+#define SELINUX_DOMAIN_MAP      1
+#define SELINUX_DOMAIN_ENV      2
+#define SELINUX_DOMAIN_VAL      3
 
 typedef struct selinux_list selinux_list;
 struct selinux_list
@@ -49,19 +49,126 @@ struct selinux_config
     const char     *dirname;
     selinux_list   *list;
     int             allow_caches;
-    int             allow_keep_alive;
 };
 
 module AP_MODULE_DECLARE_DATA selinux_module;
 
 /*
- * selinux_map_fixups
+ * do_set_domain
+ *   It tries to replace the domain/range of the current context.
+ */
+static int
+do_set_domain(security_context_t old_context, char *domain, server_rec *s)
+{
+    security_context_t  new_context;
+    context_t           context;
+    char               *range;
+
+    /*
+     * Compute the new security context
+     */
+    context = context_new(old_context);
+    if (!context) {
+        ap_log_error(APLOG_MARK, APLOG_ERR, errno, s,
+                     "SELinux: context_new(\"%s\") failed",
+                     old_context);
+        return -1;
+    }
+
+    range = strchr(domain, ':');
+    if (range)
+        *range++ = '\0';
+
+    if (domain && strcmp(domain, "*") != 0)
+        context_type_set(context, domain);
+    if (range  && strcmp(range, "*") != 0)
+        context_range_set(context, range);
+
+    if (range)
+        *--range = ':';     /* fixup */
+
+    new_context = context_str(context);
+    if (!new_context) {
+        ap_log_error(APLOG_MARK, APLOG_ERR, errno, s,
+                     "SELinux: context_str(\"%s:%s:%s:%s\") failed",
+                     context_user_get(context),
+                     context_role_get(context),
+                     context_type_get(context),
+                     context_range_get(context));
+        context_free(context);
+        return -1;
+    }
+
+    /*
+     * If old_context == new_context, we don't need to do anything
+     */
+    if (!strcmp(old_context, new_context)) {
+        context_free(context);
+        return 1;
+    }
+
+    if (setcon_raw(new_context) < 0) {
+        ap_log_error(APLOG_MARK, APLOG_ERR, errno, s,
+                     "SELinux: setcon_raw(\"%s\") failed",
+                     new_context);
+        context_free(context);
+        return -1;
+    }
+
+    context_free(context);
+
+    return 0;
+}
+
+/*
+ * selinux_post_config
+ *   allows us to drop categories on startup
+ */
+static const char *server_domain = NULL;
+
+static int
+selinux_post_config(apr_pool_t *pconf, apr_pool_t *plog,
+                    apr_pool_t *ptemp, server_rec *s)
+{
+    security_context_t  context;
+    char   *domain;
+    int     rc;
+
+    if (!server_domain)
+        return OK;
+
+    if (getcon_raw(&context) < 0) {
+        ap_log_error(APLOG_MARK, APLOG_ERR, errno, s,
+                     "SELinux: getcon_raw() failed");
+        return DONE;
+    }
+
+    domain = apr_pstrdup(ptemp, server_domain);
+
+    rc = do_set_domain(context, domain, s);
+    if (rc < 0) {
+        freecon(context);
+        return DONE;
+    }
+
+    ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, s,
+                 "SELinux: %s: %s/%s",
+                 (rc == 0 ? "replace server domain"
+                          : "no need to change server domain"),
+                 context, server_domain);
+    freecon(context);
+
+    return OK;
+}
+
+/*
+ * selinux_lookup_mapfile
  *
  *   It lookups a matched entry from the given configuration file,
  *   and returns 1 with a copied cstring, if found. Otherwise, it returns 0.
  */
 static int
-selinux_map_fixups(request_rec *r, const char *filename, char **domain)
+selinux_lookup_mapfile(request_rec *r, const char *filename, char **domain)
 {
     const char *white_space = " \t\r\n";
     ap_configfile_t *filp;
@@ -111,155 +218,157 @@ selinux_map_fixups(request_rec *r, const char *filename, char **domain)
 }
 
 /*
- * selinux_env_fixups
- *
- *   It returns 1 and copies the required environment variable to the
- *   caller, if it is already defined. Otherwise, it returns 0.
- */
-static int
-selinux_env_fixups(request_rec *r, const char *envname, char **domain)
-{
-    const char *envval
-        = apr_table_get(r->subprocess_env, envname);
-
-    if (envval) {
-        *domain = apr_pstrdup(r->pool, envval);
-        return 1;
-    }
-    return 0;
-}
-
-/*
- * selinux_set_fixups
- *
- *   It always returns 1 and a copy of the given context. We can use
- *   it as a default when map/env cannot find any entries.
- */
-static int
-selinux_set_fixups(request_rec *r, const char *context, char **domain)
-{
-    *domain = apr_pstrdup(r->pool, context);
-    return 1;
-}
-
-/*
- * selinux_fixups
+ * selinux_set_domain
  *
  *   It assigns an appropriate security context on the current
  *   working thread based on attributes of the given request.
  */
-static int selinux_fixups(request_rec *r)
+static int selinux_set_domain(request_rec *r)
 {
-    security_context_t old_context;
-    security_context_t new_context;
-    security_context_t tmp_context;
-    context_t          context;
+    security_context_t  context;
     selinux_config *sconf;
     selinux_list   *entry;
-    char           *domain, *range;
+    const char     *envval;
+    char           *domain;
     int             rc = 0;
 
     sconf = ap_get_module_config(r->per_dir_config,
                                  &selinux_module);
     if (!sconf || !sconf->list)
-        return DECLINED;
+        return 0;
 
     for (entry = sconf->list; !rc && entry; entry = entry->next)
     {
         switch (entry->method)
         {
-        case SELINUX_MAP_CONTEXT:
-            rc = selinux_map_fixups(r, entry->value, &domain);
+        case SELINUX_DOMAIN_MAP:
+            rc = selinux_lookup_mapfile(r, entry->value, &domain);
             break;
-        case SELINUX_ENV_CONTEXT:
-            rc = selinux_env_fixups(r, entry->value, &domain);
+
+        case SELINUX_DOMAIN_ENV:
+            envval = apr_table_get(r->subprocess_env, entry->value);
+            if (envval) {
+                domain = apr_pstrdup(r->pool, envval);
+                rc = 1;
+            }
             break;
-        default: /* SELINUX_SET_CONTEXT */
-            rc = selinux_set_fixups(r, entry->value, &domain);
+
+        default: /* SELINUX_DOMAIN_VAL */
+            domain = apr_pstrdup(r->pool, entry->value);
+            rc = 1;
             break;
         }
 
         if (rc < 0)
-            return HTTP_INTERNAL_SERVER_ERROR;
+            return -1;
     }
 
     /* no matched entry */
     if (rc == 0)
-        return DECLINED;
+        return 0;
 
-    /*
-     * Get the current security context
-     */
-    if (getcon_raw(&tmp_context) < 0) {
-        ap_log_error(APLOG_MARK, APLOG_ERR, errno, r->server,
-                     "SELinux: getcon_raw() failed");
-        return HTTP_INTERNAL_SERVER_ERROR;
-    }
-    old_context = apr_pstrdup(r->pool, tmp_context);
-    freecon(tmp_context);
-
-    /*
-     * Compute a new security context
-     */
-    range = strchr(domain, ':');
-    if (range)
-        *range++ = '\0';
-
-    context = context_new(old_context);
-    if (!context) {
-        ap_log_rerror(APLOG_MARK, APLOG_ERR, errno, r,
-                      "context_new('%s') failed", old_context);
-        return HTTP_INTERNAL_SERVER_ERROR;
-    }
-
-    if (domain && strcmp(domain, "*") != 0)
-        context_type_set(context, domain);
-    if (range  && strcmp(range, "*") != 0)
-        context_range_set(context, range);
-
-    tmp_context = context_str(context);
-    if (!tmp_context) {
-        ap_log_rerror(APLOG_MARK, APLOG_ERR, errno, r,
-                      "context_str() failed");
-        context_free(context);
-        return HTTP_INTERNAL_SERVER_ERROR;
-    }
-    new_context = apr_pstrdup(r->pool, tmp_context);
-    context_free(context);
-
-    /*
-     * If old_context == new_context, we don't need to do anything.
-     */
-    if (strcmp(old_context, new_context) == 0) {
+    if (getcon_raw(&context) < 0) {
         ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r,
-                      "no need to set security context: %s "
-                      "(uri=%s dir=%s user=%s remote=%s)",
-                      old_context,
-                      r->uri, sconf->dirname, r->user,
-                      r->connection->remote_ip);
-        return DECLINED;
+                      "SELinux: getcon_raw() failed");
+        return -1;
     }
 
-    if (setcon_raw(new_context) < 0) {
-        ap_log_rerror(APLOG_MARK, APLOG_ERR, errno, r,
-                      "setcon_raw('%s') failed", new_context);
-        return HTTP_INTERNAL_SERVER_ERROR;
+    rc = do_set_domain(context, domain, r->server);
+    if (rc < 0) {
+        freecon(context);
+        return -1;
     }
 
     ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r,
-                  "set security context: %s -> %s "
-                  "(uri=%s dir=%s user=%s remote=%s)",
-                  old_context, new_context,
+                  "SELinux: %s: %s/%s (uri=%s dir=%s user=%s remote=%s)",
+                  (rc == 0 ? "replace handler domain"
+                           : "no need to change handler domain"),
+                  context, domain,
                   r->uri, sconf->dirname, r->user,
                   r->connection->remote_ip);
-    return DECLINED;
+
+    freecon(context);
+    return 0;
 }
 
 /*
- * selinux_disable_cache
+ * selinux_process_connection
+ *
+ *   It overrides the default handler (ap_process_http_connection)
+ *   and launches a one-time thread to invoke the default one.
+ */
+static int __thread volatile am_worker = 0;
+
+static void * APR_THREAD_FUNC
+selinux_worker_handler(apr_thread_t *thread, void *data)
+{
+    request_rec *r = (request_rec *) data;
+    int result;
+
+    /* marks as the current context is worker thread */
+    am_worker = 1;
+
+    /* set security context */
+    if (selinux_set_domain(r) < 0)
+        apr_thread_exit(thread, HTTP_INTERNAL_SERVER_ERROR);
+
+    /* invoke content handler */
+    result = ap_run_handler(r);
+
+    if (result == DECLINED)
+        result = HTTP_INTERNAL_SERVER_ERROR;
+
+    apr_thread_exit(thread, result);
+
+    return NULL;
+}
+
+static int selinux_handler(request_rec *r)
+{
+    apr_threadattr_t *thread_attr;
+    apr_thread_t *thread;
+    apr_status_t rv, thread_rv;
+
+    /*
+     * If the hook is invoked under the worker context,
+     * we simply skips this module.
+     */
+    if (am_worker)
+        return DECLINED;
+
+    apr_threadattr_create(&thread_attr, r->pool);
+    /* 0 means PTHREAD_CREATE_JOINABLE */
+    apr_threadattr_detach_set(thread_attr, 0);
+
+    rv = apr_thread_create(&thread, thread_attr,
+                           selinux_worker_handler,
+                           r, r->pool);
+    if (rv != APR_SUCCESS) {
+        ap_log_rerror(APLOG_MARK, APLOG_ERR, errno, r,
+                      "Unable to launch a one-time worker thread");
+        return HTTP_INTERNAL_SERVER_ERROR;
+    }
+
+    rv = apr_thread_join(&thread_rv, thread);
+    if (rv != APR_SUCCESS) {
+        ap_log_rerror(APLOG_MARK, APLOG_ERR, errno, r,
+                      "Unable to join the one-time worker thread");
+        /* kill itself to clean up the thread */
+        r->connection->aborted = 1;
+        return HTTP_INTERNAL_SERVER_ERROR;
+    }
+
+
+
+    return OK;
+    return thread_rv;
+}
+
+/*
+ * selinux_post_read_request
  *   It disables contents caches, if not allowed explicitly.
  */
-static int selinux_disable_cache(request_rec *r)
+static int selinux_post_read_request(request_rec *r)
 {
     selinux_config *sconf
         = ap_get_module_config(r->per_dir_config, &selinux_module);
@@ -270,97 +379,20 @@ static int selinux_disable_cache(request_rec *r)
     return DECLINED;
 }
 
-/*
- * selinux_disable_keep_alive
- *   It disables keep-alive connection, if not allowed explicitly.
- */
-static int selinux_disable_keep_alive(request_rec *r)
-{
-    selinux_config *sconf
-        = ap_get_module_config(r->per_dir_config, &selinux_module);
-
-    if (sconf && !sconf->allow_keep_alive)
-        r->connection->keepalive = AP_CONN_CLOSE;
-
-    return DECLINED;
-}
-
-/*
- * selinux_process_connection
- *
- *   It overrides the default handler (ap_process_http_connection)
- *   and launches a one-time thread to invoke the default one.
- */
-static int __thread volatile is_worker = 0;
-
-static void * APR_THREAD_FUNC
-selinux_worker_process_connection(apr_thread_t *thread, void *dummy)
-{
-    conn_rec *c = (conn_rec *) dummy;
-
-    /* marks as the current context is worker thread */
-    is_worker = 1;
-
-    ap_run_process_connection(c);
-
-    apr_thread_exit(thread, 0);
-
-    return NULL;
-}
-
-static int selinux_process_connection(conn_rec *c)
-{
-    apr_threadattr_t *thread_attr;
-    apr_thread_t *thread;
-    apr_status_t rv, thread_rv;
-
-    /*
-     * If the hook is invoked under the worker context,
-     * we simply skips it.
-     */
-    if (is_worker)
-        return DECLINED;
-
-    apr_threadattr_create(&thread_attr, c->pool);
-    /* 0 means PTHREAD_CREATE_JOINABLE */
-    apr_threadattr_detach_set(thread_attr, 0);
-
-    rv = apr_thread_create(&thread, thread_attr,
-                           selinux_worker_process_connection,
-                           c, c->pool);
-    if (rv != APR_SUCCESS) {
-        ap_log_cerror(APLOG_MARK, APLOG_ERR, errno, c,
-                      "Unable to launch a one-time thread");
-        c->aborted = 1;
-        return DONE;
-    }
-
-    rv = apr_thread_join(&thread_rv, thread);
-    if (rv != APR_SUCCESS) {
-        ap_log_cerror(APLOG_MARK, APLOG_ERR, errno, c,
-                      "Unable to join the worker thread");
-        c->aborted = 1;
-        return DONE;
-    }
-
-    return OK;
-}
-
 /* ---------------------------------------
  * Apache/SELinux plus API routines
  */
 static void selinux_hooks(apr_pool_t *p)
 {
-	if (is_selinux_enabled() < 1)
-		return;
+    if (is_selinux_enabled() < 1)
+        return;
 
-	ap_hook_process_connection(selinux_process_connection,
-							   NULL, NULL, APR_HOOK_FIRST);
-	ap_hook_post_read_request(selinux_disable_cache,
-							  NULL, NULL, APR_HOOK_MIDDLE);
-	ap_hook_log_transaction(selinux_disable_keep_alive,
-							NULL, NULL, APR_HOOK_MIDDLE);
-	ap_hook_fixups(selinux_fixups, NULL, NULL, APR_HOOK_MIDDLE);
+    ap_hook_post_config(selinux_post_config,
+                        NULL, NULL, APR_HOOK_MIDDLE);
+    ap_hook_post_read_request(selinux_post_read_request,
+                              NULL, NULL, APR_HOOK_MIDDLE);
+    ap_hook_handler(selinux_handler,
+                    NULL, NULL, APR_HOOK_REALLY_FIRST);
 }
 
 static void *selinux_create_dir(apr_pool_t *p, char *dirname)
@@ -374,14 +406,21 @@ static void *selinux_create_dir(apr_pool_t *p, char *dirname)
     sconf->dirname = apr_pstrdup(p, dirname);
     sconf->list = NULL;
 	sconf->allow_caches = 0;
-    sconf->allow_keep_alive = 0;
 
     return sconf;
 }
 
 static const char *
-set_method_context(cmd_parms *cmd, void *mconfig,
-                   int method, const char *v1)
+set_server_domain(cmd_parms *cmd, void *mconfig, const char *v1)
+{
+    server_domain = apr_pstrdup(cmd->pool, v1);
+
+    return NULL;
+}
+
+static const char *
+set_method_domain(cmd_parms *cmd, void *mconfig,
+                  int method, const char *v1)
 {
     selinux_config *sconf = mconfig;
     selinux_list   *entry, *cur;
@@ -405,21 +444,21 @@ set_method_context(cmd_parms *cmd, void *mconfig,
 }
 
 static const char *
-set_map_context(cmd_parms *cmd, void *mconfig, const char *v1)
+set_domain_map(cmd_parms *cmd, void *mconfig, const char *v1)
 {
-    return set_method_context(cmd, mconfig, SELINUX_MAP_CONTEXT, v1);
+    return set_method_domain(cmd, mconfig, SELINUX_DOMAIN_MAP, v1);
 }
 
 static const char *
-set_env_context(cmd_parms *cmd, void *mconfig, const char *v1)
+set_domain_env(cmd_parms *cmd, void *mconfig, const char *v1)
 {
-    return set_method_context(cmd, mconfig, SELINUX_ENV_CONTEXT, v1);
+    return set_method_domain(cmd, mconfig, SELINUX_DOMAIN_ENV, v1);
 }
 
 static const char *
-set_set_context(cmd_parms *cmd, void *mconfig, const char *v1)
+set_domain_val(cmd_parms *cmd, void *mconfig, const char *v1)
 {
-    return set_method_context(cmd, mconfig, SELINUX_SET_CONTEXT, v1);
+    return set_method_domain(cmd, mconfig, SELINUX_DOMAIN_VAL, v1);
 }
 
 static const char *
@@ -435,35 +474,24 @@ set_allow_caches(cmd_parms *cmd, void *mconfig, int flag)
     return NULL;
 }
 
-static const char *
-set_allow_keep_alive(cmd_parms *cmd, void *mconfig, int flag)
-{
-    selinux_config *sconf = mconfig;
-
-    sconf->allow_keep_alive = flag;
-
-    ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, cmd->server,
-                 "selinuxAllowKeepAlive = %s at '%s'",
-                 flag ? "On" : "Off", sconf->dirname);
-    return NULL;
-}
-
 static const command_rec selinux_cmds[] = {
-    AP_INIT_TAKE1("selinuxMapContext",
-                  set_map_context, NULL, OR_OPTIONS,
-                  "Set the security context using user/group mapping file"),
-    AP_INIT_TAKE1("selinuxEnvContext",
-                  set_env_context, NULL, OR_OPTIONS,
-                  "Set the security context using environment variable"),
-    AP_INIT_TAKE1("selinuxSetContext",
-                  set_set_context, NULL, OR_OPTIONS,
-                  "Set the security context to perform"),
+    /* Global config */
+    AP_INIT_TAKE1("selinuxServerDomain",
+                  set_server_domain, NULL, RSRC_CONF | EXEC_ON_READ,
+                  "Set domain of the daemon processes"),
+    /* Per-dir config */
+    AP_INIT_TAKE1("selinuxDomainMap",
+                  set_domain_map, NULL, OR_OPTIONS,
+                  "Set user/domain mapping file"),
+    AP_INIT_TAKE1("selinuxDomainEnv",
+                  set_domain_env, NULL, OR_OPTIONS,
+                  "Set an environment variable to show a domain"),
+    AP_INIT_TAKE1("selinuxDomainVal",
+                  set_domain_val, NULL, OR_OPTIONS,
+                  "Set a certain domain to be performed"),
     AP_INIT_FLAG("selinuxAllowCaches",
                  set_allow_caches, NULL, OR_OPTIONS,
-                 "Enables to control availability of contents caches"),
-    AP_INIT_FLAG("selinuxAllowKeepAlive",
-                 set_allow_keep_alive, NULL, OR_OPTIONS,
-                 "Enables to control availability of keep-alive connection"),
+                 "Allows contents caches"),
     {NULL}
 };
 

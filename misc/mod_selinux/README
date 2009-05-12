@@ -3,34 +3,41 @@ Apache/SELinux plus documentation
 
 OVERVIEW
 --------
-The Apache/SELinux plus is the name of this package which contains
-the following modules:
+The Apache/SELinux plus is a set of modules which give us
+a feature to perform web applications with individual security
+context based on http-authentication.
 
+List of modules:
  * mod_selinux.so
+ * mod_authn_sepgsql.so (under development)
  * mod_selinux.pp (targeted and mls)
-
-Some of (SELinux aware) authentication modules will be upcoming.
 
 The mod_selinux.so is a third-party module for apache/httpd.
 It enables to launch web-application instances with individual
 security context based on the result of http-authentications.
-Internally, it forks a one-time process for each connections
-from client, as if traditional client-server model did, and
-assigns a security context on the worker prior to the invocation
-of web-applications.
+Internally, it creates a one-time worker thread for each
+connections from client, as if traditional client-server model
+did, and assigns its security context on the worker prior to
+the invocation of web-applications.
 
 In the past days, we had a headache issue that all the requests
 to the web-server handled under a uniformed set of privileges
 with few exceptions such as CGI.
 From the viewpoint of operating system, it meant we cannot
-discriminate all the web-application instances and cannot apply
-valid access controls.
+discriminate all the web-application instances and cannot
+apply valid access controls.
 
 For example, the apache/httpd is typically working under httpd_t
 domain, and it accepts and handles all the http requests, but
 all the instance shares or inherits httpd_t.
 
-The mod_selinux.so intends to resolve the issue.
+(NOTE: mod_authn_sepgsql.so is now under development.)
+The mod_authn_sepgsql.so provides an authentication mechanism
+using SE-PostgreSQL backend. In addition, this module allows
+us to set a certain domain to be performed for the given http
+users. We can use it with vanilla PostgreSQL backend, but our
+recommendation is using SE- version to keep confidentiality
+of identification/authentication info.
 
 REQUIREMENTS
 ------------
@@ -40,7 +47,7 @@ It needs the following packages:
  - httpd and httpd-devel (>= 2.2.0)
  - libselinux and libselinux-devel
  - selinux-policy
- - checkpolicy
+ - checkpolicy (>= 2.0.19)
  - policycoreutils
 
 BUILD and INSTALLATION
@@ -58,7 +65,7 @@ BUILD and INSTALLATION
  % tar zxvf mod_selinux-2.2.xxxx.tgz
  % cd mod_selinux-2.2.xxxx
  % make
- % make -f /usr/share/selinux/deve/Makefile
+ % make -f /usr/share/selinux/devel/Makefile
  % su
  # make install
  # semodule -i mod_selinux.pp
@@ -69,25 +76,58 @@ CONFIGURATION (mod_selinux.so)
 
 The mod_selinux.so has the following four configurations:
 
- * selinuxMappingFile <filename>
-  It specifies the name of mapping file which allow us to defines
-  the relationship between an identification and a security context.
-  When we omit the configuration, the security context specified in
-  the selinuxDefaultContext will be applied.
-  The detailed file-format is described bellow.
+ * selinuxServerDomain  <domain/range pair>
+  It specifies the security context of daemon process which accepts
+  the connection come from clients. The mod_selinux.pp security policy
+  module adds a range_transition rule to perform with mcs_systemhigh
+  categories at first. However, in most cases, all the categories are
+  not required for httpd daemon process.
+  This directive allows us to drop unnecessary categories prior to
+  connection accepting. If you only uses category from c0 to c15,
+  we recommend you to set up the directive as follows.
 
-    example)
-      selinuxMappingFile       /var/www/mod_selinux.map
+   Example)
+    selinuxServerDomain    *:s0-s0:c0.c15
 
- * selinuxDefaultContext <entry>
-  It specifies a fallback security context when we don't have the
-  configuration of selinuxMappingFile or cannot find a matched
-  entry from the mapping file.
-  If we don't have the configuration and could not find a matched
-  entry, the mod_selinux.so does not change the security context.
+ * selinuxDomainMap     <filename>
+  It specifies the user/domain mapping file which defines the
+  relationship between username (authenticated by httpd) and
+  a domain/range pair.
 
-    example)
-      selinuxDefaultContext    unpriv_webapp_t:s0
+   Example)
+    selinuxDomainMap    /var/www/mod_selinux.map
+
+ * selinuxDomainEnv <environment variable>
+  It specifies an environment variable which tells a domain/range
+  pair to be assigned. We can set up an environment variable using
+  SetEnfIf directive conditionally, and some of authentication module
+  have a plan to set up it to show expected domain/range pair.
+
+   Example)
+    SetEnvIf Remote_Addr "192.168.1.[0-9]+$" SELINUX_DOMAIN=staff_webapp_t:s0:c1
+    SetEnvIf Remote_Addr "192.168.2.[0-9]+$" SELINUX_DOMAIN=staff_webapp_t:s0:c2
+    selinuxDomainEnv    SELINUX_DOMAIN
+
+ * selinuxDomainVal    <domain/range pair>
+  It specifies a domain/range pair to be assigned to content handlers.
+  In normal cases, this directive is placed on the tail of the series
+  of configuration to perform as a fallback when the request does not
+  match selinuxDomainMap/selinuxDomainEnv rules.
+
+   Example)
+    SetEnvIf Remote_Addr "192.168.1.[0-9]+$" SELINUX_DOMAIN=staff_webapp_t:s0:c1
+    SetEnvIf Remote_Addr "192.168.2.[0-9]+$" SELINUX_DOMAIN=staff_webapp_t:s0:c2
+    selinuxDomainMap    /var/www/mod_selinux.map   ... (1)
+    selinuxDomainEnv    SELINUX_DOMAIN             ... (2)
+    selinuxDomainVal    anon_webapp_t:s0           ... (3)
+
+  In this example, the (1) is checked at first. If the given request is
+  already authenticated and matched to the mapfile, the mod_selinux.so
+  launches the contents handler with an appropriate domain/range pair.
+  Then, (2) is checked. The SELINUX_DOMAIN is set based on Remote_Addr,
+  so it may have a valid value, if the request come from certain networks.
+  Otherwise, the (3) will be checked and any other request is executed
+  with the domain/range pair of "anon_webapp_t:so".
 
  * selinuxAllowCaches (On|Off)
   As the apache/httpd official documentation noted, it checks
@@ -98,88 +138,64 @@ The mod_selinux.so has the following four configurations:
   Please understand the risk to use contents caches, before you
   enables it.
 
-    example)
-      selinuxAllowCaches        On
-
- * selinuxAllowKeepAlive (On|Off)
-  The keep-alive connections allows to accept multiple requests
-  within a single connection, to improve performance.
-  But it also means the mod_selinux.so may need to assign a different
-  security context for each request and some of them are impossible
-  to assign due to lack of permissions.
-  In the default, the mod_selinux.so unconditionally close the
-  connection after one request is handled, as far as the configuration
-  is not explicitly set.
-  If we got a fail at setcon(), the mod_selinux.so returns an internal
-  server error (500). Please understand here is a possibility we cannot
-  assign a security context on a keep-alive connection.
-
-    example)
-      selinuxAllowKeepAlive     On
-
+   Example)
+    selinuxAllowCaches        On
 
 CONFIGURATION (mapping files)
 -----------------------------
 
-The mapping file can hold a relationship between an identifier and
-a security context to be assigned for each lines.
-Currently, we can use http-authenticated username or remote address
-as the identifier. When '!' is on the head of literal, it means a
-negative condition which matches all unmatched entries.
-The security context is a pair of a domain and a range, or a special
-term which enables to collaborate upcoming SELinux aware authentication
-modules.
-The mod_selinux.so checks entries from the head sequencially, and
-the first matched one will be applied.
+The selinuxDomainMap can specify a certain mapping file which allows
+to describe relationships between a http-authenticated username and
+a pair of domain/range.
+Each lines of the mapfile mean a relationship as follows:
 
-  Examples)
-  kaigai            unpriv_webapp_t:s0
-  # It matches the authenticated "kaigai", and "unpriv_webapp_t:s0"
-  # will be assigned on.
+  kaigai	staff_webapp_t:s0
 
-  himainu           *:s0:c0
-  # It matches the authenticated "himainu", and "s0:c0" will be
-  # assigned on, but the domain will be unchanged.
+The lefthand is a username, and the righthand is a domain/range pair.
+We have two special usernames. The "*" matches all the usernames and
+anonymous (unauthenticated) requests, and "__anonymous__" matches
+all the anonymous requests but does not for authenticated users.
 
-  !guest            staff_webapp_t:s0
-  # It matches the authenticated users expect for "guest", and
-  # "staff_webapp_t:s0" will be assigned on.
+When both or either of domain/range part is "*", it means mod_selinux
+does not change the current ones. For example, when "*:s0:c0" is given
+for a user; himainu, his request will be run with "s0:c0" in MCS, but
+it inherits server processes domain.
 
-  192.168.1.0/24    *:s0:c1
-  # It matches all the request come from "192.168.1.0/24", and
-  # "s0:c0" will be assigned on the range.
+The '#' and the following characters are handled as comments.
 
-  !192.168.2.0/24   *:s0:c2
-  # It matched all the request come from anywhere except for
-  # "192.168.2.0/24", and "s0:c2" will be assigned on the range.
+ Example)
+  #
+  # user <--> domain/range mapping
+  #
+  kaigai		*:s0:c0
+  himainu		*::s0:c1
+  panda			staff_webapp_t:s0:c2
+  __anonymous__		anon_webapp_t:s0
 
 
 TIPS (virtual-host based separation)
 ------------------------------------
 
-Please note that the selinuxDefaultContext will be applied,
-if we have no selinuxMappingFile. If we intentionally omit the
-selinuxMappingFile, the configuration of selinuxDefaultContext
-will be applied unconditionally.
+If you want to separate the security context per virtual host,
+but not necessary for users, we can utilize selinuxDomainVal
+to set up the domain/range pair for each virtual host.
+In the following example, all the request for dog.example.com
+will be handled with "s0:c1" category, but ones for others are
+handled with "s0:c2" category.
 
-If we put the configuration within <VirtualHost> tags, it also
-means all the web-applications works under the specified security
-context.
-
-  Example)
-
+ Example)
   NameVirtualHost *:80
   
   <VirtualHost *:80>
   DocumentRoot          /var/www/html
   ServerName            dog.example.com
-  selinuxDefaultContext *:s0:c1
+  selinuxDomainVal       *:s0:c1
   </VirtualHost>
 
   <VirtualHost *:80>
   DocumentRoot          /var/www/html
   ServerName            cat.example.com
-  selinuxDefaultContext *:s0:c2
+  selinuxDomainVal      *:s0:c2
   </VirtualHost>
 
 CONTACT

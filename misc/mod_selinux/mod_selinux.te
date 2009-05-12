@@ -17,11 +17,17 @@ type anon_webapp_t;
 domain_type(anon_webapp_t)
 apache_base_webapp(anon_webapp_t)
 
-# domains for authorized clients
+# domains for authorized clients (user)
 type user_webapp_t;
 domain_type(user_webapp_t)
 apache_base_webapp(user_webapp_t)
 apache_user_webapp(user, user_webapp_t)
+
+# domains for authorized clients (staff)
+type staff_webapp_t;
+domain_type(staff_webapp_t)
+apache_base_webapp(staff_webapp_t)
+apache_user_webapp(staff, staff_webapp_t)
 
 ########################################
 #
@@ -31,16 +37,13 @@ apache_user_webapp(user, user_webapp_t)
 
 gen_require(`
 	type httpd_t;
+	type httpd_exec_t;
 ')
 
 allow httpd_t self : process { setcurrent };
 
 typeattribute httpd_t httpd_server_domains;
 
-optional_policy(`
-	mcs_process_set_categories(httpd_t)
-')
-
-optional_policy(`
-	mls_process_set_level(httpd_t)
+ifdef(`enable_mcs',`
+	init_ranged_daemon_domain(httpd_t,httpd_exec_t,s0 - mcs_systemhigh)
 ')
