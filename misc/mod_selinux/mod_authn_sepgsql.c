@@ -26,7 +26,15 @@
 
 #include <libpq-fe.h>
 
-typedef struct
+typedef struct authn_sepgsql_setenv authn_sepgsql_setenv;
+struct authn_sepgsql_setenv {
+	authn_sepgsql_setenv *next;
+	char *field_name;
+	char *setenv_name;
+};
+
+typedef struct authn_sepgsql_config authn_sepgsql_config;
+struct authn_sepgsql_config
 {
     char *dirname;
     char *host;
@@ -35,11 +43,11 @@ typedef struct
     char *database;
     char *dbuser;
     char *dbpassword;
-    char *check_password_query;
-    char *get_realm_hash_query;
+    char *check_query;
+    char *hash_query;
     char *result_field;
-    char *domain_field;
-} authn_sepgsql_config;
+	authn_sepgsql_setenv *setenv_list;
+};
 
 module AP_MODULE_DECLARE_DATA authn_sepgsql_module;
 
@@ -57,7 +65,7 @@ sepgsql_check_password(request_rec *r, const char *user, const char *password)
     sconf = ap_get_module_config(r->per_dir_config,
                                  &authn_sepgsql_module);
 
-    if (!sconf->check_password_query) {
+    if (!sconf->check_query) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
                       "AuthSepgsqlCheckPasswordQuery is not defined");
         return AUTH_GENERAL_ERROR;
@@ -88,7 +96,7 @@ sepgsql_check_password(request_rec *r, const char *user, const char *password)
     params[0] = user;
     params[1] = password;
     res = PQexecParams(conn,
-                       sconf->check_password_query,
+                       sconf->check_query,
                        2,
                        NULL,
                        params,
@@ -100,7 +108,7 @@ sepgsql_check_password(request_rec *r, const char *user, const char *password)
                       "Query error: %s for %s (user=%s password=%s)",
                       !res ? "PQexecParams() returns NULL"
                            : PQresultErrorMessage(res),
-                      sconf->check_password_query, user, password);
+                      sconf->check_query, user, password);
         if (res)
             PQclear(res);
         PQfinish(conn);
@@ -114,12 +122,12 @@ sepgsql_check_password(request_rec *r, const char *user, const char *password)
         PQclear(res);
         PQfinish(conn);
         return AUTH_USER_NOT_FOUND;
-    } else if (PQntuples(res) > 0) {
+    } else if (PQntuples(res) > 1) {
         ap_log_rerror(APLOG_MARK, APLOG_NOTICE, 0, r,
                       "Query info: more than one tuples are fetched "
-                      "for %s (user=%s password=%s), the header one "
-                      "is used to authentication",
-                      sconf->check_password_query, user, password);
+                      "for %s (user=%s password=%s), the first one "
+					  "is used to authentication",
+                      sconf->check_query, user, password);
     }
 
     if (sconf->result_field) {
@@ -129,7 +137,7 @@ sepgsql_check_password(request_rec *r, const char *user, const char *password)
                           "Query error: \"%s\" not found in the result "
                           "for %s (user=%s password=%s)",
                           sconf->result_field,
-                          sconf->check_password_query, user, password);
+                          sconf->check_query, user, password);
             PQclear(res);
             PQfinish(conn);
             return AUTH_GENERAL_ERROR;
@@ -184,7 +192,9 @@ static void *authn_sepgsql_create_dir(apr_pool_t *p, char *dirname)
     sconf->dbuser = NULL;
     sconf->dbpassword = NULL;
     sconf->result_field = NULL;
-    sconf->domain_field = NULL;
+    sconf->check_query = NULL;
+    sconf->hash_query = NULL;
+    sconf->setenv_list = NULL;
 
     return sconf;
 }
@@ -250,7 +260,7 @@ set_sepgsql_password(cmd_parms *cmd, void *mconfig, const char *v1)
 }
 
 static const char *
-set_sepgsql_check_password_query(cmd_parms *cmd, void *mconfig, const char *v1)
+set_sepgsql_check_query(cmd_parms *cmd, void *mconfig, const char *v1)
 {
     authn_sepgsql_config *sconf = mconfig;
     char *query, *pos;
@@ -264,24 +274,24 @@ set_sepgsql_check_password_query(cmd_parms *cmd, void *mconfig, const char *v1)
     for (i = 0, pos = query; v1[i] != '\0'; i++) {
         *pos++ = v1[i];
         if (v1[i] == '$' && v1[i+1] == '{') {
-            if (strncmp(v1, "${user}", 7) == 0) {
+            if (strncmp(v1+i, "${user}", 7) == 0) {
                 *pos++ = '1';	/* $1 means user */
-                i += 5;
-            } else if (strncmp(v1, "${password}", 11) == 0) {
+                i += 6;
+            } else if (strncmp(v1+i, "${password}", 11) == 0) {
                 *pos++ = '2';	/* $2 means password */
-                i += 9;
+                i += 10;
             }
         }
     }
     *pos = '\0';
 
-    sconf->check_password_query = query;
+    sconf->check_query = query;
 
     return NULL;
 }
 
 static const char *
-set_sepgsql_get_realm_hash_query(cmd_parms *cmd, void *mconfig, const char *v1)
+set_sepgsql_hash_query(cmd_parms *cmd, void *mconfig, const char *v1)
 {
     authn_sepgsql_config *sconf = mconfig;
     char *query, *pos;
@@ -295,18 +305,18 @@ set_sepgsql_get_realm_hash_query(cmd_parms *cmd, void *mconfig, const char *v1)
     for (i=0, pos = query; v1[i] != '\0'; i++) {
         *pos++ = v1[i];
         if (v1[i] == '$' && v1[i+1] == '{') {
-            if (strncmp(v1, "${user}", 7) == 0) {
+            if (strncmp(v1+i, "${user}", 7) == 0) {
                 *pos++ = '1';
-                i += 5;
-            } else if (strncmp(v1, "${realm}", 8) == 0) {
-                *pos++ = '2';
                 i += 6;
+            } else if (strncmp(v1+i, "${realm}", 8) == 0) {
+                *pos++ = '2';
+                i += 7;
             }
         }
     }
     *pos = '\0';
 
-    sconf->get_realm_hash_query = query;
+    sconf->hash_query = query;
 
     return NULL;
 }
@@ -322,11 +332,25 @@ set_sepgsql_result_field(cmd_parms *cmd, void *mconfig, const char *v1)
 }
 
 static const char *
-set_sepgsql_domain_field(cmd_parms *cmd, void *mconfig, const char *v1)
+set_sepgsql_setenv_field(cmd_parms *cmd, void *mconfig,
+						 const char *v1, const char *v2)
 {
     authn_sepgsql_config *sconf = mconfig;
+	authn_sepgsql_setenv *entry, *cur;
 
-    sconf->domain_field = apr_pstrdup(cmd->pool, v1);
+	entry = apr_palloc(cmd->pool, sizeof(authn_sepgsql_setenv));
+	entry->next = NULL;
+	entry->field_name = apr_pstrdup(cmd->pool, v1);
+	entry->setenv_name = (!v2 ? entry->field_name
+						      : apr_pstrdup(cmd->pool, v2));
+	if (!sconf->setenv_list) {
+		sconf->setenv_list = entry;
+		return NULL;
+	}
+
+	for (cur = sconf->setenv_list; cur->next; cur = cur->next);
+
+	cur->next = entry;
 
     return NULL;
 }
@@ -350,21 +374,18 @@ static const command_rec authn_sepgsql_cmds[] = {
   AP_INIT_TAKE1("AuthSepgsqlPassword",
                 set_sepgsql_password, NULL, OR_OPTIONS,
                 "SE-PostgreSQL database password"),
-  AP_INIT_TAKE1("AuthSepgsqlQuery",
-                set_sepgsql_check_password_query, NULL, OR_OPTIONS,
-                "Alias of AuthSepgsqlCheckPasswordQuery"),
-  AP_INIT_TAKE1("AuthSepgsqlCheckPasswordQuery",
-                set_sepgsql_check_password_query, NULL, OR_OPTIONS,
+  AP_INIT_TAKE1("AuthSepgsqlCheckQuery",
+                set_sepgsql_check_query, NULL, OR_OPTIONS,
                 "Query string to check password"),
-  AP_INIT_TAKE1("AuthSepgsqlGetRealmHashQuery",
-                set_sepgsql_get_realm_hash_query, NULL, OR_OPTIONS,
+  AP_INIT_TAKE1("AuthSepgsqlHashQuery",
+                set_sepgsql_hash_query, NULL, OR_OPTIONS,
                 "Query string to get realm hash value"),
   AP_INIT_TAKE1("AuthSepgsqlResultField",
                 set_sepgsql_result_field, NULL, OR_OPTIONS,
                 "Field name of authentication result"),
-  AP_INIT_TAKE1("AuthSepgsqlDomainField",
-                set_sepgsql_domain_field, NULL, OR_OPTIONS,
-                "Field name of domain/raige pair"),
+  AP_INIT_TAKE12("AuthSepgsqlSetEnvField",
+				 set_sepgsql_setenv_field, NULL, OR_OPTIONS,
+				 "Field name of domain/raige pair"),
   {NULL}
 };
 
