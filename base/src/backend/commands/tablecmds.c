@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/commands/tablecmds.c,v 1.281 2009/03/31 22:12:47 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/commands/tablecmds.c,v 1.284 2009/05/12 03:11:01 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -29,6 +29,7 @@
 #include "catalog/pg_constraint.h"
 #include "catalog/pg_depend.h"
 #include "catalog/pg_inherits.h"
+#include "catalog/pg_inherits_fn.h"
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_opclass.h"
 #include "catalog/pg_tablespace.h"
@@ -50,8 +51,6 @@
 #include "nodes/nodeFuncs.h"
 #include "nodes/parsenodes.h"
 #include "optimizer/clauses.h"
-#include "optimizer/plancat.h"
-#include "optimizer/prep.h"
 #include "parser/gramparse.h"
 #include "parser/parse_clause.h"
 #include "parser/parse_coerce.h"
@@ -798,7 +797,7 @@ ExecuteTruncate(TruncateStmt *stmt)
 			ListCell   *child;
 			List	   *children;
 
-			children = find_all_inheritors(myrelid);
+			children = find_all_inheritors(myrelid, AccessExclusiveLock);
 
 			foreach(child, children)
 			{
@@ -807,7 +806,8 @@ ExecuteTruncate(TruncateStmt *stmt)
 				if (list_member_oid(relids, childrelid))
 					continue;
 
-				rel = heap_open(childrelid, AccessExclusiveLock);
+				/* find_all_inheritors already got lock */
+				rel = heap_open(childrelid, NoLock);
 				truncate_check_rel(rel);
 				rels = lappend(rels, rel);
 				relids = lappend_oid(relids, childrelid);
@@ -1873,8 +1873,7 @@ renameatt(Oid myrelid,
 		ListCell   *child;
 		List	   *children;
 
-		/* this routine is actually in the planner */
-		children = find_all_inheritors(myrelid);
+		children = find_all_inheritors(myrelid, AccessExclusiveLock);
 
 		/*
 		 * find_all_inheritors does the recursive search of the inheritance
@@ -1898,7 +1897,7 @@ renameatt(Oid myrelid,
 		 * tables; else the rename would put them out of step.
 		 */
 		if (!recursing &&
-			find_inheritance_children(myrelid) != NIL)
+			find_inheritance_children(myrelid, NoLock) != NIL)
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
 					 errmsg("inherited column \"%s\" must be renamed in child tables too",
@@ -2584,7 +2583,7 @@ ATRewriteCatalogs(List **wqueue)
 			(tab->subcmds[AT_PASS_ADD_COL] ||
 			 tab->subcmds[AT_PASS_ALTER_TYPE] ||
 			 tab->subcmds[AT_PASS_COL_ATTRS]))
-			AlterTableCreateToastTable(tab->relid, (Datum) 0);
+			AlterTableCreateToastTable(tab->relid, (Datum) 0, false);
 	}
 }
 
@@ -3292,8 +3291,7 @@ ATSimpleRecursion(List **wqueue, Relation rel,
 		ListCell   *child;
 		List	   *children;
 
-		/* this routine is actually in the planner */
-		children = find_all_inheritors(relid);
+		children = find_all_inheritors(relid, AccessExclusiveLock);
 
 		/*
 		 * find_all_inheritors does the recursive search of the inheritance
@@ -3307,7 +3305,8 @@ ATSimpleRecursion(List **wqueue, Relation rel,
 
 			if (childrelid == relid)
 				continue;
-			childrel = relation_open(childrelid, AccessExclusiveLock);
+			/* find_all_inheritors already got lock */
+			childrel = relation_open(childrelid, NoLock);
 			CheckTableNotInUse(childrel, "ALTER TABLE");
 			ATPrepCmd(wqueue, childrel, cmd, false, true);
 			relation_close(childrel, NoLock);
@@ -3331,15 +3330,15 @@ ATOneLevelRecursion(List **wqueue, Relation rel,
 	ListCell   *child;
 	List	   *children;
 
-	/* this routine is actually in the planner */
-	children = find_inheritance_children(relid);
+	children = find_inheritance_children(relid, AccessExclusiveLock);
 
 	foreach(child, children)
 	{
 		Oid			childrelid = lfirst_oid(child);
 		Relation	childrel;
 
-		childrel = relation_open(childrelid, AccessExclusiveLock);
+		/* find_inheritance_children already got lock */
+		childrel = relation_open(childrelid, NoLock);
 		CheckTableNotInUse(childrel, "ALTER TABLE");
 		ATPrepCmd(wqueue, childrel, cmd, true, true);
 		relation_close(childrel, NoLock);
@@ -3485,7 +3484,7 @@ ATPrepAddColumn(List **wqueue, Relation rel, bool recurse,
 		 * If we are told not to recurse, there had better not be any child
 		 * tables; else the addition would put them out of step.
 		 */
-		if (find_inheritance_children(RelationGetRelid(rel)) != NIL)
+		if (find_inheritance_children(RelationGetRelid(rel), NoLock) != NIL)
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
 					 errmsg("column must be added to child tables too")));
@@ -4204,7 +4203,8 @@ ATExecDropColumn(List **wqueue, Relation rel, const char *colName,
 	 * routines, we have to do this one level of recursion at a time; we can't
 	 * use find_all_inheritors to do it in one pass.
 	 */
-	children = find_inheritance_children(RelationGetRelid(rel));
+	children = find_inheritance_children(RelationGetRelid(rel),
+										 AccessExclusiveLock);
 
 	if (children)
 	{
@@ -4218,7 +4218,8 @@ ATExecDropColumn(List **wqueue, Relation rel, const char *colName,
 			Relation	childrel;
 			Form_pg_attribute childatt;
 
-			childrel = heap_open(childrelid, AccessExclusiveLock);
+			/* find_inheritance_children already got lock */
+			childrel = heap_open(childrelid, NoLock);
 			CheckTableNotInUse(childrel, "ALTER TABLE");
 
 			tuple = SearchSysCacheCopyAttName(childrelid, colName);
@@ -4514,7 +4515,8 @@ ATAddCheckConstraint(List **wqueue, AlteredTableInfo *tab, Relation rel,
 	 * routines, we have to do this one level of recursion at a time; we can't
 	 * use find_all_inheritors to do it in one pass.
 	 */
-	children = find_inheritance_children(RelationGetRelid(rel));
+	children = find_inheritance_children(RelationGetRelid(rel),
+										 AccessExclusiveLock);
 
 	/*
 	 * If we are told not to recurse, there had better not be any child
@@ -4531,7 +4533,8 @@ ATAddCheckConstraint(List **wqueue, AlteredTableInfo *tab, Relation rel,
 		Relation	childrel;
 		AlteredTableInfo *childtab;
 
-		childrel = heap_open(childrelid, AccessExclusiveLock);
+		/* find_inheritance_children already got lock */
+		childrel = heap_open(childrelid, NoLock);
 		CheckTableNotInUse(childrel, "ALTER TABLE");
 
 		/* Find or create work queue entry for this table */
@@ -5431,7 +5434,8 @@ ATExecDropConstraint(Relation rel, const char *constrName,
 	 * use find_all_inheritors to do it in one pass.
 	 */
 	if (is_check_constraint)
-		children = find_inheritance_children(RelationGetRelid(rel));
+		children = find_inheritance_children(RelationGetRelid(rel),
+											 AccessExclusiveLock);
 	else
 		children = NIL;
 
@@ -5440,7 +5444,8 @@ ATExecDropConstraint(Relation rel, const char *constrName,
 		Oid			childrelid = lfirst_oid(child);
 		Relation	childrel;
 
-		childrel = heap_open(childrelid, AccessExclusiveLock);
+		/* find_inheritance_children already got lock */
+		childrel = heap_open(childrelid, NoLock);
 		CheckTableNotInUse(childrel, "ALTER TABLE");
 
 		ScanKeyInit(&key,
@@ -5664,7 +5669,7 @@ ATPrepAlterColumnType(List **wqueue,
 	if (recurse)
 		ATSimpleRecursion(wqueue, rel, cmd, recurse);
 	else if (!recursing &&
-			 find_inheritance_children(RelationGetRelid(rel)) != NIL)
+			 find_inheritance_children(RelationGetRelid(rel), NoLock) != NIL)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
 				 errmsg("type of inherited column \"%s\" must be changed in child tables too",
@@ -6950,8 +6955,11 @@ ATExecAddInherit(Relation child_rel, RangeVar *parent)
 	 * exclusive locks on the entire inheritance tree, which is a cure worse
 	 * than the disease.  find_all_inheritors() will cope with circularity
 	 * anyway, so don't sweat it too much.
+	 *
+	 * We use weakest lock we can on child's children, namely AccessShareLock.
 	 */
-	children = find_all_inheritors(RelationGetRelid(child_rel));
+	children = find_all_inheritors(RelationGetRelid(child_rel),
+								   AccessShareLock);
 
 	if (list_member_oid(children, RelationGetRelid(parent_rel)))
 		ereport(ERROR,
