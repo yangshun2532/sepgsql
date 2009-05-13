@@ -22,7 +22,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/optimizer/prep/prepunion.c,v 1.168 2009/03/31 22:12:48 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/optimizer/prep/prepunion.c,v 1.170 2009/05/12 03:11:01 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -32,6 +32,7 @@
 #include "access/heapam.h"
 #include "access/sysattr.h"
 #include "catalog/namespace.h"
+#include "catalog/pg_inherits_fn.h"
 #include "catalog/pg_type.h"
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
@@ -39,7 +40,6 @@
 #include "optimizer/cost.h"
 #include "optimizer/pathnode.h"
 #include "optimizer/paths.h"
-#include "optimizer/plancat.h"
 #include "optimizer/planmain.h"
 #include "optimizer/planner.h"
 #include "optimizer/prep.h"
@@ -1082,47 +1082,6 @@ generate_setop_grouplist(SetOperationStmt *op, List *targetlist)
 
 
 /*
- * find_all_inheritors -
- *		Returns a list of relation OIDs including the given rel plus
- *		all relations that inherit from it, directly or indirectly.
- */
-List *
-find_all_inheritors(Oid parentrel)
-{
-	List	   *rels_list;
-	ListCell   *l;
-
-	/*
-	 * We build a list starting with the given rel and adding all direct and
-	 * indirect children.  We can use a single list as both the record of
-	 * already-found rels and the agenda of rels yet to be scanned for more
-	 * children.  This is a bit tricky but works because the foreach() macro
-	 * doesn't fetch the next list element until the bottom of the loop.
-	 */
-	rels_list = list_make1_oid(parentrel);
-
-	foreach(l, rels_list)
-	{
-		Oid			currentrel = lfirst_oid(l);
-		List	   *currentchildren;
-
-		/* Get the direct children of this rel */
-		currentchildren = find_inheritance_children(currentrel);
-
-		/*
-		 * Add to the queue only those children not already seen. This avoids
-		 * making duplicate entries in case of multiple inheritance paths from
-		 * the same parent.  (It'll also keep us from getting into an infinite
-		 * loop, though theoretically there can't be any cycles in the
-		 * inheritance graph anyway.)
-		 */
-		rels_list = list_concat_unique_oid(rels_list, currentchildren);
-	}
-
-	return rels_list;
-}
-
-/*
  * expand_inherited_tables
  *		Expand each rangetable entry that represents an inheritance set
  *		into an "append relation".	At the conclusion of this process,
@@ -1198,8 +1157,29 @@ expand_inherited_rtentry(PlannerInfo *root, RangeTblEntry *rte, Index rti)
 		return;
 	}
 
-	/* Scan for all members of inheritance set */
-	inhOIDs = find_all_inheritors(parentOID);
+	/*
+	 * The rewriter should already have obtained an appropriate lock on each
+	 * relation named in the query.  However, for each child relation we add
+	 * to the query, we must obtain an appropriate lock, because this will be
+	 * the first use of those relations in the parse/rewrite/plan pipeline.
+	 *
+	 * If the parent relation is the query's result relation, then we need
+	 * RowExclusiveLock.  Otherwise, if it's accessed FOR UPDATE/SHARE, we
+	 * need RowShareLock; otherwise AccessShareLock.  We can't just grab
+	 * AccessShareLock because then the executor would be trying to upgrade
+	 * the lock, leading to possible deadlocks.  (This code should match the
+	 * parser and rewriter.)
+	 */
+	oldrc = get_rowmark(parse, rti);
+	if (rti == parse->resultRelation)
+		lockmode = RowExclusiveLock;
+	else if (oldrc)
+		lockmode = RowShareLock;
+	else
+		lockmode = AccessShareLock;
+
+	/* Scan for all members of inheritance set, acquire needed locks */
+	inhOIDs = find_all_inheritors(parentOID, lockmode);
 
 	/*
 	 * Check that there's at least one descendant, else treat as no-child
@@ -1214,39 +1194,18 @@ expand_inherited_rtentry(PlannerInfo *root, RangeTblEntry *rte, Index rti)
 	}
 
 	/*
-	 * Find out if parent relation is selected FOR UPDATE/SHARE.  If so,
-	 * we need to mark its RowMarkClause as isParent = true, and generate
-	 * a new RowMarkClause for each child.
+	 * If parent relation is selected FOR UPDATE/SHARE, we need to mark its
+	 * RowMarkClause as isParent = true, and generate a new RowMarkClause for
+	 * each child.
 	 */
-	oldrc = get_rowmark(parse, rti);
 	if (oldrc)
 		oldrc->isParent = true;
 
 	/*
 	 * Must open the parent relation to examine its tupdesc.  We need not lock
-	 * it since the rewriter already obtained at least AccessShareLock on each
-	 * relation used in the query.
+	 * it; we assume the rewriter already did.
 	 */
 	oldrelation = heap_open(parentOID, NoLock);
-
-	/*
-	 * However, for each child relation we add to the query, we must obtain an
-	 * appropriate lock, because this will be the first use of those relations
-	 * in the parse/rewrite/plan pipeline.
-	 *
-	 * If the parent relation is the query's result relation, then we need
-	 * RowExclusiveLock.  Otherwise, if it's accessed FOR UPDATE/SHARE, we
-	 * need RowShareLock; otherwise AccessShareLock.  We can't just grab
-	 * AccessShareLock because then the executor would be trying to upgrade
-	 * the lock, leading to possible deadlocks.  (This code should match the
-	 * parser and rewriter.)
-	 */
-	if (rti == parse->resultRelation)
-		lockmode = RowExclusiveLock;
-	else if (oldrc)
-		lockmode = RowShareLock;
-	else
-		lockmode = AccessShareLock;
 
 	/* Scan the inheritance set and expand it */
 	appinfos = NIL;
@@ -1258,9 +1217,9 @@ expand_inherited_rtentry(PlannerInfo *root, RangeTblEntry *rte, Index rti)
 		Index		childRTindex;
 		AppendRelInfo *appinfo;
 
-		/* Open rel, acquire the appropriate lock type */
+		/* Open rel if needed; we already have required locks */
 		if (childOID != parentOID)
-			newrelation = heap_open(childOID, lockmode);
+			newrelation = heap_open(childOID, NoLock);
 		else
 			newrelation = oldrelation;
 
