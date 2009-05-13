@@ -186,7 +186,7 @@ rowaclSetupTuplePerms(RangeTblEntry *rte)
 
 	heap_close(relation, NoLock);
 
-	return rte->rtekind & mask;
+	return rte->requiredPerms & mask;
 }
 
 /******************************************************************
