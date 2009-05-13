@@ -8,8 +8,9 @@ Group: System Environment/Daemons
 License: ASL 2.0
 URL: http://code.google.com/p/sepgsql/
 Source0: http://sepgsql.googlecode.com/files/%{name}-%{version}.tgz
-Source1: %{name}.conf
-Source2: %{name}.map
+Source1: mod_selinux.conf
+Source2: mod_authn_sepgsql.conf
+Source3: mod_selinux.map
 BuildRequires: httpd-devel >= 2.2.0 libselinux-devel checkpolicy selinux-policy
 Requires: kernel >= 2.6.28 httpd >= 2.2.0 libselinux policycoreutils selinux-policy
 BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root
@@ -54,7 +55,8 @@ rm -rf %{buildroot}
 %{__make} install DESTDIR=%{buildroot}
 
 %{__install} -p -m 644 %{SOURCE1}       %{buildroot}%{_sysconfdir}/httpd/conf.d
-%{__install} -p -m 644 %{SOURCE2}       %{buildroot}%{_var}/www
+%{__install} -p -m 644 %{SOURCE2}       %{buildroot}%{_sysconfdir}/httpd/conf.d
+%{__install} -p -m 644 %{SOURCE3}       %{buildroot}%{_var}/www
 for policy in %{selinux_policy_types}
 do
     %{__install} -d %{buildroot}%{_datadir}/selinux/${policy}
@@ -86,7 +88,7 @@ fi
 %files
 %defattr(-,root,root,-)
 %doc LICENSE README
-%config(noreplace) %{_sysconfdir}/httpd/conf.d/%{name}.conf
+%config(noreplace) %{_sysconfdir}/httpd/conf.d/mod_*.conf
 %config(noreplace) %{_var}/www/%{name}.map
 %{_libdir}/httpd/modules/mod_*.so
 %{_datadir}/selinux/*/%{name}.pp

@@ -28,8 +28,9 @@ cp -f ${BASEDIR}/mod_selinux.c		\
 
 rm -rf ${WORKDIR}
 
-cp -f ${BASEDIR}/${NAME}.conf	${RPMSOURCE}
-cp -f ${BASEDIR}/${NAME}.map	${RPMSOURCE}
+cp -f ${BASEDIR}/mod_selinux.conf	${RPMSOURCE}
+cp -f ${BASEDIR}/mod_authn_sepgsql.conf	${RPMSOURCE}
+cp -f ${BASEDIR}/mod_selinux.map	${RPMSOURCE}
 
 rpmbuild -ba ${RPMSOURCE}/${NAME}.spec
 
