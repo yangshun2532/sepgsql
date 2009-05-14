@@ -238,7 +238,7 @@ fi
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
 
 %changelog
-* Thu May 14 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 8.4beta1-1890
+* Thu May 14 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 8.4beta1-1891
 - update: add db_table/db_column:{reference} permissions.
 - update: base version was upgraded to 8.4beta1
 
