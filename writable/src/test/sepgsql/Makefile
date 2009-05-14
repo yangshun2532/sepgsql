@@ -45,9 +45,9 @@ check:
 	@$(PSQL) -qt -c 'SHOW sepostgresql' -d $(DBNAME) 2>/dev/null | grep -q on || \
 		(echo "HINT: database \"$(DBNAME)\" is not available"; \
 		 echo "HINT: SE-PostgreSQL may not be available on server"; exit 1)
-	@$(GETSEBOOL) allow_user_postgresql_connect | grep -q on || \
+	@$(GETSEBOOL) allow_user_postgresql_connect | grep -q 'on$' || \
 		(echo "HINT: check allow_user_postgresql_connect boolean"; exit 1)
-	@$(GETSEBOOL) sepgsql_regression_test_mode | grep -q on || \
+	@$(GETSEBOOL) sepgsql_regression_test_mode | grep -q 'on$' || \
 		(echo "HINT: check sepgsql_regression_test_mode boolean"; \
 		 echo "HINT: check sepostgresql-devel.pp installed"; exit 1)
 	@$(RUNCON) -t sepgsql_test_t -l s0-s0:c0.c15 \
