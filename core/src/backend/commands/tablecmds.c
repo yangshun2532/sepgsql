@@ -5126,7 +5126,7 @@ checkFkeyPermissions(Relation rel, int16 *attnums, int natts)
 	aclresult = pg_class_aclcheck(RelationGetRelid(rel), roleid,
 								  ACL_REFERENCES);
 	if (aclresult == ACLCHECK_OK)
-		return;
+		goto ok;
 	/* Else we must have REFERENCES on each column */
 	for (i = 0; i < natts; i++)
 	{
@@ -5136,6 +5136,9 @@ checkFkeyPermissions(Relation rel, int16 *attnums, int natts)
 			aclcheck_error(aclresult, ACL_KIND_CLASS,
 						   RelationGetRelationName(rel));
 	}
+ok:
+	/* SELinux: check db_table/db_column:{reference} */
+	sepgsqlCheckTableReference(rel, attnums, natts);
 }
 
 /*
