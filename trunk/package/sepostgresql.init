@@ -39,6 +39,7 @@ test -f "${SEPGSQL_BIN}/sepostgres" || exit 1
 # Commands
 RUNUSER="/sbin/runuser"
 SEPG_CTL="${SEPGSQL_BIN}/sepg_ctl -D ${SEPGSQL_DATA}"
+SEPG_INITDB="${SEPGSQL_BIN}/initdb.sepgsql -D ${SEPGSQL_DATA}"
 
 script_result=0
 
@@ -79,8 +80,9 @@ do_start() {
     script_result=$?
     if [ $script_result -eq 0 ];
     then
-	/sbin/runuser - sepgsql -c "${SEPGSQL_BIN}/sepg_ctl -D ${SEPGSQL_DATA} status" \
-	    | head -1 | sed -e 's/^.*PID://g' -e 's/[^0-9].*//g' > "/var/run/${NAME}.pid"
+	/sbin/runuser - sepgsql -c "${SEPG_CTL} status" \
+	    | head -1 | sed -e 's/^.*PID://g' -e 's/[^0-9].*//g' \
+	    > "/var/run/${NAME}.pid"
 	touch "/var/lock/subsys/${NAME}.lock"
 	echo_success
     else
@@ -123,18 +125,18 @@ do_status() {
 }
 
 do_condrestart() {
-    $RUNUSER -- sepgsql -c "$SEPG_CTL status" &>/dev/null \
+    $RUNUSER -- sepgsql -c "${SEPG_CTL} status" &>/dev/null \
 	&& do_stop && do_start
 }
 
 do_condstop() {
-   $RUNUSER -- sepgsql -c "$SEPG_CTL status" &>/dev/null \
+    $RUNUSER -- sepgsql -c "${SEPG_CTL} status" &>/dev/null \
 	&& do_stop
 }
 
 do_reload() {
     echo -n $"Reloading ${NAME} service: "
-    $RUNUSER -- sepgsql -c "$SEPG_CTL reload" &>/dev/null < /dev/null
+    $RUNUSER -- sepgsql -c "${SEPG_CTL} reload" &>/dev/null < /dev/null
     if [ $? -eq 0 ]; then
         echo_success
     else
@@ -160,7 +162,7 @@ do_initdb() {
 	# cleanup SELinux labeling for "${SEPGSQL_DATA}"
 	test -x /sbin/restorecon && /sbin/restorecon -R "${SEPGSQL_DATA}"
 	# Initialize the database
-	$RUNUSER -- sepgsql -c "${SEPGSQL_BIN}/initdb.sepgsql --enable-selinux -D ${SEPGSQL_DATA}" \
+	$RUNUSER -- sepgsql -c "${SEPG_INITDB} --enable-selinux" \
 	    >> "${SEPGSQL_STARTUP_LOG}" 2>&1 < /dev/null
 	if [ -f "${SEPGSQL_DATA}/PG_VERSION" ]; then
 	    echo_success
