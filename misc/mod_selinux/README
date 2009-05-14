@@ -3,51 +3,51 @@ Apache/SELinux plus documentation
 
 OVERVIEW
 --------
-The Apache/SELinux plus is a set of modules which give us
-a feature to perform web applications with individual security
-context based on http-authentication.
+The Apache/SELinux plus is a set of modules which gives us a set of features
+to work web applications with individual security context for each requests.
+At the past days,
 
 List of modules:
  * mod_selinux.so
- * mod_authn_sepgsql.so (under development)
- * mod_selinux.pp (targeted and mls)
+ * mod_authn_sepgsql.so
+ * mod_selinux.pp
 
-The mod_selinux.so is a third-party module for apache/httpd.
-It enables to launch web-application instances with individual
-security context based on the result of http-authentications.
-Internally, it creates a one-time worker thread for each
-connections from client, as if traditional client-server model
-did, and assigns its security context on the worker prior to
-the invocation of web-applications.
+The mod_selinux.so enables to launch contents-handler (it contains references
+to static contents and invocations of web applications) with one-time worker
+thread and assign individual security context based on the result of httpd-
+authentication.
+The apache/httpd daemon process handles the requests come from the clients,
+and it also means all the requests are processed with a uniformed set of
+privileges, without few exceptions such as SuExec/CGI.
+From the viewpoint of operating system, its access control feature cannot
+discriminate all the web-application instances, so cannot apply any valid
+access controls. It impose on every web-applications a burden of correct
+access controls, but it is not basically good design, because fewer points
+to be checked is better to reduce security bugs.
 
-In the past days, we had a headache issue that all the requests
-to the web-server handled under a uniformed set of privileges
-with few exceptions such as CGI.
-From the viewpoint of operating system, it meant we cannot
-discriminate all the web-application instances and cannot
-apply valid access controls.
+The mod_authn_sepgsql.so performs as an authentication provider using
+SE-PostgreSQL backend. It allows to store authentication information
+in the databases without exposing password in plain text.
+In addition, it enables to point out mod_selinux.so what domain/range
+pair to be assigned on the contents-handler for the given authenticated
+user.
 
-For example, the apache/httpd is typically working under httpd_t
-domain, and it accepts and handles all the http requests, but
-all the instance shares or inherits httpd_t.
-
-(NOTE: mod_authn_sepgsql.so is now under development.)
-The mod_authn_sepgsql.so provides an authentication mechanism
-using SE-PostgreSQL backend. In addition, this module allows
-us to set a certain domain to be performed for the given http
-users. We can use it with vanilla PostgreSQL backend, but our
-recommendation is using SE- version to keep confidentiality
-of identification/authentication info.
+The mod_selinux.pp is a security policy module of SELinux.
+It gives us a few pre-defined web application domains (user_webapp_t and
+anon_webapp_t), and enables to launch apache/httpd with multi categories.
+The mod_selinux.so drops unnecessary categories at the startup time,
+then we can assign rest of categories to contents-handler.
 
 REQUIREMENTS
 ------------
 
 It needs the following packages:
 
- - httpd and httpd-devel (>= 2.2.0)
+ - kernel (2.6.28 or later)
+ - httpd and httpd-devel (2.2.0 or later)
  - libselinux and libselinux-devel
  - selinux-policy
- - checkpolicy (>= 2.0.19)
+ - checkpolicy (2.0.19 or later)
  - policycoreutils
 
 BUILD and INSTALLATION
@@ -104,8 +104,8 @@ The mod_selinux.so has the following four configurations:
   have a plan to set up it to show expected domain/range pair.
 
    Example)
-    SetEnvIf Remote_Addr "192.168.1.[0-9]+$" SELINUX_DOMAIN=staff_webapp_t:s0:c1
-    SetEnvIf Remote_Addr "192.168.2.[0-9]+$" SELINUX_DOMAIN=staff_webapp_t:s0:c2
+    SetEnvIf Remote_Addr "192.168.1.[0-9]+$" SELINUX_DOMAIN=*:s0:c1
+    SetEnvIf Remote_Addr "192.168.2.[0-9]+$" SELINUX_DOMAIN=*:s0:c2
     selinuxDomainEnv    SELINUX_DOMAIN
 
  * selinuxDomainVal    <domain/range pair>
@@ -115,8 +115,8 @@ The mod_selinux.so has the following four configurations:
   match selinuxDomainMap/selinuxDomainEnv rules.
 
    Example)
-    SetEnvIf Remote_Addr "192.168.1.[0-9]+$" SELINUX_DOMAIN=staff_webapp_t:s0:c1
-    SetEnvIf Remote_Addr "192.168.2.[0-9]+$" SELINUX_DOMAIN=staff_webapp_t:s0:c2
+    SetEnvIf Remote_Addr "192.168.1.[0-9]+$" SELINUX_DOMAIN=*:s0:c1
+    SetEnvIf Remote_Addr "192.168.2.[0-9]+$" SELINUX_DOMAIN=*:s0:c2
     selinuxDomainMap    /var/www/mod_selinux.map   ... (1)
     selinuxDomainEnv    SELINUX_DOMAIN             ... (2)
     selinuxDomainVal    anon_webapp_t:s0           ... (3)
@@ -197,6 +197,57 @@ handled with "s0:c2" category.
   ServerName            cat.example.com
   selinuxDomainVal      *:s0:c2
   </VirtualHost>
+
+CONFIGURATION (mod_authn_sepgsql.so)
+------------------------------------
+The mod_authn_sepgsql.so has the following directives to connect database,
+to provide basic/digest authentication and delivers user's extra information
+to other modules.
+
+ == Database connection parameters ==
+ * AuthSepgsqlHost         <hostname>
+   It specifies the hostname of SE-PostgreSQL server working.
+   The default is local connection via UNIX domain socket.
+
+ * AuthSepgsqlPort         <port>
+   It specifies the port number of SE-PostgreSQL server accepting.
+   The default is 5432, or default name of UNIX domain socket.
+
+ * AuthSepgsqlOptions      <options>
+   It specifies the connection option.
+   The default is empty.
+
+ * AuthSepgsqlDatabase     <database>
+   It specifies the database name logged in.
+   The default is username of httpd process.
+
+ * AuthSepgsqlDbUser       <username>
+   It specifies the database username logged in.
+   The default is username of httpd process.
+
+ * AuthSepgsqlDbPass       <password>
+   It specifies the database password.
+   The default is empty string, and does not use password when logs in.
+
+ == Basic Authentication parameters ==
+ * AuthSepgsqlCheckQuery   <query string>
+ * AuthSepgsqlCheckField   <field name>
+
+ == Digest Authentication parameters ==
+ * AuthSepgsqlHashQuery    <query string>
+ * AuthSepgsqlHashField    <field name>
+
+ == Collaboration parameters ==
+ * AuthSepgsqlSetEnvField  <field name> [<environ variable>]
+
+
+Example of configuration:
+
+The following example assumes "uaccount"
+
+
+
+
 
 CONTACT
 -------
