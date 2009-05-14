@@ -86,9 +86,7 @@ static int	avc_version;
 
 static bool	avc_enforcing;
 
-static int	local_enforcing = -1;
-
-#define	is_enforcing()	(local_enforcing > 0 ? local_enforcing : avc_enforcing)
+static int  avc_exception = 0;
 
 /*
  * selinux_state
@@ -127,18 +125,24 @@ sepgsqlShmemSize(void)
 	return sizeof(*selinux_state);
 }
 
-int sepgsqlGetLocalEnforcing(void)
+/*
+ * sepgsqlGetExceptionMode
+ * sepgsqlSetExceptionMode
+ *   They control exception mode bit to disable checks
+ *   temporary (for internal processing purpose).
+ */
+int sepgsqlGetExceptionMode(void)
 {
-	return local_enforcing;
+	return avc_exception;
 }
 
-int sepgsqlSetLocalEnforcing(int new_enforce)
+int sepgsqlSetExceptionMode(int new_exception)
 {
-	int		old_enforcing = local_enforcing;
+	int		old_exception = avc_exception;
 
-	local_enforcing = new_enforce;
+	avc_exception = new_exception;
 
-	return old_enforcing;
+	return old_exception;
 }
 
 /*
@@ -473,6 +477,9 @@ sepgsqlClientHasPerms(Oid tsid,
 
 	Assert(required != 0);
 
+	if (avc_exception)
+		return true;
+
 retry:
 	cache = avc_lookup(client_avc_page, tsid, tclass);
 	if (!cache)
@@ -495,7 +502,7 @@ retry:
 
 	if (denied)
 	{
-		if (!is_enforcing() || cache->permissive)
+		if (!avc_enforcing || cache->permissive)
 			cache->allowed |= required;		/* prevent flood of audit log */
 		else
 			result = false;
@@ -620,6 +627,9 @@ sepgsqlComputePerms(security_context_t scontext,
 
 	Assert(required != 0);
 
+	if (avc_exception)
+		return true;
+
 	if (security_check_context_raw(scontext) < 0)
 		scontext = sepgsqlGetUnlabeledLabel();
 	if (security_check_context_raw(tcontext) < 0)
@@ -658,7 +668,7 @@ sepgsqlComputePerms(security_context_t scontext,
 						 tclass, !!denied, audited, audit_name);
 	}
 
-	if (denied && is_enforcing() &&
+	if (denied && avc_enforcing &&
 		(avd.flags & SELINUX_AVD_FLAGS_PERMISSIVE) == 0)
 	{
 		if (abort)
