@@ -160,6 +160,7 @@ static struct
 			{ "insert",			SEPG_DB_TABLE__INSERT },
 			{ "delete",			SEPG_DB_TABLE__DELETE },
 			{ "lock",			SEPG_DB_TABLE__LOCK },
+			{ "reference",		SEPG_DB_TABLE__REFERENCE },
 			{ NULL, 0UL },
 		}
 	},
@@ -205,6 +206,7 @@ static struct
 			{ "select",			SEPG_DB_COLUMN__SELECT },
 			{ "update",			SEPG_DB_COLUMN__UPDATE },
 			{ "insert",			SEPG_DB_COLUMN__INSERT },
+			{ "reference",		SEPG_DB_COLUMN__REFERENCE },
 			{ NULL, 0UL },
 		}
 	},

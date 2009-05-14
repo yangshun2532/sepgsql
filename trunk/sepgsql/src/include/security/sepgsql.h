@@ -113,6 +113,7 @@ enum SepgsqlClasses
 #define SEPG_DB_TABLE__INSERT				(1<<8)
 #define SEPG_DB_TABLE__DELETE				(1<<9)
 #define SEPG_DB_TABLE__LOCK					(1<<10)
+#define SEPG_DB_TABLE__REFERENCE			(1<<11)
 
 #define SEPG_DB_SEQUENCE__CREATE			(SEPG_DB_DATABASE__CREATE)
 #define SEPG_DB_SEQUENCE__DROP				(SEPG_DB_DATABASE__DROP)
@@ -143,6 +144,7 @@ enum SepgsqlClasses
 #define SEPG_DB_COLUMN__SELECT				(1<<6)
 #define SEPG_DB_COLUMN__UPDATE				(1<<7)
 #define SEPG_DB_COLUMN__INSERT				(1<<8)
+#define SEPG_DB_COLUMN__REFERENCE			(1<<9)
 
 #define SEPG_DB_TUPLE__RELABELFROM			(SEPG_DB_DATABASE__RELABELFROM)
 #define SEPG_DB_TUPLE__RELABELTO			(SEPG_DB_DATABASE__RELABELTO)
@@ -276,6 +278,9 @@ extern void
 sepgsqlCheckTableTruncate(Relation rel);
 
 extern void
+sepgsqlCheckTableReference(Relation rel, int16 *attnums, int natts);
+
+extern void
 sepgsqlCheckSequenceGetValue(Oid seqid);
 
 extern void
@@ -407,6 +412,7 @@ sepgsqlCheckObjectPerms(Relation rel, HeapTuple tuple,
 #define sepgsqlCheckSchemaSearch(a)				(true)
 #define sepgsqlCheckTableLock(a)				do {} while(0)
 #define sepgsqlCheckTableTruncate(a)			do {} while(0)
+#define sepgsqlCheckTableReference(a,b,c)		do {} while(0)
 #define sepgsqlCheckSequenceGetValue(a)			do {} while(0)
 #define sepgsqlCheckSequenceNextValue(a)		do {} while(0)
 #define sepgsqlCheckSequenceSetValue(a)			do {} while(0)

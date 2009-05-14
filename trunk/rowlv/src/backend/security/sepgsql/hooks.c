@@ -179,6 +179,38 @@ sepgsqlCheckTableTruncate(Relation rel)
 	heap_endscan(scan);
 }
 
+void
+sepgsqlCheckTableReference(Relation rel, int16 *attnums, int natts)
+{
+	const char *audit_name;
+	HeapTuple	tuple;
+	int			i;
+
+	if (!sepgsqlIsEnabled())
+		return;
+
+	/* check db_table:{reference} permission */
+	checkTableCommon(RelationGetRelid(rel), SEPG_DB_TABLE__REFERENCE);
+
+	/* check db_column:{reference} permission */
+	for (i=0; i < natts; i++)
+	{
+		tuple = SearchSysCache(ATTNUM,
+							   RelationGetRelid(rel),
+							   attnums[i], 0, 0);
+		if (!HeapTupleIsValid(tuple))
+			elog(ERROR, "cache lookup failed for attribute %u of %s",
+				 attnums[i], RelationGetRelationName(rel));
+
+		audit_name = sepgsqlAuditName(AttributeRelationId, tuple);
+		sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
+							  SEPG_CLASS_DB_COLUMN,
+							  SEPG_DB_COLUMN__REFERENCE,
+							  audit_name, true);
+		ReleaseSysCache(tuple);
+	}
+}
+
 /*
  * sepgsqlCheckSequenceXXXX
  *
