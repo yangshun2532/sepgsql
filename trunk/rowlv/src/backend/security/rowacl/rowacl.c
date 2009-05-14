@@ -126,14 +126,22 @@ rowaclInitialize(void)
 /******************************************************************
  * Row-level access controls
  ******************************************************************/
-static bool
-rowaclCheckPermission(Relation rel, HeapTuple tuple, AclMode required)
+bool
+rowaclExecScan(Relation rel, HeapTuple tuple, uint32 required, bool abort)
 {
-	Oid relid = RelationGetRelid(rel);
-	Oid ownerid = RelationGetForm(rel)->relowner;
-	Oid userid = GetUserId();
-	Oid aclid = HeapTupleGetRowAcl(tuple);
-	AclMode privs;
+	Oid		relid;
+	Oid		ownerid;
+	Oid		userid;
+	Oid		aclid;
+	AclMode	privs;
+
+	if (!RelationGetRowLevelAcl(rel) || !required)
+		return true;
+
+	relid = RelationGetRelid(rel);
+	ownerid = RelationGetForm(rel)->relowner;
+	userid = GetUserId();
+	aclid = HeapTupleGetRowAcl(tuple);
 
 	if (!rowaclCacheLookup(relid, userid, aclid, &privs))
 	{
@@ -153,16 +161,12 @@ rowaclCheckPermission(Relation rel, HeapTuple tuple, AclMode required)
 	if ((privs & required) == required)
 		return true;
 
+	if (abort)
+		ereport(ERROR,
+				(errcode(ERRCODE_ROWACL_ERROR),
+				 errmsg("Access violation at Row-level ACLs")));
+
 	return false;
-}
-
-bool
-rowaclExecScan(Relation rel, HeapTuple tuple, uint32 required)
-{
-	if (!RelationGetRowLevelAcl(rel) || !required)
-		return true;
-
-	return rowaclCheckPermission(rel, tuple, required);
 }
 
 uint32

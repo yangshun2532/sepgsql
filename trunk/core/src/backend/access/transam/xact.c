@@ -2038,7 +2038,7 @@ AbortTransaction(void)
 	SetUserIdAndContext(s->prevUser, s->prevSecDefCxt);
 
 	/*
-	 * Reset exception mode bit in SE-PostgreSQL
+	 * Reset behavior in advanced security features
 	 */
 	sepgsqlSetExceptionMode(s->prevSepgsql);
 
@@ -3887,7 +3887,7 @@ AbortSubTransaction(void)
 	SetUserIdAndContext(s->prevUser, s->prevSecDefCxt);
 
 	/*
-	 * Reset exception mode bit in SE-PostgreSQL
+	 * Reset behavior in advanced security features
 	 */
 	sepgsqlSetExceptionMode(s->prevSepgsql);
 

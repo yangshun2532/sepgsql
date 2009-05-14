@@ -36,6 +36,7 @@
 #include "libpq/be-fsstubs.h"
 #include "miscadmin.h"
 #include "pgstat.h"
+#include "security/rowlevel.h"
 #include "security/sepgsql.h"
 #include "storage/bufmgr.h"
 #include "storage/fd.h"
@@ -142,7 +143,8 @@ typedef struct TransactionStateData
 	Oid			prevUser;		/* previous CurrentUserId setting */
 	bool		prevSecDefCxt;	/* previous SecurityDefinerContext setting */
 	bool		prevXactReadOnly;		/* entry-time xact r/o state */
-	int			prevSELinux;	/* previous SELinux mode (enforcing/permissive) */
+	int			prevRowlv;		/* previous Row-level control behavior */
+	int			prevSepgsql;	/* previous SE-PgSQL exception mode bit */
 	struct TransactionStateData *parent;		/* back link to parent */
 } TransactionStateData;
 
@@ -1529,7 +1531,8 @@ StartTransaction(void)
 	s->nChildXids = 0;
 	s->maxChildXids = 0;
 	GetUserIdAndContext(&s->prevUser, &s->prevSecDefCxt);
-	s->prevSELinux = sepgsqlGetLocalEnforcing();
+	s->prevRowlv = rowlvGetPerformingMode();
+	s->prevSepgsql = sepgsqlGetExceptionMode();
 	/* SecurityDefinerContext should never be set outside a transaction */
 	Assert(!s->prevSecDefCxt);
 
@@ -2038,9 +2041,10 @@ AbortTransaction(void)
 	SetUserIdAndContext(s->prevUser, s->prevSecDefCxt);
 
 	/*
-	 * Reset local enforcing/permissive mode in SE-PostgreSQL
+	 * Reset behavior in advanced security features
 	 */
-	sepgsqlSetLocalEnforcing(s->prevSELinux);
+	rowlvSetPerformingMode(s->prevRowlv);
+	sepgsqlSetExceptionMode(s->prevSepgsql);
 
 	/*
 	 * do abort processing
@@ -3887,9 +3891,10 @@ AbortSubTransaction(void)
 	SetUserIdAndContext(s->prevUser, s->prevSecDefCxt);
 
 	/*
-	 * Reset local enforcing/permissive mode in SE-PostgreSQL
+	 * Reset behavior in advanced security features
 	 */
-	sepgsqlSetLocalEnforcing(s->prevSELinux);
+	rowlvSetPerformingMode(s->prevRowlv);
+	sepgsqlSetExceptionMode(s->prevSepgsql);
 
 	/*
 	 * We can skip all this stuff if the subxact failed before creating a
@@ -4034,7 +4039,8 @@ PushTransaction(void)
 	s->blockState = TBLOCK_SUBBEGIN;
 	GetUserIdAndContext(&s->prevUser, &s->prevSecDefCxt);
 	s->prevXactReadOnly = XactReadOnly;
-	s->prevSELinux = sepgsqlGetLocalEnforcing();
+	s->prevRowlv = rowlvGetPerformingMode();
+	s->prevSepgsql = sepgsqlGetExceptionMode();
 
 	CurrentTransactionState = s;
 
