@@ -17,6 +17,31 @@
 #include "utils/tqual.h"
 
 /*
+ * rowlvGetPerformingMode
+ * rowlvSetPerformingMode
+ *   enables to control the behavior of row-level features
+ *   when violated tuples are detected.
+ *   The default is ROWLV_FILTER_MODE which filters out
+ *   violated tuples from result set, ROWLV_ABORT_MODE
+ *   raises an error and ROWLV_BYPASS_MODE do nothing.
+ */
+static int rowlv_mode = ROWLV_FILTER_MODE;
+
+int rowlvGetPerformingMode(void)
+{
+	return rowlv_mode;
+}
+
+int rowlvSetPerformingMode(int new_mode)
+{
+	int		old_mode = new_mode;
+
+	rowlv_mode = new_mode;
+
+	return old_mode;
+}
+
+/*
  * rowlvSetupPermissions
  *   setups permissions for row-level access controls.
  */
@@ -43,27 +68,41 @@ rowlvSetupPermissions(RangeTblEntry *rte)
  * rowlvExecScan
  *   a hook to filter out invisible/untouchable tuples.
  */
-bool
-rowlvExecScan(Scan *scan, Relation rel, TupleTableSlot *slot)
+static bool
+rowlvExecScan(Scan *scan, Relation rel, TupleTableSlot *slot, bool abort)
 {
-	HeapTuple		tuple;
-	uint32			perms = scan->rowlvPerms;
-
-	/* skip row-level checks on not-general relation */
-	if (!rel || !perms)
-		return true;
+	HeapTuple	tuple;
+	uint32		perms = scan->rowlvPerms;
 
 	tuple = ExecMaterializeSlot(slot);
 
 	if (ROWLV_DAC_PERMS(perms) != 0 &&
-		!rowaclExecScan(rel, tuple, ROWLV_DAC_PERMS(perms)))
+		!rowaclExecScan(rel, tuple, ROWLV_DAC_PERMS(perms), abort))
 		return false;
 
 	if (ROWLV_MAC_PERMS(perms) != 0 &&
-		!sepgsqlExecScan(rel, tuple, ROWLV_MAC_PERMS(perms)))
+		!sepgsqlExecScan(rel, tuple, ROWLV_MAC_PERMS(perms), abort))
 		return false;
 
 	return true;
+}
+
+bool
+rowlvExecScanFilter(Scan *scan, Relation rel, TupleTableSlot *slot)
+{
+	if (!rel || !scan->rowlvPerms || rowlv_mode != ROWLV_FILTER_MODE)
+		return true;
+
+	return rowlvExecScan(scan, rel, slot, false);
+}
+
+void
+rowlvExecScanAbort(Scan *scan, Relation rel, TupleTableSlot *slot)
+{
+	if (!rel || !scan->rowlvPerms || rowlv_mode != ROWLV_ABORT_MODE)
+		return;
+
+	rowlvExecScan(scan, rel, slot, true);
 }
 
 /*
@@ -73,9 +112,9 @@ rowlvExecScan(Scan *scan, Relation rel, TupleTableSlot *slot)
 bool
 rowlvCopyToTuple(Relation rel, HeapTuple tuple)
 {
-	if (!rowaclExecScan(rel, tuple, ACL_SELECT))
+	if (!rowaclExecScan(rel, tuple, ACL_SELECT, false))
 		return false;
-	if (!sepgsqlExecScan(rel, tuple, SEPG_DB_TUPLE__SELECT))
+	if (!sepgsqlExecScan(rel, tuple, SEPG_DB_TUPLE__SELECT, false))
 		return false;
 
 	return true;

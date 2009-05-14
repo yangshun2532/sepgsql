@@ -338,7 +338,7 @@ fixupColumnAvPerms(HeapTuple oldtup, HeapTuple newtup)
  *   makes a decision on the given tuple.
  */
 bool
-sepgsqlExecScan(Relation rel, HeapTuple tuple, uint32 required)
+sepgsqlExecScan(Relation rel, HeapTuple tuple, uint32 required, bool abort)
 {
 	security_class_t	tclass;
 	const char		   *audit_name;
@@ -353,7 +353,7 @@ sepgsqlExecScan(Relation rel, HeapTuple tuple, uint32 required)
 	return sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
 								 tclass,
 								 required,
-								 audit_name, false);
+								 audit_name, abort);
 }
 
 uint32
