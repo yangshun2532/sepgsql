@@ -16,7 +16,7 @@ extern void
 rowaclInitialize(void);
 
 extern bool
-rowaclExecScan(Relation rel, HeapTuple tuple, uint32 required);
+rowaclExecScan(Relation rel, HeapTuple tuple, uint32 required, bool abort);
 
 extern uint32
 rowaclSetupTuplePerms(RangeTblEntry *rte);

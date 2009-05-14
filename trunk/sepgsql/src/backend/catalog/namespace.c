@@ -39,6 +39,7 @@
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
 #include "parser/parse_func.h"
+#include "security/sepgsql.h"
 #include "storage/backendid.h"
 #include "storage/ipc.h"
 #include "utils/acl.h"
@@ -3019,6 +3020,7 @@ static void
 RemoveTempRelations(Oid tempNamespaceId)
 {
 	ObjectAddress object;
+	int		mode;
 
 	/*
 	 * We want to get rid of everything in the target namespace, but not the
@@ -3030,7 +3032,14 @@ RemoveTempRelations(Oid tempNamespaceId)
 	object.objectId = tempNamespaceId;
 	object.objectSubId = 0;
 
+	/*
+	 * SELinux does not check privileges to drop temporary objects
+	 */
+	mode = sepgsqlSetExceptionMode(1);
+
 	deleteWhatDependsOn(&object, false);
+
+	sepgsqlSetExceptionMode(mode);
 }
 
 /*

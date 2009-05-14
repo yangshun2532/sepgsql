@@ -130,9 +130,17 @@ ExecScan(ScanState *node,
 		 * when the qual is nil ... saves only a few cycles, but they add up
 		 * ...
 		 */
-		if (rowlvExecScan(scan, node->ss_currentRelation, slot)
+		if (rowlvExecScanFilter(scan, node->ss_currentRelation, slot)
 			&& (!qual || ExecQual(qual, econtext, false)))
 		{
+			/*
+			 * NOTE: On FK checks, the Row-level feature needs to raise
+			 * an error after evaluation of all the given quals to avoid
+			 * incorrect error reporting. We assume FK implementation
+			 * does not use malicious functions as the quals.
+			 */
+			rowlvExecScanAbort(scan, node->ss_currentRelation, slot);
+
 			/*
 			 * Found a satisfactory scan tuple.
 			 */
