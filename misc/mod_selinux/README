@@ -200,54 +200,113 @@ handled with "s0:c2" category.
 
 CONFIGURATION (mod_authn_sepgsql.so)
 ------------------------------------
-The mod_authn_sepgsql.so has the following directives to connect database,
-to provide basic/digest authentication and delivers user's extra information
-to other modules.
+
+The mod_authn_sepgsql.so provides an authentication mechanism collaborating
+with SE-PostgreSQL. When apache/httpd receives a request, it calls registered
+authentication modules sequencially, and also invokes mod_authn_sepgsql.
+It makes a query to the database to check whether the given pair of user and
+password is correct, or to return a hash token generated from password text.
+It expects the configured query can return a record for a valid web-user which
+contains a field to shows the required result.
+One useful feature is exporting the extra information of returned record to
+other modules via environment variable. For example, mod_selinux.so can
+assign individual security context based on the extra user information.
 
  == Database connection parameters ==
- * AuthSepgsqlHost         <hostname>
-   It specifies the hostname of SE-PostgreSQL server working.
-   The default is local connection via UNIX domain socket.
+ The following parameters allow to set up connection to database.
+ We can set up hostname, port number, database name, user and password
+ with specific directive. If you want to specify more detailed connection
+ parameter (such as LDAP or SSL option), the AuthSepgsqlConnInfo directive
+ allows to specify a raw connection string.
+ Please note that when AuthSepgsqlConnInfo has an explicit value, rest of
+ database connection parameters are ignored.
 
- * AuthSepgsqlPort         <port>
-   It specifies the port number of SE-PostgreSQL server accepting.
-   The default is 5432, or default name of UNIX domain socket.
+ * AuthSepgsqlHost         <host>  (default: local unix domain socket)
+   The hostname server working on.
 
- * AuthSepgsqlOptions      <options>
-   It specifies the connection option.
-   The default is empty.
+ * AuthSepgsqlPort         <port>  (default: 5432)
+   The port number server accepting connection.
 
- * AuthSepgsqlDatabase     <database>
-   It specifies the database name logged in.
-   The default is username of httpd process.
+ * AuthSepgsqlDatabase     <database> (default: username of httpd daemon)
+   The database name to be logged in.
 
- * AuthSepgsqlDbUser       <username>
-   It specifies the database username logged in.
-   The default is username of httpd process.
+ * AuthSepgsqlUser         <username> (default: username of httpd daemon)
+   The database username to be logged in.
 
- * AuthSepgsqlDbPass       <password>
-   It specifies the database password.
-   The default is empty string, and does not use password when logs in.
+ * AuthSepgsqlPassword     <password> (default: empty)
+   The database password to be used for database authentication.
 
- == Basic Authentication parameters ==
- * AuthSepgsqlCheckQuery   <query string>
- * AuthSepgsqlCheckField   <field name>
+ * AuthSepgsqlConnInfo     <connection string>
+   The raw connection information string.
 
- == Digest Authentication parameters ==
- * AuthSepgsqlHashQuery    <query string>
- * AuthSepgsqlHashField    <field name>
+ == Query for authentication ==
+ The following parameters allow to specify query string used for basic or
+ digest authentication, and field name optionally which stores the result
+ of authentication or generation of hash string.
+ The given query can have some of special variables which are replaced by
+ run-time informations, such as username, password and so on.
+
+  - $(user)        ... replaced by the given username to be authorized
+  - $(password)    ... replaced by the given password.
+                       (*) It is not valid for digest authentication.
+  - $(realm)       ... replaced by the given realm to be used to generate
+                       a hash string in digest authentication.
+                       (*) It is not valid for basic authentication.
+  - $(remote_addr) ... replaced by the ip address of remote host.
+  - $(method)      ... replaced by the request method.
+  - $(uri)         ... replaced by the request URI.
+
+ example)
+   AuthSepgsqlCheckQuery  check_result    \
+       "SELECT upassword = $(password) AS check_result FROM uaccount WHERE uname = $(user)"
+
+ The AuthSepgsqlCheckQuery is a query used for basic authentication, and
+ the AuthSepgsqlHashQuery is a query used for digest authentication.
+ They need to return a tuple for valid-user. If no records were returned,
+ it is considered as user-not-found, not an authentication denied.
+
+ * AuthSepgsqlCheckQuery   [<field name>] <query string>
+ It specifies a query string for basic authentication. The field name needs
+ to be BOOL type which shows whether the given $(user) and $(password) were
+ matched, or not. When it is true ('t'), the required authentication gets
+ granted, otherwise denied.
+ If the field name is omitted, the first field is used for the result.
+
+ * AuthSepgsqlHashQuery    [<field name>] <query string>
+ It specified a query string for digest authentication. The field name needs
+ to be TEXT or compatible type which returns a computed hash token used for
+ digest authentication. It has to be computed as:
+   MD5($(user):$(realm):<password>)
+ The digest authentication does not deliver the plain password, the query
+ needs to create the hash token from the given $(user) and $(realm), and
+ password stored within database.
+ The returned hash token matches with expected one, the required
+ authentication gets graned, otherwise denied.
+ If the field name is omitted, the first field is used for the result.
 
  == Collaboration parameters ==
- * AuthSepgsqlSetEnvField  <field name> [<environ variable>]
+ * AuthSepgsqlSetEnv       <field name> [<environ variable>]
 
+ A record can contain extra information related to authenticated users,
+ such as real-name, e-mail address, security context to be performed on.
+ This directive enables to export a certain field to other modules via
+ environment variable.
 
-Example of configuration:
+ example)
+   AuthSepgsqlSetEnv	umail	USER_EMAIL_ADDRESS
 
-The following example assumes "uaccount"
+ This example enables to export 'umail' field of the result record via
+ the environment variable of USER_EMAIL_ADDRESS, if the valid record
+ found in the authentication. Then, contents-handlers (web applications)
+ are invoked, and they can refer the extra information.
+ If the second argument is omitted, AUTH_SEPGSQL_<field name> is used
+ for the name of environ variable.
 
-
-
-
+ Please note that mod_selinux.so supports selinuxDomainEnv directive
+ which allows to assign a domain/range pair set in a certain environ
+ variable. The combination of these configuration enables to store
+ whole of web-user account info (username, password, domain/range, ...)
+ within the database.
 
 CONTACT
 -------

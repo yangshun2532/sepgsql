@@ -3,7 +3,7 @@
 Name: mod_selinux
 Version: 2.2.%%__mod_selinux_revision__%%
 Release: 1%{?dist}
-Summary: Apache/SELinux plus (module)
+Summary: Apache/SELinux plus modules
 Group: System Environment/Daemons
 License: ASL 2.0
 URL: http://code.google.com/p/sepgsql/
@@ -16,20 +16,10 @@ Requires: kernel >= 2.6.28 httpd >= 2.2.0 libselinux policycoreutils selinux-pol
 BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root
 
 %description
-The Apache/SELinux plus (module) enables to launch web
-applications under the more restrictive privileges of
-SELinux for each requests. It also means we can associate
-a concept of web-users and a set of privileges on the
-operating system.
-Internally, it spawns a one-time thread for each request
-at the process_connection hook and assigns an appropriate
-privileges at the fixups hook based on http-authentication
-or remote addresses. In addition, it always disables
-contents caches because it enables users to bypass access
-controls.
-Please note that it may give us performance impact, but
-we don't assume users of the module give the highest
-priority to the performance rather than the security.
+The Apache/SELinux plus is a set of modules to launch web applications
+under the restrictive privileges set (mod_selinux.so), to provide advanced
+authentication mechanism using SE-PostgreSQL (mod_auth_sepgsql.so), and to
+define the set of access control policies (mod_selinux.pp).
 
 %prep
 %setup -q
@@ -89,11 +79,15 @@ fi
 %defattr(-,root,root,-)
 %doc LICENSE README
 %config(noreplace) %{_sysconfdir}/httpd/conf.d/mod_*.conf
-%config(noreplace) %{_var}/www/%{name}.map
+%config(noreplace) %{_var}/www/mod_selinux.map
 %{_libdir}/httpd/modules/mod_*.so
-%{_datadir}/selinux/*/%{name}.pp
+%{_datadir}/selinux/*/mod_selinux.pp
 
 %changelog
+* Fri May 15 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 2.2.1897
+- rework: mod_authn_sepgsql cleanups
+- update: README updates.
+
 * Wed May 13 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 2.2.1884
 - rework: add mod_authn_sepgsql module
 - rework: directives were reorganized
