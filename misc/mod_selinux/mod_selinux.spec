@@ -84,32 +84,32 @@ fi
 %{_datadir}/selinux/*/mod_selinux.pp
 
 %changelog
-* Fri May 15 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 2.2.1897
+* Fri May 15 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 2.2.1898-1
 - rework: mod_authn_sepgsql cleanups
 - update: README updates.
 
-* Wed May 13 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 2.2.1884
+* Wed May 13 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 2.2.1884-1
 - rework: add mod_authn_sepgsql module
 - rework: directives were reorganized
 - rework: simultaneous usage with keep-alive
 
-* Fri Apr 17 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 2.2.1817
+* Fri Apr 17 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 2.2.1817-1
 - bugfix: add kernel >= 2.6.28 because of typebounds feature
 
-* Thu Apr 16 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 2.2.1803
+* Thu Apr 16 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 2.2.1803-1
 - rework: reverted to multi-threading design
 - bugfix: security policy didn't allow prosess:{setcurrent}
 
-* Wed Apr 15 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 2.2.1800
+* Wed Apr 15 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 2.2.1800-1
 - rework: worker was redesigned to use a process, instead of thread,
           on process_connection hook.
 - rework: "selinuxAllowCaches" and "selinuxAllowKeepAlive" were added.
 - rework: README was revised
 
-* Tue Apr 14 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 2.2.1795
+* Tue Apr 14 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 2.2.1795-1
 - bugfix: install script didn't work correctly.
 - update: add some of inline source comments.
 - update: specfile improvement.
 
-* Sun Apr 12 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 2.2.1792
+* Sun Apr 12 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 2.2.1792-1
 - Initial build
