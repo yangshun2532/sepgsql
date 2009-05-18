@@ -373,7 +373,7 @@ static int selinux_post_read_request(request_rec *r)
     selinux_config *sconf
         = ap_get_module_config(r->per_dir_config, &selinux_module);
 
-    if (sconf && !sconf->allow_caches)
+    if (sconf && sconf->allow_caches < 1)
         r->no_cache = 1;
 
     return DECLINED;
@@ -405,9 +405,57 @@ static void *selinux_create_dir(apr_pool_t *p, char *dirname)
 
     sconf->dirname = apr_pstrdup(p, dirname);
     sconf->list = NULL;
-	sconf->allow_caches = 0;
+	sconf->allow_caches = -1;
 
     return sconf;
+}
+
+static void *selinux_merge_conf(apr_pool_t *p, void *base, void *add)
+{
+    selinux_list *pos, *tmp, *cur = NULL;
+    selinux_config *bconf = base;
+    selinux_config *aconf = add;
+    selinux_config *sconf
+        = apr_pcalloc(p, sizeof(selinux_config));
+
+    sconf->dirname = apr_pstrdup(p, aconf->dirname);
+
+    if (aconf->list) {
+        for (pos = aconf->list; pos; pos = pos->next) {
+            tmp = apr_palloc(p, sizeof(*tmp) + strlen(pos->value));
+            tmp->next = NULL;
+            tmp->method = pos->method;
+            strcpy(tmp->value, pos->value);
+
+            if (!cur)
+                sconf->list = tmp;
+            else
+                cur->next = tmp;
+
+            cur = tmp;
+        }
+    }
+
+	if (bconf->list) {
+        for (pos = bconf->list; pos; pos = pos->next) {
+            tmp = apr_palloc(p, sizeof(*tmp) + strlen(pos->value));
+            tmp->next = NULL;
+            tmp->method = pos->method;
+            strcpy(tmp->value, pos->value);
+
+            if (!cur)
+                sconf->list = tmp;
+            else
+                cur->next = tmp;
+
+            cur = tmp;
+        }
+    }
+
+	sconf->allow_caches = (aconf->allow_caches < 0
+						   ? bconf->allow_caches
+						   : aconf->allow_caches);
+	return sconf;
 }
 
 static const char *
@@ -498,7 +546,7 @@ static const command_rec selinux_cmds[] = {
 module AP_MODULE_DECLARE_DATA selinux_module = {
     STANDARD20_MODULE_STUFF,
     selinux_create_dir,     /* create per-directory config */
-    NULL,                   /* merge per-directory config */
+    selinux_merge_conf,     /* merge per-directory config */
     NULL,                   /* server config creator */
     NULL,                   /* server config merger */
     selinux_cmds,           /* command table */
