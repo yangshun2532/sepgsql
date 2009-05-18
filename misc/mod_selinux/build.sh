@@ -29,7 +29,7 @@ cp -f ${BASEDIR}/${NAME}.c	\
 rm -rf ${WORKDIR}
 
 cp -f ${BASEDIR}/${NAME}.conf	${RPMSOURCE}
-cp -f ${BASEDIR}/${NAME}.map	${RPMSOURCE}
+# cp -f ${BASEDIR}/${NAME}.map	${RPMSOURCE}
 
 rpmbuild -ba ${RPMSOURCE}/${NAME}.spec
 
