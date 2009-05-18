@@ -84,7 +84,7 @@ fi
 %{_datadir}/selinux/*/%{name}.pp
 
 %changelog
-* Mon May 18 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 2.2.1901-1
+* Mon May 18 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 2.2.1903-1
 - rework: add selinux_merge_conf()
 - rework: remove mod_authn_sepgsql, instead of documentation
           to use mod_authn_dbd with pgsql driver.
