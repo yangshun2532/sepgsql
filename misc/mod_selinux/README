@@ -3,40 +3,30 @@ Apache/SELinux plus documentation
 
 OVERVIEW
 --------
-The Apache/SELinux plus is a set of modules which gives us a set of features
-to work web applications with individual security context for each requests.
-At the past days,
+The Apache/SELinux plus is an extra module (mod_selinux.so) which enables
+to launch contents-handler (it means both of references to static contents
+and invocations of web applications) with individual and restrictive
+privileges set, based on http authentication.
 
-List of modules:
- * mod_selinux.so
- * mod_authn_sepgsql.so
- * mod_selinux.pp
+SELinux assigns a privilege set called as domain or security context for
+each processes on the system, to apply its access control policy.
+The apache/httpd is not an exception. Typically, it works under httpd_t
+domain, and handles all the request come from client. But it is also
+a headache for SELinux, because all the contents handler inherits
+identical security context of apache/httpd daemon process (although each
+requests can come from different users), so SELinux cannot apply valid
+access controls on web application.
+In the result, we need to consign the task for web applications itself,
+but is isn't basically good design, since fewer points to be checked is
+better to reduce security holes.
 
-The mod_selinux.so enables to launch contents-handler (it contains references
-to static contents and invocations of web applications) with one-time worker
-thread and assign individual security context based on the result of httpd-
-authentication.
-The apache/httpd daemon process handles the requests come from the clients,
-and it also means all the requests are processed with a uniformed set of
-privileges, without few exceptions such as SuExec/CGI.
-From the viewpoint of operating system, its access control feature cannot
-discriminate all the web-application instances, so cannot apply any valid
-access controls. It impose on every web-applications a burden of correct
-access controls, but it is not basically good design, because fewer points
-to be checked is better to reduce security bugs.
-
-The mod_authn_sepgsql.so performs as an authentication provider using
-SE-PostgreSQL backend. It allows to store authentication information
-in the databases without exposing password in plain text.
-In addition, it enables to point out mod_selinux.so what domain/range
-pair to be assigned on the contents-handler for the given authenticated
-user.
-
-The mod_selinux.pp is a security policy module of SELinux.
-It gives us a few pre-defined web application domains (user_webapp_t and
-anon_webapp_t), and enables to launch apache/httpd with multi categories.
-The mod_selinux.so drops unnecessary categories at the startup time,
-then we can assign rest of categories to contents-handler.
+The mod_selinux.so generates a one-time worker thread for each request,
+and it assigns the worker restrictive domain based on the authentication
+prior to launching contents handlers. The assigned domain reflects the
+identification of users, and SELinux can ident them each other.
+It means we can apply valid access controls on web-applications, and
+makes assurance operating system can prevent violated accesses, even if
+web application contains security bugs or vulnerabilities.
 
 REQUIREMENTS
 ------------
@@ -71,10 +61,8 @@ BUILD and INSTALLATION
  # semodule -i mod_selinux.pp
 
 
-CONFIGURATION (mod_selinux.so)
-------------------------------
-
-The mod_selinux.so has the following four configurations:
+CONFIGURATION
+-------------
 
  * selinuxServerDomain  <domain/range pair>
   It specifies the security context of daemon process which accepts
@@ -98,10 +86,14 @@ The mod_selinux.so has the following four configurations:
     selinuxDomainMap    /var/www/mod_selinux.map
 
  * selinuxDomainEnv <environment variable>
-  It specifies an environment variable which tells a domain/range
-  pair to be assigned. We can set up an environment variable using
-  SetEnfIf directive conditionally, and some of authentication module
-  have a plan to set up it to show expected domain/range pair.
+  It specifies an environment variable which shows a domain/range
+  pair to be assigned. Some of extra modules supports to set up
+  environment variable depending on metadata of requests.
+  For examle, SetEnvIf allows to set up a certain environment
+  variable based on remote address conditionally. The following
+  configuration is an example which tries to assign "s0:c1" range
+  for connections from 192.168.1.0/24 and "s0:c2" range for
+  192.168.2.0/24.
 
    Example)
     SetEnvIf Remote_Addr "192.168.1.[0-9]+$" SELINUX_DOMAIN=*:s0:c1
@@ -172,16 +164,15 @@ The '#' and the following characters are handled as comments.
   panda			staff_webapp_t:s0:c2
   __anonymous__		anon_webapp_t:s0
 
-
-TIPS (virtual-host based separation)
-------------------------------------
-
-If you want to separate the security context per virtual host,
-but not necessary for users, we can utilize selinuxDomainVal
-to set up the domain/range pair for each virtual host.
-In the following example, all the request for dog.example.com
-will be handled with "s0:c1" category, but ones for others are
-handled with "s0:c2" category.
+USE CASES: virtual host based separation
+----------------------------------------
+If you want to assign an individual security context for each virtual
+hosts, but not necessary for each users, we can utilize selinuxDomainVal
+to set up the domain/range pair.
+In the following example, all the requests to dog.example.com are always
+handled as "*:s0:c1" categories, because it has an only selinuxDomainVal
+directive without any other conditional directives. In the same manner,
+all the requests to cat.example.com are always handled as "*:s0:c2".
 
  Example)
   NameVirtualHost *:80
@@ -198,115 +189,88 @@ handled with "s0:c2" category.
   selinuxDomainVal      *:s0:c2
   </VirtualHost>
 
-CONFIGURATION (mod_authn_sepgsql.so)
-------------------------------------
+USE CASES: integration of authentication
+----------------------------------------
+The mod_authn_dbd module performs as an authentication provider for
+Basic/Digest authentication using RDBMS such as PostgreSQL.
+It executes a prepared SQL query with parameters (like username, etc...)
+and fetches the result set. The SELECT statement can contains multiple
+fields in the result, and the only first one is used for authentication.
+Rest of the fields are exported via environment variable. If the field
+is refered by "hoge", it set up AUTHENTICATE_HOGE with contents of
+the field.
+Please remind mod_selinux.so allows to set up a domain/range pair based
+on a certain environment variable using selinuxDomainEnv directive.
+It means we can store all the user account information which includes
+privileges to be performed as within RDBMS.
 
-The mod_authn_sepgsql.so provides an authentication mechanism collaborating
-with SE-PostgreSQL. When apache/httpd receives a request, it calls registered
-authentication modules sequencially, and also invokes mod_authn_sepgsql.
-It makes a query to the database to check whether the given pair of user and
-password is correct, or to return a hash token generated from password text.
-It expects the configured query can return a record for a valid web-user which
-contains a field to shows the required result.
-One useful feature is exporting the extra information of returned record to
-other modules via environment variable. For example, mod_selinux.so can
-assign individual security context based on the extra user information.
+The following example assumes to use PostgreSQL, and stores user
+account information within uaccount table defined as follows:
 
- == Database connection parameters ==
- The following parameters allow to set up connection to database.
- We can set up hostname, port number, database name, user and password
- with specific directive. If you want to specify more detailed connection
- parameter (such as LDAP or SSL option), the AuthSepgsqlConnInfo directive
- allows to specify a raw connection string.
- Please note that when AuthSepgsqlConnInfo has an explicit value, rest of
- database connection parameters are ignored.
+  CREATE TABLE uaccount (
+      uname     TEXT PRIMARY KEY,
+      upass     TEXT NOT NULL,
+      udomain   TEXT
+  );
+  INSERT INTO uaccount VALUES ('foo', 'xxx', 'user_webapp_t:s0:c0');
+  INSERT INTO uaccount VALUES ('var', 'yyy', 'staff_webapp_t:s0:c1');
+  INSERT INTO uaccount VALUES ('baz', 'zzz', 'anon_webapp_t:s0:c2');
 
- * AuthSepgsqlHost         <host>  (default: local unix domain socket)
-   The hostname server working on.
+In addition, mod_authn_dbb module internally uses mod_dbd module which
+requires apr-util-pgsql package to communicate with PostgreSQL.
+Please install it prior to set up:
 
- * AuthSepgsqlPort         <port>  (default: 5432)
-   The port number server accepting connection.
+  # yum install -y apr-util-pgsql
 
- * AuthSepgsqlDatabase     <database> (default: username of httpd daemon)
-   The database name to be logged in.
+ Example)
 
- * AuthSepgsqlUser         <username> (default: username of httpd daemon)
-   The database username to be logged in.
+  LoadModule dbd_module        modules/mod_dbd.so       ... (1)
+  LoadModule authn_dbd_module  modules/mod_authn_dbd.so
+  LoadModule selinux_module    modules/mod_selinux.so
 
- * AuthSepgsqlPassword     <password> (default: empty)
-   The database password to be used for database authentication.
+  DBDriver    pgsql                             ... (2)
+  DBDParams  "dbname=web user=apache"           ... (3)
 
- * AuthSepgsqlConnInfo     <connection string>
-   The raw connection information string.
+  <Directory "/var/www/html">
+  # Digest authentication
+  # ---------------------
+  # AuthType               Digest
+  # AuthName               "Secret Zone"
+  # AuthDigestProvider     dbd                  ... (4)
+  # AuthDBDUserRealmQuery  \                    ... (5)
+  #     "SELECT md5(uname || ':' || $2 || ':' || upass), udomain, \
+  #             %s=%s as dummy FROM uaccount WHERE uname = $1"
 
- == Query for authentication ==
- The following parameters allow to specify query string used for basic or
- digest authentication, and field name optionally which stores the result
- of authentication or generation of hash string.
- The given query can have some of special variables which are replaced by
- run-time informations, such as username, password and so on.
+  # SELinux context mapping
+  # -----------------------
+  selinuxDomainEnv         AUTHENTICATE_UDOMAIN ... (6)
+  selinuxDomainVal         anon_webapp_t:s0
+  </Directory>
 
-  - $(user)        ... replaced by the given username to be authorized
-  - $(password)    ... replaced by the given password.
-                       (*) It is not valid for digest authentication.
-  - $(realm)       ... replaced by the given realm to be used to generate
-                       a hash string in digest authentication.
-                       (*) It is not valid for basic authentication.
-  - $(remote_addr) ... replaced by the ip address of remote host.
-  - $(method)      ... replaced by the request method.
-  - $(uri)         ... replaced by the request URI.
+At first, we need to load these modules on the (1), if the default
+configuration does not load them in default.
+The (2) specifies what database driver is used by mod_dbd, and the
+(3) specifies raw database connection string. In this example, we
+tries to connect "web" database by the database user of "apache"
+without password. The (4) specifies the dbd module is used for
+authentication, and the (5) is the query to be run.
 
- example)
-   AuthSepgsqlCheckQuery  check_result    \
-       "SELECT upassword = $(password) AS check_result FROM uaccount WHERE uname = $(user)"
+We don't recommend to use Basic authentication here, because Digest
+is more robust and mod_authn_dbd requires to return hashed password
+but PostgreSQL does not support it.
 
- The AuthSepgsqlCheckQuery is a query used for basic authentication, and
- the AuthSepgsqlHashQuery is a query used for digest authentication.
- They need to return a tuple for valid-user. If no records were returned,
- it is considered as user-not-found, not an authentication denied.
+In addition, the query has storange usage of "%s=%s as dummy", because
+mod_dbd replaces %s to parameter references ($<number>), but its order
+is currently hardwired. The first one is replaced by username, and the
+second one is replaced by realm. However, we need to put the given
+realm prior to username, so we put $1 and $2 directly, and put dummy
+%s to keep it harmless.
 
- * AuthSepgsqlCheckQuery   [<field name>] <query string>
- It specifies a query string for basic authentication. The field name needs
- to be BOOL type which shows whether the given $(user) and $(password) were
- matched, or not. When it is true ('t'), the required authentication gets
- granted, otherwise denied.
- If the field name is omitted, the first field is used for the result.
+The (6) specifies the environment variable of AUTHENTICATE_UDOMAIN which
+holds the result of udomain field from the query. mod_selinux.so will
+assign the fetched domain/range pair on the authenticated user context.
+Otherwise, it assigns anon_webapp_t:s0 via selinuxDomainVal directive.
 
- * AuthSepgsqlHashQuery    [<field name>] <query string>
- It specified a query string for digest authentication. The field name needs
- to be TEXT or compatible type which returns a computed hash token used for
- digest authentication. It has to be computed as:
-   MD5($(user):$(realm):<password>)
- The digest authentication does not deliver the plain password, the query
- needs to create the hash token from the given $(user) and $(realm), and
- password stored within database.
- The returned hash token matches with expected one, the required
- authentication gets graned, otherwise denied.
- If the field name is omitted, the first field is used for the result.
-
- == Collaboration parameters ==
- * AuthSepgsqlSetEnv       <field name> [<environ variable>]
-
- A record can contain extra information related to authenticated users,
- such as real-name, e-mail address, security context to be performed on.
- This directive enables to export a certain field to other modules via
- environment variable.
-
- example)
-   AuthSepgsqlSetEnv	umail	USER_EMAIL_ADDRESS
-
- This example enables to export 'umail' field of the result record via
- the environment variable of USER_EMAIL_ADDRESS, if the valid record
- found in the authentication. Then, contents-handlers (web applications)
- are invoked, and they can refer the extra information.
- If the second argument is omitted, AUTH_SEPGSQL_<field name> is used
- for the name of environ variable.
-
- Please note that mod_selinux.so supports selinuxDomainEnv directive
- which allows to assign a domain/range pair set in a certain environ
- variable. The combination of these configuration enables to store
- whole of web-user account info (username, password, domain/range, ...)
- within the database.
 
 CONTACT
 -------

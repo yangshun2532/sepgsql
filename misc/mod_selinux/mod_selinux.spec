@@ -8,9 +8,8 @@ Group: System Environment/Daemons
 License: ASL 2.0
 URL: http://code.google.com/p/sepgsql/
 Source0: http://sepgsql.googlecode.com/files/%{name}-%{version}.tgz
-Source1: mod_selinux.conf
-Source2: mod_authn_sepgsql.conf
-Source3: mod_selinux.map
+Source1: %{name}.conf
+Source2: %{name}.map
 BuildRequires: httpd-devel >= 2.2.0 libselinux-devel checkpolicy >= 2.0.19 selinux-policy
 Requires: kernel >= 2.6.28 httpd >= 2.2.0 libselinux policycoreutils selinux-policy
 BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root
@@ -45,8 +44,7 @@ rm -rf %{buildroot}
 %{__make} install DESTDIR=%{buildroot}
 
 %{__install} -p -m 644 %{SOURCE1}       %{buildroot}%{_sysconfdir}/httpd/conf.d
-%{__install} -p -m 644 %{SOURCE2}       %{buildroot}%{_sysconfdir}/httpd/conf.d
-%{__install} -p -m 644 %{SOURCE3}       %{buildroot}%{_var}/www
+%{__install} -p -m 644 %{SOURCE2}       %{buildroot}%{_var}/www
 for policy in %{selinux_policy_types}
 do
     %{__install} -d %{buildroot}%{_datadir}/selinux/${policy}
@@ -78,12 +76,17 @@ fi
 %files
 %defattr(-,root,root,-)
 %doc LICENSE README
-%config(noreplace) %{_sysconfdir}/httpd/conf.d/mod_*.conf
-%config(noreplace) %{_var}/www/mod_selinux.map
-%{_libdir}/httpd/modules/mod_*.so
-%{_datadir}/selinux/*/mod_selinux.pp
+%config(noreplace) %{_sysconfdir}/httpd/conf.d/%{name}.conf
+%config(noreplace) %{_var}/www/%{name}.map
+%{_libdir}/httpd/modules/%{name}.so
+%{_datadir}/selinux/*/%{name}.pp
 
 %changelog
+* Mon May 18 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 2.2.1900-1
+- rework: add selinux_merge_conf()
+- rework: remove mod_authn_sepgsql, instead of documentation
+          to use mod_authn_dbd with pgsql driver.
+
 * Fri May 15 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 2.2.1898-1
 - rework: mod_authn_sepgsql cleanups
 - update: README updates.
