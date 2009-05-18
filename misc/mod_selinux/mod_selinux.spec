@@ -3,7 +3,7 @@
 Name: mod_selinux
 Version: 2.2.%%__mod_selinux_revision__%%
 Release: 1%{?dist}
-Summary: Apache/SELinux plus modules
+Summary: Apache/SELinux plus module
 Group: System Environment/Daemons
 License: ASL 2.0
 URL: http://code.google.com/p/sepgsql/
@@ -15,10 +15,16 @@ Requires: kernel >= 2.6.28 httpd >= 2.2.0 libselinux policycoreutils selinux-pol
 BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root
 
 %description
-The Apache/SELinux plus is a set of modules to launch web applications
-under the restrictive privileges set (mod_selinux.so), to provide advanced
-authentication mechanism using SE-PostgreSQL (mod_auth_sepgsql.so), and to
-define the set of access control policies (mod_selinux.pp).
+The Apache/SELinux plus is an extra module (mod_selinux.so) which enables
+to launch contents-handler (it means both of references to static contents
+and invocations of web applications) with individual and restrictive
+privileges set, based on http authentication.
+The mod_selinux.so generates a one-time worker thread for each request,
+and it assigns the worker restrictive domain based on the authentication
+prior to launching contents handlers.
+It means we can apply valid access controls on web-applications, and
+makes assurance operating system can prevent violated accesses, even if
+web application contains security bugs or vulnerabilities.
 
 %prep
 %setup -q
@@ -82,7 +88,7 @@ fi
 %{_datadir}/selinux/*/%{name}.pp
 
 %changelog
-* Mon May 18 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 2.2.1900-1
+* Mon May 18 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 2.2.1901-1
 - rework: add selinux_merge_conf()
 - rework: remove mod_authn_sepgsql, instead of documentation
           to use mod_authn_dbd with pgsql driver.
