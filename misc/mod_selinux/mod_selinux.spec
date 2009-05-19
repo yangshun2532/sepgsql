@@ -84,6 +84,9 @@ fi
 %{_datadir}/selinux/*/%{name}.pp
 
 %changelog
+* Tue May 19 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 2.2.1904-1
+- bugfix: update Makefile to allow to build for 64bit architecture
+
 * Mon May 18 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 2.2.1903-1
 - rework: add selinux_merge_conf()
 - rework: remove mod_authn_sepgsql, instead of documentation
