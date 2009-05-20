@@ -23,10 +23,7 @@ rowlvGetPerformingMode(void);
 extern int
 rowlvSetPerformingMode(int mode);
 
-extern bool
-rowlvSetAbortOnViolation(bool abort);
-
-extern AclMode
+extern uint32
 rowlvSetupPermissions(RangeTblEntry *rte);
 
 extern bool

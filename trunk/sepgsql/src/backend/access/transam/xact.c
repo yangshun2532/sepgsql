@@ -172,6 +172,7 @@ static TransactionStateData TopTransactionStateData = {
 	InvalidOid,					/* previous CurrentUserId setting */
 	false,						/* previous SecurityDefinerContext setting */
 	false,						/* entry-time xact r/o state */
+	-1,							/* previous Row-level control behavior */
 	-1,							/* previous SELinux setting */
 	NULL						/* link to parent state block */
 };
