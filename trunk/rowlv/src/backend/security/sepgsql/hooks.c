@@ -223,8 +223,8 @@ sepgsqlCheckSequenceCommon(Oid seqid, access_vector_t required)
 	HeapTuple tuple;
 
 	tuple = SearchSysCache(RELOID,
-                           ObjectIdGetDatum(seqid),
-                           0, 0, 0);
+						   ObjectIdGetDatum(seqid),
+						   0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
 		elog(ERROR, "cache lookup failed for sequence: %u", seqid);
 

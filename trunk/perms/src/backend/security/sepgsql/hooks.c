@@ -94,10 +94,10 @@ sepgsqlCheckDatabaseSuperuser(void)
 void
 sepgsqlCheckDatabaseInstallModule(const char *filename)
 {
-	security_context_t fcontext;
-	HeapTuple tuple;
-	const char *audit_name;
-	char *fullpath;
+	security_context_t	fcontext;
+	HeapTuple			tuple;
+	const char		   *audit_name;
+	char			   *fullpath;
 
 	if (!sepgsqlIsEnabled())
 		return;
@@ -134,7 +134,7 @@ sepgsqlCheckDatabaseInstallModule(const char *filename)
 	PG_CATCH();
 	{
 		freecon(fcontext);
-        PG_RE_THROW();
+		PG_RE_THROW();
 	}
 	PG_END_TRY();
 	freecon(fcontext);
@@ -143,7 +143,7 @@ sepgsqlCheckDatabaseInstallModule(const char *filename)
 /*
  * sepgsqlDatabaseLoadModule
  *   checks capability of database to load a specific library
-*/
+ */
 void
 sepgsqlCheckDatabaseLoadModule(const char *filename)
 {
@@ -184,8 +184,8 @@ sepgsqlCheckDatabaseLoadModule(const char *filename)
 	PG_CATCH();
 	{
 		freecon(filecon);
-        PG_RE_THROW();
-    }
+		PG_RE_THROW();
+	}
 	PG_END_TRY();
 	freecon(filecon);
 }
@@ -251,7 +251,7 @@ checkSchemaAddRemove(Oid nsid, bool remove)
 			checkSchemaAddRemove(nsid_old, true);						\
 			checkSchemaAddRemove(nsid_new, false);						\
 		}																\
-	} while(0)															\
+	} while(0)
 
 void
 sepgsqlCheckSchemaAddRemove(Relation rel, HeapTuple newtup, HeapTuple oldtup)
@@ -414,8 +414,8 @@ sepgsqlCheckSequenceCommon(Oid seqid, access_vector_t required)
 	HeapTuple tuple;
 
 	tuple = SearchSysCache(RELOID,
-                           ObjectIdGetDatum(seqid),
-                           0, 0, 0);
+						   ObjectIdGetDatum(seqid),
+						   0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
 		elog(ERROR, "cache lookup failed for sequence: %u", seqid);
 
@@ -618,12 +618,12 @@ sepgsqlCheckProcedureInstall(Relation rel, HeapTuple newtup, HeapTuple oldtup)
 	switch (RelationGetRelid(rel))
 	{
 	case AggregateRelationId:
-       /*
-        * db_procedure:{execute} is checked on invocations of:
-        *   pg_aggregate.aggfnoid
-        *   pg_aggregate.aggtransfn
-        *   pg_aggregate.aggfinalfn
-        */
+		/*
+		 * db_procedure:{execute} is checked on invocations of:
+		 *   pg_aggregate.aggfnoid
+		 *   pg_aggregate.aggtransfn
+		 *   pg_aggregate.aggfinalfn
+		 */
 		break;
 
 	case AccessMethodRelationId:
@@ -781,9 +781,9 @@ sepgsqlCheckBlobGetattr(HeapTuple tuple)
 }
 
 /*
-  * sepgsqlCheckBlobSetattr
-  *   check db_blob:{setattr} permission
-  */
+ * sepgsqlCheckBlobSetattr
+ *   check db_blob:{setattr} permission
+ */
 void
 sepgsqlCheckBlobSetattr(HeapTuple tuple)
 {
@@ -845,8 +845,8 @@ void
 sepgsqlCheckBlobImport(LargeObjectDesc *lobj,
 					   int fdesc, const char *filename)
 {
-	security_context_t      fcontext;
-	security_class_t        fclass;
+	security_context_t	fcontext;
+	security_class_t	fclass;
 
 	if (!sepgsqlIsEnabled())
 		return;
@@ -872,7 +872,7 @@ sepgsqlCheckBlobImport(LargeObjectDesc *lobj,
 	PG_CATCH();
 	{
 		freecon(fcontext);
-        PG_RE_THROW();
+		PG_RE_THROW();
 	}
 	PG_END_TRY();
 	freecon(fcontext);
@@ -885,7 +885,7 @@ sepgsqlCheckBlobImport(LargeObjectDesc *lobj,
 void
 sepgsqlCheckBlobRelabel(HeapTuple oldtup, HeapTuple newtup)
 {
-	access_vector_t     required = SEPG_DB_BLOB__SETATTR;
+	access_vector_t		required = SEPG_DB_BLOB__SETATTR;
 
 	if (HeapTupleGetSecLabel(oldtup) != HeapTupleGetSecLabel(newtup))
 		required |= SEPG_DB_BLOB__RELABELFROM;
@@ -912,8 +912,8 @@ sepgsqlCheckBlobRelabel(HeapTuple oldtup, HeapTuple newtup)
 static void
 checkFileCommon(int fdesc, const char *filename, access_vector_t perms)
 {
-	security_context_t  context;
-	security_class_t    tclass;
+	security_context_t	context;
+	security_class_t	tclass;
 
 	if (!sepgsqlIsEnabled())
 		return;

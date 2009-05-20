@@ -310,10 +310,10 @@ avc_make_entry(avc_page *page, Oid tsid, security_class_t tclass)
 	 */
 	if (security_compute_create_raw(scontext, tcontext, tclass_ex, &ncontext) < 0)
 		ereport(ERROR,
-                (errcode(ERRCODE_SELINUX_ERROR),
-                 errmsg("SELinux: could not compute new context: "
-                        "scontext=%s tcontext=%s tclass=%s",
-                        scontext, tcontext, sepgsqlGetClassString(tclass))));
+				(errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("SELinux: could not compute new context: "
+						"scontext=%s tcontext=%s tclass=%s",
+						scontext, tcontext, sepgsqlGetClassString(tclass))));
 	/*
 	 * Copy them to avc_datum
 	 */
