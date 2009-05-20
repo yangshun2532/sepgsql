@@ -105,6 +105,9 @@ pg_read_file(PG_FUNCTION_ARGS)
 				 errmsg("could not open file \"%s\" for reading: %m",
 						filename)));
 
+	/* SELinux: check file:{read} permission */
+	sepgsqlCheckFileRead(fileno(file), filename);
+
 	if (fseeko(file, (off_t) seek_offset,
 			   (seek_offset >= 0) ? SEEK_SET : SEEK_END) != 0)
 		ereport(ERROR,
