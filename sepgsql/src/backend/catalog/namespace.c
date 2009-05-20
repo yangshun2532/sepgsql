@@ -3033,12 +3033,20 @@ RemoveTempRelations(Oid tempNamespaceId)
 	object.objectSubId = 0;
 
 	/*
-	 * SELinux does not check privileges to drop temporary objects
+	 * SELinux does not check anything while cleaning up
+	 * temporary objects.
 	 */
 	mode = sepgsqlSetExceptionMode(1);
-
-	deleteWhatDependsOn(&object, false);
-
+	PG_TRY();
+	{
+		deleteWhatDependsOn(&object, false);
+	}
+	PG_CATCH();
+	{
+		sepgsqlSetExceptionMode(mode);
+		PG_RE_THROW();
+	}
+	PG_END_TRY();
 	sepgsqlSetExceptionMode(mode);
 }
 
