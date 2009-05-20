@@ -2621,6 +2621,7 @@ RI_Initial_Check(Trigger *trigger, Relation fk_rel, Relation pk_rel)
 	const char *sep;
 	int			i;
 	int			old_work_mem;
+	int			save_rowlv;
 	char		workmembuf[32];
 	int			spi_result;
 	SPIPlanPtr	qplan;
@@ -2753,6 +2754,11 @@ RI_Initial_Check(Trigger *trigger, Relation fk_rel, Relation pk_rel)
 			 SPI_result, querybuf.data);
 
 	/*
+	 * Disables the Row-level stuff during the internal consistency checks.
+	 */
+	save_rowlv = rowlvSetPerformingMode(ROWLV_BYPASS_MODE);
+
+	/*
 	 * Run the plan.  For safety we force a current snapshot to be used. (In
 	 * serializable mode, this arguably violates serializability, but we
 	 * really haven't got much choice.)  We need at most one tuple returned,
@@ -2763,6 +2769,9 @@ RI_Initial_Check(Trigger *trigger, Relation fk_rel, Relation pk_rel)
 									  CopySnapshot(GetLatestSnapshot()),
 									  InvalidSnapshot,
 									  true, false, 1);
+
+	/* Restore Row-level stuff */
+	rowlvSetPerformingMode(save_rowlv);
 
 	/* Check result */
 	if (spi_result != SPI_OK_SELECT)
@@ -3257,7 +3266,7 @@ ri_PerformCheck(RI_QueryKey *qkey, SPIPlanPtr qplan,
 	int			spi_result;
 	Oid			save_userid;
 	bool		save_secdefcxt;
-	bool		save_rowlv_bahavior;
+	int			save_rowlv, temp_rowlv;
 	Datum		vals[RI_MAX_NUMKEYS * 2];
 	char		nulls[RI_MAX_NUMKEYS * 2];
 
@@ -3338,29 +3347,18 @@ ri_PerformCheck(RI_QueryKey *qkey, SPIPlanPtr qplan,
 	GetUserIdAndContext(&save_userid, &save_secdefcxt);
 	SetUserIdAndContext(RelationGetForm(query_rel)->relowner, true);
 
-	/*
-	 * Switch internal state of row-level security features
-	 *
-	 * NOTE: when a user tries to update/delete a PK which
-	 * is refered by invisible FKs, it need to be aborted
-	 * due to the referencial integrity.
-	 */
-	save_rowlv_bahavior = rowlvBehaviorSwitchTo(detectNewRows);
+	/* Switch Row-level stuff behavior on FK checks, if necessary */
+	temp_rowlv = (detectNewRows ? ROWLV_ABORT_MODE : ROWLV_FILTER_MODE);
+	save_rowlv = rowlvSetPerformingMode(temp_rowlv);
 
-	PG_TRY();
-	{
-		/* Finally we can run the query. */
-		spi_result = SPI_execute_snapshot(qplan,
-										  vals, nulls,
-										  test_snapshot, crosscheck_snapshot,
-										  false, false, limit);
-	}
-	PG_CATCH();
-	{
-		rowlvBehaviorSwitchTo(save_rowlv_bahavior);
-		PG_RE_THROW();
-	}
-	PG_END_TRY();
+	/* Finally we can run the query. */
+	spi_result = SPI_execute_snapshot(qplan,
+									  vals, nulls,
+									  test_snapshot, crosscheck_snapshot,
+									  false, false, limit);
+
+	/* Restore Row-level stuff behavior */
+	rowlvSetPerformingMode(save_rowlv);
 
 	/* Restore UID */
 	SetUserIdAndContext(save_userid, save_secdefcxt);

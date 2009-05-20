@@ -56,10 +56,12 @@ LockTableCommand(LockStmt *lockstmt)
 			aclresult = pg_class_aclcheck(reloid, GetUserId(),
 										  ACL_UPDATE | ACL_DELETE);
 
-		if (aclresult != ACLCHECK_OK ||
-			!sepgsqlCheckTableLock(reloid))
+		if (aclresult != ACLCHECK_OK)
 			aclcheck_error(aclresult, ACL_KIND_CLASS,
 						   get_rel_name(reloid));
+
+		/* SELinux: check db_table:{lock} permission */
+		sepgsqlCheckTableLock(reloid);
 
 		if (lockstmt->nowait)
 			rel = relation_open_nowait(reloid, lockstmt->mode);

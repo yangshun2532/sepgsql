@@ -668,9 +668,8 @@ truncate_check_rel(Relation rel)
 				 errmsg("permission denied: \"%s\" is a system catalog",
 						RelationGetRelationName(rel))));
 
-	if (!sepgsqlCheckTableTruncate(rel))
-		aclcheck_error(ACLCHECK_NO_PRIV, ACL_KIND_CLASS,
-					   RelationGetRelationName(rel));
+	/* SELinux: check db_table:{delete} permission */
+	sepgsqlCheckTableTruncate(rel);
 
 	/*
 	 * We can never allow truncation of shared or nailed-in-cache relations,
@@ -4080,6 +4079,10 @@ ATAddForeignKeyConstraint(AlteredTableInfo *tab, Relation rel,
 		indexOid = transformFkeyCheckAttrs(pkrel, numpks, pkattnum,
 										   opclasses);
 	}
+
+	/* SELinux: check db_table/db_column:{reference} permission */
+	sepgsqlCheckTableReference(pkrel, pkattnum, numpks);
+	sepgsqlCheckTableReference(rel, fkattnum, numfks);
 
 	/*
 	 * Look up the equality operators to use in the constraint.

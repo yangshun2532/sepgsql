@@ -12,6 +12,7 @@
 #include "catalog/pg_proc.h"
 #include "catalog/pg_language.h"
 #include "catalog/pg_largeobject.h"
+#include "catalog/pg_namespace.h"
 #include "catalog/pg_type.h"
 #include "miscadmin.h"
 #include "security/sepgsql.h"
@@ -19,6 +20,7 @@
 #include "utils/lsyscache.h"
 #include "utils/syscache.h"
 #include <sys/stat.h>
+
 
 /*
  * Dynamic object class/permissions mapping
@@ -117,6 +119,36 @@ static struct
 		}
 	},
 	{
+		"db_schema",			SEPG_CLASS_DB_SCHEMA,
+		{
+			{ "create",			SEPG_DB_SCHEMA__CREATE },
+			{ "drop",			SEPG_DB_SCHEMA__DROP },
+			{ "getattr",		SEPG_DB_SCHEMA__GETATTR },
+			{ "setattr",		SEPG_DB_SCHEMA__SETATTR },
+			{ "relabelfrom",	SEPG_DB_SCHEMA__RELABELFROM },
+			{ "relabelto",		SEPG_DB_SCHEMA__RELABELTO },
+			{ "search",			SEPG_DB_SCHEMA__SEARCH },
+			{ "add_object",		SEPG_DB_SCHEMA__ADD_OBJECT },
+			{ "remove_object",	SEPG_DB_SCHEMA__REMOVE_OBJECT },
+			{ NULL, 0UL },
+		}
+	},
+	{
+		"db_schema_temp",		SEPG_CLASS_DB_SCHEMA_TEMP,
+		{
+			{ "create",			SEPG_DB_SCHEMA_TEMP__CREATE },
+			{ "drop",			SEPG_DB_SCHEMA_TEMP__DROP},
+			{ "getattr",		SEPG_DB_SCHEMA_TEMP__GETATTR },
+			{ "setattr",		SEPG_DB_SCHEMA_TEMP__SETATTR },
+			{ "relabelfrom",	SEPG_DB_SCHEMA_TEMP__RELABELFROM },
+			{ "relabelto",		SEPG_DB_SCHEMA_TEMP__RELABELTO },
+			{ "search",			SEPG_DB_SCHEMA_TEMP__SEARCH },
+			{ "add_object",		SEPG_DB_SCHEMA_TEMP__ADD_OBJECT },
+			{ "remove_object",	SEPG_DB_SCHEMA_TEMP__REMOVE_OBJECT },
+			{ NULL, 0UL },
+		}
+	},
+	{
 		"db_table",				SEPG_CLASS_DB_TABLE,
 		{
 			{ "create",			SEPG_DB_TABLE__CREATE },
@@ -130,6 +162,22 @@ static struct
 			{ "insert",			SEPG_DB_TABLE__INSERT },
 			{ "delete",			SEPG_DB_TABLE__DELETE },
 			{ "lock",			SEPG_DB_TABLE__LOCK },
+			{ "reference",		SEPG_DB_TABLE__REFERENCE },
+			{ NULL, 0UL },
+		}
+	},
+	{
+		"db_sequence",			SEPG_CLASS_DB_SEQUENCE,
+		{
+			{ "create",			SEPG_DB_SEQUENCE__CREATE },
+			{ "drop",			SEPG_DB_SEQUENCE__DROP },
+			{ "getattr",		SEPG_DB_SEQUENCE__GETATTR },
+			{ "setattr",		SEPG_DB_SEQUENCE__SETATTR },
+			{ "relabelfrom",	SEPG_DB_SEQUENCE__RELABELFROM },
+			{ "relabelto",		SEPG_DB_SEQUENCE__RELABELTO },
+			{ "get_value",		SEPG_DB_SEQUENCE__GET_VALUE },
+			{ "next_value",		SEPG_DB_SEQUENCE__NEXT_VALUE },
+			{ "set_value",		SEPG_DB_SEQUENCE__SET_VALUE },
 			{ NULL, 0UL },
 		}
 	},
@@ -160,6 +208,7 @@ static struct
 			{ "select",			SEPG_DB_COLUMN__SELECT },
 			{ "update",			SEPG_DB_COLUMN__UPDATE },
 			{ "insert",			SEPG_DB_COLUMN__INSERT },
+			{ "reference",		SEPG_DB_COLUMN__REFERENCE },
 			{ NULL, 0UL },
 		}
 	},
@@ -201,17 +250,9 @@ static struct
 extern security_class_t
 sepgsqlTransToExternalClass(security_class_t tclass)
 {
-	security_class_t	tclass_ex;
-
 	Assert(tclass < SEPG_CLASS_MAX);
 
-	tclass_ex = string_to_security_class(selinux_catalog[tclass].class_name);
-	if (!tclass_ex)
-		ereport(FATAL,
-				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("SELinux: \"%s\" class is not defined in the policy",
-						selinux_catalog[tclass].class_name)));
-	return tclass_ex;
+	return string_to_security_class(selinux_catalog[tclass].class_name);
 }
 
 /*
@@ -224,11 +265,13 @@ sepgsqlTransToInternalPerms(security_class_t tclass, struct av_decision *avd)
 {
 	security_class_t tclass_ex;
 	struct av_decision i_avd;
-	int i;
+	int i, deny_unknown;
 
 	Assert(tclass < SEPG_CLASS_MAX);
 
 	memset(&i_avd, 0, sizeof(struct av_decision));
+
+	deny_unknown = security_deny_unknown();
 
 	tclass_ex = sepgsqlTransToExternalClass(tclass);
 	for (i=0; selinux_catalog[tclass].av[i].perm_name; i++)
@@ -240,8 +283,11 @@ sepgsqlTransToInternalPerms(security_class_t tclass, struct av_decision *avd)
 		perm_code_ex = string_to_av_perm(tclass_ex, perm_name);
 		if (!perm_code_ex)
 		{
-			/* permission is undefined */
-			i_avd.allowed |= perm_code;
+			/* fill up undefined permission */
+			if (!deny_unknown)
+				i_avd.allowed |= perm_code;
+			i_avd.decided |= perm_code;
+			i_avd.auditdeny |= perm_code;
 			continue;
 		}
 
@@ -305,6 +351,9 @@ sepgsqlAuditName(Oid relid, HeapTuple tuple)
 	{
 	case DatabaseRelationId:
 		return NameStr(((Form_pg_database) GETSTRUCT(tuple))->datname);
+
+	case NamespaceRelationId:
+		return NameStr(((Form_pg_namespace) GETSTRUCT(tuple))->nspname);
 
 	case RelationRelationId:
 		return NameStr(((Form_pg_class) GETSTRUCT(tuple))->relname);
@@ -373,6 +422,7 @@ sepgsqlFileObjectClass(int fdesc)
 security_class_t
 sepgsqlTupleObjectClass(Oid relid, HeapTuple tuple)
 {
+	Form_pg_namespace nspForm;
 	Form_pg_class clsForm;
 	Form_pg_attribute attForm;
 
@@ -381,10 +431,19 @@ sepgsqlTupleObjectClass(Oid relid, HeapTuple tuple)
 	case DatabaseRelationId:
 		return SEPG_CLASS_DB_DATABASE;
 
+	case NamespaceRelationId:
+		nspForm = (Form_pg_namespace) GETSTRUCT(tuple);
+		if (strncmp(NameStr(nspForm->nspname), "pg_temp_", 8) == 0 ||
+			strncmp(NameStr(nspForm->nspname), "pg_toast_temp_", 14) == 0)
+			return SEPG_CLASS_DB_SCHEMA_TEMP;
+		return SEPG_CLASS_DB_SCHEMA;
+
 	case RelationRelationId:
 		clsForm = (Form_pg_class) GETSTRUCT(tuple);
 		if (clsForm->relkind == RELKIND_RELATION)
 			return SEPG_CLASS_DB_TABLE;
+		if (clsForm->relkind == RELKIND_SEQUENCE)
+			return SEPG_CLASS_DB_SEQUENCE;
 		break;
 
 	case AttributeRelationId:

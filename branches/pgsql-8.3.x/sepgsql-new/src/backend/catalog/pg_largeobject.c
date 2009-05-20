@@ -58,6 +58,9 @@ LargeObjectCreate(Oid loid)
 
 	ntup = heap_formtuple(pg_largeobject->rd_att, values, nulls);
 
+	/* SELinux checks db_blob:{create} */
+	sepgsqlCheckBlobCreate(pg_largeobject, ntup);
+
 	/*
 	 * Insert it
 	 */
@@ -92,8 +95,9 @@ LargeObjectDrop(Oid loid)
 
 	while ((tuple = systable_getnext(sd)) != NULL)
 	{
+		/* SELinux checks db_blob:{drop} */
 		if (!found)
-			sepgsqlCheckBlobDrop(tuple);
+			sepgsqlCheckBlobDrop(pg_largeobject, tuple);
 		simple_heap_delete(pg_largeobject, &tuple->t_self);
 		found = true;
 	}
