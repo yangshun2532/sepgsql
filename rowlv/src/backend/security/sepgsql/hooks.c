@@ -103,6 +103,9 @@ sepgsqlCheckSchemaCommon(Oid nsid, access_vector_t required, bool abort)
 
 bool sepgsqlCheckSchemaSearch(Oid nsid)
 {
+	if (!sepgsqlIsEnabled())
+		return true;
+
 	return sepgsqlCheckSchemaCommon(nsid, SEPG_DB_SCHEMA__SEARCH, false);
 }
 
@@ -221,6 +224,9 @@ sepgsqlCheckSequenceCommon(Oid seqid, access_vector_t required)
 {
 	const char *audit_name;
 	HeapTuple tuple;
+
+	if (!sepgsqlIsEnabled())
+		return;
 
 	tuple = SearchSysCache(RELOID,
 						   ObjectIdGetDatum(seqid),
