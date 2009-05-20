@@ -25,6 +25,7 @@
 #include "commands/tablecmds.h"
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
+#include "security/sepgsql.h"
 #include "storage/proc.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
@@ -442,6 +443,9 @@ nextval_internal(Oid relid)
 				 errmsg("permission denied for sequence %s",
 						RelationGetRelationName(seqrel))));
 
+	/* SELinux check db_sequence:{next_value} */
+	sepgsqlCheckSequenceNextValue(elm->relid);
+
 	if (elm->last != elm->cached)		/* some numbers were cached */
 	{
 		Assert(elm->last_valid);
@@ -637,6 +641,9 @@ currval_oid(PG_FUNCTION_ARGS)
 				 errmsg("permission denied for sequence %s",
 						RelationGetRelationName(seqrel))));
 
+	/* SELinux check db_sequence:{get_value} */
+	sepgsqlCheckSequenceGetValue(elm->relid);
+
 	if (!elm->last_valid)
 		ereport(ERROR,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
@@ -681,6 +688,9 @@ lastval(PG_FUNCTION_ARGS)
 				 errmsg("permission denied for sequence %s",
 						RelationGetRelationName(seqrel))));
 
+	/* SELinux check db_sequence:{get_value} */
+	sepgsqlCheckSequenceGetValue(last_used_seq->relid);
+
 	result = last_used_seq->last;
 	relation_close(seqrel, NoLock);
 
@@ -716,6 +726,9 @@ do_setval(Oid relid, int64 next, bool iscalled)
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 				 errmsg("permission denied for sequence %s",
 						RelationGetRelationName(seqrel))));
+
+	/* SELinux check db_sequence:{set_value} */
+	sepgsqlCheckSequenceSetValue(elm->relid);
 
 	/* lock page' buffer and read tuple */
 	seq = read_info(elm, seqrel, &buf);

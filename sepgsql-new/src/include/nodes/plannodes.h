@@ -220,7 +220,11 @@ typedef struct Scan
 	Plan		plan;
 	Index		scanrelid;		/* relid is index into the range table */
 
-	AclMode		requiredPerms;	/* permissions in row-level access controls */
+	/*
+	 * Row-level access control stuff. Zero means we don't need
+	 * to apply row-level access control on the Scan.
+	 */
+	uint32      rowlvPerms;
 } Scan;
 
 /* ----------------

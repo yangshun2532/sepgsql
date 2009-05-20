@@ -93,62 +93,12 @@ sepgsqlGetUnlabeledLabel(void)
 	{
 		if (security_get_initial_context_raw("unlabeled",
 											 &unlabeledLabel) < 0)
+			
 			ereport(ERROR,
 					(errcode(ERRCODE_SELINUX_ERROR),
 					 errmsg("SELinux: could not get unlabeled label")));
 	}
 	return unlabeledLabel;
-}
-
-security_context_t
-sepgsqlGetDatabaseLabel(void)
-{
-	HeapTuple			tuple;
-	sepgsql_sid_t		dbsid;
-	security_context_t	dbcon;
-
-	if (IsBootstrapProcessingMode())
-	{
-		static security_context_t	databaseLabel = NULL;
-
-		if (!databaseLabel)
-		{
-			security_class_t	tclass
-				= string_to_security_class("db_database");
-
-			if (security_compute_create_raw(sepgsqlGetClientLabel(),
-											sepgsqlGetClientLabel(),
-											tclass, &databaseLabel) < 0)
-				ereport(ERROR,
-						(errcode(ERRCODE_SELINUX_ERROR),
-						 errmsg("SELinux: unable to compute database context")));
-		}
-		return pstrdup(databaseLabel);
-	}
-
-	tuple = SearchSysCache(DATABASEOID,
-						   ObjectIdGetDatum(MyDatabaseId),
-						   0, 0, 0);
-	if (!HeapTupleIsValid(tuple))
-		elog(ERROR, "SELinux: cache lookup failed for database: %u",
-			 MyDatabaseId);
-
-	dbsid = HeapTupleGetSecLabel(tuple);
-	dbcon = securityLookupSecurityLabel(dbsid);
-	if (!dbcon || !sepgsqlCheckValidSecurityLabel(dbcon))
-		dbcon = pstrdup(sepgsqlGetUnlabeledLabel());
-
-	ReleaseSysCache(tuple);
-
-	return dbcon;
-}
-
-sepgsql_sid_t
-sepgsqlGetDatabaseSid(void)
-{
-	security_context_t	dbcontext = sepgsqlGetDatabaseLabel();
-
-	return securityLookupSecurityId(dbcontext);
 }
 
 /*
@@ -232,7 +182,7 @@ static void
 parse_security_context(security_context_t context,
 					   char **user, char **role, char **type, char **range)
 {
-	security_context_t  raw_context;
+	security_context_t	raw_context;
 	char	   *tok;
 
 	if (!sepgsqlIsEnabled())
@@ -253,8 +203,8 @@ parse_security_context(security_context_t context,
 
 		tok = strtok(NULL, ":");
 		if (role)
-			*role = (!tok ? NULL : pstrdup(tok));
-
+	        *role = (!tok ? NULL : pstrdup(tok));
+		
 		tok = strtok(NULL, ":");
 		if (type)
 			*type = (!tok ? NULL : pstrdup(tok));
@@ -275,7 +225,7 @@ parse_security_context(security_context_t context,
 Datum
 sepgsql_get_user(PG_FUNCTION_ARGS)
 {
-	char	   *context = TextDatumGetCString(PG_GETARG_TEXT_P(0));
+	security_context_t	context = TextDatumGetCString(PG_GETARG_TEXT_P(0));
 	char	   *user;
 
 	parse_security_context(context, &user, NULL, NULL, NULL);
@@ -290,7 +240,7 @@ sepgsql_get_user(PG_FUNCTION_ARGS)
 Datum
 sepgsql_get_role(PG_FUNCTION_ARGS)
 {
-	char	   *context = TextDatumGetCString(PG_GETARG_TEXT_P(0));
+	security_context_t	context = TextDatumGetCString(PG_GETARG_TEXT_P(0));
 	char	   *role;
 
 	parse_security_context(context, NULL, &role, NULL, NULL);
@@ -305,7 +255,7 @@ sepgsql_get_role(PG_FUNCTION_ARGS)
 Datum
 sepgsql_get_type(PG_FUNCTION_ARGS)
 {
-	char	   *context = TextDatumGetCString(PG_GETARG_TEXT_P(0));
+	security_context_t	context = TextDatumGetCString(PG_GETARG_TEXT_P(0));
 	char	   *type;
 
 	parse_security_context(context, NULL, NULL, &type, NULL);
@@ -320,7 +270,7 @@ sepgsql_get_type(PG_FUNCTION_ARGS)
 Datum
 sepgsql_get_range(PG_FUNCTION_ARGS)
 {
-	char	   *context = TextDatumGetCString(PG_GETARG_TEXT_P(0));
+	security_context_t context = TextDatumGetCString(PG_GETARG_TEXT_P(0));
 	char	   *range;
 
 	parse_security_context(context, NULL, NULL, NULL, &range);
@@ -335,13 +285,13 @@ sepgsql_get_range(PG_FUNCTION_ARGS)
 static Datum
 sepgsql_set_common(char *context, char *user, char *role, char *type, char *range)
 {
-	StringInfoData		newcon;
+	StringInfoData	newcon;
 
 	parse_security_context(context,
-						   !user    ? &user : NULL,
-						   !role    ? &role : NULL,
-						   !type    ? &type : NULL,
-						   !range   ? &range : NULL);
+						   !user	? &user  : NULL,
+						   !role	? &role	 : NULL,
+						   !type	? &type  : NULL,
+						   !range	? &range : NULL);
 	if (!user || !role || !type)
 		ereport(ERROR,
 				(errcode(ERRCODE_SELINUX_ERROR),
@@ -358,17 +308,17 @@ sepgsql_set_common(char *context, char *user, char *role, char *type, char *rang
 Datum
 sepgsql_set_user(PG_FUNCTION_ARGS)
 {
-	char	   *context	= TextDatumGetCString(PG_GETARG_TEXT_P(0));
-	char	   *user	= TextDatumGetCString(PG_GETARG_TEXT_P(1));
+	security_context_t	context = TextDatumGetCString(PG_GETARG_TEXT_P(0));
+	char	   *user = TextDatumGetCString(PG_GETARG_TEXT_P(1));
 
-    return sepgsql_set_common(context, user, NULL, NULL, NULL);
+	return sepgsql_set_common(context, user, NULL, NULL, NULL);
 }
 
 Datum
 sepgsql_set_role(PG_FUNCTION_ARGS)
 {
-	char	   *context	= TextDatumGetCString(PG_GETARG_TEXT_P(0));
-	char	   *role	= TextDatumGetCString(PG_GETARG_TEXT_P(1));
+	security_context_t	context = TextDatumGetCString(PG_GETARG_TEXT_P(0));
+	char	   *role = TextDatumGetCString(PG_GETARG_TEXT_P(1));
 
 	return sepgsql_set_common(context, NULL, role, NULL, NULL);
 }
@@ -376,8 +326,8 @@ sepgsql_set_role(PG_FUNCTION_ARGS)
 Datum
 sepgsql_set_type(PG_FUNCTION_ARGS)
 {
-	char	   *context	= TextDatumGetCString(PG_GETARG_TEXT_P(0));
-	char	   *type	= TextDatumGetCString(PG_GETARG_TEXT_P(1));
+	security_context_t	context = TextDatumGetCString(PG_GETARG_TEXT_P(0));
+	char	   *type = TextDatumGetCString(PG_GETARG_TEXT_P(1));
 
 	return sepgsql_set_common(context, NULL, NULL, type, NULL);
 }
@@ -385,8 +335,8 @@ sepgsql_set_type(PG_FUNCTION_ARGS)
 Datum
 sepgsql_set_range(PG_FUNCTION_ARGS)
 {
-	char	   *context	= TextDatumGetCString(PG_GETARG_TEXT_P(0));
-	char	   *range	= TextDatumGetCString(PG_GETARG_TEXT_P(1));
+	security_context_t	context = TextDatumGetCString(PG_GETARG_TEXT_P(0));
+	char	   *range = TextDatumGetCString(PG_GETARG_TEXT_P(1));
 
 	return sepgsql_set_common(context, NULL, NULL, NULL, range);
 }

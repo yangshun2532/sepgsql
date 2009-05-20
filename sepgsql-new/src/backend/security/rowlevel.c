@@ -16,71 +16,95 @@
 #include "utils/rel.h"
 
 /*
- * rowlvBehaviorSwitchTo
- *
- *   switches current behavior of the row level access control features.
- *   In the default, it works as a filter to skip fetching violated tuples
- *   at the ExecScan(). However, we should not apply simple filtering
- *   policy at a few exceptions, during checks of FK constraints.
- *
- *   PostgreSQL implements FK constraints as trigger functions.
- *   When we update or delete tuples within PK table, these triggers are
- *   invoked to check FK tables whether the mofified PK is refered, or not.
- *   In this case, we have to consider a possibility one or more invisible
- *   or untouchable tuples are refering the target PK. If we simply filter
- *   out these tuples in this case, it allows to delete refered PKs, keep
- *   the current value of FK on SET CASCADE rules, and so on.
- *
- *   So, it is necessary to raise an error when invisible or untouchable
- *   ones are refering PKs. It also makes another issues.
- *   In the filtering strategy, any permission checks are done earlier
- *   than evaluations of WHERE clause, because user can give a malicious
- *   function as a condition with side effects which allows to expose
- *   the contents of invisible tuples.
- *   However, when we adopt a strategy of "abort on violation", permission
- *   should be checked after the evaluation of WHERE clause, because it
- *   raises an error even if the given tuple is out of scopes. In this case,
- *   we have an assumption that WHERE clause is not malicious and does not
- *   has side effect.
- *   The built-in FK constraints always uses simple operators which are
- *   already cheked on installation both of database ACL and SELinux.
- *   So, it is possible to change the behavior during FK constraint.
- *   Elsewhere, we should apply filtering strategy, as far as we cannot
- *   ensure a malicious function is injected on WHERE clause.
+ * rowlvGetPerformingMode
+ * rowlvSetPerformingMode
+ *   enables to control the behavior of row-level features
+ *   when violated tuples are detected.
+ *   The default is ROWLV_FILTER_MODE which filters out
+ *   violated tuples from result set, ROWLV_ABORT_MODE
+ *   raises an error and ROWLV_BYPASS_MODE do nothing.
  */
-static bool rowlvAbortBehavior = false;
+static int rowlv_mode = ROWLV_FILTER_MODE;
 
-bool
-rowlvBehaviorSwitchTo(bool new_abort)
+int rowlvGetPerformingMode(void)
 {
-	bool	old_abort = rowlvAbortBehavior;
+	return rowlv_mode;
+}
 
-	rowlvAbortBehavior = new_abort;
+int rowlvSetPerformingMode(int new_mode)
+{
+	int		old_mode = new_mode;
 
-	return old_abort;
+	rowlv_mode = new_mode;
+
+	return old_mode;
+}
+
+/*
+ * rowlvSetupPermissions
+ *   setups permissions for row-level access controls.
+ */
+#define ROWLV_PERMS_MASK		0xffff
+#define ROWLV_PERMS_SHIFT		16
+#define ROWLV_DAC_PERMS(perms)	((perms) & ROWLV_PERMS_MASK)
+#define ROWLV_MAC_PERMS(perms)	(((perms) >> ROWLV_PERMS_SHIFT) & ROWLV_PERMS_MASK)
+
+uint32
+rowlvSetupPermissions(RangeTblEntry *rte)
+{
+	uint32		mac_perms;
+
+	mac_perms = sepgsqlSetupTuplePerms(rte);
+	Assert((mac_perms & ROWLV_PERMS_MASK) == mac_perms);
+
+	return (mac_perms << ROWLV_PERMS_SHIFT);
 }
 
 /*
  * rowlvExecScan
  *   a hook to filter out invisible/untouchable tuples.
  */
-bool
+static bool
 rowlvExecScan(Scan *scan, Relation rel, TupleTableSlot *slot, bool abort)
 {
-	HeapTuple		tuple;
-	AclMode			required = scan->requiredPerms;
-
-	/* It is not a time to make a decision */
-	if (rowlvAbortBehavior != abort)
-		return true;
-
-	/* skip row-level controls on virtual relation */
-	if (!rel)
-		return true;
+	HeapTuple	tuple;
+	uint32		perms = scan->rowlvPerms;
 
 	tuple = ExecMaterializeSlot(slot);
 
-	if (!sepgsqlExecScan(rel, tuple, required, abort))
+	if (ROWLV_MAC_PERMS(perms) != 0 &&
+		!sepgsqlExecScan(rel, tuple, ROWLV_MAC_PERMS(perms), abort))
+		return false;
+
+	return true;
+}
+
+bool
+rowlvExecScanFilter(Scan *scan, Relation rel, TupleTableSlot *slot)
+{
+	if (!rel || !scan->rowlvPerms || rowlv_mode != ROWLV_FILTER_MODE)
+		return true;
+
+	return rowlvExecScan(scan, rel, slot, false);
+}
+
+void
+rowlvExecScanAbort(Scan *scan, Relation rel, TupleTableSlot *slot)
+{
+	if (!rel || !scan->rowlvPerms || rowlv_mode != ROWLV_ABORT_MODE)
+		return;
+
+	rowlvExecScan(scan, rel, slot, true);
+}
+
+/*
+ * rowlvCopyToTuple
+ *   checks permission on fetched tuple
+ */
+bool
+rowlvCopyToTuple(Relation rel, HeapTuple tuple)
+{
+	if (!sepgsqlExecScan(rel, tuple, SEPG_DB_TUPLE__SELECT, false))
 		return false;
 
 	return true;
@@ -95,7 +119,10 @@ bool
 rowlvHeapTupleInsert(Relation rel, HeapTuple newtup, bool internal)
 {
 	if (!sepgsqlHeapTupleInsert(rel, newtup, internal))
+	{
+		Assert(!internal);
 		return false;
+	}
 
 	return true;
 }
@@ -146,20 +173,5 @@ rowlvHeapTupleDelete(Relation rel, ItemPointer otid, bool internal)
 	}
 
 	ReleaseBuffer(oldbuf);
-	return true;
-}
-
-/*
- * rowlvCopyToTuple
- *   checks permission on fetched tuple
- */
-bool
-rowlvCopyToTuple(Relation rel, HeapTuple tuple)
-{
-	AclMode		required = ACL_SELECT;
-
-	if (!sepgsqlExecScan(rel, tuple, required, false))
-		return false;
-
 	return true;
 }

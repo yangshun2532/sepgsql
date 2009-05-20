@@ -13,11 +13,24 @@
 #include "nodes/plannodes.h"
 #include "utils/relcache.h"
 
-extern bool
-rowlvBehaviorSwitchTo(bool new_abort);
+#define ROWLV_BYPASS_MODE   1
+#define ROWLV_FILTER_MODE   2
+#define ROWLV_ABORT_MODE    3
+
+extern int
+rowlvGetPerformingMode(void);
+
+extern int
+rowlvSetPerformingMode(int mode);
+
+extern uint32
+rowlvSetupPermissions(RangeTblEntry *rte);
 
 extern bool
-rowlvExecScan(Scan *scan, Relation rel, TupleTableSlot *slot, bool abort);
+rowlvExecScanFilter(Scan *scan, Relation rel, TupleTableSlot *slot);
+
+extern void
+rowlvExecScanAbort(Scan *scan, Relation rel, TupleTableSlot *slot);
 
 extern bool
 rowlvHeapTupleInsert(Relation rel, HeapTuple newtup, bool internal);

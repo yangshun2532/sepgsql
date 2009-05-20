@@ -368,13 +368,13 @@ typedef struct RelOptInfo
 	 */
 
 	/*
-	 * Row-level access controls (both DAC and MAC) requires tuplePerms
-	 * holds proper required permissions for each fetched tuples. It is
-	 * similar to conditional scan on relations so, optimizar have to
-	 * check whether tuplePerms is zero, or not. The tuplePerms with zero
-	 * means we have no row-level security in this relation.
+	 * Permissions used in Row-level access control features both of DAC
+	 * and MAC. The lower 16bit is used for DAC, and rest of upper bits
+	 * are used for MAC. When rowlvPerms is zero, so it means we don't need
+	 * to apply the row-level stuff on the relation in both of levels.
+	 * It can be used as a hint for optimization stuff.
 	 */
-	AclMode		requiredPerms;
+	uint32      rowlvPerms;
 } RelOptInfo;
 
 /*

@@ -92,7 +92,7 @@ securityPostBootstrapingMode(void)
 	char			   *meta_label;
 
 	if (!earlySecLabelList)
-		return;	/* do nothing */
+		return;		/* do nothing */
 
 	StartTransactionCommand();
 
@@ -144,7 +144,6 @@ securityLookupSecurityId(const char *seclabel)
 
 	if (IsBootstrapProcessingMode())
 		return earlyLookupSecurityId(seclabel);
-
 	/*
 	 * lookup syscache at first
 	 */
@@ -203,7 +202,7 @@ securityLookupSecurityId(const char *seclabel)
 	 * We also have to insert a cache entry of new tuple of
 	 * pg_security for temporary usage.
 	 * If user tries to apply same security attribute twice
-	 * or more within same command id, PGACE cannot decide
+	 * or more within same command id, we cannot decide
 	 * whether it should be inserted, or not, because it
 	 * cannot scan the prior one with SnapshotNow.
 	 *
@@ -257,12 +256,7 @@ securityLookupSecurityLabel(Oid secid)
 Oid
 securityTransSecLabelIn(char *seclabel)
 {
-	char *rawlabel = sepgsqlSecurityLabelTransIn(seclabel);
-
-	if (!sepgsqlCheckValidSecurityLabel(rawlabel))
-		ereport(ERROR,
-				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("invalid security label: %s", rawlabel)));
+	char   *rawlabel = sepgsqlSecurityLabelTransIn(seclabel);
 
 	return securityLookupSecurityId(rawlabel);
 }
@@ -270,21 +264,20 @@ securityTransSecLabelIn(char *seclabel)
 char *
 securityTransSecLabelOut(Oid secid)
 {
-	char *rawlabel = securityLookupSecurityLabel(secid);
+	char   *rawlabel = securityLookupSecurityLabel(secid);
+	char   *seclabel;
 
-	if (!rawlabel || !sepgsqlCheckValidSecurityLabel(rawlabel))
-		rawlabel = sepgsqlGetUnlabeledLabel();
+	seclabel = sepgsqlSecurityLabelTransOut(rawlabel);
+	if (!seclabel)
+		seclabel = pstrdup("unlabeled");
 
-	if (!rawlabel)
-		rawlabel = pstrdup("unlabeled");
-
-	return sepgsqlSecurityLabelTransOut(rawlabel);
+	return seclabel;
 }
 
 Datum
 securityHeapGetSecLabelSysattr(HeapTuple tuple)
 {
-	Oid	secid = HeapTupleGetSecLabel(tuple);
+	Oid		secid = HeapTupleGetSecLabel(tuple);
 
 	return CStringGetTextDatum(securityTransSecLabelOut(secid));
 }

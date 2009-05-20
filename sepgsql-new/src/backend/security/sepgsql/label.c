@@ -13,160 +13,322 @@
 #include "catalog/pg_attribute.h"
 #include "catalog/pg_class.h"
 #include "catalog/pg_database.h"
-#include "catalog/pg_largeobject.h"
+#include "catalog/pg_namespace.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_security.h"
 #include "catalog/pg_type.h"
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
 #include "security/sepgsql.h"
+#include "storage/fd.h"
 #include "utils/builtins.h"
 #include "utils/memutils.h"
 #include "utils/syscache.h"
 
-/*
- * sepgsqlTupleDescHasSecLabel
- *   controls TupleDesc->tdhasseclabel
- */
+/* GUC: to turn on/off row level controls in SE-PostgreSQL */
 bool sepostgresql_row_level;
 
+/*
+ * sepgsqlTupleDescHasSecLabel
+ *
+ *   returns a hint whether we should allocate a field to store
+ *   security label on the given relation, or not.
+ */
 bool
 sepgsqlTupleDescHasSecLabel(Relation rel)
 {
 	if (!sepgsqlIsEnabled())
 		return false;
 
-	if (rel != NULL &&
-		RelationGetForm(rel)->relkind != RELKIND_RELATION)
-		return false;
+	if (rel == NULL)
+		return sepostgresql_row_level;	/* target of SELECT INTO */
 
-	if (rel != NULL &&
-		(RelationGetRelid(rel) == DatabaseRelationId ||		/* db_database */
-		 RelationGetRelid(rel) == RelationRelationId ||		/* db_table */
-		 RelationGetRelid(rel) == AttributeRelationId ||	/* db_column */
-		 RelationGetRelid(rel) == ProcedureRelationId ||	/* db_procedure */
-		 RelationGetRelid(rel) == LargeObjectRelationId))	/* db_blob */
+	if (RelationGetRelid(rel) == DatabaseRelationId  ||
+		RelationGetRelid(rel) == NamespaceRelationId ||
+		RelationGetRelid(rel) == RelationRelationId  ||
+		RelationGetRelid(rel) == AttributeRelationId ||
+		RelationGetRelid(rel) == ProcedureRelationId)
 		return true;
 
-	return sepostgresql_row_level;	/* db_tuple class depends on a GUC parameter */
+	return sepostgresql_row_level;
 }
 
 /*
- * sepgsqlSetDefaultSecLabel
+ * sepgsqlSetDefaultSecLabel 
  *
- *   It assigns a default security label on a tuple newly created.
- *   The default security label depends on the security policy, and
- *   its object class.
- *   The db_class and db_tuple class inherits the parent table's one,
- *   but we cannot refer system cache in very early phase, so it assumes
- *   nobody relabels the default one during initdb.
+ *   assigns a default security context for the newly inserted tuple.
  */
-void
+static Oid
+defaultDatabaseSecLabel(void)
+{
+	security_context_t context;
+	char		filename[MAXPGPATH];
+	char		buffer[512], *ptype, *tmp;
+	FILE	   *filp;
+
+	/*
+	 * NOTE: A special handling is necessary to determine the default
+	 * label for db_database obejct class because it does not have
+	 * its parent object, so we cannot apply normal type transition
+	 * here. At first, it tries to fetch the default context from the
+	 * configuration file of selinux-policy. If it is invalid, we 
+	 * determine it based on only the context of client (compatible
+	 * behavior).
+	 */
+	if (selinux_getpolicytype(&ptype) < 0)
+		goto fallback;
+
+	snprintf(filename, sizeof(filename),
+			 "%s%s/contexts/sepgsql_context", selinux_path(), ptype);
+	filp = AllocateFile(filename, PG_BINARY_R);
+	if (!filp)
+		goto fallback;
+
+	while (fgets(buffer, sizeof(buffer), filp) != NULL)
+	{
+		tmp = strchr(buffer, '#');
+		if (tmp)
+			*tmp = '\0';
+
+		context = strtok(buffer, " \t\n\r");
+		if (!context)
+			continue;
+
+		/* An entry found */
+		FreeFile(filp);
+		return securityLookupSecurityId(context);
+	}
+	FreeFile(filp);
+
+fallback:
+	context = sepgsqlComputeCreate(sepgsqlGetClientLabel(),
+								   sepgsqlGetClientLabel(),
+								   SEPG_CLASS_DB_DATABASE);
+	return securityLookupSecurityId(context);
+}
+
+static Oid
+defaultSchemaSecLabelCommon(security_class_t tclass)
+{
+	HeapTuple	tuple;
+	Oid			newsid;
+
+	if (IsBootstrapProcessingMode())
+	{
+		static Oid cached = InvalidOid;
+
+		if (!OidIsValid(cached))
+			cached = sepgsqlClientCreate(defaultDatabaseSecLabel(), tclass);
+
+		return cached;
+	}
+
+	tuple = SearchSysCache(DATABASEOID,
+						   ObjectIdGetDatum(MyDatabaseId),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "cache lookup failed for database: %u", MyDatabaseId);
+
+	newsid = sepgsqlClientCreate(HeapTupleGetSecLabel(tuple), tclass);
+
+	ReleaseSysCache(tuple);
+
+	return newsid;
+
+
+}
+
+static Oid
+defaultSchemaSecLabel(void)
+{
+	return defaultSchemaSecLabelCommon(SEPG_CLASS_DB_SCHEMA);
+}
+
+static Oid
+defaultSchemaTempSecLabel(void)
+{
+	return defaultSchemaSecLabelCommon(SEPG_CLASS_DB_SCHEMA_TEMP);
+}
+
+static Oid
+defaultSecLabelWithSchema(Oid nspoid, security_class_t tclass)
+{
+	HeapTuple	tuple;
+	Oid			newsid;
+
+	if (IsBootstrapProcessingMode())
+	{
+		static Oid cached  = InvalidOid;
+
+		if (!OidIsValid(cached))
+			cached = defaultSchemaSecLabel();
+
+		return sepgsqlClientCreate(cached, tclass);
+	}
+
+	tuple = SearchSysCache(NAMESPACEOID,
+						   ObjectIdGetDatum(nspoid),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "cache lookup failed for namespace: %u", nspoid);
+
+	newsid = sepgsqlClientCreate(HeapTupleGetSecLabel(tuple), tclass);
+
+	ReleaseSysCache(tuple);
+
+	return newsid;
+}
+
+static Oid
+defaultTableSecLabel(Oid nspoid)
+{
+	return defaultSecLabelWithSchema(nspoid, SEPG_CLASS_DB_TABLE);
+}
+
+static Oid
+defaultSequenceSecLabel(Oid nspoid)
+{
+	return defaultSecLabelWithSchema(nspoid, SEPG_CLASS_DB_SEQUENCE);
+}
+
+static Oid
+defaultProcedureSecLabel(Oid nspoid)
+{
+	return defaultSecLabelWithSchema(nspoid, SEPG_CLASS_DB_PROCEDURE);
+}
+
+static Oid
+defaultSecLabelWithTable(Oid relid, security_class_t tclass)
+{
+	HeapTuple	tuple;
+	Oid			relsid;
+
+	if (IsBootstrapProcessingMode()
+		&& (relid == TypeRelationId ||
+			relid == ProcedureRelationId ||
+			relid == AttributeRelationId ||
+			relid == RelationRelationId))
+	{
+		static Oid cached = InvalidOid;
+
+		if (!OidIsValid(cached))
+			cached = defaultTableSecLabel(PG_CATALOG_NAMESPACE);
+		relsid = cached;
+	}
+	else
+	{
+		tuple = SearchSysCache(RELOID,
+							   ObjectIdGetDatum(relid),
+							   0, 0, 0);
+		if (!HeapTupleIsValid(tuple))
+			elog(ERROR, "cache lookup failed for relation: %u", relid);
+
+		relsid = HeapTupleGetSecLabel(tuple);
+
+		ReleaseSysCache(tuple);
+	}
+
+	return sepgsqlClientCreate(relsid, tclass);
+}
+
+static Oid
+defaultColumnSecLabel(Oid relid)
+{
+	return defaultSecLabelWithTable(relid, SEPG_CLASS_DB_COLUMN);
+}
+
+static Oid
+defaultTupleSecLabel(Oid relid)
+{
+	return defaultSecLabelWithTable(relid, SEPG_CLASS_DB_TUPLE);
+}
+
+static Oid
+defaultBlobSecLabel(void)
+{
+	/*
+	 * NOTE:
+	 * A binary largeobject has its characteristic which has
+	 * one-to-any relationship between itself and tuples.
+	 * In other word, a large object consists of multiple
+	 * tuple, and the security context of thr first page
+	 * represents whole of the binary largeobject.
+	 * It requires all the pages within a single largeobejct
+	 * to have identical security context, and the assumption
+	 * is kept by a hardwired rule which prevent to manipulate
+	 * pg_largeobject system catalog by hand.
+	 * 
+	 * The security context of the first page is copied to
+	 * write new pages, so the default security context is
+	 * only asked when we create a new largeobject.
+	 */
+	HeapTuple	tuple;
+	Oid			newsid;
+
+	tuple = SearchSysCache(DATABASEOID,
+						   ObjectIdGetDatum(MyDatabaseId),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "cache lookup failed for database: %u", MyDatabaseId);
+
+	newsid = sepgsqlClientCreate(HeapTupleGetSecLabel(tuple),
+								 SEPG_CLASS_DB_BLOB);
+	ReleaseSysCache(tuple);
+
+	return newsid;
+}
+
+extern void
 sepgsqlSetDefaultSecLabel(Relation rel, HeapTuple tuple)
 {
-	Form_pg_attribute   attform;
-	security_context_t  context;
-	security_class_t    tclass;
-	sepgsql_sid_t       newsid, table_sid;
-	HeapTuple           reltup;
+	Form_pg_class		clsForm;
+	Form_pg_proc		proForm;
+	Form_pg_attribute	attForm;
+	Oid		relid = RelationGetRelid(rel);
+	Oid		newsid;
 
 	Assert(HeapTupleHasSecLabel(tuple));
-	tclass = sepgsqlTupleObjectClass(RelationGetRelid(rel), tuple);
 
-	switch (tclass)
+	switch (sepgsqlTupleObjectClass(relid, tuple))
 	{
 	case SEPG_CLASS_DB_DATABASE:
-		context = sepgsqlComputeCreate(sepgsqlGetClientLabel(),
-									   sepgsqlGetClientLabel(),
-									   SEPG_CLASS_DB_DATABASE);
-		newsid = securityTransSecLabelIn(context);
+		newsid = defaultDatabaseSecLabel();
+		break;
+
+	case SEPG_CLASS_DB_SCHEMA:
+		newsid = defaultSchemaSecLabel();
+		break;
+
+	case SEPG_CLASS_DB_SCHEMA_TEMP:
+		newsid = defaultSchemaTempSecLabel();
 		break;
 
 	case SEPG_CLASS_DB_TABLE:
-		newsid = sepgsqlClientCreate(sepgsqlGetDatabaseSid(),
-									 SEPG_CLASS_DB_TABLE);
+		clsForm = (Form_pg_class) GETSTRUCT(tuple);
+		newsid = defaultTableSecLabel(clsForm->relnamespace);
+		break;
+
+	case SEPG_CLASS_DB_SEQUENCE:
+		clsForm = (Form_pg_class) GETSTRUCT(tuple);
+		newsid = defaultSequenceSecLabel(clsForm->relnamespace);
 		break;
 
 	case SEPG_CLASS_DB_PROCEDURE:
-		newsid = sepgsqlClientCreate(sepgsqlGetDatabaseSid(),
-									 SEPG_CLASS_DB_PROCEDURE);
+		proForm = (Form_pg_proc) GETSTRUCT(tuple);
+		newsid = defaultProcedureSecLabel(proForm->pronamespace);
 		break;
+
 	case SEPG_CLASS_DB_COLUMN:
-		attform = (Form_pg_attribute) GETSTRUCT(tuple);
-		if (IsBootstrapProcessingMode() &&
-			(attform->attrelid == TypeRelationId ||
-			 attform->attrelid == ProcedureRelationId ||
-			 attform->attrelid == AttributeRelationId ||
-			 attform->attrelid == RelationRelationId))
-		{
-			table_sid = sepgsqlClientCreate(sepgsqlGetDatabaseSid(),
-											SEPG_CLASS_DB_TABLE);
-		}
-		else
-		{
-			reltup = SearchSysCache(RELOID,
-									ObjectIdGetDatum(attform->attrelid),
-									0, 0, 0);
-			if (!HeapTupleIsValid(reltup))
-				elog(ERROR, "SELinux: cache lookup failed fro relation: %u",
-					 attform->attrelid);
-
-			table_sid = HeapTupleGetSecLabel(reltup);
-
-			ReleaseSysCache(reltup);
-		}
-		newsid = sepgsqlClientCreate(table_sid, SEPG_CLASS_DB_COLUMN);
+		attForm = (Form_pg_attribute) GETSTRUCT(tuple);
+		newsid = defaultColumnSecLabel(attForm->attrelid);
 		break;
 
 	case SEPG_CLASS_DB_BLOB:
-		/*
-		 * NOTE:
-		 * A object within db_blob class has a characteristic.
-		 * It does not have one-to-one mapping on a object and
-		 * a tuple, in other word, a large object consists of
-		 * multiple tuples. In most cases, user accesses them
-		 * via several certain interfaces, like loread().
-		 * So, we assume user don't touch pg_largeobject system
-		 * catalog by hand, and it does not give us any degradation
-		 * at interface incompatibility.
-		 *
-		 * Thus, all the tuples modified are come from internal
-		 * interfaces, like simple_heap_insert(). The backend
-		 * implementation has to set correct security context
-		 * prior to insert a tuple. A security context of
-		 * largeobject is cached on LargeObjectDesc->secid
-		 * The only exception is inv_create(). It invoked
-		 * simple_heap_insert() with no security context to
-		 * assign a default one here.
-		 */
-		newsid = sepgsqlClientCreate(sepgsqlGetDatabaseSid(),
-									 SEPG_CLASS_DB_BLOB);
+		newsid = defaultBlobSecLabel();
 		break;
 
-	default:
-		if (IsBootstrapProcessingMode() &&
-			(RelationGetRelid(rel) == TypeRelationId ||
-			 RelationGetRelid(rel) == ProcedureRelationId ||
-			 RelationGetRelid(rel) == AttributeRelationId ||
-			 RelationGetRelid(rel) == RelationRelationId))
-		{
-			table_sid = sepgsqlClientCreate(sepgsqlGetDatabaseSid(),
-											SEPG_CLASS_DB_TABLE);
-		}
-		else
-		{
-			reltup = SearchSysCache(RELOID,
-									ObjectIdGetDatum(RelationGetRelid(rel)),
-									0, 0, 0);
-			if (!HeapTupleIsValid(reltup))
-				elog(ERROR, "SELinux: cache lookup failed fro relation: %u",
-					 RelationGetRelid(rel));
-
-			table_sid = HeapTupleGetSecLabel(reltup);
-
-			ReleaseSysCache(reltup);
-		}
-		newsid = sepgsqlClientCreate(table_sid, SEPG_CLASS_DB_TUPLE);
+	default: /* SEPG_CLASS_DB_TUPLE */
+		newsid = defaultTupleSecLabel(relid);
 		break;
 	}
 
@@ -175,28 +337,29 @@ sepgsqlSetDefaultSecLabel(Relation rel, HeapTuple tuple)
 
 /*
  * sepgsqlMetaSecurityLabel
- *   returns a security context of tuples within pg_security
+ *   It returns a security label of tuples within pg_security system
+ *   catalog. The purpose of this special handling is to avoid infinite
+ *   function invocations to insert new entry for meta security labels.
  */
 char *
 sepgsqlMetaSecurityLabel(void)
 {
-	security_context_t	tcontext;
-	sepgsql_sid_t		tsid;
 	HeapTuple			tuple;
+	security_context_t	tcontext;
+	Oid					tsecid;
 
 	tuple = SearchSysCache(RELOID,
 						   ObjectIdGetDatum(SecurityRelationId),
 						   0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
-		elog(ERROR, "SELinux: cache lookup failed for relation %u",
-			 SecurityRelationId);
+		elog(ERROR, "SELinux: cache lookup failed for relation: pg_security");
 
-	tsid = HeapTupleGetSecLabel(tuple);
+	tsecid = HeapTupleGetSecLabel(tuple);
 
 	ReleaseSysCache(tuple);
 
-	tcontext = securityLookupSecurityLabel(tsid);
-	if (!tcontext || !sepgsqlCheckValidSecurityLabel(tcontext))
+	tcontext = securityLookupSecurityLabel(tsecid);
+	if (!tcontext || security_check_context(tcontext) < 0)
 		tcontext = sepgsqlGetUnlabeledLabel();
 
 	return sepgsqlComputeCreate(sepgsqlGetServerLabel(),
@@ -213,6 +376,8 @@ sepgsqlMetaSecurityLabel(void)
 Oid
 sepgsqlInputGivenSecLabel(DefElem *defel)
 {
+	security_context_t	context;
+
 	if (!defel)
 		return InvalidOid;
 
@@ -221,7 +386,13 @@ sepgsqlInputGivenSecLabel(DefElem *defel)
 				(errcode(ERRCODE_SELINUX_ERROR),
 				 errmsg("SELinux: disabled now")));
 
-	return securityTransSecLabelIn(strVal(defel->arg));
+	context = strVal(defel->arg);
+	if (security_check_context(context) < 0)
+		ereport(ERROR,
+				(errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("Not a valid security context: \"%s\"", context)));
+
+	return securityTransSecLabelIn(context);
 }
 
 /*
@@ -272,26 +443,34 @@ sepgsqlInputGivenSecLabelRelation(CreateStmt *stmt)
  *   translate external security label into internal one
  */
 security_context_t
-sepgsqlSecurityLabelTransIn(security_context_t context)
+sepgsqlSecurityLabelTransIn(security_context_t seclabel)
 {
-	security_context_t raw_context, result;
+	security_context_t	rawlabel;
+	security_context_t	result;
 
-	if (selinux_trans_to_raw_context(context, &raw_context) < 0)
+	if (!sepgsqlIsEnabled())
+		return seclabel;
+
+	if (!seclabel || security_check_context(seclabel) < 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("SELinux: could not translate external label: %s", context)));
+				 errmsg("Not a valid security context: \"%s\"", seclabel)));
+
+	if (selinux_trans_to_raw_context(seclabel, &rawlabel) < 0)
+		ereport(ERROR,
+				(errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("Failed to translate \"%s\" to raw format", seclabel)));
 	PG_TRY();
 	{
-		result = pstrdup(raw_context);
+		result = pstrdup(rawlabel);
 	}
 	PG_CATCH();
 	{
-		freecon(raw_context);
+		freecon(rawlabel);
 		PG_RE_THROW();
 	}
 	PG_END_TRY();
-
-	freecon(raw_context);
+	freecon(rawlabel);
 
 	return result;
 }
@@ -301,39 +480,33 @@ sepgsqlSecurityLabelTransIn(security_context_t context)
  *   translate internal security label into external one
  */
 security_context_t
-sepgsqlSecurityLabelTransOut(security_context_t context)
+sepgsqlSecurityLabelTransOut(security_context_t rawlabel)
 {
-	security_context_t trans_context, result;
+	security_context_t	seclabel;
+	security_context_t	result;
 
-	if (selinux_raw_to_trans_context(context, &trans_context) < 0)
+	if (!sepgsqlIsEnabled())
+		return rawlabel;
+
+	if (!rawlabel || security_check_context(rawlabel) < 0)
+		rawlabel = sepgsqlGetUnlabeledLabel();
+
+	if (selinux_raw_to_trans_context(rawlabel, &seclabel) < 0)
 		ereport(ERROR,
-				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("SELinux: could not translate internal label: %s", context)));
+                (errcode(ERRCODE_SELINUX_ERROR),
+                 errmsg("Failed to translate \"%s\" to readable format", rawlabel)));
+
 	PG_TRY();
 	{
-		result = pstrdup(trans_context);
+		result = pstrdup(seclabel);
 	}
 	PG_CATCH();
 	{
-		freecon(trans_context);
+		freecon(seclabel);
 		PG_RE_THROW();
 	}
 	PG_END_TRY();
-
-	freecon(trans_context);
+	freecon(seclabel);
 
 	return result;
-}
-
-/*
- * sepgsqlCheckValidSecurityLabel()
- *   checks whether the given security context is a valid one, or not
- */
-bool
-sepgsqlCheckValidSecurityLabel(security_context_t context)
-{
-	if (security_check_context_raw(context) < 0)
-		return false;
-
-	return true;
 }
