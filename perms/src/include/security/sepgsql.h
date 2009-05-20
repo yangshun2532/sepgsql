@@ -406,7 +406,7 @@ sepgsqlCheckObjectPerms(Relation rel, HeapTuple tuple,
 /* core.c */
 #define sepgsqlIsEnabled()						(false)
 #define sepgsqlInitialize()						do {} while(0)
-// hooks.c
+/* hooks.c */
 #define sepgsqlCheckDatabaseAccess(a)			(true)
 #define sepgsqlCheckDatabaseSuperuser()			(true)
 #define sepgsqlCheckSchemaSearch(a)				(true)
@@ -427,8 +427,10 @@ sepgsqlCheckObjectPerms(Relation rel, HeapTuple tuple,
 #define sepgsqlCheckBlobExport(a,b,c)			do {} while(0)
 #define sepgsqlCheckBlobImport(a,b,c)			do {} while(0)
 #define sepgsqlCheckBlobRelabel(a,b)			do {} while(0)
+#define sepgsqlCheckFileRead(a,b)				do {} while(0)
+#define sepgsqlCheckFileWrite(a,b)				do {} while(0)
 #define sepgsqlAllowFunctionInlined(a)			(true)
-// label.c
+/* label.c */
 #define sepgsqlTupleDescHasSecLabel(a)			(false)
 #define sepgsqlMetaSecurityLabel()				(NULL)
 #define sepgsqlInputGivenSecLabel(a)			(InvalidOid)
