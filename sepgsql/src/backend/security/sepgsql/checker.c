@@ -476,7 +476,6 @@ sepgsqlHeapTupleInsert(Relation rel, HeapTuple newtup, bool internal)
 	/* check db_procedure:{install} */
 	sepgsqlCheckProcedureInstall(rel, newtup, NULL);
 
-skip:	/* A case for special care of db_blob:{create} */
 	tclass = sepgsqlTupleObjectClass(relid, newtup);
 	audit_name = sepgsqlAuditName(relid, newtup);
 	return sepgsqlClientHasPerms(HeapTupleGetSecLabel(newtup),

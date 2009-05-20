@@ -53,7 +53,7 @@ int rowlvSetPerformingMode(int new_mode)
 uint32
 rowlvSetupPermissions(RangeTblEntry *rte)
 {
-	AclMode		dac_perms, mac_perms;
+	uint32		dac_perms, mac_perms;
 
 	dac_perms = rowaclSetupTuplePerms(rte);
 	Assert((dac_perms & ROWLV_PERMS_MASK) == dac_perms);
