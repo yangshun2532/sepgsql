@@ -28,7 +28,7 @@ RPMSOURCE=`rpm -E '%{_sourcedir}'`
 test -d ${RPMSOURCE} || exit 1
 
 # -- get base postgresql tar+gz, if necessary
-if [ ${GEN_PATCH_ONLY} -ne 0 ]; then
+if [ ${GEN_PATCH_ONLY} -eq 0 ]; then
     if [ ! -e ${RPMSOURCE}/postgresql-${BASE_VERSION}.tar.bz2 ]; then
         wget -O ${RPMSOURCE}/postgresql-${BASE_VERSION}.tar.bz2 \
             "ftp://ftp.postgresql.org/pub/source/v${BASE_VERSION}/postgresql-${BASE_VERSION}.tar.bz2" || exit 1
