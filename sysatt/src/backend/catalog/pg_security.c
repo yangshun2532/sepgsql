@@ -49,8 +49,8 @@ securityMetaSecurityLabel(void)
 typedef struct earlySecLabel
 {
 	struct earlySecLabel   *next;
-	Oid         secid;
-	char        seclabel[1];
+	Oid			secid;
+	char		seclabel[1];
 } earlySecLabel;
 
 static earlySecLabel *earlySecLabelList = NULL;
@@ -125,7 +125,7 @@ securityPostBootstrapingMode(void)
 		memset(nulls, false, sizeof(nulls));
 
 		values[Anum_pg_security_seclabel - 1]
-	        = CStringGetTextDatum(es->seclabel);
+			= CStringGetTextDatum(es->seclabel);
 
 		tuple = heap_form_tuple(RelationGetDescr(rel),
 								values, nulls);
@@ -378,7 +378,7 @@ securityTransSecLabelOut(Oid secid)
 Datum
 securityHeapGetSecLabelSysattr(HeapTuple tuple)
 {
-	Oid secid = HeapTupleGetSecLabel(tuple);
+	Oid		secid = HeapTupleGetSecLabel(tuple);
 
 	return CStringGetTextDatum(securityTransSecLabelOut(secid));
 }
