@@ -168,9 +168,9 @@ enum SepgsqlClasses
  */
 extern Size sepgsqlShmemSize(void);
 
-extern int  sepgsqlGetExceptionMode(void);
+extern bool sepgsqlGetExceptionMode(void);
 
-extern int  sepgsqlSetExceptionMode(int exception);
+extern bool sepgsqlSetExceptionMode(bool exception);
 
 extern void sepgsqlAvcInit(void);
 

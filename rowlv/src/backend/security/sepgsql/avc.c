@@ -86,7 +86,7 @@ static int	avc_version;
 
 static bool	avc_enforcing;
 
-static int  avc_exception = 0;
+static bool avc_exception = false;
 
 /*
  * selinux_state
@@ -131,14 +131,14 @@ sepgsqlShmemSize(void)
  *   They control exception mode bit to disable checks
  *   temporary (for internal processing purpose).
  */
-int sepgsqlGetExceptionMode(void)
+bool sepgsqlGetExceptionMode(void)
 {
 	return avc_exception;
 }
 
-int sepgsqlSetExceptionMode(int new_exception)
+bool sepgsqlSetExceptionMode(bool new_exception)
 {
-	int		old_exception = avc_exception;
+	bool		old_exception = avc_exception;
 
 	avc_exception = new_exception;
 
