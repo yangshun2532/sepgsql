@@ -10,7 +10,7 @@ URL: http://code.google.com/p/sepgsql/
 Source0: http://sepgsql.googlecode.com/files/%{name}-%{version}.tgz
 Source1: %{name}.conf
 BuildRequires: httpd-devel >= 2.2.0 libselinux-devel checkpolicy >= 2.0.19 selinux-policy
-Requires: kernel >= 2.6.28 httpd >= 2.2.0 libselinux policycoreutils selinux-policy
+Requires: kernel >= 2.6.28 httpd >= 2.2.0 policycoreutils selinux-policy
 BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root
 
 %description
@@ -84,6 +84,10 @@ fi
 %{_datadir}/selinux/*/%{name}.pp
 
 %changelog
+* Fri May 22 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 2.2.1930-1
+- rework: libselinux was dropped from explicit dependencies due to
+    http://fedoraproject.org/wiki/Packaging/Guidelines#Explicit_Requires
+
 * Tue May 19 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 2.2.1904-1
 - bugfix: update Makefile to allow to build for 64bit architecture
 
