@@ -1,0 +1,50 @@
+#summary Introduction of the Apache/SELinux plus
+#labels Phase-Design
+
+<font size="6" face="Impact,Chicago"><i><u>Apache/SELinux plus</u></i></font>
+
+<wiki:toc max_depth="2" />
+
+= Overview =
+
+
+http://sepgsql.googlecode.com/files/LAPP_SELinux_Fig02.png
+
+http://sepgsql.googlecode.com/files/LAPP_SELinux_Fig04.png
+
+= Background =
+
+== LAPP/SELinux ==
+http://sepgsql.googlecode.com/files/LAPP_SELinux_Fig00.png
+
+http://sepgsql.googlecode.com/files/LAPP_SELinux_Fig01.png
+
+== SE-PostgreSQL ==
+
+http://sepgsql.googlecode.com/files/LAPP_SELinux_Fig03.png
+
+== Bounds domain ==
+
+
+http://sepgsql.googlecode.com/files/LAPP_SELinux_Fig05.png
+
+
+= Installation =
+
+== RPM Installation ==
+
+== Sourve Installation ==
+
+= Configuration =
+
+== Directives ==
+
+= Examples =
+
+== An usual case ==
+
+== Per virtual-host separation ==
+
+== Authentication with database backend ==
+
+= List of sources =
