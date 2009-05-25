@@ -29,8 +29,26 @@ Any kind of application servers (such as Tomcat) can be a candidate to be deploy
 
 == Background ==
 
+=== Apache/SELinux plus ===
+We can show an analogy between shell login and web accesses.
+It will make clear how SELinux should perform in web systems.
+
+In this section, the *user* means a human who would like to access the resources managed by the system, such as a web contents file. In generally, human is not suitable to hardware device by hand, so he creates his *agent* to access the resources instead of him, then he gives a set of orders and receives the result. Because the agent works according to orders from the user, the system needs to assign a correct privileges set which represents the user.
 
 [http://sepgsql.googlecode.com/files/LAPP_SELinux_Fig02.png]
+
+When we access the resource via ssh login, the ssh-server applies identification and authentication, then it forks a child process and execute the login shell with an appropriate user identifier and security context. The user can send a set of operations to access the resource, and the login shell executes them, as far as SELinux allow them.
+
+In the same manner, when we access the resource via web access, the web-server can apply identification and authentication (it also allows anonymous accesses), then it launches a web application instance, as an agent of the user, to handle the given http-request. However, the web-server does not change its security context, so it looks like the web-server process performing as an agent, and SELinux cannot apply valid access controls.
+
+There are few differences between two methods. The user sends his request and authentication information to the server, then the server launches an agent which accesses to the quired resource instead of the user. The only difference is whether the server assigns an appropriate security context, or not.
+
+The Apache/SELinux plus complements the facility. It assigns a corresponding security context based on http authentication prior to the launch of web application instance, as if ssh server assigns a corresponding security context on the user's login shell process.
+
+=== SE-PostgreSQL ===
+
+[http://sepgsql.googlecode.com/files/LAPP_SELinux_Fig03.png]
+
 
 == Components of LAPP/SELinux ==
 
@@ -39,7 +57,7 @@ Any kind of application servers (such as Tomcat) can be a candidate to be deploy
 
 === SE-PostgreSQL ===
 
-[http://sepgsql.googlecode.com/files/LAPP_SELinux_Fig03.png]
+
 
 === Apache/SELinux plus ===
 
@@ -48,6 +66,4 @@ Any kind of application servers (such as Tomcat) can be a candidate to be deploy
 [http://sepgsql.googlecode.com/files/LAPP_SELinux_Fig05.png]
 
 === PHP/SELinux support ===
-
-
 
