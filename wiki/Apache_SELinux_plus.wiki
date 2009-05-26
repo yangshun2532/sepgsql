@@ -7,27 +7,127 @@
 
 = Overview =
 
+The Apache/SELinux plus is an extra module of apache/httpd 2.2.x series, packaged as [https://admin.fedoraproject.org/pkgdb/packages/name/mod_selinux mod_selinux] in the Fedora Project.
+It allows to launch web application instance with an individual security context based on http authentication, it also can be understood as a mapping between a concept of web-user and security context in SELinux, so it becomes possible to apply valid access controls on web applications/users using SELinux.
+It is a significant component of LAPP/SELinux stack which is a community effort to utilize SELinux for fine-grained, system-wide consistent and mandatory access controls.
+
+It requires the following packages to work.
+
+ * Linux kernel >= 2.6.28, with SELinux enabled
+ * libselinux
+ * libsepol >= 2.0.34
+ * checkpolicy >= 2.0.17
+
+These features are available at Fedora 11, so it is recommendable to use it.
+
+== Analogy in design ==
+
+We can show an analogy between a traditional shell login usage and Apache/SELinux plus. It can make clear how SELinux performs in web system.
+
+In this section, the user (without any modifier) means a human who would like to access the resource managed by an information system, such as pdf documents. A human is not generally suitable to hardware device by hand (if he can touch and break down the hardware-box, it is out of the scope in SELinux), so he can create an agent to access the resource instead of himself. The agent is called a process on operating system, or called web application instance on web system.
+Because the agent performs as an alternative entity of the human user on the information system, it is necessary to have correct privileges set (such as security context) which is used for access controls. It is ensured by identification and authentication mechanism, so access control facility can prevent accesses when the agent tries to read invisible files, for example.
 
 http://sepgsql.googlecode.com/files/LAPP_SELinux_Fig02.png
 
+When a user tries to access the resource via ssh login, the ssh-server applies identification and authentication for the given connection, then it forks a child process and executes the login shell with a correct security context. In this case, the login shell process and its child processes are the agent of the user. The user can send a set of orders to access the resources, and the agent executes them as far as SELinux allows thems. Finally, the user receives either the result of them or an error from the agent.
+
+In the same manner, when we access the resource via web interface, the web server can apply its identification and authentication (it allows anonymous accesses). Then, it launches a web application instance as the agent of the user, to handle the given http request. The agent tries to access the required resources, however, SELinux cannot apply any valid access controls except for whether it should be allowed to web accesses, or not, because the web server does not assign a correct security context prior to launch of web application instance, and it always inherits the security context of web server. It looks like uniformed agents from the viewpoint of SELinux.
+
+The Apache/SELinux plus assigns a correct security context on the agent prior to its launches.
+It enables to give SELinux a chance to apply valid access control on web users, as if it is doing on accesses via the agent from shell login usage.
+
+== Internals ==
+
+The implementation of Apache/SELinux plus is simple.
+
+When the web server process receives a http request, it parses and analyze the request headers, then it applies http authentication if necessary. Please note that the authentication is done under the web server's context.
+Next, the mod_selinux.so module makes a one-time worker thread, and the parent side immediately gets sleep by the completion of the worker thread.
+The worker changes the security context of itself prior to the invocation of contents handlers which includes entry points of web applications. The recent version of SELinux (bundled in v2.6.28 or later) allows to set an individual security context for each thread as far as the new security context is bounded by older one. See the [Apache_SELinux_plus#Bounds_domain Bounds domain] for more details.
+Finally, the contents handlers are invoked by the worker thread with the new security context.
+
 http://sepgsql.googlecode.com/files/LAPP_SELinux_Fig04.png
+
+If the `mod_selinux.so` is not installed on the apache/httpd server, it invokes the contents handlers in the same context synchronously. Because the server side backend repeatedly receives and handles http requests, it is not impossible to assign a security context directly. If it onces assigned a restrictive security context, it can never handle other requests any more, but we cannot know before it parses and analyze the request header. So, it is necessary to create a one-time worker, as if a traditional `accept(2)` - `fork(2)` model did.
+
+Please note that dynamic domain transition is weaker separation than `execve(2)` based one. If the server process already loads an invisible files into local memory, it is logically referanciable for the worker thread with a restrictive security context.
+However, it can well check and prevent the web application to access violated resources voluntarily.
+
+----
 
 = Background =
 
 == LAPP/SELinux ==
-http://sepgsql.googlecode.com/files/LAPP_SELinux_Fig00.png
 
-http://sepgsql.googlecode.com/files/LAPP_SELinux_Fig01.png
+The [http://en.wikipedia.org/wiki/LAPP LAPP] is a usual oss web application software stack which consists of Linux, Apache, PostgreSQL and PHP/Perl/Python. The LAPP/SELinux is a concept of our efforts which tries to improve web application security using SELinux. 
+
+[http://www.nsa.gov/research/selinux/index.shtml SELinux] is an implementation of the [http://en.wikipedia.org/wiki/Reference_monitor reference monitor] on the Linux operating system, to provide fine-grained mandatory access controls based on the unified security policy. It has been a mainlined feature and also adopted by major distributions (Fedora, RedHatEL, etc...) for more than five years.
+It effectively prevents violated or unexpected accesses on system resources (such as credential files) from buggy applications or malicious users, so it well contributes competitive edge of the Linux.
+
+However, we often have heard a concern to SELinux, such as _"How does it improve the web application security?"_.
+In fact, the trend of threats to our information system has been rapidly changed for a few years.
+The following figure is adopted from _[http://www.lac.co.jp/info/jsoc_report/ The analysis report of the trend of intrusions: vol.12 (Mar 16, 2009)]_. It says 93% of significant incidents targeted to web systems in 2008, although it was 53% in 2006.
+
+[http://sepgsql.googlecode.com/files/LAPP_SELinux_Fig00.png]
+
+The rate of attacks to web systems obviously has grew up with expansion of online commerces and enlargement of the worth of information assets via web systems. So, it is necessary to provide a solution to improve the security in the regison, but we also have a few difficult matters.
+
+The one is access controls to database objects. SELinux performs as a reference monitor in operating system, it means SELinux can check all the accesses on resources managed by operating system, but it also means SELinux cannot check anything on resources not managed by operating system, such as database management system.
+SE-PostgreSQL is an enhancement of PostgreSQL relational database management system. It enables to apply fine-grained mandatory access controls based on the unified security policy of SELinux.
+It also means the coverage of SELinux got enlarged to the database layer on LAPP stack.
+
+The other is privileges of web application instance. The apache/httpd receives and handles all the http requests in a uniformed security context, so it means SELinux cannot apply valid access controls based on web users.
+The Apache/SELinux is an extra module of apache/httpd. It enables to assign a restrictive security context based on http authentication prior to the invocation of contents handlers which includes the entrypoints of web applications.
+It also means the coverage of SELinux got enlarged to the web server layer on LAPP stack.
+
+[http://sepgsql.googlecode.com/files/LAPP_SELinux_Fig01.png]
+
+At the past days, SELinux can control accesses to the resources managed by operating systems.
+Nowadays, it can cover the lower LAP of the LAPP stack, then we consider the load to cover whole of the stack with SELinux.
+The final P is symbolically considered as lightweight-languages, such as PHP, but not limited to them.
+Any kind of application servers (such as Tomcat) can be a candidate to be deployed here, and it is an action item to be solved in the future.
 
 == SE-PostgreSQL ==
 
+Massive number of web applications use database, so it is a very significant facility to be considered from the viewpoint of access controls, nowadays.
+As we notes above, in-kernel SELinux cannot check accesses on data objects managed by userspace applications. It means all the accesses on database objects perform as blind-spot from SELinux, so all we could do was to control the connection to database management system in system-call level, but inflexible.
+
+SE-PostgreSQL performs as a reference monitor on the PostgreSQL, collaborating with in-kernel SELinux.
+It also can be understood as an analogy between SQL-queries and system-calls.
+
 http://sepgsql.googlecode.com/files/LAPP_SELinux_Fig03.png
+
+When a process (which is an agent of user) accesses to the filesystem objects managed by the operating system, it invokes a system call as a method to access them, then in-kernel SELinux checks the privileges between the caller process and the targe object based on the security policy. Both of them have its security context, and if the security policy allows the required action on the combination of the security contexts, SELinux allows to execute the system call. In the result, the caller receives the result of the system call.
+
+In a similar manner, when a client process accesses to the database objects managed by database management system as a literal, it sends a SQL query as a method to access them, then SE-PostgreSQL subsystem checks the privileges between the client process (SELinux provides an API to obtain the security context of the peer socket) and the target object based on the security policy manged by the kernel. SE-PostgreSQL also manages the security context of the database objects. SE-PostgreSQL asks in-kernel SELinux whether the security policy allows the required actions for the given combination of security contexts, or not.
+If SELinux answered it to be allowed, SE-PostgreSQL also allows to execute the SQL-query. In the result, the client receives the result of the SQL-query.
+
+See the http://wiki.postgresql.org/wiki/SEPostgreSQL for more details.
 
 == Bounds domain ==
 
+The Apache/SELinux plus uses one-time worker threads to launch web application instances, and the worker threads assign a new security context on themself. SELinux has a restriction to set an individual security context for each threads. The new security context to be set on threads has to be bounded by the original security context. The relationship of boundary is defined in the security policy.
+
+In a mult-thread process, multiple threads share a process local memory, so SELinux cannot acquire and check information flows between different domains due to the property of reference monitor. It is the reason why the older kernel does not allow to set a new security context in multi-thread processes.
+
+The bounds domain feature restricts the scope of privileges to be assigned to the bounded domain.
+When a domain is bounded by another one, any privileges can never be assigned to the bounded domain as far as the bounding one is allowed.
 
 http://sepgsql.googlecode.com/files/LAPP_SELinux_Fig05.png
 
+The above example bounds the `anon_webapp_t` domain by the `httpd_t` domain with the following `typebounds` policy.
+{{{
+typebounds httpd_t anon_webapp_t;
+}}}
+
+The rule is that all the privileges to be allowed on `anon_webapp_t` domain have to be also allowed to `httpd_t` domain.
+If we tries to allow `anon_webapp_t` to access `/etc/shadow` on writing policies, it is dropped in run-time because the `httpd_t` is not allowed to access it.
+In this figure, both of them are allowed on the `/var/www/cgi-bin/test.cgi` when `httpd_enable_cgi` boolean is turned on. The `httpd_enable_cgi` only controls privileges for `httpd_t` in the security policy, but turning it off concurrently drops privileges of `anon_webapp_t` because `http_t` has lost the privileges in this state.
+
+We can consider the bounds domains as a special state of the original domain which lacks a part of privileges. Thus, SELinux allows to change the security context of a certain thread within multi-thread process as far as the new security context is bounded by the older one.
+
+The Apache/SELinux plus uses the bounds domain to assign individual security context on a certain thread, without unnecessary privileges for the authenticated users.
+
+----
 
 = Installation =
 
@@ -35,9 +135,24 @@ http://sepgsql.googlecode.com/files/LAPP_SELinux_Fig05.png
 
 == Sourve Installation ==
 
+
+----
+
 = Configuration =
 
 == Directives ==
+
+The `mod_selinux.so` supports the following directives.
+
+=== selinuxServerDomain ===
+=== selinuxDomainMap ===
+=== selinuxDomainEnv ===
+=== selinuxDomainVal ===
+=== selinuxAllowCaches ===
+
+
+
+----
 
 = Examples =
 
@@ -47,4 +162,13 @@ http://sepgsql.googlecode.com/files/LAPP_SELinux_Fig05.png
 
 == Authentication with database backend ==
 
+
+----
+
 = List of sources =
+
+== mod_selinux-2.2.1930.tgz (May 21, 2009) ==
+ * http://sepgsql.googlecode.com/files/mod_selinux-2.2.1930.tgz
+ * SHA1: 80cd3c367787340010066019a929f41f975eb485
+ * ChangeLog:
+  * The first release of Apache/SELinux plus
