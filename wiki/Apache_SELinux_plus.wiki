@@ -479,5 +479,5 @@ If the variable is not set, the `selinuxDomainVal` is used as a fallback.
 == mod_selinux-2.2.1930.tgz (May 21, 2009) ==
  * http://sepgsql.googlecode.com/files/mod_selinux-2.2.1930.tgz
  * SHA1: 80cd3c367787340010066019a929f41f975eb485
- * ChangeLog:
+ * Changelog:
   * The first release of Apache/SELinux plus
