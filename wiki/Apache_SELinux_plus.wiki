@@ -162,8 +162,8 @@ The RPM packages are hosted by [http://fedoraproject.org/ Fedora Project]. Pleas
 
 Then, run the `rpm` command. Please note that it also installs the `mod_selinux.pp` policy module, so it may require a bit of time to complete.
 {{{
-[root@saba ~]# wget http://download.fedora.redhat.com/pub/fedora/linux/development/i386/os/Packages/mod_selinux-2.2.1930-1.fc11.i586.rpm
---2009-05-26 13:29:06--  http://download.fedora.redhat.com/pub/fedora/linux/development/i386/os/Packages/mod_selinux-2.2.1930-1.fc11.i586.rpm
+[root@saba ~]# wget http://...(snip).../mod_selinux-2.2.1930-1.fc11.i586.rpm
+--2009-05-26 13:29:06--  http://...(snip).../Packages/mod_selinux-2.2.1930-1.fc11.i586.rpm
 Resolving download.fedora.redhat.com... 209.132.176.220
 Connecting to download.fedora.redhat.com|209.132.176.220|:80... connected.
 HTTP request sent, awaiting response... 200 OK
