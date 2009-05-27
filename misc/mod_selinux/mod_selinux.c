@@ -358,9 +358,6 @@ static int selinux_handler(request_rec *r)
         return HTTP_INTERNAL_SERVER_ERROR;
     }
 
-
-
-    return OK;
     return thread_rv;
 }
 

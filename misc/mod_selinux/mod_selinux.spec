@@ -84,6 +84,10 @@ fi
 %{_datadir}/selinux/*/%{name}.pp
 
 %changelog
+* Wed May 27 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 2.2.1938-1
+- bugfix: it may returns OK, instead of HTTP_INTERNAL_SERVER_ERROR,
+    when the contents handler crashed.
+
 * Fri May 22 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 2.2.1930-1
 - rework: libselinux was dropped from explicit dependencies due to
     http://fedoraproject.org/wiki/Packaging/Guidelines#Explicit_Requires
