@@ -44,7 +44,7 @@ The implementation of Apache/SELinux plus is simple.
 
 When the web server process receives a http request, it parses and analyzes the given request headers, then it applies http authentication if necessary. Please note that the authentication is done under the web server's context.
 Next, the mod_selinux.so module makes a one-time worker thread, and the parent side immediately gets sleep by the completion of the worker thread.
-The worker changes the security context of itself prior to the invocation of contents handlers including entry points of web applications. The recent version of SELinux (bundled in v2.6.28 or later) allows to set an individual security context for each thread as far as the new security context is bounded by older one. See the [Apache_SELinux_plus#Bounds_domain Bounds domain] for more details.
+The worker changes the security context of itself prior to the invocation of contents handlers including entry points of web applications. The recent version of SELinux (bundled in v2.6.28 or later) allows to set an individual security context for each thread as far as the new security context is bounded by older one. See the [#Bounds_domain Bounds domain] for more details.
 Finally, the contents handlers are invoked by the worker thread with the new security context.
 
 http://sepgsql.googlecode.com/files/LAPP_SELinux_Fig04.png
