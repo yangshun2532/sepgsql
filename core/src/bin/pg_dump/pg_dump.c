@@ -12,7 +12,7 @@
  *	by PostgreSQL
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/bin/pg_dump/pg_dump.c,v 1.535 2009/04/08 19:02:37 heikki Exp $
+ *	  $PostgreSQL: pgsql/src/bin/pg_dump/pg_dump.c,v 1.538 2009/05/27 20:42:29 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -6237,13 +6237,14 @@ dumpBaseType(Archive *fout, TypeInfo *tinfo)
 						  "typanalyze::pg_catalog.oid AS typanalyzeoid, "
 						  "typcategory, typispreferred, "
 						  "typdelim, typbyval, typalign, typstorage, "
-						  "pg_catalog.pg_get_expr(typdefaultbin, 'pg_catalog.pg_type'::pg_catalog.regclass) AS typdefaultbin, typdefault "
+						  "pg_catalog.pg_get_expr(typdefaultbin, 0) AS typdefaultbin, typdefault "
 						  "FROM pg_catalog.pg_type "
 						  "WHERE oid = '%u'::pg_catalog.oid",
 						  tinfo->dobj.catId.oid);
 	}
 	else if (fout->remoteVersion >= 80300)
 	{
+		/* Before 8.4, pg_get_expr does not allow 0 for its second arg */
 		appendPQExpBuffer(query, "SELECT typlen, "
 						  "typinput, typoutput, typreceive, typsend, "
 						  "typmodin, typmodout, typanalyze, "
@@ -7792,7 +7793,9 @@ dumpOpr(Archive *fout, OprInfo *oprinfo)
 	ntups = PQntuples(res);
 	if (ntups != 1)
 	{
-		write_msg(NULL, "query returned %d rows instead of one: %s\n",
+		write_msg(NULL, ngettext("query returned %d row instead of one: %s\n",
+								 "query returned %d rows instead of one: %s\n",
+								 ntups),
 				  ntups, query->data);
 		exit_nicely();
 	}
@@ -8040,7 +8043,9 @@ convertTSFunction(Oid funcOid)
 	ntups = PQntuples(res);
 	if (ntups != 1)
 	{
-		write_msg(NULL, "query returned %d rows instead of one: %s\n",
+		write_msg(NULL, ngettext("query returned %d row instead of one: %s\n",
+								 "query returned %d rows instead of one: %s\n",
+								 ntups),
 				  ntups, query);
 		exit_nicely();
 	}
@@ -8144,7 +8149,9 @@ dumpOpclass(Archive *fout, OpclassInfo *opcinfo)
 	ntups = PQntuples(res);
 	if (ntups != 1)
 	{
-		write_msg(NULL, "query returned %d rows instead of one: %s\n",
+		write_msg(NULL, ngettext("query returned %d row instead of one: %s\n",
+								 "query returned %d rows instead of one: %s\n",
+								 ntups),
 				  ntups, query->data);
 		exit_nicely();
 	}
@@ -8216,8 +8223,10 @@ dumpOpclass(Archive *fout, OpclassInfo *opcinfo)
 		 * pg_depend entries.
 		 *
 		 * XXX RECHECK is gone as of 8.4, but we'll still print it if dumping
-		 * an older server's table in which it is used.  Would it be better
-		 * to silently ignore it?
+		 * an older server's opclass in which it is used.  This is to avoid
+		 * hard-to-detect breakage if a newer pg_dump is used to dump from
+		 * an older server and then reload into that old version.  This can
+		 * go away once 8.3 is so old as to not be of interest to anyone.
 		 */
 		appendPQExpBuffer(query, "SELECT amopstrategy, false AS amopreqcheck, "
 						  "amopopr::pg_catalog.regoperator "
@@ -8427,8 +8436,10 @@ dumpOpfamily(Archive *fout, OpfamilyInfo *opfinfo)
 	{
 		/*
 		 * XXX RECHECK is gone as of 8.4, but we'll still print it if dumping
-		 * an older server's table in which it is used.  Would it be better
-		 * to silently ignore it?
+		 * an older server's opclass in which it is used.  This is to avoid
+		 * hard-to-detect breakage if a newer pg_dump is used to dump from
+		 * an older server and then reload into that old version.  This can
+		 * go away once 8.3 is so old as to not be of interest to anyone.
 		 */
 		appendPQExpBuffer(query, "SELECT amopstrategy, false AS amopreqcheck, "
 					  "amopopr::pg_catalog.regoperator "
@@ -8523,7 +8534,9 @@ dumpOpfamily(Archive *fout, OpfamilyInfo *opfinfo)
 	ntups = PQntuples(res);
 	if (ntups != 1)
 	{
-		write_msg(NULL, "query returned %d rows instead of one: %s\n",
+		write_msg(NULL, ngettext("query returned %d row instead of one: %s\n",
+								 "query returned %d rows instead of one: %s\n",
+								 ntups),
 				  ntups, query->data);
 		exit_nicely();
 	}
@@ -8697,7 +8710,9 @@ dumpConversion(Archive *fout, ConvInfo *convinfo)
 	ntups = PQntuples(res);
 	if (ntups != 1)
 	{
-		write_msg(NULL, "query returned %d rows instead of one: %s\n",
+		write_msg(NULL, ngettext("query returned %d row instead of one: %s\n",
+								 "query returned %d rows instead of one: %s\n",
+								 ntups),
 				  ntups, query->data);
 		exit_nicely();
 	}
@@ -8892,7 +8907,9 @@ dumpAgg(Archive *fout, AggInfo *agginfo)
 	ntups = PQntuples(res);
 	if (ntups != 1)
 	{
-		write_msg(NULL, "query returned %d rows instead of one: %s\n",
+		write_msg(NULL, ngettext("query returned %d row instead of one: %s\n",
+								 "query returned %d rows instead of one: %s\n",
+								 ntups),
 				  ntups, query->data);
 		exit_nicely();
 	}
@@ -9117,7 +9134,9 @@ dumpTSDictionary(Archive *fout, TSDictInfo *dictinfo)
 	ntups = PQntuples(res);
 	if (ntups != 1)
 	{
-		write_msg(NULL, "query returned %d rows instead of one: %s\n",
+		write_msg(NULL, ngettext("query returned %d row instead of one: %s\n",
+								 "query returned %d rows instead of one: %s\n",
+								 ntups),
 				  ntups, query->data);
 		exit_nicely();
 	}
@@ -9270,7 +9289,9 @@ dumpTSConfig(Archive *fout, TSConfigInfo *cfginfo)
 	ntups = PQntuples(res);
 	if (ntups != 1)
 	{
-		write_msg(NULL, "query returned %d rows instead of one: %s\n",
+		write_msg(NULL, ngettext("query returned %d row instead of one: %s\n",
+								 "query returned %d rows instead of one: %s\n",
+								 ntups),
 				  ntups, query->data);
 		exit_nicely();
 	}
@@ -9454,7 +9475,9 @@ dumpForeignServer(Archive *fout, ForeignServerInfo *srvinfo)
 	ntups = PQntuples(res);
 	if (ntups != 1)
 	{
-		write_msg(NULL, "query returned %d rows instead of one: %s\n",
+		write_msg(NULL, ngettext("query returned %d row instead of one: %s\n",
+								 "query returned %d rows instead of one: %s\n",
+								 ntups),
 				  ntups, query->data);
 		exit_nicely();
 	}
@@ -11320,7 +11343,9 @@ getFormattedTypeName(Oid oid, OidOptions opts)
 	ntups = PQntuples(res);
 	if (ntups != 1)
 	{
-		write_msg(NULL, "query returned %d rows instead of one: %s\n",
+		write_msg(NULL, ngettext("query returned %d row instead of one: %s\n",
+								 "query returned %d rows instead of one: %s\n",
+								 ntups),
 				  ntups, query->data);
 		exit_nicely();
 	}
