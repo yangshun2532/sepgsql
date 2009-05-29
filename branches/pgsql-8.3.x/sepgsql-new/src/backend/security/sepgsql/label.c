@@ -28,6 +28,9 @@
 /* GUC: to turn on/off row level controls in SE-PostgreSQL */
 bool sepostgresql_row_level;
 
+/* GUC parameter to turn on/off mcstrans */
+bool sepostgresql_use_mcstrans;
+
 /*
  * sepgsqlTupleDescHasSecLabel
  *
@@ -490,6 +493,9 @@ sepgsqlSecurityLabelTransOut(security_context_t rawlabel)
 
 	if (!rawlabel || security_check_context(rawlabel) < 0)
 		rawlabel = sepgsqlGetUnlabeledLabel();
+
+	if (!sepostgresql_use_mcstrans)
+		return rawlabel;
 
 	if (selinux_raw_to_trans_context(rawlabel, &seclabel) < 0)
 		ereport(ERROR,
