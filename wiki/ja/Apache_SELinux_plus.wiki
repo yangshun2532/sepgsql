@@ -1,0 +1,485 @@
+#summary Introduction of the Apache/SELinux plus
+
+<font size="6" face="Impact,Chicago"><i><u>Apache/SELinux plus</u></i></font>
+
+<wiki:toc max_depth="2" />
+
+= 概要 =
+
+Apache/SELinux plus は apache/httpd 2.2.x 系列に対応した外部モジュールで、Fedora Projectにおいて [https://admin.fedoraproject.org/pkgdb/packages/name/mod_selinux mod_selinux] としてパッケージ化されています。
+本モジュールは、WebアプリケーションのインスタンスにHTTP認証に基づいた個別のセキュリティコンテキストを割り当てて起動する事を可能にします。この機能は、Webユーザの概念とSELinuxのセキュリティコンテキストとのマッピングとして理解する事もできるでしょう。つまり、Webユーザ/アプリケーションに対してSELinuxが有効なアクセス制御を実施できるようになったという事です。
+本モジュールは LAPP/SELinux スタックを構成する重要な要素であり、細粒度でシステムワイドな強制アクセス制御にSELinuxを適用するためのコミュニティの活動により生まれました。
+
+本モジュールのビルド、インストール、及び実行には以下のパッケージが必要です。
+
+ * Linux kernel >= 2.6.28 (SELinux有効)
+ * httpd >= 2.2.0
+ * libselinux
+ * libsepol >= 2.0.34
+ * policycoreutils
+ * httpd-devel >= 2.2.0 (ビルド時に必要)
+ * checkpolicy >= 2.0.17 (ビルド時に必要)
+ * libselinux-devel (ビルド時に必要)
+
+これらのパッケージは Fedora 11 で利用可能ですので、その利用をお勧めします。
+
+== 設計におけるアナロジー ==
+
+SELinuxがWebシステムでどのように機能するかを明確にするため、伝統的なシェル・ログインとApache/SELinux plusの間のアナロジーを紹介します。
+
+本節では、（特に形容詞を伴わない）利用者とは情報システムの管理下にあるリソース（例えばPDF文書です）にアクセスしようとしている人間を意味します。人間は一般的にハードウェアデバイスを直接アクセスするのに不向きです（もし彼が直接ハードウェアに触れる事ができるなら、それはSELinuxの範疇外です）。したがって、利用者は彼の代わりにリソースにアクセスするエージェントを作り出す必要があります。このエージェントとは、OS上ではプロセス、WebシステムではWebアプリケーションインスタンスと呼ばれるものです。
+
+エージェントは利用者の代わりに情報システム内で働く物であるので、正しく利用者に対応した権限セット（例：セキュリティコンテキスト）を持つ必要があります。識別・認証の機構がその正しさを担保し、SELinuxのようなアクセス制御機構は、もしエージェントが不正な動作をしてもそれを禁止する事ができます。
+
+http://sepgsql.googlecode.com/files/LAPP_SELinux_Fig02.png
+
+利用者がsshログイン経由でリソースにアクセスしようとする時、sshサーバはコネクションに対して識別・認証を行ない、子プロセスを生成してログインシェルを適切な権限で実行します。この場合、ログインシェルプロセスが利用者のエージェントとして働きます。利用者はエージェントに対してリソースにアクセスするためのコマンド列を送出し、SELinuxがそれを許可する限り、エージェントはそれを実行します。最終的に、利用者はエージェントから結果又はエラーを受け取ります。
+
+同様に、Webインターフェースを通じてリソースにアクセスする時、Webサーバは識別・認証を行う事ができます（匿名でのアクセスも許可します）。そして、Webサーバは受け取ったHTTP要求を処理するため、利用者のエージェントとしてWebアプリケーションインスタンスを起動します
+エージェントは要求されたリソースにアクセスしようとします。しかし、SELinuxは有効なアクセス制御を行う事ができません（それがWebコンテンツとして公開されていないものにアクセスしようとする場合を除く）。なぜなら、WebサーバはWebアプリケーションインスタンスに正しく権限を関連付けていないからです。したがって、Webアプリケーションインスタンスは常にWebサーバのセキュリティコンテキストを継承しますが、SELinuxには全てのエージェントが一様なセキュリティコンテキストを持っているように見えるのです。
+
+Apache/SELinux plus は、HTTP認証に基づいて、エージェントの起動前に適切な権限を設定します。これは、あたかもエージェントがシェル・ログイン経由でアクセスしているかのように、SELinuxがWebユーザ毎の有効なアクセス制御を実施できるようになった事を意味します。
+
+== 内部設計 ==
+
+The implementation of Apache/SELinux plus is simple.
+
+When the web server process receives a http request, it parses and analyzes the given request headers, then it applies http authentication if necessary. Please note that the authentication is done under the web server's context.
+Next, the mod_selinux.so module makes a one-time worker thread, and the parent side immediately gets sleep by the completion of the worker thread.
+The worker changes the security context of itself prior to the invocation of contents handlers including entry points of web applications. The recent version of SELinux (bundled in v2.6.28 or later) allows to set an individual security context for each thread as far as the new security context is bounded by older one. See the [#Bounds_domain Bounds domain] for more details.
+Finally, the contents handlers are invoked by the worker thread with the new security context.
+
+http://sepgsql.googlecode.com/files/LAPP_SELinux_Fig04.png
+
+If the `mod_selinux.so` is not installed on the apache/httpd server, it invokes the contents handlers in the same context synchronously. Because the server side backend repeatedly receives and handles http requests, it is not impossible to assign a security context directly. If it onces assigned a restrictive security context, it can never handle other requests any more. But we cannot know the suitable security context before the authentication, so it is necessary to create a one-time worker, as if a traditional `accept(2)` - `fork(2)` model did.
+
+Please note that dynamic domain transition is weaker separation than `execve(2)` based one. If the server process already loads an invisible files into local memory, it is logically referanciable for the worker thread with a restrictive security context.
+However, it can check and prevent well the web application to access violated resources voluntarily.
+
+----
+
+= 背景 =
+
+== LAPP/SELinux ==
+
+The [http://en.wikipedia.org/wiki/LAPP LAPP] is a usual oss web application software stack which consists of Linux, Apache, PostgreSQL and PHP/Perl/Python. The LAPP/SELinux is a concept of our efforts which tries to improve web application security using SELinux. 
+
+[http://www.nsa.gov/research/selinux/index.shtml SELinux] is an implementation of the [http://en.wikipedia.org/wiki/Reference_monitor reference monitor] on the Linux operating system, to provide fine-grained mandatory access controls based on the unified security policy. It has been a mainlined feature and also adopted by major distributions (Fedora, RedHatEL, etc...) for more than five years.
+It effectively prevents violated or unexpected accesses on system resources (such as credential files) from buggy applications or malicious users, so it well contributes competitive edge of the Linux.
+
+However, we often have heard a concern to SELinux, such as _"How does it improve the web application security?"_.
+In fact, the trend of threats to our information system has been rapidly changed for a few years.
+The following figure is adopted from _[http://www.lac.co.jp/info/jsoc_report/ The analysis report of the trend of intrusions: vol.12 (Mar 16, 2009)]_. It says 93% of significant incidents targeted to web systems in 2008, although it was 53% in 2006.
+
+[http://sepgsql.googlecode.com/files/LAPP_SELinux_Fig00.png]
+
+The rate of attacks to web systems obviously has grew up with expansion of the online commerces and enlargement of the worth of information assets exchanged via web systems. So, it is necessary to provide a solution to improve the security on the regison, but we also have a few difficult matters.
+
+The one is access controls to database objects. SELinux performs as a reference monitor in operating system, it means SELinux can check all the accesses on resources managed by operating system, but it also means SELinux cannot check anything on resources not managed by operating system, such as database management system.
+SE-PostgreSQL is an enhancement of PostgreSQL relational database management system. It enables to apply fine-grained mandatory access controls based on the unified security policy of SELinux.
+It also means the coverage of SELinux got enlarged to the database layer on LAPP stack.
+
+The other is privileges of web application instance. The apache/httpd receives and handles all the http requests in a uniformed security context, so it means SELinux cannot apply valid access controls based on web users.
+The Apache/SELinux is an extra module of apache/httpd. It enables to assign a restrictive security context based on http authentication prior to the invocation of contents handlers which includes the entrypoints of web applications.
+It also means the coverage of SELinux got enlarged to the web server layer on LAPP stack.
+
+[http://sepgsql.googlecode.com/files/LAPP_SELinux_Fig01.png]
+
+At the past days, SELinux can only control accesses to the resources managed by operating systems.
+Nowadays, it can cover the lower LAP of the LAPP stack in web systems, and some of significant applications such as X-window system. We are considering the load to cover whole of the LAPP stack with SELinux.
+The final P is symbolically understood as lightweight-languages, such as PHP/Perl/Python, but not limited to them.
+Any kind of application servers (such as Tomcat) can be a candidate to be deployed here, and it can be our action item to be supported in the future.
+
+== SE-PostgreSQL ==
+
+Nowadays, massive number of web applications use database, so it is also a very significant facility from the viewpoint of access controls.
+
+As we notes above, in-kernel SELinux cannot check accesses to data objects managed by userspace applications. It means all the accesses on database objects perform as blind-spot from SELinux, so all we could do was to control the connection to database management system in system-call level, but such a all-or-nothing policy was inflexible.
+
+SE-PostgreSQL performs as a reference monitor on the PostgreSQL, collaborating with in-kernel SELinux.
+It also can be understood as an analogy between SQL-queries and system-calls.
+
+http://sepgsql.googlecode.com/files/LAPP_SELinux_Fig03.png
+
+When a process (which is an agent of the user) accesses to the filesystem object managed by the operating system, it invokes a system call as a method to access them. Then, SELinux checks the privileges of the process on the required object in the kernel.
+Both of them have their security context, and SELinux finds up an entry from the security policy corresponding to the combination of the pair of security contexts.
+It it is explicitly allowed, SELinux does not prevent anything, otherwise, it raises an error.
+
+In a similar manner, when a client process accesses to the database objects managed by database management system as a literal, it sends a SQL query as a method to access them.
+Then SE-PostgreSQL subsystem checks the privileges of the client (please note that SELinux provides an API to obtain the security context of the peer socket) on the required database object based on the security policy managed by the in-kernel SELinux.
+SE-PostgreSQL also manages the security context of the database objects. SE-PostgreSQL asks in-kernel SELinux whether the security policy allows the required actions for the given pair of security contexts, or not.
+If it should be allowed, SE-PostgreSQL does not prevent anything to execute the SQL-query, otherwise, it raises an error.
+
+See the http://wiki.postgresql.org/wiki/SEPostgreSQL for more details.
+
+== Bounds domain ==
+
+The Apache/SELinux plus uses one-time worker threads to launch web application instances, and the worker threads assign a new security context on themself. SELinux has a restriction to set an individual security context on a thread. The new security context to be set on threads has to be bounded by the original security context. The bounds relationship is declared in the security policy.
+
+In a mult-thread process, multiple threads share a process local memory, so SELinux cannot acquire and check information flows between different domains due to the property of reference monitor. It is the reason why the older kernel does not allow to set a new security context in multi-thread processes.
+
+The bounds domain feature restricts the scope of privileges to be allowed on the bounded domain.
+When a domain is bounded by another one, any privileges can never be assigned to the bounded domain as far as the bounding one is allowed.
+
+http://sepgsql.googlecode.com/files/LAPP_SELinux_Fig05.png
+
+The above example bounds the `anon_webapp_t` domain by the `httpd_t` domain with the following `typebounds` policy.
+{{{
+typebounds httpd_t anon_webapp_t;
+}}}
+
+The rule is that all the privileges to be allowed on `anon_webapp_t` domain have to be also allowed to `httpd_t` domain.
+If we tries to allow `anon_webapp_t` to access `/etc/shadow` on writing policies, it is dropped at run-time because the `httpd_t` is not allowed to access it.
+In this figure, both of them are allowed on the `/var/www/cgi-bin/test.cgi` when `httpd_enable_cgi` boolean is turned on. The `httpd_enable_cgi` only controls privileges for `httpd_t` in the security policy, but turning it off concurrently drops privileges of `anon_webapp_t` because `http_t` has lost the privileges in this state.
+
+We can consider the bounds domains as a special state of the original domain which lacks a part of privileges. Thus, SELinux allows to change the security context of a certain thread within multi-thread process as far as the new security context is bounded by the older one.
+
+The Apache/SELinux plus uses the bounds domain to assign individual security context on a certain thread, without unnecessary privileges for the authenticated users.
+
+----
+
+= インストール =
+
+== RPM インストール ==
+
+RPM Installation is the preferable way to set up the Apache/SELinux plus on your systems.
+
+If you already installed Fedora 11 and use `yum` to set up, all you need to do is to type the following commends:
+{{{
+# yum install mod_selinux
+}}}
+
+It find up, download and installs the package automatically.
+
+If you would like to install the RPM package by hand, please confirm the following packages and their versions:
+ * Linux kernel >= 2.6.28, with SELinux enabled
+ * httpd >= 2.2.0
+ * libselinux
+ * libsepol >= 2.0.34
+ * policycoreutils
+
+The RPM packages are hosted by [http://fedoraproject.org/ Fedora Project]. Please find up the `mod_selinux` package suitable for your environment from here:
+
+ http://download.fedora.redhat.com/pub/fedora/linux/development/
+
+Then, run the `rpm` command. Please note that it also installs the `mod_selinux.pp` policy module, so it may require a bit of time to complete.
+{{{
+[root@saba ~]# wget http://...(snip).../mod_selinux-2.2.1930-1.fc11.i586.rpm
+--2009-05-26 13:29:06--  http://...(snip).../Packages/mod_selinux-2.2.1930-1.fc11.i586.rpm
+Resolving download.fedora.redhat.com... 209.132.176.220
+Connecting to download.fedora.redhat.com|209.132.176.220|:80... connected.
+HTTP request sent, awaiting response... 200 OK
+Length: 55810 (55K) [application/x-rpm]
+Saving to: `mod_selinux-2.2.1930-1.fc11.i586.rpm'
+
+100%[=============================================>] 53,776      --.-K/s   in 0.1s
+
+2009-05-26 13:27:33 (460 KB/s) - `mod_selinux-2.2.1930-1.fc11.i586.rpm' saved [53776/53776]
+
+[root@saba ~]# rpm -Uvh mod_selinux-2.2.1930-1.fc11.i586.rpm
+Preparing...                ################################### [100%]
+   1:mod_selinux            ################################### [100%]
+}}}
+
+== ソースインストール ==
+
+特に明確な理由の無い限り、ソースからのインストールはお勧めしません。
+
+Please confirm the following packages and their versions prior to the installation.
+ * Linux kernel >= 2.6.28, with SELinux enabled
+ * httpd >= 2.2.0
+ * libselinux
+ * libsepol >= 2.0.34
+ * policycoreutils
+ * httpd-devel >= 2.2.0 (required for build)
+ * checkpolicy >= 2.0.17 (required for build)
+ * libselinux-devel (required for build)
+
+=== 1. Getting the source ===
+
+You can download the source tarball from the [Apache_SELinux_plus#List_of_sources List of Sources] section.
+Currently, the latest one is the most recommendable one.
+
+{{{
+[kaigai@saba ~]$ wget http://sepgsql.googlecode.com/files/mod_selinux-2.2.1930.tgz
+--2009-05-26 13:42:32--  http://sepgsql.googlecode.com/files/mod_selinux-2.2.1930.tgz
+Resolving sepgsql.googlecode.com... 72.14.203.82
+Connecting to sepgsql.googlecode.com|72.14.203.82|:80... connected.
+HTTP request sent, awaiting response... 200 OK
+Length: 14028 (14K) [application/empty]
+Saving to: `mod_selinux-2.2.1930.tgz'
+
+100%[=============================================>] 14,028      56.2K/s   in 0.2s
+
+2009-05-26 13:42:34 (56.2 KB/s) - `mod_selinux-2.2.1930.tgz' saved [14028/14028]
+}}}
+
+=== 2. Build the module and policy ===
+
+Extract the source tarball.
+{{{
+[kaigai@saba ~]$ tar zxvf mod_selinux-2.2.1930.tgz
+mod_selinux-2.2.1930/
+mod_selinux-2.2.1930/Makefile
+mod_selinux-2.2.1930/mod_selinux.if
+mod_selinux-2.2.1930/.deps
+mod_selinux-2.2.1930/LICENSE
+mod_selinux-2.2.1930/README
+mod_selinux-2.2.1930/modules.mk
+mod_selinux-2.2.1930/mod_selinux.te
+mod_selinux-2.2.1930/mod_selinux.c
+[kaigai@saba ~]$ cd mod_selinux-2.2.1930
+}}}
+
+Build the module with `make`.
+{{{
+[kaigai@saba mod_selinux-2.2.1930]$ make
+/usr/lib64/apr-1/build/libtool --silent --mode=compile gcc -pthread  -O2 -g -pipe -Wall   \
+       -Wp,-D_FORTIFY_SOURCE=2 -fexceptions -fstack-protector --param=ssp-buffer-size=4   \
+       -m64 -mtune=generic  -DLINUX=2 -D_REENTRANT -D_GNU_SOURCE    -I/usr/include/httpd  \
+       -I. -I/usr/include/apr-1 -prefer-pic -c mod_selinux.c && touch mod_selinux.slo
+/usr/lib64/apr-1/build/libtool --silent --mode=link gcc -pthread  -O2 -g -pipe -Wall      \
+       -Wp,-D_FORTIFY_SOURCE=2 -fexceptions -fstack-protector --param=ssp-buffer-size=4   \
+       -m64 -mtune=generic     -Wl,-z,relro   -o mod_selinux.la -rpath /usr/lib/httpd/modules \
+       -module -avoid-version -lselinux mod_selinux.lo
+}}}
+
+Build the security policy module also.
+{{{
+[kaigai@saba mod_selinux-2.2.1930]$ make -f /usr/share/selinux/devel/Makefile
+Compiling targeted mod_selinux module
+/usr/bin/checkmodule:  loading policy configuration from tmp/mod_selinux.tmp
+/usr/bin/checkmodule:  policy configuration loaded
+/usr/bin/checkmodule:  writing binary representation (version 10) to tmp/mod_selinux.mod
+Creating targeted mod_selinux.pp policy package
+rm tmp/mod_selinux.mod.fc tmp/mod_selinux.mod
+}}}
+
+=== 3. Install the modules ===
+
+Install the `mod_selinux.so` and `mod_selinux.pp` modules.
+
+{{{
+[kaigai@masu mod_selinux-2.2.1930]$ su
+Password:
+[root@saba mod_selinux-2.2.1930]# make install
+make[1]: Entering directory `/home/kaigai/mod_selinux-2.2.1930'
+/usr/lib/apr-1/build/libtool --silent --mode=install cp mod_selinux.la /usr/lib/httpd/modules/
+make[1]: Leaving directory `/home/kaigai/mod_selinux-2.2.1930'
+/usr/lib/apr-1/build/libtool --silent --mode=install cp mod_selinux.la /usr/lib/httpd/modules/
+[root@saba mod_selinux-2.2.1930]# semodule -i mod_selinux.pp
+}}}
+
+=== 4. Relabel files ===
+
+If the installed `mod_selinux.so` is not labeled as `httpd_modules_t`, run the `/sbin/restorecon`.
+But it is not necessary for most of cases.
+{{{
+[root@saba ~]# restorecon -R /usr/lib/httpd/modules
+}}}
+
+----
+
+= 設定 =
+
+== ディレクティブ ==
+
+The `mod_selinux.so` supports the following directives.
+
+The `selinuxServerDomain` need to be a global configuration.
+Rest of directives can be placed on the discretional location.
+If we put the multiple directives in a single block, an earlier directive is evaluated earlier on run time, and the rest of directives are checked if the request is not matched to the prior directives.
+
+=== selinuxServerDomain <domain/range pair> ===
+
+It specifies the security context of daemon process when starting it up.
+The `mod_selinux.pp` policy module adds a `range_transition` rule to perform it with `mcs_systemhigh` which is extracted to all the available categories in the base policy. However, in most cases, it is too much for the apache/httpd daemon process.
+
+The `selinuxServerDomain` directive gives us a chance to drop unnecessary categories during its starting up.
+The domain/range pair is a colon separatable text. The lefthand of the first colon is used as a domain, and the remaining part is used as a range. If the colon is omitted, whole of the given text is used as a domain. The `*` has a special meaning which indicates to keep the field as is.
+
+If it is not available to change the security context specified, the `mod_selinux.so` raises an error and aborts the starting up process.
+
+Example of the directive:
+{{{
+selinuxServerDomain     *:s0-s0:c0.c15
+}}}
+
+It keeps the domain as is, and set `s0-s0:c0.c15` as range.
+
+=== selinuxDomainMap <mapping file> ===
+
+It specifies the path of the user/domain mapping file which describes the relationships between authenticated username and a domain/range pair. The mapping file 
+
+Example of the directive:
+{{{
+selinuxDomainMap        /var/www/mod_selinux.map
+}}}
+
+Example of mapping file:
+{{{
+#
+# Apache/SELinux plus - user/domain mapping file
+# ----------------------------------------------
+
+# Format:
+# <http user>      <domain/range pair>
+#
+
+foo                *:s0:c0
+var                *:s0:c1
+baz                *:s0:c2
+__anonymous__      anon_webapp_t:s0
+*                  user_webapp_t:s0
+}}}
+
+The format of the domain/range pair follows the notes in `selinuxServerDomain`.
+The `__anonymous__` is a special term which matches all the unauthorized requests.
+The `*` is also a special term which matches all the authorized and unauthorized requests.
+
+=== selinuxDomainEnv <environment variable> ===
+
+It specifies an environment variable which gives a domain/range pair to be assigned on the web application contexts.
+Some of extra modules support to set up environment variables depending on the attributes of request.
+The format of the domain/range pair to be delivered follows the notes in `selinuxServerDomain`.
+
+For example, `SetEnvIf` directive allows to set up a certain environment variable based on the remote address when it is matched to the given pattern.
+
+Example:
+{{{
+SetEnvIf Remote_Addr "192.168.1.[0-9]+$" SELINUX_DOMAIN=*:s0:c1
+SetEnvIf Remote_Addr "192.168.2.[0-9]+$" SELINUX_DOMAIN=*:s0:c2
+selinuxDomainEnv    SELINUX_DOMAIN
+}}}
+
+This example shows a configuration which assigns "`s0:c1`" for the request come from `192.168.1.0/24`, and "`s0:c2`" from `192.168.2.0/24`, but does not anything for the request come from others.
+
+=== selinuxDomainVal <domain/range pair> ===
+
+It specifies a domain/range pair to be assigned to the contents handlers.
+The format of the domain/range pair to be delivered follows the notes in `selinuxServerDomain`.
+
+In normal cases, it is placed on the tail of the series of configuration to perform as a fallback when the request did not match any prior `selinuxDomainMap` and `selinuxDomainEnv` rules.
+
+Example:
+{{{
+SetEnvIf Remote_Addr "192.168.1.[0-9]+$" SELINUX_DOMAIN=*:s0:c1
+SetEnvIf Remote_Addr "192.168.2.[0-9]+$" SELINUX_DOMAIN=*:s0:c2
+selinuxDomainMap    /var/www/mod_selinux.map      ... (1)
+selinuxDomainEnv    SELINUX_DOMAIN                ... (2)
+selinuxDomainVal    anon_webapp_t:s0              ... (3)
+}}}
+
+In this example, the (1) is checked at first. If the given request is matched to any entries within the mapfile, the `mod_selinux.so` launches the contents handler with the domain/range pair specified.
+Then, the (2) is checked. The `SELINUX_DOMAIN` is set based on `Remote_Addr`, so it may has a valid value, if the request comes from certain networks. Otherwise, the (3) is applied for unmatched requests at (1) and (2). The requests will be launched with `anon_webapp_t:s0`.
+
+=== selinuxAllowCaches (on|off) ===
+
+As the apache/httpd official documentation noted, contents caches work prior to the authentication and domain transition. It means the facility allows users to bypass access controls. In the default, `mod_selinux.so` disables the content caches as fas as the `selinuxAllowCaches` is not set to `on` explicitly.
+
+This directive allows to use the contents cahces, but please understand the risk to set it `on` before changing it.
+
+Example:
+{{{
+selinuxAllowCaches      On
+}}}
+
+----
+
+= Usual examples =
+
+This section introduces a few usual example of `mod_selinux.so` configuration.
+
+== バーチャルホスト単位の分離 ==
+
+If `selinuxDomainVal` is put without any other directives, it means all the requests are always handled with the specified privileges. We can utilize it to achieve per virtual host separation.
+
+In this example, all the request to the `dog.example.com` is handled with `s0:c1` range, but ones to `cat.example.com` is handled with `s0:c2` range.
+{{{
+NameVirtualHost *:80
+
+<VirtualHost *:80>
+DocumentRoot          /var/www/html-dog
+ServerName            dog.example.com
+selinuxDomainVal      *:s0:c1
+</VirtualHost>
+
+<VirtualHost *:80>
+DocumentRoot          /var/www/html-cat
+ServerName            cat.example.com
+selinuxDomainVal      *:s0:c2
+</VirtualHost>
+}}}
+
+== DB連携による認証 ==
+
+The `mod_authn_dbd.so` module enables to authenticate the user using a database backend.
+It pulls a database record with the configured query, and enables to export additional information as an exvironment variable.
+The `selinuxDomainEnv` directive utilize the information, and it enables to map a user and a domain/range pair without any mapping files.
+
+In this example, we assume the following `uaccount` table is already set up on the `web` database, and the `apache` database user is allowed to access the table. Please note that it is connected from the apache/httpd server domain, so the SE-PostgreSQL also needs to allow to accept connections from the security context configured at `selinuxServerDomain`.
+{{{
+CREATE TABLE uaccount (
+        uname       TEXT PRIMARY KEY,
+        upass       TEXT NOTE NULL,
+        udomain     TEXT
+);
+
+INSERT INTO uaccount VALUES ('foo', 'xxx', 'user_webapp_t:s0:c0');
+INSERT INTO uaccount VALUES ('var', 'yyy', 'staff_webapp_t:s0:c1');
+INSERT INTO uaccount VALUES ('baz', 'zzz', 'anon_webapp_t:s0:c2');
+}}}
+
+Example of apache/httpd configuration:
+{{{
+#
+# 1. Load the dbd drivers
+#
+LoadModule dbd_module        modules/mod_dbd.so
+LoadModule authn_dbd_module  modules/mod_authn_dbd.so
+
+#
+# 2. Database connection parameters
+#
+
+DBDriver    pgsql
+DBDParams   "dbname=web user=apache"
+
+<Directory "/var/www/html">
+#
+# 3. Digest authentication
+#
+AuthType               Digest
+AuthName               "Secret Zone"
+AuthDigestProvider     dbd
+AuthDBDUserRealmQuery  \
+    "SELECT md5(uname || ':' || $2 || ':' || upass), udomain, \
+            %s=%s as dummy FROM uaccount WHERE uname = $1"
+
+#
+# 4. SELinux context mapping
+#
+selinuxDomainEnv         AUTHENTICATE_UDOMAIN
+selinuxDomainVal         anon_webapp_t:s0
+</Directory>
+}}}
+
+At first, we need to load tne dbd drivers at the global configuration, since the default configuration does not load them.
+The (2) specifies database connection parameters. The `DBDriver` means the kind of dbd driver. In this case, the `apr-util-pgsql` package needs to be installed additionally. The `DBDParams` is a connection string. Please see the PostgreSQL documentation for more details.
+
+The (3) specifies the parameters for authentication. We uses the digest authentication here, because `mod_authn_dbd` module requires to return a hashed password for basic authentication, but PostgreSQL does not support it in the core.
+The `mod_authn_dbd` requires to return a hashed string for `md5(username : realm : password)`. The username and realm are delivered from the module and it compares the hash with the authentication token from the client.
+
+If the query returns multiple fields, the `mod_authn_dbd` exports them (except for the first one) as environment variables named as `AUTHENTICATE_<field name>`, so the second and third fields are delivered to the `mod_selinux`.
+
+The third field might seem to you a storange usage of parameters (`%s=%s as dummy`).
+The `mod_dbd` replaces `%s` to query parameter of prepared statements, but its order is currently hardwired. The first one is always replaced by username, and the second one is replace by realm string. However, we need to put the given realm prior the username, so we put $1 and $2 in the query directly, and put a dummy usage of `%s` to keep it harmless.
+
+At the (4), it tries to set the security context based on the `AUTHENTICATE_UDOMAIN` first.
+If the variable is not set, the `selinuxDomainVal` is used as a fallback.
+
+----
+
+= ソースコードの一覧 =
+
+英語版ドキュメントの [[Apache_SELinux_plus#List_of_sources List of sources]] を参照してください。
