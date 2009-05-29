@@ -42,19 +42,20 @@ Apache/SELinux plus は、HTTP認証に基づいて、エージェントの起�
 
 == 内部設計 ==
 
-The implementation of Apache/SELinux plus is simple.
+Apache/SELinux plus の実装はシンプルです。
 
-When the web server process receives a http request, it parses and analyzes the given request headers, then it applies http authentication if necessary. Please note that the authentication is done under the web server's context.
-Next, the mod_selinux.so module makes a one-time worker thread, and the parent side immediately gets sleep by the completion of the worker thread.
-The worker changes the security context of itself prior to the invocation of contents handlers including entry points of web applications. The recent version of SELinux (bundled in v2.6.28 or later) allows to set an individual security context for each thread as far as the new security context is bounded by older one. See the [#Bounds_domain Bounds domain] for more details.
-Finally, the contents handlers are invoked by the worker thread with the new security context.
+WebサーバがHTTP要求を受け取ると、HTTP要求ヘッダを解析し、必要であればHTTP認証を適用します。この認証プロセスはWebサーバのコンテキストで実行される事に留意してください。
+次に、mod_selinux.soモジュールは一時的な作業スレッドを作成し、作業スレッドが終了するまでスリープします。
+作業スレッドは、コンテンツハンドラ（Webアプリケーションのエントリポイントを含む）の起動前に、自身のセキュリティコンテキストを変更します。新しいセキュリティコンテキストが、古いセキュリティコンテキストの bounds domain である場合に限り、最近のSELinux（2.6.28カーネル以降）ではスレッド単位にセキュリティコンテキストを設定する事ができます。詳細は[#Bounds_domain Bounds domain]を参照してください。
+
+最終的に、コンテンツハンドラは新しいセキュリティコンテキストをセットした作業スレッドで実行されます。
 
 http://sepgsql.googlecode.com/files/LAPP_SELinux_Fig04.png
 
-If the `mod_selinux.so` is not installed on the apache/httpd server, it invokes the contents handlers in the same context synchronously. Because the server side backend repeatedly receives and handles http requests, it is not impossible to assign a security context directly. If it onces assigned a restrictive security context, it can never handle other requests any more. But we cannot know the suitable security context before the authentication, so it is necessary to create a one-time worker, as if a traditional `accept(2)` - `fork(2)` model did.
+`mod_selinux.so`がインストールされていない場合、apache/httpdはコンテンツハンドラを同一のコンテキストで同期的に実行します。サーバ側のバックエンドはHTTP要求を繰り返し受信・実行するため、直接セキュリティコンテキストを設定する事は不可能です。ひとたび権限の弱いセキュリティコンテキストを設定した場合、そのバックエンドは二度と他のリクエストを実行できなくなるでしょう。しかし、認証プロセスの前にどのセキュリティコンテキストを設定すべきか特定できないため、（伝統的な`accept(2)`-`fork(2)`モデルのように）一時的な作業スレッドを生成する事が必要です。
 
-Please note that dynamic domain transition is weaker separation than `execve(2)` based one. If the server process already loads an invisible files into local memory, it is logically referanciable for the worker thread with a restrictive security context.
-However, it can check and prevent well the web application to access violated resources voluntarily.
+動的ドメイン遷移は、`execve(2)`ベースのドメイン遷移よりも弱い分離である事に留意してください。サーバプロセスが既に不可視なファイルをローカルなメモリ空間にロードしていた場合、論理的には、弱い権限をセットされた作業用スレッドから参照可能です。
+しかしながら、この枠組みはWebアプリケーションによる自発的な違反アクセスのチェック・防止に役立ちます。
 
 ----
 
@@ -62,55 +63,50 @@ However, it can check and prevent well the web application to access violated re
 
 == LAPP/SELinux ==
 
-The [http://en.wikipedia.org/wiki/LAPP LAPP] is a usual oss web application software stack which consists of Linux, Apache, PostgreSQL and PHP/Perl/Python. The LAPP/SELinux is a concept of our efforts which tries to improve web application security using SELinux. 
+[http://en.wikipedia.org/wiki/LAPP LAPP]とは、Linux、Apache、PostgreSQLとPHP/Perl/Pythonスクリプトから成る、ありふれたOSSのWebアプリケーションスタックです。LAPP/SELinuxとは、我々のSELinuxを利用したWebアプリケーションのセキュリティ改善のコンセプトです。
 
-[http://www.nsa.gov/research/selinux/index.shtml SELinux] is an implementation of the [http://en.wikipedia.org/wiki/Reference_monitor reference monitor] on the Linux operating system, to provide fine-grained mandatory access controls based on the unified security policy. It has been a mainlined feature and also adopted by major distributions (Fedora, RedHatEL, etc...) for more than five years.
-It effectively prevents violated or unexpected accesses on system resources (such as credential files) from buggy applications or malicious users, so it well contributes competitive edge of the Linux.
+[http://www.nsa.gov/research/selinux/index.shtml SELinux]とは、Linuxオペレーティングシステムにおける[http://en.wikipedia.org/wiki/Reference_monitor リファレンスモニタ]の実装で、一元管理されたセキュリティポリシーに基づく細粒度の強制アクセス制御が特徴です。５年以上も前から、本流のLinuxカーネルや主要ディストリビューション（Fedora, RedHatELなど）にも採用されています。
+SELinuxは、バグったアプリケーションや悪意あるユーザからの、システムリソースへの予期していないアクセスを効果的に禁止し、Linuxの優位性に貢献しています。
 
-However, we often have heard a concern to SELinux, such as _"How does it improve the web application security?"_.
-In fact, the trend of threats to our information system has been rapidly changed for a few years.
-The following figure is adopted from _[http://www.lac.co.jp/info/jsoc_report/ The analysis report of the trend of intrusions: vol.12 (Mar 16, 2009)]_. It says 93% of significant incidents targeted to web systems in 2008, although it was 53% in 2006.
+しかし、SELinuxに対する不満として「どうやってWebアプリケーションのセキュリティを改善するんだ？」という声をしばしば耳にします。
+事実、情報システムに対する脅威は、その傾向が数年の間に大きく変わりました。
+以下のグラフは_[http://www.lac.co.jp/info/jsoc_report/ 侵入傾向分析レポート: vol.12]_からの引用です。これによると、2008年度の重大インシデントのうち93%がWebシステムに対するもので、2006年度の53%という数字から大きく変化しています。
 
 [http://sepgsql.googlecode.com/files/LAPP_SELinux_Fig00.png]
 
-The rate of attacks to web systems obviously has grew up with expansion of the online commerces and enlargement of the worth of information assets exchanged via web systems. So, it is necessary to provide a solution to improve the security on the regison, but we also have a few difficult matters.
+Webシステムに対する攻撃の割合は、明らかにオンライン市場の成長とWebシステムを通じてやり取りが行なわれる情報資産の価値の増大と軌を一にしています。したがって、この領域のセキュリティを改善するソリューションが必要なわけですが、2～3の困難な課題があります。
 
-The one is access controls to database objects. SELinux performs as a reference monitor in operating system, it means SELinux can check all the accesses on resources managed by operating system, but it also means SELinux cannot check anything on resources not managed by operating system, such as database management system.
-SE-PostgreSQL is an enhancement of PostgreSQL relational database management system. It enables to apply fine-grained mandatory access controls based on the unified security policy of SELinux.
-It also means the coverage of SELinux got enlarged to the database layer on LAPP stack.
+一つは、DBオブジェクトに対するアクセス制御。SELinuxはオペレーティングシステムのリファレンスモニタとして機能するため、OS管理下のリソースに対するアクセスを全てチェックする事ができます。しかしこれは、SELinuxはOS管理外のリソース（DBオブジェクトなど）に対しては何もできない事をも意味しています。
+SE-PostgreSQLはPostgreSQLの拡張で、SELinuxのセキュリティポリシーに基づいた細粒度の強制アクセス制御を可能にします。これはまた、SELinuxのカバレッジがLAPPスタックのDB層に拡大した事を意味します。
 
-The other is privileges of web application instance. The apache/httpd receives and handles all the http requests in a uniformed security context, so it means SELinux cannot apply valid access controls based on web users.
-The Apache/SELinux is an extra module of apache/httpd. It enables to assign a restrictive security context based on http authentication prior to the invocation of contents handlers which includes the entrypoints of web applications.
-It also means the coverage of SELinux got enlarged to the web server layer on LAPP stack.
+もう一つは、Webアプリケーションインスタンスの権限です。Apache/httpdは全てのHTTP要求を受け付け、一様なセキュリティコンテキストの下でこれを処理します。これは、SELinuxにはWebユーザに基づいた有効なアクセス制御を行えない事を意味します。
+Apache/SELinux plus は apache/httpd の外部モジュールで、権限の制約されたセキュリティコンテキストを（Webアプリケーションのエントリポイントを含む）コンテンツハンドラの実行前にセットする事を可能にします。これはまた、SELinuxのカバレッジがLAPPスタックのWeb層に拡大した事を意味します。
+
 
 [http://sepgsql.googlecode.com/files/LAPP_SELinux_Fig01.png]
 
-At the past days, SELinux can only control accesses to the resources managed by operating systems.
-Nowadays, it can cover the lower LAP of the LAPP stack in web systems, and some of significant applications such as X-window system. We are considering the load to cover whole of the LAPP stack with SELinux.
-The final P is symbolically understood as lightweight-languages, such as PHP/Perl/Python, but not limited to them.
-Any kind of application servers (such as Tomcat) can be a candidate to be deployed here, and it can be our action item to be supported in the future.
+昔は、SELinuxが制御できたのはOS管理下のリソースに対してのみでした。現在では、WebシステムのLAPPスタックのうち、LAPまでカバーする事ができます（加えて、X-windowのような幾つかの重要なアプリケーションも）。我々としては、LAPPスタック全体をSELinuxで保護するための道筋を考えています。
+最後の P は象徴的にはPHP/Perl/PythonのようなLL言語として理解されています。しかし、それらには限定されません。あらゆる種類のアプリケーションサーバ（例えばTomcat）はここにマップされるかもしれない候補で、将来的な我々のアクションアイテムでもあります。
 
 == SE-PostgreSQL ==
 
-Nowadays, massive number of web applications use database, so it is also a very significant facility from the viewpoint of access controls.
+現在では膨大な数のWebアプリケーションがデータベースを利用しており、アクセス制御の観点からの非常に重要な機能です。
 
-As we notes above, in-kernel SELinux cannot check accesses to data objects managed by userspace applications. It means all the accesses on database objects perform as blind-spot from SELinux, so all we could do was to control the connection to database management system in system-call level, but such a all-or-nothing policy was inflexible.
+前述の通り、カーネル内のSELinuxはユーザ空間で管理されているオブジェクトに対するアクセスをチェックする事ができません。これは、DBオブジェクトに対するアクセスが、SELinuxからは盲点となっている事を意味しており、我々にできたのはシステムコールのレベルでデータベースへの接続を制御する事だけでしたが、この種の All-or-Nothing のポリシーは柔軟性に欠けています。
 
-SE-PostgreSQL performs as a reference monitor on the PostgreSQL, collaborating with in-kernel SELinux.
-It also can be understood as an analogy between SQL-queries and system-calls.
+SE-PostgreSQL は PostgreSQL におけるリファレンスモニタとして機能し、カーネル内のSELinuxと連携して動作します。
+これはまた、SQLクエリとシステムコールの間のアナロジーとして理解する事ができます。
 
 http://sepgsql.googlecode.com/files/LAPP_SELinux_Fig03.png
 
-When a process (which is an agent of the user) accesses to the filesystem object managed by the operating system, it invokes a system call as a method to access them. Then, SELinux checks the privileges of the process on the required object in the kernel.
-Both of them have their security context, and SELinux finds up an entry from the security policy corresponding to the combination of the pair of security contexts.
-It it is explicitly allowed, SELinux does not prevent anything, otherwise, it raises an error.
+（利用者のエージェントとして働く）プロセスがOS管理下のファイルシステムオブジェクトにアクセスする時、アクセスの手段としてシステムコールを利用します。そして、SELinuxは要求されたオブジェクトに対するプロセスの権限をチェックします。
+プロセスとオブジェクトの双方がセキュリティコンテキストを持っており、SELinuxはセキュリティポリシーの中からこれら双方のセキュリティコンテキストの組み合わせに対応したルールを探し出します。
+もし明示的に許可されていれば、SELinuxは何もしません。それ以外の場合、SELinuxはエラーを返します。
 
-In a similar manner, when a client process accesses to the database objects managed by database management system as a literal, it sends a SQL query as a method to access them.
-Then SE-PostgreSQL subsystem checks the privileges of the client (please note that SELinux provides an API to obtain the security context of the peer socket) on the required database object based on the security policy managed by the in-kernel SELinux.
-SE-PostgreSQL also manages the security context of the database objects. SE-PostgreSQL asks in-kernel SELinux whether the security policy allows the required actions for the given pair of security contexts, or not.
-If it should be allowed, SE-PostgreSQL does not prevent anything to execute the SQL-query, otherwise, it raises an error.
+同様に、クライアントプロセスが（文字通りDB管理システムの管理下にある）DBオブジェクトにアクセスする時、アクセス手段としてSQLクエリを送出します。そして、SE-PostgreSQLサブシステムはカーネル内のSELinuxの持っているセキュリティポリシーに基づいて、要求されたDBオブジェクトに対するクライアントの権限をチェックします。（SELinuxはソケットの接続端点のセキュリティコンテキストを取得するAPIを提供している事に留意してください）
+SE-PostgreSQLはまたDBオブジェクトのセキュリティコンテキストも管理しています。SE-PostgreSQLはカーネル内のSELinuxに、セキュリティポリシーが所与のセキュリティコンテキストの間に要求された操作を許可しているか否かを問合せます。もしそれを許可すべきなら、SE-PostgreSQLは何もSQLクエリの実行を妨げません。それ以外の場合、SE-PostgreSQLはエラーを返します。
 
-See the http://wiki.postgresql.org/wiki/SEPostgreSQL for more details.
+詳細については http://wiki.postgresql.org/wiki/SEPostgreSQL をご覧ください。
 
 == Bounds domain ==
 
@@ -482,4 +478,4 @@ If the variable is not set, the `selinuxDomainVal` is used as a fallback.
 
 = ソースコードの一覧 =
 
-英語版ドキュメントの [[Apache_SELinux_plus#List_of_sources List of sources]] を参照してください。
+英語版ドキュメントの [Apache_SELinux_plus#List_of_sources List of sources] を参照してください。
