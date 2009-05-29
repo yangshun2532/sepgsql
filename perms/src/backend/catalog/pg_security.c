@@ -117,6 +117,8 @@ securityPostBootstrapingMode(void)
 
 		values[Anum_pg_security_seclabel - 1]
 			= CStringGetTextDatum(es->seclabel);
+		values[Anum_pg_security_secinuse - 1]
+			= BoolGetDatum(true);
 
 		tuple = heap_form_tuple(RelationGetDescr(rel),
 								values, nulls);
@@ -192,6 +194,8 @@ securityLookupSecurityId(const char *seclabel)
 	memset(nulls, false, sizeof(nulls));
 	values[Anum_pg_security_seclabel - 1]
 		= CStringGetTextDatum(seclabel);
+	values[Anum_pg_security_secinuse - 1]
+		= BoolGetDatum(true);
 
 	tuple = heap_form_tuple(RelationGetDescr(rel),
 							values, nulls);
