@@ -46,7 +46,7 @@ Apache/SELinux plus の実装はシンプルです。
 
 WebサーバがHTTP要求を受け取ると、HTTP要求ヘッダを解析し、必要であればHTTP認証を適用します。この認証プロセスはWebサーバのコンテキストで実行される事に留意してください。
 次に、mod_selinux.soモジュールは一時的な作業スレッドを作成し、作業スレッドが終了するまでスリープします。
-作業スレッドは、コンテンツハンドラ（Webアプリケーションのエントリポイントを含む）の起動前に、自身のセキュリティコンテキストを変更します。新しいセキュリティコンテキストが、古いセキュリティコンテキストの bounds domain である場合に限り、最近のSELinux（2.6.28カーネル以降）ではスレッド単位にセキュリティコンテキストを設定する事ができます。詳細は[#Bounds_domain Bounds domain]を参照してください。
+作業スレッドは、コンテンツハンドラ（Webアプリケーションのエントリポイントを含む）の起動前に、自身のセキュリティコンテキストを変更します。新しいセキュリティコンテキストが、古いセキュリティコンテキストの被制限ドメインである場合に限り、最近のSELinux（2.6.28カーネル以降）ではスレッド単位にセキュリティコンテキストを設定する事ができます。詳細は[#制限ドメイン 制限ドメイン]を参照してください。
 
 最終的に、コンテンツハンドラは新しいセキュリティコンテキストをセットした作業スレッドで実行されます。
 
@@ -108,29 +108,29 @@ SE-PostgreSQLはまたDBオブジェクトのセキュリティコンテキス�
 
 詳細については http://wiki.postgresql.org/wiki/SEPostgreSQL をご覧ください。
 
-== Bounds domain ==
+== 制限ドメイン（Bounds domain）==
 
-The Apache/SELinux plus uses one-time worker threads to launch web application instances, and the worker threads assign a new security context on themself. SELinux has a restriction to set an individual security context on a thread. The new security context to be set on threads has to be bounded by the original security context. The bounds relationship is declared in the security policy.
+Apache/SELinux plusは、Webアプリケーションインスタンスを起動するために一時的な作業スレッドを利用し、その作業スレッドは自分自身に新しいセキュリティコンテキストを割り当てます。SELinuxにはスレッド毎のセキュリティコンテキストを設定する際に制約があり、スレッドに設定される新しいセキュリティコンテキストは、元々のセキュリティコンテキストによって制限されている必要があります。この関係はセキュリティポリシーの中で定義されています。
 
-In a mult-thread process, multiple threads share a process local memory, so SELinux cannot acquire and check information flows between different domains due to the property of reference monitor. It is the reason why the older kernel does not allow to set a new security context in multi-thread processes.
+マルチスレッドプロセスでは、複数のスレッドがプロセスローカルメモリを共有します。したがって、SELinuxは異なるドメイン間のデータフローの捕捉とチェックが不可能でした（リファレンスモニタとしての性質による）。これが、従来のカーネルはマルチスレッドプロセスに新しいセキュリティコンテキストを割り当てる事を許していなかった理由です。
 
-The bounds domain feature restricts the scope of privileges to be allowed on the bounded domain.
-When a domain is bounded by another one, any privileges can never be assigned to the bounded domain as far as the bounding one is allowed.
+制限ドメインの機能は、非制限ドメインに許可を与える事のできる権限の範囲を制限します。
+あるドメインが別のドメインによって制限されている場合、あらゆる権限は、制限ドメインがそれを持っていない限り、被制限ドメインに対して許可される事は決してありません。
 
 http://sepgsql.googlecode.com/files/LAPP_SELinux_Fig05.png
 
-The above example bounds the `anon_webapp_t` domain by the `httpd_t` domain with the following `typebounds` policy.
+上記の例では、次の`typebounds`構文ポリシーによって、`anon_webapp_t`ドメインが`httpd_t`ドメインによって制限されています。
 {{{
 typebounds httpd_t anon_webapp_t;
 }}}
 
-The rule is that all the privileges to be allowed on `anon_webapp_t` domain have to be also allowed to `httpd_t` domain.
-If we tries to allow `anon_webapp_t` to access `/etc/shadow` on writing policies, it is dropped at run-time because the `httpd_t` is not allowed to access it.
-In this figure, both of them are allowed on the `/var/www/cgi-bin/test.cgi` when `httpd_enable_cgi` boolean is turned on. The `httpd_enable_cgi` only controls privileges for `httpd_t` in the security policy, but turning it off concurrently drops privileges of `anon_webapp_t` because `http_t` has lost the privileges in this state.
+ルールは、`anon_webapp_t`に許可されている全ての権限は、`httpd_t`にも許可されていなければならないという事です。
+ポリシーの作成において、もし`anon_webapp_t`に`/etc/shadow`へのアクセスを許可しようとしても、`httpd_t`には許可されていないため、実行時にその権限は落とされてしまいます。
+この図において、`httpd_enable_cgi`がOnの時、双方のドメインは`/var/www/cgi-bin/test.cgi`へのアクセスを許可されています。`httpd_enable_cgi`は`httpd_t`ドメインの権限にのみ作用しますが、この状態で`httpd_t`ドメインは権限を失っているため、これをOffにする事は同時に`anon_webapp_t`の権限を落とすことにもなります。
 
-We can consider the bounds domains as a special state of the original domain which lacks a part of privileges. Thus, SELinux allows to change the security context of a certain thread within multi-thread process as far as the new security context is bounded by the older one.
+制限ドメインとは、元々のドメインが一部の権限を失った特別な状態であると考える事もできます。したがって、新しいドメインが古いドメインによって制限されている限りにおいて、SELinuxはマルチスレッドプロセス内の特定のスレッドのセキュリティコンテキストを変更する事を認めているのです。
 
-The Apache/SELinux plus uses the bounds domain to assign individual security context on a certain thread, without unnecessary privileges for the authenticated users.
+Apache/SELinux plusは、認証されたユーザに応じた個々のセキュリティコンテキストを特定のスレッドに割り当てるために、この制限ドメインを利用しています。
 
 ----
 
@@ -138,27 +138,28 @@ The Apache/SELinux plus uses the bounds domain to assign individual security con
 
 == RPM インストール ==
 
-RPM Installation is the preferable way to set up the Apache/SELinux plus on your systems.
+Apache/SELinux plus をセットアップするにはRPMインストールがお勧めです。
 
-If you already installed Fedora 11 and use `yum` to set up, all you need to do is to type the following commends:
+もし既にFedora11がインストール済みなら、`yum`コマンドを利用して下さい。必要なのは、以下のコマンドをタイプする事だけです。
 {{{
 # yum install mod_selinux
 }}}
+これで、パッケージを探し出し、ダウンロードし、インストールまでを自動的に行ってくれます。
 
-It find up, download and installs the package automatically.
-
-If you would like to install the RPM package by hand, please confirm the following packages and their versions:
+もしRPMパッケージを手動でインストールしたいなら、以下のパッケージとバージョンを確認して下さい。
  * Linux kernel >= 2.6.28, with SELinux enabled
  * httpd >= 2.2.0
  * libselinux
  * libsepol >= 2.0.34
  * policycoreutils
 
-The RPM packages are hosted by [http://fedoraproject.org/ Fedora Project]. Please find up the `mod_selinux` package suitable for your environment from here:
+RPMパッケージは[http://fedoraproject.org/ Fedora Project]にホストされています。
+以下のURLから、あなたの環境に応じた`mod_selinux`パッケージを探してください。
 
  http://download.fedora.redhat.com/pub/fedora/linux/development/
 
-Then, run the `rpm` command. Please note that it also installs the `mod_selinux.pp` policy module, so it may require a bit of time to complete.
+そして、`rpm`コマンドを実行します。
+これにより、`mod_selinux.pp`ポリシーモジュールもインストールされる事に留意して下さい。これはちょっとだけ時間のかかる処理です。
 {{{
 [root@saba ~]# wget http://...(snip).../mod_selinux-2.2.1930-1.fc11.i586.rpm
 --2009-05-26 13:29:06--  http://...(snip).../Packages/mod_selinux-2.2.1930-1.fc11.i586.rpm
@@ -181,20 +182,20 @@ Preparing...                ################################### [100%]
 
 特に明確な理由の無い限り、ソースからのインストールはお勧めしません。
 
-Please confirm the following packages and their versions prior to the installation.
+インストールの前に、以下のパッケージとバージョンを確認して下さい。
  * Linux kernel >= 2.6.28, with SELinux enabled
  * httpd >= 2.2.0
  * libselinux
  * libsepol >= 2.0.34
  * policycoreutils
- * httpd-devel >= 2.2.0 (required for build)
- * checkpolicy >= 2.0.17 (required for build)
- * libselinux-devel (required for build)
+ * httpd-devel >= 2.2.0（ビルド時に必要）
+ * checkpolicy >= 2.0.17（ビルド時に必要）
+ * libselinux-devel（ビルド時に必要）
 
-=== 1. Getting the source ===
+=== 1. ソースの取得 ===
 
-You can download the source tarball from the [Apache_SELinux_plus#List_of_sources List of Sources] section.
-Currently, the latest one is the most recommendable one.
+[Apache_SELinux_plus#List_of_sources List of Sources]セクションからソースコードをダウンロードする事ができます。
+現在のところ、最新版が最もお勧めです。
 
 {{{
 [kaigai@saba ~]$ wget http://sepgsql.googlecode.com/files/mod_selinux-2.2.1930.tgz
@@ -210,9 +211,9 @@ Saving to: `mod_selinux-2.2.1930.tgz'
 2009-05-26 13:42:34 (56.2 KB/s) - `mod_selinux-2.2.1930.tgz' saved [14028/14028]
 }}}
 
-=== 2. Build the module and policy ===
+=== 2. モジュールとポリシーのビルド ===
 
-Extract the source tarball.
+ソースの*.tgzファイルを展開します
 {{{
 [kaigai@saba ~]$ tar zxvf mod_selinux-2.2.1930.tgz
 mod_selinux-2.2.1930/
@@ -227,7 +228,7 @@ mod_selinux-2.2.1930/mod_selinux.c
 [kaigai@saba ~]$ cd mod_selinux-2.2.1930
 }}}
 
-Build the module with `make`.
+`make`でモジュールをビルドします。
 {{{
 [kaigai@saba mod_selinux-2.2.1930]$ make
 /usr/lib64/apr-1/build/libtool --silent --mode=compile gcc -pthread  -O2 -g -pipe -Wall   \
@@ -240,7 +241,7 @@ Build the module with `make`.
        -module -avoid-version -lselinux mod_selinux.lo
 }}}
 
-Build the security policy module also.
+セキュリティポリシーもビルドします。
 {{{
 [kaigai@saba mod_selinux-2.2.1930]$ make -f /usr/share/selinux/devel/Makefile
 Compiling targeted mod_selinux module
@@ -251,9 +252,9 @@ Creating targeted mod_selinux.pp policy package
 rm tmp/mod_selinux.mod.fc tmp/mod_selinux.mod
 }}}
 
-=== 3. Install the modules ===
+=== 3. モジュールのインストール ===
 
-Install the `mod_selinux.so` and `mod_selinux.pp` modules.
+`mod_selinux.so`と`mod_selinux.pp`をインストールします。
 
 {{{
 [kaigai@masu mod_selinux-2.2.1930]$ su
@@ -266,10 +267,10 @@ make[1]: Leaving directory `/home/kaigai/mod_selinux-2.2.1930'
 [root@saba mod_selinux-2.2.1930]# semodule -i mod_selinux.pp
 }}}
 
-=== 4. Relabel files ===
+=== 4. ファイルの再ラベリング ===
 
-If the installed `mod_selinux.so` is not labeled as `httpd_modules_t`, run the `/sbin/restorecon`.
-But it is not necessary for most of cases.
+インストールされた`mod_selinux.so`が`httpd_modules_t`とラベル付けされていない場合、`/sbin/restorecon`を実行してください。
+しかし、大抵の場合は必要ありません。
 {{{
 [root@saba ~]# restorecon -R /usr/lib/httpd/modules
 }}}
@@ -280,39 +281,40 @@ But it is not necessary for most of cases.
 
 == ディレクティブ ==
 
-The `mod_selinux.so` supports the following directives.
+`mod_selinux.so`は以下のディレクティブをサポートしています。
 
-The `selinuxServerDomain` need to be a global configuration.
-Rest of directives can be placed on the discretional location.
-If we put the multiple directives in a single block, an earlier directive is evaluated earlier on run time, and the rest of directives are checked if the request is not matched to the prior directives.
+`selinuxServerDomain`はグローバルな設定である事が必要です。
+残りの設定項目は任意の場所に記述する事ができます。
+複数のディレクティブが一つのブロックにある場合、先に記述したものが、実行時にも先に評価されます。そして、残りのディレクティブは、HTTP要求が前のディレクティブにマッチしない時に評価されます。
 
-=== selinuxServerDomain <domain/range pair> ===
+=== selinuxServerDomain <ドメイン/レンジ ペア> ===
 
-It specifies the security context of daemon process when starting it up.
-The `mod_selinux.pp` policy module adds a `range_transition` rule to perform it with `mcs_systemhigh` which is extracted to all the available categories in the base policy. However, in most cases, it is too much for the apache/httpd daemon process.
+デーモンプロセスが起動するときのセキュリティコンテキストを指定します。
+`mod_selinux.pp`ポリシーモジュールは、デーモンが`mcs_systemhigh`カテゴリ（全ての有効なカテゴリに展開される）で動作するよう`range_transition`ルールを追加しますが、大抵の場合、apache/httpdデーモンプロセスには過剰です。
 
-The `selinuxServerDomain` directive gives us a chance to drop unnecessary categories during its starting up.
-The domain/range pair is a colon separatable text. The lefthand of the first colon is used as a domain, and the remaining part is used as a range. If the colon is omitted, whole of the given text is used as a domain. The `*` has a special meaning which indicates to keep the field as is.
+`selinuxServerDomain`ディレクティブはスタートアップ時にこれをドロップする事を可能にします。
+ドメイン/レンジペアはコロン(`:`)区切りの文字列で、最初のコロンの左側がドメインとして、残りの部分がレンジとして扱われます。
+もしコロンが省略された場合、文字列の全体がドメインとして利用されます。アスタリスク(`*`)には特別な意味があり、現在の当該フィールドの値をそのまま利用するという事を意味します。
 
-If it is not available to change the security context specified, the `mod_selinux.so` raises an error and aborts the starting up process.
+指定されたセキュリティコンテキストに変更できなかった場合、`mod_selinux.so`はエラーを起こし、プロセスの起動を中断します。
 
-Example of the directive:
+ディレクティブの例
 {{{
 selinuxServerDomain     *:s0-s0:c0.c15
 }}}
 
-It keeps the domain as is, and set `s0-s0:c0.c15` as range.
+これはドメインを現在の値のままとし、レンジに`s0-s0:c0.c15`をセットします。
 
-=== selinuxDomainMap <mapping file> ===
+=== selinuxDomainMap <マップファイル> ===
 
-It specifies the path of the user/domain mapping file which describes the relationships between authenticated username and a domain/range pair. The mapping file 
+ユーザ/ドメインのマップファイルのパスを指定します。このファイルには、HTTP認証ユーザとドメイン/レンジペアの対応関係を記述します。
 
-Example of the directive:
+ディレクティブの例
 {{{
 selinuxDomainMap        /var/www/mod_selinux.map
 }}}
 
-Example of mapping file:
+マップファイルの例
 {{{
 #
 # Apache/SELinux plus - user/domain mapping file
@@ -329,35 +331,35 @@ __anonymous__      anon_webapp_t:s0
 *                  user_webapp_t:s0
 }}}
 
-The format of the domain/range pair follows the notes in `selinuxServerDomain`.
-The `__anonymous__` is a special term which matches all the unauthorized requests.
-The `*` is also a special term which matches all the authorized and unauthorized requests.
+ドメイン/レンジペアの書式は`selinuxServerDomain`の記述と同様です。
+`__anonymous__`は特別な語句で、全ての未認証リクエストにマッチします。
+`*`も特別な語句で、全ての認証済み/未認証リクエストにマッチします。
 
-=== selinuxDomainEnv <environment variable> ===
+=== selinuxDomainEnv <環境変数> ===
 
-It specifies an environment variable which gives a domain/range pair to be assigned on the web application contexts.
-Some of extra modules support to set up environment variables depending on the attributes of request.
-The format of the domain/range pair to be delivered follows the notes in `selinuxServerDomain`.
+Webアプリケーションのコンテキストに設定すべきドメイン/レンジペアを与える環境変数を指定します。
+いくつかの外部モジュールは、HTTP要求のメタ情報に応じて環境変数を設定する機能を提供しています。
+ドメイン/レンジペアの書式は`selinuxServerDomain`の記述と同様です。
 
-For example, `SetEnvIf` directive allows to set up a certain environment variable based on the remote address when it is matched to the given pattern.
+例えば、`SetEnvIf`ディレクティブは、リモートアドレスが所与のパターンにマッチした場合に特定の環境変数をセットアップする事ができます。
 
-Example:
+例：
 {{{
 SetEnvIf Remote_Addr "192.168.1.[0-9]+$" SELINUX_DOMAIN=*:s0:c1
 SetEnvIf Remote_Addr "192.168.2.[0-9]+$" SELINUX_DOMAIN=*:s0:c2
 selinuxDomainEnv    SELINUX_DOMAIN
 }}}
 
-This example shows a configuration which assigns "`s0:c1`" for the request come from `192.168.1.0/24`, and "`s0:c2`" from `192.168.2.0/24`, but does not anything for the request come from others.
+この例は、`192.168.1.0/24`からのHTTP要求に"`s0:c1`"を割り当て、`192.168.2.0/24`からのHTTP要求に"`s0:c2`"を割り当てる設定です。しかし、それ以外のリクエストに対しては何もしません。
 
-=== selinuxDomainVal <domain/range pair> ===
+=== selinuxDomainVal <ドメイン/レンジペア> ===
 
-It specifies a domain/range pair to be assigned to the contents handlers.
-The format of the domain/range pair to be delivered follows the notes in `selinuxServerDomain`.
+コンテンツハンドラに割り当てるべきドメイン/レンジペアを指定します。
+ドメイン/レンジペアの書式は`selinuxServerDomain`の記述と同様です。
 
-In normal cases, it is placed on the tail of the series of configuration to perform as a fallback when the request did not match any prior `selinuxDomainMap` and `selinuxDomainEnv` rules.
+通常、HTTP要求は他の`selinuxDomainMap`や`selinuxDomainEnv`にマッチしなかった場合のフォールバックとして、このディレクティブは設定の最後に置かれます。
 
-Example:
+例：
 {{{
 SetEnvIf Remote_Addr "192.168.1.[0-9]+$" SELINUX_DOMAIN=*:s0:c1
 SetEnvIf Remote_Addr "192.168.2.[0-9]+$" SELINUX_DOMAIN=*:s0:c2
@@ -366,31 +368,35 @@ selinuxDomainEnv    SELINUX_DOMAIN                ... (2)
 selinuxDomainVal    anon_webapp_t:s0              ... (3)
 }}}
 
-In this example, the (1) is checked at first. If the given request is matched to any entries within the mapfile, the `mod_selinux.so` launches the contents handler with the domain/range pair specified.
-Then, the (2) is checked. The `SELINUX_DOMAIN` is set based on `Remote_Addr`, so it may has a valid value, if the request comes from certain networks. Otherwise, the (3) is applied for unmatched requests at (1) and (2). The requests will be launched with `anon_webapp_t:s0`.
+この例では、最初に(1)がチェックされます。HTTP要求がマップファイル内のエントリにマッチしたら、`mod_selinux.so`はコンテンツハンドラを指定されたドメイン/レンジペアで起動します。
+次に(2)がチェックされます。環境変数`SELINUX_DOMAIN`は`Remote_Addr`に基づいてセットされますが、HTTP要求が特定のネットワークから来ていた場合、この環境変数は有効な値を持ちます。
+それ以外の場合、(1)及び(2)にマッチしなかったHTTP要求に対して(3)が適用され、`anon_webapp_t:s0`で起動されることでしょう。
 
 === selinuxAllowCaches (on|off) ===
 
-As the apache/httpd official documentation noted, contents caches work prior to the authentication and domain transition. It means the facility allows users to bypass access controls. In the default, `mod_selinux.so` disables the content caches as fas as the `selinuxAllowCaches` is not set to `on` explicitly.
+Apache/httpdの公式ドキュメントが言及しているように、コンテンツキャッシュは認証及びドメイン遷移より前に動きます。
+これは、ユーザにアクセス制御をバイパスさせる事を意味します。
+標準では、`selinuxAllowCaches`が明示的に`On`とセットされない限り、`mod_selinux.so`はコンテンツキャッシュを無効化します。
 
-This directive allows to use the contents cahces, but please understand the risk to set it `on` before changing it.
+このディレクティブはコンテンツキャッシュの利用を許可しますが、これを`on`にする前に、そのリスクを理解するようにしてください。
 
-Example:
+例：
 {{{
 selinuxAllowCaches      On
 }}}
 
 ----
 
-= Usual examples =
+= よくある例 =
 
-This section introduces a few usual example of `mod_selinux.so` configuration.
+本節では、`mod_selinux.so`設定のよくある例を紹介します。
 
 == バーチャルホスト単位の分離 ==
 
-If `selinuxDomainVal` is put without any other directives, it means all the requests are always handled with the specified privileges. We can utilize it to achieve per virtual host separation.
+もし`selinuxDomainVal`が単独で記述されたら、全てのHTTP要求は常に指定された権限で動作する事を意味します。
+これをバーチャルホスト単位の分離に利用する事ができます。
 
-In this example, all the request to the `dog.example.com` is handled with `s0:c1` range, but ones to `cat.example.com` is handled with `s0:c2` range.
+この例では、`dog.example.com`への全てのHTTP要求は`s0:c1`で処理され、`cat.example.com`への要求は`s0:c2`で処理されます。
 {{{
 NameVirtualHost *:80
 
@@ -409,11 +415,11 @@ selinuxDomainVal      *:s0:c2
 
 == DB連携による認証 ==
 
-The `mod_authn_dbd.so` module enables to authenticate the user using a database backend.
-It pulls a database record with the configured query, and enables to export additional information as an exvironment variable.
-The `selinuxDomainEnv` directive utilize the information, and it enables to map a user and a domain/range pair without any mapping files.
+`mod_authn_dbd.so`モジュールはバックエンドのデータベースつかったユーザ認証を可能にします。
+このモジュールは、設定されたクエリによってDBレコードを引き出し、さらに環境変数としてその情報をエクスポートする事ができます。
+`selinuxDomainEnv`ディレクティブはこの情報を利用する事ができ、それにより、マップファイル無しでユーザとドメイン/レンジペアを対応付ける事ができます。
 
-In this example, we assume the following `uaccount` table is already set up on the `web` database, and the `apache` database user is allowed to access the table. Please note that it is connected from the apache/httpd server domain, so the SE-PostgreSQL also needs to allow to accept connections from the security context configured at `selinuxServerDomain`.
+この例では、以下の`uaccount`テーブルが`web`データベースにセットアップ済みであり、DBユーザ`apache`がこのテーブルにアクセス可能であると仮定します。この接続はapache/httpdサーバのドメインから行われている事に留意して下さい。SE-PostgreSQLは`selinuxServerDomain`で設定したドメインからの接続を許可している必要があります。
 {{{
 CREATE TABLE uaccount (
         uname       TEXT PRIMARY KEY,
@@ -426,7 +432,7 @@ INSERT INTO uaccount VALUES ('var', 'yyy', 'staff_webapp_t:s0:c1');
 INSERT INTO uaccount VALUES ('baz', 'zzz', 'anon_webapp_t:s0:c2');
 }}}
 
-Example of apache/httpd configuration:
+Apache/httpdの設定例：
 {{{
 #
 # 1. Load the dbd drivers
@@ -459,20 +465,18 @@ selinuxDomainEnv         AUTHENTICATE_UDOMAIN
 selinuxDomainVal         anon_webapp_t:s0
 </Directory>
 }}}
+最初に、デフォルトの設定はdbdドライバをロードしないため、これをグローバル領域でロードする必要があります。
+(2)ではデータベース接続パラメータを指定します。`DBDriver`はdbdドライバの種類。この場合、`apr-util-pgsql`パッケージの追加インストールが必要です。`DBDParams`は接続文字列で、詳細に関してはPostgreSQLのドキュメントを参照してください。
 
-At first, we need to load tne dbd drivers at the global configuration, since the default configuration does not load them.
-The (2) specifies database connection parameters. The `DBDriver` means the kind of dbd driver. In this case, the `apr-util-pgsql` package needs to be installed additionally. The `DBDParams` is a connection string. Please see the PostgreSQL documentation for more details.
+(3)は認証パラメータを指定します。BASIC認証の場合、`mod_authn_dbd`モジュールはクエリがハッシュ化されたパスワード文字列を返すよう求めていますが、PostgreSQLはこのハッシュ化方式を標準でサポートしていません。なので、ここではDigest認証を利用します。
+`mod_authn_dbd`へはハッシュ化された文字列`md5(username : realm : password)`を返却する必要があります。`username`と`realm`はモジュールから渡され、ハッシュ値はクライアントから来た認証トークンと比較されます。
 
-The (3) specifies the parameters for authentication. We uses the digest authentication here, because `mod_authn_dbd` module requires to return a hashed password for basic authentication, but PostgreSQL does not support it in the core.
-The `mod_authn_dbd` requires to return a hashed string for `md5(username : realm : password)`. The username and realm are delivered from the module and it compares the hash with the authentication token from the client.
+クエリが複数のフィールドを返す場合、`mod_authn_dbd`は（先頭のフィールドを除き）これらを環境変数`AUTHENTICATE_<フィールド名>`としてエクスポートします。したがって、2番目と3番目のフィールドは`mod_selinux`に渡されます。
 
-If the query returns multiple fields, the `mod_authn_dbd` exports them (except for the first one) as environment variables named as `AUTHENTICATE_<field name>`, so the second and third fields are delivered to the `mod_selinux`.
+3番目のフィールドは奇妙なパラメータの使い方（`%s=%s as dummy`）に見えるかもしれません。
+`mod_dbd`モジュールは、`%s`をプリペアード・ステートメントのパラメータに置換しますが、現在のところ、その順番は固定です。最初のパラメータは常にユーザ名に置換され、2番目はレルム文字列です。しかし、レルム文字列をユーザ名より前に置く事が必要なので、ここでは`$1`と`$2`をクエリ中に直接記載し、無害化のためにダミーの`%s`を置いています。
 
-The third field might seem to you a storange usage of parameters (`%s=%s as dummy`).
-The `mod_dbd` replaces `%s` to query parameter of prepared statements, but its order is currently hardwired. The first one is always replaced by username, and the second one is replace by realm string. However, we need to put the given realm prior the username, so we put $1 and $2 in the query directly, and put a dummy usage of `%s` to keep it harmless.
-
-At the (4), it tries to set the security context based on the `AUTHENTICATE_UDOMAIN` first.
-If the variable is not set, the `selinuxDomainVal` is used as a fallback.
+(4)ではまず、`AUTHENTICATE_UDOMAIN`環境変数に基づいてセキュリティコンテキストの設定を試み、もし値が設定されていなかった場合、`selinuxDomainVal`がフォールバックとして利用されます。
 
 ----
 
