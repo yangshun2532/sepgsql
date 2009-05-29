@@ -49,7 +49,7 @@ Finally, the contents handlers are invoked by the worker thread with the new sec
 
 http://sepgsql.googlecode.com/files/LAPP_SELinux_Fig04.png
 
-If the `mod_selinux.so` is not installed on the apache/httpd server, it invokes the contents handlers in the same context synchronously. Because the server side backend repeatedly receives and handles http requests, it is not impossible to assign a security context directly. If it onces assigned a restrictive security context, it can never handle other requests any more. But we cannot know the suitable security context before the authentication, so it is necessary to create a one-time worker, as if a traditional `accept(2)` - `fork(2)` model did.
+If the `mod_selinux.so` is not installed on the apache/httpd server, it invokes the contents handlers in the same context synchronously. Because the server side backend repeatedly receives and handles http requests, it is not possible to assign a security context directly. If it onces assigned a restrictive security context, it can never handle other requests any more. But we cannot know the suitable security context before the authentication, so it is necessary to create a one-time worker, as if a traditional `accept(2)` - `fork(2)` model did.
 
 Please note that dynamic domain transition is weaker separation than `execve(2)` based one. If the server process already loads an invisible files into local memory, it is logically referanciable for the worker thread with a restrictive security context.
 However, it can check and prevent well the web application to access violated resources voluntarily.
