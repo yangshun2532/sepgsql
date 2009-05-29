@@ -1222,7 +1222,7 @@ static struct config_bool ConfigureNamesBool[] =
 		false, NULL, NULL
 	},
 #ifdef HAVE_SELINUX
-    {
+	{
 		{"sepostgresql", PGC_POSTMASTER, CONN_AUTH_SECURITY,
 		 gettext_noop("SE-PostgreSQL activation option to be turned on/off"),
 		 NULL,
