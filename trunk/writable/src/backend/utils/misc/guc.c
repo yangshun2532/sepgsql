@@ -1222,13 +1222,21 @@ static struct config_bool ConfigureNamesBool[] =
 		false, NULL, NULL
 	},
 #ifdef HAVE_SELINUX
-    {
+	{
 		{"sepostgresql", PGC_POSTMASTER, CONN_AUTH_SECURITY,
 		 gettext_noop("SE-PostgreSQL activation option to be turned on/off"),
 		 NULL,
 		},
 		&sepostgresql_is_enabled,
 		false, NULL, NULL
+	},
+	{
+		{"sepostgresql_mcstrans", PGC_USERSET, CONN_AUTH_SECURITY,
+		 gettext_noop("SE-PostgreSQL uses mcstrans on printing security labels"),
+		 NULL,
+		},
+		&sepostgresql_use_mcstrans,
+		true, NULL, NULL
 	},
 #endif
 

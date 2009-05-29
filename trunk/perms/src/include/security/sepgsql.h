@@ -25,6 +25,9 @@ extern bool sepostgresql_is_enabled;
 /* GUC parameter to turn on/off Row-level controls */
 extern bool sepostgresql_row_level;
 
+/* GUC parameter to turn on/off mcstrans */
+extern bool sepostgresql_use_mcstrans;
+
 /* Objject classes and permissions internally used */
 enum SepgsqlClasses
 {
