@@ -1230,6 +1230,14 @@ static struct config_bool ConfigureNamesBool[] =
 		&sepostgresql_is_enabled,
 		false, NULL, NULL
 	},
+	{
+		{"sepostgresql_mcstrans", PGC_USERSET, CONN_AUTH_SECURITY,
+		 gettext_noop("SE-PostgreSQL uses mcstrans on printing security labels"),
+		 NULL,
+		},
+		&sepostgresql_use_mcstrans,
+		true, NULL, NULL
+	},
 #endif
 
 	/* End-of-list marker */
