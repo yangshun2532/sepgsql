@@ -18,9 +18,14 @@
 CATALOG(pg_security,3400) BKI_SHARED_RELATION
 {
 	/*
-	 * seclabel is a text representation of security identifier
+	 * a text representation of the security label
 	 */
 	text		seclabel;
+
+	/*
+	 * a flag used by seclabel reclaimer
+	 */
+	bool		secinuse;
 } FormData_pg_security;
 
 /*
@@ -32,8 +37,9 @@ typedef FormData_pg_security *Form_pg_security;
 /*
  * compiler constants for pg_selinux
  */
-#define Natts_pg_security             1
-#define Anum_pg_security_seclabel     1
+#define Natts_pg_security				2
+#define Anum_pg_security_seclabel		1
+#define Anum_pg_security_secinuse		2
 
 /*
  * Functions to translate between security label and identifier

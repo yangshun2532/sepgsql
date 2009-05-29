@@ -331,6 +331,8 @@ IsSharedRelation(Oid relationId)
 		relationId == PgAuthidToastIndex ||
 		relationId == PgDatabaseToastTable ||
 		relationId == PgDatabaseToastIndex ||
+		relationId == PgSecurityToastTable ||
+		relationId == PgSecurityToastIndex ||
 		relationId == PgShdescriptionToastTable ||
 		relationId == PgShdescriptionToastIndex)
 		return true;

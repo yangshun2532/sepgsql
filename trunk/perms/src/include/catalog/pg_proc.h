@@ -4340,9 +4340,9 @@ DATA(insert OID = 2963 (  uuid_hash		   PGNSP PGUID 12 1 0 0 f f f t f i 1 0 23 
 DESCR("hash");
 
 /* SE-PostgreSQL related functions */
-DATA(insert OID = 3403 (  sepgsql_getcon   PGNSP PGUID 12 1 0 0 f f f t f v 0 0 25 "" _null_ _null_ _null_ _null_ sepgsql_getcon _null_ _null_ _null_ ));
-DATA(insert OID = 3404 (  sepgsql_server_getcon	PGNSP PGUID 12 1 0 0 f f f t f v 0 0 25 "" _null_ _null_ _null_ _null_ sepgsql_server_getcon _null_ _null_ _null_ ));
-DATA(insert OID = 3405 ( sepgsql_get_user  PGNSP PGUID 12 1 0 0 f f f t f v 1 0 25 "25" _null_ _null_ _null_ _null_ sepgsql_get_user _null_ _null_ _null_ ));
+DATA(insert OID = 3405 (  sepgsql_getcon   PGNSP PGUID 12 1 0 0 f f f t f v 0 0 25 "" _null_ _null_ _null_ _null_ sepgsql_getcon _null_ _null_ _null_ ));
+DATA(insert OID = 3406 (  sepgsql_server_getcon	PGNSP PGUID 12 1 0 0 f f f t f v 0 0 25 "" _null_ _null_ _null_ _null_ sepgsql_server_getcon _null_ _null_ _null_ ));
+DATA(insert OID = 3407 ( sepgsql_get_user  PGNSP PGUID 12 1 0 0 f f f t f v 1 0 25 "25" _null_ _null_ _null_ _null_ sepgsql_get_user _null_ _null_ _null_ ));
 DATA(insert OID = 3408 ( sepgsql_set_user  PGNSP PGUID 12 1 0 0 f f f t f v 2 0 25 "25 25" _null_ _null_ _null_ _null_ sepgsql_set_user _null_ _null_ _null_ ));
 DATA(insert OID = 3409 ( sepgsql_get_role  PGNSP PGUID 12 1 0 0 f f f t f v 1 0 25 "25" _null_ _null_ _null_ _null_ sepgsql_get_role _null_ _null_ _null_ ));
 DATA(insert OID = 3410 ( sepgsql_set_role  PGNSP PGUID 12 1 0 0 f f f t f v 2 0 25 "25 25" _null_ _null_ _null_ _null_ sepgsql_set_role _null_ _null_ _null_ ));
