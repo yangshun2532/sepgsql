@@ -194,7 +194,7 @@ Preparing...                ################################### [100%]
 
 === 1. ソースの取得 ===
 
-[Apache_SELinux_plus#List_of_sources List of Sources]セクションからソースコードをダウンロードする事ができます。
+[http://code.google.com/p/sepgsql/wiki/Apache_SELinux_plus?wl=en#List_of_sources List of Sources]セクションからソースコードをダウンロードする事ができます。
 現在のところ、最新版が最もお勧めです。
 
 {{{
@@ -482,4 +482,4 @@ selinuxDomainVal         anon_webapp_t:s0
 
 = ソースコードの一覧 =
 
-英語版ドキュメントの [Apache_SELinux_plus#List_of_sources List of sources] を参照してください。
+英語版ドキュメントの [http://code.google.com/p/sepgsql/wiki/Apache_SELinux_plus?wl=en#List_of_sources List of sources] を参照してください。
