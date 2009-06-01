@@ -13,6 +13,7 @@
 #include "catalog/indexing.h"
 #include "catalog/pg_security.h"
 #include "miscadmin.h"
+#include "security/rowacl.h"
 #include "security/sepgsql.h"
 #include "utils/builtins.h"
 #include "utils/memutils.h"
@@ -260,13 +261,12 @@ securityLookupSecurityLabel(Oid secid)
 	return label;
 }
 
-Oid
-securityTransRowAclIn(Acl *acl)
+static char *
+rowacl_acl_to_trans_internal(Acl *acl)
 {
 	AclItem	   *aip = ACL_DAT(acl);
 	char	   *rawacl = palloc0(ACL_NUM(acl) * 30 + 10);
 	int			i, ofs;
-	Oid			secid;
 
 	ofs = sprintf(rawacl, "acl:");
 
@@ -285,47 +285,88 @@ securityTransRowAclIn(Acl *acl)
 					   aip[i].ai_grantor);
 	}
 
-	secid = securityLookupSecurityId(rawacl);
+	return rawacl;
+}
 
-	pfree(rawacl);
+Oid
+securityTransRowAclIn(Acl *acl)
+{
+	char	   *rawacl = rowacl_acl_to_trans_internal(acl);
 
-	return secid;
+	return securityLookupSecurityId(rawacl);
+}
+
+Datum
+rowacl_acl_to_trans(PG_FUNCTION_ARGS)
+{
+	Acl		   *acl = PG_GETARG_ACL_P(0);
+	char	   *rawacl = rowacl_acl_to_trans_internal(acl);
+
+	PG_RETURN_TEXT_P(cstring_to_text(rawacl));
+}
+
+static Acl *
+rowacl_trans_to_acl_internal(char *rawacl)
+{
+	Acl		   *acl = NULL;
+	AclItem	   *aip;
+	char	   *tok, *sv = NULL;
+	int			index = 0;
+
+	if (strncmp(rawacl, "acl:", 4) != 0)
+		return NULL;
+
+	aip = palloc(strlen(rawacl) * sizeof(AclItem) / 4);
+	for (tok = strtok_r(rawacl + 4, ",", &sv);
+		 tok;
+		 tok = strtok_r(NULL, ",", &sv))
+	{
+		if (sscanf(tok, "%x=%x/%x",
+				   &aip[index].ai_grantee,
+				   &aip[index].ai_privs,
+				   &aip[index].ai_grantor) != 3)
+			continue;
+		index++;
+	}
+
+	if (index == 0)
+	{
+		pfree(aip);
+		return NULL;
+	}
+
+	acl = allocacl(index);
+	memcpy(ACL_DAT(acl), aip, index * sizeof(AclItem));
+
+	pfree(aip);
+	return acl;
 }
 
 Acl *
 securityTransRowAclOut(Oid secid, Oid relowner)
 {
-	Acl		   *acl = NULL;
-	char	   *rawacl = securityLookupSecurityLabel(secid);
+	Acl	   *acl = NULL;
+	char   *rawacl = securityLookupSecurityLabel(secid);
 
-	if (rawacl && strncmp(rawacl, "acl:", 4) == 0)
-	{
-		AclItem	   *aip;
-		char	   *tok, *sv = NULL;
-		int			index = 0;
-
-		aip = palloc(strlen(rawacl) * sizeof(AclItem) / 4);
-		for (tok = strtok_r(rawacl + 4, ",", &sv);
-			 tok;
-			 tok = strtok_r(NULL, ",", &sv))
-		{
-			if (sscanf(tok, "%x=%x/%x",
-					   &aip[index].ai_grantee,
-					   &aip[index].ai_privs,
-					   &aip[index].ai_grantor) != 3)
-				continue;
-		           index++;
-		}
-		acl = allocacl(index);
-		memcpy(ACL_DAT(acl), aip, index * sizeof(AclItem));
-
-		pfree(aip);
-	}
-
+	if (rawacl)
+		acl = rowacl_trans_to_acl_internal(rawacl);
 	if (!acl)
 		acl = acldefault(ACL_OBJECT_TUPLE, relowner);
 
 	return acl;
+}
+
+Datum
+rowacl_trans_to_acl(PG_FUNCTION_ARGS)
+{
+	Acl	   *acl = NULL;
+	char   *rawacl = TextDatumGetCString(PG_GETARG_TEXT_P(0));
+
+	acl = rowacl_trans_to_acl_internal(rawacl);
+	if (!acl)
+		PG_RETURN_NULL();
+
+	PG_RETURN_ACL_P(acl);
 }
 
 Datum
