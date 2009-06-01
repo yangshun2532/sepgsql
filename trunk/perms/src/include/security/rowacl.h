@@ -39,6 +39,12 @@ rowaclHeapTupleUpdate(Relation rel, HeapTuple oldtup, HeapTuple newtup, bool int
 extern bool
 rowaclHeapTupleDelete(Relation rel, HeapTuple oldtup, bool internal);
 
+extern Datum
+rowacl_acl_to_trans(PG_FUNCTION_ARGS);
+
+extern Datum
+rowacl_trans_to_acl(PG_FUNCTION_ARGS);
+
 #endif	/* ROWACL_H */
 
 
