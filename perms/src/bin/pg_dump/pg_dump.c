@@ -590,6 +590,13 @@ main(int argc, char **argv)
 			write_msg(NULL, "SE-PostgreSQL is not available now.");
 			exit(1);
 		}
+
+		/*
+		 * If both of --security-label and --inserts are given,
+		 * it implicitly enables --column-inserts
+		 */
+		if (dump_inserts)
+			column_inserts = 1;
 	}
 
 	/* Set the role if requested */
@@ -1247,7 +1254,8 @@ dumpTableData_insert(Archive *fout, void *dcontext)
 	if (fout->remoteVersion >= 70100)
 	{
 		appendPQExpBuffer(q, "DECLARE _pg_dump_cursor CURSOR FOR "
-						  "SELECT * FROM ONLY %s",
+						  "SELECT %s* FROM ONLY %s",
+						  (security_label > 0 ? "security_label, " : ""),
 						  fmtQualifiedId(tbinfo->dobj.namespace->dobj.name,
 										 classname));
 	}
@@ -11488,6 +11496,13 @@ fmtCopyColumnList(const TableInfo *ti)
 
 	appendPQExpBuffer(q, "(");
 	needComma = false;
+
+	if (security_label > 0)
+	{
+		appendPQExpBuffer(q, "security_label");
+		needComma = true;
+	}
+
 	for (i = 0; i < numatts; i++)
 	{
 		if (attisdropped[i])
