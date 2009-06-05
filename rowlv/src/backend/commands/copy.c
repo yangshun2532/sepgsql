@@ -1568,6 +1568,7 @@ CopyOneRowTo(CopyState cstate, Oid tupleOid, Oid rowAclId, Oid secLabelId,
 	foreach(cur, cstate->attnumlist)
 	{
 		int			attnum = lfirst_int(cur);
+		Oid			relid;
 		Datum		value;
 		bool		isnull;
 		bool		force_quot;
@@ -1583,7 +1584,8 @@ CopyOneRowTo(CopyState cstate, Oid tupleOid, Oid rowAclId, Oid secLabelId,
 		switch (attnum)
 		{
 		case SecurityAclAttributeNumber:
-			value = PointerGetDatum(securityTransRowAclOut(rowAclId,
+			relid = RelationGetRelid(cstate->rel);
+			value = PointerGetDatum(securityTransRowAclOut(relid, rowAclId,
 									RelationGetForm(cstate->rel)->relowner));
 			isnull = false;
 			force_quot = cstate->rowacl_force_quot;
@@ -1591,7 +1593,8 @@ CopyOneRowTo(CopyState cstate, Oid tupleOid, Oid rowAclId, Oid secLabelId,
 			break;
 
 		case SecurityLabelAttributeNumber:
-			value = CStringGetTextDatum(securityTransSecLabelOut(secLabelId));
+			relid = RelationGetRelid(cstate->rel);
+			value = CStringGetTextDatum(securityTransSecLabelOut(relid, secLabelId));
 			isnull = false;
 			force_quot = cstate->seclabel_force_quot;
 			out_fmgr = &cstate->seclabel_out_function;
@@ -2172,7 +2175,8 @@ CopyFrom(CopyState cstate)
 											rowacl_typioparam,
 											attForm->atttypmod);
 					loaded_rowacl
-						= securityTransRowAclIn(DatumGetAclP(dat));
+						= securityTransRowAclIn(RelationGetRelid(cstate->rel),
+												DatumGetAclP(dat));
 					break;
 
 				case SecurityLabelAttributeNumber:
@@ -2184,7 +2188,8 @@ CopyFrom(CopyState cstate)
 											seclabel_typioparam,
 											attForm->atttypmod);
 					loaded_seclabel
-						= securityTransSecLabelIn(TextDatumGetCString(dat));
+						= securityTransSecLabelIn(RelationGetRelid(cstate->rel),
+												  TextDatumGetCString(dat));
 					break;
 
 				default:
@@ -2270,7 +2275,9 @@ CopyFrom(CopyState cstate)
 												  attForm->atttypmod,
 												  &isnull);
 					if (!isnull)
-						loaded_rowacl = securityTransRowAclIn(DatumGetAclP(dat));
+						loaded_rowacl
+							= securityTransRowAclIn(RelationGetRelid(cstate->rel),
+													DatumGetAclP(dat));
 					break;
 
 				case SecurityLabelAttributeNumber:
@@ -2281,7 +2288,8 @@ CopyFrom(CopyState cstate)
 												  &isnull);
 					if (!isnull)
 						loaded_seclabel
-							= securityTransSecLabelIn(TextDatumGetCString(dat));
+							= securityTransSecLabelIn(RelationGetRelid(cstate->rel),
+													  TextDatumGetCString(dat));
 					break;
 
 				default:

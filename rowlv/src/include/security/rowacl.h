@@ -10,6 +10,7 @@
 
 #include "access/htup.h"
 #include "nodes/parsenodes.h"
+#include "utils/acl.h"
 #include "utils/relcache.h"
 
 extern void
@@ -39,11 +40,17 @@ rowaclHeapTupleUpdate(Relation rel, HeapTuple oldtup, HeapTuple newtup, bool int
 extern bool
 rowaclHeapTupleDelete(Relation rel, HeapTuple oldtup, bool internal);
 
-extern Datum
-rowacl_acl_to_trans(PG_FUNCTION_ARGS);
+extern char *
+rowaclTransRowAclIn(Acl *acl);
+
+extern Acl *
+rowaclTransRowAclOut(char *secacl);
 
 extern Datum
-rowacl_trans_to_acl(PG_FUNCTION_ARGS);
+rowacl_acl_to_internal(PG_FUNCTION_ARGS);
+
+extern Datum
+rowacl_internal_to_acl(PG_FUNCTION_ARGS);
 
 #endif	/* ROWACL_H */
 

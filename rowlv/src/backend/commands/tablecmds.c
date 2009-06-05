@@ -500,7 +500,7 @@ DefineRelation(CreateStmt *stmt, char relkind)
 	/*
 	 * SELinux: fetch SECURITY_LABEL = '...' from CREATE TABLE
 	 */
-	seclabelList = sepgsqlInputGivenSecLabelRelation(stmt);
+	seclabelList = sepgsqlGivenCreateStmtSecLabelIn(stmt);
 
 	/*
 	 * Create the relation.  Inherited defaults and constraints are passed
@@ -7536,7 +7536,7 @@ ATExecSetSecurityLabel(Relation rel, const char *attr_name, DefElem *defel)
 			elog(ERROR, "Unable to assign security label on \"%s\"",
 				 RelationGetRelationName(class_rel));
 
-		rel_secid = sepgsqlInputGivenSecLabel(defel);
+		rel_secid = sepgsqlGivenTableSecLabelIn(defel);
 		HeapTupleSetSecLabel(newtup, rel_secid);
 
 		simple_heap_update(class_rel, &tuple->t_self, newtup);
@@ -7572,7 +7572,7 @@ ATExecSetSecurityLabel(Relation rel, const char *attr_name, DefElem *defel)
 			elog(ERROR, "Unable to assign security label on \"%s\"",
 				 RelationGetRelationName(attr_rel));
 
-		att_secid = sepgsqlInputGivenSecLabel(defel);
+		att_secid = sepgsqlGivenColumnSecLabelIn(defel);
 		HeapTupleSetSecLabel(newtup, att_secid);
 
 		simple_heap_update(attr_rel, &tuple->t_self, newtup);
