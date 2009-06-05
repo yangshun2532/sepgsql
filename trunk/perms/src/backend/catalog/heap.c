@@ -626,7 +626,7 @@ AddNewAttributeTuples(Oid new_rel_oid,
 			if (defel->defname &&
 				strcmp(defel->defname, NameStr(attr->attname)) == 0)
 			{
-				att_secid = sepgsqlInputGivenSecLabel(defel);
+				att_secid = sepgsqlGivenColumnSecLabelIn(defel);
 				break;
 			}
 		}
@@ -858,7 +858,7 @@ AddNewRelationTuple(Relation pg_class_desc,
 
 		if (!defel->defname)
 		{
-			rel_secid = sepgsqlInputGivenSecLabel(defel);
+			rel_secid = sepgsqlGivenTableSecLabelIn(defel);
 			break;
 		}
 	}
