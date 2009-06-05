@@ -318,8 +318,8 @@ IsSharedRelation(Oid relationId)
 		relationId == DatabaseNameIndexId ||
 		relationId == DatabaseOidIndexId ||
 		relationId == PLTemplateNameIndexId ||
-		relationId == SecurityOidIndexId ||
-		relationId == SecuritySeclabelIndexId ||
+		relationId == SecuritySecidIndexId ||
+		relationId == SecuritySecattrIndexId ||
 		relationId == SharedDescriptionObjIndexId ||
 		relationId == SharedDependDependerIndexId ||
 		relationId == SharedDependReferenceIndexId ||
