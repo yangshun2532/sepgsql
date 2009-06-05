@@ -21,7 +21,6 @@
 
 static security_context_t clientLabel = NULL;
 static security_context_t serverLabel = NULL;
-static security_context_t unlabeledLabel = NULL;
 
 security_context_t
 sepgsqlGetServerLabel(void)
@@ -86,21 +85,6 @@ sepgsqlSwitchClient(security_context_t new_client)
 	return new_client;
 }
 
-security_context_t
-sepgsqlGetUnlabeledLabel(void)
-{
-	if (!unlabeledLabel)
-	{
-		if (security_get_initial_context_raw("unlabeled",
-											 &unlabeledLabel) < 0)
-			
-			ereport(ERROR,
-					(errcode(ERRCODE_SELINUX_ERROR),
-					 errmsg("SELinux: could not get unlabeled label")));
-	}
-	return unlabeledLabel;
-}
-
 /*
  * sepgsqlIsEnabled()
  *
@@ -155,7 +139,7 @@ sepgsql_getcon(PG_FUNCTION_ARGS)
 				 errmsg("SELinux: disabled now")));
 
 	context = sepgsqlGetClientLabel();
-	context = sepgsqlSecurityLabelTransOut(context);
+	context = sepgsqlTransSecLabelOut(context);
 	return CStringGetTextDatum(context);
 }
 
@@ -170,6 +154,6 @@ sepgsql_server_getcon(PG_FUNCTION_ARGS)
 				 errmsg("SELinux: disabled now")));
 
 	context = sepgsqlGetServerLabel();
-	context = sepgsqlSecurityLabelTransOut(context);
+	context = sepgsqlTransSecLabelOut(context);
 	return CStringGetTextDatum(context);
 }
