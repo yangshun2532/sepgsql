@@ -284,7 +284,7 @@ OutputSecurityAttr(Oid relid, char seckind, Oid secid)
  * input/output handler
  */
 Oid
-securityRawSecLabelIn(Oid relid, const char *seclabel)
+securityRawSecLabelIn(Oid relid, char *seclabel)
 {
 	seclabel = sepgsqlRawSecLabelIn(seclabel);
 
@@ -300,7 +300,7 @@ securityRawSecLabelOut(Oid relid, Oid secid)
 }
 
 Oid
-securityTransSecLabelIn(Oid relid, const char *seclabel)
+securityTransSecLabelIn(Oid relid, char *seclabel)
 {
 	seclabel = sepgsqlTransSecLabelIn(seclabel);
 

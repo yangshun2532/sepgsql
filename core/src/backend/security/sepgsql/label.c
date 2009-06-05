@@ -110,7 +110,6 @@ fallback:
 static Oid
 defaultSecLabelWithDatabase(Oid relid, Oid datoid, security_class_t tclass)
 {
-	security_context_t	newcon;
 	HeapTuple	tuple;
 	Oid			datsid;
 
@@ -157,7 +156,6 @@ defaultSchemaTempSecLabel(void)
 static Oid
 defaultSecLabelWithSchema(Oid relid, Oid nspoid, security_class_t tclass)
 {
-	security_context_t	newcon;
 	HeapTuple	tuple;
 	Oid			nspsid;
 
@@ -213,7 +211,6 @@ defaultProcedureSecLabel(Oid nspoid)
 static Oid
 defaultSecLabelWithTable(Oid relid, Oid tbloid, security_class_t tclass)
 {
-	security_context_t	newcon;
 	HeapTuple	tuple;
 	Oid			tblsid;
 

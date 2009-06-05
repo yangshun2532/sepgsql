@@ -286,7 +286,7 @@ OutputSecurityAttr(Oid relid, char seckind, Oid secid)
  * input/output handler
  */
 Oid
-securityRawSecLabelIn(Oid relid, const char *seclabel)
+securityRawSecLabelIn(Oid relid, char *seclabel)
 {
 	return InputSecurityAttr(relid, SECKIND_SECURITY_LABEL, seclabel);
 }
@@ -300,7 +300,7 @@ securityRawSecLabelOut(Oid relid, Oid secid)
 }
 
 Oid
-securityTransSecLabelIn(Oid relid, const char *seclabel)
+securityTransSecLabelIn(Oid relid, char *seclabel)
 {
 	return securityRawSecLabelIn(relid, seclabel);
 }
