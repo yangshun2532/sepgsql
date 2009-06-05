@@ -33,6 +33,7 @@
 #include "catalog/indexing.h"
 #include "catalog/pg_authid.h"
 #include "catalog/pg_database.h"
+#include "catalog/pg_security.h"
 #include "catalog/pg_tablespace.h"
 #include "commands/comment.h"
 #include "commands/dbcommands.h"
@@ -571,7 +572,7 @@ createdb(const CreatedbStmt *stmt)
 	/* SELinux: set a given security context */
 	if (dseclabel)
 	{
-		Oid		dat_secid = sepgsqlInputGivenSecLabel(dseclabel);
+		Oid		dat_secid = sepgsqlGivenDatabaseSecLabelIn(dseclabel);
 
 		if (!HeapTupleHasSecLabel(tuple))
 			elog(ERROR, "Unable to assign security label on \"%s\"",
@@ -593,6 +594,9 @@ createdb(const CreatedbStmt *stmt)
 
 	/* Create pg_shdepend entries for objects within database */
 	copyTemplateDependencies(src_dboid, dboid);
+
+	/* Create pg_security entries for objects within database */
+	securityOnDatabaseCreate(src_dboid, dboid);
 
 	/*
 	 * Force a checkpoint before starting the copy. This will force dirty
@@ -848,6 +852,11 @@ dropdb(const char *dbname, bool missing_ok)
 	 * Remove shared dependency references for the database.
 	 */
 	dropDatabaseDependencies(db_id);
+
+	/*
+	 * Remove orphan pg_security entries for the database.
+	 */
+	securityOnDatabaseDrop(db_id);
 
 	/*
 	 * Drop pages for this database that are in the shared buffer cache. This
@@ -1423,7 +1432,7 @@ AlterDatabase(AlterDatabaseStmt *stmt, bool isTopLevel)
 	/* SELinux: set a given security context */
 	if (dseclabel)
 	{
-		Oid		dat_secid = sepgsqlInputGivenSecLabel(dseclabel);
+		Oid		dat_secid = sepgsqlGivenDatabaseSecLabelIn(dseclabel);
 
 		if (!HeapTupleHasSecLabel(newtuple))
 			elog(ERROR, "Unable to assign security label on \"%s\"",

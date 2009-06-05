@@ -30,7 +30,6 @@
 static bool
 checkDatabaseCommon(Oid database_oid, access_vector_t perms)
 {
-	const char	   *audit_name;
 	HeapTuple		tuple;
 	bool			rc;
 
@@ -44,11 +43,9 @@ checkDatabaseCommon(Oid database_oid, access_vector_t perms)
 		elog(ERROR, "SELinux: cache lookup failed for database: %u",
 			 database_oid);
 
-	audit_name = sepgsqlAuditName(DatabaseRelationId, tuple);
-	rc = sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
-							   SEPG_CLASS_DB_DATABASE,
-							   perms,
-							   audit_name, false);
+	rc = sepgsqlClientHasPermsTup(DatabaseRelationId, tuple,
+								  SEPG_CLASS_DB_DATABASE,
+								  perms, false);
 	ReleaseSysCache(tuple);
 
 	return rc;
@@ -79,7 +76,6 @@ sepgsqlCheckDatabaseSuperuser(void)
 static bool
 sepgsqlCheckSchemaCommon(Oid nsid, access_vector_t required, bool abort)
 {
-	const char		   *audit_name;
 	security_class_t	tclass;
 	HeapTuple			tuple;
 	bool rc;
@@ -90,12 +86,9 @@ sepgsqlCheckSchemaCommon(Oid nsid, access_vector_t required, bool abort)
 	if (!HeapTupleIsValid(tuple))
 		elog(ERROR, "cache lookup failed for namespace: %u", nsid);
 
-	audit_name = sepgsqlAuditName(NamespaceRelationId, tuple);
 	tclass = sepgsqlTupleObjectClass(NamespaceRelationId, tuple);
-	rc = sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
-							   tclass,
-							   required,
-							   audit_name, false);
+	rc = sepgsqlClientHasPermsTup(NamespaceRelationId, tuple,
+								  tclass, required, false);
 	ReleaseSysCache(tuple);
 
 	return rc;
@@ -121,7 +114,6 @@ bool sepgsqlCheckSchemaSearch(Oid nsid)
 static void
 checkTableCommon(Oid table_oid, access_vector_t perms)
 {
-	const char		   *audit_name;
 	security_class_t	tclass;
 	HeapTuple			tuple;
 
@@ -134,11 +126,9 @@ checkTableCommon(Oid table_oid, access_vector_t perms)
 	tclass = sepgsqlTupleObjectClass(RelationRelationId, tuple);
 	if (tclass == SEPG_CLASS_DB_TABLE)
 	{
-		audit_name = sepgsqlAuditName(RelationRelationId, tuple);
-		sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
-							  SEPG_CLASS_DB_TABLE,
-							  perms,
-							  audit_name, true);
+		sepgsqlClientHasPermsTup(RelationRelationId, tuple,
+								 SEPG_CLASS_DB_TABLE,
+								 perms, true);
 	}
 	ReleaseSysCache(tuple);
 }
@@ -173,11 +163,8 @@ sepgsqlCheckTableTruncate(Relation rel)
 	while ((tuple = heap_getnext(scan, ForwardScanDirection)) != NULL)
 	{
 		tclass = sepgsqlTupleObjectClass(RelationGetRelid(rel), tuple);
-		audit_name = sepgsqlAuditName(RelationGetRelid(rel), tuple);
-		sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
-							  tclass,
-							  SEPG_DB_TUPLE__DELETE,
-							  audit_name, true);
+		sepgsqlClientHasPermsTup(RelationGetRelid(rel), tuple, tclass,
+								 SEPG_DB_TUPLE__DELETE, true);
 	}
 	heap_endscan(scan);
 }
@@ -185,7 +172,6 @@ sepgsqlCheckTableTruncate(Relation rel)
 void
 sepgsqlCheckTableReference(Relation rel, int16 *attnums, int natts)
 {
-	const char *audit_name;
 	HeapTuple	tuple;
 	int			i;
 
@@ -205,11 +191,10 @@ sepgsqlCheckTableReference(Relation rel, int16 *attnums, int natts)
 			elog(ERROR, "cache lookup failed for attribute %u of %s",
 				 attnums[i], RelationGetRelationName(rel));
 
-		audit_name = sepgsqlAuditName(AttributeRelationId, tuple);
-		sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
-							  SEPG_CLASS_DB_COLUMN,
-							  SEPG_DB_COLUMN__REFERENCE,
-							  audit_name, true);
+		sepgsqlClientHasPermsTup(AttributeRelationId, tuple,
+								 SEPG_CLASS_DB_COLUMN,
+								 SEPG_DB_COLUMN__REFERENCE,
+								 true);
 		ReleaseSysCache(tuple);
 	}
 }
@@ -222,7 +207,6 @@ sepgsqlCheckTableReference(Relation rel, int16 *attnums, int natts)
 static void
 sepgsqlCheckSequenceCommon(Oid seqid, access_vector_t required)
 {
-	const char *audit_name;
 	HeapTuple tuple;
 
 	if (!sepgsqlIsEnabled())
@@ -234,11 +218,9 @@ sepgsqlCheckSequenceCommon(Oid seqid, access_vector_t required)
 	if (!HeapTupleIsValid(tuple))
 		elog(ERROR, "cache lookup failed for sequence: %u", seqid);
 
-	audit_name = sepgsqlAuditName(RelationRelationId, tuple);
-	sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
-						  SEPG_CLASS_DB_SEQUENCE,
-						  required,
-						  audit_name, true);
+	sepgsqlClientHasPermsTup(RelationRelationId, tuple,
+							 SEPG_CLASS_DB_SEQUENCE,
+							 required, true);
 	ReleaseSysCache(tuple);
 }
 
@@ -264,7 +246,6 @@ void sepgsqlCheckSequenceSetValue(Oid seqid)
  */
 bool sepgsqlCheckProcedureExecute(Oid proc_oid)
 {
-	const char *audit_name;
 	HeapTuple tuple;
 	bool rc;
 
@@ -280,11 +261,10 @@ bool sepgsqlCheckProcedureExecute(Oid proc_oid)
 	if (!HeapTupleIsValid(tuple))
 		elog(ERROR, "SELinux: cache lookup failed for procedure: %u", proc_oid);
 
-	audit_name = sepgsqlAuditName(ProcedureRelationId, tuple);
-	rc = sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
-							   SEPG_CLASS_DB_PROCEDURE,
-							   SEPG_DB_PROCEDURE__EXECUTE,
-							   audit_name, false);
+	rc = sepgsqlClientHasPermsTup(ProcedureRelationId, tuple,
+								  SEPG_CLASS_DB_PROCEDURE,
+								  SEPG_DB_PROCEDURE__EXECUTE,
+								  false);
 	ReleaseSysCache(tuple);
 
 	return rc;
@@ -337,14 +317,14 @@ sepgsqlTrustedProcedure(PG_FUNCTION_ARGS)
 void
 sepgsqlCheckProcedureEntrypoint(FmgrInfo *flinfo, HeapTuple protup)
 {
-	struct TrustedProcedureCache *tcache;
+	struct TrustedProcedureCache   *tcache;
 	security_context_t	newcon;
-	const char		   *audit_name;
 
 	if (!sepgsqlIsEnabled())
 		return;
 
-	newcon = sepgsqlClientCreateLabel(HeapTupleGetSecLabel(protup),
+	newcon = sepgsqlClientCreateLabel(ProcedureRelationId,
+									  HeapTupleGetSecLabel(protup),
 									  SEPG_CLASS_PROCESS);
 
 	/* Do nothing, if it is not a trusted procedure */
@@ -352,11 +332,10 @@ sepgsqlCheckProcedureEntrypoint(FmgrInfo *flinfo, HeapTuple protup)
 		return;
 
 	/* check db_procedure:{entrypoint} */
-	audit_name = sepgsqlAuditName(ProcedureRelationId, protup);
-	sepgsqlClientHasPerms(HeapTupleGetSecLabel(protup),
-						  SEPG_CLASS_DB_PROCEDURE,
-						  SEPG_DB_PROCEDURE__ENTRYPOINT,
-						  audit_name, true);
+	sepgsqlClientHasPermsTup(ProcedureRelationId, protup,
+							 SEPG_CLASS_DB_PROCEDURE,
+							 SEPG_DB_PROCEDURE__ENTRYPOINT,
+							 true);
 
 	/* check process:{transition} */
 	sepgsqlComputePerms(sepgsqlGetClientLabel(),
@@ -369,7 +348,7 @@ sepgsqlCheckProcedureEntrypoint(FmgrInfo *flinfo, HeapTuple protup)
 	tcache = MemoryContextAllocZero(flinfo->fn_mcxt,
 							sizeof(*tcache) + strlen(newcon));
 	memcpy(&tcache->flinfo, flinfo, sizeof(*flinfo));
-	strcmp(tcache->newcon, newcon);
+	strcpy(tcache->newcon, newcon);
 	flinfo->fn_addr = sepgsqlTrustedProcedure;
 	flinfo->fn_extra = tcache;
 }
@@ -381,22 +360,23 @@ sepgsqlCheckProcedureEntrypoint(FmgrInfo *flinfo, HeapTuple protup)
  *   procedure, we should not allow it inlined.
  */
 bool
-sepgsqlAllowFunctionInlined(HeapTuple proc_tuple)
+sepgsqlAllowFunctionInlined(HeapTuple protup)
 {
-	security_context_t	context;
+	security_context_t	newcon;
 
 	if (!sepgsqlIsEnabled())
 		return true;
 
-	context = sepgsqlClientCreateLabel(HeapTupleGetSecLabel(proc_tuple),
-									   SEPG_CLASS_PROCESS);
+	newcon = sepgsqlClientCreateLabel(ProcedureRelationId,
+									  HeapTupleGetSecLabel(protup),
+									  SEPG_CLASS_PROCESS);
 	/*
 	 * If the security context of client is unchange
 	 * before or after invocation of the functions,
 	 * it is not a trusted procedure, so it can be
 	 * inlined due to performance purpose.
 	 */
-	if (strcmp(sepgsqlGetClientLabel(), context) == 0)
+	if (strcmp(sepgsqlGetClientLabel(), newcon) == 0)
 		return true;
 
 	return false;
