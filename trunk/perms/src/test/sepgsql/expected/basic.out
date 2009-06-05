@@ -1,4 +1,6 @@
 --@SECURITY_CONTEXT=unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c15
+SET sepostgresql_mcstrans TO off;
+SET
 SELECT sepgsql_getcon();
                    sepgsql_getcon                    
 -----------------------------------------------------
@@ -48,6 +50,8 @@ CREATE TABLE t3
 ) inherits(t2);
 CREATE TABLE
 --@SECURITY_CONTEXT=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0
+SET sepostgresql_mcstrans TO off;
+SET
 SELECT sepgsql_getcon();
                   sepgsql_getcon                   
 ---------------------------------------------------
@@ -91,6 +95,8 @@ SELECT 1 FROM t3;
 (0 rows)
 
 --@SECURITY_CONTEXT=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c1
+SET sepostgresql_mcstrans TO off;
+SET
 SELECT sepgsql_getcon();
                   sepgsql_getcon                   
 ---------------------------------------------------

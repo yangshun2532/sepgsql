@@ -1,4 +1,6 @@
 --@SECURITY_CONTEXT=unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c15
+SET sepostgresql_mcstrans TO off;
+SET
 SELECT sepgsql_getcon();
                    sepgsql_getcon                    
 -----------------------------------------------------
@@ -85,7 +87,7 @@ CREATE TABLE t4 (
        a int,
        b text
 ) SECURITY_LABEL = 'unconfined_u:object_r:invalid_label_t:s0';	-- to be failed
-ERROR:  Not a valid security context: "unconfined_u:object_r:invalid_label_t:s0"
+ERROR:  Invalid security context: "unconfined_u:object_r:invalid_label_t:s0"
 CREATE TABLE t4 (
        a int,
        b text
@@ -143,7 +145,7 @@ CREATE FUNCTION f2 (int) RETURNS int
        LANGUAGE 'sql'
        SECURITY_LABEL = 'unconfined_u:object_r:invalid_label_t:s0'
        AS 'SELECT $1 + $1';	 -- to be failed
-ERROR:  Not a valid security context: "unconfined_u:object_r:invalid_label_t:s0"
+ERROR:  Invalid security context: "unconfined_u:object_r:invalid_label_t:s0"
 CREATE FUNCTION f2 (int) RETURNS int
        LANGUAGE 'sql'
        SECURITY_LABEL = 'unconfined_u:object_r:sepgsql_proc_t:s0:c16'

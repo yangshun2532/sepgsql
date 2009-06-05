@@ -1,4 +1,6 @@
 --@SECURITY_CONTEXT=unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c15
+SET sepostgresql_mcstrans TO off;
+SET
 SELECT sepgsql_getcon();
                    sepgsql_getcon                    
 -----------------------------------------------------
@@ -67,6 +69,8 @@ SELECT security_label, * FROM t2;
 (3 rows)
 
 --@SECURITY_CONTEXT=unconfined_u:unconfined_r:sepgsql_test_t:s0:c0
+SET sepostgresql_mcstrans TO off;
+SET
 SELECT sepgsql_getcon();
                  sepgsql_getcon                 
 ------------------------------------------------

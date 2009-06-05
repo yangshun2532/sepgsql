@@ -54,7 +54,10 @@ int main(int argc, char *const argv[])
 				pclose(filp);
 				filp = NULL;
 			}
-
+			/* Inject SET sepostgresql_mcstrans TO off */
+			ofs = strlen(buffer);
+			snprintf(buffer + ofs, sizeof(buffer) - ofs,
+					 "\nSET sepostgresql_mcstrans TO off;\n");
 			/* Inject a pseudo sepgsql_getcon() to confirm new context */
 			ofs = strlen(buffer);
 			snprintf(buffer + ofs, sizeof(buffer) - ofs,

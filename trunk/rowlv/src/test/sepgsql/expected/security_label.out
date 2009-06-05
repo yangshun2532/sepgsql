@@ -1,4 +1,6 @@
 --@SECURITY_CONTEXT=unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c15
+SET sepostgresql_mcstrans TO off;
+SET
 SELECT sepgsql_getcon();
                    sepgsql_getcon                    
 -----------------------------------------------------
@@ -47,7 +49,7 @@ INSERT 0 1
 INSERT INTO t1 VALUES (4, 'ddd'), (5, 'eee');
 INSERT 0 2
 INSERT INTO t1 (security_label, a, b) VALUES ('invalid security context', 6, 'fff');	-- to be failed
-ERROR:  Not a valid security context: "invalid security context"
+ERROR:  Invalid security context: "invalid security context"
 INSERT INTO t1 (security_label, a, b) VALUES ('system_u:object_r:sepgsql_table_t:s0:c20', 6, 'fff');	-- to be denied
 INSERT 0 0
 SELECT security_label, * FROM t1;
