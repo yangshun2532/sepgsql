@@ -70,13 +70,13 @@ extern bool
 securityTupleDescHasSecLabel(Relation rel);
 
 extern Oid
-securityRawSecLabelIn(Oid relid, const char *secattr);
+securityRawSecLabelIn(Oid relid, char *seclabel);
 
 extern char *
 securityRawSecLabelOut(Oid relid, Oid secid);
 
 extern Oid
-securityTransSecLabelIn(Oid relid, const char *secattr);
+securityTransSecLabelIn(Oid relid, char *seclabel);
 
 extern char *
 securityTransSecLabelOut(Oid relid, Oid secid);
