@@ -7,6 +7,7 @@
  */
 #include "postgres.h"
 
+#include "access/genam.h"
 #include "access/heapam.h"
 #include "access/xact.h"
 #include "catalog/catalog.h"
@@ -15,9 +16,11 @@
 #include "miscadmin.h"
 #include "security/sepgsql.h"
 #include "utils/builtins.h"
+#include "utils/fmgroids.h"
 #include "utils/memutils.h"
 #include "utils/rel.h"
 #include "utils/syscache.h"
+#include "utils/tqual.h"
 
 bool
 securityTupleDescHasRowAcl(Relation rel)
@@ -44,52 +47,59 @@ securityMetaSecurityLabel(void)
 	return NULL;
 }
 
-typedef struct earlySecLabel
+/*
+ * security attribute management at the initdb phase.
+ */
+typedef struct earlySecAttr
 {
-	struct earlySecLabel   *next;
-	Oid			secid;
-	char		seclabel[1];
-} earlySecLabel;
+	struct earlySecAttr	   *next;
+	Oid		datid;
+	Oid		secid;
+	char	seckind;
+	char	secattr[1];
+} earlySecAttr;
 
-static earlySecLabel *earlySecLabelList = NULL;
+static earlySecAttr *earlySecAttrList = NULL;
 
 static Oid
-earlyLookupSecurityId(const char *seclabel)
+earlyInputSecurityAttr(Oid datid, char seckind, const char *secattr)
 {
-	earlySecLabel  *es;
-	Oid				minsecid = SecurityRelationId;
+	static Oid		dummySecid = SecurityRelationId;
+	earlySecAttr   *es;
 
-	for (es = earlySecLabelList; es; es = es->next)
+	for (es = earlySecAttrList; es; es = es->next)
 	{
-		if (strcmp(seclabel, es->seclabel) == 0)
+		if (es->datid == datid &&
+			strcmp(es->secattr, secattr) == 0)
 			return es->secid;
-		if (es->secid < minsecid)
-			minsecid = es->secid;
 	}
+	/* Not found */
+	es = MemoryContextAlloc(TopMemoryContext,
+							sizeof(*es) + strlen(secattr));
+	es->datid = datid;
+	es->secid = --dummySecid;
+	es->seckind = seckind;
+	strcpy(es->secattr, secattr);
 
-	/* not found */
-	es = MemoryContextAllocZero(TopMemoryContext,
-								sizeof(*es) + strlen(seclabel));
-	es->next = earlySecLabelList;
-	es->secid = minsecid - 1;
-	strcpy(es->seclabel, seclabel);
-	earlySecLabelList = es;
+	es->next = earlySecAttrList;
+	earlySecAttrList = es;
 
 	return es->secid;
 }
 
 static char *
-earlyLookupSecurityLabel(Oid secid)
+earlyOutputSecurityAttr(Oid datid, char seckind, Oid secid)
 {
-	earlySecLabel  *es;
+	earlySecAttr   *es;
 
-	for (es = earlySecLabelList; es; es = es->next)
+	for (es = earlySecAttrList; es; es = es->next)
 	{
-		if (es->secid == secid)
-			return pstrdup(es->seclabel);
+		if (es->datid == datid &&
+			es->secid == secid &&
+			es->seckind == seckind)
+			return pstrdup(es->secattr);
 	}
-
-	return NULL;	/* not found */
+	return NULL;	/* Not found */
 }
 
 void
@@ -98,40 +108,38 @@ securityPostBootstrapingMode(void)
 	Relation			rel;
 	CatalogIndexState	ind;
 	HeapTuple			tuple;
-	earlySecLabel	   *es;
-	Oid					labelSid;
+	earlySecAttr	   *es;
 	Datum				values[Natts_pg_security];
 	bool				nulls[Natts_pg_security];
+	Oid					meta_secid = InvalidOid;
 	char			   *meta_label;
 
-	if (!earlySecLabelList)
+	if (!earlySecAttrList)
 		return;		/* do nothing */
 
 	StartTransactionCommand();
 
+	meta_label = securityMetaSecurityLabel();
+	if (meta_label)
+		meta_secid = securityTransSecLabelIn(SecurityRelationId, meta_label);
+
 	rel = heap_open(SecurityRelationId, RowExclusiveLock);
+
 	ind = CatalogOpenIndexes(rel);
 
-	if (RelationGetDescr(rel)->tdhasseclabel &&
-		(meta_label = securityMetaSecurityLabel()) != NULL)
-		labelSid = earlyLookupSecurityId(meta_label);
-	else
-		labelSid = InvalidOid;
-
-	for (es = earlySecLabelList; es; es = es->next)
+	for (es = earlySecAttrList; es; es = es->next)
 	{
 		memset(nulls, false, sizeof(nulls));
 
-		values[Anum_pg_security_seclabel - 1]
-			= CStringGetTextDatum(es->seclabel);
-		values[Anum_pg_security_secinuse - 1]
-			= BoolGetDatum(true);
+		values[Anum_pg_security_datid - 1] = ObjectIdGetDatum(es->datid);
+		values[Anum_pg_security_secid - 1] = ObjectIdGetDatum(es->secid);
+		values[Anum_pg_security_secinuse - 1] = BoolGetDatum(true);
+		values[Anum_pg_security_seckind - 1] = CharGetDatum(es->seckind);
+		values[Anum_pg_security_secattr - 1] = CStringGetTextDatum(es->secattr);
 
-		tuple = heap_form_tuple(RelationGetDescr(rel),
-								values, nulls);
-		HeapTupleSetOid(tuple, es->secid);
+		tuple = heap_form_tuple(RelationGetDescr(rel), values, nulls);
 		if (HeapTupleHasSecLabel(tuple))
-			HeapTupleSetSecLabel(tuple, labelSid);
+			HeapTupleSetSecLabel(tuple, meta_secid);
 
 		simple_heap_insert(rel, tuple);
 		CatalogIndexInsert(ind, tuple);
@@ -140,93 +148,97 @@ securityPostBootstrapingMode(void)
 	}
 
 	CatalogCloseIndexes(ind);
+
 	heap_close(rel, RowExclusiveLock);
 
 	CommitTransactionCommand();
 }
 
-Oid
-securityLookupSecurityId(const char *seclabel)
+/*
+ * InputSecurityAttr
+ */
+static Oid
+InputSecurityAttr(Oid relid, char seckind, const char *secattr)
 {
-	Relation			rel;
+	Relation		rel;
 	CatalogIndexState	ind;
-	HeapTuple			tuple;
-	Oid					labelOid;
-	Oid					labelSid;
-	Datum				values[Natts_pg_security];
-	bool				nulls[Natts_pg_security];
-	char			   *meta_label;
+	HeapTuple		tuple;
+	Datum			values[Natts_pg_security];
+	bool			nulls[Natts_pg_security];
+	Oid				datid;
+	Oid				secid;
+	Oid				meta_secid = InvalidOid;
+	char		   *meta_label;
 
+	datid = (IsSharedRelation(relid) ? InvalidOid : MyDatabaseId);
 	if (IsBootstrapProcessingMode())
-		return earlyLookupSecurityId(seclabel);
+		return earlyInputSecurityAttr(datid, seckind, secattr);
+
 	/*
-	 * lookup syscache at first
+	 * Lookup syscache first
 	 */
-	tuple = SearchSysCache(SECURITYLABEL,
-						   CStringGetTextDatum(seclabel),
-						   0, 0, 0);
+	tuple = SearchSysCache(SECURITYATTR,
+						   ObjectIdGetDatum(datid),
+						   CStringGetTextDatum(secattr),
+						   0, 0);
 	if (HeapTupleIsValid(tuple))
 	{
-		labelOid = HeapTupleGetOid(tuple);
-		ReleaseSysCache(tuple);
-		return labelOid;
-	}
+		secid = ((Form_pg_security) GETSTRUCT(tuple))->secid;
 
+		ReleaseSysCache(tuple);
+
+		return secid;
+	}
 	/*
-	 * Not found, insert a new one into pg_security
+	 * Insert a new tuple, if not found
 	 */
 	rel = heap_open(SecurityRelationId, RowExclusiveLock);
 
 	ind = CatalogOpenIndexes(rel);
 
-	if (RelationGetDescr(rel)->tdhasseclabel &&
-		(meta_label = securityMetaSecurityLabel()) != NULL)
+	secid = GetNewOidWithIndex(rel, SecuritySecidIndexId,
+							   Anum_pg_security_secid);
+
+	/*
+	 * set up self security context
+	 */
+	meta_label = securityMetaSecurityLabel();
+	if (meta_label != NULL)
 	{
-		if (strcmp(seclabel, meta_label) == 0)
-		{
-			labelOid = labelSid = GetNewOid(rel);
-		}
+		if (seckind == SECKIND_SECURITY_LABEL &&
+			strcmp(meta_label, secattr) == 0)
+			meta_secid = secid;
 		else
-		{
-			labelOid = GetNewOid(rel);
-			labelSid = securityLookupSecurityId(meta_label);
-		}
-	}
-	else
-	{
-		labelOid = GetNewOid(rel);
-		labelSid = InvalidOid;
+			meta_secid = securityTransSecLabelIn(SecurityRelationId, meta_label);
 	}
 
 	memset(nulls, false, sizeof(nulls));
-	values[Anum_pg_security_seclabel - 1]
-		= CStringGetTextDatum(seclabel);
-	values[Anum_pg_security_secinuse - 1]
-		= BoolGetDatum(true);
+	values[Anum_pg_security_datid - 1] = ObjectIdGetDatum(datid);
+	values[Anum_pg_security_secid - 1] = ObjectIdGetDatum(secid);
+	values[Anum_pg_security_seckind - 1] = CharGetDatum(seckind);
+	values[Anum_pg_security_secinuse - 1] = BoolGetDatum(true);
+	values[Anum_pg_security_secattr - 1] = CStringGetTextDatum(secattr);
 
 	tuple = heap_form_tuple(RelationGetDescr(rel),
 							values, nulls);
-
 	if (HeapTupleHasSecLabel(tuple))
-		HeapTupleSetSecLabel(tuple, labelSid);
-	HeapTupleSetOid(tuple, labelOid);
+		HeapTupleSetSecLabel(tuple, meta_secid);
 
 	simple_heap_insert(rel, tuple);
+
 	CatalogIndexInsert(ind, tuple);
 
 	/*
 	 * NOTE:
-	 * We also have to insert a cache entry of new tuple of
-	 * pg_security for temporary usage.
-	 * If user tries to apply same security attribute twice
-	 * or more within same command id, we cannot decide
-	 * whether it should be inserted, or not, because it
-	 * cannot scan the prior one with SnapshotNow.
+	 * We also need to insert the new tuple into the system cache
+	 * for temporary usage.
+	 * When user tries to apply same security attribute twice or
+	 * more within a single command id, it cannot determine whether
+	 * the given security attribute is already inserted, or not.
 	 *
-	 * A cache entry inserted will be invalidated on the
-	 * next CommandIdIncrement().
-	 * The purpose of InsertSysCache() here is to prevent
-	 * duplicate insertion
+	 * The cache entry shall be invalidated on the next
+	 * CommandIdIncrement(). The purpose of InsertSysCache() is
+	 * to prevent duplicate insertion (and undesirable error).
 	 */
 	InsertSysCache(RelationGetRelid(rel), tuple);
 
@@ -234,157 +246,211 @@ securityLookupSecurityId(const char *seclabel)
 
 	heap_close(rel, RowExclusiveLock);
 
-	return labelOid;
-}
-
-char *
-securityLookupSecurityLabel(Oid secid)
-{
-	HeapTuple	tuple;
-	Datum		labelTxt;
-	char	   *label;
-	bool		isnull;
-
-	if (!OidIsValid(secid))
-		return NULL;
-
-	if (IsBootstrapProcessingMode())
-		return earlyLookupSecurityLabel(secid);
-
-	tuple = SearchSysCache(SECURITYOID,
-						   ObjectIdGetDatum(secid),
-						   0, 0, 0);
-	if (!HeapTupleIsValid(tuple))
-		return NULL;
-
-	labelTxt = SysCacheGetAttr(SECURITYOID, tuple,
-							   Anum_pg_security_seclabel,
-							   &isnull);
-	Assert(!isnull);
-	label = TextDatumGetCString(labelTxt);
-	ReleaseSysCache(tuple);
-
-	return label;
-}
-
-Oid
-securityTransRowAclIn(Acl *acl)
-{
-	AclItem	   *aip = ACL_DAT(acl);
-	char	   *rawacl = palloc0(ACL_NUM(acl) * 30 + 10);
-	int			i, ofs;
-	Oid			secid;
-
-	ofs = sprintf(rawacl, "acl:");
-
-	for (i=0; i < ACL_NUM(acl); i++)
-	{
-		if ((aip[i].ai_privs & ACL_ALL_RIGHTS_TUPLE) != aip[i].ai_privs)
-			ereport(ERROR,
-					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-					 errmsg("unsupported privileges for tuple: %04x",
-							aip[i].ai_privs & ~ACL_ALL_RIGHTS_TUPLE)));
-
-		ofs += sprintf(rawacl + ofs, "%s%x=%x/%x",
-					   (i == 0 ? "" : ","),
-					   aip[i].ai_grantee,
-					   aip[i].ai_privs,
-					   aip[i].ai_grantor);
-	}
-
-	secid = securityLookupSecurityId(rawacl);
-
-	pfree(rawacl);
-
 	return secid;
 }
 
-Acl *
-securityTransRowAclOut(Oid secid, Oid relowner)
+static char *
+OutputSecurityAttr(Oid relid, char seckind, Oid secid)
 {
-	Acl		   *acl = NULL;
-	char	   *rawacl = securityLookupSecurityLabel(secid);
+	HeapTuple	tuple;
+	Datum		datum;
+	char	   *result;
+	Oid			datid;
+	bool		isnull;
 
-	if (rawacl && strncmp(rawacl, "acl:", 4) == 0)
-	{
-		AclItem	   *aip;
-		char	   *tok, *sv = NULL;
-		int			index = 0;
+	datid = (IsSharedRelation(relid) ? InvalidOid : MyDatabaseId);
+	if (IsBootstrapProcessingMode())
+		return earlyOutputSecurityAttr(datid, seckind, secid);
 
-		aip = palloc(strlen(rawacl) * sizeof(AclItem) / 4);
-		for (tok = strtok_r(rawacl + 4, ",", &sv);
-			 tok;
-			 tok = strtok_r(NULL, ",", &sv))
-		{
-			if (sscanf(tok, "%x=%x/%x",
-					   &aip[index].ai_grantee,
-					   &aip[index].ai_privs,
-					   &aip[index].ai_grantor) != 3)
-				continue;
-		           index++;
-		}
-		acl = allocacl(index);
-		memcpy(ACL_DAT(acl), aip, index * sizeof(AclItem));
+	tuple = SearchSysCache(SECURITYSECID,
+						   ObjectIdGetDatum(datid),
+						   ObjectIdGetDatum(secid),
+						   0, 0);
+	if (!HeapTupleIsValid(tuple))
+		return NULL;
 
-		pfree(aip);
-	}
+	datum = SysCacheGetAttr(SECURITYSECID, tuple,
+							Anum_pg_security_secattr,
+							&isnull);
+	Assert(!isnull);
+
+	result = TextDatumGetCString(datum);
+	ReleaseSysCache(tuple);
+
+	return result;
+}
+
+/*
+ * input/output handler
+ */
+Oid
+securityRawSecLabelIn(Oid relid, char *seclabel)
+{
+	seclabel = sepgsqlRawSecLabelIn(seclabel);
+
+	return InputSecurityAttr(relid, SECKIND_SECURITY_LABEL, seclabel);
+}
+
+char *
+securityRawSecLabelOut(Oid relid, Oid secid)
+{
+	char *seclabel = OutputSecurityAttr(relid, SECKIND_SECURITY_LABEL, secid);
+
+	return sepgsqlRawSecLabelOut(seclabel);
+}
+
+Oid
+securityTransSecLabelIn(Oid relid, char *seclabel)
+{
+	seclabel = sepgsqlTransSecLabelIn(seclabel);
+
+	return securityRawSecLabelIn(relid, seclabel);
+}
+
+char *
+securityTransSecLabelOut(Oid relid, Oid secid)
+{
+	char *seclabel = securityRawSecLabelOut(relid, secid);
+
+	return sepgsqlTransSecLabelOut(seclabel);
+}
+
+Oid
+securityTransRowAclIn(Oid relid, Acl *acl)
+{
+	char   *secacl = NULL;
+
+	return InputSecurityAttr(relid, SECKIND_SECURITY_ACL, secacl);
+}
+
+Acl *
+securityTransRowAclOut(Oid relid, Oid secid, Oid ownid)
+{
+	char   *secacl = OutputSecurityAttr(relid, SECKIND_SECURITY_ACL, secid);
+	Acl	   *acl = NULL;
 
 	if (!acl)
-		acl = acldefault(ACL_OBJECT_TUPLE, relowner);
+		acl = acldefault(ACL_OBJECT_TUPLE, ownid);
 
 	return acl;
 }
 
+/*
+ * Output handler for system columns
+ */
 Datum
 securityHeapGetRowAclSysattr(HeapTuple tuple)
 {
-	HeapTuple	classTup;
-	Oid			secid;
-	Oid			relowner;
+	HeapTuple	reltup;
+	Oid			secid = HeapTupleGetRowAcl(tuple);
+	Oid			ownid;
+	Acl		   *acl;
 
-	classTup = SearchSysCache(RELOID,
-							  ObjectIdGetDatum(tuple->t_tableOid),
-							  0, 0, 0);
-	if (!HeapTupleIsValid(classTup))
+	reltup = SearchSysCache(RELOID,
+							ObjectIdGetDatum(tuple->t_tableOid),
+							0, 0, 0);
+	if (!HeapTupleIsValid(reltup))
 		elog(ERROR, "cache lookup failed for relation: %u", tuple->t_tableOid);
 
-	relowner = ((Form_pg_class) GETSTRUCT(classTup))->relowner;
+	ownid = ((Form_pg_class) GETSTRUCT(reltup))->relowner;
 
-	ReleaseSysCache(classTup);
+	ReleaseSysCache(reltup);
 
-	secid = HeapTupleGetRowAcl(tuple);
+	acl = securityTransRowAclOut(tuple->t_tableOid, secid, ownid);
 
-	return PointerGetDatum(securityTransRowAclOut(secid, relowner));
-}
-
-/*
- * "security_label" system column related stuffs
- */
-Oid
-securityTransSecLabelIn(char *seclabel)
-{
-	char   *rawlabel = sepgsqlSecurityLabelTransIn(seclabel);
-
-	return securityLookupSecurityId(rawlabel);
-}
-
-char *
-securityTransSecLabelOut(Oid secid)
-{
-	char   *rawlabel = securityLookupSecurityLabel(secid);
-	char   *seclabel;
-
-	seclabel = sepgsqlSecurityLabelTransOut(rawlabel);
-	if (!seclabel)
-		seclabel = pstrdup("unlabeled");
-
-	return seclabel;
+	return PointerGetDatum(acl);
 }
 
 Datum
 securityHeapGetSecLabelSysattr(HeapTuple tuple)
 {
 	Oid		secid = HeapTupleGetSecLabel(tuple);
+	char   *seclabel;
 
-	return CStringGetTextDatum(securityTransSecLabelOut(secid));
+	seclabel = securityTransSecLabelOut(tuple->t_tableOid, secid);
+	if (!seclabel)
+		seclabel = pstrdup("unlabeled");
+
+	return CStringGetTextDatum(seclabel);
+}
+
+/*
+ * Create/Drop database event handler
+ */
+void
+securityOnDatabaseCreate(Oid tmpid, Oid newid)
+{
+	Relation		rel;
+	CatalogIndexState	ind;
+	SysScanDesc		scan;
+	ScanKeyData		key[1];
+	HeapTuple		oldtup, newtup;
+	Datum			values[Natts_pg_security];
+	bool			nulls[Natts_pg_security];
+	bool			repls[Natts_pg_security];
+	char   *seclabel;
+
+	rel = heap_open(SecurityRelationId, RowExclusiveLock);
+	ind = CatalogOpenIndexes(rel);
+
+	/* Scan all the entries with tmpid == pg_security.datid */
+	ScanKeyInit(&key[0],
+				Anum_pg_security_datid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(tmpid));
+	scan = systable_beginscan(rel, SecuritySecidIndexId, true,
+							  SnapshotNow, 1, key);
+	/* Set up to copy the tuples except for inserting newid  */
+	memset(values, 0, sizeof(values));
+	memset(nulls, false, sizeof(nulls));
+	memset(repls, false, sizeof(nulls));
+
+	values[Anum_pg_security_datid - 1] = ObjectIdGetDatum(newid);
+	repls[Anum_pg_security_datid - 1] = true;
+
+	/* Insert entries within old database */
+	while (HeapTupleIsValid(oldtup = systable_getnext(scan)))
+	{
+		newtup = heap_modify_tuple(oldtup, RelationGetDescr(rel),
+								   values, nulls, repls);
+		simple_heap_insert(rel, newtup);
+
+		CatalogIndexInsert(ind, newtup);
+
+		heap_freetuple(newtup);
+	}
+
+	systable_endscan(scan);
+
+	CatalogCloseIndexes(ind);
+
+	heap_close(rel, RowExclusiveLock);
+}
+
+void
+securityOnDatabaseDrop(Oid datid)
+{
+	Relation		rel;
+	SysScanDesc		scan;
+	ScanKeyData		key[1];
+	HeapTuple		tuple;
+
+	rel = heap_open(SecurityRelationId, RowExclusiveLock);
+
+	ScanKeyInit(&key[0],
+				Anum_pg_security_datid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(datid));
+
+	scan = systable_beginscan(rel, SecuritySecidIndexId, true,
+							  SnapshotNow, 1, key);
+
+	while (HeapTupleIsValid(tuple = systable_getnext(scan)))
+	{
+		simple_heap_delete(rel, &tuple->t_self);
+	}
+
+	systable_endscan(scan);
+
+	heap_close(rel, RowExclusiveLock);
 }

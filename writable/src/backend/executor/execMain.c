@@ -1498,7 +1498,7 @@ ExecEndPlan(PlanState *planstate, EState *estate)
  */
 static void
 fetchWritableSystemAttribute(JunkFilter *junkfilter, TupleTableSlot *slot,
-							 Oid *tts_rowacl, Oid *tts_seclabel)
+							 Datum *tts_rowacl, Datum *tts_seclabel)
 {
 	AttrNumber	attno;
 	Datum		datum;
@@ -1512,9 +1512,9 @@ fetchWritableSystemAttribute(JunkFilter *junkfilter, TupleTableSlot *slot,
 		if (isnull)
 			ereport(ERROR,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-					 errmsg("setting NULL on \"%s\" system column is not supported",
+					 errmsg("Unable to set NULL on \"%s\"",
 							SecurityAclAttributeName)));
-		*tts_rowacl = securityTransRowAclIn(DatumGetAclP(datum));
+		*tts_rowacl = datum;
 	}
 
 	/* for Security Label */
@@ -1525,32 +1525,49 @@ fetchWritableSystemAttribute(JunkFilter *junkfilter, TupleTableSlot *slot,
 		if (isnull)
 			ereport(ERROR,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-					 errmsg("setting NULL on \"%s\" system column is not supported",
+					 errmsg("Unable to set NULL on \"%s\"",
 							SecurityLabelAttributeName)));
-		*tts_seclabel = securityTransSecLabelIn(TextDatumGetCString(datum));
+		*tts_seclabel = datum;
 	}
 }
 
 static void
 storeWritableSystemAttribute(Relation rel, TupleTableSlot *slot, HeapTuple tuple)
 {
+	Oid		relid = RelationGetRelid(rel);
+	Oid		secid;
+
 	/* "security_acl" */
-	if (HeapTupleHasRowAcl(tuple))
-		HeapTupleSetRowAcl(tuple, slot->tts_rowacl);
-	else if (OidIsValid(slot->tts_rowacl))
-		ereport(ERROR,
-				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("Unable to assign Row-level ACLs on \"%s\"",
-						RelationGetRelationName(rel))));
+	if (DatumGetPointer(slot->tts_rowacl) != NULL)
+	{
+		Acl *acl = DatumGetAclP(slot->tts_rowacl);
+
+		if (!HeapTupleHasRowAcl(tuple))
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("Unable to assign Row-level ACLs on \"%s\"",
+							RelationGetRelationName(rel))));
+		secid = securityTransRowAclIn(relid, acl);
+		HeapTupleSetRowAcl(tuple, secid);
+	}
+	else if (HeapTupleHasRowAcl(tuple))
+		HeapTupleSetRowAcl(tuple, InvalidOid);
 
 	/* "security_label" */
-	if (HeapTupleHasSecLabel(tuple))
-		HeapTupleSetSecLabel(tuple, slot->tts_seclabel);
-	else if (OidIsValid(slot->tts_seclabel))
-		ereport(ERROR,
-				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("Unable to assign security label on \"%s\"",
-						RelationGetRelationName(rel))));
+	if (DatumGetPointer(slot->tts_seclabel) != NULL)
+	{
+		char *seclabel = TextDatumGetCString(slot->tts_seclabel);
+
+		if (!HeapTupleHasSecLabel(tuple))
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("Unable to assign security label on \"%s\"",
+							RelationGetRelationName(rel))));
+		secid = securityTransSecLabelIn(relid, seclabel);
+		HeapTupleSetSecLabel(tuple, secid);
+	}
+	else if (HeapTupleHasSecLabel(tuple))
+		HeapTupleSetSecLabel(tuple, InvalidOid);
 }
 
 /* ----------------------------------------------------------------
@@ -1614,8 +1631,8 @@ ExecutePlan(EState *estate,
 	 */
 	for (;;)
 	{
-		Oid		tts_rowacl = InvalidOid;
-		Oid		tts_seclabel = InvalidOid;
+		Datum	tts_rowacl = PointerGetDatum(NULL);
+		Datum	tts_seclabel = PointerGetDatum(NULL);
 
 		/* Reset the per-output-tuple exprcontext */
 		ResetPerTupleExprContext(estate);
