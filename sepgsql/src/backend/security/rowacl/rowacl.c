@@ -17,6 +17,7 @@
 #include "nodes/nodeFuncs.h"
 #include "parser/parsetree.h"
 #include "security/rowacl.h"
+#include "utils/builtins.h"
 #include "utils/fmgroids.h"
 #include "utils/hsearch.h"
 #include "utils/inval.h"
@@ -150,7 +151,7 @@ rowaclExecScan(Relation rel, HeapTuple tuple, uint32 required, bool abort)
 			privs = ACL_ALL_RIGHTS_TUPLE;
 		else
 		{
-			Acl	   *acl = securityTransRowAclOut(aclid, ownerid);
+			Acl	   *acl = securityTransRowAclOut(relid, aclid, ownerid);
 
 			privs = aclmask(acl, userid, ownerid,
 							ACL_ALL_RIGHTS_TUPLE, ACLMASK_ALL);
@@ -343,15 +344,16 @@ rowaclHeapTupleInsert(Relation rel, HeapTuple newtup, bool internal)
 			FmgrInfo	finfo;
 			Datum		aclDat;
 			Oid			secid;
-			Oid			relowner = RelationGetForm(rel)->relowner;
+			Oid			relid = RelationGetRelid(rel);
+			Oid			ownid = RelationGetForm(rel)->relowner;
 
-			defacl = extractDefaultRowAcl(defacl, relowner);
+			defacl = extractDefaultRowAcl(defacl, ownid);
 			fmgr_info(F_ARRAY_IN, &finfo);
 			aclDat = FunctionCall3(&finfo,
 								   CStringGetDatum(defacl),
 								   ObjectIdGetDatum(ACLITEMOID),
 								   Int32GetDatum(-1));
-			secid = securityTransRowAclIn(DatumGetAclP(aclDat));
+			secid = securityTransRowAclIn(relid, DatumGetAclP(aclDat));
 			HeapTupleSetRowAcl(newtup, secid);
 		}
 		/*
@@ -394,4 +396,90 @@ rowaclHeapTupleDelete(Relation rel, HeapTuple oldtup, bool internal)
 	 * No need to do anything here
 	 */
 	return true;
+}
+
+/******************************************************************
+ * Row-Acl input/output handler
+ ******************************************************************/
+char *
+rowaclTransRowAclIn(Acl *acl)
+{
+	AclItem	   *aip = ACL_DAT(acl);
+	char	   *secacl = palloc0(ACL_NUM(acl) * 30 + 10);
+	int			i, ofs = 0;
+
+	for (i=0; i < ACL_NUM(acl); i++)
+	{
+		if ((aip[i].ai_privs & ACL_ALL_RIGHTS_TUPLE) != aip[i].ai_privs)
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("unsupported row level privileges: %04x",
+							aip[i].ai_privs & ~ACL_ALL_RIGHTS_TUPLE)));
+		ofs += sprintf(secacl + ofs, "%s%x=%x/%x",
+					   (i == 0 ? "" : ","),
+					   aip[i].ai_grantee,
+					   aip[i].ai_privs,
+					   aip[i].ai_grantor);
+	}
+
+	return secacl;
+}
+
+Acl *
+rowaclTransRowAclOut(char *secacl)
+{
+	Acl		   *acl = NULL;
+	AclItem	   *aip;
+	char	   *copy, *tok, *sv = NULL;
+	int			index = 0;
+
+	if (!secacl)
+		return NULL;	/* fallback to default acl */
+
+	aip = palloc(strlen(secacl) * sizeof(AclItem) / 4);
+	copy = pstrdup(secacl);
+
+	for (tok = strtok_r(copy, ",", &sv);
+		 tok;
+		 tok = strtok_r(NULL, ",", &sv))
+	{
+		if (sscanf(tok, "%x=%x/%x",
+				   &aip[index].ai_grantee,
+				   &aip[index].ai_privs,
+				   &aip[index].ai_grantor) != 3)
+			goto out;
+		index++;
+	}
+
+	if (index > 0)
+	{
+		acl = allocacl(index);
+		memcpy(ACL_DAT(acl), aip, index * sizeof(AclItem));
+	}
+out:
+	pfree(aip);
+	pfree(copy);
+
+	return acl;
+}
+
+Datum
+rowacl_acl_to_internal(PG_FUNCTION_ARGS)
+{
+	Acl	   *acl = PG_GETARG_ACL_P(0);
+	char   *secacl = rowaclTransRowAclIn(acl);
+
+	PG_RETURN_TEXT_P(CStringGetTextDatum(secacl));
+}
+
+Datum
+rowacl_internal_to_acl(PG_FUNCTION_ARGS)
+{
+	char   *secacl = TextDatumGetCString(PG_GETARG_TEXT_P(0));
+	Acl	   *acl = rowaclTransRowAclOut(secacl);
+
+	if (!acl)
+		PG_RETURN_NULL();
+
+	PG_RETURN_ACL_P(acl);
 }
