@@ -13,6 +13,7 @@
 #include "catalog/pg_attribute.h"
 #include "catalog/pg_class.h"
 #include "catalog/pg_database.h"
+#include "catalog/pg_largeobject.h"
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_security.h"
@@ -99,7 +100,7 @@ defaultDatabaseSecLabel(void)
 
 		/* An entry found */
 		FreeFile(filp);
-		return securityLookupSecurityId(context);
+		return securityTransSecLabelIn(DatabaseRelationId, context);
 	}
 	FreeFile(filp);
 
@@ -107,57 +108,60 @@ fallback:
 	context = sepgsqlComputeCreate(sepgsqlGetClientLabel(),
 								   sepgsqlGetClientLabel(),
 								   SEPG_CLASS_DB_DATABASE);
-	return securityLookupSecurityId(context);
+	return securityTransSecLabelIn(DatabaseRelationId, context);
 }
 
 static Oid
-defaultSchemaSecLabelCommon(security_class_t tclass)
+defaultSecLabelWithDatabase(Oid relid, Oid datoid, security_class_t tclass)
 {
 	HeapTuple	tuple;
-	Oid			newsid;
+	Oid			datsid;
 
 	if (IsBootstrapProcessingMode())
 	{
 		static Oid cached = InvalidOid;
 
 		if (!OidIsValid(cached))
-			cached = sepgsqlClientCreate(defaultDatabaseSecLabel(), tclass);
+			cached = defaultDatabaseSecLabel();
+		datsid = cached;
+	}
+	else
+	{
+		tuple = SearchSysCache(DATABASEOID,
+							   ObjectIdGetDatum(datoid),
+							   0, 0, 0);
+		if (!HeapTupleIsValid(tuple))
+			elog(ERROR, "cache lookup failed for database: %u", datoid);
+		datsid = HeapTupleGetSecLabel(tuple);
 
-		return cached;
+		ReleaseSysCache(tuple);
 	}
 
-	tuple = SearchSysCache(DATABASEOID,
-						   ObjectIdGetDatum(MyDatabaseId),
-						   0, 0, 0);
-	if (!HeapTupleIsValid(tuple))
-		elog(ERROR, "cache lookup failed for database: %u", MyDatabaseId);
-
-	newsid = sepgsqlClientCreate(HeapTupleGetSecLabel(tuple), tclass);
-
-	ReleaseSysCache(tuple);
-
-	return newsid;
-
-
+	return sepgsqlClientCreateSecid(relid,
+									DatabaseRelationId, datsid, tclass);
 }
 
 static Oid
 defaultSchemaSecLabel(void)
 {
-	return defaultSchemaSecLabelCommon(SEPG_CLASS_DB_SCHEMA);
+	return defaultSecLabelWithDatabase(NamespaceRelationId,
+									   MyDatabaseId,
+									   SEPG_CLASS_DB_SCHEMA);
 }
 
 static Oid
 defaultSchemaTempSecLabel(void)
 {
-	return defaultSchemaSecLabelCommon(SEPG_CLASS_DB_SCHEMA_TEMP);
+	return defaultSecLabelWithDatabase(NamespaceRelationId,
+									   MyDatabaseId,
+									   SEPG_CLASS_DB_SCHEMA_TEMP);
 }
 
 static Oid
-defaultSecLabelWithSchema(Oid nspoid, security_class_t tclass)
+defaultSecLabelWithSchema(Oid relid, Oid nspoid, security_class_t tclass)
 {
 	HeapTuple	tuple;
-	Oid			newsid;
+	Oid			nspsid;
 
 	if (IsBootstrapProcessingMode())
 	{
@@ -165,85 +169,98 @@ defaultSecLabelWithSchema(Oid nspoid, security_class_t tclass)
 
 		if (!OidIsValid(cached))
 			cached = defaultSchemaSecLabel();
+		nspsid = cached;
+	}
+	else
+	{
+		tuple = SearchSysCache(NAMESPACEOID,
+							   ObjectIdGetDatum(nspoid),
+							   0, 0, 0);
+		if (!HeapTupleIsValid(tuple))
+			elog(ERROR, "cache lookup failed for namespace: %u", nspoid);
 
-		return sepgsqlClientCreate(cached, tclass);
+		nspsid = HeapTupleGetSecLabel(tuple);
+
+		ReleaseSysCache(tuple);
 	}
 
-	tuple = SearchSysCache(NAMESPACEOID,
-						   ObjectIdGetDatum(nspoid),
-						   0, 0, 0);
-	if (!HeapTupleIsValid(tuple))
-		elog(ERROR, "cache lookup failed for namespace: %u", nspoid);
-
-	newsid = sepgsqlClientCreate(HeapTupleGetSecLabel(tuple), tclass);
-
-	ReleaseSysCache(tuple);
-
-	return newsid;
+	return sepgsqlClientCreateSecid(relid,
+									NamespaceRelationId, nspsid, tclass);
 }
 
 static Oid
 defaultTableSecLabel(Oid nspoid)
 {
-	return defaultSecLabelWithSchema(nspoid, SEPG_CLASS_DB_TABLE);
+	return defaultSecLabelWithSchema(RelationRelationId,
+									 nspoid,
+									 SEPG_CLASS_DB_TABLE);
 }
 
 static Oid
 defaultSequenceSecLabel(Oid nspoid)
 {
-	return defaultSecLabelWithSchema(nspoid, SEPG_CLASS_DB_SEQUENCE);
+	return defaultSecLabelWithSchema(RelationRelationId,
+									 nspoid,
+									 SEPG_CLASS_DB_SEQUENCE);
 }
 
 static Oid
 defaultProcedureSecLabel(Oid nspoid)
 {
-	return defaultSecLabelWithSchema(nspoid, SEPG_CLASS_DB_PROCEDURE);
+	return defaultSecLabelWithSchema(ProcedureRelationId,
+									 nspoid,
+									 SEPG_CLASS_DB_PROCEDURE);
 }
 
 static Oid
-defaultSecLabelWithTable(Oid relid, security_class_t tclass)
+defaultSecLabelWithTable(Oid relid, Oid tbloid, security_class_t tclass)
 {
 	HeapTuple	tuple;
-	Oid			relsid;
+	Oid			tblsid;
 
 	if (IsBootstrapProcessingMode()
-		&& (relid == TypeRelationId ||
-			relid == ProcedureRelationId ||
-			relid == AttributeRelationId ||
-			relid == RelationRelationId))
+		&& (tbloid == TypeRelationId ||
+			tbloid == ProcedureRelationId ||
+			tbloid == AttributeRelationId ||
+			tbloid == RelationRelationId))
 	{
 		static Oid cached = InvalidOid;
 
 		if (!OidIsValid(cached))
 			cached = defaultTableSecLabel(PG_CATALOG_NAMESPACE);
-		relsid = cached;
+		tblsid = cached;
 	}
 	else
 	{
 		tuple = SearchSysCache(RELOID,
-							   ObjectIdGetDatum(relid),
+							   ObjectIdGetDatum(tbloid),
 							   0, 0, 0);
 		if (!HeapTupleIsValid(tuple))
-			elog(ERROR, "cache lookup failed for relation: %u", relid);
+			elog(ERROR, "cache lookup failed for relation: %u", tbloid);
 
-		relsid = HeapTupleGetSecLabel(tuple);
+		tblsid = HeapTupleGetSecLabel(tuple);
 
 		ReleaseSysCache(tuple);
 	}
 
-	return sepgsqlClientCreate(relsid, tclass);
+	return sepgsqlClientCreateSecid(relid,
+									RelationRelationId, tblsid, tclass);
 }
 
 static Oid
-defaultColumnSecLabel(Oid relid)
+defaultColumnSecLabel(Oid tbloid)
 {
-	return defaultSecLabelWithTable(relid, SEPG_CLASS_DB_COLUMN);
+	return defaultSecLabelWithTable(AttributeRelationId,
+									tbloid,
+									SEPG_CLASS_DB_COLUMN);
 }
 
 static Oid
 defaultTupleSecLabel(Oid relid)
 {
-	return defaultSecLabelWithTable(relid, SEPG_CLASS_DB_TUPLE);
+	return defaultSecLabelWithTable(relid,
+									relid,
+									SEPG_CLASS_DB_TUPLE);
 }
 
 static Oid
@@ -265,20 +282,9 @@ defaultBlobSecLabel(void)
 	 * write new pages, so the default security context is
 	 * only asked when we create a new largeobject.
 	 */
-	HeapTuple	tuple;
-	Oid			newsid;
-
-	tuple = SearchSysCache(DATABASEOID,
-						   ObjectIdGetDatum(MyDatabaseId),
-						   0, 0, 0);
-	if (!HeapTupleIsValid(tuple))
-		elog(ERROR, "cache lookup failed for database: %u", MyDatabaseId);
-
-	newsid = sepgsqlClientCreate(HeapTupleGetSecLabel(tuple),
-								 SEPG_CLASS_DB_BLOB);
-	ReleaseSysCache(tuple);
-
-	return newsid;
+	return defaultSecLabelWithDatabase(LargeObjectRelationId,
+									   MyDatabaseId,
+									   SEPG_CLASS_DB_BLOB);
 }
 
 extern void
@@ -351,6 +357,9 @@ sepgsqlMetaSecurityLabel(void)
 	security_context_t	tcontext;
 	Oid					tsecid;
 
+	if (!sepgsqlIsEnabled())
+		return NULL;
+
 	tuple = SearchSysCache(RELOID,
 						   ObjectIdGetDatum(SecurityRelationId),
 						   0, 0, 0);
@@ -358,12 +367,9 @@ sepgsqlMetaSecurityLabel(void)
 		elog(ERROR, "SELinux: cache lookup failed for relation: pg_security");
 
 	tsecid = HeapTupleGetSecLabel(tuple);
+	tcontext = securityRawSecLabelOut(RelationRelationId, tsecid);
 
 	ReleaseSysCache(tuple);
-
-	tcontext = securityLookupSecurityLabel(tsecid);
-	if (!tcontext || security_check_context(tcontext) < 0)
-		tcontext = sepgsqlGetUnlabeledLabel();
 
 	return sepgsqlComputeCreate(sepgsqlGetServerLabel(),
 								tcontext,
@@ -371,42 +377,56 @@ sepgsqlMetaSecurityLabel(void)
 }
 
 /*
- * sepgsqlInputGivenSecLabel
+ * givenObjectSecLabelIn
  *   translate a given security label in text form into a security
  *   identifier. It can raise an error, if its format is violated,
  *   but permission checks are done later.
  */
-Oid
-sepgsqlInputGivenSecLabel(DefElem *defel)
+static Oid
+givenObjectSecLabelIn(Oid relid, DefElem *defel)
 {
-	security_context_t	context;
-
 	if (!defel)
 		return InvalidOid;
 
 	if (!sepgsqlIsEnabled())
 		ereport(ERROR,
 				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("SELinux: disabled now")));
+				 errmsg("SELinux is disabled now")));
 
-	context = strVal(defel->arg);
-	if (security_check_context(context) < 0)
-		ereport(ERROR,
-				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("Not a valid security context: \"%s\"", context)));
+	return securityTransSecLabelIn(relid, strVal(defel->arg));
+}
 
-	return securityTransSecLabelIn(context);
+Oid
+sepgsqlGivenDatabaseSecLabelIn(DefElem *defel)
+{
+	return givenObjectSecLabelIn(DatabaseRelationId, defel);
+}
+
+Oid
+sepgsqlGivenProcedureSecLabelIn(DefElem *defel)
+{
+	return givenObjectSecLabelIn(ProcedureRelationId, defel);
+}
+
+Oid
+sepgsqlGivenTableSecLabelIn(DefElem *defel)
+{
+	return givenObjectSecLabelIn(RelationRelationId, defel);
+}
+
+Oid
+sepgsqlGivenColumnSecLabelIn(DefElem *defel)
+{
+	return givenObjectSecLabelIn(AttributeRelationId, defel);
 }
 
 /*
- * sepgsqlInputGivenSecLabelRelation
- *   organize a set of given security labels on CREATE TABLE statement.
- *   User can specify a security label for individual table/columns.
- *   It returns a list of DefElem. !defel->defname means a specified one
- *   for the table, rest of them means one for columns.
+ * sepgsqlGivenCreateStmtSecLabelIn
+ *   picks up the given security context using CREATE TABLE and
+ *   SECURITY_LABEL enhancement. It returns a DefElem list.
  */
 List *
-sepgsqlInputGivenSecLabelRelation(CreateStmt *stmt)
+sepgsqlGivenCreateStmtSecLabelIn(CreateStmt *stmt)
 {
 	List	   *results = NIL;
 	ListCell   *l;
@@ -415,7 +435,6 @@ sepgsqlInputGivenSecLabelRelation(CreateStmt *stmt)
 	if (stmt->secLabel)
 	{
 		defel = (DefElem *) stmt->secLabel;
-
 		Assert(IsA(defel, DefElem));
 
 		newel = makeDefElem(NULL, copyObject(defel->arg));
@@ -442,27 +461,77 @@ sepgsqlInputGivenSecLabelRelation(CreateStmt *stmt)
 }
 
 /*
- * sepgsqlSecurityLabelTransIn()
- *   translate external security label into internal one
+ * sepgsqlRawSecLabelIn
+ *   correctness checks for the given security context
  */
 security_context_t
-sepgsqlSecurityLabelTransIn(security_context_t seclabel)
+sepgsqlRawSecLabelIn(security_context_t seclabel)
+{
+	if (!sepgsqlIsEnabled())
+		return seclabel;
+
+	if (!seclabel || security_check_context_raw(seclabel) < 0)
+		ereport(ERROR,
+				(errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("Invalid security context: \"%s\"", seclabel)));
+
+	return seclabel;
+}
+
+/*
+ * sepgsqlRawSecLabelOut
+ *   correctness checks for the given security context,
+ *   and replace it if invalid security context
+ */
+security_context_t
+sepgsqlRawSecLabelOut(security_context_t seclabel)
+{
+	if (!sepgsqlIsEnabled())
+		return seclabel;
+
+	if (!seclabel || security_check_context_raw(seclabel) < 0)
+	{
+		security_context_t	unlabeledcon;
+
+		if (security_get_initial_context_raw("unlabeled",
+											 &unlabeledcon) < 0)
+			ereport(ERROR,
+					(errcode(ERRCODE_SELINUX_ERROR),
+					 errmsg("Unabled to get unlabeled security context")));
+		PG_TRY();
+		{
+			seclabel = pstrdup(unlabeledcon);
+		}
+		PG_CATCH();
+		{
+			freecon(unlabeledcon);
+			PG_RE_THROW();
+		}
+		PG_END_TRY();
+		freecon(unlabeledcon);
+	}
+	return seclabel;
+}
+
+/*
+ * sepgsqlTransSecLabelIn
+ * sepgsqlTransSecLabelOut
+ *   translation between human-readable and raw format
+ */
+security_context_t
+sepgsqlTransSecLabelIn(security_context_t seclabel)
 {
 	security_context_t	rawlabel;
 	security_context_t	result;
 
-	if (!sepgsqlIsEnabled())
+	if (!sepgsqlIsEnabled() ||
+		!sepostgresql_use_mcstrans)
 		return seclabel;
-
-	if (!seclabel || security_check_context(seclabel) < 0)
-		ereport(ERROR,
-				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("Not a valid security context: \"%s\"", seclabel)));
 
 	if (selinux_trans_to_raw_context(seclabel, &rawlabel) < 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("Failed to translate \"%s\" to raw format", seclabel)));
+				 errmsg("SELinux: failed to translate \"%s\"", seclabel)));
 	PG_TRY();
 	{
 		result = pstrdup(rawlabel);
@@ -478,41 +547,31 @@ sepgsqlSecurityLabelTransIn(security_context_t seclabel)
 	return result;
 }
 
-/*
- * sepgsqlSecurityLabelTransOut()
- *   translate internal security label into external one
- */
 security_context_t
-sepgsqlSecurityLabelTransOut(security_context_t rawlabel)
+sepgsqlTransSecLabelOut(security_context_t seclabel)
 {
-	security_context_t	seclabel;
+	security_context_t	translabel;
 	security_context_t	result;
 
-	if (!sepgsqlIsEnabled())
-		return rawlabel;
+	if (!sepgsqlIsEnabled() ||
+		!sepostgresql_use_mcstrans)
+		return seclabel;
 
-	if (!rawlabel || security_check_context(rawlabel) < 0)
-		rawlabel = sepgsqlGetUnlabeledLabel();
-
-	if (!sepostgresql_use_mcstrans)
-		return rawlabel;
-
-	if (selinux_raw_to_trans_context(rawlabel, &seclabel) < 0)
+	if (selinux_raw_to_trans_context(seclabel, &translabel) < 0)
 		ereport(ERROR,
-                (errcode(ERRCODE_SELINUX_ERROR),
-                 errmsg("Failed to translate \"%s\" to readable format", rawlabel)));
-
+				(errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("SELinux: failed to translate \"%s\"", seclabel)));
 	PG_TRY();
 	{
-		result = pstrdup(seclabel);
+		result = pstrdup(translabel);
 	}
 	PG_CATCH();
 	{
-		freecon(seclabel);
+		freecon(translabel);
 		PG_RE_THROW();
 	}
 	PG_END_TRY();
-	freecon(seclabel);
+	freecon(translabel);
 
 	return result;
 }
