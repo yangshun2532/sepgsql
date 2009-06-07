@@ -26,7 +26,7 @@ Patch1: sepostgresql-utils-%%__base_major_version__%%.patch
 Patch2: sepostgresql-test-%%__base_major_version__%%.patch
 Patch3: sepostgresql-fedora-prefix.patch
 BuildRequires: perl glibc-devel bison flex readline-devel zlib-devel >= 1.0.4
-BuildRequires: checkpolicy libselinux-devel >= 2.0.43
+BuildRequires: checkpolicy libselinux-devel >= 2.0.80
 BuildRequires: selinux-policy >= 3.4.2
 %if %{ssl}
 BuildRequires: openssl-devel
