@@ -15,18 +15,15 @@
 #include "utils/acl.h"
 #include "utils/relcache.h"
 
-#define SecurityRelationId        3400
+#define SecurityRelationId        3405
 
-CATALOG(pg_security,3400) BKI_SHARED_RELATION BKI_WITHOUT_OIDS
+CATALOG(pg_security,3405) BKI_WITHOUT_OIDS
 {
-	/* OID of the database which refers the entry */
-	Oid		datid;
+	/* OID of the table which refers the entry */
+	Oid		relid;
 
 	/* Identifier of the security attribute */
 	Oid		secid;
-
-	/* Reclaimer flag */
-	bool	secinuse;
 
 	/* 'a' = security_acl, 'l' = security_label */
 	char	seckind;
@@ -44,12 +41,11 @@ typedef FormData_pg_security *Form_pg_security;
 /*
  * Compiler constants for pg_security
  */
-#define Natts_pg_security				5
-#define Anum_pg_security_datid			1
+#define Natts_pg_security				4
+#define Anum_pg_security_relid			1
 #define Anum_pg_security_secid			2
-#define Anum_pg_security_secinuse		3
-#define Anum_pg_security_seckind		4
-#define Anum_pg_security_secattr		5
+#define Anum_pg_security_seckind		3
+#define Anum_pg_security_secattr		4
 
 /*
  * Compiler constants for pg_security.seckind
@@ -94,9 +90,6 @@ extern Datum
 securityHeapGetSecLabelSysattr(HeapTuple tuple);
 
 extern void
-securityOnDatabaseCreate(Oid tmpid, Oid newid);
-
-extern void
-securityOnDatabaseDrop(Oid datid);
+securityReclaimOnTableDrop(Oid relid);
 
 #endif		/* PG_SECURITY_H */
