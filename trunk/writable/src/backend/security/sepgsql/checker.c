@@ -14,6 +14,7 @@
 #include "catalog/pg_proc.h"
 #include "catalog/pg_rewrite.h"
 #include "catalog/pg_security.h"
+#include "catalog/pg_shsecurity.h"
 #include "security/sepgsql.h"
 #include "storage/bufmgr.h"
 #include "utils/builtins.h"

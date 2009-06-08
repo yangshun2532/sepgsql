@@ -133,8 +133,8 @@ defaultSecLabelWithDatabase(Oid relid, Oid datoid, security_class_t tclass)
 		ReleaseSysCache(tuple);
 	}
 
-	return sepgsqlClientCreateSecid(relid,
-									DatabaseRelationId, datsid, tclass);
+	return sepgsqlClientCreateSecid(DatabaseRelationId, datsid,
+									tclass, relid);
 }
 
 static Oid
@@ -180,8 +180,8 @@ defaultSecLabelWithSchema(Oid relid, Oid nspoid, security_class_t tclass)
 		ReleaseSysCache(tuple);
 	}
 
-	return sepgsqlClientCreateSecid(relid,
-									NamespaceRelationId, nspsid, tclass);
+	return sepgsqlClientCreateSecid(NamespaceRelationId, nspsid,
+									tclass, relid);
 }
 
 static Oid
@@ -239,8 +239,8 @@ defaultSecLabelWithTable(Oid relid, Oid tbloid, security_class_t tclass)
 		ReleaseSysCache(tuple);
 	}
 
-	return sepgsqlClientCreateSecid(relid,
-									RelationRelationId, tblsid, tclass);
+	return sepgsqlClientCreateSecid(RelationRelationId, tblsid,
+									tclass, relid);
 }
 
 static Oid
