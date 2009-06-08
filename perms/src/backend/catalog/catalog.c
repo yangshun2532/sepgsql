@@ -31,9 +31,9 @@
 #include "catalog/pg_database.h"
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_pltemplate.h"
-#include "catalog/pg_security.h"
 #include "catalog/pg_shdepend.h"
 #include "catalog/pg_shdescription.h"
+#include "catalog/pg_shsecurity.h"
 #include "catalog/pg_tablespace.h"
 #include "catalog/toasting.h"
 #include "miscadmin.h"
@@ -305,9 +305,9 @@ IsSharedRelation(Oid relationId)
 		relationId == AuthMemRelationId ||
 		relationId == DatabaseRelationId ||
 		relationId == PLTemplateRelationId ||
-		relationId == SecurityRelationId ||
 		relationId == SharedDescriptionRelationId ||
 		relationId == SharedDependRelationId ||
+		relationId == SharedSecurityRelationId ||
 		relationId == TableSpaceRelationId)
 		return true;
 	/* These are their indexes (see indexing.h) */
@@ -318,11 +318,11 @@ IsSharedRelation(Oid relationId)
 		relationId == DatabaseNameIndexId ||
 		relationId == DatabaseOidIndexId ||
 		relationId == PLTemplateNameIndexId ||
-		relationId == SecuritySecidIndexId ||
-		relationId == SecuritySecattrIndexId ||
 		relationId == SharedDescriptionObjIndexId ||
 		relationId == SharedDependDependerIndexId ||
 		relationId == SharedDependReferenceIndexId ||
+		relationId == SharedSecuritySecidIndexId ||
+		relationId == SharedSecuritySecattrIndexId ||
 		relationId == TablespaceOidIndexId ||
 		relationId == TablespaceNameIndexId)
 		return true;
@@ -331,8 +331,8 @@ IsSharedRelation(Oid relationId)
 		relationId == PgAuthidToastIndex ||
 		relationId == PgDatabaseToastTable ||
 		relationId == PgDatabaseToastIndex ||
-		relationId == PgSecurityToastTable ||
-		relationId == PgSecurityToastIndex ||
+		relationId == PgSharedSecurityToastTable ||
+		relationId == PgSharedSecurityToastIndex ||
 		relationId == PgShdescriptionToastTable ||
 		relationId == PgShdescriptionToastIndex)
 		return true;
