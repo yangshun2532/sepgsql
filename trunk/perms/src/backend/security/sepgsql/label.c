@@ -17,6 +17,7 @@
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_security.h"
+#include "catalog/pg_shsecurity.h"
 #include "catalog/pg_type.h"
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
@@ -137,8 +138,8 @@ defaultSecLabelWithDatabase(Oid relid, Oid datoid, security_class_t tclass)
 		ReleaseSysCache(tuple);
 	}
 
-	return sepgsqlClientCreateSecid(relid,
-									DatabaseRelationId, datsid, tclass);
+	return sepgsqlClientCreateSecid(DatabaseRelationId, datsid,
+									tclass, relid);
 }
 
 static Oid
@@ -184,8 +185,8 @@ defaultSecLabelWithSchema(Oid relid, Oid nspoid, security_class_t tclass)
 		ReleaseSysCache(tuple);
 	}
 
-	return sepgsqlClientCreateSecid(relid,
-									NamespaceRelationId, nspsid, tclass);
+	return sepgsqlClientCreateSecid(NamespaceRelationId, nspsid,
+									tclass, relid);
 }
 
 static Oid
@@ -243,8 +244,8 @@ defaultSecLabelWithTable(Oid relid, Oid tbloid, security_class_t tclass)
 		ReleaseSysCache(tuple);
 	}
 
-	return sepgsqlClientCreateSecid(relid,
-									RelationRelationId, tblsid, tclass);
+	return sepgsqlClientCreateSecid(RelationRelationId, tblsid,
+									tclass, relid);
 }
 
 static Oid
@@ -351,8 +352,9 @@ sepgsqlSetDefaultSecLabel(Relation rel, HeapTuple tuple)
  *   function invocations to insert new entry for meta security labels.
  */
 char *
-sepgsqlMetaSecurityLabel(void)
+sepgsqlMetaSecurityLabel(bool shared)
 {
+	Oid					secrelid;
 	HeapTuple			tuple;
 	security_context_t	tcontext;
 	Oid					tsecid;
@@ -360,8 +362,9 @@ sepgsqlMetaSecurityLabel(void)
 	if (!sepgsqlIsEnabled())
 		return NULL;
 
+	secrelid = (shared ? SharedSecurityRelationId : SecurityRelationId);
 	tuple = SearchSysCache(RELOID,
-						   ObjectIdGetDatum(SecurityRelationId),
+						   ObjectIdGetDatum(secrelid),
 						   0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
 		elog(ERROR, "SELinux: cache lookup failed for relation: pg_security");
