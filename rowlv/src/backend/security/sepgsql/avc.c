@@ -22,28 +22,24 @@
 #include <selinux/avc.h>
 
 /*
- * AVC: userspace Access Vector Cache
+ * AVC: userspace access vector cache
  *
- * SE-PostgreSQL makes inqueries for SELinux to check whether the security
- * policy allows the required action, or not. However, it need to invoke
- * system call because SELinux is a kernel feature and it hold its security
- * policy in the kernel memory.
+ * SE-PostgreSQL asks in-kernel SELinux to make its decision whether
+ * the required accesses should be allowed, or not, based on the unified 
+ * security policy. It needs a system call invocation to communicate
+ * a kernel feature, such as SELinux, but it is a heavy task in most cases
+ * due to the context switching.
  *
- * AVC enables to reduce the number of kernel invocation, with caching
- * the result of inquiries. When we have to make a decision based on the
- * security policy of SELinux, it tries to find up an appropriate cache
- * entry on the uAVC. If exist, we don't need to invoke a system call
- * and can reduce unnecessary overhead.
+ * The userspace avc enables to minimize the number of system call
+ * invocations, using a chache mechanim for the certain pair of security
+ * contexts and object classes (it means the kind of actions).
+ * It enables to hold recently fetched results from the in-kernel SELinux,
+ * and make a decision without context switching, if the cache hit.
  *
- * If not exist, SE-PostgreSQL makes a new cache entry based on the
- * result of inquiries, and chains it on uAVC to prepare the following
- * decision makings.
- *
- * uAVC has a version number to check whether it is now valid, or not.
- * Not need to say, uAVC cache entry has to be invalid just after
- * policy reloaded or state change.
- * If it is not match the latest one, updated by the policy state
- * monitoring process, uAVC has to be reseted.
+ * When the state of security policy is changed, the cached results
+ * shall to be invalidated. The state monitoring process launched by
+ * postmaster can receives the notification messages from the kernel
+ * space, and invalidate the current version of avc.
  */
 static MemoryContext AvcMemCtx;
 
@@ -52,13 +48,18 @@ static MemoryContext AvcMemCtx;
 
 typedef struct
 {
+	Oid		relid;
+	Oid		secid;
+} sepgsql_sid_t;
+
+#define AVC_DATUM_NSID_SLOTS	19
+typedef struct
+{
 	uint32				hash_key;
 
 	security_class_t	tclass;
-	Oid					trelid;
-	Oid					tsecid;
-	Oid					nsecid_lo;
-	Oid					nsecid_sh;
+	sepgsql_sid_t		tsid;
+	sepgsql_sid_t		nsid[AVC_DATUM_NSID_SLOTS];
 
 	access_vector_t		allowed;
 	access_vector_t		decided;
@@ -262,7 +263,7 @@ avc_audit_common(security_context_t scontext,
  *   cache the result of SELinux's decision for access rights and
  *   default security context.
  */
-#define avc_hash_key(trelid,tsecid,tclass)					\
+#define avc_hash_key(trelid,tsecid,tclass)			\
 	(hash_uint32((trelid) ^ (tsecid) ^ ((tclass) << 3)))
 
 static avc_datum *
@@ -337,10 +338,9 @@ avc_make_entry(avc_page *page, Oid relid, Oid secid, security_class_t tclass)
 
 	cache->hash_key = hash_key;
 	cache->tclass = tclass;
-	cache->trelid = relid;
-	cache->tsecid = secid;
-	cache->nsecid_lo = InvalidOid;	/* set it later */
-	cache->nsecid_sh = InvalidOid;	/* set it later */
+	cache->tsid.relid = relid;
+	cache->tsid.secid = secid;
+	/* cache->nsid shall be set later */
 
 	cache->allowed = avd.allowed;
 	cache->decided = avd.decided;
@@ -389,8 +389,8 @@ avc_lookup(avc_page *page, Oid trelid, Oid tsecid,
 		cache = lfirst(l);
 		if (cache->hash_key == hash_key
 			&& cache->tclass == tclass
-			&& cache->trelid == trelid
-			&& cache->tsecid == tsecid)
+			&& cache->tsid.relid == trelid
+			&& cache->tsid.secid == tsecid)
 		{
 			cache->hot_cache = true;
 			return cache;
@@ -488,6 +488,7 @@ sepgsqlClientHasPermsSid(Oid relid, Oid secid,
 
 	if (avc_exception)
 		return true;
+
 retry:
 	cache = avc_lookup(client_avc_page, relid, secid, tclass);
 	if (!cache)
@@ -539,28 +540,28 @@ sepgsqlClientHasPermsTup(Oid relid, HeapTuple tuple,
  * sepgsqlClientCreateLabel
  */
 Oid
-sepgsqlClientCreateSecid(Oid nrelid, Oid trelid, Oid tsecid,
-						 security_class_t tclass)
+sepgsqlClientCreateSecid(Oid trelid, Oid tsecid,
+						 security_class_t tclass, Oid nrelid)
 {
 	avc_datum  *cache;
+	int			index;
 	Oid			nsecid;
 
 retry:
 	cache = avc_lookup(client_avc_page, trelid, tsecid, tclass);
 	if (!cache)
-		cache = avc_make_entry(client_avc_page, trelid, tsecid, tclass);
-	if (IsSharedRelation(nrelid))
+		cache = avc_make_entry(client_avc_page,
+							   trelid, tsecid, tclass);
+
+	index = (nrelid % AVC_DATUM_NSID_SLOTS);
+	if (cache->nsid[index].relid != nrelid)
 	{
-		if (!OidIsValid(cache->nsecid_sh))
-			cache->nsecid_sh = securityRawSecLabelIn(nrelid, cache->ncontext);
-		nsecid = cache->nsecid_sh;
+		cache->nsid[index].secid
+			= securityRawSecLabelIn(nrelid, cache->ncontext);
+		cache->nsid[index].relid = nrelid;
 	}
-	else
-	{
-		if (!OidIsValid(cache->nsecid_lo))
-			cache->nsecid_lo = securityRawSecLabelIn(nrelid, cache->ncontext);
-		nsecid = cache->nsecid_lo;
-	}
+	nsecid = cache->nsid[index].secid;
+
 	if (!sepgsql_avc_check_valid())
 		goto retry;
 

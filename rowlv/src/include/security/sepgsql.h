@@ -191,8 +191,8 @@ sepgsqlClientHasPermsSid(Oid relid, Oid secid,
 						 access_vector_t required,
 						 const char *audit_name, bool abort);
 extern Oid
-sepgsqlClientCreateSecid(Oid nrelid, Oid trelid, Oid tsecid,
-						 security_class_t tclass);
+sepgsqlClientCreateSecid(Oid trelid, Oid tsecid,
+						 security_class_t tclass, Oid nrelid);
 
 extern security_context_t
 sepgsqlClientCreateLabel(Oid trelid, Oid tsecid,
@@ -305,7 +305,7 @@ extern void
 sepgsqlSetDefaultSecLabel(Relation rel, HeapTuple tuple);
 
 extern security_context_t
-sepgsqlMetaSecurityLabel(void);
+sepgsqlMetaSecurityLabel(bool shared);
 
 extern Oid
 sepgsqlGivenDatabaseSecLabelIn(DefElem *defel);
@@ -392,13 +392,7 @@ sepgsqlGetPermissionString(security_class_t tclass, access_vector_t av);
 #define sepgsqlAllowFunctionInlined(a)			(true)
 // label.c
 #define sepgsqlTupleDescHasSecLabel(a)			(false)
-<<<<<<< .working
-#define sepgsqlMetaSecurityLabel()				(NULL)
-#define sepgsqlInputGivenSecLabel(a)			(InvalidOid)
-#define sepgsqlInputGivenSecLabelRelation(a)	(NIL)
-#define sepgsqlSecurityLabelTransIn(a)			(a)
-#define sepgsqlSecurityLabelTransOut(a)			(a)
-=======
+#define sepgsqlMetaSecurityLabel(a)				(NULL)
 #define sepgsqlGivenDatabaseSecLabelIn(a)		(InvalidOid)
 #define sepgsqlGivenProcedureSecLabelIn(a)		(InvalidOid)
 #define sepgsqlGivenTableSecLabelIn(a)			(InvalidOid)
@@ -408,7 +402,6 @@ sepgsqlGetPermissionString(security_class_t tclass, access_vector_t av);
 #define sepgsqlTransSecLabelOut(a)				(a)
 #define sepgsqlRawSecLabelIn(a)					(a)
 #define sepgsqlRawSecLabelOut(a)				(a)
->>>>>>> .merge-right.r1965
 
 #endif	/* HAVE_SELINUX */
 
