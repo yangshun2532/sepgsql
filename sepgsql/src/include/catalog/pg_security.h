@@ -92,4 +92,16 @@ securityHeapGetSecLabelSysattr(HeapTuple tuple);
 extern void
 securityReclaimOnTableDrop(Oid relid);
 
+extern Datum
+security_reclaim_acl(PG_FUNCTION_ARGS);
+
+extern Datum
+security_reclaim_table_acl(PG_FUNCTION_ARGS);
+
+extern Datum
+security_reclaim_label(PG_FUNCTION_ARGS);
+
+extern Datum
+security_reclaim_table_label(PG_FUNCTION_ARGS);
+
 #endif		/* PG_SECURITY_H */

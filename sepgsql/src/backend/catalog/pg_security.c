@@ -422,3 +422,114 @@ securityHeapGetSecLabelSysattr(HeapTuple tuple)
 
 	return CStringGetTextDatum(seclabel);
 }
+
+/*
+ * securityReclaimOnDropTable
+ *   drop orphan entries within pg_security on drop table
+ */
+void
+securityReclaimOnDropTable(Oid relid)
+{
+	Oid				srelId;
+	Oid				sindId;
+	Relation		srel;
+	SysScanDesc		sscan;
+	ScanKeyData		key[1];
+	HeapTuple		tuple;
+
+	if (!IsSharedRelation(relid))
+	{
+		srelId = SecurityRelationId;
+		sindId = SecuritySecattrIndexId;
+	}
+	else
+	{
+		srelId = SharedSecurityRelationId;
+		sindId = SharedSecuritySecattrIndexId;
+	}
+
+	/*
+	 * reclaim all the entries with pg_security.relid == relid
+	 */
+	ScanKeyInit(&key[0],
+				Anum_pg_security_relid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(relid));
+
+	srel = heap_open(srelId, RowExclusiveLock);
+	sscan = systable_beginscan(srel, sindId, true,
+							   SnapshotNow, 1, key);
+	while (HeapTupleIsValid(tuple = systable_getnext(sscan)))
+	{
+		Datum	datum;
+		bool	isnull;
+
+		datum = heap_getattr(tuple,
+							 Anum_pg_security_secattr,
+							 RelationGetDescr(srel),
+							 &isnull);
+		Assert(!isnull);
+
+		elog(NOTICE, "%s: \"%s\" is reclaimed",
+			 __FUNCTION__, TextDatumGetCString(datum));
+
+		simple_heap_delete(srel, &tuple->t_self);
+	}
+
+	systable_endscan(sscan);
+
+	heap_close(srel, RowExclusiveLock);
+}
+
+static void
+security_reclaim(List *oidList, char seckind)
+{
+	if (!superuser())
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("must be superuser to reclaim security attributes")));
+	/*
+
+LOCK ROW EXCLUSIVE 
+
+
+
+
+	 */
+}
+
+Datum
+security_reclaim_acl(PG_FUNCTION_ARGS)
+{
+	security_reclaim(InvalidOid, SECKIND_SECURITY_ACL);
+
+	PG_RETURN_BOOL(true);
+}
+
+Datum
+security_reclaim_table_acl(PG_FUNCTION_ARGS)
+{
+	Oid		relid = PG_GETARG_OID(0);
+
+	security_reclaim(relid, SECKIND_SECURITY_ACL);
+
+	PG_RETURN_BOOL(true);
+}
+
+Datum
+security_reclaim_label(PG_FUNCTION_ARGS)
+{
+	security_reclaim(InvalidOid, SECKIND_SECURITY_LABEL);
+
+	PG_RETURN_BOOL(true);
+}
+
+Datum
+security_reclaim_table_label(PG_FUNCTION_ARGS)
+{
+	Oid		relid = PG_GETARG_OID(0);
+
+	security_reclaim(relid, SECKIND_SECURITY_LABEL);
+
+	PG_RETURN_BOOL(ture);
+}
