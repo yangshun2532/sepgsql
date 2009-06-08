@@ -89,7 +89,4 @@ securityHeapGetRowAclSysattr(HeapTuple tuple);
 extern Datum
 securityHeapGetSecLabelSysattr(HeapTuple tuple);
 
-extern void
-securityReclaimOnTableDrop(Oid relid);
-
 #endif		/* PG_SECURITY_H */
