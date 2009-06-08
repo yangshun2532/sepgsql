@@ -19,11 +19,11 @@
 
 CATALOG(pg_security,3405) BKI_WITHOUT_OIDS
 {
-	/* OID of the table which refers the entry */
-	Oid		relid;
-
 	/* Identifier of the security attribute */
 	Oid		secid;
+
+	/* OID of the table which refers the entry */
+	Oid		relid;
 
 	/* 'a' = security_acl, 'l' = security_label */
 	char	seckind;
@@ -42,8 +42,8 @@ typedef FormData_pg_security *Form_pg_security;
  * Compiler constants for pg_security
  */
 #define Natts_pg_security				4
-#define Anum_pg_security_relid			1
-#define Anum_pg_security_secid			2
+#define Anum_pg_security_secid			1
+#define Anum_pg_security_relid			2
 #define Anum_pg_security_seckind		3
 #define Anum_pg_security_secattr		4
 
