@@ -188,8 +188,8 @@ sepgsqlClientHasPermsSid(Oid relid, Oid secid,
 						 access_vector_t required,
 						 const char *audit_name, bool abort);
 extern Oid
-sepgsqlClientCreateSecid(Oid nrelid, Oid trelid, Oid tsecid,
-						 security_class_t tclass);
+sepgsqlClientCreateSecid(Oid trelid, Oid tsecid,
+						 security_class_t tclass, Oid nrelid);
 
 extern security_context_t
 sepgsqlClientCreateLabel(Oid trelid, Oid tsecid,
