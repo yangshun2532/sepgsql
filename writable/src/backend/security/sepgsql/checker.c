@@ -106,7 +106,8 @@ checkTabelColumnPerms(Oid relid, Bitmapset *selected, Bitmapset *modified,
 					 | SEPG_DB_TABLE__INSERT
 					 | SEPG_DB_TABLE__DELETE)) != 0
 		&& (relid == RewriteRelationId ||
-			relid == SecurityRelationId))
+			relid == SecurityRelationId ||
+			relid == SharedSecurityRelationId))
 		ereport(ERROR,
 				(errcode(ERRCODE_SELINUX_ERROR),
 				 errmsg("SE-PostgreSQL peremptorily prevent to modify "
