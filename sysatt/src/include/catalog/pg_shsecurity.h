@@ -14,11 +14,11 @@
 
 CATALOG(pg_shsecurity,3400) BKI_SHARED_RELATION BKI_WITHOUT_OIDS
 {
-	/* OID of the table which refers the entry */
-	Oid		relid;
-
 	/* Identifier of the security attribute */
 	Oid		secid;
+
+	/* OID of the table which refers the entry */
+	Oid		relid;
 
 	/* 'a' = security_acl, 'l' = security_label */
 	char	seckind;
@@ -37,8 +37,8 @@ typedef FormData_pg_shsecurity *Form_pg_shsecurity;
  * Compiler constants for pg_shsecurity
  */
 #define Natts_pg_shsecurity				4
-#define Anum_pg_shsecurity_relid		1
-#define Anum_pg_shsecurity_secid		2
+#define Anum_pg_shsecurity_secid		1
+#define Anum_pg_shsecurity_relid		2
 #define Anum_pg_shsecurity_seckind		3
 #define Anum_pg_shsecurity_secattr		4
 
