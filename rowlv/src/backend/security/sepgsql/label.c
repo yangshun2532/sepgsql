@@ -47,6 +47,9 @@ sepgsqlTupleDescHasSecLabel(Relation rel)
 	if (rel == NULL)
 		return sepostgresql_row_level;	/* target of SELECT INTO */
 
+	if (RelationGetForm(rel)->relkind != RELKIND_RELATION)
+		return false;
+
 	if (RelationGetRelid(rel) == DatabaseRelationId  ||
 		RelationGetRelid(rel) == NamespaceRelationId ||
 		RelationGetRelid(rel) == RelationRelationId  ||
@@ -432,6 +435,26 @@ sepgsqlGivenCreateStmtSecLabelIn(CreateStmt *stmt)
 	}
 
 	return results;
+}
+
+/*
+ * sepgsqlGet/SetMcstransMode
+ *   provide an interface to get/set sepostgresql_use_mcstrans
+ */
+bool
+sepgsqlGetMcstransMode(void)
+{
+	return sepostgresql_use_mcstrans;
+}
+
+bool
+sepgsqlSetMcstransMode(bool new_mode)
+{
+	bool	old_mode = sepostgresql_use_mcstrans;
+
+	sepostgresql_use_mcstrans = new_mode;
+
+	return old_mode;
 }
 
 /*

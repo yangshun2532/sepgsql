@@ -262,7 +262,13 @@ InputSecurityAttr(Oid relid, char seckind, const char *secattr)
 	meta_label = securityMetaSecurityLabel(shared);
 	if (meta_label != NULL)
 	{
-		if (seckind == SECKIND_SECURITY_LABEL &&
+		/*
+		 * NOTE: when the meta_label refers itself, no need to
+		 * assign secid anymore. This check is necessary to
+		 * avoid infinite invocations.
+		 */
+		if (sec_relid == relid &&
+			seckind == SECKIND_SECURITY_LABEL &&
 			strcmp(meta_label, secattr) == 0)
 			meta_secid = secid;
 		else
