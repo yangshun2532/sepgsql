@@ -8,7 +8,7 @@
  * Darko Prenosil <Darko.Prenosil@finteh.hr>
  * Shridhar Daithankar <shridhar_daithankar@persistent.co.in>
  *
- * $PostgreSQL: pgsql/contrib/dblink/dblink.c,v 1.77 2009/01/01 17:23:31 momjian Exp $
+ * $PostgreSQL: pgsql/contrib/dblink/dblink.c,v 1.79 2009/06/06 21:27:56 joe Exp $
  * Copyright (c) 2001-2009, PostgreSQL Global Development Group
  * ALL RIGHTS RESERVED;
  *
@@ -46,6 +46,7 @@
 #include "catalog/pg_type.h"
 #include "executor/executor.h"
 #include "executor/spi.h"
+#include "foreign/foreign.h"
 #include "lib/stringinfo.h"
 #include "miscadmin.h"
 #include "nodes/execnodes.h"
@@ -77,7 +78,7 @@ typedef struct remoteConn
 /*
  * Internal declarations
  */
-static Datum dblink_record_internal(FunctionCallInfo fcinfo, bool is_async, bool do_get);
+static Datum dblink_record_internal(FunctionCallInfo fcinfo, bool is_async);
 static remoteConn *getConnectionByName(const char *name);
 static HTAB *createConnHash(void);
 static void createNewConnection(const char *name, remoteConn * rconn);
@@ -96,6 +97,8 @@ static char *generate_relation_name(Oid relid);
 static void dblink_connstr_check(const char *connstr);
 static void dblink_security_check(PGconn *conn, remoteConn *rconn);
 static void dblink_res_error(const char *conname, PGresult *res, const char *dblink_context_msg, bool fail);
+static char *get_connect_string(const char *servername);
+static char *escape_param_str(const char *from);
 
 /* Global */
 static remoteConn *pconn = NULL;
@@ -165,7 +168,11 @@ typedef struct remoteConnHashEnt
 			} \
 			else \
 			{ \
-				connstr = conname_or_str; \
+				connstr = get_connect_string(conname_or_str); \
+				if (connstr == NULL) \
+				{ \
+					connstr = conname_or_str; \
+				} \
 				dblink_connstr_check(connstr); \
 				conn = PQconnectdb(connstr); \
 				if (PQstatus(conn) == CONNECTION_BAD) \
@@ -210,6 +217,7 @@ PG_FUNCTION_INFO_V1(dblink_connect);
 Datum
 dblink_connect(PG_FUNCTION_ARGS)
 {
+	char	   *conname_or_str = NULL;
 	char	   *connstr = NULL;
 	char	   *connname = NULL;
 	char	   *msg;
@@ -220,15 +228,20 @@ dblink_connect(PG_FUNCTION_ARGS)
 
 	if (PG_NARGS() == 2)
 	{
-		connstr = text_to_cstring(PG_GETARG_TEXT_PP(1));
+		conname_or_str = text_to_cstring(PG_GETARG_TEXT_PP(1));
 		connname = text_to_cstring(PG_GETARG_TEXT_PP(0));
 	}
 	else if (PG_NARGS() == 1)
-		connstr = text_to_cstring(PG_GETARG_TEXT_PP(0));
+		conname_or_str = text_to_cstring(PG_GETARG_TEXT_PP(0));
 
 	if (connname)
 		rconn = (remoteConn *) MemoryContextAlloc(TopMemoryContext,
 												  sizeof(remoteConn));
+
+	/* first check for valid foreign data server */
+	connstr = get_connect_string(conname_or_str);
+	if (connstr == NULL)
+		connstr = conname_or_str;
 
 	/* check password in connection string if not superuser */
 	dblink_connstr_check(connstr);
@@ -689,25 +702,47 @@ PG_FUNCTION_INFO_V1(dblink_record);
 Datum
 dblink_record(PG_FUNCTION_ARGS)
 {
-	return dblink_record_internal(fcinfo, false, false);
+	return dblink_record_internal(fcinfo, false);
 }
 
 PG_FUNCTION_INFO_V1(dblink_send_query);
 Datum
 dblink_send_query(PG_FUNCTION_ARGS)
 {
-	return dblink_record_internal(fcinfo, true, false);
+	PGconn	   *conn = NULL;
+	char	   *connstr = NULL;
+	char	   *sql = NULL;
+	remoteConn *rconn = NULL;
+	char	   *msg;
+	bool		freeconn = false;
+	int			retval;
+
+	if (PG_NARGS() == 2)
+	{
+		DBLINK_GET_CONN;
+		sql = text_to_cstring(PG_GETARG_TEXT_PP(1));
+	}
+	else
+		/* shouldn't happen */
+		elog(ERROR, "wrong number of arguments");
+
+	/* async query send */
+	retval = PQsendQuery(conn, sql);
+	if (retval != 1)
+		elog(NOTICE, "%s", PQerrorMessage(conn));
+
+	PG_RETURN_INT32(retval);
 }
 
 PG_FUNCTION_INFO_V1(dblink_get_result);
 Datum
 dblink_get_result(PG_FUNCTION_ARGS)
 {
-	return dblink_record_internal(fcinfo, true, true);
+	return dblink_record_internal(fcinfo, true);
 }
 
 static Datum
-dblink_record_internal(FunctionCallInfo fcinfo, bool is_async, bool do_get)
+dblink_record_internal(FunctionCallInfo fcinfo, bool is_async)
 {
 	FuncCallContext *funcctx;
 	TupleDesc	tupdesc = NULL;
@@ -775,14 +810,14 @@ dblink_record_internal(FunctionCallInfo fcinfo, bool is_async, bool do_get)
 				/* shouldn't happen */
 				elog(ERROR, "wrong number of arguments");
 		}
-		else if (is_async && do_get)
+		else /* is_async */
 		{
 			/* get async result */
 			if (PG_NARGS() == 2)
 			{
 				/* text,bool */
 				DBLINK_GET_CONN;
-				fail = PG_GETARG_BOOL(2);
+				fail = PG_GETARG_BOOL(1);
 			}
 			else if (PG_NARGS() == 1)
 			{
@@ -793,24 +828,10 @@ dblink_record_internal(FunctionCallInfo fcinfo, bool is_async, bool do_get)
 				/* shouldn't happen */
 				elog(ERROR, "wrong number of arguments");
 		}
-		else
-		{
-			/* send async query */
-			if (PG_NARGS() == 2)
-			{
-				DBLINK_GET_CONN;
-				sql = text_to_cstring(PG_GETARG_TEXT_PP(1));
-			}
-			else
-				/* shouldn't happen */
-				elog(ERROR, "wrong number of arguments");
-		}
 
 		if (!conn)
 			DBLINK_CONN_NOT_AVAIL;
 
-		if (!is_async || (is_async && do_get))
-		{
 			/* synchronous query, or async result retrieval */
 			if (!is_async)
 				res = PQexec(conn, sql);
@@ -911,19 +932,6 @@ dblink_record_internal(FunctionCallInfo fcinfo, bool is_async, bool do_get)
 			funcctx->attinmeta = attinmeta;
 
 			MemoryContextSwitchTo(oldcontext);
-		}
-		else
-		{
-			/* async query send */
-			MemoryContextSwitchTo(oldcontext);
-			PG_RETURN_INT32(PQsendQuery(conn, sql));
-		}
-	}
-
-	if (is_async && !do_get)
-	{
-		/* async query send -- should not happen */
-		elog(ERROR, "async query send called more than once");
 
 	}
 
@@ -2357,4 +2365,87 @@ dblink_res_error(const char *conname, PGresult *res, const char *dblink_context_
 		 message_context ? errcontext("%s", message_context) : 0,
 		 errcontext("Error occurred on dblink connection named \"%s\": %s.",
 					dblink_context_conname, dblink_context_msg)));
+}
+
+/*
+ * Obtain connection string for a foreign server
+ */
+static char *
+get_connect_string(const char *servername)
+{
+	ForeignServer	   *foreign_server = NULL;
+	UserMapping		   *user_mapping;
+	ListCell		   *cell;
+	StringInfo			buf = makeStringInfo();
+	ForeignDataWrapper *fdw;
+	AclResult			aclresult;
+
+	/* first gather the server connstr options */
+	if (strlen(servername) < NAMEDATALEN)
+		foreign_server = GetForeignServerByName(servername, true);
+
+	if (foreign_server)
+	{
+		Oid		serverid = foreign_server->serverid;
+		Oid		fdwid = foreign_server->fdwid;
+		Oid		userid = GetUserId();
+
+		user_mapping = GetUserMapping(userid, serverid);
+		fdw	= GetForeignDataWrapper(fdwid);
+
+		/* Check permissions, user must have usage on the server. */
+		aclresult = pg_foreign_server_aclcheck(serverid, userid, ACL_USAGE);
+		if (aclresult != ACLCHECK_OK)
+			aclcheck_error(aclresult, ACL_KIND_FOREIGN_SERVER, foreign_server->servername);
+
+		foreach (cell, fdw->options)
+		{
+			DefElem		   *def = lfirst(cell);
+
+			appendStringInfo(buf, "%s='%s' ", def->defname,
+							 escape_param_str(strVal(def->arg)));
+		}
+
+		foreach (cell, foreign_server->options)
+		{
+			DefElem		   *def = lfirst(cell);
+	
+			appendStringInfo(buf, "%s='%s' ", def->defname,
+							 escape_param_str(strVal(def->arg)));
+		}
+	
+		foreach (cell, user_mapping->options)
+		{
+	
+			DefElem		   *def = lfirst(cell);
+	
+			appendStringInfo(buf, "%s='%s' ", def->defname,
+							 escape_param_str(strVal(def->arg)));
+		}
+
+		return buf->data;
+	}
+	else
+		return NULL;
+}
+
+/*
+ * Escaping libpq connect parameter strings.
+ *
+ * Replaces "'" with "\'" and "\" with "\\".
+ */
+static char *
+escape_param_str(const char *str)
+{
+	const char	   *cp;
+	StringInfo		buf = makeStringInfo();
+
+	for (cp = str; *cp; cp++)
+	{
+		if (*cp == '\\' || *cp == '\'')
+			appendStringInfoChar(buf, '\\');
+		appendStringInfoChar(buf, *cp);
+	}
+
+	return buf->data;
 }
