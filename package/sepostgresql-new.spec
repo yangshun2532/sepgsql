@@ -202,6 +202,9 @@ fi
 * Tue Jun  9 2009 KaiGai Kohei <kaigai@kaigai.gr.jp> - 8.3.7-1990
 - backport features from v8.4devel, it also needs libselinux-2.0.80
 
+* Fri Apr 17 2009 KaiGai Kohei <kaigai@kaigai.gr.jp> - 8.3.7-1772
+- bugfix: /etc/init.d/sepostgresql initdb didn't work correctly
+
 * Fri Mar 27 2009 KaiGai Kohei <kaigai@kaigai.gr.jp> - 8.3.7-1770
 - upgrade base PostgreSQL versin 8.3.6->8.3.7
 - backport features from v8.4devel
