@@ -7,7 +7,7 @@
  * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/backend/access/transam/xlog.c,v 1.340 2009/05/15 15:56:39 tgl Exp $
+ * $PostgreSQL: pgsql/src/backend/access/transam/xlog.c,v 1.342 2009/06/02 06:18:06 heikki Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -3006,6 +3006,7 @@ RemoveOldXlogFiles(uint32 log, uint32 seg, XLogRecPtr endptr)
 	struct dirent *xlde;
 	char		lastoff[MAXFNAMELEN];
 	char		path[MAXPGPATH];
+	struct stat statbuf;
 
 	/*
 	 * Initialize info about where to try to recycle to.  We allow recycling
@@ -3046,11 +3047,13 @@ RemoveOldXlogFiles(uint32 log, uint32 seg, XLogRecPtr endptr)
 
 				/*
 				 * Before deleting the file, see if it can be recycled as a
-				 * future log segment.
+				 * future log segment. Only recycle normal files, pg_standby
+				 * for example can create symbolic links pointing to a
+				 * separate archive directory.
 				 */
-				if (InstallXLogFileSegment(&endlogId, &endlogSeg, path,
-										   true, &max_advance,
-										   true))
+				if (lstat(path, &statbuf) == 0 && S_ISREG(statbuf.st_mode) &&
+					InstallXLogFileSegment(&endlogId, &endlogSeg, path,
+										   true, &max_advance, true))
 				{
 					ereport(DEBUG2,
 							(errmsg("recycled transaction log file \"%s\"",
@@ -6085,7 +6088,18 @@ ShutdownXLOG(int code, Datum arg)
 	if (RecoveryInProgress())
 		CreateRestartPoint(CHECKPOINT_IS_SHUTDOWN | CHECKPOINT_IMMEDIATE);
 	else
+	{
+		/*
+		 * If archiving is enabled, rotate the last XLOG file so that all the
+		 * remaining records are archived (postmaster wakes up the archiver
+		 * process one more time at the end of shutdown). The checkpoint
+		 * record will go to the next XLOG file and won't be archived (yet).
+		 */
+		if (XLogArchivingActive() && XLogArchiveCommandSet())
+			RequestXLogSwitch();
+
 		CreateCheckPoint(CHECKPOINT_IS_SHUTDOWN | CHECKPOINT_IMMEDIATE);
+	}
 	ShutdownCLOG();
 	ShutdownSUBTRANS();
 	ShutdownMultiXact();
