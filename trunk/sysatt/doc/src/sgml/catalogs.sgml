@@ -200,7 +200,12 @@
 
      <row>
        <entry><link linkend="catalog-pg-security"><structname>pg_security</structname></link></entry>
-       <entry>text representation of security attribute</entry>
+       <entry>security attributes container for local relations</entry>
+     </row>
+
+     <row>
+       <entry><link linkend="catalog-pg-shsecurity"><structname>pg_shsecurity</structname></link></entry>
+       <entry>security attributes container for shared relations</entry>
      </row>
 
      <row>
@@ -3981,34 +3986,49 @@
    </indexterm>
 
    <para>
-     The catalog <structname>pg_security</structname> enables to store
-     text representations of security attributes, and every tuples have
-     its object identifier called as security identifier.
+     The catalog <structname>pg_security</structname> enables to record
+     security attributes in text representation, and translate it from/to
+     a security identifier corresponding to a certain security attribute.
+     The purpose of this catalog is to provide an efficient manner to
+     manage the security attribute of individual database objects.
    </para>
+   <para>
+     SE-PostgreSQL needs a security attribute to be correctly assigned
+     on the database objects, when it makes its access control decision.
+     Its security attribute is represented as a human readable text with
+     20 - 40 bytes length in most cases, however, it is not a good idea
+     to store it within every tuples, due to the performance reason and
+     storage consumption.
+   </para>
+   <para>
+     A security identifier is a unique identifier to indicate a certain
+     entry within <structname>pg_security</structname>, using a pair of
+     <literal>relid</literal> and <literal>secid</literal>.
+     The <literal>relid</literal> is the <literal>oid</literal> of the
+     relation which contains the tuple, and the <literal>secid</literal>
+     is an identifer stored in a padding field of every tuples as if
+     <literal>oid</literal> doing.
+     Because its width is shorter than raw representation of the security
+     attribute, and we can check its identity without text comparison,
+     the feature improve issues in performance and storage consumption.
+   </para>
+   <para>
+     Here is an assumption. The limited number of security attributes
+     are shared by massive number of database objects, as far as we
+     don't create corner cases artificially.
 
-   <para>
-     Enhanced security features, such as SE-PostgreSQL, need to assign
-     a security attribute on a database object, but it is not a good
-     strategy to assign it as a human readable form on individual tuples,
-     because it consumes about 20 - 40 bytes of strage for each tuples,
-     makes hard to tune performance for permission checks and more complex
-     its implementation.
+     The reason why the entry is associated to a certain relation is
+     to make easy to reclaim orphan security attributes. It enables
+     to narrow down the scope to be checked at the reclaim steps.
+
+     When a new security attribtue is given to the system, the backend
+     implicitly adds an entry to <structname>pg_security</structname>
+     and its security identifier is assigned on the database objects.
    </para>
    <para>
-     The security identifier consumes only 4-byte storage for each tuples,
-     and it indicates an entry within <structname>pg_security</structname>
-     which contains text representation of security attribute.
-   </para>
-   <para>
-     It assumes enhanced security feature assigns a limited number of
-     security attributes on massive number of tuples, as generic security
-     mechanism doing. It enables to store the text representations and
-     associate it and security identifiers effectively.
-   </para>
-   <para>
-     When a new security attribute is given to the system, the backend
-     adds an entry to <structname>pg_security</structname> and its
-     object id is newly used to security identifier.
+     There is no difference to <structname>pg_shsecurity</structname>
+     expect for it records security attributes corresponding to the
+     local database objects, not shared ones.
    </para>
 
    <table>
@@ -4025,12 +4045,98 @@
        </thead>
 
        <tbody>
-         <row>
-           <entry><structfield>seclabel</structfield></entry>
-           <entry><type>text</type></entry>
-           <entry></entry>
-           <entry>Text representation of security attribute</entry>
+	 <row>
+	   <entry><structfield>secid</structfield></entry>
+	   <entry><type>oid</type></entry>
+	   <entry></entry>
+	   <entry>Identifier of the security attributes</entry>
+	 </row>
+
+	 <row>
+	   <entry><structfield>relid</structfield></entry>
+	   <entry><type>oid</type></entry>
+	   <entry><literal><link linkend="catalog-pg-class"><structname>pg_class</structname></link>.oid</literal></entry>
+	   <entry>OID of the relation which refers this entry</entry>
+	 </row>
+
+	 <row>
+	   <entry><structfield>seckind</structfield></entry>
+	   <entry><type>char</type></entry>
+	   <entry></entry>
+	   <entry>
+	     <literal>a</literal> = row-level ACLs,
+	     <literal>l</literal> = security label
+	   </entry>
+	 </row>
+
+	 <row>
+	   <entry><structfield>secattr</structfield></entry>
+	   <entry><type>text</type></entry>
+	   <entry></entry>
+	   <entry>Text representation of a security attribute</entry>
+       </tbody>
+     </tgroup>
+   </table>
+ </sect1>
+
+ <sect1 id="catalog-pg-shsecurity">
+   <title><structname>pg_security</structname></title>
+
+   <indexterm zone="catalog-pg-shsecurity">
+     <primary>pg_shsecurity</primary>
+   </indexterm>
+
+   <para>
+     The catalog <structname>pg_shsecurity</structname> enables to record
+     security attributes, as if <structname>pg_security</structname> doing.
+     The only difference to <structname>pg_security</structname> is that
+     it stores security attributes corresponding to shared relations.
+   </para>
+
+   <table>
+     <title><structname>pg_security</>Columns</title>
+
+     <tgroup cols=4>
+       <thead>
+	 <row>
+           <entry>Name</entry>
+           <entry>Type</entry>
+           <entry>References</entry>
+           <entry>Description</entry>
          </row>
+       </thead>
+
+       <tbody>
+	 <row>
+	   <entry><structfield>secid</structfield></entry>
+	   <entry><type>oid</type></entry>
+	   <entry></entry>
+	   <entry>Identifier of the security attributes</entry>
+	 </row>
+
+	 <row>
+	   <entry><structfield>relid</structfield></entry>
+	   <entry><type>oid</type></entry>
+	   <entry><literal><link linkend="catalog-pg-class"><structname>pg_class</structname></link>.oid</literal></entry>
+	   <entry>OID of the relation which refers this entry</entry>
+	 </row>
+
+	 <row>
+	   <entry><structfield>seckind</structfield></entry>
+	   <entry><type>char</type></entry>
+	   <entry></entry>
+	   <entry>
+	     <literal>a</literal> = row-level ACLs,
+	     <literal>l</literal> = security label
+	   </entry>
+	 </row>
+
+	 <row>
+	   <entry><structfield>secattr</structfield></entry>
+	   <entry><type>text</type></entry>
+	   <entry></entry>
+	   <entry>Text representation of a security attribute</entry>
+	 </row>
        </tbody>
      </tgroup>
    </table>
