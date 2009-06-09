@@ -9,11 +9,15 @@
 
 #include "access/genam.h"
 #include "access/heapam.h"
+#include "access/sysattr.h"
 #include "access/xact.h"
 #include "catalog/catalog.h"
 #include "catalog/indexing.h"
+#include "catalog/pg_proc.h"
 #include "catalog/pg_security.h"
 #include "catalog/pg_shsecurity.h"
+#include "catalog/pg_type.h"
+#include "executor/spi.h"
 #include "miscadmin.h"
 #include "security/rowacl.h"
 #include "security/sepgsql.h"
@@ -21,6 +25,7 @@
 #include "utils/fmgroids.h"
 #include "utils/memutils.h"
 #include "utils/rel.h"
+#include "utils/lsyscache.h"
 #include "utils/syscache.h"
 #include "utils/tqual.h"
 
@@ -254,7 +259,13 @@ InputSecurityAttr(Oid relid, char seckind, const char *secattr)
 	meta_label = securityMetaSecurityLabel(shared);
 	if (meta_label != NULL)
 	{
-		if (seckind == SECKIND_SECURITY_LABEL &&
+		/*
+		 * NOTE: when the meta_label refers itself, no need to
+		 * assign secid anymore. This check is necessary to
+		 * avoid infinite invocations.
+		 */
+		if (sec_relid == relid &&
+			seckind == SECKIND_SECURITY_LABEL &&
 			strcmp(meta_label, secattr) == 0)
 			meta_secid = secid;
 		else
@@ -481,55 +492,252 @@ securityReclaimOnDropTable(Oid relid)
 	heap_close(srel, RowExclusiveLock);
 }
 
-static void
-security_reclaim(List *oidList, char seckind)
+/*
+ * security_quote_relation
+ *   returns palloc'de identifier with explicit namespace
+ */
+static char *
+security_quote_relation(Oid relid)
 {
+	Oid		nspoid = get_rel_namespace(relid);
+	char   *nspname;
+	char   *relname;
+
+	nspname = get_namespace_name(nspoid);
+	relname = get_rel_name(relid);
+
+	return quote_qualified_identifier(nspname, relname);
+}
+
+/*
+ * security_reclaim_table
+ *   reclaims orphan entries associated to a certain table
+ */
+static int
+security_reclaim_table(Oid relid, char seckind)
+{
+	StringInfoData	query;
+	SPIPlanPtr		plan;
+	Oid				types[2];
+	Datum			values[2];
+	int				index;
+	const char	   *relname;
+	Oid				secrelid;
+	char		   *att_relid;
+	char		   *att_secid;
+	char		   *att_seckind;
+	char		   *att_secattr;
+	const char	   *syscolumn = NULL;
+
+	/*
+	 * LOCK the target table
+	 */
+	initStringInfo(&query);
+	relname = security_quote_relation(relid);
+	appendStringInfo(&query, "LOCK %s IN SHARE MODE", relname);
+	if (SPI_execute(query.data, false, 0) != SPI_OK_UTILITY)
+		elog(ERROR, "SPI_execute failed on %s", query.data);
+
+	/*
+	 * DELETE orphan entries
+	 */
+	initStringInfo(&query);
+
+	secrelid = (!IsSharedRelation(relid)
+				? SecurityRelationId : SharedSecurityRelationId);
+	att_relid = get_attname(secrelid, Anum_pg_security_relid);
+	att_secid = get_attname(secrelid, Anum_pg_security_secid);
+	att_seckind = get_attname(secrelid, Anum_pg_security_seckind);
+	att_secattr = get_attname(secrelid, Anum_pg_security_secattr);
+
+	switch (seckind)
+	{
+	case SECKIND_SECURITY_LABEL:
+		syscolumn = quote_identifier(SecurityLabelAttributeName);
+		break;
+	case SECKIND_SECURITY_ACL:
+		{
+			StringInfoData	temp;
+			Form_pg_proc	proForm;
+			HeapTuple		protup;
+
+			initStringInfo(&temp);
+
+			protup = SearchSysCache(PROCOID,
+									ObjectIdGetDatum(F_ROWACL_ACL_TO_INTERNAL),
+									0, 0, 0);
+			if (!HeapTupleIsValid(protup))
+				elog(ERROR, "cache lookup failed for procedure: %u",
+					 F_ROWACL_ACL_TO_INTERNAL);
+			proForm = (Form_pg_proc) GETSTRUCT(protup);
+
+			appendStringInfo(&temp, "%s.%s(%s)",
+							 quote_identifier(get_namespace_name(proForm->pronamespace)),
+							 quote_identifier(NameStr(proForm->proname)),
+							 quote_identifier(SecurityAclAttributeName));
+			syscolumn = temp.data;
+
+			ReleaseSysCache(protup);
+			break;
+		}
+	default:
+		elog(ERROR, "unexpected seckind: %c", seckind);
+		break;
+	}
+
+	appendStringInfo(&query,
+					 "DELETE FROM %s WHERE %s = $1 AND %s = $2 AND %s NOT IN "
+					 "(SELECT %s FROM %s) RETURNING %s, %s",
+					 security_quote_relation(secrelid),
+					 quote_identifier(att_relid),
+					 quote_identifier(att_seckind),
+					 quote_identifier(att_secattr),
+					 syscolumn,
+					 relname,
+					 quote_identifier(att_secid),
+					 quote_identifier(att_secattr));
+
+	types[0] = OIDOID;
+	types[1] = CHAROID;
+	plan = SPI_prepare(query.data, 2, types);
+	if (!plan)
+		elog(ERROR, "SPI_prepare failed on %s", query.data);
+
+	values[0] = ObjectIdGetDatum(relid);
+	values[1] = CharGetDatum(seckind);
+	if (SPI_execute_plan(plan, values, NULL, false, 0) != SPI_OK_DELETE_RETURNING)
+		elog(ERROR, "SPI_execute_plan failed on %s", query.data);
+
+	for (index = 0; index < SPI_processed; index++)
+	{
+		char   *recl_secid;
+		char   *recl_secattr;
+
+		recl_secid = SPI_getvalue(SPI_tuptable->vals[index],
+								  SPI_tuptable->tupdesc, 1);
+		recl_secattr = SPI_getvalue(SPI_tuptable->vals[index],
+									SPI_tuptable->tupdesc, 2);
+		ereport(NOTICE,
+				(errmsg("secattr=\"\", secid=%s on %s was reclaimed",
+						recl_secattr, recl_secid, security_quote_relation(relid))));
+	}
+
+	SPI_freetuptable(SPI_tuptable);
+
+	return SPI_processed;
+}
+
+static int
+security_reclaim_all_tables(char seckind)
+{
+	StringInfoData	query;
+	char	   *attname;
+	int			index;
+	Datum		datum;
+	bool		isnull;
+	int			count = 0;
+	List	   *relidList = NIL;
+	ListCell   *l;
+
+	initStringInfo(&query);
+
+	attname = get_attname(SecurityRelationId, Anum_pg_security_relid);
+	appendStringInfo(&query,
+					 "SELECT DISTINCT %s FROM %s",
+					 quote_identifier(attname),
+					 security_quote_relation(SecurityRelationId));
+
+	appendStringInfo(&query, " UNION ");
+
+	attname = get_attname(SharedSecurityRelationId, Anum_pg_shsecurity_relid);
+	appendStringInfo(&query,
+					 "SELECT DISTINCT %s FROM %s",
+					 quote_identifier(attname),
+					 security_quote_relation(SharedSecurityRelationId));
+
+	if (SPI_execute(query.data, true, 0) != SPI_OK_SELECT)
+		elog(ERROR, "SPI_execute failed on %s", query.data);
+
+	for (index = 0; index < SPI_processed; index++)
+	{
+		datum = SPI_getbinval(SPI_tuptable->vals[index],
+							  SPI_tuptable->tupdesc, 1, &isnull);
+		if (isnull)
+			continue;
+		relidList = lappend_oid(relidList, DatumGetObjectId(datum));
+	}
+	SPI_freetuptable(SPI_tuptable);
+
+	foreach (l, relidList)
+		count += security_reclaim_table(lfirst_oid(l), seckind);
+
+	return count;
+}
+
+static int
+security_reclaim(Oid relid, char seckind)
+{
+	bool		sepgsql_saved;
+	bool		mcstrans_saved;
+	int			count;
+
 	if (!superuser())
 		ereport(ERROR,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 				 errmsg("must be superuser to reclaim security attributes")));
 	/*
-
-LOCK ROW EXCLUSIVE 
-
-
-
-
+	 * Disable SE-PostgreSQL temporary
 	 */
+	sepgsql_saved = sepgsqlSetExceptionMode(true);
+	mcstrans_saved = sepgsqlSetMcstransMode(false);
+
+	PG_TRY();
+	{
+		if (SPI_connect() != SPI_OK_CONNECT)
+			elog(ERROR, "SPI_connect failed");
+
+		if (OidIsValid(relid))
+			count = security_reclaim_table(relid, seckind);
+		else
+			count = security_reclaim_all_tables(seckind);
+
+		if (SPI_finish() != SPI_OK_FINISH)
+			elog(ERROR, "SPI_finish failed");
+	}
+	PG_CATCH();
+	{
+		sepgsqlSetExceptionMode(sepgsql_saved);
+		sepgsqlSetMcstransMode(mcstrans_saved);
+		PG_RE_THROW();
+	}
+	PG_END_TRY();
+
+	sepgsqlSetExceptionMode(sepgsql_saved);
+	sepgsqlSetMcstransMode(mcstrans_saved);
+
+	return count;
 }
 
 Datum
 security_reclaim_acl(PG_FUNCTION_ARGS)
 {
-	security_reclaim(InvalidOid, SECKIND_SECURITY_ACL);
-
-	PG_RETURN_BOOL(true);
+	PG_RETURN_INT32(security_reclaim(InvalidOid, SECKIND_SECURITY_ACL));
 }
 
 Datum
 security_reclaim_table_acl(PG_FUNCTION_ARGS)
 {
-	Oid		relid = PG_GETARG_OID(0);
-
-	security_reclaim(relid, SECKIND_SECURITY_ACL);
-
-	PG_RETURN_BOOL(true);
+	PG_RETURN_INT32(security_reclaim(PG_GETARG_OID(0), SECKIND_SECURITY_ACL));
 }
 
 Datum
 security_reclaim_label(PG_FUNCTION_ARGS)
 {
-	security_reclaim(InvalidOid, SECKIND_SECURITY_LABEL);
-
-	PG_RETURN_BOOL(true);
+	PG_RETURN_INT32(security_reclaim(InvalidOid, SECKIND_SECURITY_LABEL));
 }
 
 Datum
 security_reclaim_table_label(PG_FUNCTION_ARGS)
 {
-	Oid		relid = PG_GETARG_OID(0);
-
-	security_reclaim(relid, SECKIND_SECURITY_LABEL);
-
-	PG_RETURN_BOOL(ture);
+	PG_RETURN_INT32(security_reclaim(PG_GETARG_OID(0), SECKIND_SECURITY_LABEL));
 }
