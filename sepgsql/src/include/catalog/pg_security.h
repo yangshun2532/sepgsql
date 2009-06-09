@@ -90,7 +90,7 @@ extern Datum
 securityHeapGetSecLabelSysattr(HeapTuple tuple);
 
 extern void
-securityReclaimOnTableDrop(Oid relid);
+securityReclaimOnDropTable(Oid relid);
 
 extern Datum
 security_reclaim_acl(PG_FUNCTION_ARGS);
