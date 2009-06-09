@@ -145,8 +145,8 @@ securityPostBootstrapingMode(void)
 			bool	nulls[Natts_pg_security];
 
 			memset(nulls, false, sizeof(nulls));
-			values[Anum_pg_security_relid - 1] = ObjectIdGetDatum(es->relid);
 			values[Anum_pg_security_secid - 1] = ObjectIdGetDatum(es->secid);
+			values[Anum_pg_security_relid - 1] = ObjectIdGetDatum(es->relid);
 			values[Anum_pg_security_seckind - 1] = CharGetDatum(es->seckind);
 			values[Anum_pg_security_secattr - 1] = CStringGetTextDatum(es->secattr);
 

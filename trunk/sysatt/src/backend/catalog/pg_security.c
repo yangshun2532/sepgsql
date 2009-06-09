@@ -147,8 +147,8 @@ securityPostBootstrapingMode(void)
 			bool	nulls[Natts_pg_security];
 
 			memset(nulls, false, sizeof(nulls));
-			values[Anum_pg_security_relid - 1] = ObjectIdGetDatum(es->relid);
 			values[Anum_pg_security_secid - 1] = ObjectIdGetDatum(es->secid);
+			values[Anum_pg_security_relid - 1] = ObjectIdGetDatum(es->relid);
 			values[Anum_pg_security_seckind - 1] = CharGetDatum(es->seckind);
 			values[Anum_pg_security_secattr - 1] = CStringGetTextDatum(es->secattr);
 
@@ -165,8 +165,8 @@ securityPostBootstrapingMode(void)
 			bool	nulls[Natts_pg_shsecurity];
 
 			memset(nulls, false, sizeof(nulls));
-			values[Anum_pg_shsecurity_relid - 1] = ObjectIdGetDatum(es->relid);
 			values[Anum_pg_shsecurity_secid - 1] = ObjectIdGetDatum(es->secid);
+			values[Anum_pg_shsecurity_relid - 1] = ObjectIdGetDatum(es->relid);
 			values[Anum_pg_shsecurity_seckind - 1] = CharGetDatum(es->seckind);
 			values[Anum_pg_shsecurity_secattr - 1] = CStringGetTextDatum(es->secattr);
 
@@ -325,8 +325,8 @@ OutputSecurityAttr(Oid relid, char seckind, Oid secid)
 		return earlyOutputSecurityAttr(relid, seckind, secid);
 
 	tuple = SearchSysCache(cacheId,
-						   ObjectIdGetDatum(relid),
 						   ObjectIdGetDatum(secid),
+						   ObjectIdGetDatum(relid),
 						   CharGetDatum(seckind),
 						   0);
 	if (!HeapTupleIsValid(tuple))

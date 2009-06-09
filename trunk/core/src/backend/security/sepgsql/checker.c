@@ -14,6 +14,7 @@
 #include "catalog/pg_proc.h"
 #include "catalog/pg_rewrite.h"
 #include "catalog/pg_security.h"
+#include "catalog/pg_shsecurity.h"
 #include "security/sepgsql.h"
 #include "storage/bufmgr.h"
 #include "utils/builtins.h"
@@ -92,9 +93,9 @@ checkTabelColumnPerms(Oid relid, Bitmapset *selected, Bitmapset *modified,
 	 *   are protected from unexpected manipulation..
 	 *
 	 * - User cannot modify pg_security.* by hand, because it holds
-     *   all the pairs of security identifier and label, so the
-     *   correctness of access controls depends on these data are
-     *   protected from unexpected manipulation.
+	 *   all the pairs of security identifier and label, so the
+	 *   correctness of access controls depends on these data are
+	 *   protected from unexpected manipulation.
 	 *
 	 * SE-PostgreSQL always prevent user's query tries to modify
 	 * these system catalogs by hand. Please use approariate
@@ -105,7 +106,8 @@ checkTabelColumnPerms(Oid relid, Bitmapset *selected, Bitmapset *modified,
 					 | SEPG_DB_TABLE__INSERT
 					 | SEPG_DB_TABLE__DELETE)) != 0
 		&& (relid == RewriteRelationId ||
-			relid == SecurityRelationId))
+			relid == SecurityRelationId ||
+			relid == SharedSecurityRelationId))
 		ereport(ERROR,
 				(errcode(ERRCODE_SELINUX_ERROR),
 				 errmsg("SE-PostgreSQL peremptorily prevent to modify "

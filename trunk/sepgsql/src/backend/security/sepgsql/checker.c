@@ -94,9 +94,9 @@ checkTabelColumnPerms(Oid relid, Bitmapset *selected, Bitmapset *modified,
 	 *   are protected from unexpected manipulation..
 	 *
 	 * - User cannot modify pg_security.* by hand, because it holds
-     *   all the pairs of security identifier and label, so the
-     *   correctness of access controls depends on these data are
-     *   protected from unexpected manipulation.
+	 *   all the pairs of security identifier and label, so the
+	 *   correctness of access controls depends on these data are
+	 *   protected from unexpected manipulation.
 	 *
 	 * - User cannot modify pg_largeobject.* by hand, because we
 	 *   assumes largeobjects are accessed via certain functions
