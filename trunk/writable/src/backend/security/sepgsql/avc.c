@@ -516,9 +516,11 @@ retry:
 	}
 
 	if (abort && !result)
+	{
 		ereport(ERROR,
 				(errcode(ERRCODE_SELINUX_ERROR),
 				 errmsg("SELinux: security policy violation")));
+	}
 
 	return result;
 }
