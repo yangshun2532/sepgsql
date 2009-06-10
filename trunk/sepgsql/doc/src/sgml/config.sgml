@@ -713,10 +713,12 @@ SET ENABLE_SEQSCAN TO OFF;
        </indexterm>
        <listitem>
          <para>
-	   Enabled to turn on/off the SE-PostgreSQL feature.
+	   Enables to turn on/off the SE-PostgreSQL feature.
 	   It is off by default. This parameter can only be set in
 	   the <filename>postgresql.conf</filename> file or on the
 	   server command line.
+	 </para>
+	 <para>
 	   Please note that SE-PostgreSQL requires SELinux is enabled
 	   on its running operating system.
 	   This parameter is only available on a binary with SELinux
@@ -747,6 +749,29 @@ SET ENABLE_SEQSCAN TO OFF;
        </listitem>
       </varlistentry>
      </variablelist>
+
+     <varlistentry id="guc-sepostgresql-mcstrans" xreflabel="sepostgresql_mcstrans">
+       <term><varname>sepostgresql_mcstrans</varname> (<type>boolean</type>)</term>
+       <indexterm>
+	 <primary><varname>sepostgresql_mcstrans</varname> configuration parameter</primary>
+       </indexterm>
+       <listitem>
+         <para>
+	   Enables to turn on/off Mcstrans feature on SE-PostgreSQL.
+	   It is on by default. Every users can set this parameter on
+	   their sessision without any limitations.
+	 </para>
+	 <para>
+	   SELinux provides a feature to translate a part of security
+	   context between raw format and human-readable format, called
+	   Mcstrans.
+	   If the parameter is turned on, SE-PostgreSQL translate the
+	   security context when it is exported to or imported from
+	   users.
+	 </para>
+       </listitem>
+     </varlistentry>
+    </variablelist>
     </sect2>
    </sect1>
 
