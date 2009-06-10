@@ -524,7 +524,6 @@ extern bool get_call_expr_arg_stable(fmNodePtr expr, int argnum);
  */
 extern char *Dynamic_library_path;
 
-extern char *expand_dynamic_library_name(const char *name);
 extern PGFunction load_external_function(char *filename, char *funcname,
 					   bool signalNotFound, void **filehandle);
 extern PGFunction lookup_external_function(void *filehandle, char *funcname);

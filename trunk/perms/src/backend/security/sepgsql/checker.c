@@ -390,21 +390,20 @@ checkCLibraryInstallation(HeapTuple newtup, HeapTuple oldtup)
 
 	newbin = SysCacheGetAttr(PROCOID, newtup,
 							 Anum_pg_proc_probin, &isnull);
-	if (isnull)
-		return;
-
-	if (HeapTupleIsValid(oldtup))
+	if (!isnull)
 	{
-		oldpro = (Form_pg_proc) GETSTRUCT(oldtup);
-		oldbin = SysCacheGetAttr(PROCOID, oldtup,
-								 Anum_pg_proc_probin, &isnull);
-		if (!isnull &&
-			oldpro->prolang == newpro->prolang &&
-			DatumGetBool(DirectFunctionCall2(byteaeq, oldbin, newbin)))
-			return;		/* no need to check, if unchanged */
+		if (HeapTupleIsValid(oldtup))
+		{
+			oldpro = (Form_pg_proc) GETSTRUCT(oldtup);
+			oldbin = SysCacheGetAttr(PROCOID, oldtup,
+									 Anum_pg_proc_probin, &isnull);
+			if (!isnull &&
+				oldpro->prolang == newpro->prolang &&
+				DatumGetBool(DirectFunctionCall2(byteaeq, oldbin, newbin)))
+				return;		/* no need to check, if unchanged */
+		}
+		sepgsqlCheckDatabaseInstallModule();
 	}
-	filename = TextDatumGetCString(newbin);
-	sepgsqlCheckDatabaseInstallModule(filename);
 }
 
 /*

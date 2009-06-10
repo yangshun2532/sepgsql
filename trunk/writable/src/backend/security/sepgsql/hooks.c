@@ -27,7 +27,7 @@
  *   to perform as a superuser on the given databse.
  */
 static bool
-checkDatabaseCommon(Oid database_oid, access_vector_t perms)
+checkDatabaseCommon(Oid datoid, access_vector_t perms, bool abort)
 {
 	HeapTuple		tuple;
 	bool			rc;
@@ -36,15 +36,14 @@ checkDatabaseCommon(Oid database_oid, access_vector_t perms)
 		return true;
 
 	tuple = SearchSysCache(DATABASEOID,
-						   ObjectIdGetDatum(database_oid),
+						   ObjectIdGetDatum(datoid),
 						   0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
-		elog(ERROR, "SELinux: cache lookup failed for database: %u",
-			 database_oid);
+		elog(ERROR, "cache lookup failed for database: %u", datoid);
 
 	rc = sepgsqlClientHasPermsTup(DatabaseRelationId, tuple,
 								  SEPG_CLASS_DB_DATABASE,
-								  perms, false);
+								  perms, abort);
 	ReleaseSysCache(tuple);
 
 	return rc;
@@ -54,23 +53,23 @@ bool
 sepgsqlCheckDatabaseAccess(Oid database_oid)
 {
 	return checkDatabaseCommon(database_oid,
-							   SEPG_DB_DATABASE__ACCESS);
+							   SEPG_DB_DATABASE__ACCESS,
+							   false);
 }
 
 bool
 sepgsqlCheckDatabaseSuperuser(void)
 {
 	return checkDatabaseCommon(MyDatabaseId,
-							   SEPG_DB_DATABASE__SUPERUSER);
+							   SEPG_DB_DATABASE__SUPERUSER,
+							   false);
 }
 
 /*
  * sepgsqlCheckSchemaSearch
  *   checks db_schema:{search} permission when the given namespace
- *   is searched.
- *
- *   db_schema:{add_object remove_object} permissions is not now
- *   implemented.
+ *   is searched. It is not available on temporary namespace due to
+ *   the limitation of implementation.
  */
 static bool
 sepgsqlCheckSchemaCommon(Oid nsid, access_vector_t required, bool abort)
@@ -93,7 +92,8 @@ sepgsqlCheckSchemaCommon(Oid nsid, access_vector_t required, bool abort)
 	return rc;
 }
 
-bool sepgsqlCheckSchemaSearch(Oid nsid)
+bool
+sepgsqlCheckSchemaSearch(Oid nsid)
 {
 	if (!sepgsqlIsEnabled())
 		return true;
@@ -183,9 +183,18 @@ sepgsqlCheckTableReference(Relation rel, int16 *attnums, int natts)
 }
 
 /*
- * sepgsqlCheckSequenceXXXX
+ * sepgsqlCheckSequenceGetValue
+ *   checks db_sequence:{get_value} permission when the client
+ *   refers the given sequence object without any increments.
  *
- *   It checks permissions on db_sequence objects.
+ * sepgsqlCheckSequenceNextValue
+ *   checks db_sequence:{next_value} permission when the client
+ *   fetchs a value from the given sequence object with an
+ *   increment of the counter.
+ *
+ * sepgsqlCheckSequenceSetValue
+ *   checks db_sequence:{set_value} permission when the client
+ *   set a discretionary value on the given sequence object.
  */
 static void
 sepgsqlCheckSequenceCommon(Oid seqid, access_vector_t required)

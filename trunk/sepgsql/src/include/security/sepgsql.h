@@ -265,17 +265,17 @@ sepgsqlCheckDatabaseAccess(Oid database_oid);
 extern bool
 sepgsqlCheckDatabaseSuperuser(void);
 
+extern void
+sepgsqlCheckDatabaseInstallModule(void);
+
+extern void
+sepgsqlCheckDatabaseLoadModule(const char *filename);
+
 extern bool
 sepgsqlCheckSchemaSearch(Oid nsid);
 
 extern void
 sepgsqlCheckSchemaAddRemove(Relation rel, HeapTuple newtup, HeapTuple oldtup);
-
-extern void
-sepgsqlCheckDatabaseInstallModule(const char *filename);
-
-extern void
-sepgsqlCheckDatabaseLoadModule(const char *filename);
 
 extern void
 sepgsqlCheckTableLock(Oid table_oid);
@@ -432,6 +432,8 @@ sepgsqlGetPermissionString(security_class_t tclass, access_vector_t av);
 /* hooks.c */
 #define sepgsqlCheckDatabaseAccess(a)			(true)
 #define sepgsqlCheckDatabaseSuperuser()			(true)
+#define sepgsqlCheckDatabaseInstallModule()		do {} while(0)
+#define sepgsqlCheckDatabaseLoadModule(a)		do {} while(0)
 #define sepgsqlCheckSchemaSearch(a)				(true)
 #define sepgsqlCheckTableLock(a)				do {} while(0)
 #define sepgsqlCheckTableTruncate(a)			do {} while(0)
