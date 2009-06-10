@@ -4083,13 +4083,14 @@
 	   <entry><type>text</type></entry>
 	   <entry></entry>
 	   <entry>Text representation of a security attribute</entry>
+	 </row>
        </tbody>
      </tgroup>
    </table>
  </sect1>
 
  <sect1 id="catalog-pg-shsecurity">
-   <title><structname>pg_security</structname></title>
+   <title><structname>pg_shsecurity</structname></title>
 
    <indexterm zone="catalog-pg-shsecurity">
      <primary>pg_shsecurity</primary>
@@ -4103,7 +4104,7 @@
    </para>
 
    <table>
-     <title><structname>pg_security</>Columns</title>
+     <title><structname>pg_shsecurity</>Columns</title>
 
      <tgroup cols=4>
        <thead>
