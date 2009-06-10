@@ -28,7 +28,7 @@ securityTupleDescHasSecLabel(Relation rel)
 static char *
 securityMetaSecurityLabel(void)
 {
-	return sepgsqlMetaSecurityLabel();
+	return sepgsqlMetaSecurityLabel(true);
 }
 
 typedef struct earlySecLabel
@@ -41,32 +41,31 @@ typedef struct earlySecLabel
 static earlySecLabel *earlySecLabelList = NULL;
 
 static Oid
-earlyLookupSecurityId(const char *seclabel)
+earlyInputSecurityAttr(const char *seclabel)
 {
+	static Oid		dummySecid = SecurityRelationId;
 	earlySecLabel  *es;
-	Oid				minsecid = SecurityRelationId;
 
 	for (es = earlySecLabelList; es; es = es->next)
 	{
 		if (strcmp(seclabel, es->seclabel) == 0)
 			return es->secid;
-		if (es->secid < minsecid)
-			minsecid = es->secid;
 	}
 
 	/* not found */
-	es = MemoryContextAllocZero(TopMemoryContext,
-								sizeof(*es) + strlen(seclabel));
-	es->next = earlySecLabelList;
-	es->secid = minsecid - 1;
+	es = MemoryContextAlloc(TopMemoryContext,
+							sizeof(*es) + strlen(seclabel));
+	es->secid = --dummySecid;
 	strcpy(es->seclabel, seclabel);
+
+	es->next = earlySecLabelList;
 	earlySecLabelList = es;
 
 	return es->secid;
 }
 
 static char *
-earlyLookupSecurityLabel(Oid secid)
+earlyOutputSecurityAttr(Oid secid)
 {
 	earlySecLabel  *es;
 
@@ -75,8 +74,7 @@ earlyLookupSecurityLabel(Oid secid)
 		if (es->secid == secid)
 			return pstrdup(es->seclabel);
 	}
-
-	return NULL;	/* not found */
+	return NULL;	/* Not found */
 }
 
 void
@@ -86,7 +84,7 @@ securityPostBootstrapingMode(void)
 	CatalogIndexState	ind;
 	HeapTuple			tuple;
 	earlySecLabel	   *es;
-	Oid					labelSid;
+	Oid					labelSid = InvalidOid;
 	Datum				values[Natts_pg_security];
 	bool				nulls[Natts_pg_security];
 	char			   *meta_label;
@@ -96,14 +94,12 @@ securityPostBootstrapingMode(void)
 
 	StartTransactionCommand();
 
+	meta_label = securityMetaSecurityLabel();
+	if (meta_label)
+		labelSid = securityTransSecLabelIn(SecurityRelationId, meta_label);
+
 	rel = heap_open(SecurityRelationId, RowExclusiveLock);
 	ind = CatalogOpenIndexes(rel);
-
-	if (RelationGetDescr(rel)->tdhasseclabel &&
-		(meta_label = securityMetaSecurityLabel()) != NULL)
-		labelSid = earlyLookupSecurityId(meta_label);
-	else
-		labelSid = InvalidOid;
 
 	for (es = earlySecLabelList; es; es = es->next)
 	{
@@ -130,8 +126,11 @@ securityPostBootstrapingMode(void)
 	CommitTransactionCommand();
 }
 
-Oid
-securityLookupSecurityId(const char *seclabel)
+/*
+ * InputSecurityAttr
+ */
+static Oid
+InputSecurityAttr(Oid relid, const char *seclabel)
 {
 	Relation			rel;
 	CatalogIndexState	ind;
@@ -143,7 +142,7 @@ securityLookupSecurityId(const char *seclabel)
 	char			   *meta_label;
 
 	if (IsBootstrapProcessingMode())
-		return earlyLookupSecurityId(seclabel);
+		return earlyInputSecurityAttr(seclabel);
 	/*
 	 * lookup syscache at first
 	 */
@@ -174,7 +173,7 @@ securityLookupSecurityId(const char *seclabel)
 		else
 		{
 			labelOid = GetNewOid(rel);
-			labelSid = securityLookupSecurityId(meta_label);
+			labelSid = securityTransSecLabelIn(SecurityRelationId, meta_label);
 		}
 	}
 	else
@@ -220,19 +219,16 @@ securityLookupSecurityId(const char *seclabel)
 	return labelOid;
 }
 
-char *
-securityLookupSecurityLabel(Oid secid)
+static char *
+OutputSecurityAttr(Oid relid, Oid secid)
 {
 	HeapTuple	tuple;
 	Datum		labelTxt;
 	char	   *label;
 	bool		isnull;
 
-	if (!OidIsValid(secid))
-		return NULL;
-
 	if (IsBootstrapProcessingMode())
-		return earlyLookupSecurityLabel(secid);
+		return earlyOutputSecurityAttr(secid);
 
 	tuple = SearchSysCache(SECURITYOID,
 						   ObjectIdGetDatum(secid),
@@ -251,33 +247,53 @@ securityLookupSecurityLabel(Oid secid)
 }
 
 /*
- * "security_label" system column related stuffs
+ * input/output handler
  */
 Oid
-securityTransSecLabelIn(char *seclabel)
+securityRawSecLabelIn(Oid relid, char *seclabel)
 {
-	char   *rawlabel = sepgsqlSecurityLabelTransIn(seclabel);
+	seclabel = sepgsqlRawSecLabelIn(seclabel);
 
-	return securityLookupSecurityId(rawlabel);
+	return InputSecurityAttr(relid, seclabel);
 }
 
 char *
-securityTransSecLabelOut(Oid secid)
+securityRawSecLabelOut(Oid relid, Oid secid)
 {
-	char   *rawlabel = securityLookupSecurityLabel(secid);
-	char   *seclabel;
+	char *seclabel = OutputSecurityAttr(relid, secid);
 
-	seclabel = sepgsqlSecurityLabelTransOut(rawlabel);
-	if (!seclabel)
-		seclabel = pstrdup("unlabeled");
-
-	return seclabel;
+	return sepgsqlRawSecLabelOut(seclabel);
 }
 
+
+Oid
+securityTransSecLabelIn(Oid relid, char *seclabel)
+{
+	seclabel = sepgsqlTransSecLabelIn(seclabel);
+
+	return securityRawSecLabelIn(relid, seclabel);
+}
+
+char *
+securityTransSecLabelOut(Oid relid, Oid secid)
+{
+	char *seclabel = securityRawSecLabelOut(relid, secid);
+
+	return sepgsqlTransSecLabelOut(seclabel);
+}
+
+/*
+ * Output handler for system columns
+ */
 Datum
 securityHeapGetSecLabelSysattr(HeapTuple tuple)
 {
 	Oid		secid = HeapTupleGetSecLabel(tuple);
+	char   *seclabel;
 
-	return CStringGetTextDatum(securityTransSecLabelOut(secid));
+	seclabel = securityTransSecLabelOut(tuple->t_tableOid, secid);
+	if (!seclabel)
+		seclabel = pstrdup("unlabeled");
+
+	return CStringGetTextDatum(seclabel);
 }

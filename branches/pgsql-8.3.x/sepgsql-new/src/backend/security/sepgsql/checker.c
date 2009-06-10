@@ -82,7 +82,6 @@ checkTabelColumnPerms(Oid relid, Bitmapset *selected, Bitmapset *modified,
 	AttrNumber			attno;
 	int					nattrs;
 	security_class_t	tclass;
-	const char		   *audit_name;
 
 	/*
 	 * NOTE: HARDWIRED POLICY IN SE-POSTGRESQL
@@ -93,9 +92,9 @@ checkTabelColumnPerms(Oid relid, Bitmapset *selected, Bitmapset *modified,
 	 *   are protected from unexpected manipulation..
 	 *
 	 * - User cannot modify pg_security.* by hand, because it holds
-     *   all the pairs of security identifier and label, so the
-     *   correctness of access controls depends on these data are
-     *   protected from unexpected manipulation.
+	 *   all the pairs of security identifier and label, so the
+	 *   correctness of access controls depends on these data are
+	 *   protected from unexpected manipulation.
 	 *
 	 * - User cannot modify pg_largeobject.* by hand, because we
 	 *   assumes largeobjects are accessed via certain functions
@@ -107,7 +106,8 @@ checkTabelColumnPerms(Oid relid, Bitmapset *selected, Bitmapset *modified,
 	 * these system catalogs by hand. Please use approariate
 	 * interfaces.
 	 */
-	if ((required & (SEPG_DB_TABLE__UPDATE
+	if (!sepgsqlGetExceptionMode() &&
+		(required & (SEPG_DB_TABLE__UPDATE
 					 | SEPG_DB_TABLE__INSERT
 					 | SEPG_DB_TABLE__DELETE)) != 0
 		&& (relid == RewriteRelationId ||
@@ -134,31 +134,21 @@ checkTabelColumnPerms(Oid relid, Bitmapset *selected, Bitmapset *modified,
 		/* check db_sequence:{xxx} permission */
 		if (tclass == SEPG_CLASS_DB_SEQUENCE)
 		{
-			access_vector_t seq_perms = 0;
-
 			if (required & SEPG_DB_TABLE__SELECT)
-				seq_perms |= SEPG_DB_SEQUENCE__GET_VALUE;
-			/*
-			 * Now we cannot modify sequence by INSERT/UPDATE/DELETE
-			 */
-			if (seq_perms != 0)
 			{
-				audit_name = sepgsqlAuditName(RelationRelationId, tuple);
-				sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
-									  SEPG_CLASS_DB_SEQUENCE,
-									  seq_perms,
-									  audit_name, true);
+				sepgsqlClientHasPermsTup(RelationRelationId, tuple,
+										 SEPG_CLASS_DB_SEQUENCE,
+										 SEPG_DB_SEQUENCE__GET_VALUE,
+										 true);
 			}
 		}
 		ReleaseSysCache(tuple);
 		return;
 	}
 
-	audit_name = sepgsqlAuditName(RelationRelationId, tuple);
-	sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
-						  SEPG_CLASS_DB_TABLE,
-						  required,
-						  audit_name, true);
+	sepgsqlClientHasPermsTup(RelationRelationId, tuple,
+							 SEPG_CLASS_DB_TABLE,
+							 required, true);
 
 	nattrs = ((Form_pg_class) GETSTRUCT(tuple))->relnatts;
 
@@ -203,11 +193,9 @@ checkTabelColumnPerms(Oid relid, Bitmapset *selected, Bitmapset *modified,
 			elog(ERROR, "attribute %d of relation %u does not exist",
 				 attno, relid);
 
-		audit_name = sepgsqlAuditName(AttributeRelationId, tuple);
-		sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
-							  SEPG_CLASS_DB_COLUMN,
-							  attperms,
-							  audit_name, true);
+		sepgsqlClientHasPermsTup(AttributeRelationId, tuple,
+								 SEPG_CLASS_DB_COLUMN,
+								 attperms, true);
 		ReleaseSysCache(tuple);
 	}
 
@@ -348,19 +336,15 @@ bool
 sepgsqlExecScan(Relation rel, HeapTuple tuple, uint32 required, bool abort)
 {
 	security_class_t	tclass;
-	const char		   *audit_name;
 
 	if (!sepgsqlIsEnabled() ||
 		!required ||
 		RelationGetForm(rel)->relkind != RELKIND_RELATION)
 		return true;
 
-	audit_name = sepgsqlAuditName(RelationGetRelid(rel), tuple);
 	tclass = sepgsqlTupleObjectClass(RelationGetRelid(rel), tuple);
-	return sepgsqlClientHasPerms(HeapTupleGetSecLabel(tuple),
-								 tclass,
-								 required,
-								 audit_name, abort);
+	return sepgsqlClientHasPermsTup(RelationGetRelid(rel), tuple,
+									tclass, required, abort);
 }
 
 uint32
@@ -403,21 +387,20 @@ checkCLibraryInstallation(HeapTuple newtup, HeapTuple oldtup)
 
 	newbin = SysCacheGetAttr(PROCOID, newtup,
 							 Anum_pg_proc_probin, &isnull);
-	if (isnull)
-		return;
-
-	if (HeapTupleIsValid(oldtup))
+	if (!isnull)
 	{
-		oldpro = (Form_pg_proc) GETSTRUCT(oldtup);
-		oldbin = SysCacheGetAttr(PROCOID, oldtup,
-								 Anum_pg_proc_probin, &isnull);
-		if (!isnull &&
-			oldpro->prolang == newpro->prolang &&
-			DatumGetBool(DirectFunctionCall2(byteaeq, oldbin, newbin)))
-			return;		/* no need to check, if unchanged */
+		if (HeapTupleIsValid(oldtup))
+		{
+			oldpro = (Form_pg_proc) GETSTRUCT(oldtup);
+			oldbin = SysCacheGetAttr(PROCOID, oldtup,
+									 Anum_pg_proc_probin, &isnull);
+			if (!isnull &&
+				oldpro->prolang == newpro->prolang &&
+				DatumGetBool(DirectFunctionCall2(byteaeq, oldbin, newbin)))
+				return;		/* no need to check, if unchanged */
+		}
+		sepgsqlCheckDatabaseInstallModule();
 	}
-	filename = TextDatumGetCString(newbin);
-	sepgsqlCheckDatabaseInstallModule(filename);
 }
 
 /*
@@ -453,7 +436,6 @@ sepgsqlHeapTupleInsert(Relation rel, HeapTuple newtup, bool internal)
 {
 	Oid					relid = RelationGetRelid(rel);
 	security_class_t	tclass;
-	const char		   *audit_name;
 
 	if (!sepgsqlIsEnabled())
 		return true;
@@ -476,11 +458,9 @@ sepgsqlHeapTupleInsert(Relation rel, HeapTuple newtup, bool internal)
 	sepgsqlCheckProcedureInstall(rel, newtup, NULL);
 
 	tclass = sepgsqlTupleObjectClass(relid, newtup);
-	audit_name = sepgsqlAuditName(relid, newtup);
-	return sepgsqlClientHasPerms(HeapTupleGetSecLabel(newtup),
-								 tclass,
-								 SEPG_DB_TUPLE__INSERT,
-								 audit_name, internal);
+	return sepgsqlClientHasPermsTup(relid, newtup, tclass,
+									SEPG_DB_TUPLE__INSERT,
+									internal);
 }
 
 bool
@@ -491,7 +471,6 @@ sepgsqlHeapTupleUpdate(Relation rel, HeapTuple oldtup,
 	access_vector_t		required = 0;
 	security_class_t	newclass;
 	security_class_t	oldclass;
-	const char		   *audit_name;
 
 	if (!sepgsqlIsEnabled())
 		return true;
@@ -527,24 +506,18 @@ sepgsqlHeapTupleUpdate(Relation rel, HeapTuple oldtup,
 	/* check db_procedure:{install}, if necessary */
 	sepgsqlCheckProcedureInstall(rel, newtup, oldtup);
 
-	audit_name = sepgsqlAuditName(relid, newtup);
 	if (required != 0)
 	{
-		audit_name = sepgsqlAuditName(relid, oldtup);
-		if (!sepgsqlClientHasPerms(HeapTupleGetSecLabel(oldtup),
-								   oldclass,
-								   required,
-								   audit_name, internal))
+		if (!sepgsqlClientHasPermsTup(relid, oldtup, oldclass,
+									  required, false))
 			return false;
 	}
 
 	if ((required & SEPG_DB_TUPLE__RELABELFROM) != 0)
 	{
-		audit_name = sepgsqlAuditName(relid, newtup);
-		if (!sepgsqlClientHasPerms(HeapTupleGetSecLabel(newtup),
-								   newclass,
-								   SEPG_DB_TUPLE__RELABELTO,
-								   audit_name, internal))
+		if (!sepgsqlClientHasPermsTup(relid, newtup, newclass,
+									  SEPG_DB_TUPLE__RELABELTO,
+									  internal))
 			return false;
 	}
 
@@ -557,7 +530,6 @@ sepgsqlHeapTupleDelete(Relation rel, HeapTuple oldtup, bool internal)
 	Oid					relid = RelationGetRelid(rel);
 	security_class_t	tclass;
 	access_vector_t		required = 0;
-	const char		   *audit_name;
 
 	if (!sepgsqlIsEnabled())
 		return true;
@@ -574,12 +546,11 @@ sepgsqlHeapTupleDelete(Relation rel, HeapTuple oldtup, bool internal)
 
 	if (required != 0)
 	{
+
 		tclass = sepgsqlTupleObjectClass(relid, oldtup);
-		audit_name = sepgsqlAuditName(relid, oldtup);
-		if (sepgsqlClientHasPerms(HeapTupleGetSecLabel(oldtup),
-								  tclass,
-								  SEPG_DB_TUPLE__DELETE,
-								  audit_name, internal))
+		if (!sepgsqlClientHasPermsTup(relid, oldtup, tclass,
+									  SEPG_DB_TUPLE__DELETE,
+									  internal))
 			return false;
 	}
 

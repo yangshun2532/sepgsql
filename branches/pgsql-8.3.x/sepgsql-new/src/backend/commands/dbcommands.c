@@ -445,7 +445,7 @@ createdb(const CreatedbStmt *stmt)
 	HeapTupleSetOid(tuple, dboid);
 	if (dselabel)
 	{
-		Oid		secid = sepgsqlInputGivenSecLabel(dselabel);
+		Oid		secid = sepgsqlGivenDatabaseSecLabelIn(dselabel);
 
 		if (!HeapTupleHasSecLabel(tuple))
 			elog(ERROR, "Unable to assign security label on \"%s\"",
@@ -949,7 +949,7 @@ AlterDatabase(AlterDatabaseStmt *stmt)
 								new_record_nulls, new_record_repl);
 	if (dselabel)
 	{
-		Oid		secid = sepgsqlInputGivenSecLabel(dselabel);
+		Oid		secid = sepgsqlGivenDatabaseSecLabelIn(dselabel);
 
 		if (!HeapTupleHasSecLabel(newtuple))
 			elog(ERROR, "Unable to assign security label on \"%s\"",

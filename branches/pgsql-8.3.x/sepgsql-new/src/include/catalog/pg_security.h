@@ -41,16 +41,16 @@ extern bool
 securityTupleDescHasSecLabel(Relation rel);
 
 extern Oid
-securityLookupSecurityId(const char *seclabel);
+securityRawSecLabelIn(Oid relid, char *seclabel);
 
 extern char *
-securityLookupSecurityLabel(Oid secid);
+securityRawSecLabelOut(Oid relid, Oid secid);
 
 extern Oid
-securityTransSecLabelIn(char *seclabel);
+securityTransSecLabelIn(Oid relid, char *seclabel);
 
 extern char *
-securityTransSecLabelOut(Oid secid);
+securityTransSecLabelOut(Oid relid, Oid secid);
 
 extern Datum
 securityHeapGetSecLabelSysattr(HeapTuple tuple);
