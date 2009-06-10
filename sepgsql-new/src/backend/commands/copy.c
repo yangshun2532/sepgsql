@@ -1541,6 +1541,7 @@ CopyOneRowTo(CopyState cstate, Oid tupleOid, Oid secLabelId, Datum *values, bool
 	foreach(cur, cstate->attnumlist)
 	{
 		int			attnum = lfirst_int(cur);
+		Oid			relid;
 		Datum		value;
 		bool		isnull;
 		bool		force_quot;
@@ -1556,7 +1557,8 @@ CopyOneRowTo(CopyState cstate, Oid tupleOid, Oid secLabelId, Datum *values, bool
 		switch (attnum)
 		{
 		case SecurityLabelAttributeNumber:
-			value = CStringGetTextDatum(securityTransSecLabelOut(secLabelId));
+			relid = RelationGetRelid(cstate->rel);
+			value = CStringGetTextDatum(securityTransSecLabelOut(relid, secLabelId));
 			isnull = false;
 			force_quot = cstate->seclabel_force_quot;
 			out_fmgr = &cstate->seclabel_out_function;
@@ -2117,7 +2119,8 @@ CopyFrom(CopyState cstate)
 											seclabel_typioparam,
 											attForm->atttypmod);
 					loaded_seclabel
-						= securityTransSecLabelIn(TextDatumGetCString(dat));
+						= securityTransSecLabelIn(RelationGetRelid(cstate->rel),
+												  TextDatumGetCString(dat));
 					break;
 
 				default:
@@ -2203,7 +2206,8 @@ CopyFrom(CopyState cstate)
 												  &isnull);
 					if (!isnull)
 						loaded_seclabel
-							= securityTransSecLabelIn(TextDatumGetCString(dat));
+							= securityTransSecLabelIn(RelationGetRelid(cstate->rel),
+													  TextDatumGetCString(dat));
 					break;
 
 				default:

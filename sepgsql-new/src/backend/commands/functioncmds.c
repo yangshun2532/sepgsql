@@ -519,7 +519,7 @@ compute_attributes_sql_style(List *options,
 					 errmsg("ROWS must be positive")));
 	}
 	if (selabel_item)
-		*proselabel = sepgsqlInputGivenSecLabel(selabel_item);
+		*proselabel = sepgsqlGivenProcedureSecLabelIn(selabel_item);
 }
 
 
@@ -1275,7 +1275,7 @@ AlterFunction(AlterFunctionStmt *stmt)
 						   repl_val, repl_null, repl_repl);
 		if (selabel_item)
 		{
-			Oid		secid = sepgsqlInputGivenSecLabel(selabel_item);
+			Oid		secid = sepgsqlGivenProcedureSecLabelIn(selabel_item);
 
 			if (!HeapTupleHasSecLabel(tup))
 				elog(ERROR, "Unable to assign security label on \"%s\"",
