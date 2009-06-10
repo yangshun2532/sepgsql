@@ -1,4 +1,6 @@
 --@SECURITY_CONTEXT=unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c15
+SET sepostgresql_mcstrans TO off;
+SET
 SELECT sepgsql_getcon();
                    sepgsql_getcon                    
 -----------------------------------------------------
@@ -48,6 +50,8 @@ CREATE TABLE t3
 ) inherits(t2);
 CREATE TABLE
 --@SECURITY_CONTEXT=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0
+SET sepostgresql_mcstrans TO off;
+SET
 SELECT sepgsql_getcon();
                   sepgsql_getcon                   
 ---------------------------------------------------
@@ -55,7 +59,7 @@ SELECT sepgsql_getcon();
 (1 row)
 
 SELECT * FROM t1;			-- to be denied
-ERROR:  SELinux: denied { select } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=unconfined_u:object_r:sepgsql_secret_table_t:s0 tclass=db_column name=t1.c
+ERROR:  SELinux: security policy violation
 SELECT a, b FROM t1;
  a |  b  
 ---+-----
@@ -64,13 +68,13 @@ SELECT a, b FROM t1;
 (2 rows)
 
 SELECT COUNT(*) FROM t1 WHERE c;	-- to be denied
-ERROR:  SELinux: denied { select } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=unconfined_u:object_r:sepgsql_secret_table_t:s0 tclass=db_column name=t1.c
+ERROR:  SELinux: security policy violation
 UPDATE t1 SET b = 'ccc';		-- to be denied
-ERROR:  SELinux: denied { update } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=unconfined_u:object_r:sepgsql_ro_table_t:s0 tclass=db_column name=t1.b
+ERROR:  SELinux: security policy violation
 UPDATE t1 SET a = a + 2;
 UPDATE 2
 INSERT INTO t1 VALUES (5, 'eee', true);	-- to be denied
-ERROR:  SELinux: denied { insert } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=unconfined_u:object_r:sepgsql_ro_table_t:s0 tclass=db_column name=t1.b
+ERROR:  SELinux: security policy violation
 INSERT INTO t1 VALUES (5);
 INSERT 0 1
 SELECT * FROM t2;
@@ -84,13 +88,15 @@ SELECT t2 FROM t2;
 (0 rows)
 
 SELECT t3 FROM t3;	-- to be denied
-ERROR:  SELinux: denied { select } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=unconfined_u:object_r:sepgsql_table_t:s0:c1 tclass=db_column name=t3.x
+ERROR:  SELinux: security policy violation
 SELECT 1 FROM t3;
  ?column? 
 ----------
 (0 rows)
 
 --@SECURITY_CONTEXT=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c1
+SET sepostgresql_mcstrans TO off;
+SET
 SELECT sepgsql_getcon();
                   sepgsql_getcon                   
 ---------------------------------------------------
@@ -98,9 +104,9 @@ SELECT sepgsql_getcon();
 (1 row)
 
 SELECT * FROM t2;	-- to be denied
-ERROR:  SELinux: denied { select } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c1 tcontext=unconfined_u:object_r:sepgsql_table_t:s0:c0 tclass=db_table name=t2
+ERROR:  SELinux: security policy violation
 SELECT t2 FROM t2;	-- to be denied
-ERROR:  SELinux: denied { select } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c1 tcontext=unconfined_u:object_r:sepgsql_table_t:s0:c0 tclass=db_table name=t2
+ERROR:  SELinux: security policy violation
 SELECT t3 FROM t3;
  t3 
 ----

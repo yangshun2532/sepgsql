@@ -1,4 +1,6 @@
 --@SECURITY_CONTEXT=unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c15
+SET sepostgresql_mcstrans TO off;
+SET
 SELECT sepgsql_getcon();
                    sepgsql_getcon                    
 -----------------------------------------------------
@@ -51,6 +53,8 @@ CREATE TABLE
 INSERT INTO t2 VALUES (1, 'sss'), (2, 'ttt');
 INSERT 0 2
 --@SECURITY_CONTEXT=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0
+SET sepostgresql_mcstrans TO off;
+SET
 SELECT sepgsql_getcon();
                   sepgsql_getcon                   
 ---------------------------------------------------
@@ -64,11 +68,11 @@ COPY t1 FROM stdin;
 COPY t1 TO '/tmp/sepgsql_test_copy_1';
 COPY 4
 COPY t1 TO '/tmp/sepgsql_test_copy_2';	-- to be denied
-ERROR:  SELinux: denied { write } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=unconfined_u:object_r:postgresql_db_t:s0 tclass=file name=/tmp/sepgsql_test_copy_2
+ERROR:  SELinux: security policy violation
 COPY t2 TO stdout;	-- to be denied
-ERROR:  SELinux: denied { select } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=unconfined_u:object_r:sepgsql_secret_table_t:s0 tclass=db_column name=t2.y
+ERROR:  SELinux: security policy violation
 COPY t2 FROM stdin;	-- to be denied
-ERROR:  SELinux: denied { insert } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=unconfined_u:object_r:sepgsql_secret_table_t:s0 tclass=db_column name=t2.y
+ERROR:  SELinux: security policy violation
 COPY t2 (x) TO stdout;
 1
 2
@@ -76,7 +80,7 @@ COPY t2 (x) TO stdout;
 2
 COPY t3 TO stdout;
 COPY t3 FROM '/tmp/sepgsql_test_copy_1';	-- to be denied
-ERROR:  SELinux: denied { insert } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=unconfined_u:object_r:sepgsql_ro_table_t:s0 tclass=db_table name=t3
+ERROR:  SELinux: security policy violation
 COPY t1 FROM '/tmp/sepgsql_test_copy_1';
 COPY 4
 COPY t1 TO stdout;

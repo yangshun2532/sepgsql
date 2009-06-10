@@ -42,6 +42,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "catalog/pg_largeobject.h"
 #include "catalog/pg_security.h"
 #include "libpq/be-fsstubs.h"
 #include "libpq/libpq-fs.h"
@@ -509,10 +510,12 @@ lo_get_security(PG_FUNCTION_ARGS)
 {
 	Oid		loid = PG_GETARG_OID(0);
 	Oid		secid;
+	char	       *seclabel;
 
 	secid = inv_get_security(loid);
+	seclabel = securityTransSecLabelOut(LargeObjectRelationId, secid);
 
-	return CStringGetTextDatum(securityTransSecLabelOut(secid));
+	return CStringGetTextDatum(seclabel);
 }
 
 /*
@@ -526,7 +529,7 @@ lo_set_security(PG_FUNCTION_ARGS)
 	char   *seclabel = TextDatumGetCString(PG_GETARG_DATUM(1));
 	Oid		secid;
 
-	secid = securityTransSecLabelIn(seclabel);
+	secid = securityTransSecLabelIn(LargeObjectRelationId, seclabel);
 
 	inv_set_security(loid, secid);
 
