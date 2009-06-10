@@ -1449,6 +1449,12 @@
 </row>
 
 <row>
+  <entry><literal>SE011</literal></entry>
+  <entry>ROWACL ERROR</entry>
+  <entru>errors_in_row_level_acls</entry>
+</row>
+
+<row>
 <entry spanname="span13"><emphasis role="bold">Class XX &mdash; Internal Error</></entry>
 </row>
 

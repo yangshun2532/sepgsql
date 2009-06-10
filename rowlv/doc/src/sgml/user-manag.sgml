@@ -521,14 +521,11 @@ DROP ROLE <replaceable>name</replaceable>;
        database superusers.
      </para>
      <para>
-       This feature is implemented as a guest of PGACE security framework,
-       but wired feature, not a selectable one.
-     </para>
-     <para>
-       It works as if there is a filter to drop inaccessible tuples on scanning
-       the relation. Just before the executor scans relation, tables and
-       columns level ACLs are also checked, and the feature makes a decision
-       as to whether the tuple should be returned, ot not.
+       It works as if there is a filter to drop inaccessible tuples on
+       scanning the relation. Just before the executor scans relation,
+       tables and columns level ACLs are also checked, and the feature
+       makes a decision whether the fetched tuple should be returned,
+       or not.
      </para>
      <para>
        We provides four kind of permissions on tuples.
@@ -614,7 +611,84 @@ UPDATE 3
 	 client who inserted the tuple.
        </para>
      </sect3>
+     <sect3>
+       <title>Default ACLs</title>
+       <para>
+	 The default ACL is a set of ACLs to be assigned on a tuple newly
+	 inserted.
+	 It can be set up using <literal>default_row_acl</literal>.
 
+	 It allows to contain parameters to be replaced at the runtime,
+	 as follows:
+       </para>
+<screen>
+<prompt>postgres=> </prompt><userinput>SELECT getpgusername();</userinput>
+ getpgusername
+---------------
+ cat
+(1 row)
+<prompt>postgres=> </prompt><userinput>CREATE TABLE t (
+    a int,
+    b text
+) WITH (row_level_acl=on,default_row_acl='{%u=rw/%o,=r/%o}');</userinput>
+CREATE TABLE
+<prompt>postgres=> </prompt><userinput>GRANT all ON t TO public;</userinput>
+GRANT
+<prompt>postgres=> </prompt><userinput>\c - dog</userinput>
+psql (8.4beta2)
+You are now connected to database "postgres" as user "dog".
+<prompt>postgres=> </prompt><userinput>INSERT INTO t VALUES (1, 'aaa');</userinput>
+INSERT 0 1
+<prompt>postgres=> </prompt><userinput>SELECT security_acl, * FROM t;</userinput>
+    security_acl     | a |  b
+---------------------+---+-----
+ {dog=rw/cat,=r/cat} | 1 | aaa
+(1 row)
+
+<prompt>postgres=> </prompt><userinput>\c - bird</userinput>
+psql (8.4beta2)
+You are now connected to database "postgres" as user "bird".
+<prompt>postgres=> </prompt><userinput>INSERT INTO t VALUES (2, 'bbb');</userinput>
+INSERT 0 1
+<prompt>postgres=> </prompt><userinput>SELECT security_acl, * FROM t;</userinput>
+     security_acl     | a |  b
+----------------------+---+-----
+ {dog=rw/cat,=r/cat}  | 1 | aaa
+ {bird=rw/cat,=r/cat} | 2 | bbb
+(2 rows)
+
+<prompt>postgres=> </prompt><userinput>UPDATE t SET b = b || '_updt';</userinput>
+UPDATE 1
+<prompt>postgres=> </prompt><userinput>SELECT security_acl, * FROM t;</userinput>
+     security_acl     | a |    b
+----------------------+---+----------
+ {dog=rw/cat,=r/cat}  | 1 | aaa
+ {bird=rw/cat,=r/cat} | 2 | bbb_updt
+(2 rows)
+</screen>
+       <para>
+	 In this example, a user: <literal>cat</literal> defines a new table
+	 with a default acl: <literal>{%u=rw/%o,=r/%o}</literal>.
+	 The <literal>%u</literal> is replaced to the username who inserts
+	 a new tuple, and <literal>%o</literal> is replaced to the username
+	 of the table owner at runtime.
+       </para>
+       <para>
+	 Then, a user: <literal>dog</literal> inserts a tuple and refers it.
+	 The <literal>security_acl</literal> contains the default acl with
+	 these special characters replaced by current user and owner.
+       </para>
+       <para>
+	 When a user: <literal>bird</literal> inserts a tuple,
+	 the <literal>%u</literal> is replaced by <literal>bird</literal>,
+	 instead of <literal>dog</literal>.
+       </para>
+       <para>
+	 At the state, the user: <literal>bird</literal> can update only
+	 the tuple inserted by himself, so the <command>UPDATE</command>
+	 does not affect to the tuples inserted by others.
+       </para>
+     </sect3>
      <sect3>
        <title>Backup and Restore</title>
        <para>
