@@ -1,4 +1,6 @@
 --@SECURITY_CONTEXT=unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c15
+SET sepostgresql_mcstrans TO off;
+SET
 SELECT sepgsql_getcon();
                    sepgsql_getcon                    
 -----------------------------------------------------
@@ -85,12 +87,12 @@ CREATE TABLE t4 (
        a int,
        b text
 ) SECURITY_CONTEXT = 'unconfined_u:object_r:invalid_label_t:s0';	-- to be failed
-ERROR:  invalid security label: unconfined_u:object_r:invalid_label_t:s0
+ERROR:  Invalid security context: "unconfined_u:object_r:invalid_label_t:s0"
 CREATE TABLE t4 (
        a int,
        b text
 ) SECURITY_CONTEXT = 'unconfined_u:object_r:sepgsql_proc_t:s0';	-- to be denied
-ERROR:  SELinux: denied { create } scontext=unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c15 tcontext=unconfined_u:object_r:sepgsql_proc_t:s0 tclass=db_table name=t4
+ERROR:  SELinux: security policy violation
 -- ALTER TABLE with SECURITY_CONTEXT clause
 ALTER TABLE t2 SECURITY_CONTEXT = 'unconfined_u:object_r:sepgsql_secret_table_t:s0';
 ALTER TABLE
@@ -143,12 +145,12 @@ CREATE FUNCTION f2 (int) RETURNS int
        LANGUAGE 'sql'
        SECURITY_CONTEXT = 'unconfined_u:object_r:invalid_label_t:s0'
        AS 'SELECT $1 + $1';	 -- to be failed
-ERROR:  invalid security label: unconfined_u:object_r:invalid_label_t:s0
+ERROR:  Invalid security context: "unconfined_u:object_r:invalid_label_t:s0"
 CREATE FUNCTION f2 (int) RETURNS int
        LANGUAGE 'sql'
        SECURITY_CONTEXT = 'unconfined_u:object_r:sepgsql_proc_t:s0:c16'
        AS 'SELECT $1 + $1';	 -- to be denied
-ERROR:  SELinux: denied { create } scontext=unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c15 tcontext=unconfined_u:object_r:sepgsql_proc_t:s0:c16 tclass=db_procedure name=f2
+ERROR:  SELinux: security policy violation
 CREATE FUNCTION f2 (int) RETURNS int
        LANGUAGE 'sql'
        AS 'SELECT $1 + $1';
@@ -171,7 +173,7 @@ SELECT proname, security_context FROM pg_proc WHERE oid = 'f1'::regproc;
 
 ALTER FUNCTION f2(int)
       SECURITY_CONTEXT = 'unconfined_u:object_r:sepgsql_proc_t:s0:c16';	-- to be denied
-ERROR:  SELinux: denied { relabelto } scontext=unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c15 tcontext=unconfined_u:object_r:sepgsql_proc_t:s0:c16 tclass=db_procedure name=f2
+ERROR:  SELinux: security policy violation
 SELECT proname, security_context FROM pg_proc WHERE oid = 'f2'::regproc;
  proname |            security_context             
 ---------+-----------------------------------------

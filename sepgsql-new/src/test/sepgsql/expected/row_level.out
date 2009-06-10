@@ -1,4 +1,6 @@
 --@SECURITY_CONTEXT=unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c15
+SET sepostgresql_mcstrans TO off;
+SET
 SELECT sepgsql_getcon();
                    sepgsql_getcon                    
 -----------------------------------------------------
@@ -67,6 +69,8 @@ SELECT security_context, * FROM t2;
 (3 rows)
 
 --@SECURITY_CONTEXT=unconfined_u:unconfined_r:sepgsql_test_t:s0:c0
+SET sepostgresql_mcstrans TO off;
+SET
 SELECT sepgsql_getcon();
                  sepgsql_getcon                 
 ------------------------------------------------
@@ -127,5 +131,6 @@ ERROR:  SELinux: security policy violation
 CONTEXT:  SQL statement "SELECT 1 FROM ONLY "public"."t2" x WHERE $1 OPERATOR(pg_catalog.=) "x" FOR SHARE OF x"
 DELETE FROM t1 WHERE a not in (SELECT x FROM t2);	-- to be failed
 ERROR:  SELinux: security policy violation
+CONTEXT:  SQL statement "SELECT 1 FROM ONLY "public"."t2" x WHERE $1 OPERATOR(pg_catalog.=) "x" FOR SHARE OF x"
 DELETE FROM t1 WHERE a = 7;
 DELETE 1
