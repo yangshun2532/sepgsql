@@ -1,4 +1,4 @@
-.TH "sepostgresql" "8" "Jul 15 2007" "kaigai@kaigai.gr.jp" "Security-Enhanced PostgreSQL"
+.TH "sepostgresql" "8" "Jul 11 2009" "kaigai@ak.jp.nec.com" "Security-Enhanced PostgreSQL"
 
 .SH "NAME"
 sepostgresql \- Security-Enhances PostgreSQL
@@ -13,6 +13,11 @@ stages of the life of the information.
 .PP
 This document describes the way to customize SE-PostgreSQL on the default
 security policy.
+.PP
+The online SE-PostgreSQL documentation shall give you more detailed and
+comprehensive information.
+.PP
+See also \fIhttp://wiki.postgresql.org/wiki/SEPostgreSQL\fP .
 
 .SH "BOOLEANS"
 The SELinux policy is customizable via BOOLEAN variable. This variable has
@@ -67,66 +72,84 @@ In the default, it is set to off. You can set it as follows:
 setsebool -P sepgsql_regression_test_mode ( on | \fBoff\fP )
 .EE
 
-.SH "TYPES"
+.SH "PREDEFINED TYPES"
 
-\fBsepgsql_db_t\fP is a only type for database itself.
-It is attched for newly created databases in the default.
+\fBsepgsql_db_t\fP is the only type assigned to any databases.
+It is also the default type of databases for any clients.
 
 \fBsepgsql_table_t\fP is a type for tables, columns and tuples.
-It is the default type of newly created tables by unconfined or
-non-roled domain. It allows confined clietns to access with any
-kind of operations except for relabeling, so we can use this type
-for compatible purpose.
+It is the default type of tables created by unconfined clients.
+It allows confined clients various kind of operations expect for
+relabeling, so we can use the type for compatible purpose.
+
+\fBsepgsql_fixed_table_t\fP is a type for tables, columns and tuples.
+It allows confined clients to \fBSELECT\fP and \fBINSERT\fP, but
+\fBUPDATE\fP and \fBDELETE\fP are disallowed.
+It can be used to store information asset to be protected from unexpected
+manipulations.
+
+\fBsepgsql_ro_table_t\fP is a type for tables, columns and tuples.
+It only allows confined clients to \fBSELECT\fP, but any other writer
+operations shall be prevented.
+It can be used to store read-only informations.
 
 \fBsepgsql_secret_table_t\fP is a type for tables, columns and tuples.
-It never allows confined clients to access, so we can use this type
-to store sensitive information. We reccomend to apply trusted procedures
-to access tables/columns/tuples with this type under safe operation.
+It does not allow confined clients anything, so it can be used to store
+confidential information asset.
+The only way to access this type is to invoke trusted procedures.
 
-\fBsepgsql_ro_table_t\fP is a type for read-only tables, columns and tuples.
-It does not allow confined clients to modify any objects with this type.
+\fBPREFIX_sepgsql_table_t\fP is a type for tables, columns and tuples.
+It is the default type of tables created by confined clients.
+It allows confined clients various kind of operations expect for
+relabeling, but it is restricted to same PREFIX.
+The \fIunpriv\fP is applied to confined clients without a certain role.
 
-\fBsepgsql_fixed_table_t\fP is a type for non-manupulatable tables, columns
-and tuples. It does not allow confined clients to update or delete any
-objects with this type.
-
-\fBsepgsql_ROLE_table_t\fP is a type for a role specific tables, columns
-and tuples. It allows confined clients with its role to access with any
-kind of operations except for relabeling.
-It is the default type of newly created tables by confined clients with
-its role, and we can use this type to describe role level separation.
-
-\fBsepgsql_proc_t\fP is a type for procedures.
-It is attached for newly created procedures by unconfined clients.
-It allows any clients to invoke procedures with this type.
-All of PostgreSQL built-in functions are labeled as this type in the default.
-
-\fBsepgsql_ROLE_proc_t\fP is a type for a role specific procedure.
-It is attached for newly created procedures by confined clients with its role.
-It allows clients with same role to invoke procedure with this type.
-Note that unconfined clients cannot invoke this type to avoid to execute
-dangerous functions with unconfined authorities. They have to confirm its
-contains and relabel to \fBsepgsql_proc_t\fP for its invocation.
+\fBsepgsql_proc_exec_t\fP is a type for procedures.
+It is the default type of procedured created by unconfined clients.
+It allows confined clients to execute the procedures, and all the
+built-in functions shall be labeled with the type.
 
 \fBsepgsql_trusted_proc_exec_t\fP is a type for trusted procedures.
-To call procedures with this type invokes domain transition to
-unconfined domain, so it can access any kind of database objects.
-We can use this type to provide a secure method to access sensitive
-information.
+It allows confined clients to execute the procedures, and their
+clients shall be switched to \fBsepgsql_trusted_proc_t\fP during
+the execution of the procedure.
+Unconfined accesses are allowed to \fBsepgsql_trusted_proc_t\fP,
+so it can be used to provide confined clients secure methods to
+access confidential informations.
 
-\fBsepgsql_blob_t\fP is a type for binary large objects (blob).
-It is attached for newly created blob in the default.
-Non-administrative clients can read and write the blobs with this type.
+\fBPREFIX_sepgsql_proc_exec_t\fP is a type for procedures.
+It is the default type of procedures created by confined clients.
+It allows confined clients various kind of operations expect for
+relabeling, but it is restricted to same PREFIX.
+Unconfined clients cannot execute the procedures with this type,
+because user defined functions are not enough trusted and it is
+not safe to execute with unconfined privileges.
+In this case, 
 
-\fBsepgsql_ro_blob_t\fP is a type for read-only binary large objects (blob).
-Non-administrative clients cannot write the blobs with this type.
+\fBsepgsql_blob_t\fP is a type for largeobjects.
+It is the default type of largeobjects created by unconfined clients.
+It allows confined clients various kind of operations expect for
+relabeling.
+
+\fBsepgsql_ro_blob_t\fP is a type for largeobjects.
+It allows confined clients to read the largeobjects, but writer
+operations are not allowed.
+
+\fBsepgsql_secret_blob_t\fP is a type for largeobjects.
+It does not allow confined clients anything, so it can be used to store
+confidential information asset.
+
+\fBPREFIX_sepgsql_blob_t\fP is a type for largeobjects.
+It is the default type of largeobjects created by confined clients.
+It allows confined clients various kind of operations expect for
+relabeling, but it is restricted to same PREFIX.
 
 .SH "BACKUP and RESTORE"
-\fI--enable-selinux\fP option in \fBsepg_dump\fP and \fBsepg_dumpall\fP enable to dump database image with security context. We can restore the dumped image using the standard \fIpg_restore\fP and so on.
+\fI--security-label\fP option in \fBsepg_dump\fP and \fBsepg_dumpall\fP enable to dump database image with security context. We can restore the dumped image using the standard \fIpg_restore\fP and so on.
 
 .EX
 Example)
-$ sepg_dump -Ft -b --enable-selinux postgres | gzip -c > postgres.tgz
+$ sepg_dump -Ft -b --security-label postgres | gzip -c > postgres.tgz
 .EE
 
 .SH AUTHOR	
