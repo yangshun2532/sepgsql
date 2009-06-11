@@ -70,6 +70,7 @@ static int	use_setsessauth = 0;
 static int	server_version;
 
 static int	security_label = 0;
+static int	security_acl = 0;
 
 static FILE *OPF;
 static char *filename = NULL;
@@ -133,6 +134,7 @@ main(int argc, char *argv[])
 		{"role", required_argument, NULL, 3},
 		{"use-set-session-authorization", no_argument, &use_setsessauth, 1},
 		{"security-label", no_argument, &security_label, 1},
+		{"security-acl", no_argument, &security_acl, 1},
 
 		{NULL, 0, NULL, 0}
 	};
@@ -288,6 +290,8 @@ main(int argc, char *argv[])
 					use_setsessauth = 1;
 				else if (strcmp(optarg, "security-label") == 0)
 					security_label = 1;
+				else if (strcmp(optarg, "security-acl") == 0)
+					security_acl = 1;
 				else
 				{
 					fprintf(stderr,
@@ -335,6 +339,8 @@ main(int argc, char *argv[])
 		appendPQExpBuffer(pgdumpopts, " --use-set-session-authorization");
 	if (security_label)
 		appendPQExpBuffer(pgdumpopts, " --security-label");
+	if (security_acl)
+		appendPQExpBuffer(pgdumpopts, " --security-acl");
 
 	if (optind < argc)
 	{
