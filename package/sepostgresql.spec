@@ -130,7 +130,7 @@ rm -rf %{buildroot}%{_libdir}
 
 # remove unnecessary files
 rm -rf %{buildroot}%{_includedir}
-rm -rf %{buildroot}%{_usr}/doc
+rm -rf %{buildroot}%{_defaultdocdir}
 rm -rf %{buildroot}%{_datadir}/sepgsql/timezone
 rm -rf %{buildroot}%{_mandir}
 
