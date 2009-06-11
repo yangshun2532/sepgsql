@@ -5,6 +5,7 @@ PSQL      := $(shell which psql)
 DIFF      := $(shell which diff)
 RUNCON    := $(shell which runcon)
 GETSEBOOL := $(shell which getsebool)
+GETENFORCE:= $(shell which getenforce)
 DBNAME	  := test
 
 TESTCASES = $(wildcard sql/*.sql)
@@ -46,6 +47,8 @@ setup: launch_psql
 check:
 	@test -x $(PSQL) || \
 		(echo "HINT: $(PSQL) is not available"; exit 1)
+	@$(GETENFORCE) | grep Enforcing || \
+		(echo "HINT: SELinux does not work in Enforcing mode"; exit 1)
 	@$(PSQL) -qt -c 'SHOW sepostgresql' -d $(DBNAME) 2>/dev/null | grep -q on || \
 		(echo "HINT: database \"$(DBNAME)\" is not available"; \
 		 echo "HINT: SE-PostgreSQL may not be available on server"; exit 1)
