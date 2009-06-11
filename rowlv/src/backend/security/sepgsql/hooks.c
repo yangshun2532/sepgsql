@@ -149,7 +149,6 @@ sepgsqlCheckTableTruncate(Relation rel)
 	HeapScanDesc		scan;
 	HeapTuple			tuple;
 	security_class_t	tclass;
-	const char		   *audit_name;
 
 	if (!sepgsqlIsEnabled())
 		return;

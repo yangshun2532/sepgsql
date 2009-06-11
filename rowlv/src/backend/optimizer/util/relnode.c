@@ -21,6 +21,7 @@
 #include "optimizer/plancat.h"
 #include "optimizer/restrictinfo.h"
 #include "parser/parsetree.h"
+#include "security/rowlevel.h"
 #include "utils/hsearch.h"
 
 

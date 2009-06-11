@@ -111,8 +111,9 @@ static int	disable_dollar_quoting = 0;
 static int	dump_inserts = 0;
 static int	column_inserts = 0;
 
-/* flag to turn on/off security_label */
+/* flag to turn on/off security_label and security_acl */
 static int	security_label = 0;
+static int	security_acl = 0;
 
 static void help(const char *progname);
 static void expand_schema_name_patterns(SimpleStringList *patterns,
@@ -279,6 +280,7 @@ main(int argc, char **argv)
 		{"role", required_argument, NULL, 3},
 		{"use-set-session-authorization", no_argument, &use_setsessauth, 1},
 		{"security-label", no_argument, &security_label, 1},
+		{"security-acl", no_argument, &security_acl, 1},
 
 		{NULL, 0, NULL, 0}
 	};
@@ -429,6 +431,8 @@ main(int argc, char **argv)
 					use_setsessauth = 1;
 				else if (strcmp(optarg, "security-label") == 0)
 					security_label = 1;
+				else if (strcmp(optarg, "security-acl") == 0)
+					security_acl = 1;
 				else
 				{
 					fprintf(stderr,
@@ -590,14 +594,14 @@ main(int argc, char **argv)
 			write_msg(NULL, "SE-PostgreSQL is not available now.");
 			exit(1);
 		}
-
-		/*
-		 * If both of --security-label and --inserts are given,
-		 * it implicitly enables --column-inserts
-		 */
-		if (dump_inserts)
-			column_inserts = 1;
 	}
+
+	/*
+	 * It needs to force column insertion mode, when --inserts
+	 * and either --security-label or --security-acl is given.
+	 */
+	if ((security_label > 0 || security_acl > 0) && dump_inserts)
+		column_inserts = 1;
 
 	/* Set the role if requested */
 	if (use_role && g_fout->remoteVersion >= 80100)
@@ -853,6 +857,7 @@ help(const char *progname)
 		 "                              use SET SESSION AUTHORIZATION commands instead of\n"
 		 "                              ALTER OWNER commands to set ownership\n"));
 	printf(_("  --security-label            dump SE-PostgreSQL security labels\n"));
+	printf(_("  --security-acl              dump row-level database ACLs\n"));
 
 	printf(_("\nConnection options:\n"));
 	printf(_("  -h, --host=HOSTNAME      database server host or socket directory\n"));
@@ -1254,8 +1259,9 @@ dumpTableData_insert(Archive *fout, void *dcontext)
 	if (fout->remoteVersion >= 70100)
 	{
 		appendPQExpBuffer(q, "DECLARE _pg_dump_cursor CURSOR FOR "
-						  "SELECT %s* FROM ONLY %s",
+						  "SELECT %s%s* FROM ONLY %s",
 						  (security_label > 0 ? "security_label, " : ""),
+						  (security_acl > 0 ? "security_acl, " : ""),
 						  fmtQualifiedId(tbinfo->dobj.namespace->dobj.name,
 										 classname));
 	}
@@ -11500,6 +11506,14 @@ fmtCopyColumnList(const TableInfo *ti)
 	if (security_label > 0)
 	{
 		appendPQExpBuffer(q, "security_label");
+		needComma = true;
+	}
+
+	if (security_acl > 0)
+	{
+		if (needComma)
+			appendPQExpBuffer(q, ", ");
+		appendPQExpBuffer(q, "security_acl");
 		needComma = true;
 	}
 

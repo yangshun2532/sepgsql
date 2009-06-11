@@ -147,7 +147,7 @@ rowaclExecScan(Relation rel, HeapTuple tuple, uint32 required, bool abort)
 	if (!rowaclCacheLookup(relid, userid, aclid, &privs))
 	{
 		/* Superusers/Owner bypass all permission checking */
-		if (pg_class_ownercheck(RelationGetRelid(rel), userid))
+		if (pg_class_ownercheck(relid, userid))
 			privs = ACL_ALL_RIGHTS_TUPLE;
 		else
 		{
