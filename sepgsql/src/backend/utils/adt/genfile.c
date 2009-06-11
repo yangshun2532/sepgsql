@@ -24,6 +24,7 @@
 #include "funcapi.h"
 #include "miscadmin.h"
 #include "postmaster/syslogger.h"
+#include "security/sepgsql.h"
 #include "storage/fd.h"
 #include "utils/builtins.h"
 #include "utils/memutils.h"

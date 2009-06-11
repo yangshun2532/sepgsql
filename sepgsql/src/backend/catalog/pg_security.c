@@ -618,7 +618,7 @@ security_reclaim_table(Oid relid, char seckind)
 		recl_secattr = SPI_getvalue(SPI_tuptable->vals[index],
 									SPI_tuptable->tupdesc, 2);
 		ereport(NOTICE,
-				(errmsg("secattr=\"\", secid=%s on %s was reclaimed",
+				(errmsg("secattr=\"%s\", secid=%s on %s was reclaimed",
 						recl_secattr, recl_secid, security_quote_relation(relid))));
 	}
 
