@@ -231,9 +231,13 @@ fi
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
 
 %changelog
-* Thu Jun 11 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 8.4beta2-2003
+* Thu Jun 11 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 8.4beta2-2007
 - update: add support to reclaim orphan security_labels
 - update: mls/targeted policy package was unified
+
+* Fri May 29 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 8.4beta2-1950
+- update: add sepostgresql_mcstrans guc option
+- upgrade: base version 8.4beta1 -> 8.4beta2
 
 * Thu May 14 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 8.4beta1-1891
 - update: add db_table/db_column:{reference} permissions.
