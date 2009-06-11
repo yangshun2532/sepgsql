@@ -23,6 +23,7 @@
 #include "catalog/pg_operator.h"
 #include "catalog/pg_opfamily.h"
 #include "catalog/pg_proc.h"
+#include "catalog/pg_security.h"
 #include "catalog/pg_trigger.h"
 #include "catalog/pg_ts_dict.h"
 #include "catalog/pg_ts_parser.h"
@@ -769,9 +770,6 @@ void
 sepgsqlCheckBlobExport(LargeObjectDesc *lobj,
 					   int fdesc, const char *filename)
 {
-	security_context_t	fcontext;
-	security_class_t	fclass;
-
 	if (!sepgsqlIsEnabled())
 		return;
 
@@ -793,9 +791,6 @@ void
 sepgsqlCheckBlobImport(LargeObjectDesc *lobj,
 					   int fdesc, const char *filename)
 {
-	security_context_t	fcontext;
-	security_class_t	fclass;
-
 	if (!sepgsqlIsEnabled())
 		return;
 

@@ -225,12 +225,16 @@ fi
 %{_libdir}/sepgsql/*_and_*.so
 %{_libdir}/sepgsql/dict_*.so
 %endif
-%attr(644,root,root) %{_datadir}/selinux/*/%{policy_module_name}.pp
+%attr(644,root,root) %{_datadir}/selinux/packages/%{policy_module_name}.pp
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/data
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
 
 %changelog
+* Thu Jun 11 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 8.4beta2-2003
+- update: add support to reclaim orphan security_labels
+- update: mls/targeted policy package was unified
+
 * Thu May 14 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 8.4beta1-1891
 - update: add db_table/db_column:{reference} permissions.
 - update: base version was upgraded to 8.4beta1
