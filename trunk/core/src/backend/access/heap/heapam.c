@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/access/heap/heapam.c,v 1.275 2009/05/12 16:43:32 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/access/heap/heapam.c,v 1.276 2009/06/10 18:54:16 tgl Exp $
  *
  *
  * INTERFACE ROUTINES
@@ -94,7 +94,7 @@ static bool HeapSatisfiesHOTUpdate(Relation relation, Bitmapset *hot_attrs,
  * ----------------
  */
 static void
-initscan(HeapScanDesc scan, ScanKey key)
+initscan(HeapScanDesc scan, ScanKey key, bool is_rescan)
 {
 	bool		allow_strat;
 	bool		allow_sync;
@@ -144,7 +144,16 @@ initscan(HeapScanDesc scan, ScanKey key)
 		scan->rs_strategy = NULL;
 	}
 
-	if (allow_sync && synchronize_seqscans)
+	if (is_rescan)
+	{
+		/*
+		 * If rescan, keep the previous startblock setting so that rewinding
+		 * a cursor doesn't generate surprising results.  Reset the syncscan
+		 * setting, though.
+		 */
+		scan->rs_syncscan = (allow_sync && synchronize_seqscans);
+	}
+	else if (allow_sync && synchronize_seqscans)
 	{
 		scan->rs_syncscan = true;
 		scan->rs_startblock = ss_get_location(scan->rs_rd, scan->rs_nblocks);
@@ -1219,7 +1228,7 @@ heap_beginscan_internal(Relation relation, Snapshot snapshot,
 	else
 		scan->rs_key = NULL;
 
-	initscan(scan, key);
+	initscan(scan, key, false);
 
 	return scan;
 }
@@ -1241,7 +1250,7 @@ heap_rescan(HeapScanDesc scan,
 	/*
 	 * reinitialize scan descriptor
 	 */
-	initscan(scan, key);
+	initscan(scan, key, true);
 }
 
 /* ----------------
