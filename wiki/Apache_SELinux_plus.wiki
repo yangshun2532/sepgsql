@@ -480,6 +480,12 @@ If the variable is not set, the `selinuxDomainVal` is used as a fallback.
 
 = List of sources =
 
+== mod_selinux-2.2.2015.tgz (Jun 11, 2009) ==
+ * http://sepgsql.googlecode.com/files/mod_selinux-2.2.2015.tgz
+ * SHA1: 55caad1737bcca6683dbff712cc48b92e20d18fd
+ * Changelog:
+  * update: add support to use translated format in MLS-range
+
 == mod_selinux-2.2.1938.tgz (May 26, 2009) ==
  * http://sepgsql.googlecode.com/files/mod_selinux-2.2.1938.tgz
  * SHA1: ab99f9032f22f243a424f43d62588d9307896c91
