@@ -378,7 +378,6 @@ checkCLibraryInstallation(HeapTuple newtup, HeapTuple oldtup)
 {
 	Form_pg_proc    oldpro, newpro;
 	Datum           oldbin, newbin;
-	char           *filename;
 	bool            isnull;
 
 	newpro = (Form_pg_proc) GETSTRUCT(newtup);
