@@ -32,7 +32,8 @@ Patch5: sepgsql-05-perms-%%__base_major_version__%%.patch
 Patch6: sepgsql-06-utils-%%__base_major_version__%%.patch
 Patch7: sepgsql-07-tests-%%__base_major_version__%%.patch
 Patch8: sepgsql-08-docs-%%__base_major_version__%%.patch
-Patch9: sepgsql-fedora-prefix.patch
+Patch9: sepgsql-09-extra-%%__base_major_version__%%.patch
+Patch10: sepgsql-fedora-prefix.patch
 BuildRequires: perl glibc-devel bison flex readline-devel zlib-devel >= 1.0.4
 Buildrequires: checkpolicy libselinux-devel >= 2.0.80 selinux-policy >= 3.4.2
 %if %{ssl}
@@ -45,7 +46,7 @@ Requires(postun): policycoreutils
 %if !%{standalone}
 Requires: postgresql-server = %{version}
 %endif
-Requires: policycoreutils >= 2.0.16 libselinux >= 2.0.80 selinux-policy >= 3.4.2
+Requires: policycoreutils >= 2.0.16 libselinux >= 2.0.80 selinux-policy >= 3.6.13
 Requires: tzdata logrotate
 %if %ssl
 BuildRequires: openssl-devel
@@ -70,6 +71,7 @@ reference monitor to check any SQL query.
 %patch7 -p1
 %patch8 -p1
 %patch9 -p1
+%patch10 -p1
 
 %build
 CFLAGS="${CFLAGS:-%optflags}" ; export CFLAGS
@@ -100,13 +102,7 @@ make -C src/backend/security/sepgsql/policy
 %install
 rm -rf %{buildroot}
 make DESTDIR=%{buildroot} install
-
-for store in %{selinux_policy_stores}
-do
-    install -d %{buildroot}%{_datadir}/selinux/${store}
-    install -p -m 644 src/backend/security/sepgsql/policy/%{policy_module_name}.pp.${store} \
-               %{buildroot}%{_datadir}/selinux/${store}/%{policy_module_name}.pp
-done
+make DESTDIR=%{buildroot} -C src/backend/security/sepgsql/policy install
 
 # avoid to conflict with native postgresql package
 mv %{buildroot}%{_bindir}  %{buildroot}%{_bindir}.orig
@@ -171,11 +167,8 @@ exit 0
 
 for store in %{selinux_policy_stores}
 do
-    if %{_sbindir}/semodule -s ${store} -l 2>/dev/null | egrep -q "^%{policy_module_name}";
-    then
-       %{_sbindir}/semodule -s ${store}	   \
-           -u %{_datadir}/selinux/${store}/%{policy_module_name}.pp &> /dev/null || :
-    fi
+    %{_sbindir}/semodule -s ${store}       \
+        -i %{_datadir}/selinux/packages/%{policy_module_name}.pp &> /dev/null || :
 done
 
 # Fix up non-standard file contexts
