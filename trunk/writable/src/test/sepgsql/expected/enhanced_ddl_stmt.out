@@ -156,9 +156,9 @@ CREATE FUNCTION f2 (int) RETURNS int
        AS 'SELECT $1 + $1';
 CREATE FUNCTION
 SELECT security_label, proname FROM pg_proc WHERE oid = 'f2'::regproc;
-             security_label              | proname 
------------------------------------------+---------
- unconfined_u:object_r:sepgsql_proc_t:s0 | f2
+                security_label                | proname 
+----------------------------------------------+---------
+ unconfined_u:object_r:sepgsql_proc_exec_t:s0 | f2
 (1 row)
 
 -- ALTER FUNCTION with SECURITY_LABEL clause
@@ -175,8 +175,8 @@ ALTER FUNCTION f2(int)
       SECURITY_LABEL = 'unconfined_u:object_r:sepgsql_proc_t:s0:c16';	-- to be denied
 ERROR:  SELinux: security policy violation
 SELECT security_label, proname FROM pg_proc WHERE oid = 'f2'::regproc;
-             security_label              | proname 
------------------------------------------+---------
- unconfined_u:object_r:sepgsql_proc_t:s0 | f2
+                security_label                | proname 
+----------------------------------------------+---------
+ unconfined_u:object_r:sepgsql_proc_exec_t:s0 | f2
 (1 row)
 
