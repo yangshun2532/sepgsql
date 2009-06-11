@@ -61,6 +61,7 @@ static int
 do_set_domain(security_context_t old_context, char *domain, server_rec *s)
 {
     security_context_t  new_context;
+    security_context_t  raw_context;
     context_t           context;
     char               *range;
 
@@ -102,20 +103,29 @@ do_set_domain(security_context_t old_context, char *domain, server_rec *s)
     /*
      * If old_context == new_context, we don't need to do anything
      */
-    if (!strcmp(old_context, new_context)) {
-        context_free(context);
-        return 1;
-    }
-
-    if (setcon_raw(new_context) < 0) {
+    if (selinux_trans_to_raw_context(new_context, &raw_context) < 0) {
         ap_log_error(APLOG_MARK, APLOG_ERR, errno, s,
-                     "SELinux: setcon_raw(\"%s\") failed",
+                     "SELinux: selinux_trans_to_raw_context(\"%s\") failed",
                      new_context);
         context_free(context);
         return -1;
     }
-
     context_free(context);
+
+    if (!strcmp(old_context, raw_context)) {
+        freecon(raw_context);
+        return 1;
+    }
+
+    if (setcon_raw(raw_context) < 0) {
+        ap_log_error(APLOG_MARK, APLOG_ERR, errno, s,
+                     "SELinux: setcon_raw(\"%s\") failed",
+                     raw_context);
+        freecon(raw_context);
+        return -1;
+    }
+
+    freecon(raw_context);
 
     return 0;
 }

@@ -84,6 +84,9 @@ fi
 %{_datadir}/selinux/*/%{name}.pp
 
 %changelog
+* Thu Jun 11 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 2.2.2015-1
+- update: add support to use translated format in MLS-range
+
 * Wed May 27 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 2.2.1938-1
 - bugfix: it may returns OK, instead of HTTP_INTERNAL_SERVER_ERROR,
     when the contents handler crashed.
