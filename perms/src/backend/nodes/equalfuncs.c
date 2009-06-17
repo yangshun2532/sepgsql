@@ -1272,6 +1272,19 @@ _equalAlterOwnerStmt(AlterOwnerStmt *a, AlterOwnerStmt *b)
 }
 
 static bool
+_equalAlterSecLabelStmt(AlterSecLabelStmt *a, AlterSecLabelStmt *b)
+{
+	COMPARE_SCALAR_FIELD(objectType);
+	COMPARE_NODE_FIELD(relation);
+	COMPARE_NODE_FIELD(object);
+	COMPARE_NODE_FIELD(objarg);
+	COMPARE_STRING_FIELD(subname);
+	COMPARE_NODE_FIELD(secLabel);
+
+	return true;
+}
+
+static bool
 _equalRuleStmt(RuleStmt *a, RuleStmt *b)
 {
 	COMPARE_NODE_FIELD(relation);
@@ -2598,6 +2611,9 @@ equal(void *a, void *b)
 			break;
 		case T_AlterOwnerStmt:
 			retval = _equalAlterOwnerStmt(a, b);
+			break;
+		case T_AlterSecLabelStmt:
+			retval = _equalAlterSecLabelStmt(a, b);
 			break;
 		case T_RuleStmt:
 			retval = _equalRuleStmt(a, b);
