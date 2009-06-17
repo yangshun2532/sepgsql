@@ -19,5 +19,6 @@
 extern void ExecRenameStmt(RenameStmt *stmt);
 extern void ExecAlterObjectSchemaStmt(AlterObjectSchemaStmt *stmt);
 extern void ExecAlterOwnerStmt(AlterOwnerStmt *stmt);
+extern void ExecAlterSecLabelStmt(AlterSecLabelStmt *stmt);
 
 #endif   /* ALTER_H */

@@ -313,13 +313,13 @@ sepgsqlSetDefaultSecLabel(Relation rel, HeapTuple tuple)
 }
 
 /*
- * givenObjectSecLabelIn
+ * sepgsqlGivenSecLabelIn
  *   translate a given security label in text form into a security
  *   identifier. It can raise an error, if its format is violated,
  *   but permission checks are done later.
  */
-static Oid
-givenObjectSecLabelIn(Oid relid, DefElem *defel)
+Oid
+sepgsqlGivenSecLabelIn(Oid relid, DefElem *defel)
 {
 	if (!defel)
 		return InvalidOid;
@@ -332,49 +332,27 @@ givenObjectSecLabelIn(Oid relid, DefElem *defel)
 	return securityTransSecLabelIn(relid, strVal(defel->arg));
 }
 
-Oid
-sepgsqlGivenDatabaseSecLabelIn(DefElem *defel)
-{
-	return givenObjectSecLabelIn(DatabaseRelationId, defel);
-}
-
-Oid
-sepgsqlGivenProcedureSecLabelIn(DefElem *defel)
-{
-	return givenObjectSecLabelIn(ProcedureRelationId, defel);
-}
-
-Oid
-sepgsqlGivenTableSecLabelIn(DefElem *defel)
-{
-	return givenObjectSecLabelIn(RelationRelationId, defel);
-}
-
-Oid
-sepgsqlGivenColumnSecLabelIn(DefElem *defel)
-{
-	return givenObjectSecLabelIn(AttributeRelationId, defel);
-}
-
 /*
- * sepgsqlGivenCreateStmtSecLabelIn
+ * sepgsqlParseCreateStmtSecLabelIn
  *   picks up the given security context using CREATE TABLE and
  *   SECURITY_LABEL enhancement. It returns a DefElem list.
  */
 List *
-sepgsqlGivenCreateStmtSecLabelIn(CreateStmt *stmt)
+sepgsqlParseCreateStmtSecLabelIn(CreateStmt *stmt)
 {
 	List	   *results = NIL;
 	ListCell   *l;
-	DefElem	   *defel, *newel;
+	DefElem	   *defel;
+	Oid			secid;
 
 	if (stmt->secLabel)
 	{
 		defel = (DefElem *) stmt->secLabel;
 		Assert(IsA(defel, DefElem));
 
-		newel = makeDefElem(NULL, copyObject(defel->arg));
-		results = lappend(results, newel);
+		secid = sepgsqlGivenSecLabelIn(RelationRelationId, defel);
+		defel = makeDefElem(NULL, makeInteger(secid));
+		results = lappend(results, defel);
 	}
 
 	foreach (l, stmt->tableElts)
@@ -384,12 +362,12 @@ sepgsqlGivenCreateStmtSecLabelIn(CreateStmt *stmt)
 		if (cdef->secLabel)
 		{
 			defel = (DefElem *) cdef->secLabel;
-
 			Assert(IsA(defel, DefElem));
 
-			newel = makeDefElem(pstrdup(cdef->colname),
-								copyObject(defel->arg));
-			results = lappend(results, newel);
+			secid = sepgsqlGivenSecLabelIn(AttributeRelationId, defel);
+			defel = makeDefElem(pstrdup(cdef->colname),
+								makeInteger(secid));
+			results = lappend(results, defel);
 		}
 	}
 
