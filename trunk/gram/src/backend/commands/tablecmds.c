@@ -324,7 +324,6 @@ static void ATExecEnableDisableRule(Relation rel, char *rulename,
 						char fires_when);
 static void ATExecAddInherit(Relation rel, RangeVar *parent);
 static void ATExecDropInherit(Relation rel, RangeVar *parent);
-static void ATExecSetSecurityLabel(Relation rel, const char *name, DefElem *defel);
 static void copy_relation_data(SMgrRelation rel, SMgrRelation dst,
 							   ForkNumber forkNum, bool istemp);
 
@@ -500,7 +499,7 @@ DefineRelation(CreateStmt *stmt, char relkind)
 	/*
 	 * SELinux: fetch SECURITY_LABEL = '...' from CREATE TABLE
 	 */
-	seclabelList = sepgsqlGivenCreateStmtSecLabelIn(stmt);
+	seclabelList = sepgsqlParseCreateStmtSecLabelIn(stmt);
 
 	/*
 	 * Create the relation.  Inherited defaults and constraints are passed
@@ -2514,7 +2513,6 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 		case AT_DisableRule:
 		case AT_AddInherit:		/* INHERIT / NO INHERIT */
 		case AT_DropInherit:
-		case AT_SetSecurityLabel:
 			ATSimplePermissions(rel, false);
 			/* These commands never recurse */
 			/* No command-specific prep needed */
@@ -2748,9 +2746,6 @@ ATExecCmd(List **wqueue, AlteredTableInfo *tab, Relation rel,
 			break;
 		case AT_DropInherit:
 			ATExecDropInherit(rel, (RangeVar *) cmd->def);
-			break;
-		case AT_SetSecurityLabel:
-			ATExecSetSecurityLabel(rel, cmd->name, (DefElem *) cmd->def);
 			break;
 		default:				/* oops */
 			elog(ERROR, "unrecognized alter table type: %d",
@@ -7491,98 +7486,6 @@ ATExecDropInherit(Relation rel, RangeVar *parent)
 	heap_close(parent_rel, NoLock);
 }
 
-/*
- * Execute ALTER TABLE ... SECURITY_LABEL = 'xxxx'
- */
-void
-ATExecSetSecurityLabel(Relation rel, const char *attr_name, DefElem *defel)
-{
-	Relation    class_rel;
-	Relation    attr_rel;
-	HeapTuple   tuple, newtup;
-
-	if (!sepgsqlIsEnabled())
-		ereport(ERROR,
-				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("SELinux: disabled now")));
-
-	Assert(IsA(defel, DefElem));
-
-	if (!attr_name)
-	{
-		Datum   values[Natts_pg_class];
-		bool    nulls[Natts_pg_class];
-		bool    replaces[Natts_pg_class];
-		Oid		rel_secid;
-
-		memset(replaces, false, sizeof(replaces));
-
-		class_rel = heap_open(RelationRelationId, RowExclusiveLock);
-
-		tuple = SearchSysCache(RELOID,
-							   ObjectIdGetDatum(RelationGetRelid(rel)),
-							   0, 0, 0);
-		if (!HeapTupleIsValid(tuple))
-	        elog(ERROR, "SELinux: cache lookup failed for relation: \"%s\"",
-				 RelationGetRelationName(rel));
-		/*
-		 * NOTE: heap_modify_tuple() is necessary to make sure
-		 * newtup has HEAP_HAS_SECLABEL and a field to store
-		 * security lidentifier.
-		 */
-		newtup = heap_modify_tuple(tuple, RelationGetDescr(class_rel),
-								   values, nulls, replaces);
-		if (!HeapTupleHasSecLabel(newtup))
-			elog(ERROR, "Unable to assign security label on \"%s\"",
-				 RelationGetRelationName(class_rel));
-
-		rel_secid = sepgsqlGivenTableSecLabelIn(defel);
-		HeapTupleSetSecLabel(newtup, rel_secid);
-
-		simple_heap_update(class_rel, &tuple->t_self, newtup);
-
-		CatalogUpdateIndexes(class_rel, newtup);
-
-		ReleaseSysCache(tuple);
-		heap_close(class_rel, RowExclusiveLock);
-	}
-	else
-    {
-		Datum	values[Natts_pg_attribute];
-		bool	nulls[Natts_pg_attribute];
-		bool	replaces[Natts_pg_attribute];
-		Oid		att_secid;
-
-		memset(replaces, false, sizeof(replaces));
-
-		attr_rel = heap_open(AttributeRelationId, RowExclusiveLock);
-
-		tuple = SearchSysCacheAttName(RelationGetRelid(rel), attr_name);
-		if (!HeapTupleIsValid(tuple))
-			elog(ERROR, "SELinux: cache lookup failed for column \"%s.%s\"",
-				 RelationGetRelationName(rel), attr_name);
-		/*
-		 * NOTE: heap_modify_tuple() is necessary to make sure
-		 * newtup has HEAP_HAS_SECLABEL and a field to store
-		 * security lidentifier.
-		 */
-		newtup = heap_modify_tuple(tuple, RelationGetDescr(attr_rel),
-								   values, nulls, replaces);
-		if (!HeapTupleHasSecLabel(newtup))
-			elog(ERROR, "Unable to assign security label on \"%s\"",
-				 RelationGetRelationName(attr_rel));
-
-		att_secid = sepgsqlGivenColumnSecLabelIn(defel);
-		HeapTupleSetSecLabel(newtup, att_secid);
-
-		simple_heap_update(attr_rel, &tuple->t_self, newtup);
-
-		CatalogUpdateIndexes(attr_rel, newtup);
-
-		ReleaseSysCache(tuple);
-		heap_close(attr_rel, RowExclusiveLock);
-	}
-}
 
 /*
  * Execute ALTER TABLE SET SCHEMA
@@ -7875,6 +7778,128 @@ AlterSeqNamespaces(Relation classRel, Relation rel,
 	relation_close(depRel, AccessShareLock);
 }
 
+/*
+ * ALTER TABLE/SEQUENCE name SECURITY_LABEL [=] newlabel
+ * ALTER TABLE/SEQUENCE name ALTER column SECURITY_LABEL [=] newlabel
+ */
+static void
+ExecRelationSetSecLabel(Oid relid, DefElem *seclabel)
+{
+	Relation	rel;
+	HeapTuple	tuple, newtup;
+	Oid			secid;
+	bool		replaces[Natts_pg_class];
+
+	/*  Translate text representation to security id */
+	secid = sepgsqlGivenSecLabelIn(RelationRelationId, seclabel);
+
+	rel = heap_open(RelationRelationId, RowExclusiveLock);
+	tuple = SearchSysCache(RELOID,
+						   ObjectIdGetDatum(relid),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "cache lookup failed for relation: %u", relid);
+
+	memset(replaces, false, sizeof(replaces));
+	newtup = heap_modify_tuple(tuple, RelationGetDescr(rel),
+							   NULL, NULL, replaces);
+
+	if (!HeapTupleHasSecLabel(newtup))
+		elog(ERROR, "Unable to set security label on: %s",
+			 NameStr(((Form_pg_class) GETSTRUCT(tuple))->relname));
+	HeapTupleSetSecLabel(newtup, secid);
+
+	simple_heap_update(rel, &newtup->t_self, newtup);
+
+	CatalogUpdateIndexes(rel, newtup);
+
+	ReleaseSysCache(tuple);
+
+	heap_close(rel, RowExclusiveLock);
+}
+
+static void
+ExecAttributeSetSecLabel(Oid relid, char *attname, DefElem *seclabel)
+{
+	Relation	rel;
+	HeapTuple	tuple, newtup;
+	Oid			secid;
+	bool		replaces[Natts_pg_class];
+
+	/*  Translate text representation to security id */
+	secid = sepgsqlGivenSecLabelIn(AttributeRelationId, seclabel);
+
+	rel = heap_open(AttributeRelationId, RowExclusiveLock);
+	tuple = SearchSysCacheAttName(relid, attname);
+	if (!HeapTupleIsValid(tuple))
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_COLUMN),
+				 errmsg("column \"%s\" of relation \"%s\" does not exist",
+						attname, get_rel_name(relid))));
+
+	memset(replaces, false, sizeof(replaces));
+	newtup = heap_modify_tuple(tuple, RelationGetDescr(rel),
+							   NULL, NULL, replaces);
+	if (!HeapTupleHasSecLabel(newtup))
+		elog(ERROR, "Unable to set security label on: %s",
+			 NameStr(((Form_pg_attribute) GETSTRUCT(tuple))->attname));
+	HeapTupleSetSecLabel(newtup, secid);
+
+	simple_heap_update(rel, &newtup->t_self, newtup);
+
+	CatalogUpdateIndexes(rel, newtup);
+
+	ReleaseSysCache(tuple);
+
+	heap_close(rel, RowExclusiveLock);
+}
+
+void
+AlterRelationSecLabel(RangeVar *relation, const char *attname,
+					  ObjectType objtype, DefElem *seclabel)
+{
+	Form_pg_class	clsForm;
+	HeapTuple		tuple;
+	Oid				relid;
+
+	/* Check relation type against type specified in the ALTER command */
+	relid = RangeVarGetRelid(relation, false);
+	tuple = SearchSysCache(RELOID,
+						   ObjectIdGetDatum(relid),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "cache lookup failed for relation %u", relid);
+	clsForm = (Form_pg_class) GETSTRUCT(tuple);
+
+	switch (objtype)
+	{
+	case OBJECT_TABLE:
+	case OBJECT_COLUMN:
+		if (clsForm->relkind != RELKIND_RELATION)
+			ereport(ERROR,
+					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+					 errmsg("\"%s\" is not a table",
+							NameStr(clsForm->relname))));
+		break;
+	case OBJECT_SEQUENCE:
+		if (clsForm->relkind != RELKIND_SEQUENCE)
+			ereport(ERROR,
+					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+					 errmsg("\"%s\" is not a sequence",
+							NameStr(clsForm->relname))));
+		break;
+	default:
+		elog(ERROR, "unrecognized object type: %d", (int)objtype);
+		break;
+	}
+	ReleaseSysCache(tuple);
+
+	/* Exec set security label */
+	if (objtype != OBJECT_COLUMN)
+		ExecRelationSetSecLabel(relid, seclabel);
+	else
+		ExecAttributeSetSecLabel(relid, attname, seclabel);
+}
 
 /*
  * This code supports

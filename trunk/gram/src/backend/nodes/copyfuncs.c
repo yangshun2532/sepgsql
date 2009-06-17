@@ -2640,6 +2640,21 @@ _copyAlterOwnerStmt(AlterOwnerStmt *from)
 	return newnode;
 }
 
+static AlterSecLabelStmt *
+_copyAlterSecLabelStmt(AlterSecLabelStmt *from)
+{
+	AlterSecLabelStmt *newnode = makeNode(AlterSecLabelStmt);
+
+	COPY_SCALAR_FIELD(objectType);
+	COPY_NODE_FIELD(relation);
+	COPY_NODE_FIELD(object);
+	COPY_NODE_FIELD(objarg);
+	COPY_STRING_FIELD(subname);
+	COPY_NODE_FIELD(secLabel);
+	
+	return newnode;
+}
+
 static RuleStmt *
 _copyRuleStmt(RuleStmt *from)
 {
@@ -3820,6 +3835,9 @@ copyObject(void *from)
 			break;
 		case T_AlterOwnerStmt:
 			retval = _copyAlterOwnerStmt(from);
+			break;
+		case T_AlterSecLabelStmt:
+			retval = _copyAlterSecLabelStmt(from);
 			break;
 		case T_RuleStmt:
 			retval = _copyRuleStmt(from);
