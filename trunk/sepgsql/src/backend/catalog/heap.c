@@ -57,7 +57,6 @@
 #include "parser/parse_coerce.h"
 #include "parser/parse_expr.h"
 #include "parser/parse_relation.h"
-#include "security/sepgsql.h"
 #include "storage/bufmgr.h"
 #include "storage/freespace.h"
 #include "storage/smgr.h"
@@ -626,7 +625,7 @@ AddNewAttributeTuples(Oid new_rel_oid,
 			if (defel->defname &&
 				strcmp(defel->defname, NameStr(attr->attname)) == 0)
 			{
-				att_secid = sepgsqlGivenColumnSecLabelIn(defel);
+				att_secid = intVal(defel->arg);
 				break;
 			}
 		}
@@ -858,7 +857,7 @@ AddNewRelationTuple(Relation pg_class_desc,
 
 		if (!defel->defname)
 		{
-			rel_secid = sepgsqlGivenTableSecLabelIn(defel);
+			rel_secid = intVal(defel->arg);
 			break;
 		}
 	}
