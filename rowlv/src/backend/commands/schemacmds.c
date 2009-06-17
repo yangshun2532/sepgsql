@@ -25,6 +25,7 @@
 #include "commands/schemacmds.h"
 #include "miscadmin.h"
 #include "parser/parse_utilcmd.h"
+#include "security/sepgsql.h"
 #include "tcop/utility.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
@@ -48,6 +49,7 @@ CreateSchemaCommand(CreateSchemaStmt *stmt, const char *queryString)
 	ListCell   *parsetree_item;
 	Oid			owner_uid;
 	Oid			saved_uid;
+	Oid			secid = InvalidOid;
 	bool		saved_secdefcxt;
 	AclResult	aclresult;
 
@@ -93,8 +95,15 @@ CreateSchemaCommand(CreateSchemaStmt *stmt, const char *queryString)
 	if (saved_uid != owner_uid)
 		SetUserIdAndContext(owner_uid, true);
 
+	/* Explicitly given security label */
+	if (stmt->secLabel)
+	{
+		secid = sepgsqlGivenSecLabelIn(NamespaceRelationId,
+									   (DefElem *)stmt->secLabel);
+	}
+
 	/* Create the schema's namespace */
-	namespaceId = NamespaceCreate(schemaName, owner_uid);
+	namespaceId = NamespaceCreate(schemaName, owner_uid, secid);
 
 	/* Advance cmd counter to make the namespace visible */
 	CommandCounterIncrement();
@@ -430,4 +439,53 @@ AlterSchemaOwner_internal(HeapTuple tup, Relation rel, Oid newOwnerId)
 								newOwnerId);
 	}
 
+}
+
+/*
+ * ALTER SCHEMA name SECURITY_LABEL [=] newlabel
+ */
+void
+AlterSchemaSecLabel(const char *name, DefElem *seclabel)
+{
+	Relation	rel;
+	HeapTuple	tuple, newtup;
+	Oid			secid;
+	bool		replaces[Natts_pg_namespace];
+
+	/* Translate text representation to security id */
+	secid = sepgsqlGivenSecLabelIn(NamespaceRelationId, seclabel);
+
+	/* open pg_namespace relation */
+	rel = heap_open(NamespaceRelationId, RowExclusiveLock);
+	tuple = SearchSysCache(NAMESPACENAME,
+						   CStringGetDatum(name),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_SCHEMA),
+				 errmsg("schema \"%s\" does not exist", name)));
+
+	/* DAC permission check */
+	if (!pg_namespace_ownercheck(HeapTupleGetOid(tuple), GetUserId()))
+		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_NAMESPACE,
+					   NameStr(((Form_pg_namespace) GETSTRUCT(tuple))->nspname));
+	/*
+	 * NOTE: we should not use heap_copytuple() here because of
+	 * possibility that the fetched tuple was inserted while
+	 * SE-PostgreSQL is disabled and it does not have a field
+	 * to store security label.
+	 */
+	memset(replaces, false, sizeof(replaces));
+	newtup = heap_modify_tuple(tuple, RelationGetDescr(rel),
+							   NULL, NULL, replaces);
+	if (!HeapTupleHasSecLabel(newtup))
+		elog(ERROR, "Unable to set security label on tuples in pg_namespace");
+	HeapTupleSetSecLabel(newtup, secid);
+
+	simple_heap_update(rel, &newtup->t_self, newtup);
+	CatalogUpdateIndexes(rel, newtup);
+
+	heap_freetuple(newtup);
+
+	heap_close(rel, RowExclusiveLock);
 }
