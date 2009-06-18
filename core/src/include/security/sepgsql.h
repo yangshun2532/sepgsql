@@ -295,21 +295,6 @@ sepgsqlTupleDescHasSecLabel(Relation rel);
 extern void
 sepgsqlSetDefaultSecLabel(Relation rel, HeapTuple tuple);
 
-extern Oid
-sepgsqlGivenDatabaseSecLabelIn(DefElem *defel);
-
-extern Oid
-sepgsqlGivenProcedureSecLabelIn(DefElem *defel);
-
-extern Oid
-sepgsqlGivenTableSecLabelIn(DefElem *defel);
-
-extern Oid
-sepgsqlGivenColumnSecLabelIn(DefElem *defel);
-
-extern List *
-sepgsqlGivenCreateStmtSecLabelIn(CreateStmt *stmt);
-
 extern bool
 sepgsqlGetMcstransMode(void);
 
@@ -384,11 +369,6 @@ sepgsqlGetPermissionString(security_class_t tclass, access_vector_t av);
 #define sepgsqlAllowFunctionInlined(a)			(true)
 // label.c
 #define sepgsqlTupleDescHasSecLabel(a)			(false)
-#define sepgsqlGivenDatabaseSecLabelIn(a)		(InvalidOid)
-#define sepgsqlGivenProcedureSecLabelIn(a)		(InvalidOid)
-#define sepgsqlGivenTableSecLabelIn(a)			(InvalidOid)
-#define sepgsqlGivenColumnSecLabelIn(a)			(InvalidOid)
-#define sepgsqlGivenCreateStmtSecLabelIn(a)		(NIL)
 #define sepgsqlGetMcstransMode()				(false)
 #define sepgsqlSetMcstransMode(a)				(false)
 #define sepgsqlTransSecLabelIn(a)				(a)

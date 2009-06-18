@@ -2075,7 +2075,6 @@ _copyColumnDef(ColumnDef *from)
 	COPY_NODE_FIELD(raw_default);
 	COPY_STRING_FIELD(cooked_default);
 	COPY_NODE_FIELD(constraints);
-	COPY_NODE_FIELD(secLabel);
 
 	return newnode;
 }
@@ -2415,7 +2414,6 @@ _copyCreateStmt(CreateStmt *from)
 	COPY_NODE_FIELD(options);
 	COPY_SCALAR_FIELD(oncommit);
 	COPY_STRING_FIELD(tablespacename);
-	COPY_NODE_FIELD(secLabel);
 
 	return newnode;
 }

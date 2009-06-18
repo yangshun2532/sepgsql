@@ -1078,7 +1078,6 @@ _equalCreateStmt(CreateStmt *a, CreateStmt *b)
 	COMPARE_NODE_FIELD(options);
 	COMPARE_SCALAR_FIELD(oncommit);
 	COMPARE_STRING_FIELD(tablespacename);
-	COMPARE_NODE_FIELD(secLabel);
 
 	return true;
 }
@@ -2056,7 +2055,6 @@ _equalColumnDef(ColumnDef *a, ColumnDef *b)
 	COMPARE_NODE_FIELD(raw_default);
 	COMPARE_STRING_FIELD(cooked_default);
 	COMPARE_NODE_FIELD(constraints);
-	COMPARE_NODE_FIELD(secLabel);
 
 	return true;
 }
