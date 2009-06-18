@@ -10,7 +10,7 @@
  * Written by Peter Eisentraut <peter_e@gmx.net>.
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/misc/guc.c,v 1.504 2009/05/03 20:09:54 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/utils/misc/guc.c,v 1.505 2009/06/11 14:49:06 momjian Exp $
  *
  *--------------------------------------------------------------------
  */
@@ -140,7 +140,7 @@ static const char *assign_log_destination(const char *value,
 static int	syslog_facility = LOG_LOCAL0;
 
 static bool assign_syslog_facility(int newval,
-				    bool doit, GucSource source);
+					   bool doit, GucSource source);
 static const char *assign_syslog_ident(const char *ident,
 					bool doit, GucSource source);
 #endif
@@ -170,9 +170,9 @@ static bool assign_autovacuum_max_workers(int newval, bool doit, GucSource sourc
 static bool assign_effective_io_concurrency(int newval, bool doit, GucSource source);
 static const char *assign_pgstat_temp_directory(const char *newval, bool doit, GucSource source);
 
-static char *config_enum_get_options(struct config_enum *record, 
-									 const char *prefix, const char *suffix,
-									 const char *separator);
+static char *config_enum_get_options(struct config_enum * record,
+						const char *prefix, const char *suffix,
+						const char *separator);
 
 
 /*
@@ -243,10 +243,10 @@ static const struct config_enum_entry log_statement_options[] = {
 };
 
 static const struct config_enum_entry regex_flavor_options[] = {
-    {"advanced", REG_ADVANCED, false},
-    {"extended", REG_EXTENDED, false},
-    {"basic", REG_BASIC, false},
-    {NULL, 0, false}
+	{"advanced", REG_ADVANCED, false},
+	{"extended", REG_EXTENDED, false},
+	{"basic", REG_BASIC, false},
+	{NULL, 0, false}
 };
 
 static const struct config_enum_entry isolation_level_options[] = {
@@ -1742,11 +1742,11 @@ static struct config_int ConfigureNamesInt[] =
 	{
 		{"effective_io_concurrency",
 #ifdef USE_PREFETCH
-		PGC_USERSET,
+			PGC_USERSET,
 #else
-		PGC_INTERNAL,
+			PGC_INTERNAL,
 #endif
-		RESOURCES,
+			RESOURCES,
 			gettext_noop("Number of simultaneous requests that can be handled efficiently by the disk subsystem."),
 			gettext_noop("For RAID arrays, this should be approximately the number of drive spindles in the array.")
 		},
@@ -1821,9 +1821,9 @@ static struct config_int ConfigureNamesInt[] =
 
 	{
 		{"segment_size", PGC_INTERNAL, PRESET_OPTIONS,
-		    gettext_noop("Shows the number of pages per disk file."),
-		    NULL,
-		    GUC_UNIT_BLOCKS | GUC_NOT_IN_SAMPLE | GUC_DISALLOW_IN_FILE
+			gettext_noop("Shows the number of pages per disk file."),
+			NULL,
+			GUC_UNIT_BLOCKS | GUC_NOT_IN_SAMPLE | GUC_DISALLOW_IN_FILE
 		},
 		&segment_size,
 		RELSEG_SIZE, RELSEG_SIZE, RELSEG_SIZE, NULL, NULL
@@ -1846,8 +1846,8 @@ static struct config_int ConfigureNamesInt[] =
 			GUC_UNIT_XBLOCKS | GUC_NOT_IN_SAMPLE | GUC_DISALLOW_IN_FILE
 		},
 		&wal_segment_size,
-		(XLOG_SEG_SIZE / XLOG_BLCKSZ), 
-		(XLOG_SEG_SIZE / XLOG_BLCKSZ), 
+		(XLOG_SEG_SIZE / XLOG_BLCKSZ),
+		(XLOG_SEG_SIZE / XLOG_BLCKSZ),
 		(XLOG_SEG_SIZE / XLOG_BLCKSZ),
 		NULL, NULL
 	},
@@ -2589,7 +2589,7 @@ static struct config_enum ConfigureNamesEnum[] =
 		XACT_READ_COMMITTED, isolation_level_options, NULL, NULL
 	},
 
- 	{
+	{
 		{"IntervalStyle", PGC_USERSET, CLIENT_CONN_LOCALE,
 			gettext_noop("Sets the display format for interval values."),
 			NULL,
@@ -2682,7 +2682,7 @@ static struct config_enum ConfigureNamesEnum[] =
 			NULL
 		},
 		&sync_method,
-		DEFAULT_SYNC_METHOD, sync_method_options, 
+		DEFAULT_SYNC_METHOD, sync_method_options,
 		assign_xlog_sync_method, NULL
 	},
 
@@ -2749,7 +2749,7 @@ static int	GUCNestLevel = 0;	/* 1 when in main transaction */
 
 static int	guc_var_compare(const void *a, const void *b);
 static int	guc_name_compare(const char *namea, const char *nameb);
-static void InitializeOneGUCOption(struct config_generic *gconf);
+static void InitializeOneGUCOption(struct config_generic * gconf);
 static void push_old_value(struct config_generic * gconf, GucAction action);
 static void ReportGUCOption(struct config_generic * record);
 static void ShowGUCConfigOption(const char *name, DestReceiver *dest);
@@ -2880,7 +2880,7 @@ set_stack_value(struct config_generic * gconf, union config_var_value * val)
 							 *((struct config_string *) gconf)->variable);
 			break;
 		case PGC_ENUM:
-			val->enumval = 
+			val->enumval =
 				*((struct config_enum *) gconf)->variable;
 			break;
 	}
@@ -3317,7 +3317,7 @@ InitializeGUCOptions(void)
  * Initialize one GUC option variable to its compiled-in default.
  */
 static void
-InitializeOneGUCOption(struct config_generic *gconf)
+InitializeOneGUCOption(struct config_generic * gconf)
 {
 	gconf->status = 0;
 	gconf->reset_source = PGC_S_DEFAULT;
@@ -3329,100 +3329,100 @@ InitializeOneGUCOption(struct config_generic *gconf)
 	switch (gconf->vartype)
 	{
 		case PGC_BOOL:
-		{
-			struct config_bool *conf = (struct config_bool *) gconf;
-
-			if (conf->assign_hook)
-				if (!(*conf->assign_hook) (conf->boot_val, true,
-										   PGC_S_DEFAULT))
-					elog(FATAL, "failed to initialize %s to %d",
-						 conf->gen.name, (int) conf->boot_val);
-			*conf->variable = conf->reset_val = conf->boot_val;
-			break;
-		}
-		case PGC_INT:
-		{
-			struct config_int *conf = (struct config_int *) gconf;
-
-			Assert(conf->boot_val >= conf->min);
-			Assert(conf->boot_val <= conf->max);
-			if (conf->assign_hook)
-				if (!(*conf->assign_hook) (conf->boot_val, true,
-										   PGC_S_DEFAULT))
-					elog(FATAL, "failed to initialize %s to %d",
-						 conf->gen.name, conf->boot_val);
-			*conf->variable = conf->reset_val = conf->boot_val;
-			break;
-		}
-		case PGC_REAL:
-		{
-			struct config_real *conf = (struct config_real *) gconf;
-
-			Assert(conf->boot_val >= conf->min);
-			Assert(conf->boot_val <= conf->max);
-			if (conf->assign_hook)
-				if (!(*conf->assign_hook) (conf->boot_val, true,
-										   PGC_S_DEFAULT))
-					elog(FATAL, "failed to initialize %s to %g",
-						 conf->gen.name, conf->boot_val);
-			*conf->variable = conf->reset_val = conf->boot_val;
-			break;
-		}
-		case PGC_STRING:
-		{
-			struct config_string *conf = (struct config_string *) gconf;
-			char	   *str;
-
-			*conf->variable = NULL;
-			conf->reset_val = NULL;
-
-			if (conf->boot_val == NULL)
 			{
-				/* leave the value NULL, do not call assign hook */
+				struct config_bool *conf = (struct config_bool *) gconf;
+
+				if (conf->assign_hook)
+					if (!(*conf->assign_hook) (conf->boot_val, true,
+											   PGC_S_DEFAULT))
+						elog(FATAL, "failed to initialize %s to %d",
+							 conf->gen.name, (int) conf->boot_val);
+				*conf->variable = conf->reset_val = conf->boot_val;
 				break;
 			}
-
-			str = guc_strdup(FATAL, conf->boot_val);
-			conf->reset_val = str;
-
-			if (conf->assign_hook)
+		case PGC_INT:
 			{
-				const char *newstr;
+				struct config_int *conf = (struct config_int *) gconf;
 
-				newstr = (*conf->assign_hook) (str, true,
-											   PGC_S_DEFAULT);
-				if (newstr == NULL)
-				{
-					elog(FATAL, "failed to initialize %s to \"%s\"",
-						 conf->gen.name, str);
-				}
-				else if (newstr != str)
-				{
-					free(str);
-
-					/*
-					 * See notes in set_config_option about casting
-					 */
-					str = (char *) newstr;
-					conf->reset_val = str;
-				}
+				Assert(conf->boot_val >= conf->min);
+				Assert(conf->boot_val <= conf->max);
+				if (conf->assign_hook)
+					if (!(*conf->assign_hook) (conf->boot_val, true,
+											   PGC_S_DEFAULT))
+						elog(FATAL, "failed to initialize %s to %d",
+							 conf->gen.name, conf->boot_val);
+				*conf->variable = conf->reset_val = conf->boot_val;
+				break;
 			}
-			*conf->variable = str;
-			break;
-		}
-		case PGC_ENUM:
-		{
-			struct config_enum *conf = (struct config_enum *) gconf;
+		case PGC_REAL:
+			{
+				struct config_real *conf = (struct config_real *) gconf;
 
-			if (conf->assign_hook)
-				if (!(*conf->assign_hook) (conf->boot_val, true,
-										   PGC_S_DEFAULT))
-					elog(FATAL, "failed to initialize %s to %s",
-						 conf->gen.name, 
-						 config_enum_lookup_by_value(conf, conf->boot_val));
-			*conf->variable = conf->reset_val = conf->boot_val;
-			break;
-		}
+				Assert(conf->boot_val >= conf->min);
+				Assert(conf->boot_val <= conf->max);
+				if (conf->assign_hook)
+					if (!(*conf->assign_hook) (conf->boot_val, true,
+											   PGC_S_DEFAULT))
+						elog(FATAL, "failed to initialize %s to %g",
+							 conf->gen.name, conf->boot_val);
+				*conf->variable = conf->reset_val = conf->boot_val;
+				break;
+			}
+		case PGC_STRING:
+			{
+				struct config_string *conf = (struct config_string *) gconf;
+				char	   *str;
+
+				*conf->variable = NULL;
+				conf->reset_val = NULL;
+
+				if (conf->boot_val == NULL)
+				{
+					/* leave the value NULL, do not call assign hook */
+					break;
+				}
+
+				str = guc_strdup(FATAL, conf->boot_val);
+				conf->reset_val = str;
+
+				if (conf->assign_hook)
+				{
+					const char *newstr;
+
+					newstr = (*conf->assign_hook) (str, true,
+												   PGC_S_DEFAULT);
+					if (newstr == NULL)
+					{
+						elog(FATAL, "failed to initialize %s to \"%s\"",
+							 conf->gen.name, str);
+					}
+					else if (newstr != str)
+					{
+						free(str);
+
+						/*
+						 * See notes in set_config_option about casting
+						 */
+						str = (char *) newstr;
+						conf->reset_val = str;
+					}
+				}
+				*conf->variable = str;
+				break;
+			}
+		case PGC_ENUM:
+			{
+				struct config_enum *conf = (struct config_enum *) gconf;
+
+				if (conf->assign_hook)
+					if (!(*conf->assign_hook) (conf->boot_val, true,
+											   PGC_S_DEFAULT))
+						elog(FATAL, "failed to initialize %s to %s",
+							 conf->gen.name,
+						  config_enum_lookup_by_value(conf, conf->boot_val));
+				*conf->variable = conf->reset_val = conf->boot_val;
+				break;
+			}
 	}
 }
 
@@ -4036,13 +4036,13 @@ AtEOXact_GUC(bool isCommit, int nestLevel)
 					case PGC_ENUM:
 						{
 							struct config_enum *conf = (struct config_enum *) gconf;
-							int newval = newvalue.enumval;
+							int			newval = newvalue.enumval;
 
 							if (*conf->variable != newval)
 							{
 								if (conf->assign_hook)
 									if (!(*conf->assign_hook) (newval,
-															   true, PGC_S_OVERRIDE))
+													   true, PGC_S_OVERRIDE))
 										elog(LOG, "failed to commit %s as %s",
 											 conf->gen.name,
 											 config_enum_lookup_by_value(conf, newval));
@@ -4378,7 +4378,7 @@ parse_real(const char *value, double *result)
  * allocated for modification.
  */
 const char *
-config_enum_lookup_by_value(struct config_enum *record, int val)
+config_enum_lookup_by_value(struct config_enum * record, int val)
 {
 	const struct config_enum_entry *entry;
 
@@ -4390,7 +4390,7 @@ config_enum_lookup_by_value(struct config_enum *record, int val)
 
 	elog(ERROR, "could not find enum option %d for %s",
 		 val, record->gen.name);
-	return NULL;		/* silence compiler */
+	return NULL;				/* silence compiler */
 }
 
 
@@ -4401,7 +4401,7 @@ config_enum_lookup_by_value(struct config_enum *record, int val)
  * true. If it's not found, return FALSE and retval is set to 0.
  */
 bool
-config_enum_lookup_by_name(struct config_enum *record, const char *value,
+config_enum_lookup_by_name(struct config_enum * record, const char *value,
 						   int *retval)
 {
 	const struct config_enum_entry *entry;
@@ -4427,16 +4427,16 @@ config_enum_lookup_by_name(struct config_enum *record, const char *value,
  * If suffix is non-NULL, it is added to the end of the string.
  */
 static char *
-config_enum_get_options(struct config_enum *record, const char *prefix,
+config_enum_get_options(struct config_enum * record, const char *prefix,
 						const char *suffix, const char *separator)
 {
 	const struct config_enum_entry *entry;
-	StringInfoData	retstr;
+	StringInfoData retstr;
 	int			seplen;
 
 	initStringInfo(&retstr);
 	appendStringInfoString(&retstr, prefix);
-	
+
 	seplen = strlen(separator);
 	for (entry = record->options; entry && entry->name; entry++)
 	{
@@ -4448,11 +4448,11 @@ config_enum_get_options(struct config_enum *record, const char *prefix,
 	}
 
 	/*
-	 * All the entries may have been hidden, leaving the string empty
-	 * if no prefix was given. This indicates a broken GUC setup, since
-	 * there is no use for an enum without any values, so we just check
-	 * to make sure we don't write to invalid memory instead of actually
-	 * trying to do something smart with it.
+	 * All the entries may have been hidden, leaving the string empty if no
+	 * prefix was given. This indicates a broken GUC setup, since there is no
+	 * use for an enum without any values, so we just check to make sure we
+	 * don't write to invalid memory instead of actually trying to do
+	 * something smart with it.
 	 */
 	if (retstr.len >= seplen)
 	{
@@ -4592,8 +4592,8 @@ set_config_option(const char *name, const char *value,
 				if (changeVal && !is_newvalue_equal(record, value))
 					ereport(elevel,
 							(errcode(ERRCODE_CANT_CHANGE_RUNTIME_PARAM),
-							 errmsg("attempted change of parameter \"%s\" ignored",
-									name),
+					   errmsg("attempted change of parameter \"%s\" ignored",
+							  name),
 							 errdetail("This parameter cannot be changed after server start.")));
 				return true;
 			}
@@ -4601,8 +4601,8 @@ set_config_option(const char *name, const char *value,
 			{
 				ereport(elevel,
 						(errcode(ERRCODE_CANT_CHANGE_RUNTIME_PARAM),
-						 errmsg("attempted change of parameter \"%s\" ignored",
-								name),
+					   errmsg("attempted change of parameter \"%s\" ignored",
+							  name),
 						 errdetail("This parameter cannot be changed after server start.")));
 				return false;
 			}
@@ -5031,16 +5031,16 @@ set_config_option(const char *name, const char *value,
 				{
 					if (!config_enum_lookup_by_name(conf, value, &newval))
 					{
-						char *hintmsg;
-					   
-						hintmsg	= config_enum_get_options(conf,
-														  "Available values: ",
+						char	   *hintmsg;
+
+						hintmsg = config_enum_get_options(conf,
+														"Available values: ",
 														  ".", ", ");
 
 						ereport(elevel,
 								(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-								 errmsg("invalid value for parameter \"%s\": \"%s\"",
-										name, value),
+						 errmsg("invalid value for parameter \"%s\": \"%s\"",
+								name, value),
 								 hintmsg ? errhint("%s", _(hintmsg)) : 0));
 
 						if (hintmsg)
@@ -5065,9 +5065,9 @@ set_config_option(const char *name, const char *value,
 					{
 						ereport(elevel,
 								(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-								 errmsg("invalid value for parameter \"%s\": \"%s\"",
-										name, 
-										config_enum_lookup_by_value(conf, newval))));
+						 errmsg("invalid value for parameter \"%s\": \"%s\"",
+								name,
+								config_enum_lookup_by_value(conf, newval))));
 						return false;
 					}
 
@@ -5115,8 +5115,8 @@ set_config_sourcefile(const char *name, char *sourcefile, int sourceline)
 	int			elevel;
 
 	/*
-	 * To avoid cluttering the log, only the postmaster bleats loudly
-	 * about problems with the config file.
+	 * To avoid cluttering the log, only the postmaster bleats loudly about
+	 * problems with the config file.
 	 */
 	elevel = IsUnderPostmaster ? DEBUG3 : LOG;
 
@@ -5193,7 +5193,7 @@ GetConfigOption(const char *name)
 
 		case PGC_ENUM:
 			return config_enum_lookup_by_value((struct config_enum *) record,
-											*((struct config_enum *) record)->variable);
+								 *((struct config_enum *) record)->variable);
 	}
 	return NULL;
 }
@@ -5241,7 +5241,7 @@ GetConfigOptionResetString(const char *name)
 
 		case PGC_ENUM:
 			return config_enum_lookup_by_value((struct config_enum *) record,
-										    ((struct config_enum *) record)->reset_val);
+								 ((struct config_enum *) record)->reset_val);
 	}
 	return NULL;
 }
@@ -5271,7 +5271,7 @@ IsSuperuserConfigOption(const char *name)
  * report (in addition to the generic "invalid value for option FOO" that
  * guc.c will provide).  Note that the result might be ERROR or a lower
  * level, so the caller must be prepared for control to return from ereport,
- * or not.  If control does return, return false/NULL from the hook function.
+ * or not.	If control does return, return false/NULL from the hook function.
  *
  * At some point it'd be nice to replace this with a mechanism that allows
  * the custom message to become the DETAIL line of guc.c's generic message.
@@ -5293,9 +5293,9 @@ GUC_complaint_elevel(GucSource source)
 	{
 		/*
 		 * If we're a postmaster child, this is probably "undo" during
-		 * transaction abort, so we don't want to clutter the log.  There's
-		 * a small chance of a real problem with an OVERRIDE setting,
-		 * though, so suppressing the message entirely wouldn't be desirable.
+		 * transaction abort, so we don't want to clutter the log.  There's a
+		 * small chance of a real problem with an OVERRIDE setting, though, so
+		 * suppressing the message entirely wouldn't be desirable.
 		 */
 		elevel = IsUnderPostmaster ? DEBUG5 : LOG;
 	}
@@ -5351,22 +5351,22 @@ flatten_set_variable_args(const char *name, List *args)
 
 	/*
 	 * Each list member may be a plain A_Const node, or an A_Const within a
-	 * TypeCast; the latter case is supported only for ConstInterval
-	 * arguments (for SET TIME ZONE).
+	 * TypeCast; the latter case is supported only for ConstInterval arguments
+	 * (for SET TIME ZONE).
 	 */
 	foreach(l, args)
 	{
-		Node       *arg = (Node *) lfirst(l);
+		Node	   *arg = (Node *) lfirst(l);
 		char	   *val;
 		TypeName   *typename = NULL;
-		A_Const	   *con;
+		A_Const    *con;
 
 		if (l != list_head(args))
 			appendStringInfo(&buf, ", ");
 
 		if (IsA(arg, TypeCast))
 		{
-			TypeCast *tc = (TypeCast *) arg;
+			TypeCast   *tc = (TypeCast *) arg;
 
 			arg = tc->arg;
 			typename = tc->typename;
@@ -5624,11 +5624,11 @@ init_custom_variable(const char *name,
 	struct config_generic *gen;
 
 	/*
-	 * Only allow custom PGC_POSTMASTER variables to be created during
-	 * shared library preload; any later than that, we can't ensure that
-	 * the value doesn't change after startup.  This is a fatal elog if it
-	 * happens; just erroring out isn't safe because we don't know what
-	 * the calling loadable module might already have hooked into.
+	 * Only allow custom PGC_POSTMASTER variables to be created during shared
+	 * library preload; any later than that, we can't ensure that the value
+	 * doesn't change after startup.  This is a fatal elog if it happens; just
+	 * erroring out isn't safe because we don't know what the calling loadable
+	 * module might already have hooked into.
 	 */
 	if (context == PGC_POSTMASTER &&
 		!process_shared_preload_libraries_in_progress)
@@ -5659,7 +5659,7 @@ define_custom_variable(struct config_generic * variable)
 	const char **nameAddr = &name;
 	const char *value;
 	struct config_string *pHolder;
-	GucContext phcontext;
+	GucContext	phcontext;
 	struct config_generic **res;
 
 	/*
@@ -5706,9 +5706,9 @@ define_custom_variable(struct config_generic * variable)
 	*res = variable;
 
 	/*
-	 * Infer context for assignment based on source of existing value.
-	 * We can't tell this with exact accuracy, but we can at least do
-	 * something reasonable in typical cases.
+	 * Infer context for assignment based on source of existing value. We
+	 * can't tell this with exact accuracy, but we can at least do something
+	 * reasonable in typical cases.
 	 */
 	switch (pHolder->gen.source)
 	{
@@ -5716,10 +5716,11 @@ define_custom_variable(struct config_generic * variable)
 		case PGC_S_ENV_VAR:
 		case PGC_S_FILE:
 		case PGC_S_ARGV:
+
 			/*
-			 * If we got past the check in init_custom_variable, we can
-			 * safely assume that any existing value for a PGC_POSTMASTER
-			 * variable was set in postmaster context.
+			 * If we got past the check in init_custom_variable, we can safely
+			 * assume that any existing value for a PGC_POSTMASTER variable
+			 * was set in postmaster context.
 			 */
 			if (variable->context == PGC_POSTMASTER)
 				phcontext = PGC_POSTMASTER;
@@ -5879,7 +5880,7 @@ DefineCustomEnumVariable(const char *name,
 						 const char *long_desc,
 						 int *valueAddr,
 						 int bootValue,
-						 const struct config_enum_entry *options,
+						 const struct config_enum_entry * options,
 						 GucContext context,
 						 int flags,
 						 GucEnumAssignHook assign_hook,
@@ -6192,13 +6193,13 @@ GetConfigOptionByNum(int varnum, const char **values, bool *noshow)
 				/* enumvals */
 				values[11] = NULL;
 
- 				/* boot_val */
- 				snprintf(buffer, sizeof(buffer), "%d", lconf->boot_val);
- 				values[12] = pstrdup(buffer);
+				/* boot_val */
+				snprintf(buffer, sizeof(buffer), "%d", lconf->boot_val);
+				values[12] = pstrdup(buffer);
 
- 				/* reset_val */
- 				snprintf(buffer, sizeof(buffer), "%d", lconf->reset_val);
- 				values[13] = pstrdup(buffer);
+				/* reset_val */
+				snprintf(buffer, sizeof(buffer), "%d", lconf->reset_val);
+				values[13] = pstrdup(buffer);
 			}
 			break;
 
@@ -6217,19 +6218,19 @@ GetConfigOptionByNum(int varnum, const char **values, bool *noshow)
 				/* enumvals */
 				values[11] = NULL;
 
- 				/* boot_val */
- 				snprintf(buffer, sizeof(buffer), "%g", lconf->boot_val);
- 				values[12] = pstrdup(buffer);
+				/* boot_val */
+				snprintf(buffer, sizeof(buffer), "%g", lconf->boot_val);
+				values[12] = pstrdup(buffer);
 
- 				/* reset_val */
- 				snprintf(buffer, sizeof(buffer), "%g", lconf->reset_val);
- 				values[13] = pstrdup(buffer);
+				/* reset_val */
+				snprintf(buffer, sizeof(buffer), "%g", lconf->reset_val);
+				values[13] = pstrdup(buffer);
 			}
 			break;
 
 		case PGC_STRING:
 			{
- 				struct config_string *lconf = (struct config_string *) conf;
+				struct config_string *lconf = (struct config_string *) conf;
 
 				/* min_val */
 				values[9] = NULL;
@@ -6240,15 +6241,15 @@ GetConfigOptionByNum(int varnum, const char **values, bool *noshow)
 				/* enumvals */
 				values[11] = NULL;
 
- 				/* boot_val */
- 				if (lconf->boot_val == NULL)
- 					values[12] = NULL;
+				/* boot_val */
+				if (lconf->boot_val == NULL)
+					values[12] = NULL;
 				else
 					values[12] = pstrdup(lconf->boot_val);
 
- 				/* reset_val */
- 				if (lconf->reset_val == NULL)
- 					values[13] = NULL;
+				/* reset_val */
+				if (lconf->reset_val == NULL)
+					values[13] = NULL;
 				else
 					values[13] = pstrdup(lconf->reset_val);
 			}
@@ -6256,7 +6257,7 @@ GetConfigOptionByNum(int varnum, const char **values, bool *noshow)
 
 		case PGC_ENUM:
 			{
- 				struct config_enum *lconf = (struct config_enum *) conf;
+				struct config_enum *lconf = (struct config_enum *) conf;
 
 				/* min_val */
 				values[9] = NULL;
@@ -6265,17 +6266,21 @@ GetConfigOptionByNum(int varnum, const char **values, bool *noshow)
 				values[10] = NULL;
 
 				/* enumvals */
-				/* NOTE! enumvals with double quotes in them are not supported! */
+
+				/*
+				 * NOTE! enumvals with double quotes in them are not
+				 * supported!
+				 */
 				values[11] = config_enum_get_options((struct config_enum *) conf,
 													 "{\"", "\"}", "\",\"");
 
- 				/* boot_val */
+				/* boot_val */
 				values[12] = pstrdup(config_enum_lookup_by_value(lconf,
-																 lconf->boot_val));
+														   lconf->boot_val));
 
- 				/* reset_val */
+				/* reset_val */
 				values[13] = pstrdup(config_enum_lookup_by_value(lconf,
-																 lconf->reset_val));
+														  lconf->reset_val));
 			}
 			break;
 
@@ -6294,18 +6299,18 @@ GetConfigOptionByNum(int varnum, const char **values, bool *noshow)
 				/* enumvals */
 				values[11] = NULL;
 
- 				/* boot_val */
- 				values[12] = NULL;
+				/* boot_val */
+				values[12] = NULL;
 
- 				/* reset_val */
- 				values[13] = NULL;
+				/* reset_val */
+				values[13] = NULL;
 			}
 			break;
 	}
 
-	/* 
-	 * If the setting came from a config file, set the source location.
-	 * For security reasons, we don't show source file/line number for
+	/*
+	 * If the setting came from a config file, set the source location. For
+	 * security reasons, we don't show source file/line number for
 	 * non-superusers.
 	 */
 	if (conf->source == PGC_S_FILE && superuser())
@@ -6406,10 +6411,10 @@ show_all_settings(PG_FUNCTION_ARGS)
 						   TEXTOID, -1, 0);
 		TupleDescInitEntry(tupdesc, (AttrNumber) 12, "enumvals",
 						   TEXTARRAYOID, -1, 0);
- 		TupleDescInitEntry(tupdesc, (AttrNumber) 13, "boot_val",
- 						   TEXTOID, -1, 0);
- 		TupleDescInitEntry(tupdesc, (AttrNumber) 14, "reset_val",
- 						   TEXTOID, -1, 0);
+		TupleDescInitEntry(tupdesc, (AttrNumber) 13, "boot_val",
+						   TEXTOID, -1, 0);
+		TupleDescInitEntry(tupdesc, (AttrNumber) 14, "reset_val",
+						   TEXTOID, -1, 0);
 		TupleDescInitEntry(tupdesc, (AttrNumber) 15, "sourcefile",
 						   TEXTOID, -1, 0);
 		TupleDescInitEntry(tupdesc, (AttrNumber) 16, "sourceline",
@@ -6503,10 +6508,10 @@ _ShowOption(struct config_generic * record, bool use_units)
 				{
 					/*
 					 * Use int64 arithmetic to avoid overflows in units
-					 * conversion.  If INT64_IS_BUSTED we might overflow
+					 * conversion.	If INT64_IS_BUSTED we might overflow
 					 * anyway and print bogus answers, but there are few
-					 * enough such machines that it doesn't seem worth
-					 * trying harder.
+					 * enough such machines that it doesn't seem worth trying
+					 * harder.
 					 */
 					int64		result = *conf->variable;
 					const char *unit;
@@ -6619,7 +6624,7 @@ _ShowOption(struct config_generic * record, bool use_units)
 			{
 				struct config_enum *conf = (struct config_enum *) record;
 
-				if(conf->show_hook)
+				if (conf->show_hook)
 					val = (*conf->show_hook) ();
 				else
 					val = config_enum_lookup_by_value(conf, *conf->variable);
@@ -6708,7 +6713,7 @@ is_newvalue_equal(struct config_generic * record, const char *newvalue)
  *		variable source, integer
  */
 static void
-write_one_nondefault_variable(FILE *fp, struct config_generic *gconf)
+write_one_nondefault_variable(FILE *fp, struct config_generic * gconf)
 {
 	if (gconf->source == PGC_S_DEFAULT)
 		return;
@@ -6719,49 +6724,49 @@ write_one_nondefault_variable(FILE *fp, struct config_generic *gconf)
 	switch (gconf->vartype)
 	{
 		case PGC_BOOL:
-		{
-			struct config_bool *conf = (struct config_bool *) gconf;
+			{
+				struct config_bool *conf = (struct config_bool *) gconf;
 
-			if (*conf->variable)
-				fprintf(fp, "true");
-			else
-				fprintf(fp, "false");
-		}
-		break;
+				if (*conf->variable)
+					fprintf(fp, "true");
+				else
+					fprintf(fp, "false");
+			}
+			break;
 
 		case PGC_INT:
-		{
-			struct config_int *conf = (struct config_int *) gconf;
+			{
+				struct config_int *conf = (struct config_int *) gconf;
 
-			fprintf(fp, "%d", *conf->variable);
-		}
-		break;
+				fprintf(fp, "%d", *conf->variable);
+			}
+			break;
 
 		case PGC_REAL:
-		{
-			struct config_real *conf = (struct config_real *) gconf;
+			{
+				struct config_real *conf = (struct config_real *) gconf;
 
-			/* Could lose precision here? */
-			fprintf(fp, "%f", *conf->variable);
-		}
-		break;
+				/* Could lose precision here? */
+				fprintf(fp, "%f", *conf->variable);
+			}
+			break;
 
 		case PGC_STRING:
-		{
-			struct config_string *conf = (struct config_string *) gconf;
+			{
+				struct config_string *conf = (struct config_string *) gconf;
 
-			fprintf(fp, "%s", *conf->variable);
-		}
-		break;
+				fprintf(fp, "%s", *conf->variable);
+			}
+			break;
 
 		case PGC_ENUM:
-		{
-			struct config_enum *conf = (struct config_enum *) gconf;
-						
-			fprintf(fp, "%s",
-					config_enum_lookup_by_value(conf, *conf->variable));
-		}
-		break;
+			{
+				struct config_enum *conf = (struct config_enum *) gconf;
+
+				fprintf(fp, "%s",
+						config_enum_lookup_by_value(conf, *conf->variable));
+			}
+			break;
 	}
 
 	fputc(0, fp);
@@ -7184,7 +7189,7 @@ assign_log_destination(const char *value, bool doit, GucSource source)
 		list_free(elemlist);
 		ereport(GUC_complaint_elevel(source),
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-			errmsg("invalid list syntax for parameter \"log_destination\"")));
+		   errmsg("invalid list syntax for parameter \"log_destination\"")));
 		return NULL;
 	}
 
@@ -7600,11 +7605,11 @@ assign_effective_io_concurrency(int newval, bool doit, GucSource source)
 	 *
 	 * drives |   I/O requests
 	 * -------+----------------
-	 *      1 |   1
-	 *      2 |   2/1 + 2/2 = 3
-	 *      3 |   3/1 + 3/2 + 3/3 = 5 1/2
-	 *      4 |   4/1 + 4/2 + 4/3 + 4/4 = 8 1/3
-	 *      n |   n * H(n)
+	 *		1 |   1
+	 *		2 |   2/1 + 2/2 = 3
+	 *		3 |   3/1 + 3/2 + 3/3 = 5 1/2
+	 *		4 |   4/1 + 4/2 + 4/3 + 4/4 = 8 1/3
+	 *		n |   n * H(n)
 	 *
 	 * This is called the "coupon collector problem" and H(n) is called the
 	 * harmonic series.  This could be approximated by n * ln(n), but for
@@ -7637,7 +7642,7 @@ assign_effective_io_concurrency(int newval, bool doit, GucSource source)
 		return false;
 #else
 	return true;
-#endif /* USE_PREFETCH */
+#endif   /* USE_PREFETCH */
 }
 
 static const char *
@@ -7651,9 +7656,9 @@ assign_pgstat_temp_directory(const char *newval, bool doit, GucSource source)
 
 		canonicalize_path(canon_val);
 
-		tname = guc_malloc(ERROR, strlen(canon_val) + 12);	/* /pgstat.tmp */
+		tname = guc_malloc(ERROR, strlen(canon_val) + 12);		/* /pgstat.tmp */
 		sprintf(tname, "%s/pgstat.tmp", canon_val);
-		fname = guc_malloc(ERROR, strlen(canon_val) + 13);	/* /pgstat.stat */
+		fname = guc_malloc(ERROR, strlen(canon_val) + 13);		/* /pgstat.stat */
 		sprintf(fname, "%s/pgstat.stat", canon_val);
 
 		if (pgstat_stat_tmpname)

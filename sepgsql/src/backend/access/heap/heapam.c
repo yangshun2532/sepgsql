@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/access/heap/heapam.c,v 1.276 2009/06/10 18:54:16 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/access/heap/heapam.c,v 1.277 2009/06/11 14:48:53 momjian Exp $
  *
  *
  * INTERFACE ROUTINES
@@ -70,7 +70,7 @@
 
 
 /* GUC variable */
-bool	synchronize_seqscans = true;
+bool		synchronize_seqscans = true;
 
 
 static HeapScanDesc heap_beginscan_internal(Relation relation,
@@ -117,9 +117,9 @@ initscan(HeapScanDesc scan, ScanKey key, bool is_rescan)
 	 * strategy and enable synchronized scanning (see syncscan.c).	Although
 	 * the thresholds for these features could be different, we make them the
 	 * same so that there are only two behaviors to tune rather than four.
-	 * (However, some callers need to be able to disable one or both of
-	 * these behaviors, independently of the size of the table; also there
-	 * is a GUC variable that can disable synchronized scanning.)
+	 * (However, some callers need to be able to disable one or both of these
+	 * behaviors, independently of the size of the table; also there is a GUC
+	 * variable that can disable synchronized scanning.)
 	 *
 	 * During a rescan, don't make a new strategy object if we don't have to.
 	 */
@@ -147,8 +147,8 @@ initscan(HeapScanDesc scan, ScanKey key, bool is_rescan)
 	if (is_rescan)
 	{
 		/*
-		 * If rescan, keep the previous startblock setting so that rewinding
-		 * a cursor doesn't generate surprising results.  Reset the syncscan
+		 * If rescan, keep the previous startblock setting so that rewinding a
+		 * cursor doesn't generate surprising results.  Reset the syncscan
 		 * setting, though.
 		 */
 		scan->rs_syncscan = (allow_sync && synchronize_seqscans);
@@ -1794,7 +1794,7 @@ void
 FreeBulkInsertState(BulkInsertState bistate)
 {
 	if (bistate->current_buf != InvalidBuffer)
-		ReleaseBuffer(bistate->current_buf);		
+		ReleaseBuffer(bistate->current_buf);
 	FreeAccessStrategy(bistate->strategy);
 	pfree(bistate);
 }
@@ -1978,7 +1978,7 @@ heap_insert(Relation relation, HeapTuple tup, CommandId cid,
 
 	/* Clear the bit in the visibility map if necessary */
 	if (all_visible_cleared)
-		visibilitymap_clear(relation, 
+		visibilitymap_clear(relation,
 							ItemPointerGetBlockNumber(&(heaptup->t_self)));
 
 	/*
@@ -3444,8 +3444,8 @@ l3:
 	LockBuffer(*buffer, BUFFER_LOCK_UNLOCK);
 
 	/*
-	 * Don't update the visibility map here. Locking a tuple doesn't
-	 * change visibility info.
+	 * Don't update the visibility map here. Locking a tuple doesn't change
+	 * visibility info.
 	 */
 
 	/*
@@ -4122,11 +4122,11 @@ heap_xlog_clean(XLogRecPtr lsn, XLogRecord *record, bool clean_move)
 							nowunused, nunused,
 							clean_move);
 
-	freespace = PageGetHeapFreeSpace(page); /* needed to update FSM below */
+	freespace = PageGetHeapFreeSpace(page);		/* needed to update FSM below */
 
 	/*
-	 * Note: we don't worry about updating the page's prunability hints.
-	 * At worst this will cause an extra prune cycle to occur soon.
+	 * Note: we don't worry about updating the page's prunability hints. At
+	 * worst this will cause an extra prune cycle to occur soon.
 	 */
 
 	PageSetLSN(page, lsn);
@@ -4224,17 +4224,18 @@ heap_xlog_delete(XLogRecPtr lsn, XLogRecord *record)
 	OffsetNumber offnum;
 	ItemId		lp = NULL;
 	HeapTupleHeader htup;
-	BlockNumber	blkno;
+	BlockNumber blkno;
 
 	blkno = ItemPointerGetBlockNumber(&(xlrec->target.tid));
 
 	/*
-	 * The visibility map always needs to be updated, even if the heap page
-	 * is already up-to-date.
+	 * The visibility map always needs to be updated, even if the heap page is
+	 * already up-to-date.
 	 */
 	if (xlrec->all_visible_cleared)
 	{
-		Relation reln = CreateFakeRelcacheEntry(xlrec->target.node);
+		Relation	reln = CreateFakeRelcacheEntry(xlrec->target.node);
+
 		visibilitymap_clear(reln, blkno);
 		FreeFakeRelcacheEntry(reln);
 	}
@@ -4301,17 +4302,18 @@ heap_xlog_insert(XLogRecPtr lsn, XLogRecord *record)
 	xl_heap_header xlhdr;
 	uint32		newlen;
 	Size		freespace;
-	BlockNumber	blkno;
+	BlockNumber blkno;
 
 	blkno = ItemPointerGetBlockNumber(&(xlrec->target.tid));
 
 	/*
-	 * The visibility map always needs to be updated, even if the heap page
-	 * is already up-to-date.
+	 * The visibility map always needs to be updated, even if the heap page is
+	 * already up-to-date.
 	 */
 	if (xlrec->all_visible_cleared)
 	{
-		Relation reln = CreateFakeRelcacheEntry(xlrec->target.node);
+		Relation	reln = CreateFakeRelcacheEntry(xlrec->target.node);
+
 		visibilitymap_clear(reln, blkno);
 		FreeFakeRelcacheEntry(reln);
 	}
@@ -4368,7 +4370,7 @@ heap_xlog_insert(XLogRecPtr lsn, XLogRecord *record)
 	if (offnum == InvalidOffsetNumber)
 		elog(PANIC, "heap_insert_redo: failed to add tuple");
 
-	freespace = PageGetHeapFreeSpace(page); /* needed to update FSM below */
+	freespace = PageGetHeapFreeSpace(page);		/* needed to update FSM below */
 
 	PageSetLSN(page, lsn);
 	PageSetTLI(page, ThisTimeLineID);
@@ -4381,8 +4383,8 @@ heap_xlog_insert(XLogRecPtr lsn, XLogRecord *record)
 
 	/*
 	 * If the page is running low on free space, update the FSM as well.
-	 * Arbitrarily, our definition of "low" is less than 20%. We can't do
-	 * much better than that without knowing the fill-factor for the table.
+	 * Arbitrarily, our definition of "low" is less than 20%. We can't do much
+	 * better than that without knowing the fill-factor for the table.
 	 *
 	 * XXX: We don't get here if the page was restored from full page image.
 	 * We don't bother to update the FSM in that case, it doesn't need to be
@@ -4417,12 +4419,13 @@ heap_xlog_update(XLogRecPtr lsn, XLogRecord *record, bool move, bool hot_update)
 	Size		freespace;
 
 	/*
-	 * The visibility map always needs to be updated, even if the heap page
-	 * is already up-to-date.
+	 * The visibility map always needs to be updated, even if the heap page is
+	 * already up-to-date.
 	 */
 	if (xlrec->all_visible_cleared)
 	{
-		Relation reln = CreateFakeRelcacheEntry(xlrec->target.node);
+		Relation	reln = CreateFakeRelcacheEntry(xlrec->target.node);
+
 		visibilitymap_clear(reln,
 							ItemPointerGetBlockNumber(&xlrec->target.tid));
 		FreeFakeRelcacheEntry(reln);
@@ -4511,12 +4514,13 @@ heap_xlog_update(XLogRecPtr lsn, XLogRecord *record, bool move, bool hot_update)
 newt:;
 
 	/*
-	 * The visibility map always needs to be updated, even if the heap page
-	 * is already up-to-date.
+	 * The visibility map always needs to be updated, even if the heap page is
+	 * already up-to-date.
 	 */
 	if (xlrec->new_all_visible_cleared)
 	{
-		Relation reln = CreateFakeRelcacheEntry(xlrec->target.node);
+		Relation	reln = CreateFakeRelcacheEntry(xlrec->target.node);
+
 		visibilitymap_clear(reln, ItemPointerGetBlockNumber(&xlrec->newtid));
 		FreeFakeRelcacheEntry(reln);
 	}
@@ -4602,7 +4606,7 @@ newsame:;
 	if (xlrec->new_all_visible_cleared)
 		PageClearAllVisible(page);
 
-	freespace = PageGetHeapFreeSpace(page); /* needed to update FSM below */
+	freespace = PageGetHeapFreeSpace(page);		/* needed to update FSM below */
 
 	PageSetLSN(page, lsn);
 	PageSetTLI(page, ThisTimeLineID);
@@ -4611,8 +4615,8 @@ newsame:;
 
 	/*
 	 * If the page is running low on free space, update the FSM as well.
-	 * Arbitrarily, our definition of "low" is less than 20%. We can't do
-	 * much better than that without knowing the fill-factor for the table.
+	 * Arbitrarily, our definition of "low" is less than 20%. We can't do much
+	 * better than that without knowing the fill-factor for the table.
 	 *
 	 * However, don't update the FSM on HOT updates, because after crash
 	 * recovery, either the old or the new tuple will certainly be dead and
@@ -4626,7 +4630,7 @@ newsame:;
 	 */
 	if (!hot_update && freespace < BLCKSZ / 5)
 		XLogRecordPageWithFreeSpace(xlrec->target.node,
-					ItemPointerGetBlockNumber(&(xlrec->newtid)), freespace);
+					 ItemPointerGetBlockNumber(&(xlrec->newtid)), freespace);
 }
 
 static void
