@@ -147,12 +147,12 @@ securityPostBootstrapingMode(void)
 			bool	nulls[Natts_pg_security];
 
 			memset(nulls, false, sizeof(nulls));
-			values[Anum_pg_security_secid - 1] = ObjectIdGetDatum(es->secid);
 			values[Anum_pg_security_relid - 1] = ObjectIdGetDatum(es->relid);
 			values[Anum_pg_security_seckind - 1] = CharGetDatum(es->seckind);
 			values[Anum_pg_security_secattr - 1] = CStringGetTextDatum(es->secattr);
 
 			tuple = heap_form_tuple(RelationGetDescr(lorel), values, nulls);
+			HeapTupleSetOid(tuple, es->secid);
 			if (HeapTupleHasSecLabel(tuple))
 				HeapTupleSetSecLabel(tuple, meta_lo_secid);
 
@@ -165,12 +165,12 @@ securityPostBootstrapingMode(void)
 			bool	nulls[Natts_pg_shsecurity];
 
 			memset(nulls, false, sizeof(nulls));
-			values[Anum_pg_shsecurity_secid - 1] = ObjectIdGetDatum(es->secid);
 			values[Anum_pg_shsecurity_relid - 1] = ObjectIdGetDatum(es->relid);
 			values[Anum_pg_shsecurity_seckind - 1] = CharGetDatum(es->seckind);
 			values[Anum_pg_shsecurity_secattr - 1] = CStringGetTextDatum(es->secattr);
 
 			tuple = heap_form_tuple(RelationGetDescr(shrel), values, nulls);
+			HeapTupleSetOid(tuple, es->secid);
 			if (HeapTupleHasSecLabel(tuple))
 				HeapTupleSetSecLabel(tuple, meta_sh_secid);
 
@@ -201,8 +201,7 @@ InputSecurityAttr(Oid relid, char seckind, const char *secattr)
 	HeapTuple		tuple;
 	int				cacheId;
 	Oid				sec_relid;
-	Oid				sec_indid;
-	Oid				secid;
+	Oid				sec_oid;
 	char		   *meta_label;
 	Oid				meta_secid = InvalidOid;
 	bool			shared = IsSharedRelation(relid);
@@ -223,39 +222,23 @@ InputSecurityAttr(Oid relid, char seckind, const char *secattr)
 						   0);
 	if (HeapTupleIsValid(tuple))
 	{
-		Datum	datum;
-		bool	isnull;
-
-		datum = SysCacheGetAttr(cacheId, tuple,
-								Anum_pg_security_secid, &isnull);
-		Assert(!isnull);
-
-		secid = DatumGetObjectId(datum);
+		sec_oid = HeapTupleGetOid(tuple);
 
 		ReleaseSysCache(tuple);
 
-		return secid;
+		return sec_oid;
 	}
 
 	/*
 	 * Insert a new tuple, if not found
 	 */
-	if (!IsSharedRelation(relid))
-	{
-		sec_relid = SecurityRelationId;
-		sec_indid = SecuritySecidIndexId;
-	}
-	else
-	{
-		sec_relid = SharedSecurityRelationId;
-		sec_indid = SharedSecuritySecidIndexId;
-	}
-
+	sec_relid = (!shared ? SecurityRelationId
+						 : SharedSecurityRelationId);
 	rel = heap_open(sec_relid, RowExclusiveLock);
 	ind = CatalogOpenIndexes(rel);
 
-	secid = GetNewOidWithIndex(rel, sec_indid,
-							   Anum_pg_security_secid);
+	sec_oid = GetNewOid(rel);
+
 	/*
 	 * set up security context of itself
 	 */
@@ -264,25 +247,25 @@ InputSecurityAttr(Oid relid, char seckind, const char *secattr)
 	{
 		/*
 		 * NOTE: when the meta_label refers itself, no need to
-		 * assign secid anymore. This check is necessary to
+		 * assign sec_oid anymore. This check is necessary to
 		 * avoid infinite invocations.
 		 */
 		if (sec_relid == relid &&
 			seckind == SECKIND_SECURITY_LABEL &&
 			strcmp(meta_label, secattr) == 0)
-			meta_secid = secid;
+			meta_secid = sec_oid;
 		else
 			meta_secid = securityTransSecLabelIn(sec_relid, meta_label);
 	}
 
 	memset(nulls, false, sizeof(nulls));
 	values[Anum_pg_security_relid - 1] = ObjectIdGetDatum(relid);
-	values[Anum_pg_security_secid - 1] = ObjectIdGetDatum(secid);
 	values[Anum_pg_security_seckind - 1] = CharGetDatum(seckind);
 	values[Anum_pg_security_secattr - 1] = CStringGetTextDatum(secattr);
 
 	tuple = heap_form_tuple(RelationGetDescr(rel), values, nulls);
 
+	HeapTupleSetOid(tuple, sec_oid);
 	if (HeapTupleHasSecLabel(tuple))
 		HeapTupleSetSecLabel(tuple, meta_secid);
 
@@ -308,7 +291,7 @@ InputSecurityAttr(Oid relid, char seckind, const char *secattr)
 
 	heap_close(rel, RowExclusiveLock);
 
-	return secid;
+	return sec_oid;
 }
 
 static char *
@@ -326,21 +309,39 @@ OutputSecurityAttr(Oid relid, char seckind, Oid secid)
 
 	tuple = SearchSysCache(cacheId,
 						   ObjectIdGetDatum(secid),
-						   ObjectIdGetDatum(relid),
-						   CharGetDatum(seckind),
-						   0);
+						   0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
 		return NULL;
 
-	datum = SysCacheGetAttr(SECURITYSECID, tuple,
+	/* Integrity checks */
+	datum = SysCacheGetAttr(cacheId, tuple,
+							Anum_pg_security_relid,
+							&isnull);
+	if (isnull || DatumGetObjectId(datum) != relid)
+		goto error;
+
+	datum = SysCacheGetAttr(cacheId, tuple,
+							Anum_pg_security_seckind,
+							&isnull);
+	if (isnull || DatumGetChar(datum) != seckind)
+		goto error;
+
+	/* Fetch security attribute */
+	datum = SysCacheGetAttr(cacheId, tuple,
 							Anum_pg_security_secattr,
 							&isnull);
-	Assert(!isnull);
+	if (isnull)
+		goto error;
 
 	result = TextDatumGetCString(datum);
+
 	ReleaseSysCache(tuple);
 
 	return result;
+
+error:
+	ReleaseSysCache(tuple);
+	return NULL;
 }
 
 /*

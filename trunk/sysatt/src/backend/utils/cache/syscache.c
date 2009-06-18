@@ -599,13 +599,13 @@ static const struct cachedesc cacheinfo[] = {
 		128,
 	},
 	{SecurityRelationId,		/* SECURITYSECID */
-		SecuritySecidIndexId,
+		SecurityOidIndexId,
 		Anum_pg_security_relid,
-		3,
+		1,
 		{
-			Anum_pg_security_secid,
-			Anum_pg_security_relid,
-			Anum_pg_security_seckind,
+			ObjectIdAttributeNumber,
+			0,
+			0,
 			0
 		},
 		128
@@ -623,13 +623,13 @@ static const struct cachedesc cacheinfo[] = {
 		128
 	},
 	{SharedSecurityRelationId,	/* SHSECURITYSECID */
-		SharedSecuritySecidIndexId,
+		SharedSecurityOidIndexId,
 		Anum_pg_shsecurity_relid,
-		3,
+		1,
 		{
-			Anum_pg_shsecurity_secid,
-			Anum_pg_shsecurity_relid,
-			Anum_pg_shsecurity_seckind,
+			ObjectIdAttributeNumber,
+			0,
+			0,
 			0
 		},
 		128
