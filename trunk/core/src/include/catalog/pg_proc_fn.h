@@ -37,8 +37,7 @@ extern Oid ProcedureCreate(const char *procedureName,
 				List *parameterDefaults,
 				Datum proconfig,
 				float4 procost,
-				float4 prorows,
-				Oid pro_secid);
+				float4 prorows);
 
 extern bool function_parse_error_transpose(const char *prosrc);
 

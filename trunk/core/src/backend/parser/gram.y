@@ -57,7 +57,6 @@
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
 #include "parser/gramparse.h"
-#include "security/sepgsql.h"
 #include "storage/lmgr.h"
 #include "utils/date.h"
 #include "utils/datetime.h"
@@ -401,8 +400,6 @@ static TypeName *TableFuncTypeName(List *columns);
 %type <boolean> constraints_set_mode
 %type <str>		OptTableSpace OptConsTableSpace OptTableSpaceOwner
 %type <list>	opt_check_option
-
-%type <defelt> OptSecurityItem SecurityItem
 
 %type <target>	xml_attribute_el
 %type <list>	xml_attribute_list xml_attributes
@@ -1805,24 +1802,6 @@ alter_table_cmd:
 					n->def = (Node *)$2;
 					$$ = (Node *)n;
 				}
-			/* ALTER TABLE <relation> CONTEXT = '...' */
-			| SecurityItem
-				{
-					AlterTableCmd *n = makeNode(AlterTableCmd);
-					n->subtype = AT_SetSecurityLabel;
-					n->name = NULL;
-					n->def = (Node *) $1;
-					$$ = (Node *) n;
-				}
-			/* ALTER TABLE <relation> ALTER [COLUMN] <colname> CONTEXT = '...' */
-			| ALTER opt_column ColId SecurityItem
-				{
-					AlterTableCmd *n = makeNode(AlterTableCmd);
-					n->subtype = AT_SetSecurityLabel;
-					n->name = $3;
-					n->def = (Node *) $4;
-					$$ = (Node *) n;
-				}
 		;
 
 alter_column_default:
@@ -2057,7 +2036,7 @@ opt_using:
  *****************************************************************************/
 
 CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
-			OptInherit OptWith OnCommitOption OptTableSpace OptSecurityItem
+			OptInherit OptWith OnCommitOption OptTableSpace
 				{
 					CreateStmt *n = makeNode(CreateStmt);
 					$4->istemp = $2;
@@ -2068,11 +2047,10 @@ CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
 					n->options = $9;
 					n->oncommit = $10;
 					n->tablespacename = $11;
-					n->secLabel = (Node *) $12;
 					$$ = (Node *)n;
 				}
 		| CREATE OptTemp TABLE qualified_name OF qualified_name
-			'(' OptTableElementList ')' OptWith OnCommitOption OptTableSpace OptSecurityItem
+			'(' OptTableElementList ')' OptWith OnCommitOption OptTableSpace
 				{
 					/* SQL99 CREATE TABLE OF <UDT> (cols) seems to be satisfied
 					 * by our inheritance capabilities. Let's try it...
@@ -2086,7 +2064,6 @@ CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
 					n->options = $10;
 					n->oncommit = $11;
 					n->tablespacename = $12;
-					n->secLabel = (Node *) $13;
 					$$ = (Node *)n;
 				}
 		;
@@ -2129,14 +2106,13 @@ TableElement:
 			| TableConstraint					{ $$ = $1; }
 		;
 
-columnDef:	ColId Typename ColQualList OptSecurityItem
+columnDef:	ColId Typename ColQualList
 				{
 					ColumnDef *n = makeNode(ColumnDef);
 					n->colname = $1;
 					n->typename = $2;
 					n->constraints = $3;
 					n->is_local = true;
-					n->secLabel = (Node *) $4;
 					$$ = (Node *)n;
 				}
 		;
@@ -4905,10 +4881,6 @@ common_func_opt_item:
 					/* we abuse the normal content of a DefElem here */
 					$$ = makeDefElem("set", (Node *)$1);
 				}
-			| SecurityItem
-				{
-					$$ = $1;
-				}
 		;
 
 createfunc_opt_item:
@@ -6072,10 +6044,6 @@ createdb_opt_item:
 				{
 					$$ = makeDefElem("owner", NULL);
 				}
-			| SecurityItem
-				{
-					$$ = $1;
-				}
 		;
 
 /*
@@ -6131,10 +6099,6 @@ alterdb_opt_item:
 			CONNECTION LIMIT opt_equal SignedIconst
 				{
 					$$ = makeDefElem("connectionlimit", (Node *)makeInteger($4));
-				}
-			| SecurityItem
-				{
-					$$ = $1;
 				}
 		;
 
@@ -9923,27 +9887,6 @@ target_el:	a_expr AS ColLabel
 				}
 		;
 
-/*****************************************************************************
- *
- * SE-PostgreSQL security items
- *
- *****************************************************************************/
-
-OptSecurityItem:
-			SecurityItem				{ $$ = $1; }
-			| /* EMPTY */				{ $$ = NULL; }
-			;
-
-SecurityItem:
-			IDENT opt_equal Sconst
-				{
-					if (!sepgsqlIsEnabled() ||
-						strcmp("security_label", $1) != 0)
-						yyerror("syntax error");
-
-					$$ = makeDefElem($1, (Node *) makeString($3));
-				}
-			;
 
 /*****************************************************************************
  *

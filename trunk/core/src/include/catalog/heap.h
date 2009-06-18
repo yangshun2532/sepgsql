@@ -56,8 +56,7 @@ extern Oid heap_create_with_catalog(const char *relname,
 						 int oidinhcount,
 						 OnCommitAction oncommit,
 						 Datum reloptions,
-						 bool allow_system_table_mods,
-						 List *seclabelList);
+						 bool allow_system_table_mods);
 
 extern void heap_drop_with_catalog(Oid relid);
 
@@ -69,14 +68,12 @@ extern List *heap_truncate_find_FKs(List *relationIds);
 
 extern void InsertPgAttributeTuple(Relation pg_attribute_rel,
 						Form_pg_attribute new_attribute,
-						CatalogIndexState indstate,
-						Oid att_secid);
+						CatalogIndexState indstate);
 
 extern void InsertPgClassTuple(Relation pg_class_desc,
 				   Relation new_rel_desc,
 				   Oid new_rel_oid,
-				   Datum reloptions,
-				   Oid rel_secid);
+				   Datum reloptions);
 
 extern List *AddRelationNewConstraints(Relation rel,
 						  List *newColDefaults,

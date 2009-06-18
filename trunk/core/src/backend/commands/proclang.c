@@ -151,8 +151,7 @@ CreateProceduralLanguage(CreatePLangStmt *stmt)
 										 NIL,
 										 PointerGetDatum(NULL),
 										 1,
-										 0,
-										 InvalidOid);
+										 0);
 		}
 
 		/*
@@ -187,8 +186,7 @@ CreateProceduralLanguage(CreatePLangStmt *stmt)
 										 NIL,
 										 PointerGetDatum(NULL),
 										 1,
-										 0,
-										 InvalidOid);
+										 0);
 			}
 		}
 		else

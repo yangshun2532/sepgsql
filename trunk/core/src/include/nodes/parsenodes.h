@@ -463,7 +463,6 @@ typedef struct ColumnDef
 	Node	   *raw_default;	/* default value (untransformed parse tree) */
 	char	   *cooked_default; /* nodeToString representation */
 	List	   *constraints;	/* other constraints on column */
-	Node	   *secLabel;		/* explicitly specified security label */
 } ColumnDef;
 
 /*
@@ -1132,8 +1131,7 @@ typedef enum AlterTableType
 	AT_EnableReplicaRule,		/* ENABLE REPLICA RULE name */
 	AT_DisableRule,				/* DISABLE RULE name */
 	AT_AddInherit,				/* INHERIT parent */
-	AT_DropInherit,				/* NO INHERIT parent */
-	AT_SetSecurityLabel			/* SECURITY_LABEL newlabel */
+	AT_DropInherit				/* NO INHERIT parent */
 } AlterTableType;
 
 typedef struct AlterTableCmd	/* one subcommand of an ALTER TABLE */
@@ -1337,7 +1335,6 @@ typedef struct CreateStmt
 	List	   *options;		/* options from WITH clause */
 	OnCommitAction oncommit;	/* what do we do at COMMIT? */
 	char	   *tablespacename; /* table space to use, or NULL */
-	Node	   *secLabel;		/* explicitly specified security label */
 } CreateStmt;
 
 /* ----------
