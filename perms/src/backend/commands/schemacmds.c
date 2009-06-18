@@ -487,5 +487,7 @@ AlterSchemaSecLabel(const char *name, DefElem *seclabel)
 
 	heap_freetuple(newtup);
 
+	ReleaseSysCache(tuple);
+
 	heap_close(rel, RowExclusiveLock);
 }
