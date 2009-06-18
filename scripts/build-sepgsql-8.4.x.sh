@@ -56,17 +56,17 @@ diff -Nrpc base sepgsql | gzip -c		\
 
 echo "GEN: sepgsql-10-docs-${BASE_VERSION}.patch"
 diff -Nrpc base/doc sepgsql/doc			\
-    > ${RPMSOURCE}/sepgsql-08-docs-${BASE_VERSION}.patch
+    > ${RPMSOURCE}/sepgsql-10-docs-${BASE_VERSION}.patch
 rm -rf ./*/doc
 
 echo "GEN: sepgsql-09-tests-${BASE_VERSION}.patch"
 diff -Nrpc base/src/test sepgsql/src/test	\
-    > ${RPMSOURCE}/sepgsql-07-tests-${BASE_VERSION}.patch
+    > ${RPMSOURCE}/sepgsql-09-tests-${BASE_VERSION}.patch
 rm -rf ./*/src/test
 
 echo "GEN: sepgsql-08-utils-${BASE_VERSION}.patch"
 diff -Nrpc base/src/bin sepgsql/src/bin		\
-    > ${RPMSOURCE}/sepgsql-06-utils-${BASE_VERSION}.patch
+    > ${RPMSOURCE}/sepgsql-08-utils-${BASE_VERSION}.patch
 rm -rf ./*/src/bin
 
 echo "GEN: sepgsql-01-sysatt-${BASE_VERSION}.patch"
@@ -83,19 +83,19 @@ diff -Nrpc core gram		\
 
 echo "GEN: sepgsql-04-writable-${BASE_VERSION}.patch"
 diff -Nrpc gram writable	\
-    > ${RPMSOURCE}/sepgsql-03-writable-${BASE_VERSION}.patch
+    > ${RPMSOURCE}/sepgsql-04-writable-${BASE_VERSION}.patch
 
 echo "GEN: sepgsql-05-rowlevel-${BASE_VERSION}.patch"
 diff -Nrpc writable rowlv	\
-    > ${RPMSOURCE}/sepgsql-04-rowlevel-${BASE_VERSION}.patch
+    > ${RPMSOURCE}/sepgsql-05-rowlevel-${BASE_VERSION}.patch
 
 echo "GEN: sepgsql-06-perms-${BASE_VERSION}.patch"
 diff -Nrpc rowlv perms		\
-    > ${RPMSOURCE}/sepgsql-05-perms-${BASE_VERSION}.patch
+    > ${RPMSOURCE}/sepgsql-06-perms-${BASE_VERSION}.patch
 
 echo "GEN: sepgsql-07-extra-${BASE_VERSION}.patch"
 diff -Nrpc perms sepgsql	\
-    > ${RPMSOURCE}/sepgsql-09-extra-${BASE_VERSION}.patch
+    > ${RPMSOURCE}/sepgsql-07-extra-${BASE_VERSION}.patch
 
 echo "GEN: sepostgresql.init"
 cat package/sepostgresql.init					\
