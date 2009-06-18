@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/fmgr/dfmgr.c,v 1.98 2009/01/01 17:23:51 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/backend/utils/fmgr/dfmgr.c,v 1.99 2009/06/11 14:49:05 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -74,7 +74,7 @@ char	   *Dynamic_library_path;
 
 static void *internal_load_library(const char *libname);
 static void incompatible_module_error(const char *libname,
-									const Pg_magic_struct *module_magic_data);
+						  const Pg_magic_struct *module_magic_data);
 static void internal_unload_library(const char *libname);
 static bool file_exists(const char *name);
 static char *expand_dynamic_library_name(const char *name);
@@ -308,7 +308,7 @@ static void
 incompatible_module_error(const char *libname,
 						  const Pg_magic_struct *module_magic_data)
 {
-	StringInfoData	details;
+	StringInfoData details;
 
 	/*
 	 * If the version doesn't match, just report that, because the rest of the
@@ -318,11 +318,11 @@ incompatible_module_error(const char *libname,
 		ereport(ERROR,
 				(errmsg("incompatible library \"%s\": version mismatch",
 						libname),
-				 errdetail("Server is version %d.%d, library is version %d.%d.",
-						   magic_data.version / 100,
-						   magic_data.version % 100,
-						   module_magic_data->version / 100,
-						   module_magic_data->version % 100)));
+			  errdetail("Server is version %d.%d, library is version %d.%d.",
+						magic_data.version / 100,
+						magic_data.version % 100,
+						module_magic_data->version / 100,
+						module_magic_data->version % 100)));
 
 	/*
 	 * Otherwise, spell out which fields don't agree.
@@ -364,7 +364,7 @@ incompatible_module_error(const char *libname,
 		if (details.len)
 			appendStringInfoChar(&details, '\n');
 		appendStringInfo(&details,
-						 _("Server has FLOAT4PASSBYVAL = %s, library has %s."),
+					   _("Server has FLOAT4PASSBYVAL = %s, library has %s."),
 						 magic_data.float4byval ? "true" : "false",
 						 module_magic_data->float4byval ? "true" : "false");
 	}
@@ -373,14 +373,14 @@ incompatible_module_error(const char *libname,
 		if (details.len)
 			appendStringInfoChar(&details, '\n');
 		appendStringInfo(&details,
-						 _("Server has FLOAT8PASSBYVAL = %s, library has %s."),
+					   _("Server has FLOAT8PASSBYVAL = %s, library has %s."),
 						 magic_data.float8byval ? "true" : "false",
 						 module_magic_data->float8byval ? "true" : "false");
 	}
 
 	if (details.len == 0)
 		appendStringInfo(&details,
-						 _("Magic block has unexpected length or padding difference."));
+			  _("Magic block has unexpected length or padding difference."));
 
 	ereport(ERROR,
 			(errmsg("incompatible library \"%s\": magic block mismatch",
