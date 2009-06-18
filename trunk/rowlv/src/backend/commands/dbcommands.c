@@ -13,7 +13,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/commands/dbcommands.c,v 1.224 2009/05/06 16:15:21 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/commands/dbcommands.c,v 1.225 2009/06/11 14:48:55 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -344,8 +344,8 @@ createdb(const CreatedbStmt *stmt)
 	/*
 	 * Check whether chosen encoding matches chosen locale settings.  This
 	 * restriction is necessary because libc's locale-specific code usually
-	 * fails when presented with data in an encoding it's not expecting.
-	 * We allow mismatch in three cases:
+	 * fails when presented with data in an encoding it's not expecting. We
+	 * allow mismatch in three cases:
 	 *
 	 * 1. locale encoding = SQL_ASCII, which means either that the locale is
 	 * C/POSIX which works with any encoding, or that we couldn't determine
@@ -375,8 +375,8 @@ createdb(const CreatedbStmt *stmt)
 				 errmsg("encoding %s does not match locale %s",
 						pg_encoding_to_char(encoding),
 						dbctype),
-			 errdetail("The chosen LC_CTYPE setting requires encoding %s.",
-					   pg_encoding_to_char(ctype_encoding))));
+			   errdetail("The chosen LC_CTYPE setting requires encoding %s.",
+						 pg_encoding_to_char(ctype_encoding))));
 
 	if (!(collate_encoding == encoding ||
 		  collate_encoding == PG_SQL_ASCII ||
@@ -564,7 +564,7 @@ createdb(const CreatedbStmt *stmt)
 	new_record_nulls[Anum_pg_database_datacl - 1] = true;
 
 	tuple = heap_form_tuple(RelationGetDescr(pg_database_rel),
-						   new_record, new_record_nulls);
+							new_record, new_record_nulls);
 
 	HeapTupleSetOid(tuple, dboid);
 
@@ -737,9 +737,9 @@ createdb_failure_callback(int code, Datum arg)
 	createdb_failure_params *fparms = (createdb_failure_params *) DatumGetPointer(arg);
 
 	/*
-	 * Release lock on source database before doing recursive remove.
-	 * This is not essential but it seems desirable to release the lock
-	 * as soon as possible.
+	 * Release lock on source database before doing recursive remove. This is
+	 * not essential but it seems desirable to release the lock as soon as
+	 * possible.
 	 */
 	UnlockSharedObject(DatabaseRelationId, fparms->src_dboid, 0, ShareLock);
 
@@ -863,9 +863,9 @@ dropdb(const char *dbname, bool missing_ok)
 
 	/*
 	 * Tell bgwriter to forget any pending fsync and unlink requests for files
-	 * in the database; else the fsyncs will fail at next checkpoint, or worse,
-	 * it will delete files that belong to a newly created database with the
-	 * same OID.
+	 * in the database; else the fsyncs will fail at next checkpoint, or
+	 * worse, it will delete files that belong to a newly created database
+	 * with the same OID.
 	 */
 	ForgetDatabaseFsyncRequests(db_id);
 
@@ -996,21 +996,23 @@ RenameDatabase(const char *oldname, const char *newname)
 static void
 movedb(const char *dbname, const char *tblspcname)
 {
-	Oid			  db_id;
-	Relation	  pgdbrel;
-	int			  notherbackends;
-	int			  npreparedxacts;
-	HeapTuple	  oldtuple, newtuple;
-	Oid           src_tblspcoid, dst_tblspcoid;
-	Datum		  new_record[Natts_pg_database];
-	bool		  new_record_nulls[Natts_pg_database];
-	bool		  new_record_repl[Natts_pg_database];
-	ScanKeyData   scankey;
-	SysScanDesc   sysscan;
-	AclResult	  aclresult;
-	char          *src_dbpath;
-	char          *dst_dbpath;
-	DIR           *dstdir;
+	Oid			db_id;
+	Relation	pgdbrel;
+	int			notherbackends;
+	int			npreparedxacts;
+	HeapTuple	oldtuple,
+				newtuple;
+	Oid			src_tblspcoid,
+				dst_tblspcoid;
+	Datum		new_record[Natts_pg_database];
+	bool		new_record_nulls[Natts_pg_database];
+	bool		new_record_repl[Natts_pg_database];
+	ScanKeyData scankey;
+	SysScanDesc sysscan;
+	AclResult	aclresult;
+	char	   *src_dbpath;
+	char	   *dst_dbpath;
+	DIR		   *dstdir;
 	struct dirent *xlde;
 	movedb_failure_params fparms;
 
@@ -1110,13 +1112,13 @@ movedb(const char *dbname, const char *tblspcname)
 
 	/*
 	 * Force a checkpoint before proceeding. This will force dirty buffers out
-	 * to disk, to ensure source database is up-to-date on disk for the
-	 * copy. FlushDatabaseBuffers() would suffice for that, but we also want
-	 * to process any pending unlink requests. Otherwise, the check for
-	 * existing files in the target directory might fail unnecessarily, not to
-	 * mention that the copy might fail due to source files getting deleted
-	 * under it.  On Windows, this also ensures that the bgwriter doesn't hold
-	 * any open files, which would cause rmdir() to fail.
+	 * to disk, to ensure source database is up-to-date on disk for the copy.
+	 * FlushDatabaseBuffers() would suffice for that, but we also want to
+	 * process any pending unlink requests. Otherwise, the check for existing
+	 * files in the target directory might fail unnecessarily, not to mention
+	 * that the copy might fail due to source files getting deleted under it.
+	 * On Windows, this also ensures that the bgwriter doesn't hold any open
+	 * files, which would cause rmdir() to fail.
 	 */
 	RequestCheckpoint(CHECKPOINT_IMMEDIATE | CHECKPOINT_FORCE | CHECKPOINT_WAIT);
 
@@ -1146,8 +1148,8 @@ movedb(const char *dbname, const char *tblspcname)
 		FreeDir(dstdir);
 
 		/*
-		 * The directory exists but is empty.
-		 * We must remove it before using the copydir function.
+		 * The directory exists but is empty. We must remove it before using
+		 * the copydir function.
 		 */
 		if (rmdir(dst_dbpath) != 0)
 			elog(ERROR, "could not remove directory \"%s\": %m",
@@ -1156,7 +1158,7 @@ movedb(const char *dbname, const char *tblspcname)
 
 	/*
 	 * Use an ENSURE block to make sure we remove the debris if the copy fails
-	 * (eg, due to out-of-disk-space).  This is not a 100% solution, because
+	 * (eg, due to out-of-disk-space).	This is not a 100% solution, because
 	 * of the possibility of failure during transaction commit, but it should
 	 * handle most scenarios.
 	 */
@@ -1200,7 +1202,7 @@ movedb(const char *dbname, const char *tblspcname)
 		sysscan = systable_beginscan(pgdbrel, DatabaseNameIndexId, true,
 									 SnapshotNow, 1, &scankey);
 		oldtuple = systable_getnext(sysscan);
-		if (!HeapTupleIsValid(oldtuple)) /* shouldn't happen... */
+		if (!HeapTupleIsValid(oldtuple))		/* shouldn't happen... */
 			ereport(ERROR,
 					(errcode(ERRCODE_UNDEFINED_DATABASE),
 					 errmsg("database \"%s\" does not exist", dbname)));
@@ -1249,13 +1251,13 @@ movedb(const char *dbname, const char *tblspcname)
 								PointerGetDatum(&fparms));
 
 	/*
-	 * Commit the transaction so that the pg_database update is committed.
-	 * If we crash while removing files, the database won't be corrupt,
-	 * we'll just leave some orphaned files in the old directory.
+	 * Commit the transaction so that the pg_database update is committed. If
+	 * we crash while removing files, the database won't be corrupt, we'll
+	 * just leave some orphaned files in the old directory.
 	 *
 	 * (This is OK because we know we aren't inside a transaction block.)
 	 *
-	 * XXX would it be safe/better to do this inside the ensure block?  Not
+	 * XXX would it be safe/better to do this inside the ensure block?	Not
 	 * convinced it's a good idea; consider elog just after the transaction
 	 * really commits.
 	 */
@@ -1410,7 +1412,7 @@ AlterDatabase(AlterDatabaseStmt *stmt, bool isTopLevel)
 	}
 
 	newtuple = heap_modify_tuple(tuple, RelationGetDescr(rel), new_record,
-								new_record_nulls, new_record_repl);
+								 new_record_nulls, new_record_repl);
 	simple_heap_update(rel, &tuple->t_self, newtuple);
 
 	/* Update indexes */
@@ -1503,7 +1505,7 @@ AlterDatabaseSet(AlterDatabaseSetStmt *stmt)
 	}
 
 	newtuple = heap_modify_tuple(tuple, RelationGetDescr(rel),
-								repl_val, repl_null, repl_repl);
+								 repl_val, repl_null, repl_repl);
 	simple_heap_update(rel, &tuple->t_self, newtuple);
 
 	/* Update indexes */
@@ -1796,11 +1798,11 @@ get_db_info(const char *name, LOCKMODE lockmode,
 				/* default tablespace for this database */
 				if (dbTablespace)
 					*dbTablespace = dbform->dattablespace;
- 				/* default locale settings for this database */
- 				if (dbCollate)
- 					*dbCollate = pstrdup(NameStr(dbform->datcollate));
- 				if (dbCtype)
- 					*dbCtype = pstrdup(NameStr(dbform->datctype));
+				/* default locale settings for this database */
+				if (dbCollate)
+					*dbCollate = pstrdup(NameStr(dbform->datcollate));
+				if (dbCtype)
+					*dbCtype = pstrdup(NameStr(dbform->datctype));
 				ReleaseSysCache(tuple);
 				result = true;
 				break;
