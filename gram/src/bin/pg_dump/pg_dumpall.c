@@ -6,7 +6,7 @@
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
- * $PostgreSQL: pgsql/src/bin/pg_dump/pg_dumpall.c,v 1.125 2009/05/10 02:51:44 tgl Exp $
+ * $PostgreSQL: pgsql/src/bin/pg_dump/pg_dumpall.c,v 1.126 2009/06/11 14:49:07 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -51,7 +51,7 @@ static void doShellQuoting(PQExpBuffer buf, const char *str);
 
 static int	runPgDump(const char *dbname);
 static PGconn *connectDatabase(const char *dbname, const char *pghost, const char *pgport,
-			  const char *pguser, enum trivalue prompt_password, bool fail_on_error);
+	  const char *pguser, enum trivalue prompt_password, bool fail_on_error);
 static PGresult *executeQuery(PGconn *conn, const char *query);
 static void executeCommand(PGconn *conn, const char *query);
 
@@ -282,7 +282,7 @@ main(int argc, char *argv[])
 					disable_dollar_quoting = 1;
 				else if (strcmp(optarg, "disable-triggers") == 0)
 					disable_triggers = 1;
-				else if (strcmp(optarg, "no-tablespaces") == 0) 
+				else if (strcmp(optarg, "no-tablespaces") == 0)
 					no_tablespaces = 1;
 				else if (strcmp(optarg, "use-set-session-authorization") == 0)
 					use_setsessauth = 1;
@@ -475,9 +475,9 @@ main(int argc, char *argv[])
 	if (!data_only)
 	{
 		/*
-		 * If asked to --clean, do that first.  We can avoid detailed
+		 * If asked to --clean, do that first.	We can avoid detailed
 		 * dependency analysis because databases never depend on each other,
-		 * and tablespaces never depend on each other.  Roles could have
+		 * and tablespaces never depend on each other.	Roles could have
 		 * grants to each other, but DROP ROLE will clean those up silently.
 		 */
 		if (output_clean)
@@ -496,8 +496,8 @@ main(int argc, char *argv[])
 		}
 
 		/*
-		 * Now create objects as requested.  Be careful that option logic
-		 * here is the same as for drops above.
+		 * Now create objects as requested.  Be careful that option logic here
+		 * is the same as for drops above.
 		 */
 		if (!tablespaces_only)
 		{
@@ -570,8 +570,8 @@ help(void)
 	printf(_("  --no-tablespaces            do not dump tablespace assignments\n"));
 	printf(_("  --role=ROLENAME             do SET ROLE before dump\n"));
 	printf(_("  --use-set-session-authorization\n"
-		 "                              use SET SESSION AUTHORIZATION commands instead of\n"
-		 "                              ALTER OWNER commands to set ownership\n"));
+			 "                              use SET SESSION AUTHORIZATION commands instead of\n"
+	"                              ALTER OWNER commands to set ownership\n"));
 
 	printf(_("\nConnection options:\n"));
 	printf(_("  -h, --host=HOSTNAME      database server host or socket directory\n"));
@@ -582,7 +582,7 @@ help(void)
 	printf(_("  -W, --password           force password prompt (should happen automatically)\n"));
 
 	printf(_("\nIf -f/--file is not used, then the SQL script will be written to the standard\n"
-		"output.\n\n"));
+			 "output.\n\n"));
 	printf(_("Report bugs to <pgsql-bugs@postgresql.org>.\n"));
 }
 
@@ -727,10 +727,10 @@ dumpRoles(PGconn *conn)
 
 		/*
 		 * We dump CREATE ROLE followed by ALTER ROLE to ensure that the role
-		 * will acquire the right properties even if it already exists (ie,
-		 * it won't hurt for the CREATE to fail).  This is particularly
-		 * important for the role we are connected as, since even with --clean
-		 * we will have failed to drop it.
+		 * will acquire the right properties even if it already exists (ie, it
+		 * won't hurt for the CREATE to fail).  This is particularly important
+		 * for the role we are connected as, since even with --clean we will
+		 * have failed to drop it.
 		 */
 		appendPQExpBuffer(buf, "CREATE ROLE %s;\n", fmtId(rolename));
 		appendPQExpBuffer(buf, "ALTER ROLE %s WITH", fmtId(rolename));
@@ -1110,11 +1110,11 @@ dumpCreateDB(PGconn *conn)
 	 * commands for just those databases with values different from defaults.
 	 *
 	 * We consider template0's encoding and locale (or, pre-7.1, template1's)
-	 * to define the installation default.  Pre-8.4 installations do not
-	 * have per-database locale settings; for them, every database must
-	 * necessarily be using the installation default, so there's no need to
-	 * do anything (which is good, since in very old versions there is no
-	 * good way to find out what the installation locale is anyway...)
+	 * to define the installation default.	Pre-8.4 installations do not have
+	 * per-database locale settings; for them, every database must necessarily
+	 * be using the installation default, so there's no need to do anything
+	 * (which is good, since in very old versions there is no good way to find
+	 * out what the installation locale is anyway...)
 	 */
 	if (server_version >= 80400)
 		res = executeQuery(conn,
@@ -1164,7 +1164,7 @@ dumpCreateDB(PGconn *conn)
 		appendPQExpBuffer(buf, "SELECT datname, "
 						   "coalesce(rolname, (select rolname from pg_authid where oid=(select datdba from pg_database where datname='template0'))), "
 						   "pg_encoding_to_char(d.encoding), "
-						   "null::text AS datcollate, null::text AS datctype, datfrozenxid, "
+		   "null::text AS datcollate, null::text AS datctype, datfrozenxid, "
 						   "datistemplate, datacl, datconnlimit, "
 						   "(SELECT spcname FROM pg_tablespace t WHERE t.oid = d.dattablespace) AS dattablespace, "
 						   "null::text "
@@ -1174,7 +1174,7 @@ dumpCreateDB(PGconn *conn)
 		appendPQExpBuffer(buf, "SELECT datname, "
 						   "coalesce(usename, (select usename from pg_shadow where usesysid=(select datdba from pg_database where datname='template0'))), "
 						   "pg_encoding_to_char(d.encoding), "
-						   "null::text AS datcollate, null::text AS datctype, datfrozenxid, "
+		   "null::text AS datcollate, null::text AS datctype, datfrozenxid, "
 						   "datistemplate, datacl, -1 as datconnlimit, "
 						   "(SELECT spcname FROM pg_tablespace t WHERE t.oid = d.dattablespace) AS dattablespace, "
 						   "null::text "
@@ -1184,7 +1184,7 @@ dumpCreateDB(PGconn *conn)
 		appendPQExpBuffer(buf, "SELECT datname, "
 						   "coalesce(usename, (select usename from pg_shadow where usesysid=(select datdba from pg_database where datname='template0'))), "
 						   "pg_encoding_to_char(d.encoding), "
-						   "null::text AS datcollate, null::text AS datctype, datfrozenxid, "
+		   "null::text AS datcollate, null::text AS datctype, datfrozenxid, "
 						   "datistemplate, datacl, -1 as datconnlimit, "
 						   "'pg_default' AS dattablespace, "
 						   "null::text "
@@ -1229,7 +1229,7 @@ dumpCreateDB(PGconn *conn)
 		char	   *dbencoding = PQgetvalue(res, i, 2);
 		char	   *dbcollate = PQgetvalue(res, i, 3);
 		char	   *dbctype = PQgetvalue(res, i, 4);
-		uint32	   dbfrozenxid = atooid(PQgetvalue(res, i, 5));
+		uint32		dbfrozenxid = atooid(PQgetvalue(res, i, 5));
 		char	   *dbistemplate = PQgetvalue(res, i, 6);
 		char	   *dbacl = PQgetvalue(res, i, 7);
 		char	   *dbconnlimit = PQgetvalue(res, i, 8);
@@ -1555,7 +1555,7 @@ runPgDump(const char *dbname)
  */
 static PGconn *
 connectDatabase(const char *dbname, const char *pghost, const char *pgport,
-				const char *pguser, enum trivalue prompt_password, bool fail_on_error)
+	   const char *pguser, enum trivalue prompt_password, bool fail_on_error)
 {
 	PGconn	   *conn;
 	bool		new_pass;
@@ -1633,8 +1633,8 @@ connectDatabase(const char *dbname, const char *pghost, const char *pgport,
 	}
 
 	/*
-	 * We allow the server to be back to 7.0, and up to any minor release
-	 * of our own major version.  (See also version check in pg_dump.c.)
+	 * We allow the server to be back to 7.0, and up to any minor release of
+	 * our own major version.  (See also version check in pg_dump.c.)
 	 */
 	if (my_version != server_version
 		&& (server_version < 70000 ||
@@ -1755,8 +1755,7 @@ doShellQuoting(PQExpBuffer buf, const char *str)
 			appendPQExpBufferChar(buf, *p);
 	}
 	appendPQExpBufferChar(buf, '\'');
-
-#else /* WIN32 */
+#else							/* WIN32 */
 
 	appendPQExpBufferChar(buf, '"');
 	for (p = str; *p; p++)
@@ -1767,5 +1766,5 @@ doShellQuoting(PQExpBuffer buf, const char *str)
 			appendPQExpBufferChar(buf, *p);
 	}
 	appendPQExpBufferChar(buf, '"');
-#endif /* WIN32 */
+#endif   /* WIN32 */
 }

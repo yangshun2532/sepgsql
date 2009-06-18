@@ -37,7 +37,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/postmaster/postmaster.c,v 1.581 2009/05/05 19:59:00 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/postmaster/postmaster.c,v 1.582 2009/06/11 14:49:01 momjian Exp $
  *
  * NOTES
  *
@@ -221,7 +221,7 @@ static pid_t StartupPID = 0,
 static int	Shutdown = NoShutdown;
 
 static bool FatalError = false; /* T if recovering from backend crash */
-static bool RecoveryError = false; /* T if WAL recovery failed */
+static bool RecoveryError = false;		/* T if WAL recovery failed */
 
 /*
  * We use a simple state machine to control startup, shutdown, and
@@ -232,8 +232,8 @@ static bool RecoveryError = false; /* T if WAL recovery failed */
  * reading the control file and other preliminary initialization steps. When
  * it's ready to start WAL redo, it signals postmaster, and we switch to
  * PM_RECOVERY phase. The background writer is launched, while the startup
- * process continues applying WAL. 
- * 
+ * process continues applying WAL.
+ *
  * After reaching a consistent point in WAL redo, startup process signals
  * us again, and we switch to PM_RECOVERY_CONSISTENT phase. There's currently
  * no difference between PM_RECOVERY and PM_RECOVERY_CONSISTENT, but we
@@ -367,7 +367,7 @@ typedef struct
 	HANDLE		waitHandle;
 	HANDLE		procHandle;
 	DWORD		procId;
-}	win32_deadchild_waitinfo;
+} win32_deadchild_waitinfo;
 
 HANDLE		PostmasterHandle;
 #endif
@@ -382,7 +382,7 @@ typedef struct
 	SOCKET		origsocket;		/* Original socket value, or -1 if not a
 								 * socket */
 	WSAPROTOCOL_INFO wsainfo;
-}	InheritableSocket;
+} InheritableSocket;
 #else
 typedef int InheritableSocket;
 #endif
@@ -427,15 +427,15 @@ typedef struct
 	char		ExtraOptions[MAXPGPATH];
 	char		lc_collate[NAMEDATALEN];
 	char		lc_ctype[NAMEDATALEN];
-}	BackendParameters;
+} BackendParameters;
 
 static void read_backend_variables(char *id, Port *port);
-static void restore_backend_variables(BackendParameters * param, Port *port);
+static void restore_backend_variables(BackendParameters *param, Port *port);
 
 #ifndef WIN32
-static bool save_backend_variables(BackendParameters * param, Port *port);
+static bool save_backend_variables(BackendParameters *param, Port *port);
 #else
-static bool save_backend_variables(BackendParameters * param, Port *port,
+static bool save_backend_variables(BackendParameters *param, Port *port,
 					   HANDLE childProcess, pid_t childPid);
 #endif
 
@@ -900,8 +900,8 @@ PostmasterMain(int argc, char *argv[])
 	 */
 	if (!load_hba())
 	{
-		/* 
-		 * It makes no sense continue if we fail to load the HBA file, since 
+		/*
+		 * It makes no sense continue if we fail to load the HBA file, since
 		 * there is no way to connect to the database in this case.
 		 */
 		ereport(FATAL,
@@ -1078,11 +1078,11 @@ getInstallationPaths(const char *argv0)
 	get_pkglib_path(my_exec_path, pkglib_path);
 
 	/*
-	 * Verify that there's a readable directory there; otherwise the
-	 * Postgres installation is incomplete or corrupt.  (A typical cause
-	 * of this failure is that the postgres executable has been moved or
-	 * hardlinked to some directory that's not a sibling of the installation
-	 * lib/ directory.)
+	 * Verify that there's a readable directory there; otherwise the Postgres
+	 * installation is incomplete or corrupt.  (A typical cause of this
+	 * failure is that the postgres executable has been moved or hardlinked to
+	 * some directory that's not a sibling of the installation lib/
+	 * directory.)
 	 */
 	pdir = AllocateDir(pkglib_path);
 	if (pdir == NULL)
@@ -1095,8 +1095,8 @@ getInstallationPaths(const char *argv0)
 	FreeDir(pdir);
 
 	/*
-	 * XXX is it worth similarly checking the share/ directory?  If the
-	 * lib/ directory is there, then share/ probably is too.
+	 * XXX is it worth similarly checking the share/ directory?  If the lib/
+	 * directory is there, then share/ probably is too.
 	 */
 }
 
@@ -1365,7 +1365,7 @@ ServerLoop(void)
 		 * fails, we'll just try again later.
 		 */
 		if (BgWriterPID == 0 &&
-			(pmState == PM_RUN || pmState == PM_RECOVERY || 
+			(pmState == PM_RUN || pmState == PM_RECOVERY ||
 			 pmState == PM_RECOVERY_CONSISTENT))
 			BgWriterPID = StartBackgroundWriter();
 
@@ -1432,7 +1432,8 @@ initMasks(fd_set *rmask)
 
 		if (fd == -1)
 			break;
-		FD_SET(fd, rmask);
+		FD_SET		(fd, rmask);
+
 		if (fd > maxsock)
 			maxsock = fd;
 	}
@@ -1817,7 +1818,7 @@ canAcceptConnections(void)
 	if (pmState != PM_RUN)
 	{
 		if (pmState == PM_WAIT_BACKUP)
-			return CAC_WAITBACKUP;	/* allow superusers only */
+			return CAC_WAITBACKUP;		/* allow superusers only */
 		if (Shutdown > NoShutdown)
 			return CAC_SHUTDOWN;	/* shutdown is pending */
 		if (!FatalError &&
@@ -2075,9 +2076,9 @@ pmdie(SIGNAL_ARGS)
 			}
 
 			/*
-			 * Now wait for online backup mode to end and
-			 * backends to exit.  If that is already the case,
-			 * PostmasterStateMachine will take the next step.
+			 * Now wait for online backup mode to end and backends to exit.
+			 * If that is already the case, PostmasterStateMachine will take
+			 * the next step.
 			 */
 			PostmasterStateMachine();
 			break;
@@ -2210,8 +2211,8 @@ reaper(SIGNAL_ARGS)
 
 			/*
 			 * Unexpected exit of startup process (including FATAL exit)
-			 * during PM_STARTUP is treated as catastrophic. There is no
-			 * other processes running yet, so we can just exit.
+			 * during PM_STARTUP is treated as catastrophic. There is no other
+			 * processes running yet, so we can just exit.
 			 */
 			if (pmState == PM_STARTUP && !EXIT_STATUS_0(exitstatus))
 			{
@@ -2221,9 +2222,10 @@ reaper(SIGNAL_ARGS)
 				(errmsg("aborting startup due to startup process failure")));
 				ExitPostmaster(1);
 			}
+
 			/*
-			 * Startup process exited in response to a shutdown request (or
-			 * it completed normally regardless of the shutdown request).
+			 * Startup process exited in response to a shutdown request (or it
+			 * completed normally regardless of the shutdown request).
 			 */
 			if (Shutdown > NoShutdown &&
 				(EXIT_STATUS_0(exitstatus) || EXIT_STATUS_1(exitstatus)))
@@ -2232,10 +2234,11 @@ reaper(SIGNAL_ARGS)
 				/* PostmasterStateMachine logic does the rest */
 				continue;
 			}
+
 			/*
 			 * Any unexpected exit (including FATAL exit) of the startup
-			 * process is treated as a crash, except that we don't want
-			 * to reinitialize.
+			 * process is treated as a crash, except that we don't want to
+			 * reinitialize.
 			 */
 			if (!EXIT_STATUS_0(exitstatus))
 			{
@@ -2480,8 +2483,8 @@ CleanupBackend(int pid,
 				if (!ReleasePostmasterChildSlot(bp->child_slot))
 				{
 					/*
-					 * Uh-oh, the child failed to clean itself up.  Treat
-					 * as a crash after all.
+					 * Uh-oh, the child failed to clean itself up.	Treat as a
+					 * crash after all.
 					 */
 					HandleChildCrash(pid, exitstatus, _("server process"));
 					return;
@@ -2772,8 +2775,8 @@ PostmasterStateMachine(void)
 				pmState = PM_WAIT_DEAD_END;
 
 				/*
-				 * We already SIGQUIT'd the archiver and stats processes,
-				 * if any, when we entered FatalError state.
+				 * We already SIGQUIT'd the archiver and stats processes, if
+				 * any, when we entered FatalError state.
 				 */
 			}
 			else
@@ -2864,8 +2867,8 @@ PostmasterStateMachine(void)
 		else
 		{
 			/*
-			 * Terminate backup mode to avoid recovery after a
-			 * clean fast shutdown.
+			 * Terminate backup mode to avoid recovery after a clean fast
+			 * shutdown.
 			 */
 			CancelBackup();
 
@@ -2875,17 +2878,17 @@ PostmasterStateMachine(void)
 	}
 
 	/*
-	 * If recovery failed, wait for all non-syslogger children to exit,
-	 * and then exit postmaster. We don't try to reinitialize when recovery
-	 * fails, because more than likely it will just fail again and we will
-	 * keep trying forever.
+	 * If recovery failed, wait for all non-syslogger children to exit, and
+	 * then exit postmaster. We don't try to reinitialize when recovery fails,
+	 * because more than likely it will just fail again and we will keep
+	 * trying forever.
 	 */
 	if (RecoveryError && pmState == PM_NO_CHILDREN)
-		ExitPostmaster(1);		
+		ExitPostmaster(1);
 
 	/*
-	 * If we need to recover from a crash, wait for all non-syslogger
-	 * children to exit, then reset shmem and StartupDataBase.
+	 * If we need to recover from a crash, wait for all non-syslogger children
+	 * to exit, then reset shmem and StartupDataBase.
 	 */
 	if (FatalError && pmState == PM_NO_CHILDREN)
 	{
@@ -2979,8 +2982,8 @@ BackendStartup(Port *port)
 	pid_t		pid;
 
 	/*
-	 * Create backend data structure.  Better before the fork() so we
-	 * can handle failure cleanly.
+	 * Create backend data structure.  Better before the fork() so we can
+	 * handle failure cleanly.
 	 */
 	bn = (Backend *) malloc(sizeof(Backend));
 	if (!bn)
@@ -3264,8 +3267,8 @@ BackendInitialize(Port *port)
 
 	if (!load_hba())
 	{
-		/* 
-		 * It makes no sense continue if we fail to load the HBA file, since 
+		/*
+		 * It makes no sense continue if we fail to load the HBA file, since
 		 * there is no way to connect to the database in this case.
 		 */
 		ereport(FATAL,
@@ -3839,10 +3842,10 @@ SubPostmasterMain(int argc, char *argv[])
 	read_nondefault_variables();
 
 	/*
-	 * Reload any libraries that were preloaded by the postmaster.  Since
-	 * we exec'd this process, those libraries didn't come along with us;
-	 * but we should load them into all child processes to be consistent
-	 * with the non-EXEC_BACKEND behavior.
+	 * Reload any libraries that were preloaded by the postmaster.	Since we
+	 * exec'd this process, those libraries didn't come along with us; but we
+	 * should load them into all child processes to be consistent with the
+	 * non-EXEC_BACKEND behavior.
 	 */
 	process_shared_preload_libraries();
 
@@ -4030,8 +4033,8 @@ sigusr1_handler(SIGNAL_ARGS)
 		FatalError = false;
 
 		/*
-		 * Crank up the background writer.	It doesn't matter if this
-		 * fails, we'll just try again later.
+		 * Crank up the background writer.	It doesn't matter if this fails,
+		 * we'll just try again later.
 		 */
 		Assert(BgWriterPID == 0);
 		BgWriterPID = StartBackgroundWriter();
@@ -4044,7 +4047,7 @@ sigusr1_handler(SIGNAL_ARGS)
 		/*
 		 * Load the flat authorization file into postmaster's cache. The
 		 * startup process won't have recomputed this from the database yet,
-		 * so we it may change following recovery. 
+		 * so we it may change following recovery.
 		 */
 		load_role();
 
@@ -4331,10 +4334,10 @@ StartAutovacuumWorker(void)
 		if (bn)
 		{
 			/*
-			 * Compute the cancel key that will be assigned to this session. We
-			 * probably don't need cancel keys for autovac workers, but we'd
-			 * better have something random in the field to prevent unfriendly
-			 * people from sending cancels to them.
+			 * Compute the cancel key that will be assigned to this session.
+			 * We probably don't need cancel keys for autovac workers, but
+			 * we'd better have something random in the field to prevent
+			 * unfriendly people from sending cancels to them.
 			 */
 			MyCancelKey = PostmasterRandom();
 			bn->cancel_key = MyCancelKey;
@@ -4418,9 +4421,9 @@ CreateOptsFile(int argc, char *argv[], char *fullprogname)
  * This reports the number of entries needed in per-child-process arrays
  * (the PMChildFlags array, and if EXEC_BACKEND the ShmemBackendArray).
  * These arrays include regular backends and autovac workers, but not special
- * children nor dead_end children.  This allows the arrays to have a fixed
+ * children nor dead_end children.	This allows the arrays to have a fixed
  * maximum size, to wit the same too-many-children limit enforced by
- * canAcceptConnections().  The exact value isn't too critical as long as
+ * canAcceptConnections().	The exact value isn't too critical as long as
  * it's more than MaxBackends.
  */
 int
@@ -4448,20 +4451,20 @@ extern int	pgStatSock;
 #define write_inheritable_socket(dest, src, childpid) (*(dest) = (src))
 #define read_inheritable_socket(dest, src) (*(dest) = *(src))
 #else
-static void write_duplicated_handle(HANDLE * dest, HANDLE src, HANDLE child);
-static void write_inheritable_socket(InheritableSocket * dest, SOCKET src,
+static void write_duplicated_handle(HANDLE *dest, HANDLE src, HANDLE child);
+static void write_inheritable_socket(InheritableSocket *dest, SOCKET src,
 						 pid_t childPid);
-static void read_inheritable_socket(SOCKET * dest, InheritableSocket * src);
+static void read_inheritable_socket(SOCKET *dest, InheritableSocket *src);
 #endif
 
 
 /* Save critical backend variables into the BackendParameters struct */
 #ifndef WIN32
 static bool
-save_backend_variables(BackendParameters * param, Port *port)
+save_backend_variables(BackendParameters *param, Port *port)
 #else
 static bool
-save_backend_variables(BackendParameters * param, Port *port,
+save_backend_variables(BackendParameters *param, Port *port,
 					   HANDLE childProcess, pid_t childPid)
 #endif
 {
@@ -4523,7 +4526,7 @@ save_backend_variables(BackendParameters * param, Port *port,
  * process instance of the handle to the parameter file.
  */
 static void
-write_duplicated_handle(HANDLE * dest, HANDLE src, HANDLE childProcess)
+write_duplicated_handle(HANDLE *dest, HANDLE src, HANDLE childProcess)
 {
 	HANDLE		hChild = INVALID_HANDLE_VALUE;
 
@@ -4549,7 +4552,7 @@ write_duplicated_handle(HANDLE * dest, HANDLE src, HANDLE childProcess)
  * straight socket inheritance.
  */
 static void
-write_inheritable_socket(InheritableSocket * dest, SOCKET src, pid_t childpid)
+write_inheritable_socket(InheritableSocket *dest, SOCKET src, pid_t childpid)
 {
 	dest->origsocket = src;
 	if (src != 0 && src != -1)
@@ -4566,7 +4569,7 @@ write_inheritable_socket(InheritableSocket * dest, SOCKET src, pid_t childpid)
  * Read a duplicate socket structure back, and get the socket descriptor.
  */
 static void
-read_inheritable_socket(SOCKET * dest, InheritableSocket * src)
+read_inheritable_socket(SOCKET *dest, InheritableSocket *src)
 {
 	SOCKET		s;
 
@@ -4671,7 +4674,7 @@ read_backend_variables(char *id, Port *port)
 
 /* Restore critical backend variables from the BackendParameters struct */
 static void
-restore_backend_variables(BackendParameters * param, Port *port)
+restore_backend_variables(BackendParameters *param, Port *port)
 {
 	memcpy(port, &param->port, sizeof(Port));
 	read_inheritable_socket(&port->sock, &param->portsocket);
@@ -4756,7 +4759,6 @@ ShmemBackendArrayRemove(Backend *bn)
 	/* Mark the slot as empty */
 	ShmemBackendArray[i].pid = 0;
 }
-
 #endif   /* EXEC_BACKEND */
 
 
