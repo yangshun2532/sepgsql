@@ -46,12 +46,6 @@ rowaclTransRowAclIn(Acl *acl);
 extern Acl *
 rowaclTransRowAclOut(char *secacl);
 
-extern Datum
-rowacl_acl_to_internal(PG_FUNCTION_ARGS);
-
-extern Datum
-rowacl_internal_to_acl(PG_FUNCTION_ARGS);
-
 #endif	/* ROWACL_H */
 
 

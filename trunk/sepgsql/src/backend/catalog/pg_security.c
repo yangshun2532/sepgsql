@@ -522,20 +522,24 @@ security_reclaim_table(Oid relid, char seckind)
 	Oid				types[2];
 	Datum			values[2];
 	int				index;
-	const char	   *relname;
-	Oid				secrelid;
-	char		   *att_relid;
-	char		   *att_secid;
-	char		   *att_seckind;
-	char		   *att_secattr;
-	const char	   *syscolumn = NULL;
+	Oid				sec_relid;
+	Oid				proc_oid;
+	char		   *relname_full;
+	char		   *attname_relid;
+	char		   *attname_seckind;
+	char		   *attname_oid;
+	char		   *attname_secattr;
+	char		   *sec_proname;
+	char		   *sec_nspname;
+	Form_pg_proc	proForm;
+	HeapTuple		protup;
 
 	/*
 	 * LOCK the target table
 	 */
 	initStringInfo(&query);
-	relname = security_quote_relation(relid);
-	appendStringInfo(&query, "LOCK %s IN SHARE MODE", relname);
+	relname_full = security_quote_relation(relid);
+	appendStringInfo(&query, "LOCK %s IN SHARE MODE", relname_full);
 	if (SPI_execute(query.data, false, 0) != SPI_OK_UTILITY)
 		elog(ERROR, "SPI_execute failed on %s", query.data);
 
@@ -544,60 +548,56 @@ security_reclaim_table(Oid relid, char seckind)
 	 */
 	initStringInfo(&query);
 
-	secrelid = (!IsSharedRelation(relid)
-				? SecurityRelationId : SharedSecurityRelationId);
-	att_secid = get_attname(secrelid, ObjectIdAttributeNumber);
-	att_relid = get_attname(secrelid, Anum_pg_security_relid);
-	att_seckind = get_attname(secrelid, Anum_pg_security_seckind);
-	att_secattr = get_attname(secrelid, Anum_pg_security_secattr);
+	sec_relid = (!IsSharedRelation(relid)
+				 ? SecurityRelationId : SharedSecurityRelationId);
+	attname_relid = get_attname(sec_relid, Anum_pg_security_relid);
+	attname_seckind = get_attname(sec_relid, Anum_pg_security_seckind);
+	attname_oid = get_attname(sec_relid, ObjectIdAttributeNumber);
+	attname_secattr = get_attname(sec_relid, Anum_pg_security_secattr);
 
+	appendStringInfo(&query,
+					 "DELETE FROM %s WHERE %s = $1 AND %s = $2 AND %s NOT IN ",
+					 security_quote_relation(sec_relid),
+					 quote_identifier(attname_relid),
+					 quote_identifier(attname_seckind),
+					 quote_identifier(attname_oid));
 	switch (seckind)
 	{
 	case SECKIND_SECURITY_LABEL:
-		syscolumn = quote_identifier(SecurityLabelAttributeName);
+		proc_oid = F_SECURITY_LABEL_TO_SECID;
 		break;
 	case SECKIND_SECURITY_ACL:
-		{
-			StringInfoData	temp;
-			Form_pg_proc	proForm;
-			HeapTuple		protup;
-
-			initStringInfo(&temp);
-
-			protup = SearchSysCache(PROCOID,
-									ObjectIdGetDatum(F_ROWACL_ACL_TO_INTERNAL),
-									0, 0, 0);
-			if (!HeapTupleIsValid(protup))
-				elog(ERROR, "cache lookup failed for procedure: %u",
-					 F_ROWACL_ACL_TO_INTERNAL);
-			proForm = (Form_pg_proc) GETSTRUCT(protup);
-
-			appendStringInfo(&temp, "%s.%s(%s)",
-							 quote_identifier(get_namespace_name(proForm->pronamespace)),
-							 quote_identifier(NameStr(proForm->proname)),
-							 quote_identifier(SecurityAclAttributeName));
-			syscolumn = temp.data;
-
-			ReleaseSysCache(protup);
-			break;
-		}
+		proc_oid = F_SECURITY_ACL_TO_SECID;
+		break;
 	default:
 		elog(ERROR, "unexpected seckind: %c", seckind);
+		proc_oid = InvalidOid;	/* to compiler silent */
 		break;
 	}
 
-	appendStringInfo(&query,
-					 "DELETE FROM %s WHERE %s = $1 AND %s = $2 AND %s NOT IN "
-					 "(SELECT %s FROM %s) RETURNING %s, %s",
-					 security_quote_relation(secrelid),
-					 quote_identifier(att_relid),
-					 quote_identifier(att_seckind),
-					 quote_identifier(att_secattr),
-					 syscolumn,
-					 relname,
-					 quote_identifier(att_secid),
-					 quote_identifier(att_secattr));
+	protup = SearchSysCache(PROCOID,
+							ObjectIdGetDatum(proc_oid),
+							0, 0, 0);
+	if (!HeapTupleIsValid(protup))
+		elog(ERROR, "cache lookup failed for procedure: %u", proc_oid);
+	proForm = (Form_pg_proc) GETSTRUCT(protup);
+	sec_proname = NameStr(proForm->proname);
+	sec_nspname = get_namespace_name(proForm->pronamespace);
 
+	appendStringInfo(&query,
+					 "(SELECT %s.%s(%s) FROM ONLY %s) "
+					 "RETURNING %s,%s",
+					 quote_identifier(sec_nspname),
+					 quote_identifier(sec_proname),
+					 quote_identifier(get_rel_name(relid)),
+					 relname_full,
+					 quote_identifier(attname_oid),
+					 quote_identifier(attname_secattr));
+	ReleaseSysCache(protup);
+
+	/*
+	 * Setup and execute query
+	 */
 	types[0] = OIDOID;
 	types[1] = CHAROID;
 	plan = SPI_prepare(query.data, 2, types);
@@ -679,7 +679,6 @@ static int
 security_reclaim(Oid relid, char seckind)
 {
 	bool		sepgsql_saved;
-	bool		mcstrans_saved;
 	int			count;
 
 	if (!superuser())
@@ -690,7 +689,6 @@ security_reclaim(Oid relid, char seckind)
 	 * Disable SE-PostgreSQL temporary
 	 */
 	sepgsql_saved = sepgsqlSetExceptionMode(true);
-	mcstrans_saved = sepgsqlSetMcstransMode(false);
 
 	PG_TRY();
 	{
@@ -708,13 +706,11 @@ security_reclaim(Oid relid, char seckind)
 	PG_CATCH();
 	{
 		sepgsqlSetExceptionMode(sepgsql_saved);
-		sepgsqlSetMcstransMode(mcstrans_saved);
 		PG_RE_THROW();
 	}
 	PG_END_TRY();
 
 	sepgsqlSetExceptionMode(sepgsql_saved);
-	sepgsqlSetMcstransMode(mcstrans_saved);
 
 	return count;
 }
@@ -741,4 +737,20 @@ Datum
 security_reclaim_table_label(PG_FUNCTION_ARGS)
 {
 	PG_RETURN_INT32(security_reclaim(PG_GETARG_OID(0), SECKIND_SECURITY_LABEL));
+}
+
+Datum
+security_acl_to_secid(PG_FUNCTION_ARGS)
+{
+	HeapTupleHeader	tuphdr = PG_GETARG_HEAPTUPLEHEADER(0);
+
+	PG_RETURN_OID(HeapTupleHeaderGetRowAcl(tuphdr));
+}
+
+Datum
+security_label_to_secid(PG_FUNCTION_ARGS)
+{
+	HeapTupleHeader tuphdr = PG_GETARG_HEAPTUPLEHEADER(0);
+
+	PG_RETURN_OID(HeapTupleHeaderGetSecLabel(tuphdr));
 }

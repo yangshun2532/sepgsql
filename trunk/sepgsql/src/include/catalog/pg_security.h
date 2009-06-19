@@ -100,4 +100,10 @@ security_reclaim_label(PG_FUNCTION_ARGS);
 extern Datum
 security_reclaim_table_label(PG_FUNCTION_ARGS);
 
+extern Datum
+security_acl_to_secid(PG_FUNCTION_ARGS);
+
+extern Datum
+security_label_to_secid(PG_FUNCTION_ARGS);
+
 #endif		/* PG_SECURITY_H */
