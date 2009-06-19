@@ -17,11 +17,8 @@
 
 #define SecurityRelationId        3405
 
-CATALOG(pg_security,3405) BKI_WITHOUT_OIDS
+CATALOG(pg_security,3405)
 {
-	/* Identifier of the security attribute */
-	Oid		secid;
-
 	/* OID of the table which refers the entry */
 	Oid		relid;
 
@@ -41,11 +38,10 @@ typedef FormData_pg_security *Form_pg_security;
 /*
  * Compiler constants for pg_security
  */
-#define Natts_pg_security				4
-#define Anum_pg_security_secid			1
-#define Anum_pg_security_relid			2
-#define Anum_pg_security_seckind		3
-#define Anum_pg_security_secattr		4
+#define Natts_pg_security				3
+#define Anum_pg_security_relid			1
+#define Anum_pg_security_seckind		2
+#define Anum_pg_security_secattr		3
 
 /*
  * Compiler constants for pg_security.seckind
