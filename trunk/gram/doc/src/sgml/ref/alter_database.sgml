@@ -26,13 +26,14 @@ ALTER DATABASE <replaceable class="PARAMETER">name</replaceable> [ [ WITH ] <rep
 where <replaceable class="PARAMETER">option</replaceable> can be:
 
     CONNECTION LIMIT <replaceable class="PARAMETER">connlimit</replaceable>
-    SECURITY_LABEL [=] <replaceable class="PARAMETER">new_seclabel</replaceable>
 
 ALTER DATABASE <replaceable class="PARAMETER">name</replaceable> RENAME TO <replaceable>newname</replaceable>
 
 ALTER DATABASE <replaceable class="PARAMETER">name</replaceable> OWNER TO <replaceable>new_owner</replaceable>
 
 ALTER DATABASE <replaceable class="PARAMETER">name</replaceable> SET TABLESPACE <replaceable class="PARAMETER">new_tablespace</replaceable>
+
+ALTER DATABASE <replaceable class="PARAMETER">name</replaceable> SECURITY_LABEL [=] <replaceable class="PARAMETER">security_label</replaceable>
 
 ALTER DATABASE <replaceable class="PARAMETER">name</replaceable> SET <replaceable>configuration_parameter</replaceable> { TO | = } { <replaceable>value</replaceable> | DEFAULT }
 ALTER DATABASE <replaceable class="PARAMETER">name</replaceable> SET <replaceable>configuration_parameter</replaceable> FROM CURRENT
@@ -144,6 +145,17 @@ ALTER DATABASE <replaceable class="PARAMETER">name</replaceable> RESET ALL
     </listitem>
    </varlistentry> 
 
+   <varlistentry>
+    <term><replaceable class="parameter">security_label</replaceable></term>
+    <listitem>
+     <para>
+      The new security label of the database.
+      It is available only when SE-PostgreSQL is working.
+      See <xref linkend="enhanced-security-and-sepostgresql"> for more details.
+     </para>
+    </listitem>
+   </varlistentry>
+
      <varlistentry>
       <term><replaceable>configuration_parameter</replaceable></term>
       <term><replaceable>value</replaceable></term>
@@ -167,20 +179,6 @@ ALTER DATABASE <replaceable class="PARAMETER">name</replaceable> RESET ALL
        </para>
       </listitem>
      </varlistentry>
-
-     <varlistentry>
-       <term><literal>SECURITY_LABEL</literal></term>
-       <listitem>
-         <para>
-	   The <literal>SECURITY_LABEL</literal> forms allows user to replace
-	   the current security label of database by
-	   <replaceable class="PARAMETER">new_seclabel</replaceable>.
-	   This form is available only when SE-PostgreSQL is working.
-	   See <xref linkend="enhanced-security-and-sepostgresql"> for more details.
-         </para>
-       </listitem>
-     </varlistentry>
-
   </variablelist>
  </refsect1>
 

@@ -60,7 +60,6 @@ where <replaceable class="PARAMETER">action</replaceable> is one of:
     NO INHERIT <replaceable class="PARAMETER">parent_table</replaceable>
     OWNER TO <replaceable class="PARAMETER">new_owner</replaceable>
     SET TABLESPACE <replaceable class="PARAMETER">new_tablespace</replaceable>
-    SECURITY_LABEL [=] <replaceable class="PARAMETER">new_seclabel</replaceable>
 </synopsis>
  </refsynopsisdiv>
 
@@ -412,19 +411,6 @@ where <replaceable class="PARAMETER">action</replaceable> is one of:
       constraints, and sequences owned by table columns are moved as well.
      </para>
     </listitem>
-   </varlistentry>
-
-   <varlistentry>
-     <term><literal>SECURITY_LABEL</literal></term>
-     <listitem>
-       <para>
-	 The <literal>SECURITY_LABEL</literal> forms allows user to replace
-	 the current security label of table by
-	 <replaceable class="PARAMETER">new_seclabel</replaceable>.
-	 This form is available only when SE-PostgreSQL is working.
-	 See <xref linkend="enhanced-security-and-sepostgresql"> for more details.
-       </para>
-     </listitem>
    </varlistentry>
 
   </variablelist>

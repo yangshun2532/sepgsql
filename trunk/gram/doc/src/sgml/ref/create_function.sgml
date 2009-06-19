@@ -32,7 +32,7 @@ CREATE [ OR REPLACE ] FUNCTION
     | COST <replaceable class="parameter">execution_cost</replaceable>
     | ROWS <replaceable class="parameter">result_rows</replaceable>
     | SET <replaceable class="parameter">configuration_parameter</replaceable> { TO <replaceable class="parameter">value</replaceable> | = <replaceable class="parameter">value</replaceable> | FROM CURRENT }
-    | SECURITY_LABEL [=] <replaceable class="parameter">value</replaceable>
+    | SECURITY_LABEL [=] <replaceable class="parameter">security_label</replaceable>
     | AS '<replaceable class="parameter">definition</replaceable>'
     | AS '<replaceable class="parameter">obj_file</replaceable>', '<replaceable class="parameter">link_symbol</replaceable>'
   } ...
@@ -472,18 +472,16 @@ CREATE [ OR REPLACE ] FUNCTION
    </varlistentry>
 
    <varlistentry>
-     <term><literal>SECURITY_LABEL = <replaceable class="PARAMETER">value</replaceable></literal></term>
-     <listitem>
-       <para>
-	 This clause allows to create a procedure with an explicit security label,
-	 and is available only when SE-PostgreSQL is running.
-	 If this clause is not given, it assigns a default security label based on the
-	 security policy.
-	 See <xref linkend="enhanced-security-and-sepostgresql"> for more details.
-       </para>
-     </listitem>
-    </varlistentry>
-
+    <term><replaceable class="parameter">security_label</replaceable></term>
+    <listitem>
+     <para>
+      The security label of the new function, available only when SE-PostgreSQL
+      is working. If no label is given, the default security label shall be
+      assigned on the new function.
+      See <xref linkend="enhanced-security-and-sepostgresql"> for more details.
+     </para>
+    </listitem>
+   </varlistentry>
    </variablelist>
 
  </refsect1>
