@@ -7822,7 +7822,7 @@ ExecRelationSetSecLabel(Oid relid, DefElem *seclabel)
 }
 
 static void
-ExecAttributeSetSecLabel(Oid relid, char *attname, DefElem *seclabel)
+ExecAttributeSetSecLabel(Oid relid, const char *attname, DefElem *seclabel)
 {
 	Relation	rel;
 	HeapTuple	tuple, newtup;
