@@ -29,6 +29,8 @@ ALTER FUNCTION <replaceable>name</replaceable> ( [ [ <replaceable class="paramet
     OWNER TO <replaceable>new_owner</replaceable>
 ALTER FUNCTION <replaceable>name</replaceable> ( [ [ <replaceable class="parameter">argmode</replaceable> ] [ <replaceable class="parameter">argname</replaceable> ] <replaceable class="parameter">argtype</replaceable> [, ...] ] )
     SET SCHEMA <replaceable>new_schema</replaceable>
+ALTER FUNCTION <replaceable>name</replaceable> ( [ [ <replaceable class="parameter">argmode</replaceable> ] [ <replaceable class="parameter">argname</replaceable> ] <replaceable class="parameter">argtype</replaceable> [, ...] ] )
+    SECURITY_LABEL [=] <replaceable>security_label</replaceable>
 
 where <replaceable class="PARAMETER">action</replaceable> is one of:
 
@@ -41,7 +43,6 @@ where <replaceable class="PARAMETER">action</replaceable> is one of:
     SET <replaceable class="parameter">configuration_parameter</replaceable> FROM CURRENT
     RESET <replaceable class="parameter">configuration_parameter</replaceable>
     RESET ALL
-    SECURITY_LABEL [=] <replaceable class="parameter">new_seclabel</replaceable>
 </synopsis>
  </refsynopsisdiv>
   
@@ -144,6 +145,17 @@ where <replaceable class="PARAMETER">action</replaceable> is one of:
     <listitem>
      <para>
       The new schema for the function.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">security_label</replaceable></term>
+    <listitem>
+     <para>
+      The new security label of the function.
+      It is available only when SE-PostgreSQL is working.
+      See <xref linkend="enhanced-security-and-sepostgresql"> for more details.
      </para>
     </listitem>
    </varlistentry>
@@ -252,20 +264,6 @@ where <replaceable class="PARAMETER">action</replaceable> is one of:
      </para>
     </listitem>
    </varlistentry>
-
-   <varlistentry>
-     <term><literal>SECURITY_LABEL</literal></term>
-     <listitem>
-       <para>
-	 The <literal>SECURITY_LABEL</literal> forms allows user to replace
-	 the current security label of procedure by
-	 <replaceable class="PARAMETER">new_seclabel</replaceable>.
-	 This form is available only when SE-PostgreSQL is working.
-	 See <xref linkend="enhanced-security-and-sepostgresql"> for more details.
-       </para>
-     </listitem>
-   </varlistentry>
-
   </variablelist>
  </refsect1>
 

@@ -32,6 +32,7 @@ ALTER SEQUENCE <replaceable class="parameter">name</replaceable> [ INCREMENT [ B
 ALTER SEQUENCE <replaceable class="parameter">name</replaceable> OWNER TO <replaceable class="PARAMETER">new_owner</replaceable>
 ALTER SEQUENCE <replaceable class="parameter">name</replaceable> RENAME TO <replaceable class="parameter">new_name</replaceable>
 ALTER SEQUENCE <replaceable class="parameter">name</replaceable> SET SCHEMA <replaceable class="parameter">new_schema</replaceable>
+ALTER SEQUENCE <replaceable class="parameter">name</replaceable> SECURITY_LABEL [=] <replaceable class="parameter">security_label</replaceable>
   </synopsis>
  </refsynopsisdiv>
 
@@ -233,6 +234,17 @@ ALTER SEQUENCE <replaceable class="parameter">name</replaceable> SET SCHEMA <rep
     <listitem>
      <para>
       The new schema for the sequence.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">security_label</replaceable></term>
+    <listitem>
+     <para>
+      The new security label of the sequence.
+      It is available only when SE-PostgreSQL is working.
+      See <xref linkend="enhanced-security-and-sepostgresql"> for more details.
      </para>
     </listitem>
    </varlistentry>
