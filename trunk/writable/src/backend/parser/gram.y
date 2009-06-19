@@ -4880,7 +4880,7 @@ common_func_opt_item:
 					/* we abuse the normal content of a DefElem here */
 					$$ = makeDefElem("set", (Node *)$1);
 				}
-			;
+		;
 
 createfunc_opt_item:
 			AS func_as
@@ -9962,6 +9962,7 @@ target_el:	a_expr AS ColLabel
 					$$->location = @1;
 				}
 		;
+
 
 /*****************************************************************************
  *
