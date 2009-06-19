@@ -31,7 +31,7 @@ CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } ] TABLE <replaceable class="PAR
 [ WITH ( <replaceable class="PARAMETER">storage_parameter</replaceable> [= <replaceable class="PARAMETER">value</replaceable>] [, ... ] ) | WITH OIDS | WITHOUT OIDS ]
 [ ON COMMIT { PRESERVE ROWS | DELETE ROWS | DROP } ]
 [ TABLESPACE <replaceable class="PARAMETER">tablespace</replaceable> ]
-[ SECURITY_LABEL [=] <replaceable class="PARAMETER">value</replaceable>]
+[ SECURITY_LABEL [=] <replaceable class="PARAMETER">security_label</replaceable> ]
 
 where <replaceable class="PARAMETER">column_constraint</replaceable> is:
 
@@ -44,7 +44,7 @@ where <replaceable class="PARAMETER">column_constraint</replaceable> is:
   REFERENCES <replaceable class="PARAMETER">reftable</replaceable> [ ( <replaceable class="PARAMETER">refcolumn</replaceable> ) ] [ MATCH FULL | MATCH PARTIAL | MATCH SIMPLE ]
     [ ON DELETE <replaceable class="parameter">action</replaceable> ] [ ON UPDATE <replaceable class="parameter">action</replaceable> ] }
 [ DEFERRABLE | NOT DEFERRABLE ] [ INITIALLY DEFERRED | INITIALLY IMMEDIATE ]
-[ SECURITY_LABEL [=] <replaceable class="PARAMETER">value</replaceable>]
+[ SECURITY_LABEL [=] <replaceable class="PARAMETER">security_label</replaceable> ]
 
 and <replaceable class="PARAMETER">table_constraint</replaceable> is:
 
@@ -683,18 +683,21 @@ and <replaceable class="PARAMETER">table_constraint</replaceable> is:
    </varlistentry>
 
    <varlistentry>
-     <term><literal>SECURITY_LABEL [=] <replaceable class="PARAMETER">value</replaceable></literal></term>
-      <listitem>
-        <para>
-	  This clause allows to create a table and column with an explicit
-	  security label, and is available only when SE-PostgreSQL is running.
-	  If this clause is not given, it assigns a default security label based
-	  on the security policy.
-	  See <xref linkend="enhanced-security-and-sepostgresql"> for more details.
-        </para>
-      </listitem>
+    <term><literal>SECURITY_LABEL [=] <replaceable class="PARAMETER">security_label</replaceable></literal></term>
+    <listitem>
+     <para>
+      This clause allows to specify a certain security label on the new tables
+      and columns, available only when SE-PostgreSQL is working.
+      If no label is given, the default security label shall be assigned on
+      the new table and columns.
+      If no label is given, the default security label shall be assigned on
+      the new table and columns. Please note that a column inherits the security
+      label of the table, so the given security label on the table shall be
+      also applied on the columns in default.
+      See <xref linkend="enhanced-security-and-sepostgresql"> for more details.
+     </para>
+    </listitem>
    </varlistentry>
-
   </variablelist>
 
   <refsect2 id="SQL-CREATETABLE-storage-parameters">
