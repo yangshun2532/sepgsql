@@ -5563,9 +5563,9 @@ fi
 
 
 if test "$enable_selinux" = yes; then
-    { echo "$as_me:$LINENO: checking for getpeercon in -lselinux" >&5
-echo $ECHO_N "checking for getpeercon in -lselinux... $ECHO_C" >&6; }
-if test "${ac_cv_lib_selinux_getpeercon+set}" = set; then
+    { echo "$as_me:$LINENO: checking for avc_netlink_loop in -lselinux" >&5
+echo $ECHO_N "checking for avc_netlink_loop in -lselinux... $ECHO_C" >&6; }
+if test "${ac_cv_lib_selinux_avc_netlink_loop+set}" = set; then
   echo $ECHO_N "(cached) $ECHO_C" >&6
 else
   ac_check_lib_save_LIBS=$LIBS
@@ -5583,11 +5583,11 @@ cat >>conftest.$ac_ext <<_ACEOF
 #ifdef __cplusplus
 extern "C"
 #endif
-char getpeercon ();
+char avc_netlink_loop ();
 int
 main ()
 {
-return getpeercon ();
+return avc_netlink_loop ();
   ;
   return 0;
 }
@@ -5610,21 +5610,21 @@ eval "echo \"\$as_me:$LINENO: $ac_try_echo\"") >&5
 	 test ! -s conftest.err
        } && test -s conftest$ac_exeext &&
        $as_test_x conftest$ac_exeext; then
-  ac_cv_lib_selinux_getpeercon=yes
+  ac_cv_lib_selinux_avc_netlink_loop=yes
 else
   echo "$as_me: failed program was:" >&5
 sed 's/^/| /' conftest.$ac_ext >&5
 
-	ac_cv_lib_selinux_getpeercon=no
+	ac_cv_lib_selinux_avc_netlink_loop=no
 fi
 
 rm -f core conftest.err conftest.$ac_objext conftest_ipa8_conftest.oo \
       conftest$ac_exeext conftest.$ac_ext
 LIBS=$ac_check_lib_save_LIBS
 fi
-{ echo "$as_me:$LINENO: result: $ac_cv_lib_selinux_getpeercon" >&5
-echo "${ECHO_T}$ac_cv_lib_selinux_getpeercon" >&6; }
-if test $ac_cv_lib_selinux_getpeercon = yes; then
+{ echo "$as_me:$LINENO: result: $ac_cv_lib_selinux_avc_netlink_loop" >&5
+echo "${ECHO_T}$ac_cv_lib_selinux_avc_netlink_loop" >&6; }
+if test $ac_cv_lib_selinux_avc_netlink_loop = yes; then
 
 cat >>confdefs.h <<_ACEOF
 #define HAVE_SELINUX 1
