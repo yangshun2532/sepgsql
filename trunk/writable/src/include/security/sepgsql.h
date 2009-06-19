@@ -301,12 +301,6 @@ sepgsqlGivenSecLabelIn(Oid relid, DefElem *defel);
 extern List *
 sepgsqlParseCreateStmtSecLabelIn(CreateStmt *stmt);
 
-extern bool
-sepgsqlGetMcstransMode(void);
-
-extern bool
-sepgsqlSetMcstransMode(bool mode);
-
 extern security_context_t
 sepgsqlTransSecLabelIn(security_context_t seclabel);
 
@@ -377,8 +371,6 @@ sepgsqlGetPermissionString(security_class_t tclass, access_vector_t av);
 #define sepgsqlTupleDescHasSecLabel(a)			(false)
 #define sepgsqlGivenSecLabelIn(a,b)				(InvalidOid)
 #define sepgsqlParseCreateStmtSecLabelIn(a)		(NIL)
-#define sepgsqlGetMcstransMode()				(false)
-#define sepgsqlSetMcstransMode(a)				(false)
 #define sepgsqlTransSecLabelIn(a)				(a)
 #define sepgsqlTransSecLabelOut(a)				(a)
 #define sepgsqlRawSecLabelIn(a)					(a)
