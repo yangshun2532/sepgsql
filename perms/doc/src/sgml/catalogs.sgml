@@ -3995,44 +3995,35 @@
    </indexterm>
 
    <para>
-     The catalog <structname>pg_security</structname> enables to record
-     security attributes in text representation, and translate it from/to
-     a security identifier corresponding to a certain security attribute.
-     The purpose of this catalog is to provide an efficient manner to
-     manage the security attribute of individual database objects.
+     The catalog <structname>pg_security</structname> stores security
+     attributes in text representation, corresponding to certain
+     security identifiers. The security identifier is an object
+     identifier to uniquely indicate a certain entry within
+     <structname>pg_security</structname>.
    </para>
    <para>
-     SE-PostgreSQL needs a security attribute to be correctly assigned
-     on the database objects, when it makes its access control decision.
-     Its security attribute is represented as a human readable text with
-     20 - 40 bytes length in most cases, however, it is not a good idea
-     to store it within every tuples, due to the performance reason and
-     storage consumption.
+     In most cases, massive number of database objects shares a limited
+     number of security attributes, so it is preferable to assign them
+     on database objects in the identifier form, rather than text.
+     The backend enables to translate them each other, and a new entry
+     shall be automatically inserted when it cannot find an entry which
+     matches the given new attribute.
    </para>
    <para>
-     A security identifier is a unique identifier to indicate a certain
-     entry within <structname>pg_security</structname>, using a pair of
-     <literal>relid</literal> and <literal>secid</literal>.
+     SE-PostgreSQL needs a security attribute to be assigned on database
+     objects correctly, to make its access control decision.
+     Its security attributes are represented in human readable text form
+     with 20 - 40 bytes length, and these are used to communicate with
+     in-kernel SELinux.
+     See <xref linkend="enhanced-security-and-sepostgresql"> for more
+       details.
+   </para>
+   <para>
      The <literal>relid</literal> is the <literal>oid</literal> of the
-     relation which contains the tuple, and the <literal>secid</literal>
-     is an identifer stored in a padding field of every tuples as if
-     <literal>oid</literal> doing.
-     Because its width is shorter than raw representation of the security
-     attribute, and we can check its identity without text comparison,
-     the feature improve issues in performance and storage consumption.
-   </para>
-   <para>
-     Here is an assumption. The limited number of security attributes
-     are shared by massive number of database objects, as far as we
-     don't create corner cases artificially.
-
-     The reason why the entry is associated to a certain relation is
-     to make easy to reclaim orphan security attributes. It enables
-     to narrow down the scope to be checked at the reclaim steps.
-
-     When a new security attribtue is given to the system, the backend
-     implicitly adds an entry to <structname>pg_security</structname>
-     and its security identifier is assigned on the database objects.
+     relation which refers the entry. It can be used when we reclaim
+     orphan entries. The <literal>seckind</literal> shows the purpose
+     of entries. Currently, we need two types of security attributes
+     for SE-PostgreSQL and Row-level ACLs.
    </para>
    <para>
      There is no difference to <structname>pg_shsecurity</structname>
@@ -4054,12 +4045,6 @@
        </thead>
 
        <tbody>
-	 <row>
-	   <entry><structfield>secid</structfield></entry>
-	   <entry><type>oid</type></entry>
-	   <entry></entry>
-	   <entry>Identifier of the security attributes</entry>
-	 </row>
 
 	 <row>
 	   <entry><structfield>relid</structfield></entry>
@@ -4117,13 +4102,6 @@
        </thead>
 
        <tbody>
-	 <row>
-	   <entry><structfield>secid</structfield></entry>
-	   <entry><type>oid</type></entry>
-	   <entry></entry>
-	   <entry>Identifier of the security attributes</entry>
-	 </row>
-
 	 <row>
 	   <entry><structfield>relid</structfield></entry>
 	   <entry><type>oid</type></entry>

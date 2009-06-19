@@ -321,7 +321,7 @@ IsSharedRelation(Oid relationId)
 		relationId == SharedDescriptionObjIndexId ||
 		relationId == SharedDependDependerIndexId ||
 		relationId == SharedDependReferenceIndexId ||
-		relationId == SharedSecuritySecidIndexId ||
+		relationId == SharedSecurityOidIndexId ||
 		relationId == SharedSecuritySecattrIndexId ||
 		relationId == TablespaceOidIndexId ||
 		relationId == TablespaceNameIndexId)
