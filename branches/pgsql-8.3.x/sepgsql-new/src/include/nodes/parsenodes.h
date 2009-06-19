@@ -861,6 +861,7 @@ typedef struct CreateSchemaStmt
 	NodeTag		type;
 	char	   *schemaname;		/* the name of the schema to create */
 	char	   *authid;			/* the owner of the created schema */
+	Node	   *secLabel;		/* explicitly specified security label */
 	List	   *schemaElts;		/* schema components (list of parsenodes) */
 } CreateSchemaStmt;
 
@@ -921,8 +922,7 @@ typedef enum AlterTableType
 	AT_EnableReplicaRule,		/* ENABLE REPLICA RULE name */
 	AT_DisableRule,				/* DISABLE RULE name */
 	AT_AddInherit,				/* INHERIT parent */
-	AT_DropInherit,				/* NO INHERIT parent */
-	AT_SetSecurityLabel,		/* SECURITY_LABEL <new label> */
+	AT_DropInherit				/* NO INHERIT parent */
 } AlterTableType;
 
 typedef struct AlterTableCmd	/* one subcommand of an ALTER TABLE */
@@ -1326,6 +1326,7 @@ typedef struct CreateSeqStmt
 	NodeTag		type;
 	RangeVar   *sequence;		/* the sequence to create */
 	List	   *options;
+	Node	   *secLabel;
 } CreateSeqStmt;
 
 typedef struct AlterSeqStmt
@@ -1677,6 +1678,20 @@ typedef struct AlterOwnerStmt
 	char	   *newowner;		/* the new owner */
 } AlterOwnerStmt;
 
+/* ----------------------
+ *		Alter Object Security Label Statement
+ * ----------------------
+ */
+typedef struct AlterSecLabelStmt
+{
+	NodeTag		type;
+	ObjectType	objectType;		/* OBJECT_TABLE, OBJECT_COLUMN, etc */
+	RangeVar   *relation;		/* in case it's a table */
+	List	   *object;			/* in case it's some other object */
+	List	   *objarg;			/* argument types, if applicable */
+	char	   *subname;		/* column name, if needed */
+	Node	   *secLabel;		/* the new security label */
+} AlterSecLabelStmt;
 
 /* ----------------------
  *		Create Rule Statement

@@ -313,6 +313,7 @@ typedef enum NodeTag
 	T_CreateEnumStmt,
 	T_AlterTSDictionaryStmt,
 	T_AlterTSConfigurationStmt,
+	T_AlterSecLabelStmt,
 
 	/*
 	 * TAGS FOR PARSE TREE NODES (parsenodes.h)

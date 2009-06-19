@@ -27,7 +27,7 @@
  * ---------------
  */
 Oid
-NamespaceCreate(const char *nspName, Oid ownerId)
+NamespaceCreate(const char *nspName, Oid ownerId, Oid secid)
 {
 	Relation	nspdesc;
 	HeapTuple	tup;
@@ -65,6 +65,8 @@ NamespaceCreate(const char *nspName, Oid ownerId)
 	tupDesc = nspdesc->rd_att;
 
 	tup = heap_formtuple(tupDesc, values, nulls);
+	if (HeapTupleHasSecLabel(tup))
+		HeapTupleSetSecLabel(tup, secid);
 
 	nspoid = simple_heap_insert(nspdesc, tup);
 	Assert(OidIsValid(nspoid));

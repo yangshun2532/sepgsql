@@ -34,6 +34,9 @@ extern void AlterRelationNamespaceInternal(Relation classRel, Oid relOid,
 							   Oid oldNspOid, Oid newNspOid,
 							   bool hasDependEntry);
 
+extern void AlterRelationSecLabel(RangeVar *relation, const char *attname,
+								  ObjectType objtype, DefElem *seclabel);
+
 extern void CheckTableNotInUse(Relation rel, const char *stmt);
 
 extern void ExecuteTruncate(TruncateStmt *stmt);
