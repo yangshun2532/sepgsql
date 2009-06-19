@@ -295,12 +295,6 @@ sepgsqlTupleDescHasSecLabel(Relation rel);
 extern void
 sepgsqlSetDefaultSecLabel(Relation rel, HeapTuple tuple);
 
-extern bool
-sepgsqlGetMcstransMode(void);
-
-extern bool
-sepgsqlSetMcstransMode(bool mode);
-
 extern security_context_t
 sepgsqlTransSecLabelIn(security_context_t seclabel);
 
@@ -369,8 +363,6 @@ sepgsqlGetPermissionString(security_class_t tclass, access_vector_t av);
 #define sepgsqlAllowFunctionInlined(a)			(true)
 // label.c
 #define sepgsqlTupleDescHasSecLabel(a)			(false)
-#define sepgsqlGetMcstransMode()				(false)
-#define sepgsqlSetMcstransMode(a)				(false)
 #define sepgsqlTransSecLabelIn(a)				(a)
 #define sepgsqlTransSecLabelOut(a)				(a)
 #define sepgsqlRawSecLabelIn(a)					(a)
