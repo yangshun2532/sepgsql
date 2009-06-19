@@ -462,24 +462,3 @@ out:
 
 	return acl;
 }
-
-Datum
-rowacl_acl_to_internal(PG_FUNCTION_ARGS)
-{
-	Acl	   *acl = PG_GETARG_ACL_P(0);
-	char   *secacl = rowaclTransRowAclIn(acl);
-
-	PG_RETURN_TEXT_P(CStringGetTextDatum(secacl));
-}
-
-Datum
-rowacl_internal_to_acl(PG_FUNCTION_ARGS)
-{
-	char   *secacl = TextDatumGetCString(PG_GETARG_TEXT_P(0));
-	Acl	   *acl = rowaclTransRowAclOut(secacl);
-
-	if (!acl)
-		PG_RETURN_NULL();
-
-	PG_RETURN_ACL_P(acl);
-}

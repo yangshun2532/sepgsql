@@ -4344,10 +4344,8 @@ DATA(insert OID = 3410 ( security_reclaim_acl	PGNSP PGUID 12 1 0 0 f f f t f v 0
 DATA(insert OID = 3411 ( security_reclaim_label	PGNSP PGUID 12 1 0 0 f f f t f v 0 0 23 "" _null_ _null_ _null_ _null_ security_reclaim_label	_null_ _null_ _null_ ));
 DATA(insert OID = 3412 ( security_reclaim_acl	PGNSP PGUID 12 1 0 0 f f f t f v 1 0 23 "2205" _null_ _null_ _null_ _null_ security_reclaim_table_acl	_null_ _null_ _null_ ));
 DATA(insert OID = 3413 ( security_reclaim_label	PGNSP PGUID 12 1 0 0 f f f t f v 1 0 23 "2205" _null_ _null_ _null_ _null_ security_reclaim_table_label	_null_ _null_ _null_ ));
-
-/* RowAcl related functions */
-DATA(insert OID = 3414 ( rowacl_acl_to_internal	PGNSP PGUID 12 1 0 0 f f f t f v 1 0 25 "1034" _null_ _null_ _null_ _null_ rowacl_acl_to_internal	_null_ _null_ _null_ ));
-DATA(insert OID = 3415 ( rowacl_internal_to_acl	PGNSP PGUID 12 1 0 0 f f f t f v 1 0 1034 "25" _null_ _null_ _null_ _null_ rowacl_internal_to_acl	_null_ _null_ _null_ ));
+DATA(insert OID = 3414 ( security_acl_to_secid		PGNSP PGUID 12 1 0 0 f f f t f v 1 0 26 "2249" _null_ _null_ _null_ _null_ security_acl_to_secid	_null_ _null_ _null_ ));
+DATA(insert OID = 3415 ( security_label_to_secid	PGNSP PGUID 12 1 0 0 f f f t f v 1 0 26 "2249" _null_ _null_ _null_ _null_ security_label_to_secid	_null_ _null_ _null_ ));
 
 /* SE-PostgreSQL related functions */
 DATA(insert OID = 3416 (  sepgsql_getcon   PGNSP PGUID 12 1 0 0 f f f t f v 0 0 25 "" _null_ _null_ _null_ _null_ sepgsql_getcon _null_ _null_ _null_ ));
