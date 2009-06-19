@@ -156,9 +156,9 @@ CREATE FUNCTION f2 (int) RETURNS int
        AS 'SELECT $1 + $1';
 CREATE FUNCTION
 SELECT proname, security_context FROM pg_proc WHERE oid = 'f2'::regproc;
- proname |            security_context             
----------+-----------------------------------------
- f2      | unconfined_u:object_r:sepgsql_proc_t:s0
+ proname |               security_context               
+---------+----------------------------------------------
+ f2      | unconfined_u:object_r:sepgsql_proc_exec_t:s0
 (1 row)
 
 -- ALTER FUNCTION with SECURITY_CONTEXT clause
@@ -175,8 +175,8 @@ ALTER FUNCTION f2(int)
       SECURITY_CONTEXT = 'unconfined_u:object_r:sepgsql_proc_t:s0:c16';	-- to be denied
 ERROR:  SELinux: security policy violation
 SELECT proname, security_context FROM pg_proc WHERE oid = 'f2'::regproc;
- proname |            security_context             
----------+-----------------------------------------
- f2      | unconfined_u:object_r:sepgsql_proc_t:s0
+ proname |               security_context               
+---------+----------------------------------------------
+ f2      | unconfined_u:object_r:sepgsql_proc_exec_t:s0
 (1 row)
 

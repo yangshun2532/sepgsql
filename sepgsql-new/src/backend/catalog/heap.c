@@ -54,7 +54,6 @@
 #include "parser/parse_coerce.h"
 #include "parser/parse_expr.h"
 #include "parser/parse_relation.h"
-#include "security/sepgsql.h"
 #include "storage/smgr.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
@@ -519,7 +518,7 @@ AddNewAttributeTuples(Oid new_rel_oid,
 	for (i = 0; i < natts; i++)
 	{
 		ListCell *l;
-		Oid attselabel = InvalidOid;
+		Oid	attselabel = InvalidOid;
 
 		/* Fill in the correct relation OID */
 		(*dpp)->attrelid = new_rel_oid;
@@ -535,7 +534,7 @@ AddNewAttributeTuples(Oid new_rel_oid,
 			if (defel->defname &&
 				strcmp(defel->defname, NameStr((*dpp)->attname)) == 0)
 			{
-				attselabel = sepgsqlGivenColumnSecLabelIn(defel);
+				attselabel = intVal(defel->arg);
 				break;
 			}
 		}
@@ -798,7 +797,7 @@ AddNewRelationTuple(Relation pg_class_desc,
 
 		if (!defel->defname)
 		{
-			relselabel = sepgsqlGivenTableSecLabelIn(defel);
+			relselabel = intVal(defel->arg);
 			break;
 		}
 	}

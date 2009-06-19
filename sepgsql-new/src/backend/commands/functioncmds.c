@@ -296,8 +296,7 @@ compute_common_attribute(DefElem *defel,
 						 DefElem **security_item,
 						 List **set_items,
 						 DefElem **cost_item,
-						 DefElem **rows_item,
-						 DefElem **selabel_item)
+						 DefElem **rows_item)
 {
 	if (strcmp(defel->defname, "volatility") == 0)
 	{
@@ -337,13 +336,6 @@ compute_common_attribute(DefElem *defel,
 			goto duplicate_error;
 
 		*rows_item = defel;
-	}
-	else if (strcmp(defel->defname, "security_context") == 0)
-	{
-		if (*selabel_item)
-			goto duplicate_error;
-
-		*selabel_item = defel;
 	}
 	else
 		return false;
@@ -455,14 +447,21 @@ compute_attributes_sql_style(List *options,
 						 errmsg("conflicting or redundant options")));
 			language_item = defel;
 		}
+		else if (strcmp(defel->defname, "security_context") == 0)
+		{
+			if (selabel_item)
+				ereport(ERROR,
+						(errcode(ERRCODE_SYNTAX_ERROR),
+						 errmsg("conflicting or redundant options")));
+			selabel_item = defel;
+		}
 		else if (compute_common_attribute(defel,
 										  &volatility_item,
 										  &strict_item,
 										  &security_item,
 										  &set_items,
 										  &cost_item,
-										  &rows_item,
-										  &selabel_item))
+										  &rows_item))
 		{
 			/* recognized common option */
 			continue;
@@ -519,7 +518,7 @@ compute_attributes_sql_style(List *options,
 					 errmsg("ROWS must be positive")));
 	}
 	if (selabel_item)
-		*proselabel = sepgsqlGivenProcedureSecLabelIn(selabel_item);
+		*proselabel = sepgsqlGivenSecLabelIn(ProcedureRelationId, selabel_item);
 }
 
 
@@ -1150,6 +1149,58 @@ AlterFunctionOwner_internal(Relation rel, HeapTuple tup, Oid newOwnerId)
 }
 
 /*
+ * ALTER FUNCTION name(args,...) SECURITY_LABEL [=] newlabel
+ */
+void
+AlterFunctionSecLabel(List *name, List *argtypes, DefElem *seclabel)
+{
+	Relation	rel;
+	HeapTuple	tuple, newtup;
+	Oid			proid, secid;
+	bool		replaces[Natts_pg_proc];
+
+	/* Translate text representation to security id */
+	secid = sepgsqlGivenSecLabelIn(ProcedureRelationId, seclabel);
+
+	/* open pg_proc system catalog */
+	rel = heap_open(ProcedureRelationId, RowExclusiveLock);
+
+	proid = LookupFuncNameTypeNames(name, argtypes, false);
+
+	tuple = SearchSysCache(PROCOID,
+						   ObjectIdGetDatum(proid),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "cache lookup failed for function %u", proid);
+
+	/* DAC permission checks */
+	if (!pg_proc_ownercheck(proid, GetUserId()))
+		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
+					   NameStr(((Form_pg_proc) GETSTRUCT(tuple))->proname));
+	/*
+	 * NOTE: we should not use heap_copytuple() here because of
+	 * possibility that the fetched tuple was inserted while
+	 * SE-PostgreSQL is disabled and it does not have a field
+	 * to store security label.
+	 */
+	memset(replaces, false, sizeof(replaces));
+	newtup = heap_modify_tuple(tuple, RelationGetDescr(rel),
+							   NULL, NULL, replaces);
+	if (!HeapTupleHasSecLabel(newtup))
+		elog(ERROR, "Unable to set security label on tuples in pg_proc");
+	HeapTupleSetSecLabel(newtup, secid);
+
+	simple_heap_update(rel, &newtup->t_self, newtup);
+	CatalogUpdateIndexes(rel, newtup);
+
+	ReleaseSysCache(tuple);
+
+	heap_freetuple(newtup);
+
+	heap_close(rel, RowExclusiveLock);
+}
+
+/*
  * Implements the ALTER FUNCTION utility command (except for the
  * RENAME and OWNER clauses, which are handled as part of the generic
  * ALTER framework).
@@ -1168,7 +1219,6 @@ AlterFunction(AlterFunctionStmt *stmt)
 	List	   *set_items = NIL;
 	DefElem    *cost_item = NULL;
 	DefElem    *rows_item = NULL;
-	DefElem	   *selabel_item = NULL;
 
 	rel = heap_open(ProcedureRelationId, RowExclusiveLock);
 
@@ -1206,8 +1256,7 @@ AlterFunction(AlterFunctionStmt *stmt)
 									 &security_def_item,
 									 &set_items,
 									 &cost_item,
-									 &rows_item,
-									 &selabel_item) == false)
+									 &rows_item) == false)
 			elog(ERROR, "option \"%s\" not recognized", defel->defname);
 	}
 
@@ -1237,7 +1286,7 @@ AlterFunction(AlterFunctionStmt *stmt)
 					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 					 errmsg("ROWS is not applicable when function does not return a set")));
 	}
-	if (set_items || selabel_item)
+	if (set_items)
 	{
 		Datum		datum;
 		bool		isnull;
@@ -1246,42 +1295,30 @@ AlterFunction(AlterFunctionStmt *stmt)
 		char		repl_null[Natts_pg_proc];
 		char		repl_repl[Natts_pg_proc];
 
+		/* extract existing proconfig setting */
+		datum = SysCacheGetAttr(PROCOID, tup, Anum_pg_proc_proconfig, &isnull);
+		a = isnull ? NULL : DatumGetArrayTypeP(datum);
+
+		/* update according to each SET or RESET item, left to right */
+		a = update_proconfig_value(a, set_items);
+
+		/* update the tuple */
 		memset(repl_repl, ' ', sizeof(repl_repl));
+		repl_repl[Anum_pg_proc_proconfig - 1] = 'r';
 
-		if (set_items)
+		if (a == NULL)
 		{
-			/* extract existing proconfig setting */
-			datum = SysCacheGetAttr(PROCOID, tup, Anum_pg_proc_proconfig, &isnull);
-			a = isnull ? NULL : DatumGetArrayTypeP(datum);
-
-			/* update according to each SET or RESET item, left to right */
-			a = update_proconfig_value(a, set_items);
-
-			/* update the tuple */
-			repl_repl[Anum_pg_proc_proconfig - 1] = 'r';
-
-			if (a == NULL)
-			{
-				repl_val[Anum_pg_proc_proconfig - 1] = (Datum) 0;
-				repl_null[Anum_pg_proc_proconfig - 1] = 'n';
-			}
-			else
-			{
-				repl_val[Anum_pg_proc_proconfig - 1] = PointerGetDatum(a);
-				repl_null[Anum_pg_proc_proconfig - 1] = ' ';
-			}
+			repl_val[Anum_pg_proc_proconfig - 1] = (Datum) 0;
+			repl_null[Anum_pg_proc_proconfig - 1] = 'n';
 		}
+		else
+		{
+			repl_val[Anum_pg_proc_proconfig - 1] = PointerGetDatum(a);
+			repl_null[Anum_pg_proc_proconfig - 1] = ' ';
+		}
+
 		tup = heap_modifytuple(tup, RelationGetDescr(rel),
-						   repl_val, repl_null, repl_repl);
-		if (selabel_item)
-		{
-			Oid		secid = sepgsqlGivenProcedureSecLabelIn(selabel_item);
-
-			if (!HeapTupleHasSecLabel(tup))
-				elog(ERROR, "Unable to assign security label on \"%s\"",
-					 RelationGetRelationName(rel));
-			HeapTupleSetSecLabel(tup, secid);
-		}
+							   repl_val, repl_null, repl_repl);
 	}
 
 	/* Do the update */

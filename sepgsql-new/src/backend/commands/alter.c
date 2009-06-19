@@ -269,3 +269,32 @@ ExecAlterOwnerStmt(AlterOwnerStmt *stmt)
 				 (int) stmt->objectType);
 	}
 }
+
+void
+ExecAlterSecLabelStmt(AlterSecLabelStmt *stmt)
+{
+	DefElem	   *seclabel = (DefElem *)stmt->secLabel;
+
+	switch (stmt->objectType)
+	{
+	case OBJECT_DATABASE:
+		AlterDatabaseSecLabel(strVal(linitial(stmt->object)), seclabel);
+		break;
+	case OBJECT_SCHEMA:
+		AlterSchemaSecLabel(strVal(linitial(stmt->object)), seclabel);
+		break;
+	case OBJECT_TABLE:
+	case OBJECT_SEQUENCE:
+	case OBJECT_COLUMN:
+		CheckRelationOwnership(stmt->relation, false);
+		AlterRelationSecLabel(stmt->relation, stmt->subname,
+							  stmt->objectType, seclabel);
+		break;
+	case OBJECT_FUNCTION:
+		AlterFunctionSecLabel(stmt->object, stmt->objarg, seclabel);
+		break;
+	default:
+		elog(ERROR, "unrecognized AlterSecLabelStmt type: %d",
+			 (int) stmt->objectType);
+	}
+}

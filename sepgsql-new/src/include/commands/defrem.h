@@ -54,6 +54,7 @@ extern void SetFunctionArgType(Oid funcOid, int argIndex, Oid newArgType);
 extern void RenameFunction(List *name, List *argtypes, const char *newname);
 extern void AlterFunctionOwner(List *name, List *argtypes, Oid newOwnerId);
 extern void AlterFunctionOwner_oid(Oid procOid, Oid newOwnerId);
+extern void AlterFunctionSecLabel(List *name, List *argtypes, DefElem *seclabel);
 extern void AlterFunction(AlterFunctionStmt *stmt);
 extern void CreateCast(CreateCastStmt *stmt);
 extern void DropCast(DropCastStmt *stmt);

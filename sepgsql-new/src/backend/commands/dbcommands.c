@@ -445,7 +445,7 @@ createdb(const CreatedbStmt *stmt)
 	HeapTupleSetOid(tuple, dboid);
 	if (dselabel)
 	{
-		Oid		secid = sepgsqlGivenDatabaseSecLabelIn(dselabel);
+		Oid		secid = sepgsqlGivenSecLabelIn(DatabaseRelationId, dselabel);
 
 		if (!HeapTupleHasSecLabel(tuple))
 			elog(ERROR, "Unable to assign security label on \"%s\"",
@@ -876,7 +876,6 @@ AlterDatabase(AlterDatabaseStmt *stmt)
 	ListCell   *option;
 	int			connlimit = -1;
 	DefElem    *dconnlimit = NULL;
-	DefElem	   *dselabel = NULL;
 	Datum		new_record[Natts_pg_database];
 	char		new_record_nulls[Natts_pg_database];
 	char		new_record_repl[Natts_pg_database];
@@ -893,14 +892,6 @@ AlterDatabase(AlterDatabaseStmt *stmt)
 						(errcode(ERRCODE_SYNTAX_ERROR),
 						 errmsg("conflicting or redundant options")));
 			dconnlimit = defel;
-		}
-		else if (strcmp(defel->defname, "security_context") == 0)
-		{
-			if (dselabel)
-				ereport(ERROR,
-						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options")));
-			dselabel = defel;
 		}
 		else
 			elog(ERROR, "option \"%s\" not recognized",
@@ -947,15 +938,6 @@ AlterDatabase(AlterDatabaseStmt *stmt)
 
 	newtuple = heap_modifytuple(tuple, RelationGetDescr(rel), new_record,
 								new_record_nulls, new_record_repl);
-	if (dselabel)
-	{
-		Oid		secid = sepgsqlGivenDatabaseSecLabelIn(dselabel);
-
-		if (!HeapTupleHasSecLabel(newtuple))
-			elog(ERROR, "Unable to assign security label on \"%s\"",
-				 RelationGetRelationName(rel));
-		HeapTupleSetSecLabel(newtuple, secid);
-	}
 	simple_heap_update(rel, &tuple->t_self, newtuple);
 
 	/* Update indexes */
@@ -1179,6 +1161,61 @@ AlterDatabaseOwner(const char *dbname, Oid newOwnerId)
 	 */
 }
 
+/*
+ * ALTER DATABASE name SECURITY_LABEL [=] newlabel
+ */
+void
+AlterDatabaseSecLabel(const char *dbname, DefElem *seclabel)
+{
+	Relation	rel;
+	HeapTuple	tuple, newtup;
+	ScanKeyData	scankey;
+	SysScanDesc	scan;
+	Oid			secid;
+	bool		replaces[Natts_pg_database];
+
+	/* Translate text representation to security id */
+	secid = sepgsqlGivenSecLabelIn(DatabaseRelationId, seclabel);
+
+	/* Fetch the old tuple */
+	rel = heap_open(DatabaseRelationId, RowExclusiveLock);
+	ScanKeyInit(&scankey,
+				Anum_pg_database_datname,
+				BTEqualStrategyNumber, F_NAMEEQ,
+				NameGetDatum(dbname));
+	scan = systable_beginscan(rel, DatabaseNameIndexId, true,
+							  SnapshotNow, 1, &scankey);
+	tuple = systable_getnext(scan);
+	if (!HeapTupleIsValid(tuple))
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_DATABASE),
+				 errmsg("database \"%s\" does not exist", dbname)));
+
+	/* check DAC permission */
+	if (!pg_database_ownercheck(HeapTupleGetOid(tuple), GetUserId()))
+		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_DATABASE, dbname);
+	/*
+	 * NOTE: we should not use heap_copytuple() here because of
+	 * possibility that the fetched tuple was inserted while
+	 * SE-PostgreSQL is disabled and it does not have a field
+	 * to store security label.
+	 */
+	memset(replaces, false, sizeof(replaces));
+	newtup = heap_modify_tuple(tuple, RelationGetDescr(rel),
+							   NULL, NULL, replaces);
+	if (!HeapTupleHasSecLabel(newtup))
+		elog(ERROR, "Unable to set security label on tuples in pg_database");
+	HeapTupleSetSecLabel(newtup, secid);
+
+	simple_heap_update(rel, &newtup->t_self, newtup);
+	CatalogUpdateIndexes(rel, newtup);
+
+	heap_freetuple(newtup);
+
+	systable_endscan(scan);
+
+	heap_close(rel, RowExclusiveLock);
+}
 
 /*
  * Helper functions

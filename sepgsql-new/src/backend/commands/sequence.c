@@ -194,6 +194,7 @@ DefineSequence(CreateSeqStmt *seq)
 	stmt->options = list_make1(defWithOids(false));
 	stmt->oncommit = ONCOMMIT_NOOP;
 	stmt->tablespacename = NULL;
+	stmt->secLabel = seq->secLabel;
 
 	seqoid = DefineRelation(stmt, RELKIND_SEQUENCE);
 
