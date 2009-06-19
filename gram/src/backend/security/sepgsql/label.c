@@ -375,26 +375,6 @@ sepgsqlParseCreateStmtSecLabelIn(CreateStmt *stmt)
 }
 
 /*
- * sepgsqlGet/SetMcstransMode
- *   provide an interface to get/set sepostgresql_use_mcstrans
- */
-bool
-sepgsqlGetMcstransMode(void)
-{
-	return sepostgresql_use_mcstrans;
-}
-
-bool
-sepgsqlSetMcstransMode(bool new_mode)
-{
-	bool	old_mode = sepostgresql_use_mcstrans;
-
-	sepostgresql_use_mcstrans = new_mode;
-
-	return old_mode;
-}
-
-/*
  * sepgsqlRawSecLabelIn
  *   correctness checks for the given security context
  */
