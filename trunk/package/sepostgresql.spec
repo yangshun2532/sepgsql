@@ -36,7 +36,7 @@ Patch9: sepgsql-09-tests-%%__base_major_version__%%.patch
 Patch10: sepgsql-10-docs-%%__base_major_version__%%.patch
 Patch11: sepgsql-fedora-prefix.patch
 BuildRequires: perl glibc-devel bison flex readline-devel zlib-devel >= 1.0.4
-Buildrequires: checkpolicy libselinux-devel >= 2.0.80 selinux-policy >= 3.4.2
+Buildrequires: checkpolicy libselinux-devel >= 2.0.80 selinux-policy >= 3.6.13
 %if %{ssl}
 BuildRequires: openssl-devel
 %endif
@@ -233,6 +233,11 @@ fi
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
 
 %changelog
+* Fri Jun 19 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 8.4rc1-2047
+- upgrade: base version 8.4beta2 -> 8.4rc1
+- update: security_reclaim_label/acl got more smart.
+- update: remove a few unused functions
+
 * Thu Jun 11 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 8.4beta2-2007
 - update: add support to reclaim orphan security_labels
 - update: mls/targeted policy package was unified
