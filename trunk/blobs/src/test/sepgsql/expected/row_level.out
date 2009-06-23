@@ -1,0 +1,146 @@
+--@SECURITY_CONTEXT=unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c15
+SET sepostgresql_mcstrans TO off;
+SET
+SELECT sepgsql_getcon();
+                   sepgsql_getcon                    
+-----------------------------------------------------
+ unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c15
+(1 row)
+
+-- cleanup previous tests
+SET client_min_messages TO 'error';
+SET
+DROP TABLE IF EXISTS t4 CASCADE;
+DROP TABLE
+DROP TABLE IF EXISTS t3 CASCADE;
+DROP TABLE
+DROP TABLE IF EXISTS t2 CASCADE;
+DROP TABLE
+DROP TABLE IF EXISTS t1 CASCADE;
+DROP TABLE
+DROP FUNCTION IF EXISTS f1(int) CASCADE;
+DROP FUNCTION
+DROP FUNCTION IF EXISTS f2(int) CASCADE;
+DROP FUNCTION
+RESET client_min_messages;
+RESET
+-- test begins here
+CREATE TABLE t1 (
+       a int primary key,
+       b text
+);
+NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "t1_pkey" for table "t1"
+CREATE TABLE
+CREATE TABLE t2 (
+       x int references t1 (a) on update cascade,
+       y text
+);
+CREATE TABLE
+INSERT INTO t1 (security_label, a, b) VALUES
+       ('system_u:object_r:sepgsql_table_t:s0',		1, 'aaa'),
+       ('system_u:object_r:sepgsql_table_t:s0:c0',	2, 'bbb'),
+       ('system_u:object_r:sepgsql_table_t:s0:c1',	3, 'ccc'),
+       ('system_u:object_r:sepgsql_ro_table_t:s0',	4, 'ddd'),
+       ('system_u:object_r:sepgsql_ro_table_t:s0:c0',	5, 'eee'),
+       ('system_u:object_r:sepgsql_ro_table_t:s0:c1',	6, 'fff');
+INSERT 0 6
+INSERT INTO t2 (security_label, x, y) VALUES
+       ('system_u:object_r:sepgsql_table_t:s0:c1',	1, 'xxx'),
+       ('system_u:object_r:sepgsql_table_t:s0:c0',	2, 'yyy'),
+       ('system_u:object_r:sepgsql_table_t:s0',		3, 'zzz');
+INSERT 0 3
+SELECT security_label, * FROM t1;
+               security_label               | a |  b  
+--------------------------------------------+---+-----
+ system_u:object_r:sepgsql_table_t:s0       | 1 | aaa
+ system_u:object_r:sepgsql_table_t:s0:c0    | 2 | bbb
+ system_u:object_r:sepgsql_table_t:s0:c1    | 3 | ccc
+ system_u:object_r:sepgsql_ro_table_t:s0    | 4 | ddd
+ system_u:object_r:sepgsql_ro_table_t:s0:c0 | 5 | eee
+ system_u:object_r:sepgsql_ro_table_t:s0:c1 | 6 | fff
+(6 rows)
+
+SELECT security_label, * FROM t2;
+             security_label              | x |  y  
+-----------------------------------------+---+-----
+ system_u:object_r:sepgsql_table_t:s0:c1 | 1 | xxx
+ system_u:object_r:sepgsql_table_t:s0:c0 | 2 | yyy
+ system_u:object_r:sepgsql_table_t:s0    | 3 | zzz
+(3 rows)
+
+--@SECURITY_CONTEXT=unconfined_u:unconfined_r:sepgsql_test_t:s0:c0
+SET sepostgresql_mcstrans TO off;
+SET
+SELECT sepgsql_getcon();
+                 sepgsql_getcon                 
+------------------------------------------------
+ unconfined_u:unconfined_r:sepgsql_test_t:s0:c0
+(1 row)
+
+SELECT security_label, * FROM t1;
+               security_label               | a |  b  
+--------------------------------------------+---+-----
+ system_u:object_r:sepgsql_table_t:s0       | 1 | aaa
+ system_u:object_r:sepgsql_table_t:s0:c0    | 2 | bbb
+ system_u:object_r:sepgsql_ro_table_t:s0    | 4 | ddd
+ system_u:object_r:sepgsql_ro_table_t:s0:c0 | 5 | eee
+(4 rows)
+
+SELECT security_label, * FROM t2;
+             security_label              | x |  y  
+-----------------------------------------+---+-----
+ system_u:object_r:sepgsql_table_t:s0:c0 | 2 | yyy
+ system_u:object_r:sepgsql_table_t:s0    | 3 | zzz
+(2 rows)
+
+COPY t1 TO stdout;
+1	aaa
+2	bbb
+4	ddd
+5	eee
+COPY t2 (security_label, x, y) TO stdout;
+system_u:object_r:sepgsql_table_t:s0:c0	2	yyy
+system_u:object_r:sepgsql_table_t:s0	3	zzz
+UPDATE t1 SET a = 99 WHERE a = 1 RETURNING *;	-- to be failed
+ERROR:  SELinux: security policy violation
+CONTEXT:  SQL statement "UPDATE ONLY "public"."t2" SET "x" = $1 WHERE $2 OPERATOR(pg_catalog.=) "x""
+UPDATE t1 SET a = 99 WHERE a = 2 RETURNING *;
+ a  |  b  
+----+-----
+ 99 | bbb
+(1 row)
+
+UPDATE 1
+UPDATE t1 SET a = 99 WHERE a = 4 RETURNING *;	-- to be denied
+ a | b 
+---+---
+(0 rows)
+
+UPDATE 0
+INSERT INTO t1 VALUES (3, 'ccc');	-- to be failed
+ERROR:  duplicate key value violates unique constraint "t1_pkey"
+INSERT INTO t1 VALUES (7, 'ggg');
+INSERT 0 1
+INSERT INTO t2 VALUES (3, 'XXX');	-- to be failed
+ERROR:  insert or update on table "t2" violates foreign key constraint "t2_x_fkey"
+DETAIL:  Key (x)=(3) is not present in table "t1".
+INSERT INTO t2 VALUES (4, 'XXX');
+INSERT 0 1
+SELECT security_label, * FROM t1;
+               security_label                | a  |  b  
+---------------------------------------------+----+-----
+ system_u:object_r:sepgsql_table_t:s0        |  1 | aaa
+ system_u:object_r:sepgsql_ro_table_t:s0     |  4 | ddd
+ system_u:object_r:sepgsql_ro_table_t:s0:c0  |  5 | eee
+ system_u:object_r:sepgsql_table_t:s0:c0     | 99 | bbb
+ unconfined_u:object_r:sepgsql_table_t:s0:c0 |  7 | ggg
+(5 rows)
+
+DELETE FROM t1;		-- to be failed
+ERROR:  SELinux: security policy violation
+CONTEXT:  SQL statement "SELECT 1 FROM ONLY "public"."t2" x WHERE $1 OPERATOR(pg_catalog.=) "x" FOR SHARE OF x"
+DELETE FROM t1 WHERE a not in (SELECT x FROM t2);	-- to be failed
+ERROR:  SELinux: security policy violation
+CONTEXT:  SQL statement "SELECT 1 FROM ONLY "public"."t2" x WHERE $1 OPERATOR(pg_catalog.=) "x" FOR SHARE OF x"
+DELETE FROM t1 WHERE a = 7;
+DELETE 1
