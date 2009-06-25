@@ -316,10 +316,7 @@ InitializeAttributeOids(Relation indexRelation,
 	tupleDescriptor = RelationGetDescr(indexRelation);
 
 	for (i = 0; i < numatts; i += 1)
-	{
 		tupleDescriptor->attrs[i]->attrelid = indexoid;
-		tupleDescriptor->attrs[i]->attkind = RELKIND_INDEX;
-	}
 }
 
 /* ----------------------------------------------------------------
