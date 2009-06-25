@@ -47,6 +47,7 @@ DECLARE_TOAST(pg_description, 2834, 2835);
 DECLARE_TOAST(pg_proc, 2836, 2837);
 DECLARE_TOAST(pg_rewrite, 2838, 2839);
 DECLARE_TOAST(pg_statistic, 2840, 2841);
+DECLARE_TOAST(pg_largeobject, 2964, 2965);
 
 /* shared catalogs */
 DECLARE_TOAST(pg_authid, 2842, 2843);

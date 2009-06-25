@@ -151,6 +151,7 @@ typedef ArrayType Acl;
 #define ACL_ALL_RIGHTS_FOREIGN_SERVER (ACL_USAGE)
 #define ACL_ALL_RIGHTS_FUNCTION		(ACL_EXECUTE)
 #define ACL_ALL_RIGHTS_LANGUAGE		(ACL_USAGE)
+#define ACL_ALL_RIGHTS_LARGEOBJECT	(ACL_SELECT|ACL_UPDATE)
 #define ACL_ALL_RIGHTS_NAMESPACE	(ACL_USAGE|ACL_CREATE)
 #define ACL_ALL_RIGHTS_TABLESPACE	(ACL_CREATE)
 
@@ -181,6 +182,7 @@ typedef enum AclObjectKind
 	ACL_KIND_OPER,				/* pg_operator */
 	ACL_KIND_TYPE,				/* pg_type */
 	ACL_KIND_LANGUAGE,			/* pg_language */
+	ACL_KIND_LARGEOBJECT,		/* pg_largeobject */
 	ACL_KIND_NAMESPACE,			/* pg_namespace */
 	ACL_KIND_OPCLASS,			/* pg_opclass */
 	ACL_KIND_OPFAMILY,			/* pg_opfamily */
@@ -273,6 +275,8 @@ extern AclMode pg_proc_aclmask(Oid proc_oid, Oid roleid,
 				AclMode mask, AclMaskHow how);
 extern AclMode pg_language_aclmask(Oid lang_oid, Oid roleid,
 					AclMode mask, AclMaskHow how);
+extern AclMode pg_largeobject_aclmask(Oid loid, Oid roleid,
+									  AclMode mask, AclMaskHow how);
 extern AclMode pg_namespace_aclmask(Oid nsp_oid, Oid roleid,
 					 AclMode mask, AclMaskHow how);
 extern AclMode pg_tablespace_aclmask(Oid spc_oid, Oid roleid,
@@ -290,10 +294,12 @@ extern AclResult pg_class_aclcheck(Oid table_oid, Oid roleid, AclMode mode);
 extern AclResult pg_database_aclcheck(Oid db_oid, Oid roleid, AclMode mode);
 extern AclResult pg_proc_aclcheck(Oid proc_oid, Oid roleid, AclMode mode);
 extern AclResult pg_language_aclcheck(Oid lang_oid, Oid roleid, AclMode mode);
+extern AclResult pg_largeobject_aclcheck(Oid loid, Oid roleid, AclMode mode);
 extern AclResult pg_namespace_aclcheck(Oid nsp_oid, Oid roleid, AclMode mode);
 extern AclResult pg_tablespace_aclcheck(Oid spc_oid, Oid roleid, AclMode mode);
 extern AclResult pg_foreign_data_wrapper_aclcheck(Oid fdw_oid, Oid roleid, AclMode mode);
 extern AclResult pg_foreign_server_aclcheck(Oid srv_oid, Oid roleid, AclMode mode);
+extern AclResult pg_largeobject_aclcheck(Oid loid, Oid roleid, AclMode mode);
 
 extern void aclcheck_error(AclResult aclerr, AclObjectKind objectkind,
 			   const char *objectname);
@@ -316,5 +322,6 @@ extern bool pg_conversion_ownercheck(Oid conv_oid, Oid roleid);
 extern bool pg_ts_dict_ownercheck(Oid dict_oid, Oid roleid);
 extern bool pg_ts_config_ownercheck(Oid cfg_oid, Oid roleid);
 extern bool pg_foreign_server_ownercheck(Oid srv_oid, Oid roleid);
+extern bool pg_largeobject_ownercheck(Oid loid, Oid roleid);
 
 #endif   /* ACL_H */

@@ -1187,6 +1187,7 @@ typedef enum GrantObjectType
 	ACL_OBJECT_FOREIGN_SERVER,	/* foreign server */
 	ACL_OBJECT_FUNCTION,		/* function */
 	ACL_OBJECT_LANGUAGE,		/* procedural language */
+	ACL_OBJECT_LARGEOBJECT,		/* large object */
 	ACL_OBJECT_NAMESPACE,		/* namespace */
 	ACL_OBJECT_TABLESPACE		/* tablespace */
 } GrantObjectType;
