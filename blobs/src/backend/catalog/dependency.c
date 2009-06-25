@@ -36,6 +36,7 @@
 #include "catalog/pg_foreign_data_wrapper.h"
 #include "catalog/pg_foreign_server.h"
 #include "catalog/pg_language.h"
+#include "catalog/pg_largeobject.h"
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_opclass.h"
 #include "catalog/pg_operator.h"
@@ -1127,6 +1128,10 @@ doDeletion(const ObjectAddress *object)
 			RemoveForeignDataWrapperById(object->objectId);
 			break;
 
+		case OCLASS_LARGEOBJECT:
+			LargeObjectDrop(object->objectId);
+			break;
+
 			/* OCLASS_ROLE, OCLASS_DATABASE, OCLASS_TBLSPACE not handled */
 
 		default:
@@ -2048,6 +2053,10 @@ getObjectClass(const ObjectAddress *object)
 		case UserMappingRelationId:
 			Assert(object->objectSubId == 0);
 			return OCLASS_USER_MAPPING;
+
+		case LargeObjectRelationId:
+			Assert(object->objectSubId == 0);
+			return OCLASS_LARGEOBJECT;
 	}
 
 	/* shouldn't get here */
@@ -2587,6 +2596,12 @@ getObjectDescription(const ObjectAddress *object)
 					usename = "public";
 
 				appendStringInfo(&buffer, _("user mapping for %s"), usename);
+				break;
+			}
+
+		case OCLASS_LARGEOBJECT:
+			{
+				appendStringInfo(&buffer, _("largeobject %u"), object->objectId);
 				break;
 			}
 

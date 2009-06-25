@@ -15,6 +15,7 @@
 #include "postgres.h"
 
 #include "catalog/namespace.h"
+#include "catalog/pg_largeobject.h"
 #include "commands/alter.h"
 #include "commands/conversioncmds.h"
 #include "commands/dbcommands.h"
@@ -196,6 +197,10 @@ ExecAlterObjectSchemaStmt(AlterObjectSchemaStmt *stmt)
 			AlterTypeNamespace(stmt->object, stmt->newschema);
 			break;
 
+		case OBJECT_LARGEOBJECT:
+			LargeObjectAlterNamespace(stmt->object, stmt->newschema);
+			break;
+
 		default:
 			elog(ERROR, "unrecognized AlterObjectSchemaStmt type: %d",
 				 (int) stmt->objectType);
@@ -277,6 +282,10 @@ ExecAlterOwnerStmt(AlterOwnerStmt *stmt)
 
 		case OBJECT_FOREIGN_SERVER:
 			AlterForeignServerOwner(strVal(linitial(stmt->object)), newowner);
+			break;
+
+		case OBJECT_LARGEOBJECT:
+			LargeObjectAlterOwner(stmt->object, newowner);
 			break;
 
 		default:

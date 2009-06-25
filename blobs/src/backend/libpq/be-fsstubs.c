@@ -47,6 +47,7 @@
 #include "miscadmin.h"
 #include "storage/fd.h"
 #include "storage/large_object.h"
+#include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/memutils.h"
 
@@ -149,12 +150,20 @@ lo_close(PG_FUNCTION_ARGS)
 int
 lo_read(int fd, char *buf, int len)
 {
+	AclResult	aclresult;
 	int			status;
 
 	if (fd < 0 || fd >= cookies_size || cookies[fd] == NULL)
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("invalid large-object descriptor: %d", fd)));
+
+	/* check database acls */
+	aclresult = pg_largeobject_aclcheck(cookies[fd]->id,
+										GetUserId(), ACL_SELECT);
+	if (aclresult != ACLCHECK_OK)
+		aclcheck_error(aclresult, ACL_KIND_LARGEOBJECT,
+					   get_largeobject_name(cookies[fd]->id));
 
 	status = inv_read(cookies[fd], buf, len);
 
@@ -164,6 +173,7 @@ lo_read(int fd, char *buf, int len)
 int
 lo_write(int fd, const char *buf, int len)
 {
+	AclResult	aclresult;
 	int			status;
 
 	if (fd < 0 || fd >= cookies_size || cookies[fd] == NULL)
@@ -176,6 +186,13 @@ lo_write(int fd, const char *buf, int len)
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 			  errmsg("large object descriptor %d was not opened for writing",
 					 fd)));
+
+	/* check database acls */
+	aclresult = pg_largeobject_aclcheck(cookies[fd]->id,
+										GetUserId(), ACL_UPDATE);
+	if (aclresult != ACLCHECK_OK)
+		aclcheck_error(aclresult, ACL_KIND_LARGEOBJECT,
+					   get_largeobject_name(cookies[fd]->id));
 
 	status = inv_write(cookies[fd], buf, len);
 
@@ -476,11 +493,19 @@ lo_truncate(PG_FUNCTION_ARGS)
 {
 	int32		fd = PG_GETARG_INT32(0);
 	int32		len = PG_GETARG_INT32(1);
+	AclResult	aclresult;
 
 	if (fd < 0 || fd >= cookies_size || cookies[fd] == NULL)
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("invalid large-object descriptor: %d", fd)));
+
+	/* check database acls */
+	aclresult = pg_largeobject_aclcheck(cookies[fd]->id,
+										GetUserId(), ACL_UPDATE);
+	if (aclresult != ACLCHECK_OK)
+		aclcheck_error(aclresult, ACL_KIND_LARGEOBJECT,
+					   get_largeobject_name(cookies[fd]->id));
 
 	inv_truncate(cookies[fd], len);
 

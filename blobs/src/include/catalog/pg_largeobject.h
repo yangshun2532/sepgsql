@@ -28,11 +28,15 @@
  */
 #define LargeObjectRelationId  2613
 
-CATALOG(pg_largeobject,2613) BKI_WITHOUT_OIDS
+CATALOG(pg_largeobject,2613)
 {
-	Oid			loid;			/* Identifier of large object */
-	int4		pageno;			/* Page number (starting from 0) */
-	bytea		data;			/* Data for page (may be zero-length) */
+	NameData	loname;			/* Display name */
+
+	Oid			lonsp;			/* OID of the namespace */
+
+	Oid			loowner;		/* OID of the owner */
+
+	aclitem		loacl[1];		/* access permissions */
 } FormData_pg_largeobject;
 
 /* ----------------
@@ -46,13 +50,16 @@ typedef FormData_pg_largeobject *Form_pg_largeobject;
  *		compiler constants for pg_largeobject
  * ----------------
  */
-#define Natts_pg_largeobject			3
-#define Anum_pg_largeobject_loid		1
-#define Anum_pg_largeobject_pageno		2
-#define Anum_pg_largeobject_data		3
+#define Natts_pg_largeobject			4
+#define Anum_pg_largeobject_loname		1
+#define Anum_pg_largeobject_lonsp		2
+#define Anum_pg_largeobject_loowner		3
+#define Anum_pg_largeobject_loacl		4
 
-extern void LargeObjectCreate(Oid loid);
+extern void LargeObjectCreate(Oid loid, Oid lonsp, Oid loowner, Name loname);
 extern void LargeObjectDrop(Oid loid);
 extern bool LargeObjectExists(Oid loid);
+extern void LargeObjectAlterNamespace(List *loid_list, const char *newschema);
+extern void LargeObjectAlterOwner(List *loid_list, Oid newowner);
 
 #endif   /* PG_LARGEOBJECT_H */

@@ -1572,6 +1572,9 @@ CreateCommandTag(Node *parsetree)
 				case OBJECT_VIEW:
 					tag = "ALTER VIEW";
 					break;
+				case OBJECT_LARGEOBJECT:
+					tag = "ALTER LARGE OBJECT";
+					break;
 				default:
 					tag = "???";
 					break;
@@ -1628,6 +1631,9 @@ CreateCommandTag(Node *parsetree)
 					break;
 				case OBJECT_FOREIGN_SERVER:
 					tag = "ALTER SERVER";
+					break;
+				case OBJECT_LARGEOBJECT:
+					tag = "ALTER LARGE OBJECT";
 					break;
 				default:
 					tag = "???";
