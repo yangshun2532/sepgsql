@@ -87,6 +87,10 @@ checkTabelColumnPerms(Oid relid, Bitmapset *selected, Bitmapset *modified,
 
 	/*
 	 * NOTE: HARDWIRED POLICY IN SE-POSTGRESQL
+	 * - User cannot access RELKIND_TOASTVALUE by hand, because
+	 *   it is used to store variable length data within other
+	 *   column and tuples, and it should be considered as a part
+	 *   of content within them.
 	 * - User cannot modify pg_rewrite.* by hand, because it holds
 	 *   a parsed Query tree which includes requiredPerms and
 	 *   RangeTblEntry with selectedCols/modifiedCols.
@@ -108,18 +112,34 @@ checkTabelColumnPerms(Oid relid, Bitmapset *selected, Bitmapset *modified,
 	 * these system catalogs by hand. Please use approariate
 	 * interfaces.
 	 */
-	if (!sepgsqlGetExceptionMode() &&
-		(required & (SEPG_DB_TABLE__UPDATE
-					 | SEPG_DB_TABLE__INSERT
-					 | SEPG_DB_TABLE__DELETE)) != 0
-		&& (relid == RewriteRelationId ||
-			relid == SecurityRelationId ||
-			relid == SharedSecurityRelationId ||
-			relid == LargeObjectRelationId))
-		ereport(ERROR,
-				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("SE-PostgreSQL peremptorily prevent to modify "
-						"\"%s\" system catalog by hand", get_rel_name(relid))));
+	if (!sepgsqlGetExceptionMode())
+	{
+		switch (relid)
+		{
+		case RewriteRelationId:
+		case SecurityRelationId:
+		case SharedSecurityRelationId:
+		case LargeObjectRelationId:
+			if ((required & (SEPG_DB_TABLE__UPDATE |
+							 SEPG_DB_TABLE__INSERT |
+							 SEPG_DB_TABLE__DELETE)) != 0)
+				ereport(ERROR,
+						(errcode(ERRCODE_SELINUX_ERROR),
+						 errmsg("SE-PostgreSQL prevent to modify \"%s\" "
+								"by hand due to the hardwired policy",
+								get_rel_name(relid))));
+			break;
+
+		default:
+			if (get_rel_relkind(relid) == RELKIND_TOASTVALUE)
+				ereport(ERROR,
+						(errcode(ERRCODE_SELINUX_ERROR),
+						 errmsg("SE-PostgreSQL prevent to accuees \"%s\" "
+								"by hand due to the hardwired policy",
+								get_rel_name(relid))));
+			break;
+		}
+	}
 
 	/*
 	 * Check db_table:{...} or db_sequence permissions
