@@ -115,37 +115,37 @@ static List *insert_ordered_unique_oid(List *list, Oid datum);
 static FormData_pg_attribute a1 = {
 	0, {"ctid"}, TIDOID, 0, sizeof(ItemPointerData),
 	SelfItemPointerAttributeNumber, 0, -1, -1,
-	false, 'p', 's', 0, true, false, false, true, 0, {0}
+	false, 'p', 's', true, false, false, true, 0, {0}
 };
 
 static FormData_pg_attribute a2 = {
 	0, {"oid"}, OIDOID, 0, sizeof(Oid),
 	ObjectIdAttributeNumber, 0, -1, -1,
-	true, 'p', 'i', 0, true, false, false, true, 0, {0}
+	true, 'p', 'i', true, false, false, true, 0, {0}
 };
 
 static FormData_pg_attribute a3 = {
 	0, {"xmin"}, XIDOID, 0, sizeof(TransactionId),
 	MinTransactionIdAttributeNumber, 0, -1, -1,
-	true, 'p', 'i', 0, true, false, false, true, 0, {0}
+	true, 'p', 'i', true, false, false, true, 0, {0}
 };
 
 static FormData_pg_attribute a4 = {
 	0, {"cmin"}, CIDOID, 0, sizeof(CommandId),
 	MinCommandIdAttributeNumber, 0, -1, -1,
-	true, 'p', 'i', 0, true, false, false, true, 0, {0}
+	true, 'p', 'i', true, false, false, true, 0, {0}
 };
 
 static FormData_pg_attribute a5 = {
 	0, {"xmax"}, XIDOID, 0, sizeof(TransactionId),
 	MaxTransactionIdAttributeNumber, 0, -1, -1,
-	true, 'p', 'i', 0, true, false, false, true, 0, {0}
+	true, 'p', 'i', true, false, false, true, 0, {0}
 };
 
 static FormData_pg_attribute a6 = {
 	0, {"cmax"}, CIDOID, 0, sizeof(CommandId),
 	MaxCommandIdAttributeNumber, 0, -1, -1,
-	true, 'p', 'i', 0, true, false, false, true, 0, {0}
+	true, 'p', 'i', true, false, false, true, 0, {0}
 };
 
 /*
@@ -157,7 +157,7 @@ static FormData_pg_attribute a6 = {
 static FormData_pg_attribute a7 = {
 	0, {"tableoid"}, OIDOID, 0, sizeof(Oid),
 	TableOidAttributeNumber, 0, -1, -1,
-	true, 'p', 'i', 0, true, false, false, true, 0, {0}
+	true, 'p', 'i', true, false, false, true, 0, {0}
 };
 
 /*
@@ -166,13 +166,13 @@ static FormData_pg_attribute a7 = {
 static FormData_pg_attribute a8 = {
 	0, {SecurityAclAttributeName}, ACLITEMARRAYOID, 0, -1,
 	SecurityAclAttributeNumber, 1, -1, -1,
-	false, 'x', 'i', 0, true, false, false, true, 0, {0}
+	false, 'x', 'i', true, false, false, true, 0, {0}
 };
 
 static FormData_pg_attribute a9 = {
 	0, {SecurityLabelAttributeName}, TEXTOID, 0, -1,
 	SecurityLabelAttributeNumber, 0, -1, -1,
-	false, 'x', 'i', 0, true, false, false, true, 0, {0}
+	false, 'x', 'i', true, false, false, true, 0, {0}
 };
 
 static const Form_pg_attribute SysAtt[] = {&a1, &a2, &a3, &a4, &a5, &a6, &a7, &a8, &a9};
@@ -527,7 +527,6 @@ InsertPgAttributeTuple(Relation pg_attribute_rel,
 	values[Anum_pg_attribute_attbyval - 1] = BoolGetDatum(new_attribute->attbyval);
 	values[Anum_pg_attribute_attstorage - 1] = CharGetDatum(new_attribute->attstorage);
 	values[Anum_pg_attribute_attalign - 1] = CharGetDatum(new_attribute->attalign);
-	values[Anum_pg_attribute_attkind - 1] = CharGetDatum(new_attribute->attkind);
 	values[Anum_pg_attribute_attnotnull - 1] = BoolGetDatum(new_attribute->attnotnull);
 	values[Anum_pg_attribute_atthasdef - 1] = BoolGetDatum(new_attribute->atthasdef);
 	values[Anum_pg_attribute_attisdropped - 1] = BoolGetDatum(new_attribute->attisdropped);
@@ -599,9 +598,8 @@ AddNewAttributeTuples(Oid new_rel_oid,
 		Oid			att_secid = InvalidOid;
 
 		attr = tupdesc->attrs[i];
-		/* Fill in the correct relation OID and relkind */
+		/* Fill in the correct relation OID */
 		attr->attrelid = new_rel_oid;
-		attr->attkind = relkind;
 		/* Make sure these are OK, too */
 		attr->attstattarget = -1;
 		attr->attcacheoff = -1;
@@ -649,9 +647,8 @@ AddNewAttributeTuples(Oid new_rel_oid,
 
 			memcpy(&attStruct, (char *) SysAtt[i], sizeof(FormData_pg_attribute));
 
-			/* Fill in the correct relation OID and relkind in the copied tuple */
+			/* Fill in the correct relation OID in the copied tuple */
 			attStruct.attrelid = new_rel_oid;
-			attStruct.attkind = relkind;
 
 			/* Fill in correct inheritance info for the OID column */
 			if (attStruct.attnum == ObjectIdAttributeNumber)

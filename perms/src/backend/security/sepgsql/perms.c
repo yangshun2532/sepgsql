@@ -13,6 +13,7 @@
 #include "catalog/pg_language.h"
 #include "catalog/pg_largeobject.h"
 #include "catalog/pg_namespace.h"
+#include "catalog/pg_type.h"
 #include "miscadmin.h"
 #include "security/sepgsql.h"
 #include "utils/builtins.h"
@@ -446,7 +447,14 @@ sepgsqlTupleObjectClass(Oid relid, HeapTuple tuple)
 
 	case AttributeRelationId:
 		attForm = (Form_pg_attribute) GETSTRUCT(tuple);
-		if (attForm->attkind == RELKIND_RELATION)
+		if (IsBootstrapProcessingMode() &&
+			(attForm->attrelid == TypeRelationId      ||
+			 attForm->attrelid == ProcedureRelationId ||
+			 attForm->attrelid == AttributeRelationId ||
+			 attForm->attrelid == RelationRelationId))
+			return SEPG_CLASS_DB_COLUMN;
+
+		if (get_rel_relkind(attForm->attrelid) == RELKIND_RELATION)
 			return SEPG_CLASS_DB_COLUMN;
 		break;
 
