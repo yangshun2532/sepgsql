@@ -3634,7 +3634,6 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 	attribute.attndims = list_length(colDef->typename->arrayBounds);
 	attribute.attstorage = tform->typstorage;
 	attribute.attalign = tform->typalign;
-	attribute.attkind = relkind;
 	attribute.attnotnull = colDef->is_not_null;
 	attribute.atthasdef = false;
 	attribute.attisdropped = false;
