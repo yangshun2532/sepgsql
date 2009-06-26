@@ -21,7 +21,6 @@
 #include "catalog/pg_amop.h"
 #include "catalog/pg_amproc.h"
 #include "catalog/pg_constraint.h"
-#include "catalog/pg_largeobject.h"
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_opclass.h"
 #include "catalog/pg_operator.h"
@@ -2750,32 +2749,4 @@ get_roleid_checked(const char *rolname)
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("role \"%s\" does not exist", rolname)));
 	return roleid;
-}
-
-/*
- * get_largeobject_name
- *    Given a largeobject id, look up the largeobject's name
- *    Returns NULL if no such largeobject.
- */
-char *
-get_largeobject_name(Oid loid)
-{
-	HeapTuple	tuple;
-
-	tuple = SearchSysCache(LARGEOBJECTOID,
-						   ObjectIdGetDatum(loid),
-						   0, 0, 0);
-	if (HeapTupleIsValid(tuple))
-	{
-		Form_pg_largeobject	loform;
-		char	   *result;
-
-		loform = ((Form_pg_largeobject) GETSTRUCT(tuple));
-		result = pstrdup(NameStr(loform->loname));
-
-		ReleaseSysCache(tuple);
-
-		return result;
-	}
-	return NULL;
 }

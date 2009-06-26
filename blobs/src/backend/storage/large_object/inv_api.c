@@ -36,9 +36,9 @@
 #include "access/xact.h"
 #include "catalog/catalog.h"
 #include "catalog/indexing.h"
-#include "catalog/namespace.h"
 #include "catalog/pg_largeobject.h"
 #include "catalog/pg_largeobject_data.h"
+#include "catalog/pg_namespace.h"
 #include "commands/comment.h"
 #include "libpq/libpq-fs.h"
 #include "miscadmin.h"
@@ -164,8 +164,6 @@ inv_create(Oid lobjId)
 	Relation	rel;
 	NameData	loname;
 	Oid			lonsp;
-	List	   *dummy_list;
-	char	   *dummy;
 	AclResult	aclresult;
 
 	/*
@@ -185,10 +183,7 @@ inv_create(Oid lobjId)
 	/*
 	 * check create permission on a largeobject.
 	 */
-	snprintf(NameStr(loname), NAMEDATALEN, "lobj_%u", lobjId);
-	dummy_list = list_make1(NameStr(loname));
-	lonsp = QualifiedNameGetCreationNamespace(dummy_list, &dummy);
-
+	lonsp = PG_PUBLIC_NAMESPACE;
 	aclresult = pg_namespace_aclcheck(lonsp, GetUserId(), ACL_CREATE);
 	if (aclresult != ACLCHECK_OK)
 		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
@@ -197,7 +192,7 @@ inv_create(Oid lobjId)
 	 * Create the LO by writing an empty first page for it in pg_largeobject
 	 * (will fail if duplicate)
 	 */
-	LargeObjectCreate(lobjId, lonsp, GetUserId(), &loname);
+	LargeObjectCreate(lobjId, lonsp, GetUserId());
 
 	/*
 	 * Advance command counter to make new tuple visible to later operations.
@@ -281,7 +276,7 @@ inv_drop(Oid lobjId)
 	/* Check ownership of the largeobject */
 	if (!pg_largeobject_ownercheck(lobjId, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_LARGEOBJECT,
-					   get_largeobject_name(lobjId));
+					   LargeObjectGetName(lobjId));
 
 	/* Do deletion */
 	LargeObjectDrop(lobjId);
@@ -539,7 +534,7 @@ inv_write(LargeObjectDesc *obj_desc, const char *buf, int nbytes)
 	aclresult = pg_largeobject_aclcheck(obj_desc->id, GetUserId(), ACL_UPDATE);
 	if (aclresult != ACLCHECK_OK)
 		aclcheck_error(aclresult, ACL_KIND_LARGEOBJECT,
-					   get_largeobject_name(obj_desc->id));
+					   LargeObjectGetName(obj_desc->id));
 
 	open_lo_relation();
 

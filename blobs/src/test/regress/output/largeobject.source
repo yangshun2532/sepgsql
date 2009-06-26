@@ -369,7 +369,7 @@ SELECT loread(lo_open(1002, x'60000'::int), 20);
 (1 row)
 
 SELECT lowrite(lo_open(1002, x'60000'::int), 'abcd');	-- to be failed
-ERROR:  permission denied for largeobject lobj_1002
+ERROR:  permission denied for largeobject 1002
 SELECT loread(lo_open(1003, x'60000'::int), 20);
         loread        
 ----------------------
@@ -377,7 +377,7 @@ SELECT loread(lo_open(1003, x'60000'::int), 20);
 (1 row)
 
 SELECT lowrite(lo_open(1003, x'60000'::int), 'abcd');	-- to be failed
-ERROR:  permission denied for largeobject lobj_1003
+ERROR:  permission denied for largeobject 1003
 \c - louser2
 SELECT loread(lo_open(1001, x'60000'::int), 20);
  loread 
@@ -392,16 +392,20 @@ SELECT lowrite(lo_open(1001, x'60000'::int), 'abcdefghijklmnopqrstuvwxyz');
 (1 row)
 
 SELECT loread(lo_open(1002, x'60000'::int), 20);	-- to be failed
-ERROR:  permission denied for largeobject lobj_1002
+ERROR:  permission denied for largeobject 1002
 SELECT lowrite(lo_open(1002, x'60000'::int), 'abcd');	-- to be failed
-ERROR:  permission denied for largeobject lobj_1002
-SELECT lo_truncate(lo_open(1003, x'60000'::int), 15);
-ERROR:  permission denied for largeobject lobj_1003
+ERROR:  permission denied for largeobject 1002
+SELECT lo_truncate(lo_open(1001, x'60000'::int), 15);
+ lo_truncate 
+-------------
+           0
+(1 row)
+
 SELECT lo_truncate(lo_open(1003, x'60000'::int), 128);	-- to be failed
-ERROR:  permission denied for largeobject lobj_1003
+ERROR:  permission denied for largeobject 1003
 \c - louser3
 SELECT loread(lo_open(1002, x'60000'::int), 40);	-- to be failed
-ERROR:  permission denied for largeobject lobj_1002
+ERROR:  permission denied for largeobject 1002
 SELECT lowrite(lo_open(1002, x'60000'::int), 'abcdefghijklmnopqrstuvwxyz');
  lowrite 
 ---------
@@ -409,7 +413,7 @@ SELECT lowrite(lo_open(1002, x'60000'::int), 'abcdefghijklmnopqrstuvwxyz');
 (1 row)
 
 SELECT lo_unlink(1002);				-- to be failed
-ERROR:  must be owner of largeobejct lobj_1002
+ERROR:  must be owner of largeobejct 1002
 SELECT lo_unlink(1003);
  lo_unlink 
 -----------
@@ -418,7 +422,7 @@ SELECT lo_unlink(1003);
 
 \c - louser1
 ALTER LARGE OBJECT 1002 OWNER TO louser3;	-- to be failed
-ERROR:  must be owner of largeobejct lobj_1002
+ERROR:  must be owner of largeobejct 1002
 ALTER LARGE OBJECT 1002 OWNER TO louser2;
 \c - losuper
 ALTER LARGE OBJECT 1001 SET SCHEMA pg_temp;	-- to be failed
@@ -427,12 +431,12 @@ ALTER LARGE OBJECT 1001 SET SCHEMA pg_toast;	-- to be failed
 ERROR:  cannot move objects into or out of TOAST schema
 CREATE SCHEMA lotest;
 ALTER LARGE OBJECT 1002 SET SCHEMA lotest;
-SELECT loname, nspname FROM pg_namespace n JOIN pg_largeobject l ON n.oid = l.lonsp
+SELECT l.oid, nspname FROM pg_namespace n JOIN pg_largeobject l ON n.oid = l.lonsp
        WHERE l.oid IN (1001,1002);
-  loname   | nspname 
------------+---------
- lobj_1001 | public
- lobj_1002 | lotest
+ oid  | nspname 
+------+---------
+ 1001 | public
+ 1002 | lotest
 (2 rows)
 
 DROP SCHEMA lotest;	-- to be failed

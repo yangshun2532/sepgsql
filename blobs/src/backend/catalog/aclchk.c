@@ -555,7 +555,7 @@ objectNamesToOids(GrantObjectType objtype, List *objnames)
 										  0, 0, 0))
 					ereport(ERROR,
 							(errcode(ERRCODE_UNDEFINED_OBJECT),
-							 "largeobject %u does not exist", loid));
+							 errmsg("largeobject %u does not exist", loid)));
 
 				objects = lappend_oid(objects, loid);
 			}
@@ -1838,7 +1838,7 @@ ExecGrant_Largeobject(InternalGrant *istmt)
 			restrict_and_check_grant(istmt->is_grant, avail_goptions,
 									 istmt->all_privs, istmt->privileges,
 									 loid, grantorId, ACL_KIND_LARGEOBJECT,
-									 NameStr(pg_largeobejct_tuple->loname),
+									 LargeObjectGetName(loid),
 									 0, NULL);
 		/*
          * Generate new ACL.

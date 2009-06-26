@@ -136,7 +136,6 @@ extern void free_attstatsslot(Oid atttype,
 extern char *get_namespace_name(Oid nspid);
 extern Oid	get_roleid(const char *rolname);
 extern Oid	get_roleid_checked(const char *rolname);
-extern char *get_largeobject_name(Oid loid);
 
 #define type_is_array(typid)  (get_element_type(typid) != InvalidOid)
 
