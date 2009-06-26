@@ -30,8 +30,6 @@
 
 CATALOG(pg_largeobject,2613)
 {
-	NameData	loname;			/* Display name */
-
 	Oid			lonsp;			/* OID of the namespace */
 
 	Oid			loowner;		/* OID of the owner */
@@ -50,15 +48,15 @@ typedef FormData_pg_largeobject *Form_pg_largeobject;
  *		compiler constants for pg_largeobject
  * ----------------
  */
-#define Natts_pg_largeobject			4
-#define Anum_pg_largeobject_loname		1
-#define Anum_pg_largeobject_lonsp		2
-#define Anum_pg_largeobject_loowner		3
-#define Anum_pg_largeobject_loacl		4
+#define Natts_pg_largeobject			3
+#define Anum_pg_largeobject_lonsp		1
+#define Anum_pg_largeobject_loowner		2
+#define Anum_pg_largeobject_loacl		3
 
-extern void LargeObjectCreate(Oid loid, Oid lonsp, Oid loowner, Name loname);
+extern void LargeObjectCreate(Oid loid, Oid lonsp, Oid loowner);
 extern void LargeObjectDrop(Oid loid);
 extern bool LargeObjectExists(Oid loid);
+extern const char *LargeObjectGetName(Oid loid);
 extern void LargeObjectAlterNamespace(List *loid_list, const char *newschema);
 extern void LargeObjectAlterOwner(List *loid_list, Oid newowner);
 

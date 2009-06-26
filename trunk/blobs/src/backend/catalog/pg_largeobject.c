@@ -27,9 +27,9 @@
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
 #include "utils/rel.h"
-#include "utils/lsyscache.h"
 #include "utils/syscache.h"
 #include "utils/tqual.h"
+
 
 /*
  * Create a large object having the given LO identifier.
@@ -39,7 +39,7 @@
  * an attempt to create a duplicate page.
  */
 void
-LargeObjectCreate(Oid loid, Oid lonsp, Oid loowner, Name loname)
+LargeObjectCreate(Oid loid, Oid lonsp, Oid loowner)
 {
 	Relation	pg_largeobject;
 	HeapTuple	ntup;
@@ -53,7 +53,6 @@ LargeObjectCreate(Oid loid, Oid lonsp, Oid loowner, Name loname)
 	 * Form new tuple
 	 */
 	memset(nulls, false, sizeof(nulls));
-	values[Anum_pg_largeobject_loname - 1] = NameGetDatum(loname);
 	values[Anum_pg_largeobject_lonsp - 1] = ObjectIdGetDatum(lonsp);
 	values[Anum_pg_largeobject_loowner - 1] = ObjectIdGetDatum(loowner);
 	nulls[Anum_pg_largeobject_loacl - 1] = true;
@@ -147,6 +146,16 @@ LargeObjectExists(Oid loid)
 								0, 0, 0);
 }
 
+const char *
+LargeObjectGetName(Oid loid)
+{
+	static NameData		loname;
+
+	snprintf(NameStr(loname), NAMEDATALEN, "%u", loid);
+
+	return NameStr(loname);
+}
+
 void
 LargeObjectAlterNamespace(List *loid_list, const char *newschema)
 {
@@ -160,7 +169,7 @@ LargeObjectAlterNamespace(List *loid_list, const char *newschema)
 	/* check permissions on largeobject */
 	if (!pg_largeobject_ownercheck(loid, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_LARGEOBJECT,
-					   get_largeobject_name(loid));
+					   LargeObjectGetName(loid));
 
 	/* get schema OID and check its permissions */
 	lonsp = LookupCreationNamespace(newschema);
@@ -196,11 +205,6 @@ LargeObjectAlterNamespace(List *loid_list, const char *newschema)
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot move objects into or out of TOAST schema")));
-
-	/*
-	 * TODO: we should put duplicate naming checks here,
-	 * when 'named largeobject' feature got included.
-	 */
 
 	/* OK, modyfy the pg_largeobject row */
 	loform->lonsp = lonsp;
@@ -256,7 +260,7 @@ LargeObjectAlterOwner(List *loid_list, Oid newowner)
 			/* Otherwise, must be owner of the existing object */
 			if (!pg_largeobject_ownercheck(loid, GetUserId()))
 				aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_LARGEOBJECT,
-							   get_largeobject_name(loid));
+							   LargeObjectGetName(loid));
 
 			/* Must be able to become new owner */
 			check_is_member_of_role(GetUserId(), newowner);
@@ -266,7 +270,7 @@ LargeObjectAlterOwner(List *loid_list, Oid newowner)
 											  newowner, ACL_CREATE);
 			if (aclresult != ACLCHECK_OK)
 				aclcheck_error(aclresult, ACL_KIND_LARGEOBJECT,
-							   get_largeobject_name(loform->lonsp));
+							   LargeObjectGetName(loform->lonsp));
 		}
 
 		memset(values, 0, sizeof(values));
@@ -280,7 +284,7 @@ LargeObjectAlterOwner(List *loid_list, Oid newowner)
 		 * Determine the modified ACL for the new owner.
 		 * This is only necessary when the ACL is non-null.
 		 */
-		aclDatum = SysCacheGetAttr(PROCOID, tuple,
+		aclDatum = SysCacheGetAttr(LARGEOBJECTOID, tuple,
 								   Anum_pg_largeobject_loacl,
 								   &isnull);
 		if (!isnull)

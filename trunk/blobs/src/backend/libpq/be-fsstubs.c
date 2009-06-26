@@ -163,7 +163,7 @@ lo_read(int fd, char *buf, int len)
 										GetUserId(), ACL_SELECT);
 	if (aclresult != ACLCHECK_OK)
 		aclcheck_error(aclresult, ACL_KIND_LARGEOBJECT,
-					   get_largeobject_name(cookies[fd]->id));
+					   LargeObjectGetName(cookies[fd]->id));
 
 	status = inv_read(cookies[fd], buf, len);
 
@@ -192,7 +192,7 @@ lo_write(int fd, const char *buf, int len)
 										GetUserId(), ACL_UPDATE);
 	if (aclresult != ACLCHECK_OK)
 		aclcheck_error(aclresult, ACL_KIND_LARGEOBJECT,
-					   get_largeobject_name(cookies[fd]->id));
+					   LargeObjectGetName(cookies[fd]->id));
 
 	status = inv_write(cookies[fd], buf, len);
 
@@ -505,7 +505,7 @@ lo_truncate(PG_FUNCTION_ARGS)
 										GetUserId(), ACL_UPDATE);
 	if (aclresult != ACLCHECK_OK)
 		aclcheck_error(aclresult, ACL_KIND_LARGEOBJECT,
-					   get_largeobject_name(cookies[fd]->id));
+					   LargeObjectGetName(cookies[fd]->id));
 
 	inv_truncate(cookies[fd], len);
 

@@ -226,7 +226,7 @@ SELECT lowrite(lo_open(1001, x'60000'::int), 'abcdefghijklmnopqrstuvwxyz');
 SELECT loread(lo_open(1002, x'60000'::int), 20);	-- to be failed
 SELECT lowrite(lo_open(1002, x'60000'::int), 'abcd');	-- to be failed
 
-SELECT lo_truncate(lo_open(1003, x'60000'::int), 15);
+SELECT lo_truncate(lo_open(1001, x'60000'::int), 15);
 SELECT lo_truncate(lo_open(1003, x'60000'::int), 128);	-- to be failed
 
 \c - louser3
@@ -245,7 +245,7 @@ ALTER LARGE OBJECT 1001 SET SCHEMA pg_toast;	-- to be failed
 
 CREATE SCHEMA lotest;
 ALTER LARGE OBJECT 1002 SET SCHEMA lotest;
-SELECT loname, nspname FROM pg_namespace n JOIN pg_largeobject l ON n.oid = l.lonsp
+SELECT l.oid, nspname FROM pg_namespace n JOIN pg_largeobject l ON n.oid = l.lonsp
        WHERE l.oid IN (1001,1002);
 DROP SCHEMA lotest;	-- to be failed
 DROP SCHEMA lotest CASCADE;
