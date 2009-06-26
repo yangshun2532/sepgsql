@@ -107,7 +107,9 @@ LargeObjectDrop(Oid loid)
 						   ObjectIdGetDatum(loid),
 						   0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
-		elog(ERROR, "cache lookup failed for largeobejct: %u", loid);
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_OBJECT),
+				 errmsg("large object %u does not exist", loid)));
 
 	simple_heap_delete(pg_largeobject, &tuple->t_self);
 
@@ -170,7 +172,9 @@ LargeObjectAlterNamespace(List *loid_list, const char *newschema)
 							   ObjectIdGetDatum(loid),
 							   0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
-		elog(ERROR, "cache lookup failed for largeobject: %u", loid);
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_OBJECT),
+				 errmsg("large object %u does not exist", loid)));
 	loform = (Form_pg_largeobject) GETSTRUCT(tuple);
 	lonsp_old = loform->lonsp;
 
