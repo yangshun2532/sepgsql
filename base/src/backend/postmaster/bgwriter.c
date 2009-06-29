@@ -19,7 +19,8 @@
  * condition.)
  *
  * The bgwriter is started by the postmaster as soon as the startup subprocess
- * finishes.  It remains alive until the postmaster commands it to terminate.
+ * finishes, or as soon as recovery begins if we are doing archive recovery.
+ * It remains alive until the postmaster commands it to terminate.
  * Normal termination is by SIGUSR2, which instructs the bgwriter to execute
  * a shutdown checkpoint and then exit(0).	(All backends must be stopped
  * before SIGUSR2 is issued!)  Emergency termination is by SIGQUIT; like any
@@ -37,7 +38,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/postmaster/bgwriter.c,v 1.60 2009/06/11 14:49:01 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/backend/postmaster/bgwriter.c,v 1.62 2009/06/26 20:29:04 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -447,6 +448,13 @@ BackgroundWriterMain(void)
 			bgs->ckpt_flags = 0;
 			bgs->ckpt_started++;
 			SpinLockRelease(&bgs->ckpt_lck);
+
+			/*
+			 * The end-of-recovery checkpoint is a real checkpoint that's
+			 * performed while we're still in recovery.
+			 */
+			if (flags & CHECKPOINT_END_OF_RECOVERY)
+				do_restartpoint = false;
 
 			/*
 			 * We will warn if (a) too soon since last checkpoint (whatever
@@ -895,10 +903,12 @@ BgWriterShmemInit(void)
  *
  * flags is a bitwise OR of the following:
  *	CHECKPOINT_IS_SHUTDOWN: checkpoint is for database shutdown.
+ *	CHECKPOINT_END_OF_RECOVERY: checkpoint is for end of WAL recovery.
  *	CHECKPOINT_IMMEDIATE: finish the checkpoint ASAP,
  *		ignoring checkpoint_completion_target parameter.
  *	CHECKPOINT_FORCE: force a checkpoint even if no XLOG activity has occured
- *		since the last one (implied by CHECKPOINT_IS_SHUTDOWN).
+ *		since the last one (implied by CHECKPOINT_IS_SHUTDOWN or
+ *		CHECKPOINT_END_OF_RECOVERY).
  *	CHECKPOINT_WAIT: wait for completion before returning (otherwise,
  *		just signal bgwriter to do it, and return).
  *	CHECKPOINT_CAUSE_XLOG: checkpoint is requested due to xlog filling.
