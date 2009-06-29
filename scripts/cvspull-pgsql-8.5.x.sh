@@ -2,8 +2,8 @@
 
 # This script pulls the PostgreSQL tree from CVS.
 # ---- parametors ----
-CVSTAG="REL8_4_0"
-SVNBRANCH="/branches/pgsql-8.4.x"
+CVSTAG="HEAD"
+SVNBRANCH="/trunk"
 
 SEPGSQL_REPOSITORY=`(cd \`dirname $0\`/..; pwd)`
 echo $SEPGSQL_REPOSITORY
@@ -62,6 +62,34 @@ echo "svn diff ./base"
 echo "svn commit -m 'CVS pull -r ${CVSTAG} at `env LANG=C date`' ./base && \\"
 echo "svn update"
 echo
-echo "svn merge -c `expr ${SVNREV} + 1` ./base ./sepgsql && \\"
-echo "svn commit -m 'merge updates of ${SVNBRANCH}/base into ${SVNBRANCH}/sepgsql at r`expr ${SVNREV} + 1`' ./sepgsql && \\"
+echo "svn merge -c `expr ${SVNREV} + 1` ./base ./sysatt && \\"
+echo "svn commit -m 'merge updates of ${SVNBRANCH}/base into ${SVNBRANCH}/sysatt at r`expr ${SVNREV} + 1`' ./sysatt && \\"
+echo "svn update"
+echo
+echo "svn merge -c `expr ${SVNREV} + 1` ./base ./blobs  && \\"
+echo "svn commit -m 'merge updates of ${SVNBRANCH}/base into ${SVNBRANCH}/blobs at r`expr ${SVNREV} + 1`' ./blobs && \\"
+echo "svn update"
+echo
+echo "svn merge -c `expr ${SVNREV} + 2` ./sysatt ./core && \\"
+echo "svn commit -m 'merge updates of ${SVNBRANCH}/sysatt into ${SVNBRANCH}/core at r`expr ${SVNREV} + 2`' ./core && \\"
+echo "svn update"
+echo
+echo "svn merge -c `expr ${SVNREV} + 3` ./core ./gram && \\"
+echo "svn commit -m 'merge updates of ${SVNBRANCH}/core into ${SVNBRANCH}/gram at r`expr ${SVNREV} + 3`' ./gram && \\"
+echo "svn update"
+echo
+echo "svn merge -c `expr ${SVNREV} + 4` ./gram ./writable && \\"
+echo "svn commit -m 'merge updates of ${SVNBRANCH}/gram into ${SVNBRANCH}/writable at r`expr ${SVNREV} + 4`' ./writable && \\"
+echo "svn update"
+echo
+echo "svn merge -c `expr ${SVNREV} + 5` ./writable ./rowlv && \\"
+echo "svn commit -m 'merge updates of ${SVNBRANCH}/writable into ${SVNBRANCH}/rowlv at r`expr ${SVNREV} + 5`' ./rowlv && \\"
+echo "svn update"
+echo
+echo "svn merge -c `expr ${SVNREV} + 6` ./rowlv ./perms && \\"
+echo "svn commit -m 'merge updates of ${SVNBRANCH}/rowlv into ${SVNBRANCH}/perms at r`expr ${SVNREV} + 6`' ./perms && \\"
+echo "svn update"
+echo
+echo "svn merge -c `expr ${SVNREV} + 7` ./perms ./sepgsql && \\"
+echo "svn commit -m 'merge updates of ${SVNBRANCH}/perms into ${SVNBRANCH}/sepgsql at r`expr ${SVNREV} + 7`' ./sepgsql && \\"
 echo "svn update"
