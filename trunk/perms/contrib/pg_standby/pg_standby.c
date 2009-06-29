@@ -1,5 +1,5 @@
 /*
- * $PostgreSQL: pgsql/contrib/pg_standby/pg_standby.c,v 1.24 2009/06/18 10:08:08 heikki Exp $
+ * $PostgreSQL: pgsql/contrib/pg_standby/pg_standby.c,v 1.26 2009/06/25 19:33:25 tgl Exp $
  *
  *
  * pg_standby.c
@@ -523,7 +523,7 @@ usage(void)
 	printf("  -d                 generate lots of debugging output (testing only)\n");
 	printf("  -k NUMFILESTOKEEP  if RESTARTWALFILE not used, removes files prior to limit\n"
 		   "                     (0 keeps all)\n");
-	printf("  -l                 links into archive (leaves file in archive)\n");
+	printf("  -l                 does nothing; use of link is now deprecated\n");
 	printf("  -r MAXRETRIES      max number of times to retry, with progressive wait\n"
 		   "                     (default=3)\n");
 	printf("  -s SLEEPTIME       seconds to wait between file checks (min=1, max=60,\n"
@@ -610,7 +610,14 @@ main(int argc, char **argv)
 				}
 				break;
 			case 'l':			/* Use link */
+				/*
+				 * Link feature disabled, possibly permanently. Linking
+				 * causes a problem after recovery ends that is not currently
+				 * resolved by PostgreSQL. 25 Jun 2009
+				 */
+#ifdef NOT_USED
 				restoreCommandType = RESTORE_COMMAND_LINK;
+#endif
 				break;
 			case 'r':			/* Retries */
 				maxretries = atoi(optarg);
