@@ -71,7 +71,7 @@ cp package/sepgsql-fedora-prefix.patch ${RPMSOURCE}
 # ---- build rpm package, if necessary
 if [ ${GEN_PATCH_ONLY} -eq 0 ]; then
     gunzip -c ${RPMSOURCE}/sepgsql-00-full-${BASE_VERSION}.patch.gz \
-        > ${RPMSOURCE}/sepgsql-00-full-${BASE_VERSION}.patch
+        > ${RPMSOURCE}/sepgsql-00-full-${BASE_MAJOR}.patch
     rpmbuild -ba ${RPMSOURCE}/sepostgresql.spec
 fi
 

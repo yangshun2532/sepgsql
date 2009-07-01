@@ -66,10 +66,6 @@ echo "svn merge -c `expr ${SVNREV} + 1` ./base ./sysatt && \\"
 echo "svn commit -m 'merge updates of ${SVNBRANCH}/base into ${SVNBRANCH}/sysatt at r`expr ${SVNREV} + 1`' ./sysatt && \\"
 echo "svn update"
 echo
-echo "svn merge -c `expr ${SVNREV} + 1` ./base ./blobs  && \\"
-echo "svn commit -m 'merge updates of ${SVNBRANCH}/base into ${SVNBRANCH}/blobs at r`expr ${SVNREV} + 1`' ./blobs && \\"
-echo "svn update"
-echo
 echo "svn merge -c `expr ${SVNREV} + 2` ./sysatt ./core && \\"
 echo "svn commit -m 'merge updates of ${SVNBRANCH}/sysatt into ${SVNBRANCH}/core at r`expr ${SVNREV} + 2`' ./core && \\"
 echo "svn update"
@@ -92,4 +88,8 @@ echo "svn update"
 echo
 echo "svn merge -c `expr ${SVNREV} + 7` ./perms ./sepgsql && \\"
 echo "svn commit -m 'merge updates of ${SVNBRANCH}/perms into ${SVNBRANCH}/sepgsql at r`expr ${SVNREV} + 7`' ./sepgsql && \\"
+echo "svn update"
+echo
+echo "svn merge -c `expr ${SVNREV} + 1` ./base ./blob-toast  && \\"
+echo "svn commit -m 'merge updates of ${SVNBRANCH}/base into ${SVNBRANCH}/blob-toast at r`expr ${SVNREV} + 1`' ./blob-toast && \\"
 echo "svn update"
