@@ -1054,7 +1054,7 @@ CreateSchemaStmt:
 					else
 						n->schemaname = $5;
 					n->authid = $5;
-					n->secLabel = $6;
+					n->secLabel = (Node *)$6;
 					n->schemaElts = $7;
 					$$ = (Node *)n;
 				}
@@ -1064,7 +1064,7 @@ CreateSchemaStmt:
 					/* ...but not both */
 					n->schemaname = $3;
 					n->authid = NULL;
-					n->secLabel = $4;
+					n->secLabel = (Node *)$4;
 					n->schemaElts = $5;
 					$$ = (Node *)n;
 				}
@@ -2599,7 +2599,7 @@ CreateSeqStmt:
 					$4->istemp = $2;
 					n->sequence = $4;
 					n->options = $5;
-					n->secLabel = $6;
+					n->secLabel = (Node *)$6;
 					$$ = (Node *)n;
 				}
 		;
