@@ -187,7 +187,7 @@ typedef HeapTupleHeaderData *HeapTupleHeader;
  * information stored in t_infomask2:
  */
 #define HEAP_NATTS_MASK			0x07FF	/* 11 bits for number of attributes */
-#define HEAP_HAS_ROWACL			0x1000	/* tuple has row-level ACLs */
+/* bits 0x1800 are available */
 #define HEAP_HAS_SECLABEL		0x2000	/* tuple has security label */
 #define HEAP_HOT_UPDATED		0x4000	/* tuple was HOT-updated */
 #define HEAP_ONLY_TUPLE			0x8000	/* this is heap-only tuple */
@@ -353,21 +353,8 @@ do { \
 	(tup)->t_infomask2 = ((tup)->t_infomask2 & ~HEAP_NATTS_MASK) | (natts) \
 )
 
-#define HeapTupleHeaderHasRowAcl(tup)         \
-	((tup)->t_infomask2 & HEAP_HAS_ROWACL)
-
 #define HeapTupleHeaderHasSecLabel(tup)			\
 	((tup)->t_infomask2 & HEAP_HAS_SECLABEL)
-
-#define HeapTupleHeaderGetRowAcl(tup)									\
-	(                                                                   \
-		HeapTupleHeaderHasRowAcl(tup)                                   \
-		? (*((Oid *)((char *)(tup) + (tup)->t_hoff                      \
-					 - (HeapTupleHeaderHasOid(tup) ? sizeof(Oid) : 0)	\
-					 - (HeapTupleHeaderHasSecLabel(tup) ? sizeof(Oid) : 0) \
-					 - sizeof(Oid))))									\
-		: InvalidOid													\
-	)
 
 #define HeapTupleHeaderGetSecLabel(tup)									\
 	(                                                                   \
@@ -377,15 +364,6 @@ do { \
 					- sizeof(Oid)))										\
 		: InvalidOid													\
 	)
-
-#define HeapTupleHeaderSetRowAcl(tup, rowacl)							\
-	do {                                                                \
-		Assert(HeapTupleHeaderHasRowAcl(tup));                          \
-		*((Oid *)((char *)(tup) + (tup)->t_hoff                         \
-				  - (HeapTupleHeaderHasOid(tup) ? sizeof(Oid) : 0)		\
-				  - (HeapTupleHeaderHasSecLabel(tup) ? sizeof(Oid) : 0) \
-				  - sizeof(Oid))) = (rowacl);							\
-	} while (0)
 
 #define HeapTupleHeaderSetSecLabel(tup, seclabel)						\
 	do {																\
@@ -588,29 +566,17 @@ typedef HeapTupleData *HeapTuple;
 #define HeapTupleClearHeapOnly(tuple) \
 		HeapTupleHeaderClearHeapOnly((tuple)->t_data)
 
-#define HeapTupleHasOid(tuple) \
-		HeapTupleHeaderHasOid((tuple)->t_data)
-
 #define HeapTupleGetOid(tuple) \
 		HeapTupleHeaderGetOid((tuple)->t_data)
 
 #define HeapTupleSetOid(tuple, oid) \
 		HeapTupleHeaderSetOid((tuple)->t_data, (oid))
 
-#define HeapTupleHasRowAcl(tuple) \
-	HeapTupleHeaderHasRowAcl((tuple)->t_data)
-
 #define HeapTupleHasSecLabel(tuple)				\
 	HeapTupleHeaderHasSecLabel((tuple)->t_data)
 
-#define HeapTupleGetRowAcl(tuple)				\
-	HeapTupleHeaderGetRowAcl((tuple)->t_data)
-
 #define HeapTupleGetSecLabel(tuple)				\
 	HeapTupleHeaderGetSecLabel((tuple)->t_data)
-
-#define HeapTupleSetRowAcl(tuple, rowacl)				\
-	HeapTupleHeaderSetRowAcl((tuple)->t_data, (rowacl))
 
 #define HeapTupleSetSecLabel(tuple, seclabel)			\
 	HeapTupleHeaderSetSecLabel((tuple)->t_data, (seclabel))

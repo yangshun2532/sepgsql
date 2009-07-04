@@ -847,14 +847,12 @@ PlanCacheComputeResultDesc(List *stmt_list)
 			if (IsA(node, Query))
 			{
 				query = (Query *) node;
-				return ExecCleanTypeFromTL(query->targetList,
-										   false, false, false);
+				return ExecCleanTypeFromTL(query->targetList, false, false);
 			}
 			if (IsA(node, PlannedStmt))
 			{
 				pstmt = (PlannedStmt *) node;
-				return ExecCleanTypeFromTL(pstmt->planTree->targetlist,
-										   false, false, false);
+				return ExecCleanTypeFromTL(pstmt->planTree->targetlist, false, false);
 			}
 			/* other cases shouldn't happen, but return NULL */
 			break;
@@ -865,15 +863,14 @@ PlanCacheComputeResultDesc(List *stmt_list)
 			{
 				query = (Query *) node;
 				Assert(query->returningList);
-				return ExecCleanTypeFromTL(query->returningList,
-										   false, false, false);
+				return ExecCleanTypeFromTL(query->returningList, false, false);
 			}
 			if (IsA(node, PlannedStmt))
 			{
 				pstmt = (PlannedStmt *) node;
 				Assert(pstmt->returningLists);
 				return ExecCleanTypeFromTL((List *) linitial(pstmt->returningLists),
-										   false, false, false);
+										   false, false);
 			}
 			/* other cases shouldn't happen, but return NULL */
 			break;

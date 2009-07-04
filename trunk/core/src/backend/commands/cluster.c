@@ -924,10 +924,6 @@ copy_heap_data(Oid OIDNewHeap, Oid OIDOldHeap, Oid OIDOldIndex)
 		if (NewHeap->rd_rel->relhasoids)
 			HeapTupleSetOid(copiedTuple, HeapTupleGetOid(tuple));
 
-		/* Preserve RowACL, if any */
-		if (HeapTupleHasRowAcl(copiedTuple))
-			HeapTupleSetRowAcl(copiedTuple, HeapTupleGetRowAcl(tuple));
-
 		/* Preserve SecLabel, if any */
 		if (HeapTupleHasSecLabel(copiedTuple))
 			HeapTupleSetSecLabel(copiedTuple, HeapTupleGetSecLabel(tuple));
