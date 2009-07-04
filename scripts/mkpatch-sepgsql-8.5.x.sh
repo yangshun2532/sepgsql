@@ -70,14 +70,18 @@ echo "GEN: sepgsql-07-rowlevel-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch"
 diff -Nrpc writable rowlv	\
     > ${RPMSOURCE}/sepgsql-07-rowlevel-${BASE_MAJOR}-r${SEPGSQL_REVISION}.patch
 
-# For third commit fest?
-echo "GEN: sepgsql-08-perms-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch"
-diff -Nrpc rowlv perms		\
-    > ${RPMSOURCE}/sepgsql-08-perms-${BASE_MAJOR}-r${SEPGSQL_REVISION}.patch
+echo "GEN: sepgsql-08-rowacl-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch"
+diff -Nrpc rowlv rowacl		\
+    > ${RPMSOURCE}/sepgsql-08-rowacl-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch
 
-echo "GEN: sepgsql-09-extra-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch"
+# For third commit fest?
+echo "GEN: sepgsql-09-perms-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch"
+diff -Nrpc rowlv perms		\
+    > ${RPMSOURCE}/sepgsql-09-perms-${BASE_MAJOR}-r${SEPGSQL_REVISION}.patch
+
+echo "GEN: sepgsql-10-extra-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch"
 diff -Nrpc perms sepgsql	\
-    > ${RPMSOURCE}/sepgsql-09-extra-${BASE_MAJOR}-r${SEPGSQL_REVISION}.patch
+    > ${RPMSOURCE}/sepgsql-10-extra-${BASE_MAJOR}-r${SEPGSQL_REVISION}.patch
 
 echo "GEN: sepostgresql.init"
 cat package/sepostgresql.init					\
@@ -109,9 +113,10 @@ echo "05) ${RPMSOURCE}/sepgsql-05-docs-${BASE_MAJOR}-r${SEPGSQL_REVISION}.patch"
 echo "---- 1st commit fest ----"
 echo "06) ${RPMSOURCE}/sepgsql-06-writable-${BASE_MAJOR}-r${SEPGSQL_REVISION}.patch"
 echo "07) ${RPMSOURCE}/sepgsql-07-rowlevel-${BASE_MAJOR}-r${SEPGSQL_REVISION}.patch"
+echo "08) ${RPMSOURCE}/sepgsql-08-rowacl-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch"
 echo "---- 2nd commit fest ----"
-echo "08) ${RPMSOURCE}/sepgsql-08-perms-${BASE_MAJOR}-r${SEPGSQL_REVISION}.patch"
-echo "09) ${RPMSOURCE}/sepgsql-09-extra-${BASE_MAJOR}-r${SEPGSQL_REVISION}.patch"
+echo "09) ${RPMSOURCE}/sepgsql-09-perms-${BASE_MAJOR}-r${SEPGSQL_REVISION}.patch"
+echo "10) ${RPMSOURCE}/sepgsql-10-extra-${BASE_MAJOR}-r${SEPGSQL_REVISION}.patch"
 echo "---- 3rd commit fest ----"
 
 # ---- clean up
