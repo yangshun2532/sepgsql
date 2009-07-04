@@ -506,7 +506,6 @@ void
 ExecAssignResultTypeFromTL(PlanState *planstate)
 {
 	bool		hasoid;
-	bool		hassecacl;
 	bool		hasseclabel;
 	TupleDesc	tupDesc;
 
@@ -520,8 +519,6 @@ ExecAssignResultTypeFromTL(PlanState *planstate)
 		hasoid = false;
 	}
 
-	if (!ExecContextForcesRowAcl(planstate, &hassecacl))
-		hassecacl = false;
 	if (!ExecContextForcesSecLabel(planstate, &hasseclabel))
 		hasseclabel = false;
 
@@ -530,8 +527,7 @@ ExecAssignResultTypeFromTL(PlanState *planstate)
 	 * list of ExprStates.	This is good because some plan nodes don't bother
 	 * to set up planstate->targetlist ...
 	 */
-	tupDesc = ExecTypeFromTL(planstate->plan->targetlist,
-							 hasoid, hassecacl, hasseclabel);
+	tupDesc = ExecTypeFromTL(planstate->plan->targetlist, hasoid, hasseclabel);
 	ExecAssignResultType(planstate, tupDesc);
 }
 

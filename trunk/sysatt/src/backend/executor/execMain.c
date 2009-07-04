@@ -910,7 +910,6 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 
 					j = ExecInitJunkFilter(subplan->plan->targetlist,
 										   RelationGetDescr(resultRel)->tdhasoid,
-										   RelationGetDescr(resultRel)->tdhasrowacl,
 										   RelationGetDescr(resultRel)->tdhasseclabel,
 										   ExecAllocTableSlot(estate->es_tupleTable));
 					/*
@@ -955,7 +954,6 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 
 				j = ExecInitJunkFilter(planstate->plan->targetlist,
 									   tupType->tdhasoid,
-									   tupType->tdhasrowacl,
 									   tupType->tdhasseclabel,
 								  ExecAllocTableSlot(estate->es_tupleTable));
 				estate->es_junkFilter = j;
@@ -1027,7 +1025,7 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 		 * We assume all the sublists will generate the same output tupdesc.
 		 */
 		tupType = ExecTypeFromTL((List *) linitial(plannedstmt->returningLists),
-								 false, false, false);
+								 false, false);
 
 		/* Set up a slot for the output of the RETURNING projection(s) */
 		slot = ExecAllocTableSlot(estate->es_tupleTable);
@@ -1347,35 +1345,6 @@ ExecContextForcesOids(PlanState *planstate, bool *hasoids)
 		}
 	}
 
-	return false;
-}
-
-/*
- * ExecContextForcesRowAcl
- *
- * We need to ensure that result tuples have space for row level ACLs.
- * If row_level_acl = true on the given relation, it should be allocated.
- */
-bool ExecContextForcesRowAcl(PlanState *planstate, bool *hasrowacl)
-{
-	if (planstate->state->es_select_into)
-	{
-		/*
-		 * TODO: check "row_level_acl" option here
-		 */
-		*hasrowacl = false;
-		return true;
-	}
-	else
-	{
-		ResultRelInfo *ri = planstate->state->es_result_relation_info;
-
-		if (ri && ri->ri_RelationDesc)
-		{
-			*hasrowacl = securityTupleDescHasRowAcl(ri->ri_RelationDesc);
-			return true;
-		}
-	}
 	return false;
 }
 

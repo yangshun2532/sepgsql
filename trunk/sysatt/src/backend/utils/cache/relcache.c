@@ -330,13 +330,7 @@ AllocateRelationDesc(Relation relation, Form_pg_class relp)
 	/* initialize relation tuple form */
 	relation->rd_rel = relationForm;
 
-	/*
-	 * and allocate attribute tuple form storage
-	 *
-	 * Please note that relation->rd_att->tdhasrowacl and tdhasseclabel
-	 * have to be fixed up correctly at RelationBuildTupleDesc(), because
-	 * security module may need reloptions info to make its decision.
-	 */
+	/* and allocate attribute tuple form storage */
 	relation->rd_att = CreateTemplateTupleDesc(relationForm->relnatts,
 											   relationForm->relhasoids);
 	/* which we mark as a reference-counted tupdesc */
@@ -872,9 +866,7 @@ RelationBuildDesc(Oid targetRelId, Relation oldrelation)
 	/* extract reloptions if any */
 	RelationParseRelOptions(relation, pg_class_tuple);
 
-	/* Fixup relation->rd_att->tdhassecXXXX */
-	relation->rd_att->tdhasrowacl
-		= securityTupleDescHasRowAcl(relation);
+	/* Fixup relation->rd_att->tdhasseclabel */
 	relation->rd_att->tdhasseclabel
 		= securityTupleDescHasSecLabel(relation);
 
@@ -1471,9 +1463,7 @@ formrdesc(const char *relationName, Oid relationReltype,
 	RelationGetRelid(relation) = relation->rd_att->attrs[0]->attrelid;
 	relation->rd_rel->relfilenode = RelationGetRelid(relation);
 
-	/* Fixup relation->rd_att->tdhassecXXX */
-	RelationGetDescr(relation)->tdhasrowacl
-		= securityTupleDescHasRowAcl(relation);
+	/* Fixup relation->rd_att->tdhasseclabel */
 	RelationGetDescr(relation)->tdhasseclabel
 		= securityTupleDescHasSecLabel(relation);
 
@@ -2721,8 +2711,8 @@ BuildHardcodedDescriptor(int natts, Form_pg_attribute attrs, bool hasoids)
 	/*
 	 * NOTE: we assume the returned TupleDesc is only used for
 	 * references to toast'ed data, and it is not delivered to
-	 * heap_form_tuple(), so TupleDesc->tdhasrowacl and tdhasseclabel
-	 * don't give us any effect.
+	 * heap_form_tuple(), so TupleDesc->tdhasseclabel don't give us
+	 * any effect.
 	 * We omit to invoke securityTupleDescHasSecLabel() here.
 	 */
 
@@ -3479,9 +3469,7 @@ load_relcache_init_file(void)
 			rel->rd_options = NULL;
 		}
 
-		/* Fixup rel->rd_att->tdhassecXXXX */
-		rel->rd_att->tdhasrowacl
-			= securityTupleDescHasRowAcl(rel);
+		/* Fixup rel->rd_att->tdhasseclabel */
 		rel->rd_att->tdhasseclabel
 			= securityTupleDescHasSecLabel(rel);
 
