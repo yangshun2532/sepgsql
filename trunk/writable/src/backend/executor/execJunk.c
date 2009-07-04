@@ -60,8 +60,7 @@
  * An optional resultSlot can be passed as well.
  */
 JunkFilter *
-ExecInitJunkFilter(List *targetList,
-				   bool hasoid, bool hassecacl, bool hasseclabel,
+ExecInitJunkFilter(List *targetList, bool hasoid, bool hasseclabel,
 				   TupleTableSlot *slot)
 {
 	JunkFilter *junkfilter;
@@ -74,7 +73,7 @@ ExecInitJunkFilter(List *targetList,
 	/*
 	 * Compute the tuple descriptor for the cleaned tuple.
 	 */
-	cleanTupType = ExecCleanTypeFromTL(targetList, hasoid, hassecacl, hasseclabel);
+	cleanTupType = ExecCleanTypeFromTL(targetList, hasoid, hasseclabel);
 
 	/*
 	 * Use the given slot, or make a new slot if we weren't given one.
