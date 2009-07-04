@@ -111,8 +111,6 @@ static int	disable_dollar_quoting = 0;
 static int	dump_inserts = 0;
 static int	column_inserts = 0;
 
-/* flag to turn on/off security_label */
-static int	security_label = 0;
 
 static void help(const char *progname);
 static void expand_schema_name_patterns(SimpleStringList *patterns,
@@ -278,7 +276,6 @@ main(int argc, char **argv)
 		{"no-tablespaces", no_argument, &outputNoTablespaces, 1},
 		{"role", required_argument, NULL, 3},
 		{"use-set-session-authorization", no_argument, &use_setsessauth, 1},
-		{"security-label", no_argument, &security_label, 1},
 
 		{NULL, 0, NULL, 0}
 	};
@@ -427,8 +424,6 @@ main(int argc, char **argv)
 					outputNoTablespaces = 1;
 				else if (strcmp(optarg, "use-set-session-authorization") == 0)
 					use_setsessauth = 1;
-				else if (strcmp(optarg, "security-label") == 0)
-					security_label = 1;
 				else
 				{
 					fprintf(stderr,
@@ -576,21 +571,6 @@ main(int argc, char **argv)
 
 	std_strings = PQparameterStatus(g_conn, "standard_conforming_strings");
 	g_fout->std_strings = (std_strings && strcmp(std_strings, "on") == 0);
-
-	/* Check availability of SE-PostgreSQL */
-	if (security_label > 0)
-	{
-		PGresult *res;
-
-		res = PQexec(g_conn, "SHOW sepostgresql");
-		if (PQresultStatus(res) != PGRES_TUPLES_OK ||
-			PQntuples(res) != 1 ||
-			strcmp(PQgetvalue(res, 0, 0), "on") != 0)
-		{
-			write_msg(NULL, "SE-PostgreSQL is not available now.");
-			exit(1);
-		}
-	}
 
 	/* Set the role if requested */
 	if (use_role && g_fout->remoteVersion >= 80100)
@@ -845,7 +825,6 @@ help(const char *progname)
 	printf(_("  --use-set-session-authorization\n"
 			 "                              use SET SESSION AUTHORIZATION commands instead of\n"
 	"                              ALTER OWNER commands to set ownership\n"));
-	printf(_("  --security-label            dump SE-PostgreSQL security labels\n"));
 
 	printf(_("\nConnection options:\n"));
 	printf(_("  -h, --host=HOSTNAME      database server host or socket directory\n"));
@@ -1603,8 +1582,7 @@ dumpDatabase(Archive *AH)
 				i_collate,
 				i_ctype,
 				i_frozenxid,
-				i_tablespace,
-				i_seclabel;
+				i_tablespace;
 	CatalogId	dbCatId;
 	DumpId		dbDumpId;
 	const char *datname,
@@ -1612,8 +1590,7 @@ dumpDatabase(Archive *AH)
 			   *encoding,
 			   *collate,
 			   *ctype,
-			   *tablespace,
-			   *seclabel;
+			   *tablespace;
 	uint32		frozenxid;
 
 	datname = PQdb(g_conn);
@@ -1632,12 +1609,11 @@ dumpDatabase(Archive *AH)
 						  "pg_encoding_to_char(encoding) AS encoding, "
 						  "datcollate, datctype, datfrozenxid, "
 						  "(SELECT spcname FROM pg_tablespace t WHERE t.oid = dattablespace) AS tablespace, "
-					  "shobj_description(oid, 'pg_database') AS description, "
-						  "%s as security_label "
+					  "shobj_description(oid, 'pg_database') AS description "
+
 						  "FROM pg_database "
 						  "WHERE datname = ",
-						  username_subquery,
-						  security_label ? "security_label" : "NULL");
+						  username_subquery);
 		appendStringLiteralAH(dbQry, datname, AH);
 	}
 	else if (g_fout->remoteVersion >= 80200)
@@ -1647,8 +1623,8 @@ dumpDatabase(Archive *AH)
 						  "pg_encoding_to_char(encoding) AS encoding, "
 					   "NULL AS datcollate, NULL AS datctype, datfrozenxid, "
 						  "(SELECT spcname FROM pg_tablespace t WHERE t.oid = dattablespace) AS tablespace, "
-					  "shobj_description(oid, 'pg_database') AS description, "
-						  "NULL as security_label "
+					  "shobj_description(oid, 'pg_database') AS description "
+
 						  "FROM pg_database "
 						  "WHERE datname = ",
 						  username_subquery);
@@ -1660,8 +1636,7 @@ dumpDatabase(Archive *AH)
 						  "(%s datdba) AS dba, "
 						  "pg_encoding_to_char(encoding) AS encoding, "
 					   "NULL AS datcollate, NULL AS datctype, datfrozenxid, "
-						  "(SELECT spcname FROM pg_tablespace t WHERE t.oid = dattablespace) AS tablespace, "
-						  "NULL as security_label "
+						  "(SELECT spcname FROM pg_tablespace t WHERE t.oid = dattablespace) AS tablespace "
 						  "FROM pg_database "
 						  "WHERE datname = ",
 						  username_subquery);
@@ -1674,8 +1649,7 @@ dumpDatabase(Archive *AH)
 						  "pg_encoding_to_char(encoding) AS encoding, "
 						  "NULL AS datcollate, NULL AS datctype, "
 						  "0 AS datfrozenxid, "
-						  "NULL AS tablespace, "
-						  "NULL AS security_label "
+						  "NULL AS tablespace "
 						  "FROM pg_database "
 						  "WHERE datname = ",
 						  username_subquery);
@@ -1690,8 +1664,7 @@ dumpDatabase(Archive *AH)
 						  "pg_encoding_to_char(encoding) AS encoding, "
 						  "NULL AS datcollate, NULL AS datctype, "
 						  "0 AS datfrozenxid, "
-						  "NULL AS tablespace, "
-						  "NULL as security_label "
+						  "NULL AS tablespace "
 						  "FROM pg_database "
 						  "WHERE datname = ",
 						  username_subquery);
@@ -1725,7 +1698,6 @@ dumpDatabase(Archive *AH)
 	i_ctype = PQfnumber(res, "datctype");
 	i_frozenxid = PQfnumber(res, "datfrozenxid");
 	i_tablespace = PQfnumber(res, "tablespace");
-	i_seclabel = PQfnumber(res, "security_label");
 
 	dbCatId.tableoid = atooid(PQgetvalue(res, 0, i_tableoid));
 	dbCatId.oid = atooid(PQgetvalue(res, 0, i_oid));
@@ -1735,7 +1707,6 @@ dumpDatabase(Archive *AH)
 	ctype = PQgetvalue(res, 0, i_ctype);
 	frozenxid = atooid(PQgetvalue(res, 0, i_frozenxid));
 	tablespace = PQgetvalue(res, 0, i_tablespace);
-	seclabel = PQgetvalue(res, 0, i_seclabel);
 
 	appendPQExpBuffer(creaQry, "CREATE DATABASE %s WITH TEMPLATE = template0",
 					  fmtId(datname));
@@ -1757,9 +1728,6 @@ dumpDatabase(Archive *AH)
 	if (strlen(tablespace) > 0 && strcmp(tablespace, "pg_default") != 0)
 		appendPQExpBuffer(creaQry, " TABLESPACE = %s",
 						  fmtId(tablespace));
-	if (strlen(seclabel) > 0)
-		appendPQExpBuffer(creaQry, " SECURITY_LABEL = '%s'", seclabel);
-
 	appendPQExpBuffer(creaQry, ";\n");
 
 	if (binary_upgrade)
@@ -3175,7 +3143,6 @@ getTables(int *numTables)
 	int			i_reltablespace;
 	int			i_reloptions;
 	int			i_toastreloptions;
-	int			i_relseclabel;
 
 	/* Make sure we are in proper schema */
 	selectSourceSchema("pg_catalog");
@@ -3217,8 +3184,7 @@ getTables(int *numTables)
 						  "d.refobjsubid AS owning_col, "
 						  "(SELECT spcname FROM pg_tablespace t WHERE t.oid = c.reltablespace) AS reltablespace, "
 						"array_to_string(c.reloptions, ', ') AS reloptions, "
-						  "array_to_string(array(SELECT 'toast.' || x FROM unnest(tc.reloptions) x), ', ') AS toast_reloptions, "
-						  "%s as security_label "
+						  "array_to_string(array(SELECT 'toast.' || x FROM unnest(tc.reloptions) x), ', ') AS toast_reloptions "
 						  "FROM pg_class c "
 						  "LEFT JOIN pg_depend d ON "
 						  "(c.relkind = '%c' AND "
@@ -3229,7 +3195,6 @@ getTables(int *numTables)
 						  "WHERE c.relkind in ('%c', '%c', '%c', '%c') "
 						  "ORDER BY c.oid",
 						  username_subquery,
-						  security_label ? "c.security_label" : "NULL",
 						  RELKIND_SEQUENCE,
 						  RELKIND_RELATION, RELKIND_SEQUENCE,
 						  RELKIND_VIEW, RELKIND_COMPOSITE_TYPE);
@@ -3251,8 +3216,7 @@ getTables(int *numTables)
 						  "d.refobjsubid AS owning_col, "
 						  "(SELECT spcname FROM pg_tablespace t WHERE t.oid = c.reltablespace) AS reltablespace, "
 						"array_to_string(c.reloptions, ', ') AS reloptions, "
-						  "NULL AS toast_reloptions, "
-						  "NULL as security_label "
+						  "NULL AS toast_reloptions "
 						  "FROM pg_class c "
 						  "LEFT JOIN pg_depend d ON "
 						  "(c.relkind = '%c' AND "
@@ -3283,8 +3247,7 @@ getTables(int *numTables)
 						  "d.refobjsubid AS owning_col, "
 						  "(SELECT spcname FROM pg_tablespace t WHERE t.oid = c.reltablespace) AS reltablespace, "
 						  "NULL AS reloptions, "
-						  "NULL AS toast_reloptions, "
-						  "NULL as security_label "
+						  "NULL AS toast_reloptions "
 						  "FROM pg_class c "
 						  "LEFT JOIN pg_depend d ON "
 						  "(c.relkind = '%c' AND "
@@ -3315,8 +3278,7 @@ getTables(int *numTables)
 						  "d.refobjsubid AS owning_col, "
 						  "NULL AS reltablespace, "
 						  "NULL AS reloptions, "
-						  "NULL AS toast_reloptions, "
-						  "NULL as security_label "
+						  "NULL AS toast_reloptions "
 						  "FROM pg_class c "
 						  "LEFT JOIN pg_depend d ON "
 						  "(c.relkind = '%c' AND "
@@ -3343,8 +3305,7 @@ getTables(int *numTables)
 						  "NULL::int4 AS owning_col, "
 						  "NULL AS reltablespace, "
 						  "NULL AS reloptions, "
-						  "NULL AS toast_reloptions, "
-						  "NULL AS security_label "
+						  "NULL AS toast_reloptions "
 						  "FROM pg_class "
 						  "WHERE relkind IN ('%c', '%c', '%c') "
 						  "ORDER BY oid",
@@ -3366,8 +3327,7 @@ getTables(int *numTables)
 						  "NULL::int4 AS owning_col, "
 						  "NULL AS reltablespace, "
 						  "NULL AS reloptions, "
-						  "NULL AS toast_reloptions, "
-						  "NULL AS security_label "
+						  "NULL AS toast_reloptions "
 						  "FROM pg_class "
 						  "WHERE relkind IN ('%c', '%c', '%c') "
 						  "ORDER BY oid",
@@ -3399,8 +3359,7 @@ getTables(int *numTables)
 						  "NULL::int4 AS owning_col, "
 						  "NULL AS reltablespace, "
 						  "NULL AS reloptions, "
-						  "NULL AS toast_reloptions, "
-						  "NULL as security_label "
+						  "NULL AS toast_reloptions "
 						  "FROM pg_class c "
 						  "WHERE relkind IN ('%c', '%c') "
 						  "ORDER BY oid",
@@ -3445,7 +3404,6 @@ getTables(int *numTables)
 	i_reltablespace = PQfnumber(res, "reltablespace");
 	i_reloptions = PQfnumber(res, "reloptions");
 	i_toastreloptions = PQfnumber(res, "toast_reloptions");
-	i_relseclabel = PQfnumber(res, "security_label");
 
 	if (lockWaitTimeout && g_fout->remoteVersion >= 70300)
 	{
@@ -3493,7 +3451,6 @@ getTables(int *numTables)
 		tblinfo[i].reltablespace = strdup(PQgetvalue(res, i, i_reltablespace));
 		tblinfo[i].reloptions = strdup(PQgetvalue(res, i, i_reloptions));
 		tblinfo[i].toast_reloptions = strdup(PQgetvalue(res, i, i_toastreloptions));
-		tblinfo[i].relseclabel = strdup(PQgetvalue(res, i, i_relseclabel));
 
 		/* other fields were zeroed above */
 
@@ -4693,7 +4650,6 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 	int			i_attlen;
 	int			i_attalign;
 	int			i_attislocal;
-	int			i_attseclabel;
 	PGresult   *res;
 	int			ntups;
 	bool		hasdefaults;
@@ -4738,14 +4694,12 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 							  "a.attstattarget, a.attstorage, t.typstorage, "
 							  "a.attnotnull, a.atthasdef, a.attisdropped, "
 							  "a.attlen, a.attalign, a.attislocal, "
-				   "pg_catalog.format_type(t.oid,a.atttypmod) AS atttypname, "
-								 "%s as security_label "
+				   "pg_catalog.format_type(t.oid,a.atttypmod) AS atttypname "
 			 "FROM pg_catalog.pg_attribute a LEFT JOIN pg_catalog.pg_type t "
 							  "ON a.atttypid = t.oid "
 							  "WHERE a.attrelid = '%u'::pg_catalog.oid "
 							  "AND a.attnum > 0::pg_catalog.int2 "
 							  "ORDER BY a.attrelid, a.attnum",
-							  security_label ? "a.security_label" : "NULL",
 							  tbinfo->dobj.catId.oid);
 		}
 		else if (g_fout->remoteVersion >= 70100)
@@ -4760,8 +4714,7 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 							  "t.typstorage, a.attnotnull, a.atthasdef, "
 							  "false AS attisdropped, 0 AS attlen, "
 							  "' ' AS attalign, false AS attislocal, "
-							  "format_type(t.oid,a.atttypmod) AS atttypname, "
-							  "NULL as security_label "
+							  "format_type(t.oid,a.atttypmod) AS atttypname "
 							  "FROM pg_attribute a LEFT JOIN pg_type t "
 							  "ON a.atttypid = t.oid "
 							  "WHERE a.attrelid = '%u'::oid "
@@ -4778,8 +4731,7 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 							  "attnotnull, atthasdef, false AS attisdropped, "
 							  "0 AS attlen, ' ' AS attalign, "
 							  "false AS attislocal, "
-							  "(SELECT typname FROM pg_type WHERE oid = atttypid) AS atttypname, "
-							  "NULL as security_label "
+							  "(SELECT typname FROM pg_type WHERE oid = atttypid) AS atttypname "
 							  "FROM pg_attribute a "
 							  "WHERE attrelid = '%u'::oid "
 							  "AND attnum > 0::int2 "
@@ -4805,7 +4757,6 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 		i_attlen = PQfnumber(res, "attlen");
 		i_attalign = PQfnumber(res, "attalign");
 		i_attislocal = PQfnumber(res, "attislocal");
-		i_attseclabel = PQfnumber(res, "security_label");
 
 		tbinfo->numatts = ntups;
 		tbinfo->attnames = (char **) malloc(ntups * sizeof(char *));
@@ -4818,7 +4769,6 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 		tbinfo->attlen = (int *) malloc(ntups * sizeof(int));
 		tbinfo->attalign = (char *) malloc(ntups * sizeof(char));
 		tbinfo->attislocal = (bool *) malloc(ntups * sizeof(bool));
-		tbinfo->attseclabel = (char **) malloc(ntups * sizeof(char *));
 		tbinfo->notnull = (bool *) malloc(ntups * sizeof(bool));
 		tbinfo->attrdefs = (AttrDefInfo **) malloc(ntups * sizeof(AttrDefInfo *));
 		tbinfo->inhAttrs = (bool *) malloc(ntups * sizeof(bool));
@@ -4844,7 +4794,6 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 			tbinfo->attlen[j] = atoi(PQgetvalue(res, j, i_attlen));
 			tbinfo->attalign[j] = *(PQgetvalue(res, j, i_attalign));
 			tbinfo->attislocal[j] = (PQgetvalue(res, j, i_attislocal)[0] == 't');
-			tbinfo->attseclabel[j] = strdup(PQgetvalue(res, j, i_attseclabel));
 			tbinfo->notnull[j] = (PQgetvalue(res, j, i_attnotnull)[0] == 't');
 			tbinfo->attrdefs[j] = NULL; /* fix below */
 			if (PQgetvalue(res, j, i_atthasdef)[0] == 't')
@@ -7109,7 +7058,6 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 	char	   *proconfig;
 	char	   *procost;
 	char	   *prorows;
-	char	   *proseclabel;
 	char	   *lanname;
 	char	   *rettypename;
 	int			nallargs;
@@ -7146,11 +7094,9 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 					 "pg_catalog.pg_get_function_result(oid) AS funcresult, "
 						  "proiswindow, provolatile, proisstrict, prosecdef, "
 						  "proconfig, procost, prorows, "
-						  "(SELECT lanname FROM pg_catalog.pg_language WHERE oid = prolang) AS lanname, "
-						  "%s as security_label "
+						  "(SELECT lanname FROM pg_catalog.pg_language WHERE oid = prolang) AS lanname "
 						  "FROM pg_catalog.pg_proc "
 						  "WHERE oid = '%u'::pg_catalog.oid",
-						  security_label ? "security_label" : "NULL",
 						  finfo->dobj.catId.oid);
 	}
 	else if (g_fout->remoteVersion >= 80300)
@@ -7161,8 +7107,7 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 						  "false AS proiswindow, "
 						  "provolatile, proisstrict, prosecdef, "
 						  "proconfig, procost, prorows, "
-						  "(SELECT lanname FROM pg_catalog.pg_language WHERE oid = prolang) AS lanname, "
-						  "NULL AS security_label "
+						  "(SELECT lanname FROM pg_catalog.pg_language WHERE oid = prolang) AS lanname "
 						  "FROM pg_catalog.pg_proc "
 						  "WHERE oid = '%u'::pg_catalog.oid",
 						  finfo->dobj.catId.oid);
@@ -7175,8 +7120,7 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 						  "false AS proiswindow, "
 						  "provolatile, proisstrict, prosecdef, "
 						  "null AS proconfig, 0 AS procost, 0 AS prorows, "
-						  "(SELECT lanname FROM pg_catalog.pg_language WHERE oid = prolang) AS lanname, "
-						  "NULL AS security_label "
+						  "(SELECT lanname FROM pg_catalog.pg_language WHERE oid = prolang) AS lanname "
 						  "FROM pg_catalog.pg_proc "
 						  "WHERE oid = '%u'::pg_catalog.oid",
 						  finfo->dobj.catId.oid);
@@ -7191,8 +7135,7 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 						  "false AS proiswindow, "
 						  "provolatile, proisstrict, prosecdef, "
 						  "null AS proconfig, 0 AS procost, 0 AS prorows, "
-						  "(SELECT lanname FROM pg_catalog.pg_language WHERE oid = prolang) AS lanname, "
-						  "NULL AS security_label "
+						  "(SELECT lanname FROM pg_catalog.pg_language WHERE oid = prolang) AS lanname "
 						  "FROM pg_catalog.pg_proc "
 						  "WHERE oid = '%u'::pg_catalog.oid",
 						  finfo->dobj.catId.oid);
@@ -7207,8 +7150,7 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 						  "false AS proiswindow, "
 						  "provolatile, proisstrict, prosecdef, "
 						  "null AS proconfig, 0 AS procost, 0 AS prorows, "
-						  "(SELECT lanname FROM pg_catalog.pg_language WHERE oid = prolang) AS lanname, "
-						  "NULL AS security_label "
+						  "(SELECT lanname FROM pg_catalog.pg_language WHERE oid = prolang) AS lanname "
 						  "FROM pg_catalog.pg_proc "
 						  "WHERE oid = '%u'::pg_catalog.oid",
 						  finfo->dobj.catId.oid);
@@ -7225,8 +7167,7 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 						  "proisstrict, "
 						  "false AS prosecdef, "
 						  "null AS proconfig, 0 AS procost, 0 AS prorows, "
-		  "(SELECT lanname FROM pg_language WHERE oid = prolang) AS lanname, "
-						  "NULL AS security_label "
+		  "(SELECT lanname FROM pg_language WHERE oid = prolang) AS lanname "
 						  "FROM pg_proc "
 						  "WHERE oid = '%u'::oid",
 						  finfo->dobj.catId.oid);
@@ -7243,8 +7184,7 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 						  "false AS proisstrict, "
 						  "false AS prosecdef, "
 						  "NULL AS proconfig, 0 AS procost, 0 AS prorows, "
-		  "(SELECT lanname FROM pg_language WHERE oid = prolang) AS lanname, "
-						  "NULL AS security_label "
+		  "(SELECT lanname FROM pg_language WHERE oid = prolang) AS lanname "
 						  "FROM pg_proc "
 						  "WHERE oid = '%u'::oid",
 						  finfo->dobj.catId.oid);
@@ -7288,7 +7228,6 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 	proconfig = PQgetvalue(res, 0, PQfnumber(res, "proconfig"));
 	procost = PQgetvalue(res, 0, PQfnumber(res, "procost"));
 	prorows = PQgetvalue(res, 0, PQfnumber(res, "prorows"));
-	proseclabel = PQgetvalue(res, 0, PQfnumber(res, "security_label"));
 	lanname = PQgetvalue(res, 0, PQfnumber(res, "lanname"));
 
 	/*
@@ -7446,9 +7385,6 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 
 	if (prosecdef[0] == 't')
 		appendPQExpBuffer(q, " SECURITY DEFINER");
-
-	if (security_label > 0 && strlen(proseclabel) > 0)
-		appendPQExpBuffer(q, " SECURITY_LABEL = '%s'", proseclabel);
 
 	/*
 	 * COST and ROWS are emitted only if present and not default, so as not to
@@ -9890,15 +9826,6 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 				if (tbinfo->notnull[j] && !tbinfo->inhNotNull[j])
 					appendPQExpBuffer(q, " NOT NULL");
 
-				/*
-				 * Security label -- if SE-PostgreSQL enabled
-				 */
-				if (security_label > 0 &&
-					strlen(tbinfo->attseclabel[j]) > 0 &&
-					strcmp(tbinfo->relseclabel, tbinfo->attseclabel[j]) != 0)
-					appendPQExpBuffer(q, " SECURITY_LABEL = '%s'",
-									  tbinfo->attseclabel[j]);
-
 				actual_atts++;
 			}
 		}
@@ -9961,9 +9888,6 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 			}
 			appendPQExpBuffer(q, ")");
 		}
-
-		if (security_label > 0 && strlen(tbinfo->relseclabel) > 0)
-			appendPQExpBuffer(q, " SECURITY_LABEL = '%s'", tbinfo->relseclabel);
 
 		appendPQExpBuffer(q, ";\n");
 

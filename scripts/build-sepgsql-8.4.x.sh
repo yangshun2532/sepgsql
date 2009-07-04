@@ -69,11 +69,9 @@ echo "CPY: sepgsql-fedora-prefix.patch"
 cp package/sepgsql-fedora-prefix.patch ${RPMSOURCE}
 
 # ---- build rpm package, if necessary
-if [ ${GEN_PATCH_ONLY} -eq 0 ]; then
-    gunzip -c ${RPMSOURCE}/sepgsql-00-full-${BASE_VERSION}.patch.gz \
-        > ${RPMSOURCE}/sepgsql-00-full-${BASE_MAJOR}.patch
-    rpmbuild -ba ${RPMSOURCE}/sepostgresql.spec
-fi
+gunzip -c ${RPMSOURCE}/sepgsql-00-full-${BASE_VERSION}.patch.gz \
+    > ${RPMSOURCE}/sepgsql-00-full-${BASE_MAJOR}.patch
+rpmbuild -ba ${RPMSOURCE}/sepostgresql.spec
 
 mv ${RPMSOURCE}/sepgsql-00-full-${BASE_VERSION}.patch.gz	\
     ${RPMSOURCE}/sepgsql-00-full-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch.gz
