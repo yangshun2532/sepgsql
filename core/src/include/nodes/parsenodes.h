@@ -1179,7 +1179,6 @@ typedef struct AlterDomainStmt
  */
 typedef enum GrantObjectType
 {
-	ACL_OBJECT_TUPLE,			/* tuple */
 	ACL_OBJECT_COLUMN,			/* column */
 	ACL_OBJECT_RELATION,		/* table, view */
 	ACL_OBJECT_SEQUENCE,		/* sequence */

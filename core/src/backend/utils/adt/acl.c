@@ -72,6 +72,7 @@ static List *cached_membership_roles = NIL;
 
 static const char *getid(const char *s, char *n);
 static void putid(char *p, const char *s);
+static Acl *allocacl(int n);
 static void check_acl(const Acl *acl);
 static const char *aclparse(const char *s, AclItem *aip);
 static bool aclitem_match(const AclItem *a1, const AclItem *a2);
@@ -360,7 +361,7 @@ aclparse(const char *s, AclItem *aip)
  * RETURNS:
  *		the new Acl
  */
-Acl *
+static Acl *
 allocacl(int n)
 {
 	Acl		   *new_acl;
@@ -602,10 +603,6 @@ acldefault(GrantObjectType objtype, Oid ownerId)
 
 	switch (objtype)
 	{
-		case ACL_OBJECT_TUPLE:
-			world_default = ACL_ALL_RIGHTS_TUPLE;
-			owner_default = ACL_ALL_RIGHTS_TUPLE;
-			break;
 		case ACL_OBJECT_COLUMN:
 			/* by default, columns have no extra privileges */
 			world_default = ACL_NO_RIGHTS;
