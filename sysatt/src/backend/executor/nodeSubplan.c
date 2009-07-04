@@ -869,7 +869,7 @@ ExecInitSubPlan(SubPlan *subplan, PlanState *parent)
 		 * (hack alert!).  The righthand expressions will be evaluated in our
 		 * own innerecontext.
 		 */
-		tupDesc = ExecTypeFromTL(leftptlist, false, false, false);
+		tupDesc = ExecTypeFromTL(leftptlist, false, false);
 		slot = ExecAllocTableSlot(tupTable);
 		ExecSetSlotDescriptor(slot, tupDesc);
 		sstate->projLeft = ExecBuildProjectionInfo(lefttlist,
@@ -877,7 +877,7 @@ ExecInitSubPlan(SubPlan *subplan, PlanState *parent)
 												   slot,
 												   NULL);
 
-		tupDesc = ExecTypeFromTL(rightptlist, false, false, false);
+		tupDesc = ExecTypeFromTL(rightptlist, false, false);
 		slot = ExecAllocTableSlot(tupTable);
 		ExecSetSlotDescriptor(slot, tupDesc);
 		sstate->projRight = ExecBuildProjectionInfo(righttlist,
