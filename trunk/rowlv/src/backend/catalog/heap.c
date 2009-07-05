@@ -164,18 +164,12 @@ static FormData_pg_attribute a7 = {
  * System columns for enhanced security features
  */
 static FormData_pg_attribute a8 = {
-	0, {SecurityAclAttributeName}, ACLITEMARRAYOID, 0, -1,
-	SecurityAclAttributeNumber, 1, -1, -1,
-	false, 'x', 'i', true, false, false, true, 0, {0}
-};
-
-static FormData_pg_attribute a9 = {
 	0, {SecurityLabelAttributeName}, TEXTOID, 0, -1,
 	SecurityLabelAttributeNumber, 0, -1, -1,
 	false, 'x', 'i', true, false, false, true, 0, {0}
 };
 
-static const Form_pg_attribute SysAtt[] = {&a1, &a2, &a3, &a4, &a5, &a6, &a7, &a8, &a9};
+static const Form_pg_attribute SysAtt[] = {&a1, &a2, &a3, &a4, &a5, &a6, &a7, &a8};
 
 /*
  * This function returns a Form_pg_attribute pointer for a system attribute.
@@ -221,8 +215,7 @@ SystemAttributeByName(const char *attname, bool relhasoids)
 bool
 SystemAttributeIsWritable(AttrNumber attnum)
 {
-	if (attnum == SecurityAclAttributeNumber ||
-		attnum == SecurityLabelAttributeNumber)
+	if (attnum == SecurityLabelAttributeNumber)
 		return true;
 
 	return false;
@@ -1119,9 +1112,7 @@ heap_create_with_catalog(const char *relname,
 	AddNewAttributeTuples(relid, new_rel_desc->rd_att, relkind,
 						  oidislocal, oidinhcount, seclabelList);
 
-	/* Fixup rel->rd_att->tdhassecXXXX */
-	new_rel_desc->rd_att->tdhasrowacl
-		= securityTupleDescHasRowAcl(new_rel_desc);
+	/* Fixup rel->rd_att->tdhasseclabel */
 	new_rel_desc->rd_att->tdhasseclabel
 		= securityTupleDescHasSecLabel(new_rel_desc);
 

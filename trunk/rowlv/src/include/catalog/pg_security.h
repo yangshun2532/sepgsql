@@ -22,7 +22,7 @@ CATALOG(pg_security,3405)
 	/* OID of the table which refers the entry */
 	Oid		relid;
 
-	/* 'a' = security_acl, 'l' = security_label */
+	/* See the SECKIND_SECURITY_* definition */
 	char	seckind;
 
 	/* Text representation of security attribute */
@@ -46,7 +46,6 @@ typedef FormData_pg_security *Form_pg_security;
 /*
  * Compiler constants for pg_security.seckind
  */
-#define SECKIND_SECURITY_ACL			'a'
 #define SECKIND_SECURITY_LABEL			'l'
 
 /*

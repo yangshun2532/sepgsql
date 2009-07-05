@@ -288,7 +288,6 @@ heap_attisnull(HeapTuple tup, int attnum)
 		case MinCommandIdAttributeNumber:
 		case MaxTransactionIdAttributeNumber:
 		case MaxCommandIdAttributeNumber:
-		case SecurityAclAttributeNumber:
 		case SecurityLabelAttributeNumber:
 			/* these are never null */
 			break;
@@ -602,9 +601,6 @@ heap_getsysattr(HeapTuple tup, int attnum, TupleDesc tupleDesc, bool *isnull)
 		case TableOidAttributeNumber:
 			result = ObjectIdGetDatum(tup->t_tableOid);
 			break;
-		case SecurityAclAttributeNumber:
-			result = securityHeapGetRowAclSysattr(tup);
-			break;
 		case SecurityLabelAttributeNumber:
 			result = securityHeapGetSecLabelSysattr(tup);
 			break;
@@ -731,8 +727,6 @@ heap_form_tuple(TupleDesc tupleDescriptor,
 
 	if (tupleDescriptor->tdhasoid)
 		len += sizeof(Oid);
-	if (tupleDescriptor->tdhasrowacl)
-		len += sizeof(Oid);
 	if (tupleDescriptor->tdhasseclabel)
 		len += sizeof(Oid);
 
@@ -766,8 +760,6 @@ heap_form_tuple(TupleDesc tupleDescriptor,
 
 	if (tupleDescriptor->tdhasoid)		/* else leave infomask = 0 */
 		td->t_infomask = HEAP_HASOID;
-	if (tupleDescriptor->tdhasrowacl)
-		td->t_infomask2 |= HEAP_HAS_ROWACL;
 	if (tupleDescriptor->tdhasseclabel)
 		td->t_infomask2 |= HEAP_HAS_SECLABEL;
 
@@ -881,8 +873,6 @@ heap_modify_tuple(HeapTuple tuple,
 	newTuple->t_tableOid = tuple->t_tableOid;
 	if (tupleDesc->tdhasoid)
 		HeapTupleSetOid(newTuple, HeapTupleGetOid(tuple));
-	if (HeapTupleHasRowAcl(newTuple))
-		HeapTupleSetRowAcl(newTuple, HeapTupleGetRowAcl(tuple));
 	if (HeapTupleHasSecLabel(newTuple))
 		HeapTupleSetSecLabel(newTuple, HeapTupleGetSecLabel(tuple));
 
@@ -1495,8 +1485,6 @@ heap_form_minimal_tuple(TupleDesc tupleDescriptor,
 
 	if (tupleDescriptor->tdhasoid)
 		len += sizeof(Oid);
-	if (tupleDescriptor->tdhasrowacl)
-		len += sizeof(Oid);
 	if (tupleDescriptor->tdhasseclabel)
 		len += sizeof(Oid);
 
@@ -1520,8 +1508,6 @@ heap_form_minimal_tuple(TupleDesc tupleDescriptor,
 
 	if (tupleDescriptor->tdhasoid)		/* else leave infomask = 0 */
 		tuple->t_infomask = HEAP_HASOID;
-	if (tupleDescriptor->tdhasrowacl)
-		tuple->t_infomask2 |= HEAP_HAS_ROWACL;
 	if (tupleDescriptor->tdhasseclabel)
 		tuple->t_infomask2 |= HEAP_HAS_SECLABEL;
 

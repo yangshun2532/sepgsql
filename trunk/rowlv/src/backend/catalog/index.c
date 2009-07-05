@@ -631,9 +631,7 @@ index_create(Oid heapRelationId,
 
 	Assert(indexRelationId == RelationGetRelid(indexRelation));
 
-	/* Fixup rel->rd_att->tdhassecXXXX */
-	indexRelation->rd_att->tdhasrowacl
-		= securityTupleDescHasRowAcl(indexRelation);
+	/* Fixup rel->rd_att->tdhasseclabel */
 	indexRelation->rd_att->tdhasseclabel
 		= securityTupleDescHasSecLabel(indexRelation);
 

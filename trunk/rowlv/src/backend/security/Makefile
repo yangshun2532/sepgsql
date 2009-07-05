@@ -6,7 +6,7 @@ subdir = src/backend/security
 top_builddir = ../../..
 include $(top_builddir)/src/Makefile.global
 
-SUBDIRS	= rowacl sepgsql
+SUBDIRS	= sepgsql
 
 OBJS = rowlevel.o
 

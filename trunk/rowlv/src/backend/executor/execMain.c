@@ -51,7 +51,6 @@
 #include "optimizer/clauses.h"
 #include "parser/parse_clause.h"
 #include "parser/parsetree.h"
-#include "security/rowlevel.h"
 #include "security/sepgsql.h"
 #include "storage/bufmgr.h"
 #include "storage/lmgr.h"
@@ -915,7 +914,6 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 
 					j = ExecInitJunkFilter(subplan->plan->targetlist,
 										   RelationGetDescr(resultRel)->tdhasoid,
-										   RelationGetDescr(resultRel)->tdhasrowacl,
 										   RelationGetDescr(resultRel)->tdhasseclabel,
 										   ExecAllocTableSlot(estate->es_tupleTable));
 					/*
@@ -960,7 +958,6 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 
 				j = ExecInitJunkFilter(planstate->plan->targetlist,
 									   tupType->tdhasoid,
-									   tupType->tdhasrowacl,
 									   tupType->tdhasseclabel,
 								  ExecAllocTableSlot(estate->es_tupleTable));
 				estate->es_junkFilter = j;
@@ -1032,7 +1029,7 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 		 * We assume all the sublists will generate the same output tupdesc.
 		 */
 		tupType = ExecTypeFromTL((List *) linitial(plannedstmt->returningLists),
-								 false, false, false);
+								 false, false);
 
 		/* Set up a slot for the output of the RETURNING projection(s) */
 		slot = ExecAllocTableSlot(estate->es_tupleTable);
@@ -1356,35 +1353,6 @@ ExecContextForcesOids(PlanState *planstate, bool *hasoids)
 }
 
 /*
- * ExecContextForcesRowAcl
- *
- * We need to ensure that result tuples have space for row level ACLs.
- * If row_level_acl = true on the given relation, it should be allocated.
- */
-bool ExecContextForcesRowAcl(PlanState *planstate, bool *hasrowacl)
-{
-	if (planstate->state->es_select_into)
-	{
-		/*
-		 * TODO: check "row_level_acl" option here
-		 */
-		*hasrowacl = false;
-		return true;
-	}
-	else
-	{
-		ResultRelInfo *ri = planstate->state->es_result_relation_info;
-
-		if (ri && ri->ri_RelationDesc)
-		{
-			*hasrowacl = securityTupleDescHasRowAcl(ri->ri_RelationDesc);
-			return true;
-		}
-	}
-	return false;
-}
-
-/*
  * ExecContextForcesSecLabel
  *
  * We need to ensure that result tuples have space for security label,
@@ -1499,24 +1467,11 @@ ExecEndPlan(PlanState *planstate, EState *estate)
  */
 static void
 fetchWritableSystemAttribute(JunkFilter *junkfilter, TupleTableSlot *slot,
-							 Datum *tts_rowacl, Datum *tts_seclabel)
+							 Datum *tts_seclabel)
 {
 	AttrNumber	attno;
 	Datum		datum;
 	bool		isnull;
-
-	/* for Row-level ACLs */
-	attno = ExecFindJunkAttribute(junkfilter, SecurityAclAttributeName);
-	if (attno != InvalidAttrNumber)
-	{
-		datum = ExecGetJunkAttribute(slot, attno, &isnull);
-		if (isnull)
-			ereport(ERROR,
-					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-					 errmsg("Unable to set NULL on \"%s\"",
-							SecurityAclAttributeName)));
-		*tts_rowacl = datum;
-	}
 
 	/* for Security Label */
 	attno = ExecFindJunkAttribute(junkfilter, SecurityLabelAttributeName);
@@ -1537,22 +1492,6 @@ storeWritableSystemAttribute(Relation rel, TupleTableSlot *slot, HeapTuple tuple
 {
 	Oid		relid = RelationGetRelid(rel);
 	Oid		secid;
-
-	/* "security_acl" */
-	if (DatumGetPointer(slot->tts_rowacl) != NULL)
-	{
-		Acl *acl = DatumGetAclP(slot->tts_rowacl);
-
-		if (!HeapTupleHasRowAcl(tuple))
-			ereport(ERROR,
-					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-					 errmsg("Unable to assign Row-level ACLs on \"%s\"",
-							RelationGetRelationName(rel))));
-		secid = securityTransRowAclIn(relid, acl);
-		HeapTupleSetRowAcl(tuple, secid);
-	}
-	else if (HeapTupleHasRowAcl(tuple))
-		HeapTupleSetRowAcl(tuple, InvalidOid);
 
 	/* "security_label" */
 	if (DatumGetPointer(slot->tts_seclabel) != NULL)
@@ -1632,7 +1571,6 @@ ExecutePlan(EState *estate,
 	 */
 	for (;;)
 	{
-		Datum	tts_rowacl = PointerGetDatum(NULL);
 		Datum	tts_seclabel = PointerGetDatum(NULL);
 
 		/* Reset the per-output-tuple exprcontext */
@@ -1781,8 +1719,7 @@ lnext:	;
 			/*
 			 * extract writable system attribute
 			 */
-			fetchWritableSystemAttribute(junkfilter, slot,
-										 &tts_rowacl, &tts_seclabel);
+			fetchWritableSystemAttribute(junkfilter, slot, &tts_seclabel);
 
 			/*
 			 * extract the 'ctid' junk attribute.
@@ -1811,7 +1748,6 @@ lnext:	;
 			if (operation != CMD_DELETE)
 				slot = ExecFilterJunk(junkfilter, slot);
 		}
-		slot->tts_rowacl = tts_rowacl;
 		slot->tts_seclabel = tts_seclabel;
 
 		/*

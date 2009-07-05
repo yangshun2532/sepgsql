@@ -32,7 +32,6 @@
 #include "pgstat.h"
 #include "postmaster/autovacuum.h"
 #include "postmaster/postmaster.h"
-#include "security/rowacl.h"
 #include "security/sepgsql.h"
 #include "storage/backendid.h"
 #include "storage/bufmgr.h"
@@ -607,9 +606,6 @@ InitPostgres(const char *in_dbname, Oid dboid, const char *username,
 
 	/* set up ACL framework (so CheckMyDatabase can check permissions) */
 	initialize_acl();
-
-	/* set up Row-level ACL facilities */
-	rowaclInitialize();
 
 	/*
 	 * Read the real pg_database row for our database, check permissions and

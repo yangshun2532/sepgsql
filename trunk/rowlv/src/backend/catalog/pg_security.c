@@ -15,7 +15,6 @@
 #include "catalog/pg_security.h"
 #include "catalog/pg_shsecurity.h"
 #include "miscadmin.h"
-#include "security/rowacl.h"
 #include "security/sepgsql.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
@@ -23,12 +22,6 @@
 #include "utils/rel.h"
 #include "utils/syscache.h"
 #include "utils/tqual.h"
-
-bool
-securityTupleDescHasRowAcl(Relation rel)
-{
-	return RelationGetRowLevelAcl(rel);
-}
 
 bool
 securityTupleDescHasSecLabel(Relation rel)
@@ -371,52 +364,9 @@ securityTransSecLabelOut(Oid relid, Oid secid)
 	return sepgsqlTransSecLabelOut(seclabel);
 }
 
-Oid
-securityTransRowAclIn(Oid relid, Acl *acl)
-{
-	char   *secacl = rowaclTransRowAclIn(acl);
-
-	return InputSecurityAttr(relid, SECKIND_SECURITY_ACL, secacl);
-}
-
-Acl *
-securityTransRowAclOut(Oid relid, Oid secid, Oid ownid)
-{
-	char   *secacl = OutputSecurityAttr(relid, SECKIND_SECURITY_ACL, secid);
-	Acl	   *acl = rowaclTransRowAclOut(secacl);
-
-	if (!acl)
-		acl = acldefault(ACL_OBJECT_TUPLE, ownid);
-
-	return acl;
-}
-
 /*
  * Output handler for system columns
  */
-Datum
-securityHeapGetRowAclSysattr(HeapTuple tuple)
-{
-	HeapTuple	reltup;
-	Oid			secid = HeapTupleGetRowAcl(tuple);
-	Oid			ownid;
-	Acl		   *acl;
-
-	reltup = SearchSysCache(RELOID,
-							ObjectIdGetDatum(tuple->t_tableOid),
-							0, 0, 0);
-	if (!HeapTupleIsValid(reltup))
-		elog(ERROR, "cache lookup failed for relation: %u", tuple->t_tableOid);
-
-	ownid = ((Form_pg_class) GETSTRUCT(reltup))->relowner;
-
-	ReleaseSysCache(reltup);
-
-	acl = securityTransRowAclOut(tuple->t_tableOid, secid, ownid);
-
-	return PointerGetDatum(acl);
-}
-
 Datum
 securityHeapGetSecLabelSysattr(HeapTuple tuple)
 {
