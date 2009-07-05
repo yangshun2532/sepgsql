@@ -288,8 +288,8 @@ heap_attisnull(HeapTuple tup, int attnum)
 		case MinCommandIdAttributeNumber:
 		case MaxTransactionIdAttributeNumber:
 		case MaxCommandIdAttributeNumber:
-		case SecurityAclAttributeNumber:
 		case SecurityLabelAttributeNumber:
+		case SecurityAclAttributeNumber:
 			/* these are never null */
 			break;
 
@@ -602,11 +602,11 @@ heap_getsysattr(HeapTuple tup, int attnum, TupleDesc tupleDesc, bool *isnull)
 		case TableOidAttributeNumber:
 			result = ObjectIdGetDatum(tup->t_tableOid);
 			break;
-		case SecurityAclAttributeNumber:
-			result = securityHeapGetRowAclSysattr(tup);
-			break;
 		case SecurityLabelAttributeNumber:
 			result = securityHeapGetSecLabelSysattr(tup);
+			break;
+		case SecurityAclAttributeNumber:
+			result = securityHeapGetRowAclSysattr(tup);
 			break;
 		default:
 			elog(ERROR, "invalid attnum: %d", attnum);
@@ -731,9 +731,9 @@ heap_form_tuple(TupleDesc tupleDescriptor,
 
 	if (tupleDescriptor->tdhasoid)
 		len += sizeof(Oid);
-	if (tupleDescriptor->tdhasrowacl)
-		len += sizeof(Oid);
 	if (tupleDescriptor->tdhasseclabel)
+		len += sizeof(Oid);
+	if (tupleDescriptor->tdhasrowacl)
 		len += sizeof(Oid);
 
 	hoff = len = MAXALIGN(len); /* align user data safely */
@@ -766,10 +766,10 @@ heap_form_tuple(TupleDesc tupleDescriptor,
 
 	if (tupleDescriptor->tdhasoid)		/* else leave infomask = 0 */
 		td->t_infomask = HEAP_HASOID;
-	if (tupleDescriptor->tdhasrowacl)
-		td->t_infomask2 |= HEAP_HAS_ROWACL;
 	if (tupleDescriptor->tdhasseclabel)
 		td->t_infomask2 |= HEAP_HAS_SECLABEL;
+	if (tupleDescriptor->tdhasrowacl)
+		td->t_infomask2 |= HEAP_HAS_ROWACL;
 
 	heap_fill_tuple(tupleDescriptor,
 					values,
@@ -1495,9 +1495,9 @@ heap_form_minimal_tuple(TupleDesc tupleDescriptor,
 
 	if (tupleDescriptor->tdhasoid)
 		len += sizeof(Oid);
-	if (tupleDescriptor->tdhasrowacl)
-		len += sizeof(Oid);
 	if (tupleDescriptor->tdhasseclabel)
+		len += sizeof(Oid);
+	if (tupleDescriptor->tdhasrowacl)
 		len += sizeof(Oid);
 
 	hoff = len = MAXALIGN(len); /* align user data safely */
@@ -1520,10 +1520,10 @@ heap_form_minimal_tuple(TupleDesc tupleDescriptor,
 
 	if (tupleDescriptor->tdhasoid)		/* else leave infomask = 0 */
 		tuple->t_infomask = HEAP_HASOID;
-	if (tupleDescriptor->tdhasrowacl)
-		tuple->t_infomask2 |= HEAP_HAS_ROWACL;
 	if (tupleDescriptor->tdhasseclabel)
 		tuple->t_infomask2 |= HEAP_HAS_SECLABEL;
+	if (tupleDescriptor->tdhasrowacl)
+		tuple->t_infomask2 |= HEAP_HAS_ROWACL;
 
 	heap_fill_tuple(tupleDescriptor,
 					values,

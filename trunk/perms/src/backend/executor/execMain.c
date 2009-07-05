@@ -915,8 +915,8 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 
 					j = ExecInitJunkFilter(subplan->plan->targetlist,
 										   RelationGetDescr(resultRel)->tdhasoid,
-										   RelationGetDescr(resultRel)->tdhasrowacl,
 										   RelationGetDescr(resultRel)->tdhasseclabel,
+										   RelationGetDescr(resultRel)->tdhasrowacl,
 										   ExecAllocTableSlot(estate->es_tupleTable));
 					/*
 					 * Since it must be UPDATE/DELETE, there had better be a
@@ -960,8 +960,8 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 
 				j = ExecInitJunkFilter(planstate->plan->targetlist,
 									   tupType->tdhasoid,
-									   tupType->tdhasrowacl,
 									   tupType->tdhasseclabel,
+									   tupType->tdhasrowacl,
 								  ExecAllocTableSlot(estate->es_tupleTable));
 				estate->es_junkFilter = j;
 				if (estate->es_result_relation_info)
@@ -1356,6 +1356,32 @@ ExecContextForcesOids(PlanState *planstate, bool *hasoids)
 }
 
 /*
+ * ExecContextForcesSecLabel
+ *
+ * We need to ensure that result tuples have space for security label,
+ * if the security feature need to store it within the given relation.
+ */
+bool ExecContextForcesSecLabel(PlanState *planstate, bool *hassecurity)
+{
+	if (planstate->state->es_select_into)
+	{
+		*hassecurity = securityTupleDescHasSecLabel(NULL);
+		return true;
+	}
+	else
+	{
+		ResultRelInfo *ri = planstate->state->es_result_relation_info;
+
+		if (ri && ri->ri_RelationDesc)
+		{
+			*hassecurity = securityTupleDescHasSecLabel(ri->ri_RelationDesc);
+			return true;
+		}
+	}
+	return false;
+}
+
+/*
  * ExecContextForcesRowAcl
  *
  * We need to ensure that result tuples have space for row level ACLs.
@@ -1378,32 +1404,6 @@ bool ExecContextForcesRowAcl(PlanState *planstate, bool *hasrowacl)
 		if (ri && ri->ri_RelationDesc)
 		{
 			*hasrowacl = securityTupleDescHasRowAcl(ri->ri_RelationDesc);
-			return true;
-		}
-	}
-	return false;
-}
-
-/*
- * ExecContextForcesSecLabel
- *
- * We need to ensure that result tuples have space for security label,
- * if the security feature need to store it within the given relation.
- */
-bool ExecContextForcesSecLabel(PlanState *planstate, bool *hassecurity)
-{
-	if (planstate->state->es_select_into)
-	{
-		*hassecurity = securityTupleDescHasSecLabel(NULL);
-		return true;
-	}
-	else
-	{
-		ResultRelInfo *ri = planstate->state->es_result_relation_info;
-
-		if (ri && ri->ri_RelationDesc)
-		{
-			*hassecurity = securityTupleDescHasSecLabel(ri->ri_RelationDesc);
 			return true;
 		}
 	}
@@ -1499,24 +1499,11 @@ ExecEndPlan(PlanState *planstate, EState *estate)
  */
 static void
 fetchWritableSystemAttribute(JunkFilter *junkfilter, TupleTableSlot *slot,
-							 Datum *tts_rowacl, Datum *tts_seclabel)
+							 Datum *tts_seclabel, Datum *tts_rowacl)
 {
 	AttrNumber	attno;
 	Datum		datum;
 	bool		isnull;
-
-	/* for Row-level ACLs */
-	attno = ExecFindJunkAttribute(junkfilter, SecurityAclAttributeName);
-	if (attno != InvalidAttrNumber)
-	{
-		datum = ExecGetJunkAttribute(slot, attno, &isnull);
-		if (isnull)
-			ereport(ERROR,
-					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-					 errmsg("Unable to set NULL on \"%s\"",
-							SecurityAclAttributeName)));
-		*tts_rowacl = datum;
-	}
 
 	/* for Security Label */
 	attno = ExecFindJunkAttribute(junkfilter, SecurityLabelAttributeName);
@@ -1530,6 +1517,19 @@ fetchWritableSystemAttribute(JunkFilter *junkfilter, TupleTableSlot *slot,
 							SecurityLabelAttributeName)));
 		*tts_seclabel = datum;
 	}
+
+	/* for Row-level ACLs */
+	attno = ExecFindJunkAttribute(junkfilter, SecurityAclAttributeName);
+	if (attno != InvalidAttrNumber)
+	{
+		datum = ExecGetJunkAttribute(slot, attno, &isnull);
+		if (isnull)
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("Unable to set NULL on \"%s\"",
+							SecurityAclAttributeName)));
+		*tts_rowacl = datum;
+	}
 }
 
 static void
@@ -1537,22 +1537,6 @@ storeWritableSystemAttribute(Relation rel, TupleTableSlot *slot, HeapTuple tuple
 {
 	Oid		relid = RelationGetRelid(rel);
 	Oid		secid;
-
-	/* "security_acl" */
-	if (DatumGetPointer(slot->tts_rowacl) != NULL)
-	{
-		Acl *acl = DatumGetAclP(slot->tts_rowacl);
-
-		if (!HeapTupleHasRowAcl(tuple))
-			ereport(ERROR,
-					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-					 errmsg("Unable to assign Row-level ACLs on \"%s\"",
-							RelationGetRelationName(rel))));
-		secid = securityTransRowAclIn(relid, acl);
-		HeapTupleSetRowAcl(tuple, secid);
-	}
-	else if (HeapTupleHasRowAcl(tuple))
-		HeapTupleSetRowAcl(tuple, InvalidOid);
 
 	/* "security_label" */
 	if (DatumGetPointer(slot->tts_seclabel) != NULL)
@@ -1569,6 +1553,22 @@ storeWritableSystemAttribute(Relation rel, TupleTableSlot *slot, HeapTuple tuple
 	}
 	else if (HeapTupleHasSecLabel(tuple))
 		HeapTupleSetSecLabel(tuple, InvalidOid);
+
+	/* "security_acl" */
+	if (DatumGetPointer(slot->tts_rowacl) != NULL)
+	{
+		Acl *acl = DatumGetAclP(slot->tts_rowacl);
+
+		if (!HeapTupleHasRowAcl(tuple))
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("Unable to assign Row-level ACLs on \"%s\"",
+							RelationGetRelationName(rel))));
+		secid = securityTransRowAclIn(relid, acl);
+		HeapTupleSetRowAcl(tuple, secid);
+	}
+	else if (HeapTupleHasRowAcl(tuple))
+		HeapTupleSetRowAcl(tuple, InvalidOid);
 }
 
 /* ----------------------------------------------------------------
@@ -1632,8 +1632,8 @@ ExecutePlan(EState *estate,
 	 */
 	for (;;)
 	{
-		Datum	tts_rowacl = PointerGetDatum(NULL);
 		Datum	tts_seclabel = PointerGetDatum(NULL);
+		Datum	tts_rowacl = PointerGetDatum(NULL);
 
 		/* Reset the per-output-tuple exprcontext */
 		ResetPerTupleExprContext(estate);
@@ -1782,7 +1782,7 @@ lnext:	;
 			 * extract writable system attribute
 			 */
 			fetchWritableSystemAttribute(junkfilter, slot,
-										 &tts_rowacl, &tts_seclabel);
+										 &tts_seclabel, &tts_rowacl);
 
 			/*
 			 * extract the 'ctid' junk attribute.
@@ -1811,8 +1811,8 @@ lnext:	;
 			if (operation != CMD_DELETE)
 				slot = ExecFilterJunk(junkfilter, slot);
 		}
-		slot->tts_rowacl = tts_rowacl;
 		slot->tts_seclabel = tts_seclabel;
+		slot->tts_rowacl = tts_rowacl;
 
 		/*
 		 * now that we have a tuple, do the appropriate thing with it.. either

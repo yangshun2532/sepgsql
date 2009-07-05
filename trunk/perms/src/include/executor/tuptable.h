@@ -127,8 +127,8 @@ typedef struct TupleTableSlot
 	MinimalTuple tts_mintuple;	/* minimal tuple, or NULL if none */
 	HeapTupleData tts_minhdr;	/* workspace for minimal-tuple-only case */
 	long		tts_off;		/* saved state for slot_deform_tuple */
-	Datum		tts_rowacl;		/* temp storage for the given security_acl */
 	Datum		tts_seclabel;	/* temp storage for the given security_label */
+	Datum		tts_rowacl;		/* temp storage for the given security_acl */
 } TupleTableSlot;
 
 #define TTS_HAS_PHYSICAL_TUPLE(slot)  \

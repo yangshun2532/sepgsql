@@ -75,8 +75,8 @@ typedef struct tupleDesc
 	Oid			tdtypeid;		/* composite type ID for tuple type */
 	int32		tdtypmod;		/* typmod for tuple type */
 	bool		tdhasoid;		/* tuple has oid attribute in its header */
-	bool		tdhasrowacl;	/* tuple has Row-level ACLs in its header */
 	bool		tdhasseclabel;	/* tuple has security label in its header */
+	bool		tdhasrowacl;	/* tuple has Row-level ACLs in its header */
 	int			tdrefcount;		/* reference count, or -1 if not counting */
 }	*TupleDesc;
 

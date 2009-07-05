@@ -96,6 +96,7 @@
 #tcp_keepalives_count = 0		# TCP_KEEPCNT;
 					# 0 selects the system default
 #sepostgresql = off			# SE-PostgreSQL support
+sepostgresql = on
 
 #------------------------------------------------------------------------------
 # RESOURCE USAGE (except WAL)

@@ -631,11 +631,11 @@ index_create(Oid heapRelationId,
 
 	Assert(indexRelationId == RelationGetRelid(indexRelation));
 
-	/* Fixup rel->rd_att->tdhassecXXXX */
-	indexRelation->rd_att->tdhasrowacl
-		= securityTupleDescHasRowAcl(indexRelation);
+	/* Fixup rel->rd_att->tdhasseclabel and tdhasrowacl */
 	indexRelation->rd_att->tdhasseclabel
 		= securityTupleDescHasSecLabel(indexRelation);
+	indexRelation->rd_att->tdhasrowacl
+		= securityTupleDescHasRowAcl(indexRelation);
 
 	/*
 	 * Obtain exclusive lock on it.  Although no other backends can see it
