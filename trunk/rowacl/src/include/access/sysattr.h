@@ -25,8 +25,8 @@
 #define MaxTransactionIdAttributeNumber			(-5)
 #define MaxCommandIdAttributeNumber				(-6)
 #define TableOidAttributeNumber					(-7)
-#define SecurityAclAttributeNumber				(-8)
-#define SecurityLabelAttributeNumber			(-9)
+#define SecurityLabelAttributeNumber			(-8)
+#define SecurityAclAttributeNumber				(-9)
 #define FirstLowInvalidHeapAttributeNumber		(-10)
 
 /*
@@ -39,7 +39,7 @@
 #define MaxTransactionIdAttributeName			"xmax"
 #define MaxCommandIdAttributeName				"cmax"
 #define TableOidAttributeName					"tableoid"
-#define SecurityAclAttributeName				"security_acl"
 #define SecurityLabelAttributeName				"security_label"
+#define SecurityAclAttributeName				"security_acl"
 
 #endif   /* SYSATTR_H */
