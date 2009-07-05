@@ -22,9 +22,6 @@ rowaclExecScan(Relation rel, HeapTuple tuple, uint32 required, bool abort);
 extern uint32
 rowaclSetupTuplePerms(RangeTblEntry *rte);
 
-extern void
-rowaclReloptDefaultRowAcl(char *value);
-
 extern bool
 rowaclTupleDescHasRowAcl(Relation rel);
 

@@ -166,13 +166,13 @@ typedef struct CopyStateData
 	int			raw_buf_index;	/* next byte to process */
 	int			raw_buf_len;	/* total # of bytes stored */
 
-	/* dump/restore support for security_acl */
-	FmgrInfo	rowacl_out_function;
-	bool		rowacl_force_quot;
-
 	/* dump/restore support for security_label */
 	FmgrInfo	seclabel_out_function;
 	bool		seclabel_force_quot;
+
+	/* dump/restore support for security_acl */
+	FmgrInfo	rowacl_out_function;
+	bool		rowacl_force_quot;
 } CopyStateData;
 
 typedef CopyStateData *CopyState;
@@ -256,7 +256,7 @@ static const char BinarySignature[11] = "PGCOPY\n\377\r\n\0";
 /* non-export function prototypes */
 static void DoCopyTo(CopyState cstate);
 static void CopyTo(CopyState cstate);
-static void CopyOneRowTo(CopyState cstate, Oid tupleOid, Oid rowAclId, Oid secLabelId,
+static void CopyOneRowTo(CopyState cstate, Oid tupleOid, Oid secLabelId, Oid rowAclId,
 			 Datum *values, bool *nulls);
 static void CopyFrom(CopyState cstate);
 static bool CopyReadLine(CopyState cstate);
@@ -1138,11 +1138,11 @@ DoCopy(const CopyStmt *stmt, const char *queryString)
 
 			switch (attnum)
 			{
-			case SecurityAclAttributeNumber:
-				cstate->rowacl_force_quot = true;
-				break;
 			case SecurityLabelAttributeNumber:
 				cstate->seclabel_force_quot = true;
+				break;
+			case SecurityAclAttributeNumber:
+				cstate->rowacl_force_quot = true;
 				break;
 			default:
 				cstate->force_quote_flags[attnum - 1] = true;
@@ -1378,14 +1378,14 @@ CopyTo(CopyState cstate)
 
 		switch (attnum)
 		{
-		case SecurityAclAttributeNumber:
-			attForm = SystemAttributeDefinition(attnum, true);
-			out_fmgr = &cstate->rowacl_out_function;
-			break;
-
 		case SecurityLabelAttributeNumber:
 			attForm = SystemAttributeDefinition(attnum, true);
 			out_fmgr = &cstate->seclabel_out_function;
+			break;
+
+		case SecurityAclAttributeNumber:
+			attForm = SystemAttributeDefinition(attnum, true);
+			out_fmgr = &cstate->rowacl_out_function;
 			break;
 
 		default:
@@ -1500,8 +1500,8 @@ CopyTo(CopyState cstate)
 			/* Format and send the data */
 			CopyOneRowTo(cstate,
 						 HeapTupleGetOid(tuple),
-						 HeapTupleGetRowAcl(tuple),
 						 HeapTupleGetSecLabel(tuple),
+						 HeapTupleGetRowAcl(tuple),
 						 values, nulls);
 		}
 
@@ -1528,7 +1528,7 @@ CopyTo(CopyState cstate)
  * Emit one row during CopyTo().
  */
 static void
-CopyOneRowTo(CopyState cstate, Oid tupleOid, Oid rowAclId, Oid secLabelId,
+CopyOneRowTo(CopyState cstate, Oid tupleOid, Oid secLabelId, Oid rowAclId,
 			 Datum *values, bool *nulls)
 {
 	bool		need_delim = false;
@@ -1583,6 +1583,14 @@ CopyOneRowTo(CopyState cstate, Oid tupleOid, Oid rowAclId, Oid secLabelId,
 
 		switch (attnum)
 		{
+		case SecurityLabelAttributeNumber:
+			relid = RelationGetRelid(cstate->rel);
+			value = CStringGetTextDatum(securityTransSecLabelOut(relid, secLabelId));
+			isnull = false;
+			force_quot = cstate->seclabel_force_quot;
+			out_fmgr = &cstate->seclabel_out_function;
+			break;
+
 		case SecurityAclAttributeNumber:
 			relid = RelationGetRelid(cstate->rel);
 			value = PointerGetDatum(securityTransRowAclOut(relid, rowAclId,
@@ -1590,14 +1598,6 @@ CopyOneRowTo(CopyState cstate, Oid tupleOid, Oid rowAclId, Oid secLabelId,
 			isnull = false;
 			force_quot = cstate->rowacl_force_quot;
 			out_fmgr = &cstate->rowacl_out_function;
-			break;
-
-		case SecurityLabelAttributeNumber:
-			relid = RelationGetRelid(cstate->rel);
-			value = CStringGetTextDatum(securityTransSecLabelOut(relid, secLabelId));
-			isnull = false;
-			force_quot = cstate->seclabel_force_quot;
-			out_fmgr = &cstate->seclabel_out_function;
 			break;
 
 		default:
@@ -1764,12 +1764,12 @@ CopyFrom(CopyState cstate)
 				num_defaults;
 	FmgrInfo   *in_functions;
 	FmgrInfo	oid_in_function;
-	FmgrInfo	rowacl_in_function;
 	FmgrInfo	seclabel_in_function;
+	FmgrInfo	rowacl_in_function;
 	Oid		   *typioparams;
 	Oid			oid_typioparam;
-	Oid			rowacl_typioparam;
 	Oid			seclabel_typioparam;
+	Oid			rowacl_typioparam;
 	int			attnum;
 	int			i;
 	Oid			in_func_oid;
@@ -2008,18 +2008,6 @@ CopyFrom(CopyState cstate)
 	}
 
 	if (list_member_int(cstate->attnumlist,
-						SecurityAclAttributeNumber))
-	{
-		if (!cstate->binary)
-			getTypeInputInfo(ACLITEMARRAYOID,
-							 &in_func_oid, &rowacl_typioparam);
-		else
-			getTypeBinaryInputInfo(ACLITEMARRAYOID,
-								   &in_func_oid, &rowacl_typioparam);
-		fmgr_info(in_func_oid, &rowacl_in_function);
-	}
-
-	if (list_member_int(cstate->attnumlist,
 						SecurityLabelAttributeNumber))
 	{
 		if (!cstate->binary)
@@ -2029,6 +2017,18 @@ CopyFrom(CopyState cstate)
 	        getTypeBinaryInputInfo(TEXTOID,
 								   &in_func_oid, &seclabel_typioparam);
 		fmgr_info(in_func_oid, &seclabel_in_function);
+	}
+
+	if (list_member_int(cstate->attnumlist,
+						SecurityAclAttributeNumber))
+	{
+		if (!cstate->binary)
+			getTypeInputInfo(ACLITEMARRAYOID,
+							 &in_func_oid, &rowacl_typioparam);
+		else
+			getTypeBinaryInputInfo(ACLITEMARRAYOID,
+								   &in_func_oid, &rowacl_typioparam);
+		fmgr_info(in_func_oid, &rowacl_in_function);
 	}
 
 	values = (Datum *) palloc(num_phys_attrs * sizeof(Datum));
@@ -2065,8 +2065,8 @@ CopyFrom(CopyState cstate)
 	{
 		bool		skip_tuple;
 		Oid			loaded_oid = InvalidOid;
-		Oid			loaded_rowacl = InvalidOid;
 		Oid			loaded_seclabel = InvalidOid;
+		Oid			loaded_rowacl = InvalidOid;
 
 		CHECK_FOR_INTERRUPTS();
 
@@ -2166,19 +2166,7 @@ CopyFrom(CopyState cstate)
 				cstate->cur_attval = string;
 
 				switch (attnum)
-                {
-				case SecurityAclAttributeNumber:
-					if (!string)
-						break;
-					dat = InputFunctionCall(&rowacl_in_function,
-											string,
-											rowacl_typioparam,
-											attForm->atttypmod);
-					loaded_rowacl
-						= securityTransRowAclIn(RelationGetRelid(cstate->rel),
-												DatumGetAclP(dat));
-					break;
-
+				{
 				case SecurityLabelAttributeNumber:
 					if (!string)
 						break;
@@ -2190,6 +2178,18 @@ CopyFrom(CopyState cstate)
 					loaded_seclabel
 						= securityTransSecLabelIn(RelationGetRelid(cstate->rel),
 												  TextDatumGetCString(dat));
+					break;
+
+				case SecurityAclAttributeNumber:
+					if (!string)
+						break;
+					dat = InputFunctionCall(&rowacl_in_function,
+											string,
+											rowacl_typioparam,
+											attForm->atttypmod);
+					loaded_rowacl
+						= securityTransRowAclIn(RelationGetRelid(cstate->rel),
+												DatumGetAclP(dat));
 					break;
 
 				default:
@@ -2268,18 +2268,6 @@ CopyFrom(CopyState cstate)
 
 				switch (attnum)
 				{
-				case SecurityAclAttributeNumber:
-					dat = CopyReadBinaryAttribute(cstate, i,
-												  &rowacl_in_function,
-												  rowacl_typioparam,
-												  attForm->atttypmod,
-												  &isnull);
-					if (!isnull)
-						loaded_rowacl
-							= securityTransRowAclIn(RelationGetRelid(cstate->rel),
-													DatumGetAclP(dat));
-					break;
-
 				case SecurityLabelAttributeNumber:
 					dat = CopyReadBinaryAttribute(cstate, i,
 												  &seclabel_in_function,
@@ -2290,6 +2278,18 @@ CopyFrom(CopyState cstate)
 						loaded_seclabel
 							= securityTransSecLabelIn(RelationGetRelid(cstate->rel),
 													  TextDatumGetCString(dat));
+					break;
+
+				case SecurityAclAttributeNumber:
+					dat = CopyReadBinaryAttribute(cstate, i,
+												  &rowacl_in_function,
+												  rowacl_typioparam,
+												  attForm->atttypmod,
+												  &isnull);
+					if (!isnull)
+						loaded_rowacl
+							= securityTransRowAclIn(RelationGetRelid(cstate->rel),
+													DatumGetAclP(dat));
 					break;
 
 				default:
@@ -2320,10 +2320,10 @@ CopyFrom(CopyState cstate)
 
 		if (cstate->oids && file_has_oids)
 			HeapTupleSetOid(tuple, loaded_oid);
-		if (HeapTupleHasRowAcl(tuple))
-			HeapTupleSetRowAcl(tuple, loaded_rowacl);
 		if (HeapTupleHasSecLabel(tuple))
 			HeapTupleSetSecLabel(tuple, loaded_seclabel);
+		if (HeapTupleHasRowAcl(tuple))
+			HeapTupleSetRowAcl(tuple, loaded_rowacl);
 
 		/* Triggers and stuff need to be invoked in query context. */
 		MemoryContextSwitchTo(oldcontext);
