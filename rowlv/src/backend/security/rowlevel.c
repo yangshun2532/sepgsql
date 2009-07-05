@@ -9,7 +9,6 @@
 
 #include "catalog/pg_security.h"
 #include "security/rowlevel.h"
-#include "security/rowacl.h"
 #include "security/sepgsql.h"
 #include "storage/bufmgr.h"
 #include "storage/bufpage.h"
@@ -55,9 +54,7 @@ rowlvSetupPermissions(RangeTblEntry *rte)
 {
 	uint32		dac_perms, mac_perms;
 
-	dac_perms = rowaclSetupTuplePerms(rte);
-	Assert((dac_perms & ROWLV_PERMS_MASK) == dac_perms);
-
+	dac_perms = 0;	/* upcoming Row-level ACLs */
 	mac_perms = sepgsqlSetupTuplePerms(rte);
 	Assert((mac_perms & ROWLV_PERMS_MASK) == mac_perms);
 
@@ -75,10 +72,6 @@ rowlvExecScan(Scan *scan, Relation rel, TupleTableSlot *slot, bool abort)
 	uint32		perms = scan->rowlvPerms;
 
 	tuple = ExecMaterializeSlot(slot);
-
-	if (ROWLV_DAC_PERMS(perms) != 0 &&
-		!rowaclExecScan(rel, tuple, ROWLV_DAC_PERMS(perms), abort))
-		return false;
 
 	if (ROWLV_MAC_PERMS(perms) != 0 &&
 		!sepgsqlExecScan(rel, tuple, ROWLV_MAC_PERMS(perms), abort))
@@ -112,8 +105,6 @@ rowlvExecScanAbort(Scan *scan, Relation rel, TupleTableSlot *slot)
 bool
 rowlvCopyToTuple(Relation rel, HeapTuple tuple)
 {
-	if (!rowaclExecScan(rel, tuple, ACL_SELECT, false))
-		return false;
 	if (!sepgsqlExecScan(rel, tuple, SEPG_DB_TUPLE__SELECT, false))
 		return false;
 
@@ -128,12 +119,6 @@ rowlvCopyToTuple(Relation rel, HeapTuple tuple)
 bool
 rowlvHeapTupleInsert(Relation rel, HeapTuple newtup, bool internal)
 {
-	if (!rowaclHeapTupleInsert(rel, newtup, internal))
-	{
-		Assert(!internal);
-		return false;
-	}
-
 	if (!sepgsqlHeapTupleInsert(rel, newtup, internal))
 	{
 		Assert(!internal);
@@ -158,12 +143,6 @@ rowlvHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple newtup, bool inte
 	if (!heap_fetch(rel, SnapshotAny, &oldtup, &oldbuf, false, NULL))
 		elog(ERROR, "failed to fetch a tuple for row-level access controls");
 
-	if (!rowaclHeapTupleUpdate(rel, &oldtup, newtup, internal))
-	{
-		ReleaseBuffer(oldbuf);
-		return false;
-	}
-
 	if (!sepgsqlHeapTupleUpdate(rel, &oldtup, newtup, internal))
 	{
 		ReleaseBuffer(oldbuf);
@@ -187,12 +166,6 @@ rowlvHeapTupleDelete(Relation rel, ItemPointer otid, bool internal)
 	ItemPointerCopy(otid, &oldtup.t_self);
 	if (!heap_fetch(rel, SnapshotAny, &oldtup, &oldbuf, false, NULL))
 		elog(ERROR, "failed to fetch a tuple for row-level access controls");
-
-	if (!rowaclHeapTupleDelete(rel, &oldtup, internal))
-	{
-		ReleaseBuffer(oldbuf);
-		return false;
-	}
 
 	if (!sepgsqlHeapTupleDelete(rel, &oldtup, internal))
 	{
