@@ -291,29 +291,6 @@ rowaclTupleDescHasRowAcl(Relation rel)
 	return RelationGetRowLevelAcl(rel);
 }
 
-/*
- * rowaclInterpretRowAclOption()
- *   returns availability of Row-level ACLs in newly generated
- *   relation via SELECT INTO statement. Because its Relation
- *   structure is not available when we need to make a decision
- *   whether TupleDesc->tdhasrowacl is true, or false.
- */
-bool
-rowaclInterpretRowAclOption(List *relopts)
-{
-	ListCell   *l;
-
-	foreach (l, relopts)
-	{
-		DefElem	   *def = (DefElem *) lfirst(l);
-
-		if (pg_strcasecmp(def->defname, "row_level_acl") == 0)
-			return defGetBoolean(def);
-	}
-
-	return false;
-}
-
 /******************************************************************
  * Hooks for heap_(insert|update|delete)
  ******************************************************************/
@@ -334,34 +311,6 @@ rowaclHeapTupleInsert(Relation rel, HeapTuple newtup, bool internal)
 			ereport(ERROR,
 					(errcode(ERRCODE_ROWACL_ERROR),
 					 errmsg("Only owner or superuser can set ACLs")));
-	}
-	else
-	{
-		char   *defacl = RelationGetDefaultRowAcl(rel);
-
-		if (defacl)
-		{
-			FmgrInfo	finfo;
-			Datum		aclDat;
-			Oid			secid;
-			Oid			relid = RelationGetRelid(rel);
-			Oid			ownid = RelationGetForm(rel)->relowner;
-
-			defacl = extractDefaultRowAcl(defacl, ownid);
-			fmgr_info(F_ARRAY_IN, &finfo);
-			aclDat = FunctionCall3(&finfo,
-								   CStringGetDatum(defacl),
-								   ObjectIdGetDatum(ACLITEMOID),
-								   Int32GetDatum(-1));
-			secid = securityTransRowAclIn(relid, DatumGetAclP(aclDat));
-			HeapTupleSetRowAcl(newtup, secid);
-		}
-		/*
-		 * When no default ACLs are not configured but row_level_acl
-		 * on the relation is activated, we keep it as InvalidOid.
-		 * If no ACLs are set, it is dealt as default one which allows
-		 * public to do anything.
-		 */
 	}
 
 	return true;

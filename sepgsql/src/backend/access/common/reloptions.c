@@ -22,7 +22,6 @@
 #include "catalog/pg_type.h"
 #include "commands/defrem.h"
 #include "nodes/makefuncs.h"
-#include "security/rowacl.h"
 #include "utils/array.h"
 #include "utils/builtins.h"
 #include "utils/guc.h"
@@ -194,14 +193,6 @@ static relopt_real realRelOpts[] =
 
 static relopt_string stringRelOpts[] =
 {
-	{
-		{
-			"default_row_acl",
-			"Default Raw-level ACLs in this relation",
-			RELOPT_KIND_HEAP
-		},
-		0, true, rowaclReloptDefaultRowAcl, ""
-	},
 	/* list terminator */
 	{{NULL}}
 };
@@ -1091,6 +1082,7 @@ default_reloptions(Datum reloptions, bool validate, relopt_kind kind)
 	int			numoptions;
 	static const relopt_parse_elt tab[] = {
 		{"fillfactor", RELOPT_TYPE_INT, offsetof(StdRdOptions, fillfactor)},
+		{"row_level_acl", RELOPT_TYPE_BOOL, offsetof(StdRdOptions, row_level_acl)},
 		{"autovacuum_enabled", RELOPT_TYPE_BOOL,
 		offsetof(StdRdOptions, autovacuum) +offsetof(AutoVacOpts, enabled)},
 		{"autovacuum_vacuum_threshold", RELOPT_TYPE_INT,
@@ -1110,9 +1102,7 @@ default_reloptions(Datum reloptions, bool validate, relopt_kind kind)
 		{"autovacuum_vacuum_scale_factor", RELOPT_TYPE_REAL,
 		offsetof(StdRdOptions, autovacuum) +offsetof(AutoVacOpts, vacuum_scale_factor)},
 		{"autovacuum_analyze_scale_factor", RELOPT_TYPE_REAL,
-		offsetof(StdRdOptions, autovacuum) +offsetof(AutoVacOpts, analyze_scale_factor)},
-		{"row_level_acl", RELOPT_TYPE_BOOL, offsetof(StdRdOptions, row_level_acl)},
-		{"default_row_acl", RELOPT_TYPE_STRING, offsetof(StdRdOptions, default_row_acl)},
+		offsetof(StdRdOptions, autovacuum) +offsetof(AutoVacOpts, analyze_scale_factor)}
 	};
 
 	options = parseRelOptions(reloptions, validate, kind, &numoptions);

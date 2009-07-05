@@ -187,6 +187,7 @@ typedef HeapTupleHeaderData *HeapTupleHeader;
  * information stored in t_infomask2:
  */
 #define HEAP_NATTS_MASK			0x07FF	/* 11 bits for number of attributes */
+/* bits 0x0800 are available */
 #define HEAP_HAS_ROWACL			0x1000	/* tuple has row-level ACLs */
 #define HEAP_HAS_SECLABEL		0x2000	/* tuple has security label */
 #define HEAP_HOT_UPDATED		0x4000	/* tuple was HOT-updated */
@@ -353,7 +354,7 @@ do { \
 	(tup)->t_infomask2 = ((tup)->t_infomask2 & ~HEAP_NATTS_MASK) | (natts) \
 )
 
-#define HeapTupleHeaderHasRowAcl(tup)         \
+#define HeapTupleHeaderHasRowAcl(tup)			\
 	((tup)->t_infomask2 & HEAP_HAS_ROWACL)
 
 #define HeapTupleHeaderHasSecLabel(tup)			\
@@ -587,9 +588,6 @@ typedef HeapTupleData *HeapTuple;
 
 #define HeapTupleClearHeapOnly(tuple) \
 		HeapTupleHeaderClearHeapOnly((tuple)->t_data)
-
-#define HeapTupleHasOid(tuple) \
-		HeapTupleHeaderHasOid((tuple)->t_data)
 
 #define HeapTupleGetOid(tuple) \
 		HeapTupleHeaderGetOid((tuple)->t_data)

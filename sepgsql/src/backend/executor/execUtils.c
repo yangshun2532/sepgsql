@@ -506,8 +506,8 @@ void
 ExecAssignResultTypeFromTL(PlanState *planstate)
 {
 	bool		hasoid;
-	bool		hassecacl;
 	bool		hasseclabel;
+	bool		hasrowacl;
 	TupleDesc	tupDesc;
 
 	if (ExecContextForcesOids(planstate, &hasoid))
@@ -520,10 +520,10 @@ ExecAssignResultTypeFromTL(PlanState *planstate)
 		hasoid = false;
 	}
 
-	if (!ExecContextForcesRowAcl(planstate, &hassecacl))
-		hassecacl = false;
 	if (!ExecContextForcesSecLabel(planstate, &hasseclabel))
 		hasseclabel = false;
+	if (!ExecContextForcesRowAcl(planstate, &hasrowacl))
+		hasrowacl = false;
 
 	/*
 	 * ExecTypeFromTL needs the parse-time representation of the tlist, not a
@@ -531,7 +531,7 @@ ExecAssignResultTypeFromTL(PlanState *planstate)
 	 * to set up planstate->targetlist ...
 	 */
 	tupDesc = ExecTypeFromTL(planstate->plan->targetlist,
-							 hasoid, hassecacl, hasseclabel);
+							 hasoid, hasseclabel, hasrowacl);
 	ExecAssignResultType(planstate, tupDesc);
 }
 
