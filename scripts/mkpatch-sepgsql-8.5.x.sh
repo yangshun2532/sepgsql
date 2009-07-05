@@ -34,10 +34,15 @@ echo "  working directory: ${WORKDIR}"
 echo "  repository: ${SEPGSQL_REPOSITORY}${SEPGSQL_BRANCH}"
 echo
 
-# -- make a SE-PostgreSQL patch
-svn export ${SEPGSQL_REPOSITORY}${SEPGSQL_BRANCH} altroot || exit 1
-cd altroot
+# -- exporting branches
+TREES="base sysatt core gram writable rowlv rowacl perms sepgsql package"
+for name in ${TREES}
+do
+  echo "Exporting ${SEPGSQL_BRANCH}/${name} ..."
+  svn export ${SEPGSQL_REPOSITORY}${SEPGSQL_BRANCH}/${name} || exit 1
+done
 
+# -- generating patches
 echo "GEN: sepgsql-05-docs-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch"
 diff -Nrpc base/doc gram/doc			\
     > ${RPMSOURCE}/sepgsql-05-docs-${BASE_MAJOR}-r${SEPGSQL_REVISION}.patch
@@ -76,7 +81,7 @@ diff -Nrpc rowlv rowacl		\
 
 # For third commit fest?
 echo "GEN: sepgsql-09-perms-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch"
-diff -Nrpc rowlv perms		\
+diff -Nrpc rowacl perms		\
     > ${RPMSOURCE}/sepgsql-09-perms-${BASE_MAJOR}-r${SEPGSQL_REVISION}.patch
 
 echo "GEN: sepgsql-10-extra-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch"
