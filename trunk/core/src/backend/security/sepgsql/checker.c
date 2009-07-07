@@ -85,52 +85,25 @@ checkTabelColumnPerms(Oid relid, Bitmapset *selected, Bitmapset *modified,
 	security_class_t	tclass;
 
 	/*
-	 * NOTE: HARDWIRED POLICY IN SE-POSTGRESQL
-	 * - User cannot access RELKIND_TOASTVALUE by hand, because
-	 *   it is used to store variable length data within other
-	 *   column and tuples, and it should be considered as a part
-	 *   of content within them.
-	 * - User cannot modify pg_rewrite.* by hand, because it holds
-	 *   a parsed Query tree which includes requiredPerms and
-	 *   RangeTblEntry with selectedCols/modifiedCols.
-	 *   The correctness of access controls depends on these data
-	 *   are protected from unexpected manipulation..
-	 *
-	 * - User cannot modify pg_security.* by hand, because it holds
-	 *   all the pairs of security identifier and label, so the
-	 *   correctness of access controls depends on these data are
-	 *   protected from unexpected manipulation.
-	 *
-	 * SE-PostgreSQL always prevent user's query tries to modify
-	 * these system catalogs by hand. Please use approariate
-	 * interfaces.
+	 * NOTE: SE-PostgreSQL enforces a few hardwired rules.
+	 * - User cannot modify system catalogs by hand.
+	 * - User cannot access toast values by hand.
 	 */
 	if (!sepgsqlGetExceptionMode())
 	{
-		switch (relid)
-		{
-		case RewriteRelationId:
-		case SecurityRelationId:
-		case SharedSecurityRelationId:
-			if ((required & (SEPG_DB_TABLE__UPDATE |
-							 SEPG_DB_TABLE__INSERT |
-							 SEPG_DB_TABLE__DELETE)) != 0)
-				ereport(ERROR,
-						(errcode(ERRCODE_SELINUX_ERROR),
-						 errmsg("SE-PostgreSQL prevent to modify \"%s\" "
-								"by hand due to the hardwired policy",
-								get_rel_name(relid))));
-			break;
-
-		default:
-			if (get_rel_relkind(relid) == RELKIND_TOASTVALUE)
-				ereport(ERROR,
-						(errcode(ERRCODE_SELINUX_ERROR),
-						 errmsg("SE-PostgreSQL prevent to accuees \"%s\" "
-								"by hand due to the hardwired policy",
-								get_rel_name(relid))));
-			break;
-		}
+		if (IsSystemNamespace(get_rel_namespace(relid)) &&
+			(required & (SEPG_DB_TABLE__UPDATE |
+						 SEPG_DB_TABLE__INSERT |
+						 SEPG_DB_TABLE__DELETE)) != 0)
+			ereport(ERROR,
+					(errcode(ERRCODE_SELINUX_ERROR),
+					 errmsg("SE-PostgreSQL prevents to modidy \"%s\"",
+							get_rel_name(relid))));
+		if (get_rel_relkind(relid) == RELKIND_TOASTVALUE)
+			ereport(ERROR,
+					(errcode(ERRCODE_SELINUX_ERROR),
+					 errmsg("SE-PostgreSQL prevents to access \"%s\"",
+							get_rel_name(relid))));
 	}
 
 	/*
@@ -321,159 +294,4 @@ sepgsqlCheckSelectInto(Oid relationId)
 
 	checkTabelColumnPerms(relationId, NULL, modified,
 						  SEPG_DB_TABLE__INSERT);
-}
-
-/*
- * fixupColumnAvPerms
- *   To change pg_attribute.attisdropped means dropping a column,
- *   although this operation done by update, so it need to change
- *   required permmision in this special case.
- */
-static access_vector_t
-fixupColumnAvPerms(HeapTuple oldtup, HeapTuple newtup)
-{
-	Form_pg_attribute	oldatt = (Form_pg_attribute) GETSTRUCT(oldtup);
-	Form_pg_attribute	newatt = (Form_pg_attribute) GETSTRUCT(newtup);
-
-	if (!oldatt->attisdropped && newatt->attisdropped)
-		return SEPG_DB_COLUMN__DROP;
-	if (oldatt->attisdropped && !newatt->attisdropped)
-		return SEPG_DB_COLUMN__CREATE;
-
-	return 0;
-}
-
-/*
- * checkTrustedAction
- *   It returns true, if we can ignore access controls for create/alter/drop
- *   on the given database objects.
- */
-static bool
-checkTrustedAction(Relation rel, bool internal)
-{
-	if (RelationGetRelid(rel) == DatabaseRelationId ||
-		RelationGetRelid(rel) == NamespaceRelationId ||
-		RelationGetRelid(rel) == RelationRelationId ||
-		RelationGetRelid(rel) == AttributeRelationId ||
-		RelationGetRelid(rel) == ProcedureRelationId)
-		return false;
-
-	return true;
-}
-
-/*
- * HeapTuple INSERT/UPDATE/DELETE
- */
-void
-sepgsqlHeapTupleInsert(Relation rel, HeapTuple newtup, bool internal)
-{
-	Oid					relid = RelationGetRelid(rel);
-	security_class_t	tclass;
-
-	if (!sepgsqlIsEnabled())
-		return;
-
-	/* set a default security context */
-	if (!OidIsValid(HeapTupleGetSecLabel(newtup)))
-	{
-		if (HeapTupleHasSecLabel(newtup))
-			sepgsqlSetDefaultSecLabel(rel, newtup);
-	}
-
-	if (checkTrustedAction(rel, internal))
-		return;
-
-	tclass = sepgsqlTupleObjectClass(relid, newtup);
-	if (tclass != SEPG_CLASS_DB_TUPLE)
-	{
-		sepgsqlClientHasPermsTup(relid, newtup, tclass,
-								 SEPG_DB_TUPLE__INSERT,
-								 true);
-	}
-}
-
-void
-sepgsqlHeapTupleUpdate(Relation rel, ItemPointer otid,
-					   HeapTuple newtup, bool internal)
-{
-	Oid					relid = RelationGetRelid(rel);
-	access_vector_t		required = SEPG_DB_TUPLE__UPDATE;
-	HeapTupleData		oldtup;
-	Buffer				oldbuf;
-	security_class_t	newclass;
-	security_class_t	oldclass;
-
-	if (!sepgsqlIsEnabled())
-		return;
-
-	ItemPointerCopy(otid, &oldtup.t_self);
-	if (!heap_fetch(rel, SnapshotAny, &oldtup, &oldbuf, false, NULL))
-		elog(ERROR, "SELinux: failed to fetch a tuple");
-
-	/* preserve security label, if unchanged */
-	if (!OidIsValid(HeapTupleGetSecLabel(newtup)))
-	{
-		if (HeapTupleHasSecLabel(newtup))
-			HeapTupleSetSecLabel(newtup, HeapTupleGetSecLabel(&oldtup));
-	}
-
-	if (checkTrustedAction(rel, internal))
-	{
-		ReleaseBuffer(oldbuf);
-		return;
-	}
-
-	if (relid == AttributeRelationId)
-		required |= fixupColumnAvPerms(&oldtup, newtup);
-
-	newclass = sepgsqlTupleObjectClass(relid, newtup);
-	oldclass = sepgsqlTupleObjectClass(relid, &oldtup);
-
-	/* relabeled? */
-	if (oldclass != newclass ||
-		HeapTupleGetSecLabel(&oldtup) != HeapTupleGetSecLabel(newtup))
-		required |= SEPG_DB_TUPLE__RELABELFROM;
-
-	if (oldclass != SEPG_CLASS_DB_TUPLE)
-	{
-		sepgsqlClientHasPermsTup(relid, &oldtup, oldclass,
-								 required, true);
-	}
-
-	if (oldclass != SEPG_CLASS_DB_TUPLE &&
-		(required & SEPG_DB_TUPLE__RELABELFROM) != 0)
-	{
-		sepgsqlClientHasPermsTup(relid, newtup, newclass,
-								 SEPG_DB_TUPLE__RELABELTO,
-								 true);
-	}
-	ReleaseBuffer(oldbuf);
-}
-
-void
-sepgsqlHeapTupleDelete(Relation rel, ItemPointer otid, bool internal)
-{
-	Oid					relid = RelationGetRelid(rel);
-	security_class_t	tclass;
-	HeapTupleData		oldtup;
-	Buffer				oldbuf;
-
-	if (!sepgsqlIsEnabled())
-		return;
-
-	if (checkTrustedAction(rel, internal))
-		return;
-
-	ItemPointerCopy(otid, &(oldtup.t_self));
-	if (!heap_fetch(rel, SnapshotAny, &oldtup, &oldbuf, false, NULL))
-		elog(ERROR, "SELinux: failed to fetch a tuple");
-
-	tclass = sepgsqlTupleObjectClass(relid, &oldtup);
-	if (tclass != SEPG_CLASS_DB_TUPLE)
-	{
-		sepgsqlClientHasPermsTup(relid, &oldtup, tclass,
-								 SEPG_DB_TUPLE__DELETE,
-								 true);
-	}
-	ReleaseBuffer(oldbuf);
 }

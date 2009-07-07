@@ -164,7 +164,7 @@ enum SepgsqlClasses
 #define SEPG_DB_BLOB__EXPORT				(1<<9)
 
 /*
- * avc.c : userspace access vector cache
+ * avc.c : userspace access vector caches
  */
 extern Size sepgsqlShmemSize(void);
 
@@ -206,7 +206,6 @@ extern security_context_t
 sepgsqlComputeCreate(security_context_t scontext,
 					 security_context_t tcontext,
 					 security_class_t tclass);
-
 /*
  * checker.c : check permission on given queries
  */
@@ -218,15 +217,6 @@ sepgsqlCheckCopyTable(Relation rel, List *attnumlist, bool is_from);
 
 extern void
 sepgsqlCheckSelectInto(Oid relaionId);
-
-extern void
-sepgsqlHeapTupleInsert(Relation rel, HeapTuple tuple, bool internal);
-
-extern void
-sepgsqlHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple tuple, bool internal);
-
-extern void
-sepgsqlHeapTupleDelete(Relation rel, ItemPointer otid, bool internal);
 
 /*
  * core.c : core facilities
@@ -247,42 +237,48 @@ extern void
 sepgsqlInitialize(void);
 
 /*
- * hooks.c : test certain permissions
+ * hooks.c : routines to check certain permissions
  */
-extern bool
-sepgsqlCheckDatabaseAccess(Oid database_oid);
+extern Oid	sepgsqlCheckDatabaseCreate(const char *datname, DefElem *new_label);
+extern void	sepgsqlCheckDatabaseDrop(Oid database_oid);
+extern void	sepgsqlCheckDatabaseSetattr(Oid database_oid);
+extern bool	sepgsqlCheckDatabaseAccess(Oid database_oid);
+extern bool	sepgsqlCheckDatabaseSuperuser(void);
 
-extern bool
-sepgsqlCheckDatabaseSuperuser(void);
+extern Oid	sepgsqlCheckSchemaCreate(const char *nspname, DefElem *new_label,
+									 bool temp_schame);
+extern void	sepgsqlCheckSchemaDrop(Oid namespace_oid);
+extern void	sepgsqlCheckSchemaSetattr(Oid namespace_oid);
+extern bool	sepgsqlCheckSchemaSearch(Oid nsid);
 
-extern bool
-sepgsqlCheckSchemaSearch(Oid nsid);
+extern List	*sepgsqlCopiedTableCreate(Oid table_oid);
+extern List *sepgsqlCheckTableCreate(CreateStmt *stmt);
+extern void	sepgsqlCheckTableDrop(Oid table_oid);
+extern void	sepgsqlCheckTableSetattr(Oid table_oid);
+extern void	sepgsqlCheckTableLock(Oid table_oid);
+extern void	sepgsqlCheckTableTruncate(Relation rel);
+extern void	sepgsqlCheckTableReference(Relation rel, int16 *attnums, int natts);
 
-extern void
-sepgsqlCheckTableLock(Oid table_oid);
+extern void	sepgsqlCheckSequenceGetValue(Oid seqid);
+extern void	sepgsqlCheckSequenceNextValue(Oid seqid);
+extern void	sepgsqlCheckSequenceSetValue(Oid seqid);
 
-extern void
-sepgsqlCheckTableTruncate(Relation rel);
+extern Oid	sepgsqlCheckColumnCreate(Oid relid, const char *attname, ColumnDef *cdef);
+extern void	sepgsqlCheckColumnDrop(Oid relid, AttrNumber attnum);
+extern void	sepgsqlCheckColumnSetattr(Oid relid, AttrNumber attnum);
 
-extern void
-sepgsqlCheckTableReference(Relation rel, int16 *attnums, int natts);
-
-extern void
-sepgsqlCheckSequenceGetValue(Oid seqid);
-
-extern void
-sepgsqlCheckSequenceNextValue(Oid seqid);
-
-extern void
-sepgsqlCheckSequenceSetValue(Oid seqid);
-
-extern bool
-sepgsqlCheckProcedureExecute(Oid proc_oid);
+extern Oid	sepgsqlCheckProcedureCreate(const char *proname,
+										const char *new_label,
+										HeapTuple oldtup);
+extern Oid	sepgsqlCheckProcedureCreate(const char *proname, Oid namespace_oid);
+extern void	sepgsqlCheckProcedureDrop(Oid proc_oid);
+extern void sepgsqlCheckProcedureSetattr(Oid proc_oid);
+extern bool sepgsqlCheckProcedureExecute(Oid proc_oid);
 
 extern void
 sepgsqlCheckProcedureEntrypoint(FmgrInfo *finfo, HeapTuple protup);
 
-// Hint for optimizer
+/* optimizar hints */
 extern bool
 sepgsqlAllowFunctionInlined(HeapTuple protup);
 

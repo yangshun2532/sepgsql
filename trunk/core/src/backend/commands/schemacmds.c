@@ -48,6 +48,7 @@ CreateSchemaCommand(CreateSchemaStmt *stmt, const char *queryString)
 	ListCell   *parsetree_item;
 	Oid			owner_uid;
 	Oid			saved_uid;
+	Oid			nspsecid;
 	bool		saved_secdefcxt;
 	AclResult	aclresult;
 
@@ -74,6 +75,9 @@ CreateSchemaCommand(CreateSchemaStmt *stmt, const char *queryString)
 					   get_database_name(MyDatabaseId));
 
 	check_is_member_of_role(saved_uid, owner_uid);
+
+	/* SELinux checks db_schema:{create} */
+	nspsecid = sepgsqlCheckSchemaCreate(NULL);
 
 	/* Additional check to protect reserved schema names */
 	if (!allowSystemTableMods && IsReservedName(schemaName))
@@ -286,6 +290,9 @@ RenameSchema(const char *oldname, const char *newname)
 		aclcheck_error(aclresult, ACL_KIND_DATABASE,
 					   get_database_name(MyDatabaseId));
 
+	/* SELinux checks db_schema:{setattr} */
+	sepgsqlCheckSchemaSetattr(HeapTupleGetOid(tup));
+
 	if (!allowSystemTableMods && IsReservedName(newname))
 		ereport(ERROR,
 				(errcode(ERRCODE_RESERVED_NAME),
@@ -396,6 +403,9 @@ AlterSchemaOwner_internal(HeapTuple tup, Relation rel, Oid newOwnerId)
 		if (aclresult != ACLCHECK_OK)
 			aclcheck_error(aclresult, ACL_KIND_DATABASE,
 						   get_database_name(MyDatabaseId));
+
+		/* SELinux checks db_schema:{setattr} */
+		sepgsqlCheckSchemaSetattr(HeapTupleGetOid(tup));
 
 		memset(repl_null, false, sizeof(repl_null));
 		memset(repl_repl, false, sizeof(repl_repl));

@@ -36,6 +36,7 @@
 #include "commands/trigger.h"
 #include "commands/vacuum.h"
 #include "miscadmin.h"
+#include "security/sepgsql.h"
 #include "storage/bufmgr.h"
 #include "storage/procarray.h"
 #include "utils/acl.h"
@@ -712,7 +713,8 @@ make_new_heap(Oid OIDOldHeap, const char *NewName, Oid NewTableSpace)
 										  0,
 										  ONCOMMIT_NOOP,
 										  reloptions,
-										  allowSystemTableMods);
+										  allowSystemTableMods,
+										  sepgsqlCopiedTableCreate(OldHeap));
 
 	ReleaseSysCache(tuple);
 

@@ -1362,7 +1362,8 @@ bool ExecContextForcesSecLabel(PlanState *planstate, bool *hassecurity)
 {
 	if (planstate->state->es_select_into)
 	{
-		*hassecurity = securityTupleDescHasSecLabel(NULL);
+		*hassecurity = securityTupleDescHasSecLabel(InvalidOid,
+													RELKIND_RELATION);
 		return true;
 	}
 	else
@@ -1371,7 +1372,11 @@ bool ExecContextForcesSecLabel(PlanState *planstate, bool *hassecurity)
 
 		if (ri && ri->ri_RelationDesc)
 		{
-			*hassecurity = securityTupleDescHasSecLabel(ri->ri_RelationDesc);
+			Oid		relid = RelationGetRelid(ri->ri_RelationDesc);
+			char	relkind = RelationGetForm(ri->ri_RelationDesc)->relkind;
+
+			*hassecurity = securityTupleDescHasSecLabel(relid, relkind);
+
 			return true;
 		}
 	}
@@ -2884,6 +2889,7 @@ OpenIntoRel(QueryDesc *queryDesc)
 	Oid			namespaceId;
 	Oid			tablespaceId;
 	Datum		reloptions;
+	List	   *secLabels;
 	AclResult	aclresult;
 	Oid			intoRelationId;
 	TupleDesc	tupdesc;
@@ -2944,6 +2950,9 @@ OpenIntoRel(QueryDesc *queryDesc)
 						   get_tablespace_name(tablespaceId));
 	}
 
+	/* SELinux checks db_table:{create} and db_column:{create} */
+    secLabels = sepgsqlCheckTableCreate(NULL, RELKIND_RELATION, namespaceId);
+
 	/* Parse and validate any reloptions */
 	reloptions = transformRelOptions((Datum) 0,
 									 into->options,
@@ -2970,7 +2979,8 @@ OpenIntoRel(QueryDesc *queryDesc)
 											  0,
 											  into->onCommit,
 											  reloptions,
-											  allowSystemTableMods);
+											  allowSystemTableMods,
+											  secLabels);
 
 	FreeTupleDesc(tupdesc);
 
