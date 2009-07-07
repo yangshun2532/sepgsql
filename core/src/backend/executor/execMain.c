@@ -2950,9 +2950,6 @@ OpenIntoRel(QueryDesc *queryDesc)
 						   get_tablespace_name(tablespaceId));
 	}
 
-	/* SELinux checks db_table:{create} and db_column:{create} */
-    secLabels = sepgsqlCheckTableCreate(NULL, RELKIND_RELATION, namespaceId);
-
 	/* Parse and validate any reloptions */
 	reloptions = transformRelOptions((Datum) 0,
 									 into->options,
@@ -2964,6 +2961,9 @@ OpenIntoRel(QueryDesc *queryDesc)
 
 	/* Copy the tupdesc because heap_create_with_catalog modifies it */
 	tupdesc = CreateTupleDescCopy(queryDesc->tupDesc);
+
+	/* SELinux checks db_table:{create} and db_column:{create} */
+	secLabels = sepgsqlCheckTableCreate(NULL, namespaceId, RELKIND_RELATION);
 
 	/* Now we can actually create the new relation */
 	intoRelationId = heap_create_with_catalog(intoName,

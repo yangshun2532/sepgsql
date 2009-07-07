@@ -25,7 +25,7 @@
 bool
 securityTupleDescHasSecLabel(Oid relid, char relkind)
 {
-	return sepgsqlTupleDescHasSecLabel(rel);
+	return sepgsqlTupleDescHasSecLabel(relid, relkind);
 }
 
 /*

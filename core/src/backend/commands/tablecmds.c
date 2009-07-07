@@ -420,9 +420,6 @@ DefineRelation(CreateStmt *stmt, char relkind)
 						   get_tablespace_name(tablespaceId));
 	}
 
-	/* SELinux checks db_table:{create} and db_column:{create} */
-	secLabels = sepgsqlCheckTableCreate(stmt, relkind, namespaceId);
-
 	/*
 	 * Parse and validate reloptions, if any.
 	 */
@@ -498,6 +495,9 @@ DefineRelation(CreateStmt *stmt, char relkind)
 			descriptor->attrs[attnum - 1]->atthasdef = true;
 		}
 	}
+
+	/* SELinux computes a security label for the new table */
+	secLabels = sepgsqlCreateTableSecLabels(stmt, namespaceId, relkind);
 
 	/*
 	 * Create the relation.  Inherited defaults and constraints are passed in
@@ -2369,7 +2369,7 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 	{
 		case AT_AddColumn:		/* ADD COLUMN */
 			ATSimplePermissions(rel, false);
-			sepgsqlCheckColumnCreate(rel, cmd->name, cmd->def);
+			sepgsqlCheckColumnCreateAT(rel, cmd->name, cmd->def);
 			/* Performs own recursion */
 			ATPrepAddColumn(wqueue, rel, recurse, cmd);
 			pass = AT_PASS_ADD_COL;
@@ -2377,7 +2377,7 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 		case AT_AddColumnToView:		/* add column via CREATE OR REPLACE
 										 * VIEW */
 			ATSimplePermissions(rel, true);
-			sepgsqlCheckColumnCreate(rel, cmd->name, cmd->def);
+			sepgsqlCheckColumnCreateAT(rel, cmd->name, cmd->def);
 			/* Performs own recursion */
 			ATPrepAddColumn(wqueue, rel, recurse, cmd);
 			pass = AT_PASS_ADD_COL;
@@ -3828,7 +3828,7 @@ ATPrepAddOids(List **wqueue, Relation rel, bool recurse, AlterTableCmd *cmd)
 		cdef->is_not_null = true;
 		cmd->def = (Node *) cdef;
 	}
-	sepgsqlCheckColumnCreate(rel, cmd->name, cmd->def);
+	sepgsqlCheckColumnCreateAT(rel, cmd->name, cmd->def);
 	ATPrepAddColumn(wqueue, rel, recurse, cmd);
 }
 

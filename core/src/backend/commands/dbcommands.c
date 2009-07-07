@@ -276,7 +276,7 @@ createdb(const CreatedbStmt *stmt)
 	check_is_member_of_role(GetUserId(), datdba);
 
 	/* SELinux checks db_database:{create} */
-	datsid = sepgsqlCheckDatabaseCreate(NULL);
+	datsecid = sepgsqlCheckDatabaseCreate(dbname, NULL);
 
 	/*
 	 * Lookup database (template) to be cloned, and obtain share lock on it.
@@ -788,7 +788,7 @@ dropdb(const char *dbname, bool missing_ok)
 					   dbname);
 
 	/* SELinux checks db_database:{drop} permission */
-	sepgsqlCheckDatabaseDrop(dbname, db_id);
+	sepgsqlCheckDatabaseDrop(db_id);
 
 	/*
 	 * Disallow dropping a DB that is marked istemplate.  This is just to

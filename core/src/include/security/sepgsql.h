@@ -251,8 +251,7 @@ extern void	sepgsqlCheckSchemaDrop(Oid namespace_oid);
 extern void	sepgsqlCheckSchemaSetattr(Oid namespace_oid);
 extern bool	sepgsqlCheckSchemaSearch(Oid nsid);
 
-extern List	*sepgsqlCopiedTableCreate(Oid table_oid);
-extern List *sepgsqlCheckTableCreate(CreateStmt *stmt);
+extern Oid	sepgsqlCheckTableCreate(Relation new_rel, List *secLabels);
 extern void	sepgsqlCheckTableDrop(Oid table_oid);
 extern void	sepgsqlCheckTableSetattr(Oid table_oid);
 extern void	sepgsqlCheckTableLock(Oid table_oid);
@@ -270,7 +269,6 @@ extern void	sepgsqlCheckColumnSetattr(Oid relid, AttrNumber attnum);
 extern Oid	sepgsqlCheckProcedureCreate(const char *proname,
 										const char *new_label,
 										HeapTuple oldtup);
-extern Oid	sepgsqlCheckProcedureCreate(const char *proname, Oid namespace_oid);
 extern void	sepgsqlCheckProcedureDrop(Oid proc_oid);
 extern void sepgsqlCheckProcedureSetattr(Oid proc_oid);
 extern bool sepgsqlCheckProcedureExecute(Oid proc_oid);
@@ -285,47 +283,35 @@ sepgsqlAllowFunctionInlined(HeapTuple protup);
 /*
  * label.c : security label management
  */
-extern bool
-sepgsqlTupleDescHasSecLabel(Relation rel);
+extern bool sepgsqlTupleDescHasSecLabel(Oid relid, char relkind);
 
-extern void
-sepgsqlSetDefaultSecLabel(Relation rel, HeapTuple tuple);
+extern void sepgsqlSetDefaultSecLabel(Relation rel, HeapTuple tuple);
 
-extern security_context_t
-sepgsqlTransSecLabelIn(security_context_t seclabel);
+extern List *sepgsqlCreateTableSecLabels(CreateStmt *stmt,
+										 Oid namespace_oid, char relkind);
+extern List *sepgsqlCopyTableSecLabels(Relation source);
 
-extern security_context_t
-sepgsqlTransSecLabelOut(security_context_t seclabel);
-
-extern security_context_t
-sepgsqlRawSecLabelIn(security_context_t seclabel);
-
-extern security_context_t
-sepgsqlRawSecLabelOut(security_context_t seclabel);
+extern security_context_t sepgsqlTransSecLabelIn(security_context_t seclabel);
+extern security_context_t sepgsqlTransSecLabelOut(security_context_t seclabel);
+extern security_context_t sepgsqlRawSecLabelIn(security_context_t seclabel);
+extern security_context_t sepgsqlRawSecLabelOut(security_context_t seclabel);
 
 /*
  * perms.c : SELinux permission related stuff
  */
-extern const char *
-sepgsqlAuditName(Oid relid, HeapTuple tuple);
+extern const char *sepgsqlAuditName(Oid relid, HeapTuple tuple);
 
-extern security_class_t
-sepgsqlFileObjectClass(int fdesc);
+extern security_class_t sepgsqlFileObjectClass(int fdesc);
 
-extern security_class_t
-sepgsqlTupleObjectClass(Oid relid, HeapTuple tuple);
+extern security_class_t sepgsqlTupleObjectClass(Oid relid, HeapTuple tuple);
 
-extern security_class_t
-sepgsqlTransToExternalClass(security_class_t tclass_in);
+extern security_class_t sepgsqlTransToExternalClass(security_class_t tclass_in);
 
-extern void
-sepgsqlTransToInternalPerms(security_class_t tclass_ex, struct av_decision *avd);
-
-extern const char *
-sepgsqlGetClassString(security_class_t tclass);
-
-extern const char *
-sepgsqlGetPermissionString(security_class_t tclass, access_vector_t av);
+extern void sepgsqlTransToInternalPerms(security_class_t tclass_ex,
+										struct av_decision *avd);
+extern const char *sepgsqlGetClassString(security_class_t tclass);
+extern const char *sepgsqlGetPermissionString(security_class_t tclass,
+											  access_vector_t av);
 
 #else	/* HAVE_SELINUX */
 
