@@ -294,6 +294,11 @@ heap_create(const char *relname,
 									 relid,
 									 reltablespace,
 									 shared_relation);
+	/*
+	 * Does the relation have security attribute?
+	 */
+	RelationGetDescr(rel)->tdhasseclabel
+		= securityTupleDescHasSecLabel(relid, relkind);
 
 	/*
 	 * Have the storage manager create the relation's disk file, if needed.
@@ -1027,10 +1032,6 @@ heap_create_with_catalog(const char *relname,
 	 */
 	AddNewAttributeTuples(relid, new_rel_desc->rd_att, relkind,
 						  oidislocal, oidinhcount);
-
-	/* Fixup rel->rd_att->tdhasseclabel */
-	new_rel_desc->rd_att->tdhasseclabel
-		= securityTupleDescHasSecLabel(new_rel_desc);
 
 	/*
 	 * Make a dependency link to force the relation to be deleted if its
