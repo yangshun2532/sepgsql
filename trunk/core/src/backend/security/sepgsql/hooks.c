@@ -98,19 +98,27 @@ sepgsqlCheckDatabaseSuperuser(void)
 Oid
 sepgsqlCheckSchemaCreate(const char *nspname, DefElem *new_label, bool temp_schema)
 {
-	security_class_t
 	Oid		nspsid;
 
 	if (!sepgsqlIsEnabled())
 		return InvalidOid;
 
-	nspsid = sepgsqlGetDefaultNamespaceSecLabel(MyDatabaseId, temp_schema);
-
-	sepgsqlClientHasPermsSid(NamespaceRelationId, nspsid,
-							 !temp_schema ? SEPG_CLASS_DB_SCHEMA
-										  : SEPG_CLASS_DB_SCHEMA_TEMP,
-							 SEPG_DB_SCHEMA__CREATE,
-							 nspname, true);
+	if (!temp_schema)
+	{
+		nspsid = sepgsqlGetDefaultSchemaSecLabel(MyDatabaseId);
+		sepgsqlClientHasPermsSid(NamespaceRelationId, nspsid,
+								 SEPG_CLASS_DB_SCHEMA,
+								 SEPG_DB_SCHEMA__CREATE,
+								 nspname, true);
+	}
+	else
+	{
+		nspsid = sepgsqlGetDefaultSchemaTempSecLabel(MyDatabaseId);
+		sepgsqlClientHasPermsSid(NamespaceRelationId, nspsid,
+								 SEPG_CLASS_DB_SCHEMA_TEMP,
+								 SEPG_DB_SCHEMA_TEMP__CREATE,
+								 nspname, true);
+	}
 	return nspsid;
 }
 
@@ -162,157 +170,63 @@ sepgsqlCheckSchemaSearch(Oid namespace_oid)
 /* ------------------------------------------------------------ *
  *   Hooks corresponding to db_table object class
  * ------------------------------------------------------------ */
-
-/*
- * sepgsqlCopiedTableCreate
- *   It returns a list of security identifiers for a new table
- *   which is copied from an existing table.
- *   The make_new_heap() creates a copy of relation, then is
- *   shall be swapped with the original one.
- *   Internally, it creates a new table, but we should not
- *   apply default labeling, because it is not a user visible
- *   change.
- */
-List *
-sepgsqlCopiedTableCreate(Relation srcrel)
+Oid
+sepgsqlCheckTableCreate(Relation new_rel, List *secLabels)
 {
-	Form_pg_attribute	attr;
-	HeapTuple	tuple;
-	DefElem	   *defel;
-	Oid			tblsid;
-	Oid			attsid;
-	AttrNumber	attnum;
-	List	   *result = NIL;
-
-	if (!sepgsqlIsEnabled())
-		return NIL;
-
-	/* copy table's security label */
-	tuple = SearchSysCache(RELOID,
-						   ObjectIdGetDatum(RelationGetRelid(srcrel)),
-						   0, 0, 0);
-	if (!HeapTupleIsValid(tuple))
-		elog(ERROR, "cache lookup failed for relation: %u",
-			 RelationGetRelid(srcrel));
-
-	tblsid = HeapTupleGetSecLabel(tuple);
-	defel = makeDefElem(NULL, (Node *)makeInteger(tblsid));
-	result = lappend(result, defel);
-	ReleaseSysCache(tuple);
-
-	/* copy column's security label */
-	attsid = securityMoveSecLabel(AttributeRelationId,
-								  RelationRelationId, tblsid);
-
-	for (attnum = FirstLowInvalidHeapAttributeNumber + 1;
-		 attnum < RelationGetDescr(srcrel)->natts;
-		 attnum++)
-	{
-		tuple = SearchSysCache(ATTNUM,
-							   ObjectIdGetDatum(RelationGetRelid(srcrel)),
-							   Int16GetDatum(attnum),
-							   0, 0);
-		if (!HeapTupleIsValid(tuple))
-			continue;
-
-		/* no need to chain when column's label is same as default one */
-		if (attsid != HeapTupleGetSecLabel(tuple))
-		{
-			attr = (Form_pg_attribute) GETSTRUCT(tuple);
-
-			defel = makeDefElem(pstrdup(NameStr(attr->attname)),
-								(Node *)makeInteger(HeapTupleGetSecLabel(tuple)));
-			result = lappend(result, defel);
-		}
-		ReleaseSysCache(tuple);
-	}
-
-	return result;
-}
-
-/*
- * sepgsqlCheckTableCreate
- *   It returns a list of security identifiers of tables/columns
- *   newly created.
- */
-List *
-sepgsqlCheckTableCreate(CreateStmt *stmt,
-						const char *relname, Oid namespace_oid,
-						TupleDesc tupdesc, char relkind)
-{
-	Form_pg_attribute	attr;
-	DefElem	   *defel;
-	Oid			relsid;
-	Oid			attsid;
-	Oid			attsid_def;
-	int			index;
-	List	   *result = NIL;
-
-	if (!sepgsqlIsEnabled())
-		return NIL;
+	security_class_t	tclass;
+	char		relkind = RelationGetForm(new_rel)->relkind;
+	Oid			secid = InvalidOid;
+	ListCell   *l;
 
 	/*
-	 * In the current version, we don't give any labels on
-	 * relations except for tables, sequences
+	 * NOTE: The given secLabels list is the result of
+	 * sepgsqlCreateTableSecLabels() which returns
+	 * pre-computed security identifiers.
 	 */
-	if (relkind != RELKIND_RELATION &&
-		relkind != RELKIND_SEQUENCE)
-		return NIL;
+	if (!sepgsqlIsEnabled())
+		return InvalidOid;
 
-	/* compute security label of tables/sequences and check it */
-	if (relkind == RELKIND_SEQUENCE)
+	foreach (l, secLabels)
 	{
-		relsid = sepgsqlGetDefaultSequenceSecLabel(namespace_oid);
-		sepgsqlClientHasPermsSid(RelationRelationId, relsid,
-								 SEPG_CLASS_DB_SEQUENCE,
-								 SEPG_DB_SEQUENCE__CREATE,
-								 relname, true);
+		DefElem	   *defel = lfirst(l);
+
+		if (!defel->defname)
+		{
+			secid = intVal(defel->arg);
+			break;
+		}
 	}
-	else
+
+	switch (relkind)
 	{
-		relsid = sepgsqlGetDefaultTableSecLabel(namespace_oid);
-		sepgsqlClientHasPermsSid(RelationRelationId, relsid,
+	case RELKIND_RELATION:
+		sepgsqlClientHasPermsSid(RelationRelationId, secid,
 								 SEPG_CLASS_DB_TABLE,
 								 SEPG_DB_TABLE__CREATE,
-								 relname, true);
+								 RelationGetRelationName(new_rel), true);
+		break;
+
+	case RELKIND_SEQUENCE:
+		sepgsqlClientHasPermsSid(RelationRelationId, secid,
+								 SEPG_CLASS_DB_SEQUENCE,
+								 SEPG_DB_SEQUENCE__CREATE,
+								 RelationGetRelationName(new_rel), true);
+		break;
+	default:
+		/* do not check anything now */
+		break;
 	}
-	defel = makeDefElem(NULL, (Node *)makeInteger(relsid));
-	result = lappend(result, defel);
 
-	/* compute default column's security label and check it */
-	attsid_def = sepgsqlClientCreateSecid(RelationRelationId, relsid,
-										  SEPG_CLASS_DB_COLUMN,
-										  AttributeRelationId);
-	defel = makeDefElem(pstrdup("@__default__@")
-						(Node *)makeInteger(attsid_def));
-	result = lappend(result, defel);
-
-	for (index = FirstLowInvalidHeapAttributeNumber + 1;
-		 index < tupdesc->natts;
-		 index++)
-	{
-		if (index == ObjectIdAttributeNumber && !tupdesc->tdhasoids)
-			continue;
-		if (index < 0)
-			attr = SystemAttributeDefinition(index, tupdesc->tdhasoids);
-		else
-			attr = tupdesc->attrs[index];
-
-		attname = NameStr(attr);
-		/* TODO: check given security label here */
-		attsid = attsid_def;
-		sepgsqlClientHasPermsSid(AttributeRelationId, attsid,
-								 SEPG_CLASS_DB_COLUMN,
-								 SEPG_DB_COLUMN__CREATE,
-								 attname, true);
-	}
-	return result;
+	return secid;
 }
 
 static void
 checkTableCommon(Oid table_oid, access_vector_t perms, bool abort)
 {
 	HeapTuple			tuple;
+
+	if (!sepgsqlIsEnabled())
+		return;
 
 	tuple = SearchSysCache(RELOID,
 						   ObjectIdGetDatum(table_oid),
@@ -335,35 +249,29 @@ checkTableCommon(Oid table_oid, access_vector_t perms, bool abort)
 void
 sepgsqlCheckTableDrop(Oid table_oid)
 {
-	if (!sepgsqlIsEnabled())
-		return;
-	checkTableCommon(table_oid, SEPG_DB_TABLE__DROP, true);
+	checkTableCommon(table_oid,
+					 SEPG_DB_TABLE__DROP, true);
 }
 
 void
 sepgsqlCheckTableSetattr(Oid table_oid)
 {
-	if (!sepgsqlIsEnabled())
-		return;
-	checkTableCommon(table_oid, SEPG_DB_TABLE__SETATTR, true);
+	checkTableCommon(table_oid,
+					 SEPG_DB_TABLE__SETATTR, true);
 }
 
 void
 sepgsqlCheckTableLock(Oid table_oid)
 {
-	if (!sepgsqlIsEnabled())
-		return;
-
-	checkTableCommon(table_oid, SEPG_DB_TABLE__LOCK, true);
+	checkTableCommon(table_oid,
+					 SEPG_DB_TABLE__LOCK, true);
 }
 
 void
 sepgsqlCheckTableTruncate(Relation rel)
 {
-	if (!sepgsqlIsEnabled())
-		return;
-
-	checkTableCommon(RelationGetRelid(rel), SEPG_DB_TABLE__DELETE, true);
+	checkTableCommon(RelationGetRelid(rel),
+					 SEPG_DB_TABLE__DELETE, true);
 }
 
 void
@@ -437,25 +345,72 @@ void sepgsqlCheckSequenceSetValue(Oid seqid)
  *   Hooks corresponding to db_column object class
  * ------------------------------------------------------------ */
 Oid
-sepgsqlCheckColumnCreate(Oid relid, const char *attname, ColumnDef *cdef)
+sepgsqlCheckColumnCreate(Form_pg_attribute attr, char relkind, List *secLabels)
 {
-	Oid		attsid;
-	char	relkind;
+	Oid			relsid = InvalidOid;
+	Oid			attsid = InvalidOid;
+	ListCell   *l;
 
 	if (!sepgsqlIsEnabled())
 		return InvalidOid;
 
-	relkind = get_rel_relkind(relid);
-	if (relkind != RELKIND_RELATION &&
-		relkind != RELKIND_SEQUENCE)
+	if (relkind != RELKIND_RELATION)
 		return InvalidOid;
 
-	attsid = sepgsqlGetDefaultAttributeSecLabel(relid);
+	foreach (l, secLabels)
+	{
+		DefElem	   *defel = lfirst(l);
+
+		if (!defel->defname)
+			relsid = intVal(defel->arg);
+		else if (strcmp(defel->defname, NameStr(attr->attname)) == 0)
+		{
+			attsid = intVal(defel->arg);
+			break;
+		}
+	}
+
+	if (!OidIsValid(attsid))
+		attsid = sepgsqlClientCreateSecid(RelationRelationId, relsid,
+										  SEPG_CLASS_DB_COLUMN,
+										  AttributeRelationId);
+
 	sepgsqlClientHasPermsSid(AttributeRelationId, attsid,
 							 SEPG_CLASS_DB_COLUMN,
 							 SEPG_DB_COLUMN__CREATE,
-							 attname, true);
+							 NameStr(attr->attname), true);
 	return attsid;
+}
+
+void
+sepgsqlCheckColumnCreateAT(Relation rel, const char *attname, Node *def)
+{
+	ColumnDef  *colDef = (ColumnDef *)def;
+	Oid			relid = RelationGetRelid(rel);
+
+	if (!sepgsqlIsEnabled())
+	{
+		if (colDef->secLabel)
+			ereport(ERROR,
+					(errcode(ERRCODE_SELINUX_ERROR),
+					 errmsg("SELinux is disabled now")));
+		return;
+	}
+
+	if (!colDef->secLabel)
+		secid = sepgsqlGetDefaultColumnSecLabel(relid);
+	else
+	{
+		char *seclabel = strVal((DefElem *)colDef->secLabel);
+
+		secid = sepgsqlGivenSecLabelIn(AttributeRelationId, seclabel);
+	}
+
+	sepgsqlClientHasPermsSid(AttributeRelationId, secid,
+							 SEPG_CLASS_DB_COLUMN,
+							 SEPG_DB_COLUMN__CREATE,
+							 attname, true);
+	colDef->secLabel = (Node *) makeInteger(secid);
 }
 
 static void

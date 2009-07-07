@@ -2839,7 +2839,7 @@ InitTempTableNamespace(void)
 						get_database_name(MyDatabaseId))));
 
 	/* SELinux checks db_schema_temp:{create} */
-	nspsecid = sepgsqlCheckSchemaCreate(NULL);
+	nspsecid = sepgsqlCheckSchemaCreate(namespaceName, NULL, true);
 
 	snprintf(namespaceName, sizeof(namespaceName), "pg_temp_%d", MyBackendId);
 

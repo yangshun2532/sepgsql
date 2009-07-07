@@ -57,6 +57,7 @@
 #include "parser/parse_coerce.h"
 #include "parser/parse_expr.h"
 #include "parser/parse_relation.h"
+#include "security/sepgsql.h"
 #include "storage/bufmgr.h"
 #include "storage/freespace.h"
 #include "storage/smgr.h"
@@ -563,8 +564,6 @@ AddNewAttributeTuples(Oid new_rel_oid,
 	CatalogIndexState indstate;
 	int			natts = tupdesc->natts;
 	Oid			new_att_secid;
-	Oid			new_def_secid;
-	ListCell   *l;
 	ObjectAddress myself,
 				referenced;
 
@@ -588,24 +587,8 @@ AddNewAttributeTuples(Oid new_rel_oid,
 		attr->attstattarget = -1;
 		attr->attcacheoff = -1;
 
-		/* SELinux: set a security label of column */
-		new_att_secid = new_def_secid = InvalidOid;
-		foreach (l, secLabels)
-		{
-			DefElem	   *defel = lfirst(l);
-
-			if (!defel->defname)
-				continue;
-			else if (strcmp(defel->defname, "@__default__@") == 0)
-				new_def_secid = intVal(defel->arg);
-			else if (strcmp(defel->defname, NameStr(attr->attname)) == 0)
-			{
-				new_att_secid = intVal(defel->arg);
-				break;
-			}
-		}
-		if (!OidIsValid(new_att_secid))
-			new_att_secid = new_def_secid;
+		/* SELinux checks db_column:{create} */
+		new_att_secid = sepgsqlCheckColumnCreate(attr, relkind, secLabels);
 
 		InsertPgAttributeTuple(rel, attr, indstate, new_att_secid);
 
@@ -647,24 +630,8 @@ AddNewAttributeTuples(Oid new_rel_oid,
 				attStruct.attinhcount = oidinhcount;
 			}
 
-			/* SELinux: set a security label of column */
-			new_att_secid = new_def_secid = InvalidOid;
-			foreach (l, secLabels)
-			{
-				DefElem	   *defel = lfirst(l);
-
-				if (!defel->defname)
-					continue;
-				else if (strcmp(defel->defname, "@__default__@") == 0)
-					new_def_secid = intVal(defel->arg);
-				else if (strcmp(defel->defname, NameStr(attr->attname)) == 0)
-				{
-					new_att_secid = intVal(defel->arg);
-					break;
-				}
-			}
-			if (!OidIsValid(new_att_secid))
-				new_att_secid = new_def_secid;
+			/* SELinux checks db_column:{create} */
+			new_att_secid = sepgsqlCheckColumnCreate(&attStruct, relkind, secLabels);
 
 			InsertPgAttributeTuple(rel, &attStruct, indstate, new_att_secid);
 		}
@@ -773,8 +740,7 @@ AddNewRelationTuple(Relation pg_class_desc,
 					List *secLabels)
 {
 	Form_pg_class new_rel_reltup;
-	ListCell   *l;
-	Oid			new_rel_secid = InvalidOid;
+	Oid		new_rel_secid;
 
 	/*
 	 * first we update some of the information in our uncataloged relation's
@@ -831,17 +797,8 @@ AddNewRelationTuple(Relation pg_class_desc,
 
 	new_rel_desc->rd_att->tdtypeid = new_type_oid;
 
-	/* SELinux: set a security context of relation */
-	foreach (l, secLabels)
-	{
-		DefElem	   *defel = lfirst(l);
-
-		if (!defel->defname)
-		{
-			new_rel_secid = intVal(defel->arg);
-			break;
-		}
-	}
+	/* SELinux check db_table:{create} permission */
+	new_rel_secid = sepgsqlCheckTableCreate(new_rel_desc, secLabels);
 
 	/* Now build and insert the tuple */
 	InsertPgClassTuple(pg_class_desc, new_rel_desc, new_rel_oid,

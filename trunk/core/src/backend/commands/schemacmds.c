@@ -77,7 +77,7 @@ CreateSchemaCommand(CreateSchemaStmt *stmt, const char *queryString)
 	check_is_member_of_role(saved_uid, owner_uid);
 
 	/* SELinux checks db_schema:{create} */
-	nspsecid = sepgsqlCheckSchemaCreate(NULL);
+	nspsecid = sepgsqlCheckSchemaCreate(schemaName, NULL, false);
 
 	/* Additional check to protect reserved schema names */
 	if (!allowSystemTableMods && IsReservedName(schemaName))
