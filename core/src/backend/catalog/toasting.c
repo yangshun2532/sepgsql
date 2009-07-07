@@ -28,6 +28,7 @@
 #include "catalog/toasting.h"
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
+#include "security/sepgsql.h"
 #include "utils/builtins.h"
 #include "utils/syscache.h"
 
@@ -125,6 +126,7 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 	char		toast_relname[NAMEDATALEN];
 	char		toast_idxname[NAMEDATALEN];
 	IndexInfo  *indexInfo;
+	List	   *secLabels;
 	Oid			classObjectId[2];
 	int16		coloptions[2];
 	ObjectAddress baseobject,
@@ -199,6 +201,9 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 	else
 		namespaceid = PG_TOAST_NAMESPACE;
 
+	secLabels = sepgsqlCheckCreateTable(NULL, toast_relname,
+										RELKIND_TOASTVALUE, namespaceid);
+
 	toast_relid = heap_create_with_catalog(toast_relname,
 										   namespaceid,
 										   rel->rd_rel->reltablespace,
@@ -212,7 +217,8 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 										   0,
 										   ONCOMMIT_NOOP,
 										   reloptions,
-										   true);
+										   true,
+										   secLabels);
 
 	/* make the toast relation visible, else index creation will fail */
 	CommandCounterIncrement();

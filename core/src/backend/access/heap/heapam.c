@@ -54,7 +54,6 @@
 #include "catalog/namespace.h"
 #include "miscadmin.h"
 #include "pgstat.h"
-#include "security/sepgsql.h"
 #include "storage/bufmgr.h"
 #include "storage/freespace.h"
 #include "storage/lmgr.h"
@@ -2016,9 +2015,6 @@ heap_insert(Relation relation, HeapTuple tup, CommandId cid,
 Oid
 simple_heap_insert(Relation relation, HeapTuple tup)
 {
-	/* SELinux: check db_xxx:{create} permission */
-	sepgsqlHeapTupleInsert(relation, tup, true);
-
 	return heap_insert(relation, tup, GetCurrentCommandId(true), 0, NULL);
 }
 
@@ -2311,9 +2307,6 @@ simple_heap_delete(Relation relation, ItemPointer tid)
 	HTSU_Result result;
 	ItemPointerData update_ctid;
 	TransactionId update_xmax;
-
-	/* SELinux: check db_xxx:{drop} permission */
-	sepgsqlHeapTupleDelete(relation, tid, true);
 
 	result = heap_delete(relation, tid,
 						 &update_ctid, &update_xmax,
@@ -2983,9 +2976,6 @@ simple_heap_update(Relation relation, ItemPointer otid, HeapTuple tup)
 	HTSU_Result result;
 	ItemPointerData update_ctid;
 	TransactionId update_xmax;
-
-	/* SELinux: check db_xxx:{setattr} permission */
-	sepgsqlHeapTupleUpdate(relation, otid, tup, true);
 
 	result = heap_update(relation, otid, tup,
 						 &update_ctid, &update_xmax,

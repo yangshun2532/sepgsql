@@ -96,6 +96,7 @@ ProcedureCreate(const char *procedureName,
 	Datum		values[Natts_pg_proc];
 	bool		replaces[Natts_pg_proc];
 	Oid			relid;
+	Oid			prosecid;
 	NameData	procname;
 	TupleDesc	tupDesc;
 	bool		is_update;
@@ -342,7 +343,6 @@ ProcedureCreate(const char *procedureName,
 							PointerGetDatum(parameterTypes),
 							ObjectIdGetDatum(procNamespace),
 							0);
-
 	if (HeapTupleIsValid(oldtup))
 	{
 		/* There is one; okay to replace it? */
@@ -357,6 +357,9 @@ ProcedureCreate(const char *procedureName,
 			aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
 						   procedureName);
 
+		/* SELinux checks db_procedure:{setattr} */
+		prosecid = sepgsqlCheckProcedureCreate(procedureName, procNamespace,
+											   InvalidOid, oldtup);
 		/*
 		 * Not okay to change the return type of the existing proc, since
 		 * existing rules, views, etc may depend on the return type.
@@ -477,6 +480,8 @@ ProcedureCreate(const char *procedureName,
 
 		/* Okay, do it... */
 		tup = heap_modify_tuple(oldtup, tupDesc, values, nulls, replaces);
+		if (HeapTupleHasSecLabel(tup) && OidIsValid(prosecid))
+			HeapTupleSetSecLabel(tup, prosecid);
 		simple_heap_update(rel, &tup->t_self, tup);
 
 		ReleaseSysCache(oldtup);
@@ -484,8 +489,13 @@ ProcedureCreate(const char *procedureName,
 	}
 	else
 	{
+		/* SELinux checks db_procedure:{create} */
+		prosecid = sepgsqlCheckProcedureCreate(procedureName, procNamespace,
+											   InvalidOid, NULL);
 		/* Creating a new procedure */
 		tup = heap_form_tuple(tupDesc, values, nulls);
+		if (HeapTupleHasSecLabel(tup))
+			HeapTupleSetSecLabel(tup, prosecid);
 		simple_heap_insert(rel, tup);
 		is_update = false;
 	}

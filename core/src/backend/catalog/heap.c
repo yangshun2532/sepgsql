@@ -75,7 +75,8 @@ static void AddNewRelationTuple(Relation pg_class_desc,
 					Oid new_rel_oid, Oid new_type_oid,
 					Oid relowner,
 					char relkind,
-					Datum reloptions);
+					Datum reloptions,
+					List *secLabels);
 static Oid AddNewRelationType(const char *typeName,
 				   Oid typeNamespace,
 				   Oid new_rel_oid,
@@ -294,6 +295,11 @@ heap_create(const char *relname,
 									 relid,
 									 reltablespace,
 									 shared_relation);
+	/*
+	 * Does the relation have security attribute?
+	 */
+	RelationGetDescr(rel)->tdhasseclabel
+		= securityTupleDescHasSecLabel(relid, relkind);
 
 	/*
 	 * Have the storage manager create the relation's disk file, if needed.
@@ -488,7 +494,8 @@ CheckAttributeType(const char *attname, Oid atttypid)
 void
 InsertPgAttributeTuple(Relation pg_attribute_rel,
 					   Form_pg_attribute new_attribute,
-					   CatalogIndexState indstate)
+					   CatalogIndexState indstate,
+					   Oid new_att_secid)
 {
 	Datum		values[Natts_pg_attribute];
 	bool		nulls[Natts_pg_attribute];
@@ -521,6 +528,9 @@ InsertPgAttributeTuple(Relation pg_attribute_rel,
 
 	tup = heap_form_tuple(RelationGetDescr(pg_attribute_rel), values, nulls);
 
+	if (HeapTupleHasSecLabel(tup))
+		HeapTupleSetSecLabel(tup, new_att_secid);
+
 	/* finally insert the new tuple, update the indexes, and clean up */
 	simple_heap_insert(pg_attribute_rel, tup);
 
@@ -544,13 +554,17 @@ AddNewAttributeTuples(Oid new_rel_oid,
 					  TupleDesc tupdesc,
 					  char relkind,
 					  bool oidislocal,
-					  int oidinhcount)
+					  int oidinhcount,
+					  List *secLabels)
 {
 	Form_pg_attribute attr;
 	int			i;
 	Relation	rel;
 	CatalogIndexState indstate;
 	int			natts = tupdesc->natts;
+	Oid			new_att_secid;
+	Oid			new_def_secid;
+	ListCell   *l;
 	ObjectAddress myself,
 				referenced;
 
@@ -574,7 +588,26 @@ AddNewAttributeTuples(Oid new_rel_oid,
 		attr->attstattarget = -1;
 		attr->attcacheoff = -1;
 
-		InsertPgAttributeTuple(rel, attr, indstate);
+		/* SELinux: set a security label of column */
+		new_att_secid = new_def_secid = InvalidOid;
+		foreach (l, secLabels)
+		{
+			DefElem	   *defel = lfirst(l);
+
+			if (!defel->defname)
+				continue;
+			else if (strcmp(defel->defname, "@__default__@") == 0)
+				new_def_secid = intVal(defel->arg);
+			else if (strcmp(defel->defname, NameStr(attr->attname)) == 0)
+			{
+				new_att_secid = intVal(defel->arg);
+				break;
+			}
+		}
+		if (!OidIsValid(new_att_secid))
+			new_att_secid = new_def_secid;
+
+		InsertPgAttributeTuple(rel, attr, indstate, new_att_secid);
 
 		/* Add dependency info */
 		myself.classId = RelationRelationId;
@@ -614,7 +647,26 @@ AddNewAttributeTuples(Oid new_rel_oid,
 				attStruct.attinhcount = oidinhcount;
 			}
 
-			InsertPgAttributeTuple(rel, &attStruct, indstate);
+			/* SELinux: set a security label of column */
+			new_att_secid = new_def_secid = InvalidOid;
+			foreach (l, secLabels)
+			{
+				DefElem	   *defel = lfirst(l);
+
+				if (!defel->defname)
+					continue;
+				else if (strcmp(defel->defname, "@__default__@") == 0)
+					new_def_secid = intVal(defel->arg);
+				else if (strcmp(defel->defname, NameStr(attr->attname)) == 0)
+				{
+					new_att_secid = intVal(defel->arg);
+					break;
+				}
+			}
+			if (!OidIsValid(new_att_secid))
+				new_att_secid = new_def_secid;
+
+			InsertPgAttributeTuple(rel, &attStruct, indstate, new_att_secid);
 		}
 	}
 
@@ -642,7 +694,8 @@ void
 InsertPgClassTuple(Relation pg_class_desc,
 				   Relation new_rel_desc,
 				   Oid new_rel_oid,
-				   Datum reloptions)
+				   Datum reloptions,
+				   Oid new_rel_secid)
 {
 	Form_pg_class rd_rel = new_rel_desc->rd_rel;
 	Datum		values[Natts_pg_class];
@@ -691,18 +744,13 @@ InsertPgClassTuple(Relation pg_class_desc,
 	 */
 	HeapTupleSetOid(tup, new_rel_oid);
 
+	if (HeapTupleHasSecLabel(tup))
+		HeapTupleSetSecLabel(tup, new_rel_secid);
+
 	/* finally insert the new tuple, update the indexes, and clean up */
 	simple_heap_insert(pg_class_desc, tup);
 
 	CatalogUpdateIndexes(pg_class_desc, tup);
-
-	/*
-	 * It need to be on system cache in temporarily by the next
-	 * CommandCounterIncrement(), because new columns inherit
-	 * the security context of the relation in default, so it
-	 * need to refer the tuple soon.
-	 */
-	InsertSysCache(RelationGetRelid(pg_class_desc), tup);
 
 	heap_freetuple(tup);
 }
@@ -721,9 +769,12 @@ AddNewRelationTuple(Relation pg_class_desc,
 					Oid new_type_oid,
 					Oid relowner,
 					char relkind,
-					Datum reloptions)
+					Datum reloptions,
+					List *secLabels)
 {
 	Form_pg_class new_rel_reltup;
+	ListCell   *l;
+	Oid			new_rel_secid = InvalidOid;
 
 	/*
 	 * first we update some of the information in our uncataloged relation's
@@ -780,8 +831,21 @@ AddNewRelationTuple(Relation pg_class_desc,
 
 	new_rel_desc->rd_att->tdtypeid = new_type_oid;
 
+	/* SELinux: set a security context of relation */
+	foreach (l, secLabels)
+	{
+		DefElem	   *defel = lfirst(l);
+
+		if (!defel->defname)
+		{
+			new_rel_secid = intVal(defel->arg);
+			break;
+		}
+	}
+
 	/* Now build and insert the tuple */
-	InsertPgClassTuple(pg_class_desc, new_rel_desc, new_rel_oid, reloptions);
+	InsertPgClassTuple(pg_class_desc, new_rel_desc, new_rel_oid,
+					   reloptions, new_rel_secid);
 }
 
 
@@ -852,7 +916,8 @@ heap_create_with_catalog(const char *relname,
 						 int oidinhcount,
 						 OnCommitAction oncommit,
 						 Datum reloptions,
-						 bool allow_system_table_mods)
+						 bool allow_system_table_mods,
+						 List *secLabels)
 {
 	Relation	pg_class_desc;
 	Relation	new_rel_desc;
@@ -1028,17 +1093,14 @@ heap_create_with_catalog(const char *relname,
 						new_type_oid,
 						ownerid,
 						relkind,
-						reloptions);
+						reloptions,
+						secLabels);
 
 	/*
 	 * now add tuples to pg_attribute for the attributes in our new relation.
 	 */
 	AddNewAttributeTuples(relid, new_rel_desc->rd_att, relkind,
-						  oidislocal, oidinhcount);
-
-	/* Fixup rel->rd_att->tdhasseclabel */
-	new_rel_desc->rd_att->tdhasseclabel
-		= securityTupleDescHasSecLabel(new_rel_desc);
+						  oidislocal, oidinhcount, secLabels);
 
 	/*
 	 * Make a dependency link to force the relation to be deleted if its

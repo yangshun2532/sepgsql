@@ -329,6 +329,8 @@ AlterSequence(AlterSeqStmt *stmt)
 	if (!pg_class_ownercheck(relid, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
 					   stmt->sequence->relname);
+	/* SELinux checks db_sequence:{setattr} */
+	sepgsqlCheckTableSetattr(relid);
 
 	/* do the work */
 	AlterSequenceInternal(relid, stmt->options);
