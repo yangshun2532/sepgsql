@@ -1358,7 +1358,8 @@ bool ExecContextForcesSecLabel(PlanState *planstate, bool *hassecurity)
 {
 	if (planstate->state->es_select_into)
 	{
-		*hassecurity = securityTupleDescHasSecLabel(NULL);
+		*hassecurity = securityTupleDescHasSecLabel(InvalidOid,
+													RELKIND_RELATION);
 		return true;
 	}
 	else
@@ -1367,7 +1368,11 @@ bool ExecContextForcesSecLabel(PlanState *planstate, bool *hassecurity)
 
 		if (ri && ri->ri_RelationDesc)
 		{
-			*hassecurity = securityTupleDescHasSecLabel(ri->ri_RelationDesc);
+			Oid		relid = RelationGetRelid(ri->ri_RelationDesc);
+			char	relkind = RelationGetForm(ri->ri_RelationDesc)->relkind;
+
+			*hassecurity = securityTupleDescHasSecLabel(relid, relkind);
+
 			return true;
 		}
 	}

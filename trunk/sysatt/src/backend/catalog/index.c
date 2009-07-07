@@ -39,7 +39,6 @@
 #include "catalog/pg_constraint.h"
 #include "catalog/pg_operator.h"
 #include "catalog/pg_opclass.h"
-#include "catalog/pg_security.h"
 #include "catalog/pg_tablespace.h"
 #include "catalog/pg_type.h"
 #include "catalog/storage.h"
@@ -629,10 +628,6 @@ index_create(Oid heapRelationId,
 								allow_system_table_mods);
 
 	Assert(indexRelationId == RelationGetRelid(indexRelation));
-
-	/* Fixup rel->rd_att->tdhasseclabel */
-	indexRelation->rd_att->tdhasseclabel
-		= securityTupleDescHasSecLabel(indexRelation);
 
 	/*
 	 * Obtain exclusive lock on it.  Although no other backends can see it

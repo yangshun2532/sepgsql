@@ -33,6 +33,7 @@
 #include "catalog/indexing.h"
 #include "catalog/pg_authid.h"
 #include "catalog/pg_database.h"
+#include "catalog/pg_security.h"
 #include "catalog/pg_tablespace.h"
 #include "commands/comment.h"
 #include "commands/dbcommands.h"
@@ -573,6 +574,9 @@ createdb(const CreatedbStmt *stmt)
 	/* Create pg_shdepend entries for objects within database */
 	copyTemplateDependencies(src_dboid, dboid);
 
+	/* Create pg_security entries for objects within database */
+	securityOnCreateDatabase(src_dboid, dboid);
+
 	/*
 	 * Force a checkpoint before starting the copy. This will force dirty
 	 * buffers out to disk, to ensure source database is up-to-date on disk
@@ -827,6 +831,11 @@ dropdb(const char *dbname, bool missing_ok)
 	 * Remove shared dependency references for the database.
 	 */
 	dropDatabaseDependencies(db_id);
+
+	/*
+	 * Remove pg_security entries for the database.
+	 */
+	securityOnDropDatabase(db_id);
 
 	/*
 	 * Drop pages for this database that are in the shared buffer cache. This
