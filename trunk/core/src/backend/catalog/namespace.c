@@ -3028,7 +3028,7 @@ static void
 RemoveTempRelations(Oid tempNamespaceId)
 {
 	ObjectAddress object;
-	int		mode;
+	bool	mode;
 
 	/*
 	 * We want to get rid of everything in the target namespace, but not the
@@ -3044,7 +3044,7 @@ RemoveTempRelations(Oid tempNamespaceId)
 	 * SELinux does not check anything while cleaning up
 	 * temporary objects.
 	 */
-	mode = sepgsqlSetExceptionMode(1);
+	mode = sepgsqlSetExceptionMode(true);
 	PG_TRY();
 	{
 		deleteWhatDependsOn(&object, false);

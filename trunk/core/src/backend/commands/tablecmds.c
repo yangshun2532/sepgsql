@@ -1930,8 +1930,8 @@ renameatt(Oid myrelid,
 				 errmsg("cannot rename system column \"%s\"",
 						oldattname)));
 
-	/* SELinux checks db_column:{setattr} permission */
-	sepgsqlCheckColumnSetattr(targetrelation, oldattname);
+	/* SELinux checks db_column:{setattr} */
+	sepgsqlCheckColumnSetattr(myrelid, attnum);
 
 	/*
 	 * if the attribute is inherited, forbid the renaming, unless we are
@@ -2372,7 +2372,6 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 	{
 		case AT_AddColumn:		/* ADD COLUMN */
 			ATSimplePermissions(rel, false);
-			sepgsqlCheckColumnCreateAT(rel, cmd->def);
 			/* Performs own recursion */
 			ATPrepAddColumn(wqueue, rel, recurse, cmd);
 			pass = AT_PASS_ADD_COL;
@@ -2380,7 +2379,6 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 		case AT_AddColumnToView:		/* add column via CREATE OR REPLACE
 										 * VIEW */
 			ATSimplePermissions(rel, true);
-			sepgsqlCheckColumnCreateAT(rel, cmd->def);
 			/* Performs own recursion */
 			ATPrepAddColumn(wqueue, rel, recurse, cmd);
 			pass = AT_PASS_ADD_COL;
@@ -3573,6 +3571,9 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 				 errmsg("child table \"%s\" has a conflicting \"%s\" column",
 						RelationGetRelationName(rel), colDef->colname)));
 
+			/* SELinux checks db_column:{setattr} */
+			sepgsqlCheckColumnSetattr(myrelid, childatt->attnum);
+
 			/* Bump the existing child att's inhcount */
 			childatt->attinhcount++;
 			simple_heap_update(attrdesc, &tuple->t_self, tuple);
@@ -3611,6 +3612,9 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 				(errcode(ERRCODE_DUPLICATE_COLUMN),
 				 errmsg("column \"%s\" of relation \"%s\" already exists",
 						colDef->colname, RelationGetRelationName(rel))));
+
+	/* SELinux checks db_column:{create} */
+	attsecid = sepgsqlCheckColumnCreateAT(myrelid, colDef);
 
 	/* Determine the new attribute's number */
 	if (isOid)
@@ -3653,9 +3657,6 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 	/* attribute.attacl is handled by InsertPgAttributeTuple */
 
 	ReleaseSysCache(typeTuple);
-
-	if (colDef->secLabel)
-		attsecid = intVal(colDef->secLabel);
 
 	InsertPgAttributeTuple(attrdesc, &attribute, NULL, attsecid);
 
@@ -3825,7 +3826,6 @@ ATPrepAddOids(List **wqueue, Relation rel, bool recurse, AlterTableCmd *cmd)
 		cdef->is_not_null = true;
 		cmd->def = (Node *) cdef;
 	}
-	sepgsqlCheckColumnCreateAT(rel, cmd->def);
 	ATPrepAddColumn(wqueue, rel, recurse, cmd);
 }
 
@@ -3864,7 +3864,7 @@ ATExecDropNotNull(Relation rel, const char *colName)
 						colName)));
 
 	/* SELinux checks db_column:{setattr} */
-	sepgsqlCheckColumnSetattr(rel, colName);
+	sepgsqlCheckColumnSetattr(RelationGetRelid(rel), attnum);
 
 	/*
 	 * Check that the attribute is not in a primary key
@@ -3958,8 +3958,8 @@ ATExecSetNotNull(AlteredTableInfo *tab, Relation rel,
 				 errmsg("cannot alter system column \"%s\"",
 						colName)));
 
-	/* SELinux checks db_column:{setattr} permission */
-	sepgsqlCheckColumnSetattr(rel, colName);
+	/* SELinux checks db_column:{setattr} */
+	sepgsqlCheckColumnSetattr(RelationGetRelid(rel), attnum);
 
 	/*
 	 * Okay, actually perform the catalog change ... if needed
@@ -4007,7 +4007,7 @@ ATExecColumnDefault(Relation rel, const char *colName,
 						colName)));
 
 	/* SELinux checks db_column:{setattr} */
-	sepgsqlCheckColumnSetattr(rel, colName);
+	sepgsqlCheckColumnSetattr(RelationGetRelid(rel), attnum);
 
 	/*
 	 * Remove any old default for the column.  We use RESTRICT here for
@@ -4108,7 +4108,7 @@ ATExecSetStatistics(Relation rel, const char *colName, Node *newValue)
 						colName)));
 
 	/* SELinux checks db_column:{setattr} */
-	sepgsqlCheckColumnSetattr(rel, colName);
+	sepgsqlCheckColumnSetattr(RelationGetRelid(rel), attrtuple->attnum);
 
 	attrtuple->attstattarget = newtarget;
 
@@ -4171,8 +4171,8 @@ ATExecSetStorage(Relation rel, const char *colName, Node *newValue)
 				 errmsg("cannot alter system column \"%s\"",
 						colName)));
 
-	/* SELinux checks db_column:{setattr} permission */
-	sepgsqlCheckColumnSetattr(rel, colName);
+	/* SELinux checks db_column:{setattr} */
+	sepgsqlCheckColumnSetattr(RelationGetRelid(rel), attrtuple->attnum);
 
 	/*
 	 * safety check: do not allow toasted storage modes unless column datatype
@@ -4251,7 +4251,7 @@ ATExecDropColumn(List **wqueue, Relation rel, const char *colName,
 	ReleaseSysCache(tuple);
 
 	/* SELinux checks db_column:{drop} */
-	sepgsqlCheckColumnDrop(rel, colName);
+	sepgsqlCheckColumnDrop(RelationGetRelid(rel), attnum);
 
 	/*
 	 * Propagate to children as appropriate.  Unlike most other ALTER
@@ -5769,8 +5769,8 @@ ATExecAlterColumnType(AlteredTableInfo *tab, Relation rel,
 				 errmsg("cannot alter type of column \"%s\" twice",
 						colName)));
 
-	/* SELinux checks db_column:{setattr} permission */
-	sepgsqlCheckColumnSetattr(rel, colName);
+	/* SELinux checks db_column:{setattr} */
+	sepgsqlCheckColumnSetattr(RelationGetRelid(rel), attnum);
 
 	/* Look up the target type (should not fail, since prep found it) */
 	typeTuple = typenameType(NULL, typename, &targettypmod);

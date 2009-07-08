@@ -9,6 +9,7 @@
 #define SEPGSQL_H
 
 #include "access/htup.h"
+#include "catalog/dependency.h"
 #include "executor/execdesc.h"
 #include "fmgr.h"
 #include "nodes/parsenodes.h"
@@ -166,17 +167,13 @@ enum SepgsqlClasses
 /*
  * avc.c : userspace access vector caches
  */
-extern Size sepgsqlShmemSize(void);
-
-extern bool sepgsqlGetExceptionMode(void);
-
-extern bool sepgsqlSetExceptionMode(bool exception);
-
-extern void sepgsqlAvcInit(void);
-
-extern pid_t sepgsqlStartupWorkerProcess(void);
-
-extern void sepgsqlAvcSwitchClient(void);
+extern Size	sepgsqlShmemSize(void);
+extern bool	sepgsqlGetExceptionMode(void);
+extern bool	sepgsqlSetExceptionMode(bool exception);
+extern void	sepgsqlAvcInit(void);
+extern void	sepgsqlAvcSwitchClient(void);
+extern pid_t
+sepgsqlStartupWorkerProcess(void);
 
 extern bool
 sepgsqlClientHasPermsTup(Oid relid, HeapTuple tuple,
@@ -281,12 +278,12 @@ sepgsqlCheckSequenceSetValue(Oid seqid);
 
 extern Oid
 sepgsqlCheckColumnCreate(Form_pg_attribute attr, char relkind, List *secLabels);
+extern Oid
+sepgsqlCheckColumnCreateAT(Oid relid, ColumnDef *colDef);
 extern void
-sepgsqlCheckColumnCreateAT(Relation rel, Node *cdef);
+sepgsqlCheckColumnDrop(Oid relid, AttrNumber attno);
 extern void
-sepgsqlCheckColumnDrop(Relation rel, const char *attname);
-extern void
-sepgsqlCheckColumnSetattr(Relation rel, const char *attname);
+sepgsqlCheckColumnSetattr(Oid relid, AttrNumber attno);
 
 extern Oid
 sepgsqlCheckProcedureCreate(const char *proname, Oid namespace_oid,
@@ -297,9 +294,11 @@ extern void
 sepgsqlCheckProcedureSetattr(Oid proc_oid);
 extern bool
 sepgsqlCheckProcedureExecute(Oid proc_oid);
-
 extern void
 sepgsqlCheckProcedureEntrypoint(FmgrInfo *finfo, HeapTuple protup);
+
+void
+sepgsqlCheckObjectDrop(const ObjectAddress *object);
 
 /* optimizar hints */
 extern bool
@@ -369,8 +368,8 @@ extern const char *sepgsqlGetPermissionString(security_class_t tclass,
 /* avc.c */
 #define sepgsqlShmemSize()						(0)
 #define sepgsqlStartupWorkerProcess()			(0)
-#define sepgsqlGetExceptionMode()				(0)
-#define sepgsqlSetExceptionMode(a)				(0)
+#define sepgsqlGetExceptionMode()				(false)
+#define sepgsqlSetExceptionMode(a)				(false)
 /* checker.c */
 #define sepgsqlCheckRTEPerms(a)					do {} while(0)
 #define sepgsqlCheckCopyTable(a,b,c)			do {} while(0)
