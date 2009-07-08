@@ -867,8 +867,8 @@ RelationBuildDesc(Oid targetRelId, Relation oldrelation)
 	RelationParseRelOptions(relation, pg_class_tuple);
 
 	/* Fixup relation->rd_att->tdhasseclabel */
-	relation->rd_att->tdhasseclabel
-		= securityTupleDescHasSecLabel(relation);
+	RelationGetDescr(relation)->tdhasseclabel
+		= securityTupleDescHasSecLabel(relid, relp->relkind);
 
 	/*
 	 * initialize the relation lock manager information
@@ -1465,7 +1465,8 @@ formrdesc(const char *relationName, Oid relationReltype,
 
 	/* Fixup relation->rd_att->tdhasseclabel */
 	RelationGetDescr(relation)->tdhasseclabel
-		= securityTupleDescHasSecLabel(relation);
+		= securityTupleDescHasSecLabel(RelationGetRelid(relation),
+									   RELKIND_RELATION);
 
 	/*
 	 * initialize the relation lock manager information
@@ -3470,8 +3471,9 @@ load_relcache_init_file(void)
 		}
 
 		/* Fixup rel->rd_att->tdhasseclabel */
-		rel->rd_att->tdhasseclabel
-			= securityTupleDescHasSecLabel(rel);
+		RelationGetDescr(rel)->tdhasseclabel
+			= securityTupleDescHasSecLabel(RelationGetRelid(rel),
+										   RelationGetForm(rel)->relkind);
 
 		/* mark not-null status */
 		if (has_not_null)

@@ -464,7 +464,7 @@ typedef struct ColumnDef
 	Node	   *raw_default;	/* default value (untransformed parse tree) */
 	char	   *cooked_default; /* nodeToString representation */
 	List	   *constraints;	/* other constraints on column */
-	Node	   *secLabel;		/* explicitly specified security label */
+	Node	   *secLabel;		/* security label of column */
 } ColumnDef;
 
 /*

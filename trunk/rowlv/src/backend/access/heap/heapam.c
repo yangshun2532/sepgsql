@@ -2016,6 +2016,7 @@ heap_insert(Relation relation, HeapTuple tup, CommandId cid,
 Oid
 simple_heap_insert(Relation relation, HeapTuple tup)
 {
+	/* SELinux set up default security label */
 	rowlvHeapTupleInsert(relation, tup, true);
 
 	return heap_insert(relation, tup, GetCurrentCommandId(true), 0, NULL);
@@ -2311,6 +2312,7 @@ simple_heap_delete(Relation relation, ItemPointer tid)
 	ItemPointerData update_ctid;
 	TransactionId update_xmax;
 
+	/* Is is really necessary? */
 	rowlvHeapTupleDelete(relation, tid, true);
 
 	result = heap_delete(relation, tid,
@@ -2561,6 +2563,11 @@ l2:
 		/* check there is not space for an OID */
 		Assert(!(newtup->t_data->t_infomask & HEAP_HASOID));
 	}
+
+	/* Preserve SecLabel, if not changed */
+	if (HeapTupleHasSecLabel(newtup) &&
+		!OidIsValid(HeapTupleGetSecLabel(newtup)))
+		HeapTupleSetSecLabel(newtup, HeapTupleGetSecLabel(&oldtup));
 
 	newtup->t_data->t_infomask &= ~(HEAP_XACT_MASK);
 	newtup->t_data->t_infomask2 &= ~(HEAP2_XACT_MASK);
@@ -2982,6 +2989,7 @@ simple_heap_update(Relation relation, ItemPointer otid, HeapTuple tup)
 	ItemPointerData update_ctid;
 	TransactionId update_xmax;
 
+	/* Is it really necessary? */
 	rowlvHeapTupleUpdate(relation, otid, tup, true);
 
 	result = heap_update(relation, otid, tup,
