@@ -140,7 +140,7 @@ sepgsqlCheckSchemaCommon(Oid nsid, access_vector_t required, bool abort)
 
 	tclass = sepgsqlTupleObjectClass(NamespaceRelationId, tuple);
 	rc = sepgsqlClientHasPermsTup(NamespaceRelationId, tuple,
-								  tclass, required, false);
+								  tclass, required, abort);
 	ReleaseSysCache(tuple);
 
 	return rc;
@@ -173,7 +173,6 @@ sepgsqlCheckSchemaSearch(Oid namespace_oid)
 Oid
 sepgsqlCheckTableCreate(Relation new_rel, List *secLabels)
 {
-	security_class_t	tclass;
 	char		relkind = RelationGetForm(new_rel)->relkind;
 	Oid			secid = InvalidOid;
 	ListCell   *l;
@@ -221,9 +220,10 @@ sepgsqlCheckTableCreate(Relation new_rel, List *secLabels)
 }
 
 static void
-checkTableCommon(Oid table_oid, access_vector_t perms, bool abort)
+checkTableCommon(Oid table_oid, access_vector_t required)
 {
-	HeapTuple			tuple;
+	HeapTuple	tuple;
+	char		relkind;
 
 	if (!sepgsqlIsEnabled())
 		return;
@@ -234,14 +234,24 @@ checkTableCommon(Oid table_oid, access_vector_t perms, bool abort)
 	if (!HeapTupleIsValid(tuple))
 		elog(ERROR, "cache lookup failed for relation %u", table_oid);
 
-	if (relkind == SEPG_CLASS_DB_TABLE ||
-		relkind == SEPG_CLASS_DB_SEQUENCE)
+	relkind = ((Form_pg_class) GETSTRUCT(tuple))->relkind;
+	switch (relkind)
 	{
+	case RELKIND_RELATION:
 		sepgsqlClientHasPermsTup(RelationRelationId, tuple,
-								 relkind == RELKIND_SEQUENCE
-									 ? SEPG_CLASS_DB_TABLE
-									 : SEPG_CLASS_DB_SEQUENCE,
-								 perms, abort);
+								 SEPG_CLASS_DB_TABLE,
+								 required, true);
+		break;
+
+	case RELKIND_SEQUENCE:
+		sepgsqlClientHasPermsTup(RelationRelationId, tuple,
+								 SEPG_CLASS_DB_SEQUENCE,
+								 required, true);
+		break;
+
+	default:
+		/* do nothing in this version */
+		break;
 	}
 	ReleaseSysCache(tuple);
 }
@@ -249,29 +259,25 @@ checkTableCommon(Oid table_oid, access_vector_t perms, bool abort)
 void
 sepgsqlCheckTableDrop(Oid table_oid)
 {
-	checkTableCommon(table_oid,
-					 SEPG_DB_TABLE__DROP, true);
+	checkTableCommon(table_oid, SEPG_DB_TABLE__DROP);
 }
 
 void
 sepgsqlCheckTableSetattr(Oid table_oid)
 {
-	checkTableCommon(table_oid,
-					 SEPG_DB_TABLE__SETATTR, true);
+	checkTableCommon(table_oid, SEPG_DB_TABLE__SETATTR);
 }
 
 void
 sepgsqlCheckTableLock(Oid table_oid)
 {
-	checkTableCommon(table_oid,
-					 SEPG_DB_TABLE__LOCK, true);
+	checkTableCommon(table_oid, SEPG_DB_TABLE__LOCK);
 }
 
 void
 sepgsqlCheckTableTruncate(Relation rel)
 {
-	checkTableCommon(RelationGetRelid(rel),
-					 SEPG_DB_TABLE__DELETE, true);
+	checkTableCommon(RelationGetRelid(rel), SEPG_DB_TABLE__DELETE);
 }
 
 void
@@ -283,7 +289,7 @@ sepgsqlCheckTableReference(Relation rel, int16 *attnums, int natts)
 	if (!sepgsqlIsEnabled())
 		return;
 
-	checkTableCommon(RelationGetRelid(rel), SEPG_DB_TABLE__REFERENCE, true);
+	checkTableCommon(RelationGetRelid(rel), SEPG_DB_TABLE__REFERENCE);
 
 	for (i=0; i < natts; i++)
 	{
@@ -383,13 +389,19 @@ sepgsqlCheckColumnCreate(Form_pg_attribute attr, char relkind, List *secLabels)
 }
 
 void
-sepgsqlCheckColumnCreateAT(Relation rel, const char *attname, Node *def)
+sepgsqlCheckColumnCreateAT(Relation rel, Node *cdef)
 {
-	ColumnDef  *colDef = (ColumnDef *)def;
+	ColumnDef  *colDef = (ColumnDef *)cdef;
+	char		relkind = RelationGetForm(rel)->relkind;
 	Oid			relid = RelationGetRelid(rel);
+	Oid			secid;
 
 	if (!sepgsqlIsEnabled())
 	{
+		/*
+		 * we cannot use SECURITY_LABEL option when SE-PostgreSQL
+		 * is unavailable.
+		 */
 		if (colDef->secLabel)
 			ereport(ERROR,
 					(errcode(ERRCODE_SELINUX_ERROR),
@@ -397,25 +409,33 @@ sepgsqlCheckColumnCreateAT(Relation rel, const char *attname, Node *def)
 		return;
 	}
 
+	if (relkind != RELKIND_RELATION)
+	{
+		if (colDef->secLabel)
+			ereport(ERROR,
+					(errcode(ERRCODE_SELINUX_ERROR),
+					 errmsg("Unable to assign security label")));
+		return;
+	}
+
 	if (!colDef->secLabel)
 		secid = sepgsqlGetDefaultColumnSecLabel(relid);
+	else if (IsA(colDef->secLabel, Integer))
+		secid = intVal(colDef->secLabel);	/* already translated */
 	else
-	{
-		char *seclabel = strVal((DefElem *)colDef->secLabel);
-
-		secid = sepgsqlGivenSecLabelIn(AttributeRelationId, seclabel);
-	}
+		secid = sepgsqlGivenSecLabelIn(AttributeRelationId,
+									   (DefElem *)colDef->secLabel);
 
 	sepgsqlClientHasPermsSid(AttributeRelationId, secid,
 							 SEPG_CLASS_DB_COLUMN,
 							 SEPG_DB_COLUMN__CREATE,
-							 attname, true);
+							 colDef->colname, true);
 	colDef->secLabel = (Node *) makeInteger(secid);
 }
 
 static void
-sepgsqlCheckSequenceCommon(Oid relid, AttrNumber attnum,
-						   access_vector_t required)
+sepgsqlCheckColumnCommon(Relation rel, const char *attname,
+						 access_vector_t required)
 {
 	HeapTuple	tuple;
 	char		relkind;
@@ -423,31 +443,32 @@ sepgsqlCheckSequenceCommon(Oid relid, AttrNumber attnum,
 	if (!sepgsqlIsEnabled())
 		return;
 
-	relkind = get_rel_relkind(relid);
-	if (relkind != RELKIND_RELATION &&
-		relkind != RELKIND_SEQUENCE)
+	relkind = RelationGetForm(rel)->relkind;
+	if (relkind != RELKIND_RELATION)
 		return;
 
-	tuple = SearchSysCache(ATTNUM,
-						   ObjectIdGetDatum(relid),
-						   Int16GetDatum(attnum),
-						   0, 0);
+	tuple = SearchSysCacheAttName(RelationGetRelid(rel), attname);
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "cache lookup failed for %s.%s",
+			 RelationGetRelationName(rel), attname);
+
 	sepgsqlClientHasPermsTup(AttributeRelationId, tuple,
 							 SEPG_CLASS_DB_COLUMN,
 							 required, true);
+
 	ReleaseSysCache(tuple);
 }
 
 void
-sepgsqlCheckColumnDrop(Oid relid, AttrNumber attnum)
+sepgsqlCheckColumnDrop(Relation rel, const char *attname)
 {
-	sepgsqlCheckSequenceCommon(relid, attnum, SEPG_DB_COLUMN__DROP);
+	sepgsqlCheckColumnCommon(rel, attname, SEPG_DB_COLUMN__DROP);
 }
 
 void
-sepgsqlCheckColumnSetattr(Oid relid, AttrNumber attnum)
+sepgsqlCheckColumnSetattr(Relation rel, const char *attname)
 {
-	sepgsqlCheckSequenceCommon(relid, attnum, SEPG_DB_COLUMN__SETATTR);
+	sepgsqlCheckColumnCommon(rel, attname, SEPG_DB_COLUMN__SETATTR);
 }
 
 /* ------------------------------------------------------------ *

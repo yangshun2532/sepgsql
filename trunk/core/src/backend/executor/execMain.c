@@ -1847,9 +1847,6 @@ ExecInsert(TupleTableSlot *slot,
 		}
 	}
 
-	/* SELinux: check db_xxx:{create} permission */
-	sepgsqlHeapTupleInsert(resultRelationDesc, tuple, false);
-
 	/*
 	 * Check the constraints of the tuple
 	 */
@@ -1921,9 +1918,6 @@ ExecDelete(ItemPointer tupleid,
 		if (!dodelete)			/* "do nothing" */
 			return;
 	}
-
-	/* SELinux: check db_xxx:{drop} permission */
-	sepgsqlHeapTupleDelete(resultRelationDesc, tupleid, false);
 
 	/*
 	 * delete the tuple
@@ -2090,9 +2084,6 @@ ExecUpdate(TupleTableSlot *slot,
 			tuple = newtuple;
 		}
 	}
-
-	/* SELinux: check db_xxx:{setattr} permission */
-	sepgsqlHeapTupleUpdate(resultRelationDesc, tupleid, tuple, false);
 
 	/*
 	 * Check the constraints of the tuple
@@ -2962,8 +2953,8 @@ OpenIntoRel(QueryDesc *queryDesc)
 	/* Copy the tupdesc because heap_create_with_catalog modifies it */
 	tupdesc = CreateTupleDescCopy(queryDesc->tupDesc);
 
-	/* SELinux checks db_table:{create} and db_column:{create} */
-	secLabels = sepgsqlCheckTableCreate(NULL, namespaceId, RELKIND_RELATION);
+	/* SELinux compute security labels for tables/columns */
+	secLabels = sepgsqlCreateTableSecLabels(NULL, namespaceId, RELKIND_RELATION);
 
 	/* Now we can actually create the new relation */
 	intoRelationId = heap_create_with_catalog(intoName,

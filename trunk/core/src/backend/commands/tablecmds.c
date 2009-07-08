@@ -1930,6 +1930,9 @@ renameatt(Oid myrelid,
 				 errmsg("cannot rename system column \"%s\"",
 						oldattname)));
 
+	/* SELinux checks db_column:{setattr} permission */
+	sepgsqlCheckColumnSetattr(targetrelation, oldattname);
+
 	/*
 	 * if the attribute is inherited, forbid the renaming, unless we are
 	 * already inside a recursive rename.
@@ -2369,7 +2372,7 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 	{
 		case AT_AddColumn:		/* ADD COLUMN */
 			ATSimplePermissions(rel, false);
-			sepgsqlCheckColumnCreateAT(rel, cmd->name, cmd->def);
+			sepgsqlCheckColumnCreateAT(rel, cmd->def);
 			/* Performs own recursion */
 			ATPrepAddColumn(wqueue, rel, recurse, cmd);
 			pass = AT_PASS_ADD_COL;
@@ -2377,7 +2380,7 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 		case AT_AddColumnToView:		/* add column via CREATE OR REPLACE
 										 * VIEW */
 			ATSimplePermissions(rel, true);
-			sepgsqlCheckColumnCreateAT(rel, cmd->name, cmd->def);
+			sepgsqlCheckColumnCreateAT(rel, cmd->def);
 			/* Performs own recursion */
 			ATPrepAddColumn(wqueue, rel, recurse, cmd);
 			pass = AT_PASS_ADD_COL;
@@ -2391,42 +2394,36 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 			 * rules.
 			 */
 			ATSimplePermissions(rel, true);
-			sepgsqlCheckColumnSetattr(rel, cmd->name);
 			ATSimpleRecursion(wqueue, rel, cmd, recurse);
 			/* No command-specific prep needed */
 			pass = cmd->def ? AT_PASS_ADD_CONSTR : AT_PASS_DROP;
 			break;
 		case AT_DropNotNull:	/* ALTER COLUMN DROP NOT NULL */
 			ATSimplePermissions(rel, false);
-			sepgsqlCheckColumnSetattr(rel, cmd->name);
 			ATSimpleRecursion(wqueue, rel, cmd, recurse);
 			/* No command-specific prep needed */
 			pass = AT_PASS_DROP;
 			break;
 		case AT_SetNotNull:		/* ALTER COLUMN SET NOT NULL */
 			ATSimplePermissions(rel, false);
-			sepgsqlCheckColumnSetattr(rel, cmd->name);
 			ATSimpleRecursion(wqueue, rel, cmd, recurse);
 			/* No command-specific prep needed */
 			pass = AT_PASS_ADD_CONSTR;
 			break;
 		case AT_SetStatistics:	/* ALTER COLUMN STATISTICS */
 			ATSimpleRecursion(wqueue, rel, cmd, recurse);
-			sepgsqlCheckColumnSetattr(rel, cmd->name);
 			/* Performs own permission checks */
 			ATPrepSetStatistics(rel, cmd->name, cmd->def);
 			pass = AT_PASS_COL_ATTRS;
 			break;
 		case AT_SetStorage:		/* ALTER COLUMN STORAGE */
 			ATSimplePermissions(rel, false);
-			sepgsqlCheckColumnSetattr(rel, cmd->name);
 			ATSimpleRecursion(wqueue, rel, cmd, recurse);
 			/* No command-specific prep needed */
 			pass = AT_PASS_COL_ATTRS;
 			break;
 		case AT_DropColumn:		/* DROP COLUMN */
 			ATSimplePermissions(rel, false);
-			sepgsqlCheckColumnDrop(rel, cmd->name);
 			/* Recursion occurs during execution phase */
 			/* No command-specific prep needed except saving recurse flag */
 			if (recurse)
@@ -3828,7 +3825,7 @@ ATPrepAddOids(List **wqueue, Relation rel, bool recurse, AlterTableCmd *cmd)
 		cdef->is_not_null = true;
 		cmd->def = (Node *) cdef;
 	}
-	sepgsqlCheckColumnCreateAT(rel, cmd->name, cmd->def);
+	sepgsqlCheckColumnCreateAT(rel, cmd->def);
 	ATPrepAddColumn(wqueue, rel, recurse, cmd);
 }
 
@@ -3865,6 +3862,9 @@ ATExecDropNotNull(Relation rel, const char *colName)
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot alter system column \"%s\"",
 						colName)));
+
+	/* SELinux checks db_column:{setattr} */
+	sepgsqlCheckColumnSetattr(rel, colName);
 
 	/*
 	 * Check that the attribute is not in a primary key
@@ -3958,6 +3958,9 @@ ATExecSetNotNull(AlteredTableInfo *tab, Relation rel,
 				 errmsg("cannot alter system column \"%s\"",
 						colName)));
 
+	/* SELinux checks db_column:{setattr} permission */
+	sepgsqlCheckColumnSetattr(rel, colName);
+
 	/*
 	 * Okay, actually perform the catalog change ... if needed
 	 */
@@ -4002,6 +4005,9 @@ ATExecColumnDefault(Relation rel, const char *colName,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot alter system column \"%s\"",
 						colName)));
+
+	/* SELinux checks db_column:{setattr} */
+	sepgsqlCheckColumnSetattr(rel, colName);
 
 	/*
 	 * Remove any old default for the column.  We use RESTRICT here for
@@ -4101,6 +4107,9 @@ ATExecSetStatistics(Relation rel, const char *colName, Node *newValue)
 				 errmsg("cannot alter system column \"%s\"",
 						colName)));
 
+	/* SELinux checks db_column:{setattr} */
+	sepgsqlCheckColumnSetattr(rel, colName);
+
 	attrtuple->attstattarget = newtarget;
 
 	simple_heap_update(attrelation, &tuple->t_self, tuple);
@@ -4162,6 +4171,9 @@ ATExecSetStorage(Relation rel, const char *colName, Node *newValue)
 				 errmsg("cannot alter system column \"%s\"",
 						colName)));
 
+	/* SELinux checks db_column:{setattr} permission */
+	sepgsqlCheckColumnSetattr(rel, colName);
+
 	/*
 	 * safety check: do not allow toasted storage modes unless column datatype
 	 * is TOAST-aware.
@@ -4207,10 +4219,7 @@ ATExecDropColumn(List **wqueue, Relation rel, const char *colName,
 
 	/* At top level, permission check was done in ATPrepCmd, else do it */
 	if (recursing)
-	{
-		ATSimplePermissions(rel, false);
-		sepgsqlCheckColumnDrop(rel, colName);
-	}
+  		ATSimplePermissions(rel, false);
 
 	/*
 	 * get the number of the attribute
@@ -4240,6 +4249,9 @@ ATExecDropColumn(List **wqueue, Relation rel, const char *colName,
 						colName)));
 
 	ReleaseSysCache(tuple);
+
+	/* SELinux checks db_column:{drop} */
+	sepgsqlCheckColumnDrop(rel, colName);
 
 	/*
 	 * Propagate to children as appropriate.  Unlike most other ALTER
@@ -5756,6 +5768,9 @@ ATExecAlterColumnType(AlteredTableInfo *tab, Relation rel,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot alter type of column \"%s\" twice",
 						colName)));
+
+	/* SELinux checks db_column:{setattr} permission */
+	sepgsqlCheckColumnSetattr(rel, colName);
 
 	/* Look up the target type (should not fail, since prep found it) */
 	typeTuple = typenameType(NULL, typename, &targettypmod);
