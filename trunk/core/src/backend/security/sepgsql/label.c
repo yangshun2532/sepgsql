@@ -303,7 +303,13 @@ sepgsqlSetDefaultSecLabel(Relation rel, HeapTuple tuple)
 
 /*
  * sepgsqlCreateTableSecLabels
- *
+ *   It compute a security labels of new table, and chains explicitly
+ *   given security labels for the table and columns. The returned
+ *   list is delivered to sepgsqlCheckTableCreate() and
+ *   sepgsqlCheckColumnCreate(). In the default, columns are labeled
+ *   using the security context of its table, but we cannot refer
+ *   RELOID system cache within heap_create_with_catalog(), so it is
+ *   necessary to register what label is assigned on the table.
  */
 List *
 sepgsqlCreateTableSecLabels(CreateStmt *stmt, Oid namespace_oid, char relkind)
@@ -400,28 +406,6 @@ sepgsqlCopyTableSecLabels(Relation source)
 	}
 
 	return result;
-}
-
-/*
- * sepgsqlGivenSecLabelIn
- *   translate a given security label in text form into a security
- *   identifier. It can raise an error, if its format is violated,
- *   but permission checks are done later.
- */
-Oid
-sepgsqlGivenSecLabelIn(Oid relid, DefElem *defel)
-{
-	if (!defel)
-		return InvalidOid;
-
-	Assert(IsA(defel, DefElem));
-
-	if (!sepgsqlIsEnabled())
-		ereport(ERROR,
-				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("SELinux is disabled now")));
-
-	return securityTransSecLabelIn(relid, strVal(defel->arg));
 }
 
 /*

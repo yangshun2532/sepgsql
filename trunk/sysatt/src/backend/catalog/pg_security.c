@@ -362,5 +362,8 @@ securityMoveSecLabel(Oid dstid, Oid srcid, Oid secid)
 {
 	char   *seclabel = securityRawSecLabelOut(srcid, secid);
 
+	if (!seclabel)
+		return InvalidOid;
+
 	return securityRawSecLabelIn(dstid, seclabel);
 }

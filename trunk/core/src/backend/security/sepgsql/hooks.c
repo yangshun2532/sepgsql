@@ -8,9 +8,12 @@
 #include "postgres.h"
 
 #include "catalog/indexing.h"
+#include "catalog/namespace.h"
 #include "catalog/pg_database.h"
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_proc.h"
+#include "catalog/pg_security.h"
+#include "commands/dbcommands.h"
 #include "miscadmin.h"
 #include "security/sepgsql.h"
 #include "utils/fmgroids.h"
@@ -31,7 +34,11 @@ sepgsqlCheckDatabaseCreate(const char *datname, DefElem *new_label)
 	if (!sepgsqlIsEnabled())
 		return InvalidOid;
 
-	datsid = sepgsqlGetDefaultDatabaseSecLabel();
+	if (!new_label)
+		datsid = sepgsqlGetDefaultDatabaseSecLabel();
+	else
+		datsid = securityTransSecLabelIn(DatabaseRelationId,
+										 strVal(new_label->arg));
 
 	sepgsqlClientHasPermsSid(DatabaseRelationId, datsid,
 							 SEPG_CLASS_DB_DATABASE,
@@ -104,44 +111,43 @@ sepgsqlCheckSchemaCreate(const char *nspname, DefElem *new_label, bool temp_sche
 	if (!sepgsqlIsEnabled())
 		return InvalidOid;
 
-	if (!temp_schema)
-	{
-		nspsid = sepgsqlGetDefaultSchemaSecLabel(MyDatabaseId);
-		sepgsqlClientHasPermsSid(NamespaceRelationId, nspsid,
-								 SEPG_CLASS_DB_SCHEMA,
-								 SEPG_DB_SCHEMA__CREATE,
-								 nspname, true);
-	}
+	if (!new_label)
+		nspsid = (!temp_schema
+				  ? sepgsqlGetDefaultSchemaSecLabel(MyDatabaseId)
+				  : sepgsqlGetDefaultSchemaTempSecLabel(MyDatabaseId));
 	else
-	{
-		nspsid = sepgsqlGetDefaultSchemaTempSecLabel(MyDatabaseId);
-		sepgsqlClientHasPermsSid(NamespaceRelationId, nspsid,
-								 SEPG_CLASS_DB_SCHEMA_TEMP,
-								 SEPG_DB_SCHEMA_TEMP__CREATE,
-								 nspname, true);
-	}
+		nspsid = securityTransSecLabelIn(NamespaceRelationId,
+										 strVal(new_label->arg));
+
+	sepgsqlClientHasPermsSid(NamespaceRelationId, nspsid,
+							 (!temp_schema
+							  ? SEPG_CLASS_DB_SCHEMA
+							  : SEPG_CLASS_DB_SCHEMA_TEMP),
+							 SEPG_DB_SCHEMA__CREATE,
+							 nspname, true);
 	return nspsid;
 }
 
 static bool
-sepgsqlCheckSchemaCommon(Oid nsid, access_vector_t required, bool abort)
+sepgsqlCheckSchemaCommon(Oid namespace_oid, access_vector_t required, bool abort)
 {
-	security_class_t	tclass;
-	HeapTuple			tuple;
-	bool rc;
+	HeapTuple	tuple;
+	bool		rc;
 
 	if (!sepgsqlIsEnabled())
 		return true;
 
 	tuple = SearchSysCache(NAMESPACEOID,
-						   ObjectIdGetDatum(nsid),
+						   ObjectIdGetDatum(namespace_oid),
 						   0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
-		elog(ERROR, "cache lookup failed for namespace: %u", nsid);
+		elog(ERROR, "cache lookup failed for namespace: %u", namespace_oid);
 
-	tclass = sepgsqlTupleObjectClass(NamespaceRelationId, tuple);
 	rc = sepgsqlClientHasPermsTup(NamespaceRelationId, tuple,
-								  tclass, required, abort);
+								  (!isAnyTempNamespace(namespace_oid)
+								   ? SEPG_CLASS_DB_SCHEMA
+								   : SEPG_CLASS_DB_SCHEMA_TEMP),
+								  required, abort);
 	ReleaseSysCache(tuple);
 
 	return rc;
@@ -175,7 +181,7 @@ Oid
 sepgsqlCheckTableCreate(Relation new_rel, List *secLabels)
 {
 	char		relkind = RelationGetForm(new_rel)->relkind;
-	Oid			secid = InvalidOid;
+	Oid			relsid = InvalidOid;
 	ListCell   *l;
 
 	/*
@@ -192,7 +198,7 @@ sepgsqlCheckTableCreate(Relation new_rel, List *secLabels)
 
 		if (!defel->defname)
 		{
-			secid = intVal(defel->arg);
+			relsid = intVal(defel->arg);
 			break;
 		}
 	}
@@ -200,14 +206,14 @@ sepgsqlCheckTableCreate(Relation new_rel, List *secLabels)
 	switch (relkind)
 	{
 	case RELKIND_RELATION:
-		sepgsqlClientHasPermsSid(RelationRelationId, secid,
+		sepgsqlClientHasPermsSid(RelationRelationId, relsid,
 								 SEPG_CLASS_DB_TABLE,
 								 SEPG_DB_TABLE__CREATE,
 								 RelationGetRelationName(new_rel), true);
 		break;
 
 	case RELKIND_SEQUENCE:
-		sepgsqlClientHasPermsSid(RelationRelationId, secid,
+		sepgsqlClientHasPermsSid(RelationRelationId, relsid,
 								 SEPG_CLASS_DB_SEQUENCE,
 								 SEPG_DB_SEQUENCE__CREATE,
 								 RelationGetRelationName(new_rel), true);
@@ -217,7 +223,7 @@ sepgsqlCheckTableCreate(Relation new_rel, List *secLabels)
 		break;
 	}
 
-	return secid;
+	return relsid;
 }
 
 static void
@@ -265,11 +271,16 @@ sepgsqlCheckTableDrop(Oid table_oid)
 	SysScanDesc scan;
 	ScanKeyData key[1];
 	HeapTuple   atttup;
+	char		relkind;
 
 	if (!sepgsqlIsEnabled())
 		return;
 
 	checkTableCommon(table_oid, SEPG_DB_TABLE__DROP);
+
+	relkind = get_rel_relkind(table_oid);
+	if (relkind != RELKIND_RELATION)
+		return;		/* no need to check anymore */
 
 	/* Also checks db_column:{drop} */
 	attrel = heap_open(AttributeRelationId, AccessShareLock);
@@ -424,49 +435,45 @@ sepgsqlCheckColumnCreate(Form_pg_attribute attr, char relkind, List *secLabels)
 }
 
 Oid
-sepgsqlCheckColumnCreateAT(Oid relid, ColumnDef *colDef)
+sepgsqlCheckColumnCreateAT(Oid table_oid, const char *attname, DefElem *new_label)
 {
 	Oid		secid;
 	char	relkind;
 
 	if (!sepgsqlIsEnabled())
 	{
-		/*
-		 * we cannot use SECURITY_LABEL option when SE-PostgreSQL
-		 * is unavailable.
-		 */
-		if (colDef->secLabel)
+		if (new_label)
 			ereport(ERROR,
 					(errcode(ERRCODE_SELINUX_ERROR),
 					 errmsg("SELinux is disabled now")));
 		return InvalidOid;
 	}
 
-	relkind = get_rel_relkind(relid);
+	relkind = get_rel_relkind(table_oid);
 	if (relkind != RELKIND_RELATION)
 	{
-		if (colDef->secLabel)
+		if (new_label)
 			ereport(ERROR,
 					(errcode(ERRCODE_SELINUX_ERROR),
 					 errmsg("Unable to assign security label")));
 		return InvalidOid;
 	}
 
-	if (!colDef->secLabel)
-		secid = sepgsqlGetDefaultColumnSecLabel(relid);
+	if (!new_label)
+		secid = sepgsqlGetDefaultColumnSecLabel(table_oid);
 	else
-		secid = sepgsqlGivenSecLabelIn(AttributeRelationId,
-									   (DefElem *)colDef->secLabel);
+		secid = securityTransSecLabelIn(AttributeRelationId,
+										strVal(new_label->arg));
 
 	sepgsqlClientHasPermsSid(AttributeRelationId, secid,
 							 SEPG_CLASS_DB_COLUMN,
 							 SEPG_DB_COLUMN__CREATE,
-							 colDef->colname, true);
+							 attname, true);
 	return secid;
 }
 
 static void
-sepgsqlCheckColumnCommon(Oid relid, AttrNumber attno,
+sepgsqlCheckColumnCommon(Oid table_oid, AttrNumber attno,
 						 access_vector_t required)
 {
 	Form_pg_attribute	attr;
@@ -476,17 +483,17 @@ sepgsqlCheckColumnCommon(Oid relid, AttrNumber attno,
 	if (!sepgsqlIsEnabled())
 		return;
 
-	relkind = get_rel_relkind(relid);
+	relkind = get_rel_relkind(table_oid);
 	if (relkind != RELKIND_RELATION)
 		return;
 
 	tuple = SearchSysCache(ATTNUM,
-						   ObjectIdGetDatum(relid),
+						   ObjectIdGetDatum(table_oid),
 						   Int16GetDatum(attno),
 						   0, 0);
 	if (!HeapTupleIsValid(tuple))
 		elog(ERROR, "cache lookup failed for attribute %d of relation %u",
-			 attno, relid);
+			 attno, table_oid);
 
 	attr = (Form_pg_attribute) GETSTRUCT(tuple);
 	if (!attr->attisdropped)
@@ -497,61 +504,39 @@ sepgsqlCheckColumnCommon(Oid relid, AttrNumber attno,
 }
 
 void
-sepgsqlCheckColumnDrop(Oid relid, AttrNumber attno)
+sepgsqlCheckColumnDrop(Oid table_oid, AttrNumber attno)
 {
-	sepgsqlCheckColumnCommon(relid, attno, SEPG_DB_COLUMN__DROP);
+	sepgsqlCheckColumnCommon(table_oid, attno, SEPG_DB_COLUMN__DROP);
 }
 
 void
-sepgsqlCheckColumnSetattr(Oid relid, AttrNumber attno)
+sepgsqlCheckColumnSetattr(Oid table_oid, AttrNumber attno)
 {
-	sepgsqlCheckColumnCommon(relid, attno, SEPG_DB_COLUMN__SETATTR);
+	sepgsqlCheckColumnCommon(table_oid, attno, SEPG_DB_COLUMN__SETATTR);
 }
 
 /* ------------------------------------------------------------ *
  *   Hooks corresponding to db_procedure object class
  * ------------------------------------------------------------ */
 Oid
-sepgsqlCheckProcedureCreate(const char *proname, Oid namespace_oid,
-							Oid given_secid, HeapTuple oldtup)
+sepgsqlCheckProcedureCreate(const char *proname,
+							Oid namespace_oid, DefElem *new_label)
 {
-	Oid		prosid = InvalidOid;
+	Oid		prosid;
 
 	if (!sepgsqlIsEnabled())
 		return InvalidOid;
 
-	if (!HeapTupleIsValid(oldtup))
-	{
+	if (!new_label)
 		prosid = sepgsqlGetDefaultProcedureSecLabel(namespace_oid);
-		sepgsqlClientHasPermsSid(ProcedureRelationId, prosid,
-								 SEPG_CLASS_DB_PROCEDURE,
-								 SEPG_DB_PROCEDURE__CREATE,
-								 proname, true);
-	}
 	else
-	{
-		Form_pg_proc	proForm = (Form_pg_proc) GETSTRUCT(oldtup);
-		access_vector_t	required = SEPG_DB_PROCEDURE__SETATTR;
+		prosid = securityTransSecLabelIn(ProcedureRelationId,
+										 strVal(new_label->arg));
 
-		if (OidIsValid(given_secid) &&
-			HeapTupleGetSecLabel(oldtup) != given_secid)
-			required |= SEPG_DB_PROCEDURE__RELABELFROM;
-
-		sepgsqlClientHasPermsSid(ProcedureRelationId,
-								 HeapTupleGetSecLabel(oldtup),
-								 SEPG_CLASS_DB_PROCEDURE,
-								 required,
-								 NameStr(proForm->proname), true);
-
-		if (required & SEPG_DB_PROCEDURE__RELABELFROM)
-		{
-			sepgsqlClientHasPermsSid(ProcedureRelationId, given_secid,
-									 SEPG_CLASS_DB_PROCEDURE,
-									 SEPG_DB_PROCEDURE__RELABELTO,
-									 proname, true);
-			prosid = given_secid;
-		}
-	}
+	sepgsqlClientHasPermsSid(ProcedureRelationId, prosid,
+							 SEPG_CLASS_DB_PROCEDURE,
+							 SEPG_DB_PROCEDURE__CREATE,
+							 proname, true);
 
 	return prosid;
 }

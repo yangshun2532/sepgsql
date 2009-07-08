@@ -3533,7 +3533,7 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 	HeapTuple	typeTuple;
 	Oid			typeOid;
 	int32		typmod;
-	Oid			attsecid = InvalidOid;
+	Oid			attsecid;
 	Form_pg_type tform;
 	Expr	   *defval;
 
@@ -4220,7 +4220,7 @@ ATExecDropColumn(List **wqueue, Relation rel, const char *colName,
 
 	/* At top level, permission check was done in ATPrepCmd, else do it */
 	if (recursing)
-  		ATSimplePermissions(rel, false);
+		ATSimplePermissions(rel, false);
 
 	/*
 	 * get the number of the attribute

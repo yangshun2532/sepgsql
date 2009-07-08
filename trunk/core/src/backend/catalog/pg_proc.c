@@ -344,6 +344,7 @@ ProcedureCreate(const char *procedureName,
 							PointerGetDatum(parameterTypes),
 							ObjectIdGetDatum(procNamespace),
 							0);
+
 	if (HeapTupleIsValid(oldtup))
 	{
 		/* There is one; okay to replace it? */
@@ -359,8 +360,8 @@ ProcedureCreate(const char *procedureName,
 						   procedureName);
 
 		/* SELinux checks db_procedure:{setattr} */
-		prosecid = sepgsqlCheckProcedureCreate(procedureName, procNamespace,
-											   InvalidOid, oldtup);
+		sepgsqlCheckProcedureSetattr(HeapTupleGetOid(oldtup));
+
 		/*
 		 * Not okay to change the return type of the existing proc, since
 		 * existing rules, views, etc may depend on the return type.
@@ -491,8 +492,8 @@ ProcedureCreate(const char *procedureName,
 	else
 	{
 		/* SELinux checks db_procedure:{create} */
-		prosecid = sepgsqlCheckProcedureCreate(procedureName, procNamespace,
-											   InvalidOid, NULL);
+		prosecid = sepgsqlCheckProcedureCreate(procedureName,
+											   procNamespace, NULL);
 		/* Creating a new procedure */
 		tup = heap_form_tuple(tupDesc, values, nulls);
 		if (HeapTupleHasSecLabel(tup))

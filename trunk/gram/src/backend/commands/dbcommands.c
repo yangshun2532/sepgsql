@@ -1411,6 +1411,7 @@ AlterDatabase(AlterDatabaseStmt *stmt, bool isTopLevel)
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_DATABASE,
 					   stmt->dbname);
 
+	/* SELinux checks db_database:{setattr} */
 	sepgsqlCheckDatabaseSetattr(HeapTupleGetOid(tuple));
 
 	/*

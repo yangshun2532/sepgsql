@@ -344,8 +344,6 @@ sepgsqlCreateTableSecLabels(CreateStmt *stmt,
 							Oid namespace_oid, char relkind);
 extern List *
 sepgsqlCopyTableSecLabels(Relation source);
-extern Oid
-sepgsqlGivenSecLabelIn(Oid relid, DefElem *defel);
 
 extern security_context_t
 sepgsqlTransSecLabelIn(security_context_t seclabel);
@@ -405,8 +403,6 @@ extern const char *sepgsqlGetPermissionString(security_class_t tclass,
 #define sepgsqlAllowFunctionInlined(a)			(true)
 // label.c
 #define sepgsqlTupleDescHasSecLabel(a)			(false)
-#define sepgsqlGivenSecLabelIn(a,b)				(InvalidOid)
-#define sepgsqlParseCreateStmtSecLabelIn(a)		(NIL)
 #define sepgsqlTransSecLabelIn(a)				(a)
 #define sepgsqlTransSecLabelOut(a)				(a)
 #define sepgsqlRawSecLabelIn(a)					(a)

@@ -279,15 +279,15 @@ sepgsqlCheckSequenceSetValue(Oid seqid);
 extern Oid
 sepgsqlCheckColumnCreate(Form_pg_attribute attr, char relkind, List *secLabels);
 extern Oid
-sepgsqlCheckColumnCreateAT(Oid relid, ColumnDef *colDef);
+sepgsqlCheckColumnCreateAT(Oid table_oid, const char *attname, DefElem *new_label);
 extern void
-sepgsqlCheckColumnDrop(Oid relid, AttrNumber attno);
+sepgsqlCheckColumnDrop(Oid table_oid, AttrNumber attno);
 extern void
-sepgsqlCheckColumnSetattr(Oid relid, AttrNumber attno);
+sepgsqlCheckColumnSetattr(Oid table_oid, AttrNumber attno);
 
 extern Oid
 sepgsqlCheckProcedureCreate(const char *proname, Oid namespace_oid,
-							Oid given_secid, HeapTuple oldtup);
+							DefElem *new_label);
 extern void
 sepgsqlCheckProcedureDrop(Oid proc_oid);
 extern void
@@ -334,8 +334,6 @@ sepgsqlCreateTableSecLabels(CreateStmt *stmt,
 							Oid namespace_oid, char relkind);
 extern List *
 sepgsqlCopyTableSecLabels(Relation source);
-extern Oid
-sepgsqlGivenSecLabelIn(Oid relid, DefElem *defel);
 
 extern security_context_t
 sepgsqlTransSecLabelIn(security_context_t seclabel);
