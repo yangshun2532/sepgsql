@@ -80,7 +80,7 @@ ProcedureCreate(const char *procedureName,
 				Datum proconfig,
 				float4 procost,
 				float4 prorows,
-				Oid pro_secid)
+				Node *proseclabel)
 {
 	Oid			retval;
 	int			parameterCount;
@@ -98,6 +98,7 @@ ProcedureCreate(const char *procedureName,
 	Datum		values[Natts_pg_proc];
 	bool		replaces[Natts_pg_proc];
 	Oid			relid;
+	Oid			prosecid;
 	NameData	procname;
 	TupleDesc	tupDesc;
 	bool		is_update;
@@ -359,6 +360,13 @@ ProcedureCreate(const char *procedureName,
 			aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
 						   procedureName);
 
+		/* SELinux checks db_procedure:{setattr},
+		 * and db_procedure:{relabelfrom relabelto} if necessary. */
+		if (!proseclabel)
+			sepgsqlCheckProcedureSetattr(HeapTupleGetOid(oldtup));
+		else
+			prosecid = sepgsqlCheckProcedureRelabel(HeapTupleGetOid(oldtup),
+													(DefElem *)proseclabel);
 		/*
 		 * Not okay to change the return type of the existing proc, since
 		 * existing rules, views, etc may depend on the return type.
@@ -479,13 +487,8 @@ ProcedureCreate(const char *procedureName,
 
 		/* Okay, do it... */
 		tup = heap_modify_tuple(oldtup, tupDesc, values, nulls, replaces);
-		if (OidIsValid(pro_secid))
-		{
-			if (!HeapTupleHasSecLabel(tup))
-				elog(ERROR, "Unable to assign security label on \"%s\"",
-					 RelationGetRelationName(rel));
-			HeapTupleSetSecLabel(tup, pro_secid);
-		}
+		if (HeapTupleHasSecLabel(tup) && OidIsValid(prosecid))
+			HeapTupleSetSecLabel(tup, prosecid);
 		simple_heap_update(rel, &tup->t_self, tup);
 
 		ReleaseSysCache(oldtup);
@@ -493,15 +496,13 @@ ProcedureCreate(const char *procedureName,
 	}
 	else
 	{
+		/* SELinux checks db_procedure:{create} */
+		prosecid = sepgsqlCheckProcedureCreate(procedureName,
+											   procNamespace, proseclabel);
 		/* Creating a new procedure */
 		tup = heap_form_tuple(tupDesc, values, nulls);
-		if (OidIsValid(pro_secid))
-		{
-			if (!HeapTupleHasSecLabel(tup))
-				elog(ERROR, "Unable to assign security label on \"%s\"",
-					 RelationGetRelationName(rel));
-			HeapTupleSetSecLabel(tup, pro_secid);
-		}
+		if (HeapTupleHasSecLabel(tup))
+			HeapTupleSetSecLabel(tup, prosecid);
 		simple_heap_insert(rel, tup);
 		is_update = false;
 	}

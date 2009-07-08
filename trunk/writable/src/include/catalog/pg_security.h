@@ -15,10 +15,16 @@
 #include "utils/acl.h"
 #include "utils/relcache.h"
 
-#define SecurityRelationId        3405
+#define SecurityRelationId        3400
 
-CATALOG(pg_security,3405)
+CATALOG(pg_security,3400) BKI_SHARED_RELATION BKI_WITHOUT_OIDS
 {
+	/* Identifier of the security attribute  */
+	Oid		secid;
+
+	/* OID of the database which referes the entry */
+	Oid		datid;
+
 	/* OID of the table which refers the entry */
 	Oid		relid;
 
@@ -38,10 +44,12 @@ typedef FormData_pg_security *Form_pg_security;
 /*
  * Compiler constants for pg_security
  */
-#define Natts_pg_security				3
-#define Anum_pg_security_relid			1
-#define Anum_pg_security_seckind		2
-#define Anum_pg_security_secattr		3
+#define Natts_pg_security				5
+#define Anum_pg_security_secid			1
+#define Anum_pg_security_datid			2
+#define Anum_pg_security_relid			3
+#define Anum_pg_security_seckind		4
+#define Anum_pg_security_secattr		5
 
 /*
  * Compiler constants for pg_security.seckind
@@ -54,11 +62,14 @@ typedef FormData_pg_security *Form_pg_security;
 extern void
 securityPostBootstrapingMode(void);
 
-extern bool
-securityTupleDescHasRowAcl(Relation rel);
+extern void
+securityOnCreateDatabase(Oid src_datid, Oid dst_datid);
+
+extern void
+securityOnDropDatabase(Oid datid);
 
 extern bool
-securityTupleDescHasSecLabel(Relation rel);
+securityTupleDescHasSecLabel(Oid relid, char relkind);
 
 extern Oid
 securityRawSecLabelIn(Oid relid, char *seclabel);
@@ -73,15 +84,6 @@ extern char *
 securityTransSecLabelOut(Oid relid, Oid secid);
 
 extern Oid
-securityTransRowAclIn(Oid relid, Acl *acl);
-
-extern Acl *
-securityTransRowAclOut(Oid relid, Oid secid, Oid ownid);
-
-extern Datum
-securityHeapGetRowAclSysattr(HeapTuple tuple);
-
-extern Datum
-securityHeapGetSecLabelSysattr(HeapTuple tuple);
+securityMoveSecLabel(Oid dst_relid, Oid src_relid, Oid secid);
 
 #endif		/* PG_SECURITY_H */

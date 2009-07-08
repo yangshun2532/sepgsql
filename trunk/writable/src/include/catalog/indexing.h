@@ -249,15 +249,10 @@ DECLARE_UNIQUE_INDEX(pg_type_oid_index, 2703, on pg_type using btree(oid oid_ops
 DECLARE_UNIQUE_INDEX(pg_type_typname_nsp_index, 2704, on pg_type using btree(typname name_ops, typnamespace oid_ops));
 #define TypeNameNspIndexId	2704
 
-DECLARE_UNIQUE_INDEX(pg_shsecurity_oid_index, 3401, on pg_shsecurity using btree(oid oid_ops));
-#define SharedSecurityOidIndexId		3401
-DECLARE_UNIQUE_INDEX(pg_shsecurity_secattr_index, 3402, on pg_shsecurity using btree(relid oid_ops, seckind char_ops, secattr text_ops));
-#define SharedSecuritySecattrIndexId	3402
-
-DECLARE_UNIQUE_INDEX(pg_security_oid_index, 3406, on pg_security using btree(oid oid_ops));
-#define SecurityOidIndexId				3406
-DECLARE_UNIQUE_INDEX(pg_security_secattr_index, 3407, on pg_security using btree(relid oid_ops, seckind char_ops, secattr text_ops));
-#define SecuritySecattrIndexId			3407
+DECLARE_UNIQUE_INDEX(pg_security_secid_index, 3401, on pg_security using btree(secid oid_ops, datid oid_ops, relid oid_ops));
+#define SecuritySecidIndexId		3401
+DECLARE_UNIQUE_INDEX(pg_security_secattr_index, 3402, on pg_security using btree(datid oid_ops, relid oid_ops, seckind char_ops, secattr text_ops));
+#define SecuritySecattrIndexId		3402
 
 DECLARE_UNIQUE_INDEX(pg_foreign_data_wrapper_oid_index, 112, on pg_foreign_data_wrapper using btree(oid oid_ops));
 #define ForeignDataWrapperOidIndexId	112
