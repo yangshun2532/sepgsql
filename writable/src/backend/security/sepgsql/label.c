@@ -7,8 +7,10 @@
  */
 #include "postgres.h"
 
+#include "access/sysattr.h"
 #include "access/xact.h"
 #include "catalog/catalog.h"
+#include "catalog/heap.h"
 #include "catalog/indexing.h"
 #include "catalog/pg_attribute.h"
 #include "catalog/pg_class.h"
@@ -21,8 +23,6 @@
 #include "nodes/makefuncs.h"
 #include "security/sepgsql.h"
 #include "storage/fd.h"
-#include "utils/builtins.h"
-#include "utils/memutils.h"
 #include "utils/syscache.h"
 
 /* GUC parameter to turn on/off mcstrans */
@@ -35,51 +35,48 @@ bool sepostgresql_use_mcstrans;
  *   security label on the given relation, or not.
  */
 bool
-sepgsqlTupleDescHasSecLabel(Relation rel)
+sepgsqlTupleDescHasSecLabel(Oid relid, char relkind)
 {
 	if (!sepgsqlIsEnabled())
 		return false;
 
-	if (rel == NULL)
-		return false;	/* target of SELECT INTO */
+	if (!OidIsValid(relid))
+		return false;	/* Target of SELECT INTO */
 
-	if (RelationGetRelid(rel) == DatabaseRelationId  ||
-		RelationGetRelid(rel) == NamespaceRelationId ||
-		RelationGetRelid(rel) == RelationRelationId  ||
-		RelationGetRelid(rel) == AttributeRelationId ||
-		RelationGetRelid(rel) == ProcedureRelationId)
+	if (relid == DatabaseRelationId  ||
+		relid == NamespaceRelationId ||
+		relid == RelationRelationId  ||
+		relid == AttributeRelationId ||
+		relid == ProcedureRelationId)
 		return true;
 
 	return false;
 }
 
 /*
- * sepgsqlSetDefaultSecLabel 
- *
- *   assigns a default security context for the newly inserted tuple.
+ * sepgsqlGetDefaultDatabaseSecLabel
+ *   It returns the default security label of a database object.
  */
-static Oid
-defaultDatabaseSecLabel(void)
+Oid
+sepgsqlGetDefaultDatabaseSecLabel(void)
 {
-	security_context_t context;
+	security_context_t	seclabel;
 	char		filename[MAXPGPATH];
-	char		buffer[512], *ptype, *tmp;
+	char		buffer[1024], *policy_type, *tmp;
 	FILE	   *filp;
 
 	/*
-	 * NOTE: A special handling is necessary to determine the default
-	 * label for db_database obejct class because it does not have
-	 * its parent object, so we cannot apply normal type transition
-	 * here. At first, it tries to fetch the default context from the
-	 * configuration file of selinux-policy. If it is invalid, we 
-	 * determine it based on only the context of client (compatible
-	 * behavior).
+	 * NOTE: when the security policy provide a configuration to
+	 * specify the default security context of database object,
+	 * we apply is as a default one.
+	 * If the configuration is unavailable, we compute the
+	 * default security context without any parent object.
 	 */
-	if (selinux_getpolicytype(&ptype) < 0)
+	if (selinux_getpolicytype(&policy_type) < 0)
 		goto fallback;
 
 	snprintf(filename, sizeof(filename),
-			 "%s%s/contexts/sepgsql_context", selinux_path(), ptype);
+			 "%s%s/contexts/sepgsql_context", selinux_path(), policy_type);
 	filp = AllocateFile(filename, PG_BINARY_R);
 	if (!filp)
 		goto fallback;
@@ -90,21 +87,21 @@ defaultDatabaseSecLabel(void)
 		if (tmp)
 			*tmp = '\0';
 
-		context = strtok(buffer, " \t\n\r");
-		if (!context)
+		seclabel = strtok(buffer, " \t\n\r");
+		if (!seclabel)
 			continue;
 
 		/* An entry found */
 		FreeFile(filp);
-		return securityTransSecLabelIn(DatabaseRelationId, context);
+		return securityTransSecLabelIn(DatabaseRelationId, seclabel);
 	}
 	FreeFile(filp);
 
 fallback:
-	context = sepgsqlComputeCreate(sepgsqlGetClientLabel(),
-								   sepgsqlGetClientLabel(),
-								   SEPG_CLASS_DB_DATABASE);
-	return securityTransSecLabelIn(DatabaseRelationId, context);
+	seclabel = sepgsqlComputeCreate(sepgsqlGetClientLabel(),
+									sepgsqlGetClientLabel(),
+									SEPG_CLASS_DB_DATABASE);
+	return securityTransSecLabelIn(DatabaseRelationId, seclabel);
 }
 
 static Oid
@@ -118,7 +115,7 @@ defaultSecLabelWithDatabase(Oid relid, Oid datoid, security_class_t tclass)
 		static Oid cached = InvalidOid;
 
 		if (!OidIsValid(cached))
-			cached = defaultDatabaseSecLabel();
+			cached = sepgsqlGetDefaultDatabaseSecLabel();
 		datsid = cached;
 	}
 	else
@@ -137,20 +134,18 @@ defaultSecLabelWithDatabase(Oid relid, Oid datoid, security_class_t tclass)
 									tclass, relid);
 }
 
-static Oid
-defaultSchemaSecLabel(void)
+Oid
+sepgsqlGetDefaultSchemaSecLabel(Oid database_oid)
 {
 	return defaultSecLabelWithDatabase(NamespaceRelationId,
-									   MyDatabaseId,
-									   SEPG_CLASS_DB_SCHEMA);
+									   database_oid, SEPG_CLASS_DB_SCHEMA);
 }
 
-static Oid
-defaultSchemaTempSecLabel(void)
+Oid
+sepgsqlGetDefaultSchemaTempSecLabel(Oid database_oid)
 {
 	return defaultSecLabelWithDatabase(NamespaceRelationId,
-									   MyDatabaseId,
-									   SEPG_CLASS_DB_SCHEMA_TEMP);
+									   database_oid, SEPG_CLASS_DB_SCHEMA_TEMP);
 }
 
 static Oid
@@ -164,7 +159,7 @@ defaultSecLabelWithSchema(Oid relid, Oid nspoid, security_class_t tclass)
 		static Oid cached  = InvalidOid;
 
 		if (!OidIsValid(cached))
-			cached = defaultSchemaSecLabel();
+			cached = sepgsqlGetDefaultSchemaSecLabel(MyDatabaseId);
 		nspsid = cached;
 	}
 	else
@@ -184,27 +179,27 @@ defaultSecLabelWithSchema(Oid relid, Oid nspoid, security_class_t tclass)
 									tclass, relid);
 }
 
-static Oid
-defaultTableSecLabel(Oid nspoid)
+Oid
+sepgsqlGetDefaultTableSecLabel(Oid namespace_oid)
 {
 	return defaultSecLabelWithSchema(RelationRelationId,
-									 nspoid,
+									 namespace_oid,
 									 SEPG_CLASS_DB_TABLE);
 }
 
-static Oid
-defaultSequenceSecLabel(Oid nspoid)
+Oid
+sepgsqlGetDefaultSequenceSecLabel(Oid namespace_oid)
 {
 	return defaultSecLabelWithSchema(RelationRelationId,
-									 nspoid,
+									 namespace_oid,
 									 SEPG_CLASS_DB_SEQUENCE);
 }
 
-static Oid
-defaultProcedureSecLabel(Oid nspoid)
+Oid
+sepgsqlGetDefaultProcedureSecLabel(Oid namespace_oid)
 {
 	return defaultSecLabelWithSchema(ProcedureRelationId,
-									 nspoid,
+									 namespace_oid,
 									 SEPG_CLASS_DB_PROCEDURE);
 }
 
@@ -223,7 +218,7 @@ defaultSecLabelWithTable(Oid relid, Oid tbloid, security_class_t tclass)
 		static Oid cached = InvalidOid;
 
 		if (!OidIsValid(cached))
-			cached = defaultTableSecLabel(PG_CATALOG_NAMESPACE);
+			cached = sepgsqlGetDefaultTableSecLabel(PG_CATALOG_NAMESPACE);
 		tblsid = cached;
 	}
 	else
@@ -243,69 +238,63 @@ defaultSecLabelWithTable(Oid relid, Oid tbloid, security_class_t tclass)
 									tclass, relid);
 }
 
-static Oid
-defaultColumnSecLabel(Oid tbloid)
+Oid
+sepgsqlGetDefaultColumnSecLabel(Oid table_oid)
 {
 	return defaultSecLabelWithTable(AttributeRelationId,
-									tbloid,
+									table_oid,
 									SEPG_CLASS_DB_COLUMN);
 }
 
-static Oid
-defaultTupleSecLabel(Oid relid)
+Oid
+sepgsqlGetDefaultTupleSecLabel(Oid table_oid)
 {
-	return defaultSecLabelWithTable(relid,
-									relid,
+	return defaultSecLabelWithTable(table_oid,
+									table_oid,
 									SEPG_CLASS_DB_TUPLE);
 }
 
-extern void
+void
 sepgsqlSetDefaultSecLabel(Relation rel, HeapTuple tuple)
 {
-	Form_pg_class		clsForm;
-	Form_pg_proc		proForm;
-	Form_pg_attribute	attForm;
 	Oid		relid = RelationGetRelid(rel);
-	Oid		newsid;
+	Oid		newsid, nspoid, tbloid;
 
-	Assert(HeapTupleHasSecLabel(tuple));
+	if (!sepgsqlIsEnabled())
+		return;
+
+	if (!HeapTupleHasSecLabel(tuple))
+		return;
 
 	switch (sepgsqlTupleObjectClass(relid, tuple))
 	{
 	case SEPG_CLASS_DB_DATABASE:
-		newsid = defaultDatabaseSecLabel();
+		newsid = sepgsqlGetDefaultDatabaseSecLabel();
 		break;
-
 	case SEPG_CLASS_DB_SCHEMA:
-		newsid = defaultSchemaSecLabel();
+		newsid = sepgsqlGetDefaultSchemaSecLabel(MyDatabaseId);
 		break;
-
 	case SEPG_CLASS_DB_SCHEMA_TEMP:
-		newsid = defaultSchemaTempSecLabel();
+		newsid = sepgsqlGetDefaultSchemaTempSecLabel(MyDatabaseId);
 		break;
-
 	case SEPG_CLASS_DB_TABLE:
-		clsForm = (Form_pg_class) GETSTRUCT(tuple);
-		newsid = defaultTableSecLabel(clsForm->relnamespace);
+		nspoid = ((Form_pg_class) GETSTRUCT(tuple))->relnamespace;
+		newsid = sepgsqlGetDefaultTableSecLabel(nspoid);
 		break;
-
 	case SEPG_CLASS_DB_SEQUENCE:
-		clsForm = (Form_pg_class) GETSTRUCT(tuple);
-		newsid = defaultSequenceSecLabel(clsForm->relnamespace);
+		nspoid = ((Form_pg_class) GETSTRUCT(tuple))->relnamespace;
+		newsid = sepgsqlGetDefaultSequenceSecLabel(nspoid);
 		break;
-
 	case SEPG_CLASS_DB_PROCEDURE:
-		proForm = (Form_pg_proc) GETSTRUCT(tuple);
-		newsid = defaultProcedureSecLabel(proForm->pronamespace);
+		nspoid = ((Form_pg_proc) GETSTRUCT(tuple))->pronamespace;
+		newsid = sepgsqlGetDefaultProcedureSecLabel(nspoid);
 		break;
-
 	case SEPG_CLASS_DB_COLUMN:
-		attForm = (Form_pg_attribute) GETSTRUCT(tuple);
-		newsid = defaultColumnSecLabel(attForm->attrelid);
+		tbloid = ((Form_pg_attribute) GETSTRUCT(tuple))->attrelid;
+		newsid = sepgsqlGetDefaultColumnSecLabel(tbloid);
 		break;
-
-	default: /* SEPG_CLASS_DB_TUPLE */
-		newsid = defaultTupleSecLabel(relid);
+	default:
+		newsid = InvalidOid;
 		break;
 	}
 
@@ -313,65 +302,110 @@ sepgsqlSetDefaultSecLabel(Relation rel, HeapTuple tuple)
 }
 
 /*
- * sepgsqlGivenSecLabelIn
- *   translate a given security label in text form into a security
- *   identifier. It can raise an error, if its format is violated,
- *   but permission checks are done later.
- */
-Oid
-sepgsqlGivenSecLabelIn(Oid relid, DefElem *defel)
-{
-	if (!defel)
-		return InvalidOid;
-
-	if (!sepgsqlIsEnabled())
-		ereport(ERROR,
-				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("SELinux is disabled now")));
-
-	return securityTransSecLabelIn(relid, strVal(defel->arg));
-}
-
-/*
- * sepgsqlParseCreateStmtSecLabelIn
- *   picks up the given security context using CREATE TABLE and
- *   SECURITY_LABEL enhancement. It returns a DefElem list.
+ * sepgsqlCreateTableSecLabels
+ *   It compute a security labels of new table, and chains explicitly
+ *   given security labels for the table and columns. The returned
+ *   list is delivered to sepgsqlCheckTableCreate() and
+ *   sepgsqlCheckColumnCreate(). In the default, columns are labeled
+ *   using the security context of its table, but we cannot refer
+ *   RELOID system cache within heap_create_with_catalog(), so it is
+ *   necessary to register what label is assigned on the table.
  */
 List *
-sepgsqlParseCreateStmtSecLabelIn(CreateStmt *stmt)
+sepgsqlCreateTableSecLabels(CreateStmt *stmt, Oid namespace_oid, char relkind)
 {
-	List	   *results = NIL;
-	ListCell   *l;
+	List	   *result = NIL;
 	DefElem	   *defel;
 	Oid			secid;
 
-	if (stmt->secLabel)
-	{
-		defel = (DefElem *) stmt->secLabel;
-		Assert(IsA(defel, DefElem));
+	if (!sepgsqlIsEnabled())
+		return NIL;
 
-		secid = sepgsqlGivenSecLabelIn(RelationRelationId, defel);
-		defel = makeDefElem(NULL, makeInteger(secid));
-		results = lappend(results, defel);
+	/*
+	 * In the current version, we don't give any security labels
+	 * on relations except for tables and sequences.
+	 */
+	switch (relkind)
+	{
+	case RELKIND_RELATION:
+		secid = sepgsqlGetDefaultTableSecLabel(namespace_oid);
+		break;
+
+	case RELKIND_SEQUENCE:
+		secid = sepgsqlGetDefaultSequenceSecLabel(namespace_oid);
+		break;
+
+	default:
+		/* no security labels in this version */
+		return NIL;
+	}
+	defel = makeDefElem(NULL, (Node *) makeInteger(secid));
+	result = lappend(result, defel);
+
+	return result;
+}
+
+/*
+ * sepgsqlCopyTableSecLabels
+ *   It returns a list of security identifiers for a new table
+ *   which is copied from an existing table.
+ *   The make_new_heap() creates a copy of relation, then is
+ *   shall be swapped with the original one.
+ *   Internally, it creates a new table, but we should not
+ *   apply default labeling, because it is not a user visible
+ *   change.
+ */
+List *
+sepgsqlCopyTableSecLabels(Relation source)
+{
+	HeapTuple	tuple;
+	Oid			relid = RelationGetRelid(source);
+	Oid			secid;
+	int			index;
+	DefElem	   *defel;
+	List	   *result = NIL;
+
+	if (!sepgsqlIsEnabled())
+		return NIL;
+
+	/* Copy table's security label */
+	tuple = SearchSysCache(RELOID,
+						   ObjectIdGetDatum(relid),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "cache lookup failed for relation: %u", relid);
+
+	secid = HeapTupleGetSecLabel(tuple);
+	defel = makeDefElem(NULL, (Node *)makeInteger(secid));
+	result = lappend(result, defel);
+
+	ReleaseSysCache(tuple);
+
+	/* Copy column's security label */
+	for (index = FirstLowInvalidHeapAttributeNumber + 1;
+		 index < RelationGetDescr(source)->natts;
+		 index++)
+	{
+		Form_pg_attribute	attr;
+
+		if (index < 0)
+			attr = SystemAttributeDefinition(index, true);
+		else
+			attr = RelationGetDescr(source)->attrs[index];
+
+		tuple = SearchSysCacheAttName(relid, NameStr(attr->attname));
+		if (!HeapTupleIsValid(tuple))
+			continue;
+
+		secid = HeapTupleGetSecLabel(tuple);
+		defel = makeDefElem(pstrdup(NameStr(attr->attname)),
+							(Node *)makeInteger(secid));
+		result = lappend(result, defel);
+
+		ReleaseSysCache(tuple);
 	}
 
-	foreach (l, stmt->tableElts)
-	{
-		ColumnDef  *cdef = lfirst(l);
-
-		if (cdef->secLabel)
-		{
-			defel = (DefElem *) cdef->secLabel;
-			Assert(IsA(defel, DefElem));
-
-			secid = sepgsqlGivenSecLabelIn(AttributeRelationId, defel);
-			defel = makeDefElem(pstrdup(cdef->colname),
-								makeInteger(secid));
-			results = lappend(results, defel);
-		}
-	}
-
-	return results;
+	return result;
 }
 
 /*

@@ -49,7 +49,7 @@ CreateSchemaCommand(CreateSchemaStmt *stmt, const char *queryString)
 	ListCell   *parsetree_item;
 	Oid			owner_uid;
 	Oid			saved_uid;
-	Oid			secid = InvalidOid;
+	Oid			nspsecid;
 	bool		saved_secdefcxt;
 	AclResult	aclresult;
 
@@ -77,6 +77,10 @@ CreateSchemaCommand(CreateSchemaStmt *stmt, const char *queryString)
 
 	check_is_member_of_role(saved_uid, owner_uid);
 
+	/* SELinux checks db_schema:{create} */
+	nspsecid = sepgsqlCheckSchemaCreate(schemaName,
+										(DefElem *)stmt->secLabel, false);
+
 	/* Additional check to protect reserved schema names */
 	if (!allowSystemTableMods && IsReservedName(schemaName))
 		ereport(ERROR,
@@ -95,15 +99,8 @@ CreateSchemaCommand(CreateSchemaStmt *stmt, const char *queryString)
 	if (saved_uid != owner_uid)
 		SetUserIdAndContext(owner_uid, true);
 
-	/* Explicitly given security label */
-	if (stmt->secLabel)
-	{
-		secid = sepgsqlGivenSecLabelIn(NamespaceRelationId,
-									   (DefElem *)stmt->secLabel);
-	}
-
 	/* Create the schema's namespace */
-	namespaceId = NamespaceCreate(schemaName, owner_uid, secid);
+	namespaceId = NamespaceCreate(schemaName, owner_uid, nspsecid);
 
 	/* Advance cmd counter to make the namespace visible */
 	CommandCounterIncrement();
@@ -295,6 +292,9 @@ RenameSchema(const char *oldname, const char *newname)
 		aclcheck_error(aclresult, ACL_KIND_DATABASE,
 					   get_database_name(MyDatabaseId));
 
+	/* SELinux checks db_schema:{setattr} */
+	sepgsqlCheckSchemaSetattr(HeapTupleGetOid(tup));
+
 	if (!allowSystemTableMods && IsReservedName(newname))
 		ereport(ERROR,
 				(errcode(ERRCODE_RESERVED_NAME),
@@ -406,6 +406,9 @@ AlterSchemaOwner_internal(HeapTuple tup, Relation rel, Oid newOwnerId)
 			aclcheck_error(aclresult, ACL_KIND_DATABASE,
 						   get_database_name(MyDatabaseId));
 
+		/* SELinux checks db_schema:{setattr} */
+		sepgsqlCheckSchemaSetattr(HeapTupleGetOid(tup));
+
 		memset(repl_null, false, sizeof(repl_null));
 		memset(repl_repl, false, sizeof(repl_repl));
 
@@ -448,46 +451,41 @@ void
 AlterSchemaSecLabel(const char *name, DefElem *seclabel)
 {
 	Relation	rel;
-	HeapTuple	tuple, newtup;
+	HeapTuple	oldtup;
+	HeapTuple	newtup;
 	Oid			secid;
 	bool		replaces[Natts_pg_namespace];
 
-	/* Translate text representation to security id */
-	secid = sepgsqlGivenSecLabelIn(NamespaceRelationId, seclabel);
-
 	/* open pg_namespace relation */
 	rel = heap_open(NamespaceRelationId, RowExclusiveLock);
-	tuple = SearchSysCache(NAMESPACENAME,
-						   CStringGetDatum(name),
-						   0, 0, 0);
-	if (!HeapTupleIsValid(tuple))
+	oldtup = SearchSysCache(NAMESPACENAME,
+							CStringGetDatum(name),
+							0, 0, 0);
+	if (!HeapTupleIsValid(oldtup))
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_SCHEMA),
 				 errmsg("schema \"%s\" does not exist", name)));
 
-	/* DAC permission check */
-	if (!pg_namespace_ownercheck(HeapTupleGetOid(tuple), GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_NAMESPACE,
-					   NameStr(((Form_pg_namespace) GETSTRUCT(tuple))->nspname));
-	/*
-	 * NOTE: we should not use heap_copytuple() here because of
-	 * possibility that the fetched tuple was inserted while
-	 * SE-PostgreSQL is disabled and it does not have a field
-	 * to store security label.
-	 */
 	memset(replaces, false, sizeof(replaces));
-	newtup = heap_modify_tuple(tuple, RelationGetDescr(rel),
+	newtup = heap_modify_tuple(oldtup, RelationGetDescr(rel),
 							   NULL, NULL, replaces);
+	ReleaseSysCache(oldtup);
+
+	/* DAC permission check */
+	if (!pg_namespace_ownercheck(HeapTupleGetOid(newtup), GetUserId()))
+		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_NAMESPACE, name);
+	/* SELinux checks db_schema:{setattr relabelfrom relabelto} */
+	secid = sepgsqlCheckSchemaRelabel(HeapTupleGetOid(newtup), seclabel);
 	if (!HeapTupleHasSecLabel(newtup))
-		elog(ERROR, "Unable to set security label on tuples in pg_namespace");
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("Unable to set security label on \"%s\"", name)));
 	HeapTupleSetSecLabel(newtup, secid);
 
 	simple_heap_update(rel, &newtup->t_self, newtup);
 	CatalogUpdateIndexes(rel, newtup);
 
 	heap_freetuple(newtup);
-
-	ReleaseSysCache(tuple);
 
 	heap_close(rel, RowExclusiveLock);
 }
