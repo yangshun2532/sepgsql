@@ -360,6 +360,7 @@ List *
 sepgsqlCreateTableSecLabels(CreateStmt *stmt, Oid namespace_oid, char relkind)
 {
 	List	   *result = NIL;
+	ListCell   *l;
 	DefElem	   *defel;
 	Oid			secid;
 
@@ -373,11 +374,19 @@ sepgsqlCreateTableSecLabels(CreateStmt *stmt, Oid namespace_oid, char relkind)
 	switch (relkind)
 	{
 	case RELKIND_RELATION:
-		secid = sepgsqlGetDefaultTableSecLabel(namespace_oid);
+		if (!stmt->secLabel)
+			secid = sepgsqlGetDefaultTableSecLabel(namespace_oid);
+		else
+			secid = securityTransSecLabelIn(RelationRelationId,
+											strVal(stmt->secLabel));
 		break;
 
 	case RELKIND_SEQUENCE:
-		secid = sepgsqlGetDefaultSequenceSecLabel(namespace_oid);
+		if (!stmt->secLabel)
+			secid = sepgsqlGetDefaultSequenceSecLabel(namespace_oid);
+		else
+			secid = securityTransSecLabelIn(RelationRelationId,
+											strVal(stmt->secLabel));
 		break;
 
 	default:
@@ -386,6 +395,20 @@ sepgsqlCreateTableSecLabels(CreateStmt *stmt, Oid namespace_oid, char relkind)
 	}
 	defel = makeDefElem(NULL, (Node *) makeInteger(secid));
 	result = lappend(result, defel);
+
+	foreach (l, stmt->tableElts)
+	{
+		ColumnDef  *colDef = lfirst(l);
+
+		if (!colDef->secLabel)
+			continue;
+
+		secid = securityTransSecLabelIn(AttributeRelationId,
+										strVal(colDef->secLabel));
+		defel = makeDefElem(colDef->colname,
+							(Node *) makeInteger(secid));
+		result = lappend(result, defel);
+	}
 
 	return result;
 }
