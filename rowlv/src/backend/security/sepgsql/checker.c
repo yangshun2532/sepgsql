@@ -8,20 +8,11 @@
 #include "postgres.h"
 
 #include "access/sysattr.h"
-#include "catalog/pg_database.h"
-#include "catalog/pg_language.h"
-#include "catalog/pg_namespace.h"
-#include "catalog/pg_proc.h"
-#include "catalog/pg_rewrite.h"
-#include "catalog/pg_security.h"
-#include "catalog/pg_shsecurity.h"
+#include "catalog/catalog.h"
+#include "miscadmin.h"
 #include "security/sepgsql.h"
-#include "storage/bufmgr.h"
-#include "utils/builtins.h"
-#include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
 #include "utils/syscache.h"
-#include "utils/tqual.h"
 
 /*
  * fixupWholeRowReference
@@ -85,52 +76,25 @@ checkTabelColumnPerms(Oid relid, Bitmapset *selected, Bitmapset *modified,
 	security_class_t	tclass;
 
 	/*
-	 * NOTE: HARDWIRED POLICY IN SE-POSTGRESQL
-	 * - User cannot access RELKIND_TOASTVALUE by hand, because
-	 *   it is used to store variable length data within other
-	 *   column and tuples, and it should be considered as a part
-	 *   of content within them.
-	 * - User cannot modify pg_rewrite.* by hand, because it holds
-	 *   a parsed Query tree which includes requiredPerms and
-	 *   RangeTblEntry with selectedCols/modifiedCols.
-	 *   The correctness of access controls depends on these data
-	 *   are protected from unexpected manipulation..
-	 *
-	 * - User cannot modify pg_security.* by hand, because it holds
-	 *   all the pairs of security identifier and label, so the
-	 *   correctness of access controls depends on these data are
-	 *   protected from unexpected manipulation.
-	 *
-	 * SE-PostgreSQL always prevent user's query tries to modify
-	 * these system catalogs by hand. Please use approariate
-	 * interfaces.
+	 * Hardwired Policy:
+	 * SE-PostgreSQL enforces that clients cannot modify system
+	 * catalogs and access toast values using DML statements.
 	 */
-	if (!sepgsqlGetExceptionMode())
+	if (!sepgsqlGetExceptionMode() && MyProcPort != NULL)
 	{
-		switch (relid)
-		{
-		case RewriteRelationId:
-		case SecurityRelationId:
-		case SharedSecurityRelationId:
-			if ((required & (SEPG_DB_TABLE__UPDATE |
-							 SEPG_DB_TABLE__INSERT |
-							 SEPG_DB_TABLE__DELETE)) != 0)
-				ereport(ERROR,
-						(errcode(ERRCODE_SELINUX_ERROR),
-						 errmsg("SE-PostgreSQL prevent to modify \"%s\" "
-								"by hand due to the hardwired policy",
-								get_rel_name(relid))));
-			break;
-
-		default:
-			if (get_rel_relkind(relid) == RELKIND_TOASTVALUE)
-				ereport(ERROR,
-						(errcode(ERRCODE_SELINUX_ERROR),
-						 errmsg("SE-PostgreSQL prevent to accuees \"%s\" "
-								"by hand due to the hardwired policy",
-								get_rel_name(relid))));
-			break;
-		}
+		if (IsSystemNamespace(get_rel_namespace(relid)) &&
+			(required & (SEPG_DB_TABLE__UPDATE |
+						 SEPG_DB_TABLE__INSERT |
+						 SEPG_DB_TABLE__DELETE)) != 0)
+			ereport(ERROR,
+					(errcode(ERRCODE_SELINUX_ERROR),
+					 errmsg("SE-PostgreSQL prevents to modidy \"%s\"",
+							get_rel_name(relid))));
+		if (get_rel_relkind(relid) == RELKIND_TOASTVALUE)
+			ereport(ERROR,
+					(errcode(ERRCODE_SELINUX_ERROR),
+					 errmsg("SE-PostgreSQL prevents to access \"%s\"",
+							get_rel_name(relid))));
 	}
 
 	/*
@@ -324,26 +288,6 @@ sepgsqlCheckSelectInto(Oid relationId)
 }
 
 /*
- * fixupColumnAvPerms
- *   To change pg_attribute.attisdropped means dropping a column,
- *   although this operation done by update, so it need to change
- *   required permmision in this special case.
- */
-static access_vector_t
-fixupColumnAvPerms(HeapTuple oldtup, HeapTuple newtup)
-{
-	Form_pg_attribute	oldatt = (Form_pg_attribute) GETSTRUCT(oldtup);
-	Form_pg_attribute	newatt = (Form_pg_attribute) GETSTRUCT(newtup);
-
-	if (!oldatt->attisdropped && newatt->attisdropped)
-		return SEPG_DB_COLUMN__DROP;
-	if (oldatt->attisdropped && !newatt->attisdropped)
-		return SEPG_DB_COLUMN__CREATE;
-
-	return 0;
-}
-
-/*
  * sepgsqlExecScan
  *   makes a decision on the given tuple.
  */
@@ -384,34 +328,11 @@ sepgsqlSetupTuplePerms(RangeTblEntry *rte)
 }
 
 /*
- * checkTrustedAction
- *   It returns true, if we can ignore access controls for create/alter/drop
- *   on the given database objects.
- */
-static bool
-checkTrustedAction(Relation rel, bool internal)
-{
-	if (RelationGetForm(rel)->relkind != RELKIND_RELATION)
-		return true;
-
-	if (internal &&
-		(RelationGetRelid(rel) == SecurityRelationId ||
-		 RelationGetRelid(rel) == SharedSecurityRelationId))
-		return true;
-
-	if (RelationGetRelid(rel) == DatabaseRelationId ||
-		RelationGetRelid(rel) == NamespaceRelationId ||
-		RelationGetRelid(rel) == RelationRelationId ||
-		RelationGetRelid(rel) == AttributeRelationId ||
-		RelationGetRelid(rel) == ProcedureRelationId)
-		return false;
-
-	return !sepostgresql_row_level;
-}
-
-/*
  * HeapTuple INSERT/UPDATE/DELETE
  */
+
+FIXME these hooks
+
 bool
 sepgsqlHeapTupleInsert(Relation rel, HeapTuple newtup, bool internal)
 {
