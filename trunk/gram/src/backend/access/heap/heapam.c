@@ -54,7 +54,6 @@
 #include "catalog/namespace.h"
 #include "miscadmin.h"
 #include "pgstat.h"
-#include "security/sepgsql.h"
 #include "storage/bufmgr.h"
 #include "storage/freespace.h"
 #include "storage/lmgr.h"
@@ -2016,9 +2015,6 @@ heap_insert(Relation relation, HeapTuple tup, CommandId cid,
 Oid
 simple_heap_insert(Relation relation, HeapTuple tup)
 {
-	/* SELinux: check db_xxx:{create} permission */
-	sepgsqlHeapTupleInsert(relation, tup, true);
-
 	return heap_insert(relation, tup, GetCurrentCommandId(true), 0, NULL);
 }
 
@@ -2312,9 +2308,6 @@ simple_heap_delete(Relation relation, ItemPointer tid)
 	ItemPointerData update_ctid;
 	TransactionId update_xmax;
 
-	/* SELinux: check db_xxx:{drop} permission */
-	sepgsqlHeapTupleDelete(relation, tid, true);
-
 	result = heap_delete(relation, tid,
 						 &update_ctid, &update_xmax,
 						 GetCurrentCommandId(true), InvalidSnapshot,
@@ -2563,6 +2556,11 @@ l2:
 		/* check there is not space for an OID */
 		Assert(!(newtup->t_data->t_infomask & HEAP_HASOID));
 	}
+
+	/* Preserve SecLabel, if not changed*/
+	if (HeapTupleHasSecLabel(newtup) &&
+		!OidIsValid(HeapTupleGetSecLabel(newtup)))
+		HeapTupleSetSecLabel(newtup, HeapTupleGetSecLabel(&oldtup));
 
 	newtup->t_data->t_infomask &= ~(HEAP_XACT_MASK);
 	newtup->t_data->t_infomask2 &= ~(HEAP2_XACT_MASK);
@@ -2983,9 +2981,6 @@ simple_heap_update(Relation relation, ItemPointer otid, HeapTuple tup)
 	HTSU_Result result;
 	ItemPointerData update_ctid;
 	TransactionId update_xmax;
-
-	/* SELinux: check db_xxx:{setattr} permission */
-	sepgsqlHeapTupleUpdate(relation, otid, tup, true);
 
 	result = heap_update(relation, otid, tup,
 						 &update_ctid, &update_xmax,
