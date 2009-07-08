@@ -33,6 +33,7 @@
 #include "catalog/indexing.h"
 #include "catalog/pg_authid.h"
 #include "catalog/pg_database.h"
+#include "catalog/pg_security.h"
 #include "catalog/pg_tablespace.h"
 #include "commands/comment.h"
 #include "commands/dbcommands.h"
@@ -112,6 +113,7 @@ createdb(const CreatedbStmt *stmt)
 	bool		new_record_nulls[Natts_pg_database];
 	Oid			dboid;
 	Oid			datdba;
+	Oid			datsecid;
 	ListCell   *option;
 	DefElem    *dtablespacename = NULL;
 	DefElem    *downer = NULL;
@@ -281,6 +283,9 @@ createdb(const CreatedbStmt *stmt)
 				 errmsg("permission denied to create database")));
 
 	check_is_member_of_role(GetUserId(), datdba);
+
+	/* SELinux checks db_database:{create} */
+	datsecid = sepgsqlCheckDatabaseCreate(dbname, dseclabel);
 
 	/*
 	 * Lookup database (template) to be cloned, and obtain share lock on it.
@@ -567,17 +572,8 @@ createdb(const CreatedbStmt *stmt)
 							new_record, new_record_nulls);
 
 	HeapTupleSetOid(tuple, dboid);
-
-	/* SELinux: set a given security context */
-	if (dseclabel)
-	{
-		Oid		secid = sepgsqlGivenSecLabelIn(DatabaseRelationId, dseclabel);
-
-		if (!HeapTupleHasSecLabel(tuple))
-			elog(ERROR, "Unable to assign security label on \"%s\"",
-				 RelationGetRelationName(pg_database_rel));
-		HeapTupleSetSecLabel(tuple, secid);
-	}
+	if (HeapTupleHasSecLabel(tuple))
+		HeapTupleSetSecLabel(tuple, datsecid);
 
 	simple_heap_insert(pg_database_rel, tuple);
 
@@ -593,6 +589,9 @@ createdb(const CreatedbStmt *stmt)
 
 	/* Create pg_shdepend entries for objects within database */
 	copyTemplateDependencies(src_dboid, dboid);
+
+	/* Create pg_security entries for objects within database */
+	securityOnCreateDatabase(src_dboid, dboid);
 
 	/*
 	 * Force a checkpoint before starting the copy. This will force dirty
@@ -797,6 +796,9 @@ dropdb(const char *dbname, bool missing_ok)
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_DATABASE,
 					   dbname);
 
+	/* SELinux checks db_database:{drop} permission */
+	sepgsqlCheckDatabaseDrop(db_id);
+
 	/*
 	 * Disallow dropping a DB that is marked istemplate.  This is just to
 	 * prevent people from accidentally dropping template0 or template1; they
@@ -848,6 +850,11 @@ dropdb(const char *dbname, bool missing_ok)
 	 * Remove shared dependency references for the database.
 	 */
 	dropDatabaseDependencies(db_id);
+
+	/*
+	 * Remove pg_security entries for the database.
+	 */
+	securityOnDropDatabase(db_id);
 
 	/*
 	 * Drop pages for this database that are in the shared buffer cache. This
@@ -933,6 +940,9 @@ RenameDatabase(const char *oldname, const char *newname)
 		ereport(ERROR,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 				 errmsg("permission denied to rename database")));
+
+	/* SELinux: check db_database:{setattr} */
+	sepgsqlCheckDatabaseSetattr(db_id);
 
 	/*
 	 * Make sure the new name doesn't exist.  See notes for same error in
@@ -1045,6 +1055,9 @@ movedb(const char *dbname, const char *tblspcname)
 	if (!pg_database_ownercheck(db_id, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_DATABASE,
 					   dbname);
+
+	/* SELinux checks db_database:{setattr} */
+	sepgsqlCheckDatabaseSetattr(db_id);
 
 	/*
 	 * Obviously can't move the tables of my own database
@@ -1398,6 +1411,8 @@ AlterDatabase(AlterDatabaseStmt *stmt, bool isTopLevel)
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_DATABASE,
 					   stmt->dbname);
 
+	sepgsqlCheckDatabaseSetattr(HeapTupleGetOid(tuple));
+
 	/*
 	 * Build an updated tuple, perusing the information just obtained
 	 */
@@ -1469,6 +1484,9 @@ AlterDatabaseSet(AlterDatabaseSetStmt *stmt)
 	if (!pg_database_ownercheck(HeapTupleGetOid(tuple), GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_DATABASE,
 					   stmt->dbname);
+
+	/* SELinux checks db_database:{setattr} */
+	sepgsqlCheckDatabaseSetattr(HeapTupleGetOid(tuple));
 
 	memset(repl_repl, false, sizeof(repl_repl));
 	repl_repl[Anum_pg_database_datconfig - 1] = true;
@@ -1592,6 +1610,9 @@ AlterDatabaseOwner(const char *dbname, Oid newOwnerId)
 					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 				   errmsg("permission denied to change owner of database")));
 
+		/* SELinux checks db_database:{setattr} */
+		sepgsqlCheckDatabaseSetattr(HeapTupleGetOid(tuple));
+
 		memset(repl_null, false, sizeof(repl_null));
 		memset(repl_repl, false, sizeof(repl_repl));
 
@@ -1643,14 +1664,12 @@ void
 AlterDatabaseSecLabel(const char *dbname, DefElem *seclabel)
 {
 	Relation	rel;
-	HeapTuple	tuple, newtup;
+	HeapTuple	oldtup;
+	HeapTuple	newtup;
 	ScanKeyData	scankey;
 	SysScanDesc	scan;
 	Oid			secid;
 	bool		replaces[Natts_pg_database];
-
-	/* Translate text representation to security id */
-	secid = sepgsqlGivenSecLabelIn(DatabaseRelationId, seclabel);
 
 	/* Fetch the old tuple */
 	rel = heap_open(DatabaseRelationId, RowExclusiveLock);
@@ -1660,34 +1679,33 @@ AlterDatabaseSecLabel(const char *dbname, DefElem *seclabel)
 				NameGetDatum(dbname));
 	scan = systable_beginscan(rel, DatabaseNameIndexId, true,
 							  SnapshotNow, 1, &scankey);
-	tuple = systable_getnext(scan);
-	if (!HeapTupleIsValid(tuple))
+	oldtup = systable_getnext(scan);
+	if (!HeapTupleIsValid(oldtup))
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_DATABASE),
 				 errmsg("database \"%s\" does not exist", dbname)));
 
-	/* check DAC permission */
-	if (!pg_database_ownercheck(HeapTupleGetOid(tuple), GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_DATABASE, dbname);
-	/*
-	 * NOTE: we should not use heap_copytuple() here because of
-	 * possibility that the fetched tuple was inserted while
-	 * SE-PostgreSQL is disabled and it does not have a field
-	 * to store security label.
-	 */
 	memset(replaces, false, sizeof(replaces));
-	newtup = heap_modify_tuple(tuple, RelationGetDescr(rel),
+	newtup = heap_modify_tuple(oldtup, RelationGetDescr(rel),
 							   NULL, NULL, replaces);
+	systable_endscan(scan);
+
+	/* check DAC permission */
+	if (!pg_database_ownercheck(HeapTupleGetOid(newtup), GetUserId()))
+		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_DATABASE, dbname);
+
+	/* SELinux checks db_database:{setattr relabelfrom relabelto} */
+	secid = sepgsqlCheckDatabaseRelabel(HeapTupleGetOid(newtup), seclabel);
 	if (!HeapTupleHasSecLabel(newtup))
-		elog(ERROR, "Unable to set security label on tuples in pg_database");
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("Unable to set security label on \"%s\"", dbname)));
 	HeapTupleSetSecLabel(newtup, secid);
 
 	simple_heap_update(rel, &newtup->t_self, newtup);
 	CatalogUpdateIndexes(rel, newtup);
 
 	heap_freetuple(newtup);
-
-	systable_endscan(scan);
 
 	heap_close(rel, RowExclusiveLock);
 }

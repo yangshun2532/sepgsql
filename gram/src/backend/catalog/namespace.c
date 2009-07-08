@@ -2817,6 +2817,7 @@ InitTempTableNamespace(void)
 	char		namespaceName[NAMEDATALEN];
 	Oid			namespaceId;
 	Oid			toastspaceId;
+	Oid			nspsecid;
 
 	Assert(!OidIsValid(myTempNamespace));
 
@@ -2837,6 +2838,9 @@ InitTempTableNamespace(void)
 				 errmsg("permission denied to create temporary tables in database \"%s\"",
 						get_database_name(MyDatabaseId))));
 
+	/* SELinux checks db_schema_temp:{create} */
+	nspsecid = sepgsqlCheckSchemaCreate(namespaceName, NULL, true);
+
 	snprintf(namespaceName, sizeof(namespaceName), "pg_temp_%d", MyBackendId);
 
 	namespaceId = GetSysCacheOid(NAMESPACENAME,
@@ -2854,7 +2858,7 @@ InitTempTableNamespace(void)
 		 */
 		namespaceId = NamespaceCreate(namespaceName,
 									  BOOTSTRAP_SUPERUSERID,
-									  InvalidOid);
+									  nspsecid);
 		/* Advance command counter to make namespace visible */
 		CommandCounterIncrement();
 	}
@@ -2882,7 +2886,7 @@ InitTempTableNamespace(void)
 	{
 		toastspaceId = NamespaceCreate(namespaceName,
 									   BOOTSTRAP_SUPERUSERID,
-									   InvalidOid);
+									   nspsecid);
 		/* Advance command counter to make namespace visible */
 		CommandCounterIncrement();
 	}
@@ -3024,7 +3028,7 @@ static void
 RemoveTempRelations(Oid tempNamespaceId)
 {
 	ObjectAddress object;
-	int		mode;
+	bool	mode;
 
 	/*
 	 * We want to get rid of everything in the target namespace, but not the
@@ -3040,7 +3044,7 @@ RemoveTempRelations(Oid tempNamespaceId)
 	 * SELinux does not check anything while cleaning up
 	 * temporary objects.
 	 */
-	mode = sepgsqlSetExceptionMode(1);
+	mode = sepgsqlSetExceptionMode(true);
 	PG_TRY();
 	{
 		deleteWhatDependsOn(&object, false);

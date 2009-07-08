@@ -43,6 +43,7 @@
 #include "nodes/pg_list.h"
 #include "nodes/primnodes.h"
 #include "rewrite/prs2lock.h"
+#include "security/sepgsql.h"
 #include "storage/block.h"
 #include "storage/fd.h"
 #include "storage/ipc.h"
@@ -207,16 +208,15 @@ Boot_CreateStmt:
 												   RELKIND_RELATION,
 												   $3,
 												   true);
-						/* fixup boot_reldesc->rd_att->tdhassecXXXX */
-						boot_reldesc->rd_rel->relkind = RELKIND_RELATION;
-						boot_reldesc->rd_att->tdhasseclabel
-							= securityTupleDescHasSecLabel(boot_reldesc);
 						elog(DEBUG4, "bootstrap relation created");
 					}
 					else
 					{
 						Oid id;
-
+						List *secLabels
+							= sepgsqlCreateTableSecLabels(NULL,
+														  PG_CATALOG_NAMESPACE,
+														  RELKIND_RELATION);
 						id = heap_create_with_catalog(LexIDStr($5),
 													  PG_CATALOG_NAMESPACE,
 													  $3 ? GLOBALTABLESPACE_OID : 0,
@@ -231,7 +231,7 @@ Boot_CreateStmt:
 													  ONCOMMIT_NOOP,
 													  (Datum) 0,
 													  true,
-													  NIL);
+													  secLabels);
 						elog(DEBUG4, "relation created with oid %u", id);
 					}
 					do_end();

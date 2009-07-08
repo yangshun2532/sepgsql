@@ -800,13 +800,15 @@ InsertOneTuple(Oid objectid)
 	tupDesc = CreateTupleDesc(numattr,
 							  RelationGetForm(boot_reldesc)->relhasoids,
 							  attrtypes);
-	tupDesc->tdhasseclabel
-		= securityTupleDescHasSecLabel(boot_reldesc);
+	tupDesc->tdhasseclabel = RelationGetDescr(boot_reldesc)->tdhasseclabel;
 
 	tuple = heap_form_tuple(tupDesc, values, Nulls);
 	if (objectid != (Oid) 0)
 		HeapTupleSetOid(tuple, objectid);
 	pfree(tupDesc);				/* just free's tupDesc, not the attrtypes */
+
+	/* SELinux: set up default security label */
+	sepgsqlSetDefaultSecLabel(boot_reldesc, tuple);
 
 	simple_heap_insert(boot_reldesc, tuple);
 	heap_freetuple(tuple);

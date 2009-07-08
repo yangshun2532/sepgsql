@@ -8,7 +8,6 @@
 #include "postgres.h"
 
 #include "access/hash.h"
-#include "catalog/catalog.h"
 #include "catalog/pg_security.h"
 #include "libpq/pqsignal.h"
 #include "postmaster/postmaster.h"
@@ -16,7 +15,6 @@
 #include "storage/ipc.h"
 #include "storage/lwlock.h"
 #include "utils/memutils.h"
-#include "utils/syscache.h"
 #include <signal.h>
 #include <unistd.h>
 #include <selinux/avc.h>
