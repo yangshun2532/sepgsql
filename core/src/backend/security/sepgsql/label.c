@@ -23,8 +23,6 @@
 #include "nodes/makefuncs.h"
 #include "security/sepgsql.h"
 #include "storage/fd.h"
-#include "utils/builtins.h"
-#include "utils/memutils.h"
 #include "utils/syscache.h"
 
 /* GUC parameter to turn on/off mcstrans */

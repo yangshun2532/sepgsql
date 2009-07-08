@@ -7,15 +7,16 @@
  */
 #include "postgres.h"
 
+#include "catalog/indexing.h"
 #include "catalog/pg_database.h"
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_proc.h"
 #include "miscadmin.h"
-#include "nodes/makefuncs.h"
-#include "nodes/nodes.h"
 #include "security/sepgsql.h"
-#include "storage/bufmgr.h"
+#include "utils/fmgroids.h"
+#include "utils/lsyscache.h"
 #include "utils/syscache.h"
+#include "utils/tqual.h"
 
 /*
  * ------------------------------------------------------------
@@ -259,7 +260,41 @@ checkTableCommon(Oid table_oid, access_vector_t required)
 void
 sepgsqlCheckTableDrop(Oid table_oid)
 {
+	Form_pg_attribute	attr;
+	Relation	attrel;
+	SysScanDesc scan;
+	ScanKeyData key[1];
+	HeapTuple   atttup;
+
+	if (!sepgsqlIsEnabled())
+		return;
+
 	checkTableCommon(table_oid, SEPG_DB_TABLE__DROP);
+
+	/* Also checks db_column:{drop} */
+	attrel = heap_open(AttributeRelationId, AccessShareLock);
+
+	ScanKeyInit(&key[0],
+				Anum_pg_attribute_attrelid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(table_oid));
+
+    scan = systable_beginscan(attrel, AttributeRelidNumIndexId, true,
+                              SnapshotNow, 1, key);
+	while(HeapTupleIsValid(atttup = systable_getnext(scan)))
+	{
+		attr = (Form_pg_attribute) GETSTRUCT(atttup);
+		if (attr->attisdropped)
+			continue;
+
+		sepgsqlClientHasPermsTup(AttributeRelationId, atttup,
+								 SEPG_CLASS_DB_COLUMN,
+								 SEPG_DB_COLUMN__DROP,
+								 true);
+	}
+    systable_endscan(scan);
+
+    heap_close(attrel, AccessShareLock);
 }
 
 void
@@ -388,13 +423,11 @@ sepgsqlCheckColumnCreate(Form_pg_attribute attr, char relkind, List *secLabels)
 	return attsid;
 }
 
-void
-sepgsqlCheckColumnCreateAT(Relation rel, Node *cdef)
+Oid
+sepgsqlCheckColumnCreateAT(Oid relid, ColumnDef *colDef)
 {
-	ColumnDef  *colDef = (ColumnDef *)cdef;
-	char		relkind = RelationGetForm(rel)->relkind;
-	Oid			relid = RelationGetRelid(rel);
-	Oid			secid;
+	Oid		secid;
+	char	relkind;
 
 	if (!sepgsqlIsEnabled())
 	{
@@ -406,22 +439,21 @@ sepgsqlCheckColumnCreateAT(Relation rel, Node *cdef)
 			ereport(ERROR,
 					(errcode(ERRCODE_SELINUX_ERROR),
 					 errmsg("SELinux is disabled now")));
-		return;
+		return InvalidOid;
 	}
 
+	relkind = get_rel_relkind(relid);
 	if (relkind != RELKIND_RELATION)
 	{
 		if (colDef->secLabel)
 			ereport(ERROR,
 					(errcode(ERRCODE_SELINUX_ERROR),
 					 errmsg("Unable to assign security label")));
-		return;
+		return InvalidOid;
 	}
 
 	if (!colDef->secLabel)
 		secid = sepgsqlGetDefaultColumnSecLabel(relid);
-	else if (IsA(colDef->secLabel, Integer))
-		secid = intVal(colDef->secLabel);	/* already translated */
 	else
 		secid = sepgsqlGivenSecLabelIn(AttributeRelationId,
 									   (DefElem *)colDef->secLabel);
@@ -430,45 +462,50 @@ sepgsqlCheckColumnCreateAT(Relation rel, Node *cdef)
 							 SEPG_CLASS_DB_COLUMN,
 							 SEPG_DB_COLUMN__CREATE,
 							 colDef->colname, true);
-	colDef->secLabel = (Node *) makeInteger(secid);
+	return secid;
 }
 
 static void
-sepgsqlCheckColumnCommon(Relation rel, const char *attname,
+sepgsqlCheckColumnCommon(Oid relid, AttrNumber attno,
 						 access_vector_t required)
 {
+	Form_pg_attribute	attr;
 	HeapTuple	tuple;
 	char		relkind;
 
 	if (!sepgsqlIsEnabled())
 		return;
 
-	relkind = RelationGetForm(rel)->relkind;
+	relkind = get_rel_relkind(relid);
 	if (relkind != RELKIND_RELATION)
 		return;
 
-	tuple = SearchSysCacheAttName(RelationGetRelid(rel), attname);
+	tuple = SearchSysCache(ATTNUM,
+						   ObjectIdGetDatum(relid),
+						   Int16GetDatum(attno),
+						   0, 0);
 	if (!HeapTupleIsValid(tuple))
-		elog(ERROR, "cache lookup failed for %s.%s",
-			 RelationGetRelationName(rel), attname);
+		elog(ERROR, "cache lookup failed for attribute %d of relation %u",
+			 attno, relid);
 
-	sepgsqlClientHasPermsTup(AttributeRelationId, tuple,
-							 SEPG_CLASS_DB_COLUMN,
-							 required, true);
-
+	attr = (Form_pg_attribute) GETSTRUCT(tuple);
+	if (!attr->attisdropped)
+		sepgsqlClientHasPermsTup(AttributeRelationId, tuple,
+								 SEPG_CLASS_DB_COLUMN,
+								 required, true);
 	ReleaseSysCache(tuple);
 }
 
 void
-sepgsqlCheckColumnDrop(Relation rel, const char *attname)
+sepgsqlCheckColumnDrop(Oid relid, AttrNumber attno)
 {
-	sepgsqlCheckColumnCommon(rel, attname, SEPG_DB_COLUMN__DROP);
+	sepgsqlCheckColumnCommon(relid, attno, SEPG_DB_COLUMN__DROP);
 }
 
 void
-sepgsqlCheckColumnSetattr(Relation rel, const char *attname)
+sepgsqlCheckColumnSetattr(Oid relid, AttrNumber attno)
 {
-	sepgsqlCheckColumnCommon(rel, attname, SEPG_DB_COLUMN__SETATTR);
+	sepgsqlCheckColumnCommon(relid, attno, SEPG_DB_COLUMN__SETATTR);
 }
 
 /* ------------------------------------------------------------ *
@@ -641,6 +678,38 @@ sepgsqlCheckProcedureEntrypoint(FmgrInfo *flinfo, HeapTuple protup)
 	strcpy(tcache->newcon, newcon);
 	flinfo->fn_addr = sepgsqlTrustedProcedure;
 	flinfo->fn_extra = tcache;
+}
+
+/*
+ * sepgsqlCheckObjectDrop
+ *   It checks db_xxx:{drop} permission on the given opaque
+ *   object, invoked from deleteOneObject()
+ */
+void
+sepgsqlCheckObjectDrop(const ObjectAddress *object)
+{
+	switch (object->classId)
+	{
+	case NamespaceRelationId:
+		sepgsqlCheckSchemaDrop(object->objectId);
+		break;
+
+	case RelationRelationId:
+		sepgsqlCheckTableDrop(object->objectId);
+		break;
+
+	case AttributeRelationId:
+		sepgsqlCheckColumnDrop(object->objectId, object->objectSubId);
+		break;
+
+	case ProcedureRelationId:
+		sepgsqlCheckProcedureDrop(object->objectId);
+		break;
+
+	default:
+		/* do nothing in this version */
+		break;
+	}
 }
 
 /*

@@ -214,8 +214,6 @@ InputSecurityAttr(Oid relid, char seckind, const char *secattr)
 	Datum			values[Natts_pg_security];
 	bool			nulls[Natts_pg_security];
 
-	Assert(strstr(secattr, ":unlabeled_t:") == NULL);
-
 	if (IsBootstrapProcessingMode())
 		return earlyInputSecurityAttr(relid, seckind, secattr);
 

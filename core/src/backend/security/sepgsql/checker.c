@@ -9,20 +9,10 @@
 
 #include "access/sysattr.h"
 #include "catalog/catalog.h"
-#include "catalog/pg_database.h"
-#include "catalog/pg_language.h"
-#include "catalog/pg_namespace.h"
-#include "catalog/pg_proc.h"
-#include "catalog/pg_rewrite.h"
-#include "catalog/pg_security.h"
 #include "miscadmin.h"
 #include "security/sepgsql.h"
-#include "storage/bufmgr.h"
-#include "utils/builtins.h"
-#include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
 #include "utils/syscache.h"
-#include "utils/tqual.h"
 
 /*
  * fixupWholeRowReference
