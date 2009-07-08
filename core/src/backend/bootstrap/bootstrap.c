@@ -807,6 +807,9 @@ InsertOneTuple(Oid objectid)
 		HeapTupleSetOid(tuple, objectid);
 	pfree(tupDesc);				/* just free's tupDesc, not the attrtypes */
 
+	/* SELinux: set up default security label */
+	sepgsqlSetDefaultSecLabel(boot_reldesc, tuple);
+
 	simple_heap_insert(boot_reldesc, tuple);
 	heap_freetuple(tuple);
 	elog(DEBUG4, "row inserted");

@@ -1,5 +1,5 @@
 /*
- * src/include/utils/sepgsql.h
+ * src/include/security/sepgsql.h
  *    Headers of SE-PostgreSQL
  *
  * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
@@ -239,39 +239,64 @@ sepgsqlInitialize(void);
 /*
  * hooks.c : routines to check certain permissions
  */
-extern Oid	sepgsqlCheckDatabaseCreate(const char *datname, DefElem *new_label);
-extern void	sepgsqlCheckDatabaseDrop(Oid database_oid);
-extern void	sepgsqlCheckDatabaseSetattr(Oid database_oid);
-extern bool	sepgsqlCheckDatabaseAccess(Oid database_oid);
-extern bool	sepgsqlCheckDatabaseSuperuser(void);
+extern Oid
+sepgsqlCheckDatabaseCreate(const char *datname, DefElem *new_label);
+extern void
+sepgsqlCheckDatabaseDrop(Oid database_oid);
+extern void
+sepgsqlCheckDatabaseSetattr(Oid database_oid);
+extern bool
+sepgsqlCheckDatabaseAccess(Oid database_oid);
+extern bool
+sepgsqlCheckDatabaseSuperuser(void);
 
-extern Oid	sepgsqlCheckSchemaCreate(const char *nspname, DefElem *new_label,
-									 bool temp_schame);
-extern void	sepgsqlCheckSchemaDrop(Oid namespace_oid);
-extern void	sepgsqlCheckSchemaSetattr(Oid namespace_oid);
-extern bool	sepgsqlCheckSchemaSearch(Oid nsid);
+extern Oid
+sepgsqlCheckSchemaCreate(const char *nspname, DefElem *new_label, bool temp_schame);
+extern void
+sepgsqlCheckSchemaDrop(Oid namespace_oid);
+extern void
+sepgsqlCheckSchemaSetattr(Oid namespace_oid);
+extern bool
+sepgsqlCheckSchemaSearch(Oid nsid);
 
-extern Oid	sepgsqlCheckTableCreate(Relation new_rel, List *secLabels);
-extern void	sepgsqlCheckTableDrop(Oid table_oid);
-extern void	sepgsqlCheckTableSetattr(Oid table_oid);
-extern void	sepgsqlCheckTableLock(Oid table_oid);
-extern void	sepgsqlCheckTableTruncate(Relation rel);
-extern void	sepgsqlCheckTableReference(Relation rel, int16 *attnums, int natts);
+extern Oid
+sepgsqlCheckTableCreate(Relation new_rel, List *secLabels);
+extern void
+sepgsqlCheckTableDrop(Oid table_oid);
+extern void
+sepgsqlCheckTableSetattr(Oid table_oid);
+extern void
+sepgsqlCheckTableLock(Oid table_oid);
+extern void
+sepgsqlCheckTableTruncate(Relation rel);
+extern void
+sepgsqlCheckTableReference(Relation rel, int16 *attnums, int natts);
 
-extern void	sepgsqlCheckSequenceGetValue(Oid seqid);
-extern void	sepgsqlCheckSequenceNextValue(Oid seqid);
-extern void	sepgsqlCheckSequenceSetValue(Oid seqid);
+extern void
+sepgsqlCheckSequenceGetValue(Oid seqid);
+extern void
+sepgsqlCheckSequenceNextValue(Oid seqid);
+extern void
+sepgsqlCheckSequenceSetValue(Oid seqid);
 
-extern Oid	sepgsqlCheckColumnCreate(Oid relid, const char *attname, ColumnDef *cdef);
-extern void	sepgsqlCheckColumnDrop(Oid relid, AttrNumber attnum);
-extern void	sepgsqlCheckColumnSetattr(Oid relid, AttrNumber attnum);
+extern Oid
+sepgsqlCheckColumnCreate(Form_pg_attribute attr, char relkind, List *secLabels);
+extern void
+sepgsqlCheckColumnCreateAT(Relation rel, Node *cdef);
+extern void
+sepgsqlCheckColumnDrop(Relation rel, const char *attname);
+extern void
+sepgsqlCheckColumnSetattr(Relation rel, const char *attname);
 
-extern Oid	sepgsqlCheckProcedureCreate(const char *proname,
-										const char *new_label,
-										HeapTuple oldtup);
-extern void	sepgsqlCheckProcedureDrop(Oid proc_oid);
-extern void sepgsqlCheckProcedureSetattr(Oid proc_oid);
-extern bool sepgsqlCheckProcedureExecute(Oid proc_oid);
+extern Oid
+sepgsqlCheckProcedureCreate(const char *proname, Oid namespace_oid,
+							Oid given_secid, HeapTuple oldtup);
+extern void
+sepgsqlCheckProcedureDrop(Oid proc_oid);
+extern void
+sepgsqlCheckProcedureSetattr(Oid proc_oid);
+extern bool
+sepgsqlCheckProcedureExecute(Oid proc_oid);
 
 extern void
 sepgsqlCheckProcedureEntrypoint(FmgrInfo *finfo, HeapTuple protup);
@@ -283,18 +308,44 @@ sepgsqlAllowFunctionInlined(HeapTuple protup);
 /*
  * label.c : security label management
  */
-extern bool sepgsqlTupleDescHasSecLabel(Oid relid, char relkind);
+extern bool
+sepgsqlTupleDescHasSecLabel(Oid relid, char relkind);
+extern void
+sepgsqlSetDefaultSecLabel(Relation rel, HeapTuple tuple);
 
-extern void sepgsqlSetDefaultSecLabel(Relation rel, HeapTuple tuple);
+extern Oid
+sepgsqlGetDefaultDatabaseSecLabel(void);
+extern Oid
+sepgsqlGetDefaultSchemaSecLabel(Oid database_oid);
+extern Oid
+sepgsqlGetDefaultSchemaTempSecLabel(Oid database_oid);
+extern Oid
+sepgsqlGetDefaultTableSecLabel(Oid namespace_oid);
+extern Oid
+sepgsqlGetDefaultSequenceSecLabel(Oid namespace_oid);
+extern Oid
+sepgsqlGetDefaultProcedureSecLabel(Oid namespace_oid);
+extern Oid
+sepgsqlGetDefaultColumnSecLabel(Oid table_oid);
+extern Oid
+sepgsqlGetDefaultTupleSecLabel(Oid table_oid);
 
-extern List *sepgsqlCreateTableSecLabels(CreateStmt *stmt,
-										 Oid namespace_oid, char relkind);
-extern List *sepgsqlCopyTableSecLabels(Relation source);
+extern List *
+sepgsqlCreateTableSecLabels(CreateStmt *stmt,
+							Oid namespace_oid, char relkind);
+extern List *
+sepgsqlCopyTableSecLabels(Relation source);
+extern Oid
+sepgsqlGivenSecLabelIn(Oid relid, DefElem *defel);
 
-extern security_context_t sepgsqlTransSecLabelIn(security_context_t seclabel);
-extern security_context_t sepgsqlTransSecLabelOut(security_context_t seclabel);
-extern security_context_t sepgsqlRawSecLabelIn(security_context_t seclabel);
-extern security_context_t sepgsqlRawSecLabelOut(security_context_t seclabel);
+extern security_context_t
+sepgsqlTransSecLabelIn(security_context_t seclabel);
+extern security_context_t
+sepgsqlTransSecLabelOut(security_context_t seclabel);
+extern security_context_t
+sepgsqlRawSecLabelIn(security_context_t seclabel);
+extern security_context_t
+sepgsqlRawSecLabelOut(security_context_t seclabel);
 
 /*
  * perms.c : SELinux permission related stuff

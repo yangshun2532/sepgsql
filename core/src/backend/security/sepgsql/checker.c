@@ -8,13 +8,14 @@
 #include "postgres.h"
 
 #include "access/sysattr.h"
+#include "catalog/catalog.h"
 #include "catalog/pg_database.h"
 #include "catalog/pg_language.h"
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_rewrite.h"
 #include "catalog/pg_security.h"
-#include "catalog/pg_shsecurity.h"
+#include "miscadmin.h"
 #include "security/sepgsql.h"
 #include "storage/bufmgr.h"
 #include "utils/builtins.h"
@@ -85,11 +86,11 @@ checkTabelColumnPerms(Oid relid, Bitmapset *selected, Bitmapset *modified,
 	security_class_t	tclass;
 
 	/*
-	 * NOTE: SE-PostgreSQL enforces a few hardwired rules.
-	 * - User cannot modify system catalogs by hand.
-	 * - User cannot access toast values by hand.
+	 * Hardwired Policy:
+	 * SE-PostgreSQL enforces that clients cannot modify system
+	 * catalogs and access toast values using DML statements.
 	 */
-	if (!sepgsqlGetExceptionMode())
+	if (!sepgsqlGetExceptionMode() && MyProcPort != NULL)
 	{
 		if (IsSystemNamespace(get_rel_namespace(relid)) &&
 			(required & (SEPG_DB_TABLE__UPDATE |
