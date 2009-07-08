@@ -337,7 +337,7 @@ sepgsqlCheckTableDrop(Oid table_oid)
 
 	relkind = get_rel_relkind(table_oid);
 	if (relkind != RELKIND_RELATION)
-		return;	/* no need to check anymore */
+		return;		/* no need to check anymore */
 
 	/* Also checks db_column:{drop} */
 	attrel = heap_open(AttributeRelationId, AccessShareLock);

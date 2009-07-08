@@ -3533,7 +3533,7 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 	HeapTuple	typeTuple;
 	Oid			typeOid;
 	int32		typmod;
-	Oid			attsecid = InvalidOid;
+	Oid			attsecid;
 	Form_pg_type tform;
 	Expr	   *defval;
 
@@ -3614,7 +3614,7 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 						colDef->colname, RelationGetRelationName(rel))));
 
 	/* SELinux checks db_column:{create} */
-	attsecid = sepgsqlCheckColumnCreateAT(myrelid, colDef);
+	attsecid = sepgsqlCheckColumnCreateAT(myrelid, colDef->colname, NULL);
 
 	/* Determine the new attribute's number */
 	if (isOid)
@@ -4219,7 +4219,7 @@ ATExecDropColumn(List **wqueue, Relation rel, const char *colName,
 
 	/* At top level, permission check was done in ATPrepCmd, else do it */
 	if (recursing)
-  		ATSimplePermissions(rel, false);
+		ATSimplePermissions(rel, false);
 
 	/*
 	 * get the number of the attribute

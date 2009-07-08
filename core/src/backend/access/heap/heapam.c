@@ -2557,7 +2557,7 @@ l2:
 		Assert(!(newtup->t_data->t_infomask & HEAP_HASOID));
 	}
 
-	/* Preserve SecLabel, if not changed*/
+	/* Preserve SecLabel, if not changed */
 	if (HeapTupleHasSecLabel(newtup) &&
 		!OidIsValid(HeapTupleGetSecLabel(newtup)))
 		HeapTupleSetSecLabel(newtup, HeapTupleGetSecLabel(&oldtup));

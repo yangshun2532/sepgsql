@@ -98,7 +98,7 @@ ProcedureCreate(const char *procedureName,
 	Datum		values[Natts_pg_proc];
 	bool		replaces[Natts_pg_proc];
 	Oid			relid;
-	Oid			prosecid = InvalidOid;
+	Oid			prosecid;
 	NameData	procname;
 	TupleDesc	tupDesc;
 	bool		is_update;
@@ -345,6 +345,7 @@ ProcedureCreate(const char *procedureName,
 							PointerGetDatum(parameterTypes),
 							ObjectIdGetDatum(procNamespace),
 							0);
+
 	if (HeapTupleIsValid(oldtup))
 	{
 		/* There is one; okay to replace it? */
