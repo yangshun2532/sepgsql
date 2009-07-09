@@ -352,7 +352,7 @@ DefineRelation(CreateStmt *stmt, char relkind)
 	List	   *rawDefaults;
 	List	   *cookedDefaults;
 	Datum		reloptions;
-	List	   *secLabels;
+	Oid		   *secLabels;
 	ListCell   *listptr;
 	AttrNumber	attnum;
 	static char *validnsps[] = HEAP_RELOPT_NAMESPACES;
@@ -496,8 +496,9 @@ DefineRelation(CreateStmt *stmt, char relkind)
 		}
 	}
 
-	/* SELinux computes a security label for the new table */
-	secLabels = sepgsqlCreateTableSecLabels(stmt, namespaceId, relkind);
+	/* SELinux checks db_table:{create} and db_column:{create} */
+	secLabels = sepgsqlCreateTableColumns(stmt, relname, namespaceId,
+										  descriptor, relkind);
 
 	/*
 	 * Create the relation.  Inherited defaults and constraints are passed in
@@ -3614,7 +3615,7 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 						colDef->colname, RelationGetRelationName(rel))));
 
 	/* SELinux checks db_column:{create} */
-	attsecid = sepgsqlCheckColumnCreateAT(myrelid, colDef->colname, NULL);
+	attsecid = sepgsqlCheckColumnCreate(myrelid, colDef->colname, NULL);
 
 	/* Determine the new attribute's number */
 	if (isOid)

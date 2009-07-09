@@ -256,8 +256,6 @@ sepgsqlCheckSchemaSetattr(Oid namespace_oid);
 extern bool
 sepgsqlCheckSchemaSearch(Oid nsid);
 
-extern Oid
-sepgsqlCheckTableCreate(Relation new_rel, List *secLabels);
 extern void
 sepgsqlCheckTableDrop(Oid table_oid);
 extern void
@@ -277,17 +275,14 @@ extern void
 sepgsqlCheckSequenceSetValue(Oid seqid);
 
 extern Oid
-sepgsqlCheckColumnCreate(Form_pg_attribute attr, char relkind, List *secLabels);
-extern Oid
-sepgsqlCheckColumnCreateAT(Oid table_oid, const char *attname, DefElem *new_label);
+sepgsqlCheckColumnCreate(Oid table_oid, const char *attname, DefElem *new_label);
 extern void
 sepgsqlCheckColumnDrop(Oid table_oid, AttrNumber attno);
 extern void
 sepgsqlCheckColumnSetattr(Oid table_oid, AttrNumber attno);
 
 extern Oid
-sepgsqlCheckProcedureCreate(const char *proname, Oid namespace_oid,
-							DefElem *new_label);
+sepgsqlCheckProcedureCreate(const char *proname, Oid namespace_oid, DefElem *new_label);
 extern void
 sepgsqlCheckProcedureDrop(Oid proc_oid);
 extern void
@@ -329,11 +324,12 @@ sepgsqlGetDefaultColumnSecLabel(Oid table_oid);
 extern Oid
 sepgsqlGetDefaultTupleSecLabel(Oid table_oid);
 
-extern List *
-sepgsqlCreateTableSecLabels(CreateStmt *stmt,
-							Oid namespace_oid, char relkind);
-extern List *
-sepgsqlCopyTableSecLabels(Relation source);
+extern Oid *
+sepgsqlCreateTableColumns(CreateStmt *stmt,
+						  const char *relname, Oid namespace_oid,
+						  TupleDesc tupdesc, char relkind);
+extern Oid *
+sepgsqlCopyTableColumns(Relation source);
 
 extern security_context_t
 sepgsqlTransSecLabelIn(security_context_t seclabel);
