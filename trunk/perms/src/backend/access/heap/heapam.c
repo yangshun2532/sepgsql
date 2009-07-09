@@ -54,7 +54,7 @@
 #include "catalog/namespace.h"
 #include "miscadmin.h"
 #include "pgstat.h"
-#include "security/rowlevel.h"
+#include "security/sepgsql.h"
 #include "storage/bufmgr.h"
 #include "storage/freespace.h"
 #include "storage/lmgr.h"
@@ -2016,6 +2016,10 @@ heap_insert(Relation relation, HeapTuple tup, CommandId cid,
 Oid
 simple_heap_insert(Relation relation, HeapTuple tup)
 {
+	/*
+	 * SELinux assigns default security label for the tuple,
+	 * but does not check permissions to the internal operations.
+	 */
 	rowlvHeapTupleInsert(relation, tup, true);
 
 	return heap_insert(relation, tup, GetCurrentCommandId(true), 0, NULL);
@@ -2311,8 +2315,6 @@ simple_heap_delete(Relation relation, ItemPointer tid)
 	ItemPointerData update_ctid;
 	TransactionId update_xmax;
 
-	rowlvHeapTupleDelete(relation, tid, true);
-
 	result = heap_delete(relation, tid,
 						 &update_ctid, &update_xmax,
 						 GetCurrentCommandId(true), InvalidSnapshot,
@@ -2561,6 +2563,16 @@ l2:
 		/* check there is not space for an OID */
 		Assert(!(newtup->t_data->t_infomask & HEAP_HASOID));
 	}
+
+	/* Preserve SecLabel, if not changed */
+	if (HeapTupleHasSecLabel(newtup) &&
+		!OidIsValid(HeapTupleGetSecLabel(newtup)))
+		HeapTupleSetSecLabel(newtup, HeapTupleGetSecLabel(&oldtup));
+
+	/* Preserve RowAcl, if not changed */
+	if (HeapTupleHasRowAcl(newtup) &&
+		!OidIsValid(HeapTupleGetRowAcl(newtup)))
+		HeapTupleSetSecLabel(newtup, HeapTupleGetRowAcl(&oldtup));
 
 	newtup->t_data->t_infomask &= ~(HEAP_XACT_MASK);
 	newtup->t_data->t_infomask2 &= ~(HEAP2_XACT_MASK);
@@ -2981,8 +2993,6 @@ simple_heap_update(Relation relation, ItemPointer otid, HeapTuple tup)
 	HTSU_Result result;
 	ItemPointerData update_ctid;
 	TransactionId update_xmax;
-
-	rowlvHeapTupleUpdate(relation, otid, tup, true);
 
 	result = heap_update(relation, otid, tup,
 						 &update_ctid, &update_xmax,

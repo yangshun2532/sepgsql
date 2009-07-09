@@ -301,7 +301,7 @@ ExecAlterSecLabelStmt(AlterSecLabelStmt *stmt)
 	case OBJECT_TABLE:
 	case OBJECT_SEQUENCE:
 	case OBJECT_COLUMN:
-		CheckRelationOwnership(stmt->relation, false);
+		CheckRelationOwnership(stmt->relation, true);
 		AlterRelationSecLabel(stmt->relation, stmt->subname,
 							  stmt->objectType, seclabel);
 		break;
