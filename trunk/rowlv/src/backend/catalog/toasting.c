@@ -126,7 +126,7 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 	char		toast_relname[NAMEDATALEN];
 	char		toast_idxname[NAMEDATALEN];
 	IndexInfo  *indexInfo;
-	List	   *secLabels;
+	Oid		   *secLabels;
 	Oid			classObjectId[2];
 	int16		coloptions[2];
 	ObjectAddress baseobject,
@@ -201,7 +201,9 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 	else
 		namespaceid = PG_TOAST_NAMESPACE;
 
-	secLabels = sepgsqlCreateTableSecLabels(NULL, namespaceid, RELKIND_TOASTVALUE);
+	secLabels = sepgsqlCreateTableColumns(NULL,
+										  toast_relname, namespaceid,
+										  tupdesc, RELKIND_TOASTVALUE);
 
 	toast_relid = heap_create_with_catalog(toast_relname,
 										   namespaceid,
