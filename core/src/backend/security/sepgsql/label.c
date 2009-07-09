@@ -490,8 +490,8 @@ sepgsqlCopyTableColumns(Relation source)
  * sepgsqlRawSecLabelIn
  *   correctness checks for the given security context
  */
-security_context_t
-sepgsqlRawSecLabelIn(security_context_t seclabel)
+char *
+sepgsqlRawSecLabelIn(char *seclabel)
 {
 	if (!sepgsqlIsEnabled())
 		return seclabel;
@@ -509,8 +509,8 @@ sepgsqlRawSecLabelIn(security_context_t seclabel)
  *   correctness checks for the given security context,
  *   and replace it if invalid security context
  */
-security_context_t
-sepgsqlRawSecLabelOut(security_context_t seclabel)
+char *
+sepgsqlRawSecLabelOut(char *seclabel)
 {
 	if (!sepgsqlIsEnabled())
 		return seclabel;
@@ -544,8 +544,8 @@ sepgsqlRawSecLabelOut(security_context_t seclabel)
  * sepgsqlTransSecLabelOut
  *   translation between human-readable and raw format
  */
-security_context_t
-sepgsqlTransSecLabelIn(security_context_t seclabel)
+char *
+sepgsqlTransSecLabelIn(char *seclabel)
 {
 	security_context_t	rawlabel;
 	security_context_t	result;
@@ -573,8 +573,8 @@ sepgsqlTransSecLabelIn(security_context_t seclabel)
 	return result;
 }
 
-security_context_t
-sepgsqlTransSecLabelOut(security_context_t seclabel)
+char *
+sepgsqlTransSecLabelOut(char *seclabel)
 {
 	security_context_t	translabel;
 	security_context_t	result;
