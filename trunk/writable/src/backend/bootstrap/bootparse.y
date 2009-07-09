@@ -32,7 +32,6 @@
 #include "catalog/pg_authid.h"
 #include "catalog/pg_class.h"
 #include "catalog/pg_namespace.h"
-#include "catalog/pg_security.h"
 #include "catalog/pg_tablespace.h"
 #include "catalog/toasting.h"
 #include "commands/defrem.h"

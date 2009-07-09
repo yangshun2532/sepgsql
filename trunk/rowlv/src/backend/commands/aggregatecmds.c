@@ -32,6 +32,7 @@
 #include "miscadmin.h"
 #include "parser/parse_func.h"
 #include "parser/parse_type.h"
+#include "security/sepgsql.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
@@ -310,6 +311,9 @@ RenameAggregate(List *name, List *args, const char *newname)
 	if (aclresult != ACLCHECK_OK)
 		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
 					   get_namespace_name(namespaceOid));
+
+	/* SELinux checks db_procedure:{setattr} */
+	sepgsqlCheckProcedureSetattr(procOid);
 
 	/* rename */
 	namestrcpy(&(((Form_pg_proc) GETSTRUCT(tup))->proname), newname);
