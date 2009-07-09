@@ -2880,7 +2880,7 @@ OpenIntoRel(QueryDesc *queryDesc)
 	Oid			namespaceId;
 	Oid			tablespaceId;
 	Datum		reloptions;
-	List	   *secLabels;
+	Oid		   *secLabels;
 	AclResult	aclresult;
 	Oid			intoRelationId;
 	TupleDesc	tupdesc;
@@ -2908,6 +2908,10 @@ OpenIntoRel(QueryDesc *queryDesc)
 	if (aclresult != ACLCHECK_OK)
 		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
 					   get_namespace_name(namespaceId));
+
+	/* SELinux checks db_table:{create} and db_column:{create} */
+	secLabels = sepgsqlCreateTableColumns(NULL, intoName, namespaceId,
+										  queryDesc->tupDesc, RELKIND_RELATION);
 
 	/*
 	 * Select tablespace to use.  If not specified, use default tablespace
@@ -2952,9 +2956,6 @@ OpenIntoRel(QueryDesc *queryDesc)
 
 	/* Copy the tupdesc because heap_create_with_catalog modifies it */
 	tupdesc = CreateTupleDescCopy(queryDesc->tupDesc);
-
-	/* SELinux compute security labels for tables/columns */
-	secLabels = sepgsqlCreateTableSecLabels(NULL, namespaceId, RELKIND_RELATION);
 
 	/* Now we can actually create the new relation */
 	intoRelationId = heap_create_with_catalog(intoName,
