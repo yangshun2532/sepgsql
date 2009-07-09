@@ -258,6 +258,32 @@ interpretOidsOption(List *defList)
 }
 
 /*
+ * interpretRowAclOption
+ *   It returns true, if the given relation options list
+ *   includes "row_level_acl=on". In the case of CREATE
+ *   TABLE AS, it needs to parse reloptions prior to
+ *   creation of the target relation.
+ */
+bool
+interpretRowAclOption(List *defList)
+{
+	ListCell   *cell;
+
+	/* Scan list to see if row_level_acl was included */
+	foreach (cell, defList)
+	{
+		DefElem	   *def = (DefElem *) lfirst(cell);
+
+		if (def->defnamespace == NULL &&
+			pg_strcasecmp(def->defname, "row_level_acl") == 0)
+			return defGetBoolean(def);
+	}
+
+	/* In the default, row level acls are disabled */
+	return false;
+}
+
+/*
  * Extract all not-in-common columns from column lists of a source table
  */
 static void
