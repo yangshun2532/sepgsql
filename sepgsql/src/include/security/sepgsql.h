@@ -171,13 +171,19 @@ enum SepgsqlClasses
 /*
  * avc.c : userspace access vector caches
  */
+
+/* Hook for plugin to record audit logs  */
+typedef void (*sepgsqlAvcAuditHook_t)(const char *scontext, const char *tcontext,
+									  const char *tclass, const char *av_perms,
+									  bool denied, const char *audit_name);
+extern PGDLLIMPORT sepgsqlAvcAuditHook_t sepgsqlAvcAuditHook;
+
 extern Size	sepgsqlShmemSize(void);
-extern bool	sepgsqlGetExceptionMode(void);
-extern bool	sepgsqlSetExceptionMode(bool exception);
+extern int	sepgsqlSetLocalEnforce(int mode);
+extern bool	sepgsqlGetEnforce(void);
 extern void	sepgsqlAvcInit(void);
 extern void	sepgsqlAvcSwitchClient(void);
-extern pid_t
-sepgsqlStartupWorkerProcess(void);
+extern pid_t sepgsqlStartupWorkerProcess(void);
 
 extern bool
 sepgsqlClientHasPermsTup(Oid relid, HeapTuple tuple,
@@ -207,6 +213,7 @@ extern security_context_t
 sepgsqlComputeCreate(security_context_t scontext,
 					 security_context_t tcontext,
 					 security_class_t tclass);
+
 /*
  * checker.c : check permission on given queries
  */
@@ -354,7 +361,6 @@ sepgsqlCheckFileRead(int fdesc, const char *filename);
 extern void
 sepgsqlCheckFileWrite(int fdesc, const char *filename);
 
-// Hint for optimizer
 void
 sepgsqlCheckObjectDrop(const ObjectAddress *object);
 
@@ -372,40 +378,25 @@ sepgsqlMetaSecurityLabel(void);
 extern void
 sepgsqlSetDefaultSecLabel(Relation rel, HeapTuple tuple);
 
-extern Oid
-sepgsqlGetDefaultDatabaseSecLabel(void);
-extern Oid
-sepgsqlGetDefaultSchemaSecLabel(Oid database_oid);
-extern Oid
-sepgsqlGetDefaultSchemaTempSecLabel(Oid database_oid);
-extern Oid
-sepgsqlGetDefaultTableSecLabel(Oid namespace_oid);
-extern Oid
-sepgsqlGetDefaultSequenceSecLabel(Oid namespace_oid);
-extern Oid
-sepgsqlGetDefaultProcedureSecLabel(Oid namespace_oid);
-extern Oid
-sepgsqlGetDefaultColumnSecLabel(Oid table_oid);
-extern Oid
-sepgsqlGetDefaultTupleSecLabel(Oid table_oid);
-extern Oid
-sepgsqlGetDefaultBlobSecLabel(Oid database_oid);
+extern Oid sepgsqlGetDefaultDatabaseSecLabel(void);
+extern Oid sepgsqlGetDefaultSchemaSecLabel(Oid database_oid);
+extern Oid sepgsqlGetDefaultSchemaTempSecLabel(Oid database_oid);
+extern Oid sepgsqlGetDefaultTableSecLabel(Oid namespace_oid);
+extern Oid sepgsqlGetDefaultSequenceSecLabel(Oid namespace_oid);
+extern Oid sepgsqlGetDefaultProcedureSecLabel(Oid namespace_oid);
+extern Oid sepgsqlGetDefaultColumnSecLabel(Oid table_oid);
+extern Oid sepgsqlGetDefaultTupleSecLabel(Oid table_oid);
+extern Oid sepgsqlGetDefaultBlobSecLabel(Oid database_oid);
 
-extern Oid *
-sepgsqlCreateTableColumns(CreateStmt *stmt,
-						  const char *relname, Oid namespace_oid,
-						  TupleDesc tupdesc, char relkind);
-extern Oid *
-sepgsqlCopyTableColumns(Relation source);
+extern Oid *sepgsqlCreateTableColumns(CreateStmt *stmt,
+									  const char *relname, Oid namespace_oid,
+									  TupleDesc tupdesc, char relkind);
+extern Oid *sepgsqlCopyTableColumns(Relation source);
 
-extern security_context_t
-sepgsqlTransSecLabelIn(security_context_t seclabel);
-extern security_context_t
-sepgsqlTransSecLabelOut(security_context_t seclabel);
-extern security_context_t
-sepgsqlRawSecLabelIn(security_context_t seclabel);
-extern security_context_t
-sepgsqlRawSecLabelOut(security_context_t seclabel);
+extern char *sepgsqlTransSecLabelIn(char *seclabel);
+extern char *sepgsqlTransSecLabelOut(char *seclabel);
+extern char *sepgsqlRawSecLabelIn(char *seclabel);
+extern char *sepgsqlRawSecLabelOut(char *seclabel);
 
 /*
  * perms.c : SELinux permission related stuff
@@ -428,35 +419,63 @@ extern const char *sepgsqlGetPermissionString(security_class_t tclass,
 
 /* avc.c */
 #define sepgsqlShmemSize()						(0)
+#define sepgsqlSetLocalEnforce(a)				(0)
 #define sepgsqlStartupWorkerProcess()			(0)
-#define sepgsqlGetExceptionMode()				(false)
-#define sepgsqlSetExceptionMode(a)				(false)
+
 /* checker.c */
 #define sepgsqlCheckRTEPerms(a)					do {} while(0)
 #define sepgsqlCheckCopyTable(a,b,c)			do {} while(0)
 #define sepgsqlCheckSelectInto(a)				do {} while(0)
+#define sepgsqlExecScan(a,b,c)					(true)
 #define sepgsqlSetupTuplePerms(a)				(0)
-#define sepgsqlExecScan(a,b,c,d)				(true)
-#define sepgsqlHeapTupleInsert(a,b,c)			(true)
-#define sepgsqlHeapTupleUpdate(a,b,c,d)			(true)
-#define sepgsqlHeapTupleDelete(a,b,c)			(true)
+#define sepgsqlHeapTupleInsert(a,b,c)			do {} while(0)
+#define sepgsqlHeapTupleUpdate(a,b,c)			do {} while(0)
+
 /* core.c */
 #define sepgsqlIsEnabled()						(false)
 #define sepgsqlInitialize()						do {} while(0)
+
 /* hooks.c */
+#define sepgsqlCheckDatabaseCreate(a,b)			(InvalidOid)
+#define sepgsqlCheckDatabaseDrop(a)				do {} while(0)
+#define sepgsqlCheckDatabaseSetattr(a)			do {} while(0)
+#define sepgsqlCheckDatabaseRelabel(a,b)		(InvalidOid)
 #define sepgsqlCheckDatabaseAccess(a)			(true)
 #define sepgsqlCheckDatabaseSuperuser()			(true)
 #define sepgsqlCheckDatabaseInstallModule()		do {} while(0)
 #define sepgsqlCheckDatabaseLoadModule(a)		do {} while(0)
+
+#define sepgsqlCheckSchemaCreate(a,b,c)			(InvalidOid)
+#define sepgsqlCheckSchemaDrop(a)				do {} while(0)
+#define sepgsqlCheckSchemaSetattr(a)			do {} while(0)
+#define sepgsqlCheckSchemaRelabel(a,b)			(InvalidOid)
 #define sepgsqlCheckSchemaSearch(a)				(true)
+#define sepgsqlCheckSchemaAddObject(a)			do {} while(0)
+#define sepgsqlCheckSchemaRemoveObject(a)		do {} while(0)
+
+#define sepgsqlCheckTableDrop(a)				do {} while(0)
+#define sepgsqlCheckTableSetattr(a)				do {} while(0)
+#define sepgsqlCheckTableRelabel(a,b)			(InvalidOid)
 #define sepgsqlCheckTableLock(a)				do {} while(0)
 #define sepgsqlCheckTableTruncate(a)			do {} while(0)
 #define sepgsqlCheckTableReference(a,b,c)		do {} while(0)
+
 #define sepgsqlCheckSequenceGetValue(a)			do {} while(0)
 #define sepgsqlCheckSequenceNextValue(a)		do {} while(0)
 #define sepgsqlCheckSequenceSetValue(a)			do {} while(0)
+
+#define sepgsqlCheckColumnCreate(a,b,c)			(InvalidOid)
+#define sepgsqlCheckColumnDrop(a,b)				do {} while(0)
+#define sepgsqlCheckColumnSetattr(a,b)			do {} while(0)
+#define sepgsqlCheckColumnRelabel(a,b,c)		(InvalidOid)
+
+#define sepgsqlCheckProcedureCreate(a,b,c)		(InvalidOid)
+#define sepgsqlCheckProcedureDrop(a)			do {} while(0)
+#define sepgsqlCheckProcedureSetattr(a)			do {} while(0)
+#define sepgsqlCheckProcedureRelabel(a,b)		(InvalidOid)
 #define sepgsqlCheckProcedureExecute(a)			(true)
 #define sepgsqlCheckProcedureEntrypoint(a,b)	do {} while(0)
+
 #define sepgsqlCheckBlobCreate(a,b)				do {} while(0)
 #define sepgsqlCheckBlobDrop(a,b)				do {} while(0)
 #define sepgsqlCheckBlobRead(a)					do {} while(0)
@@ -468,10 +487,17 @@ extern const char *sepgsqlGetPermissionString(security_class_t tclass,
 #define sepgsqlCheckBlobRelabel(a,b)			do {} while(0)
 #define sepgsqlCheckFileRead(a,b)				do {} while(0)
 #define sepgsqlCheckFileWrite(a,b)				do {} while(0)
+
+#define sepgsqlCheckObjectDrop(a)				do {} while(0)
+
 #define sepgsqlAllowFunctionInlined(a)			(true)
+
 /* label.c */
-#define sepgsqlTupleDescHasSecLabel(a)			(false)
-#define sepgsqlMetaSecurityLabel(a)				(NULL)
+#define sepgsqlTupleDescHasSecLabel(a,b)		(false)
+#define sepgsqlSetDefaultSecLabel(a,b)			do {} while(0)
+#define sepgsqlCreateTableColumns(a,b,c,d,e)	(NULL)
+#define sepgsqlCopyTableColumns(a)				(NULL)
+#define sepgsqlMetaSecurityLabel()				(NULL)
 #define sepgsqlTransSecLabelIn(a)				(a)
 #define sepgsqlTransSecLabelOut(a)				(a)
 #define sepgsqlRawSecLabelIn(a)					(a)

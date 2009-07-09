@@ -86,29 +86,23 @@ static avc_page *client_avc_page = NULL;
 
 static int	avc_version;
 
-static bool	avc_enforcing;
+static bool system_enforcing;
 
-static bool avc_exception = false;
+static int	local_enforcing = -1;
 
 /*
  * selinux_state
  *
- * This structure shows the global state of SELinux and its security
- * policy, and it is assigned on shared memory region.
+ * It is deployed on the shared memory region, to show the system
+ * state of SELinux and its security policy.
  *
- * The selinux_state->version should be checked prior to any avc
- * accesses. If avc_page->avc_version is not matched with the
- * global state, it means security policy is reloaded, system booleans
- * are changed, or working mode (enforcing/permissive) is changed.
- * The selinux_state->enforcing means current working mode. If it it
- * true, it works in enforcing mode, elsewhere permissive mode.
+ * The selinux_state->version should be checked prior to avc accesses.
+ * If it does not match with the local avc_version, it means that
+ * system security policy was reloaded or system state (enforcing
+ * or permissive) was changed.
  *
- * The only process able to update these variable are policy state
- * monitoring process forked by postmaster. It enables to receive
- * notifications from the kernwl via netlink socket.
- *
- * These global state is protected by SepgsqlAvcLock LWlock, so
- * we need to acquire this lock when it is refered.
+ * The state monitoring worker process receives messages from the
+ * kernel using libselinux, and it updates the selinux_state.
  */
 struct
 {
@@ -128,26 +122,6 @@ sepgsqlShmemSize(void)
 }
 
 /*
- * sepgsqlGetExceptionMode
- * sepgsqlSetExceptionMode
- *   They control exception mode bit to disable checks
- *   temporary (for internal processing purpose).
- */
-bool sepgsqlGetExceptionMode(void)
-{
-	return avc_exception;
-}
-
-bool sepgsqlSetExceptionMode(bool new_exception)
-{
-	bool		old_exception = avc_exception;
-
-	avc_exception = new_exception;
-
-	return old_exception;
-}
-
-/*
  * sepgsql_avc_check_valid
  *   returns false, if the given avc_page is already obsolete.
  */
@@ -164,7 +138,6 @@ sepgsql_avc_check_valid(void)
 	return result;
 }
 
-
 /*
  * sepgsql_avc_reset
  *   clears all AVC entries and update its version.
@@ -179,10 +152,53 @@ sepgsql_avc_reset(void)
 
 	LWLockAcquire(SepgsqlAvcLock, LW_SHARED);
 	avc_version = selinux_state->version;
-	avc_enforcing = selinux_state->enforcing;
+	system_enforcing = selinux_state->enforcing;
 	LWLockRelease(SepgsqlAvcLock);
 
 	sepgsqlAvcSwitchClient();
+}
+
+/*
+ * sepgsqlSetLocalEnforce
+ *   It controls local enforcing/permissive mode.
+ *   In the default, it follows system setting, but it can be set
+ *   to permissive mode when the system internal stuff temporary
+ *   want to disable access controls.
+ *   (E.g, when temporary objects are cleaned up)
+ *
+ * local_enforcing < 0 (undefined, follows system setting)
+ * local_enforcing = 0 (local permissive)
+ * local_enforcing > 0 (local enforcing)
+ */
+int
+sepgsqlSetLocalEnforce(int mode)
+{
+	int		old_enforcing = local_enforcing;
+
+	local_enforcing = mode;
+
+	return old_enforcing;
+}
+
+/*
+ * sepgsqlGetEnforce
+ *   It returns current enforcing/permissive mode
+ */
+bool
+sepgsqlGetEnforce(void)
+{
+	if (!sepgsqlIsEnabled())
+		return false;
+
+	if (!sepgsql_avc_check_valid())
+		sepgsql_avc_reset();
+
+	if (local_enforcing < 0)
+		return system_enforcing;
+	else if (local_enforcing == 0)
+		return false;
+	else
+		return true;
 }
 
 /*
@@ -220,6 +236,8 @@ sepgsql_avc_reclaim(avc_page *page)
  *   generates an audit message on the give string buffer based on
  *   the given av_decision which means the resutl of permission checks.
  */
+sepgsqlAvcAuditHook_t sepgsqlAvcAuditHook = NULL;
+
 static void
 avc_audit_common(security_context_t scontext,
 				 security_context_t tcontext,
@@ -227,32 +245,37 @@ avc_audit_common(security_context_t scontext,
 				 bool denied, access_vector_t audited,
 				 const char *audit_name)
 {
-	char buffer[2048];
+	StringInfoData	buf;
 	access_vector_t mask;
-	int ofs = 0;
 
-	ofs += snprintf(buffer + ofs, sizeof(buffer) - ofs, "%s {",
-					denied ? "denied" : "granted");
+	initStringInfo(&buf);
+	appendStringInfo(&buf, "{");
 	for (mask = 1; audited != 0; mask <<= 1)
 	{
 		if (audited & mask)
-			ofs += snprintf(buffer + ofs, sizeof(buffer) - ofs, " %s",
-							sepgsqlGetPermissionString(tclass, mask));
+			appendStringInfo(&buf, " %s",
+							 sepgsqlGetPermissionString(tclass, mask));
 		audited &= ~mask;
 	}
-	ofs += snprintf(buffer + ofs, sizeof(buffer) - ofs, " } ");
+	appendStringInfo(&buf, " }");
 
-	ofs += snprintf(buffer + ofs, sizeof(buffer) - ofs,
-					"scontext=%s tcontext=%s tclass=%s",
-					scontext, tcontext,
-					sepgsqlGetClassString(tclass));
+	if (sepgsqlAvcAuditHook)
+		(*sepgsqlAvcAuditHook)(scontext, tcontext,
+							   sepgsqlGetClassString(tclass), buf.data,
+							   denied, audit_name);
+	else
+	{
+		appendStringInfo(&buf, " scontext=%s tcontext=%s tclass=%s",
+						 scontext, tcontext,
+						 sepgsqlGetClassString(tclass));
+		if (audit_name)
+			appendStringInfo(&buf, " name=%s", audit_name);
 
-	if (audit_name)
-		ofs += snprintf(buffer + ofs, sizeof(buffer) - ofs, " name=%s", audit_name);
-
-	ereport(LOG,
-			(errcode(ERRCODE_SELINUX_AUDIT),
-			 errmsg("SELinux: %s", buffer)));
+		ereport(LOG,
+				(errcode(ERRCODE_SELINUX_AUDIT),
+				 errmsg("SELinux: %s %s",
+						denied ? "denied" : "granted", buf.data)));
+	}
 }
 
 /*
@@ -484,9 +507,6 @@ sepgsqlClientHasPermsSid(Oid relid, Oid secid,
 
 	Assert(required != 0);
 
-	if (avc_exception)
-		return true;
-
 retry:
 	cache = avc_lookup(client_avc_page, relid, secid, tclass);
 	if (!cache)
@@ -507,7 +527,7 @@ retry:
 
 	if (denied)
 	{
-		if (!avc_enforcing || cache->permissive)
+		if (!sepgsqlGetEnforce() || cache->permissive)
 			cache->allowed |= required;		/* prevent flood of audit log */
 		else
 			result = false;
@@ -656,9 +676,6 @@ sepgsqlComputePerms(security_context_t scontext,
 
 	Assert(required != 0);
 
-	if (avc_exception)
-		return true;
-
 	tclass_ex = sepgsqlTransToExternalClass(tclass);
 	if (tclass_ex > 0)
 	{
@@ -692,7 +709,7 @@ sepgsqlComputePerms(security_context_t scontext,
 						 tclass, !!denied, audited, audit_name);
 	}
 
-	if (denied && avc_enforcing &&
+	if (denied && sepgsqlGetEnforce() &&
 		(avd.flags & SELINUX_AVD_FLAGS_PERMISSIVE) == 0)
 	{
 		if (abort)
