@@ -177,7 +177,7 @@ sepgsqlSetLocalEnforce(int mode)
 
 	local_enforcing = mode;
 
-	return local_enforcing;
+	return old_enforcing;
 }
 
 /*
@@ -265,7 +265,7 @@ avc_audit_common(security_context_t scontext,
 							   denied, audit_name);
 	else
 	{
-		appendStringInfo(&buf, " scontext=%s tcontext=%s tclass=%s"
+		appendStringInfo(&buf, " scontext=%s tcontext=%s tclass=%s",
 						 scontext, tcontext,
 						 sepgsqlGetClassString(tclass));
 		if (audit_name)
