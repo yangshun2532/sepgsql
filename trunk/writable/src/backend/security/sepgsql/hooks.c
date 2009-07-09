@@ -234,54 +234,12 @@ sepgsqlCheckSchemaSearch(Oid namespace_oid)
 /* ------------------------------------------------------------ *
  *   Hooks corresponding to db_table object class
  * ------------------------------------------------------------ */
-Oid
-sepgsqlCheckTableCreate(Relation new_rel, List *secLabels)
-{
-	char		relkind = RelationGetForm(new_rel)->relkind;
-	Oid			relsid = InvalidOid;
-	ListCell   *l;
 
-	/*
-	 * NOTE: The given secLabels list is the result of
-	 * sepgsqlCreateTableSecLabels() which returns
-	 * pre-computed security identifiers.
-	 */
-	if (!sepgsqlIsEnabled())
-		return InvalidOid;
-
-	foreach (l, secLabels)
-	{
-		DefElem	   *defel = lfirst(l);
-
-		if (!defel->defname)
-		{
-			relsid = intVal(defel->arg);
-			break;
-		}
-	}
-
-	switch (relkind)
-	{
-	case RELKIND_RELATION:
-		sepgsqlClientHasPermsSid(RelationRelationId, relsid,
-								 SEPG_CLASS_DB_TABLE,
-								 SEPG_DB_TABLE__CREATE,
-								 RelationGetRelationName(new_rel), true);
-		break;
-
-	case RELKIND_SEQUENCE:
-		sepgsqlClientHasPermsSid(RelationRelationId, relsid,
-								 SEPG_CLASS_DB_SEQUENCE,
-								 SEPG_DB_SEQUENCE__CREATE,
-								 RelationGetRelationName(new_rel), true);
-		break;
-	default:
-		/* do not check anything now */
-		break;
-	}
-
-	return relsid;
-}
+/*
+ * NOTE: db_table/db_sequence:{create} permission is checked
+ *       at sepgsqlCreateTableColumns() due to the reason
+ *       for implementation.
+ */
 
 static void
 checkTableCommon(Oid table_oid, access_vector_t required)
@@ -493,46 +451,15 @@ void sepgsqlCheckSequenceSetValue(Oid seqid)
 /* ------------------------------------------------------------ *
  *   Hooks corresponding to db_column object class
  * ------------------------------------------------------------ */
+
+/*
+ * NOTE: db_column:{create} is checked on sepgsqlCreateTableColumns()
+ *       which is invoked on CREATE TABLE statement.
+ *       The sepgsqlCheckColumnCreate() is called on the ALTER TABLE
+ *       ... ADD COLUMN path.
+ */
 Oid
-sepgsqlCheckColumnCreate(Form_pg_attribute attr, char relkind, List *secLabels)
-{
-	Oid			relsid = InvalidOid;
-	Oid			attsid = InvalidOid;
-	ListCell   *l;
-
-	if (!sepgsqlIsEnabled())
-		return InvalidOid;
-
-	if (relkind != RELKIND_RELATION)
-		return InvalidOid;
-
-	foreach (l, secLabels)
-	{
-		DefElem	   *defel = lfirst(l);
-
-		if (!defel->defname)
-			relsid = intVal(defel->arg);
-		else if (strcmp(defel->defname, NameStr(attr->attname)) == 0)
-		{
-			attsid = intVal(defel->arg);
-			break;
-		}
-	}
-
-	if (!OidIsValid(attsid))
-		attsid = sepgsqlClientCreateSecid(RelationRelationId, relsid,
-										  SEPG_CLASS_DB_COLUMN,
-										  AttributeRelationId);
-
-	sepgsqlClientHasPermsSid(AttributeRelationId, attsid,
-							 SEPG_CLASS_DB_COLUMN,
-							 SEPG_DB_COLUMN__CREATE,
-							 NameStr(attr->attname), true);
-	return attsid;
-}
-
-Oid
-sepgsqlCheckColumnCreateAT(Oid table_oid, const char *attname, DefElem *new_label)
+sepgsqlCheckColumnCreate(Oid table_oid, const char *attname, DefElem *new_label)
 {
 	Oid		secid;
 	char	relkind;

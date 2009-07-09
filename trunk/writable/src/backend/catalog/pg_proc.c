@@ -98,7 +98,7 @@ ProcedureCreate(const char *procedureName,
 	Datum		values[Natts_pg_proc];
 	bool		replaces[Natts_pg_proc];
 	Oid			relid;
-	Oid			prosecid;
+	Oid			prosecid = InvalidOid;
 	NameData	procname;
 	TupleDesc	tupDesc;
 	bool		is_update;
@@ -498,7 +498,8 @@ ProcedureCreate(const char *procedureName,
 	{
 		/* SELinux checks db_procedure:{create} */
 		prosecid = sepgsqlCheckProcedureCreate(procedureName,
-											   procNamespace, proseclabel);
+											   procNamespace,
+											   (DefElem *)proseclabel);
 		/* Creating a new procedure */
 		tup = heap_form_tuple(tupDesc, values, nulls);
 		if (HeapTupleHasSecLabel(tup))

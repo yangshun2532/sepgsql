@@ -213,10 +213,11 @@ Boot_CreateStmt:
 					else
 					{
 						Oid id;
-						List *secLabels
-							= sepgsqlCreateTableSecLabels(NULL,
-														  PG_CATALOG_NAMESPACE,
-														  RELKIND_RELATION);
+						Oid *secLabels =
+							sepgsqlCreateTableColumns(NULL,
+													  LexIDStr($5),
+													  PG_CATALOG_NAMESPACE,
+													  tupdesc, RELKIND_RELATION);
 
 						id = heap_create_with_catalog(LexIDStr($5),
 													  PG_CATALOG_NAMESPACE,

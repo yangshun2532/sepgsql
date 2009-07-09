@@ -77,7 +77,7 @@ static void AddNewRelationTuple(Relation pg_class_desc,
 					Oid relowner,
 					char relkind,
 					Datum reloptions,
-					List *secLabels);
+					Oid *secLabels);
 static Oid AddNewRelationType(const char *typeName,
 				   Oid typeNamespace,
 				   Oid new_rel_oid,
@@ -576,7 +576,7 @@ AddNewAttributeTuples(Oid new_rel_oid,
 					  char relkind,
 					  bool oidislocal,
 					  int oidinhcount,
-					  List *secLabels)
+					  Oid *secLabels)
 {
 	Form_pg_attribute attr;
 	int			i;
@@ -600,9 +600,6 @@ AddNewAttributeTuples(Oid new_rel_oid,
 	 */
 	for (i = 0; i < natts; i++)
 	{
-		ListCell   *l;
-		Oid			att_secid = InvalidOid;
-
 		attr = tupdesc->attrs[i];
 		/* Fill in the correct relation OID */
 		attr->attrelid = new_rel_oid;
@@ -610,8 +607,9 @@ AddNewAttributeTuples(Oid new_rel_oid,
 		attr->attstattarget = -1;
 		attr->attcacheoff = -1;
 
-		/* SELinux checks db_column:{create} */
-		new_att_secid = sepgsqlCheckColumnCreate(attr, relkind, secLabels);
+		/* Security label of the column */
+		new_att_secid = (!secLabels ? InvalidOid
+						 : secLabels[i - FirstLowInvalidHeapAttributeNumber]);
 
 		InsertPgAttributeTuple(rel, attr, indstate, new_att_secid);
 
@@ -653,8 +651,9 @@ AddNewAttributeTuples(Oid new_rel_oid,
 				attStruct.attinhcount = oidinhcount;
 			}
 
-			/* SELinux checks db_column:{create} */
-			new_att_secid = sepgsqlCheckColumnCreate(&attStruct, relkind, secLabels);
+			/* Security label of the system column */
+			new_att_secid = (!secLabels ? InvalidOid
+				: secLabels[SysAtt[i]->attnum - FirstLowInvalidHeapAttributeNumber]);
 
 			InsertPgAttributeTuple(rel, &attStruct, indstate, new_att_secid);
 		}
@@ -760,10 +759,10 @@ AddNewRelationTuple(Relation pg_class_desc,
 					Oid relowner,
 					char relkind,
 					Datum reloptions,
-					List *secLabels)
+					Oid *secLabels)
 {
 	Form_pg_class new_rel_reltup;
-	Oid		new_rel_secid;
+	Oid		new_rel_secid = InvalidOid;
 
 	/*
 	 * first we update some of the information in our uncataloged relation's
@@ -820,8 +819,8 @@ AddNewRelationTuple(Relation pg_class_desc,
 
 	new_rel_desc->rd_att->tdtypeid = new_type_oid;
 
-	/* SELinux check db_table:{create} permission */
-	new_rel_secid = sepgsqlCheckTableCreate(new_rel_desc, secLabels);
+	if (secLabels)
+		new_rel_secid = secLabels[0];
 
 	/* Now build and insert the tuple */
 	InsertPgClassTuple(pg_class_desc, new_rel_desc, new_rel_oid,
@@ -897,7 +896,7 @@ heap_create_with_catalog(const char *relname,
 						 OnCommitAction oncommit,
 						 Datum reloptions,
 						 bool allow_system_table_mods,
-						 List *secLabels)
+						 Oid *secLabels)
 {
 	Relation	pg_class_desc;
 	Relation	new_rel_desc;
