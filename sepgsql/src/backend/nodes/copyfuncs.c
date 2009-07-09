@@ -2905,6 +2905,7 @@ _copyCreateSeqStmt(CreateSeqStmt *from)
 
 	COPY_NODE_FIELD(sequence);
 	COPY_NODE_FIELD(options);
+	COPY_NODE_FIELD(secLabel);
 
 	return newnode;
 }
