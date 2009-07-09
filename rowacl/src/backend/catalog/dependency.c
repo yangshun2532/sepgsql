@@ -63,6 +63,7 @@
 #include "nodes/nodeFuncs.h"
 #include "parser/parsetree.h"
 #include "rewrite/rewriteRemove.h"
+#include "security/sepgsql.h"
 #include "storage/lmgr.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
@@ -945,6 +946,9 @@ deleteOneObject(const ObjectAddress *object, Relation depRel)
 	int			nkeys;
 	SysScanDesc scan;
 	HeapTuple	tup;
+
+	/* SELinux checks db_xxx:{drop} permission */
+	sepgsqlCheckObjectDrop(object);
 
 	/*
 	 * First remove any pg_depend records that link from this object to

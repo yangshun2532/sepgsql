@@ -2348,7 +2348,7 @@ CopyFrom(CopyState cstate)
 		}
 
 		if (!skip_tuple)
-			skip_tuple = !rowlvHeapTupleInsert(cstate->rel, tuple, false);
+			rowlvHeapTupleInsert(cstate->rel, tuple, false);
 
 		if (!skip_tuple)
 		{

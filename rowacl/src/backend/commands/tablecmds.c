@@ -352,7 +352,7 @@ DefineRelation(CreateStmt *stmt, char relkind)
 	List	   *rawDefaults;
 	List	   *cookedDefaults;
 	Datum		reloptions;
-	List	   *seclabelList;
+	Oid		   *secLabels;
 	ListCell   *listptr;
 	AttrNumber	attnum;
 	static char *validnsps[] = HEAP_RELOPT_NAMESPACES;
@@ -496,10 +496,9 @@ DefineRelation(CreateStmt *stmt, char relkind)
 		}
 	}
 
-	/*
-	 * SELinux: fetch SECURITY_LABEL = '...' from CREATE TABLE
-	 */
-	seclabelList = sepgsqlParseCreateStmtSecLabelIn(stmt);
+	/* SELinux checks db_table:{create} and db_column:{create} */
+	secLabels = sepgsqlCreateTableColumns(stmt, relname, namespaceId,
+										  descriptor, relkind);
 
 	/*
 	 * Create the relation.  Inherited defaults and constraints are passed in
@@ -521,7 +520,7 @@ DefineRelation(CreateStmt *stmt, char relkind)
 										  stmt->oncommit,
 										  reloptions,
 										  allowSystemTableMods,
-										  seclabelList);
+										  secLabels);
 
 	StoreCatalogInheritance(relationId, inheritOids);
 
@@ -1932,6 +1931,9 @@ renameatt(Oid myrelid,
 				 errmsg("cannot rename system column \"%s\"",
 						oldattname)));
 
+	/* SELinux checks db_column:{setattr} */
+	sepgsqlCheckColumnSetattr(myrelid, attnum);
+
 	/*
 	 * if the attribute is inherited, forbid the renaming, unless we are
 	 * already inside a recursive rename.
@@ -3265,6 +3267,9 @@ ATSimplePermissions(Relation rel, bool allowView)
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 				 errmsg("permission denied: \"%s\" is a system catalog",
 						RelationGetRelationName(rel))));
+
+	/* SELinux checks db_table:{setattr} */
+	sepgsqlCheckTableSetattr(RelationGetRelid(rel));
 }
 
 /*
@@ -3294,6 +3299,9 @@ ATSimplePermissionsRelationOrIndex(Relation rel)
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 				 errmsg("permission denied: \"%s\" is a system catalog",
 						RelationGetRelationName(rel))));
+
+	/* SELinux checks db_table:{setattr} */
+	sepgsqlCheckTableSetattr(RelationGetRelid(rel));
 }
 
 /*
@@ -3532,6 +3540,7 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 	HeapTuple	typeTuple;
 	Oid			typeOid;
 	int32		typmod;
+	Oid			attsecid;
 	Form_pg_type tform;
 	Expr	   *defval;
 
@@ -3568,6 +3577,9 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 						(errcode(ERRCODE_DATATYPE_MISMATCH),
 				 errmsg("child table \"%s\" has a conflicting \"%s\" column",
 						RelationGetRelationName(rel), colDef->colname)));
+
+			/* SELinux checks db_column:{setattr} */
+			sepgsqlCheckColumnSetattr(myrelid, childatt->attnum);
 
 			/* Bump the existing child att's inhcount */
 			childatt->attinhcount++;
@@ -3607,6 +3619,10 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 				(errcode(ERRCODE_DUPLICATE_COLUMN),
 				 errmsg("column \"%s\" of relation \"%s\" already exists",
 						colDef->colname, RelationGetRelationName(rel))));
+
+	/* SELinux checks db_column:{create} */
+	attsecid = sepgsqlCheckColumnCreate(myrelid, colDef->colname,
+										(DefElem *)colDef->secLabel);
 
 	/* Determine the new attribute's number */
 	if (isOid)
@@ -3650,7 +3666,7 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 
 	ReleaseSysCache(typeTuple);
 
-	InsertPgAttributeTuple(attrdesc, &attribute, NULL, InvalidOid);
+	InsertPgAttributeTuple(attrdesc, &attribute, NULL, attsecid);
 
 	heap_close(attrdesc, RowExclusiveLock);
 
@@ -3855,6 +3871,9 @@ ATExecDropNotNull(Relation rel, const char *colName)
 				 errmsg("cannot alter system column \"%s\"",
 						colName)));
 
+	/* SELinux checks db_column:{setattr} */
+	sepgsqlCheckColumnSetattr(RelationGetRelid(rel), attnum);
+
 	/*
 	 * Check that the attribute is not in a primary key
 	 */
@@ -3947,6 +3966,9 @@ ATExecSetNotNull(AlteredTableInfo *tab, Relation rel,
 				 errmsg("cannot alter system column \"%s\"",
 						colName)));
 
+	/* SELinux checks db_column:{setattr} */
+	sepgsqlCheckColumnSetattr(RelationGetRelid(rel), attnum);
+
 	/*
 	 * Okay, actually perform the catalog change ... if needed
 	 */
@@ -3991,6 +4013,9 @@ ATExecColumnDefault(Relation rel, const char *colName,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot alter system column \"%s\"",
 						colName)));
+
+	/* SELinux checks db_column:{setattr} */
+	sepgsqlCheckColumnSetattr(RelationGetRelid(rel), attnum);
 
 	/*
 	 * Remove any old default for the column.  We use RESTRICT here for
@@ -4039,6 +4064,8 @@ ATPrepSetStatistics(Relation rel, const char *colName, Node *flagValue)
 	if (!pg_class_ownercheck(RelationGetRelid(rel), GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
 					   RelationGetRelationName(rel));
+	/* SELinux checks db_table:{setatr} */
+	sepgsqlCheckTableSetattr(RelationGetRelid(rel));
 }
 
 static void
@@ -4087,6 +4114,9 @@ ATExecSetStatistics(Relation rel, const char *colName, Node *newValue)
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot alter system column \"%s\"",
 						colName)));
+
+	/* SELinux checks db_column:{setattr} */
+	sepgsqlCheckColumnSetattr(RelationGetRelid(rel), attrtuple->attnum);
 
 	attrtuple->attstattarget = newtarget;
 
@@ -4148,6 +4178,9 @@ ATExecSetStorage(Relation rel, const char *colName, Node *newValue)
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot alter system column \"%s\"",
 						colName)));
+
+	/* SELinux checks db_column:{setattr} */
+	sepgsqlCheckColumnSetattr(RelationGetRelid(rel), attrtuple->attnum);
 
 	/*
 	 * safety check: do not allow toasted storage modes unless column datatype
@@ -4224,6 +4257,9 @@ ATExecDropColumn(List **wqueue, Relation rel, const char *colName,
 						colName)));
 
 	ReleaseSysCache(tuple);
+
+	/* SELinux checks db_column:{drop} */
+	sepgsqlCheckColumnDrop(RelationGetRelid(rel), attnum);
 
 	/*
 	 * Propagate to children as appropriate.  Unlike most other ALTER
@@ -5740,6 +5776,9 @@ ATExecAlterColumnType(AlteredTableInfo *tab, Relation rel,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot alter type of column \"%s\" twice",
 						colName)));
+
+	/* SELinux checks db_column:{setattr} */
+	sepgsqlCheckColumnSetattr(RelationGetRelid(rel), attnum);
 
 	/* Look up the target type (should not fail, since prep found it) */
 	typeTuple = typenameType(NULL, typename, &targettypmod);
@@ -7788,34 +7827,36 @@ static void
 ExecRelationSetSecLabel(Oid relid, DefElem *seclabel)
 {
 	Relation	rel;
-	HeapTuple	tuple, newtup;
+	HeapTuple	oldtup;
+	HeapTuple	newtup;
 	Oid			secid;
 	bool		replaces[Natts_pg_class];
 
-	/*  Translate text representation to security id */
-	secid = sepgsqlGivenSecLabelIn(RelationRelationId, seclabel);
-
 	rel = heap_open(RelationRelationId, RowExclusiveLock);
-	tuple = SearchSysCache(RELOID,
-						   ObjectIdGetDatum(relid),
-						   0, 0, 0);
-	if (!HeapTupleIsValid(tuple))
+	oldtup = SearchSysCache(RELOID,
+							ObjectIdGetDatum(relid),
+							0, 0, 0);
+	if (!HeapTupleIsValid(oldtup))
 		elog(ERROR, "cache lookup failed for relation: %u", relid);
 
 	memset(replaces, false, sizeof(replaces));
-	newtup = heap_modify_tuple(tuple, RelationGetDescr(rel),
+	newtup = heap_modify_tuple(oldtup, RelationGetDescr(rel),
 							   NULL, NULL, replaces);
+	ReleaseSysCache(oldtup);
 
+	/* SELinux checks db_table:{setattr relabelfrom relabelto} */
+	secid = sepgsqlCheckTableRelabel(relid, seclabel);
 	if (!HeapTupleHasSecLabel(newtup))
-		elog(ERROR, "Unable to set security label on: %s",
-			 NameStr(((Form_pg_class) GETSTRUCT(tuple))->relname));
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("Unable to set security label on \"%s\"",
+						get_rel_name(relid))));
 	HeapTupleSetSecLabel(newtup, secid);
 
 	simple_heap_update(rel, &newtup->t_self, newtup);
-
 	CatalogUpdateIndexes(rel, newtup);
 
-	ReleaseSysCache(tuple);
+	heap_freetuple(newtup);
 
 	heap_close(rel, RowExclusiveLock);
 }
@@ -7824,34 +7865,39 @@ static void
 ExecAttributeSetSecLabel(Oid relid, const char *attname, DefElem *seclabel)
 {
 	Relation	rel;
-	HeapTuple	tuple, newtup;
+	HeapTuple	oldtup;
+	HeapTuple	newtup;
+	AttrNumber	attnum;
 	Oid			secid;
-	bool		replaces[Natts_pg_class];
-
-	/*  Translate text representation to security id */
-	secid = sepgsqlGivenSecLabelIn(AttributeRelationId, seclabel);
+	bool		replaces[Natts_pg_attribute];
 
 	rel = heap_open(AttributeRelationId, RowExclusiveLock);
-	tuple = SearchSysCacheAttName(relid, attname);
-	if (!HeapTupleIsValid(tuple))
+	oldtup = SearchSysCacheAttName(relid, attname);
+	if (!HeapTupleIsValid(oldtup))
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_COLUMN),
 				 errmsg("column \"%s\" of relation \"%s\" does not exist",
 						attname, get_rel_name(relid))));
+	attnum = ((Form_pg_attribute) GETSTRUCT(oldtup))->attnum;
 
 	memset(replaces, false, sizeof(replaces));
-	newtup = heap_modify_tuple(tuple, RelationGetDescr(rel),
+	newtup = heap_modify_tuple(oldtup, RelationGetDescr(rel),
 							   NULL, NULL, replaces);
+	ReleaseSysCache(oldtup);
+
+	/* SELinux checks db_column:{setattr relabelfrom relabelto} */
+	secid = sepgsqlCheckColumnRelabel(relid, attnum, seclabel); 
 	if (!HeapTupleHasSecLabel(newtup))
-		elog(ERROR, "Unable to set security label on: %s",
-			 NameStr(((Form_pg_attribute) GETSTRUCT(tuple))->attname));
+		ereport(ERROR,
+                (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+                 errmsg("Unable to set security label on \"%s.%s\"",
+						get_rel_name(relid), attname)));
 	HeapTupleSetSecLabel(newtup, secid);
 
 	simple_heap_update(rel, &newtup->t_self, newtup);
-
 	CatalogUpdateIndexes(rel, newtup);
 
-	ReleaseSysCache(tuple);
+	heap_freetuple(newtup);
 
 	heap_close(rel, RowExclusiveLock);
 }
@@ -7860,41 +7906,34 @@ void
 AlterRelationSecLabel(RangeVar *relation, const char *attname,
 					  ObjectType objtype, DefElem *seclabel)
 {
-	Form_pg_class	clsForm;
-	HeapTuple		tuple;
-	Oid				relid;
+	Oid		relid;
+	char	relkind;
 
 	/* Check relation type against type specified in the ALTER command */
 	relid = RangeVarGetRelid(relation, false);
-	tuple = SearchSysCache(RELOID,
-						   ObjectIdGetDatum(relid),
-						   0, 0, 0);
-	if (!HeapTupleIsValid(tuple))
-		elog(ERROR, "cache lookup failed for relation %u", relid);
-	clsForm = (Form_pg_class) GETSTRUCT(tuple);
+	relkind = get_rel_relkind(relid);
 
 	switch (objtype)
 	{
 	case OBJECT_TABLE:
 	case OBJECT_COLUMN:
-		if (clsForm->relkind != RELKIND_RELATION)
+		if (relkind != RELKIND_RELATION)
 			ereport(ERROR,
 					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-					 errmsg("\"%s\" is not a table",
-							NameStr(clsForm->relname))));
+					 errmsg("\"%s\" is not a table", get_rel_name(relid))));
 		break;
+
 	case OBJECT_SEQUENCE:
-		if (clsForm->relkind != RELKIND_SEQUENCE)
+		if (relkind != RELKIND_SEQUENCE)
 			ereport(ERROR,
 					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-					 errmsg("\"%s\" is not a sequence",
-							NameStr(clsForm->relname))));
+					 errmsg("\"%s\" is not a sequence", get_rel_name(relid))));
 		break;
+
 	default:
 		elog(ERROR, "unrecognized object type: %d", (int)objtype);
 		break;
 	}
-	ReleaseSysCache(tuple);
 
 	/* Exec set security label */
 	if (objtype != OBJECT_COLUMN)

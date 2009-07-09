@@ -206,6 +206,7 @@ CreateExecutorState(void)
 	estate->es_instrument = false;
 	estate->es_select_into = false;
 	estate->es_into_oids = false;
+	estate->es_into_rowacl = false;
 
 	estate->es_exprcontexts = NIL;
 

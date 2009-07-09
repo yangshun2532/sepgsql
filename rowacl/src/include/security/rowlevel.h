@@ -33,15 +33,12 @@ extern void
 rowlvExecScanAbort(Scan *scan, Relation rel, TupleTableSlot *slot);
 
 extern bool
+rowlvCopyToTuple(Relation rel, HeapTuple tuple);
+
+extern void
 rowlvHeapTupleInsert(Relation rel, HeapTuple newtup, bool internal);
 
-extern bool
-rowlvHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple newtup, bool internal);
-
-extern bool
-rowlvHeapTupleDelete(Relation rel, ItemPointer otid, bool internal);
-
-extern bool
-rowlvCopyToTuple(Relation rel, HeapTuple tuple);
+extern void
+rowlvHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple newtup);
 
 #endif	/* ROWLEVEL_H */
