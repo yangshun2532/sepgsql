@@ -329,7 +329,7 @@ extern Oid *sepgsqlCreateTableColumns(CreateStmt *stmt,
 extern Oid *sepgsqlCopyTableColumns(Relation source);
 
 extern char *sepgsqlTransSecLabelIn(char *seclabel);
-extern char *sepgsqlTransSecLabelIn(char *seclabel);
+extern char *sepgsqlTransSecLabelOut(char *seclabel);
 extern char *sepgsqlRawSecLabelIn(char *seclabel);
 extern char *sepgsqlRawSecLabelOut(char *seclabel);
 
