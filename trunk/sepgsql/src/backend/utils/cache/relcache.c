@@ -867,8 +867,8 @@ RelationBuildDesc(Oid targetRelId, Relation oldrelation)
 	RelationParseRelOptions(relation, pg_class_tuple);
 
 	/* Fixup relation->rd_att->tdhasseclabel and tdhasrowacl */
-	relation->rd_att->tdhasseclabel
-		= securityTupleDescHasSecLabel(relation);
+	RelationGetDescr(relation)->tdhasseclabel
+		= securityTupleDescHasSecLabel(relid, relp->relkind);
 	relation->rd_att->tdhasrowacl
 		= securityTupleDescHasRowAcl(relation);
 
@@ -1467,7 +1467,8 @@ formrdesc(const char *relationName, Oid relationReltype,
 
 	/* Fixup relation->rd_att->tdhasseclabel and tdhasrowacl */
 	RelationGetDescr(relation)->tdhasseclabel
-		= securityTupleDescHasSecLabel(relation);
+		= securityTupleDescHasSecLabel(RelationGetRelid(relation),
+									   RELKIND_RELATION);
 	RelationGetDescr(relation)->tdhasrowacl
 		= securityTupleDescHasRowAcl(relation);
 
@@ -3474,8 +3475,9 @@ load_relcache_init_file(void)
 		}
 
 		/* Fixup rel->rd_att->tdhasseclabel and tdhasrowacl */
-		rel->rd_att->tdhasseclabel
-			= securityTupleDescHasSecLabel(rel);
+		RelationGetDescr(rel)->tdhasseclabel
+			= securityTupleDescHasSecLabel(RelationGetRelid(rel),
+										   RelationGetForm(rel)->relkind);
 		rel->rd_att->tdhasrowacl
 			= securityTupleDescHasRowAcl(rel);
 

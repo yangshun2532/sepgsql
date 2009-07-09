@@ -17,6 +17,7 @@
 #include "nodes/nodeFuncs.h"
 #include "parser/parsetree.h"
 #include "security/rowacl.h"
+#include "storage/bufmgr.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
 #include "utils/hsearch.h"
@@ -24,6 +25,7 @@
 #include "utils/memutils.h"
 #include "utils/rel.h"
 #include "utils/syscache.h"
+#include "utils/tqual.h"
 
 /******************************************************************
  * Cache boost row-level ACLs checks
@@ -195,156 +197,62 @@ rowaclSetupTuplePerms(RangeTblEntry *rte)
 }
 
 /******************************************************************
- * Relation options
+ * Check permission to change Row-Acl
  ******************************************************************/
-
-static char *
-extractDefaultRowAcl(const char *defacl, Oid relowner)
+void
+rowaclHeapTupleInsert(Relation rel, HeapTuple newtup, bool internal)
 {
-	char   *result;
-	int		i, len, ofs;
+	Oid		aclsid;
 
-	for (i=0, len=1; defacl[i] != '\0'; i++)
+	if (!RelationGetRowLevelAcl(rel))
+		return;
+
+	/*
+	 * TODO: default row-level acl should be set here?
+	 */
+
+	if (internal)
+		return;
+
+	aclsid = HeapTupleGetRowAcl(newtup);
+	if (!OidIsValid(aclsid))
 	{
-		if (defacl[i] == '%')
-			len += NAMEDATALEN;
-		else
-			len++;
+		if (!pg_class_ownercheck(RelationGetRelid(rel), GetUserId()))
+			ereport(ERROR,
+					(errcode(ERRCODE_ROWACL_ERROR),
+					 errmsg("Only owner or superuser can set Row-level ACLs")));
 	}
-
-	result = palloc0(len);
-	for (i=0, ofs=0; defacl[i] != '\0'; i++)
-	{
-		if (defacl[i] == '%')
-		{
-			Form_pg_authid	authForm;
-			HeapTuple		utup;
-			int				code = defacl[++i];
-
-			if (code == 'u')
-			{
-				utup = SearchSysCache(AUTHOID,
-									  ObjectIdGetDatum(GetUserId()),
-									  0, 0, 0);
-				if (!HeapTupleIsValid(utup))
-					elog(ERROR, "cache lookup failed for user: %u", GetUserId());
-
-				authForm = (Form_pg_authid) GETSTRUCT(utup);
-				strcpy(result + ofs, NameStr(authForm->rolname));
-				ofs += strlen(NameStr(authForm->rolname));
-				ReleaseSysCache(utup);
-			}
-			else if (code == 'o')
-			{
-				utup = SearchSysCache(AUTHOID,
-									  ObjectIdGetDatum(relowner),
-									  0, 0, 0);
-				if (!HeapTupleIsValid(utup))
-					elog(ERROR, "cache lookup failed for user: %u", relowner);
-
-				authForm = (Form_pg_authid) GETSTRUCT(utup);
-				strcpy(result + ofs, NameStr(authForm->rolname));
-				ofs += strlen(NameStr(authForm->rolname));
-				ReleaseSysCache(utup);
-			}
-			else
-			{
-				ereport(ERROR,
-						(errcode(ERRCODE_ROWACL_ERROR),
-						 errmsg("invalid replacement character '%c'", code)));
-			}
-		}
-		else
-			result[ofs++] = defacl[i];
-	}
-
-	return result;
 }
 
 void
-rowaclReloptDefaultRowAcl(char *value)
+rowaclHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple newtup)
 {
-	FmgrInfo	finfo;
-	Datum		acldat;
-	char	   *defacl = extractDefaultRowAcl(value, GetUserId());
+	HeapTupleData	oldtup;
+	Buffer	oldbuf;
+	Oid		aclsid;
+
+	if (!RelationGetRowLevelAcl(rel))
+		return;
+
+	aclsid = HeapTupleGetRowAcl(newtup);
+	if (!OidIsValid(aclsid))
+		return;
 
 	/*
-	 * If given default row-acl in reloptions is not valid,
-	 * aclitemin can raise an error.
+	 * Is it really changed?
 	 */
-	fmgr_info(F_ARRAY_IN, &finfo);
-	acldat = FunctionCall3(&finfo,
-						   CStringGetDatum(defacl),
-						   ObjectIdGetDatum(ACLITEMOID),
-						   Int32GetDatum(-1));
-	pfree(DatumGetAclP(acldat));
-	pfree(defacl);
-}
+	ItemPointerCopy(otid, &oldtup.t_self);
+	if (!heap_fetch(rel, SnapshotAny, &oldtup, &oldbuf, false, NULL))
+		elog(ERROR, "failed to fetch old version of the tuple");
 
-/*
- * rowaclTupleDescHasRowAcl()
- *   returns availability of Row-level ACLs in the given relation.
- */
-bool
-rowaclTupleDescHasRowAcl(Relation rel)
-{
-	return RelationGetRowLevelAcl(rel);
-}
-
-/******************************************************************
- * Hooks for heap_(insert|update|delete)
- ******************************************************************/
-bool
-rowaclHeapTupleInsert(Relation rel, HeapTuple newtup, bool internal)
-{
-	if (!HeapTupleHasRowAcl(newtup))
-		return true;
-
-	if (OidIsValid(HeapTupleGetRowAcl(newtup)))
+	if (aclsid != HeapTupleGetRowAcl(&oldtup))
 	{
-		if (RelationGetForm(rel)->relkind != RELKIND_RELATION)
+		if (!pg_class_ownercheck(RelationGetRelid(rel), GetUserId()))
 			ereport(ERROR,
 					(errcode(ERRCODE_ROWACL_ERROR),
-					 errmsg("Only normal relation can have Row-level ACLs")));
-		if (!internal &&
-			!pg_class_ownercheck(RelationGetRelid(rel), GetUserId()))
-			ereport(ERROR,
-					(errcode(ERRCODE_ROWACL_ERROR),
-					 errmsg("Only owner or superuser can set ACLs")));
+					 errmsg("Only owner or superuser can set Row-level ACLs")));
 	}
-
-	return true;
-}
-
-bool
-rowaclHeapTupleUpdate(Relation rel, HeapTuple oldtup, HeapTuple newtup, bool internal)
-{
-	if (!HeapTupleHasRowAcl(newtup))
-		return true;
-
-	if (!OidIsValid(HeapTupleGetRowAcl(newtup)))
-	{
-		/* preserve old one */
-		HeapTupleSetRowAcl(newtup, HeapTupleGetRowAcl(oldtup));
-	}
-	else if (HeapTupleGetRowAcl(newtup) != HeapTupleGetRowAcl(oldtup))
-	{
-		if (!internal &&
-			!pg_class_ownercheck(RelationGetRelid(rel), GetUserId()))
-			ereport(ERROR,
-					(errcode(ERRCODE_ROWACL_ERROR),
-					 errmsg("Only owner or superuser can set ACLs")));
-	}
-	return true;
-}
-
-bool
-rowaclHeapTupleDelete(Relation rel, HeapTuple oldtup, bool internal)
-{
-	/*
-	 * No need to do anything here
-	 */
-	return true;
+	ReleaseBuffer(oldbuf);
 }
 
 /******************************************************************

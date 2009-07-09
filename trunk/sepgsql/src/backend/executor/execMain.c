@@ -726,6 +726,7 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 	{
 		estate->es_select_into = true;
 		estate->es_into_oids = interpretOidsOption(plannedstmt->intoClause->options);
+		estate->es_into_rowacl = interpretRowAclOption(plannedstmt->intoClause->options);
 	}
 
 	/*
@@ -1365,7 +1366,8 @@ bool ExecContextForcesSecLabel(PlanState *planstate, bool *hassecurity)
 {
 	if (planstate->state->es_select_into)
 	{
-		*hassecurity = securityTupleDescHasSecLabel(NULL);
+		*hassecurity = securityTupleDescHasSecLabel(InvalidOid,
+													RELKIND_RELATION);
 		return true;
 	}
 	else
@@ -1374,7 +1376,11 @@ bool ExecContextForcesSecLabel(PlanState *planstate, bool *hassecurity)
 
 		if (ri && ri->ri_RelationDesc)
 		{
-			*hassecurity = securityTupleDescHasSecLabel(ri->ri_RelationDesc);
+			Oid		relid = RelationGetRelid(ri->ri_RelationDesc);
+			char	relkind = RelationGetForm(ri->ri_RelationDesc)->relkind;
+
+			*hassecurity = securityTupleDescHasSecLabel(relid, relkind);
+
 			return true;
 		}
 	}
@@ -1391,10 +1397,7 @@ bool ExecContextForcesRowAcl(PlanState *planstate, bool *hasrowacl)
 {
 	if (planstate->state->es_select_into)
 	{
-		/*
-		 * TODO: check "row_level_acl" option here
-		 */
-		*hasrowacl = false;
+		*hasrowacl = planstate->state->es_into_rowacl;
 		return true;
 	}
 	else
@@ -1969,10 +1972,10 @@ ExecInsert(TupleTableSlot *slot,
 	}
 
 	/*
-	 * check Row-level permission on the tuple
+	 * SELinux assigns default security label, and 
+	 * it also checks db_tuple:{insert} permission
 	 */
-	if (!rowlvHeapTupleInsert(resultRelationDesc, tuple, false))
-		return;
+	rowlvHeapTupleInsert(resultRelationDesc, tuple, false);
 
 	/*
 	 * Check the constraints of the tuple
@@ -2045,12 +2048,6 @@ ExecDelete(ItemPointer tupleid,
 		if (!dodelete)			/* "do nothing" */
 			return;
 	}
-
-	/*
-	 * check Row-level permission on the tuple
-	 */
-	if (!rowlvHeapTupleDelete(resultRelationDesc, tupleid, false))
-		return;
 
 	/*
 	 * delete the tuple
@@ -2220,11 +2217,8 @@ ExecUpdate(TupleTableSlot *slot,
 		}
 	}
 
-	/*
-	 * check Row-level permission on the tuple
-	 */
-	if (!rowlvHeapTupleUpdate(resultRelationDesc, tupleid, tuple, false))
-		return;
+	/* SELinux checks db_tuple:{relabelfrom relabelto}, if needed */
+	rowlvHeapTupleUpdate(resultRelationDesc, tupleid, tuple);
 
 	/*
 	 * Check the constraints of the tuple
@@ -2868,6 +2862,7 @@ EvalPlanQualStart(evalPlanQual *epq, EState *estate, evalPlanQual *priorepq)
 	epqstate->es_instrument = estate->es_instrument;
 	epqstate->es_select_into = estate->es_select_into;
 	epqstate->es_into_oids = estate->es_into_oids;
+	epqstate->es_into_rowacl = estate->es_into_rowacl;
 	epqstate->es_plannedstmt = estate->es_plannedstmt;
 
 	/*
@@ -3021,6 +3016,7 @@ OpenIntoRel(QueryDesc *queryDesc)
 	Oid			namespaceId;
 	Oid			tablespaceId;
 	Datum		reloptions;
+	Oid		   *secLabels;
 	AclResult	aclresult;
 	Oid			intoRelationId;
 	TupleDesc	tupdesc;
@@ -3048,6 +3044,10 @@ OpenIntoRel(QueryDesc *queryDesc)
 	if (aclresult != ACLCHECK_OK)
 		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
 					   get_namespace_name(namespaceId));
+
+	/* SELinux checks db_table:{create} and db_column:{create} */
+	secLabels = sepgsqlCreateTableColumns(NULL, intoName, namespaceId,
+										  queryDesc->tupDesc, RELKIND_RELATION);
 
 	/*
 	 * Select tablespace to use.  If not specified, use default tablespace
@@ -3108,7 +3108,7 @@ OpenIntoRel(QueryDesc *queryDesc)
 											  into->onCommit,
 											  reloptions,
 											  allowSystemTableMods,
-											  NIL);
+											  secLabels);
 
 	FreeTupleDesc(tupdesc);
 
@@ -3239,8 +3239,8 @@ intorel_receive(TupleTableSlot *slot, DestReceiver *self)
 		HeapTupleSetOid(tuple, InvalidOid);
 
 	storeWritableSystemAttribute(myState->rel, slot, tuple);
-	if (!rowlvHeapTupleInsert(myState->rel, tuple, false))
-		return;
+	/* SELinux checks db_tuple:{insert} */
+	rowlvHeapTupleInsert(myState->rel, tuple, false);
 
 	heap_insert(myState->rel,
 				tuple,

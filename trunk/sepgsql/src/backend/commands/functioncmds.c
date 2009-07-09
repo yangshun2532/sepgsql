@@ -519,7 +519,7 @@ compute_attributes_sql_style(List *options,
 							 ArrayType **proconfig,
 							 float4 *procost,
 							 float4 *prorows,
-							 Oid *pro_secid)
+							 Node **proseclabel)
 {
 	ListCell   *option;
 	DefElem    *as_item = NULL;
@@ -634,7 +634,7 @@ compute_attributes_sql_style(List *options,
 					 errmsg("ROWS must be positive")));
 	}
 	if (seclabel_item)
-		*pro_secid = sepgsqlGivenSecLabelIn(ProcedureRelationId, seclabel_item);
+		*proseclabel = (Node *)seclabel_item;
 }
 
 
@@ -775,7 +775,7 @@ CreateFunction(CreateFunctionStmt *stmt, const char *queryString)
 	ArrayType  *proconfig;
 	float4		procost;
 	float4		prorows;
-	Oid			pro_secid;
+	Node	   *proseclabel;
 	HeapTuple	languageTuple;
 	Form_pg_language languageStruct;
 	List	   *as_clause;
@@ -798,14 +798,14 @@ CreateFunction(CreateFunctionStmt *stmt, const char *queryString)
 	proconfig = NULL;
 	procost = -1;				/* indicates not set */
 	prorows = -1;				/* indicates not set */
-	pro_secid = InvalidOid;		/* indicates not set */
+	proseclabel = NULL;
 
 	/* override attributes from explicit list */
 	compute_attributes_sql_style(stmt->options,
 								 &as_clause, &language,
 								 &isWindowFunc, &volatility,
 								 &isStrict, &security,
-								 &proconfig, &procost, &prorows, &pro_secid);
+								 &proconfig, &procost, &prorows, &proseclabel);
 
 	/* Convert language name to canonical case */
 	languageName = case_translate_language_name(language);
@@ -942,7 +942,7 @@ CreateFunction(CreateFunctionStmt *stmt, const char *queryString)
 					PointerGetDatum(proconfig),
 					procost,
 					prorows,
-					pro_secid);
+					proseclabel);
 }
 
 
@@ -1280,45 +1280,45 @@ void
 AlterFunctionSecLabel(List *name, List *argtypes, DefElem *seclabel)
 {
 	Relation	rel;
-	HeapTuple	tuple, newtup;
-	Oid			proid, secid;
+	HeapTuple	oldtup;
+	HeapTuple	newtup;
+	Oid			proc_oid;
+	Oid			secid;
 	bool		replaces[Natts_pg_proc];
-
-	/* Translate text representation to security id */
-	secid = sepgsqlGivenSecLabelIn(ProcedureRelationId, seclabel);
 
 	/* open pg_proc system catalog */
 	rel = heap_open(ProcedureRelationId, RowExclusiveLock);
 
-	proid = LookupFuncNameTypeNames(name, argtypes, false);
+	proc_oid = LookupFuncNameTypeNames(name, argtypes, false);
 
-	tuple = SearchSysCache(PROCOID,
-						   ObjectIdGetDatum(proid),
-						   0, 0, 0);
-	if (!HeapTupleIsValid(tuple))
-		elog(ERROR, "cache lookup failed for function %u", proid);
+	oldtup = SearchSysCache(PROCOID,
+							ObjectIdGetDatum(proc_oid),
+							0, 0, 0);
+	if (!HeapTupleIsValid(oldtup))
+		elog(ERROR, "cache lookup failed for function %u", proc_oid);
+
+	memset(replaces, false, sizeof(replaces));
+	newtup = heap_modify_tuple(oldtup, RelationGetDescr(rel),
+							   NULL, NULL, replaces);
+	ReleaseSysCache(oldtup);
 
 	/* DAC permission checks */
-	if (!pg_proc_ownercheck(proid, GetUserId()))
+	if (!pg_proc_ownercheck(HeapTupleGetOid(newtup), GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
-					   NameStr(((Form_pg_proc) GETSTRUCT(tuple))->proname));
-	/*
-	 * NOTE: we should not use heap_copytuple() here because of
-	 * possibility that the fetched tuple was inserted while
-	 * SE-PostgreSQL is disabled and it does not have a field
-	 * to store security label.
-	 */
-	memset(replaces, false, sizeof(replaces));
-	newtup = heap_modify_tuple(tuple, RelationGetDescr(rel),
-							   NULL, NULL, replaces);
+					   get_func_name(HeapTupleGetOid(newtup)));
+
+	/* SELinux checks db_procedure:{setattr relabelfrom relabelto} */
+	secid = sepgsqlCheckProcedureRelabel(HeapTupleGetOid(newtup), seclabel);
+
 	if (!HeapTupleHasSecLabel(newtup))
-		elog(ERROR, "Unable to set security label on tuples in pg_proc");
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("Unable to set security label on \"%s\"",
+						get_func_name(HeapTupleGetOid(newtup)))));
 	HeapTupleSetSecLabel(newtup, secid);
 
 	simple_heap_update(rel, &newtup->t_self, newtup);
 	CatalogUpdateIndexes(rel, newtup);
-
-	ReleaseSysCache(tuple);
 
 	heap_freetuple(newtup);
 

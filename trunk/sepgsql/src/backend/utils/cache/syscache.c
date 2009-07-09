@@ -42,7 +42,6 @@
 #include "catalog/pg_proc.h"
 #include "catalog/pg_rewrite.h"
 #include "catalog/pg_security.h"
-#include "catalog/pg_shsecurity.h"
 #include "catalog/pg_statistic.h"
 #include "catalog/pg_ts_config.h"
 #include "catalog/pg_ts_config_map.h"
@@ -589,46 +588,22 @@ static const struct cachedesc cacheinfo[] = {
 	{SecurityRelationId,		/* SECURITYATTR */
 		SecuritySecattrIndexId,
 		Anum_pg_security_relid,
-		3,
+	 	4,
 		{
+			Anum_pg_security_datid,
 			Anum_pg_security_relid,
 			Anum_pg_security_seckind,
-			Anum_pg_security_secattr,
-			0
+			Anum_pg_security_secattr
 		},
 		128,
 	},
 	{SecurityRelationId,		/* SECURITYSECID */
-		SecurityOidIndexId,
+		SecuritySecidIndexId,
 		Anum_pg_security_relid,
-		1,
+		2,
 		{
-			ObjectIdAttributeNumber,
-			0,
-			0,
-			0
-		},
-		128
-	},
-	{SharedSecurityRelationId,	/* SHSECURITYATTR */
-		SharedSecuritySecattrIndexId,
-		Anum_pg_shsecurity_relid,
-		3,
-		{
-			Anum_pg_shsecurity_relid,
-			Anum_pg_shsecurity_seckind,
-			Anum_pg_shsecurity_secattr,
-			0
-		},
-		128
-	},
-	{SharedSecurityRelationId,	/* SHSECURITYSECID */
-		SharedSecurityOidIndexId,
-		Anum_pg_shsecurity_relid,
-		1,
-		{
-			ObjectIdAttributeNumber,
-			0,
+			Anum_pg_security_secid,
+			Anum_pg_security_datid,
 			0,
 			0
 		},
