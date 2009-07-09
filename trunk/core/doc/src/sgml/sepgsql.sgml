@@ -571,60 +571,6 @@ postgres=#
 </screen>
       </sect3>
     </sect2>
-
-    <sect2>
-      <title>Backup and Restore</title>
-      <para>
-	When we restore a database from backups, we have to restore
-	its security context correctly as GRANT statement doing on
-	the restored table.
-      </para>
-
-      <para>
-	The <command>pg_dump</command> and <command>pg_dumpall</command>
-	have <option>--security-label</option> option to dump databases
-	with its security context.
-
-	The dumped image can be restored with proper security context.
-      </para>
-
-      <para>
-	Needless to say, a process which invokes <command>pg_dump</command>
-	must be allowed to refer whole of the database,
-	because SE-PostgreSQL filters all inaccessible tuples from the result
-	set, or aborts query execution if it references inaccessible
-	columns, tables, or functions.
-
-	These requirements are same when we restore the image.
-	A process which invokes <command>pg_restore</command> has to have
-	enough permission to create/insert these objects with the specified
-	security context.
-      </para>
-<screen>
-<prompt>$ </prompt><userinput>pg_dump --security-label postgres</userinput>
-	:
-      (snip)
-	:
---
--- Name: drink; Type: TABLE; Schema: public; Owner: kaigai; Tablespace:
---
-
-CREATE TABLE drink (
-    id integer NOT NULL,
-    name character varying(48),
-    price integer
-) SECURITY_LABEL = 'system_u:object_r:sepgsql_table_t';
-	:
-</screen>
-      <para>
-	This example shows a backup image with explicitly specified security
-	context on tables and tuples.
-
-	If a column has different security context from that of the table, it
-	must be specified explicitly in the <command>CREATE TABLE</command>
-	statement.
-      </para>
-    </sect2>
   </sect1>
 
   <sect1 id="sepostgresql-policy">

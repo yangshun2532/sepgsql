@@ -200,12 +200,7 @@
 
      <row>
        <entry><link linkend="catalog-pg-security"><structname>pg_security</structname></link></entry>
-       <entry>security attributes container for local relations</entry>
-     </row>
-
-     <row>
-       <entry><link linkend="catalog-pg-shsecurity"><structname>pg_shsecurity</structname></link></entry>
-       <entry>security attributes container for shared relations</entry>
+       <entry>text representation of security attributes</entry>
      </row>
 
      <row>
@@ -3986,39 +3981,34 @@
 
    <para>
      The catalog <structname>pg_security</structname> stores security
-     attributes in text representation, corresponding to certain
-     security identifiers. The security identifier is an object
-     identifier to uniquely indicate a certain entry within
-     <structname>pg_security</structname>.
+     attributes in text representation, corresponding to a pair of
+     certain database, relation and security identifier.
    </para>
    <para>
      In most cases, massive number of database objects shares a limited
-     number of security attributes, so it is preferable to assign them
-     on database objects in the identifier form, rather than text.
-     The backend enables to translate them each other, and a new entry
-     shall be automatically inserted when it cannot find an entry which
-     matches the given new attribute.
+     number of security attributes (E.g, five of tables are read-only,
+     ten of them are invisible from unprivileged users, and rest of
+     tables are read-writable), so using security identifier is
+     a preferable strategy to associate database objects with security
+     attribute, rather than raw text for each database obejcts.
+     The backend translate them each other, and a new entry shall be
+     automatically inserted when user gives a new one.
    </para>
    <para>
-     SE-PostgreSQL needs a security attribute to be assigned on database
-     objects correctly, to make its access control decision.
+     SE-PostgreSQL requires security attribute to be assigned on database
+     objects correctly to make its access control decision.
      Its security attributes are represented in human readable text form
-     with 20 - 40 bytes length, and these are used to communicate with
-     in-kernel SELinux.
-     See <xref linkend="enhanced-security-and-sepostgresql"> for more
-       details.
+     within 20 - 40 bytes length, and used to communicate with in-kernel
+     SELinux.
+     See <xref linkend="enhanced-security-and-sepostgresql"> for more details.
    </para>
    <para>
-     The <literal>relid</literal> is the <literal>oid</literal> of the
-     relation which refers the entry. It can be used when we reclaim
-     orphan entries. The <literal>seckind</literal> shows the purpose
-     of entries. Currently, we need two types of security attributes
-     for SE-PostgreSQL and Row-level ACLs.
-   </para>
-   <para>
-     There is no difference to <structname>pg_shsecurity</structname>
-     expect for it records security attributes corresponding to the
-     local database objects, not shared ones.
+     The <literal>datid</literal> and <literal>relid</literal> are
+     <literal>oid</literal> of the database and relation which refers
+     the entry. These are used to reclaim orphan security attributes
+     later. The <literal>seckind</literal> means the purpose of the
+     security attribute. Currently, SE-PostgreSQL uses it to store
+     its security label, represented as <literal>l</literal>.
    </para>
 
    <table>
@@ -4035,6 +4025,19 @@
        </thead>
 
        <tbody>
+	 <row>
+	   <entry><structfield>secid</structfield></entry>
+	   <entry><type>oid</type></entry>
+	   <entry></entry>
+	   <entry>security identifier.</entry>
+	 </row>
+
+	 <row>
+	   <entry><structfield>datid</structfield></entry>
+	   <entry><type>oid</type></entry>
+	   <entry><literal><link linkend="catalog-pg-database"><structname>pg_database</structname></link>.oid</literal></entry>
+	   <entry>OID of the database which refers this entry. 0 for shared relation.</entry>
+	 </row>
 
 	 <row>
 	   <entry><structfield>relid</structfield></entry>
@@ -4048,63 +4051,8 @@
 	   <entry><type>char</type></entry>
 	   <entry></entry>
 	   <entry>
-	     <literal>a</literal> = row-level ACLs,
-	     <literal>l</literal> = security label
-	   </entry>
-	 </row>
-
-	 <row>
-	   <entry><structfield>secattr</structfield></entry>
-	   <entry><type>text</type></entry>
-	   <entry></entry>
-	   <entry>Text representation of a security attribute</entry>
-       </tbody>
-     </tgroup>
-   </table>
- </sect1>
-
- <sect1 id="catalog-pg-shsecurity">
-   <title><structname>pg_shsecurity</structname></title>
-
-   <indexterm zone="catalog-pg-shsecurity">
-     <primary>pg_shsecurity</primary>
-   </indexterm>
-
-   <para>
-     The catalog <structname>pg_shsecurity</structname> enables to record
-     security attributes, as if <structname>pg_security</structname> doing.
-     The only difference to <structname>pg_security</structname> is that
-     it stores security attributes corresponding to shared relations.
-   </para>
-
-   <table>
-     <title><structname>pg_shsecurity</>Columns</title>
-
-     <tgroup cols=4>
-       <thead>
-	 <row>
-           <entry>Name</entry>
-           <entry>Type</entry>
-           <entry>References</entry>
-           <entry>Description</entry>
-         </row>
-       </thead>
-
-       <tbody>
-	 <row>
-	   <entry><structfield>relid</structfield></entry>
-	   <entry><type>oid</type></entry>
-	   <entry><literal><link linkend="catalog-pg-class"><structname>pg_class</structname></link>.oid</literal></entry>
-	   <entry>OID of the relation which refers this entry</entry>
-	 </row>
-
-	 <row>
-	   <entry><structfield>seckind</structfield></entry>
-	   <entry><type>char</type></entry>
-	   <entry></entry>
-	   <entry>
-	     <literal>a</literal> = row-level ACLs,
-	     <literal>l</literal> = security label
+	     <literal>l</literal> = security label,
+	     <literal>a</literal> = database acl
 	   </entry>
 	 </row>
 
