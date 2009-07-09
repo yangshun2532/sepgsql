@@ -35,7 +35,6 @@
 #include "access/tuptoaster.h"
 #include "access/xact.h"
 #include "catalog/catalog.h"
-#include "security/rowlevel.h"
 #include "utils/fmgroids.h"
 #include "utils/pg_lzcompress.h"
 #include "utils/rel.h"
@@ -1226,7 +1225,11 @@ toast_save_datum(Relation rel, Datum value, int options)
 		memcpy(VARDATA(&chunk_data), data_p, chunk_size);
 		toasttup = heap_form_tuple(toasttupDesc, t_values, t_isnull);
 
-		rowlvHeapTupleInsert(toastrel, toasttup, true);
+		/*
+		 * NOTE: SE-PostgreSQL does not assign any security label
+		 * for tuples within the TOASTVALUE relation, so we omit
+		 * to put sepgsqlHeapTupleInsert() hook here.
+		 */
 
 		heap_insert(toastrel, toasttup, mycid, options, NULL);
 

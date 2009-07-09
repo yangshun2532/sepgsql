@@ -28,14 +28,11 @@ rowaclTupleDescHasRowAcl(Relation rel);
 extern bool
 rowaclInterpretRowAclOption(List *relopts);
 
-extern bool
+extern void
 rowaclHeapTupleInsert(Relation rel, HeapTuple newtup, bool internal);
 
-extern bool
-rowaclHeapTupleUpdate(Relation rel, HeapTuple oldtup, HeapTuple newtup, bool internal);
-
-extern bool
-rowaclHeapTupleDelete(Relation rel, HeapTuple oldtup, bool internal);
+extern void
+rowaclHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple newtup);
 
 extern char *
 rowaclTransRowAclIn(Acl *acl);

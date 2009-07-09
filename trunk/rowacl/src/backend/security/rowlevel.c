@@ -122,84 +122,25 @@ rowlvCopyToTuple(Relation rel, HeapTuple tuple)
 
 /*
  * rowlvHeapTupleInsert
- *   assigns default acl and label on a newly inserted tuple, and checks
- *   permissions on insert a tuple.
+ *   assign default security attribute, and check permission
+ *   if necessary.
  */
-bool
+void
 rowlvHeapTupleInsert(Relation rel, HeapTuple newtup, bool internal)
 {
-	if (!rowaclHeapTupleInsert(rel, newtup, internal))
-	{
-		Assert(!internal);
-		return false;
-	}
+	rowaclHeapTupleInsert(rel, newtup, internal);
 
-	if (!sepgsqlHeapTupleInsert(rel, newtup, internal))
-	{
-		Assert(!internal);
-		return false;
-	}
-
-	return true;
+	sepgsqlHeapTupleInsert(rel, newtup, internal);
 }
 
 /*
  * rowlvHeapTupleUpdate
- *   preserves original acl and label if necessary, and checks
- *   permissions on update a tuple.
+ *   check permission to change security attribute, if necesary
  */
-bool
-rowlvHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple newtup, bool internal)
+void
+rowlvHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple newtup)
 {
-	HeapTupleData	oldtup;
-	Buffer			oldbuf;
+	rowaclHeapTupleUpdate(rel, otid, newtup);
 
-	ItemPointerCopy(otid, &oldtup.t_self);
-	if (!heap_fetch(rel, SnapshotAny, &oldtup, &oldbuf, false, NULL))
-		elog(ERROR, "failed to fetch a tuple for row-level access controls");
-
-	if (!rowaclHeapTupleUpdate(rel, &oldtup, newtup, internal))
-	{
-		ReleaseBuffer(oldbuf);
-		return false;
-	}
-
-	if (!sepgsqlHeapTupleUpdate(rel, &oldtup, newtup, internal))
-	{
-		ReleaseBuffer(oldbuf);
-		return false;
-	}
-
-	ReleaseBuffer(oldbuf);
-	return true;
-}
-
-/*
- * rowlvHeapTupleDelete
- *   checks permissions on delete a tuple.
- */
-bool
-rowlvHeapTupleDelete(Relation rel, ItemPointer otid, bool internal)
-{
-	HeapTupleData	oldtup;
-	Buffer			oldbuf;
-
-	ItemPointerCopy(otid, &oldtup.t_self);
-	if (!heap_fetch(rel, SnapshotAny, &oldtup, &oldbuf, false, NULL))
-		elog(ERROR, "failed to fetch a tuple for row-level access controls");
-
-	if (!rowaclHeapTupleDelete(rel, &oldtup, internal))
-	{
-		ReleaseBuffer(oldbuf);
-		return false;
-	}
-
-	if (!sepgsqlHeapTupleDelete(rel, &oldtup, internal))
-	{
-		ReleaseBuffer(oldbuf);
-		return false;
-	}
-
-	ReleaseBuffer(oldbuf);
-	return true;
+	sepgsqlHeapTupleUpdate(rel, otid, newtup);
 }
