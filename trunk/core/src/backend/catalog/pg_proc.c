@@ -482,8 +482,6 @@ ProcedureCreate(const char *procedureName,
 
 		/* Okay, do it... */
 		tup = heap_modify_tuple(oldtup, tupDesc, values, nulls, replaces);
-		if (HeapTupleHasSecLabel(tup) && OidIsValid(prosecid))
-			HeapTupleSetSecLabel(tup, prosecid);
 		simple_heap_update(rel, &tup->t_self, tup);
 
 		ReleaseSysCache(oldtup);
