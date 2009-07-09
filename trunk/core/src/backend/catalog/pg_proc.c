@@ -97,7 +97,7 @@ ProcedureCreate(const char *procedureName,
 	Datum		values[Natts_pg_proc];
 	bool		replaces[Natts_pg_proc];
 	Oid			relid;
-	Oid			prosecid;
+	Oid			prosecid = InvalidOid;
 	NameData	procname;
 	TupleDesc	tupDesc;
 	bool		is_update;
