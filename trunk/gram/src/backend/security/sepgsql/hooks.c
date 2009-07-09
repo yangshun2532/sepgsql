@@ -305,8 +305,8 @@ sepgsqlCheckTableDrop(Oid table_oid)
 				BTEqualStrategyNumber, F_OIDEQ,
 				ObjectIdGetDatum(table_oid));
 
-    scan = systable_beginscan(attrel, AttributeRelidNumIndexId, true,
-                              SnapshotNow, 1, key);
+	scan = systable_beginscan(attrel, AttributeRelidNumIndexId, true,
+							  SnapshotNow, 1, key);
 	while(HeapTupleIsValid(atttup = systable_getnext(scan)))
 	{
 		attr = (Form_pg_attribute) GETSTRUCT(atttup);
