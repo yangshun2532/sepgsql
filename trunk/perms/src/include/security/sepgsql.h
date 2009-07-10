@@ -472,6 +472,7 @@ extern const char *sepgsqlGetPermissionString(security_class_t tclass,
 #define sepgsqlCheckProcedureRelabel(a,b)		(InvalidOid)
 #define sepgsqlCheckProcedureExecute(a)			(true)
 #define sepgsqlCheckProcedureEntrypoint(a,b)	do {} while(0)
+#define sepgsqlCheckProcedureInstall(a)			do {} while(0)
 
 #define sepgsqlCheckBlobCreate(a,b)				do {} while(0)
 #define sepgsqlCheckBlobDrop(a,b)				do {} while(0)

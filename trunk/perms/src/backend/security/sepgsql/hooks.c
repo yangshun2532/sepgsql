@@ -799,11 +799,17 @@ sepgsqlCheckProcedureExecute(Oid proc_oid)
 	return sepgsqlCheckProcedureCommon(proc_oid, SEPG_DB_PROCEDURE__EXECUTE, false);
 }
 
+/*
+ * sepgsqlCheckProcedureInstall
+ *
+ *
+ *
+ */
 void
 sepgsqlCheckProcedureInstall(Oid proc_oid)
 {
-	// TODO: who should call the hook?
-	sepgsqlCheckProcedureCommon(proc_oid, SEPG_DB_PROCEDURE__INSTALL, true);
+	if (OidIsValid(proc_oid))
+		sepgsqlCheckProcedureCommon(proc_oid, SEPG_DB_PROCEDURE__INSTALL, true);
 }
 
 /*
