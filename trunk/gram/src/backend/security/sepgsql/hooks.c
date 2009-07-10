@@ -463,6 +463,7 @@ sepgsqlCheckColumnCreate(Oid table_oid, const char *attname, DefElem *new_label)
 {
 	Oid		secid;
 	char	relkind;
+	char	buffer[NAMEDATALEN * 2 + 3];
 
 	if (!sepgsqlIsEnabled())
 	{
@@ -489,10 +490,11 @@ sepgsqlCheckColumnCreate(Oid table_oid, const char *attname, DefElem *new_label)
 		secid = securityTransSecLabelIn(AttributeRelationId,
 										strVal(new_label->arg));
 
+	sprintf(buffer, "%s.%s", get_rel_name(table_oid), attname);
 	sepgsqlClientHasPermsSid(AttributeRelationId, secid,
 							 SEPG_CLASS_DB_COLUMN,
 							 SEPG_DB_COLUMN__CREATE,
-							 attname, true);
+							 buffer, true);
 	return secid;
 }
 
