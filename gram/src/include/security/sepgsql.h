@@ -175,8 +175,6 @@ typedef void (*sepgsqlAvcAuditHook_t)(const char *scontext, const char *tcontext
 extern PGDLLIMPORT sepgsqlAvcAuditHook_t sepgsqlAvcAuditHook;
 
 extern Size	sepgsqlShmemSize(void);
-extern int	sepgsqlSetLocalEnforce(int mode);
-extern bool	sepgsqlGetEnforce(void);
 extern void	sepgsqlAvcInit(void);
 extern void	sepgsqlAvcSwitchClient(void);
 extern pid_t sepgsqlStartupWorkerProcess(void);
@@ -364,7 +362,6 @@ extern const char *sepgsqlGetPermissionString(security_class_t tclass,
 
 /* avc.c */
 #define sepgsqlShmemSize()						(0)
-#define sepgsqlSetLocalEnforce(a)				(0)
 #define sepgsqlStartupWorkerProcess()			(0)
 
 /* checker.c */

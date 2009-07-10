@@ -117,6 +117,9 @@ ExecRenameStmt(RenameStmt *stmt)
 								aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
 											get_namespace_name(namespaceId));
 
+							/* SELinux checks db_table/db_sequence:{setattr} */
+							sepgsqlCheckTableSetattr(relid);
+
 							RenameRelation(relid, stmt->newname, stmt->renameType);
 							break;
 						}
