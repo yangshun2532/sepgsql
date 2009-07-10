@@ -3028,7 +3028,6 @@ static void
 RemoveTempRelations(Oid tempNamespaceId)
 {
 	ObjectAddress object;
-	int		mode;
 
 	/*
 	 * We want to get rid of everything in the target namespace, but not the
@@ -3041,21 +3040,13 @@ RemoveTempRelations(Oid tempNamespaceId)
 	object.objectSubId = 0;
 
 	/*
-	 * SELinux does not check anything while cleaning up
-	 * temporary objects.
+	 * TODO:
+	 * SELinux should not check db_xxx:{drop} permission during cleaning
+	 * up all the temporary objects. It may be necessary a bool argument
+	 * to control MAC permission check on deleteOneObject() called from
+	 * deleteWhatDependsOn() and so on.
 	 */
-	mode = sepgsqlSetLocalEnforce(0);
-	PG_TRY();
-	{
-		deleteWhatDependsOn(&object, false);
-	}
-	PG_CATCH();
-	{
-		sepgsqlSetLocalEnforce(mode);
-		PG_RE_THROW();
-	}
-	PG_END_TRY();
-	sepgsqlSetLocalEnforce(mode);
+	deleteWhatDependsOn(&object, false);
 }
 
 /*
