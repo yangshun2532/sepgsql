@@ -30,7 +30,7 @@ results/%.diff: sql/%.sql
 	@$(DIFF) -u $(<:sql/%.sql=expected/%.out)	\
 	            $(<:sql/%.sql=results/%.out) >& $@	\
 		&& echo -n "PASS: " || echo -n "FAIL: "
-	@echo $(notdir $(@:.diff=))
+	@echo "[SQL] $(notdir $(@:.diff=))"
 
 setup: launch_psql
 	@cp -f /dev/null /tmp/sepgsql_test_copy_1
@@ -38,24 +38,37 @@ setup: launch_psql
 	@chcon -t postgresql_tmp_t -l s0 /tmp/sepgsql_test_copy_1
 	@chcon -t postgresql_db_t  -l s0 /tmp/sepgsql_test_copy_2
 	@chmod 0666 /tmp/sepgsql_test_*
-	@echo "PASS: setup system environment"
+	@echo "PASS: [SETUP] data files"
 
 check:
 	@test -x $(PSQL) || \
-		(echo "HINT: $(PSQL) is not available"; exit 1)
+		(echo "ERROR: $(PSQL) is not available"; exit 1)
 	@$(GETENFORCE) | grep Enforcing || \
-		(echo "HINT: SELinux does not work in Enforcing mode"; exit 1)
+		(echo "ERROR: SELinux is disabled, or permissive mode"; exit 1)
+	@$(GETSEBOOL) allow_user_postgresql_connect | grep -q 'on$$' ||		\
+		(echo "ERROR: allow_user_postgresql_connect is disabled";	\
+		 echo;								\
+		 echo "HINT: setsebool -P allow_user_postgresql_connect 1";	\
+		 exit 1)
+	@$(GETSEBOOL) sepgsql_regression_test_mode | grep -q 'on$$' ||		\
+		(echo "ERROR: sepgsql_regression_test_mode is disabled";	\
+		 echo;								\
+		 echo "HINT: semodule -i /path/to/sepostgresql-devel.pp";	\
+		 echo "HINT: setsebool -P sepgsql_regression_test_mode 1";	\
+		 exit 1)
+	@$(PSQL) -qt -c '' -d $(DBNAME) >& /dev/null ||				\
+		(echo "ERROR: database \"$(DBNAME)\" unavailable."; exit 1)
 	@$(PSQL) -qt -c 'SHOW sepostgresql' -d $(DBNAME) 2>/dev/null | grep -q on || \
-		(echo "HINT: database \"$(DBNAME)\" is not available"; \
-		 echo "HINT: SE-PostgreSQL may not be available on server"; exit 1)
-	@$(GETSEBOOL) allow_user_postgresql_connect | grep -q 'on$$' || \
-		(echo "HINT: check allow_user_postgresql_connect boolean"; exit 1)
-	@$(GETSEBOOL) sepgsql_regression_test_mode | grep -q 'on$$' || \
-		(echo "HINT: check sepgsql_regression_test_mode boolean"; \
-		 echo "HINT: check sepostgresql-devel.pp installed"; exit 1)
+		(echo "ERROR: SE-PostgreSQL unavailable."; 			\
+		 echo;								\
+		 echo "HINT: initdb --enable-selinux -D /path/to/database";	\
+		 exit 1)
 	@$(RUNCON) -t sepgsql_test_t -l s0-s0:c0.c15 \
-		$(PSQL) -c 'SELECT sepgsql_getcon()' $(DBNAME) >& /dev/null || \
-		(echo "HINT: /sbin/restorecon -R <prefix> and restart"; \
-		 echo "HINT: user shell should have 's0-s0:c0.c15' range, at least"; \
-		 echo "      semanage enables to set up it"; exit 1)
-	@echo "PASS: check runtime environment"
+		$(PSQL) -c 'SELECT sepgsql_getcon()' $(DBNAME) >& /dev/null ||	\
+		(echo "ERROR: unable to connect with \"sepgsql_test_t\" domain"; \
+		 echo;								\
+		 echo "HINT: /sbin/restorecon -R /path/to/install and restart";	\
+		 echo "HINT: User shell must have \"s0-s0:c0.c15\" range.";	\
+		 echo "      semanage login -a -r s0-s0:c0.c15 <username>";	\
+		 exit 1)
+	@echo "PASS: [CHECK] runtime environment"

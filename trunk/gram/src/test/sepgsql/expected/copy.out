@@ -1,6 +1,4 @@
 --@SECURITY_CONTEXT=unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c15
-SET sepostgresql_mcstrans TO off;
-SET
 SELECT sepgsql_getcon();
                    sepgsql_getcon                    
 -----------------------------------------------------
@@ -29,33 +27,30 @@ CREATE TABLE t1
 CREATE TABLE
 INSERT INTO t1 VALUES (1, 'aaa'), (2, 'bbb');
 INSERT 0 2
+-- partial secret table
 CREATE TABLE t2
 (
     x    int,
     y    text
-         SECURITY_LABEL = 'unconfined_u:object_r:sepgsql_secret_table_t:s0'
+         SECURITY_LABEL = 'system_u:object_r:sepgsql_secret_table_t:s0'
 );
 CREATE TABLE
-SELECT security_label, attname FROM pg_attribute
-       WHERE attrelid = 't2'::regclass AND attname = 'y';
-                 security_label                  | attname 
--------------------------------------------------+---------
- unconfined_u:object_r:sepgsql_secret_table_t:s0 | y
-(1 row)
-
-INSERT INTO t2 VALUES (1, 'xxx'), (2, 'yyy');
-INSERT 0 2
-CREATE TABLE t3	      -- read only table
+INSERT INTO t2 VALUES (1, 'xxx'), (2, 'yyy'), (3, 'zzz');
+INSERT 0 3
+-- read only table
+CREATE TABLE t3
 (
     s    int,
     t    text
-) SECURITY_LABEL = 'unconfined_u:object_r:sepgsql_ro_table_t:s0';
+) SECURITY_LABEL = 'system_u:object_r:sepgsql_ro_table_t:s0';
 CREATE TABLE
-INSERT INTO t2 VALUES (1, 'sss'), (2, 'ttt');
-INSERT 0 2
+INSERT INTO t3 VALUES (1, 'sss'), (2, 'ttt'), (3, 'uuu');
+INSERT 0 3
+CREATE OR REPLACE FUNCTION f1(int) RETURNS TEXT
+    LANGUAGE 'sql'
+    AS 'SELECT regexp_replace(b, ''.'', ''*'',''g'') FROM t1 WHERE a = $1';
+CREATE FUNCTION
 --@SECURITY_CONTEXT=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0
-SET sepostgresql_mcstrans TO off;
-SET
 SELECT sepgsql_getcon();
                   sepgsql_getcon                   
 ---------------------------------------------------
@@ -71,9 +66,11 @@ ERROR:  SELinux: security policy violation
 COPY t2 (x) TO stdout;
 1
 2
-1
-2
+3
 COPY t3 TO stdout;
+1	sss
+2	ttt
+3	uuu
 COPY t3 FROM stdin;	-- to be denied
 ERROR:  SELinux: security policy violation
 COPY (SELECT * FROM t2) TO stdout;	-- to be denied
@@ -81,5 +78,8 @@ ERROR:  SELinux: security policy violation
 COPY (SELECT x FROM t2) TO stdout;
 1
 2
-1
-2
+3
+COPY (SELECT x, f1(x) FROM t2) TO stdout;
+1	***
+2	***
+3	***
