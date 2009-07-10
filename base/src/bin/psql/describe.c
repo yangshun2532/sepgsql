@@ -8,7 +8,7 @@
  *
  * Copyright (c) 2000-2009, PostgreSQL Global Development Group
  *
- * $PostgreSQL: pgsql/src/bin/psql/describe.c,v 1.219 2009/07/03 18:56:50 petere Exp $
+ * $PostgreSQL: pgsql/src/bin/psql/describe.c,v 1.224 2009/07/07 21:45:05 tgl Exp $
  */
 #include "postgres_fe.h"
 
@@ -1028,7 +1028,7 @@ describeOneTableDetails(const char *schemaname,
 	char	  **ptr;
 	PQExpBufferData title;
 	PQExpBufferData tmpbuf;
-	int			cols = 0;
+	int			cols;
 	int			numrows = 0;
 	struct
 	{
@@ -1156,21 +1156,19 @@ describeOneTableDetails(const char *schemaname,
 		PQclear(result);
 	}
 
-	/* Get column info (index requires additional checks) */
+	/* Get column info */
 	printfPQExpBuffer(&buf, "SELECT a.attname,");
 	appendPQExpBuffer(&buf, "\n  pg_catalog.format_type(a.atttypid, a.atttypmod),"
 					  "\n  (SELECT substring(pg_catalog.pg_get_expr(d.adbin, d.adrelid) for 128)"
 					  "\n   FROM pg_catalog.pg_attrdef d"
 					  "\n   WHERE d.adrelid = a.attrelid AND d.adnum = a.attnum AND a.atthasdef),"
 					  "\n  a.attnotnull, a.attnum");
+	if (tableinfo.relkind == 'i')
+		appendPQExpBuffer(&buf, ",\n  pg_catalog.pg_get_indexdef(a.attrelid, a.attnum, TRUE) AS indexdef");
 	if (verbose)
-		appendPQExpBuffer(&buf, ", a.attstorage, pg_catalog.col_description(a.attrelid, a.attnum)");
+		appendPQExpBuffer(&buf, ",\n  a.attstorage, pg_catalog.col_description(a.attrelid, a.attnum)");
 	appendPQExpBuffer(&buf, "\nFROM pg_catalog.pg_attribute a");
-	if (tableinfo.relkind == 'i')
-		appendPQExpBuffer(&buf, ", pg_catalog.pg_index i");
 	appendPQExpBuffer(&buf, "\nWHERE a.attrelid = '%s' AND a.attnum > 0 AND NOT a.attisdropped", oid);
-	if (tableinfo.relkind == 'i')
-		appendPQExpBuffer(&buf, " AND a.attrelid = i.indexrelid");
 	appendPQExpBuffer(&buf, "\nORDER BY a.attnum");
 
 	res = PSQLexec(buf.data, false);
@@ -1218,9 +1216,9 @@ describeOneTableDetails(const char *schemaname,
 	}
 
 	/* Set the number of columns, and their names */
-	cols += 2;
 	headers[0] = gettext_noop("Column");
 	headers[1] = gettext_noop("Type");
+	cols = 2;
 
 	if (tableinfo.relkind == 'r' || tableinfo.relkind == 'v')
 	{
@@ -1231,6 +1229,9 @@ describeOneTableDetails(const char *schemaname,
 
 	if (tableinfo.relkind == 'S')
 		headers[cols++] = gettext_noop("Value");
+
+	if (tableinfo.relkind == 'i')
+		headers[cols++] = gettext_noop("Definition");
 
 	if (verbose)
 	{
@@ -1297,10 +1298,15 @@ describeOneTableDetails(const char *schemaname,
 		if (tableinfo.relkind == 'S')
 			printTableAddCell(&cont, seq_values[i], false);
 
+		/* Expression for index column */
+		if (tableinfo.relkind == 'i')
+			printTableAddCell(&cont, PQgetvalue(res, i, 5), false);
+
 		/* Storage and Description */
 		if (verbose)
 		{
-			char	   *storage = PQgetvalue(res, i, 5);
+			int			firstvcol = (tableinfo.relkind == 'i' ? 6 : 5);
+			char	   *storage  = PQgetvalue(res, i, firstvcol);
 
 			/* these strings are literal in our syntax, so not translated. */
 			printTableAddCell(&cont, (storage[0] == 'p' ? "plain" :
@@ -1309,7 +1315,7 @@ describeOneTableDetails(const char *schemaname,
 										(storage[0] == 'e' ? "external" :
 										 "???")))),
 							  false);
-			printTableAddCell(&cont, PQgetvalue(res, i, 6), false);
+			printTableAddCell(&cont, PQgetvalue(res, i, firstvcol + 1), false);
 		}
 	}
 
@@ -1815,7 +1821,10 @@ describeOneTableDetails(const char *schemaname,
 		PQclear(result);
 
 		/* print child tables */
-		printfPQExpBuffer(&buf, "SELECT c.oid::pg_catalog.regclass FROM pg_catalog.pg_class c, pg_catalog.pg_inherits i WHERE c.oid=i.inhrelid AND i.inhparent = '%s' ORDER BY c.oid::pg_catalog.regclass;", oid);
+		if (pset.sversion >= 80300)
+			printfPQExpBuffer(&buf, "SELECT c.oid::pg_catalog.regclass FROM pg_catalog.pg_class c, pg_catalog.pg_inherits i WHERE c.oid=i.inhrelid AND i.inhparent = '%s' ORDER BY c.oid::pg_catalog.regclass::pg_catalog.text;", oid);
+		else
+			printfPQExpBuffer(&buf, "SELECT c.oid::pg_catalog.regclass FROM pg_catalog.pg_class c, pg_catalog.pg_inherits i WHERE c.oid=i.inhrelid AND i.inhparent = '%s' ORDER BY c.relname;", oid);
 
 		result = PSQLexec(buf.data, false);
 		if (!result)
@@ -1834,20 +1843,23 @@ describeOneTableDetails(const char *schemaname,
 		}
 		else
 		{
-			/* display the list of child tables*/
+			/* display the list of child tables */
+			const char *ct = _("Child tables");
+
 			for (i = 0; i < tuples; i++)
-                	{
-                        	const char *ct = _("Child tables");
+			{
+				if (i == 0)
+					printfPQExpBuffer(&buf, "%s: %s",
+									  ct, PQgetvalue(result, i, 0));
+				else
+					printfPQExpBuffer(&buf, "%*s  %s",
+									  (int) strlen(ct), "",
+									  PQgetvalue(result, i, 0));
+				if (i < tuples - 1)
+					appendPQExpBuffer(&buf, ",");
 
-                        	if (i == 0)
-                                	printfPQExpBuffer(&buf, "%s: %s", ct, PQgetvalue(result, i, 0));
-                        	else
-                                	printfPQExpBuffer(&buf, "%*s  %s", (int) strlen(ct), "", PQgetvalue(result, i, 0));
-                        	if (i < tuples - 1)
-                                	appendPQExpBuffer(&buf, ",");
-
-                        	printTableAddFooter(&cont, buf.data);
-                	}
+				printTableAddFooter(&cont, buf.data);
+			}
 		}
 		PQclear(result);
 
