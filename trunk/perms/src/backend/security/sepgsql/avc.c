@@ -88,8 +88,6 @@ static int	avc_version;
 
 static bool system_enforcing;
 
-static int	local_enforcing = -1;
-
 /*
  * selinux_state
  *
@@ -156,49 +154,6 @@ sepgsql_avc_reset(void)
 	LWLockRelease(SepgsqlAvcLock);
 
 	sepgsqlAvcSwitchClient();
-}
-
-/*
- * sepgsqlSetLocalEnforce
- *   It controls local enforcing/permissive mode.
- *   In the default, it follows system setting, but it can be set
- *   to permissive mode when the system internal stuff temporary
- *   want to disable access controls.
- *   (E.g, when temporary objects are cleaned up)
- *
- * local_enforcing < 0 (undefined, follows system setting)
- * local_enforcing = 0 (local permissive)
- * local_enforcing > 0 (local enforcing)
- */
-int
-sepgsqlSetLocalEnforce(int mode)
-{
-	int		old_enforcing = local_enforcing;
-
-	local_enforcing = mode;
-
-	return old_enforcing;
-}
-
-/*
- * sepgsqlGetEnforce
- *   It returns current enforcing/permissive mode
- */
-bool
-sepgsqlGetEnforce(void)
-{
-	if (!sepgsqlIsEnabled())
-		return false;
-
-	if (!sepgsql_avc_check_valid())
-		sepgsql_avc_reset();
-
-	if (local_enforcing < 0)
-		return system_enforcing;
-	else if (local_enforcing == 0)
-		return false;
-	else
-		return true;
 }
 
 /*
@@ -527,7 +482,7 @@ retry:
 
 	if (denied)
 	{
-		if (!sepgsqlGetEnforce() || cache->permissive)
+		if (!system_enforcing || cache->permissive)
 			cache->allowed |= required;		/* prevent flood of audit log */
 		else
 			result = false;
@@ -709,7 +664,7 @@ sepgsqlComputePerms(security_context_t scontext,
 						 tclass, !!denied, audited, audit_name);
 	}
 
-	if (denied && sepgsqlGetEnforce() &&
+	if (denied && system_enforcing &&
 		(avd.flags & SELINUX_AVD_FLAGS_PERMISSIVE) == 0)
 	{
 		if (abort)

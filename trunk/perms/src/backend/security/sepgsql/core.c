@@ -116,13 +116,6 @@ sepgsqlInitialize(void)
 	sepgsqlGetClientLabel();
 
 	sepgsqlAvcInit();
-
-	/*
-	 * Performs in permissive mode when server initializes
-	 * database cluster.
-	 */
-	if (!MyProcPort)
-		sepgsqlSetLocalEnforce(0);
 }
 
 /*

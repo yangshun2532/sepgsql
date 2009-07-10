@@ -6365,6 +6365,8 @@ ATExecChangeOwner(Oid relationOid, Oid newOwnerId, bool recursing)
 					aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
 								   get_namespace_name(namespaceOid));
 			}
+			/* SELinux checks db_table:{setattr} */
+			sepgsqlCheckTableSetattr(relationOid);
 		}
 
 		memset(repl_null, false, sizeof(repl_null));

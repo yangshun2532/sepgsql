@@ -78,9 +78,10 @@ checkTabelColumnPerms(Oid relid, Bitmapset *selected, Bitmapset *modified,
 	/*
 	 * Hardwired Policy:
 	 * SE-PostgreSQL enforces that clients cannot modify system
-	 * catalogs and access toast values using DML statements.
+	 * catalogs and access toast values using DML statements,
+	 * except initial setting up phase.
 	 */
-	if (sepgsqlGetEnforce())
+	if (MyProcPort)
 	{
 		if (IsSystemNamespace(get_rel_namespace(relid)) &&
 			(required & (SEPG_DB_TABLE__UPDATE |
