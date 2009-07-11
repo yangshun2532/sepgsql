@@ -270,7 +270,7 @@ sepgsqlCheckDatabaseAccess(Oid database_oid);
 extern bool
 sepgsqlCheckDatabaseSuperuser(void);
 extern void
-sepgsqlCheckDatabaseInstallModule(void);
+sepgsqlCheckDatabaseInstallModule(const char *probin, HeapTuple protup);
 extern void
 sepgsqlCheckDatabaseLoadModule(const char *filename);
 
@@ -439,7 +439,7 @@ extern const char *sepgsqlGetPermissionString(security_class_t tclass,
 #define sepgsqlCheckDatabaseRelabel(a,b)		(InvalidOid)
 #define sepgsqlCheckDatabaseAccess(a)			(true)
 #define sepgsqlCheckDatabaseSuperuser()			(true)
-#define sepgsqlCheckDatabaseInstallModule()		do {} while(0)
+#define sepgsqlCheckDatabaseInstallModule(a,b)	do {} while(0)
 #define sepgsqlCheckDatabaseLoadModule(a)		do {} while(0)
 
 #define sepgsqlCheckSchemaCreate(a,b,c)			(InvalidOid)
