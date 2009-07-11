@@ -30,6 +30,7 @@
 #include "miscadmin.h"
 #include "parser/gramparse.h"
 #include "parser/parse_func.h"
+#include "security/sepgsql.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
@@ -194,6 +195,10 @@ CreateProceduralLanguage(CreatePLangStmt *stmt)
 		else
 			valOid = InvalidOid;
 
+		/* SELinux checks db_procedure:{install} */
+		sepgsqlCheckProcedureInstall(handlerOid);
+		sepgsqlCheckProcedureInstall(valOid);
+
 		/* ok, create it */
 		create_proc_lang(languageName, GetUserId(), handlerOid, valOid,
 						 pltemplate->tmpltrusted);
@@ -257,6 +262,10 @@ CreateProceduralLanguage(CreatePLangStmt *stmt)
 		}
 		else
 			valOid = InvalidOid;
+
+		/* SELinux checks db_procedure:{install} */
+		sepgsqlCheckProcedureInstall(handlerOid);
+		sepgsqlCheckProcedureInstall(valOid);
 
 		/* ok, create it */
 		create_proc_lang(languageName, GetUserId(), handlerOid, valOid,

@@ -1656,6 +1656,9 @@ CreateCast(CreateCastStmt *stmt)
 					 errmsg("cast function must not return a set")));
 
 		ReleaseSysCache(tuple);
+
+		/* SELinux checks db_procedure:{install} */
+		sepgsqlCheckProcedureInstall(funcid);
 	}
 	else
 	{
