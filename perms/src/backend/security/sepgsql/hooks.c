@@ -146,11 +146,22 @@ sepgsqlCheckDatabaseSuperuser(void)
 }
 
 void
-sepgsqlCheckDatabaseInstallModule(void)
+sepgsqlCheckDatabaseInstallModule(const char *probin, HeapTuple protup)
 {
+	Datum	oldbin;
+	bool	isnull;
+
+	if (HeapTupleIsValid(protup))
+	{
+		oldbin = SysCacheGetAttr(PROOID, protup,
+								 Anum_pg_proc_probin,
+								 &isnull);
+		if (!isnull &&
+			strcmp(probin, TextDatumGetCString(oldbin)))
+			return;		/* unchanged */
+	}
 	checkDatabaseCommon(MyDatabaseId,
-						SEPG_DB_DATABASE__INSTALL_MODULE,
-						true);
+						SEPG_DB_DATABASE__INSTALL_MODULE, true);
 }
 
 void
