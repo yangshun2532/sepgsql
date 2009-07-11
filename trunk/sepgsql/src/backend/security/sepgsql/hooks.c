@@ -146,11 +146,22 @@ sepgsqlCheckDatabaseSuperuser(void)
 }
 
 void
-sepgsqlCheckDatabaseInstallModule(void)
+sepgsqlCheckDatabaseInstallModule(const char *probin, HeapTuple protup)
 {
+	Datum	oldbin;
+	bool	isnull;
+
+	if (HeapTupleIsValid(protup))
+	{
+		oldbin = SysCacheGetAttr(PROOID, protup,
+								 Anum_pg_proc_probin,
+								 &isnull);
+		if (!isnull &&
+			strcmp(probin, TextDatumGetCString(oldbin)))
+			return;		/* unchanged */
+	}
 	checkDatabaseCommon(MyDatabaseId,
-						SEPG_DB_DATABASE__INSTALL_MODULE,
-						true);
+						SEPG_DB_DATABASE__INSTALL_MODULE, true);
 }
 
 void
@@ -799,11 +810,17 @@ sepgsqlCheckProcedureExecute(Oid proc_oid)
 	return sepgsqlCheckProcedureCommon(proc_oid, SEPG_DB_PROCEDURE__EXECUTE, false);
 }
 
+/*
+ * sepgsqlCheckProcedureInstall
+ *
+ *
+ *
+ */
 void
 sepgsqlCheckProcedureInstall(Oid proc_oid)
 {
-	// TODO: who should call the hook?
-	sepgsqlCheckProcedureCommon(proc_oid, SEPG_DB_PROCEDURE__INSTALL, true);
+	if (OidIsValid(proc_oid))
+		sepgsqlCheckProcedureCommon(proc_oid, SEPG_DB_PROCEDURE__INSTALL, true);
 }
 
 /*
