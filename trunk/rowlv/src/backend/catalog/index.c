@@ -48,6 +48,7 @@
 #include "nodes/nodeFuncs.h"
 #include "optimizer/clauses.h"
 #include "optimizer/var.h"
+#include "security/sepgsql.h"
 #include "storage/bufmgr.h"
 #include "storage/lmgr.h"
 #include "storage/procarray.h"
@@ -81,7 +82,7 @@ static TupleDesc ConstructTupleDescriptor(Relation heapRelation,
 						 Oid *classObjectId);
 static void InitializeAttributeOids(Relation indexRelation,
 						int numatts, Oid indexoid);
-static void AppendAttributeTuples(Relation indexRelation, int numatts);
+static void AppendAttributeTuples(Relation indexRelation, int numatts, Oid *secLabels);
 static void UpdateIndexRelation(Oid indexoid, Oid heapoid,
 					IndexInfo *indexInfo,
 					Oid *classOids,
@@ -323,11 +324,12 @@ InitializeAttributeOids(Relation indexRelation,
  * ----------------------------------------------------------------
  */
 static void
-AppendAttributeTuples(Relation indexRelation, int numatts)
+AppendAttributeTuples(Relation indexRelation, int numatts, Oid *secLabels)
 {
 	Relation	pg_attribute;
 	CatalogIndexState indstate;
 	TupleDesc	indexTupDesc;
+	Oid			attsid = InvalidOid;
 	int			i;
 
 	/*
@@ -351,8 +353,11 @@ AppendAttributeTuples(Relation indexRelation, int numatts)
 		Assert(indexTupDesc->attrs[i]->attnum == i + 1);
 		Assert(indexTupDesc->attrs[i]->attcacheoff == -1);
 
+		if (secLabels)
+			attsid = secLabels[i - FirstLowInvalidHeapAttributeNumber];
+
 		InsertPgAttributeTuple(pg_attribute, indexTupDesc->attrs[i],
-							   indstate, InvalidOid);
+							   indstate, attsid);
 	}
 
 	CatalogCloseIndexes(indstate);
@@ -520,6 +525,8 @@ index_create(Oid heapRelationId,
 	TupleDesc	indexTupDesc;
 	bool		shared_relation;
 	Oid			namespaceId;
+	Oid		   *secLabels;
+	Oid			relsid = InvalidOid;
 	int			i;
 
 	pg_class = heap_open(RelationRelationId, RowExclusiveLock);
@@ -605,6 +612,14 @@ index_create(Oid heapRelationId,
 											classObjectId);
 
 	/*
+	 * compute security labels to be assigned on index relation
+	 */
+	secLabels = sepgsqlCreateTableColumns(NULL, indexRelationName, namespaceId,
+										  indexTupDesc, RELKIND_INDEX);
+	if (secLabels)
+		relsid = secLabels[0];
+
+	/*
 	 * Allocate an OID for the index, unless we were told what to use.
 	 *
 	 * The OID will be the relfilenode as well, so make sure it doesn't
@@ -653,7 +668,7 @@ index_create(Oid heapRelationId,
 	 */
 	InsertPgClassTuple(pg_class, indexRelation,
 					   RelationGetRelid(indexRelation),
-					   reloptions, InvalidOid);
+					   reloptions, relsid);
 
 	/* done with pg_class */
 	heap_close(pg_class, RowExclusiveLock);
@@ -669,7 +684,7 @@ index_create(Oid heapRelationId,
 	/*
 	 * append ATTRIBUTE tuples for the index
 	 */
-	AppendAttributeTuples(indexRelation, indexInfo->ii_NumIndexAttrs);
+	AppendAttributeTuples(indexRelation, indexInfo->ii_NumIndexAttrs, secLabels);
 
 	/* ----------------
 	 *	  update pg_index
