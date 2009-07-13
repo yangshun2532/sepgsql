@@ -1288,7 +1288,9 @@ AlterFunctionSecLabel(List *name, List *argtypes, DefElem *seclabel)
 	HeapTuple	oldtup;
 	HeapTuple	newtup;
 	Oid			proc_oid;
-	Oid			secid;
+	Datum		proseclabel;
+	Datum		values[Natts_pg_proc];
+	bool		nulls[Natts_pg_proc];
 	bool		replaces[Natts_pg_proc];
 
 	/* open pg_proc system catalog */
@@ -1302,30 +1304,32 @@ AlterFunctionSecLabel(List *name, List *argtypes, DefElem *seclabel)
 	if (!HeapTupleIsValid(oldtup))
 		elog(ERROR, "cache lookup failed for function %u", proc_oid);
 
+	memset(values, 0, sizeof(values));
+	memset(nulls, false, sizeof(nulls));
 	memset(replaces, false, sizeof(replaces));
-	newtup = heap_modify_tuple(oldtup, RelationGetDescr(rel),
-							   NULL, NULL, replaces);
-	ReleaseSysCache(oldtup);
 
 	/* DAC permission checks */
-	if (!pg_proc_ownercheck(HeapTupleGetOid(newtup), GetUserId()))
+	if (!pg_proc_ownercheck(proc_oid, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
 					   get_func_name(HeapTupleGetOid(newtup)));
 
 	/* SELinux checks db_procedure:{setattr relabelfrom relabelto} */
-	secid = sepgsqlCheckProcedureRelabel(HeapTupleGetOid(newtup), seclabel);
+	proseclabel = sepgsqlCheckProcedureRelabel(proc_oid, new_label);
+	replaces[Anum_pg_proc_seclabel - 1] = true;
+	if (DatumGetPointer(proseclabel))
+		values[Anum_pg_proc_seclabel - 1] = proseclabel;
+	else
+		nulls[Anum_pg_proc_seclabel - 1] = true;
 
-	if (!HeapTupleHasSecLabel(newtup))
-		ereport(ERROR,
-				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("Unable to set security label on \"%s\"",
-						get_func_name(HeapTupleGetOid(newtup)))));
-	HeapTupleSetSecLabel(newtup, secid);
+	newtup = heap_modify_tuple(oldtup, RelationGetDescr(rel),
+							   values, nulls, replaces);
 
 	simple_heap_update(rel, &newtup->t_self, newtup);
 	CatalogUpdateIndexes(rel, newtup);
 
 	heap_freetuple(newtup);
+
+	ReleaseSysCache(oldtup);
 
 	heap_close(rel, RowExclusiveLock);
 }

@@ -352,7 +352,7 @@ DefineRelation(CreateStmt *stmt, char relkind)
 	List	   *rawDefaults;
 	List	   *cookedDefaults;
 	Datum		reloptions;
-	Oid		   *secLabels;
+	Datum	   *secLabels;
 	ListCell   *listptr;
 	AttrNumber	attnum;
 	static char *validnsps[] = HEAP_RELOPT_NAMESPACES;
@@ -3089,14 +3089,11 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap)
 			if (newrel)
 			{
 				Oid			tupOid = InvalidOid;
-				Oid			tupSecLabel = InvalidOid;
 
 				/* Extract data from old tuple */
 				heap_deform_tuple(tuple, oldTupDesc, values, isnull);
 				if (oldTupDesc->tdhasoid)
 					tupOid = HeapTupleGetOid(tuple);
-				if (HeapTupleHasSecLabel(tuple))
-					tupSecLabel = HeapTupleGetSecLabel(tuple);
 
 				/* Set dropped attributes to null in new tuple */
 				foreach(lc, dropped_attrs)
@@ -3128,9 +3125,6 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap)
 				/* Preserve OID, if any */
 				if (newTupDesc->tdhasoid)
 					HeapTupleSetOid(tuple, tupOid);
-				/* Preserve SecLabel, if any */
-				if (HeapTupleHasSecLabel(tuple))
-					HeapTupleSetSecLabel(tuple, tupSecLabel);
 			}
 
 			/* Now check any constraints on the possibly-changed tuple */
@@ -3534,7 +3528,7 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 	HeapTuple	typeTuple;
 	Oid			typeOid;
 	int32		typmod;
-	Oid			attsecid;
+	Datum		attseclabel;
 	Form_pg_type tform;
 	Expr	   *defval;
 
@@ -3615,8 +3609,8 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 						colDef->colname, RelationGetRelationName(rel))));
 
 	/* SELinux checks db_column:{create} */
-	attsecid = sepgsqlCheckColumnCreate(myrelid, colDef->colname,
-										(DefElem *)colDef->secLabel);
+	attseclabel = sepgsqlCheckColumnCreate(myrelid, colDef->colname,
+										   (DefElem *)colDef->secLabel);
 
 	/* Determine the new attribute's number */
 	if (isOid)
@@ -3660,7 +3654,7 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 
 	ReleaseSysCache(typeTuple);
 
-	InsertPgAttributeTuple(attrdesc, &attribute, NULL, attsecid);
+	InsertPgAttributeTuple(attrdesc, &attribute, NULL, attseclabel);
 
 	heap_close(attrdesc, RowExclusiveLock);
 
@@ -7820,12 +7814,14 @@ AlterSeqNamespaces(Relation classRel, Relation rel,
  * ALTER TABLE/SEQUENCE name ALTER column SECURITY_LABEL [=] newlabel
  */
 static void
-ExecRelationSetSecLabel(Oid relid, DefElem *seclabel)
+ExecRelationSetSecLabel(Oid relid, DefElem *new_label)
 {
 	Relation	rel;
 	HeapTuple	oldtup;
 	HeapTuple	newtup;
-	Oid			secid;
+	Datum		relseclabel;
+	Datum		values[Natts_pg_class];
+	bool		nulls[Natts_pg_class];
 	bool		replaces[Natts_pg_class];
 
 	rel = heap_open(RelationRelationId, RowExclusiveLock);
@@ -7835,36 +7831,41 @@ ExecRelationSetSecLabel(Oid relid, DefElem *seclabel)
 	if (!HeapTupleIsValid(oldtup))
 		elog(ERROR, "cache lookup failed for relation: %u", relid);
 
+	memset(values, 0, sizeof(values));
+	memset(nulls, false, sizeof(nulls));
 	memset(replaces, false, sizeof(replaces));
-	newtup = heap_modify_tuple(oldtup, RelationGetDescr(rel),
-							   NULL, NULL, replaces);
-	ReleaseSysCache(oldtup);
 
 	/* SELinux checks db_table:{setattr relabelfrom relabelto} */
-	secid = sepgsqlCheckTableRelabel(relid, seclabel);
-	if (!HeapTupleHasSecLabel(newtup))
-		ereport(ERROR,
-				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("Unable to set security label on \"%s\"",
-						get_rel_name(relid))));
-	HeapTupleSetSecLabel(newtup, secid);
+	relseclabel = sepgsqlCheckTableRelabel(relid, new_label);
+	replaces[Anum_pg_class_relseclabel - 1] = true;
+	if (DatumGetPointer(relseclabel))
+		values[Anum_pg_class_relseclabel - 1] = relseclabel;
+	else
+		nulls[Anum_pg_class_relseclabel - 1] = true;
+
+	newtup = heap_modify_tuple(oldtup, RelationGetDescr(rel),
+							   values, nulls, replaces);
 
 	simple_heap_update(rel, &newtup->t_self, newtup);
 	CatalogUpdateIndexes(rel, newtup);
 
 	heap_freetuple(newtup);
 
+	ReleaseSysCache(oldtup);
+
 	heap_close(rel, RowExclusiveLock);
 }
 
 static void
-ExecAttributeSetSecLabel(Oid relid, const char *attname, DefElem *seclabel)
+ExecAttributeSetSecLabel(Oid relid, const char *attname, DefElem *new_label)
 {
 	Relation	rel;
 	HeapTuple	oldtup;
 	HeapTuple	newtup;
 	AttrNumber	attnum;
-	Oid			secid;
+	Datum		attlabel;
+	Datum		values[Natts_pg_attribute];
+	bool		nulls[Natts_pg_attribute];
 	bool		replaces[Natts_pg_attribute];
 
 	rel = heap_open(AttributeRelationId, RowExclusiveLock);
@@ -7876,24 +7877,27 @@ ExecAttributeSetSecLabel(Oid relid, const char *attname, DefElem *seclabel)
 						attname, get_rel_name(relid))));
 	attnum = ((Form_pg_attribute) GETSTRUCT(oldtup))->attnum;
 
+	memset(values, 0, sizeof(values));
+	memset(nulls, false, sizeof(nulls));
 	memset(replaces, false, sizeof(replaces));
-	newtup = heap_modify_tuple(oldtup, RelationGetDescr(rel),
-							   NULL, NULL, replaces);
-	ReleaseSysCache(oldtup);
 
 	/* SELinux checks db_column:{setattr relabelfrom relabelto} */
-	secid = sepgsqlCheckColumnRelabel(relid, attnum, seclabel); 
-	if (!HeapTupleHasSecLabel(newtup))
-		ereport(ERROR,
-                (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-                 errmsg("Unable to set security label on \"%s.%s\"",
-						get_rel_name(relid), attname)));
-	HeapTupleSetSecLabel(newtup, secid);
+	attlabel = sepgsqlCheckColumnRelabel(relid, attnum, new_label);
+	replaces[Anum_pg_attribute_attseclabel - 1] = true;
+	if (DatumGetPointer(attlabel))
+		values[Anum_pg_attribute_attseclabel - 1] = attlabel;
+	else
+		nulls[Anum_pg_attribute_attseclabel - 1] = true;
+
+	newtup = heap_modify_tuple(oldtup, RelationGetDescr(rel),
+							   values, nulls, replaces);
 
 	simple_heap_update(rel, &newtup->t_self, newtup);
 	CatalogUpdateIndexes(rel, newtup);
 
 	heap_freetuple(newtup);
+
+	ReleaseSysCache(oldtup);
 
 	heap_close(rel, RowExclusiveLock);
 }

@@ -49,7 +49,7 @@ CreateSchemaCommand(CreateSchemaStmt *stmt, const char *queryString)
 	ListCell   *parsetree_item;
 	Oid			owner_uid;
 	Oid			saved_uid;
-	Oid			nspsecid;
+	Datum		nspseclabel;
 	bool		saved_secdefcxt;
 	AclResult	aclresult;
 
@@ -78,7 +78,7 @@ CreateSchemaCommand(CreateSchemaStmt *stmt, const char *queryString)
 	check_is_member_of_role(saved_uid, owner_uid);
 
 	/* SELinux checks db_schema:{create} */
-	nspsecid = sepgsqlCheckSchemaCreate(schemaName,
+	nspseclabel = sepgsqlCheckSchemaCreate(schemaName,
 										(DefElem *)stmt->secLabel, false);
 
 	/* Additional check to protect reserved schema names */
@@ -100,7 +100,7 @@ CreateSchemaCommand(CreateSchemaStmt *stmt, const char *queryString)
 		SetUserIdAndContext(owner_uid, true);
 
 	/* Create the schema's namespace */
-	namespaceId = NamespaceCreate(schemaName, owner_uid, nspsecid);
+	namespaceId = NamespaceCreate(schemaName, owner_uid, nspseclabel);
 
 	/* Advance cmd counter to make the namespace visible */
 	CommandCounterIncrement();
@@ -448,12 +448,15 @@ AlterSchemaOwner_internal(HeapTuple tup, Relation rel, Oid newOwnerId)
  * ALTER SCHEMA name SECURITY_LABEL [=] newlabel
  */
 void
-AlterSchemaSecLabel(const char *name, DefElem *seclabel)
+AlterSchemaSecLabel(const char *name, DefElem *new_label)
 {
 	Relation	rel;
 	HeapTuple	oldtup;
 	HeapTuple	newtup;
-	Oid			secid;
+	Oid			namespace_oid;
+	Datum		nspseclabel;
+	Datum		values[Natts_pg_namespace];
+	bool		nulls[Natts_pg_namespace];
 	bool		replaces[Natts_pg_namespace];
 
 	/* open pg_namespace relation */
@@ -466,26 +469,32 @@ AlterSchemaSecLabel(const char *name, DefElem *seclabel)
 				(errcode(ERRCODE_UNDEFINED_SCHEMA),
 				 errmsg("schema \"%s\" does not exist", name)));
 
+	namespace_oid = HeapTupleGetOid(oldtup);
+	memset(values, 0, sizeof(values));
+	memset(nulls, false, sizeof(nulls));
 	memset(replaces, false, sizeof(replaces));
-	newtup = heap_modify_tuple(oldtup, RelationGetDescr(rel),
-							   NULL, NULL, replaces);
-	ReleaseSysCache(oldtup);
 
 	/* DAC permission check */
-	if (!pg_namespace_ownercheck(HeapTupleGetOid(newtup), GetUserId()))
+	if (!pg_namespace_ownercheck(namespace_oid, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_NAMESPACE, name);
+
 	/* SELinux checks db_schema:{setattr relabelfrom relabelto} */
-	secid = sepgsqlCheckSchemaRelabel(HeapTupleGetOid(newtup), seclabel);
-	if (!HeapTupleHasSecLabel(newtup))
-		ereport(ERROR,
-				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("Unable to set security label on \"%s\"", name)));
-	HeapTupleSetSecLabel(newtup, secid);
+	nspseclabel = sepgsqlCheckSchemaRelabel(namespace_oid, new_label);
+	replaces[Anum_pg_namespace_nspseclabel - 1] = true;
+	if (DatumGetPointer(nspseclabel))
+		values[Anum_pg_namespace_nspseclabel - 1] = nspseclabel;
+	else
+		nulls[Anum_pg_namespace_nspseclabel - 1] = true;
+
+	newtup = heap_modify_tuple(oldtup, RelationGetDescr(rel),
+							   values, nulls, replaces);
 
 	simple_heap_update(rel, &newtup->t_self, newtup);
 	CatalogUpdateIndexes(rel, newtup);
 
 	heap_freetuple(newtup);
+
+	ReleaseSysCache(oldtup);
 
 	heap_close(rel, RowExclusiveLock);
 }

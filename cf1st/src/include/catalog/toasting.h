@@ -58,8 +58,5 @@ DECLARE_TOAST(pg_database, 2844, 2845);
 DECLARE_TOAST(pg_shdescription, 2846, 2847);
 #define PgShdescriptionToastTable 2846
 #define PgShdescriptionToastIndex 2847
-DECLARE_TOAST(pg_security, 3403, 3404);
-#define PgSecurityToastTable 3403
-#define PgSecurityToastIndex 3404
 
 #endif   /* TOASTING_H */
