@@ -7819,7 +7819,7 @@ ExecRelationSetSecLabel(Oid relid, DefElem *new_label)
 	Relation	rel;
 	HeapTuple	oldtup;
 	HeapTuple	newtup;
-	Datum		relseclabel;
+	Datum		rellabel;
 	Datum		values[Natts_pg_class];
 	bool		nulls[Natts_pg_class];
 	bool		replaces[Natts_pg_class];
@@ -7836,10 +7836,10 @@ ExecRelationSetSecLabel(Oid relid, DefElem *new_label)
 	memset(replaces, false, sizeof(replaces));
 
 	/* SELinux checks db_table:{setattr relabelfrom relabelto} */
-	relseclabel = sepgsqlCheckTableRelabel(relid, new_label);
+	rellabel = sepgsqlCheckTableRelabel(relid, new_label);
 	replaces[Anum_pg_class_relseclabel - 1] = true;
 	if (DatumGetPointer(relseclabel))
-		values[Anum_pg_class_relseclabel - 1] = relseclabel;
+		values[Anum_pg_class_relseclabel - 1] = rellabel;
 	else
 		nulls[Anum_pg_class_relseclabel - 1] = true;
 
