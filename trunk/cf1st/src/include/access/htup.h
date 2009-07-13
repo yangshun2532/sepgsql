@@ -187,8 +187,7 @@ typedef HeapTupleHeaderData *HeapTupleHeader;
  * information stored in t_infomask2:
  */
 #define HEAP_NATTS_MASK			0x07FF	/* 11 bits for number of attributes */
-/* bits 0x1800 are available */
-#define HEAP_HAS_SECLABEL		0x2000	/* tuple has security label */
+/* bits 0x3800 are available */
 #define HEAP_HOT_UPDATED		0x4000	/* tuple was HOT-updated */
 #define HEAP_ONLY_TUPLE			0x8000	/* this is heap-only tuple */
 
@@ -291,9 +290,6 @@ do { \
 	(tup)->t_choice.t_datum.datum_typmod = (typmod) \
 )
 
-#define HeapTupleHeaderHasOid(tup) \
-	((tup)->t_infomask & HEAP_HASOID)
-
 #define HeapTupleHeaderGetOid(tup) \
 ( \
 	((tup)->t_infomask & HEAP_HASOID) ? \
@@ -353,25 +349,6 @@ do { \
 	(tup)->t_infomask2 = ((tup)->t_infomask2 & ~HEAP_NATTS_MASK) | (natts) \
 )
 
-#define HeapTupleHeaderHasSecLabel(tup)			\
-	((tup)->t_infomask2 & HEAP_HAS_SECLABEL)
-
-#define HeapTupleHeaderGetSecLabel(tup)									\
-	(                                                                   \
-		HeapTupleHeaderHasSecLabel(tup)                                 \
-		? (*(Oid *)((char *)(tup) + (tup)->t_hoff                       \
-					- (HeapTupleHeaderHasOid(tup) ? sizeof(Oid) : 0)	\
-					- sizeof(Oid)))										\
-		: InvalidOid													\
-	)
-
-#define HeapTupleHeaderSetSecLabel(tup, seclabel)						\
-	do {																\
-		Assert(HeapTupleHeaderHasSecLabel(tup));						\
-		*((Oid *)((char *)(tup) + (tup)->t_hoff                         \
-				  - (HeapTupleHeaderHasOid(tup) ? sizeof(Oid) : 0)		\
-				  - sizeof(Oid))) = (seclabel);							\
-	} while(0)
 
 /*
  * BITMAPLEN(NATTS) -
@@ -572,14 +549,6 @@ typedef HeapTupleData *HeapTuple;
 #define HeapTupleSetOid(tuple, oid) \
 		HeapTupleHeaderSetOid((tuple)->t_data, (oid))
 
-#define HeapTupleHasSecLabel(tuple)				\
-	HeapTupleHeaderHasSecLabel((tuple)->t_data)
-
-#define HeapTupleGetSecLabel(tuple)				\
-	HeapTupleHeaderGetSecLabel((tuple)->t_data)
-
-#define HeapTupleSetSecLabel(tuple, seclabel)			\
-	HeapTupleHeaderSetSecLabel((tuple)->t_data, (seclabel))
 
 /*
  * WAL record definitions for heapam.c's WAL operations

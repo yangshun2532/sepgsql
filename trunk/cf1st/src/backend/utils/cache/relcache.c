@@ -47,7 +47,6 @@
 #include "catalog/pg_opclass.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_rewrite.h"
-#include "catalog/pg_security.h"
 #include "catalog/pg_type.h"
 #include "commands/trigger.h"
 #include "miscadmin.h"
@@ -866,10 +865,6 @@ RelationBuildDesc(Oid targetRelId, Relation oldrelation)
 	/* extract reloptions if any */
 	RelationParseRelOptions(relation, pg_class_tuple);
 
-	/* Fixup relation->rd_att->tdhasseclabel */
-	RelationGetDescr(relation)->tdhasseclabel
-		= securityTupleDescHasSecLabel(relid, relp->relkind);
-
 	/*
 	 * initialize the relation lock manager information
 	 */
@@ -1462,11 +1457,6 @@ formrdesc(const char *relationName, Oid relationReltype,
 	 */
 	RelationGetRelid(relation) = relation->rd_att->attrs[0]->attrelid;
 	relation->rd_rel->relfilenode = RelationGetRelid(relation);
-
-	/* Fixup relation->rd_att->tdhasseclabel */
-	RelationGetDescr(relation)->tdhasseclabel
-		= securityTupleDescHasSecLabel(RelationGetRelid(relation),
-									   RELKIND_RELATION);
 
 	/*
 	 * initialize the relation lock manager information
@@ -2709,13 +2699,6 @@ BuildHardcodedDescriptor(int natts, Form_pg_attribute attrs, bool hasoids)
 	result = CreateTemplateTupleDesc(natts, hasoids);
 	result->tdtypeid = RECORDOID;		/* not right, but we don't care */
 	result->tdtypmod = -1;
-	/*
-	 * NOTE: we assume the returned TupleDesc is only used for
-	 * references to toast'ed data, and it is not delivered to
-	 * heap_form_tuple(), so TupleDesc->tdhasseclabel don't give us
-	 * any effect.
-	 * We omit to invoke securityTupleDescHasSecLabel() here.
-	 */
 
 	for (i = 0; i < natts; i++)
 	{
@@ -3469,11 +3452,6 @@ load_relcache_init_file(void)
 		{
 			rel->rd_options = NULL;
 		}
-
-		/* Fixup rel->rd_att->tdhasseclabel */
-		RelationGetDescr(rel)->tdhasseclabel
-			= securityTupleDescHasSecLabel(RelationGetRelid(rel),
-										   RelationGetForm(rel)->relkind);
 
 		/* mark not-null status */
 		if (has_not_null)

@@ -212,7 +212,7 @@ Boot_CreateStmt:
 					else
 					{
 						Oid id;
-						Oid *secLabels =
+						Datum *secLabels =
 							sepgsqlCreateTableColumns(NULL,
 													  LexIDStr($5),
 													  PG_CATALOG_NAMESPACE,

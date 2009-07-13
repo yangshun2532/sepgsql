@@ -197,7 +197,6 @@ tlist_matches_tupdesc(PlanState *ps, List *tlist, Index varno, TupleDesc tupdesc
 	int			numattrs = tupdesc->natts;
 	int			attrno;
 	bool		hasoid;
-	bool		hasseclabel;
 	ListCell   *tlist_item = list_head(tlist);
 
 	/* Check the tlist attributes */
@@ -241,15 +240,11 @@ tlist_matches_tupdesc(PlanState *ps, List *tlist, Index varno, TupleDesc tupdesc
 		return false;			/* tlist too long */
 
 	/*
-	 * If the plan context requires a particular hasoid or hasseclabel setting,
-	 * then that has to match, too.
+	 * If the plan context requires a particular hasoid setting, then that has
+	 * to match, too.
 	 */
 	if (ExecContextForcesOids(ps, &hasoid) &&
 		hasoid != tupdesc->tdhasoid)
-		return false;
-
-	if (ExecContextForcesSecLabel(ps, &hasseclabel) &&
-		hasseclabel != tupdesc->tdhasseclabel)
 		return false;
 
 	return true;

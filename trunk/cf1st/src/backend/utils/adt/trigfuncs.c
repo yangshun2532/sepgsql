@@ -76,10 +76,6 @@ suppress_redundant_updates_trigger(PG_FUNCTION_ARGS)
 		!OidIsValid(HeapTupleHeaderGetOid(newheader)))
 		HeapTupleHeaderSetOid(newheader, HeapTupleHeaderGetOid(oldheader));
 
-	if (HeapTupleHeaderHasSecLabel(newheader) &&
-		!OidIsValid(HeapTupleHeaderGetSecLabel(newheader)))
-		HeapTupleHeaderSetSecLabel(newheader, HeapTupleHeaderGetSecLabel(oldheader));
-
 	/* if the tuple payload is the same ... */
 	if (newtuple->t_len == oldtuple->t_len &&
 		newheader->t_hoff == oldheader->t_hoff &&

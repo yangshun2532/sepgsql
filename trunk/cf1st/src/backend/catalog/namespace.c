@@ -2817,7 +2817,7 @@ InitTempTableNamespace(void)
 	char		namespaceName[NAMEDATALEN];
 	Oid			namespaceId;
 	Oid			toastspaceId;
-	Oid			nspsecid;
+	Datum		nspseclabel;
 
 	Assert(!OidIsValid(myTempNamespace));
 
@@ -2839,7 +2839,7 @@ InitTempTableNamespace(void)
 						get_database_name(MyDatabaseId))));
 
 	/* SELinux checks db_schema_temp:{create} */
-	nspsecid = sepgsqlCheckSchemaCreate(namespaceName, NULL, true);
+	nspseclabel = sepgsqlCheckSchemaCreate(namespaceName, NULL, true);
 
 	snprintf(namespaceName, sizeof(namespaceName), "pg_temp_%d", MyBackendId);
 
@@ -2858,7 +2858,7 @@ InitTempTableNamespace(void)
 		 */
 		namespaceId = NamespaceCreate(namespaceName,
 									  BOOTSTRAP_SUPERUSERID,
-									  nspsecid);
+									  nspseclabel);
 		/* Advance command counter to make namespace visible */
 		CommandCounterIncrement();
 	}
@@ -2886,7 +2886,7 @@ InitTempTableNamespace(void)
 	{
 		toastspaceId = NamespaceCreate(namespaceName,
 									   BOOTSTRAP_SUPERUSERID,
-									   nspsecid);
+									   nspseclabel);
 		/* Advance command counter to make namespace visible */
 		CommandCounterIncrement();
 	}

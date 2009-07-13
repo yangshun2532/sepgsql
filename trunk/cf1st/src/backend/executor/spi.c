@@ -705,8 +705,6 @@ SPI_modifytuple(Relation rel, HeapTuple tuple, int natts, int *attnum,
 		mtuple->t_tableOid = tuple->t_tableOid;
 		if (rel->rd_att->tdhasoid)
 			HeapTupleSetOid(mtuple, HeapTupleGetOid(tuple));
-		if (HeapTupleHasSecLabel(mtuple))
-			HeapTupleSetSecLabel(mtuple, HeapTupleGetSecLabel(tuple));
 	}
 	else
 	{

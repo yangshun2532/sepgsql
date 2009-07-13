@@ -43,7 +43,6 @@
 #include "catalog/pg_constraint.h"
 #include "catalog/pg_inherits.h"
 #include "catalog/pg_namespace.h"
-#include "catalog/pg_security.h"
 #include "catalog/pg_statistic.h"
 #include "catalog/pg_tablespace.h"
 #include "catalog/pg_type.h"
@@ -77,7 +76,7 @@ static void AddNewRelationTuple(Relation pg_class_desc,
 					Oid relowner,
 					char relkind,
 					Datum reloptions,
-					Oid *secLabels);
+					Datum *secLabels);
 static Oid AddNewRelationType(const char *typeName,
 				   Oid typeNamespace,
 				   Oid new_rel_oid,
@@ -296,11 +295,6 @@ heap_create(const char *relname,
 									 relid,
 									 reltablespace,
 									 shared_relation);
-	/*
-	 * Does the relation have security attribute?
-	 */
-	RelationGetDescr(rel)->tdhasseclabel
-		= securityTupleDescHasSecLabel(relid, relkind);
 
 	/*
 	 * Have the storage manager create the relation's disk file, if needed.
@@ -496,7 +490,7 @@ void
 InsertPgAttributeTuple(Relation pg_attribute_rel,
 					   Form_pg_attribute new_attribute,
 					   CatalogIndexState indstate,
-					   Oid new_att_secid)
+					   Datum attseclabel)
 {
 	Datum		values[Natts_pg_attribute];
 	bool		nulls[Natts_pg_attribute];
@@ -527,10 +521,12 @@ InsertPgAttributeTuple(Relation pg_attribute_rel,
 	/* start out with empty permissions */
 	nulls[Anum_pg_attribute_attacl - 1] = true;
 
-	tup = heap_form_tuple(RelationGetDescr(pg_attribute_rel), values, nulls);
+	if (DatumGetPointer(attseclabel))
+		values[Anum_pg_attribtue_attseclabel - 1] = attseclabel;
+	else
+		nulls[Anum_pg_attribtue_attseclabel - 1] = true;
 
-	if (HeapTupleHasSecLabel(tup))
-		HeapTupleSetSecLabel(tup, new_att_secid);
+	tup = heap_form_tuple(RelationGetDescr(pg_attribute_rel), values, nulls);
 
 	/* finally insert the new tuple, update the indexes, and clean up */
 	simple_heap_insert(pg_attribute_rel, tup);
@@ -556,14 +552,14 @@ AddNewAttributeTuples(Oid new_rel_oid,
 					  char relkind,
 					  bool oidislocal,
 					  int oidinhcount,
-					  Oid *secLabels)
+					  Datum *secLabels)
 {
 	Form_pg_attribute attr;
 	int			i;
 	Relation	rel;
 	CatalogIndexState indstate;
 	int			natts = tupdesc->natts;
-	Oid			new_att_secid;
+	Datum		attseclabel;
 	ObjectAddress myself,
 				referenced;
 
@@ -588,10 +584,10 @@ AddNewAttributeTuples(Oid new_rel_oid,
 		attr->attcacheoff = -1;
 
 		/* Security label of the column */
-		new_att_secid = (!secLabels ? InvalidOid
-						 : secLabels[i - FirstLowInvalidHeapAttributeNumber]);
+		attseclabel = (!secLabels ? PointerGetDatum(NULL)
+					   : secLabels[i - FirstLowInvalidHeapAttributeNumber]);
 
-		InsertPgAttributeTuple(rel, attr, indstate, new_att_secid);
+		InsertPgAttributeTuple(rel, attr, indstate, attseclabel);
 
 		/* Add dependency info */
 		myself.classId = RelationRelationId;
@@ -632,8 +628,8 @@ AddNewAttributeTuples(Oid new_rel_oid,
 			}
 
 			/* Security label of the system column */
-			new_att_secid = (!secLabels ? InvalidOid
-				: secLabels[SysAtt[i]->attnum - FirstLowInvalidHeapAttributeNumber]);
+			attseclabel = (!secLabels ? PointerGetDatum(NULL)
+				: secLabels[(SysAtt[i]->attnum) - FirstLowInvalidHeapAttributeNumber]);
 
 			InsertPgAttributeTuple(rel, &attStruct, indstate, new_att_secid);
 		}
@@ -664,7 +660,7 @@ InsertPgClassTuple(Relation pg_class_desc,
 				   Relation new_rel_desc,
 				   Oid new_rel_oid,
 				   Datum reloptions,
-				   Oid new_rel_secid)
+				   Datum relseclabel)
 {
 	Form_pg_class rd_rel = new_rel_desc->rd_rel;
 	Datum		values[Natts_pg_class];
@@ -705,6 +701,11 @@ InsertPgClassTuple(Relation pg_class_desc,
 	else
 		nulls[Anum_pg_class_reloptions - 1] = true;
 
+	if (relseclabel != PointerGetDatum(NULL))
+		values[Anum_pg_class_relseclabel - 1] = relseclabel;
+	else
+		nulls[Anum_pg_class_relseclabel - 1] = true;
+
 	tup = heap_form_tuple(RelationGetDescr(pg_class_desc), values, nulls);
 
 	/*
@@ -739,10 +740,10 @@ AddNewRelationTuple(Relation pg_class_desc,
 					Oid relowner,
 					char relkind,
 					Datum reloptions,
-					Oid *secLabels)
+					Datum *secLabels)
 {
 	Form_pg_class new_rel_reltup;
-	Oid		new_rel_secid = InvalidOid;
+	Datum	relseclabel = PointerGetDatum(NULL);
 
 	/*
 	 * first we update some of the information in our uncataloged relation's
@@ -800,11 +801,11 @@ AddNewRelationTuple(Relation pg_class_desc,
 	new_rel_desc->rd_att->tdtypeid = new_type_oid;
 
 	if (secLabels)
-		new_rel_secid = secLabels[0];
+		relseclabel = secLabels[0];
 
 	/* Now build and insert the tuple */
 	InsertPgClassTuple(pg_class_desc, new_rel_desc, new_rel_oid,
-					   reloptions, new_rel_secid);
+					   reloptions, relseclabel);
 }
 
 

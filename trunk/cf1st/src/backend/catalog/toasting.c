@@ -126,7 +126,7 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 	char		toast_relname[NAMEDATALEN];
 	char		toast_idxname[NAMEDATALEN];
 	IndexInfo  *indexInfo;
-	Oid		   *secLabels;
+	Datum	   *secLabels;
 	Oid			classObjectId[2];
 	int16		coloptions[2];
 	ObjectAddress baseobject,
