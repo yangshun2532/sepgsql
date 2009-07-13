@@ -877,7 +877,7 @@ heap_create_with_catalog(const char *relname,
 						 OnCommitAction oncommit,
 						 Datum reloptions,
 						 bool allow_system_table_mods,
-						 Oid *secLabels)
+						 Datum *secLabels)
 {
 	Relation	pg_class_desc;
 	Relation	new_rel_desc;
