@@ -7,12 +7,72 @@
  */
 #include "postgres.h"
 
-/******************/
+/*
+ * sepgsqlAvcAudit
+ *
+ * It write out audit message, when auditdeny or auditallow
+ * matches the required permission bits.
+ * If external module support sepgsqlAvcAuditHook, it allows
+ * to write audit logs to external log manager, such as system
+ * auditd.
+ */
 
+PGDLLIMPORT sepgsqlAvcAuditHook_t sepgsqlAvcAuditHook = NULL;
 
-PGDLLIMPORT sepgsqlAvcAuditHook_t sepgsqlAvcAuditHook;
+static void
+sepgsqlAvcAudit(char *scontext, char *tcontext,
+				uint16 tclass, uint32 audited,
+				bool denied, const char *audit_name)
+{
+	StringInfoData	buf;
+	uint32			mask;
+	const char	   *tclass_name;
 
-/*********/
+	/* translate to human readable form */
+	scontext = sepgsqlTransSecLabelOut(scontext);
+	tcontext = sepgsqlTransSecLabelOut(tcontext);
+
+	/* permissions in text representation */
+	initStringInfo(&buf);
+	appendStringInfo(&buf, "{");
+	for (mask = 1; audited != 0; mask <<= 1)
+	{
+		if (audited & mask)
+			appendStringInfo(&buf, " %s", sepgsqlGetPermString(tclass, mask));
+
+		audited &= ~mask;
+	}
+	appendStringInfo(&buf, " }");
+
+	tclass_name = sepgsqlGetClassString(tclass);
+
+	/* call external audit module, if loaded */
+	if (sepgsqlAvcAuditHook)
+		(*sepgsqlAvcAuditHook) (denied, scontext, tcontext,
+								tclass_name, buf.data, audit_name);
+	else
+	{
+		appendStringInfo(&buf, " scontext=%s tcontext=%s tclass=%s",
+						 scontext, tcontext, tclass_name);
+		if (audit_name)
+			appendStringInfo(&buf, " name=%s", audit_name);
+
+		ereport(LOG,
+				(errcode(ERRCODE_SELINUX_AUDIT),
+				 errmsg("SELinux: %s %s",
+						denied ? "denied" : "granted", buf.data)));
+	}
+}
+
+/*
+ * sepgsqlClientHasPermsTup
+ *
+ *
+ *
+ *
+ *
+ *
+ */
 bool
 sepgsqlClientHasPermsTup(Oid relid, HeapTuple tuple,
 						 uint16 tclass, uint32 required, bool abort)
