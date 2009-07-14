@@ -306,7 +306,8 @@ DATA(insert ( 1247 tableoid			26 0  4  -7 0 -1 -1 t p i t f f t 0 _null_));
 { 1255, {"prosrc"},				25, -1, -1, 22, 0, -1, -1, false, 'x', 'i', false, false, false, true, 0, { 0 } }, \
 { 1255, {"probin"},				17, -1, -1, 23, 0, -1, -1, false, 'x', 'i', false, false, false, true, 0, { 0 } }, \
 { 1255, {"proconfig"},		  1009, -1, -1, 24, 1, -1, -1, false, 'x', 'i', false, false, false, true, 0, { 0 } }, \
-{ 1255, {"proacl"},			  1034, -1, -1, 25, 1, -1, -1, false, 'x', 'i', false, false, false, true, 0, { 0 } }
+{ 1255, {"proacl"},			  1034, -1, -1, 25, 1, -1, -1, false, 'x', 'i', false, false, false, true, 0, { 0 } }, \
+{ 1255, {"proseclabel"},		25, -1, -1, 26, 0, -1, -1, false, 'x', 'i', false, false, false, true, 0, { 0 } }
 
 DATA(insert ( 1255 proname			19 -1 NAMEDATALEN	1 0 -1 -1 f p c t f f t 0 _null_));
 DATA(insert ( 1255 pronamespace		26 -1 4   2 0 -1 -1 t p i t f f t 0 _null_));
@@ -333,6 +334,7 @@ DATA(insert ( 1255 prosrc			25 -1 -1 22 0 -1 -1 f x i f f f t 0 _null_));
 DATA(insert ( 1255 probin			17 -1 -1 23 0 -1 -1 f x i f f f t 0 _null_));
 DATA(insert ( 1255 proconfig	  1009 -1 -1 24 1 -1 -1 f x i f f f t 0 _null_));
 DATA(insert ( 1255 proacl		  1034 -1 -1 25 1 -1 -1 f x i f f f t 0 _null_));
+DATA(insert ( 1255 proseclabel		25 -1 -1 26 0 -1 -1 f x i f f f t 0 _null_));
 DATA(insert ( 1255 ctid				27 0  6  -1 0 -1 -1 f p s t f f t 0 _null_));
 DATA(insert ( 1255 oid				26 0  4  -2 0 -1 -1 t p i t f f t 0 _null_));
 DATA(insert ( 1255 xmin				28 0  4  -3 0 -1 -1 t p i t f f t 0 _null_));

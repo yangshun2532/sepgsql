@@ -38,6 +38,7 @@ CATALOG(pg_namespace,2615)
 	NameData	nspname;
 	Oid			nspowner;
 	aclitem		nspacl[1];		/* VARIABLE LENGTH FIELD */
+	text		nspseclabel;
 } FormData_pg_namespace;
 
 /* ----------------
@@ -52,10 +53,11 @@ typedef FormData_pg_namespace *Form_pg_namespace;
  * ----------------
  */
 
-#define Natts_pg_namespace				3
+#define Natts_pg_namespace				4
 #define Anum_pg_namespace_nspname		1
 #define Anum_pg_namespace_nspowner		2
 #define Anum_pg_namespace_nspacl		3
+#define Anum_pg_namespace_nspseclabel	4
 
 
 /* ----------------
@@ -63,13 +65,13 @@ typedef FormData_pg_namespace *Form_pg_namespace;
  * ---------------
  */
 
-DATA(insert OID = 11 ( "pg_catalog" PGUID _null_ ));
+DATA(insert OID = 11 ( "pg_catalog" PGUID _null_ _null_));
 DESCR("system catalog schema");
 #define PG_CATALOG_NAMESPACE 11
-DATA(insert OID = 99 ( "pg_toast" PGUID _null_ ));
+DATA(insert OID = 99 ( "pg_toast" PGUID _null_ _null_));
 DESCR("reserved schema for TOAST tables");
 #define PG_TOAST_NAMESPACE 99
-DATA(insert OID = 2200 ( "public" PGUID _null_ ));
+DATA(insert OID = 2200 ( "public" PGUID _null_ _null_));
 DESCR("standard public schema");
 #define PG_PUBLIC_NAMESPACE 2200
 
