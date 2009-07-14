@@ -41,6 +41,7 @@
 #include "miscadmin.h"
 #include "pgstat.h"
 #include "postmaster/bgwriter.h"
+#include "security/sepgsql.h"
 #include "storage/bufmgr.h"
 #include "storage/fd.h"
 #include "storage/lmgr.h"
@@ -119,11 +120,13 @@ createdb(const CreatedbStmt *stmt)
 	DefElem    *dcollate = NULL;
 	DefElem    *dctype = NULL;
 	DefElem    *dconnlimit = NULL;
+	DefElem	   *dseclabel = NULL;
 	char	   *dbname = stmt->dbname;
 	char	   *dbowner = NULL;
 	const char *dbtemplate = NULL;
 	char	   *dbcollate = NULL;
 	char	   *dbctype = NULL;
+	Datum		seclabel;
 	int			encoding = -1;
 	int			dbconnlimit = -1;
 	int			ctype_encoding;
@@ -200,6 +203,14 @@ createdb(const CreatedbStmt *stmt)
 					 errmsg("LOCATION is not supported anymore"),
 					 errhint("Consider using tablespaces instead.")));
 		}
+		else if (strcmp(defel->defname, "security_label") == 0)
+		{
+			if (dseclabel)
+				ereport(ERROR,
+						(errcode(ERRCODE_SYNTAX_ERROR),
+						 errmsg("conflicting or redundant options")));
+			dseclabel = defel;
+		}
 		else
 			elog(ERROR, "option \"%s\" not recognized",
 				 defel->defname);
@@ -271,6 +282,12 @@ createdb(const CreatedbStmt *stmt)
 				 errmsg("permission denied to create database")));
 
 	check_is_member_of_role(GetUserId(), datdba);
+
+	/*
+	 * SELinux assigns a default or user given security label
+	 * on the new database in creation.
+	 */
+	seclabel = sepgsqlAssignDatabaseCreate(dbname, dseclabel);
 
 	/*
 	 * Lookup database (template) to be cloned, and obtain share lock on it.
@@ -552,6 +569,11 @@ createdb(const CreatedbStmt *stmt)
 	 */
 	new_record_nulls[Anum_pg_database_datconfig - 1] = true;
 	new_record_nulls[Anum_pg_database_datacl - 1] = true;
+
+	if (!DatumGetPointer(seclabel))
+		new_record_nulls[Anum_pg_database_seclabel - 1] = true;
+	else
+		new_record[Anum_pg_database_seclabel - 1] = seclabel;
 
 	tuple = heap_form_tuple(RelationGetDescr(pg_database_rel),
 							new_record, new_record_nulls);
