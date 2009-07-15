@@ -29,6 +29,7 @@
 #include "miscadmin.h"
 #include "nodes/nodeFuncs.h"
 #include "parser/parse_type.h"
+#include "security/sepgsql.h"
 #include "tcop/pquery.h"
 #include "tcop/tcopprot.h"
 #include "utils/acl.h"
@@ -96,6 +97,7 @@ ProcedureCreate(const char *procedureName,
 	Datum		values[Natts_pg_proc];
 	bool		replaces[Natts_pg_proc];
 	Oid			relid;
+	Oid			prosecid = InvalidOid;
 	NameData	procname;
 	TupleDesc	tupDesc;
 	bool		is_update;
@@ -357,6 +359,9 @@ ProcedureCreate(const char *procedureName,
 			aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
 						   procedureName);
 
+		/* SELinux checks db_procedure:{setattr} */
+		sepgsqlCheckProcedureSetattr(HeapTupleGetOid(oldtup));
+
 		/*
 		 * Not okay to change the return type of the existing proc, since
 		 * existing rules, views, etc may depend on the return type.
@@ -484,8 +489,13 @@ ProcedureCreate(const char *procedureName,
 	}
 	else
 	{
+		/* SELinux checks db_procedure:{create} */
+		prosecid = sepgsqlCheckProcedureCreate(procedureName,
+											   procNamespace, NULL);
 		/* Creating a new procedure */
 		tup = heap_form_tuple(tupDesc, values, nulls);
+		if (HeapTupleHasSecLabel(tup))
+			HeapTupleSetSecLabel(tup, prosecid);
 		simple_heap_insert(rel, tup);
 		is_update = false;
 	}

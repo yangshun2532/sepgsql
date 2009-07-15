@@ -25,6 +25,7 @@
 #include "postmaster/autovacuum.h"
 #include "postmaster/bgwriter.h"
 #include "postmaster/postmaster.h"
+#include "security/sepgsql.h"
 #include "storage/bufmgr.h"
 #include "storage/ipc.h"
 #include "storage/pg_shmem.h"
@@ -119,6 +120,7 @@ CreateSharedMemoryAndSemaphores(bool makePrivate, int port)
 #ifdef EXEC_BACKEND
 		size = add_size(size, ShmemBackendArraySize());
 #endif
+		size = add_size(size, sepgsqlShmemSize());
 
 		/* freeze the addin request size and include it */
 		addin_request_allowed = false;
