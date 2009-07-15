@@ -379,3 +379,20 @@ securityMoveSecLabel(Oid dstid, Oid srcid, Oid secid)
 
 	return securityRawSecLabelIn(dstid, seclabel);
 }
+
+/*
+ * Output handler for system columns
+ */
+Datum
+securityHeapGetSecLabelSysattr(HeapTuple tuple)
+{
+	Oid		secid = HeapTupleGetSecLabel(tuple);
+	char   *seclabel;
+
+	seclabel = securityTransSecLabelOut(tuple->t_tableOid, secid);
+	if (!seclabel)
+		seclabel = pstrdup("unlabeled");
+
+	return CStringGetTextDatum(seclabel);
+}
+

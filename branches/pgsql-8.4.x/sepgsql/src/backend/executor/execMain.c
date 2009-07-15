@@ -1463,6 +1463,58 @@ ExecEndPlan(PlanState *planstate, EState *estate)
 	}
 }
 
+/*
+ * fetchWritableSystemAttribute() fetches writable system column data
+ * using Junkfilter, and saves them at TupleTableSlot temporary.
+ *
+ * storeWritableSystemAttribute() copies these fetched data into
+ * header structure of HeapTuple.
+ */
+static void
+fetchWritableSystemAttribute(JunkFilter *junkfilter, TupleTableSlot *slot,
+							 Datum *tts_seclabel)
+{
+	AttrNumber	attno;
+	Datum		datum;
+	bool		isnull;
+
+	/* for Security Label */
+	attno = ExecFindJunkAttribute(junkfilter, SecurityLabelAttributeName);
+	if (attno != InvalidAttrNumber)
+	{
+		datum = ExecGetJunkAttribute(slot, attno, &isnull);
+		if (isnull)
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("Unable to set NULL on \"%s\"",
+							SecurityLabelAttributeName)));
+		*tts_seclabel = datum;
+	}
+}
+
+static void
+storeWritableSystemAttribute(Relation rel, TupleTableSlot *slot, HeapTuple tuple)
+{
+	Oid		relid = RelationGetRelid(rel);
+	Oid		secid;
+
+	/* "security_label" */
+	if (DatumGetPointer(slot->tts_seclabel) != NULL)
+	{
+		char *seclabel = TextDatumGetCString(slot->tts_seclabel);
+
+		if (!HeapTupleHasSecLabel(tuple))
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("Unable to assign security label on \"%s\"",
+							RelationGetRelationName(rel))));
+		secid = securityTransSecLabelIn(relid, seclabel);
+		HeapTupleSetSecLabel(tuple, secid);
+	}
+	else if (HeapTupleHasSecLabel(tuple))
+		HeapTupleSetSecLabel(tuple, InvalidOid);
+}
+
 /* ----------------------------------------------------------------
  *		ExecutePlan
  *
@@ -1524,6 +1576,8 @@ ExecutePlan(EState *estate,
 	 */
 	for (;;)
 	{
+		Datum	tts_seclabel = PointerGetDatum(NULL);
+
 		/* Reset the per-output-tuple exprcontext */
 		ResetPerTupleExprContext(estate);
 
@@ -1668,6 +1722,11 @@ lnext:	;
 			}
 
 			/*
+			 * extract writable system attribute
+			 */
+			fetchWritableSystemAttribute(junkfilter, slot, &tts_seclabel);
+
+			/*
 			 * extract the 'ctid' junk attribute.
 			 */
 			if (operation == CMD_UPDATE || operation == CMD_DELETE)
@@ -1694,6 +1753,7 @@ lnext:	;
 			if (operation != CMD_DELETE)
 				slot = ExecFilterJunk(junkfilter, slot);
 		}
+		slot->tts_seclabel = tts_seclabel;
 
 		/*
 		 * now that we have a tuple, do the appropriate thing with it.. either
@@ -1817,6 +1877,8 @@ ExecInsert(TupleTableSlot *slot,
 	 */
 	if (resultRelationDesc->rd_rel->relhasoids)
 		HeapTupleSetOid(tuple, InvalidOid);
+
+	storeWritableSystemAttribute(resultRelationDesc, slot, tuple);
 
 	/* BEFORE ROW INSERT Triggers */
 	if (resultRelInfo->ri_TrigDesc &&
@@ -2054,6 +2116,8 @@ ExecUpdate(TupleTableSlot *slot,
 	 */
 	resultRelInfo = estate->es_result_relation_info;
 	resultRelationDesc = resultRelInfo->ri_RelationDesc;
+
+	storeWritableSystemAttribute(resultRelationDesc, slot, tuple);
 
 	/* BEFORE ROW UPDATE Triggers */
 	if (resultRelInfo->ri_TrigDesc &&
@@ -3101,6 +3165,8 @@ intorel_receive(TupleTableSlot *slot, DestReceiver *self)
 	 */
 	if (myState->rel->rd_rel->relhasoids)
 		HeapTupleSetOid(tuple, InvalidOid);
+
+	storeWritableSystemAttribute(myState->rel, slot, tuple);
 
 	heap_insert(myState->rel,
 				tuple,
