@@ -1319,6 +1319,13 @@ FileTruncate(File file, off_t offset)
 	return returnCode;
 }
 
+int
+FileRawDescriptor(File file)
+{
+	Assert(FileIsValid(file));
+
+	return VfdCache[file].fd;
+}
 
 /*
  * Routines that want to use stdio (ie, FILE*) should use AllocateFile

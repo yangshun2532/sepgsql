@@ -761,7 +761,7 @@ heap_form_tuple(TupleDesc tupleDescriptor,
 	if (tupleDescriptor->tdhasoid)		/* else leave infomask = 0 */
 		td->t_infomask = HEAP_HASOID;
 	if (tupleDescriptor->tdhasseclabel)
-		td->t_infomask2 |= HEAP_HAS_SECLABEL;
+		td->t_infomask |= HEAP_HAS_SECLABEL;
 
 	heap_fill_tuple(tupleDescriptor,
 					values,
@@ -1509,7 +1509,7 @@ heap_form_minimal_tuple(TupleDesc tupleDescriptor,
 	if (tupleDescriptor->tdhasoid)		/* else leave infomask = 0 */
 		tuple->t_infomask = HEAP_HASOID;
 	if (tupleDescriptor->tdhasseclabel)
-		tuple->t_infomask2 |= HEAP_HAS_SECLABEL;
+		tuple->t_infomask |= HEAP_HAS_SECLABEL;
 
 	heap_fill_tuple(tupleDescriptor,
 					values,

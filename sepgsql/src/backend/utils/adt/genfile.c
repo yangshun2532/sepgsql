@@ -24,6 +24,7 @@
 #include "funcapi.h"
 #include "miscadmin.h"
 #include "postmaster/syslogger.h"
+#include "security/sepgsql.h"
 #include "storage/fd.h"
 #include "utils/builtins.h"
 #include "utils/memutils.h"
@@ -104,6 +105,9 @@ pg_read_file(PG_FUNCTION_ARGS)
 				(errcode_for_file_access(),
 				 errmsg("could not open file \"%s\" for reading: %m",
 						filename)));
+
+	/* SELinux: check file:{read} permission */
+	sepgsqlCheckFileRead(fileno(file), filename);
 
 	if (fseeko(file, (off_t) seek_offset,
 			   (seek_offset >= 0) ? SEEK_SET : SEEK_END) != 0)

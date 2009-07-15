@@ -24,6 +24,7 @@
 #include "mb/pg_wchar.h"
 #include "miscadmin.h"
 #include "parser/parse_func.h"
+#include "security/sepgsql.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
@@ -95,6 +96,9 @@ CreateConversionCommand(CreateConversionStmt *stmt)
 	if (aclresult != ACLCHECK_OK)
 		aclcheck_error(aclresult, ACL_KIND_PROC,
 					   NameListToString(func_name));
+
+	/* SELinux checks db_procedure:{install} */
+	sepgsqlCheckProcedureInstall(funcoid);
 
 	/*
 	 * Check that the conversion function is suitable for the requested source

@@ -35,6 +35,7 @@
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
 #include "parser/parse_func.h"
+#include "security/sepgsql.h"
 #include "tsearch/ts_cache.h"
 #include "tsearch/ts_public.h"
 #include "tsearch/ts_utils.h"
@@ -109,6 +110,9 @@ get_ts_parser_func(DefElem *defel, int attnum)
 				 errmsg("function %s should return type %s",
 						func_signature_string(funcName, nargs, typeId),
 						format_type_be(retTypeId))));
+
+	/* SELinux checks db_procedure:{install} */
+	sepgsqlCheckProcedureInstall(procOid);
 
 	return ObjectIdGetDatum(procOid);
 }
@@ -947,6 +951,9 @@ get_ts_template_func(DefElem *defel, int attnum)
 				 errmsg("function %s should return type %s",
 						func_signature_string(funcName, nargs, typeId),
 						format_type_be(retTypeId))));
+
+	/* SELinux checks db_procedure:{install} */
+	sepgsqlCheckProcedureInstall(procOid);
 
 	return ObjectIdGetDatum(procOid);
 }

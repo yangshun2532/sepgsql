@@ -27,6 +27,7 @@
 #include "foreign/foreign.h"
 #include "miscadmin.h"
 #include "parser/parse_func.h"
+#include "security/sepgsql.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
@@ -380,6 +381,9 @@ CreateForeignDataWrapper(CreateFdwStmt *stmt)
 	else
 		fdwvalidator = InvalidOid;
 
+	/* SELinux checks db_procedure:{install} */
+	sepgsqlCheckProcedureInstall(fdwvalidator);
+
 	values[Anum_pg_foreign_data_wrapper_fdwvalidator - 1] = fdwvalidator;
 
 	nulls[Anum_pg_foreign_data_wrapper_fdwacl - 1] = true;
@@ -473,6 +477,9 @@ AlterForeignDataWrapper(AlterFdwStmt *stmt)
 			ereport(WARNING,
 			 (errmsg("changing the foreign-data wrapper validator can cause "
 					 "the options for dependent objects to become invalid")));
+
+		/* SELinux checks db_procedure:{install} */
+		sepgsqlCheckProcedureInstall(fdwvalidator);
 	}
 	else
 	{

@@ -15,6 +15,7 @@
 #include "catalog/pg_attribute.h"
 #include "catalog/pg_class.h"
 #include "catalog/pg_database.h"
+#include "catalog/pg_largeobject.h"
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_security.h"
@@ -288,6 +289,14 @@ sepgsqlGetDefaultTupleSecLabel(Oid table_oid)
 									SEPG_CLASS_DB_TUPLE);
 }
 
+Oid
+sepgsqlGetDefaultBlobSecLabel(Oid database_oid)
+{
+	return defaultSecLabelWithDatabase(LargeObjectRelationId,
+									   MyDatabaseId,
+									   SEPG_CLASS_DB_BLOB);
+}
+
 void
 sepgsqlSetDefaultSecLabel(Relation rel, HeapTuple tuple)
 {
@@ -326,6 +335,9 @@ sepgsqlSetDefaultSecLabel(Relation rel, HeapTuple tuple)
 	case SEPG_CLASS_DB_COLUMN:
 		tbloid = ((Form_pg_attribute) GETSTRUCT(tuple))->attrelid;
 		newsid = sepgsqlGetDefaultColumnSecLabel(tbloid);
+		break;
+	case SEPG_CLASS_DB_BLOB:
+		newsid = sepgsqlGetDefaultBlobSecLabel(MyDatabaseId);
 		break;
 	default:
 		newsid = sepgsqlGetDefaultTupleSecLabel(relid);
