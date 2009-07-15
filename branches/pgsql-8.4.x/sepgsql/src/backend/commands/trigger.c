@@ -182,6 +182,9 @@ CreateTrigger(CreateTrigStmt *stmt, Oid constraintOid, bool checkPermissions)
 							NameListToString(stmt->funcname))));
 	}
 
+	/* SELinux checks db_procedure:{install} */
+	sepgsqlCheckProcedureInstall(funcoid);
+
 	/*
 	 * If the command is a user-entered CREATE CONSTRAINT TRIGGER command that
 	 * references one of the built-in RI_FKey trigger functions, assume it is

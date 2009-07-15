@@ -9,6 +9,7 @@
 
 #include "catalog/pg_database.h"
 #include "catalog/pg_proc.h"
+#include "catalog/pg_largeobject.h"
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_type.h"
 #include "miscadmin.h"
@@ -454,6 +455,9 @@ sepgsqlTupleObjectClass(Oid relid, HeapTuple tuple)
 
 	case ProcedureRelationId:
 		return SEPG_CLASS_DB_PROCEDURE;
+
+	case LargeObjectRelationId:
+		return SEPG_CLASS_DB_BLOB;
 	}
 	return SEPG_CLASS_DB_TUPLE;
 }

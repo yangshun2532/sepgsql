@@ -56,6 +56,7 @@
 #include "parser/parse_expr.h"
 #include "parser/parse_func.h"
 #include "parser/parse_type.h"
+#include "security/sepgsql.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
@@ -521,6 +522,14 @@ DefineType(List *names, List *parameters)
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
 					   NameListToString(analyzeName));
 #endif
+	/* SELinux checks db_procedure:{install} */
+	sepgsqlCheckProcedureInstall(inputOid);
+	sepgsqlCheckProcedureInstall(outputOid);
+	sepgsqlCheckProcedureInstall(receiveOid);
+	sepgsqlCheckProcedureInstall(sendOid);
+	sepgsqlCheckProcedureInstall(typmodinOid);
+	sepgsqlCheckProcedureInstall(typmodoutOid);
+	sepgsqlCheckProcedureInstall(analyzeOid);
 
 	/* Preassign array type OID so we can insert it in pg_type.typarray */
 	pg_type = heap_open(TypeRelationId, AccessShareLock);

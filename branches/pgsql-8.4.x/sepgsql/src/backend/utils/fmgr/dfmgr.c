@@ -23,6 +23,7 @@
 #endif
 #include "lib/stringinfo.h"
 #include "miscadmin.h"
+#include "security/sepgsql.h"
 #include "utils/dynamic_loader.h"
 #include "utils/hsearch.h"
 
@@ -109,6 +110,9 @@ load_external_function(char *filename, char *funcname,
 	/* Expand the possibly-abbreviated filename to an exact path name */
 	fullname = expand_dynamic_library_name(filename);
 
+	/* SELinux checks db_database:{load_module} */
+	sepgsqlCheckDatabaseLoadModule(fullname);
+
 	/* Load the shared library, unless we already did */
 	lib_handle = internal_load_library(fullname);
 
@@ -148,6 +152,9 @@ load_file(const char *filename, bool restricted)
 
 	/* Expand the possibly-abbreviated filename to an exact path name */
 	fullname = expand_dynamic_library_name(filename);
+
+	/* SELinux checks db_database:{load_module} */
+	sepgsqlCheckDatabaseLoadModule(fullname);
 
 	/* Unload the library if currently loaded */
 	internal_unload_library(fullname);

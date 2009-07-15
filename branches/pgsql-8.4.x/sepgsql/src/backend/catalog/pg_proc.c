@@ -367,6 +367,11 @@ ProcedureCreate(const char *procedureName,
 		else
 			prosecid = sepgsqlCheckProcedureRelabel(HeapTupleGetOid(oldtup),
 													(DefElem *)proseclabel);
+
+		/* SELinux checks db_database:{install_module}, if necessary */
+		if (probin && languageObjectId == ClanguageId)
+			sepgsqlCheckDatabaseInstallModule(probin, oldtup);
+
 		/*
 		 * Not okay to change the return type of the existing proc, since
 		 * existing rules, views, etc may depend on the return type.
@@ -500,6 +505,11 @@ ProcedureCreate(const char *procedureName,
 		prosecid = sepgsqlCheckProcedureCreate(procedureName,
 											   procNamespace,
 											   (DefElem *)proseclabel);
+
+		/* SELinux checks db_database:{install_module}, if necessary */
+		if (probin && languageObjectId == ClanguageId)
+			sepgsqlCheckDatabaseInstallModule(probin, NULL);
+
 		/* Creating a new procedure */
 		tup = heap_form_tuple(tupDesc, values, nulls);
 		if (HeapTupleHasSecLabel(tup))

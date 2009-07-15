@@ -10,8 +10,20 @@
 #include "catalog/indexing.h"
 #include "catalog/namespace.h"
 #include "catalog/pg_database.h"
+#include "catalog/pg_foreign_data_wrapper.h"
+#include "catalog/pg_language.h"
+#include "catalog/pg_largeobject.h"
 #include "catalog/pg_namespace.h"
+#include "catalog/pg_opclass.h"
+#include "catalog/pg_operator.h"
+#include "catalog/pg_opfamily.h"
 #include "catalog/pg_proc.h"
+#include "catalog/pg_security.h"
+#include "catalog/pg_trigger.h"
+#include "catalog/pg_ts_dict.h"
+#include "catalog/pg_ts_parser.h"
+#include "catalog/pg_ts_template.h"
+#include "catalog/pg_type.h"
 #include "catalog/pg_security.h"
 #include "commands/dbcommands.h"
 #include "miscadmin.h"
@@ -25,6 +37,14 @@
  * ------------------------------------------------------------
  *   Hooks corresponding to db_database object class
  * ------------------------------------------------------------
+ *
+ * sepgsqlCheckDatabaseInstallModule
+ *   checks db_database:{install_module} permission when the client
+ *   tries to install a dynamic link library on the current databse.
+ *
+ * sepgsqlCheckDatabaseLoadModule
+ *   checks capability of the database when it loads a certain DLL
+ *   into its process address space.
  */
 Oid
 sepgsqlCheckDatabaseCreate(const char *datname, DefElem *new_label)
@@ -125,10 +145,84 @@ sepgsqlCheckDatabaseSuperuser(void)
 							   SEPG_DB_DATABASE__SUPERUSER, false);
 }
 
+void
+sepgsqlCheckDatabaseInstallModule(const char *probin, HeapTuple protup)
+{
+	Datum	oldbin;
+	bool	isnull;
+
+	if (HeapTupleIsValid(protup))
+	{
+		oldbin = SysCacheGetAttr(PROOID, protup,
+								 Anum_pg_proc_probin,
+								 &isnull);
+		if (!isnull &&
+			strcmp(probin, TextDatumGetCString(oldbin)))
+			return;		/* unchanged */
+	}
+	checkDatabaseCommon(MyDatabaseId,
+						SEPG_DB_DATABASE__INSTALL_MODULE, true);
+}
+
+void
+sepgsqlCheckDatabaseLoadModule(const char *filename)
+{
+	HeapTuple		tuple;
+	security_context_t filecon;
+	security_context_t dbcon;
+
+	if (!sepgsqlIsEnabled())
+		return;
+	/*
+	 * It assumes preloaded libraries are secure,
+	 * because it can be set up using guc variable
+	 * not any SQL statements.
+	 */
+	if (GetProcessingMode() == InitProcessing)
+		return;
+
+	/* Get database context */
+	tuple = SearchSysCache(DATABASEOID,
+						   ObjectIdGetDatum(MyDatabaseId),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "cache lookup failed for database: %u", MyDatabaseId);
+
+	dbcon = securityRawSecLabelOut(DatabaseRelationId,
+								   HeapTupleGetSecLabel(tuple));
+	ReleaseSysCache(tuple);
+
+	/* Get library context */
+	if (getfilecon_raw(filename, &filecon) < 0)
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 errmsg("could not access file \"%s\": %m", filename)));
+	PG_TRY();
+	{
+		sepgsqlComputePerms(dbcon,
+							filecon,
+							SEPG_CLASS_DB_DATABASE,
+							SEPG_DB_DATABASE__LOAD_MODULE,
+							filename, true);
+	}
+	PG_CATCH();
+	{
+		freecon(filecon);
+		PG_RE_THROW();
+	}
+	PG_END_TRY();
+	freecon(filecon);
+}
+
 /*
  * ------------------------------------------------------------
  * Hooks corresponding to db_schema object class
  * ------------------------------------------------------------
+ *
+ * sepgsqlCheckSchemaAddRemove
+ *   checks db_schema:{add_object} and db_schema:{remove_object}
+ *   permission when a database object within a certain schema
+ *   is added or removed.
  */
 Oid
 sepgsqlCheckSchemaCreate(const char *nspname, DefElem *new_label, bool temp_schema)
@@ -231,6 +325,22 @@ sepgsqlCheckSchemaSearch(Oid namespace_oid)
 									SEPG_DB_SCHEMA__SEARCH, false);
 }
 
+void
+sepgsqlCheckSchemaAddObject(Oid namespace_oid)
+{
+	/* TODO: who should call the hook? */
+	sepgsqlCheckSchemaCommon(namespace_oid,
+							 SEPG_DB_SCHEMA__ADD_OBJECT, true);
+}
+
+void
+sepgsqlCheckSchemaRemoveObject(Oid namespace_oid)
+{
+	/* TODO: who should call the hook? */
+	sepgsqlCheckSchemaCommon(namespace_oid,
+							 SEPG_DB_SCHEMA__REMOVE_OBJECT, true);
+}
+
 /* ------------------------------------------------------------ *
  *   Hooks corresponding to db_table object class
  * ------------------------------------------------------------ */
@@ -239,6 +349,11 @@ sepgsqlCheckSchemaSearch(Oid namespace_oid)
  * NOTE: db_table/db_sequence:{create} permission is checked
  *       at sepgsqlCreateTableColumns() due to the reason
  *       for implementation.
+ *
+ * sepgsqlCheckTableReference
+ *   checks db_table:{reference} and db_column:{reference} permission
+ *   when the client tries to set up a foreign key constraint on the
+ *   certain tables and columns.
  */
 
 static void
@@ -696,6 +811,19 @@ sepgsqlCheckProcedureExecute(Oid proc_oid)
 }
 
 /*
+ * sepgsqlCheckProcedureInstall
+ *
+ *
+ *
+ */
+void
+sepgsqlCheckProcedureInstall(Oid proc_oid)
+{
+	if (OidIsValid(proc_oid))
+		sepgsqlCheckProcedureCommon(proc_oid, SEPG_DB_PROCEDURE__INSTALL, true);
+}
+
+/*
  * sepgsqlCheckProcedureEntrypoint
  *   checks whether the given function call causes domain transition,
  *   or not. If it needs a domain transition, it injects a wrapper
@@ -776,6 +904,223 @@ sepgsqlCheckProcedureEntrypoint(FmgrInfo *flinfo, HeapTuple protup)
 	strcpy(tcache->newcon, newcon);
 	flinfo->fn_addr = sepgsqlTrustedProcedure;
 	flinfo->fn_extra = tcache;
+}
+
+/*
+ * sepgsqlCheckBlobCreate
+ *   assigns a default security label and checks db_blob:{create}
+ */
+void
+sepgsqlCheckBlobCreate(Relation rel, HeapTuple lotup)
+{
+	if (!sepgsqlIsEnabled())
+		return;
+
+	/* set a default security context */
+	sepgsqlSetDefaultSecLabel(rel, lotup);
+	sepgsqlClientHasPermsTup(RelationGetRelid(rel), lotup,
+							 SEPG_CLASS_DB_BLOB,
+							 SEPG_DB_BLOB__CREATE,
+							 true);
+}
+
+/*
+ * sepgsqlCheckBlobDrop
+ *   checks db_blob:{drop} permission
+ */
+void
+sepgsqlCheckBlobDrop(Relation rel, HeapTuple lotup)
+{
+	if (!sepgsqlIsEnabled())
+		return;
+
+	sepgsqlClientHasPermsTup(RelationGetRelid(rel), lotup,
+							 SEPG_CLASS_DB_BLOB,
+							 SEPG_DB_BLOB__DROP,
+							 true);
+}
+
+/*
+ * sepgsqlCheckBlobRead
+ *   checks db_blob:{read} permission
+ */
+void
+sepgsqlCheckBlobRead(LargeObjectDesc *lobj)
+{
+	if (!sepgsqlIsEnabled())
+		return;
+
+	sepgsqlClientHasPermsSid(LargeObjectRelationId,
+							 lobj->secid,
+							 SEPG_CLASS_DB_BLOB,
+							 SEPG_DB_BLOB__READ,
+							 NULL, true);
+}
+
+/*
+ * sepgsqlCheckBlobWrite
+ *   check db_blob:{write} permission
+ */
+void
+sepgsqlCheckBlobWrite(LargeObjectDesc *lobj)
+{
+	if (!sepgsqlIsEnabled())
+		return;
+
+	sepgsqlClientHasPermsSid(LargeObjectRelationId,
+							 lobj->secid,
+							 SEPG_CLASS_DB_BLOB,
+							 SEPG_DB_BLOB__WRITE,
+							 NULL, true);
+}
+
+/*
+ * sepgsqlCheckBlobGetattr
+ *   check db_blob:{getattr} permission
+ */
+void
+sepgsqlCheckBlobGetattr(HeapTuple tuple)
+{
+	if (!sepgsqlIsEnabled())
+		return;
+
+	sepgsqlClientHasPermsTup(LargeObjectRelationId, tuple,
+							 SEPG_CLASS_DB_BLOB,
+							 SEPG_DB_BLOB__GETATTR,
+							 true);
+}
+
+/*
+ * sepgsqlCheckBlobSetattr
+ *   check db_blob:{setattr} permission
+ */
+void
+sepgsqlCheckBlobSetattr(HeapTuple tuple)
+{
+	if (!sepgsqlIsEnabled())
+		return;
+
+	sepgsqlClientHasPermsTup(LargeObjectRelationId, tuple,
+							 SEPG_CLASS_DB_BLOB,
+							 SEPG_DB_BLOB__SETATTR,
+							 true);
+}
+
+/*
+ * sepgsqlCheckBlobExport
+ *   check db_blob:{read export} and file:{write} permission
+ */
+void
+sepgsqlCheckBlobExport(LargeObjectDesc *lobj,
+					   int fdesc, const char *filename)
+{
+	if (!sepgsqlIsEnabled())
+		return;
+
+	/* db_blob:{read export} */
+	sepgsqlClientHasPermsSid(LargeObjectRelationId,
+							 lobj->secid,
+							 SEPG_CLASS_DB_BLOB,
+							 SEPG_DB_BLOB__READ | SEPG_DB_BLOB__EXPORT,
+							 NULL, true);
+	/* file:{write} */
+	sepgsqlCheckFileWrite(fdesc, filename);
+}
+
+/*
+ * sepgsqlCheckBlobImport
+ *   check db_blob:{write import} and file:{read} permission
+ */
+void
+sepgsqlCheckBlobImport(LargeObjectDesc *lobj,
+					   int fdesc, const char *filename)
+{
+	if (!sepgsqlIsEnabled())
+		return;
+
+	/* db_blob:{write import} */
+	sepgsqlClientHasPermsSid(LargeObjectRelationId,
+							 lobj->secid,
+							 SEPG_CLASS_DB_BLOB,
+							 SEPG_DB_BLOB__WRITE | SEPG_DB_BLOB__IMPORT,
+							 NULL, true);
+	/* file:{read} */
+	sepgsqlCheckFileRead(fdesc, filename);
+}
+
+/*
+ * sepgsqlCheckBlobRelabel
+ *   check db_blob:{setattr relabelfrom relabelto}
+ */
+void
+sepgsqlCheckBlobRelabel(HeapTuple oldtup, HeapTuple newtup)
+{
+	access_vector_t		required = SEPG_DB_BLOB__SETATTR;
+
+	if (HeapTupleGetSecLabel(oldtup) != HeapTupleGetSecLabel(newtup))
+		required |= SEPG_DB_BLOB__RELABELFROM;
+
+	sepgsqlClientHasPermsTup(LargeObjectRelationId, oldtup,
+							 SEPG_CLASS_DB_BLOB,
+							 required,
+							 true);
+	if ((required & SEPG_DB_BLOB__RELABELFROM) == 0)
+		return;
+
+	sepgsqlClientHasPermsTup(LargeObjectRelationId, newtup,
+							 SEPG_CLASS_DB_BLOB,
+							 SEPG_DB_BLOB__RELABELTO,
+							 true);
+}
+
+/*
+ * sepgsqlCheckFileRead
+ * sepgsqlCheckFileWrite
+ *   check file:{read} or file:{write} permission on the given file,
+ *   and raises an error if violated.
+ */
+static void
+checkFileCommon(int fdesc, const char *filename, access_vector_t perms)
+{
+	security_context_t	context;
+	security_class_t	tclass;
+
+	if (!sepgsqlIsEnabled())
+		return;
+
+	tclass = sepgsqlFileObjectClass(fdesc);
+
+	if (fgetfilecon_raw(fdesc, &context) < 0)
+		ereport(ERROR,
+				(errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("SELinux: could not get context of %s", filename)));
+	PG_TRY();
+	{
+		sepgsqlComputePerms(sepgsqlGetClientLabel(),
+							context,
+							tclass,
+							perms,
+							filename, true);
+	}
+	PG_CATCH();
+	{
+		freecon(context);
+		PG_RE_THROW();
+	}
+	PG_END_TRY();
+	freecon(context);
+}
+
+void
+sepgsqlCheckFileRead(int fdesc, const char *filename)
+{
+	checkFileCommon(fdesc, filename, SEPG_FILE__READ);
+}
+
+void
+sepgsqlCheckFileWrite(int fdesc, const char *filename)
+{
+	checkFileCommon(fdesc, filename, SEPG_FILE__WRITE);
 }
 
 /*

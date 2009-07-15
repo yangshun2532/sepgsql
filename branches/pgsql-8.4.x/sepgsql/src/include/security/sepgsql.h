@@ -13,6 +13,7 @@
 #include "executor/execdesc.h"
 #include "fmgr.h"
 #include "nodes/parsenodes.h"
+#include "storage/large_object.h"
 #include "utils/relcache.h"
 
 #ifdef HAVE_SELINUX
@@ -268,6 +269,10 @@ extern bool
 sepgsqlCheckDatabaseAccess(Oid database_oid);
 extern bool
 sepgsqlCheckDatabaseSuperuser(void);
+extern void
+sepgsqlCheckDatabaseInstallModule(const char *probin, HeapTuple protup);
+extern void
+sepgsqlCheckDatabaseLoadModule(const char *filename);
 
 extern Oid
 sepgsqlCheckSchemaCreate(const char *nspname, DefElem *new_label, bool temp_schame);
@@ -279,6 +284,10 @@ extern Oid
 sepgsqlCheckSchemaRelabel(Oid namespace_oid, DefElem *new_label);
 extern bool
 sepgsqlCheckSchemaSearch(Oid nsid);
+extern void
+sepgsqlCheckSchemaAddObject(Oid namespace_oid);
+extern void
+sepgsqlCheckSchemaRemoveObject(Oid namespace_oid);
 
 extern void
 sepgsqlCheckTableDrop(Oid table_oid);
@@ -321,6 +330,34 @@ extern bool
 sepgsqlCheckProcedureExecute(Oid proc_oid);
 extern void
 sepgsqlCheckProcedureEntrypoint(FmgrInfo *finfo, HeapTuple protup);
+extern void
+sepgsqlCheckProcedureInstall(Oid proc_oid);
+
+extern void
+sepgsqlCheckBlobCreate(Relation rel, HeapTuple lotup);
+extern void
+sepgsqlCheckBlobDrop(Relation rel, HeapTuple lotup);
+extern void
+sepgsqlCheckBlobRead(LargeObjectDesc *lobj);
+extern void
+sepgsqlCheckBlobWrite(LargeObjectDesc *lobj);
+extern void
+sepgsqlCheckBlobGetattr(HeapTuple tuple);
+extern void
+sepgsqlCheckBlobSetattr(HeapTuple tuple);
+extern void
+sepgsqlCheckBlobExport(LargeObjectDesc *lobj,
+					   int fdesc, const char *filename);
+extern void
+sepgsqlCheckBlobImport(LargeObjectDesc *lobj,
+					   int fdesc, const char *filename);
+extern void
+sepgsqlCheckBlobRelabel(HeapTuple oldtup, HeapTuple newtup);
+
+extern void
+sepgsqlCheckFileRead(int fdesc, const char *filename);
+extern void
+sepgsqlCheckFileWrite(int fdesc, const char *filename);
 
 void
 sepgsqlCheckObjectDrop(const ObjectAddress *object);
@@ -347,6 +384,7 @@ extern Oid sepgsqlGetDefaultSequenceSecLabel(Oid namespace_oid);
 extern Oid sepgsqlGetDefaultProcedureSecLabel(Oid namespace_oid);
 extern Oid sepgsqlGetDefaultColumnSecLabel(Oid table_oid);
 extern Oid sepgsqlGetDefaultTupleSecLabel(Oid table_oid);
+extern Oid sepgsqlGetDefaultBlobSecLabel(Oid database_oid);
 
 extern Oid *sepgsqlCreateTableColumns(CreateStmt *stmt,
 									  const char *relname, Oid namespace_oid,
@@ -401,12 +439,16 @@ extern const char *sepgsqlGetPermissionString(security_class_t tclass,
 #define sepgsqlCheckDatabaseRelabel(a,b)		(InvalidOid)
 #define sepgsqlCheckDatabaseAccess(a)			(true)
 #define sepgsqlCheckDatabaseSuperuser()			(true)
+#define sepgsqlCheckDatabaseInstallModule(a,b)	do {} while(0)
+#define sepgsqlCheckDatabaseLoadModule(a)		do {} while(0)
 
 #define sepgsqlCheckSchemaCreate(a,b,c)			(InvalidOid)
 #define sepgsqlCheckSchemaDrop(a)				do {} while(0)
 #define sepgsqlCheckSchemaSetattr(a)			do {} while(0)
 #define sepgsqlCheckSchemaRelabel(a,b)			(InvalidOid)
 #define sepgsqlCheckSchemaSearch(a)				(true)
+#define sepgsqlCheckSchemaAddObject(a)			do {} while(0)
+#define sepgsqlCheckSchemaRemoveObject(a)		do {} while(0)
 
 #define sepgsqlCheckTableDrop(a)				do {} while(0)
 #define sepgsqlCheckTableSetattr(a)				do {} while(0)
@@ -430,6 +472,19 @@ extern const char *sepgsqlGetPermissionString(security_class_t tclass,
 #define sepgsqlCheckProcedureRelabel(a,b)		(InvalidOid)
 #define sepgsqlCheckProcedureExecute(a)			(true)
 #define sepgsqlCheckProcedureEntrypoint(a,b)	do {} while(0)
+#define sepgsqlCheckProcedureInstall(a)			do {} while(0)
+
+#define sepgsqlCheckBlobCreate(a,b)				do {} while(0)
+#define sepgsqlCheckBlobDrop(a,b)				do {} while(0)
+#define sepgsqlCheckBlobRead(a)					do {} while(0)
+#define sepgsqlCheckBlobWrite(a)				do {} while(0)
+#define sepgsqlCheckBlobGetattr(a)				do {} while(0)
+#define sepgsqlCheckBlobSetattr(a)				do {} while(0)
+#define sepgsqlCheckBlobExport(a,b,c)			do {} while(0)
+#define sepgsqlCheckBlobImport(a,b,c)			do {} while(0)
+#define sepgsqlCheckBlobRelabel(a,b)			do {} while(0)
+#define sepgsqlCheckFileRead(a,b)				do {} while(0)
+#define sepgsqlCheckFileWrite(a,b)				do {} while(0)
 
 #define sepgsqlCheckObjectDrop(a)				do {} while(0)
 
