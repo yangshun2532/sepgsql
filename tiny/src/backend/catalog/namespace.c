@@ -39,6 +39,7 @@
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
 #include "parser/parse_func.h"
+#include "security/sepgsql.h"
 #include "storage/backendid.h"
 #include "storage/ipc.h"
 #include "utils/acl.h"
@@ -2816,6 +2817,7 @@ InitTempTableNamespace(void)
 	char		namespaceName[NAMEDATALEN];
 	Oid			namespaceId;
 	Oid			toastspaceId;
+	Datum		nspseclabel;
 
 	Assert(!OidIsValid(myTempNamespace));
 
@@ -2838,6 +2840,13 @@ InitTempTableNamespace(void)
 
 	snprintf(namespaceName, sizeof(namespaceName), "pg_temp_%d", MyBackendId);
 
+	/*
+	 * TODO: SELinux shall check db_schema_temp:{create} here,
+	 *       not only assigning a default security label.
+	 */
+	nspseclabel = sepgsqlAssignSchemaSecLabel(namespaceName,
+											  MyDatabaseId, NULL, true);
+
 	namespaceId = GetSysCacheOid(NAMESPACENAME,
 								 CStringGetDatum(namespaceName),
 								 0, 0, 0);
@@ -2851,7 +2860,9 @@ InitTempTableNamespace(void)
 		 * temp tables.  This works because the places that access the temp
 		 * namespace for my own backend skip permissions checks on it.
 		 */
-		namespaceId = NamespaceCreate(namespaceName, BOOTSTRAP_SUPERUSERID);
+		namespaceId = NamespaceCreate(namespaceName,
+									  BOOTSTRAP_SUPERUSERID,
+									  nspseclabel);
 		/* Advance command counter to make namespace visible */
 		CommandCounterIncrement();
 	}
@@ -2877,7 +2888,9 @@ InitTempTableNamespace(void)
 								  0, 0, 0);
 	if (!OidIsValid(toastspaceId))
 	{
-		toastspaceId = NamespaceCreate(namespaceName, BOOTSTRAP_SUPERUSERID);
+		toastspaceId = NamespaceCreate(namespaceName,
+									   BOOTSTRAP_SUPERUSERID,
+									   nspseclabel);
 		/* Advance command counter to make namespace visible */
 		CommandCounterIncrement();
 	}

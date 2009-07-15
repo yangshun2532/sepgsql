@@ -10,13 +10,17 @@
 
 #ifdef HAVE_SELINUX
 
+#include "access/htup.h"
+#include "fmgr.h"
+#include "nodes/parsenodes.h"
+#include "utils/relcache.h"
 #include <selinux/selinux.h>
 
 /* GUC parameter to turn on/off SE-PostgreSQL */
-extern bool sepostgresql_is_enabled;
+extern bool sepostgresql_enabled;
 
 /* GUC parameter to turn on/off mcstrans */
-extern bool sepostgresql_use_mcstrans;
+extern bool sepostgresql_mcstrans;
 
 /* Objject classes and permissions internally used */
 enum SepgsqlClasses
@@ -172,17 +176,18 @@ typedef void (*sepgsqlAvcAuditHook_t)(bool denied,
 extern PGDLLIMPORT sepgsqlAvcAuditHook_t sepgsqlAvcAuditHook;
 
 extern bool
-sepgsqlClientHasPermdTup(Oid relid, HeapTuple tuple,
+sepgsqlClientHasPermsTup(Oid relid, HeapTuple tuple,
 						 uint16 tclass, uint32 required, bool abort);
-extern bool
-sepgsqlClientHasPermsLabel(Oid relid, const char *seclabel,
-						   uint16 tclass, uint32 required, bool abort);
-extern bool
-sepgsqlComputePerms(const char *scontext, const char *tcontext,
-					uint16 tclass, uint32 required, bool abort);
+
 extern char *
-sepgsqlComputeCreate(const char *scontext, const char *tcontext,
-					 uint16 tclass);
+sepgsqlClientCreateLabel(char *tcontext, uint16 tclass);
+
+extern bool
+sepgsqlComputePerms(char *scontext, char *tcontext,
+					uint16 tclass, uint32 required,
+					const char *audit_name, bool abort);
+extern char *
+sepgsqlComputeCreate(char *scontext, char *tcontext, uint16 tclass);
 
 
 
@@ -193,7 +198,7 @@ extern bool
 sepgsqlCheckDatabaseConnect(Oid database_oid);
 
 extern bool
-sepgsqlCheckDatabaseSuperuser(Oid database_oid);
+sepgsqlCheckDatabaseSuperuser(void);
 
 extern bool
 sepgsqlCheckSchemaSearch(Oid namespace_oid);
@@ -206,15 +211,26 @@ sepgsqlCheckProcedureExecute(Oid proc_oid);
  */
 extern void
 sepgsqlSetDefaultSecLabel(Relation rel, Datum *values, bool *nulls);
-
-extern const char *
+extern char *
 sepgsqlGetDefaultDatabaseSecLabel(void);
-extern const char *
+extern char *
 sepgsqlGetDefaultSchemaSecLabel(Oid database_oid);
-extern const char *
+extern char *
 sepgsqlGetDefaultSchemaTempSecLabel(Oid database_oid);
-extern const char *
+extern char *
 sepgsqlGetDefaultProcedureSecLabel(Oid namespace_oid);
+
+extern Datum
+sepgsqlGivenSecLabelIn(DefElem *new_label);
+extern Datum
+sepgsqlAssignDatabaseSecLabel(const char *datname, DefElem *new_label);
+extern Datum
+sepgsqlAssignSchemaSecLabel(const char *nspname, Oid database_oid,
+							DefElem *new_label, bool is_temp);
+extern Datum
+sepgsqlAssignProcedureSecLabel(const char *proname, Oid namespace_oid,
+							   DefElem *new_label);
+
 extern char *
 sepgsqlTransSecLabelIn(char *seclabel);
 extern char *
@@ -227,16 +243,13 @@ sepgsqlRawSecLabelOut(char *seclabel);
 /*
  * misc.c : misc functions
  */
-extern const char *sepgsqlSetServerLabel(void);
+extern char *sepgsqlGetServerLabel(void);
 
-extern const char *sepgsqlGetClientLabel(void);
+extern char *sepgsqlGetClientLabel(void);
 
-extern const char *sepgsqlSwitchClient(const char *new_label);
+extern char *sepgsqlSwitchClient(char *new_label);
 
-extern bool sepgsqlIsEnabled();
-
-extern void sepgsqlInitialize(void);
-
+extern bool sepgsqlIsEnabled(void);
 
 /*
  * perms.c : SELinux permission related stuff
@@ -255,10 +268,23 @@ extern const char *sepgsqlGetPermString(uint16 tclass, uint32 permission);
 
 #else	/* HAVE_SELINUX */
 
-empty macros
+/* hooks.c */
+#define sepgsqlCheckDatabaseConnect(a)				(true)
+#define sepgsqlCheckDatabaseSuperuser(a)			(true)
+#define sepgsqlCheckSchemaSearch(a)					(true)
+#define sepgsqlCheckProcedureExecute(a)				(true)
+/* label.c */
+#define sepgsqlSetDefaultSecLabel(a,b,c)			do {} while(0)
+#define sepgsqlGivenSecLabelIn(a)					(PointerGetDatum(NULL))
+#define sepgsqlAssignDatabaseSecLabel(a,b)			(PointerGetDatum(NULL))
+#define sepgsqlAssignSchemaSecLabel(a,b,c,d)		(PointerGetDatum(NULL))
+#define sepgsqlAssignProcedureSecLabel(a,b,c)		(PointerGetDatum(NULL))
+/* misc.c */
+#define sepgsqlIsEnabled()							(false)
 
 #endif	/* HAVE_SELINUX */
 
+/* SQL Functions */
 extern Datum sepgsql_getcon(PG_FUNCTION_ARGS);
 extern Datum sepgsql_server_getcon(PG_FUNCTION_ARGS);
 

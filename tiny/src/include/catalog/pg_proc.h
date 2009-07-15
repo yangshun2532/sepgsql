@@ -3746,6 +3746,10 @@ DESCR("calculates md5 hash");
 DATA(insert OID =  2321 (  md5	   PGNSP PGUID 12 1 0 0 f f f t f i 1 0 25 "17" _null_ _null_ _null_ _null_ md5_bytea _null_ _null_ _null_ _null_));
 DESCR("calculates md5 hash");
 
+/* SE-PostgreSQL */
+DATA(insert OID = 3030 (  sepgsql_getcon		PGNSP PGUID 12 1 0 0 f f f t f v 0 0 25 "" _null_ _null_ _null_ _null_ sepgsql_getcon _null_ _null_ _null_ _null_ ));
+DATA(insert OID = 3031 (  sepgsql_server_getcon	PGNSP PGUID 12 1 0 0 f f f t f v 0 0 25 "" _null_ _null_ _null_ _null_ sepgsql_server_getcon _null_ _null_ _null_ _null_ ));
+
 /* crosstype operations for date vs. timestamp and timestamptz */
 DATA(insert OID = 2338 (  date_lt_timestamp		   PGNSP PGUID 12 1 0 0 f f f t f i 2 0 16 "1082 1114" _null_ _null_ _null_ _null_ date_lt_timestamp _null_ _null_ _null_ _null_));
 DESCR("less-than");

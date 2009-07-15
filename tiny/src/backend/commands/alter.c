@@ -284,3 +284,34 @@ ExecAlterOwnerStmt(AlterOwnerStmt *stmt)
 				 (int) stmt->objectType);
 	}
 }
+
+/*
+ * ExecAlterSecLabelStmt
+ *
+ * It executes an ALTER xxx SECURITY LABEL [=] <new label> statement.
+ * Appropriate branches are based on the object type.
+ */
+void
+ExecAlterSecLabelStmt(AlterSecLabelStmt *stmt)
+{
+	DefElem	   *secLabel = (DefElem *)stmt->secLabel;
+
+	switch (stmt->objectType)
+	{
+		case OBJECT_DATABASE:
+			AlterDatabaseSecLabel(strVal(linitial(stmt->object)), secLabel);
+			break;
+
+		case OBJECT_SCHEMA:
+			AlterSchemaSecLabel(strVal(linitial(stmt->object)), secLabel);
+			break;
+
+		case OBJECT_FUNCTION:
+			AlterFunctionSecLabel(stmt->object, stmt->objarg, secLabel);
+			break;
+
+    	default:
+			elog(ERROR, "unrecognized AlterSecLabelStmt type: %d",
+				 (int) stmt->objectType);
+    }
+}

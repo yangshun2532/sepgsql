@@ -162,6 +162,7 @@ check_xact_readonly(Node *parsetree)
 		case T_AlterRoleSetStmt:
 		case T_AlterObjectSchemaStmt:
 		case T_AlterOwnerStmt:
+		case T_AlterSecLabelStmt:
 		case T_AlterSeqStmt:
 		case T_AlterTableStmt:
 		case T_RenameStmt:
@@ -610,6 +611,10 @@ ProcessUtility(Node *parsetree,
 
 		case T_AlterOwnerStmt:
 			ExecAlterOwnerStmt((AlterOwnerStmt *) parsetree);
+			break;
+
+		case T_AlterSecLabelStmt:
+			ExecAlterSecLabelStmt((AlterSecLabelStmt *) parsetree);
 			break;
 
 		case T_AlterTableStmt:
@@ -1635,6 +1640,24 @@ CreateCommandTag(Node *parsetree)
 			}
 			break;
 
+		case T_AlterSecLabelStmt:
+			switch (((AlterSecLabelStmt *) parsetree)->objectType)
+			{
+				case OBJECT_DATABASE:
+					tag = "ALTER DATABASE";
+					break;
+				case OBJECT_SCHEMA:
+					tag = "ALTER SCHEMA";
+					break;
+				case OBJECT_FUNCTION:
+					tag = "ALTER FUNCTION";
+					break;
+				default:
+					tag = "???";
+					break;
+			}
+			break;
+
 		case T_AlterTableStmt:
 			switch (((AlterTableStmt *) parsetree)->relkind)
 			{
@@ -2210,6 +2233,10 @@ GetCommandLogLevel(Node *parsetree)
 			break;
 
 		case T_AlterOwnerStmt:
+			lev = LOGSTMT_DDL;
+			break;
+
+		case T_AlterSecLabelStmt:
 			lev = LOGSTMT_DDL;
 			break;
 

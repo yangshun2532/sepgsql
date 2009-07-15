@@ -7,10 +7,16 @@
  */
 #include "postgres.h"
 
-#include "catalog/pg_class.h"
 #include "catalog/pg_database.h"
 #include "catalog/pg_namespace.h"
+#include "catalog/pg_proc.h"
+#include "miscadmin.h"
 #include "security/sepgsql.h"
+#include "storage/fd.h"
+#include "utils/builtins.h"
+#include "utils/memutils.h"
+#include "utils/rel.h"
+#include "utils/syscache.h"
 
 /* GUC parameter to turn on/off mcstrans */
 bool sepostgresql_mcstrans;
@@ -24,17 +30,39 @@ bool sepostgresql_mcstrans;
 void
 sepgsqlSetDefaultSecLabel(Relation rel, Datum *values, bool *nulls)
 {
-	char *seclabel;
+	char   *seclabel;
+
+	/*
+	 * postgresql.bki tries to set _null_ on the security label.
+	 */
+	if (!sepgsqlIsEnabled())
+		return;
 
 	switch (RelationGetRelid(rel))
 	{
 	case DatabaseRelationId:
+		seclabel = sepgsqlGetDefaultDatabaseSecLabel();
+		values[Anum_pg_database_datseclabel - 1]
+			= CStringGetTextDatum(seclabel);
+		nulls[Anum_pg_database_datseclabel - 1] = false;
 		break;
 
 	case NamespaceRelationId:
+		/*
+		 * we assume no temporary namespaces are not initialize
+		 * during bootstraping mode.
+		 */
+		seclabel = sepgsqlGetDefaultSchemaSecLabel(MyDatabaseId);
+		values[Anum_pg_namespace_nspseclabel - 1]
+			= CStringGetTextDatum(seclabel);
+		nulls[Anum_pg_namespace_nspseclabel - 1] = false;
 		break;
 
 	case ProcedureRelationId:
+		seclabel = sepgsqlGetDefaultProcedureSecLabel(PG_CATALOG_NAMESPACE);
+		values[Anum_pg_proc_proseclabel - 1]
+			= CStringGetTextDatum(seclabel);
+		nulls[Anum_pg_proc_proseclabel - 1] = false;
 		break;
 
 	default:
@@ -69,7 +97,7 @@ sepgsqlGetDefaultDatabaseSecLabel(void)
 	if (selinux_getpolicytype(&policy_type) < 0)
 		goto fallback;
 
-	snprintf(buffer, sizeof(filename),
+	snprintf(buffer, sizeof(buffer),
 			 "%s%s/contexts/sepgsql_context",
 			 selinux_path(), policy_type);
 
@@ -89,15 +117,14 @@ sepgsqlGetDefaultDatabaseSecLabel(void)
 
 		/* An entry found */
 		FreeFile(filp);
-		return securityTransSecLabelIn(DatabaseRelationId, seclabel);
+		return sepgsqlTransSecLabelIn(seclabel);
 	}
 	FreeFile(filp);
 
 fallback:
-	seclabel = sepgsqlComputeCreate(sepgsqlGetClientLabel(),
-									sepgsqlGetClientLabel(),
-									SEPG_CLASS_DB_DATABASE);
-	return sepgsqlTransSecLabelIn(DatabaseRelationId, seclabel);
+	return sepgsqlComputeCreate(sepgsqlGetClientLabel(),
+								sepgsqlGetClientLabel(),
+								SEPG_CLASS_DB_DATABASE);
 }
 
 /*
@@ -107,7 +134,7 @@ fallback:
  * of the new object being created under a certain schema
  */
 static char *
-defaultSecLabelWithSchema(Oid relid, Oid database_oid, uint16 tclass)
+defaultSecLabelWithDatabase(Oid relid, Oid database_oid, uint16 tclass)
 {
 	HeapTuple	tuple;
 	Datum		datum;
@@ -117,7 +144,13 @@ defaultSecLabelWithSchema(Oid relid, Oid database_oid, uint16 tclass)
 	if (IsBootstrapProcessingMode())
 	{
 		static char *cached = NULL;
-
+		/*
+		 * On the initdb processes, we may not able to refer
+		 * database using system caches. An assumption is
+		 * nobody relabels during the bootstraping mode.
+		 * So, we assume the database always has its default
+		 * security label in this mode.
+		 */
 		if (!cached)
 		{
 			char   *temp = sepgsqlGetDefaultDatabaseSecLabel();
@@ -128,23 +161,30 @@ defaultSecLabelWithSchema(Oid relid, Oid database_oid, uint16 tclass)
 	}
 	else
 	{
+		/* Fetch pg_database.datseclabel */
 		tuple = SearchSysCache(DATABASEOID,
 							   ObjectIdGetDatum(database_oid),
 							   0, 0, 0);
 		if (!HeapTupleIsValid(tuple))
-			elog(ERROR, "cache lookup failed for database: %u", datoid);
+			elog(ERROR, "cache lookup failed for database: %u", database_oid);
 
 		datum = SysCacheGetAttr(DATABASEOID, tuple,
 								Anum_pg_database_datseclabel, &isnull);
 		if (isnull)
-			datseclabel = sepgsqlRawSecLabelOut(DatabaseRelationId, NULL);
+			datseclabel = sepgsqlRawSecLabelOut(NULL);
 		else
-			datseclabel = sepgsqlRawSecLabelOut(DatabaseRelationId,
-												TextDatumGetCString(datum));
+			datseclabel = sepgsqlRawSecLabelOut(TextDatumGetCString(datum));
+
+		ReleaseSysCache(tuple);
 	}
 
-	return sepgsqlClientCreateSecLabel(DatabaseRelationId, datseclabel,
-									   tclass, relid);
+	/*
+	 * The security policy can suggest a default security label to
+	 * the combination of subject-label (client process), target-
+	 * label (database object which owns the new object) and 
+	 * object class.
+	 */
+	return sepgsqlClientCreateLabel(datseclabel, tclass);
 }
 
 /*
@@ -201,6 +241,7 @@ defaultSecLabelWithSchema(Oid relid, Oid namespace_oid, uint16 tclass)
 	}
 	else
     {
+		/* Fetch pg_namespace.nspseclabel */
 		tuple = SearchSysCache(NAMESPACEOID,
 							   ObjectIdGetDatum(namespace_oid),
 							   0, 0, 0);
@@ -210,14 +251,14 @@ defaultSecLabelWithSchema(Oid relid, Oid namespace_oid, uint16 tclass)
 		datum = SysCacheGetAttr(NAMESPACEOID, tuple,
 								Anum_pg_namespace_nspseclabel, &isnull);
 		if (isnull)
-			datseclabel = sepgsqlRawSecLabelOut(NamespaceRelationId, NULL);
+			nspseclabel = sepgsqlRawSecLabelOut(NULL);
 		else
-			datseclabel = sepgsqlRawSecLabelOut(NamespaceRelationId,
-												TextDatumGetCString(datum));
+			nspseclabel = sepgsqlRawSecLabelOut(TextDatumGetCString(datum));
+
+		ReleaseSysCache(tuple);
 	}
 
-	return sepgsqlClientCreateSecLabel(NamespaceRelationId, datseclabel,
-									   tclass, relid);
+	return sepgsqlClientCreateLabel(nspseclabel, tclass);
 }
 
 /*
@@ -231,6 +272,114 @@ sepgsqlGetDefaultProcedureSecLabel(Oid namespace_oid)
 	return defaultSecLabelWithSchema(ProcedureRelationId,
 									 namespace_oid,
 									 SEPG_CLASS_DB_PROCEDURE);
+}
+
+/*
+ * sepgsqlGivenSecLabelIn
+ *
+ *
+ */
+Datum
+sepgsqlGivenSecLabelIn(DefElem *new_label)
+{
+	char   *seclabel;
+
+	if (!sepgsqlIsEnabled())
+	{
+		if (new_label)
+			ereport(ERROR,
+					(errcode(ERRCODE_SELINUX_ERROR),
+					 errmsg("SELinux is disabled now")));
+		return PointerGetDatum(NULL);
+	}
+
+	if (!new_label)
+		return PointerGetDatum(NULL);
+
+	Assert(strcmp(new_label->defname, "security_label") == 0);
+
+	seclabel = sepgsqlTransSecLabelIn(strVal(new_label->arg));
+
+	return CStringGetTextDatum(seclabel);
+}
+
+/*
+ * sepgsqlAssignDatabaseSecLabel
+ *
+ *
+ */
+Datum
+sepgsqlAssignDatabaseSecLabel(const char *datname, DefElem *new_label)
+{
+	char   *deflabel;
+
+	/*
+	 * If SE-PgSQL is not enabled, it does not assign any security
+	 * label. NULL shall be set, and it is dealt as unlabeled object.
+	 */
+	if (!sepgsqlIsEnabled())
+		return PointerGetDatum(NULL);
+
+	/*
+	 * If user provide a security label using SECURITY LABEL option,
+	 * it shall be assigned rather than the default security label.
+	 */
+	if (new_label)
+		return sepgsqlGivenSecLabelIn(new_label);
+
+	/*
+	 * Otherwise, it assigns the default security label.
+	 */
+	deflabel = sepgsqlGetDefaultDatabaseSecLabel();
+
+	return CStringGetTextDatum(deflabel);
+}
+
+/*
+ * sepgsqlAssignSchemaSecLabel
+ *
+ *
+ */
+Datum
+sepgsqlAssignSchemaSecLabel(const char *nspname, Oid database_oid,
+							DefElem *new_label, bool is_temp)
+{
+	char   *deflabel;
+
+	if (!sepgsqlIsEnabled())
+		return PointerGetDatum(NULL);
+
+	if (new_label)
+		return sepgsqlGivenSecLabelIn(new_label);
+
+	if (!is_temp)
+		deflabel = sepgsqlGetDefaultSchemaSecLabel(database_oid);
+	else
+		deflabel = sepgsqlGetDefaultSchemaTempSecLabel(database_oid);
+
+	return CStringGetTextDatum(deflabel);
+}
+
+/*
+ * sepgsqlAssignProcedureSecLabel
+ *
+ *
+ */
+Datum
+sepgsqlAssignProcedureSecLabel(const char *proname, Oid namespace_oid,
+							   DefElem *new_label)
+{
+	char   *deflabel;
+
+	if (!sepgsqlIsEnabled())
+		return PointerGetDatum(NULL);
+
+	if (new_label)
+		return sepgsqlGivenSecLabelIn(new_label);
+
+	deflabel = sepgsqlGetDefaultProcedureSecLabel(namespace_oid);
+
+	return CStringGetTextDatum(deflabel);
 }
 
 /*
@@ -251,7 +400,7 @@ sepgsqlTransSecLabelIn(char *seclabel)
 			ereport(ERROR,
 					(errcode(ERRCODE_SELINUX_ERROR),
 					 errmsg("SELinux: failed to translate \"%s\"", seclabel)));
-		PG_TRY()
+		PG_TRY();
 		{
 			seclabel = pstrdup(temp);
 		}
@@ -339,17 +488,17 @@ sepgsqlRawSecLabelOut(char *seclabel)
 				ereport(ERROR,
 						(errcode(ERRCODE_SELINUX_ERROR),
 						 errmsg("Unabled to get unlabeled security context")));
-			PG_TYR();
+			PG_TRY();
 			{
-				seclabel = pstrdup(unlabeledcon);
+				seclabel = pstrdup(unlabeled_con);
 			}
 			PG_CATCH();
 			{
-				freecon(unlabeledcon);
+				freecon(unlabeled_con);
 				PG_RE_THROW();
 			}
 			PG_END_TRY();
-			freecon(unlabeledcon);
+			freecon(unlabeled_con);
 		}
 	}
 	return seclabel;
