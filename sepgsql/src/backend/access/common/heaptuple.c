@@ -60,6 +60,7 @@
 #include "access/heapam.h"
 #include "access/sysattr.h"
 #include "access/tuptoaster.h"
+#include "catalog/pg_security.h"
 #include "executor/tuptable.h"
 
 
@@ -287,6 +288,7 @@ heap_attisnull(HeapTuple tup, int attnum)
 		case MinCommandIdAttributeNumber:
 		case MaxTransactionIdAttributeNumber:
 		case MaxCommandIdAttributeNumber:
+		case SecurityLabelAttributeNumber:
 			/* these are never null */
 			break;
 
@@ -598,6 +600,9 @@ heap_getsysattr(HeapTuple tup, int attnum, TupleDesc tupleDesc, bool *isnull)
 			break;
 		case TableOidAttributeNumber:
 			result = ObjectIdGetDatum(tup->t_tableOid);
+			break;
+		case SecurityLabelAttributeNumber:
+			result = securityHeapGetSecLabelSysattr(tup);
 			break;
 		default:
 			elog(ERROR, "invalid attnum: %d", attnum);
