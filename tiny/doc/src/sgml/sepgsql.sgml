@@ -1,0 +1,395 @@
+<chapter id="enhanced-security-and-sepostgresql">
+  <title>Enhanced Security and SE-PostgreSQL</title>
+  <para>
+    This chapter introduces enhanced security features which enable
+    <productname>PostgreSQL</productname> to provide mandatory
+    access controls, fine-grained access controls, and integration
+    of security policy between the operating system and
+    <productname>PostgreSQL</productname>.
+  </para>
+  <para>
+    <ulink url="http://wiki.postgresql.org/wiki/SEPostgreSQL">
+      The SE-PostgreSQL documentation
+    </ulink>
+    also provides a comprehensive documentation.
+    Please also see the wikipage for more details.
+  </para>
+  <para>
+    The current version of <productname>PostgreSQL</productname>
+    has an enhanced security facility named as SE-PostgreSQL
+    (Security Enhanced PostgreSQL).
+
+    SE-PostgreSQL provides additional fine-grained mandatory access
+    controls on accesses to database objects using SQL. It makes a
+    decision whether the given requests from client should be allowed,
+    or not, communicating with in-kernel SELinux.
+
+    SELinux has its security policy which is a set of white listed
+    rules, and provides its access control decisions to the kernel
+    and userspace object manager.
+
+    The key concept of SE-PostgreSQL is integration of access controls
+    between operating system and database management systems.
+    It makes and applies its access control decision based on a single
+    unified security policy of operating system.
+
+    It applies the security context of the peer process as privileges
+    of the client, independent from database authentication.
+    It also manages security context of the database objects, and
+    asks SELinux whether it allows a certain actions between a pair
+    of security contexts.
+
+    The access controls implemented by SE-PostgrSQL shall not be bypassed
+    even if the given queries are come from database superuser, from the
+    definition of mandatory access controls (MAC).
+
+    The exising database ACLs are also checked.
+    This double checks enable to prevent information leaks and manipulations
+    from malicious attackers, and reduce risks for SQL injections or other
+    application level bugs.
+  </para>
+
+  <para>
+    To enable SE-PostgreSQL, specify <option>--enable-selinux</option> option
+    at <command>configure</command> stage,
+    and use the <option>--enable-selinux</option> option to
+    <command>initdb</command>.
+<screen>
+<prompt>$ </prompt><userinput>./configure --enable-selinux</userinput>
+<prompt>$ </prompt><userinput>make install</userinput>
+<prompt>$ </prompt><userinput>initdb --enable-selinux</userinput>
+</screen>
+  </para>
+
+  <sect1 id="sepostgresql-features">
+    <title>SE-PostgreSQL Features</title>
+
+    <sect2 id="sepostgresql-single-unified-security-policy">
+      <title>Single unified security policy</title>
+
+      <para>
+	We can show an analogy between filesystem and database management
+	system, both of them have a similar capabilities to store information
+	asserts and similar access controls to control accesses to keep
+	confidentiality and integrity.
+
+	We uses system calls to access information assets stored within
+	a filesystem, such as <command>write(2)</command> system call.
+	On the other hand, we uses SQL queries to access information assets
+	stored within a database.
+      </para>
+      <para>
+	Both of the methods to access information assets are checked by
+	access control features, such as UNIX permission mechanism and
+	database ACLs, called discretionary access controls (DAC).
+
+	In addition, the recent Linux system also applies additional
+	access controls from the different viewpoint, called mandatory
+	access controls (MAC).
+
+	However, it was not available on accesses to database objects
+	as far as we don't have specific support for MAC.
+	It also means the databases was an uncontrollable communication
+	chanel from the viewpoint of the MAC system.
+      </para>
+      <para>
+	SE-PostgreSQL is an implementation of MAC feature on database
+	management system, collaborating with host operating system
+	(SELinux).
+
+	It acquires the given SQL, as if SELinux hooks system calls,
+	and applies its access controls based on the unified security
+	policy.
+
+	Because they shares a security policy and common forms to
+	represent client's privileges and attributes of the database
+	objects, it always makes consistent result in access controls.
+      </para>
+      <para>
+	For example, both of SELinux and SE-PostgreSQL never allows
+	users to access filesystem or database objects labeled as
+	<literal>Classified</literal>, as far as they don't have
+	enough privileges set, independent from the way to store
+	the information.
+
+	The DAC mechanisms perform independently based on its own
+	privileges set and access control rules, so it is a hard
+	work to keep consistency between operating system and
+	database management systems.
+      </para>
+
+      <sect3 id="sepostgresql-security-context">
+	<title>Security Context</title>
+	<para>
+	  The security policy is a set of massive rules for access
+	  controls. A rule is defined as a relationship between
+	  a subject entity and an object entiry on a certain action.
+
+	  All the entity is identified with a common attribute
+	  called a security context. Any other attributes don't
+	  give any effects in access controls, such as ownership,
+	  pathname and so on.
+	</para>
+	<para>
+	  The security context is a formatted text independent from
+	  sort of the objects being labeled, such as:
+	  <synopsis>system_u:object_r:postgresql_db_t:SystemHigh</synopsis>.
+
+	  The security context is assigned to variable objects managed
+	  by operating system and some of userspace object manager
+	  including SE-PostgreSQL.
+
+	  The kernel manages security context of the files, sockets,
+	  processes and so on. In the same manner, SE-PostgreSQL also
+	  manages security context of the database objects, such as
+	  tables, columns and so on.
+	</para>
+	<para>
+	  For example, when a process labeled as
+	  <literal>system_u:system_r:postgresql_t:s0</literal> tries to
+	  write a log message to <filename>/var/log/postgresql.log</filename>
+	  labeled as <literal>system_u:object_r:postgresql_log_t:s0</literal>,
+	  it issues a <literal>write(2)</literal> system call;
+	  SELinux checks its security policy to find up a rule to describe
+	  allowed actions for given pair of the security contexts.
+
+	  If it can find the entry which allows the operatin, SELinux
+	  does not prevent anything. Otherwise, SELinux blocks the
+	  <literal>write(2)</literal> system call.
+	</para>
+	<para>
+	  Any object managers which want a decision come from SELinux
+	  (including kernel) should have the capability to manage the security
+	  contexts of their objects.
+
+	  For example, most of major filesystems support xattr (Extended
+	  Attributes) facilities which allows to store individual security
+	  context of files.
+
+	  SE-PostgreSQL also provides a facility to manage security context
+	  of a few kind of database objects (databases, tables, columns and
+	  procedures). We can set up them via enhanced DDL statement.
+	</para>
+      </sect3>
+
+      <sect3 id="sepostgresql-client-privileges">
+	<title>Client Privileges</title>
+	<para>
+	  SE-PostgreSQL needs to obtain the security context of the peer
+	  process which connected to. SELinux provides an interface for
+	  the purpose: <literal>getpeercon(3)</literal>. It returns the
+	  security context of the peer process of the given socket.
+
+	  Note that the security context of peer process is unrelated to
+	  the database role and authentication.
+	</para>
+
+	<para>
+	  From the SQL, the security context of the clietn can be confirmed
+	  using the <literal>sepgsql_getcon()</literal> function, like this:
+<screen>
+<prompt>$ </prompt><userinput>id -Z</userinput>
+unconfined_u:unconfined_r:unconfined_t:Classified
+<prompt>$ </prompt><userinput>psql -q</userinput>
+<prompt>postgres=# </prompt><userinput>SELECT sepgsql_getcon();</userinput>
+                  sepgsql_getcon
+---------------------------------------------------
+ unconfined_u:unconfined_r:unconfined_t:Classified
+(1 row)
+</screen>
+	</para>
+
+	<para>
+	  When connecting to SE-PostgreSQL via a TCP/IP socket, labeled
+	  networking must be set up to ensure that
+	  <literal>getpeercon(3)</literal> returns the correct security
+	  context.
+
+	  See the
+	  <ulink url="http://wiki.postgresql.org/wiki/SEPostgreSQL_Administration#Labeled_networks">
+	    SE-PostgreSQL Administration->Labeled networks
+	  </ulink> in the SE-PostgreSQL documentation for more details.
+	</para>
+      </sect3>
+    </sect2>
+  </sect1>
+
+  <sect1 id="sepostgresql-administration">
+    <title>SE-PostgreSQL Administration</title>
+
+    <sect2>
+      <title>Build and Installation</title>
+      <sect3>
+	<title>Requirement</title>
+	<para>
+	  We need the following packages to build and install
+	  SE-PostgreSQL correctly. Please check it at first.
+	</para>
+
+	<variablelist>
+	  <varlistentry>
+	    <term><literal>Linux kernel</literal></term>
+	    <listitem>
+	      <para>
+		Linux kernel has to support SELinux feature, at least.
+		In addition, it is necessary to provide an interface to
+		obtain a list of supported object classes and permissions
+		via <filename>/selinux/class</filename>, which is available
+		on the Linux kernel 2.6.24 or later.
+	      </para>
+	    </listitem>
+	  </varlistentry>
+
+	  <varlistentry>
+	    <term><literal>Security policy</literal></term>
+	    <listitem>
+	      <para>
+		The security policy of SELinux is neccesary to contain access
+		control rules related to database objects.
+		The upstreamed security policy (<literal>20080702</literal>
+		or later) already has a set of rules for SE-PostgreSQL,
+		as a part of PostgreSQL policy.
+	      </para>
+	      <para>
+		In <literal>Red Hat EL</literal> or <literal>Fedora</literal>,
+		check the version number of <literal>selinux-policy</literal>
+		rpm package is <literal>3.4.2</literal>, or later.
+	      </para>
+	    </listitem>
+	  </varlistentry>
+
+	  <varlistentry>
+	    <term><literal>libselinux</literal></term>
+	    <listitem>
+	      <para>
+		<literal>libselinux</literal> is a set of interfaces to
+		communicate between applications and SELinux in the kernel.
+		The <literal>libselinux-2.0.80</literal> or later is
+		necessary to build and run the SE-PostgreSQL.
+	      </para>
+	    </listitem>
+	  </varlistentry>
+
+	  <varlistentry>
+	    <term><command>checkmodule</command></term>
+	    <listitem>
+	      <para>
+		The <command>checkmodule</command> is a policy compiler
+		for a modular policy package, such as
+		<literal>sepostgresql-devel.pp</literal> we provided.
+	      </para>
+	    </listitem>
+	  </varlistentry>
+
+	  <varlistentry>
+	    <term><command>semodule</command></term>
+	    <listitem>
+	      <para>
+		The <command>semodule</command> is a command to manage
+		modular policy packages. It enables to link/unlink,
+		upgrade or load/unload modular policy packages, such as
+		<literal>sepostgresql-devel.pp</literal> we provided.
+	      </para>
+	    </listitem>
+	  </varlistentry>
+
+	  <varlistentry>
+	    <term><command>restorecon</command></term>
+	    <listitem>
+	      <para>
+		The <command>restorecon</command> enables to assign
+		correct security context for files, directories and
+		any other objects on filesystem, based on the security
+		policy configuration.
+		It helps to assign correct security context on
+		installed files by hand.
+	      </para>
+	    </listitem>
+	  </varlistentry>
+	</variablelist>
+      </sect3>
+
+      <sect3>
+	<title>Build</title>
+	<para>
+	  SE-PostgreSQL feature is disabled in the default build.
+	  So, we have to add <option>--enable-selinux</option> option
+	  to configure script. It enables to build your PostgreSQL
+	  with a feature to suppor SELinux.
+	</para>
+<screen>
+<prompt>$ </prompt><userinput>./configure --enable-selinux</userinput>
+<prompt>$ </prompt><userinput>make</userinput>
+<prompt>$ </prompt><userinput>make -C src/backend/security/sepgsql/policy</userinput>
+</screen>
+        <para>
+	  Please note that the recent upstreamed security policy of SELinux
+	  contains a set of rules for SE-PostgreSQL, so we are not always 
+	  necessary to build security policy module.
+	</para>
+	<para>
+	  However, SE-PostgreSQL also provides an optinal policy module
+	  for development purpose. It allows users a few sets of operations,
+	  such as regression test and toggle audit logs.
+	</para>
+	<para>
+	  It is stored in
+	  <filename>src/backend/security/sepgsql/policy</filename>,
+	  and can be also build and installed as a binary security policy
+	  module.
+	</para>
+      </sect3>
+
+      <sect3>
+	<title>Installation</title>
+	<para>
+	  Please note that SELinux requires installed files, directories and
+	  others should be labeled properly. RPM installation do it implicitly.
+
+	  But, when you install PostgreSQL from a tarball, you should assign
+	  proper security context for them. The development policy module
+	  has a list that shows what security context should be assigned to
+	  what files, and will help you to manage them, so we recommend to
+	  install the <filename>sepostgresql-devel.pp</filename> also.
+	</para>
+<screen>
+<prompt># </prompt><userinput>make install</userinput>
+<prompt># </prompt><userinput>/usr/sbin/semodule -i src/backend/security/sepgsql/policy/sepostgresql-devel.pp</userinput>
+<prompt># </prompt><userinput>/sbin/restorecon -R /usr/local/pgsql</userinput>
+</screen>
+        <para>
+	  <command>semodule</command> is a command to install and uninstall
+	  a security policy module. <command>restorecon</command> is a command
+	  to assign given directories its default security context recursively.
+	</para>
+
+	<para>
+	  As we note later, all the files and directories to store database
+	  cluster should be labeled as <literal>postgresql_db_t</literal>.
+	  The default security policy assumes it is constructed at
+	  <filename>/var/lib/pgsql/data</filename> as RPM doing.
+
+	  If you want to set up it on another directory, you need to label
+	  it by hand.
+	</para>
+<screen>
+<prompt># </prompt><userinput>mkdir -p $PGDATA</userinput>
+<prompt># </prompt><userinput>chcon -t postgresql_db_t -R $PGDATA</userinput>
+</screen>
+        <para>
+	  Then, we need to run <command>initdb</command> to initialize
+	  the database cluster. It is necessary to specify an option of
+	  <option>--enable-selinux</option> which enables to initialize
+	  database cluster with proper security context.
+
+	  Please note that SE-PostgreSQL is not activated in the default,
+	  without this option.
+	</para>
+<screen>
+<prompt>$ </prompt><userinput>initdb --enable-selinux</userinput>
+<prompt>$ </prompt><userinput>pg_ctl start</userinput>
+</screen>
+      </sect3>
+    </sect2>
+  </sect1>
+</chapter>

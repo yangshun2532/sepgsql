@@ -28,7 +28,8 @@ CREATE DATABASE <replaceable class="PARAMETER">name</replaceable>
            [ LC_COLLATE [=] <replaceable class="parameter">lc_collate</replaceable> ]
            [ LC_CTYPE [=] <replaceable class="parameter">lc_ctype</replaceable> ]
            [ TABLESPACE [=] <replaceable class="parameter">tablespace</replaceable> ]
-           [ CONNECTION LIMIT [=] <replaceable class="parameter">connlimit</replaceable> ] ]
+           [ CONNECTION LIMIT [=] <replaceable class="parameter">connlimit</replaceable> ]
+           [ SECURITY LABEL [=] <replaceable class="parameter">security_label</replaceable> ] ]
 </synopsis>
  </refsynopsisdiv>
 
@@ -159,6 +160,17 @@ CREATE DATABASE <replaceable class="PARAMETER">name</replaceable>
        <para>
         How many concurrent connections can be made
         to this database.  -1 (the default) means no limit.
+       </para>
+      </listitem>
+     </varlistentry>
+     <varlistentry>
+      <term><replaceable class="parameter">security_label</replaceable></term>
+      <listitem>
+       <para>
+	The security label of the new database, available only when SE-PostgreSQL
+        is working. If no label is given, the default security label shall be
+        assigned on the new database.
+        See <xref linkend="enhanced-security-and-sepostgresql"> for more details.
        </para>
       </listitem>
      </varlistentry>

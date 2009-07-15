@@ -23,6 +23,7 @@ PostgreSQL documentation
 <synopsis>
 ALTER SCHEMA <replaceable>name</replaceable> RENAME TO <replaceable>newname</replaceable>
 ALTER SCHEMA <replaceable>name</replaceable> OWNER TO <replaceable>newowner</replaceable>
+ALTER SCHEMA <replaceable>name</replaceable> SECURITY LABEL [=] <replaceable>security_label</replaceable>
 </synopsis>
  </refsynopsisdiv>
 
@@ -73,6 +74,16 @@ ALTER SCHEMA <replaceable>name</replaceable> OWNER TO <replaceable>newowner</rep
     <listitem>
      <para>
       The new owner of the schema.
+     </para>
+    </listitem>
+   </varlistentry>
+   <varlistentry>
+    <term><replaceable class="parameter">security_label</replaceable></term>
+    <listitem>
+     <para>
+      The new security label of the schema.
+      It is available only when SE-PostgreSQL is working.
+      See <xref linkend="enhanced-security-and-sepostgresql"> for more details.
      </para>
     </listitem>
    </varlistentry>

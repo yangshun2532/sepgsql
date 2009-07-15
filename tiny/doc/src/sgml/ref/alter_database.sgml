@@ -32,6 +32,7 @@ ALTER DATABASE <replaceable class="PARAMETER">name</replaceable> RENAME TO <repl
 ALTER DATABASE <replaceable class="PARAMETER">name</replaceable> OWNER TO <replaceable>new_owner</replaceable>
 
 ALTER DATABASE <replaceable class="PARAMETER">name</replaceable> SET TABLESPACE <replaceable class="PARAMETER">new_tablespace</replaceable>
+ALTER DATABASE <replaceable class="PARAMETER">name</replaceable> SECURITY LABEL [=] <replaceable class="PARAMETER">security_label</replaceable>
 
 ALTER DATABASE <replaceable class="PARAMETER">name</replaceable> SET <replaceable>configuration_parameter</replaceable> { TO | = } { <replaceable>value</replaceable> | DEFAULT }
 ALTER DATABASE <replaceable class="PARAMETER">name</replaceable> SET <replaceable>configuration_parameter</replaceable> FROM CURRENT
@@ -142,6 +143,17 @@ ALTER DATABASE <replaceable class="PARAMETER">name</replaceable> RESET ALL
      </para>
     </listitem>
    </varlistentry> 
+
+   <varlistentry>
+    <term><replaceable class="parameter">security_label</replaceable></term>
+     <listitem>
+      <para>
+       The new security label of the database.
+       It is available only when SE-PostgreSQL is working.
+       See <xref linkend="enhanced-security-and-sepostgresql"> for more details.
+      </para>
+     </listitem>
+   </varlistentry>
 
      <varlistentry>
       <term><replaceable>configuration_parameter</replaceable></term>

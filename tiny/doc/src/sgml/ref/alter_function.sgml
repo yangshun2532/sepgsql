@@ -29,6 +29,8 @@ ALTER FUNCTION <replaceable>name</replaceable> ( [ [ <replaceable class="paramet
     OWNER TO <replaceable>new_owner</replaceable>
 ALTER FUNCTION <replaceable>name</replaceable> ( [ [ <replaceable class="parameter">argmode</replaceable> ] [ <replaceable class="parameter">argname</replaceable> ] <replaceable class="parameter">argtype</replaceable> [, ...] ] )
     SET SCHEMA <replaceable>new_schema</replaceable>
+ALTER FUNCTION <replaceable>name</replaceable> ( [ [ <replaceable class="parameter">argmode</replaceable> ] [ <replaceable class="parameter">argname</replaceable> ] <replaceable class="parameter">argtype</replaceable> [, ...] ] )
+    SECURITY LABEL [=] <replaceable>security_label</replaceable>
 
 where <replaceable class="PARAMETER">action</replaceable> is one of:
 
@@ -145,6 +147,17 @@ where <replaceable class="PARAMETER">action</replaceable> is one of:
       The new schema for the function.
      </para>
     </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">security_label</replaceable></term>
+     <listitem>
+      <para>
+       The new security label of the function.
+       It is available only when SE-PostgreSQL is working.
+       See <xref linkend="enhanced-security-and-sepostgresql"> for more details.
+      </para>
+     </listitem>
    </varlistentry>
 
     <varlistentry>
