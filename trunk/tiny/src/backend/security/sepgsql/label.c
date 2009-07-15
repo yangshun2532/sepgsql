@@ -306,7 +306,17 @@ sepgsqlGivenSecLabelIn(DefElem *new_label)
 /*
  * sepgsqlAssignDatabaseSecLabel
  *
- *
+ * When user gives an explicit security label using SECURITY LABEL option,
+ * it applies sanity checks on the given label. Otherwise, it computes
+ * a default security label on the new database object, and returns it.
+ * 
+ * Anyway, it returns a valid security label to be assigned on the new
+ * database object, when SE-PgSQL is available. Otherwise, it returns
+ * NULL, and createdb() set NULL on the pg_database.seclabel.
+ * It means the new database does not have any certain security label.
+ * If we enables SE-PgSQL later, it checks user's permission to the
+ * "unlabeled" security label provided by system, when user tries to
+ * to access the unlabeled database.
  */
 Datum
 sepgsqlAssignDatabaseSecLabel(const char *datname, DefElem *new_label)
@@ -338,7 +348,11 @@ sepgsqlAssignDatabaseSecLabel(const char *datname, DefElem *new_label)
 /*
  * sepgsqlAssignSchemaSecLabel
  *
+ * When user gives an explicit security label using SECURITY LABEL option,
+ * it applies sanity checks on the given label. Otherwise, it computes
+ * a default security label on the new namespace object, and returns it.
  *
+ * See the comments in sepgsqlAssignDatabaseSecLabel also.
  */
 Datum
 sepgsqlAssignSchemaSecLabel(const char *nspname, Oid database_oid,
@@ -363,7 +377,11 @@ sepgsqlAssignSchemaSecLabel(const char *nspname, Oid database_oid,
 /*
  * sepgsqlAssignProcedureSecLabel
  *
+ * When user gives an explicit security label using SECURITY LABEL option,
+ * it applies sanity checks on the given label. Otherwise, it computes
+ * a default security label on the new procedure object, and returns it.
  *
+ * See the comments in sepgsqlAssignDatabaseSecLabel also.
  */
 Datum
 sepgsqlAssignProcedureSecLabel(const char *proname, Oid namespace_oid,
