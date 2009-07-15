@@ -2128,6 +2128,13 @@
        for details
       </entry>
      </row>
+
+     <row>
+      <entry><structfield>datseclabel</structfield></entry>
+      <entry><type>text</type></entry>
+      <entry></entry>
+      <entry>Security label of the database</entry>
+     </row>
     </tbody>
    </tgroup>
   </table>
@@ -3123,6 +3130,13 @@
        for details
       </entry>
      </row>
+
+     <row>
+      <entry><structfield>nspseclabel</structfield></entry>
+      <entry><type>text</type></entry>
+      <entry></entry>
+      <entry>Security label of the namespace</entry>
+     </row>
     </tbody>
    </tgroup>
   </table>
@@ -3837,6 +3851,13 @@
        <xref linkend="sql-revoke" endterm="sql-revoke-title">
        for details
       </entry>
+     </row>
+
+     <row>
+      <entry><structfield>proseclabel</structfield></entry>
+      <entry><type>text</type></entry>
+      <entry></entry>
+      <entry>Security label of the procedure</entry>
      </row>
     </tbody>
    </tgroup>

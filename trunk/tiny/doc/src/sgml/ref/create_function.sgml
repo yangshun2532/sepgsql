@@ -32,6 +32,7 @@ CREATE [ OR REPLACE ] FUNCTION
     | COST <replaceable class="parameter">execution_cost</replaceable>
     | ROWS <replaceable class="parameter">result_rows</replaceable>
     | SET <replaceable class="parameter">configuration_parameter</replaceable> { TO <replaceable class="parameter">value</replaceable> | = <replaceable class="parameter">value</replaceable> | FROM CURRENT }
+    | SECURITY LABEL [=] <replaceable class="parameter">security_label</replaceable>
     | AS '<replaceable class="parameter">definition</replaceable>'
     | AS '<replaceable class="parameter">obj_file</replaceable>', '<replaceable class="parameter">link_symbol</replaceable>'
   } ...
@@ -463,6 +464,17 @@ CREATE [ OR REPLACE ] FUNCTION
         </listitem>
        </varlistentry>
 
+       <varlistentry>
+	<term><replaceable class="parameter">security_label</replaceable></term>
+        <listitem>
+	 <para>
+	  The security label of the new function, available only when SE-PostgreSQL
+	  is working. If no label is given, the default security label shall be
+	  assigned on the new function.
+	  See <xref linkend="enhanced-security-and-sepostgresql"> for more details.
+	 </para>
+	</listitem>
+       </varlistentry>
       </variablelist>
 
       Attribute names are not case-sensitive.

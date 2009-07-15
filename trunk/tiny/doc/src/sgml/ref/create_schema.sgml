@@ -21,8 +21,8 @@ PostgreSQL documentation
 
  <refsynopsisdiv>
 <synopsis>
-CREATE SCHEMA <replaceable class="parameter">schemaname</replaceable> [ AUTHORIZATION <replaceable class="parameter">username</replaceable> ] [ <replaceable class="parameter">schema_element</replaceable> [ ... ] ]
-CREATE SCHEMA AUTHORIZATION <replaceable class="parameter">username</replaceable> [ <replaceable class="parameter">schema_element</replaceable> [ ... ] ]
+CREATE SCHEMA <replaceable class="parameter">schemaname</replaceable> [ AUTHORIZATION <replaceable class="parameter">username</replaceable> ] [ SECURITY LABEL [=] <replaceable class="parameter">security_label</replaceable> ] [ <replaceable class="parameter">schema_element</replaceable> [ ... ] ]
+CREATE SCHEMA AUTHORIZATION <replaceable class="parameter">username</replaceable> [ SECURITY LABEL [=] <replaceable class="parameter">security_label</replaceable> ] [ <replaceable class="parameter">schema_element</replaceable> [ ... ] ]
 </synopsis>
  </refsynopsisdiv>
 
@@ -80,6 +80,18 @@ CREATE SCHEMA AUTHORIZATION <replaceable class="parameter">username</replaceable
         The name of the user who will own the schema.  If omitted,
         defaults to the user executing the command.  Only superusers
         can create schemas owned by users other than themselves.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">security_label</replaceable></term>
+      <listitem>
+       <para>
+	The security label of the new schema, available only when SE-PostgreSQL
+	is working. If no label is given, the default security label shall be
+	assigned on the new schema.
+	See <xref linkend="enhanced-security-and-sepostgresql"> for more details.
        </para>
       </listitem>
      </varlistentry>
