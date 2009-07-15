@@ -1538,6 +1538,11 @@ heap_drop_with_catalog(Oid relid)
 	 * delete relation tuple
 	 */
 	DeleteRelationTuple(relid);
+
+	/*
+	 * delete orphan pg_security entries
+	 */
+	securityReclaimOnDropTable(relid);
 }
 
 
