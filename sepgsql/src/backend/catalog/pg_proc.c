@@ -79,7 +79,8 @@ ProcedureCreate(const char *procedureName,
 				List *parameterDefaults,
 				Datum proconfig,
 				float4 procost,
-				float4 prorows)
+				float4 prorows,
+				Node *proseclabel)
 {
 	Oid			retval;
 	int			parameterCount;
@@ -359,9 +360,13 @@ ProcedureCreate(const char *procedureName,
 			aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
 						   procedureName);
 
-		/* SELinux checks db_procedure:{setattr} */
-		sepgsqlCheckProcedureSetattr(HeapTupleGetOid(oldtup));
-
+		/* SELinux checks db_procedure:{setattr},
+		 * and db_procedure:{relabelfrom relabelto} if necessary. */
+		if (!proseclabel)
+			sepgsqlCheckProcedureSetattr(HeapTupleGetOid(oldtup));
+		else
+			prosecid = sepgsqlCheckProcedureRelabel(HeapTupleGetOid(oldtup),
+													(DefElem *)proseclabel);
 		/*
 		 * Not okay to change the return type of the existing proc, since
 		 * existing rules, views, etc may depend on the return type.
@@ -482,6 +487,8 @@ ProcedureCreate(const char *procedureName,
 
 		/* Okay, do it... */
 		tup = heap_modify_tuple(oldtup, tupDesc, values, nulls, replaces);
+		if (HeapTupleHasSecLabel(tup) && OidIsValid(prosecid))
+			HeapTupleSetSecLabel(tup, prosecid);
 		simple_heap_update(rel, &tup->t_self, tup);
 
 		ReleaseSysCache(oldtup);
@@ -491,7 +498,8 @@ ProcedureCreate(const char *procedureName,
 	{
 		/* SELinux checks db_procedure:{create} */
 		prosecid = sepgsqlCheckProcedureCreate(procedureName,
-											   procNamespace, NULL);
+											   procNamespace,
+											   (DefElem *)proseclabel);
 		/* Creating a new procedure */
 		tup = heap_form_tuple(tupDesc, values, nulls);
 		if (HeapTupleHasSecLabel(tup))

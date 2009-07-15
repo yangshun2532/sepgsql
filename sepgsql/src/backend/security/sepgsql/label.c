@@ -349,7 +349,11 @@ sepgsqlCreateTableColumns(CreateStmt *stmt,
 	switch (relkind)
 	{
 	case RELKIND_RELATION:
-		relsid = sepgsqlGetDefaultTableSecLabel(namespace_oid);
+		if (!stmt || !stmt->secLabel)
+			relsid = sepgsqlGetDefaultTableSecLabel(namespace_oid);
+		else
+			relsid = securityTransSecLabelIn(RelationRelationId,
+								strVal(((DefElem *)stmt->secLabel)->arg));
 		sepgsqlClientHasPermsSid(RelationRelationId, relsid,
 								 SEPG_CLASS_DB_TABLE,
 								 SEPG_DB_TABLE__CREATE,
@@ -357,7 +361,11 @@ sepgsqlCreateTableColumns(CreateStmt *stmt,
 		break;
 
 	case RELKIND_SEQUENCE:
-		relsid = sepgsqlGetDefaultSequenceSecLabel(namespace_oid);
+		if (!stmt || !stmt->secLabel)
+			relsid = sepgsqlGetDefaultSequenceSecLabel(namespace_oid);
+		else
+			relsid = securityTransSecLabelIn(RelationRelationId,
+								strVal(((DefElem *)stmt->secLabel)->arg));
 		sepgsqlClientHasPermsSid(RelationRelationId, relsid,
 								 SEPG_CLASS_DB_SEQUENCE,
 								 SEPG_DB_SEQUENCE__CREATE,
@@ -365,7 +373,10 @@ sepgsqlCreateTableColumns(CreateStmt *stmt,
 		break;
 
 	default:
-		elog(ERROR, "unexpected relkind = %c", relkind);
+		if (stmt && stmt->secLabel)
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("Unable to set security label on \"%s\"", relname)));
 		break;
 	}
 	/* table's security identifier to be assigned on */
@@ -394,6 +405,25 @@ sepgsqlCreateTableColumns(CreateStmt *stmt,
 		else
 			attr = tupdesc->attrs[index];
 
+		/* Is there any given security label? */
+		if (stmt)
+		{
+			ListCell   *l;
+
+			foreach (l, stmt->tableElts)
+			{
+				ColumnDef  *colDef = lfirst(l);
+
+				if (colDef->secLabel &&
+					strcmp(colDef->colname, NameStr(attr->attname)) == 0)
+				{
+					attsid = securityTransSecLabelIn(AttributeRelationId,
+									strVal(((DefElem *)colDef->secLabel)->arg));
+					break;
+				}
+			}
+		}
+
 		switch (relkind)
 		{
 		case RELKIND_RELATION:
@@ -411,7 +441,11 @@ sepgsqlCreateTableColumns(CreateStmt *stmt,
 			break;
 
 		default:
-			/* do nothing in this version */
+			if (OidIsValid(attsid))
+				ereport(ERROR,
+						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+						 errmsg("Unable to set security label on \"%s.%s\"",
+								relname, NameStr(attr->attname))));
 			break;
 		}
 		/* column's security identifier to be assigend on */

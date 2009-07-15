@@ -84,6 +84,33 @@ sepgsqlCheckDatabaseSetattr(Oid database_oid)
 						SEPG_DB_DATABASE__SETATTR, true);
 }
 
+Oid
+sepgsqlCheckDatabaseRelabel(Oid database_oid, DefElem *new_label)
+{
+	Oid		datsid;
+
+	if (!sepgsqlIsEnabled())
+	{
+		if (new_label)
+			ereport(ERROR,
+					(errcode(ERRCODE_SELINUX_ERROR),
+					 errmsg("SELinux is disabled now")));
+		return InvalidOid;
+	}
+	datsid = securityTransSecLabelIn(DatabaseRelationId,
+									 strVal(new_label->arg));
+	/* db_database:{setattr relabelfrom} for older seclabel */
+	checkDatabaseCommon(database_oid,
+						SEPG_DB_DATABASE__SETATTR |
+						SEPG_DB_DATABASE__RELABELFROM, true);
+	/* db_database:{relabelto} for newer seclabel */
+	sepgsqlClientHasPermsSid(DatabaseRelationId, datsid,
+							 SEPG_CLASS_DB_DATABASE,
+							 SEPG_DB_DATABASE__RELABELTO,
+							 get_database_name(database_oid), true);
+	return datsid;
+}
+
 bool
 sepgsqlCheckDatabaseAccess(Oid database_oid)
 {
@@ -165,6 +192,36 @@ sepgsqlCheckSchemaSetattr(Oid namespace_oid)
 {
 	sepgsqlCheckSchemaCommon(namespace_oid,
 							 SEPG_DB_SCHEMA__SETATTR, true);
+}
+
+Oid
+sepgsqlCheckSchemaRelabel(Oid namespace_oid, DefElem *new_label)
+{
+	Oid		nspsid;
+
+	if (!sepgsqlIsEnabled())
+	{
+		if (new_label)
+			ereport(ERROR,
+					(errcode(ERRCODE_SELINUX_ERROR),
+					 errmsg("SELinux is disabled now")));
+		return InvalidOid;
+	}
+	nspsid = securityTransSecLabelIn(NamespaceRelationId,
+									 strVal(new_label->arg));
+
+	/* db_schema:{setattr relabelfrom} for older seclabel */
+	sepgsqlCheckSchemaCommon(namespace_oid,
+							 SEPG_DB_SCHEMA__SETATTR |
+							 SEPG_DB_SCHEMA__RELABELFROM, true);
+	/* db_schema:{relabelto} for newer seclabel */
+	sepgsqlClientHasPermsSid(NamespaceRelationId, nspsid,
+							 !isAnyTempNamespace(namespace_oid)
+							 ? SEPG_CLASS_DB_SCHEMA
+							 : SEPG_CLASS_DB_SCHEMA_TEMP,
+							 SEPG_DB_SCHEMA__RELABELTO,
+							 get_namespace_name(namespace_oid), true);
+	return nspsid;
 }
 
 bool
@@ -270,6 +327,46 @@ void
 sepgsqlCheckTableSetattr(Oid table_oid)
 {
 	checkTableCommon(table_oid, SEPG_DB_TABLE__SETATTR);
+}
+
+Oid
+sepgsqlCheckTableRelabel(Oid table_oid, DefElem *new_label)
+{
+	Oid		relsid;
+	char	relkind;
+
+	if (!sepgsqlIsEnabled())
+	{
+		if (new_label)
+			ereport(ERROR,
+					(errcode(ERRCODE_SELINUX_ERROR),
+					 errmsg("SELinux is disabled now")));
+		return InvalidOid;
+	}
+
+	relkind = get_rel_relkind(table_oid);
+	if (relkind != RELKIND_RELATION && relkind != RELKIND_SEQUENCE)
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("Unable to set security label on \"%s\"",
+						get_rel_name(table_oid))));
+
+	relsid = securityTransSecLabelIn(RelationRelationId,
+									 strVal(new_label->arg));
+
+	/* db_table/db_sequence:{setattr relabelfrom} for older seclabel  */
+	checkTableCommon(table_oid,
+					 SEPG_DB_TABLE__SETATTR |
+					 SEPG_DB_TABLE__RELABELFROM);
+
+	/* db_table/db_sequence:{relabelto} for newer seclabel */
+	sepgsqlClientHasPermsSid(RelationRelationId, relsid,
+							 (relkind == RELKIND_RELATION
+							  ? SEPG_CLASS_DB_TABLE
+							  : SEPG_CLASS_DB_SEQUENCE),
+							 SEPG_DB_TABLE__RELABELTO,
+							 get_rel_name(table_oid), true);
+	return relsid;
 }
 
 void
@@ -444,6 +541,45 @@ sepgsqlCheckColumnSetattr(Oid table_oid, AttrNumber attno)
 	sepgsqlCheckColumnCommon(table_oid, attno, SEPG_DB_COLUMN__SETATTR);
 }
 
+Oid
+sepgsqlCheckColumnRelabel(Oid table_oid, AttrNumber attno, DefElem *new_label)
+{
+	Oid		attsid;
+	char	relkind;
+
+	if (!sepgsqlIsEnabled())
+	{
+		if (new_label)
+			ereport(ERROR,
+					(errcode(ERRCODE_SELINUX_ERROR),
+					 errmsg("SELinux is disabled now")));
+		return InvalidOid;
+	}
+
+	relkind = get_rel_relkind(table_oid);
+	if (relkind != RELKIND_RELATION)
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("Unable to set security label on \"%s.%s\"",
+						get_rel_name(table_oid),
+						get_attname(table_oid, attno))));
+
+	attsid = securityTransSecLabelIn(AttributeRelationId,
+									 strVal(new_label->arg));
+
+	/* db_column:{setattr relabelfrom} for older seclabel */
+	sepgsqlCheckColumnCommon(table_oid, attno,
+							 SEPG_DB_COLUMN__SETATTR |
+							 SEPG_DB_COLUMN__RELABELFROM);
+
+	/* db_column:{relabelto} for newer seclabel */
+	sepgsqlClientHasPermsSid(AttributeRelationId, attsid,
+							 SEPG_CLASS_DB_COLUMN,
+							 SEPG_DB_COLUMN__RELABELTO,
+							 get_attname(table_oid, attno), true);
+	return attsid;
+}
+
 /* ------------------------------------------------------------ *
  *   Hooks corresponding to db_procedure object class
  * ------------------------------------------------------------ */
@@ -503,6 +639,35 @@ void
 sepgsqlCheckProcedureSetattr(Oid proc_oid)
 {
 	sepgsqlCheckProcedureCommon(proc_oid, SEPG_DB_PROCEDURE__SETATTR, true);
+}
+
+Oid
+sepgsqlCheckProcedureRelabel(Oid proc_oid, DefElem *new_label)
+{
+	Oid		prosid;
+
+	if (!sepgsqlIsEnabled())
+	{
+		if (new_label)
+			ereport(ERROR,
+					(errcode(ERRCODE_SELINUX_ERROR),
+					 errmsg("SELinux is disabled now")));
+		return InvalidOid;
+	}
+
+	prosid = securityTransSecLabelIn(ProcedureRelationId,
+									 strVal(new_label->arg));
+
+	/* db_procedure:{setattr relabelfrom} for older seclabel */
+	sepgsqlCheckProcedureCommon(proc_oid,
+								SEPG_DB_PROCEDURE__SETATTR |
+								SEPG_DB_PROCEDURE__RELABELFROM, true);
+	/* db_procedure:{relabelto} for newer seclabel */
+	sepgsqlClientHasPermsSid(ProcedureRelationId, prosid,
+							 SEPG_CLASS_DB_PROCEDURE,
+							 SEPG_DB_PROCEDURE__RELABELTO,
+							 get_func_name(proc_oid), true);
+	return prosid;
 }
 
 bool

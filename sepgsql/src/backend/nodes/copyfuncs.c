@@ -2075,6 +2075,7 @@ _copyColumnDef(ColumnDef *from)
 	COPY_NODE_FIELD(raw_default);
 	COPY_STRING_FIELD(cooked_default);
 	COPY_NODE_FIELD(constraints);
+	COPY_NODE_FIELD(secLabel);
 
 	return newnode;
 }
@@ -2414,6 +2415,7 @@ _copyCreateStmt(CreateStmt *from)
 	COPY_NODE_FIELD(options);
 	COPY_SCALAR_FIELD(oncommit);
 	COPY_STRING_FIELD(tablespacename);
+	COPY_NODE_FIELD(secLabel);
 
 	return newnode;
 }
@@ -2635,6 +2637,21 @@ _copyAlterOwnerStmt(AlterOwnerStmt *from)
 	COPY_STRING_FIELD(addname);
 	COPY_STRING_FIELD(newowner);
 
+	return newnode;
+}
+
+static AlterSecLabelStmt *
+_copyAlterSecLabelStmt(AlterSecLabelStmt *from)
+{
+	AlterSecLabelStmt *newnode = makeNode(AlterSecLabelStmt);
+
+	COPY_SCALAR_FIELD(objectType);
+	COPY_NODE_FIELD(relation);
+	COPY_NODE_FIELD(object);
+	COPY_NODE_FIELD(objarg);
+	COPY_STRING_FIELD(subname);
+	COPY_NODE_FIELD(secLabel);
+	
 	return newnode;
 }
 
@@ -2887,6 +2904,7 @@ _copyCreateSeqStmt(CreateSeqStmt *from)
 
 	COPY_NODE_FIELD(sequence);
 	COPY_NODE_FIELD(options);
+	COPY_NODE_FIELD(secLabel);
 
 	return newnode;
 }
@@ -3818,6 +3836,9 @@ copyObject(void *from)
 			break;
 		case T_AlterOwnerStmt:
 			retval = _copyAlterOwnerStmt(from);
+			break;
+		case T_AlterSecLabelStmt:
+			retval = _copyAlterSecLabelStmt(from);
 			break;
 		case T_RuleStmt:
 			retval = _copyRuleStmt(from);

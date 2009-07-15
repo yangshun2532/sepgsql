@@ -26,5 +26,6 @@ extern void RemoveSchemaById(Oid schemaOid);
 extern void RenameSchema(const char *oldname, const char *newname);
 extern void AlterSchemaOwner(const char *name, Oid newOwnerId);
 extern void AlterSchemaOwner_oid(Oid schemaOid, Oid newOwnerId);
+extern void AlterSchemaSecLabel(const char *name, DefElem *seclabel);
 
 #endif   /* SCHEMACMDS_H */
