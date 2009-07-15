@@ -573,7 +573,7 @@ PortalStart(Portal portal, ParamListInfo params, Snapshot snapshot)
 					Assert(pstmt->returningLists);
 					portal->tupDesc =
 						ExecCleanTypeFromTL((List *) linitial(pstmt->returningLists),
-											false);
+											false, false);
 				}
 
 				/*
