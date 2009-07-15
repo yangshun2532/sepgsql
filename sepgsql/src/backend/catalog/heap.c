@@ -43,6 +43,7 @@
 #include "catalog/pg_constraint.h"
 #include "catalog/pg_inherits.h"
 #include "catalog/pg_namespace.h"
+#include "catalog/pg_security.h"
 #include "catalog/pg_statistic.h"
 #include "catalog/pg_tablespace.h"
 #include "catalog/pg_type.h"
@@ -293,6 +294,11 @@ heap_create(const char *relname,
 									 relid,
 									 reltablespace,
 									 shared_relation);
+	/*
+	 * Does the relation have security attribute?
+	 */
+	RelationGetDescr(rel)->tdhasseclabel
+		= securityTupleDescHasSecLabel(relid, relkind);
 
 	/*
 	 * Have the storage manager create the relation's disk file, if needed.

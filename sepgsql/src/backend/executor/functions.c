@@ -1135,7 +1135,7 @@ check_sql_fn_retval(Oid func_id, Oid rettype, List *queryTreeList,
 
 		/* Set up junk filter if needed */
 		if (junkFilter)
-			*junkFilter = ExecInitJunkFilter(tlist, false, NULL);
+			*junkFilter = ExecInitJunkFilter(tlist, false, false, NULL);
 	}
 	else if (fn_typtype == TYPTYPE_COMPOSITE || rettype == RECORDOID)
 	{
@@ -1167,7 +1167,7 @@ check_sql_fn_retval(Oid func_id, Oid rettype, List *queryTreeList,
 														 COERCE_DONTCARE);
 				/* Set up junk filter if needed */
 				if (junkFilter)
-					*junkFilter = ExecInitJunkFilter(tlist, false, NULL);
+					*junkFilter = ExecInitJunkFilter(tlist, false, false, NULL);
 				return false;	/* NOT returning whole tuple */
 			}
 		}
@@ -1180,7 +1180,7 @@ check_sql_fn_retval(Oid func_id, Oid rettype, List *queryTreeList,
 			 * what the caller expects will happen at runtime.
 			 */
 			if (junkFilter)
-				*junkFilter = ExecInitJunkFilter(tlist, false, NULL);
+				*junkFilter = ExecInitJunkFilter(tlist, false, false, NULL);
 			return true;
 		}
 		Assert(tupdesc);
