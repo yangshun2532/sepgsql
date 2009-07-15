@@ -1231,6 +1231,14 @@ static struct config_bool ConfigureNamesBool[] =
 		false, NULL, NULL
 	},
 	{
+		{"sepostgresql_row_level", PGC_POSTMASTER, CONN_AUTH_SECURITY,
+		 gettext_noop("Row-level access controls on SE-PostgreSQL"),
+		 NULL,
+		},
+		&sepostgresql_row_level,
+		true, NULL, NULL
+	},
+	{
 		{"sepostgresql_mcstrans", PGC_USERSET, CONN_AUTH_SECURITY,
 		 gettext_noop("SE-PostgreSQL uses mcstrans on printing security labels"),
 		 NULL,

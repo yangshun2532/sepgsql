@@ -383,6 +383,15 @@ typedef struct RelOptInfo
 	 * list just to avoid recomputing the best inner indexscan repeatedly for
 	 * similar outer relations.  See comments for InnerIndexscanInfo.
 	 */
+
+	/*
+	 * Permissions used in Row-level access control features both of DAC
+	 * and MAC. The lower 16bit is used for DAC, and rest of upper bits
+	 * are used for MAC. When rowlvPerms is zero, so it means we don't need
+	 * to apply the row-level stuff on the relation in both of levels.
+	 * It can be used as a hint for optimization stuff.
+	 */
+	uint32		rowlvPerms;
 } RelOptInfo;
 
 /*

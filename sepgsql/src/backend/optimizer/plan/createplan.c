@@ -305,6 +305,9 @@ create_scan_plan(PlannerInfo *root, Path *best_path)
 			break;
 	}
 
+	/* Copy of row-level permissions to Scan node */
+	((Scan *)plan)->rowlvPerms = rel->rowlvPerms;
+
 	/*
 	 * If there are any pseudoconstant clauses attached to this node, insert a
 	 * gating Result node that evaluates the pseudoconstants as one-time

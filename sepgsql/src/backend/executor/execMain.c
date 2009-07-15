@@ -1910,6 +1910,12 @@ ExecInsert(TupleTableSlot *slot,
 	}
 
 	/*
+	 * SELinux assigns default security label, and 
+	 * it also checks db_tuple:{insert} permission
+	 */
+	sepgsqlHeapTupleInsert(resultRelationDesc, tuple, false);
+
+	/*
 	 * Check the constraints of the tuple
 	 */
 	if (resultRelationDesc->rd_att->constr)
@@ -2148,6 +2154,9 @@ ExecUpdate(TupleTableSlot *slot,
 			tuple = newtuple;
 		}
 	}
+
+	/* SELinux checks db_tuple:{relabelfrom relabelto}, if needed */
+	sepgsqlHeapTupleUpdate(resultRelationDesc, tupleid, tuple);
 
 	/*
 	 * Check the constraints of the tuple
@@ -3167,6 +3176,8 @@ intorel_receive(TupleTableSlot *slot, DestReceiver *self)
 		HeapTupleSetOid(tuple, InvalidOid);
 
 	storeWritableSystemAttribute(myState->rel, slot, tuple);
+	/* SELinux checks db_tuple:{insert} */
+	sepgsqlHeapTupleInsert(myState->rel, tuple, false);
 
 	heap_insert(myState->rel,
 				tuple,

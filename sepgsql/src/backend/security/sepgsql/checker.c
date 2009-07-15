@@ -11,8 +11,10 @@
 #include "catalog/catalog.h"
 #include "miscadmin.h"
 #include "security/sepgsql.h"
+#include "storage/bufmgr.h"
 #include "utils/lsyscache.h"
 #include "utils/syscache.h"
+#include "utils/tqual.h"
 
 /*
  * fixupWholeRowReference
@@ -286,4 +288,133 @@ sepgsqlCheckSelectInto(Oid relationId)
 
 	checkTabelColumnPerms(relationId, NULL, modified,
 						  SEPG_DB_TABLE__INSERT);
+}
+
+/*
+ * sepgsqlExecScan
+ *   makes a decision on the given tuple.
+ */
+bool
+sepgsqlExecScan(Relation rel, HeapTuple tuple, uint32 required, bool abort)
+{
+	security_class_t	tclass;
+
+	if (!sepgsqlIsEnabled() ||
+		!required ||
+		RelationGetForm(rel)->relkind != RELKIND_RELATION)
+		return true;
+
+	tclass = sepgsqlTupleObjectClass(RelationGetRelid(rel), tuple);
+	return sepgsqlClientHasPermsTup(RelationGetRelid(rel), tuple,
+									tclass, required, abort);
+}
+
+uint32
+sepgsqlSetupTuplePerms(RangeTblEntry *rte)
+{
+	AclMode		perms = 0;
+
+	if (!sepgsqlIsEnabled())
+		return 0;
+
+	if (rte->rtekind != RTE_RELATION)
+		return 0;
+
+	if (rte->requiredPerms & ACL_SELECT)
+		perms |= SEPG_DB_TUPLE__SELECT;
+	if (rte->requiredPerms & ACL_UPDATE && !bms_is_empty(rte->modifiedCols))
+		perms |= SEPG_DB_TUPLE__UPDATE;
+	if (rte->requiredPerms & ACL_DELETE)
+		perms |= SEPG_DB_TUPLE__DELETE;
+
+	return perms;
+}
+
+/*
+ * sepgsqlHeapTupleInsert
+ *   It assigns a default security label, if no explicit security labels
+ *   were given. In addition, it also checks db_tuple:{insert} for the
+ *   tuple newly inserted, when it invoked from user's query.
+ */
+void
+sepgsqlHeapTupleInsert(Relation rel, HeapTuple newtup, bool internal)
+{
+	security_class_t	tclass;
+	Oid		relid = RelationGetRelid(rel);
+
+	if (!sepgsqlIsEnabled())
+		return;
+
+	/*
+	 * assigns a default security label, if not explicit one
+	 */
+	if (!OidIsValid(HeapTupleGetSecLabel(newtup)))
+	{
+		if (HeapTupleHasSecLabel(newtup))
+			sepgsqlSetDefaultSecLabel(rel, newtup);
+	}
+
+	/*
+	 * It does not check permission for the new tuples
+	 * inserted by system internal stuff using
+	 * simple_heap_insert();
+	 */
+	if (internal)
+		return;
+
+	tclass = sepgsqlTupleObjectClass(relid, newtup);
+	sepgsqlClientHasPermsTup(relid, newtup, tclass,
+							 SEPG_DB_TUPLE__INSERT, true);
+}
+
+/*
+ * sepgsqlHeapTupleUpdate
+ *   It checks db_tuple:{relabelfrom relabelto} permission on
+ *   the user queries. (Please note that it does not check
+ *   system internal stuff via simple_heap_update)
+ */
+void
+sepgsqlHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple newtup)
+{
+	Oid				relid = RelationGetRelid(rel);
+	Oid				secid;
+	HeapTupleData	oldtup;
+	Buffer			oldbuf;
+
+	if (!sepgsqlIsEnabled())
+		return;
+
+	/*
+	 * heap_update() preserves the original security label
+	 * of the given tuple, if no explicit security label
+	 * is assigned on the newer version.
+	 * In this case, db_tuple:{update} is already checked
+	 * at the sepgsqlExecScan() hook, so we don't need to
+	 * check anything more.
+	 */
+	secid = HeapTupleGetSecLabel(newtup);
+	if (!OidIsValid(secid))
+		return;
+
+	/*
+	 * User gave an explicit security label
+	 */
+	ItemPointerCopy(otid, &oldtup.t_self);
+	if (!heap_fetch(rel, SnapshotAny, &oldtup, &oldbuf, false, NULL))
+		elog(ERROR, "failed to fetch old version of the tuple");
+
+	if (secid != HeapTupleGetSecLabel(&oldtup))
+	{
+		security_class_t	tclass
+			= sepgsqlTupleObjectClass(relid, newtup);
+
+		/* db_tuple:{relabelfrom} for older security label */
+		sepgsqlClientHasPermsTup(relid, &oldtup, tclass,
+								 SEPG_DB_TUPLE__RELABELFROM, true);
+
+		/* db_tuple:{relabelto} for newer security label */
+		sepgsqlClientHasPermsTup(relid, newtup, tclass,
+								 SEPG_DB_TUPLE__RELABELTO, true);
+	}
+	ReleaseBuffer(oldbuf);
 }

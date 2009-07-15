@@ -25,6 +25,9 @@
 #include "storage/fd.h"
 #include "utils/syscache.h"
 
+/* GUC: to turn on/off row level controls in SE-PostgreSQL */
+bool sepostgresql_row_level;
+
 /* GUC parameter to turn on/off mcstrans */
 bool sepostgresql_use_mcstrans;
 
@@ -41,7 +44,7 @@ sepgsqlTupleDescHasSecLabel(Oid relid, char relkind)
 		return false;
 
 	if (!OidIsValid(relid))
-		return false;	/* Target of SELECT INTO */
+		return sepostgresql_row_level;	/* Target of SELECT INTO */
 
 	if (relid == DatabaseRelationId  ||
 		relid == NamespaceRelationId ||
@@ -50,7 +53,38 @@ sepgsqlTupleDescHasSecLabel(Oid relid, char relkind)
 		relid == ProcedureRelationId)
 		return true;
 
-	return false;
+	return sepostgresql_row_level;
+}
+
+/*
+ * sepgsqlMetaSecurityLabel
+ *   It returns a security label of tuples within pg_security system
+ *   catalog. The purpose of this special handling is to avoid infinite
+ *   function invocations to insert new entry for meta security labels.
+ */
+security_context_t
+sepgsqlMetaSecurityLabel(void)
+{
+	HeapTuple			tuple;
+	security_context_t	tcontext;
+	Oid					tblsid;
+
+	if (!sepgsqlIsEnabled())
+		return NULL;
+
+	tuple = SearchSysCache(RELOID,
+						   ObjectIdGetDatum(SecurityRelationId),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "cache lookup failed for relation: \"pg_security\"");
+
+	tblsid = HeapTupleGetSecLabel(tuple);
+	tcontext = securityRawSecLabelOut(RelationRelationId, tblsid);
+
+	ReleaseSysCache(tuple);
+
+	return sepgsqlComputeCreate(sepgsqlGetServerLabel(),
+								tcontext, SEPG_CLASS_DB_TUPLE);
 }
 
 /*
@@ -294,7 +328,7 @@ sepgsqlSetDefaultSecLabel(Relation rel, HeapTuple tuple)
 		newsid = sepgsqlGetDefaultColumnSecLabel(tbloid);
 		break;
 	default:
-		newsid = InvalidOid;
+		newsid = sepgsqlGetDefaultTupleSecLabel(relid);
 		break;
 	}
 
@@ -377,6 +411,7 @@ sepgsqlCreateTableColumns(CreateStmt *stmt,
 			ereport(ERROR,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 					 errmsg("Unable to set security label on \"%s\"", relname)));
+		relsid = sepgsqlGetDefaultTupleSecLabel(RelationRelationId);
 		break;
 	}
 	/* table's security identifier to be assigned on */
@@ -446,6 +481,7 @@ sepgsqlCreateTableColumns(CreateStmt *stmt,
 						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 						 errmsg("Unable to set security label on \"%s.%s\"",
 								relname, NameStr(attr->attname))));
+			attsid = sepgsqlGetDefaultTupleSecLabel(AttributeRelationId);
 			break;
 		}
 		/* column's security identifier to be assigend on */

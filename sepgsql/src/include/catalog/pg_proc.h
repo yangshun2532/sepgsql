@@ -4338,6 +4338,14 @@ DESCR("hash");
 /* SE-PostgreSQL related functions */
 DATA(insert OID = 3416 (  sepgsql_getcon   PGNSP PGUID 12 1 0 0 f f f t f v 0 0 25 "" _null_ _null_ _null_ _null_ sepgsql_getcon _null_ _null_ _null_ ));
 DATA(insert OID = 3417 (  sepgsql_server_getcon	PGNSP PGUID 12 1 0 0 f f f t f v 0 0 25 "" _null_ _null_ _null_ _null_ sepgsql_server_getcon _null_ _null_ _null_ ));
+DATA(insert OID = 3418 ( sepgsql_get_user  PGNSP PGUID 12 1 0 0 f f f t f v 1 0 25 "25" _null_ _null_ _null_ _null_ sepgsql_get_user _null_ _null_ _null_ ));
+DATA(insert OID = 3419 ( sepgsql_set_user  PGNSP PGUID 12 1 0 0 f f f t f v 2 0 25 "25 25" _null_ _null_ _null_ _null_ sepgsql_set_user _null_ _null_ _null_ ));
+DATA(insert OID = 3420 ( sepgsql_get_role  PGNSP PGUID 12 1 0 0 f f f t f v 1 0 25 "25" _null_ _null_ _null_ _null_ sepgsql_get_role _null_ _null_ _null_ ));
+DATA(insert OID = 3421 ( sepgsql_set_role  PGNSP PGUID 12 1 0 0 f f f t f v 2 0 25 "25 25" _null_ _null_ _null_ _null_ sepgsql_set_role _null_ _null_ _null_ ));
+DATA(insert OID = 3422 ( sepgsql_get_type  PGNSP PGUID 12 1 0 0 f f f t f v 1 0 25 "25" _null_ _null_ _null_ _null_ sepgsql_get_type _null_ _null_ _null_ ));
+DATA(insert OID = 3423 ( sepgsql_set_type  PGNSP PGUID 12 1 0 0 f f f t f v 2 0 25 "25 25" _null_ _null_ _null_ _null_ sepgsql_set_type _null_ _null_ _null_ ));
+DATA(insert OID = 3424 ( sepgsql_get_range PGNSP PGUID 12 1 0 0 f f f t f v 1 0 25 "25" _null_ _null_ _null_ _null_ sepgsql_get_range _null_ _null_ _null_ ));
+DATA(insert OID = 3425 ( sepgsql_set_range PGNSP PGUID 12 1 0 0 f f f t f v 2 0 25 "25 25" _null_ _null_ _null_ _null_ sepgsql_set_range _null_ _null_ _null_ ));
 
 /* enum related procs */
 DATA(insert OID = 3504 (  anyenum_in	PGNSP PGUID 12 1 0 0 f f f t f i 1 0 3500 "2275" _null_ _null_ _null_ _null_ anyenum_in _null_ _null_ _null_ ));

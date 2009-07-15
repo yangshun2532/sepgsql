@@ -22,6 +22,9 @@
 /* GUC parameter to turn on/off SE-PostgreSQL */
 extern bool sepostgresql_is_enabled;
 
+/* GUC parameter to turn on/off Row-level controls */
+extern bool sepostgresql_row_level;
+
 /* GUC parameter to turn on/off mcstrans */
 extern bool sepostgresql_use_mcstrans;
 
@@ -220,6 +223,18 @@ sepgsqlCheckCopyTable(Relation rel, List *attnumlist, bool is_from);
 extern void
 sepgsqlCheckSelectInto(Oid relaionId);
 
+extern bool
+sepgsqlExecScan(Relation rel, HeapTuple tuple, uint32 required, bool abort);
+
+extern uint32
+sepgsqlSetupTuplePerms(RangeTblEntry *rte);
+
+extern void
+sepgsqlHeapTupleInsert(Relation rel, HeapTuple newtup, bool internal);
+
+extern void
+sepgsqlHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple newtup);
+
 /*
  * core.c : core facilities
  */
@@ -319,6 +334,8 @@ sepgsqlAllowFunctionInlined(HeapTuple protup);
  */
 extern bool
 sepgsqlTupleDescHasSecLabel(Oid relid, char relkind);
+extern security_context_t
+sepgsqlMetaSecurityLabel(void);
 extern void
 sepgsqlSetDefaultSecLabel(Relation rel, HeapTuple tuple);
 
@@ -368,6 +385,10 @@ extern const char *sepgsqlGetPermissionString(security_class_t tclass,
 #define sepgsqlCheckRTEPerms(a)					do {} while(0)
 #define sepgsqlCheckCopyTable(a,b,c)			do {} while(0)
 #define sepgsqlCheckSelectInto(a)				do {} while(0)
+#define sepgsqlExecScan(a,b,c)					(true)
+#define sepgsqlSetupTuplePerms(a)				(0)
+#define sepgsqlHeapTupleInsert(a,b,c)			do {} while(0)
+#define sepgsqlHeapTupleUpdate(a,b,c)			do {} while(0)
 
 /* core.c */
 #define sepgsqlIsEnabled()						(false)
@@ -419,6 +440,7 @@ extern const char *sepgsqlGetPermissionString(security_class_t tclass,
 #define sepgsqlSetDefaultSecLabel(a,b)			do {} while(0)
 #define sepgsqlCreateTableColumns(a,b,c,d,e)	(NULL)
 #define sepgsqlCopyTableColumns(a)				(NULL)
+#define sepgsqlMetaSecurityLabel()				(NULL)
 #define sepgsqlTransSecLabelIn(a)				(a)
 #define sepgsqlTransSecLabelOut(a)				(a)
 #define sepgsqlRawSecLabelIn(a)					(a)
@@ -428,5 +450,13 @@ extern const char *sepgsqlGetPermissionString(security_class_t tclass,
 
 extern Datum sepgsql_getcon(PG_FUNCTION_ARGS);
 extern Datum sepgsql_server_getcon(PG_FUNCTION_ARGS);
+extern Datum sepgsql_get_user(PG_FUNCTION_ARGS);
+extern Datum sepgsql_get_role(PG_FUNCTION_ARGS);
+extern Datum sepgsql_get_type(PG_FUNCTION_ARGS);
+extern Datum sepgsql_get_range(PG_FUNCTION_ARGS);
+extern Datum sepgsql_set_user(PG_FUNCTION_ARGS);
+extern Datum sepgsql_set_role(PG_FUNCTION_ARGS);
+extern Datum sepgsql_set_type(PG_FUNCTION_ARGS);
+extern Datum sepgsql_set_range(PG_FUNCTION_ARGS);
 
 #endif	/* SEPGSQL_H */
