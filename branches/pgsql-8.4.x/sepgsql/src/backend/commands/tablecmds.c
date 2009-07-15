@@ -3615,7 +3615,8 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 						colDef->colname, RelationGetRelationName(rel))));
 
 	/* SELinux checks db_column:{create} */
-	attsecid = sepgsqlCheckColumnCreate(myrelid, colDef->colname, NULL);
+	attsecid = sepgsqlCheckColumnCreate(myrelid, colDef->colname,
+										(DefElem *)colDef->secLabel);
 
 	/* Determine the new attribute's number */
 	if (isOid)
@@ -7814,6 +7815,128 @@ AlterSeqNamespaces(Relation classRel, Relation rel,
 	relation_close(depRel, AccessShareLock);
 }
 
+/*
+ * ALTER TABLE/SEQUENCE name SECURITY_LABEL [=] newlabel
+ * ALTER TABLE/SEQUENCE name ALTER column SECURITY_LABEL [=] newlabel
+ */
+static void
+ExecRelationSetSecLabel(Oid relid, DefElem *seclabel)
+{
+	Relation	rel;
+	HeapTuple	oldtup;
+	HeapTuple	newtup;
+	Oid			secid;
+	bool		replaces[Natts_pg_class];
+
+	rel = heap_open(RelationRelationId, RowExclusiveLock);
+	oldtup = SearchSysCache(RELOID,
+							ObjectIdGetDatum(relid),
+							0, 0, 0);
+	if (!HeapTupleIsValid(oldtup))
+		elog(ERROR, "cache lookup failed for relation: %u", relid);
+
+	memset(replaces, false, sizeof(replaces));
+	newtup = heap_modify_tuple(oldtup, RelationGetDescr(rel),
+							   NULL, NULL, replaces);
+	ReleaseSysCache(oldtup);
+
+	/* SELinux checks db_table:{setattr relabelfrom relabelto} */
+	secid = sepgsqlCheckTableRelabel(relid, seclabel);
+	if (!HeapTupleHasSecLabel(newtup))
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("Unable to set security label on \"%s\"",
+						get_rel_name(relid))));
+	HeapTupleSetSecLabel(newtup, secid);
+
+	simple_heap_update(rel, &newtup->t_self, newtup);
+	CatalogUpdateIndexes(rel, newtup);
+
+	heap_freetuple(newtup);
+
+	heap_close(rel, RowExclusiveLock);
+}
+
+static void
+ExecAttributeSetSecLabel(Oid relid, const char *attname, DefElem *seclabel)
+{
+	Relation	rel;
+	HeapTuple	oldtup;
+	HeapTuple	newtup;
+	AttrNumber	attnum;
+	Oid			secid;
+	bool		replaces[Natts_pg_attribute];
+
+	rel = heap_open(AttributeRelationId, RowExclusiveLock);
+	oldtup = SearchSysCacheAttName(relid, attname);
+	if (!HeapTupleIsValid(oldtup))
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_COLUMN),
+				 errmsg("column \"%s\" of relation \"%s\" does not exist",
+						attname, get_rel_name(relid))));
+	attnum = ((Form_pg_attribute) GETSTRUCT(oldtup))->attnum;
+
+	memset(replaces, false, sizeof(replaces));
+	newtup = heap_modify_tuple(oldtup, RelationGetDescr(rel),
+							   NULL, NULL, replaces);
+	ReleaseSysCache(oldtup);
+
+	/* SELinux checks db_column:{setattr relabelfrom relabelto} */
+	secid = sepgsqlCheckColumnRelabel(relid, attnum, seclabel); 
+	if (!HeapTupleHasSecLabel(newtup))
+		ereport(ERROR,
+                (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+                 errmsg("Unable to set security label on \"%s.%s\"",
+						get_rel_name(relid), attname)));
+	HeapTupleSetSecLabel(newtup, secid);
+
+	simple_heap_update(rel, &newtup->t_self, newtup);
+	CatalogUpdateIndexes(rel, newtup);
+
+	heap_freetuple(newtup);
+
+	heap_close(rel, RowExclusiveLock);
+}
+
+void
+AlterRelationSecLabel(RangeVar *relation, const char *attname,
+					  ObjectType objtype, DefElem *seclabel)
+{
+	Oid		relid;
+	char	relkind;
+
+	/* Check relation type against type specified in the ALTER command */
+	relid = RangeVarGetRelid(relation, false);
+	relkind = get_rel_relkind(relid);
+
+	switch (objtype)
+	{
+	case OBJECT_TABLE:
+	case OBJECT_COLUMN:
+		if (relkind != RELKIND_RELATION)
+			ereport(ERROR,
+					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+					 errmsg("\"%s\" is not a table", get_rel_name(relid))));
+		break;
+
+	case OBJECT_SEQUENCE:
+		if (relkind != RELKIND_SEQUENCE)
+			ereport(ERROR,
+					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+					 errmsg("\"%s\" is not a sequence", get_rel_name(relid))));
+		break;
+
+	default:
+		elog(ERROR, "unrecognized object type: %d", (int)objtype);
+		break;
+	}
+
+	/* Exec set security label */
+	if (objtype != OBJECT_COLUMN)
+		ExecRelationSetSecLabel(relid, seclabel);
+	else
+		ExecAttributeSetSecLabel(relid, attname, seclabel);
+}
 
 /*
  * This code supports

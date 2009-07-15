@@ -122,6 +122,7 @@ createdb(const CreatedbStmt *stmt)
 	DefElem    *dcollate = NULL;
 	DefElem    *dctype = NULL;
 	DefElem    *dconnlimit = NULL;
+	DefElem	   *dseclabel = NULL;
 	char	   *dbname = stmt->dbname;
 	char	   *dbowner = NULL;
 	const char *dbtemplate = NULL;
@@ -203,6 +204,14 @@ createdb(const CreatedbStmt *stmt)
 					 errmsg("LOCATION is not supported anymore"),
 					 errhint("Consider using tablespaces instead.")));
 		}
+		else if (strcmp(defel->defname, "security_label") == 0)
+		{
+			if (dseclabel)
+				ereport(ERROR,
+						(errcode(ERRCODE_SYNTAX_ERROR),
+						 errmsg("conflicting or redundant options")));
+			dseclabel = defel;
+		}
 		else
 			elog(ERROR, "option \"%s\" not recognized",
 				 defel->defname);
@@ -276,7 +285,7 @@ createdb(const CreatedbStmt *stmt)
 	check_is_member_of_role(GetUserId(), datdba);
 
 	/* SELinux checks db_database:{create} */
-	datsecid = sepgsqlCheckDatabaseCreate(dbname, NULL);
+	datsecid = sepgsqlCheckDatabaseCreate(dbname, dseclabel);
 
 	/*
 	 * Lookup database (template) to be cloned, and obtain share lock on it.
@@ -1649,6 +1658,58 @@ AlterDatabaseOwner(const char *dbname, Oid newOwnerId)
 	 */
 }
 
+/*
+ * ALTER DATABASE name SECURITY_LABEL [=] newlabel
+ */
+void
+AlterDatabaseSecLabel(const char *dbname, DefElem *seclabel)
+{
+	Relation	rel;
+	HeapTuple	oldtup;
+	HeapTuple	newtup;
+	ScanKeyData	scankey;
+	SysScanDesc	scan;
+	Oid			secid;
+	bool		replaces[Natts_pg_database];
+
+	/* Fetch the old tuple */
+	rel = heap_open(DatabaseRelationId, RowExclusiveLock);
+	ScanKeyInit(&scankey,
+				Anum_pg_database_datname,
+				BTEqualStrategyNumber, F_NAMEEQ,
+				NameGetDatum(dbname));
+	scan = systable_beginscan(rel, DatabaseNameIndexId, true,
+							  SnapshotNow, 1, &scankey);
+	oldtup = systable_getnext(scan);
+	if (!HeapTupleIsValid(oldtup))
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_DATABASE),
+				 errmsg("database \"%s\" does not exist", dbname)));
+
+	memset(replaces, false, sizeof(replaces));
+	newtup = heap_modify_tuple(oldtup, RelationGetDescr(rel),
+							   NULL, NULL, replaces);
+	systable_endscan(scan);
+
+	/* check DAC permission */
+	if (!pg_database_ownercheck(HeapTupleGetOid(newtup), GetUserId()))
+		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_DATABASE, dbname);
+
+	/* SELinux checks db_database:{setattr relabelfrom relabelto} */
+	secid = sepgsqlCheckDatabaseRelabel(HeapTupleGetOid(newtup), seclabel);
+	if (!HeapTupleHasSecLabel(newtup))
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("Unable to set security label on \"%s\"", dbname)));
+	HeapTupleSetSecLabel(newtup, secid);
+
+	simple_heap_update(rel, &newtup->t_self, newtup);
+	CatalogUpdateIndexes(rel, newtup);
+
+	heap_freetuple(newtup);
+
+	heap_close(rel, RowExclusiveLock);
+}
 
 /*
  * Helper functions

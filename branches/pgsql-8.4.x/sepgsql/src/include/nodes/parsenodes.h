@@ -464,6 +464,7 @@ typedef struct ColumnDef
 	Node	   *raw_default;	/* default value (untransformed parse tree) */
 	char	   *cooked_default; /* nodeToString representation */
 	List	   *constraints;	/* other constraints on column */
+	Node	   *secLabel;		/* security label of column */
 } ColumnDef;
 
 /*
@@ -1070,6 +1071,7 @@ typedef struct CreateSchemaStmt
 	NodeTag		type;
 	char	   *schemaname;		/* the name of the schema to create */
 	char	   *authid;			/* the owner of the created schema */
+	Node	   *secLabel;		/* explicitly specified security label */
 	List	   *schemaElts;		/* schema components (list of parsenodes) */
 } CreateSchemaStmt;
 
@@ -1335,6 +1337,7 @@ typedef struct CreateStmt
 	List	   *options;		/* options from WITH clause */
 	OnCommitAction oncommit;	/* what do we do at COMMIT? */
 	char	   *tablespacename; /* table space to use, or NULL */
+	Node	   *secLabel;		/* explicitly specified security label */
 } CreateStmt;
 
 /* ----------
@@ -1639,6 +1642,7 @@ typedef struct CreateSeqStmt
 	NodeTag		type;
 	RangeVar   *sequence;		/* the sequence to create */
 	List	   *options;
+	Node	   *secLabel;
 } CreateSeqStmt;
 
 typedef struct AlterSeqStmt
@@ -1993,6 +1997,20 @@ typedef struct AlterOwnerStmt
 	char	   *newowner;		/* the new owner */
 } AlterOwnerStmt;
 
+/* ----------------------
+ *		Alter Object Security Label Statement
+ * ----------------------
+ */
+typedef struct AlterSecLabelStmt
+{
+	NodeTag		type;
+	ObjectType	objectType;		/* OBJECT_TABLE, OBJECT_COLUMN, etc */
+	RangeVar   *relation;		/* in case it's a table */
+	List	   *object;			/* in case it's some other object */
+	List	   *objarg;			/* argument types, if applicable */
+	char	   *subname;		/* column name, if needed */
+	Node	   *secLabel;		/* the new security label */
+} AlterSecLabelStmt;
 
 /* ----------------------
  *		Create Rule Statement

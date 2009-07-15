@@ -518,7 +518,8 @@ compute_attributes_sql_style(List *options,
 							 bool *security_definer,
 							 ArrayType **proconfig,
 							 float4 *procost,
-							 float4 *prorows)
+							 float4 *prorows,
+							 Node **proseclabel)
 {
 	ListCell   *option;
 	DefElem    *as_item = NULL;
@@ -530,6 +531,7 @@ compute_attributes_sql_style(List *options,
 	List	   *set_items = NIL;
 	DefElem    *cost_item = NULL;
 	DefElem    *rows_item = NULL;
+	DefElem	   *seclabel_item = NULL;
 
 	foreach(option, options)
 	{
@@ -558,6 +560,14 @@ compute_attributes_sql_style(List *options,
 						(errcode(ERRCODE_SYNTAX_ERROR),
 						 errmsg("conflicting or redundant options")));
 			windowfunc_item = defel;
+		}
+		else if (strcmp(defel->defname, "security_label") == 0)
+		{
+			if (seclabel_item)
+				ereport(ERROR,
+						(errcode(ERRCODE_SYNTAX_ERROR),
+						 errmsg("conflicting or redundant options")));
+			seclabel_item = defel;
 		}
 		else if (compute_common_attribute(defel,
 										  &volatility_item,
@@ -623,6 +633,8 @@ compute_attributes_sql_style(List *options,
 					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 					 errmsg("ROWS must be positive")));
 	}
+	if (seclabel_item)
+		*proseclabel = (Node *)seclabel_item;
 }
 
 
@@ -763,6 +775,7 @@ CreateFunction(CreateFunctionStmt *stmt, const char *queryString)
 	ArrayType  *proconfig;
 	float4		procost;
 	float4		prorows;
+	Node	   *proseclabel;
 	HeapTuple	languageTuple;
 	Form_pg_language languageStruct;
 	List	   *as_clause;
@@ -785,13 +798,14 @@ CreateFunction(CreateFunctionStmt *stmt, const char *queryString)
 	proconfig = NULL;
 	procost = -1;				/* indicates not set */
 	prorows = -1;				/* indicates not set */
+	proseclabel = NULL;
 
 	/* override attributes from explicit list */
 	compute_attributes_sql_style(stmt->options,
 								 &as_clause, &language,
 								 &isWindowFunc, &volatility,
 								 &isStrict, &security,
-								 &proconfig, &procost, &prorows);
+								 &proconfig, &procost, &prorows, &proseclabel);
 
 	/* Convert language name to canonical case */
 	languageName = case_translate_language_name(language);
@@ -927,7 +941,8 @@ CreateFunction(CreateFunctionStmt *stmt, const char *queryString)
 					parameterDefaults,
 					PointerGetDatum(proconfig),
 					procost,
-					prorows);
+					prorows,
+					proseclabel);
 }
 
 
@@ -1261,6 +1276,58 @@ AlterFunctionOwner_internal(Relation rel, HeapTuple tup, Oid newOwnerId)
 	}
 
 	ReleaseSysCache(tup);
+}
+
+/*
+ * ALTER FUNCTION name(args,...) SECURITY_LABEL [=] newlabel
+ */
+void
+AlterFunctionSecLabel(List *name, List *argtypes, DefElem *seclabel)
+{
+	Relation	rel;
+	HeapTuple	oldtup;
+	HeapTuple	newtup;
+	Oid			proc_oid;
+	Oid			secid;
+	bool		replaces[Natts_pg_proc];
+
+	/* open pg_proc system catalog */
+	rel = heap_open(ProcedureRelationId, RowExclusiveLock);
+
+	proc_oid = LookupFuncNameTypeNames(name, argtypes, false);
+
+	oldtup = SearchSysCache(PROCOID,
+							ObjectIdGetDatum(proc_oid),
+							0, 0, 0);
+	if (!HeapTupleIsValid(oldtup))
+		elog(ERROR, "cache lookup failed for function %u", proc_oid);
+
+	memset(replaces, false, sizeof(replaces));
+	newtup = heap_modify_tuple(oldtup, RelationGetDescr(rel),
+							   NULL, NULL, replaces);
+	ReleaseSysCache(oldtup);
+
+	/* DAC permission checks */
+	if (!pg_proc_ownercheck(HeapTupleGetOid(newtup), GetUserId()))
+		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
+					   get_func_name(HeapTupleGetOid(newtup)));
+
+	/* SELinux checks db_procedure:{setattr relabelfrom relabelto} */
+	secid = sepgsqlCheckProcedureRelabel(HeapTupleGetOid(newtup), seclabel);
+
+	if (!HeapTupleHasSecLabel(newtup))
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("Unable to set security label on \"%s\"",
+						get_func_name(HeapTupleGetOid(newtup)))));
+	HeapTupleSetSecLabel(newtup, secid);
+
+	simple_heap_update(rel, &newtup->t_self, newtup);
+	CatalogUpdateIndexes(rel, newtup);
+
+	heap_freetuple(newtup);
+
+	heap_close(rel, RowExclusiveLock);
 }
 
 /*

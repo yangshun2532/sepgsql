@@ -247,6 +247,8 @@ extern void
 sepgsqlCheckDatabaseDrop(Oid database_oid);
 extern void
 sepgsqlCheckDatabaseSetattr(Oid database_oid);
+extern Oid
+sepgsqlCheckDatabaseRelabel(Oid database_oid, DefElem *new_label);
 extern bool
 sepgsqlCheckDatabaseAccess(Oid database_oid);
 extern bool
@@ -258,6 +260,8 @@ extern void
 sepgsqlCheckSchemaDrop(Oid namespace_oid);
 extern void
 sepgsqlCheckSchemaSetattr(Oid namespace_oid);
+extern Oid
+sepgsqlCheckSchemaRelabel(Oid namespace_oid, DefElem *new_label);
 extern bool
 sepgsqlCheckSchemaSearch(Oid nsid);
 
@@ -265,6 +269,8 @@ extern void
 sepgsqlCheckTableDrop(Oid table_oid);
 extern void
 sepgsqlCheckTableSetattr(Oid table_oid);
+extern Oid
+sepgsqlCheckTableRelabel(Oid table_oid, DefElem *new_label);
 extern void
 sepgsqlCheckTableLock(Oid table_oid);
 extern void
@@ -285,6 +291,8 @@ extern void
 sepgsqlCheckColumnDrop(Oid table_oid, AttrNumber attno);
 extern void
 sepgsqlCheckColumnSetattr(Oid table_oid, AttrNumber attno);
+extern Oid
+sepgsqlCheckColumnRelabel(Oid table_oid, AttrNumber attno, DefElem *new_label);
 
 extern Oid
 sepgsqlCheckProcedureCreate(const char *proname, Oid namespace_oid, DefElem *new_label);
@@ -292,6 +300,8 @@ extern void
 sepgsqlCheckProcedureDrop(Oid proc_oid);
 extern void
 sepgsqlCheckProcedureSetattr(Oid proc_oid);
+extern Oid
+sepgsqlCheckProcedureRelabel(Oid proc_oid, DefElem *new_label);
 extern bool
 sepgsqlCheckProcedureExecute(Oid proc_oid);
 extern void
@@ -367,16 +377,19 @@ extern const char *sepgsqlGetPermissionString(security_class_t tclass,
 #define sepgsqlCheckDatabaseCreate(a,b)			(InvalidOid)
 #define sepgsqlCheckDatabaseDrop(a)				do {} while(0)
 #define sepgsqlCheckDatabaseSetattr(a)			do {} while(0)
+#define sepgsqlCheckDatabaseRelabel(a,b)		(InvalidOid)
 #define sepgsqlCheckDatabaseAccess(a)			(true)
 #define sepgsqlCheckDatabaseSuperuser()			(true)
 
 #define sepgsqlCheckSchemaCreate(a,b,c)			(InvalidOid)
 #define sepgsqlCheckSchemaDrop(a)				do {} while(0)
 #define sepgsqlCheckSchemaSetattr(a)			do {} while(0)
+#define sepgsqlCheckSchemaRelabel(a,b)			(InvalidOid)
 #define sepgsqlCheckSchemaSearch(a)				(true)
 
 #define sepgsqlCheckTableDrop(a)				do {} while(0)
 #define sepgsqlCheckTableSetattr(a)				do {} while(0)
+#define sepgsqlCheckTableRelabel(a,b)			(InvalidOid)
 #define sepgsqlCheckTableLock(a)				do {} while(0)
 #define sepgsqlCheckTableTruncate(a)			do {} while(0)
 #define sepgsqlCheckTableReference(a,b,c)		do {} while(0)
@@ -388,10 +401,12 @@ extern const char *sepgsqlGetPermissionString(security_class_t tclass,
 #define sepgsqlCheckColumnCreate(a,b,c)			(InvalidOid)
 #define sepgsqlCheckColumnDrop(a,b)				do {} while(0)
 #define sepgsqlCheckColumnSetattr(a,b)			do {} while(0)
+#define sepgsqlCheckColumnRelabel(a,b,c)		(InvalidOid)
 
 #define sepgsqlCheckProcedureCreate(a,b,c)		(InvalidOid)
 #define sepgsqlCheckProcedureDrop(a)			do {} while(0)
 #define sepgsqlCheckProcedureSetattr(a)			do {} while(0)
+#define sepgsqlCheckProcedureRelabel(a,b)		(InvalidOid)
 #define sepgsqlCheckProcedureExecute(a)			(true)
 #define sepgsqlCheckProcedureEntrypoint(a,b)	do {} while(0)
 

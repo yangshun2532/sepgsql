@@ -78,7 +78,8 @@ CreateSchemaCommand(CreateSchemaStmt *stmt, const char *queryString)
 	check_is_member_of_role(saved_uid, owner_uid);
 
 	/* SELinux checks db_schema:{create} */
-	nspsecid = sepgsqlCheckSchemaCreate(schemaName, NULL, false);
+	nspsecid = sepgsqlCheckSchemaCreate(schemaName,
+										(DefElem *)stmt->secLabel, false);
 
 	/* Additional check to protect reserved schema names */
 	if (!allowSystemTableMods && IsReservedName(schemaName))
@@ -441,4 +442,50 @@ AlterSchemaOwner_internal(HeapTuple tup, Relation rel, Oid newOwnerId)
 								newOwnerId);
 	}
 
+}
+
+/*
+ * ALTER SCHEMA name SECURITY_LABEL [=] newlabel
+ */
+void
+AlterSchemaSecLabel(const char *name, DefElem *seclabel)
+{
+	Relation	rel;
+	HeapTuple	oldtup;
+	HeapTuple	newtup;
+	Oid			secid;
+	bool		replaces[Natts_pg_namespace];
+
+	/* open pg_namespace relation */
+	rel = heap_open(NamespaceRelationId, RowExclusiveLock);
+	oldtup = SearchSysCache(NAMESPACENAME,
+							CStringGetDatum(name),
+							0, 0, 0);
+	if (!HeapTupleIsValid(oldtup))
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_SCHEMA),
+				 errmsg("schema \"%s\" does not exist", name)));
+
+	memset(replaces, false, sizeof(replaces));
+	newtup = heap_modify_tuple(oldtup, RelationGetDescr(rel),
+							   NULL, NULL, replaces);
+	ReleaseSysCache(oldtup);
+
+	/* DAC permission check */
+	if (!pg_namespace_ownercheck(HeapTupleGetOid(newtup), GetUserId()))
+		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_NAMESPACE, name);
+	/* SELinux checks db_schema:{setattr relabelfrom relabelto} */
+	secid = sepgsqlCheckSchemaRelabel(HeapTupleGetOid(newtup), seclabel);
+	if (!HeapTupleHasSecLabel(newtup))
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("Unable to set security label on \"%s\"", name)));
+	HeapTupleSetSecLabel(newtup, secid);
+
+	simple_heap_update(rel, &newtup->t_self, newtup);
+	CatalogUpdateIndexes(rel, newtup);
+
+	heap_freetuple(newtup);
+
+	heap_close(rel, RowExclusiveLock);
 }
