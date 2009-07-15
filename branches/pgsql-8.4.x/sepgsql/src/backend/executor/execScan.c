@@ -20,6 +20,7 @@
 
 #include "executor/executor.h"
 #include "miscadmin.h"
+#include "security/rowlevel.h"
 #include "utils/memutils.h"
 
 
@@ -53,6 +54,7 @@ ExecScan(ScanState *node,
 	ProjectionInfo *projInfo;
 	ExprDoneCond isDone;
 	TupleTableSlot *resultSlot;
+	Scan		   *scan = (Scan *)node->ps.plan;
 
 	/*
 	 * Fetch data from node
@@ -64,7 +66,7 @@ ExecScan(ScanState *node,
 	 * If we have neither a qual to check nor a projection to do, just skip
 	 * all the overhead and return the raw scan tuple.
 	 */
-	if (!qual && !projInfo)
+	if (!qual && !projInfo && !scan->rowlvPerms)
 		return (*accessMtd) (node);
 
 	/*
@@ -128,8 +130,17 @@ ExecScan(ScanState *node,
 		 * when the qual is nil ... saves only a few cycles, but they add up
 		 * ...
 		 */
-		if (!qual || ExecQual(qual, econtext, false))
+		if (rowlvExecScanFilter(scan, node->ss_currentRelation, slot)
+			&& (!qual || ExecQual(qual, econtext, false)))
 		{
+			/*
+			 * NOTE: On FK checks, the Row-level feature needs to raise
+			 * an error after evaluation of all the given quals to avoid
+			 * incorrect error reporting. We assume FK implementation
+			 * does not use malicious functions as the quals.
+			 */
+			rowlvExecScanAbort(scan, node->ss_currentRelation, slot);
+
 			/*
 			 * Found a satisfactory scan tuple.
 			 */

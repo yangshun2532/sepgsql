@@ -259,6 +259,7 @@ CopyScanFields(Scan *from, Scan *newnode)
 	CopyPlanFields((Plan *) from, (Plan *) newnode);
 
 	COPY_SCALAR_FIELD(scanrelid);
+	COPY_SCALAR_FIELD(rowlvPerms);
 }
 
 /*

@@ -21,6 +21,7 @@
 #include "optimizer/plancat.h"
 #include "optimizer/restrictinfo.h"
 #include "parser/parsetree.h"
+#include "security/rowlevel.h"
 #include "utils/hsearch.h"
 
 
@@ -91,6 +92,7 @@ build_simple_rel(PlannerInfo *root, int relid, RelOptKind reloptkind)
 	rel->has_eclass_joins = false;
 	rel->index_outer_relids = NULL;
 	rel->index_inner_paths = NIL;
+	rel->rowlvPerms = rowlvSetupPermissions(rte);
 
 	/* Check type of rtable entry */
 	switch (rte->rtekind)

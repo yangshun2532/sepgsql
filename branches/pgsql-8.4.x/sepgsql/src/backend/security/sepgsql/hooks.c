@@ -378,7 +378,26 @@ sepgsqlCheckTableLock(Oid table_oid)
 void
 sepgsqlCheckTableTruncate(Relation rel)
 {
+	HeapScanDesc		scan;
+	HeapTuple			tuple;
+	security_class_t	tclass;
+
+	if (!sepgsqlIsEnabled())
+		return;
+
+	/* check db_table:{delete} permission */
 	checkTableCommon(RelationGetRelid(rel), SEPG_DB_TABLE__DELETE);
+
+	/* check db_tuple:{delete} permission */
+	scan = heap_beginscan(rel, SnapshotNow, 0, NULL);
+
+	while ((tuple = heap_getnext(scan, ForwardScanDirection)) != NULL)
+	{
+		tclass = sepgsqlTupleObjectClass(RelationGetRelid(rel), tuple);
+		sepgsqlClientHasPermsTup(RelationGetRelid(rel), tuple, tclass,
+								 SEPG_DB_TUPLE__DELETE, true);
+	}
+	heap_endscan(scan);
 }
 
 void

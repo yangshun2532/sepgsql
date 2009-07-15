@@ -37,6 +37,7 @@
 #include "optimizer/planner.h"
 #include "parser/parse_relation.h"
 #include "rewrite/rewriteHandler.h"
+#include "security/rowlevel.h"
 #include "security/sepgsql.h"
 #include "storage/fd.h"
 #include "tcop/tcopprot.h"
@@ -1477,6 +1478,10 @@ CopyTo(CopyState cstate)
 		{
 			CHECK_FOR_INTERRUPTS();
 
+			/* check Row-level permission on the tuple */
+			if (!rowlvCopyToTuple(cstate->rel, tuple))
+				continue;
+
 			/* Deconstruct the tuple ... faster than repeated heap_getattr */
 			heap_deform_tuple(tuple, tupDesc, values, nulls);
 
@@ -2278,6 +2283,9 @@ CopyFrom(CopyState cstate)
 				tuple = newtuple;
 			}
 		}
+
+		if (!skip_tuple)
+			sepgsqlHeapTupleInsert(cstate->rel, tuple, false);
 
 		if (!skip_tuple)
 		{
