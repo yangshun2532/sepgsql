@@ -1,11 +1,20 @@
 /*
  * src/backend/security/sepgsql/avc.c
- *    SE-PostgreSQL userspace access vector cache
+ *    SE-PostgreSQL makes its access control decision
  *
  * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  */
 #include "postgres.h"
+
+#include "catalog/pg_class.h"
+#include "catalog/pg_database.h"
+#include "catalog/pg_namespace.h"
+#include "catalog/pg_proc.h"
+#include "lib/stringinfo.h"
+#include "security/sepgsql.h"
+#include "utils/builtins.h"
+#include "utils/syscache.h"
 
 /*
  * sepgsqlAvcAudit
@@ -20,9 +29,8 @@
 PGDLLIMPORT sepgsqlAvcAuditHook_t sepgsqlAvcAuditHook = NULL;
 
 static void
-sepgsqlAvcAudit(char *scontext, char *tcontext,
-				uint16 tclass, uint32 audited,
-				bool denied, const char *audit_name)
+sepgsqlAvcAudit(bool denied, char *scontext, char *tcontext,
+				uint16 tclass, uint32 audited, const char *audit_name)
 {
 	StringInfoData	buf;
 	uint32			mask;
@@ -67,19 +75,16 @@ sepgsqlAvcAudit(char *scontext, char *tcontext,
 /*
  * sepgsqlClientHasPermsTup
  *
- *
- *
- *
- *
- *
+ * A wrapper function to sepgsqlComputePerms()
  */
 bool
 sepgsqlClientHasPermsTup(Oid relid, HeapTuple tuple,
 						 uint16 tclass, uint32 required, bool abort)
 {
-	Datum	datum;
-	bool	isnull;
-	char   *seclabel = NULL;
+	Datum		datum;
+	bool		isnull;
+	char	   *seclabel = NULL;
+	const char *audit_name = sepgsqlAuditName(relid, tuple);
 
 	switch (relid)
 	{
@@ -111,28 +116,36 @@ sepgsqlClientHasPermsTup(Oid relid, HeapTuple tuple,
 	/* validate security context */
 	seclabel = sepgsqlRawSecLabelOut(seclabel);
 
-	return sepgsqlComputePerms(sepgsqlGetClientLabel(),
-							   seclabel, tclass, required, abort);
+	return sepgsqlComputePerms(sepgsqlGetClientLabel(), seclabel,
+							   tclass, required, audit_name, abort);
 }
 
-/*********/
-bool
-sepgsqlClientHasPermsLabel(Oid relid, const char *seclabel,
-						   uint16 tclass, uint32 required, bool abort)
-{}
+/*
+ * sepgsqlClientCreateLabel
+ *
+ * A wrapper function to sepgsqlComputeCreate
+ */
+char *
+sepgsqlClientCreateLabel(char *tcontext, uint16 tclass)
+{
+	return sepgsqlComputeCreate(sepgsqlGetClientLabel(),
+								tcontext, tclass);
+}
 
 /*
  * sepgsqlComputePerms
  *
- *
- *
- *
- *
- *
+ * It tells in-kernel SELinux whether the given combination of
+ * client's label (scontext), target object's label (tcontext)
+ * and kind of actions (tclass_in and required) should be allowed
+ * or not.
+ * If all the required permissions are allowed, it returns true.
+ * Otherwise, it returns false or raises an error.
  */
 bool
-sepgsqlComputePerms(const char *scontext, const char *tcontext,
-					uint16 tclass_in, uint32 required, bool abort)
+sepgsqlComputePerms(char *scontext, char *tcontext,
+					uint16 tclass_in, uint32 required,
+					const char *audit_name, bool abort)
 {
 	access_vector_t		denied, audited;
 	security_class_t	tclass_ex;
@@ -150,7 +163,7 @@ sepgsqlComputePerms(const char *scontext, const char *tcontext,
 					 errmsg("SELinux: could not compute av_decision: "
 							"scontext=%s tcontext=%s tclass=%s",
 							scontext, tcontext,
-							sepgsqlGetClassString(tclass))));
+							sepgsqlGetClassString(tclass_in))));
 		sepgsqlTransToInternalPerms(tclass_in, &avd);
 	}
 	else
@@ -168,9 +181,8 @@ sepgsqlComputePerms(const char *scontext, const char *tcontext,
 					 : (required & avd.auditallow);
 	if (audited)
 	{
-		avc_audit_common(sepgsqlTransSecLabelOut(scontext),
-						 sepgsqlTransSecLabelOut(tcontext),
-						 tclass, !!denied, audited, audit_name);
+		sepgsqlAvcAudit(!!denied, scontext, tcontext,
+						tclass_in, audited, audit_name);
 	}
 
 	if (denied && security_getenforce() < 1 &&
@@ -186,10 +198,14 @@ sepgsqlComputePerms(const char *scontext, const char *tcontext,
 	return true;
 }
 
-/*********/
+/*
+ * sepgsqlComputeCreate
+ *
+ * It tells in-kernel SELinux a default security label to be assigned
+ * on the new tclass_in type object under tcontext, by scontext.
+ */
 char *
-sepgsqlComputeCreate(const char *scontext, const char *tcontext,
-					 uint16 tclass_in)
+sepgsqlComputeCreate(char *scontext, char *tcontext, uint16 tclass_in)
 {
 	security_context_t	ncontext, result;
 	security_class_t	tclass_ex;
@@ -199,7 +215,7 @@ sepgsqlComputeCreate(const char *scontext, const char *tcontext,
 									tclass_ex, &ncontext) < 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("SELinux: could not compute a new context ",
+				 errmsg("SELinux: could not compute a new context "
 						"scontext=%s tcontext=%s tclass=%s",
 						scontext, tcontext, sepgsqlGetClassString(tclass_in))));
 	PG_TRY();

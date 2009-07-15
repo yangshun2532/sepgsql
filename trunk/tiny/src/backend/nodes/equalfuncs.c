@@ -1755,6 +1755,7 @@ _equalCreateSchemaStmt(CreateSchemaStmt *a, CreateSchemaStmt *b)
 {
 	COMPARE_STRING_FIELD(schemaname);
 	COMPARE_STRING_FIELD(authid);
+	COMPARE_NODE_FIELD(secLabel);
 	COMPARE_NODE_FIELD(schemaElts);
 
 	return true;
@@ -1860,6 +1861,19 @@ _equalAlterTSConfigurationStmt(AlterTSConfigurationStmt *a,
 	COMPARE_SCALAR_FIELD(override);
 	COMPARE_SCALAR_FIELD(replace);
 	COMPARE_SCALAR_FIELD(missing_ok);
+
+	return true;
+}
+
+static bool
+_equalAlterSecLabelStmt(AlterSecLabelStmt *a, AlterSecLabelStmt *b)
+{
+	COMPARE_SCALAR_FIELD(objectType);
+	COMPARE_NODE_FIELD(relation);
+	COMPARE_NODE_FIELD(object);
+	COMPARE_NODE_FIELD(objarg);
+	COMPARE_STRING_FIELD(subname);
+	COMPARE_NODE_FIELD(secLabel);
 
 	return true;
 }
@@ -2772,6 +2786,9 @@ equal(void *a, void *b)
 			break;
 		case T_AlterTSConfigurationStmt:
 			retval = _equalAlterTSConfigurationStmt(a, b);
+			break;
+		case T_AlterSecLabelStmt:
+			retval = _equalAlterSecLabelStmt(a, b);
 			break;
 
 		case T_A_Expr:

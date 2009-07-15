@@ -53,6 +53,7 @@
 #include "parser/parse_expr.h"
 #include "parser/parse_func.h"
 #include "parser/parse_type.h"
+#include "security/sepgsql.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
@@ -517,7 +518,8 @@ compute_attributes_sql_style(List *options,
 							 bool *security_definer,
 							 ArrayType **proconfig,
 							 float4 *procost,
-							 float4 *prorows)
+							 float4 *prorows,
+							 Node **proseclabel)
 {
 	ListCell   *option;
 	DefElem    *as_item = NULL;
@@ -529,6 +531,7 @@ compute_attributes_sql_style(List *options,
 	List	   *set_items = NIL;
 	DefElem    *cost_item = NULL;
 	DefElem    *rows_item = NULL;
+	DefElem	   *seclabel_item = NULL;
 
 	foreach(option, options)
 	{
@@ -557,6 +560,14 @@ compute_attributes_sql_style(List *options,
 						(errcode(ERRCODE_SYNTAX_ERROR),
 						 errmsg("conflicting or redundant options")));
 			windowfunc_item = defel;
+		}
+		else if (strcmp(defel->defname, "security_label") == 0)
+		{
+			if (seclabel_item)
+				ereport(ERROR,
+						(errcode(ERRCODE_SYNTAX_ERROR),
+						 errmsg("conflicting or redundant options")));
+			seclabel_item = defel;
 		}
 		else if (compute_common_attribute(defel,
 										  &volatility_item,
@@ -622,6 +633,8 @@ compute_attributes_sql_style(List *options,
 					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 					 errmsg("ROWS must be positive")));
 	}
+	if (seclabel_item)
+		*proseclabel = (Node *)seclabel_item;
 }
 
 
@@ -762,6 +775,7 @@ CreateFunction(CreateFunctionStmt *stmt, const char *queryString)
 	ArrayType  *proconfig;
 	float4		procost;
 	float4		prorows;
+	Node	   *proseclabel;
 	HeapTuple	languageTuple;
 	Form_pg_language languageStruct;
 	List	   *as_clause;
@@ -784,13 +798,14 @@ CreateFunction(CreateFunctionStmt *stmt, const char *queryString)
 	proconfig = NULL;
 	procost = -1;				/* indicates not set */
 	prorows = -1;				/* indicates not set */
+	proseclabel = NULL;
 
 	/* override attributes from explicit list */
 	compute_attributes_sql_style(stmt->options,
 								 &as_clause, &language,
 								 &isWindowFunc, &volatility,
 								 &isStrict, &security,
-								 &proconfig, &procost, &prorows);
+								 &proconfig, &procost, &prorows, &proseclabel);
 
 	/* Convert language name to canonical case */
 	languageName = case_translate_language_name(language);
@@ -926,7 +941,8 @@ CreateFunction(CreateFunctionStmt *stmt, const char *queryString)
 					parameterDefaults,
 					PointerGetDatum(proconfig),
 					procost,
-					prorows);
+					prorows,
+					proseclabel);
 }
 
 
@@ -1255,6 +1271,65 @@ AlterFunctionOwner_internal(Relation rel, HeapTuple tup, Oid newOwnerId)
 	}
 
 	ReleaseSysCache(tup);
+}
+
+/*
+ * ALTER FUNCTION name(args,...) SECURITY LABEL [=] <new_label>
+ */
+void
+AlterFunctionSecLabel(List *name, List *argtypes, DefElem *new_label)
+{
+	Relation	rel;
+	HeapTuple	oldtup, newtup;
+	Oid			proc_oid;
+	Datum		seclabel;
+	Datum		values[Natts_pg_proc];
+	bool		nulls[Natts_pg_proc];
+	bool		repls[Natts_pg_proc];
+
+	/* Fetch the old tuple */
+	proc_oid = LookupFuncNameTypeNames(name, argtypes, false);
+
+	rel = heap_open(ProcedureRelationId, RowExclusiveLock);
+
+	oldtup = SearchSysCache(PROCOID,
+							ObjectIdGetDatum(proc_oid),
+							0, 0, 0);
+	if (!HeapTupleIsValid(oldtup))
+		elog(ERROR, "cache lookup failed for function %u", proc_oid);
+
+	/* Check procedure ownership */
+	if (!pg_proc_ownercheck(proc_oid, GetUserId()))
+		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
+					   NameStr(((Form_pg_proc) GETSTRUCT(oldtup))->proname));
+	/*
+	 * TODO: we should check db_proc:{setattr relabelfrom relabelto},
+	 * not only sanity checks of the given security label.
+	 */
+	seclabel = sepgsqlGivenSecLabelIn(new_label);
+
+	/* Set up new security label */
+	memset(values, 0, sizeof(values));
+	memset(nulls, false, sizeof(nulls));
+	memset(repls, false, sizeof(repls));
+
+	repls[Anum_pg_proc_proseclabel - 1] = true;
+	if (!DatumGetPointer(seclabel))
+		nulls[Anum_pg_proc_proseclabel - 1] = true;
+	else
+		values[Anum_pg_proc_proseclabel - 1] = seclabel;
+
+	newtup = heap_modify_tuple(oldtup, RelationGetDescr(rel),
+							   values, nulls, repls);
+
+	simple_heap_update(rel, &newtup->t_self, newtup);
+	CatalogUpdateIndexes(rel, newtup);
+
+	heap_freetuple(newtup);
+
+	ReleaseSysCache(oldtup);
+
+	heap_close(rel, RowExclusiveLock);
 }
 
 /*

@@ -29,6 +29,7 @@
 #include "miscadmin.h"
 #include "nodes/nodeFuncs.h"
 #include "parser/parse_type.h"
+#include "security/sepgsql.h"
 #include "tcop/pquery.h"
 #include "tcop/tcopprot.h"
 #include "utils/acl.h"
@@ -78,7 +79,8 @@ ProcedureCreate(const char *procedureName,
 				List *parameterDefaults,
 				Datum proconfig,
 				float4 procost,
-				float4 prorows)
+				float4 prorows,
+				Node *new_label)
 {
 	Oid			retval;
 	int			parameterCount;
@@ -96,6 +98,7 @@ ProcedureCreate(const char *procedureName,
 	Datum		values[Natts_pg_proc];
 	bool		replaces[Natts_pg_proc];
 	Oid			relid;
+	Datum		seclabel;
 	NameData	procname;
 	TupleDesc	tupDesc;
 	bool		is_update;
@@ -358,6 +361,19 @@ ProcedureCreate(const char *procedureName,
 						   procedureName);
 
 		/*
+		 * TODO: SELinux shall check db_procedure:{setattr} and
+		 *       db_procedure:{relabelfrom relabelto} here,
+		 *       not only sanity checks for the given security label.
+		 */
+		if (!new_label)
+			replaces[Anum_pg_proc_proseclabel - 1] = false;
+		else
+		{
+			values[Anum_pg_proc_proseclabel - 1]
+				= sepgsqlGivenSecLabelIn((DefElem *)new_label);
+		}
+
+		/*
 		 * Not okay to change the return type of the existing proc, since
 		 * existing rules, views, etc may depend on the return type.
 		 */
@@ -484,6 +500,17 @@ ProcedureCreate(const char *procedureName,
 	}
 	else
 	{
+		/*
+		 * TODO: SELinux shall check db_procedure:{create} here,
+		 *       not only sanity checks for the given security label.
+		 */
+		seclabel = sepgsqlAssignProcedureSecLabel(procedureName, procNamespace,
+												  (DefElem *)new_label);
+		if (!PointerGetDatum(seclabel))
+			nulls[Anum_pg_proc_proseclabel - 1] = true;
+		else
+			values[Anum_pg_proc_proseclabel - 1] = seclabel;
+
 		/* Creating a new procedure */
 		tup = heap_form_tuple(tupDesc, values, nulls);
 		simple_heap_insert(rel, tup);

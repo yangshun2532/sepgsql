@@ -120,13 +120,13 @@ createdb(const CreatedbStmt *stmt)
 	DefElem    *dcollate = NULL;
 	DefElem    *dctype = NULL;
 	DefElem    *dconnlimit = NULL;
-	DefElem	   *dseclabel = NULL;
+	DefElem	   *dnew_label = NULL;
 	char	   *dbname = stmt->dbname;
 	char	   *dbowner = NULL;
 	const char *dbtemplate = NULL;
 	char	   *dbcollate = NULL;
 	char	   *dbctype = NULL;
-	Datum		seclabel;
+	Datum		datseclabel;
 	int			encoding = -1;
 	int			dbconnlimit = -1;
 	int			ctype_encoding;
@@ -205,11 +205,11 @@ createdb(const CreatedbStmt *stmt)
 		}
 		else if (strcmp(defel->defname, "security_label") == 0)
 		{
-			if (dseclabel)
+			if (dnew_label)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
 						 errmsg("conflicting or redundant options")));
-			dseclabel = defel;
+			dnew_label = defel;
 		}
 		else
 			elog(ERROR, "option \"%s\" not recognized",
@@ -284,10 +284,11 @@ createdb(const CreatedbStmt *stmt)
 	check_is_member_of_role(GetUserId(), datdba);
 
 	/*
-	 * SELinux assigns a default or user given security label
-	 * on the new database in creation.
+	 * SELinux shall check db_database:{create} here, not only
+	 * assigning a default label or sanity checks on the user
+	 * given security label.
 	 */
-	seclabel = sepgsqlAssignDatabaseCreate(dbname, dseclabel);
+	datseclabel = sepgsqlAssignDatabaseSecLabel(dbname, dnew_label);
 
 	/*
 	 * Lookup database (template) to be cloned, and obtain share lock on it.
@@ -570,10 +571,10 @@ createdb(const CreatedbStmt *stmt)
 	new_record_nulls[Anum_pg_database_datconfig - 1] = true;
 	new_record_nulls[Anum_pg_database_datacl - 1] = true;
 
-	if (!DatumGetPointer(seclabel))
-		new_record_nulls[Anum_pg_database_seclabel - 1] = true;
+	if (!DatumGetPointer(datseclabel))
+		new_record_nulls[Anum_pg_database_datseclabel - 1] = true;
 	else
-		new_record[Anum_pg_database_seclabel - 1] = seclabel;
+		new_record[Anum_pg_database_datseclabel - 1] = datseclabel;
 
 	tuple = heap_form_tuple(RelationGetDescr(pg_database_rel),
 							new_record, new_record_nulls);
@@ -1637,6 +1638,69 @@ AlterDatabaseOwner(const char *dbname, Oid newOwnerId)
 	 */
 }
 
+/*
+ * ALTER DATABASE name SECURITY LABEL [=] <new_label>
+ */
+void
+AlterDatabaseSecLabel(const char *dbname, DefElem *new_label)
+{
+	Relation	rel;
+	HeapTuple	oldtup, newtup;
+	ScanKeyData	key[1];
+	SysScanDesc	scan;
+	Datum		seclabel;
+	Datum		values[Natts_pg_database];
+	bool		nulls[Natts_pg_database];
+	bool		repls[Natts_pg_database];
+
+	/* Fetch the old tuple */
+	rel = heap_open(DatabaseRelationId, RowExclusiveLock);
+
+	ScanKeyInit(&key[0],
+				Anum_pg_database_datname,
+				BTEqualStrategyNumber, F_NAMEEQ,
+				NameGetDatum(dbname));
+	scan = systable_beginscan(rel, DatabaseNameIndexId, true,
+							  SnapshotNow, 1, &key[0]);
+	oldtup = systable_getnext(scan);
+	if (!HeapTupleIsValid(oldtup))
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_DATABASE),
+				 errmsg("database \"%s\" does not exist", dbname)));
+
+	/* check database ownership */
+	if (!pg_database_ownercheck(HeapTupleGetOid(oldtup), GetUserId()))
+		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_DATABASE, dbname);
+
+	/*
+	 * TODO: we should check db_database:{setattr relabelfrom relabelto},
+	 * not only sanity checks of the given security label.
+	 */
+	seclabel = sepgsqlGivenSecLabelIn(new_label);
+
+	/* Set up new security label */
+	memset(values, 0, sizeof(values));
+	memset(nulls, false, sizeof(nulls));
+	memset(repls, false, sizeof(repls));
+
+	repls[Anum_pg_database_datseclabel - 1] = true;
+	if (!DatumGetPointer(seclabel))
+		nulls[Anum_pg_database_datseclabel - 1] = true;
+	else
+		values[Anum_pg_database_datseclabel - 1] = seclabel;
+
+	newtup = heap_modify_tuple(oldtup, RelationGetDescr(rel),
+							   values, nulls, repls);
+
+	simple_heap_update(rel, &newtup->t_self, newtup);
+	CatalogUpdateIndexes(rel, newtup);
+
+	heap_freetuple(newtup);
+
+	systable_endscan(scan);
+
+	heap_close(rel, RowExclusiveLock);
+}
 
 /*
  * Helper functions

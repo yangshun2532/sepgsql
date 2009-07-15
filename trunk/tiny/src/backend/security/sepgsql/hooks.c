@@ -7,6 +7,12 @@
  */
 #include "postgres.h"
 
+#include "catalog/namespace.h"
+#include "catalog/pg_database.h"
+#include "catalog/pg_namespace.h"
+#include "catalog/pg_proc.h"
+#include "miscadmin.h"
+#include "security/sepgsql.h"
 #include "utils/syscache.h"
 
 /* ------------------------------------------------------------
@@ -47,10 +53,10 @@ checkDatabaseCommon(Oid database_oid, uint32 required, bool abort)
  * bypassed, even if client has superuser privilege.
  */
 bool
-sepgsqlCheckDatabaseAccess(Oid database_oid)
+sepgsqlCheckDatabaseConnect(Oid database_oid)
 {
 	return checkDatabaseCommon(database_oid,
-							   SEPG_DB_DATABASE__ACCESS, false);
+							   SEPG_DB_DATABASE__CONNECT, false);
 }
 
 /*
@@ -75,7 +81,7 @@ sepgsqlCheckDatabaseSuperuser(void)
  * ------------------------------------------------------------ */
 
 static bool
-checkSchemaCommon(Oid namespace_oid, uint32 required, boot abort)
+checkSchemaCommon(Oid namespace_oid, uint32 required, bool abort)
 {
 	HeapTuple	tuple;
 	bool		rc;
@@ -112,8 +118,8 @@ checkSchemaCommon(Oid namespace_oid, uint32 required, boot abort)
 bool
 sepgsqlCheckSchemaSearch(Oid namespace_oid)
 {
-	return sepgsqlCheckSchemaCommon(namespace_oid,
-									SEPG_DB_SCHEMA__SEARCH, false);
+	return checkSchemaCommon(namespace_oid,
+							 SEPG_DB_SCHEMA__SEARCH, false);
 }
 
 /* ------------------------------------------------------------

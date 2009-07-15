@@ -184,7 +184,7 @@ static TypeName *TableFuncTypeName(List *columns);
 %type <node>	stmt schema_stmt
 		AlterDatabaseStmt AlterDatabaseSetStmt AlterDomainStmt AlterFdwStmt
 		AlterForeignServerStmt AlterGroupStmt
-		AlterObjectSchemaStmt AlterOwnerStmt AlterSeqStmt AlterTableStmt
+		AlterObjectSchemaStmt AlterOwnerStmt AlterSecLabelStmt AlterSeqStmt AlterTableStmt
 		AlterUserStmt AlterUserMappingStmt AlterUserSetStmt AlterRoleStmt AlterRoleSetStmt
 		AnalyzeStmt ClosePortalStmt ClusterStmt CommentStmt
 		ConstraintsSetStmt CopyStmt CreateAsStmt CreateCastStmt
@@ -401,6 +401,8 @@ static TypeName *TableFuncTypeName(List *columns);
 %type <str>		OptTableSpace OptConsTableSpace OptTableSpaceOwner
 %type <list>	opt_check_option
 
+%type <defelt>	OptSecLabel SecLabelItem
+
 %type <target>	xml_attribute_el
 %type <list>	xml_attribute_list xml_attributes
 %type <node>	xml_root_version opt_xml_root_standalone
@@ -464,7 +466,7 @@ static TypeName *TableFuncTypeName(List *columns);
 
 	KEY
 
-	LANCOMPILER LANGUAGE LARGE_P LAST_P LC_COLLATE_P LC_CTYPE_P LEADING
+	LABEL_P LANCOMPILER LANGUAGE LARGE_P LAST_P LC_COLLATE_P LC_CTYPE_P LEADING
 	LEAST LEFT LEVEL LIKE LIMIT LISTEN LOAD LOCAL LOCALTIME LOCALTIMESTAMP
 	LOCATION LOCK_P LOGIN_P
 
@@ -607,6 +609,7 @@ stmt :
 			| AlterGroupStmt
 			| AlterObjectSchemaStmt
 			| AlterOwnerStmt
+			| AlterSecLabelStmt
 			| AlterSeqStmt
 			| AlterTableStmt
 			| AlterRoleSetStmt
@@ -1041,7 +1044,7 @@ DropGroupStmt:
  *****************************************************************************/
 
 CreateSchemaStmt:
-			CREATE SCHEMA OptSchemaName AUTHORIZATION RoleId OptSchemaEltList
+			CREATE SCHEMA OptSchemaName AUTHORIZATION RoleId OptSecLabel OptSchemaEltList
 				{
 					CreateSchemaStmt *n = makeNode(CreateSchemaStmt);
 					/* One can omit the schema name or the authorization id. */
@@ -1050,16 +1053,18 @@ CreateSchemaStmt:
 					else
 						n->schemaname = $5;
 					n->authid = $5;
-					n->schemaElts = $6;
+					n->secLabel = (Node *)$6;
+					n->schemaElts = $7;
 					$$ = (Node *)n;
 				}
-			| CREATE SCHEMA ColId OptSchemaEltList
+			| CREATE SCHEMA ColId OptSecLabel OptSchemaEltList
 				{
 					CreateSchemaStmt *n = makeNode(CreateSchemaStmt);
 					/* ...but not both */
 					n->schemaname = $3;
 					n->authid = NULL;
-					n->schemaElts = $4;
+					n->secLabel = (Node *)$4;
+					n->schemaElts = $5;
 					$$ = (Node *)n;
 				}
 		;
@@ -4885,6 +4890,10 @@ createfunc_opt_item:
 				{
 					$$ = makeDefElem("window", (Node *)makeInteger(TRUE));
 				}
+			| SecLabelItem
+				{
+					$$ = $1;
+				}
 			| common_func_opt_item
 				{
 					$$ = $1;
@@ -5591,6 +5600,48 @@ AlterOwnerStmt: ALTER AGGREGATE func_name aggr_args OWNER TO RoleId
 				}
 		;
 
+/*****************************************************************************
+ *
+ * ALTER THING name SECURITY LABEL [=] <newlabel>
+ *
+ *****************************************************************************/
+
+AlterSecLabelStmt:	ALTER DATABASE database_name SecLabelItem
+				{
+					AlterSecLabelStmt *n = makeNode(AlterSecLabelStmt);
+					n->objectType = OBJECT_DATABASE;
+					n->object = list_make1(makeString($3));
+					n->secLabel = (Node *)$4;
+					$$ = (Node *) n;
+				}
+			| ALTER SCHEMA name SecLabelItem
+				{
+					AlterSecLabelStmt *n = makeNode(AlterSecLabelStmt);
+					n->objectType = OBJECT_SCHEMA;
+					n->object = list_make1(makeString($3));
+					n->secLabel = (Node *)$4;
+					$$ = (Node *) n;
+				}
+			| ALTER FUNCTION function_with_argtypes SecLabelItem
+				{
+					AlterSecLabelStmt *n = makeNode(AlterSecLabelStmt);
+					n->objectType = OBJECT_FUNCTION;
+					n->object = $3->funcname;
+					n->objarg = $3->funcargs;
+					n->secLabel = (Node *)$4;
+					$$ = (Node *) n;
+				}
+		;
+
+OptSecLabel:	SecLabelItem		{ $$ = $1; }
+			|	/* EMPTY */			{ $$ = NULL; }
+		;
+
+SecLabelItem:	SECURITY LABEL_P opt_equal Sconst
+				{
+					$$ = makeDefElem("security_label", (Node *)makeString($4));
+				}
+		;
 
 /*****************************************************************************
  *
@@ -6032,6 +6083,10 @@ createdb_opt_item:
 			| OWNER opt_equal DEFAULT
 				{
 					$$ = makeDefElem("owner", NULL);
+				}
+			| SecLabelItem
+				{
+					$$ = $1;
 				}
 		;
 
@@ -10225,6 +10280,7 @@ unreserved_keyword:
 			| INVOKER
 			| ISOLATION
 			| KEY
+			| LABEL_P
 			| LANCOMPILER
 			| LANGUAGE
 			| LARGE_P

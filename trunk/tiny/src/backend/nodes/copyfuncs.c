@@ -3219,6 +3219,7 @@ _copyCreateSchemaStmt(CreateSchemaStmt *from)
 
 	COPY_STRING_FIELD(schemaname);
 	COPY_STRING_FIELD(authid);
+	COPY_NODE_FIELD(secLabel);
 	COPY_NODE_FIELD(schemaElts);
 
 	return newnode;
@@ -3343,6 +3344,21 @@ _copyAlterTSConfigurationStmt(AlterTSConfigurationStmt *from)
 	COPY_SCALAR_FIELD(override);
 	COPY_SCALAR_FIELD(replace);
 	COPY_SCALAR_FIELD(missing_ok);
+
+	return newnode;
+}
+
+static AlterSecLabelStmt *
+_copyAlterSecLabelStmt(AlterSecLabelStmt *from)
+{
+	AlterSecLabelStmt *newnode = makeNode(AlterSecLabelStmt);
+
+	COPY_SCALAR_FIELD(objectType);
+	COPY_NODE_FIELD(relation);
+    COPY_NODE_FIELD(object);
+    COPY_NODE_FIELD(objarg);
+	COPY_STRING_FIELD(subname);
+	COPY_NODE_FIELD(secLabel);
 
 	return newnode;
 }
@@ -3995,6 +4011,9 @@ copyObject(void *from)
 			break;
 		case T_AlterTSConfigurationStmt:
 			retval = _copyAlterTSConfigurationStmt(from);
+			break;
+		case T_AlterSecLabelStmt:
+			retval = _copyAlterSecLabelStmt(from);
 			break;
 
 		case T_A_Expr:

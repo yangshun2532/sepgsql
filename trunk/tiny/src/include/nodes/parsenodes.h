@@ -1070,6 +1070,7 @@ typedef struct CreateSchemaStmt
 	NodeTag		type;
 	char	   *schemaname;		/* the name of the schema to create */
 	char	   *authid;			/* the owner of the created schema */
+	Node	   *secLabel;		/* explicitly given security label */
 	List	   *schemaElts;		/* schema components (list of parsenodes) */
 } CreateSchemaStmt;
 
@@ -1993,6 +1994,20 @@ typedef struct AlterOwnerStmt
 	char	   *newowner;		/* the new owner */
 } AlterOwnerStmt;
 
+/* ----------------------
+ *      Alter Object Security Label Statement
+ * ----------------------
+ */
+typedef struct AlterSecLabelStmt
+{
+	NodeTag		type;
+	ObjectType	objectType;		/* OBJECT_DATABASE, OBJECT_TABLE, etc */
+	RangeVar   *relation;		/* in case it's a table */
+	List	   *object;			/* in case it's some other object */
+	List	   *objarg;			/* argument types, if applicable */
+	char	   *subname;		/* column name, if needed */
+	Node	   *secLabel;		/* the new security label */
+} AlterSecLabelStmt;
 
 /* ----------------------
  *		Create Rule Statement

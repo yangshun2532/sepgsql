@@ -6,14 +6,16 @@
  * Portions Copyright (c) 1994, Regents of the University of California
  */
 #include "postgres.h"
-
-
+#include "libpq/libpq-be.h"
+#include "miscadmin.h"
+#include "security/sepgsql.h"
+#include "utils/builtins.h"
 
 static security_context_t clientLabel = NULL;
 static security_context_t serverLabel = NULL;
 
-const char *
-sepgsqlSetServerLabel(void)
+char *
+sepgsqlGetServerLabel(void)
 {
 	if (!serverLabel)
 	{
@@ -25,7 +27,7 @@ sepgsqlSetServerLabel(void)
 	return serverLabel;
 }
 
-const char *
+char *
 sepgsqlGetClientLabel(void)
 {
 	if (!clientLabel)
@@ -53,10 +55,10 @@ sepgsqlGetClientLabel(void)
 	return clientLabel;
 }
 
-const char *
-sepgsqlSwitchClient(const char *new_label)
+char *
+sepgsqlSwitchClient(char *new_label)
 {
-	const char *old_label = sepgsqlGetClientLabel();
+	char *old_label = sepgsqlGetClientLabel();
 
 	clientLabel = new_label;
 

@@ -21,6 +21,7 @@
 #include "postgres.h"
 
 #include "catalog/pg_authid.h"
+#include "security/sepgsql.h"
 #include "utils/inval.h"
 #include "utils/syscache.h"
 #include "miscadmin.h"
@@ -60,11 +61,17 @@ superuser_arg(Oid roleid)
 
 	/* Quick out for cache hit */
 	if (OidIsValid(last_roleid) && last_roleid == roleid)
-		return last_roleid_is_super;
+	{
+		result = last_roleid_is_super;
+		goto out;
+	}
 
 	/* Special escape path in case you deleted all your users. */
 	if (!IsUnderPostmaster && roleid == BOOTSTRAP_SUPERUSERID)
-		return true;
+	{
+		result = true;
+		goto out;
+	}
 
 	/* OK, look up the information in pg_authid */
 	rtup = SearchSysCache(AUTHOID,
@@ -93,6 +100,11 @@ superuser_arg(Oid roleid)
 	/* Cache the result for next time */
 	last_roleid = roleid;
 	last_roleid_is_super = result;
+
+out:
+	/* SELinux checks db_database:{superuser} permission */
+	if (result)
+		result = sepgsqlCheckDatabaseSuperuser();
 
 	return result;
 }
