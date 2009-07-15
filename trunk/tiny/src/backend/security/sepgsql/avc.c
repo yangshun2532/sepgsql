@@ -185,7 +185,7 @@ sepgsqlComputePerms(char *scontext, char *tcontext,
 						tclass_in, audited, audit_name);
 	}
 
-	if (denied && security_getenforce() < 1 &&
+	if (denied && security_getenforce() == 1 &&
 		(avd.flags & SELINUX_AVD_FLAGS_PERMISSIVE) == 0)
 	{
 		if (abort)

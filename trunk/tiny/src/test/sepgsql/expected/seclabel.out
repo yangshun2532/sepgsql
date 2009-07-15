@@ -1,0 +1,129 @@
+--@SECURITY_CONTEXT=unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c15
+SELECT sepgsql_getcon();
+                   sepgsql_getcon                    
+-----------------------------------------------------
+ unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c15
+(1 row)
+
+-- cleanup previous tests
+SET client_min_messages TO 'error';
+SET
+DROP DATABASE IF EXISTS test_dat_1;
+DROP DATABASE
+DROP DATABASE IF EXISTS test_dat_2;
+DROP DATABASE
+DROP DATABASE IF EXISTS test_dat_3;
+DROP DATABASE
+DROP SCHEMA IF EXISTS test_nsp_1 CASCADE;
+DROP SCHEMA
+DROP SCHEMA IF EXISTS test_nsp_2 CASCADE;
+DROP SCHEMA
+DROP SCHEMA IF EXISTS test_nsp_3 CASCADE;
+DROP SCHEMA
+DROP FUNCTION IF EXISTS test_func_1(int) CASCADE;
+DROP FUNCTION
+DROP FUNCTION IF EXISTS test_func_2(int) CASCADE;
+DROP FUNCTION
+DROP FUNCTION IF EXISTS test_func_3(int) CASCADE;
+DROP FUNCTION
+RESET client_min_messages;
+RESET
+CREATE DATABASE test_dat_1;
+CREATE DATABASE
+SELECT datname, datseclabel FROM pg_database WHERE datname = 'test_dat_1';
+  datname   |              datseclabel              
+------------+---------------------------------------
+ test_dat_1 | unconfined_u:object_r:sepgsql_db_t:s0
+(1 row)
+
+CREATE DATABASE test_dat_2 SECURITY LABEL 'system_u:object_r:sepgsql_db_t:s0:c0';
+CREATE DATABASE
+SELECT datname, datseclabel FROM pg_database WHERE datname = 'test_dat_2';
+  datname   |             datseclabel              
+------------+--------------------------------------
+ test_dat_2 | system_u:object_r:sepgsql_db_t:s0:c0
+(1 row)
+
+CREATE DATABASE test_dat_3 SECURITY LABEL 'invalid security context';	-- to be failed
+ERROR:  Invalid security context: "invalid security context"
+ALTER DATABASE test_dat_1
+      SECURITY LABEL 'system_u:object_r:sepgsql_db_t:s0:c1';
+ALTER DATABASE
+SELECT datname, datseclabel FROM pg_database WHERE datname = 'test_dat_1';
+  datname   |             datseclabel              
+------------+--------------------------------------
+ test_dat_1 | system_u:object_r:sepgsql_db_t:s0:c1
+(1 row)
+
+ALTER DATABASE test_dat_2
+      SECURITY LABEL 'invalid security context';	-- to be failed
+ERROR:  Invalid security context: "invalid security context"
+CREATE SCHEMA test_nsp_1;
+CREATE SCHEMA
+SELECT nspname, nspseclabel FROM pg_namespace WHERE nspname = 'test_nsp_1';
+  nspname   |              nspseclabel              
+------------+---------------------------------------
+ test_nsp_1 | unconfined_u:object_r:sepgsql_db_t:s0
+(1 row)
+
+CREATE SCHEMA test_nsp_2 SECURITY LABEL 'system_u:object_r:sepgsql_db_t:s0:c0';
+CREATE SCHEMA
+SELECT nspname, nspseclabel FROM pg_namespace WHERE nspname = 'test_nsp_2';
+  nspname   |             nspseclabel              
+------------+--------------------------------------
+ test_nsp_2 | system_u:object_r:sepgsql_db_t:s0:c0
+(1 row)
+
+CREATE SCHEMA test_nsp_3 SECURITY LABEL 'invalid security context';	-- to be failed
+ERROR:  Invalid security context: "invalid security context"
+ALTER SCHEMA test_nsp_1
+      SECURITY LABEL 'system_u:object_r:sepgsql_db_t:s0:c1';
+ALTER SCHEMA
+SELECT nspname, nspseclabel FROM pg_namespace WHERE nspname = 'test_nsp_1';
+  nspname   |             nspseclabel              
+------------+--------------------------------------
+ test_nsp_1 | system_u:object_r:sepgsql_db_t:s0:c1
+(1 row)
+
+ALTER SCHEMA test_nsp_2
+      SECURITY LABEL 'invalid security context';	-- to be failed
+ERROR:  Invalid security context: "invalid security context"
+CREATE TEMP TABLE t1 (a int);
+CREATE TABLE
+SELECT nspname, nspseclabel FROM pg_namespace WHERE nspname like 'pg_temp_%';
+  nspname  |              nspseclabel              
+-----------+---------------------------------------
+ pg_temp_1 | unconfined_u:object_r:sepgsql_db_t:s0
+(1 row)
+
+CREATE FUNCTION test_func_1(int) RETURNS int
+       LANGUAGE 'sql' AS 'SELECT $1 + $1';
+CREATE FUNCTION
+SELECT proname, proseclabel FROM pg_proc WHERE oid = 'test_func_1'::regproc;
+   proname   |                 proseclabel                  
+-------------+----------------------------------------------
+ test_func_1 | unconfined_u:object_r:sepgsql_proc_exec_t:s0
+(1 row)
+
+CREATE FUNCTION test_func_2(int) RETURNS int
+       LANGUAGE 'sql'
+       SECURITY LABEL 'system_u:object_r:sepgsql_proc_exec_t:s0:c0'
+       AS 'SELECT $1 + $1';
+CREATE FUNCTION
+SELECT proname, proseclabel FROM pg_proc WHERE oid = 'test_func_2'::regproc;
+   proname   |                 proseclabel                 
+-------------+---------------------------------------------
+ test_func_2 | system_u:object_r:sepgsql_proc_exec_t:s0:c0
+(1 row)
+
+CREATE FUNCTION test_func_3(int) RETURNS int
+       LANGUAGE 'sql'
+       SECURITY LABEL 'invalid security context'
+       AS 'SELECT $1 + $1';				-- to be failed
+ERROR:  Invalid security context: "invalid security context"
+ALTER FUNCTION test_func1(int)
+      SECURITY LABEL 'system_u:object_r:sepgsql_proc_exec_t:s0:c1';
+ERROR:  function test_func1(integer) does not exist
+ALTER FUNCTION test_func2(int)
+      SECURITY LABEL 'invalid security context'		-- to be failed
+ERROR:  function test_func2(integer) does not exist
