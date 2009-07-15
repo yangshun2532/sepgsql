@@ -710,6 +710,7 @@ with_libxml
 with_libxslt
 with_system_tzdata
 with_zlib
+enable_selinux
 GREP
 EGREP
 ELF_SYS
@@ -5536,6 +5537,7 @@ fi
 # SELinux support
 #
 
+pgac_args="$pgac_args enable_selinux"
 
 # Check whether --enable-selinux was given.
 if test "${enable_selinux+set}" = set; then
@@ -5548,8 +5550,8 @@ if test "${enable_selinux+set}" = set; then
       :
       ;;
     *)
-      { { $as_echo "$as_me:$LINENO: error: no argument expected for --enable-selinux option" >&5
-$as_echo "$as_me: error: no argument expected for --enable-selinux option" >&2;}
+      { { echo "$as_me:$LINENO: error: no argument expected for --enable-selinux option" >&5
+echo "$as_me: error: no argument expected for --enable-selinux option" >&2;}
    { (exit 1); exit 1; }; }
       ;;
   esac
@@ -5561,10 +5563,10 @@ fi
 
 
 if test "$enable_selinux" = yes; then
-    { $as_echo "$as_me:$LINENO: checking for avc_netlink_loop in -lselinux" >&5
-$as_echo_n "checking for avc_netlink_loop in -lselinux... " >&6; }
+    { echo "$as_me:$LINENO: checking for avc_netlink_loop in -lselinux" >&5
+echo $ECHO_N "checking for avc_netlink_loop in -lselinux... $ECHO_C" >&6; }
 if test "${ac_cv_lib_selinux_avc_netlink_loop+set}" = set; then
-  $as_echo_n "(cached) " >&6
+  echo $ECHO_N "(cached) $ECHO_C" >&6
 else
   ac_check_lib_save_LIBS=$LIBS
 LIBS="-lselinux  $LIBS"
@@ -5596,37 +5598,33 @@ case "(($ac_try" in
   *\"* | *\`* | *\\*) ac_try_echo=\$ac_try;;
   *) ac_try_echo=$ac_try;;
 esac
-eval ac_try_echo="\"\$as_me:$LINENO: $ac_try_echo\""
-$as_echo "$ac_try_echo") >&5
+eval "echo \"\$as_me:$LINENO: $ac_try_echo\"") >&5
   (eval "$ac_link") 2>conftest.er1
   ac_status=$?
   grep -v '^ *+' conftest.er1 >conftest.err
   rm -f conftest.er1
   cat conftest.err >&5
-  $as_echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
   (exit $ac_status); } && {
 	 test -z "$ac_c_werror_flag" ||
 	 test ! -s conftest.err
-       } && test -s conftest$ac_exeext && {
-	 test "$cross_compiling" = yes ||
-	 $as_test_x conftest$ac_exeext
-       }; then
+       } && test -s conftest$ac_exeext &&
+       $as_test_x conftest$ac_exeext; then
   ac_cv_lib_selinux_avc_netlink_loop=yes
 else
-  $as_echo "$as_me: failed program was:" >&5
+  echo "$as_me: failed program was:" >&5
 sed 's/^/| /' conftest.$ac_ext >&5
 
 	ac_cv_lib_selinux_avc_netlink_loop=no
 fi
 
-rm -rf conftest.dSYM
 rm -f core conftest.err conftest.$ac_objext conftest_ipa8_conftest.oo \
       conftest$ac_exeext conftest.$ac_ext
 LIBS=$ac_check_lib_save_LIBS
 fi
-{ $as_echo "$as_me:$LINENO: result: $ac_cv_lib_selinux_avc_netlink_loop" >&5
-$as_echo "$ac_cv_lib_selinux_avc_netlink_loop" >&6; }
-if test "x$ac_cv_lib_selinux_avc_netlink_loop" = x""yes; then
+{ echo "$as_me:$LINENO: result: $ac_cv_lib_selinux_avc_netlink_loop" >&5
+echo "${ECHO_T}$ac_cv_lib_selinux_avc_netlink_loop" >&6; }
+if test $ac_cv_lib_selinux_avc_netlink_loop = yes; then
 
 cat >>confdefs.h <<_ACEOF
 #define HAVE_SELINUX 1
@@ -5634,8 +5632,8 @@ _ACEOF
 
 
 else
-  { { $as_echo "$as_me:$LINENO: error: \"--enable-selinux requires libselinux.\"" >&5
-$as_echo "$as_me: error: \"--enable-selinux requires libselinux.\"" >&2;}
+  { { echo "$as_me:$LINENO: error: \"--enable-selinux requires libselinux.\"" >&5
+echo "$as_me: error: \"--enable-selinux requires libselinux.\"" >&2;}
    { (exit 1); exit 1; }; }
 fi
 
@@ -28247,11 +28245,11 @@ with_libxml!$with_libxml$ac_delim
 with_libxslt!$with_libxslt$ac_delim
 with_system_tzdata!$with_system_tzdata$ac_delim
 with_zlib!$with_zlib$ac_delim
+enable_selinux!$enable_selinux$ac_delim
 GREP!$GREP$ac_delim
 EGREP!$EGREP$ac_delim
 ELF_SYS!$ELF_SYS$ac_delim
 LDFLAGS_SL!$LDFLAGS_SL$ac_delim
-LD!$LD$ac_delim
 _ACEOF
 
   if test `sed -n "s/.*$ac_delim\$/X/p" conf$$subs.sed | grep -c X` = 97; then
@@ -28293,6 +28291,7 @@ _ACEOF
 ac_delim='%!_!# '
 for ac_last_try in false false false false false :; do
   cat >conf$$subs.sed <<_ACEOF
+LD!$LD$ac_delim
 with_gnu_ld!$with_gnu_ld$ac_delim
 ld_R_works!$ld_R_works$ac_delim
 RANLIB!$RANLIB$ac_delim
@@ -28355,7 +28354,7 @@ vpath_build!$vpath_build$ac_delim
 LTLIBOBJS!$LTLIBOBJS$ac_delim
 _ACEOF
 
-  if test `sed -n "s/.*$ac_delim\$/X/p" conf$$subs.sed | grep -c X` = 60; then
+  if test `sed -n "s/.*$ac_delim\$/X/p" conf$$subs.sed | grep -c X` = 61; then
     break
   elif $ac_last_try; then
     { { echo "$as_me:$LINENO: error: could not make $CONFIG_STATUS" >&5

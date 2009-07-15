@@ -18,6 +18,7 @@
 #include "catalog/pg_type.h"
 #include "executor/spi.h"
 #include "miscadmin.h"
+#include "security/rowlevel.h"
 #include "security/sepgsql.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
@@ -540,9 +541,6 @@ security_reclaim_table(Oid relid, char seckind)
 	case SECKIND_SECURITY_LABEL:
 		proc_oid = F_SECURITY_LABEL_TO_SECID;
 		break;
-	case SECKIND_SECURITY_ACL:
-		proc_oid = F_SECURITY_ACL_TO_SECID;
-		break;
 	default:
 		elog(ERROR, "unexpected seckind: %c", seckind);
 		proc_oid = InvalidOid;	/* to compiler silent */
@@ -635,39 +633,30 @@ security_reclaim_all_tables(char seckind)
 static int
 security_reclaim(Oid relid, char seckind)
 {
-	bool		sepgsql_saved;
-	int			count;
+	int		saved_mode;
+	int		count;
 
 	if (!superuser())
 		ereport(ERROR,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 				 errmsg("must be superuser to reclaim security attributes")));
 	/*
-	 * Disable SE-PostgreSQL temporary
+	 * Disable row-level controls temporary
 	 */
-	sepgsql_saved = sepgsqlSetExceptionMode(true);
+	saved_mode = rowlvSetPerformingMode(ROWLV_BYPASS_MODE);
 
-	PG_TRY();
-	{
-		if (SPI_connect() != SPI_OK_CONNECT)
-			elog(ERROR, "SPI_connect failed");
+	if (SPI_connect() != SPI_OK_CONNECT)
+		elog(ERROR, "SPI_connect failed");
 
-		if (OidIsValid(relid))
-			count = security_reclaim_table(relid, seckind);
-		else
-			count = security_reclaim_all_tables(seckind);
+	if (OidIsValid(relid))
+		count = security_reclaim_table(relid, seckind);
+	else
+		count = security_reclaim_all_tables(seckind);
 
-		if (SPI_finish() != SPI_OK_FINISH)
-			elog(ERROR, "SPI_finish failed");
-	}
-	PG_CATCH();
-	{
-		sepgsqlSetExceptionMode(sepgsql_saved);
-		PG_RE_THROW();
-	}
-	PG_END_TRY();
+	if (SPI_finish() != SPI_OK_FINISH)
+		elog(ERROR, "SPI_finish failed");
 
-	sepgsqlSetExceptionMode(sepgsql_saved);
+	rowlvSetPerformingMode(saved_mode);
 
 	return count;
 }

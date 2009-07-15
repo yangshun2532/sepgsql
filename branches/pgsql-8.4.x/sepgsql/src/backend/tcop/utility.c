@@ -899,8 +899,7 @@ ProcessUtility(Node *parsetree,
 				LoadStmt   *stmt = (LoadStmt *) parsetree;
 
 				closeAllVfds(); /* probably not necessary... */
-				/* SELinux: check db_database:{install_module} */
-				sepgsqlCheckDatabaseInstallModule();
+
 				/* Allowed names are restricted if you're not superuser */
 				load_file(stmt->filename, !superuser());
 			}
@@ -1661,6 +1660,9 @@ CreateCommandTag(Node *parsetree)
 					break;
 				case OBJECT_FUNCTION:
 					tag = "ALTER FUNCTION";
+					break;
+				default:
+					tag = "???";
 					break;
 			}
 			break;

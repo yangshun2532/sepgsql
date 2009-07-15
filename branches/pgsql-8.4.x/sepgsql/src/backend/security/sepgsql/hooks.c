@@ -28,6 +28,7 @@
 #include "commands/dbcommands.h"
 #include "miscadmin.h"
 #include "security/sepgsql.h"
+#include "utils/builtins.h"
 #include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
 #include "utils/syscache.h"
@@ -153,7 +154,7 @@ sepgsqlCheckDatabaseInstallModule(const char *probin, HeapTuple protup)
 
 	if (HeapTupleIsValid(protup))
 	{
-		oldbin = SysCacheGetAttr(PROOID, protup,
+		oldbin = SysCacheGetAttr(PROCOID, protup,
 								 Anum_pg_proc_probin,
 								 &isnull);
 		if (!isnull &&
