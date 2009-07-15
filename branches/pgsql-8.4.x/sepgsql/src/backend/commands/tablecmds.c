@@ -62,6 +62,7 @@
 #include "parser/parser.h"
 #include "rewrite/rewriteDefine.h"
 #include "rewrite/rewriteHandler.h"
+#include "security/sepgsql.h"
 #include "storage/bufmgr.h"
 #include "storage/lmgr.h"
 #include "storage/smgr.h"
@@ -351,6 +352,7 @@ DefineRelation(CreateStmt *stmt, char relkind)
 	List	   *rawDefaults;
 	List	   *cookedDefaults;
 	Datum		reloptions;
+	Oid		   *secLabels;
 	ListCell   *listptr;
 	AttrNumber	attnum;
 	static char *validnsps[] = HEAP_RELOPT_NAMESPACES;
@@ -494,6 +496,10 @@ DefineRelation(CreateStmt *stmt, char relkind)
 		}
 	}
 
+	/* SELinux checks db_table:{create} and db_column:{create} */
+	secLabels = sepgsqlCreateTableColumns(stmt, relname, namespaceId,
+										  descriptor, relkind);
+
 	/*
 	 * Create the relation.  Inherited defaults and constraints are passed in
 	 * for immediate handling --- since they don't need parsing, they can be
@@ -513,7 +519,8 @@ DefineRelation(CreateStmt *stmt, char relkind)
 										  parentOidCount,
 										  stmt->oncommit,
 										  reloptions,
-										  allowSystemTableMods);
+										  allowSystemTableMods,
+										  secLabels);
 
 	StoreCatalogInheritance(relationId, inheritOids);
 
@@ -1041,6 +1048,9 @@ truncate_check_rel(Relation rel)
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 				 errmsg("permission denied: \"%s\" is a system catalog",
 						RelationGetRelationName(rel))));
+
+	/* SELinux: check db_table:{delete} permission */
+	sepgsqlCheckTableTruncate(rel);
 
 	/*
 	 * We can never allow truncation of shared or nailed-in-cache relations,
@@ -1920,6 +1930,9 @@ renameatt(Oid myrelid,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot rename system column \"%s\"",
 						oldattname)));
+
+	/* SELinux checks db_column:{setattr} */
+	sepgsqlCheckColumnSetattr(myrelid, attnum);
 
 	/*
 	 * if the attribute is inherited, forbid the renaming, unless we are
@@ -3248,6 +3261,9 @@ ATSimplePermissions(Relation rel, bool allowView)
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 				 errmsg("permission denied: \"%s\" is a system catalog",
 						RelationGetRelationName(rel))));
+
+	/* SELinux checks db_table:{setattr} */
+	sepgsqlCheckTableSetattr(RelationGetRelid(rel));
 }
 
 /*
@@ -3277,6 +3293,9 @@ ATSimplePermissionsRelationOrIndex(Relation rel)
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 				 errmsg("permission denied: \"%s\" is a system catalog",
 						RelationGetRelationName(rel))));
+
+	/* SELinux checks db_table:{setattr} */
+	sepgsqlCheckTableSetattr(RelationGetRelid(rel));
 }
 
 /*
@@ -3515,6 +3534,7 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 	HeapTuple	typeTuple;
 	Oid			typeOid;
 	int32		typmod;
+	Oid			attsecid;
 	Form_pg_type tform;
 	Expr	   *defval;
 
@@ -3551,6 +3571,9 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 						(errcode(ERRCODE_DATATYPE_MISMATCH),
 				 errmsg("child table \"%s\" has a conflicting \"%s\" column",
 						RelationGetRelationName(rel), colDef->colname)));
+
+			/* SELinux checks db_column:{setattr} */
+			sepgsqlCheckColumnSetattr(myrelid, childatt->attnum);
 
 			/* Bump the existing child att's inhcount */
 			childatt->attinhcount++;
@@ -3590,6 +3613,9 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 				(errcode(ERRCODE_DUPLICATE_COLUMN),
 				 errmsg("column \"%s\" of relation \"%s\" already exists",
 						colDef->colname, RelationGetRelationName(rel))));
+
+	/* SELinux checks db_column:{create} */
+	attsecid = sepgsqlCheckColumnCreate(myrelid, colDef->colname, NULL);
 
 	/* Determine the new attribute's number */
 	if (isOid)
@@ -3633,7 +3659,7 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 
 	ReleaseSysCache(typeTuple);
 
-	InsertPgAttributeTuple(attrdesc, &attribute, NULL);
+	InsertPgAttributeTuple(attrdesc, &attribute, NULL, attsecid);
 
 	heap_close(attrdesc, RowExclusiveLock);
 
@@ -3838,6 +3864,9 @@ ATExecDropNotNull(Relation rel, const char *colName)
 				 errmsg("cannot alter system column \"%s\"",
 						colName)));
 
+	/* SELinux checks db_column:{setattr} */
+	sepgsqlCheckColumnSetattr(RelationGetRelid(rel), attnum);
+
 	/*
 	 * Check that the attribute is not in a primary key
 	 */
@@ -3930,6 +3959,9 @@ ATExecSetNotNull(AlteredTableInfo *tab, Relation rel,
 				 errmsg("cannot alter system column \"%s\"",
 						colName)));
 
+	/* SELinux checks db_column:{setattr} */
+	sepgsqlCheckColumnSetattr(RelationGetRelid(rel), attnum);
+
 	/*
 	 * Okay, actually perform the catalog change ... if needed
 	 */
@@ -3974,6 +4006,9 @@ ATExecColumnDefault(Relation rel, const char *colName,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot alter system column \"%s\"",
 						colName)));
+
+	/* SELinux checks db_column:{setattr} */
+	sepgsqlCheckColumnSetattr(RelationGetRelid(rel), attnum);
 
 	/*
 	 * Remove any old default for the column.  We use RESTRICT here for
@@ -4022,6 +4057,8 @@ ATPrepSetStatistics(Relation rel, const char *colName, Node *flagValue)
 	if (!pg_class_ownercheck(RelationGetRelid(rel), GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
 					   RelationGetRelationName(rel));
+	/* SELinux checks db_table:{setatr} */
+	sepgsqlCheckTableSetattr(RelationGetRelid(rel));
 }
 
 static void
@@ -4070,6 +4107,9 @@ ATExecSetStatistics(Relation rel, const char *colName, Node *newValue)
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot alter system column \"%s\"",
 						colName)));
+
+	/* SELinux checks db_column:{setattr} */
+	sepgsqlCheckColumnSetattr(RelationGetRelid(rel), attrtuple->attnum);
 
 	attrtuple->attstattarget = newtarget;
 
@@ -4131,6 +4171,9 @@ ATExecSetStorage(Relation rel, const char *colName, Node *newValue)
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot alter system column \"%s\"",
 						colName)));
+
+	/* SELinux checks db_column:{setattr} */
+	sepgsqlCheckColumnSetattr(RelationGetRelid(rel), attrtuple->attnum);
 
 	/*
 	 * safety check: do not allow toasted storage modes unless column datatype
@@ -4207,6 +4250,9 @@ ATExecDropColumn(List **wqueue, Relation rel, const char *colName,
 						colName)));
 
 	ReleaseSysCache(tuple);
+
+	/* SELinux checks db_column:{drop} */
+	sepgsqlCheckColumnDrop(RelationGetRelid(rel), attnum);
 
 	/*
 	 * Propagate to children as appropriate.  Unlike most other ALTER
@@ -5108,7 +5154,7 @@ checkFkeyPermissions(Relation rel, int16 *attnums, int natts)
 	aclresult = pg_class_aclcheck(RelationGetRelid(rel), roleid,
 								  ACL_REFERENCES);
 	if (aclresult == ACLCHECK_OK)
-		return;
+		goto ok;
 	/* Else we must have REFERENCES on each column */
 	for (i = 0; i < natts; i++)
 	{
@@ -5118,6 +5164,9 @@ checkFkeyPermissions(Relation rel, int16 *attnums, int natts)
 			aclcheck_error(aclresult, ACL_KIND_CLASS,
 						   RelationGetRelationName(rel));
 	}
+ok:
+	/* SELinux: check db_table/db_column:{reference} */
+	sepgsqlCheckTableReference(rel, attnums, natts);
 }
 
 /*
@@ -5721,6 +5770,9 @@ ATExecAlterColumnType(AlteredTableInfo *tab, Relation rel,
 				 errmsg("cannot alter type of column \"%s\" twice",
 						colName)));
 
+	/* SELinux checks db_column:{setattr} */
+	sepgsqlCheckColumnSetattr(RelationGetRelid(rel), attnum);
+
 	/* Look up the target type (should not fail, since prep found it) */
 	typeTuple = typenameType(NULL, typename, &targettypmod);
 	tform = (Form_pg_type) GETSTRUCT(typeTuple);
@@ -6306,6 +6358,8 @@ ATExecChangeOwner(Oid relationOid, Oid newOwnerId, bool recursing)
 					aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
 								   get_namespace_name(namespaceOid));
 			}
+			/* SELinux checks db_table:{setattr} */
+			sepgsqlCheckTableSetattr(relationOid);
 		}
 
 		memset(repl_null, false, sizeof(repl_null));

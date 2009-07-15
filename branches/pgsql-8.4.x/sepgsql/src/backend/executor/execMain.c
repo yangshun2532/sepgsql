@@ -51,6 +51,7 @@
 #include "optimizer/clauses.h"
 #include "parser/parse_clause.h"
 #include "parser/parsetree.h"
+#include "security/sepgsql.h"
 #include "storage/bufmgr.h"
 #include "storage/lmgr.h"
 #include "storage/smgr.h"
@@ -443,7 +444,10 @@ ExecCheckRTPerms(List *rangeTable)
 
 	foreach(l, rangeTable)
 	{
-		ExecCheckRTEPerms((RangeTblEntry *) lfirst(l));
+		RangeTblEntry  *rte = (RangeTblEntry *) lfirst(l);
+
+		ExecCheckRTEPerms(rte);
+		sepgsqlCheckRTEPerms(rte);
 	}
 }
 
@@ -2876,6 +2880,7 @@ OpenIntoRel(QueryDesc *queryDesc)
 	Oid			namespaceId;
 	Oid			tablespaceId;
 	Datum		reloptions;
+	Oid		   *secLabels;
 	AclResult	aclresult;
 	Oid			intoRelationId;
 	TupleDesc	tupdesc;
@@ -2903,6 +2908,10 @@ OpenIntoRel(QueryDesc *queryDesc)
 	if (aclresult != ACLCHECK_OK)
 		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
 					   get_namespace_name(namespaceId));
+
+	/* SELinux checks db_table:{create} and db_column:{create} */
+	secLabels = sepgsqlCreateTableColumns(NULL, intoName, namespaceId,
+										  queryDesc->tupDesc, RELKIND_RELATION);
 
 	/*
 	 * Select tablespace to use.  If not specified, use default tablespace
@@ -2962,7 +2971,8 @@ OpenIntoRel(QueryDesc *queryDesc)
 											  0,
 											  into->onCommit,
 											  reloptions,
-											  allowSystemTableMods);
+											  allowSystemTableMods,
+											  secLabels);
 
 	FreeTupleDesc(tupdesc);
 
@@ -2987,6 +2997,11 @@ OpenIntoRel(QueryDesc *queryDesc)
 	(void) heap_reloptions(RELKIND_TOASTVALUE, reloptions, true);
 
 	AlterTableCreateToastTable(intoRelationId, InvalidOid, reloptions, false);
+
+	/*
+	 * SELinux: checks db_table/column:{insert} permission
+	 */
+	sepgsqlCheckSelectInto(intoRelationId);
 
 	/*
 	 * And open the constructed table for writing.

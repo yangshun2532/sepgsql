@@ -42,6 +42,7 @@
 #include "miscadmin.h"
 #include "pgstat.h"
 #include "postmaster/bgwriter.h"
+#include "security/sepgsql.h"
 #include "storage/bufmgr.h"
 #include "storage/fd.h"
 #include "storage/lmgr.h"
@@ -112,6 +113,7 @@ createdb(const CreatedbStmt *stmt)
 	bool		new_record_nulls[Natts_pg_database];
 	Oid			dboid;
 	Oid			datdba;
+	Oid			datsecid;
 	ListCell   *option;
 	DefElem    *dtablespacename = NULL;
 	DefElem    *downer = NULL;
@@ -272,6 +274,9 @@ createdb(const CreatedbStmt *stmt)
 				 errmsg("permission denied to create database")));
 
 	check_is_member_of_role(GetUserId(), datdba);
+
+	/* SELinux checks db_database:{create} */
+	datsecid = sepgsqlCheckDatabaseCreate(dbname, NULL);
 
 	/*
 	 * Lookup database (template) to be cloned, and obtain share lock on it.
@@ -558,6 +563,8 @@ createdb(const CreatedbStmt *stmt)
 							new_record, new_record_nulls);
 
 	HeapTupleSetOid(tuple, dboid);
+	if (HeapTupleHasSecLabel(tuple))
+		HeapTupleSetSecLabel(tuple, datsecid);
 
 	simple_heap_insert(pg_database_rel, tuple);
 
@@ -780,6 +787,9 @@ dropdb(const char *dbname, bool missing_ok)
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_DATABASE,
 					   dbname);
 
+	/* SELinux checks db_database:{drop} permission */
+	sepgsqlCheckDatabaseDrop(db_id);
+
 	/*
 	 * Disallow dropping a DB that is marked istemplate.  This is just to
 	 * prevent people from accidentally dropping template0 or template1; they
@@ -922,6 +932,9 @@ RenameDatabase(const char *oldname, const char *newname)
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 				 errmsg("permission denied to rename database")));
 
+	/* SELinux: check db_database:{setattr} */
+	sepgsqlCheckDatabaseSetattr(db_id);
+
 	/*
 	 * Make sure the new name doesn't exist.  See notes for same error in
 	 * CREATE DATABASE.
@@ -1033,6 +1046,9 @@ movedb(const char *dbname, const char *tblspcname)
 	if (!pg_database_ownercheck(db_id, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_DATABASE,
 					   dbname);
+
+	/* SELinux checks db_database:{setattr} */
+	sepgsqlCheckDatabaseSetattr(db_id);
 
 	/*
 	 * Obviously can't move the tables of my own database
@@ -1386,6 +1402,9 @@ AlterDatabase(AlterDatabaseStmt *stmt, bool isTopLevel)
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_DATABASE,
 					   stmt->dbname);
 
+	/* SELinux checks db_database:{setattr} */
+	sepgsqlCheckDatabaseSetattr(HeapTupleGetOid(tuple));
+
 	/*
 	 * Build an updated tuple, perusing the information just obtained
 	 */
@@ -1457,6 +1476,9 @@ AlterDatabaseSet(AlterDatabaseSetStmt *stmt)
 	if (!pg_database_ownercheck(HeapTupleGetOid(tuple), GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_DATABASE,
 					   stmt->dbname);
+
+	/* SELinux checks db_database:{setattr} */
+	sepgsqlCheckDatabaseSetattr(HeapTupleGetOid(tuple));
 
 	memset(repl_repl, false, sizeof(repl_repl));
 	repl_repl[Anum_pg_database_datconfig - 1] = true;
@@ -1579,6 +1601,9 @@ AlterDatabaseOwner(const char *dbname, Oid newOwnerId)
 			ereport(ERROR,
 					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 				   errmsg("permission denied to change owner of database")));
+
+		/* SELinux checks db_database:{setattr} */
+		sepgsqlCheckDatabaseSetattr(HeapTupleGetOid(tuple));
 
 		memset(repl_null, false, sizeof(repl_null));
 		memset(repl_repl, false, sizeof(repl_repl));

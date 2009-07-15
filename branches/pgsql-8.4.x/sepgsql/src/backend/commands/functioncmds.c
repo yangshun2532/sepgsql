@@ -53,6 +53,7 @@
 #include "parser/parse_expr.h"
 #include "parser/parse_func.h"
 #include "parser/parse_type.h"
+#include "security/sepgsql.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
@@ -1112,6 +1113,9 @@ RenameFunction(List *name, List *argtypes, const char *newname)
 		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
 					   get_namespace_name(namespaceOid));
 
+	/* SELinux checks db_procedure:{setattr} */
+	sepgsqlCheckProcedureSetattr(procOid);
+
 	/* rename */
 	namestrcpy(&(procForm->proname), newname);
 	simple_heap_update(rel, &tup->t_self, tup);
@@ -1220,6 +1224,8 @@ AlterFunctionOwner_internal(Relation rel, HeapTuple tup, Oid newOwnerId)
 				aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
 							   get_namespace_name(procForm->pronamespace));
 		}
+		/* SELinux checks db_procedure:{setattr} */
+		sepgsqlCheckProcedureSetattr(procOid);
 
 		memset(repl_null, false, sizeof(repl_null));
 		memset(repl_repl, false, sizeof(repl_repl));
@@ -1295,6 +1301,9 @@ AlterFunction(AlterFunctionStmt *stmt)
 	if (!pg_proc_ownercheck(funcOid, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
 					   NameListToString(stmt->func->funcname));
+
+	/* SELinux checks db_procedure:{setattr} */
+	sepgsqlCheckProcedureSetattr(funcOid);
 
 	if (procForm->proisagg)
 		ereport(ERROR,
@@ -1853,6 +1862,9 @@ AlterFunctionNamespace(List *name, List *argtypes, bool isagg,
 	if (!pg_proc_ownercheck(procOid, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
 					   NameListToString(name));
+
+	/* SELinux checks db_procedure:{setattr} */
+	sepgsqlCheckProcedureSetattr(procOid);
 
 	tup = SearchSysCacheCopy(PROCOID,
 							 ObjectIdGetDatum(procOid),

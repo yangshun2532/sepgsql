@@ -38,6 +38,7 @@
 #include "parser/parse_coerce.h"
 #include "parser/parse_func.h"
 #include "rewrite/rewriteManip.h"
+#include "security/sepgsql.h"
 #include "tcop/tcopprot.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
@@ -3502,6 +3503,7 @@ inline_function(Oid funcid, Oid result_type, List *args,
 		funcform->prosecdef ||
 		funcform->proretset ||
 		!heap_attisnull(func_tuple, Anum_pg_proc_proconfig) ||
+		!sepgsqlAllowFunctionInlined(func_tuple) ||
 		funcform->pronargs != list_length(args))
 		return NULL;
 
@@ -3970,6 +3972,7 @@ inline_set_returning_function(PlannerInfo *root, RangeTblEntry *rte)
 		funcform->prosecdef ||
 		!funcform->proretset ||
 		!heap_attisnull(func_tuple, Anum_pg_proc_proconfig) ||
+		!sepgsqlAllowFunctionInlined(func_tuple) ||
 		funcform->pronargs != list_length(fexpr->args))
 	{
 		ReleaseSysCache(func_tuple);

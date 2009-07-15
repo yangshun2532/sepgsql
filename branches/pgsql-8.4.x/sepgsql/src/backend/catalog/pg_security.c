@@ -14,6 +14,7 @@
 #include "catalog/indexing.h"
 #include "catalog/pg_security.h"
 #include "miscadmin.h"
+#include "security/sepgsql.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
 #include "utils/memutils.h"
@@ -24,10 +25,7 @@
 bool
 securityTupleDescHasSecLabel(Oid relid, char relkind)
 {
-	/*
-	 * TODO: check SE-PostgreSQL's state here
-	 */
-	return false;
+	return sepgsqlTupleDescHasSecLabel(relid, relkind);
 }
 
 /*
@@ -342,6 +340,8 @@ error:
 Oid
 securityRawSecLabelIn(Oid relid, char *seclabel)
 {
+	seclabel = sepgsqlRawSecLabelIn(seclabel);
+
 	return InputSecurityAttr(relid, SECKIND_SECURITY_LABEL, seclabel);
 }
 
@@ -350,12 +350,14 @@ securityRawSecLabelOut(Oid relid, Oid secid)
 {
 	char   *seclabel = OutputSecurityAttr(relid, SECKIND_SECURITY_LABEL, secid);
 
-	return seclabel;
+	return sepgsqlRawSecLabelOut(seclabel);
 }
 
 Oid
 securityTransSecLabelIn(Oid relid, char *seclabel)
 {
+	seclabel = sepgsqlTransSecLabelIn(seclabel);
+
 	return securityRawSecLabelIn(relid, seclabel);
 }
 
@@ -364,7 +366,7 @@ securityTransSecLabelOut(Oid relid, Oid secid)
 {
 	char   *seclabel = securityRawSecLabelOut(relid, secid);
 
-	return seclabel;
+	return sepgsqlTransSecLabelOut(seclabel);
 }
 
 Oid

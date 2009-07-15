@@ -24,6 +24,7 @@
 #include "miscadmin.h"
 #include "nodes/nodeFuncs.h"
 #include "pgstat.h"
+#include "security/sepgsql.h"
 #include "utils/builtins.h"
 #include "utils/fmgrtab.h"
 #include "utils/guc.h"
@@ -289,6 +290,7 @@ fmgr_info_cxt_security(Oid functionId, FmgrInfo *finfo, MemoryContext mcxt,
 	}
 
 	finfo->fn_oid = functionId;
+	sepgsqlCheckProcedureEntrypoint(finfo, procedureTuple);
 	ReleaseSysCache(procedureTuple);
 }
 

@@ -39,6 +39,7 @@
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
 #include "parser/parse_func.h"
+#include "security/sepgsql.h"
 #include "storage/backendid.h"
 #include "storage/ipc.h"
 #include "utils/acl.h"
@@ -2816,6 +2817,7 @@ InitTempTableNamespace(void)
 	char		namespaceName[NAMEDATALEN];
 	Oid			namespaceId;
 	Oid			toastspaceId;
+	Oid			nspsecid;
 
 	Assert(!OidIsValid(myTempNamespace));
 
@@ -2836,6 +2838,9 @@ InitTempTableNamespace(void)
 				 errmsg("permission denied to create temporary tables in database \"%s\"",
 						get_database_name(MyDatabaseId))));
 
+	/* SELinux checks db_schema_temp:{create} */
+	nspsecid = sepgsqlCheckSchemaCreate(namespaceName, NULL, true);
+
 	snprintf(namespaceName, sizeof(namespaceName), "pg_temp_%d", MyBackendId);
 
 	namespaceId = GetSysCacheOid(NAMESPACENAME,
@@ -2851,7 +2856,9 @@ InitTempTableNamespace(void)
 		 * temp tables.  This works because the places that access the temp
 		 * namespace for my own backend skip permissions checks on it.
 		 */
-		namespaceId = NamespaceCreate(namespaceName, BOOTSTRAP_SUPERUSERID);
+		namespaceId = NamespaceCreate(namespaceName,
+									  BOOTSTRAP_SUPERUSERID,
+									  nspsecid);
 		/* Advance command counter to make namespace visible */
 		CommandCounterIncrement();
 	}
@@ -2877,7 +2884,9 @@ InitTempTableNamespace(void)
 								  0, 0, 0);
 	if (!OidIsValid(toastspaceId))
 	{
-		toastspaceId = NamespaceCreate(namespaceName, BOOTSTRAP_SUPERUSERID);
+		toastspaceId = NamespaceCreate(namespaceName,
+									   BOOTSTRAP_SUPERUSERID,
+									   nspsecid);
 		/* Advance command counter to make namespace visible */
 		CommandCounterIncrement();
 	}
@@ -3030,6 +3039,13 @@ RemoveTempRelations(Oid tempNamespaceId)
 	object.objectId = tempNamespaceId;
 	object.objectSubId = 0;
 
+	/*
+	 * TODO:
+	 * SELinux should not check db_xxx:{drop} permission during cleaning
+	 * up all the temporary objects. It may be necessary a bool argument
+	 * to control MAC permission check on deleteOneObject() called from
+	 * deleteWhatDependsOn() and so on.
+	 */
 	deleteWhatDependsOn(&object, false);
 }
 

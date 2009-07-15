@@ -25,6 +25,7 @@
 #include "commands/schemacmds.h"
 #include "miscadmin.h"
 #include "parser/parse_utilcmd.h"
+#include "security/sepgsql.h"
 #include "tcop/utility.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
@@ -48,6 +49,7 @@ CreateSchemaCommand(CreateSchemaStmt *stmt, const char *queryString)
 	ListCell   *parsetree_item;
 	Oid			owner_uid;
 	Oid			saved_uid;
+	Oid			nspsecid;
 	bool		saved_secdefcxt;
 	AclResult	aclresult;
 
@@ -75,6 +77,9 @@ CreateSchemaCommand(CreateSchemaStmt *stmt, const char *queryString)
 
 	check_is_member_of_role(saved_uid, owner_uid);
 
+	/* SELinux checks db_schema:{create} */
+	nspsecid = sepgsqlCheckSchemaCreate(schemaName, NULL, false);
+
 	/* Additional check to protect reserved schema names */
 	if (!allowSystemTableMods && IsReservedName(schemaName))
 		ereport(ERROR,
@@ -94,7 +99,7 @@ CreateSchemaCommand(CreateSchemaStmt *stmt, const char *queryString)
 		SetUserIdAndContext(owner_uid, true);
 
 	/* Create the schema's namespace */
-	namespaceId = NamespaceCreate(schemaName, owner_uid);
+	namespaceId = NamespaceCreate(schemaName, owner_uid, nspsecid);
 
 	/* Advance cmd counter to make the namespace visible */
 	CommandCounterIncrement();
@@ -286,6 +291,9 @@ RenameSchema(const char *oldname, const char *newname)
 		aclcheck_error(aclresult, ACL_KIND_DATABASE,
 					   get_database_name(MyDatabaseId));
 
+	/* SELinux checks db_schema:{setattr} */
+	sepgsqlCheckSchemaSetattr(HeapTupleGetOid(tup));
+
 	if (!allowSystemTableMods && IsReservedName(newname))
 		ereport(ERROR,
 				(errcode(ERRCODE_RESERVED_NAME),
@@ -396,6 +404,9 @@ AlterSchemaOwner_internal(HeapTuple tup, Relation rel, Oid newOwnerId)
 		if (aclresult != ACLCHECK_OK)
 			aclcheck_error(aclresult, ACL_KIND_DATABASE,
 						   get_database_name(MyDatabaseId));
+
+		/* SELinux checks db_schema:{setattr} */
+		sepgsqlCheckSchemaSetattr(HeapTupleGetOid(tup));
 
 		memset(repl_null, false, sizeof(repl_null));
 		memset(repl_repl, false, sizeof(repl_repl));

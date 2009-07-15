@@ -20,6 +20,7 @@
 #include "commands/lockcmds.h"
 #include "miscadmin.h"
 #include "parser/parse_clause.h"
+#include "security/sepgsql.h"
 #include "storage/lmgr.h"
 #include "utils/acl.h"
 #include "utils/lsyscache.h"
@@ -139,6 +140,9 @@ LockTableRecurse(Oid reloid, RangeVar *rv,
 				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
 				 errmsg("\"%s\" is not a table",
 						RelationGetRelationName(rel))));
+
+	/* SELinux: check db_table:{lock} permission */
+	sepgsqlCheckTableLock(reloid);
 
 	/*
 	 * If requested, recurse to children.  We use find_inheritance_children

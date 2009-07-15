@@ -34,6 +34,7 @@
 #include "optimizer/planner.h"
 #include "parser/parse_relation.h"
 #include "rewrite/rewriteHandler.h"
+#include "security/sepgsql.h"
 #include "storage/fd.h"
 #include "tcop/tcopprot.h"
 #include "utils/acl.h"
@@ -1089,6 +1090,9 @@ DoCopy(const CopyStmt *stmt, const char *queryString)
 	cstate->attnumlist = CopyGetAttnums(tupDesc, cstate->rel, attnamelist);
 
 	num_phys_attrs = tupDesc->natts;
+
+	/* SELinux: check table/column level permission */
+	sepgsqlCheckCopyTable(cstate->rel, cstate->attnumlist, is_from);
 
 	/* Convert FORCE QUOTE name list to per-column flags, check validity */
 	cstate->force_quote_flags = (bool *) palloc0(num_phys_attrs * sizeof(bool));
