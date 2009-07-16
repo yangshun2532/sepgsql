@@ -297,22 +297,13 @@ InputSecurityAttr(Oid relid, char seckind, const char *secattr)
 	simple_heap_insert(rel, tuple);
 	CatalogUpdateIndexes(rel, tuple);
 
-	/*
-	 * NOTE:
-	 * We also need to insert the new entry into system cache for
-	 * temporary usage, because user tries to use an identical
-	 * security attributes twice or more within a single command
-	 * identifier. The syscache mechanism scans the pg_security with
-	 * SnapshotNow, so the entry newly inserted is not visible for
-	 * the second trial. Then, it tries to insert an identical
-	 * security attribute twice and get failed.
-	 * The temporary cache entry shall be invalidated on the next
-	 * CommandIdIncrement(). The purpose of InsertSysCache() is
-	 * to avoid duplication of insertion (and undesirable error).
-	 */
-	InsertSysCache(RelationGetRelid(rel), tuple);
-
 	heap_close(rel, RowExclusiveLock);
+
+	/*
+	 * Newly inserted security label needs to be visible by
+	 * later operations in this transaction.
+	 */
+	CommandCounterIncrement();
 
 	return secid;
 }
