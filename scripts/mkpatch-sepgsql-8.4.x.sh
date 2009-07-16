@@ -2,7 +2,7 @@
 export LANG=C
 
 # ---- build parametors
-SEPGSQL_BRANCH="/trunk"
+SEPGSQL_BRANCH="/branches/pgsql-8.4.x"
 DIST="`rpm -E '%{dist}'`"
 
 # -- SE-PostgreSQL repository
@@ -35,7 +35,7 @@ echo "  repository: ${SEPGSQL_REPOSITORY}${SEPGSQL_BRANCH}"
 echo
 
 # -- exporting branches
-TREES="base tiny"
+TREES="base sepgsql"
 for name in ${TREES}
 do
   echo "Exporting ${SEPGSQL_BRANCH}/${name} ..."
@@ -43,12 +43,12 @@ do
 done
 
 # -- generating patches
-echo "GEN: sepgsql-01-tiny-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch"
-diff -Nrpc base tiny | gzip -c			\
-    > ${RPMSOURCE}/sepgsql-01-tiny-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch.gz
+echo "GEN: sepgsql-01-full-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch"
+diff -Nrpc base sepgsql | gzip -c			\
+    > ${RPMSOURCE}/sepgsql-01-full-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch.gz
 
 echo "---- LIST OF GENERATED PATCHES ----"
-echo "01) ${RPMSOURCE}/sepgsql-01-tiny-${BASE_MAJOR}-r${SEPGSQL_REVISION}.patch.gz"
+echo "01) ${RPMSOURCE}/sepgsql-01-full-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch.gz"
 
 # ---- clean up
 rm -rf ${WORKDIR}
