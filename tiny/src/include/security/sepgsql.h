@@ -8,14 +8,13 @@
 #ifndef SEPGSQL_H
 #define SEPGSQL_H
 
-#ifdef HAVE_SELINUX
-
 #include "access/htup.h"
 #include "fmgr.h"
 #include "nodes/parsenodes.h"
 #include "utils/relcache.h"
 #include <selinux/selinux.h>
 
+#ifdef HAVE_SELINUX
 /* GUC parameter to turn on/off SE-PostgreSQL */
 extern bool sepostgresql_enabled;
 
@@ -175,10 +174,16 @@ typedef void (*sepgsqlAvcAuditHook_t)(bool denied,
 									  const char *audit_name);
 extern PGDLLIMPORT sepgsqlAvcAuditHook_t sepgsqlAvcAuditHook;
 
+extern void
+sepgsqlAvcInitialize(void);
+extern bool
+sepgsqlGetEnforce(void);
+extern int
+sepgsqlSetEnforce(int new_mode);
+
 extern bool
 sepgsqlClientHasPermsTup(Oid relid, HeapTuple tuple,
 						 uint16 tclass, uint32 required, bool abort);
-
 extern char *
 sepgsqlClientCreateLabel(char *tcontext, uint16 tclass);
 
@@ -188,8 +193,6 @@ sepgsqlComputePerms(char *scontext, char *tcontext,
 					const char *audit_name, bool abort);
 extern char *
 sepgsqlComputeCreate(char *scontext, char *tcontext, uint16 tclass);
-
-
 
 /*
  * hooks.c : routines to check permissions
@@ -267,7 +270,8 @@ extern const char *sepgsqlGetClassString(uint16 tclass);
 extern const char *sepgsqlGetPermString(uint16 tclass, uint32 permission);
 
 #else	/* HAVE_SELINUX */
-
+/* avc.c */
+#define sepgsqlAvcInitialize()						do {} while(0)
 /* hooks.c */
 #define sepgsqlCheckDatabaseConnect(a)				(true)
 #define sepgsqlCheckDatabaseSuperuser(a)			(true)

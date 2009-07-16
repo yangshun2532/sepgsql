@@ -805,7 +805,8 @@ CreateFunction(CreateFunctionStmt *stmt, const char *queryString)
 								 &as_clause, &language,
 								 &isWindowFunc, &volatility,
 								 &isStrict, &security,
-								 &proconfig, &procost, &prorows, &proseclabel);
+								 &proconfig, &procost,
+								 &prorows, &proseclabel);
 
 	/* Convert language name to canonical case */
 	languageName = case_translate_language_name(language);

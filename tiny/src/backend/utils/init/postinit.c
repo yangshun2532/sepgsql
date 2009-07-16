@@ -32,6 +32,7 @@
 #include "pgstat.h"
 #include "postmaster/autovacuum.h"
 #include "postmaster/postmaster.h"
+#include "security/sepgsql.h"
 #include "storage/backendid.h"
 #include "storage/bufmgr.h"
 #include "storage/fd.h"
@@ -571,6 +572,9 @@ InitPostgres(const char *in_dbname, Oid dboid, const char *username,
 	 * least the minimum set of "nailed-in" cache entries.
 	 */
 	RelationCacheInitializePhase2();
+
+	/* Initialize SE-PostgreSQL internal state */
+	sepgsqlAvcInitialize();
 
 	/*
 	 * Figure out our postgres user id, and see if we are a superuser.

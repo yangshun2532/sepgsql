@@ -97,7 +97,6 @@
 					# 0 selects the system default
 #sepostgresql = off			# SE-PostgreSQL support
 
-
 #------------------------------------------------------------------------------
 # RESOURCE USAGE (except WAL)
 #------------------------------------------------------------------------------
