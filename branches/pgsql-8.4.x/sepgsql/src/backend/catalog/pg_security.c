@@ -458,7 +458,7 @@ securityReclaimOnDropTable(Oid relid)
 
 	rel = heap_open(SecurityRelationId, RowExclusiveLock);
 	scan = systable_beginscan(rel, SecuritySecattrIndexId, true,
-							  SnapshotNow, 1, key);
+							  SnapshotNow, 2, key);
 	while (HeapTupleIsValid(tuple = systable_getnext(scan)))
 		simple_heap_delete(rel, &tuple->t_self);
 
