@@ -33,6 +33,7 @@
 #include "nodes/makefuncs.h"
 #include "parser/parse_func.h"
 #include "pgstat.h"
+#include "security/sepgsql.h"
 #include "storage/bufmgr.h"
 #include "tcop/utility.h"
 #include "utils/acl.h"

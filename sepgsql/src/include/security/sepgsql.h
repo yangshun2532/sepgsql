@@ -81,7 +81,7 @@ enum SepgsqlClasses
 #define SEPG_DB_DATABASE__SETATTR			(1<<3)
 #define SEPG_DB_DATABASE__RELABELFROM		(1<<4)
 #define SEPG_DB_DATABASE__RELABELTO			(1<<5)
-#define SEPG_DB_DATABASE__ACCESS			(1<<6)
+#define SEPG_DB_DATABASE__CONNECT			(1<<6)
 #define SEPG_DB_DATABASE__INSTALL_MODULE	(1<<7)
 #define SEPG_DB_DATABASE__LOAD_MODULE		(1<<8)
 #define SEPG_DB_DATABASE__SUPERUSER			(1<<9)
@@ -92,7 +92,7 @@ enum SepgsqlClasses
 #define SEPG_DB_SCHEMA__SETATTR				(SEPG_DB_DATABASE__SETATTR)
 #define SEPG_DB_SCHEMA__RELABELFROM			(SEPG_DB_DATABASE__RELABELFROM)
 #define SEPG_DB_SCHEMA__RELABELTO			(SEPG_DB_DATABASE__RELABELTO)
-#define SEPG_DB_SCHEMA__SEARCH				(1<<6)
+#define SEPG_DB_SCHEMA__USAGE				(1<<6)
 #define SEPG_DB_SCHEMA__ADD_OBJECT			(1<<7)
 #define SEPG_DB_SCHEMA__REMOVE_OBJECT		(1<<8)
 
@@ -102,7 +102,7 @@ enum SepgsqlClasses
 #define SEPG_DB_SCHEMA_TEMP__SETATTR		(SEPG_DB_DATABASE__SETATTR)
 #define SEPG_DB_SCHEMA_TEMP__RELABELFROM	(SEPG_DB_DATABASE__RELABELFROM)
 #define SEPG_DB_SCHEMA_TEMP__RELABELTO		(SEPG_DB_DATABASE__RELABELTO)
-#define SEPG_DB_SCHEMA_TEMP__SEARCH			(SEPG_DB_SCHEMA__SEARCH)
+#define SEPG_DB_SCHEMA_TEMP__USAGE			(SEPG_DB_SCHEMA__USAGE)
 #define SEPG_DB_SCHEMA_TEMP__ADD_OBJECT		(SEPG_DB_SCHEMA__ADD_OBJECT)
 #define SEPG_DB_SCHEMA_TEMP__REMOVE_OBJECT	(SEPG_DB_SCHEMA__REMOVE_OBJECT)
 
@@ -172,29 +172,31 @@ enum SepgsqlClasses
  * avc.c : userspace access vector caches
  */
 
-/* Hook for plugin to record audit logs  */
-typedef void (*sepgsqlAvcAuditHook_t)(const char *scontext, const char *tcontext,
-									  const char *tclass, const char *av_perms,
-									  bool denied, const char *audit_name);
+/* Hook to record audit logs */
+typedef void (*sepgsqlAvcAuditHook_t)(bool denied,
+									  const char *scontext,
+									  const char *tcontext,
+									  const char *tclass,
+									  const char *permissions,
+									  const char *audit_name);
 extern PGDLLIMPORT sepgsqlAvcAuditHook_t sepgsqlAvcAuditHook;
 
-extern Size	sepgsqlShmemSize(void);
-extern void	sepgsqlAvcInit(void);
-extern void	sepgsqlAvcSwitchClient(void);
-extern pid_t sepgsqlStartupWorkerProcess(void);
+extern Size sepgsqlShmemSize(void);
+extern void sepgsqlAvcInitialize(void);
+
+extern bool sepgsqlGetEnforce(void);
+extern int  sepgsqlSetEnforce(int new_mode);
+extern void sepgsqlAvcSwitchClient(const char *scontext);
 
 extern bool
-sepgsqlClientHasPermsTup(Oid relid, HeapTuple tuple,
-						 security_class_t tclass,
-						 access_vector_t required, bool abort);
-extern bool
 sepgsqlClientHasPermsSid(Oid relid, Oid secid,
-						 security_class_t tclass,
-						 access_vector_t required,
+						 uint16 tclass, uint32 required,
 						 const char *audit_name, bool abort);
+extern bool
+sepgsqlClientHasPermsTup(Oid relid, HeapTuple tuple,
+						 uint16 tclass, uint32 required, bool abort);
 extern Oid
-sepgsqlClientCreateSecid(Oid trelid, Oid tsecid,
-						 security_class_t tclass, Oid nrelid);
+sepgsqlClientCreateSecid(Oid trelid, Oid tsecid, uint16 tclass, Oid nrelid);
 
 extern security_context_t
 sepgsqlClientCreateLabel(Oid trelid, Oid tsecid,
@@ -211,6 +213,8 @@ extern security_context_t
 sepgsqlComputeCreate(security_context_t scontext,
 					 security_context_t tcontext,
 					 security_class_t tclass);
+
+extern pid_t sepgsqlStartupWorkerProcess(void);
 
 /*
  * checker.c : check permission on given queries
@@ -266,7 +270,7 @@ sepgsqlCheckDatabaseSetattr(Oid database_oid);
 extern Oid
 sepgsqlCheckDatabaseRelabel(Oid database_oid, DefElem *new_label);
 extern bool
-sepgsqlCheckDatabaseAccess(Oid database_oid);
+sepgsqlCheckDatabaseConnect(Oid database_oid);
 extern bool
 sepgsqlCheckDatabaseSuperuser(void);
 extern void
@@ -283,11 +287,7 @@ sepgsqlCheckSchemaSetattr(Oid namespace_oid);
 extern Oid
 sepgsqlCheckSchemaRelabel(Oid namespace_oid, DefElem *new_label);
 extern bool
-sepgsqlCheckSchemaSearch(Oid nsid);
-extern void
-sepgsqlCheckSchemaAddObject(Oid namespace_oid);
-extern void
-sepgsqlCheckSchemaRemoveObject(Oid namespace_oid);
+sepgsqlCheckSchemaUsage(Oid nsid);
 
 extern void
 sepgsqlCheckTableDrop(Oid table_oid);
@@ -409,9 +409,8 @@ extern security_class_t sepgsqlTransToExternalClass(security_class_t tclass_in);
 
 extern void sepgsqlTransToInternalPerms(security_class_t tclass_ex,
 										struct av_decision *avd);
-extern const char *sepgsqlGetClassString(security_class_t tclass);
-extern const char *sepgsqlGetPermissionString(security_class_t tclass,
-											  access_vector_t av);
+extern const char *sepgsqlGetClassString(uint16 tclass);
+extern const char *sepgsqlGetPermString(uint16 tclass, uint32 permission);
 
 #else	/* HAVE_SELINUX */
 
@@ -446,9 +445,7 @@ extern const char *sepgsqlGetPermissionString(security_class_t tclass,
 #define sepgsqlCheckSchemaDrop(a)				do {} while(0)
 #define sepgsqlCheckSchemaSetattr(a)			do {} while(0)
 #define sepgsqlCheckSchemaRelabel(a,b)			(InvalidOid)
-#define sepgsqlCheckSchemaSearch(a)				(true)
-#define sepgsqlCheckSchemaAddObject(a)			do {} while(0)
-#define sepgsqlCheckSchemaRemoveObject(a)		do {} while(0)
+#define sepgsqlCheckSchemaUsage(a)				(true)
 
 #define sepgsqlCheckTableDrop(a)				do {} while(0)
 #define sepgsqlCheckTableSetattr(a)				do {} while(0)
