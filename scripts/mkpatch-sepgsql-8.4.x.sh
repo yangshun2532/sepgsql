@@ -16,7 +16,8 @@ BASE_VERSION=`grep AC_INIT ${SEPGSQL_REPOSITORY}${SEPGSQL_BRANCH}/base/configure
 BASE_MAJOR=`echo $BASE_VERSION | sed 's/\.[0-9]\+$//g'`
 
 svn update ${SEPGSQL_REPOSITORY}${SEPGSQL_BRANCH} || exit 1
-SEPGSQL_REVISION=`svn info ${SEPGSQL_REPOSITORY} | egrep '^Revision:' | awk '{print $2}'`
+SEPGSQL_REVISION=`svn info ${SEPGSQL_REPOSITORY}${SEPGSQL_BRANCH} \
+    | egrep '^Revision:' | awk '{print $2}'`
 
 # -- lookup RPMS/SOURCE directory
 RPMSOURCE=`rpm -E '%{_sourcedir}'`
