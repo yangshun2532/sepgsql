@@ -106,9 +106,9 @@ checkSchemaCommon(Oid namespace_oid, uint32 required, bool abort)
 }
 
 /*
- * sepgsqlCheckSchemaSearch
+ * sepgsqlCheckSchemaUsage
  *
- * It checks db_schema:{search} permission on the namespace,
+ * It checks db_schema:{usage} permission on the namespace,
  * and returns its decision.
  *
  * This check is equivalent to ACL_USAGE privilge on namespaces,
@@ -116,10 +116,10 @@ checkSchemaCommon(Oid namespace_oid, uint32 required, bool abort)
  * bypassed, even if client has superuser privilege.
  */
 bool
-sepgsqlCheckSchemaSearch(Oid namespace_oid)
+sepgsqlCheckSchemaUsage(Oid namespace_oid)
 {
 	return checkSchemaCommon(namespace_oid,
-							 SEPG_DB_SCHEMA__SEARCH, false);
+							 SEPG_DB_SCHEMA__USAGE, false);
 }
 
 /* ------------------------------------------------------------

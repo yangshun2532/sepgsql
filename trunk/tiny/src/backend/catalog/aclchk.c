@@ -3097,9 +3097,9 @@ pg_namespace_aclcheck(Oid nsp_oid, Oid roleid, AclMode mode)
 {
 	if (pg_namespace_aclmask(nsp_oid, roleid, mode, ACLMASK_ANY) != 0)
 	{
-		/* SELinux: db_schema:{search} permission */
+		/* SELinux: db_schema:{usage} permission */
 		if ((mode & ACL_USAGE) &&
-			!sepgsqlCheckSchemaSearch(nsp_oid))
+			!sepgsqlCheckSchemaUsage(nsp_oid))
 			return ACLCHECK_NO_PRIV;
 
 		return ACLCHECK_OK;

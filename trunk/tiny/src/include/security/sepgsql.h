@@ -85,9 +85,9 @@ enum SepgsqlClasses
 #define SEPG_DB_SCHEMA__SETATTR				(SEPG_DB_DATABASE__SETATTR)
 #define SEPG_DB_SCHEMA__RELABELFROM			(SEPG_DB_DATABASE__RELABELFROM)
 #define SEPG_DB_SCHEMA__RELABELTO			(SEPG_DB_DATABASE__RELABELTO)
-#define SEPG_DB_SCHEMA__SEARCH				(1<<6)
-#define SEPG_DB_SCHEMA__ADD_OBJECT			(1<<7)
-#define SEPG_DB_SCHEMA__REMOVE_OBJECT		(1<<8)
+#define SEPG_DB_SCHEMA__USAGE				(1<<6)
+#define SEPG_DB_SCHEMA__ADD_NAME			(1<<7)
+#define SEPG_DB_SCHEMA__REMOVE_NAME			(1<<8)
 
 #define SEPG_DB_SCHEMA_TEMP__CREATE			(SEPG_DB_DATABASE__CREATE)
 #define SEPG_DB_SCHEMA_TEMP__DROP			(SEPG_DB_DATABASE__DROP)
@@ -95,9 +95,9 @@ enum SepgsqlClasses
 #define SEPG_DB_SCHEMA_TEMP__SETATTR		(SEPG_DB_DATABASE__SETATTR)
 #define SEPG_DB_SCHEMA_TEMP__RELABELFROM	(SEPG_DB_DATABASE__RELABELFROM)
 #define SEPG_DB_SCHEMA_TEMP__RELABELTO		(SEPG_DB_DATABASE__RELABELTO)
-#define SEPG_DB_SCHEMA_TEMP__SEARCH			(SEPG_DB_SCHEMA__SEARCH)
-#define SEPG_DB_SCHEMA_TEMP__ADD_OBJECT		(SEPG_DB_SCHEMA__ADD_OBJECT)
-#define SEPG_DB_SCHEMA_TEMP__REMOVE_OBJECT	(SEPG_DB_SCHEMA__REMOVE_OBJECT)
+#define SEPG_DB_SCHEMA_TEMP__USAGE			(SEPG_DB_SCHEMA__USAGE)
+#define SEPG_DB_SCHEMA_TEMP__ADD_NAME		(SEPG_DB_SCHEMA__ADD_NAME)
+#define SEPG_DB_SCHEMA_TEMP__REMOVE_NAME	(SEPG_DB_SCHEMA__REMOVE_NAME)
 
 #define SEPG_DB_TABLE__CREATE				(SEPG_DB_DATABASE__CREATE)
 #define SEPG_DB_TABLE__DROP					(SEPG_DB_DATABASE__DROP)
@@ -204,7 +204,7 @@ extern bool
 sepgsqlCheckDatabaseSuperuser(void);
 
 extern bool
-sepgsqlCheckSchemaSearch(Oid namespace_oid);
+sepgsqlCheckSchemaUsage(Oid namespace_oid);
 
 extern bool
 sepgsqlCheckProcedureExecute(Oid proc_oid);
@@ -275,7 +275,7 @@ extern const char *sepgsqlGetPermString(uint16 tclass, uint32 permission);
 /* hooks.c */
 #define sepgsqlCheckDatabaseConnect(a)				(true)
 #define sepgsqlCheckDatabaseSuperuser(a)			(true)
-#define sepgsqlCheckSchemaSearch(a)					(true)
+#define sepgsqlCheckSchemaUsage(a)					(true)
 #define sepgsqlCheckProcedureExecute(a)				(true)
 /* label.c */
 #define sepgsqlSetDefaultSecLabel(a,b,c)			do {} while(0)
