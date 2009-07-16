@@ -30,7 +30,12 @@ sepgsqlAvcInitialize(void)
 	if (!sepgsqlIsEnabled())
 		return;
 
-	sepgsqlSetEnforce(0);
+	/*
+	 * Switch to local permissive mode,
+	 * if the backend is not assigned to a certain client.
+	 */
+	if (!MyProcPort)
+		sepgsqlSetEnforce(0);
 }
 
 /*
@@ -71,7 +76,7 @@ sepgsqlSetEnforce(int new_mode)
 {
 	int		old_mode = local_enforce;
 
-	new_mode = local_enforce;
+	local_enforce = new_mode;
 
 	return old_mode;
 }
