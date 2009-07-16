@@ -12,9 +12,69 @@
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_proc.h"
 #include "lib/stringinfo.h"
+#include "miscadmin.h"
 #include "security/sepgsql.h"
 #include "utils/builtins.h"
 #include "utils/syscache.h"
+
+/*
+ * sepgsqlAvcInitialize
+ *
+ * If the current backend is not associated with a certain
+ * client process, it switches to permissive mode to avoid
+ * to prevent any internal processes.
+ */
+void
+sepgsqlAvcInitialize(void)
+{
+	if (!sepgsqlIsEnabled())
+		return;
+
+	sepgsqlSetEnforce(0);
+}
+
+/*
+ * sepgsqlGetEnforce
+ * sepgsqlSetEnforce
+ *
+ * SELinux has two working mode called Enforcing/Permissive.
+ * In enforcing mode, it checks security policy and actually
+ * applies its access controls. In permissive mode, it also
+ * checks security policy, but does not apply any access
+ * controls. It is used to collect access denied logs to
+ * debug security policy.
+ *
+ * sepgsqlGetEnforce() returns the current working mode, and
+ * sepgsqlSetEnforce() switches the current working mode
+ * temporary. When we switches the mode, any errors have to
+ * be acquired, and it should be restored correctly.
+ */
+static int	local_enforce = -1;	/* undefined */
+
+bool
+sepgsqlGetEnforce(void)
+{
+	/* Enforcing mode, independent from system setting */
+	if (local_enforce > 0)
+		return true;
+
+	/* Permissive mode independent from system setting */
+	if (local_enforce == 0)
+		return false;
+
+	/* According to the system setting */
+	return (security_getenforce() > 0 ? true : false);
+}
+
+int
+sepgsqlSetEnforce(int new_mode)
+{
+	int		old_mode = local_enforce;
+
+	new_mode = local_enforce;
+
+	return old_mode;
+}
 
 /*
  * sepgsqlAvcAudit
@@ -156,6 +216,16 @@ sepgsqlComputePerms(char *scontext, char *tcontext,
 	tclass_ex = sepgsqlTransToExternalClass(tclass_in);
 	if (tclass_ex > 0)
 	{
+		/*
+		 * security_compute_av_flags_raw() is a SELinux's API that
+		 * returns its access control decision based on the security
+		 * policy, to the given combination of user's privilege
+		 * (scontext; security label of the client process),
+		 * target's attribute (tcontext; security label of the
+		 * object) and type of actions (tclass; object classes).
+		 *
+		 * The returned avd.allowed is a bitmap of allowed actions.
+		 */
 		if (security_compute_av_flags_raw(scontext, tcontext,
 										  tclass_ex, 0, &avd) < 0)
 			ereport(ERROR,
@@ -168,8 +238,15 @@ sepgsqlComputePerms(char *scontext, char *tcontext,
 	}
 	else
 	{
-		/* fill it up as undefined class */
-		avd.allowed = (security_deny_unknown() ? 0 : ~0UL);
+		/*
+		 * If security policy does not support database related
+		 * permissions, it fulls up permission bits by dummy
+		 * data.
+		 * If security_deny_unknown() returns positive value,
+		 * undefined permissions should not be allowed.
+		 * Otherwise, it shall be allowed.
+		 */
+		avd.allowed = (security_deny_unknown() > 0 ? 0 : ~0UL);
 		avd.decided = ~0UL;
 		avd.auditallow = 0UL;
 		avd.auditdeny = ~0UL;
@@ -181,11 +258,24 @@ sepgsqlComputePerms(char *scontext, char *tcontext,
 					 : (required & avd.auditallow);
 	if (audited)
 	{
+		/*
+		 * If security policy requires to generate an audit log
+		 * record for the given request, it should be logged.
+		 */
 		sepgsqlAvcAudit(!!denied, scontext, tcontext,
 						tclass_in, audited, audit_name);
 	}
 
-	if (denied && security_getenforce() == 1 &&
+	/*
+	 * If any required permissions are not allowed, and
+	 * SE-PgSQL performs in enforcing mode, and the given
+	 * combination of subject, object and action does not
+	 * have special flag to be handled as permission,
+	 * SE-PgSQL returns false or raises an error.
+	 * Otherwise, it returns true that means required
+	 * actions are allowed.
+	 */
+	if (denied && sepgsqlGetEnforce() &&
 		(avd.flags & SELINUX_AVD_FLAGS_PERMISSIVE) == 0)
 	{
 		if (abort)
@@ -211,6 +301,13 @@ sepgsqlComputeCreate(char *scontext, char *tcontext, uint16 tclass_in)
 	security_class_t	tclass_ex;
 
 	tclass_ex = sepgsqlTransToExternalClass(tclass_in);
+	/*
+	 * security_compute_create_raw() is a SELinux's API that
+	 * returns a default security context to be assigned on
+	 * a new object (categorized by object class) when a client
+	 * labeled as scontext tries to create a new one under the
+	 * parent object labeled as tcontext.
+	 */
 	if (security_compute_create_raw(scontext, tcontext,
 									tclass_ex, &ncontext) < 0)
 		ereport(ERROR,

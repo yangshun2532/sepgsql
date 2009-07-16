@@ -14,7 +14,12 @@
 static security_context_t clientLabel = NULL;
 static security_context_t serverLabel = NULL;
 
-char *
+/*
+ * sepgsqlGetServerLabel
+ *
+ * It returns the security label of server process.
+ */
+security_context_t
 sepgsqlGetServerLabel(void)
 {
 	if (!serverLabel)
@@ -27,7 +32,15 @@ sepgsqlGetServerLabel(void)
 	return serverLabel;
 }
 
-char *
+/*
+ * sepgsqlGetClientLabel
+ *
+ * It returns the security label of client process which is
+ * obtained from getpeercon(3) API.
+ * If the backend is not launched with a certain remote client,
+ * it returns the security label of itself.
+ */
+security_context_t
 sepgsqlGetClientLabel(void)
 {
 	if (!clientLabel)
@@ -55,6 +68,14 @@ sepgsqlGetClientLabel(void)
 	return clientLabel;
 }
 
+/*
+ * sepgsqlSwitchClient
+ *
+ * It switches the security label of the client temporary.
+ * If someone raises an error during an alternative security
+ * label is applied, it is not recovered automatically.
+ * In this case, caller needs to acquire errors using PG_TRY().
+ */
 char *
 sepgsqlSwitchClient(char *new_label)
 {
@@ -129,8 +150,3 @@ sepgsql_server_getcon(PG_FUNCTION_ARGS)
 	context = sepgsqlTransSecLabelOut(context);
 	return CStringGetTextDatum(context);
 }
-
-
-
-
-
