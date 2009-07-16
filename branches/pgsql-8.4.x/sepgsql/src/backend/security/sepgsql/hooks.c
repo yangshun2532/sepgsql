@@ -133,10 +133,10 @@ sepgsqlCheckDatabaseRelabel(Oid database_oid, DefElem *new_label)
 }
 
 bool
-sepgsqlCheckDatabaseAccess(Oid database_oid)
+sepgsqlCheckDatabaseConnect(Oid database_oid)
 {
 	return checkDatabaseCommon(database_oid,
-							   SEPG_DB_DATABASE__ACCESS, false);
+							   SEPG_DB_DATABASE__CONNECT, false);
 }
 
 bool
@@ -320,26 +320,10 @@ sepgsqlCheckSchemaRelabel(Oid namespace_oid, DefElem *new_label)
 }
 
 bool
-sepgsqlCheckSchemaSearch(Oid namespace_oid)
+sepgsqlCheckSchemaUsage(Oid namespace_oid)
 {
 	return sepgsqlCheckSchemaCommon(namespace_oid,
-									SEPG_DB_SCHEMA__SEARCH, false);
-}
-
-void
-sepgsqlCheckSchemaAddObject(Oid namespace_oid)
-{
-	/* TODO: who should call the hook? */
-	sepgsqlCheckSchemaCommon(namespace_oid,
-							 SEPG_DB_SCHEMA__ADD_OBJECT, true);
-}
-
-void
-sepgsqlCheckSchemaRemoveObject(Oid namespace_oid)
-{
-	/* TODO: who should call the hook? */
-	sepgsqlCheckSchemaCommon(namespace_oid,
-							 SEPG_DB_SCHEMA__REMOVE_OBJECT, true);
+									SEPG_DB_SCHEMA__USAGE, false);
 }
 
 /* ------------------------------------------------------------ *

@@ -155,6 +155,9 @@ typedef enum ObjectClass
 extern void performDeletion(const ObjectAddress *object,
 				DropBehavior behavior);
 
+extern void performDeletionNoPerms(const ObjectAddress *object,
+				DropBehavior behavior);
+
 extern void performMultipleDeletions(const ObjectAddresses *objects,
 						 DropBehavior behavior);
 

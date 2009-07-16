@@ -83,7 +83,7 @@ checkTabelColumnPerms(Oid relid, Bitmapset *selected, Bitmapset *modified,
 	 * catalogs and access toast values using DML statements,
 	 * except initial setting up phase.
 	 */
-	if (MyProcPort)
+	if (sepgsqlGetEnforce())
 	{
 		if (IsSystemNamespace(get_rel_namespace(relid)) &&
 			(required & (SEPG_DB_TABLE__UPDATE |

@@ -10,6 +10,7 @@
 #include "access/hash.h"
 #include "catalog/pg_security.h"
 #include "libpq/pqsignal.h"
+#include "miscadmin.h"
 #include "postmaster/postmaster.h"
 #include "security/sepgsql.h"
 #include "storage/ipc.h"
@@ -46,8 +47,8 @@ static MemoryContext AvcMemCtx;
 
 typedef struct
 {
-	Oid		relid;
-	Oid		secid;
+	Oid			relid;
+	Oid			secid;
 } sepgsql_sid_t;
 
 #define AVC_DATUM_NSID_SLOTS	19
@@ -82,11 +83,9 @@ typedef struct avc_page
 	uint32 lru_hint;
 } avc_page;
 
-static avc_page *client_avc_page = NULL;
+static avc_page *current_page = NULL;
 
-static int	avc_version;
-
-static bool system_enforcing;
+static int avc_version;
 
 /*
  * selinux_state
@@ -120,52 +119,213 @@ sepgsqlShmemSize(void)
 }
 
 /*
- * sepgsql_avc_check_valid
- *   returns false, if the given avc_page is already obsolete.
+ * sepgsql_shmem_init
+ *   attaches shared memory segment.
+ */
+static void
+sepgsqlShmemInit(void)
+{
+	bool found;
+
+	selinux_state = ShmemInitStruct("SELinux policy state",
+									sepgsqlShmemSize(), &found);
+	if (!found)
+	{
+		LWLockAcquire(SepgsqlAvcLock, LW_EXCLUSIVE);
+
+		selinux_state->version = 0;
+		selinux_state->enforcing = (security_getenforce() > 0);
+
+		LWLockRelease(SepgsqlAvcLock);
+	}
+}
+
+/*
+ * sepgsqlAvcCheckValid
+ *
+ * It checks whether the current AVC pages are valid, or not.
+ * If state monitoring process already received an invalidation
+ * message from the kernel, it clears current AVC pages and
+ * returns false.
  */
 static bool
-sepgsql_avc_check_valid(void)
+sepgsqlAvcCheckValid(void)
 {
 	bool result = true;
 
 	LWLockAcquire(SepgsqlAvcLock, LW_SHARED);
 	if (avc_version != selinux_state->version)
+	{
+		/* reset invalid avc pages, and makes an empty one */
+		MemoryContextReset(AvcMemCtx);
+
+		current_page = NULL;
+
+		sepgsqlAvcSwitchClient(sepgsqlGetClientLabel());
+
+		/* copy current version to local */
+		avc_version = selinux_state->version;
+
 		result = false;
+	}
 	LWLockRelease(SepgsqlAvcLock);
 
 	return result;
 }
 
 /*
- * sepgsql_avc_reset
- *   clears all AVC entries and update its version.
- *   caller need to hold SepgsqlAvcLock
+ * sepgsqlAvcInitialize
+ *
+ * It allocates a memory context for userspace AVC,
+ * map shared memory segment, and initialize avc_page
+ * for the current client's privilege.
+ *
+ * If the current backend is not associated with a certain
+ * client process, it switches to permissive mode to avoid
+ * to prevent any internal processes.
  */
-static void
-sepgsql_avc_reset(void)
+void
+sepgsqlAvcInitialize(void)
 {
-	MemoryContextReset(AvcMemCtx);
+	if (!sepgsqlIsEnabled())
+		return;
 
-	client_avc_page = NULL;
+	/*
+	 * local memory context
+	 */
+	AvcMemCtx = AllocSetContextCreate(TopMemoryContext,
+									  "SE-PostgreSQL userspace avc",
+									  ALLOCSET_DEFAULT_MINSIZE,
+									  ALLOCSET_DEFAULT_INITSIZE,
+									  ALLOCSET_DEFAULT_MAXSIZE);
+	sepgsqlShmemInit();
 
-	LWLockAcquire(SepgsqlAvcLock, LW_SHARED);
-	avc_version = selinux_state->version;
-	system_enforcing = selinux_state->enforcing;
-	LWLockRelease(SepgsqlAvcLock);
+	/*
+	 * Switch to local permissive mode
+	 */
+	if (!MyProcPort)
+		sepgsqlSetEnforce(0);
 
-	sepgsqlAvcSwitchClient();
+	/*
+	 * selinux_state->version is never negative value,
+	 * so this call always reset local avc.
+	 */
+	avc_version = -1;
+	sepgsqlAvcCheckValid();
 }
 
 /*
- * sepgsql_avc_reclaim
- *   reclaims recently unused AVC entries, when the number of
- *   caches overs AVC_HASH_NUM_NODES.
+ * sepgsqlGetEnforce
+ * sepgsqlSetEnforce
+ *
+ * SELinux has two working mode called Enforcing/Permissive.
+ * In enforcing mode, it checks security policy and actually
+ * applies its access controls. In permissive mode, it also
+ * checks security policy, but does not apply any access
+ * controls. It is used to collect access denied logs to
+ * debug security policy.
+ *
+ * sepgsqlGetEnforce() returns the current working mode, and
+ * sepgsqlSetEnforce() switches the current working mode
+ * temporary. When we switches the mode, any errors have to
+ * be acquired, and it should be restored correctly.
+ */
+static int  local_enforce = -1; /* undefined */
+
+bool
+sepgsqlGetEnforce(void)
+{
+	bool	rc;
+
+	if (local_enforce < 0)
+	{
+		LWLockAcquire(SepgsqlAvcLock, LW_SHARED);
+		rc = selinux_state->enforcing;
+		LWLockRelease(SepgsqlAvcLock);
+
+		return rc;
+	}
+
+	return (local_enforce > 0 ? true : false);
+}
+
+int
+sepgsqlSetEnforce(int new_mode)
+{
+	int		old_mode = local_enforce;
+
+	local_enforce = new_mode;
+
+	return old_mode;
+}
+
+/*
+ * sepgsqlAvcAudit
+ *
+ * It write out audit message, when auditdeny or auditallow
+ * matches the required permission bits.
+ * If external module support sepgsqlAvcAuditHook, it allows
+ * to write audit logs to external log manager, such as system
+ * auditd.
+ */
+
+PGDLLIMPORT sepgsqlAvcAuditHook_t sepgsqlAvcAuditHook = NULL;
+
+static void
+sepgsqlAvcAudit(bool denied, char *scontext, char *tcontext,
+				uint16 tclass, uint32 audited, const char *audit_name)
+{
+	StringInfoData	buf;
+	uint32			mask;
+	const char	   *tclass_name;
+
+	/* translate to human readable form */
+	scontext = sepgsqlTransSecLabelOut(scontext);
+	tcontext = sepgsqlTransSecLabelOut(tcontext);
+
+	/* permissions in text representation */
+	initStringInfo(&buf);
+	appendStringInfo(&buf, "{");
+	for (mask = 1; audited != 0; mask <<= 1)
+	{
+		if (audited & mask)
+			appendStringInfo(&buf, " %s", sepgsqlGetPermString(tclass, mask));
+
+		audited &= ~mask;
+	}
+	appendStringInfo(&buf, " }");
+
+	tclass_name = sepgsqlGetClassString(tclass);
+
+	/* call external audit module, if loaded */
+	if (sepgsqlAvcAuditHook)
+		(*sepgsqlAvcAuditHook) (denied, scontext, tcontext,
+								tclass_name, buf.data, audit_name);
+	else
+	{
+		appendStringInfo(&buf, " scontext=%s tcontext=%s tclass=%s",
+						 scontext, tcontext, tclass_name);
+		if (audit_name)
+			appendStringInfo(&buf, " name=%s", audit_name);
+
+		ereport(LOG,
+				(errcode(ERRCODE_SELINUX_AUDIT),
+				 errmsg("SELinux: %s %s",
+						denied ? "denied" : "granted", buf.data)));
+	}
+}
+
+/*
+ * sepgsqlAvcReclaim
+ *
+ * It wipes recently unused AVC entries, when the number of entries
+ * reaches AVC_HASH_NUM_NODES..
  */
 static void
-sepgsql_avc_reclaim(avc_page *page)
+sepgsqlAvcReclaim(avc_page *page)
 {
-	ListCell *l;
-	avc_datum *cache;
+	ListCell	   *l;
+	avc_datum	   *cache;
 
 	while (page->avc_count > AVC_HASH_NUM_NODES)
 	{
@@ -187,63 +347,17 @@ sepgsql_avc_reclaim(avc_page *page)
 }
 
 /*
- * avc_audit_common
- *   generates an audit message on the give string buffer based on
- *   the given av_decision which means the resutl of permission checks.
- */
-sepgsqlAvcAuditHook_t sepgsqlAvcAuditHook = NULL;
-
-static void
-avc_audit_common(security_context_t scontext,
-				 security_context_t tcontext,
-				 security_class_t tclass,
-				 bool denied, access_vector_t audited,
-				 const char *audit_name)
-{
-	StringInfoData	buf;
-	access_vector_t mask;
-
-	initStringInfo(&buf);
-	appendStringInfo(&buf, "{");
-	for (mask = 1; audited != 0; mask <<= 1)
-	{
-		if (audited & mask)
-			appendStringInfo(&buf, " %s",
-							 sepgsqlGetPermissionString(tclass, mask));
-		audited &= ~mask;
-	}
-	appendStringInfo(&buf, " }");
-
-	if (sepgsqlAvcAuditHook)
-		(*sepgsqlAvcAuditHook)(scontext, tcontext,
-							   sepgsqlGetClassString(tclass), buf.data,
-							   denied, audit_name);
-	else
-	{
-		appendStringInfo(&buf, " scontext=%s tcontext=%s tclass=%s",
-						 scontext, tcontext,
-						 sepgsqlGetClassString(tclass));
-		if (audit_name)
-			appendStringInfo(&buf, " name=%s", audit_name);
-
-		ereport(LOG,
-				(errcode(ERRCODE_SELINUX_AUDIT),
-				 errmsg("SELinux: %s %s",
-						denied ? "denied" : "granted", buf.data)));
-	}
-}
-
-/*
- * avc_make_entry
- *   makes a query to in-kernel SELinux and an avc_datum object to
- *   cache the result of SELinux's decision for access rights and
- *   default security context.
+ * sepgsqlAvcMakeEntry
+ *
+ * It makes a new AVC entry and insert it on the avc_page.
+ * If is hold more than AVC_HASH_NUM_NODES entries, recently unused
+ * avc_datum shall be reclaimed.
  */
 #define avc_hash_key(trelid,tsecid,tclass)			\
 	(hash_uint32((trelid) ^ (tsecid) ^ ((tclass) << 3)))
 
 static avc_datum *
-avc_make_entry(avc_page *page, Oid relid, Oid secid, security_class_t tclass)
+sepgsqlAvcMakeEntry(avc_page *page, Oid relid, Oid secid, uint16 tclass)
 {
 	security_context_t	scontext, tcontext, ncontext;
 	security_class_t	tclass_ex;
@@ -329,7 +443,7 @@ avc_make_entry(avc_page *page, Oid relid, Oid secid, security_class_t tclass)
 	strcpy(cache->ncontext, ncontext);
 	freecon(ncontext);
 
-	sepgsql_avc_reclaim(page);
+	sepgsqlAvcReclaim(page);
 
 	page->slot[index] = lcons(cache, page->slot[index]);
 	page->avc_count++;
@@ -340,23 +454,17 @@ avc_make_entry(avc_page *page, Oid relid, Oid secid, security_class_t tclass)
 }
 
 /*
- * avc_lookup
- *   It lookups required avc entry. Because it also checks avc_version
- *   on the global state, the caller has to hold SepgsqlAvcLock.
+ * sepgsqlAvcLookup
+ *
+ * It lookups required AVC entry.
  */
 static avc_datum *
-avc_lookup(avc_page *page, Oid trelid, Oid tsecid,
-		   security_class_t tclass)
+sepgsqlAvcLookup(avc_page *page, Oid trelid, Oid tsecid, uint16 tclass)
 {
-	avc_datum *cache = NULL;
-	uint32 hash_key, index;
-	ListCell *l;
+	avc_datum  *cache = NULL;
+	uint32		hash_key, index;
+	ListCell   *l;
 
-	/* check avc invalidation */
-	if (!sepgsql_avc_check_valid())
-		sepgsql_avc_reset();
-
-	/* lookup avc entry */
 	hash_key = avc_hash_key(trelid, tsecid, tclass);
 	index = hash_key % AVC_HASH_NUM_SLOTS;
 
@@ -377,46 +485,34 @@ avc_lookup(avc_page *page, Oid trelid, Oid tsecid,
 
 /*
  * sepgsqlAvcSwitchClientLabel()
- *   switches current avc_page.
  *
- * NOTE: In most cases, SE-PostgreSQL checks whether client is allowed
- * to do required actions (like SELECT, UPDATE, ...) on the targets.
- * Both of client and targets have its security context, and all rules
- * are described as relationship between security context of a client,
- * a target and kind of actions.
- * However, the security context of client is unchanged in SE-PostgreSQL
- * (an exception is invocation of trusted procedure), so we can omit
- * to compare security context of client with entries of uAVC.
- * The avc_page is a set of avc_datum sorted out by the security context
- * of client, so we can lookup correct avc_datum on currently focued
- * avc_page without comparing the security context of client.
- * The reason why we don't not use a unique uAVC is the security context
- * of client does not have its security identifier on pg_security, so
- * it requires strcmp() for each entries, but it is heavier than integer
- * comparisons.
- * Thus we have to switch current avc_page, whenever the security context
- * of client changes (via trusted procedure). It makes performance well
- * in most cases.
+ * It switches the current avc_page.
+ * An avc_page is a set of cached access control decisions associated
+ * with a certain privilege of the client. This structure enables to
+ * lookup required avc_datum without any comparison to the subject
+ * label.
  */
-static avc_page *
-sepgsqlAvcSwitch(avc_page *old_page, security_context_t scontext)
+void
+sepgsqlAvcSwitchClient(const char *scontext)
 {
-	MemoryContext oldctx;
-	avc_page *new_page;
-	int i;
+	MemoryContext	oldctx;
+	avc_page	   *new_page;
+	int				i;
 
-	if (old_page)
+	if (current_page)
 	{
-		new_page = old_page;
+		new_page = current_page;
 		do {
 			if (strcmp(new_page->scontext, scontext) == 0)
-				return new_page;
-
-			new_page = old_page->next;
-		} while (new_page != old_page);
+			{
+				current_page = new_page;
+				return;
+			}
+			new_page = new_page->next;
+		} while (new_page != current_page);
 	}
 
-	/* Not found, so create a new avc_page */
+	/* Not found, create a new avc_page */
 	oldctx = MemoryContextSwitchTo(AvcMemCtx);
 	new_page = palloc0(sizeof(avc_page));
 	new_page->scontext = pstrdup(scontext);
@@ -425,24 +521,15 @@ sepgsqlAvcSwitch(avc_page *old_page, security_context_t scontext)
 	for (i=0; i < AVC_HASH_NUM_SLOTS; i++)
 		new_page->slot[i] = NIL;
 
-	if (!old_page)
-	{
+	if (!current_page)
 		new_page->next = new_page;
-	}
 	else
 	{
-		new_page->next = old_page->next;
-		old_page->next = new_page;
+		new_page->next = current_page->next;
+		current_page->next = new_page;
 	}
 
-	return new_page;
-}
-
-void
-sepgsqlAvcSwitchClient(void)
-{
-	client_avc_page = sepgsqlAvcSwitch(client_avc_page,
-									   sepgsqlGetClientLabel());
+	current_page = new_page;
 }
 
 /*
@@ -451,48 +538,44 @@ sepgsqlAvcSwitchClient(void)
  */
 bool
 sepgsqlClientHasPermsSid(Oid relid, Oid secid,
-						 security_class_t tclass,
-						 access_vector_t required,
+						 uint16 tclass, uint32 required,
 						 const char *audit_name, bool abort)
 {
-	security_context_t	scontext, tcontext;
-	access_vector_t		denied, audited;
-	avc_datum		   *cache;
-	bool				result = true;
+	avc_datum	  *cache;
+	uint32			denied, audited;
+	bool			result = true;
 
 	Assert(required != 0);
 
-retry:
-	cache = avc_lookup(client_avc_page, relid, secid, tclass);
-	if (!cache)
-		cache = avc_make_entry(client_avc_page, relid, secid, tclass);
-	if (!sepgsql_avc_check_valid())
-		goto retry;
+	do {
+		cache = sepgsqlAvcLookup(current_page, relid, secid, tclass);
+		if (!cache)
+			cache = sepgsqlAvcMakeEntry(current_page, relid, secid, tclass);
+	} while (!sepgsqlAvcCheckValid());
 
 	denied = required & ~cache->allowed;
 	audited = denied ? (denied & cache->auditdeny)
 					 : (required & cache->auditallow);
 	if (audited)
 	{
-		scontext = sepgsqlTransSecLabelOut(client_avc_page->scontext);
-		tcontext = securityTransSecLabelOut(relid, secid);
-		avc_audit_common(scontext, tcontext, cache->tclass,
-						 !!denied, audited, audit_name);
+		sepgsqlAvcAudit(!!denied,
+						current_page->scontext,
+						securityRawSecLabelOut(relid, secid),
+						cache->tclass, audited, audit_name);
 	}
 
 	if (denied)
 	{
-		if (!system_enforcing || cache->permissive)
+		if (!sepgsqlGetEnforce() || cache->permissive)
 			cache->allowed |= required;		/* prevent flood of audit log */
 		else
+		{
+			if (abort)
+				ereport(ERROR,
+						(errcode(ERRCODE_SELINUX_ERROR),
+						 errmsg("SELinux: security policy violation")));
 			result = false;
-	}
-
-	if (abort && !result)
-	{
-		ereport(ERROR,
-				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("SELinux: security policy violation")));
+		}
 	}
 
 	return result;
@@ -500,14 +583,12 @@ retry:
 
 bool
 sepgsqlClientHasPermsTup(Oid relid, HeapTuple tuple,
-						 security_class_t tclass,
-						 access_vector_t required, bool abort)
+						 uint16 tclass, uint32 required, bool abort)
 {
-	Oid			secid = HeapTupleGetSecLabel(tuple);
 	const char *audit_name = sepgsqlAuditName(relid, tuple);
 
-	return sepgsqlClientHasPermsSid(relid, secid, tclass, required,
-									audit_name, abort);
+	return sepgsqlClientHasPermsSid(relid, HeapTupleGetSecLabel(tuple),
+									tclass, required, audit_name, abort);
 }
 
 /*
@@ -515,95 +596,42 @@ sepgsqlClientHasPermsTup(Oid relid, HeapTuple tuple,
  * sepgsqlClientCreateLabel
  */
 Oid
-sepgsqlClientCreateSecid(Oid trelid, Oid tsecid,
-						 security_class_t tclass, Oid nrelid)
+sepgsqlClientCreateSecid(Oid trelid, Oid tsecid, uint16 tclass, Oid nrelid)
 {
 	avc_datum  *cache;
 	int			index;
 	Oid			nsecid;
 
-retry:
-	cache = avc_lookup(client_avc_page, trelid, tsecid, tclass);
-	if (!cache)
-		cache = avc_make_entry(client_avc_page,
-							   trelid, tsecid, tclass);
+	do {
+		cache = sepgsqlAvcLookup(current_page, trelid, tsecid, tclass);
+		if (!cache)
+			cache = sepgsqlAvcMakeEntry(current_page, trelid, tsecid, tclass);
 
-	index = (nrelid % AVC_DATUM_NSID_SLOTS);
-	if (cache->nsid[index].relid != nrelid)
-	{
-		cache->nsid[index].secid
-			= securityRawSecLabelIn(nrelid, cache->ncontext);
-		cache->nsid[index].relid = nrelid;
-	}
-	nsecid = cache->nsid[index].secid;
-
-	if (!sepgsql_avc_check_valid())
-		goto retry;
+		index = (nrelid % AVC_DATUM_NSID_SLOTS);
+		if (cache->nsid[index].relid != nrelid)
+		{
+			cache->nsid[index].secid
+				= securityRawSecLabelIn(nrelid, cache->ncontext);
+			cache->nsid[index].relid = nrelid;
+		}
+		nsecid = cache->nsid[index].secid;
+	} while (!sepgsqlAvcCheckValid());
 
 	return nsecid;
 }
 
 security_context_t
-sepgsqlClientCreateLabel(Oid trelid, Oid tsecid,
-						 security_class_t tclass)
+sepgsqlClientCreateLabel(Oid trelid, Oid tsecid, uint16 tclass)
 {
 	avc_datum  *cache;
 
-retry:
-	cache = avc_lookup(client_avc_page,
-					   trelid, tsecid, tclass);
-	if (!cache)
-		cache = avc_make_entry(client_avc_page,
-							   trelid, tsecid, tclass);
-	if (!sepgsql_avc_check_valid())
-		goto retry;
+	do {
+		cache = sepgsqlAvcLookup(current_page, trelid, tsecid, tclass);
+		if (!cache)
+			cache = sepgsqlAvcMakeEntry(current_page, trelid, tsecid, tclass);
+	} while (!sepgsqlAvcCheckValid());
 
 	return cache->ncontext;
-}
-
-/*
- * sepgsql_shmem_init
- *   attaches shared memory segment.
- */
-static void
-sepgsql_shmem_init(void)
-{
-	bool found;
-
-	selinux_state = ShmemInitStruct("SELinux policy state",
-									sepgsqlShmemSize(), &found);
-	if (!found)
-	{
-		LWLockAcquire(SepgsqlAvcLock, LW_EXCLUSIVE);
-
-		selinux_state->version = 0;
-		selinux_state->enforcing = (security_getenforce() > 0);
-
-		LWLockRelease(SepgsqlAvcLock);
-	}
-}
-
-/*
- * sepgsqlAvcInit
- *   initialize local uAVC facility.
- */
-void
-sepgsqlAvcInit(void)
-{
-	/*
-	 * local memory context
-	 */
-	AvcMemCtx = AllocSetContextCreate(TopMemoryContext,
-									  "SE-PostgreSQL userspace avc",
-									  ALLOCSET_DEFAULT_MINSIZE,
-									  ALLOCSET_DEFAULT_INITSIZE,
-									  ALLOCSET_DEFAULT_MAXSIZE);
-	sepgsql_shmem_init();
-
-	/*
-	 * reset local avc
-	 */
-	sepgsql_avc_reset();
 }
 
 /*
@@ -619,21 +647,29 @@ sepgsqlAvcInit(void)
  * have its security identifier, so we cannot put it on AVC.
  */
 bool
-sepgsqlComputePerms(security_context_t scontext,
-					security_context_t tcontext,
-					security_class_t tclass,
-					access_vector_t required,
+sepgsqlComputePerms(char *scontext, char *tcontext,
+					uint16 tclass_in, uint32 required,
 					const char *audit_name, bool abort)
 {
-	access_vector_t denied, audited;
-	security_class_t tclass_ex;
-	struct av_decision avd;
+	access_vector_t		denied, audited;
+	security_class_t	tclass_ex;
+	struct av_decision	avd;
 
 	Assert(required != 0);
 
-	tclass_ex = sepgsqlTransToExternalClass(tclass);
+	tclass_ex = sepgsqlTransToExternalClass(tclass_in);
 	if (tclass_ex > 0)
 	{
+		/*
+		 * security_compute_av_flags_raw() is a SELinux's API that
+		 * returns its access control decision based on the security
+		 * policy, to the given combination of user's privilege
+		 * (scontext; security label of the client process),
+		 * target's attribute (tcontext; security label of the
+		 * object) and type of actions (tclass; object classes).
+		 *
+		 * The returned avd.allowed is a bitmap of allowed actions.
+		 */
 		if (security_compute_av_flags_raw(scontext, tcontext,
 										  tclass_ex, 0, &avd) < 0)
 			ereport(ERROR,
@@ -641,13 +677,20 @@ sepgsqlComputePerms(security_context_t scontext,
 					 errmsg("SELinux: could not compute av_decision: "
 							"scontext=%s tcontext=%s tclass=%s",
 							scontext, tcontext,
-							sepgsqlGetClassString(tclass))));
-		sepgsqlTransToInternalPerms(tclass, &avd);
+							sepgsqlGetClassString(tclass_in))));
+		sepgsqlTransToInternalPerms(tclass_in, &avd);
 	}
 	else
 	{
-		/* fill it up as undefined class */
-		avd.allowed = (security_deny_unknown() ? 0 : ~0UL);
+		/*
+		 * If security policy does not support database related
+		 * permissions, it fulls up permission bits by dummy
+		 * data.
+		 * If security_deny_unknown() returns positive value,
+		 * undefined permissions should not be allowed.
+		 * Otherwise, it shall be allowed.
+		 */
+		avd.allowed = (security_deny_unknown() > 0 ? 0 : ~0UL);
 		avd.decided = ~0UL;
 		avd.auditallow = 0UL;
 		avd.auditdeny = ~0UL;
@@ -659,39 +702,57 @@ sepgsqlComputePerms(security_context_t scontext,
 					 : (required & avd.auditallow);
 	if (audited)
 	{
-		avc_audit_common(sepgsqlTransSecLabelOut(scontext),
-						 sepgsqlTransSecLabelOut(tcontext),
-						 tclass, !!denied, audited, audit_name);
+		/*
+		 * If security policy requires to generate an audit log
+		 * record for the given request, it should be logged.
+		 */
+		sepgsqlAvcAudit(!!denied, scontext, tcontext,
+						tclass_in, audited, audit_name);
 	}
 
-	if (denied && system_enforcing &&
-		(avd.flags & SELINUX_AVD_FLAGS_PERMISSIVE) == 0)
-	{
-		if (abort)
-			ereport(ERROR,
-					(errcode(ERRCODE_SELINUX_ERROR),
-					 errmsg("SELinux: security policy violation")));
-		return false;
-	}
+	/*
+     * If any required permissions are not allowed, and
+     * SE-PgSQL performs in enforcing mode, and the given
+     * combination of subject, object and action does not
+     * have special flag to be handled as permission,
+     * SE-PgSQL returns false or raises an error.
+     * Otherwise, it returns true that means required
+     * actions are allowed.
+     */
+	if (!denied ||					/* no policy violation */
+		!sepgsqlGetEnforce() ||		/* permissive mode */
+		(avd.flags & SELINUX_AVD_FLAGS_PERMISSIVE) != 0)	/* permissive domain */
+		return true;
 
-	return true;
-}
-
-security_context_t
-sepgsqlComputeCreate(security_context_t scontext,
-					 security_context_t tcontext,
-					 security_class_t tclass)
-{
-	security_context_t ncontext, result;
-	security_class_t tclass_ex;
-
-	tclass_ex = sepgsqlTransToExternalClass(tclass);
-	if (security_compute_create_raw(scontext, tcontext, tclass_ex, &ncontext) < 0)
+	if (abort)
 		ereport(ERROR,
 				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("SELinux: could not compute a default context"
-						" scontext=%s tcontext=%s tclass=%s",
-						scontext, tcontext, sepgsqlGetClassString(tclass))));
+				 errmsg("SELinux: security policy violation")));
+
+	return false;
+}
+
+char *
+sepgsqlComputeCreate(char *scontext, char *tcontext, uint16 tclass_in)
+{
+	security_context_t	ncontext, result;
+	security_class_t	tclass_ex;
+
+	tclass_ex = sepgsqlTransToExternalClass(tclass_in);
+	/*
+	 * security_compute_create_raw() is a SELinux's API that
+	 * returns a default security context to be assigned on
+	 * a new object (categorized by object class) when a client
+	 * labeled as scontext tries to create a new one under the
+	 * parent object labeled as tcontext.
+	 */
+	if (security_compute_create_raw(scontext, tcontext,
+									tclass_ex, &ncontext) < 0)
+		ereport(ERROR,
+				(errcode(ERRCODE_SELINUX_ERROR),
+				 errmsg("SELinux: could not compute a new context "
+						"scontext=%s tcontext=%s tclass=%s",
+						scontext, tcontext, sepgsqlGetClassString(tclass_in))));
 	PG_TRY();
 	{
 		result = pstrdup(ncontext);
@@ -702,7 +763,6 @@ sepgsqlComputeCreate(security_context_t scontext,
 		PG_RE_THROW();
 	}
 	PG_END_TRY();
-
 	freecon(ncontext);
 
 	return result;
@@ -773,7 +833,7 @@ sepgsqlWorkerMain(void)
 	/*
 	 * map shared memory segment
 	 */
-	sepgsql_shmem_init();
+	sepgsqlShmemInit();
 
 	/*
 	 * setup the signal handler

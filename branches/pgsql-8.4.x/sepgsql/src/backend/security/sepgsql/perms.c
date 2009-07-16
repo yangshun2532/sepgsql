@@ -105,7 +105,7 @@ static struct
 			{ "setattr",		SEPG_DB_DATABASE__SETATTR },
 			{ "relabelfrom",	SEPG_DB_DATABASE__RELABELFROM },
 			{ "relabelto",		SEPG_DB_DATABASE__RELABELTO },
-			{ "access",			SEPG_DB_DATABASE__ACCESS },
+			{ "connect",		SEPG_DB_DATABASE__CONNECT },
 			{ "install_module",	SEPG_DB_DATABASE__INSTALL_MODULE },
 			{ "load_module",	SEPG_DB_DATABASE__LOAD_MODULE },
 			{ "superuser",		SEPG_DB_DATABASE__SUPERUSER },
@@ -121,7 +121,7 @@ static struct
 			{ "setattr",		SEPG_DB_SCHEMA__SETATTR },
 			{ "relabelfrom",	SEPG_DB_SCHEMA__RELABELFROM },
 			{ "relabelto",		SEPG_DB_SCHEMA__RELABELTO },
-			{ "search",			SEPG_DB_SCHEMA__SEARCH },
+			{ "search",			SEPG_DB_SCHEMA__USAGE },
 			{ "add_object",		SEPG_DB_SCHEMA__ADD_OBJECT },
 			{ "remove_object",	SEPG_DB_SCHEMA__REMOVE_OBJECT },
 			{ NULL, 0UL },
@@ -136,7 +136,7 @@ static struct
 			{ "setattr",		SEPG_DB_SCHEMA_TEMP__SETATTR },
 			{ "relabelfrom",	SEPG_DB_SCHEMA_TEMP__RELABELFROM },
 			{ "relabelto",		SEPG_DB_SCHEMA_TEMP__RELABELTO },
-			{ "search",			SEPG_DB_SCHEMA_TEMP__SEARCH },
+			{ "usage",			SEPG_DB_SCHEMA_TEMP__USAGE },
 			{ "add_object",		SEPG_DB_SCHEMA_TEMP__ADD_OBJECT },
 			{ "remove_object",	SEPG_DB_SCHEMA_TEMP__REMOVE_OBJECT },
 			{ NULL, 0UL },
@@ -307,7 +307,7 @@ sepgsqlTransToInternalPerms(security_class_t tclass, struct av_decision *avd)
  *   It returns text representation of object classes/permissions
  */
 const char *
-sepgsqlGetClassString(security_class_t tclass)
+sepgsqlGetClassString(uint16 tclass)
 {
 	Assert(tclass < SEPG_CLASS_MAX);
 
@@ -315,7 +315,7 @@ sepgsqlGetClassString(security_class_t tclass)
 }
 
 const char *
-sepgsqlGetPermissionString(security_class_t tclass, access_vector_t av)
+sepgsqlGetPermString(uint16 tclass, uint32 permission)
 {
 	int		i;
 
@@ -323,7 +323,7 @@ sepgsqlGetPermissionString(security_class_t tclass, access_vector_t av)
 
 	for (i=0; selinux_catalog[tclass].av[i].perm_name; i++)
 	{
-		if (selinux_catalog[tclass].av[i].perm_code == av)
+		if (selinux_catalog[tclass].av[i].perm_code == permission)
 			return selinux_catalog[tclass].av[i].perm_name;
 	}
 	return NULL;

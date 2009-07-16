@@ -2863,8 +2863,9 @@ ATRewriteTables(List **wqueue)
 			/*
 			 * The new relation is local to our transaction and we know
 			 * nothing depends on it, so DROP_RESTRICT should be OK.
+			 * SELinux does not apply any permission checks here.
 			 */
-			performDeletion(&object, DROP_RESTRICT);
+			performDeletionNoPerms(&object, DROP_RESTRICT);
 			/* performDeletion does CommandCounterIncrement at end */
 
 			/*

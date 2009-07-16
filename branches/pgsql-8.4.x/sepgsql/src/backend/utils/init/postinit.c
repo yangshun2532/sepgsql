@@ -573,7 +573,7 @@ InitPostgres(const char *in_dbname, Oid dboid, const char *username,
 	RelationCacheInitializePhase2();
 
 	/* Initialize SE-PostgreSQL internal facilities */
-	sepgsqlInitialize();
+	sepgsqlAvcInitialize();
 
 	/*
 	 * Figure out our postgres user id, and see if we are a superuser.

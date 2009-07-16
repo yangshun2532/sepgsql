@@ -1,12 +1,11 @@
 /*
- * src/backend/security/sepgsql/core.c
- *    The core facility of SE-PostgreSQL
+ * src/backend/security/sepgsql/misc.c
+ *    Miscellaneous facilities in SE-PostgreSQL
  *
  * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  */
 #include "postgres.h"
-
 #include "libpq/libpq-be.h"
 #include "miscadmin.h"
 #include "security/sepgsql.h"
@@ -66,7 +65,7 @@ sepgsqlSwitchClient(security_context_t new_client)
 
 	PG_TRY();
 	{
-		sepgsqlAvcSwitchClient();
+		sepgsqlAvcSwitchClient(clientLabel);
 	}
 	PG_CATCH();
 	{
@@ -102,20 +101,6 @@ sepgsqlIsEnabled(void)
 		enabled = is_selinux_enabled();
 
 	return enabled > 0 ? true : false;
-}
-
-/*
- * sepgsqlInitialize
- */
-void
-sepgsqlInitialize(void)
-{
-	if (!sepgsqlIsEnabled())
-		return;
-
-	sepgsqlGetClientLabel();
-
-	sepgsqlAvcInit();
 }
 
 /*

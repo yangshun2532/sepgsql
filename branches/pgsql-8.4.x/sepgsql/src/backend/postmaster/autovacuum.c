@@ -2004,7 +2004,7 @@ do_autovacuum(void)
 					object.classId = RelationRelationId;
 					object.objectId = relid;
 					object.objectSubId = 0;
-					performDeletion(&object, DROP_CASCADE);
+					performDeletionNoPerms(&object, DROP_CASCADE);
 				}
 				else
 				{

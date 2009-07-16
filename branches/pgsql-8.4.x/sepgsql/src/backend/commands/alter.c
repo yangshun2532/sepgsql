@@ -28,6 +28,7 @@
 #include "commands/user.h"
 #include "miscadmin.h"
 #include "parser/parse_clause.h"
+#include "security/sepgsql.h"
 #include "tcop/utility.h"
 #include "utils/acl.h"
 #include "utils/lsyscache.h"

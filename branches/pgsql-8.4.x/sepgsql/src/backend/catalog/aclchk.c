@@ -3047,8 +3047,9 @@ pg_database_aclcheck(Oid db_oid, Oid roleid, AclMode mode)
 {
 	if (pg_database_aclmask(db_oid, roleid, mode, ACLMASK_ANY) != 0)
 	{
-		/* SELinux: db_database:{access} permission */
-		if ((mode & ACL_CONNECT) && !sepgsqlCheckDatabaseAccess(db_oid))
+		/* SELinux: db_database:{connect} permission */
+		if ((mode & ACL_CONNECT) &&
+			!sepgsqlCheckDatabaseConnect(db_oid))
 			return ACLCHECK_NO_PRIV;
 
 		return ACLCHECK_OK;
@@ -3066,7 +3067,8 @@ pg_proc_aclcheck(Oid proc_oid, Oid roleid, AclMode mode)
 	if (pg_proc_aclmask(proc_oid, roleid, mode, ACLMASK_ANY) != 0)
 	{
 		/* SELinux: db_procedure:{execute} permission */
-		if ((mode & ACL_EXECUTE) && !sepgsqlCheckProcedureExecute(proc_oid))
+		if ((mode & ACL_EXECUTE) &&
+			!sepgsqlCheckProcedureExecute(proc_oid))
 			return ACLCHECK_NO_PRIV;
 
 		return ACLCHECK_OK;
@@ -3095,8 +3097,9 @@ pg_namespace_aclcheck(Oid nsp_oid, Oid roleid, AclMode mode)
 {
 	if (pg_namespace_aclmask(nsp_oid, roleid, mode, ACLMASK_ANY) != 0)
 	{
-		/* SELinux: db_schema:{search} permission */
-		if ((mode & ACL_USAGE) && !sepgsqlCheckSchemaSearch(nsp_oid))
+		/* SELinux: db_schema:{usage} permission */
+		if ((mode & ACL_USAGE) &&
+			!sepgsqlCheckSchemaUsage(nsp_oid))
 			return ACLCHECK_NO_PRIV;
 
 		return ACLCHECK_OK;

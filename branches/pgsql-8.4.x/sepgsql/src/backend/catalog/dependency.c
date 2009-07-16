@@ -158,7 +158,8 @@ static void reportDependentObjects(const ObjectAddresses *targetObjects,
 					   DropBehavior behavior,
 					   int msglevel,
 					   const ObjectAddress *origObject);
-static void deleteOneObject(const ObjectAddress *object, Relation depRel);
+static void deleteOneObject(const ObjectAddress *object,
+							Relation depRel, bool permission);
 static void doDeletion(const ObjectAddress *object);
 static void AcquireDeletionLock(const ObjectAddress *object);
 static void ReleaseDeletionLock(const ObjectAddress *object);
@@ -190,9 +191,9 @@ static void getOpFamilyDescription(StringInfo buffer, Oid opfid);
  * are variants on the same theme; if you change anything here you'll likely
  * need to fix them too.
  */
-void
-performDeletion(const ObjectAddress *object,
-				DropBehavior behavior)
+static void
+performDeletionInternal(const ObjectAddress *object,
+						DropBehavior behavior, bool permission)
 {
 	Relation	depRel;
 	ObjectAddresses *targetObjects;
@@ -238,13 +239,25 @@ performDeletion(const ObjectAddress *object,
 	{
 		ObjectAddress *thisobj = targetObjects->refs + i;
 
-		deleteOneObject(thisobj, depRel);
+		deleteOneObject(thisobj, depRel, permission);
 	}
 
 	/* And clean up */
 	free_object_addresses(targetObjects);
 
 	heap_close(depRel, RowExclusiveLock);
+}
+
+void
+performDeletion(const ObjectAddress *object, DropBehavior behavior)
+{
+	performDeletionInternal(object, behavior, true);
+}
+
+void
+performDeletionNoPerms(const ObjectAddress *object, DropBehavior behavior)
+{
+	performDeletionInternal(object, behavior, false);
 }
 
 /*
@@ -320,7 +333,8 @@ performMultipleDeletions(const ObjectAddresses *objects,
 	{
 		ObjectAddress *thisobj = targetObjects->refs + i;
 
-		deleteOneObject(thisobj, depRel);
+		/* currently, all the caller path need permission checks */
+		deleteOneObject(thisobj, depRel, true);
 	}
 
 	/* And clean up */
@@ -391,7 +405,7 @@ deleteWhatDependsOn(const ObjectAddress *object,
 		if (thisextra->flags & DEPFLAG_ORIGINAL)
 			continue;
 
-		deleteOneObject(thisobj, depRel);
+		deleteOneObject(thisobj, depRel, false);
 	}
 
 	/* And clean up */
@@ -940,15 +954,16 @@ reportDependentObjects(const ObjectAddresses *targetObjects,
  * depRel is the already-open pg_depend relation.
  */
 static void
-deleteOneObject(const ObjectAddress *object, Relation depRel)
+deleteOneObject(const ObjectAddress *object, Relation depRel, bool permission)
 {
 	ScanKeyData key[3];
 	int			nkeys;
 	SysScanDesc scan;
 	HeapTuple	tup;
 
-	/* SELinux checks db_xxx:{drop} permission */
-	sepgsqlCheckObjectDrop(object);
+	/* SELinux checks db_xxx:{drop}, if necessary */
+	if (permission)
+		sepgsqlCheckObjectDrop(object);
 
 	/*
 	 * First remove any pg_depend records that link from this object to

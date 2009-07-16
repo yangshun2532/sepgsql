@@ -618,8 +618,9 @@ rebuild_relation(Relation OldHeap, Oid indexOid)
 	/*
 	 * The new relation is local to our transaction and we know nothing
 	 * depends on it, so DROP_RESTRICT should be OK.
+	 * SELinux does not check any permissions here.
 	 */
-	performDeletion(&object, DROP_RESTRICT);
+	performDeletionNoPerms(&object, DROP_RESTRICT);
 
 	/* performDeletion does CommandCounterIncrement at end */
 
