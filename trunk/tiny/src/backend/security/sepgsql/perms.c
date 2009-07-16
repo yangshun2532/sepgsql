@@ -31,80 +31,9 @@ static struct
 	} av[sizeof(access_vector_t) * 8];
 } selinux_catalog[] = {
 	{
-		"process",				SEPG_CLASS_PROCESS,
-		{
-			{"translation",		SEPG_PROCESS__TRANSITION },
-			{NULL, 0}
-		}
-	},
-	{
-		"file",					SEPG_CLASS_FILE,
-		{
-			{"read",			SEPG_FILE__READ },
-			{"write",			SEPG_FILE__WRITE },
-			{NULL, 0}
-		}
-	},
-	{
-		"dir",					SEPG_CLASS_DIR,
-		{
-			{"read",			SEPG_DIR__READ },
-			{"write",			SEPG_DIR__WRITE },
-			{NULL,0}
-		}
-	},
-	{
-		"lnk_file",				SEPG_CLASS_LNK_FILE,
-		{
-			{"read",			SEPG_LNK_FILE__READ },
-			{"write",			SEPG_LNK_FILE__WRITE },
-			{NULL,0}
-		}
-	},
-	{
-		"chr_file",				SEPG_CLASS_CHR_FILE,
-		{
-			{"read",			SEPG_CHR_FILE__READ },
-			{"write",			SEPG_CHR_FILE__WRITE },
-			{NULL,0}
-		}
-	},
-	{
-		"blk_file",				SEPG_CLASS_BLK_FILE,
-		{
-			{"read",			SEPG_BLK_FILE__READ },
-			{"write",			SEPG_BLK_FILE__WRITE },
-			{NULL,0}
-		}
-	},
-	{
-		"sock_file",			SEPG_CLASS_SOCK_FILE,
-		{
-			{"read",			SEPG_SOCK_FILE__READ },
-			{"write",			SEPG_SOCK_FILE__WRITE },
-			{NULL,0}
-		}
-	},
-	{
-		"fifo_file",			SEPG_CLASS_FIFO_FILE,
-		{
-			{"read",			SEPG_FIFO_FILE__READ },
-			{"write",			SEPG_FIFO_FILE__WRITE },
-			{NULL, 0UL }
-		}
-	},
-	{
 		"db_database",			SEPG_CLASS_DB_DATABASE,
 		{
-			{ "create",			SEPG_DB_DATABASE__CREATE },
-			{ "drop",			SEPG_DB_DATABASE__DROP },
-			{ "getattr",		SEPG_DB_DATABASE__GETATTR },
-			{ "setattr",		SEPG_DB_DATABASE__SETATTR },
-			{ "relabelfrom",	SEPG_DB_DATABASE__RELABELFROM },
-			{ "relabelto",		SEPG_DB_DATABASE__RELABELTO },
 			{ "connect",		SEPG_DB_DATABASE__CONNECT },
-			{ "install_module",	SEPG_DB_DATABASE__INSTALL_MODULE },
-			{ "load_module",	SEPG_DB_DATABASE__LOAD_MODULE },
 			{ "superuser",		SEPG_DB_DATABASE__SUPERUSER },
 			{ NULL, 0UL },
 		}
@@ -112,125 +41,24 @@ static struct
 	{
 		"db_schema",			SEPG_CLASS_DB_SCHEMA,
 		{
-			{ "create",			SEPG_DB_SCHEMA__CREATE },
-			{ "drop",			SEPG_DB_SCHEMA__DROP },
-			{ "getattr",		SEPG_DB_SCHEMA__GETATTR },
-			{ "setattr",		SEPG_DB_SCHEMA__SETATTR },
-			{ "relabelfrom",	SEPG_DB_SCHEMA__RELABELFROM },
-			{ "relabelto",		SEPG_DB_SCHEMA__RELABELTO },
 			{ "usage",			SEPG_DB_SCHEMA__USAGE },
-			{ "add_name",		SEPG_DB_SCHEMA__ADD_NAME },
-			{ "remove_name",	SEPG_DB_SCHEMA__REMOVE_NAME },
 			{ NULL, 0UL },
 		}
 	},
 	{
 		"db_schema_temp",		SEPG_CLASS_DB_SCHEMA_TEMP,
 		{
-			{ "create",			SEPG_DB_SCHEMA_TEMP__CREATE },
-			{ "drop",			SEPG_DB_SCHEMA_TEMP__DROP},
-			{ "getattr",		SEPG_DB_SCHEMA_TEMP__GETATTR },
-			{ "setattr",		SEPG_DB_SCHEMA_TEMP__SETATTR },
-			{ "relabelfrom",	SEPG_DB_SCHEMA_TEMP__RELABELFROM },
-			{ "relabelto",		SEPG_DB_SCHEMA_TEMP__RELABELTO },
 			{ "usage",			SEPG_DB_SCHEMA_TEMP__USAGE },
-			{ "add_name",		SEPG_DB_SCHEMA_TEMP__ADD_NAME },
-			{ "remove_name",	SEPG_DB_SCHEMA_TEMP__REMOVE_NAME },
-			{ NULL, 0UL },
-		}
-	},
-	{
-		"db_table",				SEPG_CLASS_DB_TABLE,
-		{
-			{ "create",			SEPG_DB_TABLE__CREATE },
-			{ "drop",			SEPG_DB_TABLE__DROP },
-			{ "getattr",		SEPG_DB_TABLE__GETATTR },
-			{ "setattr",		SEPG_DB_TABLE__SETATTR },
-			{ "relabelfrom",	SEPG_DB_TABLE__RELABELFROM },
-			{ "relabelto",		SEPG_DB_TABLE__RELABELTO },
-			{ "select",			SEPG_DB_TABLE__SELECT },
-			{ "update",			SEPG_DB_TABLE__UPDATE },
-			{ "insert",			SEPG_DB_TABLE__INSERT },
-			{ "delete",			SEPG_DB_TABLE__DELETE },
-			{ "lock",			SEPG_DB_TABLE__LOCK },
-			{ "reference",		SEPG_DB_TABLE__REFERENCE },
-			{ NULL, 0UL },
-		}
-	},
-	{
-		"db_sequence",			SEPG_CLASS_DB_SEQUENCE,
-		{
-			{ "create",			SEPG_DB_SEQUENCE__CREATE },
-			{ "drop",			SEPG_DB_SEQUENCE__DROP },
-			{ "getattr",		SEPG_DB_SEQUENCE__GETATTR },
-			{ "setattr",		SEPG_DB_SEQUENCE__SETATTR },
-			{ "relabelfrom",	SEPG_DB_SEQUENCE__RELABELFROM },
-			{ "relabelto",		SEPG_DB_SEQUENCE__RELABELTO },
-			{ "get_value",		SEPG_DB_SEQUENCE__GET_VALUE },
-			{ "next_value",		SEPG_DB_SEQUENCE__NEXT_VALUE },
-			{ "set_value",		SEPG_DB_SEQUENCE__SET_VALUE },
 			{ NULL, 0UL },
 		}
 	},
 	{
 		"db_procedure",			SEPG_CLASS_DB_PROCEDURE,
 		{
-			{ "create",			SEPG_DB_PROCEDURE__CREATE },
-			{ "drop",			SEPG_DB_PROCEDURE__DROP },
-			{ "getattr",		SEPG_DB_PROCEDURE__GETATTR },
-			{ "setattr",		SEPG_DB_PROCEDURE__SETATTR },
-			{ "relabelfrom",	SEPG_DB_PROCEDURE__RELABELFROM },
-			{ "relabelto",		SEPG_DB_PROCEDURE__RELABELTO },
 			{ "execute",		SEPG_DB_PROCEDURE__EXECUTE },
-			{ "entrypoint",		SEPG_DB_PROCEDURE__ENTRYPOINT },
-			{ "install",		SEPG_DB_PROCEDURE__INSTALL },
 			{ NULL, 0UL },
 		}
 	},
-	{
-		"db_column",			SEPG_CLASS_DB_COLUMN,
-		{
-			{ "create",			SEPG_DB_COLUMN__CREATE },
-			{ "drop",			SEPG_DB_COLUMN__DROP },
-			{ "getattr",		SEPG_DB_COLUMN__GETATTR },
-			{ "setattr",		SEPG_DB_COLUMN__SETATTR },
-			{ "relabelfrom",	SEPG_DB_COLUMN__RELABELFROM },
-			{ "relabelto",		SEPG_DB_COLUMN__RELABELTO },
-			{ "select",			SEPG_DB_COLUMN__SELECT },
-			{ "update",			SEPG_DB_COLUMN__UPDATE },
-			{ "insert",			SEPG_DB_COLUMN__INSERT },
-			{ "reference",		SEPG_DB_COLUMN__REFERENCE },
-			{ NULL, 0UL },
-		}
-	},
-	{
-		"db_tuple",				SEPG_CLASS_DB_TUPLE,
-		{
-			{ "relabelfrom",	SEPG_DB_TUPLE__RELABELFROM },
-			{ "relabelto",		SEPG_DB_TUPLE__RELABELTO },
-			{ "select",			SEPG_DB_TUPLE__SELECT },
-			{ "update",			SEPG_DB_TUPLE__UPDATE },
-			{ "insert",			SEPG_DB_TUPLE__INSERT },
-			{ "delete",			SEPG_DB_TUPLE__DELETE },
-			{ NULL, 0UL },
-		}
-	},
-	{
-		"db_blob",				SEPG_CLASS_DB_BLOB,
-		{
-			{ "create",			SEPG_DB_BLOB__CREATE },
-			{ "drop",			SEPG_DB_BLOB__DROP },
-			{ "getattr",		SEPG_DB_BLOB__GETATTR },
-			{ "setattr",		SEPG_DB_BLOB__SETATTR },
-			{ "relabelfrom",	SEPG_DB_BLOB__RELABELFROM },
-			{ "relabelto",		SEPG_DB_BLOB__RELABELTO },
-			{ "read",			SEPG_DB_BLOB__READ },
-			{ "write",			SEPG_DB_BLOB__WRITE },
-			{ "import",			SEPG_DB_BLOB__IMPORT },
-			{ "export",			SEPG_DB_BLOB__EXPORT },
-			{ NULL, 0UL },
-		}
-	}
 };
 
 /*
