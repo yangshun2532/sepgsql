@@ -33,7 +33,6 @@
 #include "nodes/makefuncs.h"
 #include "postmaster/bgwriter.h"
 #include "postmaster/walwriter.h"
-#include "security/sepgsql.h"
 #include "storage/bufmgr.h"
 #include "storage/ipc.h"
 #include "storage/proc.h"
@@ -807,9 +806,6 @@ InsertOneTuple(Oid objectid)
 	if (objectid != (Oid) 0)
 		HeapTupleSetOid(tuple, objectid);
 	pfree(tupDesc);				/* just free's tupDesc, not the attrtypes */
-
-	/* SELinux: set up default security label */
-	sepgsqlSetDefaultSecLabel(boot_reldesc, tuple);
 
 	simple_heap_insert(boot_reldesc, tuple);
 	heap_freetuple(tuple);
