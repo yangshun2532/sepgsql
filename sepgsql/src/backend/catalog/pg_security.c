@@ -561,7 +561,7 @@ security_reclaim_table(Oid relid, char seckind)
 	types[0] = OIDOID;
 	types[1] = OIDOID;
 	types[2] = CHAROID;
-	plan = SPI_prepare(query.data, 2, types);
+	plan = SPI_prepare(query.data, 3, types);
 	if (!plan)
 		elog(ERROR, "SPI_prepare failed on %s", query.data);
 
@@ -596,11 +596,10 @@ security_reclaim_all_tables(char seckind)
 	attname_datid = get_attname(SecurityRelationId, Anum_pg_security_datid);
 	attname_relid = get_attname(SecurityRelationId, Anum_pg_security_relid);
 	appendStringInfo(&query,
-					 "SELECT DISTINCT %s FROM %s WHERE %s = %u OR %s = %u",
+					 "SELECT DISTINCT %s FROM %s WHERE %s IN (%u,%u)",
 					 attname_relid,
 					 security_quote_relation(SecurityRelationId),
-					 attname_datid, InvalidOid,
-					 attname_datid, MyDatabaseId);
+					 attname_datid, InvalidOid, MyDatabaseId);
 
 	if (SPI_execute(query.data, true, 0) != SPI_OK_SELECT)
 		elog(ERROR, "SPI_execute failed on %s", query.data);
@@ -632,22 +631,30 @@ security_reclaim(Oid relid, char seckind)
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 				 errmsg("must be superuser to reclaim security attributes")));
 	/*
-	 * Disable row-level controls temporary
+	 * Disables SE-PostgreSQL temporary
 	 */
-	saved_mode = rowlvSetPerformingMode(ROWLV_BYPASS_MODE);
+	saved_mode = sepgsqlSetEnforce(0);
 
-	if (SPI_connect() != SPI_OK_CONNECT)
-		elog(ERROR, "SPI_connect failed");
+	PG_TRY();
+	{
+		if (SPI_connect() != SPI_OK_CONNECT)
+			elog(ERROR, "SPI_connect failed");
 
-	if (OidIsValid(relid))
-		count = security_reclaim_table(relid, seckind);
-	else
-		count = security_reclaim_all_tables(seckind);
+		if (OidIsValid(relid))
+			count = security_reclaim_table(relid, seckind);
+		else
+			count = security_reclaim_all_tables(seckind);
 
-	if (SPI_finish() != SPI_OK_FINISH)
-		elog(ERROR, "SPI_finish failed");
-
-	rowlvSetPerformingMode(saved_mode);
+		if (SPI_finish() != SPI_OK_FINISH)
+			elog(ERROR, "SPI_finish failed");
+	}
+	PG_CATCH();
+	{
+		sepgsqlSetEnforce(saved_mode);
+		PG_RE_THROW();
+	}
+	PG_END_TRY();
+	sepgsqlSetEnforce(saved_mode);
 
 	return count;
 }
