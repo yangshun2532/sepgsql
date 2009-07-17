@@ -62,34 +62,8 @@ echo "svn diff ./base"
 echo "svn commit -m 'CVS pull -r ${CVSTAG} at `env LANG=C date`' ./base && \\"
 echo "svn update"
 echo
-echo "svn merge -c `expr ${SVNREV} + 1` ./base ./sysatt && \\"
-echo "svn commit -m 'merge updates of ${SVNBRANCH}/base into ${SVNBRANCH}/sysatt at r`expr ${SVNREV} + 1`' ./sysatt && \\"
+echo "svn merge -c `expr ${SVNREV} + 1` ./base ./tiny && \\"
+echo "svn merge -c `expr ${SVNREV} + 1` ./base ./blob && \\"
+echo "svn commit -m 'merge updates of ${SVNBRANCH}/base into ${SVNBRANCH}/{tiny, blob} at r`expr ${SVNREV} + 1`' ./tiny ./blob && \\"
 echo "svn update"
 echo
-echo "svn merge -c `expr ${SVNREV} + 2` ./sysatt ./core && \\"
-echo "svn commit -m 'merge updates of ${SVNBRANCH}/sysatt into ${SVNBRANCH}/core at r`expr ${SVNREV} + 2`' ./core && \\"
-echo "svn update"
-echo
-echo "svn merge -c `expr ${SVNREV} + 3` ./core ./gram && \\"
-echo "svn commit -m 'merge updates of ${SVNBRANCH}/core into ${SVNBRANCH}/gram at r`expr ${SVNREV} + 3`' ./gram && \\"
-echo "svn update"
-echo
-echo "svn merge -c `expr ${SVNREV} + 4` ./gram ./writable && \\"
-echo "svn commit -m 'merge updates of ${SVNBRANCH}/gram into ${SVNBRANCH}/writable at r`expr ${SVNREV} + 4`' ./writable && \\"
-echo "svn update"
-echo
-echo "svn merge -c `expr ${SVNREV} + 5` ./writable ./rowlv && \\"
-echo "svn commit -m 'merge updates of ${SVNBRANCH}/writable into ${SVNBRANCH}/rowlv at r`expr ${SVNREV} + 5`' ./rowlv && \\"
-echo "svn update"
-echo
-echo "svn merge -c `expr ${SVNREV} + 6` ./rowlv ./rowacl && \\"
-echo "svn commit -m 'merge updates of ${SVNBRANCH}/rowlv into ${SVNBRANCH}/rowacl at r`expr ${SVNREV} + 6`' ./rowacl && \\"
-echo "svn update"
-echo
-echo "svn merge -c `expr ${SVNREV} + 7` ./rowacl ./perms && \\"
-echo "svn commit -m 'merge updates of ${SVNBRANCH}/rowlv into ${SVNBRANCH}/perms at r`expr ${SVNREV} + 7`' ./perms && \\"
-echo "svn update"
-echo
-echo "svn merge -c `expr ${SVNREV} + 8` ./perms ./sepgsql && \\"
-echo "svn commit -m 'merge updates of ${SVNBRANCH}/perms into ${SVNBRANCH}/sepgsql at r`expr ${SVNREV} + 8`' ./sepgsql && \\"
-echo "svn update"
