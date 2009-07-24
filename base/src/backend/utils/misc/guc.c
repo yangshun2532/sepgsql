@@ -10,7 +10,7 @@
  * Written by Peter Eisentraut <peter_e@gmx.net>.
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/misc/guc.c,v 1.505 2009/06/11 14:49:06 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/backend/utils/misc/guc.c,v 1.509 2009/07/22 17:00:23 tgl Exp $
  *
  *--------------------------------------------------------------------
  */
@@ -44,10 +44,10 @@
 #include "optimizer/geqo.h"
 #include "optimizer/paths.h"
 #include "optimizer/planmain.h"
-#include "parser/gramparse.h"
 #include "parser/parse_expr.h"
 #include "parser/parse_relation.h"
 #include "parser/parse_type.h"
+#include "parser/parser.h"
 #include "parser/scansup.h"
 #include "pgstat.h"
 #include "postmaster/autovacuum.h"
@@ -2025,6 +2025,14 @@ static struct config_real ConfigureNamesReal[] =
 		&Geqo_selection_bias,
 		DEFAULT_GEQO_SELECTION_BIAS, MIN_GEQO_SELECTION_BIAS,
 		MAX_GEQO_SELECTION_BIAS, NULL, NULL
+	},
+	{
+		{"geqo_seed", PGC_USERSET, QUERY_TUNING_GEQO,
+			gettext_noop("GEQO: seed for random path selection."),
+			NULL
+		},
+		&Geqo_seed,
+		0.0, 0.0, 1.0, NULL, NULL
 	},
 
 	{
@@ -5331,7 +5339,7 @@ flatten_set_variable_args(const char *name, List *args)
 	{
 		Node	   *arg = (Node *) lfirst(l);
 		char	   *val;
-		TypeName   *typename = NULL;
+		TypeName   *typeName = NULL;
 		A_Const    *con;
 
 		if (l != list_head(args))
@@ -5342,7 +5350,7 @@ flatten_set_variable_args(const char *name, List *args)
 			TypeCast   *tc = (TypeCast *) arg;
 
 			arg = tc->arg;
-			typename = tc->typename;
+			typeName = tc->typeName;
 		}
 
 		if (!IsA(arg, A_Const))
@@ -5360,7 +5368,7 @@ flatten_set_variable_args(const char *name, List *args)
 				break;
 			case T_String:
 				val = strVal(&con->val);
-				if (typename != NULL)
+				if (typeName != NULL)
 				{
 					/*
 					 * Must be a ConstInterval argument for TIME ZONE. Coerce
@@ -5372,7 +5380,7 @@ flatten_set_variable_args(const char *name, List *args)
 					Datum		interval;
 					char	   *intervalout;
 
-					typoid = typenameTypeId(NULL, typename, &typmod);
+					typoid = typenameTypeId(NULL, typeName, &typmod);
 					Assert(typoid == INTERVALOID);
 
 					interval =
@@ -5978,7 +5986,8 @@ ShowAllGUCConfig(DestReceiver *dest)
 	int			i;
 	TupOutputState *tstate;
 	TupleDesc	tupdesc;
-	char	   *values[3];
+	Datum	    values[3];
+	bool		isnull[3] = { false, false, false };
 
 	/* need a tuple descriptor representing three TEXT columns */
 	tupdesc = CreateTemplateTupleDesc(3, false);
@@ -5989,29 +5998,46 @@ ShowAllGUCConfig(DestReceiver *dest)
 	TupleDescInitEntry(tupdesc, (AttrNumber) 3, "description",
 					   TEXTOID, -1, 0);
 
-
 	/* prepare for projection of tuples */
 	tstate = begin_tup_output_tupdesc(dest, tupdesc);
 
 	for (i = 0; i < num_guc_variables; i++)
 	{
 		struct config_generic *conf = guc_variables[i];
+		char   *setting;
 
 		if ((conf->flags & GUC_NO_SHOW_ALL) ||
 			((conf->flags & GUC_SUPERUSER_ONLY) && !am_superuser))
 			continue;
 
 		/* assign to the values array */
-		values[0] = (char *) conf->name;
-		values[1] = _ShowOption(conf, true);
-		values[2] = (char *) conf->short_desc;
+		values[0] = PointerGetDatum(cstring_to_text(conf->name));
+
+		setting = _ShowOption(conf, true);
+		if (setting)
+		{
+			values[1] = PointerGetDatum(cstring_to_text(setting));
+			isnull[1] = false;
+		}
+		else
+		{
+			values[1] = PointerGetDatum(NULL);
+			isnull[1] = true;
+		}
+
+		values[2] = PointerGetDatum(cstring_to_text(conf->short_desc));
 
 		/* send it to dest */
-		do_tup_output(tstate, values);
+		do_tup_output(tstate, values, isnull);
 
 		/* clean up */
-		if (values[1] != NULL)
-			pfree(values[1]);
+		pfree(DatumGetPointer(values[0]));
+		if (setting)
+		{
+			pfree(setting);
+			pfree(DatumGetPointer(values[1]));
+		}
+		pfree(DatumGetPointer(values[2]));
 	}
 
 	end_tup_output(tstate);

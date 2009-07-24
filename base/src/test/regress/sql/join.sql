@@ -343,6 +343,16 @@ select count(*) from tenk1 x where
   x.unique1 = 0 and
   x.unique1 in (select aa.f1 from int4_tbl aa,float8_tbl bb where aa.f1=bb.f1);
 
+-- try that with GEQO too
+begin;
+set geqo = on;
+set geqo_threshold = 2;
+select count(*) from tenk1 x where
+  x.unique1 in (select a.f1 from int4_tbl a,float8_tbl b where a.f1=b.f1) and
+  x.unique1 = 0 and
+  x.unique1 in (select aa.f1 from int4_tbl aa,float8_tbl bb where aa.f1=bb.f1);
+rollback;
+
 
 --
 -- Clean up
@@ -505,3 +515,20 @@ prepare foo(bool) as
         (select 1 from tenk1 c where c.thousand = b.unique2 and $1));
 execute foo(true);
 execute foo(false);
+
+--
+-- test for sane behavior with noncanonical merge clauses, per bug #4926
+--
+
+begin;
+
+set enable_mergejoin = 1;
+set enable_hashjoin = 0;
+set enable_nestloop = 0;
+
+create temp table a (i integer);
+create temp table b (x integer, y integer);
+
+select * from a left join b on i = x and i = y and x = i;
+
+rollback;

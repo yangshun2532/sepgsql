@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/commands/tablecmds.c,v 1.288 2009/06/18 01:27:02 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/commands/tablecmds.c,v 1.291 2009/07/20 02:42:27 adunstan Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -51,7 +51,6 @@
 #include "nodes/nodeFuncs.h"
 #include "nodes/parsenodes.h"
 #include "optimizer/clauses.h"
-#include "parser/gramparse.h"
 #include "parser/parse_clause.h"
 #include "parser/parse_coerce.h"
 #include "parser/parse_expr.h"
@@ -286,7 +285,8 @@ static void ATExecSetStorage(Relation rel, const char *colName,
 				 Node *newValue);
 static void ATExecDropColumn(List **wqueue, Relation rel, const char *colName,
 				 DropBehavior behavior,
-				 bool recurse, bool recursing);
+				 bool recurse, bool recursing,
+				 bool missing_ok);
 static void ATExecAddIndex(AlteredTableInfo *tab, Relation rel,
 			   IndexStmt *stmt, bool is_rebuild);
 static void ATExecAddConstraint(List **wqueue,
@@ -299,14 +299,15 @@ static void ATAddCheckConstraint(List **wqueue,
 static void ATAddForeignKeyConstraint(AlteredTableInfo *tab, Relation rel,
 						  FkConstraint *fkconstraint);
 static void ATExecDropConstraint(Relation rel, const char *constrName,
-					 DropBehavior behavior,
-					 bool recurse, bool recursing);
+								 DropBehavior behavior,
+								 bool recurse, bool recursing,
+								 bool missing_ok);
 static void ATPrepAlterColumnType(List **wqueue,
 					  AlteredTableInfo *tab, Relation rel,
 					  bool recurse, bool recursing,
 					  AlterTableCmd *cmd);
 static void ATExecAlterColumnType(AlteredTableInfo *tab, Relation rel,
-					  const char *colName, TypeName *typename);
+					  const char *colName, TypeName *typeName);
 static void ATPostAlterTypeCleanup(List **wqueue, AlteredTableInfo *tab);
 static void ATPostAlterTypeParse(char *cmd, List **wqueue);
 static void change_owner_recurse_to_sequences(Oid relationOid,
@@ -1281,7 +1282,7 @@ MergeAttributes(List *schema, List *supers, bool istemp,
 						(errmsg("merging multiple inherited definitions of column \"%s\"",
 								attributeName)));
 				def = (ColumnDef *) list_nth(inhSchema, exist_attno - 1);
-				defTypeId = typenameTypeId(NULL, def->typename, &deftypmod);
+				defTypeId = typenameTypeId(NULL, def->typeName, &deftypmod);
 				if (defTypeId != attribute->atttypid ||
 					deftypmod != attribute->atttypmod)
 					ereport(ERROR,
@@ -1289,7 +1290,7 @@ MergeAttributes(List *schema, List *supers, bool istemp,
 						errmsg("inherited column \"%s\" has a type conflict",
 							   attributeName),
 							 errdetail("%s versus %s",
-									   TypeNameToString(def->typename),
+									   TypeNameToString(def->typeName),
 									   format_type_be(attribute->atttypid))));
 				def->inhcount++;
 				/* Merge of NOT NULL constraints = OR 'em together */
@@ -1304,7 +1305,7 @@ MergeAttributes(List *schema, List *supers, bool istemp,
 				 */
 				def = makeNode(ColumnDef);
 				def->colname = pstrdup(attributeName);
-				def->typename = makeTypeNameFromOid(attribute->atttypid,
+				def->typeName = makeTypeNameFromOid(attribute->atttypid,
 													attribute->atttypmod);
 				def->inhcount = 1;
 				def->is_local = false;
@@ -1439,16 +1440,16 @@ MergeAttributes(List *schema, List *supers, bool istemp,
 				   (errmsg("merging column \"%s\" with inherited definition",
 						   attributeName)));
 				def = (ColumnDef *) list_nth(inhSchema, exist_attno - 1);
-				defTypeId = typenameTypeId(NULL, def->typename, &deftypmod);
-				newTypeId = typenameTypeId(NULL, newdef->typename, &newtypmod);
+				defTypeId = typenameTypeId(NULL, def->typeName, &deftypmod);
+				newTypeId = typenameTypeId(NULL, newdef->typeName, &newtypmod);
 				if (defTypeId != newTypeId || deftypmod != newtypmod)
 					ereport(ERROR,
 							(errcode(ERRCODE_DATATYPE_MISMATCH),
 							 errmsg("column \"%s\" has a type conflict",
 									attributeName),
 							 errdetail("%s versus %s",
-									   TypeNameToString(def->typename),
-									   TypeNameToString(newdef->typename))));
+									   TypeNameToString(def->typeName),
+									   TypeNameToString(newdef->typeName))));
 				/* Mark the column as locally defined */
 				def->is_local = true;
 				/* Merge of NOT NULL constraints = OR 'em together */
@@ -1599,22 +1600,22 @@ change_varattnos_walker(Node *node, const AttrNumber *newattno)
  * matching according to column name.
  */
 AttrNumber *
-varattnos_map(TupleDesc old, TupleDesc new)
+varattnos_map(TupleDesc olddesc, TupleDesc newdesc)
 {
 	AttrNumber *attmap;
 	int			i,
 				j;
 
-	attmap = (AttrNumber *) palloc0(sizeof(AttrNumber) * old->natts);
-	for (i = 1; i <= old->natts; i++)
+	attmap = (AttrNumber *) palloc0(sizeof(AttrNumber) * olddesc->natts);
+	for (i = 1; i <= olddesc->natts; i++)
 	{
-		if (old->attrs[i - 1]->attisdropped)
+		if (olddesc->attrs[i - 1]->attisdropped)
 			continue;			/* leave the entry as zero */
 
-		for (j = 1; j <= new->natts; j++)
+		for (j = 1; j <= newdesc->natts; j++)
 		{
-			if (strcmp(NameStr(old->attrs[i - 1]->attname),
-					   NameStr(new->attrs[j - 1]->attname)) == 0)
+			if (strcmp(NameStr(olddesc->attrs[i - 1]->attname),
+					   NameStr(newdesc->attrs[j - 1]->attname)) == 0)
 			{
 				attmap[i - 1] = j;
 				break;
@@ -2621,11 +2622,11 @@ ATExecCmd(List **wqueue, AlteredTableInfo *tab, Relation rel,
 			break;
 		case AT_DropColumn:		/* DROP COLUMN */
 			ATExecDropColumn(wqueue, rel, cmd->name,
-							 cmd->behavior, false, false);
+							 cmd->behavior, false, false, cmd->missing_ok);
 			break;
 		case AT_DropColumnRecurse:		/* DROP COLUMN with recursion */
 			ATExecDropColumn(wqueue, rel, cmd->name,
-							 cmd->behavior, true, false);
+							 cmd->behavior, true, false, cmd->missing_ok);
 			break;
 		case AT_AddIndex:		/* ADD INDEX */
 			ATExecAddIndex(tab, rel, (IndexStmt *) cmd->def, false);
@@ -2640,10 +2641,14 @@ ATExecCmd(List **wqueue, AlteredTableInfo *tab, Relation rel,
 			ATExecAddConstraint(wqueue, tab, rel, cmd->def, true);
 			break;
 		case AT_DropConstraint:	/* DROP CONSTRAINT */
-			ATExecDropConstraint(rel, cmd->name, cmd->behavior, false, false);
+			ATExecDropConstraint(rel, cmd->name, cmd->behavior,
+								 false, false,
+								 cmd->missing_ok);
 			break;
 		case AT_DropConstraintRecurse:	/* DROP CONSTRAINT with recursion */
-			ATExecDropConstraint(rel, cmd->name, cmd->behavior, true, false);
+			ATExecDropConstraint(rel, cmd->name, cmd->behavior,
+								 true, false,
+								 cmd->missing_ok);
 			break;
 		case AT_AlterColumnType:		/* ALTER COLUMN TYPE */
 			ATExecAlterColumnType(tab, rel, cmd->name, (TypeName *) cmd->def);
@@ -3531,7 +3536,7 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 			int32		ctypmod;
 
 			/* Child column must match by type */
-			ctypeId = typenameTypeId(NULL, colDef->typename, &ctypmod);
+			ctypeId = typenameTypeId(NULL, colDef->typeName, &ctypmod);
 			if (ctypeId != childatt->atttypid ||
 				ctypmod != childatt->atttypmod)
 				ereport(ERROR,
@@ -3598,7 +3603,7 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 							MaxHeapAttributeNumber)));
 	}
 
-	typeTuple = typenameType(NULL, colDef->typename, &typmod);
+	typeTuple = typenameType(NULL, colDef->typeName, &typmod);
 	tform = (Form_pg_type) GETSTRUCT(typeTuple);
 	typeOid = HeapTupleGetOid(typeTuple);
 
@@ -3615,7 +3620,7 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 	attribute.atttypmod = typmod;
 	attribute.attnum = newattnum;
 	attribute.attbyval = tform->typbyval;
-	attribute.attndims = list_length(colDef->typename->arrayBounds);
+	attribute.attndims = list_length(colDef->typeName->arrayBounds);
 	attribute.attstorage = tform->typstorage;
 	attribute.attalign = tform->typalign;
 	attribute.attnotnull = colDef->is_not_null;
@@ -3789,7 +3794,7 @@ ATPrepAddOids(List **wqueue, Relation rel, bool recurse, AlterTableCmd *cmd)
 		ColumnDef  *cdef = makeNode(ColumnDef);
 
 		cdef->colname = pstrdup("oid");
-		cdef->typename = makeTypeNameFromOid(OIDOID, -1);
+		cdef->typeName = makeTypeNameFromOid(OIDOID, -1);
 		cdef->inhcount = 0;
 		cdef->is_local = true;
 		cdef->is_not_null = true;
@@ -4161,7 +4166,8 @@ ATExecSetStorage(Relation rel, const char *colName, Node *newValue)
 static void
 ATExecDropColumn(List **wqueue, Relation rel, const char *colName,
 				 DropBehavior behavior,
-				 bool recurse, bool recursing)
+				 bool recurse, bool recursing,
+				 bool missing_ok)
 {
 	HeapTuple	tuple;
 	Form_pg_attribute targetatt;
@@ -4177,11 +4183,21 @@ ATExecDropColumn(List **wqueue, Relation rel, const char *colName,
 	 * get the number of the attribute
 	 */
 	tuple = SearchSysCacheAttName(RelationGetRelid(rel), colName);
-	if (!HeapTupleIsValid(tuple))
-		ereport(ERROR,
-				(errcode(ERRCODE_UNDEFINED_COLUMN),
-				 errmsg("column \"%s\" of relation \"%s\" does not exist",
-						colName, RelationGetRelationName(rel))));
+	if (!HeapTupleIsValid(tuple)){
+		if (!missing_ok){
+			ereport(ERROR,
+					(errcode(ERRCODE_UNDEFINED_COLUMN),
+					 errmsg("column \"%s\" of relation \"%s\" does not exist",
+							colName, RelationGetRelationName(rel))));
+		}
+		else
+		{
+			ereport(NOTICE,
+					(errmsg("column \"%s\" of relation \"%s\" does not exist, skipping",
+							colName, RelationGetRelationName(rel))));
+			return;
+		}
+	}
 	targetatt = (Form_pg_attribute) GETSTRUCT(tuple);
 
 	attnum = targetatt->attnum;
@@ -4247,7 +4263,8 @@ ATExecDropColumn(List **wqueue, Relation rel, const char *colName,
 				{
 					/* Time to delete this child column, too */
 					ATExecDropColumn(wqueue, childrel, colName,
-									 behavior, true, true);
+									 behavior, true, true,
+									 false);
 				}
 				else
 				{
@@ -5361,7 +5378,8 @@ createForeignKeyTriggers(Relation rel, FkConstraint *fkconstraint,
 static void
 ATExecDropConstraint(Relation rel, const char *constrName,
 					 DropBehavior behavior,
-					 bool recurse, bool recursing)
+					 bool recurse, bool recursing,
+					 bool missing_ok)
 {
 	List	   *children;
 	ListCell   *child;
@@ -5423,12 +5441,22 @@ ATExecDropConstraint(Relation rel, const char *constrName,
 
 	systable_endscan(scan);
 
-	if (!found)
-		ereport(ERROR,
-				(errcode(ERRCODE_UNDEFINED_OBJECT),
-				 errmsg("constraint \"%s\" of relation \"%s\" does not exist",
-						constrName, RelationGetRelationName(rel))));
-
+	if (!found){
+		if (!missing_ok){
+			ereport(ERROR,
+					(errcode(ERRCODE_UNDEFINED_OBJECT),
+					 errmsg("constraint \"%s\" of relation \"%s\" does not exist",
+							constrName, RelationGetRelationName(rel))));
+		}
+		else
+		{
+			ereport(NOTICE,
+					(errmsg("constraint \"%s\" of relation \"%s\" does not exist, skipping",
+							constrName, RelationGetRelationName(rel))));
+			heap_close(conrel, RowExclusiveLock);
+			return;
+		}
+	}
 	/*
 	 * Propagate to children as appropriate.  Unlike most other ALTER
 	 * routines, we have to do this one level of recursion at a time; we can't
@@ -5491,7 +5519,8 @@ ATExecDropConstraint(Relation rel, const char *constrName,
 				{
 					/* Time to delete this child constraint, too */
 					ATExecDropConstraint(childrel, constrName, behavior,
-										 true, true);
+										 true, true,
+										 false);
 				}
 				else
 				{
@@ -5549,7 +5578,7 @@ ATPrepAlterColumnType(List **wqueue,
 					  AlterTableCmd *cmd)
 {
 	char	   *colName = cmd->name;
-	TypeName   *typename = (TypeName *) cmd->def;
+	TypeName   *typeName = (TypeName *) cmd->def;
 	HeapTuple	tuple;
 	Form_pg_attribute attTup;
 	AttrNumber	attnum;
@@ -5584,7 +5613,7 @@ ATPrepAlterColumnType(List **wqueue,
 						colName)));
 
 	/* Look up the target type */
-	targettype = typenameTypeId(NULL, typename, &targettypmod);
+	targettype = typenameTypeId(NULL, typeName, &targettypmod);
 
 	/* make sure datatype is legal for a column */
 	CheckAttributeType(colName, targettype);
@@ -5679,7 +5708,7 @@ ATPrepAlterColumnType(List **wqueue,
 
 static void
 ATExecAlterColumnType(AlteredTableInfo *tab, Relation rel,
-					  const char *colName, TypeName *typename)
+					  const char *colName, TypeName *typeName)
 {
 	HeapTuple	heapTup;
 	Form_pg_attribute attTup;
@@ -5716,7 +5745,7 @@ ATExecAlterColumnType(AlteredTableInfo *tab, Relation rel,
 						colName)));
 
 	/* Look up the target type (should not fail, since prep found it) */
-	typeTuple = typenameType(NULL, typename, &targettypmod);
+	typeTuple = typenameType(NULL, typeName, &targettypmod);
 	tform = (Form_pg_type) GETSTRUCT(typeTuple);
 	targettype = HeapTupleGetOid(typeTuple);
 
@@ -5963,7 +5992,7 @@ ATExecAlterColumnType(AlteredTableInfo *tab, Relation rel,
 	 */
 	attTup->atttypid = targettype;
 	attTup->atttypmod = targettypmod;
-	attTup->attndims = list_length(typename->arrayBounds);
+	attTup->attndims = list_length(typeName->arrayBounds);
 	attTup->attlen = tform->typlen;
 	attTup->attbyval = tform->typbyval;
 	attTup->attalign = tform->typalign;
