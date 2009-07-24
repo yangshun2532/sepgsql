@@ -2,7 +2,7 @@
 #
 # PostgreSQL documentation makefile
 #
-# $PostgreSQL: pgsql/doc/src/sgml/Makefile,v 1.117 2009/06/25 21:15:38 petere Exp $
+# $PostgreSQL: pgsql/doc/src/sgml/Makefile,v 1.119 2009/07/20 18:34:58 petere Exp $
 #
 #----------------------------------------------------------------------------
 
@@ -51,6 +51,9 @@ GENERATED_SGML = bookindex.sgml version.sgml \
 
 ALLSGML := $(wildcard $(srcdir)/*.sgml $(srcdir)/ref/*.sgml) $(GENERATED_SGML)
 
+# Sometimes we don't want this one.
+ALMOSTALLSGML := $(filter-out %bookindex.sgml,$(ALLSGML))
+
 ifdef DOCBOOKSTYLE
 CATALOG = -c $(DOCBOOKSTYLE)/catalog
 endif
@@ -94,37 +97,27 @@ man: postgres.sgml $(ALLSGML)
 
 all: html
 
-# The draft target creates HTML output in draft mode
-draft : JADEFLAGS += -V draft-mode
-draft: html-output
+JADE.html.call = $(JADE) $(JADEFLAGS) $(SPFLAGS) $(SGMLINCLUDE) $(CATALOG) -d stylesheet.dsl -t sgml -i output-html
 
-html: html-output
-# Re-run this target until HTML.index does not change
-	@cmp -s HTML.index.start HTML.index || $(MAKE) $@
+# The draft target creates HTML output in draft mode, without index (for faster build).
+draft: postgres.sgml $(ALMOSTALLSGML) stylesheet.dsl
+	$(JADE.html.call) -V draft-mode $<
 
-# This is run for all output formats because we need bookindex.sgml
-html-output: postgres.sgml $(ALLSGML) stylesheet.dsl
+html: html-stamp
+
+html-stamp: postgres.sgml $(ALLSGML) stylesheet.dsl
 	@rm -f *.html
-	$(JADE) $(JADEFLAGS) $(SPFLAGS) $(SGMLINCLUDE) $(CATALOG) -d stylesheet.dsl -i output-html -t sgml $<
+	$(JADE.html.call) -i include-index $<
 ifeq ($(vpath_build), yes)
 	@cp $(srcdir)/stylesheet.css .
 endif
+	touch $@
 
-COLLATEINDEX := LC_ALL=C $(PERL) $(COLLATEINDEX) -f -g
+HTML.index: postgres.sgml $(ALMOSTALLSGML) stylesheet.dsl
+	$(JADE.html.call) -V html-index $<
 
-# bookindex.sgml is required so there is a proper index for all output formats
 bookindex.sgml: HTML.index
-# create a dummy bookindex.html
-	test -s HTML.index || $(COLLATEINDEX) -o $@ -N
-# If HTML.index is valid, create a valid bookindex.sgml.
-	test ! -s HTML.index || $(COLLATEINDEX) -i 'bookindex' -o $@ $<
-# save copy of HTML.index for later comparison
-	@cp HTML.index HTML.index.start
-
-# HTML.index is used to create bookindex.sgml
-HTML.index:
-# create an empty HTML.index if it does not exist
-	@$(if $(wildcard HTML.index), , touch HTML.index)
+	LC_ALL=C $(PERL) $(COLLATEINDEX) -f -g -i 'bookindex' -o $@ $<
 
 version.sgml: $(top_builddir)/src/Makefile.global
 	{ \
@@ -146,13 +139,13 @@ features-unsupported.sgml: $(top_srcdir)/src/backend/catalog/sql_feature_package
 
 # RTF to allow minor editing for hardcopy
 %.rtf: %.sgml $(ALLSGML) html
-	$(JADE) $(JADEFLAGS) $(SGMLINCLUDE) $(CATALOG) -d stylesheet.dsl -t rtf -V rtf-backend -i output-print postgres.sgml
+	$(JADE) $(JADEFLAGS) $(SGMLINCLUDE) $(CATALOG) -d stylesheet.dsl -t rtf -V rtf-backend -i output-print  -i include-index postgres.sgml
 
 # TeX
 # Regular TeX and pdfTeX have slightly differing requirements, so we
 # need to distinguish the path we're taking.
 
-JADE.tex.call = $(JADE) $(JADEFLAGS) $(SGMLINCLUDE) $(CATALOG) -d $(srcdir)/stylesheet.dsl -t tex -V tex-backend -i output-print
+JADE.tex.call = $(JADE) $(JADEFLAGS) $(SGMLINCLUDE) $(CATALOG) -d $(srcdir)/stylesheet.dsl -t tex -V tex-backend -i output-print -i include-index
 
 %-A4.tex-ps: %.sgml $(ALLSGML) html
 	$(JADE.tex.call) -V texdvi-output -V '%paper-type%'=A4 -o $@ $<
@@ -195,7 +188,7 @@ postgres.pdf:
 # for debugging DSSSL code, and possibly to interface to some other
 # tools that can make use of this.
 %.fot: %.sgml $(ALLSGML) html
-	$(JADE) $(JADEFLAGS) $(SGMLINCLUDE) $(CATALOG) -d stylesheet.dsl -t fot -i output-print -o $@ $<
+	$(JADE) $(JADEFLAGS) $(SGMLINCLUDE) $(CATALOG) -d stylesheet.dsl -t fot -i output-print -i include-index -o $@ $<
 
 
 ##
@@ -232,7 +225,7 @@ regress_README.html: regress.sgml
 OSX = osx # (may be called sx or sgml2xml on some systems)
 XSLTPROC = xsltproc
 
-postgres.xml: postgres.sgml $(GENERATED_SGML)
+postgres.xml: postgres.sgml $(ALMOSTALLSGML)
 	$(OSX) -D. -x lower $< | \
 	  $(PERL) -p -e 's/\[(amp|copy|egrave|gt|lt|mdash|nbsp|ouml|pi|quot|uuml) *\]/\&\1;/g;' \
 	             -e '$$_ .= qq{<!DOCTYPE book PUBLIC "-//OASIS//DTD DocBook XML V4.2//EN" "http://www.oasis-open.org/docbook/xml/4.2/docbookx.dtd">\n} if $$. == 1;' \
@@ -292,7 +285,7 @@ manx: postgres.xml stylesheet-man.xsl
 ##
 
 # Quick syntax check without style processing
-check: postgres.sgml $(ALLSGML)
+check: postgres.sgml $(ALMOSTALLSGML)
 	$(NSGMLS) $(SPFLAGS) $(SGMLINCLUDE) -s $<
 
 
@@ -302,13 +295,13 @@ check: postgres.sgml $(ALLSGML)
 
 clean distclean maintainer-clean:
 # HTML
-	rm -f HTML.manifest *.html
+	rm -f *.html html-stamp
 # man
 	rm -rf *.1 *.7 *.$(DEFAULTSECTION) man1 man7 manpage.refs manpage.links manpage.log
 # print
 	rm -f *.rtf *.tex-ps *.tex-pdf *.dvi *.aux *.log *.ps *.pdf *.out *.fot
 # index
-	rm -f HTML.index HTML.index.start $(GENERATED_SGML)
+	rm -f HTML.index $(GENERATED_SGML)
 # text
 	rm -f INSTALL HISTORY regress_README
 # XSLT
