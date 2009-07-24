@@ -9,7 +9,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/adt/ruleutils.c,v 1.300 2009/06/11 14:49:04 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/backend/utils/adt/ruleutils.c,v 1.303 2009/07/16 06:33:44 petere Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -39,10 +39,10 @@
 #include "nodes/nodeFuncs.h"
 #include "optimizer/clauses.h"
 #include "optimizer/tlist.h"
-#include "parser/gramparse.h"
 #include "parser/keywords.h"
 #include "parser/parse_func.h"
 #include "parser/parse_oper.h"
+#include "parser/parser.h"
 #include "parser/parsetree.h"
 #include "rewrite/rewriteHandler.h"
 #include "rewrite/rewriteManip.h"
@@ -5910,14 +5910,14 @@ get_from_clause_item(Node *jtnode, Query *query, deparse_context *context)
 
 		if (!j->isNatural)
 		{
-			if (j->using)
+			if (j->usingClause)
 			{
 				ListCell   *col;
 
 				appendStringInfo(buf, " USING (");
-				foreach(col, j->using)
+				foreach(col, j->usingClause)
 				{
-					if (col != list_head(j->using))
+					if (col != list_head(j->usingClause))
 						appendStringInfo(buf, ", ");
 					appendStringInfoString(buf,
 									  quote_identifier(strVal(lfirst(col))));
@@ -6219,7 +6219,9 @@ quote_identifier(const char *ident)
 		 * Note: ScanKeywordLookup() does case-insensitive comparison, but
 		 * that's fine, since we already know we have all-lower-case.
 		 */
-		const ScanKeyword *keyword = ScanKeywordLookup(ident);
+		const ScanKeyword *keyword = ScanKeywordLookup(ident,
+													   ScanKeywords,
+													   NumScanKeywords);
 
 		if (keyword != NULL && keyword->category != UNRESERVED_KEYWORD)
 			safe = false;
@@ -6249,18 +6251,18 @@ quote_identifier(const char *ident)
 /*
  * quote_qualified_identifier	- Quote a possibly-qualified identifier
  *
- * Return a name of the form namespace.ident, or just ident if namespace
+ * Return a name of the form qualifier.ident, or just ident if qualifier
  * is NULL, quoting each component if necessary.  The result is palloc'd.
  */
 char *
-quote_qualified_identifier(const char *namespace,
+quote_qualified_identifier(const char *qualifier,
 						   const char *ident)
 {
 	StringInfoData buf;
 
 	initStringInfo(&buf);
-	if (namespace)
-		appendStringInfo(&buf, "%s.", quote_identifier(namespace));
+	if (qualifier)
+		appendStringInfo(&buf, "%s.", quote_identifier(qualifier));
 	appendStringInfoString(&buf, quote_identifier(ident));
 	return buf.data;
 }
