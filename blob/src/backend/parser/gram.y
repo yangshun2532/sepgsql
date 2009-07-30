@@ -11,7 +11,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/parser/gram.y,v 2.671 2009/07/20 02:42:28 adunstan Exp $
+ *	  $PostgreSQL: pgsql/src/backend/parser/gram.y,v 2.675 2009/07/30 02:45:37 tgl Exp $
  *
  * HISTORY
  *	  AUTHOR			DATE			MAJOR EVENT
@@ -321,7 +321,7 @@ static TypeName *TableFuncTypeName(List *columns);
 %type <list>	opt_interval interval_second
 %type <node>	overlay_placing substr_from substr_for
 
-%type <boolean> opt_instead opt_analyze
+%type <boolean> opt_instead
 %type <boolean> index_opt_unique opt_verbose opt_full
 %type <boolean> opt_freeze opt_default opt_recheck
 %type <defelt>	opt_binary opt_oids copy_delimiter
@@ -368,6 +368,10 @@ static TypeName *TableFuncTypeName(List *columns);
 %type <node>	generic_option_arg
 %type <defelt>	generic_option_elem alter_generic_option_elem
 %type <list>	generic_option_list alter_generic_option_list
+%type <str>		explain_option_name
+%type <node>	explain_option_arg
+%type <defelt>	explain_option_elem
+%type <list>	explain_option_list
 
 %type <typnam>	Typename SimpleTypename ConstTypename
 				GenericType Numeric opt_float
@@ -2028,6 +2032,10 @@ copy_opt_item:
 				{
 					$$ = makeDefElem("force_quote", (Node *)$3);
 				}
+			| FORCE QUOTE '*'
+				{
+					$$ = makeDefElem("force_quote", (Node *)makeNode(A_Star));
+				}
 			| FORCE NOT NULL_P columnList
 				{
 					$$ = makeDefElem("force_notnull", (Node *)$4);
@@ -2164,24 +2172,11 @@ ColQualList:
 ColConstraint:
 			CONSTRAINT name ColConstraintElem
 				{
-					switch (nodeTag($3))
-					{
-						case T_Constraint:
-							{
-								Constraint *n = (Constraint *)$3;
-								n->name = $2;
-							}
-							break;
-						case T_FkConstraint:
-							{
-								FkConstraint *n = (FkConstraint *)$3;
-								n->constr_name = $2;
-							}
-							break;
-						default:
-							break;
-					}
-					$$ = $3;
+					Constraint *n = (Constraint *) $3;
+					Assert(IsA(n, Constraint));
+					n->conname = $2;
+					n->location = @1;
+					$$ = (Node *) n;
 				}
 			| ColConstraintElem						{ $$ = $1; }
 			| ConstraintAttr						{ $$ = $1; }
@@ -2207,31 +2202,21 @@ ColConstraintElem:
 				{
 					Constraint *n = makeNode(Constraint);
 					n->contype = CONSTR_NOTNULL;
-					n->name = NULL;
-					n->raw_expr = NULL;
-					n->cooked_expr = NULL;
-					n->keys = NULL;
-					n->indexspace = NULL;
+					n->location = @1;
 					$$ = (Node *)n;
 				}
 			| NULL_P
 				{
 					Constraint *n = makeNode(Constraint);
 					n->contype = CONSTR_NULL;
-					n->name = NULL;
-					n->raw_expr = NULL;
-					n->cooked_expr = NULL;
-					n->keys = NULL;
-					n->indexspace = NULL;
+					n->location = @1;
 					$$ = (Node *)n;
 				}
 			| UNIQUE opt_definition OptConsTableSpace
 				{
 					Constraint *n = makeNode(Constraint);
 					n->contype = CONSTR_UNIQUE;
-					n->name = NULL;
-					n->raw_expr = NULL;
-					n->cooked_expr = NULL;
+					n->location = @1;
 					n->keys = NULL;
 					n->options = $2;
 					n->indexspace = $3;
@@ -2241,9 +2226,7 @@ ColConstraintElem:
 				{
 					Constraint *n = makeNode(Constraint);
 					n->contype = CONSTR_PRIMARY;
-					n->name = NULL;
-					n->raw_expr = NULL;
-					n->cooked_expr = NULL;
+					n->location = @1;
 					n->keys = NULL;
 					n->options = $3;
 					n->indexspace = $4;
@@ -2253,36 +2236,32 @@ ColConstraintElem:
 				{
 					Constraint *n = makeNode(Constraint);
 					n->contype = CONSTR_CHECK;
-					n->name = NULL;
+					n->location = @1;
 					n->raw_expr = $3;
 					n->cooked_expr = NULL;
-					n->keys = NULL;
-					n->indexspace = NULL;
 					$$ = (Node *)n;
 				}
 			| DEFAULT b_expr
 				{
 					Constraint *n = makeNode(Constraint);
 					n->contype = CONSTR_DEFAULT;
-					n->name = NULL;
+					n->location = @1;
 					n->raw_expr = $2;
 					n->cooked_expr = NULL;
-					n->keys = NULL;
-					n->indexspace = NULL;
 					$$ = (Node *)n;
 				}
 			| REFERENCES qualified_name opt_column_list key_match key_actions
 				{
-					FkConstraint *n = makeNode(FkConstraint);
-					n->constr_name		= NULL;
+					Constraint *n = makeNode(Constraint);
+					n->contype = CONSTR_FOREIGN;
+					n->location = @1;
 					n->pktable			= $2;
 					n->fk_attrs			= NIL;
 					n->pk_attrs			= $3;
 					n->fk_matchtype		= $4;
 					n->fk_upd_action	= (char) ($5 >> 8);
 					n->fk_del_action	= (char) ($5 & 0xFF);
-					n->deferrable		= FALSE;
-					n->initdeferred		= FALSE;
+					n->skip_validation  = FALSE;
 					$$ = (Node *)n;
 				}
 		;
@@ -2304,24 +2283,28 @@ ConstraintAttr:
 				{
 					Constraint *n = makeNode(Constraint);
 					n->contype = CONSTR_ATTR_DEFERRABLE;
+					n->location = @1;
 					$$ = (Node *)n;
 				}
 			| NOT DEFERRABLE
 				{
 					Constraint *n = makeNode(Constraint);
 					n->contype = CONSTR_ATTR_NOT_DEFERRABLE;
+					n->location = @1;
 					$$ = (Node *)n;
 				}
 			| INITIALLY DEFERRED
 				{
 					Constraint *n = makeNode(Constraint);
 					n->contype = CONSTR_ATTR_DEFERRED;
+					n->location = @1;
 					$$ = (Node *)n;
 				}
 			| INITIALLY IMMEDIATE
 				{
 					Constraint *n = makeNode(Constraint);
 					n->contype = CONSTR_ATTR_IMMEDIATE;
+					n->location = @1;
 					$$ = (Node *)n;
 				}
 		;
@@ -2367,74 +2350,69 @@ TableLikeOption:
 TableConstraint:
 			CONSTRAINT name ConstraintElem
 				{
-					switch (nodeTag($3))
-					{
-						case T_Constraint:
-							{
-								Constraint *n = (Constraint *)$3;
-								n->name = $2;
-							}
-							break;
-						case T_FkConstraint:
-							{
-								FkConstraint *n = (FkConstraint *)$3;
-								n->constr_name = $2;
-							}
-							break;
-						default:
-							break;
-					}
-					$$ = $3;
+					Constraint *n = (Constraint *) $3;
+					Assert(IsA(n, Constraint));
+					n->conname = $2;
+					n->location = @1;
+					$$ = (Node *) n;
 				}
 			| ConstraintElem						{ $$ = $1; }
 		;
 
 ConstraintElem:
-			CHECK '(' a_expr ')'
+			CHECK '(' a_expr ')' ConstraintAttributeSpec
 				{
 					Constraint *n = makeNode(Constraint);
 					n->contype = CONSTR_CHECK;
-					n->name = NULL;
+					n->location = @1;
 					n->raw_expr = $3;
 					n->cooked_expr = NULL;
-					n->indexspace = NULL;
+					if ($5 != 0)
+						ereport(ERROR,
+								(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+								 errmsg("CHECK constraints cannot be deferred"),
+								 parser_errposition(@5)));
 					$$ = (Node *)n;
 				}
 			| UNIQUE '(' columnList ')' opt_definition OptConsTableSpace
+				ConstraintAttributeSpec
 				{
 					Constraint *n = makeNode(Constraint);
 					n->contype = CONSTR_UNIQUE;
-					n->name = NULL;
-					n->raw_expr = NULL;
-					n->cooked_expr = NULL;
+					n->location = @1;
 					n->keys = $3;
 					n->options = $5;
 					n->indexspace = $6;
+					n->deferrable = ($7 & 1) != 0;
+					n->initdeferred = ($7 & 2) != 0;
 					$$ = (Node *)n;
 				}
 			| PRIMARY KEY '(' columnList ')' opt_definition OptConsTableSpace
+				ConstraintAttributeSpec
 				{
 					Constraint *n = makeNode(Constraint);
 					n->contype = CONSTR_PRIMARY;
-					n->name = NULL;
-					n->raw_expr = NULL;
-					n->cooked_expr = NULL;
+					n->location = @1;
 					n->keys = $4;
 					n->options = $6;
 					n->indexspace = $7;
+					n->deferrable = ($8 & 1) != 0;
+					n->initdeferred = ($8 & 2) != 0;
 					$$ = (Node *)n;
 				}
 			| FOREIGN KEY '(' columnList ')' REFERENCES qualified_name
 				opt_column_list key_match key_actions ConstraintAttributeSpec
 				{
-					FkConstraint *n = makeNode(FkConstraint);
-					n->constr_name		= NULL;
+					Constraint *n = makeNode(Constraint);
+					n->contype = CONSTR_FOREIGN;
+					n->location = @1;
 					n->pktable			= $7;
 					n->fk_attrs			= $4;
 					n->pk_attrs			= $8;
 					n->fk_matchtype		= $9;
 					n->fk_upd_action	= (char) ($10 >> 8);
 					n->fk_del_action	= (char) ($10 & 0xFF);
+					n->skip_validation  = FALSE;
 					n->deferrable		= ($11 & 1) != 0;
 					n->initdeferred		= ($11 & 2) != 0;
 					$$ = (Node *)n;
@@ -2706,13 +2684,13 @@ opt_by:		BY				{}
 	  ;
 
 NumericOnly:
-		FCONST									{ $$ = makeFloat($1); }
+			FCONST								{ $$ = makeFloat($1); }
 			| '-' FCONST
 				{
 					$$ = makeFloat($2);
 					doNegateFloat($$);
 				}
-			| SignedIconst                                                  { $$ = makeInteger($1); };
+			| SignedIconst						{ $$ = makeInteger($1); }
 		;
 
 /*****************************************************************************
@@ -6469,16 +6447,41 @@ opt_name_list:
  *
  *		QUERY:
  *				EXPLAIN [ANALYZE] [VERBOSE] query
+ *				EXPLAIN ( options ) query
  *
  *****************************************************************************/
 
-ExplainStmt: EXPLAIN opt_analyze opt_verbose ExplainableStmt
+ExplainStmt:
+		EXPLAIN ExplainableStmt
 				{
 					ExplainStmt *n = makeNode(ExplainStmt);
-					n->analyze = $2;
-					n->verbose = $3;
+					n->query = $2;
+					n->options = NIL;
+					$$ = (Node *) n;
+				}
+		| EXPLAIN analyze_keyword opt_verbose ExplainableStmt
+				{
+					ExplainStmt *n = makeNode(ExplainStmt);
 					n->query = $4;
-					$$ = (Node *)n;
+					n->options = list_make1(makeDefElem("analyze", NULL));
+					if ($3)
+						n->options = lappend(n->options,
+											 makeDefElem("verbose", NULL));
+					$$ = (Node *) n;
+				}
+		| EXPLAIN VERBOSE ExplainableStmt
+				{
+					ExplainStmt *n = makeNode(ExplainStmt);
+					n->query = $3;
+					n->options = list_make1(makeDefElem("verbose", NULL));
+					$$ = (Node *) n;
+				}
+		| EXPLAIN '(' explain_option_list ')' ExplainableStmt
+				{
+					ExplainStmt *n = makeNode(ExplainStmt);
+					n->query = $5;
+					n->options = $3;
+					$$ = (Node *) n;
 				}
 		;
 
@@ -6492,9 +6495,35 @@ ExplainableStmt:
 			| ExecuteStmt					/* by default all are $$=$1 */
 		;
 
-opt_analyze:
-			analyze_keyword			{ $$ = TRUE; }
-			| /* EMPTY */			{ $$ = FALSE; }
+explain_option_list:
+			explain_option_elem
+				{
+					$$ = list_make1($1);
+				}
+			| explain_option_list ',' explain_option_elem
+				{
+					$$ = lappend($1, $3);
+				}
+		;
+
+explain_option_elem:
+			explain_option_name explain_option_arg
+				{
+					$$ = makeDefElem($1, $2);
+				}
+		;
+
+explain_option_name:
+			ColId					{ $$ = $1; }
+			| analyze_keyword		{ $$ = "analyze"; }
+			| VERBOSE				{ $$ = "verbose"; }
+		;
+
+explain_option_arg:
+			opt_boolean				{ $$ = (Node *) makeString($1); }
+			| ColId_or_Sconst		{ $$ = (Node *) makeString($1); }
+			| NumericOnly			{ $$ = (Node *) $1; }
+			| /* EMPTY */			{ $$ = NULL; }
 		;
 
 /*****************************************************************************

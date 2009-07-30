@@ -22,7 +22,7 @@
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/nodes/equalfuncs.c,v 1.357 2009/07/20 02:42:27 adunstan Exp $
+ *	  $PostgreSQL: pgsql/src/backend/nodes/equalfuncs.c,v 1.360 2009/07/30 02:45:37 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -1160,6 +1160,8 @@ _equalIndexStmt(IndexStmt *a, IndexStmt *b)
 	COMPARE_SCALAR_FIELD(unique);
 	COMPARE_SCALAR_FIELD(primary);
 	COMPARE_SCALAR_FIELD(isconstraint);
+	COMPARE_SCALAR_FIELD(deferrable);
+	COMPARE_SCALAR_FIELD(initdeferred);
 	COMPARE_SCALAR_FIELD(concurrent);
 
 	return true;
@@ -1467,8 +1469,7 @@ static bool
 _equalExplainStmt(ExplainStmt *a, ExplainStmt *b)
 {
 	COMPARE_NODE_FIELD(query);
-	COMPARE_SCALAR_FIELD(verbose);
-	COMPARE_SCALAR_FIELD(analyze);
+	COMPARE_NODE_FIELD(options);
 
 	return true;
 }
@@ -2077,12 +2078,22 @@ static bool
 _equalConstraint(Constraint *a, Constraint *b)
 {
 	COMPARE_SCALAR_FIELD(contype);
-	COMPARE_STRING_FIELD(name);
+	COMPARE_STRING_FIELD(conname);
+	COMPARE_SCALAR_FIELD(deferrable);
+	COMPARE_SCALAR_FIELD(initdeferred);
+	COMPARE_LOCATION_FIELD(location);
 	COMPARE_NODE_FIELD(raw_expr);
 	COMPARE_STRING_FIELD(cooked_expr);
 	COMPARE_NODE_FIELD(keys);
 	COMPARE_NODE_FIELD(options);
 	COMPARE_STRING_FIELD(indexspace);
+	COMPARE_NODE_FIELD(pktable);
+	COMPARE_NODE_FIELD(fk_attrs);
+	COMPARE_NODE_FIELD(pk_attrs);
+	COMPARE_SCALAR_FIELD(fk_matchtype);
+	COMPARE_SCALAR_FIELD(fk_upd_action);
+	COMPARE_SCALAR_FIELD(fk_del_action);
+	COMPARE_SCALAR_FIELD(skip_validation);
 
 	return true;
 }
@@ -2196,23 +2207,6 @@ _equalCommonTableExpr(CommonTableExpr *a, CommonTableExpr *b)
 	COMPARE_NODE_FIELD(ctecolnames);
 	COMPARE_NODE_FIELD(ctecoltypes);
 	COMPARE_NODE_FIELD(ctecoltypmods);
-
-	return true;
-}
-
-static bool
-_equalFkConstraint(FkConstraint *a, FkConstraint *b)
-{
-	COMPARE_STRING_FIELD(constr_name);
-	COMPARE_NODE_FIELD(pktable);
-	COMPARE_NODE_FIELD(fk_attrs);
-	COMPARE_NODE_FIELD(pk_attrs);
-	COMPARE_SCALAR_FIELD(fk_matchtype);
-	COMPARE_SCALAR_FIELD(fk_upd_action);
-	COMPARE_SCALAR_FIELD(fk_del_action);
-	COMPARE_SCALAR_FIELD(deferrable);
-	COMPARE_SCALAR_FIELD(initdeferred);
-	COMPARE_SCALAR_FIELD(skip_validation);
 
 	return true;
 }
@@ -2872,9 +2866,6 @@ equal(void *a, void *b)
 			break;
 		case T_CommonTableExpr:
 			retval = _equalCommonTableExpr(a, b);
-			break;
-		case T_FkConstraint:
-			retval = _equalFkConstraint(a, b);
 			break;
 		case T_PrivGrantee:
 			retval = _equalPrivGrantee(a, b);
