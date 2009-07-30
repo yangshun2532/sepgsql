@@ -7,7 +7,7 @@
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/commands/trigger.c,v 1.248 2009/06/18 01:27:02 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/commands/trigger.c,v 1.251 2009/07/30 02:45:36 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -63,7 +63,8 @@ static HeapTuple ExecCallTriggerFunc(TriggerData *trigdata,
 					Instrumentation *instr,
 					MemoryContext per_tuple_context);
 static void AfterTriggerSaveEvent(ResultRelInfo *relinfo, int event,
-					  bool row_trigger, HeapTuple oldtup, HeapTuple newtup);
+					  bool row_trigger, HeapTuple oldtup, HeapTuple newtup,
+					  List *recheckIndexes);
 
 
 /*
@@ -74,6 +75,13 @@ static void AfterTriggerSaveEvent(ResultRelInfo *relinfo, int event,
  * be made to link the trigger to that constraint.	constraintOid is zero when
  * executing a user-entered CREATE TRIGGER command.
  *
+ * indexOid, if nonzero, is the OID of an index associated with the constraint.
+ * We do nothing with this except store it into pg_trigger.tgconstrindid.
+ *
+ * prefix is NULL for user-created triggers.  For internally generated
+ * constraint triggers, it is a prefix string to use in building the
+ * trigger name.  (stmt->trigname is the constraint name in such cases.)
+ *
  * If checkPermissions is true we require ACL_TRIGGER permissions on the
  * relation.  If not, the caller already checked permissions.  (This is
  * currently redundant with constraintOid being zero, but it's clearer to
@@ -83,7 +91,9 @@ static void AfterTriggerSaveEvent(ResultRelInfo *relinfo, int event,
  * but a foreign-key constraint.  This is a kluge for backwards compatibility.
  */
 Oid
-CreateTrigger(CreateTrigStmt *stmt, Oid constraintOid, bool checkPermissions)
+CreateTrigger(CreateTrigStmt *stmt,
+			  Oid constraintOid, Oid indexOid, const char *prefix,
+			  bool checkPermissions)
 {
 	int16		tgtype;
 	int2vector *tgattr;
@@ -211,20 +221,20 @@ CreateTrigger(CreateTrigStmt *stmt, Oid constraintOid, bool checkPermissions)
 	trigoid = GetNewOid(tgrel);
 
 	/*
-	 * If trigger is for an RI constraint, the passed-in name is the
-	 * constraint name; save that and build a unique trigger name to avoid
-	 * collisions with user-selected trigger names.
+	 * If trigger is for a constraint, stmt->trigname is the constraint
+	 * name; save that and build a unique trigger name based on the supplied
+	 * prefix, to avoid collisions with user-selected trigger names.
 	 */
-	if (OidIsValid(constraintOid))
+	if (prefix != NULL)
 	{
 		snprintf(constrtrigname, sizeof(constrtrigname),
-				 "RI_ConstraintTrigger_%u", trigoid);
+				 "%s_%u", prefix, trigoid);
 		trigname = constrtrigname;
 		constrname = stmt->trigname;
 	}
 	else if (stmt->isconstraint)
 	{
-		/* constraint trigger: trigger name is also constraint name */
+		/* user constraint trigger: trigger name is also constraint name */
 		trigname = stmt->trigname;
 		constrname = stmt->trigname;
 	}
@@ -276,6 +286,7 @@ CreateTrigger(CreateTrigStmt *stmt, Oid constraintOid, bool checkPermissions)
 	values[Anum_pg_trigger_tgconstrname - 1] = DirectFunctionCall1(namein,
 												CStringGetDatum(constrname));
 	values[Anum_pg_trigger_tgconstrrelid - 1] = ObjectIdGetDatum(constrrelid);
+	values[Anum_pg_trigger_tgconstrindid - 1] = ObjectIdGetDatum(indexOid);
 	values[Anum_pg_trigger_tgconstraint - 1] = ObjectIdGetDatum(constraintOid);
 	values[Anum_pg_trigger_tgdeferrable - 1] = BoolGetDatum(stmt->deferrable);
 	values[Anum_pg_trigger_tginitdeferred - 1] = BoolGetDatum(stmt->initdeferred);
@@ -410,13 +421,15 @@ CreateTrigger(CreateTrigStmt *stmt, Oid constraintOid, bool checkPermissions)
 		referenced.objectId = RelationGetRelid(rel);
 		referenced.objectSubId = 0;
 		recordDependencyOn(&myself, &referenced, DEPENDENCY_AUTO);
-		if (constrrelid != InvalidOid)
+		if (OidIsValid(constrrelid))
 		{
 			referenced.classId = RelationRelationId;
 			referenced.objectId = constrrelid;
 			referenced.objectSubId = 0;
 			recordDependencyOn(&myself, &referenced, DEPENDENCY_AUTO);
 		}
+		/* Not possible to have an index dependency in this case */
+		Assert(!OidIsValid(indexOid));
 	}
 
 	/* Keep lock on target rel until end of xact */
@@ -594,12 +607,14 @@ ConvertTriggerToFK(CreateTrigStmt *stmt, Oid funcoid)
 		/* OK, we have a set, so make the FK constraint ALTER TABLE cmd */
 		AlterTableStmt *atstmt = makeNode(AlterTableStmt);
 		AlterTableCmd *atcmd = makeNode(AlterTableCmd);
-		FkConstraint *fkcon = makeNode(FkConstraint);
+		Constraint *fkcon = makeNode(Constraint);
 
 		ereport(NOTICE,
 				(errmsg("converting trigger group into constraint \"%s\" %s",
 						constr_name, buf.data),
 				 errdetail("%s", _(funcdescr[funcnum]))));
+		fkcon->contype = CONSTR_FOREIGN;
+		fkcon->location = -1;
 		if (funcnum == 2)
 		{
 			/* This trigger is on the FK table */
@@ -629,9 +644,9 @@ ConvertTriggerToFK(CreateTrigStmt *stmt, Oid funcoid)
 		atcmd->subtype = AT_AddConstraint;
 		atcmd->def = (Node *) fkcon;
 		if (strcmp(constr_name, "<unnamed>") == 0)
-			fkcon->constr_name = NULL;
+			fkcon->conname = NULL;
 		else
-			fkcon->constr_name = constr_name;
+			fkcon->conname = constr_name;
 		fkcon->fk_attrs = fk_attrs;
 		fkcon->pk_attrs = pk_attrs;
 		fkcon->fk_matchtype = fk_matchtype;
@@ -1122,6 +1137,7 @@ RelationBuildTriggers(Relation relation)
 		build->tgenabled = pg_trigger->tgenabled;
 		build->tgisconstraint = pg_trigger->tgisconstraint;
 		build->tgconstrrelid = pg_trigger->tgconstrrelid;
+		build->tgconstrindid = pg_trigger->tgconstrindid;
 		build->tgconstraint = pg_trigger->tgconstraint;
 		build->tgdeferrable = pg_trigger->tgdeferrable;
 		build->tginitdeferred = pg_trigger->tginitdeferred;
@@ -1467,6 +1483,8 @@ equalTriggerDescs(TriggerDesc *trigdesc1, TriggerDesc *trigdesc2)
 				return false;
 			if (trig1->tgconstrrelid != trig2->tgconstrrelid)
 				return false;
+			if (trig1->tgconstrindid != trig2->tgconstrindid)
+				return false;
 			if (trig1->tgconstraint != trig2->tgconstraint)
 				return false;
 			if (trig1->tgdeferrable != trig2->tgdeferrable)
@@ -1639,7 +1657,7 @@ ExecASInsertTriggers(EState *estate, ResultRelInfo *relinfo)
 
 	if (trigdesc && trigdesc->n_after_statement[TRIGGER_EVENT_INSERT] > 0)
 		AfterTriggerSaveEvent(relinfo, TRIGGER_EVENT_INSERT,
-							  false, NULL, NULL);
+							  false, NULL, NULL, NIL);
 }
 
 HeapTuple
@@ -1695,13 +1713,13 @@ ExecBRInsertTriggers(EState *estate, ResultRelInfo *relinfo,
 
 void
 ExecARInsertTriggers(EState *estate, ResultRelInfo *relinfo,
-					 HeapTuple trigtuple)
+					 HeapTuple trigtuple, List *recheckIndexes)
 {
 	TriggerDesc *trigdesc = relinfo->ri_TrigDesc;
 
 	if (trigdesc && trigdesc->n_after_row[TRIGGER_EVENT_INSERT] > 0)
 		AfterTriggerSaveEvent(relinfo, TRIGGER_EVENT_INSERT,
-							  true, NULL, trigtuple);
+							  true, NULL, trigtuple, recheckIndexes);
 }
 
 void
@@ -1770,7 +1788,7 @@ ExecASDeleteTriggers(EState *estate, ResultRelInfo *relinfo)
 
 	if (trigdesc && trigdesc->n_after_statement[TRIGGER_EVENT_DELETE] > 0)
 		AfterTriggerSaveEvent(relinfo, TRIGGER_EVENT_DELETE,
-							  false, NULL, NULL);
+							  false, NULL, NULL, NIL);
 }
 
 bool
@@ -1847,7 +1865,7 @@ ExecARDeleteTriggers(EState *estate, ResultRelInfo *relinfo,
 												   tupleid, NULL);
 
 		AfterTriggerSaveEvent(relinfo, TRIGGER_EVENT_DELETE,
-							  true, trigtuple, NULL);
+							  true, trigtuple, NULL, NIL);
 		heap_freetuple(trigtuple);
 	}
 }
@@ -1918,7 +1936,7 @@ ExecASUpdateTriggers(EState *estate, ResultRelInfo *relinfo)
 
 	if (trigdesc && trigdesc->n_after_statement[TRIGGER_EVENT_UPDATE] > 0)
 		AfterTriggerSaveEvent(relinfo, TRIGGER_EVENT_UPDATE,
-							  false, NULL, NULL);
+							  false, NULL, NULL, NIL);
 }
 
 HeapTuple
@@ -1988,7 +2006,8 @@ ExecBRUpdateTriggers(EState *estate, ResultRelInfo *relinfo,
 
 void
 ExecARUpdateTriggers(EState *estate, ResultRelInfo *relinfo,
-					 ItemPointer tupleid, HeapTuple newtuple)
+					 ItemPointer tupleid, HeapTuple newtuple,
+					 List *recheckIndexes)
 {
 	TriggerDesc *trigdesc = relinfo->ri_TrigDesc;
 
@@ -1998,7 +2017,7 @@ ExecARUpdateTriggers(EState *estate, ResultRelInfo *relinfo,
 												   tupleid, NULL);
 
 		AfterTriggerSaveEvent(relinfo, TRIGGER_EVENT_UPDATE,
-							  true, trigtuple, newtuple);
+							  true, trigtuple, newtuple, recheckIndexes);
 		heap_freetuple(trigtuple);
 	}
 }
@@ -2069,7 +2088,7 @@ ExecASTruncateTriggers(EState *estate, ResultRelInfo *relinfo)
 
 	if (trigdesc && trigdesc->n_after_statement[TRIGGER_EVENT_TRUNCATE] > 0)
 		AfterTriggerSaveEvent(relinfo, TRIGGER_EVENT_TRUNCATE,
-							  false, NULL, NULL);
+							  false, NULL, NULL, NIL);
 }
 
 
@@ -3782,15 +3801,18 @@ AfterTriggerPendingOnRel(Oid relid)
 /* ----------
  * AfterTriggerSaveEvent()
  *
- *	Called by ExecA[RS]...Triggers() to add the event to the queue.
+ *	Called by ExecA[RS]...Triggers() to queue up the triggers that should
+ *	be fired for an event.
  *
- *	NOTE: should be called only if we've determined that an event must
- *	be added to the queue.
+ *	NOTE: this is called whenever there are any triggers associated with
+ *	the event (even if they are disabled).  This function decides which
+ *	triggers actually need to be queued.
  * ----------
  */
 static void
 AfterTriggerSaveEvent(ResultRelInfo *relinfo, int event, bool row_trigger,
-					  HeapTuple oldtup, HeapTuple newtup)
+					  HeapTuple oldtup, HeapTuple newtup,
+					  List *recheckIndexes)
 {
 	Relation	rel = relinfo->ri_RelationDesc;
 	TriggerDesc *trigdesc = relinfo->ri_TrigDesc;
@@ -3948,6 +3970,17 @@ AfterTriggerSaveEvent(ResultRelInfo *relinfo, int event, bool row_trigger,
 					/* Not an FK trigger */
 					break;
 			}
+		}
+
+		/*
+		 * If the trigger is a deferred unique constraint check trigger,
+		 * only queue it if the unique constraint was potentially violated,
+		 * which we know from index insertion time.
+		 */
+		if (trigger->tgfoid == F_UNIQUE_KEY_RECHECK)
+		{
+			if (!list_member_oid(recheckIndexes, trigger->tgconstrindid))
+				continue;		/* Uniqueness definitely not violated */
 		}
 
 		/*

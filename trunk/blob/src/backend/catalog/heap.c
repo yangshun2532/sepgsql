@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/catalog/heap.c,v 1.354 2009/06/11 14:48:54 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/backend/catalog/heap.c,v 1.356 2009/07/30 02:45:36 tgl Exp $
  *
  *
  * INTERFACE ROUTINES
@@ -1659,6 +1659,7 @@ StoreRelCheck(Relation rel, char *ccname, Node *expr,
 						  attNos,		/* attrs in the constraint */
 						  keycount,		/* # attrs in the constraint */
 						  InvalidOid,	/* not a domain constraint */
+						  InvalidOid,	/* no associated index */
 						  InvalidOid,	/* Foreign key fields */
 						  NULL,
 						  NULL,
@@ -1668,7 +1669,6 @@ StoreRelCheck(Relation rel, char *ccname, Node *expr,
 						  ' ',
 						  ' ',
 						  ' ',
-						  InvalidOid,	/* no associated index */
 						  expr, /* Tree form check constraint */
 						  ccbin,	/* Binary form check constraint */
 						  ccsrc,	/* Source form check constraint */
@@ -1870,11 +1870,11 @@ AddRelationNewConstraints(Relation rel,
 		/*
 		 * Check name uniqueness, or generate a name if none was given.
 		 */
-		if (cdef->name != NULL)
+		if (cdef->conname != NULL)
 		{
 			ListCell   *cell2;
 
-			ccname = cdef->name;
+			ccname = cdef->conname;
 			/* Check against other new constraints */
 			/* Needed because we don't do CommandCounterIncrement in loop */
 			foreach(cell2, checknames)

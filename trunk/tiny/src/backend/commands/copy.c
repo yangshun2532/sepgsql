@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/commands/copy.c,v 1.312 2009/06/11 14:48:55 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/backend/commands/copy.c,v 1.316 2009/07/29 20:56:18 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -722,6 +722,7 @@ DoCopy(const CopyStmt *stmt, const char *queryString)
 	List	   *attnamelist = stmt->attlist;
 	List	   *force_quote = NIL;
 	List	   *force_notnull = NIL;
+	bool		force_quote_all = false;
 	AclMode		required_access = (is_from ? ACL_INSERT : ACL_SELECT);
 	AclMode		relPerms;
 	AclMode		remainingPerms;
@@ -804,11 +805,14 @@ DoCopy(const CopyStmt *stmt, const char *queryString)
 		}
 		else if (strcmp(defel->defname, "force_quote") == 0)
 		{
-			if (force_quote)
+			if (force_quote || force_quote_all)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
 						 errmsg("conflicting or redundant options")));
-			force_quote = (List *) defel->arg;
+			if (defel->arg && IsA(defel->arg, A_Star))
+				force_quote_all = true;
+			else
+				force_quote = (List *) defel->arg;
 		}
 		else if (strcmp(defel->defname, "force_notnull") == 0)
 		{
@@ -925,11 +929,11 @@ DoCopy(const CopyStmt *stmt, const char *queryString)
 				 errmsg("COPY escape must be a single one-byte character")));
 
 	/* Check force_quote */
-	if (!cstate->csv_mode && force_quote != NIL)
+	if (!cstate->csv_mode && (force_quote != NIL || force_quote_all))
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("COPY force quote available only in CSV mode")));
-	if (force_quote != NIL && is_from)
+	if ((force_quote != NIL || force_quote_all) && is_from)
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("COPY force quote only available using COPY TO")));
@@ -1092,7 +1096,14 @@ DoCopy(const CopyStmt *stmt, const char *queryString)
 
 	/* Convert FORCE QUOTE name list to per-column flags, check validity */
 	cstate->force_quote_flags = (bool *) palloc0(num_phys_attrs * sizeof(bool));
-	if (force_quote)
+	if (force_quote_all)
+	{
+		int		i;
+
+		for (i = 0; i < num_phys_attrs; i++)
+			cstate->force_quote_flags[i] = true;
+	}
+	else if (force_quote)
 	{
 		List	   *attnums;
 		ListCell   *cur;
@@ -2119,6 +2130,8 @@ CopyFrom(CopyState cstate)
 
 		if (!skip_tuple)
 		{
+			List *recheckIndexes = NIL;
+
 			/* Place tuple in tuple slot */
 			ExecStoreTuple(tuple, slot, InvalidBuffer, false);
 
@@ -2130,10 +2143,12 @@ CopyFrom(CopyState cstate)
 			heap_insert(cstate->rel, tuple, mycid, hi_options, bistate);
 
 			if (resultRelInfo->ri_NumIndices > 0)
-				ExecInsertIndexTuples(slot, &(tuple->t_self), estate, false);
+				recheckIndexes = ExecInsertIndexTuples(slot, &(tuple->t_self),
+													   estate, false);
 
 			/* AFTER ROW INSERT Triggers */
-			ExecARInsertTriggers(estate, resultRelInfo, tuple);
+			ExecARInsertTriggers(estate, resultRelInfo, tuple,
+								 recheckIndexes);
 
 			/*
 			 * We count only tuples not suppressed by a BEFORE INSERT trigger;

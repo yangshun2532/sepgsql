@@ -19,7 +19,7 @@
  * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- *	$PostgreSQL: pgsql/src/backend/parser/parse_utilcmd.c,v 2.23 2009/07/16 06:33:43 petere Exp $
+ *	$PostgreSQL: pgsql/src/backend/parser/parse_utilcmd.c,v 2.25 2009/07/30 02:45:37 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -33,6 +33,7 @@
 #include "catalog/heap.h"
 #include "catalog/index.h"
 #include "catalog/namespace.h"
+#include "catalog/pg_constraint.h"
 #include "catalog/pg_opclass.h"
 #include "catalog/pg_type.h"
 #include "commands/defrem.h"
@@ -111,7 +112,7 @@ static void transformFKConstraints(ParseState *pstate,
 					   CreateStmtContext *cxt,
 					   bool skipValidation,
 					   bool isAddConstraint);
-static void transformConstraintAttrs(List *constraintList);
+static void transformConstraintAttrs(ParseState *pstate, List *constraintList);
 static void transformColumnType(ParseState *pstate, ColumnDef *column);
 static void setSchemaName(char *context_schema, char **stmt_schema_name);
 
@@ -196,11 +197,6 @@ transformCreateStmt(CreateStmt *stmt, const char *queryString)
 			case T_Constraint:
 				transformTableConstraint(pstate, &cxt,
 										 (Constraint *) element);
-				break;
-
-			case T_FkConstraint:
-				/* No pre-transformation needed */
-				cxt.fkconstraints = lappend(cxt.fkconstraints, element);
 				break;
 
 			case T_InhRelation:
@@ -294,7 +290,8 @@ transformColumnDefinition(ParseState *pstate, CreateStmtContext *cxt,
 		if (is_serial && column->typeName->arrayBounds != NIL)
 			ereport(ERROR,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-					 errmsg("array of serial is not implemented")));
+					 errmsg("array of serial is not implemented"),
+					 parser_errposition(pstate, column->typeName->location)));
 	}
 
 	/* Do necessary work on the column type declaration */
@@ -396,18 +393,19 @@ transformColumnDefinition(ParseState *pstate, CreateStmtContext *cxt,
 
 		constraint = makeNode(Constraint);
 		constraint->contype = CONSTR_DEFAULT;
+		constraint->location = -1;
 		constraint->raw_expr = (Node *) funccallnode;
 		constraint->cooked_expr = NULL;
-		constraint->keys = NIL;
 		column->constraints = lappend(column->constraints, constraint);
 
 		constraint = makeNode(Constraint);
 		constraint->contype = CONSTR_NOTNULL;
+		constraint->location = -1;
 		column->constraints = lappend(column->constraints, constraint);
 	}
 
 	/* Process column constraints, if any... */
-	transformConstraintAttrs(column->constraints);
+	transformConstraintAttrs(pstate, column->constraints);
 
 	saw_nullable = false;
 	saw_default = false;
@@ -415,21 +413,6 @@ transformColumnDefinition(ParseState *pstate, CreateStmtContext *cxt,
 	foreach(clist, column->constraints)
 	{
 		constraint = lfirst(clist);
-
-		/*
-		 * If this column constraint is a FOREIGN KEY constraint, then we fill
-		 * in the current attribute's name and throw it into the list of FK
-		 * constraints to be processed later.
-		 */
-		if (IsA(constraint, FkConstraint))
-		{
-			FkConstraint *fkconstraint = (FkConstraint *) constraint;
-
-			fkconstraint->fk_attrs = list_make1(makeString(column->colname));
-			cxt->fkconstraints = lappend(cxt->fkconstraints, fkconstraint);
-			continue;
-		}
-
 		Assert(IsA(constraint, Constraint));
 
 		switch (constraint->contype)
@@ -439,7 +422,9 @@ transformColumnDefinition(ParseState *pstate, CreateStmtContext *cxt,
 					ereport(ERROR,
 							(errcode(ERRCODE_SYNTAX_ERROR),
 							 errmsg("conflicting NULL/NOT NULL declarations for column \"%s\" of table \"%s\"",
-								  column->colname, cxt->relation->relname)));
+									column->colname, cxt->relation->relname),
+							 parser_errposition(pstate,
+												constraint->location)));
 				column->is_not_null = FALSE;
 				saw_nullable = true;
 				break;
@@ -449,7 +434,9 @@ transformColumnDefinition(ParseState *pstate, CreateStmtContext *cxt,
 					ereport(ERROR,
 							(errcode(ERRCODE_SYNTAX_ERROR),
 							 errmsg("conflicting NULL/NOT NULL declarations for column \"%s\" of table \"%s\"",
-								  column->colname, cxt->relation->relname)));
+									column->colname, cxt->relation->relname),
+							 parser_errposition(pstate,
+												constraint->location)));
 				column->is_not_null = TRUE;
 				saw_nullable = true;
 				break;
@@ -459,7 +446,9 @@ transformColumnDefinition(ParseState *pstate, CreateStmtContext *cxt,
 					ereport(ERROR,
 							(errcode(ERRCODE_SYNTAX_ERROR),
 							 errmsg("multiple default values specified for column \"%s\" of table \"%s\"",
-								  column->colname, cxt->relation->relname)));
+									column->colname, cxt->relation->relname),
+							 parser_errposition(pstate,
+												constraint->location)));
 				column->raw_default = constraint->raw_expr;
 				Assert(constraint->cooked_expr == NULL);
 				saw_default = true;
@@ -474,6 +463,15 @@ transformColumnDefinition(ParseState *pstate, CreateStmtContext *cxt,
 
 			case CONSTR_CHECK:
 				cxt->ckconstraints = lappend(cxt->ckconstraints, constraint);
+				break;
+
+			case CONSTR_FOREIGN:
+				/*
+				 * Fill in the current attribute's name and throw it into the
+				 * list of FK constraints to be processed later.
+				 */
+				constraint->fk_attrs = list_make1(makeString(column->colname));
+				cxt->fkconstraints = lappend(cxt->fkconstraints, constraint);
 				break;
 
 			case CONSTR_ATTR_DEFERRABLE:
@@ -508,6 +506,10 @@ transformTableConstraint(ParseState *pstate, CreateStmtContext *cxt,
 
 		case CONSTR_CHECK:
 			cxt->ckconstraints = lappend(cxt->ckconstraints, constraint);
+			break;
+
+		case CONSTR_FOREIGN:
+			cxt->fkconstraints = lappend(cxt->fkconstraints, constraint);
 			break;
 
 		case CONSTR_NULL:
@@ -687,11 +689,11 @@ transformInhRelation(ParseState *pstate, CreateStmtContext *cxt,
 			change_varattnos_of_a_node(ccbin_node, attmap);
 
 			n->contype = CONSTR_CHECK;
-			n->name = pstrdup(ccname);
+			n->location = -1;
+			n->conname = pstrdup(ccname);
 			n->raw_expr = NULL;
 			n->cooked_expr = nodeToString(ccbin_node);
-			n->indexspace = NULL;
-			cxt->ckconstraints = lappend(cxt->ckconstraints, (Node *) n);
+			cxt->ckconstraints = lappend(cxt->ckconstraints, n);
 		}
 	}
 
@@ -801,15 +803,38 @@ generateClonedIndexStmt(CreateStmtContext *cxt, Relation source_idx,
 
 	/*
 	 * If the index is marked PRIMARY, it's certainly from a constraint; else,
-	 * if it's not marked UNIQUE, it certainly isn't; else, we have to search
-	 * pg_depend to see if there's an associated unique constraint.
+	 * if it's not marked UNIQUE, it certainly isn't.  If it is or might be
+	 * from a constraint, we have to fetch the constraint to check for
+	 * deferrability attributes.
 	 */
-	if (index->primary)
-		index->isconstraint = true;
-	else if (!index->unique)
-		index->isconstraint = false;
+	if (index->primary || index->unique)
+	{
+		Oid		constraintId = get_index_constraint(source_relid);
+
+		if (OidIsValid(constraintId))
+		{
+			HeapTuple	ht_constr;
+			Form_pg_constraint conrec;
+
+			ht_constr = SearchSysCache(CONSTROID,
+									   ObjectIdGetDatum(constraintId),
+									   0, 0, 0);
+			if (!HeapTupleIsValid(ht_constr))
+				elog(ERROR, "cache lookup failed for constraint %u",
+					 constraintId);
+			conrec = (Form_pg_constraint) GETSTRUCT(ht_constr);
+
+			index->isconstraint = true;
+			index->deferrable = conrec->condeferrable;
+			index->initdeferred = conrec->condeferred;
+
+			ReleaseSysCache(ht_constr);
+		}
+		else
+			index->isconstraint = false;
+	}
 	else
-		index->isconstraint = OidIsValid(get_index_constraint(source_relid));
+		index->isconstraint = false;
 
 	/* Get the index expressions, if any */
 	datum = SysCacheGetAttr(INDEXRELID, ht_idx,
@@ -1039,7 +1064,9 @@ transformIndexConstraints(ParseState *pstate, CreateStmtContext *cxt)
 
 			if (equal(index->indexParams, priorindex->indexParams) &&
 				equal(index->whereClause, priorindex->whereClause) &&
-				strcmp(index->accessMethod, priorindex->accessMethod) == 0)
+				strcmp(index->accessMethod, priorindex->accessMethod) == 0 &&
+				index->deferrable == priorindex->deferrable &&
+				index->initdeferred == priorindex->initdeferred)
 			{
 				priorindex->unique |= index->unique;
 
@@ -1092,9 +1119,11 @@ transformIndexConstraint(Constraint *constraint, CreateStmtContext *cxt)
 		 */
 	}
 	index->isconstraint = true;
+	index->deferrable = constraint->deferrable;
+	index->initdeferred = constraint->initdeferred;
 
-	if (constraint->name != NULL)
-		index->idxname = pstrdup(constraint->name);
+	if (constraint->conname != NULL)
+		index->idxname = pstrdup(constraint->conname);
 	else
 		index->idxname = NULL;	/* DefineIndex will choose name */
 
@@ -1253,9 +1282,9 @@ transformFKConstraints(ParseState *pstate, CreateStmtContext *cxt,
 	{
 		foreach(fkclist, cxt->fkconstraints)
 		{
-			FkConstraint *fkconstraint = (FkConstraint *) lfirst(fkclist);
+			Constraint *constraint = (Constraint *) lfirst(fkclist);
 
-			fkconstraint->skip_validation = true;
+			constraint->skip_validation = true;
 		}
 	}
 
@@ -1280,12 +1309,12 @@ transformFKConstraints(ParseState *pstate, CreateStmtContext *cxt,
 
 		foreach(fkclist, cxt->fkconstraints)
 		{
-			FkConstraint *fkconstraint = (FkConstraint *) lfirst(fkclist);
+			Constraint *constraint = (Constraint *) lfirst(fkclist);
 			AlterTableCmd *altercmd = makeNode(AlterTableCmd);
 
 			altercmd->subtype = AT_ProcessedConstraint;
 			altercmd->name = NULL;
-			altercmd->def = (Node *) fkconstraint;
+			altercmd->def = (Node *) constraint;
 			alterstmt->cmds = lappend(alterstmt->cmds, altercmd);
 		}
 
@@ -1756,12 +1785,11 @@ transformAlterTableStmt(AlterTableStmt *stmt, const char *queryString)
 				 * The original AddConstraint cmd node doesn't go to newcmds
 				 */
 				if (IsA(cmd->def, Constraint))
+				{
 					transformTableConstraint(pstate, &cxt,
 											 (Constraint *) cmd->def);
-				else if (IsA(cmd->def, FkConstraint))
-				{
-					cxt.fkconstraints = lappend(cxt.fkconstraints, cmd->def);
-					skipValidation = false;
+					if (((Constraint *) cmd->def)->contype == CONSTR_FOREIGN)
+						skipValidation = false;
 				}
 				else
 					elog(ERROR, "unrecognized node type: %d",
@@ -1853,109 +1881,117 @@ transformAlterTableStmt(AlterTableStmt *stmt, const char *queryString)
  * to attach constraint attributes to their primary constraint nodes
  * and detect inconsistent/misplaced constraint attributes.
  *
- * NOTE: currently, attributes are only supported for FOREIGN KEY primary
- * constraints, but someday they ought to be supported for other constraints.
+ * NOTE: currently, attributes are only supported for FOREIGN KEY, UNIQUE,
+ * and PRIMARY KEY constraints, but someday they ought to be supported
+ * for other constraint types.
  */
 static void
-transformConstraintAttrs(List *constraintList)
+transformConstraintAttrs(ParseState *pstate, List *constraintList)
 {
-	Node	   *lastprimarynode = NULL;
+	Constraint *lastprimarycon = NULL;
 	bool		saw_deferrability = false;
 	bool		saw_initially = false;
 	ListCell   *clist;
 
+#define SUPPORTS_ATTRS(node)				\
+	((node) != NULL &&						\
+	 ((node)->contype == CONSTR_PRIMARY ||	\
+	  (node)->contype == CONSTR_UNIQUE ||	\
+	  (node)->contype == CONSTR_FOREIGN))
+
 	foreach(clist, constraintList)
 	{
-		Node	   *node = lfirst(clist);
+		Constraint *con = (Constraint *) lfirst(clist);
 
-		if (!IsA(node, Constraint))
+		if (!IsA(con, Constraint))
+			elog(ERROR, "unrecognized node type: %d",
+				 (int) nodeTag(con));
+		switch (con->contype)
 		{
-			lastprimarynode = node;
-			/* reset flags for new primary node */
-			saw_deferrability = false;
-			saw_initially = false;
-		}
-		else
-		{
-			Constraint *con = (Constraint *) node;
+			case CONSTR_ATTR_DEFERRABLE:
+				if (!SUPPORTS_ATTRS(lastprimarycon))
+					ereport(ERROR,
+							(errcode(ERRCODE_SYNTAX_ERROR),
+							 errmsg("misplaced DEFERRABLE clause"),
+							 parser_errposition(pstate, con->location)));
+				if (saw_deferrability)
+					ereport(ERROR,
+							(errcode(ERRCODE_SYNTAX_ERROR),
+							 errmsg("multiple DEFERRABLE/NOT DEFERRABLE clauses not allowed"),
+							 parser_errposition(pstate, con->location)));
+				saw_deferrability = true;
+				lastprimarycon->deferrable = true;
+				break;
 
-			switch (con->contype)
-			{
-				case CONSTR_ATTR_DEFERRABLE:
-					if (lastprimarynode == NULL ||
-						!IsA(lastprimarynode, FkConstraint))
-						ereport(ERROR,
-								(errcode(ERRCODE_SYNTAX_ERROR),
-								 errmsg("misplaced DEFERRABLE clause")));
-					if (saw_deferrability)
-						ereport(ERROR,
-								(errcode(ERRCODE_SYNTAX_ERROR),
-								 errmsg("multiple DEFERRABLE/NOT DEFERRABLE clauses not allowed")));
-					saw_deferrability = true;
-					((FkConstraint *) lastprimarynode)->deferrable = true;
-					break;
-				case CONSTR_ATTR_NOT_DEFERRABLE:
-					if (lastprimarynode == NULL ||
-						!IsA(lastprimarynode, FkConstraint))
-						ereport(ERROR,
-								(errcode(ERRCODE_SYNTAX_ERROR),
-								 errmsg("misplaced NOT DEFERRABLE clause")));
-					if (saw_deferrability)
-						ereport(ERROR,
-								(errcode(ERRCODE_SYNTAX_ERROR),
-								 errmsg("multiple DEFERRABLE/NOT DEFERRABLE clauses not allowed")));
-					saw_deferrability = true;
-					((FkConstraint *) lastprimarynode)->deferrable = false;
-					if (saw_initially &&
-						((FkConstraint *) lastprimarynode)->initdeferred)
-						ereport(ERROR,
-								(errcode(ERRCODE_SYNTAX_ERROR),
-								 errmsg("constraint declared INITIALLY DEFERRED must be DEFERRABLE")));
-					break;
-				case CONSTR_ATTR_DEFERRED:
-					if (lastprimarynode == NULL ||
-						!IsA(lastprimarynode, FkConstraint))
-						ereport(ERROR,
-								(errcode(ERRCODE_SYNTAX_ERROR),
-							 errmsg("misplaced INITIALLY DEFERRED clause")));
-					if (saw_initially)
-						ereport(ERROR,
-								(errcode(ERRCODE_SYNTAX_ERROR),
-								 errmsg("multiple INITIALLY IMMEDIATE/DEFERRED clauses not allowed")));
-					saw_initially = true;
-					((FkConstraint *) lastprimarynode)->initdeferred = true;
+			case CONSTR_ATTR_NOT_DEFERRABLE:
+				if (!SUPPORTS_ATTRS(lastprimarycon))
+					ereport(ERROR,
+							(errcode(ERRCODE_SYNTAX_ERROR),
+							 errmsg("misplaced NOT DEFERRABLE clause"),
+							 parser_errposition(pstate, con->location)));
+				if (saw_deferrability)
+					ereport(ERROR,
+							(errcode(ERRCODE_SYNTAX_ERROR),
+							 errmsg("multiple DEFERRABLE/NOT DEFERRABLE clauses not allowed"),
+							 parser_errposition(pstate, con->location)));
+				saw_deferrability = true;
+				lastprimarycon->deferrable = false;
+				if (saw_initially &&
+					lastprimarycon->initdeferred)
+					ereport(ERROR,
+							(errcode(ERRCODE_SYNTAX_ERROR),
+							 errmsg("constraint declared INITIALLY DEFERRED must be DEFERRABLE"),
+							 parser_errposition(pstate, con->location)));
+				break;
 
-					/*
-					 * If only INITIALLY DEFERRED appears, assume DEFERRABLE
-					 */
-					if (!saw_deferrability)
-						((FkConstraint *) lastprimarynode)->deferrable = true;
-					else if (!((FkConstraint *) lastprimarynode)->deferrable)
-						ereport(ERROR,
-								(errcode(ERRCODE_SYNTAX_ERROR),
-								 errmsg("constraint declared INITIALLY DEFERRED must be DEFERRABLE")));
-					break;
-				case CONSTR_ATTR_IMMEDIATE:
-					if (lastprimarynode == NULL ||
-						!IsA(lastprimarynode, FkConstraint))
-						ereport(ERROR,
-								(errcode(ERRCODE_SYNTAX_ERROR),
-							errmsg("misplaced INITIALLY IMMEDIATE clause")));
-					if (saw_initially)
-						ereport(ERROR,
-								(errcode(ERRCODE_SYNTAX_ERROR),
-								 errmsg("multiple INITIALLY IMMEDIATE/DEFERRED clauses not allowed")));
-					saw_initially = true;
-					((FkConstraint *) lastprimarynode)->initdeferred = false;
-					break;
-				default:
-					/* Otherwise it's not an attribute */
-					lastprimarynode = node;
-					/* reset flags for new primary node */
-					saw_deferrability = false;
-					saw_initially = false;
-					break;
-			}
+			case CONSTR_ATTR_DEFERRED:
+				if (!SUPPORTS_ATTRS(lastprimarycon))
+					ereport(ERROR,
+							(errcode(ERRCODE_SYNTAX_ERROR),
+							 errmsg("misplaced INITIALLY DEFERRED clause"),
+							 parser_errposition(pstate, con->location)));
+				if (saw_initially)
+					ereport(ERROR,
+							(errcode(ERRCODE_SYNTAX_ERROR),
+							 errmsg("multiple INITIALLY IMMEDIATE/DEFERRED clauses not allowed"),
+							 parser_errposition(pstate, con->location)));
+				saw_initially = true;
+				lastprimarycon->initdeferred = true;
+
+				/*
+				 * If only INITIALLY DEFERRED appears, assume DEFERRABLE
+				 */
+				if (!saw_deferrability)
+					lastprimarycon->deferrable = true;
+				else if (!lastprimarycon->deferrable)
+					ereport(ERROR,
+							(errcode(ERRCODE_SYNTAX_ERROR),
+							 errmsg("constraint declared INITIALLY DEFERRED must be DEFERRABLE"),
+							 parser_errposition(pstate, con->location)));
+				break;
+
+			case CONSTR_ATTR_IMMEDIATE:
+				if (!SUPPORTS_ATTRS(lastprimarycon))
+					ereport(ERROR,
+							(errcode(ERRCODE_SYNTAX_ERROR),
+							 errmsg("misplaced INITIALLY IMMEDIATE clause"),
+							 parser_errposition(pstate, con->location)));
+				if (saw_initially)
+					ereport(ERROR,
+							(errcode(ERRCODE_SYNTAX_ERROR),
+							 errmsg("multiple INITIALLY IMMEDIATE/DEFERRED clauses not allowed"),
+							 parser_errposition(pstate, con->location)));
+				saw_initially = true;
+				lastprimarycon->initdeferred = false;
+				break;
+
+			default:
+				/* Otherwise it's not an attribute */
+				lastprimarycon = con;
+				/* reset flags for new primary node */
+				saw_deferrability = false;
+				saw_initially = false;
+				break;
 		}
 	}
 }
