@@ -1,4 +1,4 @@
-<!-- $PostgreSQL: pgsql/doc/src/sgml/catalogs.sgml,v 2.201 2009/07/01 23:57:33 tgl Exp $ -->
+<!-- $PostgreSQL: pgsql/doc/src/sgml/catalogs.sgml,v 2.203 2009/07/29 20:56:17 tgl Exp $ -->
 <!--
  Documentation of the system catalogs, directed toward PostgreSQL developers
  -->
@@ -1749,6 +1749,14 @@
      </row>
 
      <row>
+      <entry><structfield>conindid</structfield></entry>
+      <entry><type>oid</type></entry>
+      <entry><literal><link linkend="catalog-pg-class"><structname>pg_class</structname></link>.oid</literal></entry>
+      <entry>The index supporting this constraint, if it's a unique, primary
+       key, or foreign key constraint; else 0</entry>
+     </row>
+
+     <row>
       <entry><structfield>confrelid</structfield></entry>
       <entry><type>oid</type></entry>
       <entry><literal><link linkend="catalog-pg-class"><structname>pg_class</structname></link>.oid</literal></entry>
@@ -2664,6 +2672,14 @@
       <entry><type>bool</type></entry>
       <entry></entry>
       <entry>If true, this index represents the primary key of the table
+      (<structfield>indisunique</> should always be true when this is true)</entry>
+     </row>
+
+     <row>
+      <entry><structfield>indimmediate</structfield></entry>
+      <entry><type>bool</type></entry>
+      <entry></entry>
+      <entry>If true, the uniqueness check is enforced immediately on insertion
       (<structfield>indisunique</> should always be true when this is true)</entry>
      </row>
 
@@ -4511,6 +4527,13 @@
      </row>
 
      <row>
+      <entry><structfield>tgconstrindid</structfield></entry>
+      <entry><type>oid</type></entry>
+      <entry><literal><link linkend="catalog-pg-class"><structname>pg_class</structname></link>.oid</literal></entry>
+      <entry>The index supporting a unique, primary key, or referential integrity constraint</entry>
+     </row>
+
+     <row>
       <entry><structfield>tgconstraint</structfield></entry>
       <entry><type>oid</type></entry>
       <entry><literal><link linkend="catalog-pg-constraint"><structname>pg_constraint</structname></link>.oid</literal></entry>
@@ -4560,6 +4583,7 @@
     When <structfield>tgconstraint</> is nonzero,
     <structfield>tgisconstraint</> must be true, and
     <structfield>tgconstrname</>, <structfield>tgconstrrelid</>,
+    <structfield>tgconstrindid</>,
     <structfield>tgdeferrable</>, <structfield>tginitdeferred</> are redundant
     with the referenced <structname>pg_constraint</> entry.  The reason we
     keep these fields is that we support <quote>stand-alone</> constraint
