@@ -10,7 +10,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/tcop/utility.c,v 1.310 2009/07/16 06:33:44 petere Exp $
+ *	  $PostgreSQL: pgsql/src/backend/tcop/utility.c,v 1.313 2009/07/29 20:56:19 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -795,6 +795,8 @@ ProcessUtility(Node *parsetree,
 							stmt->unique,
 							stmt->primary,
 							stmt->isconstraint,
+							stmt->deferrable,
+							stmt->initdeferred,
 							false,		/* is_alter_table */
 							true,		/* check_rights */
 							false,		/* skip_build */
@@ -928,7 +930,8 @@ ProcessUtility(Node *parsetree,
 			break;
 
 		case T_CreateTrigStmt:
-			CreateTrigger((CreateTrigStmt *) parsetree, InvalidOid, true);
+			CreateTrigger((CreateTrigStmt *) parsetree,
+						  InvalidOid, InvalidOid, NULL, true);
 			break;
 
 		case T_DropPropertyStmt:
@@ -2316,10 +2319,20 @@ GetCommandLogLevel(Node *parsetree)
 		case T_ExplainStmt:
 			{
 				ExplainStmt *stmt = (ExplainStmt *) parsetree;
+				bool		 analyze = false;
+				ListCell	*lc;
 
 				/* Look through an EXPLAIN ANALYZE to the contained stmt */
-				if (stmt->analyze)
+				foreach(lc, stmt->options)
+				{
+					DefElem *opt = (DefElem *) lfirst(lc);
+
+					if (strcmp(opt->defname, "analyze") == 0)
+						analyze = defGetBoolean(opt);
+				}
+				if (analyze)
 					return GetCommandLogLevel(stmt->query);
+
 				/* Plain EXPLAIN isn't so interesting */
 				lev = LOGSTMT_ALL;
 			}
