@@ -28,11 +28,19 @@
  */
 #define LargeObjectRelationId  2613
 
-CATALOG(pg_largeobject,2613) BKI_WITHOUT_OIDS
+/*
+ * bytea_nocomp is a pseudo type which is an identical one
+ * except for its attstorage is 'e'.
+ * It is handled in bootstrap/bootstrap.c
+ */
+typedef bytea bytea_nocomp;
+
+CATALOG(pg_largeobject,2613)
 {
-	Oid			loid;			/* Identifier of large object */
-	int4		pageno;			/* Page number (starting from 0) */
-	bytea		data;			/* Data for page (may be zero-length) */
+	Oid				loown;		/* OID of the owner */
+	Oid				lonsp;		/* OID if the namespace */
+	aclitem			loacl[1];	/* access permissions */
+	bytea_nocomp	lodata;		/* contents of largeobejct */
 } FormData_pg_largeobject;
 
 /* ----------------
@@ -46,10 +54,11 @@ typedef FormData_pg_largeobject *Form_pg_largeobject;
  *		compiler constants for pg_largeobject
  * ----------------
  */
-#define Natts_pg_largeobject			3
-#define Anum_pg_largeobject_loid		1
-#define Anum_pg_largeobject_pageno		2
-#define Anum_pg_largeobject_data		3
+#define Natts_pg_largeobject			4
+#define Anum_pg_largeobject_loown		1
+#define Anum_pg_largeobject_lonsp		2
+#define Anum_pg_largeobject_loacl		3
+#define Anum_pg_largeobejct_lodata		4
 
 extern void LargeObjectCreate(Oid loid);
 extern void LargeObjectDrop(Oid loid);
