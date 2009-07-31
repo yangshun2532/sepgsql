@@ -115,6 +115,8 @@ static const struct typinfo TypInfo[] = {
 	F_BOOLIN, F_BOOLOUT},
 	{"bytea", BYTEAOID, 0, -1, false, 'i', 'x',
 	F_BYTEAIN, F_BYTEAOUT},
+	{"bytea_uncomp", BYTEAOID, 0, -1, false, 'i', 'e',
+	F_BYTEAIN, F_BYTEAOUT},
 	{"char", CHAROID, 0, 1, true, 'c', 'p',
 	F_CHARIN, F_CHAROUT},
 	{"int2", INT2OID, 0, 2, true, 's', 'p',
