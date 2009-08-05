@@ -1252,7 +1252,7 @@ ExecGrant_Database(InternalGrant *istmt)
 							old_acl, ownerId,
 							&grantorId, &avail_goptions);
 
-		/* Permission checks to grant/revoke privileges */
+		/* Permission checks */
 		ac_database_grant(datId, istmt->is_grant, istmt->privileges,
 						  grantorId, avail_goptions);
 
@@ -1976,16 +1976,18 @@ ExecGrant_Tablespace(InternalGrant *istmt)
 							old_acl, ownerId,
 							&grantorId, &avail_goptions);
 
+		/* Permission checks */
+		ac_tablespace_grant(tblId, istmt->is_grant, istmt->privileges,
+							grantorId, avail_goptions);
+
 		/*
 		 * Restrict the privileges to what we can actually grant, and emit the
 		 * standards-mandated warning and error messages.
 		 */
 		this_privileges =
-			restrict_and_check_grant(istmt->is_grant, avail_goptions,
-									 istmt->all_privs, istmt->privileges,
-									 tblId, grantorId, ACL_KIND_TABLESPACE,
-									 NameStr(pg_tablespace_tuple->spcname),
-									 0, NULL);
+			restrict_grant(istmt->is_grant, avail_goptions,
+						   istmt->all_privs, istmt->privileges,
+						   NameStr(pg_tablespace_tuple->spcname));
 
 		/*
 		 * Generate new ACL.

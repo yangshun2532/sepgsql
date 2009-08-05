@@ -5,6 +5,6 @@ subdir = src/backend/security/common
 top_builddir = ../../../..
 include $(top_builddir)/src/Makefile.global
 
-OBJS = ac_misc.o ac_database.o ac_namespace.o
+OBJS = ac_misc.o ac_database.o ac_namespace.o ac_tablespace.o
 
 include $(top_srcdir)/src/backend/common.mk

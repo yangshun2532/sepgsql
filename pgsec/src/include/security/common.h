@@ -63,4 +63,26 @@ ac_namespace_search(Oid nspOid, bool abort);
 extern void
 ac_namespace_comment(Oid nspOid);
 
+/* pg_tablespace */
+extern void
+ac_tablespace_create(const char *tblspcName);
+
+extern void
+ac_tablespace_alter(Oid tblspcOid, const char *newName,
+					Oid newOwner, Datum *newAcl);
+extern void
+ac_tablespace_drop(Oid tblspcOid, bool cascade);
+
+extern void
+ac_tablespace_grant(Oid tblspcOid, bool isGrant, AclMode privs,
+					Oid grantor, AclMode goptions);
+extern void
+ac_tablespace_calculate_size(Oid tblspcOid);
+
+extern bool
+ac_tablespace_for_temporary(Oid tblspcOid, bool abort);
+
+extern void
+ac_tablespace_comment(Oid tblspcOid);
+
 #endif

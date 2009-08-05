@@ -145,7 +145,7 @@ ac_database_alter(Oid datOid, const char *newName,
 		HeapTuple	dattup;
 		Datum		acldat;
 		bool		isnull;
-		Acl		   *acl;
+		Acl		   *acl = NULL;
 
 		/* Must be able to become new owner */
 		check_is_member_of_role(GetUserId(), newOwner);
@@ -169,6 +169,7 @@ ac_database_alter(Oid datOid, const char *newName,
 								0, 0, 0);
 		if (!HeapTupleIsValid(dattup))
 			elog(ERROR, "cache lookup failed for database %u", datOid);
+		datForm = (Form_pg_database) GETSTRUCT(dattup);
 
 		/*
 		 * Determine the modified ACL for the new owner.
@@ -176,16 +177,9 @@ ac_database_alter(Oid datOid, const char *newName,
 		acldat = SysCacheGetAttr(DATABASEOID, dattup,
 								 Anum_pg_database_datacl, &isnull);
 		if (!isnull)
-		{
-			datForm = (Form_pg_database) GETSTRUCT(dattup);
-
 			acl = aclnewowner(DatumGetAclP(acldat),
 							  datForm->datdba, newOwner);
-
-			*newAcl = PointerGetDatum(acl);
-		}
-		else
-			*newAcl = PointerGetDatum(NULL);
+		*newAcl = PointerGetDatum(acl);
 
 		ReleaseSysCache(dattup);
 	}
