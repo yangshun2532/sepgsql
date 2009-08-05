@@ -1851,17 +1851,18 @@ ExecGrant_Namespace(InternalGrant *istmt)
 							old_acl, ownerId,
 							&grantorId, &avail_goptions);
 
+		/* Permission checks */
+		ac_namespace_grant(nspid, istmt->is_grant, istmt->privileges,
+						   grantorId, avail_goptions);
+
 		/*
 		 * Restrict the privileges to what we can actually grant, and emit the
 		 * standards-mandated warning and error messages.
 		 */
 		this_privileges =
-			restrict_and_check_grant(istmt->is_grant, avail_goptions,
-									 istmt->all_privs, istmt->privileges,
-									 nspid, grantorId, ACL_KIND_NAMESPACE,
-									 NameStr(pg_namespace_tuple->nspname),
-									 0, NULL);
-
+			restrict_grant(istmt->is_grant, avail_goptions,
+						   istmt->all_privs, istmt->privileges,
+						   NameStr(pg_namespace_tuple->nspname));
 		/*
 		 * Generate new ACL.
 		 *

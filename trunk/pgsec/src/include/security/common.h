@@ -20,33 +20,37 @@ ac_database_alter(Oid datOid, const char *newName,
 				  Oid newTblspc, Oid newOwner, Datum *newAcl);
 extern void
 ac_database_drop(Oid datOid, bool cascade);
+
 extern void
 ac_database_grant(Oid datOid, bool isGrant, AclMode privileges,
 				  Oid grantor, AclMode goptions);
 extern void
 ac_database_connect(Oid datOid);
+
 extern void
 ac_database_calculate_size(Oid datOid);
+
 extern void
 ac_database_reindex(Oid datOid);
+
 extern void
 ac_database_comment(Oid datOid);
 
 /* pg_namespace */
 extern void
-ac_namespace_create(const char *nspName, bool isTemp);
+ac_namespace_create(const char *nspName, Oid nspOwner, bool isTemp);
 
 extern void
-ac_namespace_alter(Oid nspOid, const char *newName, Oid newOwner);
+ac_namespace_alter(Oid nspOid, const char *newName,
+				   Oid newOwner, Datum *newAcl);
+extern void
+ac_namespace_drop(Oid nspOid, bool cascade);
 
 extern void
-ac_namespace_drop(Oid nspOid);
-
-extern void
-ac_namespace_grant(Oid nspOid);
-
-extern void
-ac_namespace_search(Oid nspOid);
+ac_namespace_grant(Oid nspOid, bool isGrant, AclMode privs,
+				   Oid grantor, AclMode goptions);
+extern bool
+ac_namespace_search(Oid nspOid, bool abort);
 
 extern void
 ac_namespace_comment(Oid nspOid);

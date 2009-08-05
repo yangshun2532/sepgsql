@@ -25,8 +25,8 @@
 #include "commands/schemacmds.h"
 #include "miscadmin.h"
 #include "parser/parse_utilcmd.h"
+#include "security/common.h"
 #include "tcop/utility.h"
-#include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
 #include "utils/syscache.h"
@@ -61,19 +61,8 @@ CreateSchemaCommand(CreateSchemaStmt *stmt, const char *queryString)
 	else
 		owner_uid = saved_uid;
 
-	/*
-	 * To create a schema, must have schema-create privilege on the current
-	 * database and must be able to become the target role (this does not
-	 * imply that the target role itself must have create-schema privilege).
-	 * The latter provision guards against "giveaway" attacks.	Note that a
-	 * superuser will always have both of these privileges a fortiori.
-	 */
-	aclresult = pg_database_aclcheck(MyDatabaseId, saved_uid, ACL_CREATE);
-	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, ACL_KIND_DATABASE,
-					   get_database_name(MyDatabaseId));
-
-	check_is_member_of_role(saved_uid, owner_uid);
+	/* Permission check to create a new namespace */
+	ac_namespace_create(schemaName, owner_uid, false);
 
 	/* Additional check to protect reserved schema names */
 	if (!allowSystemTableMods && IsReservedName(schemaName))
@@ -200,9 +189,7 @@ RemoveSchemas(DropStmt *drop)
 		}
 
 		/* Permission check */
-		if (!pg_namespace_ownercheck(namespaceId, GetUserId()))
-			aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_NAMESPACE,
-						   namespaceName);
+		ac_namespace_drop(namespaceId, false);
 
 		object.classId = NamespaceRelationId;
 		object.objectId = namespaceId;
@@ -275,16 +262,9 @@ RenameSchema(const char *oldname, const char *newname)
 				(errcode(ERRCODE_DUPLICATE_SCHEMA),
 				 errmsg("schema \"%s\" already exists", newname)));
 
-	/* must be owner */
-	if (!pg_namespace_ownercheck(HeapTupleGetOid(tup), GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_NAMESPACE,
-					   oldname);
-
-	/* must have CREATE privilege on database */
-	aclresult = pg_database_aclcheck(MyDatabaseId, GetUserId(), ACL_CREATE);
-	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, ACL_KIND_DATABASE,
-					   get_database_name(MyDatabaseId));
+	/* Permission check to rename the namespace */
+	ac_namespace_alter(HeapTupleGetOid(tup), newname,
+					   InvalidOid, NULL);
 
 	if (!allowSystemTableMods && IsReservedName(newname))
 		ereport(ERROR,
@@ -368,34 +348,12 @@ AlterSchemaOwner_internal(HeapTuple tup, Relation rel, Oid newOwnerId)
 		Datum		repl_val[Natts_pg_namespace];
 		bool		repl_null[Natts_pg_namespace];
 		bool		repl_repl[Natts_pg_namespace];
-		Acl		   *newAcl;
 		Datum		aclDatum;
-		bool		isNull;
 		HeapTuple	newtuple;
-		AclResult	aclresult;
 
-		/* Otherwise, must be owner of the existing object */
-		if (!pg_namespace_ownercheck(HeapTupleGetOid(tup), GetUserId()))
-			aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_NAMESPACE,
-						   NameStr(nspForm->nspname));
-
-		/* Must be able to become new owner */
-		check_is_member_of_role(GetUserId(), newOwnerId);
-
-		/*
-		 * must have create-schema rights
-		 *
-		 * NOTE: This is different from other alter-owner checks in that the
-		 * current user is checked for create privileges instead of the
-		 * destination owner.  This is consistent with the CREATE case for
-		 * schemas.  Because superusers will always have this right, we need
-		 * no special case for them.
-		 */
-		aclresult = pg_database_aclcheck(MyDatabaseId, GetUserId(),
-										 ACL_CREATE);
-		if (aclresult != ACLCHECK_OK)
-			aclcheck_error(aclresult, ACL_KIND_DATABASE,
-						   get_database_name(MyDatabaseId));
+		/* Permission check to change the namespace owner */
+		ac_namespace_alter(HeapTupleGetOid(tup), NULL,
+						   newOwnerId, &aclDatum);
 
 		memset(repl_null, false, sizeof(repl_null));
 		memset(repl_repl, false, sizeof(repl_repl));
@@ -403,22 +361,14 @@ AlterSchemaOwner_internal(HeapTuple tup, Relation rel, Oid newOwnerId)
 		repl_repl[Anum_pg_namespace_nspowner - 1] = true;
 		repl_val[Anum_pg_namespace_nspowner - 1] = ObjectIdGetDatum(newOwnerId);
 
-		/*
-		 * Determine the modified ACL for the new owner.  This is only
-		 * necessary when the ACL is non-null.
-		 */
-		aclDatum = SysCacheGetAttr(NAMESPACENAME, tup,
-								   Anum_pg_namespace_nspacl,
-								   &isNull);
-		if (!isNull)
+		if (DatumGetPointer(aclDatum) != NULL)
 		{
-			newAcl = aclnewowner(DatumGetAclP(aclDatum),
-								 nspForm->nspowner, newOwnerId);
 			repl_repl[Anum_pg_namespace_nspacl - 1] = true;
-			repl_val[Anum_pg_namespace_nspacl - 1] = PointerGetDatum(newAcl);
+			repl_val[Anum_pg_namespace_nspacl - 1] = aclDatum;
 		}
 
-		newtuple = heap_modify_tuple(tup, RelationGetDescr(rel), repl_val, repl_null, repl_repl);
+		newtuple = heap_modify_tuple(tup, RelationGetDescr(rel),
+									 repl_val, repl_null, repl_repl);
 
 		simple_heap_update(rel, &newtuple->t_self, newtuple);
 		CatalogUpdateIndexes(rel, newtuple);

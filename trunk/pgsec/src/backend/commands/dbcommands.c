@@ -1502,12 +1502,11 @@ AlterDatabaseOwner(const char *dbname, Oid newOwnerId)
 		repl_repl[Anum_pg_database_datdba - 1] = true;
 		repl_val[Anum_pg_database_datdba - 1] = ObjectIdGetDatum(newOwnerId);
 
-		/* ACL also needs to be modified for new owner */
-		repl_repl[Anum_pg_database_datacl - 1] = true;
-		if (DatumGetPointer(aclDatum) != NULL)
+		if (DatumGetPointer(aclDatum))
+		{
+			repl_repl[Anum_pg_database_datacl - 1] = true;
 			repl_val[Anum_pg_database_datacl - 1] = aclDatum;
-		else
-			repl_null[Anum_pg_database_datacl - 1] = true;
+		}
 
 		newtuple = heap_modify_tuple(tuple, RelationGetDescr(rel),
 									 repl_val, repl_null, repl_repl);
