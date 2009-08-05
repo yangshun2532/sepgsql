@@ -1,6 +1,6 @@
 /*
- * src/backend/security/common/qryperms.c
- *   common access control abstration corresponding to regular queries.
+ * src/backend/security/common/ac_misc.c
+ *   common access control abstration for misc objects
  *
  * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
@@ -19,10 +19,10 @@
  * [Params]
  *   relOid        : OID of the target relation
  *   roleId        : OID of the database role to be evaluated
- *   requiredPerms : 
- *   selectedCols  : 
- *   modifiedCols  : 
- *   abort         : 
+ *   requiredPerms : mask of permission bits
+ *   selectedCols  : bitmapset of referenced columns
+ *   modifiedCols  : bitmapset of modified columns
+ *   abort         : Trus, if caller want to raise an error, if violated
  */
 bool
 ac_relation_perms(Oid relOid, Oid roleId, AclMode requiredPerms,
