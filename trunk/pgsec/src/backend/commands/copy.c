@@ -21,6 +21,7 @@
 #include <arpa/inet.h>
 
 #include "access/heapam.h"
+#include "access/sysattr.h"
 #include "access/xact.h"
 #include "catalog/namespace.h"
 #include "catalog/pg_type.h"
@@ -34,6 +35,7 @@
 #include "optimizer/planner.h"
 #include "parser/parse_relation.h"
 #include "rewrite/rewriteHandler.h"
+#include "security/common.h"
 #include "storage/fd.h"
 #include "tcop/tcopprot.h"
 #include "utils/acl.h"
@@ -723,9 +725,6 @@ DoCopy(const CopyStmt *stmt, const char *queryString)
 	List	   *force_quote = NIL;
 	List	   *force_notnull = NIL;
 	bool		force_quote_all = false;
-	AclMode		required_access = (is_from ? ACL_INSERT : ACL_SELECT);
-	AclMode		relPerms;
-	AclMode		remainingPerms;
 	ListCell   *option;
 	TupleDesc	tupDesc;
 	int			num_phys_attrs;
@@ -971,6 +970,10 @@ DoCopy(const CopyStmt *stmt, const char *queryString)
 
 	if (stmt->relation)
 	{
+		Bitmapset  *columnsSet = NULL;
+		List	   *attnums;
+		ListCell   *cur;
+
 		Assert(!stmt->query);
 		cstate->queryDesc = NULL;
 
@@ -981,28 +984,19 @@ DoCopy(const CopyStmt *stmt, const char *queryString)
 		tupDesc = RelationGetDescr(cstate->rel);
 
 		/* Check relation permissions. */
-		relPerms = pg_class_aclmask(RelationGetRelid(cstate->rel), GetUserId(),
-									required_access, ACLMASK_ALL);
-		remainingPerms = required_access & ~relPerms;
-		if (remainingPerms != 0)
+		attnums = CopyGetAttnums(tupDesc, cstate->rel, attnamelist);
+		foreach(cur, attnums)
 		{
-			/* We don't have table permissions, check per-column permissions */
-			List	   *attnums;
-			ListCell   *cur;
-
-			attnums = CopyGetAttnums(tupDesc, cstate->rel, attnamelist);
-			foreach(cur, attnums)
-			{
-				int			attnum = lfirst_int(cur);
-
-				if (pg_attribute_aclcheck(RelationGetRelid(cstate->rel),
-										  attnum,
-										  GetUserId(),
-										  remainingPerms) != ACLCHECK_OK)
-					aclcheck_error(ACLCHECK_NO_PRIV, ACL_KIND_CLASS,
-								   RelationGetRelationName(cstate->rel));
-			}
+			columnsSet = bms_add_member(columnsSet,
+							lfirst_int(cur) - FirstLowInvalidHeapAttributeNumber);
 		}
+
+		if (is_from)
+			ac_relation_perms(RelationGetRelid(cstate->rel), GetUserId(),
+							  ACL_INSERT, NULL, columnsSet, true);
+		else
+			ac_relation_perms(RelationGetRelid(cstate->rel), GetUserId(),
+							  ACL_SELECT, columnsSet, NULL, true);
 
 		/* check read-only transaction */
 		if (XactReadOnly && is_from && !cstate->rel->rd_islocaltemp)

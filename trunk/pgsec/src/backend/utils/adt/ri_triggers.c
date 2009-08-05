@@ -30,6 +30,7 @@
 
 #include "postgres.h"
 
+#include "access/sysattr.h"
 #include "access/xact.h"
 #include "catalog/pg_constraint.h"
 #include "catalog/pg_operator.h"
@@ -39,7 +40,7 @@
 #include "parser/parse_coerce.h"
 #include "parser/parse_relation.h"
 #include "miscadmin.h"
-#include "utils/acl.h"
+#include "security/common.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
 #include "utils/guc.h"
@@ -2624,12 +2625,17 @@ RI_Initial_Check(Trigger *trigger, Relation fk_rel, Relation pk_rel)
 	char		fkrelname[MAX_QUOTED_REL_NAME_LEN];
 	char		pkattname[MAX_QUOTED_NAME_LEN + 3];
 	char		fkattname[MAX_QUOTED_NAME_LEN + 3];
+	Bitmapset  *pkColumns = NULL;
+	Bitmapset  *fkColumns = NULL;
 	const char *sep;
 	int			i;
 	int			old_work_mem;
 	char		workmembuf[32];
 	int			spi_result;
 	SPIPlanPtr	qplan;
+
+
+	ri_FetchConstraintInfo(&riinfo, trigger, fk_rel, false);
 
 	/*
 	 * Check to make sure current user has enough permissions to do the test
@@ -2638,12 +2644,20 @@ RI_Initial_Check(Trigger *trigger, Relation fk_rel, Relation pk_rel)
 	 *
 	 * XXX are there any other show-stopper conditions to check?
 	 */
-	if (pg_class_aclcheck(RelationGetRelid(fk_rel), GetUserId(), ACL_SELECT) != ACLCHECK_OK)
-		return false;
-	if (pg_class_aclcheck(RelationGetRelid(pk_rel), GetUserId(), ACL_SELECT) != ACLCHECK_OK)
-		return false;
+	for (i = 0; i < riinfo.nkeys; i++)
+	{
+		fkColumns = bms_add_member(fkColumns, riinfo.fk_attnums[i]
+									- FirstLowInvalidHeapAttributeNumber);
+		pkColumns = bms_add_member(pkColumns, riinfo.pk_attnums[i]
+									- FirstLowInvalidHeapAttributeNumber);
+	}
 
-	ri_FetchConstraintInfo(&riinfo, trigger, fk_rel, false);
+	if (!ac_relation_perms(RelationGetRelid(fk_rel), GetUserId(),
+						   ACL_SELECT, fkColumns, NULL, false))
+		return false;
+	if (!ac_relation_perms(RelationGetRelid(pk_rel), GetUserId(),
+						   ACL_SELECT, pkColumns, NULL, false))
+		return false;
 
 	/*----------
 	 * The query string built is:
