@@ -9,7 +9,15 @@
 #define SECURITY_COMMON_H
 
 #include "utils/acl.h"
+#include "nodes/bitmapset.h"
 
+/* regular query permissions */
+extern bool
+ac_relation_perms(Oid relOid, Oid roleId,
+				  AclMode requiredPerms,
+				  Bitmapset *selectedCols,
+				  Bitmapset *modifiedCols,
+				  bool abort);
 /* pg_dataabse */
 extern void
 ac_database_create(const char *datName,
@@ -54,9 +62,5 @@ ac_namespace_search(Oid nspOid, bool abort);
 
 extern void
 ac_namespace_comment(Oid nspOid);
-
-
-
-
 
 #endif
