@@ -734,10 +734,8 @@ CommentNamespace(List *qualname, char *comment)
 				(errcode(ERRCODE_UNDEFINED_SCHEMA),
 				 errmsg("schema \"%s\" does not exist", namespace)));
 
-	/* Check object security */
-	if (!pg_namespace_ownercheck(oid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_NAMESPACE,
-					   namespace);
+	/* Permission checks */
+	ac_namespace_comment(oid);
 
 	/* Call CreateComments() to create/drop the comments */
 	CreateComments(oid, NamespaceRelationId, 0, comment);

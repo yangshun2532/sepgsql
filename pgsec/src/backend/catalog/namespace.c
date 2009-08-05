@@ -39,9 +39,9 @@
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
 #include "parser/parse_func.h"
+#include "security/common.h"
 #include "storage/backendid.h"
 #include "storage/ipc.h"
-#include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/guc.h"
 #include "utils/inval.h"
@@ -2099,13 +2099,15 @@ Oid
 LookupExplicitNamespace(const char *nspname)
 {
 	Oid			namespaceId;
-	AclResult	aclresult;
 
 	/* check for pg_temp alias */
 	if (strcmp(nspname, "pg_temp") == 0)
 	{
 		if (OidIsValid(myTempNamespace))
+		{
+			ac_namespace_search(myTempNamespace, true);
 			return myTempNamespace;
+		}
 
 		/*
 		 * Since this is used only for looking up existing objects, there is
@@ -2123,10 +2125,8 @@ LookupExplicitNamespace(const char *nspname)
 				(errcode(ERRCODE_UNDEFINED_SCHEMA),
 				 errmsg("schema \"%s\" does not exist", nspname)));
 
-	aclresult = pg_namespace_aclcheck(namespaceId, GetUserId(), ACL_USAGE);
-	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
-					   nspname);
+	/* Permission checks. */
+	ac_namespace_search(namespaceId, true);
 
 	return namespaceId;
 }
@@ -2721,8 +2721,7 @@ recomputeNamespacePath(void)
 				ReleaseSysCache(tuple);
 				if (OidIsValid(namespaceId) &&
 					!list_member_oid(oidlist, namespaceId) &&
-					pg_namespace_aclcheck(namespaceId, roleid,
-										  ACL_USAGE) == ACLCHECK_OK)
+					ac_namespace_search(namespaceId, false))
 					oidlist = lappend_oid(oidlist, namespaceId);
 			}
 		}
@@ -2731,7 +2730,8 @@ recomputeNamespacePath(void)
 			/* pg_temp --- substitute temp namespace, if any */
 			if (OidIsValid(myTempNamespace))
 			{
-				if (!list_member_oid(oidlist, myTempNamespace))
+				if (!list_member_oid(oidlist, myTempNamespace) &&
+					ac_namespace_search(myTempNamespace, false))
 					oidlist = lappend_oid(oidlist, myTempNamespace);
 			}
 			else
@@ -2749,8 +2749,7 @@ recomputeNamespacePath(void)
 										 0, 0, 0);
 			if (OidIsValid(namespaceId) &&
 				!list_member_oid(oidlist, namespaceId) &&
-				pg_namespace_aclcheck(namespaceId, roleid,
-									  ACL_USAGE) == ACLCHECK_OK)
+				ac_namespace_search(namespaceId, false))
 				oidlist = lappend_oid(oidlist, namespaceId);
 		}
 	}
@@ -2819,24 +2818,10 @@ InitTempTableNamespace(void)
 
 	Assert(!OidIsValid(myTempNamespace));
 
-	/*
-	 * First, do permission check to see if we are authorized to make temp
-	 * tables.	We use a nonstandard error message here since "databasename:
-	 * permission denied" might be a tad cryptic.
-	 *
-	 * Note that ACL_CREATE_TEMP rights are rechecked in pg_namespace_aclmask;
-	 * that's necessary since current user ID could change during the session.
-	 * But there's no need to make the namespace in the first place until a
-	 * temp table creation request is made by someone with appropriate rights.
-	 */
-	if (pg_database_aclcheck(MyDatabaseId, GetUserId(),
-							 ACL_CREATE_TEMP) != ACLCHECK_OK)
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("permission denied to create temporary tables in database \"%s\"",
-						get_database_name(MyDatabaseId))));
-
 	snprintf(namespaceName, sizeof(namespaceName), "pg_temp_%d", MyBackendId);
+
+	/* Permission check to create a temporary namespace */
+	ac_namespace_create(namespaceName, BOOTSTRAP_SUPERUSERID, true);
 
 	namespaceId = GetSysCacheOid(NAMESPACENAME,
 								 CStringGetDatum(namespaceName),
