@@ -201,18 +201,8 @@ CheckMyDatabase(const char *name, bool am_superuser)
 			 errmsg("database \"%s\" is not currently accepting connections",
 					name)));
 
-		/*
-		 * Check privilege to connect to the database.	(The am_superuser test
-		 * is redundant, but since we have the flag, might as well check it
-		 * and save a few cycles.)
-		 */
-		if (!am_superuser &&
-			pg_database_aclcheck(MyDatabaseId, GetUserId(),
-								 ACL_CONNECT) != ACLCHECK_OK)
-			ereport(FATAL,
-					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-					 errmsg("permission denied for database \"%s\"", name),
-					 errdetail("User does not have CONNECT privilege.")));
+		/* Permission check to connect to the database. */
+		ac_database_connect(MyDatabaseId);
 
 		/*
 		 * Check connection limit for this database.

@@ -43,6 +43,7 @@
 #include "foreign/foreign.h"
 #include "miscadmin.h"
 #include "parser/parse_func.h"
+#include "security/common.h"
 #include "utils/acl.h"
 #include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
@@ -235,6 +236,50 @@ restrict_and_check_grant(bool is_grant, AclMode avail_goptions, bool all_privs,
 				aclcheck_error(ACLCHECK_NO_PRIV, objkind, objname);
 		}
 	}
+
+	/*
+	 * Restrict the operation to what we can actually grant or revoke, and
+	 * issue a warning if appropriate.	(For REVOKE this isn't quite what the
+	 * spec says to do: the spec seems to want a warning only if no privilege
+	 * bits actually change in the ACL. In practice that behavior seems much
+	 * too noisy, as well as inconsistent with the GRANT case.)
+	 */
+	this_privileges = privileges & ACL_OPTION_TO_PRIVS(avail_goptions);
+	if (is_grant)
+	{
+		if (this_privileges == 0)
+			ereport(WARNING,
+					(errcode(ERRCODE_WARNING_PRIVILEGE_NOT_GRANTED),
+				  errmsg("no privileges were granted for \"%s\"", objname)));
+		else if (!all_privs && this_privileges != privileges)
+			ereport(WARNING,
+					(errcode(ERRCODE_WARNING_PRIVILEGE_NOT_GRANTED),
+			 errmsg("not all privileges were granted for \"%s\"", objname)));
+	}
+	else
+	{
+		if (this_privileges == 0)
+			ereport(WARNING,
+					(errcode(ERRCODE_WARNING_PRIVILEGE_NOT_REVOKED),
+			  errmsg("no privileges could be revoked for \"%s\"", objname)));
+		else if (!all_privs && this_privileges != privileges)
+			ereport(WARNING,
+					(errcode(ERRCODE_WARNING_PRIVILEGE_NOT_REVOKED),
+					 errmsg("not all privileges could be revoked for \"%s\"", objname)));
+	}
+
+	return this_privileges;
+}
+
+/*
+ * Restrict the privileges to what we can actually grant, and emit
+ * the standards-mandated warning and error messages.
+ */
+static AclMode
+restrict_grant(bool is_grant, AclMode avail_goptions, bool all_privs,
+			   AclMode privileges, const char *objname)
+{
+	AclMode	this_privileges;
 
 	/*
 	 * Restrict the operation to what we can actually grant or revoke, and
@@ -1207,16 +1252,18 @@ ExecGrant_Database(InternalGrant *istmt)
 							old_acl, ownerId,
 							&grantorId, &avail_goptions);
 
+		/* Permission checks to grant/revoke privileges */
+		ac_database_grant(datId, istmt->is_grant, istmt->privileges,
+						  grantorId, avail_goptions);
+
 		/*
 		 * Restrict the privileges to what we can actually grant, and emit the
 		 * standards-mandated warning and error messages.
 		 */
 		this_privileges =
-			restrict_and_check_grant(istmt->is_grant, avail_goptions,
-									 istmt->all_privs, istmt->privileges,
-									 datId, grantorId, ACL_KIND_DATABASE,
-									 NameStr(pg_database_tuple->datname),
-									 0, NULL);
+			restrict_grant(istmt->is_grant, avail_goptions,
+						   istmt->all_privs, istmt->privileges,
+						   NameStr(pg_database_tuple->datname));
 
 		/*
 		 * Generate new ACL.
