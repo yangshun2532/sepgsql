@@ -665,9 +665,8 @@ CommentTablespace(List *qualname, char *comment)
 		return;
 	}
 
-	/* Check object security */
-	if (!pg_tablespace_ownercheck(oid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_TABLESPACE, tablespace);
+	/* Permission checks */
+	ac_tablespace_comment(oid);
 
 	/* Call CreateSharedComments() to create/drop the comments */
 	CreateSharedComments(oid, TableSpaceRelationId, comment);

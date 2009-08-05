@@ -23,7 +23,6 @@
 #include "miscadmin.h"
 #include "security/common.h"
 #include "storage/fd.h"
-#include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/rel.h"
 #include "utils/syscache.h"
@@ -156,20 +155,9 @@ calculate_tablespace_size(Oid tblspcOid)
 	int64		totalsize = 0;
 	DIR		   *dirdesc;
 	struct dirent *direntry;
-	AclResult	aclresult;
 
-	/*
-	 * User must have CREATE privilege for target tablespace, either
-	 * explicitly granted or implicitly because it is default for current
-	 * database.
-	 */
-	if (tblspcOid != MyDatabaseTableSpace)
-	{
-		aclresult = pg_tablespace_aclcheck(tblspcOid, GetUserId(), ACL_CREATE);
-		if (aclresult != ACLCHECK_OK)
-			aclcheck_error(aclresult, ACL_KIND_TABLESPACE,
-						   get_tablespace_name(tblspcOid));
-	}
+	/* Permission check to calculate database size */
+	ac_tablespace_calculate_size(tblspcOid);
 
 	if (tblspcOid == DEFAULTTABLESPACE_OID)
 		snprintf(tblspcPath, MAXPGPATH, "base");

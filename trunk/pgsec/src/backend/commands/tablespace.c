@@ -59,8 +59,8 @@
 #include "commands/tablespace.h"
 #include "miscadmin.h"
 #include "postmaster/bgwriter.h"
+#include "security/common.h"
 #include "storage/fd.h"
-#include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
 #include "utils/guc.h"
@@ -204,13 +204,8 @@ CreateTableSpace(CreateTableSpaceStmt *stmt)
 	char	   *linkloc;
 	Oid			ownerId;
 
-	/* Must be super user */
-	if (!superuser())
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("permission denied to create tablespace \"%s\"",
-						stmt->tablespacename),
-				 errhint("Must be superuser to create a tablespace.")));
+	/* Permission check to create a new tablespace */
+	ac_tablespace_create(stmt->tablespacename);
 
 	/* However, the eventual owner of the tablespace need not be */
 	if (stmt->owner)
@@ -429,10 +424,8 @@ DropTableSpace(DropTableSpaceStmt *stmt)
 
 	tablespaceoid = HeapTupleGetOid(tuple);
 
-	/* Must be tablespace owner */
-	if (!pg_tablespace_ownercheck(tablespaceoid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_TABLESPACE,
-					   tablespacename);
+	/* Permission checks */
+	ac_tablespace_drop(tablespaceoid, false);
 
 	/* Disallow drop of the standard tablespaces, even by superuser */
 	if (tablespaceoid == GLOBALTABLESPACE_OID ||
@@ -775,9 +768,8 @@ RenameTableSpace(const char *oldname, const char *newname)
 
 	heap_endscan(scan);
 
-	/* Must be owner */
-	if (!pg_tablespace_ownercheck(HeapTupleGetOid(newtuple), GetUserId()))
-		aclcheck_error(ACLCHECK_NO_PRIV, ACL_KIND_TABLESPACE, oldname);
+	/* Permission checks to rename */
+	ac_tablespace_alter(HeapTupleGetOid(newtuple), newname, InvalidOid, NULL);
 
 	/* Validate new name */
 	if (!allowSystemTableMods && IsReservedName(newname))
@@ -847,18 +839,12 @@ AlterTableSpaceOwner(const char *name, Oid newOwnerId)
 		Datum		repl_val[Natts_pg_tablespace];
 		bool		repl_null[Natts_pg_tablespace];
 		bool		repl_repl[Natts_pg_tablespace];
-		Acl		   *newAcl;
 		Datum		aclDatum;
-		bool		isNull;
 		HeapTuple	newtuple;
 
-		/* Otherwise, must be owner of the existing object */
-		if (!pg_tablespace_ownercheck(HeapTupleGetOid(tup), GetUserId()))
-			aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_TABLESPACE,
-						   name);
-
-		/* Must be able to become new owner */
-		check_is_member_of_role(GetUserId(), newOwnerId);
+		/* Permission checks to change tablespace owner */
+		ac_tablespace_alter(HeapTupleGetOid(tup), NULL,
+							newOwnerId, &aclDatum);
 
 		/*
 		 * Normally we would also check for create permissions here, but there
@@ -876,23 +862,14 @@ AlterTableSpaceOwner(const char *name, Oid newOwnerId)
 		repl_repl[Anum_pg_tablespace_spcowner - 1] = true;
 		repl_val[Anum_pg_tablespace_spcowner - 1] = ObjectIdGetDatum(newOwnerId);
 
-		/*
-		 * Determine the modified ACL for the new owner.  This is only
-		 * necessary when the ACL is non-null.
-		 */
-		aclDatum = heap_getattr(tup,
-								Anum_pg_tablespace_spcacl,
-								RelationGetDescr(rel),
-								&isNull);
-		if (!isNull)
+		if (DatumGetPointer(aclDatum))
 		{
-			newAcl = aclnewowner(DatumGetAclP(aclDatum),
-								 spcForm->spcowner, newOwnerId);
 			repl_repl[Anum_pg_tablespace_spcacl - 1] = true;
-			repl_val[Anum_pg_tablespace_spcacl - 1] = PointerGetDatum(newAcl);
+			repl_val[Anum_pg_tablespace_spcacl - 1] = aclDatum;
 		}
 
-		newtuple = heap_modify_tuple(tup, RelationGetDescr(rel), repl_val, repl_null, repl_repl);
+		newtuple = heap_modify_tuple(tup, RelationGetDescr(rel),
+									 repl_val, repl_null, repl_repl);
 
 		simple_heap_update(rel, &newtuple->t_self, newtuple);
 		CatalogUpdateIndexes(rel, newtuple);
@@ -996,6 +973,7 @@ assign_temp_tablespaces(const char *newval, bool doit, GucSource source)
 {
 	char	   *rawname;
 	List	   *namelist;
+	bool		abort = (source >= PGC_S_INTERACTIVE ? true : false);
 
 	/* Need a modifiable copy of string */
 	rawname = pstrdup(newval);
@@ -1032,7 +1010,6 @@ assign_temp_tablespaces(const char *newval, bool doit, GucSource source)
 		{
 			char	   *curname = (char *) lfirst(l);
 			Oid			curoid;
-			AclResult	aclresult;
 
 			/* Allow an empty string (signifying database default) */
 			if (curname[0] == '\0')
@@ -1068,14 +1045,8 @@ assign_temp_tablespaces(const char *newval, bool doit, GucSource source)
 			}
 
 			/* Check permissions similarly */
-			aclresult = pg_tablespace_aclcheck(curoid, GetUserId(),
-											   ACL_CREATE);
-			if (aclresult != ACLCHECK_OK)
-			{
-				if (source >= PGC_S_INTERACTIVE)
-					aclcheck_error(aclresult, ACL_KIND_TABLESPACE, curname);
+			if (!ac_tablespace_for_temporary(curoid, abort))
 				continue;
-			}
 
 			tblSpcs[numSpcs++] = curoid;
 		}
@@ -1144,7 +1115,6 @@ PrepareTempTablespaces(void)
 	{
 		char	   *curname = (char *) lfirst(l);
 		Oid			curoid;
-		AclResult	aclresult;
 
 		/* Allow an empty string (signifying database default) */
 		if (curname[0] == '\0')
@@ -1172,9 +1142,7 @@ PrepareTempTablespaces(void)
 		}
 
 		/* Check permissions similarly */
-		aclresult = pg_tablespace_aclcheck(curoid, GetUserId(),
-										   ACL_CREATE);
-		if (aclresult != ACLCHECK_OK)
+		if (!ac_tablespace_for_temporary(curoid, false))
 			continue;
 
 		tblSpcs[numSpcs++] = curoid;
