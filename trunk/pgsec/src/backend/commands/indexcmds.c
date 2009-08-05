@@ -37,6 +37,7 @@
 #include "parser/parse_coerce.h"
 #include "parser/parse_func.h"
 #include "parser/parsetree.h"
+#include "security/common.h"
 #include "storage/lmgr.h"
 #include "storage/proc.h"
 #include "storage/procarray.h"
@@ -1410,9 +1411,8 @@ ReindexDatabase(const char *databaseName, bool do_system, bool do_user)
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("can only reindex the currently open database")));
 
-	if (!pg_database_ownercheck(MyDatabaseId, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_DATABASE,
-					   databaseName);
+	/* Permission checks */
+	ac_database_reindex(MyDatabaseId);
 
 	/*
 	 * Create a memory context that will survive forced transaction commits we
