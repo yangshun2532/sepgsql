@@ -27,7 +27,7 @@
 #include "libpq/pqformat.h"
 #include "miscadmin.h"
 #include "parser/parsetree.h"
-#include "utils/acl.h"
+#include "security/common.h"
 #include "utils/builtins.h"
 #include "utils/rel.h"
 #include "utils/tqual.h"
@@ -342,11 +342,8 @@ currtid_byreloid(PG_FUNCTION_ARGS)
 
 	rel = heap_open(reloid, AccessShareLock);
 
-	aclresult = pg_class_aclcheck(RelationGetRelid(rel), GetUserId(),
-								  ACL_SELECT);
-	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, ACL_KIND_CLASS,
-					   RelationGetRelationName(rel));
+	/* Permission checks */
+	ac_class_get_transaction_id(RelationGetRelid(rel));
 
 	if (rel->rd_rel->relkind == RELKIND_VIEW)
 		return currtid_for_view(rel, tid);
@@ -372,11 +369,8 @@ currtid_byrelname(PG_FUNCTION_ARGS)
 	relrv = makeRangeVarFromNameList(textToQualifiedNameList(relname));
 	rel = heap_openrv(relrv, AccessShareLock);
 
-	aclresult = pg_class_aclcheck(RelationGetRelid(rel), GetUserId(),
-								  ACL_SELECT);
-	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, ACL_KIND_CLASS,
-					   RelationGetRelationName(rel));
+	/* Permission checks */
+	ac_class_get_transaction_id(RelationGetRelid(rel));
 
 	if (rel->rd_rel->relkind == RELKIND_VIEW)
 		return currtid_for_view(rel, tid);
