@@ -134,25 +134,6 @@ CreateTrigger(CreateTrigStmt *stmt,
 	if (stmt->isconstraint && stmt->constrrel != NULL)
 		constrrelid = RangeVarGetRelid(stmt->constrrel, false);
 
-	/* permission checks */
-	if (checkPermissions)
-	{
-		aclresult = pg_class_aclcheck(RelationGetRelid(rel), GetUserId(),
-									  ACL_TRIGGER);
-		if (aclresult != ACLCHECK_OK)
-			aclcheck_error(aclresult, ACL_KIND_CLASS,
-						   RelationGetRelationName(rel));
-
-		if (OidIsValid(constrrelid))
-		{
-			aclresult = pg_class_aclcheck(constrrelid, GetUserId(),
-										  ACL_TRIGGER);
-			if (aclresult != ACLCHECK_OK)
-				aclcheck_error(aclresult, ACL_KIND_CLASS,
-							   get_rel_name(constrrelid));
-		}
-	}
-
 	/* Compute tgtype */
 	TRIGGER_CLEAR_TYPE(tgtype);
 	if (stmt->before)
@@ -191,6 +172,10 @@ CreateTrigger(CreateTrigStmt *stmt,
 					 errmsg("function %s must return type \"trigger\"",
 							NameListToString(stmt->funcname))));
 	}
+
+	/* permission checks */
+	if (checkPermissions)
+		ac_trigger_create(RelationGetRelid(rel), constrrelid, funcoid);
 
 	/*
 	 * If the command is a user-entered CREATE CONSTRAINT TRIGGER command that
@@ -758,9 +743,8 @@ DropTrigger(Oid relid, const char *trigname, DropBehavior behavior,
 		return;
 	}
 
-	if (!pg_class_ownercheck(relid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
-					   get_rel_name(relid));
+	/* Permission checks */
+	ac_trigger_drop(relid, tup, false);
 
 	object.classId = TriggerRelationId;
 	object.objectId = HeapTupleGetOid(tup);
@@ -926,6 +910,9 @@ renametrig(Oid relid,
 								SnapshotNow, 2, key);
 	if (HeapTupleIsValid(tuple = systable_getnext(tgscan)))
 	{
+		/* Permission check to rename the trigger */
+		ac_trigger_alter(relid, tuple, newname);
+
 		/*
 		 * Update pg_trigger tuple with new tgname.
 		 */
