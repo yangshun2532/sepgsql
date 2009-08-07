@@ -205,6 +205,25 @@ ac_class_comment(Oid relOid)
 }
 
 /*
+ * ac_class_get_transaction_id
+ *
+ * It checks privilege to execute currtid() function.
+ *
+ * [Params]
+ *   relOid : OID of the relation to be referenced
+ */
+void
+ac_class_get_transaction_id(Oid relOid)
+{
+	AclResult	aclresult;
+
+	aclresult = pg_class_aclcheck(relOid, GetUserId(), ACL_SELECT);
+	if (aclresult != ACLCHECK_OK)
+		aclcheck_error(aclresult, ACL_KIND_CLASS,
+					   get_rel_name(relOid));
+}
+
+/*
  * ac_relation_copy_definition
  *
  * It checks privileges to define a new column which is copied from

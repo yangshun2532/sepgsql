@@ -106,6 +106,9 @@ extern void
 ac_class_comment(Oid relOid);
 
 extern void
+ac_class_get_transaction_id(Oid relOid);
+
+extern void
 ac_relation_copy_definition(Oid relOidSrc);
 
 extern void
