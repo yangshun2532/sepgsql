@@ -8,6 +8,7 @@
 #ifndef SECURITY_COMMON_H
 #define SECURITY_COMMON_H
 
+#include "access/htup.h"
 #include "nodes/bitmapset.h"
 #include "nodes/parsenodes.h"
 #include "storage/lock.h"
@@ -160,6 +161,23 @@ extern void
 ac_attribute_drop(Oid relOid, const char *attname);
 
 extern void
+ac_attribute_grant(Oid relOid, AttrNumber attnum,
+				   bool isGrant, AclMode privs,
+				   Oid grantor, AclMode goptions);
+extern void
 ac_attribute_comment(Oid relOid, const char *attname);
+
+/* pg_trigger */
+extern void
+ac_trigger_create(Oid relOid, Oid conRelOid, Oid funcOid);
+
+extern void
+ac_trigger_alter(Oid relOid, HeapTuple trigTup, const char *newName);
+
+extern void
+ac_trigger_drop(Oid relOid, HeapTuple trigTup, bool cascade);
+
+extern void
+ac_trigger_comment(Oid relOid, HeapTuple trigTup);
 
 #endif

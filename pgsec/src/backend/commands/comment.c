@@ -995,12 +995,6 @@ CommentTrigger(List *qualname, char *comment)
 	rel = makeRangeVarFromNameList(relname);
 	relation = heap_openrv(rel, AccessShareLock);
 
-	/* Check object security */
-
-	if (!pg_class_ownercheck(RelationGetRelid(relation), GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
-					   RelationGetRelationName(relation));
-
 	/*
 	 * Fetch the trigger tuple from pg_trigger.  There can be only one because
 	 * of the unique index.
@@ -1025,6 +1019,9 @@ CommentTrigger(List *qualname, char *comment)
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("trigger \"%s\" for table \"%s\" does not exist",
 						trigname, RelationGetRelationName(relation))));
+
+	/* Check object security */
+	ac_trigger_comment(RelationGetRelid(relation), triggertuple);
 
 	oid = HeapTupleGetOid(triggertuple);
 
