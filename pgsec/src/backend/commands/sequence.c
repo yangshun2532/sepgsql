@@ -26,10 +26,10 @@
 #include "commands/tablecmds.h"
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
+#include "security/common.h"
 #include "storage/bufmgr.h"
 #include "storage/lmgr.h"
 #include "storage/proc.h"
-#include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
 #include "utils/resowner.h"
@@ -323,11 +323,8 @@ AlterSequence(AlterSeqStmt *stmt)
 	/* find sequence */
 	relid = RangeVarGetRelid(stmt->sequence, false);
 
-	/* allow ALTER to sequence owner only */
 	/* if you change this, see also callers of AlterSequenceInternal! */
-	if (!pg_class_ownercheck(relid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
-					   stmt->sequence->relname);
+	ac_class_alter(relid, NULL, InvalidOid, InvalidOid, InvalidOid);
 
 	/* do the work */
 	AlterSequenceInternal(relid, stmt->options);
@@ -460,12 +457,8 @@ nextval_internal(Oid relid)
 	/* open and AccessShareLock sequence */
 	init_sequence(relid, &elm, &seqrel);
 
-	if (pg_class_aclcheck(elm->relid, GetUserId(), ACL_USAGE) != ACLCHECK_OK &&
-		pg_class_aclcheck(elm->relid, GetUserId(), ACL_UPDATE) != ACLCHECK_OK)
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("permission denied for sequence %s",
-						RelationGetRelationName(seqrel))));
+	/* Permission check */
+	ac_sequence_next_value(elm->relid);
 
 	if (elm->last != elm->cached)		/* some numbers were cached */
 	{
@@ -655,12 +648,8 @@ currval_oid(PG_FUNCTION_ARGS)
 	/* open and AccessShareLock sequence */
 	init_sequence(relid, &elm, &seqrel);
 
-	if (pg_class_aclcheck(elm->relid, GetUserId(), ACL_SELECT) != ACLCHECK_OK &&
-		pg_class_aclcheck(elm->relid, GetUserId(), ACL_USAGE) != ACLCHECK_OK)
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("permission denied for sequence %s",
-						RelationGetRelationName(seqrel))));
+	/* Permission check */
+	ac_sequence_get_value(elm->relid);
 
 	if (!elm->last_valid)
 		ereport(ERROR,
@@ -699,12 +688,8 @@ lastval(PG_FUNCTION_ARGS)
 	/* nextval() must have already been called for this sequence */
 	Assert(last_used_seq->last_valid);
 
-	if (pg_class_aclcheck(last_used_seq->relid, GetUserId(), ACL_SELECT) != ACLCHECK_OK &&
-		pg_class_aclcheck(last_used_seq->relid, GetUserId(), ACL_USAGE) != ACLCHECK_OK)
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("permission denied for sequence %s",
-						RelationGetRelationName(seqrel))));
+	/* Permission check */
+	ac_sequence_get_value(last_used_seq->relid);
 
 	result = last_used_seq->last;
 	relation_close(seqrel, NoLock);
@@ -736,11 +721,8 @@ do_setval(Oid relid, int64 next, bool iscalled)
 	/* open and AccessShareLock sequence */
 	init_sequence(relid, &elm, &seqrel);
 
-	if (pg_class_aclcheck(elm->relid, GetUserId(), ACL_UPDATE) != ACLCHECK_OK)
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("permission denied for sequence %s",
-						RelationGetRelationName(seqrel))));
+	/* Permission check */
+	ac_sequence_set_value(elm->relid);
 
 	/* lock page' buffer and read tuple */
 	seq = read_info(elm, seqrel, &buf);

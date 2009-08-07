@@ -870,7 +870,7 @@ RenameDatabase(const char *oldname, const char *newname)
 				 errmsg("database \"%s\" does not exist", oldname)));
 
 	/* Permission check to rename the database */
-	ac_database_alter(db_id, newname, InvalidOid, InvalidOid, NULL);
+	ac_database_alter(db_id, newname, InvalidOid, InvalidOid);
 
 	/*
 	 * Make sure the new name doesn't exist.  See notes for same error in
@@ -994,7 +994,7 @@ movedb(const char *dbname, const char *tblspcname)
 				 errmsg("tablespace \"%s\" does not exist", tblspcname)));
 
 	/* Permission checks to change the default tablespace */
-	ac_database_alter(db_id, NULL, dst_tblspcoid, InvalidOid, NULL);
+	ac_database_alter(db_id, NULL, dst_tblspcoid, InvalidOid);
 
 	/*
 	 * pg_global must never be the default tablespace
@@ -1319,8 +1319,7 @@ AlterDatabase(AlterDatabaseStmt *stmt, bool isTopLevel)
 				 errmsg("database \"%s\" does not exist", stmt->dbname)));
 
 	/* Permission checks to alter database */
-	ac_database_alter(HeapTupleGetOid(tuple), NULL,
-					  InvalidOid, InvalidOid, NULL);
+	ac_database_alter(HeapTupleGetOid(tuple), NULL, InvalidOid, InvalidOid);
 
 	/*
 	 * Build an updated tuple, perusing the information just obtained
@@ -1391,8 +1390,7 @@ AlterDatabaseSet(AlterDatabaseSetStmt *stmt)
 				 errmsg("database \"%s\" does not exist", stmt->dbname)));
 
 	/* Permission checks to alter database */
-	ac_database_alter(HeapTupleGetOid(tuple), NULL,
-					  InvalidOid, InvalidOid, NULL);
+	ac_database_alter(HeapTupleGetOid(tuple), NULL, InvalidOid, InvalidOid);
 
 	memset(repl_repl, false, sizeof(repl_repl));
 	repl_repl[Anum_pg_database_datconfig - 1] = true;
@@ -1489,12 +1487,13 @@ AlterDatabaseOwner(const char *dbname, Oid newOwnerId)
 		Datum		repl_val[Natts_pg_database];
 		bool		repl_null[Natts_pg_database];
 		bool		repl_repl[Natts_pg_database];
+		Acl		   *newAcl;
 		Datum		aclDatum;
+		bool		isNull;
 		HeapTuple	newtuple;
 
 		/* Permission checks to change the database owner */
-		ac_database_alter(HeapTupleGetOid(tuple), NULL, InvalidOid,
-						  newOwnerId, &aclDatum);
+		ac_database_alter(HeapTupleGetOid(tuple), NULL, InvalidOid, newOwnerId);
 
 		memset(repl_null, false, sizeof(repl_null));
 		memset(repl_repl, false, sizeof(repl_repl));
@@ -1502,14 +1501,23 @@ AlterDatabaseOwner(const char *dbname, Oid newOwnerId)
 		repl_repl[Anum_pg_database_datdba - 1] = true;
 		repl_val[Anum_pg_database_datdba - 1] = ObjectIdGetDatum(newOwnerId);
 
-		if (DatumGetPointer(aclDatum))
+		/*
+		 * Determine the modified ACL for the new owner.  This is only
+		 * necessary when the ACL is non-null.
+		 */
+		aclDatum = heap_getattr(tuple,
+								Anum_pg_database_datacl,
+								RelationGetDescr(rel),
+								&isNull);
+		if (!isNull)
 		{
+			newAcl = aclnewowner(DatumGetAclP(aclDatum),
+								 datForm->datdba, newOwnerId);
 			repl_repl[Anum_pg_database_datacl - 1] = true;
-			repl_val[Anum_pg_database_datacl - 1] = aclDatum;
+			repl_val[Anum_pg_database_datacl - 1] = PointerGetDatum(newAcl);
 		}
 
-		newtuple = heap_modify_tuple(tuple, RelationGetDescr(rel),
-									 repl_val, repl_null, repl_repl);
+		newtuple = heap_modify_tuple(tuple, RelationGetDescr(rel), repl_val, repl_null, repl_repl);
 		simple_heap_update(rel, &newtuple->t_self, newtuple);
 		CatalogUpdateIndexes(rel, newtuple);
 

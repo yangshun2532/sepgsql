@@ -2728,7 +2728,6 @@ OpenIntoRel(QueryDesc *queryDesc)
 	Datum		reloptions;
 	Bitmapset  *columnsSet = NULL;
 	int			i;
-	AclResult	aclresult;
 	Oid			intoRelationId;
 	TupleDesc	tupdesc;
 	DR_intorel *myState;
@@ -2745,16 +2744,10 @@ OpenIntoRel(QueryDesc *queryDesc)
 				 errmsg("ON COMMIT can only be used on temporary tables")));
 
 	/*
-	 * Find namespace to create in, check its permissions
+	 * Find namespace to create in
 	 */
 	intoName = into->rel->relname;
 	namespaceId = RangeVarGetCreationNamespace(into->rel);
-
-	aclresult = pg_namespace_aclcheck(namespaceId, GetUserId(),
-									  ACL_CREATE);
-	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
-					   get_namespace_name(namespaceId));
 
 	/*
 	 * Select tablespace to use.  If not specified, use default tablespace
@@ -2775,19 +2768,6 @@ OpenIntoRel(QueryDesc *queryDesc)
 		/* note InvalidOid is OK in this case */
 	}
 
-	/* Check permissions except when using the database's default space */
-	if (OidIsValid(tablespaceId) && tablespaceId != MyDatabaseTableSpace)
-	{
-		AclResult	aclresult;
-
-		aclresult = pg_tablespace_aclcheck(tablespaceId, GetUserId(),
-										   ACL_CREATE);
-
-		if (aclresult != ACLCHECK_OK)
-			aclcheck_error(aclresult, ACL_KIND_TABLESPACE,
-						   get_tablespace_name(tablespaceId));
-	}
-
 	/* Parse and validate any reloptions */
 	reloptions = transformRelOptions((Datum) 0,
 									 into->options,
@@ -2796,6 +2776,10 @@ OpenIntoRel(QueryDesc *queryDesc)
 									 true,
 									 false);
 	(void) heap_reloptions(RELKIND_RELATION, reloptions, true);
+
+	/* Permission check to create a new table */
+	ac_class_create(intoName, RELKIND_RELATION, queryDesc->tupDesc,
+					namespaceId, tablespaceId, NULL);
 
 	/* Copy the tupdesc because heap_create_with_catalog modifies it */
 	tupdesc = CreateTupleDescCopy(queryDesc->tupDesc);

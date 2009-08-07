@@ -57,44 +57,6 @@
 #include "utils/guc.h"
 #include "utils/syscache.h"
 
-
-/*
- * Verify user has ownership of specified relation, else ereport.
- *
- * If noCatalogs is true then we also deny access to system catalogs,
- * except when allowSystemTableMods is true.
- */
-void
-CheckRelationOwnership(RangeVar *rel, bool noCatalogs)
-{
-	Oid			relOid;
-	HeapTuple	tuple;
-
-	relOid = RangeVarGetRelid(rel, false);
-	tuple = SearchSysCache(RELOID,
-						   ObjectIdGetDatum(relOid),
-						   0, 0, 0);
-	if (!HeapTupleIsValid(tuple))		/* should not happen */
-		elog(ERROR, "cache lookup failed for relation %u", relOid);
-
-	if (!pg_class_ownercheck(relOid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
-					   rel->relname);
-
-	if (noCatalogs)
-	{
-		if (!allowSystemTableMods &&
-			IsSystemClass((Form_pg_class) GETSTRUCT(tuple)))
-			ereport(ERROR,
-					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-					 errmsg("permission denied: \"%s\" is a system catalog",
-							rel->relname)));
-	}
-
-	ReleaseSysCache(tuple);
-}
-
-
 /*
  * CommandIsReadOnly: is an executable query read-only?
  *
@@ -771,38 +733,10 @@ ProcessUtility(Node *parsetree,
 			break;
 
 		case T_IndexStmt:		/* CREATE INDEX */
-			{
-				IndexStmt  *stmt = (IndexStmt *) parsetree;
-
-				if (stmt->concurrent)
-					PreventTransactionChain(isTopLevel,
-											"CREATE INDEX CONCURRENTLY");
-
-				CheckRelationOwnership(stmt->relation, true);
-
-				/* Run parse analysis ... */
-				stmt = transformIndexStmt(stmt, queryString);
-
-				/* ... and do it */
-				DefineIndex(stmt->relation,		/* relation */
-							stmt->idxname,		/* index name */
-							InvalidOid, /* no predefined OID */
-							stmt->accessMethod, /* am name */
-							stmt->tableSpace,
-							stmt->indexParams,	/* parameters */
-							(Expr *) stmt->whereClause,
-							stmt->options,
-							stmt->unique,
-							stmt->primary,
-							stmt->isconstraint,
-							stmt->deferrable,
-							stmt->initdeferred,
-							false,		/* is_alter_table */
-							true,		/* check_rights */
-							false,		/* skip_build */
-							false,		/* quiet */
-							stmt->concurrent);	/* concurrent */
-			}
+			if (((IndexStmt *) parsetree)->concurrent)
+				PreventTransactionChain(isTopLevel,
+										"CREATE INDEX CONCURRENTLY");
+			CreateIndex((IndexStmt *) parsetree, queryString);
 			break;
 
 		case T_RuleStmt:		/* CREATE RULE */

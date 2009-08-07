@@ -18,6 +18,7 @@
 
 
 /* commands/indexcmds.c */
+extern void CreateIndex(IndexStmt *stmt, const char *queryString);
 extern void DefineIndex(RangeVar *heapRelation,
 			char *indexRelationName,
 			Oid indexRelationId,

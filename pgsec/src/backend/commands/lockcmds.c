@@ -20,6 +20,7 @@
 #include "commands/lockcmds.h"
 #include "miscadmin.h"
 #include "parser/parse_clause.h"
+#include "security/common.h"
 #include "storage/lmgr.h"
 #include "utils/acl.h"
 #include "utils/lsyscache.h"
@@ -122,23 +123,15 @@ LockTableRecurse(Oid reloid, RangeVar *rv,
 		return;
 	}
 
-	/* Verify adequate privilege */
-	if (lockmode == AccessShareLock)
-		aclresult = pg_class_aclcheck(reloid, GetUserId(),
-									  ACL_SELECT);
-	else
-		aclresult = pg_class_aclcheck(reloid, GetUserId(),
-									  ACL_UPDATE | ACL_DELETE | ACL_TRUNCATE);
-	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, ACL_KIND_CLASS,
-					   RelationGetRelationName(rel));
-
 	/* Currently, we only allow plain tables to be locked */
 	if (rel->rd_rel->relkind != RELKIND_RELATION)
 		ereport(ERROR,
 				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
 				 errmsg("\"%s\" is not a table",
 						RelationGetRelationName(rel))));
+
+	/* Permission checks to lock tables */
+	ac_relation_lock(RelationGetRelid(rel), lockmode);
 
 	/*
 	 * If requested, recurse to children.  We use find_inheritance_children

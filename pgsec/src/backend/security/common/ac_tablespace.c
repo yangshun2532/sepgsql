@@ -46,11 +46,9 @@ ac_tablespace_create(const char *tblspcName)
  *  tblspcOid : OID of the tablespace to be altered
  *  newName   : New name of the tablespace, if exist
  *  newOwner  : OID of the new tablespace owner, if exist
- *  newAcl    : Pointer to set a new acl datum, when newOwner is valid
  */
 void
-ac_tablespace_alter(Oid tblspcOid, const char *newName,
-					Oid newOwner, Datum *newAcl)
+ac_tablespace_alter(Oid tblspcOid, const char *newName, Oid newOwner)
 {
 	/* Must be owner for all the ALTER TABLESPACE options */
 	if (!pg_tablespace_ownercheck(tblspcOid, GetUserId()))
@@ -59,44 +57,8 @@ ac_tablespace_alter(Oid tblspcOid, const char *newName,
 
 	if (OidIsValid(newOwner))
 	{
-		Form_pg_tablespace	spcForm;
-		Relation		rel;
-		ScanKeyData		key[1];
-		HeapScanDesc	scan;
-		HeapTuple		spctup;
-		Datum			datum;
-		bool			isnull;
-		Acl			   *acl = NULL;
-
 		/* Must be able to become new owner */
-		check_is_member_of_role(GetUserId(), newOwner);
-
-		/* system cache does not support tablespace */
-		rel = heap_open(TableSpaceRelationId, AccessShareLock);
-
-		ScanKeyInit(&key[0],
-					ObjectIdAttributeNumber,
-					BTEqualStrategyNumber, F_OIDEQ,
-					ObjectIdGetDatum(tblspcOid));
-
-		scan = heap_beginscan(rel, SnapshotNow, 1, key);
-
-		spctup = heap_getnext(scan, ForwardScanDirection);
-		if (!HeapTupleIsValid(spctup))
-			elog(ERROR, "tablespace with OID %u does not exist", tblspcOid);
-		spcForm = (Form_pg_tablespace) GETSTRUCT(spctup);
-
-		datum = heap_getattr(spctup,
-							 Anum_pg_tablespace_spcacl,
-							 RelationGetDescr(rel),
-							 &isnull);
-		if (!isnull)
-			acl = aclnewowner(DatumGetAclP(datum),
-							  spcForm->spcowner, newOwner);
-		*newAcl = PointerGetDatum(acl);
-
-		heap_endscan(scan);
-		heap_close(rel, AccessShareLock);
+        check_is_member_of_role(GetUserId(), newOwner);
 	}
 }
 

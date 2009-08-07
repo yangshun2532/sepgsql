@@ -36,6 +36,7 @@
 #include "optimizer/clauses.h"
 #include "parser/parse_coerce.h"
 #include "parser/parse_func.h"
+#include "parser/parse_utilcmd.h"
 #include "parser/parsetree.h"
 #include "security/common.h"
 #include "storage/lmgr.h"
@@ -67,6 +68,64 @@ static Oid GetIndexOpClass(List *opclass, Oid attrType,
 				char *accessMethodName, Oid accessMethodId);
 static bool relationHasPrimaryKey(Relation rel);
 
+/*
+ * CreateIndex
+ *		A wrapper function for CREATE INDEX statement
+ */
+void
+CreateIndex(IndexStmt *stmt, const char *queryString)
+{
+	Oid			relOid;
+
+	relOid = RangeVarGetRelid(stmt->relation, false);
+
+	/*
+	 * Permission check to create a new index on a certain table
+	 */
+	ac_relation_indexon(relOid);
+
+	/* Prevent system catalogs */
+	if (!allowSystemTableMods)
+	{
+		HeapTuple	reltup;
+
+		reltup = SearchSysCache(RELOID,
+								ObjectIdGetDatum(relOid),
+								0, 0, 0);
+		if (!HeapTupleIsValid(reltup))
+			elog(ERROR, "cache lookup failed for relation: %u", relOid);
+
+		if (IsSystemClass((Form_pg_class) GETSTRUCT(reltup)))
+			ereport(ERROR,
+					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+					 errmsg("permission denied: \"%s\" is a system catalog",
+							get_rel_name(relOid))));
+		ReleaseSysCache(reltup);
+	}
+
+	/* Run parse analysis ... */
+	stmt = transformIndexStmt(stmt, queryString);
+
+	/* ... and do it */
+	DefineIndex(stmt->relation,		/* relation */
+				stmt->idxname,		/* index name */
+				InvalidOid, /* no predefined OID */
+				stmt->accessMethod, /* am name */
+				stmt->tableSpace,
+				stmt->indexParams,	/* parameters */
+				(Expr *) stmt->whereClause,
+				stmt->options,
+				stmt->unique,
+				stmt->primary,
+				stmt->isconstraint,
+				stmt->deferrable,
+				stmt->initdeferred,
+				false,		/* is_alter_table */
+				true,		/* check_rights */
+				false,		/* skip_build */
+				false,		/* quiet */
+				stmt->concurrent);	/* concurrent */
+}
 
 /*
  * DefineIndex
@@ -188,23 +247,6 @@ DefineIndex(RangeVar *heapRelation,
 				 errmsg("cannot create indexes on temporary tables of other sessions")));
 
 	/*
-	 * Verify we (still) have CREATE rights in the rel's namespace.
-	 * (Presumably we did when the rel was created, but maybe not anymore.)
-	 * Skip check if caller doesn't want it.  Also skip check if
-	 * bootstrapping, since permissions machinery may not be working yet.
-	 */
-	if (check_rights && !IsBootstrapProcessingMode())
-	{
-		AclResult	aclresult;
-
-		aclresult = pg_namespace_aclcheck(namespaceId, GetUserId(),
-										  ACL_CREATE);
-		if (aclresult != ACLCHECK_OK)
-			aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
-						   get_namespace_name(namespaceId));
-	}
-
-	/*
 	 * Select tablespace to use.  If not specified, use default tablespace
 	 * (which may in turn default to database's default).
 	 */
@@ -222,25 +264,6 @@ DefineIndex(RangeVar *heapRelation,
 		tablespaceId = GetDefaultTablespace(rel->rd_istemp);
 		/* note InvalidOid is OK in this case */
 	}
-
-	/* Check permissions except when using database's default */
-	if (OidIsValid(tablespaceId) && tablespaceId != MyDatabaseTableSpace)
-	{
-		AclResult	aclresult;
-
-		aclresult = pg_tablespace_aclcheck(tablespaceId, GetUserId(),
-										   ACL_CREATE);
-		if (aclresult != ACLCHECK_OK)
-			aclcheck_error(aclresult, ACL_KIND_TABLESPACE,
-						   get_tablespace_name(tablespaceId));
-	}
-
-	/*
-	 * Force shared indexes into the pg_global tablespace.	This is a bit of a
-	 * hack but seems simpler than marking them in the BKI commands.
-	 */
-	if (rel->rd_rel->relisshared)
-		tablespaceId = GLOBALTABLESPACE_OID;
 
 	/*
 	 * Select name for index if caller didn't specify
@@ -262,6 +285,17 @@ DefineIndex(RangeVar *heapRelation,
 												   namespaceId);
 		}
 	}
+
+	/* Check permission to create a new index */
+	ac_index_create(indexRelationName, check_rights,
+					namespaceId, tablespaceId);
+
+	/*
+	 * Force shared indexes into the pg_global tablespace.	This is a bit of a
+	 * hack but seems simpler than marking them in the BKI commands.
+	 */
+	if (rel->rd_rel->relisshared)
+		tablespaceId = GLOBALTABLESPACE_OID;
 
 	/*
 	 * look up the access method, verify it can handle the requested features
@@ -1332,6 +1366,8 @@ ReindexIndex(RangeVar *indexRelation)
 						indexRelation->relname)));
 
 	/* Check permissions */
+	ac_index_reindex(indOid);
+
 	if (!pg_class_ownercheck(indOid, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
 					   indexRelation->relname);
@@ -1366,9 +1402,7 @@ ReindexTable(RangeVar *relation)
 						relation->relname)));
 
 	/* Check permissions */
-	if (!pg_class_ownercheck(heapOid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
-					   relation->relname);
+	ac_relation_reindex(heapOid);
 
 	/* Can't reindex shared tables except in standalone mode */
 	if (((Form_pg_class) GETSTRUCT(tuple))->relisshared && IsUnderPostmaster)
