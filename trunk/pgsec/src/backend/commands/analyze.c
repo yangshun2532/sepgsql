@@ -33,10 +33,10 @@
 #include "parser/parse_relation.h"
 #include "pgstat.h"
 #include "postmaster/autovacuum.h"
+#include "security/common.h"
 #include "storage/bufmgr.h"
 #include "storage/proc.h"
 #include "storage/procarray.h"
-#include "utils/acl.h"
 #include "utils/datum.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
@@ -169,8 +169,7 @@ analyze_rel(Oid relid, VacuumStmt *vacstmt,
 	/*
 	 * Check permissions --- this should match vacuum's check!
 	 */
-	if (!(pg_class_ownercheck(RelationGetRelid(onerel), GetUserId()) ||
-		  (pg_database_ownercheck(MyDatabaseId, GetUserId()) && !onerel->rd_rel->relisshared)))
+	if (!ac_relation_vacuum(onerel))
 	{
 		/* No need for a WARNING if we already complained during VACUUM */
 		if (!vacstmt->vacuum)

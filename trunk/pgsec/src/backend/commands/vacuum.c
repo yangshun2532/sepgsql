@@ -1103,8 +1103,7 @@ vacuum_rel(Oid relid, VacuumStmt *vacstmt, bool do_toast, bool for_wraparound,
 	 * Note we choose to treat permissions failure as a WARNING and keep
 	 * trying to vacuum the rest of the DB --- is this appropriate?
 	 */
-	if (!(pg_class_ownercheck(RelationGetRelid(onerel), GetUserId()) ||
-		  (pg_database_ownercheck(MyDatabaseId, GetUserId()) && !onerel->rd_rel->relisshared)))
+	if (!ac_relation_vacuum(onerel))
 	{
 		if (onerel->rd_rel->relisshared)
 			ereport(WARNING,

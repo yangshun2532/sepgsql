@@ -769,7 +769,7 @@ RenameTableSpace(const char *oldname, const char *newname)
 	heap_endscan(scan);
 
 	/* Permission checks to rename */
-	ac_tablespace_alter(HeapTupleGetOid(newtuple), newname, InvalidOid, NULL);
+	ac_tablespace_alter(HeapTupleGetOid(newtuple), newname, InvalidOid);
 
 	/* Validate new name */
 	if (!allowSystemTableMods && IsReservedName(newname))
@@ -839,12 +839,13 @@ AlterTableSpaceOwner(const char *name, Oid newOwnerId)
 		Datum		repl_val[Natts_pg_tablespace];
 		bool		repl_null[Natts_pg_tablespace];
 		bool		repl_repl[Natts_pg_tablespace];
+		Acl		   *newAcl;
 		Datum		aclDatum;
+		bool		isNull;
 		HeapTuple	newtuple;
 
 		/* Permission checks to change tablespace owner */
-		ac_tablespace_alter(HeapTupleGetOid(tup), NULL,
-							newOwnerId, &aclDatum);
+		ac_tablespace_alter(HeapTupleGetOid(tup), NULL, newOwnerId);
 
 		/*
 		 * Normally we would also check for create permissions here, but there
@@ -862,14 +863,23 @@ AlterTableSpaceOwner(const char *name, Oid newOwnerId)
 		repl_repl[Anum_pg_tablespace_spcowner - 1] = true;
 		repl_val[Anum_pg_tablespace_spcowner - 1] = ObjectIdGetDatum(newOwnerId);
 
-		if (DatumGetPointer(aclDatum))
+		/*
+		 * Determine the modified ACL for the new owner.  This is only
+		 * necessary when the ACL is non-null.
+		 */
+		aclDatum = heap_getattr(tup,
+								Anum_pg_tablespace_spcacl,
+								RelationGetDescr(rel),
+								&isNull);
+		if (!isNull)
 		{
+			newAcl = aclnewowner(DatumGetAclP(aclDatum),
+								 spcForm->spcowner, newOwnerId);
 			repl_repl[Anum_pg_tablespace_spcacl - 1] = true;
-			repl_val[Anum_pg_tablespace_spcacl - 1] = aclDatum;
+			repl_val[Anum_pg_tablespace_spcacl - 1] = PointerGetDatum(newAcl);
 		}
 
-		newtuple = heap_modify_tuple(tup, RelationGetDescr(rel),
-									 repl_val, repl_null, repl_repl);
+		newtuple = heap_modify_tuple(tup, RelationGetDescr(rel), repl_val, repl_null, repl_repl);
 
 		simple_heap_update(rel, &newtuple->t_self, newtuple);
 		CatalogUpdateIndexes(rel, newtuple);

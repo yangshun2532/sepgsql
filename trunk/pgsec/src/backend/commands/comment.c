@@ -488,9 +488,7 @@ CommentRelation(int objtype, List *relname, char *comment)
 	relation = relation_openrv(tgtrel, AccessShareLock);
 
 	/* Check object security */
-	if (!pg_class_ownercheck(RelationGetRelid(relation), GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
-					   RelationGetRelationName(relation));
+	ac_class_comment(RelationGetRelid(relation));
 
 	/* Next, verify that the relation type matches the intent */
 
@@ -565,20 +563,16 @@ CommentAttribute(List *qualname, char *comment)
 	rel = makeRangeVarFromNameList(relname);
 	relation = relation_openrv(rel, AccessShareLock);
 
-	/* Check object security */
-
-	if (!pg_class_ownercheck(RelationGetRelid(relation), GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
-					   RelationGetRelationName(relation));
-
 	/* Now, fetch the attribute number from the system cache */
-
 	attnum = get_attnum(RelationGetRelid(relation), attrname);
 	if (attnum == InvalidAttrNumber)
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_COLUMN),
 				 errmsg("column \"%s\" of relation \"%s\" does not exist",
 						attrname, RelationGetRelationName(relation))));
+
+	/* Check object security */
+	ac_attribute_comment(RelationGetRelid(relation), attrname);
 
 	/* Create the comment using the relation's oid */
 	CreateComments(RelationGetRelid(relation), RelationRelationId,

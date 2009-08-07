@@ -1062,18 +1062,18 @@ ExecGrant_Relation(InternalGrant *istmt)
 								old_acl, ownerId,
 								&grantorId, &avail_goptions);
 
+			/* Permission check to grant/revoke */
+			ac_class_grant(relOid, istmt->is_grant, this_privileges,
+						   grantorId, avail_goptions);
+
 			/*
 			 * Restrict the privileges to what we can actually grant, and emit
 			 * the standards-mandated warning and error messages.
 			 */
 			this_privileges =
-				restrict_and_check_grant(istmt->is_grant, avail_goptions,
-										 istmt->all_privs, this_privileges,
-										 relOid, grantorId,
-								  pg_class_tuple->relkind == RELKIND_SEQUENCE
-										 ? ACL_KIND_SEQUENCE : ACL_KIND_CLASS,
-										 NameStr(pg_class_tuple->relname),
-										 0, NULL);
+				restrict_grant(istmt->is_grant, avail_goptions,
+							   istmt->all_privs, this_privileges,
+							   NameStr(pg_class_tuple->relname));
 
 			/*
 			 * Generate new ACL.
@@ -1252,6 +1252,7 @@ ExecGrant_Database(InternalGrant *istmt)
 							old_acl, ownerId,
 							&grantorId, &avail_goptions);
 
+#if 0
 		/* Permission checks */
 		ac_database_grant(datId, istmt->is_grant, istmt->privileges,
 						  grantorId, avail_goptions);
@@ -1264,6 +1265,13 @@ ExecGrant_Database(InternalGrant *istmt)
 			restrict_grant(istmt->is_grant, avail_goptions,
 						   istmt->all_privs, istmt->privileges,
 						   NameStr(pg_database_tuple->datname));
+#endif
+        this_privileges =
+			restrict_and_check_grant(istmt->is_grant, avail_goptions,
+									 istmt->all_privs, istmt->privileges,
+									 datId, grantorId, ACL_KIND_DATABASE,
+									 NameStr(pg_database_tuple->datname),
+									 0, NULL);
 
 		/*
 		 * Generate new ACL.

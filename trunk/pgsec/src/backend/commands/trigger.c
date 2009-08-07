@@ -33,9 +33,9 @@
 #include "nodes/makefuncs.h"
 #include "parser/parse_func.h"
 #include "pgstat.h"
+#include "security/common.h"
 #include "storage/bufmgr.h"
 #include "tcop/utility.h"
-#include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
 #include "utils/inval.h"
@@ -870,6 +870,9 @@ renametrig(Oid relid,
 	HeapTuple	tuple;
 	SysScanDesc tgscan;
 	ScanKeyData key[2];
+
+	/* Permission checks */
+	//ac_trigger_alter_rename(relid, oldname, newname);
 
 	/*
 	 * Grab an exclusive lock on the target table, which we will NOT release

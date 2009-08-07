@@ -111,7 +111,7 @@ ac_database_create(const char *datName, Oid srcDatOid, bool srcIsTemp,
  */
 void
 ac_database_alter(Oid datOid, const char *newName,
-				  Oid newTblspc, Oid newOwner, Datum *newAcl)
+				  Oid newTblspc, Oid newOwner)
 {
 	AclResult	aclresult;
 
@@ -141,12 +141,6 @@ ac_database_alter(Oid datOid, const char *newName,
 
 	if (OidIsValid(newOwner))
 	{
-		Form_pg_database	datForm;
-		HeapTuple	dattup;
-		Datum		acldat;
-		bool		isnull;
-		Acl		   *acl = NULL;
-
 		/* Must be able to become new owner */
 		check_is_member_of_role(GetUserId(), newOwner);
 
@@ -163,25 +157,6 @@ ac_database_alter(Oid datOid, const char *newName,
 			ereport(ERROR,
 					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 					 errmsg("permission denied to change owner of database")));
-
-		dattup = SearchSysCache(DATABASEOID,
-								ObjectIdGetDatum(datOid),
-								0, 0, 0);
-		if (!HeapTupleIsValid(dattup))
-			elog(ERROR, "cache lookup failed for database %u", datOid);
-		datForm = (Form_pg_database) GETSTRUCT(dattup);
-
-		/*
-		 * Determine the modified ACL for the new owner.
-		 */
-		acldat = SysCacheGetAttr(DATABASEOID, dattup,
-								 Anum_pg_database_datacl, &isnull);
-		if (!isnull)
-			acl = aclnewowner(DatumGetAclP(acldat),
-							  datForm->datdba, newOwner);
-		*newAcl = PointerGetDatum(acl);
-
-		ReleaseSysCache(dattup);
 	}
 }
 
@@ -209,21 +184,21 @@ ac_database_drop(Oid datOid, bool cascade)
  * It checks privileges to grant/revoke permissions on a certain database.
  *
  * [Params]
- *  datOid     : OID of the target database for GRANT/REVOKE
- *  isGrant    : True, if the statement is GRANT
- *  privileges : AclMask being tries to be granted
- *  grantor    : OID of the gractor role
- *  goptions   : Available AclMask available to grant others
+ *  datOid   : OID of the target database for GRANT/REVOKE
+ *  isGrant  : True, if the statement is GRANT
+ *  privs    : AclMask being tries to be granted/revoked
+ *  grantor  : OID of the gractor role
+ *  goptions : Available AclMask available to grant others
  */
 void
-ac_database_grant(Oid datOid, bool isGrant, AclMode privileges,
+ac_database_grant(Oid datOid, bool isGrant, AclMode privs,
 				  Oid grantor, AclMode goptions)
 {
 	if (goptions == ACL_NO_RIGHTS)
 	{
 		AclMode		whole_mask = ACL_ALL_RIGHTS_DATABASE;
 
-		if (pg_database_aclmask(datOid, grantor, 
+		if (pg_database_aclmask(datOid, grantor,
 								whole_mask | ACL_GRANT_OPTION_FOR(whole_mask),
 								ACLMASK_ANY) == ACL_NO_RIGHTS)
 			aclcheck_error(ACLCHECK_NO_PRIV, ACL_KIND_DATABASE,

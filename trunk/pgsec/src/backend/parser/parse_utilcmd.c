@@ -50,7 +50,7 @@
 #include "parser/parse_utilcmd.h"
 #include "parser/parser.h"
 #include "rewrite/rewriteManip.h"
-#include "utils/acl.h"
+#include "security/common.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
 #include "utils/relcache.h"
@@ -545,7 +545,6 @@ transformInhRelation(ParseState *pstate, CreateStmtContext *cxt,
 	Relation	relation;
 	TupleDesc	tupleDesc;
 	TupleConstr *constr;
-	AclResult	aclresult;
 	bool		including_defaults = false;
 	bool		including_constraints = false;
 	bool		including_indexes = false;
@@ -559,14 +558,8 @@ transformInhRelation(ParseState *pstate, CreateStmtContext *cxt,
 				 errmsg("inherited relation \"%s\" is not a table",
 						inhRelation->relation->relname)));
 
-	/*
-	 * Check for SELECT privilages
-	 */
-	aclresult = pg_class_aclcheck(RelationGetRelid(relation), GetUserId(),
-								  ACL_SELECT);
-	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, ACL_KIND_CLASS,
-					   RelationGetRelationName(relation));
+	/* Permission check to copy definitions from another table */
+	ac_relation_copy_definition(RelationGetRelid(relation));
 
 	tupleDesc = RelationGetDescr(relation);
 	constr = tupleDesc->constr;

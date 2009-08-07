@@ -109,9 +109,7 @@ cluster(ClusterStmt *stmt, bool isTopLevel)
 		tableOid = RelationGetRelid(rel);
 
 		/* Check permissions */
-		if (!pg_class_ownercheck(tableOid, GetUserId()))
-			aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
-						   RelationGetRelationName(rel));
+		ac_relation_cluster(tableOid, true);
 
 		/*
 		 * Reject clustering a remote temp table ... their local buffer
@@ -287,7 +285,7 @@ cluster_rel(RelToCluster *rvtc, bool recheck, bool verbose)
 		Form_pg_index indexForm;
 
 		/* Check that the user still owns the relation */
-		if (!pg_class_ownercheck(rvtc->tableOid, GetUserId()))
+		if (!ac_relation_cluster(rvtc->tableOid, false))
 		{
 			relation_close(OldHeap, AccessExclusiveLock);
 			return;
@@ -1150,7 +1148,7 @@ get_tables_to_cluster(MemoryContext cluster_context)
 	{
 		index = (Form_pg_index) GETSTRUCT(indexTuple);
 
-		if (!pg_class_ownercheck(index->indrelid, GetUserId()))
+		if (!ac_relation_cluster(index->indrelid, false))
 			continue;
 
 		/*

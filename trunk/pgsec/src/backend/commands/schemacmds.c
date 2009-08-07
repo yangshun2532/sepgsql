@@ -49,7 +49,6 @@ CreateSchemaCommand(CreateSchemaStmt *stmt, const char *queryString)
 	Oid			owner_uid;
 	Oid			saved_uid;
 	bool		saved_secdefcxt;
-	AclResult	aclresult;
 
 	GetUserIdAndContext(&saved_uid, &saved_secdefcxt);
 
@@ -241,7 +240,6 @@ RenameSchema(const char *oldname, const char *newname)
 {
 	HeapTuple	tup;
 	Relation	rel;
-	AclResult	aclresult;
 
 	rel = heap_open(NamespaceRelationId, RowExclusiveLock);
 
@@ -263,8 +261,7 @@ RenameSchema(const char *oldname, const char *newname)
 				 errmsg("schema \"%s\" already exists", newname)));
 
 	/* Permission check to rename the namespace */
-	ac_namespace_alter(HeapTupleGetOid(tup), newname,
-					   InvalidOid, NULL);
+	ac_namespace_alter(HeapTupleGetOid(tup), newname, InvalidOid);
 
 	if (!allowSystemTableMods && IsReservedName(newname))
 		ereport(ERROR,
@@ -348,12 +345,13 @@ AlterSchemaOwner_internal(HeapTuple tup, Relation rel, Oid newOwnerId)
 		Datum		repl_val[Natts_pg_namespace];
 		bool		repl_null[Natts_pg_namespace];
 		bool		repl_repl[Natts_pg_namespace];
+		Acl		   *newAcl;
 		Datum		aclDatum;
+		bool		isNull;
 		HeapTuple	newtuple;
 
 		/* Permission check to change the namespace owner */
-		ac_namespace_alter(HeapTupleGetOid(tup), NULL,
-						   newOwnerId, &aclDatum);
+		ac_namespace_alter(HeapTupleGetOid(tup), NULL, newOwnerId);
 
 		memset(repl_null, false, sizeof(repl_null));
 		memset(repl_repl, false, sizeof(repl_repl));
@@ -361,14 +359,22 @@ AlterSchemaOwner_internal(HeapTuple tup, Relation rel, Oid newOwnerId)
 		repl_repl[Anum_pg_namespace_nspowner - 1] = true;
 		repl_val[Anum_pg_namespace_nspowner - 1] = ObjectIdGetDatum(newOwnerId);
 
-		if (DatumGetPointer(aclDatum) != NULL)
+		/*
+		 * Determine the modified ACL for the new owner.  This is only
+		 * necessary when the ACL is non-null.
+		 */
+		aclDatum = SysCacheGetAttr(NAMESPACENAME, tup,
+								   Anum_pg_namespace_nspacl,
+								   &isNull);
+		if (!isNull)
 		{
+			newAcl = aclnewowner(DatumGetAclP(aclDatum),
+								 nspForm->nspowner, newOwnerId);
 			repl_repl[Anum_pg_namespace_nspacl - 1] = true;
-			repl_val[Anum_pg_namespace_nspacl - 1] = aclDatum;
+			repl_val[Anum_pg_namespace_nspacl - 1] = PointerGetDatum(newAcl);
 		}
 
-		newtuple = heap_modify_tuple(tup, RelationGetDescr(rel),
-									 repl_val, repl_null, repl_repl);
+		newtuple = heap_modify_tuple(tup, RelationGetDescr(rel), repl_val, repl_null, repl_repl);
 
 		simple_heap_update(rel, &newtuple->t_self, newtuple);
 		CatalogUpdateIndexes(rel, newtuple);
