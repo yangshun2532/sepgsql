@@ -1299,6 +1299,27 @@ get_func_name(Oid funcid)
 }
 
 /*
+ * get_func_namespace
+ *    returns the namespace id of the function with the given funid
+ */
+Oid
+get_func_namespace(Oid funcid)
+{
+	HeapTuple	tp;
+	Oid			result;
+
+	tp = SearchSysCache(PROCOID,
+						ObjectIdGetDatum(funcid),
+						0, 0, 0);
+	if (!HeapTupleIsValid(tp))
+		elog(ERROR, "cache lookup failed for function %u", funcid);
+
+	result = ((Form_pg_proc) GETSTRUCT(tp))->pronamespace;
+	ReleaseSysCache(tp);
+	return result;
+}
+
+/*
  * get_func_rettype
  *		Given procedure id, return the function's result type.
  */

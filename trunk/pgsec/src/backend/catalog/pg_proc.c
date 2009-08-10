@@ -29,9 +29,9 @@
 #include "miscadmin.h"
 #include "nodes/nodeFuncs.h"
 #include "parser/parse_type.h"
+#include "security/common.h"
 #include "tcop/pquery.h"
 #include "tcop/tcopprot.h"
-#include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
 #include "utils/syscache.h"
@@ -60,6 +60,7 @@ Oid
 ProcedureCreate(const char *procedureName,
 				Oid procNamespace,
 				bool replace,
+				bool permission,
 				bool returnsSet,
 				Oid returnType,
 				Oid languageObjectId,
@@ -353,10 +354,9 @@ ProcedureCreate(const char *procedureName,
 					(errcode(ERRCODE_DUPLICATE_FUNCTION),
 			errmsg("function \"%s\" already exists with same argument types",
 				   procedureName)));
-		if (!pg_proc_ownercheck(HeapTupleGetOid(oldtup), GetUserId()))
-			aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
-						   procedureName);
-
+		if (permission)
+			ac_proc_replace(HeapTupleGetOid(oldtup),
+							procNamespace, languageObjectId);
 		/*
 		 * Not okay to change the return type of the existing proc, since
 		 * existing rules, views, etc may depend on the return type.
@@ -484,6 +484,9 @@ ProcedureCreate(const char *procedureName,
 	}
 	else
 	{
+		if (permission)
+			ac_proc_create(procNamespace, languageObjectId);
+
 		/* Creating a new procedure */
 		tup = heap_form_tuple(tupDesc, values, nulls);
 		simple_heap_insert(rel, tup);
