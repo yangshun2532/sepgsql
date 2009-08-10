@@ -47,7 +47,7 @@
 #include "nodes/nodeFuncs.h"
 #include "optimizer/planner.h"
 #include "pgstat.h"
-#include "utils/acl.h"
+#include "security/common.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
@@ -1028,12 +1028,8 @@ static void
 init_fcache(Oid foid, FuncExprState *fcache,
 			MemoryContext fcacheCxt, bool needDescForSets)
 {
-	AclResult	aclresult;
-
 	/* Check permission to call function */
-	aclresult = pg_proc_aclcheck(foid, GetUserId(), ACL_EXECUTE);
-	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, ACL_KIND_PROC, get_func_name(foid));
+	ac_proc_execute(foid, GetUserId());
 
 	/*
 	 * Safety check on nargs.  Under normal circumstances this should never
@@ -4024,14 +4020,8 @@ ExecEvalArrayCoerceExpr(ArrayCoerceExprState *astate,
 	/* Initialize function cache if first time through */
 	if (astate->elemfunc.fn_oid == InvalidOid)
 	{
-		AclResult	aclresult;
-
 		/* Check permission to call function */
-		aclresult = pg_proc_aclcheck(acoerce->elemfuncid, GetUserId(),
-									 ACL_EXECUTE);
-		if (aclresult != ACLCHECK_OK)
-			aclcheck_error(aclresult, ACL_KIND_PROC,
-						   get_func_name(acoerce->elemfuncid));
+		ac_proc_execute(acoerce->elemfuncid, GetUserId());
 
 		/* Set up the primary fmgr lookup information */
 		fmgr_info_cxt(acoerce->elemfuncid, &(astate->elemfunc),

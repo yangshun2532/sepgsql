@@ -76,14 +76,11 @@ ac_attribute_drop(Oid relOid, const char *colName)
  * [Params]
  *   relOid   : OID of the target relation for GRANT/REVOKE
  *   attnum   : Attribute number of the target column for GRANT/REVOKE
- *   isGrant  : True, if the statement is GRANT
- *   privs    : AclMask being tries to be granted/revoked
  *   grantor  : OID of the gractor role
  *   goptions : Available AclMask available to grant others
  */
 void
 ac_attribute_grant(Oid relOid, AttrNumber attnum,
-				   bool isGrant, AclMode privs,
 				   Oid grantor, AclMode goptions)
 {
 	if (goptions == ACL_NO_RIGHTS)

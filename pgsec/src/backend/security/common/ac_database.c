@@ -185,14 +185,11 @@ ac_database_drop(Oid datOid, bool cascade)
  *
  * [Params]
  *  datOid   : OID of the target database for GRANT/REVOKE
- *  isGrant  : True, if the statement is GRANT
- *  privs    : AclMask being tries to be granted/revoked
  *  grantor  : OID of the gractor role
  *  goptions : Available AclMask available to grant others
  */
 void
-ac_database_grant(Oid datOid, bool isGrant, AclMode privs,
-				  Oid grantor, AclMode goptions)
+ac_database_grant(Oid datOid, Oid grantor, AclMode goptions)
 {
 	if (goptions == ACL_NO_RIGHTS)
 	{

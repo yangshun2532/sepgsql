@@ -164,11 +164,35 @@ extern void
 ac_attribute_drop(Oid relOid, const char *attname);
 
 extern void
-ac_attribute_grant(Oid relOid, AttrNumber attnum,
-				   bool isGrant, AclMode privs,
-				   Oid grantor, AclMode goptions);
+ac_attribute_grant(Oid relOid, AttrNumber attnum, Oid grantor, AclMode goptions);
+
 extern void
 ac_attribute_comment(Oid relOid, const char *attname);
+
+/* pg_proc */
+extern void
+ac_proc_create(Oid proNspOid, Oid proLangOid);
+
+extern void
+ac_proc_replace(Oid proOid, Oid proNspOid, Oid proLangOid);
+
+extern void
+ac_proc_alter(Oid proOid, const char *newName, Oid newNspOid, Oid newOwner);
+
+extern void
+ac_proc_drop(Oid proOid, bool cascade);
+
+extern void
+ac_proc_grant(Oid proOid, Oid grantor, AclMode goptions);
+
+extern void
+ac_proc_comment(Oid proOid);
+
+extern void
+ac_proc_execute(Oid proOid, Oid roleOid);
+
+extern bool
+ac_proc_hint_inline(Oid proOid);
 
 /* pg_trigger */
 extern void

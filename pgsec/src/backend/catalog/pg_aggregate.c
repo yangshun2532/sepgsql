@@ -210,6 +210,7 @@ AggregateCreate(const char *aggName,
 	procOid = ProcedureCreate(aggName,
 							  aggNamespace,
 							  false,	/* no replacement */
+							  false,	/* no permission checks */
 							  false,	/* doesn't return a set */
 							  finaltype,		/* returnType */
 							  INTERNALlanguageId,		/* languageObjectId */

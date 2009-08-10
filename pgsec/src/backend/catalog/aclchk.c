@@ -183,35 +183,23 @@ restrict_and_check_grant(bool is_grant, AclMode avail_goptions, bool all_privs,
 
 	switch (objkind)
 	{
-		case ACL_KIND_COLUMN:
-			whole_mask = ACL_ALL_RIGHTS_COLUMN;
-			break;
-		case ACL_KIND_CLASS:
-			whole_mask = ACL_ALL_RIGHTS_RELATION;
-			break;
-		case ACL_KIND_SEQUENCE:
-			whole_mask = ACL_ALL_RIGHTS_SEQUENCE;
-			break;
-		case ACL_KIND_DATABASE:
-			whole_mask = ACL_ALL_RIGHTS_DATABASE;
-			break;
-		case ACL_KIND_PROC:
-			whole_mask = ACL_ALL_RIGHTS_FUNCTION;
-			break;
 		case ACL_KIND_LANGUAGE:
 			whole_mask = ACL_ALL_RIGHTS_LANGUAGE;
-			break;
-		case ACL_KIND_NAMESPACE:
-			whole_mask = ACL_ALL_RIGHTS_NAMESPACE;
-			break;
-		case ACL_KIND_TABLESPACE:
-			whole_mask = ACL_ALL_RIGHTS_TABLESPACE;
 			break;
 		case ACL_KIND_FDW:
 			whole_mask = ACL_ALL_RIGHTS_FDW;
 			break;
 		case ACL_KIND_FOREIGN_SERVER:
 			whole_mask = ACL_ALL_RIGHTS_FOREIGN_SERVER;
+			break;
+		case ACL_KIND_COLUMN:
+		case ACL_KIND_CLASS:
+		case ACL_KIND_SEQUENCE:
+		case ACL_KIND_DATABASE:
+		case ACL_KIND_PROC:
+		case ACL_KIND_NAMESPACE:
+		case ACL_KIND_TABLESPACE:
+			elog(ERROR, "already integrated with common abstraction layer", objkind);
 			break;
 		default:
 			elog(ERROR, "unrecognized object kind: %d", objkind);
@@ -804,6 +792,9 @@ ExecGrant_Attribute(InternalGrant *istmt, Oid relOid, const char *relname,
 
 	pfree(merged_acl);
 
+	/* Permission check to grant/revoke */
+	ac_attribute_grant(relOid, attnum, grantorId, avail_goptions);
+
 	/*
 	 * Restrict the privileges to what we can actually grant, and emit the
 	 * standards-mandated warning and error messages.  Note: we don't track
@@ -813,12 +804,9 @@ ExecGrant_Attribute(InternalGrant *istmt, Oid relOid, const char *relname,
 	 * whether a warning is issued, this seems close enough.
 	 */
 	col_privileges =
-		restrict_and_check_grant(istmt->is_grant, avail_goptions,
-								 (col_privileges == ACL_ALL_RIGHTS_COLUMN),
-								 col_privileges,
-								 relOid, grantorId, ACL_KIND_COLUMN,
-								 relname, attnum,
-								 NameStr(pg_attribute_tuple->attname));
+		restrict_grant(istmt->is_grant, avail_goptions,
+					   (col_privileges == ACL_ALL_RIGHTS_COLUMN),
+					   col_privileges, relname);
 
 	/*
 	 * Generate new ACL.
@@ -1063,8 +1051,7 @@ ExecGrant_Relation(InternalGrant *istmt)
 								&grantorId, &avail_goptions);
 
 			/* Permission check to grant/revoke */
-			ac_class_grant(relOid, istmt->is_grant, this_privileges,
-						   grantorId, avail_goptions);
+			ac_class_grant(relOid, grantorId, avail_goptions);
 
 			/*
 			 * Restrict the privileges to what we can actually grant, and emit
@@ -1252,10 +1239,8 @@ ExecGrant_Database(InternalGrant *istmt)
 							old_acl, ownerId,
 							&grantorId, &avail_goptions);
 
-#if 0
 		/* Permission checks */
-		ac_database_grant(datId, istmt->is_grant, istmt->privileges,
-						  grantorId, avail_goptions);
+		ac_database_grant(datId, grantorId, avail_goptions);
 
 		/*
 		 * Restrict the privileges to what we can actually grant, and emit the
@@ -1265,13 +1250,6 @@ ExecGrant_Database(InternalGrant *istmt)
 			restrict_grant(istmt->is_grant, avail_goptions,
 						   istmt->all_privs, istmt->privileges,
 						   NameStr(pg_database_tuple->datname));
-#endif
-        this_privileges =
-			restrict_and_check_grant(istmt->is_grant, avail_goptions,
-									 istmt->all_privs, istmt->privileges,
-									 datId, grantorId, ACL_KIND_DATABASE,
-									 NameStr(pg_database_tuple->datname),
-									 0, NULL);
 
 		/*
 		 * Generate new ACL.
@@ -1617,16 +1595,17 @@ ExecGrant_Function(InternalGrant *istmt)
 							old_acl, ownerId,
 							&grantorId, &avail_goptions);
 
+		/* Permission check to grant/revoke */
+		ac_proc_grant(funcId, grantorId, avail_goptions);
+
 		/*
 		 * Restrict the privileges to what we can actually grant, and emit the
 		 * standards-mandated warning and error messages.
 		 */
 		this_privileges =
-			restrict_and_check_grant(istmt->is_grant, avail_goptions,
-									 istmt->all_privs, istmt->privileges,
-									 funcId, grantorId, ACL_KIND_PROC,
-									 NameStr(pg_proc_tuple->proname),
-									 0, NULL);
+			restrict_grant(istmt->is_grant, avail_goptions,
+						   istmt->all_privs, istmt->privileges,
+						   NameStr(pg_proc_tuple->proname));
 
 		/*
 		 * Generate new ACL.
@@ -1860,8 +1839,7 @@ ExecGrant_Namespace(InternalGrant *istmt)
 							&grantorId, &avail_goptions);
 
 		/* Permission checks */
-		ac_namespace_grant(nspid, istmt->is_grant, istmt->privileges,
-						   grantorId, avail_goptions);
+		ac_namespace_grant(nspid, grantorId, avail_goptions);
 
 		/*
 		 * Restrict the privileges to what we can actually grant, and emit the
@@ -1985,8 +1963,7 @@ ExecGrant_Tablespace(InternalGrant *istmt)
 							&grantorId, &avail_goptions);
 
 		/* Permission checks */
-		ac_tablespace_grant(tblId, istmt->is_grant, istmt->privileges,
-							grantorId, avail_goptions);
+		ac_tablespace_grant(tblId, grantorId, avail_goptions);
 
 		/*
 		 * Restrict the privileges to what we can actually grant, and emit the

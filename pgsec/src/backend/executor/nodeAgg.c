@@ -81,7 +81,7 @@
 #include "parser/parse_agg.h"
 #include "parser/parse_coerce.h"
 #include "parser/parse_oper.h"
-#include "utils/acl.h"
+#include "security/common.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
@@ -1368,7 +1368,6 @@ ExecInitAgg(Agg *node, EState *estate, int eflags)
 		HeapTuple	aggTuple;
 		Form_pg_aggregate aggform;
 		Oid			aggtranstype;
-		AclResult	aclresult;
 		Oid			transfn_oid,
 					finalfn_oid;
 		Expr	   *transfnexpr,
@@ -1426,11 +1425,7 @@ ExecInitAgg(Agg *node, EState *estate, int eflags)
 		aggform = (Form_pg_aggregate) GETSTRUCT(aggTuple);
 
 		/* Check permission to call aggregate function */
-		aclresult = pg_proc_aclcheck(aggref->aggfnoid, GetUserId(),
-									 ACL_EXECUTE);
-		if (aclresult != ACLCHECK_OK)
-			aclcheck_error(aclresult, ACL_KIND_PROC,
-						   get_func_name(aggref->aggfnoid));
+		ac_proc_execute(aggref->aggfnoid, GetUserId());
 
 		peraggstate->transfn_oid = transfn_oid = aggform->aggtransfn;
 		peraggstate->finalfn_oid = finalfn_oid = aggform->aggfinalfn;
@@ -1449,19 +1444,10 @@ ExecInitAgg(Agg *node, EState *estate, int eflags)
 			aggOwner = ((Form_pg_proc) GETSTRUCT(procTuple))->proowner;
 			ReleaseSysCache(procTuple);
 
-			aclresult = pg_proc_aclcheck(transfn_oid, aggOwner,
-										 ACL_EXECUTE);
-			if (aclresult != ACLCHECK_OK)
-				aclcheck_error(aclresult, ACL_KIND_PROC,
-							   get_func_name(transfn_oid));
+			/* Permission check on transfn and finalfn, if exist */
+			ac_proc_execute(transfn_oid, aggOwner);
 			if (OidIsValid(finalfn_oid))
-			{
-				aclresult = pg_proc_aclcheck(finalfn_oid, aggOwner,
-											 ACL_EXECUTE);
-				if (aclresult != ACLCHECK_OK)
-					aclcheck_error(aclresult, ACL_KIND_PROC,
-								   get_func_name(finalfn_oid));
-			}
+				ac_proc_execute(finalfn_oid, aggOwner);
 		}
 
 		/* resolve actual type of transition state, if polymorphic */

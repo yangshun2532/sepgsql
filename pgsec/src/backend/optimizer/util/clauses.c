@@ -38,8 +38,8 @@
 #include "parser/parse_coerce.h"
 #include "parser/parse_func.h"
 #include "rewrite/rewriteManip.h"
+#include "security/common.h"
 #include "tcop/tcopprot.h"
-#include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/datum.h"
 #include "utils/lsyscache.h"
@@ -3534,7 +3534,7 @@ inline_function(Oid funcid, Oid result_type, List *args,
 		return NULL;
 
 	/* Check permission to call function (fail later, if not) */
-	if (pg_proc_aclcheck(funcid, GetUserId(), ACL_EXECUTE) != ACLCHECK_OK)
+	if (ac_proc_hint_inline(funcid))
 		return NULL;
 
 	/*
@@ -3967,7 +3967,7 @@ inline_set_returning_function(PlannerInfo *root, RangeTblEntry *rte)
 		return NULL;
 
 	/* Check permission to call function (fail later, if not) */
-	if (pg_proc_aclcheck(fexpr->funcid, GetUserId(), ACL_EXECUTE) != ACLCHECK_OK)
+	if (ac_proc_hint_inline(fexpr->funcid))
 		return NULL;
 
 	/*

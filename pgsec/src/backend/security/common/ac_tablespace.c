@@ -88,14 +88,11 @@ ac_tablespace_drop(Oid tblspcOid, bool cascade)
  *
  * [Params]
  *  tblspcOid  : OID of the target tablespace for GRANT/REVOKE
- *  isGrant    : True, if the statement is GRANT
- *  privileges : AclMask being tries to be granted
  *  grantor    : OID of the gractor database role
  *  goptions   : Available AclMask to grant others
  */
 void
-ac_tablespace_grant(Oid tblspcOid, bool isGrant, AclMode privileges,
-					Oid grantor, AclMode goptions)
+ac_tablespace_grant(Oid tblspcOid, Oid grantor, AclMode goptions)
 {
 	if (goptions == ACL_NO_RIGHTS)
 	{

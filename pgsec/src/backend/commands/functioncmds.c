@@ -770,12 +770,6 @@ CreateFunction(CreateFunctionStmt *stmt, const char *queryString)
 	namespaceId = QualifiedNameGetCreationNamespace(stmt->funcname,
 													&funcname);
 
-	/* Check we have creation rights in target namespace */
-	aclresult = pg_namespace_aclcheck(namespaceId, GetUserId(), ACL_CREATE);
-	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
-					   get_namespace_name(namespaceId));
-
 	/* default attributes */
 	isWindowFunc = false;
 	isStrict = false;
@@ -808,25 +802,6 @@ CreateFunction(CreateFunctionStmt *stmt, const char *queryString)
 
 	languageOid = HeapTupleGetOid(languageTuple);
 	languageStruct = (Form_pg_language) GETSTRUCT(languageTuple);
-
-	if (languageStruct->lanpltrusted)
-	{
-		/* if trusted language, need USAGE privilege */
-		AclResult	aclresult;
-
-		aclresult = pg_language_aclcheck(languageOid, GetUserId(), ACL_USAGE);
-		if (aclresult != ACLCHECK_OK)
-			aclcheck_error(aclresult, ACL_KIND_LANGUAGE,
-						   NameStr(languageStruct->lanname));
-	}
-	else
-	{
-		/* if untrusted language, must be superuser */
-		if (!superuser())
-			aclcheck_error(ACLCHECK_NO_PRIV, ACL_KIND_LANGUAGE,
-						   NameStr(languageStruct->lanname));
-	}
-
 	languageValidator = languageStruct->lanvalidator;
 
 	ReleaseSysCache(languageTuple);
@@ -908,6 +883,7 @@ CreateFunction(CreateFunctionStmt *stmt, const char *queryString)
 	ProcedureCreate(funcname,
 					namespaceId,
 					stmt->replace,
+					true,		/* permission to create or replace */
 					returnsSet,
 					prorettype,
 					languageOid,
@@ -957,18 +933,14 @@ RemoveFunction(RemoveFuncStmt *stmt)
 		return;
 	}
 
+	/* Permission check to drop it */
+	ac_proc_drop(funcOid, false);
+
 	tup = SearchSysCache(PROCOID,
 						 ObjectIdGetDatum(funcOid),
 						 0, 0, 0);
 	if (!HeapTupleIsValid(tup)) /* should not happen */
 		elog(ERROR, "cache lookup failed for function %u", funcOid);
-
-	/* Permission check: must own func or its namespace */
-	if (!pg_proc_ownercheck(funcOid, GetUserId()) &&
-	  !pg_namespace_ownercheck(((Form_pg_proc) GETSTRUCT(tup))->pronamespace,
-							   GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
-					   NameListToString(functionName));
 
 	if (((Form_pg_proc) GETSTRUCT(tup))->proisagg)
 		ereport(ERROR,
@@ -1101,16 +1073,8 @@ RenameFunction(List *name, List *argtypes, const char *newname)
 						get_namespace_name(namespaceOid))));
 	}
 
-	/* must be owner */
-	if (!pg_proc_ownercheck(procOid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
-					   NameListToString(name));
-
-	/* must have CREATE privilege on namespace */
-	aclresult = pg_namespace_aclcheck(namespaceOid, GetUserId(), ACL_CREATE);
-	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
-					   get_namespace_name(namespaceOid));
+	/* Permission checks to rename it */
+	ac_proc_alter(procOid, newname, InvalidOid, InvalidOid);
 
 	/* rename */
 	namestrcpy(&(procForm->proname), newname);
@@ -1201,25 +1165,8 @@ AlterFunctionOwner_internal(Relation rel, HeapTuple tup, Oid newOwnerId)
 		bool		isNull;
 		HeapTuple	newtuple;
 
-		/* Superusers can always do it */
-		if (!superuser())
-		{
-			/* Otherwise, must be owner of the existing object */
-			if (!pg_proc_ownercheck(procOid, GetUserId()))
-				aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
-							   NameStr(procForm->proname));
-
-			/* Must be able to become new owner */
-			check_is_member_of_role(GetUserId(), newOwnerId);
-
-			/* New owner must have CREATE privilege on namespace */
-			aclresult = pg_namespace_aclcheck(procForm->pronamespace,
-											  newOwnerId,
-											  ACL_CREATE);
-			if (aclresult != ACLCHECK_OK)
-				aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
-							   get_namespace_name(procForm->pronamespace));
-		}
+		/* Permission check to change owner */
+		ac_proc_alter(procOid, NULL, InvalidOid, newOwnerId);
 
 		memset(repl_null, false, sizeof(repl_null));
 		memset(repl_repl, false, sizeof(repl_repl));
@@ -1291,10 +1238,8 @@ AlterFunction(AlterFunctionStmt *stmt)
 
 	procForm = (Form_pg_proc) GETSTRUCT(tup);
 
-	/* Permission check: must own function */
-	if (!pg_proc_ownercheck(funcOid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
-					   NameListToString(stmt->func->funcname));
+	/* Permission check */
+	ac_proc_alter(funcOid, NULL, InvalidOid, InvalidOid);
 
 	if (procForm->proisagg)
 		ereport(ERROR,
@@ -1849,11 +1794,6 @@ AlterFunctionNamespace(List *name, List *argtypes, bool isagg,
 	else
 		procOid = LookupFuncNameTypeNames(name, argtypes, false);
 
-	/* check permissions on function */
-	if (!pg_proc_ownercheck(procOid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
-					   NameListToString(name));
-
 	tup = SearchSysCacheCopy(PROCOID,
 							 ObjectIdGetDatum(procOid),
 							 0, 0, 0);
@@ -1872,6 +1812,9 @@ AlterFunctionNamespace(List *name, List *argtypes, bool isagg,
 				 errmsg("function \"%s\" is already in schema \"%s\"",
 						NameListToString(name),
 						newschema)));
+
+	/* Permission check to change the schema */
+	ac_proc_alter(procOid, NULL, nspOid, InvalidOid);
 
 	/* disallow renaming into or out of temp schemas */
 	if (isAnyTempNamespace(nspOid) || isAnyTempNamespace(oldNspOid))

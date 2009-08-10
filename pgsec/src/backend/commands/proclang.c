@@ -133,6 +133,7 @@ CreateProceduralLanguage(CreatePLangStmt *stmt)
 			handlerOid = ProcedureCreate(pltemplate->tmplhandler,
 										 PG_CATALOG_NAMESPACE,
 										 false, /* replace */
+										 false, /* permission */
 										 false, /* returnsSet */
 										 LANGUAGE_HANDLEROID,
 										 ClanguageId,
@@ -168,6 +169,7 @@ CreateProceduralLanguage(CreatePLangStmt *stmt)
 				valOid = ProcedureCreate(pltemplate->tmplvalidator,
 										 PG_CATALOG_NAMESPACE,
 										 false, /* replace */
+										 false, /* permission */
 										 false, /* returnsSet */
 										 VOIDOID,
 										 ClanguageId,

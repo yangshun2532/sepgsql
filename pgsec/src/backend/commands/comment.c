@@ -921,10 +921,7 @@ CommentProc(List *function, List *arguments, char *comment)
 	oid = LookupFuncNameTypeNames(function, arguments, false);
 
 	/* Now, validate the user's ability to comment on this function */
-
-	if (!pg_proc_ownercheck(oid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
-					   NameListToString(function));
+	ac_proc_comment(oid);
 
 	/* Call CreateComments() to create/drop the comments */
 	CreateComments(oid, ProcedureRelationId, 0, comment);

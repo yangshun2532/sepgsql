@@ -98,7 +98,7 @@
 #include "executor/execdefs.h"
 #include "executor/nodeMergejoin.h"
 #include "miscadmin.h"
-#include "utils/acl.h"
+#include "security/common.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
 #include "utils/syscache.h"
@@ -181,7 +181,6 @@ MJExamineQuals(List *mergeclauses,
 		Oid			op_lefttype;
 		Oid			op_righttype;
 		RegProcedure cmpproc;
-		AclResult	aclresult;
 
 		if (!IsA(qual, OpExpr))
 			elog(ERROR, "mergejoin clause is not an OpExpr");
@@ -211,10 +210,7 @@ MJExamineQuals(List *mergeclauses,
 				 BTORDER_PROC, op_lefttype, op_righttype, opfamily);
 
 		/* Check permission to call cmp function */
-		aclresult = pg_proc_aclcheck(cmpproc, GetUserId(), ACL_EXECUTE);
-		if (aclresult != ACLCHECK_OK)
-			aclcheck_error(aclresult, ACL_KIND_PROC,
-						   get_func_name(cmpproc));
+		ac_proc_execute(cmpproc, GetUserId());
 
 		/* Set up the fmgr lookup information */
 		fmgr_info(cmpproc, &(clause->cmpfinfo));

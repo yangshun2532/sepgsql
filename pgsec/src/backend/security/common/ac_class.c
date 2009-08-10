@@ -162,14 +162,11 @@ ac_class_drop(Oid relOid, bool cascade)
  *
  * [Params]
  *   relOid   : OID of the target relation for GRANT/REVOKE
- *   isGrant  : True, if the statement is GRANT
- *   privs    : AclMask being tries to be granted/revoked
  *   grantor  : OID of the gractor role
  *   goptions : Available AclMask available to grant others
  */
 void
-ac_class_grant(Oid relOid, bool isGrant, AclMode privs,
-			   Oid grantor, AclMode goptions)
+ac_class_grant(Oid relOid, Oid grantor, AclMode goptions)
 {
 	if (goptions == ACL_NO_RIGHTS)
 	{
