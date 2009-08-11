@@ -27,7 +27,7 @@
 #include "foreign/foreign.h"
 #include "miscadmin.h"
 #include "parser/parse_func.h"
-#include "utils/acl.h"
+#include "security/common.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
@@ -201,22 +201,6 @@ AlterForeignDataWrapperOwner(const char *name, Oid newOwnerId)
 	Oid			fdwId;
 	Form_pg_foreign_data_wrapper form;
 
-	/* Must be a superuser to change a FDW owner */
-	if (!superuser())
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("permission denied to change owner of foreign-data wrapper \"%s\"",
-						name),
-				 errhint("Must be superuser to change owner of a foreign-data wrapper.")));
-
-	/* New owner must also be a superuser */
-	if (!superuser_arg(newOwnerId))
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("permission denied to change owner of foreign-data wrapper \"%s\"",
-						name),
-		errhint("The owner of a foreign-data wrapper must be a superuser.")));
-
 	rel = heap_open(ForeignDataWrapperRelationId, RowExclusiveLock);
 
 	tup = SearchSysCacheCopy(FOREIGNDATAWRAPPERNAME,
@@ -230,6 +214,9 @@ AlterForeignDataWrapperOwner(const char *name, Oid newOwnerId)
 
 	fdwId = HeapTupleGetOid(tup);
 	form = (Form_pg_foreign_data_wrapper) GETSTRUCT(tup);
+
+	/* Permission checks */
+	ac_foreign_data_wrapper(fdwId, InvalidOid, newOwnerId);
 
 	if (form->fdwowner != newOwnerId)
 	{
@@ -277,26 +264,8 @@ AlterForeignServerOwner(const char *name, Oid newOwnerId)
 
 	if (form->srvowner != newOwnerId)
 	{
-		/* Superusers can always do it */
-		if (!superuser())
-		{
-			/* Must be owner */
-			if (!pg_foreign_server_ownercheck(srvId, GetUserId()))
-				aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_FOREIGN_SERVER,
-							   name);
-
-			/* Must be able to become new owner */
-			check_is_member_of_role(GetUserId(), newOwnerId);
-
-			/* New owner must have USAGE privilege on foreign-data wrapper */
-			aclresult = pg_foreign_data_wrapper_aclcheck(form->srvfdw, newOwnerId, ACL_USAGE);
-			if (aclresult != ACLCHECK_OK)
-			{
-				ForeignDataWrapper *fdw = GetForeignDataWrapper(form->srvfdw);
-
-				aclcheck_error(aclresult, ACL_KIND_FDW, fdw->fdwname);
-			}
-		}
+		/* Permission checks */
+		ac_foreign_server_alter(srvId, newOwnerId);
 
 		form->srvowner = newOwnerId;
 
@@ -343,14 +312,6 @@ CreateForeignDataWrapper(CreateFdwStmt *stmt)
 	Datum		fdwoptions;
 	Oid			ownerId;
 
-	/* Must be super user */
-	if (!superuser())
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-			errmsg("permission denied to create foreign-data wrapper \"%s\"",
-				   stmt->fdwname),
-			errhint("Must be superuser to create a foreign-data wrapper.")));
-
 	/* For now the owner cannot be specified on create. Use effective user ID. */
 	ownerId = GetUserId();
 
@@ -363,6 +324,14 @@ CreateForeignDataWrapper(CreateFdwStmt *stmt)
 				 errmsg("foreign-data wrapper \"%s\" already exists",
 						stmt->fdwname)));
 
+	if (stmt->validator)
+		fdwvalidator = lookup_fdw_validator_func(stmt->validator);
+	else
+		fdwvalidator = InvalidOid;
+
+	/* Permission checks */
+	ac_foreign_data_wrapper(stmt->fdwname, fdwvalidator);
+
 	/*
 	 * Insert tuple into pg_foreign_data_wrapper.
 	 */
@@ -374,12 +343,6 @@ CreateForeignDataWrapper(CreateFdwStmt *stmt)
 	values[Anum_pg_foreign_data_wrapper_fdwname - 1] =
 		DirectFunctionCall1(namein, CStringGetDatum(stmt->fdwname));
 	values[Anum_pg_foreign_data_wrapper_fdwowner - 1] = ObjectIdGetDatum(ownerId);
-
-	if (stmt->validator)
-		fdwvalidator = lookup_fdw_validator_func(stmt->validator);
-	else
-		fdwvalidator = InvalidOid;
-
 	values[Anum_pg_foreign_data_wrapper_fdwvalidator - 1] = fdwvalidator;
 
 	nulls[Anum_pg_foreign_data_wrapper_fdwacl - 1] = true;
@@ -435,14 +398,6 @@ AlterForeignDataWrapper(AlterFdwStmt *stmt)
 	bool		isnull;
 	Datum		datum;
 	Oid			fdwvalidator;
-
-	/* Must be super user */
-	if (!superuser())
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-			 errmsg("permission denied to alter foreign-data wrapper \"%s\"",
-					stmt->fdwname),
-			 errhint("Must be superuser to alter a foreign-data wrapper.")));
 
 	tp = SearchSysCacheCopy(FOREIGNDATAWRAPPERNAME,
 							CStringGetDatum(stmt->fdwname),
@@ -511,6 +466,9 @@ AlterForeignDataWrapper(AlterFdwStmt *stmt)
 		repl_repl[Anum_pg_foreign_data_wrapper_fdwoptions - 1] = true;
 	}
 
+	/* Permission checks to alter */
+	ac_foreign_data_wrapper_alter(fdwId, fdwvalidator, InvalidOid);
+
 	/* Everything looks good - update the tuple */
 
 	rel = heap_open(ForeignDataWrapperRelationId, RowExclusiveLock);
@@ -537,13 +495,6 @@ RemoveForeignDataWrapper(DropFdwStmt *stmt)
 
 	fdwId = GetForeignDataWrapperOidByName(stmt->fdwname, true);
 
-	if (!superuser())
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-			  errmsg("permission denied to drop foreign-data wrapper \"%s\"",
-					 stmt->fdwname),
-			  errhint("Must be superuser to drop a foreign-data wrapper.")));
-
 	if (!OidIsValid(fdwId))
 	{
 		if (!stmt->missing_ok)
@@ -558,6 +509,9 @@ RemoveForeignDataWrapper(DropFdwStmt *stmt)
 					  stmt->fdwname)));
 		return;
 	}
+
+	/* Permission checks */
+	ac_foreign_data_wrapper_drop(fdwId, false);
 
 	/*
 	 * Do the deletion
@@ -725,12 +679,8 @@ AlterForeignServer(AlterForeignServerStmt *stmt)
 	srvId = HeapTupleGetOid(tp);
 	srvForm = (Form_pg_foreign_server) GETSTRUCT(tp);
 
-	/*
-	 * Only owner or a superuser can ALTER a SERVER.
-	 */
-	if (!pg_foreign_server_ownercheck(srvId, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_FOREIGN_SERVER,
-					   stmt->servername);
+	/* Permission checks */
+	ac_foreign_server_alter(srvId, InvalidOid);
 
 	memset(repl_val, 0, sizeof(repl_val));
 	memset(repl_null, false, sizeof(repl_null));
@@ -817,10 +767,8 @@ RemoveForeignServer(DropForeignServerStmt *stmt)
 		return;
 	}
 
-	/* Only allow DROP if the server is owned by the user. */
-	if (!pg_foreign_server_ownercheck(srvId, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_FOREIGN_SERVER,
-					   stmt->servername);
+	/* Permission check to drop the foreign server */
+	ac_foreign_server_drop(srvId, false);
 
 	object.classId = ForeignServerRelationId;
 	object.objectId = srvId;
@@ -855,34 +803,6 @@ RemoveForeignServerById(Oid srvId)
 	heap_close(rel, RowExclusiveLock);
 }
 
-
-/*
- * Common routine to check permission for user-mapping-related DDL
- * commands.  We allow server owners to operate on any mapping, and
- * users to operate on their own mapping.
- */
-static void
-user_mapping_ddl_aclcheck(Oid umuserid, Oid serverid, const char *servername)
-{
-	Oid			curuserid = GetUserId();
-
-	if (!pg_foreign_server_ownercheck(serverid, curuserid))
-	{
-		if (umuserid == curuserid)
-		{
-			AclResult	aclresult;
-
-			aclresult = pg_foreign_server_aclcheck(serverid, curuserid, ACL_USAGE);
-			if (aclresult != ACLCHECK_OK)
-				aclcheck_error(aclresult, ACL_KIND_FOREIGN_SERVER, servername);
-		}
-		else
-			aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_FOREIGN_SERVER,
-						   servername);
-	}
-}
-
-
 /*
  * Create user mapping
  */
@@ -906,7 +826,8 @@ CreateUserMapping(CreateUserMappingStmt *stmt)
 	/* Check that the server exists. */
 	srv = GetForeignServerByName(stmt->servername, false);
 
-	user_mapping_ddl_aclcheck(useId, srv->serverid, stmt->servername);
+	/* Permission check to create user mapping */
+	ac_user_mapping_create(useId, srv->serverid);
 
 	/*
 	 * Check that the user mapping is unique within server.
@@ -998,7 +919,8 @@ AlterUserMapping(AlterUserMappingStmt *stmt)
 				 errmsg("user mapping \"%s\" does not exist for the server",
 						MappingUserName(useId))));
 
-	user_mapping_ddl_aclcheck(useId, srv->serverid, stmt->servername);
+	/* Permission check to alter this user mapping */
+	ac_user_mapping_alter(useId, srv->serverid);
 
 	tp = SearchSysCacheCopy(USERMAPPINGOID,
 							ObjectIdGetDatum(umId),
@@ -1113,7 +1035,8 @@ RemoveUserMapping(DropUserMappingStmt *stmt)
 		return;
 	}
 
-	user_mapping_ddl_aclcheck(useId, srv->serverid, srv->servername);
+	/* Permission check to drop thi user mapping */
+	ac_user_mapping_drop(useId, srv->serverid, false);
 
 	/*
 	 * Do the deletion

@@ -72,11 +72,8 @@ static void expand_all_col_privileges(Oid table_oid, Form_pg_class classForm,
 						  int num_col_privileges);
 static AclMode string_to_privilege(const char *privname);
 static const char *privilege_to_string(AclMode privilege);
-static AclMode restrict_and_check_grant(bool is_grant, AclMode avail_goptions,
-						 bool all_privs, AclMode privileges,
-						 Oid objectId, Oid grantorId,
-						 AclObjectKind objkind, const char *objname,
-						 AttrNumber att_number, const char *colname);
+static AclMode restrict_grant(bool is_grant, AclMode avail_goptions, bool all_privs,
+							  AclMode privileges, const char *objname);
 static AclMode pg_aclmask(AclObjectKind objkind, Oid table_oid, AttrNumber attnum,
 		   Oid roleid, AclMode mask, AclMaskHow how);
 
@@ -166,95 +163,6 @@ merge_acl_with_grant(Acl *old_acl, bool is_grant,
 	}
 
 	return new_acl;
-}
-
-/*
- * Restrict the privileges to what we can actually grant, and emit
- * the standards-mandated warning and error messages.
- */
-static AclMode
-restrict_and_check_grant(bool is_grant, AclMode avail_goptions, bool all_privs,
-						 AclMode privileges, Oid objectId, Oid grantorId,
-						 AclObjectKind objkind, const char *objname,
-						 AttrNumber att_number, const char *colname)
-{
-	AclMode		this_privileges;
-	AclMode		whole_mask;
-
-	switch (objkind)
-	{
-		case ACL_KIND_FDW:
-			whole_mask = ACL_ALL_RIGHTS_FDW;
-			break;
-		case ACL_KIND_FOREIGN_SERVER:
-			whole_mask = ACL_ALL_RIGHTS_FOREIGN_SERVER;
-			break;
-		case ACL_KIND_COLUMN:
-		case ACL_KIND_CLASS:
-		case ACL_KIND_SEQUENCE:
-		case ACL_KIND_DATABASE:
-		case ACL_KIND_PROC:
-		case ACL_KIND_NAMESPACE:
-		case ACL_KIND_TABLESPACE:
-		case ACL_KIND_LANGUAGE:
-			elog(ERROR, "already integrated with common abstraction layer", objkind);
-			break;
-		default:
-			elog(ERROR, "unrecognized object kind: %d", objkind);
-			/* not reached, but keep compiler quiet */
-			return ACL_NO_RIGHTS;
-	}
-
-	/*
-	 * If we found no grant options, consider whether to issue a hard error.
-	 * Per spec, having any privilege at all on the object will get you by
-	 * here.
-	 */
-	if (avail_goptions == ACL_NO_RIGHTS)
-	{
-		if (pg_aclmask(objkind, objectId, att_number, grantorId,
-					   whole_mask | ACL_GRANT_OPTION_FOR(whole_mask),
-					   ACLMASK_ANY) == ACL_NO_RIGHTS)
-		{
-			if (objkind == ACL_KIND_COLUMN && colname)
-				aclcheck_error_col(ACLCHECK_NO_PRIV, objkind, objname, colname);
-			else
-				aclcheck_error(ACLCHECK_NO_PRIV, objkind, objname);
-		}
-	}
-
-	/*
-	 * Restrict the operation to what we can actually grant or revoke, and
-	 * issue a warning if appropriate.	(For REVOKE this isn't quite what the
-	 * spec says to do: the spec seems to want a warning only if no privilege
-	 * bits actually change in the ACL. In practice that behavior seems much
-	 * too noisy, as well as inconsistent with the GRANT case.)
-	 */
-	this_privileges = privileges & ACL_OPTION_TO_PRIVS(avail_goptions);
-	if (is_grant)
-	{
-		if (this_privileges == 0)
-			ereport(WARNING,
-					(errcode(ERRCODE_WARNING_PRIVILEGE_NOT_GRANTED),
-				  errmsg("no privileges were granted for \"%s\"", objname)));
-		else if (!all_privs && this_privileges != privileges)
-			ereport(WARNING,
-					(errcode(ERRCODE_WARNING_PRIVILEGE_NOT_GRANTED),
-			 errmsg("not all privileges were granted for \"%s\"", objname)));
-	}
-	else
-	{
-		if (this_privileges == 0)
-			ereport(WARNING,
-					(errcode(ERRCODE_WARNING_PRIVILEGE_NOT_REVOKED),
-			  errmsg("no privileges could be revoked for \"%s\"", objname)));
-		else if (!all_privs && this_privileges != privileges)
-			ereport(WARNING,
-					(errcode(ERRCODE_WARNING_PRIVILEGE_NOT_REVOKED),
-					 errmsg("not all privileges could be revoked for \"%s\"", objname)));
-	}
-
-	return this_privileges;
 }
 
 /*
@@ -1356,16 +1264,17 @@ ExecGrant_Fdw(InternalGrant *istmt)
 							old_acl, ownerId,
 							&grantorId, &avail_goptions);
 
+		/* Permission checks */
+		ac_foreign_data_wrapper_grant(fdwid, grantorId, avail_goptions);
+
 		/*
 		 * Restrict the privileges to what we can actually grant, and emit the
 		 * standards-mandated warning and error messages.
 		 */
 		this_privileges =
-			restrict_and_check_grant(istmt->is_grant, avail_goptions,
-									 istmt->all_privs, istmt->privileges,
-									 fdwid, grantorId, ACL_KIND_FDW,
-									 NameStr(pg_fdw_tuple->fdwname),
-									 0, NULL);
+			restrict_grant(istmt->is_grant, avail_goptions,
+						   istmt->all_privs, istmt->privileges,
+						   NameStr(pg_fdw_tuple->fdwname));
 
 		/*
 		 * Generate new ACL.
@@ -1475,16 +1384,17 @@ ExecGrant_ForeignServer(InternalGrant *istmt)
 							old_acl, ownerId,
 							&grantorId, &avail_goptions);
 
+		/* Permission checks */
+		ac_foreign_server_grant(srvid, grantorId, avail_goptions);
+
 		/*
 		 * Restrict the privileges to what we can actually grant, and emit the
 		 * standards-mandated warning and error messages.
 		 */
 		this_privileges =
-			restrict_and_check_grant(istmt->is_grant, avail_goptions,
-									 istmt->all_privs, istmt->privileges,
-								   srvid, grantorId, ACL_KIND_FOREIGN_SERVER,
-									 NameStr(pg_server_tuple->srvname),
-									 0, NULL);
+			restrict_grant(istmt->is_grant, avail_goptions,
+						   istmt->all_privs, istmt->privileges,
+						   NameStr(pg_server_tuple->srvname));
 
 		/*
 		 * Generate new ACL.
