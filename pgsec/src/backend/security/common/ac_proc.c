@@ -51,6 +51,25 @@ check_language_usage(Oid langOid)
 	return langTrusted;
 }
 
+static Oid
+get_func_namespace(Oid funcOid)
+{
+	HeapTuple	proTup;
+	Oid			proNsp;
+
+	proTup = SearchSysCache(PROCOID,
+							ObjectIdGetDatum(funcOid),
+							0, 0, 0);
+	if (!HeapTupleIsValid(proTup))
+		elog(ERROR, "cache lookup failed for function %u", proTup);
+
+	proNsp = ((Form_pg_proc) GETSTRUCT(tp))->pronamespace;
+
+	ReleaseSysCache(proNsp);
+
+	return proNsp;
+}
+
 /*
  * ac_proc_create
  *

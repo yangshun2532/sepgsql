@@ -1179,10 +1179,7 @@ CommentLanguage(List *qualname, char *comment)
 				 errmsg("language \"%s\" does not exist", language)));
 
 	/* Check object security */
-	if (!superuser())
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-			 errmsg("must be superuser to comment on procedural language")));
+	ac_language_comment(oid);
 
 	/* Call CreateComments() to create/drop the comments */
 	CreateComments(oid, LanguageRelationId, 0, comment);

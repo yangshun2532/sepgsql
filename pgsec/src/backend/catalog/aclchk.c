@@ -183,9 +183,6 @@ restrict_and_check_grant(bool is_grant, AclMode avail_goptions, bool all_privs,
 
 	switch (objkind)
 	{
-		case ACL_KIND_LANGUAGE:
-			whole_mask = ACL_ALL_RIGHTS_LANGUAGE;
-			break;
 		case ACL_KIND_FDW:
 			whole_mask = ACL_ALL_RIGHTS_FDW;
 			break;
@@ -199,6 +196,7 @@ restrict_and_check_grant(bool is_grant, AclMode avail_goptions, bool all_privs,
 		case ACL_KIND_PROC:
 		case ACL_KIND_NAMESPACE:
 		case ACL_KIND_TABLESPACE:
+		case ACL_KIND_LANGUAGE:
 			elog(ERROR, "already integrated with common abstraction layer", objkind);
 			break;
 		default:
@@ -1720,16 +1718,17 @@ ExecGrant_Language(InternalGrant *istmt)
 							old_acl, ownerId,
 							&grantorId, &avail_goptions);
 
+		/* Permission checks */
+		ac_language_grant(langId, grantorId, avail_goptions);
+
 		/*
 		 * Restrict the privileges to what we can actually grant, and emit the
 		 * standards-mandated warning and error messages.
 		 */
 		this_privileges =
-			restrict_and_check_grant(istmt->is_grant, avail_goptions,
-									 istmt->all_privs, istmt->privileges,
-									 langId, grantorId, ACL_KIND_LANGUAGE,
-									 NameStr(pg_language_tuple->lanname),
-									 0, NULL);
+			restrict_grant(istmt->is_grant, avail_goptions,
+						   istmt->all_privs, istmt->privileges,
+						   NameStr(pg_language_tuple->lanname));
 
 		/*
 		 * Generate new ACL.
