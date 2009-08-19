@@ -56,7 +56,7 @@
 #include "parser/parse_expr.h"
 #include "parser/parse_func.h"
 #include "parser/parse_type.h"
-#include "utils/acl.h"
+#include "security/common.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
@@ -83,7 +83,6 @@ static Oid	findTypeTypmodinFunction(List *procname);
 static Oid	findTypeTypmodoutFunction(List *procname);
 static Oid	findTypeAnalyzeFunction(List *procname, Oid typeOid);
 static List *get_rels_with_domain(Oid domainOid, LOCKMODE lockmode);
-static void checkDomainOwner(HeapTuple tup, TypeName *typename);
 static char *domainAddConstraint(Oid domainOid, Oid domainNamespace,
 					Oid baseTypeOid,
 					int typMod, Constraint *constr,
@@ -146,33 +145,8 @@ DefineType(List *names, List *parameters)
 	Relation	pg_type;
 	ListCell   *pl;
 
-	/*
-	 * As of Postgres 8.4, we require superuser privilege to create a base
-	 * type.  This is simple paranoia: there are too many ways to mess up the
-	 * system with an incorrect type definition (for instance, representation
-	 * parameters that don't match what the C code expects).  In practice it
-	 * takes superuser privilege to create the I/O functions, and so the
-	 * former requirement that you own the I/O functions pretty much forced
-	 * superuserness anyway.  We're just making doubly sure here.
-	 *
-	 * XXX re-enable NOT_USED code sections below if you remove this test.
-	 */
-	if (!superuser())
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("must be superuser to create a base type")));
-
 	/* Convert list of names to a name and namespace */
 	typeNamespace = QualifiedNameGetCreationNamespace(names, &typeName);
-
-#ifdef NOT_USED
-	/* XXX this is unnecessary given the superuser check above */
-	/* Check we have creation rights in target namespace */
-	aclresult = pg_namespace_aclcheck(typeNamespace, GetUserId(), ACL_CREATE);
-	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
-					   get_namespace_name(typeNamespace));
-#endif
 
 	/*
 	 * Look to see if type already exists (presumably as a shell; if not,
@@ -489,38 +463,10 @@ DefineType(List *names, List *parameters)
 	if (analyzeName)
 		analyzeOid = findTypeAnalyzeFunction(analyzeName, typoid);
 
-	/*
-	 * Check permissions on functions.	We choose to require the creator/owner
-	 * of a type to also own the underlying functions.	Since creating a type
-	 * is tantamount to granting public execute access on the functions, the
-	 * minimum sane check would be for execute-with-grant-option.  But we
-	 * don't have a way to make the type go away if the grant option is
-	 * revoked, so ownership seems better.
-	 */
-#ifdef NOT_USED
-	/* XXX this is unnecessary given the superuser check above */
-	if (inputOid && !pg_proc_ownercheck(inputOid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
-					   NameListToString(inputName));
-	if (outputOid && !pg_proc_ownercheck(outputOid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
-					   NameListToString(outputName));
-	if (receiveOid && !pg_proc_ownercheck(receiveOid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
-					   NameListToString(receiveName));
-	if (sendOid && !pg_proc_ownercheck(sendOid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
-					   NameListToString(sendName));
-	if (typmodinOid && !pg_proc_ownercheck(typmodinOid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
-					   NameListToString(typmodinName));
-	if (typmodoutOid && !pg_proc_ownercheck(typmodoutOid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
-					   NameListToString(typmodoutName));
-	if (analyzeOid && !pg_proc_ownercheck(analyzeOid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
-					   NameListToString(analyzeName));
-#endif
+	/* Permission check to define a new regular type */
+	ac_type_create(typeName, typeNamespace,
+				   inputOid, outputOid, receiveOid, sendOid,
+				   typmodinOid, typmodoutOid, analyzeOid);
 
 	/* Preassign array type OID so we can insert it in pg_type.typarray */
 	pg_type = heap_open(TypeRelationId, AccessShareLock);
@@ -660,11 +606,8 @@ RemoveTypes(DropStmt *drop)
 		typeoid = typeTypeId(tup);
 		typ = (Form_pg_type) GETSTRUCT(tup);
 
-		/* Permission check: must own type or its namespace */
-		if (!pg_type_ownercheck(typeoid, GetUserId()) &&
-			!pg_namespace_ownercheck(typ->typnamespace, GetUserId()))
-			aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_TYPE,
-						   format_type_be(typeoid));
+		/* Permission check to drop the type */
+		ac_type_drop(typeoid, false);
 
 		if (drop->removeType == OBJECT_DOMAIN)
 		{
@@ -738,7 +681,6 @@ DefineDomain(CreateDomainStmt *stmt)
 {
 	char	   *domainName;
 	Oid			domainNamespace;
-	AclResult	aclresult;
 	int16		internalLength;
 	Oid			inputProcedure;
 	Oid			outputProcedure;
@@ -773,12 +715,8 @@ DefineDomain(CreateDomainStmt *stmt)
 	domainNamespace = QualifiedNameGetCreationNamespace(stmt->domainname,
 														&domainName);
 
-	/* Check we have creation rights in target namespace */
-	aclresult = pg_namespace_aclcheck(domainNamespace, GetUserId(),
-									  ACL_CREATE);
-	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
-					   get_namespace_name(domainNamespace));
+	/* Permission checks */
+	ac_domain_create(domainName, domainNamespace);
 
 	/*
 	 * Check for collision with an existing type name.	If there is one and
@@ -1086,7 +1024,6 @@ DefineEnum(CreateEnumStmt *stmt)
 	char	   *enumArrayName;
 	Oid			enumNamespace;
 	Oid			enumTypeOid;
-	AclResult	aclresult;
 	Oid			old_type_oid;
 	Oid			enumArrayOid;
 	Relation	pg_type;
@@ -1095,11 +1032,8 @@ DefineEnum(CreateEnumStmt *stmt)
 	enumNamespace = QualifiedNameGetCreationNamespace(stmt->typeName,
 													  &enumName);
 
-	/* Check we have creation rights in target namespace */
-	aclresult = pg_namespace_aclcheck(enumNamespace, GetUserId(), ACL_CREATE);
-	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
-					   get_namespace_name(enumNamespace));
+	/* Permission check to create a new enum type */
+	ac_enum_create(enumName, enumNamespace);
 
 	/*
 	 * Check for collision with an existing type name.	If there is one and
@@ -1536,8 +1470,13 @@ AlterDomainDefault(List *names, Node *defaultRaw)
 		elog(ERROR, "cache lookup failed for type %u", domainoid);
 	typTup = (Form_pg_type) GETSTRUCT(tup);
 
-	/* Check it's a domain and check user has permission for ALTER DOMAIN */
-	checkDomainOwner(tup, typename);
+	if (typTup->typtype != TYPTYPE_DOMAIN)
+		ereport(ERROR,
+				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+				 errmsg("\"%s\" is not a domain",
+						TypeNameToString(typename))));
+	/* Permission checks */
+	ac_type_alter(domainoid, NULL, InvalidOid, InvalidOid);
 
 	/* Setup new tuple */
 	MemSet(new_record, (Datum) 0, sizeof(new_record));
@@ -1664,8 +1603,13 @@ AlterDomainNotNull(List *names, bool notNull)
 		elog(ERROR, "cache lookup failed for type %u", domainoid);
 	typTup = (Form_pg_type) GETSTRUCT(tup);
 
-	/* Check it's a domain and check user has permission for ALTER DOMAIN */
-	checkDomainOwner(tup, typename);
+	if (typTup->typtype != TYPTYPE_DOMAIN)
+		ereport(ERROR,
+				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+				 errmsg("\"%s\" is not a domain",
+						TypeNameToString(typename))));
+	/* Permission checks */
+	ac_type_alter(domainoid, NULL, InvalidOid, InvalidOid);
 
 	/* Is the domain already set to the desired constraint? */
 	if (typTup->typnotnull == notNull)
@@ -1746,6 +1690,7 @@ AlterDomainDropConstraint(List *names, const char *constrName,
 	TypeName   *typename;
 	Oid			domainoid;
 	HeapTuple	tup;
+	Form_pg_type	typTup;
 	Relation	rel;
 	Relation	conrel;
 	SysScanDesc conscan;
@@ -1764,9 +1709,15 @@ AlterDomainDropConstraint(List *names, const char *constrName,
 							 0, 0, 0);
 	if (!HeapTupleIsValid(tup))
 		elog(ERROR, "cache lookup failed for type %u", domainoid);
+	typTup = (Form_pg_type) GETSTRUCT(tup);
 
-	/* Check it's a domain and check user has permission for ALTER DOMAIN */
-	checkDomainOwner(tup, typename);
+	if (typTup->typtype != TYPTYPE_DOMAIN)
+		ereport(ERROR,
+				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+				 errmsg("\"%s\" is not a domain",
+						TypeNameToString(typename))));
+	/* Permission checks */
+	ac_type_alter(domainoid, NULL, InvalidOid, InvalidOid);
 
 	/* Grab an appropriate lock on the pg_constraint relation */
 	conrel = heap_open(ConstraintRelationId, RowExclusiveLock);
@@ -1841,8 +1792,13 @@ AlterDomainAddConstraint(List *names, Node *newConstraint)
 		elog(ERROR, "cache lookup failed for type %u", domainoid);
 	typTup = (Form_pg_type) GETSTRUCT(tup);
 
-	/* Check it's a domain and check user has permission for ALTER DOMAIN */
-	checkDomainOwner(tup, typename);
+	if (typTup->typtype != TYPTYPE_DOMAIN)
+		ereport(ERROR,
+				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+				 errmsg("\"%s\" is not a domain",
+						TypeNameToString(typename))));
+	/* Permission checks */
+	ac_type_alter(domainoid, NULL, InvalidOid, InvalidOid);
 
 	if (!IsA(newConstraint, Constraint))
 		elog(ERROR, "unrecognized node type: %d",
@@ -2142,30 +2098,6 @@ get_rels_with_domain(Oid domainOid, LOCKMODE lockmode)
 }
 
 /*
- * checkDomainOwner
- *
- * Check that the type is actually a domain and that the current user
- * has permission to do ALTER DOMAIN on it.  Throw an error if not.
- */
-static void
-checkDomainOwner(HeapTuple tup, TypeName *typename)
-{
-	Form_pg_type typTup = (Form_pg_type) GETSTRUCT(tup);
-
-	/* Check that this is actually a domain */
-	if (typTup->typtype != TYPTYPE_DOMAIN)
-		ereport(ERROR,
-				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-				 errmsg("\"%s\" is not a domain",
-						TypeNameToString(typename))));
-
-	/* Permission check: must own type */
-	if (!pg_type_ownercheck(HeapTupleGetOid(tup), GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_TYPE,
-					   format_type_be(HeapTupleGetOid(tup)));
-}
-
-/*
  * domainAddConstraint - code shared between CREATE and ALTER DOMAIN
  */
 static char *
@@ -2460,9 +2392,7 @@ RenameType(List *names, const char *newTypeName)
 	typTup = (Form_pg_type) GETSTRUCT(tup);
 
 	/* check permissions on type */
-	if (!pg_type_ownercheck(typeOid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_TYPE,
-					   format_type_be(typeOid));
+	ac_type_alter(typeOid, newTypeName, InvalidOid, InvalidOid);
 
 	/*
 	 * If it's a composite type, we need to check that it really is a
@@ -2514,7 +2444,6 @@ AlterTypeOwner(List *names, Oid newOwnerId)
 	HeapTuple	tup;
 	HeapTuple	newtup;
 	Form_pg_type typTup;
-	AclResult	aclresult;
 
 	rel = heap_open(TypeRelationId, RowExclusiveLock);
 
@@ -2565,25 +2494,8 @@ AlterTypeOwner(List *names, Oid newOwnerId)
 	 */
 	if (typTup->typowner != newOwnerId)
 	{
-		/* Superusers can always do it */
-		if (!superuser())
-		{
-			/* Otherwise, must be owner of the existing object */
-			if (!pg_type_ownercheck(HeapTupleGetOid(tup), GetUserId()))
-				aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_TYPE,
-							   format_type_be(HeapTupleGetOid(tup)));
-
-			/* Must be able to become new owner */
-			check_is_member_of_role(GetUserId(), newOwnerId);
-
-			/* New owner must have CREATE privilege on namespace */
-			aclresult = pg_namespace_aclcheck(typTup->typnamespace,
-											  newOwnerId,
-											  ACL_CREATE);
-			if (aclresult != ACLCHECK_OK)
-				aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
-							   get_namespace_name(typTup->typnamespace));
-		}
+		/* Permission checks to alter owner of types */
+		ac_type_alter(HeapTupleGetOid(tup), NULL, InvalidOid, newOwnerId);
 
 		/*
 		 * If it's a composite type, invoke ATExecChangeOwner so that we fix
@@ -2682,13 +2594,11 @@ AlterTypeNamespace(List *names, const char *newschema)
 	typename = makeTypeNameFromNameList(names);
 	typeOid = typenameTypeId(NULL, typename, NULL);
 
-	/* check permissions on type */
-	if (!pg_type_ownercheck(typeOid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_TYPE,
-					   format_type_be(typeOid));
-
 	/* get schema OID and check its permissions */
 	nspOid = LookupCreationNamespace(newschema);
+
+	/* check permissions on type */
+	ac_type_alter(typeOid, NULL, nspOid, InvalidOid);
 
 	/* don't allow direct alteration of array types */
 	elemOid = get_element_type(typeOid);
