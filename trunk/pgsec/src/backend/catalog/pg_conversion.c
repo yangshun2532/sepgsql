@@ -24,7 +24,7 @@
 #include "catalog/pg_proc.h"
 #include "mb/pg_wchar.h"
 #include "miscadmin.h"
-#include "utils/acl.h"
+#include "security/common.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
 #include "utils/rel.h"
@@ -221,8 +221,7 @@ FindConversion(const char *conname, Oid connamespace)
 {
 	HeapTuple	tuple;
 	Oid			procoid;
-	Oid			conoid;
-	AclResult	aclresult;
+	Oid			conoid = InvalidOid;
 
 	/* search pg_conversion by connamespace and conversion name */
 	tuple = SearchSysCache(CONNAMENSP,
@@ -233,14 +232,10 @@ FindConversion(const char *conname, Oid connamespace)
 		return InvalidOid;
 
 	procoid = ((Form_pg_conversion) GETSTRUCT(tuple))->conproc;
-	conoid = HeapTupleGetOid(tuple);
+	if (ac_conversion_lookup(procoid))
+		conoid = HeapTupleGetOid(tuple);
 
 	ReleaseSysCache(tuple);
-
-	/* Check we have execute rights for the function */
-	aclresult = pg_proc_aclcheck(procoid, GetUserId(), ACL_EXECUTE);
-	if (aclresult != ACLCHECK_OK)
-		return InvalidOid;
 
 	return conoid;
 }

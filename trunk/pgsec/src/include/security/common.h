@@ -284,4 +284,30 @@ ac_type_drop(Oid typOid, bool cascade);
 extern void
 ac_type_comment(Oid typOid);
 
+/* pg_cast */
+extern void
+ac_cast_create(Oid sourceTypOid, Oid targetTypOid,
+			   char castmethod, Oid funcOid);
+extern void
+ac_cast_drop(Oid sourceTypOid, Oid targetTypOid, bool cascade);
+
+extern void
+ac_cast_comment(Oid sourceTypOid, Oid targetTypOid);
+
+/* pg_conversion */
+extern void
+ac_conversion_create(const char *convName, Oid nspOid, Oid funcOid);
+
+extern void
+ac_conversion_alter(Oid convOid, const char *newName, Oid newOwner);
+
+extern void
+ac_conversion_drop(Oid convOid, bool cascade);
+
+extern bool
+ac_conversion_lookup(Oid conProc);
+
+extern void
+ac_conversion_comment(Oid convOid);
+
 #endif

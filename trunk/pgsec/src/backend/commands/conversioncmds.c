@@ -24,7 +24,7 @@
 #include "mb/pg_wchar.h"
 #include "miscadmin.h"
 #include "parser/parse_func.h"
-#include "utils/acl.h"
+#include "security/common.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
@@ -41,7 +41,6 @@ CreateConversionCommand(CreateConversionStmt *stmt)
 {
 	Oid			namespaceId;
 	char	   *conversion_name;
-	AclResult	aclresult;
 	int			from_encoding;
 	int			to_encoding;
 	Oid			funcoid;
@@ -54,12 +53,6 @@ CreateConversionCommand(CreateConversionStmt *stmt)
 	/* Convert list of names to a name and namespace */
 	namespaceId = QualifiedNameGetCreationNamespace(stmt->conversion_name,
 													&conversion_name);
-
-	/* Check we have creation rights in target namespace */
-	aclresult = pg_namespace_aclcheck(namespaceId, GetUserId(), ACL_CREATE);
-	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
-					   get_namespace_name(namespaceId));
 
 	/* Check the encoding names */
 	from_encoding = pg_char_to_encoding(from_encoding_name);
@@ -90,11 +83,8 @@ CreateConversionCommand(CreateConversionStmt *stmt)
 		  errmsg("encoding conversion function %s must return type \"void\"",
 				 NameListToString(func_name))));
 
-	/* Check we have EXECUTE rights for the function */
-	aclresult = pg_proc_aclcheck(funcoid, GetUserId(), ACL_EXECUTE);
-	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, ACL_KIND_PROC,
-					   NameListToString(func_name));
+	/* Permission checks to create a new conversion */
+	ac_conversion_create(conversion_name, namespaceId, funcoid);
 
 	/*
 	 * Check that the conversion function is suitable for the requested source
@@ -162,27 +152,14 @@ DropConversionsCommand(DropStmt *drop)
 			continue;
 		}
 
-		tuple = SearchSysCache(CONVOID,
-							   ObjectIdGetDatum(conversionOid),
-							   0, 0, 0);
-		if (!HeapTupleIsValid(tuple))
-			elog(ERROR, "cache lookup failed for conversion %u",
-				 conversionOid);
-		con = (Form_pg_conversion) GETSTRUCT(tuple);
-
-		/* Permission check: must own conversion or its namespace */
-		if (!pg_conversion_ownercheck(conversionOid, GetUserId()) &&
-			!pg_namespace_ownercheck(con->connamespace, GetUserId()))
-			aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CONVERSION,
-						   NameStr(con->conname));
+		/* Permission check */
+		ac_conversion_drop(conversionOid, false);
 
 		object.classId = ConversionRelationId;
 		object.objectId = conversionOid;
 		object.objectSubId = 0;
 
 		add_exact_object_address(&object, objects);
-
-		ReleaseSysCache(tuple);
 	}
 
 	performMultipleDeletions(objects, drop->behavior);
@@ -200,7 +177,6 @@ RenameConversion(List *name, const char *newname)
 	Oid			namespaceOid;
 	HeapTuple	tup;
 	Relation	rel;
-	AclResult	aclresult;
 
 	rel = heap_open(ConversionRelationId, RowExclusiveLock);
 
@@ -229,16 +205,8 @@ RenameConversion(List *name, const char *newname)
 				 errmsg("conversion \"%s\" already exists in schema \"%s\"",
 						newname, get_namespace_name(namespaceOid))));
 
-	/* must be owner */
-	if (!pg_conversion_ownercheck(conversionOid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CONVERSION,
-					   NameListToString(name));
-
-	/* must have CREATE privilege on namespace */
-	aclresult = pg_namespace_aclcheck(namespaceOid, GetUserId(), ACL_CREATE);
-	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
-					   get_namespace_name(namespaceOid));
+	/* Permission check */
+	ac_conversion_alter(conversionOid, newname, InvalidOid);
 
 	/* rename */
 	namestrcpy(&(((Form_pg_conversion) GETSTRUCT(tup))->conname), newname);
@@ -315,27 +283,8 @@ AlterConversionOwner_internal(Relation rel, Oid conversionOid, Oid newOwnerId)
 	 */
 	if (convForm->conowner != newOwnerId)
 	{
-		AclResult	aclresult;
-
-		/* Superusers can always do it */
-		if (!superuser())
-		{
-			/* Otherwise, must be owner of the existing object */
-			if (!pg_conversion_ownercheck(HeapTupleGetOid(tup), GetUserId()))
-				aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CONVERSION,
-							   NameStr(convForm->conname));
-
-			/* Must be able to become new owner */
-			check_is_member_of_role(GetUserId(), newOwnerId);
-
-			/* New owner must have CREATE privilege on namespace */
-			aclresult = pg_namespace_aclcheck(convForm->connamespace,
-											  newOwnerId,
-											  ACL_CREATE);
-			if (aclresult != ACLCHECK_OK)
-				aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
-							   get_namespace_name(convForm->connamespace));
-		}
+		/* Permission checks */
+		ac_conversion_alter(HeapTupleGetOid(tup), NULL, newOwnerId);
 
 		/*
 		 * Modify the owner --- okay to scribble on tup because it's a copy

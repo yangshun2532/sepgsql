@@ -1136,9 +1136,7 @@ CommentConversion(List *qualname, char *comment)
 						NameListToString(qualname))));
 
 	/* Check object security */
-	if (!pg_conversion_ownercheck(conversionOid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CONVERSION,
-					   NameListToString(qualname));
+	ac_conversion_comment(conversionOid);
 
 	/* Call CreateComments() to create/drop the comments */
 	CreateComments(conversionOid, ConversionRelationId, 0, comment);
@@ -1447,13 +1445,7 @@ CommentCast(List *qualname, List *arguments, char *comment)
 	castOid = HeapTupleGetOid(tuple);
 
 	/* Permission check */
-	if (!pg_type_ownercheck(sourcetypeid, GetUserId())
-		&& !pg_type_ownercheck(targettypeid, GetUserId()))
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("must be owner of type %s or type %s",
-						format_type_be(sourcetypeid),
-						format_type_be(targettypeid))));
+	ac_cast_comment(sourcetypeid, targettypeid);
 
 	ReleaseSysCache(tuple);
 
