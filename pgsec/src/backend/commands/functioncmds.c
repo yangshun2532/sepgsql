@@ -1443,15 +1443,6 @@ CreateCast(CreateCastStmt *stmt)
 				 errmsg("target data type %s is a pseudo-type",
 						TypeNameToString(stmt->targettype))));
 
-	/* Permission check */
-	if (!pg_type_ownercheck(sourcetypeid, GetUserId())
-		&& !pg_type_ownercheck(targettypeid, GetUserId()))
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("must be owner of type %s or type %s",
-						format_type_be(sourcetypeid),
-						format_type_be(targettypeid))));
-
 	/* Detemine the cast method */
 	if (stmt->func != NULL)
 		castmethod = COERCION_METHOD_FUNCTION;
@@ -1539,15 +1530,6 @@ CreateCast(CreateCastStmt *stmt)
 		char		typ2align;
 
 		/*
-		 * Must be superuser to create binary-compatible casts, since
-		 * erroneous casts can easily crash the backend.
-		 */
-		if (!superuser())
-			ereport(ERROR,
-					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-			 errmsg("must be superuser to create a cast WITHOUT FUNCTION")));
-
-		/*
 		 * Also, insist that the types match as to size, alignment, and
 		 * pass-by-value attributes; this provides at least a crude check that
 		 * they have similar representations.  A pair of types that fail this
@@ -1589,6 +1571,9 @@ CreateCast(CreateCastStmt *stmt)
 					(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
 					 errmsg("array data types are not binary-compatible")));
 	}
+
+	/* Permission check to create a new cast */
+	ac_cast_create(sourcetypeid, targettypeid, castmethod, funcid);
 
 	/*
 	 * Allow source and target types to be same only for length coercion
@@ -1720,13 +1705,7 @@ DropCast(DropCastStmt *stmt)
 	}
 
 	/* Permission check */
-	if (!pg_type_ownercheck(sourcetypeid, GetUserId())
-		&& !pg_type_ownercheck(targettypeid, GetUserId()))
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("must be owner of type %s or type %s",
-						format_type_be(sourcetypeid),
-						format_type_be(targettypeid))));
+	ac_cast_drop(sourcetypeid, targettypeid, false);
 
 	/*
 	 * Do the deletion

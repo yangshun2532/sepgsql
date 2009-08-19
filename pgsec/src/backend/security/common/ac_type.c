@@ -7,6 +7,8 @@
  */
 #include "postgres.h"
 
+#include "catalog/pg_cast.h"
+#include "catalog/pg_conversion.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_type.h"
 #include "miscadmin.h"
@@ -251,4 +253,256 @@ ac_type_comment(Oid typOid)
 	if (!pg_type_ownercheck(typOid, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_TYPE,
 					   format_type_be(typOid));
+}
+
+/*
+ * ac_cast_create
+ *
+ * It checks privilege to create a new cast
+ *
+ * [Params]
+ *   sourceTypOid : OID of the source type
+ *   targetTypOid : OID of the target type
+ *   castmethod   : One of the COERCION_METHOD_*
+ *   funcOid      : OID of the cast function
+ */
+void
+ac_cast_create(Oid sourceTypOid, Oid targetTypOid,
+			   char castmethod, Oid funcOid)
+{
+	/* Must be owner of either source or target type */
+	if (!pg_type_ownercheck(sourceTypOid, GetUserId()) &&
+		!pg_type_ownercheck(targetTypOid, GetUserId()))
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("must be owner of type %s or type %s",
+						format_type_be(sourceTypOid),
+						format_type_be(targetTypOid))));
+	/*
+	 * Must be superuser to create binary-compatible casts,
+	 * since erroneous casts can easily crash the backend.
+	 */
+	if (castmethod == COERCION_METHOD_BINARY)
+	{
+		if (!superuser())
+			ereport(ERROR,
+					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+					 errmsg("must be superuser to create a cast WITHOUT FUNCTION")));
+	}
+}
+
+/*
+ * ac_cast_drop
+ *
+ * It checks privilege to drop a certain cast
+ *
+ * [Params]
+ *   sourceTypOid : OID of the source type
+ *   targetTypOid : OID of the target type
+ *   cascade      : True, if cascaded deletion
+ */
+void
+ac_cast_drop(Oid sourceTypOid, Oid targetTypOid, bool cascade)
+{
+	if (!cascade &&
+		!pg_type_ownercheck(sourceTypOid, GetUserId()) &&
+		!pg_type_ownercheck(targetTypOid, GetUserId()))
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("must be owner of type %s or type %s",
+						format_type_be(sourceTypOid),
+						format_type_be(targetTypOid))));
+}
+
+/*
+ * ac_cast_comment
+ *
+ * It checks privilege to comment on a certain cast
+ *
+ * [Params]
+ *   sourceTypOid : OID of the source type
+ *   targetTypOid : OID of the target type
+ */
+void
+ac_cast_comment(Oid sourceTypOid, Oid targetTypOid)
+{
+	if (!pg_type_ownercheck(sourceTypOid, GetUserId()) &&
+		!pg_type_ownercheck(targetTypOid, GetUserId()))
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("must be owner of type %s or type %s",
+						format_type_be(sourceTypOid),
+						format_type_be(targetTypOid))));
+}
+
+/*
+ * pg_conversion
+ */
+static char *
+get_conversion_name(Oid convOid)
+{
+	Form_pg_conversion	convForm;
+	HeapTuple	convTup;
+	char	   *result;
+
+	convTup = SearchSysCache(CONVOID,
+							 ObjectIdGetDatum(convOid),
+							 0, 0, 0);
+	if (HeapTupleIsValid(convTup))
+		elog(ERROR, "cache lookup failed for conversion: %u", convOid);
+
+	convForm = (Form_pg_conversion) GETSTRUCT(convTup);
+	result = pstrdup(NameStr(convForm->conname));
+
+	ReleaseSysCache(convTup);
+
+	return result;
+}
+
+static Oid
+get_conversion_namespace(Oid convOid)
+{
+	Form_pg_conversion	convForm;
+	HeapTuple	convTup;
+	Oid			result;
+
+	convTup = SearchSysCache(CONVOID,
+							 ObjectIdGetDatum(convOid),
+							 0, 0, 0);
+	if (HeapTupleIsValid(convTup))
+		elog(ERROR, "cache lookup failed for conversion: %u", convOid);
+
+	convForm = (Form_pg_conversion) GETSTRUCT(convTup);
+	result = convForm->connamespace;
+
+	ReleaseSysCache(convTup);
+
+	return result;
+}
+
+/*
+ * ac_conversion_create
+ *
+ * It checks privilege to create a new conversion
+ *
+ * [Params]
+ *   convName : Name of the new conversion
+ *   nspOid   : OID of the namespace to be created on
+ *   funcOid  : OID of the conversion function
+ */
+void
+ac_conversion_create(const char *convName, Oid nspOid, Oid funcOid)
+{
+	AclResult	aclresult;
+
+	aclresult = pg_namespace_aclcheck(nspOid, GetUserId(), ACL_CREATE);
+	if (aclresult != ACLCHECK_OK)
+		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
+					   get_namespace_name(nspOid));
+
+	aclresult = pg_proc_aclcheck(funcOid, GetUserId(), ACL_EXECUTE);
+	if (aclresult != ACLCHECK_OK)
+		aclcheck_error(aclresult, ACL_KIND_PROC,
+					   get_func_name(funcOid));
+}
+
+/*
+ * ac_conversion_alter
+ *
+ * It checks privilege to alter a certain conversion
+ *
+ * [Params]
+ *   convOid  : OID of the conversion to be altered
+ *   newName  : New name of the conversion, if exist
+ *   newOwner : OID of the new conversion owner, if exist
+ */
+void
+ac_conversion_alter(Oid convOid, const char *newName, Oid newOwner)
+{
+	Oid			nspOid = get_conversion_namespace(convOid);
+	AclResult	aclresult;
+
+	/* Must be owner for all the ALTER CONVERSION options */
+	if (!pg_conversion_ownercheck(convOid, GetUserId()))
+		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CONVERSION,
+					   get_conversion_name(convOid));
+
+	/* Must have CREATE privilege on namespace on renaming */
+	if (newName)
+	{
+		aclresult = pg_namespace_aclcheck(nspOid, GetUserId(), ACL_CREATE);
+		if (aclresult != ACLCHECK_OK)
+			aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
+						   get_namespace_name(nspOid));
+	}
+
+	if (OidIsValid(newOwner))
+	{
+		if (!superuser())
+		{
+			/* Must be able to become new owner */
+			check_is_member_of_role(GetUserId(), newOwner);
+
+			/* New owner must have CREATE privilege on namespace */
+			aclresult = pg_namespace_aclcheck(nspOid, newOwner, ACL_CREATE);
+			if (aclresult != ACLCHECK_OK)
+                aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
+							   get_namespace_name(nspOid));
+		}
+	}
+}
+
+void
+ac_conversion_drop(Oid convOid, bool cascade)
+{
+	Oid		nspOid = get_conversion_namespace(convOid);
+
+	if (!cascade &&
+		!pg_conversion_ownercheck(convOid, GetUserId()) &&
+		!pg_namespace_ownercheck(nspOid, GetUserId()))
+		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CONVERSION,
+					   get_conversion_name(convOid));
+}
+
+/*
+ * ac_conversion_lookup
+ *
+ * It checks privilege to lookup a certain conversion as a target of
+ * ALTER CONVERSION/DROP CONVERSION. When it returns false, the caller
+ * considers the conversion is not available, so it will be skipped.
+ *
+ * MEMO: I wonder why the original implementation didn't deploy this
+ * check on the FindDefaultConversionProc() which is called from
+ * SetClientEncoding(), not FindConversion() which controls the target
+ * of DDL statement.
+ *
+ * [Params]
+ *   conProc : OID of the conversion procedure
+ */
+bool
+ac_conversion_lookup(Oid conProc)
+{
+	AclResult	aclresult;
+
+	aclresult = pg_proc_aclcheck(conProc, GetUserId(), ACL_EXECUTE);
+    if (aclresult != ACLCHECK_OK)
+		return false;
+
+	return true;
+}
+
+/*
+ * ac_conversion_comment
+ *
+ * It checks privilege to comment on a certain conversion
+ *
+ * [Params]
+ *   convOid : OID of the conversion to be commented on
+ */
+void
+ac_conversion_comment(Oid convOid)
+{
+	if (!pg_conversion_ownercheck(convOid, GetUserId()))
+		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CONVERSION,
+					   get_conversion_name(convOid));
 }
