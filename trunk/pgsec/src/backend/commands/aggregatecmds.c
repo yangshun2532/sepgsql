@@ -32,7 +32,7 @@
 #include "miscadmin.h"
 #include "parser/parse_func.h"
 #include "parser/parse_type.h"
-#include "utils/acl.h"
+#include "security/common.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
 #include "utils/syscache.h"
@@ -50,7 +50,6 @@ DefineAggregate(List *name, List *args, bool oldstyle, List *parameters)
 {
 	char	   *aggName;
 	Oid			aggNamespace;
-	AclResult	aclresult;
 	List	   *transfuncName = NIL;
 	List	   *finalfuncName = NIL;
 	List	   *sortoperatorName = NIL;
@@ -64,12 +63,6 @@ DefineAggregate(List *name, List *args, bool oldstyle, List *parameters)
 
 	/* Convert list of names to a name and namespace */
 	aggNamespace = QualifiedNameGetCreationNamespace(name, &aggName);
-
-	/* Check we have creation rights in target namespace */
-	aclresult = pg_namespace_aclcheck(aggNamespace, GetUserId(), ACL_CREATE);
-	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
-					   get_namespace_name(aggNamespace));
 
 	foreach(pl, parameters)
 	{
@@ -217,7 +210,6 @@ RemoveAggregate(RemoveFuncStmt *stmt)
 	List	   *aggName = stmt->name;
 	List	   *aggArgs = stmt->args;
 	Oid			procOid;
-	HeapTuple	tup;
 	ObjectAddress object;
 
 	/* Look up function and make sure it's an aggregate */
@@ -233,23 +225,8 @@ RemoveAggregate(RemoveFuncStmt *stmt)
 		return;
 	}
 
-	/*
-	 * Find the function tuple, do permissions and validity checks
-	 */
-	tup = SearchSysCache(PROCOID,
-						 ObjectIdGetDatum(procOid),
-						 0, 0, 0);
-	if (!HeapTupleIsValid(tup)) /* should not happen */
-		elog(ERROR, "cache lookup failed for function %u", procOid);
-
-	/* Permission check: must own agg or its namespace */
-	if (!pg_proc_ownercheck(procOid, GetUserId()) &&
-	  !pg_namespace_ownercheck(((Form_pg_proc) GETSTRUCT(tup))->pronamespace,
-							   GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
-					   NameListToString(aggName));
-
-	ReleaseSysCache(tup);
+	/* Permission checks */
+	ac_proc_drop(procOid, false);
 
 	/*
 	 * Do the deletion
@@ -270,7 +247,6 @@ RenameAggregate(List *name, List *args, const char *newname)
 	HeapTuple	tup;
 	Form_pg_proc procForm;
 	Relation	rel;
-	AclResult	aclresult;
 
 	rel = heap_open(ProcedureRelationId, RowExclusiveLock);
 
@@ -300,16 +276,8 @@ RenameAggregate(List *name, List *args, const char *newname)
 											   procForm->proargtypes.values),
 						get_namespace_name(namespaceOid))));
 
-	/* must be owner */
-	if (!pg_proc_ownercheck(procOid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
-					   NameListToString(name));
-
-	/* must have CREATE privilege on namespace */
-	aclresult = pg_namespace_aclcheck(namespaceOid, GetUserId(), ACL_CREATE);
-	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
-					   get_namespace_name(namespaceOid));
+	/* Permission checks */
+	ac_proc_alter(procOid, newname, InvalidOid, InvalidOid);
 
 	/* rename */
 	namestrcpy(&(((Form_pg_proc) GETSTRUCT(tup))->proname), newname);

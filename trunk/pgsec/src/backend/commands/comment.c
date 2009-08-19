@@ -894,9 +894,7 @@ CommentAggregate(List *aggregate, List *arguments, char *comment)
 	oid = LookupAggNameTypeNames(aggregate, arguments, false);
 
 	/* Next, validate the user's attempt to comment */
-	if (!pg_proc_ownercheck(oid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
-					   NameListToString(aggregate));
+	ac_proc_comment(oid);
 
 	/* Call CreateComments() to create/drop the comments */
 	CreateComments(oid, ProcedureRelationId, 0, comment);

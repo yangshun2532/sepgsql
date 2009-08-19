@@ -485,7 +485,7 @@ ProcedureCreate(const char *procedureName,
 	else
 	{
 		if (permission)
-			ac_proc_create(procNamespace, languageObjectId);
+			ac_proc_create(procedureName, procNamespace, languageObjectId);
 
 		/* Creating a new procedure */
 		tup = heap_form_tuple(tupDesc, values, nulls);

@@ -27,7 +27,7 @@
 #include "parser/parse_coerce.h"
 #include "parser/parse_func.h"
 #include "parser/parse_oper.h"
-#include "utils/acl.h"
+#include "security/common.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
@@ -202,6 +202,9 @@ AggregateCreate(const char *aggName,
 								false, -1);
 	}
 
+	/* Permission check to define a new aggregate function */
+	ac_aggregate_create(aggName, aggNamespace, transfn, finalfn);
+
 	/*
 	 * Everything looks okay.  Try to create the pg_proc entry for the
 	 * aggregate.  (This could fail if there's already a conflicting entry.)
@@ -312,7 +315,6 @@ lookup_agg_function(List *fnName,
 	int			nvargs;
 	Oid		   *true_oid_array;
 	FuncDetailCode fdresult;
-	AclResult	aclresult;
 	int			i;
 
 	/*
@@ -362,11 +364,6 @@ lookup_agg_function(List *fnName,
 					 errmsg("function %s requires run-time type coercion",
 					 func_signature_string(fnName, nargs, true_oid_array))));
 	}
-
-	/* Check aggregate creator has permission to call the function */
-	aclresult = pg_proc_aclcheck(fnOid, GetUserId(), ACL_EXECUTE);
-	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, ACL_KIND_PROC, get_func_name(fnOid));
 
 	return fnOid;
 }

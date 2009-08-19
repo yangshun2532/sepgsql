@@ -81,23 +81,24 @@ get_func_namespace(Oid funcOid)
  * It checks privilege to create a new function
  *
  * [Params]
- *   proNspOid  : OID of the namespace for the function
- *   proLangOid : OID of the language for the function
+ *   proName : Name of the new function
+ *   nspOid  : OID of the namespace for the new function
+ *   langOid : OID of the procedural language for the new function
  */
 void
-ac_proc_create(Oid proNspOid, Oid proLangOid)
+ac_proc_create(const char *proName, Oid nspOid, Oid langOid)
 {
 	AclResult		aclresult;
 	bool			langTrusted;
 
 	/* Check we have creation rights in target namespace */
-	aclresult = pg_namespace_aclcheck(proNspOid, GetUserId(), ACL_CREATE);
+	aclresult = pg_namespace_aclcheck(nspOid, GetUserId(), ACL_CREATE);
 	if (aclresult != ACLCHECK_OK)
 		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
-					   get_namespace_name(proNspOid));
+					   get_namespace_name(nspOid));
 
 	/* Check permission to use language */
-	langTrusted = check_language_usage(proLangOid);
+	langTrusted = check_language_usage(langOid);
 }
 
 /*
@@ -107,21 +108,21 @@ ac_proc_create(Oid proNspOid, Oid proLangOid)
  * the ac_proc_create()
  *
  * [Params]
- *   proOid     : OID of the function to be replaced 
- *   proNspOid  : OID of the namespace for the function
- *   proLangOid : OID of the language for the function
+ *   proOid  : OID of the function to be replaced 
+ *   nspOid  : OID of the namespace for the function
+ *   langOid : OID of the language for the function
  */
 void
-ac_proc_replace(Oid proOid, Oid proNspOid, Oid proLangOid)
+ac_proc_replace(Oid proOid, Oid nspOid, Oid langOid)
 {
 	AclResult		aclresult;
 	bool			langTrusted;
 
 	/* Check we have creation rights in target namespace */
-	aclresult = pg_namespace_aclcheck(proNspOid, GetUserId(), ACL_CREATE);
+	aclresult = pg_namespace_aclcheck(nspOid, GetUserId(), ACL_CREATE);
 	if (aclresult != ACLCHECK_OK)
 		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
-					   get_namespace_name(proNspOid));
+					   get_namespace_name(nspOid));
 
 	/* Need ownership to replace an existing function */
 	if (!pg_proc_ownercheck(proOid, GetUserId()))
@@ -129,7 +130,45 @@ ac_proc_replace(Oid proOid, Oid proNspOid, Oid proLangOid)
 					   get_func_name(proOid));
 
 	/* Check permissions to use language */
-	langTrusted = check_language_usage(proLangOid);
+	langTrusted = check_language_usage(langOid);
+}
+
+/*
+ * ac_aggregate_create
+ *
+ * It checks privilege to create a new aggregate function
+ *
+ * [Params]
+ *   aggName : Name of the new aggregate function
+ *   nspOid  : OID of the namespace for the new aggregate function
+ *   transfn : OID of the trans function for the aggregate
+ *   finalfn : OID of the final function for the aggregate, if exist
+ */
+void
+ac_aggregate_create(const char *aggName, Oid nspOid,
+					Oid transfn, Oid finalfn)
+{
+	AclResult	aclresult;
+
+	/* Check we have creation rights in target namespace */
+	aclresult = pg_namespace_aclcheck(nspOid, GetUserId(), ACL_CREATE);
+	if (aclresult != ACLCHECK_OK)
+		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
+					   get_namespace_name(nspOid));
+
+	/* Check aggregate creator has permission to call the trans function */
+	Assert(OidIsValid(transfn));
+	aclresult = pg_proc_aclcheck(transfn, GetUserId(), ACL_EXECUTE);
+	if (aclresult != ACLCHECK_OK)
+		aclcheck_error(aclresult, ACL_KIND_PROC, get_func_name(transfn));
+
+	/* Check aggregate creator has permission to call the final function */
+	if (OidIsValid(finalfn))
+	{
+		aclresult = pg_proc_aclcheck(finalfn, GetUserId(), ACL_EXECUTE);
+		if (aclresult != ACLCHECK_OK)
+			aclcheck_error(aclresult, ACL_KIND_PROC, get_func_name(finalfn));
+	}
 }
 
 /*
@@ -295,6 +334,8 @@ ac_proc_execute(Oid proOid, Oid roleOid)
  *
  * It provides a hint for the optimizer whether the given SQL function
  * can be inlined from the viewpoint of access controls.
+ * Because we have no chance to apply execution permission checks on
+ * the inlined functions, the function must be executable.
  *
  * [Params]
  *   proOid : OID of the function tried to be inlined
