@@ -74,9 +74,6 @@ static AclMode string_to_privilege(const char *privname);
 static const char *privilege_to_string(AclMode privilege);
 static AclMode restrict_grant(bool is_grant, AclMode avail_goptions, bool all_privs,
 							  AclMode privileges, const char *objname);
-static AclMode pg_aclmask(AclObjectKind objkind, Oid table_oid, AttrNumber attnum,
-		   Oid roleid, AclMode mask, AclMaskHow how);
-
 
 #ifdef ACLDEBUG
 static void
@@ -2163,45 +2160,6 @@ has_rolcatupdate(Oid roleid)
 
 	return rolcatupdate;
 }
-
-/*
- * Relay for the various pg_*_mask routines depending on object kind
- */
-static AclMode
-pg_aclmask(AclObjectKind objkind, Oid table_oid, AttrNumber attnum, Oid roleid,
-		   AclMode mask, AclMaskHow how)
-{
-	switch (objkind)
-	{
-		case ACL_KIND_COLUMN:
-			return
-				pg_class_aclmask(table_oid, roleid, mask, how) |
-				pg_attribute_aclmask(table_oid, attnum, roleid, mask, how);
-		case ACL_KIND_CLASS:
-		case ACL_KIND_SEQUENCE:
-			return pg_class_aclmask(table_oid, roleid, mask, how);
-		case ACL_KIND_DATABASE:
-			return pg_database_aclmask(table_oid, roleid, mask, how);
-		case ACL_KIND_PROC:
-			return pg_proc_aclmask(table_oid, roleid, mask, how);
-		case ACL_KIND_LANGUAGE:
-			return pg_language_aclmask(table_oid, roleid, mask, how);
-		case ACL_KIND_NAMESPACE:
-			return pg_namespace_aclmask(table_oid, roleid, mask, how);
-		case ACL_KIND_TABLESPACE:
-			return pg_tablespace_aclmask(table_oid, roleid, mask, how);
-		case ACL_KIND_FDW:
-			return pg_foreign_data_wrapper_aclmask(table_oid, roleid, mask, how);
-		case ACL_KIND_FOREIGN_SERVER:
-			return pg_foreign_server_aclmask(table_oid, roleid, mask, how);
-		default:
-			elog(ERROR, "unrecognized objkind: %d",
-				 (int) objkind);
-			/* not reached, but keep compiler quiet */
-			return ACL_NO_RIGHTS;
-	}
-}
-
 
 /* ****************************************************************
  * Exported routines for examining a user's privileges for various objects

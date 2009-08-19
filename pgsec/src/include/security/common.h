@@ -34,8 +34,7 @@ extern void
 ac_database_drop(Oid datOid, bool cascade);
 
 extern void
-ac_database_grant(Oid datOid, bool isGrant, AclMode privileges,
-				  Oid grantor, AclMode goptions);
+ac_database_grant(Oid datOid, Oid grantor, AclMode goptions);
 extern void
 ac_database_connect(Oid datOid);
 
@@ -59,8 +58,8 @@ extern void
 ac_namespace_drop(Oid nspOid, bool cascade);
 
 extern void
-ac_namespace_grant(Oid nspOid, bool isGrant, AclMode privs,
-				   Oid grantor, AclMode goptions);
+ac_namespace_grant(Oid nspOid, Oid grantor, AclMode goptions);
+
 extern bool
 ac_namespace_search(Oid nspOid, bool abort);
 
@@ -78,8 +77,8 @@ extern void
 ac_tablespace_drop(Oid tblspcOid, bool cascade);
 
 extern void
-ac_tablespace_grant(Oid tblspcOid, bool isGrant, AclMode privs,
-					Oid grantor, AclMode goptions);
+ac_tablespace_grant(Oid tblspcOid, Oid grantor, AclMode goptions);
+
 extern void
 ac_tablespace_calculate_size(Oid tblspcOid);
 
@@ -100,8 +99,8 @@ extern void
 ac_class_drop(Oid relOid, bool cascade);
 
 extern void
-ac_class_grant(Oid relOid, bool isGrant, AclMode privs,
-			   Oid grantor, AclMode goptions);
+ac_class_grant(Oid relOid, Oid grantor, AclMode goptions);
+
 extern void
 ac_class_comment(Oid relOid);
 
@@ -194,6 +193,24 @@ ac_proc_execute(Oid proOid, Oid roleOid);
 extern bool
 ac_proc_hint_inline(Oid proOid);
 
+/* pg_language */
+extern void
+ac_language_create(const char *langName, bool IsTemplate,
+                   bool plTrusted, bool plDbaCreate,
+                   Oid handlerOid, Oid validatorOid);
+
+extern void
+ac_language_alter(Oid langOid, const char *newName, Oid newOwner);
+
+extern void
+ac_language_drop(Oid langOid, bool cascade);
+
+extern void
+ac_language_grant(Oid langOid, Oid grantor, AclMode goptions);
+
+extern void
+ac_language_comment(Oid langOid);
+
 /* pg_trigger */
 extern void
 ac_trigger_create(Oid relOid, Oid conRelOid, Oid funcOid);
@@ -206,5 +223,41 @@ ac_trigger_drop(Oid relOid, HeapTuple trigTup, bool cascade);
 
 extern void
 ac_trigger_comment(Oid relOid, HeapTuple trigTup);
+
+/* pg_foreign_data_wrapper */
+extern void
+ac_foreign_data_wrapper_create(const char *fdwName, Oid fdwValidator);
+
+extern void
+ac_foreign_data_wrapper_alter(Oid fdwOid, Oid newValidator, Oid newOwner);
+
+extern void
+ac_foreign_data_wrapper_drop(Oid fdwOid, bool cascade);
+
+extern void
+ac_foreign_data_wrapper_grant(Oid fdwOid, Oid grantor, AclMode goptions);
+
+/* pg_foreign_server */
+extern void
+ac_foreign_server_create(const char *fsrvName, Oid fsrvOwner, Oid fdwOid);
+
+extern void
+ac_foreign_server_alter(Oid fsrvOid, Oid newOwner);
+
+extern void
+ac_foreign_server_drop(Oid fsrvOid, bool cascade);
+
+extern void
+ac_foreign_server_grant(Oid fsrvOid, Oid grantor, AclMode goptions);
+
+/* pg_user_mapping */
+extern void
+ac_user_mapping_create(Oid umuserId, Oid fsrvOid);
+
+extern void
+ac_user_mapping_alter(Oid umuserId, Oid fsrvOid);
+
+extern void
+ac_user_mapping_drop(Oid umuserId, Oid fsrvOid, bool cascade);
 
 #endif

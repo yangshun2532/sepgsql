@@ -331,7 +331,6 @@ currtid_byreloid(PG_FUNCTION_ARGS)
 	ItemPointer tid = PG_GETARG_ITEMPOINTER(1);
 	ItemPointer result;
 	Relation	rel;
-	AclResult	aclresult;
 
 	result = (ItemPointer) palloc(sizeof(ItemPointerData));
 	if (!reloid)
@@ -364,7 +363,6 @@ currtid_byrelname(PG_FUNCTION_ARGS)
 	ItemPointer result;
 	RangeVar   *relrv;
 	Relation	rel;
-	AclResult	aclresult;
 
 	relrv = makeRangeVarFromNameList(textToQualifiedNameList(relname));
 	rel = heap_openrv(relrv, AccessShareLock);

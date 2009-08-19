@@ -7,7 +7,12 @@
  */
 #include "postgres.h"
 
+#include "catalog/pg_language.h"
+#include "catalog/pg_proc.h"
+#include "miscadmin.h"
 #include "security/common.h"
+#include "utils/lsyscache.h"
+#include "utils/syscache.h"
 
 /*
  * Helper functions
@@ -61,11 +66,11 @@ get_func_namespace(Oid funcOid)
 							ObjectIdGetDatum(funcOid),
 							0, 0, 0);
 	if (!HeapTupleIsValid(proTup))
-		elog(ERROR, "cache lookup failed for function %u", proTup);
+		elog(ERROR, "cache lookup failed for function %u", funcOid);
 
-	proNsp = ((Form_pg_proc) GETSTRUCT(tp))->pronamespace;
+	proNsp = ((Form_pg_proc) GETSTRUCT(proTup))->pronamespace;
 
-	ReleaseSysCache(proNsp);
+	ReleaseSysCache(proTup);
 
 	return proNsp;
 }
@@ -185,8 +190,6 @@ ac_proc_alter(Oid proOid, const char *newName, Oid newNspOid, Oid newOwner)
 		if (aclresult != ACLCHECK_OK)
 			aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
 						   get_namespace_name(curNspOid));
-
-		ReleaseSysCache(proTup);
 	}
 }
 
