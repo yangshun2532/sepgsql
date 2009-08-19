@@ -869,10 +869,7 @@ CommentType(List *typename, char *comment)
 	oid = typenameTypeId(NULL, tname, NULL);
 
 	/* Check object security */
-
-	if (!pg_type_ownercheck(oid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_TYPE,
-					   format_type_be(oid));
+	ac_type_comment(oid);
 
 	/* Call CreateComments() to create/drop the comments */
 	CreateComments(oid, TypeRelationId, 0, comment);

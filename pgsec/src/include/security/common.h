@@ -263,4 +263,25 @@ ac_user_mapping_alter(Oid umuserId, Oid fsrvOid);
 extern void
 ac_user_mapping_drop(Oid umuserId, Oid fsrvOid, bool cascade);
 
+/* pg_type */
+extern void
+ac_type_create(const char *typName, Oid nspOid,
+			   Oid inputOid, Oid outputOid, Oid receiveOid, Oid sendOid,
+			   Oid typmodinOid, Oid typmodoutOid, Oid analyzeOid);
+extern void
+ac_domain_create(const char *domName, Oid nspOid);
+
+extern void
+ac_enum_create(const char *enumName, Oid nspOid);
+
+extern void
+ac_type_alter(Oid typOid, const char *newName,
+			  Oid newNspOid, Oid newOwner);
+
+extern void
+ac_type_drop(Oid typOid, bool cascade);
+
+extern void
+ac_type_comment(Oid typOid);
+
 #endif

@@ -2133,10 +2133,10 @@ LookupExplicitNamespace(const char *nspname)
 
 /*
  * LookupCreationNamespace
- *		Look up the schema and verify we have CREATE rights on it.
+ *		Look up the schema to be used to create a new object
  *
- * This is just like LookupExplicitNamespace except for the permission check,
- * and that we are willing to create pg_temp if needed.
+ * This is just like LookupExplicitNamespace except for that we are willing to
+ * create pg_temp if needed.
  *
  * Note: calling this may result in a CommandCounterIncrement operation,
  * if we have to create or clean out the temp namespace.
@@ -2145,7 +2145,6 @@ Oid
 LookupCreationNamespace(const char *nspname)
 {
 	Oid			namespaceId;
-	AclResult	aclresult;
 
 	/* check for pg_temp alias */
 	if (strcmp(nspname, "pg_temp") == 0)
@@ -2163,11 +2162,6 @@ LookupCreationNamespace(const char *nspname)
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_SCHEMA),
 				 errmsg("schema \"%s\" does not exist", nspname)));
-
-	aclresult = pg_namespace_aclcheck(namespaceId, GetUserId(), ACL_CREATE);
-	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
-					   nspname);
 
 	return namespaceId;
 }
