@@ -1368,10 +1368,6 @@ ReindexIndex(RangeVar *indexRelation)
 	/* Check permissions */
 	ac_index_reindex(indOid);
 
-	if (!pg_class_ownercheck(indOid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
-					   indexRelation->relname);
-
 	ReleaseSysCache(tuple);
 
 	reindex_index(indOid);

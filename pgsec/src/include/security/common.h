@@ -168,10 +168,13 @@ ac_attribute_grant(Oid relOid, AttrNumber attnum, Oid grantor, AclMode goptions)
 extern void
 ac_attribute_comment(Oid relOid, const char *attname);
 
-/* pg_proc */
+/* pg_proc and pg_aggregate */
 extern void
-ac_proc_create(Oid proNspOid, Oid proLangOid);
+ac_proc_create(const char *proName, Oid namespc, Oid pllang);
 
+extern void
+ac_aggregate_create(const char *aggName, Oid namespc,
+					Oid transfn, Oid finalfn);
 extern void
 ac_proc_replace(Oid proOid, Oid proNspOid, Oid proLangOid);
 
