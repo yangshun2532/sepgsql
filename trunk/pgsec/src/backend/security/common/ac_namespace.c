@@ -110,14 +110,11 @@ ac_namespace_drop(Oid nspOid, bool cascade)
  *
  * [Params]
  *  nspOid   : OID of the target namespace for GRANT/REVOKE
- *  isGrant  : True, if the statement is GRANT
- *  privs    : AclMask being tries to be granted
  *  grantor  : OID of the gractor role
  *  goptions : Available AclMask available to grant others
  */
 void
-ac_namespace_grant(Oid nspOid, bool isGrant, AclMode privs,
-				   Oid grantor, AclMode goptions)
+ac_namespace_grant(Oid nspOid, Oid grantor, AclMode goptions)
 {
 	if (goptions == ACL_NO_RIGHTS)
 	{

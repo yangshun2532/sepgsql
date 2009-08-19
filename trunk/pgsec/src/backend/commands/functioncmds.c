@@ -53,7 +53,7 @@
 #include "parser/parse_expr.h"
 #include "parser/parse_func.h"
 #include "parser/parse_type.h"
-#include "utils/acl.h"
+#include "security/common.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
 #include "utils/guc.h"
@@ -748,7 +748,6 @@ CreateFunction(CreateFunctionStmt *stmt, const char *queryString)
 	Oid			languageValidator;
 	char	   *funcname;
 	Oid			namespaceId;
-	AclResult	aclresult;
 	oidvector  *parameterTypes;
 	ArrayType  *allParameterTypes;
 	ArrayType  *parameterModes;
@@ -1035,7 +1034,6 @@ RenameFunction(List *name, List *argtypes, const char *newname)
 	HeapTuple	tup;
 	Form_pg_proc procForm;
 	Relation	rel;
-	AclResult	aclresult;
 
 	rel = heap_open(ProcedureRelationId, RowExclusiveLock);
 
@@ -1142,7 +1140,6 @@ static void
 AlterFunctionOwner_internal(Relation rel, HeapTuple tup, Oid newOwnerId)
 {
 	Form_pg_proc procForm;
-	AclResult	aclresult;
 	Oid			procOid;
 
 	Assert(RelationGetRelid(rel) == ProcedureRelationId);

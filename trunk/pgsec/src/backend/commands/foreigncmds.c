@@ -216,7 +216,7 @@ AlterForeignDataWrapperOwner(const char *name, Oid newOwnerId)
 	form = (Form_pg_foreign_data_wrapper) GETSTRUCT(tup);
 
 	/* Permission checks */
-	ac_foreign_data_wrapper(fdwId, InvalidOid, newOwnerId);
+	ac_foreign_data_wrapper_alter(fdwId, InvalidOid, newOwnerId);
 
 	if (form->fdwowner != newOwnerId)
 	{
@@ -245,7 +245,6 @@ AlterForeignServerOwner(const char *name, Oid newOwnerId)
 	HeapTuple	tup;
 	Relation	rel;
 	Oid			srvId;
-	AclResult	aclresult;
 	Form_pg_foreign_server form;
 
 	rel = heap_open(ForeignServerRelationId, RowExclusiveLock);
@@ -330,7 +329,7 @@ CreateForeignDataWrapper(CreateFdwStmt *stmt)
 		fdwvalidator = InvalidOid;
 
 	/* Permission checks */
-	ac_foreign_data_wrapper(stmt->fdwname, fdwvalidator);
+	ac_foreign_data_wrapper_create(stmt->fdwname, fdwvalidator);
 
 	/*
 	 * Insert tuple into pg_foreign_data_wrapper.
@@ -442,6 +441,9 @@ AlterForeignDataWrapper(AlterFdwStmt *stmt)
 		fdwvalidator = DatumGetObjectId(datum);
 	}
 
+	/* Permission checks to alter */
+	ac_foreign_data_wrapper_alter(fdwId, fdwvalidator, InvalidOid);
+
 	/*
 	 * Options specified, validate and update.
 	 */
@@ -465,9 +467,6 @@ AlterForeignDataWrapper(AlterFdwStmt *stmt)
 
 		repl_repl[Anum_pg_foreign_data_wrapper_fdwoptions - 1] = true;
 	}
-
-	/* Permission checks to alter */
-	ac_foreign_data_wrapper_alter(fdwId, fdwvalidator, InvalidOid);
 
 	/* Everything looks good - update the tuple */
 

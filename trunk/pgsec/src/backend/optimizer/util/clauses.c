@@ -3534,7 +3534,7 @@ inline_function(Oid funcid, Oid result_type, List *args,
 		return NULL;
 
 	/* Check permission to call function (fail later, if not) */
-	if (ac_proc_hint_inline(funcid))
+	if (!ac_proc_hint_inline(funcid))
 		return NULL;
 
 	/*
@@ -3967,7 +3967,7 @@ inline_set_returning_function(PlannerInfo *root, RangeTblEntry *rte)
 		return NULL;
 
 	/* Check permission to call function (fail later, if not) */
-	if (ac_proc_hint_inline(fexpr->funcid))
+	if (!ac_proc_hint_inline(fexpr->funcid))
 		return NULL;
 
 	/*

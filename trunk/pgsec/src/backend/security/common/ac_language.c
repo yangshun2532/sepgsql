@@ -7,7 +7,11 @@
  */
 #include "postgres.h"
 
+#include "catalog/pg_language.h"
+#include "commands/dbcommands.h"
+#include "miscadmin.h"
 #include "security/common.h"
+#include "utils/syscache.h"
 
 /*
  * Helper functions
@@ -84,11 +88,10 @@ ac_language_create(const char *langName, bool IsTemplate,
 void
 ac_language_alter(Oid langOid, const char *newName, Oid newOwner)
 {
-
 	/* must be owner of PL */
-	if (!pg_language_ownercheck(HeapTupleGetOid(tup), GetUserId()))
+	if (!pg_language_ownercheck(langOid, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_LANGUAGE,
-					   get_language_name(langOid));
+					   get_lang_name(langOid));
 
 	/* Must be able to become new owner, when owner changes  */
 	if (OidIsValid(newOwner))
@@ -105,12 +108,12 @@ ac_language_alter(Oid langOid, const char *newName, Oid newOwner)
  *   cascade : True, if cascaded deletion
  */
 void
-ac_langugae_drop(Oid langOid, bool cascade)
+ac_language_drop(Oid langOid, bool cascade)
 {
 	if (!cascade &&
 		!pg_language_ownercheck(langOid, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_LANGUAGE,
-					   get_language_name(langOid));
+					   get_lang_name(langOid));
 }
 
 /*

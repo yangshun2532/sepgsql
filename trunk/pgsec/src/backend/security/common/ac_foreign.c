@@ -8,7 +8,11 @@
  */
 #include "postgres.h"
 
+#include "catalog/pg_foreign_data_wrapper.h"
+#include "catalog/pg_foreign_server.h"
+#include "miscadmin.h"
 #include "security/common.h"
+#include "utils/syscache.h"
 
 /*
  * Hepler functions
@@ -116,21 +120,31 @@ ac_foreign_data_wrapper_create(const char *fdwName, Oid fdwValidator)
 void
 ac_foreign_data_wrapper_alter(Oid fdwOid, Oid newValidator, Oid newOwner)
 {
+	/*
+	 * MEMO: Here is a bit difference in error messages between
+	 * AlterForeignDataWrapper() and AlterForeignDataWrapperOwner(),
+	 * so it is necessary to provide different versions.
+	 */
+
 	/* Must be super user */
 	if (!superuser())
 		ereport(ERROR,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("permission denied to alter foreign-data wrapper \"%s\"",
+				 errmsg("permission denied to %s foreign-data wrapper \"%s\"",
+						(!OidIsValid(newOwner) ? "alter" : "change owner of"),
 						get_fdw_name(fdwOid)),
-				 errhint("Must be superuser to alter a foreign-data wrapper.")));
+				 errhint("Must be superuser to %s a foreign-data wrapper.",
+						 (!OidIsValid(newOwner) ? "alter" : "change owner of"))));
 
-	/* New owner must also be a superuser */
-	if (OidIsValid(newOwner) && !superuser_arg(newOwner))
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("permission denied to change owner of foreign-data wrapper \"%s\"",
-						get_fdw_name(fdwOid)),
-				 errhint("The owner of a foreign-data wrapper must be a superuser.")));
+	if (OidIsValid(newOwner))
+	{
+		if (!superuser_arg(newOwner))
+			ereport(ERROR,
+					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+					 errmsg("permission denied to change owner of foreign-data wrapper \"%s\"",
+							get_fdw_name(fdwOid)),
+					 errhint("The owner of a foreign-data wrapper must be a superuser.")));
+	}
 }
 
 /*
@@ -216,15 +230,16 @@ ac_foreign_server_alter(Oid fsrvOid, Oid newOwner)
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_FOREIGN_SERVER,
 					   get_fsrv_name(fsrvOid));
 
-	/* Additional checks for change owner */
-	if (OidIsValid(newOwner))
+	/* Additional checks for change owner
+	 * (superuser bypasses all the checks) */
+	if (OidIsValid(newOwner) && !superuser())
 	{
 		Form_pg_foreign_server	fsrvForm;
 		HeapTuple		fsrvTup;
 		AclResult		aclresult;
 
 		/* Must be able to become new owner */
-		check_is_member_of_role(GetUserId(), newOwnerId);
+		check_is_member_of_role(GetUserId(), newOwner);
 
 		/* New owner must have USAGE privilege on foreign-data wrapper */
 		fsrvTup = SearchSysCacheCopy(FOREIGNSERVEROID,
@@ -278,10 +293,10 @@ ac_foreign_server_grant(Oid fsrvOid, Oid grantor, AclMode goptions)
 {
 	if (goptions == ACL_NO_RIGHTS)
 	{
-		AclMode		whole_mask = ACL_KIND_FOREIGN_SERVER;
+		AclMode		whole_mask = ACL_ALL_RIGHTS_FOREIGN_SERVER;
 
 		whole_mask |= ACL_GRANT_OPTION_FOR(whole_mask);
-		if (pg_foreign_server_aclmask(fdwOid, grantor, whole_mask,
+		if (pg_foreign_server_aclmask(fsrvOid, grantor, whole_mask,
 									  ACLMASK_ANY) == ACL_NO_RIGHTS)
 			aclcheck_error(ACLCHECK_NO_PRIV, ACL_KIND_FOREIGN_SERVER,
 						   get_fsrv_name(fsrvOid));

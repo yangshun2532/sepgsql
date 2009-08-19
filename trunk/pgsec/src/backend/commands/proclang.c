@@ -30,7 +30,7 @@
 #include "miscadmin.h"
 #include "parser/parse_func.h"
 #include "parser/parser.h"
-#include "utils/acl.h"
+#include "security/common.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
