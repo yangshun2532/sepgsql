@@ -1252,9 +1252,7 @@ CommentOpClass(List *qualname, List *arguments, char *comment)
 	opcID = HeapTupleGetOid(tuple);
 
 	/* Permission check: must own opclass */
-	if (!pg_opclass_ownercheck(opcID, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_OPCLASS,
-					   NameListToString(qualname));
+	ac_opclass_comment(opcID);
 
 	ReleaseSysCache(tuple);
 
@@ -1338,9 +1336,7 @@ CommentOpFamily(List *qualname, List *arguments, char *comment)
 	opfID = HeapTupleGetOid(tuple);
 
 	/* Permission check: must own opfamily */
-	if (!pg_opfamily_ownercheck(opfID, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_OPFAMILY,
-					   NameListToString(qualname));
+	ac_opfamily_comment(opfID);
 
 	ReleaseSysCache(tuple);
 
