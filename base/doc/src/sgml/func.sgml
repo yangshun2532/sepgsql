@@ -1,4 +1,4 @@
-<!-- $PostgreSQL: pgsql/doc/src/sgml/func.sgml,v 1.483 2009/07/22 18:07:26 petere Exp $ -->
+<!-- $PostgreSQL: pgsql/doc/src/sgml/func.sgml,v 1.487 2009/08/16 19:55:21 tgl Exp $ -->
 
  <chapter id="functions">
   <title>Functions and Operators</title>
@@ -821,7 +821,7 @@
       <row>
        <entry><literal><function>random</function>()</literal></entry>
        <entry><type>dp</type></entry>
-       <entry>random value between 0.0 and 1.0, inclusive</entry>
+       <entry>random value in the range 0.0 &lt;= x &lt; 1.0</entry>
        <entry><literal>random()</literal></entry>
        <entry></entry>
       </row>
@@ -5345,7 +5345,7 @@ SELECT SUBSTRING('XY1234Z', 'Y*?([0-9]{1,3})');
        </row>
        <row>
         <entry><literal>EEEE</literal></entry>
-        <entry>scientific notation (not implemented)</entry>
+        <entry>exponent for scientific notation</entry>
        </row>
       </tbody>
      </tgroup>
@@ -5402,6 +5402,15 @@ SELECT SUBSTRING('XY1234Z', 'Y*?([0-9]{1,3})');
        <function>to_char</function> does not support the use of
        <literal>V</literal> combined with a decimal point
        (e.g., <literal>99.9V99</literal> is not allowed).
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       <literal>EEEE</literal> (scientific notation) cannot be used in
+       combination with any of the other special formatting patterns or
+       modifiers, and must be at the end of the format string
+       (e.g., <literal>9.99EEEE</literal> is a valid pattern).
       </para>
      </listitem>
     </itemizedlist>
@@ -5604,6 +5613,10 @@ SELECT SUBSTRING('XY1234Z', 'Y*?([0-9]{1,3})');
        <row>            
         <entry><literal>to_char(12.45, '99V9')</literal></entry>
         <entry><literal>'&nbsp;125'</literal></entry>
+       </row>
+       <row>
+        <entry><literal>to_char(0.0004859, '9.99EEEE')</literal></entry>
+        <entry><literal>' 4.86e-04'</literal></entry>
        </row>
       </tbody>
      </tgroup>
@@ -6239,8 +6252,8 @@ SELECT EXTRACT(DOY FROM TIMESTAMP '2001-02-16 20:38:40');
        </para>
 
 <screen>
-SELECT EXTRACT(EPOCH FROM TIMESTAMP WITH TIME ZONE '2001-02-16 20:38:40-08');
-<lineannotation>Result: </lineannotation><computeroutput>982384720</computeroutput>
+SELECT EXTRACT(EPOCH FROM TIMESTAMP WITH TIME ZONE '2001-02-16 20:38:40.12-08');
+<lineannotation>Result: </lineannotation><computeroutput>982384720.12</computeroutput>
 
 SELECT EXTRACT(EPOCH FROM INTERVAL '5 days 3 hours');
 <lineannotation>Result: </lineannotation><computeroutput>442800</computeroutput>
@@ -6250,10 +6263,13 @@ SELECT EXTRACT(EPOCH FROM INTERVAL '5 days 3 hours');
         Here is how you can convert an epoch value back to a time
         stamp:
        </para>
-
 <screen>
-SELECT TIMESTAMP WITH TIME ZONE 'epoch' + 982384720 * INTERVAL '1 second';
+SELECT TIMESTAMP WITH TIME ZONE 'epoch' + 982384720.12 * INTERVAL '1 second';
 </screen>
+       <para>
+        (The <function>to_timestamp</> function encapsulates the above
+        conversion.)
+       </para>
       </listitem>
      </varlistentry>
 
@@ -11789,6 +11805,21 @@ SET search_path TO <replaceable>schema</> <optional>, <replaceable>schema</>, ..
        <entry>does current user have privilege for foreign server</entry>
       </row>
       <row>
+       <entry><literal><function>has_sequence_privilege</function>(<parameter>user</parameter>,
+                                  <parameter>sequence</parameter>,
+                                  <parameter>privilege</parameter>)</literal>
+       </entry>
+       <entry><type>boolean</type></entry>
+       <entry>does user have privilege for sequence</entry>
+      </row>
+      <row>
+       <entry><literal><function>has_sequence_privilege</function>(<parameter>sequence</parameter>,
+                                  <parameter>privilege</parameter>)</literal>
+       </entry>
+       <entry><type>boolean</type></entry>
+       <entry>does current user have privilege for sequence</entry>
+      </row>
+      <row>
        <entry><literal><function>has_table_privilege</function>(<parameter>user</parameter>,
                                   <parameter>table</parameter>,
                                   <parameter>privilege</parameter>)</literal>
@@ -11862,6 +11893,9 @@ SET search_path TO <replaceable>schema</> <optional>, <replaceable>schema</>, ..
     <primary>has_server_privilege</primary>
    </indexterm>
    <indexterm>
+    <primary>has_sequence_privilege</primary>
+   </indexterm>
+   <indexterm>
     <primary>has_table_privilege</primary>
    </indexterm>
    <indexterm>
@@ -11898,6 +11932,16 @@ SET search_path TO <replaceable>schema</> <optional>, <replaceable>schema</>, ..
 SELECT has_table_privilege('myschema.mytable', 'select');
 SELECT has_table_privilege('joe', 'mytable', 'INSERT, SELECT WITH GRANT OPTION');
 </programlisting>
+   </para>
+
+   <para>
+    <function>has_sequence_privilege</function> checks whether a user
+    can access a sequence in a particular way.  The possibilities for its
+    arguments are analogous to <function>has_table_privilege</function>.
+    The desired access privilege type must evaluate to one of
+    <literal>USAGE</literal>,
+    <literal>SELECT</literal>, or
+    <literal>UPDATE</literal>.
    </para>
 
    <para>

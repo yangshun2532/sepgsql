@@ -7,7 +7,7 @@
  * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/backend/access/transam/xlog.c,v 1.345 2009/06/26 20:29:04 tgl Exp $
+ * $PostgreSQL: pgsql/src/backend/access/transam/xlog.c,v 1.348 2009/08/12 20:53:30 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -463,6 +463,7 @@ static void readRecoveryCommandFile(void);
 static void exitArchiveRecovery(TimeLineID endTLI,
 					uint32 endLogId, uint32 endLogSeg);
 static bool recoveryStopsHere(XLogRecord *record, bool *includeThis);
+static void LocalSetXLogInsertAllowed(void);
 static void CheckPointGuts(XLogRecPtr checkPointRedo, int flags);
 
 static bool XLogCheckBuffer(XLogRecData *rdata, bool doPageWrites,
@@ -5249,6 +5250,16 @@ StartupXLOG(void)
 	ValidateXLOGDirectoryStructure();
 
 	/*
+	 * Clear out any old relcache cache files.  This is *necessary* if we
+	 * do any WAL replay, since that would probably result in the cache files
+	 * being out of sync with database reality.  In theory we could leave
+	 * them in place if the database had been cleanly shut down, but it
+	 * seems safest to just remove them always and let them be rebuilt
+	 * during the first backend startup.
+	 */
+	RelationCacheInitFileRemove();
+
+	/*
 	 * Initialize on the assumption we want to recover to the same timeline
 	 * that's active according to pg_control.
 	 */
@@ -5759,6 +5770,13 @@ StartupXLOG(void)
 		int			rmid;
 
 		/*
+		 * Resource managers might need to write WAL records, eg, to record
+		 * index cleanup actions.  So temporarily enable XLogInsertAllowed in
+		 * this process only.
+		 */
+		LocalSetXLogInsertAllowed();
+
+		/*
 		 * Allow resource managers to do any required cleanup.
 		 */
 		for (rmid = 0; rmid <= RM_MAX_ID; rmid++)
@@ -5766,6 +5784,9 @@ StartupXLOG(void)
 			if (RmgrTable[rmid].rm_cleanup != NULL)
 				RmgrTable[rmid].rm_cleanup();
 		}
+
+		/* Disallow XLogInsert again */
+		LocalXLogInsertAllowed = -1;
 
 		/*
 		 * Check to see if the XLOG sequence contained any unresolved
@@ -5940,6 +5961,9 @@ XLogInsertAllowed(void)
 
 /*
  * Make XLogInsertAllowed() return true in the current process only.
+ *
+ * Note: it is allowed to switch LocalXLogInsertAllowed back to -1 later,
+ * and even call LocalSetXLogInsertAllowed() again after that.
  */
 static void
 LocalSetXLogInsertAllowed(void)
