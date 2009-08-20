@@ -45,7 +45,7 @@
 #include "parser/parse_func.h"
 #include "parser/parse_oper.h"
 #include "parser/parse_type.h"
-#include "utils/acl.h"
+#include "security/common.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
 #include "utils/syscache.h"
@@ -66,7 +66,6 @@ DefineOperator(List *names, List *parameters)
 {
 	char	   *oprName;
 	Oid			oprNamespace;
-	AclResult	aclresult;
 	bool		canMerge = false;		/* operator merges */
 	bool		canHash = false;	/* operator hashes */
 	List	   *functionName = NIL;		/* function for operator */
@@ -87,12 +86,6 @@ DefineOperator(List *names, List *parameters)
 
 	/* Convert list of names to a name and namespace */
 	oprNamespace = QualifiedNameGetCreationNamespace(names, &oprName);
-
-	/* Check we have creation rights in target namespace */
-	aclresult = pg_namespace_aclcheck(oprNamespace, GetUserId(), ACL_CREATE);
-	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
-					   get_namespace_name(oprNamespace));
 
 	/*
 	 * loop over the definition list and extract the information we need.
@@ -188,16 +181,6 @@ DefineOperator(List *names, List *parameters)
 	functionOid = LookupFuncName(functionName, nargs, typeId, false);
 
 	/*
-	 * We require EXECUTE rights for the function.	This isn't strictly
-	 * necessary, since EXECUTE will be checked at any attempted use of the
-	 * operator, but it seems like a good idea anyway.
-	 */
-	aclresult = pg_proc_aclcheck(functionOid, GetUserId(), ACL_EXECUTE);
-	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, ACL_KIND_PROC,
-					   NameListToString(functionName));
-
-	/*
 	 * Look up restriction estimator if specified
 	 */
 	if (restrictionName)
@@ -215,12 +198,6 @@ DefineOperator(List *names, List *parameters)
 					(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
 					 errmsg("restriction estimator function %s must return type \"float8\"",
 							NameListToString(restrictionName))));
-
-		/* Require EXECUTE rights for the estimator */
-		aclresult = pg_proc_aclcheck(restrictionOid, GetUserId(), ACL_EXECUTE);
-		if (aclresult != ACLCHECK_OK)
-			aclcheck_error(aclresult, ACL_KIND_PROC,
-						   NameListToString(restrictionName));
 	}
 	else
 		restrictionOid = InvalidOid;
@@ -254,12 +231,6 @@ DefineOperator(List *names, List *parameters)
 					(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
 			 errmsg("join estimator function %s must return type \"float8\"",
 					NameListToString(joinName))));
-
-		/* Require EXECUTE rights for the estimator */
-		aclresult = pg_proc_aclcheck(joinOid, GetUserId(), ACL_EXECUTE);
-		if (aclresult != ACLCHECK_OK)
-			aclcheck_error(aclresult, ACL_KIND_PROC,
-						   NameListToString(joinName));
 	}
 	else
 		joinOid = InvalidOid;
@@ -292,7 +263,6 @@ RemoveOperator(RemoveFuncStmt *stmt)
 	TypeName   *typeName1 = (TypeName *) linitial(stmt->args);
 	TypeName   *typeName2 = (TypeName *) lsecond(stmt->args);
 	Oid			operOid;
-	HeapTuple	tup;
 	ObjectAddress object;
 
 	Assert(list_length(stmt->args) == 2);
@@ -308,20 +278,8 @@ RemoveOperator(RemoveFuncStmt *stmt)
 		return;
 	}
 
-	tup = SearchSysCache(OPEROID,
-						 ObjectIdGetDatum(operOid),
-						 0, 0, 0);
-	if (!HeapTupleIsValid(tup)) /* should not happen */
-		elog(ERROR, "cache lookup failed for operator %u", operOid);
-
-	/* Permission check: must own operator or its namespace */
-	if (!pg_oper_ownercheck(operOid, GetUserId()) &&
-		!pg_namespace_ownercheck(((Form_pg_operator) GETSTRUCT(tup))->oprnamespace,
-								 GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_OPER,
-					   NameListToString(operatorName));
-
-	ReleaseSysCache(tup);
+	/* Permission checks */
+	ac_operator_drop(operOid, false);
 
 	/*
 	 * Do the deletion
@@ -394,7 +352,6 @@ static void
 AlterOperatorOwner_internal(Relation rel, Oid operOid, Oid newOwnerId)
 {
 	HeapTuple	tup;
-	AclResult	aclresult;
 	Form_pg_operator oprForm;
 
 	Assert(RelationGetRelid(rel) == OperatorRelationId);
@@ -413,25 +370,8 @@ AlterOperatorOwner_internal(Relation rel, Oid operOid, Oid newOwnerId)
 	 */
 	if (oprForm->oprowner != newOwnerId)
 	{
-		/* Superusers can always do it */
-		if (!superuser())
-		{
-			/* Otherwise, must be owner of the existing object */
-			if (!pg_oper_ownercheck(operOid, GetUserId()))
-				aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_OPER,
-							   NameStr(oprForm->oprname));
-
-			/* Must be able to become new owner */
-			check_is_member_of_role(GetUserId(), newOwnerId);
-
-			/* New owner must have CREATE privilege on namespace */
-			aclresult = pg_namespace_aclcheck(oprForm->oprnamespace,
-											  newOwnerId,
-											  ACL_CREATE);
-			if (aclresult != ACLCHECK_OK)
-				aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
-							   get_namespace_name(oprForm->oprnamespace));
-		}
+		/* Permission checks */
+		ac_operator_alter(operOid, newOwnerId);
 
 		/*
 		 * Modify the owner --- okay to scribble on tup because it's a copy
