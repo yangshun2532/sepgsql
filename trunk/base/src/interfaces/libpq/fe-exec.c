@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/interfaces/libpq/fe-exec.c,v 1.203 2009/06/11 14:49:13 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/interfaces/libpq/fe-exec.c,v 1.205 2009/08/04 18:05:42 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -3058,23 +3058,52 @@ PQescapeString(char *to, const char *from, size_t length)
 								  static_std_strings);
 }
 
+
+/* HEX encoding support for bytea */
+static const char hextbl[] = "0123456789abcdef";
+
+static const int8 hexlookup[128] = {
+	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+	0, 1, 2, 3, 4, 5, 6, 7, 8, 9, -1, -1, -1, -1, -1, -1,
+	-1, 10, 11, 12, 13, 14, 15, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+	-1, 10, 11, 12, 13, 14, 15, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+};
+
+static inline char
+get_hex(char c)
+{
+	int			res = -1;
+
+	if (c > 0 && c < 127)
+		res = hexlookup[(unsigned char) c];
+
+	return (char) res;
+}
+
+
 /*
  *		PQescapeBytea	- converts from binary string to the
  *		minimal encoding necessary to include the string in an SQL
  *		INSERT statement with a bytea type column as the target.
  *
- *		The following transformations are applied
+ *		We can use either hex or escape (traditional) encoding.
+ *		In escape mode, the following transformations are applied:
  *		'\0' == ASCII  0 == \000
  *		'\'' == ASCII 39 == ''
  *		'\\' == ASCII 92 == \\
  *		anything < 0x20, or > 0x7e ---> \ooo
  *										(where ooo is an octal expression)
+ *
  *		If not std_strings, all backslashes sent to the output are doubled.
  */
 static unsigned char *
 PQescapeByteaInternal(PGconn *conn,
 					  const unsigned char *from, size_t from_length,
-					  size_t *to_length, bool std_strings)
+					  size_t *to_length, bool std_strings, bool use_hex)
 {
 	const unsigned char *vp;
 	unsigned char *rp;
@@ -3088,17 +3117,24 @@ PQescapeByteaInternal(PGconn *conn,
 	 */
 	len = 1;
 
-	vp = from;
-	for (i = from_length; i > 0; i--, vp++)
+	if (use_hex)
 	{
-		if (*vp < 0x20 || *vp > 0x7e)
-			len += bslash_len + 3;
-		else if (*vp == '\'')
-			len += 2;
-		else if (*vp == '\\')
-			len += bslash_len + bslash_len;
-		else
-			len++;
+		len += bslash_len + 1 + 2 * from_length;
+	}
+	else
+	{
+		vp = from;
+		for (i = from_length; i > 0; i--, vp++)
+		{
+			if (*vp < 0x20 || *vp > 0x7e)
+				len += bslash_len + 3;
+			else if (*vp == '\'')
+				len += 2;
+			else if (*vp == '\\')
+				len += bslash_len + bslash_len;
+			else
+				len++;
+		}
 	}
 
 	*to_length = len;
@@ -3111,26 +3147,39 @@ PQescapeByteaInternal(PGconn *conn,
 		return NULL;
 	}
 
+	if (use_hex)
+	{
+		if (!std_strings)
+			*rp++ = '\\';
+		*rp++ = '\\';
+		*rp++ = 'x';
+	}
+
 	vp = from;
 	for (i = from_length; i > 0; i--, vp++)
 	{
-		if (*vp < 0x20 || *vp > 0x7e)
-		{
-			int			val = *vp;
+		unsigned char c = *vp;
 
+		if (use_hex)
+		{
+			*rp++ = hextbl[(c >> 4) & 0xF];
+			*rp++ = hextbl[c & 0xF];
+		}
+		else if (c < 0x20 || c > 0x7e)
+		{
 			if (!std_strings)
 				*rp++ = '\\';
 			*rp++ = '\\';
-			*rp++ = (val >> 6) + '0';
-			*rp++ = ((val >> 3) & 07) + '0';
-			*rp++ = (val & 07) + '0';
+			*rp++ = (c >> 6) + '0';
+			*rp++ = ((c >> 3) & 07) + '0';
+			*rp++ = (c & 07) + '0';
 		}
-		else if (*vp == '\'')
+		else if (c == '\'')
 		{
 			*rp++ = '\'';
 			*rp++ = '\'';
 		}
-		else if (*vp == '\\')
+		else if (c == '\\')
 		{
 			if (!std_strings)
 			{
@@ -3141,7 +3190,7 @@ PQescapeByteaInternal(PGconn *conn,
 			*rp++ = '\\';
 		}
 		else
-			*rp++ = *vp;
+			*rp++ = c;
 	}
 	*rp = '\0';
 
@@ -3156,14 +3205,16 @@ PQescapeByteaConn(PGconn *conn,
 	if (!conn)
 		return NULL;
 	return PQescapeByteaInternal(conn, from, from_length, to_length,
-								 conn->std_strings);
+								 conn->std_strings,
+								 (conn->sversion >= 80500));
 }
 
 unsigned char *
 PQescapeBytea(const unsigned char *from, size_t from_length, size_t *to_length)
 {
 	return PQescapeByteaInternal(NULL, from, from_length, to_length,
-								 static_std_strings);
+								 static_std_strings,
+								 false /* can't use hex */ );
 }
 
 
@@ -3198,6 +3249,40 @@ PQunescapeBytea(const unsigned char *strtext, size_t *retbuflen)
 
 	strtextlen = strlen((const char *) strtext);
 
+	if (strtext[0] == '\\' && strtext[1] == 'x')
+	{
+		const unsigned char *s;
+		unsigned char	*p;
+
+		buflen = (strtextlen - 2)/2;
+		/* Avoid unportable malloc(0) */
+		buffer = (unsigned char *) malloc(buflen > 0 ? buflen : 1);
+		if (buffer == NULL)
+			return NULL;
+
+		s = strtext + 2;
+		p = buffer;
+		while (*s)
+		{
+			char	v1,
+					v2;
+
+			/*
+			 * Bad input is silently ignored.  Note that this includes
+			 * whitespace between hex pairs, which is allowed by byteain.
+			 */
+			v1 = get_hex(*s++);
+			if (!*s || v1 == (char) -1)
+				continue;
+			v2 = get_hex(*s++);
+			if (v2 != (char) -1)
+				*p++ = (v1 << 4) | v2;
+		}
+
+		buflen = p - buffer;
+	}
+	else
+	{
 	/*
 	 * Length of input is max length of output, but add one to avoid
 	 * unportable malloc(0) if input is zero-length.
@@ -3244,6 +3329,7 @@ PQunescapeBytea(const unsigned char *strtext, size_t *retbuflen)
 		}
 	}
 	buflen = j;					/* buflen is the length of the dequoted data */
+	}
 
 	/* Shrink the buffer to be no larger than necessary */
 	/* +1 avoids unportable behavior when buflen==0 */
