@@ -305,25 +305,21 @@ ac_conversion_comment(Oid convOid);
 
 /* pg_operator */
 extern void
-ac_operator_create(const char *oprName, Oid nspOid,
-				   Oid commutatorOp, Oid negatorOp,
+ac_operator_create(const char *oprName,
+				   Oid nspOid, Oid operOid,
+				   Oid commOp, Oid negaOp,
 				   Oid codeFn, Oid restFn, Oid joinFn);
 extern void
-ac_operator_replace(Oid operOid, Oid nspOid,
-					Oid commutatorOp, Oid negatorOp,
-					Oid codeFn, Oid restFn, Oid joinFn);
-extern void
 ac_operator_alter(Oid operOid, Oid newOwner);
-
 extern void
 ac_operator_drop(Oid operOid, bool cascade);
-
 extern void
 ac_operator_comment(Oid operOid);
 
 /* pg_opclass */
 extern void
-ac_opclass_create(const char *opcName, Oid opcNsp, Oid typOid, Oid opfOid,
+ac_opclass_create(const char *opcName,
+				  Oid opcNsp, Oid typOid, Oid opfOid,
 				  List *operList, List *procList, Oid stgOid);
 extern void
 ac_opclass_alter(Oid opcOid, const char *newName, Oid newOwner);
