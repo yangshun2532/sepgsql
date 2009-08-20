@@ -1,7 +1,7 @@
 #
 # PostgreSQL top level makefile
 #
-# $PostgreSQL: pgsql/GNUmakefile.in,v 1.50 2009/01/15 01:53:49 momjian Exp $
+# $PostgreSQL: pgsql/GNUmakefile.in,v 1.53 2009/08/14 21:37:18 alvherre Exp $
 #
 
 subdir =
@@ -14,13 +14,16 @@ all:
 	$(MAKE) -C config all
 	@echo "All of PostgreSQL successfully made. Ready to install."
 
+html man:
+	$(MAKE) -C doc $@
+
 install:
 	$(MAKE) -C doc $@
 	$(MAKE) -C src $@
 	$(MAKE) -C config $@
 	@echo "PostgreSQL installation complete."
 
-installdirs uninstall:
+installdirs uninstall coverage:
 	$(MAKE) -C doc $@
 	$(MAKE) -C src $@
 	$(MAKE) -C config $@
@@ -63,25 +66,6 @@ GNUmakefile: GNUmakefile.in $(top_builddir)/config.status
 
 ##########################################################################
 
-coverage:
-	$(MAKE) -C src/backend $@
-
-.PHONY: coverage-html
-coverage-html: coverage
-	rm -rf coverage
-	mkdir coverage
-	$(GENHTML) --show-details --legend --output-directory=coverage --title=PostgreSQL --num-spaces=4 --prefix=$(abs_top_srcdir)/src `find src/backend -name lcov.info -print`
-
-ifeq ($(enable_coverage),yes)
-clean distclean maintainer-clean: clean-coverage-local
-.PHONY: clean-coverage-local
-clean-coverage-local:
-	rm -rf coverage
-endif
-
-
-##########################################################################
-
 distdir	= postgresql-$(VERSION)
 dummy	= =install=
 garbage = =*  "#"*  ."#"*  *~*  *.orig  *.rej  core  postgresql-*
@@ -114,6 +98,9 @@ postgresql-opt-$(VERSION).tar: distdir
 
 postgresql-test-$(VERSION).tar: distdir
 	$(TAR) cf $@ $(distdir)/src/test
+
+distdir-location:
+	@echo $(distdir)
 
 distdir:
 	rm -rf $(distdir)* $(dummy)

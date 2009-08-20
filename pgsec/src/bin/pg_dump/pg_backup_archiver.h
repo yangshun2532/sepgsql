@@ -17,7 +17,7 @@
  *
  *
  * IDENTIFICATION
- *		$PostgreSQL: pgsql/src/bin/pg_dump/pg_backup_archiver.h,v 1.80 2009/07/21 21:46:10 tgl Exp $
+ *		$PostgreSQL: pgsql/src/bin/pg_dump/pg_backup_archiver.h,v 1.82 2009/08/07 22:48:34 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -314,7 +314,8 @@ typedef struct _tocEntry
 	void	   *formatData;		/* TOC Entry data specific to file format */
 
 	/* working state (needed only for parallel restore) */
-	bool		restored;		/* item is in progress or done */
+	struct _tocEntry *par_prev;	/* list links for pending/ready items; */
+	struct _tocEntry *par_next;	/* these are NULL if not in either list */
 	bool		created;		/* set for DATA member if TABLE was created */
 	int			depCount;		/* number of dependencies not yet restored */
 	DumpId	   *lockDeps;		/* dumpIds of objects this one needs lock on */
@@ -341,6 +342,9 @@ extern bool checkSeek(FILE *fp);
 
 #define appendStringLiteralAHX(buf,str,AH) \
 	appendStringLiteral(buf, str, (AH)->public.encoding, (AH)->public.std_strings)
+
+#define appendByteaLiteralAHX(buf,str,len,AH) \
+	appendByteaLiteral(buf, str, len, (AH)->public.std_strings)
 
 /*
  * Mandatory routines for each supported format
