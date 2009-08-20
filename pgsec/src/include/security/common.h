@@ -321,4 +321,29 @@ ac_operator_drop(Oid operOid, bool cascade);
 extern void
 ac_operator_comment(Oid operOid);
 
+/* pg_opclass */
+extern void
+ac_opclass_create(const char *opcName, Oid opcNsp, Oid typOid, Oid opfOid,
+				  List *operList, List *procList, Oid stgOid);
+extern void
+ac_opclass_alter(Oid opcOid, const char *newName, Oid newOwner);
+extern void
+ac_opclass_drop(Oid opcOid, bool cascade);
+extern void
+ac_opclass_comment(Oid opcOid);
+
+/* pg_opfamily */
+extern void
+ac_opfamily_create(const char *opfName, Oid opfNsp, Oid amOid);
+extern void
+ac_opfamily_alter(Oid opfOid, const char *newName, Oid newOwner);
+extern void
+ac_opfamily_drop(Oid opfOid, bool cascade);
+extern void
+ac_opfamily_comment(Oid opfOid);
+extern void
+ac_opfamily_add_oper(Oid opfOid, Oid operOid);
+extern void
+ac_opfamily_add_proc(Oid opfOid, Oid procOid);
+
 #endif

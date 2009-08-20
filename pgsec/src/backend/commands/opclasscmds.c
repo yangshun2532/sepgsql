@@ -35,7 +35,7 @@
 #include "parser/parse_func.h"
 #include "parser/parse_oper.h"
 #include "parser/parse_type.h"
-#include "utils/acl.h"
+#include "security/common.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
@@ -259,13 +259,14 @@ DefineOpClass(CreateOpClassStmt *stmt)
 	bool		amstorage;		/* amstorage flag */
 	List	   *operators;		/* OpFamilyMember list for operators */
 	List	   *procedures;		/* OpFamilyMember list for support procs */
+	List	   *operOids;		/* Oid list for operators */
+	List	   *procOids;		/* Oid list for procedures */
 	ListCell   *l;
 	Relation	rel;
 	HeapTuple	tup;
 	Form_pg_am	pg_am;
 	Datum		values[Natts_pg_opclass];
 	bool		nulls[Natts_pg_opclass];
-	AclResult	aclresult;
 	NameData	opcName;
 	ObjectAddress myself,
 				referenced;
@@ -273,12 +274,6 @@ DefineOpClass(CreateOpClassStmt *stmt)
 	/* Convert list of names to a name and namespace */
 	namespaceoid = QualifiedNameGetCreationNamespace(stmt->opclassname,
 													 &opcname);
-
-	/* Check we have creation rights in target namespace */
-	aclresult = pg_namespace_aclcheck(namespaceoid, GetUserId(), ACL_CREATE);
-	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
-					   get_namespace_name(namespaceoid));
 
 	/* Get necessary info about access method */
 	tup = SearchSysCache(AMNAME,
@@ -299,45 +294,10 @@ DefineOpClass(CreateOpClassStmt *stmt)
 	maxProcNumber = pg_am->amsupport;
 	amstorage = pg_am->amstorage;
 
-	/* XXX Should we make any privilege check against the AM? */
-
 	ReleaseSysCache(tup);
-
-	/*
-	 * The question of appropriate permissions for CREATE OPERATOR CLASS is
-	 * interesting.  Creating an opclass is tantamount to granting public
-	 * execute access on the functions involved, since the index machinery
-	 * generally does not check access permission before using the functions.
-	 * A minimum expectation therefore is that the caller have execute
-	 * privilege with grant option.  Since we don't have a way to make the
-	 * opclass go away if the grant option is revoked, we choose instead to
-	 * require ownership of the functions.	It's also not entirely clear what
-	 * permissions should be required on the datatype, but ownership seems
-	 * like a safe choice.
-	 *
-	 * Currently, we require superuser privileges to create an opclass. This
-	 * seems necessary because we have no way to validate that the offered set
-	 * of operators and functions are consistent with the AM's expectations.
-	 * It would be nice to provide such a check someday, if it can be done
-	 * without solving the halting problem :-(
-	 *
-	 * XXX re-enable NOT_USED code sections below if you remove this test.
-	 */
-	if (!superuser())
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("must be superuser to create an operator class")));
 
 	/* Look up the datatype */
 	typeoid = typenameTypeId(NULL, stmt->datatype, NULL);
-
-#ifdef NOT_USED
-	/* XXX this is unnecessary given the superuser check above */
-	/* Check we have ownership of the datatype */
-	if (!pg_type_ownercheck(typeoid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_TYPE,
-					   format_type_be(typeoid));
-#endif
 
 	/*
 	 * Look up the containing operator family, or create one if FAMILY option
@@ -371,10 +331,6 @@ DefineOpClass(CreateOpClassStmt *stmt)
 		{
 			opfamilyoid = HeapTupleGetOid(tup);
 
-			/*
-			 * XXX given the superuser check above, there's no need for an
-			 * ownership check here
-			 */
 			ReleaseSysCache(tup);
 		}
 		else
@@ -389,6 +345,8 @@ DefineOpClass(CreateOpClassStmt *stmt)
 
 	operators = NIL;
 	procedures = NIL;
+	operOids = NIL;
+	procOids = NIL;
 
 	/* Storage datatype is optional */
 	storageoid = InvalidOid;
@@ -430,24 +388,13 @@ DefineOpClass(CreateOpClassStmt *stmt)
 											 false, -1);
 				}
 
-#ifdef NOT_USED
-				/* XXX this is unnecessary given the superuser check above */
-				/* Caller must own operator and its underlying function */
-				if (!pg_oper_ownercheck(operOid, GetUserId()))
-					aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_OPER,
-								   get_opname(operOid));
-				funcOid = get_opcode(operOid);
-				if (!pg_proc_ownercheck(funcOid, GetUserId()))
-					aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
-								   get_func_name(funcOid));
-#endif
-
 				/* Save the info */
 				member = (OpFamilyMember *) palloc0(sizeof(OpFamilyMember));
 				member->object = operOid;
 				member->number = item->number;
 				assignOperTypes(member, amoid, typeoid);
 				addFamilyMember(&operators, member, false);
+				operOids = lappend_oid(operOids, operOid);
 				break;
 			case OPCLASS_ITEM_FUNCTION:
 				if (item->number <= 0 || item->number > maxProcNumber)
@@ -458,13 +405,6 @@ DefineOpClass(CreateOpClassStmt *stmt)
 									item->number, maxProcNumber)));
 				funcOid = LookupFuncNameTypeNames(item->name, item->args,
 												  false);
-#ifdef NOT_USED
-				/* XXX this is unnecessary given the superuser check above */
-				/* Caller must own function */
-				if (!pg_proc_ownercheck(funcOid, GetUserId()))
-					aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
-								   get_func_name(funcOid));
-#endif
 
 				/* Save the info */
 				member = (OpFamilyMember *) palloc0(sizeof(OpFamilyMember));
@@ -478,6 +418,7 @@ DefineOpClass(CreateOpClassStmt *stmt)
 
 				assignProcTypes(member, amoid, typeoid);
 				addFamilyMember(&procedures, member, true);
+				procOids = lappend_oid(procOids, funcOid);
 				break;
 			case OPCLASS_ITEM_STORAGETYPE:
 				if (OidIsValid(storageoid))
@@ -485,14 +426,6 @@ DefineOpClass(CreateOpClassStmt *stmt)
 							(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
 						   errmsg("storage type specified more than once")));
 				storageoid = typenameTypeId(NULL, item->storedtype, NULL);
-
-#ifdef NOT_USED
-				/* XXX this is unnecessary given the superuser check above */
-				/* Check we have ownership of the datatype */
-				if (!pg_type_ownercheck(storageoid, GetUserId()))
-					aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_TYPE,
-								   format_type_be(storageoid));
-#endif
 				break;
 			default:
 				elog(ERROR, "unrecognized item type: %d", item->itemtype);
@@ -514,6 +447,10 @@ DefineOpClass(CreateOpClassStmt *stmt)
 					 errmsg("storage type cannot be different from data type for access method \"%s\"",
 							stmt->amname)));
 	}
+
+	/* Permission check to create a new opclass */
+	ac_opclass_create(opcname, namespaceoid, typeoid, opfamilyoid,
+					  operOids, procOids, storageoid);
 
 	rel = heap_open(OperatorClassRelationId, RowExclusiveLock);
 
@@ -657,7 +594,6 @@ DefineOpFamily(CreateOpFamilyStmt *stmt)
 	HeapTuple	tup;
 	Datum		values[Natts_pg_opfamily];
 	bool		nulls[Natts_pg_opfamily];
-	AclResult	aclresult;
 	NameData	opfName;
 	ObjectAddress myself,
 				referenced;
@@ -665,12 +601,6 @@ DefineOpFamily(CreateOpFamilyStmt *stmt)
 	/* Convert list of names to a name and namespace */
 	namespaceoid = QualifiedNameGetCreationNamespace(stmt->opfamilyname,
 													 &opfname);
-
-	/* Check we have creation rights in target namespace */
-	aclresult = pg_namespace_aclcheck(namespaceoid, GetUserId(), ACL_CREATE);
-	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
-					   get_namespace_name(namespaceoid));
 
 	/* Get necessary info about access method */
 	tup = SearchSysCache(AMNAME,
@@ -684,20 +614,10 @@ DefineOpFamily(CreateOpFamilyStmt *stmt)
 
 	amoid = HeapTupleGetOid(tup);
 
-	/* XXX Should we make any privilege check against the AM? */
-
 	ReleaseSysCache(tup);
 
-	/*
-	 * Currently, we require superuser privileges to create an opfamily. See
-	 * comments in DefineOpClass.
-	 *
-	 * XXX re-enable NOT_USED code sections below if you remove this test.
-	 */
-	if (!superuser())
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("must be superuser to create an operator family")));
+	/* Permission checks */
+	ac_opfamily_create(opfname, namespaceoid, amoid);
 
 	rel = heap_open(OperatorFamilyRelationId, RowExclusiveLock);
 
@@ -807,15 +727,8 @@ AlterOpFamily(AlterOpFamilyStmt *stmt)
 	opfamilyoid = HeapTupleGetOid(tup);
 	ReleaseSysCache(tup);
 
-	/*
-	 * Currently, we require superuser privileges to alter an opfamily.
-	 *
-	 * XXX re-enable NOT_USED code sections below if you remove this test.
-	 */
-	if (!superuser())
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("must be superuser to alter an operator family")));
+	/* Permission checks */
+	ac_opfamily_alter(opfamilyoid, NULL, InvalidOid);
 
 	/*
 	 * ADD and DROP cases need separate code from here on down.
@@ -882,17 +795,8 @@ AlterOpFamilyAdd(List *opfamilyname, Oid amoid, Oid opfamilyoid,
 					operOid = InvalidOid;		/* keep compiler quiet */
 				}
 
-#ifdef NOT_USED
-				/* XXX this is unnecessary given the superuser check above */
-				/* Caller must own operator and its underlying function */
-				if (!pg_oper_ownercheck(operOid, GetUserId()))
-					aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_OPER,
-								   get_opname(operOid));
-				funcOid = get_opcode(operOid);
-				if (!pg_proc_ownercheck(funcOid, GetUserId()))
-					aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
-								   get_func_name(funcOid));
-#endif
+				/* Permission check to add the operator */
+				ac_opfamily_add_oper(opfamilyoid, operOid);
 
 				/* Save the info */
 				member = (OpFamilyMember *) palloc0(sizeof(OpFamilyMember));
@@ -910,13 +814,8 @@ AlterOpFamilyAdd(List *opfamilyname, Oid amoid, Oid opfamilyoid,
 									item->number, maxProcNumber)));
 				funcOid = LookupFuncNameTypeNames(item->name, item->args,
 												  false);
-#ifdef NOT_USED
-				/* XXX this is unnecessary given the superuser check above */
-				/* Caller must own function */
-				if (!pg_proc_ownercheck(funcOid, GetUserId()))
-					aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
-								   get_func_name(funcOid));
-#endif
+				/* Permission check to add the function */
+				ac_opfamily_add_proc(opfamilyoid, funcOid);
 
 				/* Save the info */
 				member = (OpFamilyMember *) palloc0(sizeof(OpFamilyMember));
@@ -1537,12 +1436,8 @@ RemoveOpClass(RemoveOpClassStmt *stmt)
 
 	opcID = HeapTupleGetOid(tuple);
 
-	/* Permission check: must own opclass or its namespace */
-	if (!pg_opclass_ownercheck(opcID, GetUserId()) &&
-		!pg_namespace_ownercheck(((Form_pg_opclass) GETSTRUCT(tuple))->opcnamespace,
-								 GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_OPCLASS,
-					   NameListToString(stmt->opclassname));
+	/* Permission checks */
+	ac_opclass_drop(opcID, false);
 
 	ReleaseSysCache(tuple);
 
@@ -1600,12 +1495,8 @@ RemoveOpFamily(RemoveOpFamilyStmt *stmt)
 
 	opfID = HeapTupleGetOid(tuple);
 
-	/* Permission check: must own opfamily or its namespace */
-	if (!pg_opfamily_ownercheck(opfID, GetUserId()) &&
-		!pg_namespace_ownercheck(((Form_pg_opfamily) GETSTRUCT(tuple))->opfnamespace,
-								 GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_OPFAMILY,
-					   NameListToString(stmt->opfamilyname));
+	/* Permission checks */
+	ac_opfamily_drop(opfID, false);
 
 	ReleaseSysCache(tuple);
 
@@ -1737,7 +1628,6 @@ RenameOpClass(List *name, const char *access_method, const char *newname)
 	char	   *opcname;
 	HeapTuple	tup;
 	Relation	rel;
-	AclResult	aclresult;
 
 	amOid = GetSysCacheOid(AMNAME,
 						   CStringGetDatum(access_method),
@@ -1804,16 +1694,8 @@ RenameOpClass(List *name, const char *access_method, const char *newname)
 						get_namespace_name(namespaceOid))));
 	}
 
-	/* must be owner */
-	if (!pg_opclass_ownercheck(opcOid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_OPCLASS,
-					   NameListToString(name));
-
-	/* must have CREATE privilege on namespace */
-	aclresult = pg_namespace_aclcheck(namespaceOid, GetUserId(), ACL_CREATE);
-	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
-					   get_namespace_name(namespaceOid));
+	/* Permission checks */
+	ac_opclass_alter(opcOid, newname, InvalidOid);
 
 	/* rename */
 	namestrcpy(&(((Form_pg_opclass) GETSTRUCT(tup))->opcname), newname);
@@ -1837,7 +1719,6 @@ RenameOpFamily(List *name, const char *access_method, const char *newname)
 	char	   *opfname;
 	HeapTuple	tup;
 	Relation	rel;
-	AclResult	aclresult;
 
 	amOid = GetSysCacheOid(AMNAME,
 						   CStringGetDatum(access_method),
@@ -1904,16 +1785,8 @@ RenameOpFamily(List *name, const char *access_method, const char *newname)
 						get_namespace_name(namespaceOid))));
 	}
 
-	/* must be owner */
-	if (!pg_opfamily_ownercheck(opfOid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_OPFAMILY,
-					   NameListToString(name));
-
-	/* must have CREATE privilege on namespace */
-	aclresult = pg_namespace_aclcheck(namespaceOid, GetUserId(), ACL_CREATE);
-	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
-					   get_namespace_name(namespaceOid));
+	/* Permission check */
+	ac_opfamily_alter(opfOid, newname, InvalidOid);
 
 	/* rename */
 	namestrcpy(&(((Form_pg_opfamily) GETSTRUCT(tup))->opfname), newname);
@@ -2001,7 +1874,6 @@ static void
 AlterOpClassOwner_internal(Relation rel, HeapTuple tup, Oid newOwnerId)
 {
 	Oid			namespaceOid;
-	AclResult	aclresult;
 	Form_pg_opclass opcForm;
 
 	Assert(tup->t_tableOid == OperatorClassRelationId);
@@ -2017,24 +1889,8 @@ AlterOpClassOwner_internal(Relation rel, HeapTuple tup, Oid newOwnerId)
 	 */
 	if (opcForm->opcowner != newOwnerId)
 	{
-		/* Superusers can always do it */
-		if (!superuser())
-		{
-			/* Otherwise, must be owner of the existing object */
-			if (!pg_opclass_ownercheck(HeapTupleGetOid(tup), GetUserId()))
-				aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_OPCLASS,
-							   NameStr(opcForm->opcname));
-
-			/* Must be able to become new owner */
-			check_is_member_of_role(GetUserId(), newOwnerId);
-
-			/* New owner must have CREATE privilege on namespace */
-			aclresult = pg_namespace_aclcheck(namespaceOid, newOwnerId,
-											  ACL_CREATE);
-			if (aclresult != ACLCHECK_OK)
-				aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
-							   get_namespace_name(namespaceOid));
-		}
+		/* Permission checks */
+		ac_opclass_alter(HeapTupleGetOid(tup), NULL, newOwnerId);
 
 		/*
 		 * Modify the owner --- okay to scribble on tup because it's a copy
@@ -2128,7 +1984,6 @@ static void
 AlterOpFamilyOwner_internal(Relation rel, HeapTuple tup, Oid newOwnerId)
 {
 	Oid			namespaceOid;
-	AclResult	aclresult;
 	Form_pg_opfamily opfForm;
 
 	Assert(tup->t_tableOid == OperatorFamilyRelationId);
@@ -2144,24 +1999,8 @@ AlterOpFamilyOwner_internal(Relation rel, HeapTuple tup, Oid newOwnerId)
 	 */
 	if (opfForm->opfowner != newOwnerId)
 	{
-		/* Superusers can always do it */
-		if (!superuser())
-		{
-			/* Otherwise, must be owner of the existing object */
-			if (!pg_opfamily_ownercheck(HeapTupleGetOid(tup), GetUserId()))
-				aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_OPFAMILY,
-							   NameStr(opfForm->opfname));
-
-			/* Must be able to become new owner */
-			check_is_member_of_role(GetUserId(), newOwnerId);
-
-			/* New owner must have CREATE privilege on namespace */
-			aclresult = pg_namespace_aclcheck(namespaceOid, newOwnerId,
-											  ACL_CREATE);
-			if (aclresult != ACLCHECK_OK)
-				aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
-							   get_namespace_name(namespaceOid));
-		}
+		/* Permission checks */
+		ac_opfamily_alter(HeapTupleGetOid(tup), NULL, newOwnerId);
 
 		/*
 		 * Modify the owner --- okay to scribble on tup because it's a copy
