@@ -28,7 +28,7 @@
 #include "catalog/pg_type.h"
 #include "miscadmin.h"
 #include "parser/parse_oper.h"
-#include "utils/acl.h"
+#include "security/common.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
@@ -419,16 +419,6 @@ OperatorCreate(const char *operatorName,
 						operatorName)));
 
 	/*
-	 * At this point, if operatorObjectId is not InvalidOid then we are
-	 * filling in a previously-created shell.  Insist that the user own any
-	 * such shell.
-	 */
-	if (OidIsValid(operatorObjectId) &&
-		!pg_oper_ownercheck(operatorObjectId, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_OPER,
-					   operatorName);
-
-	/*
 	 * Set up the other operators.	If they do not currently exist, create
 	 * shells in order to get ObjectId's.
 	 */
@@ -441,13 +431,6 @@ OperatorCreate(const char *operatorName,
 										  operatorName, operatorNamespace,
 										  leftTypeId, rightTypeId,
 										  true);
-
-		/* Permission check: must own other operator */
-		if (OidIsValid(commutatorId) &&
-			!pg_oper_ownercheck(commutatorId, GetUserId()))
-			aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_OPER,
-						   NameListToString(commutatorName));
-
 		/*
 		 * self-linkage to this operator; will fix below. Note that only
 		 * self-linkage for commutation makes sense.
@@ -466,12 +449,6 @@ OperatorCreate(const char *operatorName,
 									   operatorName, operatorNamespace,
 									   leftTypeId, rightTypeId,
 									   false);
-
-		/* Permission check: must own other operator */
-		if (OidIsValid(negatorId) &&
-			!pg_oper_ownercheck(negatorId, GetUserId()))
-			aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_OPER,
-						   NameListToString(negatorName));
 	}
 	else
 		negatorId = InvalidOid;
@@ -511,6 +488,11 @@ OperatorCreate(const char *operatorName,
 	 */
 	if (operatorObjectId)
 	{
+		/* Permission check to replace an existing operator */
+		ac_operator_replace(operatorObjectId, operatorNamespace,
+							commutatorId, negatorId,
+							procedureId, restrictionId, joinId);
+
 		tup = SearchSysCacheCopy(OPEROID,
 								 ObjectIdGetDatum(operatorObjectId),
 								 0, 0, 0);
@@ -528,6 +510,11 @@ OperatorCreate(const char *operatorName,
 	}
 	else
 	{
+		/* Permission check to create a new operator */
+		ac_operator_create(operatorName, operatorNamespace,
+						   commutatorId, negatorId,
+						   procedureId, restrictionId, joinId);
+
 		tupDesc = pg_operator_desc->rd_att;
 		tup = heap_form_tuple(tupDesc, values, nulls);
 
@@ -611,11 +598,10 @@ get_other_operator(List *otherOp, Oid otherLeftTypeId, Oid otherRightTypeId,
 
 	/* not in catalogs, different from operator, so make shell */
 
-	aclresult = pg_namespace_aclcheck(otherNamespace, GetUserId(),
-									  ACL_CREATE);
-	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
-					   get_namespace_name(otherNamespace));
+	/* Permission check to create a new shell operator */
+	ac_operator_create(otherName, otherNamespace,
+					   InvalidOid, InvalidOid,
+					   InvalidOid, InvalidOid, InvalidOid);
 
 	other_oid = OperatorShellMake(otherName,
 								  otherNamespace,

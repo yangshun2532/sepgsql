@@ -348,7 +348,7 @@ get_conversion_name(Oid convOid)
 	convTup = SearchSysCache(CONVOID,
 							 ObjectIdGetDatum(convOid),
 							 0, 0, 0);
-	if (HeapTupleIsValid(convTup))
+	if (!HeapTupleIsValid(convTup))
 		elog(ERROR, "cache lookup failed for conversion: %u", convOid);
 
 	convForm = (Form_pg_conversion) GETSTRUCT(convTup);
@@ -369,7 +369,7 @@ get_conversion_namespace(Oid convOid)
 	convTup = SearchSysCache(CONVOID,
 							 ObjectIdGetDatum(convOid),
 							 0, 0, 0);
-	if (HeapTupleIsValid(convTup))
+	if (!HeapTupleIsValid(convTup))
 		elog(ERROR, "cache lookup failed for conversion: %u", convOid);
 
 	convForm = (Form_pg_conversion) GETSTRUCT(convTup);
@@ -452,6 +452,15 @@ ac_conversion_alter(Oid convOid, const char *newName, Oid newOwner)
 	}
 }
 
+/*
+ * ac_conversion_drop
+ *
+ * It checks privilege to drop a certain conversion
+ *
+ * [Params]
+ *   convOid : OID of the target conversion
+ *   cascade : Trus, if cascaded deletion
+ */
 void
 ac_conversion_drop(Oid convOid, bool cascade)
 {
@@ -462,33 +471,6 @@ ac_conversion_drop(Oid convOid, bool cascade)
 		!pg_namespace_ownercheck(nspOid, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CONVERSION,
 					   get_conversion_name(convOid));
-}
-
-/*
- * ac_conversion_lookup
- *
- * It checks privilege to lookup a certain conversion as a target of
- * ALTER CONVERSION/DROP CONVERSION. When it returns false, the caller
- * considers the conversion is not available, so it will be skipped.
- *
- * MEMO: I wonder why the original implementation didn't deploy this
- * check on the FindDefaultConversionProc() which is called from
- * SetClientEncoding(), not FindConversion() which controls the target
- * of DDL statement.
- *
- * [Params]
- *   conProc : OID of the conversion procedure
- */
-bool
-ac_conversion_lookup(Oid conProc)
-{
-	AclResult	aclresult;
-
-	aclresult = pg_proc_aclcheck(conProc, GetUserId(), ACL_EXECUTE);
-    if (aclresult != ACLCHECK_OK)
-		return false;
-
-	return true;
 }
 
 /*
