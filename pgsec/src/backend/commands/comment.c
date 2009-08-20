@@ -945,9 +945,7 @@ CommentOperator(List *opername, List *arguments, char *comment)
 								  false, -1);
 
 	/* Check user's privilege to comment on this operator */
-	if (!pg_oper_ownercheck(oid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_OPER,
-					   NameListToString(opername));
+	ac_operator_comment(oid);
 
 	/* Call CreateComments() to create/drop the comments */
 	CreateComments(oid, OperatorRelationId, 0, comment);

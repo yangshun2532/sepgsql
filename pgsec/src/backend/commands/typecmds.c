@@ -83,6 +83,7 @@ static Oid	findTypeTypmodinFunction(List *procname);
 static Oid	findTypeTypmodoutFunction(List *procname);
 static Oid	findTypeAnalyzeFunction(List *procname, Oid typeOid);
 static List *get_rels_with_domain(Oid domainOid, LOCKMODE lockmode);
+static void checkDomainAlter(HeapTuple tup, TypeName *typename);
 static char *domainAddConstraint(Oid domainOid, Oid domainNamespace,
 					Oid baseTypeOid,
 					int typMod, Constraint *constr,
@@ -463,11 +464,6 @@ DefineType(List *names, List *parameters)
 	if (analyzeName)
 		analyzeOid = findTypeAnalyzeFunction(analyzeName, typoid);
 
-	/* Permission check to define a new regular type */
-	ac_type_create(typeName, typeNamespace,
-				   inputOid, outputOid, receiveOid, sendOid,
-				   typmodinOid, typmodoutOid, analyzeOid);
-
 	/* Preassign array type OID so we can insert it in pg_type.typarray */
 	pg_type = heap_open(TypeRelationId, AccessShareLock);
 	array_oid = GetNewOid(pg_type);
@@ -714,9 +710,6 @@ DefineDomain(CreateDomainStmt *stmt)
 	/* Convert list of names to a name and namespace */
 	domainNamespace = QualifiedNameGetCreationNamespace(stmt->domainname,
 														&domainName);
-
-	/* Permission checks */
-	ac_domain_create(domainName, domainNamespace);
 
 	/*
 	 * Check for collision with an existing type name.	If there is one and
@@ -1031,9 +1024,6 @@ DefineEnum(CreateEnumStmt *stmt)
 	/* Convert list of names to a name and namespace */
 	enumNamespace = QualifiedNameGetCreationNamespace(stmt->typeName,
 													  &enumName);
-
-	/* Permission check to create a new enum type */
-	ac_enum_create(enumName, enumNamespace);
 
 	/*
 	 * Check for collision with an existing type name.	If there is one and
@@ -1470,13 +1460,8 @@ AlterDomainDefault(List *names, Node *defaultRaw)
 		elog(ERROR, "cache lookup failed for type %u", domainoid);
 	typTup = (Form_pg_type) GETSTRUCT(tup);
 
-	if (typTup->typtype != TYPTYPE_DOMAIN)
-		ereport(ERROR,
-				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-				 errmsg("\"%s\" is not a domain",
-						TypeNameToString(typename))));
-	/* Permission checks */
-	ac_type_alter(domainoid, NULL, InvalidOid, InvalidOid);
+	/* Check it's a domain and check user has permission for ALTER DOMAIN */
+	checkDomainAlter(tup, typename);
 
 	/* Setup new tuple */
 	MemSet(new_record, (Datum) 0, sizeof(new_record));
@@ -1603,13 +1588,8 @@ AlterDomainNotNull(List *names, bool notNull)
 		elog(ERROR, "cache lookup failed for type %u", domainoid);
 	typTup = (Form_pg_type) GETSTRUCT(tup);
 
-	if (typTup->typtype != TYPTYPE_DOMAIN)
-		ereport(ERROR,
-				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-				 errmsg("\"%s\" is not a domain",
-						TypeNameToString(typename))));
-	/* Permission checks */
-	ac_type_alter(domainoid, NULL, InvalidOid, InvalidOid);
+	/* Check it's a domain and check user has permission for ALTER DOMAIN */
+	checkDomainAlter(tup, typename);
 
 	/* Is the domain already set to the desired constraint? */
 	if (typTup->typnotnull == notNull)
@@ -1690,7 +1670,6 @@ AlterDomainDropConstraint(List *names, const char *constrName,
 	TypeName   *typename;
 	Oid			domainoid;
 	HeapTuple	tup;
-	Form_pg_type	typTup;
 	Relation	rel;
 	Relation	conrel;
 	SysScanDesc conscan;
@@ -1709,15 +1688,9 @@ AlterDomainDropConstraint(List *names, const char *constrName,
 							 0, 0, 0);
 	if (!HeapTupleIsValid(tup))
 		elog(ERROR, "cache lookup failed for type %u", domainoid);
-	typTup = (Form_pg_type) GETSTRUCT(tup);
 
-	if (typTup->typtype != TYPTYPE_DOMAIN)
-		ereport(ERROR,
-				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-				 errmsg("\"%s\" is not a domain",
-						TypeNameToString(typename))));
-	/* Permission checks */
-	ac_type_alter(domainoid, NULL, InvalidOid, InvalidOid);
+	/* Check it's a domain and check user has permission for ALTER DOMAIN */
+	checkDomainAlter(tup, typename);
 
 	/* Grab an appropriate lock on the pg_constraint relation */
 	conrel = heap_open(ConstraintRelationId, RowExclusiveLock);
@@ -1792,13 +1765,7 @@ AlterDomainAddConstraint(List *names, Node *newConstraint)
 		elog(ERROR, "cache lookup failed for type %u", domainoid);
 	typTup = (Form_pg_type) GETSTRUCT(tup);
 
-	if (typTup->typtype != TYPTYPE_DOMAIN)
-		ereport(ERROR,
-				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-				 errmsg("\"%s\" is not a domain",
-						TypeNameToString(typename))));
-	/* Permission checks */
-	ac_type_alter(domainoid, NULL, InvalidOid, InvalidOid);
+	checkDomainAlter(tup, typename);
 
 	if (!IsA(newConstraint, Constraint))
 		elog(ERROR, "unrecognized node type: %d",
@@ -2095,6 +2062,28 @@ get_rels_with_domain(Oid domainOid, LOCKMODE lockmode)
 	relation_close(depRel, AccessShareLock);
 
 	return result;
+}
+
+/*
+ * checkDomainAlter
+ *
+ * Check that the type is actually a domain and that the current user
+ * has permission to do ALTER DOMAIN on it.  Throw an error if not.
+ */
+static void
+checkDomainAlter(HeapTuple tup, TypeName *typename)
+{
+	Form_pg_type typTup = (Form_pg_type) GETSTRUCT(tup);
+
+	/* Check that this is actually a domain */
+	if (typTup->typtype != TYPTYPE_DOMAIN)
+		ereport(ERROR,
+				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+				 errmsg("\"%s\" is not a domain",
+						TypeNameToString(typename))));
+
+	/* Permission check */
+	ac_type_alter(HeapTupleGetOid(tup), NULL, InvalidOid, InvalidOid);
 }
 
 /*

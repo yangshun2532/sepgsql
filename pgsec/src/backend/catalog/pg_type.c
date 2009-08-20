@@ -25,7 +25,7 @@
 #include "commands/typecmds.h"
 #include "miscadmin.h"
 #include "parser/scansup.h"
-#include "utils/acl.h"
+#include "security/common.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
@@ -59,6 +59,13 @@ TypeShellMake(const char *typeName, Oid typeNamespace, Oid ownerId)
 	NameData	name;
 
 	Assert(PointerIsValid(typeName));
+
+	/* Permission check to create a shell type */
+	ac_type_create(typeName, typeNamespace, ownerId,
+				   InvalidOid, TYPTYPE_PSEUDO, false,
+				   F_SHELL_IN, F_SHELL_OUT,
+				   InvalidOid, InvalidOid,
+				   InvalidOid, InvalidOid, InvalidOid);
 
 	/*
 	 * open pg_type
@@ -367,6 +374,16 @@ TypeCreate(Oid newTypeOid,
 							 CStringGetDatum(typeName),
 							 ObjectIdGetDatum(typeNamespace),
 							 0, 0);
+
+	/* Permission checks */
+	ac_type_create(typeName, typeNamespace, ownerId,
+				   HeapTupleIsValid(tup) ? HeapTupleGetOid(tup) : InvalidOid,
+				   typeType, isImplicitArray,
+				   inputProcedure, outputProcedure,
+				   receiveProcedure, sendProcedure,
+				   typmodinProcedure, typmodoutProcedure,
+				   analyzeProcedure);
+
 	if (HeapTupleIsValid(tup))
 	{
 		/*
@@ -377,12 +394,6 @@ TypeCreate(Oid newTypeOid,
 			ereport(ERROR,
 					(errcode(ERRCODE_DUPLICATE_OBJECT),
 					 errmsg("type \"%s\" already exists", typeName)));
-
-		/*
-		 * shell type must have been created by same owner
-		 */
-		if (((Form_pg_type) GETSTRUCT(tup))->typowner != ownerId)
-			aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_TYPE, typeName);
 
 		/* trouble if caller wanted to force the OID */
 		if (OidIsValid(newTypeOid))

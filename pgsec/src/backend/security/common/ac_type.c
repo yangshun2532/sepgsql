@@ -40,125 +40,136 @@ get_type_namespace(Oid typOid)
 }
 
 /*
- * ac_type_create
+ * ac_type_create_base
  *
- * It checks privilege to create a new regular type
- *
- * [Params]
- *   typName      : Name of the new regular type
- *   nspOid       : OID of the namespace to be used for the type
- *   inputOid     : OID of the input function, if exist
- *   outputOid    : OID of the output function, if exist
- *   receiveOid   : OID of the receive function, if exist
- *   sendOid      : OID of the send function, if exist
- *   typmodinOid  : OID of the typemodin function, if exist
- *   typmodoutOid : OID of the typemodout function, if exist
- *   analyzeOid   : OID of the analyze function, if exist
- */
-void
-ac_type_create(const char *typName, Oid nspOid,
-			   Oid inputOid, Oid outputOid, Oid receiveOid, Oid sendOid,
-			   Oid typmodinOid, Oid typmodoutOid, Oid analyzeOid)
-{
-	/*
-	 * As of Postgres 8.4, we require superuser privilege to create a base
-	 * type.  This is simple paranoia: there are too many ways to mess up the
-	 * system with an incorrect type definition (for instance, representation
-	 * parameters that don't match what the C code expects).  In practice it
-	 * takes superuser privilege to create the I/O functions, and so the
-	 * former requirement that you own the I/O functions pretty much forced
-	 * superuserness anyway.  We're just making doubly sure here.
-	 *
-	 * XXX re-enable NOT_USED code sections below if you remove this test.
-	 */
-	if (!superuser())
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("must be superuser to create a base type")));
-
-#ifdef NOT_USED
-	/* XXX this is unnecessary given the superuser check above */
-	/* Check we have creation rights in target namespace */
-	aclresult = pg_namespace_aclcheck(nspOid, GetUserId(), ACL_CREATE);
-	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
-					   get_namespace_name(nspOid));
-#endif
-
-	/*
-	 * Check permissions on functions.	We choose to require the creator/owner
-	 * of a type to also own the underlying functions.	Since creating a type
-	 * is tantamount to granting public execute access on the functions, the
-	 * minimum sane check would be for execute-with-grant-option.  But we
-	 * don't have a way to make the type go away if the grant option is
-	 * revoked, so ownership seems better.
-	 */
-#ifdef NOT_USED
-	/* XXX this is unnecessary given the superuser check above */
-	if (inputOid && !pg_proc_ownercheck(inputOid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
-					   NameListToString(inputName));
-	if (outputOid && !pg_proc_ownercheck(outputOid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
-					   NameListToString(outputName));
-	if (receiveOid && !pg_proc_ownercheck(receiveOid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
-					   NameListToString(receiveName));
-	if (sendOid && !pg_proc_ownercheck(sendOid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
-					   NameListToString(sendName));
-	if (typmodinOid && !pg_proc_ownercheck(typmodinOid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
-					   NameListToString(typmodinName));
-	if (typmodoutOid && !pg_proc_ownercheck(typmodoutOid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
-					   NameListToString(typmodoutName));
-	if (analyzeOid && !pg_proc_ownercheck(analyzeOid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
-					   NameListToString(analyzeName));
-#endif
-}
-
-/*
- * ac_domain_create
- *
- * It checks privilege to create a new domain type
+ * It checks privilege to create a new type
  *
  * [Params]
- *   domName : Name of the new domain type
- *   nspOid  : OID of the namespace to be used
+ *   typName    : Name of the new type
+ *   typNsp     : OID of the namespace to be used for the type
+ *   typOwner   : OID of the type owner
+ *   typReplOid : OID of the shell type to be replaced, if exist
+ *   typTypey   : TYPTYPE_* of the new type
+ *   typIsArray : True, if implicit array type
+ *   inputOid   : OID of the input function, if exist
+ *   outputOid  : OID of the output function, if exist
+ *   recvOid    : OID of the receive function, if exist
+ *   sendOid    : OID of the send function, if exist
+ *   modinOid   : OID of the typemodin function, if exist
+ *   modoutOid  : OID of the typemodout function, if exist
+ *   analyzeOid : OID of the analyze function, if exist
  */
 void
-ac_domain_create(const char *domName, Oid nspOid)
+ac_type_create(const char *typName, Oid typNsp, Oid typOwner,
+			   Oid typReplOid, char typType, bool typIsArray,
+			   Oid inputOid, Oid outputOid, Oid recvOid, Oid sendOid,
+			   Oid modinOid, Oid modoutOid, Oid analyzeOid)
 {
 	AclResult	aclresult;
 
-	/* Check we have creation rights in target namespace */
-	aclresult = pg_namespace_aclcheck(nspOid, GetUserId(), ACL_CREATE);
-	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
-					   get_namespace_name(nspOid));
-}
+	switch (typType)
+	{
+		case TYPTYPE_BASE:
+			/* No permission checks for implicit array type */
+			if (typIsArray)
+				break;
 
-/*
- * ac_enum_create
- *
- * It checks privilege to create a new enumelate type
- *
- * [Params]
- *   enumName : Name of the new enumelate type
- *   nspOid   : OID of the namespace to be used
- */
-void
-ac_enum_create(const char *enumName, Oid nspOid)
-{
-	AclResult	aclresult;
+			/*
+			 * As of Postgres 8.4, we require superuser privilege to create
+			 * a base type.  This is simple paranoia: there are too many ways
+			 * to mess up the system with an incorrect type definition (for
+			 * instance, representation parameters that don't match what the
+			 * C code expects).  In practice it takes superuser privilege to
+			 * create the I/O functions, and so the former requirement that
+			 * you own the I/O functions pretty much forced superuserness anyway.
+			 * We're just making doubly sure here.
+			 *
+			 * XXX re-enable NOT_USED code sections below if you remove this test.
+			 */
+			if (!superuser())
+				ereport(ERROR,
+						(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+						 errmsg("must be superuser to create a base type")));
+#ifdef NOT_USED
+			/* XXX this is unnecessary given the superuser check above */
+			/* Check we have creation rights in target namespace */
+			aclresult = pg_namespace_aclcheck(typNsp, GetUserId(), ACL_CREATE);
+			if (aclresult != ACLCHECK_OK)
+				aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
+							   get_namespace_name(typNsp));
 
-	/* Check we have creation rights in target namespace */
-	aclresult = pg_namespace_aclcheck(nspOid, GetUserId(), ACL_CREATE);
-	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
-					   get_namespace_name(nspOid));
+			/*
+			 * Check permissions on functions.	We choose to require the
+			 * creator/owner of a type to also own the underlying functions.
+			 * Since creating a type is tantamount to granting public execute
+			 * access on the functions, the minimum sane check would be for
+			 * execute-with-grant-option.  But we don't have a way to make
+			 * the type go away if the grant option is revoked, so ownership
+			 * seems better.
+			 */
+			/* XXX this is unnecessary given the superuser check above */
+			if (inputOid && !pg_proc_ownercheck(inputOid, GetUserId()))
+				aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
+							   format_type_be(inputOid));
+			if (outputOid && !pg_proc_ownercheck(outputOid, GetUserId()))
+				aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
+							   format_type_be(outputOid));
+			if (recvOid && !pg_proc_ownercheck(recvOid, GetUserId()))
+				aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
+							   format_type_be(recvOid));
+			if (sendOid && !pg_proc_ownercheck(sendOid, GetUserId()))
+				aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
+							   format_type_be(sendOid));
+			if (modinOid && !pg_proc_ownercheck(modinOid, GetUserId()))
+				aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
+							   format_type_be(modinOid));
+			if (modoutOid && !pg_proc_ownercheck(modoutOid, GetUserId()))
+				aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
+							   format_type_be(modoutOid));
+			if (analyzeOid && !pg_proc_ownercheck(analyzeOid, GetUserId()))
+				aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
+							   format_type_be(analyzeOid));
+#endif
+			break;
+
+		case TYPTYPE_COMPOSITE:
+			/* do nothing here */
+			break;
+
+		case TYPTYPE_DOMAIN:
+		case TYPTYPE_ENUM:
+		case TYPTYPE_PSEUDO:
+			/* No superuser privileges are required */
+			aclresult = pg_namespace_aclcheck(typNsp, GetUserId(), ACL_CREATE);
+			if (aclresult != ACLCHECK_OK)
+				aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
+							   get_namespace_name(typNsp));
+			break;
+
+		default:
+			elog(ERROR, "Unexpected typetype: %c", typType);
+			break;
+	}
+
+	/*
+	 * If the new type replaces an existing shell type,
+	 * its ownership must be matched.
+	 */
+	if (OidIsValid(typReplOid))
+	{
+		HeapTuple	typTup;
+
+		typTup = SearchSysCache(TYPEOID,
+								ObjectIdGetDatum(typReplOid),
+								0, 0, 0);
+        if (!HeapTupleIsValid(typTup))
+            elog(ERROR, "cache lookup failed for type %u", typReplOid);
+
+		if (((Form_pg_type) GETSTRUCT(typTup))->typowner != typOwner)
+			aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_TYPE, typName);
+
+		ReleaseSysCache(typTup);
+	}
 }
 
 /*
