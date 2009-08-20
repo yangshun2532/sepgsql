@@ -453,6 +453,12 @@ OperatorCreate(const char *operatorName,
 	else
 		negatorId = InvalidOid;
 
+	/* Permission check to create a new operator */
+	ac_operator_create(operatorName,
+					   operatorNamespace, operatorObjectId,
+					   commutatorId, negatorId,
+					   procedureId, restrictionId, joinId);
+
 	/*
 	 * set up values in the operator tuple
 	 */
@@ -488,11 +494,6 @@ OperatorCreate(const char *operatorName,
 	 */
 	if (operatorObjectId)
 	{
-		/* Permission check to replace an existing operator */
-		ac_operator_replace(operatorObjectId, operatorNamespace,
-							commutatorId, negatorId,
-							procedureId, restrictionId, joinId);
-
 		tup = SearchSysCacheCopy(OPEROID,
 								 ObjectIdGetDatum(operatorObjectId),
 								 0, 0, 0);
@@ -510,11 +511,6 @@ OperatorCreate(const char *operatorName,
 	}
 	else
 	{
-		/* Permission check to create a new operator */
-		ac_operator_create(operatorName, operatorNamespace,
-						   commutatorId, negatorId,
-						   procedureId, restrictionId, joinId);
-
 		tupDesc = pg_operator_desc->rd_att;
 		tup = heap_form_tuple(tupDesc, values, nulls);
 
@@ -564,7 +560,6 @@ get_other_operator(List *otherOp, Oid otherLeftTypeId, Oid otherRightTypeId,
 	bool		otherDefined;
 	char	   *otherName;
 	Oid			otherNamespace;
-	AclResult	aclresult;
 
 	other_oid = OperatorLookup(otherOp,
 							   otherLeftTypeId,
@@ -599,7 +594,8 @@ get_other_operator(List *otherOp, Oid otherLeftTypeId, Oid otherRightTypeId,
 	/* not in catalogs, different from operator, so make shell */
 
 	/* Permission check to create a new shell operator */
-	ac_operator_create(otherName, otherNamespace,
+	ac_operator_create(otherName,
+					   otherNamespace, InvalidOid,
 					   InvalidOid, InvalidOid,
 					   InvalidOid, InvalidOid, InvalidOid);
 

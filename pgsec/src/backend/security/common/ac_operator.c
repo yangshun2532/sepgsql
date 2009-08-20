@@ -53,15 +53,17 @@ get_operator_namespace(Oid operOid)
  * [Params]
  * oprName : Name of the new operator
  * nspOid  : OID of the namespace to be used for the operator
- * commutatorOp : OID of the commutator operator, if exist 
- * negatorOp    : OID of the nagator operator, if exist
+ * operOid : OID of the shell operator to be replaced, if exist
+ * commOp  : OID of the commutator operator, if exist 
+ * negaOp  : OID of the nagator operator, if exist
  * codeFn  : OID of the function to implement the operator, if exist
  * restFn  : OID of the restriction estimator function, if exist
  * joinFn  : OID of the join estimator function, if exist
  */
 void
-ac_operator_create(const char *oprName, Oid nspOid,
-				   Oid commutatorOp, Oid negatorOp,
+ac_operator_create(const char *oprName,
+				   Oid nspOid, Oid operOid,
+				   Oid commOp, Oid negaOp,
 				   Oid codeFn, Oid restFn, Oid joinFn)
 {
 	AclResult	aclresult;
@@ -71,19 +73,20 @@ ac_operator_create(const char *oprName, Oid nspOid,
 		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
 					   get_namespace_name(nspOid));
 
-	if (OidIsValid(commutatorOp))
-	{
-		if (!pg_oper_ownercheck(commutatorOp, GetUserId()))
-			aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_OPER,
-						   get_opname(commutatorOp));
-	}
+	if (OidIsValid(operOid) &&
+		!pg_oper_ownercheck(operOid, GetUserId()))
+		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_OPER,
+					   get_opname(operOid));
 
-	if (OidIsValid(negatorOp))
-	{
-		if (!pg_oper_ownercheck(negatorOp, GetUserId()))
-			aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_OPER,
-						   get_opname(negatorOp));
-	}
+	if (OidIsValid(commOp) &&
+		!pg_oper_ownercheck(commOp, GetUserId()))
+		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_OPER,
+					   get_opname(commOp));
+
+	if (OidIsValid(negaOp) &&
+		!pg_oper_ownercheck(negaOp, GetUserId()))
+		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_OPER,
+					   get_opname(negaOp));
 
 	if (OidIsValid(codeFn))
 	{
@@ -112,38 +115,6 @@ ac_operator_create(const char *oprName, Oid nspOid,
 		if (aclresult != ACLCHECK_OK)
 			aclcheck_error(aclresult, ACL_KIND_PROC, get_func_name(joinFn));
 	}
-}
-
-/*
- * ac_operator_replace
- *
- * It checks privilege to replace definition of a certain operator
- *
- * [Params]
- * oprName : Name of the new operator
- * nspOid  : OID of the namespace to be used for the operator
- * commutatorOp : OID of the commutator operator, if exist 
- * negatorOp    : OID of the nagator operator, if exist
- * codeFn  : OID of the function to implement the operator, if exist
- * restFn  : OID of the restriction estimator function, if exist
- * joinFn  : OID of the join estimator function, if exist
- */
-void
-ac_operator_replace(Oid operOid, Oid nspOid,
-					Oid commutatorOp, Oid negatorOp,
-					Oid codeFn, Oid restFn, Oid joinFn)
-{
-	char   *operName = get_opname(operOid);
-
-	ac_operator_create(operName, nspOid,
-					   commutatorOp, negatorOp,
-					   codeFn, restFn, joinFn);
-
-	if (!pg_oper_ownercheck(operOid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_OPER,
-					   operName);
-
-	pfree(operName);
 }
 
 /*
@@ -278,7 +249,8 @@ get_opclass_namespace(Oid opcOid)
  * stgOid   : OID of the type stored used as a storage
  */
 void
-ac_opclass_create(const char *opcName, Oid opcNsp, Oid typOid, Oid opfOid,
+ac_opclass_create(const char *opcName,
+				  Oid opcNsp, Oid typOid, Oid opfOid,
 				  List *operList, List *procList, Oid stgOid)
 {
 	AclResult	aclresult;
