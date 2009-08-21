@@ -25,10 +25,10 @@
 #include "commands/schemacmds.h"
 #include "miscadmin.h"
 #include "parser/parse_utilcmd.h"
-#include "security/common.h"
 #include "tcop/utility.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
+#include "utils/security.h"
 #include "utils/syscache.h"
 
 
@@ -61,7 +61,7 @@ CreateSchemaCommand(CreateSchemaStmt *stmt, const char *queryString)
 		owner_uid = saved_uid;
 
 	/* Permission check to create a new namespace */
-	ac_namespace_create(schemaName, owner_uid, false);
+	ac_schema_create(schemaName, owner_uid, false);
 
 	/* Additional check to protect reserved schema names */
 	if (!allowSystemTableMods && IsReservedName(schemaName))
@@ -188,7 +188,7 @@ RemoveSchemas(DropStmt *drop)
 		}
 
 		/* Permission check */
-		ac_namespace_drop(namespaceId, false);
+		ac_schema_drop(namespaceId, false);
 
 		object.classId = NamespaceRelationId;
 		object.objectId = namespaceId;
@@ -261,7 +261,7 @@ RenameSchema(const char *oldname, const char *newname)
 				 errmsg("schema \"%s\" already exists", newname)));
 
 	/* Permission check to rename the namespace */
-	ac_namespace_alter(HeapTupleGetOid(tup), newname, InvalidOid);
+	ac_schema_alter(HeapTupleGetOid(tup), newname, InvalidOid);
 
 	if (!allowSystemTableMods && IsReservedName(newname))
 		ereport(ERROR,
@@ -351,7 +351,7 @@ AlterSchemaOwner_internal(HeapTuple tup, Relation rel, Oid newOwnerId)
 		HeapTuple	newtuple;
 
 		/* Permission check to change the namespace owner */
-		ac_namespace_alter(HeapTupleGetOid(tup), NULL, newOwnerId);
+		ac_schema_alter(HeapTupleGetOid(tup), NULL, newOwnerId);
 
 		memset(repl_null, false, sizeof(repl_null));
 		memset(repl_repl, false, sizeof(repl_repl));

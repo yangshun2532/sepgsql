@@ -7,6 +7,4 @@ include $(top_builddir)/src/Makefile.global
 
 OBJS = access_control.o
 
-SUBDIRS = common
-
 include $(top_srcdir)/src/backend/common.mk

@@ -38,12 +38,12 @@
 #include "parser/parse_coerce.h"
 #include "parser/parse_func.h"
 #include "rewrite/rewriteManip.h"
-#include "security/common.h"
 #include "tcop/tcopprot.h"
 #include "utils/builtins.h"
 #include "utils/datum.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
+#include "utils/security.h"
 #include "utils/syscache.h"
 #include "utils/typcache.h"
 
