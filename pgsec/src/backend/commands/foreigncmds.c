@@ -27,10 +27,10 @@
 #include "foreign/foreign.h"
 #include "miscadmin.h"
 #include "parser/parse_func.h"
-#include "security/common.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
+#include "utils/security.h"
 #include "utils/syscache.h"
 
 
@@ -585,9 +585,8 @@ CreateForeignServer(CreateForeignServerStmt *stmt)
 	 */
 	fdw = GetForeignDataWrapperByName(stmt->fdwname, false);
 
-	aclresult = pg_foreign_data_wrapper_aclcheck(fdw->fdwid, ownerId, ACL_USAGE);
-	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, ACL_KIND_FDW, fdw->fdwname);
+	/* Permission checks */
+	ac_foreign_server_create(stmt->servername, ownerId, fdw->fdwid);
 
 	/*
 	 * Insert tuple into pg_foreign_server.

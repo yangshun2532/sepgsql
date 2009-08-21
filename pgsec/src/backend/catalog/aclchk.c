@@ -43,11 +43,11 @@
 #include "foreign/foreign.h"
 #include "miscadmin.h"
 #include "parser/parse_func.h"
-#include "security/common.h"
 #include "utils/acl.h"
 #include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
+#include "utils/security.h"
 #include "utils/syscache.h"
 #include "utils/tqual.h"
 
@@ -954,7 +954,7 @@ ExecGrant_Relation(InternalGrant *istmt)
 								&grantorId, &avail_goptions);
 
 			/* Permission check to grant/revoke */
-			ac_class_grant(relOid, grantorId, avail_goptions);
+			ac_relation_grant(relOid, grantorId, avail_goptions);
 
 			/*
 			 * Restrict the privileges to what we can actually grant, and emit
@@ -1745,7 +1745,7 @@ ExecGrant_Namespace(InternalGrant *istmt)
 							&grantorId, &avail_goptions);
 
 		/* Permission checks */
-		ac_namespace_grant(nspid, grantorId, avail_goptions);
+		ac_schema_grant(nspid, grantorId, avail_goptions);
 
 		/*
 		 * Restrict the privileges to what we can actually grant, and emit the

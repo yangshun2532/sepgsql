@@ -24,10 +24,10 @@
 #include "mb/pg_wchar.h"
 #include "miscadmin.h"
 #include "parser/parse_func.h"
-#include "security/common.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
+#include "utils/security.h"
 #include "utils/syscache.h"
 
 static void AlterConversionOwner_internal(Relation rel, Oid conversionOid,

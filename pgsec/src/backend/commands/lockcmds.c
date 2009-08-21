@@ -20,10 +20,9 @@
 #include "commands/lockcmds.h"
 #include "miscadmin.h"
 #include "parser/parse_clause.h"
-#include "security/common.h"
 #include "storage/lmgr.h"
-#include "utils/acl.h"
 #include "utils/lsyscache.h"
+#include "utils/security.h"
 
 static void LockTableRecurse(Oid reloid, RangeVar *rv,
 				 LOCKMODE lockmode, bool nowait, bool recurse);
@@ -65,7 +64,6 @@ LockTableRecurse(Oid reloid, RangeVar *rv,
 				 LOCKMODE lockmode, bool nowait, bool recurse)
 {
 	Relation	rel;
-	AclResult	aclresult;
 
 	/*
 	 * Acquire the lock.  We must do this first to protect against concurrent

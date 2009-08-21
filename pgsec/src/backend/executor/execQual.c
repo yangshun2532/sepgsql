@@ -48,10 +48,10 @@
 #include "nodes/nodeFuncs.h"
 #include "optimizer/planner.h"
 #include "pgstat.h"
-#include "security/common.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
+#include "utils/security.h"
 #include "utils/typcache.h"
 #include "utils/xml.h"
 

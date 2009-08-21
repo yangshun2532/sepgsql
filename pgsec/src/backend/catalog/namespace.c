@@ -39,7 +39,6 @@
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
 #include "parser/parse_func.h"
-#include "security/common.h"
 #include "storage/backendid.h"
 #include "storage/ipc.h"
 #include "utils/builtins.h"
@@ -48,6 +47,7 @@
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
 #include "utils/rel.h"
+#include "utils/security.h"
 #include "utils/syscache.h"
 
 
@@ -2105,7 +2105,7 @@ LookupExplicitNamespace(const char *nspname)
 	{
 		if (OidIsValid(myTempNamespace))
 		{
-			ac_namespace_search(myTempNamespace, true);
+			ac_schema_search(myTempNamespace, true);
 			return myTempNamespace;
 		}
 
@@ -2126,7 +2126,7 @@ LookupExplicitNamespace(const char *nspname)
 				 errmsg("schema \"%s\" does not exist", nspname)));
 
 	/* Permission checks. */
-	ac_namespace_search(namespaceId, true);
+	ac_schema_search(namespaceId, true);
 
 	return namespaceId;
 }
@@ -2715,7 +2715,7 @@ recomputeNamespacePath(void)
 				ReleaseSysCache(tuple);
 				if (OidIsValid(namespaceId) &&
 					!list_member_oid(oidlist, namespaceId) &&
-					ac_namespace_search(namespaceId, false))
+					ac_schema_search(namespaceId, false))
 					oidlist = lappend_oid(oidlist, namespaceId);
 			}
 		}
@@ -2725,7 +2725,7 @@ recomputeNamespacePath(void)
 			if (OidIsValid(myTempNamespace))
 			{
 				if (!list_member_oid(oidlist, myTempNamespace) &&
-					ac_namespace_search(myTempNamespace, false))
+					ac_schema_search(myTempNamespace, false))
 					oidlist = lappend_oid(oidlist, myTempNamespace);
 			}
 			else
@@ -2743,7 +2743,7 @@ recomputeNamespacePath(void)
 										 0, 0, 0);
 			if (OidIsValid(namespaceId) &&
 				!list_member_oid(oidlist, namespaceId) &&
-				ac_namespace_search(namespaceId, false))
+				ac_schema_search(namespaceId, false))
 				oidlist = lappend_oid(oidlist, namespaceId);
 		}
 	}
@@ -2815,7 +2815,7 @@ InitTempTableNamespace(void)
 	snprintf(namespaceName, sizeof(namespaceName), "pg_temp_%d", MyBackendId);
 
 	/* Permission check to create a temporary namespace */
-	ac_namespace_create(namespaceName, BOOTSTRAP_SUPERUSERID, true);
+	ac_schema_create(namespaceName, BOOTSTRAP_SUPERUSERID, true);
 
 	namespaceId = GetSysCacheOid(NAMESPACENAME,
 								 CStringGetDatum(namespaceName),

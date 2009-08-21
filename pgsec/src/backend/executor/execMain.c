@@ -53,10 +53,10 @@
 #include "storage/bufmgr.h"
 #include "storage/lmgr.h"
 #include "storage/smgr.h"
-#include "security/common.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
+#include "utils/security.h"
 #include "utils/snapmgr.h"
 #include "utils/tqual.h"
 
@@ -2778,8 +2778,8 @@ OpenIntoRel(QueryDesc *queryDesc)
 	(void) heap_reloptions(RELKIND_RELATION, reloptions, true);
 
 	/* Permission check to create a new table */
-	ac_class_create(intoName, RELKIND_RELATION, queryDesc->tupDesc,
-					namespaceId, tablespaceId, NULL);
+	ac_relation_create(intoName, RELKIND_RELATION, queryDesc->tupDesc,
+					   namespaceId, tablespaceId, NULL);
 
 	/* Copy the tupdesc because heap_create_with_catalog modifies it */
 	tupdesc = CreateTupleDescCopy(queryDesc->tupDesc);

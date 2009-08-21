@@ -61,7 +61,6 @@
 #include "parser/parser.h"
 #include "rewrite/rewriteDefine.h"
 #include "rewrite/rewriteHandler.h"
-#include "security/common.h"
 #include "storage/bufmgr.h"
 #include "storage/lmgr.h"
 #include "storage/smgr.h"
@@ -71,6 +70,7 @@
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
 #include "utils/relcache.h"
+#include "utils/security.h"
 #include "utils/snapmgr.h"
 #include "utils/syscache.h"
 #include "utils/tqual.h"
@@ -431,8 +431,8 @@ DefineRelation(CreateStmt *stmt, char relkind)
 	/*
 	 * Permission checks to create a new table.
 	 */
-	ac_class_create(relname, relkind, descriptor,
-					namespaceId, tablespaceId, stmt);
+	ac_relation_create(relname, relkind, descriptor,
+					   namespaceId, tablespaceId, stmt);
 
 	/*
 	 * Find columns with default values and prepare for insertion of the
@@ -711,7 +711,7 @@ RemoveRelations(DropStmt *drop)
 			DropErrorMsgWrongType(rel->relname, classform->relkind, relkind);
 
 		/* Permission checks to drop the relation */
-		ac_class_drop(relOid, false);
+		ac_relation_drop(relOid, false);
 
 		if (!allowSystemTableMods && IsSystemClass(classform))
 			ereport(ERROR,
@@ -871,8 +871,8 @@ ExecuteTruncate(TruncateStmt *stmt)
 				seq_rel = relation_open(seq_relid, AccessShareLock);
 
 				/* This check must match AlterSequence! */
-				ac_class_alter(seq_relid, NULL,
-							   InvalidOid, InvalidOid, InvalidOid);
+				ac_relation_alter(seq_relid, NULL,
+								  InvalidOid, InvalidOid, InvalidOid);
 
 				seq_relids = lappend_oid(seq_relids, seq_relid);
 
@@ -1996,8 +1996,8 @@ RenameRelation(Oid myrelid, const char *newrelname, ObjectType reltype)
 	char		relkind;
 
 	/* Permission checks */
-	ac_class_alter(myrelid, newrelname,
-				   InvalidOid, InvalidOid, InvalidOid);
+	ac_relation_alter(myrelid, newrelname,
+					  InvalidOid, InvalidOid, InvalidOid);
 	/*
 	 * Grab an exclusive lock on the target table, index, sequence or view,
 	 * which we will NOT release until end of transaction.
@@ -3254,8 +3254,8 @@ ATSimplePermissions(Relation rel, bool allowView, bool allowIndex)
 	}
 
 	/* Permission to alter the relation */
-	ac_class_alter(RelationGetRelid(rel), NULL,
-				   InvalidOid, InvalidOid, InvalidOid);
+	ac_relation_alter(RelationGetRelid(rel), NULL,
+					  InvalidOid, InvalidOid, InvalidOid);
 
 	if (!allowSystemTableMods && IsSystemRelation(rel))
 		ereport(ERROR,
@@ -6482,8 +6482,8 @@ ATExecChangeOwner(Oid relationOid, Oid newOwnerId, bool recursing)
 
 		/* skip permission checks when recursing to index or toast table */
 		if (!recursing)
-			ac_class_alter(relationOid, NULL,
-						   InvalidOid, InvalidOid, newOwnerId);
+			ac_relation_alter(relationOid, NULL,
+							  InvalidOid, InvalidOid, newOwnerId);
 
 		memset(repl_null, false, sizeof(repl_null));
 		memset(repl_repl, false, sizeof(repl_repl));
@@ -6699,8 +6699,8 @@ ATPrepSetTableSpace(AlteredTableInfo *tab, Relation rel, char *tablespacename)
 				 errmsg("tablespace \"%s\" does not exist", tablespacename)));
 
 	/* Permissions checks */
-	ac_class_alter(RelationGetRelid(rel), NULL,
-				   InvalidOid, tablespaceId, InvalidOid);
+	ac_relation_alter(RelationGetRelid(rel), NULL,
+					  InvalidOid, tablespaceId, InvalidOid);
 
 	if (!allowSystemTableMods && IsSystemRelation(rel))
 		ereport(ERROR,
@@ -7765,7 +7765,7 @@ AlterTableNamespace(RangeVar *relation, const char *newschema,
 						newschema)));
 
 	/* Permission checks */
-	ac_class_alter(relid, NULL, nspOid, InvalidOid, InvalidOid);
+	ac_relation_alter(relid, NULL, nspOid, InvalidOid, InvalidOid);
 
 	/* disallow move system catalogs to out of system namespace */
 	if (!allowSystemTableMods && IsSystemRelation(rel))

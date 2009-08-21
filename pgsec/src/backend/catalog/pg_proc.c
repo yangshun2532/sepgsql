@@ -29,11 +29,11 @@
 #include "miscadmin.h"
 #include "nodes/nodeFuncs.h"
 #include "parser/parse_type.h"
-#include "security/common.h"
 #include "tcop/pquery.h"
 #include "tcop/tcopprot.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
+#include "utils/security.h"
 #include "utils/syscache.h"
 
 
@@ -343,7 +343,6 @@ ProcedureCreate(const char *procedureName,
 							PointerGetDatum(parameterTypes),
 							ObjectIdGetDatum(procNamespace),
 							0);
-
 	if (HeapTupleIsValid(oldtup))
 	{
 		/* There is one; okay to replace it? */
@@ -355,8 +354,8 @@ ProcedureCreate(const char *procedureName,
 			errmsg("function \"%s\" already exists with same argument types",
 				   procedureName)));
 		if (permission)
-			ac_proc_replace(HeapTupleGetOid(oldtup),
-							procNamespace, languageObjectId);
+			ac_proc_create(procedureName, HeapTupleGetOid(oldtup),
+						   procNamespace, languageObjectId);
 		/*
 		 * Not okay to change the return type of the existing proc, since
 		 * existing rules, views, etc may depend on the return type.
@@ -485,7 +484,8 @@ ProcedureCreate(const char *procedureName,
 	else
 	{
 		if (permission)
-			ac_proc_create(procedureName, procNamespace, languageObjectId);
+			ac_proc_create(procedureName, InvalidOid,
+						   procNamespace, languageObjectId);
 
 		/* Creating a new procedure */
 		tup = heap_form_tuple(tupDesc, values, nulls);

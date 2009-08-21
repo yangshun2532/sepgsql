@@ -28,10 +28,10 @@
 #include "catalog/pg_type.h"
 #include "miscadmin.h"
 #include "parser/parse_oper.h"
-#include "security/common.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
+#include "utils/security.h"
 #include "utils/syscache.h"
 
 

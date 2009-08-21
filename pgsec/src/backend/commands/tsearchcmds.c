@@ -639,7 +639,6 @@ RemoveTSDictionaries(DropStmt *drop)
 		Oid			dictOid;
 		ObjectAddress object;
 		HeapTuple	tup;
-		Oid			namespaceId;
 
 		dictOid = TSDictionaryGetDictid(names, true);
 

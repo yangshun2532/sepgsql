@@ -26,13 +26,13 @@
 #include "commands/tablecmds.h"
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
-#include "security/common.h"
 #include "storage/bufmgr.h"
 #include "storage/lmgr.h"
 #include "storage/proc.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
 #include "utils/resowner.h"
+#include "utils/security.h"
 #include "utils/syscache.h"
 
 
@@ -324,7 +324,7 @@ AlterSequence(AlterSeqStmt *stmt)
 	relid = RangeVarGetRelid(stmt->sequence, false);
 
 	/* if you change this, see also callers of AlterSequenceInternal! */
-	ac_class_alter(relid, NULL, InvalidOid, InvalidOid, InvalidOid);
+	ac_relation_alter(relid, NULL, InvalidOid, InvalidOid, InvalidOid);
 
 	/* do the work */
 	AlterSequenceInternal(relid, stmt->options);

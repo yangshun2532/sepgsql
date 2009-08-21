@@ -26,10 +26,10 @@
 #include "libpq/pqformat.h"
 #include "mb/pg_wchar.h"
 #include "miscadmin.h"
-#include "security/common.h"
 #include "tcop/fastpath.h"
 #include "tcop/tcopprot.h"
 #include "utils/lsyscache.h"
+#include "utils/security.h"
 #include "utils/snapmgr.h"
 #include "utils/syscache.h"
 
@@ -338,7 +338,7 @@ HandleFunctionRequest(StringInfo msgBuf)
 	 * Check permission to access and call function.  Since we didn't go
 	 * through a normal name lookup, we need to check schema usage too.
 	 */
-	ac_namespace_search(fip->namespace, true);
+	ac_schema_search(fip->namespace, true);
 
 	ac_proc_execute(fid, GetUserId());
 

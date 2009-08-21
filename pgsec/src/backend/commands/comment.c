@@ -47,8 +47,6 @@
 #include "parser/parse_func.h"
 #include "parser/parse_oper.h"
 #include "parser/parse_type.h"
-#include "security/common.h"
-#include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
@@ -489,7 +487,7 @@ CommentRelation(int objtype, List *relname, char *comment)
 	relation = relation_openrv(tgtrel, AccessShareLock);
 
 	/* Check object security */
-	ac_class_comment(RelationGetRelid(relation));
+	ac_relation_comment(RelationGetRelid(relation));
 
 	/* Next, verify that the relation type matches the intent */
 
@@ -729,7 +727,7 @@ CommentNamespace(List *qualname, char *comment)
 				 errmsg("schema \"%s\" does not exist", namespace)));
 
 	/* Permission checks */
-	ac_namespace_comment(oid);
+	ac_schema_comment(oid);
 
 	/* Call CreateComments() to create/drop the comments */
 	CreateComments(oid, NamespaceRelationId, 0, comment);
@@ -1058,12 +1056,6 @@ CommentConstraint(List *qualname, char *comment)
 	rel = makeRangeVarFromNameList(relName);
 	relation = heap_openrv(rel, AccessShareLock);
 
-	/* Check object security */
-
-	if (!pg_class_ownercheck(RelationGetRelid(relation), GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
-					   RelationGetRelationName(relation));
-
 	/*
 	 * Fetch the constraint tuple from pg_constraint.  There may be more than
 	 * one match, because constraints are not required to have unique names;
@@ -1102,6 +1094,9 @@ CommentConstraint(List *qualname, char *comment)
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("constraint \"%s\" for table \"%s\" does not exist",
 						conName, RelationGetRelationName(relation))));
+
+	/* Permission checks */
+	ac_constraint_comment(conOid);
 
 	/* Call CreateComments() to create/drop the comments */
 	CreateComments(conOid, ConstraintRelationId, 0, comment);

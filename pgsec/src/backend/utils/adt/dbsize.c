@@ -21,10 +21,10 @@
 #include "commands/dbcommands.h"
 #include "commands/tablespace.h"
 #include "miscadmin.h"
-#include "security/common.h"
 #include "storage/fd.h"
 #include "utils/builtins.h"
 #include "utils/rel.h"
+#include "utils/security.h"
 #include "utils/syscache.h"
 
 

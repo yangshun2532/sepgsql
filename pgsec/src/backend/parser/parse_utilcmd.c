@@ -50,10 +50,10 @@
 #include "parser/parse_utilcmd.h"
 #include "parser/parser.h"
 #include "rewrite/rewriteManip.h"
-#include "security/common.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
 #include "utils/relcache.h"
+#include "utils/security.h"
 #include "utils/syscache.h"
 
 

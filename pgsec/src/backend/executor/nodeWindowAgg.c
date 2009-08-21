@@ -43,11 +43,11 @@
 #include "optimizer/clauses.h"
 #include "parser/parse_agg.h"
 #include "parser/parse_coerce.h"
-#include "security/common.h"
 #include "utils/builtins.h"
 #include "utils/datum.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
+#include "utils/security.h"
 #include "utils/syscache.h"
 #include "windowapi.h"
 
