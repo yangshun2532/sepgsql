@@ -101,7 +101,6 @@ CreateTrigger(CreateTrigStmt *stmt,
 	Datum		values[Natts_pg_trigger];
 	bool		nulls[Natts_pg_trigger];
 	Relation	rel;
-	AclResult	aclresult;
 	Relation	tgrel;
 	SysScanDesc tgscan;
 	ScanKeyData key;
