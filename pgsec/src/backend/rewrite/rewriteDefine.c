@@ -27,11 +27,11 @@
 #include "rewrite/rewriteDefine.h"
 #include "rewrite/rewriteManip.h"
 #include "rewrite/rewriteSupport.h"
-#include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/inval.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
+#include "utils/security.h"
 #include "utils/syscache.h"
 #include "utils/tqual.h"
 
@@ -262,9 +262,7 @@ DefineQueryRewrite(char *rulename,
 	/*
 	 * Check user has permission to apply rules to this relation.
 	 */
-	if (!pg_class_ownercheck(event_relid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
-					   RelationGetRelationName(event_relation));
+	ac_rule_create(event_relid, rulename);
 
 	/*
 	 * No rule actions that modify OLD or NEW
@@ -694,9 +692,7 @@ EnableDisableRule(Relation rel, const char *rulename,
 	 */
 	eventRelationOid = ((Form_pg_rewrite) GETSTRUCT(ruletup))->ev_class;
 	Assert(eventRelationOid == owningRel);
-	if (!pg_class_ownercheck(eventRelationOid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
-					   get_rel_name(eventRelationOid));
+	ac_rule_toggle(eventRelationOid, rulename, fires_when);
 
 	/*
 	 * Change ev_enabled if it is different from the desired new state.

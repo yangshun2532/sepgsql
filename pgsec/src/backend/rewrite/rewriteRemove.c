@@ -22,11 +22,11 @@
 #include "catalog/pg_rewrite.h"
 #include "miscadmin.h"
 #include "rewrite/rewriteRemove.h"
-#include "utils/acl.h"
 #include "utils/fmgroids.h"
 #include "utils/inval.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
+#include "utils/security.h"
 #include "utils/syscache.h"
 #include "utils/tqual.h"
 
@@ -74,9 +74,7 @@ RemoveRewriteRule(Oid owningRel, const char *ruleName, DropBehavior behavior,
 	 */
 	eventRelationOid = ((Form_pg_rewrite) GETSTRUCT(tuple))->ev_class;
 	Assert(eventRelationOid == owningRel);
-	if (!pg_class_ownercheck(eventRelationOid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
-					   get_rel_name(eventRelationOid));
+	ac_rule_drop(eventRelationOid, ruleName, false);
 
 	/*
 	 * Do the deletion

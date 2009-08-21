@@ -128,8 +128,6 @@ DropConversionsCommand(DropStmt *drop)
 	{
 		List	   *name = (List *) lfirst(cell);
 		Oid			conversionOid;
-		HeapTuple	tuple;
-		Form_pg_conversion con;
 		ObjectAddress object;
 
 		conversionOid = FindConversionByName(name);

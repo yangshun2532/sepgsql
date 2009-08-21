@@ -53,6 +53,7 @@
 #include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
+#include "utils/security.h"
 #include "utils/syscache.h"
 #include "utils/tqual.h"
 
@@ -836,9 +837,7 @@ CommentRule(List *qualname, char *comment)
 	}
 
 	/* Check object security */
-	if (!pg_class_ownercheck(reloid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
-					   get_rel_name(reloid));
+	ac_rule_comment(reloid, rulename);
 
 	/* Call CreateComments() to create/drop the comments */
 	CreateComments(ruleoid, RewriteRelationId, 0, comment);
