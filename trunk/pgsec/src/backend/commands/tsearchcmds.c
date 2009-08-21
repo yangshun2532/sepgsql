@@ -38,12 +38,12 @@
 #include "tsearch/ts_cache.h"
 #include "tsearch/ts_public.h"
 #include "tsearch/ts_utils.h"
-#include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/catcache.h"
 #include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
+#include "utils/security.h"
 #include "utils/syscache.h"
 #include "utils/tqual.h"
 
@@ -172,11 +172,6 @@ DefineTSParser(List *names, List *parameters)
 	Oid			prsOid;
 	Oid			namespaceoid;
 
-	if (!superuser())
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("must be superuser to create text search parsers")));
-
 	/* Convert list of names to a name and namespace */
 	namespaceoid = QualifiedNameGetCreationNamespace(names, &prsname);
 
@@ -251,6 +246,16 @@ DefineTSParser(List *names, List *parameters)
 				 errmsg("text search parser lextypes method is required")));
 
 	/*
+	 * Permission checks
+	 */
+	ac_ts_parser_create(prsname, namespaceoid,
+						DatumGetObjectId(values[Anum_pg_ts_parser_prsstart - 1]),
+						DatumGetObjectId(values[Anum_pg_ts_parser_prstoken - 1]),
+						DatumGetObjectId(values[Anum_pg_ts_parser_prsend - 1]),
+						DatumGetObjectId(values[Anum_pg_ts_parser_prsheadline - 1]),
+						DatumGetObjectId(values[Anum_pg_ts_parser_prslextype - 1]));
+
+	/*
 	 * Looks good, insert
 	 */
 	prsRel = heap_open(TSParserRelationId, RowExclusiveLock);
@@ -276,11 +281,6 @@ RemoveTSParsers(DropStmt *drop)
 {
 	ObjectAddresses *objects;
 	ListCell   *cell;
-
-	if (!superuser())
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("must be superuser to drop text search parsers")));
 
 	/*
 	 * First we identify all the objects, then we delete them in a single
@@ -314,6 +314,9 @@ RemoveTSParsers(DropStmt *drop)
 			}
 			continue;
 		}
+
+		/* Permission checks */
+		ac_ts_parser_drop(prsOid, false);
 
 		object.classId = TSParserRelationId;
 		object.objectId = prsOid;
@@ -363,14 +366,12 @@ RenameTSParser(List *oldname, const char *newname)
 	Oid			prsId;
 	Oid			namespaceOid;
 
-	if (!superuser())
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("must be superuser to rename text search parsers")));
-
 	rel = heap_open(TSParserRelationId, RowExclusiveLock);
 
 	prsId = TSParserGetPrsid(oldname, false);
+
+	/* Permission checks */
+	ac_ts_parser_alter(prsId, newname);
 
 	tup = SearchSysCacheCopy(TSPARSEROID,
 							 ObjectIdGetDatum(prsId),
@@ -503,17 +504,13 @@ DefineTSDictionary(List *names, List *parameters)
 	List	   *dictoptions = NIL;
 	Oid			dictOid;
 	Oid			namespaceoid;
-	AclResult	aclresult;
 	char	   *dictname;
 
 	/* Convert list of names to a name and namespace */
 	namespaceoid = QualifiedNameGetCreationNamespace(names, &dictname);
 
-	/* Check we have creation rights in target namespace */
-	aclresult = pg_namespace_aclcheck(namespaceoid, GetUserId(), ACL_CREATE);
-	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
-					   get_namespace_name(namespaceoid));
+	/* Permission check */
+	ac_ts_dict_create(dictname, namespaceoid);
 
 	/*
 	 * loop over the definition list and extract the information we need.
@@ -585,7 +582,6 @@ RenameTSDictionary(List *oldname, const char *newname)
 	Relation	rel;
 	Oid			dictId;
 	Oid			namespaceOid;
-	AclResult	aclresult;
 
 	rel = heap_open(TSDictionaryRelationId, RowExclusiveLock);
 
@@ -610,16 +606,8 @@ RenameTSDictionary(List *oldname, const char *newname)
 				 errmsg("text search dictionary \"%s\" already exists",
 						newname)));
 
-	/* must be owner */
-	if (!pg_ts_dict_ownercheck(dictId, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_TSDICTIONARY,
-					   NameListToString(oldname));
-
-	/* must have CREATE privilege on namespace */
-	aclresult = pg_namespace_aclcheck(namespaceOid, GetUserId(), ACL_CREATE);
-	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
-					   get_namespace_name(namespaceOid));
+	/* Permission checks */
+	ac_ts_dict_alter(dictId, newname, InvalidOid);
 
 	namestrcpy(&(((Form_pg_ts_dict) GETSTRUCT(tup))->dictname), newname);
 	simple_heap_update(rel, &tup->t_self, tup);
@@ -680,12 +668,8 @@ RemoveTSDictionaries(DropStmt *drop)
 			elog(ERROR, "cache lookup failed for text search dictionary %u",
 				 dictOid);
 
-		/* Permission check: must own dictionary or its namespace */
-		namespaceId = ((Form_pg_ts_dict) GETSTRUCT(tup))->dictnamespace;
-		if (!pg_ts_dict_ownercheck(dictOid, GetUserId()) &&
-			!pg_namespace_ownercheck(namespaceId, GetUserId()))
-			aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_TSDICTIONARY,
-						   NameListToString(names));
+		/* Permission check */
+		ac_ts_dict_drop(dictOid, false);
 
 		object.classId = TSDictionaryRelationId;
 		object.objectId = dictOid;
@@ -757,10 +741,8 @@ AlterTSDictionary(AlterTSDictionaryStmt *stmt)
 		elog(ERROR, "cache lookup failed for text search dictionary %u",
 			 dictId);
 
-	/* must be owner */
-	if (!pg_ts_dict_ownercheck(dictId, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_TSDICTIONARY,
-					   NameListToString(stmt->dictname));
+	/* Permission checks */
+	ac_ts_dict_alter(dictId, NULL, InvalidOid);
 
 	/* deserialize the existing set of options */
 	opt = SysCacheGetAttr(TSDICTOID, tup,
@@ -852,7 +834,6 @@ AlterTSDictionaryOwner(List *name, Oid newOwnerId)
 	Relation	rel;
 	Oid			dictId;
 	Oid			namespaceOid;
-	AclResult	aclresult;
 	Form_pg_ts_dict form;
 
 	rel = heap_open(TSDictionaryRelationId, RowExclusiveLock);
@@ -872,23 +853,8 @@ AlterTSDictionaryOwner(List *name, Oid newOwnerId)
 
 	if (form->dictowner != newOwnerId)
 	{
-		/* Superusers can always do it */
-		if (!superuser())
-		{
-			/* must be owner */
-			if (!pg_ts_dict_ownercheck(dictId, GetUserId()))
-				aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_TSDICTIONARY,
-							   NameListToString(name));
-
-			/* Must be able to become new owner */
-			check_is_member_of_role(GetUserId(), newOwnerId);
-
-			/* New owner must have CREATE privilege on namespace */
-			aclresult = pg_namespace_aclcheck(namespaceOid, newOwnerId, ACL_CREATE);
-			if (aclresult != ACLCHECK_OK)
-				aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
-							   get_namespace_name(namespaceOid));
-		}
+		/* Permission checks */
+		ac_ts_dict_alter(dictId, NULL, newOwnerId);
 
 		form->dictowner = newOwnerId;
 
@@ -1002,11 +968,6 @@ DefineTSTemplate(List *names, List *parameters)
 	Oid			namespaceoid;
 	char	   *tmplname;
 
-	if (!superuser())
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-			   errmsg("must be superuser to create text search templates")));
-
 	/* Convert list of names to a name and namespace */
 	namespaceoid = QualifiedNameGetCreationNamespace(names, &tmplname);
 
@@ -1054,6 +1015,11 @@ DefineTSTemplate(List *names, List *parameters)
 				(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
 				 errmsg("text search template lexize method is required")));
 
+	/* Permission checks */
+	ac_ts_template_create(tmplname, namespaceoid,
+				DatumGetObjectId(values[Anum_pg_ts_template_tmplinit - 1]),
+				DatumGetObjectId(values[Anum_pg_ts_template_tmpllexize - 1]));
+
 	/*
 	 * Looks good, insert
 	 */
@@ -1084,14 +1050,12 @@ RenameTSTemplate(List *oldname, const char *newname)
 	Oid			tmplId;
 	Oid			namespaceOid;
 
-	if (!superuser())
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-			   errmsg("must be superuser to rename text search templates")));
+	tmplId = TSTemplateGetTmplid(oldname, false);
+
+	/* Permission checks */
+	ac_ts_template_alter(tmplId, newname);
 
 	rel = heap_open(TSTemplateRelationId, RowExclusiveLock);
-
-	tmplId = TSTemplateGetTmplid(oldname, false);
 
 	tup = SearchSysCacheCopy(TSTEMPLATEOID,
 							 ObjectIdGetDatum(tmplId),
@@ -1129,11 +1093,6 @@ RemoveTSTemplates(DropStmt *drop)
 	ObjectAddresses *objects;
 	ListCell   *cell;
 
-	if (!superuser())
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("must be superuser to drop text search templates")));
-
 	/*
 	 * First we identify all the objects, then we delete them in a single
 	 * performMultipleDeletions() call.  This is to avoid unwanted DROP
@@ -1166,6 +1125,9 @@ RemoveTSTemplates(DropStmt *drop)
 			}
 			continue;
 		}
+
+		/* Permission checks */
+		ac_ts_template_drop(tmplOid, false);
 
 		object.classId = TSTemplateRelationId;
 		object.objectId = tmplOid;
@@ -1328,7 +1290,6 @@ DefineTSConfiguration(List *names, List *parameters)
 	HeapTuple	tup;
 	Datum		values[Natts_pg_ts_config];
 	bool		nulls[Natts_pg_ts_config];
-	AclResult	aclresult;
 	Oid			namespaceoid;
 	char	   *cfgname;
 	NameData	cname;
@@ -1339,12 +1300,6 @@ DefineTSConfiguration(List *names, List *parameters)
 
 	/* Convert list of names to a name and namespace */
 	namespaceoid = QualifiedNameGetCreationNamespace(names, &cfgname);
-
-	/* Check we have creation rights in target namespace */
-	aclresult = pg_namespace_aclcheck(namespaceoid, GetUserId(), ACL_CREATE);
-	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
-					   get_namespace_name(namespaceoid));
 
 	/*
 	 * loop over the definition list and extract the information we need.
@@ -1398,6 +1353,9 @@ DefineTSConfiguration(List *names, List *parameters)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
 				 errmsg("text search parser is required")));
+
+	/* Permission checks */
+	ac_ts_config_create(cfgname, namespaceoid);
 
 	/*
 	 * Looks good, build tuple and insert
@@ -1483,7 +1441,6 @@ RenameTSConfiguration(List *oldname, const char *newname)
 	HeapTuple	tup;
 	Relation	rel;
 	Oid			cfgId;
-	AclResult	aclresult;
 	Oid			namespaceOid;
 
 	rel = heap_open(TSConfigRelationId, RowExclusiveLock);
@@ -1509,15 +1466,8 @@ RenameTSConfiguration(List *oldname, const char *newname)
 				 errmsg("text search configuration \"%s\" already exists",
 						newname)));
 
-	/* must be owner */
-	if (!pg_ts_config_ownercheck(cfgId, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_TSCONFIGURATION,
-					   NameListToString(oldname));
-
-	/* must have CREATE privilege on namespace */
-	aclresult = pg_namespace_aclcheck(namespaceOid, GetUserId(), ACL_CREATE);
-	aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
-				   get_namespace_name(namespaceOid));
+	/* Permission checks */
+	ac_ts_config_alter(cfgId, newname, InvalidOid);
 
 	namestrcpy(&(((Form_pg_ts_config) GETSTRUCT(tup))->cfgname), newname);
 	simple_heap_update(rel, &tup->t_self, tup);
@@ -1547,7 +1497,6 @@ RemoveTSConfigurations(DropStmt *drop)
 	{
 		List	   *names = (List *) lfirst(cell);
 		Oid			cfgOid;
-		Oid			namespaceId;
 		ObjectAddress object;
 		HeapTuple	tup;
 
@@ -1570,14 +1519,10 @@ RemoveTSConfigurations(DropStmt *drop)
 			}
 			continue;
 		}
-
-		/* Permission check: must own configuration or its namespace */
 		cfgOid = HeapTupleGetOid(tup);
-		namespaceId = ((Form_pg_ts_config) GETSTRUCT(tup))->cfgnamespace;
-		if (!pg_ts_config_ownercheck(cfgOid, GetUserId()) &&
-			!pg_namespace_ownercheck(namespaceId, GetUserId()))
-			aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_TSCONFIGURATION,
-						   NameListToString(names));
+
+		/* Permission check */
+		ac_ts_config_drop(cfgOid, false);
 
 		object.classId = TSConfigRelationId;
 		object.objectId = cfgOid;
@@ -1652,7 +1597,6 @@ AlterTSConfigurationOwner(List *name, Oid newOwnerId)
 	HeapTuple	tup;
 	Relation	rel;
 	Oid			cfgId;
-	AclResult	aclresult;
 	Oid			namespaceOid;
 	Form_pg_ts_config form;
 
@@ -1673,23 +1617,8 @@ AlterTSConfigurationOwner(List *name, Oid newOwnerId)
 
 	if (form->cfgowner != newOwnerId)
 	{
-		/* Superusers can always do it */
-		if (!superuser())
-		{
-			/* must be owner */
-			if (!pg_ts_config_ownercheck(cfgId, GetUserId()))
-				aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_TSCONFIGURATION,
-							   NameListToString(name));
-
-			/* Must be able to become new owner */
-			check_is_member_of_role(GetUserId(), newOwnerId);
-
-			/* New owner must have CREATE privilege on namespace */
-			aclresult = pg_namespace_aclcheck(namespaceOid, newOwnerId, ACL_CREATE);
-			if (aclresult != ACLCHECK_OK)
-				aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
-							   get_namespace_name(namespaceOid));
-		}
+		/* Permission checks */
+		ac_ts_config_alter(cfgId, NULL, newOwnerId);
 
 		form->cfgowner = newOwnerId;
 
@@ -1722,10 +1651,8 @@ AlterTSConfiguration(AlterTSConfigurationStmt *stmt)
 				 errmsg("text search configuration \"%s\" does not exist",
 						NameListToString(stmt->cfgname))));
 
-	/* must be owner */
-	if (!pg_ts_config_ownercheck(HeapTupleGetOid(tup), GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_TSCONFIGURATION,
-					   NameListToString(stmt->cfgname));
+	/* Permission check */
+	ac_ts_config_alter(HeapTupleGetOid(tup), NULL, InvalidOid);
 
 	relMap = heap_open(TSConfigMapRelationId, RowExclusiveLock);
 

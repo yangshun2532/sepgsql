@@ -1453,10 +1453,8 @@ CommentTSParser(List *qualname, char *comment)
 
 	prsId = TSParserGetPrsid(qualname, false);
 
-	if (!superuser())
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-			  errmsg("must be superuser to comment on text search parser")));
+	/* Permission checks */
+	ac_ts_parser_comment(prsId);
 
 	CreateComments(prsId, TSParserRelationId, 0, comment);
 }
@@ -1468,9 +1466,8 @@ CommentTSDictionary(List *qualname, char *comment)
 
 	dictId = TSDictionaryGetDictid(qualname, false);
 
-	if (!pg_ts_dict_ownercheck(dictId, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_TSDICTIONARY,
-					   NameListToString(qualname));
+	/* Permission checks */
+	ac_ts_dict_comment(dictId);
 
 	CreateComments(dictId, TSDictionaryRelationId, 0, comment);
 }
@@ -1482,10 +1479,8 @@ CommentTSTemplate(List *qualname, char *comment)
 
 	tmplId = TSTemplateGetTmplid(qualname, false);
 
-	if (!superuser())
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-			errmsg("must be superuser to comment on text search template")));
+	/* Permission checks */
+	ac_ts_template_comment(tmplId);
 
 	CreateComments(tmplId, TSTemplateRelationId, 0, comment);
 }
@@ -1497,9 +1492,8 @@ CommentTSConfiguration(List *qualname, char *comment)
 
 	cfgId = TSConfigGetCfgid(qualname, false);
 
-	if (!pg_ts_config_ownercheck(cfgId, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_TSCONFIGURATION,
-					   NameListToString(qualname));
+	/* Permission checks */
+	ac_ts_config_comment(cfgId);
 
 	CreateComments(cfgId, TSConfigRelationId, 0, comment);
 }
