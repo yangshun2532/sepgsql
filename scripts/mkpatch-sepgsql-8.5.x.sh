@@ -36,7 +36,7 @@ echo "  repository: ${SEPGSQL_REPOSITORY}${SEPGSQL_BRANCH}"
 echo
 
 # -- exporting branches
-TREES="base tiny"
+TREES="base pgsec"
 for name in ${TREES}
 do
   echo "Exporting ${SEPGSQL_BRANCH}/${name} ..."
@@ -44,12 +44,12 @@ do
 done
 
 # -- generating patches
-echo "GEN: sepgsql-01-tiny-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch"
-diff -Nrpc base tiny | gzip -c			\
-    > ${RPMSOURCE}/sepgsql-01-tiny-${BASE_VERSION}-r${SEPGSQL_REVISION}.patch.gz
+echo "GEN: sepgsql-01-base-${BASE_MAJOR}-r${SEPGSQL_REVISION}.patch"
+diff -Nrpc base pgsec | gzip -c			\
+    > ${RPMSOURCE}/sepgsql-01-base-${BASE_MAJOR}-r${SEPGSQL_REVISION}.patch.gz
 
 echo "---- LIST OF GENERATED PATCHES ----"
-echo "01) ${RPMSOURCE}/sepgsql-01-tiny-${BASE_MAJOR}-r${SEPGSQL_REVISION}.patch.gz"
+echo "01) ${RPMSOURCE}/sepgsql-01-base-${BASE_MAJOR}-r${SEPGSQL_REVISION}.patch.gz"
 
 # ---- clean up
 rm -rf ${WORKDIR}
