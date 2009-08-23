@@ -74,7 +74,7 @@ sepgsqlSwitchClient(security_context_t new_client)
 	}
 	PG_END_TRY();
 
-	return new_client;
+	return old_client;
 }
 
 /*
