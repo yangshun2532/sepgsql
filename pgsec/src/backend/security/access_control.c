@@ -8,7 +8,10 @@
  */
 #include "postgres.h"
 
+#include "access/genam.h"
+#include "access/heapam.h"
 #include "access/sysattr.h"
+#include "catalog/indexing.h"
 #include "catalog/pg_attribute.h"
 #include "catalog/pg_authid.h"
 #include "catalog/pg_cast.h"
@@ -25,20 +28,24 @@
 #include "catalog/pg_opfamily.h"
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_rewrite.h"
+#include "catalog/pg_trigger.h"
 #include "catalog/pg_ts_config.h"
 #include "catalog/pg_ts_dict.h"
 #include "catalog/pg_ts_parser.h"
 #include "catalog/pg_ts_template.h"
 #include "catalog/pg_type.h"
+#include "catalog/pg_user_mapping.h"
 #include "commands/dbcommands.h"
 #include "commands/tablespace.h"
 #include "miscadmin.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
+#include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
 #include "utils/security.h"
 #include "utils/syscache.h"
+#include "utils/tqual.h"
 
 /* ************************************************************
  *
@@ -55,11 +62,11 @@
  * the ac_class_create() instead, if necessary.
  *
  * [Params]
- *   relOid : OID of the relation to be altered
- *   cdef   : Definition of the new column
+ * relOid : OID of the relation to be altered
+ * colDef : Definition of the new column
  */
 void
-ac_attribute_create(Oid relOid, ColumnDef *cdef)
+ac_attribute_create(Oid relOid, ColumnDef *colDef)
 {
 	if (!pg_class_ownercheck(relOid, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
@@ -73,11 +80,11 @@ ac_attribute_create(Oid relOid, ColumnDef *cdef)
  * using ALTER TABLE statement.
  *
  * [Params]
- *   relOid : OID of the relation to be altered
- *   cdef   : Name of the target column
+ * relOid  : OID of the relation to be altered
+ * attName : Name of the target attribute to be altered
  */
 void
-ac_attribute_alter(Oid relOid, const char *colName)
+ac_attribute_alter(Oid relOid, const char *attName)
 {
 	if (!pg_class_ownercheck(relOid, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
@@ -92,11 +99,12 @@ ac_attribute_alter(Oid relOid, const char *colName)
  * use the ac_class_drop() instead, if necessary.
  *
  * [Params]
- *   relOid  : OID of the relation to be altered
- *   colName : Name of the target column
+ * relOid  : OID of the relation to be altered
+ * attName : Name of the target attribute to be dropped
+ * dacSkip : True, if dac permission check should be bypassed
  */
 void
-ac_attribute_drop(Oid relOid, const char *colName)
+ac_attribute_drop(Oid relOid, const char *attName, bool dacSkip)
 {
 	if (!pg_class_ownercheck(relOid, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
@@ -109,10 +117,10 @@ ac_attribute_drop(Oid relOid, const char *colName)
  * It checks privileges to grant/revoke permissions on a certain attribute
  *
  * [Params]
- *   relOid   : OID of the target relation for GRANT/REVOKE
- *   attnum   : Attribute number of the target column for GRANT/REVOKE
- *   grantor  : OID of the gractor role
- *   goptions : Available AclMask available to grant others
+ * relOid   : OID of the target relation for GRANT/REVOKE
+ * attnum   : Attribute number of the target column for GRANT/REVOKE
+ * grantor  : OID of the gractor role
+ * goptions : Available AclMask available to grant others
  */
 void
 ac_attribute_grant(Oid relOid, AttrNumber attnum,
@@ -140,11 +148,11 @@ ac_attribute_grant(Oid relOid, AttrNumber attnum,
  * It checks privilege to comment on a certain attribute
  *
  * [Params]
- *   relOid  : OID of the relation which contains the target
- *   colName : Name of the target attribute
+ * relOid  : OID of the relation which contains the target
+ * attName : Name of the target attribute
  */
 void
-ac_attribute_comment(Oid relOid, const char *colName)
+ac_attribute_comment(Oid relOid, const char *attName)
 {
 	if (!pg_class_ownercheck(relOid, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
@@ -163,14 +171,14 @@ ac_attribute_comment(Oid relOid, const char *colName)
  * It checks privilege to create a new cast
  *
  * [Params]
- *   sourceTypOid : OID of the source type
- *   targetTypOid : OID of the target type
- *   castmethod   : One of the COERCION_METHOD_*
- *   funcOid      : OID of the cast function
+ * sourceTypOid  : OID of the source type
+ * targetTypOid  : OID of the target type
+ * castMethod    : One of the COERCION_METHOD_*
+ * funcOid       : OID of the cast function
  */
 void
 ac_cast_create(Oid sourceTypOid, Oid targetTypOid,
-			   char castmethod, Oid funcOid)
+			   char castMethod, Oid funcOid)
 {
 	/* Must be owner of either source or target type */
 	if (!pg_type_ownercheck(sourceTypOid, GetUserId()) &&
@@ -184,12 +192,13 @@ ac_cast_create(Oid sourceTypOid, Oid targetTypOid,
 	 * Must be superuser to create binary-compatible casts,
 	 * since erroneous casts can easily crash the backend.
 	 */
-	if (castmethod == COERCION_METHOD_BINARY)
+	if (castMethod == COERCION_METHOD_BINARY)
 	{
 		if (!superuser())
 			ereport(ERROR,
 					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-					 errmsg("must be superuser to create a cast WITHOUT FUNCTION")));
+					 errmsg("must be superuser to create "
+							"a cast WITHOUT FUNCTION")));
 	}
 }
 
@@ -199,14 +208,14 @@ ac_cast_create(Oid sourceTypOid, Oid targetTypOid,
  * It checks privilege to drop a certain cast
  *
  * [Params]
- *   sourceTypOid : OID of the source type
- *   targetTypOid : OID of the target type
- *   cascade      : True, if cascaded deletion
+ * sourceTypOid : OID of the source type
+ * targetTypOid : OID of the target type
+ * dacSkip      : True, if dac permission check should be bypassed
  */
 void
-ac_cast_drop(Oid sourceTypOid, Oid targetTypOid, bool cascade)
+ac_cast_drop(Oid sourceTypOid, Oid targetTypOid, bool dacSkip)
 {
-	if (!cascade &&
+	if (!dacSkip &&
 		!pg_type_ownercheck(sourceTypOid, GetUserId()) &&
 		!pg_type_ownercheck(targetTypOid, GetUserId()))
 		ereport(ERROR,
@@ -216,14 +225,44 @@ ac_cast_drop(Oid sourceTypOid, Oid targetTypOid, bool cascade)
 						format_type_be(targetTypOid))));
 }
 
+/* Helper function to call ac_cast_drop() by oid */
+static void
+ac_cast_drop_by_oid(Oid castOid, bool dacSkip)
+{
+	Form_pg_cast	castForm;
+	Relation		castRel;
+	HeapTuple		castTup;
+	ScanKeyData		skey;
+	SysScanDesc		sscan;
+
+	castRel = heap_open(CastRelationId, AccessShareLock);
+
+	ScanKeyInit(&skey,
+				ObjectIdAttributeNumber,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(castOid));
+	sscan = systable_beginscan(castRel, CastOidIndexId, true,
+							   SnapshotNow, 1, &skey);
+	castTup = systable_getnext(sscan);
+	if (!HeapTupleIsValid(castTup))
+		elog(ERROR, "could not find tuple for cast %u", castOid);
+
+	castForm = (Form_pg_cast) GETSTRUCT(castTup);
+	ac_cast_drop(castForm->castsource, castForm->casttarget, dacSkip);
+
+	systable_endscan(sscan);
+
+	heap_close(castRel, AccessShareLock);
+}
+
 /*
  * ac_cast_comment
  *
  * It checks privilege to comment on a certain cast
  *
  * [Params]
- *   sourceTypOid : OID of the source type
- *   targetTypOid : OID of the target type
+ * sourceTypOid : OID of the source type
+ * targetTypOid : OID of the target type
  */
 void
 ac_cast_comment(Oid sourceTypOid, Oid targetTypOid)
@@ -246,15 +285,16 @@ ac_cast_comment(Oid sourceTypOid, Oid targetTypOid)
 /*
  * ac_relation_perms
  *
- * It checks privileges to access a certain table and columns using regular DML.
+ * It checks privilege to access a certain table and columns using
+ * regular DML statements.
  *
  * [Params]
- *   relOid   : OID of the target relation
- *   roleId   : OID of the database role to be evaluated
- *   reqPerms : mask of permission bits
- *   selCols  : bitmapset of referenced columns
- *   modCols  : bitmapset of modified columns
- *   abort    : Trus, if caller want to raise an error, if violated
+ * relOid   : OID of the relation to be checked
+ * roleId   : OID of the database role to be checked
+ * reqPerms : mask of permission bits
+ * selCols  : bitmapset of referenced columns
+ * modCols  : bitmapset of modified columns
+ * abort    : True, if caller want to raise an error on access violation
  */
 bool
 ac_relation_perms(Oid relOid, Oid roleId, AclMode reqPerms,
@@ -403,22 +443,24 @@ ac_relation_perms(Oid relOid, Oid roleId, AclMode reqPerms,
  * It checks privilege to create a new relation (except for indexes;
  * use ac_index_create() instead).
  *
- * Note that (currently) this checks is not invoked from bootparse.y
+ * Note that this check is not currently called from bootparse.y
  * (Boot_CreateStmt), create_toast_table() and make_new_heap(),
- * because it is unnecessary to check anything here. But SE-PgSQL
- * requires to return its default security context.
+ * because they are used to the initialization or internal stuffs,
+ * so they don't need to check any permissions here.
+ * But SE-PgSQL will require to return its default security context
+ * to be assigned on the new relation, even if no permission checks.
  *
  * [Params]
- *   relName   : Name of the new relation
- *   relkind   : relkind of the new relation
- *   tupDesc   : tupDesc of the new relation
- *   relNsp    : OID of the namespace of the relation
- *   relTblspc : OID of the tablespace of the relation, if exist
- *   stmt      : CreateStmt as a hint, if exist
+ * relName   : Name of the new relation
+ * relkind   : relkind of the new relation
+ * tupDesc   : tupDesc of the new relation
+ * relNsp    : OID of the namespace of the relation
+ * relTblspc : OID of the tablespace of the relation, if exist
+ * colList   : List of ColumnDef, if exist
  */
 void
 ac_relation_create(const char *relName, char relkind, TupleDesc tupDesc,
-				   Oid relNsp, Oid relTblspc, CreateStmt *stmt)
+				   Oid relNsp, Oid relTblspc, List *colList)
 {
 	AclResult	aclresult;
 
@@ -428,7 +470,8 @@ ac_relation_create(const char *relName, char relkind, TupleDesc tupDesc,
 	if (!IsBootstrapProcessingMode())
 	{
 		/* Check permissions to create a relation on the namespace */
-		aclresult = pg_namespace_aclcheck(relNsp, GetUserId(), ACL_CREATE);
+		aclresult = pg_namespace_aclcheck(relNsp, GetUserId(),
+										  ACL_CREATE);
 		if (aclresult != ACLCHECK_OK)
 			aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
 						   get_namespace_name(relNsp));
@@ -451,18 +494,18 @@ ac_relation_create(const char *relName, char relkind, TupleDesc tupDesc,
  * It checks privilege to alter a certain relation
  *
  * [Params]
- *   relOid    : OID of the relation to be altered
- *   newName   : New name of the relation, if given
- *   newNspOid : OID of the new namespace, if given
- *   newTblSpc : OID of the new tablespace, if given
- *   newOwner  : OID of the new relation owner, if given
+ * relOid    : OID of the relation to be altered
+ * newName   : New name of the relation, if given
+ * newNsp    : OID of the new namespace, if given
+ * newTblspc : OID of the new tablespace, if given
+ * newOwner  : OID of the new relation owner, if given
  */
 void
 ac_relation_alter(Oid relOid, const char *newName,
-				  Oid newNspOid, Oid newTblSpc, Oid newOwner)
+				  Oid newNsp, Oid newTblspc, Oid newOwner)
 {
 	AclResult	aclresult;
-	Oid			namespaceId;
+	Oid			relNsp;
 
 	/* Must be owner for all the ALTER TABLE options */
 	if (!pg_class_ownercheck(relOid, GetUserId()))
@@ -471,44 +514,41 @@ ac_relation_alter(Oid relOid, const char *newName,
 
 	if (newName)
 	{
-		namespaceId = get_rel_namespace(relOid);
-		aclresult = pg_namespace_aclcheck(namespaceId, GetUserId(),
-										  ACL_CREATE);
+		relNsp = get_rel_namespace(relOid);
+		aclresult = pg_namespace_aclcheck(relNsp, GetUserId(), ACL_CREATE);
 		if (aclresult != ACLCHECK_OK)
 			aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
-						   get_namespace_name(namespaceId));
+						   get_namespace_name(relNsp));
 	}
 
-	if (OidIsValid(newNspOid))
+	if (OidIsValid(newNsp))
 	{
-		aclresult = pg_namespace_aclcheck(newNspOid, GetUserId(),
-										  ACL_CREATE);
+		aclresult = pg_namespace_aclcheck(newNsp, GetUserId(), ACL_CREATE);
 		if (aclresult != ACLCHECK_OK)
 			aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
-						   get_namespace_name(newNspOid));
+						   get_namespace_name(newNsp));
 	}
 
-	if (OidIsValid(newTblSpc))
+	if (OidIsValid(newTblspc))
 	{
-		aclresult = pg_tablespace_aclcheck(newTblSpc, GetUserId(),
-										   ACL_CREATE);
+		aclresult = pg_tablespace_aclcheck(newTblspc, GetUserId(), ACL_CREATE);
 		if (aclresult != ACLCHECK_OK)
 			aclcheck_error(aclresult, ACL_KIND_TABLESPACE,
-						   get_tablespace_name(newTblSpc));
+						   get_tablespace_name(newTblspc));
 	}
 
-	if (OidIsValid(newOwner))
+	/* Superusers can always do it */
+	if (OidIsValid(newOwner) && !superuser())
 	{
 		/* Must be able to become new owner */
 		check_is_member_of_role(GetUserId(), newOwner);
 
 		/* New owner must have CREATE privilege on namespace */
-		namespaceId = get_rel_namespace(relOid);
-		aclresult = pg_namespace_aclcheck(namespaceId, newOwner,
-										  ACL_CREATE);
+		relNsp = get_rel_namespace(relOid);
+		aclresult = pg_namespace_aclcheck(relNsp, newOwner, ACL_CREATE);
 		if (aclresult != ACLCHECK_OK)
 			aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
-						   get_namespace_name(namespaceId));
+						   get_namespace_name(relNsp));
 	}
 }
 
@@ -521,7 +561,7 @@ ac_relation_alter(Oid relOid, const char *newName,
  *
  * [Params]
  * relOid  : OID of the relation to be dropped
- * dacSkip : True, if cascaded deletion
+ * dacSkip : True, if dac permission checks should be bypassed
  */
 void
 ac_relation_drop(Oid relOid, bool dacSkip)
@@ -542,9 +582,9 @@ ac_relation_drop(Oid relOid, bool dacSkip)
  * It checks privileges to grant/revoke permissions on a certain relation
  *
  * [Params]
- *   relOid   : OID of the target relation for GRANT/REVOKE
- *   grantor  : OID of the gractor role
- *   goptions : Available AclMask available to grant others
+ * relOid   : OID of the target relation for GRANT/REVOKE
+ * grantor  : OID of the gractor role
+ * goptions : Available AclMask available to grant others
  */
 void
 ac_relation_grant(Oid relOid, Oid grantor, AclMode goptions)
@@ -572,7 +612,7 @@ ac_relation_grant(Oid relOid, Oid grantor, AclMode goptions)
  * It checks privilges to comment on the relation
  *
  * [Params]
- *   relOid : OID of the relation to be commented
+ * relOid : OID of the relation to be commented
  */
 void
 ac_relation_comment(Oid relOid)
@@ -765,7 +805,8 @@ ac_relation_lock(Oid relOid, LOCKMODE lockmode)
 /*
  * ac_relation_vacuum
  *
- * It checks privilege to vacuum a certain relation
+ * It checks privilege to vacuum a certain relation, and returns
+ * false on privilege violation.
  *
  * [Params]
  * rel : The Relation to be vacuumed
@@ -805,8 +846,8 @@ ac_relation_indexon(Oid relOid)
  *
  * It checks privilege to rebuild all the indexes defined on a certain
  * table using REINDEX statement.
- * Note that ac_index_reindex() is not called when this check is uses.
- * In other word, this check implicitly contains checks for each indexes.
+ *
+ * Note that this check is not called on REINDEX DATABSE or INDEX
  *
  * [Params]
  * relOid : OID of the index to be rebuilt
@@ -822,8 +863,9 @@ ac_relation_reindex(Oid relOid)
 /*
  * ac_view_replace
  *
- * It checks privilege to replace an existing view using CREATE OR REPLACE VIEW.
- * Note that ac_class_create() is called when we actually define a new view.
+ * It checks privilege to replace a certain view using CREATE OR REPLACE
+ * VIEW. Note that ac_class_create() is called if here is not previously
+ * defined view.
  *
  * [Params]
  * viewOid : OID of the target view.
@@ -844,24 +886,24 @@ ac_view_replace(Oid viewOid)
  * Note that create_toast_table() does not call the check.
  *
  * [Params]
- *   indName      : Name of the new index
- *   check_rights : True, if caller wait permission checks on namespace
- *   indNspOid    : OID of the namespace to be assigned
- *   indTblSpc    : OID of the tablespace, if given
+ * indName      : Name of the new index
+ * check_rights : True, if caller wait permission checks on namespace
+ * indNsp       : OID of the namespace to be used
+ * indTblSpc    : OID of the tablespace, if given
  */
 void
 ac_index_create(const char *indName, bool check_rights,
-				Oid indNspOid, Oid indTblSpc)
+				Oid indNsp, Oid indTblSpc)
 {
 	AclResult	aclresult;
 
 	if (check_rights)
 	{
-		aclresult = pg_namespace_aclcheck(indNspOid, GetUserId(),
+		aclresult = pg_namespace_aclcheck(indNsp, GetUserId(),
 										  ACL_CREATE);
 		if (aclresult != ACLCHECK_OK)
 			aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
-						   get_namespace_name(indNspOid));
+						   get_namespace_name(indNsp));
 	}
 
 	if (OidIsValid(indTblSpc) && indTblSpc != MyDatabaseTableSpace)
@@ -878,11 +920,10 @@ ac_index_create(const char *indName, bool check_rights,
  * ac_index_reindex
  *
  * It checks privilege to rebuild a certain index using REINDEX statement.
- * Note that ac_database_reindex() and ac_relation_reindex() can be checked
- * depending on the statement option.
+ * Note that this check is not called on REINDEX DATABASE or TABLE.
  *
  * [Params]
- *   indOid : OID of the target index
+ * indOid : OID of the target index
  */
 void
 ac_index_reindex(Oid indOid)
@@ -902,7 +943,7 @@ ac_index_reindex(Oid indOid)
  * check.
  *
  * [Params]
- *   seqOid : OID of the sequence to be referenced
+ * seqOid : OID of the sequence to be referenced
  */
 void
 ac_sequence_get_value(Oid seqOid)
@@ -924,7 +965,7 @@ ac_sequence_get_value(Oid seqOid)
  * object. In other words, nextval() invokes this check.
  *
  * [Params]
- *   seqOid : OID of the sequence to be fetched
+ * seqOid : OID of the sequence to be fetched
  */
 void
 ac_sequence_next_value(Oid seqOid)
@@ -938,6 +979,7 @@ ac_sequence_next_value(Oid seqOid)
 				 errmsg("permission denied for sequence %s",
 						get_rel_name(seqOid))));
 }
+
 /*
  * ac_sequence_set_value
  *
@@ -945,7 +987,7 @@ ac_sequence_next_value(Oid seqOid)
  * object. In other words, setval() invokes this check.
  *
  * [Params]
- *   seqOid : OID of the sequence to be rewritten
+ * seqOid : OID of the sequence to be rewritten
  */
 void
 ac_sequence_set_value(Oid seqOid)
@@ -964,6 +1006,15 @@ ac_sequence_set_value(Oid seqOid)
  * Pg_constraint system catalog related access control stuffs
  *
  * ************************************************************/
+
+/*
+ * ac_constraint_comment
+ *
+ * It checks privilege to comment on a certain constraint
+ *
+ * [Params]
+ * conOid : OID of the constraint to be commented on
+ */
 void
 ac_constraint_comment(Oid conOid)
 {
@@ -990,46 +1041,43 @@ ac_constraint_comment(Oid conOid)
  *
  * ************************************************************/
 
+/* Helper function */
 static char *
 get_conversion_name(Oid convOid)
 {
 	Form_pg_conversion	convForm;
 	HeapTuple	convTup;
-	char	   *result;
+	char	   *convName = NULL;
 
 	convTup = SearchSysCache(CONVOID,
 							 ObjectIdGetDatum(convOid),
 							 0, 0, 0);
-	if (!HeapTupleIsValid(convTup))
-		elog(ERROR, "cache lookup failed for conversion: %u", convOid);
+	if (HeapTupleIsValid(convTup))
+	{
+		convForm = (Form_pg_conversion) GETSTRUCT(convTup);
+		convName = pstrdup(NameStr(convForm->conname));
 
-	convForm = (Form_pg_conversion) GETSTRUCT(convTup);
-	result = pstrdup(NameStr(convForm->conname));
-
-	ReleaseSysCache(convTup);
-
-	return result;
+		ReleaseSysCache(convTup);
+	}
+	return convName;
 }
 
 static Oid
 get_conversion_namespace(Oid convOid)
 {
-	Form_pg_conversion	convForm;
 	HeapTuple	convTup;
-	Oid			result;
+	Oid			convNsp = InvalidOid;
 
 	convTup = SearchSysCache(CONVOID,
 							 ObjectIdGetDatum(convOid),
 							 0, 0, 0);
-	if (!HeapTupleIsValid(convTup))
-		elog(ERROR, "cache lookup failed for conversion: %u", convOid);
+	if (HeapTupleIsValid(convTup))
+	{
+		convNsp = ((Form_pg_conversion) GETSTRUCT(convTup))->connamespace;
 
-	convForm = (Form_pg_conversion) GETSTRUCT(convTup);
-	result = convForm->connamespace;
-
-	ReleaseSysCache(convTup);
-
-	return result;
+		ReleaseSysCache(convTup);
+	}
+	return convNsp;
 }
 
 /*
@@ -1038,19 +1086,19 @@ get_conversion_namespace(Oid convOid)
  * It checks privilege to create a new conversion
  *
  * [Params]
- *   convName : Name of the new conversion
- *   nspOid   : OID of the namespace to be created on
- *   funcOid  : OID of the conversion function
+ * convName : Name of the new conversion
+ * convNsp  : OID of the namespace to be created on
+ * funcOid  : OID of the conversion function
  */
 void
-ac_conversion_create(const char *convName, Oid nspOid, Oid funcOid)
+ac_conversion_create(const char *convName, Oid convNsp, Oid funcOid)
 {
 	AclResult	aclresult;
 
-	aclresult = pg_namespace_aclcheck(nspOid, GetUserId(), ACL_CREATE);
+	aclresult = pg_namespace_aclcheck(convNsp, GetUserId(), ACL_CREATE);
 	if (aclresult != ACLCHECK_OK)
 		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
-					   get_namespace_name(nspOid));
+					   get_namespace_name(convNsp));
 
 	aclresult = pg_proc_aclcheck(funcOid, GetUserId(), ACL_EXECUTE);
 	if (aclresult != ACLCHECK_OK)
@@ -1064,14 +1112,14 @@ ac_conversion_create(const char *convName, Oid nspOid, Oid funcOid)
  * It checks privilege to alter a certain conversion
  *
  * [Params]
- *   convOid  : OID of the conversion to be altered
- *   newName  : New name of the conversion, if exist
- *   newOwner : OID of the new conversion owner, if exist
+ * convOid  : OID of the conversion to be altered
+ * newName  : New name of the conversion, if exist
+ * newOwner : OID of the new conversion owner, if exist
  */
 void
 ac_conversion_alter(Oid convOid, const char *newName, Oid newOwner)
 {
-	Oid			nspOid = get_conversion_namespace(convOid);
+	Oid			convNsp = get_conversion_namespace(convOid);
 	AclResult	aclresult;
 
 	/* Must be owner for all the ALTER CONVERSION options */
@@ -1082,25 +1130,23 @@ ac_conversion_alter(Oid convOid, const char *newName, Oid newOwner)
 	/* Must have CREATE privilege on namespace on renaming */
 	if (newName)
 	{
-		aclresult = pg_namespace_aclcheck(nspOid, GetUserId(), ACL_CREATE);
+		aclresult = pg_namespace_aclcheck(convNsp, GetUserId(), ACL_CREATE);
 		if (aclresult != ACLCHECK_OK)
 			aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
-						   get_namespace_name(nspOid));
+						   get_namespace_name(convNsp));
 	}
 
-	if (OidIsValid(newOwner))
+	/* Superusers can always do it */
+	if (OidIsValid(newOwner) && !superuser())
 	{
-		if (!superuser())
-		{
-			/* Must be able to become new owner */
-			check_is_member_of_role(GetUserId(), newOwner);
+		/* Must be able to become new owner */
+		check_is_member_of_role(GetUserId(), newOwner);
 
-			/* New owner must have CREATE privilege on namespace */
-			aclresult = pg_namespace_aclcheck(nspOid, newOwner, ACL_CREATE);
-			if (aclresult != ACLCHECK_OK)
-                aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
-							   get_namespace_name(nspOid));
-		}
+		/* New owner must have CREATE privilege on namespace */
+		aclresult = pg_namespace_aclcheck(convNsp, newOwner, ACL_CREATE);
+		if (aclresult != ACLCHECK_OK)
+			aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
+						   get_namespace_name(convNsp));
 	}
 }
 
@@ -1110,17 +1156,17 @@ ac_conversion_alter(Oid convOid, const char *newName, Oid newOwner)
  * It checks privilege to drop a certain conversion
  *
  * [Params]
- *   convOid : OID of the target conversion
- *   cascade : Trus, if cascaded deletion
+ * convOid : OID of the target conversion
+ * dacSkip:  True, if dac permission check should be bypassed
  */
 void
-ac_conversion_drop(Oid convOid, bool cascade)
+ac_conversion_drop(Oid convOid, bool dacSkip)
 {
-	Oid		nspOid = get_conversion_namespace(convOid);
+	Oid		convNsp = get_conversion_namespace(convOid);
 
-	if (!cascade &&
+	if (!dacSkip &&
 		!pg_conversion_ownercheck(convOid, GetUserId()) &&
-		!pg_namespace_ownercheck(nspOid, GetUserId()))
+		!pg_namespace_ownercheck(convNsp, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CONVERSION,
 					   get_conversion_name(convOid));
 }
@@ -1131,7 +1177,7 @@ ac_conversion_drop(Oid convOid, bool cascade)
  * It checks privilege to comment on a certain conversion
  *
  * [Params]
- *   convOid : OID of the conversion to be commented on
+ * convOid : OID of the conversion to be commented on
  */
 void
 ac_conversion_comment(Oid convOid)
@@ -1147,6 +1193,7 @@ ac_conversion_comment(Oid convOid)
  *
  * ************************************************************/
 
+/* Helper function */
 static bool
 have_createdb_privilege(void)
 {
@@ -1238,7 +1285,6 @@ ac_database_create(const char *datName, Oid srcDatOid, bool srcIsTemp,
  * newName   : New name of the database, if exist
  * newTblspc : OID of the new default tablespace, if exist
  * newOwner  : OID of the new owner, if exist
- * newAcl    : Pointer to set a new acl datum, when newOwner is valid.
  */
 void
 ac_database_alter(Oid datOid, const char *newName,
@@ -1297,8 +1343,8 @@ ac_database_alter(Oid datOid, const char *newName,
  * It checks privileges to drop a certain database
  *
  * [Params]
- *  datOid  : OID of the database to be dropped
- *  dacSkip : True, if dac permission checks should be bypassed
+ * datOid  : OID of the database to be dropped
+ * dacSkip : True, if dac permission checks should be bypassed
  */
 void
 ac_database_drop(Oid datOid, bool dacSkip)
@@ -1382,7 +1428,7 @@ ac_database_calculate_size(Oid datOid)
  * It checks privileges to reindex tables within the database
  *
  * [Params]
- *  datOid : OID of the database to be commented on
+ * datOid : OID of the database to be commented on
  */
 void
 ac_database_reindex(Oid datOid)
@@ -1398,7 +1444,7 @@ ac_database_reindex(Oid datOid)
  * It checks privilges to comment on the database
  *
  * [Params]
- *  datOid : OID of the database to be commented
+ * datOid : OID of the database to be commented
  */
 void
 ac_database_comment(Oid datOid)
@@ -1414,8 +1460,9 @@ ac_database_comment(Oid datOid)
  *
  * ************************************************************/
 
+/* Helper functions */
 static char *
-get_fdw_name(Oid fdwOid)
+get_foreign_data_wrapper_name(Oid fdwOid)
 {
 	Form_pg_foreign_data_wrapper	fdwForm;
 	HeapTuple	fdwTup;
@@ -1427,7 +1474,6 @@ get_fdw_name(Oid fdwOid)
 	if (HeapTupleIsValid(fdwTup))
 	{
 		fdwForm = (Form_pg_foreign_data_wrapper) GETSTRUCT(fdwTup);
-
 		fdwName = pstrdup(NameStr(fdwForm->fdwname));
 
 		ReleaseSysCache(fdwTup);
@@ -1441,8 +1487,8 @@ get_fdw_name(Oid fdwOid)
  * It checks privilege to create a new foreign data wrapper
  *
  * [Params]
- *   fdwName      : Name of the new foreign data wrapper
- *   fdwValidator : OID of the validator function, if exist
+ * fdwName      : Name of the new foreign data wrapper
+ * fdwValidator : OID of the validator function, if exist
  */
 void
 ac_foreign_data_wrapper_create(const char *fdwName, Oid fdwValidator)
@@ -1451,9 +1497,8 @@ ac_foreign_data_wrapper_create(const char *fdwName, Oid fdwValidator)
 	if (!superuser())
 		ereport(ERROR,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("permission denied to create "
-						"foreign-data wrapper \"%s\"", fdwName),
-				 errhint("Must be superuser to create a foreign-data wrapper.")));
+		errmsg("permission denied to create foreign-data wrapper \"%s\"", fdwName),
+		errhint("Must be superuser to create a foreign-data wrapper.")));
 }
 
 /*
@@ -1462,39 +1507,32 @@ ac_foreign_data_wrapper_create(const char *fdwName, Oid fdwValidator)
  * It checks privilege to alter a certain foreign data wrapper
  *
  * [Params]
- *   fdwOid       : OID of the target foreign data wrapper
- *   newValidator : OID of the new validator function, if exist
- *   newOwner     : OID of the new owner, if exist
+ * fdwOid       : OID of the target foreign data wrapper
+ * newValidator : OID of the new validator function, if exist
+ * newOwner     : OID of the new owner, if exist
  */
 void
 ac_foreign_data_wrapper_alter(Oid fdwOid, Oid newValidator, Oid newOwner)
 {
-	/*
-	 * MEMO: Here is a bit difference in error messages between
-	 * AlterForeignDataWrapper() and AlterForeignDataWrapperOwner(),
-	 * so it is necessary to provide different versions.
-	 */
-
 	/* Must be super user */
 	if (!superuser())
+	{
+		const char *actmsg = (OidIsValid(newOwner) ? "change owner of" : "alter");
+
 		ereport(ERROR,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("permission denied to %s foreign-data wrapper \"%s\"",
-						(!OidIsValid(newOwner) ? "alter" : "change owner of"),
-						get_fdw_name(fdwOid)),
-				 errhint("Must be superuser to %s a foreign-data wrapper.",
-						 (!OidIsValid(newOwner) ? "alter" : "change owner of"))));
+			errmsg("permission denied to %s foreign-data wrapper \"%s\"",
+				   actmsg, get_foreign_data_wrapper_name(fdwOid)),
+			errhint("Must be superuser to %s a foreign-data wrapper.", actmsg)));
+	}
 
-	if (OidIsValid(newOwner))
+	if (OidIsValid(newOwner) && !superuser_arg(newOwner))
 	{
-		if (!superuser_arg(newOwner))
-			ereport(ERROR,
-					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-					 errmsg("permission denied to change owner of"
-							" foreign-data wrapper \"%s\"",
-							get_fdw_name(fdwOid)),
-					 errhint("The owner of a foreign-data wrapper"
-							 " must be a superuser.")));
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+			errmsg("permission denied to change owner of foreign-data wrapper \"%s\"",
+				   get_foreign_data_wrapper_name(fdwOid)),
+			errhint("The owner of a foreign-data wrapper must be a superuser.")));
 	}
 }
 
@@ -1504,19 +1542,19 @@ ac_foreign_data_wrapper_alter(Oid fdwOid, Oid newValidator, Oid newOwner)
  * It checks privilege to drop a certain foreign data wrapper
  *
  * [Params]
- *   fdwOid  : OID of the target foreign data wrapper
- *   cascade : True, if cascaded deletion
+ * fdwOid  : OID of the target foreign data wrapper
+ * dacSkip : True, if dac permission check should be bypassed
  */
 void
-ac_foreign_data_wrapper_drop(Oid fdwOid, bool cascade)
+ac_foreign_data_wrapper_drop(Oid fdwOid, bool dacSkip)
 {
-	if (!cascade &&
+	if (!dacSkip &&
 		!superuser())
 		ereport(ERROR,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("permission denied to drop foreign-data wrapper \"%s\"",
-						get_fdw_name(fdwOid)),
-				 errhint("Must be superuser to drop a foreign-data wrapper.")));
+			errmsg("permission denied to drop foreign-data wrapper \"%s\"",
+				   get_foreign_data_wrapper_name(fdwOid)),
+			errhint("Must be superuser to drop a foreign-data wrapper.")));
 }
 
 /*
@@ -1526,9 +1564,9 @@ ac_foreign_data_wrapper_drop(Oid fdwOid, bool cascade)
  * data wrapper
  *
  * [Params]
- *   fdwOid   : OID of the target foreign data wrapper
- *   grantor  : OID of the gractor database role
- *   goptions : Available AclMask to grant others
+ * fdwOid   : OID of the target foreign data wrapper
+ * grantor  : OID of the gractor database role
+ * goptions : Available AclMask to grant others
  */
 void
 ac_foreign_data_wrapper_grant(Oid fdwOid, Oid grantor, AclMode goptions)
@@ -1541,7 +1579,7 @@ ac_foreign_data_wrapper_grant(Oid fdwOid, Oid grantor, AclMode goptions)
 		if (pg_foreign_data_wrapper_aclmask(fdwOid, grantor, whole_mask,
 											ACLMASK_ANY) == ACL_NO_RIGHTS)
 			aclcheck_error(ACLCHECK_NO_PRIV, ACL_KIND_FDW,
-						   get_fdw_name(fdwOid));
+						   get_foreign_data_wrapper_name(fdwOid));
 	}
 }
 
@@ -1551,8 +1589,9 @@ ac_foreign_data_wrapper_grant(Oid fdwOid, Oid grantor, AclMode goptions)
  *
  * ************************************************************/
 
+/* Helper functions */
 static char *
-get_fsrv_name(Oid fsrvOid)
+get_foreign_server_name(Oid fsrvOid)
 {
 	Form_pg_foreign_server	fsrvForm;
 	HeapTuple	fsrvTup;
@@ -1564,7 +1603,6 @@ get_fsrv_name(Oid fsrvOid)
 	if (HeapTupleIsValid(fsrvTup))
 	{
 		fsrvForm = (Form_pg_foreign_server) GETSTRUCT(fsrvTup);
-
 		fsrvName = pstrdup(NameStr(fsrvForm->srvname));
 
 		ReleaseSysCache(fsrvTup);
@@ -1578,9 +1616,9 @@ get_fsrv_name(Oid fsrvOid)
  * It checks privilege to create a new foreign server
  *
  * [Params]
- *   fsrvName  : Name of the new foreign server
- *   fsrvOwner : OID of the foreign server owner
- *   fdwOid    : OID of the foreign data wrapper used in the server
+ * fsrvName  : Name of the new foreign server
+ * fsrvOwner : OID of the foreign server owner
+ * fdwOid    : OID of the foreign data wrapper used in the server
  */
 void
 ac_foreign_server_create(const char *fsrvName, Oid fsrvOwner, Oid fdwOid)
@@ -1589,7 +1627,8 @@ ac_foreign_server_create(const char *fsrvName, Oid fsrvOwner, Oid fdwOid)
 
 	aclresult = pg_foreign_data_wrapper_aclcheck(fdwOid, fsrvOwner, ACL_USAGE);
 	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, ACL_KIND_FDW, get_fdw_name(fdwOid));
+		aclcheck_error(aclresult, ACL_KIND_FDW,
+					   get_foreign_data_wrapper_name(fdwOid));
 }
 
 /*
@@ -1598,15 +1637,15 @@ ac_foreign_server_create(const char *fsrvName, Oid fsrvOwner, Oid fdwOid)
  * It checks privilege to alter a certain foreign server
  *
  * [Params]
- *   fsrvOid  : OID of the target foreign server
- *   newOwner : OID of the new foreign server owner, if exist
+ * fsrvOid  : OID of the target foreign server
+ * newOwner : OID of the new foreign server owner, if exist
  */
 void
 ac_foreign_server_alter(Oid fsrvOid, Oid newOwner)
 {
 	if (!pg_foreign_server_ownercheck(fsrvOid, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_FOREIGN_SERVER,
-					   get_fsrv_name(fsrvOid));
+					   get_foreign_server_name(fsrvOid));
 
 	/* Additional checks for change owner
 	 * (superuser bypasses all the checks) */
@@ -1632,7 +1671,7 @@ ac_foreign_server_alter(Oid fsrvOid, Oid newOwner)
 													 newOwner, ACL_USAGE);
 		if (aclresult != ACLCHECK_OK)
 			aclcheck_error(aclresult, ACL_KIND_FDW,
-						   get_fdw_name(fsrvForm->srvfdw));
+						   get_foreign_data_wrapper_name(fsrvForm->srvfdw));
 	}
 }
 
@@ -1642,17 +1681,17 @@ ac_foreign_server_alter(Oid fsrvOid, Oid newOwner)
  * It checks privilege to drop a certain foreign server.
  *
  * [Params]
- *   fsrvOid : OID of the target foreign server
- *   cascade : True, if cascaded deletion
+ * fsrvOid : OID of the target foreign server
+ * dacSkip : True, if dac permission check should be bypassed
  */
 void
-ac_foreign_server_drop(Oid fsrvOid, bool cascade)
+ac_foreign_server_drop(Oid fsrvOid, bool dacSkip)
 {
 	/* Only allow DROP if the server is owned by the user. */
-	if (!cascade &&
+	if (!dacSkip &&
 		!pg_foreign_server_ownercheck(fsrvOid, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_FOREIGN_SERVER,
-					   get_fsrv_name(fsrvOid));
+					   get_foreign_server_name(fsrvOid));
 }
 
 /*
@@ -1662,9 +1701,9 @@ ac_foreign_server_drop(Oid fsrvOid, bool cascade)
  * foreign server
  *
  * [Params]
- *   fsrvOid  : OID of the target foreign server
- *   grantor  : OID of the gractor database role
- *   goptions : Available AclMask to grant others
+ * fsrvOid  : OID of the target foreign server
+ * grantor  : OID of the gractor database role
+ * goptions : Available AclMask to grant others
  */
 void
 ac_foreign_server_grant(Oid fsrvOid, Oid grantor, AclMode goptions)
@@ -1677,7 +1716,7 @@ ac_foreign_server_grant(Oid fsrvOid, Oid grantor, AclMode goptions)
 		if (pg_foreign_server_aclmask(fsrvOid, grantor, whole_mask,
 									  ACLMASK_ANY) == ACL_NO_RIGHTS)
 			aclcheck_error(ACLCHECK_NO_PRIV, ACL_KIND_FOREIGN_SERVER,
-						   get_fsrv_name(fsrvOid));
+						   get_foreign_server_name(fsrvOid));
 	}
 }
 
@@ -1687,24 +1726,24 @@ ac_foreign_server_grant(Oid fsrvOid, Oid grantor, AclMode goptions)
  *
  * ************************************************************/
 
+/* Helper functions */
 static char *
 get_lang_name(Oid langOid)
 {
 	Form_pg_language	langForm;
 	HeapTuple	langTup;
-	char	   *langName;
+	char	   *langName = NULL;
 
 	langTup = SearchSysCache(LANGOID,
 							 ObjectIdGetDatum(langOid),
 							 0, 0, 0);
-	if (!HeapTupleIsValid(langTup))
-		elog(ERROR, "cache lookup failed for language %u", langOid);
+	if (HeapTupleIsValid(langTup))
+	{
+		langForm = (Form_pg_language) GETSTRUCT(langTup);
+		langName = pstrdup(NameStr(langForm->lanname));
 
-	langForm = (Form_pg_language) GETSTRUCT(langTup);
-	langName = pstrdup(NameStr(langForm->lanname));
-
-	ReleaseSysCache(langTup);
-
+		ReleaseSysCache(langTup);
+	}
 	return langName;
 }
 
@@ -1714,12 +1753,12 @@ get_lang_name(Oid langOid)
  * It checks privilege to create a new procedural language.
  *
  * [Params]
- *   langName     : Name of the new procedural language
- *   IsTemplate   : True, if the procedural language is based on a template
- *   plTrusted    : A copy from PLTemplate->tmpltrusted, if exist
- *   plDbaCreate  : A copy from PLTemplate->tmpldbacreate, if exist
- *   handlerOid   : OID of the handler function
- *   validatorOid : OID of the validator function
+ * langName     : Name of the new procedural language
+ * IsTemplate   : True, if the procedural language is based on a template
+ * plTrusted    : A copy from PLTemplate->tmpltrusted, if exist
+ * plDbaCreate  : A copy from PLTemplate->tmpldbacreate, if exist
+ * handlerOid   : OID of the handler function
+ * validatorOid : OID of the validator function
  */
 void
 ac_language_create(const char *langName, bool IsTemplate,
@@ -1752,9 +1791,9 @@ ac_language_create(const char *langName, bool IsTemplate,
  * It checks privilege to alter a certain procedural language
  *
  * [Params]
- *   langOid  : OID of the procedural language
- *   newName  : New name of the procedural language, if exist
- *   newOwner : New owner of the procedural language, if exist
+ * langOid  : OID of the procedural language to be altered
+ * newName  : New name of the procedural language, if exist
+ * newOwner : New owner of the procedural language, if exist
  */
 void
 ac_language_alter(Oid langOid, const char *newName, Oid newOwner)
@@ -1775,13 +1814,13 @@ ac_language_alter(Oid langOid, const char *newName, Oid newOwner)
  * It checks privilege to drop a certain procedural language
  *
  * [Params]
- *   langOid : 
- *   cascade : True, if cascaded deletion
+ * langOid : OID of the procedural language to be dropped
+ * dacSkip : True, if dac permission check should be bypassed
  */
 void
-ac_language_drop(Oid langOid, bool cascade)
+ac_language_drop(Oid langOid, bool dacSkip)
 {
-	if (!cascade &&
+	if (!dacSkip &&
 		!pg_language_ownercheck(langOid, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_LANGUAGE,
 					   get_lang_name(langOid));
@@ -1793,9 +1832,9 @@ ac_language_drop(Oid langOid, bool cascade)
  * It checks privilege to grant/revoke permissions on procedural language
  *
  * [Params]
- *   langOid  : OID of the target procedural language
- *   grantor  : OID of the gractor database role
- *   goptions : Available AclMask to grant others
+ * langOid  : OID of the target procedural language
+ * grantor  : OID of the gractor database role
+ * goptions : Available AclMask to grant others
  */
 void
 ac_language_grant(Oid langOid, Oid grantor, AclMode goptions)
@@ -1818,7 +1857,7 @@ ac_language_grant(Oid langOid, Oid grantor, AclMode goptions)
  * It checks privilege to comment on a certain procedural language
  *
  * [Params]
- *   langOid : OID of the procedural language
+ * langOid : OID of the procedural language
  */
 void
 ac_language_comment(Oid langOid)
@@ -1831,28 +1870,190 @@ ac_language_comment(Oid langOid)
 
 /* ************************************************************
  *
+ * Pg_namespace system catalog related access control stuffs
+ *
+ * ************************************************************/
+
+/*
+ * ac_schema_create
+ *
+ * It checks privileges to create a new schema object
+ *
+ * [Params]
+ * nspName  : Name of the new schema object
+ * nspOwner : OID of the new schema owner
+ * isTemp   : True, if the schema is temporay
+ */
+void
+ac_schema_create(const char *nspName, Oid nspOwner, bool isTemp)
+{
+	AclResult	aclresult;
+
+	/*
+	 * To create a schema, must have (temporary) schema-create privilege
+	 * on the current database and must be able to become the target role
+	 * (this does not imply that the target role itself must have create-schema
+	 * privilege), if not temporary schema.
+	 * The latter provision guards against "giveaway" attacks.  Note that a
+	 * superuser will always have both of these privileges a fortiori.
+	 */
+	aclresult = pg_database_aclcheck(MyDatabaseId, GetUserId(),
+									 isTemp ? ACL_CREATE_TEMP : ACL_CREATE);
+	if (aclresult != ACLCHECK_OK)
+		aclcheck_error(aclresult, ACL_KIND_DATABASE,
+					   get_database_name(MyDatabaseId));
+
+	if (!isTemp)
+		check_is_member_of_role(GetUserId(), nspOwner);
+}
+
+/*
+ * ac_schema_alter
+ *
+ * It checks privileges to alter a certain schema object
+ *
+ * [Params]
+ * nspOid   : OID of the namespace to be altered
+ * newName  : New name of the namespace, if exist
+ * newOwner : OID of the new namespace owner, if exist
+ */
+void
+ac_schema_alter(Oid nspOid, const char *newName, Oid newOwner)
+{
+	AclResult	aclresult;
+
+	/* must be owner for all the ALTER SCHEMA options */
+	if (!pg_namespace_ownercheck(nspOid, GetUserId()))
+		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_NAMESPACE,
+					   get_namespace_name(nspOid));
+
+	/* must have CREATE privilege on database to rename */
+	if (newName)
+	{
+		aclresult = pg_database_aclcheck(MyDatabaseId, GetUserId(),
+										 ACL_CREATE);
+		if (aclresult != ACLCHECK_OK)
+			aclcheck_error(aclresult, ACL_KIND_DATABASE,
+						   get_database_name(MyDatabaseId));
+	}
+
+	if (OidIsValid(newOwner))
+	{
+		/* Must be able to become new owner */
+		check_is_member_of_role(GetUserId(), newOwner);
+	}
+}
+
+/*
+ * ac_schema_drop
+ *
+ * It checks privileges to drop a certain schema object
+ *
+ * [Params]
+ * nspOid  : OID of the namespace to be dropped
+ * dacSkip : True, if dac permission checks should be bypassed
+ */
+void
+ac_schema_drop(Oid nspOid, bool dacSkip)
+{
+	if (!dacSkip &&
+		!pg_namespace_ownercheck(nspOid, GetUserId()))
+		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_NAMESPACE,
+					   get_namespace_name(nspOid));
+}
+
+/*
+ * ac_schema_grant
+ *
+ * It checks privileges to grant/revoke permissions on a certain namespace
+ *
+ * [Params]
+ * nspOid   : OID of the target schema for GRANT/REVOKE
+ * grantor  : OID of the gractor role
+ * goptions : Available AclMask available to grant others
+ */
+void
+ac_schema_grant(Oid nspOid, Oid grantor, AclMode goptions)
+{
+	if (goptions == ACL_NO_RIGHTS)
+	{
+		AclMode		whole_mask = ACL_ALL_RIGHTS_NAMESPACE;
+
+		if (pg_namespace_aclmask(nspOid, grantor, 
+								 whole_mask | ACL_GRANT_OPTION_FOR(whole_mask),
+								 ACLMASK_ANY) == ACL_NO_RIGHTS)
+			aclcheck_error(ACLCHECK_NO_PRIV, ACL_KIND_DATABASE,
+						   get_namespace_name(nspOid));
+	}
+}
+
+/*
+ * ac_schema_search
+ *
+ * It checks privileges to search a certain schema
+ *
+ * [Params]
+ * nspOid : OID of the target schema
+ * abort  : True, if caller want to raise an error, if violated
+ */
+bool
+ac_schema_search(Oid nspOid, bool abort)
+{
+	AclResult	aclresult;
+
+	aclresult = pg_namespace_aclcheck(nspOid, GetUserId(),
+									  ACL_USAGE);
+	if (aclresult != ACLCHECK_OK)
+	{
+		if (abort)
+			aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
+						   get_namespace_name(nspOid));
+		return false;
+	}
+
+	return true;
+}
+
+/*
+ * ac_schema_comment
+ *
+ * It checks privileges to comment on a certain schema
+ *
+ * [Params]
+ * nspOid : OID of the schema to be commented on
+ */
+void
+ac_schema_comment(Oid nspOid)
+{
+	if (!pg_namespace_ownercheck(nspOid, GetUserId()))
+		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_NAMESPACE,
+					   get_namespace_name(nspOid));
+}
+
+/* ************************************************************
+ *
  * Pg_opclass system catalog related access control stuffs
  *
  * ************************************************************/
 
+/* Helper functions */
 static char *
 get_opclass_name(Oid opcOid)
 {
 	Form_pg_opclass		opcForm;
 	HeapTuple	opcTup;
-	char	   *opcName;
+	char	   *opcName = NULL;
 
 	opcTup = SearchSysCache(CLAOID,
 							ObjectIdGetDatum(opcOid),
 							0, 0, 0);
-	if (!HeapTupleIsValid(opcTup))
-		elog(ERROR, "cache lookup failed for opclass %u", opcOid);
+	if (HeapTupleIsValid(opcTup))
+	{
+		opcForm = (Form_pg_opclass) GETSTRUCT(opcTup);
+		opcName = pstrdup(NameStr(opcForm->opcname));
 
-	opcForm = (Form_pg_opclass) GETSTRUCT(opcTup);
-	opcName = pstrdup(NameStr(opcForm->opcname));
-
-	ReleaseSysCache(opcTup);
-
+		ReleaseSysCache(opcTup);
+	}
 	return opcName;
 }
 
@@ -2043,14 +2244,14 @@ ac_opclass_alter(Oid opcOid, const char *newName, Oid newOwner)
  *
  * [Params]
  * opcOid  : OID of the operator class to be dropped
- * cascade : True, if cascaded deletion
+ * dacSkip : True, if dac permission check should be bypassed
  */
 void
-ac_opclass_drop(Oid opcOid, bool cascade)
+ac_opclass_drop(Oid opcOid, bool dacSkip)
 {
 	Oid		opcNsp = get_opclass_namespace(opcOid);
 
-	if (!cascade &&
+	if (!dacSkip &&
 		!pg_opclass_ownercheck(opcOid, GetUserId()) &&
 		!pg_namespace_ownercheck(opcNsp, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_OPCLASS,
@@ -2079,6 +2280,7 @@ ac_opclass_comment(Oid opcOid)
  *
  * ************************************************************/
 
+/* Helper function */
 static Oid
 get_operator_namespace(Oid operOid)
 {
@@ -2107,7 +2309,7 @@ get_operator_namespace(Oid operOid)
  *
  * [Params]
  * oprName : Name of the new operator
- * nspOid  : OID of the namespace to be used for the operator
+ * oprNsp  : OID of the namespace to be used for the operator
  * operOid : OID of the shell operator to be replaced, if exist
  * commOp  : OID of the commutator operator, if exist 
  * negaOp  : OID of the nagator operator, if exist
@@ -2117,16 +2319,16 @@ get_operator_namespace(Oid operOid)
  */
 void
 ac_operator_create(const char *oprName,
-				   Oid nspOid, Oid operOid,
+				   Oid oprNsp, Oid operOid,
 				   Oid commOp, Oid negaOp,
 				   Oid codeFn, Oid restFn, Oid joinFn)
 {
 	AclResult	aclresult;
 
-	aclresult = pg_namespace_aclcheck(nspOid, GetUserId(), ACL_CREATE);
+	aclresult = pg_namespace_aclcheck(oprNsp, GetUserId(), ACL_CREATE);
 	if (aclresult != ACLCHECK_OK)
 		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
-					   get_namespace_name(nspOid));
+					   get_namespace_name(oprNsp));
 
 	if (OidIsValid(operOid) &&
 		!pg_oper_ownercheck(operOid, GetUserId()))
@@ -2213,15 +2415,15 @@ ac_operator_alter(Oid operOid, Oid newOwner)
  *
  * [Params]
  * operOid : OID of the operator to be dropped
- * cascade : True, if cascaded deletion
+ * dacSkip : True, if dac permission check should be bypassed
  */
 void
-ac_operator_drop(Oid operOid, bool cascade)
+ac_operator_drop(Oid operOid, bool dacSkip)
 {
 	Oid			operNsp = get_operator_namespace(operOid);
 
 	/* Must be owner of the operator or its namespace */
-	if (!cascade &&
+	if (!dacSkip &&
 		!pg_oper_ownercheck(operOid, GetUserId()) &&
 		!pg_namespace_ownercheck(operNsp, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_OPER,
@@ -2250,24 +2452,24 @@ ac_operator_comment(Oid operOid)
  *
  * ************************************************************/
 
+/* Helper function */
 static char *
 get_opfamily_name(Oid opfOid)
 {
 	Form_pg_opfamily	opfForm;
 	HeapTuple	opfTup;
-	char	   *opfName;
+	char	   *opfName = NULL;
 
 	opfTup = SearchSysCache(OPFAMILYOID,
 							ObjectIdGetDatum(opfOid),
 							0, 0, 0);
-	if (!HeapTupleIsValid(opfTup))
-		elog(ERROR, "cache lookup failed for opfamily %u", opfOid);
+	if (HeapTupleIsValid(opfTup))
+	{
+		opfForm = (Form_pg_opfamily) GETSTRUCT(opfTup);
+		opfName = pstrdup(NameStr(opfForm->opfname));
 
-	opfForm = (Form_pg_opfamily) GETSTRUCT(opfTup);
-	opfName = pstrdup(NameStr(opfForm->opfname));
-
-	ReleaseSysCache(opfTup);
-
+		ReleaseSysCache(opfTup);
+	}
 	return opfName;
 }
 
@@ -2389,10 +2591,10 @@ ac_opfamily_alter(Oid opfOid, const char *newName, Oid newOwner)
  *
  * [Params]
  * opfOid  : OID of the operator family to be dropped
- * cascade : True, if cascaded deletion
+ * dacSkip : True, if dac permission check should by bypassed
  */
 void
-ac_opfamily_drop(Oid opfOid, bool cascade)
+ac_opfamily_drop(Oid opfOid, bool dacSkip)
 {
 	Oid		opfNsp = get_opfamily_namespace(opfOid);
 
@@ -2484,11 +2686,11 @@ ac_opfamily_add_proc(Oid opfOid, Oid procOid)
  * [Params]
  * proName : Name of the new function
  * proOid  : OID of the procedure to be replaced, if exist
- * nspOid  : OID of the namespace for the new function
+ * proNsp  : OID of the namespace for the new function
  * langOid : OID of the procedural language for the new function
  */
 void
-ac_proc_create(const char *proName, Oid proOid, Oid nspOid, Oid langOid)
+ac_proc_create(const char *proName, Oid proOid, Oid proNsp, Oid langOid)
 {
 	AclResult			aclresult;
 	Form_pg_language	langForm;
@@ -2496,10 +2698,10 @@ ac_proc_create(const char *proName, Oid proOid, Oid nspOid, Oid langOid)
 	bool				langTrusted;
 
 	/* Check we have creation rights in target namespace */
-	aclresult = pg_namespace_aclcheck(nspOid, GetUserId(), ACL_CREATE);
+	aclresult = pg_namespace_aclcheck(proNsp, GetUserId(), ACL_CREATE);
 	if (aclresult != ACLCHECK_OK)
 		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
-					   get_namespace_name(nspOid));
+					   get_namespace_name(proNsp));
 
 	/* Check permission to use language */
 	langTup = SearchSysCache(LANGOID,
@@ -2541,22 +2743,22 @@ ac_proc_create(const char *proName, Oid proOid, Oid nspOid, Oid langOid)
  * It checks privilege to create a new aggregate function
  *
  * [Params]
- *   aggName : Name of the new aggregate function
- *   nspOid  : OID of the namespace for the new aggregate function
- *   transfn : OID of the trans function for the aggregate
- *   finalfn : OID of the final function for the aggregate, if exist
+ * aggName : Name of the new aggregate function
+ * proNsp  : OID of the namespace for the new aggregate function
+ * transfn : OID of the trans function for the aggregate
+ * finalfn : OID of the final function for the aggregate, if exist
  */
 void
-ac_aggregate_create(const char *aggName, Oid nspOid,
+ac_aggregate_create(const char *aggName, Oid proNsp,
 					Oid transfn, Oid finalfn)
 {
 	AclResult	aclresult;
 
 	/* Check we have creation rights in target namespace */
-	aclresult = pg_namespace_aclcheck(nspOid, GetUserId(), ACL_CREATE);
+	aclresult = pg_namespace_aclcheck(proNsp, GetUserId(), ACL_CREATE);
 	if (aclresult != ACLCHECK_OK)
 		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
-					   get_namespace_name(nspOid));
+					   get_namespace_name(proNsp));
 
 	/* Check aggregate creator has permission to call the trans function */
 	Assert(OidIsValid(transfn));
@@ -2579,10 +2781,10 @@ ac_aggregate_create(const char *aggName, Oid nspOid,
  * It checks privilege to alter a certain function
  *
  * [Params]
- *   proOid    : OID of the function to be altered
- *   newName   : New name of the function, if given
- *   newNspOid : OID of the new namespace, if given
- *   newOwner  : OID of the new function owner, if given
+ * proOid    : OID of the function to be altered
+ * newName   : New name of the function, if given
+ * newNspOid : OID of the new namespace, if given
+ * newOwner  : OID of the new function owner, if given
  */
 void
 ac_proc_alter(Oid proOid, const char *newName, Oid newNspOid, Oid newOwner)
@@ -2640,30 +2842,19 @@ ac_proc_alter(Oid proOid, const char *newName, Oid newNspOid, Oid newOwner)
  * It checks privilege to drop a certain function.
  *
  * [Params]
- *   proOID  : OID of the function to be dropped
- *   cascade : True, if cascaded deletion
+ * proOid  : OID of the function to be dropped
+ * dacSkip : True, if dac permission check should be bypassed
  */
 void
 ac_proc_drop(Oid proOid, bool cascade)
 {
-	HeapTuple		proTup;
-	Form_pg_proc	proForm;
-
-	/* Must be owner of function or its namespace */
-	proTup =  SearchSysCache(PROCOID,
-							 ObjectIdGetDatum(proOid),
-							 0, 0, 0);
-	if (!HeapTupleIsValid(proTup))
-		elog(ERROR, "cache lookup failed for function %u", proOid);
-	proForm = (Form_pg_proc) GETSTRUCT(proTup);
+	Oid		proNsp = get_func_namespace(proOid);
 
 	if (!cascade &&
 		!pg_proc_ownercheck(proOid, GetUserId()) &&
-		!pg_namespace_ownercheck(proForm->pronamespace, GetUserId()))
+		!pg_namespace_ownercheck(proNsp, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
 					   get_func_name(proOid));
-
-	ReleaseSysCache(proTup);
 }
 
 /*
@@ -2672,9 +2863,9 @@ ac_proc_drop(Oid proOid, bool cascade)
  * It checks privileges to grant/revoke permissions on a certain function
  *
  * [Params]
- *   proOid   : OID of the target function for GRANT/REVOKE
- *   grantor  : OID of the gractor role
- *   goptions : Available AclMask available to grant others
+ * proOid   : OID of the target function for GRANT/REVOKE
+ * grantor  : OID of the gractor role
+ * goptions : Available AclMask available to grant others
  */
 void
 ac_proc_grant(Oid proOid, Oid grantor, AclMode goptions)
@@ -2697,7 +2888,7 @@ ac_proc_grant(Oid proOid, Oid grantor, AclMode goptions)
  * It checks privilege to comment on the function
  *
  * [Params]
- *   proOid : OID of the function to be commented
+ * proOid : OID of the function to be commented
  */
 void
 ac_proc_comment(Oid proOid)
@@ -2718,8 +2909,8 @@ ac_proc_comment(Oid proOid)
  * the ac_xxx_create() hook.
  *
  * [Params]
- *   proOID  : OID of the function to be executed
- *   roleOid : OID of the database role to be evaluated
+ * proOID  : OID of the function to be executed
+ * roleOid : OID of the database role to be evaluated
  */
 void
 ac_proc_execute(Oid proOid, Oid roleOid)
@@ -2740,7 +2931,7 @@ ac_proc_execute(Oid proOid, Oid roleOid)
  * the inlined functions, the function must be executable.
  *
  * [Params]
- *   proOid : OID of the function tried to be inlined
+ * proOid : OID of the function tried to be inlined
  */
 bool
 ac_proc_hint_inline(Oid proOid)
@@ -2750,185 +2941,6 @@ ac_proc_hint_inline(Oid proOid)
 
 	return true;
 }
-
-
-
-
-
-
-
-
-/* ************************************************************
- *
- * Pg_namespace system catalog related access control stuffs
- *
- * ************************************************************/
-
-/*
- * ac_schema_create
- *
- * It checks privileges to create a new schema object
- *
- * [Params]
- * nspName  : Name of the new schema object
- * nspOwner : OID of the new schema owner
- * isTemp   : True, if the schema is temporay
- */
-void
-ac_schema_create(const char *nspName, Oid nspOwner, bool isTemp)
-{
-	AclResult	aclresult;
-
-	/*
-	 * To create a schema, must have (temporary) schema-create privilege
-	 * on the current database and must be able to become the target role
-	 * (this does not imply that the target role itself must have create-schema
-	 * privilege), if not temporary schema.
-	 * The latter provision guards against "giveaway" attacks.  Note that a
-	 * superuser will always have both of these privileges a fortiori.
-	 */
-	aclresult = pg_database_aclcheck(MyDatabaseId, GetUserId(),
-									 isTemp ? ACL_CREATE_TEMP : ACL_CREATE);
-	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, ACL_KIND_DATABASE,
-					   get_database_name(MyDatabaseId));
-
-	if (!isTemp)
-		check_is_member_of_role(GetUserId(), nspOwner);
-}
-
-/*
- * ac_schema_alter
- *
- * It checks privileges to alter a certain schema object
- *
- * [Params]
- * nspOid   : OID of the namespace to be altered
- * newName  : New name of the namespace, if exist
- * newOwner : OID of the new namespace owner, if exist
- */
-void
-ac_schema_alter(Oid nspOid, const char *newName, Oid newOwner)
-{
-	AclResult	aclresult;
-
-	/* must be owner for all the ALTER SCHEMA options */
-	if (!pg_namespace_ownercheck(nspOid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_NAMESPACE,
-					   get_namespace_name(nspOid));
-
-	/* must have CREATE privilege on database to rename */
-	if (newName)
-	{
-		aclresult = pg_database_aclcheck(MyDatabaseId, GetUserId(),
-										 ACL_CREATE);
-		if (aclresult != ACLCHECK_OK)
-			aclcheck_error(aclresult, ACL_KIND_DATABASE,
-						   get_database_name(MyDatabaseId));
-	}
-
-	if (OidIsValid(newOwner))
-	{
-		/* Must be able to become new owner */
-		check_is_member_of_role(GetUserId(), newOwner);
-	}
-}
-
-/*
- * ac_schema_drop
- *
- * It checks privileges to drop a certain schema object
- *
- * [Params]
- * nspOid  : OID of the namespace to be dropped
- * dacSkip : True, if dac permission checks should be bypassed
- */
-void
-ac_schema_drop(Oid nspOid, bool dacSkip)
-{
-	if (!dacSkip &&
-		!pg_namespace_ownercheck(nspOid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_NAMESPACE,
-					   get_namespace_name(nspOid));
-}
-
-/*
- * ac_schema_grant
- *
- * It checks privileges to grant/revoke permissions on a certain namespace
- *
- * [Params]
- *  nspOid   : OID of the target schema for GRANT/REVOKE
- *  grantor  : OID of the gractor role
- *  goptions : Available AclMask available to grant others
- */
-void
-ac_schema_grant(Oid nspOid, Oid grantor, AclMode goptions)
-{
-	if (goptions == ACL_NO_RIGHTS)
-	{
-		AclMode		whole_mask = ACL_ALL_RIGHTS_NAMESPACE;
-
-		if (pg_namespace_aclmask(nspOid, grantor, 
-								 whole_mask | ACL_GRANT_OPTION_FOR(whole_mask),
-								 ACLMASK_ANY) == ACL_NO_RIGHTS)
-			aclcheck_error(ACLCHECK_NO_PRIV, ACL_KIND_DATABASE,
-						   get_namespace_name(nspOid));
-	}
-}
-
-/*
- * ac_schema_search
- *
- * It checks privileges to search a certain schema
- *
- * [Params]
- *  nspOid : OID of the target schema
- *  abort  : True, if caller want to raise an error, if violated
- */
-bool
-ac_schema_search(Oid nspOid, bool abort)
-{
-	AclResult	aclresult;
-
-	aclresult = pg_namespace_aclcheck(nspOid, GetUserId(),
-									  ACL_USAGE);
-	if (aclresult != ACLCHECK_OK)
-	{
-		if (abort)
-			aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
-						   get_namespace_name(nspOid));
-		return false;
-	}
-
-	return true;
-}
-
-/*
- * ac_schema_comment
- *
- * It checks privileges to comment on a certain schema
- *
- * [Params]
- * nspOid : OID of the schema to be commented on
- */
-void
-ac_schema_comment(Oid nspOid)
-{
-	if (!pg_namespace_ownercheck(nspOid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_NAMESPACE,
-					   get_namespace_name(nspOid));
-}
-
-
-
-
-
-
-
-
-
-
 
 /* ************************************************************
  *
@@ -2970,6 +2982,37 @@ ac_rule_drop(Oid relOid, const char *ruleName, bool dacSkip)
 		!pg_class_ownercheck(relOid, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
 					   get_rel_name(relOid));
+}
+
+/* Helper function to call ac_rule_drop */
+static void
+ac_rule_drop_by_oid(Oid ruleOid, bool dacSkip)
+{
+	Form_pg_rewrite	ruleForm;
+	Relation		ruleRel;
+	ScanKeyData		skey;
+	SysScanDesc		sscan;
+	HeapTuple		ruleTup;
+
+	ruleRel = heap_open(RewriteRelationId, AccessShareLock);
+
+	ScanKeyInit(&skey,
+				ObjectIdAttributeNumber,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(ruleOid));
+	sscan = systable_beginscan(ruleRel, RewriteOidIndexId, true,
+							   SnapshotNow, 1, &skey);
+	ruleTup = systable_getnext(sscan);
+	if (!HeapTupleIsValid(ruleTup))
+		elog(ERROR, "could not find tuple for rule %u", ruleOid);
+
+	ruleForm = (Form_pg_rewrite) GETSTRUCT(ruleTup);
+
+	ac_rule_drop(ruleForm->ev_class, NameStr(ruleForm->rulename), dacSkip);
+
+	systable_endscan(sscan);
+
+	heap_close(ruleRel, AccessShareLock);
 }
 
 /*
@@ -3019,7 +3062,7 @@ ac_rule_toggle(Oid relOid, const char *ruleName, char fire_when)
  * It checks privileges to create a new tablespace
  *
  * [Params]
- *  tblspcName : Name of the new tablespace
+ * tblspcName : Name of the new tablespace
  */
 void
 ac_tablespace_create(const char *tblspcName)
@@ -3039,9 +3082,9 @@ ac_tablespace_create(const char *tblspcName)
  * It checks privileges to alter a certain tablespace
  *
  * [Params]
- *  tblspcOid : OID of the tablespace to be altered
- *  newName   : New name of the tablespace, if exist
- *  newOwner  : OID of the new tablespace owner, if exist
+ * tblspcOid : OID of the tablespace to be altered
+ * newName   : New name of the tablespace, if exist
+ * newOwner  : OID of the new tablespace owner, if exist
  */
 void
 ac_tablespace_alter(Oid tblspcOid, const char *newName, Oid newOwner)
@@ -3064,14 +3107,14 @@ ac_tablespace_alter(Oid tblspcOid, const char *newName, Oid newOwner)
  * It checks privileges to drop a certain tablespace
  *
  * [Params]
- *  tblspcOid : OID of the tablespace to be dropped
- *  cascade   : True, if cascaded deletion
+ * tblspcOid : OID of the tablespace to be dropped
+ * dacSkip   : True, if dac permission check should be bypassed
  */
 void
-ac_tablespace_drop(Oid tblspcOid, bool cascade)
+ac_tablespace_drop(Oid tblspcOid, bool dacSkip)
 {
 	/* Must be tablespace owner */
-	if (!cascade &&
+	if (!dacSkip &&
 		!pg_tablespace_ownercheck(tblspcOid, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_TABLESPACE,
 					   get_tablespace_name(tblspcOid));
@@ -3083,9 +3126,9 @@ ac_tablespace_drop(Oid tblspcOid, bool cascade)
  * It checks privileges to grant/revoke permissions on a certain tablespace
  *
  * [Params]
- *  tblspcOid  : OID of the target tablespace for GRANT/REVOKE
- *  grantor    : OID of the gractor database role
- *  goptions   : Available AclMask to grant others
+ * tblspcOid  : OID of the target tablespace for GRANT/REVOKE
+ * grantor    : OID of the gractor database role
+ * goptions   : Available AclMask to grant others
  */
 void
 ac_tablespace_grant(Oid tblspcOid, Oid grantor, AclMode goptions)
@@ -3108,7 +3151,7 @@ ac_tablespace_grant(Oid tblspcOid, Oid grantor, AclMode goptions)
  * It checks privileges to calculate size of a certain tablespace
  *
  * [Params]
- *   tblspcOid : OID of the target tablespace
+ * tblspcOid : OID of the target tablespace
  */
 void
 ac_tablespace_calculate_size(Oid tblspcOid)
@@ -3138,8 +3181,8 @@ ac_tablespace_calculate_size(Oid tblspcOid)
  * temporary database objects.
  *
  * [Params]
- *   tblspcOid : OID of the target tablespace
- *   abort     : True, if caller want to raise an error, if violated
+ * tblspcOid : OID of the target tablespace
+ * abort     : True, if caller want to raise an error, if violated
  */
 bool
 ac_tablespace_for_temporary(Oid tblspcOid, bool abort)
@@ -3160,7 +3203,7 @@ ac_tablespace_for_temporary(Oid tblspcOid, bool abort)
  * It checks privileges to comment on a certain tablespace
  *
  * [Params]
- *   tblspcOid : OID of the tablespace to be commented on
+ * tblspcOid : OID of the tablespace to be commented on
  */
 void
 ac_tablespace_comment(Oid tblspcOid)
@@ -3182,12 +3225,13 @@ ac_tablespace_comment(Oid tblspcOid)
  * It checks privilege to create a new trigger on a certain table.
  *
  * [Params]
- *   relOid    : OID of the relation on which the trigger is set up
- *   conRelOid : OID of the constrained relation, if exist
- *   funcOid   : OID of the trigger function
+ * relOid    : OID of the relation on which the trigger is set up
+ * trigName  : Name of the new trigger
+ * conRelOid : OID of the constrained relation, if exist
+ * funcOid   : OID of the trigger function
  */
 void
-ac_trigger_create(Oid relOid, Oid conRelOid, Oid funcOid)
+ac_trigger_create(Oid relOid, const char *trigName, Oid conRelOid, Oid funcOid)
 {
 	AclResult	aclresult;
 
@@ -3210,12 +3254,12 @@ ac_trigger_create(Oid relOid, Oid conRelOid, Oid funcOid)
  * Currently, only an operation to rename is defined on triggers.
  *
  * [Params]
- *   relOid  : OID of the ralation on which the trigger is set up
- *   trigTup : HeapTuple of the target trigger
- *   newName : New name of the trigger
+ * relOid   : OID of the ralation on which the trigger is set up
+ * trigName : Name of the trigger to be altered
+ * newName  : New name of the trigger, if exist
  */
 void
-ac_trigger_alter(Oid relOid, HeapTuple trigTup, const char *newName)
+ac_trigger_alter(Oid relOid, const char *trigName, const char *newName)
 {
 	if (!pg_class_ownercheck(relOid, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
@@ -3228,16 +3272,49 @@ ac_trigger_alter(Oid relOid, HeapTuple trigTup, const char *newName)
  * It checks privilege to drop a certain trigger
  *
  * [Params]
- *   relOid  : OID of the ralation on which the trigger is set up
- *   trigTup : HeapTuple of the target trigger
- *   cascade : True, if cascaded deletion
+ * relOid   : OID of the ralation on which the trigger is set up
+ * trigName : Name of the trigger to be dropped
+ * dacSkip  : True, if dac permission check should be bypassed
  */
 void
-ac_trigger_drop(Oid relOid, HeapTuple trigTup, bool cascade)
+ac_trigger_drop(Oid relOid, const char *trigName, bool dacSkip)
 {
-	if (!pg_class_ownercheck(relOid, GetUserId()))
+	if (!dacSkip &&
+		!pg_class_ownercheck(relOid, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
 					   get_rel_name(relOid));
+}
+
+/* Helper function to call ac_trigger_drop() */
+static void
+ac_trigger_drop_by_oid(Oid trigOid, bool dacSkip)
+{
+	Form_pg_trigger	tgForm;
+	Relation	tgRel;
+	HeapTuple	tgTup;
+	SysScanDesc sscan;
+    ScanKeyData skey;
+
+	tgRel = heap_open(TriggerRelationId, AccessShareLock);
+
+	ScanKeyInit(&skey,
+				ObjectIdAttributeNumber,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(trigOid));
+
+	sscan = systable_beginscan(tgRel, TriggerOidIndexId, true,
+							   SnapshotNow, 1, &skey);
+
+	tgTup = systable_getnext(sscan);
+	if (!HeapTupleIsValid(tgTup))
+		elog(ERROR, "could not find tuple for trigger %u", trigOid);
+
+	tgForm = (Form_pg_trigger) GETSTRUCT(tgTup);
+	ac_trigger_drop(tgForm->tgrelid, NameStr(tgForm->tgname), dacSkip);
+
+	systable_endscan(sscan);
+
+    heap_close(tgRel, AccessShareLock);
 }
 
 /*
@@ -3246,11 +3323,11 @@ ac_trigger_drop(Oid relOid, HeapTuple trigTup, bool cascade)
  * It checks privilege to comment on a certain trigger
  *
  * [Params]
- *   relOid  : OID of the ralation on which the trigger is set up
- *   trigTup : HeapTuple of the target trigger
+ * relOid   : OID of the ralation on which the trigger is set up
+ * trigName : Name of the trigger to be commented on
  */
 void
-ac_trigger_comment(Oid relOid, HeapTuple trigTup)
+ac_trigger_comment(Oid relOid, const char *trigName)
 {
 	if (!pg_class_ownercheck(relOid, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
@@ -3268,19 +3345,18 @@ get_ts_config_name(Oid cfgOid)
 {
 	Form_pg_ts_config	cfgForm;
 	HeapTuple	cfgTup;
-	char	   *cfgName;
+	char	   *cfgName = NULL;
 
 	cfgTup =  SearchSysCache(TSCONFIGOID,
 							 ObjectIdGetDatum(cfgOid),
 							 0, 0, 0);
-	if (!HeapTupleIsValid(cfgTup))
-		elog(ERROR, "cache lookup failed for text search configuration %u", cfgOid);
+	if (HeapTupleIsValid(cfgTup))
+	{
+		cfgForm = ((Form_pg_ts_config) GETSTRUCT(cfgTup));
+		cfgName = pstrdup(NameStr(cfgForm->cfgname));
 
-	cfgForm = ((Form_pg_ts_config) GETSTRUCT(cfgTup));
-	cfgName = pstrdup(NameStr(cfgForm->cfgname));
-
-	ReleaseSysCache(cfgTup);
-
+		ReleaseSysCache(cfgTup);
+	}
 	return cfgName;
 }
 
@@ -3415,19 +3491,18 @@ get_ts_dict_name(Oid dictOid)
 {
 	Form_pg_ts_dict	dictForm;
 	HeapTuple	dictTup;
-	char	   *dictName;
+	char	   *dictName = NULL;
 
 	dictTup = SearchSysCache(TSDICTOID,
 							 ObjectIdGetDatum(dictOid),
 							 0, 0, 0);
-	if (!HeapTupleIsValid(dictTup))
-		elog(ERROR, "cache lookup failed for text search dictionary %u", dictOid);
+	if (HeapTupleIsValid(dictTup))
+	{
+		dictForm = (Form_pg_ts_dict) GETSTRUCT(dictTup);
+		dictName = pstrdup(NameStr(dictForm->dictname));
 
-	dictForm = (Form_pg_ts_dict) GETSTRUCT(dictTup);
-	dictName = pstrdup(NameStr(dictForm->dictname));
-
-	ReleaseSysCache(dictTup);
-
+		ReleaseSysCache(dictTup);
+	}
 	return dictName;
 }
 
@@ -3772,19 +3847,19 @@ get_type_namespace(Oid typOid)
  * It checks privilege to create a new type
  *
  * [Params]
- *   typName    : Name of the new type
- *   typNsp     : OID of the namespace to be used for the type
- *   typOwner   : OID of the type owner
- *   typReplOid : OID of the shell type to be replaced, if exist
- *   typTypey   : TYPTYPE_* of the new type
- *   typIsArray : True, if implicit array type
- *   inputOid   : OID of the input function, if exist
- *   outputOid  : OID of the output function, if exist
- *   recvOid    : OID of the receive function, if exist
- *   sendOid    : OID of the send function, if exist
- *   modinOid   : OID of the typemodin function, if exist
- *   modoutOid  : OID of the typemodout function, if exist
- *   analyzeOid : OID of the analyze function, if exist
+ * typName    : Name of the new type
+ * typNsp     : OID of the namespace to be used for the type
+ * typOwner   : OID of the type owner
+ * typReplOid : OID of the shell type to be replaced, if exist
+ * typTypey   : TYPTYPE_* of the new type
+ * typIsArray : True, if implicit array type
+ * inputOid   : OID of the input function, if exist
+ * outputOid  : OID of the output function, if exist
+ * recvOid    : OID of the receive function, if exist
+ * sendOid    : OID of the send function, if exist
+ * modinOid   : OID of the typemodin function, if exist
+ * modoutOid  : OID of the typemodout function, if exist
+ * analyzeOid : OID of the analyze function, if exist
  */
 void
 ac_type_create(const char *typName, Oid typNsp, Oid typOwner,
@@ -3905,10 +3980,10 @@ ac_type_create(const char *typName, Oid typNsp, Oid typOwner,
  * It checks privilege to alter a certain type
  *
  * [Params]
- *   typOid    : OID of the type to be altered
- *   newName   : New name of the type, if exist
- *   newNspOid : OID of the new type namespace, if exist
- *   newOwner  : OID of the new type owner, if exist
+ * typOid    : OID of the type to be altered
+ * newName   : New name of the type, if exist
+ * newNspOid : OID of the new type namespace, if exist
+ * newOwner  : OID of the new type owner, if exist
  */
 void
 ac_type_alter(Oid typOid, const char *newName,
@@ -3961,16 +4036,16 @@ ac_type_alter(Oid typOid, const char *newName,
  * It checks privileges to drop a certain type
  *
  * [Params]
- *   typOid  : OID of the type to be dropped
- *   cascade : True, if cascaded deletion
+ * typOid  : OID of the type to be dropped
+ * dacSkip : True, if dac permission check should be bypassed
  */
 void
-ac_type_drop(Oid typOid, bool cascade)
+ac_type_drop(Oid typOid, bool dacSkip)
 {
 	Oid		typNsp = get_type_namespace(typOid);
 
 	/* Permission check: must own type or its namespace */
-	if (!cascade &&
+	if (!dacSkip &&
 		!pg_type_ownercheck(typOid, GetUserId()) &&
 		!pg_namespace_ownercheck(typNsp, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_TYPE,
@@ -3983,7 +4058,7 @@ ac_type_drop(Oid typOid, bool cascade)
  * It checks privilege to comment on a certain type
  *
  * [Params]
- *   typOid : OID of the type to be commented on
+ * typOid : OID of the type to be commented on
  */
 void
 ac_type_comment(Oid typOid)
@@ -3999,6 +4074,8 @@ ac_type_comment(Oid typOid)
  *
  * ************************************************************/
 
+/* Helper functions */
+
 /*
  * Common routine to check permission for user-mapping-related DDL
  * commands.  We allow server owners to operate on any mapping, and
@@ -4007,7 +4084,7 @@ ac_type_comment(Oid typOid)
 static void
 user_mapping_ddl_aclcheck(Oid umuserid, Oid serverid)
 {
-	Oid         curuserid = GetUserId();
+	Oid		curuserid = GetUserId();
 
 	if (!pg_foreign_server_ownercheck(serverid, curuserid))
 	{
@@ -4015,14 +4092,15 @@ user_mapping_ddl_aclcheck(Oid umuserid, Oid serverid)
 		{
 			AclResult	aclresult;
 
-			aclresult = pg_foreign_server_aclcheck(serverid, curuserid, ACL_USAGE);
+			aclresult = pg_foreign_server_aclcheck(serverid, curuserid,
+												   ACL_USAGE);
 			if (aclresult != ACLCHECK_OK)
 				aclcheck_error(aclresult, ACL_KIND_FOREIGN_SERVER,
-							   get_fsrv_name(serverid));
+							   get_foreign_server_name(serverid));
 		}
 		else
 			aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_FOREIGN_SERVER,
-						   get_fsrv_name(serverid));
+						   get_foreign_server_name(serverid));
     }
 }
 
@@ -4032,13 +4110,13 @@ user_mapping_ddl_aclcheck(Oid umuserid, Oid serverid)
  * It checks permission to create a new user mapping
  *
  * [Params]
- *   umuserId : OID of the mapped user id
- *   fsrvOid  : OID of the foreign server
+ * userOid : OID of the mapped user id
+ * fsrvOid : OID of the foreign server
  */
 void
-ac_user_mapping_create(Oid umuserId, Oid fsrvOid)
+ac_user_mapping_create(Oid userOid, Oid fsrvOid)
 {
-	user_mapping_ddl_aclcheck(umuserId, fsrvOid);
+	user_mapping_ddl_aclcheck(userOid, fsrvOid);
 }
 
 /*
@@ -4047,13 +4125,24 @@ ac_user_mapping_create(Oid umuserId, Oid fsrvOid)
  * It checks permission to alter a certain user mapping
  *
  * [Params]
- *   umuserId : OID of the mapped user id
- *   fsrvOid  : OID of the foreign server
+ * umOid : OID of the user mapping to be altered
  */
 void
-ac_user_mapping_alter(Oid umuserId, Oid fsrvOid)
+ac_user_mapping_alter(Oid umOid)
 {
-	user_mapping_ddl_aclcheck(umuserId, fsrvOid);
+	Form_pg_user_mapping	umForm;
+	HeapTuple		umTup;
+
+	umTup = SearchSysCache(USERMAPPINGOID,
+						   ObjectIdGetDatum(umOid),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(umTup))
+		elog(ERROR, "cache lookup failed for user mapping %u", umOid);
+
+	umForm = (Form_pg_user_mapping) GETSTRUCT(umTup);
+	user_mapping_ddl_aclcheck(umForm->umuser, umForm->umserver);
+
+	ReleaseSysCache(umTup);
 }
 
 /*
@@ -4062,15 +4151,25 @@ ac_user_mapping_alter(Oid umuserId, Oid fsrvOid)
  * It checks permission to drop a certain user mapping
  *
  * [Params]
- *   umuserId : OID of the mapped user id
- *   fsrvOid  : OID of the foreign server
- *   cascade : True, if cascaded deletion
+ * umOid   : OID of the user mapping to be dropped
+ * dacSkip : True, if dac permission check should be bypassed
  */
 void
-ac_user_mapping_drop(Oid umuserId, Oid fsrvOid, bool cascade)
+ac_user_mapping_drop(Oid umOid, bool dacSkip)
 {
-	if (!cascade)
-		user_mapping_ddl_aclcheck(umuserId, fsrvOid);
+	Form_pg_user_mapping	umForm;
+	HeapTuple		umTup;
+
+	umTup = SearchSysCache(USERMAPPINGOID,
+						   ObjectIdGetDatum(umOid),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(umTup))
+		elog(ERROR, "cache lookup failed for user mapping %u", umOid);
+
+	umForm = (Form_pg_user_mapping) GETSTRUCT(umTup);
+	user_mapping_ddl_aclcheck(umForm->umuser, umForm->umserver);
+
+	ReleaseSysCache(umTup);
 }
 
 /* ************************************************************
@@ -4078,26 +4177,100 @@ ac_user_mapping_drop(Oid umuserId, Oid fsrvOid, bool cascade)
  * Entrypoint to drop miscellaneous database objects
  *
  * ************************************************************/
+
+/*
+ * ac_object_drop
+ *
+ * It checks privilege to drop a certain miscellaneous database objects
+ * during cascaded deletion and so on.
+ *
+ * [Params]
+ * classId  : One of the OCLASS_*
+ * objectId : OID of the database object to be dropped
+ * objSubId : Attribute number, if exist
+ */
 void
-ac_object_drop(Oid classId, Oid objectId, int32 objSubId)
+ac_object_drop(ObjectClass classId, Oid objectId, int32 objSubId)
 {
-	switch(classId)
+	switch (classId)
 	{
-	case RewriteRelationId:			/* OCLASS_REWRITE */
-		//ac_rule_drop(objectId, "dummy", true);
-		//ruleOid should be used!!
+	case OCLASS_CLASS:				/* pg_class */
+		if (objSubId != 0)
+			ac_relation_drop(objectId, true);
+		else
+		{
+			const char *attName = get_relid_attribute_name(objectId, objSubId);
+			ac_attribute_drop(objectId, attName, true);
+		}
 		break;
-	case TSConfigRelationId:		/* OCLASS_TSCONFIG */
-		ac_ts_config_drop(objectId, true);
+	case OCLASS_PROC:				/* pg_proc */
+		ac_proc_drop(objectId, true);
 		break;
-	case TSDictionaryRelationId:	/* OCLASS_TSDICT */
-		ac_ts_dict_drop(objectId, true);
+	case OCLASS_TYPE:				/* pg_type */
+		ac_type_drop(objectId, true);
 		break;
-	case TSParserRelationId:		/* OCLASS_TSPARSER */
+	case OCLASS_CAST:				/* pg_cast */
+		ac_cast_drop_by_oid(objectId, true);
+		break;
+	case OCLASS_CONSTRAINT:			/* pg_constraint */
+		/* no need to do nothing in this version */
+		break;
+	case OCLASS_CONVERSION:			/* pg_conversion */
+		ac_conversion_drop(objectId, true);
+		break;
+ 	case OCLASS_LANGUAGE:			/* pg_language */
+		ac_language_drop(objectId, true);
+		break;
+ 	case OCLASS_OPERATOR:			/* pg_operator */
+		ac_operator_drop(objectId, true);
+		break;
+	case OCLASS_OPCLASS:			/* pg_opclass */
+		ac_opclass_drop(objectId, true);
+		break;
+	case OCLASS_OPFAMILY:			/* pg_opfamily */
+		ac_opfamily_drop(objectId, true);
+		break;
+	case OCLASS_AMOP:				/* pg_amop */
+	case OCLASS_AMPROC:				/* pg_amproc */
+		/* no need to do nothing in this version */
+		break;
+	case OCLASS_REWRITE:			/* pg_rewrite */
+		ac_rule_drop_by_oid(objectId, true);
+		break;
+	case OCLASS_TRIGGER:			/* pg_trigger */
+		ac_trigger_drop_by_oid(objectId, true);
+		break;
+	case OCLASS_SCHEMA:				/* pg_namespace */
+		ac_schema_drop(objectId, true);
+		break;
+	case OCLASS_TSPARSER:			/* pg_ts_parser */
 		ac_ts_parser_drop(objectId, true);
 		break;
-	case TSTemplateRelationId:		/* OCLASS_TSTEMPLATE */
+	case OCLASS_TSDICT:				/* pg_ts_dict */
+		ac_ts_dict_drop(objectId, true);
+		break;
+	case OCLASS_TSTEMPLATE:			/* pg_ts_template */
 		ac_ts_template_drop(objectId, true);
+		break;
+	case OCLASS_TSCONFIG:			/* pg_ts_config */
+		ac_ts_config_drop(objectId, true);
+		break;
+	case OCLASS_ROLE:
+	case OCLASS_DATABASE:
+	case OCLASS_TBLSPACE:
+		/* should not be happen */
+		break;
+	case OCLASS_FDW:				/* pg_foreign_data_wrapper */
+		ac_foreign_data_wrapper_drop(objectId, true);
+		break;
+	case OCLASS_FOREIGN_SERVER:		/* pg_foreign_server */
+		ac_foreign_server_drop(objectId, true);
+		break;
+	case OCLASS_USER_MAPPING:		/* pg_user_mapping */
+		ac_user_mapping_drop(objectId, true);
+		break;
+	default:
+		/* do nothing */
 		break;
 	}
 }

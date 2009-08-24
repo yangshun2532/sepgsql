@@ -1008,7 +1008,7 @@ CommentTrigger(List *qualname, char *comment)
 						trigname, RelationGetRelationName(relation))));
 
 	/* Check object security */
-	ac_trigger_comment(RelationGetRelid(relation), triggertuple);
+	ac_trigger_comment(RelationGetRelid(relation), trigname);
 
 	oid = HeapTupleGetOid(triggertuple);
 

@@ -562,7 +562,6 @@ CreateForeignServer(CreateForeignServerStmt *stmt)
 	HeapTuple	tuple;
 	Oid			srvId;
 	Oid			ownerId;
-	AclResult	aclresult;
 	ObjectAddress myself;
 	ObjectAddress referenced;
 	ForeignDataWrapper *fdw;
@@ -918,7 +917,7 @@ AlterUserMapping(AlterUserMappingStmt *stmt)
 						MappingUserName(useId))));
 
 	/* Permission check to alter this user mapping */
-	ac_user_mapping_alter(useId, srv->serverid);
+	ac_user_mapping_alter(umId);
 
 	tp = SearchSysCacheCopy(USERMAPPINGOID,
 							ObjectIdGetDatum(umId),
@@ -1034,7 +1033,7 @@ RemoveUserMapping(DropUserMappingStmt *stmt)
 	}
 
 	/* Permission check to drop thi user mapping */
-	ac_user_mapping_drop(useId, srv->serverid, false);
+	ac_user_mapping_drop(umId, false);
 
 	/*
 	 * Do the deletion
