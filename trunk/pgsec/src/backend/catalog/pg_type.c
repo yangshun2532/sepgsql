@@ -375,7 +375,7 @@ TypeCreate(Oid newTypeOid,
 							 ObjectIdGetDatum(typeNamespace),
 							 0, 0);
 
-	/* Permission checks */
+	/* Permission checks to create or replace a regular type */
 	ac_type_create(typeName, typeNamespace, ownerId,
 				   HeapTupleIsValid(tup) ? HeapTupleGetOid(tup) : InvalidOid,
 				   typeType, isImplicitArray,
