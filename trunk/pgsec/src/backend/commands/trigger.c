@@ -175,7 +175,8 @@ CreateTrigger(CreateTrigStmt *stmt,
 
 	/* permission checks */
 	if (checkPermissions)
-		ac_trigger_create(RelationGetRelid(rel), constrrelid, funcoid);
+		ac_trigger_create(RelationGetRelid(rel), stmt->trigname,
+						  constrrelid, funcoid);
 
 	/*
 	 * If the command is a user-entered CREATE CONSTRAINT TRIGGER command that
@@ -744,7 +745,7 @@ DropTrigger(Oid relid, const char *trigname, DropBehavior behavior,
 	}
 
 	/* Permission checks */
-	ac_trigger_drop(relid, tup, false);
+	ac_trigger_drop(relid, trigname, false);
 
 	object.classId = TriggerRelationId;
 	object.objectId = HeapTupleGetOid(tup);
@@ -855,9 +856,6 @@ renametrig(Oid relid,
 	SysScanDesc tgscan;
 	ScanKeyData key[2];
 
-	/* Permission checks */
-	//ac_trigger_alter_rename(relid, oldname, newname);
-
 	/*
 	 * Grab an exclusive lock on the target table, which we will NOT release
 	 * until end of transaction.
@@ -911,7 +909,7 @@ renametrig(Oid relid,
 	if (HeapTupleIsValid(tuple = systable_getnext(tgscan)))
 	{
 		/* Permission check to rename the trigger */
-		ac_trigger_alter(relid, tuple, newname);
+		ac_trigger_alter(relid, oldname, newname);
 
 		/*
 		 * Update pg_trigger tuple with new tgname.

@@ -432,7 +432,7 @@ DefineRelation(CreateStmt *stmt, char relkind)
 	 * Permission checks to create a new table.
 	 */
 	ac_relation_create(relname, relkind, descriptor,
-					   namespaceId, tablespaceId, stmt);
+					   namespaceId, tablespaceId, schema);
 
 	/*
 	 * Find columns with default values and prepare for insertion of the

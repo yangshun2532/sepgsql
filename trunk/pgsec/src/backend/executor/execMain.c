@@ -2779,7 +2779,7 @@ OpenIntoRel(QueryDesc *queryDesc)
 
 	/* Permission check to create a new table */
 	ac_relation_create(intoName, RELKIND_RELATION, queryDesc->tupDesc,
-					   namespaceId, tablespaceId, NULL);
+					   namespaceId, tablespaceId, NIL);
 
 	/* Copy the tupdesc because heap_create_with_catalog modifies it */
 	tupdesc = CreateTupleDescCopy(queryDesc->tupDesc);

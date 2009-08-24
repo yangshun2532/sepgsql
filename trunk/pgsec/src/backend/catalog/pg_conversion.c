@@ -218,40 +218,9 @@ FindDefaultConversion(Oid name_space, int32 for_encoding, int32 to_encoding)
 Oid
 FindConversion(const char *conname, Oid connamespace)
 {
-	HeapTuple	tuple;
-	Oid			conoid;
-
 	/* search pg_conversion by connamespace and conversion name */
-	tuple = SearchSysCache(CONNAMENSP,
-						   PointerGetDatum(conname),
-						   ObjectIdGetDatum(connamespace),
-						   0, 0);
-	if (!HeapTupleIsValid(tuple))
-		return InvalidOid;
-
-#if 0
-	/*
-	 * MEMO: This ACL check is meaningless, because this function
-	 * is called on ALTER or DROP conversion to fetch the conversion
-	 * specified by the given conname. Then, caller checks user's
-	 * ownership on the fetched conversion.
-	 * 
-	 * See the discussion at:
-	 * http://archives.postgresql.org/message-id/4A8C8FBD.8010000@ak.jp.nec.com
-	 */
-	procoid = ((Form_pg_conversion) GETSTRUCT(tuple))->conproc;
-	conoid = HeapTupleGetOid(tuple);
-
-	ReleaseSysCache(tuple);
-
-	/* Check we have execute rights for the function */
-	aclresult = pg_proc_aclcheck(procoid, GetUserId(), ACL_EXECUTE);
-	if (aclresult != ACLCHECK_OK)
-		return InvalidOid;
-#endif
-	conoid = HeapTupleGetOid(tuple);
-
-	ReleaseSysCache(tuple);
-
-	return conoid;
+	return GetSysCacheOid(CONNAMENSP,
+						  PointerGetDatum(conname),
+						  ObjectIdGetDatum(connamespace),
+						  0, 0);
 }
