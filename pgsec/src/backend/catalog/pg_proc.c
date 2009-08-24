@@ -343,6 +343,7 @@ ProcedureCreate(const char *procedureName,
 							PointerGetDatum(parameterTypes),
 							ObjectIdGetDatum(procNamespace),
 							0);
+
 	if (HeapTupleIsValid(oldtup))
 	{
 		/* There is one; okay to replace it? */
@@ -353,6 +354,8 @@ ProcedureCreate(const char *procedureName,
 					(errcode(ERRCODE_DUPLICATE_FUNCTION),
 			errmsg("function \"%s\" already exists with same argument types",
 				   procedureName)));
+
+		/* Permission check to replace an existing procedure */
 		if (permission)
 			ac_proc_create(procedureName, HeapTupleGetOid(oldtup),
 						   procNamespace, languageObjectId);
@@ -483,6 +486,7 @@ ProcedureCreate(const char *procedureName,
 	}
 	else
 	{
+		/* Permission check to create a new procedure */
 		if (permission)
 			ac_proc_create(procedureName, InvalidOid,
 						   procNamespace, languageObjectId);

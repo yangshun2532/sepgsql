@@ -4185,75 +4185,76 @@ ac_user_mapping_drop(Oid umOid, bool dacSkip)
  * during cascaded deletion and so on.
  *
  * [Params]
- * classId  : One of the OCLASS_*
- * objectId : OID of the database object to be dropped
- * objSubId : Attribute number, if exist
+ * object  : a miscellaneous database object to be dropped
+ * dacSkip : True, if dac permission check should be bypassed
  */
 void
-ac_object_drop(ObjectClass classId, Oid objectId, int32 objSubId)
+ac_object_drop(const ObjectAddress *object, bool dacSkip)
 {
-	switch (classId)
+	switch (getObjectClass(object))
 	{
 	case OCLASS_CLASS:				/* pg_class */
-		if (objSubId != 0)
-			ac_relation_drop(objectId, true);
+		if (object->objectSubId != 0)
+			ac_relation_drop(object->objectId, dacSkip);
 		else
 		{
-			const char *attName = get_relid_attribute_name(objectId, objSubId);
-			ac_attribute_drop(objectId, attName, true);
+			char *attName
+				= get_relid_attribute_name(object->objectId,
+										   object->objectSubId);
+			ac_attribute_drop(object->objectId, attName, dacSkip);
 		}
 		break;
 	case OCLASS_PROC:				/* pg_proc */
-		ac_proc_drop(objectId, true);
+		ac_proc_drop(object->objectId, dacSkip);
 		break;
 	case OCLASS_TYPE:				/* pg_type */
-		ac_type_drop(objectId, true);
+		ac_type_drop(object->objectId, dacSkip);
 		break;
 	case OCLASS_CAST:				/* pg_cast */
-		ac_cast_drop_by_oid(objectId, true);
+		ac_cast_drop_by_oid(object->objectId, dacSkip);
 		break;
 	case OCLASS_CONSTRAINT:			/* pg_constraint */
 		/* no need to do nothing in this version */
 		break;
 	case OCLASS_CONVERSION:			/* pg_conversion */
-		ac_conversion_drop(objectId, true);
+		ac_conversion_drop(object->objectId, dacSkip);
 		break;
  	case OCLASS_LANGUAGE:			/* pg_language */
-		ac_language_drop(objectId, true);
+		ac_language_drop(object->objectId, dacSkip);
 		break;
  	case OCLASS_OPERATOR:			/* pg_operator */
-		ac_operator_drop(objectId, true);
+		ac_operator_drop(object->objectId, dacSkip);
 		break;
 	case OCLASS_OPCLASS:			/* pg_opclass */
-		ac_opclass_drop(objectId, true);
+		ac_opclass_drop(object->objectId, dacSkip);
 		break;
 	case OCLASS_OPFAMILY:			/* pg_opfamily */
-		ac_opfamily_drop(objectId, true);
+		ac_opfamily_drop(object->objectId, dacSkip);
 		break;
 	case OCLASS_AMOP:				/* pg_amop */
 	case OCLASS_AMPROC:				/* pg_amproc */
 		/* no need to do nothing in this version */
 		break;
 	case OCLASS_REWRITE:			/* pg_rewrite */
-		ac_rule_drop_by_oid(objectId, true);
+		ac_rule_drop_by_oid(object->objectId, dacSkip);
 		break;
 	case OCLASS_TRIGGER:			/* pg_trigger */
-		ac_trigger_drop_by_oid(objectId, true);
+		ac_trigger_drop_by_oid(object->objectId, dacSkip);
 		break;
 	case OCLASS_SCHEMA:				/* pg_namespace */
-		ac_schema_drop(objectId, true);
+		ac_schema_drop(object->objectId, dacSkip);
 		break;
 	case OCLASS_TSPARSER:			/* pg_ts_parser */
-		ac_ts_parser_drop(objectId, true);
+		ac_ts_parser_drop(object->objectId, dacSkip);
 		break;
 	case OCLASS_TSDICT:				/* pg_ts_dict */
-		ac_ts_dict_drop(objectId, true);
+		ac_ts_dict_drop(object->objectId, dacSkip);
 		break;
 	case OCLASS_TSTEMPLATE:			/* pg_ts_template */
-		ac_ts_template_drop(objectId, true);
+		ac_ts_template_drop(object->objectId, dacSkip);
 		break;
 	case OCLASS_TSCONFIG:			/* pg_ts_config */
-		ac_ts_config_drop(objectId, true);
+		ac_ts_config_drop(object->objectId, dacSkip);
 		break;
 	case OCLASS_ROLE:
 	case OCLASS_DATABASE:
@@ -4261,13 +4262,13 @@ ac_object_drop(ObjectClass classId, Oid objectId, int32 objSubId)
 		/* should not be happen */
 		break;
 	case OCLASS_FDW:				/* pg_foreign_data_wrapper */
-		ac_foreign_data_wrapper_drop(objectId, true);
+		ac_foreign_data_wrapper_drop(object->objectId, dacSkip);
 		break;
 	case OCLASS_FOREIGN_SERVER:		/* pg_foreign_server */
-		ac_foreign_server_drop(objectId, true);
+		ac_foreign_server_drop(object->objectId, dacSkip);
 		break;
 	case OCLASS_USER_MAPPING:		/* pg_user_mapping */
-		ac_user_mapping_drop(objectId, true);
+		ac_user_mapping_drop(object->objectId, dacSkip);
 		break;
 	default:
 		/* do nothing */

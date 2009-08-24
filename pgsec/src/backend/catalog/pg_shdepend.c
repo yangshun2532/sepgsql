@@ -1336,6 +1336,13 @@ shdepReassignOwned(List *roleids, Oid newrole)
 					break;
 
 				case TypeRelationId:
+					/*
+					 * FIXME: Only types and relations don't check
+					 * permissions to change their ownership inside of
+					 * AlterTypeOwnerInternal() and ATExecChangeOwner().
+					 * So, it may be necessary to put permission checks
+					 * to control to change its ownership.
+					 */
 					AlterTypeOwnerInternal(sdepForm->objid, newrole, true);
 					break;
 
@@ -1348,6 +1355,7 @@ shdepReassignOwned(List *roleids, Oid newrole)
 					break;
 
 				case RelationRelationId:
+					/* FIXME: see the comment on TypeRelationId */
 
 					/*
 					 * Pass recursing = true so that we don't fail on indexes,

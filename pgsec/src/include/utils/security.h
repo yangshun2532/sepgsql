@@ -332,6 +332,6 @@ ac_user_mapping_drop(Oid umOid, bool dacSkip);
 
 /* misc database objects */
 extern void
-ac_object_drop(ObjectClass classId, Oid objectId, int32 objSubId);
+ac_object_drop(const ObjectAddress *object, bool dacSkip);
 
 #endif	/* UTILS_SECURITY_H */

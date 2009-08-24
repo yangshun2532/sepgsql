@@ -862,6 +862,12 @@ renametrig(Oid relid,
 	 */
 	targetrel = heap_open(relid, AccessExclusiveLock);
 
+	/* Prevent system catalogs */
+	if (!allowSystemTableMods && IsSystemRelation(targetrel))
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("permission denied: \"%s\" is a system catalog",
+						RelationGetRelationName(targetrel))));
 	/*
 	 * Scan pg_trigger twice for existing triggers on relation.  We do this in
 	 * order to ensure a trigger does not exist with newname (The unique index
