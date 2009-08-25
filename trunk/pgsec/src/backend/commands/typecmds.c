@@ -1765,6 +1765,7 @@ AlterDomainAddConstraint(List *names, Node *newConstraint)
 		elog(ERROR, "cache lookup failed for type %u", domainoid);
 	typTup = (Form_pg_type) GETSTRUCT(tup);
 
+	/* Check it's a domain and check user has permission for ALTER DOMAIN */
 	checkDomainAlter(tup, typename);
 
 	if (!IsA(newConstraint, Constraint))

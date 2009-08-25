@@ -1783,7 +1783,7 @@ AlterFunctionNamespace(List *name, List *argtypes, bool isagg,
 						NameListToString(name),
 						newschema)));
 
-	/* Permission check to change the schema */
+	/* Permission check to change the schema of procedure */
 	ac_proc_alter(procOid, NULL, nspOid, InvalidOid);
 
 	/* disallow renaming into or out of temp schemas */

@@ -1497,7 +1497,8 @@ ac_foreign_data_wrapper_create(const char *fdwName, Oid fdwValidator)
 	if (!superuser())
 		ereport(ERROR,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-		errmsg("permission denied to create foreign-data wrapper \"%s\"", fdwName),
+		errmsg("permission denied to create foreign-data wrapper \"%s\"",
+			   fdwName),
 		errhint("Must be superuser to create a foreign-data wrapper.")));
 }
 
@@ -1517,22 +1518,24 @@ ac_foreign_data_wrapper_alter(Oid fdwOid, Oid newValidator, Oid newOwner)
 	/* Must be super user */
 	if (!superuser())
 	{
-		const char *actmsg = (OidIsValid(newOwner) ? "change owner of" : "alter");
+		const char *actmsg
+			= (OidIsValid(newOwner) ? "change owner of" : "alter");
 
 		ereport(ERROR,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-			errmsg("permission denied to %s foreign-data wrapper \"%s\"",
-				   actmsg, get_foreign_data_wrapper_name(fdwOid)),
-			errhint("Must be superuser to %s a foreign-data wrapper.", actmsg)));
+				 errmsg("permission denied to %s foreign-data wrapper \"%s\"",
+						actmsg, get_foreign_data_wrapper_name(fdwOid)),
+				 errhint("Must be superuser to %s a foreign-data wrapper.",
+						 actmsg)));
 	}
 
 	if (OidIsValid(newOwner) && !superuser_arg(newOwner))
 	{
 		ereport(ERROR,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-			errmsg("permission denied to change owner of foreign-data wrapper \"%s\"",
-				   get_foreign_data_wrapper_name(fdwOid)),
-			errhint("The owner of a foreign-data wrapper must be a superuser.")));
+				 errmsg("permission denied to change owner of foreign-data wrapper \"%s\"",
+						get_foreign_data_wrapper_name(fdwOid)),
+				 errhint("The owner of a foreign-data wrapper must be a superuser.")));
 	}
 }
 
@@ -1552,9 +1555,9 @@ ac_foreign_data_wrapper_drop(Oid fdwOid, bool dacSkip)
 		!superuser())
 		ereport(ERROR,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-			errmsg("permission denied to drop foreign-data wrapper \"%s\"",
-				   get_foreign_data_wrapper_name(fdwOid)),
-			errhint("Must be superuser to drop a foreign-data wrapper.")));
+				 errmsg("permission denied to drop foreign-data wrapper \"%s\"",
+						get_foreign_data_wrapper_name(fdwOid)),
+				 errhint("Must be superuser to drop a foreign-data wrapper.")));
 }
 
 /*
@@ -2325,11 +2328,16 @@ ac_operator_create(const char *oprName,
 {
 	AclResult	aclresult;
 
+	/* ACL_CREATE on the namespace is always required */
 	aclresult = pg_namespace_aclcheck(oprNsp, GetUserId(), ACL_CREATE);
 	if (aclresult != ACLCHECK_OK)
 		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
 					   get_namespace_name(oprNsp));
 
+	/*
+	 * When we try to replace an existing operator, it is
+	 * necessary to own the operator to be replaced.
+	 */
 	if (OidIsValid(operOid) &&
 		!pg_oper_ownercheck(operOid, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_OPER,
@@ -3842,7 +3850,7 @@ get_type_namespace(Oid typOid)
 }
 
 /*
- * ac_type_create_base
+ * ac_type_create
  *
  * It checks privilege to create a new type
  *
@@ -3883,7 +3891,8 @@ ac_type_create(const char *typName, Oid typNsp, Oid typOwner,
 			 * instance, representation parameters that don't match what the
 			 * C code expects).  In practice it takes superuser privilege to
 			 * create the I/O functions, and so the former requirement that
-			 * you own the I/O functions pretty much forced superuserness anyway.
+			 * you own the I/O functions pretty much forced superuserness
+			 * anyway.
 			 * We're just making doubly sure here.
 			 *
 			 * XXX re-enable NOT_USED code sections below if you remove this test.
@@ -3941,7 +3950,11 @@ ac_type_create(const char *typName, Oid typNsp, Oid typOwner,
 		case TYPTYPE_DOMAIN:
 		case TYPTYPE_ENUM:
 		case TYPTYPE_PSEUDO:
-			/* No superuser privileges are required */
+			/*
+			 * For DOMAIN, ENUM and shell-type, it requires ACL_CREATE
+			 * on the namespace to be associated, instead of superuser
+			 * privilege.
+			 */
 			aclresult = pg_namespace_aclcheck(typNsp, GetUserId(), ACL_CREATE);
 			if (aclresult != ACLCHECK_OK)
 				aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
