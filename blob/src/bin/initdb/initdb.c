@@ -173,6 +173,7 @@ static void setup_sysviews(void);
 static void setup_description(void);
 static void setup_conversion(void);
 static void setup_dictionary(void);
+static void setup_largeobject(void);
 static void setup_privileges(void);
 static void set_info_version(void);
 static void setup_schema(void);
@@ -1793,6 +1794,36 @@ setup_dictionary(void)
 }
 
 /*
+ * setup_largeobject
+ *
+ * It changes storage option on the pg_largeobject.data to turn
+ * off compression for partial writing.
+ */
+static void
+setup_largeobject(void)
+{
+	PG_CMD_DECL;
+	const char *lobj_setup_cmd
+		= "ALTER TABLE pg_largeobject ALTER data SET STORAGE EXTERNAL;\n";
+
+	fputs(_("setting up largeobject ... "), stdout);
+	fflush(stdout);
+
+	snprintf(cmd, sizeof(cmd),
+			 "\"%s\" %s template1 >%s",
+			 backend_exec, backend_options,
+			 DEVNULL);
+
+	PG_CMD_OPEN;
+
+	PG_CMD_PUTS(lobj_setup_cmd);
+
+	PG_CMD_CLOSE;
+
+	check_ok();
+}
+
+/*
  * Set up privileges
  *
  * We mark most system catalogs as world-readable.	We don't currently have
@@ -3161,6 +3192,8 @@ main(int argc, char *argv[])
 	setup_conversion();
 
 	setup_dictionary();
+
+	setup_largeobject();
 
 	setup_privileges();
 
