@@ -162,8 +162,8 @@ DECLARE_UNIQUE_INDEX(pg_language_name_index, 2681, on pg_language using btree(la
 DECLARE_UNIQUE_INDEX(pg_language_oid_index, 2682, on pg_language using btree(oid oid_ops));
 #define LanguageOidIndexId	2682
 
-DECLARE_UNIQUE_INDEX(pg_largeobject_loid_pn_index, 2683, on pg_largeobject using btree(loid oid_ops, pageno int4_ops));
-#define LargeObjectLOidPNIndexId  2683
+DECLARE_UNIQUE_INDEX(pg_largeobject_oid_index, 2683, on pg_largeobject using btree(oid oid_ops));
+#define LargeObjectOidIndexId  2683
 
 DECLARE_UNIQUE_INDEX(pg_namespace_nspname_index, 2684, on pg_namespace using btree(nspname name_ops));
 #define NamespaceNameIndexId  2684

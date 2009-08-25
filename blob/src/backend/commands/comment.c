@@ -1417,7 +1417,9 @@ CommentLargeObject(List *qualname, char *comment)
 	}
 
 	/* check that the large object exists */
-	if (!LargeObjectExists(loid))
+	if (!SearchSysCacheExists(LARGEOBJECTOID,
+							  ObjectIdGetDatum(loid),
+							  0, 0, 0))
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("large object %u does not exist", loid)));

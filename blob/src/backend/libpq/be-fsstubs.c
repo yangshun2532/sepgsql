@@ -520,9 +520,6 @@ AtEOXact_LargeObject(bool isCommit)
 	/* Release the LO memory context to prevent permanent memory leaks. */
 	MemoryContextDelete(fscxt);
 	fscxt = NULL;
-
-	/* Give inv_api.c a chance to clean up, too */
-	close_lo_relation(isCommit);
 }
 
 /*
