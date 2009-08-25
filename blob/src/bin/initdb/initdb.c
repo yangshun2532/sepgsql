@@ -1804,7 +1804,7 @@ setup_largeobject(void)
 {
 	PG_CMD_DECL;
 	const char *lobj_setup_cmd
-		= "ALTER TABLE pg_largeobject ALTER data SET STORAGE EXTERNAL;\n";
+		= "ALTER TABLE pg_largeobject ALTER lodata SET STORAGE EXTERNAL;\n";
 
 	fputs(_("setting up largeobject ... "), stdout);
 	fflush(stdout);
