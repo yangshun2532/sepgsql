@@ -219,6 +219,13 @@ Oid
 FindConversion(const char *conname, Oid connamespace)
 {
 	/* search pg_conversion by connamespace and conversion name */
+
+	/*
+	 * MEMO: ACL_EXECUTE on the conversion function was checked in
+	 * the previous version. If user does not have the permission,
+	 * the matched conversion was ignored as if it does not exist.
+	 * However, this check was meaningless, so removed at v8.5.x.
+	 */
 	return GetSysCacheOid(CONNAMENSP,
 						  PointerGetDatum(conname),
 						  ObjectIdGetDatum(connamespace),
