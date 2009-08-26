@@ -30,7 +30,6 @@
 #include "catalog/pg_foreign_data_wrapper.h"
 #include "catalog/pg_foreign_server.h"
 #include "catalog/pg_language.h"
-#include "catalog/pg_largeobject.h"
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_opclass.h"
 #include "catalog/pg_operator.h"
@@ -58,7 +57,6 @@ static void ExecGrant_Fdw(InternalGrant *grantStmt);
 static void ExecGrant_ForeignServer(InternalGrant *grantStmt);
 static void ExecGrant_Function(InternalGrant *grantStmt);
 static void ExecGrant_Language(InternalGrant *grantStmt);
-static void ExecGrant_Largeobject(InternalGrant *grantStmt);
 static void ExecGrant_Namespace(InternalGrant *grantStmt);
 static void ExecGrant_Tablespace(InternalGrant *grantStmt);
 
@@ -201,9 +199,6 @@ restrict_and_check_grant(bool is_grant, AclMode avail_goptions, bool all_privs,
 			break;
 		case ACL_KIND_LANGUAGE:
 			whole_mask = ACL_ALL_RIGHTS_LANGUAGE;
-			break;
-		case ACL_KIND_LARGEOBJECT:
-			whole_mask = ACL_ALL_RIGHTS_LARGEOBJECT;
 			break;
 		case ACL_KIND_NAMESPACE:
 			whole_mask = ACL_ALL_RIGHTS_NAMESPACE;
@@ -349,10 +344,6 @@ ExecuteGrantStmt(GrantStmt *stmt)
 			all_privileges = ACL_ALL_RIGHTS_LANGUAGE;
 			errormsg = gettext_noop("invalid privilege type %s for language");
 			break;
-		case ACL_OBJECT_LARGEOBJECT:
-			all_privileges = ACL_ALL_RIGHTS_LARGEOBJECT;
-			errormsg = gettext_noop("invalid privilege type %s for largeobject");
-			break;
 		case ACL_OBJECT_NAMESPACE:
 			all_privileges = ACL_ALL_RIGHTS_NAMESPACE;
 			errormsg = gettext_noop("invalid privilege type %s for schema");
@@ -458,9 +449,6 @@ ExecGrantStmt_oids(InternalGrant *istmt)
 		case ACL_OBJECT_LANGUAGE:
 			ExecGrant_Language(istmt);
 			break;
-		case ACL_OBJECT_LARGEOBJECT:
-			ExecGrant_Largeobject(istmt);
-			break;
 		case ACL_OBJECT_NAMESPACE:
 			ExecGrant_Namespace(istmt);
 			break;
@@ -543,22 +531,6 @@ objectNamesToOids(GrantObjectType objtype, List *objnames)
 				objects = lappend_oid(objects, HeapTupleGetOid(tuple));
 
 				ReleaseSysCache(tuple);
-			}
-			break;
-		case ACL_OBJECT_LARGEOBJECT:
-			foreach(cell, objnames)
-			{
-				Oid		lobjId = intVal(lfirst(cell));
-
-				if (!SearchSysCacheExists(LARGEOBJECTOID,
-										  ObjectIdGetDatum(lobjId),
-										  0, 0, 0))
-					ereport(ERROR,
-                            (errcode(ERRCODE_UNDEFINED_OBJECT),
-							 errmsg("largeobject %u does not exist",
-									lobjId)));
-
-				objects = lappend_oid(objects, lobjId);
 			}
 			break;
 		case ACL_OBJECT_NAMESPACE:
@@ -1774,122 +1746,6 @@ ExecGrant_Language(InternalGrant *istmt)
 }
 
 static void
-ExecGrant_Largeobject(InternalGrant *istmt)
-{
-	Relation	relation;
-	ListCell   *cell;
-
-	if (istmt->all_privs && istmt->privileges == ACL_NO_RIGHTS)
-		istmt->privileges = ACL_ALL_RIGHTS_LARGEOBJECT;
-
-	relation = heap_open(LargeObjectRelationId, RowExclusiveLock);
-
-	foreach(cell, istmt->objects)
-	{
-		Oid			lobjId = lfirst_oid(cell);
-		Datum		aclDatum;
-		bool		isNull;
-		AclMode		avail_goptions;
-		AclMode		this_privileges;
-		Acl		   *old_acl;
-		Acl		   *new_acl;
-		Oid			grantorId;
-		Oid			ownerId;
-		HeapTuple	tuple;
-		HeapTuple	newtuple;
-		Datum		values[Natts_pg_largeobject];
-		bool		nulls[Natts_pg_largeobject];
-		bool		replaces[Natts_pg_largeobject];
-		char		loname[NAMEDATALEN];
-		int			noldmembers;
-		int			nnewmembers;
-		Oid		   *oldmembers;
-		Oid		   *newmembers;
-
-		tuple = SearchSysCache(LARGEOBJECTOID,
-							   ObjectIdGetDatum(lobjId),
-							   0, 0, 0);
-		if (!HeapTupleIsValid(tuple))
-			elog(ERROR, "cache lookup failed for largeobject %u", lobjId);
-
-		ownerId = ((Form_pg_largeobject) GETSTRUCT(tuple))->loowner;
-		snprintf(loname, sizeof(loname), "largeobject(%u)", lobjId);
-		/*
-		 * Get owner ID and working copy of existing ACL. If there's no ACL,
-		 * substitute the proper default.
-		 */
-		aclDatum = SysCacheGetAttr(LARGEOBJECTOID, tuple,
-								   Anum_pg_largeobject_loacl,
-								   &isNull);
-		if (isNull)
-			old_acl = acldefault(ACL_OBJECT_LARGEOBJECT, ownerId);
-		else
-			old_acl = DatumGetAclPCopy(aclDatum);
-
-		/* Determine ID to do the grant as, and available grant options */
-		select_best_grantor(GetUserId(), istmt->privileges,
-							old_acl, ownerId,
-							&grantorId, &avail_goptions);
-
-		/*
-		 * Restrict the privileges to what we can actually grant, and emit the
-		 * standards-mandated warning and error messages.
-		 */
-		this_privileges =
-			restrict_and_check_grant(istmt->is_grant, avail_goptions,
-									 istmt->all_privs, istmt->privileges,
-									 lobjId, grantorId, ACL_KIND_LARGEOBJECT,
-									 loname, 0, NULL);
-
-		/*
-		 * Generate new ACL.
-		 *
-		 * We need the members of both old and new ACLs so we can correct the
-		 * shared dependency information.
-		 */
-		noldmembers = aclmembers(old_acl, &oldmembers);
-
-		new_acl = merge_acl_with_grant(old_acl, istmt->is_grant,
-									   istmt->grant_option, istmt->behavior,
-									   istmt->grantees, this_privileges,
-									   grantorId, ownerId);
-
-		nnewmembers = aclmembers(new_acl, &newmembers);
-
-		/* finished building new ACL value, now insert it */
-		MemSet(values, 0, sizeof(values));
-		MemSet(nulls, false, sizeof(nulls));
-		MemSet(replaces, false, sizeof(replaces));
-
-		replaces[Anum_pg_largeobject_loacl - 1] = true;
-		values[Anum_pg_largeobject_loacl - 1] = PointerGetDatum(new_acl);
-
-		newtuple = heap_modify_tuple(tuple, RelationGetDescr(relation), values,
-									 nulls, replaces);
-
-		simple_heap_update(relation, &newtuple->t_self, newtuple);
-
-		/* keep the catalog indexes up to date */
-		CatalogUpdateIndexes(relation, newtuple);
-
-		/* Update the shared dependency ACL info */
-		updateAclDependencies(LargeObjectRelationId, HeapTupleGetOid(tuple), 0,
-							  ownerId, istmt->is_grant,
-							  noldmembers, oldmembers,
-							  nnewmembers, newmembers);
-
-		ReleaseSysCache(tuple);
-
-		pfree(new_acl);
-
-		/* prevent error when processing duplicate objects */
-		CommandCounterIncrement();
-	}
-
-	heap_close(relation, RowExclusiveLock);
-}
-
-static void
 ExecGrant_Namespace(InternalGrant *istmt)
 {
 	Relation	relation;
@@ -2229,8 +2085,6 @@ static const char *const no_priv_msg[MAX_ACL_KIND] =
 	gettext_noop("permission denied for type %s"),
 	/* ACL_KIND_LANGUAGE */
 	gettext_noop("permission denied for language %s"),
-	/* ACL_KIND_LARGEOBJECT */
-	gettext_noop("permission denied for largeobject %s"),
 	/* ACL_KIND_NAMESPACE */
 	gettext_noop("permission denied for schema %s"),
 	/* ACL_KIND_OPCLASS */
@@ -2269,8 +2123,6 @@ static const char *const not_owner_msg[MAX_ACL_KIND] =
 	gettext_noop("must be owner of type %s"),
 	/* ACL_KIND_LANGUAGE */
 	gettext_noop("must be owner of language %s"),
-	/* ACL_KIND_LARGEOBJECT */
-	gettext_noop("must be owner of largeobject %s"),
 	/* ACL_KIND_NAMESPACE */
 	gettext_noop("must be owner of schema %s"),
 	/* ACL_KIND_OPCLASS */

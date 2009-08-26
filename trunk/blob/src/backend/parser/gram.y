@@ -386,7 +386,6 @@ static TypeName *TableFuncTypeName(List *columns);
 %type <boolean> opt_varying opt_timezone
 
 %type <ival>	Iconst SignedIconst
-%type <list>	Iconst_list
 %type <str>		Sconst comment_text
 %type <str>		RoleId opt_granted_by opt_boolean ColId_or_Sconst
 %type <list>	var_list
@@ -4405,13 +4404,6 @@ privilege_target:
 					PrivTarget *n = (PrivTarget *) palloc(sizeof(PrivTarget));
 					n->objtype = ACL_OBJECT_LANGUAGE;
 					n->objs = $2;
-					$$ = n;
-				}
-			| LARGE_P OBJECT_P Iconst_list
-				{
-					PrivTarget *n = (PrivTarget *) palloc(sizeof(PrivTarget));
-					n->objtype = ACL_OBJECT_LARGEOBJECT;
-					n->objs = $3;
 					$$ = n;
 				}
 			| SCHEMA name_list
@@ -10164,13 +10156,6 @@ SignedIconst: Iconst								{ $$ = $1; }
 			| '+' Iconst							{ $$ = + $2; }
 			| '-' Iconst							{ $$ = - $2; }
 		;
-
-Iconst_list:  Iconst
-					{ $$ = list_make1(makeInteger($1)); }
-			| Iconst_list ',' Iconst
-					{ $$ = lappend($1, makeInteger($3)); }
-		;
-
 
 /*
  * Name classification hierarchy.
