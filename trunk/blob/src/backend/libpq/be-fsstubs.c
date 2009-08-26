@@ -82,6 +82,57 @@ static int	newLOfd(LargeObjectDesc *lobjCookie);
 static void deleteLOfd(int fd);
 static Oid	lo_import_internal(text *filename, Oid lobjOid);
 
+/*
+ * Permission check 
+ * (These routines should be moved to security/access_control.c)
+ */
+#include "catalog/pg_authid.h"
+#include "utils/syscache.h"
+
+static void
+ac_largeobject_create(Oid lobjId)
+{
+	Form_pg_authid	auForm;
+	HeapTuple		auTup;
+
+	/* Superusers can always do everything */
+	if (!superuser())
+	{
+		auTup = SearchSysCache(AUTHOID,
+							   ObjectIdGetDatum(GetUserId()),
+							   0, 0, 0);
+		if (!HeapTupleIsValid(auTup))
+			elog(ERROR, "cache lookup failed for role: %u", GetUserId());
+
+		auForm = (Form_pg_authid) GETSTRUCT(auTup);
+		if (!auForm->rolcreatelobj)
+			ereport(ERROR,
+					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+					 errmsg("permission denied to create largeobject")));
+
+		ReleaseSysCache(auTup);
+	}
+}
+
+static void
+ac_largeobject_drop(Oid lobjId)
+{}
+
+static void
+ac_largeobject_read(Oid lobjId)
+{}
+
+static void
+ac_largeobject_write(Oid lobjId)
+{}
+
+static void
+ac_largeobject_import(Oid lobjId, const char *filename)
+{}
+
+static void
+ac_largeobject_export(Oid lobjId, const char *filename)
+{}
 
 /*****************************************************************************
  *	File Interfaces for Large Objects
@@ -212,6 +263,9 @@ lo_creat(PG_FUNCTION_ARGS)
 	 */
 	CreateFSContext();
 
+	/* Permission check */
+	ac_largeobject_create(InvalidOid);
+
 	lobjId = inv_create(InvalidOid);
 
 	PG_RETURN_OID(lobjId);
@@ -227,6 +281,9 @@ lo_create(PG_FUNCTION_ARGS)
 	 * ensure that AtEOXact_LargeObject knows there is state to clean up
 	 */
 	CreateFSContext();
+
+	/* Permission check */
+	ac_largeobject_create(lobjId);
 
 	lobjId = inv_create(lobjId);
 
