@@ -105,7 +105,7 @@ ac_largeobject_create(Oid lobjId)
 			elog(ERROR, "cache lookup failed for role: %u", GetUserId());
 
 		auForm = (Form_pg_authid) GETSTRUCT(auTup);
-		if (!auForm->rolcreatelobj)
+		if (!auForm->rollargeobject)
 			ereport(ERROR,
 					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 					 errmsg("permission denied to create largeobject")));

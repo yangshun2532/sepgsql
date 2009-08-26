@@ -90,6 +90,7 @@ CreateRole(CreateRoleStmt *stmt)
 	bool		createrole = false;		/* Can this user create roles? */
 	bool		createdb = false;		/* Can the user create databases? */
 	bool		canlogin = false;		/* Can this user login? */
+	bool		largeobject = false;	/* Can the user create largeobject? */
 	int			connlimit = -1; /* maximum connections allowed */
 	List	   *addroleto = NIL;	/* roles to make this a member of */
 	List	   *rolemembers = NIL;		/* roles to be members of this role */
@@ -101,6 +102,7 @@ CreateRole(CreateRoleStmt *stmt)
 	DefElem    *dcreaterole = NULL;
 	DefElem    *dcreatedb = NULL;
 	DefElem    *dcanlogin = NULL;
+	DefElem	   *dlargeobject = NULL;
 	DefElem    *dconnlimit = NULL;
 	DefElem    *daddroleto = NULL;
 	DefElem    *drolemembers = NULL;
@@ -184,6 +186,14 @@ CreateRole(CreateRoleStmt *stmt)
 						 errmsg("conflicting or redundant options")));
 			dcanlogin = defel;
 		}
+		else if (strcmp(defel->defname, "largeobject") == 0)
+		{
+			if (dlargeobject)
+				ereport(ERROR,
+						(errcode(ERRCODE_SYNTAX_ERROR),
+						 errmsg("conflicting or redundant options")));
+			dlargeobject = defel;
+		}
 		else if (strcmp(defel->defname, "connectionlimit") == 0)
 		{
 			if (dconnlimit)
@@ -241,6 +251,8 @@ CreateRole(CreateRoleStmt *stmt)
 		createdb = intVal(dcreatedb->arg) != 0;
 	if (dcanlogin)
 		canlogin = intVal(dcanlogin->arg) != 0;
+	if (dlargeobject)
+		largeobject = intVal(dlargeobject->arg) != 0;
 	if (dconnlimit)
 	{
 		connlimit = intVal(dconnlimit->arg);
@@ -313,6 +325,7 @@ CreateRole(CreateRoleStmt *stmt)
 	/* superuser gets catupdate right by default */
 	new_record[Anum_pg_authid_rolcatupdate - 1] = BoolGetDatum(issuper);
 	new_record[Anum_pg_authid_rolcanlogin - 1] = BoolGetDatum(canlogin);
+	new_record[Anum_pg_authid_rollargeobject - 1] = BoolGetDatum(largeobject);
 	new_record[Anum_pg_authid_rolconnlimit - 1] = Int32GetDatum(connlimit);
 
 	if (password)
@@ -423,6 +436,7 @@ AlterRole(AlterRoleStmt *stmt)
 	int			createrole = -1;	/* Can this user create roles? */
 	int			createdb = -1;	/* Can the user create databases? */
 	int			canlogin = -1;	/* Can this user login? */
+	int			largeobject = -1;	/* Can the user create largeobject? */
 	int			connlimit = -1; /* maximum connections allowed */
 	List	   *rolemembers = NIL;		/* roles to be added/removed */
 	char	   *validUntil = NULL;		/* time the login is valid until */
@@ -432,6 +446,7 @@ AlterRole(AlterRoleStmt *stmt)
 	DefElem    *dcreaterole = NULL;
 	DefElem    *dcreatedb = NULL;
 	DefElem    *dcanlogin = NULL;
+	DefElem	   *dlargeobject = NULL;
 	DefElem    *dconnlimit = NULL;
 	DefElem    *drolemembers = NULL;
 	DefElem    *dvalidUntil = NULL;
@@ -496,6 +511,14 @@ AlterRole(AlterRoleStmt *stmt)
 						 errmsg("conflicting or redundant options")));
 			dcanlogin = defel;
 		}
+		else if (strcmp(defel->defname, "largeobject") == 0)
+		{
+			if (dlargeobject)
+				ereport(ERROR,
+						(errcode(ERRCODE_SYNTAX_ERROR),
+						 errmsg("conflicting or redundant options")));
+			dlargeobject = defel;
+		}
 		else if (strcmp(defel->defname, "connectionlimit") == 0)
 		{
 			if (dconnlimit)
@@ -538,6 +561,8 @@ AlterRole(AlterRoleStmt *stmt)
 		createdb = intVal(dcreatedb->arg);
 	if (dcanlogin)
 		canlogin = intVal(dcanlogin->arg);
+	if (dlargeobject)
+		largeobject = intVal(dlargeobject->arg);
 	if (dconnlimit)
 	{
 		connlimit = intVal(dconnlimit->arg);
@@ -584,6 +609,7 @@ AlterRole(AlterRoleStmt *stmt)
 			  createrole < 0 &&
 			  createdb < 0 &&
 			  canlogin < 0 &&
+			  largeobject < 0 &&
 			  !dconnlimit &&
 			  !rolemembers &&
 			  !validUntil &&
@@ -640,6 +666,12 @@ AlterRole(AlterRoleStmt *stmt)
 	{
 		new_record[Anum_pg_authid_rolcanlogin - 1] = BoolGetDatum(canlogin > 0);
 		new_record_repl[Anum_pg_authid_rolcanlogin - 1] = true;
+	}
+
+	if (largeobject >= 0)
+	{
+		new_record[Anum_pg_authid_rollargeobject - 1] = BoolGetDatum(largeobject > 0);
+		new_record_repl[Anum_pg_authid_rollargeobject - 1] = true;
 	}
 
 	if (dconnlimit)
