@@ -50,6 +50,7 @@ CATALOG(pg_authid,1260) BKI_SHARED_RELATION
 	bool		rolcreatedb;	/* allowed to create databases? */
 	bool		rolcatupdate;	/* allowed to alter catalogs manually? */
 	bool		rolcanlogin;	/* allowed to log in as session user? */
+	bool		rolcreatelobj;	/* allowed to create largeobject */
 	int4		rolconnlimit;	/* max connections allowed (-1=no limit) */
 
 	/* remaining fields may be null; use heap_getattr to read them! */
@@ -72,7 +73,7 @@ typedef FormData_pg_authid *Form_pg_authid;
  *		compiler constants for pg_authid
  * ----------------
  */
-#define Natts_pg_authid					11
+#define Natts_pg_authid					12
 #define Anum_pg_authid_rolname			1
 #define Anum_pg_authid_rolsuper			2
 #define Anum_pg_authid_rolinherit		3
@@ -80,10 +81,11 @@ typedef FormData_pg_authid *Form_pg_authid;
 #define Anum_pg_authid_rolcreatedb		5
 #define Anum_pg_authid_rolcatupdate		6
 #define Anum_pg_authid_rolcanlogin		7
-#define Anum_pg_authid_rolconnlimit		8
-#define Anum_pg_authid_rolpassword		9
-#define Anum_pg_authid_rolvaliduntil	10
-#define Anum_pg_authid_rolconfig		11
+#define Anum_pg_authid_rolcreatelobj	8
+#define Anum_pg_authid_rolconnlimit		9
+#define Anum_pg_authid_rolpassword		10
+#define Anum_pg_authid_rolvaliduntil	11
+#define Anum_pg_authid_rolconfig		12
 
 /* ----------------
  *		initial contents of pg_authid
@@ -92,7 +94,7 @@ typedef FormData_pg_authid *Form_pg_authid;
  * user choices.
  * ----------------
  */
-DATA(insert OID = 10 ( "POSTGRES" t t t t t t -1 _null_ _null_ _null_ ));
+DATA(insert OID = 10 ( "POSTGRES" t t t t t t t -1 _null_ _null_ _null_ ));
 
 #define BOOTSTRAP_SUPERUSERID 10
 
