@@ -386,6 +386,7 @@ static TypeName *TableFuncTypeName(List *columns);
 %type <boolean> opt_varying opt_timezone
 
 %type <ival>	Iconst SignedIconst
+%type <list>	Iconst_list
 %type <str>		Sconst comment_text
 %type <str>		RoleId opt_granted_by opt_boolean ColId_or_Sconst
 %type <list>	var_list
@@ -485,14 +486,14 @@ static TypeName *TableFuncTypeName(List *columns);
 
 	KEY
 
-	LANCOMPILER LANGUAGE LARGE_P LAST_P LC_COLLATE_P LC_CTYPE_P LEADING
+	LANCOMPILER LANGUAGE LARGE_P LARGEOBJECT LAST_P LC_COLLATE_P LC_CTYPE_P LEADING
 	LEAST LEFT LEVEL LIKE LIMIT LISTEN LOAD LOCAL LOCALTIME LOCALTIMESTAMP
 	LOCATION LOCK_P LOGIN_P
 
 	MAPPING MATCH MAXVALUE MINUTE_P MINVALUE MODE MONTH_P MOVE
 
 	NAME_P NAMES NATIONAL NATURAL NCHAR NEW NEXT NO NOCREATEDB
-	NOCREATEROLE NOCREATEUSER NOINHERIT NOLOGIN_P NONE NOSUPERUSER
+	NOCREATEROLE NOCREATEUSER NOINHERIT NOLARGEOBJECT NOLOGIN_P NONE NOSUPERUSER
 	NOT NOTHING NOTIFY NOTNULL NOWAIT NULL_P NULLIF NULLS_P NUMERIC
 
 	OBJECT_P OF OFF OFFSET OIDS OLD ON ONLY OPERATOR OPTION OPTIONS OR
@@ -824,6 +825,14 @@ OptRoleElem:
 			| NOLOGIN_P
 				{
 					$$ = makeDefElem("canlogin", (Node *)makeInteger(FALSE));
+				}
+			| LARGEOBJECT
+				{
+					$$ = makeDefElem("largeobject", (Node *)makeInteger(TRUE));
+				}
+			| NOLARGEOBJECT
+				{
+					$$ = makeDefElem("largeobject", (Node *)makeInteger(FALSE));
 				}
 			| CONNECTION LIMIT SignedIconst
 				{
@@ -4403,6 +4412,13 @@ privilege_target:
 				{
 					PrivTarget *n = (PrivTarget *) palloc(sizeof(PrivTarget));
 					n->objtype = ACL_OBJECT_LANGUAGE;
+					n->objs = $2;
+					$$ = n;
+				}
+			| LARGE_P OBJECT_P Iconst_list
+				{
+					PrivTarget *n = (PrivTarget *) palloc(sizeof(PrivTarget));
+					n->objtype = ACL_OBJECT_LARGEOBJECT;
 					n->objs = $2;
 					$$ = n;
 				}
@@ -10157,6 +10173,10 @@ SignedIconst: Iconst								{ $$ = $1; }
 			| '-' Iconst							{ $$ = - $2; }
 		;
 
+Iconst_list:	Iconst						{ $$ = list_make1(makeInteger($1)); }
+				| Iconst_list ',' Iconst	{ $$ = lappend($1, makeInteger($3)); }
+		;
+
 /*
  * Name classification hierarchy.
  *
@@ -10319,6 +10339,7 @@ unreserved_keyword:
 			| LANCOMPILER
 			| LANGUAGE
 			| LARGE_P
+			| LARGEOBJECT
 			| LAST_P
 			| LC_COLLATE_P
 			| LC_CTYPE_P
@@ -10345,6 +10366,7 @@ unreserved_keyword:
 			| NOCREATEROLE
 			| NOCREATEUSER
 			| NOINHERIT
+			| NOLARGEOBJECT
 			| NOLOGIN_P
 			| NOSUPERUSER
 			| NOTHING

@@ -50,7 +50,7 @@ CATALOG(pg_authid,1260) BKI_SHARED_RELATION
 	bool		rolcreatedb;	/* allowed to create databases? */
 	bool		rolcatupdate;	/* allowed to alter catalogs manually? */
 	bool		rolcanlogin;	/* allowed to log in as session user? */
-	bool		rolcreatelobj;	/* allowed to create largeobject */
+	bool		rollargeobject;	/* allowed to create largeobject */
 	int4		rolconnlimit;	/* max connections allowed (-1=no limit) */
 
 	/* remaining fields may be null; use heap_getattr to read them! */
@@ -81,7 +81,7 @@ typedef FormData_pg_authid *Form_pg_authid;
 #define Anum_pg_authid_rolcreatedb		5
 #define Anum_pg_authid_rolcatupdate		6
 #define Anum_pg_authid_rolcanlogin		7
-#define Anum_pg_authid_rolcreatelobj	8
+#define Anum_pg_authid_rollargeobject	8
 #define Anum_pg_authid_rolconnlimit		9
 #define Anum_pg_authid_rolpassword		10
 #define Anum_pg_authid_rolvaliduntil	11
