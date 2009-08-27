@@ -38,15 +38,42 @@ Oid
 LargeObjectCreate(Oid loid)
 {
 	Relation	pg_largeobject;
+	Relation	pg_toast;
 	HeapTuple	ntup;
 	Datum		values[Natts_pg_largeobject];
 	bool		nulls[Natts_pg_largeobject];
+	Oid			chunk_id;
 	Oid			loid_new;
 
 	pg_largeobject = heap_open(LargeObjectRelationId, RowExclusiveLock);
 
+	pg_toast = heap_open(PgLargeObjectToastTable, RowExclusiveLock);
+
 	/*
-	 * Form new tuple
+	 * Insert an empty chunk
+	 */
+	chunk_id = GetNewOidWithIndex(pg_toast, PgLargeObjectToastIndex,
+								  Anum_pg_toast_chunk_id);
+
+	memset(values, 0, sizeof(values));
+	memset(nulls, false, sizeof(nulls));
+
+	values[Anum_pg_toast_chunk_id - 1] = ObjectIdGetDatum(chunk_id);
+	values[Anum_pg_toast_chunk_seq - 1] = Int32GetDatum(0);
+	values[Anum_pg_toast_chunk_data - 1]
+		= DirectFunctionCall1(byteain, CStringGetDatum(""));
+
+	ntup = heap_form_tuple(RelationGetDescr(pg_toast),
+						   values, nulls);
+
+	simple_heap_insert(pg_toast, ntup);
+
+	CatalogUpdateIndexes(pg_toast, ntup);
+
+	heap_freetuple(ntup);
+
+	/*
+	 * Insert pg_largeobject itself
 	 */
 	memset(values, 0, sizeof(values));
 	memset(nulls, false, sizeof(nulls));
@@ -54,7 +81,7 @@ LargeObjectCreate(Oid loid)
 	values[Anum_pg_largeobject_loowner - 1]
 		= ObjectIdGetDatum(GetUserId());
 	values[Anum_pg_largeobject_lochunk - 1]
-		= ObjectIdGetDatum(InvalidOid);		/* empty largeobject */
+		= ObjectIdGetDatum(chunk_id);
 	nulls[Anum_pg_largeobject_loacl - 1] = true;
 
 	ntup = heap_form_tuple(RelationGetDescr(pg_largeobject),
@@ -62,18 +89,16 @@ LargeObjectCreate(Oid loid)
 	if (OidIsValid(loid))
 		HeapTupleSetOid(ntup, loid);
 
-	/*
-	 * Insert it
-	 */
 	loid_new = simple_heap_insert(pg_largeobject, ntup);
 	Assert(!OidIsValid(loid) || loid == loid_new);
 
-	/* Update indexes */
 	CatalogUpdateIndexes(pg_largeobject, ntup);
 
-	heap_close(pg_largeobject, RowExclusiveLock);
-
 	heap_freetuple(ntup);
+
+	heap_close(pg_toast, RowExclusiveLock);
+
+	heap_close(pg_largeobject, RowExclusiveLock);
 
 	return loid_new;
 }

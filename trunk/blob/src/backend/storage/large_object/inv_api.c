@@ -145,7 +145,7 @@ getbytealen(bytea *data)
 }
 
 static Oid
-get_largeobject_chunk_id(Oid lobjId, bool force)
+get_largeobject_chunk_id(Oid lobjId)
 {
 	HeapTuple	loTup;
 	Oid			loChunk = InvalidOid;
@@ -160,42 +160,6 @@ get_largeobject_chunk_id(Oid lobjId, bool force)
 
 	loChunk = ((Form_pg_largeobject) GETSTRUCT(loTup))->lochunk;
 
-	/* If largeobject is empty, assign a new chunk id */
-	if (force && !OidIsValid(loChunk))
-	{
-		Relation	loRel;
-		HeapTuple	newTup;
-		Datum		values[Natts_pg_largeobject];
-		bool		nulls[Natts_pg_largeobject];
-		bool		replace[Natts_pg_largeobject];
-
-		/* Caller already invoked open_lo_relation() */
-		Assert(lo_heap_r && lo_index_r);
-
-		loRel = heap_open(LargeObjectRelationId, RowExclusiveLock);
-
-		loChunk = GetNewOidWithIndex(lo_heap_r,
-									 RelationGetRelid(lo_index_r),
-                                     Anum_pg_toast_chunk_id);
-
-		memset(values, 0, sizeof(values));
-		memset(nulls, false, sizeof(nulls));
-		memset(replace, false, sizeof(replace));
-
-		values[Anum_pg_largeobject_lochunk - 1]
-			= ObjectIdGetDatum(loChunk);
-		replace[Anum_pg_largeobject_lochunk - 1] = true;
-
-		newTup = heap_modify_tuple(loTup, RelationGetDescr(loRel),
-								   values, nulls, replace);
-		simple_heap_update(loRel, &newTup->t_self, newTup);
-
-		CatalogUpdateIndexes(loRel, newTup);
-
-		heap_close(loRel, RowExclusiveLock);
-
-		heap_freetuple(newTup);
-	}
 	ReleaseSysCache(loTup);
 
 	return loChunk;
@@ -342,9 +306,7 @@ inv_getsize(LargeObjectDesc *obj_desc)
 
 	Assert(PointerIsValid(obj_desc));
 
-	loChunk = get_largeobject_chunk_id(obj_desc->id, false);
-	if (!OidIsValid(loChunk))
-		return 0;	/* empty largeobject */
+	loChunk = get_largeobject_chunk_id(obj_desc->id);
 
 	open_lo_relation();
 
@@ -445,9 +407,7 @@ inv_read(LargeObjectDesc *obj_desc, char *buf, int nbytes)
 	if (nbytes <= 0)
 		return 0;
 
-	loChunk = get_largeobject_chunk_id(obj_desc->id, false);
-	if (!OidIsValid(loChunk))	/* empty largeobject */
-		return 0;
+	loChunk = get_largeobject_chunk_id(obj_desc->id);
 
 	open_lo_relation();
 
@@ -567,7 +527,7 @@ inv_write(LargeObjectDesc *obj_desc, const char *buf, int nbytes)
 
 	indstate = CatalogOpenIndexes(lo_heap_r);
 
-	loChunk = get_largeobject_chunk_id(obj_desc->id, true);
+	loChunk = get_largeobject_chunk_id(obj_desc->id);
 
 	ScanKeyInit(&skey[0],
 				Anum_pg_toast_chunk_id,
@@ -760,7 +720,7 @@ inv_truncate(LargeObjectDesc *obj_desc, int len)
 
 	indstate = CatalogOpenIndexes(lo_heap_r);
 
-	loChunk = get_largeobject_chunk_id(obj_desc->id, true);
+	loChunk = get_largeobject_chunk_id(obj_desc->id);
 
 	ScanKeyInit(&skey[0],
 				Anum_pg_toast_chunk_id,
