@@ -24,6 +24,7 @@
 #include "catalog/pg_conversion.h"
 #include "catalog/pg_database.h"
 #include "catalog/pg_language.h"
+#include "catalog/pg_largeobject.h"
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_operator.h"
 #include "catalog/pg_proc.h"
@@ -1209,6 +1210,9 @@ shdepDropOwned(List *roleids, DropBehavior behavior)
 							break;
 						case LanguageRelationId:
 							istmt.objtype = ACL_OBJECT_LANGUAGE;
+							break;
+						case LargeObjectRelationId:
+							istmt.objtype = ACL_OBJECT_LARGEOBJECT;
 							break;
 						case NamespaceRelationId:
 							istmt.objtype = ACL_OBJECT_NAMESPACE;

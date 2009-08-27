@@ -87,6 +87,7 @@ static Oid	lo_import_internal(text *filename, Oid lobjOid);
  * (These routines should be moved to security/access_control.c)
  */
 #include "catalog/pg_authid.h"
+#include "utils/acl.h"
 #include "utils/syscache.h"
 
 static void
@@ -115,24 +116,65 @@ ac_largeobject_create(Oid lobjId)
 }
 
 static void
-ac_largeobject_drop(Oid lobjId)
-{}
+ac_largeobject_drop(Oid lobjId, bool dacSkip)
+{
+	/* Must be owner of the largeobject */
+	if (!dacSkip &&
+		!pg_largeobject_ownercheck(lobjId, GetUserId()))
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("must be owner of largeobject %u", lobjId)));
+}
 
 static void
 ac_largeobject_read(Oid lobjId)
-{}
+{
+	AclResult	aclresult;
+
+	aclresult = pg_largeobject_aclcheck(lobjId, GetUserId(), ACL_SELECT);
+	if (aclresult != ACLCHECK_OK)
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("permission denied for largeobject %u", lobjId)));
+}
 
 static void
 ac_largeobject_write(Oid lobjId)
-{}
+{
+	AclResult	aclresult;
+
+	aclresult = pg_largeobject_aclcheck(lobjId, GetUserId(), ACL_UPDATE);
+	if (aclresult != ACLCHECK_OK)
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("permission denied for largeobject %u", lobjId)));
+}
 
 static void
 ac_largeobject_import(Oid lobjId, const char *filename)
-{}
+{
+#ifndef ALLOW_DANGEROUS_LO_FUNCTIONS
+	if (!superuser())
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("must be superuser to use server-side lo_import()"),
+				 errhint("Anyone can use the client-side lo_import() provided by libpq.")));
+#endif
+	ac_largeobject_create(lobjId);
+}
 
 static void
 ac_largeobject_export(Oid lobjId, const char *filename)
-{}
+{
+#ifndef ALLOW_DANGEROUS_LO_FUNCTIONS
+	if (!superuser())
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("must be superuser to use server-side lo_export()"),
+				 errhint("Anyone can use the client-side lo_export() provided by libpq.")));
+#endif
+	ac_largeobject_read(lobjId);
+}
 
 /*****************************************************************************
  *	File Interfaces for Large Objects
@@ -207,6 +249,9 @@ lo_read(int fd, char *buf, int len)
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("invalid large-object descriptor: %d", fd)));
 
+	/* Permission checks */
+	ac_largeobject_read(cookies[fd]->id);
+
 	status = inv_read(cookies[fd], buf, len);
 
 	return status;
@@ -227,6 +272,9 @@ lo_write(int fd, const char *buf, int len)
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 			  errmsg("large object descriptor %d was not opened for writing",
 					 fd)));
+
+	/* Permission checks */
+	ac_largeobject_write(cookies[fd]->id);
 
 	status = inv_write(cookies[fd], buf, len);
 
@@ -307,6 +355,9 @@ Datum
 lo_unlink(PG_FUNCTION_ARGS)
 {
 	Oid			lobjId = PG_GETARG_OID(0);
+
+	/* Permission check */
+	ac_largeobject_drop(lobjId, false);
 
 	/*
 	 * If there are any open LO FDs referencing that ID, close 'em.
@@ -403,24 +454,18 @@ lo_import_internal(text *filename, Oid lobjOid)
 	int			nbytes,
 				tmp;
 	char		buf[BUFSIZE];
-	char		fnamebuf[MAXPGPATH];
+	char	   *fnamebuf = text_to_cstring(filename);
 	LargeObjectDesc *lobj;
 	Oid			oid;
 
-#ifndef ALLOW_DANGEROUS_LO_FUNCTIONS
-	if (!superuser())
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("must be superuser to use server-side lo_import()"),
-				 errhint("Anyone can use the client-side lo_import() provided by libpq.")));
-#endif
-
 	CreateFSContext();
+
+	/* Permission checks */
+	ac_largeobject_import(lobjOid, fnamebuf);
 
 	/*
 	 * open the file to be read in
 	 */
-	text_to_cstring_buffer(filename, fnamebuf, sizeof(fnamebuf));
 	fd = PathNameOpenFile(fnamebuf, O_RDONLY | PG_BINARY, 0666);
 	if (fd < 0)
 		ereport(ERROR,
@@ -452,6 +497,7 @@ lo_import_internal(text *filename, Oid lobjOid)
 
 	inv_close(lobj);
 	FileClose(fd);
+	pfree(fnamebuf);
 
 	return oid;
 }
@@ -469,19 +515,14 @@ lo_export(PG_FUNCTION_ARGS)
 	int			nbytes,
 				tmp;
 	char		buf[BUFSIZE];
-	char		fnamebuf[MAXPGPATH];
+	char	   *fnamebuf = text_to_cstring(filename);
 	LargeObjectDesc *lobj;
 	mode_t		oumask;
 
-#ifndef ALLOW_DANGEROUS_LO_FUNCTIONS
-	if (!superuser())
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("must be superuser to use server-side lo_export()"),
-				 errhint("Anyone can use the client-side lo_export() provided by libpq.")));
-#endif
-
 	CreateFSContext();
+
+	/* Permission checks  */
+	ac_largeobject_export(lobjId, fnamebuf);
 
 	/*
 	 * open the inversion object (no need to test for failure)
@@ -495,7 +536,6 @@ lo_export(PG_FUNCTION_ARGS)
 	 * 022. This code used to drop it all the way to 0, but creating
 	 * world-writable export files doesn't seem wise.
 	 */
-	text_to_cstring_buffer(filename, fnamebuf, sizeof(fnamebuf));
 	oumask = umask((mode_t) 0022);
 	fd = PathNameOpenFile(fnamebuf, O_CREAT | O_WRONLY | O_TRUNC | PG_BINARY, 0666);
 	umask(oumask);
@@ -520,6 +560,7 @@ lo_export(PG_FUNCTION_ARGS)
 
 	FileClose(fd);
 	inv_close(lobj);
+	pfree(fnamebuf);
 
 	PG_RETURN_INT32(1);
 }
@@ -538,6 +579,9 @@ lo_truncate(PG_FUNCTION_ARGS)
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("invalid large-object descriptor: %d", fd)));
+
+	/* Permission check */
+	ac_largeobject_write(cookies[fd]->id);
 
 	inv_truncate(cookies[fd], len);
 

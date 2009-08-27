@@ -1424,6 +1424,12 @@ CommentLargeObject(List *qualname, char *comment)
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("large object %u does not exist", loid)));
 
+	/* Permission checks */
+	if (!pg_largeobject_ownercheck(loid, GetUserId()))
+		ereport(ERROR,
+                (errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("must be owner of largeobject %u", loid)));
+
 	/* Call CreateComments() to create/drop the comments */
 	CreateComments(loid, LargeObjectRelationId, 0, comment);
 }

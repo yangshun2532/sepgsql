@@ -269,11 +269,13 @@ SELECT lo_export(loid, '@abs_builddir@/results/lotest.txt') FROM lotest_stash_va
 -- This is a hack to test that export/import are reversible
 -- This uses knowledge about the inner workings of large object mechanism
 -- which should not be used outside it.  This makes it a HACK
-SELECT pageno, data FROM pg_largeobject WHERE loid = (SELECT loid from lotest_stash_values)
+SELECT chunk_seq, chunk_data FROM pg_toast.pg_toast_2613 WHERE chunk_id
+    = (SELECT lochunk FROM pg_largeobject WHERE oid = (SELECT loid from lotest_stash_values))
 EXCEPT
-SELECT pageno, data FROM pg_largeobject WHERE loid = :newloid;
- pageno | data 
---------+------
+SELECT chunk_seq, chunk_data FROM pg_toast.pg_toast_2613 WHERE chunk_id
+    = (SELECT lochunk FROM pg_largeobject WHERE oid = :newloid);
+ chunk_seq | chunk_data
+-----------+------------
 (0 rows)
 
 SELECT lo_unlink(loid) FROM lotest_stash_values;
