@@ -35,6 +35,7 @@
 #include "access/tuptoaster.h"
 #include "access/xact.h"
 #include "catalog/catalog.h"
+#include "catalog/dependency.h"
 #include "catalog/indexing.h"
 #include "catalog/pg_largeobject.h"
 #include "catalog/toasting.h"
@@ -168,7 +169,8 @@ get_largeobject_chunk_id(Oid lobjId, bool force)
 		bool		nulls[Natts_pg_largeobject];
 		bool		replace[Natts_pg_largeobject];
 
-		open_lo_relation();
+		/* Caller already invoked open_lo_relation() */
+		Assert(lo_heap_r && lo_index_r);
 
 		loRel = heap_open(LargeObjectRelationId, RowExclusiveLock);
 
@@ -214,50 +216,20 @@ get_largeobject_chunk_id(Oid lobjId, bool force)
 Oid
 inv_create(Oid lobjId)
 {
-	Relation	loRel;
-	HeapTuple	loTup;
-	Oid			loOid_new;
-	Datum		values[Natts_pg_largeobject];
-	bool		nulls[Natts_pg_largeobject];
+	Oid			lobjId_new;
 
 	/*
-	 * Form a new tuple
+	 * Create a new largeobejct with empty chunks
+	 * (will be assigned on later)
 	 */
-	loRel = heap_open(LargeObjectRelationId, RowExclusiveLock);
-
-	memset(values, 0, sizeof(values));
-	memset(nulls, false, sizeof(nulls));
-
-	values[Anum_pg_largeobject_loowner - 1]
-		= ObjectIdGetDatum(GetUserId());
-	values[Anum_pg_largeobject_lochunk - 1]
-		= ObjectIdGetDatum(InvalidOid);		/* empty largeobject */
-	nulls[Anum_pg_largeobject_loacl - 1] = true;
-
-	loTup = heap_form_tuple(RelationGetDescr(loRel), values, nulls);
-	if (OidIsValid(lobjId))
-		HeapTupleSetOid(loTup, lobjId);
-
-	/*
-	 * Insert it
-	 */
-	loOid_new = simple_heap_insert(loRel, loTup);
-
-	Assert(!OidIsValid(lobjId) || lobjId == loOid_new);
-
-	/* Update indexes */
-	CatalogUpdateIndexes(loRel, loTup);
-
-	heap_close(loRel, RowExclusiveLock);
-
-	heap_freetuple(loTup);
+	lobjId_new = LargeObjectCreate(lobjId);
 
 	/*
 	 * Advance command counter to make new tuple visible to later operations.
 	 */
 	CommandCounterIncrement();
 
-	return loOid_new;
+	return lobjId_new;
 }
 
 /*
@@ -336,58 +308,13 @@ inv_close(LargeObjectDesc *obj_desc)
 int
 inv_drop(Oid lobjId)
 {
-	Relation		loRel;
-	HeapTuple		loTup;
-	Oid				loChunk;
-	ScanKeyData		skey;
-	SysScanDesc		sscan;
+	ObjectAddress	object;
 
-	/*
-	 * Delete meta data
-	 */
-	loRel = heap_open(LargeObjectRelationId, RowExclusiveLock);
-
-	loTup = SearchSysCache(LARGEOBJECTOID,
-						   ObjectIdGetDatum(lobjId),
-						   0, 0, 0);
-	if (!HeapTupleIsValid(loTup))
-		ereport(ERROR,
-				(errcode(ERRCODE_UNDEFINED_OBJECT),
-				 errmsg("large object %u does not exist", lobjId)));
-
-	loChunk = ((Form_pg_largeobject) GETSTRUCT(loTup))->lochunk;
-
-	simple_heap_delete(loRel, &loTup->t_self);
-
-	ReleaseSysCache(loTup);
-
-	heap_close(loRel, RowExclusiveLock);
-
-	/*
-	 * Delete data chunks
-	 */
-	if (OidIsValid(loChunk))
-	{
-		ScanKeyInit(&skey,
-					Anum_pg_toast_chunk_id,
-					BTEqualStrategyNumber, F_OIDEQ,
-					ObjectIdGetDatum(loChunk));
-
-		loRel = heap_open(PgLargeObjectToastTable, RowExclusiveLock);
-
-		sscan = systable_beginscan(loRel, PgLargeObjectToastIndex,
-								   true, SnapshotNow, 1, &skey);
-		while (HeapTupleIsValid(loTup = systable_getnext(sscan)))
-		{
-			simple_heap_delete(loRel, &loTup->t_self);
-		}
-		systable_endscan(sscan);
-
-		heap_close(loRel, RowExclusiveLock);
-	}
-
-	/* Delete any comments on the large object */
-	DeleteComments(lobjId, LargeObjectRelationId, 0);
+	/* Delete any comments and dependencies on the large object */
+	object.classId = LargeObjectRelationId;
+	object.objectId = lobjId;
+	object.objectSubId = 0;
+	performDeletion(&object, DROP_CASCADE);
 
 	/*
 	 * Advance command counter so that tuple removal will be seen by later
