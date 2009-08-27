@@ -11,6 +11,12 @@ DROP ROLE IF EXISTS regressuser2;
 DROP ROLE IF EXISTS regressuser3;
 DROP ROLE IF EXISTS regressuser4;
 DROP ROLE IF EXISTS regressuser5;
+DROP ROLE IF EXISTS regressuser6;
+SELECT lo_unlink(oid) FROM pg_largeobject;
+ lo_unlink 
+-----------
+(0 rows)
+
 RESET client_min_messages;
 -- test proper begins here
 CREATE USER regressuser1;
@@ -836,6 +842,189 @@ SELECT has_sequence_privilege('x_seq', 'USAGE');
  t
 (1 row)
 
+-- largeobject privilege tests
+\c -
+CREATE USER regressuser6 NOLARGEOBJECT;
+ALTER  USER regressuser5 NOLARGEOBJECT;
+SET SESSION AUTHORIZATION regressuser3;
+SELECT lo_create(3001);
+ lo_create 
+-----------
+      3001
+(1 row)
+
+SELECT lo_create(3002);
+ lo_create 
+-----------
+      3002
+(1 row)
+
+SELECT lo_create(3003);
+ lo_create 
+-----------
+      3003
+(1 row)
+
+SELECT lo_create(3004);
+ lo_create 
+-----------
+      3004
+(1 row)
+
+SELECT lo_create(3005);
+ lo_create 
+-----------
+      3005
+(1 row)
+
+SELECT lo_create(3006);
+ lo_create 
+-----------
+      3006
+(1 row)
+
+SELECT lowrite(lo_open(3001, x'20000'::int), 'This is largeobject 3001');
+ lowrite 
+---------
+      24
+(1 row)
+
+SELECT lowrite(lo_open(3002, x'20000'::int), 'This is largeobject 3002');
+ lowrite 
+---------
+      24
+(1 row)
+
+SELECT lowrite(lo_open(3003, x'20000'::int), 'This is largeobject 3003');
+ lowrite 
+---------
+      24
+(1 row)
+
+SELECT lowrite(lo_open(3004, x'20000'::int), 'This is largeobject 3004');
+ lowrite 
+---------
+      24
+(1 row)
+
+SELECT lowrite(lo_open(3005, x'20000'::int), 'This is largeobject 3005');
+ lowrite 
+---------
+      24
+(1 row)
+
+SELECT lowrite(lo_open(3006, x'20000'::int), 'This is largeobject 3006');
+ lowrite 
+---------
+      24
+(1 row)
+
+GRANT SELECT ON LARGE OBJECT 3002 TO regressuser4;
+GRANT SELECT, UPDATE ON LARGE OBJECT 3003 TO regressuser4;
+GRANT SELECT ON LARGE OBJECT 3004 TO regressuser5 WITH GRANT OPTION;
+GRANT ALL ON LARGE OBJECT 3004 TO regressuser5;
+GRANT SELECT ON LARGE OBJECT 3005 TO PUBLIC;
+GRANT SELECT, INSERT ON LARGE OBJECT 3006 TO PUBLIC;	-- to be failed
+ERROR:  invalid privilege type INSERT for largeobject
+GRANT SELECT, UPDATE ON LARGE OBJECT 3006 TO nosuchuser;	-- to be failed
+ERROR:  role "nosuchuser" does not exist
+GRANT SELECT, UPDATE ON LARGE OBJECT 3007 TO PUBLIC;	-- to be failed
+ERROR:  largeobject 3007 does not exist
+SELECT lo_create(3007);
+ lo_create 
+-----------
+      3007
+(1 row)
+
+SELECT lo_unlink(3007);
+ lo_unlink 
+-----------
+         1
+(1 row)
+
+SELECT lo_unlink(3008);		-- to be denied
+ERROR:  largeobject 3008 does not exist
+\c -
+SET SESSION AUTHORIZATION regressuser4;
+SELECT loread(lo_open(3001, x'40000'::int), 100);	-- to be denied
+ERROR:  permission denied for largeobject 3001
+SELECT loread(lo_open(3002, x'40000'::int), 100);
+                       loread                       
+----------------------------------------------------
+ \x54686973206973206c617267656f626a6563742033303032
+(1 row)
+
+SELECT loread(lo_open(3003, x'40000'::int), 100);
+                       loread                       
+----------------------------------------------------
+ \x54686973206973206c617267656f626a6563742033303033
+(1 row)
+
+SELECT lowrite(lo_open(3001, x'20000'::int), 'updated largeobject');	-- to be denied
+ERROR:  permission denied for largeobject 3001
+SELECT lowrite(lo_open(3002, x'20000'::int), 'updated largeobject');	-- to be denied
+ERROR:  permission denied for largeobject 3002
+SELECT lowrite(lo_open(3003, x'20000'::int), 'updated largeobject');
+ lowrite 
+---------
+      19
+(1 row)
+
+GRANT SELECT ON LARGE OBJECT 3001 TO regressuser5;	-- to be denied
+ERROR:  permission denied for largeobject largeobject 3001
+SELECT lo_create(4001);
+ lo_create 
+-----------
+      4001
+(1 row)
+
+SELECT lo_create(4002);
+ lo_create 
+-----------
+      4002
+(1 row)
+
+GRANT SELECT ON LARGE OBJECT 4001 TO regressuser5;
+GRANT ALL ON LARGE OBJECT 4002 TO regressuser5;
+SELECT lo_unlink(3001);		-- to be denied
+ERROR:  must be owner of largeobject 3001
+SELECT lo_unlink(4002);
+ lo_unlink 
+-----------
+         1
+(1 row)
+
+\c -
+SET SESSION AUTHORIZATION regressuser5;
+SELECT loread(lo_open(3004, x'40000'::int), 100);
+                       loread                       
+----------------------------------------------------
+ \x54686973206973206c617267656f626a6563742033303034
+(1 row)
+
+SELECT loread(lo_open(3005, x'40000'::int), 100);
+                       loread                       
+----------------------------------------------------
+ \x54686973206973206c617267656f626a6563742033303035
+(1 row)
+
+SELECT lo_truncate(lo_open(3004, x'40000'::int), 10);	-- to be failed
+ERROR:  large object 3004 was not opened for writing
+SELECT lo_truncate(lo_open(3004, x'20000'::int), 10);
+ lo_truncate 
+-------------
+           0
+(1 row)
+
+SELECT lo_truncate(lo_open(3005, x'20000'::int), 10);	-- to be denied
+ERROR:  permission denied for largeobject 3005
+GRANT SELECT ON LARGE OBJECT 3004 TO regressuser6;
+GRANT UPDATE ON LARGE OBJECT 3004 TO regressuser6;	-- to be denied
+WARNING:  no privileges were granted for "largeobject 3004"
+GRANT SELECT ON LARGE OBJECT 3005 TO regressuser6;	-- to be denied
+WARNING:  no privileges were granted for "largeobject 3005"
+SELECT lo_create(5001);		-- to be denied (ALTER ROLE NOLARGEOBJECT)
+ERROR:  permission denied to create largeobject
 -- clean up
 \c
 drop sequence x_seq;
@@ -858,6 +1047,18 @@ DROP TABLE atest6;
 DROP TABLE atestc;
 DROP TABLE atestp1;
 DROP TABLE atestp2;
+SELECT lo_unlink(oid) FROM pg_largeobject;
+ lo_unlink 
+-----------
+         1
+         1
+         1
+         1
+         1
+         1
+         1
+(7 rows)
+
 DROP GROUP regressgroup1;
 DROP GROUP regressgroup2;
 REVOKE USAGE ON LANGUAGE sql FROM regressuser1;
@@ -866,3 +1067,4 @@ DROP USER regressuser2;
 DROP USER regressuser3;
 DROP USER regressuser4;
 DROP USER regressuser5;
+DROP USER regressuser6;

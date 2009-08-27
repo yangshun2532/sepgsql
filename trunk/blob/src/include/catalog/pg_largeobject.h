@@ -51,4 +51,7 @@ typedef FormData_pg_largeobject *Form_pg_largeobject;
 #define Anum_pg_largeobject_lochunk		2
 #define Anum_pg_largeobject_loacl		3
 
+extern Oid  LargeObjectCreate(Oid loid);
+extern void LargeObjectDrop(Oid loid);
+
 #endif   /* PG_LARGEOBJECT_H */

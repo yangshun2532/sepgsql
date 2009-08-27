@@ -1817,9 +1817,9 @@ ExecGrant_Largeobject(InternalGrant *istmt)
 		 * substitute the proper default.
 		 */
 		ownerId = ((Form_pg_largeobject) GETSTRUCT(tuple))->loowner;
-		snprintf(loname, sizeof(loname), "largeobject(%u)", loid);
-		aclDatum = SysCacheGetAttr(NAMESPACENAME, tuple,
-								   Anum_pg_namespace_nspacl,
+		snprintf(loname, sizeof(loname), "largeobject %u", loid);
+		aclDatum = SysCacheGetAttr(LARGEOBJECTOID, tuple,
+								   Anum_pg_largeobject_loacl,
 								   &isNull);
 		if (isNull)
 			old_acl = acldefault(ACL_OBJECT_LARGEOBJECT, ownerId);
@@ -2390,6 +2390,8 @@ pg_aclmask(AclObjectKind objkind, Oid table_oid, AttrNumber attnum, Oid roleid,
 			return pg_proc_aclmask(table_oid, roleid, mask, how);
 		case ACL_KIND_LANGUAGE:
 			return pg_language_aclmask(table_oid, roleid, mask, how);
+		case ACL_KIND_LARGEOBJECT:
+			return pg_largeobject_aclmask(table_oid, roleid, mask, how);
 		case ACL_KIND_NAMESPACE:
 			return pg_namespace_aclmask(table_oid, roleid, mask, how);
 		case ACL_KIND_TABLESPACE:
