@@ -4419,7 +4419,7 @@ privilege_target:
 				{
 					PrivTarget *n = (PrivTarget *) palloc(sizeof(PrivTarget));
 					n->objtype = ACL_OBJECT_LARGEOBJECT;
-					n->objs = $2;
+					n->objs = $3;
 					$$ = n;
 				}
 			| SCHEMA name_list
