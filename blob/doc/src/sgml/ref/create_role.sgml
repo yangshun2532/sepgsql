@@ -31,6 +31,7 @@ where <replaceable class="PARAMETER">option</replaceable> can be:
     | CREATEUSER | NOCREATEUSER
     | INHERIT | NOINHERIT
     | LOGIN | NOLOGIN
+    | LARGEOBJECT | NOLARGEOBJECT
     | CONNECTION LIMIT <replaceable class="PARAMETER">connlimit</replaceable>
     | [ ENCRYPTED | UNENCRYPTED ] PASSWORD '<replaceable class="PARAMETER">password</replaceable>'
     | VALID UNTIL '<replaceable class="PARAMETER">timestamp</replaceable>' 
@@ -170,6 +171,18 @@ where <replaceable class="PARAMETER">option</replaceable> can be:
         <literal>NOLOGIN</literal> is the default, except when
         <command>CREATE ROLE</> is invoked through its alternative spelling
         <command>CREATE USER</>.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>LARGEOBJECT</literal></term>
+      <term><literal>NOLARGEOBJECT</literal></term>
+      <listitem>
+       <para>
+        These clauses determine whether a role is allowed to create
+        new large objects, or not.
+        <literal>LARGEOBJECT</literal> is the default.
        </para>
       </listitem>
      </varlistentry>
