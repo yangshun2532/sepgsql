@@ -1369,6 +1369,10 @@ shdepReassignOwned(List *roleids, Oid newrole)
 					AlterLanguageOwner_oid(sdepForm->objid, newrole);
 					break;
 
+				case LargeObjectRelationId:
+					LargeObjectAlterOwner(sdepForm->objid, newrole);
+					break;
+
 				default:
 					elog(ERROR, "unexpected classid %d", sdepForm->classid);
 					break;

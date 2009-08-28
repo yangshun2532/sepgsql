@@ -188,6 +188,10 @@ inv_create(Oid lobjId)
 	 */
 	lobjId_new = LargeObjectCreate(lobjId);
 
+	/* dependency on owner */
+	recordDependencyOnOwner(LargeObjectRelationId,
+							lobjId_new, GetUserId());
+
 	/*
 	 * Advance command counter to make new tuple visible to later operations.
 	 */

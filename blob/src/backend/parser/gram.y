@@ -5549,6 +5549,14 @@ AlterOwnerStmt: ALTER AGGREGATE func_name aggr_args OWNER TO RoleId
 					n->newowner = $7;
 					$$ = (Node *)n;
 				}
+			| ALTER LARGE_P OBJECT_P Iconst OWNER TO RoleId
+				{
+					AlterOwnerStmt *n = makeNode(AlterOwnerStmt);
+					n->objectType = OBJECT_LARGEOBJECT;
+					n->object = list_make1(makeInteger($4));
+					n->newowner = $7;
+					$$ = (Node *)n;
+				}
 			| ALTER OPERATOR any_operator oper_argtypes OWNER TO RoleId
 				{
 					AlterOwnerStmt *n = makeNode(AlterOwnerStmt);
