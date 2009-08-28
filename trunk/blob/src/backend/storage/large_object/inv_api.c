@@ -144,27 +144,6 @@ getbytealen(bytea *data)
 	return (VARSIZE(data) - VARHDRSZ);
 }
 
-static Oid
-get_largeobject_chunk_id(Oid lobjId)
-{
-	HeapTuple	loTup;
-	Oid			loChunk = InvalidOid;
-
-	loTup = SearchSysCache(LARGEOBJECTOID,
-						   ObjectIdGetDatum(lobjId),
-						   0, 0, 0);
-	if (!HeapTupleIsValid(loTup))
-		ereport(ERROR,
-				(errcode(ERRCODE_UNDEFINED_OBJECT),
-				 errmsg("large object %u does not exist", lobjId)));
-
-	loChunk = ((Form_pg_largeobject) GETSTRUCT(loTup))->lochunk;
-
-	ReleaseSysCache(loTup);
-
-	return loChunk;
-}
-
 /*
  *	inv_create -- create a new large object
  *
@@ -212,10 +191,12 @@ LargeObjectDesc *
 inv_open(Oid lobjId, int flags, MemoryContext mcxt)
 {
 	LargeObjectDesc *retval;
+	HeapTuple		tuple;
 
-	if (!SearchSysCacheExists(LARGEOBJECTOID,
-							  ObjectIdGetDatum(lobjId),
-							  0, 0, 0))
+	tuple = SearchSysCache(LARGEOBJECTOID,
+						   ObjectIdGetDatum(lobjId),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("large object %u does not exist", lobjId)));
@@ -227,6 +208,7 @@ inv_open(Oid lobjId, int flags, MemoryContext mcxt)
 													sizeof(LargeObjectDesc));
 
 	retval->id = lobjId;
+	retval->chunk = ((Form_pg_largeobject) GETSTRUCT(tuple))->lochunk;
 	retval->subid = GetCurrentSubTransactionId();
 	retval->offset = 0;
 
@@ -248,6 +230,8 @@ inv_open(Oid lobjId, int flags, MemoryContext mcxt)
 	}
 	else
 		elog(ERROR, "invalid flags: %d", flags);
+
+	ReleaseSysCache(tuple);
 
 	return retval;
 }
@@ -302,7 +286,6 @@ inv_drop(Oid lobjId)
 static uint32
 inv_getsize(LargeObjectDesc *obj_desc)
 {
-	Oid			loChunk;
 	uint32		lastbyte = 0;
 	ScanKeyData skey[1];
 	SysScanDesc sd;
@@ -310,14 +293,12 @@ inv_getsize(LargeObjectDesc *obj_desc)
 
 	Assert(PointerIsValid(obj_desc));
 
-	loChunk = get_largeobject_chunk_id(obj_desc->id);
-
 	open_lo_relation();
 
 	ScanKeyInit(&skey[0],
 				Anum_pg_toast_chunk_id,
 				BTEqualStrategyNumber, F_OIDEQ,
-				ObjectIdGetDatum(loChunk));
+				ObjectIdGetDatum(obj_desc->chunk));
 
 	sd = systable_beginscan_ordered(lo_heap_r, lo_index_r,
 									obj_desc->snapshot, 1, skey);
@@ -398,7 +379,6 @@ inv_read(LargeObjectDesc *obj_desc, char *buf, int nbytes)
 	int			n;
 	int			off;
 	int			len;
-	Oid			loChunk;
 	int32		pageno = (int32) (obj_desc->offset / TOAST_MAX_CHUNK_SIZE);
 	uint32		pageoff;
 	ScanKeyData skey[2];
@@ -411,14 +391,12 @@ inv_read(LargeObjectDesc *obj_desc, char *buf, int nbytes)
 	if (nbytes <= 0)
 		return 0;
 
-	loChunk = get_largeobject_chunk_id(obj_desc->id);
-
 	open_lo_relation();
 
 	ScanKeyInit(&skey[0],
 				Anum_pg_toast_chunk_id,
 				BTEqualStrategyNumber, F_OIDEQ,
-				ObjectIdGetDatum(loChunk));
+				ObjectIdGetDatum(obj_desc->chunk));
 
 	ScanKeyInit(&skey[1],
 				Anum_pg_toast_chunk_seq,
@@ -491,7 +469,6 @@ inv_write(LargeObjectDesc *obj_desc, const char *buf, int nbytes)
 	int			n;
 	int			off;
 	int			len;
-	Oid			loChunk;
 	int32		pageno = (int32) (obj_desc->offset / TOAST_MAX_CHUNK_SIZE);
 	ScanKeyData skey[2];
 	SysScanDesc sd;
@@ -531,12 +508,10 @@ inv_write(LargeObjectDesc *obj_desc, const char *buf, int nbytes)
 
 	indstate = CatalogOpenIndexes(lo_heap_r);
 
-	loChunk = get_largeobject_chunk_id(obj_desc->id);
-
 	ScanKeyInit(&skey[0],
 				Anum_pg_toast_chunk_id,
 				BTEqualStrategyNumber, F_OIDEQ,
-				ObjectIdGetDatum(loChunk));
+				ObjectIdGetDatum(obj_desc->chunk));
 
 	ScanKeyInit(&skey[1],
 				Anum_pg_toast_chunk_seq,
@@ -662,7 +637,7 @@ inv_write(LargeObjectDesc *obj_desc, const char *buf, int nbytes)
 			 */
 			memset(values, 0, sizeof(values));
 			memset(nulls, false, sizeof(nulls));
-			values[Anum_pg_toast_chunk_id - 1] = ObjectIdGetDatum(loChunk);
+			values[Anum_pg_toast_chunk_id - 1] = ObjectIdGetDatum(obj_desc->chunk);
 			values[Anum_pg_toast_chunk_seq - 1] = Int32GetDatum(pageno);
 			values[Anum_pg_toast_chunk_data - 1] = PointerGetDatum(&workbuf);
 			newtup = heap_form_tuple(lo_heap_r->rd_att, values, nulls);
@@ -691,7 +666,6 @@ inv_truncate(LargeObjectDesc *obj_desc, int len)
 {
 	int32		pageno = (int32) (len / TOAST_MAX_CHUNK_SIZE);
 	int			off;
-	Oid			loChunk;
 	ScanKeyData skey[2];
 	SysScanDesc sd;
 	HeapTuple	oldtuple;
@@ -724,12 +698,10 @@ inv_truncate(LargeObjectDesc *obj_desc, int len)
 
 	indstate = CatalogOpenIndexes(lo_heap_r);
 
-	loChunk = get_largeobject_chunk_id(obj_desc->id);
-
 	ScanKeyInit(&skey[0],
 				Anum_pg_toast_chunk_id,
 				BTEqualStrategyNumber, F_OIDEQ,
-				ObjectIdGetDatum(loChunk));
+				ObjectIdGetDatum(obj_desc->chunk));
 
 	ScanKeyInit(&skey[1],
 				Anum_pg_toast_chunk_seq,
@@ -827,7 +799,7 @@ inv_truncate(LargeObjectDesc *obj_desc, int len)
 		 */
 		memset(values, 0, sizeof(values));
 		memset(nulls, false, sizeof(nulls));
-		values[Anum_pg_toast_chunk_id - 1] = ObjectIdGetDatum(loChunk);
+		values[Anum_pg_toast_chunk_id - 1] = ObjectIdGetDatum(obj_desc->chunk);
 		values[Anum_pg_toast_chunk_seq - 1] = Int32GetDatum(pageno);
 		values[Anum_pg_toast_chunk_data - 1] = PointerGetDatum(&workbuf);
 		newtup = heap_form_tuple(lo_heap_r->rd_att, values, nulls);
