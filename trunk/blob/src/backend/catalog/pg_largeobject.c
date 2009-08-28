@@ -16,10 +16,14 @@
 
 #include "access/genam.h"
 #include "access/heapam.h"
+#include "catalog/catalog.h"
+#include "catalog/dependency.h"
 #include "catalog/indexing.h"
+#include "catalog/pg_authid.h"
 #include "catalog/pg_largeobject.h"
 #include "catalog/toasting.h"
 #include "miscadmin.h"
+#include "utils/acl.h"
 #include "utils/bytea.h"
 #include "utils/fmgroids.h"
 #include "utils/rel.h"
@@ -149,4 +153,108 @@ LargeObjectDrop(Oid loid)
 	heap_close(pg_toast, RowExclusiveLock);
 
 	heap_close(pg_largeobject, RowExclusiveLock);
+}
+
+static void
+ac_largeobject_alter(Oid lobjId, Oid newOwner)
+{
+	/* must be owner of largeobject */
+	if (!pg_largeobject_ownercheck(lobjId, GetUserId()))
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("must be owner of largeobject %u", lobjId)));
+
+	/* Superusers can always do it */
+	if (OidIsValid(newOwner) && !superuser())
+	{
+		HeapTuple	auTup;
+
+		/* Must be able to become new owner */
+		check_is_member_of_role(GetUserId(), newOwner);
+
+		/* New owner must have privilege to create largeobject */
+		auTup = SearchSysCache(AUTHOID,
+							   ObjectIdGetDatum(newOwner),
+							   0, 0, 0);
+		if (!HeapTupleIsValid(auTup))
+			elog(ERROR, "cache lookup failed for role: %u", newOwner);
+
+		if (!((Form_pg_authid) GETSTRUCT(auTup))->rollargeobject)
+			ereport(ERROR,
+					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+					 errmsg("permission denied to create largeobject")));
+
+		ReleaseSysCache(auTup);
+	}
+}
+
+void
+LargeObjectAlterOwner(Oid loid, Oid newOwnerId)
+{
+	Form_pg_largeobject	loForm;
+	Relation	loRel;
+	HeapTuple	oldtup, newtup;
+
+	loRel = heap_open(LargeObjectRelationId, RowExclusiveLock);
+
+	oldtup = SearchSysCache(LARGEOBJECTOID,
+							ObjectIdGetDatum(loid),
+							0, 0, 0);
+	if (!HeapTupleIsValid(oldtup))
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_OBJECT),
+				 errmsg("large object %u does not exist", loid)));
+
+	loForm = (Form_pg_largeobject) GETSTRUCT(oldtup);
+	if (loForm->loowner != newOwnerId)
+	{
+		Datum		values[Natts_pg_largeobject];
+		bool		nulls[Natts_pg_largeobject];
+		bool		replaces[Natts_pg_largeobject];
+		Acl		   *newAcl;
+		Datum		aclDatum;
+		bool		isnull;
+
+		/* Permission checks */
+		ac_largeobject_alter(loid, newOwnerId);
+
+		memset(values, 0, sizeof(values));
+		memset(nulls, false, sizeof(nulls));
+		memset(replaces, false, sizeof(nulls));
+
+		values[Anum_pg_largeobject_loowner - 1]
+			= ObjectIdGetDatum(newOwnerId);
+		replaces[Anum_pg_largeobject_loowner - 1] = true;
+
+		/*
+		 * Determine the modified ACL for the new owner.
+		 * This is only necessary when the ACL is non-null.
+		 */
+		aclDatum = SysCacheGetAttr(LARGEOBJECTOID, oldtup,
+								   Anum_pg_largeobject_loacl,
+								   &isnull);
+		if (!isnull)
+		{
+			newAcl = aclnewowner(DatumGetAclP(aclDatum),
+								 loForm->loowner, newOwnerId);
+			values[Anum_pg_largeobject_loacl - 1]
+				= PointerGetDatum(newAcl);
+			replaces[Anum_pg_largeobject_loacl - 1] = true;
+		}
+
+		newtup = heap_modify_tuple(oldtup, RelationGetDescr(loRel),
+								   values, nulls, replaces);
+
+		simple_heap_update(loRel, &newtup->t_self, newtup);
+		CatalogUpdateIndexes(loRel, newtup);
+
+		heap_freetuple(newtup);
+
+		/* Update owner dependency reference */
+		changeDependencyOnOwner(LargeObjectRelationId,
+								loid, newOwnerId);
+	}
+	ReleaseSysCache(oldtup);
+
+	heap_close(loRel, RowExclusiveLock);
 }
