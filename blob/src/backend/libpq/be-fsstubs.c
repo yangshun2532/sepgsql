@@ -42,6 +42,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "access/tuptoaster.h"
 #include "libpq/be-fsstubs.h"
 #include "libpq/libpq-fs.h"
 #include "miscadmin.h"
@@ -52,7 +53,7 @@
 
 
 /*#define FSDB 1*/
-#define BUFSIZE			8192
+#define BUFSIZE			(TOAST_MAX_CHUNK_SIZE * 4)
 
 /*
  * LO "FD"s are indexes into the cookies array.
