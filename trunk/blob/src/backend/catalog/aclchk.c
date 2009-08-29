@@ -30,7 +30,7 @@
 #include "catalog/pg_foreign_data_wrapper.h"
 #include "catalog/pg_foreign_server.h"
 #include "catalog/pg_language.h"
-#include "catalog/pg_largeobject.h"
+#include "catalog/pg_largeobject_meta.h"
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_opclass.h"
 #include "catalog/pg_operator.h"
@@ -1782,7 +1782,7 @@ ExecGrant_Largeobject(InternalGrant *istmt)
 	if (istmt->all_privs && istmt->privileges == ACL_NO_RIGHTS)
 		istmt->privileges = ACL_ALL_RIGHTS_LARGEOBJECT;
 
-	relation = heap_open(LargeObjectRelationId, RowExclusiveLock);
+	relation = heap_open(LargeObjectMetaRelationId, RowExclusiveLock);
 
 	foreach(cell, istmt->objects)
 	{
@@ -1798,9 +1798,9 @@ ExecGrant_Largeobject(InternalGrant *istmt)
 		Oid			ownerId;
 		HeapTuple	tuple;
 		HeapTuple	newtuple;
-		Datum		values[Natts_pg_largeobject];
-		bool		nulls[Natts_pg_largeobject];
-		bool		replaces[Natts_pg_largeobject];
+		Datum		values[Natts_pg_largeobject_meta];
+		bool		nulls[Natts_pg_largeobject_meta];
+		bool		replaces[Natts_pg_largeobject_meta];
 		int			noldmembers;
 		int			nnewmembers;
 		Oid		   *oldmembers;
@@ -1816,10 +1816,10 @@ ExecGrant_Largeobject(InternalGrant *istmt)
 		 * Get owner ID and working copy of existing ACL. If there's no ACL,
 		 * substitute the proper default.
 		 */
-		ownerId = ((Form_pg_largeobject) GETSTRUCT(tuple))->loowner;
+		ownerId = ((Form_pg_largeobject_meta) GETSTRUCT(tuple))->lomowner;
 		snprintf(loname, sizeof(loname), "largeobject %u", loid);
 		aclDatum = SysCacheGetAttr(LARGEOBJECTOID, tuple,
-								   Anum_pg_largeobject_loacl,
+								   Anum_pg_largeobject_meta_lomacl,
 								   &isNull);
 		if (isNull)
 			old_acl = acldefault(ACL_OBJECT_LARGEOBJECT, ownerId);
@@ -1861,8 +1861,8 @@ ExecGrant_Largeobject(InternalGrant *istmt)
 		MemSet(nulls, false, sizeof(nulls));
 		MemSet(replaces, false, sizeof(replaces));
 
-		replaces[Anum_pg_largeobject_loacl - 1] = true;
-		values[Anum_pg_largeobject_loacl - 1] = PointerGetDatum(new_acl);
+		replaces[Anum_pg_largeobject_meta_lomacl - 1] = true;
+		values[Anum_pg_largeobject_meta_lomacl - 1] = PointerGetDatum(new_acl);
 
 		newtuple = heap_modify_tuple(tuple, RelationGetDescr(relation), values,
 									 nulls, replaces);
@@ -1873,7 +1873,8 @@ ExecGrant_Largeobject(InternalGrant *istmt)
 		CatalogUpdateIndexes(relation, newtuple);
 
 		/* Update the shared dependency ACL info */
-		updateAclDependencies(LargeObjectRelationId, HeapTupleGetOid(tuple), 0,
+		updateAclDependencies(LargeObjectMetaRelationId,
+							  HeapTupleGetOid(tuple), 0,
 							  ownerId, istmt->is_grant,
 							  noldmembers, oldmembers,
 							  nnewmembers, newmembers);
@@ -2803,10 +2804,10 @@ pg_largeobject_aclmask(Oid lobj_oid, Oid roleid,
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("largeobject %u does not exist", lobj_oid)));
 
-	ownerId = ((Form_pg_largeobject) GETSTRUCT(tuple))->loowner;
+	ownerId = ((Form_pg_largeobject_meta) GETSTRUCT(tuple))->lomowner;
 
 	aclDatum = SysCacheGetAttr(LARGEOBJECTOID, tuple,
-							   Anum_pg_largeobject_loacl, &isNull);
+							   Anum_pg_largeobject_meta_lomacl, &isNull);
 	if (isNull)
 	{
 		/* No ACL, so build default ACL */
@@ -3503,7 +3504,7 @@ pg_largeobject_ownercheck(Oid lobj_oid, Oid roleid)
 				(errcode(ERRCODE_UNDEFINED_FUNCTION),
 				 errmsg("largeobject %u does not exist", lobj_oid)));
 
-	ownerId = ((Form_pg_largeobject) GETSTRUCT(tuple))->loowner;
+	ownerId = ((Form_pg_largeobject_meta) GETSTRUCT(tuple))->lomowner;
 
 	ReleaseSysCache(tuple);
 

@@ -38,7 +38,7 @@
 #include "catalog/dependency.h"
 #include "catalog/indexing.h"
 #include "catalog/pg_largeobject.h"
-#include "catalog/toasting.h"
+#include "catalog/pg_largeobject_meta.h"
 #include "commands/comment.h"
 #include "libpq/libpq-fs.h"
 #include "miscadmin.h"
@@ -81,9 +81,9 @@ open_lo_relation(void)
 
 		/* Use RowExclusiveLock since we might either read or write */
 		if (lo_heap_r == NULL)
-			lo_heap_r = heap_open(PgLargeObjectToastTable, RowExclusiveLock);
+			lo_heap_r = heap_open(LargeObjectRelationId, RowExclusiveLock);
 		if (lo_index_r == NULL)
-			lo_index_r = index_open(PgLargeObjectToastIndex, RowExclusiveLock);
+			lo_index_r = index_open(LargeObjectLOidPNIndexId, RowExclusiveLock);
 	}
 	PG_CATCH();
 	{
@@ -162,15 +162,15 @@ inv_create(Oid lobjId)
 	Oid			lobjId_new;
 
 	/*
-	 * Create a new largeobejct with empty chunks
-	 * (will be assigned on later)
+	 * Create a new largeobject with empty data pages
 	 */
-	lobjId_new = LargeObjectCreate(lobjId);
+	lobjId_new = CreateLargeObject(lobjId);
 
-	/* dependency on owner */
-	recordDependencyOnOwner(LargeObjectRelationId,
+	/*
+	 * dependency on the owner of largeobject
+	 */
+	recordDependencyOnOwner(LargeObjectMetaRelationId,
 							lobjId_new, GetUserId());
-
 	/*
 	 * Advance command counter to make new tuple visible to later operations.
 	 */
@@ -191,24 +191,18 @@ LargeObjectDesc *
 inv_open(Oid lobjId, int flags, MemoryContext mcxt)
 {
 	LargeObjectDesc *retval;
-	HeapTuple		tuple;
 
-	tuple = SearchSysCache(LARGEOBJECTOID,
-						   ObjectIdGetDatum(lobjId),
-						   0, 0, 0);
-	if (!HeapTupleIsValid(tuple))
+	if (!SearchSysCacheExists(LARGEOBJECTOID,
+							  ObjectIdGetDatum(lobjId),
+							  0, 0, 0))
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("large object %u does not exist", lobjId)));
 
-	/*
-	 * Create largeobject descriptor
-	 */
 	retval = (LargeObjectDesc *) MemoryContextAlloc(mcxt,
 													sizeof(LargeObjectDesc));
 
 	retval->id = lobjId;
-	retval->chunk = ((Form_pg_largeobject) GETSTRUCT(tuple))->lochunk;
 	retval->subid = GetCurrentSubTransactionId();
 	retval->offset = 0;
 
@@ -230,8 +224,6 @@ inv_open(Oid lobjId, int flags, MemoryContext mcxt)
 	}
 	else
 		elog(ERROR, "invalid flags: %d", flags);
-
-	ReleaseSysCache(tuple);
 
 	return retval;
 }
@@ -262,8 +254,10 @@ inv_drop(Oid lobjId)
 {
 	ObjectAddress	object;
 
-	/* Delete any comments and dependencies on the large object */
-	object.classId = LargeObjectRelationId;
+	/*
+	 * Delete any comments and dependencies on the large object
+	 */
+	object.classId = LargeObjectMetaRelationId;
 	object.objectId = lobjId;
 	object.objectSubId = 0;
 	performDeletion(&object, DROP_CASCADE);
@@ -296,9 +290,9 @@ inv_getsize(LargeObjectDesc *obj_desc)
 	open_lo_relation();
 
 	ScanKeyInit(&skey[0],
-				Anum_pg_toast_chunk_id,
+				Anum_pg_largeobject_loid,
 				BTEqualStrategyNumber, F_OIDEQ,
-				ObjectIdGetDatum(obj_desc->chunk));
+				ObjectIdGetDatum(obj_desc->id));
 
 	sd = systable_beginscan_ordered(lo_heap_r, lo_index_r,
 									obj_desc->snapshot, 1, skey);
@@ -312,21 +306,26 @@ inv_getsize(LargeObjectDesc *obj_desc)
 	tuple = systable_getnext_ordered(sd, BackwardScanDirection);
 	if (HeapTupleIsValid(tuple))
 	{
-		Datum	seqno;
-		Datum	data;
-		bool	isnull;
+		Form_pg_largeobject data;
+		bytea	   *datafield;
+		bool		pfreeit;
 
 		if (HeapTupleHasNulls(tuple))	/* paranoia */
 			elog(ERROR, "null field found in pg_largeobject");
-
-		seqno = heap_getattr(tuple, Anum_pg_toast_chunk_seq,
-							 RelationGetDescr(lo_heap_r), &isnull);
-		data  = heap_getattr(tuple, Anum_pg_toast_chunk_data,
-							 RelationGetDescr(lo_heap_r), &isnull);
-
-		lastbyte = DatumGetInt32(seqno) * TOAST_MAX_CHUNK_SIZE
-			+ getbytealen(DatumGetByteaP(data));
+		data = (Form_pg_largeobject) GETSTRUCT(tuple);
+		datafield = &(data->data);		/* see note at top of file */
+		pfreeit = false;
+		if (VARATT_IS_EXTENDED(datafield))
+		{
+			datafield = (bytea *)
+				heap_tuple_untoast_attr((struct varlena *) datafield);
+			pfreeit = true;
+		}
+		lastbyte = data->pageno * LOBLKSIZE + getbytealen(datafield);
+		if (pfreeit)
+			pfree(datafield);
 	}
+
 	systable_endscan_ordered(sd);
 
 	return lastbyte;
@@ -379,7 +378,7 @@ inv_read(LargeObjectDesc *obj_desc, char *buf, int nbytes)
 	int			n;
 	int			off;
 	int			len;
-	int32		pageno = (int32) (obj_desc->offset / TOAST_MAX_CHUNK_SIZE);
+	int32		pageno = (int32) (obj_desc->offset / LOBLKSIZE);
 	uint32		pageoff;
 	ScanKeyData skey[2];
 	SysScanDesc sd;
@@ -394,12 +393,12 @@ inv_read(LargeObjectDesc *obj_desc, char *buf, int nbytes)
 	open_lo_relation();
 
 	ScanKeyInit(&skey[0],
-				Anum_pg_toast_chunk_id,
+				Anum_pg_largeobject_loid,
 				BTEqualStrategyNumber, F_OIDEQ,
-				ObjectIdGetDatum(obj_desc->chunk));
+				ObjectIdGetDatum(obj_desc->id));
 
 	ScanKeyInit(&skey[1],
-				Anum_pg_toast_chunk_seq,
+				Anum_pg_largeobject_pageno,
 				BTGreaterEqualStrategyNumber, F_INT4GE,
 				Int32GetDatum(pageno));
 
@@ -408,25 +407,20 @@ inv_read(LargeObjectDesc *obj_desc, char *buf, int nbytes)
 
 	while ((tuple = systable_getnext_ordered(sd, ForwardScanDirection)) != NULL)
 	{
-		Datum		seqno;
-		Datum		data;
+		Form_pg_largeobject data;
 		bytea	   *datafield;
-		bool		isnull;
+		bool		pfreeit;
 
 		if (HeapTupleHasNulls(tuple))	/* paranoia */
 			elog(ERROR, "null field found in pg_largeobject");
+		data = (Form_pg_largeobject) GETSTRUCT(tuple);
 
-		seqno = heap_getattr(tuple, Anum_pg_toast_chunk_seq,
-							 RelationGetDescr(lo_heap_r), &isnull);
-		data = heap_getattr(tuple, Anum_pg_toast_chunk_data,
-							RelationGetDescr(lo_heap_r), &isnull);
-		datafield = DatumGetByteaP(data);
 		/*
 		 * We expect the indexscan will deliver pages in order.  However,
 		 * there may be missing pages if the LO contains unwritten "holes". We
 		 * want missing sections to read out as zeroes.
 		 */
-		pageoff = DatumGetInt32(seqno) * TOAST_MAX_CHUNK_SIZE;
+		pageoff = ((uint32) data->pageno) * LOBLKSIZE;
 		if (pageoff > obj_desc->offset)
 		{
 			n = pageoff - obj_desc->offset;
@@ -440,8 +434,16 @@ inv_read(LargeObjectDesc *obj_desc, char *buf, int nbytes)
 		{
 			Assert(obj_desc->offset >= pageoff);
 			off = (int) (obj_desc->offset - pageoff);
-			Assert(off >= 0 && off < TOAST_MAX_CHUNK_SIZE);
+			Assert(off >= 0 && off < LOBLKSIZE);
 
+			datafield = &(data->data);	/* see note at top of file */
+			pfreeit = false;
+			if (VARATT_IS_EXTENDED(datafield))
+			{
+				datafield = (bytea *)
+					heap_tuple_untoast_attr((struct varlena *) datafield);
+				pfreeit = true;
+			}
 			len = getbytealen(datafield);
 			if (len > off)
 			{
@@ -451,6 +453,8 @@ inv_read(LargeObjectDesc *obj_desc, char *buf, int nbytes)
 				nread += n;
 				obj_desc->offset += n;
 			}
+			if (pfreeit)
+				pfree(datafield);
 		}
 
 		if (nread >= nbytes)
@@ -469,26 +473,25 @@ inv_write(LargeObjectDesc *obj_desc, const char *buf, int nbytes)
 	int			n;
 	int			off;
 	int			len;
-	int32		pageno = (int32) (obj_desc->offset / TOAST_MAX_CHUNK_SIZE);
+	int32		pageno = (int32) (obj_desc->offset / LOBLKSIZE);
 	ScanKeyData skey[2];
 	SysScanDesc sd;
 	HeapTuple	oldtuple;
-	Datum		datum;
-	bool		isnull;
-	int32		old_pageno;
+	Form_pg_largeobject olddata;
 	bool		neednextpage;
 	bytea	   *datafield;
+	bool		pfreeit;
 	struct
 	{
 		bytea		hdr;
-		char		data[TOAST_MAX_CHUNK_SIZE];	/* make struct big enough */
+		char		data[LOBLKSIZE];	/* make struct big enough */
 		int32		align_it;	/* ensure struct is aligned well enough */
 	}			workbuf;
 	char	   *workb = VARDATA(&workbuf.hdr);
 	HeapTuple	newtup;
-	Datum		values[Natts_pg_toast];
-	bool		nulls[Natts_pg_toast];
-	bool		replace[Natts_pg_toast];
+	Datum		values[Natts_pg_largeobject];
+	bool		nulls[Natts_pg_largeobject];
+	bool		replace[Natts_pg_largeobject];
 	CatalogIndexState indstate;
 
 	Assert(PointerIsValid(obj_desc));
@@ -501,6 +504,14 @@ inv_write(LargeObjectDesc *obj_desc, const char *buf, int nbytes)
 				 errmsg("large object %u was not opened for writing",
 						obj_desc->id)));
 
+	/* check existence of the target largeobject */
+	if (!SearchSysCacheExists(LARGEOBJECTOID,
+							  ObjectIdGetDatum(obj_desc->id),
+							  0, 0, 0))
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_OBJECT),
+				 errmsg("large object %u was already dropped", obj_desc->id)));
+
 	if (nbytes <= 0)
 		return 0;
 
@@ -509,12 +520,12 @@ inv_write(LargeObjectDesc *obj_desc, const char *buf, int nbytes)
 	indstate = CatalogOpenIndexes(lo_heap_r);
 
 	ScanKeyInit(&skey[0],
-				Anum_pg_toast_chunk_id,
+				Anum_pg_largeobject_loid,
 				BTEqualStrategyNumber, F_OIDEQ,
-				ObjectIdGetDatum(obj_desc->chunk));
+				ObjectIdGetDatum(obj_desc->id));
 
 	ScanKeyInit(&skey[1],
-				Anum_pg_toast_chunk_seq,
+				Anum_pg_largeobject_pageno,
 				BTGreaterEqualStrategyNumber, F_INT4GE,
 				Int32GetDatum(pageno));
 
@@ -522,7 +533,7 @@ inv_write(LargeObjectDesc *obj_desc, const char *buf, int nbytes)
 									obj_desc->snapshot, 2, skey);
 
 	oldtuple = NULL;
-	old_pageno = 0;
+	olddata = NULL;
 	neednextpage = true;
 
 	while (nwritten < nbytes)
@@ -533,17 +544,12 @@ inv_write(LargeObjectDesc *obj_desc, const char *buf, int nbytes)
 		 */
 		if (neednextpage)
 		{
-			oldtuple = systable_getnext_ordered(sd, ForwardScanDirection);
-			if (HeapTupleIsValid(oldtuple))
+			if ((oldtuple = systable_getnext_ordered(sd, ForwardScanDirection)) != NULL)
 			{
 				if (HeapTupleHasNulls(oldtuple))		/* paranoia */
 					elog(ERROR, "null field found in pg_largeobject");
-
-				datum = heap_getattr(oldtuple, Anum_pg_toast_chunk_seq,
-									 RelationGetDescr(lo_heap_r), &isnull);
-				old_pageno = DatumGetInt32(datum);
-
-				Assert(old_pageno >= pageno);
+				olddata = (Form_pg_largeobject) GETSTRUCT(oldtuple);
+				Assert(olddata->pageno >= pageno);
 			}
 			neednextpage = false;
 		}
@@ -552,34 +558,38 @@ inv_write(LargeObjectDesc *obj_desc, const char *buf, int nbytes)
 		 * If we have a pre-existing page, see if it is the page we want to
 		 * write, or a later one.
 		 */
-		if (HeapTupleIsValid(oldtuple) && old_pageno == pageno)
+		if (olddata != NULL && olddata->pageno == pageno)
 		{
 			/*
 			 * Update an existing page with fresh data.
 			 *
 			 * First, load old data into workbuf
-			 * pg_toast.chunk_data has PLAIN storage,
-			 * so it always inlined and uncompressed.
 			 */
-			datum = heap_getattr(oldtuple, Anum_pg_toast_chunk_data,
-								 RelationGetDescr(lo_heap_r), &isnull);
-			Assert(!VARATT_IS_EXTENDED(datum));
-			datafield = (bytea *)datum;
+			datafield = &(olddata->data);		/* see note at top of file */
+			pfreeit = false;
+			if (VARATT_IS_EXTENDED(datafield))
+			{
+				datafield = (bytea *)
+					heap_tuple_untoast_attr((struct varlena *) datafield);
+				pfreeit = true;
+			}
 			len = getbytealen(datafield);
-			Assert(len <= TOAST_MAX_CHUNK_SIZE);
+			Assert(len <= LOBLKSIZE);
 			memcpy(workb, VARDATA(datafield), len);
+			if (pfreeit)
+				pfree(datafield);
 
 			/*
 			 * Fill any hole
 			 */
-			off = (int) (obj_desc->offset % TOAST_MAX_CHUNK_SIZE);
+			off = (int) (obj_desc->offset % LOBLKSIZE);
 			if (off > len)
-				MemSet(VARDATA(datafield) + len, 0, off - len);
+				MemSet(workb + len, 0, off - len);
 
 			/*
 			 * Insert appropriate portion of new data
 			 */
-			n = TOAST_MAX_CHUNK_SIZE - off;
+			n = LOBLKSIZE - off;
 			n = (n <= (nbytes - nwritten)) ? n : (nbytes - nwritten);
 			memcpy(workb + off, buf + nwritten, n);
 			nwritten += n;
@@ -595,8 +605,8 @@ inv_write(LargeObjectDesc *obj_desc, const char *buf, int nbytes)
 			memset(values, 0, sizeof(values));
 			memset(nulls, false, sizeof(nulls));
 			memset(replace, false, sizeof(replace));
-			values[Anum_pg_toast_chunk_data - 1] = PointerGetDatum(&workbuf);
-			replace[Anum_pg_toast_chunk_data - 1] = true;
+			values[Anum_pg_largeobject_data - 1] = PointerGetDatum(&workbuf);
+			replace[Anum_pg_largeobject_data - 1] = true;
 			newtup = heap_modify_tuple(oldtuple, RelationGetDescr(lo_heap_r),
 									   values, nulls, replace);
 			simple_heap_update(lo_heap_r, &newtup->t_self, newtup);
@@ -607,6 +617,7 @@ inv_write(LargeObjectDesc *obj_desc, const char *buf, int nbytes)
 			 * We're done with this old page.
 			 */
 			oldtuple = NULL;
+			olddata = NULL;
 			neednextpage = true;
 		}
 		else
@@ -616,14 +627,14 @@ inv_write(LargeObjectDesc *obj_desc, const char *buf, int nbytes)
 			 *
 			 * First, fill any hole
 			 */
-			off = (int) (obj_desc->offset % TOAST_MAX_CHUNK_SIZE);
+			off = (int) (obj_desc->offset % LOBLKSIZE);
 			if (off > 0)
 				MemSet(workb, 0, off);
 
 			/*
 			 * Insert appropriate portion of new data
 			 */
-			n = TOAST_MAX_CHUNK_SIZE - off;
+			n = LOBLKSIZE - off;
 			n = (n <= (nbytes - nwritten)) ? n : (nbytes - nwritten);
 			memcpy(workb + off, buf + nwritten, n);
 			nwritten += n;
@@ -637,9 +648,9 @@ inv_write(LargeObjectDesc *obj_desc, const char *buf, int nbytes)
 			 */
 			memset(values, 0, sizeof(values));
 			memset(nulls, false, sizeof(nulls));
-			values[Anum_pg_toast_chunk_id - 1] = ObjectIdGetDatum(obj_desc->chunk);
-			values[Anum_pg_toast_chunk_seq - 1] = Int32GetDatum(pageno);
-			values[Anum_pg_toast_chunk_data - 1] = PointerGetDatum(&workbuf);
+			values[Anum_pg_largeobject_loid - 1] = ObjectIdGetDatum(obj_desc->id);
+			values[Anum_pg_largeobject_pageno - 1] = Int32GetDatum(pageno);
+			values[Anum_pg_largeobject_data - 1] = PointerGetDatum(&workbuf);
 			newtup = heap_form_tuple(lo_heap_r->rd_att, values, nulls);
 			simple_heap_insert(lo_heap_r, newtup);
 			CatalogIndexInsert(indstate, newtup);
@@ -664,25 +675,23 @@ inv_write(LargeObjectDesc *obj_desc, const char *buf, int nbytes)
 void
 inv_truncate(LargeObjectDesc *obj_desc, int len)
 {
-	int32		pageno = (int32) (len / TOAST_MAX_CHUNK_SIZE);
+	int32		pageno = (int32) (len / LOBLKSIZE);
 	int			off;
 	ScanKeyData skey[2];
 	SysScanDesc sd;
 	HeapTuple	oldtuple;
-	Datum		datum;
-	bool		isnull;
-	int32		old_pageno;
+	Form_pg_largeobject olddata;
 	struct
 	{
 		bytea		hdr;
-		char		data[TOAST_MAX_CHUNK_SIZE];	/* make struct big enough */
+		char		data[LOBLKSIZE];	/* make struct big enough */
 		int32		align_it;	/* ensure struct is aligned well enough */
 	}			workbuf;
 	char	   *workb = VARDATA(&workbuf.hdr);
 	HeapTuple	newtup;
-	Datum		values[Natts_pg_toast];
-	bool		nulls[Natts_pg_toast];
-	bool		replace[Natts_pg_toast];
+	Datum		values[Natts_pg_largeobject];
+	bool		nulls[Natts_pg_largeobject];
+	bool		replace[Natts_pg_largeobject];
 	CatalogIndexState indstate;
 
 	Assert(PointerIsValid(obj_desc));
@@ -694,17 +703,25 @@ inv_truncate(LargeObjectDesc *obj_desc, int len)
 				 errmsg("large object %u was not opened for writing",
 						obj_desc->id)));
 
+	/* check existence of the target largeobject */
+	if (!SearchSysCacheExists(LARGEOBJECTOID,
+							  ObjectIdGetDatum(obj_desc->id),
+							  0, 0, 0))
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_OBJECT),
+				 errmsg("large object %u was already dropped", obj_desc->id)));
+
 	open_lo_relation();
 
 	indstate = CatalogOpenIndexes(lo_heap_r);
 
 	ScanKeyInit(&skey[0],
-				Anum_pg_toast_chunk_id,
+				Anum_pg_largeobject_loid,
 				BTEqualStrategyNumber, F_OIDEQ,
-				ObjectIdGetDatum(obj_desc->chunk));
+				ObjectIdGetDatum(obj_desc->id));
 
 	ScanKeyInit(&skey[1],
-				Anum_pg_toast_chunk_seq,
+				Anum_pg_largeobject_pageno,
 				BTGreaterEqualStrategyNumber, F_INT4GE,
 				Int32GetDatum(pageno));
 
@@ -715,15 +732,13 @@ inv_truncate(LargeObjectDesc *obj_desc, int len)
 	 * If possible, get the page the truncation point is in. The truncation
 	 * point may be beyond the end of the LO or in a hole.
 	 */
-	oldtuple = systable_getnext_ordered(sd, ForwardScanDirection);
-	if (HeapTupleIsValid(oldtuple))
+	olddata = NULL;
+	if ((oldtuple = systable_getnext_ordered(sd, ForwardScanDirection)) != NULL)
 	{
 		if (HeapTupleHasNulls(oldtuple))		/* paranoia */
 			elog(ERROR, "null field found in pg_largeobject");
-		datum = heap_getattr(oldtuple, Anum_pg_toast_chunk_seq,
-							 RelationGetDescr(lo_heap_r), &isnull);
-		old_pageno = DatumGetInt32(datum);
-		Assert(old_pageno >= pageno);
+		olddata = (Form_pg_largeobject) GETSTRUCT(oldtuple);
+		Assert(olddata->pageno >= pageno);
 	}
 
 	/*
@@ -731,28 +746,30 @@ inv_truncate(LargeObjectDesc *obj_desc, int len)
 	 * data in it.	Otherwise if we're in a hole, we need to create a page to
 	 * mark the end of data.
 	 */
-	if (HeapTupleIsValid(oldtuple) && old_pageno == pageno)
+	if (olddata != NULL && olddata->pageno == pageno)
 	{
-		/*
-		 * First, load old data into workbuf
-		 * pg_toast.chunk_data has PLAIN storage,
-		 * so it always inlined and uncompressed.
-		 */
-		bytea	   *datafield;
+		/* First, load old data into workbuf */
+		bytea	   *datafield = &(olddata->data);		/* see note at top of
+														 * file */
+		bool		pfreeit = false;
 		int			pagelen;
 
-		datum = heap_getattr(oldtuple, Anum_pg_toast_chunk_data,
-							 RelationGetDescr(lo_heap_r), &isnull);
-		Assert(!VARATT_IS_EXTENDED(datum));
-		datafield = (bytea *)datum;
+		if (VARATT_IS_EXTENDED(datafield))
+		{
+			datafield = (bytea *)
+				heap_tuple_untoast_attr((struct varlena *) datafield);
+			pfreeit = true;
+		}
 		pagelen = getbytealen(datafield);
-		Assert(pagelen <= TOAST_MAX_CHUNK_SIZE);
+		Assert(pagelen <= LOBLKSIZE);
 		memcpy(workb, VARDATA(datafield), pagelen);
+		if (pfreeit)
+			pfree(datafield);
 
 		/*
 		 * Fill any hole
 		 */
-		off = len % TOAST_MAX_CHUNK_SIZE;
+		off = len % LOBLKSIZE;
 		if (off > pagelen)
 			MemSet(workb + pagelen, 0, off - pagelen);
 
@@ -765,8 +782,8 @@ inv_truncate(LargeObjectDesc *obj_desc, int len)
 		memset(values, 0, sizeof(values));
 		memset(nulls, false, sizeof(nulls));
 		memset(replace, false, sizeof(replace));
-		values[Anum_pg_toast_chunk_data - 1] = PointerGetDatum(&workbuf);
-		replace[Anum_pg_toast_chunk_data - 1] = true;
+		values[Anum_pg_largeobject_data - 1] = PointerGetDatum(&workbuf);
+		replace[Anum_pg_largeobject_data - 1] = true;
 		newtup = heap_modify_tuple(oldtuple, RelationGetDescr(lo_heap_r),
 								   values, nulls, replace);
 		simple_heap_update(lo_heap_r, &newtup->t_self, newtup);
@@ -779,7 +796,7 @@ inv_truncate(LargeObjectDesc *obj_desc, int len)
 		 * If the first page we found was after the truncation point, we're in
 		 * a hole that we'll fill, but we need to delete the later page.
 		 */
-		if (HeapTupleIsValid(oldtuple) && old_pageno > pageno)
+		if (olddata != NULL && olddata->pageno > pageno)
 			simple_heap_delete(lo_heap_r, &oldtuple->t_self);
 
 		/*
@@ -787,7 +804,7 @@ inv_truncate(LargeObjectDesc *obj_desc, int len)
 		 *
 		 * Fill the hole up to the truncation point
 		 */
-		off = len % TOAST_MAX_CHUNK_SIZE;
+		off = len % LOBLKSIZE;
 		if (off > 0)
 			MemSet(workb, 0, off);
 
@@ -799,9 +816,9 @@ inv_truncate(LargeObjectDesc *obj_desc, int len)
 		 */
 		memset(values, 0, sizeof(values));
 		memset(nulls, false, sizeof(nulls));
-		values[Anum_pg_toast_chunk_id - 1] = ObjectIdGetDatum(obj_desc->chunk);
-		values[Anum_pg_toast_chunk_seq - 1] = Int32GetDatum(pageno);
-		values[Anum_pg_toast_chunk_data - 1] = PointerGetDatum(&workbuf);
+		values[Anum_pg_largeobject_loid - 1] = ObjectIdGetDatum(obj_desc->id);
+		values[Anum_pg_largeobject_pageno - 1] = Int32GetDatum(pageno);
+		values[Anum_pg_largeobject_data - 1] = PointerGetDatum(&workbuf);
 		newtup = heap_form_tuple(lo_heap_r->rd_att, values, nulls);
 		simple_heap_insert(lo_heap_r, newtup);
 		CatalogIndexInsert(indstate, newtup);

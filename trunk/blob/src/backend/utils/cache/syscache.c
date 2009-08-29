@@ -35,7 +35,7 @@
 #include "catalog/pg_foreign_data_wrapper.h"
 #include "catalog/pg_foreign_server.h"
 #include "catalog/pg_language.h"
-#include "catalog/pg_largeobject.h"
+#include "catalog/pg_largeobject_meta.h"
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_opclass.h"
 #include "catalog/pg_operator.h"
@@ -453,8 +453,8 @@ static const struct cachedesc cacheinfo[] = {
 		},
 		4
 	},
-	{LargeObjectRelationId,		/* LARGEOBJECTOID */
-		LargeObjectOidIndexId,
+	{LargeObjectMetaRelationId,		/* LARGEOBJECTOID */
+		LargeObjectMetaOidIndexId,
 		0,
 		1,
 		{

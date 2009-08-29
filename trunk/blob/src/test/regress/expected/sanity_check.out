@@ -104,6 +104,7 @@ SELECT relname, relhasindex
  pg_inherits             | t
  pg_language             | t
  pg_largeobject          | t
+ pg_largeobject_meta     | t
  pg_listener             | f
  pg_namespace            | t
  pg_opclass              | t
@@ -151,7 +152,7 @@ SELECT relname, relhasindex
  timetz_tbl              | f
  tinterval_tbl           | f
  varchar_tbl             | f
-(140 rows)
+(141 rows)
 
 --
 -- another sanity check: every system catalog that has OIDs should have
