@@ -17,7 +17,7 @@ DROP ROLE IF EXISTS regressuser4;
 DROP ROLE IF EXISTS regressuser5;
 DROP ROLE IF EXISTS regressuser6;
 
-SELECT lo_unlink(oid) FROM pg_largeobject;
+SELECT lo_unlink(oid) FROM pg_largeobject_meta;
 
 RESET client_min_messages;
 
@@ -488,71 +488,61 @@ SELECT has_sequence_privilege('x_seq', 'USAGE');
 
 -- largeobject privilege tests
 \c -
-CREATE USER regressuser6 NOLARGEOBJECT;
-ALTER  USER regressuser5 NOLARGEOBJECT;
+SET SESSION AUTHORIZATION regressuser1;
+
+SELECT lo_create(1001);
+SELECT lo_create(1002);
+SELECT lo_create(1003);
+SELECT lo_create(1004);
+SELECT lo_create(1005);
+
+REVOKE ALL ON LARGE OBJECT 1002, 1003, 1004, 1005 FROM PUBLIC;
+
+GRANT SELECT ON LARGE OBJECT 1003 TO regressuser2;
+GRANT SELECT,UPDATE ON LARGE OBJECT 1004 TO regressuser2;
+GRANT ALL ON LARGE OBJECT 1005 TO regressuser2;
+GRANT SELECT ON LARGE OBJECT 1005 TO regressuser2 WITH GRANT OPTION;
+
+GRANT SELECT, INSERT ON LARGE OBJECT 1001 TO PUBLIC;	-- to be failed
+GRANT SELECT, UPDATE ON LARGE OBJECT 1001 TO nosuchuser;	-- to be failed
+GRANT SELECT, UPDATE ON LARGE OBJECT  999 TO PUBLIC;	-- to be failed
+
+\c -
+SET SESSION AUTHORIZATION regressuser2;
+
+SELECT lo_create(2001);
+SELECT lo_create(2002);
+
+SELECT loread(lo_open(1001, x'40000'::int), 32);
+SELECT loread(lo_open(1002, x'40000'::int), 32);	-- to be denied
+SELECT loread(lo_open(1003, x'40000'::int), 32);
+SELECT loread(lo_open(1004, x'40000'::int), 32);
+
+SELECT lowrite(lo_open(1001, x'20000'::int), 'abcd');
+SELECT lowrite(lo_open(1002, x'20000'::int), 'abcd');	-- to be denied
+SELECT lowrite(lo_open(1003, x'20000'::int), 'abcd');	-- to be denied
+SELECT lowrite(lo_open(1004, x'20000'::int), 'abcd');
+
+GRANT SELECT ON LARGE OBJECT 1005 TO regressuser3;
+GRANT UPDATE ON LARGE OBJECT 1006 TO regressuser3;	-- to be denied
+REVOKE ALL ON LARGE OBJECT 2001, 2002 FROM PUBLIC;
+GRANT ALL ON LARGE OBJECT 2001 TO regressuser3;
+
+SELECT lo_unlink(1001);		-- to be denied
+SELECT lo_unlink(2002);
+
+\c -
+-- confirm ACL setting
+SELECT l.oid, a.rolname, l.lomacl FROM pg_largeobject_meta l JOIN pg_authid a ON l.lomowner = a.oid;
 
 SET SESSION AUTHORIZATION regressuser3;
 
-SELECT lo_create(3001);
-SELECT lo_create(3002);
-SELECT lo_create(3003);
-SELECT lo_create(3004);
-SELECT lo_create(3005);
-SELECT lo_create(3006);
+SELECT loread(lo_open(1001, x'40000'::int), 32);
+SELECT loread(lo_open(1003, x'40000'::int), 32);	-- to be denied
+SELECT loread(lo_open(1005, x'40000'::int), 32);
 
-SELECT lowrite(lo_open(3001, x'20000'::int), 'This is largeobject 3001');
-SELECT lowrite(lo_open(3002, x'20000'::int), 'This is largeobject 3002');
-SELECT lowrite(lo_open(3003, x'20000'::int), 'This is largeobject 3003');
-SELECT lowrite(lo_open(3004, x'20000'::int), 'This is largeobject 3004');
-SELECT lowrite(lo_open(3005, x'20000'::int), 'This is largeobject 3005');
-SELECT lowrite(lo_open(3006, x'20000'::int), 'This is largeobject 3006');
-
-GRANT SELECT ON LARGE OBJECT 3002 TO regressuser4;
-GRANT SELECT, UPDATE ON LARGE OBJECT 3003 TO regressuser4;
-GRANT SELECT ON LARGE OBJECT 3004 TO regressuser5 WITH GRANT OPTION;
-GRANT ALL ON LARGE OBJECT 3004 TO regressuser5;
-GRANT SELECT ON LARGE OBJECT 3005 TO PUBLIC;
-GRANT SELECT, INSERT ON LARGE OBJECT 3006 TO PUBLIC;	-- to be failed
-GRANT SELECT, UPDATE ON LARGE OBJECT 3006 TO nosuchuser;	-- to be failed
-GRANT SELECT, UPDATE ON LARGE OBJECT 3007 TO PUBLIC;	-- to be failed
-
-SELECT lo_create(3007);
-SELECT lo_unlink(3007);
-SELECT lo_unlink(3008);		-- to be denied
-
-\c -
-SET SESSION AUTHORIZATION regressuser4;
-SELECT loread(lo_open(3001, x'40000'::int), 100);	-- to be denied
-SELECT loread(lo_open(3002, x'40000'::int), 100);
-SELECT loread(lo_open(3003, x'40000'::int), 100);
-
-SELECT lowrite(lo_open(3001, x'20000'::int), 'updated largeobject');	-- to be denied
-SELECT lowrite(lo_open(3002, x'20000'::int), 'updated largeobject');	-- to be denied
-SELECT lowrite(lo_open(3003, x'20000'::int), 'updated largeobject');
-
-GRANT SELECT ON LARGE OBJECT 3001 TO regressuser5;	-- to be denied
-
-SELECT lo_create(4001);
-SELECT lo_create(4002);
-GRANT SELECT ON LARGE OBJECT 4001 TO regressuser5;
-GRANT ALL ON LARGE OBJECT 4002 TO regressuser5;
-
-SELECT lo_unlink(3001);		-- to be denied
-SELECT lo_unlink(4002);
-
-\c -
-SET SESSION AUTHORIZATION regressuser5;
-SELECT loread(lo_open(3004, x'40000'::int), 100);
-SELECT loread(lo_open(3005, x'40000'::int), 100);
-SELECT lo_truncate(lo_open(3004, x'40000'::int), 10);	-- to be failed
-SELECT lo_truncate(lo_open(3004, x'20000'::int), 10);
-SELECT lo_truncate(lo_open(3005, x'20000'::int), 10);	-- to be denied
-
-GRANT SELECT ON LARGE OBJECT 3004 TO regressuser6;
-GRANT UPDATE ON LARGE OBJECT 3004 TO regressuser6;	-- to be denied
-GRANT SELECT ON LARGE OBJECT 3005 TO regressuser6;	-- to be denied
-
-SELECT lo_create(5001);		-- to be denied (ALTER ROLE NOLARGEOBJECT)
+SELECT lo_truncate(lo_open(1005, x'20000'::int), 10);	-- to be denied
+SELECT lo_truncate(lo_open(2001, x'20000'::int), 10);
 
 -- clean up
 
@@ -580,7 +570,7 @@ DROP TABLE atestc;
 DROP TABLE atestp1;
 DROP TABLE atestp2;
 
-SELECT lo_unlink(oid) FROM pg_largeobject;
+SELECT lo_unlink(oid) FROM pg_largeobject_meta;
 
 DROP GROUP regressgroup1;
 DROP GROUP regressgroup2;

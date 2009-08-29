@@ -24,7 +24,7 @@
 #include "catalog/pg_database.h"
 #include "catalog/pg_description.h"
 #include "catalog/pg_language.h"
-#include "catalog/pg_largeobject.h"
+#include "catalog/pg_largeobject_meta.h"
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_opclass.h"
 #include "catalog/pg_operator.h"
@@ -1431,7 +1431,7 @@ CommentLargeObject(List *qualname, char *comment)
 				 errmsg("must be owner of largeobject %u", loid)));
 
 	/* Call CreateComments() to create/drop the comments */
-	CreateComments(loid, LargeObjectRelationId, 0, comment);
+	CreateComments(loid, LargeObjectMetaRelationId, 0, comment);
 }
 
 /*

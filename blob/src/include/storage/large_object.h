@@ -35,7 +35,6 @@
 typedef struct LargeObjectDesc
 {
 	Oid			id;				/* LO's identifier */
-	Oid			chunk;			/* OID of data chunks */
 	Snapshot	snapshot;		/* snapshot to use */
 	SubTransactionId subid;		/* owning subtransaction ID */
 	uint32		offset;			/* current seek pointer */

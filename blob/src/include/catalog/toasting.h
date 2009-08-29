@@ -22,13 +22,6 @@ extern void AlterTableCreateToastTable(Oid relOid, Oid toastOid,
 extern void BootstrapToastTable(char *relName,
 					Oid toastOid, Oid toastIndexOid);
 
-/*
- * structure of toast relation
- */
-#define Natts_pg_toast				3
-#define Anum_pg_toast_chunk_id		1
-#define Anum_pg_toast_chunk_seq		2
-#define Anum_pg_toast_chunk_data	3
 
 /*
  * This macro is just to keep the C compiler from spitting up on the
@@ -51,9 +44,6 @@ extern void BootstrapToastTable(char *relName,
 DECLARE_TOAST(pg_attrdef, 2830, 2831);
 DECLARE_TOAST(pg_constraint, 2832, 2833);
 DECLARE_TOAST(pg_description, 2834, 2835);
-DECLARE_TOAST(pg_largeobject, 2336, 2337);
-#define PgLargeObjectToastTable		2336
-#define PgLargeObjectToastIndex		2337
 DECLARE_TOAST(pg_proc, 2836, 2837);
 DECLARE_TOAST(pg_rewrite, 2838, 2839);
 DECLARE_TOAST(pg_statistic, 2840, 2841);

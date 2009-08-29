@@ -42,7 +42,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include "access/tuptoaster.h"
+#include "catalog/pg_largeobject_meta.h"
 #include "libpq/be-fsstubs.h"
 #include "libpq/libpq-fs.h"
 #include "miscadmin.h"
@@ -53,7 +53,7 @@
 
 
 /*#define FSDB 1*/
-#define BUFSIZE			(TOAST_MAX_CHUNK_SIZE * 4)
+#define BUFSIZE			8192
 
 /*
  * LO "FD"s are indexes into the cookies array.
@@ -83,99 +83,6 @@ static int	newLOfd(LargeObjectDesc *lobjCookie);
 static void deleteLOfd(int fd);
 static Oid	lo_import_internal(text *filename, Oid lobjOid);
 
-/*
- * Permission check 
- * (These routines should be moved to security/access_control.c)
- */
-#include "catalog/pg_authid.h"
-#include "utils/acl.h"
-#include "utils/syscache.h"
-
-static void
-ac_largeobject_create(Oid lobjId)
-{
-	Form_pg_authid	auForm;
-	HeapTuple		auTup;
-
-	/* Superusers can always do everything */
-	if (!superuser())
-	{
-		auTup = SearchSysCache(AUTHOID,
-							   ObjectIdGetDatum(GetUserId()),
-							   0, 0, 0);
-		if (!HeapTupleIsValid(auTup))
-			elog(ERROR, "cache lookup failed for role: %u", GetUserId());
-
-		auForm = (Form_pg_authid) GETSTRUCT(auTup);
-		if (!auForm->rollargeobject)
-			ereport(ERROR,
-					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-					 errmsg("permission denied to create largeobject")));
-
-		ReleaseSysCache(auTup);
-	}
-}
-
-static void
-ac_largeobject_drop(Oid lobjId, bool dacSkip)
-{
-	/* Must be owner of the largeobject */
-	if (!dacSkip &&
-		!pg_largeobject_ownercheck(lobjId, GetUserId()))
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("must be owner of largeobject %u", lobjId)));
-}
-
-static void
-ac_largeobject_read(Oid lobjId)
-{
-	AclResult	aclresult;
-
-	aclresult = pg_largeobject_aclcheck(lobjId, GetUserId(), ACL_SELECT);
-	if (aclresult != ACLCHECK_OK)
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("permission denied for largeobject %u", lobjId)));
-}
-
-static void
-ac_largeobject_write(Oid lobjId)
-{
-	AclResult	aclresult;
-
-	aclresult = pg_largeobject_aclcheck(lobjId, GetUserId(), ACL_UPDATE);
-	if (aclresult != ACLCHECK_OK)
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("permission denied for largeobject %u", lobjId)));
-}
-
-static void
-ac_largeobject_import(Oid lobjId, const char *filename)
-{
-#ifndef ALLOW_DANGEROUS_LO_FUNCTIONS
-	if (!superuser())
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("must be superuser to use server-side lo_import()"),
-				 errhint("Anyone can use the client-side lo_import() provided by libpq.")));
-#endif
-	ac_largeobject_create(lobjId);
-}
-
-static void
-ac_largeobject_export(Oid lobjId, const char *filename)
-{
-#ifndef ALLOW_DANGEROUS_LO_FUNCTIONS
-	if (!superuser())
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("must be superuser to use server-side lo_export()"),
-				 errhint("Anyone can use the client-side lo_export() provided by libpq.")));
-#endif
-	ac_largeobject_read(lobjId);
-}
 
 /*****************************************************************************
  *	File Interfaces for Large Objects

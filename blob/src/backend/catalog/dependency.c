@@ -36,7 +36,7 @@
 #include "catalog/pg_foreign_data_wrapper.h"
 #include "catalog/pg_foreign_server.h"
 #include "catalog/pg_language.h"
-#include "catalog/pg_largeobject.h"
+#include "catalog/pg_largeobject_meta.h"
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_opclass.h"
 #include "catalog/pg_operator.h"
@@ -130,7 +130,7 @@ static const Oid object_classes[MAX_OCLASS] = {
 	ConversionRelationId,		/* OCLASS_CONVERSION */
 	AttrDefaultRelationId,		/* OCLASS_DEFAULT */
 	LanguageRelationId,			/* OCLASS_LANGUAGE */
-	LargeObjectRelationId,		/* OCLASS_LARGEOBJECT */
+	LargeObjectMetaRelationId,	/* OCLASS_LARGEOBJECT */
 	OperatorRelationId,			/* OCLASS_OPERATOR */
 	OperatorClassRelationId,	/* OCLASS_OPCLASS */
 	OperatorFamilyRelationId,	/* OCLASS_OPFAMILY */
@@ -1073,7 +1073,7 @@ doDeletion(const ObjectAddress *object)
 			break;
 
 		case OCLASS_LARGEOBJECT:
-			LargeObjectDrop(object->objectId);
+			DropLargeObject(object->objectId);
 			break;
 
 		case OCLASS_OPERATOR:
@@ -1989,7 +1989,7 @@ getObjectClass(const ObjectAddress *object)
 			Assert(object->objectSubId == 0);
 			return OCLASS_LANGUAGE;
 
-		case LargeObjectRelationId:
+		case LargeObjectMetaRelationId:
 			Assert(object->objectSubId == 0);
 			return OCLASS_LARGEOBJECT;
 
