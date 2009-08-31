@@ -1,7 +1,7 @@
 /**********************************************************************
  * plpython.c - python as a procedural language for PostgreSQL
  *
- *	$PostgreSQL: pgsql/src/pl/plpython/plpython.c,v 1.125 2009/08/14 13:12:21 petere Exp $
+ *	$PostgreSQL: pgsql/src/pl/plpython/plpython.c,v 1.127 2009/08/25 12:44:59 petere Exp $
  *
  *********************************************************************
  */
@@ -339,6 +339,20 @@ plpython_error_callback(void *arg)
 		errcontext("PL/Python function \"%s\"", PLy_procedure_name(PLy_curr_procedure));
 }
 
+static void
+plpython_trigger_error_callback(void *arg)
+{
+	if (PLy_curr_procedure)
+		errcontext("while modifying trigger row");
+}
+
+static void
+plpython_return_error_callback(void *arg)
+{
+	if (PLy_curr_procedure)
+		errcontext("while creating return value");
+}
+
 Datum
 plpython_call_handler(PG_FUNCTION_ARGS)
 {
@@ -506,6 +520,11 @@ PLy_modify_tuple(PLyProcedure *proc, PyObject *pltd, TriggerData *tdata,
 	Datum	   *volatile modvalues;
 	char	   *volatile modnulls;
 	TupleDesc	tupdesc;
+	ErrorContextCallback plerrcontext;
+
+	plerrcontext.callback = plpython_trigger_error_callback;
+	plerrcontext.previous = error_context_stack;
+	error_context_stack = &plerrcontext;
 
 	plntup = plkeys = platt = plval = plstr = NULL;
 	modattrs = NULL;
@@ -563,7 +582,7 @@ PLy_modify_tuple(PLyProcedure *proc, PyObject *pltd, TriggerData *tdata,
 			{
 				plstr = PyObject_Str(plval);
 				if (!plstr)
-					PLy_elog(ERROR, "could not compute string representation of Python object, while modifying trigger row");
+					PLy_elog(ERROR, "could not create string representation of Python object");
 				src = PyString_AsString(plstr);
 
 				modvalues[i] =
@@ -619,6 +638,8 @@ PLy_modify_tuple(PLyProcedure *proc, PyObject *pltd, TriggerData *tdata,
 	pfree(modattrs);
 	pfree(modvalues);
 	pfree(modnulls);
+
+	error_context_stack = plerrcontext.previous;
 
 	return rtup;
 }
@@ -811,6 +832,7 @@ PLy_function_handler(FunctionCallInfo fcinfo, PLyProcedure *proc)
 	PyObject   *volatile plrv = NULL;
 	PyObject   *volatile plrv_so = NULL;
 	char	   *plrv_sc;
+	ErrorContextCallback plerrcontext;
 
 	PG_TRY();
 	{
@@ -901,6 +923,10 @@ PLy_function_handler(FunctionCallInfo fcinfo, PLyProcedure *proc)
 			}
 		}
 
+		plerrcontext.callback = plpython_return_error_callback;
+		plerrcontext.previous = error_context_stack;
+		error_context_stack = &plerrcontext;
+
 		/*
 		 * If the function is declared to return void, the Python return value
 		 * must be None. For void-returning functions, we also treat a None
@@ -959,7 +985,7 @@ PLy_function_handler(FunctionCallInfo fcinfo, PLyProcedure *proc)
 			fcinfo->isnull = false;
 			plrv_so = PyObject_Str(plrv);
 			if (!plrv_so)
-				PLy_elog(ERROR, "could not create string representation of Python object, while creating return value");
+				PLy_elog(ERROR, "could not create string representation of Python object");
 			plrv_sc = PyString_AsString(plrv_so);
 			rv = InputFunctionCall(&proc->result.out.d.typfunc,
 								   plrv_sc,
@@ -976,6 +1002,8 @@ PLy_function_handler(FunctionCallInfo fcinfo, PLyProcedure *proc)
 		PG_RE_THROW();
 	}
 	PG_END_TRY();
+
+	error_context_stack = plerrcontext.previous;
 
 	Py_XDECREF(plargs);
 	Py_DECREF(plrv);
@@ -2050,12 +2078,10 @@ static PyObject *PLy_fatal(PyObject *, PyObject *);
 #define is_PLyPlanObject(x) ((x)->ob_type == &PLy_PlanType)
 static PyObject *PLy_plan_new(void);
 static void PLy_plan_dealloc(PyObject *);
-static PyObject *PLy_plan_getattr(PyObject *, char *);
 static PyObject *PLy_plan_status(PyObject *, PyObject *);
 
 static PyObject *PLy_result_new(void);
 static void PLy_result_dealloc(PyObject *);
-static PyObject *PLy_result_getattr(PyObject *, char *);
 static PyObject *PLy_result_nrows(PyObject *, PyObject *);
 static PyObject *PLy_result_status(PyObject *, PyObject *);
 static Py_ssize_t PLy_result_length(PyObject *);
@@ -2072,6 +2098,11 @@ static PyObject *PLy_spi_execute_plan(PyObject *, PyObject *, long);
 static PyObject *PLy_spi_execute_fetch_result(SPITupleTable *, int, int);
 
 
+static PyMethodDef PLy_plan_methods[] = {
+	{"status", PLy_plan_status, METH_VARARGS, NULL},
+	{NULL, NULL, 0, NULL}
+};
+
 static PyTypeObject PLy_PlanType = {
 	PyObject_HEAD_INIT(NULL)
 	0,							/* ob_size */
@@ -2084,7 +2115,7 @@ static PyTypeObject PLy_PlanType = {
 	 */
 	PLy_plan_dealloc,			/* tp_dealloc */
 	0,							/* tp_print */
-	PLy_plan_getattr,			/* tp_getattr */
+	0,							/* tp_getattr */
 	0,							/* tp_setattr */
 	0,							/* tp_compare */
 	0,							/* tp_repr */
@@ -2099,11 +2130,13 @@ static PyTypeObject PLy_PlanType = {
 	0,							/* tp_as_buffer */
 	Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,	/* tp_flags */
 	PLy_plan_doc,				/* tp_doc */
-};
-
-static PyMethodDef PLy_plan_methods[] = {
-	{"status", PLy_plan_status, METH_VARARGS, NULL},
-	{NULL, NULL, 0, NULL}
+	0,							/* tp_traverse */
+	0,							/* tp_clear */
+	0,							/* tp_richcompare */
+	0,							/* tp_weaklistoffset */
+	0,							/* tp_iter */
+	0,							/* tp_iternext */
+	PLy_plan_methods,			/* tp_tpmethods */
 };
 
 static PySequenceMethods PLy_result_as_sequence = {
@@ -2114,6 +2147,12 @@ static PySequenceMethods PLy_result_as_sequence = {
 	PLy_result_slice,			/* sq_slice */
 	PLy_result_ass_item,		/* sq_ass_item */
 	PLy_result_ass_slice,		/* sq_ass_slice */
+};
+
+static PyMethodDef PLy_result_methods[] = {
+	{"nrows", PLy_result_nrows, METH_VARARGS, NULL},
+	{"status", PLy_result_status, METH_VARARGS, NULL},
+	{NULL, NULL, 0, NULL}
 };
 
 static PyTypeObject PLy_ResultType = {
@@ -2128,7 +2167,7 @@ static PyTypeObject PLy_ResultType = {
 	 */
 	PLy_result_dealloc,			/* tp_dealloc */
 	0,							/* tp_print */
-	PLy_result_getattr,			/* tp_getattr */
+	0,							/* tp_getattr */
 	0,							/* tp_setattr */
 	0,							/* tp_compare */
 	0,							/* tp_repr */
@@ -2143,12 +2182,13 @@ static PyTypeObject PLy_ResultType = {
 	0,							/* tp_as_buffer */
 	Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,	/* tp_flags */
 	PLy_result_doc,				/* tp_doc */
-};
-
-static PyMethodDef PLy_result_methods[] = {
-	{"nrows", PLy_result_nrows, METH_VARARGS, NULL},
-	{"status", PLy_result_status, METH_VARARGS, NULL},
-	{NULL, NULL, 0, NULL}
+	0,							/* tp_traverse */
+	0,							/* tp_clear */
+	0,							/* tp_richcompare */
+	0,							/* tp_weaklistoffset */
+	0,							/* tp_iter */
+	0,							/* tp_iternext */
+	PLy_result_methods,			/* tp_tpmethods */
 };
 
 static PyMethodDef PLy_methods[] = {
@@ -2218,12 +2258,6 @@ PLy_plan_dealloc(PyObject *arg)
 
 
 static PyObject *
-PLy_plan_getattr(PyObject *self, char *name)
-{
-	return Py_FindMethod(PLy_plan_methods, self, name);
-}
-
-static PyObject *
 PLy_plan_status(PyObject *self, PyObject *args)
 {
 	if (PyArg_ParseTuple(args, ""))
@@ -2268,12 +2302,6 @@ PLy_result_dealloc(PyObject *arg)
 	Py_XDECREF(ob->status);
 
 	arg->ob_type->tp_free(arg);
-}
-
-static PyObject *
-PLy_result_getattr(PyObject *self, char *name)
-{
-	return Py_FindMethod(PLy_result_methods, self, name);
 }
 
 static PyObject *
