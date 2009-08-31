@@ -2,7 +2,7 @@
 #
 # Makefile for parser
 #
-# $PostgreSQL: pgsql/src/backend/parser/Makefile,v 1.49 2009/03/07 00:13:57 alvherre Exp $
+# $PostgreSQL: pgsql/src/backend/parser/Makefile,v 1.51 2009/08/28 20:26:19 petere Exp $
 #
 #-------------------------------------------------------------------------
 
@@ -22,7 +22,12 @@ include $(top_srcdir)/src/backend/common.mk
 
 
 # scan is compiled as part of gram
-gram.o: $(srcdir)/scan.c
+gram.o: scan.c
+
+# Latest flex causes warnings in this file.
+ifeq ($(GCC),yes)
+gram.o: CFLAGS += -Wno-error
+endif
 
 
 # There is no correct way to write a rule that generates two files.
@@ -32,9 +37,9 @@ gram.o: $(srcdir)/scan.c
 # important, otherwise make will choose the built-in rule for
 # gram.y=>gram.c.
 
-$(srcdir)/gram.h: $(srcdir)/gram.c ;
+gram.h: gram.c ;
 
-$(srcdir)/gram.c: gram.y
+gram.c: gram.y
 ifdef BISON
 	$(BISON) -d $(BISONFLAGS) -o $@ $<
 else
@@ -42,7 +47,7 @@ else
 endif
 
 
-$(srcdir)/scan.c: scan.l
+scan.c: scan.l
 ifdef FLEX
 	$(FLEX) $(FLEXFLAGS) -o'$@' $<
 else
@@ -51,7 +56,7 @@ endif
 
 
 # Force these dependencies to be known even without dependency info built:
-gram.o keywords.o parser.o: $(srcdir)/gram.h
+gram.o keywords.o parser.o: gram.h
 
 
 # gram.c, gram.h, and scan.c are in the distribution tarball, so they
