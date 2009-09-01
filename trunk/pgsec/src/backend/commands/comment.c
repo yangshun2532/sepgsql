@@ -688,10 +688,7 @@ CommentRole(List *qualname, char *comment)
 	oid = get_roleid_checked(role);
 
 	/* Check object security */
-	if (!has_privs_of_role(GetUserId(), oid))
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-		  errmsg("must be member of role \"%s\" to comment upon it", role)));
+	ac_role_comment(oid);
 
 	/* Call CreateSharedComments() to create/drop the comments */
 	CreateSharedComments(oid, AuthIdRelationId, comment);

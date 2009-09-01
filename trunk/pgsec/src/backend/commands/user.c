@@ -24,12 +24,12 @@
 #include "libpq/md5.h"
 #include "miscadmin.h"
 #include "storage/lmgr.h"
-#include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/flatfiles.h"
 #include "utils/fmgroids.h"
 #include "utils/guc.h"
 #include "utils/lsyscache.h"
+#include "utils/security.h"
 #include "utils/syscache.h"
 #include "utils/tqual.h"
 
@@ -259,20 +259,7 @@ CreateRole(CreateRoleStmt *stmt)
 		validUntil = strVal(dvalidUntil->arg);
 
 	/* Check some permissions first */
-	if (issuper)
-	{
-		if (!superuser())
-			ereport(ERROR,
-					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-					 errmsg("must be superuser to create superusers")));
-	}
-	else
-	{
-		if (!have_createrole_privilege())
-			ereport(ERROR,
-					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-					 errmsg("permission denied to create role")));
-	}
+	ac_role_create(stmt->role, issuper);
 
 	if (strcmp(stmt->role, "public") == 0 ||
 		strcmp(stmt->role, "none") == 0)
@@ -418,6 +405,7 @@ AlterRole(AlterRoleStmt *stmt)
 	char	   *password = NULL;	/* user password */
 	bool		encrypt_password = Password_encryption; /* encrypt password? */
 	char		encrypted_password[MD5_PASSWD_LEN + 1];
+	bool		only_password = false;	/* true, if other option is not given */
 	int			issuper = -1;	/* Make the user a superuser? */
 	int			inherit = -1;	/* Auto inherit privileges? */
 	int			createrole = -1;	/* Can this user create roles? */
@@ -568,31 +556,16 @@ AlterRole(AlterRoleStmt *stmt)
 	roleid = HeapTupleGetOid(tuple);
 
 	/*
-	 * To mess with a superuser you gotta be superuser; else you need
-	 * createrole, or just want to change your own password
+	 * Permission checks to alter the role.
+	 * If it does not change anything except for the password
+	 * of himself, the caller must give the hint.
 	 */
-	if (((Form_pg_authid) GETSTRUCT(tuple))->rolsuper || issuper >= 0)
-	{
-		if (!superuser())
-			ereport(ERROR,
-					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-					 errmsg("must be superuser to alter superusers")));
-	}
-	else if (!have_createrole_privilege())
-	{
-		if (!(inherit < 0 &&
-			  createrole < 0 &&
-			  createdb < 0 &&
-			  canlogin < 0 &&
-			  !dconnlimit &&
-			  !rolemembers &&
-			  !validUntil &&
-			  dpassword &&
-			  roleid == GetUserId()))
-			ereport(ERROR,
-					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-					 errmsg("permission denied")));
-	}
+	if (dpassword && issuper < 0 && inherit < 0 &&
+		createrole < 0 && createdb < 0 && canlogin < 0 &&
+		connlimit < 0 && !rolemembers && validUntil)
+		only_password = true;
+
+	ac_role_alter(roleid, issuper, only_password, false);
 
 	/*
 	 * Build an updated tuple, perusing the information just obtained
@@ -747,6 +720,9 @@ AlterRoleSet(AlterRoleSetStmt *stmt)
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("role \"%s\" does not exist", stmt->role)));
 
+	/* Permission checks */
+	ac_role_alter(HeapTupleGetOid(oldtuple), -1, false, true);
+
 	/*
 	 * To mess with a superuser you gotta be superuser; else you need
 	 * createrole, or just want to change your own settings
@@ -823,11 +799,6 @@ DropRole(DropRoleStmt *stmt)
 				pg_auth_members_rel;
 	ListCell   *item;
 
-	if (!have_createrole_privilege())
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("permission denied to drop role")));
-
 	/*
 	 * Scan the pg_authid relation to find the Oid of the role(s) to be
 	 * deleted.
@@ -882,16 +853,8 @@ DropRole(DropRoleStmt *stmt)
 					(errcode(ERRCODE_OBJECT_IN_USE),
 					 errmsg("session user cannot be dropped")));
 
-		/*
-		 * For safety's sake, we allow createrole holders to drop ordinary
-		 * roles but not superuser roles.  This is mainly to avoid the
-		 * scenario where you accidentally drop the last superuser.
-		 */
-		if (((Form_pg_authid) GETSTRUCT(tuple))->rolsuper &&
-			!superuser())
-			ereport(ERROR,
-					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-					 errmsg("must be superuser to drop superusers")));
+		/* Permission check to drop the role */
+		ac_role_drop(roleid, false);
 
 		/*
 		 * Lock the role, so nobody can add dependencies to her while we drop
@@ -1045,23 +1008,8 @@ RenameRole(const char *oldname, const char *newname)
 				 errmsg("role name \"%s\" is reserved",
 						newname)));
 
-	/*
-	 * createrole is enough privilege unless you want to mess with a superuser
-	 */
-	if (((Form_pg_authid) GETSTRUCT(oldtuple))->rolsuper)
-	{
-		if (!superuser())
-			ereport(ERROR,
-					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-					 errmsg("must be superuser to rename superusers")));
-	}
-	else
-	{
-		if (!have_createrole_privilege())
-			ereport(ERROR,
-					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-					 errmsg("permission denied to rename role")));
-	}
+	/* Permission checks */
+	ac_role_alter(roleid, -1, false, false);
 
 	/* OK, construct the modified tuple */
 	for (i = 0; i < Natts_pg_authid; i++)
@@ -1279,32 +1227,8 @@ AddRoleMems(const char *rolename, Oid roleid,
 	if (!memberIds)
 		return;
 
-	/*
-	 * Check permissions: must have createrole or admin option on the role to
-	 * be changed.	To mess with a superuser role, you gotta be superuser.
-	 */
-	if (superuser_arg(roleid))
-	{
-		if (!superuser())
-			ereport(ERROR,
-					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-					 errmsg("must be superuser to alter superusers")));
-	}
-	else
-	{
-		if (!have_createrole_privilege() &&
-			!is_admin_of_role(grantorId, roleid))
-			ereport(ERROR,
-					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-					 errmsg("must have admin option on role \"%s\"",
-							rolename)));
-	}
-
-	/* XXX not sure about this check */
-	if (grantorId != GetUserId() && !superuser())
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("must be superuser to set grantor")));
+	/* Check permission to add membership */
+	ac_role_grant(roleid, grantorId, true);
 
 	pg_authmem_rel = heap_open(AuthMemRelationId, RowExclusiveLock);
 	pg_authmem_dsc = RelationGetDescr(pg_authmem_rel);
@@ -1418,26 +1342,8 @@ DelRoleMems(const char *rolename, Oid roleid,
 	if (!memberIds)
 		return;
 
-	/*
-	 * Check permissions: must have createrole or admin option on the role to
-	 * be changed.	To mess with a superuser role, you gotta be superuser.
-	 */
-	if (superuser_arg(roleid))
-	{
-		if (!superuser())
-			ereport(ERROR,
-					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-					 errmsg("must be superuser to alter superusers")));
-	}
-	else
-	{
-		if (!have_createrole_privilege() &&
-			!is_admin_of_role(GetUserId(), roleid))
-			ereport(ERROR,
-					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-					 errmsg("must have admin option on role \"%s\"",
-							rolename)));
-	}
+	/* Check permissions to delete membership from the role */
+	ac_role_grant(roleid, GetUserId(), false);
 
 	pg_authmem_rel = heap_open(AuthMemRelationId, RowExclusiveLock);
 	pg_authmem_dsc = RelationGetDescr(pg_authmem_rel);

@@ -161,6 +161,218 @@ ac_attribute_comment(Oid relOid, const char *attName)
 
 /* ************************************************************
  *
+ * Pg_authid system catalog related access control stuffs
+ *
+ * ************************************************************/
+
+/* Helper functions */
+static bool
+have_createrole_privilege(void)
+{
+	bool        result = false;
+	HeapTuple   utup;
+
+	/* Superusers can always do everything */
+	if (superuser())
+		return true;
+
+	utup = SearchSysCache(AUTHOID,
+						  ObjectIdGetDatum(GetUserId()),
+						  0, 0, 0);
+	if (HeapTupleIsValid(utup))
+	{
+		result = ((Form_pg_authid) GETSTRUCT(utup))->rolcreaterole;
+		ReleaseSysCache(utup);
+	}
+	return result;
+}
+
+/*
+ * ac_role_create
+ *
+ * It checks privilege to create a new database role.
+ *
+ * [Params]
+ * rolName  : Name of the new database role
+ * rolSuper : True, if the new role is set up as a superuser
+ */
+void
+ac_role_create(const char *rolName, bool rolSuper)
+{
+	if (rolSuper)
+	{
+		if (!superuser())
+			ereport(ERROR,
+					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+					 errmsg("must be superuser to create superusers")));
+	}
+	else
+	{
+		if (!have_createrole_privilege())
+			ereport(ERROR,
+					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+					 errmsg("permission denied to create role")));
+	}
+}
+
+/*
+ * ac_role_alter
+ *
+ * It checks privilege to alter a certain database role.
+ *
+ * [Params]
+ * roleId     : OID of the database role
+ * newSuper   : Zero or positive value, if user gives new SUPERUSER state.
+ *              If it is negative, it keeps the value as is.
+ * onlyPasswd : True, if user only changes his password.
+ * setRoleGuc : True, if user changes per role Guc setting.
+ */
+void
+ac_role_alter(Oid roleId, int newSuper, bool onlyPassword, bool setRoleGuc)
+{
+	Form_pg_authid	rolForm;
+	HeapTuple		rolTup;
+
+	rolTup = SearchSysCache(AUTHOID,
+							ObjectIdGetDatum(roleId),
+							0, 0, 0);
+	if (!HeapTupleIsValid(rolTup))
+		elog(ERROR, "cache lookup failed for role %u", roleId);
+
+	/*
+	 * If user tries to change any attribute on superuser or
+	 * SUPERUSER attribute of any database roles, he also needs
+	 * to be superuser.
+	 * Otherwise, user needs to have CREATEROLE privilege to
+	 * alter any attributes of database roles, except for the
+	 * password and local Guc setting of himself.
+	 */
+	rolForm = (Form_pg_authid) GETSTRUCT(rolTup);
+	if (rolForm->rolsuper || newSuper >= 0)
+	{
+		if (!superuser())
+			ereport(ERROR,
+					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+					 errmsg("must be superuser to alter superusers")));
+	}
+	else if (!have_createrole_privilege())
+	{
+		/*
+		 * When we alter the password or user local Guc setting,
+		 * it is not necessary to have CREATEROLE privilege, as
+		 * long as the target database role is himself.
+		 */
+		if ((!onlyPassword && !setRoleGuc) || roleId != GetUserId())
+			ereport(ERROR,
+					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+					 errmsg("permission denied")));
+	}
+	ReleaseSysCache(rolTup);
+}
+
+/*
+ * ac_role_drop
+ *
+ * It checks privilege to drop a certain database role.
+ *
+ * [Params]
+ * roleId  : OID of the database role to be dropped
+ * dacSkip : True, if dac permission check should be bypassed
+ */
+void
+ac_role_drop(Oid roleId, bool dacSkip)
+{
+	if (!dacSkip)
+	{
+		HeapTuple	rolTup;
+
+		if (!have_createrole_privilege())
+			ereport(ERROR,
+					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+					 errmsg("permission denied to drop role")));
+
+		/*
+		 * For safety's sake, we allow createrole holders to drop ordinary
+		 * roles but not superuser roles.  This is mainly to avoid the
+		 * scenario where you accidentally drop the last superuser.
+		 */
+		rolTup = SearchSysCache(AUTHOID,
+								ObjectIdGetDatum(roleId),
+								0, 0, 0);
+		if (!HeapTupleIsValid(rolTup))
+			elog(ERROR, "cache lookup failed for role %u", roleId);
+
+		if (((Form_pg_authid) GETSTRUCT(rolTup))->rolsuper &&
+			!superuser())
+			ereport(ERROR,
+					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+					 errmsg("must be superuser to drop superusers")));
+
+		ReleaseSysCache(rolTup);
+	}
+}
+
+/*
+ * ac_role_comment
+ *
+ * It checks privilege to comment on a certain database role
+ *
+ * [Params]
+ * roleId : OID of the target database role
+ */
+void
+ac_role_comment(Oid roleId)
+{
+	if (!has_privs_of_role(GetUserId(), roleId))
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("must be member of role \"%s\" to comment upon it",
+						GetUserNameFromId(roleId))));
+}
+
+/*
+ * ac_role_grant
+ *
+ * It checks privilege to add/delete membership of a certain role.
+ *
+ * [Params]
+ * roleId   : OID of the database role to be modified
+ * grantor  : OID of the grantor's role
+ * is_grant : True, if caller tries to add membership.
+ */
+void
+ac_role_grant(Oid roleId, Oid grantorId, bool is_grant)
+{
+	/*
+	 * Check permissions: must have createrole or admin option on the role to
+	 * be changed.	To mess with a superuser role, you gotta be superuser.
+	 */
+	if (superuser_arg(roleId))
+	{
+		if (!superuser())
+			ereport(ERROR,
+					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+					 errmsg("must be superuser to alter superusers")));
+	}
+	else
+	{
+		if (!have_createrole_privilege() &&
+			!is_admin_of_role(grantorId, roleId))
+			ereport(ERROR,
+					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+					 errmsg("must have admin option on role \"%s\"",
+							GetUserNameFromId(roleId))));
+	}
+
+	/* XXX not sure about this check */
+	if (grantorId != GetUserId() && !superuser())
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("must be superuser to set grantor")));
+}
+
+/* ************************************************************
+ *
  * Pg_cast system catalog related access control stuffs
  *
  * ************************************************************/
