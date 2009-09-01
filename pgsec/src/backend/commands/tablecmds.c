@@ -3374,7 +3374,7 @@ ATColumnDropPermissions(Relation rel, bool allowView, const char *colName)
 	}
 
 	/* Permission to create a new column */
-	ac_attribute_drop(RelationGetRelid(rel), colName);
+	ac_attribute_drop(RelationGetRelid(rel), colName, false);
 
 	if (!allowSystemTableMods && IsSystemRelation(rel))
 		ereport(ERROR,

@@ -30,6 +30,18 @@ ac_attribute_grant(Oid relOid, AttrNumber attnum,
 extern void
 ac_attribute_comment(Oid relOid, const char *colName);
 
+/* pg_authid */
+extern void
+ac_role_create(const char *rolName, bool rolSuper);
+extern void
+ac_role_alter(Oid roleId, int newSuper, bool onlyPasswd, bool setRoleGuc);
+extern void
+ac_role_drop(Oid roleId, bool dacSkip);
+extern void
+ac_role_comment(Oid roleId);
+extern void
+ac_role_grant(Oid roleId, Oid grantorId, bool is_grant);
+
 /* pg_cast */
 extern void
 ac_cast_create(Oid sourceTypOid, Oid targetTypOid,
