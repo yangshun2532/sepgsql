@@ -45,29 +45,6 @@ static void DelRoleMems(const char *rolename, Oid roleid,
 			bool admin_opt);
 
 
-/* Check if current user has createrole privileges */
-static bool
-have_createrole_privilege(void)
-{
-	bool		result = false;
-	HeapTuple	utup;
-
-	/* Superusers can always do everything */
-	if (superuser())
-		return true;
-
-	utup = SearchSysCache(AUTHOID,
-						  ObjectIdGetDatum(GetUserId()),
-						  0, 0, 0);
-	if (HeapTupleIsValid(utup))
-	{
-		result = ((Form_pg_authid) GETSTRUCT(utup))->rolcreaterole;
-		ReleaseSysCache(utup);
-	}
-	return result;
-}
-
-
 /*
  * CREATE ROLE
  */
@@ -722,26 +699,6 @@ AlterRoleSet(AlterRoleSetStmt *stmt)
 
 	/* Permission checks */
 	ac_role_alter(HeapTupleGetOid(oldtuple), -1, false, true);
-
-	/*
-	 * To mess with a superuser you gotta be superuser; else you need
-	 * createrole, or just want to change your own settings
-	 */
-	if (((Form_pg_authid) GETSTRUCT(oldtuple))->rolsuper)
-	{
-		if (!superuser())
-			ereport(ERROR,
-					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-					 errmsg("must be superuser to alter superusers")));
-	}
-	else
-	{
-		if (!have_createrole_privilege() &&
-			HeapTupleGetOid(oldtuple) != GetUserId())
-			ereport(ERROR,
-					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-					 errmsg("permission denied")));
-	}
 
 	memset(repl_repl, false, sizeof(repl_repl));
 	repl_repl[Anum_pg_authid_rolconfig - 1] = true;
