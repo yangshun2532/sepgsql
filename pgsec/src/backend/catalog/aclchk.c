@@ -173,6 +173,14 @@ restrict_grant(bool is_grant, AclMode avail_goptions, bool all_privs,
 	AclMode	this_privileges;
 
 	/*
+	 * MEMO: A logic to check user's privilege to grant anything was
+	 * exported to security/access_control.c.
+	 * It also makes pg_aclmack() unnecessary, because here was the
+	 * only caller. See the ac_<object class>_grant() checks.
+	 * It invokes pg_<object class>_aclmask() directly.
+	 */
+
+	/*
 	 * Restrict the operation to what we can actually grant or revoke, and
 	 * issue a warning if appropriate.	(For REVOKE this isn't quite what the
 	 * spec says to do: the spec seems to want a warning only if no privilege
