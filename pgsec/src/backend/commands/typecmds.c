@@ -146,6 +146,13 @@ DefineType(List *names, List *parameters)
 	Relation	pg_type;
 	ListCell   *pl;
 
+	/*
+	 * MEMO: Permission checks are moved to TypeCreate(), because we
+	 * cannot know whether the type creation replaces an existing shell
+	 * type, or not. If it tries to replace a shell type, its owner id
+	 * shall match with the current user, even if he is a superuser.
+	 */
+
 	/* Convert list of names to a name and namespace */
 	typeNamespace = QualifiedNameGetCreationNamespace(names, &typeName);
 
