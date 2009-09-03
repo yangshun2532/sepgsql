@@ -355,6 +355,13 @@ ProcedureCreate(const char *procedureName,
 			errmsg("function \"%s\" already exists with same argument types",
 				   procedureName)));
 
+		/*
+		 * MEMO: Permission check to create a new function was moved
+		 * to here, because we cannot know whether the CREATE OR REPLACE
+		 * FUNCTION statement create a new function, or replace an
+		 * existing one actually, at the caller side.
+		 */
+
 		/* Permission check to replace an existing procedure */
 		if (permission)
 			ac_proc_create(procedureName, HeapTupleGetOid(oldtup),

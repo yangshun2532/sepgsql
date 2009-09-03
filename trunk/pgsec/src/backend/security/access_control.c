@@ -59,7 +59,7 @@
  * It checks privilege to create a new column using ALTER TABLE
  * statement.
  * Note that this check is not called on CREARE TABLE, so use
- * the ac_class_create() instead, if necessary.
+ * the ac_relation_create() instead, if necessary.
  *
  * [Params]
  * relOid : OID of the relation to be altered
@@ -68,9 +68,11 @@
 void
 ac_attribute_create(Oid relOid, ColumnDef *colDef)
 {
-	if (!pg_class_ownercheck(relOid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
-					   get_rel_name(relOid));
+	/*
+	 * Now, all the caller already checks ownership of the relation
+	 * on which the column to be created. So, we can heuristically
+	 * omit pg_class_ownercheck() here.
+	 */
 }
 
 /*
@@ -96,7 +98,7 @@ ac_attribute_alter(Oid relOid, const char *attName)
  *
  * It checks privilege to drop a certain column using ALTER TABLE
  * statement. Note that this check is not called on DROP TABLE, so
- * use the ac_class_drop() instead, if necessary.
+ * use the ac_relation_drop() instead, if necessary.
  *
  * [Params]
  * relOid  : OID of the relation to be altered
@@ -106,9 +108,11 @@ ac_attribute_alter(Oid relOid, const char *attName)
 void
 ac_attribute_drop(Oid relOid, const char *attName, bool dacSkip)
 {
-	if (!pg_class_ownercheck(relOid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
-					   get_rel_name(relOid));
+	/*
+	 * Now, all the caller already checks ownership of the relation
+	 * on which the column to be dropped. So, we can heuristically
+	 * omit pg_class_ownercheck() here.
+	 */
 }
 
 /*
@@ -1312,6 +1316,12 @@ ac_conversion_create(const char *convName, Oid convNsp, Oid funcOid)
 		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
 					   get_namespace_name(convNsp));
 
+	/*
+	 * MEMO: Why original implementation check ACL_EXECUTE to create
+	 * a new conversion? It is equivalent to allow everyone to execute
+	 * the function, so it seems to me pg_proc_ownercheck() is more
+	 * appropriate permission to be checked..
+	 */
 	aclresult = pg_proc_aclcheck(funcOid, GetUserId(), ACL_EXECUTE);
 	if (aclresult != ACLCHECK_OK)
 		aclcheck_error(aclresult, ACL_KIND_PROC,
@@ -2819,7 +2829,8 @@ ac_opfamily_drop(Oid opfOid, bool dacSkip)
 	Oid		opfNsp = get_opfamily_namespace(opfOid);
 
 	/* Must be owner of opfamily or its namespace */
-	if (!pg_opfamily_ownercheck(opfOid, GetUserId()) &&
+	if (!dacSkip &&
+		!pg_opfamily_ownercheck(opfOid, GetUserId()) &&
 		!pg_namespace_ownercheck(opfNsp, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_OPFAMILY,
 					   get_opfamily_name(opfOid));
@@ -3066,11 +3077,11 @@ ac_proc_alter(Oid proOid, const char *newName, Oid newNspOid, Oid newOwner)
  * dacSkip : True, if dac permission check should be bypassed
  */
 void
-ac_proc_drop(Oid proOid, bool cascade)
+ac_proc_drop(Oid proOid, bool dacSkip)
 {
 	Oid		proNsp = get_func_namespace(proOid);
 
-	if (!cascade &&
+	if (!dacSkip &&
 		!pg_proc_ownercheck(proOid, GetUserId()) &&
 		!pg_namespace_ownercheck(proNsp, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,

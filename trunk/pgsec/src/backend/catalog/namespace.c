@@ -2103,6 +2103,12 @@ LookupExplicitNamespace(const char *nspname)
 	/* check for pg_temp alias */
 	if (strcmp(nspname, "pg_temp") == 0)
 	{
+		/*
+		 * MEMO: The native privilege mechanism always allows everyone
+		 * to apply ACL_USAGE permission on the temporary namespaces
+		 * implicitly, so it was omitted to check the obvious one here.
+		 * But it is a heuristic, not a correct way.
+		 */
 		if (OidIsValid(myTempNamespace))
 		{
 			ac_schema_search(myTempNamespace, true);
@@ -2135,8 +2141,15 @@ LookupExplicitNamespace(const char *nspname)
  * LookupCreationNamespace
  *		Look up the schema to be used to create a new object
  *
- * This is just like LookupExplicitNamespace except for that we are willing to
- * create pg_temp if needed.
+ * This is just like LookupExplicitNamespace except for that we are willing
+ * to create pg_temp if needed.
+ *
+ * MEMO: we had permission check to create anything on the namespace,
+ * but it is not certain what kind of objects are created, so the check
+ * was moved to the caller side.
+ * The caller invokes ac_<object class>_create() with the OID of the
+ * namespace, and the ac_xxx_create() checks CREATE permission on the
+ * given namespace.
  *
  * Note: calling this may result in a CommandCounterIncrement operation,
  * if we have to create or clean out the temp namespace.

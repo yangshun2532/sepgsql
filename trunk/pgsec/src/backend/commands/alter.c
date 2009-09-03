@@ -86,6 +86,12 @@ ExecRenameStmt(RenameStmt *stmt)
 		case OBJECT_SEQUENCE:
 		case OBJECT_VIEW:
 		case OBJECT_INDEX:
+			/*
+			 * MEMO: ac_relation_alter() invoked from inside of
+			 * the RenameRelation() also checks permissions which
+			 * were checked on the CheckRelationOwnership().
+			 * Same for renameatt() and renametrig().
+			 */
 			RenameRelation(RangeVarGetRelid(stmt->relation, false),
 						   stmt->newname,
 						   stmt->renameType);

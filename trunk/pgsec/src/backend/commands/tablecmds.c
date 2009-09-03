@@ -260,10 +260,8 @@ static void ATExecCmd(List **wqueue, AlteredTableInfo *tab, Relation rel,
 static void ATRewriteTables(List **wqueue);
 static void ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap);
 static AlteredTableInfo *ATGetQueueEntry(List **wqueue, Relation rel);
-static void ATSimplePermissions(Relation rel, bool allowView, bool allowIndex);
-static void ATColumnCreatePermissions(Relation rel, bool allowView, ColumnDef *cdef);
-static void ATColumnAlterPermissions(Relation rel, bool allowView, const char *colName);
-static void ATColumnDropPermissions(Relation rel, bool allowView, const char *colName);
+static void ATSimplePermissions(Relation rel, const char *colName,
+								bool allowView, bool allowIndex);
 static void ATSimpleRecursion(List **wqueue, Relation rel,
 				  AlterTableCmd *cmd, bool recurse);
 static void ATOneLevelRecursion(List **wqueue, Relation rel,
@@ -273,6 +271,8 @@ static void ATPrepAddColumn(List **wqueue, Relation rel, bool recurse,
 static void ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 				ColumnDef *colDef, bool isOid);
 static void add_column_datatype_dependency(Oid relid, int32 attnum, Oid typid);
+static void ATPrepAddOids(List **wqueue, Relation rel, bool recurse,
+			  AlterTableCmd *cmd);
 static void ATExecDropNotNull(Relation rel, const char *colName);
 static void ATExecSetNotNull(AlteredTableInfo *tab, Relation rel,
 				 const char *colName);
@@ -2360,14 +2360,14 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 	switch (cmd->subtype)
 	{
 		case AT_AddColumn:		/* ADD COLUMN */
-			ATColumnCreatePermissions(rel, false, (ColumnDef *) cmd->def);
+			ATSimplePermissions(rel, NULL, false, false);
 			/* Performs own recursion */
 			ATPrepAddColumn(wqueue, rel, recurse, cmd);
 			pass = AT_PASS_ADD_COL;
 			break;
 		case AT_AddColumnToView:		/* add column via CREATE OR REPLACE
 										 * VIEW */
-			ATColumnCreatePermissions(rel, true, (ColumnDef *) cmd->def);
+			ATSimplePermissions(rel, NULL, true, false);
 			/* Performs own recursion */
 			ATPrepAddColumn(wqueue, rel, recurse, cmd);
 			pass = AT_PASS_ADD_COL;
@@ -2380,19 +2380,19 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 			 * substitutes default values into INSERTs before it expands
 			 * rules.
 			 */
-			ATColumnAlterPermissions(rel, true, cmd->name);
+			ATSimplePermissions(rel, cmd->name, true, false);
 			ATSimpleRecursion(wqueue, rel, cmd, recurse);
 			/* No command-specific prep needed */
 			pass = cmd->def ? AT_PASS_ADD_CONSTR : AT_PASS_DROP;
 			break;
 		case AT_DropNotNull:	/* ALTER COLUMN DROP NOT NULL */
-			ATColumnAlterPermissions(rel, false, cmd->name);
+			ATSimplePermissions(rel, cmd->name, false, false);
 			ATSimpleRecursion(wqueue, rel, cmd, recurse);
 			/* No command-specific prep needed */
 			pass = AT_PASS_DROP;
 			break;
 		case AT_SetNotNull:		/* ALTER COLUMN SET NOT NULL */
-			ATColumnAlterPermissions(rel, false, cmd->name);
+			ATSimplePermissions(rel, cmd->name, false, false);
 			ATSimpleRecursion(wqueue, rel, cmd, recurse);
 			/* No command-specific prep needed */
 			pass = AT_PASS_ADD_CONSTR;
@@ -2410,13 +2410,13 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 			pass = AT_PASS_COL_ATTRS;
 			break;
 		case AT_SetStorage:		/* ALTER COLUMN SET STORAGE */
-			ATColumnAlterPermissions(rel, false, cmd->name);
+			ATSimplePermissions(rel, cmd->name, false, false);
 			ATSimpleRecursion(wqueue, rel, cmd, recurse);
 			/* No command-specific prep needed */
 			pass = AT_PASS_COL_ATTRS;
 			break;
 		case AT_DropColumn:		/* DROP COLUMN */
-			ATColumnDropPermissions(rel, false, cmd->name);
+			ATSimplePermissions(rel, NULL, false, false);
 			/* Recursion occurs during execution phase */
 			/* No command-specific prep needed except saving recurse flag */
 			if (recurse)
@@ -2427,11 +2427,10 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 			/* Perform own permission checks */
 			ATPrepAddIndex(rel);
 			/* This command never recurses */
-			/* No command-specific prep needed */
 			pass = AT_PASS_ADD_INDEX;
 			break;
 		case AT_AddConstraint:	/* ADD CONSTRAINT */
-			ATSimplePermissions(rel, false, false);
+			ATSimplePermissions(rel, NULL, false, false);
 			/* Recursion occurs during execution phase */
 			/* No command-specific prep needed except saving recurse flag */
 			if (recurse)
@@ -2439,7 +2438,7 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 			pass = AT_PASS_ADD_CONSTR;
 			break;
 		case AT_DropConstraint:	/* DROP CONSTRAINT */
-			ATSimplePermissions(rel, false, false);
+			ATSimplePermissions(rel, NULL, false, false);
 			/* Recursion occurs during execution phase */
 			/* No command-specific prep needed except saving recurse flag */
 			if (recurse)
@@ -2447,7 +2446,7 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 			pass = AT_PASS_DROP;
 			break;
 		case AT_AlterColumnType:		/* ALTER COLUMN TYPE */
-			ATColumnAlterPermissions(rel, false, cmd->name);
+			ATSimplePermissions(rel, cmd->name, false, false);
 			/* Performs own recursion */
 			ATPrepAlterColumnType(wqueue, tab, rel, recurse, recursing, cmd);
 			pass = AT_PASS_ALTER_TYPE;
@@ -2459,35 +2458,20 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 			break;
 		case AT_ClusterOn:		/* CLUSTER ON */
 		case AT_DropCluster:	/* SET WITHOUT CLUSTER */
-			ATSimplePermissions(rel, false, false);
+			ATSimplePermissions(rel, NULL, false, false);
 			/* These commands never recurse */
 			/* No command-specific prep needed */
 			pass = AT_PASS_MISC;
 			break;
 		case AT_AddOids:		/* SET WITH OIDS */
-			/*
-			 * If we're recursing to a child table,
-			 * the ColumnDef is already set up
-			 */
-			if (cmd->def == NULL)
-			{
-				ColumnDef  *cdef = makeNode(ColumnDef);
-
-				cdef->colname = pstrdup("oid");
-				cdef->typeName = makeTypeNameFromOid(OIDOID, -1);
-				cdef->inhcount = 0;
-				cdef->is_local = true;
-				cdef->is_not_null = true;
-				cmd->def = (Node *) cdef;
-			}
-			ATColumnCreatePermissions(rel, false, (ColumnDef *) cmd->def);
+			ATSimplePermissions(rel, NULL, false, false);
 			/* Performs own recursion */
 			if (!rel->rd_rel->relhasoids || recursing)
-				ATPrepAddColumn(wqueue, rel, recurse, cmd);
+				ATPrepAddOids(wqueue, rel, recurse, cmd);
 			pass = AT_PASS_ADD_COL;
 			break;
 		case AT_DropOids:		/* SET WITHOUT OIDS */
-			ATColumnDropPermissions(rel, false, "oid");
+			ATSimplePermissions(rel, NULL, false, false);
 			/* Performs own recursion */
 			if (rel->rd_rel->relhasoids)
 			{
@@ -2508,7 +2492,7 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 			break;
 		case AT_SetRelOptions:	/* SET (...) */
 		case AT_ResetRelOptions:		/* RESET (...) */
-			ATSimplePermissions(rel, false, true);
+			ATSimplePermissions(rel, NULL, false, true);
 			/* This command never recurses */
 			/* No command-specific prep needed */
 			pass = AT_PASS_MISC;
@@ -2527,7 +2511,7 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 		case AT_DisableRule:
 		case AT_AddInherit:		/* INHERIT / NO INHERIT */
 		case AT_DropInherit:
-			ATSimplePermissions(rel, false, false);
+			ATSimplePermissions(rel, NULL, false, false);
 			/* These commands never recurse */
 			/* No command-specific prep needed */
 			pass = AT_PASS_MISC;
@@ -3242,11 +3226,12 @@ ATGetQueueEntry(List **wqueue, Relation rel)
  * ATSimplePermissions
  *
  * - Ensure that it is a relation (or possibly a view or index)
- * - Ensure this user has privilege to alter the table
+ * - Ensure this user has privilege to alter the table or column
  * - Ensure that it is not a system table
  */
 static void
-ATSimplePermissions(Relation rel, bool allowView, bool allowIndex)
+ATSimplePermissions(Relation rel, const char *colName,
+					bool allowView, bool allowIndex)
 {
 	char	relkind = rel->rd_rel->relkind;
 
@@ -3254,127 +3239,33 @@ ATSimplePermissions(Relation rel, bool allowView, bool allowIndex)
 		(!allowView || relkind != RELKIND_VIEW) &&
 		(!allowIndex || relkind != RELKIND_INDEX))
 	{
+		const char *wrong_object;
+
 		if (allowView && allowIndex)
-			ereport(ERROR,
-					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-					 errmsg("\"%s\" is not a table, view or index",
-							RelationGetRelationName(rel))));
+			wrong_object = "a table, view or index";
 		else if (allowView)
-			ereport(ERROR,
-					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-					 errmsg("\"%s\" is not a table or view",
-							RelationGetRelationName(rel))));
+		    wrong_object = "a table or view";
 		else if (allowIndex)
-			ereport(ERROR,
-					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-					 errmsg("\"%s\" is not a table or index",
-							RelationGetRelationName(rel))));
+		    wrong_object = "a table or index";
 		else
-			ereport(ERROR,
-					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-					 errmsg("\"%s\" is not a table",
-							RelationGetRelationName(rel))));
+			wrong_object = "a table";
+
+		ereport(ERROR,
+				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+				 errmsg("\"%s\" is not %s",
+						RelationGetRelationName(rel), wrong_object)));
 	}
 
-	/* Permission to alter the relation */
-	ac_relation_alter(RelationGetRelid(rel), NULL,
-					  InvalidOid, InvalidOid, InvalidOid);
-
-	if (!allowSystemTableMods && IsSystemRelation(rel))
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("permission denied: \"%s\" is a system catalog",
-						RelationGetRelationName(rel))));
-}
-
-/*
- * ATColumnCreatePermissions
- *
- * - Ensure that it is a relation (or possibly a view)
- * - Ensure this user has privilege to create a new column
- * - Ensure that it is not a system table
- */
-static void
-ATColumnCreatePermissions(Relation rel, bool allowView, ColumnDef *cdef)
-{
-	char	relkind = rel->rd_rel->relkind;
-
-	if (relkind != RELKIND_RELATION &&
-		(!allowView || relkind != RELKIND_VIEW))
+	/* Permission check to alter the given relation or attribute */
+	if (!colName)
 	{
-		ereport(ERROR,
-                (errcode(ERRCODE_WRONG_OBJECT_TYPE),
-                 errmsg("\"%s\" is not a table%s",
-                        RelationGetRelationName(rel),
-						(!allowView ? "" : " or view"))));
+		ac_relation_alter(RelationGetRelid(rel), NULL,
+						  InvalidOid, InvalidOid, InvalidOid);
 	}
-
-	/* Permission to create a new column */
-	ac_attribute_create(RelationGetRelid(rel), cdef);
-
-	if (!allowSystemTableMods && IsSystemRelation(rel))
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("permission denied: \"%s\" is a system catalog",
-						RelationGetRelationName(rel))));
-}
-
-/*
- * ATColumnAlterPermissions
- *
- * - Ensure that it is a relation (or possibly a view)
- * - Ensure this user has privilege to alter a certain column
- * - Ensure that it is not a system table
- */
-static void
-ATColumnAlterPermissions(Relation rel, bool allowView, const char *colName)
-{
-	char	relkind = rel->rd_rel->relkind;
-
-	if (relkind != RELKIND_RELATION &&
-		(!allowView || relkind != RELKIND_VIEW))
+	else
 	{
-		ereport(ERROR,
-                (errcode(ERRCODE_WRONG_OBJECT_TYPE),
-                 errmsg("\"%s\" is not a table%s",
-                        RelationGetRelationName(rel),
-						(!allowView ? "" : " or view"))));
+		ac_attribute_alter(RelationGetRelid(rel), colName);
 	}
-
-	/* Permission to create a new column */
-	ac_attribute_alter(RelationGetRelid(rel), colName);
-
-	if (!allowSystemTableMods && IsSystemRelation(rel))
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("permission denied: \"%s\" is a system catalog",
-						RelationGetRelationName(rel))));
-}
-
-/*
- * ATColumnDropPermissions
- *
- * - Ensure that it is a relation (or possibly a view)
- * - Ensure this user has privilege to drop a certain column
- * - Ensure that it is not a system table
- */
-static void
-ATColumnDropPermissions(Relation rel, bool allowView, const char *colName)
-{
-	char	relkind = rel->rd_rel->relkind;
-
-	if (relkind != RELKIND_RELATION &&
-		(!allowView || relkind != RELKIND_VIEW))
-	{
-		ereport(ERROR,
-                (errcode(ERRCODE_WRONG_OBJECT_TYPE),
-                 errmsg("\"%s\" is not a table%s",
-                        RelationGetRelationName(rel),
-						(!allowView ? "" : " or view"))));
-	}
-
-	/* Permission to create a new column */
-	ac_attribute_drop(RelationGetRelid(rel), colName, false);
 
 	if (!allowSystemTableMods && IsSystemRelation(rel))
 		ereport(ERROR,
@@ -3621,6 +3512,17 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 	int32		typmod;
 	Form_pg_type tform;
 	Expr	   *defval;
+
+	/*
+	 * MEMO: ac_attribute_create() should be deployed here.
+	 * However, the native privilege system control permissions
+	 * to add a new column based on the ownership of the parent
+	 * relation. It is already checked on the ATPrepCmd.
+	 * At the time for SE-PgSQL, the following invocation should
+	 * to commented out.
+	 *
+	 * ac_attribute_create(myrelid, colDef);
+	 */
 
 	attrdesc = heap_open(AttributeRelationId, RowExclusiveLock);
 
@@ -3883,6 +3785,30 @@ add_column_datatype_dependency(Oid relid, int32 attnum, Oid typid)
 	referenced.objectId = typid;
 	referenced.objectSubId = 0;
 	recordDependencyOn(&myself, &referenced, DEPENDENCY_NORMAL);
+}
+
+/*
+ * ALTER TABLE SET WITH OIDS
+ *
+ * Basically this is an ADD COLUMN for the special OID column.	We have
+ * to cons up a ColumnDef node because the ADD COLUMN code needs one.
+ */
+static void
+ATPrepAddOids(List **wqueue, Relation rel, bool recurse, AlterTableCmd *cmd)
+{
+	/* If we're recursing to a child table, the ColumnDef is already set up */
+	if (cmd->def == NULL)
+	{
+		ColumnDef  *cdef = makeNode(ColumnDef);
+
+		cdef->colname = pstrdup("oid");
+		cdef->typeName = makeTypeNameFromOid(OIDOID, -1);
+		cdef->inhcount = 0;
+		cdef->is_local = true;
+		cdef->is_not_null = true;
+		cmd->def = (Node *) cdef;
+	}
+	ATPrepAddColumn(wqueue, rel, recurse, cmd);
 }
 
 /*
@@ -4343,7 +4269,7 @@ ATExecDropColumn(List **wqueue, Relation rel, const char *colName,
 
 	/* At top level, permission check was done in ATPrepCmd, else do it */
 	if (recursing)
-		ATColumnDropPermissions(rel, false, colName);
+		ATSimplePermissions(rel, NULL, false, false);
 
 	/*
 	 * get the number of the attribute
@@ -4383,6 +4309,20 @@ ATExecDropColumn(List **wqueue, Relation rel, const char *colName,
 						colName)));
 
 	ReleaseSysCache(tuple);
+
+	/*
+	 * MEMO: ac_attribute_drop() should be deployed here.
+	 * However, the native privilege system control permissions
+	 * to drop an existing column based on the ownership of the
+	 * parent relation.
+	 * It is already checked on the ATPrepCmd() or head of the
+	 * function, so we heuristically omit this checks.
+	 *
+	 * At the time for SE-PgSQL, the following invocation should
+	 * be commented out.
+	 *
+	 * ac_attribute_drop(RelationGetRelid(rel), colName, false);
+	 */
 
 	/*
 	 * Propagate to children as appropriate.  Unlike most other ALTER
@@ -4663,7 +4603,7 @@ ATAddCheckConstraint(List **wqueue, AlteredTableInfo *tab, Relation rel,
 
 	/* At top level, permission check was done in ATPrepCmd, else do it */
 	if (recursing)
-		ATSimplePermissions(rel, false, false);
+		ATSimplePermissions(rel, NULL, false, false);
 
 	/*
 	 * Call AddRelationNewConstraints to do the work, making sure it works on
@@ -5583,7 +5523,7 @@ ATExecDropConstraint(Relation rel, const char *constrName,
 
 	/* At top level, permission check was done in ATPrepCmd, else do it */
 	if (recursing)
-		ATSimplePermissions(rel, false, false);
+		ATSimplePermissions(rel, NULL, false, false);
 
 	conrel = heap_open(ConstraintRelationId, RowExclusiveLock);
 

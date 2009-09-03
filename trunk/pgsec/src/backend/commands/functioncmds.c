@@ -138,6 +138,10 @@ compute_return_type(TypeName *returnType, Oid languageOid,
 				 errdetail("Creating a shell type definition.")));
 		namespaceId = QualifiedNameGetCreationNamespace(returnType->names,
 														&typname);
+		/*
+		 * MEMO: It checks permission to create a new shell type
+		 * inside of the TypeShellMake()
+		 */
 		rettype = TypeShellMake(typname, namespaceId, GetUserId());
 		Assert(OidIsValid(rettype));
 	}
