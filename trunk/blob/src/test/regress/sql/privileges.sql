@@ -496,8 +496,7 @@ SELECT lo_create(1003);
 SELECT lo_create(1004);
 SELECT lo_create(1005);
 
-REVOKE ALL ON LARGE OBJECT 1002, 1003, 1004, 1005 FROM PUBLIC;
-
+GRANT ALL ON LARGE OBJECT 1001 TO PUBLIC;
 GRANT SELECT ON LARGE OBJECT 1003 TO regressuser2;
 GRANT SELECT,UPDATE ON LARGE OBJECT 1004 TO regressuser2;
 GRANT ALL ON LARGE OBJECT 1005 TO regressuser2;
@@ -543,6 +542,25 @@ SELECT loread(lo_open(1005, x'40000'::int), 32);
 
 SELECT lo_truncate(lo_open(1005, x'20000'::int), 10);	-- to be denied
 SELECT lo_truncate(lo_open(2001, x'20000'::int), 10);
+
+-- compatibility mode in largeobject permission
+\c -
+SET largeobject_compat_dac = false;
+SET SESSION AUTHORIZATION regressuser4;
+
+SELECT loread(lo_open(1002, x'40000'::int), 32);	-- to be denied
+SELECT lowrite(lo_open(1002, x'20000'::int), 'abcd');	-- to be denied
+SELECT lo_truncate(lo_open(1002, x'20000'::int), 10);	-- to be denied
+SELECT lo_unlink(1002);					-- to be denied
+
+\c -
+SET largeobject_compat_dac = true;
+SET SESSION AUTHORIZATION regressuser4;
+
+SELECT loread(lo_open(1002, x'40000'::int), 32);
+SELECT lowrite(lo_open(1002, x'20000'::int), 'abcd');
+SELECT lo_truncate(lo_open(1002, x'20000'::int), 10);
+SELECT lo_unlink(1002);
 
 -- clean up
 
