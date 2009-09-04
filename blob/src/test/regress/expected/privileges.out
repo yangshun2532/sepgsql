@@ -875,7 +875,7 @@ SELECT lo_create(1005);
       1005
 (1 row)
 
-REVOKE ALL ON LARGE OBJECT 1002, 1003, 1004, 1005 FROM PUBLIC;
+GRANT ALL ON LARGE OBJECT 1001 TO PUBLIC;
 GRANT SELECT ON LARGE OBJECT 1003 TO regressuser2;
 GRANT SELECT,UPDATE ON LARGE OBJECT 1004 TO regressuser2;
 GRANT ALL ON LARGE OBJECT 1005 TO regressuser2;
@@ -954,8 +954,8 @@ SELECT lo_unlink(2002);
 SELECT l.oid, a.rolname, l.lomacl FROM pg_largeobject_meta l JOIN pg_authid a ON l.lomowner = a.oid;
  oid  |   rolname    |                                          lomacl                                          
 ------+--------------+------------------------------------------------------------------------------------------
- 1001 | regressuser1 | 
- 1002 | regressuser1 | {regressuser1=rw/regressuser1}
+ 1002 | regressuser1 | 
+ 1001 | regressuser1 | {regressuser1=rw/regressuser1,=rw/regressuser1}
  1003 | regressuser1 | {regressuser1=rw/regressuser1,regressuser2=r/regressuser1}
  1004 | regressuser1 | {regressuser1=rw/regressuser1,regressuser2=rw/regressuser1}
  1005 | regressuser1 | {regressuser1=rw/regressuser1,regressuser2=r*w/regressuser1,regressuser3=r/regressuser2}
@@ -983,6 +983,45 @@ SELECT lo_truncate(lo_open(2001, x'20000'::int), 10);
  lo_truncate 
 -------------
            0
+(1 row)
+
+-- compatibility mode in largeobject permission
+\c -
+SET largeobject_compat_dac = false;
+SET SESSION AUTHORIZATION regressuser4;
+SELECT loread(lo_open(1002, x'40000'::int), 32);	-- to be denied
+ERROR:  permission denied for largeobject 1002
+SELECT lowrite(lo_open(1002, x'20000'::int), 'abcd');	-- to be denied
+ERROR:  permission denied for largeobject 1002
+SELECT lo_truncate(lo_open(1002, x'20000'::int), 10);	-- to be denied
+ERROR:  permission denied for largeobject 1002
+SELECT lo_unlink(1002);					-- to be denied
+ERROR:  must be owner of largeobject 1002
+\c -
+SET largeobject_compat_dac = true;
+SET SESSION AUTHORIZATION regressuser4;
+SELECT loread(lo_open(1002, x'40000'::int), 32);
+ loread 
+--------
+ \x
+(1 row)
+
+SELECT lowrite(lo_open(1002, x'20000'::int), 'abcd');
+ lowrite 
+---------
+       4
+(1 row)
+
+SELECT lo_truncate(lo_open(1002, x'20000'::int), 10);
+ lo_truncate 
+-------------
+           0
+(1 row)
+
+SELECT lo_unlink(1002);
+ lo_unlink 
+-----------
+         1
 (1 row)
 
 -- clean up
@@ -1015,8 +1054,7 @@ SELECT lo_unlink(oid) FROM pg_largeobject_meta;
          1
          1
          1
-         1
-(6 rows)
+(5 rows)
 
 DROP GROUP regressgroup1;
 DROP GROUP regressgroup2;
