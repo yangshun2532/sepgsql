@@ -54,6 +54,7 @@ extern void DropLargeObject(Oid loid);
 extern void AlterLargeObjectOwner(Oid loid, Oid newOwnerId);
 
 /* to be moved to backend/security/access_control.c */
+extern bool ac_largeobject_compat_dac;
 extern void ac_largeobject_create(Oid loid);
 extern void ac_largeobject_alter(Oid loid, Oid newOwner);
 extern void ac_largeobject_drop(Oid loid, bool dacSkip);

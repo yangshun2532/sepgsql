@@ -203,6 +203,17 @@ AlterLargeObjectOwner(Oid loid, Oid newOwnerId)
  * the backend/security/access_control.c)
  */
 
+/* GUC option to control compatible largeobject bahavior */
+bool ac_largeobject_compat_dac;
+
+/*
+ * ac_largeobject_create
+ *
+ * It checks permission to create a new largeobject.
+ *
+ * [Params]
+ * loid : InvalidOid or OID of the new largeobject if given
+ */
 void ac_largeobject_create(Oid loid)
 {
 	/*
@@ -212,6 +223,16 @@ void ac_largeobject_create(Oid loid)
 	 */
 }
 
+/*
+ * ac_largeobject_alter
+ *
+ * It checks permission to alter a certain largeobject.
+ * (Now the only caller is ALTER LARGE OBJECT loid OWNER TO newowner)
+ *
+ * [Params]
+ * loid     : OID of the largeobject to be altered
+ * newOwner : OID of the new largeobject owner
+ */
 void
 ac_largeobject_alter(Oid loid, Oid newOwner)
 {
@@ -236,46 +257,99 @@ ac_largeobject_alter(Oid loid, Oid newOwner)
 	}
 }
 
+/*
+ * ac_largeobject_drop
+ *
+ * It checks permission to drop a certain largeobejct
+ *
+ * [Params]
+ * loid    : OID of the largeobject to be altered
+ * dacSkip : True, if dac permission checks should be bypassed
+ */
 void ac_largeobject_drop(Oid loid, bool dacSkip)
 {
 	/* Must be owner of the largeobject */
-	if (!dacSkip &&
-		!pg_largeobject_ownercheck(loid, GetUserId()))
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("must be owner of largeobject %u", loid)));
+	if (!dacSkip && !ac_largeobject_compat_dac)
+	{
+		if (!pg_largeobject_ownercheck(loid, GetUserId()))
+			ereport(ERROR,
+					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+					 errmsg("must be owner of largeobject %u", loid)));
+	}
 }
 
+/*
+ * ac_largeobject_comment
+ *
+ * It checks permission to comment on a certain largeobject
+ *
+ * [Params]
+ * loid : OID of the largeobject to be commented on
+ */
 void ac_largeobject_comment(Oid loid)
 {
-	if (!pg_largeobject_ownercheck(loid, GetUserId()))
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("must be owner of largeobject %u", loid)));
+	if (!ac_largeobject_compat_dac)
+	{
+		if (!pg_largeobject_ownercheck(loid, GetUserId()))
+			ereport(ERROR,
+					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+					 errmsg("must be owner of largeobject %u", loid)));
+	}
 }
 
+/*
+ * ac_largeobject_read
+ *
+ * It checks permission to read data chunks from a certain largeobject
+ *
+ * [Params]
+ * loid : OID of the largeobject to be read from
+ */
 void ac_largeobject_read(Oid loid)
 {
-	AclResult	aclresult;
+	if (!ac_largeobject_compat_dac)
+	{
+		AclResult	aclresult;
 
-	aclresult = pg_largeobject_aclcheck(loid, GetUserId(), ACL_SELECT);
-	if (aclresult != ACLCHECK_OK)
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("permission denied for largeobject %u", loid)));
+		aclresult = pg_largeobject_aclcheck(loid, GetUserId(), ACL_SELECT);
+		if (aclresult != ACLCHECK_OK)
+			ereport(ERROR,
+					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+					 errmsg("permission denied for largeobject %u", loid)));
+	}
 }
 
+/*
+ * ac_largeobject_write
+ *
+ * It checks permission to write data chunkd to a certain largeobject
+ *
+ * [Params]
+ * loid : OID of the largeobject to be written to
+ */
 void ac_largeobject_write(Oid loid)
 {
-	AclResult	aclresult;
+	if (!ac_largeobject_compat_dac)
+	{
+		AclResult	aclresult;
 
-	aclresult = pg_largeobject_aclcheck(loid, GetUserId(), ACL_UPDATE);
-	if (aclresult != ACLCHECK_OK)
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("permission denied for largeobject %u", loid)));
+		aclresult = pg_largeobject_aclcheck(loid, GetUserId(), ACL_UPDATE);
+		if (aclresult != ACLCHECK_OK)
+			ereport(ERROR,
+					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+					 errmsg("permission denied for largeobject %u", loid)));
+	}
 }
 
+/*
+ * ac_largeobject_export
+ *
+ * It checks permission to export a certain largeobject to a server-side file.
+ *
+ * [Params]
+ * loid     : OID of the largeobject to be exported
+ * filename : The target filename to be exported to
+ */
 void ac_largeobject_export(Oid loid, const char *filename)
 {
 #ifndef ALLOW_DANGEROUS_LO_FUNCTIONS
@@ -287,6 +361,15 @@ void ac_largeobject_export(Oid loid, const char *filename)
 #endif
 }
 
+/*
+ * ac_largeobject_import
+ *
+ * It checks permission to import contents from a server-side file.
+ *
+ * [Params]
+ * loid     : InvalidOid or OID of the largeobject, if given
+ * filename : The target filename to be imported from
+ */
 void ac_largeobject_import(Oid loid, const char *filename)
 {
 #ifndef ALLOW_DANGEROUS_LO_FUNCTIONS
