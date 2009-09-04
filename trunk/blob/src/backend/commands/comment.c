@@ -1425,10 +1425,7 @@ CommentLargeObject(List *qualname, char *comment)
 				 errmsg("large object %u does not exist", loid)));
 
 	/* Permission checks */
-	if (!pg_largeobject_ownercheck(loid, GetUserId()))
-		ereport(ERROR,
-                (errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("must be owner of largeobject %u", loid)));
+	ac_largeobject_comment(loid);
 
 	/* Call CreateComments() to create/drop the comments */
 	CreateComments(loid, LargeObjectMetaRelationId, 0, comment);

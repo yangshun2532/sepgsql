@@ -635,7 +635,7 @@ acldefault(GrantObjectType objtype, Oid ownerId)
 			break;
 		case ACL_OBJECT_LARGEOBJECT:
 			/* Grant SELECT,UPDATE by default, for now */
-			world_default = ACL_ALL_RIGHTS_LARGEOBJECT;
+			world_default = ACL_NO_RIGHTS;
 			owner_default = ACL_ALL_RIGHTS_LARGEOBJECT;
 			break;
 		case ACL_OBJECT_NAMESPACE:

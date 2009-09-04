@@ -31,6 +31,7 @@
 #include "access/twophase.h"
 #include "access/xact.h"
 #include "catalog/namespace.h"
+#include "catalog/pg_largeobject_meta.h"
 #include "commands/async.h"
 #include "commands/prepare.h"
 #include "commands/vacuum.h"
@@ -1225,6 +1226,16 @@ static struct config_bool ConfigureNamesBool[] =
 			GUC_NOT_IN_SAMPLE
 		},
 		&IgnoreSystemIndexes,
+		false, NULL, NULL
+	},
+
+	{
+		{"largeobject_compat_dac", PGC_SUSET, COMPAT_OPTIONS,
+			gettext_noop("Compatible mode in largeobject dac permissions"),
+			NULL,
+			GUC_NOT_IN_SAMPLE
+		},
+		&ac_largeobject_compat_dac,
 		false, NULL, NULL
 	},
 
