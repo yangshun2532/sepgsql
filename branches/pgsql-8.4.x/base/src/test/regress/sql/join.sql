@@ -505,3 +505,41 @@ prepare foo(bool) as
         (select 1 from tenk1 c where c.thousand = b.unique2 and $1));
 execute foo(true);
 execute foo(false);
+
+--
+-- test for sane behavior with noncanonical merge clauses, per bug #4926
+--
+
+begin;
+
+set enable_mergejoin = 1;
+set enable_hashjoin = 0;
+set enable_nestloop = 0;
+
+create temp table a (i integer);
+create temp table b (x integer, y integer);
+
+select * from a left join b on i = x and i = y and x = i;
+
+rollback;
+
+--
+-- test NULL behavior of whole-row Vars, per bug #5025
+--
+select t1.q2, count(t2.*)
+from int8_tbl t1 left join int8_tbl t2 on (t1.q2 = t2.q1)
+group by t1.q2 order by 1;
+
+select t1.q2, count(t2.*)
+from int8_tbl t1 left join (select * from int8_tbl) t2 on (t1.q2 = t2.q1)
+group by t1.q2 order by 1;
+
+select t1.q2, count(t2.*)
+from int8_tbl t1 left join (select * from int8_tbl offset 0) t2 on (t1.q2 = t2.q1)
+group by t1.q2 order by 1;
+
+select t1.q2, count(t2.*)
+from int8_tbl t1 left join
+  (select q1, case when q2=1 then 1 else q2 end as q2 from int8_tbl) t2
+  on (t1.q2 = t2.q1)
+group by t1.q2 order by 1;

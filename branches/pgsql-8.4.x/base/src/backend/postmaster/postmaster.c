@@ -37,7 +37,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/postmaster/postmaster.c,v 1.583 2009/06/26 20:29:04 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/postmaster/postmaster.c,v 1.583.2.6 2009/08/24 20:08:40 tgl Exp $
  *
  * NOTES
  *
@@ -191,7 +191,7 @@ static int	SendStop = false;
 
 /* still more option variables */
 bool		EnableSSL = false;
-bool		SilentMode = false; /* silent mode (-S) */
+bool		SilentMode = false; /* silent_mode */
 
 int			PreAuthDelay = 0;
 int			AuthenticationTimeout = 60;
@@ -290,6 +290,8 @@ bool		redirection_done = false;	/* stderr redirected for syslogger? */
 
 /* received START_AUTOVAC_LAUNCHER signal */
 static volatile sig_atomic_t start_autovac_launcher = false;
+/* the launcher needs to be signalled to communicate some condition */
+static volatile bool		avlauncher_needs_signal = false;
 
 /*
  * State for assigning random salts and cancel keys.
@@ -424,8 +426,6 @@ typedef struct
 	char		my_exec_path[MAXPGPATH];
 	char		pkglib_path[MAXPGPATH];
 	char		ExtraOptions[MAXPGPATH];
-	char		lc_collate[NAMEDATALEN];
-	char		lc_ctype[NAMEDATALEN];
 } BackendParameters;
 
 static void read_backend_variables(char *id, Port *port);
@@ -744,7 +744,7 @@ PostmasterMain(int argc, char *argv[])
 	}
 
 	/*
-	 * Fork away from controlling terminal, if -S specified.
+	 * Fork away from controlling terminal, if silent_mode specified.
 	 *
 	 * Must do this before we grab any interlock files, else the interlocks
 	 * will show the wrong PID.
@@ -895,20 +895,6 @@ PostmasterMain(int argc, char *argv[])
 	set_max_safe_fds();
 
 	/*
-	 * Load configuration files for client authentication.
-	 */
-	if (!load_hba())
-	{
-		/*
-		 * It makes no sense continue if we fail to load the HBA file, since
-		 * there is no way to connect to the database in this case.
-		 */
-		ereport(FATAL,
-				(errmsg("could not load pg_hba.conf")));
-	}
-	load_ident();
-
-	/*
 	 * Initialize the list of active backends.
 	 */
 	BackendList = DLNewList();
@@ -1022,6 +1008,20 @@ PostmasterMain(int argc, char *argv[])
 	 * Initialize the autovacuum subsystem (again, no process start yet)
 	 */
 	autovac_init();
+
+	/*
+	 * Load configuration files for client authentication.
+	 */
+	if (!load_hba())
+	{
+		/*
+		 * It makes no sense to continue if we fail to load the HBA file,
+		 * since there is no way to connect to the database in this case.
+		 */
+		ereport(FATAL,
+				(errmsg("could not load pg_hba.conf")));
+	}
+	load_ident();
 
 	/*
 	 * Remember postmaster startup time
@@ -1204,15 +1204,46 @@ reg_reply(DNSServiceRegistrationReplyErrorType errorCode, void *context)
 
 
 /*
- * Fork away from the controlling terminal (-S option)
+ * Fork away from the controlling terminal (silent_mode option)
+ *
+ * Since this requires disconnecting from stdin/stdout/stderr (in case they're
+ * linked to the terminal), we re-point stdin to /dev/null and stdout/stderr
+ * to "postmaster.log" in the data directory, where we're already chdir'd.
  */
 static void
 pmdaemonize(void)
 {
 #ifndef WIN32
-	int			i;
+	const char *pmlogname = "postmaster.log";
+	int			dvnull;
+	int			pmlog;
 	pid_t		pid;
+	int			res;
 
+	/*
+	 * Make sure we can open the files we're going to redirect to.  If this
+	 * fails, we want to complain before disconnecting.  Mention the full path
+	 * of the logfile in the error message, even though we address it by
+	 * relative path.
+	 */
+	dvnull = open(DEVNULL, O_RDONLY, 0);
+	if (dvnull < 0)
+	{
+		write_stderr("%s: could not open file \"%s\": %s\n",
+					 progname, DEVNULL, strerror(errno));
+		ExitPostmaster(1);
+	}
+	pmlog = open(pmlogname, O_CREAT | O_WRONLY | O_APPEND, 0600);
+	if (pmlog < 0)
+	{
+		write_stderr("%s: could not open log file \"%s/%s\": %s\n",
+					 progname, DataDir, pmlogname, strerror(errno));
+		ExitPostmaster(1);
+	}
+
+	/*
+	 * Okay to fork.
+	 */
 	pid = fork_process();
 	if (pid == (pid_t) -1)
 	{
@@ -1231,8 +1262,8 @@ pmdaemonize(void)
 	MyStartTime = time(NULL);
 
 	/*
-	 * GH: If there's no setsid(), we hopefully don't need silent mode. Until
-	 * there's a better solution.
+	 * Some systems use setsid() to dissociate from the TTY's process group,
+	 * while on others it depends on stdin/stdout/stderr.  Do both if possible.
 	 */
 #ifdef HAVE_SETSID
 	if (setsid() < 0)
@@ -1242,14 +1273,26 @@ pmdaemonize(void)
 		ExitPostmaster(1);
 	}
 #endif
-	i = open(DEVNULL, O_RDWR, 0);
-	dup2(i, 0);
-	dup2(i, 1);
-	dup2(i, 2);
-	close(i);
+
+	/*
+	 * Reassociate stdin/stdout/stderr.  fork_process() cleared any pending
+	 * output, so this should be safe.  The only plausible error is EINTR,
+	 * which just means we should retry.
+	 */
+	do {
+		res = dup2(dvnull, 0);
+	} while (res < 0 && errno == EINTR);
+	close(dvnull);
+	do {
+		res = dup2(pmlog, 1);
+	} while (res < 0 && errno == EINTR);
+	do {
+		res = dup2(pmlog, 2);
+	} while (res < 0 && errno == EINTR);
+	close(pmlog);
 #else							/* WIN32 */
 	/* not supported */
-	elog(FATAL, "SilentMode not supported under WIN32");
+	elog(FATAL, "silent_mode is not supported under Windows");
 #endif   /* WIN32 */
 }
 
@@ -1392,6 +1435,14 @@ ServerLoop(void)
 		/* If we have lost the stats collector, try to start a new one */
 		if (PgStatPID == 0 && pmState == PM_RUN)
 			PgStatPID = pgstat_start();
+
+		/* If we need to signal the autovacuum launcher, do so now */
+		if (avlauncher_needs_signal)
+		{
+			avlauncher_needs_signal = false;
+			if (AutoVacPID != 0)
+				kill(AutoVacPID, SIGUSR1);
+		}
 
 		/*
 		 * Touch the socket and lock file every 58 minutes, to ensure that
@@ -2096,6 +2147,7 @@ pmdie(SIGNAL_ARGS)
 			}
 			if (pmState == PM_RUN ||
 				pmState == PM_WAIT_BACKUP ||
+				pmState == PM_WAIT_BACKENDS ||
 				pmState == PM_RECOVERY_CONSISTENT)
 			{
 				ereport(LOG,
@@ -3015,6 +3067,8 @@ BackendStartup(Port *port)
 		/* in parent, fork failed */
 		int			save_errno = errno;
 
+		if (!bn->dead_end)
+			(void) ReleasePostmasterChildSlot(bn->child_slot);
 		free(bn);
 		errno = save_errno;
 		ereport(LOG,
@@ -3230,8 +3284,8 @@ BackendInitialize(Port *port)
 	if (!load_hba())
 	{
 		/*
-		 * It makes no sense continue if we fail to load the HBA file, since
-		 * there is no way to connect to the database in this case.
+		 * It makes no sense to continue if we fail to load the HBA file,
+		 * since there is no way to connect to the database in this case.
 		 */
 		ereport(FATAL,
 				(errmsg("could not load pg_hba.conf")));
@@ -3637,13 +3691,32 @@ internal_forkexec(int argc, char *argv[], Port *port)
 		return -1;				/* log made by save_backend_variables */
 	}
 
-	/* Drop the shared memory that is now inherited to the backend */
+	/* Drop the parameter shared memory that is now inherited to the backend */
 	if (!UnmapViewOfFile(param))
 		elog(LOG, "could not unmap view of backend parameter file: error code %d",
 			 (int) GetLastError());
 	if (!CloseHandle(paramHandle))
 		elog(LOG, "could not close handle to backend parameter file: error code %d",
 			 (int) GetLastError());
+
+	/*
+	 * Reserve the memory region used by our main shared memory segment before we
+	 * resume the child process.
+	 */
+	if (!pgwin32_ReserveSharedMemoryRegion(pi.hProcess))
+	{
+		/*
+		 * Failed to reserve the memory, so terminate the newly created
+		 * process and give up.
+		 */
+		if (!TerminateProcess(pi.hProcess, 255))
+			ereport(ERROR,
+					(errmsg_internal("could not terminate process that failed to reserve memory: error code %d",
+									 (int) GetLastError())));
+		CloseHandle(pi.hProcess);
+		CloseHandle(pi.hThread);
+		return -1;			/* logging done made by pgwin32_ReserveSharedMemoryRegion() */
+	}
 
 	/*
 	 * Now that the backend variables are written out, we start the child
@@ -4325,6 +4398,7 @@ StartAutovacuumWorker(void)
 			 * fork failed, fall through to report -- actual error message was
 			 * logged by StartAutoVacWorker
 			 */
+			(void) ReleasePostmasterChildSlot(bn->child_slot);
 			free(bn);
 		}
 		else
@@ -4336,12 +4410,16 @@ StartAutovacuumWorker(void)
 	/*
 	 * Report the failure to the launcher, if it's running.  (If it's not, we
 	 * might not even be connected to shared memory, so don't try to call
-	 * AutoVacWorkerFailed.)
+	 * AutoVacWorkerFailed.)  Note that we also need to signal it so that it
+	 * responds to the condition, but we don't do that here, instead waiting
+	 * for ServerLoop to do it.  This way we avoid a ping-pong signalling in
+	 * quick succession between the autovac launcher and postmaster in case
+	 * things get ugly.
 	 */
 	if (AutoVacPID != 0)
 	{
 		AutoVacWorkerFailed();
-		kill(AutoVacPID, SIGUSR1);
+		avlauncher_needs_signal = true;
 	}
 }
 
@@ -4474,9 +4552,6 @@ save_backend_variables(BackendParameters *param, Port *port,
 	strlcpy(param->pkglib_path, pkglib_path, MAXPGPATH);
 
 	strlcpy(param->ExtraOptions, ExtraOptions, MAXPGPATH);
-
-	strlcpy(param->lc_collate, setlocale(LC_COLLATE, NULL), NAMEDATALEN);
-	strlcpy(param->lc_ctype, setlocale(LC_CTYPE, NULL), NAMEDATALEN);
 
 	return true;
 }
@@ -4680,9 +4755,6 @@ restore_backend_variables(BackendParameters *param, Port *port)
 	strlcpy(pkglib_path, param->pkglib_path, MAXPGPATH);
 
 	strlcpy(ExtraOptions, param->ExtraOptions, MAXPGPATH);
-
-	setlocale(LC_COLLATE, param->lc_collate);
-	setlocale(LC_CTYPE, param->lc_ctype);
 }
 
 
