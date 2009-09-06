@@ -312,8 +312,10 @@ RenameAggregate(List *name, List *args, const char *newname)
 		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
 					   get_namespace_name(namespaceOid));
 
-	/* SELinux checks permission to alter an aggregate */
-	sepgsql_proc_alter(procOid, newname, InvalidOid, NULL);
+	/* SELinux permission checks */
+	sepgsqlCheckProcedureSetattr(procOid);
+	sepgsqlCheckSchemaRemoveName(namespaceOid);
+	sepgsqlCheckSchemaAddName(namespaceOid);
 
 	/* rename */
 	namestrcpy(&(((Form_pg_proc) GETSTRUCT(tup))->proname), newname);

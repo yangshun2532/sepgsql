@@ -78,7 +78,7 @@ CreateSchemaCommand(CreateSchemaStmt *stmt, const char *queryString)
 	check_is_member_of_role(saved_uid, owner_uid);
 
 	/* SELinux checks db_schema:{create} */
-	nspsecid = sepgsql_schema_create(schemaName, (DefElem *)stmt->secLabel, false);
+	nspsecid = sepgsqlCheckSchemaCreate(schemaName, (DefElem *)stmt->secLabel, false);
 
 	/* Additional check to protect reserved schema names */
 	if (!allowSystemTableMods && IsReservedName(schemaName))
@@ -272,8 +272,7 @@ RenameSchema(const char *oldname, const char *newname)
 				 errmsg("schema \"%s\" does not exist", oldname)));
 
 	/* make sure the new name doesn't exist */
-	if (HeapTupleIsValid(
-						 SearchSysCache(NAMESPACENAME,
+	if (HeapTupleIsValid(SearchSysCache(NAMESPACENAME,
 										CStringGetDatum(newname),
 										0, 0, 0)))
 		ereport(ERROR,
@@ -292,7 +291,7 @@ RenameSchema(const char *oldname, const char *newname)
 					   get_database_name(MyDatabaseId));
 
 	/* SELinux checks db_schema:{setattr} */
-	sepgsql_schema_alter(HeapTupleGetOid(tup), NULL);
+	sepgsqlCheckSchemaSetattr(HeapTupleGetOid(tup));
 
 	if (!allowSystemTableMods && IsReservedName(newname))
 		ereport(ERROR,
@@ -406,7 +405,7 @@ AlterSchemaOwner_internal(HeapTuple tup, Relation rel, Oid newOwnerId)
 						   get_database_name(MyDatabaseId));
 
 		/* SELinux checks db_schema:{setattr} */
-		sepgsql_schema_alter(HeapTupleGetOid(tup), NULL);
+		sepgsqlCheckSchemaSetattr(HeapTupleGetOid(tup));
 
 		memset(repl_null, false, sizeof(repl_null));
 		memset(repl_repl, false, sizeof(repl_repl));
@@ -447,7 +446,7 @@ AlterSchemaOwner_internal(HeapTuple tup, Relation rel, Oid newOwnerId)
  * ALTER SCHEMA name SECURITY_LABEL [=] newlabel
  */
 void
-AlterSchemaSecLabel(const char *name, DefElem *seclabel)
+AlterSchemaSecLabel(const char *name, DefElem *secLabel)
 {
 	Relation	rel;
 	HeapTuple	oldtup;
@@ -474,7 +473,7 @@ AlterSchemaSecLabel(const char *name, DefElem *seclabel)
 	if (!pg_namespace_ownercheck(HeapTupleGetOid(newtup), GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_NAMESPACE, name);
 	/* SELinux checks db_schema:{setattr relabelfrom relabelto} */
-	secid = sepgsql_schema_alter(HeapTupleGetOid(newtup), seclabel);
+	secid = sepgsqlCheckSchemaRelabel(HeapTupleGetOid(newtup), secLabel);
 	if (!HeapTupleHasSecLabel(newtup))
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),

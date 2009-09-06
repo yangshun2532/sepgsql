@@ -1544,7 +1544,8 @@ AlterDomainDefault(List *names, Node *defaultRaw)
 
 	/* Check it's a domain and check user has permission for ALTER DOMAIN */
 	checkDomainOwner(tup, typename);
-	sepgsql_type_alter(domainoid, NULL, InvalidOid);
+	sepgsqlCheckSysobjSetattr(TypeRelationId, HeapTupleGetSecLabel(tup),
+							  format_type_be(domainoid));
 
 	/* Setup new tuple */
 	MemSet(new_record, (Datum) 0, sizeof(new_record));
@@ -1673,7 +1674,8 @@ AlterDomainNotNull(List *names, bool notNull)
 
 	/* Check it's a domain and check user has permission for ALTER DOMAIN */
 	checkDomainOwner(tup, typename);
-	sepgsql_type_alter(domainoid, NULL, InvalidOid);
+	sepgsqlCheckSysobjSetattr(TypeRelationId, HeapTupleGetSecLabel(tup),
+							  format_type_be(domainoid));
 
 	/* Is the domain already set to the desired constraint? */
 	if (typTup->typnotnull == notNull)
@@ -1775,7 +1777,8 @@ AlterDomainDropConstraint(List *names, const char *constrName,
 
 	/* Check it's a domain and check user has permission for ALTER DOMAIN */
 	checkDomainOwner(tup, typename);
-	sepgsql_type_alter(domainoid, NULL, InvalidOid);
+	sepgsqlCheckSysobjSetattr(TypeRelationId, HeapTupleGetSecLabel(tup),
+							  format_type_be(domainoid));
 
 	/* Grab an appropriate lock on the pg_constraint relation */
 	conrel = heap_open(ConstraintRelationId, RowExclusiveLock);
@@ -1852,7 +1855,8 @@ AlterDomainAddConstraint(List *names, Node *newConstraint)
 
 	/* Check it's a domain and check user has permission for ALTER DOMAIN */
 	checkDomainOwner(tup, typename);
-	sepgsql_type_alter(domainoid, NULL, InvalidOid);
+	sepgsqlCheckSysobjSetattr(TypeRelationId, HeapTupleGetSecLabel(tup),
+							  format_type_be(domainoid));
 
 	/* Check for unsupported constraint types */
 	if (IsA(newConstraint, FkConstraint))
@@ -2474,7 +2478,12 @@ RenameType(List *names, const char *newTypeName)
 	if (!pg_type_ownercheck(typeOid, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_TYPE,
 					   format_type_be(typeOid));
-	sepgsql_type_alter(typeOid, newTypeName, InvalidOid);
+
+	/* SELinux check permission */
+	sepgsqlCheckSysobjSetattr(TypeRelationId, HeapTupleGetSecLabel(tup),
+							  format_type_be(typeOid));
+	sepgsqlCheckSchemaRemoveName(typTup->typnamespace);
+	sepgsqlCheckSchemaAddName(typTup->typnamespace);
 
 	/*
 	 * If it's a composite type, we need to check that it really is a
@@ -2596,7 +2605,9 @@ AlterTypeOwner(List *names, Oid newOwnerId)
 				aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
 							   get_namespace_name(typTup->typnamespace));
 		}
-		sepgsql_type_alter(HeapTupleGetOid(tup), NULL, newOwnerId);
+		/* SELinux checks permissions */
+		sepgsqlCheckSysobjSetattr(TypeRelationId, HeapTupleGetSecLabel(tup),
+								  format_type_be(HeapTupleGetOid(tup)));
 
 		/*
 		 * If it's a composite type, invoke ATExecChangeOwner so that we fix
@@ -2687,6 +2698,7 @@ void
 AlterTypeNamespace(List *names, const char *newschema)
 {
 	TypeName   *typename;
+	HeapTuple	typtup;
 	Oid			typeOid;
 	Oid			nspOid;
 	Oid			elemOid;
@@ -2712,8 +2724,18 @@ AlterTypeNamespace(List *names, const char *newschema)
 						format_type_be(typeOid)),
 				 errhint("You can alter type %s, which will alter the array type as well.",
 						 format_type_be(elemOid))));
-	/* SELinux check permission to change its namespace */
-	sepgsql_type_alter(typeOid, NULL, nspOid);
+
+	/* SELinux checks permissions */
+	typtup = SearchSysCache(TYPEOID,
+							ObjectIdGetDatum(typeOid),
+							0, 0, 0);
+	if (!HeapTupleIsValid(typtup))
+		elog(ERROR, "cache lookup failed for type: %u", typeOid);
+	sepgsqlCheckSysobjSetattr(TypeRelationId, HeapTupleGetSecLabel(typtup),
+							  format_type_be(typeOid));
+	sepgsqlCheckSchemaRemoveName(((Form_pg_type) GETSTRUCT(typtup))->typnamespace);
+	sepgsqlCheckSchemaAddName(nspOid);
+	ReleaseSysCache(typtup);
 
 	/* and do the work */
 	AlterTypeNamespaceInternal(typeOid, nspOid, false, true);

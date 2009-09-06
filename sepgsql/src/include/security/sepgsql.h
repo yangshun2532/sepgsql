@@ -264,21 +264,34 @@ sepgsqlInitialize(void);
  * hooks.c : routines to check certain permissions
  */
 extern Oid
-sepgsqlCheckDatabaseCreate(const char *datname, DefElem *new_label);
+sepgsqlCheckDatabaseCreate(const char *datname, DefElem *newLabel);
 extern void
-sepgsqlCheckDatabaseDrop(Oid database_oid);
+sepgsqlCheckDatabaseDrop(Oid datOid);
 extern void
-sepgsqlCheckDatabaseSetattr(Oid database_oid);
+sepgsqlCheckDatabaseSetattr(Oid datOid);
 extern Oid
-sepgsqlCheckDatabaseRelabel(Oid database_oid, DefElem *new_label);
-extern bool
-sepgsqlCheckDatabaseConnect(Oid database_oid);
+sepgsqlCheckDatabaseRelabel(Oid datOid, DefElem *newLlabel);
+extern void
+sepgsqlCheckDatabaseAccess(Oid datOid);
 extern bool
 sepgsqlCheckDatabaseSuperuser(void);
 extern void
-sepgsqlCheckDatabaseInstallModule(const char *probin, HeapTuple protup);
-extern void
 sepgsqlCheckDatabaseLoadModule(const char *filename);
+
+extern Oid
+sepgsqlCheckSchemaCreate(const char *nspName, DefElem *new_label, bool isTemp);
+extern void
+sepgsqlCheckSchemaDrop(Oid nspOid);
+extern void
+sepgsqlCheckSchemaSetattr(Oid nspOid);
+extern Oid
+sepgsqlCheckSchemaRelabel(Oid nspOid, DefElem *new_label);
+extern void
+sepgsqlCheckSchemaAddName(Oid nspOid);
+extern void
+sepgsqlCheckSchemaRemoveName(Oid nspOid);
+extern bool
+sepgsqlCheckSchemaSearch(Oid nspOid, bool abort);
 
 extern void
 sepgsqlCheckTableDrop(Oid table_oid);
@@ -294,25 +307,38 @@ extern void
 sepgsqlCheckTableReference(Relation rel, int16 *attnums, int natts);
 
 extern void
-sepgsqlCheckSequenceGetValue(Oid seqid);
+sepgsqlCheckSequenceGetValue(Oid seqOid);
 extern void
-sepgsqlCheckSequenceNextValue(Oid seqid);
+sepgsqlCheckSequenceNextValue(Oid seqOid);
 extern void
-sepgsqlCheckSequenceSetValue(Oid seqid);
+sepgsqlCheckSequenceSetValue(Oid seqOid);
 
 extern Oid
-sepgsqlCheckColumnCreate(Oid table_oid, const char *attname, DefElem *new_label);
+sepgsqlCheckColumnCreate(Oid relOid, const char *attname, DefElem *newLabel);
 extern void
-sepgsqlCheckColumnDrop(Oid table_oid, AttrNumber attno);
+sepgsqlCheckColumnDrop(Oid relOid, AttrNumber attno);
 extern void
-sepgsqlCheckColumnSetattr(Oid table_oid, AttrNumber attno);
+sepgsqlCheckColumnSetattr(Oid relOid, AttrNumber attno);
 extern Oid
-sepgsqlCheckColumnRelabel(Oid table_oid, AttrNumber attno, DefElem *new_label);
+sepgsqlCheckColumnRelabel(Oid relOid, AttrNumber attno, DefElem *newLabel);
 
+extern Oid
+sepgsqlCheckProcedureCreate(const char *procName, Oid procOid,
+                            Oid procNsp, Oid procLang, DefElem *newLabel);
 extern void
-sepgsqlCheckProcedureEntrypoint(FmgrInfo *finfo, HeapTuple protup);
+sepgsqlCheckProcedureDrop(Oid procOid);
 extern void
-sepgsqlCheckProcedureInstall(Oid proc_oid);
+sepgsqlCheckProcedureSetattr(Oid procOid);
+extern Oid
+sepgsqlCheckProcedureRelabel(Oid procOid, DefElem *newLabel);
+extern void
+sepgsqlCheckProcedureExecute(Oid procOid);
+extern void
+sepgsqlCheckProcedureInstall(Oid procOid);
+extern bool
+sepgsqlHintProcedureInlined(HeapTuple protup);
+extern void
+sepgsqlCheckProcedureEntrypoint(FmgrInfo *flinfo, HeapTuple protup);
 
 extern void
 sepgsqlCheckBlobCreate(Relation rel, HeapTuple lotup);
@@ -340,55 +366,14 @@ sepgsqlCheckFileRead(int fdesc, const char *filename);
 extern void
 sepgsqlCheckFileWrite(int fdesc, const char *filename);
 
-void
-sepgsqlCheckObjectDrop(const ObjectAddress *object);
-
-/* optimizar hints */
-extern bool
-sepgsqlAllowFunctionInlined(HeapTuple protup);
-
-/* new style hooks */
-
-/* Pg_schema system catalog */
 extern Oid
-sepgsql_schema_create(const char *nspName, DefElem *nspLabel, bool isTemp);
-extern Oid
-sepgsql_schema_alter(Oid nspOid, DefElem *newLabel);
+sepgsqlCheckSysobjCreate(Oid relid, const char *auditName);
 extern void
-sepgsql_schema_drop(Oid nspOid);
+sepgsqlCheckSysobjGetattr(Oid relid, Oid secid, const char *auditName);
 extern void
-sepgsql_schema_grant(Oid nspOid);
-extern bool
-sepgsql_schema_search(Oid nspOid, bool abort);
-
-/* Pg_proc system catalog */
-extern Oid
-sepgsql_proc_create(const char *proName, Oid proOid, Oid proNsp,
-					Oid langOid, DefElem *proLabel);
-extern Oid
-sepgsql_proc_alter(Oid proOid, const char *newName,
-				   Oid newNsp, DefElem *newLabel);
+sepgsqlCheckSysobjSetattr(Oid relid, Oid secid, const char *auditName);
 extern void
-sepgsql_proc_drop(Oid proOid);
-extern void
-sepgsql_proc_grant(Oid proOid);
-extern void
-sepgsql_proc_execute(Oid proOid);
-extern bool
-sepgsql_proc_hint_inlined(HeapTuple protup);
-
-/* Pg_type system catalog */
-extern Oid
-sepgsql_type_create(const char *typeName, Oid typeOid, Oid typeNsp,
-					char typeType, bool typeIsArray,
-					Oid inputOid, Oid outputOid, Oid recvOid, Oid sendOid,
-					Oid modinOid, Oid modoutOid, Oid analyzeOid);
-extern void
-sepgsql_type_alter(Oid typeOid, const char *newName, Oid newNsp);
-extern void
-sepgsql_type_drop(Oid typeOid);
-extern void
-sepgsql_type_comment(Oid typeOid);
+sepgsqlCheckSysobjDrop(const ObjectAddress *object);
 
 /*
  * label.c : security label management
@@ -462,14 +447,15 @@ extern const char *sepgsqlGetPermString(uint16 tclass, uint32 permission);
 #define sepgsqlCheckDatabaseRelabel(a,b)		(InvalidOid)
 #define sepgsqlCheckDatabaseAccess(a)			(true)
 #define sepgsqlCheckDatabaseSuperuser()			(true)
-#define sepgsqlCheckDatabaseInstallModule(a,b)	do {} while(0)
 #define sepgsqlCheckDatabaseLoadModule(a)		do {} while(0)
 
 #define sepgsqlCheckSchemaCreate(a,b,c)			(InvalidOid)
 #define sepgsqlCheckSchemaDrop(a)				do {} while(0)
 #define sepgsqlCheckSchemaSetattr(a)			do {} while(0)
 #define sepgsqlCheckSchemaRelabel(a,b)			(InvalidOid)
-#define sepgsqlCheckSchemaUsage(a)				(true)
+#define sepgsqlCheckSchemaAddName(a)			do {} while(0)
+#define sepgsqlCheckSchemaRemoveName(a)			do {} while(0)
+#define sepgsqlCheckSchemaSearch(a,b)			(true)
 
 #define sepgsqlCheckTableDrop(a)				do {} while(0)
 #define sepgsqlCheckTableSetattr(a)				do {} while(0)
@@ -487,13 +473,14 @@ extern const char *sepgsqlGetPermString(uint16 tclass, uint32 permission);
 #define sepgsqlCheckColumnSetattr(a,b)			do {} while(0)
 #define sepgsqlCheckColumnRelabel(a,b,c)		(InvalidOid)
 
-#define sepgsqlCheckProcedureCreate(a,b,c)		(InvalidOid)
+#define sepgsqlCheckProcedureCreate(a,b,c,d)	(InvalidOid)
 #define sepgsqlCheckProcedureDrop(a)			do {} while(0)
 #define sepgsqlCheckProcedureSetattr(a)			do {} while(0)
 #define sepgsqlCheckProcedureRelabel(a,b)		(InvalidOid)
 #define sepgsqlCheckProcedureExecute(a)			(true)
-#define sepgsqlCheckProcedureEntrypoint(a,b)	do {} while(0)
 #define sepgsqlCheckProcedureInstall(a)			do {} while(0)
+#define sepgsqlHintProcedureInlined(a)			(true)
+#define sepgsqlCheckProcedureEntrypoint(a,b)	do {} while(0)
 
 #define sepgsqlCheckBlobCreate(a,b)				do {} while(0)
 #define sepgsqlCheckBlobDrop(a,b)				do {} while(0)
@@ -507,9 +494,10 @@ extern const char *sepgsqlGetPermString(uint16 tclass, uint32 permission);
 #define sepgsqlCheckFileRead(a,b)				do {} while(0)
 #define sepgsqlCheckFileWrite(a,b)				do {} while(0)
 
-#define sepgsqlCheckObjectDrop(a)				do {} while(0)
-
-#define sepgsqlAllowFunctionInlined(a)			(true)
+#define sepgsqlCheckSysobjCreate(a,b)			(InvalidOid)
+#define sepgsqlCheckSysobjGetattr(a,b,c)		do {} while(0)
+#define sepgsqlCheckSysobjSetattr(a,b,c)		do {} while(0)
+#define sepgsqlCheckSysobjDrop(a)				do {} while(0)
 
 /* label.c */
 #define sepgsqlTupleDescHasSecLabel(a,b)		(false)

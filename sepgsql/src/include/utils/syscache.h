@@ -101,8 +101,6 @@ extern bool SearchSysCacheExists(int cacheId,
 					 Datum key1, Datum key2, Datum key3, Datum key4);
 extern Oid GetSysCacheOid(int cacheId,
 			   Datum key1, Datum key2, Datum key3, Datum key4);
-extern Oid GetSysCacheSecid(int cacheId,
-			   Datum key1, Datum key2, Datum key3, Datum key4);
 
 extern HeapTuple SearchSysCacheAttName(Oid relid, const char *attname);
 extern HeapTuple SearchSysCacheCopyAttName(Oid relid, const char *attname);

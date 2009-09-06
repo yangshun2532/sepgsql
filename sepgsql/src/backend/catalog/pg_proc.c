@@ -346,6 +346,16 @@ ProcedureCreate(const char *procedureName,
 							ObjectIdGetDatum(procNamespace),
 							0);
 
+	/* Check permission to create/replace a function */
+	prosecid = sepgsqlCheckProcedureCreate(procedureName,
+										   HeapTupleIsValid(oldtup)
+										   ? HeapTupleGetOid(oldtup)
+										   : InvalidOid,
+										   procNamespace,
+										   languageObjectId,
+										   (DefElem *)proseclabel);
+	sepgsqlCheckSchemaAddName(procNamespace);
+
 	if (HeapTupleIsValid(oldtup))
 	{
 		/* There is one; okay to replace it? */
@@ -359,12 +369,6 @@ ProcedureCreate(const char *procedureName,
 		if (!pg_proc_ownercheck(HeapTupleGetOid(oldtup), GetUserId()))
 			aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
 						   procedureName);
-
-		/* SELinux check permission to replace a function */
-		prosecid = sepgsql_proc_create(procedureName,
-									   HeapTupleGetOid(oldtup),
-									   procNamespace, languageObjectId,
-									   (DefElem *)proseclabel);
 
 		/*
 		 * Not okay to change the return type of the existing proc, since
@@ -495,11 +499,6 @@ ProcedureCreate(const char *procedureName,
 	}
 	else
 	{
-		/* SELinux check permission to create a new function */
-		prosecid = sepgsql_proc_create(procedureName, InvalidOid,
-									   procNamespace, languageObjectId,
-									   (DefElem *)proseclabel);
-
 		/* Creating a new procedure */
 		tup = heap_form_tuple(tupDesc, values, nulls);
 		if (HeapTupleHasSecLabel(tup))

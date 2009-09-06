@@ -1573,9 +1573,8 @@ ExecGrant_Function(InternalGrant *istmt)
 									 funcId, grantorId, ACL_KIND_PROC,
 									 NameStr(pg_proc_tuple->proname),
 									 0, NULL);
-
-		/* SELinux checks permission to grant it */
-		sepgsql_proc_grant(funcId);
+		/* SELinux: db_procedure:{setattr} */
+		sepgsqlCheckProcedureSetattr(funcId);
 
 		/*
 		 * Generate new ACL.
@@ -1819,8 +1818,8 @@ ExecGrant_Namespace(InternalGrant *istmt)
 									 NameStr(pg_namespace_tuple->nspname),
 									 0, NULL);
 
-		/* SELinux checks permission to grant it */
-		sepgsql_schema_grant(nspid);
+		/* SELinux: db_schema:{setattr} */
+		sepgsqlCheckSchemaSetattr(nspid);
 
 		/*
 		 * Generate new ACL.
@@ -3052,14 +3051,7 @@ AclResult
 pg_database_aclcheck(Oid db_oid, Oid roleid, AclMode mode)
 {
 	if (pg_database_aclmask(db_oid, roleid, mode, ACLMASK_ANY) != 0)
-	{
- 		/* SELinux: db_database:{connect} permission */
-		if ((mode & ACL_CONNECT) &&
-			!sepgsqlCheckDatabaseConnect(db_oid))
-			return ACLCHECK_NO_PRIV;
-
 		return ACLCHECK_OK;
-	}
 	else
 		return ACLCHECK_NO_PRIV;
 }
