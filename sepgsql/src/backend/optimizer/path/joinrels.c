@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/optimizer/path/joinrels.c,v 1.100 2009/06/11 14:48:59 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/backend/optimizer/path/joinrels.c,v 1.100.2.2 2009/07/23 17:42:13 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -349,6 +349,7 @@ join_is_legal(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 {
 	SpecialJoinInfo *match_sjinfo;
 	bool		reversed;
+	bool		unique_ified;
 	bool		is_valid_inner;
 	ListCell   *l;
 
@@ -366,6 +367,7 @@ join_is_legal(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 	 */
 	match_sjinfo = NULL;
 	reversed = false;
+	unique_ified = false;
 	is_valid_inner = true;
 
 	foreach(l, root->join_info_list)
@@ -396,6 +398,22 @@ join_is_legal(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 		if (bms_is_subset(sjinfo->min_lefthand, rel2->relids) &&
 			bms_is_subset(sjinfo->min_righthand, rel2->relids))
 			continue;
+
+		/*
+		 * If it's a semijoin and we already joined the RHS to any other
+		 * rels within either input, then we must have unique-ified the RHS
+		 * at that point (see below).  Therefore the semijoin is no longer
+		 * relevant in this join path.
+		 */
+		if (sjinfo->jointype == JOIN_SEMI)
+		{
+			if (bms_is_subset(sjinfo->syn_righthand, rel1->relids) &&
+				!bms_equal(sjinfo->syn_righthand, rel1->relids))
+				continue;
+			if (bms_is_subset(sjinfo->syn_righthand, rel2->relids) &&
+				!bms_equal(sjinfo->syn_righthand, rel2->relids))
+				continue;
+		}
 
 		/*
 		 * If one input contains min_lefthand and the other contains
@@ -450,6 +468,7 @@ join_is_legal(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 				return false;	/* invalid join path */
 			match_sjinfo = sjinfo;
 			reversed = false;
+			unique_ified = true;
 		}
 		else if (sjinfo->jointype == JOIN_SEMI &&
 				 bms_equal(sjinfo->syn_righthand, rel1->relids) &&
@@ -461,6 +480,7 @@ join_is_legal(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 				return false;	/* invalid join path */
 			match_sjinfo = sjinfo;
 			reversed = true;
+			unique_ified = true;
 		}
 		else
 		{
@@ -487,9 +507,6 @@ join_is_legal(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 			 * We assume that make_outerjoininfo() set things up correctly
 			 * so that we'll only match to some SJ if the join is valid.
 			 * Set flag here to check at bottom of loop.
-			 *
-			 * For a semijoin, assume it's okay if either side fully contains
-			 * the RHS (per the unique-ification case above).
 			 *----------
 			 */
 			if (sjinfo->jointype != JOIN_SEMI &&
@@ -499,19 +516,18 @@ join_is_legal(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 				/* seems OK */
 				Assert(!bms_overlap(joinrelids, sjinfo->min_lefthand));
 			}
-			else if (sjinfo->jointype == JOIN_SEMI &&
-					 (bms_is_subset(sjinfo->syn_righthand, rel1->relids) ||
-					  bms_is_subset(sjinfo->syn_righthand, rel2->relids)))
-			{
-				/* seems OK */
-			}
 			else
 				is_valid_inner = false;
 		}
 	}
 
-	/* Fail if violated some SJ's RHS and didn't match to another SJ */
-	if (match_sjinfo == NULL && !is_valid_inner)
+	/*
+	 * Fail if violated some SJ's RHS and didn't match to another SJ.
+	 * However, "matching" to a semijoin we are implementing by
+	 * unique-ification doesn't count (think: it's really an inner join).
+	 */
+	if (!is_valid_inner &&
+		(match_sjinfo == NULL || unique_ified))
 		return false;			/* invalid join path */
 
 	/* Otherwise, it's a valid join */

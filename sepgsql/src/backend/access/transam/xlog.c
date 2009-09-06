@@ -7,7 +7,7 @@
  * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/backend/access/transam/xlog.c,v 1.345 2009/06/26 20:29:04 tgl Exp $
+ * $PostgreSQL: pgsql/src/backend/access/transam/xlog.c,v 1.345.2.3 2009/08/27 07:18:04 heikki Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -463,6 +463,7 @@ static void readRecoveryCommandFile(void);
 static void exitArchiveRecovery(TimeLineID endTLI,
 					uint32 endLogId, uint32 endLogSeg);
 static bool recoveryStopsHere(XLogRecord *record, bool *includeThis);
+static void LocalSetXLogInsertAllowed(void);
 static void CheckPointGuts(XLogRecPtr checkPointRedo, int flags);
 
 static bool XLogCheckBuffer(XLogRecData *rdata, bool doPageWrites,
@@ -5759,6 +5760,13 @@ StartupXLOG(void)
 		int			rmid;
 
 		/*
+		 * Resource managers might need to write WAL records, eg, to record
+		 * index cleanup actions.  So temporarily enable XLogInsertAllowed in
+		 * this process only.
+		 */
+		LocalSetXLogInsertAllowed();
+
+		/*
 		 * Allow resource managers to do any required cleanup.
 		 */
 		for (rmid = 0; rmid <= RM_MAX_ID; rmid++)
@@ -5766,6 +5774,9 @@ StartupXLOG(void)
 			if (RmgrTable[rmid].rm_cleanup != NULL)
 				RmgrTable[rmid].rm_cleanup();
 		}
+
+		/* Disallow XLogInsert again */
+		LocalXLogInsertAllowed = -1;
 
 		/*
 		 * Check to see if the XLOG sequence contained any unresolved
@@ -5940,6 +5951,9 @@ XLogInsertAllowed(void)
 
 /*
  * Make XLogInsertAllowed() return true in the current process only.
+ *
+ * Note: it is allowed to switch LocalXLogInsertAllowed back to -1 later,
+ * and even call LocalSetXLogInsertAllowed() again after that.
  */
 static void
 LocalSetXLogInsertAllowed(void)
@@ -6421,6 +6435,17 @@ CreateCheckPoint(int flags)
 	}
 
 	/*
+	 * An end-of-recovery checkpoint is created before anyone is allowed to
+	 * write WAL. To allow us to write the checkpoint record, temporarily
+	 * enable XLogInsertAllowed.  (This also ensures ThisTimeLineID is
+	 * initialized, which we need here and in AdvanceXLInsertBuffer.)
+	 */
+	if (flags & CHECKPOINT_END_OF_RECOVERY)
+		LocalSetXLogInsertAllowed();
+
+	checkPoint.ThisTimeLineID = ThisTimeLineID;
+
+	/*
 	 * Compute new REDO record ptr = location of next XLOG record.
 	 *
 	 * NB: this is NOT necessarily where the checkpoint record itself will be,
@@ -6541,20 +6566,6 @@ CreateCheckPoint(int flags)
 	CheckPointGuts(checkPoint.redo, flags);
 
 	START_CRIT_SECTION();
-
-	/*
-	 * An end-of-recovery checkpoint is created before anyone is allowed to
-	 * write WAL. To allow us to write the checkpoint record, temporarily
-	 * enable XLogInsertAllowed.
-	 */
-	if (flags & CHECKPOINT_END_OF_RECOVERY)
-		LocalSetXLogInsertAllowed();
-
-	/*
-	 * This needs to be done after LocalSetXLogInsertAllowed(), else
-	 * ThisTimeLineID might still be uninitialized.
-	 */
-	checkPoint.ThisTimeLineID = ThisTimeLineID;
 
 	/*
 	 * Now insert the checkpoint record into XLOG.

@@ -22,7 +22,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/optimizer/prep/prepunion.c,v 1.171 2009/06/11 14:48:59 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/backend/optimizer/prep/prepunion.c,v 1.171.2.3 2009/09/02 17:52:33 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -1477,8 +1477,8 @@ translate_col_privs(const Bitmapset *parent_privs,
  * Note: this is only applied after conversion of sublinks to subplans,
  * so we don't need to cope with recursion into sub-queries.
  *
- * Note: this is not hugely different from what ResolveNew() does; maybe
- * we should try to fold the two routines together.
+ * Note: this is not hugely different from what pullup_replace_vars() does;
+ * maybe we should try to fold the two routines together.
  */
 Node *
 adjust_appendrel_attrs(Node *node, AppendRelInfo *appinfo)
@@ -1638,7 +1638,9 @@ adjust_appendrel_attrs_mutator(Node *node, AppendRelInfo *context)
 	Assert(!IsA(node, PlaceHolderInfo));
 
 	/*
-	 * We have to process RestrictInfo nodes specially.
+	 * We have to process RestrictInfo nodes specially.  (Note: although
+	 * set_append_rel_pathlist will hide RestrictInfos in the parent's
+	 * baserestrictinfo list from us, it doesn't hide those in joininfo.)
 	 */
 	if (IsA(node, RestrictInfo))
 	{
@@ -1661,6 +1663,9 @@ adjust_appendrel_attrs_mutator(Node *node, AppendRelInfo *context)
 												  context->parent_relid,
 												  context->child_relid);
 		newinfo->required_relids = adjust_relid_set(oldinfo->required_relids,
+													context->parent_relid,
+													context->child_relid);
+		newinfo->nullable_relids = adjust_relid_set(oldinfo->nullable_relids,
 													context->parent_relid,
 													context->child_relid);
 		newinfo->left_relids = adjust_relid_set(oldinfo->left_relids,
