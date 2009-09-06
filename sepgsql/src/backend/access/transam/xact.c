@@ -37,6 +37,7 @@
 #include "miscadmin.h"
 #include "pgstat.h"
 #include "security/rowlevel.h"
+#include "security/sepgsql.h"
 #include "storage/bufmgr.h"
 #include "storage/fd.h"
 #include "storage/lmgr.h"
@@ -2039,6 +2040,11 @@ AbortTransaction(void)
 	rowlvSetPerformingMode(s->prevRowlv);
 
 	/*
+	 * Reset access vector cache on error
+	 */
+	sepgsqlAvcReset();
+
+	/*
 	 * do abort processing
 	 */
 	AfterTriggerEndXact(false);
@@ -3885,6 +3891,11 @@ AbortSubTransaction(void)
 	 * Reset behavior of row-level access controls
 	 */
 	rowlvSetPerformingMode(s->prevRowlv);
+
+    /*
+     * Reset access vector cache on error
+     */
+    sepgsqlAvcReset();
 
 	/*
 	 * We can skip all this stuff if the subxact failed before creating a

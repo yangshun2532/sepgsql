@@ -43,6 +43,7 @@
 #include "optimizer/clauses.h"
 #include "parser/parse_agg.h"
 #include "parser/parse_coerce.h"
+#include "security/sepgsql.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/datum.h"
@@ -1224,6 +1225,7 @@ ExecInitWindowAgg(WindowAgg *node, EState *estate, int eflags)
 		if (aclresult != ACLCHECK_OK)
 			aclcheck_error(aclresult, ACL_KIND_PROC,
 						   get_func_name(wfunc->winfnoid));
+		sepgsql_proc_execute(wfunc->winfnoid);
 
 		/* Fill in the perfuncstate data */
 		perfuncstate->wfuncstate = wfuncstate;
@@ -1418,6 +1420,7 @@ initialize_peragg(WindowAggState *winstate, WindowFunc *wfunc,
 		if (aclresult != ACLCHECK_OK)
 			aclcheck_error(aclresult, ACL_KIND_PROC,
 						   get_func_name(transfn_oid));
+		sepgsql_proc_execute(transfn_oid);
 		if (OidIsValid(finalfn_oid))
 		{
 			aclresult = pg_proc_aclcheck(finalfn_oid, aggOwner,
@@ -1425,6 +1428,7 @@ initialize_peragg(WindowAggState *winstate, WindowFunc *wfunc,
 			if (aclresult != ACLCHECK_OK)
 				aclcheck_error(aclresult, ACL_KIND_PROC,
 							   get_func_name(finalfn_oid));
+			sepgsql_proc_execute(finalfn_oid);
 		}
 	}
 

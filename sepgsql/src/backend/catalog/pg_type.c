@@ -25,6 +25,7 @@
 #include "commands/typecmds.h"
 #include "miscadmin.h"
 #include "parser/scansup.h"
+#include "security/sepgsql.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
@@ -56,10 +57,17 @@ TypeShellMake(const char *typeName, Oid typeNamespace, Oid ownerId)
 	Datum		values[Natts_pg_type];
 	bool		nulls[Natts_pg_type];
 	Oid			typoid;
+	Oid			typsid;
 	NameData	name;
 
 	Assert(PointerIsValid(typeName));
 
+	/* SELinux check permission to create a shell type */
+	typsid = sepgsql_type_create(typeName, InvalidOid, typeNamespace,
+								 TYPTYPE_PSEUDO, false,
+								 F_SHELL_IN, F_SHELL_OUT,
+								 InvalidOid, InvalidOid,
+								 InvalidOid, InvalidOid, InvalidOid);
 	/*
 	 * open pg_type
 	 */
@@ -201,6 +209,7 @@ TypeCreate(Oid newTypeOid,
 {
 	Relation	pg_type_desc;
 	Oid			typeObjectId;
+	Oid			typeSid;
 	bool		rebuildDeps = false;
 	HeapTuple	tup;
 	bool		nulls[Natts_pg_type];
@@ -367,6 +376,15 @@ TypeCreate(Oid newTypeOid,
 							 CStringGetDatum(typeName),
 							 ObjectIdGetDatum(typeNamespace),
 							 0, 0);
+
+	/* Permission check to create or replace a regular type */
+	typeObjectId = HeapTupleIsValid(tup) ? HeapTupleGetOid(tup) : InvalidOid;
+	typeSid = sepgsql_type_create(typeName, typeObjectId, typeNamespace,
+								  typeType, isImplicitArray,
+								  inputProcedure, outputProcedure,
+								  receiveProcedure, sendProcedure,
+								  typmodinProcedure, typmodoutProcedure,
+								  analyzeProcedure);
 	if (HeapTupleIsValid(tup))
 	{
 		/*
