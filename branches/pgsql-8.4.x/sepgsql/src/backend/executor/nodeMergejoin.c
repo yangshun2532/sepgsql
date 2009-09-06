@@ -216,7 +216,7 @@ MJExamineQuals(List *mergeclauses,
 		if (aclresult != ACLCHECK_OK)
 			aclcheck_error(aclresult, ACL_KIND_PROC,
 						   get_func_name(cmpproc));
-		sepgsql_proc_execute(cmpproc);
+		sepgsqlCheckProcedureExecute(cmpproc);
 
 		/* Set up the fmgr lookup information */
 		fmgr_info(cmpproc, &(clause->cmpfinfo));

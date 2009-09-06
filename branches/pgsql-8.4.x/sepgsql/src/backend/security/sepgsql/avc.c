@@ -150,6 +150,9 @@ sepgsqlShmemInit(void)
 void
 sepgsqlAvcReset(void)
 {
+	if (!sepgsqlIsEnabled())
+		return;
+
 	MemoryContextReset(AvcMemCtx);
 
 	current_page = NULL;

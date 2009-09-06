@@ -1128,8 +1128,10 @@ RenameFunction(List *name, List *argtypes, const char *newname)
 		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
 					   get_namespace_name(namespaceOid));
 
-	/* SELinux checks permission to rename it */
-	sepgsql_proc_alter(procOid, newname, InvalidOid, NULL);
+	/* SELinux permission checks */
+	sepgsqlCheckProcedureSetattr(procOid);
+	sepgsqlCheckSchemaRemoveName(namespaceOid);
+	sepgsqlCheckSchemaAddName(namespaceOid);
 
 	/* rename */
 	namestrcpy(&(procForm->proname), newname);
@@ -1239,8 +1241,8 @@ AlterFunctionOwner_internal(Relation rel, HeapTuple tup, Oid newOwnerId)
 				aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
 							   get_namespace_name(procForm->pronamespace));
 		}
-		/* SELinux checks permission to alter it */
-		sepgsql_proc_alter(procOid, NULL, InvalidOid, NULL);
+		/* SELinux permission checks */
+		sepgsqlCheckProcedureSetattr(procOid);
 
 		memset(repl_null, false, sizeof(repl_null));
 		memset(repl_repl, false, sizeof(repl_repl));
@@ -1287,20 +1289,20 @@ AlterFunctionSecLabel(List *name, List *argtypes, DefElem *seclabel)
 	Relation	rel;
 	HeapTuple	oldtup;
 	HeapTuple	newtup;
-	Oid			proc_oid;
+	Oid			procOid;
 	Oid			secid;
 	bool		replaces[Natts_pg_proc];
 
 	/* open pg_proc system catalog */
 	rel = heap_open(ProcedureRelationId, RowExclusiveLock);
 
-	proc_oid = LookupFuncNameTypeNames(name, argtypes, false);
+	procOid = LookupFuncNameTypeNames(name, argtypes, false);
 
 	oldtup = SearchSysCache(PROCOID,
-							ObjectIdGetDatum(proc_oid),
+							ObjectIdGetDatum(procOid),
 							0, 0, 0);
 	if (!HeapTupleIsValid(oldtup))
-		elog(ERROR, "cache lookup failed for function %u", proc_oid);
+		elog(ERROR, "cache lookup failed for function %u", procOid);
 
 	memset(replaces, false, sizeof(replaces));
 	newtup = heap_modify_tuple(oldtup, RelationGetDescr(rel),
@@ -1312,14 +1314,13 @@ AlterFunctionSecLabel(List *name, List *argtypes, DefElem *seclabel)
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
 					   get_func_name(HeapTupleGetOid(newtup)));
 
-	/* SELinux checks db_procedure:{setattr relabelfrom relabelto} */
-	secid = sepgsql_proc_alter(HeapTupleGetOid(newtup),
-							   NULL, InvalidOid, seclabel);
+	/* SELinux permission checks */
+	secid = sepgsqlCheckProcedureRelabel(procOid, seclabel);
 	if (!HeapTupleHasSecLabel(newtup))
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("Unable to set security label on \"%s\"",
-						get_func_name(HeapTupleGetOid(newtup)))));
+						get_func_name(procOid))));
 	HeapTupleSetSecLabel(newtup, secid);
 
 	simple_heap_update(rel, &newtup->t_self, newtup);
@@ -1369,8 +1370,8 @@ AlterFunction(AlterFunctionStmt *stmt)
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
 					   NameListToString(stmt->func->funcname));
 
-	/* SELinux checks permission to alter function */
-	sepgsql_proc_alter(funcOid, NULL, InvalidOid, NULL);
+	/* SELinux checks permissions */
+	sepgsqlCheckProcedureSetattr(funcOid);
 
 	if (procForm->proisagg)
 		ereport(ERROR,
@@ -1976,8 +1977,10 @@ AlterFunctionNamespace(List *name, List *argtypes, bool isagg,
 						NameStr(proc->proname),
 						newschema)));
 
-	/* SELinux checks permission to alter it */
-	sepgsql_proc_alter(procOid, NULL, nspOid, InvalidOid);
+	/* SELinux checks permissions */
+	sepgsqlCheckProcedureSetattr(procOid);
+	sepgsqlCheckSchemaRemoveName(oldNspOid);
+	sepgsqlCheckSchemaAddName(nspOid);
 
 	/* OK, modify the pg_proc row */
 
