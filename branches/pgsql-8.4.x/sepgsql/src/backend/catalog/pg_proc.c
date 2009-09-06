@@ -360,17 +360,11 @@ ProcedureCreate(const char *procedureName,
 			aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
 						   procedureName);
 
-		/* SELinux checks db_procedure:{setattr},
-		 * and db_procedure:{relabelfrom relabelto} if necessary. */
-		if (!proseclabel)
-			sepgsqlCheckProcedureSetattr(HeapTupleGetOid(oldtup));
-		else
-			prosecid = sepgsqlCheckProcedureRelabel(HeapTupleGetOid(oldtup),
-													(DefElem *)proseclabel);
-
-		/* SELinux checks db_database:{install_module}, if necessary */
-		if (probin && languageObjectId == ClanguageId)
-			sepgsqlCheckDatabaseInstallModule(probin, oldtup);
+		/* SELinux check permission to replace a function */
+		prosecid = sepgsql_proc_create(procedureName,
+									   HeapTupleGetOid(oldtup),
+									   procNamespace, languageObjectId,
+									   (DefElem *)proseclabel);
 
 		/*
 		 * Not okay to change the return type of the existing proc, since
@@ -501,14 +495,10 @@ ProcedureCreate(const char *procedureName,
 	}
 	else
 	{
-		/* SELinux checks db_procedure:{create} */
-		prosecid = sepgsqlCheckProcedureCreate(procedureName,
-											   procNamespace,
-											   (DefElem *)proseclabel);
-
-		/* SELinux checks db_database:{install_module}, if necessary */
-		if (probin && languageObjectId == ClanguageId)
-			sepgsqlCheckDatabaseInstallModule(probin, NULL);
+		/* SELinux check permission to create a new function */
+		prosecid = sepgsql_proc_create(procedureName, InvalidOid,
+									   procNamespace, languageObjectId,
+									   (DefElem *)proseclabel);
 
 		/* Creating a new procedure */
 		tup = heap_form_tuple(tupDesc, values, nulls);

@@ -141,6 +141,23 @@ sepgsqlShmemInit(void)
 }
 
 /*
+ * sepgsqlAvcReset
+ *
+ * It invalidate access vector cache. It has to be called on errors,
+ * because avc entries for newly created context is uncertain whether
+ * it is still valid, or not.
+ */
+void
+sepgsqlAvcReset(void)
+{
+	MemoryContextReset(AvcMemCtx);
+
+	current_page = NULL;
+
+	sepgsqlAvcSwitchClient(sepgsqlGetClientLabel());
+}
+
+/*
  * sepgsqlAvcCheckValid
  *
  * It checks whether the current AVC pages are valid, or not.

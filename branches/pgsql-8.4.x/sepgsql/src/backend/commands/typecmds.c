@@ -522,14 +522,6 @@ DefineType(List *names, List *parameters)
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
 					   NameListToString(analyzeName));
 #endif
-	/* SELinux checks db_procedure:{install} */
-	sepgsqlCheckProcedureInstall(inputOid);
-	sepgsqlCheckProcedureInstall(outputOid);
-	sepgsqlCheckProcedureInstall(receiveOid);
-	sepgsqlCheckProcedureInstall(sendOid);
-	sepgsqlCheckProcedureInstall(typmodinOid);
-	sepgsqlCheckProcedureInstall(typmodoutOid);
-	sepgsqlCheckProcedureInstall(analyzeOid);
 
 	/* Preassign array type OID so we can insert it in pg_type.typarray */
 	pg_type = heap_open(TypeRelationId, AccessShareLock);
@@ -1552,6 +1544,7 @@ AlterDomainDefault(List *names, Node *defaultRaw)
 
 	/* Check it's a domain and check user has permission for ALTER DOMAIN */
 	checkDomainOwner(tup, typename);
+	sepgsql_type_alter(domainoid, NULL, InvalidOid);
 
 	/* Setup new tuple */
 	MemSet(new_record, (Datum) 0, sizeof(new_record));
@@ -1680,6 +1673,7 @@ AlterDomainNotNull(List *names, bool notNull)
 
 	/* Check it's a domain and check user has permission for ALTER DOMAIN */
 	checkDomainOwner(tup, typename);
+	sepgsql_type_alter(domainoid, NULL, InvalidOid);
 
 	/* Is the domain already set to the desired constraint? */
 	if (typTup->typnotnull == notNull)
@@ -1781,6 +1775,7 @@ AlterDomainDropConstraint(List *names, const char *constrName,
 
 	/* Check it's a domain and check user has permission for ALTER DOMAIN */
 	checkDomainOwner(tup, typename);
+	sepgsql_type_alter(domainoid, NULL, InvalidOid);
 
 	/* Grab an appropriate lock on the pg_constraint relation */
 	conrel = heap_open(ConstraintRelationId, RowExclusiveLock);
@@ -1857,6 +1852,7 @@ AlterDomainAddConstraint(List *names, Node *newConstraint)
 
 	/* Check it's a domain and check user has permission for ALTER DOMAIN */
 	checkDomainOwner(tup, typename);
+	sepgsql_type_alter(domainoid, NULL, InvalidOid);
 
 	/* Check for unsupported constraint types */
 	if (IsA(newConstraint, FkConstraint))
@@ -2478,6 +2474,7 @@ RenameType(List *names, const char *newTypeName)
 	if (!pg_type_ownercheck(typeOid, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_TYPE,
 					   format_type_be(typeOid));
+	sepgsql_type_alter(typeOid, newTypeName, InvalidOid);
 
 	/*
 	 * If it's a composite type, we need to check that it really is a
@@ -2599,6 +2596,7 @@ AlterTypeOwner(List *names, Oid newOwnerId)
 				aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
 							   get_namespace_name(typTup->typnamespace));
 		}
+		sepgsql_type_alter(HeapTupleGetOid(tup), NULL, newOwnerId);
 
 		/*
 		 * If it's a composite type, invoke ATExecChangeOwner so that we fix
@@ -2714,6 +2712,8 @@ AlterTypeNamespace(List *names, const char *newschema)
 						format_type_be(typeOid)),
 				 errhint("You can alter type %s, which will alter the array type as well.",
 						 format_type_be(elemOid))));
+	/* SELinux check permission to change its namespace */
+	sepgsql_type_alter(typeOid, NULL, nspOid);
 
 	/* and do the work */
 	AlterTypeNamespaceInternal(typeOid, nspOid, false, true);

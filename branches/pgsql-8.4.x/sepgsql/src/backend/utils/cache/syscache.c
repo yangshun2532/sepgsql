@@ -956,6 +956,30 @@ GetSysCacheOid(int cacheId,
 	return result;
 }
 
+/*
+ * GetSysCacheSecid
+ *
+ * A convenience routine that does SearchSysCache and returns the SecID
+ * of the found tuple, or InvalidOid if no tuple could be found.
+ * No lock is retained on the syscache entry.
+ */
+Oid
+GetSysCacheSecid(int cacheId,
+				 Datum key1,
+				 Datum key2,
+				 Datum key3,
+				 Datum key4)
+{
+	HeapTuple	tuple;
+	Oid			result;
+
+	tuple = SearchSysCache(cacheId, key1, key2, key3, key4);
+	if (!HeapTupleIsValid(tuple))
+		return InvalidOid;
+	result = HeapTupleGetSecLabel(tuple);
+	ReleaseSysCache(tuple);
+	return result;
+}
 
 /*
  * SearchSysCacheAttName

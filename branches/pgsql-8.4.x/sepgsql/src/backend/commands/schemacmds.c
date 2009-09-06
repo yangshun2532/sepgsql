@@ -78,8 +78,7 @@ CreateSchemaCommand(CreateSchemaStmt *stmt, const char *queryString)
 	check_is_member_of_role(saved_uid, owner_uid);
 
 	/* SELinux checks db_schema:{create} */
-	nspsecid = sepgsqlCheckSchemaCreate(schemaName,
-										(DefElem *)stmt->secLabel, false);
+	nspsecid = sepgsql_schema_create(schemaName, (DefElem *)stmt->secLabel, false);
 
 	/* Additional check to protect reserved schema names */
 	if (!allowSystemTableMods && IsReservedName(schemaName))
@@ -293,7 +292,7 @@ RenameSchema(const char *oldname, const char *newname)
 					   get_database_name(MyDatabaseId));
 
 	/* SELinux checks db_schema:{setattr} */
-	sepgsqlCheckSchemaSetattr(HeapTupleGetOid(tup));
+	sepgsql_schema_alter(HeapTupleGetOid(tup), NULL);
 
 	if (!allowSystemTableMods && IsReservedName(newname))
 		ereport(ERROR,
@@ -407,7 +406,7 @@ AlterSchemaOwner_internal(HeapTuple tup, Relation rel, Oid newOwnerId)
 						   get_database_name(MyDatabaseId));
 
 		/* SELinux checks db_schema:{setattr} */
-		sepgsqlCheckSchemaSetattr(HeapTupleGetOid(tup));
+		sepgsql_schema_alter(HeapTupleGetOid(tup), NULL);
 
 		memset(repl_null, false, sizeof(repl_null));
 		memset(repl_repl, false, sizeof(repl_repl));
@@ -475,7 +474,7 @@ AlterSchemaSecLabel(const char *name, DefElem *seclabel)
 	if (!pg_namespace_ownercheck(HeapTupleGetOid(newtup), GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_NAMESPACE, name);
 	/* SELinux checks db_schema:{setattr relabelfrom relabelto} */
-	secid = sepgsqlCheckSchemaRelabel(HeapTupleGetOid(newtup), seclabel);
+	secid = sepgsql_schema_alter(HeapTupleGetOid(newtup), seclabel);
 	if (!HeapTupleHasSecLabel(newtup))
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),

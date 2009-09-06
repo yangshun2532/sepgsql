@@ -1574,6 +1574,9 @@ ExecGrant_Function(InternalGrant *istmt)
 									 NameStr(pg_proc_tuple->proname),
 									 0, NULL);
 
+		/* SELinux checks permission to grant it */
+		sepgsql_proc_grant(funcId);
+
 		/*
 		 * Generate new ACL.
 		 *
@@ -1815,6 +1818,9 @@ ExecGrant_Namespace(InternalGrant *istmt)
 									 nspid, grantorId, ACL_KIND_NAMESPACE,
 									 NameStr(pg_namespace_tuple->nspname),
 									 0, NULL);
+
+		/* SELinux checks permission to grant it */
+		sepgsql_schema_grant(nspid);
 
 		/*
 		 * Generate new ACL.
@@ -3047,7 +3053,7 @@ pg_database_aclcheck(Oid db_oid, Oid roleid, AclMode mode)
 {
 	if (pg_database_aclmask(db_oid, roleid, mode, ACLMASK_ANY) != 0)
 	{
-		/* SELinux: db_database:{connect} permission */
+ 		/* SELinux: db_database:{connect} permission */
 		if ((mode & ACL_CONNECT) &&
 			!sepgsqlCheckDatabaseConnect(db_oid))
 			return ACLCHECK_NO_PRIV;
@@ -3065,14 +3071,7 @@ AclResult
 pg_proc_aclcheck(Oid proc_oid, Oid roleid, AclMode mode)
 {
 	if (pg_proc_aclmask(proc_oid, roleid, mode, ACLMASK_ANY) != 0)
-	{
-		/* SELinux: db_procedure:{execute} permission */
-		if ((mode & ACL_EXECUTE) &&
-			!sepgsqlCheckProcedureExecute(proc_oid))
-			return ACLCHECK_NO_PRIV;
-
 		return ACLCHECK_OK;
-	}
 	else
 		return ACLCHECK_NO_PRIV;
 }
@@ -3096,14 +3095,7 @@ AclResult
 pg_namespace_aclcheck(Oid nsp_oid, Oid roleid, AclMode mode)
 {
 	if (pg_namespace_aclmask(nsp_oid, roleid, mode, ACLMASK_ANY) != 0)
-	{
-		/* SELinux: db_schema:{usage} permission */
-		if ((mode & ACL_USAGE) &&
-			!sepgsqlCheckSchemaUsage(nsp_oid))
-			return ACLCHECK_NO_PRIV;
-
 		return ACLCHECK_OK;
-	}
 	else
 		return ACLCHECK_NO_PRIV;
 }

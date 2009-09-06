@@ -36,6 +36,7 @@
 #include "commands/schemacmds.h"
 #include "commands/tablecmds.h"
 #include "commands/typecmds.h"
+#include "security/sepgsql.h"
 #include "storage/lmgr.h"
 #include "miscadmin.h"
 #include "utils/acl.h"
@@ -1336,6 +1337,7 @@ shdepReassignOwned(List *roleids, Oid newrole)
 					break;
 
 				case TypeRelationId:
+					sepgsql_type_alter(sdepForm->objid, NULL, InvalidOid);
 					AlterTypeOwnerInternal(sdepForm->objid, newrole, true);
 					break;
 

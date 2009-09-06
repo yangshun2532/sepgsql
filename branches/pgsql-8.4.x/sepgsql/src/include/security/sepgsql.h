@@ -81,7 +81,7 @@ enum SepgsqlClasses
 #define SEPG_DB_DATABASE__SETATTR			(1<<3)
 #define SEPG_DB_DATABASE__RELABELFROM		(1<<4)
 #define SEPG_DB_DATABASE__RELABELTO			(1<<5)
-#define SEPG_DB_DATABASE__CONNECT			(1<<6)
+#define SEPG_DB_DATABASE__ACCESS			(1<<6)
 #define SEPG_DB_DATABASE__INSTALL_MODULE	(1<<7)
 #define SEPG_DB_DATABASE__LOAD_MODULE		(1<<8)
 #define SEPG_DB_DATABASE__SUPERUSER			(1<<9)
@@ -92,9 +92,9 @@ enum SepgsqlClasses
 #define SEPG_DB_SCHEMA__SETATTR				(SEPG_DB_DATABASE__SETATTR)
 #define SEPG_DB_SCHEMA__RELABELFROM			(SEPG_DB_DATABASE__RELABELFROM)
 #define SEPG_DB_SCHEMA__RELABELTO			(SEPG_DB_DATABASE__RELABELTO)
-#define SEPG_DB_SCHEMA__USAGE				(1<<6)
-#define SEPG_DB_SCHEMA__ADD_OBJECT			(1<<7)
-#define SEPG_DB_SCHEMA__REMOVE_OBJECT		(1<<8)
+#define SEPG_DB_SCHEMA__SEARCH				(1<<6)
+#define SEPG_DB_SCHEMA__ADD_NAME			(1<<7)
+#define SEPG_DB_SCHEMA__REMOVE_NAME			(1<<8)
 
 #define SEPG_DB_SCHEMA_TEMP__CREATE			(SEPG_DB_DATABASE__CREATE)
 #define SEPG_DB_SCHEMA_TEMP__DROP			(SEPG_DB_DATABASE__DROP)
@@ -102,9 +102,9 @@ enum SepgsqlClasses
 #define SEPG_DB_SCHEMA_TEMP__SETATTR		(SEPG_DB_DATABASE__SETATTR)
 #define SEPG_DB_SCHEMA_TEMP__RELABELFROM	(SEPG_DB_DATABASE__RELABELFROM)
 #define SEPG_DB_SCHEMA_TEMP__RELABELTO		(SEPG_DB_DATABASE__RELABELTO)
-#define SEPG_DB_SCHEMA_TEMP__USAGE			(SEPG_DB_SCHEMA__USAGE)
-#define SEPG_DB_SCHEMA_TEMP__ADD_OBJECT		(SEPG_DB_SCHEMA__ADD_OBJECT)
-#define SEPG_DB_SCHEMA_TEMP__REMOVE_OBJECT	(SEPG_DB_SCHEMA__REMOVE_OBJECT)
+#define SEPG_DB_SCHEMA_TEMP__SEARCH			(SEPG_DB_SCHEMA__SEARCH)
+#define SEPG_DB_SCHEMA_TEMP__ADD_NAME		(SEPG_DB_SCHEMA__ADD_NAME)
+#define SEPG_DB_SCHEMA_TEMP__REMOVE_NAME	(SEPG_DB_SCHEMA__REMOVE_NAME)
 
 #define SEPG_DB_TABLE__CREATE				(SEPG_DB_DATABASE__CREATE)
 #define SEPG_DB_TABLE__DROP					(SEPG_DB_DATABASE__DROP)
@@ -138,6 +138,7 @@ enum SepgsqlClasses
 #define SEPG_DB_PROCEDURE__EXECUTE			(1<<6)
 #define SEPG_DB_PROCEDURE__ENTRYPOINT		(1<<7)
 #define SEPG_DB_PROCEDURE__INSTALL			(1<<8)
+#define SEPG_DB_PROCEDURE__UNTRUSTED		(1<<9)
 
 #define SEPG_DB_COLUMN__CREATE				(SEPG_DB_DATABASE__CREATE)
 #define SEPG_DB_COLUMN__DROP				(SEPG_DB_DATABASE__DROP)
@@ -186,6 +187,7 @@ extern void sepgsqlAvcInitialize(void);
 
 extern bool sepgsqlGetEnforce(void);
 extern int  sepgsqlSetEnforce(int new_mode);
+extern void sepgsqlAvcReset(void);
 extern void sepgsqlAvcSwitchClient(const char *scontext);
 
 extern bool
@@ -278,17 +280,6 @@ sepgsqlCheckDatabaseInstallModule(const char *probin, HeapTuple protup);
 extern void
 sepgsqlCheckDatabaseLoadModule(const char *filename);
 
-extern Oid
-sepgsqlCheckSchemaCreate(const char *nspname, DefElem *new_label, bool temp_schame);
-extern void
-sepgsqlCheckSchemaDrop(Oid namespace_oid);
-extern void
-sepgsqlCheckSchemaSetattr(Oid namespace_oid);
-extern Oid
-sepgsqlCheckSchemaRelabel(Oid namespace_oid, DefElem *new_label);
-extern bool
-sepgsqlCheckSchemaUsage(Oid nsid);
-
 extern void
 sepgsqlCheckTableDrop(Oid table_oid);
 extern void
@@ -318,16 +309,6 @@ sepgsqlCheckColumnSetattr(Oid table_oid, AttrNumber attno);
 extern Oid
 sepgsqlCheckColumnRelabel(Oid table_oid, AttrNumber attno, DefElem *new_label);
 
-extern Oid
-sepgsqlCheckProcedureCreate(const char *proname, Oid namespace_oid, DefElem *new_label);
-extern void
-sepgsqlCheckProcedureDrop(Oid proc_oid);
-extern void
-sepgsqlCheckProcedureSetattr(Oid proc_oid);
-extern Oid
-sepgsqlCheckProcedureRelabel(Oid proc_oid, DefElem *new_label);
-extern bool
-sepgsqlCheckProcedureExecute(Oid proc_oid);
 extern void
 sepgsqlCheckProcedureEntrypoint(FmgrInfo *finfo, HeapTuple protup);
 extern void
@@ -365,6 +346,49 @@ sepgsqlCheckObjectDrop(const ObjectAddress *object);
 /* optimizar hints */
 extern bool
 sepgsqlAllowFunctionInlined(HeapTuple protup);
+
+/* new style hooks */
+
+/* Pg_schema system catalog */
+extern Oid
+sepgsql_schema_create(const char *nspName, DefElem *nspLabel, bool isTemp);
+extern Oid
+sepgsql_schema_alter(Oid nspOid, DefElem *newLabel);
+extern void
+sepgsql_schema_drop(Oid nspOid);
+extern void
+sepgsql_schema_grant(Oid nspOid);
+extern bool
+sepgsql_schema_search(Oid nspOid, bool abort);
+
+/* Pg_proc system catalog */
+extern Oid
+sepgsql_proc_create(const char *proName, Oid proOid, Oid proNsp,
+					Oid langOid, DefElem *proLabel);
+extern Oid
+sepgsql_proc_alter(Oid proOid, const char *newName,
+				   Oid newNsp, DefElem *newLabel);
+extern void
+sepgsql_proc_drop(Oid proOid);
+extern void
+sepgsql_proc_grant(Oid proOid);
+extern void
+sepgsql_proc_execute(Oid proOid);
+extern bool
+sepgsql_proc_hint_inlined(HeapTuple protup);
+
+/* Pg_type system catalog */
+extern Oid
+sepgsql_type_create(const char *typeName, Oid typeOid, Oid typeNsp,
+					char typeType, bool typeIsArray,
+					Oid inputOid, Oid outputOid, Oid recvOid, Oid sendOid,
+					Oid modinOid, Oid modoutOid, Oid analyzeOid);
+extern void
+sepgsql_type_alter(Oid typeOid, const char *newName, Oid newNsp);
+extern void
+sepgsql_type_drop(Oid typeOid);
+extern void
+sepgsql_type_comment(Oid typeOid);
 
 /*
  * label.c : security label management

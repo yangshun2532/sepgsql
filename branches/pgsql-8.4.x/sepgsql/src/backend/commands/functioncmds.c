@@ -1128,8 +1128,8 @@ RenameFunction(List *name, List *argtypes, const char *newname)
 		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
 					   get_namespace_name(namespaceOid));
 
-	/* SELinux checks db_procedure:{setattr} */
-	sepgsqlCheckProcedureSetattr(procOid);
+	/* SELinux checks permission to rename it */
+	sepgsql_proc_alter(procOid, newname, InvalidOid, NULL);
 
 	/* rename */
 	namestrcpy(&(procForm->proname), newname);
@@ -1239,8 +1239,8 @@ AlterFunctionOwner_internal(Relation rel, HeapTuple tup, Oid newOwnerId)
 				aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
 							   get_namespace_name(procForm->pronamespace));
 		}
-		/* SELinux checks db_procedure:{setattr} */
-		sepgsqlCheckProcedureSetattr(procOid);
+		/* SELinux checks permission to alter it */
+		sepgsql_proc_alter(procOid, NULL, InvalidOid, NULL);
 
 		memset(repl_null, false, sizeof(repl_null));
 		memset(repl_repl, false, sizeof(repl_repl));
@@ -1313,8 +1313,8 @@ AlterFunctionSecLabel(List *name, List *argtypes, DefElem *seclabel)
 					   get_func_name(HeapTupleGetOid(newtup)));
 
 	/* SELinux checks db_procedure:{setattr relabelfrom relabelto} */
-	secid = sepgsqlCheckProcedureRelabel(HeapTupleGetOid(newtup), seclabel);
-
+	secid = sepgsql_proc_alter(HeapTupleGetOid(newtup),
+							   NULL, InvalidOid, seclabel);
 	if (!HeapTupleHasSecLabel(newtup))
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
@@ -1369,8 +1369,8 @@ AlterFunction(AlterFunctionStmt *stmt)
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
 					   NameListToString(stmt->func->funcname));
 
-	/* SELinux checks db_procedure:{setattr} */
-	sepgsqlCheckProcedureSetattr(funcOid);
+	/* SELinux checks permission to alter function */
+	sepgsql_proc_alter(funcOid, NULL, InvalidOid, NULL);
 
 	if (procForm->proisagg)
 		ereport(ERROR,
@@ -1933,9 +1933,6 @@ AlterFunctionNamespace(List *name, List *argtypes, bool isagg,
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
 					   NameListToString(name));
 
-	/* SELinux checks db_procedure:{setattr} */
-	sepgsqlCheckProcedureSetattr(procOid);
-
 	tup = SearchSysCacheCopy(PROCOID,
 							 ObjectIdGetDatum(procOid),
 							 0, 0, 0);
@@ -1978,6 +1975,9 @@ AlterFunctionNamespace(List *name, List *argtypes, bool isagg,
 				 errmsg("function \"%s\" already exists in schema \"%s\"",
 						NameStr(proc->proname),
 						newschema)));
+
+	/* SELinux checks permission to alter it */
+	sepgsql_proc_alter(procOid, NULL, nspOid, InvalidOid);
 
 	/* OK, modify the pg_proc row */
 
