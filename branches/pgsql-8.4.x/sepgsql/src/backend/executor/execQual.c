@@ -47,6 +47,7 @@
 #include "nodes/nodeFuncs.h"
 #include "optimizer/planner.h"
 #include "pgstat.h"
+#include "security/sepgsql.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"

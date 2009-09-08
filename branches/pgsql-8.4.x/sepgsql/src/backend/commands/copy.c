@@ -1134,7 +1134,7 @@ DoCopy(const CopyStmt *stmt, const char *queryString)
 
 			switch (attnum)
 			{
-			case SecurityLabelAttributeNumber:
+			case SecurityContextAttributeNumber:
 				cstate->seclabel_force_quot = true;
 				break;
 			default:
@@ -1374,7 +1374,7 @@ CopyTo(CopyState cstate)
 
 		switch (attnum)
 		{
-		case SecurityLabelAttributeNumber:
+		case SecurityContextAttributeNumber:
 			attForm = SystemAttributeDefinition(attnum, true);
 			out_fmgr = &cstate->seclabel_out_function;
 			break;
@@ -1573,7 +1573,7 @@ CopyOneRowTo(CopyState cstate, Oid tupleOid, Oid secLabelId,
 
 		switch (attnum)
 		{
-		case SecurityLabelAttributeNumber:
+		case SecurityContextAttributeNumber:
 			relid = RelationGetRelid(cstate->rel);
 			value = CStringGetTextDatum(securityTransSecLabelOut(relid, secLabelId));
 			isnull = false;
@@ -1990,7 +1990,7 @@ CopyFrom(CopyState cstate)
 	}
 
 	if (list_member_int(cstate->attnumlist,
-						SecurityLabelAttributeNumber))
+						SecurityContextAttributeNumber))
 	{
 		if (!cstate->binary)
 			getTypeInputInfo(TEXTOID,
@@ -2136,7 +2136,7 @@ CopyFrom(CopyState cstate)
 
 				switch (attnum)
 				{
-				case SecurityLabelAttributeNumber:
+				case SecurityContextAttributeNumber:
 					if (!string)
 						break;
 
@@ -2225,7 +2225,7 @@ CopyFrom(CopyState cstate)
 
 				switch (attnum)
 				{
-				case SecurityLabelAttributeNumber:
+				case SecurityContextAttributeNumber:
 					dat = CopyReadBinaryAttribute(cstate, i,
 												  &seclabel_in_function,
 												  seclabel_typioparam,
