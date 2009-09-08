@@ -204,7 +204,7 @@ createdb(const CreatedbStmt *stmt)
 					 errmsg("LOCATION is not supported anymore"),
 					 errhint("Consider using tablespaces instead.")));
 		}
-		else if (strcmp(defel->defname, "security_label") == 0)
+		else if (strcmp(defel->defname, "security_context") == 0)
 		{
 			if (dseclabel)
 				ereport(ERROR,

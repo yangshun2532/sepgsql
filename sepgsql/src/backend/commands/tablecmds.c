@@ -446,6 +446,10 @@ DefineRelation(CreateStmt *stmt, char relkind)
 	localHasOids = interpretOidsOption(stmt->options);
 	descriptor->tdhasoid = (localHasOids || parentOidCount > 0);
 
+	/* SELinux checks db_table:{create} and db_column:{create} */
+	secLabels = sepgsqlCreateTableColumns(stmt, relname, namespaceId,
+										  descriptor, relkind);
+
 	/*
 	 * Find columns with default values and prepare for insertion of the
 	 * defaults.  Pre-cooked (that is, inherited) defaults go into a list of
@@ -495,10 +499,6 @@ DefineRelation(CreateStmt *stmt, char relkind)
 			descriptor->attrs[attnum - 1]->atthasdef = true;
 		}
 	}
-
-	/* SELinux checks db_table:{create} and db_column:{create} */
-	secLabels = sepgsqlCreateTableColumns(stmt, relname, namespaceId,
-										  descriptor, relkind);
 
 	/*
 	 * Create the relation.  Inherited defaults and constraints are passed in

@@ -561,7 +561,7 @@ compute_attributes_sql_style(List *options,
 						 errmsg("conflicting or redundant options")));
 			windowfunc_item = defel;
 		}
-		else if (strcmp(defel->defname, "security_label") == 0)
+		else if (strcmp(defel->defname, "security_context") == 0)
 		{
 			if (seclabel_item)
 				ereport(ERROR,

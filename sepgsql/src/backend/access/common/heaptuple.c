@@ -288,7 +288,7 @@ heap_attisnull(HeapTuple tup, int attnum)
 		case MinCommandIdAttributeNumber:
 		case MaxTransactionIdAttributeNumber:
 		case MaxCommandIdAttributeNumber:
-		case SecurityLabelAttributeNumber:
+		case SecurityContextAttributeNumber:
 			/* these are never null */
 			break;
 
@@ -601,7 +601,7 @@ heap_getsysattr(HeapTuple tup, int attnum, TupleDesc tupleDesc, bool *isnull)
 		case TableOidAttributeNumber:
 			result = ObjectIdGetDatum(tup->t_tableOid);
 			break;
-		case SecurityLabelAttributeNumber:
+		case SecurityContextAttributeNumber:
 			result = securityHeapGetSecLabelSysattr(tup);
 			break;
 		default:

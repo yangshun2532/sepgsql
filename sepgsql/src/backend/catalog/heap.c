@@ -165,8 +165,8 @@ static FormData_pg_attribute a7 = {
  * System columns for enhanced security features
  */
 static FormData_pg_attribute a8 = {
-	0, {SecurityLabelAttributeName}, TEXTOID, 0, -1,
-	SecurityLabelAttributeNumber, 0, -1, -1,
+	0, {SecurityContextAttributeName}, TEXTOID, 0, -1,
+	SecurityContextAttributeNumber, 0, -1, -1,
 	false, 'x', 'i', true, false, false, true, 0, {0}
 };
 
@@ -216,7 +216,7 @@ SystemAttributeByName(const char *attname, bool relhasoids)
 bool
 SystemAttributeIsWritable(AttrNumber attnum)
 {
-	if (attnum == SecurityLabelAttributeNumber)
+	if (attnum == SecurityContextAttributeNumber)
 		return true;
 
 	return false;
