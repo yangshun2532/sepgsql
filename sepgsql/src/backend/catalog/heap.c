@@ -549,8 +549,8 @@ InsertPgAttributeTuple(Relation pg_attribute_rel,
 
 	tup = heap_form_tuple(RelationGetDescr(pg_attribute_rel), values, nulls);
 
-	if (HeapTupleHasSecLabel(tup))
-		HeapTupleSetSecLabel(tup, new_att_secid);
+	if (HeapTupleHasSecid(tup))
+		HeapTupleSetSecid(tup, new_att_secid);
 
 	/* finally insert the new tuple, update the indexes, and clean up */
 	simple_heap_insert(pg_attribute_rel, tup);
@@ -733,8 +733,8 @@ InsertPgClassTuple(Relation pg_class_desc,
 	 */
 	HeapTupleSetOid(tup, new_rel_oid);
 
-	if (HeapTupleHasSecLabel(tup))
-		HeapTupleSetSecLabel(tup, new_rel_secid);
+	if (HeapTupleHasSecid(tup))
+		HeapTupleSetSecid(tup, new_rel_secid);
 
 	/* finally insert the new tuple, update the indexes, and clean up */
 	simple_heap_insert(pg_class_desc, tup);

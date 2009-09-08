@@ -1316,12 +1316,12 @@ AlterFunctionSecLabel(List *name, List *argtypes, DefElem *seclabel)
 
 	/* SELinux permission checks */
 	secid = sepgsqlCheckProcedureRelabel(procOid, seclabel);
-	if (!HeapTupleHasSecLabel(newtup))
+	if (!HeapTupleHasSecid(newtup))
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("Unable to set security label on \"%s\"",
 						get_func_name(procOid))));
-	HeapTupleSetSecLabel(newtup, secid);
+	HeapTupleSetSecid(newtup, secid);
 
 	simple_heap_update(rel, &newtup->t_self, newtup);
 	CatalogUpdateIndexes(rel, newtup);

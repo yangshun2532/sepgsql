@@ -348,9 +348,9 @@ sepgsqlHeapTupleInsert(Relation rel, HeapTuple newtup, bool internal)
 	/*
 	 * assigns a default security label, if not explicit one
 	 */
-	if (!OidIsValid(HeapTupleGetSecLabel(newtup)))
+	if (!OidIsValid(HeapTupleGetSecid(newtup)))
 	{
-		if (HeapTupleHasSecLabel(newtup))
+		if (HeapTupleHasSecid(newtup))
 			sepgsqlSetDefaultSecLabel(rel, newtup);
 	}
 
@@ -392,7 +392,7 @@ sepgsqlHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple newtup)
 	 * at the sepgsqlExecScan() hook, so we don't need to
 	 * check anything more.
 	 */
-	secid = HeapTupleGetSecLabel(newtup);
+	secid = HeapTupleGetSecid(newtup);
 	if (!OidIsValid(secid))
 		return;
 
@@ -403,7 +403,7 @@ sepgsqlHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple newtup)
 	if (!heap_fetch(rel, SnapshotAny, &oldtup, &oldbuf, false, NULL))
 		elog(ERROR, "failed to fetch old version of the tuple");
 
-	if (secid != HeapTupleGetSecLabel(&oldtup))
+	if (secid != HeapTupleGetSecid(&oldtup))
 	{
 		security_class_t	tclass
 			= sepgsqlTupleObjectClass(relid, newtup);

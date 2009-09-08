@@ -572,8 +572,8 @@ createdb(const CreatedbStmt *stmt)
 							new_record, new_record_nulls);
 
 	HeapTupleSetOid(tuple, dboid);
-	if (HeapTupleHasSecLabel(tuple))
-		HeapTupleSetSecLabel(tuple, datsecid);
+	if (HeapTupleHasSecid(tuple))
+		HeapTupleSetSecid(tuple, datsecid);
 
 	simple_heap_insert(pg_database_rel, tuple);
 
@@ -1697,11 +1697,11 @@ AlterDatabaseSecLabel(const char *dbname, DefElem *seclabel)
 
 	/* SELinux checks db_database:{setattr relabelfrom relabelto} */
 	secid = sepgsqlCheckDatabaseRelabel(HeapTupleGetOid(newtup), seclabel);
-	if (!HeapTupleHasSecLabel(newtup))
+	if (!HeapTupleHasSecid(newtup))
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("Unable to set security label on \"%s\"", dbname)));
-	HeapTupleSetSecLabel(newtup, secid);
+	HeapTupleSetSecid(newtup, secid);
 
 	simple_heap_update(rel, &newtup->t_self, newtup);
 	CatalogUpdateIndexes(rel, newtup);

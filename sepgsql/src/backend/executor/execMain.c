@@ -1503,16 +1503,16 @@ storeWritableSystemAttribute(Relation rel, TupleTableSlot *slot, HeapTuple tuple
 	{
 		char *seclabel = TextDatumGetCString(slot->tts_seclabel);
 
-		if (!HeapTupleHasSecLabel(tuple))
+		if (!HeapTupleHasSecid(tuple))
 			ereport(ERROR,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 					 errmsg("Unable to assign security label on \"%s\"",
 							RelationGetRelationName(rel))));
 		secid = securityTransSecLabelIn(relid, seclabel);
-		HeapTupleSetSecLabel(tuple, secid);
+		HeapTupleSetSecid(tuple, secid);
 	}
-	else if (HeapTupleHasSecLabel(tuple))
-		HeapTupleSetSecLabel(tuple, InvalidOid);
+	else if (HeapTupleHasSecid(tuple))
+		HeapTupleSetSecid(tuple, InvalidOid);
 }
 
 /* ----------------------------------------------------------------

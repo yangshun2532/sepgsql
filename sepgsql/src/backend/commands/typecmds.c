@@ -1544,7 +1544,7 @@ AlterDomainDefault(List *names, Node *defaultRaw)
 
 	/* Check it's a domain and check user has permission for ALTER DOMAIN */
 	checkDomainOwner(tup, typename);
-	sepgsqlCheckSysobjSetattr(TypeRelationId, HeapTupleGetSecLabel(tup),
+	sepgsqlCheckSysobjSetattr(TypeRelationId, HeapTupleGetSecid(tup),
 							  format_type_be(domainoid));
 
 	/* Setup new tuple */
@@ -1674,7 +1674,7 @@ AlterDomainNotNull(List *names, bool notNull)
 
 	/* Check it's a domain and check user has permission for ALTER DOMAIN */
 	checkDomainOwner(tup, typename);
-	sepgsqlCheckSysobjSetattr(TypeRelationId, HeapTupleGetSecLabel(tup),
+	sepgsqlCheckSysobjSetattr(TypeRelationId, HeapTupleGetSecid(tup),
 							  format_type_be(domainoid));
 
 	/* Is the domain already set to the desired constraint? */
@@ -1777,7 +1777,7 @@ AlterDomainDropConstraint(List *names, const char *constrName,
 
 	/* Check it's a domain and check user has permission for ALTER DOMAIN */
 	checkDomainOwner(tup, typename);
-	sepgsqlCheckSysobjSetattr(TypeRelationId, HeapTupleGetSecLabel(tup),
+	sepgsqlCheckSysobjSetattr(TypeRelationId, HeapTupleGetSecid(tup),
 							  format_type_be(domainoid));
 
 	/* Grab an appropriate lock on the pg_constraint relation */
@@ -1855,7 +1855,7 @@ AlterDomainAddConstraint(List *names, Node *newConstraint)
 
 	/* Check it's a domain and check user has permission for ALTER DOMAIN */
 	checkDomainOwner(tup, typename);
-	sepgsqlCheckSysobjSetattr(TypeRelationId, HeapTupleGetSecLabel(tup),
+	sepgsqlCheckSysobjSetattr(TypeRelationId, HeapTupleGetSecid(tup),
 							  format_type_be(domainoid));
 
 	/* Check for unsupported constraint types */
@@ -2480,7 +2480,7 @@ RenameType(List *names, const char *newTypeName)
 					   format_type_be(typeOid));
 
 	/* SELinux check permission */
-	sepgsqlCheckSysobjSetattr(TypeRelationId, HeapTupleGetSecLabel(tup),
+	sepgsqlCheckSysobjSetattr(TypeRelationId, HeapTupleGetSecid(tup),
 							  format_type_be(typeOid));
 	sepgsqlCheckSchemaRemoveName(typTup->typnamespace);
 	sepgsqlCheckSchemaAddName(typTup->typnamespace);
@@ -2606,7 +2606,7 @@ AlterTypeOwner(List *names, Oid newOwnerId)
 							   get_namespace_name(typTup->typnamespace));
 		}
 		/* SELinux checks permissions */
-		sepgsqlCheckSysobjSetattr(TypeRelationId, HeapTupleGetSecLabel(tup),
+		sepgsqlCheckSysobjSetattr(TypeRelationId, HeapTupleGetSecid(tup),
 								  format_type_be(HeapTupleGetOid(tup)));
 
 		/*
@@ -2731,7 +2731,7 @@ AlterTypeNamespace(List *names, const char *newschema)
 							0, 0, 0);
 	if (!HeapTupleIsValid(typtup))
 		elog(ERROR, "cache lookup failed for type: %u", typeOid);
-	sepgsqlCheckSysobjSetattr(TypeRelationId, HeapTupleGetSecLabel(typtup),
+	sepgsqlCheckSysobjSetattr(TypeRelationId, HeapTupleGetSecid(typtup),
 							  format_type_be(typeOid));
 	sepgsqlCheckSchemaRemoveName(((Form_pg_type) GETSTRUCT(typtup))->typnamespace);
 	sepgsqlCheckSchemaAddName(nspOid);

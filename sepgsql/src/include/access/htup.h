@@ -163,7 +163,7 @@ typedef HeapTupleHeaderData *HeapTupleHeader;
 #define HEAP_HASVARWIDTH		0x0002	/* has variable-width attribute(s) */
 #define HEAP_HASEXTERNAL		0x0004	/* has external stored attribute(s) */
 #define HEAP_HASOID				0x0008	/* has an object-id field */
-#define HEAP_HAS_SECLABEL		0x0010	/* tuple has security label */
+#define HEAP_HASSECID			0x0010	/* has an security-id field */
 #define HEAP_COMBOCID			0x0020	/* t_cid is a combo cid */
 #define HEAP_XMAX_EXCL_LOCK		0x0040	/* xmax is exclusive locker */
 #define HEAP_XMAX_SHARED_LOCK	0x0080	/* xmax is shared locker */
@@ -352,24 +352,24 @@ do { \
 	(tup)->t_infomask2 = ((tup)->t_infomask2 & ~HEAP_NATTS_MASK) | (natts) \
 )
 
-#define HeapTupleHeaderHasSecLabel(tup)			\
-	((tup)->t_infomask & HEAP_HAS_SECLABEL)
+#define HeapTupleHeaderHasSecid(tup)			\
+	((tup)->t_infomask & HEAP_HASSECID)
 
-#define HeapTupleHeaderGetSecLabel(tup)									\
-	(                                                                   \
-		HeapTupleHeaderHasSecLabel(tup)                                 \
+#define HeapTupleHeaderGetSecid(tup)									\
+	(																	\
+		HeapTupleHeaderHasSecid(tup)									\
 		? (*(Oid *)((char *)(tup) + (tup)->t_hoff                       \
 					- (HeapTupleHeaderHasOid(tup) ? sizeof(Oid) : 0)	\
 					- sizeof(Oid)))										\
 		: InvalidOid													\
 	)
 
-#define HeapTupleHeaderSetSecLabel(tup, seclabel)						\
+#define HeapTupleHeaderSetSecid(tup, secid)								\
 	do {																\
-		Assert(HeapTupleHeaderHasSecLabel(tup));						\
+		Assert(HeapTupleHeaderHasSecid(tup));							\
 		*((Oid *)((char *)(tup) + (tup)->t_hoff                         \
 				  - (HeapTupleHeaderHasOid(tup) ? sizeof(Oid) : 0)		\
-				  - sizeof(Oid))) = (seclabel);							\
+				  - sizeof(Oid))) = (secid);							\
 	} while(0)
 
 /*
@@ -571,14 +571,14 @@ typedef HeapTupleData *HeapTuple;
 #define HeapTupleSetOid(tuple, oid) \
 		HeapTupleHeaderSetOid((tuple)->t_data, (oid))
 
-#define HeapTupleHasSecLabel(tuple)				\
-	HeapTupleHeaderHasSecLabel((tuple)->t_data)
+#define HeapTupleHasSecid(tuple)				\
+	HeapTupleHeaderHasSecid((tuple)->t_data)
 
-#define HeapTupleGetSecLabel(tuple)				\
-	HeapTupleHeaderGetSecLabel((tuple)->t_data)
+#define HeapTupleGetSecid(tuple)				\
+	HeapTupleHeaderGetSecid((tuple)->t_data)
 
-#define HeapTupleSetSecLabel(tuple, seclabel)			\
-	HeapTupleHeaderSetSecLabel((tuple)->t_data, (seclabel))
+#define HeapTupleSetSecid(tuple, secid)			\
+	HeapTupleHeaderSetSecid((tuple)->t_data, (secid))
 
 /*
  * WAL record definitions for heapam.c's WAL operations

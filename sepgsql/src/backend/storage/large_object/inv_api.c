@@ -163,7 +163,7 @@ myLargeObjectExists(LargeObjectDesc *lobj)
 	if (HeapTupleIsValid(tuple))
 	{
 		retval = true;
-		lobj->secid = HeapTupleGetSecLabel(tuple);
+		lobj->secid = HeapTupleGetSecid(tuple);
 	}
 
 	systable_endscan(sd);
@@ -648,8 +648,8 @@ inv_write(LargeObjectDesc *obj_desc, const char *buf, int nbytes)
 			replace[Anum_pg_largeobject_data - 1] = true;
 			newtup = heap_modify_tuple(oldtuple, RelationGetDescr(lo_heap_r),
 									   values, nulls, replace);
-			if (HeapTupleHasSecLabel(newtup))
-				HeapTupleSetSecLabel(newtup, obj_desc->secid);
+			if (HeapTupleHasSecid(newtup))
+				HeapTupleSetSecid(newtup, obj_desc->secid);
 			simple_heap_update(lo_heap_r, &newtup->t_self, newtup);
 			CatalogIndexInsert(indstate, newtup);
 			heap_freetuple(newtup);
@@ -693,8 +693,8 @@ inv_write(LargeObjectDesc *obj_desc, const char *buf, int nbytes)
 			values[Anum_pg_largeobject_pageno - 1] = Int32GetDatum(pageno);
 			values[Anum_pg_largeobject_data - 1] = PointerGetDatum(&workbuf);
 			newtup = heap_form_tuple(lo_heap_r->rd_att, values, nulls);
-			if (HeapTupleHasSecLabel(newtup))
-				HeapTupleSetSecLabel(newtup, obj_desc->secid);
+			if (HeapTupleHasSecid(newtup))
+				HeapTupleSetSecid(newtup, obj_desc->secid);
 			simple_heap_insert(lo_heap_r, newtup);
 			CatalogIndexInsert(indstate, newtup);
 			heap_freetuple(newtup);
@@ -855,8 +855,8 @@ inv_truncate(LargeObjectDesc *obj_desc, int len)
 		values[Anum_pg_largeobject_pageno - 1] = Int32GetDatum(pageno);
 		values[Anum_pg_largeobject_data - 1] = PointerGetDatum(&workbuf);
 		newtup = heap_form_tuple(lo_heap_r->rd_att, values, nulls);
-		if (HeapTupleHasSecLabel(newtup))
-			HeapTupleSetSecLabel(newtup, obj_desc->secid);
+		if (HeapTupleHasSecid(newtup))
+			HeapTupleSetSecid(newtup, obj_desc->secid);
 		simple_heap_insert(lo_heap_r, newtup);
 		CatalogIndexInsert(indstate, newtup);
 		heap_freetuple(newtup);
@@ -907,7 +907,7 @@ inv_get_security(Oid loid)
 		 * SELinux: check db_blob:{getattr}
 		 */
 		sepgsqlCheckBlobGetattr(tuple);
-		secid = HeapTupleGetSecLabel(tuple);
+		secid = HeapTupleGetSecid(tuple);
 	}
 	systable_endscan(scan);
 
@@ -948,10 +948,10 @@ inv_set_security(Oid loid, Oid secid)
 
 		newtuple = heap_modify_tuple(tuple, RelationGetDescr(rel),
 									 values, nulls, replaces);
-		if (!HeapTupleHasSecLabel(newtuple))
+		if (!HeapTupleHasSecid(newtuple))
 			elog(ERROR, "Unable to assign security label on \"%s\"",
 				 RelationGetRelationName(rel));
-		HeapTupleSetSecLabel(newtuple, secid);
+		HeapTupleSetSecid(newtuple, secid);
 
 		/*
 		 * SELinux: check db_blob:{setattr relabelfrom relabelto}

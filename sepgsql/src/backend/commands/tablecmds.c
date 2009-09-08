@@ -3090,14 +3090,14 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap)
 			if (newrel)
 			{
 				Oid			tupOid = InvalidOid;
-				Oid			tupSecLabel = InvalidOid;
+				Oid			tupSecid = InvalidOid;
 
 				/* Extract data from old tuple */
 				heap_deform_tuple(tuple, oldTupDesc, values, isnull);
 				if (oldTupDesc->tdhasoid)
 					tupOid = HeapTupleGetOid(tuple);
-				if (HeapTupleHasSecLabel(tuple))
-					tupSecLabel = HeapTupleGetSecLabel(tuple);
+				if (HeapTupleHasSecid(tuple))
+					tupSecid = HeapTupleGetSecid(tuple);
 
 				/* Set dropped attributes to null in new tuple */
 				foreach(lc, dropped_attrs)
@@ -3129,9 +3129,9 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap)
 				/* Preserve OID, if any */
 				if (newTupDesc->tdhasoid)
 					HeapTupleSetOid(tuple, tupOid);
-				/* Preserve SecLabel, if any */
-				if (HeapTupleHasSecLabel(tuple))
-					HeapTupleSetSecLabel(tuple, tupSecLabel);
+				/* Preserve SID, if any */
+				if (HeapTupleHasSecid(tuple))
+					HeapTupleSetSecid(tuple, tupSecid);
 			}
 
 			/* Now check any constraints on the possibly-changed tuple */
@@ -7851,12 +7851,12 @@ ExecRelationSetSecLabel(Oid relid, DefElem *seclabel)
 
 	/* SELinux checks db_table:{setattr relabelfrom relabelto} */
 	secid = sepgsqlCheckTableRelabel(relid, seclabel);
-	if (!HeapTupleHasSecLabel(newtup))
+	if (!HeapTupleHasSecid(newtup))
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("Unable to set security label on \"%s\"",
 						get_rel_name(relid))));
-	HeapTupleSetSecLabel(newtup, secid);
+	HeapTupleSetSecid(newtup, secid);
 
 	simple_heap_update(rel, &newtup->t_self, newtup);
 	CatalogUpdateIndexes(rel, newtup);
@@ -7892,12 +7892,12 @@ ExecAttributeSetSecLabel(Oid relid, const char *attname, DefElem *seclabel)
 
 	/* SELinux checks db_column:{setattr relabelfrom relabelto} */
 	secid = sepgsqlCheckColumnRelabel(relid, attnum, seclabel); 
-	if (!HeapTupleHasSecLabel(newtup))
+	if (!HeapTupleHasSecid(newtup))
 		ereport(ERROR,
                 (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
                  errmsg("Unable to set security label on \"%s.%s\"",
 						get_rel_name(relid), attname)));
-	HeapTupleSetSecLabel(newtup, secid);
+	HeapTupleSetSecid(newtup, secid);
 
 	simple_heap_update(rel, &newtup->t_self, newtup);
 	CatalogUpdateIndexes(rel, newtup);
