@@ -1347,7 +1347,7 @@ shdepReassignOwned(List *roleids, Oid newrole)
 					if (!HeapTupleIsValid(tuple))
 						elog(ERROR, "cache lookup failed for type: %u", sdepForm->objid);
 					sepgsqlCheckSysobjSetattr(TypeRelationId,
-											  HeapTupleGetSecLabel(tuple),
+											  HeapTupleGetSecid(tuple),
 							NameStr(((Form_pg_type) GETSTRUCT(tuple))->typname));
 					ReleaseSysCache(tuple);
 					AlterTypeOwnerInternal(sdepForm->objid, newrole, true);

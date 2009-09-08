@@ -170,6 +170,14 @@ enum SepgsqlClasses
 #define SEPG_DB_BLOB__EXPORT				(1<<9)
 
 /*
+ * sepgsql_sid_t : alternative representation of security context
+ */
+typedef struct {
+	Oid		relid;
+	Oid		secid;
+} sepgsql_sid_t;
+
+/*
  * avc.c : userspace access vector caches
  */
 

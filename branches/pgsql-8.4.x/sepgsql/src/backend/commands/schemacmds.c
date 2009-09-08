@@ -474,11 +474,11 @@ AlterSchemaSecLabel(const char *name, DefElem *secLabel)
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_NAMESPACE, name);
 	/* SELinux checks db_schema:{setattr relabelfrom relabelto} */
 	secid = sepgsqlCheckSchemaRelabel(HeapTupleGetOid(newtup), secLabel);
-	if (!HeapTupleHasSecLabel(newtup))
+	if (!HeapTupleHasSecid(newtup))
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("Unable to set security label on \"%s\"", name)));
-	HeapTupleSetSecLabel(newtup, secid);
+	HeapTupleSetSecid(newtup, secid);
 
 	simple_heap_update(rel, &newtup->t_self, newtup);
 	CatalogUpdateIndexes(rel, newtup);

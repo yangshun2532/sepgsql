@@ -45,12 +45,6 @@ static MemoryContext AvcMemCtx;
 #define AVC_HASH_NUM_SLOTS		256
 #define AVC_HASH_NUM_NODES		180
 
-typedef struct
-{
-	Oid			relid;
-	Oid			secid;
-} sepgsql_sid_t;
-
 #define AVC_DATUM_NSID_SLOTS	19
 typedef struct
 {
@@ -607,7 +601,7 @@ sepgsqlClientHasPermsTup(Oid relid, HeapTuple tuple,
 {
 	const char *audit_name = sepgsqlAuditName(relid, tuple);
 
-	return sepgsqlClientHasPermsSid(relid, HeapTupleGetSecLabel(tuple),
+	return sepgsqlClientHasPermsSid(relid, HeapTupleGetSecid(tuple),
 									tclass, required, audit_name, abort);
 }
 

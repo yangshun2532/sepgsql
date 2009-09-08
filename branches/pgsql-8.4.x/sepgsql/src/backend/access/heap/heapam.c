@@ -2565,10 +2565,10 @@ l2:
 		Assert(!(newtup->t_data->t_infomask & HEAP_HASOID));
 	}
 
-	/* Preserve SecLabel, if not changed */
-	if (HeapTupleHasSecLabel(newtup) &&
-		!OidIsValid(HeapTupleGetSecLabel(newtup)))
-		HeapTupleSetSecLabel(newtup, HeapTupleGetSecLabel(&oldtup));
+	/* Preserve SecurityId, if not changed */
+	if (HeapTupleHasSecid(newtup) &&
+		!OidIsValid(HeapTupleGetSecid(newtup)))
+		HeapTupleSetSecid(newtup, HeapTupleGetSecid(&oldtup));
 
 	newtup->t_data->t_infomask &= ~(HEAP_XACT_MASK);
 	newtup->t_data->t_infomask2 &= ~(HEAP2_XACT_MASK);

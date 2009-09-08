@@ -133,8 +133,8 @@ securityPostBootstrapingMode(void)
 		values[Anum_pg_security_secattr - 1] = CStringGetTextDatum(es->secattr);
 
 		tuple = heap_form_tuple(RelationGetDescr(rel), values, nulls);
-		if (HeapTupleHasSecLabel(tuple))
-			HeapTupleSetSecLabel(tuple, meta_secid);
+		if (HeapTupleHasSecid(tuple))
+			HeapTupleSetSecid(tuple, meta_secid);
 
 		simple_heap_insert(rel, tuple);
 		CatalogUpdateIndexes(rel, tuple);
@@ -291,8 +291,8 @@ InputSecurityAttr(Oid relid, char seckind, const char *secattr)
 	}
 
 	tuple = heap_form_tuple(RelationGetDescr(rel), values, nulls);
-	if (HeapTupleHasSecLabel(tuple))
-		HeapTupleSetSecLabel(tuple, meta_secid);
+	if (HeapTupleHasSecid(tuple))
+		HeapTupleSetSecid(tuple, meta_secid);
 
 	simple_heap_insert(rel, tuple);
 	CatalogUpdateIndexes(rel, tuple);
@@ -397,24 +397,13 @@ securityTransSecLabelOut(Oid relid, Oid secid)
 	return sepgsqlTransSecLabelOut(seclabel);
 }
 
-Oid
-securityMoveSecLabel(Oid dstid, Oid srcid, Oid secid)
-{
-	char   *seclabel = securityRawSecLabelOut(srcid, secid);
-
-	if (!seclabel)
-		return InvalidOid;
-
-	return securityRawSecLabelIn(dstid, seclabel);
-}
-
 /*
  * Output handler for system columns
  */
 Datum
 securityHeapGetSecLabelSysattr(HeapTuple tuple)
 {
-	Oid		secid = HeapTupleGetSecLabel(tuple);
+	Oid		secid = HeapTupleGetSecid(tuple);
 	char   *seclabel;
 
 	seclabel = securityTransSecLabelOut(tuple->t_tableOid, secid);
@@ -676,5 +665,5 @@ security_label_to_secid(PG_FUNCTION_ARGS)
 {
 	HeapTupleHeader tuphdr = PG_GETARG_HEAPTUPLEHEADER(0);
 
-	PG_RETURN_OID(HeapTupleHeaderGetSecLabel(tuphdr));
+	PG_RETURN_OID(HeapTupleHeaderGetSecid(tuphdr));
 }

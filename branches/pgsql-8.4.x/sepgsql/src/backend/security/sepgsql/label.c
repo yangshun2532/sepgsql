@@ -79,7 +79,7 @@ sepgsqlMetaSecurityLabel(void)
 	if (!HeapTupleIsValid(tuple))
 		elog(ERROR, "cache lookup failed for relation: \"pg_security\"");
 
-	tblsid = HeapTupleGetSecLabel(tuple);
+	tblsid = HeapTupleGetSecid(tuple);
 	tcontext = securityRawSecLabelOut(RelationRelationId, tblsid);
 
 	ReleaseSysCache(tuple);
@@ -160,7 +160,7 @@ defaultSecLabelWithDatabase(Oid relid, Oid datoid, security_class_t tclass)
 							   0, 0, 0);
 		if (!HeapTupleIsValid(tuple))
 			elog(ERROR, "cache lookup failed for database: %u", datoid);
-		datsid = HeapTupleGetSecLabel(tuple);
+		datsid = HeapTupleGetSecid(tuple);
 
 		ReleaseSysCache(tuple);
 	}
@@ -205,7 +205,7 @@ defaultSecLabelWithSchema(Oid relid, Oid nspoid, security_class_t tclass)
 		if (!HeapTupleIsValid(tuple))
 			elog(ERROR, "cache lookup failed for namespace: %u", nspoid);
 
-		nspsid = HeapTupleGetSecLabel(tuple);
+		nspsid = HeapTupleGetSecid(tuple);
 
 		ReleaseSysCache(tuple);
 	}
@@ -264,7 +264,7 @@ defaultSecLabelWithTable(Oid relid, Oid tbloid, security_class_t tclass)
 		if (!HeapTupleIsValid(tuple))
 			elog(ERROR, "cache lookup failed for relation: %u", tbloid);
 
-		tblsid = HeapTupleGetSecLabel(tuple);
+		tblsid = HeapTupleGetSecid(tuple);
 
 		ReleaseSysCache(tuple);
 	}
@@ -306,7 +306,7 @@ sepgsqlSetDefaultSecLabel(Relation rel, HeapTuple tuple)
 	if (!sepgsqlIsEnabled())
 		return;
 
-	if (!HeapTupleHasSecLabel(tuple))
+	if (!HeapTupleHasSecid(tuple))
 		return;
 
 	switch (sepgsqlTupleObjectClass(relid, tuple))
@@ -344,7 +344,7 @@ sepgsqlSetDefaultSecLabel(Relation rel, HeapTuple tuple)
 		break;
 	}
 
-	HeapTupleSetSecLabel(tuple, newsid);
+	HeapTupleSetSecid(tuple, newsid);
 }
 
 /*
@@ -536,7 +536,7 @@ sepgsqlCopyTableColumns(Relation source)
 		elog(ERROR, "cache lookup failed for relation \"%s\"",
 			 RelationGetRelationName(source));
 
-	secLabels[0] = HeapTupleGetSecLabel(tuple);
+	secLabels[0] = HeapTupleGetSecid(tuple);
 
 	ReleaseSysCache(tuple);
 
@@ -560,7 +560,7 @@ sepgsqlCopyTableColumns(Relation source)
 			continue;
 
 		secLabels[index - FirstLowInvalidHeapAttributeNumber]
-			= HeapTupleGetSecLabel(tuple);
+			= HeapTupleGetSecid(tuple);
 
 		ReleaseSysCache(tuple);
 	}

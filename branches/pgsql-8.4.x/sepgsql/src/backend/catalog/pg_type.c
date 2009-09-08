@@ -208,7 +208,7 @@ TypeCreate(Oid newTypeOid,
 {
 	Relation	pg_type_desc;
 	Oid			typeObjectId;
-	Oid			typeSid;
+	Oid			typeSecid = InvalidOid;
 	bool		rebuildDeps = false;
 	HeapTuple	tup;
 	bool		nulls[Natts_pg_type];
@@ -380,11 +380,11 @@ TypeCreate(Oid newTypeOid,
 	if (!isImplicitArray && typeType != TYPTYPE_COMPOSITE)
 	{
 		if (!HeapTupleIsValid(tup))
-			typeSid = sepgsqlCheckSysobjCreate(TypeRelationId, typeName);
+			typeSecid = sepgsqlCheckSysobjCreate(TypeRelationId, typeName);
 		else
 		{
-			typeSid = HeapTupleGetSecLabel(tup);
-			sepgsqlCheckSysobjSetattr(TypeRelationId, typeSid, typeName);
+			typeSecid = HeapTupleGetSecid(tup);
+			sepgsqlCheckSysobjSetattr(TypeRelationId, typeSecid, typeName);
 		}
 		sepgsqlCheckSchemaAddName(typeNamespace);
 	}
@@ -434,6 +434,8 @@ TypeCreate(Oid newTypeOid,
 		/* Force the OID if requested by caller, else heap_insert does it */
 		if (OidIsValid(newTypeOid))
 			HeapTupleSetOid(tup, newTypeOid);
+		if (HeapTupleHasSecid(tup))
+			HeapTupleSetSecid(tup, typeSecid);
 
 		typeObjectId = simple_heap_insert(pg_type_desc, tup);
 	}

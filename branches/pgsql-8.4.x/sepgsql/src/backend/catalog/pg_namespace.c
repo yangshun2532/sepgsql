@@ -66,8 +66,8 @@ NamespaceCreate(const char *nspName, Oid ownerId, Oid nspsecid)
 	tupDesc = nspdesc->rd_att;
 
 	tup = heap_form_tuple(tupDesc, values, nulls);
-	if (HeapTupleHasSecLabel(tup))
-		HeapTupleSetSecLabel(tup, nspsecid);
+	if (HeapTupleHasSecid(tup))
+		HeapTupleSetSecid(tup, nspsecid);
 
 	nspoid = simple_heap_insert(nspdesc, tup);
 	Assert(OidIsValid(nspoid));

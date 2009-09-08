@@ -1491,7 +1491,7 @@ CopyTo(CopyState cstate)
 			/* Format and send the data */
 			CopyOneRowTo(cstate,
 						 HeapTupleGetOid(tuple),
-						 HeapTupleGetSecLabel(tuple),
+						 HeapTupleGetSecid(tuple),
 						 values, nulls);
 		}
 
@@ -2265,8 +2265,8 @@ CopyFrom(CopyState cstate)
 
 		if (cstate->oids && file_has_oids)
 			HeapTupleSetOid(tuple, loaded_oid);
-		if (HeapTupleHasSecLabel(tuple))
-			HeapTupleSetSecLabel(tuple, loaded_seclabel);
+		if (HeapTupleHasSecid(tuple))
+			HeapTupleSetSecid(tuple, loaded_seclabel);
 
 		/* Triggers and stuff need to be invoked in query context. */
 		MemoryContextSwitchTo(oldcontext);

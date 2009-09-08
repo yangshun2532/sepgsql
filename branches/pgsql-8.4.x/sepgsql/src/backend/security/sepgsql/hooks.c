@@ -171,7 +171,7 @@ sepgsqlCheckDatabaseLoadModule(const char *filename)
 		elog(ERROR, "cache lookup failed for database: %u", MyDatabaseId);
 
 	dbcon = securityRawSecLabelOut(DatabaseRelationId,
-								   HeapTupleGetSecLabel(tuple));
+								   HeapTupleGetSecid(tuple));
 	ReleaseSysCache(tuple);
 
 	/* Get library context */
@@ -740,7 +740,7 @@ sepgsqlCheckProcedureCreate(const char *procName, Oid procOid,
 		if (!HeapTupleIsValid(tuple))
 			elog(ERROR, "cache lookup failed for procedure: %u", procOid);
 
-		procSid = HeapTupleGetSecLabel(tuple);
+		procSid = HeapTupleGetSecid(tuple);
 
 		ReleaseSysCache(tuple);
 
@@ -861,7 +861,7 @@ sepgsqlHintProcedureInlined(HeapTuple protup)
 	 * inlined due to performance purpose.
 	 */
 	newcon = sepgsqlClientCreateLabel(ProcedureRelationId,
-									  HeapTupleGetSecLabel(protup),
+									  HeapTupleGetSecid(protup),
 									  SEPG_CLASS_PROCESS);
 	if (strcmp(sepgsqlGetClientLabel(), newcon) == 0)
 		return true;
@@ -923,7 +923,7 @@ sepgsqlCheckProcedureEntrypoint(FmgrInfo *flinfo, HeapTuple protup)
 		return;
 
 	newcon = sepgsqlClientCreateLabel(ProcedureRelationId,
-									  HeapTupleGetSecLabel(protup),
+									  HeapTupleGetSecid(protup),
 									  SEPG_CLASS_PROCESS);
 
 	/* Do nothing, if it is not a trusted procedure */
@@ -1103,7 +1103,7 @@ sepgsqlCheckBlobRelabel(HeapTuple oldtup, HeapTuple newtup)
 {
 	access_vector_t		required = SEPG_DB_BLOB__SETATTR;
 
-	if (HeapTupleGetSecLabel(oldtup) != HeapTupleGetSecLabel(newtup))
+	if (HeapTupleGetSecid(oldtup) != HeapTupleGetSecid(newtup))
 		required |= SEPG_DB_BLOB__RELABELFROM;
 
 	sepgsqlClientHasPermsTup(LargeObjectRelationId, oldtup,
