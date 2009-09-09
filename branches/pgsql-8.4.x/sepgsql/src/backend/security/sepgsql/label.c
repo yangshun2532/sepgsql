@@ -432,10 +432,10 @@ sepgsqlCreateTableColumns(CreateStmt *stmt,
 			relsid.secid = securityTransSecLabelIn(relsid.relid,
 								strVal(((DefElem *)stmt->secLabel)->arg));
 		}
-		sepgsqlClientHasPermsSid(relsid,
-								 SEPG_CLASS_DB_TABLE,
-								 SEPG_DB_TABLE__CREATE,
-								 relname, true);
+		sepgsqlClientHasPerms(relsid,
+							  SEPG_CLASS_DB_TABLE,
+							  SEPG_DB_TABLE__CREATE,
+							  relname, true);
 		break;
 
 	case RELKIND_SEQUENCE:
@@ -447,10 +447,10 @@ sepgsqlCreateTableColumns(CreateStmt *stmt,
 			relsid.secid = securityTransSecLabelIn(relsid.relid,
 								strVal(((DefElem *)stmt->secLabel)->arg));
 		}
-		sepgsqlClientHasPermsSid(relsid,
-								 SEPG_CLASS_DB_SEQUENCE,
-								 SEPG_DB_SEQUENCE__CREATE,
-								 relname, true);
+		sepgsqlClientHasPerms(relsid,
+							  SEPG_CLASS_DB_SEQUENCE,
+							  SEPG_DB_SEQUENCE__CREATE,
+							  relname, true);
 		break;
 
 	default:
@@ -472,7 +472,7 @@ sepgsqlCreateTableColumns(CreateStmt *stmt,
 		 index++)
 	{
 		Form_pg_attribute	attr;
-		sepgsql_sid_t	attsid;
+		sepgsql_sid_t	attsid = { InvalidOid, InvalidOid };
 		char			attname[NAMEDATALEN * 2 + 3];
 
 		/* skip unnecessary attributes */
@@ -500,7 +500,7 @@ sepgsqlCreateTableColumns(CreateStmt *stmt,
 					strcmp(colDef->colname, NameStr(attr->attname)) == 0)
 				{
 					attsid.relid = AttributeRelationId;
-					attsid.secid = securityTransSecLabelIn(attsid,
+					attsid.secid = securityTransSecLabelIn(attsid.relid,
 									strVal(((DefElem *)colDef->secLabel)->arg));
 					break;
 				}
@@ -511,20 +511,20 @@ sepgsqlCreateTableColumns(CreateStmt *stmt,
 		{
 		case RELKIND_RELATION:
 			/* compute default column's label if necessary */
-			if (!OidIsValid(attsid))
-				attsid = sepgsqlClientCreateSecid(RelationRelationId, relsid,
+			if (!SidIsValid(attsid))
+				attsid = sepgsqlClientCreateSecid(relsid,
 												  SEPG_CLASS_DB_COLUMN,
 												  AttributeRelationId);
 
 			sprintf(attname, "%s.%s", relname, NameStr(attr->attname));
-			sepgsqlClientHasPermsSid(AttributeRelationId, attsid,
-									 SEPG_CLASS_DB_COLUMN,
-									 SEPG_DB_COLUMN__CREATE,
-									 attname, true);
+			sepgsqlClientHasPerms(attsid,
+								  SEPG_CLASS_DB_COLUMN,
+								  SEPG_DB_COLUMN__CREATE,
+								  attname, true);
 			break;
 
 		default:
-			if (OidIsValid(attsid))
+			if (SidIsValid(attsid))
 				ereport(ERROR,
 						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 						 errmsg("Unable to set security label on \"%s.%s\"",
@@ -533,7 +533,7 @@ sepgsqlCreateTableColumns(CreateStmt *stmt,
 			break;
 		}
 		/* column's security identifier to be assigend on */
-		secLabels[index - FirstLowInvalidHeapAttributeNumber] = attsid;
+		secLabels[index - FirstLowInvalidHeapAttributeNumber] = attsid.secid;
 	}
 	return secLabels;
 }
@@ -938,9 +938,9 @@ sepgsqlGetSecCxtByTuple(Oid tableOid, HeapTuple tuple, uint16 *tclass)
 		}
 		/* Database's context for global assertion */
 		sid.relid = DatabaseRelationId;
-		exttup = GetSysCacheSecid(DATABASEOID,
-								  ObjectIdGetDatum(MyDatabaseId),
-								  0, 0, 0);
+		exttup = SearchSysCache(DATABASEOID,
+								ObjectIdGetDatum(MyDatabaseId),
+								0, 0, 0);
 		break;
 
 	case DescriptionRelationId:

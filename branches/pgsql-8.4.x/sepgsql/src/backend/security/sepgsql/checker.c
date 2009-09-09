@@ -73,10 +73,12 @@ checkTabelColumnPerms(Oid relid, Bitmapset *selected, Bitmapset *modified,
 	Bitmapset		   *columns;
 	Bitmapset		   *selected_ex;
 	Bitmapset		   *modified_ex;
-	HeapTuple			tuple;
+	Form_pg_class		relForm;
+	HeapTuple			reltup;
+	sepgsql_sid_t		relsid;
+	sepgsql_sid_t		attsid;
 	AttrNumber			attno;
-	int					nattrs;
-	security_class_t	tclass;
+	uint16				tclass;
 
 	/*
 	 * Hardwired Policy:
@@ -104,13 +106,15 @@ checkTabelColumnPerms(Oid relid, Bitmapset *selected, Bitmapset *modified,
 	/*
 	 * Check db_table:{...} or db_sequence permissions
 	 */
-	tuple = SearchSysCache(RELOID,
-						   ObjectIdGetDatum(relid),
-						   0, 0, 0);
-	if (!HeapTupleIsValid(tuple))
+	reltup = SearchSysCache(RELOID,
+							ObjectIdGetDatum(relid),
+							0, 0, 0);
+	if (!HeapTupleIsValid(reltup))
 		elog(ERROR, "SELinux: cache lookup failed for relation %u", relid);
 
-	tclass = sepgsqlTupleObjectClass(RelationRelationId, tuple);
+	relForm = (Form_pg_class) GETSTRUCT(reltup);
+
+	relsid = sepgsqlGetSecCxtByTuple(RelationRelationId, reltup, &tclass);
 
 	if (tclass != SEPG_CLASS_DB_TABLE)
 	{
@@ -119,35 +123,30 @@ checkTabelColumnPerms(Oid relid, Bitmapset *selected, Bitmapset *modified,
 		{
 			if (required & SEPG_DB_TABLE__SELECT)
 			{
-				sepgsqlClientHasPermsTup(RelationRelationId, tuple,
-										 SEPG_CLASS_DB_SEQUENCE,
-										 SEPG_DB_SEQUENCE__GET_VALUE,
-										 true);
+				sepgsqlClientHasPerms(relsid, tclass,
+									  SEPG_DB_SEQUENCE__GET_VALUE,
+									  NameStr(relForm->relname), true);
 			}
 		}
-		ReleaseSysCache(tuple);
+		ReleaseSysCache(reltup);
 		return;
 	}
-
-	sepgsqlClientHasPermsTup(RelationRelationId, tuple,
-							 SEPG_CLASS_DB_TABLE,
-							 required, true);
-
-	nattrs = ((Form_pg_class) GETSTRUCT(tuple))->relnatts;
-
-	ReleaseSysCache(tuple);
+	sepgsqlClientHasPerms(relsid, tclass, required,
+						  NameStr(relForm->relname), true);
 
 	/*
 	 * Check db_column:{...} permissions
 	 */
-	selected_ex = fixupWholeRowReference(relid, nattrs, selected);
-	modified_ex = fixupWholeRowReference(relid, nattrs, modified);
+	selected_ex = fixupWholeRowReference(relid, relForm->relnatts, selected);
+	modified_ex = fixupWholeRowReference(relid, relForm->relnatts, modified);
 	columns = bms_union(selected_ex, modified_ex);
 
 	while ((attno = bms_first_member(columns)) >= 0)
 	{
 		Form_pg_attribute	attForm;
-		access_vector_t		attperms = 0;
+		HeapTuple			atttup;
+		uint32				attperms = 0;
+		char				auname[2 * NAMEDATALEN + 3];
 
 		if (bms_is_member(attno, selected_ex))
 			attperms |= SEPG_DB_COLUMN__SELECT;
@@ -163,24 +162,30 @@ checkTabelColumnPerms(Oid relid, Bitmapset *selected, Bitmapset *modified,
 
 		/* remove the attribute number offset */
 		attno += FirstLowInvalidHeapAttributeNumber;
-		tuple = SearchSysCache(ATTNUM,
-							   ObjectIdGetDatum(relid),
-							   Int16GetDatum(attno),
-							   0, 0);
-		if (!HeapTupleIsValid(tuple))
+		atttup = SearchSysCache(ATTNUM,
+								ObjectIdGetDatum(relid),
+								Int16GetDatum(attno),
+								0, 0);
+		if (!HeapTupleIsValid(atttup))
 			elog(ERROR, "cache lookup failed for attribute %d of relation %u",
 				 attno, relid);
 
-		attForm = (Form_pg_attribute) GETSTRUCT(tuple);
+		attForm = (Form_pg_attribute) GETSTRUCT(atttup);
 		if (attForm->attisdropped)
 			elog(ERROR, "attribute %d of relation %u does not exist",
 				 attno, relid);
 
-		sepgsqlClientHasPermsTup(AttributeRelationId, tuple,
-								 SEPG_CLASS_DB_COLUMN,
-								 attperms, true);
-		ReleaseSysCache(tuple);
+		snprintf(auname, sizeof(auname), "%s.%s",
+				 NameStr(relForm->relname),
+				 NameStr(attForm->attname));
+		attsid = sepgsqlGetSecCxtByTuple(AttributeRelationId,
+										 atttup, &tclass);
+		sepgsqlClientHasPerms(attsid, tclass, attperms, auname, true);
+
+		ReleaseSysCache(atttup);
 	}
+
+	ReleaseSysCache(reltup);
 
 	if (selected_ex != selected)
 		bms_free(selected_ex);
@@ -319,8 +324,7 @@ sepgsqlExecScan(Relation rel, HeapTuple tuple, uint32 required, bool abort)
 		required |= SEPG_DB_TUPLE__UPDATE;
 	}
 
-	return sepgsqlClientHasPermsSid(sid.relid, sid.secid,
-									tclass, required, NULL, abort);
+	return sepgsqlClientHasPerms(sid, tclass, required, NULL, abort);
 }
 
 uint32
@@ -365,7 +369,7 @@ sepgsqlHeapTupleInsert(Relation rel, HeapTuple newtup, bool internal)
 	if (!OidIsValid(HeapTupleGetSecid(newtup)))
 	{
 		if (HeapTupleHasSecid(newtup))
-			sepgsqlSetDefaultSecLabel(rel, newtup);
+			sepgsqlSetDefaultSecid(rel, newtup);
 	}
 
 	/*
@@ -378,9 +382,7 @@ sepgsqlHeapTupleInsert(Relation rel, HeapTuple newtup, bool internal)
 
 	sid = sepgsqlGetSecCxtByTuple(RelationGetRelid(rel),
 								  newtup, &tclass);
-	sepgsqlClientHasPermsSid(sid.relid, sid.secid,
-							 tclass, SEPG_DB_TUPLE__INSERT,
-							 NULL, true);
+	sepgsqlClientHasPerms(sid, tclass, SEPG_DB_TUPLE__INSERT, NULL, true);
 }
 
 /*
@@ -426,16 +428,16 @@ sepgsqlHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple newtup)
 		/* db_tuple:{relabelfrom} for older security context */
 		sid = sepgsqlGetSecCxtByTuple(RelationGetRelid(rel),
 									  &oldtup, &tclass);
-		sepgsqlClientHasPermsSid(sid.relid, sid.secid, tclass,
-								 SEPG_DB_TUPLE__RELABELFROM,
-								 NULL, true);
+		sepgsqlClientHasPerms(sid, tclass,
+							  SEPG_DB_TUPLE__RELABELFROM,
+							  NULL, true);
 
 		/* db_tuple:{relabelto} for newer security label */
 		sid = sepgsqlGetSecCxtByTuple(RelationGetRelid(rel),
 									  newtup, &tclass);
-		sepgsqlClientHasPermsSid(sid.relid, sid.secid, tclass,
-								 SEPG_DB_TUPLE__RELABELTO,
-								 NULL, true);
+		sepgsqlClientHasPerms(sid, tclass,
+							  SEPG_DB_TUPLE__RELABELTO,
+							  NULL, true);
 	}
 	ReleaseBuffer(oldbuf);
 }
