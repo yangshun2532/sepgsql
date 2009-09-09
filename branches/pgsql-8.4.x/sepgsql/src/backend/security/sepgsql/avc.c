@@ -371,7 +371,7 @@ sepgsqlAvcReclaim(avc_page *page)
 	(hash_uint32((trelid) ^ (tsecid) ^ ((tclass) << 3)))
 
 static avc_datum *
-sepgsqlAvcMakeEntry(avc_page *page, Oid relid, Oid secid, uint16 tclass)
+sepgsqlAvcMakeEntry(avc_page *page, sepgsql_sid_t tsid, uint16 tclass)
 {
 	security_context_t	scontext, tcontext, ncontext;
 	security_class_t	tclass_ex;
@@ -380,11 +380,11 @@ sepgsqlAvcMakeEntry(avc_page *page, Oid relid, Oid secid, uint16 tclass)
 	avc_datum		   *cache;
 	uint32				hash_key, index;
 
-	hash_key = avc_hash_key(relid, secid, tclass);
+	hash_key = avc_hash_key(tsid.relid, tsid.secid, tclass);
 	index = hash_key % AVC_HASH_NUM_SLOTS;
 
 	scontext = page->scontext;
-	tcontext = securityRawSecLabelOut(relid, secid);
+	tcontext = securityRawSecLabelOut(tsid.relid, tsid.secid);
 
 	/*
 	 * Compute SELinux permission
@@ -442,8 +442,8 @@ sepgsqlAvcMakeEntry(avc_page *page, Oid relid, Oid secid, uint16 tclass)
 
 	cache->hash_key = hash_key;
 	cache->tclass = tclass;
-	cache->tsid.relid = relid;
-	cache->tsid.secid = secid;
+	cache->tsid.relid = tsid.relid;
+	cache->tsid.secid = tsid.secid;
 	/* cache->nsid shall be set later */
 
 	cache->allowed = avd.allowed;
@@ -473,13 +473,13 @@ sepgsqlAvcMakeEntry(avc_page *page, Oid relid, Oid secid, uint16 tclass)
  * It lookups required AVC entry.
  */
 static avc_datum *
-sepgsqlAvcLookup(avc_page *page, Oid trelid, Oid tsecid, uint16 tclass)
+sepgsqlAvcLookup(avc_page *page, sepgsql_sid_t tsid, uint16 tclass)
 {
 	avc_datum  *cache = NULL;
 	uint32		hash_key, index;
 	ListCell   *l;
 
-	hash_key = avc_hash_key(trelid, tsecid, tclass);
+	hash_key = avc_hash_key(tsid.relid, tsid.secid, tclass);
 	index = hash_key % AVC_HASH_NUM_SLOTS;
 
 	foreach (l, page->slot[index])
@@ -487,8 +487,8 @@ sepgsqlAvcLookup(avc_page *page, Oid trelid, Oid tsecid, uint16 tclass)
 		cache = lfirst(l);
 		if (cache->hash_key == hash_key
 			&& cache->tclass == tclass
-			&& cache->tsid.relid == trelid
-			&& cache->tsid.secid == tsecid)
+			&& cache->tsid.relid == tsid.relid
+			&& cache->tsid.secid == tsid.secid)
 		{
 			cache->hot_cache = true;
 			return cache;
@@ -548,23 +548,24 @@ sepgsqlAvcSwitchClient(const char *scontext)
 
 /*
  * sepgsqlClientHasPerms
- *   checks client's privileges on given objects via uAVC.
+ *
+ * It checks client's privileges on the given object using avc.
  */
 bool
-sepgsqlClientHasPermsSid(Oid relid, Oid secid,
-						 uint16 tclass, uint32 required,
-						 const char *audit_name, bool abort)
+sepgsqlClientHasPerms(sepgsql_sid_t tsid,
+					  uint16 tclass, uint32 required,
+					  const char *audit_name, bool abort)
 {
-	avc_datum	  *cache;
+	avc_datum	   *cache;
 	uint32			denied, audited;
 	bool			result = true;
 
 	Assert(required != 0);
 
 	do {
-		cache = sepgsqlAvcLookup(current_page, relid, secid, tclass);
+		cache = sepgsqlAvcLookup(current_page, tsid, tclass);
 		if (!cache)
-			cache = sepgsqlAvcMakeEntry(current_page, relid, secid, tclass);
+			cache = sepgsqlAvcMakeEntry(current_page, tsid, tclass);
 	} while (!sepgsqlAvcCheckValid());
 
 	denied = required & ~cache->allowed;
@@ -574,7 +575,7 @@ sepgsqlClientHasPermsSid(Oid relid, Oid secid,
 	{
 		sepgsqlAvcAudit(!!denied,
 						current_page->scontext,
-						securityRawSecLabelOut(relid, secid),
+						securityRawSecLabelOut(tsid.relid, tsid.secid),
 						cache->tclass, audited, audit_name);
 	}
 
@@ -595,31 +596,21 @@ sepgsqlClientHasPermsSid(Oid relid, Oid secid,
 	return result;
 }
 
-bool
-sepgsqlClientHasPermsTup(Oid relid, HeapTuple tuple,
-						 uint16 tclass, uint32 required, bool abort)
-{
-	const char *audit_name = sepgsqlAuditName(relid, tuple);
-
-	return sepgsqlClientHasPermsSid(relid, HeapTupleGetSecid(tuple),
-									tclass, required, audit_name, abort);
-}
-
 /*
  * sepgsqlClientCreateSecid
  * sepgsqlClientCreateLabel
  */
-Oid
-sepgsqlClientCreateSecid(Oid trelid, Oid tsecid, uint16 tclass, Oid nrelid)
+sepgsql_sid_t
+sepgsqlClientCreateSecid(sepgsql_sid_t tsid, uint16 tclass, Oid nrelid)
 {
-	avc_datum  *cache;
-	int			index;
-	Oid			nsecid;
+	sepgsql_sid_t	nsid;
+	avc_datum	   *cache;
+	int				index;
 
 	do {
-		cache = sepgsqlAvcLookup(current_page, trelid, tsecid, tclass);
+		cache = sepgsqlAvcLookup(current_page, tsid, tclass);
 		if (!cache)
-			cache = sepgsqlAvcMakeEntry(current_page, trelid, tsecid, tclass);
+			cache = sepgsqlAvcMakeEntry(current_page, tsid, tclass);
 
 		index = (nrelid % AVC_DATUM_NSID_SLOTS);
 		if (cache->nsid[index].relid != nrelid)
@@ -628,21 +619,21 @@ sepgsqlClientCreateSecid(Oid trelid, Oid tsecid, uint16 tclass, Oid nrelid)
 				= securityRawSecLabelIn(nrelid, cache->ncontext);
 			cache->nsid[index].relid = nrelid;
 		}
-		nsecid = cache->nsid[index].secid;
+		nsid = cache->nsid[index];
 	} while (!sepgsqlAvcCheckValid());
 
-	return nsecid;
+	return nsid;
 }
 
 security_context_t
-sepgsqlClientCreateLabel(Oid trelid, Oid tsecid, uint16 tclass)
+sepgsqlClientCreateLabel(sepgsql_sid_t tsid, uint16 tclass)
 {
 	avc_datum  *cache;
 
 	do {
-		cache = sepgsqlAvcLookup(current_page, trelid, tsecid, tclass);
+		cache = sepgsqlAvcLookup(current_page, tsid, tclass);
 		if (!cache)
-			cache = sepgsqlAvcMakeEntry(current_page, trelid, tsecid, tclass);
+			cache = sepgsqlAvcMakeEntry(current_page, tsid, tclass);
 	} while (!sepgsqlAvcCheckValid());
 
 	return cache->ncontext;
