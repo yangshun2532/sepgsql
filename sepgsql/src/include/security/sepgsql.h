@@ -408,6 +408,11 @@ extern Oid *sepgsqlCreateTableColumns(CreateStmt *stmt,
 									  TupleDesc tupdesc, char relkind);
 extern Oid *sepgsqlCopyTableColumns(Relation source);
 
+extern sepgsql_sid_t
+sepgsqlGetSecCxtByOid(Oid classOid, Oid objectId, int32 objsubId);
+extern sepgsql_sid_t
+sepgsqlGetSecCxtByTuple(Oid tableOid, HeapTuple tuple);
+
 extern char *sepgsqlTransSecLabelIn(char *seclabel);
 extern char *sepgsqlTransSecLabelOut(char *seclabel);
 extern char *sepgsqlRawSecLabelIn(char *seclabel);

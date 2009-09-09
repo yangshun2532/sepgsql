@@ -10,21 +10,50 @@
 #include "access/sysattr.h"
 #include "access/xact.h"
 #include "catalog/catalog.h"
+#include "catalog/pg_constraint.h"
 #include "catalog/heap.h"
 #include "catalog/indexing.h"
+#include "catalog/pg_aggregate.h"
+#include "catalog/pg_amop.h"
+#include "catalog/pg_amproc.h"
+#include "catalog/pg_attrdef.h"
 #include "catalog/pg_attribute.h"
+#include "catalog/pg_auth_members.h"
+#include "catalog/pg_authid.h"
+#include "catalog/pg_cast.h"
 #include "catalog/pg_class.h"
+#include "catalog/pg_conversion.h"
 #include "catalog/pg_database.h"
+#include "catalog/pg_description.h"
+#include "catalog/pg_enum.h"
+#include "catalog/pg_foreign_data_wrapper.h"
+#include "catalog/pg_foreign_server.h"
+#include "catalog/pg_user_mapping.h"
+#include "catalog/pg_inherits.h"
+#include "catalog/pg_language.h"
 #include "catalog/pg_largeobject.h"
 #include "catalog/pg_namespace.h"
+#include "catalog/pg_opclass.h"
+#include "catalog/pg_operator.h"
+#include "catalog/pg_opfamily.h"
 #include "catalog/pg_proc.h"
+#include "catalog/pg_rewrite.h"
 #include "catalog/pg_security.h"
+#include "catalog/pg_shdescription.h"
+#include "catalog/pg_statistic.h"
+#include "catalog/pg_trigger.h"
+#include "catalog/pg_ts_config.h"
+#include "catalog/pg_ts_dict.h"
+#include "catalog/pg_ts_parser.h"
+#include "catalog/pg_ts_template.h"
 #include "catalog/pg_type.h"
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
 #include "security/sepgsql.h"
 #include "storage/fd.h"
+#include "utils/fmgroids.h"
 #include "utils/syscache.h"
+#include "utils/tqual.h"
 
 /* GUC: to turn on/off row level controls in SE-PostgreSQL */
 bool sepostgresql_row_level;
@@ -566,6 +595,402 @@ sepgsqlCopyTableColumns(Relation source)
 	}
 
 	return secLabels;
+}
+
+/*
+ * sepgsqlGetSecCxtByOid
+ *
+ * It returns a pair of relid/secid for the given OID.
+ */
+static sepgsql_sid_t
+getSecCxtByOidDirect(Oid classOid, Oid indexOid, Oid objectId)
+{
+	sepgsql_sid_t	sid;
+	Relation		rel;
+	HeapTuple		tup;
+	ScanKeyData		skey;
+	SysScanDesc		scan;
+
+	sid.relid = classOid;
+	sid.secid = InvalidOid;
+
+	rel = heap_open(CastRelationId, AccessShareLock);
+
+	ScanKeyInit(&skey,
+				ObjectIdAttributeNumber,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(objectId));
+
+	scan = systable_beginscan(rel, CastOidIndexId, true,
+							  SnapshotNow, 1, &skey);
+	tup = systable_getnext(scan);
+
+	if (HeapTupleIsValid(tup))
+		sid = sepgsqlGetSecCxtByTuple(classOid, tup);
+
+	systable_endscan(scan);
+
+	heap_close(rel, AccessShareLock);
+
+	return sid;
+}
+
+sepgsql_sid_t
+sepgsqlGetSecCxtByOid(Oid classOid, Oid objectId, int32 objsubId)
+{
+	sepgsql_sid_t	sid;
+	HeapTuple		tup;
+
+	sid.relid = classOid;
+	sid.secid = InvalidOid;
+
+	switch (classOid)
+	{
+	case AccessMethodOperatorRelationId:
+
+		break;
+
+	case AccessMethodProcedureRelationId:
+
+		break;
+
+	case CastRelationId:
+		sid = getSecCxtByOidDirect(CastRelationId,
+								   CastOidIndexId,
+								   objectId);
+		break;
+
+	case ConstraintRelationId:
+		/* pg_constraint is an attribute of pg_class or pg_type  */
+		tup = SearchSysCache(CONSTROID,
+							 ObjectIdGetDatum(objectId),
+							 0, 0, 0);
+		if (HeapTupleIsValid(tup))
+		{
+			sid = sepgsqlGetSecCxtByTuple(classOid, tup);
+			ReleaseSysCache(tup);
+		}
+		break;
+
+	case ConversionRelationId:
+		sid.secid = GetSysCacheSecid(CONVOID,
+									 ObjectIdGetDatum(objectId),
+									 0, 0, 0);
+		break;
+
+	case ForeignDataWrapperRelationId:
+		sid.secid = GetSysCacheSecid(FOREIGNDATAWRAPPEROID,
+									 ObjectIdGetDatum(objectId),
+									 0, 0, 0);
+		break;
+
+	case ForeignServerRelationId:
+		sid.secid = GetSysCacheSecid(FOREIGNSERVEROID,
+									 ObjectIdGetDatum(objectId),
+									 0, 0, 0);
+		break;
+
+	case LanguageRelationId:
+		sid.secid = GetSysCacheSecid(LANGOID,
+									 ObjectIdGetDatum(objectId),
+									 0, 0, 0);
+		break;
+
+	case LargeObjectRelationId:
+		/* to be replaced by LargeObjectMetaRelationId! */
+		{
+			Relation		rel;
+			ScanKeyData		skey;
+			SysScanDesc		scan;
+
+			rel = heap_open(LargeObjectRelationId, AccessShareLock);
+
+			ScanKeyInit(&skey,
+						Anum_pg_largeobject_loid,
+						BTEqualStrategyNumber, F_OIDEQ,
+						ObjectIdGetDatum(objectId));
+
+			scan = systable_beginscan(rel, LargeObjectLOidPNIndexId,
+									  true, SnapshotNow, 1, &skey);
+
+			tup = systable_getnext(scan);
+
+			if (HeapTupleIsValid(tup))
+				sid.secid = HeapTupleGetSecid(tup);
+
+			systable_endscan(scan);
+
+			heap_close(rel, AccessShareLock);
+		}
+		break;
+
+	case RelationRelationId:
+		if (objsubId != 0)
+		{
+			sid.relid = AttributeRelationId;
+			sid.secid = GetSysCacheSecid(ATTNUM,
+										 ObjectIdGetDatum(objectId),
+										 Int16GetDatum(objsubId),
+										 0, 0);
+		}
+		else
+		{
+			sid.relid = RelationRelationId;
+			sid.secid = GetSysCacheSecid(RELOID,
+										 ObjectIdGetDatum(objectId),
+										 0, 0, 0);
+		}
+		break;
+
+	case NamespaceRelationId:
+		sid.secid = GetSysCacheSecid(NAMESPACEOID,
+									 ObjectIdGetDatum(objectId),
+									 0, 0, 0);
+		break;
+
+	case OperatorClassRelationId:
+		sid.secid = GetSysCacheSecid(CLAOID,
+									 ObjectIdGetDatum(objectId),
+									 0, 0, 0);
+		break;
+
+	case OperatorFamilyRelationId:
+		sid.secid = GetSysCacheSecid(OPFAMILYOID,
+									 ObjectIdGetDatum(objectId),
+									 0, 0, 0);
+		break;
+
+	case OperatorRelationId:
+		sid.secid = GetSysCacheSecid(OPEROID,
+									 ObjectIdGetDatum(objectId),
+									 0, 0, 0);
+		break;
+
+	case ProcedureRelationId:
+		sid.secid = GetSysCacheSecid(PROCOID,
+									 ObjectIdGetDatum(objectId),
+									 0, 0, 0);
+		break;
+
+	case RewriteRelationId:
+		sid = getSecCxtByOidDirect(RewriteRelationId,
+								   RewriteOidIndexId,
+                                   objectId);
+		break;
+
+	case TriggerRelationId:
+		sid = getSecCxtByOidDirect(TriggerRelationId,
+								   TriggerOidIndexId,
+								   objectId);
+		break;
+
+	case TSConfigRelationId:
+		sid.secid = GetSysCacheSecid(TSCONFIGOID,
+									 ObjectIdGetDatum(objectId),
+									 0, 0, 0);
+		break;
+
+	case TSDictionaryRelationId:
+		sid.secid = GetSysCacheSecid(TSDICTOID,
+									 ObjectIdGetDatum(objectId),
+									 0, 0, 0);
+		break;
+
+	case TSParserRelationId:
+		sid.secid = GetSysCacheSecid(TSPARSEROID,
+									 ObjectIdGetDatum(objectId),
+									 0, 0, 0);
+		break;
+
+	case TSTemplateRelationId:
+		sid.secid = GetSysCacheSecid(TSTEMPLATEOID,
+									 ObjectIdGetDatum(objectId),
+									 0, 0, 0);
+		break;
+
+	case TypeRelationId:
+		sid.secid = GetSysCacheSecid(TYPEOID,
+									 ObjectIdGetDatum(objectId),
+									 0, 0, 0);
+		break;
+
+	case UserMappingRelationId:
+		sid.secid = GetSysCacheSecid(USERMAPPINGOID,
+									 ObjectIdGetDatum(objectId),
+									 0, 0, 0);
+		break;
+
+	default:
+		elog(ERROR, "unexpected class OID: %u", classOid);
+		break;
+	}
+
+	return sid;
+}
+
+/*
+ * sepgsqlGetSecCxtByTuple
+ *
+ * It returns a pair of relid/secid for the given HeapTuple.
+ * A few system catalogs is handled as an attribute of other
+ * system objects.
+ * E.g) pg_attrdef is an attribute of a certain pg_attribute
+ */
+sepgsql_sid_t
+sepgsqlGetSecCxtByTuple(Oid tableOid, HeapTuple tuple)
+{
+	sepgsql_sid_t	sid;
+	Oid				extid;
+	Oid				extcls;
+	AttrNumber		extsub;
+
+	sid.relid = tableOid;
+	sid.secid = InvalidOid;
+
+	switch (tableOid)
+	{
+	case AggregateRelationId:
+		sid.relid = ProcedureRelationId;
+		extid = ((Form_pg_aggregate) GETSTRUCT(tuple))->aggfnoid;
+		sid.secid = GetSysCacheSecid(PROCOID,
+									 ObjectIdGetDatum(extid),
+									 0, 0, 0);
+		break;
+
+	case AccessMethodOperatorRelationId:
+		sid.relid = OperatorFamilyRelationId;
+		extid = ((Form_pg_amop) GETSTRUCT(tuple))->amopfamily;
+		sid.secid = GetSysCacheSecid(OPFAMILYOID,
+									 ObjectIdGetDatum(extid),
+									 0, 0, 0);
+		break;
+
+	case AccessMethodProcedureRelationId:
+		sid.relid = OperatorFamilyRelationId;
+		extid = ((Form_pg_amproc) GETSTRUCT(tuple))->amprocfamily;
+		sid.secid = GetSysCacheSecid(OPFAMILYOID,
+									 ObjectIdGetDatum(extid),
+									 0, 0, 0);
+		break;
+
+	case AttrDefaultRelationId:
+		sid.relid = AttributeRelationId;
+		extid = ((Form_pg_attrdef) GETSTRUCT(tuple))->adrelid;
+		extsub = ((Form_pg_attrdef) GETSTRUCT(tuple))->adnum;
+		sid.secid = GetSysCacheSecid(ATTNUM,
+									 ObjectIdGetDatum(extid),
+									 Int16GetDatum(extsub),
+									 0, 0);
+		break;
+
+	case AuthMemRelationId:
+		sid.relid = AuthIdRelationId;
+		extid = ((Form_pg_auth_members) GETSTRUCT(tuple))->roleid;
+		sid.secid = GetSysCacheSecid(AUTHOID,
+									 ObjectIdGetDatum(extid),
+									 0, 0, 0);
+		break;
+
+	case ConstraintRelationId:
+		/* CHECK constraint is an attribute of the relation */
+		extid = ((Form_pg_constraint) GETSTRUCT(tuple))->conrelid;
+		if (OidIsValid(extid))
+		{
+			sid.relid = RelationRelationId;
+			sid.secid = GetSysCacheSecid(RELOID,
+										 ObjectIdGetDatum(extid),
+										 0, 0, 0);
+			break;
+		}
+		/* DOMAIN constraint is an attribute of the domain type */
+		extid = ((Form_pg_constraint) GETSTRUCT(tuple))->contypid;
+		if (OidIsValid(extid))
+		{
+			sid.relid = TypeRelationId;
+			sid.secid = GetSysCacheSecid(TYPEOID,
+										 ObjectIdGetDatum(extid),
+										 0, 0, 0);
+			break;
+		}
+		/* Database's context for global assertion */
+		sid.relid = DatabaseRelationId;
+		sid.secid = GetSysCacheSecid(DATABASEOID,
+									 ObjectIdGetDatum(MyDatabaseId),
+									 0, 0, 0);
+		break;
+
+	case DescriptionRelationId:
+		extid = ((Form_pg_description) GETSTRUCT(tuple))->objoid;
+		extcls = ((Form_pg_description) GETSTRUCT(tuple))->classoid;
+		sid = sepgsqlGetSecCxtByOid(extcls, extid, 0);
+		break;
+
+	case EnumRelationId:
+		extid = ((Form_pg_enum) GETSTRUCT(tuple))->enumtypid;
+		sid.relid = TypeRelationId;
+		sid.secid = GetSysCacheSecid(TYPEOID,
+									 ObjectIdGetDatum(extid),
+									 0, 0, 0);
+		break;
+
+	case IndexRelationId:
+		extid = ((Form_pg_index) GETSTRUCT(tuple))->indexrelid;
+		sid.relid = RelationRelationId;
+		sid.secid = GetSysCacheSecid(RELOID,
+									 ObjectIdGetDatum(extid),
+									 0, 0, 0);
+		break;
+
+	case InheritsRelationId:
+		extid = ((Form_pg_inherits) GETSTRUCT(tuple))->inhrelid;
+		sid.relid = RelationRelationId;
+		sid.secid = GetSysCacheSecid(RELOID,
+									 ObjectIdGetDatum(extid),
+									 0, 0, 0);
+		break;
+
+	case RewriteRelationId:
+		extid = ((Form_pg_rewrite) GETSTRUCT(tuple))->ev_class;
+		sid.relid = RelationRelationId;
+		sid.secid = GetSysCacheSecid(RELOID,
+									 ObjectIdGetDatum(extid),
+									 0, 0, 0);
+		break;
+
+	case SecurityRelationId:
+		sid.relid = ((Form_pg_security) GETSTRUCT(tuple))->relid;
+		sid.secid = ((Form_pg_security) GETSTRUCT(tuple))->secid;
+		break;
+
+	case SharedDescriptionRelationId:
+		extid = ((Form_pg_shdescription) GETSTRUCT(tuple))->objoid;
+		extcls = ((Form_pg_shdescription) GETSTRUCT(tuple))->classoid;
+		sid = sepgsqlGetSecCxtByOid(extcls, extid, 0);
+		break;
+
+	case StatisticRelationId:
+		extid = ((Form_pg_statistic) GETSTRUCT(tuple))->starelid;
+		extsub = ((Form_pg_statistic) GETSTRUCT(tuple))->staattnum;
+		sid.relid = AttributeRelationId;
+		sid.secid = GetSysCacheSecid(ATTNUM,
+									 ObjectIdGetDatum(extid),
+									 Int16GetDatum(extsub),
+									 0, 0);
+		break;
+
+	case TriggerRelationId:
+		extid = ((Form_pg_trigger) GETSTRUCT(tuple))->tgrelid;
+		sid.relid = RelationRelationId;
+		sid.secid = GetSysCacheSecid(RELOID,
+									 ObjectIdGetDatum(extid),
+									 0, 0, 0);
+		break;
+
+	default:
+		sid.secid = HeapTupleGetSecid(tuple);
+		break;
+	}
+	return sid;
 }
 
 /*
