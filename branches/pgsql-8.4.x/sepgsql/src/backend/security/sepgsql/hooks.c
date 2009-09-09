@@ -90,8 +90,11 @@ checkDatabaseCommon(Oid datOid, uint32 required, bool abort)
 		elog(ERROR, "cache lookup failed for database: %u", datOid);
 
 	auname = NameStr(((Form_pg_database) GETSTRUCT(tuple))->datname);
-	datSid = sepgsqlGetSecCxtByTuple(DatabaseRelationId, tuple, &tclass);
-	rc = sepgsqlClientHasPerms(datSid, tclass, required, auname, abort);
+	datSid = sepgsqlGetTupleContext(DatabaseRelationId,
+									tuple, &tclass);
+	rc = sepgsqlClientHasPerms(datSid,
+							   tclass, required,
+							   auname, abort);
 
 	ReleaseSysCache(tuple);
 
@@ -257,10 +260,10 @@ checkSchemaCommon(Oid nspOid, uint32 required, bool abort)
 	if (!HeapTupleIsValid(tuple))
 		elog(ERROR, "cache lookup failed for namespace: %u", nspOid);
 
+	nspSid = sepgsqlGetTupleContext(NamespaceRelationId,
+									tuple, &tclass);
+
 	auname = NameStr(((Form_pg_namespace) GETSTRUCT(tuple))->nspname);
-
-	nspSid = sepgsqlGetSecCxtByTuple(NamespaceRelationId, tuple, &tclass);
-
 	rc = sepgsqlClientHasPerms(nspSid, tclass, required,
 							   auname, abort);
 
@@ -414,8 +417,8 @@ checkColumnCommon(Oid relOid, AttrNumber attno, uint32 required)
 		sprintf(auname, "%s.%s",
 				get_rel_name(relOid),
 				NameStr(attr->attname));
-		attSid = sepgsqlGetSecCxtByTuple(AttributeRelationId,
-										 tuple, &tclass);
+		attSid = sepgsqlGetTupleContext(AttributeRelationId,
+										tuple, &tclass);
 		sepgsqlClientHasPerms(attSid, tclass, required,
 							  auname, true);
 	}
@@ -508,8 +511,10 @@ checkTableCommon(Oid table_oid, access_vector_t required)
 		elog(ERROR, "cache lookup failed for relation %u", table_oid);
 
 	auname = NameStr(((Form_pg_class) GETSTRUCT(tuple))->relname);
-	relSid = sepgsqlGetSecCxtByTuple(RelationRelationId, tuple, &tclass);
-	sepgsqlClientHasPerms(relSid, tclass, required, auname, true);
+	relSid = sepgsqlGetTupleContext(RelationRelationId,
+									tuple, &tclass);
+	sepgsqlClientHasPerms(relSid, tclass, required,
+						  auname, true);
 	ReleaseSysCache(tuple);
 }
 
@@ -595,10 +600,11 @@ sepgsqlCheckTableTruncate(Relation rel)
 
 	while ((tuple = heap_getnext(scan, ForwardScanDirection)) != NULL)
 	{
-		tupSid = sepgsqlGetSecCxtByTuple(RelationGetRelid(rel),
-										 tuple, &tclass);
-		sepgsqlClientHasPerms(tupSid, tclass,
-							  SEPG_DB_TUPLE__DELETE, NULL, true);
+		tupSid = sepgsqlGetTupleContext(RelationGetRelid(rel),
+										tuple, &tclass);
+		sepgsqlClientHasPerms(tupSid,
+							  tclass, SEPG_DB_TUPLE__DELETE,
+							  NULL, true);
 	}
 	heap_endscan(scan);
 }
@@ -657,8 +663,10 @@ checkProcedureCommon(Oid procOid, uint32 required, bool abort)
 		elog(ERROR, "cache lookup failed for procedure: %u", procOid);
 
 	auname = NameStr(((Form_pg_proc) GETSTRUCT(tuple))->proname);
-	proSid = sepgsqlGetSecCxtByTuple(ProcedureRelationId, tuple, &tclass);
-	rc = sepgsqlClientHasPerms(proSid, tclass, required, auname, abort);
+	proSid = sepgsqlGetTupleContext(ProcedureRelationId,
+									tuple, &tclass);
+	rc = sepgsqlClientHasPerms(proSid, tclass, required,
+							   auname, abort);
 
 	ReleaseSysCache(tuple);
 
@@ -699,8 +707,8 @@ sepgsqlCheckProcedureCreate(const char *procName, Oid procOid,
 		if (!HeapTupleIsValid(tuple))
 			elog(ERROR, "cache lookup failed for procedure: %u", procOid);
 
-		proSid = sepgsqlGetSecCxtByTuple(ProcedureRelationId, tuple, NULL);
-
+		proSid = sepgsqlGetTupleContext(ProcedureRelationId,
+										tuple, NULL);
 		ReleaseSysCache(tuple);
 	}
 	else
@@ -729,8 +737,9 @@ sepgsqlCheckProcedureCreate(const char *procName, Oid procOid,
 	ReleaseSysCache(tuple);
 
 	/* check it */
-	sepgsqlClientHasPerms(proSid, SEPG_CLASS_DB_PROCEDURE,
-						  required, procName, true);
+	sepgsqlClientHasPerms(proSid,
+						  SEPG_CLASS_DB_PROCEDURE, required,
+						  procName, true);
 
 	return proSid.secid;
 }
@@ -819,7 +828,8 @@ sepgsqlHintProcedureInlined(HeapTuple protup)
 	 * it is not a trusted procedure, so it can be
 	 * inlined due to performance purpose.
 	 */
-	proSid = sepgsqlGetSecCxtByTuple(ProcedureRelationId, protup, NULL);
+	proSid = sepgsqlGetTupleContext(ProcedureRelationId,
+									protup, NULL);
 
 	newcon = sepgsqlClientCreateLabel(proSid, SEPG_CLASS_PROCESS);
 
@@ -883,7 +893,8 @@ sepgsqlCheckProcedureEntrypoint(FmgrInfo *flinfo, HeapTuple protup)
 	if (!sepgsqlIsEnabled())
 		return;
 
-	proSid = sepgsqlGetSecCxtByTuple(ProcedureRelationId, protup, NULL);
+	proSid = sepgsqlGetTupleContext(ProcedureRelationId,
+									protup, NULL);
 
 	newcon = sepgsqlClientCreateLabel(proSid, SEPG_CLASS_PROCESS);
 
@@ -929,7 +940,7 @@ sepgsqlCheckBlobCreate(Relation rel, HeapTuple lotup)
 	/* set a default security context */
 	sepgsqlSetDefaultSecid(rel, lotup);
 
-	loSid = sepgsqlGetSecCxtByTuple(relid, lotup, NULL);
+	loSid = sepgsqlGetTupleContext(relid, lotup, NULL);
 	sepgsqlClientHasPerms(loSid,
 						  SEPG_CLASS_DB_BLOB,
 						  SEPG_DB_BLOB__CREATE,
@@ -949,7 +960,7 @@ sepgsqlCheckBlobDrop(Relation rel, HeapTuple lotup)
 	if (!sepgsqlIsEnabled())
 		return;
 
-	loSid = sepgsqlGetSecCxtByTuple(relid, lotup, NULL);
+	loSid = sepgsqlGetTupleContext(relid, lotup, NULL);
 	sepgsqlClientHasPerms(loSid,
 						  SEPG_CLASS_DB_BLOB,
 						  SEPG_DB_BLOB__DROP,
@@ -1098,7 +1109,7 @@ sepgsqlCheckBlobRelabel(HeapTuple oldtup, HeapTuple newtup)
 		required |= SEPG_DB_BLOB__RELABELFROM;
 
 	/* db_blob:{setattr relabelfrom} */
-	loSid = sepgsqlGetSecCxtByTuple(LargeObjectRelationId, oldtup, NULL);
+	loSid = sepgsqlGetTupleContext(LargeObjectRelationId, oldtup, NULL);
 	sepgsqlClientHasPerms(loSid,
 						  SEPG_CLASS_DB_BLOB,
 						  required,
@@ -1108,7 +1119,7 @@ sepgsqlCheckBlobRelabel(HeapTuple oldtup, HeapTuple newtup)
 		return;
 
 	/* db_blob:{relabelto} */
-	loSid = sepgsqlGetSecCxtByTuple(LargeObjectRelationId, newtup, NULL);
+	loSid = sepgsqlGetTupleContext(LargeObjectRelationId, newtup, NULL);
 	sepgsqlClientHasPerms(loSid,
 						  SEPG_CLASS_DB_BLOB,
 						  SEPG_DB_BLOB__RELABELTO,

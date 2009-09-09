@@ -114,7 +114,7 @@ checkTabelColumnPerms(Oid relid, Bitmapset *selected, Bitmapset *modified,
 
 	relForm = (Form_pg_class) GETSTRUCT(reltup);
 
-	relsid = sepgsqlGetSecCxtByTuple(RelationRelationId, reltup, &tclass);
+	relsid = sepgsqlGetTupleContext(RelationRelationId, reltup, &tclass);
 
 	if (tclass != SEPG_CLASS_DB_TABLE)
 	{
@@ -178,8 +178,8 @@ checkTabelColumnPerms(Oid relid, Bitmapset *selected, Bitmapset *modified,
 		snprintf(auname, sizeof(auname), "%s.%s",
 				 NameStr(relForm->relname),
 				 NameStr(attForm->attname));
-		attsid = sepgsqlGetSecCxtByTuple(AttributeRelationId,
-										 atttup, &tclass);
+		attsid = sepgsqlGetTupleContext(AttributeRelationId,
+										atttup, &tclass);
 		sepgsqlClientHasPerms(attsid, tclass, attperms, auname, true);
 
 		ReleaseSysCache(atttup);
@@ -312,7 +312,7 @@ sepgsqlExecScan(Relation rel, HeapTuple tuple, uint32 required, bool abort)
 		RelationGetRelid(rel) == SecurityRelationId)
 		return true;
 
-	sid = sepgsqlGetSecCxtByTuple(RelationGetRelid(rel), tuple, &tclass);
+	sid = sepgsqlGetTupleContext(RelationGetRelid(rel), tuple, &tclass);
 	/*
 	 * Insert/Delete to an external attribute is equivalent to
 	 * the set-attribute on the master
@@ -380,8 +380,8 @@ sepgsqlHeapTupleInsert(Relation rel, HeapTuple newtup, bool internal)
 	if (internal)
 		return;
 
-	sid = sepgsqlGetSecCxtByTuple(RelationGetRelid(rel),
-								  newtup, &tclass);
+	sid = sepgsqlGetTupleContext(RelationGetRelid(rel),
+								 newtup, &tclass);
 	sepgsqlClientHasPerms(sid, tclass, SEPG_DB_TUPLE__INSERT, NULL, true);
 }
 
@@ -426,15 +426,15 @@ sepgsqlHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple newtup)
 		uint16			tclass;
 
 		/* db_tuple:{relabelfrom} for older security context */
-		sid = sepgsqlGetSecCxtByTuple(RelationGetRelid(rel),
-									  &oldtup, &tclass);
+		sid = sepgsqlGetTupleContext(RelationGetRelid(rel),
+									 &oldtup, &tclass);
 		sepgsqlClientHasPerms(sid, tclass,
 							  SEPG_DB_TUPLE__RELABELFROM,
 							  NULL, true);
 
 		/* db_tuple:{relabelto} for newer security label */
-		sid = sepgsqlGetSecCxtByTuple(RelationGetRelid(rel),
-									  newtup, &tclass);
+		sid = sepgsqlGetTupleContext(RelationGetRelid(rel),
+									 newtup, &tclass);
 		sepgsqlClientHasPerms(sid, tclass,
 							  SEPG_DB_TUPLE__RELABELTO,
 							  NULL, true);
