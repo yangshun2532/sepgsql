@@ -177,6 +177,8 @@ typedef struct {
 	Oid		secid;
 } sepgsql_sid_t;
 
+#define SidIsValid(sid)		(OidIsValid((sid).relid) && OidIsValid((sid).secid))
+
 /*
  * avc.c : userspace access vector caches
  */
@@ -199,18 +201,14 @@ extern void sepgsqlAvcReset(void);
 extern void sepgsqlAvcSwitchClient(const char *scontext);
 
 extern bool
-sepgsqlClientHasPermsSid(Oid relid, Oid secid,
-						 uint16 tclass, uint32 required,
-						 const char *audit_name, bool abort);
-extern bool
-sepgsqlClientHasPermsTup(Oid relid, HeapTuple tuple,
-						 uint16 tclass, uint32 required, bool abort);
-extern Oid
-sepgsqlClientCreateSecid(Oid trelid, Oid tsecid, uint16 tclass, Oid nrelid);
+sepgsqlClientHasPerms(sepgsql_sid_t tsid,
+					  uint16 tclass, uint32 required,
+					  const char *audit_name, bool abort);
+extern sepgsql_sid_t
+sepgsqlClientCreateSecid(sepgsql_sid_t tsid, uint16 tclass, Oid nrelid);
 
 extern security_context_t
-sepgsqlClientCreateLabel(Oid trelid, Oid tsecid,
-						 security_class_t tclass);
+sepgsqlClientCreateLabel(sepgsql_sid_t tsid, security_class_t tclass);
 
 extern bool
 sepgsqlComputePerms(security_context_t scontext,
@@ -388,20 +386,17 @@ sepgsqlCheckSysobjDrop(const ObjectAddress *object);
  */
 extern bool
 sepgsqlTupleDescHasSecid(Oid relid, char relkind);
-extern security_context_t
-sepgsqlMetaSecurityLabel(void);
-extern void
-sepgsqlSetDefaultSecLabel(Relation rel, HeapTuple tuple);
 
-extern Oid sepgsqlGetDefaultDatabaseSecLabel(void);
-extern Oid sepgsqlGetDefaultSchemaSecLabel(Oid database_oid);
-extern Oid sepgsqlGetDefaultSchemaTempSecLabel(Oid database_oid);
-extern Oid sepgsqlGetDefaultTableSecLabel(Oid namespace_oid);
-extern Oid sepgsqlGetDefaultSequenceSecLabel(Oid namespace_oid);
-extern Oid sepgsqlGetDefaultProcedureSecLabel(Oid namespace_oid);
-extern Oid sepgsqlGetDefaultColumnSecLabel(Oid table_oid);
-extern Oid sepgsqlGetDefaultTupleSecLabel(Oid table_oid);
-extern Oid sepgsqlGetDefaultBlobSecLabel(Oid database_oid);
+extern void sepgsqlSetDefaultSecid(Relation rel, HeapTuple tuple);
+extern sepgsql_sid_t sepgsqlGetDefaultDatabaseSecid(void);
+extern sepgsql_sid_t sepgsqlGetDefaultSchemaSecid(Oid database_oid);
+extern sepgsql_sid_t sepgsqlGetDefaultSchemaTempSecid(Oid database_oid);
+extern sepgsql_sid_t sepgsqlGetDefaultTableSecid(Oid namespace_oid);
+extern sepgsql_sid_t sepgsqlGetDefaultSequenceSecid(Oid namespace_oid);
+extern sepgsql_sid_t sepgsqlGetDefaultProcedureSecid(Oid namespace_oid);
+extern sepgsql_sid_t sepgsqlGetDefaultColumnSecid(Oid table_oid);
+extern sepgsql_sid_t sepgsqlGetDefaultTupleSecid(Oid table_oid);
+extern sepgsql_sid_t sepgsqlGetDefaultBlobSecid(Oid database_oid);
 
 extern Oid *sepgsqlCreateTableColumns(CreateStmt *stmt,
 									  const char *relname, Oid namespace_oid,
