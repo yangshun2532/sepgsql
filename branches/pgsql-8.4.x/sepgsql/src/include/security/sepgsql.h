@@ -387,7 +387,7 @@ sepgsqlCheckSysobjDrop(const ObjectAddress *object);
  * label.c : security label management
  */
 extern bool
-sepgsqlTupleDescHasSecLabel(Oid relid, char relkind);
+sepgsqlTupleDescHasSecid(Oid relid, char relkind);
 extern security_context_t
 sepgsqlMetaSecurityLabel(void);
 extern void

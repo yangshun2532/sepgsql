@@ -968,9 +968,9 @@ ExecInitNullTupleSlot(EState *estate, TupleDesc tupType)
  * ----------------------------------------------------------------
  */
 TupleDesc
-ExecTypeFromTL(List *targetList, bool hasoid, bool hasseclabel)
+ExecTypeFromTL(List *targetList, bool hasoid, bool hassecid)
 {
-	return ExecTypeFromTLInternal(targetList, hasoid, hasseclabel, false);
+	return ExecTypeFromTLInternal(targetList, hasoid, hassecid, false);
 }
 
 /* ----------------------------------------------------------------
@@ -980,14 +980,14 @@ ExecTypeFromTL(List *targetList, bool hasoid, bool hasseclabel)
  * ----------------------------------------------------------------
  */
 TupleDesc
-ExecCleanTypeFromTL(List *targetList, bool hasoid, bool hasseclabel)
+ExecCleanTypeFromTL(List *targetList, bool hasoid, bool hassecid)
 {
-	return ExecTypeFromTLInternal(targetList, hasoid, hasseclabel, true);
+	return ExecTypeFromTLInternal(targetList, hasoid, hassecid, true);
 }
 
 static TupleDesc
 ExecTypeFromTLInternal(List *targetList, bool hasoid,
-					   bool hasseclabel, bool skipjunk)
+					   bool hassecid, bool skipjunk)
 {
 	TupleDesc	typeInfo;
 	ListCell   *l;
@@ -999,7 +999,7 @@ ExecTypeFromTLInternal(List *targetList, bool hasoid,
 	else
 		len = ExecTargetListLength(targetList);
 	typeInfo = CreateTemplateTupleDesc(len, hasoid);
-	typeInfo->tdhasseclabel = hasseclabel;
+	typeInfo->tdhassecid = hassecid;
 
 	foreach(l, targetList)
 	{

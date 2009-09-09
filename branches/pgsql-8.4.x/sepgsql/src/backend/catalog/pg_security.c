@@ -29,15 +29,9 @@
 #include "utils/tqual.h"
 
 bool
-securityTupleDescHasSecLabel(Oid relid, char relkind)
+securityTupleDescHasSecid(Oid relid, char relkind)
 {
-	return sepgsqlTupleDescHasSecLabel(relid, relkind);
-}
-
-static char *
-securityMetaSecurityLabel(void)
-{
-	return sepgsqlMetaSecurityLabel();
+	return sepgsqlTupleDescHasSecid(relid, relkind);
 }
 
 /*
@@ -106,8 +100,6 @@ securityPostBootstrapingMode(void)
 	Relation		rel;
 	HeapTuple		tuple;
 	earlySecAttr   *es;
-	char		   *meta_label;
-	Oid				meta_secid = InvalidOid;
 	Datum			values[Natts_pg_security];
 	bool			nulls[Natts_pg_security];
 
@@ -115,11 +107,6 @@ securityPostBootstrapingMode(void)
 		return;		/* do nothing */
 
 	StartTransactionCommand();
-
-	/* security_label on the pg_security */
-	meta_label = securityMetaSecurityLabel();
-	if (meta_label)
-		meta_secid = securityTransSecLabelIn(SecurityRelationId, meta_label);
 
 	/* flush all the cached entries */
 	rel = heap_open(SecurityRelationId, RowExclusiveLock);
@@ -133,8 +120,6 @@ securityPostBootstrapingMode(void)
 		values[Anum_pg_security_secattr - 1] = CStringGetTextDatum(es->secattr);
 
 		tuple = heap_form_tuple(RelationGetDescr(rel), values, nulls);
-		if (HeapTupleHasSecid(tuple))
-			HeapTupleSetSecid(tuple, meta_secid);
 
 		simple_heap_insert(rel, tuple);
 		CatalogUpdateIndexes(rel, tuple);
@@ -237,8 +222,6 @@ InputSecurityAttr(Oid relid, char seckind, const char *secattr)
 	HeapTuple		tuple;
 	Oid				datid;
 	Oid				secid;
-	char		   *meta_label;
-	Oid				meta_secid = InvalidOid;
 	Datum			values[Natts_pg_security];
 	bool			nulls[Natts_pg_security];
 
@@ -278,21 +261,7 @@ InputSecurityAttr(Oid relid, char seckind, const char *secattr)
 	values[Anum_pg_security_seckind - 1] = CharGetDatum(seckind);
 	values[Anum_pg_security_secattr - 1] = CStringGetTextDatum(secattr);
 
-	meta_label = securityMetaSecurityLabel();
-	if (meta_label)
-	{
-		if (datid == InvalidOid &&
-			relid == SecurityRelationId &&
-			seckind == SECKIND_SECURITY_LABEL &&
-			strcmp(meta_label, secattr) == 0)
-			meta_secid = secid;
-		else
-			meta_secid = securityTransSecLabelIn(SecurityRelationId, meta_label);
-	}
-
 	tuple = heap_form_tuple(RelationGetDescr(rel), values, nulls);
-	if (HeapTupleHasSecid(tuple))
-		HeapTupleSetSecid(tuple, meta_secid);
 
 	simple_heap_insert(rel, tuple);
 	CatalogUpdateIndexes(rel, tuple);

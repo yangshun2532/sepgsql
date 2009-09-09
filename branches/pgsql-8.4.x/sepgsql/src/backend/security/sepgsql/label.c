@@ -68,7 +68,7 @@ bool sepostgresql_use_mcstrans;
  *   security label on the given relation, or not.
  */
 bool
-sepgsqlTupleDescHasSecLabel(Oid relid, char relkind)
+sepgsqlTupleDescHasSecid(Oid relid, char relkind)
 {
 	if (!sepgsqlIsEnabled())
 		return false;
@@ -76,12 +76,31 @@ sepgsqlTupleDescHasSecLabel(Oid relid, char relkind)
 	if (!OidIsValid(relid))
 		return sepostgresql_row_level;	/* Target of SELECT INTO */
 
+	/* These system catalogs always have its secid */
 	if (relid == DatabaseRelationId  ||
 		relid == NamespaceRelationId ||
 		relid == RelationRelationId  ||
 		relid == AttributeRelationId ||
 		relid == ProcedureRelationId)
 		return true;
+
+	/* These system catalogs are an external attributes */
+	if (relid == AggregateRelationId				||
+		relid == AccessMethodOperatorRelationId		||
+		relid == AccessMethodProcedureRelationId	||
+		relid == AttrDefaultRelationId				||
+		relid == AuthMemRelationId					||
+		relid == ConstraintRelationId				||
+		relid == DescriptionRelationId				||
+		relid == EnumRelationId						||
+		relid == IndexRelationId					||
+		relid == InheritsRelationId					||
+		relid == RewriteRelationId					||
+		relid == SecurityRelationId					||
+		relid == SharedDescriptionRelationId		||
+		relid == StatisticRelationId				||
+		relid == TriggerRelationId)
+		return false;
 
 	return sepostgresql_row_level;
 }
@@ -647,11 +666,15 @@ sepgsqlGetSecCxtByOid(Oid classOid, Oid objectId, int32 objsubId)
 	switch (classOid)
 	{
 	case AccessMethodOperatorRelationId:
-
+		sid = getSecCxtByOidDirect(AccessMethodOperatorRelationId,
+								   AccessMethodOperatorOidIndexId,
+								   objectId);
 		break;
 
 	case AccessMethodProcedureRelationId:
-
+		sid = getSecCxtByOidDirect(AccessMethodProcedureRelationId,
+								   AccessMethodProcedureOidIndexId,
+								   objectId);
 		break;
 
 	case CastRelationId:
