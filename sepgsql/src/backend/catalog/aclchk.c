@@ -675,7 +675,7 @@ expand_all_col_privileges(Oid table_oid, Form_pg_class classForm,
 			continue;
 
 		/* Skip OID column, if it doesn't exist */
-		if (curr_att == SecurityContextAttributeNumber &&
+		if (curr_att == SecurityAttributeNumber &&
 			(classForm->relkind != RELKIND_RELATION ||
 			 table_oid == SecurityRelationId))
 			continue;
