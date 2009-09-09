@@ -1479,7 +1479,7 @@ fetchWritableSystemAttribute(JunkFilter *junkfilter, TupleTableSlot *slot,
 	bool		isnull;
 
 	/* for Security Label */
-	attno = ExecFindJunkAttribute(junkfilter, SecurityContextAttributeName);
+	attno = ExecFindJunkAttribute(junkfilter, SecurityAttributeName);
 	if (attno != InvalidAttrNumber)
 	{
 		datum = ExecGetJunkAttribute(slot, attno, &isnull);
@@ -1487,7 +1487,7 @@ fetchWritableSystemAttribute(JunkFilter *junkfilter, TupleTableSlot *slot,
 			ereport(ERROR,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 					 errmsg("Unable to set NULL on \"%s\"",
-							SecurityContextAttributeName)));
+							SecurityAttributeName)));
 		*tts_seclabel = datum;
 	}
 }

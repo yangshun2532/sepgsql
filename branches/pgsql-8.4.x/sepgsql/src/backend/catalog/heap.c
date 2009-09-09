@@ -165,8 +165,8 @@ static FormData_pg_attribute a7 = {
  * System columns for enhanced security features
  */
 static FormData_pg_attribute a8 = {
-	0, {SecurityContextAttributeName}, TEXTOID, 0, -1,
-	SecurityContextAttributeNumber, 0, -1, -1,
+	0, {SecurityAttributeName}, TEXTOID, 0, -1,
+	SecurityAttributeNumber, 0, -1, -1,
 	false, 'x', 'i', true, false, false, true, 0, {0}
 };
 
@@ -216,7 +216,7 @@ SystemAttributeByName(const char *attname, bool relhasoids)
 bool
 SystemAttributeIsWritable(AttrNumber attnum)
 {
-	if (attnum == SecurityContextAttributeNumber)
+	if (attnum == SecurityAttributeNumber)
 		return true;
 
 	return false;
@@ -637,6 +637,12 @@ AddNewAttributeTuples(Oid new_rel_oid,
 			/* skip OID where appropriate */
 			if (!tupdesc->tdhasoid &&
 				SysAtt[i]->attnum == ObjectIdAttributeNumber)
+				continue;
+
+			/* skip Secid where appropriate */
+			if (SysAtt[i]->attnum == SecurityAttributeNumber &&
+				(relkind != RELKIND_RELATION ||
+				 new_rel_oid == SecurityRelationId))
 				continue;
 
 			memcpy(&attStruct, (char *) SysAtt[i], sizeof(FormData_pg_attribute));

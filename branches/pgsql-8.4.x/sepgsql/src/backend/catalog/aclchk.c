@@ -35,6 +35,7 @@
 #include "catalog/pg_operator.h"
 #include "catalog/pg_opfamily.h"
 #include "catalog/pg_proc.h"
+#include "catalog/pg_security.h"
 #include "catalog/pg_tablespace.h"
 #include "catalog/pg_type.h"
 #include "catalog/pg_ts_config.h"
@@ -671,6 +672,12 @@ expand_all_col_privileges(Oid table_oid, Form_pg_class classForm,
 
 		/* Skip OID column if it doesn't exist */
 		if (curr_att == ObjectIdAttributeNumber && !classForm->relhasoids)
+			continue;
+
+		/* Skip OID column, if it doesn't exist */
+		if (curr_att == SecurityContextAttributeNumber &&
+			(classForm->relkind != RELKIND_RELATION ||
+			 table_oid == SecurityRelationId))
 			continue;
 
 		/* Views don't have any system columns at all */
