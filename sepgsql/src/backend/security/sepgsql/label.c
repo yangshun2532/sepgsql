@@ -605,12 +605,12 @@ sepgsqlCopyTableColumns(Relation source)
 }
 
 /*
- * sepgsqlGetSecCxtByOid
+ * sepgsqlGetSysobjContext
  *
  * It returns a pair of relid/secid for the given OID.
  */
 static sepgsql_sid_t
-getSecCxtByOidDirect(Oid classOid, Oid indexOid, Oid objectId, uint16 *tclass)
+getSysobjContextDirect(Oid classOid, Oid indexOid, Oid objectId, uint16 *tclass)
 {
 	sepgsql_sid_t	sid = { InvalidOid, InvalidOid };
 	Relation		rel;
@@ -630,7 +630,7 @@ getSecCxtByOidDirect(Oid classOid, Oid indexOid, Oid objectId, uint16 *tclass)
 	tup = systable_getnext(scan);
 
 	if (HeapTupleIsValid(tup))
-		sid = sepgsqlGetSecCxtByTuple(classOid, tup, tclass);
+		sid = sepgsqlGetTupleContext(classOid, tup, tclass);
 
 	systable_endscan(scan);
 
@@ -640,7 +640,7 @@ getSecCxtByOidDirect(Oid classOid, Oid indexOid, Oid objectId, uint16 *tclass)
 }
 
 sepgsql_sid_t
-sepgsqlGetSecCxtByOid(Oid classOid, Oid objectId, int32 objsubId, uint16 *tclass)
+sepgsqlGetSysobjContext(Oid classOid, Oid objectId, int32 objsubId, uint16 *tclass)
 {
 	sepgsql_sid_t	sid = { InvalidOid, InvalidOid };
 	HeapTuple		tup = NULL;
@@ -654,14 +654,14 @@ sepgsqlGetSecCxtByOid(Oid classOid, Oid objectId, int32 objsubId, uint16 *tclass
 		break;
 
 	case AccessMethodOperatorRelationId:
-		return getSecCxtByOidDirect(AccessMethodOperatorRelationId,
-									AccessMethodOperatorOidIndexId,
-									objectId, tclass);
+		return getSysobjContextDirect(AccessMethodOperatorRelationId,
+									  AccessMethodOperatorOidIndexId,
+									  objectId, tclass);
 
 	case AccessMethodProcedureRelationId:
-		return getSecCxtByOidDirect(AccessMethodProcedureRelationId,
-								   AccessMethodProcedureOidIndexId,
-								   objectId, tclass);
+		return getSysobjContextDirect(AccessMethodProcedureRelationId,
+									  AccessMethodProcedureOidIndexId,
+									  objectId, tclass);
 
 	case AuthIdRelationId:
 		tup = SearchSysCache(AUTHOID,
@@ -670,9 +670,9 @@ sepgsqlGetSecCxtByOid(Oid classOid, Oid objectId, int32 objsubId, uint16 *tclass
 		break;
 
 	case CastRelationId:
-		return getSecCxtByOidDirect(CastRelationId,
-									CastOidIndexId,
-									objectId, tclass);
+		return getSysobjContextDirect(CastRelationId,
+									  CastOidIndexId,
+									  objectId, tclass);
 
 	case ConstraintRelationId:
 		tup = SearchSysCache(CONSTROID,
@@ -730,7 +730,7 @@ sepgsqlGetSecCxtByOid(Oid classOid, Oid objectId, int32 objsubId, uint16 *tclass
 			tup = systable_getnext(scan);
 
 			if (HeapTupleIsValid(tup))
-				sid = sepgsqlGetSecCxtByTuple(classOid, tup, tclass);
+				sid = sepgsqlGetTupleContext(classOid, tup, tclass);
 
 			systable_endscan(scan);
 
@@ -787,19 +787,19 @@ sepgsqlGetSecCxtByOid(Oid classOid, Oid objectId, int32 objsubId, uint16 *tclass
 		break;
 
 	case RewriteRelationId:
-		return getSecCxtByOidDirect(RewriteRelationId,
-									RewriteOidIndexId,
-									objectId, tclass);
+		return getSysobjContextDirect(RewriteRelationId,
+									  RewriteOidIndexId,
+									  objectId, tclass);
 
 	case TableSpaceRelationId:
-		return getSecCxtByOidDirect(TableSpaceRelationId,
-									TablespaceOidIndexId,
-									objectId, tclass);
+		return getSysobjContextDirect(TableSpaceRelationId,
+									  TablespaceOidIndexId,
+									  objectId, tclass);
 
 	case TriggerRelationId:
-		return getSecCxtByOidDirect(TriggerRelationId,
-									TriggerOidIndexId,
-									objectId, tclass);
+		return getSysobjContextDirect(TriggerRelationId,
+									  TriggerOidIndexId,
+									  objectId, tclass);
 
 	case TSConfigRelationId:
 		tup = SearchSysCache(TSCONFIGOID,
@@ -844,7 +844,7 @@ sepgsqlGetSecCxtByOid(Oid classOid, Oid objectId, int32 objsubId, uint16 *tclass
 	
 	if (HeapTupleIsValid(tup))
 	{
-		sid = sepgsqlGetSecCxtByTuple(classOid, tup, tclass);
+		sid = sepgsqlGetTupleContext(classOid, tup, tclass);
 		ReleaseSysCache(tup);
 	}
 
@@ -852,7 +852,7 @@ sepgsqlGetSecCxtByOid(Oid classOid, Oid objectId, int32 objsubId, uint16 *tclass
 }
 
 /*
- * sepgsqlGetSecCxtByTuple
+ * sepgsqlGetTupleContext
  *
  * It returns a pair of relid/secid for the given HeapTuple.
  * A few system catalogs is handled as an attribute of other
@@ -860,7 +860,7 @@ sepgsqlGetSecCxtByOid(Oid classOid, Oid objectId, int32 objsubId, uint16 *tclass
  * E.g) pg_attrdef is an attribute of a certain pg_attribute
  */
 sepgsql_sid_t
-sepgsqlGetSecCxtByTuple(Oid tableOid, HeapTuple tuple, uint16 *tclass)
+sepgsqlGetTupleContext(Oid tableOid, HeapTuple tuple, uint16 *tclass)
 {
 	sepgsql_sid_t	sid = { InvalidOid, InvalidOid };
 	HeapTuple		exttup;
@@ -947,7 +947,7 @@ sepgsqlGetSecCxtByTuple(Oid tableOid, HeapTuple tuple, uint16 *tclass)
 		/* recursive call */
 		extid = ((Form_pg_description) GETSTRUCT(tuple))->objoid;
 		extcls = ((Form_pg_description) GETSTRUCT(tuple))->classoid;
-		return sepgsqlGetSecCxtByOid(extcls, extid, 0, tclass);
+		return sepgsqlGetSysobjContext(extcls, extid, 0, tclass);
 
 	case EnumRelationId:
 		sid.relid = TypeRelationId;
@@ -985,7 +985,7 @@ sepgsqlGetSecCxtByTuple(Oid tableOid, HeapTuple tuple, uint16 *tclass)
 		/* recursive invocation */
 		extid = ((Form_pg_shdescription) GETSTRUCT(tuple))->objoid;
 		extcls = ((Form_pg_shdescription) GETSTRUCT(tuple))->classoid;
-		return sepgsqlGetSecCxtByOid(extcls, extid, 0, tclass);
+		return sepgsqlGetSysobjContext(extcls, extid, 0, tclass);
 
 	case StatisticRelationId:
 		sid.relid = AttributeRelationId;

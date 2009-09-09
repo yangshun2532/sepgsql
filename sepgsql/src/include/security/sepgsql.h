@@ -208,19 +208,18 @@ extern sepgsql_sid_t
 sepgsqlClientCreateSecid(sepgsql_sid_t tsid, uint16 tclass, Oid nrelid);
 
 extern security_context_t
-sepgsqlClientCreateLabel(sepgsql_sid_t tsid, security_class_t tclass);
+sepgsqlClientCreateLabel(sepgsql_sid_t tsid, uint16 tclass);
 
 extern bool
 sepgsqlComputePerms(security_context_t scontext,
 					security_context_t tcontext,
-					security_class_t tclass,
-					access_vector_t required,
+					uint16 tclass, uint32 required,
 					const char *audit_name, bool abort);
 
 extern security_context_t
 sepgsqlComputeCreate(security_context_t scontext,
 					 security_context_t tcontext,
-					 security_class_t tclass);
+					 uint16 tclass);
 
 extern pid_t sepgsqlStartupWorkerProcess(void);
 
@@ -404,9 +403,9 @@ extern Oid *sepgsqlCreateTableColumns(CreateStmt *stmt,
 extern Oid *sepgsqlCopyTableColumns(Relation source);
 
 extern sepgsql_sid_t
-sepgsqlGetSecCxtByOid(Oid classOid, Oid objectId, int32 objsubId, uint16 *tclass);
+sepgsqlGetTupleContext(Oid tableOid, HeapTuple tuple, uint16 *tclass);
 extern sepgsql_sid_t
-sepgsqlGetSecCxtByTuple(Oid tableOid, HeapTuple tuple, uint16 *tclass);
+sepgsqlGetSysobjContext(Oid tableOid, Oid objectId, int32 objsubId, uint16 *tclass);
 
 extern char *sepgsqlTransSecLabelIn(char *seclabel);
 extern char *sepgsqlTransSecLabelOut(char *seclabel);
