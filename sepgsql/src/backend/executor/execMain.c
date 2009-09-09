@@ -914,7 +914,7 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 
 					j = ExecInitJunkFilter(subplan->plan->targetlist,
 										   RelationGetDescr(resultRel)->tdhasoid,
-										   RelationGetDescr(resultRel)->tdhasseclabel,
+										   RelationGetDescr(resultRel)->tdhassecid,
 										   ExecAllocTableSlot(estate->es_tupleTable));
 					/*
 					 * Since it must be UPDATE/DELETE, there had better be a
@@ -958,7 +958,7 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 
 				j = ExecInitJunkFilter(planstate->plan->targetlist,
 									   tupType->tdhasoid,
-									   tupType->tdhasseclabel,
+									   tupType->tdhassecid,
 								  ExecAllocTableSlot(estate->es_tupleTable));
 				estate->es_junkFilter = j;
 				if (estate->es_result_relation_info)
@@ -1353,17 +1353,17 @@ ExecContextForcesOids(PlanState *planstate, bool *hasoids)
 }
 
 /*
- * ExecContextForcesSecLabel
+ * ExecContextForcesSecids
  *
- * We need to ensure that result tuples have space for security label,
+ * We need to ensure that result tuples have space for security identifier.
  * if the security feature need to store it within the given relation.
  */
-bool ExecContextForcesSecLabel(PlanState *planstate, bool *hassecurity)
+bool ExecContextForcesSecids(PlanState *planstate, bool *hassecid)
 {
 	if (planstate->state->es_select_into)
 	{
-		*hassecurity = securityTupleDescHasSecLabel(InvalidOid,
-													RELKIND_RELATION);
+		*hassecid = securityTupleDescHasSecid(InvalidOid,
+											  RELKIND_RELATION);
 		return true;
 	}
 	else
@@ -1375,7 +1375,7 @@ bool ExecContextForcesSecLabel(PlanState *planstate, bool *hassecurity)
 			Oid		relid = RelationGetRelid(ri->ri_RelationDesc);
 			char	relkind = RelationGetForm(ri->ri_RelationDesc)->relkind;
 
-			*hassecurity = securityTupleDescHasSecLabel(relid, relkind);
+			*hassecid = securityTupleDescHasSecid(relid, relkind);
 
 			return true;
 		}

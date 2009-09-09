@@ -163,7 +163,7 @@ extern void InitResultRelInfo(ResultRelInfo *resultRelInfo,
 				  bool doInstrument);
 extern ResultRelInfo *ExecGetTriggerResultRel(EState *estate, Oid relid);
 extern bool ExecContextForcesOids(PlanState *planstate, bool *hasoids);
-extern bool ExecContextForcesSecLabel(PlanState *planstate, bool *hasseclabel);
+extern bool ExecContextForcesSecids(PlanState *planstate, bool *hassecids);
 extern void ExecConstraints(ResultRelInfo *resultRelInfo,
 				TupleTableSlot *slot, EState *estate);
 extern TupleTableSlot *EvalPlanQual(EState *estate, Index rti,

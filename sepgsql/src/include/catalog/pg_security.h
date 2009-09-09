@@ -69,7 +69,7 @@ extern void
 securityOnDropDatabase(Oid datid);
 
 extern bool
-securityTupleDescHasSecLabel(Oid relid, char relkind);
+securityTupleDescHasSecid(Oid relid, char relkind);
 
 extern Oid
 securityRawSecLabelIn(Oid relid, char *seclabel);

@@ -319,8 +319,8 @@ heap_create(const char *relname,
 	/*
 	 * Does the relation have security attribute?
 	 */
-	RelationGetDescr(rel)->tdhasseclabel
-		= securityTupleDescHasSecLabel(relid, relkind);
+	RelationGetDescr(rel)->tdhassecid
+		= securityTupleDescHasSecid(relid, relkind);
 
 	/*
 	 * Have the storage manager create the relation's disk file, if needed.

@@ -727,7 +727,7 @@ heap_form_tuple(TupleDesc tupleDescriptor,
 
 	if (tupleDescriptor->tdhasoid)
 		len += sizeof(Oid);
-	if (tupleDescriptor->tdhasseclabel)
+	if (tupleDescriptor->tdhassecid)
 		len += sizeof(Oid);
 
 	hoff = len = MAXALIGN(len); /* align user data safely */
@@ -760,7 +760,7 @@ heap_form_tuple(TupleDesc tupleDescriptor,
 
 	if (tupleDescriptor->tdhasoid)		/* else leave infomask = 0 */
 		td->t_infomask = HEAP_HASOID;
-	if (tupleDescriptor->tdhasseclabel)
+	if (tupleDescriptor->tdhassecid)
 		td->t_infomask |= HEAP_HASSECID;
 
 	heap_fill_tuple(tupleDescriptor,
@@ -1485,7 +1485,7 @@ heap_form_minimal_tuple(TupleDesc tupleDescriptor,
 
 	if (tupleDescriptor->tdhasoid)
 		len += sizeof(Oid);
-	if (tupleDescriptor->tdhasseclabel)
+	if (tupleDescriptor->tdhassecid)
 		len += sizeof(Oid);
 
 	hoff = len = MAXALIGN(len); /* align user data safely */
@@ -1508,7 +1508,7 @@ heap_form_minimal_tuple(TupleDesc tupleDescriptor,
 
 	if (tupleDescriptor->tdhasoid)		/* else leave infomask = 0 */
 		tuple->t_infomask = HEAP_HASOID;
-	if (tupleDescriptor->tdhasseclabel)
+	if (tupleDescriptor->tdhassecid)
 		tuple->t_infomask |= HEAP_HASSECID;
 
 	heap_fill_tuple(tupleDescriptor,
