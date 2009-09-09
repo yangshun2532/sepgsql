@@ -409,9 +409,9 @@ extern Oid *sepgsqlCreateTableColumns(CreateStmt *stmt,
 extern Oid *sepgsqlCopyTableColumns(Relation source);
 
 extern sepgsql_sid_t
-sepgsqlGetSecCxtByOid(Oid classOid, Oid objectId, int32 objsubId);
+sepgsqlGetSecCxtByOid(Oid classOid, Oid objectId, int32 objsubId, uint16 *tclass);
 extern sepgsql_sid_t
-sepgsqlGetSecCxtByTuple(Oid tableOid, HeapTuple tuple);
+sepgsqlGetSecCxtByTuple(Oid tableOid, HeapTuple tuple, uint16 *tclass);
 
 extern char *sepgsqlTransSecLabelIn(char *seclabel);
 extern char *sepgsqlTransSecLabelOut(char *seclabel);

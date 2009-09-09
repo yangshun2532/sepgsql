@@ -9,6 +9,7 @@
 
 #include "access/sysattr.h"
 #include "catalog/catalog.h"
+#include "catalog/pg_security.h"
 #include "miscadmin.h"
 #include "security/sepgsql.h"
 #include "storage/bufmgr.h"
@@ -297,16 +298,29 @@ sepgsqlCheckSelectInto(Oid relationId)
 bool
 sepgsqlExecScan(Relation rel, HeapTuple tuple, uint32 required, bool abort)
 {
-	security_class_t	tclass;
+	sepgsql_sid_t	sid;
+	uint16			tclass;
 
 	if (!sepgsqlIsEnabled() ||
 		!required ||
-		RelationGetForm(rel)->relkind != RELKIND_RELATION)
+		RelationGetForm(rel)->relkind != RELKIND_RELATION ||
+		RelationGetRelid(rel) == SecurityRelationId)
 		return true;
 
-	tclass = sepgsqlTupleObjectClass(RelationGetRelid(rel), tuple);
-	return sepgsqlClientHasPermsTup(RelationGetRelid(rel), tuple,
-									tclass, required, abort);
+	sid = sepgsqlGetSecCxtByTuple(RelationGetRelid(rel), tuple, &tclass);
+	/*
+	 * Insert/Delete to an external attribute is equivalent to
+	 * the set-attribute on the master
+	 */
+	if (sid.relid != RelationGetRelid(rel) &&
+		(required & (SEPG_DB_TUPLE__INSERT | SEPG_DB_TUPLE__DELETE)))
+	{
+		required &= ~(SEPG_DB_TUPLE__INSERT | SEPG_DB_TUPLE__DELETE);
+		required |= SEPG_DB_TUPLE__UPDATE;
+	}
+
+	return sepgsqlClientHasPermsSid(sid.relid, sid.secid,
+									tclass, required, NULL, abort);
 }
 
 uint32
@@ -339,8 +353,8 @@ sepgsqlSetupTuplePerms(RangeTblEntry *rte)
 void
 sepgsqlHeapTupleInsert(Relation rel, HeapTuple newtup, bool internal)
 {
-	security_class_t	tclass;
-	Oid		relid = RelationGetRelid(rel);
+	sepgsql_sid_t		sid;
+	uint16				tclass;
 
 	if (!sepgsqlIsEnabled())
 		return;
@@ -362,9 +376,11 @@ sepgsqlHeapTupleInsert(Relation rel, HeapTuple newtup, bool internal)
 	if (internal)
 		return;
 
-	tclass = sepgsqlTupleObjectClass(relid, newtup);
-	sepgsqlClientHasPermsTup(relid, newtup, tclass,
-							 SEPG_DB_TUPLE__INSERT, true);
+	sid = sepgsqlGetSecCxtByTuple(RelationGetRelid(rel),
+								  newtup, &tclass);
+	sepgsqlClientHasPermsSid(sid.relid, sid.secid,
+							 tclass, SEPG_DB_TUPLE__INSERT,
+							 NULL, true);
 }
 
 /*
@@ -376,7 +392,6 @@ sepgsqlHeapTupleInsert(Relation rel, HeapTuple newtup, bool internal)
 void
 sepgsqlHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple newtup)
 {
-	Oid				relid = RelationGetRelid(rel);
 	Oid				secid;
 	HeapTupleData	oldtup;
 	Buffer			oldbuf;
@@ -405,16 +420,22 @@ sepgsqlHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple newtup)
 
 	if (secid != HeapTupleGetSecid(&oldtup))
 	{
-		security_class_t	tclass
-			= sepgsqlTupleObjectClass(relid, newtup);
+		sepgsql_sid_t	sid;
+		uint16			tclass;
 
-		/* db_tuple:{relabelfrom} for older security label */
-		sepgsqlClientHasPermsTup(relid, &oldtup, tclass,
-								 SEPG_DB_TUPLE__RELABELFROM, true);
+		/* db_tuple:{relabelfrom} for older security context */
+		sid = sepgsqlGetSecCxtByTuple(RelationGetRelid(rel),
+									  &oldtup, &tclass);
+		sepgsqlClientHasPermsSid(sid.relid, sid.secid, tclass,
+								 SEPG_DB_TUPLE__RELABELFROM,
+								 NULL, true);
 
 		/* db_tuple:{relabelto} for newer security label */
-		sepgsqlClientHasPermsTup(relid, newtup, tclass,
-								 SEPG_DB_TUPLE__RELABELTO, true);
+		sid = sepgsqlGetSecCxtByTuple(RelationGetRelid(rel),
+									  newtup, &tclass);
+		sepgsqlClientHasPermsSid(sid.relid, sid.secid, tclass,
+								 SEPG_DB_TUPLE__RELABELTO,
+								 NULL, true);
 	}
 	ReleaseBuffer(oldbuf);
 }
