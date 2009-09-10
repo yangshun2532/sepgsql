@@ -602,7 +602,7 @@ heap_getsysattr(HeapTuple tup, int attnum, TupleDesc tupleDesc, bool *isnull)
 			result = ObjectIdGetDatum(tup->t_tableOid);
 			break;
 		case SecurityAttributeNumber:
-			result = securityHeapGetSecLabelSysattr(tup);
+			result = securitySysattSecLabelOut(tup->t_tableOid, tup);
 			break;
 		default:
 			elog(ERROR, "invalid attnum: %d", attnum);

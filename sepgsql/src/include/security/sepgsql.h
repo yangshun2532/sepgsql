@@ -411,6 +411,7 @@ extern char *sepgsqlTransSecLabelIn(char *seclabel);
 extern char *sepgsqlTransSecLabelOut(char *seclabel);
 extern char *sepgsqlRawSecLabelIn(char *seclabel);
 extern char *sepgsqlRawSecLabelOut(char *seclabel);
+extern char *sepgsqlSysattSecLabelOut(Oid relid, HeapTuple tuple);
 
 /*
  * perms.c : SELinux permission related stuff
