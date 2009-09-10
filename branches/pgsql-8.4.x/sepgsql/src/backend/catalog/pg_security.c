@@ -370,14 +370,13 @@ securityTransSecLabelOut(Oid relid, Oid secid)
  * Output handler for system columns
  */
 Datum
-securityHeapGetSecLabelSysattr(HeapTuple tuple)
+securitySysattSecLabelOut(Oid relid, HeapTuple tuple)
 {
-	Oid		secid = HeapTupleGetSecid(tuple);
 	char   *seclabel;
 
-	seclabel = securityTransSecLabelOut(tuple->t_tableOid, secid);
+	seclabel = sepgsqlSysattSecLabelOut(relid, tuple);
 	if (!seclabel)
-		seclabel = pstrdup("unlabeled");
+		seclabel = "unlabled";
 
 	return CStringGetTextDatum(seclabel);
 }

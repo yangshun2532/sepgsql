@@ -252,8 +252,8 @@ static const char BinarySignature[11] = "PGCOPY\n\377\r\n\0";
 /* non-export function prototypes */
 static void DoCopyTo(CopyState cstate);
 static void CopyTo(CopyState cstate);
-static void CopyOneRowTo(CopyState cstate, Oid tupleOid, Oid secLabelId,
-			 Datum *values, bool *nulls);
+static void CopyOneRowTo(CopyState cstate, HeapTuple tuple,
+						 Datum *values, bool *nulls);
 static void CopyFrom(CopyState cstate);
 static bool CopyReadLine(CopyState cstate);
 static bool CopyReadLineText(CopyState cstate);
@@ -1489,10 +1489,7 @@ CopyTo(CopyState cstate)
 			heap_deform_tuple(tuple, tupDesc, values, nulls);
 
 			/* Format and send the data */
-			CopyOneRowTo(cstate,
-						 HeapTupleGetOid(tuple),
-						 HeapTupleGetSecid(tuple),
-						 values, nulls);
+			CopyOneRowTo(cstate, tuple, values, nulls);
 		}
 
 		heap_endscan(scandesc);
@@ -1518,7 +1515,7 @@ CopyTo(CopyState cstate)
  * Emit one row during CopyTo().
  */
 static void
-CopyOneRowTo(CopyState cstate, Oid tupleOid, Oid secLabelId,
+CopyOneRowTo(CopyState cstate, HeapTuple tuple,
 			 Datum *values, bool *nulls)
 {
 	bool		need_delim = false;
@@ -1539,7 +1536,7 @@ CopyOneRowTo(CopyState cstate, Oid tupleOid, Oid secLabelId,
 		{
 			/* Hack --- assume Oid is same size as int32 */
 			CopySendInt32(cstate, sizeof(int32));
-			CopySendInt32(cstate, tupleOid);
+			CopySendInt32(cstate, HeapTupleGetOid(tuple));
 		}
 	}
 	else
@@ -1549,7 +1546,7 @@ CopyOneRowTo(CopyState cstate, Oid tupleOid, Oid secLabelId,
 		if (cstate->oids)
 		{
 			string = DatumGetCString(DirectFunctionCall1(oidout,
-												ObjectIdGetDatum(tupleOid)));
+										ObjectIdGetDatum(HeapTupleGetOid(tuple))));
 			CopySendString(cstate, string);
 			need_delim = true;
 		}
@@ -1575,7 +1572,7 @@ CopyOneRowTo(CopyState cstate, Oid tupleOid, Oid secLabelId,
 		{
 		case SecurityAttributeNumber:
 			relid = RelationGetRelid(cstate->rel);
-			value = CStringGetTextDatum(securityTransSecLabelOut(relid, secLabelId));
+			value = securitySysattSecLabelOut(relid, tuple);
 			isnull = false;
 			force_quot = cstate->seclabel_force_quot;
 			out_fmgr = &cstate->seclabel_out_function;
@@ -3628,7 +3625,7 @@ copy_dest_receive(TupleTableSlot *slot, DestReceiver *self)
 	slot_getallattrs(slot);
 
 	/* And send the data */
-	CopyOneRowTo(cstate, InvalidOid, InvalidOid,
+	CopyOneRowTo(cstate, slot->tts_tuple,
 				 slot->tts_values, slot->tts_isnull);
 }
 

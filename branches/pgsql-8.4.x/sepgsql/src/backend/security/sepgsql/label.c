@@ -1139,3 +1139,13 @@ sepgsqlTransSecLabelOut(char *seclabel)
 
 	return result;
 }
+
+char *
+sepgsqlSysattSecLabelOut(Oid relid, HeapTuple tuple)
+{
+	sepgsql_sid_t	sid;
+
+	sid = sepgsqlGetTupleContext(relid, tuple, NULL);
+
+	return securityTransSecLabelOut(sid.relid, sid.secid);
+}

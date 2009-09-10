@@ -83,8 +83,8 @@ securityTransSecLabelIn(Oid relid, char *seclabel);
 extern char *
 securityTransSecLabelOut(Oid relid, Oid secid);
 
-Datum
-securityHeapGetSecLabelSysattr(HeapTuple tuple);
+extern Datum
+securitySysattSecLabelOut(Oid relid, HeapTuple tuple);
 
 extern void
 securityReclaimOnDropTable(Oid relid);
