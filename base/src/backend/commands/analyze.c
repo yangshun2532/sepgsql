@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/commands/analyze.c,v 1.114.2.1 2008/04/03 16:27:32 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/commands/analyze.c,v 1.114.2.3 2009/08/12 18:24:03 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -341,19 +341,10 @@ analyze_rel(Oid relid, VacuumStmt *vacstmt,
 	}
 
 	/*
-	 * Quit if no analyzable columns
+	 * Quit if no analyzable columns and no pg_class update needed.
 	 */
-	if (attr_cnt <= 0 && !analyzableindex)
-	{
-		/*
-		 * We report that the table is empty; this is just so that the
-		 * autovacuum code doesn't go nuts trying to get stats about a
-		 * zero-column table.
-		 */
-		if (!vacstmt->vacuum)
-			pgstat_report_analyze(onerel, 0, 0);
+	if (attr_cnt <= 0 && !analyzableindex && vacstmt->vacuum)
 		goto cleanup;
-	}
 
 	/*
 	 * Determine how many rows we need to sample, using the worst case from
@@ -476,14 +467,6 @@ cleanup:
 	/* Done with indexes */
 	vac_close_indexes(nindexes, Irel, NoLock);
 
-	/*
-	 * Close source relation now, but keep lock so that no one deletes it
-	 * before we commit.  (If someone did, they'd fail to clean up the entries
-	 * we made in pg_statistic.  Also, releasing the lock before commit would
-	 * expose us to concurrent-update failures in update_attstats.)
-	 */
-	relation_close(onerel, NoLock);
-
 	/* Log the action if appropriate */
 	if (IsAutoVacuumWorkerProcess() && Log_autovacuum_min_duration >= 0)
 	{
@@ -497,6 +480,14 @@ cleanup:
 							RelationGetRelationName(onerel),
 							pg_rusage_show(&ru0))));
 	}
+
+	/*
+	 * Close source relation now, but keep lock so that no one deletes it
+	 * before we commit.  (If someone did, they'd fail to clean up the entries
+	 * we made in pg_statistic.  Also, releasing the lock before commit would
+	 * expose us to concurrent-update failures in update_attstats.)
+	 */
+	relation_close(onerel, NoLock);
 
 	/*
 	 * Reset my PGPROC flag.  Note: we need this here, and not in vacuum_rel,

@@ -37,7 +37,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/postmaster/postmaster.c,v 1.551.2.1 2008/06/27 01:53:31 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/backend/postmaster/postmaster.c,v 1.551.2.4 2009/08/24 17:23:28 alvherre Exp $
  *
  * NOTES
  *
@@ -269,6 +269,8 @@ bool		redirection_done = false;	/* stderr redirected for syslogger? */
 
 /* received START_AUTOVAC_LAUNCHER signal */
 static volatile sig_atomic_t start_autovac_launcher = false;
+/* the launcher needs to be signalled to communicate some condition */
+static volatile bool		avlauncher_needs_signal = false;
 
 /*
  * State for assigning random salts and cancel keys.
@@ -1321,6 +1323,14 @@ ServerLoop(void)
 		if (PgStatPID == 0 && pmState == PM_RUN)
 			PgStatPID = pgstat_start();
 
+		/* If we need to signal the autovacuum launcher, do so now */
+		if (avlauncher_needs_signal)
+		{
+			avlauncher_needs_signal = false;
+			if (AutoVacPID != 0)
+				kill(AutoVacPID, SIGUSR1);
+		}
+
 		/*
 		 * Touch the socket and lock file every 58 minutes, to ensure that
 		 * they are not removed by overzealous /tmp-cleaning tasks.  We assume
@@ -1994,7 +2004,8 @@ pmdie(SIGNAL_ARGS)
 
 			if (StartupPID != 0)
 				signal_child(StartupPID, SIGTERM);
-			if (pmState == PM_RUN)
+			if (pmState == PM_RUN ||
+				pmState == PM_WAIT_BACKENDS)
 			{
 				ereport(LOG,
 						(errmsg("aborting any active transactions")));
@@ -3447,13 +3458,32 @@ internal_forkexec(int argc, char *argv[], Port *port)
 		return -1;				/* log made by save_backend_variables */
 	}
 
-	/* Drop the shared memory that is now inherited to the backend */
+	/* Drop the parameter shared memory that is now inherited to the backend */
 	if (!UnmapViewOfFile(param))
 		elog(LOG, "could not unmap view of backend parameter file: error code %d",
 			 (int) GetLastError());
 	if (!CloseHandle(paramHandle))
 		elog(LOG, "could not close handle to backend parameter file: error code %d",
 			 (int) GetLastError());
+
+	/*
+	 * Reserve the memory region used by our main shared memory segment before we
+	 * resume the child process.
+	 */
+	if (!pgwin32_ReserveSharedMemoryRegion(pi.hProcess))
+	{
+		/*
+		 * Failed to reserve the memory, so terminate the newly created
+		 * process and give up.
+		 */
+		if (!TerminateProcess(pi.hProcess, 255))
+			ereport(ERROR,
+					(errmsg_internal("could not terminate process that failed to reserve memory: error code %d",
+									 (int) GetLastError())));
+		CloseHandle(pi.hProcess);
+		CloseHandle(pi.hThread);
+		return -1;			/* logging done made by pgwin32_ReserveSharedMemoryRegion() */
+	}
 
 	/*
 	 * Now that the backend variables are written out, we start the child
@@ -4135,12 +4165,16 @@ StartAutovacuumWorker(void)
 	/*
 	 * Report the failure to the launcher, if it's running.  (If it's not, we
 	 * might not even be connected to shared memory, so don't try to call
-	 * AutoVacWorkerFailed.)
+	 * AutoVacWorkerFailed.)  Note that we also need to signal it so that it
+	 * responds to the condition, but we don't do that here, instead waiting
+	 * for ServerLoop to do it.  This way we avoid a ping-pong signalling in
+	 * quick succession between the autovac launcher and postmaster in case
+	 * things get ugly.
 	 */
 	if (AutoVacPID != 0)
 	{
 		AutoVacWorkerFailed();
-		kill(AutoVacPID, SIGUSR1);
+		avlauncher_needs_signal = true;
 	}
 }
 
