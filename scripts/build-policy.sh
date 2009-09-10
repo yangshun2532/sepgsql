@@ -71,7 +71,7 @@ cat selinux-policy.spec \
 		  print \"SELinux experimental database policy\";	\
 		  print \"\";						\
 		  print \"%files sepgsql\";				\
-		  print \"%{_usr}/selinux/packages/base-sepgsql.*.pp.bz2\";	\
+		  print \"%{_usr}/share/selinux/packages/base-sepgsql.*.pp.bz2\";	\
 		  print \"\";						\
 		  print; next;						\
 		}							\
@@ -82,4 +82,4 @@ cp $TEMPFILE selinux-policy.spec
 
 # rpmbuild 
 rpmbuild -ba ${SOURCE_DIR}/selinux-policy.spec	\
-	-D "BUILD_MINIMUM 0" -D "BUILD_OLPC 0" -D "BUILD_MLS 1"
+	-D "BUILD_MINIMUM 0" -D "BUILD_OLPC 0" -D "BUILD_MLS 0"
