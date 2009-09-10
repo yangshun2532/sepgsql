@@ -1,6 +1,7 @@
 #!/bin/sh
 
 BASE_DIR=`(cd \`dirname $0\`/..; pwd)`
+POLICY_DIR="${BASE_DIR}/misc/policy"
 SRPMFILE="$1"
 
 if [ -z "$SRPMFILE" ]; then
@@ -14,72 +15,65 @@ if echo $SRPMFILE | egrep -q "^(http|ftp)://"; then
     SRPMFILE="$TEMPFILE"
 fi
 
-# -- unpack source rpm
-SOURCE_DIR=`rpm -E '%{_sourcedir}'`
-test -d ${SOURCE_DIR} || exit 1
+PKG_NAME=`rpm -qp --queryformat='%{name}' $SRPMFILE`
+PKG_VERSION=`rpm -qp --queryformat='%{version}' $SRPMFILE`
 
-cd ${SOURCE_DIR}
-rm -f `rpm -qpl ${SRPMFILE}`
-
-rpm2cpio ${SRPMFILE} | cpio -id || exit 1
-cp ${BASE_DIR}/scripts/serefpolicy-sepgsql.patch ./
-if [ ! -f selinux-policy.spec ]; then
-    echo "selinux-policy.spec not found";
+if [ "$PKG_NAME" != "selinux-policy" ]; then
+    echo "$SRPMFILE is not selinux-policy package"
     exit 1
 fi
+
+# -- unpack source rpm
+SOURCE_DIR=`rpm -E '%{_sourcedir}'`
+test -d ${SOURCE_DIR} || mkdir -p ${SOURCE_DIR} || exit 1
+
+BUILD_DIR=`rpm -E '%{_builddir}'`
+test -d ${BUILD_DIR} || mkdir -p ${SOURCE_DIR} || exit 1
+
+cd ${SOURCE_DIR}
+rpm2cpio ${SRPMFILE} | cpio -idu || exit 1
+
+rm -rf	${BUILD_DIR}/serefpolicy-${PKG_VERSION}.orig \
+	${BUILD_DIR}/serefpolicy-${PKG_VERSION}.sepgsql
+
+rpmbuild -bp selinux-policy.spec
+mv  ${BUILD_DIR}/serefpolicy-${PKG_VERSION}	\
+    ${BUILD_DIR}/serefpolicy-${PKG_VERSION}.orig
+
+rpmbuild -bp selinux-policy.spec
+mv  ${BUILD_DIR}/serefpolicy-${PKG_VERSION}	\
+    ${BUILD_DIR}/serefpolicy-${PKG_VERSION}.sepgsql
+
+cp  ${POLICY_DIR}/security_classes		\
+    ${BUILD_DIR}/serefpolicy-${PKG_VERSION}.sepgsql/policy/flask
+cp  ${POLICY_DIR}/access_vectors		\
+    ${BUILD_DIR}/serefpolicy-${PKG_VERSION}.sepgsql/policy/flask
+cp  ${POLICY_DIR}/mcs				\
+    ${BUILD_DIR}/serefpolicy-${PKG_VERSION}.sepgsql/policy
+cp  ${POLICY_DIR}/mls				\
+    ${BUILD_DIR}/serefpolicy-${PKG_VERSION}.sepgsql/policy
+cp  ${POLICY_DIR}/postgresql.*			\
+    ${BUILD_DIR}/serefpolicy-${PKG_VERSION}.sepgsql/policy/modules/services
+
+cd ${BUILD_DIR}
+diff -rup serefpolicy-${PKG_VERSION}.orig serefpolicy-${PKG_VERSION}.sepgsql	\
+    > ${SOURCE_DIR}/serefpolicy-sepgsql.patch
 
 # -- modify specfile
 TEMPFILE=`mktemp` || exit 1
 
-cat selinux-policy.spec \
-    | awk      "BEGIN { a = b = 0 }					\
-		/^Source[0-9]+:/ && a == 0			       	\
-		{ a = 1;						\
-		  print \"patch99: serefpolicy-sepgsql.patch\";		\
-		  print; next; }					\
-		/%patch[0-9]*/ && b == 0				\
-		{ b = 1;						\
-		  print;						\
-		  print \"%patch99 -p1\";				\
-		  next;							\
-		}							\
-		/^%clean/						\
-		{							\
-		  print \"%if %{BUILD_TARGETED}\";			\
-		  print \"install -m 644 %{buildroot}%{_usr}/share/selinux/targeted/base.pp.bz2 \\\\\";	\
-		  print \"    %{buildroot}%{_usr}/share/selinux/packages/base-sepgsql.targeted.pp.bz2\";\
-		  print \"%endif\";					\
-		  print \"%if %{BUILD_MLS}\";				\
-		  print \"install -m 644 %{buildroot}%{_usr}/share/selinux/mls/base.pp.bz2 \\\\\";	\
-		  print \"    %{buildroot}%{_usr}/share/selinux/packages/base-sepgsql.mls.pp.bz2\";	\
-		  print \"%endif\";					\
-		  print \"%if %{BUILD_MINIMUM}\";			\
-		  print \"install -m 644 %{buildroot}%{_usr}/share/selinux/minimum/base.pp.bz2 \\\\\";	\
-		  print	\"    %{buildroot}%{_usr}/share/selinux/packages/base-sepgsql.minimum.pp.bz2\";	\
-		  print \"%endif\";					\
-		  print \"\";						\
-		  print; next;						\
-		}							\
-		/^%changelog/						\
-		{							\
-		  print \"%package sepgsql\";				\
-		  print \"Summary: SELinux experimental database policy\";		\
-		  print \"Group: System Environment/Base\";		\
-		  print \"Requires(pre): selinux-policy = %{version}-%{release}\";	\
-		  print \"\";						\
-		  print \"%description sepgsql\";			\
-		  print \"SELinux experimental database policy\";	\
-		  print \"\";						\
-		  print \"%files sepgsql\";				\
-		  print \"%{_usr}/share/selinux/packages/base-sepgsql.*.pp.bz2\";	\
-		  print \"\";						\
-		  print; next;						\
-		}							\
-		{							\
-		  print;						\
-		}" > $TEMPFILE
-cp $TEMPFILE selinux-policy.spec
+cat ${SOURCE_DIR}/selinux-policy.spec	| \
+    sed 's/%{?dist}/.sepgsql%{?dist}/g' | \
+    awk	"BEGIN { a = b = 0; }
+	 /^Source[0-9]+:/ && a == 0 { a = 1;
+	  print \"patch99: serefpolicy-sepgsql.patch\";
+	  print; next; }
+	 /^%patch[0-9]*/ && b == 0 { b = 1;
+	  print;
+	  print \"%patch99 -p1\";
+	  next; }
+	{ print; next; }" > $TEMPFILE
+cp $TEMPFILE ${SOURCE_DIR}/selinux-policy.spec
 
 # rpmbuild 
-rpmbuild -ba ${SOURCE_DIR}/selinux-policy.spec	\
-	-D "BUILD_MINIMUM 0" -D "BUILD_OLPC 0" -D "BUILD_MLS 0"
+rpmbuild -ba ${SOURCE_DIR}/selinux-policy.spec
