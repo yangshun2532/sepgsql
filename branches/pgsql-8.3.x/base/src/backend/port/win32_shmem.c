@@ -6,7 +6,7 @@
  * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/port/win32_shmem.c,v 1.4.2.2 2008/10/30 17:04:11 mha Exp $
+ *	  $PostgreSQL: pgsql/src/backend/port/win32_shmem.c,v 1.4.2.5 2009/08/11 11:51:19 mha Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -18,6 +18,7 @@
 
 unsigned long UsedShmemSegID = 0;
 void	   *UsedShmemSegAddr = NULL;
+static Size UsedShmemSegSize = 0;
 
 static void pgwin32_SharedMemoryDelete(int status, Datum shmId);
 
@@ -123,6 +124,7 @@ PGSharedMemoryCreate(Size size, bool makePrivate, int port)
 	HANDLE		hmap,
 				hmap2;
 	char	   *szShareMem;
+	int			i;
 
 	/* Room for a header? */
 	Assert(size > MAXALIGN(sizeof(PGShmemHeader)));
@@ -131,47 +133,52 @@ PGSharedMemoryCreate(Size size, bool makePrivate, int port)
 
 	UsedShmemSegAddr = NULL;
 
-	hmap = CreateFileMapping((HANDLE) 0xFFFFFFFF,		/* Use the pagefile */
-							 NULL,		/* Default security attrs */
-							 PAGE_READWRITE,	/* Memory is Read/Write */
-							 0L,	/* Size Upper 32 Bits	*/
-							 (DWORD) size,		/* Size Lower 32 bits */
-							 szShareMem);
-
-	if (!hmap)
-		ereport(FATAL,
-				(errmsg("could not create shared memory segment: %lu", GetLastError()),
-				 errdetail("Failed system call was CreateFileMapping(size=%lu, name=%s).",
-						   (unsigned long) size, szShareMem)));
-
 	/*
-	 * If the segment already existed, CreateFileMapping() will return a
-	 * handle to the existing one.
+	 * When recycling a shared memory segment, it may take a short while
+	 * before it gets dropped from the global namespace. So re-try after
+	 * sleeping for a second, and continue retrying 10 times.
+	 * (both the 1 second time and the 10 retries are completely arbitrary)
 	 */
-	if (GetLastError() == ERROR_ALREADY_EXISTS)
+	for (i = 0; i < 10; i++)
 	{
-		/*
-		 * When recycling a shared memory segment, it may take a short while
-		 * before it gets dropped from the global namespace. So re-try after
-		 * sleeping for a second.
-		 */
-		CloseHandle(hmap);		/* Close the old handle, since we got a valid
-								 * one to the previous segment. */
+		/* In case CreateFileMapping() doesn't set the error code to 0 on success */
+		SetLastError(0);
 
-		Sleep(1000);
+		hmap = CreateFileMapping((HANDLE) 0xFFFFFFFF,		/* Use the pagefile */
+								 NULL,		/* Default security attrs */
+								 PAGE_READWRITE,	/* Memory is Read/Write */
+								 0L,	/* Size Upper 32 Bits	*/
+								 (DWORD) size,		/* Size Lower 32 bits */
+								 szShareMem);
 
-		hmap = CreateFileMapping((HANDLE) 0xFFFFFFFF, NULL, PAGE_READWRITE, 0L, (DWORD) size, szShareMem);
 		if (!hmap)
 			ereport(FATAL,
 					(errmsg("could not create shared memory segment: %lu", GetLastError()),
 					 errdetail("Failed system call was CreateFileMapping(size=%lu, name=%s).",
 							   (unsigned long) size, szShareMem)));
 
+		/*
+		 * If the segment already existed, CreateFileMapping() will return a
+		 * handle to the existing one.
+		 */
 		if (GetLastError() == ERROR_ALREADY_EXISTS)
-			ereport(FATAL,
-				 (errmsg("pre-existing shared memory block is still in use"),
-				  errhint("Check if there are any old server processes still running, and terminate them.")));
+		{
+			CloseHandle(hmap);		/* Close the old handle, since we got a valid
+									 * one to the previous segment. */
+			Sleep(1000);
+			continue;
+		}
+		break;
 	}
+
+	/*
+	 * If the last call in the loop still returned ERROR_ALREADY_EXISTS, this shared memory
+	 * segment exists and we assume it belongs to somebody else.
+	 */
+	if (GetLastError() == ERROR_ALREADY_EXISTS)
+		ereport(FATAL,
+			 (errmsg("pre-existing shared memory block is still in use"),
+			  errhint("Check if there are any old server processes still running, and terminate them.")));
 
 	free(szShareMem);
 
@@ -223,6 +230,7 @@ PGSharedMemoryCreate(Size size, bool makePrivate, int port)
 
 	/* Save info for possible future use */
 	UsedShmemSegAddr = memAddress;
+	UsedShmemSegSize = size;
 	UsedShmemSegID = (unsigned long) hmap2;
 
 	return hdr;
@@ -246,6 +254,13 @@ PGSharedMemoryReAttach(void)
 
 	Assert(UsedShmemSegAddr != NULL);
 	Assert(IsUnderPostmaster);
+
+	/*
+	 * Release memory region reservation that was made by the postmaster
+	 */
+	if (VirtualFree(UsedShmemSegAddr, 0, MEM_RELEASE) == 0)
+		elog(FATAL, "failed to release reserved memory region (addr=%p): %lu",
+			 UsedShmemSegAddr, GetLastError());
 
 	hdr = (PGShmemHeader *) MapViewOfFileEx((HANDLE) UsedShmemSegID, FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, 0, UsedShmemSegAddr);
 	if (!hdr)
@@ -291,4 +306,54 @@ pgwin32_SharedMemoryDelete(int status, Datum shmId)
 	PGSharedMemoryDetach();
 	if (!CloseHandle((HANDLE) DatumGetInt32(shmId)))
 		elog(LOG, "could not close handle to shared memory: %lu", GetLastError());
+}
+
+/*
+ * pgwin32_ReserveSharedMemoryRegion(hChild)
+ *
+ * Reserve the memory region that will be used for shared memory in a child
+ * process. It is called before the child process starts, to make sure the
+ * memory is available.
+ *
+ * Once the child starts, DLLs loading in different order or threads getting
+ * scheduled differently may allocate memory which can conflict with the
+ * address space we need for our shared memory. By reserving the shared
+ * memory region before the child starts, and freeing it only just before we
+ * attempt to get access to the shared memory forces these allocations to
+ * be given different address ranges that don't conflict.
+ *
+ * NOTE! This function executes in the postmaster, and should for this
+ * reason not use elog(FATAL) since that would take down the postmaster.
+ */
+int
+pgwin32_ReserveSharedMemoryRegion(HANDLE hChild)
+{
+	void *address;
+
+	Assert(UsedShmemSegAddr != NULL);
+	Assert(UsedShmemSegSize != 0);
+
+	address = VirtualAllocEx(hChild, UsedShmemSegAddr, UsedShmemSegSize,
+								MEM_RESERVE, PAGE_READWRITE);
+	if (address == NULL) {
+		/* Don't use FATAL since we're running in the postmaster */
+		elog(LOG, "could not reserve shared memory region (addr=%p) for child %lu: %lu",
+			 UsedShmemSegAddr, hChild, GetLastError());
+		return false;
+	}
+	if (address != UsedShmemSegAddr)
+	{
+		/*
+		 * Should never happen - in theory if allocation granularity causes strange
+		 * effects it could, so check just in case.
+		 *
+		 * Don't use FATAL since we're running in the postmaster.
+		 */
+	    elog(LOG, "reserved shared memory region got incorrect address %p, expected %p",
+			 address, UsedShmemSegAddr);
+		VirtualFreeEx(hChild, address, 0, MEM_RELEASE);
+		return false;
+	}
+
+	return true;
 }
