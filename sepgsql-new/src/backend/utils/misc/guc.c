@@ -10,7 +10,7 @@
  * Written by Peter Eisentraut <peter_e@gmx.net>.
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/misc/guc.c,v 1.432.2.2 2008/07/06 19:48:53 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/utils/misc/guc.c,v 1.432.2.4 2009/09/03 22:08:22 tgl Exp $
  *
  *--------------------------------------------------------------------
  */
@@ -2251,7 +2251,7 @@ static struct config_string ConfigureNamesString[] =
 		{"role", PGC_USERSET, UNGROUPED,
 			gettext_noop("Sets the current role."),
 			NULL,
-			GUC_IS_NAME | GUC_NO_SHOW_ALL | GUC_NO_RESET_ALL | GUC_NOT_IN_SAMPLE | GUC_DISALLOW_IN_FILE
+			GUC_IS_NAME | GUC_NO_SHOW_ALL | GUC_NO_RESET_ALL | GUC_NOT_IN_SAMPLE | GUC_DISALLOW_IN_FILE | GUC_NOT_WHILE_SEC_DEF
 		},
 		&role_string,
 		"none", assign_role, show_role
@@ -2262,7 +2262,7 @@ static struct config_string ConfigureNamesString[] =
 		{"session_authorization", PGC_USERSET, UNGROUPED,
 			gettext_noop("Sets the session user name."),
 			NULL,
-			GUC_IS_NAME | GUC_REPORT | GUC_NO_SHOW_ALL | GUC_NO_RESET_ALL | GUC_NOT_IN_SAMPLE | GUC_DISALLOW_IN_FILE
+			GUC_IS_NAME | GUC_REPORT | GUC_NO_SHOW_ALL | GUC_NO_RESET_ALL | GUC_NOT_IN_SAMPLE | GUC_DISALLOW_IN_FILE | GUC_NOT_WHILE_SEC_DEF
 		},
 		&session_authorization_string,
 		NULL, assign_session_authorization, show_session_authorization
@@ -3354,7 +3354,8 @@ ResetAllOptions(void)
 					if (conf->assign_hook)
 						if (!(*conf->assign_hook) (conf->reset_val, true,
 												   PGC_S_SESSION))
-							elog(ERROR, "failed to reset %s", conf->gen.name);
+							elog(ERROR, "failed to reset %s to %d",
+								 conf->gen.name, (int) conf->reset_val);
 					*conf->variable = conf->reset_val;
 					conf->gen.source = conf->gen.reset_source;
 					break;
@@ -3366,7 +3367,8 @@ ResetAllOptions(void)
 					if (conf->assign_hook)
 						if (!(*conf->assign_hook) (conf->reset_val, true,
 												   PGC_S_SESSION))
-							elog(ERROR, "failed to reset %s", conf->gen.name);
+							elog(ERROR, "failed to reset %s to %d",
+								 conf->gen.name, conf->reset_val);
 					*conf->variable = conf->reset_val;
 					conf->gen.source = conf->gen.reset_source;
 					break;
@@ -3378,7 +3380,8 @@ ResetAllOptions(void)
 					if (conf->assign_hook)
 						if (!(*conf->assign_hook) (conf->reset_val, true,
 												   PGC_S_SESSION))
-							elog(ERROR, "failed to reset %s", conf->gen.name);
+							elog(ERROR, "failed to reset %s to %g",
+								 conf->gen.name, conf->reset_val);
 					*conf->variable = conf->reset_val;
 					conf->gen.source = conf->gen.reset_source;
 					break;
@@ -3398,7 +3401,8 @@ ResetAllOptions(void)
 						newstr = (*conf->assign_hook) (str, true,
 													   PGC_S_SESSION);
 						if (newstr == NULL)
-							elog(ERROR, "failed to reset %s", conf->gen.name);
+							elog(ERROR, "failed to reset %s to \"%s\"",
+								 conf->gen.name, str);
 						else if (newstr != str)
 						{
 							/*
@@ -3677,8 +3681,8 @@ AtEOXact_GUC(bool isCommit, int nestLevel)
 								if (conf->assign_hook)
 									if (!(*conf->assign_hook) (newval,
 													   true, PGC_S_OVERRIDE))
-										elog(LOG, "failed to commit %s",
-											 conf->gen.name);
+										elog(LOG, "failed to commit %s as %d",
+											 conf->gen.name, (int) newval);
 								*conf->variable = newval;
 								changed = true;
 							}
@@ -3694,8 +3698,8 @@ AtEOXact_GUC(bool isCommit, int nestLevel)
 								if (conf->assign_hook)
 									if (!(*conf->assign_hook) (newval,
 													   true, PGC_S_OVERRIDE))
-										elog(LOG, "failed to commit %s",
-											 conf->gen.name);
+										elog(LOG, "failed to commit %s as %d",
+											 conf->gen.name, newval);
 								*conf->variable = newval;
 								changed = true;
 							}
@@ -3711,8 +3715,8 @@ AtEOXact_GUC(bool isCommit, int nestLevel)
 								if (conf->assign_hook)
 									if (!(*conf->assign_hook) (newval,
 													   true, PGC_S_OVERRIDE))
-										elog(LOG, "failed to commit %s",
-											 conf->gen.name);
+										elog(LOG, "failed to commit %s as %g",
+											 conf->gen.name, newval);
 								*conf->variable = newval;
 								changed = true;
 							}
@@ -3732,8 +3736,8 @@ AtEOXact_GUC(bool isCommit, int nestLevel)
 									newstr = (*conf->assign_hook) (newval, true,
 															 PGC_S_OVERRIDE);
 									if (newstr == NULL)
-										elog(LOG, "failed to commit %s",
-											 conf->gen.name);
+										elog(LOG, "failed to commit %s as \"%s\"",
+											 conf->gen.name, newval);
 									else if (newstr != newval)
 									{
 										/*
@@ -4339,6 +4343,32 @@ set_config_option(const char *name, const char *value,
 		case PGC_USERSET:
 			/* always okay */
 			break;
+	}
+
+	/*
+	 * Disallow changing GUC_NOT_WHILE_SEC_DEF values if we are inside a
+	 * security-definer function.  We can reject this regardless of
+	 * the context or source, mainly because sources that it might be
+	 * reasonable to override for won't be seen while inside a function.
+	 *
+	 * Note: variables marked GUC_NOT_WHILE_SEC_DEF should probably be marked
+	 * GUC_NO_RESET_ALL as well, because ResetAllOptions() doesn't check this.
+	 *
+	 * Note: this flag is currently used for "session_authorization" and
+	 * "role".  We need to prohibit this because when we exit the sec-def
+	 * context, GUC won't be notified, leaving things out of sync.
+	 *
+	 * XXX it would be nice to allow these cases in future, with the behavior
+	 * being that the SET's effects end when the security definer context is
+	 * exited.
+	 */
+	if ((record->flags & GUC_NOT_WHILE_SEC_DEF) && InSecurityDefinerContext())
+	{
+		ereport(elevel,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("cannot set parameter \"%s\" within security-definer function",
+						name)));
+		return false;
 	}
 
 	/*

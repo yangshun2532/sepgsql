@@ -7,7 +7,7 @@
  * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/backend/access/transam/xlog.c,v 1.292.2.5 2008/10/30 04:06:25 tgl Exp $
+ * $PostgreSQL: pgsql/src/backend/access/transam/xlog.c,v 1.292.2.7 2009/06/02 06:19:41 heikki Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -2696,6 +2696,7 @@ RemoveOldXlogFiles(uint32 log, uint32 seg, XLogRecPtr endptr)
 	struct dirent *xlde;
 	char		lastoff[MAXFNAMELEN];
 	char		path[MAXPGPATH];
+	struct stat statbuf;
 
 	/*
 	 * Initialize info about where to try to recycle to.  We allow recycling
@@ -2736,11 +2737,13 @@ RemoveOldXlogFiles(uint32 log, uint32 seg, XLogRecPtr endptr)
 
 				/*
 				 * Before deleting the file, see if it can be recycled as a
-				 * future log segment.
+				 * future log segment. Only recycle normal files, pg_standby
+				 * for example can create symbolic links pointing to a
+				 * separate archive directory.
 				 */
-				if (InstallXLogFileSegment(&endlogId, &endlogSeg, path,
-										   true, &max_advance,
-										   true))
+				if (lstat(path, &statbuf) == 0 && S_ISREG(statbuf.st_mode) &&
+					InstallXLogFileSegment(&endlogId, &endlogSeg, path,
+										   true, &max_advance, true))
 				{
 					ereport(DEBUG2,
 							(errmsg("recycled transaction log file \"%s\"",
@@ -6480,6 +6483,19 @@ pg_start_backup(PG_FUNCTION_ARGS)
 	}
 	XLogCtl->Insert.forcePageWrites = true;
 	LWLockRelease(WALInsertLock);
+
+	/*
+	 * Force an XLOG file switch before the checkpoint, to ensure that the WAL
+	 * segment the checkpoint is written to doesn't contain pages with old
+	 * timeline IDs. That would otherwise happen if you called
+	 * pg_start_backup() right after restoring from a PITR archive: the first
+	 * WAL segment containing the startup checkpoint has pages in the
+	 * beginning with the old timeline ID. That can cause trouble at recovery:
+	 * we won't have a history file covering the old timeline if pg_xlog
+	 * directory was not included in the base backup and the WAL archive was
+	 * cleared too before starting the backup.
+	 */
+	RequestXLogSwitch();
 
 	/* Ensure we release forcePageWrites if fail below */
 	PG_ENSURE_ERROR_CLEANUP(pg_start_backup_callback, (Datum) 0);
