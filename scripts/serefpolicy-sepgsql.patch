@@ -1,0 +1,161 @@
+Binary files serefpolicy-3.6.30.orig/.git/index and serefpolicy-3.6.30.sepgsql/.git/index differ
+diff -ru serefpolicy-3.6.30.orig/policy/flask/access_vectors serefpolicy-3.6.30.sepgsql/policy/flask/access_vectors
+--- serefpolicy-3.6.30.orig/policy/flask/access_vectors	2009-09-01 02:30:37.000000000 +0900
++++ serefpolicy-3.6.30.sepgsql/policy/flask/access_vectors	2009-09-10 16:28:57.000000000 +0900
+@@ -802,3 +802,27 @@
+ 
+ class tun_socket
+ inherits socket
++
++class db_schema
++inherits database
++{
++	search
++	add_name
++	remove_name
++}
++
++class db_schema_temp
++inherits database
++{
++	search
++	add_name
++	remove_name
++}
++
++class db_sequence
++inherits database
++{
++	get_value
++	next_value
++	set_value
++}
+diff -ru serefpolicy-3.6.30.orig/policy/flask/security_classes serefpolicy-3.6.30.sepgsql/policy/flask/security_classes
+--- serefpolicy-3.6.30.orig/policy/flask/security_classes	2009-09-01 02:30:37.000000000 +0900
++++ serefpolicy-3.6.30.sepgsql/policy/flask/security_classes	2009-09-10 16:24:18.000000000 +0900
+@@ -121,4 +121,9 @@
+ 
+ class tun_socket
+ 
++# More SE-PostgreSQL stuff
++class db_schema			# userspace
++class db_schema_temp		# userspace
++class db_sequence		# userspace
++
+ # FLASK
+diff -ru serefpolicy-3.6.30.orig/policy/mcs serefpolicy-3.6.30.sepgsql/policy/mcs
+--- serefpolicy-3.6.30.orig/policy/mcs	2009-09-07 12:37:40.000000000 +0900
++++ serefpolicy-3.6.30.sepgsql/policy/mcs	2009-09-10 16:31:13.000000000 +0900
+@@ -104,7 +104,7 @@
+ 
+ # Any database object must be dominated by the relabeling subject
+ # clearance, also the objects are single-level.
+-mlsconstrain { db_database db_table db_procedure db_column db_blob } { create relabelto }
++mlsconstrain { db_database db_schema db_schema_temp db_table db_procedure db_sequence db_column db_blob } { create relabelto }
+ 	(( h1 dom h2 ) and ( l2 eq h2 ));
+ 
+ mlsconstrain { db_tuple } { insert relabelto }
+@@ -114,6 +114,9 @@
+ mlsconstrain db_database { drop getattr setattr relabelfrom access install_module load_module get_param set_param }
+ 	( h1 dom h2 );
+ 
++mlsconstrain { db_schema db_schema_temp } { drop getattr setattr relabelfrom search add_name remove_name }
++	( h1 dom h2 );
++
+ mlsconstrain db_table { drop getattr setattr relabelfrom select update insert delete use lock }
+ 	( h1 dom h2 );
+ 
+@@ -123,7 +126,10 @@
+ mlsconstrain db_tuple { relabelfrom select update delete use }
+ 	( h1 dom h2 );
+ 
+-mlsconstrain db_procedure { drop getattr setattr execute install }
++mlsconstrain db_procedure { drop getattr setattr relabelfrom execute install }
++	( h1 dom h2 );
++
++mlsconstrain db_sequence { drop getattr setattr relabelfrom get_value next_value set_value }
+ 	( h1 dom h2 );
+ 
+ mlsconstrain db_blob { drop getattr setattr relabelfrom read write import export }
+diff -ru serefpolicy-3.6.30.orig/policy/mls serefpolicy-3.6.30.sepgsql/policy/mls
+--- serefpolicy-3.6.30.orig/policy/mls	2009-09-01 02:30:37.000000000 +0900
++++ serefpolicy-3.6.30.sepgsql/policy/mls	2009-09-10 16:24:05.000000000 +0900
+@@ -712,13 +712,13 @@
+ #
+ 
+ # make sure these database classes are "single level"
+-mlsconstrain { db_database db_table db_procedure db_column db_blob } { create relabelto }
++mlsconstrain { db_database db_schema db_schema_temp db_table db_procedure db_sequence db_column db_blob } { create relabelto }
+ 	( l2 eq h2 );
+ mlsconstrain { db_tuple } { insert relabelto }
+ 	( l2 eq h2 );
+ 
+ # new database labels must be dominated by the relabeling subjects clearance
+-mlsconstrain { db_database db_table db_procedure db_column db_tuple db_blob } { relabelto }
++mlsconstrain { db_database db_schema db_schema_temp db_table db_procedure db_sequence db_column db_tuple db_blob } { relabelto }
+ 	( h1 dom h2 );
+ 
+ # the database "read" ops (note the check is dominance of the low level)
+@@ -728,6 +728,12 @@
+ 	 ( t1 == mlsdbread ) or
+ 	 ( t2 == mlstrustedobject ));
+ 
++mlsconstrain { db_schema db_schema_temp } { getattr search }
++	(( l1 dom l2 ) or
++	 (( t1 == mlsdbreadtoclr ) and ( h1 dom l2 )) or
++	 ( t1 == mlsdbread ) or
++	 ( t2 == mlstrustedobject ));
++
+ mlsconstrain { db_table } { getattr use select lock }
+ 	(( l1 dom l2 ) or
+ 	 (( t1 == mlsdbreadtoclr ) and ( h1 dom l2 )) or
+@@ -746,6 +752,12 @@
+ 	 ( t1 == mlsdbread ) or
+ 	 ( t2 == mlstrustedobject ));
+ 
++mlsconstrain { db_sequence } { getattr get_value next_value }
++	(( l1 dom l2 ) or
++	 (( t1 == mlsdbreadtoclr ) and ( h1 dom l2 )) or
++	 ( t1 == mlsdbread ) or
++	 ( t2 == mlstrustedobject ));
++
+ mlsconstrain { db_blob } { getattr read export }
+ 	(( l1 dom l2 ) or
+ 	 (( t1 == mlsdbreadtoclr ) and ( h1 dom l2 )) or
+@@ -766,6 +778,13 @@
+ 	 ( t1 == mlsdbwrite ) or
+ 	 ( t2 == mlstrustedobject ));
+ 
++mlsconstrain { db_schema db_schema_temp } { create drop setattr relabelfrom add_name remove_name }
++	(( l1 eq l2 ) or
++	 (( t1 == mlsdbwritetoclr ) and ( h1 dom l2 ) and ( l1 domby l2 )) or
++	 (( t2 == mlsdbwriteinrange ) and ( l1 dom l2 ) and ( h1 domby h2 )) or
++	 ( t1 == mlsdbwrite ) or
++	 ( t2 == mlstrustedobject ));
++
+ mlsconstrain { db_table } { create drop setattr relabelfrom update insert delete }
+ 	(( l1 eq l2 ) or
+ 	 (( t1 == mlsdbwritetoclr ) and ( h1 dom l2 ) and ( l1 domby l2 )) or
+@@ -787,6 +806,13 @@
+ 	 ( t1 == mlsdbwrite ) or
+ 	 ( t2 == mlstrustedobject ));
+ 
++mlsconstrain { db_sequence } { create drop setattr relabelfrom }
++	(( l1 eq l2 ) or
++	 (( t1 == mlsdbwritetoclr ) and ( h1 dom l2 ) and ( l1 domby l2 )) or
++	 (( t2 == mlsdbwriteinrange ) and ( l1 dom l2 ) and ( h1 domby h2 )) or
++	 ( t1 == mlsdbwrite ) or
++	 ( t2 == mlstrustedobject ));
++
+ mlsconstrain { db_blob } { create drop setattr relabelfrom write import }
+ 	(( l1 eq l2 ) or
+ 	 (( t1 == mlsdbwritetoclr ) and ( h1 dom l2 ) and ( l1 domby l2 )) or
+@@ -802,7 +828,7 @@
+ 	 ( t2 == mlstrustedobject ));
+ 
+ # the database upgrade/downgrade rule
+-mlsvalidatetrans { db_database db_table db_procedure db_column db_tuple db_blob }
++mlsvalidatetrans { db_database db_schema db_schema_temp db_table db_procedure db_sequence db_column db_tuple db_blob }
+ 	((( l1 eq l2 ) or
+ 	  (( t3 == mlsdbupgrade ) and ( l1 domby l2 )) or
+ 	  (( t3 == mlsdbdowngrade ) and ( l1 dom l2 )) or
