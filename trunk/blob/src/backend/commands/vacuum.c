@@ -13,7 +13,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/commands/vacuum.c,v 1.390 2009/08/24 02:18:31 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/commands/vacuum.c,v 1.393 2009/09/01 04:46:49 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -46,7 +46,6 @@
 #include "storage/procarray.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
-#include "utils/flatfiles.h"
 #include "utils/fmgroids.h"
 #include "utils/inval.h"
 #include "utils/lsyscache.h"
@@ -893,14 +892,12 @@ vac_update_datfrozenxid(void)
 	heap_close(relation, RowExclusiveLock);
 
 	/*
-	 * If we were able to advance datfrozenxid, mark the flat-file copy of
-	 * pg_database for update at commit, and see if we can truncate pg_clog.
+	 * If we were able to advance datfrozenxid, see if we can truncate pg_clog.
+	 * Also do it if the shared XID-wrap-limit info is stale, since this
+	 * action will update that too.
 	 */
-	if (dirty)
-	{
-		database_file_update_needed();
+	if (dirty || ForceTransactionIdLimitUpdate())
 		vac_truncate_clog(newFrozenXid);
-	}
 }
 
 
@@ -916,7 +913,7 @@ vac_update_datfrozenxid(void)
  *
  *		This routine is shared by full and lazy VACUUM.  Note that it's
  *		only invoked when we've managed to change our DB's datfrozenxid
- *		entry.
+ *		entry, or we found that the shared XID-wrap-limit info is stale.
  */
 static void
 vac_truncate_clog(TransactionId frozenXID)
@@ -925,11 +922,11 @@ vac_truncate_clog(TransactionId frozenXID)
 	Relation	relation;
 	HeapScanDesc scan;
 	HeapTuple	tuple;
-	NameData	oldest_datname;
+	Oid			oldest_datoid;
 	bool		frozenAlreadyWrapped = false;
 
-	/* init oldest_datname to sync with my frozenXID */
-	namestrcpy(&oldest_datname, get_database_name(MyDatabaseId));
+	/* init oldest_datoid to sync with my frozenXID */
+	oldest_datoid = MyDatabaseId;
 
 	/*
 	 * Scan pg_database to compute the minimum datfrozenxid
@@ -958,7 +955,7 @@ vac_truncate_clog(TransactionId frozenXID)
 		else if (TransactionIdPrecedes(dbform->datfrozenxid, frozenXID))
 		{
 			frozenXID = dbform->datfrozenxid;
-			namecpy(&oldest_datname, &dbform->datname);
+			oldest_datoid = HeapTupleGetOid(tuple);
 		}
 	}
 
@@ -987,7 +984,7 @@ vac_truncate_clog(TransactionId frozenXID)
 	 * Update the wrap limit for GetNewTransactionId.  Note: this function
 	 * will also signal the postmaster for an(other) autovac cycle if needed.
 	 */
-	SetTransactionIdLimit(frozenXID, &oldest_datname);
+	SetTransactionIdLimit(frozenXID, oldest_datoid);
 }
 
 
