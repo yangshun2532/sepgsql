@@ -204,6 +204,7 @@ OperatorShellMake(const char *operatorName,
 {
 	Relation	pg_operator_desc;
 	Oid			operatorObjectId;
+	Oid			secid;
 	int			i;
 	HeapTuple	tup;
 	Datum		values[Natts_pg_operator];
@@ -219,6 +220,10 @@ OperatorShellMake(const char *operatorName,
 				(errcode(ERRCODE_INVALID_NAME),
 				 errmsg("\"%s\" is not a valid operator name",
 						operatorName)));
+
+	/* SELinux permission check */
+	secid = sepgsqlCheckSysobjCreate(OperatorRelationId, operatorName);
+	sepgsqlCheckSchemaAddName(operatorNamespace);
 
 	/*
 	 * initialize our *nulls and *values arrays
@@ -260,6 +265,8 @@ OperatorShellMake(const char *operatorName,
 	 * create a new operator tuple
 	 */
 	tup = heap_form_tuple(tupDesc, values, nulls);
+	if (HeapTupleHasSecid(tup) && OidIsValid(secid))
+		HeapTupleSetSecid(tup, secid);
 
 	/*
 	 * insert our "shell" operator tuple
@@ -518,6 +525,14 @@ OperatorCreate(const char *operatorName,
 			elog(ERROR, "cache lookup failed for operator %u",
 				 operatorObjectId);
 
+		/* SELinux permission checks */
+		sepgsqlCheckSysobjSetattr(OperatorRelationId,
+								  HeapTupleGetSecid(tup),
+								  operatorName);
+		sepgsqlCheckProcedureInstall(procedureId);
+		sepgsqlCheckProcedureInstall(restrictionId);
+		sepgsqlCheckProcedureInstall(joinId);
+
 		tup = heap_modify_tuple(tup,
 								RelationGetDescr(pg_operator_desc),
 								values,
@@ -528,8 +543,20 @@ OperatorCreate(const char *operatorName,
 	}
 	else
 	{
+		Oid		secid;
+
+		/* SELinux permission checks */
+		secid = sepgsqlCheckSysobjCreate(OperatorRelationId,
+										 operatorName);
+		sepgsqlCheckSchemaAddName(operatorNamespace);
+		sepgsqlCheckProcedureInstall(procedureId);
+		sepgsqlCheckProcedureInstall(restrictionId);
+		sepgsqlCheckProcedureInstall(joinId);
+
 		tupDesc = pg_operator_desc->rd_att;
 		tup = heap_form_tuple(tupDesc, values, nulls);
+		if (HeapTupleHasSecid(tup) && OidIsValid(secid))
+			HeapTupleSetSecid(tup, secid);
 
 		operatorObjectId = simple_heap_insert(pg_operator_desc, tup);
 	}

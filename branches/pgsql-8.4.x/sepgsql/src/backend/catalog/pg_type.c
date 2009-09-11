@@ -387,6 +387,13 @@ TypeCreate(Oid newTypeOid,
 			sepgsqlCheckSysobjSetattr(TypeRelationId, typeSecid, typeName);
 		}
 		sepgsqlCheckSchemaAddName(typeNamespace);
+		sepgsqlCheckProcedureInstall(inputProcedure);
+		sepgsqlCheckProcedureInstall(outputProcedure);
+		sepgsqlCheckProcedureInstall(receiveProcedure);
+		sepgsqlCheckProcedureInstall(sendProcedure);
+		sepgsqlCheckProcedureInstall(typmodinProcedure);
+		sepgsqlCheckProcedureInstall(typmodoutProcedure);
+		sepgsqlCheckProcedureInstall(analyzeProcedure);
 	}
 
 	if (HeapTupleIsValid(tup))
