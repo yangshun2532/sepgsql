@@ -123,7 +123,6 @@ class tun_socket
 
 # More SE-PostgreSQL stuff
 class db_schema			# userspace
-class db_schema_temp		# userspace
 class db_sequence		# userspace
 
 # FLASK

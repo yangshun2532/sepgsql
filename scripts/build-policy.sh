@@ -76,4 +76,4 @@ cat ${SOURCE_DIR}/selinux-policy.spec	| \
 cp $TEMPFILE ${SOURCE_DIR}/selinux-policy.spec
 
 # rpmbuild 
-rpmbuild -ba ${SOURCE_DIR}/selinux-policy.spec
+rpmbuild -ba ${SOURCE_DIR}/selinux-policy.spec -D "BUILD_MLS 0" -D "BUILD_MINIMUM 0"

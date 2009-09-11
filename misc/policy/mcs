@@ -104,7 +104,7 @@ mlsconstrain process { sigkill sigstop }
 
 # Any database object must be dominated by the relabeling subject
 # clearance, also the objects are single-level.
-mlsconstrain { db_database db_schema db_schema_temp db_table db_procedure db_sequence db_column db_blob } { create relabelto }
+mlsconstrain { db_database db_schema db_table db_procedure db_sequence db_column db_blob } { create relabelto }
 	(( h1 dom h2 ) and ( l2 eq h2 ));
 
 mlsconstrain { db_tuple } { insert relabelto }
@@ -113,7 +113,7 @@ mlsconstrain { db_tuple } { insert relabelto }
 # Access control for any database objects based on MCS rules.
 mlsconstrain db_database { drop getattr setattr relabelfrom access install_module load_module get_param set_param superuser }
 	( h1 dom h2 );
-mlsconstrain { db_schema db_schema_temp } { drop getattr setattr relabelfrom search add_name remove_name }
+mlsconstrain db_schema { drop getattr setattr relabelfrom search add_name remove_name }
 	( h1 dom h2 );
 
 mlsconstrain db_table { drop getattr setattr relabelfrom select update insert delete use lock reference }

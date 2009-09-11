@@ -815,14 +815,6 @@ inherits database
 	remove_name
 }
 
-class db_schema_temp
-inherits database
-{
-	search
-	add_name
-	remove_name
-}
-
 class db_sequence
 inherits database
 {
