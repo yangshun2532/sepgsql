@@ -1199,25 +1199,49 @@ sepgsqlCheckSysobjSetattr(Oid relid, Oid secid, const char *auditName)
 void
 sepgsqlCheckSysobjDrop(const ObjectAddress *object)
 {
+	sepgsql_sid_t	tsid;
+	uint16			tclass;
+	const char	   *auname[2 * NAMEDATALEN + 10];
+
 	switch (object->classId)
 	{
-	case NamespaceRelationId:
-		sepgsqlCheckSchemaDrop(object->objectId);
-		break;
+	case TypeRelationId:
+		{
+			Form_pg_type	typForm;
+			HeapTuple		typtup;
 
-	case RelationRelationId:
-		if (!object->objectSubId)
-			sepgsqlCheckTableDrop(object->objectId);
-		else
-			sepgsqlCheckColumnDrop(object->objectId, object->objectSubId);
-		break;
+			typtup = SearchSysCache(TYPEOID,
+									ObjectIdGetDatum(object->objectId),
+									0, 0, 0);
+			if (!HeapTupleIsValid(typtup))
+				elog(ERROR, "cache lookup failed for type: %u", object->objectId);
 
-	case ProcedureRelationId:
-		sepgsqlCheckProcedureDrop(object->objectId);
+			typForm = (Form_pg_type) GETSTRUCT(typtup);
+			/*
+			 * No need to check for composite type and implicitly
+			 * declared array type here.
+			 */
+			if (!(typForm->typtype == TYPTYPE_COMPOSITE ||
+				  (typForm->typtype == TYPTYPE_BASE &&
+				   !OidIsValid(typForm->typarray))))
+			{
+				tsid = sepgsqlGetTupleContext(object->classId, typtup, &tclass);
+				sepgsqlClientHasPerms(tsid, tclass,
+									  SEPG_DB_TUPLE__DELETE,
+									  NULL, true);
+			}
+			ReleaseSysCache(typtup);
+		}
 		break;
 
 	default:
-		/* do nothing in this version */
+		tsid = sepgsqlGetSysobjContext(object->classId,
+									   object->objectId,
+									   object->objectSubId,
+									   &tclass);
+		sepgsqlClientHasPerms(tsid, tclass,
+							  SEPG_DB_TUPLE__DELETE,
+							  NULL, true);
 		break;
 	}
 }

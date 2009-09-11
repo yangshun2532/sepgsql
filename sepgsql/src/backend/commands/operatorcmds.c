@@ -432,6 +432,10 @@ AlterOperatorOwner_internal(Relation rel, Oid operOid, Oid newOwnerId)
 				aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
 							   get_namespace_name(oprForm->oprnamespace));
 		}
+		/* SELinux permission check */
+		sepgsqlCheckSysobjSetattr(OperatorRelationId,
+								  HeapTupleGetSecid(tup),
+								  NameStr(oprForm->oprname));
 
 		/*
 		 * Modify the owner --- okay to scribble on tup because it's a copy
