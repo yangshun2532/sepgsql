@@ -7,7 +7,7 @@
  * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/backend/access/transam/xlog.c,v 1.349 2009/08/27 07:15:41 heikki Exp $
+ * $PostgreSQL: pgsql/src/backend/access/transam/xlog.c,v 1.352 2009/09/10 09:42:10 heikki Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -34,6 +34,7 @@
 #include "access/xlogutils.h"
 #include "catalog/catversion.h"
 #include "catalog/pg_control.h"
+#include "catalog/pg_database.h"
 #include "catalog/pg_type.h"
 #include "funcapi.h"
 #include "libpq/pqsignal.h"
@@ -48,7 +49,6 @@
 #include "storage/smgr.h"
 #include "storage/spin.h"
 #include "utils/builtins.h"
-#include "utils/flatfiles.h"
 #include "utils/guc.h"
 #include "utils/ps_status.h"
 #include "pg_trace.h"
@@ -3040,6 +3040,9 @@ RemoveOldXlogFiles(uint32 log, uint32 seg, XLogRecPtr endptr)
 	struct dirent *xlde;
 	char		lastoff[MAXFNAMELEN];
 	char		path[MAXPGPATH];
+#ifdef WIN32
+	char		newpath[MAXPGPATH];
+#endif
 	struct stat statbuf;
 
 	/*
@@ -3103,10 +3106,41 @@ RemoveOldXlogFiles(uint32 log, uint32 seg, XLogRecPtr endptr)
 				else
 				{
 					/* No need for any more future segments... */
+					int rc;
+
 					ereport(DEBUG2,
 							(errmsg("removing transaction log file \"%s\"",
 									xlde->d_name)));
-					unlink(path);
+
+#ifdef WIN32
+					/*
+					 * On Windows, if another process (e.g another backend)
+					 * holds the file open in FILE_SHARE_DELETE mode, unlink
+					 * will succeed, but the file will still show up in
+					 * directory listing until the last handle is closed.
+					 * To avoid confusing the lingering deleted file for a
+					 * live WAL file that needs to be archived, rename it
+					 * before deleting it.
+					 *
+					 * If another process holds the file open without
+					 * FILE_SHARE_DELETE flag, rename will fail. We'll try
+					 * again at the next checkpoint.
+					 */
+					snprintf(newpath, MAXPGPATH, "%s.deleted", path);
+					if (rename(path, newpath) != 0)
+						ereport(ERROR,
+								(errcode_for_file_access(),
+								 errmsg("could not rename old transaction log file \"%s\"",
+										path)));
+					rc = unlink(newpath);
+#else
+					rc = unlink(path);
+#endif
+					if (rc != 0)
+						ereport(ERROR,
+								(errcode_for_file_access(),
+								 errmsg("could not remove old transaction log file \"%s\": %m",
+										path)));
 					CheckpointStats.ckpt_segs_removed++;
 				}
 
@@ -4638,12 +4672,16 @@ BootStrapXLOG(void)
 	checkPoint.nextOid = FirstBootstrapObjectId;
 	checkPoint.nextMulti = FirstMultiXactId;
 	checkPoint.nextMultiOffset = 0;
+	checkPoint.oldestXid = FirstNormalTransactionId;
+	checkPoint.oldestXidDB = TemplateDbOid;
 	checkPoint.time = (pg_time_t) time(NULL);
 
 	ShmemVariableCache->nextXid = checkPoint.nextXid;
 	ShmemVariableCache->nextOid = checkPoint.nextOid;
 	ShmemVariableCache->oidCount = 0;
 	MultiXactSetNextMXact(checkPoint.nextMulti, checkPoint.nextMultiOffset);
+	ShmemVariableCache->oldestXid = checkPoint.oldestXid;
+	ShmemVariableCache->oldestXidDB = checkPoint.oldestXidDB;
 
 	/* Set up the XLOG page header */
 	page->xlp_magic = XLOG_PAGE_MAGIC;
@@ -5355,6 +5393,9 @@ StartupXLOG(void)
 	ereport(DEBUG1,
 			(errmsg("next MultiXactId: %u; next MultiXactOffset: %u",
 					checkPoint.nextMulti, checkPoint.nextMultiOffset)));
+	ereport(DEBUG1,
+			(errmsg("oldest unfrozen transaction ID: %u, in database %u",
+					checkPoint.oldestXid, checkPoint.oldestXidDB)));
 	if (!TransactionIdIsNormal(checkPoint.nextXid))
 		ereport(PANIC,
 				(errmsg("invalid next transaction ID")));
@@ -5363,6 +5404,8 @@ StartupXLOG(void)
 	ShmemVariableCache->nextOid = checkPoint.nextOid;
 	ShmemVariableCache->oidCount = 0;
 	MultiXactSetNextMXact(checkPoint.nextMulti, checkPoint.nextMultiOffset);
+	ShmemVariableCache->oldestXid = checkPoint.oldestXid;
+	ShmemVariableCache->oldestXidDB = checkPoint.oldestXidDB;
 
 	/*
 	 * We must replay WAL entries using the same TimeLineID they were created
@@ -6546,6 +6589,8 @@ CreateCheckPoint(int flags)
 	 */
 	LWLockAcquire(XidGenLock, LW_SHARED);
 	checkPoint.nextXid = ShmemVariableCache->nextXid;
+	checkPoint.oldestXid = ShmemVariableCache->oldestXid;
+	checkPoint.oldestXidDB = ShmemVariableCache->oldestXidDB;
 	LWLockRelease(XidGenLock);
 
 	/* Increase XID epoch if we've wrapped around since last checkpoint */
@@ -6984,6 +7029,8 @@ xlog_redo(XLogRecPtr lsn, XLogRecord *record)
 		ShmemVariableCache->oidCount = 0;
 		MultiXactSetNextMXact(checkPoint.nextMulti,
 							  checkPoint.nextMultiOffset);
+		ShmemVariableCache->oldestXid = checkPoint.oldestXid;
+		ShmemVariableCache->oldestXidDB = checkPoint.oldestXidDB;
 
 		/* ControlFile->checkPointCopy always tracks the latest ckpt XID */
 		ControlFile->checkPointCopy.nextXidEpoch = checkPoint.nextXidEpoch;
@@ -7022,6 +7069,12 @@ xlog_redo(XLogRecPtr lsn, XLogRecord *record)
 		}
 		MultiXactAdvanceNextMXact(checkPoint.nextMulti,
 								  checkPoint.nextMultiOffset);
+		if (TransactionIdPrecedes(ShmemVariableCache->oldestXid,
+								  checkPoint.oldestXid))
+		{
+			ShmemVariableCache->oldestXid = checkPoint.oldestXid;
+			ShmemVariableCache->oldestXidDB = checkPoint.oldestXidDB;
+		}
 
 		/* ControlFile->checkPointCopy always tracks the latest ckpt XID */
 		ControlFile->checkPointCopy.nextXidEpoch = checkPoint.nextXidEpoch;
@@ -7056,13 +7109,16 @@ xlog_desc(StringInfo buf, uint8 xl_info, char *rec)
 		CheckPoint *checkpoint = (CheckPoint *) rec;
 
 		appendStringInfo(buf, "checkpoint: redo %X/%X; "
-						 "tli %u; xid %u/%u; oid %u; multi %u; offset %u; %s",
+						 "tli %u; xid %u/%u; oid %u; multi %u; offset %u; "
+						 "oldest xid %u in DB %u; %s",
 						 checkpoint->redo.xlogid, checkpoint->redo.xrecoff,
 						 checkpoint->ThisTimeLineID,
 						 checkpoint->nextXidEpoch, checkpoint->nextXid,
 						 checkpoint->nextOid,
 						 checkpoint->nextMulti,
 						 checkpoint->nextMultiOffset,
+						 checkpoint->oldestXid,
+						 checkpoint->oldestXidDB,
 				 (info == XLOG_CHECKPOINT_SHUTDOWN) ? "shutdown" : "online");
 	}
 	else if (info == XLOG_NOOP)
@@ -8053,8 +8109,6 @@ StartupProcessMain(void)
 	PG_SETMASK(&UnBlockSig);
 
 	StartupXLOG();
-
-	BuildFlatFiles(false);
 
 	/*
 	 * Exit normally. Exit code 0 tells postmaster that we completed recovery
