@@ -6,7 +6,7 @@
  * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/backend/commands/user.c,v 1.187 2009/06/11 14:48:56 momjian Exp $
+ * $PostgreSQL: pgsql/src/backend/commands/user.c,v 1.188 2009/09/01 02:54:51 alvherre Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -25,7 +25,6 @@
 #include "miscadmin.h"
 #include "storage/lmgr.h"
 #include "utils/builtins.h"
-#include "utils/flatfiles.h"
 #include "utils/fmgroids.h"
 #include "utils/guc.h"
 #include "utils/lsyscache.h"
@@ -349,15 +348,9 @@ CreateRole(CreateRoleStmt *stmt)
 				GetUserId(), false);
 
 	/*
-	 * Close pg_authid, but keep lock till commit (this is important to
-	 * prevent any risk of deadlock failure while updating flat file)
+	 * Close pg_authid, but keep lock till commit.
 	 */
 	heap_close(pg_authid_rel, NoLock);
-
-	/*
-	 * Set flag to update flat auth file at commit.
-	 */
-	auth_file_update_needed();
 }
 
 
@@ -660,15 +653,9 @@ AlterRole(AlterRoleStmt *stmt)
 					false);
 
 	/*
-	 * Close pg_authid, but keep lock till commit (this is important to
-	 * prevent any risk of deadlock failure while updating flat file)
+	 * Close pg_authid, but keep lock till commit.
 	 */
 	heap_close(pg_authid_rel, NoLock);
-
-	/*
-	 * Set flag to update flat auth file at commit.
-	 */
-	auth_file_update_needed();
 }
 
 
@@ -741,7 +728,6 @@ AlterRoleSet(AlterRoleSetStmt *stmt)
 	CatalogUpdateIndexes(rel, newtuple);
 
 	ReleaseSysCache(oldtuple);
-	/* needn't keep lock since we won't be updating the flat file */
 	heap_close(rel, RowExclusiveLock);
 }
 
@@ -890,16 +876,10 @@ DropRole(DropRoleStmt *stmt)
 	}
 
 	/*
-	 * Now we can clean up; but keep locks until commit (to avoid possible
-	 * deadlock failure while updating flat file)
+	 * Now we can clean up; but keep locks until commit.
 	 */
 	heap_close(pg_auth_members_rel, NoLock);
 	heap_close(pg_authid_rel, NoLock);
-
-	/*
-	 * Set flag to update flat auth file at commit.
-	 */
-	auth_file_update_needed();
 }
 
 /*
@@ -997,15 +977,9 @@ RenameRole(const char *oldname, const char *newname)
 	ReleaseSysCache(oldtuple);
 
 	/*
-	 * Close pg_authid, but keep lock till commit (this is important to
-	 * prevent any risk of deadlock failure while updating flat file)
+	 * Close pg_authid, but keep lock till commit.
 	 */
 	heap_close(rel, NoLock);
-
-	/*
-	 * Set flag to update flat auth file at commit.
-	 */
-	auth_file_update_needed();
 }
 
 /*
@@ -1062,15 +1036,9 @@ GrantRole(GrantRoleStmt *stmt)
 	}
 
 	/*
-	 * Close pg_authid, but keep lock till commit (this is important to
-	 * prevent any risk of deadlock failure while updating flat file)
+	 * Close pg_authid, but keep lock till commit.
 	 */
 	heap_close(pg_authid_rel, NoLock);
-
-	/*
-	 * Set flag to update flat auth file at commit.
-	 */
-	auth_file_update_needed();
 }
 
 /*
@@ -1266,8 +1234,7 @@ AddRoleMems(const char *rolename, Oid roleid,
 	}
 
 	/*
-	 * Close pg_authmem, but keep lock till commit (this is important to
-	 * prevent any risk of deadlock failure while updating flat file)
+	 * Close pg_authmem, but keep lock till commit.
 	 */
 	heap_close(pg_authmem_rel, NoLock);
 }
@@ -1361,8 +1328,7 @@ DelRoleMems(const char *rolename, Oid roleid,
 	}
 
 	/*
-	 * Close pg_authmem, but keep lock till commit (this is important to
-	 * prevent any risk of deadlock failure while updating flat file)
+	 * Close pg_authmem, but keep lock till commit.
 	 */
 	heap_close(pg_authmem_rel, NoLock);
 }
