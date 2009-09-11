@@ -4,7 +4,7 @@
  *
  * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  *
- * $PostgreSQL: pgsql/src/bin/pg_ctl/pg_ctl.c,v 1.112 2009/08/27 16:59:38 tgl Exp $
+ * $PostgreSQL: pgsql/src/bin/pg_ctl/pg_ctl.c,v 1.114 2009/09/07 11:22:12 mha Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -14,7 +14,7 @@
  * Need this to get defines for restricted tokens and jobs. And it
  * has to be set before any header from the Win32 API is loaded.
  */
-#define _WIN32_WINNT 0x0500
+#define _WIN32_WINNT 0x0501
 #endif
 
 #include "postgres_fe.h"
@@ -292,7 +292,7 @@ static char **
 readfile(const char *path)
 {
 	FILE	   *infile;
-	int			maxlength = 0,
+	int			maxlength = 1,
 				linelen = 0;
 	int			nlines = 0;
 	char	  **result;
