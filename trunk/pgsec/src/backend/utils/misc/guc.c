@@ -10,7 +10,7 @@
  * Written by Peter Eisentraut <peter_e@gmx.net>.
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/misc/guc.c,v 1.512 2009/08/29 19:26:51 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/utils/misc/guc.c,v 1.516 2009/09/08 17:08:36 tgl Exp $
  *
  *--------------------------------------------------------------------
  */
@@ -152,6 +152,7 @@ static bool assign_phony_autocommit(bool newval, bool doit, GucSource source);
 static const char *assign_custom_variable_classes(const char *newval, bool doit,
 							   GucSource source);
 static bool assign_debug_assertions(bool newval, bool doit, GucSource source);
+static bool assign_bonjour(bool newval, bool doit, GucSource source);
 static bool assign_ssl(bool newval, bool doit, GucSource source);
 static bool assign_stage_log_stats(bool newval, bool doit, GucSource source);
 static bool assign_log_stats(bool newval, bool doit, GucSource source);
@@ -680,6 +681,14 @@ static struct config_bool ConfigureNamesBool[] =
 		},
 		&session_auth_is_superuser,
 		false, NULL, NULL
+	},
+	{
+		{"bonjour", PGC_POSTMASTER, CONN_AUTH_SETTINGS,
+			gettext_noop("Enables advertising the server via Bonjour."),
+			NULL
+		},
+		&enable_bonjour,
+		false, assign_bonjour, NULL
 	},
 	{
 		{"ssl", PGC_POSTMASTER, CONN_AUTH_SECURITY,
@@ -1335,7 +1344,7 @@ static struct config_int ConfigureNamesInt[] =
 	 * Note: MaxBackends is limited to INT_MAX/4 because some places compute
 	 * 4*MaxBackends without any overflow check.  This check is made in
 	 * assign_maxconnections, since MaxBackends is computed as MaxConnections
-	 * plus autovacuum_max_workers.
+	 * plus autovacuum_max_workers plus one (for the autovacuum launcher).
 	 *
 	 * Likewise we have to limit NBuffers to INT_MAX/2.
 	 */
@@ -1864,6 +1873,7 @@ static struct config_int ConfigureNamesInt[] =
 			NULL
 		},
 		&autovacuum_freeze_max_age,
+		/* see pg_resetxlog if you change the upper-limit value */
 		200000000, 100000000, 2000000000, NULL, NULL
 	},
 	{
@@ -2198,7 +2208,7 @@ static struct config_string ConfigureNamesString[] =
 
 	{
 		{"bonjour_name", PGC_POSTMASTER, CONN_AUTH_SETTINGS,
-			gettext_noop("Sets the Bonjour broadcast service name."),
+			gettext_noop("Sets the Bonjour service name."),
 			NULL
 		},
 		&bonjour_name,
@@ -2320,7 +2330,7 @@ static struct config_string ConfigureNamesString[] =
 		{"role", PGC_USERSET, UNGROUPED,
 			gettext_noop("Sets the current role."),
 			NULL,
-			GUC_IS_NAME | GUC_NO_SHOW_ALL | GUC_NO_RESET_ALL | GUC_NOT_IN_SAMPLE | GUC_DISALLOW_IN_FILE
+			GUC_IS_NAME | GUC_NO_SHOW_ALL | GUC_NO_RESET_ALL | GUC_NOT_IN_SAMPLE | GUC_DISALLOW_IN_FILE | GUC_NOT_WHILE_SEC_DEF
 		},
 		&role_string,
 		"none", assign_role, show_role
@@ -2331,7 +2341,7 @@ static struct config_string ConfigureNamesString[] =
 		{"session_authorization", PGC_USERSET, UNGROUPED,
 			gettext_noop("Sets the session user name."),
 			NULL,
-			GUC_IS_NAME | GUC_REPORT | GUC_NO_SHOW_ALL | GUC_NO_RESET_ALL | GUC_NOT_IN_SAMPLE | GUC_DISALLOW_IN_FILE
+			GUC_IS_NAME | GUC_REPORT | GUC_NO_SHOW_ALL | GUC_NO_RESET_ALL | GUC_NOT_IN_SAMPLE | GUC_DISALLOW_IN_FILE | GUC_NOT_WHILE_SEC_DEF
 		},
 		&session_authorization_string,
 		NULL, assign_session_authorization, show_session_authorization
@@ -4658,6 +4668,32 @@ set_config_option(const char *name, const char *value,
 		case PGC_USERSET:
 			/* always okay */
 			break;
+	}
+
+	/*
+	 * Disallow changing GUC_NOT_WHILE_SEC_DEF values if we are inside a
+	 * security-definer function.  We can reject this regardless of
+	 * the context or source, mainly because sources that it might be
+	 * reasonable to override for won't be seen while inside a function.
+	 *
+	 * Note: variables marked GUC_NOT_WHILE_SEC_DEF should probably be marked
+	 * GUC_NO_RESET_ALL as well, because ResetAllOptions() doesn't check this.
+	 *
+	 * Note: this flag is currently used for "session_authorization" and
+	 * "role".  We need to prohibit this because when we exit the sec-def
+	 * context, GUC won't be notified, leaving things out of sync.
+	 *
+	 * XXX it would be nice to allow these cases in future, with the behavior
+	 * being that the SET's effects end when the security definer context is
+	 * exited.
+	 */
+	if ((record->flags & GUC_NOT_WHILE_SEC_DEF) && InSecurityDefinerContext())
+	{
+		ereport(elevel,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("cannot set parameter \"%s\" within security-definer function",
+						name)));
+		return false;
 	}
 
 	/*
@@ -7368,6 +7404,21 @@ assign_debug_assertions(bool newval, bool doit, GucSource source)
 }
 
 static bool
+assign_bonjour(bool newval, bool doit, GucSource source)
+{
+#ifndef USE_BONJOUR
+	if (newval)
+	{
+		ereport(GUC_complaint_elevel(source),
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("Bonjour is not supported by this build")));
+		return false;
+	}
+#endif
+	return true;
+}
+
+static bool
 assign_ssl(bool newval, bool doit, GucSource source)
 {
 #ifndef USE_SSL
@@ -7569,11 +7620,11 @@ show_tcp_keepalives_count(void)
 static bool
 assign_maxconnections(int newval, bool doit, GucSource source)
 {
-	if (newval + autovacuum_max_workers > INT_MAX / 4)
+	if (newval + autovacuum_max_workers + 1 > INT_MAX / 4)
 		return false;
 
 	if (doit)
-		MaxBackends = newval + autovacuum_max_workers;
+		MaxBackends = newval + autovacuum_max_workers + 1;
 
 	return true;
 }
@@ -7581,11 +7632,11 @@ assign_maxconnections(int newval, bool doit, GucSource source)
 static bool
 assign_autovacuum_max_workers(int newval, bool doit, GucSource source)
 {
-	if (newval + MaxConnections > INT_MAX / 4)
+	if (MaxConnections + newval + 1 > INT_MAX / 4)
 		return false;
 
 	if (doit)
-		MaxBackends = newval + MaxConnections;
+		MaxBackends = MaxConnections + newval + 1;
 
 	return true;
 }
