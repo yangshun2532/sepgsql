@@ -195,10 +195,6 @@ CreateProceduralLanguage(CreatePLangStmt *stmt)
 		else
 			valOid = InvalidOid;
 
-		/* SELinux checks db_procedure:{install} */
-		sepgsqlCheckProcedureInstall(handlerOid);
-		sepgsqlCheckProcedureInstall(valOid);
-
 		/* ok, create it */
 		create_proc_lang(languageName, GetUserId(), handlerOid, valOid,
 						 pltemplate->tmpltrusted);
@@ -263,10 +259,6 @@ CreateProceduralLanguage(CreatePLangStmt *stmt)
 		else
 			valOid = InvalidOid;
 
-		/* SELinux checks db_procedure:{install} */
-		sepgsqlCheckProcedureInstall(handlerOid);
-		sepgsqlCheckProcedureInstall(valOid);
-
 		/* ok, create it */
 		create_proc_lang(languageName, GetUserId(), handlerOid, valOid,
 						 stmt->pltrusted);
@@ -286,8 +278,16 @@ create_proc_lang(const char *languageName,
 	bool		nulls[Natts_pg_language];
 	NameData	langname;
 	HeapTuple	tup;
+	Oid			langSecid;
 	ObjectAddress myself,
 				referenced;
+
+	/*
+	 * SELinux permission checks
+	 */
+	langSecid = sepgsqlCheckSysobjCreate(LanguageRelationId, languageName);
+	sepgsqlCheckProcedureInstall(handlerOid);
+	sepgsqlCheckProcedureInstall(valOid);
 
 	/*
 	 * Insert the new language into pg_language
@@ -529,6 +529,11 @@ RenameLanguage(const char *oldname, const char *newname)
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_LANGUAGE,
 					   oldname);
 
+	/* SELinux permission checks */
+	sepgsqlCheckSysobjSetattr(LanguageRelationId,
+							  HeapTupleGetSecid(tup),
+							  oldname);
+
 	/* rename */
 	namestrcpy(&(((Form_pg_language) GETSTRUCT(tup))->lanname), newname);
 	simple_heap_update(rel, &tup->t_self, tup);
@@ -623,6 +628,11 @@ AlterLanguageOwner_internal(HeapTuple tup, Relation rel, Oid newOwnerId)
 
 		/* Must be able to become new owner */
 		check_is_member_of_role(GetUserId(), newOwnerId);
+
+		/* SELinux permission checks */
+		sepgsqlCheckSysobjSetattr(LanguageRelationId,
+								  HeapTupleGetSecid(tup),
+								  NameStr(lanForm->lanname));
 
 		memset(repl_null, false, sizeof(repl_null));
 		memset(repl_repl, false, sizeof(repl_repl));
