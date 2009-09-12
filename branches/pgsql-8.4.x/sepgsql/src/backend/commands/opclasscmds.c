@@ -35,6 +35,7 @@
 #include "parser/parse_func.h"
 #include "parser/parse_oper.h"
 #include "parser/parse_type.h"
+#include "security/sepgsql.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
@@ -177,6 +178,7 @@ CreateOpFamily(char *amname, char *opfname, Oid namespaceoid, Oid amoid)
 	HeapTuple	tup;
 	Datum		values[Natts_pg_opfamily];
 	bool		nulls[Natts_pg_opfamily];
+	Oid			opfSecid;
 	NameData	opfName;
 	ObjectAddress myself,
 				referenced;
@@ -197,6 +199,9 @@ CreateOpFamily(char *amname, char *opfname, Oid namespaceoid, Oid amoid)
 				 errmsg("operator family \"%s\" for access method \"%s\" already exists",
 						opfname, amname)));
 
+	/* SELinux check permission */
+	opfSecid = sepgsqlCheckSysobjCreate(OperatorFamilyRelationId, opfname);
+
 	/*
 	 * Okay, let's create the pg_opfamily entry.
 	 */
@@ -210,6 +215,8 @@ CreateOpFamily(char *amname, char *opfname, Oid namespaceoid, Oid amoid)
 	values[Anum_pg_opfamily_opfowner - 1] = ObjectIdGetDatum(GetUserId());
 
 	tup = heap_form_tuple(rel->rd_att, values, nulls);
+	if (HeapTupleHasSecid(tup))
+		HeapTupleSetSecid(tup, opfSecid);
 
 	opfamilyoid = simple_heap_insert(rel, tup);
 
@@ -265,6 +272,7 @@ DefineOpClass(CreateOpClassStmt *stmt)
 	Form_pg_am	pg_am;
 	Datum		values[Natts_pg_opclass];
 	bool		nulls[Natts_pg_opclass];
+	Oid			opcSecid;
 	AclResult	aclresult;
 	NameData	opcName;
 	ObjectAddress myself,
@@ -353,6 +361,11 @@ DefineOpClass(CreateOpClassStmt *stmt)
 					   NameListToString(stmt->opfamilyname), stmt->amname)));
 		opfamilyoid = HeapTupleGetOid(tup);
 
+		/* SELinux checks permission */
+		sepgsqlCheckSysobjSetattr(OperatorFamilyRelationId,
+								  HeapTupleGetSecid(tup),
+								  stmt->opfamilyname);
+
 		/*
 		 * XXX given the superuser check above, there's no need for an
 		 * ownership check here
@@ -370,6 +383,11 @@ DefineOpClass(CreateOpClassStmt *stmt)
 		if (HeapTupleIsValid(tup))
 		{
 			opfamilyoid = HeapTupleGetOid(tup);
+
+			/* SELinux checks permission */
+			sepgsqlCheckSysobjSetattr(OperatorFamilyRelationId,
+									  HeapTupleGetSecid(tup),
+						NameStr(((Form_pg_opfamily) GETSTRUCT(tup))->opfname));
 
 			/*
 			 * XXX given the superuser check above, there's no need for an
@@ -465,6 +483,8 @@ DefineOpClass(CreateOpClassStmt *stmt)
 					aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
 								   get_func_name(funcOid));
 #endif
+				/* SELinux check permission */
+				sepgsqlCheckProcedureInstall(funcOid);
 
 				/* Save the info */
 				member = (OpFamilyMember *) palloc0(sizeof(OpFamilyMember));
@@ -530,6 +550,9 @@ DefineOpClass(CreateOpClassStmt *stmt)
 				(errcode(ERRCODE_DUPLICATE_OBJECT),
 				 errmsg("operator class \"%s\" for access method \"%s\" already exists",
 						opcname, stmt->amname)));
+
+	/* SELinux permission check */
+	opcSecid = sepgsqlCheckSysobjCreate(OperatorClassRelationId, opcname);
 
 	/*
 	 * If we are creating a default opclass, check there isn't one already.
@@ -657,6 +680,7 @@ DefineOpFamily(CreateOpFamilyStmt *stmt)
 	HeapTuple	tup;
 	Datum		values[Natts_pg_opfamily];
 	bool		nulls[Natts_pg_opfamily];
+	Oid			opfSecid;
 	AclResult	aclresult;
 	NameData	opfName;
 	ObjectAddress myself,
@@ -698,6 +722,9 @@ DefineOpFamily(CreateOpFamilyStmt *stmt)
 		ereport(ERROR,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 				 errmsg("must be superuser to create an operator family")));
+
+	/* SELinux permission check */
+	opfSecid = sepgsqlCheckSysobjCreate(OperatorFamilyRelationId, opfname);
 
 	rel = heap_open(OperatorFamilyRelationId, RowExclusiveLock);
 
@@ -773,6 +800,7 @@ AlterOpFamily(AlterOpFamilyStmt *stmt)
 	int			maxOpNumber,	/* amstrategies value */
 				maxProcNumber;	/* amsupport value */
 	HeapTuple	tup;
+	Oid			opfSecid;
 	Form_pg_am	pg_am;
 
 	/* Get necessary info about access method */
@@ -805,6 +833,7 @@ AlterOpFamily(AlterOpFamilyStmt *stmt)
 				 errmsg("operator family \"%s\" does not exist for access method \"%s\"",
 						NameListToString(stmt->opfamilyname), stmt->amname)));
 	opfamilyoid = HeapTupleGetOid(tup);
+	opfSecid = HeapTupleGetSecid(tup);
 	ReleaseSysCache(tup);
 
 	/*
@@ -816,6 +845,10 @@ AlterOpFamily(AlterOpFamilyStmt *stmt)
 		ereport(ERROR,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 				 errmsg("must be superuser to alter an operator family")));
+
+	/* SELinux permission checks */
+	sepgsqlCheckSysobjSetattr(OperatorFamilyRelationId,
+							  opfSecid, stmt->opfamilyname);
 
 	/*
 	 * ADD and DROP cases need separate code from here on down.
@@ -1815,6 +1848,12 @@ RenameOpClass(List *name, const char *access_method, const char *newname)
 		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
 					   get_namespace_name(namespaceOid));
 
+	/* SELinux permission checks */
+	sepgsqlCheckSysobjSetattr(OperatorClassRelationId, HeapTupleGetSecid(tup),
+					NameStr(((Form_pg_opclass) GETSTRUCT(tup))->opcname));
+	sepgsqlCheckSchemaAddName(namespaceOid);
+	sepgsqlCheckSchemaRemoveName(namespaceOid);
+
 	/* rename */
 	namestrcpy(&(((Form_pg_opclass) GETSTRUCT(tup))->opcname), newname);
 	simple_heap_update(rel, &tup->t_self, tup);
@@ -1914,6 +1953,13 @@ RenameOpFamily(List *name, const char *access_method, const char *newname)
 	if (aclresult != ACLCHECK_OK)
 		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
 					   get_namespace_name(namespaceOid));
+
+	/* SELinux check permissions */
+	sepgsqlCheckSysobjSetattr(OperatorFamilyRelationId,
+							  HeapTupleGetSecid(tup),
+					NameStr(((Form_pg_opfamily) GETSTRUCT(tup))->opfname));
+	sepgsqlCheckSchemaAddName(namespaceOid);
+	sepgsqlCheckSchemaRemoveName(namespaceOid);
 
 	/* rename */
 	namestrcpy(&(((Form_pg_opfamily) GETSTRUCT(tup))->opfname), newname);
@@ -2035,7 +2081,10 @@ AlterOpClassOwner_internal(Relation rel, HeapTuple tup, Oid newOwnerId)
 				aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
 							   get_namespace_name(namespaceOid));
 		}
-
+		/* SELinux permission check */
+		sepgsqlCheckSysobjSetattr(OperatorClassRelationId,
+								  HeapTupleGetSecid(tup),
+								  NameStr(opcForm->opcname));
 		/*
 		 * Modify the owner --- okay to scribble on tup because it's a copy
 		 */
@@ -2162,6 +2211,10 @@ AlterOpFamilyOwner_internal(Relation rel, HeapTuple tup, Oid newOwnerId)
 				aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
 							   get_namespace_name(namespaceOid));
 		}
+		/* SELinux permission checks */
+		sepgsqlCheckSysobjSetattr(OperatorFamilyRelationId,
+								  HeapTupleGetSecid(tup),
+								  NameStr(opfForm->opfname));
 
 		/*
 		 * Modify the owner --- okay to scribble on tup because it's a copy
