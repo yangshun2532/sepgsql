@@ -172,9 +172,8 @@ ac_language_comment(Oid langOid);
 
 /* pg_opclass */
 extern void
-ac_opclass_create(const char *opcName,
-                  Oid opcNsp, Oid typOid, Oid opfOid,
-                  List *operList, List *procList, Oid stgOid);
+ac_opclass_create(const char *opcName, Oid opcNsp,
+				  Oid typOid, Oid opfOid, Oid stgOid);
 extern void
 ac_opclass_alter(Oid opcOid, const char *newName, Oid newOwner);
 extern void
@@ -205,9 +204,9 @@ ac_opfamily_drop(Oid opfOid, bool dacSkip);
 extern void
 ac_opfamily_comment(Oid opfOid);
 extern void
-ac_opfamily_add_oper(Oid opfOid, Oid operOid);
+ac_opfamily_add_operator(Oid opfOid, Oid operOid);
 extern void
-ac_opfamily_add_proc(Oid opfOid, Oid procOid);
+ac_opfamily_add_procedure(Oid opfOid, Oid procOid);
 
 /* pg_proc */
 extern void
