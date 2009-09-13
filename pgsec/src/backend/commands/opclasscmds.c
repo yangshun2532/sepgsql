@@ -259,8 +259,6 @@ DefineOpClass(CreateOpClassStmt *stmt)
 	bool		amstorage;		/* amstorage flag */
 	List	   *operators;		/* OpFamilyMember list for operators */
 	List	   *procedures;		/* OpFamilyMember list for support procs */
-	List	   *operOids;		/* Oid list for operators */
-	List	   *procOids;		/* Oid list for procedures */
 	ListCell   *l;
 	Relation	rel;
 	HeapTuple	tup;
@@ -318,6 +316,14 @@ DefineOpClass(CreateOpClassStmt *stmt)
 		 * ownership check here
 		 */
 		ReleaseSysCache(tup);
+
+		/*
+		 * MEMO: It is equivalent to alter an existing operator
+		 * family, then create a new operator class using the
+		 * operator family. Only super user can create a operator
+		 * class, this check should be always passed.
+		 */
+		ac_opfamily_alter(opfamilyoid, NULL, InvalidOid);
 	}
 	else
 	{
@@ -332,12 +338,13 @@ DefineOpClass(CreateOpClassStmt *stmt)
 			opfamilyoid = HeapTupleGetOid(tup);
 
 			ReleaseSysCache(tup);
+
+			/* See the above comment */
+			ac_opfamily_alter(opfamilyoid, NULL, InvalidOid);
 		}
 		else
 		{
-			/*
-			 * Create it ... again no need for more permissions ...
-			 */
+			ac_opfamily_create(opcname, namespaceoid, amoid);
 			opfamilyoid = CreateOpFamily(stmt->amname, opcname,
 										 namespaceoid, amoid);
 		}
@@ -345,8 +352,6 @@ DefineOpClass(CreateOpClassStmt *stmt)
 
 	operators = NIL;
 	procedures = NIL;
-	operOids = NIL;
-	procOids = NIL;
 
 	/* Storage datatype is optional */
 	storageoid = InvalidOid;
@@ -388,13 +393,15 @@ DefineOpClass(CreateOpClassStmt *stmt)
 											 false, -1);
 				}
 
+				/* Permission checks */
+				ac_opfamily_add_operator(opfamilyoid, operOid);
+
 				/* Save the info */
 				member = (OpFamilyMember *) palloc0(sizeof(OpFamilyMember));
 				member->object = operOid;
 				member->number = item->number;
 				assignOperTypes(member, amoid, typeoid);
 				addFamilyMember(&operators, member, false);
-				operOids = lappend_oid(operOids, operOid);
 				break;
 			case OPCLASS_ITEM_FUNCTION:
 				if (item->number <= 0 || item->number > maxProcNumber)
@@ -405,6 +412,8 @@ DefineOpClass(CreateOpClassStmt *stmt)
 									item->number, maxProcNumber)));
 				funcOid = LookupFuncNameTypeNames(item->name, item->args,
 												  false);
+				/* Permission checks */
+				ac_opfamily_add_procedure(opfamilyoid, funcOid);
 
 				/* Save the info */
 				member = (OpFamilyMember *) palloc0(sizeof(OpFamilyMember));
@@ -418,7 +427,6 @@ DefineOpClass(CreateOpClassStmt *stmt)
 
 				assignProcTypes(member, amoid, typeoid);
 				addFamilyMember(&procedures, member, true);
-				procOids = lappend_oid(procOids, funcOid);
 				break;
 			case OPCLASS_ITEM_STORAGETYPE:
 				if (OidIsValid(storageoid))
@@ -449,8 +457,8 @@ DefineOpClass(CreateOpClassStmt *stmt)
 	}
 
 	/* Permission check to create a new opclass */
-	ac_opclass_create(opcname, namespaceoid, typeoid, opfamilyoid,
-					  operOids, procOids, storageoid);
+	ac_opclass_create(opcname, namespaceoid,
+					  typeoid, opfamilyoid, storageoid);
 
 	rel = heap_open(OperatorClassRelationId, RowExclusiveLock);
 
@@ -619,6 +627,9 @@ DefineOpFamily(CreateOpFamilyStmt *stmt)
 	/* Permission checks */
 	ac_opfamily_create(opfname, namespaceoid, amoid);
 
+	/*
+	 * MEMO: The following code can be replaced by CreateOpFamily().
+	 */
 	rel = heap_open(OperatorFamilyRelationId, RowExclusiveLock);
 
 	/*
@@ -796,7 +807,7 @@ AlterOpFamilyAdd(List *opfamilyname, Oid amoid, Oid opfamilyoid,
 				}
 
 				/* Permission check to add the operator */
-				ac_opfamily_add_oper(opfamilyoid, operOid);
+				ac_opfamily_add_operator(opfamilyoid, operOid);
 
 				/* Save the info */
 				member = (OpFamilyMember *) palloc0(sizeof(OpFamilyMember));
@@ -815,7 +826,7 @@ AlterOpFamilyAdd(List *opfamilyname, Oid amoid, Oid opfamilyoid,
 				funcOid = LookupFuncNameTypeNames(item->name, item->args,
 												  false);
 				/* Permission check to add the function */
-				ac_opfamily_add_proc(opfamilyoid, funcOid);
+				ac_opfamily_add_procedure(opfamilyoid, funcOid);
 
 				/* Save the info */
 				member = (OpFamilyMember *) palloc0(sizeof(OpFamilyMember));

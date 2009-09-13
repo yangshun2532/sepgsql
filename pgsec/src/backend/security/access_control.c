@@ -2311,19 +2311,13 @@ get_opclass_namespace(Oid opcOid)
  * opcNsp   : OID of the namespace to be used
  * typOid   : OID of the type to be set up
  * opfOid   : OID of the corresponding operator family, 
- * operList : List of operator OID
- * procList : List of procedure OID
- * stgOid   : OID of the type stored used as a storage
+ * stgOid   : OID of the 
  */
 void
 ac_opclass_create(const char *opcName,
-				  Oid opcNsp, Oid typOid, Oid opfOid,
-				  List *operList, List *procList, Oid stgOid)
+				  Oid opcNsp, Oid typOid, Oid opfOid, Oid stgOid)
 {
 	AclResult	aclresult;
-#ifdef NOT_USED
-	ListCell   *l;
-#endif
 
 	/* Check we have creation rights in target namespace */
 	aclresult = pg_namespace_aclcheck(opcNsp, GetUserId(), ACL_CREATE);
@@ -2371,51 +2365,16 @@ ac_opclass_create(const char *opcName,
 	 * XXX given the superuser check above, there's no need
 	 * for an ownership check to operator family here
 	 */
-	if (!pg_opfamily_ownercheck(opfOid, GetUserId())
+	if (!pg_opfamily_ownercheck(opfOid, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_OPFAMILY,
 					   get_opfamily_name(opfOid));
-#endif
 
-#ifdef NOT_USED
 	/* XXX this is unnecessary given the superuser check above */
-	foreach(l, operList)
-	{
-		Oid		operOid = lfirst_oid(l);
-		Oid		funcOid
-
-		/* Caller must own operator and its underlying function */
-		if (!pg_oper_ownercheck(operOid, GetUserId()))
-			aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_OPER,
-						   get_opname(operOid));
-		funcOid = get_opcode(operOid);
-		if (!pg_proc_ownercheck(funcOid, GetUserId()))
-			aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
-						   get_func_name(funcOid));
-	}
-#endif
-
-#ifdef NOT_USED
-	/* XXX this is unnecessary given the superuser check above */
-	foreach(l, procList)
-	{
-		Oid		funcOid = lfirst_oid(l);
-
-		/* Caller must own function */
-		if (!pg_proc_ownercheck(funcOid, GetUserId()))
-			aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
-						   get_func_name(funcOid));
-	}
-#endif
-
-#ifdef NOT_USED
-	/* XXX this is unnecessary given the superuser check above */
-	if (OidIsValid(stgOid))
-	{
-		/* Check we have ownership of the datatype */
-		if (!pg_type_ownercheck(stgOid, GetUserId()))
-			aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_TYPE,
-						   format_type_be(stgOid));
-	}
+	/* Check we have ownership of the datatype */
+	if (OidIsValid(stgOid) &&
+		!pg_type_ownercheck(storageoid, GetUserId()))
+		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_TYPE,
+					   format_type_be(storageoid));
 #endif
 }
 
@@ -2853,7 +2812,7 @@ ac_opfamily_comment(Oid opfOid)
 }
 
 /*
- * ac_opfamily_add_oper
+ * ac_opfamily_add_operator
  *
  * It checks privilege to add a certain operator to the given
  * operator family.
@@ -2863,7 +2822,7 @@ ac_opfamily_comment(Oid opfOid)
  * operOid : OID of the given operator
  */
 void
-ac_opfamily_add_oper(Oid opfOid, Oid operOid)
+ac_opfamily_add_operator(Oid opfOid, Oid operOid)
 {
 #ifdef NOT_USED
 	Oid		funcOid;
@@ -2882,7 +2841,7 @@ ac_opfamily_add_oper(Oid opfOid, Oid operOid)
 }
 
 /*
- * ac_opfamily_add_proc
+ * ac_opfamily_add_procedure
  *
  * It checks privilege to add a certain procedure to the given
  * operator family.
@@ -2892,7 +2851,7 @@ ac_opfamily_add_oper(Oid opfOid, Oid operOid)
  * procOid : OID of the given procedure
  */
 void
-ac_opfamily_add_proc(Oid opfOid, Oid procOid)
+ac_opfamily_add_procedure(Oid opfOid, Oid procOid)
 {
 #ifdef NOT_USED
 	/* XXX this is unnecessary given the superuser check above */
