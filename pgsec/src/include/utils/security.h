@@ -224,7 +224,7 @@ ac_proc_comment(Oid proOid);
 extern void
 ac_proc_execute(Oid proOid, Oid roleOid);
 extern bool
-ac_proc_hint_inline(Oid proOid);
+ac_proc_hint_inlined(Oid proOid);
 
 /* pg_namespace */
 extern void

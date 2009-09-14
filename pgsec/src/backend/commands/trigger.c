@@ -862,6 +862,9 @@ renametrig(Oid relid,
 	 */
 	targetrel = heap_open(relid, AccessExclusiveLock);
 
+	/* Permission check to rename the trigger */
+	ac_trigger_alter(relid, oldname, newname);
+
 	/* Prevent system catalogs */
 	if (!allowSystemTableMods && IsSystemRelation(targetrel))
 		ereport(ERROR,
@@ -914,9 +917,6 @@ renametrig(Oid relid,
 								SnapshotNow, 2, key);
 	if (HeapTupleIsValid(tuple = systable_getnext(tgscan)))
 	{
-		/* Permission check to rename the trigger */
-		ac_trigger_alter(relid, oldname, newname);
-
 		/*
 		 * Update pg_trigger tuple with new tgname.
 		 */
