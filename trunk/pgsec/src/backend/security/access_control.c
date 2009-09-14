@@ -3124,7 +3124,7 @@ ac_proc_execute(Oid proOid, Oid roleOid)
  * proOid : OID of the function tried to be inlined
  */
 bool
-ac_proc_hint_inline(Oid proOid)
+ac_proc_hint_inlined(Oid proOid)
 {
 	if (pg_proc_aclcheck(proOid, GetUserId(), ACL_EXECUTE) != ACLCHECK_OK)
 		return false;
