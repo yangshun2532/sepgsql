@@ -950,6 +950,21 @@ deleteOneObject(const ObjectAddress *object, Relation depRel)
 	HeapTuple	tup;
 
 	/*
+	 * MEMO: A permission check should be placed here to check
+	 * privilege to drop a certain system object in cascaded
+	 * deletion. (It implicitly allows us to drop a database
+	 * object which depends on the object we can drop.)
+	 * 
+	 * However, it is unconfortable for other security model.
+	 * SE-PostgreSQL also needs to check permission to drop
+	 * all the database objects, even if these are dropped due
+	 * to the object dependencies.
+	 *
+	 * It should be put here.
+	 *   ac_object_drop(object, true);
+	 */
+
+	/*
 	 * First remove any pg_depend records that link from this object to
 	 * others.	(Any records linking to this object should be gone already.)
 	 *
