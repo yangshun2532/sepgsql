@@ -223,9 +223,10 @@ sepgsqlCheckSchemaCreate(const char *nspName, DefElem *newLabel, bool isTemp)
 
 	if (!newLabel)
 	{
-		nspSid = (!isTemp
-				  ? sepgsqlGetDefaultSchemaSecid(MyDatabaseId)
-				  : sepgsqlGetDefaultSchemaTempSecid(MyDatabaseId));
+		// TODO:
+		// if (isTemp)
+		//     default nspSid obtained from GUC setting
+		nspSid = sepgsqlGetDefaultSchemaSecid(MyDatabaseId);
 	}
 	else
 	{
@@ -234,9 +235,7 @@ sepgsqlCheckSchemaCreate(const char *nspName, DefElem *newLabel, bool isTemp)
 											   strVal(newLabel->arg));
 	}
 	sepgsqlClientHasPerms(nspSid,
-						  (!isTemp
-						   ? SEPG_CLASS_DB_SCHEMA
-						   : SEPG_CLASS_DB_SCHEMA_TEMP),
+						  SEPG_CLASS_DB_SCHEMA,
 						  SEPG_DB_SCHEMA__CREATE,
 						  nspName, true);
 	return nspSid.secid;
@@ -307,9 +306,7 @@ sepgsqlCheckSchemaRelabel(Oid nspOid, DefElem *newLabel)
 					  SEPG_DB_SCHEMA__RELABELFROM, true);
 	/* db_schema:{relabelto} for newer seclabel */
 	sepgsqlClientHasPerms(nspSid,
-						  !isAnyTempNamespace(nspOid)
-						  ? SEPG_CLASS_DB_SCHEMA
-						  : SEPG_CLASS_DB_SCHEMA_TEMP,
+						  SEPG_CLASS_DB_SCHEMA,
 						  SEPG_DB_SCHEMA__RELABELTO,
 						  get_namespace_name(nspOid), true);
 	return nspSid.secid;

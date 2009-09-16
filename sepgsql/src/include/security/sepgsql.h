@@ -42,7 +42,6 @@ enum SepgsqlClasses
 	SEPG_CLASS_FIFO_FILE,
 	SEPG_CLASS_DB_DATABASE,
 	SEPG_CLASS_DB_SCHEMA,
-	SEPG_CLASS_DB_SCHEMA_TEMP,
 	SEPG_CLASS_DB_TABLE,
 	SEPG_CLASS_DB_SEQUENCE,
 	SEPG_CLASS_DB_PROCEDURE,
@@ -95,16 +94,6 @@ enum SepgsqlClasses
 #define SEPG_DB_SCHEMA__SEARCH				(1<<6)
 #define SEPG_DB_SCHEMA__ADD_NAME			(1<<7)
 #define SEPG_DB_SCHEMA__REMOVE_NAME			(1<<8)
-
-#define SEPG_DB_SCHEMA_TEMP__CREATE			(SEPG_DB_DATABASE__CREATE)
-#define SEPG_DB_SCHEMA_TEMP__DROP			(SEPG_DB_DATABASE__DROP)
-#define SEPG_DB_SCHEMA_TEMP__GETATTR		(SEPG_DB_DATABASE__GETATTR)
-#define SEPG_DB_SCHEMA_TEMP__SETATTR		(SEPG_DB_DATABASE__SETATTR)
-#define SEPG_DB_SCHEMA_TEMP__RELABELFROM	(SEPG_DB_DATABASE__RELABELFROM)
-#define SEPG_DB_SCHEMA_TEMP__RELABELTO		(SEPG_DB_DATABASE__RELABELTO)
-#define SEPG_DB_SCHEMA_TEMP__SEARCH			(SEPG_DB_SCHEMA__SEARCH)
-#define SEPG_DB_SCHEMA_TEMP__ADD_NAME		(SEPG_DB_SCHEMA__ADD_NAME)
-#define SEPG_DB_SCHEMA_TEMP__REMOVE_NAME	(SEPG_DB_SCHEMA__REMOVE_NAME)
 
 #define SEPG_DB_TABLE__CREATE				(SEPG_DB_DATABASE__CREATE)
 #define SEPG_DB_TABLE__DROP					(SEPG_DB_DATABASE__DROP)
@@ -416,13 +405,11 @@ extern char *sepgsqlSysattSecLabelOut(Oid relid, HeapTuple tuple);
 /*
  * perms.c : SELinux permission related stuff
  */
-extern const char *sepgsqlAuditName(Oid relid, HeapTuple tuple);
+extern uint16 sepgsqlFileObjectClass(int fdesc);
 
-extern security_class_t sepgsqlFileObjectClass(int fdesc);
+extern uint16 sepgsqlTupleObjectClass(Oid relid, HeapTuple tuple);
 
-extern security_class_t sepgsqlTupleObjectClass(Oid relid, HeapTuple tuple);
-
-extern security_class_t sepgsqlTransToExternalClass(security_class_t tclass_in);
+extern security_class_t sepgsqlTransToExternalClass(uint16 tclass_in);
 
 extern void sepgsqlTransToInternalPerms(security_class_t tclass_ex,
 										struct av_decision *avd);

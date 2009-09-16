@@ -44,6 +44,7 @@
 #include "catalog/pg_tablespace.h"
 #include "catalog/pg_trigger.h"
 #include "catalog/pg_ts_config.h"
+#include "catalog/pg_ts_config_map.h"
 #include "catalog/pg_ts_dict.h"
 #include "catalog/pg_ts_parser.h"
 #include "catalog/pg_ts_template.h"
@@ -204,14 +205,6 @@ sepgsqlGetDefaultSchemaSecid(Oid database_oid)
 									SEPG_CLASS_DB_SCHEMA);
 }
 
-sepgsql_sid_t
-sepgsqlGetDefaultSchemaTempSecid(Oid database_oid)
-{
-	return defaultSecidWithDatabase(NamespaceRelationId,
-									database_oid,
-									SEPG_CLASS_DB_SCHEMA_TEMP);
-}
-
 static sepgsql_sid_t
 defaultSecidWithSchema(Oid relid, Oid nspoid, uint16 tclass)
 {
@@ -344,9 +337,6 @@ sepgsqlSetDefaultSecid(Relation rel, HeapTuple tuple)
 		break;
 	case SEPG_CLASS_DB_SCHEMA:
 		newSid = sepgsqlGetDefaultSchemaSecid(MyDatabaseId);
-		break;
-	case SEPG_CLASS_DB_SCHEMA_TEMP:
-		newSid = sepgsqlGetDefaultSchemaTempSecid(MyDatabaseId);
 		break;
 	case SEPG_CLASS_DB_TABLE:
 		nspOid = ((Form_pg_class) GETSTRUCT(tuple))->relnamespace;
@@ -1005,9 +995,17 @@ sepgsqlGetTupleContext(Oid tableOid, HeapTuple tuple, uint16 *tclass)
 								0, 0, 0);
 		break;
 
+	case TSConfigMapRelationId:
+		sid.relid = TSConfigRelationId;
+		extid = ((Form_pg_ts_config_map) GETSTRUCT(tuple))->mapcfg;
+		exttup = SearchSysCache(TSCONFIGOID,
+								ObjectIdGetDatum(extid),
+								0, 0, 0);
+		break;
+
 	default:
-		exttup = tuple;
 		sid.relid = tableOid;
+		exttup = tuple;
 		break;
 	}
 
