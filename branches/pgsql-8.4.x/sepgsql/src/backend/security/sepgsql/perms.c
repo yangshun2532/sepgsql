@@ -128,21 +128,6 @@ static struct
 		}
 	},
 	{
-		"db_schema_temp",		SEPG_CLASS_DB_SCHEMA_TEMP,
-		{
-			{ "create",			SEPG_DB_SCHEMA_TEMP__CREATE },
-			{ "drop",			SEPG_DB_SCHEMA_TEMP__DROP},
-			{ "getattr",		SEPG_DB_SCHEMA_TEMP__GETATTR },
-			{ "setattr",		SEPG_DB_SCHEMA_TEMP__SETATTR },
-			{ "relabelfrom",	SEPG_DB_SCHEMA_TEMP__RELABELFROM },
-			{ "relabelto",		SEPG_DB_SCHEMA_TEMP__RELABELTO },
-			{ "search",			SEPG_DB_SCHEMA_TEMP__SEARCH },
-			{ "add_name",		SEPG_DB_SCHEMA_TEMP__ADD_NAME },
-			{ "remove_name",	SEPG_DB_SCHEMA_TEMP__REMOVE_NAME },
-			{ NULL, 0UL },
-		}
-	},
-	{
 		"db_table",				SEPG_CLASS_DB_TABLE,
 		{
 			{ "create",			SEPG_DB_TABLE__CREATE },
@@ -243,7 +228,7 @@ static struct
  *   external code which is necessary to communicate in-kernel SELinux
  */
 extern security_class_t
-sepgsqlTransToExternalClass(security_class_t tclass)
+sepgsqlTransToExternalClass(uint16 tclass)
 {
 	Assert(tclass < SEPG_CLASS_MAX);
 
@@ -331,59 +316,12 @@ sepgsqlGetPermString(uint16 tclass, uint32 permission)
 }
 
 /*
- * sepgsqlAuditName
- *   returns an identifier string to generate audit record for
- *   the given tuple. Please note that its results can indicate
- *   an address within the given tuple, so we should not refer
- *   the returned pointer after HeapTuple is released.
- */
-const char *
-sepgsqlAuditName(Oid relid, HeapTuple tuple)
-{
-	static char buffer[NAMEDATALEN * 2 + 10];
-
-	switch (relid)
-	{
-	case DatabaseRelationId:
-		return NameStr(((Form_pg_database) GETSTRUCT(tuple))->datname);
-
-	case NamespaceRelationId:
-		return NameStr(((Form_pg_namespace) GETSTRUCT(tuple))->nspname);
-
-	case RelationRelationId:
-		return NameStr(((Form_pg_class) GETSTRUCT(tuple))->relname);
-
-	case AttributeRelationId:
-		if (!IsBootstrapProcessingMode())
-		{
-			Form_pg_attribute attForm
-				= (Form_pg_attribute) GETSTRUCT(tuple);
-			char *relname
-				= get_rel_name(attForm->attrelid);
-
-			if (relname)
-			{
-				snprintf(buffer, sizeof(buffer), "%s.%s",
-						 relname, NameStr(attForm->attname));
-				pfree(relname);
-				return buffer;
-			}
-		}
-		return NameStr(((Form_pg_attribute) GETSTRUCT(tuple))->attname);
-
-	case ProcedureRelationId:
-		return NameStr(((Form_pg_proc) GETSTRUCT(tuple))->proname);
-	}
-	return NULL;
-}
-
-/*
  * sepgsqlFileObjectClass
  *
  * It returns proper object class of filesystem object already opened.
  * It is necessary to check privileges voluntarily.
  */
-security_class_t
+uint16
 sepgsqlFileObjectClass(int fdesc)
 {
 	struct stat stbuf;
@@ -414,10 +352,9 @@ sepgsqlFileObjectClass(int fdesc)
  *
  * It returns correct object class of given tuple
  */
-security_class_t
+uint16
 sepgsqlTupleObjectClass(Oid relid, HeapTuple tuple)
 {
-	Form_pg_namespace nspForm;
 	Form_pg_class clsForm;
 	Form_pg_attribute attForm;
 
@@ -427,10 +364,6 @@ sepgsqlTupleObjectClass(Oid relid, HeapTuple tuple)
 		return SEPG_CLASS_DB_DATABASE;
 
 	case NamespaceRelationId:
-		nspForm = (Form_pg_namespace) GETSTRUCT(tuple);
-		if (strncmp(NameStr(nspForm->nspname), "pg_temp_", 8) == 0 ||
-			strncmp(NameStr(nspForm->nspname), "pg_toast_temp_", 14) == 0)
-			return SEPG_CLASS_DB_SCHEMA_TEMP;
 		return SEPG_CLASS_DB_SCHEMA;
 
 	case RelationRelationId:
