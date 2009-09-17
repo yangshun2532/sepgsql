@@ -215,7 +215,7 @@ CheckMyDatabase(const char *name, bool am_superuser)
 					 errdetail("User does not have CONNECT privilege.")));
 
 		/* SELinux: db_database:{access} */
-		sepgsqlCheckDatabaseAccess(MyDatabaseId);
+		sepgsql_database_access(MyDatabaseId);
 
 		/*
 		 * Check connection limit for this database.

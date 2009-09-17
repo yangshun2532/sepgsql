@@ -1225,6 +1225,8 @@ ExecGrant_Database(InternalGrant *istmt)
 									 datId, grantorId, ACL_KIND_DATABASE,
 									 NameStr(pg_database_tuple->datname),
 									 0, NULL);
+		/* SELinux permission checks */
+		sepgsql_database_grant(datId);
 
 		/*
 		 * Generate new ACL.
@@ -1581,7 +1583,7 @@ ExecGrant_Function(InternalGrant *istmt)
 									 NameStr(pg_proc_tuple->proname),
 									 0, NULL);
 		/* SELinux: db_procedure:{setattr} */
-		sepgsqlCheckProcedureSetattr(funcId);
+		sepgsql_proc_grant(funcId);
 
 		/*
 		 * Generate new ACL.
@@ -1826,7 +1828,7 @@ ExecGrant_Namespace(InternalGrant *istmt)
 									 0, NULL);
 
 		/* SELinux: db_schema:{setattr} */
-		sepgsqlCheckSchemaSetattr(nspid);
+		sepgsql_schema_grant(nspid);
 
 		/*
 		 * Generate new ACL.

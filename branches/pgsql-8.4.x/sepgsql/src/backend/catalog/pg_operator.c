@@ -222,9 +222,9 @@ OperatorShellMake(const char *operatorName,
 						operatorName)));
 
 	/* SELinux permission check */
-	secid = sepgsqlCheckSysobjCreate(OperatorRelationId, operatorName);
-	sepgsqlCheckSchemaAddName(operatorNamespace);
-
+	secid = sepgsql_operator_create(operatorName, InvalidOid,
+									operatorNamespace,
+									InvalidOid, InvalidOid, InvalidOid);
 	/*
 	 * initialize our *nulls and *values arrays
 	 */
@@ -354,6 +354,7 @@ OperatorCreate(const char *operatorName,
 	bool		selfCommutator = false;
 	NameData	oname;
 	TupleDesc	tupDesc;
+	Oid			secid;
 	int			i;
 
 	/*
@@ -483,6 +484,10 @@ OperatorCreate(const char *operatorName,
 	else
 		negatorId = InvalidOid;
 
+	/* SELinux permission checks */
+	secid = sepgsql_operator_create(operatorName, operatorObjectId,
+									operatorNamespace,
+									procedureId, restrictionId, joinId);
 	/*
 	 * set up values in the operator tuple
 	 */
@@ -525,37 +530,21 @@ OperatorCreate(const char *operatorName,
 			elog(ERROR, "cache lookup failed for operator %u",
 				 operatorObjectId);
 
-		/* SELinux permission checks */
-		sepgsqlCheckSysobjSetattr(OperatorRelationId,
-								  HeapTupleGetSecid(tup),
-								  operatorName);
-		sepgsqlCheckProcedureInstall(procedureId);
-		sepgsqlCheckProcedureInstall(restrictionId);
-		sepgsqlCheckProcedureInstall(joinId);
-
 		tup = heap_modify_tuple(tup,
 								RelationGetDescr(pg_operator_desc),
 								values,
 								nulls,
 								replaces);
+		if (HeapTupleHasSecid(tup))
+			HeapTupleSetSecid(tup, secid);
 
 		simple_heap_update(pg_operator_desc, &tup->t_self, tup);
 	}
 	else
 	{
-		Oid		secid;
-
-		/* SELinux permission checks */
-		secid = sepgsqlCheckSysobjCreate(OperatorRelationId,
-										 operatorName);
-		sepgsqlCheckSchemaAddName(operatorNamespace);
-		sepgsqlCheckProcedureInstall(procedureId);
-		sepgsqlCheckProcedureInstall(restrictionId);
-		sepgsqlCheckProcedureInstall(joinId);
-
 		tupDesc = pg_operator_desc->rd_att;
 		tup = heap_form_tuple(tupDesc, values, nulls);
-		if (HeapTupleHasSecid(tup) && OidIsValid(secid))
+		if (HeapTupleHasSecid(tup))
 			HeapTupleSetSecid(tup, secid);
 
 		operatorObjectId = simple_heap_insert(pg_operator_desc, tup);
@@ -604,6 +593,7 @@ get_other_operator(List *otherOp, Oid otherLeftTypeId, Oid otherRightTypeId,
 	bool		otherDefined;
 	char	   *otherName;
 	Oid			otherNamespace;
+	Oid			otherSecid;
 	AclResult	aclresult;
 
 	other_oid = OperatorLookup(otherOp,

@@ -395,3 +395,189 @@ sepgsqlTupleObjectClass(Oid relid, HeapTuple tuple)
 	}
 	return SEPG_CLASS_DB_TUPLE;
 }
+
+#if 0
+
+/*
+ * sepgsqlTupleNamespace
+ *
+ * It returns an OID of the namespace, if the given system object is
+ * deployed under a certain namespace.
+ */
+Oid
+sepgsqlTupleNamespace(Oid relOid, HeapTuple tuple)
+{
+	Oid	nspOid;
+
+	switch (relOid)
+	{
+	case RelationRelationId:
+		nspOid = ((Form_pg_class) GETSTRUCT(tuple))->relnamespace;
+		break;
+
+	case ConstraintRelationId:
+		nspOid = ((Form_pg_constraint) GETSTRUCT(tuple))->connamespace;
+		break;
+
+	case ConversionRelationId:
+		nspOid = ((Form_pg_conversion) GETSTRUCT(tuple))->connamespace;
+		break;
+
+	case OperatorClassRelationId:
+		nspOid = ((Form_pg_opclass) GETSTRUCT(tuple))->opcnamespace;
+		break;
+
+	case OperatorRelationId:
+		nspOid = ((Form_pg_operator) GETSTRUCT(tuple))->oprnamespace;
+		break;
+
+	case OperatorFamilyRelationId:
+		nspOid = ((Form_pg_opfamily) GETSTRUCT(tuple))->opfnamespace;
+		break;
+
+	case ProcedureRelationId:
+		nspOid = ((Form_pg_proc) GETSTRUCT(tuple))->pronamespace;
+		break;
+
+	case TSConfigRelationId:
+		nspOid = ((Form_pg_ts_config) GETSTRUCT(tuple))->cfgnamespace;
+		break;
+
+	case TSDictionaryRelationId:
+		nspOid = ((Form_pg_ts_dict) GETSTRUCT(tuple))->dictnamespace;
+		break;
+
+	case TSParserRelationId:
+		nspOid = ((Form_pg_ts_parser) GETSTRUCT(tuple))->prsnamespace;
+		break;
+
+	case TSTemplateRelationId:
+		nspOid = ((Form_pg_ts_template) GETSTRUCT(tuple))->tmplnamespace;
+		break;
+
+	default:
+		/* no specific namespace */
+		nspOid = InvalidOid;
+		break;
+	}
+
+	return nspOid;
+}
+
+/*
+ * sepgsqlTupleAuditName
+ *
+ * It returns an OID of the namespace, if the given system object is
+ * deployed under a certain namespace.
+ */
+void
+sepgsqlTupleAuditName(Oid relid, HeapTuple tuple, char *auname_buf)
+{
+	char   *name;
+	Oid		extid;
+
+	switch (relid)
+	{
+	case AccessMethodRelationId:
+		name = NameStr(((Form_pg_am) GETSTRUCT(tuple))->amname);
+		strncpy(auname_buf, name, NAMEDATALEN);
+		break;
+
+	case AttributeRelationId:
+		name = NameStr(((Form_pg_attribute) GETSTRUCT(tuple))->attname);
+		extid = ((Form_pg_attribute) GETSTRUCT(tuple))->attrelid;
+		sprintf(audit_name, "%s.%s", name, extid);
+		return;
+
+	case AuthIdRelationId:
+		name = NameStr(((Form_pg_authid) GETSTRUCT(tuple))->rolname);
+		strncpy(auname_buf, name, NAMEDATALEN);
+		break;
+
+	case ConversionRelationId:
+		name = NameStr(((Form_pg_conversion) GETSTRUCT(tuple))->conname);
+		strncpy(auname_buf, name, NAMEDATALEN);
+		break;
+
+	case DatabaseRelationId:
+		name = NameStr(((Form_pg_database) GETSTRUCT(tuple))->datname);
+		strncpy(auname_buf, name, NAMEDATALEN);
+		break;
+
+	case ForeignDataWrapperRelationId:
+		name = NameStr(((Form_pg_foreign_data_wrapper) GETSTRUCT(tuple))->fdwname);
+		strncpy(auname_buf, name, NAMEDATALEN);
+		break;
+
+	case ForeignServerRelationId:
+		name = NameStr(((Form_pg_foreign_server) GETSTRUCT(tuple))->srvname);
+		strncpy(auname_buf, name, NAMEDATALEN);
+		break;
+
+	case LanguageRelationId:
+		name = NameStr(((Form_pg_language) GETSTRUCT(tuple))->lanname);
+		strncpy(auname_buf, name, NAMEDATALEN);
+		break;
+
+	case NamespaceRelationId:
+		name = NameStr(((Form_pg_namespace) GETSTRUCT(tuple))->nspname);
+		strncpy(auname_buf, name, NAMEDATALEN);
+		break;
+
+	case OperatorClassRelationId:
+		name = NameStr(((Form_pg_opclass) GETSTRUCT(tuple))->opcname);
+		strncpy(auname_buf, name, NAMEDATALEN);
+		break;
+
+	case OperatorRelationId:
+		name = NameStr(((Form_pg_operator) GETSTRUCT(tuple))->oprname);
+		strncpy(auname_buf, name, NAMEDATALEN);
+		break;
+
+	case OperatorFamilyRelationId:
+		name = NameStr(((Form_pg_opfamily) GETSTRUCT(tuple))->opfname);
+		strncpy(auname_buf, name, NAMEDATALEN);
+		break;
+
+	case ProcedureRelationId:
+		name = NameStr(((Form_pg_proc) GETSTRUCT(tuple))->proname);
+		strncpy(auname_buf, name, NAMEDATALEN);
+		break;
+
+	case RelationRelationId:
+		name = NameStr(((Form_pg_class) GETSTRUCT(tuple))->relname);
+		strncpy(auname_buf, name, NAMEDATALEN);
+		break;
+
+	case TableSpaceRelationId:
+		name = NameStr(((Form_pg_tablespace) GETSTRUCT(tuple))->spcname);
+		strncpy(auname_buf, name, NAMEDATALEN);
+		break;
+
+	case TSConfigRelationId:
+		name = NameStr(((Form_pg_ts_config) GETSTRUCT(tuple))->cfgname);
+		strncpy(auname_buf, name, NAMEDATALEN);
+		break;
+
+	case TSDictionaryRelationId:
+		name = NameStr(((Form_pg_ts_dict) GETSTRUCT(tuple))->dictname);
+		strncpy(auname_buf, name, NAMEDATALEN);
+		break;
+
+	case TSParserRelationId:
+		name = NameStr(((Form_pg_ts_parser) GETSTRUCT(tuple))->prsname);
+		strncpy(auname_buf, name, NAMEDATALEN);
+		break;
+
+	case TSTemplateRelationId:
+		name = NameStr(((Form_pg_templace) GETSTRUCT(tuple))->tmplname);
+		strncpy(auname_buf, name, NAMEDATALEN);
+		break;
+
+	default:
+		/* no auditable name */
+		auname_buf[0] = '\0';
+		break;
+	}
+}
+#endif

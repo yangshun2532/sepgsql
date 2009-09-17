@@ -34,301 +34,6 @@
 #include "utils/syscache.h"
 #include "utils/tqual.h"
 
-/*
- * ------------------------------------------------------------
- *   Hooks corresponding to db_database object class
- * ------------------------------------------------------------
- *
- * sepgsqlCheckDatabaseInstallModule
- *   checks db_database:{install_module} permission when the client
- *   tries to install a dynamic link library on the current databse.
- *
- * sepgsqlCheckDatabaseLoadModule
- *   checks capability of the database when it loads a certain DLL
- *   into its process address space.
- */
-Oid
-sepgsqlCheckDatabaseCreate(const char *datname, DefElem *newLabel)
-{
-	sepgsql_sid_t	datSid;
-
-	if (!sepgsqlIsEnabled())
-		return InvalidOid;
-
-	if (!newLabel)
-		datSid = sepgsqlGetDefaultDatabaseSecid();
-	else
-	{
-		datSid.relid = DatabaseRelationId;
-		datSid.secid = securityTransSecLabelIn(datSid.relid,
-											   strVal(newLabel->arg));
-	}
-
-	sepgsqlClientHasPerms(datSid,
-						  SEPG_CLASS_DB_DATABASE,
-						  SEPG_DB_DATABASE__CREATE,
-						  datname, true);
-	return datSid.secid;
-}
-
-static bool
-checkDatabaseCommon(Oid datOid, uint32 required, bool abort)
-{
-	HeapTuple		tuple;
-	sepgsql_sid_t	datSid;
-	uint16			tclass;
-	const char	   *auname;
-	bool			rc;
-
-	if (!sepgsqlIsEnabled())
-		return true;
-
-	tuple = SearchSysCache(DATABASEOID,
-						   ObjectIdGetDatum(datOid),
-						   0, 0, 0);
-	if (!HeapTupleIsValid(tuple))
-		elog(ERROR, "cache lookup failed for database: %u", datOid);
-
-	auname = NameStr(((Form_pg_database) GETSTRUCT(tuple))->datname);
-	datSid = sepgsqlGetTupleContext(DatabaseRelationId,
-									tuple, &tclass);
-	rc = sepgsqlClientHasPerms(datSid,
-							   tclass, required,
-							   auname, abort);
-
-	ReleaseSysCache(tuple);
-
-	return rc;
-}
-
-void
-sepgsqlCheckDatabaseDrop(Oid datOid)
-{
-	checkDatabaseCommon(datOid, SEPG_DB_DATABASE__DROP, true);
-}
-
-void
-sepgsqlCheckDatabaseSetattr(Oid datOid)
-{
-	checkDatabaseCommon(datOid, SEPG_DB_DATABASE__SETATTR, true);
-}
-
-Oid
-sepgsqlCheckDatabaseRelabel(Oid datOid, DefElem *newLabel)
-{
-	sepgsql_sid_t	datSid;
-
-	if (!sepgsqlIsEnabled())
-	{
-		if (newLabel)
-			ereport(ERROR,
-					(errcode(ERRCODE_SELINUX_ERROR),
-					 errmsg("SELinux is disabled now")));
-		return InvalidOid;
-	}
-	datSid.relid = DatabaseRelationId;
-	datSid.secid = securityTransSecLabelIn(datSid.relid,
-										   strVal(newLabel->arg));
-	/* db_database:{setattr relabelfrom} for older seclabel */
-	checkDatabaseCommon(datOid,
-						SEPG_DB_DATABASE__SETATTR |
-						SEPG_DB_DATABASE__RELABELFROM, true);
-	/* db_database:{relabelto} for newer seclabel */
-	sepgsqlClientHasPerms(datSid,
-						  SEPG_CLASS_DB_DATABASE,
-						  SEPG_DB_DATABASE__RELABELTO,
-						  get_database_name(datOid), true);
-	return datSid.secid;
-}
-
-void
-sepgsqlCheckDatabaseAccess(Oid datOid)
-{
-	if (!checkDatabaseCommon(datOid, SEPG_DB_DATABASE__ACCESS, false))
-		ereport(FATAL,
-				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("SELinux: security policy violation")));
-}
-
-bool
-sepgsqlCheckDatabaseSuperuser(void)
-{
-	return checkDatabaseCommon(MyDatabaseId,
-							   SEPG_DB_DATABASE__SUPERUSER, false);
-}
-
-void
-sepgsqlCheckDatabaseLoadModule(const char *filename)
-{
-	HeapTuple		tuple;
-	security_context_t filecon;
-	security_context_t dbcon;
-
-	if (!sepgsqlIsEnabled())
-		return;
-	/*
-	 * It assumes preloaded libraries are secure,
-	 * because it can be set up using guc variable
-	 * not any SQL statements.
-	 */
-	if (GetProcessingMode() == InitProcessing)
-		return;
-
-	/* Get database context */
-	tuple = SearchSysCache(DATABASEOID,
-						   ObjectIdGetDatum(MyDatabaseId),
-						   0, 0, 0);
-	if (!HeapTupleIsValid(tuple))
-		elog(ERROR, "cache lookup failed for database: %u", MyDatabaseId);
-
-	dbcon = securityRawSecLabelOut(DatabaseRelationId,
-								   HeapTupleGetSecid(tuple));
-	ReleaseSysCache(tuple);
-
-	/* Get library context */
-	if (getfilecon_raw(filename, &filecon) < 0)
-		ereport(ERROR,
-				(errcode_for_file_access(),
-				 errmsg("could not access file \"%s\": %m", filename)));
-	PG_TRY();
-	{
-		sepgsqlComputePerms(dbcon,
-							filecon,
-							SEPG_CLASS_DB_DATABASE,
-							SEPG_DB_DATABASE__LOAD_MODULE,
-							filename, true);
-	}
-	PG_CATCH();
-	{
-		freecon(filecon);
-		PG_RE_THROW();
-	}
-	PG_END_TRY();
-	freecon(filecon);
-}
-
-/*
- * ------------------------------------------------------------
- * Hooks corresponding to db_schema object class
- * ------------------------------------------------------------
- */
-
-Oid
-sepgsqlCheckSchemaCreate(const char *nspName, DefElem *newLabel, bool isTemp)
-{
-	sepgsql_sid_t	nspSid;
-
-	if (!sepgsqlIsEnabled())
-		return InvalidOid;
-
-	if (!newLabel)
-	{
-		// TODO:
-		// if (isTemp)
-		//     default nspSid obtained from GUC setting
-		nspSid = sepgsqlGetDefaultSchemaSecid(MyDatabaseId);
-	}
-	else
-	{
-		nspSid.relid = NamespaceRelationId;
-		nspSid.secid = securityTransSecLabelIn(nspSid.relid,
-											   strVal(newLabel->arg));
-	}
-	sepgsqlClientHasPerms(nspSid,
-						  SEPG_CLASS_DB_SCHEMA,
-						  SEPG_DB_SCHEMA__CREATE,
-						  nspName, true);
-	return nspSid.secid;
-}
-
-static bool
-checkSchemaCommon(Oid nspOid, uint32 required, bool abort)
-{
-	HeapTuple		tuple;
-	sepgsql_sid_t	nspSid;
-	uint16			tclass;
-	const char	   *auname;
-	bool			rc;
-
-	if (!sepgsqlIsEnabled())
-		return true;
-
-	tuple = SearchSysCache(NAMESPACEOID,
-						   ObjectIdGetDatum(nspOid),
-						   0, 0, 0);
-	if (!HeapTupleIsValid(tuple))
-		elog(ERROR, "cache lookup failed for namespace: %u", nspOid);
-
-	nspSid = sepgsqlGetTupleContext(NamespaceRelationId,
-									tuple, &tclass);
-
-	auname = NameStr(((Form_pg_namespace) GETSTRUCT(tuple))->nspname);
-	rc = sepgsqlClientHasPerms(nspSid, tclass, required,
-							   auname, abort);
-
-	ReleaseSysCache(tuple);
-
-	return rc;
-}
-
-void
-sepgsqlCheckSchemaDrop(Oid nspOid)
-{
-	checkSchemaCommon(nspOid, SEPG_DB_SCHEMA__DROP, true);
-}
-
-void
-sepgsqlCheckSchemaSetattr(Oid nspOid)
-{
-	checkSchemaCommon(nspOid, SEPG_DB_SCHEMA__SETATTR, true);
-}
-
-Oid
-sepgsqlCheckSchemaRelabel(Oid nspOid, DefElem *newLabel)
-{
-	sepgsql_sid_t	nspSid;
-
-	if (!sepgsqlIsEnabled())
-	{
-		if (newLabel)
-			ereport(ERROR,
-					(errcode(ERRCODE_SELINUX_ERROR),
-					 errmsg("SELinux is disabled now")));
-		return InvalidOid;
-	}
-	nspSid.relid = NamespaceRelationId;
-	nspSid.secid = securityTransSecLabelIn(nspSid.relid,
-										   strVal(newLabel->arg));
-
-	/* db_schema:{setattr relabelfrom} for older seclabel */
-	checkSchemaCommon(nspOid,
-					  SEPG_DB_SCHEMA__SETATTR |
-					  SEPG_DB_SCHEMA__RELABELFROM, true);
-	/* db_schema:{relabelto} for newer seclabel */
-	sepgsqlClientHasPerms(nspSid,
-						  SEPG_CLASS_DB_SCHEMA,
-						  SEPG_DB_SCHEMA__RELABELTO,
-						  get_namespace_name(nspOid), true);
-	return nspSid.secid;
-}
-
-void
-sepgsqlCheckSchemaAddName(Oid nspOid)
-{
-	checkSchemaCommon(nspOid, SEPG_DB_SCHEMA__ADD_NAME, true);
-}
-
-void
-sepgsqlCheckSchemaRemoveName(Oid nspOid)
-{
-	checkSchemaCommon(nspOid, SEPG_DB_SCHEMA__REMOVE_NAME, true);
-}
-
-bool
-sepgsqlCheckSchemaSearch(Oid nspOid, bool abort)
-{
-	return checkSchemaCommon(nspOid, SEPG_DB_SCHEMA__SEARCH, abort);
-}
 
 /* ------------------------------------------------------------ *
  *   Hooks corresponding to db_column object class
@@ -414,8 +119,8 @@ checkColumnCommon(Oid relOid, AttrNumber attno, uint32 required)
 		sprintf(auname, "%s.%s",
 				get_rel_name(relOid),
 				NameStr(attr->attname));
-		attSid = sepgsqlGetTupleContext(AttributeRelationId,
-										tuple, &tclass);
+		attSid = sepgsqlGetTupleSecid(AttributeRelationId,
+									  tuple, &tclass);
 		sepgsqlClientHasPerms(attSid, tclass, required,
 							  auname, true);
 	}
@@ -508,8 +213,8 @@ checkTableCommon(Oid table_oid, access_vector_t required)
 		elog(ERROR, "cache lookup failed for relation %u", table_oid);
 
 	auname = NameStr(((Form_pg_class) GETSTRUCT(tuple))->relname);
-	relSid = sepgsqlGetTupleContext(RelationRelationId,
-									tuple, &tclass);
+	relSid = sepgsqlGetTupleSecid(RelationRelationId,
+								  tuple, &tclass);
 	sepgsqlClientHasPerms(relSid, tclass, required,
 						  auname, true);
 	ReleaseSysCache(tuple);
@@ -597,8 +302,8 @@ sepgsqlCheckTableTruncate(Relation rel)
 
 	while ((tuple = heap_getnext(scan, ForwardScanDirection)) != NULL)
 	{
-		tupSid = sepgsqlGetTupleContext(RelationGetRelid(rel),
-										tuple, &tclass);
+		tupSid = sepgsqlGetTupleSecid(RelationGetRelid(rel),
+									  tuple, &tclass);
 		sepgsqlClientHasPerms(tupSid,
 							  tclass, SEPG_DB_TUPLE__DELETE,
 							  NULL, true);
@@ -641,285 +346,6 @@ void sepgsqlCheckSequenceSetValue(Oid seqOid)
 /* ------------------------------------------------------------ *
  *   Hooks corresponding to db_procedure object class
  * ------------------------------------------------------------ */
-static bool
-checkProcedureCommon(Oid procOid, uint32 required, bool abort)
-{
-	sepgsql_sid_t	proSid;
-	HeapTuple		tuple;
-	uint16			tclass;
-	const char	   *auname;
-	bool			rc;
-
-	if (!sepgsqlIsEnabled())
-		return true;
-
-	tuple = SearchSysCache(PROCOID,
-						   ObjectIdGetDatum(procOid),
-						   0, 0, 0);
-	if (!HeapTupleIsValid(tuple))
-		elog(ERROR, "cache lookup failed for procedure: %u", procOid);
-
-	auname = NameStr(((Form_pg_proc) GETSTRUCT(tuple))->proname);
-	proSid = sepgsqlGetTupleContext(ProcedureRelationId,
-									tuple, &tclass);
-	rc = sepgsqlClientHasPerms(proSid, tclass, required,
-							   auname, abort);
-
-	ReleaseSysCache(tuple);
-
-	return rc;
-}
-
-Oid
-sepgsqlCheckProcedureCreate(const char *procName, Oid procOid,
-							Oid procNsp, Oid procLang, DefElem *newLabel)
-{
-	sepgsql_sid_t	proSid;
-	HeapTuple		tuple;
-	uint32			required;
-
-	if (!sepgsqlIsEnabled())
-		return InvalidOid;
-
-	if (!OidIsValid(procOid))
-	{
-		/* create a new function */
-		required = SEPG_DB_PROCEDURE__CREATE;
-		if (!newLabel)
-			proSid = sepgsqlGetDefaultProcedureSecid(procNsp);
-		else
-		{
-			proSid.relid = ProcedureRelationId;
-			proSid.secid = securityTransSecLabelIn(proSid.relid,
-												   strVal(newLabel->arg));
-		}
-	}
-	else if (!newLabel)
-	{
-		/* replace an existing function, without any label */
-		required = SEPG_DB_PROCEDURE__SETATTR;
-		tuple = SearchSysCache(PROCOID,
-							   ObjectIdGetDatum(procOid),
-							   0, 0, 0);
-		if (!HeapTupleIsValid(tuple))
-			elog(ERROR, "cache lookup failed for procedure: %u", procOid);
-
-		proSid = sepgsqlGetTupleContext(ProcedureRelationId,
-										tuple, NULL);
-		ReleaseSysCache(tuple);
-	}
-	else
-	{
-		/* replace an existing function, with relabeling */
-		checkProcedureCommon(procOid,
-							 SEPG_DB_PROCEDURE__SETATTR |
-							 SEPG_DB_PROCEDURE__RELABELFROM, true);
-
-		required = SEPG_DB_PROCEDURE__RELABELTO;
-		proSid.relid = ProcedureRelationId;
-		proSid.secid = securityTransSecLabelIn(proSid.relid,
-											   strVal(newLabel->arg));
-	}
-
-	/* Procedural language is trusted? */
-	tuple = SearchSysCache(LANGOID,
-						   ObjectIdGetDatum(procLang),
-						   0, 0, 0);
-	if (!HeapTupleIsValid(tuple))
-		elog(ERROR, "cache lookup failed for procedural langugage: %u", procLang);
-
-	if (!((Form_pg_language) GETSTRUCT(tuple))->lanpltrusted)
-		required |= SEPG_DB_PROCEDURE__UNTRUSTED;
-
-	ReleaseSysCache(tuple);
-
-	/* check it */
-	sepgsqlClientHasPerms(proSid,
-						  SEPG_CLASS_DB_PROCEDURE, required,
-						  procName, true);
-
-	return proSid.secid;
-}
-
-void
-sepgsqlCheckProcedureDrop(Oid procOid)
-{
-	checkProcedureCommon(procOid, SEPG_DB_PROCEDURE__DROP, true);
-}
-
-void
-sepgsqlCheckProcedureSetattr(Oid procOid)
-{
-	checkProcedureCommon(procOid, SEPG_DB_PROCEDURE__SETATTR, true);
-}
-
-Oid
-sepgsqlCheckProcedureRelabel(Oid procOid, DefElem *newLabel)
-{
-	sepgsql_sid_t	proSid;
-
-	if (!sepgsqlIsEnabled())
-	{
-		if (newLabel)
-			ereport(ERROR,
-					(errcode(ERRCODE_SELINUX_ERROR),
-					 errmsg("SELinux is disabled now")));
-		return InvalidOid;
-	}
-
-	proSid.relid = ProcedureRelationId;
-	proSid.secid = securityTransSecLabelIn(proSid.relid,
-										   strVal(newLabel->arg));
-
-	/* db_procedure:{setattr relabelfrom} for older seclabel */
-	checkProcedureCommon(procOid,
-						 SEPG_DB_PROCEDURE__SETATTR |
-						 SEPG_DB_PROCEDURE__RELABELFROM, true);
-	/* db_procedure:{relabelto} for newer seclabel */
-	sepgsqlClientHasPerms(proSid,
-						  SEPG_CLASS_DB_PROCEDURE,
-						  SEPG_DB_PROCEDURE__RELABELTO,
-						  get_func_name(procOid), true);
-	return proSid.secid;
-}
-
-void
-sepgsqlCheckProcedureExecute(Oid procOid)
-{
-	checkProcedureCommon(procOid, SEPG_DB_PROCEDURE__EXECUTE, true);
-}
-
-/*
- * sepgsqlCheckProcedureInstall
- *
- * It should be checked when a procedure is installed as a part of system
- * internal stuff.
- */
-void
-sepgsqlCheckProcedureInstall(Oid procOid)
-{
-	if (OidIsValid(procOid))
-		checkProcedureCommon(procOid, SEPG_DB_PROCEDURE__INSTALL, true);
-}
-
-/*
- * sepgsqlHintProcedureInlined
- *
- * It provides a hint whether the given sql procedure can be inlined, or not.
- */
-bool
-sepgsqlHintProcedureInlined(HeapTuple protup)
-{
-	security_context_t	newcon;
-	sepgsql_sid_t		proSid;
-
-	if (!sepgsqlIsEnabled())
-		return true;
-
-	if (!checkProcedureCommon(HeapTupleGetOid(protup),
-							  SEPG_DB_PROCEDURE__EXECUTE, false))
-		return false;
-	/*
-	 * If the security context of client is unchange
-	 * before or after invocation of the functions,
-	 * it is not a trusted procedure, so it can be
-	 * inlined due to performance purpose.
-	 */
-	proSid = sepgsqlGetTupleContext(ProcedureRelationId,
-									protup, NULL);
-
-	newcon = sepgsqlClientCreateLabel(proSid, SEPG_CLASS_PROCESS);
-
-	if (strcmp(sepgsqlGetClientLabel(), newcon) == 0)
-		return true;
-
-	return false;
-}
-
-/*
- * sepgsqlCheckProcedureEntrypoint
- *   checks whether the given function call causes domain transition,
- *   or not. If it needs a domain transition, it injects a wrapper
- *   function to invoke it under new domain.
- */
-struct TrustedProcedureCache
-{
-	FmgrInfo	flinfo;
-	char		newcon[1];
-};
-
-static Datum
-sepgsqlTrustedProcedure(PG_FUNCTION_ARGS)
-{
-	struct TrustedProcedureCache *tcache;
-	security_context_t	save_context;
-	FmgrInfo		   *save_flinfo;
-	Datum				result;
-
-	tcache = fcinfo->flinfo->fn_extra;
-	Assert(tcache != NULL);
-
-	save_context = sepgsqlSwitchClient(tcache->newcon);
-	save_flinfo = fcinfo->flinfo;
-	fcinfo->flinfo = &tcache->flinfo;
-
-	PG_TRY();
-	{
-		result = FunctionCallInvoke(fcinfo);
-	}
-	PG_CATCH();
-	{
-		sepgsqlSwitchClient(save_context);
-		fcinfo->flinfo = save_flinfo;
-		PG_RE_THROW();
-	}
-	PG_END_TRY();
-	sepgsqlSwitchClient(save_context);
-	fcinfo->flinfo = save_flinfo;
-
-	return result;
-}
-
-void
-sepgsqlCheckProcedureEntrypoint(FmgrInfo *flinfo, HeapTuple protup)
-{
-	struct TrustedProcedureCache   *tcache;
-	security_context_t	newcon;
-	sepgsql_sid_t		proSid;
-
-	if (!sepgsqlIsEnabled())
-		return;
-
-	proSid = sepgsqlGetTupleContext(ProcedureRelationId,
-									protup, NULL);
-
-	newcon = sepgsqlClientCreateLabel(proSid, SEPG_CLASS_PROCESS);
-
-	/* Do nothing, if it is not a trusted procedure */
-	if (strcmp(newcon, sepgsqlGetClientLabel()) == 0)
-		return;
-
-	/* check db_procedure:{entrypoint} */
-	sepgsqlClientHasPerms(proSid,
-						  SEPG_CLASS_DB_PROCEDURE,
-						  SEPG_DB_PROCEDURE__ENTRYPOINT,
-						  NULL, true);
-
-	/* check process:{transition} */
-	sepgsqlComputePerms(sepgsqlGetClientLabel(),
-						newcon,
-						SEPG_CLASS_PROCESS,
-						SEPG_PROCESS__TRANSITION,
-						NULL, true);
-
-	/* setup trusted procedure */
-	tcache = MemoryContextAllocZero(flinfo->fn_mcxt,
-							sizeof(*tcache) + strlen(newcon));
-	memcpy(&tcache->flinfo, flinfo, sizeof(*flinfo));
-	strcpy(tcache->newcon, newcon);
-	flinfo->fn_addr = sepgsqlTrustedProcedure;
-	flinfo->fn_extra = tcache;
-}
 
 /*
  * sepgsqlCheckBlobCreate
@@ -937,7 +363,7 @@ sepgsqlCheckBlobCreate(Relation rel, HeapTuple lotup)
 	/* set a default security context */
 	sepgsqlSetDefaultSecid(rel, lotup);
 
-	loSid = sepgsqlGetTupleContext(relid, lotup, NULL);
+	loSid = sepgsqlGetTupleSecid(relid, lotup, NULL);
 	sepgsqlClientHasPerms(loSid,
 						  SEPG_CLASS_DB_BLOB,
 						  SEPG_DB_BLOB__CREATE,
@@ -957,7 +383,7 @@ sepgsqlCheckBlobDrop(Relation rel, HeapTuple lotup)
 	if (!sepgsqlIsEnabled())
 		return;
 
-	loSid = sepgsqlGetTupleContext(relid, lotup, NULL);
+	loSid = sepgsqlGetTupleSecid(relid, lotup, NULL);
 	sepgsqlClientHasPerms(loSid,
 						  SEPG_CLASS_DB_BLOB,
 						  SEPG_DB_BLOB__DROP,
@@ -1106,7 +532,7 @@ sepgsqlCheckBlobRelabel(HeapTuple oldtup, HeapTuple newtup)
 		required |= SEPG_DB_BLOB__RELABELFROM;
 
 	/* db_blob:{setattr relabelfrom} */
-	loSid = sepgsqlGetTupleContext(LargeObjectRelationId, oldtup, NULL);
+	loSid = sepgsqlGetTupleSecid(LargeObjectRelationId, oldtup, NULL);
 	sepgsqlClientHasPerms(loSid,
 						  SEPG_CLASS_DB_BLOB,
 						  required,
@@ -1116,7 +542,7 @@ sepgsqlCheckBlobRelabel(HeapTuple oldtup, HeapTuple newtup)
 		return;
 
 	/* db_blob:{relabelto} */
-	loSid = sepgsqlGetTupleContext(LargeObjectRelationId, newtup, NULL);
+	loSid = sepgsqlGetTupleSecid(LargeObjectRelationId, newtup, NULL);
 	sepgsqlClientHasPerms(loSid,
 						  SEPG_CLASS_DB_BLOB,
 						  SEPG_DB_BLOB__RELABELTO,
@@ -1198,7 +624,6 @@ sepgsqlCheckSysobjDrop(const ObjectAddress *object)
 {
 	sepgsql_sid_t	tsid;
 	uint16			tclass;
-	const char	   *auname[2 * NAMEDATALEN + 10];
 
 	switch (object->classId)
 	{
@@ -1222,7 +647,7 @@ sepgsqlCheckSysobjDrop(const ObjectAddress *object)
 				  (typForm->typtype == TYPTYPE_BASE &&
 				   !OidIsValid(typForm->typarray))))
 			{
-				tsid = sepgsqlGetTupleContext(object->classId, typtup, &tclass);
+				tsid = sepgsqlGetTupleSecid(object->classId, typtup, &tclass);
 				sepgsqlClientHasPerms(tsid, tclass,
 									  SEPG_DB_TUPLE__DELETE,
 									  NULL, true);
@@ -1232,10 +657,10 @@ sepgsqlCheckSysobjDrop(const ObjectAddress *object)
 		break;
 
 	default:
-		tsid = sepgsqlGetSysobjContext(object->classId,
-									   object->objectId,
-									   object->objectSubId,
-									   &tclass);
+		tsid = sepgsqlGetSysobjSecid(object->classId,
+									 object->objectId,
+									 object->objectSubId,
+									 &tclass);
 		sepgsqlClientHasPerms(tsid, tclass,
 							  SEPG_DB_TUPLE__DELETE,
 							  NULL, true);

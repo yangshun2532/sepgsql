@@ -285,7 +285,7 @@ createdb(const CreatedbStmt *stmt)
 	check_is_member_of_role(GetUserId(), datdba);
 
 	/* SELinux checks db_database:{create} */
-	datsecid = sepgsqlCheckDatabaseCreate(dbname, dseclabel);
+	datsecid = sepgsql_database_create(dbname, dseclabel);
 
 	/*
 	 * Lookup database (template) to be cloned, and obtain share lock on it.
@@ -797,7 +797,7 @@ dropdb(const char *dbname, bool missing_ok)
 					   dbname);
 
 	/* SELinux checks db_database:{drop} permission */
-	sepgsqlCheckDatabaseDrop(db_id);
+	sepgsql_database_drop(db_id);
 
 	/*
 	 * Disallow dropping a DB that is marked istemplate.  This is just to
@@ -942,7 +942,7 @@ RenameDatabase(const char *oldname, const char *newname)
 				 errmsg("permission denied to rename database")));
 
 	/* SELinux: check db_database:{setattr} */
-	sepgsqlCheckDatabaseSetattr(db_id);
+	sepgsql_database_alter(db_id);
 
 	/*
 	 * Make sure the new name doesn't exist.  See notes for same error in
@@ -1057,7 +1057,7 @@ movedb(const char *dbname, const char *tblspcname)
 					   dbname);
 
 	/* SELinux checks db_database:{setattr} */
-	sepgsqlCheckDatabaseSetattr(db_id);
+	sepgsql_database_alter(db_id);
 
 	/*
 	 * Obviously can't move the tables of my own database
@@ -1412,7 +1412,7 @@ AlterDatabase(AlterDatabaseStmt *stmt, bool isTopLevel)
 					   stmt->dbname);
 
 	/* SELinux checks db_database:{setattr} */
-	sepgsqlCheckDatabaseSetattr(HeapTupleGetOid(tuple));
+	sepgsql_database_alter(HeapTupleGetOid(tuple));
 
 	/*
 	 * Build an updated tuple, perusing the information just obtained
@@ -1487,7 +1487,7 @@ AlterDatabaseSet(AlterDatabaseSetStmt *stmt)
 					   stmt->dbname);
 
 	/* SELinux checks db_database:{setattr} */
-	sepgsqlCheckDatabaseSetattr(HeapTupleGetOid(tuple));
+	sepgsql_database_alter(HeapTupleGetOid(tuple));
 
 	memset(repl_repl, false, sizeof(repl_repl));
 	repl_repl[Anum_pg_database_datconfig - 1] = true;
@@ -1612,7 +1612,7 @@ AlterDatabaseOwner(const char *dbname, Oid newOwnerId)
 				   errmsg("permission denied to change owner of database")));
 
 		/* SELinux checks db_database:{setattr} */
-		sepgsqlCheckDatabaseSetattr(HeapTupleGetOid(tuple));
+		sepgsql_database_alter(HeapTupleGetOid(tuple));
 
 		memset(repl_null, false, sizeof(repl_null));
 		memset(repl_repl, false, sizeof(repl_repl));
@@ -1689,6 +1689,10 @@ AlterDatabaseSecLabel(const char *dbname, DefElem *seclabel)
 	memset(replaces, false, sizeof(replaces));
 	newtup = heap_modify_tuple(oldtup, RelationGetDescr(rel),
 							   NULL, NULL, replaces);
+	if (!HeapTupleHasSecid(newtup))
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("Unable to set security label on \"%s\"", dbname)));
 	systable_endscan(scan);
 
 	/* check DAC permission */
@@ -1696,11 +1700,7 @@ AlterDatabaseSecLabel(const char *dbname, DefElem *seclabel)
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_DATABASE, dbname);
 
 	/* SELinux checks db_database:{setattr relabelfrom relabelto} */
-	secid = sepgsqlCheckDatabaseRelabel(HeapTupleGetOid(newtup), seclabel);
-	if (!HeapTupleHasSecid(newtup))
-		ereport(ERROR,
-				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("Unable to set security label on \"%s\"", dbname)));
+	secid = sepgsql_database_relabel(HeapTupleGetOid(newtup), seclabel);
 	HeapTupleSetSecid(newtup, secid);
 
 	simple_heap_update(rel, &newtup->t_self, newtup);
