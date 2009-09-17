@@ -234,6 +234,9 @@ AlterForeignDataWrapperOwner(const char *name, Oid newOwnerId)
 
 	if (form->fdwowner != newOwnerId)
 	{
+		/* SELinux permission check */
+		sepgsql_fdw_alter(fdwId, InvalidOid);
+
 		form->fdwowner = newOwnerId;
 
 		simple_heap_update(rel, &tup->t_self, tup);
@@ -343,6 +346,7 @@ CreateForeignDataWrapper(CreateFdwStmt *stmt)
 	Oid			fdwvalidator;
 	Datum		fdwoptions;
 	Oid			ownerId;
+	Oid			secid;
 
 	/* Must be super user */
 	if (!superuser())
@@ -381,8 +385,8 @@ CreateForeignDataWrapper(CreateFdwStmt *stmt)
 	else
 		fdwvalidator = InvalidOid;
 
-	/* SELinux checks db_procedure:{install} */
-	sepgsqlCheckProcedureInstall(fdwvalidator);
+	/* SELinux permission checks */
+	sepgsql_fdw_create(stmt->fdwname, fdwvalidator);
 
 	values[Anum_pg_foreign_data_wrapper_fdwvalidator - 1] = fdwvalidator;
 
@@ -477,9 +481,6 @@ AlterForeignDataWrapper(AlterFdwStmt *stmt)
 			ereport(WARNING,
 			 (errmsg("changing the foreign-data wrapper validator can cause "
 					 "the options for dependent objects to become invalid")));
-
-		/* SELinux checks db_procedure:{install} */
-		sepgsqlCheckProcedureInstall(fdwvalidator);
 	}
 	else
 	{
@@ -493,6 +494,9 @@ AlterForeignDataWrapper(AlterFdwStmt *stmt)
 		Assert(!isnull);
 		fdwvalidator = DatumGetObjectId(datum);
 	}
+
+	/* SELinux permission checks */
+	sepgsql_fdw_alter(fdwId, fdwvalidator);
 
 	/*
 	 * Options specified, validate and update.
