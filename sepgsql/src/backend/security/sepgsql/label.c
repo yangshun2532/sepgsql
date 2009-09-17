@@ -595,14 +595,14 @@ sepgsqlCopyTableColumns(Relation source)
 }
 
 /*
- * sepgsqlGetSysobjContext
+ * sepgsqlGetSysobjSecid
  *
  * It returns a pair of relid/secid for the given OID.
  */
 static sepgsql_sid_t
-getSysobjContextDirect(Oid classOid, Oid indexOid, Oid objectId, uint16 *tclass)
+getSysobjSecidDirect(Oid classOid, Oid indexOid, Oid objectId, uint16 *tclass)
 {
-	sepgsql_sid_t	sid = { InvalidOid, InvalidOid };
+	sepgsql_sid_t	sid;
 	Relation		rel;
 	HeapTuple		tup;
 	ScanKeyData		skey;
@@ -619,8 +619,11 @@ getSysobjContextDirect(Oid classOid, Oid indexOid, Oid objectId, uint16 *tclass)
 							  SnapshotNow, 1, &skey);
 	tup = systable_getnext(scan);
 
-	if (HeapTupleIsValid(tup))
-		sid = sepgsqlGetTupleContext(classOid, tup, tclass);
+	if (!HeapTupleIsValid(tup))
+		elog(ERROR, "system object lookup failed for oid %u on relation %u",
+			 objectId, classOid);
+
+	sid = sepgsqlGetTupleSecid(classOid, tup, tclass);
 
 	systable_endscan(scan);
 
@@ -630,10 +633,10 @@ getSysobjContextDirect(Oid classOid, Oid indexOid, Oid objectId, uint16 *tclass)
 }
 
 sepgsql_sid_t
-sepgsqlGetSysobjContext(Oid classOid, Oid objectId, int32 objsubId, uint16 *tclass)
+sepgsqlGetSysobjSecid(Oid classOid, Oid objectId, int32 objsubId, uint16 *tclass)
 {
-	sepgsql_sid_t	sid = { InvalidOid, InvalidOid };
-	HeapTuple		tup = NULL;
+	sepgsql_sid_t	sid;
+	HeapTuple		tup;
 
 	switch (classOid)
 	{
@@ -641,57 +644,71 @@ sepgsqlGetSysobjContext(Oid classOid, Oid objectId, int32 objsubId, uint16 *tcla
 		tup = SearchSysCache(AMOID,
 							 ObjectIdGetDatum(objectId),
 							 0, 0, 0);
+		if (!HeapTupleIsValid(tup))
+			elog(ERROR, "cache lookup failed for access method: %u", objectId);
 		break;
 
 	case AccessMethodOperatorRelationId:
-		return getSysobjContextDirect(AccessMethodOperatorRelationId,
-									  AccessMethodOperatorOidIndexId,
-									  objectId, tclass);
+		return getSysobjSecidDirect(AccessMethodOperatorRelationId,
+									AccessMethodOperatorOidIndexId,
+									objectId, tclass);
 
 	case AccessMethodProcedureRelationId:
-		return getSysobjContextDirect(AccessMethodProcedureRelationId,
-									  AccessMethodProcedureOidIndexId,
-									  objectId, tclass);
+		return getSysobjSecidDirect(AccessMethodProcedureRelationId,
+									AccessMethodProcedureOidIndexId,
+									objectId, tclass);
 
 	case AuthIdRelationId:
 		tup = SearchSysCache(AUTHOID,
 							 ObjectIdGetDatum(objectId),
 							 0, 0, 0);
+		if (!HeapTupleIsValid(tup))
+			elog(ERROR, "cache lookup failed for role: %u", objectId);
 		break;
 
 	case CastRelationId:
-		return getSysobjContextDirect(CastRelationId,
-									  CastOidIndexId,
-									  objectId, tclass);
+		return getSysobjSecidDirect(CastRelationId,
+									CastOidIndexId,
+									objectId, tclass);
 
 	case ConstraintRelationId:
 		tup = SearchSysCache(CONSTROID,
 							 ObjectIdGetDatum(objectId),
 							 0, 0, 0);
+		if (!HeapTupleIsValid(tup))
+			elog(ERROR, "cache lookup failed for constraint: %u", objectId);
 		break;
 
 	case ConversionRelationId:
 		tup = SearchSysCache(CONVOID,
 							 ObjectIdGetDatum(objectId),
 							 0, 0, 0);
+		if (!HeapTupleIsValid(tup))
+			elog(ERROR, "cache lookup failed for conversion: %u", objectId);
 		break;
 
 	case DatabaseRelationId:
 		tup = SearchSysCache(DATABASEOID,
 							 ObjectIdGetDatum(objectId),
 							 0, 0, 0);
+		if (!HeapTupleIsValid(tup))
+			elog(ERROR, "cache lookup failed for database: %u", objectId);
 		break;
 
 	case ForeignDataWrapperRelationId:
 		tup = SearchSysCache(FOREIGNDATAWRAPPEROID,
 							 ObjectIdGetDatum(objectId),
 							 0, 0, 0);
+		if (!HeapTupleIsValid(tup))
+			elog(ERROR, "cache lookup failed for FDW: %u", objectId);
 		break;
 
 	case ForeignServerRelationId:
 		tup = SearchSysCache(FOREIGNSERVEROID,
 							 ObjectIdGetDatum(objectId),
 							 0, 0, 0);
+		if (!HeapTupleIsValid(tup))
+			elog(ERROR, "cache lookup failed for foreign server: %u", objectId);
 		break;
 
 	case LanguageRelationId:
@@ -719,9 +736,10 @@ sepgsqlGetSysobjContext(Oid classOid, Oid objectId, int32 objsubId, uint16 *tcla
 
 			tup = systable_getnext(scan);
 
-			if (HeapTupleIsValid(tup))
-				sid = sepgsqlGetTupleContext(classOid, tup, tclass);
+			if (!HeapTupleIsValid(tup))
+				elog(ERROR, "largeobject %u lookup failed", objectId);
 
+			sid = sepgsqlGetTupleSecid(classOid, tup, tclass);
 			systable_endscan(scan);
 
 			heap_close(rel, AccessShareLock);
@@ -736,6 +754,9 @@ sepgsqlGetSysobjContext(Oid classOid, Oid objectId, int32 objsubId, uint16 *tcla
 								 ObjectIdGetDatum(objectId),
 								 Int16GetDatum(objsubId),
 								 0, 0);
+			if (!HeapTupleIsValid(tup))
+				elog(ERROR, "cache lookup failed for attribute %d of relation %u",
+					 objsubId, objectId);
 		}
 		else
 		{
@@ -743,6 +764,8 @@ sepgsqlGetSysobjContext(Oid classOid, Oid objectId, int32 objsubId, uint16 *tcla
 			tup = SearchSysCache(RELOID,
 								 ObjectIdGetDatum(objectId),
 								 0, 0, 0);
+			if (!HeapTupleIsValid(tup))
+				elog(ERROR, "cache lookup failed for relation %u", objectId);
 		}
 		break;
 
@@ -750,99 +773,121 @@ sepgsqlGetSysobjContext(Oid classOid, Oid objectId, int32 objsubId, uint16 *tcla
 		tup = SearchSysCache(NAMESPACEOID,
 							 ObjectIdGetDatum(objectId),
 							 0, 0, 0);
+		if (!HeapTupleIsValid(tup))
+			elog(ERROR, "cache lookup failed for schema %u", objectId);
 		break;
 
 	case OperatorClassRelationId:
 		tup = SearchSysCache(CLAOID,
 							 ObjectIdGetDatum(objectId),
 							 0, 0, 0);
+		if (!HeapTupleIsValid(tup))
+			elog(ERROR, "cache lookup failed for opclass %u", objectId);
 		break;
 
 	case OperatorFamilyRelationId:
 		tup = SearchSysCache(OPFAMILYOID,
 							 ObjectIdGetDatum(objectId),
 							 0, 0, 0);
+		if (!HeapTupleIsValid(tup))
+			elog(ERROR, "cache lookup failed for opfamily %u", objectId);
 		break;
 
 	case OperatorRelationId:
 		tup = SearchSysCache(OPEROID,
 							 ObjectIdGetDatum(objectId),
 							 0, 0, 0);
+		if (!HeapTupleIsValid(tup))
+			elog(ERROR, "cache lookup failed for operator %u", objectId);
 		break;
 
 	case ProcedureRelationId:
 		tup = SearchSysCache(PROCOID,
 							 ObjectIdGetDatum(objectId),
 							 0, 0, 0);
+		if (!HeapTupleIsValid(tup))
+			elog(ERROR, "cache lookup failed for procedure %u", objectId);
 		break;
 
 	case RewriteRelationId:
-		return getSysobjContextDirect(RewriteRelationId,
-									  RewriteOidIndexId,
-									  objectId, tclass);
+		return getSysobjSecidDirect(RewriteRelationId,
+									RewriteOidIndexId,
+									objectId, tclass);
 
 	case TableSpaceRelationId:
-		return getSysobjContextDirect(TableSpaceRelationId,
-									  TablespaceOidIndexId,
-									  objectId, tclass);
+		return getSysobjSecidDirect(TableSpaceRelationId,
+									TablespaceOidIndexId,
+									objectId, tclass);
 
 	case TriggerRelationId:
-		return getSysobjContextDirect(TriggerRelationId,
-									  TriggerOidIndexId,
-									  objectId, tclass);
+		return getSysobjSecidDirect(TriggerRelationId,
+									TriggerOidIndexId,
+									objectId, tclass);
 
 	case TSConfigRelationId:
 		tup = SearchSysCache(TSCONFIGOID,
 							 ObjectIdGetDatum(objectId),
 							 0, 0, 0);
+		if (!HeapTupleIsValid(tup))
+			elog(ERROR, "cache lookup failed for text search configuration %u", objectId);
 		break;
 
 	case TSDictionaryRelationId:
 		tup = SearchSysCache(TSDICTOID,
 							 ObjectIdGetDatum(objectId),
 							 0, 0, 0);
+		if (!HeapTupleIsValid(tup))
+			elog(ERROR, "cache lookup failed for text search dictionary %u", objectId);
 		break;
 
 	case TSParserRelationId:
 		tup = SearchSysCache(TSPARSEROID,
 							 ObjectIdGetDatum(objectId),
 							 0, 0, 0);
+		if (!HeapTupleIsValid(tup))
+			elog(ERROR, "cache lookup failed for text search parser %u", objectId);
 		break;
 
 	case TSTemplateRelationId:
 		tup = SearchSysCache(TSTEMPLATEOID,
 							 ObjectIdGetDatum(objectId),
 							 0, 0, 0);
+		if (!HeapTupleIsValid(tup))
+			elog(ERROR, "cache lookup failed for text search template %u", objectId);
 		break;
 
 	case TypeRelationId:
 		tup = SearchSysCache(TYPEOID,
 							 ObjectIdGetDatum(objectId),
 							 0, 0, 0);
+		if (!HeapTupleIsValid(tup))
+			elog(ERROR, "cache lookup failed for type %u", objectId);
 		break;
 
 	case UserMappingRelationId:
 		tup = SearchSysCache(USERMAPPINGOID,
 							 ObjectIdGetDatum(objectId),
 							 0, 0, 0);
+		if (!HeapTupleIsValid(tup))
+			elog(ERROR, "cache lookup failed for user mapping %u", objectId);
 		break;
 
 	default:
 		elog(ERROR, "unexpected class OID: %u", classOid);
 		break;
 	}
-	
-	if (HeapTupleIsValid(tup))
-	{
-		sid = sepgsqlGetTupleContext(classOid, tup, tclass);
-		ReleaseSysCache(tup);
-	}
+
+	Assert(HeapTupleIsValid(tup));
+
+	sid = sepgsqlGetTupleSecid(classOid, tup, tclass);
+
+	ReleaseSysCache(tup);
 
 	return sid;
 }
 
 /*
- * sepgsqlGetTupleContext
+ * sepgsqlGetTupleSecid
  *
  * It returns a pair of relid/secid for the given HeapTuple.
  * A few system catalogs is handled as an attribute of other
@@ -850,16 +895,13 @@ sepgsqlGetSysobjContext(Oid classOid, Oid objectId, int32 objsubId, uint16 *tcla
  * E.g) pg_attrdef is an attribute of a certain pg_attribute
  */
 sepgsql_sid_t
-sepgsqlGetTupleContext(Oid tableOid, HeapTuple tuple, uint16 *tclass)
+sepgsqlGetTupleSecid(Oid tableOid, HeapTuple tuple, uint16 *tclass)
 {
-	sepgsql_sid_t	sid = { InvalidOid, InvalidOid };
+	sepgsql_sid_t	sid;
 	HeapTuple		exttup;
 	Oid				extid;
 	Oid				extcls;
 	AttrNumber		extsub;
-
-	if (tclass)
-		*tclass = SEPG_CLASS_DB_TUPLE;
 
 	switch (tableOid)
 	{
@@ -869,6 +911,8 @@ sepgsqlGetTupleContext(Oid tableOid, HeapTuple tuple, uint16 *tclass)
 		exttup = SearchSysCache(PROCOID,
 								ObjectIdGetDatum(extid),
 								0, 0, 0);
+		if (!HeapTupleIsValid(exttup))
+			elog(ERROR, "cache lookup failed for procedure %u", extid);
 		break;
 
 	case AccessMethodOperatorRelationId:
@@ -877,6 +921,8 @@ sepgsqlGetTupleContext(Oid tableOid, HeapTuple tuple, uint16 *tclass)
 		exttup = SearchSysCache(OPFAMILYOID,
 								ObjectIdGetDatum(extid),
 								0, 0, 0);
+		if (!HeapTupleIsValid(exttup))
+			elog(ERROR, "cache lookup failed for opfamily %u", extid);
 		break;
 
 	case AccessMethodProcedureRelationId:
@@ -885,6 +931,8 @@ sepgsqlGetTupleContext(Oid tableOid, HeapTuple tuple, uint16 *tclass)
 		exttup = SearchSysCache(OPFAMILYOID,
 								ObjectIdGetDatum(extid),
 								0, 0, 0);
+		if (!HeapTupleIsValid(exttup))
+			elog(ERROR, "cache lookup failed for opfamily %u", extid);
 		break;
 
 	case AttrDefaultRelationId:
@@ -895,6 +943,9 @@ sepgsqlGetTupleContext(Oid tableOid, HeapTuple tuple, uint16 *tclass)
 								ObjectIdGetDatum(extid),
 								Int16GetDatum(extsub),
 								0, 0);
+		if (!HeapTupleIsValid(exttup))
+			elog(ERROR, "cache lookup failed for attribute %d of relation %u",
+				 extsub, extid);
 		break;
 
 	case AuthMemRelationId:
@@ -903,6 +954,8 @@ sepgsqlGetTupleContext(Oid tableOid, HeapTuple tuple, uint16 *tclass)
 		exttup = SearchSysCache(AUTHOID,
 								ObjectIdGetDatum(extid),
 								0, 0, 0);
+		if (!HeapTupleIsValid(exttup))
+			elog(ERROR, "cache lookup failed for role %u", extid);
 		break;
 
 	case ConstraintRelationId:
@@ -914,6 +967,8 @@ sepgsqlGetTupleContext(Oid tableOid, HeapTuple tuple, uint16 *tclass)
 			exttup = SearchSysCache(RELOID,
 									ObjectIdGetDatum(extid),
 									0, 0, 0);
+			if (!HeapTupleIsValid(exttup))
+				elog(ERROR, "cache lookup failed for relation %u", extid);
 			break;
 		}
 		/* DOMAIN constraint is an attribute of the domain type */
@@ -924,6 +979,8 @@ sepgsqlGetTupleContext(Oid tableOid, HeapTuple tuple, uint16 *tclass)
 			exttup = SearchSysCache(TYPEOID,
 									ObjectIdGetDatum(extid),
 									0, 0, 0);
+			if (!HeapTupleIsValid(exttup))
+				elog(ERROR, "cache lookup failed for type %u", extid);
 			break;
 		}
 		/* Database's context for global assertion */
@@ -931,13 +988,15 @@ sepgsqlGetTupleContext(Oid tableOid, HeapTuple tuple, uint16 *tclass)
 		exttup = SearchSysCache(DATABASEOID,
 								ObjectIdGetDatum(MyDatabaseId),
 								0, 0, 0);
+		if (!HeapTupleIsValid(exttup))
+			elog(ERROR, "cache lookup failed for database %u", extid);
 		break;
 
 	case DescriptionRelationId:
 		/* recursive call */
 		extid = ((Form_pg_description) GETSTRUCT(tuple))->objoid;
 		extcls = ((Form_pg_description) GETSTRUCT(tuple))->classoid;
-		return sepgsqlGetSysobjContext(extcls, extid, 0, tclass);
+		return sepgsqlGetSysobjSecid(extcls, extid, 0, tclass);
 
 	case EnumRelationId:
 		sid.relid = TypeRelationId;
@@ -945,6 +1004,8 @@ sepgsqlGetTupleContext(Oid tableOid, HeapTuple tuple, uint16 *tclass)
 		exttup = SearchSysCache(TYPEOID,
 								ObjectIdGetDatum(extid),
 								0, 0, 0);
+		if (!HeapTupleIsValid(exttup))
+			elog(ERROR, "cache lookup failed for type %u", extid);
 		break;
 
 	case IndexRelationId:
@@ -953,6 +1014,8 @@ sepgsqlGetTupleContext(Oid tableOid, HeapTuple tuple, uint16 *tclass)
 		exttup = SearchSysCache(RELOID,
 								ObjectIdGetDatum(extid),
 								0, 0, 0);
+		if (!HeapTupleIsValid(exttup))
+			elog(ERROR, "cache lookup failed for relation %u", extid);
 		break;
 
 	case InheritsRelationId:
@@ -961,6 +1024,8 @@ sepgsqlGetTupleContext(Oid tableOid, HeapTuple tuple, uint16 *tclass)
 		exttup = SearchSysCache(RELOID,
 								ObjectIdGetDatum(extid),
 								0, 0, 0);
+		if (!HeapTupleIsValid(exttup))
+			elog(ERROR, "cache lookup failed for relation %u", extid);
 		break;
 
 	case RewriteRelationId:
@@ -969,13 +1034,15 @@ sepgsqlGetTupleContext(Oid tableOid, HeapTuple tuple, uint16 *tclass)
 		exttup = SearchSysCache(RELOID,
 								ObjectIdGetDatum(extid),
 								0, 0, 0);
+		if (!HeapTupleIsValid(exttup))
+			elog(ERROR, "cache lookup failed for relation %u", extid);
 		break;
 
 	case SharedDescriptionRelationId:
 		/* recursive invocation */
 		extid = ((Form_pg_shdescription) GETSTRUCT(tuple))->objoid;
 		extcls = ((Form_pg_shdescription) GETSTRUCT(tuple))->classoid;
-		return sepgsqlGetSysobjContext(extcls, extid, 0, tclass);
+		return sepgsqlGetSysobjSecid(extcls, extid, 0, tclass);
 
 	case StatisticRelationId:
 		sid.relid = AttributeRelationId;
@@ -985,6 +1052,9 @@ sepgsqlGetTupleContext(Oid tableOid, HeapTuple tuple, uint16 *tclass)
 								ObjectIdGetDatum(extid),
 								Int16GetDatum(extsub),
 								0, 0);
+		if (!HeapTupleIsValid(exttup))
+			elog(ERROR, "cache lookup failed for attribute %d of relation %u",
+				 extsub, extid);
 		break;
 
 	case TriggerRelationId:
@@ -993,6 +1063,8 @@ sepgsqlGetTupleContext(Oid tableOid, HeapTuple tuple, uint16 *tclass)
 		exttup = SearchSysCache(RELOID,
 								ObjectIdGetDatum(extid),
 								0, 0, 0);
+		if (!HeapTupleIsValid(exttup))
+			elog(ERROR, "cache lookup failed for relation %u", extid);
 		break;
 
 	case TSConfigMapRelationId:
@@ -1001,24 +1073,27 @@ sepgsqlGetTupleContext(Oid tableOid, HeapTuple tuple, uint16 *tclass)
 		exttup = SearchSysCache(TSCONFIGOID,
 								ObjectIdGetDatum(extid),
 								0, 0, 0);
+		if (!HeapTupleIsValid(exttup))
+			elog(ERROR, "cache lookup failed for text search configuration %u", extid);
 		break;
 
 	default:
+		/* No external lookup (normal case) */
 		sid.relid = tableOid;
 		exttup = tuple;
 		break;
 	}
 
-	if (HeapTupleIsValid(exttup))
-	{
-		sid.secid = HeapTupleGetSecid(exttup);
+	Assert(HeapTupleIsValid(exttup));
 
-		if (tclass)
-			*tclass = sepgsqlTupleObjectClass(sid.relid, exttup);
+	sid.secid = HeapTupleGetSecid(exttup);
 
-		if (exttup != tuple)
-			ReleaseSysCache(exttup);
-	}
+	if (tclass)
+		*tclass = sepgsqlTupleObjectClass(sid.relid, exttup);
+
+	if (exttup != tuple)
+		ReleaseSysCache(exttup);
+
 	return sid;
 }
 
@@ -1143,7 +1218,7 @@ sepgsqlSysattSecLabelOut(Oid relid, HeapTuple tuple)
 {
 	sepgsql_sid_t	sid;
 
-	sid = sepgsqlGetTupleContext(relid, tuple, NULL);
+	sid = sepgsqlGetTupleSecid(relid, tuple, NULL);
 
 	return securityTransSecLabelOut(sid.relid, sid.secid);
 }

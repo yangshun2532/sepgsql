@@ -313,9 +313,7 @@ RenameAggregate(List *name, List *args, const char *newname)
 					   get_namespace_name(namespaceOid));
 
 	/* SELinux permission checks */
-	sepgsqlCheckProcedureSetattr(procOid);
-	sepgsqlCheckSchemaRemoveName(namespaceOid);
-	sepgsqlCheckSchemaAddName(namespaceOid);
+	sepgsql_proc_alter(procOid, newname, NULL);
 
 	/* rename */
 	namestrcpy(&(((Form_pg_proc) GETSTRUCT(tup))->proname), newname);

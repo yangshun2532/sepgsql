@@ -68,10 +68,7 @@ superuser_arg(Oid roleid)
 
 	/* Special escape path in case you deleted all your users. */
 	if (!IsUnderPostmaster && roleid == BOOTSTRAP_SUPERUSERID)
-	{
-		result = true;
-		goto out;
-	}
+		return true;
 
 	/* OK, look up the information in pg_authid */
 	rtup = SearchSysCache(AUTHOID,
@@ -103,7 +100,7 @@ superuser_arg(Oid roleid)
 
 out:
 	if (result)
-		result = sepgsqlCheckDatabaseSuperuser();
+		result = sepgsql_database_superuser(MyDatabaseId);
 
 	return result;
 }

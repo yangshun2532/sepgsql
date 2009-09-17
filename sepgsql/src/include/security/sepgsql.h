@@ -213,6 +213,108 @@ sepgsqlComputeCreate(security_context_t scontext,
 extern pid_t sepgsqlStartupWorkerProcess(void);
 
 /*
+ * bridge.c : new style security hooks
+ */
+/* pg_database */
+extern Oid
+sepgsql_database_create(const char *datName, DefElem *newLabel);
+extern void
+sepgsql_database_alter(Oid datOid);
+extern void
+sepgsql_database_drop(Oid datOid);
+extern Oid
+sepgsql_database_relabel(Oid datOid, DefElem *newLabel);
+extern void
+sepgsql_database_grant(Oid datOid);
+extern void
+sepgsql_database_access(Oid datOid);
+extern bool
+sepgsql_database_superuser(Oid datOid);
+extern void
+sepgsql_database_load_module(Oid datOid, const char *filename);
+
+/* pg_namespace */
+extern Oid
+sepgsql_schema_create(const char *nspName, bool isTemp, DefElem *newLabel);
+extern void
+sepgsql_schema_alter(Oid nspOid);
+extern void
+sepgsql_schema_drop(Oid nspOid);
+extern Oid
+sepgsql_schema_relabel(Oid nspOid, DefElem *newLabel);
+extern void
+sepgsql_schema_grant(Oid nspOid);
+extern bool
+sepgsql_schema_search(Oid nspOid, bool abort);
+
+/* pg_proc */
+extern Oid
+sepgsql_proc_create(const char *procName, Oid procOid,
+					Oid nspOid, Oid langOid, DefElem *newLabel);
+extern void
+sepgsql_proc_alter(Oid procOid, const char *newName, Oid newNsp);
+extern void
+sepgsql_proc_drop(Oid procOid);
+extern Oid
+sepgsql_proc_relabel(Oid procOid, DefElem *newLabel);
+extern void
+sepgsql_proc_grant(Oid procOid);
+extern void
+sepgsql_proc_execute(Oid procOid);
+extern bool
+sepgsql_proc_hint_inlined(HeapTuple protup);
+extern void
+sepgsql_proc_entrypoint(FmgrInfo *flinfo, HeapTuple protup);
+
+/* pg_cast */
+extern Oid
+sepgsql_cast_create(Oid sourceTypOid, Oid targetTypOid, Oid funcOid);
+extern void
+sepgsql_cast_drop(Oid castOid);
+
+/* pg_opclass */
+extern Oid
+sepgsql_opclass_create(const char *opcName, Oid nspOid);
+extern void
+sepgsql_opclass_alter(Oid opcOid, const char *newName);
+extern void
+sepgsql_opclass_drop(Oid opcOid);
+
+/* pg_opfamily */
+extern Oid
+sepgsql_opfamily_create(const char *opfName, Oid nspOid);
+extern void
+sepgsql_opfamily_alter(Oid opfOid, const char *newName);
+extern void
+sepgsql_opfamily_drop(Oid opfOid);
+extern void
+sepgsql_opfamily_add_operator(Oid opfOid, Oid operOid);
+extern void
+sepgsql_opfamily_add_procedure(Oid opfOid, Oid procOid);
+
+/* pg_operator */
+extern Oid
+sepgsql_operator_create(const char *oprName, Oid oprOid, Oid nspOid,
+						Oid codeFn, Oid restFn, Oid joinFn);
+extern void
+sepgsql_operator_alter(Oid oprOid);
+extern void
+sepgsql_operator_drop(Oid oprOid);
+
+/* pg_type */
+extern Oid
+sepgsql_type_create(const char *typName, Oid typOid, Oid nspOid,
+					Oid inputProc, Oid outputProc, Oid recvProc, Oid sendProc,
+					Oid modinProc, Oid modoutProc, Oid analyzeProc);
+extern void
+sepgsql_type_alter(Oid typOid, const char *newName, Oid newNsp);
+extern void
+sepgsql_type_drop(Oid typOid);
+/* misc objects */
+extern void
+sepgsql_sysobj_drop(const ObjectAddress *object);
+
+/*
  * checker.c : check permission on given queries
  */
 extern void
@@ -257,35 +359,6 @@ sepgsqlInitialize(void);
 /*
  * hooks.c : routines to check certain permissions
  */
-extern Oid
-sepgsqlCheckDatabaseCreate(const char *datname, DefElem *newLabel);
-extern void
-sepgsqlCheckDatabaseDrop(Oid datOid);
-extern void
-sepgsqlCheckDatabaseSetattr(Oid datOid);
-extern Oid
-sepgsqlCheckDatabaseRelabel(Oid datOid, DefElem *newLlabel);
-extern void
-sepgsqlCheckDatabaseAccess(Oid datOid);
-extern bool
-sepgsqlCheckDatabaseSuperuser(void);
-extern void
-sepgsqlCheckDatabaseLoadModule(const char *filename);
-
-extern Oid
-sepgsqlCheckSchemaCreate(const char *nspName, DefElem *new_label, bool isTemp);
-extern void
-sepgsqlCheckSchemaDrop(Oid nspOid);
-extern void
-sepgsqlCheckSchemaSetattr(Oid nspOid);
-extern Oid
-sepgsqlCheckSchemaRelabel(Oid nspOid, DefElem *new_label);
-extern void
-sepgsqlCheckSchemaAddName(Oid nspOid);
-extern void
-sepgsqlCheckSchemaRemoveName(Oid nspOid);
-extern bool
-sepgsqlCheckSchemaSearch(Oid nspOid, bool abort);
 
 extern void
 sepgsqlCheckTableDrop(Oid table_oid);
@@ -392,9 +465,9 @@ extern Oid *sepgsqlCreateTableColumns(CreateStmt *stmt,
 extern Oid *sepgsqlCopyTableColumns(Relation source);
 
 extern sepgsql_sid_t
-sepgsqlGetTupleContext(Oid tableOid, HeapTuple tuple, uint16 *tclass);
+sepgsqlGetTupleSecid(Oid tableOid, HeapTuple tuple, uint16 *tclass);
 extern sepgsql_sid_t
-sepgsqlGetSysobjContext(Oid tableOid, Oid objectId, int32 objsubId, uint16 *tclass);
+sepgsqlGetSysobjSecid(Oid tableOid, Oid objectId, int32 objsubId, uint16 *tclass);
 
 extern char *sepgsqlTransSecLabelIn(char *seclabel);
 extern char *sepgsqlTransSecLabelOut(char *seclabel);

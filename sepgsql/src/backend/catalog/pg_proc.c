@@ -347,14 +347,9 @@ ProcedureCreate(const char *procedureName,
 							0);
 
 	/* Check permission to create/replace a function */
-	prosecid = sepgsqlCheckProcedureCreate(procedureName,
-										   HeapTupleIsValid(oldtup)
-										   ? HeapTupleGetOid(oldtup)
-										   : InvalidOid,
-										   procNamespace,
-										   languageObjectId,
-										   (DefElem *)proseclabel);
-	sepgsqlCheckSchemaAddName(procNamespace);
+	prosecid = sepgsql_proc_create(procedureName, HeapTupleGetOid(oldtup),
+								   procNamespace, languageObjectId,
+								   (DefElem *)proseclabel);
 
 	if (HeapTupleIsValid(oldtup))
 	{
@@ -490,7 +485,7 @@ ProcedureCreate(const char *procedureName,
 
 		/* Okay, do it... */
 		tup = heap_modify_tuple(oldtup, tupDesc, values, nulls, replaces);
-		if (HeapTupleHasSecid(tup) && OidIsValid(prosecid))
+		if (HeapTupleHasSecid(tup))
 			HeapTupleSetSecid(tup, prosecid);
 		simple_heap_update(rel, &tup->t_self, tup);
 

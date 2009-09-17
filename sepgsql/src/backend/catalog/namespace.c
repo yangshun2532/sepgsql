@@ -2107,7 +2107,7 @@ LookupExplicitNamespace(const char *nspname)
 	{
 		if (OidIsValid(myTempNamespace))
 		{
-			sepgsqlCheckSchemaSearch(myTempNamespace, true);
+			sepgsql_schema_search(myTempNamespace, true);
 			return myTempNamespace;
 		}
 
@@ -2131,7 +2131,7 @@ LookupExplicitNamespace(const char *nspname)
 	if (aclresult != ACLCHECK_OK)
 		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
 					   nspname);
-	sepgsqlCheckSchemaSearch(namespaceId, true);
+	sepgsql_schema_search(namespaceId, true);
 
 	return namespaceId;
 }
@@ -2728,7 +2728,7 @@ recomputeNamespacePath(void)
 					!list_member_oid(oidlist, namespaceId) &&
 					pg_namespace_aclcheck(namespaceId, roleid,
 										  ACL_USAGE) == ACLCHECK_OK &&
-					sepgsqlCheckSchemaSearch(namespaceId, false))
+					sepgsql_schema_search(namespaceId, false))
 					oidlist = lappend_oid(oidlist, namespaceId);
 			}
 		}
@@ -2738,7 +2738,7 @@ recomputeNamespacePath(void)
 			if (OidIsValid(myTempNamespace))
 			{
 				if (!list_member_oid(oidlist, myTempNamespace) &&
-					sepgsqlCheckSchemaSearch(myTempNamespace, false))
+					sepgsql_schema_search(myTempNamespace, false))
 					oidlist = lappend_oid(oidlist, myTempNamespace);
 			}
 			else
@@ -2758,7 +2758,7 @@ recomputeNamespacePath(void)
 				!list_member_oid(oidlist, namespaceId) &&
 				pg_namespace_aclcheck(namespaceId, roleid,
 									  ACL_USAGE) == ACLCHECK_OK &&
-				sepgsqlCheckSchemaSearch(namespaceId, false))
+				sepgsql_schema_search(namespaceId, false))
 				oidlist = lappend_oid(oidlist, namespaceId);
 		}
 	}
@@ -2846,7 +2846,7 @@ InitTempTableNamespace(void)
 						get_database_name(MyDatabaseId))));
 
 	/* SELinux checks permission to create temp schema */
-	nspsecid = sepgsqlCheckSchemaCreate(namespaceName, NULL, true);
+	nspsecid = sepgsql_schema_create(namespaceName, true, NULL);
 
 	snprintf(namespaceName, sizeof(namespaceName), "pg_temp_%d", MyBackendId);
 

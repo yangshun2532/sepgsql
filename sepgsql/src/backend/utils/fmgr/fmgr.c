@@ -290,7 +290,7 @@ fmgr_info_cxt_security(Oid functionId, FmgrInfo *finfo, MemoryContext mcxt,
 	}
 
 	finfo->fn_oid = functionId;
-	sepgsqlCheckProcedureEntrypoint(finfo, procedureTuple);
+	sepgsql_proc_entrypoint(finfo, procedureTuple);
 	ReleaseSysCache(procedureTuple);
 }
 

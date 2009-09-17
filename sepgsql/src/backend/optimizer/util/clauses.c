@@ -3503,7 +3503,7 @@ inline_function(Oid funcid, Oid result_type, List *args,
 		funcform->prosecdef ||
 		funcform->proretset ||
 		!heap_attisnull(func_tuple, Anum_pg_proc_proconfig) ||
-		!sepgsqlHintProcedureInlined(func_tuple) ||
+		!sepgsql_proc_hint_inlined(func_tuple) ||
 		funcform->pronargs != list_length(args))
 		return NULL;
 
@@ -3972,7 +3972,7 @@ inline_set_returning_function(PlannerInfo *root, RangeTblEntry *rte)
 		funcform->prosecdef ||
 		!funcform->proretset ||
 		!heap_attisnull(func_tuple, Anum_pg_proc_proconfig) ||
-		!sepgsqlHintProcedureInlined(func_tuple) ||
+		!sepgsql_proc_hint_inlined(func_tuple) ||
 		funcform->pronargs != list_length(fexpr->args))
 	{
 		ReleaseSysCache(func_tuple);

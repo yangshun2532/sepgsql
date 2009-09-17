@@ -344,13 +344,13 @@ HandleFunctionRequest(StringInfo msgBuf)
 	if (aclresult != ACLCHECK_OK)
 		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
 					   get_namespace_name(fip->namespace));
-	sepgsqlCheckSchemaSearch(fip->namespace, true);
+	sepgsql_schema_search(fip->namespace, true);
 
 	aclresult = pg_proc_aclcheck(fid, GetUserId(), ACL_EXECUTE);
 	if (aclresult != ACLCHECK_OK)
 		aclcheck_error(aclresult, ACL_KIND_PROC,
 					   get_func_name(fid));
-	sepgsqlCheckProcedureExecute(fid);
+	sepgsql_proc_execute(fid);
 
 	/*
 	 * Prepare function call info block and insert arguments.

@@ -1129,9 +1129,7 @@ RenameFunction(List *name, List *argtypes, const char *newname)
 					   get_namespace_name(namespaceOid));
 
 	/* SELinux permission checks */
-	sepgsqlCheckProcedureSetattr(procOid);
-	sepgsqlCheckSchemaRemoveName(namespaceOid);
-	sepgsqlCheckSchemaAddName(namespaceOid);
+	sepgsql_proc_alter(procOid, newname, InvalidOid);
 
 	/* rename */
 	namestrcpy(&(procForm->proname), newname);
@@ -1242,7 +1240,7 @@ AlterFunctionOwner_internal(Relation rel, HeapTuple tup, Oid newOwnerId)
 							   get_namespace_name(procForm->pronamespace));
 		}
 		/* SELinux permission checks */
-		sepgsqlCheckProcedureSetattr(procOid);
+		sepgsql_proc_alter(procOid, NULL, InvalidOid);
 
 		memset(repl_null, false, sizeof(repl_null));
 		memset(repl_repl, false, sizeof(repl_repl));
@@ -1307,6 +1305,13 @@ AlterFunctionSecLabel(List *name, List *argtypes, DefElem *seclabel)
 	memset(replaces, false, sizeof(replaces));
 	newtup = heap_modify_tuple(oldtup, RelationGetDescr(rel),
 							   NULL, NULL, replaces);
+
+	if (!HeapTupleHasSecid(newtup))
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("Unable to set security label on \"%s\"",
+						get_func_name(procOid))));
+
 	ReleaseSysCache(oldtup);
 
 	/* DAC permission checks */
@@ -1315,12 +1320,7 @@ AlterFunctionSecLabel(List *name, List *argtypes, DefElem *seclabel)
 					   get_func_name(HeapTupleGetOid(newtup)));
 
 	/* SELinux permission checks */
-	secid = sepgsqlCheckProcedureRelabel(procOid, seclabel);
-	if (!HeapTupleHasSecid(newtup))
-		ereport(ERROR,
-				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("Unable to set security label on \"%s\"",
-						get_func_name(procOid))));
+	secid = sepgsql_proc_relabel(procOid, seclabel);
 	HeapTupleSetSecid(newtup, secid);
 
 	simple_heap_update(rel, &newtup->t_self, newtup);
@@ -1371,7 +1371,7 @@ AlterFunction(AlterFunctionStmt *stmt)
 					   NameListToString(stmt->func->funcname));
 
 	/* SELinux checks permissions */
-	sepgsqlCheckProcedureSetattr(funcOid);
+	sepgsql_proc_alter(funcOid, NULL, InvalidOid);
 
 	if (procForm->proisagg)
 		ereport(ERROR,
@@ -1550,6 +1550,7 @@ CreateCast(CreateCastStmt *stmt)
 	char		sourcetyptype;
 	char		targettyptype;
 	Oid			funcid;
+	Oid			secid;
 	int			nargs;
 	char		castcontext;
 	char		castmethod;
@@ -1657,9 +1658,6 @@ CreateCast(CreateCastStmt *stmt)
 					 errmsg("cast function must not return a set")));
 
 		ReleaseSysCache(tuple);
-
-		/* SELinux checks db_procedure:{install} */
-		sepgsqlCheckProcedureInstall(funcid);
 	}
 	else
 	{
@@ -1754,6 +1752,8 @@ CreateCast(CreateCastStmt *stmt)
 			castcontext = 0;	/* keep compiler quiet */
 			break;
 	}
+	/* SELinux permission check */
+	secid = sepgsql_cast_create(sourcetypeid, targettypeid, funcid);
 
 	relation = heap_open(CastRelationId, RowExclusiveLock);
 
@@ -1783,6 +1783,9 @@ CreateCast(CreateCastStmt *stmt)
 	MemSet(nulls, false, sizeof(nulls));
 
 	tuple = heap_form_tuple(RelationGetDescr(relation), values, nulls);
+
+	if (HeapTupleHasSecid(tuple))
+		HeapTupleSetSecid(tuple, secid);
 
 	simple_heap_insert(relation, tuple);
 
@@ -1978,9 +1981,7 @@ AlterFunctionNamespace(List *name, List *argtypes, bool isagg,
 						newschema)));
 
 	/* SELinux checks permissions */
-	sepgsqlCheckProcedureSetattr(procOid);
-	sepgsqlCheckSchemaRemoveName(oldNspOid);
-	sepgsqlCheckSchemaAddName(nspOid);
+	sepgsql_proc_alter(procOid, NULL, nspOid);
 
 	/* OK, modify the pg_proc row */
 

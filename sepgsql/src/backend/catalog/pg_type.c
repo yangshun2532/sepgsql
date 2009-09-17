@@ -63,9 +63,10 @@ TypeShellMake(const char *typeName, Oid typeNamespace, Oid ownerId)
 	Assert(PointerIsValid(typeName));
 
 	/* SELinux check permission to create a shell type */
-	typsid = sepgsqlCheckSysobjCreate(TypeRelationId, typeName);
-	sepgsqlCheckProcedureInstall(F_SHELL_IN);
-	sepgsqlCheckProcedureInstall(F_SHELL_OUT);
+	typsid = sepgsql_type_create(typeName, InvalidOid, typeNamespace,
+								 F_SHELL_IN, F_SHELL_OUT,
+								 InvalidOid, InvalidOid,
+								 InvalidOid, InvalidOid, InvalidOid);
 
 	/*
 	 * open pg_type
@@ -378,23 +379,12 @@ TypeCreate(Oid newTypeOid,
 
 	/* SELinux checks to create/replace type */
 	if (!isImplicitArray && typeType != TYPTYPE_COMPOSITE)
-	{
-		if (!HeapTupleIsValid(tup))
-			typeSecid = sepgsqlCheckSysobjCreate(TypeRelationId, typeName);
-		else
-		{
-			typeSecid = HeapTupleGetSecid(tup);
-			sepgsqlCheckSysobjSetattr(TypeRelationId, typeSecid, typeName);
-		}
-		sepgsqlCheckSchemaAddName(typeNamespace);
-		sepgsqlCheckProcedureInstall(inputProcedure);
-		sepgsqlCheckProcedureInstall(outputProcedure);
-		sepgsqlCheckProcedureInstall(receiveProcedure);
-		sepgsqlCheckProcedureInstall(sendProcedure);
-		sepgsqlCheckProcedureInstall(typmodinProcedure);
-		sepgsqlCheckProcedureInstall(typmodoutProcedure);
-		sepgsqlCheckProcedureInstall(analyzeProcedure);
-	}
+		typeSecid = sepgsql_type_create(typeName, HeapTupleGetOid(tup),
+										typeNamespace,
+										inputProcedure, outputProcedure,
+										receiveProcedure, sendProcedure,
+										typmodinProcedure, typmodoutProcedure,
+										analyzeProcedure);
 
 	if (HeapTupleIsValid(tup))
 	{
