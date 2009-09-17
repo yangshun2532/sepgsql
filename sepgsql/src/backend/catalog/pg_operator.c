@@ -28,6 +28,7 @@
 #include "catalog/pg_type.h"
 #include "miscadmin.h"
 #include "parser/parse_oper.h"
+#include "security/sepgsql.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
@@ -593,7 +594,6 @@ get_other_operator(List *otherOp, Oid otherLeftTypeId, Oid otherRightTypeId,
 	bool		otherDefined;
 	char	   *otherName;
 	Oid			otherNamespace;
-	Oid			otherSecid;
 	AclResult	aclresult;
 
 	other_oid = OperatorLookup(otherOp,

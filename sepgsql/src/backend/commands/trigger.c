@@ -183,8 +183,9 @@ CreateTrigger(CreateTrigStmt *stmt, Oid constraintOid, bool checkPermissions)
 							NameListToString(stmt->funcname))));
 	}
 
-	/* SELinux checks db_procedure:{install} */
-	sepgsqlCheckProcedureInstall(funcoid);
+	/* SELinux checks */
+	if (checkPermissions)
+		sepgsql_trigger_create(RelationGetRelid(rel), stmt->trigname, funcoid);
 
 	/*
 	 * If the command is a user-entered CREATE CONSTRAINT TRIGGER command that
@@ -750,6 +751,7 @@ DropTrigger(Oid relid, const char *trigname, DropBehavior behavior,
 	if (!pg_class_ownercheck(relid, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
 					   get_rel_name(relid));
+	sepgsql_trigger_drop(relid, trigname);
 
 	object.classId = TriggerRelationId;
 	object.objectId = HeapTupleGetOid(tup);
@@ -865,6 +867,9 @@ renametrig(Oid relid,
 	 * until end of transaction.
 	 */
 	targetrel = heap_open(relid, AccessExclusiveLock);
+
+	/* SELinux checks */
+	sepgsql_trigger_alter(relid, oldname);
 
 	/*
 	 * Scan pg_trigger twice for existing triggers on relation.  We do this in

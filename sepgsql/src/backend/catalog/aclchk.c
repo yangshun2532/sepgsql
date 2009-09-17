@@ -1345,6 +1345,8 @@ ExecGrant_Fdw(InternalGrant *istmt)
 									 fdwid, grantorId, ACL_KIND_FDW,
 									 NameStr(pg_fdw_tuple->fdwname),
 									 0, NULL);
+		/* SELinux permission checks */
+		sepgsql_fdw_grant(fdwid);
 
 		/*
 		 * Generate new ACL.
@@ -1464,6 +1466,8 @@ ExecGrant_ForeignServer(InternalGrant *istmt)
 								   srvid, grantorId, ACL_KIND_FOREIGN_SERVER,
 									 NameStr(pg_server_tuple->srvname),
 									 0, NULL);
+		/* SELinux checks */
+		sepgsql_foreign_server_grant(srvid);
 
 		/*
 		 * Generate new ACL.
@@ -1708,6 +1712,8 @@ ExecGrant_Language(InternalGrant *istmt)
 									 langId, grantorId, ACL_KIND_LANGUAGE,
 									 NameStr(pg_language_tuple->lanname),
 									 0, NULL);
+		/* SELinux checks */
+		sepgsql_language_grant(langId);
 
 		/*
 		 * Generate new ACL.

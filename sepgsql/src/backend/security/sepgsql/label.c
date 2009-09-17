@@ -874,6 +874,7 @@ sepgsqlGetSysobjSecid(Oid classOid, Oid objectId, int32 objsubId, uint16 *tclass
 
 	default:
 		elog(ERROR, "unexpected class OID: %u", classOid);
+		tup = NULL;	/* for compiler quiet */
 		break;
 	}
 

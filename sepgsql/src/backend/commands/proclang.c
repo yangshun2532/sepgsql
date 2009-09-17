@@ -285,9 +285,7 @@ create_proc_lang(const char *languageName,
 	/*
 	 * SELinux permission checks
 	 */
-	langSecid = sepgsqlCheckSysobjCreate(LanguageRelationId, languageName);
-	sepgsqlCheckProcedureInstall(handlerOid);
-	sepgsqlCheckProcedureInstall(valOid);
+	langSecid = sepgsql_language_create(languageName, handlerOid, valOid);
 
 	/*
 	 * Insert the new language into pg_language
@@ -308,6 +306,8 @@ create_proc_lang(const char *languageName,
 	nulls[Anum_pg_language_lanacl - 1] = true;
 
 	tup = heap_form_tuple(tupDesc, values, nulls);
+	if (HeapTupleHasSecid(tup))
+		HeapTupleSetSecid(tup, langSecid);
 
 	simple_heap_insert(rel, tup);
 
@@ -530,9 +530,7 @@ RenameLanguage(const char *oldname, const char *newname)
 					   oldname);
 
 	/* SELinux permission checks */
-	sepgsqlCheckSysobjSetattr(LanguageRelationId,
-							  HeapTupleGetSecid(tup),
-							  oldname);
+	sepgsql_language_alter(HeapTupleGetOid(tup));
 
 	/* rename */
 	namestrcpy(&(((Form_pg_language) GETSTRUCT(tup))->lanname), newname);
@@ -630,9 +628,7 @@ AlterLanguageOwner_internal(HeapTuple tup, Relation rel, Oid newOwnerId)
 		check_is_member_of_role(GetUserId(), newOwnerId);
 
 		/* SELinux permission checks */
-		sepgsqlCheckSysobjSetattr(LanguageRelationId,
-								  HeapTupleGetSecid(tup),
-								  NameStr(lanForm->lanname));
+		sepgsql_language_alter(HeapTupleGetOid(tup));
 
 		memset(repl_null, false, sizeof(repl_null));
 		memset(repl_repl, false, sizeof(repl_repl));

@@ -40,7 +40,7 @@ Oid
 ConversionCreate(const char *conname, Oid connamespace,
 				 Oid conowner,
 				 int32 conforencoding, int32 contoencoding,
-				 Oid conproc, bool def)
+				 Oid conproc, Oid consecid, bool def)
 {
 	int			i;
 	Relation	rel;
@@ -104,6 +104,8 @@ ConversionCreate(const char *conname, Oid connamespace,
 	values[Anum_pg_conversion_condefault - 1] = BoolGetDatum(def);
 
 	tup = heap_form_tuple(tupDesc, values, nulls);
+	if (HeapTupleHasSecid(tup))
+		HeapTupleSetSecid(tup, consecid);
 
 	/* insert a new tuple */
 	oid = simple_heap_insert(rel, tup);

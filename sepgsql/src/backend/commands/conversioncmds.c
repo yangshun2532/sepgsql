@@ -46,6 +46,7 @@ CreateConversionCommand(CreateConversionStmt *stmt)
 	int			from_encoding;
 	int			to_encoding;
 	Oid			funcoid;
+	Oid			secid;
 	const char *from_encoding_name = stmt->for_encoding_name;
 	const char *to_encoding_name = stmt->to_encoding_name;
 	List	   *func_name = stmt->func_name;
@@ -97,8 +98,8 @@ CreateConversionCommand(CreateConversionStmt *stmt)
 		aclcheck_error(aclresult, ACL_KIND_PROC,
 					   NameListToString(func_name));
 
-	/* SELinux checks db_procedure:{install} */
-	sepgsqlCheckProcedureInstall(funcoid);
+	/* SELinux checks */
+	secid = sepgsql_conversion_create(conversion_name, namespaceId, funcoid);
 
 	/*
 	 * Check that the conversion function is suitable for the requested source
@@ -118,7 +119,7 @@ CreateConversionCommand(CreateConversionStmt *stmt)
 	 * name)
 	 */
 	ConversionCreate(conversion_name, namespaceId, GetUserId(),
-					 from_encoding, to_encoding, funcoid, stmt->def);
+					 from_encoding, to_encoding, funcoid, secid, stmt->def);
 }
 
 /*
@@ -244,6 +245,9 @@ RenameConversion(List *name, const char *newname)
 		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
 					   get_namespace_name(namespaceOid));
 
+	/* SELinux checks */
+	sepgsql_conversion_alter(conversionOid, newname);
+
 	/* rename */
 	namestrcpy(&(((Form_pg_conversion) GETSTRUCT(tup))->conname), newname);
 	simple_heap_update(rel, &tup->t_self, tup);
@@ -340,6 +344,8 @@ AlterConversionOwner_internal(Relation rel, Oid conversionOid, Oid newOwnerId)
 				aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
 							   get_namespace_name(convForm->connamespace));
 		}
+		/* SELinux checks */
+		sepgsql_conversion_alter(HeapTupleGetOid(tup), NULL);
 
 		/*
 		 * Modify the owner --- okay to scribble on tup because it's a copy
