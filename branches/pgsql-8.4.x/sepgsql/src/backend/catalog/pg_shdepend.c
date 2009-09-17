@@ -1337,19 +1337,8 @@ shdepReassignOwned(List *roleids, Oid newrole)
 					break;
 
 				case TypeRelationId:
-					/*
-					 * NOTE: SELinux does not check anything inside
-					 * AlterTypeOwnerInternal()
-					 */
-					tuple = SearchSysCache(TYPEOID,
-										   ObjectIdGetDatum(sdepForm->objid),
-										   0, 0, 0);
-					if (!HeapTupleIsValid(tuple))
-						elog(ERROR, "cache lookup failed for type: %u", sdepForm->objid);
-					sepgsqlCheckSysobjSetattr(TypeRelationId,
-											  HeapTupleGetSecid(tuple),
-							NameStr(((Form_pg_type) GETSTRUCT(tuple))->typname));
-					ReleaseSysCache(tuple);
+					/* SELinux checks */
+					sepgsql_type_alter(sdepForm->objid, NULL, InvalidOid);
 					AlterTypeOwnerInternal(sdepForm->objid, newrole, true);
 					break;
 

@@ -966,7 +966,7 @@ deleteOneObject(const ObjectAddress *object, Relation depRel, bool permission)
 
 	/* SELinux checks db_xxx:{drop}, if necessary */
 	if (permission)
-		sepgsqlCheckSysobjDrop(object);
+		sepgsql_sysobj_drop(object);
 
 	/*
 	 * First remove any pg_depend records that link from this object to
