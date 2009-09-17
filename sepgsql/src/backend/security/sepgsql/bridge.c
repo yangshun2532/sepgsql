@@ -1369,6 +1369,368 @@ sepgsql_trigger_drop(Oid relOid, const char *trigName)
  *
  * ------------------------------------------------------------ */
 Oid
+sepgsql_ts_config_create(const char *cfgName, Oid nspOid)
+{
+	sepgsql_sid_t	sid;
+
+	if (!sepgsqlIsEnabled())
+		return InvalidOid;
+
+	sid = sepgsqlGetDefaultTupleSecid(TSConfigRelationId);
+	sepgsqlClientHasPerms(sid, SEPG_CLASS_DB_TUPLE,
+                          SEPG_DB_TUPLE__INSERT,
+						  cfgName, true);
+
+	/* db_schema:{add_name} */
+	sepgsql_schema_common(nspOid, SEPG_DB_SCHEMA__ADD_NAME, true);
+
+	return sid.secid;
+}
+
+void
+sepgsql_ts_config_alter(Oid cfgOid, const char *newName)
+{
+	Form_pg_ts_config	cfgForm;
+	HeapTuple		tuple;
+	sepgsql_sid_t	sid;
+	uint16			tclass;
+
+	if (!sepgsqlIsEnabled())
+		return;
+
+	tuple = SearchSysCache(TSCONFIGOID,
+						   ObjectIdGetDatum(cfgOid),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "cache lookup failed for text search dictionary %u", cfgOid);
+	cfgForm = (Form_pg_ts_config) GETSTRUCT(tuple);
+
+	sid = sepgsqlGetTupleSecid(TSConfigRelationId, tuple, &tclass);
+	sepgsqlClientHasPerms(sid, tclass,
+						  SEPG_DB_TUPLE__UPDATE,
+						  NameStr(cfgForm->cfgname), true);
+	if (newName)
+	{
+		sepgsql_schema_common(cfgForm->cfgnamespace,
+							  SEPG_DB_SCHEMA__ADD_NAME |
+							  SEPG_DB_SCHEMA__REMOVE_NAME, true);
+	}
+	ReleaseSysCache(tuple);
+}
+
+void
+sepgsql_ts_config_drop(Oid cfgOid)
+{
+	Form_pg_ts_config	cfgForm;
+	HeapTuple		tuple;
+	sepgsql_sid_t	sid;
+	uint16			tclass;
+
+	if (!sepgsqlIsEnabled())
+		return;
+
+	tuple = SearchSysCache(TSCONFIGOID,
+						   ObjectIdGetDatum(cfgOid),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "cache lookup failed for text search dictionary %u", cfgOid);
+	cfgForm = (Form_pg_ts_config) GETSTRUCT(tuple);
+
+	sid = sepgsqlGetTupleSecid(TSConfigRelationId, tuple, &tclass);
+	sepgsqlClientHasPerms(sid, tclass,
+						  SEPG_DB_TUPLE__DELETE,
+						  NameStr(cfgForm->cfgname), true);
+
+	/* db_schema:{remove_name} */
+	sepgsql_schema_common(cfgForm->cfgnamespace,
+						  SEPG_DB_SCHEMA__REMOVE_NAME, true);
+
+	ReleaseSysCache(tuple);
+}
+
+/* ------------------------------------------------------------ *
+ *
+ * Pg_type related security hooks
+ *
+ * ------------------------------------------------------------ */
+Oid
+sepgsql_ts_dict_create(const char *dictName, Oid nspOid)
+{
+	sepgsql_sid_t	sid;
+
+	if (!sepgsqlIsEnabled())
+		return InvalidOid;
+
+	sid = sepgsqlGetDefaultTupleSecid(TSDictionaryRelationId);
+	sepgsqlClientHasPerms(sid, SEPG_CLASS_DB_TUPLE,
+						  SEPG_DB_TUPLE__INSERT,
+						  dictName, true);
+
+	/* db_schema:{add_name} */
+	sepgsql_schema_common(nspOid, SEPG_DB_SCHEMA__ADD_NAME, true);
+
+	return sid.secid;
+}
+
+void
+sepgsql_ts_dict_alter(Oid dictOid, const char *newName)
+{
+	Form_pg_ts_dict	dictForm;
+	HeapTuple		tuple;
+	sepgsql_sid_t	sid;
+	uint16			tclass;
+
+	if (!sepgsqlIsEnabled())
+		return;
+
+	tuple = SearchSysCache(TSDICTOID,
+						   ObjectIdGetDatum(dictOid),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "cache lookup failed for text search dictionary %u", dictOid);
+
+	sid = sepgsqlGetTupleSecid(TSDictionaryRelationId, tuple, &tclass);
+	sepgsqlClientHasPerms(sid, tclass,
+						  SEPG_DB_TUPLE__UPDATE,
+						  NameStr(dictForm->dictname), true);
+
+	/* db_schema:{add_name remove_name} */
+	if (newName)
+	{
+		sepgsql_schema_common(dictForm->dictnamespace,
+							  SEPG_DB_SCHEMA__ADD_NAME |
+							  SEPG_DB_SCHEMA__REMOVE_NAME, true);
+	}
+	ReleaseSysCache(tuple);
+}
+
+void
+sepgsql_ts_dict_drop(Oid dictOid)
+{
+	Form_pg_ts_dict	dictForm;
+	HeapTuple		tuple;
+	sepgsql_sid_t	sid;
+	uint16			tclass;
+
+	if (!sepgsqlIsEnabled())
+		return;
+
+	tuple = SearchSysCache(TSDICTOID,
+						   ObjectIdGetDatum(dictOid),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "cache lookup failed for text search dictionary %u", dictOid);
+
+	sid = sepgsqlGetTupleSecid(TSDictionaryRelationId, tuple, &tclass);
+	sepgsqlClientHasPerms(sid, tclass,
+						  SEPG_DB_TUPLE__DELETE,
+						  NameStr(dictForm->dictname), true);
+
+	/* db_schema:{remove_name} */
+	sepgsql_schema_common(dictForm->dictnamespace,
+						  SEPG_DB_SCHEMA__REMOVE_NAME, true);
+
+	ReleaseSysCache(tuple);
+}
+
+/* ------------------------------------------------------------ *
+ *
+ * Pg_type related security hooks
+ *
+ * ------------------------------------------------------------ */
+Oid
+sepgsql_ts_parser_create(const char *prsName, Oid nspOid,
+						 Oid startFn, Oid tokenFn, Oid sendFn,
+						 Oid headlineFn, Oid lextypeFn)
+{
+	sepgsql_sid_t	sid;
+
+	if (!sepgsqlIsEnabled())
+		return InvalidOid;
+
+	sid = sepgsqlGetDefaultTupleSecid(TSParserRelationId);
+	sepgsqlClientHasPerms(sid, SEPG_CLASS_DB_TUPLE,
+						  SEPG_DB_TUPLE__INSERT,
+						  prsName, true);
+
+	/* db_schema:{add_name} */
+	sepgsql_schema_common(nspOid, SEPG_DB_SCHEMA__ADD_NAME, true);
+
+	/* db_procedure:{install} */
+	if (OidIsValid(startFn))
+		sepgsql_proc_common(startFn, SEPG_DB_PROCEDURE__INSTALL, true);
+	if (OidIsValid(tokenFn))
+		sepgsql_proc_common(tokenFn, SEPG_DB_PROCEDURE__INSTALL, true);
+	if (OidIsValid(sendFn))
+		sepgsql_proc_common(sendFn, SEPG_DB_PROCEDURE__INSTALL, true);
+	if (OidIsValid(headlineFn))
+		sepgsql_proc_common(headlineFn, SEPG_DB_PROCEDURE__INSTALL, true);
+	if (OidIsValid(lextypeFn))
+		sepgsql_proc_common(lextypeFn, SEPG_DB_PROCEDURE__INSTALL, true);
+}
+
+void
+sepgsql_ts_parser_alter(Oid prsOid, const char *newName)
+{
+	Form_pg_ts_parser	prsForm;
+	HeapTuple		tuple;
+	sepgsql_sid_t	sid;
+	uint16			tclass;
+
+	if (!sepgsqlIsEnabled())
+		return;
+
+	tuple = SearchSysCache(TSPARSEROID,
+						   ObjectIdGetDatum(tuple),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "cache lookup failed for text search parser %u", prsOid);
+
+	prsForm = (Form_pg_ts_parser) GETSTRUCT(tuple);
+
+	sid = sepgsqlGetTupleSecid(TSParserRelationId, tuple, &tclass);
+	sepgsqlClientHasPerms(sid, tclass,
+						  SEPG_DB_TUPLE__UPDATE,
+						  NameStr(prsForm->prsname), true);
+	if (newName)
+	{
+		sepgsql_schema_common(prsForm->prsnamespace,
+							  SEPG_DB_SCHEMA__ADD_NAME |
+							  SEPG_DB_SCHEMA__REMOVE_NAME, true);
+	}
+	ReleaseSysCache(tuple);
+}
+
+void
+sepgsql_ts_parser_drop(Oid prsOid)
+{
+	Form_pg_ts_parser	prsForm;
+	HeapTuple		tuple;
+	sepgsql_sid_t	sid;
+	uint16			tclass;
+
+	if (!sepgsqlIsEnabled())
+		return;
+
+	tuple = SearchSysCache(TSPARSEROID,
+						   ObjectIdGetDatum(tuple),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "cache lookup failed for text search parser %u", prsOid);
+
+	prsForm = (Form_pg_ts_parser) GETSTRUCT(tuple);
+
+	sid = sepgsqlGetTupleSecid(TSParserRelationId, tuple, &tclass);
+	sepgsqlClientHasPerms(sid, tclass,
+						  SEPG_DB_TUPLE__DELETE,
+						  NameStr(prsForm->prsname), true);
+
+	/* db_schema:{remove_name} */
+	sepgsql_schema_common(prsForm->prsnamespace,
+						  SEPG_DB_SCHEMA__REMOVE_NAME, true);
+
+    ReleaseSysCache(tuple);
+}
+
+/* ------------------------------------------------------------ *
+ *
+ * Pg_type related security hooks
+ *
+ * ------------------------------------------------------------ */
+Oid
+sepgsql_ts_template_create(const char *tmplName, Oid nspOid,
+						   Oid initFn, Oid lexizeFn)
+{
+	sepgsql_sid_t	sid;
+
+	if (!sepgsqlIsEnabled())
+		return InvalidOid;
+
+	sid = sepgsqlGetDefaultTupleSecid(TSTemplateRelationId);
+	sepgsqlClientHasPerms(sid, SEPG_CLASS_DB_TUPLE,
+						  SEPG_DB_TUPLE__INSERT,
+						  tmplName, true);
+
+	/* db_schema:{add_name} */
+	sepgsql_schema_common(nspOid, SEPG_DB_SCHEMA__ADD_NAME, true);
+
+	/* db_procedure:{install} */
+	if (OidIsValid(initFn))
+		sepgsql_proc_common(initFn, SEPG_DB_PROCEDURE__INSTALL, true);
+	if (OidIsValid(lexizeFn))
+		sepgsql_proc_common(lexizeFn, SEPG_DB_PROCEDURE__INSTALL, true);
+
+	return sid.secid;
+}
+
+void
+sepgsql_ts_template_alter(Oid tmplOid, const char *newName)
+{
+	Form_pg_ts_template	tmplForm;
+	HeapTuple		tuple;
+	sepgsql_sid_t	sid;
+	uint16			tclass;
+
+	if (!sepgsqlIsEnabled())
+		return;
+
+	tuple = SearchSysCache(TSTEMPLATEOID,
+						   ObjectIdGetDatum(tmplOid),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "cache lookup failed for text search template %u", tmplOid);
+	tmplForm = (Form_pg_ts_template) GETSTRUCT(tuple);
+
+	sid = sepgsqlGetTupleSecid(TSTemplateRelationId, tuple, &tclass);
+	sepgsqlClientHasPerms(sid, tclass,
+						  SEPG_DB_TUPLE__UPDATE,
+						  NameStr(tmplForm->tmplname), true);
+	if (newName)
+	{
+		sepgsql_schema_common(tmplForm->tmplnamespace,
+							  SEPG_DB_SCHEMA__ADD_NAME |
+							  SEPG_DB_SCHEMA__REMOVE_NAME, true);
+	}
+	ReleaseSysCache(tuple);
+}
+
+void
+sepgsql_ts_template_drop(Oid tmplOid)
+{
+	Form_pg_ts_template	tmplForm;
+	HeapTuple		tuple;
+	sepgsql_sid_t	sid;
+	uint16			tclass;
+
+	if (!sepgsqlIsEnabled())
+		return;
+
+	tuple = SearchSysCache(TSTEMPLATEOID,
+						   ObjectIdGetDatum(tmplOid),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "cache lookup failed for text search template %u", tmplOid);
+	tmplForm = (Form_pg_ts_template) GETSTRUCT(tuple);
+
+	sid = sepgsqlGetTupleSecid(TSTemplateRelationId, tuple, &tclass);
+	sepgsqlClientHasPerms(sid, tclass,
+						  SEPG_DB_TUPLE__DELETE,
+						  NameStr(tmplForm->tmplname), true);
+
+	/* db_schema:{remove_name} */
+	sepgsql_schema_common(tmplForm->tmplnamespace,
+						  SEPG_DB_SCHEMA__ADD_NAME |
+						  SEPG_DB_SCHEMA__REMOVE_NAME, true);
+
+	ReleaseSysCache(tuple);
+}
+
+/* ------------------------------------------------------------ *
+ *
+ * Pg_type related security hooks
+ *
+ * ------------------------------------------------------------ */
+Oid
 sepgsql_type_create(const char *typName, Oid typOid, Oid nspOid,
 					Oid inputProc, Oid outputProc, Oid recvProc, Oid sendProc,
 					Oid modinProc, Oid modoutProc, Oid analyzeProc)
@@ -1496,9 +1858,6 @@ sepgsql_type_drop(Oid typOid)
 	ReleaseSysCache(tuple);
 }
 
-
-
-
 /* ------------------------------------------------------------ *
  *
  * Misc system object related security hooks
@@ -1560,21 +1919,26 @@ sepgsql_sysobj_drop(const ObjectAddress *object)
 		break;
 
 	case TSParserRelationId:
+		sepgsql_ts_parser_drop(object->objectId);
 		break;
 
 	case TSDictionaryRelationId:
+		sepgsql_ts_dict_drop(object->objectId);
 		break;
 
 	case TSTemplateRelationId:
+		sepgsql_ts_template_drop(object->objectId);
 		break;
 
 	case TSConfigRelationId:
+		sepgsql_ts_config_drop(object->objectId);
 		break;
 
 	case AuthIdRelationId:
 		break;
 
 	case DatabaseRelationId:
+		sepgsql_database_drop(object->objectId);
 		break;
 
 	case TableSpaceRelationId:

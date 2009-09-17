@@ -347,6 +347,41 @@ sepgsql_trigger_alter(Oid relOid, const char *trigName);
 extern void
 sepgsql_trigger_drop(Oid relOid, const char *trigName);
 
+/* pg_ts_config */
+extern Oid
+sepgsql_ts_config_create(const char *cfgName, Oid nspOid);
+extern void
+sepgsql_ts_config_alter(Oid cfgOid, const char *newName);
+extern void
+sepgsql_ts_config_drop(Oid cfgOid);
+
+/* pg_ts_dict */
+extern Oid
+sepgsql_ts_dict_create(const char *dictName, Oid nspOid);
+extern void
+sepgsql_ts_dict_alter(Oid dictOid, const char *newName);
+extern void
+sepgsql_ts_dict_drop(Oid dictOid);
+
+/* pg_ts_parser */
+extern Oid
+sepgsql_ts_parser_create(const char *prsName, Oid nspOid,
+						 Oid startFn, Oid tokenFn, Oid sendFn,
+						 Oid headlineFn, Oid lextypeFn);
+extern void
+sepgsql_ts_parser_alter(Oid prsOid, const char *newName);
+extern void
+sepgsql_ts_parser_drop(Oid prsOid);
+
+/* pg_ts_templace */
+extern Oid
+sepgsql_ts_template_create(const char *tmplName, Oid nspOid,
+						   Oid initFn, Oid lexizeFn);
+extern void
+sepgsql_ts_template_alter(Oid tmplOid, const char *newName);
+extern void
+sepgsql_ts_template_drop(Oid tmplOid);
+
 /* pg_type */
 extern Oid
 sepgsql_type_create(const char *typName, Oid typOid, Oid nspOid,
@@ -478,15 +513,6 @@ extern void
 sepgsqlCheckFileRead(int fdesc, const char *filename);
 extern void
 sepgsqlCheckFileWrite(int fdesc, const char *filename);
-
-extern Oid
-sepgsqlCheckSysobjCreate(Oid relid, const char *auditName);
-extern void
-sepgsqlCheckSysobjGetattr(Oid relid, Oid secid, const char *auditName);
-extern void
-sepgsqlCheckSysobjSetattr(Oid relid, Oid secid, const char *auditName);
-extern void
-sepgsqlCheckSysobjDrop(const ObjectAddress *object);
 
 /*
  * label.c : security label management

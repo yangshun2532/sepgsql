@@ -111,9 +111,6 @@ get_ts_parser_func(DefElem *defel, int attnum)
 						func_signature_string(funcName, nargs, typeId),
 						format_type_be(retTypeId))));
 
-	/* SELinux checks db_procedure:{install} */
-	sepgsqlCheckProcedureInstall(procOid);
-
 	return ObjectIdGetDatum(procOid);
 }
 
@@ -175,6 +172,7 @@ DefineTSParser(List *names, List *parameters)
 	NameData	pname;
 	Oid			prsOid;
 	Oid			namespaceoid;
+	Oid			secid;
 
 	if (!superuser())
 		ereport(ERROR,
@@ -254,12 +252,22 @@ DefineTSParser(List *names, List *parameters)
 				(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
 				 errmsg("text search parser lextypes method is required")));
 
+	/* Permission checks */
+	secid = sepgsql_ts_parser_create(prsname, namespaceoid,
+				DatumGetObjectId(values[Anum_pg_ts_parser_prsstart - 1]),
+				DatumGetObjectId(values[Anum_pg_ts_parser_prstoken - 1]),
+				DatumGetObjectId(values[Anum_pg_ts_parser_prsend - 1]),
+				DatumGetObjectId(values[Anum_pg_ts_parser_prsheadline - 1]),
+				DatumGetObjectId(values[Anum_pg_ts_parser_prslextype - 1]));
+
 	/*
 	 * Looks good, insert
 	 */
 	prsRel = heap_open(TSParserRelationId, RowExclusiveLock);
 
 	tup = heap_form_tuple(prsRel->rd_att, values, nulls);
+	if (HeapTupleHasSecid(tup))
+		HeapTupleSetSecid(tup, secid);
 
 	prsOid = simple_heap_insert(prsRel, tup);
 
@@ -375,6 +383,9 @@ RenameTSParser(List *oldname, const char *newname)
 	rel = heap_open(TSParserRelationId, RowExclusiveLock);
 
 	prsId = TSParserGetPrsid(oldname, false);
+
+	/* SELinux checks */
+	sepgsql_ts_parser_alter(prsId, newname);
 
 	tup = SearchSysCacheCopy(TSPARSEROID,
 							 ObjectIdGetDatum(prsId),
@@ -507,6 +518,7 @@ DefineTSDictionary(List *names, List *parameters)
 	List	   *dictoptions = NIL;
 	Oid			dictOid;
 	Oid			namespaceoid;
+	Oid			secid;
 	AclResult	aclresult;
 	char	   *dictname;
 
@@ -518,6 +530,9 @@ DefineTSDictionary(List *names, List *parameters)
 	if (aclresult != ACLCHECK_OK)
 		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
 					   get_namespace_name(namespaceoid));
+
+	/* SELinux check */
+	secid = sepgsql_ts_dict_create(dictname, namespaceoid);
 
 	/*
 	 * loop over the definition list and extract the information we need.
@@ -567,6 +582,8 @@ DefineTSDictionary(List *names, List *parameters)
 	dictRel = heap_open(TSDictionaryRelationId, RowExclusiveLock);
 
 	tup = heap_form_tuple(dictRel->rd_att, values, nulls);
+	if (HeapTupleHasSecid(tup))
+		HeapTupleSetSecid(tup, secid);
 
 	dictOid = simple_heap_insert(dictRel, tup);
 
@@ -624,6 +641,9 @@ RenameTSDictionary(List *oldname, const char *newname)
 	if (aclresult != ACLCHECK_OK)
 		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
 					   get_namespace_name(namespaceOid));
+
+	/* SELinux checks */
+	sepgsql_ts_dict_alter(dictId, newname);
 
 	namestrcpy(&(((Form_pg_ts_dict) GETSTRUCT(tup))->dictname), newname);
 	simple_heap_update(rel, &tup->t_self, tup);
@@ -766,6 +786,9 @@ AlterTSDictionary(AlterTSDictionaryStmt *stmt)
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_TSDICTIONARY,
 					   NameListToString(stmt->dictname));
 
+	/* SELinux checks */
+	sepgsql_ts_dict_alter(dictId, NULL);
+
 	/* deserialize the existing set of options */
 	opt = SysCacheGetAttr(TSDICTOID, tup,
 						  Anum_pg_ts_dict_dictinitoption,
@@ -893,6 +916,8 @@ AlterTSDictionaryOwner(List *name, Oid newOwnerId)
 				aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
 							   get_namespace_name(namespaceOid));
 		}
+		/* SELinux checks */
+		sepgsql_ts_dict_alter(dictId, NULL);
 
 		form->dictowner = newOwnerId;
 
@@ -952,9 +977,6 @@ get_ts_template_func(DefElem *defel, int attnum)
 						func_signature_string(funcName, nargs, typeId),
 						format_type_be(retTypeId))));
 
-	/* SELinux checks db_procedure:{install} */
-	sepgsqlCheckProcedureInstall(procOid);
-
 	return ObjectIdGetDatum(procOid);
 }
 
@@ -1006,6 +1028,7 @@ DefineTSTemplate(List *names, List *parameters)
 	NameData	dname;
 	int			i;
 	Oid			dictOid;
+	Oid			dictSecid;
 	Oid			namespaceoid;
 	char	   *tmplname;
 
@@ -1061,6 +1084,11 @@ DefineTSTemplate(List *names, List *parameters)
 				(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
 				 errmsg("text search template lexize method is required")));
 
+	/* SELinux checks */
+	dictSecid = sepgsql_ts_template_create(tmplname, namespaceoid,
+						DatumGetObjectId(values[Anum_pg_ts_template_tmplinit - 1]),
+						DatumGetObjectId(values[Anum_pg_ts_template_tmpllexize - 1]));
+
 	/*
 	 * Looks good, insert
 	 */
@@ -1068,6 +1096,8 @@ DefineTSTemplate(List *names, List *parameters)
 	tmplRel = heap_open(TSTemplateRelationId, RowExclusiveLock);
 
 	tup = heap_form_tuple(tmplRel->rd_att, values, nulls);
+	if (HeapTupleHasSecid(tup))
+		HeapTupleSetSecid(tup, dictSecid);
 
 	dictOid = simple_heap_insert(tmplRel, tup);
 
@@ -1099,6 +1129,9 @@ RenameTSTemplate(List *oldname, const char *newname)
 	rel = heap_open(TSTemplateRelationId, RowExclusiveLock);
 
 	tmplId = TSTemplateGetTmplid(oldname, false);
+
+	/* Permission checks */
+	sepgsql_ts_template_alter(tmplId, newname);
 
 	tup = SearchSysCacheCopy(TSTEMPLATEOID,
 							 ObjectIdGetDatum(tmplId),
@@ -1342,6 +1375,7 @@ DefineTSConfiguration(List *names, List *parameters)
 	Oid			sourceOid = InvalidOid;
 	Oid			prsOid = InvalidOid;
 	Oid			cfgOid;
+	Oid			cfgSecid;
 	ListCell   *pl;
 
 	/* Convert list of names to a name and namespace */
@@ -1406,6 +1440,9 @@ DefineTSConfiguration(List *names, List *parameters)
 				(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
 				 errmsg("text search parser is required")));
 
+	/* SELinux checks */
+	cfgSecid = sepgsql_ts_config_create(cfgname, namespaceoid);
+
 	/*
 	 * Looks good, build tuple and insert
 	 */
@@ -1421,6 +1458,8 @@ DefineTSConfiguration(List *names, List *parameters)
 	cfgRel = heap_open(TSConfigRelationId, RowExclusiveLock);
 
 	tup = heap_form_tuple(cfgRel->rd_att, values, nulls);
+	if (HeapTupleHasSecid(tup))
+		HeapTupleSetSecid(tup, cfgSecid);
 
 	cfgOid = simple_heap_insert(cfgRel, tup);
 
@@ -1525,6 +1564,9 @@ RenameTSConfiguration(List *oldname, const char *newname)
 	aclresult = pg_namespace_aclcheck(namespaceOid, GetUserId(), ACL_CREATE);
 	aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
 				   get_namespace_name(namespaceOid));
+
+	/* permission checks  */
+	sepgsql_ts_config_alter(cfgId, newname);
 
 	namestrcpy(&(((Form_pg_ts_config) GETSTRUCT(tup))->cfgname), newname);
 	simple_heap_update(rel, &tup->t_self, tup);
@@ -1697,6 +1739,8 @@ AlterTSConfigurationOwner(List *name, Oid newOwnerId)
 				aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
 							   get_namespace_name(namespaceOid));
 		}
+		/* SELinux checks */
+		sepgsql_ts_config_alter(cfgId, NULL);
 
 		form->cfgowner = newOwnerId;
 
@@ -1733,6 +1777,9 @@ AlterTSConfiguration(AlterTSConfigurationStmt *stmt)
 	if (!pg_ts_config_ownercheck(HeapTupleGetOid(tup), GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_TSCONFIGURATION,
 					   NameListToString(stmt->cfgname));
+
+	/* SELinux checks */
+	sepgsql_ts_config_alter(HeapTupleGetOid(tup), NULL);
 
 	relMap = heap_open(TSConfigMapRelationId, RowExclusiveLock);
 
