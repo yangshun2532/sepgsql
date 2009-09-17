@@ -45,6 +45,7 @@
 #include "parser/parse_func.h"
 #include "parser/parse_oper.h"
 #include "parser/parse_type.h"
+#include "security/sepgsql.h"
 #include "utils/acl.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
@@ -433,9 +434,7 @@ AlterOperatorOwner_internal(Relation rel, Oid operOid, Oid newOwnerId)
 							   get_namespace_name(oprForm->oprnamespace));
 		}
 		/* SELinux permission check */
-		sepgsqlCheckSysobjSetattr(OperatorRelationId,
-								  HeapTupleGetSecid(tup),
-								  NameStr(oprForm->oprname));
+		sepgsql_operator_alter(operOid);
 
 		/*
 		 * Modify the owner --- okay to scribble on tup because it's a copy

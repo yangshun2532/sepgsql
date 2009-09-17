@@ -301,6 +301,8 @@ AlterForeignServerOwner(const char *name, Oid newOwnerId)
 				aclcheck_error(aclresult, ACL_KIND_FDW, fdw->fdwname);
 			}
 		}
+		/* SELinux permission checks */
+		sepgsql_foreign_server_alter(srvId);
 
 		form->srvowner = newOwnerId;
 
@@ -386,7 +388,7 @@ CreateForeignDataWrapper(CreateFdwStmt *stmt)
 		fdwvalidator = InvalidOid;
 
 	/* SELinux permission checks */
-	sepgsql_fdw_create(stmt->fdwname, fdwvalidator);
+	secid = sepgsql_fdw_create(stmt->fdwname, fdwvalidator);
 
 	values[Anum_pg_foreign_data_wrapper_fdwvalidator - 1] = fdwvalidator;
 
@@ -401,6 +403,8 @@ CreateForeignDataWrapper(CreateFdwStmt *stmt)
 		nulls[Anum_pg_foreign_data_wrapper_fdwoptions - 1] = true;
 
 	tuple = heap_form_tuple(rel->rd_att, values, nulls);
+	if (HeapTupleHasSecid(tuple))
+		HeapTupleSetSecid(tuple, secid);
 
 	fdwId = simple_heap_insert(rel, tuple);
 	CatalogUpdateIndexes(rel, tuple);
@@ -620,6 +624,7 @@ CreateForeignServer(CreateForeignServerStmt *stmt)
 	HeapTuple	tuple;
 	Oid			srvId;
 	Oid			ownerId;
+	Oid			secid;
 	AclResult	aclresult;
 	ObjectAddress myself;
 	ObjectAddress referenced;
@@ -646,6 +651,8 @@ CreateForeignServer(CreateForeignServerStmt *stmt)
 	aclresult = pg_foreign_data_wrapper_aclcheck(fdw->fdwid, ownerId, ACL_USAGE);
 	if (aclresult != ACLCHECK_OK)
 		aclcheck_error(aclresult, ACL_KIND_FDW, fdw->fdwname);
+
+	secid = sepgsql_foreign_server_create(stmt->fdwname);
 
 	/*
 	 * Insert tuple into pg_foreign_server.
@@ -687,6 +694,8 @@ CreateForeignServer(CreateForeignServerStmt *stmt)
 		nulls[Anum_pg_foreign_server_srvoptions - 1] = true;
 
 	tuple = heap_form_tuple(rel->rd_att, values, nulls);
+	if (HeapTupleHasSecid(tuple))
+		HeapTupleSetSecid(tuple, secid);
 
 	srvId = simple_heap_insert(rel, tuple);
 
@@ -742,6 +751,9 @@ AlterForeignServer(AlterForeignServerStmt *stmt)
 	if (!pg_foreign_server_ownercheck(srvId, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_FOREIGN_SERVER,
 					   stmt->servername);
+
+	/* SELinux permission checks */
+	sepgsql_foreign_server_alter(srvId);
 
 	memset(repl_val, 0, sizeof(repl_val));
 	memset(repl_null, false, sizeof(repl_null));

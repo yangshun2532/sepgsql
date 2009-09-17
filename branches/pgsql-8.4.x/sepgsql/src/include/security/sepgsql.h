@@ -272,6 +272,14 @@ sepgsql_cast_create(Oid sourceTypOid, Oid targetTypOid, Oid funcOid);
 extern void
 sepgsql_cast_drop(Oid castOid);
 
+/* pg_conversion */
+extern Oid
+sepgsql_conversion_create(const char *convName, Oid nspOid, Oid procOid);
+extern void
+sepgsql_conversion_alter(Oid convOid, const char *newName);
+extern void
+sepgsql_conversion_drop(Oid convOid);
+
 /* pg_foreign_data_wrapper */
 extern Oid
 sepgsql_fdw_create(const char *fdwName, Oid fdwValidator);
@@ -296,7 +304,7 @@ sepgsql_foreign_server_grant(Oid fsrvOid);
 extern Oid
 sepgsql_language_create(const char *langName, Oid handlerOid, Oid validatorOid);
 extern void
-sepgsql_language_alter(Oid langOid, const char *newName);
+sepgsql_language_alter(Oid langOid);
 extern void
 sepgsql_language_drop(Oid langOid);
 extern void
@@ -330,6 +338,14 @@ extern void
 sepgsql_operator_alter(Oid oprOid);
 extern void
 sepgsql_operator_drop(Oid oprOid);
+
+/* pg_trigger */
+extern void
+sepgsql_trigger_create(Oid relOid, const char *trigName, Oid procOid);
+extern void
+sepgsql_trigger_alter(Oid relOid, const char *trigName);
+extern void
+sepgsql_trigger_drop(Oid relOid, const char *trigName);
 
 /* pg_type */
 extern Oid

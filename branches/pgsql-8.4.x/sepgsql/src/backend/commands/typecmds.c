@@ -2690,7 +2690,6 @@ void
 AlterTypeNamespace(List *names, const char *newschema)
 {
 	TypeName   *typename;
-	HeapTuple	typtup;
 	Oid			typeOid;
 	Oid			nspOid;
 	Oid			elemOid;

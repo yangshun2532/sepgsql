@@ -735,6 +735,96 @@ sepgsql_cast_drop(Oid castOid)
 
 /* ------------------------------------------------------------ *
  *
+ * Pg_conversion related security hooks
+ *
+ * ------------------------------------------------------------ */
+Oid
+sepgsql_conversion_create(const char *convName, Oid nspOid, Oid procOid)
+{
+	sepgsql_sid_t	sid;
+
+	if (!sepgsqlIsEnabled())
+		return InvalidOid;
+
+	sid = sepgsqlGetDefaultTupleSecid(ConversionRelationId);
+	sepgsqlClientHasPerms(sid, SEPG_CLASS_DB_TUPLE,
+						  SEPG_DB_TUPLE__INSERT,
+						  convName, true);
+
+	/* db_schema:{add_name} */
+	sepgsql_schema_common(nspOid, SEPG_DB_SCHEMA__ADD_NAME, true);
+
+	/* db_procedure:{install} */
+	sepgsql_proc_common(procOid, SEPG_DB_PROCEDURE__INSTALL, true);
+
+	return sid.secid;
+}
+
+void
+sepgsql_conversion_alter(Oid convOid, const char *newName)
+{
+	Form_pg_conversion	convForm;
+	HeapTuple		tuple;
+	sepgsql_sid_t	sid;
+	uint16			tclass;
+
+	if (!sepgsqlIsEnabled())
+		return;
+
+	tuple = SearchSysCache(CONVOID,
+						   ObjectIdGetDatum(convOid),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "cache lookup failed for conversion %u", convOid);
+	convForm = (Form_pg_conversion) GETSTRUCT(tuple);
+
+	sid = sepgsqlGetTupleSecid(ConversionRelationId, tuple, &tclass);
+	sepgsqlClientHasPerms(sid, tclass,
+						  SEPG_DB_TUPLE__UPDATE,
+						  NameStr(convForm->conname), true);
+	if (newName)
+	{
+		Oid	nspOid = convForm->connamespace;
+
+		sepgsql_schema_common(nspOid,
+							  SEPG_DB_SCHEMA__ADD_NAME |
+							  SEPG_DB_SCHEMA__REMOVE_NAME, true);
+	}
+	ReleaseSysCache(tuple);
+}
+
+void
+sepgsql_conversion_drop(Oid convOid)
+{
+	Form_pg_conversion	convForm;
+	HeapTuple		tuple;
+	sepgsql_sid_t	sid;
+	uint16			tclass;
+
+	if (!sepgsqlIsEnabled())
+		return;
+
+	tuple = SearchSysCache(CONVOID,
+						   ObjectIdGetDatum(convOid),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "cache lookup failed for conversion %u", convOid);
+	convForm = (Form_pg_conversion) GETSTRUCT(tuple);
+
+	sid = sepgsqlGetTupleSecid(ConversionRelationId, tuple, &tclass);
+	sepgsqlClientHasPerms(sid, tclass,
+						  SEPG_DB_TUPLE__UPDATE,
+						  NameStr(convForm->conname), true);
+
+	/* db_schema:{remove_name} */
+	sepgsql_schema_common(convForm->connamespace,
+						  SEPG_DB_SCHEMA__REMOVE_NAME, true);
+
+	ReleaseSysCache(tuple);
+}
+
+/* ------------------------------------------------------------ *
+ *
  * Pg_foreign_data_wrapper related security hooks
  *
  * ------------------------------------------------------------ */
@@ -809,49 +899,147 @@ sepgsql_fdw_grant(Oid fdwOid)
  * Pg_foreign_server related security hooks
  *
  * ------------------------------------------------------------ */
+static bool
+sepgsql_foreign_server_common(Oid fsrvOid, uint32 required, bool abort)
+{
+	Form_pg_foreign_server	fsrvForm;
+	HeapTuple		tuple;
+	sepgsql_sid_t	sid;
+	uint16			tclass;
+	bool			rc;
+
+	tuple = SearchSysCache(FOREIGNSERVEROID,
+						   ObjectIdGetDatum(fsrvOid),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "cache lookup failed for foreign server %u", fsrvOid);
+	fsrvForm = (Form_pg_foreign_server) GETSTRUCT(tuple);
+
+	sid = sepgsqlGetTupleSecid(ForeignServerRelationId, tuple, &tclass);
+    rc = sepgsqlClientHasPerms(sid, tclass, required,
+							   NameStr(fsrvForm->srvname), abort);
+	ReleaseSysCache(tuple);
+
+	return rc;
+}
+
 Oid
 sepgsql_foreign_server_create(const char *fsrvName)
-{}
+{
+	sepgsql_sid_t	sid;
+
+	if (!sepgsqlIsEnabled())
+		return InvalidOid;
+
+	sid = sepgsqlGetDefaultTupleSecid(ForeignServerRelationId);
+	sepgsqlClientHasPerms(sid, SEPG_CLASS_DB_TUPLE,
+						  SEPG_DB_TUPLE__INSERT,
+						  fsrvName, true);
+
+	return sid.secid;
+}
 
 void
 sepgsql_foreign_server_alter(Oid fsrvOid)
-{}
+{
+	if (!sepgsqlIsEnabled())
+		return;
+
+	sepgsql_foreign_server_common(fsrvOid, SEPG_DB_TUPLE__UPDATE, true);
+}
 
 void
 sepgsql_foreign_server_drop(Oid fsrvOid)
-{}
+{
+	if (!sepgsqlIsEnabled())
+		return;
+
+	sepgsql_foreign_server_common(fsrvOid, SEPG_DB_TUPLE__DELETE, true);
+}
 
 void
 sepgsql_foreign_server_grant(Oid fsrvOid)
-{}
+{
+	if (!sepgsqlIsEnabled())
+		return;
+
+	sepgsql_foreign_server_common(fsrvOid, SEPG_DB_TUPLE__UPDATE, true);
+}
 
 /* ------------------------------------------------------------ *
  *
  * Pg_language related security hooks
  *
  * ------------------------------------------------------------ */
+static bool
+sepgsql_language_common(Oid langOid, uint32 required, bool abort)
+{
+	Form_pg_language	langForm;
+	HeapTuple		tuple;
+	sepgsql_sid_t	sid;
+	uint16			tclass;
+	bool			rc;
+
+	tuple = SearchSysCache(LANGOID,
+						   ObjectIdGetDatum(langOid),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "cache lookup failed for language %u", langOid);
+	langForm = (Form_pg_language) GETSTRUCT(tuple);
+
+	sid = sepgsqlGetTupleSecid(LanguageRelationId, tuple, &tclass);
+	rc = sepgsqlClientHasPerms(sid, tclass, required,
+							   NameStr(langForm->lanname), abort);
+
+	ReleaseSysCache(tuple);
+
+	return rc;
+}
+
 Oid
 sepgsql_language_create(const char *langName, Oid handlerOid, Oid validatorOid)
-{}
+{
+	sepgsql_sid_t	sid;
+
+	sid = sepgsqlGetDefaultTupleSecid(LanguageRelationId);
+	sepgsqlClientHasPerms(sid, SEPG_CLASS_DB_TUPLE,
+						  SEPG_DB_TUPLE__INSERT, langName, true);
+
+	/* db_procedure:{install} */
+	if (OidIsValid(handlerOid))
+		sepgsql_proc_common(handlerOid, SEPG_DB_PROCEDURE__INSTALL, true);
+	if (OidIsValid(validatorOid))
+		sepgsql_proc_common(validatorOid, SEPG_DB_PROCEDURE__INSTALL, true);
+
+	return sid.secid;
+}
 
 void
-sepgsql_language_alter(Oid langOid, const char *newName)
-{}
+sepgsql_language_alter(Oid langOid)
+{
+	if (!sepgsqlIsEnabled())
+		return;
+
+	sepgsql_language_common(langOid, SEPG_DB_TUPLE__UPDATE, true);
+}
 
 void
 sepgsql_language_drop(Oid langOid)
-{}
+{
+	if (!sepgsqlIsEnabled())
+		return;
+
+	sepgsql_language_common(langOid, SEPG_DB_TUPLE__DELETE, true);
+}
 
 void
 sepgsql_language_grant(Oid langOid)
-{}
+{
+	if (!sepgsqlIsEnabled())
+		return;
 
-
-
-
-
-
-
+	sepgsql_language_common(langOid, SEPG_DB_TUPLE__UPDATE, true);
+}
 
 /* ------------------------------------------------------------ *
  *
@@ -1070,9 +1258,9 @@ sepgsql_operator_common(Oid oprOid, uint32 required, bool abort)
 	oprForm = (Form_pg_operator) GETSTRUCT(tuple);
 
 	sid = sepgsqlGetTupleSecid(OperatorRelationId, tuple, &tclass);
-	sepgsqlClientHasPerms(sid, tclass,
-						  SEPG_DB_TUPLE__DELETE,
-						  NameStr(oprForm->oprname), abort);
+	rc = sepgsqlClientHasPerms(sid, tclass,
+							   SEPG_DB_TUPLE__DELETE,
+							   NameStr(oprForm->oprname), abort);
 
 	ReleaseSysCache(tuple);
 
@@ -1144,6 +1332,35 @@ sepgsql_operator_drop(Oid oprOid)
 		return;
 
 	sepgsql_operator_common(oprOid, SEPG_DB_TUPLE__DELETE, true);
+}
+
+/* ------------------------------------------------------------ *
+ *
+ * Pg_trigger related security hooks
+ *
+ * ------------------------------------------------------------ */
+void
+sepgsql_trigger_create(Oid relOid, const char *trigName, Oid procOid)
+{
+	/* db_table:{setattr} */
+	// sepgsql_relation_common(relOid, SEPG_DB_TABLE__SETATTR, true);
+
+	/* db_procedure:{install} */
+	sepgsql_proc_common(procOid, SEPG_DB_PROCEDURE__INSTALL, true);
+}
+
+void
+sepgsql_trigger_alter(Oid relOid, const char *trigName)
+{
+	/* db_table:{setattr} */
+	// sepgsql_relation_common(relOid, SEPG_DB_TABLE__SETATTR, true);
+}
+
+void
+sepgsql_trigger_drop(Oid relOid, const char *trigName)
+{
+	/* db_table:{setattr} */
+	// sepgsql_relation_common(relOid, SEPG_DB_TABLE__SETATTR, true);
 }
 
 /* ------------------------------------------------------------ *
@@ -1304,7 +1521,7 @@ sepgsql_sysobj_drop(const ObjectAddress *object)
 		break;
 
 	case ProcedureRelationId:
-		// sepgsql_proc_drop
+		sepgsql_proc_drop(object->objectId);
 		break;
 
 	case TypeRelationId:
@@ -1316,12 +1533,15 @@ sepgsql_sysobj_drop(const ObjectAddress *object)
 		break;
 
 	case ConversionRelationId:
+		sepgsql_conversion_drop(object->objectId);
 		break;
 
 	case LanguageRelationId:
+		sepgsql_language_drop(object->objectId);
 		break;
 
 	case OperatorRelationId:
+		sepgsql_operator_drop(object->objectId);
 		break;
 
 	case OperatorClassRelationId:
@@ -1365,6 +1585,7 @@ sepgsql_sysobj_drop(const ObjectAddress *object)
 		break;
 
 	case ForeignServerRelationId:
+		sepgsql_foreign_server_drop(object->objectId);
 		break;
 
 	case UserMappingRelationId:
