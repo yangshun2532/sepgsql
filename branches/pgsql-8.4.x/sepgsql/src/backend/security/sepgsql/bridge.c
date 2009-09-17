@@ -735,6 +735,126 @@ sepgsql_cast_drop(Oid castOid)
 
 /* ------------------------------------------------------------ *
  *
+ * Pg_foreign_data_wrapper related security hooks
+ *
+ * ------------------------------------------------------------ */
+static bool
+sepgsql_fdw_common(Oid fdwOid, uint32 required, bool abort)
+{
+	Form_pg_foreign_data_wrapper	fdwForm;
+	HeapTuple		tuple;
+	sepgsql_sid_t	sid;
+	uint16			tclass;
+	bool			rc;
+
+	tuple = SearchSysCache(FOREIGNDATAWRAPPEROID,
+						   ObjectIdGetDatum(fdwOid),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "cache lookup failed for FDW: %u", fdwOid);
+	fdwForm = (Form_pg_foreign_data_wrapper) GETSTRUCT(tuple);
+
+	sid = sepgsqlGetTupleSecid(ForeignDataWrapperRelationId, tuple, &tclass);
+	rc = sepgsqlClientHasPerms(sid, tclass, required,
+							   NameStr(fdwForm->fdwname), abort);
+	ReleaseSysCache(tuple);
+
+	return rc;
+}
+
+Oid
+sepgsql_fdw_create(const char *fdwName, Oid fdwValidator)
+{
+	sepgsql_sid_t	sid;
+
+	if (!sepgsqlIsEnabled())
+		return InvalidOid;
+
+	sid = sepgsqlGetDefaultTupleSecid(ForeignDataWrapperRelationId);
+	sepgsqlClientHasPerms(sid, SEPG_CLASS_DB_TUPLE,
+						  SEPG_DB_TUPLE__INSERT,
+						  fdwName, true);
+
+	/* db_procedure:{install} */
+	if (OidIsValid(fdwValidator))
+		sepgsql_proc_common(fdwValidator, SEPG_DB_PROCEDURE__INSTALL, true);
+
+	return sid.secid;
+}
+
+void
+sepgsql_fdw_alter(Oid fdwOid, Oid newValidator)
+{
+	sepgsql_fdw_common(fdwOid, SEPG_DB_TUPLE__UPDATE, true);
+
+	/* db_procedure:{install} */
+	if (OidIsValid(newValidator))
+		sepgsql_proc_common(newValidator, SEPG_DB_PROCEDURE__INSTALL, true);
+}
+
+void
+sepgsql_fdw_drop(Oid fdwOid)
+{
+	sepgsql_fdw_common(fdwOid, SEPG_DB_TUPLE__DELETE, true);
+}
+
+void
+sepgsql_fdw_grant(Oid fdwOid)
+{
+	sepgsql_fdw_common(fdwOid, SEPG_DB_TUPLE__UPDATE, true);
+}
+
+/* ------------------------------------------------------------ *
+ *
+ * Pg_foreign_server related security hooks
+ *
+ * ------------------------------------------------------------ */
+Oid
+sepgsql_foreign_server_create(const char *fsrvName)
+{}
+
+void
+sepgsql_foreign_server_alter(Oid fsrvOid)
+{}
+
+void
+sepgsql_foreign_server_drop(Oid fsrvOid)
+{}
+
+void
+sepgsql_foreign_server_grant(Oid fsrvOid)
+{}
+
+/* ------------------------------------------------------------ *
+ *
+ * Pg_language related security hooks
+ *
+ * ------------------------------------------------------------ */
+Oid
+sepgsql_language_create(const char *langName, Oid handlerOid, Oid validatorOid)
+{}
+
+void
+sepgsql_language_alter(Oid langOid, const char *newName)
+{}
+
+void
+sepgsql_language_drop(Oid langOid)
+{}
+
+void
+sepgsql_language_grant(Oid langOid)
+{}
+
+
+
+
+
+
+
+
+/* ------------------------------------------------------------ *
+ *
  * Pg_opclass related security hooks
  *
  * ------------------------------------------------------------ */
@@ -1241,6 +1361,7 @@ sepgsql_sysobj_drop(const ObjectAddress *object)
 		break;
 
 	case ForeignDataWrapperRelationId:
+		sepgsql_fdw_drop(object->objectId);
 		break;
 
 	case ForeignServerRelationId:
