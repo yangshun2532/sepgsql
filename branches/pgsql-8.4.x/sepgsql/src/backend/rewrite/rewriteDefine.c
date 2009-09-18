@@ -27,6 +27,7 @@
 #include "rewrite/rewriteDefine.h"
 #include "rewrite/rewriteManip.h"
 #include "rewrite/rewriteSupport.h"
+#include "security/sepgsql.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/inval.h"
@@ -265,6 +266,9 @@ DefineQueryRewrite(char *rulename,
 	if (!pg_class_ownercheck(event_relid, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
 					   RelationGetRelationName(event_relation));
+
+	/* SELinux checks */
+	sepgsql_rule_create(event_relid, rulename);
 
 	/*
 	 * No rule actions that modify OLD or NEW

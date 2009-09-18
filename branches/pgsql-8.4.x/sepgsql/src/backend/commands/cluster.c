@@ -715,7 +715,7 @@ make_new_heap(Oid OIDOldHeap, const char *NewName, Oid NewTableSpace)
 										  ONCOMMIT_NOOP,
 										  reloptions,
 										  allowSystemTableMods,
-										  sepgsqlCopyTableColumns(OldHeap));
+										  sepgsql_relation_copy(OldHeap));
 
 	ReleaseSysCache(tuple);
 

@@ -347,6 +347,8 @@ currtid_byreloid(PG_FUNCTION_ARGS)
 	if (aclresult != ACLCHECK_OK)
 		aclcheck_error(aclresult, ACL_KIND_CLASS,
 					   RelationGetRelationName(rel));
+	/* SELinux checks */
+	sepgsql_relation_get_transaction_id(RelationGetRelid(rel));
 
 	if (rel->rd_rel->relkind == RELKIND_VIEW)
 		return currtid_for_view(rel, tid);
@@ -377,6 +379,8 @@ currtid_byrelname(PG_FUNCTION_ARGS)
 	if (aclresult != ACLCHECK_OK)
 		aclcheck_error(aclresult, ACL_KIND_CLASS,
 					   RelationGetRelationName(rel));
+	/* SELinux checks */
+	sepgsql_relation_get_transaction_id(RelationGetRelid(rel));
 
 	if (rel->rd_rel->relkind == RELKIND_VIEW)
 		return currtid_for_view(rel, tid);

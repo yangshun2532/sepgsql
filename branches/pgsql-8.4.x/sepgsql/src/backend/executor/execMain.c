@@ -2982,9 +2982,10 @@ OpenIntoRel(QueryDesc *queryDesc)
 		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
 					   get_namespace_name(namespaceId));
 
-	/* SELinux checks db_table:{create} and db_column:{create} */
-	secLabels = sepgsqlCreateTableColumns(NULL, intoName, namespaceId,
-										  queryDesc->tupDesc, RELKIND_RELATION);
+	/* SELinux checks */
+	secLabels = sepgsql_relation_create(intoName, RELKIND_RELATION,
+										queryDesc->tupDesc,
+										namespaceId, NULL, NIL);
 
 	/*
 	 * Select tablespace to use.  If not specified, use default tablespace

@@ -201,9 +201,8 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 	else
 		namespaceid = PG_TOAST_NAMESPACE;
 
-	secLabels = sepgsqlCreateTableColumns(NULL,
-										  toast_relname, namespaceid,
-										  tupdesc, RELKIND_TOASTVALUE);
+	secLabels = sepgsql_relation_create(toast_relname, RELKIND_TOASTVALUE,
+										tupdesc, namespaceid, NULL, NIL);
 
 	toast_relid = heap_create_with_catalog(toast_relname,
 										   namespaceid,
@@ -260,7 +259,7 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 							   BTREE_AM_OID,
 							   rel->rd_rel->reltablespace,
 							   classObjectId, coloptions, (Datum) 0,
-							   true, false, true, false, false);
+							   InvalidOid, true, false, true, false, false);
 
 	/*
 	 * Store the toast table's OID in the parent relation's pg_class row

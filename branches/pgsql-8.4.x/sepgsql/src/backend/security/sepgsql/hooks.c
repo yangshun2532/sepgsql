@@ -38,7 +38,7 @@
 /* ------------------------------------------------------------ *
  *   Hooks corresponding to db_column object class
  * ------------------------------------------------------------ */
-
+#if 0
 /*
  * NOTE: db_column:{create} is checked on sepgsqlCreateTableColumns()
  *       which is invoked on CREATE TABLE statement.
@@ -342,7 +342,7 @@ void sepgsqlCheckSequenceSetValue(Oid seqOid)
 {
 	checkTableCommon(seqOid, SEPG_DB_SEQUENCE__SET_VALUE);
 }
-
+#endif
 /* ------------------------------------------------------------ *
  *   Hooks corresponding to db_procedure object class
  * ------------------------------------------------------------ */

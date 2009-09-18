@@ -142,7 +142,7 @@ LockTableRecurse(Oid reloid, RangeVar *rv,
 						RelationGetRelationName(rel))));
 
 	/* SELinux: check db_table:{lock} permission */
-	sepgsqlCheckTableLock(reloid);
+	sepgsql_relation_lock(reloid);
 
 	/*
 	 * If requested, recurse to children.  We use find_inheritance_children
