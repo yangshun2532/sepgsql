@@ -1026,6 +1026,9 @@ sepgsql_index_create(Oid relOid, Oid nspOid, bool check_rights)
 void
 sepgsql_sequence_get_value(Oid seqOid)
 {
+	if (!sepgsqlIsEnabled())
+		return;
+
 	Assert(get_rel_relkind(seqOid) == RELKIND_SEQUENCE);
 
 	sepgsql_relation_common(seqOid, SEPG_DB_SEQUENCE__GET_VALUE, true);
@@ -1034,6 +1037,9 @@ sepgsql_sequence_get_value(Oid seqOid)
 void
 sepgsql_sequence_next_value(Oid seqOid)
 {
+	if (!sepgsqlIsEnabled())
+		return;
+
 	Assert(get_rel_relkind(seqOid) == RELKIND_SEQUENCE);
 
 	sepgsql_relation_common(seqOid, SEPG_DB_SEQUENCE__NEXT_VALUE, true);
@@ -1042,6 +1048,9 @@ sepgsql_sequence_next_value(Oid seqOid)
 void
 sepgsql_sequence_set_value(Oid seqOid)
 {
+	if (!sepgsqlIsEnabled())
+		return;
+
 	Assert(get_rel_relkind(seqOid) == RELKIND_SEQUENCE);
 
 	sepgsql_relation_common(seqOid, SEPG_DB_SEQUENCE__SET_VALUE, true);
@@ -1078,7 +1087,7 @@ sepgsql_proc_common(Oid procOid, uint32 required, bool abort)
 }
 
 Oid
-sepgsql_proc_create(const char *procName, Oid procOid,
+sepgsql_proc_create(const char *procName, HeapTuple oldTup,
 					Oid nspOid, Oid langOid, DefElem *newLabel)
 {
 	sepgsql_sid_t	sid;
@@ -1089,7 +1098,7 @@ sepgsql_proc_create(const char *procName, Oid procOid,
 	if (!sepgsqlIsEnabled())
 		return InvalidOid;
 
-	if (!OidIsValid(procOid))
+	if (!HeapTupleIsValid(oldTup))
 	{
 		/* create a new function */
 		required = SEPG_DB_PROCEDURE__CREATE;
@@ -1105,18 +1114,17 @@ sepgsql_proc_create(const char *procName, Oid procOid,
 	{
 		/* replace an existing function, without any label */
 		required = SEPG_DB_PROCEDURE__SETATTR;
-		sid = sepgsqlGetSysobjSecid(ProcedureRelationId, procOid, 0, NULL);
+		sid = sepgsqlGetTupleSecid(ProcedureRelationId, oldTup, NULL);
 	}
 	else
 	{
 		/* replace an existing function, with relabeling */
-		sepgsql_proc_common(procOid,
+		sepgsql_proc_common(HeapTupleGetOid(oldTup),
 							SEPG_DB_PROCEDURE__SETATTR |
 							SEPG_DB_PROCEDURE__RELABELFROM, true);
 
 		required = SEPG_DB_PROCEDURE__RELABELTO;
-		sid.relid = ProcedureRelationId;
-		sid.secid = securityTransSecLabelIn(sid.relid, strVal(newLabel->arg));
+		sid = sepgsqlGetTupleSecid(ProcedureRelationId, oldTup, NULL);
 	}
 
 	/* Procedural language is trusted? */
@@ -1569,12 +1577,18 @@ sepgsql_fdw_alter(Oid fdwOid, Oid newValidator)
 void
 sepgsql_fdw_drop(Oid fdwOid)
 {
+	if (!sepgsqlIsEnabled())
+		return;
+
 	sepgsql_fdw_common(fdwOid, SEPG_DB_TUPLE__DELETE, true);
 }
 
 void
 sepgsql_fdw_grant(Oid fdwOid)
 {
+	if (!sepgsqlIsEnabled())
+		return;
+
 	sepgsql_fdw_common(fdwOid, SEPG_DB_TUPLE__UPDATE, true);
 }
 
@@ -2049,6 +2063,9 @@ sepgsql_rule_drop(Oid relOid, const char *ruleName)
 void
 sepgsql_trigger_create(Oid relOid, const char *trigName, Oid procOid)
 {
+	if (!sepgsqlIsEnabled())
+		return;
+
 	/* db_table:{setattr} */
 	sepgsql_relation_common(relOid, SEPG_DB_TABLE__SETATTR, true);
 
@@ -2059,6 +2076,9 @@ sepgsql_trigger_create(Oid relOid, const char *trigName, Oid procOid)
 void
 sepgsql_trigger_alter(Oid relOid, const char *trigName)
 {
+	if (!sepgsqlIsEnabled())
+		return;
+
 	/* db_table:{setattr} */
 	sepgsql_relation_common(relOid, SEPG_DB_TABLE__SETATTR, true);
 }
@@ -2066,6 +2086,9 @@ sepgsql_trigger_alter(Oid relOid, const char *trigName)
 void
 sepgsql_trigger_drop(Oid relOid, const char *trigName)
 {
+	if (!sepgsqlIsEnabled())
+		return;
+
 	/* db_table:{setattr} */
 	sepgsql_relation_common(relOid, SEPG_DB_TABLE__SETATTR, true);
 }
@@ -2442,7 +2465,7 @@ sepgsql_ts_template_drop(Oid tmplOid)
  *
  * ------------------------------------------------------------ */
 Oid
-sepgsql_type_create(const char *typName, Oid typOid, Oid nspOid,
+sepgsql_type_create(const char *typName, HeapTuple oldTup, Oid nspOid,
 					Oid inputProc, Oid outputProc, Oid recvProc, Oid sendProc,
 					Oid modinProc, Oid modoutProc, Oid analyzeProc)
 {
@@ -2452,14 +2475,14 @@ sepgsql_type_create(const char *typName, Oid typOid, Oid nspOid,
 	if (!sepgsqlIsEnabled())
 		return InvalidOid;
 
-	if (!OidIsValid(typOid))
+	if (!HeapTupleIsValid(oldTup))
 	{
 		sid = sepgsqlGetDefaultTupleSecid(TypeRelationId);
 		required = SEPG_DB_TUPLE__INSERT;
 	}
 	else
 	{
-		sid = sepgsqlGetSysobjSecid(TypeRelationId, typOid, 0, NULL);
+		sid = sepgsqlGetTupleSecid(TypeRelationId, oldTup, NULL);
 		required = SEPG_DB_TUPLE__UPDATE;
 	}
 	sepgsqlClientHasPerms(sid, SEPG_CLASS_DB_TUPLE,
@@ -2578,9 +2601,6 @@ sepgsql_type_drop(Oid typOid)
 void
 sepgsql_sysobj_drop(const ObjectAddress *object)
 {
-	if (!sepgsqlIsEnabled())
-		return;
-
 	switch (object->classId)
 	{
 	case RelationRelationId:
