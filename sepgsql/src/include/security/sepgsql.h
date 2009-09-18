@@ -44,6 +44,7 @@ enum SepgsqlClasses
 	SEPG_CLASS_DB_SCHEMA,
 	SEPG_CLASS_DB_TABLE,
 	SEPG_CLASS_DB_SEQUENCE,
+	SEPG_CLASS_DB_VIEW,
 	SEPG_CLASS_DB_PROCEDURE,
 	SEPG_CLASS_DB_COLUMN,
 	SEPG_CLASS_DB_TUPLE,
@@ -117,6 +118,14 @@ enum SepgsqlClasses
 #define SEPG_DB_SEQUENCE__GET_VALUE			(1<<6)
 #define SEPG_DB_SEQUENCE__NEXT_VALUE		(1<<7)
 #define SEPG_DB_SEQUENCE__SET_VALUE			(1<<8)
+
+#define SEPG_DB_VIEW__CREATE				(SEPG_DB_DATABASE__CREATE)
+#define SEPG_DB_VIEW__DROP					(SEPG_DB_DATABASE__DROP)
+#define SEPG_DB_VIEW__GETATTR				(SEPG_DB_DATABASE__GETATTR)
+#define SEPG_DB_VIEW__SETATTR				(SEPG_DB_DATABASE__SETATTR)
+#define SEPG_DB_VIEW__RELABELFROM			(SEPG_DB_DATABASE__RELABELFROM)
+#define SEPG_DB_VIEW__RELABELTO				(SEPG_DB_DATABASE__RELABELTO)
+#define SEPG_DB_VIEW__EXPAND				(1<<6)
 
 #define SEPG_DB_PROCEDURE__CREATE			(SEPG_DB_DATABASE__CREATE)
 #define SEPG_DB_PROCEDURE__DROP				(SEPG_DB_DATABASE__DROP)
@@ -254,8 +263,8 @@ extern void
 sepgsql_relation_lock(Oid relOid);
 extern void
 sepgsql_view_replace(Oid viewOid);
-extern Oid
-sepgsql_index_create(const char *indexName, Oid indexNsp, bool check_rights);
+extern void
+sepgsql_index_create(Oid relOid, Oid nspOid, bool check_rights);
 extern void
 sepgsql_sequence_get_value(Oid seqOid);
 extern void
@@ -494,54 +503,6 @@ sepgsqlInitialize(void);
 /*
  * hooks.c : routines to check certain permissions
  */
-
-extern void
-sepgsqlCheckTableDrop(Oid table_oid);
-extern void
-sepgsqlCheckTableSetattr(Oid table_oid);
-extern Oid
-sepgsqlCheckTableRelabel(Oid table_oid, DefElem *new_label);
-extern void
-sepgsqlCheckTableLock(Oid table_oid);
-extern void
-sepgsqlCheckTableTruncate(Relation rel);
-extern void
-sepgsqlCheckTableReference(Relation rel, int16 *attnums, int natts);
-
-extern void
-sepgsqlCheckSequenceGetValue(Oid seqOid);
-extern void
-sepgsqlCheckSequenceNextValue(Oid seqOid);
-extern void
-sepgsqlCheckSequenceSetValue(Oid seqOid);
-
-extern Oid
-sepgsqlCheckColumnCreate(Oid relOid, const char *attname, DefElem *newLabel);
-extern void
-sepgsqlCheckColumnDrop(Oid relOid, AttrNumber attno);
-extern void
-sepgsqlCheckColumnSetattr(Oid relOid, AttrNumber attno);
-extern Oid
-sepgsqlCheckColumnRelabel(Oid relOid, AttrNumber attno, DefElem *newLabel);
-
-extern Oid
-sepgsqlCheckProcedureCreate(const char *procName, Oid procOid,
-                            Oid procNsp, Oid procLang, DefElem *newLabel);
-extern void
-sepgsqlCheckProcedureDrop(Oid procOid);
-extern void
-sepgsqlCheckProcedureSetattr(Oid procOid);
-extern Oid
-sepgsqlCheckProcedureRelabel(Oid procOid, DefElem *newLabel);
-extern void
-sepgsqlCheckProcedureExecute(Oid procOid);
-extern void
-sepgsqlCheckProcedureInstall(Oid procOid);
-extern bool
-sepgsqlHintProcedureInlined(HeapTuple protup);
-extern void
-sepgsqlCheckProcedureEntrypoint(FmgrInfo *flinfo, HeapTuple protup);
-
 extern void
 sepgsqlCheckBlobCreate(Relation rel, HeapTuple lotup);
 extern void
@@ -580,6 +541,7 @@ extern sepgsql_sid_t sepgsqlGetDefaultSchemaSecid(Oid database_oid);
 extern sepgsql_sid_t sepgsqlGetDefaultSchemaTempSecid(Oid database_oid);
 extern sepgsql_sid_t sepgsqlGetDefaultTableSecid(Oid namespace_oid);
 extern sepgsql_sid_t sepgsqlGetDefaultSequenceSecid(Oid namespace_oid);
+extern sepgsql_sid_t sepgsqlGetDefaultViewSecid(Oid namespace_oid);
 extern sepgsql_sid_t sepgsqlGetDefaultProcedureSecid(Oid namespace_oid);
 extern sepgsql_sid_t sepgsqlGetDefaultColumnSecid(Oid table_oid);
 extern sepgsql_sid_t sepgsqlGetDefaultTupleSecid(Oid table_oid);

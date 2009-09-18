@@ -138,7 +138,6 @@ DefineIndex(RangeVar *heapRelation,
 	Relation	pg_index;
 	HeapTuple	indexTuple;
 	Form_pg_index indexForm;
-	Oid			indexSecid;
 	int			i;
 
 	/*
@@ -261,8 +260,7 @@ DefineIndex(RangeVar *heapRelation,
 	}
 
 	/* SELinux checks */
-	indexSecid = sepgsql_index_create(indexRelationName,
-									  namespaceId, check_rights);
+	sepgsql_index_create(relationId, namespaceId, check_rights);
 
 	/*
 	 * look up the access method, verify it can handle the requested features
@@ -453,7 +451,7 @@ DefineIndex(RangeVar *heapRelation,
 		indexRelationId =
 			index_create(relationId, indexRelationName, indexRelationId,
 					  indexInfo, accessMethodId, tablespaceId, classObjectId,
-						 coloptions, reloptions, indexSecid, primary, isconstraint,
+						 coloptions, reloptions, primary, isconstraint,
 						 allowSystemTableMods, skip_build, concurrent);
 
 		return;					/* We're done, in the standard case */
@@ -471,7 +469,7 @@ DefineIndex(RangeVar *heapRelation,
 	indexRelationId =
 		index_create(relationId, indexRelationName, indexRelationId,
 					 indexInfo, accessMethodId, tablespaceId, classObjectId,
-					 coloptions, reloptions, indexSecid, primary, isconstraint,
+					 coloptions, reloptions, primary, isconstraint,
 					 allowSystemTableMods, true, concurrent);
 
 	/*
