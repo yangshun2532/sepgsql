@@ -509,7 +509,6 @@ index_create(Oid heapRelationId,
 			 Oid *classObjectId,
 			 int16 *coloptions,
 			 Datum reloptions,
-			 Oid indexSecid,
 			 bool isprimary,
 			 bool isconstraint,
 			 bool allow_system_table_mods,
@@ -655,7 +654,7 @@ index_create(Oid heapRelationId,
 	 */
 	InsertPgClassTuple(pg_class, indexRelation,
 					   RelationGetRelid(indexRelation),
-					   reloptions, indexSecid);
+					   reloptions, InvalidOid);
 
 	/* done with pg_class */
 	heap_close(pg_class, RowExclusiveLock);

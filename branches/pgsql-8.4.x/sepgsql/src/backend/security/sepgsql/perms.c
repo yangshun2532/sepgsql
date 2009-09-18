@@ -161,6 +161,19 @@ static struct
 		}
 	},
 	{
+		"db_view",				SEPG_CLASS_DB_VIEW,
+		{
+			{ "create",			SEPG_DB_VIEW__CREATE },
+			{ "drop",			SEPG_DB_VIEW__DROP },
+			{ "getattr",		SEPG_DB_VIEW__GETATTR },
+			{ "setattr",		SEPG_DB_VIEW__SETATTR },
+			{ "relabelfrom",	SEPG_DB_VIEW__RELABELFROM },
+			{ "relabelto",		SEPG_DB_VIEW__RELABELTO },
+			{ "expand",			SEPG_DB_VIEW__EXPAND },
+			{ NULL, 0UL },
+		}
+	},
+	{
 		"db_procedure",			SEPG_CLASS_DB_PROCEDURE,
 		{
 			{ "create",			SEPG_DB_PROCEDURE__CREATE },
@@ -347,6 +360,7 @@ sepgsqlFileObjectClass(int fdesc)
 	return SEPG_CLASS_FILE;
 }
 
+#if 0
 /*
  * sepgsqlTupleObjectClass
  *
@@ -395,8 +409,6 @@ sepgsqlTupleObjectClass(Oid relid, HeapTuple tuple)
 	}
 	return SEPG_CLASS_DB_TUPLE;
 }
-
-#if 0
 
 /*
  * sepgsqlTupleNamespace

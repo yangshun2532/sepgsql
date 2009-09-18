@@ -597,17 +597,6 @@ sepgsql_relation_create(const char *relName, char relkind, TupleDesc tupDesc,
 	if (!sepgsqlIsEnabled())
 		return NULL;
 
-	/*
-	 * The secLabels array stores security identifiers to be assigned
-	 * on the new table and columns.
-	 * 
-	 * secLabels[0] is security identifier of the table.
-	 * secLabels[attnum - FirstLowInvalidHeapAttributeNumber]
-	 *   is security identifier of columns (if necessary).
-	 */
-	secLabels = palloc0(sizeof(Oid) * (tupDesc->natts
-							- FirstLowInvalidHeapAttributeNumber));
-
 	switch (relkind)
 	{
 	case RELKIND_RELATION:
@@ -640,6 +629,25 @@ sepgsql_relation_create(const char *relName, char relkind, TupleDesc tupDesc,
 							  relName, true);
 		break;
 
+	case RELKIND_VIEW:
+		if (!relLabel)
+			relsid = sepgsqlGetDefaultViewSecid(nspOid);
+		else
+		{
+			relsid.relid = RelationRelationId;
+			relsid.secid = securityTransSecLabelIn(relsid.relid,
+												   strVal(relLabel->arg));
+		}
+		sepgsqlClientHasPerms(relsid,
+							  SEPG_CLASS_DB_VIEW,
+							  SEPG_DB_VIEW__CREATE,
+							  relName, true);
+		break;
+
+	case RELKIND_INDEX:
+		/* no need to assign security context and check it */
+		return NULL;
+
 	default:
 		/* Any other relkind is handled as misc system object */
 		if (!relLabel)
@@ -651,17 +659,25 @@ sepgsql_relation_create(const char *relName, char relkind, TupleDesc tupDesc,
 			relsid.secid = securityTransSecLabelIn(relsid.relid,
 												   strVal(relLabel->arg));
 		}
-
 		/* TOAST is an internal stuff, so checks are bypassed */
 		if (relkind != RELKIND_TOASTVALUE)
-		{
 			sepgsqlClientHasPerms(relsid,
 								  SEPG_CLASS_DB_TUPLE,
 								  SEPG_DB_TUPLE__INSERT,
 								  relName, true);
-		}
 		break;
 	}
+
+	/*
+	 * The secLabels array stores security identifiers to be assigned
+	 * on the new table and columns.
+	 * 
+	 * secLabels[0] is security identifier of the table.
+	 * secLabels[attnum - FirstLowInvalidHeapAttributeNumber]
+	 *   is security identifier of columns (if necessary).
+	 */
+	secLabels = palloc0(sizeof(Oid) * (tupDesc->natts
+							- FirstLowInvalidHeapAttributeNumber));
 
 	/* relation's security identifier to be assigned on */
 	secLabels[0] = relsid.secid;
@@ -991,24 +1007,20 @@ sepgsql_view_replace(Oid viewOid)
 	sepgsql_relation_common(viewOid, SEPG_DB_TABLE__SETATTR, true);
 }
 
-Oid
-sepgsql_index_create(const char *indexName, Oid indexNsp, bool check_rights)
+void
+sepgsql_index_create(Oid relOid, Oid nspOid, bool check_rights)
 {
-	sepgsql_sid_t	sid;
-
 	if (!sepgsqlIsEnabled())
 		return;
 
-	sid = sepgsqlGetDefaultTupleSecid(RelationRelationId);
 	if (check_rights)
 	{
-		sepgsqlClientHasPerms(sid, SEPG_CLASS_DB_TUPLE,
-							  SEPG_DB_TUPLE__INSERT,
-							  indexName, true);
+		/* db_table:{setattr} */
+		sepgsql_relation_common(relOid, SEPG_DB_TABLE__SETATTR, true);
+
 		/* db_schema:{add_name} */
-		sepgsql_schema_common(indexNsp, SEPG_DB_SCHEMA__ADD_NAME, true);
+		sepgsql_schema_common(nspOid, SEPG_DB_SCHEMA__ADD_NAME, true);
 	}
-	return sid.secid;
 }
 
 void
