@@ -49,6 +49,7 @@
 #include "parser/parse_type.h"
 #include "parser/parse_utilcmd.h"
 #include "rewrite/rewriteManip.h"
+#include "security/sepgsql.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
@@ -565,6 +566,8 @@ transformInhRelation(ParseState *pstate, CreateStmtContext *cxt,
 	if (aclresult != ACLCHECK_OK)
 		aclcheck_error(aclresult, ACL_KIND_CLASS,
 					   RelationGetRelationName(relation));
+	/* SELinux checks */
+	sepgsql_relation_copy_definition(RelationGetRelid(relation));
 
 	tupleDesc = RelationGetDescr(relation);
 	constr = tupleDesc->constr;

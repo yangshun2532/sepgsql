@@ -28,6 +28,7 @@
 #include "rewrite/rewriteDefine.h"
 #include "rewrite/rewriteManip.h"
 #include "rewrite/rewriteSupport.h"
+#include "security/sepgsql.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
@@ -165,6 +166,9 @@ DefineVirtualRelation(const RangeVar *relation, List *tlist, bool replace)
 		if (!pg_class_ownercheck(viewOid, GetUserId()))
 			aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
 						   RelationGetRelationName(rel));
+
+		/* SELinux checks */
+		sepgsql_view_replace(viewOid);
 
 		/* Also check it's not in use already */
 		CheckTableNotInUse(rel, "CREATE OR REPLACE VIEW");

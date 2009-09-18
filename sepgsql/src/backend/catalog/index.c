@@ -82,7 +82,7 @@ static TupleDesc ConstructTupleDescriptor(Relation heapRelation,
 						 Oid *classObjectId);
 static void InitializeAttributeOids(Relation indexRelation,
 						int numatts, Oid indexoid);
-static void AppendAttributeTuples(Relation indexRelation, int numatts, Oid *secLabels);
+static void AppendAttributeTuples(Relation indexRelation, int numatts);
 static void UpdateIndexRelation(Oid indexoid, Oid heapoid,
 					IndexInfo *indexInfo,
 					Oid *classOids,
@@ -324,12 +324,11 @@ InitializeAttributeOids(Relation indexRelation,
  * ----------------------------------------------------------------
  */
 static void
-AppendAttributeTuples(Relation indexRelation, int numatts, Oid *secLabels)
+AppendAttributeTuples(Relation indexRelation, int numatts)
 {
 	Relation	pg_attribute;
 	CatalogIndexState indstate;
 	TupleDesc	indexTupDesc;
-	Oid			attsid = InvalidOid;
 	int			i;
 
 	/*
@@ -353,11 +352,8 @@ AppendAttributeTuples(Relation indexRelation, int numatts, Oid *secLabels)
 		Assert(indexTupDesc->attrs[i]->attnum == i + 1);
 		Assert(indexTupDesc->attrs[i]->attcacheoff == -1);
 
-		if (secLabels)
-			attsid = secLabels[i - FirstLowInvalidHeapAttributeNumber];
-
 		InsertPgAttributeTuple(pg_attribute, indexTupDesc->attrs[i],
-							   indstate, attsid);
+							   indstate, InvalidOid);
 	}
 
 	CatalogCloseIndexes(indstate);
@@ -513,6 +509,7 @@ index_create(Oid heapRelationId,
 			 Oid *classObjectId,
 			 int16 *coloptions,
 			 Datum reloptions,
+			 Oid indexSecid,
 			 bool isprimary,
 			 bool isconstraint,
 			 bool allow_system_table_mods,
@@ -525,8 +522,6 @@ index_create(Oid heapRelationId,
 	TupleDesc	indexTupDesc;
 	bool		shared_relation;
 	Oid			namespaceId;
-	Oid		   *secLabels;
-	Oid			relsid = InvalidOid;
 	int			i;
 
 	pg_class = heap_open(RelationRelationId, RowExclusiveLock);
@@ -612,14 +607,6 @@ index_create(Oid heapRelationId,
 											classObjectId);
 
 	/*
-	 * compute security labels to be assigned on index relation
-	 */
-	secLabels = sepgsqlCreateTableColumns(NULL, indexRelationName, namespaceId,
-										  indexTupDesc, RELKIND_INDEX);
-	if (secLabels)
-		relsid = secLabels[0];
-
-	/*
 	 * Allocate an OID for the index, unless we were told what to use.
 	 *
 	 * The OID will be the relfilenode as well, so make sure it doesn't
@@ -668,7 +655,7 @@ index_create(Oid heapRelationId,
 	 */
 	InsertPgClassTuple(pg_class, indexRelation,
 					   RelationGetRelid(indexRelation),
-					   reloptions, relsid);
+					   reloptions, indexSecid);
 
 	/* done with pg_class */
 	heap_close(pg_class, RowExclusiveLock);
@@ -684,7 +671,7 @@ index_create(Oid heapRelationId,
 	/*
 	 * append ATTRIBUTE tuples for the index
 	 */
-	AppendAttributeTuples(indexRelation, indexInfo->ii_NumIndexAttrs, secLabels);
+	AppendAttributeTuples(indexRelation, indexInfo->ii_NumIndexAttrs);
 
 	/* ----------------
 	 *	  update pg_index

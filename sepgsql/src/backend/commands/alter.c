@@ -28,7 +28,6 @@
 #include "commands/user.h"
 #include "miscadmin.h"
 #include "parser/parse_clause.h"
-#include "security/sepgsql.h"
 #include "tcop/utility.h"
 #include "utils/acl.h"
 #include "utils/lsyscache.h"
@@ -117,9 +116,6 @@ ExecRenameStmt(RenameStmt *stmt)
 							if (aclresult != ACLCHECK_OK)
 								aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
 											get_namespace_name(namespaceId));
-
-							/* SELinux checks db_table/db_sequence:{setattr} */
-							sepgsqlCheckTableSetattr(relid);
 
 							RenameRelation(relid, stmt->newname, stmt->renameType);
 							break;

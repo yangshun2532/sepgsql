@@ -782,6 +782,8 @@ ExecGrant_Attribute(InternalGrant *istmt, Oid relOid, const char *relname,
 								 relOid, grantorId, ACL_KIND_COLUMN,
 								 relname, attnum,
 								 NameStr(pg_attribute_tuple->attname));
+	/* SELinux checks */
+	sepgsql_attribute_grant(relOid, attnum);
 
 	/*
 	 * Generate new ACL.
@@ -1037,6 +1039,8 @@ ExecGrant_Relation(InternalGrant *istmt)
 										 ? ACL_KIND_SEQUENCE : ACL_KIND_CLASS,
 										 NameStr(pg_class_tuple->relname),
 										 0, NULL);
+			/* SELinux checks */
+			sepgsql_relation_grant(relOid);
 
 			/*
 			 * Generate new ACL.

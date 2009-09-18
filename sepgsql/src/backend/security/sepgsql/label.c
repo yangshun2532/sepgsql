@@ -366,6 +366,7 @@ sepgsqlSetDefaultSecid(Relation rel, HeapTuple tuple)
 	HeapTupleSetSecid(tuple, newSid.secid);
 }
 
+#if 0
 /*
  * sepgsqlCreateTableColumn
  *   It returns an array of security identifier for the new table
@@ -593,6 +594,7 @@ sepgsqlCopyTableColumns(Relation source)
 
 	return secLabels;
 }
+#endif
 
 /*
  * sepgsqlGetSysobjSecid

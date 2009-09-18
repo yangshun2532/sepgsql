@@ -331,7 +331,7 @@ AlterSequence(AlterSeqStmt *stmt)
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
 					   stmt->sequence->relname);
 	/* SELinux checks db_sequence:{setattr} */
-	sepgsqlCheckTableSetattr(relid);
+	sepgsql_relation_alter(relid, NULL, InvalidOid);
 
 	/* do the work */
 	AlterSequenceInternal(relid, stmt->options);
@@ -472,7 +472,7 @@ nextval_internal(Oid relid)
 						RelationGetRelationName(seqrel))));
 
 	/* SELinux check db_sequence:{next_value} */
-	sepgsqlCheckSequenceNextValue(elm->relid);
+	sepgsql_sequence_next_value(elm->relid);
 
 	if (elm->last != elm->cached)		/* some numbers were cached */
 	{
@@ -670,7 +670,7 @@ currval_oid(PG_FUNCTION_ARGS)
 						RelationGetRelationName(seqrel))));
 
 	/* SELinux check db_sequence:{get_value} */
-	sepgsqlCheckSequenceGetValue(elm->relid);
+	sepgsql_sequence_get_value(elm->relid);
 
 	if (!elm->last_valid)
 		ereport(ERROR,
@@ -717,7 +717,7 @@ lastval(PG_FUNCTION_ARGS)
 						RelationGetRelationName(seqrel))));
 
 	/* SELinux check db_sequence:{get_value} */
-	sepgsqlCheckSequenceGetValue(last_used_seq->relid);
+	sepgsql_sequence_get_value(last_used_seq->relid);
 
 	result = last_used_seq->last;
 	relation_close(seqrel, NoLock);
@@ -756,7 +756,7 @@ do_setval(Oid relid, int64 next, bool iscalled)
 						RelationGetRelationName(seqrel))));
 
 	/* SELinux check db_sequence:{set_value} */
-	sepgsqlCheckSequenceSetValue(elm->relid);
+	sepgsql_sequence_set_value(elm->relid);
 
 	/* lock page' buffer and read tuple */
 	seq = read_info(elm, seqrel, &buf);

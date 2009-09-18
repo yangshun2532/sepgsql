@@ -37,6 +37,7 @@
 #include "parser/parse_coerce.h"
 #include "parser/parse_func.h"
 #include "parser/parsetree.h"
+#include "security/sepgsql.h"
 #include "storage/lmgr.h"
 #include "storage/proc.h"
 #include "storage/procarray.h"
@@ -137,6 +138,7 @@ DefineIndex(RangeVar *heapRelation,
 	Relation	pg_index;
 	HeapTuple	indexTuple;
 	Form_pg_index indexForm;
+	Oid			indexSecid;
 	int			i;
 
 	/*
@@ -257,6 +259,10 @@ DefineIndex(RangeVar *heapRelation,
 												   namespaceId);
 		}
 	}
+
+	/* SELinux checks */
+	indexSecid = sepgsql_index_create(indexRelationName,
+									  namespaceId, check_rights);
 
 	/*
 	 * look up the access method, verify it can handle the requested features
@@ -447,7 +453,7 @@ DefineIndex(RangeVar *heapRelation,
 		indexRelationId =
 			index_create(relationId, indexRelationName, indexRelationId,
 					  indexInfo, accessMethodId, tablespaceId, classObjectId,
-						 coloptions, reloptions, primary, isconstraint,
+						 coloptions, reloptions, indexSecid, primary, isconstraint,
 						 allowSystemTableMods, skip_build, concurrent);
 
 		return;					/* We're done, in the standard case */
@@ -465,7 +471,7 @@ DefineIndex(RangeVar *heapRelation,
 	indexRelationId =
 		index_create(relationId, indexRelationName, indexRelationId,
 					 indexInfo, accessMethodId, tablespaceId, classObjectId,
-					 coloptions, reloptions, primary, isconstraint,
+					 coloptions, reloptions, indexSecid, primary, isconstraint,
 					 allowSystemTableMods, true, concurrent);
 
 	/*

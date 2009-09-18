@@ -22,6 +22,7 @@
 #include "catalog/pg_rewrite.h"
 #include "miscadmin.h"
 #include "rewrite/rewriteRemove.h"
+#include "security/sepgsql.h"
 #include "utils/acl.h"
 #include "utils/fmgroids.h"
 #include "utils/inval.h"
@@ -77,6 +78,9 @@ RemoveRewriteRule(Oid owningRel, const char *ruleName, DropBehavior behavior,
 	if (!pg_class_ownercheck(eventRelationOid, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
 					   get_rel_name(eventRelationOid));
+
+	/* SELinux checks */
+	sepgsql_rule_drop(eventRelationOid, ruleName);
 
 	/*
 	 * Do the deletion

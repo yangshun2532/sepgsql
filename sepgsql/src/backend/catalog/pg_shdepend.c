@@ -1351,7 +1351,8 @@ shdepReassignOwned(List *roleids, Oid newrole)
 					break;
 
 				case RelationRelationId:
-					sepgsqlCheckTableSetattr(sdepForm->objid);
+					/* SELinux checks */
+					sepgsql_relation_alter(sdepForm->objid, NULL, InvalidOid);
 					/*
 					 * Pass recursing = true so that we don't fail on indexes,
 					 * owned sequences, etc when we happen to visit them

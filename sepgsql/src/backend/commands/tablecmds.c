@@ -261,8 +261,8 @@ static void ATExecCmd(List **wqueue, AlteredTableInfo *tab, Relation rel,
 static void ATRewriteTables(List **wqueue);
 static void ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap);
 static AlteredTableInfo *ATGetQueueEntry(List **wqueue, Relation rel);
-static void ATSimplePermissions(Relation rel, bool allowView);
-static void ATSimplePermissionsRelationOrIndex(Relation rel);
+static void ATSimplePermissions(Relation rel, const char *colname, bool allowView);
+static void ATSimplePermissionsRelationOrIndex(Relation rel, const char *colname);
 static void ATSimpleRecursion(List **wqueue, Relation rel,
 				  AlterTableCmd *cmd, bool recurse);
 static void ATOneLevelRecursion(List **wqueue, Relation rel,
@@ -447,8 +447,9 @@ DefineRelation(CreateStmt *stmt, char relkind)
 	descriptor->tdhasoid = (localHasOids || parentOidCount > 0);
 
 	/* SELinux checks db_table:{create} and db_column:{create} */
-	secLabels = sepgsqlCreateTableColumns(stmt, relname, namespaceId,
-										  descriptor, relkind);
+	secLabels = sepgsql_relation_create(relname, relkind,
+										descriptor, namespaceId,
+										(DefElem *)stmt->secLabel, schema);
 
 	/*
 	 * Find columns with default values and prepare for insertion of the
@@ -894,6 +895,8 @@ ExecuteTruncate(TruncateStmt *stmt)
 				if (!pg_class_ownercheck(seq_relid, GetUserId()))
 					aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
 								   RelationGetRelationName(seq_rel));
+				/* SELinux checks */
+				sepgsql_relation_alter(seq_relid, NULL, InvalidOid);
 
 				seq_relids = lappend_oid(seq_relids, seq_relid);
 
@@ -1050,7 +1053,7 @@ truncate_check_rel(Relation rel)
 						RelationGetRelationName(rel))));
 
 	/* SELinux: check db_table:{delete} permission */
-	sepgsqlCheckTableTruncate(rel);
+	sepgsql_relation_truncate(rel);
 
 	/*
 	 * We can never allow truncation of shared or nailed-in-cache relations,
@@ -1226,6 +1229,8 @@ MergeAttributes(List *schema, List *supers, bool istemp,
 		if (!pg_class_ownercheck(RelationGetRelid(relation), GetUserId()))
 			aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
 						   RelationGetRelationName(relation));
+		/* SELinux checks db_table:{setattr} */
+		sepgsql_relation_alter(RelationGetRelid(relation), NULL, InvalidOid);
 
 		/*
 		 * Reject duplications in the list of parents.
@@ -1932,7 +1937,7 @@ renameatt(Oid myrelid,
 						oldattname)));
 
 	/* SELinux checks db_column:{setattr} */
-	sepgsqlCheckColumnSetattr(myrelid, attnum);
+	sepgsql_attribute_alter(myrelid, oldattname);
 
 	/*
 	 * if the attribute is inherited, forbid the renaming, unless we are
@@ -2038,6 +2043,9 @@ RenameRelation(Oid myrelid, const char *newrelname, ObjectType reltype)
 	Relation	targetrelation;
 	Oid			namespaceId;
 	char		relkind;
+
+	/* SELinux checks */
+	sepgsql_relation_alter(myrelid, newrelname, InvalidOid);
 
 	/*
 	 * Grab an exclusive lock on the target table, index, sequence or view,
@@ -2372,14 +2380,14 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 	switch (cmd->subtype)
 	{
 		case AT_AddColumn:		/* ADD COLUMN */
-			ATSimplePermissions(rel, false);
+			ATSimplePermissions(rel, NULL, false);
 			/* Performs own recursion */
 			ATPrepAddColumn(wqueue, rel, recurse, cmd);
 			pass = AT_PASS_ADD_COL;
 			break;
 		case AT_AddColumnToView:		/* add column via CREATE OR REPLACE
 										 * VIEW */
-			ATSimplePermissions(rel, true);
+			ATSimplePermissions(rel, NULL, true);
 			/* Performs own recursion */
 			ATPrepAddColumn(wqueue, rel, recurse, cmd);
 			pass = AT_PASS_ADD_COL;
@@ -2392,19 +2400,19 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 			 * substitutes default values into INSERTs before it expands
 			 * rules.
 			 */
-			ATSimplePermissions(rel, true);
+			ATSimplePermissions(rel, cmd->name, true);
 			ATSimpleRecursion(wqueue, rel, cmd, recurse);
 			/* No command-specific prep needed */
 			pass = cmd->def ? AT_PASS_ADD_CONSTR : AT_PASS_DROP;
 			break;
 		case AT_DropNotNull:	/* ALTER COLUMN DROP NOT NULL */
-			ATSimplePermissions(rel, false);
+			ATSimplePermissions(rel, cmd->name, false);
 			ATSimpleRecursion(wqueue, rel, cmd, recurse);
 			/* No command-specific prep needed */
 			pass = AT_PASS_DROP;
 			break;
 		case AT_SetNotNull:		/* ALTER COLUMN SET NOT NULL */
-			ATSimplePermissions(rel, false);
+			ATSimplePermissions(rel, cmd->name, false);
 			ATSimpleRecursion(wqueue, rel, cmd, recurse);
 			/* No command-specific prep needed */
 			pass = AT_PASS_ADD_CONSTR;
@@ -2416,13 +2424,13 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 			pass = AT_PASS_COL_ATTRS;
 			break;
 		case AT_SetStorage:		/* ALTER COLUMN STORAGE */
-			ATSimplePermissions(rel, false);
+			ATSimplePermissions(rel, cmd->name, false);
 			ATSimpleRecursion(wqueue, rel, cmd, recurse);
 			/* No command-specific prep needed */
 			pass = AT_PASS_COL_ATTRS;
 			break;
 		case AT_DropColumn:		/* DROP COLUMN */
-			ATSimplePermissions(rel, false);
+			ATSimplePermissions(rel, NULL, false);
 			/* Recursion occurs during execution phase */
 			/* No command-specific prep needed except saving recurse flag */
 			if (recurse)
@@ -2430,13 +2438,13 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 			pass = AT_PASS_DROP;
 			break;
 		case AT_AddIndex:		/* ADD INDEX */
-			ATSimplePermissions(rel, false);
+			ATSimplePermissions(rel, NULL, false);
 			/* This command never recurses */
 			/* No command-specific prep needed */
 			pass = AT_PASS_ADD_INDEX;
 			break;
 		case AT_AddConstraint:	/* ADD CONSTRAINT */
-			ATSimplePermissions(rel, false);
+			ATSimplePermissions(rel, NULL, false);
 			/* Recursion occurs during execution phase */
 			/* No command-specific prep needed except saving recurse flag */
 			if (recurse)
@@ -2444,7 +2452,7 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 			pass = AT_PASS_ADD_CONSTR;
 			break;
 		case AT_DropConstraint:	/* DROP CONSTRAINT */
-			ATSimplePermissions(rel, false);
+			ATSimplePermissions(rel, NULL, false);
 			/* Recursion occurs during execution phase */
 			/* No command-specific prep needed except saving recurse flag */
 			if (recurse)
@@ -2452,7 +2460,7 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 			pass = AT_PASS_DROP;
 			break;
 		case AT_AlterColumnType:		/* ALTER COLUMN TYPE */
-			ATSimplePermissions(rel, false);
+			ATSimplePermissions(rel, cmd->name, false);
 			/* Performs own recursion */
 			ATPrepAlterColumnType(wqueue, tab, rel, recurse, recursing, cmd);
 			pass = AT_PASS_ALTER_TYPE;
@@ -2464,20 +2472,20 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 			break;
 		case AT_ClusterOn:		/* CLUSTER ON */
 		case AT_DropCluster:	/* SET WITHOUT CLUSTER */
-			ATSimplePermissions(rel, false);
+			ATSimplePermissions(rel, NULL, false);
 			/* These commands never recurse */
 			/* No command-specific prep needed */
 			pass = AT_PASS_MISC;
 			break;
 		case AT_AddOids:		/* SET WITH OIDS */
-			ATSimplePermissions(rel, false);
+			ATSimplePermissions(rel, NULL, false);
 			/* Performs own recursion */
 			if (!rel->rd_rel->relhasoids || recursing)
 				ATPrepAddOids(wqueue, rel, recurse, cmd);
 			pass = AT_PASS_ADD_COL;
 			break;
 		case AT_DropOids:		/* SET WITHOUT OIDS */
-			ATSimplePermissions(rel, false);
+			ATSimplePermissions(rel, NULL, false);
 			/* Performs own recursion */
 			if (rel->rd_rel->relhasoids)
 			{
@@ -2491,14 +2499,14 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 			pass = AT_PASS_DROP;
 			break;
 		case AT_SetTableSpace:	/* SET TABLESPACE */
-			ATSimplePermissionsRelationOrIndex(rel);
+			ATSimplePermissionsRelationOrIndex(rel, NULL);
 			/* This command never recurses */
 			ATPrepSetTableSpace(tab, rel, cmd->name);
 			pass = AT_PASS_MISC;	/* doesn't actually matter */
 			break;
 		case AT_SetRelOptions:	/* SET (...) */
 		case AT_ResetRelOptions:		/* RESET (...) */
-			ATSimplePermissionsRelationOrIndex(rel);
+			ATSimplePermissionsRelationOrIndex(rel, NULL);
 			/* This command never recurses */
 			/* No command-specific prep needed */
 			pass = AT_PASS_MISC;
@@ -2517,7 +2525,7 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 		case AT_DisableRule:
 		case AT_AddInherit:		/* INHERIT / NO INHERIT */
 		case AT_DropInherit:
-			ATSimplePermissions(rel, false);
+			ATSimplePermissions(rel, NULL, false);
 			/* These commands never recurse */
 			/* No command-specific prep needed */
 			pass = AT_PASS_MISC;
@@ -3233,7 +3241,7 @@ ATGetQueueEntry(List **wqueue, Relation rel)
  * - Ensure that it is not a system table
  */
 static void
-ATSimplePermissions(Relation rel, bool allowView)
+ATSimplePermissions(Relation rel, const char *colName, bool allowView)
 {
 	if (rel->rd_rel->relkind != RELKIND_RELATION)
 	{
@@ -3257,14 +3265,17 @@ ATSimplePermissions(Relation rel, bool allowView)
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
 					   RelationGetRelationName(rel));
 
+	/* SELinux checks */
+	if (!colName)
+		sepgsql_relation_alter(RelationGetRelid(rel), NULL, InvalidOid);
+	else
+		sepgsql_attribute_alter(RelationGetRelid(rel), colName);
+
 	if (!allowSystemTableMods && IsSystemRelation(rel))
 		ereport(ERROR,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 				 errmsg("permission denied: \"%s\" is a system catalog",
 						RelationGetRelationName(rel))));
-
-	/* SELinux checks db_table:{setattr} */
-	sepgsqlCheckTableSetattr(RelationGetRelid(rel));
 }
 
 /*
@@ -3275,7 +3286,7 @@ ATSimplePermissions(Relation rel, bool allowView)
  * - Ensure that it is not a system table
  */
 static void
-ATSimplePermissionsRelationOrIndex(Relation rel)
+ATSimplePermissionsRelationOrIndex(Relation rel, const char *colName)
 {
 	if (rel->rd_rel->relkind != RELKIND_RELATION &&
 		rel->rd_rel->relkind != RELKIND_INDEX)
@@ -3289,14 +3300,17 @@ ATSimplePermissionsRelationOrIndex(Relation rel)
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
 					   RelationGetRelationName(rel));
 
+	/* SELinux checks */
+	if (!colName)
+		sepgsql_relation_alter(RelationGetRelid(rel), NULL, InvalidOid);
+	else
+		sepgsql_attribute_alter(RelationGetRelid(rel), colName);
+
 	if (!allowSystemTableMods && IsSystemRelation(rel))
 		ereport(ERROR,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 				 errmsg("permission denied: \"%s\" is a system catalog",
 						RelationGetRelationName(rel))));
-
-	/* SELinux checks db_table:{setattr} */
-	sepgsqlCheckTableSetattr(RelationGetRelid(rel));
 }
 
 /*
@@ -3574,7 +3588,7 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 						RelationGetRelationName(rel), colDef->colname)));
 
 			/* SELinux checks db_column:{setattr} */
-			sepgsqlCheckColumnSetattr(myrelid, childatt->attnum);
+			sepgsql_attribute_alter(myrelid, colDef->colname);
 
 			/* Bump the existing child att's inhcount */
 			childatt->attinhcount++;
@@ -3616,8 +3630,7 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 						colDef->colname, RelationGetRelationName(rel))));
 
 	/* SELinux checks db_column:{create} */
-	attsecid = sepgsqlCheckColumnCreate(myrelid, colDef->colname,
-										(DefElem *)colDef->secLabel);
+	attsecid = sepgsql_attribute_create(myrelid, colDef);
 
 	/* Determine the new attribute's number */
 	if (isOid)
@@ -3866,9 +3879,6 @@ ATExecDropNotNull(Relation rel, const char *colName)
 				 errmsg("cannot alter system column \"%s\"",
 						colName)));
 
-	/* SELinux checks db_column:{setattr} */
-	sepgsqlCheckColumnSetattr(RelationGetRelid(rel), attnum);
-
 	/*
 	 * Check that the attribute is not in a primary key
 	 */
@@ -3961,9 +3971,6 @@ ATExecSetNotNull(AlteredTableInfo *tab, Relation rel,
 				 errmsg("cannot alter system column \"%s\"",
 						colName)));
 
-	/* SELinux checks db_column:{setattr} */
-	sepgsqlCheckColumnSetattr(RelationGetRelid(rel), attnum);
-
 	/*
 	 * Okay, actually perform the catalog change ... if needed
 	 */
@@ -4008,9 +4015,6 @@ ATExecColumnDefault(Relation rel, const char *colName,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot alter system column \"%s\"",
 						colName)));
-
-	/* SELinux checks db_column:{setattr} */
-	sepgsqlCheckColumnSetattr(RelationGetRelid(rel), attnum);
 
 	/*
 	 * Remove any old default for the column.  We use RESTRICT here for
@@ -4059,8 +4063,8 @@ ATPrepSetStatistics(Relation rel, const char *colName, Node *flagValue)
 	if (!pg_class_ownercheck(RelationGetRelid(rel), GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
 					   RelationGetRelationName(rel));
-	/* SELinux checks db_table:{setatr} */
-	sepgsqlCheckTableSetattr(RelationGetRelid(rel));
+	/* SELinux checks */
+	sepgsql_attribute_alter(RelationGetRelid(rel), colName);
 }
 
 static void
@@ -4109,9 +4113,6 @@ ATExecSetStatistics(Relation rel, const char *colName, Node *newValue)
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot alter system column \"%s\"",
 						colName)));
-
-	/* SELinux checks db_column:{setattr} */
-	sepgsqlCheckColumnSetattr(RelationGetRelid(rel), attrtuple->attnum);
 
 	attrtuple->attstattarget = newtarget;
 
@@ -4174,9 +4175,6 @@ ATExecSetStorage(Relation rel, const char *colName, Node *newValue)
 				 errmsg("cannot alter system column \"%s\"",
 						colName)));
 
-	/* SELinux checks db_column:{setattr} */
-	sepgsqlCheckColumnSetattr(RelationGetRelid(rel), attrtuple->attnum);
-
 	/*
 	 * safety check: do not allow toasted storage modes unless column datatype
 	 * is TOAST-aware.
@@ -4222,7 +4220,7 @@ ATExecDropColumn(List **wqueue, Relation rel, const char *colName,
 
 	/* At top level, permission check was done in ATPrepCmd, else do it */
 	if (recursing)
-		ATSimplePermissions(rel, false);
+		ATSimplePermissions(rel, NULL, false);
 
 	/*
 	 * get the number of the attribute
@@ -4252,9 +4250,6 @@ ATExecDropColumn(List **wqueue, Relation rel, const char *colName,
 						colName)));
 
 	ReleaseSysCache(tuple);
-
-	/* SELinux checks db_column:{drop} */
-	sepgsqlCheckColumnDrop(RelationGetRelid(rel), attnum);
 
 	/*
 	 * Propagate to children as appropriate.  Unlike most other ALTER
@@ -4527,7 +4522,7 @@ ATAddCheckConstraint(List **wqueue, AlteredTableInfo *tab, Relation rel,
 
 	/* At top level, permission check was done in ATPrepCmd, else do it */
 	if (recursing)
-		ATSimplePermissions(rel, false);
+		ATSimplePermissions(rel, NULL, false);
 
 	/*
 	 * Call AddRelationNewConstraints to do the work, making sure it works on
@@ -5168,7 +5163,7 @@ checkFkeyPermissions(Relation rel, int16 *attnums, int natts)
 	}
 ok:
 	/* SELinux: check db_table/db_column:{reference} */
-	sepgsqlCheckTableReference(rel, attnums, natts);
+	sepgsql_relation_references(rel, attnums, natts);
 }
 
 /*
@@ -5432,7 +5427,7 @@ ATExecDropConstraint(Relation rel, const char *constrName,
 
 	/* At top level, permission check was done in ATPrepCmd, else do it */
 	if (recursing)
-		ATSimplePermissions(rel, false);
+		ATSimplePermissions(rel, NULL, false);
 
 	conrel = heap_open(ConstraintRelationId, RowExclusiveLock);
 
@@ -5771,9 +5766,6 @@ ATExecAlterColumnType(AlteredTableInfo *tab, Relation rel,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot alter type of column \"%s\" twice",
 						colName)));
-
-	/* SELinux checks db_column:{setattr} */
-	sepgsqlCheckColumnSetattr(RelationGetRelid(rel), attnum);
 
 	/* Look up the target type (should not fail, since prep found it) */
 	typeTuple = typenameType(NULL, typename, &targettypmod);
@@ -6369,7 +6361,7 @@ ATExecChangeOwner(Oid relationOid, Oid newOwnerId, bool recursing)
 								   get_namespace_name(namespaceOid));
 			}
 			/* SELinux checks db_table:{setattr} */
-			sepgsqlCheckTableSetattr(relationOid);
+			sepgsql_relation_alter(relationOid, NULL, InvalidOid);
 		}
 
 		memset(repl_null, false, sizeof(repl_null));
@@ -6974,7 +6966,7 @@ ATExecAddInherit(Relation child_rel, RangeVar *parent)
 	 * Must be owner of both parent and child -- child was checked by
 	 * ATSimplePermissions call in ATPrepCmd
 	 */
-	ATSimplePermissions(parent_rel, false);
+	ATSimplePermissions(parent_rel, NULL, false);
 
 	/* Permanent rels cannot inherit from temporary ones */
 	if (parent_rel->rd_istemp && !child_rel->rd_istemp)
@@ -7632,6 +7624,9 @@ AlterTableNamespace(RangeVar *relation, const char *newschema,
 						RelationGetRelationName(rel),
 						newschema)));
 
+	/* SELinux checks */
+	sepgsql_relation_alter(relid, NULL, nspOid);
+
 	/* disallow renaming into or out of temp schemas */
 	if (isAnyTempNamespace(nspOid) || isAnyTempNamespace(oldNspOid))
 		ereport(ERROR,
@@ -7847,18 +7842,21 @@ ExecRelationSetSecLabel(Oid relid, DefElem *seclabel)
 	memset(replaces, false, sizeof(replaces));
 	newtup = heap_modify_tuple(oldtup, RelationGetDescr(rel),
 							   NULL, NULL, replaces);
-	ReleaseSysCache(oldtup);
-
-	/* SELinux checks db_table:{setattr relabelfrom relabelto} */
-	secid = sepgsqlCheckTableRelabel(relid, seclabel);
 	if (!HeapTupleHasSecid(newtup))
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("Unable to set security label on \"%s\"",
 						get_rel_name(relid))));
+
+	ReleaseSysCache(oldtup);
+
+	/* SELinux checks db_table:{setattr relabelfrom relabelto} */
+	secid = sepgsql_relation_relabel(relid, seclabel);
+
 	HeapTupleSetSecid(newtup, secid);
 
 	simple_heap_update(rel, &newtup->t_self, newtup);
+
 	CatalogUpdateIndexes(rel, newtup);
 
 	heap_freetuple(newtup);
@@ -7888,18 +7886,21 @@ ExecAttributeSetSecLabel(Oid relid, const char *attname, DefElem *seclabel)
 	memset(replaces, false, sizeof(replaces));
 	newtup = heap_modify_tuple(oldtup, RelationGetDescr(rel),
 							   NULL, NULL, replaces);
+	if (!HeapTupleHasSecid(newtup))
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("Unable to set security context on \"%s.%s\"",
+						get_rel_name(relid), attname)));
+
 	ReleaseSysCache(oldtup);
 
 	/* SELinux checks db_column:{setattr relabelfrom relabelto} */
-	secid = sepgsqlCheckColumnRelabel(relid, attnum, seclabel); 
-	if (!HeapTupleHasSecid(newtup))
-		ereport(ERROR,
-                (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-                 errmsg("Unable to set security label on \"%s.%s\"",
-						get_rel_name(relid), attname)));
+	secid = sepgsql_attribute_relabel(relid, attnum, seclabel);
+
 	HeapTupleSetSecid(newtup, secid);
 
 	simple_heap_update(rel, &newtup->t_self, newtup);
+
 	CatalogUpdateIndexes(rel, newtup);
 
 	heap_freetuple(newtup);

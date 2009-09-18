@@ -215,6 +215,54 @@ extern pid_t sepgsqlStartupWorkerProcess(void);
 /*
  * bridge.c : new style security hooks
  */
+
+/* pg_attribute */
+extern Oid
+sepgsql_attribute_create(Oid relOid, ColumnDef *cdef);
+extern void
+sepgsql_attribute_alter(Oid relOid, const char *attname);
+extern void
+sepgsql_attribute_drop(Oid relOid, AttrNumber attnum);
+extern void
+sepgsql_attribute_grant(Oid relOid, AttrNumber attnum);
+extern Oid
+sepgsql_attribute_relabel(Oid relOid, AttrNumber attnum, DefElem *newLabel);
+
+/* pg_class */
+extern Oid *
+sepgsql_relation_create(const char *relName, char relkind, TupleDesc tupDesc,
+                        Oid nspOid, DefElem *relLabel, List *colList);
+extern Oid *
+sepgsql_relation_copy(Relation src);
+extern void
+sepgsql_relation_alter(Oid relOid, const char *newName, Oid newNsp);
+extern void
+sepgsql_relation_drop(Oid relOid);
+extern void
+sepgsql_relation_grant(Oid relOid);
+extern Oid
+sepgsql_relation_relabel(Oid relOid, DefElem *newLabel);
+extern void
+sepgsql_relation_get_transaction_id(Oid relOid);
+extern void
+sepgsql_relation_copy_definition(Oid relOid);
+extern void
+sepgsql_relation_truncate(Relation rel);
+extern void
+sepgsql_relation_references(Relation rel, int16 *attnums, int natts);
+extern void
+sepgsql_relation_lock(Oid relOid);
+extern void
+sepgsql_view_replace(Oid viewOid);
+extern Oid
+sepgsql_index_create(const char *indexName, Oid indexNsp, bool check_rights);
+extern void
+sepgsql_sequence_get_value(Oid seqOid);
+extern void
+sepgsql_sequence_next_value(Oid seqOid);
+extern void
+sepgsql_sequence_set_value(Oid seqOid);
+
 /* pg_database */
 extern Oid
 sepgsql_database_create(const char *datName, DefElem *newLabel);
@@ -338,6 +386,12 @@ extern void
 sepgsql_operator_alter(Oid oprOid);
 extern void
 sepgsql_operator_drop(Oid oprOid);
+
+/* pg_rewrite */
+extern void
+sepgsql_rule_create(Oid relOid, const char *ruleName);
+extern void
+sepgsql_rule_drop(Oid relOid, const char *ruleName);
 
 /* pg_trigger */
 extern void
