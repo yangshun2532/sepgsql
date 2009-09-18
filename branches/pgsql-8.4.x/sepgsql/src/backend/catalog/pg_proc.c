@@ -347,7 +347,7 @@ ProcedureCreate(const char *procedureName,
 							0);
 
 	/* Check permission to create/replace a function */
-	prosecid = sepgsql_proc_create(procedureName, HeapTupleGetOid(oldtup),
+	prosecid = sepgsql_proc_create(procedureName, oldtup,
 								   procNamespace, languageObjectId,
 								   (DefElem *)proseclabel);
 

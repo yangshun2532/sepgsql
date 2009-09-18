@@ -379,8 +379,7 @@ TypeCreate(Oid newTypeOid,
 
 	/* SELinux checks to create/replace type */
 	if (!isImplicitArray && typeType != TYPTYPE_COMPOSITE)
-		typeSecid = sepgsql_type_create(typeName, HeapTupleGetOid(tup),
-										typeNamespace,
+		typeSecid = sepgsql_type_create(typeName, tup, typeNamespace,
 										inputProcedure, outputProcedure,
 										receiveProcedure, sendProcedure,
 										typmodinProcedure, typmodoutProcedure,

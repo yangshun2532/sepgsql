@@ -392,12 +392,8 @@ sepgsqlSetDefaultSecid(Relation rel, HeapTuple tuple)
 		if (tblOid == TypeRelationId ||
 			tblOid == ProcedureRelationId ||
 			tblOid == AttributeRelationId ||
-			tblOid == RelationRelationId)
-			newSid = sepgsqlGetDefaultColumnSecid(tblOid);
-
-		relkind = get_rel_relkind(tblOid);
-		if (relkind == RELKIND_RELATION ||
-			relkind == RELKIND_TOASTVALUE)
+			tblOid == RelationRelationId ||
+			get_rel_relkind(tblOid) == RELKIND_RELATION)
 			newSid = sepgsqlGetDefaultColumnSecid(tblOid);
 
 		/* otherwise, it does not have individual security context */
@@ -939,6 +935,8 @@ sepgsqlGetTupleSecid(Oid tableOid, HeapTuple tuple, uint16 *tclass)
 		switch (relkind)
 		{
 		case RELKIND_INDEX:
+			Assert(!IsBootstrapProcessingMode());
+
 			extid = HeapTupleGetOid(tuple);
 			exttup = SearchSysCache(INDEXRELID,
 									ObjectIdGetDatum(extid),

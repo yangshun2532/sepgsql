@@ -306,7 +306,7 @@ sepgsql_schema_search(Oid nspOid, bool abort);
 
 /* pg_proc */
 extern Oid
-sepgsql_proc_create(const char *procName, Oid procOid,
+sepgsql_proc_create(const char *procName, HeapTuple oldTup,
 					Oid nspOid, Oid langOid, DefElem *newLabel);
 extern void
 sepgsql_proc_alter(Oid procOid, const char *newName, Oid newNsp);
@@ -447,7 +447,7 @@ sepgsql_ts_template_drop(Oid tmplOid);
 
 /* pg_type */
 extern Oid
-sepgsql_type_create(const char *typName, Oid typOid, Oid nspOid,
+sepgsql_type_create(const char *typName, HeapTuple oldTup, Oid nspOid,
 					Oid inputProc, Oid outputProc, Oid recvProc, Oid sendProc,
 					Oid modinProc, Oid modoutProc, Oid analyzeProc);
 extern void
