@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/optimizer/util/pathnode.c,v 1.152 2009/06/11 14:48:59 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/backend/optimizer/util/pathnode.c,v 1.154 2009/09/17 20:49:29 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -711,6 +711,7 @@ create_material_path(RelOptInfo *rel, Path *subpath)
 	pathnode->subpath = subpath;
 
 	cost_material(&pathnode->path,
+				  subpath->startup_cost,
 				  subpath->total_cost,
 				  rel->rows,
 				  rel->width);
@@ -1215,6 +1216,26 @@ distinct_col_search(int colno, List *colnos, List *opids)
 }
 
 /*
+ * create_noop_path
+ *	  Creates a path equivalent to the input subpath, but having a different
+ *	  parent rel.  This is used when a join is found to be removable.
+ */
+NoOpPath *
+create_noop_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath)
+{
+	NoOpPath   *pathnode = makeNode(NoOpPath);
+
+	pathnode->path.pathtype = T_Join;			/* by convention */
+	pathnode->path.parent = rel;
+	pathnode->path.startup_cost = subpath->startup_cost;
+	pathnode->path.total_cost = subpath->total_cost;
+	pathnode->path.pathkeys = subpath->pathkeys;
+	pathnode->subpath = subpath;
+
+	return pathnode;
+}
+
+/*
  * create_subqueryscan_path
  *	  Creates a path corresponding to a sequential scan of a subquery,
  *	  returning the pathnode.
@@ -1424,7 +1445,8 @@ create_mergejoin_path(PlannerInfo *root,
 		 * cost_mergejoin will avoid choosing anyway).	Therefore
 		 * cost_material's cost estimate is bogus and we should charge just
 		 * cpu_tuple_cost per tuple.  (Keep this estimate in sync with similar
-		 * ones in cost_mergejoin and create_mergejoin_plan.)
+		 * ones in cost_mergejoin and create_mergejoin_plan; also see
+		 * cost_rescan.)
 		 */
 		mpath->startup_cost = inner_path->startup_cost;
 		mpath->total_cost = inner_path->total_cost;

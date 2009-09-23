@@ -10,7 +10,7 @@
  * Written by Peter Eisentraut <peter_e@gmx.net>.
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/misc/guc.c,v 1.516 2009/09/08 17:08:36 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/utils/misc/guc.c,v 1.519 2009/09/22 23:43:38 tgl Exp $
  *
  *--------------------------------------------------------------------
  */
@@ -384,6 +384,8 @@ char	   *IdentFileName;
 char	   *external_pid_file;
 
 char	   *pgstat_temp_directory;
+
+char	   *default_do_language;
 
 int			tcp_keepalives_idle;
 int			tcp_keepalives_interval;
@@ -1684,7 +1686,7 @@ static struct config_int ConfigureNamesInt[] =
 						 "(FLT_DIG or DBL_DIG as appropriate).")
 		},
 		&extra_float_digits,
-		0, -15, 2, NULL, NULL
+		0, -15, 3, NULL, NULL
 	},
 
 	{
@@ -2538,6 +2540,15 @@ static struct config_string ConfigureNamesString[] =
 		"ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH", NULL, NULL
 	},
 #endif   /* USE_SSL */
+
+	{
+		{"default_do_language", PGC_USERSET, CLIENT_CONN_STATEMENT,
+			gettext_noop("Sets the language used in DO statement if LANGUAGE is not specified."),
+			NULL
+		},
+		&default_do_language,
+		"plpgsql", NULL, NULL
+	},
 
 	/* End-of-list marker */
 	{
@@ -4599,18 +4610,16 @@ set_config_option(const char *name, const char *value,
 				if (changeVal && !is_newvalue_equal(record, value))
 					ereport(elevel,
 							(errcode(ERRCODE_CANT_CHANGE_RUNTIME_PARAM),
-					   errmsg("attempted change of parameter \"%s\" ignored",
-							  name),
-							 errdetail("This parameter cannot be changed after server start.")));
+					   errmsg("parameter \"%s\" cannot be changed without restarting the server",
+							  name)));
 				return true;
 			}
 			if (context != PGC_POSTMASTER)
 			{
 				ereport(elevel,
 						(errcode(ERRCODE_CANT_CHANGE_RUNTIME_PARAM),
-					   errmsg("attempted change of parameter \"%s\" ignored",
-							  name),
-						 errdetail("This parameter cannot be changed after server start.")));
+					   errmsg("parameter \"%s\" cannot be changed without restarting the server",
+							  name)));
 				return false;
 			}
 			break;
