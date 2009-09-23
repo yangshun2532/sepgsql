@@ -24,7 +24,7 @@
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/parser/scan.l,v 1.157 2009/07/14 20:24:10 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/parser/scan.l,v 1.159 2009/09/22 23:52:53 petere Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -80,6 +80,9 @@ static void addlitchar(unsigned char ychar, base_yyscan_t yyscanner);
 static char *litbufdup(base_yyscan_t yyscanner);
 static char *litbuf_udeescape(unsigned char escape, base_yyscan_t yyscanner);
 static unsigned char unescape_single_char(unsigned char c, base_yyscan_t yyscanner);
+static bool is_utf16_surrogate_first(pg_wchar c);
+static bool is_utf16_surrogate_second(pg_wchar c);
+static pg_wchar surrogate_pair_to_codepoint(pg_wchar first, pg_wchar second);
 
 #define yyerror(msg)  scanner_yyerror(msg, yyscanner)
 
@@ -96,6 +99,8 @@ static void check_escape_warning(base_yyscan_t yyscanner);
  */
 extern int	base_yyget_column(yyscan_t yyscanner);
 extern void base_yyset_column(int column_no, yyscan_t yyscanner);
+
+static void addunicode(pg_wchar c, yyscan_t yyscanner);
 
 %}
 
@@ -134,6 +139,7 @@ extern void base_yyset_column(int column_no, yyscan_t yyscanner);
  *  <xdolq> $foo$ quoted strings
  *  <xui> quoted identifier with Unicode escapes
  *  <xus> quoted string with Unicode escapes
+ *  <xeu> Unicode surrogate pair in extended quoted string
  */
 
 %x xb
@@ -145,6 +151,7 @@ extern void base_yyset_column(int column_no, yyscan_t yyscanner);
 %x xdolq
 %x xui
 %x xus
+%x xeu
 
 /*
  * In order to make the world safe for Windows and Mac clients as well as
@@ -223,6 +230,8 @@ xeinside		[^\\']+
 xeescape		[\\][^0-7]
 xeoctesc		[\\][0-7]{1,3}
 xehexesc		[\\]x[0-9A-Fa-f]{1,2}
+xeunicode		[\\](u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8})
+xeunicodebad	[\\]([uU])
 
 /* Extended quote
  * xqdouble implements embedded quote, ''''
@@ -535,6 +544,45 @@ other			.
 <xe>{xeinside}  {
 					addlit(yytext, yyleng, yyscanner);
 				}
+<xe>{xeunicode} {
+					pg_wchar c = strtoul(yytext+2, NULL, 16);
+
+					check_escape_warning(yyscanner);
+
+					if (is_utf16_surrogate_first(c))
+					{
+						yyextra->utf16_first_part = c;
+						BEGIN(xeu);
+					}
+					else if (is_utf16_surrogate_second(c))
+						yyerror("invalid Unicode surrogate pair");
+					else
+						addunicode(c, yyscanner);
+				}
+<xeu>{xeunicode} {
+					pg_wchar c = strtoul(yytext+2, NULL, 16);
+
+					if (!is_utf16_surrogate_second(c))
+						yyerror("invalid Unicode surrogate pair");
+
+					c = surrogate_pair_to_codepoint(yyextra->utf16_first_part, c);
+
+					addunicode(c, yyscanner);
+
+					BEGIN(xe);
+				}
+<xeu>.			|
+<xeu>\n			|
+<xeu><<EOF>>	{ yyerror("invalid Unicode surrogate pair"); }
+
+<xe>{xeunicodebad}	{
+						ereport(ERROR,
+								(errcode(ERRCODE_INVALID_ESCAPE_SEQUENCE),
+								 errmsg("invalid Unicode escape"),
+								 errhint("Unicode escapes must be \\uXXXX or \\UXXXXXXXX."),
+								 lexer_errposition()));
+					}
+
 <xe>{xeescape}  {
 					if (yytext[1] == '\'')
 					{
@@ -1097,11 +1145,30 @@ check_unicode_value(pg_wchar c, char *loc, base_yyscan_t yyscanner)
 	}
 }
 
+static bool
+is_utf16_surrogate_first(pg_wchar c)
+{
+	return (c >= 0xD800 && c <= 0xDBFF);
+}
+
+static bool
+is_utf16_surrogate_second(pg_wchar c)
+{
+	return (c >= 0xDC00 && c <= 0xDFFF);
+}
+
+static pg_wchar
+surrogate_pair_to_codepoint(pg_wchar first, pg_wchar second)
+{
+	return ((first & 0x3FF) << 10) + 0x10000 + (second & 0x3FF);
+}
+
 static char *
 litbuf_udeescape(unsigned char escape, base_yyscan_t yyscanner)
 {
 	char *new;
 	char *litbuf, *in, *out;
+	pg_wchar pair_first = 0;
 
 	if (isxdigit(escape)
 		|| escape == '+'
@@ -1131,6 +1198,11 @@ litbuf_udeescape(unsigned char escape, base_yyscan_t yyscanner)
 		{
 			if (in[1] == escape)
 			{
+				if (pair_first)
+				{
+					ADVANCE_YYLLOC(in - litbuf + 3);   /* 3 for U&" */
+					yyerror("invalid Unicode surrogate pair");
+				}
 				*out++ = escape;
 				in += 2;
 			}
@@ -1138,9 +1210,27 @@ litbuf_udeescape(unsigned char escape, base_yyscan_t yyscanner)
 			{
 				pg_wchar unicode = hexval(in[1]) * 16*16*16 + hexval(in[2]) * 16*16 + hexval(in[3]) * 16 + hexval(in[4]);
 				check_unicode_value(unicode, in, yyscanner);
-				unicode_to_utf8(unicode, (unsigned char *) out);
+				if (pair_first)
+				{
+					if (is_utf16_surrogate_second(unicode))
+					{
+						unicode = surrogate_pair_to_codepoint(pair_first, unicode);
+						pair_first = 0;
+					}
+					else
+					{
+						ADVANCE_YYLLOC(in - litbuf + 3);   /* 3 for U&" */
+						yyerror("invalid Unicode surrogate pair");
+					}
+				}
+				if (is_utf16_surrogate_first(unicode))
+					pair_first = unicode;
+				else
+				{
+					unicode_to_utf8(unicode, (unsigned char *) out);
+					out += pg_mblen(out);
+				}
 				in += 5;
-				out += pg_mblen(out);
 			}
 			else if (in[1] == '+'
 					 && isxdigit(in[2]) && isxdigit(in[3])
@@ -1150,9 +1240,27 @@ litbuf_udeescape(unsigned char escape, base_yyscan_t yyscanner)
 				pg_wchar unicode = hexval(in[2]) * 16*16*16*16*16 + hexval(in[3]) * 16*16*16*16 + hexval(in[4]) * 16*16*16
 									+ hexval(in[5]) * 16*16 + hexval(in[6]) * 16 + hexval(in[7]);
 				check_unicode_value(unicode, in, yyscanner);
-				unicode_to_utf8(unicode, (unsigned char *) out);
+				if (pair_first)
+				{
+					if (is_utf16_surrogate_second(unicode))
+					{
+						unicode = surrogate_pair_to_codepoint(pair_first, unicode);
+						pair_first = 0;
+					}
+					else
+					{
+						ADVANCE_YYLLOC(in - litbuf + 3);   /* 3 for U&" */
+						yyerror("invalid Unicode surrogate pair");
+					}
+				}
+				if (is_utf16_surrogate_first(unicode))
+					pair_first = unicode;
+				else
+				{
+					unicode_to_utf8(unicode, (unsigned char *) out);
+					out += pg_mblen(out);
+				}
 				in += 8;
-				out += pg_mblen(out);
 			}
 			else
 			{
@@ -1161,7 +1269,14 @@ litbuf_udeescape(unsigned char escape, base_yyscan_t yyscanner)
 			}
 		}
 		else
+		{
+			if (pair_first)
+			{
+				ADVANCE_YYLLOC(in - litbuf + 3);   /* 3 for U&" */
+				yyerror("invalid Unicode surrogate pair");
+			}
 			*out++ = *in++;
+		}
 	}
 
 	*out = '\0';
@@ -1263,3 +1378,21 @@ base_yyfree(void *ptr, base_yyscan_t yyscanner)
 	if (ptr)
 		pfree(ptr);
 }
+
+static void
+addunicode(pg_wchar c, base_yyscan_t yyscanner)
+{
+	char buf[8];
+
+	if (c == 0 || c > 0x10FFFF)
+		yyerror("invalid Unicode escape value");
+	if (c > 0x7F)
+	{
+		if (GetDatabaseEncoding() != PG_UTF8)
+			yyerror("Unicode escape values cannot be used for code point values above 007F when the server encoding is not UTF8");
+		yyextra->saw_non_ascii = true;
+	}
+	unicode_to_utf8(c, (unsigned char *)buf);
+	addlit(buf, pg_mblen(buf), yyscanner);
+}
+
