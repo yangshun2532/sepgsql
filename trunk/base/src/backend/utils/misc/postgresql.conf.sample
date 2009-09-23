@@ -422,6 +422,7 @@
 #temp_tablespaces = ''			# a list of tablespace names, '' uses
 					# only default tablespace
 #check_function_bodies = on
+#default_do_language = 'plpgsql'
 #default_transaction_isolation = 'read committed'
 #default_transaction_read_only = off
 #session_replication_role = 'origin'
@@ -445,7 +446,7 @@
 					#   India
 					# You can create your own file in
 					# share/timezonesets/.
-#extra_float_digits = 0			# min -15, max 2
+#extra_float_digits = 0			# min -15, max 3
 #client_encoding = sql_ascii		# actually, defaults to database
 					# encoding
 
