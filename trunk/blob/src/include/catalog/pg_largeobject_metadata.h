@@ -26,35 +26,35 @@
  *		typedef struct FormData_pg_largeobject_meta
  * ----------------
  */
-#define LargeObjectMetaRelationId  2336
+#define LargeObjectMetadataRelationId  2336
 
-CATALOG(pg_largeobject_meta,2336)
+CATALOG(pg_largeobject_metadata,2336)
 {
 	Oid			lomowner;		/* OID of the largeobject owner */
 	aclitem		lomacl[1];		/* access permissions */
-} FormData_pg_largeobject_meta;
+} FormData_pg_largeobject_metadata;
 
 /* ----------------
- *		Form_pg_largeobject corresponds to a pointer to a tuple with
- *		the format of pg_largeobject relation.
+ *		Form_pg_largeobject_metadata corresponds to a pointer to a tuple
+ *		with the format of pg_largeobject_metadata relation.
  * ----------------
  */
-typedef FormData_pg_largeobject_meta *Form_pg_largeobject_meta;
+typedef FormData_pg_largeobject_metadata *Form_pg_largeobject_metadata;
 
 /* ----------------
- *		compiler constants for pg_largeobject
+ *		compiler constants for pg_largeobject_metadata
  * ----------------
  */
-#define Natts_pg_largeobject_meta			2
-#define Anum_pg_largeobject_meta_lomowner	1
-#define Anum_pg_largeobject_meta_lomacl		2
+#define Natts_pg_largeobject_metadata			2
+#define Anum_pg_largeobject_metadata_lomowner	1
+#define Anum_pg_largeobject_metadata_lomacl		2
 
 extern Oid  CreateLargeObject(Oid loid);
 extern void DropLargeObject(Oid loid);
 extern void AlterLargeObjectOwner(Oid loid, Oid newOwnerId);
 
 /* to be moved to backend/security/access_control.c */
-extern bool ac_largeobject_compat_dac;
+extern bool ac_largeobject_compat_acl;
 extern void ac_largeobject_create(Oid loid);
 extern void ac_largeobject_alter(Oid loid, Oid newOwner);
 extern void ac_largeobject_drop(Oid loid, bool dacSkip);

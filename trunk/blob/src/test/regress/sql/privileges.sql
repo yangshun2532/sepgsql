@@ -17,7 +17,7 @@ DROP ROLE IF EXISTS regressuser4;
 DROP ROLE IF EXISTS regressuser5;
 DROP ROLE IF EXISTS regressuser6;
 
-SELECT lo_unlink(oid) FROM pg_largeobject_meta;
+SELECT lo_unlink(oid) FROM pg_largeobject_metadata;
 
 RESET client_min_messages;
 
@@ -532,7 +532,7 @@ SELECT lo_unlink(2002);
 
 \c -
 -- confirm ACL setting
-SELECT l.oid, a.rolname, l.lomacl FROM pg_largeobject_meta l JOIN pg_authid a ON l.lomowner = a.oid;
+SELECT oid, pg_get_userbyid(lomowner) ownername, lomacl FROM pg_largeobject_metadata;
 
 SET SESSION AUTHORIZATION regressuser3;
 
@@ -545,7 +545,7 @@ SELECT lo_truncate(lo_open(2001, x'20000'::int), 10);
 
 -- compatibility mode in largeobject permission
 \c -
-SET largeobject_compat_dac = false;
+SET largeobject_compat_acl = false;
 SET SESSION AUTHORIZATION regressuser4;
 
 SELECT loread(lo_open(1002, x'40000'::int), 32);	-- to be denied
@@ -554,7 +554,7 @@ SELECT lo_truncate(lo_open(1002, x'20000'::int), 10);	-- to be denied
 SELECT lo_unlink(1002);					-- to be denied
 
 \c -
-SET largeobject_compat_dac = true;
+SET largeobject_compat_acl = true;
 SET SESSION AUTHORIZATION regressuser4;
 
 SELECT loread(lo_open(1002, x'40000'::int), 32);
@@ -588,7 +588,7 @@ DROP TABLE atestc;
 DROP TABLE atestp1;
 DROP TABLE atestp2;
 
-SELECT lo_unlink(oid) FROM pg_largeobject_meta;
+SELECT lo_unlink(oid) FROM pg_largeobject_metadata;
 
 DROP GROUP regressgroup1;
 DROP GROUP regressgroup2;

@@ -104,7 +104,7 @@ SELECT relname, relhasindex
  pg_inherits             | t
  pg_language             | t
  pg_largeobject          | t
- pg_largeobject_meta     | t
+ pg_largeobject_metadata | t
  pg_listener             | f
  pg_namespace            | t
  pg_opclass              | t
