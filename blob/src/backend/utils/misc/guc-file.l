@@ -4,7 +4,7 @@
  *
  * Copyright (c) 2000-2009, PostgreSQL Global Development Group
  *
- * $PostgreSQL: pgsql/src/backend/utils/misc/guc-file.l,v 1.59 2009/04/09 14:21:02 tgl Exp $
+ * $PostgreSQL: pgsql/src/backend/utils/misc/guc-file.l,v 1.61 2009/09/17 21:15:18 petere Exp $
  */
 
 %{
@@ -260,9 +260,8 @@ ProcessConfigFile(GucContext context)
 		{
 			ereport(elevel,
 					(errcode(ERRCODE_CANT_CHANGE_RUNTIME_PARAM),
-					 errmsg("attempted change of parameter \"%s\" ignored",
-							gconf->name),
-					 errdetail("This parameter cannot be changed after server start.")));
+					 errmsg("parameter \"%s\" cannot be changed without restarting the server",
+							gconf->name)));
 			continue;
 		}
 
@@ -283,6 +282,10 @@ ProcessConfigFile(GucContext context)
 		/* Now we can re-apply the wired-in default */
 		set_config_option(gconf->name, NULL, context, PGC_S_DEFAULT,
 						  GUC_ACTION_SET, true);
+		if (context == PGC_SIGHUP)
+			ereport(elevel,
+					(errmsg("parameter \"%s\" removed from configuration file, reset to default",
+							gconf->name)));
 	}
 
 	/*
@@ -309,9 +312,18 @@ ProcessConfigFile(GucContext context)
 	/* If we got here all the options checked out okay, so apply them. */
 	for (item = head; item; item = item->next)
 	{
+		char *pre_value = NULL;
+
+		if (context == PGC_SIGHUP)
+			pre_value = pstrdup(GetConfigOption(item->name));
+
 		if (set_config_option(item->name, item->value, context,
 			   					 PGC_S_FILE, GUC_ACTION_SET, true))
 		{
+			if (pre_value && strcmp(pre_value, GetConfigOption(item->name)) != 0)
+				ereport(elevel,
+						(errmsg("parameter \"%s\" changed to \"%s\"",
+								item->name, item->value)));
 			set_config_sourcefile(item->name, item->filename,
 								  item->sourceline);
 		}
