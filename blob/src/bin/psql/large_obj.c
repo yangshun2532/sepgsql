@@ -279,11 +279,13 @@ do_lo_list(void)
 	printQueryOpt myopt = pset.popt;
 
 	snprintf(buf, sizeof(buf),
-			 "SELECT loid as \"%s\",\n"
-		   "  pg_catalog.obj_description(loid, 'pg_largeobject') as \"%s\"\n"
-			 "FROM (SELECT DISTINCT loid FROM pg_catalog.pg_largeobject) x\n"
-			 "ORDER BY 1",
+			 "SELECT oid as \"%s\",\n"
+			 "  pg_catalog.pg_get_userbyid(lomowner) as \"%s\",\n"
+			 "  pg_catalog.obj_description(oid, 'pg_largeobject_metadata') as \"%s\"\n"
+			 "  FROM pg_largeobject_metadata "
+			 "  ORDER BY oid",
 			 gettext_noop("ID"),
+			 gettext_noop("Owner"),
 			 gettext_noop("Description"));
 
 	res = PSQLexec(buf, false);
