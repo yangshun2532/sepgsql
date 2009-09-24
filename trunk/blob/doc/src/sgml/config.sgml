@@ -1,4 +1,4 @@
-<!-- $PostgreSQL: pgsql/doc/src/sgml/config.sgml,v 1.226 2009/09/10 15:02:46 alvherre Exp $ -->
+<!-- $PostgreSQL: pgsql/doc/src/sgml/config.sgml,v 1.229 2009/09/22 23:43:37 tgl Exp $ -->
 
 <chapter Id="runtime-config">
   <title>Server Configuration</title>
@@ -3616,8 +3616,7 @@ COPY postgres_log FROM '/full/path/to/logfile.csv' WITH csv;
        <para>
         Specifies the maximum number of autovacuum processes (other than the
         autovacuum launcher) which may be running at any one time.  The default
-        is three.  This parameter can only be set in
-        the <filename>postgresql.conf</> file or on the server command line.
+        is three.  This parameter can only be set at server start.
        </para>
       </listitem>
      </varlistentry>
@@ -3965,6 +3964,21 @@ COPY postgres_log FROM '/full/path/to/logfile.csv' WITH csv;
       </listitem>
      </varlistentry>
 
+     <varlistentry id="guc-default-do-language" xreflabel="default_do_language">
+      <term><varname>default_do_language</varname> (<type>string</type>)</term>
+      <indexterm>
+       <primary><varname>default_do_language</> configuration parameter</primary>
+      </indexterm>
+      <listitem>
+       <para>
+        This parameter specifies the language to use when the
+        <literal>LANGUAGE</> option is omitted in a
+        <xref linkend="sql-do" endterm="sql-do-title"> statement.
+        The default is <literal>plpgsql</literal>.
+       </para>
+      </listitem>
+     </varlistentry>
+
      <varlistentry id="guc-default-transaction-isolation" xreflabel="default_transaction_isolation">
       <indexterm>
        <primary>transaction isolation level</primary>
@@ -4291,7 +4305,7 @@ SET XML OPTION { DOCUMENT | CONTENT };
         floating-point values, including <type>float4</>, <type>float8</>,
         and geometric data types.  The parameter value is added to the
         standard number of digits (<literal>FLT_DIG</> or <literal>DBL_DIG</>
-        as appropriate).  The value can be set as high as 2, to include
+        as appropriate).  The value can be set as high as 3, to include
         partially-significant digits; this is especially useful for dumping
         float data that needs to be restored exactly.  Or it can be set
         negative to suppress unwanted digits.

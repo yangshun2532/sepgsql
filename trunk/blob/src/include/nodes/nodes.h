@@ -7,7 +7,7 @@
  * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/nodes/nodes.h,v 1.224 2009/07/30 02:45:37 tgl Exp $
+ * $PostgreSQL: pgsql/src/include/nodes/nodes.h,v 1.226 2009/09/22 23:43:41 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -211,6 +211,7 @@ typedef enum NodeTag
 	T_ResultPath,
 	T_MaterialPath,
 	T_UniquePath,
+	T_NoOpPath,
 	T_EquivalenceClass,
 	T_EquivalenceMember,
 	T_PathKey,
@@ -273,6 +274,7 @@ typedef enum NodeTag
 	T_CreateFunctionStmt,
 	T_AlterFunctionStmt,
 	T_RemoveFuncStmt,
+	T_DoStmt,
 	T_RenameStmt,
 	T_RuleStmt,
 	T_NotifyStmt,
@@ -387,7 +389,8 @@ typedef enum NodeTag
 	T_TriggerData = 950,		/* in commands/trigger.h */
 	T_ReturnSetInfo,			/* in nodes/execnodes.h */
 	T_WindowObjectData,			/* private in nodeWindowAgg.c */
-	T_TIDBitmap					/* in nodes/tidbitmap.h */
+	T_TIDBitmap,				/* in nodes/tidbitmap.h */
+	T_InlineCodeBlock			/* in nodes/parsenodes.h */
 } NodeTag;
 
 /*

@@ -11,7 +11,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/parser/gram.y,v 2.677 2009/08/18 23:40:20 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/parser/gram.y,v 2.679 2009/09/22 23:43:38 tgl Exp $
  *
  * HISTORY
  *	  AUTHOR			DATE			MAJOR EVENT
@@ -196,7 +196,7 @@ static TypeName *TableFuncTypeName(List *columns);
 		CreateSchemaStmt CreateSeqStmt CreateStmt CreateTableSpaceStmt
 		CreateFdwStmt CreateForeignServerStmt CreateAssertStmt CreateTrigStmt
 		CreateUserStmt CreateUserMappingStmt CreateRoleStmt
-		CreatedbStmt DeclareCursorStmt DefineStmt DeleteStmt DiscardStmt
+		CreatedbStmt DeclareCursorStmt DefineStmt DeleteStmt DiscardStmt DoStmt
 		DropGroupStmt DropOpClassStmt DropOpFamilyStmt DropPLangStmt DropStmt
 		DropAssertStmt DropTrigStmt DropRuleStmt DropCastStmt DropRoleStmt
 		DropUserStmt DropdbStmt DropTableSpaceStmt DropFdwStmt
@@ -246,7 +246,6 @@ static TypeName *TableFuncTypeName(List *columns);
 %type <list>	OptSchemaEltList
 
 %type <boolean> TriggerActionTime TriggerForSpec opt_trusted opt_restart_seqs
-%type <str>		opt_lancompiler
 
 %type <ival>	TriggerEvents TriggerOneEvent
 %type <value>	TriggerFuncArg
@@ -256,7 +255,7 @@ static TypeName *TableFuncTypeName(List *columns);
 				index_name name file_name cluster_index_specification
 
 %type <list>	func_name handler_name qual_Op qual_all_Op subquery_Op
-				opt_class opt_validator validator_clause
+				opt_class opt_inline_handler opt_validator validator_clause
 
 %type <range>	qualified_name OptConstrFromTable
 
@@ -295,12 +294,12 @@ static TypeName *TableFuncTypeName(List *columns);
 				execute_param_clause using_clause returning_clause
 				enum_val_list table_func_column_list
 				create_generic_options alter_generic_options
-				relation_expr_list
+				relation_expr_list dostmt_opt_list
 
 %type <range>	OptTempTableName
 %type <into>	into_clause create_as_target
 
-%type <defelt>	createfunc_opt_item common_func_opt_item
+%type <defelt>	createfunc_opt_item common_func_opt_item dostmt_opt_item
 %type <fun_param> func_arg func_arg_with_default table_func_column
 %type <fun_param_mode> arg_class
 %type <typnam>	func_return func_type
@@ -373,6 +372,10 @@ static TypeName *TableFuncTypeName(List *columns);
 %type <node>	explain_option_arg
 %type <defelt>	explain_option_elem
 %type <list>	explain_option_list
+%type <node>	copy_generic_opt_arg copy_generic_opt_arg_list_item
+%type <defelt>	copy_generic_opt_elem
+%type <list>	copy_generic_opt_list copy_generic_opt_arg_list
+%type <list>	copy_options
 
 %type <typnam>	Typename SimpleTypename ConstTypename
 				GenericType Numeric opt_float
@@ -478,7 +481,7 @@ static TypeName *TableFuncTypeName(List *columns);
 	HANDLER HAVING HEADER_P HOLD HOUR_P
 
 	IDENTITY_P IF_P ILIKE IMMEDIATE IMMUTABLE IMPLICIT_P IN_P
-	INCLUDING INCREMENT INDEX INDEXES INHERIT INHERITS INITIALLY
+	INCLUDING INCREMENT INDEX INDEXES INHERIT INHERITS INITIALLY INLINE_P
 	INNER_P INOUT INPUT_P INSENSITIVE INSERT INSTEAD INT_P INTEGER
 	INTERSECT INTERVAL INTO INVOKER IS ISNULL ISOLATION
 
@@ -486,7 +489,7 @@ static TypeName *TableFuncTypeName(List *columns);
 
 	KEY
 
-	LANCOMPILER LANGUAGE LARGE_P LAST_P LC_COLLATE_P LC_CTYPE_P LEADING
+	LANGUAGE LARGE_P LAST_P LC_COLLATE_P LC_CTYPE_P LEADING
 	LEAST LEFT LEVEL LIKE LIMIT LISTEN LOAD LOCAL LOCALTIME LOCALTIMESTAMP
 	LOCATION LOCK_P LOGIN_P
 
@@ -673,6 +676,7 @@ stmt :
 			| DefineStmt
 			| DeleteStmt
 			| DiscardStmt
+			| DoStmt
 			| DropAssertStmt
 			| DropCastStmt
 			| DropFdwStmt
@@ -1935,19 +1939,23 @@ ClosePortalStmt:
 /*****************************************************************************
  *
  *		QUERY :
- *				COPY relname ['(' columnList ')'] FROM/TO file [WITH options]
+ *				COPY relname [(columnList)] FROM/TO file [WITH] [(options)]
+ *				COPY ( SELECT ... ) TO file [WITH] [(options)]
  *
- *				BINARY, OIDS, and DELIMITERS kept in old locations
- *				for backward compatibility.  2002-06-18
+ *				In the preferred syntax the options are comma-separated
+ *				and use generic identifiers instead of keywords.  The pre-8.5
+ *				syntax had a hard-wired, space-separated set of options.
  *
- *				COPY ( SELECT ... ) TO file [WITH options]
- *				This form doesn't have the backwards-compatible option
- *				syntax.
+ *				Really old syntax, from versions 7.2 and prior:
+ *				COPY [ BINARY ] table [ WITH OIDS ] FROM/TO file
+ *					[ [ USING ] DELIMITERS 'delimiter' ] ]
+ *					[ WITH NULL AS 'null string' ]
+ *				This option placement is not supported with COPY (SELECT...).
  *
  *****************************************************************************/
 
 CopyStmt:	COPY opt_binary qualified_name opt_column_list opt_oids
-			copy_from copy_file_name copy_delimiter opt_with copy_opt_list
+			copy_from copy_file_name copy_delimiter opt_with copy_options
 				{
 					CopyStmt *n = makeNode(CopyStmt);
 					n->relation = $3;
@@ -1968,8 +1976,7 @@ CopyStmt:	COPY opt_binary qualified_name opt_column_list opt_oids
 						n->options = list_concat(n->options, $10);
 					$$ = (Node *)n;
 				}
-			| COPY select_with_parens TO copy_file_name opt_with
-			  copy_opt_list
+			| COPY select_with_parens TO copy_file_name opt_with copy_options
 				{
 					CopyStmt *n = makeNode(CopyStmt);
 					n->relation = NULL;
@@ -1998,18 +2005,20 @@ copy_file_name:
 			| STDOUT								{ $$ = NULL; }
 		;
 
+copy_options: copy_opt_list							{ $$ = $1; }
+			| '(' copy_generic_opt_list ')'			{ $$ = $2; }
+		;
 
-
+/* old COPY option syntax */
 copy_opt_list:
 			copy_opt_list copy_opt_item				{ $$ = lappend($1, $2); }
 			| /* EMPTY */							{ $$ = NIL; }
 		;
 
-
 copy_opt_item:
 			BINARY
 				{
-					$$ = makeDefElem("binary", (Node *)makeInteger(TRUE));
+					$$ = makeDefElem("format", (Node *)makeString("binary"));
 				}
 			| OIDS
 				{
@@ -2025,7 +2034,7 @@ copy_opt_item:
 				}
 			| CSV
 				{
-					$$ = makeDefElem("csv", (Node *)makeInteger(TRUE));
+					$$ = makeDefElem("format", (Node *)makeString("csv"));
 				}
 			| HEADER_P
 				{
@@ -2049,16 +2058,16 @@ copy_opt_item:
 				}
 			| FORCE NOT NULL_P columnList
 				{
-					$$ = makeDefElem("force_notnull", (Node *)$4);
+					$$ = makeDefElem("force_not_null", (Node *)$4);
 				}
 		;
 
-/* The following exist for backward compatibility */
+/* The following exist for backward compatibility with very old versions */
 
 opt_binary:
 			BINARY
 				{
-					$$ = makeDefElem("binary", (Node *)makeInteger(TRUE));
+					$$ = makeDefElem("format", (Node *)makeString("binary"));
 				}
 			| /*EMPTY*/								{ $$ = NULL; }
 		;
@@ -2072,7 +2081,6 @@ opt_oids:
 		;
 
 copy_delimiter:
-			/* USING DELIMITERS kept for backward compatibility. 2002-06-15 */
 			opt_using DELIMITERS Sconst
 				{
 					$$ = makeDefElem("delimiter", (Node *)makeString($3));
@@ -2083,6 +2091,51 @@ copy_delimiter:
 opt_using:
 			USING									{}
 			| /*EMPTY*/								{}
+		;
+
+/* new COPY option syntax */
+copy_generic_opt_list:
+			copy_generic_opt_elem
+				{
+					$$ = list_make1($1);
+				}
+			| copy_generic_opt_list ',' copy_generic_opt_elem
+				{
+					$$ = lappend($1, $3);
+				}
+		;
+
+copy_generic_opt_elem:
+			ColLabel copy_generic_opt_arg
+				{
+					$$ = makeDefElem($1, $2);
+				}
+		;
+
+copy_generic_opt_arg:
+			opt_boolean						{ $$ = (Node *) makeString($1); }
+			| ColId_or_Sconst				{ $$ = (Node *) makeString($1); }
+			| NumericOnly					{ $$ = (Node *) $1; }
+			| '*'							{ $$ = (Node *) makeNode(A_Star); }
+			| '(' copy_generic_opt_arg_list ')'		{ $$ = (Node *) $2; }
+			| /* EMPTY */					{ $$ = NULL; }
+		;
+
+copy_generic_opt_arg_list:
+			  copy_generic_opt_arg_list_item
+				{
+					$$ = list_make1($1);
+				}
+			| copy_generic_opt_arg_list ',' copy_generic_opt_arg_list_item
+				{
+					$$ = lappend($1, $3);
+				}
+		;
+
+/* beware of emitting non-string list elements here; see commands/define.c */
+copy_generic_opt_arg_list_item:
+			opt_boolean				{ $$ = (Node *) makeString($1); }
+			| ColId_or_Sconst		{ $$ = (Node *) makeString($1); }
 		;
 
 
@@ -2719,19 +2772,20 @@ CreatePLangStmt:
 				n->plname = $5;
 				/* parameters are all to be supplied by system */
 				n->plhandler = NIL;
+				n->plinline = NIL;
 				n->plvalidator = NIL;
 				n->pltrusted = false;
 				$$ = (Node *)n;
 			}
 			| CREATE opt_trusted opt_procedural LANGUAGE ColId_or_Sconst
-			  HANDLER handler_name opt_validator opt_lancompiler
+			  HANDLER handler_name opt_inline_handler opt_validator
 			{
 				CreatePLangStmt *n = makeNode(CreatePLangStmt);
 				n->plname = $5;
 				n->plhandler = $7;
-				n->plvalidator = $8;
+				n->plinline = $8;
+				n->plvalidator = $9;
 				n->pltrusted = $2;
-				/* LANCOMPILER is now ignored entirely */
 				$$ = (Node *)n;
 			}
 		;
@@ -2750,6 +2804,11 @@ handler_name:
 			| name attrs				{ $$ = lcons(makeString($1), $2); }
 		;
 
+opt_inline_handler:
+			INLINE_P handler_name					{ $$ = $2; }
+			| /*EMPTY*/								{ $$ = NIL; }
+		;
+
 validator_clause:
 			VALIDATOR handler_name					{ $$ = $2; }
 			| NO VALIDATOR							{ $$ = NIL; }
@@ -2758,11 +2817,6 @@ validator_clause:
 opt_validator:
 			validator_clause						{ $$ = $1; }
 			| /*EMPTY*/								{ $$ = NIL; }
-		;
-
-opt_lancompiler:
-			LANCOMPILER Sconst						{ $$ = $2; }
-			| /*EMPTY*/								{ $$ = NULL; }
 		;
 
 DropPLangStmt:
@@ -5094,6 +5148,38 @@ any_operator:
 					{ $$ = lcons(makeString($1), $3); }
 		;
 
+/*****************************************************************************
+ *
+ *		DO <anonymous code block> [ LANGUAGE language ]
+ *
+ * We use a DefElem list for future extensibility, and to allow flexibility
+ * in the clause order.
+ *
+ *****************************************************************************/
+
+DoStmt: DO dostmt_opt_list
+				{
+					DoStmt *n = makeNode(DoStmt);
+					n->args = $2;
+					$$ = (Node *)n;
+				}
+		;
+
+dostmt_opt_list:
+			dostmt_opt_item						{ $$ = list_make1($1); }
+			| dostmt_opt_list dostmt_opt_item	{ $$ = lappend($1, $2); }
+		;
+
+dostmt_opt_item:
+			Sconst
+				{
+					$$ = makeDefElem("as", (Node *)makeString($1));
+				}
+			| LANGUAGE ColId_or_Sconst
+				{
+					$$ = makeDefElem("language", (Node *)makeString($2));
+				}
+		;
 
 /*****************************************************************************
  *
@@ -10329,6 +10415,7 @@ unreserved_keyword:
 			| INDEXES
 			| INHERIT
 			| INHERITS
+			| INLINE_P
 			| INPUT_P
 			| INSENSITIVE
 			| INSERT
@@ -10336,7 +10423,6 @@ unreserved_keyword:
 			| INVOKER
 			| ISOLATION
 			| KEY
-			| LANCOMPILER
 			| LANGUAGE
 			| LARGE_P
 			| LAST_P
