@@ -51,7 +51,7 @@
 
 
 #------------------------------------------------------------------------------
-# CONNECTIONS, SECURITY AND AUTHENTICATION
+# CONNECTIONS AND AUTHENTICATION
 #------------------------------------------------------------------------------
 
 # - Connection Settings -
@@ -87,10 +87,6 @@
 #krb_server_keyfile = ''
 #krb_srvname = 'postgres'		# (Kerberos only)
 #krb_caseins_users = off
-
-#largeobject_compat_acl = off		# It provides compatible mode on access
-					# control of largeobjects, as if prior
-					# versions without no ACL checks.
 
 # - TCP Keepalives -
 # see "man 7 tcp" for details
@@ -493,6 +489,7 @@
 #backslash_quote = safe_encoding	# on, off, or safe_encoding
 #default_with_oids = off
 #escape_string_warning = on
+#largeobject_compat_acl = off
 #regex_flavor = advanced		# advanced, extended, or basic
 #sql_inheritance = on
 #standard_conforming_strings = off
