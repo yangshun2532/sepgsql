@@ -38,7 +38,7 @@
 #include "catalog/dependency.h"
 #include "catalog/indexing.h"
 #include "catalog/pg_largeobject.h"
-#include "catalog/pg_largeobject_meta.h"
+#include "catalog/pg_largeobject_metadata.h"
 #include "commands/comment.h"
 #include "libpq/libpq-fs.h"
 #include "miscadmin.h"
@@ -169,7 +169,7 @@ inv_create(Oid lobjId)
 	/*
 	 * dependency on the owner of largeobject
 	 */
-	recordDependencyOnOwner(LargeObjectMetaRelationId,
+	recordDependencyOnOwner(LargeObjectMetadataRelationId,
 							lobjId_new, GetUserId());
 	/*
 	 * Advance command counter to make new tuple visible to later operations.
@@ -257,7 +257,7 @@ inv_drop(Oid lobjId)
 	/*
 	 * Delete any comments and dependencies on the large object
 	 */
-	object.classId = LargeObjectMetaRelationId;
+	object.classId = LargeObjectMetadataRelationId;
 	object.objectId = lobjId;
 	object.objectSubId = 0;
 	performDeletion(&object, DROP_CASCADE);

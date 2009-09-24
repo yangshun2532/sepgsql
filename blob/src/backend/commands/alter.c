@@ -15,7 +15,7 @@
 #include "postgres.h"
 
 #include "catalog/namespace.h"
-#include "catalog/pg_largeobject_meta.h"
+#include "catalog/pg_largeobject_metadata.h"
 #include "commands/alter.h"
 #include "commands/conversioncmds.h"
 #include "commands/dbcommands.h"

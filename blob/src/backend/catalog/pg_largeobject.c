@@ -21,7 +21,7 @@
 #include "catalog/indexing.h"
 #include "catalog/pg_authid.h"
 #include "catalog/pg_largeobject.h"
-#include "catalog/pg_largeobject_meta.h"
+#include "catalog/pg_largeobject_metadata.h"
 #include "catalog/toasting.h"
 #include "miscadmin.h"
 #include "utils/acl.h"
@@ -45,10 +45,11 @@ CreateLargeObject(Oid loid)
 	Relation	pg_lo_meta;
 	HeapTuple	ntup;
 	Oid			loid_new;
-	Datum		values[Natts_pg_largeobject_meta];
-	bool		nulls[Natts_pg_largeobject_meta];
+	Datum		values[Natts_pg_largeobject_metadata];
+	bool		nulls[Natts_pg_largeobject_metadata];
 
-	pg_lo_meta = heap_open(LargeObjectMetaRelationId, RowExclusiveLock);
+	pg_lo_meta = heap_open(LargeObjectMetadataRelationId,
+						   RowExclusiveLock);
 
 	/*
 	 * Insert metadata of the largeobject
@@ -56,9 +57,9 @@ CreateLargeObject(Oid loid)
 	memset(values, 0, sizeof(values));
 	memset(nulls, false, sizeof(nulls));
 
-	values[Anum_pg_largeobject_meta_lomowner - 1]
+	values[Anum_pg_largeobject_metadata_lomowner - 1]
 		= ObjectIdGetDatum(GetUserId());
-	nulls[Anum_pg_largeobject_meta_lomacl - 1] = true;
+	nulls[Anum_pg_largeobject_metadata_lomacl - 1] = true;
 
 	ntup = heap_form_tuple(RelationGetDescr(pg_lo_meta),
 						   values, nulls);
@@ -86,12 +87,14 @@ DropLargeObject(Oid loid)
 	SysScanDesc sd;
 	HeapTuple	tuple;
 
-	pg_lo_meta = heap_open(LargeObjectMetaRelationId, RowExclusiveLock);
+	pg_lo_meta = heap_open(LargeObjectMetadataRelationId,
+						   RowExclusiveLock);
 
-	pg_largeobject = heap_open(LargeObjectRelationId, RowExclusiveLock);
+	pg_largeobject = heap_open(LargeObjectRelationId,
+							   RowExclusiveLock);
 
 	/*
-	 * Delete an entry from pg_largeobject_meta
+	 * Delete an entry from pg_largeobject_metadata
 	 */
 	tuple = SearchSysCache(LARGEOBJECTOID,
 						   ObjectIdGetDatum(loid),
@@ -130,11 +133,12 @@ DropLargeObject(Oid loid)
 void
 AlterLargeObjectOwner(Oid loid, Oid newOwnerId)
 {
-	Form_pg_largeobject_meta	lomForm;
+	Form_pg_largeobject_metadata	lomForm;
 	Relation	lomRel;
 	HeapTuple	oldtup, newtup;
 
-	lomRel = heap_open(LargeObjectMetaRelationId, RowExclusiveLock);
+	lomRel = heap_open(LargeObjectMetadataRelationId,
+					   RowExclusiveLock);
 
 	oldtup = SearchSysCache(LARGEOBJECTOID,
 							ObjectIdGetDatum(loid),
@@ -144,12 +148,12 @@ AlterLargeObjectOwner(Oid loid, Oid newOwnerId)
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("large object %u does not exist", loid)));
 
-	lomForm = (Form_pg_largeobject_meta) GETSTRUCT(oldtup);
+	lomForm = (Form_pg_largeobject_metadata) GETSTRUCT(oldtup);
 	if (lomForm->lomowner != newOwnerId)
 	{
-		Datum		values[Natts_pg_largeobject_meta];
-		bool		nulls[Natts_pg_largeobject_meta];
-		bool		replaces[Natts_pg_largeobject_meta];
+		Datum		values[Natts_pg_largeobject_metadata];
+		bool		nulls[Natts_pg_largeobject_metadata];
+		bool		replaces[Natts_pg_largeobject_metadata];
 		Acl		   *newAcl;
 		Datum		aclDatum;
 		bool		isnull;
@@ -161,24 +165,24 @@ AlterLargeObjectOwner(Oid loid, Oid newOwnerId)
 		memset(nulls, false, sizeof(nulls));
 		memset(replaces, false, sizeof(nulls));
 
-		values[Anum_pg_largeobject_meta_lomowner - 1]
+		values[Anum_pg_largeobject_metadata_lomowner - 1]
 			= ObjectIdGetDatum(newOwnerId);
-		replaces[Anum_pg_largeobject_meta_lomowner - 1] = true;
+		replaces[Anum_pg_largeobject_metadata_lomowner - 1] = true;
 
 		/*
 		 * Determine the modified ACL for the new owner.
 		 * This is only necessary when the ACL is non-null.
 		 */
 		aclDatum = SysCacheGetAttr(LARGEOBJECTOID, oldtup,
-								   Anum_pg_largeobject_meta_lomacl,
+								   Anum_pg_largeobject_metadata_lomacl,
 								   &isnull);
 		if (!isnull)
 		{
 			newAcl = aclnewowner(DatumGetAclP(aclDatum),
 								 lomForm->lomowner, newOwnerId);
-			values[Anum_pg_largeobject_meta_lomacl - 1]
+			values[Anum_pg_largeobject_metadata_lomacl - 1]
 				= PointerGetDatum(newAcl);
-			replaces[Anum_pg_largeobject_meta_lomacl - 1] = true;
+			replaces[Anum_pg_largeobject_metadata_lomacl - 1] = true;
 		}
 
 		newtup = heap_modify_tuple(oldtup, RelationGetDescr(lomRel),
@@ -190,7 +194,7 @@ AlterLargeObjectOwner(Oid loid, Oid newOwnerId)
 		heap_freetuple(newtup);
 
 		/* Update owner dependency reference */
-		changeDependencyOnOwner(LargeObjectMetaRelationId,
+		changeDependencyOnOwner(LargeObjectMetadataRelationId,
 								loid, newOwnerId);
 	}
 	ReleaseSysCache(oldtup);
@@ -203,8 +207,16 @@ AlterLargeObjectOwner(Oid loid, Oid newOwnerId)
  * the backend/security/access_control.c)
  */
 
-/* GUC option to control compatible largeobject bahavior */
-bool ac_largeobject_compat_dac;
+/*
+ * ac_largeobject_compat_acl
+ *
+ * It enables to turn on/off ACL checks on largeobjects to keep
+ * backward compatibility. The pgsql-8.4.x or prior didn't have
+ * any access controls on largeobjects (except for supruser checks
+ * on the server side import/export), so turning it off allows us
+ * to use the largeobject stuff as if older version doing.
+ */
+bool ac_largeobject_compat_acl;
 
 /*
  * ac_largeobject_create
@@ -269,7 +281,7 @@ ac_largeobject_alter(Oid loid, Oid newOwner)
 void ac_largeobject_drop(Oid loid, bool dacSkip)
 {
 	/* Must be owner of the largeobject */
-	if (!dacSkip && !ac_largeobject_compat_dac)
+	if (!dacSkip && !ac_largeobject_compat_acl)
 	{
 		if (!pg_largeobject_ownercheck(loid, GetUserId()))
 			ereport(ERROR,
@@ -288,7 +300,7 @@ void ac_largeobject_drop(Oid loid, bool dacSkip)
  */
 void ac_largeobject_comment(Oid loid)
 {
-	if (!ac_largeobject_compat_dac)
+	if (!ac_largeobject_compat_acl)
 	{
 		if (!pg_largeobject_ownercheck(loid, GetUserId()))
 			ereport(ERROR,
@@ -307,7 +319,7 @@ void ac_largeobject_comment(Oid loid)
  */
 void ac_largeobject_read(Oid loid)
 {
-	if (!ac_largeobject_compat_dac)
+	if (!ac_largeobject_compat_acl)
 	{
 		AclResult	aclresult;
 
@@ -329,7 +341,7 @@ void ac_largeobject_read(Oid loid)
  */
 void ac_largeobject_write(Oid loid)
 {
-	if (!ac_largeobject_compat_dac)
+	if (!ac_largeobject_compat_acl)
 	{
 		AclResult	aclresult;
 
