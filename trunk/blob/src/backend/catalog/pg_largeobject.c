@@ -281,13 +281,11 @@ ac_largeobject_alter(Oid loid, Oid newOwner)
 void ac_largeobject_drop(Oid loid, bool dacSkip)
 {
 	/* Must be owner of the largeobject */
-	if (!dacSkip && !ac_largeobject_compat_acl)
-	{
-		if (!pg_largeobject_ownercheck(loid, GetUserId()))
-			ereport(ERROR,
-					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-					 errmsg("must be owner of largeobject %u", loid)));
-	}
+	if (!dacSkip &&
+		!pg_largeobject_ownercheck(loid, GetUserId()))
+		ereport(!ac_largeobject_compat_acl ? ERROR : NOTICE,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("must be owner of largeobject %u", loid)));
 }
 
 /*
@@ -300,13 +298,10 @@ void ac_largeobject_drop(Oid loid, bool dacSkip)
  */
 void ac_largeobject_comment(Oid loid)
 {
-	if (!ac_largeobject_compat_acl)
-	{
-		if (!pg_largeobject_ownercheck(loid, GetUserId()))
-			ereport(ERROR,
-					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-					 errmsg("must be owner of largeobject %u", loid)));
-	}
+	if (!pg_largeobject_ownercheck(loid, GetUserId()))
+		ereport(!ac_largeobject_compat_acl ? ERROR : NOTICE,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("must be owner of largeobject %u", loid)));
 }
 
 /*
@@ -319,16 +314,13 @@ void ac_largeobject_comment(Oid loid)
  */
 void ac_largeobject_read(Oid loid)
 {
-	if (!ac_largeobject_compat_acl)
-	{
-		AclResult	aclresult;
+	AclResult	aclresult;
 
-		aclresult = pg_largeobject_aclcheck(loid, GetUserId(), ACL_SELECT);
-		if (aclresult != ACLCHECK_OK)
-			ereport(ERROR,
-					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-					 errmsg("permission denied for largeobject %u", loid)));
-	}
+	aclresult = pg_largeobject_aclcheck(loid, GetUserId(), ACL_SELECT);
+	if (aclresult != ACLCHECK_OK)
+		ereport(!ac_largeobject_compat_acl ? ERROR : NOTICE,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("permission denied for largeobject %u", loid)));
 }
 
 /*
@@ -341,16 +333,13 @@ void ac_largeobject_read(Oid loid)
  */
 void ac_largeobject_write(Oid loid)
 {
-	if (!ac_largeobject_compat_acl)
-	{
-		AclResult	aclresult;
+	AclResult	aclresult;
 
-		aclresult = pg_largeobject_aclcheck(loid, GetUserId(), ACL_UPDATE);
-		if (aclresult != ACLCHECK_OK)
-			ereport(ERROR,
-					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-					 errmsg("permission denied for largeobject %u", loid)));
-	}
+	aclresult = pg_largeobject_aclcheck(loid, GetUserId(), ACL_UPDATE);
+	if (aclresult != ACLCHECK_OK)
+		ereport(!ac_largeobject_compat_acl ? ERROR : NOTICE,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("permission denied for largeobject %u", loid)));
 }
 
 /*
