@@ -1001,24 +1001,28 @@ ERROR:  must be owner of largeobject 1002
 SET largeobject_compat_acl = true;
 SET SESSION AUTHORIZATION regressuser4;
 SELECT loread(lo_open(1002, x'40000'::int), 32);
+NOTICE:  permission denied for largeobject 1002
  loread 
 --------
  \x
 (1 row)
 
 SELECT lowrite(lo_open(1002, x'20000'::int), 'abcd');
+NOTICE:  permission denied for largeobject 1002
  lowrite 
 ---------
        4
 (1 row)
 
 SELECT lo_truncate(lo_open(1002, x'20000'::int), 10);
+NOTICE:  permission denied for largeobject 1002
  lo_truncate 
 -------------
            0
 (1 row)
 
 SELECT lo_unlink(1002);
+NOTICE:  must be owner of largeobject 1002
  lo_unlink 
 -----------
          1
