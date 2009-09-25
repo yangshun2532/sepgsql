@@ -592,6 +592,7 @@ sepgsql_relation_create(const char *relName, char relkind, TupleDesc tupDesc,
 {
 	Oid			   *secLabels;
 	sepgsql_sid_t	relsid;
+	uint16			tclass;
 	int				index;
 
 	if (!sepgsqlIsEnabled())
@@ -608,10 +609,7 @@ sepgsql_relation_create(const char *relName, char relkind, TupleDesc tupDesc,
 			relsid.secid = securityTransSecLabelIn(relsid.relid,
 												   strVal(relLabel->arg));
 		}
-		sepgsqlClientHasPerms(relsid,
-							  SEPG_CLASS_DB_TABLE,
-							  SEPG_DB_TABLE__CREATE,
-							  relName, true);
+		tclass = SEPG_CLASS_DB_TABLE;
 		break;
 
 	case RELKIND_SEQUENCE:
@@ -623,33 +621,10 @@ sepgsql_relation_create(const char *relName, char relkind, TupleDesc tupDesc,
 			relsid.secid = securityTransSecLabelIn(relsid.relid,
 												   strVal(relLabel->arg));
 		}
-		sepgsqlClientHasPerms(relsid,
-							  SEPG_CLASS_DB_SEQUENCE,
-							  SEPG_DB_SEQUENCE__CREATE,
-							  relName, true);
+		tclass = SEPG_CLASS_DB_SEQUENCE;
 		break;
-
-	case RELKIND_VIEW:
-		if (!relLabel)
-			relsid = sepgsqlGetDefaultViewSecid(nspOid);
-		else
-		{
-			relsid.relid = RelationRelationId;
-			relsid.secid = securityTransSecLabelIn(relsid.relid,
-												   strVal(relLabel->arg));
-		}
-		sepgsqlClientHasPerms(relsid,
-							  SEPG_CLASS_DB_VIEW,
-							  SEPG_DB_VIEW__CREATE,
-							  relName, true);
-		break;
-
-	case RELKIND_INDEX:
-		/* no need to assign security context and check it */
-		return NULL;
 
 	default:
-		/* Any other relkind is handled as misc system object */
 		if (!relLabel)
 			relsid = sepgsqlGetDefaultTupleSecid(RelationRelationId);
 		else
@@ -659,17 +634,12 @@ sepgsql_relation_create(const char *relName, char relkind, TupleDesc tupDesc,
 			relsid.secid = securityTransSecLabelIn(relsid.relid,
 												   strVal(relLabel->arg));
 		}
-		/* TOAST is an internal stuff, so checks are bypassed */
-		if (relkind != RELKIND_TOASTVALUE)
-			sepgsqlClientHasPerms(relsid,
-								  SEPG_CLASS_DB_TUPLE,
-								  SEPG_DB_TUPLE__INSERT,
-								  relName, true);
+		tclass = SEPG_CLASS_DB_TUPLE;
 		break;
 	}
 
 	/*
-	 * The secLabels array stores security identifiers to be assigned
+	 * The secLabeld array stores security identifiers to be assigned
 	 * on the new table and columns.
 	 * 
 	 * secLabels[0] is security identifier of the table.
@@ -677,14 +647,28 @@ sepgsql_relation_create(const char *relName, char relkind, TupleDesc tupDesc,
 	 *   is security identifier of columns (if necessary).
 	 */
 	secLabels = palloc0(sizeof(Oid) * (tupDesc->natts
-							- FirstLowInvalidHeapAttributeNumber));
+						- FirstLowInvalidHeapAttributeNumber));
 
 	/* relation's security identifier to be assigned on */
 	secLabels[0] = relsid.secid;
 
-	/* db_schema:{add_name} */
-	if (relkind != RELKIND_TOASTVALUE)
+	/*
+	 * Note that this hook can be called during initdb processes.
+	 * It is an exception of access controls, so we skip any checks.
+	 *
+	 * And, we don't need any checks for toast relations, because
+	 * it is fully internal stuff.
+	 */
+	if (!IsBootstrapProcessingMode() && relkind != RELKIND_TOASTVALUE)
+	{
+		/* db_schema:{add_name} */
 		sepgsql_schema_common(nspOid, SEPG_DB_SCHEMA__ADD_NAME, true);
+
+		/* db_table:{create}, db_sequence:{create} or db_tuple:{insert} */
+		sepgsqlClientHasPerms(relsid, tclass,
+							  SEPG_DB_TABLE__CREATE,
+							  relName, true);
+	}
 
 	/* no individual security context expect for RELKIND_RELATION */
 	if (relkind != RELKIND_RELATION)
@@ -731,12 +715,15 @@ sepgsql_relation_create(const char *relName, char relkind, TupleDesc tupDesc,
 			attsid = sepgsqlClientCreateSecid(relsid,
 											  SEPG_CLASS_DB_COLUMN,
 											  AttributeRelationId);
-		/* db_column:{create} */
-		sprintf(attname, "%s.%s", relName, NameStr(attr->attname));
-   		sepgsqlClientHasPerms(attsid,
-							  SEPG_CLASS_DB_COLUMN,
-							  SEPG_DB_COLUMN__CREATE,
-							  attname, true);
+		if (!IsBootstrapProcessingMode())
+		{
+			/* db_column:{create} */
+			sprintf(attname, "%s.%s", relName, NameStr(attr->attname));
+			sepgsqlClientHasPerms(attsid,
+								  SEPG_CLASS_DB_COLUMN,
+								  SEPG_DB_COLUMN__CREATE,
+								  attname, true);
+		}
 		/* column's security identifier to be assigend on */
 		secLabels[index - FirstLowInvalidHeapAttributeNumber] = attsid.secid;
 	}
@@ -1002,7 +989,7 @@ sepgsql_view_replace(Oid viewOid)
 	if (!sepgsqlIsEnabled())
 		return;
 
-	Assert(get_rel_relkind(viewOid) != RELKIND_VIEW);
+	Assert(get_rel_relkind(viewOid) == RELKIND_VIEW);
 
 	sepgsql_relation_common(viewOid, SEPG_DB_TABLE__SETATTR, true);
 }
@@ -2688,4 +2675,180 @@ sepgsql_sysobj_drop(const ObjectAddress *object)
 		/* do nothing */
 		break;
 	}
+}
+
+/* ------------------------------------------------------------ *
+ *
+ * Filesystem object related security hooks
+ *
+ * ------------------------------------------------------------ */
+static void
+sepgsql_file_common(const char *filename, uint32 required, bool may_create)
+{
+	security_context_t	context;
+	struct stat		stbuf;
+	uint16			tclass = SEPG_CLASS_FILE;
+
+	/*
+	 * Get file object class
+	 */
+	if (stat(filename, &stbuf) == 0)
+	{
+		if (S_ISDIR(stbuf.st_mode))
+			tclass = SEPG_CLASS_DIR;
+		else if (S_ISCHR(stbuf.st_mode))
+			tclass = SEPG_CLASS_CHR_FILE;
+		else if (S_ISBLK(stbuf.st_mode))
+			tclass = SEPG_CLASS_BLK_FILE;
+		else if (S_ISFIFO(stbuf.st_mode))
+			tclass = SEPG_CLASS_FIFO_FILE;
+		else if (S_ISLNK(stbuf.st_mode))
+			tclass = SEPG_CLASS_LNK_FILE;
+		else if (S_ISSOCK(stbuf.st_mode))
+			tclass = SEPG_CLASS_SOCK_FILE;
+		else
+			tclass = SEPG_CLASS_FILE;
+
+		if (getfilecon_raw(filename, &context) < 0)
+			ereport(ERROR,
+					(errcode_for_file_access(),
+					 errmsg("could not get context of \"%s\": %m", filename)));
+	}
+	else if (may_create)
+	{
+		security_context	dcontext;
+		char   *parent = dirname(pstrdup(filename));
+
+
+
+
+		/*
+		 * 
+		 *
+		 *
+		 *
+		 *
+		 */
+
+
+
+		tclass = string_to_security_class("file");
+
+
+
+		
+		
+		
+		tclass = SEPG_CLASS_FILE;
+	}
+	else
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 errmsg("could not stat file \"%s\": %m", filename)));
+
+
+
+
+
+}
+
+
+static void
+sepgsql_file_read(const char *filename)
+{
+	struct stat		stbuf;
+	uint16			tclass;
+
+	/*
+	 * Get file object class
+	 */
+	if (stat(filename, &stbuf) != 0)
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 errmsg("could not open file \"%s\" for reading: %m", filename)));
+
+
+
+
+
+
+
+}
+
+static void
+sepgsql_file_write(const char *filename)
+{
+	if (stat(filename, &stbuf) == 0)
+	{
+
+
+	}
+	else
+	{
+		/* we assume the backend to create a new file */
+		tclass = SEPG_CLASS_FILE;
+
+
+
+
+	}
+
+
+
+
+}
+
+static void
+sepgsql_file_stat(const char *filename)
+{
+
+}
+
+/*
+ * TODO: add check for pg_ls_dir()
+ */
+
+
+static void
+checkFileCommon(int fdesc, const char *filename, access_vector_t perms)
+{
+    security_context_t  context;
+    security_class_t    tclass;
+
+    if (!sepgsqlIsEnabled())
+        return;
+
+    tclass = sepgsqlFileObjectClass(fdesc);
+
+    if (fgetfilecon_raw(fdesc, &context) < 0)
+        ereport(ERROR,
+                (errcode(ERRCODE_SELINUX_ERROR),
+                 errmsg("SELinux: could not get context of %s", filename)));
+    PG_TRY();
+    {
+        sepgsqlComputePerms(sepgsqlGetClientLabel(),
+                            context,
+                            tclass,
+                            perms,
+                            filename, true);
+    }
+    PG_CATCH();
+    {
+        freecon(context);
+        PG_RE_THROW();
+    }
+    PG_END_TRY();
+    freecon(context);
+}
+
+void
+sepgsqlCheckFileRead(int fdesc, const char *filename)
+{
+    checkFileCommon(fdesc, filename, SEPG_FILE__READ);
+}
+
+void
+sepgsqlCheckFileWrite(int fdesc, const char *filename)
+{
+    checkFileCommon(fdesc, filename, SEPG_FILE__WRITE);
 }
