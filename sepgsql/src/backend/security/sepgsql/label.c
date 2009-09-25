@@ -252,14 +252,6 @@ sepgsqlGetDefaultSequenceSecid(Oid namespace_oid)
 }
 
 sepgsql_sid_t
-sepgsqlGetDefaultViewSecid(Oid namespace_oid)
-{
-	return defaultSecidWithSchema(RelationRelationId,
-								  namespace_oid,
-								  SEPG_CLASS_DB_VIEW);
-}
-
-sepgsql_sid_t
 sepgsqlGetDefaultProcedureSecid(Oid namespace_oid)
 {
 	return defaultSecidWithSchema(ProcedureRelationId,
@@ -367,18 +359,11 @@ sepgsqlSetDefaultSecid(Relation rel, HeapTuple tuple)
 			newSid = sepgsqlGetDefaultSequenceSecid(nspOid);
 			break;
 
-		case RELKIND_VIEW:
-			newSid = sepgsqlGetDefaultViewSecid(nspOid);
-			break;
-
-		case RELKIND_INDEX:
-			/* no individual security context */
-			break;
-
 		default:
-			newSid = sepgsqlGetDefaultTupleSecid(nspOid);
+			newSid = sepgsqlGetDefaultTupleSecid(relOid);
 			break;
 		}
+		break;
 
 	case ProcedureRelationId:
 		nspOid = ((Form_pg_proc) GETSTRUCT(tuple))->pronamespace;
@@ -388,14 +373,19 @@ sepgsqlSetDefaultSecid(Relation rel, HeapTuple tuple)
 	case AttributeRelationId:
 		tblOid = ((Form_pg_attribute) GETSTRUCT(tuple))->attrelid;
 
-		/* special handling for initdb phase */
-		if (tblOid == TypeRelationId ||
-			tblOid == ProcedureRelationId ||
-			tblOid == AttributeRelationId ||
-			tblOid == RelationRelationId ||
-			get_rel_relkind(tblOid) == RELKIND_RELATION)
+		/*
+		 * We cannot refer system cache in the very early initdb
+		 * phase, because pg_class is not constructed yet.
+		 */
+		if ((IsBootstrapProcessingMode() &&
+			 (tblOid == TypeRelationId		||
+			  tblOid == ProcedureRelationId	||
+			  tblOid == AttributeRelationId	||
+			  tblOid == RelationRelationId))
+			|| get_rel_relkind(tblOid) == RELKIND_RELATION)
+		{
 			newSid = sepgsqlGetDefaultColumnSecid(tblOid);
-
+		}
 		/* otherwise, it does not have individual security context */
 		break;
 
@@ -720,7 +710,6 @@ sepgsqlGetTupleSecid(Oid tableOid, HeapTuple tuple, uint16 *tclass)
 	Oid				extid;
 	Oid				extcls;
 	AttrNumber		extsub;
-	char			relkind;
 
 	/* initialize (unlabeled security context) */
 	sid.relid = tableOid;
@@ -791,11 +780,14 @@ sepgsqlGetTupleSecid(Oid tableOid, HeapTuple tuple, uint16 *tclass)
 								0, 0, 0);
 		if (HeapTupleIsValid(exttup))
 		{
-			relkind = ((Form_pg_class) GETSTRUCT(exttup))->relkind;
+			char	relkind = ((Form_pg_class) GETSTRUCT(exttup))->relkind;
 
-			if (relkind == RELKIND_RELATION ||
-				relkind == RELKIND_TOASTVALUE)
+			if (relkind == RELKIND_RELATION)
+			{
+				if (tclass)
+					*tclass = SEPG_CLASS_DB_COLUMN;
 				sid.secid = HeapTupleGetSecid(tuple);
+			}
 			else
 				sid = sepgsqlGetTupleSecid(RelationRelationId,
 										   exttup, tclass);
@@ -930,44 +922,25 @@ sepgsqlGetTupleSecid(Oid tableOid, HeapTuple tuple, uint16 *tclass)
 		break;
 
 	case RelationRelationId:
-		relkind = ((Form_pg_class) GETSTRUCT(tuple))->relkind;
-
-		switch (relkind)
+		sid.secid = HeapTupleGetSecid(tuple);
+		if (tclass)
 		{
-		case RELKIND_INDEX:
-			Assert(!IsBootstrapProcessingMode());
+			char	relkind = ((Form_pg_class) GETSTRUCT(tuple))->relkind;
 
-			extid = HeapTupleGetOid(tuple);
-			exttup = SearchSysCache(INDEXRELID,
-									ObjectIdGetDatum(extid),
-									0, 0, 0);
-			if (HeapTupleIsValid(exttup))
+			switch (relkind)
 			{
-				sid = sepgsqlGetTupleSecid(IndexRelationId,
-										   exttup, tclass);
-				ReleaseSysCache(exttup);
-			}
-			break;
-
-		case RELKIND_RELATION:
-			sid.secid = HeapTupleGetSecid(tuple);
-			if (tclass)
+			case RELKIND_RELATION:
 				*tclass = SEPG_CLASS_DB_TABLE;
-			break;
+				break;
 
-		case RELKIND_SEQUENCE:
-			sid.secid = HeapTupleGetSecid(tuple);
-			if (tclass)
+			case RELKIND_SEQUENCE:
 				*tclass = SEPG_CLASS_DB_SEQUENCE;
-			break;
-		case RELKIND_VIEW:
-			sid.secid = HeapTupleGetSecid(tuple);
-			if (tclass)
-				*tclass = SEPG_CLASS_DB_VIEW;
-			break;
-		default:	/* RELKIND_TOASTVALUE, RELKIND_COMPOSITE */
-			sid.secid = HeapTupleGetSecid(tuple);
-			break;
+				break;
+
+			default:
+				*tclass = SEPG_CLASS_DB_TUPLE;
+				break;
+			}
 		}
 		break;
 

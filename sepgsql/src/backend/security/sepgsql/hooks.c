@@ -240,6 +240,7 @@ sepgsqlCheckBlobRelabel(HeapTuple oldtup, HeapTuple newtup)
 						  NULL, true);
 }
 
+#if 0
 /*
  * sepgsqlCheckFileRead
  * sepgsqlCheckFileWrite
@@ -289,3 +290,4 @@ sepgsqlCheckFileWrite(int fdesc, const char *filename)
 {
 	checkFileCommon(fdesc, filename, SEPG_FILE__WRITE);
 }
+#endif

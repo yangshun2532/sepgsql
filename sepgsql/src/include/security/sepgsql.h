@@ -44,7 +44,6 @@ enum SepgsqlClasses
 	SEPG_CLASS_DB_SCHEMA,
 	SEPG_CLASS_DB_TABLE,
 	SEPG_CLASS_DB_SEQUENCE,
-	SEPG_CLASS_DB_VIEW,
 	SEPG_CLASS_DB_PROCEDURE,
 	SEPG_CLASS_DB_COLUMN,
 	SEPG_CLASS_DB_TUPLE,
@@ -118,14 +117,6 @@ enum SepgsqlClasses
 #define SEPG_DB_SEQUENCE__GET_VALUE			(1<<6)
 #define SEPG_DB_SEQUENCE__NEXT_VALUE		(1<<7)
 #define SEPG_DB_SEQUENCE__SET_VALUE			(1<<8)
-
-#define SEPG_DB_VIEW__CREATE				(SEPG_DB_DATABASE__CREATE)
-#define SEPG_DB_VIEW__DROP					(SEPG_DB_DATABASE__DROP)
-#define SEPG_DB_VIEW__GETATTR				(SEPG_DB_DATABASE__GETATTR)
-#define SEPG_DB_VIEW__SETATTR				(SEPG_DB_DATABASE__SETATTR)
-#define SEPG_DB_VIEW__RELABELFROM			(SEPG_DB_DATABASE__RELABELFROM)
-#define SEPG_DB_VIEW__RELABELTO				(SEPG_DB_DATABASE__RELABELTO)
-#define SEPG_DB_VIEW__EXPAND				(1<<6)
 
 #define SEPG_DB_PROCEDURE__CREATE			(SEPG_DB_DATABASE__CREATE)
 #define SEPG_DB_PROCEDURE__DROP				(SEPG_DB_DATABASE__DROP)
@@ -541,7 +532,6 @@ extern sepgsql_sid_t sepgsqlGetDefaultSchemaSecid(Oid database_oid);
 extern sepgsql_sid_t sepgsqlGetDefaultSchemaTempSecid(Oid database_oid);
 extern sepgsql_sid_t sepgsqlGetDefaultTableSecid(Oid namespace_oid);
 extern sepgsql_sid_t sepgsqlGetDefaultSequenceSecid(Oid namespace_oid);
-extern sepgsql_sid_t sepgsqlGetDefaultViewSecid(Oid namespace_oid);
 extern sepgsql_sid_t sepgsqlGetDefaultProcedureSecid(Oid namespace_oid);
 extern sepgsql_sid_t sepgsqlGetDefaultColumnSecid(Oid table_oid);
 extern sepgsql_sid_t sepgsqlGetDefaultTupleSecid(Oid table_oid);
