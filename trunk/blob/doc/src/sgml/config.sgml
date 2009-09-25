@@ -4797,27 +4797,30 @@ dynamic_library_path = 'C:\tools\postgresql;H:\my_project\lib;$libdir'
       </listitem>
      </varlistentry>
 
-     <varlistentry id="guc-largeobject-compat-acl" xreflabel="largeobject_compat_acl">
-      <term><varname>largeobject_compat_acl</varname> (<type>boolean</type>)</term>
+     <varlistentry id="guc-largeobject-check-acl" xreflabel="largeobject_check_acl">
+      <term><varname>largeobject_check_acl</varname> (<type>boolean</type>)</term>
       <indexterm>
        <primary>
-        <varname>largeobject_compat_acl</varname> configuration parameter
+        <varname>largeobject_check_acl</varname> configuration parameter
        </primary>
       </indexterm>
       <listitem>
        <para>
         This allows us to turn on/off database ACL checks on largeobjects.
-        The <productname>PostgreSQL</productname> 8.4 or prior has been
-        released without any ACL checks on accesses to largeobjects, so
-        it is necessary to pay attention existing SQLs expect here is no
-        security checks.
-        It is <literal>off</literal> by default.
+        The <productname>PostgreSQL</productname> 8.4.x or prior releases
+        don't have any ACL checks on largeobjects.
+        So, turning the <varname>largeobject_check_acl</varname> off means
+        the largeobject feature performs in compatible mode.
        </para>
        <para>
-        When the <varname>largeobject_compat_acl</varname> is turned
-        <literal>on</literal>, it allows accesses even if largeobject's acl
-        disallow the given accesses, and generate a notification message
-        to inform users the given SQL to be fixed at the current version.
+        Please note that it is not equivalent to disable all the security
+        checks corresponding to largeobjects.
+        For example, the <literal>lo_import()</literal> and
+        <literal>lo_export</literal> need superuser privileges independent
+        from this setting, as if the prior version doing.
+       </para>
+       <para>
+        It is <literal>on</literal> by default.
        </para>
       </listitem>
      </varlistentry>

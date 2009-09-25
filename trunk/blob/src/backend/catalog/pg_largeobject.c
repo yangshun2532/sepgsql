@@ -208,7 +208,7 @@ AlterLargeObjectOwner(Oid loid, Oid newOwnerId)
  */
 
 /*
- * ac_largeobject_compat_acl
+ * ac_largeobject_check_acl
  *
  * It enables to turn on/off ACL checks on largeobjects to keep
  * backward compatibility. The pgsql-8.4.x or prior didn't have
@@ -216,7 +216,7 @@ AlterLargeObjectOwner(Oid loid, Oid newOwnerId)
  * on the server side import/export), so turning it off allows us
  * to use the largeobject stuff as if older version doing.
  */
-bool ac_largeobject_compat_acl;
+bool ac_largeobject_check_acl;
 
 /*
  * ac_largeobject_create
@@ -248,6 +248,12 @@ void ac_largeobject_create(Oid loid)
 void
 ac_largeobject_alter(Oid loid, Oid newOwner)
 {
+	/*
+	 * MEMO: ac_largeobject_check_acl is not refered in this check,
+	 * because we don't have ALTER LARGE OBJECT at the v8.4.x or
+	 * prior release.
+	 */
+
 	/* must be owner of largeobject */
 	if (!pg_largeobject_ownercheck(loid, GetUserId()))
 		ereport(ERROR,
@@ -281,9 +287,9 @@ ac_largeobject_alter(Oid loid, Oid newOwner)
 void ac_largeobject_drop(Oid loid, bool dacSkip)
 {
 	/* Must be owner of the largeobject */
-	if (!dacSkip &&
+	if (!dacSkip && ac_largeobject_check_acl &&
 		!pg_largeobject_ownercheck(loid, GetUserId()))
-		ereport(!ac_largeobject_compat_acl ? ERROR : NOTICE,
+		ereport(ERROR,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 				 errmsg("must be owner of largeobject %u", loid)));
 }
@@ -298,8 +304,9 @@ void ac_largeobject_drop(Oid loid, bool dacSkip)
  */
 void ac_largeobject_comment(Oid loid)
 {
-	if (!pg_largeobject_ownercheck(loid, GetUserId()))
-		ereport(!ac_largeobject_compat_acl ? ERROR : NOTICE,
+	if (ac_largeobject_check_acl &&
+		!pg_largeobject_ownercheck(loid, GetUserId()))
+		ereport(ERROR,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 				 errmsg("must be owner of largeobject %u", loid)));
 }
@@ -314,11 +321,10 @@ void ac_largeobject_comment(Oid loid)
  */
 void ac_largeobject_read(Oid loid)
 {
-	AclResult	aclresult;
-
-	aclresult = pg_largeobject_aclcheck(loid, GetUserId(), ACL_SELECT);
-	if (aclresult != ACLCHECK_OK)
-		ereport(!ac_largeobject_compat_acl ? ERROR : NOTICE,
+	if (ac_largeobject_check_acl &&
+		pg_largeobject_aclcheck(loid, GetUserId(),
+								ACL_SELECT) != ACLCHECK_OK)
+		ereport(ERROR,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 				 errmsg("permission denied for largeobject %u", loid)));
 }
@@ -333,11 +339,10 @@ void ac_largeobject_read(Oid loid)
  */
 void ac_largeobject_write(Oid loid)
 {
-	AclResult	aclresult;
-
-	aclresult = pg_largeobject_aclcheck(loid, GetUserId(), ACL_UPDATE);
-	if (aclresult != ACLCHECK_OK)
-		ereport(!ac_largeobject_compat_acl ? ERROR : NOTICE,
+	if (ac_largeobject_check_acl &&
+		pg_largeobject_aclcheck(loid, GetUserId(),
+								ACL_UPDATE) != ACLCHECK_OK)
+		ereport(ERROR,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 				 errmsg("permission denied for largeobject %u", loid)));
 }
