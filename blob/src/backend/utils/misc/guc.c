@@ -1241,12 +1241,12 @@ static struct config_bool ConfigureNamesBool[] =
 	},
 
 	{
-		{"largeobject_compat_acl", PGC_SUSET, COMPAT_OPTIONS,
-			gettext_noop("Largeobject permission checks in the compatible mode."),
+		{"largeobject_check_acl", PGC_SUSET, COMPAT_OPTIONS,
+			gettext_noop("Enables/Disables permission check for largeobjects."),
 			NULL,
 		},
-		&ac_largeobject_compat_acl,
-		false, NULL, NULL
+		&ac_largeobject_check_acl,
+		true, NULL, NULL
 	},
 
 	/* End-of-list marker */
