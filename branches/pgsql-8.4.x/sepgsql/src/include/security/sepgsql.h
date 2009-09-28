@@ -55,24 +55,38 @@ enum SepgsqlClasses
 
 #define SEPG_FILE__READ						(1<<0)
 #define SEPG_FILE__WRITE					(1<<1)
+#define SEPG_FILE__CREATE					(1<<2)
+#define SEPG_FILE__GETATTR					(1<<3)
 
 #define SEPG_DIR__READ						(SEPG_FILE__READ)
 #define SEPG_DIR__WRITE						(SEPG_FILE__WRITE)
+#define SEPG_DIR__CREATE					(SEPG_FILE__CREATE)
+#define SEPG_DIR__GETATTR					(SEPG_FILE__GETATTR)
 
 #define SEPG_LNK_FILE__READ					(SEPG_FILE__READ)
 #define SEPG_LNK_FILE__WRITE				(SEPG_FILE__WRITE)
+#define SEPG_LNK_FILE__CREATE				(SEPG_FILE__CREATE)
+#define SEPG_LNK_FILE__GETATTR				(SEPG_FILE__GETATTR)
 
 #define SEPG_CHR_FILE__READ					(SEPG_FILE__READ)
 #define SEPG_CHR_FILE__WRITE				(SEPG_FILE__WRITE)
+#define SEPG_CHR_FILE__CREATE				(SEPG_FILE__CREATE)
+#define SEPG_CHR_FILE__GETATTR				(SEPG_FILE__GETATTR)
 
 #define SEPG_BLK_FILE__READ					(SEPG_FILE__READ)
 #define SEPG_BLK_FILE__WRITE				(SEPG_FILE__WRITE)
+#define SEPG_BLK_FILE__CREATE				(SEPG_FILE__CREATE)
+#define SEPG_BLK_FILE__GETATTR				(SEPG_FILE__GETATTR)
 
 #define SEPG_SOCK_FILE__READ				(SEPG_FILE__READ)
 #define SEPG_SOCK_FILE__WRITE				(SEPG_FILE__WRITE)
+#define SEPG_SOCK_FILE__CREATE				(SEPG_FILE__CREATE)
+#define SEPG_SOCK_FILE__GETATTR				(SEPG_FILE__GETATTR)
 
 #define SEPG_FIFO_FILE__READ				(SEPG_FILE__READ)
 #define SEPG_FIFO_FILE__WRITE				(SEPG_FILE__WRITE)
+#define SEPG_FIFO_FILE__CREATE				(SEPG_FILE__CREATE)
+#define SEPG_FIFO_FILE__GETATTR				(SEPG_FILE__GETATTR)
 
 #define SEPG_DB_DATABASE__CREATE			(1<<0)
 #define SEPG_DB_DATABASE__DROP				(1<<1)
@@ -445,9 +459,18 @@ extern void
 sepgsql_type_alter(Oid typOid, const char *newName, Oid newNsp);
 extern void
 sepgsql_type_drop(Oid typOid);
+
 /* misc objects */
 extern void
 sepgsql_sysobj_drop(const ObjectAddress *object);
+
+/* filesystem objects */
+void
+sepgsql_file_stat(const char *filename);
+void
+sepgsql_file_read(const char *filename);
+void
+sepgsql_file_write(const char *filename);
 
 /*
  * checker.c : check permission on given queries

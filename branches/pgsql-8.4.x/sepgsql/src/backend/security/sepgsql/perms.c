@@ -45,6 +45,8 @@ static struct
 		{
 			{"read",			SEPG_FILE__READ },
 			{"write",			SEPG_FILE__WRITE },
+			{"create",			SEPG_FILE__CREATE },
+			{"getattr",			SEPG_FILE__GETATTR },
 			{NULL, 0}
 		}
 	},
@@ -53,6 +55,8 @@ static struct
 		{
 			{"read",			SEPG_DIR__READ },
 			{"write",			SEPG_DIR__WRITE },
+			{"create",			SEPG_DIR__CREATE },
+			{"getattr",			SEPG_DIR__GETATTR },
 			{NULL,0}
 		}
 	},
@@ -61,6 +65,8 @@ static struct
 		{
 			{"read",			SEPG_LNK_FILE__READ },
 			{"write",			SEPG_LNK_FILE__WRITE },
+			{"create",			SEPG_LNK_FILE__CREATE },
+			{"getattr",			SEPG_LNK_FILE__GETATTR },
 			{NULL,0}
 		}
 	},
@@ -69,6 +75,8 @@ static struct
 		{
 			{"read",			SEPG_CHR_FILE__READ },
 			{"write",			SEPG_CHR_FILE__WRITE },
+			{"create",			SEPG_CHR_FILE__CREATE },
+			{"getattr",			SEPG_CHR_FILE__GETATTR },
 			{NULL,0}
 		}
 	},
@@ -77,6 +85,8 @@ static struct
 		{
 			{"read",			SEPG_BLK_FILE__READ },
 			{"write",			SEPG_BLK_FILE__WRITE },
+			{"create",			SEPG_BLK_FILE__CREATE },
+			{"getattr",			SEPG_BLK_FILE__GETATTR },
 			{NULL,0}
 		}
 	},
@@ -85,6 +95,8 @@ static struct
 		{
 			{"read",			SEPG_SOCK_FILE__READ },
 			{"write",			SEPG_SOCK_FILE__WRITE },
+			{"create",			SEPG_SOCK_FILE__CREATE },
+			{"getattr",			SEPG_SOCK_FILE__GETATTR },
 			{NULL,0}
 		}
 	},
@@ -93,6 +105,8 @@ static struct
 		{
 			{"read",			SEPG_FIFO_FILE__READ },
 			{"write",			SEPG_FIFO_FILE__WRITE },
+			{"create",			SEPG_FIFO_FILE__CREATE },
+			{"getattr",			SEPG_FIFO_FILE__GETATTR },
 			{NULL, 0UL }
 		}
 	},
