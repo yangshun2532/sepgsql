@@ -552,11 +552,6 @@ sepgsqlCheckBlobImport(LargeObjectDesc *lobj, const char *filename);
 extern void
 sepgsqlCheckBlobRelabel(HeapTuple oldtup, HeapTuple newtup);
 
-extern void
-sepgsqlCheckFileRead(int fdesc, const char *filename);
-extern void
-sepgsqlCheckFileWrite(int fdesc, const char *filename);
-
 /*
  * label.c : security label management
  */

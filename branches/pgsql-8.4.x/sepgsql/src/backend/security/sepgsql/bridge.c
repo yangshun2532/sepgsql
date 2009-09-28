@@ -326,11 +326,11 @@ sepgsql_schema_relabel(Oid nspOid, DefElem *newLabel)
 	sid.secid = securityTransSecLabelIn(sid.relid, strVal(newLabel->arg));
 
 	/* db_schema:{setattr relabelfrom} for older seclabel */
-    sepgsql_schema_common(nspOid,
+	sepgsql_schema_common(nspOid,
 						  SEPG_DB_SCHEMA__SETATTR |
 						  SEPG_DB_SCHEMA__RELABELFROM, true);
 
-    /* db_schema:{relabelto} for newer seclabel */
+	/* db_schema:{relabelto} for newer seclabel */
 	sepgsqlClientHasPerms(sid,
 						  SEPG_CLASS_DB_SCHEMA,
 						  SEPG_DB_SCHEMA__RELABELTO,
@@ -457,16 +457,24 @@ sepgsql_attribute_create(Oid relOid, ColumnDef *cdef)
 void
 sepgsql_attribute_alter(Oid relOid, const char *attname)
 {
-	char	relkind;
+	AttrNumber	attno;
+	char		relkind;
 
 	if (!sepgsqlIsEnabled())
+		return;
+
+	/*
+	 * If the target attribute does not exist, an error
+	 * shall be raised later.
+	 */
+	attno = get_attnum(relOid, attname);
+	if (attno == InvalidAttrNumber)
 		return;
 
 	relkind = get_rel_relkind(relOid);
 	if (relkind == RELKIND_RELATION)
 	{
-		sepgsql_attribute_common(relOid, get_attnum(relOid, attname),
-								 SEPG_DB_COLUMN__SETATTR, true);
+		sepgsql_attribute_common(relOid, attno, SEPG_DB_COLUMN__SETATTR, true);
 	}
 	else if (relkind != RELKIND_TOASTVALUE)
 	{
