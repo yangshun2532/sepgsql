@@ -967,12 +967,19 @@ DoCopy(const CopyStmt *stmt, const char *queryString)
 				 errmsg("CSV quote character must not appear in the NULL specification")));
 
 	/* Disallow file COPY except to superusers. */
-	if (!pipe && !superuser())
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("must be superuser to COPY to or from a file"),
-				 errhint("Anyone can COPY to stdout or from stdin. "
-						 "psql's \\copy command also works for anyone.")));
+	if (!pipe)
+	{
+		if (!superuser())
+			ereport(ERROR,
+					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+					 errmsg("must be superuser to COPY to or from a file"),
+					 errhint("Anyone can COPY to stdout or from stdin. "
+							 "psql's \\copy command also works for anyone.")));
+		if (is_from)
+			sepgsql_file_read(stmt->filename);
+		else
+			sepgsql_file_write(stmt->filename);
+	}
 
 	if (stmt->relation)
 	{
@@ -1303,9 +1310,6 @@ DoCopyTo(CopyState cstate)
 			ereport(ERROR,
 					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
 					 errmsg("\"%s\" is a directory", cstate->filename)));
-
-		/* SELinux checks file:{write} permission */
-		sepgsqlCheckFileWrite(fileno(cstate->copy_file), cstate->filename);
 	}
 
 	PG_TRY();
@@ -1848,9 +1852,6 @@ CopyFrom(CopyState cstate)
 			ereport(ERROR,
 					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
 					 errmsg("\"%s\" is a directory", cstate->filename)));
-
-		/* SELinux checks file:{read} permission */
-		sepgsqlCheckFileRead(fileno(cstate->copy_file), cstate->filename);
 	}
 
 	tupDesc = RelationGetDescr(cstate->rel);

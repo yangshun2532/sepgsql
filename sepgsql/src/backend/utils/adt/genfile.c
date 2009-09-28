@@ -100,14 +100,14 @@ pg_read_file(PG_FUNCTION_ARGS)
 
 	filename = convert_and_check_filename(filename_t);
 
+	/* SELinux: check file:{read} permission */
+	sepgsql_file_read(filename);
+
 	if ((file = AllocateFile(filename, PG_BINARY_R)) == NULL)
 		ereport(ERROR,
 				(errcode_for_file_access(),
 				 errmsg("could not open file \"%s\" for reading: %m",
 						filename)));
-
-	/* SELinux: check file:{read} permission */
-	sepgsqlCheckFileRead(fileno(file), filename);
 
 	if (fseeko(file, (off_t) seek_offset,
 			   (seek_offset >= 0) ? SEEK_SET : SEEK_END) != 0)
@@ -163,6 +163,8 @@ pg_stat_file(PG_FUNCTION_ARGS)
 				 (errmsg("must be superuser to get file information"))));
 
 	filename = convert_and_check_filename(filename_t);
+	/* SELinux: check file:{getattr} permission */
+	sepgsql_file_stat(filename);
 
 	if (stat(filename, &fst) < 0)
 		ereport(ERROR,

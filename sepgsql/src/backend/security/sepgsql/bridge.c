@@ -41,6 +41,8 @@
 #include "utils/syscache.h"
 #include "utils/tqual.h"
 
+#include <libgen.h>
+
 /* ------------------------------------------------------------ *
  * Common Helper Routines
  * ------------------------------------------------------------ */
@@ -2682,18 +2684,44 @@ sepgsql_sysobj_drop(const ObjectAddress *object)
  * Filesystem object related security hooks
  *
  * ------------------------------------------------------------ */
+static char *
+sepgsql_getfilecon(const char *path)
+{
+	security_context_t	context;
+	char	   *result;
+
+	if (getfilecon_raw(path, &context) < 0)
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 errmsg("could not get context of \"%s\": %m", path)));
+
+	PG_TRY();
+	{
+		result = pstrdup(context);
+	}
+	PG_CATCH();
+	{
+		freecon(context);
+		PG_RE_THROW();
+	}
+	PG_END_TRY();
+	freecon(context);
+
+	return result;
+}
+
 static void
 sepgsql_file_common(const char *filename, uint32 required, bool may_create)
 {
-	security_context_t	context;
 	struct stat		stbuf;
-	uint16			tclass = SEPG_CLASS_FILE;
 
-	/*
-	 * Get file object class
-	 */
 	if (stat(filename, &stbuf) == 0)
 	{
+		uint16		tclass;
+
+		/*
+		 * Get file object class
+		 */
 		if (S_ISDIR(stbuf.st_mode))
 			tclass = SEPG_CLASS_DIR;
 		else if (S_ISCHR(stbuf.st_mode))
@@ -2709,146 +2737,77 @@ sepgsql_file_common(const char *filename, uint32 required, bool may_create)
 		else
 			tclass = SEPG_CLASS_FILE;
 
-		if (getfilecon_raw(filename, &context) < 0)
-			ereport(ERROR,
-					(errcode_for_file_access(),
-					 errmsg("could not get context of \"%s\": %m", filename)));
+		/*
+		 * Check permission (no cached operation)
+		 */
+		sepgsqlComputePerms(sepgsqlGetClientLabel(),
+							sepgsql_getfilecon(filename),
+							tclass, required,
+							filename, true);
 	}
 	else if (may_create)
 	{
-		security_context	dcontext;
-		char   *parent = dirname(pstrdup(filename));
-
-
-
+		/*
+		 * If the required file is not found, we check permission to
+		 * create a new file and required permission on the new file.
+		 */
+		security_context_t	dcontext;
+		security_context_t	ncontext;
+		char	   *copy = pstrdup(filename);
 
 		/*
-		 * 
-		 *
-		 *
-		 *
-		 *
+		 * Compute a security context for the new file
 		 */
+		dcontext = sepgsql_getfilecon(dirname(copy));
 
+		ncontext = sepgsqlComputeCreate(sepgsqlGetServerLabel(),
+										dcontext,
+										SEPG_CLASS_FILE);
+		/*
+		 * Check permission (no cached operation)
+		 */
+		required |= SEPG_FILE__CREATE;
 
-
-		tclass = string_to_security_class("file");
-
-
-
-		
-		
-		
-		tclass = SEPG_CLASS_FILE;
+		sepgsqlComputePerms(sepgsqlGetClientLabel(),
+							sepgsql_getfilecon(filename),
+							SEPG_CLASS_FILE,
+							required, filename, true);
 	}
 	else
+	{
 		ereport(ERROR,
 				(errcode_for_file_access(),
 				 errmsg("could not stat file \"%s\": %m", filename)));
-
-
-
-
-
-}
-
-
-static void
-sepgsql_file_read(const char *filename)
-{
-	struct stat		stbuf;
-	uint16			tclass;
-
-	/*
-	 * Get file object class
-	 */
-	if (stat(filename, &stbuf) != 0)
-		ereport(ERROR,
-				(errcode_for_file_access(),
-				 errmsg("could not open file \"%s\" for reading: %m", filename)));
-
-
-
-
-
-
-
-}
-
-static void
-sepgsql_file_write(const char *filename)
-{
-	if (stat(filename, &stbuf) == 0)
-	{
-
-
 	}
-	else
-	{
-		/* we assume the backend to create a new file */
-		tclass = SEPG_CLASS_FILE;
-
-
-
-
-	}
-
-
-
-
 }
 
-static void
+void
 sepgsql_file_stat(const char *filename)
 {
+	if (!sepgsqlIsEnabled())
+		return;
 
+	sepgsql_file_common(filename, SEPG_FILE__GETATTR, false);
+}
+
+void
+sepgsql_file_read(const char *filename)
+{
+	if (!sepgsqlIsEnabled())
+		return;
+
+	sepgsql_file_common(filename, SEPG_FILE__READ, false);
+}
+
+void
+sepgsql_file_write(const char *filename)
+{
+	if (!sepgsqlIsEnabled())
+		return;
+
+	sepgsql_file_common(filename, SEPG_FILE__WRITE, true);
 }
 
 /*
  * TODO: add check for pg_ls_dir()
  */
-
-
-static void
-checkFileCommon(int fdesc, const char *filename, access_vector_t perms)
-{
-    security_context_t  context;
-    security_class_t    tclass;
-
-    if (!sepgsqlIsEnabled())
-        return;
-
-    tclass = sepgsqlFileObjectClass(fdesc);
-
-    if (fgetfilecon_raw(fdesc, &context) < 0)
-        ereport(ERROR,
-                (errcode(ERRCODE_SELINUX_ERROR),
-                 errmsg("SELinux: could not get context of %s", filename)));
-    PG_TRY();
-    {
-        sepgsqlComputePerms(sepgsqlGetClientLabel(),
-                            context,
-                            tclass,
-                            perms,
-                            filename, true);
-    }
-    PG_CATCH();
-    {
-        freecon(context);
-        PG_RE_THROW();
-    }
-    PG_END_TRY();
-    freecon(context);
-}
-
-void
-sepgsqlCheckFileRead(int fdesc, const char *filename)
-{
-    checkFileCommon(fdesc, filename, SEPG_FILE__READ);
-}
-
-void
-sepgsqlCheckFileWrite(int fdesc, const char *filename)
-{
-    checkFileCommon(fdesc, filename, SEPG_FILE__WRITE);
-}
