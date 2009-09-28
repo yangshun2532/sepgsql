@@ -372,6 +372,22 @@ sepgsql_language_drop(Oid langOid);
 extern void
 sepgsql_language_grant(Oid langOid);
 
+/* pg_largeobject */
+extern Oid
+ac_largeobject_create(Oid loid, DefElem *newLabel);
+extern void
+ac_largeobject_alter(Oid loid, Oid newOwner);
+extern void
+ac_largeobject_drop(Oid loid, bool dacSkip);
+extern void
+ac_largeobject_read(Oid loid);
+extern void
+ac_largeobject_write(Oid loid);
+extern void
+ac_largeobject_export(Oid loid, const char *filename);
+extern Oid
+ac_largeobject_import(Oid loid, const char *filename, DefElem *newLabel);
+
 /* pg_opclass */
 extern Oid
 sepgsql_opclass_create(const char *opcName, Oid nspOid);
@@ -530,11 +546,9 @@ sepgsqlCheckBlobGetattr(HeapTuple tuple);
 extern void
 sepgsqlCheckBlobSetattr(HeapTuple tuple);
 extern void
-sepgsqlCheckBlobExport(LargeObjectDesc *lobj,
-					   int fdesc, const char *filename);
+sepgsqlCheckBlobExport(LargeObjectDesc *lobj, const char *filename);
 extern void
-sepgsqlCheckBlobImport(LargeObjectDesc *lobj,
-					   int fdesc, const char *filename);
+sepgsqlCheckBlobImport(LargeObjectDesc *lobj, const char *filename);
 extern void
 sepgsqlCheckBlobRelabel(HeapTuple oldtup, HeapTuple newtup);
 

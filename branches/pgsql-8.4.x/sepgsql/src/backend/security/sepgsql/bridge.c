@@ -1730,6 +1730,41 @@ sepgsql_language_grant(Oid langOid)
 
 /* ------------------------------------------------------------ *
  *
+ * Pg_largeobject related security hooks
+ * (need to backport v8.5 feature)
+ * ------------------------------------------------------------ */
+Oid
+ac_largeobject_create(Oid loid, DefElem *newLabel)
+{
+	return InvalidOid;
+}
+
+void
+ac_largeobject_alter(Oid loid, Oid newOwner)
+{}
+
+void
+ac_largeobject_drop(Oid loid, bool dacSkip)
+{}
+
+void
+ac_largeobject_read(Oid loid)
+{}
+
+void
+ac_largeobject_write(Oid loid)
+{}
+
+void
+ac_largeobject_export(Oid loid, const char *filename)
+{}
+
+Oid
+ac_largeobject_import(Oid loid, const char *filename, DefElem *newLabel)
+{}
+
+/* ------------------------------------------------------------ *
+ *
  * Pg_opclass related security hooks
  *
  * ------------------------------------------------------------ */

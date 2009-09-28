@@ -166,8 +166,7 @@ sepgsqlCheckBlobSetattr(HeapTuple tuple)
  *   check db_blob:{read export} and file:{write} permission
  */
 void
-sepgsqlCheckBlobExport(LargeObjectDesc *lobj,
-					   int fdesc, const char *filename)
+sepgsqlCheckBlobExport(LargeObjectDesc *lobj, const char *filename)
 {
 	sepgsql_sid_t	loSid;
 
@@ -182,7 +181,7 @@ sepgsqlCheckBlobExport(LargeObjectDesc *lobj,
 						  SEPG_DB_BLOB__READ | SEPG_DB_BLOB__EXPORT,
 						  NULL, true);
 	/* file:{write} */
-	sepgsqlCheckFileWrite(fdesc, filename);
+	sepgsql_file_write(filename);
 }
 
 /*
@@ -190,8 +189,7 @@ sepgsqlCheckBlobExport(LargeObjectDesc *lobj,
  *   check db_blob:{write import} and file:{read} permission
  */
 void
-sepgsqlCheckBlobImport(LargeObjectDesc *lobj,
-					   int fdesc, const char *filename)
+sepgsqlCheckBlobImport(LargeObjectDesc *lobj, const char *filename)
 {
 	sepgsql_sid_t	loSid;
 
@@ -206,7 +204,7 @@ sepgsqlCheckBlobImport(LargeObjectDesc *lobj,
 						  SEPG_DB_BLOB__WRITE | SEPG_DB_BLOB__IMPORT,
 						  NULL, true);
 	/* file:{read} */
-	sepgsqlCheckFileRead(fdesc, filename);
+	sepgsql_file_read(filename);
 }
 
 /*
@@ -239,55 +237,3 @@ sepgsqlCheckBlobRelabel(HeapTuple oldtup, HeapTuple newtup)
 						  SEPG_DB_BLOB__RELABELTO,
 						  NULL, true);
 }
-
-#if 0
-/*
- * sepgsqlCheckFileRead
- * sepgsqlCheckFileWrite
- *   check file:{read} or file:{write} permission on the given file,
- *   and raises an error if violated.
- */
-static void
-checkFileCommon(int fdesc, const char *filename, access_vector_t perms)
-{
-	security_context_t	context;
-	security_class_t	tclass;
-
-	if (!sepgsqlIsEnabled())
-		return;
-
-	tclass = sepgsqlFileObjectClass(fdesc);
-
-	if (fgetfilecon_raw(fdesc, &context) < 0)
-		ereport(ERROR,
-				(errcode(ERRCODE_SELINUX_ERROR),
-				 errmsg("SELinux: could not get context of %s", filename)));
-	PG_TRY();
-	{
-		sepgsqlComputePerms(sepgsqlGetClientLabel(),
-							context,
-							tclass,
-							perms,
-							filename, true);
-	}
-	PG_CATCH();
-	{
-		freecon(context);
-		PG_RE_THROW();
-	}
-	PG_END_TRY();
-	freecon(context);
-}
-
-void
-sepgsqlCheckFileRead(int fdesc, const char *filename)
-{
-	checkFileCommon(fdesc, filename, SEPG_FILE__READ);
-}
-
-void
-sepgsqlCheckFileWrite(int fdesc, const char *filename)
-{
-	checkFileCommon(fdesc, filename, SEPG_FILE__WRITE);
-}
-#endif

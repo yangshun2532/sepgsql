@@ -373,6 +373,9 @@ lo_import_internal(text *filename, Oid lobjOid)
 	 * open the file to be read in
 	 */
 	text_to_cstring_buffer(filename, fnamebuf, sizeof(fnamebuf));
+	/* SELinux checks db_blob:{write import} and file:{read}  */
+	//sepgsqlCheckBlobImport(lobj, fnamebuf);
+
 	fd = PathNameOpenFile(fnamebuf, O_RDONLY | PG_BINARY, 0666);
 	if (fd < 0)
 		ereport(ERROR,
@@ -389,9 +392,6 @@ lo_import_internal(text *filename, Oid lobjOid)
 	 * read in from the filesystem and write to the inversion object
 	 */
 	lobj = inv_open(oid, INV_WRITE, fscxt);
-
-	/* SELinux checks db_blob:{write import} and file:{read} */
-	sepgsqlCheckBlobImport(lobj, FileRawDescriptor(fd), fnamebuf);
 
 	while ((nbytes = FileRead(fd, buf, BUFSIZE)) > 0)
 	{
@@ -451,6 +451,9 @@ lo_export(PG_FUNCTION_ARGS)
 	 * world-writable export files doesn't seem wise.
 	 */
 	text_to_cstring_buffer(filename, fnamebuf, sizeof(fnamebuf));
+	/* SELinux checks db_blob:{read export} and file:{write} */
+	//sepgsqlCheckBlobExport(lobj, fnamebuf);
+
 	oumask = umask((mode_t) 0022);
 	fd = PathNameOpenFile(fnamebuf, O_CREAT | O_WRONLY | O_TRUNC | PG_BINARY, 0666);
 	umask(oumask);
@@ -459,10 +462,6 @@ lo_export(PG_FUNCTION_ARGS)
 				(errcode_for_file_access(),
 				 errmsg("could not create server file \"%s\": %m",
 						fnamebuf)));
-
-	/* SELinux checks db_blob:{read export} and file:{write} */
-	sepgsqlCheckBlobExport(lobj, FileRawDescriptor(fd), fnamebuf);
-
 	/*
 	 * read in from the inversion file and write to the filesystem
 	 */
