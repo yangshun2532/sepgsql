@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/cache/relcache.c,v 1.290 2009/08/30 17:18:52 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/utils/cache/relcache.c,v 1.292 2009/09/26 23:08:22 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -144,8 +144,7 @@ do { \
 	RelIdCacheEnt *idhentry; bool found; \
 	idhentry = (RelIdCacheEnt*)hash_search(RelationIdCache, \
 										   (void *) &(RELATION->rd_id), \
-										   HASH_ENTER, \
-										   &found); \
+										   HASH_ENTER, &found); \
 	/* used to give notice if found -- now just keep quiet */ \
 	idhentry->reldesc = RELATION; \
 } while(0)
@@ -154,7 +153,8 @@ do { \
 do { \
 	RelIdCacheEnt *hentry; \
 	hentry = (RelIdCacheEnt*)hash_search(RelationIdCache, \
-										 (void *) &(ID), HASH_FIND,NULL); \
+										 (void *) &(ID), \
+										 HASH_FIND, NULL); \
 	if (hentry) \
 		RELATION = hentry->reldesc; \
 	else \
@@ -203,8 +203,9 @@ static bool load_relcache_init_file(bool shared);
 static void write_relcache_init_file(bool shared);
 static void write_item(const void *data, Size len, FILE *fp);
 
-static void formrdesc(const char *relationName, bool isshared,
-		  bool hasoids, int natts, const FormData_pg_attribute *attrs);
+static void formrdesc(const char *relationName, Oid relationReltype,
+		  bool isshared, bool hasoids,
+		  int natts, const FormData_pg_attribute *attrs);
 
 static HeapTuple ScanPgRelation(Oid targetRelId, bool indexOK);
 static Relation AllocateRelationDesc(Relation relation, Form_pg_class relp);
@@ -1374,8 +1375,9 @@ LookupOpclassInfo(Oid operatorClassOid,
  * NOTE: we assume we are already switched into CacheMemoryContext.
  */
 static void
-formrdesc(const char *relationName, bool isshared,
-		  bool hasoids, int natts, const FormData_pg_attribute *attrs)
+formrdesc(const char *relationName, Oid relationReltype,
+		  bool isshared, bool hasoids,
+		  int natts, const FormData_pg_attribute *attrs)
 {
 	Relation	relation;
 	int			i;
@@ -1412,12 +1414,15 @@ formrdesc(const char *relationName, bool isshared,
 	 *
 	 * The data we insert here is pretty incomplete/bogus, but it'll serve to
 	 * get us launched.  RelationCacheInitializePhase3() will read the real
-	 * data from pg_class and replace what we've done here.
+	 * data from pg_class and replace what we've done here.  Note in particular
+	 * that relowner is left as zero; this cues RelationCacheInitializePhase3
+	 * that the real data isn't there yet.
 	 */
 	relation->rd_rel = (Form_pg_class) palloc0(CLASS_TUPLE_SIZE);
 
 	namestrcpy(&relation->rd_rel->relname, relationName);
 	relation->rd_rel->relnamespace = PG_CATALOG_NAMESPACE;
+	relation->rd_rel->reltype = relationReltype;
 
 	/*
 	 * It's important to distinguish between shared and non-shared relations,
@@ -1448,6 +1453,9 @@ formrdesc(const char *relationName, bool isshared,
 	 */
 	relation->rd_att = CreateTemplateTupleDesc(natts, hasoids);
 	relation->rd_att->tdrefcount = 1;	/* mark as refcounted */
+
+	relation->rd_att->tdtypeid = relationReltype;
+	relation->rd_att->tdtypmod = -1;	/* unnecessary, but... */
 
 	/*
 	 * initialize tuple desc info
@@ -2556,7 +2564,7 @@ RelationCacheInitializePhase2(void)
 	 */
 	if (!load_relcache_init_file(true))
 	{
-		formrdesc("pg_database", true,
+		formrdesc("pg_database", DatabaseRelation_Rowtype_Id, true,
 				  true, Natts_pg_database, Desc_pg_database);
 
 #define NUM_CRITICAL_SHARED_RELS	1	/* fix if you change list above */
@@ -2602,13 +2610,13 @@ RelationCacheInitializePhase3(void)
 	{
 		needNewCacheFile = true;
 
-		formrdesc("pg_class", false,
+		formrdesc("pg_class", RelationRelation_Rowtype_Id, false,
 				  true, Natts_pg_class, Desc_pg_class);
-		formrdesc("pg_attribute", false,
+		formrdesc("pg_attribute", AttributeRelation_Rowtype_Id, false,
 				  false, Natts_pg_attribute, Desc_pg_attribute);
-		formrdesc("pg_proc", false,
+		formrdesc("pg_proc", ProcedureRelation_Rowtype_Id, false,
 				  true, Natts_pg_proc, Desc_pg_proc);
-		formrdesc("pg_type", false,
+		formrdesc("pg_type", TypeRelation_Rowtype_Id, false,
 				  true, Natts_pg_type, Desc_pg_type);
 
 #define NUM_CRITICAL_LOCAL_RELS	4	/* fix if you change list above */
@@ -2687,17 +2695,31 @@ RelationCacheInitializePhase3(void)
 	 * rows and replace the fake entries with them. Also, if any of the
 	 * relcache entries have rules or triggers, load that info the hard way
 	 * since it isn't recorded in the cache file.
+	 *
+	 * Whenever we access the catalogs to read data, there is a possibility
+	 * of a shared-inval cache flush causing relcache entries to be removed.
+	 * Since hash_seq_search only guarantees to still work after the *current*
+	 * entry is removed, it's unsafe to continue the hashtable scan afterward.
+	 * We handle this by restarting the scan from scratch after each access.
+	 * This is theoretically O(N^2), but the number of entries that actually
+	 * need to be fixed is small enough that it doesn't matter.
 	 */
 	hash_seq_init(&status, RelationIdCache);
 
 	while ((idhentry = (RelIdCacheEnt *) hash_seq_search(&status)) != NULL)
 	{
 		Relation	relation = idhentry->reldesc;
+		bool		restart = false;
+
+		/*
+		 * Make sure *this* entry doesn't get flushed while we work with it.
+		 */
+		RelationIncrementReferenceCount(relation);
 
 		/*
 		 * If it's a faked-up entry, read the real pg_class tuple.
 		 */
-		if (needNewCacheFile && relation->rd_isnailed)
+		if (relation->rd_rel->relowner == InvalidOid)
 		{
 			HeapTuple	htup;
 			Form_pg_class relp;
@@ -2714,7 +2736,6 @@ RelationCacheInitializePhase3(void)
 			 * Copy tuple to relation->rd_rel. (See notes in
 			 * AllocateRelationDesc())
 			 */
-			Assert(relation->rd_rel != NULL);
 			memcpy((char *) relation->rd_rel, (char *) relp, CLASS_TUPLE_SIZE);
 
 			/* Update rd_options while we have the tuple */
@@ -2723,22 +2744,57 @@ RelationCacheInitializePhase3(void)
 			RelationParseRelOptions(relation, htup);
 
 			/*
-			 * Also update the derived fields in rd_att.
+			 * Check the values in rd_att were set up correctly.  (We cannot
+			 * just copy them over now: formrdesc must have set up the
+			 * rd_att data correctly to start with, because it may already
+			 * have been copied into one or more catcache entries.)
 			 */
-			relation->rd_att->tdtypeid = relp->reltype;
-			relation->rd_att->tdtypmod = -1;	/* unnecessary, but... */
-			relation->rd_att->tdhasoid = relp->relhasoids;
+			Assert(relation->rd_att->tdtypeid == relp->reltype);
+			Assert(relation->rd_att->tdtypmod == -1);
+			Assert(relation->rd_att->tdhasoid == relp->relhasoids);
 
 			ReleaseSysCache(htup);
+
+			/* relowner had better be OK now, else we'll loop forever */
+			if (relation->rd_rel->relowner == InvalidOid)
+				elog(ERROR, "invalid relowner in pg_class entry for \"%s\"",
+					 RelationGetRelationName(relation));
+
+			restart = true;
 		}
 
 		/*
 		 * Fix data that isn't saved in relcache cache file.
+		 *
+		 * relhasrules or relhastriggers could possibly be wrong or out of
+		 * date.  If we don't actually find any rules or triggers, clear the
+		 * local copy of the flag so that we don't get into an infinite loop
+		 * here.  We don't make any attempt to fix the pg_class entry, though.
 		 */
 		if (relation->rd_rel->relhasrules && relation->rd_rules == NULL)
+		{
 			RelationBuildRuleLock(relation);
+			if (relation->rd_rules == NULL)
+				relation->rd_rel->relhasrules = false;
+			restart = true;
+		}
 		if (relation->rd_rel->relhastriggers && relation->trigdesc == NULL)
+		{
 			RelationBuildTriggers(relation);
+			if (relation->trigdesc == NULL)
+				relation->rd_rel->relhastriggers = false;
+			restart = true;
+		}
+
+		/* Release hold on the relation */
+		RelationDecrementReferenceCount(relation);
+
+		/* Now, restart the hashtable scan if needed */
+		if (restart)
+		{
+			hash_seq_term(&status);
+			hash_seq_init(&status, RelationIdCache);
+		}
 	}
 
 	/*
