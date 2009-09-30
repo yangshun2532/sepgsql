@@ -3222,24 +3222,6 @@ ac_rule_comment(Oid relOid, const char *ruleName)
 					   get_rel_name(relOid));
 }
 
-/*
- * ac_rule_toggle
- *
- * It checks privilege to enable/disable a certain query rewrite rule
- *
- * [Params]
- * relOid    : OID of the relation to be applied on
- * ruleName  : Name of the query rewrite rule
- * fire_when : One of the RULE_FIRES_* or RULE_DISABLED
- */
-void
-ac_rule_toggle(Oid relOid, const char *ruleName, char fire_when)
-{
-	if (!pg_class_ownercheck(relOid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
-					   get_rel_name(relOid));
-}
-
 /* ************************************************************
  *
  * Pg_tablespace system catalog related access control stuffs

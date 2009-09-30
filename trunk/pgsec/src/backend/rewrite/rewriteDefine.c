@@ -27,6 +27,7 @@
 #include "rewrite/rewriteDefine.h"
 #include "rewrite/rewriteManip.h"
 #include "rewrite/rewriteSupport.h"
+#include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/inval.h"
 #include "utils/lsyscache.h"
@@ -692,7 +693,9 @@ EnableDisableRule(Relation rel, const char *rulename,
 	 */
 	eventRelationOid = ((Form_pg_rewrite) GETSTRUCT(ruletup))->ev_class;
 	Assert(eventRelationOid == owningRel);
-	ac_rule_toggle(eventRelationOid, rulename, fires_when);
+	if (!pg_class_ownercheck(eventRelationOid, GetUserId()))
+		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
+					   get_rel_name(eventRelationOid));
 
 	/*
 	 * Change ev_enabled if it is different from the desired new state.
