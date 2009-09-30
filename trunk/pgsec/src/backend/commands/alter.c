@@ -87,10 +87,16 @@ ExecRenameStmt(RenameStmt *stmt)
 		case OBJECT_VIEW:
 		case OBJECT_INDEX:
 			/*
-			 * MEMO: ac_relation_alter() invoked from inside of
-			 * the RenameRelation() also checks permissions which
-			 * were checked on the CheckRelationOwnership().
-			 * Same for renameatt() and renametrig().
+			 * There was a ownership check for the target relation
+			 * which also controls to rename columns and triggers
+			 * not only relations.
+			 * Then, access control stuff was reworked at the v8.5.
+			 * It requires to call ac_*() routines corresponding to
+			 * an appropriate object class and action.
+			 *
+			 * Now RenameRelation(), renameatt() and renametrig()
+			 * are modified to call an appropriate ac_*() routines.
+			 * So, we don't need to check anything here.
 			 */
 			RenameRelation(RangeVarGetRelid(stmt->relation, false),
 						   stmt->newname,

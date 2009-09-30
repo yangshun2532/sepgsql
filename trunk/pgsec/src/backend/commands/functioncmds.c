@@ -139,8 +139,9 @@ compute_return_type(TypeName *returnType, Oid languageOid,
 		namespaceId = QualifiedNameGetCreationNamespace(returnType->names,
 														&typname);
 		/*
-		 * MEMO: It checks permission to create a new shell type
-		 * inside of the TypeShellMake()
+		 * We had an ACL_CREATE permission check on the target
+		 * namespace here. Now it moved to the TypeShellMake(),
+		 * and it applies equivalent checks.
 		 */
 		rettype = TypeShellMake(typname, namespaceId, GetUserId());
 		Assert(OidIsValid(rettype));

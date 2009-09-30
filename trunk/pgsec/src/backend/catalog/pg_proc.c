@@ -54,6 +54,13 @@ static bool match_prosrc_to_literal(const char *prosrc, const char *literal,
  * Note: allParameterTypes, parameterModes, parameterNames, and proconfig
  * are either arrays of the proper types or NULL.  We declare them Datum,
  * not "ArrayType *", to avoid importing array.h into pg_proc_fn.h.
+ *
+ * Note: The 'permission' argument specifies if permissions checking
+ * will be done.  This allows bypassing security checks when they're
+ * not necessary, such as being called from internal routines where
+ * the checks have already been done or they're clearly not required.
+ * In general, this argument should be 'true' to ensure that appropriate
+ * permissions checks are done.
  * ----------------------------------------------------------------
  */
 Oid
@@ -356,13 +363,13 @@ ProcedureCreate(const char *procedureName,
 				   procedureName)));
 
 		/*
-		 * MEMO: Permission check to create a new function was moved
-		 * to here, because we cannot know whether the CREATE OR REPLACE
-		 * FUNCTION statement create a new function, or replace an
-		 * existing one actually, at the caller side.
+		 * Permission checks to a new function (it is a permission
+		 * to replace an existing function in actually, here) was
+		 * moved to here, because we cannot know whether the
+		 * CREATE OR REPLACE FUNCTION statement actually create
+		 * a new function or replace an existing one preliminarily
+		 * at the caller of the ProcedureCreate().
 		 */
-
-		/* Permission check to replace an existing procedure */
 		if (permission)
 			ac_proc_create(procedureName, HeapTupleGetOid(oldtup),
 						   procNamespace, languageObjectId);
@@ -493,7 +500,7 @@ ProcedureCreate(const char *procedureName,
 	}
 	else
 	{
-		/* Permission check to create a new procedure */
+		/* Permission check, see above comments. */
 		if (permission)
 			ac_proc_create(procedureName, InvalidOid,
 						   procNamespace, languageObjectId);
