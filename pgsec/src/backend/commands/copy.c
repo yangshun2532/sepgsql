@@ -727,9 +727,6 @@ DoCopy(const CopyStmt *stmt, const char *queryString)
 	List	   *force_notnull = NIL;
 	bool		force_quote_all = false;
 	bool		format_specified = false;
-	AclMode		required_access = (is_from ? ACL_INSERT : ACL_SELECT);
-	AclMode		relPerms;
-	AclMode		remainingPerms;
 	ListCell   *option;
 	TupleDesc	tupDesc;
 	int			num_phys_attrs;
