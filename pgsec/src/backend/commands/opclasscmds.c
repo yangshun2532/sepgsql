@@ -311,17 +311,14 @@ DefineOpClass(CreateOpClassStmt *stmt)
 					   NameListToString(stmt->opfamilyname), stmt->amname)));
 		opfamilyoid = HeapTupleGetOid(tup);
 
-		/*
-		 * XXX given the superuser check above, there's no need for an
-		 * ownership check here
-		 */
 		ReleaseSysCache(tup);
 
 		/*
-		 * MEMO: It is equivalent to alter an existing operator
-		 * family, then create a new operator class using the
-		 * operator family. Only super user can create a operator
-		 * class, this check should be always passed.
+		 * This operation is equivalent to alter an existing operator
+		 * family, then it create a new operator class with the
+		 * operator family.
+		 * By default, only superuser can alter operator family,
+		 * so this check chould be always passed.
 		 */
 		ac_opfamily_alter(opfamilyoid, NULL, InvalidOid);
 	}
@@ -627,9 +624,6 @@ DefineOpFamily(CreateOpFamilyStmt *stmt)
 	/* Permission checks */
 	ac_opfamily_create(opfname, namespaceoid, amoid);
 
-	/*
-	 * MEMO: The following code can be replaced by CreateOpFamily().
-	 */
 	rel = heap_open(OperatorFamilyRelationId, RowExclusiveLock);
 
 	/*

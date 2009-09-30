@@ -62,8 +62,8 @@
  * the ac_relation_create() instead, if necessary.
  *
  * [Params]
- * relOid : OID of the relation to be altered
- * colDef : Definition of the new column
+ * relOid  : OID of the relation to be altered
+ * colDef  : Definition of the new column
  */
 void
 ac_attribute_create(Oid relOid, ColumnDef *colDef)

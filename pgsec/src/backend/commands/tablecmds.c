@@ -3515,15 +3515,17 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 	Expr	   *defval;
 
 	/*
-	 * MEMO: ac_attribute_create() should be deployed here.
-	 * However, the native privilege system control permissions
-	 * to add a new column based on the ownership of the parent
-	 * relation. It is already checked on the ATPrepCmd.
-	 * At the time for SE-PgSQL, the following invocation should
-	 * to commented out.
+	 * Permission check to create a new column.
 	 *
-	 * ac_attribute_create(myrelid, colDef);
+	 * Note that the default PG security controls privilege
+	 * to create a new column using ownership of the relation
+	 * which owns the column. It is already checked on the
+	 * ATSimplePermissions(), so the ac_attribute_create()
+	 * does nothing by default.
+	 * It works only when the system is set up to apply
+	 * any other security model other than the default one.
 	 */
+	ac_attribute_create(myrelid, colDef);
 
 	attrdesc = heap_open(AttributeRelationId, RowExclusiveLock);
 
