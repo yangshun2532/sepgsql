@@ -247,8 +247,6 @@ extern void
 ac_rule_drop(Oid relOid, const char *ruleName, bool dacSkip);
 extern void
 ac_rule_comment(Oid relOid, const char *ruleName);
-extern void
-ac_rule_toggle(Oid relOid, const char *ruleName, char fire_when);
 
 /* pg_tablespace */
 extern void

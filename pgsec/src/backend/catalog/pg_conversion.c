@@ -24,6 +24,7 @@
 #include "catalog/pg_proc.h"
 #include "mb/pg_wchar.h"
 #include "miscadmin.h"
+#include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
 #include "utils/rel.h"
@@ -218,16 +219,28 @@ FindDefaultConversion(Oid name_space, int32 for_encoding, int32 to_encoding)
 Oid
 FindConversion(const char *conname, Oid connamespace)
 {
-	/* search pg_conversion by connamespace and conversion name */
+	HeapTuple	tuple;
+	Oid			procoid;
+	Oid			conoid;
+	AclResult	aclresult;
 
-	/*
-	 * MEMO: ACL_EXECUTE on the conversion function was checked in
-	 * the previous version. If user does not have the permission,
-	 * the matched conversion was ignored as if it does not exist.
-	 * However, this check was meaningless, so removed at v8.5.x.
-	 */
-	return GetSysCacheOid(CONNAMENSP,
-						  PointerGetDatum(conname),
-						  ObjectIdGetDatum(connamespace),
-						  0, 0);
+	/* search pg_conversion by connamespace and conversion name */
+	tuple = SearchSysCache(CONNAMENSP,
+						   PointerGetDatum(conname),
+						   ObjectIdGetDatum(connamespace),
+						   0, 0);
+	if (!HeapTupleIsValid(tuple))
+		return InvalidOid;
+
+	procoid = ((Form_pg_conversion) GETSTRUCT(tuple))->conproc;
+	conoid = HeapTupleGetOid(tuple);
+
+	ReleaseSysCache(tuple);
+
+	/* Check we have execute rights for the function */
+	aclresult = pg_proc_aclcheck(procoid, GetUserId(), ACL_EXECUTE);
+	if (aclresult != ACLCHECK_OK)
+		return InvalidOid;
+
+	return conoid;
 }
