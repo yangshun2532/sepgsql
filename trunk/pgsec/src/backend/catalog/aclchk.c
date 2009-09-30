@@ -173,14 +173,6 @@ restrict_grant(bool is_grant, AclMode avail_goptions, bool all_privs,
 	AclMode	this_privileges;
 
 	/*
-	 * MEMO: A logic to check user's privilege to grant anything was
-	 * exported to security/access_control.c.
-	 * It also makes pg_aclmack() unnecessary, because here was the
-	 * only caller. See the ac_<object class>_grant() checks.
-	 * It invokes pg_<object class>_aclmask() directly.
-	 */
-
-	/*
 	 * Restrict the operation to what we can actually grant or revoke, and
 	 * issue a warning if appropriate.	(For REVOKE this isn't quite what the
 	 * spec says to do: the spec seems to want a warning only if no privilege
@@ -703,7 +695,11 @@ ExecGrant_Attribute(InternalGrant *istmt, Oid relOid, const char *relname,
 
 	pfree(merged_acl);
 
-	/* Permission check to grant/revoke */
+	/*
+	 * If we found no grant options, consider whether to issue a hard error.
+	 * Per spec, having any privilege at all on the object will get you by
+	 * here.
+	 */
 	ac_attribute_grant(relOid, attnum, grantorId, avail_goptions);
 
 	/*
@@ -961,7 +957,11 @@ ExecGrant_Relation(InternalGrant *istmt)
 								old_acl, ownerId,
 								&grantorId, &avail_goptions);
 
-			/* Permission check to grant/revoke */
+			/*
+			 * If we found no grant options, consider whether to issue
+			 * a hard error. Per spec, having any privilege at all on
+			 * the object will get you by here.
+			 */
 			ac_relation_grant(relOid, grantorId, avail_goptions);
 
 			/*
@@ -1150,7 +1150,11 @@ ExecGrant_Database(InternalGrant *istmt)
 							old_acl, ownerId,
 							&grantorId, &avail_goptions);
 
-		/* Permission checks */
+		/*
+		 * If we found no grant options, consider whether to issue a hard
+		 * error. Per spec, having any privilege at all on the object will
+		 * get you by here.
+		 */
 		ac_database_grant(datId, grantorId, avail_goptions);
 
 		/*
@@ -1269,7 +1273,11 @@ ExecGrant_Fdw(InternalGrant *istmt)
 							old_acl, ownerId,
 							&grantorId, &avail_goptions);
 
-		/* Permission checks */
+		/*
+		 * If we found no grant options, consider whether to issue a hard
+		 * error. Per spec, having any privilege at all on the object will
+		 * get you by here.
+		 */
 		ac_foreign_data_wrapper_grant(fdwid, grantorId, avail_goptions);
 
 		/*
@@ -1389,7 +1397,11 @@ ExecGrant_ForeignServer(InternalGrant *istmt)
 							old_acl, ownerId,
 							&grantorId, &avail_goptions);
 
-		/* Permission checks */
+		/*
+		 * If we found no grant options, consider whether to issue a hard
+		 * error. Per spec, having any privilege at all on the object will
+		 * get you by here.
+		 */
 		ac_foreign_server_grant(srvid, grantorId, avail_goptions);
 
 		/*
@@ -1508,7 +1520,11 @@ ExecGrant_Function(InternalGrant *istmt)
 							old_acl, ownerId,
 							&grantorId, &avail_goptions);
 
-		/* Permission check to grant/revoke */
+		/*
+		 * If we found no grant options, consider whether to issue a hard
+		 * error. Per spec, having any privilege at all on the object will
+		 * get you by here.
+		 */
 		ac_proc_grant(funcId, grantorId, avail_goptions);
 
 		/*
@@ -1633,7 +1649,11 @@ ExecGrant_Language(InternalGrant *istmt)
 							old_acl, ownerId,
 							&grantorId, &avail_goptions);
 
-		/* Permission checks */
+		/*
+		 * If we found no grant options, consider whether to issue a hard
+		 * error. Per spec, having any privilege at all on the object will
+		 * get you by here.
+		 */
 		ac_language_grant(langId, grantorId, avail_goptions);
 
 		/*
@@ -1752,7 +1772,11 @@ ExecGrant_Namespace(InternalGrant *istmt)
 							old_acl, ownerId,
 							&grantorId, &avail_goptions);
 
-		/* Permission checks */
+		/*
+		 * If we found no grant options, consider whether to issue a hard
+		 * error. Per spec, having any privilege at all on the object will
+		 * get you by here.
+		 */
 		ac_schema_grant(nspid, grantorId, avail_goptions);
 
 		/*
@@ -1876,7 +1900,11 @@ ExecGrant_Tablespace(InternalGrant *istmt)
 							old_acl, ownerId,
 							&grantorId, &avail_goptions);
 
-		/* Permission checks */
+		/*
+		 * If we found no grant options, consider whether to issue a hard
+		 * error. Per spec, having any privilege at all on the object will
+		 * get you by here.
+		 */
 		ac_tablespace_grant(tblId, grantorId, avail_goptions);
 
 		/*

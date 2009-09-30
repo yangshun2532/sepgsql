@@ -132,6 +132,12 @@ ac_attribute_grant(Oid relOid, AttrNumber attnum,
 {
 	if (goptions == ACL_NO_RIGHTS)
 	{
+		/*
+		 * If we found no grant options, consider whether to issue a hard
+		 * error. Per spec, having any privilege at all on the object will
+		 * get you by here.
+		 */
+
 		AclMode		whole_mask = ACL_ALL_RIGHTS_COLUMN;
 
 		if (pg_class_aclmask(relOid, grantor,
@@ -807,6 +813,12 @@ ac_relation_grant(Oid relOid, Oid grantor, AclMode goptions)
 {
 	if (goptions == ACL_NO_RIGHTS)
 	{
+		/*
+		 * If we found no grant options, consider whether to issue a hard
+		 * error. Per spec, having any privilege at all on the object will
+		 * get you by here.
+		 */
+
 		char		relkind = get_rel_relkind(relOid);
 		AclMode		whole_mask;
 
@@ -1592,6 +1604,12 @@ ac_database_grant(Oid datOid, Oid grantor, AclMode goptions)
 {
 	if (goptions == ACL_NO_RIGHTS)
 	{
+		/*
+		 * If we found no grant options, consider whether to issue a hard
+		 * error. Per spec, having any privilege at all on the object will
+		 * get you by here.
+		 */
+
 		AclMode		whole_mask = ACL_ALL_RIGHTS_DATABASE;
 
 		if (pg_database_aclmask(datOid, grantor,
@@ -1798,6 +1816,12 @@ ac_foreign_data_wrapper_grant(Oid fdwOid, Oid grantor, AclMode goptions)
 {
 	if (goptions == ACL_NO_RIGHTS)
 	{
+		/*
+		 * If we found no grant options, consider whether to issue a hard
+		 * error. Per spec, having any privilege at all on the object will
+		 * get you by here.
+		 */
+
 		AclMode		whole_mask = ACL_ALL_RIGHTS_FDW;
 
 		whole_mask |= ACL_GRANT_OPTION_FOR(whole_mask);
@@ -1935,6 +1959,12 @@ ac_foreign_server_grant(Oid fsrvOid, Oid grantor, AclMode goptions)
 {
 	if (goptions == ACL_NO_RIGHTS)
 	{
+		/*
+		 * If we found no grant options, consider whether to issue a hard
+		 * error. Per spec, having any privilege at all on the object will
+		 * get you by here.
+		 */
+
 		AclMode		whole_mask = ACL_ALL_RIGHTS_FOREIGN_SERVER;
 
 		whole_mask |= ACL_GRANT_OPTION_FOR(whole_mask);
@@ -2066,6 +2096,12 @@ ac_language_grant(Oid langOid, Oid grantor, AclMode goptions)
 {
 	if (goptions == ACL_NO_RIGHTS)
 	{
+		/*
+		 * If we found no grant options, consider whether to issue a hard
+		 * error. Per spec, having any privilege at all on the object will
+		 * get you by here.
+		 */
+
 		AclMode		whole_mask = ACL_ALL_RIGHTS_LANGUAGE;
 
 		if (pg_language_aclmask(langOid, grantor,
@@ -2202,6 +2238,12 @@ ac_schema_grant(Oid nspOid, Oid grantor, AclMode goptions)
 {
 	if (goptions == ACL_NO_RIGHTS)
 	{
+		/*
+		 * If we found no grant options, consider whether to issue a hard
+		 * error. Per spec, having any privilege at all on the object will
+		 * get you by here.
+		 */
+
 		AclMode		whole_mask = ACL_ALL_RIGHTS_NAMESPACE;
 
 		if (pg_namespace_aclmask(nspOid, grantor, 
@@ -3062,6 +3104,12 @@ ac_proc_grant(Oid proOid, Oid grantor, AclMode goptions)
 {
 	if (goptions == ACL_NO_RIGHTS)
 	{
+		/*
+		 * If we found no grant options, consider whether to issue a hard
+		 * error. Per spec, having any privilege at all on the object will
+		 * get you by here.
+		 */
+
 		AclMode		whole_mask = ACL_ALL_RIGHTS_FUNCTION;
 
 		if (pg_proc_aclmask(proOid, grantor,
@@ -3307,6 +3355,12 @@ ac_tablespace_grant(Oid tblspcOid, Oid grantor, AclMode goptions)
 {
 	if (goptions == ACL_NO_RIGHTS)
 	{
+		/*
+		 * If we found no grant options, consider whether to issue a hard
+		 * error. Per spec, having any privilege at all on the object will
+		 * get you by here.
+		 */
+
 		AclMode		whole_mask = ACL_ALL_RIGHTS_TABLESPACE;
 
 		if (pg_tablespace_aclmask(tblspcOid, grantor,
