@@ -157,6 +157,7 @@ CreateProceduralLanguage(CreatePLangStmt *stmt)
 				inlineOid = ProcedureCreate(pltemplate->tmplinline,
 											PG_CATALOG_NAMESPACE,
 											false, /* replace */
+											false, /* permission */
 											false, /* returnsSet */
 											VOIDOID,
 											ClanguageId,
