@@ -3514,19 +3514,6 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 	Form_pg_type tform;
 	Expr	   *defval;
 
-	/*
-	 * Permission check to create a new column.
-	 *
-	 * Note that the default PG security controls privilege
-	 * to create a new column using ownership of the relation
-	 * which owns the column. It is already checked on the
-	 * ATSimplePermissions(), so the ac_attribute_create()
-	 * does nothing by default.
-	 * It works only when the system is set up to apply
-	 * any other security model other than the default one.
-	 */
-	ac_attribute_create(myrelid, colDef);
-
 	attrdesc = heap_open(AttributeRelationId, RowExclusiveLock);
 
 	/*
@@ -3577,6 +3564,21 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 			return;
 		}
 	}
+
+	/*
+	 * Permission check to create a new column
+	 *
+	 * Note that the default PG model controls the privilege
+	 * to create a new column using ownership of the relation
+	 * which owns the column. It is already checked at the
+	 * ATSimplePermissions(), so the ac_attribute_create()
+	 * does not check anything, by default.
+	 *
+	 * At the code path to increment attinhcount, it dose not
+	 * create a new attribute, ac_*() routine should not be
+	 * called.
+	 */
+	ac_attribute_create(myrelid, colDef);
 
 	pgclass = heap_open(RelationRelationId, RowExclusiveLock);
 
@@ -4295,6 +4297,17 @@ ATExecDropColumn(List **wqueue, Relation rel, const char *colName,
 	}
 	targetatt = (Form_pg_attribute) GETSTRUCT(tuple);
 
+	/*
+	 * Permission check to drop a certain column
+	 *
+	 * Note that the default PG model controls the privilege
+	 * to drop a certain column using ownership of the ralation
+	 * which owns the column. It is already checked at the
+	 * ATSimplePermissions(), so the ac_attribute_drop() does
+	 * not check anything, by default.
+	 */
+	ac_attribute_drop(RelationGetRelid(rel), colName, false);
+
 	attnum = targetatt->attnum;
 
 	/* Can't drop a system attribute, except OID */
@@ -4312,20 +4325,6 @@ ATExecDropColumn(List **wqueue, Relation rel, const char *colName,
 						colName)));
 
 	ReleaseSysCache(tuple);
-
-	/*
-	 * MEMO: ac_attribute_drop() should be deployed here.
-	 * However, the native privilege system control permissions
-	 * to drop an existing column based on the ownership of the
-	 * parent relation.
-	 * It is already checked on the ATPrepCmd() or head of the
-	 * function, so we heuristically omit this checks.
-	 *
-	 * At the time for SE-PgSQL, the following invocation should
-	 * be commented out.
-	 *
-	 * ac_attribute_drop(RelationGetRelid(rel), colName, false);
-	 */
 
 	/*
 	 * Propagate to children as appropriate.  Unlike most other ALTER

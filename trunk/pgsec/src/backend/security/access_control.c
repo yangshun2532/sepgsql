@@ -62,8 +62,8 @@
  * the ac_relation_create() instead, if necessary.
  *
  * [Params]
- * relOid  : OID of the relation to be altered
- * colDef  : Definition of the new column
+ * relOid : OID of the relation to be altered
+ * colDef : Definition of the new column
  */
 void
 ac_attribute_create(Oid relOid, ColumnDef *colDef)
@@ -897,7 +897,7 @@ ac_relation_copy_definition(Oid relOidSrc)
  * [Params]
  * parentOid : OID of the parant relation
  * childOid  : OID of the child relation
- *             It is available onlt when ALTER TABLE INHERIT case.
+ *             It is available only when ALTER TABLE INHERIT case.
  */
 void
 ac_relation_inheritance(Oid parentOid, Oid childOid)
@@ -911,12 +911,6 @@ ac_relation_inheritance(Oid parentOid, Oid childOid)
 	if (!pg_class_ownercheck(parentOid, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
 					   get_rel_name(parentOid));
-
-	/*
-	 * MEMO: CREATE TABLE (...) INHERITS(xxx); does not prevent to
-	 * create a child table with system catalog, but ALTER TABLE
-	 * INHERIT xxx prents this. Which is correct?
-	 */
 }
 
 /*
@@ -1323,17 +1317,13 @@ ac_conversion_create(const char *convName, Oid convNsp, Oid funcOid)
 {
 	AclResult	aclresult;
 
+	/* Must have CREATE privilege on namespace */
 	aclresult = pg_namespace_aclcheck(convNsp, GetUserId(), ACL_CREATE);
 	if (aclresult != ACLCHECK_OK)
 		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
 					   get_namespace_name(convNsp));
 
-	/*
-	 * MEMO: Why original implementation check ACL_EXECUTE to create
-	 * a new conversion? It is equivalent to allow everyone to execute
-	 * the function, so it seems to me pg_proc_ownercheck() is more
-	 * appropriate permission to be checked..
-	 */
+	/* Must have EXECUTE privilege on conversion function */
 	aclresult = pg_proc_aclcheck(funcOid, GetUserId(), ACL_EXECUTE);
 	if (aclresult != ACLCHECK_OK)
 		aclcheck_error(aclresult, ACL_KIND_PROC,
@@ -4229,9 +4219,7 @@ ac_type_alter(Oid typOid, const char *newName,
 	if (newName)
 	{
 		/*
-		 * MEMO: Why ACL_CREATE on the namespace is not checked
-		 * on renaming the type? Other database objects also checks
-		 * it on renaming.
+		 * It is a stub. By default, we don't check anything.
 		 */
 	}
 
