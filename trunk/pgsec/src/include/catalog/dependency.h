@@ -153,10 +153,10 @@ typedef enum ObjectClass
 /* in dependency.c */
 
 extern void performDeletion(const ObjectAddress *object,
-				DropBehavior behavior);
+				DropBehavior behavior, bool permission);
 
 extern void performMultipleDeletions(const ObjectAddresses *objects,
-						 DropBehavior behavior);
+						 DropBehavior behavior, bool permission);
 
 extern void deleteWhatDependsOn(const ObjectAddress *object,
 					bool showNotices);

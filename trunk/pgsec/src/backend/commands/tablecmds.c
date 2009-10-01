@@ -730,7 +730,7 @@ RemoveRelations(DropStmt *drop)
 		ReleaseSysCache(tuple);
 	}
 
-	performMultipleDeletions(objects, drop->behavior);
+	performMultipleDeletions(objects, drop->behavior, true);
 
 	free_object_addresses(objects);
 }
@@ -2868,7 +2868,7 @@ ATRewriteTables(List **wqueue)
 			 * The new relation is local to our transaction and we know
 			 * nothing depends on it, so DROP_RESTRICT should be OK.
 			 */
-			performDeletion(&object, DROP_RESTRICT);
+			performDeletion(&object, DROP_RESTRICT, false);
 			/* performDeletion does CommandCounterIncrement at end */
 
 			/*
@@ -4421,7 +4421,7 @@ ATExecDropColumn(List **wqueue, Relation rel, const char *colName,
 	object.objectId = RelationGetRelid(rel);
 	object.objectSubId = attnum;
 
-	performDeletion(&object, behavior);
+	performDeletion(&object, behavior, true);
 
 	/*
 	 * If we dropped the OID column, must adjust pg_class.relhasoids and tell
@@ -5566,7 +5566,7 @@ ATExecDropConstraint(Relation rel, const char *constrName,
 		conobj.objectId = HeapTupleGetOid(tuple);
 		conobj.objectSubId = 0;
 
-		performDeletion(&conobj, behavior);
+		performDeletion(&conobj, behavior, true);
 
 		found = true;
 	}
@@ -6217,7 +6217,7 @@ ATPostAlterTypeCleanup(List **wqueue, AlteredTableInfo *tab)
 		obj.classId = ConstraintRelationId;
 		obj.objectId = lfirst_oid(l);
 		obj.objectSubId = 0;
-		performDeletion(&obj, DROP_RESTRICT);
+		performDeletion(&obj, DROP_RESTRICT, true);
 	}
 
 	foreach(l, tab->changedIndexOids)
@@ -6225,7 +6225,7 @@ ATPostAlterTypeCleanup(List **wqueue, AlteredTableInfo *tab)
 		obj.classId = RelationRelationId;
 		obj.objectId = lfirst_oid(l);
 		obj.objectSubId = 0;
-		performDeletion(&obj, DROP_RESTRICT);
+		performDeletion(&obj, DROP_RESTRICT, true);
 	}
 
 	/*
@@ -8027,7 +8027,7 @@ PreCommit_on_commit_actions(void)
 					object.classId = RelationRelationId;
 					object.objectId = oc->relid;
 					object.objectSubId = 0;
-					performDeletion(&object, DROP_CASCADE);
+					performDeletion(&object, DROP_CASCADE, false);
 
 					/*
 					 * Note that table deletion will call

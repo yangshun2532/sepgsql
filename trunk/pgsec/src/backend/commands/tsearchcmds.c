@@ -325,7 +325,7 @@ RemoveTSParsers(DropStmt *drop)
 		add_exact_object_address(&object, objects);
 	}
 
-	performMultipleDeletions(objects, drop->behavior);
+	performMultipleDeletions(objects, drop->behavior, true);
 
 	free_object_addresses(objects);
 }
@@ -679,7 +679,7 @@ RemoveTSDictionaries(DropStmt *drop)
 		ReleaseSysCache(tup);
 	}
 
-	performMultipleDeletions(objects, drop->behavior);
+	performMultipleDeletions(objects, drop->behavior, true);
 
 	free_object_addresses(objects);
 }
@@ -1135,7 +1135,7 @@ RemoveTSTemplates(DropStmt *drop)
 		add_exact_object_address(&object, objects);
 	}
 
-	performMultipleDeletions(objects, drop->behavior);
+	performMultipleDeletions(objects, drop->behavior, true);
 
 	free_object_addresses(objects);
 }
@@ -1532,7 +1532,7 @@ RemoveTSConfigurations(DropStmt *drop)
 		ReleaseSysCache(tup);
 	}
 
-	performMultipleDeletions(objects, drop->behavior);
+	performMultipleDeletions(objects, drop->behavior, true);
 
 	free_object_addresses(objects);
 }

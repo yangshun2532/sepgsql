@@ -1982,7 +1982,7 @@ do_autovacuum(void)
 					object.classId = RelationRelationId;
 					object.objectId = relid;
 					object.objectSubId = 0;
-					performDeletion(&object, DROP_CASCADE);
+					performDeletion(&object, DROP_CASCADE, false);
 				}
 				else
 				{

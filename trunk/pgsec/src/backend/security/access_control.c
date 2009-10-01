@@ -103,10 +103,10 @@ ac_attribute_alter(Oid relOid, const char *attName)
  * [Params]
  * relOid  : OID of the relation to be altered
  * attName : Name of the target attribute to be dropped
- * dacSkip : True, if dac permission check should be bypassed
+ * cascade : True, if it was called due to the cascaded deletion
  */
 void
-ac_attribute_drop(Oid relOid, const char *attName, bool dacSkip)
+ac_attribute_drop(Oid relOid, const char *attName, bool cascade)
 {
 	/*
 	 * Now, all the caller already checks ownership of the relation
@@ -287,12 +287,12 @@ ac_role_alter(Oid roleId, int newSuper, bool onlyPassword, bool setRoleGuc)
  *
  * [Params]
  * roleId  : OID of the database role to be dropped
- * dacSkip : True, if dac permission check should be bypassed
+ * cascade : True, if it was called due to the cascaded deletion
  */
 void
-ac_role_drop(Oid roleId, bool dacSkip)
+ac_role_drop(Oid roleId, bool cascade)
 {
-	if (!dacSkip)
+	if (!cascade)
 	{
 		HeapTuple	rolTup;
 
@@ -432,12 +432,12 @@ ac_cast_create(Oid sourceTypOid, Oid targetTypOid,
  * [Params]
  * sourceTypOid : OID of the source type
  * targetTypOid : OID of the target type
- * dacSkip      : True, if dac permission check should be bypassed
+ * cascade      : True, if it was called due to the cascaded deletion
  */
 void
-ac_cast_drop(Oid sourceTypOid, Oid targetTypOid, bool dacSkip)
+ac_cast_drop(Oid sourceTypOid, Oid targetTypOid, bool cascade)
 {
-	if (!dacSkip &&
+	if (!cascade &&
 		!pg_type_ownercheck(sourceTypOid, GetUserId()) &&
 		!pg_type_ownercheck(targetTypOid, GetUserId()))
 		ereport(ERROR,
@@ -449,7 +449,7 @@ ac_cast_drop(Oid sourceTypOid, Oid targetTypOid, bool dacSkip)
 
 /* Helper function to call ac_cast_drop() by oid */
 static void
-ac_cast_drop_by_oid(Oid castOid, bool dacSkip)
+ac_cast_drop_by_oid(Oid castOid, bool cascade)
 {
 	Form_pg_cast	castForm;
 	Relation		castRel;
@@ -470,7 +470,7 @@ ac_cast_drop_by_oid(Oid castOid, bool dacSkip)
 		elog(ERROR, "could not find tuple for cast %u", castOid);
 
 	castForm = (Form_pg_cast) GETSTRUCT(castTup);
-	ac_cast_drop(castForm->castsource, castForm->casttarget, dacSkip);
+	ac_cast_drop(castForm->castsource, castForm->casttarget, cascade);
 
 	systable_endscan(sscan);
 
@@ -783,15 +783,15 @@ ac_relation_alter(Oid relOid, const char *newName,
  *
  * [Params]
  * relOid  : OID of the relation to be dropped
- * dacSkip : True, if dac permission checks should be bypassed
+ * cascade : True, if it was called due to the cascaded deletion
  */
 void
-ac_relation_drop(Oid relOid, bool dacSkip)
+ac_relation_drop(Oid relOid, bool cascade)
 {
 	Oid		relNspOid = get_rel_namespace(relOid);
 
 	/* Allow DROP to either table owner or schema owner */
-	if (!dacSkip &&
+	if (!cascade &&
 		!pg_class_ownercheck(relOid, GetUserId()) &&
 		!pg_namespace_ownercheck(relNspOid, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
@@ -1381,14 +1381,14 @@ ac_conversion_alter(Oid convOid, const char *newName, Oid newOwner)
  *
  * [Params]
  * convOid : OID of the target conversion
- * dacSkip:  True, if dac permission check should be bypassed
+ * cascade : True, if it was called due to the cascaded deletion
  */
 void
-ac_conversion_drop(Oid convOid, bool dacSkip)
+ac_conversion_drop(Oid convOid, bool cascade)
 {
 	Oid		convNsp = get_conversion_namespace(convOid);
 
-	if (!dacSkip &&
+	if (!cascade &&
 		!pg_conversion_ownercheck(convOid, GetUserId()) &&
 		!pg_namespace_ownercheck(convNsp, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CONVERSION,
@@ -1568,12 +1568,12 @@ ac_database_alter(Oid datOid, const char *newName,
  *
  * [Params]
  * datOid  : OID of the database to be dropped
- * dacSkip : True, if dac permission checks should be bypassed
+ * cascade : True, if it was called due to the cascaded deletion
  */
 void
-ac_database_drop(Oid datOid, bool dacSkip)
+ac_database_drop(Oid datOid, bool cascade)
 {
-	if (!dacSkip &&
+	if (!cascade &&
 		!pg_database_ownercheck(datOid, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_DATABASE,
 					   get_database_name(datOid));
@@ -1776,12 +1776,12 @@ ac_foreign_data_wrapper_alter(Oid fdwOid, Oid newValidator, Oid newOwner)
  *
  * [Params]
  * fdwOid  : OID of the target foreign data wrapper
- * dacSkip : True, if dac permission check should be bypassed
+ * cascade : True, if it was called due to the cascaded deletion
  */
 void
-ac_foreign_data_wrapper_drop(Oid fdwOid, bool dacSkip)
+ac_foreign_data_wrapper_drop(Oid fdwOid, bool cascade)
 {
-	if (!dacSkip &&
+	if (!cascade &&
 		!superuser())
 		ereport(ERROR,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
@@ -1921,13 +1921,13 @@ ac_foreign_server_alter(Oid fsrvOid, Oid newOwner)
  *
  * [Params]
  * fsrvOid : OID of the target foreign server
- * dacSkip : True, if dac permission check should be bypassed
+ * cascade : True, if it was called due to the cascaded deletion
  */
 void
-ac_foreign_server_drop(Oid fsrvOid, bool dacSkip)
+ac_foreign_server_drop(Oid fsrvOid, bool cascade)
 {
 	/* Only allow DROP if the server is owned by the user. */
-	if (!dacSkip &&
+	if (!cascade &&
 		!pg_foreign_server_ownercheck(fsrvOid, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_FOREIGN_SERVER,
 					   get_foreign_server_name(fsrvOid));
@@ -2060,12 +2060,12 @@ ac_language_alter(Oid langOid, const char *newName, Oid newOwner)
  *
  * [Params]
  * langOid : OID of the procedural language to be dropped
- * dacSkip : True, if dac permission check should be bypassed
+ * cascade : True, if it was called due to the cascaded deletion
  */
 void
-ac_language_drop(Oid langOid, bool dacSkip)
+ac_language_drop(Oid langOid, bool cascade)
 {
-	if (!dacSkip &&
+	if (!cascade &&
 		!pg_language_ownercheck(langOid, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_LANGUAGE,
 					   get_lang_name(langOid));
@@ -2202,12 +2202,12 @@ ac_schema_alter(Oid nspOid, const char *newName, Oid newOwner)
  *
  * [Params]
  * nspOid  : OID of the namespace to be dropped
- * dacSkip : True, if dac permission checks should be bypassed
+ * cascade : True, if it was called due to the cascaded deletion
  */
 void
-ac_schema_drop(Oid nspOid, bool dacSkip)
+ac_schema_drop(Oid nspOid, bool cascade)
 {
-	if (!dacSkip &&
+	if (!cascade &&
 		!pg_namespace_ownercheck(nspOid, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_NAMESPACE,
 					   get_namespace_name(nspOid));
@@ -2468,14 +2468,14 @@ ac_opclass_alter(Oid opcOid, const char *newName, Oid newOwner)
  *
  * [Params]
  * opcOid  : OID of the operator class to be dropped
- * dacSkip : True, if dac permission check should be bypassed
+ * cascade : True, if it was called due to the cascaded deletion
  */
 void
-ac_opclass_drop(Oid opcOid, bool dacSkip)
+ac_opclass_drop(Oid opcOid, bool cascade)
 {
 	Oid		opcNsp = get_opclass_namespace(opcOid);
 
-	if (!dacSkip &&
+	if (!cascade &&
 		!pg_opclass_ownercheck(opcOid, GetUserId()) &&
 		!pg_namespace_ownercheck(opcNsp, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_OPCLASS,
@@ -2644,15 +2644,15 @@ ac_operator_alter(Oid operOid, Oid newOwner)
  *
  * [Params]
  * operOid : OID of the operator to be dropped
- * dacSkip : True, if dac permission check should be bypassed
+ * cascade : True, if it was called due to the cascaded deletion
  */
 void
-ac_operator_drop(Oid operOid, bool dacSkip)
+ac_operator_drop(Oid operOid, bool cascade)
 {
 	Oid			operNsp = get_operator_namespace(operOid);
 
 	/* Must be owner of the operator or its namespace */
-	if (!dacSkip &&
+	if (!cascade &&
 		!pg_oper_ownercheck(operOid, GetUserId()) &&
 		!pg_namespace_ownercheck(operNsp, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_OPER,
@@ -2820,15 +2820,15 @@ ac_opfamily_alter(Oid opfOid, const char *newName, Oid newOwner)
  *
  * [Params]
  * opfOid  : OID of the operator family to be dropped
- * dacSkip : True, if dac permission check should by bypassed
+ * cascade : True, if it was called due to the cascaded deletion
  */
 void
-ac_opfamily_drop(Oid opfOid, bool dacSkip)
+ac_opfamily_drop(Oid opfOid, bool cascade)
 {
 	Oid		opfNsp = get_opfamily_namespace(opfOid);
 
 	/* Must be owner of opfamily or its namespace */
-	if (!dacSkip &&
+	if (!cascade &&
 		!pg_opfamily_ownercheck(opfOid, GetUserId()) &&
 		!pg_namespace_ownercheck(opfNsp, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_OPFAMILY,
@@ -3073,14 +3073,14 @@ ac_proc_alter(Oid proOid, const char *newName, Oid newNspOid, Oid newOwner)
  *
  * [Params]
  * proOid  : OID of the function to be dropped
- * dacSkip : True, if dac permission check should be bypassed
+ * cascade : True, if it was called due to the cascaded deletion
  */
 void
-ac_proc_drop(Oid proOid, bool dacSkip)
+ac_proc_drop(Oid proOid, bool cascade)
 {
 	Oid		proNsp = get_func_namespace(proOid);
 
-	if (!dacSkip &&
+	if (!cascade &&
 		!pg_proc_ownercheck(proOid, GetUserId()) &&
 		!pg_namespace_ownercheck(proNsp, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
@@ -3209,46 +3209,15 @@ ac_rule_create(Oid relOid, const char *ruleName)
  * [Params]
  * relOid   : OID of the relation to be applied on
  * ruleName : Name of the query rewrite rule
- * dacSkip  : True, if dac permission checks should be bypassed
+ * cascade  : True, if it was called due to the cascaded deletion
  */
 void
-ac_rule_drop(Oid relOid, const char *ruleName, bool dacSkip)
+ac_rule_drop(Oid relOid, const char *ruleName, bool cascade)
 {
-	if (!dacSkip &&
+	if (!cascade &&
 		!pg_class_ownercheck(relOid, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
 					   get_rel_name(relOid));
-}
-
-/* Helper function to call ac_rule_drop */
-static void
-ac_rule_drop_by_oid(Oid ruleOid, bool dacSkip)
-{
-	Form_pg_rewrite	ruleForm;
-	Relation		ruleRel;
-	ScanKeyData		skey;
-	SysScanDesc		sscan;
-	HeapTuple		ruleTup;
-
-	ruleRel = heap_open(RewriteRelationId, AccessShareLock);
-
-	ScanKeyInit(&skey,
-				ObjectIdAttributeNumber,
-				BTEqualStrategyNumber, F_OIDEQ,
-				ObjectIdGetDatum(ruleOid));
-	sscan = systable_beginscan(ruleRel, RewriteOidIndexId, true,
-							   SnapshotNow, 1, &skey);
-	ruleTup = systable_getnext(sscan);
-	if (!HeapTupleIsValid(ruleTup))
-		elog(ERROR, "could not find tuple for rule %u", ruleOid);
-
-	ruleForm = (Form_pg_rewrite) GETSTRUCT(ruleTup);
-
-	ac_rule_drop(ruleForm->ev_class, NameStr(ruleForm->rulename), dacSkip);
-
-	systable_endscan(sscan);
-
-	heap_close(ruleRel, AccessShareLock);
 }
 
 /*
@@ -3326,13 +3295,13 @@ ac_tablespace_alter(Oid tblspcOid, const char *newName, Oid newOwner)
  *
  * [Params]
  * tblspcOid : OID of the tablespace to be dropped
- * dacSkip   : True, if dac permission check should be bypassed
+ * cascade   : True, if it was called due to the cascaded deletion
  */
 void
-ac_tablespace_drop(Oid tblspcOid, bool dacSkip)
+ac_tablespace_drop(Oid tblspcOid, bool cascade)
 {
 	/* Must be tablespace owner */
-	if (!dacSkip &&
+	if (!cascade &&
 		!pg_tablespace_ownercheck(tblspcOid, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_TABLESPACE,
 					   get_tablespace_name(tblspcOid));
@@ -3498,47 +3467,15 @@ ac_trigger_alter(Oid relOid, const char *trigName, const char *newName)
  * [Params]
  * relOid   : OID of the ralation on which the trigger is set up
  * trigName : Name of the trigger to be dropped
- * dacSkip  : True, if dac permission check should be bypassed
+ * cascade  : True, if it was called due to the cascaded deletion
  */
 void
-ac_trigger_drop(Oid relOid, const char *trigName, bool dacSkip)
+ac_trigger_drop(Oid relOid, const char *trigName, bool cascade)
 {
-	if (!dacSkip &&
+	if (!cascade &&
 		!pg_class_ownercheck(relOid, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
 					   get_rel_name(relOid));
-}
-
-/* Helper function to call ac_trigger_drop() */
-static void
-ac_trigger_drop_by_oid(Oid trigOid, bool dacSkip)
-{
-	Form_pg_trigger	tgForm;
-	Relation	tgRel;
-	HeapTuple	tgTup;
-	SysScanDesc sscan;
-    ScanKeyData skey;
-
-	tgRel = heap_open(TriggerRelationId, AccessShareLock);
-
-	ScanKeyInit(&skey,
-				ObjectIdAttributeNumber,
-				BTEqualStrategyNumber, F_OIDEQ,
-				ObjectIdGetDatum(trigOid));
-
-	sscan = systable_beginscan(tgRel, TriggerOidIndexId, true,
-							   SnapshotNow, 1, &skey);
-
-	tgTup = systable_getnext(sscan);
-	if (!HeapTupleIsValid(tgTup))
-		elog(ERROR, "could not find tuple for trigger %u", trigOid);
-
-	tgForm = (Form_pg_trigger) GETSTRUCT(tgTup);
-	ac_trigger_drop(tgForm->tgrelid, NameStr(tgForm->tgname), dacSkip);
-
-	systable_endscan(sscan);
-
-    heap_close(tgRel, AccessShareLock);
 }
 
 /*
@@ -3674,14 +3611,14 @@ ac_ts_config_alter(Oid cfgOid, const char *newName, Oid newOwner)
  *
  * [Params]
  * cfgOid  : OID of the text search config to be dropped
- * dacSkip : True, if dac permission checks should be bypassed
+ * cascade : True, if it was called due to the cascaded deletion
  */
 void
-ac_ts_config_drop(Oid cfgOid, bool dacSkip)
+ac_ts_config_drop(Oid cfgOid, bool cascade)
 {
 	Oid		cfgNsp = get_ts_config_namespace(cfgOid);
 
-	if (!dacSkip &&
+	if (!cascade &&
 		!pg_ts_config_ownercheck(cfgOid, GetUserId()) &&
 		!pg_namespace_ownercheck(cfgNsp, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_TSCONFIGURATION,
@@ -3821,15 +3758,15 @@ ac_ts_dict_alter(Oid dictOid, const char *newName, Oid newOwner)
  *
  * [Params]
  * dictOid : OID of the text search dictionary to be dropped
- * dacSkip : True, if dac permission checks should be bypassed
+ * cascade : True, if it was called due to the cascaded deletion
  */
 void
-ac_ts_dict_drop(Oid dictOid, bool dacSkip)
+ac_ts_dict_drop(Oid dictOid, bool cascade)
 {
 	Oid		dictNsp = get_ts_dict_namespace(dictOid);
 
 	/* Must be owner of the dictionary or its namespace */
-	if (!dacSkip &&
+	if (!cascade &&
 		!pg_ts_dict_ownercheck(dictOid, GetUserId()) &&
 		!pg_namespace_ownercheck(dictNsp, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_TSDICTIONARY,
@@ -3919,12 +3856,12 @@ ac_ts_parser_alter(Oid prsOid, const char *newName)
  *
  * [Params]
  * prsOid  : OID of the text search parser
- * dacSkip : True, if dac permission checks should be bypassed
+ * cascade : True, if it was called due to the cascaded deletion
  */
 void
-ac_ts_parser_drop(Oid prsOid, bool dacSkip)
+ac_ts_parser_drop(Oid prsOid, bool cascade)
 {
-	if (!dacSkip &&
+	if (!cascade &&
 		!superuser())
 		ereport(ERROR,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
@@ -4011,12 +3948,12 @@ ac_ts_template_alter(Oid tmplOid, const char *newName)
  *
  * [Params]
  * tmplOid : OID of the text search template to be dropped
- * dacSkip : True, if dac permission checks should be bypassed
+ * cascade : True, if it was called due to the cascaded deletion
  */
 void
-ac_ts_template_drop(Oid tmplOid, bool dacSkip)
+ac_ts_template_drop(Oid tmplOid, bool cascade)
 {
-	if (!dacSkip &&
+	if (!cascade &&
 		!superuser())
 		ereport(ERROR,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
@@ -4264,15 +4201,15 @@ ac_type_alter(Oid typOid, const char *newName,
  *
  * [Params]
  * typOid  : OID of the type to be dropped
- * dacSkip : True, if dac permission check should be bypassed
+ * cascade : True, if it was called due to the cascaded deletion
  */
 void
-ac_type_drop(Oid typOid, bool dacSkip)
+ac_type_drop(Oid typOid, bool cascade)
 {
 	Oid		typNsp = get_type_namespace(typOid);
 
 	/* Permission check: must own type or its namespace */
-	if (!dacSkip &&
+	if (!cascade &&
 		!pg_type_ownercheck(typOid, GetUserId()) &&
 		!pg_namespace_ownercheck(typNsp, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_TYPE,
@@ -4379,10 +4316,10 @@ ac_user_mapping_alter(Oid umOid)
  *
  * [Params]
  * umOid   : OID of the user mapping to be dropped
- * dacSkip : True, if dac permission check should be bypassed
+ * cascade : True, if it was called due to the cascaded deletion
  */
 void
-ac_user_mapping_drop(Oid umOid, bool dacSkip)
+ac_user_mapping_drop(Oid umOid, bool cascade)
 {
 	Form_pg_user_mapping	umForm;
 	HeapTuple		umTup;
@@ -4413,92 +4350,97 @@ ac_user_mapping_drop(Oid umOid, bool dacSkip)
  *
  * [Params]
  * object  : a miscellaneous database object to be dropped
- * dacSkip : True, if dac permission check should be bypassed
+ * cascade : True, if it was called due to the cascaded deletion
  */
 void
-ac_object_drop(const ObjectAddress *object, bool dacSkip)
+ac_object_drop(const ObjectAddress *object, bool cascade)
 {
+	Oid		objectId = object->objectId;
+
 	switch (getObjectClass(object))
 	{
-	case OCLASS_CLASS:				/* pg_class */
-		if (object->objectSubId != 0)
-			ac_relation_drop(object->objectId, dacSkip);
+	case OCLASS_CLASS:				/* pg_class or pg_attribtue */
+		if (object->objectSubId == 0)
+			ac_relation_drop(objectId, cascade);
 		else
 		{
-			char *attName
-				= get_relid_attribute_name(object->objectId,
-										   object->objectSubId);
-			ac_attribute_drop(object->objectId, attName, dacSkip);
+			char *attName = get_relid_attribute_name(objectId,
+													 object->objectSubId);
+			ac_attribute_drop(objectId, attName, cascade);
 		}
 		break;
 	case OCLASS_PROC:				/* pg_proc */
-		ac_proc_drop(object->objectId, dacSkip);
+		ac_proc_drop(objectId, cascade);
 		break;
 	case OCLASS_TYPE:				/* pg_type */
-		ac_type_drop(object->objectId, dacSkip);
+		ac_type_drop(objectId, cascade);
 		break;
 	case OCLASS_CAST:				/* pg_cast */
-		ac_cast_drop_by_oid(object->objectId, dacSkip);
-		break;
-	case OCLASS_CONSTRAINT:			/* pg_constraint */
-		/* no need to do nothing in this version */
+		ac_cast_drop_by_oid(objectId, cascade);
 		break;
 	case OCLASS_CONVERSION:			/* pg_conversion */
-		ac_conversion_drop(object->objectId, dacSkip);
+		ac_conversion_drop(objectId, cascade);
 		break;
  	case OCLASS_LANGUAGE:			/* pg_language */
-		ac_language_drop(object->objectId, dacSkip);
+		ac_language_drop(objectId, cascade);
 		break;
  	case OCLASS_OPERATOR:			/* pg_operator */
-		ac_operator_drop(object->objectId, dacSkip);
+		ac_operator_drop(objectId, cascade);
 		break;
 	case OCLASS_OPCLASS:			/* pg_opclass */
-		ac_opclass_drop(object->objectId, dacSkip);
+		ac_opclass_drop(objectId, cascade);
 		break;
 	case OCLASS_OPFAMILY:			/* pg_opfamily */
-		ac_opfamily_drop(object->objectId, dacSkip);
-		break;
-	case OCLASS_AMOP:				/* pg_amop */
-	case OCLASS_AMPROC:				/* pg_amproc */
-		/* no need to do nothing in this version */
-		break;
-	case OCLASS_REWRITE:			/* pg_rewrite */
-		ac_rule_drop_by_oid(object->objectId, dacSkip);
-		break;
-	case OCLASS_TRIGGER:			/* pg_trigger */
-		ac_trigger_drop_by_oid(object->objectId, dacSkip);
+		ac_opfamily_drop(objectId, cascade);
 		break;
 	case OCLASS_SCHEMA:				/* pg_namespace */
-		ac_schema_drop(object->objectId, dacSkip);
+		ac_schema_drop(objectId, cascade);
 		break;
 	case OCLASS_TSPARSER:			/* pg_ts_parser */
-		ac_ts_parser_drop(object->objectId, dacSkip);
+		ac_ts_parser_drop(objectId, cascade);
 		break;
 	case OCLASS_TSDICT:				/* pg_ts_dict */
-		ac_ts_dict_drop(object->objectId, dacSkip);
+		ac_ts_dict_drop(objectId, cascade);
 		break;
 	case OCLASS_TSTEMPLATE:			/* pg_ts_template */
-		ac_ts_template_drop(object->objectId, dacSkip);
+		ac_ts_template_drop(objectId, cascade);
 		break;
 	case OCLASS_TSCONFIG:			/* pg_ts_config */
-		ac_ts_config_drop(object->objectId, dacSkip);
-		break;
-	case OCLASS_ROLE:
-	case OCLASS_DATABASE:
-	case OCLASS_TBLSPACE:
-		/* should not be happen */
+		ac_ts_config_drop(objectId, cascade);
 		break;
 	case OCLASS_FDW:				/* pg_foreign_data_wrapper */
-		ac_foreign_data_wrapper_drop(object->objectId, dacSkip);
+		ac_foreign_data_wrapper_drop(objectId, cascade);
 		break;
 	case OCLASS_FOREIGN_SERVER:		/* pg_foreign_server */
-		ac_foreign_server_drop(object->objectId, dacSkip);
+		ac_foreign_server_drop(objectId, cascade);
 		break;
 	case OCLASS_USER_MAPPING:		/* pg_user_mapping */
-		ac_user_mapping_drop(object->objectId, dacSkip);
+		ac_user_mapping_drop(objectId, cascade);
+		break;
+	case OCLASS_ROLE:				/* pg_authid */
+	case OCLASS_DATABASE:			/* pg_database */
+	case OCLASS_TBLSPACE:			/* pg_tablespace */
+		/*
+		 * It should not be happen. All the permission checks are applied
+		 * at the regular drop routines.
+		 */
+		break;
+	case OCLASS_CONSTRAINT:			/* pg_constraint */
+	case OCLASS_DEFAULT:			/* pg_attrdef */
+	case OCLASS_AMOP:				/* pg_amop */
+	case OCLASS_AMPROC:				/* pg_amproc */
+	case OCLASS_REWRITE:			/* pg_rewrite */
+	case OCLASS_TRIGGER:			/* pg_trigger */
+		/*
+		 * Currently, we have no security model planned which want
+		 * to check privileges to drop a certain constraint, amop,
+		 * amproc, rewrite rules and triggers.
+		 * So, we do nothing to here omit steps to lookup the system
+		 * catalog entry using system casche or relation scan.
+		 */
 		break;
 	default:
-		/* do nothing */
+		/* should not be here */
 		break;
 	}
 }

@@ -23,7 +23,7 @@ ac_attribute_create(Oid relOid, ColumnDef *cdef);
 extern void
 ac_attribute_alter(Oid relOid, const char *colName);
 extern void
-ac_attribute_drop(Oid relOid, const char *colName, bool dacSkip);
+ac_attribute_drop(Oid relOid, const char *colName, bool cascade);
 extern void
 ac_attribute_grant(Oid relOid, AttrNumber attnum,
 				   Oid grantor, AclMode goptions);
@@ -36,7 +36,7 @@ ac_role_create(const char *rolName, bool rolSuper);
 extern void
 ac_role_alter(Oid roleId, int newSuper, bool onlyPasswd, bool setRoleGuc);
 extern void
-ac_role_drop(Oid roleId, bool dacSkip);
+ac_role_drop(Oid roleId, bool cascade);
 extern void
 ac_role_comment(Oid roleId);
 extern void
@@ -47,7 +47,7 @@ extern void
 ac_cast_create(Oid sourceTypOid, Oid targetTypOid,
                char castmethod, Oid funcOid);
 extern void
-ac_cast_drop(Oid sourceTypOid, Oid targetTypOid, bool dacSkip);
+ac_cast_drop(Oid sourceTypOid, Oid targetTypOid, bool cascade);
 extern void
 ac_cast_comment(Oid sourceTypOid, Oid targetTypOid);
 
@@ -62,7 +62,7 @@ extern void
 ac_relation_alter(Oid relOid, const char *newName,
 				  Oid newNspOid, Oid newTblSpc, Oid newOwner);
 extern void
-ac_relation_drop(Oid relOid, bool dacSkip);
+ac_relation_drop(Oid relOid, bool cascade);
 extern void
 ac_relation_grant(Oid relOid, Oid grantor, AclMode goptions);
 extern void
@@ -111,7 +111,7 @@ ac_conversion_create(const char *convName, Oid nspOid, Oid funcOid);
 extern void
 ac_conversion_alter(Oid convOid, const char *newName, Oid newOwner);
 extern void
-ac_conversion_drop(Oid convOid, bool dacSkip);
+ac_conversion_drop(Oid convOid, bool cascade);
 extern void
 ac_conversion_comment(Oid convOid);
 
@@ -124,7 +124,7 @@ extern void
 ac_database_alter(Oid datOid, const char *newName,
 				  Oid newTblspc, Oid newOwner);
 extern void
-ac_database_drop(Oid datOid, bool dacSkip);
+ac_database_drop(Oid datOid, bool cascade);
 extern void
 ac_database_grant(Oid datOid, Oid grantor, AclMode goptions);
 extern void
@@ -142,7 +142,7 @@ ac_foreign_data_wrapper_create(const char *fdwName, Oid fdwValidator);
 extern void
 ac_foreign_data_wrapper_alter(Oid fdwOid, Oid newValidator, Oid newOwner);
 extern void
-ac_foreign_data_wrapper_drop(Oid fdwOid, bool dacSkip);
+ac_foreign_data_wrapper_drop(Oid fdwOid, bool cascade);
 extern void
 ac_foreign_data_wrapper_grant(Oid fdwOid, Oid grantor, AclMode goptions);
 
@@ -152,7 +152,7 @@ ac_foreign_server_create(const char *fsrvName, Oid fsrvOwner, Oid fdwOid);
 extern void
 ac_foreign_server_alter(Oid fsrvOid, Oid newOwner);
 extern void
-ac_foreign_server_drop(Oid fsrvOid, bool dacSkip);
+ac_foreign_server_drop(Oid fsrvOid, bool cascade);
 extern void
 ac_foreign_server_grant(Oid fsrvOid, Oid grantor, AclMode goptions);
 
@@ -164,7 +164,7 @@ ac_language_create(const char *langName, bool IsTemplate,
 extern void
 ac_language_alter(Oid langOid, const char *newName, Oid newOwner);
 extern void
-ac_language_drop(Oid langOid, bool dacSkip);
+ac_language_drop(Oid langOid, bool cascade);
 extern void
 ac_language_grant(Oid langOid, Oid grantor, AclMode goptions);
 extern void
@@ -177,7 +177,7 @@ ac_opclass_create(const char *opcName, Oid opcNsp,
 extern void
 ac_opclass_alter(Oid opcOid, const char *newName, Oid newOwner);
 extern void
-ac_opclass_drop(Oid opcOid, bool dacSkip);
+ac_opclass_drop(Oid opcOid, bool cascade);
 extern void
 ac_opclass_comment(Oid opcOid);
 
@@ -190,7 +190,7 @@ ac_operator_create(const char *oprName,
 extern void
 ac_operator_alter(Oid operOid, Oid newOwner);
 extern void
-ac_operator_drop(Oid operOid, bool dacSkip);
+ac_operator_drop(Oid operOid, bool cascade);
 extern void
 ac_operator_comment(Oid operOid);
 
@@ -200,7 +200,7 @@ ac_opfamily_create(const char *opfName, Oid opfNsp, Oid amOid);
 extern void
 ac_opfamily_alter(Oid opfOid, const char *newName, Oid newOwner);
 extern void
-ac_opfamily_drop(Oid opfOid, bool dacSkip);
+ac_opfamily_drop(Oid opfOid, bool cascade);
 extern void
 ac_opfamily_comment(Oid opfOid);
 extern void
@@ -216,7 +216,7 @@ ac_aggregate_create(const char *aggName, Oid nspOid, Oid transfn, Oid finalfn);
 extern void
 ac_proc_alter(Oid proOid, const char *newName, Oid newNspOid, Oid newOwner);
 extern void
-ac_proc_drop(Oid proOid, bool dacSkip);
+ac_proc_drop(Oid proOid, bool cascade);
 extern void
 ac_proc_grant(Oid proOid, Oid grantor, AclMode goptions);
 extern void
@@ -232,7 +232,7 @@ ac_schema_create(const char *nspName, Oid nspOwner, bool isTemp);
 extern void
 ac_schema_alter(Oid nspOid, const char *newName, Oid newOwner);
 extern void
-ac_schema_drop(Oid nspOid, bool dacSkip);
+ac_schema_drop(Oid nspOid, bool cascade);
 extern void
 ac_schema_grant(Oid nspOid, Oid grantor, AclMode goptions);
 extern bool
@@ -244,7 +244,7 @@ ac_schema_comment(Oid nspOid);
 extern void
 ac_rule_create(Oid relOid, const char *ruleName);
 extern void
-ac_rule_drop(Oid relOid, const char *ruleName, bool dacSkip);
+ac_rule_drop(Oid relOid, const char *ruleName, bool cascade);
 extern void
 ac_rule_comment(Oid relOid, const char *ruleName);
 
@@ -254,7 +254,7 @@ ac_tablespace_create(const char *tblspcName);
 extern void
 ac_tablespace_alter(Oid tblspcOid, const char *newName, Oid newOwner);
 extern void
-ac_tablespace_drop(Oid tblspcOid, bool dacSkip);
+ac_tablespace_drop(Oid tblspcOid, bool cascade);
 extern void
 ac_tablespace_grant(Oid tblspcOid, Oid grantor, AclMode goptions);
 extern void
@@ -270,7 +270,7 @@ ac_trigger_create(Oid relOid, const char *trigName, Oid conRelOid, Oid funcOid);
 extern void
 ac_trigger_alter(Oid relOid, const char *trigName, const char *newName);
 extern void
-ac_trigger_drop(Oid relOid, const char *trigName, bool dacSkip);
+ac_trigger_drop(Oid relOid, const char *trigName, bool cascade);
 extern void
 ac_trigger_comment(Oid relOid, const char *trigName);
 
@@ -280,7 +280,7 @@ ac_ts_config_create(const char *cfgName, Oid cfgNsp);
 extern void
 ac_ts_config_alter(Oid cfgOid, const char *newName, Oid newOwner);
 extern void
-ac_ts_config_drop(Oid cfgOid, bool dacSkip);
+ac_ts_config_drop(Oid cfgOid, bool cascade);
 extern void
 ac_ts_config_comment(Oid cfgOid);
 
@@ -290,7 +290,7 @@ ac_ts_dict_create(const char *dictName, Oid dictNsp);
 extern void
 ac_ts_dict_alter(Oid dictOid, const char *newName, Oid newOwner);
 extern void
-ac_ts_dict_drop(Oid dictOid, bool dacSkip);
+ac_ts_dict_drop(Oid dictOid, bool cascade);
 extern void
 ac_ts_dict_comment(Oid dictOid);
 
@@ -302,7 +302,7 @@ ac_ts_parser_create(const char *prsName, Oid prsNsp,
 extern void
 ac_ts_parser_alter(Oid prsOid, const char *newName);
 extern void
-ac_ts_parser_drop(Oid prsOid, bool dacSkip);
+ac_ts_parser_drop(Oid prsOid, bool cascade);
 extern void
 ac_ts_parser_comment(Oid prsOid);
 
@@ -313,7 +313,7 @@ ac_ts_template_create(const char *tmplName, Oid tmplNsp,
 extern void
 ac_ts_template_alter(Oid tmplOid, const char *newName);
 extern void
-ac_ts_template_drop(Oid tmplOid, bool dacSkip);
+ac_ts_template_drop(Oid tmplOid, bool cascade);
 extern void
 ac_ts_template_comment(Oid tmplOid);
 
@@ -327,7 +327,7 @@ extern void
 ac_type_alter(Oid typOid, const char *newName,
               Oid newNspOid, Oid newOwner);
 extern void
-ac_type_drop(Oid typOid, bool dacSkip);
+ac_type_drop(Oid typOid, bool cascade);
 extern void
 ac_type_comment(Oid typOid);
 
@@ -337,10 +337,10 @@ ac_user_mapping_create(Oid userId, Oid fsrvOid);
 extern void
 ac_user_mapping_alter(Oid umOid);
 extern void
-ac_user_mapping_drop(Oid umOid, bool dacSkip);
+ac_user_mapping_drop(Oid umOid, bool cascade);
 
 /* misc database objects */
 extern void
-ac_object_drop(const ObjectAddress *object, bool dacSkip);
+ac_object_drop(const ObjectAddress *object, bool cascade);
 
 #endif	/* UTILS_SECURITY_H */

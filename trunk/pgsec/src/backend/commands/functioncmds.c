@@ -965,7 +965,7 @@ RemoveFunction(RemoveFuncStmt *stmt)
 	object.objectId = funcOid;
 	object.objectSubId = 0;
 
-	performDeletion(&object, stmt->behavior);
+	performDeletion(&object, stmt->behavior, true);
 }
 
 /*
@@ -1715,7 +1715,7 @@ DropCast(DropCastStmt *stmt)
 
 	ReleaseSysCache(tuple);
 
-	performDeletion(&object, stmt->behavior);
+	performDeletion(&object, stmt->behavior, true);
 }
 
 

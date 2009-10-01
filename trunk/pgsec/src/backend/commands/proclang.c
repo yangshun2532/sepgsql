@@ -522,7 +522,7 @@ DropProceduralLanguage(DropPLangStmt *stmt)
 	/*
 	 * Do the deletion
 	 */
-	performDeletion(&object, stmt->behavior);
+	performDeletion(&object, stmt->behavior, true);
 }
 
 /*

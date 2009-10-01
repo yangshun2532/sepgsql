@@ -68,6 +68,7 @@
 #include "utils/fmgroids.h"
 #include "utils/guc.h"
 #include "utils/lsyscache.h"
+#include "utils/security.h"
 #include "utils/syscache.h"
 #include "utils/tqual.h"
 
@@ -187,6 +188,16 @@ static void getOpFamilyDescription(StringInfo buffer, Oid opfid);
  * objects, except for those that should be implicitly dropped anyway
  * according to the dependency type.
  *
+ * The 'permission' argument specifies if permissions checking will be
+ * applied on the objects to be dropped due to the dependency.
+ * Note that The default PG security model does not apply permission
+ * checks to the cascaded deletion, but extra security model may want
+ * to check.
+ * In general, this argument should be 'true' to ensure that appropriate
+ * permissions checks are done. Otherwise, it can be 'false' such as
+ * being called from internal routines where the checks have already
+ * been done or they're clearly not required.
+ *
  * This is the outer control routine for all forms of DROP that drop objects
  * that can participate in dependencies.  Note that the next two routines
  * are variants on the same theme; if you change anything here you'll likely
@@ -194,7 +205,7 @@ static void getOpFamilyDescription(StringInfo buffer, Oid opfid);
  */
 void
 performDeletion(const ObjectAddress *object,
-				DropBehavior behavior)
+				DropBehavior behavior, bool permission)
 {
 	Relation	depRel;
 	ObjectAddresses *targetObjects;
@@ -239,6 +250,12 @@ performDeletion(const ObjectAddress *object,
 	for (i = 0; i < targetObjects->numrefs; i++)
 	{
 		ObjectAddress *thisobj = targetObjects->refs + i;
+		ObjectAddressExtra *thisextra = targetObjects->extras + i;
+		bool	cascade = !(thisextra->flags & DEPFLAG_ORIGINAL);
+
+		/* Permission checks, if necessary */
+		if (permission)
+			ac_object_drop(thisobj, cascade);
 
 		deleteOneObject(thisobj, depRel);
 	}
@@ -260,7 +277,7 @@ performDeletion(const ObjectAddress *object,
  */
 void
 performMultipleDeletions(const ObjectAddresses *objects,
-						 DropBehavior behavior)
+						 DropBehavior behavior, bool permission)
 {
 	Relation	depRel;
 	ObjectAddresses *targetObjects;
@@ -321,6 +338,12 @@ performMultipleDeletions(const ObjectAddresses *objects,
 	for (i = 0; i < targetObjects->numrefs; i++)
 	{
 		ObjectAddress *thisobj = targetObjects->refs + i;
+		ObjectAddressExtra *thisextra = targetObjects->extras + i;
+		bool	cascade = !(thisextra->flags & DEPFLAG_ORIGINAL);
+
+		/* Permission checks, if necessary */
+		if (permission)
+			ac_object_drop(thisobj, cascade);
 
 		deleteOneObject(thisobj, depRel);
 	}
@@ -393,6 +416,10 @@ deleteWhatDependsOn(const ObjectAddress *object,
 		if (thisextra->flags & DEPFLAG_ORIGINAL)
 			continue;
 
+		/*
+		 * Currently, this is called only when clean up temporary
+		 * objects, so no need to check any permissions here.
+		 */
 		deleteOneObject(thisobj, depRel);
 	}
 
@@ -949,21 +976,6 @@ deleteOneObject(const ObjectAddress *object, Relation depRel)
 	int			nkeys;
 	SysScanDesc scan;
 	HeapTuple	tup;
-
-	/*
-	 * MEMO: A permission check should be placed here to check
-	 * privilege to drop a certain system object in cascaded
-	 * deletion. (It implicitly allows us to drop a database
-	 * object which depends on the object we can drop.)
-	 * 
-	 * However, it is unconfortable for other security model.
-	 * SE-PostgreSQL also needs to check permission to drop
-	 * all the database objects, even if these are dropped due
-	 * to the object dependencies.
-	 *
-	 * It should be put here.
-	 *   ac_object_drop(object, true);
-	 */
 
 	/*
 	 * First remove any pg_depend records that link from this object to

@@ -85,7 +85,7 @@ RemoveRewriteRule(Oid owningRel, const char *ruleName, DropBehavior behavior,
 
 	ReleaseSysCache(tuple);
 
-	performDeletion(&object, behavior);
+	performDeletion(&object, behavior, true);
 }
 
 

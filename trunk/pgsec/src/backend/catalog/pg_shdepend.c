@@ -40,6 +40,7 @@
 #include "miscadmin.h"
 #include "utils/acl.h"
 #include "utils/fmgroids.h"
+#include "utils/security.h"
 #include "utils/syscache.h"
 #include "utils/tqual.h"
 
@@ -1238,6 +1239,16 @@ shdepDropOwned(List *roleids, DropBehavior behavior)
 					obj.objectId = sdepForm->objid;
 					obj.objectSubId = sdepForm->objsubid;
 					add_exact_object_address(&obj, deleteobjs);
+					/*
+					 * Permission check to drop dependent objects
+					 *
+					 * These objects are depends on the given owner,
+					 * and to be dropped due to the dependency.
+					 * But performMultipleDeletions() handles them
+					 * as if top-level objects, so we need to check
+					 * privilege to drop them here.
+					 */
+					ac_object_drop(&obj, true);
 					break;
 			}
 		}
@@ -1246,7 +1257,7 @@ shdepDropOwned(List *roleids, DropBehavior behavior)
 	}
 
 	/* the dependency mechanism does the actual work */
-	performMultipleDeletions(deleteobjs, behavior);
+	performMultipleDeletions(deleteobjs, behavior, true);
 
 	heap_close(sdepRel, RowExclusiveLock);
 

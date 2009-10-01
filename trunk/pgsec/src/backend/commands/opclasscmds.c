@@ -1352,7 +1352,7 @@ dropOperators(List *opfamilyname, Oid amoid, Oid opfamilyoid,
 		object.objectId = amopid;
 		object.objectSubId = 0;
 
-		performDeletion(&object, DROP_RESTRICT);
+		performDeletion(&object, DROP_RESTRICT, true);
 	}
 }
 
@@ -1392,7 +1392,7 @@ dropProcedures(List *opfamilyname, Oid amoid, Oid opfamilyoid,
 		object.objectId = amprocid;
 		object.objectSubId = 0;
 
-		performDeletion(&object, DROP_RESTRICT);
+		performDeletion(&object, DROP_RESTRICT, true);
 	}
 }
 
@@ -1453,7 +1453,7 @@ RemoveOpClass(RemoveOpClassStmt *stmt)
 	object.objectId = opcID;
 	object.objectSubId = 0;
 
-	performDeletion(&object, stmt->behavior);
+	performDeletion(&object, stmt->behavior, true);
 }
 
 /*
@@ -1512,7 +1512,7 @@ RemoveOpFamily(RemoveOpFamilyStmt *stmt)
 	object.objectId = opfID;
 	object.objectSubId = 0;
 
-	performDeletion(&object, stmt->behavior);
+	performDeletion(&object, stmt->behavior, true);
 }
 
 

@@ -757,7 +757,7 @@ DropTrigger(Oid relid, const char *trigname, DropBehavior behavior,
 	/*
 	 * Do the deletion
 	 */
-	performDeletion(&object, behavior);
+	performDeletion(&object, behavior, true);
 }
 
 /*
