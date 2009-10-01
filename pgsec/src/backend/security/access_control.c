@@ -48,6 +48,97 @@
 #include "utils/syscache.h"
 #include "utils/tqual.h"
 
+/*
+ * The common abstraction layer for access controls
+ * ------------------------------------------------
+ *
+ * The purpose for the series of routines prefixed as "ac_" is to
+ * abstract access controls, and to separate "how to be checked"
+ * from "what to be checked".
+ *
+ * When user gives a query, the backend needs to apply its access
+ * controls to make a decision whether the given request can be
+ * allowed, or not. For example, when a user run a CREATE TABLE
+ * statement, the default PG model checks CREATE privilege on
+ * the namespace in which the new table will be stored, and also
+ * checks CREATE privilege on the tablespace if necessary.
+ * In this case, the caller (DefineRelation()) wants to know
+ * whether the given action can be allowed, or not. And, the
+ * default PG model makes its decision based on the database
+ * ACLs.
+ *
+ * On the v8.4 or prior releases, we have only one default access 
+ * control model (database ACL). So, it was not inconvenience to
+ * deploy invocations of pg_xxx_aclcheck() and pg_xxx_ownercheck()
+ * on the main routines directly. However, this design can make
+ * possible confusion on code management when we use multiple
+ * security models concurrently, because the extra security model
+ * also needs its security hooks on the similar points where the
+ * default PG model put invocations of ACL/ownership checks.
+ * The common abstraction layer for access controls were designed
+ * to be entry points of the upcoming extra security models, such
+ * as SE-PostgreSQL, with minimum impact to the core implementation.
+ *
+ * At the implementation level, when a core routine want to know an
+ * access control decision by installed security models. We can call
+ * an appropriate ac_*() routines with correct arguments needed to
+ * make an access control decision.
+ *
+ * An ac_*() routine has the following naming convention.
+ *
+ *   ac_<object class>_<name of action>([<arguments>, ...])
+ *
+ * The <object class> reflects the class of target object.
+ * In most cases, the name of system catalog is used, but some
+ * cases use more easy understandable sympol, such as 'relation'
+ * instead of 'class'. The <name of action> is a characteristic
+ * name associated with a certain operation on the object class.
+ * For example, ac_proc_execute() is a routine to make decision
+ * whether the user can execute the given function, or not.
+ *
+ * These routines are called from various kind of strategic
+ * points of the core implementations.
+ * In most cases, it simply replaced an existing ACL/ownership
+ * check by a new ac_*() routine. But some of them are not so
+ * (especially, it is frequent to check 'create' permission).
+ *
+ * In some cases, several factors are necessary to make a decision
+ * on a certain operation, such as CREATE TABLE which requires
+ * CREATE privilege on the namespace and tablespace. In this case,
+ * we have to provide both OIDs of namespace and tablespace. It
+ * means we cannot make decision until all the information which
+ * the caller should provide ac_*() routine.
+ *
+ * If an access violation was raised, it aborts the current
+ * transaction and uncommited operations are rollbacked, so
+ * final result is not unchanged.
+ * However, when we provide multiple error conditions including
+ * access violations concurrently, another error condition may
+ * hit earlier than as what v8.4 did.
+ * For the topic, see the README file in this directory for more
+ * details.
+ *
+ * On the other hand, ac_*() routines are deployed on the core
+ * routines based on its deployment policy.
+ * In generally, a security check on a certain operation has to
+ * be applied prior to the operation executed. If the security
+ * model claimed to drop a certain table after drop it, it will
+ * be costful to cancel the deletion.
+ * The backend works various kind of steps to handle a operation
+ * required by users. We can categorize these steps two types.
+ * The one has no side effects, such as construction of memory
+ * only objects or looking up system caches. The other is to
+ * write (insert/update/delete) system catalogs.
+ * The caller of ac_*() routines may need to move invocations
+ * of security checks because it has to provide enough information
+ * to make an access control decision. So, the point where access
+ * violation errors are raised can become later compared to
+ * v8.4 or prior release.
+ * However, the caller needs to deploy invocations of ac_*()
+ * routines prior to writer operations for system catalogs,
+ * even if it is just before simple_heap_insert() in the result.
+ */
+
 /* ************************************************************
  *
  * Pg_attribute system catalog related access control stuffs
