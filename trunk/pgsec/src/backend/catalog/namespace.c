@@ -2104,16 +2104,7 @@ LookupExplicitNamespace(const char *nspname)
 	if (strcmp(nspname, "pg_temp") == 0)
 	{
 		if (OidIsValid(myTempNamespace))
-		{
-			/*
-			 * By default, everyone is permitted ACL_USAGE on temporary
-			 * namespaces implicitly, so a check for it was omitted here.
-			 * Other security models may wish to implement a check, so call
-			 * ac_schema_search() to check.
-			 */
-			ac_schema_search(myTempNamespace, true);
 			return myTempNamespace;
-		}
 
 		/*
 		 * Since this is used only for looking up existing objects, there is
@@ -2739,8 +2730,7 @@ recomputeNamespacePath(void)
 			/* pg_temp --- substitute temp namespace, if any */
 			if (OidIsValid(myTempNamespace))
 			{
-				if (!list_member_oid(oidlist, myTempNamespace) &&
-					ac_schema_search(myTempNamespace, false))
+				if (!list_member_oid(oidlist, myTempNamespace))
 					oidlist = lappend_oid(oidlist, myTempNamespace);
 			}
 			else

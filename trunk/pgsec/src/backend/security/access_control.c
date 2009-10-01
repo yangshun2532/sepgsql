@@ -2247,7 +2247,15 @@ ac_schema_grant(Oid nspOid, Oid grantor, AclMode goptions)
 /*
  * ac_schema_search
  *
- * It checks privileges to search a certain schema
+ * It checks privileges to search a certain schema.
+ *
+ * Note that we handles "pg_temp" schema as a special exception.
+ * It is a schema in the fact, but it is an internal detail for
+ * perspective of users.
+ * Any security models launched from this hook should always
+ * return 'true' on the temporary schema. In addition, we omit
+ * invocations of ac_schema_search() when the nspOid is obviously
+ * temporary namespace.
  *
  * [Params]
  * nspOid : OID of the target schema
