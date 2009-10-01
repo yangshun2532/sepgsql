@@ -101,6 +101,24 @@ CreateProceduralLanguage(CreatePLangStmt *stmt)
 					(errmsg("using pg_pltemplate information instead of CREATE LANGUAGE parameters")));
 
 		/*
+		 * Check permission
+		 *
+		 * In this code path, we cannot provide OID of the handler
+		 * and validator functions, because ac_*() routines should
+		 * be deployed prior to updating system catalogs.
+		 * If the given templace defines no valid these functions,
+		 * ProcedureCreate() may update the pg_proc catalog.
+		 * However, the new function is just a copy of the template,
+		 * so it is obviously harmless.
+		 * Thus, we provide InvalidOid, instead of actual OID of
+		 * these functions.
+		 */
+		ac_language_create(languageName, true,
+						   pltemplate->tmpltrusted,
+						   pltemplate->tmpldbacreate,
+						   InvalidOid, InvalidOid);
+
+		/*
 		 * Find or create the handler function, which we force to be in the
 		 * pg_catalog schema.  If already present, it must have the correct
 		 * return type.
@@ -220,12 +238,6 @@ CreateProceduralLanguage(CreatePLangStmt *stmt)
 		}
 		else
 			valOid = InvalidOid;
-
-		/* Permission checks */
-		ac_language_create(languageName, true,
-						   pltemplate->tmpltrusted,
-						   pltemplate->tmpldbacreate,
-						   handlerOid, valOid);
 
 		/* ok, create it */
 		create_proc_lang(languageName, GetUserId(), handlerOid, inlineOid,
