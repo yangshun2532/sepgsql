@@ -1423,30 +1423,10 @@ ExecInitAgg(Agg *node, EState *estate, int eflags)
 		aggform = (Form_pg_aggregate) GETSTRUCT(aggTuple);
 
 		/* Check permission to call aggregate function */
-		ac_proc_execute(aggref->aggfnoid, GetUserId());
+		ac_aggregate_execute(aggref->aggfnoid);
 
 		peraggstate->transfn_oid = transfn_oid = aggform->aggtransfn;
 		peraggstate->finalfn_oid = finalfn_oid = aggform->aggfinalfn;
-
-		/* Check that aggregate owner has permission to call component fns */
-		{
-			HeapTuple	procTuple;
-			Oid			aggOwner;
-
-			procTuple = SearchSysCache(PROCOID,
-									   ObjectIdGetDatum(aggref->aggfnoid),
-									   0, 0, 0);
-			if (!HeapTupleIsValid(procTuple))
-				elog(ERROR, "cache lookup failed for function %u",
-					 aggref->aggfnoid);
-			aggOwner = ((Form_pg_proc) GETSTRUCT(procTuple))->proowner;
-			ReleaseSysCache(procTuple);
-
-			/* Permission check on transfn and finalfn, if exist */
-			ac_proc_execute(transfn_oid, aggOwner);
-			if (OidIsValid(finalfn_oid))
-				ac_proc_execute(finalfn_oid, aggOwner);
-		}
 
 		/* resolve actual type of transition state, if polymorphic */
 		aggtranstype = aggform->aggtranstype;

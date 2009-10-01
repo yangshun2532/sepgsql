@@ -1216,7 +1216,10 @@ ExecInitWindowAgg(WindowAgg *node, EState *estate, int eflags)
 		wfuncstate->wfuncno = wfuncno;
 
 		/* Check permission to call window function */
-		ac_proc_execute(wfunc->winfnoid, GetUserId());
+		if (wfunc->winagg)
+			ac_aggregate_execute(wfunc->winfnoid);
+		else
+			ac_proc_execute(wfunc->winfnoid);
 
 		/* Fill in the perfuncstate data */
 		perfuncstate->wfuncstate = wfuncstate;
@@ -1378,25 +1381,6 @@ initialize_peragg(WindowAggState *winstate, WindowFunc *wfunc,
 
 	peraggstate->transfn_oid = transfn_oid = aggform->aggtransfn;
 	peraggstate->finalfn_oid = finalfn_oid = aggform->aggfinalfn;
-
-	/* Check that aggregate owner has permission to call component fns */
-	{
-		HeapTuple	procTuple;
-		Oid			aggOwner;
-
-		procTuple = SearchSysCache(PROCOID,
-								   ObjectIdGetDatum(wfunc->winfnoid),
-								   0, 0, 0);
-		if (!HeapTupleIsValid(procTuple))
-			elog(ERROR, "cache lookup failed for function %u",
-				 wfunc->winfnoid);
-		aggOwner = ((Form_pg_proc) GETSTRUCT(procTuple))->proowner;
-		ReleaseSysCache(procTuple);
-
-		ac_proc_execute(transfn_oid, aggOwner);
-		if (OidIsValid(finalfn_oid))
-			ac_proc_execute(finalfn_oid, aggOwner);
-	}
 
 	/* resolve actual type of transition state, if polymorphic */
 	aggtranstype = aggform->aggtranstype;

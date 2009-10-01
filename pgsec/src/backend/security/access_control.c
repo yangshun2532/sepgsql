@@ -12,6 +12,7 @@
 #include "access/heapam.h"
 #include "access/sysattr.h"
 #include "catalog/indexing.h"
+#include "catalog/pg_aggregate.h"
 #include "catalog/pg_attribute.h"
 #include "catalog/pg_authid.h"
 #include "catalog/pg_cast.h"
@@ -3146,16 +3147,71 @@ ac_proc_comment(Oid proOid)
  *
  * [Params]
  * proOID  : OID of the function to be executed
- * roleOid : OID of the database role to be evaluated
  */
 void
-ac_proc_execute(Oid proOid, Oid roleOid)
+ac_proc_execute(Oid proOid)
 {
 	AclResult	aclresult;
 
-	aclresult = pg_proc_aclcheck(proOid, roleOid, ACL_EXECUTE);
+	aclresult = pg_proc_aclcheck(proOid, GetUserId(), ACL_EXECUTE);
 	if (aclresult != ACLCHECK_OK)
 		aclcheck_error(aclresult, ACL_KIND_PROC, get_func_name(proOid));
+}
+
+/*
+ * ac_aggregate_execute
+ *
+ * It checks privilege to execute a certain function
+ *
+ * [Params]
+ * aggOid : OID of the aggregate function to be executed
+ */
+void
+ac_aggregate_execute(Oid aggOid)
+{
+	Form_pg_aggregate	aggForm;
+	HeapTuple	aggTup;
+	HeapTuple	proTup;
+	Oid			aggOwner;
+	AclResult	aclresult;
+
+	aggTup = SearchSysCache(AGGFNOID,
+							ObjectIdGetDatum(aggOid),
+							0, 0, 0);
+	if (!HeapTupleIsValid(aggTup))
+		elog(ERROR, "cache lookup failed for aggregate %u", aggOid);
+	aggForm = (Form_pg_aggregate) GETSTRUCT(aggTup);
+
+	/* Check permission to call aggregate function */
+	aclresult = pg_proc_aclcheck(aggForm->aggfnoid,
+								 GetUserId(), ACL_EXECUTE);
+	if (aclresult != ACLCHECK_OK)
+		aclcheck_error(aclresult, ACL_KIND_PROC,
+					   get_func_name(aggForm->aggfnoid));
+
+	/* Check permission aggregate owner to call component function */
+	proTup = SearchSysCache(PROCOID,
+							ObjectIdGetDatum(aggForm->aggfnoid),
+							0, 0, 0);
+	aggOwner = ((Form_pg_proc) GETSTRUCT(proTup))->proowner;
+	ReleaseSysCache(proTup);
+
+	aclresult = pg_proc_aclcheck(aggForm->aggtransfn,
+								 aggOwner, ACL_EXECUTE);
+	if (aclresult != ACLCHECK_OK)
+		aclcheck_error(aclresult, ACL_KIND_PROC,
+					   get_func_name(aggForm->aggtransfn));
+
+	if (OidIsValid(aggForm->aggfinalfn))
+	{
+		aclresult = pg_proc_aclcheck(aggForm->aggfinalfn,
+									 aggOwner, ACL_EXECUTE);
+		if (aclresult != ACLCHECK_OK)
+			aclcheck_error(aclresult, ACL_KIND_PROC,
+						   get_func_name(aggForm->aggfinalfn));
+	}
+	
+	ReleaseSysCache(aggTup);
 }
 
 /*

@@ -210,7 +210,7 @@ MJExamineQuals(List *mergeclauses,
 				 BTORDER_PROC, op_lefttype, op_righttype, opfamily);
 
 		/* Check permission to call cmp function */
-		ac_proc_execute(cmpproc, GetUserId());
+		ac_proc_execute(cmpproc);
 
 		/* Set up the fmgr lookup information */
 		fmgr_info(cmpproc, &(clause->cmpfinfo));

@@ -208,7 +208,7 @@ ac_opfamily_add_operator(Oid opfOid, Oid operOid);
 extern void
 ac_opfamily_add_procedure(Oid opfOid, Oid procOid);
 
-/* pg_proc */
+/* pg_proc and pg_aggregate */
 extern void
 ac_proc_create(const char *proName, Oid proOid, Oid nspOid, Oid langOid);
 extern void
@@ -222,7 +222,9 @@ ac_proc_grant(Oid proOid, Oid grantor, AclMode goptions);
 extern void
 ac_proc_comment(Oid proOid);
 extern void
-ac_proc_execute(Oid proOid, Oid roleOid);
+ac_proc_execute(Oid proOid);
+extern void
+ac_aggregate_execute(Oid aggOid);
 extern bool
 ac_proc_hint_inlined(Oid proOid);
 

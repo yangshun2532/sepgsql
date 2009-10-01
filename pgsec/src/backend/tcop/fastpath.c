@@ -340,7 +340,7 @@ HandleFunctionRequest(StringInfo msgBuf)
 	 */
 	ac_schema_search(fip->namespace, true);
 
-	ac_proc_execute(fid, GetUserId());
+	ac_proc_execute(fid);
 
 	/*
 	 * Prepare function call info block and insert arguments.
