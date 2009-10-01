@@ -235,7 +235,7 @@ RemoveAggregate(RemoveFuncStmt *stmt)
 	object.objectId = procOid;
 	object.objectSubId = 0;
 
-	performDeletion(&object, stmt->behavior);
+	performDeletion(&object, stmt->behavior, true);
 }
 
 

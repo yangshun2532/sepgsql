@@ -1325,7 +1325,7 @@ RemoveAttrDefault(Oid relid, AttrNumber attnum,
 		object.objectId = HeapTupleGetOid(tuple);
 		object.objectSubId = 0;
 
-		performDeletion(&object, behavior);
+		performDeletion(&object, behavior, true);
 
 		found = true;
 	}

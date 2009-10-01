@@ -638,7 +638,7 @@ RemoveTypes(DropStmt *drop)
 		ReleaseSysCache(tup);
 	}
 
-	performMultipleDeletions(objects, drop->behavior);
+	performMultipleDeletions(objects, drop->behavior, true);
 
 	free_object_addresses(objects);
 }
@@ -1728,7 +1728,7 @@ AlterDomainDropConstraint(List *names, const char *constrName,
 			conobj.objectId = HeapTupleGetOid(contup);
 			conobj.objectSubId = 0;
 
-			performDeletion(&conobj, behavior);
+			performDeletion(&conobj, behavior, true);
 		}
 	}
 	/* Clean up after the scan */

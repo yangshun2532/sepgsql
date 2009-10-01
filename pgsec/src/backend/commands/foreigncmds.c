@@ -519,7 +519,7 @@ RemoveForeignDataWrapper(DropFdwStmt *stmt)
 	object.objectId = fdwId;
 	object.objectSubId = 0;
 
-	performDeletion(&object, stmt->behavior);
+	performDeletion(&object, stmt->behavior, true);
 }
 
 
@@ -771,7 +771,7 @@ RemoveForeignServer(DropForeignServerStmt *stmt)
 	object.objectId = srvId;
 	object.objectSubId = 0;
 
-	performDeletion(&object, stmt->behavior);
+	performDeletion(&object, stmt->behavior, true);
 }
 
 
@@ -1042,7 +1042,7 @@ RemoveUserMapping(DropUserMappingStmt *stmt)
 	object.objectId = umId;
 	object.objectSubId = 0;
 
-	performDeletion(&object, DROP_CASCADE);
+	performDeletion(&object, DROP_CASCADE, true);
 }
 
 

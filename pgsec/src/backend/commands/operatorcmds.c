@@ -288,7 +288,7 @@ RemoveOperator(RemoveFuncStmt *stmt)
 	object.objectId = operOid;
 	object.objectSubId = 0;
 
-	performDeletion(&object, stmt->behavior);
+	performDeletion(&object, stmt->behavior, true);
 }
 
 /*

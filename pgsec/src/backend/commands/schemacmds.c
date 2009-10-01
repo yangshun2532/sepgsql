@@ -201,7 +201,7 @@ RemoveSchemas(DropStmt *drop)
 	 * Do the deletions.  Objects contained in the schema(s) are removed by
 	 * means of their dependency links to the schema.
 	 */
-	performMultipleDeletions(objects, drop->behavior);
+	performMultipleDeletions(objects, drop->behavior, true);
 
 	free_object_addresses(objects);
 }
