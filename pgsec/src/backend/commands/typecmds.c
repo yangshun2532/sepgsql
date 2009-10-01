@@ -147,10 +147,12 @@ DefineType(List *names, List *parameters)
 	ListCell   *pl;
 
 	/*
-	 * MEMO: Permission checks are moved to TypeCreate(), because we
-	 * cannot know whether the type creation replaces an existing shell
-	 * type, or not. If it tries to replace a shell type, its owner id
-	 * shall match with the current user, even if he is a superuser.
+	 * Here, we had a permission check which was moved to TypeCreate(),
+	 * because we cannot know whether this invocation actually creates
+	 * a new type, or replaces an existing shell type.
+	 * It it tries to replace a shell type, its ownershipt has to be
+	 * matched with the current database user, even if he has superuser
+	 * privilege.
 	 */
 
 	/* Convert list of names to a name and namespace */
