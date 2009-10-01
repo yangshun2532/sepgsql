@@ -1030,7 +1030,7 @@ init_fcache(Oid foid, FuncExprState *fcache,
 			MemoryContext fcacheCxt, bool needDescForSets)
 {
 	/* Check permission to call function */
-	ac_proc_execute(foid, GetUserId());
+	ac_proc_execute(foid);
 
 	/*
 	 * Safety check on nargs.  Under normal circumstances this should never
@@ -3956,7 +3956,7 @@ ExecEvalArrayCoerceExpr(ArrayCoerceExprState *astate,
 	if (astate->elemfunc.fn_oid == InvalidOid)
 	{
 		/* Check permission to call function */
-		ac_proc_execute(acoerce->elemfuncid, GetUserId());
+		ac_proc_execute(acoerce->elemfuncid);
 
 		/* Set up the primary fmgr lookup information */
 		fmgr_info_cxt(acoerce->elemfuncid, &(astate->elemfunc),
