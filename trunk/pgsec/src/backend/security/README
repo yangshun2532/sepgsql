@@ -1,0 +1,113 @@
+
+Detailed Changelog in Common Abstraction Layer for Access Controls
+------------------------------------------------------------------
+
+The purpose of this memo is to keep when/what code was changed for
+the what purpose, for the future tracking.
+Needless to say, access control facility can be updated with our
+efforts in the future. In generally, if user get an inconsistent
+access control decision with the same condition on the different
+versions, it will be unacceptable without any clear reason.
+However, we may have no other choice to see some minor behavior
+changes, such as order to check error conditions. 
+For example, when an operation resolves name of the object and
+check access permission on the object, it depends on the
+implementaions which error should be detected earlier.
+
+This memo notes these behavior changes corresponding to access
+control features, which are too details for release notes.
+
+------------------------------------------------------------------
+
+Pg_attribute catalog
+====================
+
+
+Pg_authid catalog
+=================
+
+
+Pg_cast catalog
+===============
+
+
+Pg_class catalog
+================
+
+
+Pg_constraint catalog
+=====================
+
+
+Pg_conversion catalog
+=====================
+
+
+Pg_database catalog
+===================
+
+
+Pg_foreign_data_wrapper catalog
+===============================
+
+Pg_foreign_server catalog
+=========================
+
+Pg_language catalog
+===================
+
+
+
+Pg_namespace catalog
+====================
+
+
+
+
+Pg_opclass catalog
+==================
+
+
+Pg_operator catalog
+===================
+
+
+Pg_opfamily catalog
+===================
+
+Pg_proc catalog
+===============
+
+
+Pg_rewrite catalog
+==================
+
+
+Pg_tablespace catalog
+=====================
+
+
+Pg_trigger catalog
+==================
+
+
+Pg_ts_config catalog
+====================
+
+
+Pg_ts_dict catalog
+==================
+
+
+Pg_ts_parser catalog
+====================
+
+
+Pg_ts_template catalog
+======================
+
+Pg_type catalog
+===============
+
+Pg_user_mapping catalog
+=======================
