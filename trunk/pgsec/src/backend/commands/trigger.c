@@ -871,6 +871,7 @@ renametrig(Oid relid,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 				 errmsg("permission denied: \"%s\" is a system catalog",
 						RelationGetRelationName(targetrel))));
+
 	/*
 	 * Scan pg_trigger twice for existing triggers on relation.  We do this in
 	 * order to ensure a trigger does not exist with newname (The unique index

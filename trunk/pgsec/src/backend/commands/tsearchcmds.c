@@ -1300,6 +1300,9 @@ DefineTSConfiguration(List *names, List *parameters)
 	/* Convert list of names to a name and namespace */
 	namespaceoid = QualifiedNameGetCreationNamespace(names, &cfgname);
 
+	/* Permission checks */
+	ac_ts_config_create(cfgname, namespaceoid);
+
 	/*
 	 * loop over the definition list and extract the information we need.
 	 */
@@ -1352,9 +1355,6 @@ DefineTSConfiguration(List *names, List *parameters)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
 				 errmsg("text search parser is required")));
-
-	/* Permission checks */
-	ac_ts_config_create(cfgname, namespaceoid);
 
 	/*
 	 * Looks good, build tuple and insert
