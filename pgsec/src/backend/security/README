@@ -19,20 +19,64 @@ control features, which are too details for release notes.
 
 ------------------------------------------------------------------
 
+Pg_aggregate catalog
+====================
+* v8.5.0: adopts common abstraction layer for access controls
+
+- In DefineAggregate(), it moved checks on the namespace to AggregateCreate()
+  which is called at the backward. It also moved checks on the trans/final
+  functions from AggregateCreate(), so it may raise an error prior to
+  permission denied, when we provide incorrect creation options or
+  trans/final functions.
+
 Pg_attribute catalog
 ====================
 
+* v8.5.0: adopts common abstraction layer for access controls
+
+- No behavior changes.
 
 Pg_authid catalog
 =================
+
+* v8.5.0: adopts common abstraction layer for access controls
 
 
 Pg_cast catalog
 ===============
 
+* v8.5.0: adopts common abstraction layer for access controls
+
+- In CreateCast(), it moved checks on the source/target types to the
+  backward after the naming resolution and sanity checks, so it may
+  raise an error prior to permission denied, when we provide incorrect
+  types or cast function.
+
 
 Pg_class catalog
 ================
+
+* v8.5.0: adopts common abstraction layer for access controls
+
+- It obsoleted CheckRelationOwnership() which checked ownership of
+  relations and not to be a system catalog. In ExecRenameStmt(),
+  it called CheckRelationOwnership() prior to launching RenameRelation(),
+  renameatt() and renametrig(). This check was moved to the callee side.
+  So, it may raise an error prior to permission denied, when we provide
+  invalid relation.
+
+- The CheckRelationOwnership() was also called prior to invocation of
+  AlterTableNamespace(). This check was also moved to the functions,
+  so it may raise an error prior to permission denied, when we provide
+  invalid relation.
+
+- The CheckRelationOwnership() was also called prior to invocation of
+  DefineIndex() at the ProcessUtility(). This check was also moved to
+  a new wrapper function CreateIndex(). Here is no behavior change.
+
+- In DefineRelation(), it moved checks on the namespace and tablespace
+  after the construction of TupleDesc, so it may raise an error prior
+  to permission denied, when we provide invalid table creation option.
 
 
 Pg_constraint catalog
@@ -46,68 +90,205 @@ Pg_conversion catalog
 Pg_database catalog
 ===================
 
+* v8.5.0: reworked with common abstraction layer for access controls
+
+- In createdb(), it moved checks of user's rolcreatedb privilege to the
+  backward. So, it may raise an error prior to permission denied when we
+  provide invalid template database or invalid tablespace.
+
+- In movedb(), it moved checks on the database and tablespace to the
+  backward. So, it may raise an error prior to permission denied when we
+  provide an invalid new tablespace.
+
+Pg_description catalog
+======================
+
+* v8.5.0: reworked with common abstraction layer for access controls
+
+- No behavior changes.
 
 Pg_foreign_data_wrapper catalog
 ===============================
 
+* v8.5.0: reworked with common abstraction layer for access controls
+
+- In CreateForeignDataWrapper(), it moved checks of superuser privilege
+  to the backward, so it may raise an error prior to permission denied
+  when we provide duplicate FDW name or invalid validator.
+
+- In AlterForeignDataWrapper(), it also moved checks of superuser
+  privilege to the backward, so it may raise an error prior to permission
+  denied, when we provide invalid name of the FDW.
+
 Pg_foreign_server catalog
 =========================
+
+* v8.5.0: reworked with common abstraction layer for access controls
+
+- No behavior changes.
 
 Pg_language catalog
 ===================
 
+* v8.5.0: reworked with common abstraction layer for access controls
+
+- In CreateProceduralLanguage(), it moved to checks of superuser
+  privilege on the custome procedural language code path to the
+  backward. So, it may raise an error prior to permission denied,
+  when we provide invalid functions for handler or validator.
 
 
 Pg_namespace catalog
 ====================
 
+* v8.5.0: reworked with common abstraction layer for access controls
 
+- No behavior changes.
 
 
 Pg_opclass catalog
 ==================
 
+* v8.5.0: reworked with common abstraction layer for access controls
 
-Pg_operator catalog
-===================
+- In DefineOpClass(), it moved checks of superuser privilege to the
+  backward, so it may raise an error prior to permission denied, when
+  we provide invalid operator family, operators, functions or storage
+  type, or don't have enough permission to create/alter the given
+  operator family too.
 
 
 Pg_opfamily catalog
 ===================
 
+* v8.5.0: reworked with common abstraction layer for access controls
+
+- In DefineOpFamily(), it moved checks of superuser privilege to the
+  backward, so it may raise an error prior to permission denied, when
+  we provide invalid access method.
+
+
+Pg_operator catalog
+===================
+
+* v8.5.0: reworked with common abstraction layer for access controls
+
+- In DefineOperator(), it moved checks on the namespace and functions to
+  OperatorCreate() called on the backward. So, it may raise an error
+  prior to permission denied when we provide invalid creation options or
+  undefined functions.
+
+- In OperatorCreate(), it moved checks on the shell type, commutator and
+  negator to the backword. So, it may raise an error prior to permission
+  denied when we provide incorrect creation options.
+
+
 Pg_proc catalog
 ===============
+
+* v8.5.0: reworked with common abstraction layer for access controls
+
+- In CreateFunction(), it moved checks on the namespace and procedural
+  language to ac_proc_create() launched at ProcedureCreate() which can
+  provide all the needed information to make an access control decision.
+  So, it may raise an error prior to permission deniedm when we provide
+  incorrect creation options or duplicated function name without OR REPLACE.
+
+- In AlterFunctionNamespace(), it moved checks of CREATE privilege on
+  the namespace from LookupCreationNamespace() to later, so it may raise
+  an error prior to permission denied, when we provide an identical
+  namespace as a new one.
 
 
 Pg_rewrite catalog
 ==================
 
+* v8.5.0: reworked with common abstraction layer for access controls
+
+
+Pg_shdescription catalog
+========================
+
+* v8.5.0: reworked with common abstraction layer for access controls
+
+- No behavior changes.
+
 
 Pg_tablespace catalog
 =====================
+
+* v8.5.0: reworked with common abstraction layer for access controls
+
+- No behavior changes.
 
 
 Pg_trigger catalog
 ==================
 
+* v8.5.0: reworked with common abstraction layer for access controls
+
+- In CreateTrigger(), it moved checks on the table triggered to the
+  backward, so it may raise an error prior to permission denied, when
+  we provide incorrect creation parameter or trigger functions.
+
 
 Pg_ts_config catalog
 ====================
+
+* v8.5.0: reworked with common abstraction layer for access controls
 
 
 Pg_ts_dict catalog
 ==================
 
+* v8.5.0: reworked with common abstraction layer for access controls
+
+- No behavior changes.
 
 Pg_ts_parser catalog
 ====================
+
+* v8.5.0: reworked with common abstraction layer for access controls
+
+- In DefineTSParser(), it moved checks of superuser privilege behind to
+  the nameing resolution of text search parser functions, so it may raise
+  an error prior to permission denied, when we provide incorrect functions.
+
+- In RemoveTSParsers() and RenameTSParser(), it moved checks of superuser
+  privilege behind to the nameing resolution of text search parser itself,
+  so it may raise an error prior to permission denied, when we provide
+  incorrect parser.
 
 
 Pg_ts_template catalog
 ======================
 
+* v8.5.0: reworked with common abstraction layer for access controls
+
+- In DefineTSTemplate(), it moved checks of superuser privilege behind
+  to the nameing resolution of text search template functions, so it may
+  raise an error prior to permission denied, when we provide incorrect
+  functions.
+
+- In RemoveTSTemplates(), it moved checks of superuser privilege behind
+  to the nameing resolution of text search template itself, so it may raise
+  an error prior to permission denied, when we provide incorrect template.
+
+
 Pg_type catalog
 ===============
 
+* v8.5.0: reworked with common abstraction layer for access controls
+
+- It moved checks of superuser privilege from DefineType() to TypeCreate()
+  when we create a new regular base type. So, it can raise an error prior
+  to permission denied, when we provide invalid type creation parameters
+  such as undefined input/output functions.
+
+
 Pg_user_mapping catalog
 =======================
+
+* v8.5.0: reworked with common abstraction layer for access controls
+
+- No behavior changes.
