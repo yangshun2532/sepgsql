@@ -2801,6 +2801,11 @@ OpenIntoRel(QueryDesc *queryDesc)
 
 	/*
 	 * Permission check to insert into the new table
+	 *
+	 * By the default PG model, it is always allowed because the
+	 * owner of the target relation is the current user, and its
+	 * default ACL allows him to do anything.
+	 * But it may be needed for any other security model.
 	 */
 	for (i=0; i < queryDesc->tupDesc->natts; i++)
 	{
