@@ -1,14 +1,14 @@
 /*-------------------------------------------------------------------------
  *
- * pg_largeobject_meta.h
- *	  definition of the system "largeobject_meta" relation (pg_largeobject_meta)
+ * pg_largeobject_metadata.h
+ *	  definition of the system "largeobject_metadata" relation (pg_largeobject_metadata)
  *	  along with the relation's initial contents.
  *
  *
  * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/catalog/pg_largeobject_meta.h,v 1.24 2009/01/01 17:23:57 momjian Exp $
+ * $PostgreSQL: pgsql/src/include/catalog/pg_largeobject_metadata.h,v 1.24 2009/01/01 17:23:57 momjian Exp $
  *
  * NOTES
  *	  the genbki.sh script reads this file and generates .bki
@@ -16,14 +16,14 @@
  *
  *-------------------------------------------------------------------------
  */
-#ifndef PG_LARGEOBJECT_META_H
-#define PG_LARGEOBJECT_META_H
+#ifndef PG_LARGEOBJECT_METADATA_H
+#define PG_LARGEOBJECT_METADATA_H
 
 #include "catalog/genbki.h"
 
 /* ----------------
- *		pg_largeobject definition.	cpp turns this into
- *		typedef struct FormData_pg_largeobject_meta
+ *		pg_largeobject_metadata definition.	cpp turns this into
+ *		typedef struct FormData_pg_largeobject_metadata
  * ----------------
  */
 #define LargeObjectMetadataRelationId  2336
@@ -64,4 +64,4 @@ extern void ac_largeobject_write(Oid loid);
 extern void ac_largeobject_export(Oid loid, const char *filename);
 extern void ac_largeobject_import(Oid loid, const char *filename);
 
-#endif   /* PG_LARGEOBJECT_META_H */
+#endif   /* PG_LARGEOBJECT_METADATA_H */
