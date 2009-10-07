@@ -466,18 +466,6 @@ static const struct cachedesc cacheinfo[] = {
 		},
 		4
 	},
-	{LargeObjectMetadataRelationId,		/* LARGEOBJECTOID */
-		LargeObjectMetadataOidIndexId,
-		0,
-		1,
-		{
-			ObjectIdAttributeNumber,
-			0,
-			0,
-			0
-		},
-		4
-	},
 	{NamespaceRelationId,		/* NAMESPACENAME */
 		NamespaceNameIndexId,
 		0,

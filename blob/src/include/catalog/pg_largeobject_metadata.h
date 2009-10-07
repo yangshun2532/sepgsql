@@ -52,6 +52,7 @@ typedef FormData_pg_largeobject_metadata *Form_pg_largeobject_metadata;
 extern Oid  CreateLargeObject(Oid loid);
 extern void DropLargeObject(Oid loid);
 extern void AlterLargeObjectOwner(Oid loid, Oid newOwnerId);
+extern bool LargeObjectExists(Oid loid);
 
 /* to be moved to backend/security/access_control.c */
 extern bool ac_largeobject_check_acl;
