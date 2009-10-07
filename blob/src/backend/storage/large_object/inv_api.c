@@ -144,6 +144,7 @@ getbytealen(bytea *data)
 	return (VARSIZE(data) - VARHDRSZ);
 }
 
+
 /*
  *	inv_create -- create a new large object
  *
