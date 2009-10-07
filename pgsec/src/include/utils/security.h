@@ -57,7 +57,7 @@ ac_relation_perms(Oid relOid, Oid roleId, AclMode requiredPerms,
 				  Bitmapset *selCols, Bitmapset *modCols, bool abort);
 extern void
 ac_relation_create(const char *relName, char relkind, TupleDesc tupDesc,
-				   Oid relNsp, Oid relTblspc, List *colList);
+				   Oid relNsp, Oid relTblspc, List *colList, bool createAs);
 extern void
 ac_relation_alter(Oid relOid, const char *newName,
 				  Oid newNspOid, Oid newTblSpc, Oid newOwner);

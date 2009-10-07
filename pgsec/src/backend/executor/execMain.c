@@ -2700,8 +2700,6 @@ OpenIntoRel(QueryDesc *queryDesc)
 	Oid			namespaceId;
 	Oid			tablespaceId;
 	Datum		reloptions;
-	Bitmapset  *columnsSet = NULL;
-	int			i;
 	Oid			intoRelationId;
 	TupleDesc	tupdesc;
 	DR_intorel *myState;
@@ -2752,8 +2750,13 @@ OpenIntoRel(QueryDesc *queryDesc)
 	(void) heap_reloptions(RELKIND_RELATION, reloptions, true);
 
 	/* Permission check to create a new table */
-	ac_relation_create(intoName, RELKIND_RELATION, queryDesc->tupDesc,
-					   namespaceId, tablespaceId, NIL);
+	ac_relation_create(intoName,
+					   RELKIND_RELATION,
+					   queryDesc->tupDesc,
+					   namespaceId,
+					   tablespaceId,
+					   NIL,
+					   true);
 
 	/* Copy the tupdesc because heap_create_with_catalog modifies it */
 	tupdesc = CreateTupleDescCopy(queryDesc->tupDesc);
@@ -2799,24 +2802,6 @@ OpenIntoRel(QueryDesc *queryDesc)
 	(void) heap_reloptions(RELKIND_TOASTVALUE, reloptions, true);
 
 	AlterTableCreateToastTable(intoRelationId, InvalidOid, reloptions, false);
-
-	/*
-	 * Permission check to insert into the new table
-	 *
-	 * By the default PG model, it is always allowed because the
-	 * owner of the target relation is the current user, and its
-	 * default ACL allows him to do anything.
-	 * But it may be needed for any other security model.
-	 */
-	for (i=0; i < queryDesc->tupDesc->natts; i++)
-	{
-		AttrNumber	attno = queryDesc->tupDesc->attrs[i]->attnum;
-
-		columnsSet = bms_add_member(columnsSet,
-						attno - FirstLowInvalidHeapAttributeNumber);
-	}
-	ac_relation_perms(intoRelationId, GetUserId(), ACL_INSERT,
-					  NULL, columnsSet, true);
 
 	/*
 	 * And open the constructed table for writing.

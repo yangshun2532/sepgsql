@@ -771,10 +771,11 @@ ac_relation_perms(Oid relOid, Oid roleId, AclMode reqPerms,
  * relNsp    : OID of the namespace of the relation
  * relTblspc : OID of the tablespace of the relation, if exist
  * colList   : List of ColumnDef, if exist
+ * createAs  : True, if this check is on CREATE TABLE AS/SELECT INTO
  */
 void
 ac_relation_create(const char *relName, char relkind, TupleDesc tupDesc,
-				   Oid relNsp, Oid relTblspc, List *colList)
+				   Oid relNsp, Oid relTblspc, List *colList, bool createAs)
 {
 	AclResult	aclresult;
 
