@@ -192,9 +192,7 @@ inv_open(Oid lobjId, int flags, MemoryContext mcxt)
 {
 	LargeObjectDesc *retval;
 
-	if (!SearchSysCacheExists(LARGEOBJECTOID,
-							  ObjectIdGetDatum(lobjId),
-							  0, 0, 0))
+	if (!LargeObjectExists(lobjId))
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("large object %u does not exist", lobjId)));
@@ -505,9 +503,7 @@ inv_write(LargeObjectDesc *obj_desc, const char *buf, int nbytes)
 						obj_desc->id)));
 
 	/* check existence of the target largeobject */
-	if (!SearchSysCacheExists(LARGEOBJECTOID,
-							  ObjectIdGetDatum(obj_desc->id),
-							  0, 0, 0))
+	if (!LargeObjectExists(obj_desc->id))
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("large object %u was already dropped", obj_desc->id)));
@@ -704,9 +700,7 @@ inv_truncate(LargeObjectDesc *obj_desc, int len)
 						obj_desc->id)));
 
 	/* check existence of the target largeobject */
-	if (!SearchSysCacheExists(LARGEOBJECTOID,
-							  ObjectIdGetDatum(obj_desc->id),
-							  0, 0, 0))
+	if (!LargeObjectExists(obj_desc->id))
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("large object %u was already dropped", obj_desc->id)));

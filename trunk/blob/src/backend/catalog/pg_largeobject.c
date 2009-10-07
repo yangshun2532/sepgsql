@@ -16,6 +16,7 @@
 
 #include "access/genam.h"
 #include "access/heapam.h"
+#include "access/sysattr.h"
 #include "catalog/catalog.h"
 #include "catalog/dependency.h"
 #include "catalog/indexing.h"
@@ -28,7 +29,6 @@
 #include "utils/bytea.h"
 #include "utils/fmgroids.h"
 #include "utils/rel.h"
-#include "utils/syscache.h"
 #include "utils/tqual.h"
 
 
@@ -84,7 +84,7 @@ DropLargeObject(Oid loid)
 	Relation	pg_lo_meta;
 	Relation	pg_largeobject;
 	ScanKeyData skey[1];
-	SysScanDesc sd;
+	SysScanDesc scan;
 	HeapTuple	tuple;
 
 	pg_lo_meta = heap_open(LargeObjectMetadataRelationId,
@@ -96,9 +96,16 @@ DropLargeObject(Oid loid)
 	/*
 	 * Delete an entry from pg_largeobject_metadata
 	 */
-	tuple = SearchSysCache(LARGEOBJECTOID,
-						   ObjectIdGetDatum(loid),
-						   0, 0, 0);
+	ScanKeyInit(&skey[0],
+				ObjectIdAttributeNumber,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(loid));	
+
+	scan = systable_beginscan(pg_lo_meta,
+							  LargeObjectMetadataOidIndexId, true,
+							  SnapshotNow, 1, skey);
+
+	tuple = systable_getnext(scan);
 	if (!HeapTupleIsValid(tuple))
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
@@ -106,7 +113,7 @@ DropLargeObject(Oid loid)
 
 	simple_heap_delete(pg_lo_meta, &tuple->t_self);
 
-	ReleaseSysCache(tuple);
+	systable_endscan(scan);
 
 	/*
 	 * Delete all the associated entries from pg_largeobject
@@ -116,14 +123,15 @@ DropLargeObject(Oid loid)
 				BTEqualStrategyNumber, F_OIDEQ,
 				ObjectIdGetDatum(loid));
 
-	sd = systable_beginscan(pg_largeobject, LargeObjectLOidPNIndexId, true,
-							SnapshotNow, 1, skey);
-	while (HeapTupleIsValid(tuple = systable_getnext(sd)))
+	scan = systable_beginscan(pg_largeobject,
+							  LargeObjectLOidPNIndexId, true,
+							  SnapshotNow, 1, skey);
+	while (HeapTupleIsValid(tuple = systable_getnext(scan)))
 	{
 		simple_heap_delete(pg_largeobject, &tuple->t_self);
 	}
 
-	systable_endscan(sd);
+	systable_endscan(scan);
 
 	heap_close(pg_largeobject, RowExclusiveLock);
 
@@ -133,23 +141,33 @@ DropLargeObject(Oid loid)
 void
 AlterLargeObjectOwner(Oid loid, Oid newOwnerId)
 {
-	Form_pg_largeobject_metadata	lomForm;
-	Relation	lomRel;
-	HeapTuple	oldtup, newtup;
+	Form_pg_largeobject_metadata	form_lo_meta;
+	Relation	pg_lo_meta;
+	ScanKeyData	skey[1];
+	SysScanDesc	scan;
+	HeapTuple	oldtup;
+	HeapTuple	newtup;
 
-	lomRel = heap_open(LargeObjectMetadataRelationId,
-					   RowExclusiveLock);
+	pg_lo_meta = heap_open(LargeObjectMetadataRelationId,
+						   RowExclusiveLock);
 
-	oldtup = SearchSysCache(LARGEOBJECTOID,
-							ObjectIdGetDatum(loid),
-							0, 0, 0);
+	ScanKeyInit(&skey[0],
+				ObjectIdAttributeNumber,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(loid));
+
+	scan = systable_beginscan(pg_lo_meta,
+							  LargeObjectMetadataOidIndexId, true,
+							  SnapshotNow, 1, skey);
+
+	oldtup = systable_getnext(scan);
 	if (!HeapTupleIsValid(oldtup))
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("large object %u does not exist", loid)));
 
-	lomForm = (Form_pg_largeobject_metadata) GETSTRUCT(oldtup);
-	if (lomForm->lomowner != newOwnerId)
+	form_lo_meta = (Form_pg_largeobject_metadata) GETSTRUCT(oldtup);
+	if (form_lo_meta->lomowner != newOwnerId)
 	{
 		Datum		values[Natts_pg_largeobject_metadata];
 		bool		nulls[Natts_pg_largeobject_metadata];
@@ -173,23 +191,23 @@ AlterLargeObjectOwner(Oid loid, Oid newOwnerId)
 		 * Determine the modified ACL for the new owner.
 		 * This is only necessary when the ACL is non-null.
 		 */
-		aclDatum = SysCacheGetAttr(LARGEOBJECTOID, oldtup,
-								   Anum_pg_largeobject_metadata_lomacl,
-								   &isnull);
+		aclDatum = heap_getattr(oldtup,
+								Anum_pg_largeobject_metadata_lomacl,
+								RelationGetDescr(pg_lo_meta), &isnull);
 		if (!isnull)
 		{
 			newAcl = aclnewowner(DatumGetAclP(aclDatum),
-								 lomForm->lomowner, newOwnerId);
+								 form_lo_meta->lomowner, newOwnerId);
 			values[Anum_pg_largeobject_metadata_lomacl - 1]
 				= PointerGetDatum(newAcl);
 			replaces[Anum_pg_largeobject_metadata_lomacl - 1] = true;
 		}
 
-		newtup = heap_modify_tuple(oldtup, RelationGetDescr(lomRel),
+		newtup = heap_modify_tuple(oldtup, RelationGetDescr(pg_lo_meta),
 								   values, nulls, replaces);
 
-		simple_heap_update(lomRel, &newtup->t_self, newtup);
-		CatalogUpdateIndexes(lomRel, newtup);
+		simple_heap_update(pg_lo_meta, &newtup->t_self, newtup);
+		CatalogUpdateIndexes(pg_lo_meta, newtup);
 
 		heap_freetuple(newtup);
 
@@ -197,9 +215,48 @@ AlterLargeObjectOwner(Oid loid, Oid newOwnerId)
 		changeDependencyOnOwner(LargeObjectMetadataRelationId,
 								loid, newOwnerId);
 	}
-	ReleaseSysCache(oldtup);
+	systable_endscan(scan);
 
-	heap_close(lomRel, RowExclusiveLock);
+	heap_close(pg_lo_meta, RowExclusiveLock);
+}
+
+/*
+ * In currently, we don't use system cache to keep metadata of
+ * the largeobject, because it may consume massive process local
+ * memory when a user tries to massive number of largeobjects
+ * concurrently.
+ * Use the LargeObjectExists() instead of SearchSysCacheExists().
+ */
+bool
+LargeObjectExists(Oid loid)
+{
+	Relation	pg_lo_meta;
+	ScanKeyData	skey[1];
+	SysScanDesc	sd;
+	HeapTuple	tuple;
+	bool		retval = false;
+
+	ScanKeyInit(&skey[0],
+				ObjectIdAttributeNumber,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(loid));
+
+	pg_lo_meta = heap_open(LargeObjectMetadataRelationId,
+						   AccessShareLock);
+
+	sd = systable_beginscan(pg_lo_meta,
+							LargeObjectMetadataOidIndexId, true,
+							SnapshotNow, 1, skey);
+
+	tuple = systable_getnext(sd);
+	if (HeapTupleIsValid(tuple))
+		retval = true;
+
+	systable_endscan(sd);
+
+	heap_close(pg_lo_meta, AccessShareLock);
+
+	return retval;
 }
 
 /*
@@ -282,12 +339,12 @@ ac_largeobject_alter(Oid loid, Oid newOwner)
  *
  * [Params]
  * loid    : OID of the largeobject to be altered
- * dacSkip : True, if dac permission checks should be bypassed
+ * cascade : True, if dac permission checks should be bypassed
  */
-void ac_largeobject_drop(Oid loid, bool dacSkip)
+void ac_largeobject_drop(Oid loid, bool cascade)
 {
 	/* Must be owner of the largeobject */
-	if (!dacSkip && ac_largeobject_check_acl &&
+	if (!cascade && ac_largeobject_check_acl &&
 		!pg_largeobject_ownercheck(loid, GetUserId()))
 		ereport(ERROR,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),

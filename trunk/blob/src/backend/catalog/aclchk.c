@@ -597,9 +597,7 @@ objectNamesToOids(GrantObjectType objtype, List *objnames)
 			{
 				Oid		lobjOid = intVal(lfirst(cell));
 
-				if (!SearchSysCacheExists(LARGEOBJECTOID,
-										  ObjectIdGetDatum(lobjOid),
-										  0, 0, 0))
+				if (!LargeObjectExists(lobjOid))
 					ereport(ERROR,
 							(errcode(ERRCODE_UNDEFINED_OBJECT),
 							 errmsg("largeobject %u does not exist",
@@ -2395,6 +2393,7 @@ ExecGrant_Largeobject(InternalGrant *istmt)
 	foreach(cell, istmt->objects)
 	{
 		Oid			loid = lfirst_oid(cell);
+		Form_pg_largeobject_metadata	form_lo_meta;
 		char		loname[NAMEDATALEN];
 		Datum		aclDatum;
 		bool		isNull;
@@ -2404,7 +2403,6 @@ ExecGrant_Largeobject(InternalGrant *istmt)
 		Acl		   *new_acl;
 		Oid			grantorId;
 		Oid			ownerId;
-		HeapTuple	tuple;
 		HeapTuple	newtuple;
 		Datum		values[Natts_pg_largeobject_metadata];
 		bool		nulls[Natts_pg_largeobject_metadata];
@@ -2413,22 +2411,34 @@ ExecGrant_Largeobject(InternalGrant *istmt)
 		int			nnewmembers;
 		Oid		   *oldmembers;
 		Oid		   *newmembers;
+		ScanKeyData	entry[1];
+		SysScanDesc	scan;
+		HeapTuple	tuple;
 
-		tuple = SearchSysCache(LARGEOBJECTOID,
-							   ObjectIdGetDatum(loid),
-							   0, 0, 0);
+		/* There's no syscache for pg_largeobject_metadata */
+		ScanKeyInit(&entry[0],
+					ObjectIdAttributeNumber,
+					BTEqualStrategyNumber, F_OIDEQ,
+					ObjectIdGetDatum(loid));
+
+		scan = systable_beginscan(relation,
+								  LargeObjectMetadataOidIndexId, true,
+								  SnapshotNow, 1, entry);
+
+		tuple = systable_getnext(scan);
 		if (!HeapTupleIsValid(tuple))
 			elog(ERROR, "cache lookup failed for largeobject %u", loid);
+
+		form_lo_meta = (Form_pg_largeobject_metadata) GETSTRUCT(tuple);
 
 		/*
 		 * Get owner ID and working copy of existing ACL. If there's no ACL,
 		 * substitute the proper default.
 		 */
-		ownerId = ((Form_pg_largeobject_metadata) GETSTRUCT(tuple))->lomowner;
-		snprintf(loname, sizeof(loname), "largeobject %u", loid);
-		aclDatum = SysCacheGetAttr(LARGEOBJECTOID, tuple,
-								   Anum_pg_largeobject_metadata_lomacl,
-								   &isNull);
+		ownerId = form_lo_meta->lomowner;
+		aclDatum = heap_getattr(tuple,
+								Anum_pg_largeobject_metadata_lomacl,
+								RelationGetDescr(relation), &isNull);
 		if (isNull)
 			old_acl = acldefault(ACL_OBJECT_LARGEOBJECT, ownerId);
 		else
@@ -2443,6 +2453,7 @@ ExecGrant_Largeobject(InternalGrant *istmt)
 		 * Restrict the privileges to what we can actually grant, and emit the
 		 * standards-mandated warning and error messages.
 		 */
+		snprintf(loname, sizeof(loname), "largeobject %u", loid);
 		this_privileges =
 			restrict_and_check_grant(istmt->is_grant, avail_goptions,
 									 istmt->all_privs, istmt->privileges,
@@ -2470,7 +2481,8 @@ ExecGrant_Largeobject(InternalGrant *istmt)
 		MemSet(replaces, false, sizeof(replaces));
 
 		replaces[Anum_pg_largeobject_metadata_lomacl - 1] = true;
-		values[Anum_pg_largeobject_metadata_lomacl - 1] = PointerGetDatum(new_acl);
+		values[Anum_pg_largeobject_metadata_lomacl - 1]
+			= PointerGetDatum(new_acl);
 
 		newtuple = heap_modify_tuple(tuple, RelationGetDescr(relation),
 									 values, nulls, replaces);
@@ -2487,7 +2499,7 @@ ExecGrant_Largeobject(InternalGrant *istmt)
 							  noldmembers, oldmembers,
 							  nnewmembers, newmembers);
 
-		ReleaseSysCache(tuple);
+		systable_endscan(scan);
 
 		pfree(new_acl);
 
@@ -3391,6 +3403,9 @@ pg_largeobject_aclmask(Oid lobj_oid, Oid roleid,
 					   AclMode mask, AclMaskHow how)
 {
 	AclMode		result;
+	Relation	pg_lo_meta;
+	ScanKeyData	entry[1];
+	SysScanDesc	scan;
 	HeapTuple	tuple;
 	Datum		aclDatum;
 	bool		isNull;
@@ -3402,11 +3417,21 @@ pg_largeobject_aclmask(Oid lobj_oid, Oid roleid,
 		return mask;
 
 	/*
-	 * Get the largeobject's ACL from pg_language
+	 * Get the largeobject's ACL from pg_language_metadata
 	 */
-	tuple = SearchSysCache(LARGEOBJECTOID,
-						   ObjectIdGetDatum(lobj_oid),
-						   0, 0, 0);
+	pg_lo_meta = heap_open(LargeObjectMetadataRelationId,
+						   AccessShareLock);
+
+	ScanKeyInit(&entry[0],
+				ObjectIdAttributeNumber,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(lobj_oid));
+
+	scan = systable_beginscan(pg_lo_meta,
+							  LargeObjectMetadataOidIndexId, true,
+							  SnapshotNow, 1, entry);
+
+	tuple = systable_getnext(scan);
 	if (!HeapTupleIsValid(tuple))
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
@@ -3414,9 +3439,9 @@ pg_largeobject_aclmask(Oid lobj_oid, Oid roleid,
 
 	ownerId = ((Form_pg_largeobject_metadata) GETSTRUCT(tuple))->lomowner;
 
-	aclDatum = SysCacheGetAttr(LARGEOBJECTOID, tuple,
-							   Anum_pg_largeobject_metadata_lomacl,
-							   &isNull);
+	aclDatum = heap_getattr(tuple, Anum_pg_largeobject_metadata_lomacl,
+							RelationGetDescr(pg_lo_meta), &isNull);
+
 	if (isNull)
 	{
 		/* No ACL, so build default ACL */
@@ -3435,7 +3460,9 @@ pg_largeobject_aclmask(Oid lobj_oid, Oid roleid,
 	if (acl && (Pointer) acl != DatumGetPointer(aclDatum))
 		pfree(acl);
 
-	ReleaseSysCache(tuple);
+	systable_endscan(scan);
+
+	heap_close(pg_lo_meta, AccessShareLock);
 
 	return result;
 }
@@ -4098,6 +4125,9 @@ pg_language_ownercheck(Oid lan_oid, Oid roleid)
 bool
 pg_largeobject_ownercheck(Oid lobj_oid, Oid roleid)
 {
+	Relation	pg_lo_meta;
+	ScanKeyData	entry[1];
+	SysScanDesc	scan;
 	HeapTuple	tuple;
 	Oid			ownerId;
 
@@ -4105,9 +4135,20 @@ pg_largeobject_ownercheck(Oid lobj_oid, Oid roleid)
 	if (superuser_arg(roleid))
 		return true;
 
-	tuple = SearchSysCache(LARGEOBJECTOID,
-						   ObjectIdGetDatum(lobj_oid),
-						   0, 0, 0);
+	/* There's no syscache for pg_largeobject_metadata */
+	pg_lo_meta = heap_open(LargeObjectMetadataRelationId,
+						   AccessShareLock);
+
+	ScanKeyInit(&entry[0],
+				ObjectIdAttributeNumber,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(lobj_oid));
+
+	scan = systable_beginscan(pg_lo_meta,
+							  LargeObjectMetadataOidIndexId, true,
+							  SnapshotNow, 1, entry);
+
+	tuple = systable_getnext(scan);
 	if (!HeapTupleIsValid(tuple))
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_FUNCTION),
@@ -4115,7 +4156,8 @@ pg_largeobject_ownercheck(Oid lobj_oid, Oid roleid)
 
 	ownerId = ((Form_pg_largeobject_metadata) GETSTRUCT(tuple))->lomowner;
 
-	ReleaseSysCache(tuple);
+	systable_endscan(scan);
+	heap_close(pg_lo_meta, AccessShareLock);
 
 	return has_privs_of_role(roleid, ownerId);
 }
