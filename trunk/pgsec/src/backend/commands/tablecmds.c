@@ -429,10 +429,15 @@ DefineRelation(CreateStmt *stmt, char relkind)
 	descriptor->tdhasoid = (localHasOids || parentOidCount > 0);
 
 	/*
-	 * Permission checks to create a new table.
+	 * Permission checks to create a new relation.
 	 */
-	ac_relation_create(relname, relkind, descriptor,
-					   namespaceId, tablespaceId, schema);
+	ac_relation_create(relname,
+					   relkind,
+					   descriptor,
+					   namespaceId,
+					   tablespaceId,
+					   schema,
+					   false);
 
 	/*
 	 * Find columns with default values and prepare for insertion of the

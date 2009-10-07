@@ -29,6 +29,7 @@ Pg_aggregate catalog
   permission denied, when we provide incorrect creation options or
   trans/final functions.
 
+
 Pg_attribute catalog
 ====================
 
@@ -36,10 +37,13 @@ Pg_attribute catalog
 
 - No behavior changes.
 
+
 Pg_authid catalog
 =================
 
 * v8.5.0: adopts common abstraction layer for access controls
+
+- No behavior changes.
 
 
 Pg_cast catalog
@@ -237,6 +241,9 @@ Pg_ts_config catalog
 
 * v8.5.0: reworked with common abstraction layer for access controls
 
+- In DefineTSConfiguration(), it moved checks on the namespace behind of
+  the naming resolution of namespace
+
 
 Pg_ts_dict catalog
 ==================
@@ -250,12 +257,12 @@ Pg_ts_parser catalog
 
 * v8.5.0: reworked with common abstraction layer for access controls
 
-- In DefineTSParser(), it moved checks of superuser privilege behind to
+- In DefineTSParser(), it moved checks of superuser privilege behind of
   the nameing resolution of text search parser functions, so it may raise
   an error prior to permission denied, when we provide incorrect functions.
 
 - In RemoveTSParsers() and RenameTSParser(), it moved checks of superuser
-  privilege behind to the nameing resolution of text search parser itself,
+  privilege behind of the nameing resolution of text search parser itself,
   so it may raise an error prior to permission denied, when we provide
   incorrect parser.
 
@@ -266,12 +273,12 @@ Pg_ts_template catalog
 * v8.5.0: reworked with common abstraction layer for access controls
 
 - In DefineTSTemplate(), it moved checks of superuser privilege behind
-  to the nameing resolution of text search template functions, so it may
+  of the nameing resolution of text search template functions, so it may
   raise an error prior to permission denied, when we provide incorrect
   functions.
 
 - In RemoveTSTemplates(), it moved checks of superuser privilege behind
-  to the nameing resolution of text search template itself, so it may raise
+  of the nameing resolution of text search template itself, so it may raise
   an error prior to permission denied, when we provide incorrect template.
 
 
@@ -280,11 +287,17 @@ Pg_type catalog
 
 * v8.5.0: reworked with common abstraction layer for access controls
 
-- It moved checks of superuser privilege from DefineType() to TypeCreate()
-  when we create a new regular base type. So, it can raise an error prior
-  to permission denied, when we provide invalid type creation parameters
-  such as undefined input/output functions.
+- In DefineType(), it moved checks of superuser privilege to TypeCreate(),
+  so it may raise an error prior to permission denied, when we provide
+  incorrect type creation parameters such as undefined input/output functions.
 
+- In DefineDomain() and DefineEnum(), it also moved checks on the namespace,
+  so it may raise an error prior to permission denied, when we provide
+  incorrect domain/enum creation parameters.
+
+- In AlterTypeNamespace(), it moved checks on the namespace from
+  LookupCreationNamespace(), so it may raise an error prior to permission
+  denied, when we provide invalid namespace.
 
 Pg_user_mapping catalog
 =======================
