@@ -447,9 +447,14 @@ DefineRelation(CreateStmt *stmt, char relkind)
 	descriptor->tdhasoid = (localHasOids || parentOidCount > 0);
 
 	/* SELinux checks db_table:{create} and db_column:{create} */
-	secLabels = sepgsql_relation_create(relname, relkind,
-										descriptor, namespaceId,
-										(DefElem *)stmt->secLabel, schema);
+	secLabels = sepgsql_relation_create(relname,
+										relkind,
+										descriptor,
+										namespaceId,
+										(DefElem *)stmt->secLabel,
+										schema,
+										false,
+										true);
 
 	/*
 	 * Find columns with default values and prepare for insertion of the
