@@ -597,12 +597,19 @@ sepgsql_relation_common(Oid relOid, uint32 required, bool abort)
  *   them prior to the actual creation of table and columns.
  */
 Oid *
-sepgsql_relation_create(const char *relName, char relkind, TupleDesc tupDesc,
-						Oid nspOid, DefElem *relLabel, List *colList)
+sepgsql_relation_create(const char *relName,
+						char relkind,
+						TupleDesc tupDesc,
+						Oid nspOid,
+						DefElem *relLabel,
+						List *colList,
+						bool createAs,
+						bool permission)
 {
 	Oid			   *secLabels;
 	sepgsql_sid_t	relsid;
 	uint16			tclass;
+	uint32			required;
 	int				index;
 
 	if (!sepgsqlIsEnabled())
@@ -620,6 +627,9 @@ sepgsql_relation_create(const char *relName, char relkind, TupleDesc tupDesc,
 												   strVal(relLabel->arg));
 		}
 		tclass = SEPG_CLASS_DB_TABLE;
+		required = SEPG_DB_TABLE__CREATE;
+		if (createAs)
+			required |= SEPG_DB_TABLE__INSERT;
 		break;
 
 	case RELKIND_SEQUENCE:
@@ -632,6 +642,7 @@ sepgsql_relation_create(const char *relName, char relkind, TupleDesc tupDesc,
 												   strVal(relLabel->arg));
 		}
 		tclass = SEPG_CLASS_DB_SEQUENCE;
+		required = SEPG_DB_SEQUENCE__CREATE;
 		break;
 
 	default:
@@ -645,6 +656,7 @@ sepgsql_relation_create(const char *relName, char relkind, TupleDesc tupDesc,
 												   strVal(relLabel->arg));
 		}
 		tclass = SEPG_CLASS_DB_TUPLE;
+		required = SEPG_DB_TUPLE__INSERT;
 		break;
 	}
 
@@ -667,17 +679,15 @@ sepgsql_relation_create(const char *relName, char relkind, TupleDesc tupDesc,
 	 * It is an exception of access controls, so we skip any checks.
 	 *
 	 * And, we don't need any checks for toast relations, because
-	 * it is fully internal stuff.
+	 * it is a quite internal stuff.
 	 */
-	if (!IsBootstrapProcessingMode() && relkind != RELKIND_TOASTVALUE)
+	if (permission)
 	{
 		/* db_schema:{add_name} */
 		sepgsql_schema_common(nspOid, SEPG_DB_SCHEMA__ADD_NAME, true);
 
 		/* db_table:{create}, db_sequence:{create} or db_tuple:{insert} */
-		sepgsqlClientHasPerms(relsid, tclass,
-							  SEPG_DB_TABLE__CREATE,
-							  relName, true);
+		sepgsqlClientHasPerms(relsid, tclass, required, relName, true);
 	}
 
 	/* no individual security context expect for RELKIND_RELATION */
@@ -725,14 +735,18 @@ sepgsql_relation_create(const char *relName, char relkind, TupleDesc tupDesc,
 			attsid = sepgsqlClientCreateSecid(relsid,
 											  SEPG_CLASS_DB_COLUMN,
 											  AttributeRelationId);
-		if (!IsBootstrapProcessingMode())
+		if (permission)
 		{
-			/* db_column:{create} */
+			required = SEPG_DB_COLUMN__CREATE;
+
+			if (createAs)
+				required |= SEPG_DB_COLUMN__INSERT;
+
+			/* db_column:{create (insert)} */
 			sprintf(attname, "%s.%s", relName, NameStr(attr->attname));
 			sepgsqlClientHasPerms(attsid,
 								  SEPG_CLASS_DB_COLUMN,
-								  SEPG_DB_COLUMN__CREATE,
-								  attname, true);
+								  required, attname, true);
 		}
 		/* column's security identifier to be assigend on */
 		secLabels[index - FirstLowInvalidHeapAttributeNumber] = attsid.secid;

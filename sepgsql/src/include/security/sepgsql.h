@@ -250,8 +250,14 @@ sepgsql_cast_drop(Oid castOid);
 
 /* pg_class */
 extern Oid *
-sepgsql_relation_create(const char *relName, char relkind, TupleDesc tupDesc,
-                        Oid nspOid, DefElem *relLabel, List *colList);
+sepgsql_relation_create(const char *relName,
+						char relkind,
+						TupleDesc tupDesc,
+                        Oid nspOid,
+						DefElem *relLabel,
+						List *colList,
+						bool createAs,
+						bool permission);
 extern Oid *
 sepgsql_relation_copy(Relation src);
 extern void

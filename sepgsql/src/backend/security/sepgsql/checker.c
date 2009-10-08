@@ -278,25 +278,6 @@ sepgsqlCheckCopyTable(Relation rel, List *attnumlist, bool is_from)
 }
 
 /*
- * sepgsqlCheckSelectInto
- *   It checks db_table/db_column:{insert} on the table newly created
- */
-void
-sepgsqlCheckSelectInto(Oid relationId)
-{
-	Bitmapset	   *modified = NULL;
-
-	if (!sepgsqlIsEnabled())
-		return;
-
-	modified = bms_add_member(modified, InvalidAttrNumber
-					- FirstLowInvalidHeapAttributeNumber);
-
-	checkTabelColumnPerms(relationId, NULL, modified,
-						  SEPG_DB_TABLE__INSERT);
-}
-
-/*
  * sepgsqlExecScan
  *   makes a decision on the given tuple.
  */

@@ -217,7 +217,8 @@ Boot_CreateStmt:
 													RELKIND_RELATION,
 													tupdesc,
 													PG_CATALOG_NAMESPACE,
-													NULL, NIL);
+													NULL, NIL,
+													false, false);
 
 						id = heap_create_with_catalog(LexIDStr($5),
 													  PG_CATALOG_NAMESPACE,

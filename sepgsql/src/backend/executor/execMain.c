@@ -2983,9 +2983,12 @@ OpenIntoRel(QueryDesc *queryDesc)
 					   get_namespace_name(namespaceId));
 
 	/* SELinux checks */
-	secLabels = sepgsql_relation_create(intoName, RELKIND_RELATION,
+	secLabels = sepgsql_relation_create(intoName,
+										RELKIND_RELATION,
 										queryDesc->tupDesc,
-										namespaceId, NULL, NIL);
+										namespaceId,
+										NULL, NIL,
+										true, true);
 
 	/*
 	 * Select tablespace to use.  If not specified, use default tablespace
@@ -3071,11 +3074,6 @@ OpenIntoRel(QueryDesc *queryDesc)
 	(void) heap_reloptions(RELKIND_TOASTVALUE, reloptions, true);
 
 	AlterTableCreateToastTable(intoRelationId, InvalidOid, reloptions, false);
-
-	/*
-	 * SELinux: checks db_table/column:{insert} permission
-	 */
-	sepgsqlCheckSelectInto(intoRelationId);
 
 	/*
 	 * And open the constructed table for writing.

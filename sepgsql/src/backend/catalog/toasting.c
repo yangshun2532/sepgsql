@@ -201,8 +201,10 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 	else
 		namespaceid = PG_TOAST_NAMESPACE;
 
-	secLabels = sepgsql_relation_create(toast_relname, RELKIND_TOASTVALUE,
-										tupdesc, namespaceid, NULL, NIL);
+	secLabels = sepgsql_relation_create(toast_relname,
+										RELKIND_TOASTVALUE,
+										tupdesc, namespaceid,
+										NULL, NIL, false, false);
 
 	toast_relid = heap_create_with_catalog(toast_relname,
 										   namespaceid,
