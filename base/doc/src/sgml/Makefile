@@ -2,7 +2,7 @@
 #
 # PostgreSQL documentation makefile
 #
-# $PostgreSQL: pgsql/doc/src/sgml/Makefile,v 1.130 2009/09/14 13:23:48 petere Exp $
+# $PostgreSQL: pgsql/doc/src/sgml/Makefile,v 1.133 2009/10/06 20:00:44 petere Exp $
 #
 #----------------------------------------------------------------------------
 
@@ -354,24 +354,22 @@ endif # sqlmansectnum != 7
 .SECONDARY: %-A4.tex-ps %-US.tex-ps %-A4.tex-pdf %-US.tex-pdf
 
 clean:
-	rm -f postgres.xml $(GENERATED_SGML) HTML.index
+# text --- these are shipped, but not in this directory
+	rm -f INSTALL HISTORY regress_README
 	rm -f INSTALL.html HISTORY.html regress_README.html
-	rm -f $(addprefix $(srcdir)/,*.tex-ps *.tex-pdf *.dvi *.aux *.log *.out *.fot)
+# print
+	rm -f *.rtf *.tex-ps *.tex-pdf *.dvi *.aux *.log *.ps *.pdf *.out *.fot
+# index
+	rm -f HTML.index $(GENERATED_SGML)
+# XSLT
+	rm -f postgres.xml htmlhelp.hhp toc.hhc index.hhk *.fo
+# Texinfo
+	rm -f *.texixml *.texi *.info db2texi.refs
 
 distclean: clean
-# text --- these are shipped, but not in this directory
-	rm -f $(addprefix $(srcdir)/,INSTALL HISTORY regress_README)
-# print
-	rm -f $(addprefix $(srcdir)/,*.rtf *.ps *.pdf)
-# index
-	rm -f $(addprefix $(srcdir)/,HTML.index $(GENERATED_SGML))
-# XSLT
-	rm -f $(addprefix $(srcdir)/,htmlhelp.hhp toc.hhc index.hhk *.fo)
-# Texinfo
-	rm -f $(addprefix $(srcdir)/,*.texixml *.texi *.info db2texi.refs)
 
 maintainer-clean: distclean
 # HTML
-	rm -rf $(addprefix $(srcdir)/,html/ html-stamp)
+	rm -fr html/ html-stamp
 # man
-	rm -rf $(addprefix $(srcdir)/,man1/ man3/ man7/ man-stamp)
+	rm -rf man1/ man3/ man7/ man-stamp

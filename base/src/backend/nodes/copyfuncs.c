@@ -15,7 +15,7 @@
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/nodes/copyfuncs.c,v 1.439 2009/10/05 19:24:38 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/nodes/copyfuncs.c,v 1.446 2009/10/12 20:39:39 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -77,6 +77,7 @@ _copyPlannedStmt(PlannedStmt *from)
 	PlannedStmt *newnode = makeNode(PlannedStmt);
 
 	COPY_SCALAR_FIELD(commandType);
+	COPY_SCALAR_FIELD(hasReturning);
 	COPY_SCALAR_FIELD(canSetTag);
 	COPY_NODE_FIELD(planTree);
 	COPY_NODE_FIELD(rtable);
@@ -85,7 +86,6 @@ _copyPlannedStmt(PlannedStmt *from)
 	COPY_NODE_FIELD(intoClause);
 	COPY_NODE_FIELD(subplans);
 	COPY_BITMAPSET_FIELD(rewindPlanIDs);
-	COPY_NODE_FIELD(returningLists);
 	COPY_NODE_FIELD(rowMarks);
 	COPY_NODE_FIELD(relationOids);
 	COPY_NODE_FIELD(invalItems);
@@ -155,6 +155,30 @@ _copyResult(Result *from)
 }
 
 /*
+ * _copyModifyTable
+ */
+static ModifyTable *
+_copyModifyTable(ModifyTable *from)
+{
+	ModifyTable    *newnode = makeNode(ModifyTable);
+
+	/*
+	 * copy node superclass fields
+	 */
+	CopyPlanFields((Plan *) from, (Plan *) newnode);
+
+	/*
+	 * copy remainder of node
+	 */
+	COPY_SCALAR_FIELD(operation);
+	COPY_NODE_FIELD(resultRelations);
+	COPY_NODE_FIELD(plans);
+	COPY_NODE_FIELD(returningLists);
+
+	return newnode;
+}
+
+/*
  * _copyAppend
  */
 static Append *
@@ -171,7 +195,6 @@ _copyAppend(Append *from)
 	 * copy remainder of node
 	 */
 	COPY_NODE_FIELD(appendplans);
-	COPY_SCALAR_FIELD(isTarget);
 
 	return newnode;
 }
@@ -400,6 +423,7 @@ _copySubqueryScan(SubqueryScan *from)
 	 */
 	COPY_NODE_FIELD(subplan);
 	COPY_NODE_FIELD(subrtable);
+	COPY_NODE_FIELD(subrowmark);
 
 	return newnode;
 }
@@ -772,6 +796,27 @@ _copySetOp(SetOp *from)
 }
 
 /*
+ * _copyLockRows
+ */
+static LockRows *
+_copyLockRows(LockRows *from)
+{
+	LockRows	   *newnode = makeNode(LockRows);
+
+	/*
+	 * copy node superclass fields
+	 */
+	CopyPlanFields((Plan *) from, (Plan *) newnode);
+
+	/*
+	 * copy remainder of node
+	 */
+	COPY_NODE_FIELD(rowMarks);
+
+	return newnode;
+}
+
+/*
  * _copyLimit
  */
 static Limit *
@@ -1014,6 +1059,22 @@ _copyFuncExpr(FuncExpr *from)
 	COPY_SCALAR_FIELD(funcretset);
 	COPY_SCALAR_FIELD(funcformat);
 	COPY_NODE_FIELD(args);
+	COPY_LOCATION_FIELD(location);
+
+	return newnode;
+}
+
+/*
+ * _copyNamedArgExpr *
+ */
+static NamedArgExpr *
+_copyNamedArgExpr(NamedArgExpr *from)
+{
+	NamedArgExpr *newnode = makeNode(NamedArgExpr);
+
+	COPY_NODE_FIELD(arg);
+	COPY_STRING_FIELD(name);
+	COPY_SCALAR_FIELD(argnumber);
 	COPY_LOCATION_FIELD(location);
 
 	return newnode;
@@ -1774,6 +1835,7 @@ _copyRowMarkClause(RowMarkClause *from)
 
 	COPY_SCALAR_FIELD(rti);
 	COPY_SCALAR_FIELD(prti);
+	COPY_SCALAR_FIELD(rowmarkId);
 	COPY_SCALAR_FIELD(forUpdate);
 	COPY_SCALAR_FIELD(noWait);
 	COPY_SCALAR_FIELD(isParent);
@@ -2054,7 +2116,7 @@ _copyColumnDef(ColumnDef *from)
 	COPY_SCALAR_FIELD(is_local);
 	COPY_SCALAR_FIELD(is_not_null);
 	COPY_NODE_FIELD(raw_default);
-	COPY_STRING_FIELD(cooked_default);
+	COPY_NODE_FIELD(cooked_default);
 	COPY_NODE_FIELD(constraints);
 
 	return newnode;
@@ -2288,6 +2350,7 @@ _copyGrantStmt(GrantStmt *from)
 	GrantStmt  *newnode = makeNode(GrantStmt);
 
 	COPY_SCALAR_FIELD(is_grant);
+	COPY_SCALAR_FIELD(targtype);
 	COPY_SCALAR_FIELD(objtype);
 	COPY_NODE_FIELD(objects);
 	COPY_NODE_FIELD(privileges);
@@ -2427,7 +2490,7 @@ _copyInhRelation(InhRelation *from)
 	InhRelation *newnode = makeNode(InhRelation);
 
 	COPY_NODE_FIELD(relation);
-	COPY_NODE_FIELD(options);
+	COPY_SCALAR_FIELD(options);
 
 	return newnode;
 }
@@ -3174,6 +3237,7 @@ _copyAlterRoleSetStmt(AlterRoleSetStmt *from)
 	AlterRoleSetStmt *newnode = makeNode(AlterRoleSetStmt);
 
 	COPY_STRING_FIELD(role);
+	COPY_STRING_FIELD(database);
 	COPY_NODE_FIELD(setstmt);
 
 	return newnode;
@@ -3465,6 +3529,9 @@ copyObject(void *from)
 		case T_Result:
 			retval = _copyResult(from);
 			break;
+		case T_ModifyTable:
+			retval = _copyModifyTable(from);
+			break;
 		case T_Append:
 			retval = _copyAppend(from);
 			break;
@@ -3546,6 +3613,9 @@ copyObject(void *from)
 		case T_SetOp:
 			retval = _copySetOp(from);
 			break;
+		case T_LockRows:
+			retval = _copyLockRows(from);
+			break;
 		case T_Limit:
 			retval = _copyLimit(from);
 			break;
@@ -3585,6 +3655,9 @@ copyObject(void *from)
 			break;
 		case T_FuncExpr:
 			retval = _copyFuncExpr(from);
+			break;
+		case T_NamedArgExpr:
+			retval = _copyNamedArgExpr(from);
 			break;
 		case T_OpExpr:
 			retval = _copyOpExpr(from);

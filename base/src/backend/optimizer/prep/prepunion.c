@@ -22,7 +22,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/optimizer/prep/prepunion.c,v 1.174 2009/09/02 17:52:24 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/optimizer/prep/prepunion.c,v 1.176 2009/10/12 18:10:48 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -247,7 +247,8 @@ recurse_set_operations(Node *setOp, PlannerInfo *root,
 							  NIL,
 							  rtr->rtindex,
 							  subplan,
-							  subroot->parse->rtable);
+							  subroot->parse->rtable,
+							  subroot->parse->rowMarks);
 
 		/*
 		 * We don't bother to determine the subquery's output ordering since
@@ -448,7 +449,7 @@ generate_union_plan(SetOperationStmt *op, PlannerInfo *root,
 	/*
 	 * Append the child results together.
 	 */
-	plan = (Plan *) make_append(planlist, false, tlist);
+	plan = (Plan *) make_append(planlist, tlist);
 
 	/*
 	 * For UNION ALL, we just need the Append plan.  For UNION, need to add
@@ -539,7 +540,7 @@ generate_nonunion_plan(SetOperationStmt *op, PlannerInfo *root,
 	/*
 	 * Append the child results together.
 	 */
-	plan = (Plan *) make_append(planlist, false, tlist);
+	plan = (Plan *) make_append(planlist, tlist);
 
 	/* Identify the grouping semantics */
 	groupList = generate_setop_grouplist(op, tlist);
@@ -1281,6 +1282,8 @@ expand_inherited_rtentry(PlannerInfo *root, RangeTblEntry *rte, Index rti)
 
 			newrc->rti = childRTindex;
 			newrc->prti = rti;
+			/* children use the same rowmarkId as their parent */
+			newrc->rowmarkId = oldrc->rowmarkId;
 			newrc->forUpdate = oldrc->forUpdate;
 			newrc->noWait = oldrc->noWait;
 			newrc->isParent = false;
