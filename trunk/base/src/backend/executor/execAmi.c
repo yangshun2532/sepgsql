@@ -6,7 +6,7 @@
  * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- *	$PostgreSQL: pgsql/src/backend/executor/execAmi.c,v 1.104 2009/09/12 22:12:03 tgl Exp $
+ *	$PostgreSQL: pgsql/src/backend/executor/execAmi.c,v 1.106 2009/10/12 18:10:41 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -28,8 +28,10 @@
 #include "executor/nodeHashjoin.h"
 #include "executor/nodeIndexscan.h"
 #include "executor/nodeLimit.h"
+#include "executor/nodeLockRows.h"
 #include "executor/nodeMaterial.h"
 #include "executor/nodeMergejoin.h"
+#include "executor/nodeModifyTable.h"
 #include "executor/nodeNestloop.h"
 #include "executor/nodeRecursiveunion.h"
 #include "executor/nodeResult.h"
@@ -125,6 +127,10 @@ ExecReScan(PlanState *node, ExprContext *exprCtxt)
 	{
 		case T_ResultState:
 			ExecReScanResult((ResultState *) node, exprCtxt);
+			break;
+
+		case T_ModifyTableState:
+			ExecReScanModifyTable((ModifyTableState *) node, exprCtxt);
 			break;
 
 		case T_AppendState:
@@ -225,6 +231,10 @@ ExecReScan(PlanState *node, ExprContext *exprCtxt)
 
 		case T_SetOpState:
 			ExecReScanSetOp((SetOpState *) node, exprCtxt);
+			break;
+
+		case T_LockRowsState:
+			ExecReScanLockRows((LockRowsState *) node, exprCtxt);
 			break;
 
 		case T_LimitState:
@@ -439,8 +449,9 @@ ExecSupportsBackwardScan(Plan *node)
 			/* these don't evaluate tlist */
 			return true;
 
+		case T_LockRows:
 		case T_Limit:
-			/* doesn't evaluate tlist */
+			/* these don't evaluate tlist */
 			return ExecSupportsBackwardScan(outerPlan(node));
 
 		default:

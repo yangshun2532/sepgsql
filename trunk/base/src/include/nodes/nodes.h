@@ -7,7 +7,7 @@
  * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/nodes/nodes.h,v 1.227 2009/10/05 19:24:48 tgl Exp $
+ * $PostgreSQL: pgsql/src/include/nodes/nodes.h,v 1.230 2009/10/12 18:10:51 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -43,6 +43,7 @@ typedef enum NodeTag
 	 */
 	T_Plan = 100,
 	T_Result,
+	T_ModifyTable,
 	T_Append,
 	T_RecursiveUnion,
 	T_BitmapAnd,
@@ -70,6 +71,7 @@ typedef enum NodeTag
 	T_Unique,
 	T_Hash,
 	T_SetOp,
+	T_LockRows,
 	T_Limit,
 	/* this one isn't a subclass of Plan: */
 	T_PlanInvalItem,
@@ -81,6 +83,7 @@ typedef enum NodeTag
 	 */
 	T_PlanState = 200,
 	T_ResultState,
+	T_ModifyTableState,
 	T_AppendState,
 	T_RecursiveUnionState,
 	T_BitmapAndState,
@@ -108,6 +111,7 @@ typedef enum NodeTag
 	T_UniqueState,
 	T_HashState,
 	T_SetOpState,
+	T_LockRowsState,
 	T_LimitState,
 
 	/*
@@ -123,6 +127,7 @@ typedef enum NodeTag
 	T_WindowFunc,
 	T_ArrayRef,
 	T_FuncExpr,
+	T_NamedArgExpr,
 	T_OpExpr,
 	T_DistinctExpr,
 	T_ScalarArrayOpExpr,

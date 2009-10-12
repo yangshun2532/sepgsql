@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/nodes/outfuncs.c,v 1.364 2009/09/17 20:49:28 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/nodes/outfuncs.c,v 1.368 2009/10/12 18:10:45 tgl Exp $
  *
  * NOTES
  *	  Every node type that can appear in stored rules' parsetrees *must*
@@ -242,6 +242,7 @@ _outPlannedStmt(StringInfo str, PlannedStmt *node)
 	WRITE_NODE_TYPE("PLANNEDSTMT");
 
 	WRITE_ENUM_FIELD(commandType, CmdType);
+	WRITE_BOOL_FIELD(hasReturning);
 	WRITE_BOOL_FIELD(canSetTag);
 	WRITE_NODE_FIELD(planTree);
 	WRITE_NODE_FIELD(rtable);
@@ -250,7 +251,6 @@ _outPlannedStmt(StringInfo str, PlannedStmt *node)
 	WRITE_NODE_FIELD(intoClause);
 	WRITE_NODE_FIELD(subplans);
 	WRITE_BITMAPSET_FIELD(rewindPlanIDs);
-	WRITE_NODE_FIELD(returningLists);
 	WRITE_NODE_FIELD(rowMarks);
 	WRITE_NODE_FIELD(relationOids);
 	WRITE_NODE_FIELD(invalItems);
@@ -319,6 +319,19 @@ _outResult(StringInfo str, Result *node)
 }
 
 static void
+_outModifyTable(StringInfo str, ModifyTable *node)
+{
+	WRITE_NODE_TYPE("MODIFYTABLE");
+
+	_outPlanInfo(str, (Plan *) node);
+
+	WRITE_ENUM_FIELD(operation, CmdType);
+	WRITE_NODE_FIELD(resultRelations);
+	WRITE_NODE_FIELD(plans);
+	WRITE_NODE_FIELD(returningLists);
+}
+
+static void
 _outAppend(StringInfo str, Append *node)
 {
 	WRITE_NODE_TYPE("APPEND");
@@ -326,7 +339,6 @@ _outAppend(StringInfo str, Append *node)
 	_outPlanInfo(str, (Plan *) node);
 
 	WRITE_NODE_FIELD(appendplans);
-	WRITE_BOOL_FIELD(isTarget);
 }
 
 static void
@@ -442,6 +454,7 @@ _outSubqueryScan(StringInfo str, SubqueryScan *node)
 
 	WRITE_NODE_FIELD(subplan);
 	WRITE_NODE_FIELD(subrtable);
+	WRITE_NODE_FIELD(subrowmark);
 }
 
 static void
@@ -709,6 +722,16 @@ _outSetOp(StringInfo str, SetOp *node)
 }
 
 static void
+_outLockRows(StringInfo str, LockRows *node)
+{
+	WRITE_NODE_TYPE("LOCKROWS");
+
+	_outPlanInfo(str, (Plan *) node);
+
+	WRITE_NODE_FIELD(rowMarks);
+}
+
+static void
 _outLimit(StringInfo str, Limit *node)
 {
 	WRITE_NODE_TYPE("LIMIT");
@@ -872,6 +895,17 @@ _outFuncExpr(StringInfo str, FuncExpr *node)
 	WRITE_BOOL_FIELD(funcretset);
 	WRITE_ENUM_FIELD(funcformat, CoercionForm);
 	WRITE_NODE_FIELD(args);
+	WRITE_LOCATION_FIELD(location);
+}
+
+static void
+_outNamedArgExpr(StringInfo str, NamedArgExpr *node)
+{
+	WRITE_NODE_TYPE("NAMEDARGEXPR");
+
+	WRITE_NODE_FIELD(arg);
+	WRITE_STRING_FIELD(name);
+	WRITE_INT_FIELD(argnumber);
 	WRITE_LOCATION_FIELD(location);
 }
 
@@ -1471,11 +1505,14 @@ _outPlannerGlobal(StringInfo str, PlannerGlobal *node)
 	WRITE_NODE_FIELD(paramlist);
 	WRITE_NODE_FIELD(subplans);
 	WRITE_NODE_FIELD(subrtables);
+	WRITE_NODE_FIELD(subrowmarks);
 	WRITE_BITMAPSET_FIELD(rewindPlanIDs);
 	WRITE_NODE_FIELD(finalrtable);
+	WRITE_NODE_FIELD(finalrowmarks);
 	WRITE_NODE_FIELD(relationOids);
 	WRITE_NODE_FIELD(invalItems);
 	WRITE_UINT_FIELD(lastPHId);
+	WRITE_UINT_FIELD(lastRowmarkId);
 	WRITE_BOOL_FIELD(transientPlan);
 }
 
@@ -1490,7 +1527,6 @@ _outPlannerInfo(StringInfo str, PlannerInfo *node)
 	WRITE_UINT_FIELD(query_level);
 	WRITE_NODE_FIELD(join_rel_list);
 	WRITE_NODE_FIELD(resultRelations);
-	WRITE_NODE_FIELD(returningLists);
 	WRITE_NODE_FIELD(init_plans);
 	WRITE_NODE_FIELD(cte_plan_ids);
 	WRITE_NODE_FIELD(eq_classes);
@@ -1539,6 +1575,7 @@ _outRelOptInfo(StringInfo str, RelOptInfo *node)
 	WRITE_FLOAT_FIELD(tuples, "%.0f");
 	WRITE_NODE_FIELD(subplan);
 	WRITE_NODE_FIELD(subrtable);
+	WRITE_NODE_FIELD(subrowmark);
 	WRITE_NODE_FIELD(baserestrictinfo);
 	WRITE_NODE_FIELD(joininfo);
 	WRITE_BOOL_FIELD(has_eclass_joins);
@@ -1849,7 +1886,7 @@ _outColumnDef(StringInfo str, ColumnDef *node)
 	WRITE_BOOL_FIELD(is_local);
 	WRITE_BOOL_FIELD(is_not_null);
 	WRITE_NODE_FIELD(raw_default);
-	WRITE_STRING_FIELD(cooked_default);
+	WRITE_NODE_FIELD(cooked_default);
 	WRITE_NODE_FIELD(constraints);
 }
 
@@ -1979,6 +2016,7 @@ _outRowMarkClause(StringInfo str, RowMarkClause *node)
 
 	WRITE_UINT_FIELD(rti);
 	WRITE_UINT_FIELD(prti);
+	WRITE_UINT_FIELD(rowmarkId);
 	WRITE_BOOL_FIELD(forUpdate);
 	WRITE_BOOL_FIELD(noWait);
 	WRITE_BOOL_FIELD(isParent);
@@ -2397,6 +2435,9 @@ _outNode(StringInfo str, void *obj)
 			case T_Result:
 				_outResult(str, obj);
 				break;
+			case T_ModifyTable:
+				_outModifyTable(str, obj);
+				break;
 			case T_Append:
 				_outAppend(str, obj);
 				break;
@@ -2478,6 +2519,9 @@ _outNode(StringInfo str, void *obj)
 			case T_SetOp:
 				_outSetOp(str, obj);
 				break;
+			case T_LockRows:
+				_outLockRows(str, obj);
+				break;
 			case T_Limit:
 				_outLimit(str, obj);
 				break;
@@ -2513,6 +2557,9 @@ _outNode(StringInfo str, void *obj)
 				break;
 			case T_FuncExpr:
 				_outFuncExpr(str, obj);
+				break;
+			case T_NamedArgExpr:
+				_outNamedArgExpr(str, obj);
 				break;
 			case T_OpExpr:
 				_outOpExpr(str, obj);

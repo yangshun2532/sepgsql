@@ -7,7 +7,7 @@
  * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/optimizer/planmain.h,v 1.118 2009/06/11 14:49:11 momjian Exp $
+ * $PostgreSQL: pgsql/src/include/optimizer/planmain.h,v 1.120 2009/10/12 18:10:51 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -40,8 +40,9 @@ extern Plan *optimize_minmax_aggregates(PlannerInfo *root, List *tlist,
  */
 extern Plan *create_plan(PlannerInfo *root, Path *best_path);
 extern SubqueryScan *make_subqueryscan(List *qptlist, List *qpqual,
-				  Index scanrelid, Plan *subplan, List *subrtable);
-extern Append *make_append(List *appendplans, bool isTarget, List *tlist);
+				  Index scanrelid, Plan *subplan,
+				  List *subrtable, List *subrowmark);
+extern Append *make_append(List *appendplans, List *tlist);
 extern RecursiveUnion *make_recursive_union(List *tlist,
 					 Plan *lefttree, Plan *righttree, int wtParam,
 					 List *distinctList, long numGroups);
@@ -67,6 +68,7 @@ extern Group *make_group(PlannerInfo *root, List *tlist, List *qual,
 		   Plan *lefttree);
 extern Plan *materialize_finished_plan(Plan *subplan);
 extern Unique *make_unique(Plan *lefttree, List *distinctList);
+extern LockRows *make_lockrows(Plan *lefttree, List *rowMarks);
 extern Limit *make_limit(Plan *lefttree, Node *limitOffset, Node *limitCount,
 		   int64 offset_est, int64 count_est);
 extern SetOp *make_setop(SetOpCmd cmd, SetOpStrategy strategy, Plan *lefttree,
@@ -74,6 +76,8 @@ extern SetOp *make_setop(SetOpCmd cmd, SetOpStrategy strategy, Plan *lefttree,
 		   long numGroups, double outputRows);
 extern Result *make_result(PlannerInfo *root, List *tlist,
 			Node *resconstantqual, Plan *subplan);
+extern ModifyTable *make_modifytable(CmdType operation, List *resultRelations,
+									 List *subplans, List *returningLists);
 extern bool is_projection_capable_plan(Plan *plan);
 
 /*
@@ -106,7 +110,8 @@ extern RestrictInfo *build_implied_join_equality(Oid opno,
  */
 extern Plan *set_plan_references(PlannerGlobal *glob,
 					Plan *plan,
-					List *rtable);
+					List *rtable,
+					List *rowmarks);
 extern List *set_returning_clause_references(PlannerGlobal *glob,
 								List *rlist,
 								Plan *topplan,

@@ -7,7 +7,7 @@
  * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/nodes/plannodes.h,v 1.110 2009/06/11 14:49:11 momjian Exp $
+ * $PostgreSQL: pgsql/src/include/nodes/plannodes.h,v 1.112 2009/10/12 18:10:51 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -38,6 +38,8 @@ typedef struct PlannedStmt
 
 	CmdType		commandType;	/* select|insert|update|delete */
 
+	bool		hasReturning;	/* is it insert|update|delete RETURNING? */
+
 	bool		canSetTag;		/* do I set the command result tag? */
 
 	bool		transientPlan;	/* redo plan when TransactionXmin changes? */
@@ -56,18 +58,6 @@ typedef struct PlannedStmt
 	List	   *subplans;		/* Plan trees for SubPlan expressions */
 
 	Bitmapset  *rewindPlanIDs;	/* indices of subplans that require REWIND */
-
-	/*
-	 * If the query has a returningList then the planner will store a list of
-	 * processed targetlists (one per result relation) here.  We must have a
-	 * separate RETURNING targetlist for each result rel because column
-	 * numbers may vary within an inheritance tree.  In the targetlists, Vars
-	 * referencing the result relation will have their original varno and
-	 * varattno, while Vars referencing other rels will be converted to have
-	 * varno OUTER and varattno referencing a resjunk entry in the top plan
-	 * node's targetlist.
-	 */
-	List	   *returningLists; /* list of lists of TargetEntry, or NIL */
 
 	List	   *rowMarks;		/* a list of RowMarkClause's */
 
@@ -165,21 +155,29 @@ typedef struct Result
 } Result;
 
 /* ----------------
+ *	 ModifyTable node -
+ *		Apply rows produced by subplan(s) to result table(s),
+ *		by inserting, updating, or deleting.
+ * ----------------
+ */
+typedef struct ModifyTable
+{
+	Plan		plan;
+	CmdType		operation;			/* INSERT, UPDATE, or DELETE */
+	List	   *resultRelations;	/* integer list of RT indexes */
+	List	   *plans;				/* plan(s) producing source data */
+	List	   *returningLists;		/* per-target-table RETURNING tlists */
+} ModifyTable;
+
+/* ----------------
  *	 Append node -
  *		Generate the concatenation of the results of sub-plans.
- *
- * Append nodes are sometimes used to switch between several result relations
- * (when the target of an UPDATE or DELETE is an inheritance set).	Such a
- * node will have isTarget true.  The Append executor is then responsible
- * for updating the executor state to point at the correct target relation
- * whenever it switches subplans.
  * ----------------
  */
 typedef struct Append
 {
 	Plan		plan;
 	List	   *appendplans;
-	bool		isTarget;
 } Append;
 
 /* ----------------
@@ -345,7 +343,7 @@ typedef struct TidScan
  *
  * Note: subrtable is used just to carry the subquery rangetable from
  * createplan.c to setrefs.c; it should always be NIL by the time the
- * executor sees the plan.
+ * executor sees the plan.  Similarly for subrowmark.
  * ----------------
  */
 typedef struct SubqueryScan
@@ -353,6 +351,7 @@ typedef struct SubqueryScan
 	Scan		scan;
 	Plan	   *subplan;
 	List	   *subrtable;		/* temporary workspace for planner */
+	List	   *subrowmark;		/* temporary workspace for planner */
 } SubqueryScan;
 
 /* ----------------
@@ -615,6 +614,19 @@ typedef struct SetOp
 	int			firstFlag;		/* flag value for first input relation */
 	long		numGroups;		/* estimated number of groups in input */
 } SetOp;
+
+/* ----------------
+ *		lock-rows node
+ *
+ * rowMarks identifies the rels to be locked by this node; it should be
+ * a subset of the rowMarks listed in the top-level PlannedStmt.
+ * ----------------
+ */
+typedef struct LockRows
+{
+	Plan		plan;
+	List	   *rowMarks;		/* a list of RowMarkClause's */
+} LockRows;
 
 /* ----------------
  *		limit node

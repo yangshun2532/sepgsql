@@ -22,7 +22,7 @@
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/nodes/equalfuncs.c,v 1.362 2009/10/05 19:24:38 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/nodes/equalfuncs.c,v 1.368 2009/10/12 20:39:40 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -236,6 +236,17 @@ _equalFuncExpr(FuncExpr *a, FuncExpr *b)
 		return false;
 
 	COMPARE_NODE_FIELD(args);
+	COMPARE_LOCATION_FIELD(location);
+
+	return true;
+}
+
+static bool
+_equalNamedArgExpr(NamedArgExpr *a, NamedArgExpr *b)
+{
+	COMPARE_NODE_FIELD(arg);
+	COMPARE_STRING_FIELD(name);
+	COMPARE_SCALAR_FIELD(argnumber);
 	COMPARE_LOCATION_FIELD(location);
 
 	return true;
@@ -979,6 +990,7 @@ static bool
 _equalGrantStmt(GrantStmt *a, GrantStmt *b)
 {
 	COMPARE_SCALAR_FIELD(is_grant);
+	COMPARE_SCALAR_FIELD(targtype);
 	COMPARE_SCALAR_FIELD(objtype);
 	COMPARE_NODE_FIELD(objects);
 	COMPARE_NODE_FIELD(privileges);
@@ -1096,7 +1108,7 @@ static bool
 _equalInhRelation(InhRelation *a, InhRelation *b)
 {
 	COMPARE_NODE_FIELD(relation);
-	COMPARE_NODE_FIELD(options);
+	COMPARE_SCALAR_FIELD(options);
 
 	return true;
 }
@@ -1725,6 +1737,7 @@ static bool
 _equalAlterRoleSetStmt(AlterRoleSetStmt *a, AlterRoleSetStmt *b)
 {
 	COMPARE_STRING_FIELD(role);
+	COMPARE_STRING_FIELD(database);
 	COMPARE_NODE_FIELD(setstmt);
 
 	return true;
@@ -2072,7 +2085,7 @@ _equalColumnDef(ColumnDef *a, ColumnDef *b)
 	COMPARE_SCALAR_FIELD(is_local);
 	COMPARE_SCALAR_FIELD(is_not_null);
 	COMPARE_NODE_FIELD(raw_default);
-	COMPARE_STRING_FIELD(cooked_default);
+	COMPARE_NODE_FIELD(cooked_default);
 	COMPARE_NODE_FIELD(constraints);
 
 	return true;
@@ -2182,6 +2195,7 @@ _equalRowMarkClause(RowMarkClause *a, RowMarkClause *b)
 {
 	COMPARE_SCALAR_FIELD(rti);
 	COMPARE_SCALAR_FIELD(prti);
+	COMPARE_SCALAR_FIELD(rowmarkId);
 	COMPARE_SCALAR_FIELD(forUpdate);
 	COMPARE_SCALAR_FIELD(noWait);
 	COMPARE_SCALAR_FIELD(isParent);
@@ -2373,6 +2387,9 @@ equal(void *a, void *b)
 			break;
 		case T_FuncExpr:
 			retval = _equalFuncExpr(a, b);
+			break;
+		case T_NamedArgExpr:
+			retval = _equalNamedArgExpr(a, b);
 			break;
 		case T_OpExpr:
 			retval = _equalOpExpr(a, b);
