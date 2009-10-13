@@ -10,7 +10,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/optimizer/plan/createplan.c,v 1.263 2009/09/17 20:49:29 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/optimizer/plan/createplan.c,v 1.265 2009/10/12 18:10:45 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -579,7 +579,7 @@ create_append_plan(PlannerInfo *root, AppendPath *best_path)
 		subplans = lappend(subplans, create_plan(root, subpath));
 	}
 
-	plan = make_append(subplans, false, tlist);
+	plan = make_append(subplans, tlist);
 
 	return (Plan *) plan;
 }
@@ -1336,7 +1336,8 @@ create_subqueryscan_plan(PlannerInfo *root, Path *best_path,
 								  scan_clauses,
 								  scan_relid,
 								  best_path->parent->subplan,
-								  best_path->parent->subrtable);
+								  best_path->parent->subrtable,
+								  best_path->parent->subrowmark);
 
 	copy_path_costsize(&scan_plan->scan.plan, best_path);
 
@@ -2508,7 +2509,8 @@ make_subqueryscan(List *qptlist,
 				  List *qpqual,
 				  Index scanrelid,
 				  Plan *subplan,
-				  List *subrtable)
+				  List *subrtable,
+				  List *subrowmark)
 {
 	SubqueryScan *node = makeNode(SubqueryScan);
 	Plan	   *plan = &node->scan.plan;
@@ -2528,6 +2530,7 @@ make_subqueryscan(List *qptlist,
 	node->scan.scanrelid = scanrelid;
 	node->subplan = subplan;
 	node->subrtable = subrtable;
+	node->subrowmark = subrowmark;
 
 	return node;
 }
@@ -2621,7 +2624,7 @@ make_worktablescan(List *qptlist,
 }
 
 Append *
-make_append(List *appendplans, bool isTarget, List *tlist)
+make_append(List *appendplans, List *tlist)
 {
 	Append	   *node = makeNode(Append);
 	Plan	   *plan = &node->plan;
@@ -2657,7 +2660,6 @@ make_append(List *appendplans, bool isTarget, List *tlist)
 	plan->lefttree = NULL;
 	plan->righttree = NULL;
 	node->appendplans = appendplans;
-	node->isTarget = isTarget;
 
 	return node;
 }
@@ -3592,6 +3594,31 @@ make_setop(SetOpCmd cmd, SetOpStrategy strategy, Plan *lefttree,
 }
 
 /*
+ * make_lockrows
+ *	  Build a LockRows plan node
+ */
+LockRows *
+make_lockrows(Plan *lefttree, List *rowMarks)
+{
+	LockRows   *node = makeNode(LockRows);
+	Plan	   *plan = &node->plan;
+
+	copy_plan_costsize(plan, lefttree);
+
+	/* charge cpu_tuple_cost to reflect locking costs (underestimate?) */
+	plan->total_cost += cpu_tuple_cost * plan->plan_rows;
+
+	plan->targetlist = lefttree->targetlist;
+	plan->qual = NIL;
+	plan->lefttree = lefttree;
+	plan->righttree = NULL;
+
+	node->rowMarks = rowMarks;
+
+	return node;
+}
+
+/*
  * Note: offset_est and count_est are passed in to save having to repeat
  * work already done to estimate the values of the limitOffset and limitCount
  * expressions.  Their values are as returned by preprocess_limit (0 means
@@ -3712,6 +3739,73 @@ make_result(PlannerInfo *root,
 }
 
 /*
+ * make_modifytable
+ *	  Build a ModifyTable plan node
+ *
+ * Currently, we don't charge anything extra for the actual table modification
+ * work, nor for the RETURNING expressions if any.  It would only be window
+ * dressing, since these are always top-level nodes and there is no way for
+ * the costs to change any higher-level planning choices.  But we might want
+ * to make it look better sometime.
+ */
+ModifyTable *
+make_modifytable(CmdType operation, List *resultRelations,
+				 List *subplans, List *returningLists)
+{
+	ModifyTable *node = makeNode(ModifyTable);
+	Plan	   *plan = &node->plan;
+	double		total_size;
+	ListCell   *subnode;
+
+	Assert(list_length(resultRelations) == list_length(subplans));
+	Assert(returningLists == NIL ||
+		   list_length(resultRelations) == list_length(returningLists));
+
+	/*
+	 * Compute cost as sum of subplan costs.
+	 */
+	plan->startup_cost = 0;
+	plan->total_cost = 0;
+	plan->plan_rows = 0;
+	total_size = 0;
+	foreach(subnode, subplans)
+	{
+		Plan	   *subplan = (Plan *) lfirst(subnode);
+
+		if (subnode == list_head(subplans))	/* first node? */
+			plan->startup_cost = subplan->startup_cost;
+		plan->total_cost += subplan->total_cost;
+		plan->plan_rows += subplan->plan_rows;
+		total_size += subplan->plan_width * subplan->plan_rows;
+	}
+	if (plan->plan_rows > 0)
+		plan->plan_width = rint(total_size / plan->plan_rows);
+	else
+		plan->plan_width = 0;
+
+	node->plan.lefttree = NULL;
+	node->plan.righttree = NULL;
+	node->plan.qual = NIL;
+
+	/*
+	 * Set up the visible plan targetlist as being the same as the first
+	 * RETURNING list.  This is for the use of EXPLAIN; the executor won't
+	 * pay any attention to the targetlist.
+	 */
+	if (returningLists)
+		node->plan.targetlist = copyObject(linitial(returningLists));
+	else
+		node->plan.targetlist = NIL;
+
+	node->operation = operation;
+	node->resultRelations = resultRelations;
+	node->plans = subplans;
+	node->returningLists = returningLists;
+
+	return node;
+}
+
+/*
  * is_projection_capable_plan
  *		Check whether a given Plan node is able to do projection.
  */
@@ -3726,7 +3820,9 @@ is_projection_capable_plan(Plan *plan)
 		case T_Sort:
 		case T_Unique:
 		case T_SetOp:
+		case T_LockRows:
 		case T_Limit:
+		case T_ModifyTable:
 		case T_Append:
 		case T_RecursiveUnion:
 			return false;

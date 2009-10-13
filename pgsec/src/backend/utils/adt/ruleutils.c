@@ -9,7 +9,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/adt/ruleutils.c,v 1.306 2009/08/01 19:59:41 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/utils/adt/ruleutils.c,v 1.309 2009/10/10 01:43:49 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -139,6 +139,7 @@ static char *deparse_expression_pretty(Node *expr, List *dpcontext,
 						  bool forceprefix, bool showimplicit,
 						  int prettyFlags, int startIndent);
 static char *pg_get_viewdef_worker(Oid viewoid, int prettyFlags);
+static char *pg_get_triggerdef_worker(Oid trigid, bool pretty);
 static void decompile_column_index_array(Datum column_index_array, Oid relId,
 							 StringInfo buf);
 static char *pg_get_ruledef_worker(Oid ruleoid, int prettyFlags);
@@ -218,8 +219,8 @@ static Node *processIndirection(Node *node, deparse_context *context,
 				   bool printit);
 static void printSubscripts(ArrayRef *aref, deparse_context *context);
 static char *generate_relation_name(Oid relid, List *namespaces);
-static char *generate_function_name(Oid funcid, int nargs, Oid *argtypes,
-					   bool *is_variadic);
+static char *generate_function_name(Oid funcid, int nargs, List *argnames,
+									Oid *argtypes, bool *is_variadic);
 static char *generate_operator_name(Oid operid, Oid arg1, Oid arg2);
 static text *string_to_text(char *str);
 static char *flatten_reloptions(Oid relid);
@@ -462,6 +463,22 @@ Datum
 pg_get_triggerdef(PG_FUNCTION_ARGS)
 {
 	Oid			trigid = PG_GETARG_OID(0);
+
+	PG_RETURN_TEXT_P(string_to_text(pg_get_triggerdef_worker(trigid, false)));
+}
+
+Datum
+pg_get_triggerdef_ext(PG_FUNCTION_ARGS)
+{
+	Oid			trigid = PG_GETARG_OID(0);
+	bool		pretty = PG_GETARG_BOOL(1);
+
+	PG_RETURN_TEXT_P(string_to_text(pg_get_triggerdef_worker(trigid, pretty)));
+}
+
+static char *
+pg_get_triggerdef_worker(Oid trigid, bool pretty)
+{
 	HeapTuple	ht_trig;
 	Form_pg_trigger trigrec;
 	StringInfoData buf;
@@ -498,9 +515,10 @@ pg_get_triggerdef(PG_FUNCTION_ARGS)
 	initStringInfo(&buf);
 
 	tgname = NameStr(trigrec->tgname);
-	appendStringInfo(&buf, "CREATE %sTRIGGER %s ",
+	appendStringInfo(&buf, "CREATE %sTRIGGER %s",
 					 trigrec->tgisconstraint ? "CONSTRAINT " : "",
 					 quote_identifier(tgname));
+	appendStringInfoString(&buf, pretty ? "\n    " : " ");
 
 	if (TRIGGER_FOR_BEFORE(trigrec->tgtype))
 		appendStringInfo(&buf, "BEFORE");
@@ -533,32 +551,37 @@ pg_get_triggerdef(PG_FUNCTION_ARGS)
 		else
 			appendStringInfo(&buf, " TRUNCATE");
 	}
-	appendStringInfo(&buf, " ON %s ",
+	appendStringInfo(&buf, " ON %s",
 					 generate_relation_name(trigrec->tgrelid, NIL));
+	appendStringInfoString(&buf, pretty ? "\n    " : " ");
 
 	if (trigrec->tgisconstraint)
 	{
 		if (trigrec->tgconstrrelid != InvalidOid)
-			appendStringInfo(&buf, "FROM %s ",
-							 generate_relation_name(trigrec->tgconstrrelid,
-													NIL));
+		{
+			appendStringInfo(&buf, "FROM %s",
+							 generate_relation_name(trigrec->tgconstrrelid, NIL));
+			appendStringInfoString(&buf, pretty ? "\n    " : " ");
+		}
 		if (!trigrec->tgdeferrable)
 			appendStringInfo(&buf, "NOT ");
 		appendStringInfo(&buf, "DEFERRABLE INITIALLY ");
 		if (trigrec->tginitdeferred)
-			appendStringInfo(&buf, "DEFERRED ");
+			appendStringInfo(&buf, "DEFERRED");
 		else
-			appendStringInfo(&buf, "IMMEDIATE ");
-
+			appendStringInfo(&buf, "IMMEDIATE");
+		appendStringInfoString(&buf, pretty ? "\n    " : " ");
 	}
 
 	if (TRIGGER_FOR_ROW(trigrec->tgtype))
-		appendStringInfo(&buf, "FOR EACH ROW ");
+		appendStringInfo(&buf, "FOR EACH ROW");
 	else
-		appendStringInfo(&buf, "FOR EACH STATEMENT ");
+		appendStringInfo(&buf, "FOR EACH STATEMENT");
+	appendStringInfoString(&buf, pretty ? "\n    " : " ");
 
 	appendStringInfo(&buf, "EXECUTE PROCEDURE %s(",
-					 generate_function_name(trigrec->tgfoid, 0, NULL, NULL));
+					 generate_function_name(trigrec->tgfoid, 0,
+											NIL, NULL, NULL));
 
 	if (trigrec->tgnargs > 0)
 	{
@@ -593,7 +616,7 @@ pg_get_triggerdef(PG_FUNCTION_ARGS)
 
 	heap_close(tgrel, AccessShareLock);
 
-	PG_RETURN_TEXT_P(string_to_text(buf.data));
+	return buf.data;
 }
 
 /* ----------
@@ -3323,11 +3346,12 @@ static void
 push_plan(deparse_namespace *dpns, Plan *subplan)
 {
 	/*
-	 * We special-case Append to pretend that the first child plan is the
-	 * OUTER referent; otherwise normal.
+	 * We special-case ModifyTable to pretend that the first child plan is the
+	 * OUTER referent; otherwise normal.  This is to support RETURNING lists
+	 * containing references to non-target relations.
 	 */
-	if (IsA(subplan, Append))
-		dpns->outer_plan = (Plan *) linitial(((Append *) subplan)->appendplans);
+	if (IsA(subplan, ModifyTable))
+		dpns->outer_plan = (Plan *) linitial(((ModifyTable *) subplan)->plans);
 	else
 		dpns->outer_plan = outerPlan(subplan);
 
@@ -4324,6 +4348,15 @@ get_rule_expr(Node *node, deparse_context *context,
 			get_func_expr((FuncExpr *) node, context, showimplicit);
 			break;
 
+		case T_NamedArgExpr:
+			{
+				NamedArgExpr *na = (NamedArgExpr *) node;
+
+				get_rule_expr((Node *) na->arg, context, showimplicit);
+				appendStringInfo(buf, " AS %s", quote_identifier(na->name));
+			}
+			break;
+
 		case T_OpExpr:
 			get_oper_expr((OpExpr *) node, context);
 			break;
@@ -5187,6 +5220,7 @@ get_func_expr(FuncExpr *expr, deparse_context *context,
 	Oid			funcoid = expr->funcid;
 	Oid			argtypes[FUNC_MAX_ARGS];
 	int			nargs;
+	List	   *argnames;
 	bool		is_variadic;
 	ListCell   *l;
 
@@ -5231,14 +5265,20 @@ get_func_expr(FuncExpr *expr, deparse_context *context,
 				(errcode(ERRCODE_TOO_MANY_ARGUMENTS),
 				 errmsg("too many arguments")));
 	nargs = 0;
+	argnames = NIL;
 	foreach(l, expr->args)
 	{
-		argtypes[nargs] = exprType((Node *) lfirst(l));
+		Node   *arg = (Node *) lfirst(l);
+
+		if (IsA(arg, NamedArgExpr))
+			argnames = lappend(argnames, ((NamedArgExpr *) arg)->name);
+		argtypes[nargs] = exprType(arg);
 		nargs++;
 	}
 
 	appendStringInfo(buf, "%s(",
-					 generate_function_name(funcoid, nargs, argtypes,
+					 generate_function_name(funcoid, nargs,
+											argnames, argtypes,
 											&is_variadic));
 	nargs = 0;
 	foreach(l, expr->args)
@@ -5270,13 +5310,16 @@ get_agg_expr(Aggref *aggref, deparse_context *context)
 	nargs = 0;
 	foreach(l, aggref->args)
 	{
-		argtypes[nargs] = exprType((Node *) lfirst(l));
+		Node   *arg = (Node *) lfirst(l);
+
+		Assert(!IsA(arg, NamedArgExpr));
+		argtypes[nargs] = exprType(arg);
 		nargs++;
 	}
 
 	appendStringInfo(buf, "%s(%s",
-					 generate_function_name(aggref->aggfnoid,
-											nargs, argtypes, NULL),
+					 generate_function_name(aggref->aggfnoid, nargs,
+											NIL, argtypes, NULL),
 					 aggref->aggdistinct ? "DISTINCT " : "");
 	/* aggstar can be set only in zero-argument aggregates */
 	if (aggref->aggstar)
@@ -5304,13 +5347,16 @@ get_windowfunc_expr(WindowFunc *wfunc, deparse_context *context)
 	nargs = 0;
 	foreach(l, wfunc->args)
 	{
-		argtypes[nargs] = exprType((Node *) lfirst(l));
+		Node   *arg = (Node *) lfirst(l);
+
+		Assert(!IsA(arg, NamedArgExpr));
+		argtypes[nargs] = exprType(arg);
 		nargs++;
 	}
 
-	appendStringInfo(buf, "%s(%s",
-					 generate_function_name(wfunc->winfnoid,
-											nargs, argtypes, NULL), "");
+	appendStringInfo(buf, "%s(",
+					 generate_function_name(wfunc->winfnoid, nargs,
+											NIL, argtypes, NULL));
 	/* winstar can be set only in zero-argument aggregates */
 	if (wfunc->winstar)
 		appendStringInfoChar(buf, '*');
@@ -6338,15 +6384,15 @@ generate_relation_name(Oid relid, List *namespaces)
 /*
  * generate_function_name
  *		Compute the name to display for a function specified by OID,
- *		given that it is being called with the specified actual arg types.
- *		(Arg types matter because of ambiguous-function resolution rules.)
+ *		given that it is being called with the specified actual arg names and
+ *		types.  (Those matter because of ambiguous-function resolution rules.)
  *
  * The result includes all necessary quoting and schema-prefixing.	We can
  * also pass back an indication of whether the function is variadic.
  */
 static char *
-generate_function_name(Oid funcid, int nargs, Oid *argtypes,
-					   bool *is_variadic)
+generate_function_name(Oid funcid, int nargs, List *argnames,
+					   Oid *argtypes, bool *is_variadic)
 {
 	HeapTuple	proctup;
 	Form_pg_proc procform;
@@ -6371,10 +6417,12 @@ generate_function_name(Oid funcid, int nargs, Oid *argtypes,
 	/*
 	 * The idea here is to schema-qualify only if the parser would fail to
 	 * resolve the correct function given the unqualified func name with the
-	 * specified argtypes.
+	 * specified argtypes.  If the function is variadic, we should presume
+	 * that VARIADIC will be included in the call.
 	 */
 	p_result = func_get_detail(list_make1(makeString(proname)),
-							   NIL, nargs, argtypes, false, true,
+							   NIL, argnames, nargs, argtypes,
+							   !OidIsValid(procform->provariadic), true,
 							   &p_funcid, &p_rettype,
 							   &p_retset, &p_nvargs, &p_true_typeids, NULL);
 	if ((p_result == FUNCDETAIL_NORMAL ||
