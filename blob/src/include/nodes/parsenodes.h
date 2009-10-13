@@ -13,7 +13,7 @@
  * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/nodes/parsenodes.h,v 1.403 2009/10/05 19:24:48 tgl Exp $
+ * $PostgreSQL: pgsql/src/include/nodes/parsenodes.h,v 1.408 2009/10/12 20:39:42 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -443,10 +443,9 @@ typedef struct RangeFunction
  *
  * If the column has a default value, we may have the value expression
  * in either "raw" form (an untransformed parse tree) or "cooked" form
- * (the nodeToString representation of an executable expression tree),
- * depending on how this ColumnDef node was created (by parsing, or by
- * inheritance from an existing relation).	We should never have both
- * in the same node!
+ * (a post-parse-analysis, executable expression tree), depending on
+ * how this ColumnDef node was created (by parsing, or by inheritance
+ * from an existing relation).  We should never have both in the same node!
  *
  * The constraints list may contain a CONSTR_DEFAULT item in a raw
  * parsetree produced by gram.y, but transformCreateStmt will remove
@@ -461,8 +460,9 @@ typedef struct ColumnDef
 	int			inhcount;		/* number of times column is inherited */
 	bool		is_local;		/* column has local (non-inherited) def'n */
 	bool		is_not_null;	/* NOT NULL constraint specified? */
+	char		storage;		/* storage parameter of column */
 	Node	   *raw_default;	/* default value (untransformed parse tree) */
-	char	   *cooked_default; /* nodeToString representation */
+	Node	   *cooked_default; /* default value (transformed expr tree) */
 	List	   *constraints;	/* other constraints on column */
 } ColumnDef;
 
@@ -473,17 +473,17 @@ typedef struct InhRelation
 {
 	NodeTag		type;
 	RangeVar   *relation;
-	List	   *options;		/* integer List of CreateStmtLikeOption */
+	bits32		options;		/* bitmap of CreateStmtLikeOption */
 } InhRelation;
 
 typedef enum CreateStmtLikeOption
 {
-	CREATE_TABLE_LIKE_INCLUDING_DEFAULTS,
-	CREATE_TABLE_LIKE_EXCLUDING_DEFAULTS,
-	CREATE_TABLE_LIKE_INCLUDING_CONSTRAINTS,
-	CREATE_TABLE_LIKE_EXCLUDING_CONSTRAINTS,
-	CREATE_TABLE_LIKE_INCLUDING_INDEXES,
-	CREATE_TABLE_LIKE_EXCLUDING_INDEXES
+	CREATE_TABLE_LIKE_DEFAULTS		= 1 << 0,
+	CREATE_TABLE_LIKE_CONSTRAINTS	= 1 << 1,
+	CREATE_TABLE_LIKE_INDEXES		= 1 << 2,
+	CREATE_TABLE_LIKE_STORAGE		= 1 << 3,
+	CREATE_TABLE_LIKE_COMMENTS		= 1 << 4,
+	CREATE_TABLE_LIKE_ALL			= 0xFFFFFFFF
 } CreateStmtLikeOption;
 
 /*
@@ -810,12 +810,15 @@ typedef struct WindowClause
  * the target rel itself in its role as a child).  The child entries have
  * rti == child rel's RT index, prti == parent's RT index, and can therefore
  * be recognized as children by the fact that prti != rti.
+ * rowmarkId is a unique ID for the RowMarkClause across an entire query,
+ * and is assigned during planning; it's always zero upstream of the planner.
  */
 typedef struct RowMarkClause
 {
 	NodeTag		type;
 	Index		rti;			/* range table index of target relation */
 	Index		prti;			/* range table index of parent relation */
+	Index		rowmarkId;		/* unique identifier assigned by planner */
 	bool		forUpdate;		/* true = FOR UPDATE, false = FOR SHARE */
 	bool		noWait;			/* NOWAIT option */
 	bool		isParent;		/* set by planner when expanding inheritance */
@@ -1179,6 +1182,13 @@ typedef struct AlterDomainStmt
  *		Grant|Revoke Statement
  * ----------------------
  */
+typedef enum GrantTargetType
+{
+	ACL_TARGET_OBJECT,			/* grant on specific named object(s) */
+	ACL_TARGET_ALL_IN_SCHEMA,	/* grant on all objects in given schema(s) */
+	ACL_TARGET_DEFAULTS			/* ALTER DEFAULT PRIVILEGES */
+} GrantTargetType;
+
 typedef enum GrantObjectType
 {
 	ACL_OBJECT_COLUMN,			/* column */
@@ -1198,6 +1208,7 @@ typedef struct GrantStmt
 {
 	NodeTag		type;
 	bool		is_grant;		/* true = GRANT, false = REVOKE */
+	GrantTargetType targtype;	/* type of the grant target */
 	GrantObjectType objtype;	/* kind of object being operated on */
 	List	   *objects;		/* list of RangeVar nodes, FuncWithArgs nodes,
 								 * or plain names (as Value strings) */
@@ -1631,6 +1642,7 @@ typedef struct AlterRoleSetStmt
 {
 	NodeTag		type;
 	char	   *role;			/* role name */
+	char	   *database;		/* database name, or NULL */
 	VariableSetStmt *setstmt;	/* SET or RESET subcommand */
 } AlterRoleSetStmt;
 

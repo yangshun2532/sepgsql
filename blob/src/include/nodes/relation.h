@@ -7,7 +7,7 @@
  * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/nodes/relation.h,v 1.175 2009/09/17 20:49:29 tgl Exp $
+ * $PostgreSQL: pgsql/src/include/nodes/relation.h,v 1.177 2009/10/12 18:10:51 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -68,15 +68,21 @@ typedef struct PlannerGlobal
 
 	List	   *subrtables;		/* Rangetables for SubPlan nodes */
 
+	List	   *subrowmarks;	/* RowMarkClauses for SubPlan nodes */
+
 	Bitmapset  *rewindPlanIDs;	/* indices of subplans that require REWIND */
 
 	List	   *finalrtable;	/* "flat" rangetable for executor */
+
+	List	   *finalrowmarks;	/* "flat" list of RowMarkClauses */
 
 	List	   *relationOids;	/* OIDs of relations the plan depends on */
 
 	List	   *invalItems;		/* other dependencies, as PlanInvalItems */
 
 	Index		lastPHId;		/* highest PlaceHolderVar ID assigned */
+
+	Index		lastRowmarkId;	/* highest RowMarkClause ID assigned */
 
 	bool		transientPlan;	/* redo plan when TransactionXmin changes? */
 } PlannerGlobal;
@@ -139,8 +145,6 @@ typedef struct PlannerInfo
 	struct HTAB *join_rel_hash; /* optional hashtable for join relations */
 
 	List	   *resultRelations;	/* integer list of RT indexes, or NIL */
-
-	List	   *returningLists; /* list of lists of TargetEntry, or NIL */
 
 	List	   *init_plans;		/* init SubPlans for query */
 
@@ -283,6 +287,7 @@ typedef struct PlannerInfo
  *		tuples - number of tuples in relation (not considering restrictions)
  *		subplan - plan for subquery (NULL if it's not a subquery)
  *		subrtable - rangetable for subquery (NIL if it's not a subquery)
+ *		subrowmark - rowmarks for subquery (NIL if it's not a subquery)
  *
  *		Note: for a subquery, tuples and subplan are not set immediately
  *		upon creation of the RelOptInfo object; they are filled in when
@@ -366,6 +371,7 @@ typedef struct RelOptInfo
 	double		tuples;
 	struct Plan *subplan;		/* if subquery */
 	List	   *subrtable;		/* if subquery */
+	List	   *subrowmark;		/* if subquery */
 
 	/* used by various scans and joins: */
 	List	   *baserestrictinfo;		/* RestrictInfo structures (if base
