@@ -4501,6 +4501,7 @@ privilege_target:
 			| LARGE_P OBJECT_P Iconst_list
 				{
 					PrivTarget *n = (PrivTarget *) palloc(sizeof(PrivTarget));
+					n->targtype = ACL_TARGET_OBJECT;
 					n->objtype = ACL_OBJECT_LARGEOBJECT;
 					n->objs = $3;
 					$$ = n;
