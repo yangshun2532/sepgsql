@@ -11,7 +11,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/parser/gram.y,v 2.680 2009/10/05 19:24:38 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/parser/gram.y,v 2.684 2009/10/12 20:39:41 tgl Exp $
  *
  * HISTORY
  *	  AUTHOR			DATE			MAJOR EVENT
@@ -95,6 +95,7 @@
 /* Private struct for the result of privilege_target production */
 typedef struct PrivTarget
 {
+	GrantTargetType targtype;
 	GrantObjectType objtype;
 	List	   *objs;
 } PrivTarget;
@@ -237,12 +238,13 @@ static TypeName *TableFuncTypeName(List *columns);
 				opt_grant_grant_option opt_grant_admin_option
 				opt_nowait opt_if_exists opt_with_data
 
-%type <list>	OptRoleList
-%type <defelt>	OptRoleElem
+%type <list>	OptRoleList AlterOptRoleList
+%type <defelt>	CreateOptRoleElem AlterOptRoleElem
 
 %type <str>		opt_type
 %type <str>		foreign_server_version opt_foreign_server_version
 %type <str>		auth_ident
+%type <str>		opt_in_database
 
 %type <str>		OptSchemaName
 %type <list>	OptSchemaEltList
@@ -353,6 +355,8 @@ static TypeName *TableFuncTypeName(List *columns);
 %type <node>	def_arg columnElem where_clause where_or_current_clause
 				a_expr b_expr c_expr func_expr AexprConst indirection_el
 				columnref in_expr having_clause func_table array_expr
+%type <list>	func_arg_list
+%type <node>	func_arg_expr
 %type <list>	row type_list array_expr_list
 %type <node>	case_expr case_arg when_clause case_default
 %type <list>	when_clause_list
@@ -405,8 +409,7 @@ static TypeName *TableFuncTypeName(List *columns);
 %type <keyword> col_name_keyword reserved_keyword
 
 %type <node>	TableConstraint TableLikeClause
-%type <list>	TableLikeOptionList
-%type <ival>	TableLikeOption
+%type <ival>	TableLikeOptionList TableLikeOption
 %type <list>	ColQualList
 %type <node>	ColConstraint ColConstraintElem ConstraintAttr
 %type <ival>	key_actions key_delete key_match key_update key_action
@@ -464,7 +467,7 @@ static TypeName *TableFuncTypeName(List *columns);
 
 	CACHE CALLED CASCADE CASCADED CASE CAST CATALOG_P CHAIN CHAR_P
 	CHARACTER CHARACTERISTICS CHECK CHECKPOINT CLASS CLOSE
-	CLUSTER COALESCE COLLATE COLUMN COMMENT COMMIT
+	CLUSTER COALESCE COLLATE COLUMN COMMENT COMMENTS COMMIT
 	COMMITTED CONCURRENTLY CONFIGURATION CONNECTION CONSTRAINT CONSTRAINTS
 	CONTENT_P CONTINUE_P CONVERSION_P COPY COST CREATE CREATEDB
 	CREATEROLE CREATEUSER CROSS CSV CURRENT_P
@@ -479,7 +482,7 @@ static TypeName *TableFuncTypeName(List *columns);
 	EXCLUDING EXCLUSIVE EXECUTE EXISTS EXPLAIN EXTERNAL EXTRACT
 
 	FALSE_P FAMILY FETCH FIRST_P FLOAT_P FOLLOWING FOR FORCE FOREIGN FORWARD
-	FREEZE FROM FULL FUNCTION
+	FREEZE FROM FULL FUNCTION FUNCTIONS
 
 	GLOBAL GRANT GRANTED GREATEST GROUP_P
 
@@ -517,13 +520,13 @@ static TypeName *TableFuncTypeName(List *columns);
 	RELATIVE_P RELEASE RENAME REPEATABLE REPLACE REPLICA RESET RESTART
 	RESTRICT RETURNING RETURNS REVOKE RIGHT ROLE ROLLBACK ROW ROWS RULE
 
-	SAVEPOINT SCHEMA SCROLL SEARCH SECOND_P SECURITY SELECT SEQUENCE
+	SAVEPOINT SCHEMA SCROLL SEARCH SECOND_P SECURITY SELECT SEQUENCE SEQUENCES
 	SERIALIZABLE SERVER SESSION SESSION_USER SET SETOF SHARE
 	SHOW SIMILAR SIMPLE SMALLINT SOME STABLE STANDALONE_P START STATEMENT
 	STATISTICS STDIN STDOUT STORAGE STRICT_P STRIP_P SUBSTRING SUPERUSER_P
 	SYMMETRIC SYSID SYSTEM_P
 
-	TABLE TABLESPACE TEMP TEMPLATE TEMPORARY TEXT_P THEN TIME TIMESTAMP
+	TABLE TABLES TABLESPACE TEMP TEMPLATE TEMPORARY TEXT_P THEN TIME TIMESTAMP
 	TO TRAILING TRANSACTION TREAT TRIGGER TRIM TRUE_P
 	TRUNCATE TRUSTED TYPE_P
 
@@ -763,11 +766,16 @@ opt_with:	WITH									{}
  * is "WITH ADMIN name".
  */
 OptRoleList:
-			OptRoleList OptRoleElem					{ $$ = lappend($1, $2); }
+			OptRoleList CreateOptRoleElem			{ $$ = lappend($1, $2); }
 			| /* EMPTY */							{ $$ = NIL; }
 		;
 
-OptRoleElem:
+AlterOptRoleList:
+			AlterOptRoleList AlterOptRoleElem		{ $$ = lappend($1, $2); }
+			| /* EMPTY */							{ $$ = NIL; }
+		;
+
+AlterOptRoleElem:
 			PASSWORD Sconst
 				{
 					$$ = makeDefElem("password",
@@ -849,7 +857,11 @@ OptRoleElem:
 				{
 					$$ = makeDefElem("rolemembers", (Node *)$2);
 				}
-		/* The following are not supported by ALTER ROLE/USER/GROUP */
+		;
+
+CreateOptRoleElem:
+			AlterOptRoleElem			{ $$ = $1; }
+			/* The following are not supported by ALTER ROLE/USER/GROUP */
 			| SYSID Iconst
 				{
 					$$ = makeDefElem("sysid", (Node *)makeInteger($2));
@@ -898,7 +910,7 @@ CreateUserStmt:
  *****************************************************************************/
 
 AlterRoleStmt:
-			ALTER ROLE RoleId opt_with OptRoleList
+			ALTER ROLE RoleId opt_with AlterOptRoleList
 				 {
 					AlterRoleStmt *n = makeNode(AlterRoleStmt);
 					n->role = $3;
@@ -908,12 +920,18 @@ AlterRoleStmt:
 				 }
 		;
 
+opt_in_database:
+			   /* EMPTY */					{ $$ = NULL; }
+			| IN_P DATABASE database_name	{ $$ = $3; }
+		;
+
 AlterRoleSetStmt:
-			ALTER ROLE RoleId SetResetClause
+			ALTER ROLE RoleId opt_in_database SetResetClause
 				{
 					AlterRoleSetStmt *n = makeNode(AlterRoleSetStmt);
 					n->role = $3;
-					n->setstmt = $4;
+					n->database = $4;
+					n->setstmt = $5;
 					$$ = (Node *)n;
 				}
 		;
@@ -926,7 +944,7 @@ AlterRoleSetStmt:
  *****************************************************************************/
 
 AlterUserStmt:
-			ALTER USER RoleId opt_with OptRoleList
+			ALTER USER RoleId opt_with AlterOptRoleList
 				 {
 					AlterRoleStmt *n = makeNode(AlterRoleStmt);
 					n->role = $3;
@@ -942,6 +960,7 @@ AlterUserSetStmt:
 				{
 					AlterRoleSetStmt *n = makeNode(AlterRoleSetStmt);
 					n->role = $3;
+					n->database = NULL;
 					n->setstmt = $4;
 					$$ = (Node *)n;
 				}
@@ -2399,17 +2418,18 @@ TableLikeClause:
 		;
 
 TableLikeOptionList:
-				TableLikeOptionList TableLikeOption	{ $$ = lappend_int($1, $2); }
-				| /* EMPTY */						{ $$ = NIL; }
+				TableLikeOptionList INCLUDING TableLikeOption	{ $$ = $1 | $3; }
+				| TableLikeOptionList EXCLUDING TableLikeOption	{ $$ = $1 & ~$3; }
+				| /* EMPTY */						{ $$ = 0; }
 		;
 
 TableLikeOption:
-				INCLUDING DEFAULTS					{ $$ = 	CREATE_TABLE_LIKE_INCLUDING_DEFAULTS; }
-				| EXCLUDING DEFAULTS				{ $$ = 	CREATE_TABLE_LIKE_EXCLUDING_DEFAULTS; }
-				| INCLUDING CONSTRAINTS				{ $$ = 	CREATE_TABLE_LIKE_INCLUDING_CONSTRAINTS; }
-				| EXCLUDING CONSTRAINTS				{ $$ = 	CREATE_TABLE_LIKE_EXCLUDING_CONSTRAINTS; }
-				| INCLUDING INDEXES					{ $$ = 	CREATE_TABLE_LIKE_INCLUDING_INDEXES; }
-				| EXCLUDING INDEXES					{ $$ = 	CREATE_TABLE_LIKE_EXCLUDING_INDEXES; }
+				DEFAULTS			{ $$ = CREATE_TABLE_LIKE_DEFAULTS; }
+				| CONSTRAINTS		{ $$ = CREATE_TABLE_LIKE_CONSTRAINTS; }
+				| INDEXES			{ $$ = CREATE_TABLE_LIKE_INDEXES; }
+				| STORAGE			{ $$ = CREATE_TABLE_LIKE_STORAGE; }
+				| COMMENTS			{ $$ = CREATE_TABLE_LIKE_COMMENTS; }
+				| ALL				{ $$ = CREATE_TABLE_LIKE_ALL; }
 		;
 
 
@@ -4303,6 +4323,7 @@ GrantStmt:	GRANT privileges ON privilege_target TO grantee_list
 					GrantStmt *n = makeNode(GrantStmt);
 					n->is_grant = true;
 					n->privileges = $2;
+					n->targtype = ($4)->targtype;
 					n->objtype = ($4)->objtype;
 					n->objects = ($4)->objs;
 					n->grantees = $6;
@@ -4319,6 +4340,7 @@ RevokeStmt:
 					n->is_grant = false;
 					n->grant_option = false;
 					n->privileges = $2;
+					n->targtype = ($4)->targtype;
 					n->objtype = ($4)->objtype;
 					n->objects = ($4)->objs;
 					n->grantees = $6;
@@ -4332,6 +4354,7 @@ RevokeStmt:
 					n->is_grant = false;
 					n->grant_option = true;
 					n->privileges = $5;
+					n->targtype = ($7)->targtype;
 					n->objtype = ($7)->objtype;
 					n->objects = ($7)->objs;
 					n->grantees = $9;
@@ -4414,6 +4437,7 @@ privilege_target:
 			qualified_name_list
 				{
 					PrivTarget *n = (PrivTarget *) palloc(sizeof(PrivTarget));
+					n->targtype = ACL_TARGET_OBJECT;
 					n->objtype = ACL_OBJECT_RELATION;
 					n->objs = $1;
 					$$ = n;
@@ -4421,6 +4445,7 @@ privilege_target:
 			| TABLE qualified_name_list
 				{
 					PrivTarget *n = (PrivTarget *) palloc(sizeof(PrivTarget));
+					n->targtype = ACL_TARGET_OBJECT;
 					n->objtype = ACL_OBJECT_RELATION;
 					n->objs = $2;
 					$$ = n;
@@ -4428,6 +4453,7 @@ privilege_target:
 			| SEQUENCE qualified_name_list
 				{
 					PrivTarget *n = (PrivTarget *) palloc(sizeof(PrivTarget));
+					n->targtype = ACL_TARGET_OBJECT;
 					n->objtype = ACL_OBJECT_SEQUENCE;
 					n->objs = $2;
 					$$ = n;
@@ -4435,6 +4461,7 @@ privilege_target:
 			| FOREIGN DATA_P WRAPPER name_list
 				{
 					PrivTarget *n = (PrivTarget *) palloc(sizeof(PrivTarget));
+					n->targtype = ACL_TARGET_OBJECT;
 					n->objtype = ACL_OBJECT_FDW;
 					n->objs = $4;
 					$$ = n;
@@ -4442,6 +4469,7 @@ privilege_target:
 			| FOREIGN SERVER name_list
 				{
 					PrivTarget *n = (PrivTarget *) palloc(sizeof(PrivTarget));
+					n->targtype = ACL_TARGET_OBJECT;
 					n->objtype = ACL_OBJECT_FOREIGN_SERVER;
 					n->objs = $3;
 					$$ = n;
@@ -4449,6 +4477,7 @@ privilege_target:
 			| FUNCTION function_with_argtypes_list
 				{
 					PrivTarget *n = (PrivTarget *) palloc(sizeof(PrivTarget));
+					n->targtype = ACL_TARGET_OBJECT;
 					n->objtype = ACL_OBJECT_FUNCTION;
 					n->objs = $2;
 					$$ = n;
@@ -4456,6 +4485,7 @@ privilege_target:
 			| DATABASE name_list
 				{
 					PrivTarget *n = (PrivTarget *) palloc(sizeof(PrivTarget));
+					n->targtype = ACL_TARGET_OBJECT;
 					n->objtype = ACL_OBJECT_DATABASE;
 					n->objs = $2;
 					$$ = n;
@@ -4463,6 +4493,7 @@ privilege_target:
 			| LANGUAGE name_list
 				{
 					PrivTarget *n = (PrivTarget *) palloc(sizeof(PrivTarget));
+					n->targtype = ACL_TARGET_OBJECT;
 					n->objtype = ACL_OBJECT_LANGUAGE;
 					n->objs = $2;
 					$$ = n;
@@ -4477,6 +4508,7 @@ privilege_target:
 			| SCHEMA name_list
 				{
 					PrivTarget *n = (PrivTarget *) palloc(sizeof(PrivTarget));
+					n->targtype = ACL_TARGET_OBJECT;
 					n->objtype = ACL_OBJECT_NAMESPACE;
 					n->objs = $2;
 					$$ = n;
@@ -4484,8 +4516,33 @@ privilege_target:
 			| TABLESPACE name_list
 				{
 					PrivTarget *n = (PrivTarget *) palloc(sizeof(PrivTarget));
+					n->targtype = ACL_TARGET_OBJECT;
 					n->objtype = ACL_OBJECT_TABLESPACE;
 					n->objs = $2;
+					$$ = n;
+				}
+			| ALL TABLES IN_P SCHEMA name_list
+				{
+					PrivTarget *n = (PrivTarget *) palloc(sizeof(PrivTarget));
+					n->targtype = ACL_TARGET_ALL_IN_SCHEMA;
+					n->objtype = ACL_OBJECT_RELATION;
+					n->objs = $5;
+					$$ = n;
+				}
+			| ALL SEQUENCES IN_P SCHEMA name_list
+				{
+					PrivTarget *n = (PrivTarget *) palloc(sizeof(PrivTarget));
+					n->targtype = ACL_TARGET_ALL_IN_SCHEMA;
+					n->objtype = ACL_OBJECT_SEQUENCE;
+					n->objs = $5;
+					$$ = n;
+				}
+			| ALL FUNCTIONS IN_P SCHEMA name_list
+				{
+					PrivTarget *n = (PrivTarget *) palloc(sizeof(PrivTarget));
+					n->targtype = ACL_TARGET_ALL_IN_SCHEMA;
+					n->objtype = ACL_OBJECT_FUNCTION;
+					n->objs = $5;
 					$$ = n;
 				}
 		;
@@ -4637,6 +4694,7 @@ DefACLAction:
 					GrantStmt *n = makeNode(GrantStmt);
 					n->is_grant = true;
 					n->privileges = $2;
+					n->targtype = ACL_TARGET_DEFAULTS;
 					n->objtype = $4;
 					n->objects = NIL;
 					n->grantees = $6;
@@ -4650,6 +4708,7 @@ DefACLAction:
 					n->is_grant = false;
 					n->grant_option = false;
 					n->privileges = $2;
+					n->targtype = ACL_TARGET_DEFAULTS;
 					n->objtype = $4;
 					n->objects = NIL;
 					n->grantees = $6;
@@ -4663,6 +4722,7 @@ DefACLAction:
 					n->is_grant = false;
 					n->grant_option = true;
 					n->privileges = $5;
+					n->targtype = ACL_TARGET_DEFAULTS;
 					n->objtype = $7;
 					n->objects = NIL;
 					n->grantees = $9;
@@ -9054,7 +9114,7 @@ func_expr:	func_name '(' ')' over_clause
 					n->location = @1;
 					$$ = (Node *)n;
 				}
-			| func_name '(' expr_list ')' over_clause
+			| func_name '(' func_arg_list ')' over_clause
 				{
 					FuncCall *n = makeNode(FuncCall);
 					n->funcname = $1;
@@ -9066,7 +9126,7 @@ func_expr:	func_name '(' ')' over_clause
 					n->location = @1;
 					$$ = (Node *)n;
 				}
-			| func_name '(' VARIADIC a_expr ')' over_clause
+			| func_name '(' VARIADIC func_arg_expr ')' over_clause
 				{
 					FuncCall *n = makeNode(FuncCall);
 					n->funcname = $1;
@@ -9078,7 +9138,7 @@ func_expr:	func_name '(' ')' over_clause
 					n->location = @1;
 					$$ = (Node *)n;
 				}
-			| func_name '(' expr_list ',' VARIADIC a_expr ')' over_clause
+			| func_name '(' func_arg_list ',' VARIADIC func_arg_expr ')' over_clause
 				{
 					FuncCall *n = makeNode(FuncCall);
 					n->funcname = $1;
@@ -9090,7 +9150,7 @@ func_expr:	func_name '(' ')' over_clause
 					n->location = @1;
 					$$ = (Node *)n;
 				}
-			| func_name '(' ALL expr_list ')' over_clause
+			| func_name '(' ALL func_arg_list ')' over_clause
 				{
 					FuncCall *n = makeNode(FuncCall);
 					n->funcname = $1;
@@ -9106,7 +9166,7 @@ func_expr:	func_name '(' ')' over_clause
 					n->location = @1;
 					$$ = (Node *)n;
 				}
-			| func_name '(' DISTINCT expr_list ')' over_clause
+			| func_name '(' DISTINCT func_arg_list ')' over_clause
 				{
 					FuncCall *n = makeNode(FuncCall);
 					n->funcname = $1;
@@ -9829,6 +9889,32 @@ expr_list:	a_expr
 				}
 		;
 
+/* function arguments can have names */
+func_arg_list:  func_arg_expr
+				{
+					$$ = list_make1($1);
+				}
+			| func_arg_list ',' func_arg_expr
+				{
+					$$ = lappend($1, $3);
+				}
+		;
+
+func_arg_expr:  a_expr
+				{
+					$$ = $1;
+				}
+			| a_expr AS param_name
+				{
+					NamedArgExpr *na = makeNode(NamedArgExpr);
+					na->arg = (Expr *) $1;
+					na->name = $3;
+					na->argnumber = -1;		/* until determined */
+					na->location = @3;
+					$$ = (Node *) na;
+				}
+		;
+
 type_list:	Typename								{ $$ = list_make1($1); }
 			| type_list ',' Typename				{ $$ = lappend($1, $3); }
 		;
@@ -10295,10 +10381,27 @@ AexprConst: Iconst
 					t->location = @1;
 					$$ = makeStringConstCast($2, @2, t);
 				}
-			| func_name '(' expr_list ')' Sconst
+			| func_name '(' func_arg_list ')' Sconst
 				{
 					/* generic syntax with a type modifier */
 					TypeName *t = makeTypeNameFromNameList($1);
+					ListCell *lc;
+
+					/*
+					 * We must use func_arg_list in the production to avoid
+					 * reduce/reduce conflicts, but we don't actually wish
+					 * to allow NamedArgExpr in this context.
+					 */
+					foreach(lc, $3)
+					{
+						NamedArgExpr *arg = (NamedArgExpr *) lfirst(lc);
+
+						if (IsA(arg, NamedArgExpr))
+							ereport(ERROR,
+								    (errcode(ERRCODE_SYNTAX_ERROR),
+								     errmsg("type modifier cannot have AS name"),
+								     parser_errposition(arg->location)));
+					}
 					t->typmods = $3;
 					t->location = @1;
 					$$ = makeStringConstCast($5, @5, t);
@@ -10439,6 +10542,7 @@ unreserved_keyword:
 			| CLOSE
 			| CLUSTER
 			| COMMENT
+			| COMMENTS
 			| COMMIT
 			| COMMITTED
 			| CONCURRENTLY
@@ -10492,6 +10596,7 @@ unreserved_keyword:
 			| FORCE
 			| FORWARD
 			| FUNCTION
+			| FUNCTIONS
 			| GLOBAL
 			| GRANTED
 			| HANDLER
@@ -10601,6 +10706,7 @@ unreserved_keyword:
 			| SECOND_P
 			| SECURITY
 			| SEQUENCE
+			| SEQUENCES
 			| SERIALIZABLE
 			| SERVER
 			| SESSION
@@ -10621,6 +10727,7 @@ unreserved_keyword:
 			| SUPERUSER_P
 			| SYSID
 			| SYSTEM_P
+			| TABLES
 			| TABLESPACE
 			| TEMP
 			| TEMPLATE

@@ -95,6 +95,7 @@ SELECT relname, relhasindex
  pg_constraint           | t
  pg_conversion           | t
  pg_database             | t
+ pg_db_role_setting      | t
  pg_default_acl          | t
  pg_depend               | t
  pg_description          | t

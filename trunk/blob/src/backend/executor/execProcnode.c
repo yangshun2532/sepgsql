@@ -12,7 +12,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/executor/execProcnode.c,v 1.66 2009/09/27 21:10:53 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/executor/execProcnode.c,v 1.68 2009/10/12 18:10:41 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -91,8 +91,10 @@
 #include "executor/nodeHashjoin.h"
 #include "executor/nodeIndexscan.h"
 #include "executor/nodeLimit.h"
+#include "executor/nodeLockRows.h"
 #include "executor/nodeMaterial.h"
 #include "executor/nodeMergejoin.h"
+#include "executor/nodeModifyTable.h"
 #include "executor/nodeNestloop.h"
 #include "executor/nodeRecursiveunion.h"
 #include "executor/nodeResult.h"
@@ -144,6 +146,11 @@ ExecInitNode(Plan *node, EState *estate, int eflags)
 		case T_Result:
 			result = (PlanState *) ExecInitResult((Result *) node,
 												  estate, eflags);
+			break;
+
+		case T_ModifyTable:
+			result = (PlanState *) ExecInitModifyTable((ModifyTable *) node,
+													   estate, eflags);
 			break;
 
 		case T_Append:
@@ -280,6 +287,11 @@ ExecInitNode(Plan *node, EState *estate, int eflags)
 												 estate, eflags);
 			break;
 
+		case T_LockRows:
+			result = (PlanState *) ExecInitLockRows((LockRows *) node,
+													estate, eflags);
+			break;
+
 		case T_Limit:
 			result = (PlanState *) ExecInitLimit((Limit *) node,
 												 estate, eflags);
@@ -341,6 +353,10 @@ ExecProcNode(PlanState *node)
 			 */
 		case T_ResultState:
 			result = ExecResult((ResultState *) node);
+			break;
+
+		case T_ModifyTableState:
+			result = ExecModifyTable((ModifyTableState *) node);
 			break;
 
 		case T_AppendState:
@@ -446,6 +462,10 @@ ExecProcNode(PlanState *node)
 			result = ExecSetOp((SetOpState *) node);
 			break;
 
+		case T_LockRowsState:
+			result = ExecLockRows((LockRowsState *) node);
+			break;
+
 		case T_LimitState:
 			result = ExecLimit((LimitState *) node);
 			break;
@@ -524,7 +544,7 @@ MultiExecProcNode(PlanState *node)
  *		Recursively cleans up all the nodes in the plan rooted
  *		at 'node'.
  *
- *		After this operation, the query plan will not be able to
+ *		After this operation, the query plan will not be able to be
  *		processed any further.	This should be called only after
  *		the query plan has been fully executed.
  * ----------------------------------------------------------------
@@ -551,6 +571,10 @@ ExecEndNode(PlanState *node)
 			 */
 		case T_ResultState:
 			ExecEndResult((ResultState *) node);
+			break;
+
+		case T_ModifyTableState:
+			ExecEndModifyTable((ModifyTableState *) node);
 			break;
 
 		case T_AppendState:
@@ -660,6 +684,10 @@ ExecEndNode(PlanState *node)
 
 		case T_SetOpState:
 			ExecEndSetOp((SetOpState *) node);
+			break;
+
+		case T_LockRowsState:
+			ExecEndLockRows((LockRowsState *) node);
 			break;
 
 		case T_LimitState:
