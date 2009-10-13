@@ -9,7 +9,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/optimizer/plan/setrefs.c,v 1.150 2009/06/11 14:48:59 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/backend/optimizer/plan/setrefs.c,v 1.152 2009/10/12 18:10:48 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -166,12 +166,14 @@ static bool extract_query_dependencies_walker(Node *node,
  *	glob: global data for planner run
  *	plan: the topmost node of the plan
  *	rtable: the rangetable for the current subquery
+ *	rowmarks: the RowMarkClause list for the current subquery
  *
  * The return value is normally the same Plan node passed in, but can be
  * different when the passed-in Plan is a SubqueryScan we decide isn't needed.
  *
- * The flattened rangetable entries are appended to glob->finalrtable, and
- * plan dependencies are appended to glob->relationOids (for relations)
+ * The flattened rangetable entries are appended to glob->finalrtable,
+ * and we also append rowmarks entries to glob->finalrowmarks.
+ * Plan dependencies are appended to glob->relationOids (for relations)
  * and glob->invalItems (for everything else).
  *
  * Notice that we modify Plan nodes in-place, but use expression_tree_mutator
@@ -180,7 +182,8 @@ static bool extract_query_dependencies_walker(Node *node,
  * it's not so safe to assume that for expression tree nodes.
  */
 Plan *
-set_plan_references(PlannerGlobal *glob, Plan *plan, List *rtable)
+set_plan_references(PlannerGlobal *glob, Plan *plan,
+					List *rtable, List *rowmarks)
 {
 	int			rtoffset = list_length(glob->finalrtable);
 	ListCell   *lc;
@@ -228,6 +231,26 @@ set_plan_references(PlannerGlobal *glob, Plan *plan, List *rtable)
 		if (newrte->rtekind == RTE_RELATION)
 			glob->relationOids = lappend_oid(glob->relationOids,
 											 newrte->relid);
+	}
+
+	/*
+	 * Adjust RT indexes of RowMarkClauses and add to final rowmarks list
+	 */
+	foreach(lc, rowmarks)
+	{
+		RowMarkClause *rc = (RowMarkClause *) lfirst(lc);
+		RowMarkClause *newrc;
+
+		/* flat copy to duplicate all the scalar fields */
+		newrc = (RowMarkClause *) palloc(sizeof(RowMarkClause));
+		memcpy(newrc, rc, sizeof(RowMarkClause));
+
+		/* adjust indexes */
+		newrc->rti += rtoffset;
+		newrc->prti += rtoffset;
+		/* rowmarkId must NOT be adjusted */
+
+		glob->finalrowmarks = lappend(glob->finalrowmarks, newrc);
 	}
 
 	/* Now fix the Plan tree */
@@ -396,6 +419,27 @@ set_plan_refs(PlannerGlobal *glob, Plan *plan, int rtoffset)
 			 */
 			Assert(plan->qual == NIL);
 			break;
+		case T_LockRows:
+			{
+				LockRows   *splan = (LockRows *) plan;
+
+				/*
+				 * Like the plan types above, LockRows doesn't evaluate its
+				 * tlist or quals.  But we have to fix up the RT indexes
+				 * in its rowmarks.
+				 */
+				set_dummy_tlist_references(plan, rtoffset);
+				Assert(splan->plan.qual == NIL);
+
+				foreach(l, splan->rowMarks)
+				{
+					RowMarkClause *rc = (RowMarkClause *) lfirst(l);
+
+					rc->rti += rtoffset;
+					rc->prti += rtoffset;
+				}
+			}
+			break;
 		case T_Limit:
 			{
 				Limit	   *splan = (Limit *) plan;
@@ -440,6 +484,29 @@ set_plan_refs(PlannerGlobal *glob, Plan *plan, int rtoffset)
 				/* resconstantqual can't contain any subplan variable refs */
 				splan->resconstantqual =
 					fix_scan_expr(glob, splan->resconstantqual, rtoffset);
+			}
+			break;
+		case T_ModifyTable:
+			{
+				ModifyTable *splan = (ModifyTable *) plan;
+
+				/*
+				 * planner.c already called set_returning_clause_references,
+				 * so we should not process either the targetlist or the
+				 * returningLists.
+				 */
+				Assert(splan->plan.qual == NIL);
+
+				foreach(l, splan->resultRelations)
+				{
+					lfirst_int(l) += rtoffset;
+				}
+				foreach(l, splan->plans)
+				{
+					lfirst(l) = set_plan_refs(glob,
+											  (Plan *) lfirst(l),
+											  rtoffset);
+				}
 			}
 			break;
 		case T_Append:
@@ -530,10 +597,12 @@ set_subqueryscan_references(PlannerGlobal *glob,
 	Plan	   *result;
 
 	/* First, recursively process the subplan */
-	plan->subplan = set_plan_references(glob, plan->subplan, plan->subrtable);
+	plan->subplan = set_plan_references(glob, plan->subplan,
+										plan->subrtable, plan->subrowmark);
 
-	/* subrtable is no longer needed in the plan tree */
+	/* subrtable/subrowmark are no longer needed in the plan tree */
 	plan->subrtable = NIL;
+	plan->subrowmark = NIL;
 
 	if (trivial_subqueryscan(plan))
 	{
@@ -1600,7 +1669,7 @@ fix_upper_expr_mutator(Node *node, fix_upper_expr_context *context)
  *
  * If the query involves more than just the result table, we have to
  * adjust any Vars that refer to other tables to reference junk tlist
- * entries in the top plan's targetlist.  Vars referencing the result
+ * entries in the top subplan's targetlist.  Vars referencing the result
  * table should be left alone, however (the executor will evaluate them
  * using the actual heap tuple, after firing triggers if any).	In the
  * adjusted RETURNING list, result-table Vars will still have their
@@ -1610,8 +1679,8 @@ fix_upper_expr_mutator(Node *node, fix_upper_expr_context *context)
  * glob->relationOids.
  *
  * 'rlist': the RETURNING targetlist to be fixed
- * 'topplan': the top Plan node for the query (not yet passed through
- *		set_plan_references)
+ * 'topplan': the top subplan node that will be just below the ModifyTable
+ *		node (note it's not yet passed through set_plan_references)
  * 'resultRelation': RT index of the associated result relation
  *
  * Note: we assume that result relations will have rtoffset zero, that is,

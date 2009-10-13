@@ -7,7 +7,7 @@
  * Portions Copyright (c) 1994-5, Regents of the University of California
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/commands/explain.c,v 1.190 2009/08/22 02:06:32 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/commands/explain.c,v 1.192 2009/10/12 18:10:41 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -581,6 +581,7 @@ ExplainNode(Plan *plan, PlanState *planstate,
 	const char *pname;			/* node type name for text output */
 	const char *sname;			/* node type name for non-text output */
 	const char *strategy = NULL;
+	const char *operation = NULL;
 	int			save_indent = es->indent;
 	bool		haschildren;
 
@@ -590,6 +591,24 @@ ExplainNode(Plan *plan, PlanState *planstate,
 	{
 		case T_Result:
 			pname = sname = "Result";
+			break;
+		case T_ModifyTable:
+			sname = "ModifyTable";
+			switch (((ModifyTable *) plan)->operation)
+			{
+				case CMD_INSERT:
+					pname = operation = "Insert";
+					break;
+				case CMD_UPDATE:
+					pname = operation = "Update";
+					break;
+				case CMD_DELETE:
+					pname = operation = "Delete";
+					break;
+				default:
+					pname = "???";
+					break;
+			}
 			break;
 		case T_Append:
 			pname = sname = "Append";
@@ -699,6 +718,9 @@ ExplainNode(Plan *plan, PlanState *planstate,
 					break;
 			}
 			break;
+		case T_LockRows:
+			pname = sname = "LockRows";
+			break;
 		case T_Limit:
 			pname = sname = "Limit";
 			break;
@@ -736,6 +758,8 @@ ExplainNode(Plan *plan, PlanState *planstate,
 		ExplainPropertyText("Node Type", sname, es);
 		if (strategy)
 			ExplainPropertyText("Strategy", strategy, es);
+		if (operation)
+			ExplainPropertyText("Operation", operation, es);
 		if (relationship)
 			ExplainPropertyText("Parent Relationship", relationship, es);
 		if (plan_name)
@@ -1023,6 +1047,7 @@ ExplainNode(Plan *plan, PlanState *planstate,
 	haschildren = plan->initPlan ||
 		outerPlan(plan) ||
 		innerPlan(plan) ||
+		IsA(plan, ModifyTable) ||
 		IsA(plan, Append) ||
 		IsA(plan, BitmapAnd) ||
 		IsA(plan, BitmapOr) ||
@@ -1059,6 +1084,11 @@ ExplainNode(Plan *plan, PlanState *planstate,
 	/* special child plans */
 	switch (nodeTag(plan))
 	{
+		case T_ModifyTable:
+			ExplainMemberNodes(((ModifyTable *) plan)->plans,
+							   ((ModifyTableState *) planstate)->mt_plans,
+							   outer_plan, es);
+			break;
 		case T_Append:
 			ExplainMemberNodes(((Append *) plan)->appendplans,
 							   ((AppendState *) planstate)->appendplans,
@@ -1408,7 +1438,8 @@ ExplainScanTarget(Scan *plan, ExplainState *es)
 }
 
 /*
- * Explain the constituent plans of an Append, BitmapAnd, or BitmapOr node.
+ * Explain the constituent plans of a ModifyTable, Append, BitmapAnd,
+ * or BitmapOr node.
  *
  * Ordinarily we don't pass down outer_plan to our child nodes, but in these
  * cases we must, since the node could be an "inner indexscan" in which case
