@@ -684,7 +684,7 @@ AlterRoleSet(AlterRoleSetStmt *stmt)
 	shdepLockAndCheckObject(AuthIdRelationId, HeapTupleGetOid(roletuple));
 
 	/* Permission checks */
-	ac_role_alter(HeapTupleGetOid(oldtuple), -1, false, true);
+	ac_role_alter(HeapTupleGetOid(roletuple), -1, false, true);
 
 	/* look up and lock the database, if specified */
 	if (stmt->database != NULL)

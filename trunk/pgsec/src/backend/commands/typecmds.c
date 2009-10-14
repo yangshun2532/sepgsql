@@ -146,15 +146,6 @@ DefineType(List *names, List *parameters)
 	Relation	pg_type;
 	ListCell   *pl;
 
-	/*
-	 * Here, we had a permission check which was moved to TypeCreate(),
-	 * because we cannot know whether this invocation actually creates
-	 * a new type, or replaces an existing shell type.
-	 * It it tries to replace a shell type, its ownershipt has to be
-	 * matched with the current database user, even if he has superuser
-	 * privilege.
-	 */
-
 	/* Convert list of names to a name and namespace */
 	typeNamespace = QualifiedNameGetCreationNamespace(names, &typeName);
 
@@ -183,6 +174,7 @@ DefineType(List *names, List *parameters)
 	 */
 	if (!OidIsValid(typoid))
 	{
+		/* create a shell type with permission checks */
 		typoid = TypeShellMake(typeName, typeNamespace, GetUserId());
 		/* Make new shell type visible for modification below */
 		CommandCounterIncrement();
@@ -2593,10 +2585,10 @@ AlterTypeNamespace(List *names, const char *newschema)
 	typename = makeTypeNameFromNameList(names);
 	typeOid = typenameTypeId(NULL, typename, NULL);
 
-	/* get schema OID and check its permissions */
+	/* get schema OID */
 	nspOid = LookupCreationNamespace(newschema);
 
-	/* check permissions on type */
+	/* check permissions */
 	ac_type_alter(typeOid, NULL, nspOid, InvalidOid);
 
 	/* don't allow direct alteration of array types */

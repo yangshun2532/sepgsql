@@ -2334,7 +2334,8 @@ LookupExplicitNamespace(const char *nspname)
  *		Look up the schema to be used to create a new object
  *
  * This is just like LookupExplicitNamespace except for that we are willing
- * to create pg_temp if needed.
+ * to create pg_temp if needed. Note that Namespace creation permission
+ * checks are handled in the individual object ac_*_create() routines. 
  *
  * Note: calling this may result in a CommandCounterIncrement operation,
  * if we have to create or clean out the temp namespace.
@@ -2360,15 +2361,6 @@ LookupCreationNamespace(const char *nspname)
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_SCHEMA),
 				 errmsg("schema \"%s\" does not exist", nspname)));
-
-	/*
-	 * We had a permission check to create anything on the namespace,
-	 * but it is not certain what kind of objects are in creation,
-	 * so this check was moved to the caller side.
-	 * The caller invokes ac_<object class>_create() with OID of the
-	 * namespace in creation, and the ac_*() routine checks CREATE
-	 * permission on the given namespace by default.
-	 */
 
 	return namespaceId;
 }

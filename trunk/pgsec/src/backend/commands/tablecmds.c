@@ -7787,7 +7787,7 @@ AlterTableNamespace(RangeVar *relation, const char *newschema,
 							RelationGetRelationName(rel))));
 	}
 
-	/* get schema OID and check its permissions */
+	/* get schema OID */
 	nspOid = LookupCreationNamespace(newschema);
 
 	if (oldNspOid == nspOid)

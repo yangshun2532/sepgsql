@@ -138,11 +138,7 @@ compute_return_type(TypeName *returnType, Oid languageOid,
 				 errdetail("Creating a shell type definition.")));
 		namespaceId = QualifiedNameGetCreationNamespace(returnType->names,
 														&typname);
-		/*
-		 * We had an ACL_CREATE permission check on the target
-		 * namespace here. Now it moved to the TypeShellMake(),
-		 * and it applies equivalent checks.
-		 */
+		/* create a shell type with permission checks */
 		rettype = TypeShellMake(typname, namespaceId, GetUserId());
 		Assert(OidIsValid(rettype));
 	}
@@ -1812,7 +1808,7 @@ AlterFunctionNamespace(List *name, List *argtypes, bool isagg,
 
 	oldNspOid = proc->pronamespace;
 
-	/* get schema OID and check its permissions */
+	/* get schema OID */
 	nspOid = LookupCreationNamespace(newschema);
 
 	if (oldNspOid == nspOid)
@@ -1822,7 +1818,7 @@ AlterFunctionNamespace(List *name, List *argtypes, bool isagg,
 						NameListToString(name),
 						newschema)));
 
-	/* Permission check to change the schema of procedure */
+	/* Permission checks */
 	ac_proc_alter(procOid, NULL, nspOid, InvalidOid);
 
 	/* disallow renaming into or out of temp schemas */

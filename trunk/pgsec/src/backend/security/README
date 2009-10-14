@@ -104,6 +104,22 @@ Pg_database catalog
   backward. So, it may raise an error prior to permission denied when we
   provide an invalid new tablespace.
 
+Pg_depend catalog
+=================
+
+* v8.5.0: reworked with common abstraction layer for access controls
+
+- By the default PG model, it does not check any privileges when database
+  objects are dropped due to the dependency. But, other model want to check
+  user's privileges. The ac_object_drop() internally calls ac_*_drop()
+  routines with cascade=false, and ac_object_drop() is also called from
+  performDeletion() and performMultipleDeletions() which implement cascaded
+  object deletion.
+  We added a new 'permission' argument to the functions. It allows to bypass
+  permission checks for any security models. It is necessary in some cases,
+  such as cleanups of temporary objects. 
+
+
 Pg_description catalog
 ======================
 
@@ -147,7 +163,9 @@ Pg_namespace catalog
 
 * v8.5.0: reworked with common abstraction layer for access controls
 
-- No behavior changes.
+- LookupCreationNamespace() checked ACL_CREATE permission on the namespace
+  to be created on prior to v8.5.0. This checks is moved to ac_*_create()
+  routines for each object classes.
 
 
 Pg_opclass catalog
@@ -209,6 +227,14 @@ Pg_rewrite catalog
 
 * v8.5.0: reworked with common abstraction layer for access controls
 
+- No behavior changes.
+
+Pg_shdepend catalog
+===================
+
+* v8.5.0: reworked with common abstraction layer for access controls
+
+- See the comments at Pg_depend
 
 Pg_shdescription catalog
 ========================
