@@ -1358,7 +1358,7 @@ AlterDatabaseSet(AlterDatabaseSetStmt *stmt)
 	shdepLockAndCheckObject(DatabaseRelationId, datid);
 
 	/* Permission checks to alter database */
-	ac_database_alter(HeapTupleGetOid(tuple), NULL, InvalidOid, InvalidOid);
+	ac_database_alter(datid, NULL, InvalidOid, InvalidOid);
 
 	AlterSetting(datid, InvalidOid, stmt->setstmt);
   

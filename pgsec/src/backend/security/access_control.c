@@ -1212,7 +1212,13 @@ ac_index_create(const char *indName, bool check_rights,
 {
 	AclResult	aclresult;
 
-	if (check_rights)
+	/*
+	 * Verify we (still) have CREATE rights in the rel's namespace.
+	 * (Presumably we did when the rel was created, but maybe not anymore.)
+	 * Skip check if caller doesn't want it.  Also skip check if
+	 * bootstrapping, since permissions machinery may not be working yet.
+	 */
+	if (check_rights && !IsBootstrapProcessingMode())
 	{
 		aclresult = pg_namespace_aclcheck(indNsp, GetUserId(),
 										  ACL_CREATE);
@@ -2240,6 +2246,11 @@ ac_schema_create(const char *nspName, Oid nspOwner, bool isTemp)
 	 * privilege), if not temporary schema.
 	 * The latter provision guards against "giveaway" attacks.  Note that a
 	 * superuser will always have both of these privileges a fortiori.
+	 *
+	 * Note that ACL_CREATE_TEMP rights are rechecked in pg_namespace_aclmask;
+	 * that's necessary since current user ID could change during the session.
+	 * But there's no need to make the namespace in the first place until a
+	 * temp table creation request is made by someone with appropriate rights.
 	 */
 	aclresult = pg_database_aclcheck(MyDatabaseId, GetUserId(),
 									 isTemp ? ACL_CREATE_TEMP : ACL_CREATE);
@@ -2285,6 +2296,21 @@ ac_schema_alter(Oid nspOid, const char *newName, Oid newOwner)
 	{
 		/* Must be able to become new owner */
 		check_is_member_of_role(GetUserId(), newOwner);
+
+		/*
+		 * must have create-schema rights
+		 *
+		 * NOTE: This is different from other alter-owner checks in that
+		 * the current user is checked for create privileges instead of
+		 * the destination owner.  This is consistent with the CREATE case
+		 * for schemas.  Because superusers will always have this right,
+		 * we need no special case for them.
+		 */
+		aclresult = pg_database_aclcheck(MyDatabaseId, GetUserId(),
+										 ACL_CREATE);
+		if (aclresult != ACLCHECK_OK)
+			aclcheck_error(aclresult, ACL_KIND_DATABASE,
+						   get_database_name(MyDatabaseId));
 	}
 }
 
