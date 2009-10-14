@@ -31,7 +31,6 @@
 #include "access/twophase.h"
 #include "access/xact.h"
 #include "catalog/namespace.h"
-#include "catalog/pg_largeobject_metadata.h"
 #include "commands/async.h"
 #include "commands/prepare.h"
 #include "commands/vacuum.h"
@@ -39,6 +38,7 @@
 #include "commands/trigger.h"
 #include "funcapi.h"
 #include "libpq/auth.h"
+#include "libpq/be-fsstubs.h"
 #include "libpq/pqformat.h"
 #include "miscadmin.h"
 #include "optimizer/cost.h"
@@ -1241,11 +1241,11 @@ static struct config_bool ConfigureNamesBool[] =
 	},
 
 	{
-		{"largeobject_check_acl", PGC_SUSET, COMPAT_OPTIONS,
-			gettext_noop("Enables/Disables permission check for largeobjects."),
+		{"large_object_privilege_checks", PGC_SUSET, COMPAT_OPTIONS,
+			gettext_noop("Turn on/off privilege checks on large objects."),
 			NULL,
 		},
-		&ac_largeobject_check_acl,
+		&large_object_privilege_checks,
 		true, NULL, NULL
 	},
 

@@ -48,9 +48,14 @@
 #include "miscadmin.h"
 #include "storage/fd.h"
 #include "storage/large_object.h"
+#include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/memutils.h"
 
+/*
+ * compatibility flag for permission checks
+ */
+bool large_object_privilege_checks;
 
 /*#define FSDB 1*/
 #define BUFSIZE			8192
@@ -158,7 +163,13 @@ lo_read(int fd, char *buf, int len)
 				 errmsg("invalid large-object descriptor: %d", fd)));
 
 	/* Permission checks */
-	ac_largeobject_read(cookies[fd]->id);
+	if (large_object_privilege_checks &&
+		pg_largeobject_aclcheck(cookies[fd]->id, GetUserId(),
+								ACL_SELECT) != ACLCHECK_OK)
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("permission denied for largeobject %u",
+						cookies[fd]->id)));
 
 	status = inv_read(cookies[fd], buf, len);
 
@@ -182,7 +193,13 @@ lo_write(int fd, const char *buf, int len)
 					 fd)));
 
 	/* Permission checks */
-	ac_largeobject_write(cookies[fd]->id);
+	if (large_object_privilege_checks &&
+		pg_largeobject_aclcheck(cookies[fd]->id, GetUserId(),
+								ACL_UPDATE) != ACLCHECK_OK)
+		ereport(ERROR,
+                (errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("permission denied for largeobject %u",
+						cookies[fd]->id)));
 
 	status = inv_write(cookies[fd], buf, len);
 
@@ -219,9 +236,6 @@ lo_creat(PG_FUNCTION_ARGS)
 	 */
 	CreateFSContext();
 
-	/* Permission check */
-	ac_largeobject_create(InvalidOid);
-
 	lobjId = inv_create(InvalidOid);
 
 	PG_RETURN_OID(lobjId);
@@ -237,9 +251,6 @@ lo_create(PG_FUNCTION_ARGS)
 	 * ensure that AtEOXact_LargeObject knows there is state to clean up
 	 */
 	CreateFSContext();
-
-	/* Permission check */
-	ac_largeobject_create(lobjId);
 
 	lobjId = inv_create(lobjId);
 
@@ -264,8 +275,12 @@ lo_unlink(PG_FUNCTION_ARGS)
 {
 	Oid			lobjId = PG_GETARG_OID(0);
 
-	/* Permission check */
-	ac_largeobject_drop(lobjId, false);
+	/* Must be owner of the largeobject */
+	if (large_object_privilege_checks &&
+		!pg_largeobject_ownercheck(lobjId, GetUserId()))
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("must be owner of large object %u", lobjId)));
 
 	/*
 	 * If there are any open LO FDs referencing that ID, close 'em.
@@ -368,8 +383,13 @@ lo_import_internal(text *filename, Oid lobjOid)
 
 	CreateFSContext();
 
-	/* Permission checks */
-	ac_largeobject_import(lobjOid, fnamebuf);
+#ifndef ALLOW_DANGEROUS_LO_FUNCTIONS
+	if (!superuser())
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("must be superuser to use server-side lo_import()"),
+				 errhint("Anyone can use the client-side lo_import() provided by libpq.")));
+#endif
 
 	/*
 	 * open the file to be read in
@@ -427,10 +447,15 @@ lo_export(PG_FUNCTION_ARGS)
 	LargeObjectDesc *lobj;
 	mode_t		oumask;
 
-	CreateFSContext();
+#ifndef ALLOW_DANGEROUS_LO_FUNCTIONS
+	if (!superuser())
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("must be superuser to use server-side lo_export()"),
+				 errhint("Anyone can use the client-side lo_export() provided by libpq.")));
+#endif
 
-	/* Permission checks  */
-	ac_largeobject_export(lobjId, fnamebuf);
+	CreateFSContext();
 
 	/*
 	 * open the inversion object (no need to test for failure)
@@ -489,7 +514,13 @@ lo_truncate(PG_FUNCTION_ARGS)
 				 errmsg("invalid large-object descriptor: %d", fd)));
 
 	/* Permission check */
-	ac_largeobject_write(cookies[fd]->id);
+	if (large_object_privilege_checks &&
+		pg_largeobject_aclcheck(cookies[fd]->id, GetUserId(),
+								ACL_UPDATE) != ACLCHECK_OK)
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("permission denied for largeobject %u",
+						cookies[fd]->id)));
 
 	inv_truncate(cookies[fd], len);
 

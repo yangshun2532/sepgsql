@@ -31,6 +31,7 @@
 #include "catalog/pg_foreign_data_wrapper.h"
 #include "catalog/pg_foreign_server.h"
 #include "catalog/pg_language.h"
+#include "catalog/pg_largeobject.h"
 #include "catalog/pg_largeobject_metadata.h"
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_opclass.h"
@@ -1305,7 +1306,7 @@ RemoveRoleFromObjectACL(Oid roleid, Oid classid, Oid objid)
 			case LanguageRelationId:
 				istmt.objtype = ACL_OBJECT_LANGUAGE;
 				break;
-			case LargeObjectMetadataRelationId:
+			case LargeObjectRelationId:
 				istmt.objtype = ACL_OBJECT_LARGEOBJECT;
 				break;
 			case NamespaceRelationId:
@@ -2616,7 +2617,7 @@ ExecGrant_Largeobject(InternalGrant *istmt)
 		CatalogUpdateIndexes(relation, newtuple);
 
 		/* Update the shared dependency ACL info */
-		updateAclDependencies(LargeObjectMetadataRelationId,
+		updateAclDependencies(LargeObjectRelationId,
 							  HeapTupleGetOid(tuple), 0,
 							  ownerId, istmt->is_grant,
 							  noldmembers, oldmembers,
@@ -2974,7 +2975,7 @@ static const char *const no_priv_msg[MAX_ACL_KIND] =
 	/* ACL_KIND_LANGUAGE */
 	gettext_noop("permission denied for language %s"),
 	/* ACL_KIND_LARGEOBJECT */
-	gettext_noop("permission denied for largeobject %s"),
+	gettext_noop("permission denied for large object %s"),
 	/* ACL_KIND_NAMESPACE */
 	gettext_noop("permission denied for schema %s"),
 	/* ACL_KIND_OPCLASS */
@@ -3014,7 +3015,7 @@ static const char *const not_owner_msg[MAX_ACL_KIND] =
 	/* ACL_KIND_LANGUAGE */
 	gettext_noop("must be owner of language %s"),
 	/* ACL_KIND_LARGEOBJECT */
-	gettext_noop("must be owner of largeobject %s"),
+	gettext_noop("must be owner of large object %s"),
 	/* ACL_KIND_NAMESPACE */
 	gettext_noop("must be owner of schema %s"),
 	/* ACL_KIND_OPCLASS */
@@ -3558,7 +3559,7 @@ pg_largeobject_aclmask(Oid lobj_oid, Oid roleid,
 	if (!HeapTupleIsValid(tuple))
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
-				 errmsg("largeobject %u does not exist", lobj_oid)));
+				 errmsg("large object %u does not exist", lobj_oid)));
 
 	ownerId = ((Form_pg_largeobject_metadata) GETSTRUCT(tuple))->lomowner;
 
@@ -4275,7 +4276,7 @@ pg_largeobject_ownercheck(Oid lobj_oid, Oid roleid)
 	if (!HeapTupleIsValid(tuple))
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_FUNCTION),
-				 errmsg("largeobject %u does not exist", lobj_oid)));
+				 errmsg("large object %u does not exist", lobj_oid)));
 
 	ownerId = ((Form_pg_largeobject_metadata) GETSTRUCT(tuple))->lomowner;
 

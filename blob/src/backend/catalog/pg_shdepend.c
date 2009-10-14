@@ -25,7 +25,7 @@
 #include "catalog/pg_database.h"
 #include "catalog/pg_default_acl.h"
 #include "catalog/pg_language.h"
-#include "catalog/pg_largeobject_metadata.h"
+#include "catalog/pg_largeobject.h"
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_operator.h"
 #include "catalog/pg_proc.h"
@@ -1348,8 +1348,8 @@ shdepReassignOwned(List *roleids, Oid newrole)
 					AlterLanguageOwner_oid(sdepForm->objid, newrole);
 					break;
 
-				case LargeObjectMetadataRelationId:
-					AlterLargeObjectOwner(sdepForm->objid, newrole);
+				case LargeObjectRelationId:
+					LargeObjectAlterOwner(sdepForm->objid, newrole);
 					break;
 
 				case DefaultAclRelationId:

@@ -942,7 +942,7 @@ ERROR:  largeobject 1006 does not exist
 REVOKE ALL ON LARGE OBJECT 2001, 2002 FROM PUBLIC;
 GRANT ALL ON LARGE OBJECT 2001 TO regressuser3;
 SELECT lo_unlink(1001);		-- to be denied
-ERROR:  must be owner of largeobject 1001
+ERROR:  must be owner of large object 1001
 SELECT lo_unlink(2002);
  lo_unlink 
 -----------
@@ -987,7 +987,7 @@ SELECT lo_truncate(lo_open(2001, x'20000'::int), 10);
 
 -- compatibility mode in largeobject permission
 \c -
-SET largeobject_check_acl = true;	-- default setting
+SET large_object_privilege_checks = true;	-- default setting
 SET SESSION AUTHORIZATION regressuser4;
 SELECT loread(lo_open(1002, x'40000'::int), 32);	-- to be denied
 ERROR:  permission denied for largeobject 1002
@@ -996,12 +996,12 @@ ERROR:  permission denied for largeobject 1002
 SELECT lo_truncate(lo_open(1002, x'20000'::int), 10);	-- to be denied
 ERROR:  permission denied for largeobject 1002
 SELECT lo_unlink(1002);					-- to be denied
-ERROR:  must be owner of largeobject 1002
+ERROR:  must be owner of large object 1002
 SELECT lo_export(1001, '/dev/null');			-- to be denied
 ERROR:  must be superuser to use server-side lo_export()
 HINT:  Anyone can use the client-side lo_export() provided by libpq.
 \c -
-SET largeobject_check_acl = false;	-- compatibility mode
+SET large_object_privilege_checks = false;	-- compatibility mode
 SET SESSION AUTHORIZATION regressuser4;
 SELECT loread(lo_open(1002, x'40000'::int), 32);
  loread 
