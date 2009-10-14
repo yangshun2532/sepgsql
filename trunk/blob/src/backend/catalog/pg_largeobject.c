@@ -35,12 +35,12 @@
 /*
  * Create a large object having the given LO identifier.
  *
- * We do this by inserting an empty first page, so that the object will
- * appear to exist with size 0.  Note that the unique index will reject
- * an attempt to create a duplicate page.
+ * We create a new large object by inserting an entry into
+ * pg_largeobject_metadata without any data pages, so that the object
+ * will appear to exist with size 0.
  */
 Oid
-CreateLargeObject(Oid loid)
+LargeObjectCreate(Oid loid)
 {
 	Relation	pg_lo_meta;
 	HeapTuple	ntup;
@@ -78,8 +78,14 @@ CreateLargeObject(Oid loid)
 	return loid_new;
 }
 
+/*
+ * Drop a large object having the given LO identifier.
+ *
+ * When we drop a large object, it is necessary to drop both of metadata
+ * and data pages in same time.
+ */
 void
-DropLargeObject(Oid loid)
+LargeObjectDrop(Oid loid)
 {
 	Relation	pg_lo_meta;
 	Relation	pg_largeobject;
@@ -138,8 +144,13 @@ DropLargeObject(Oid loid)
 	heap_close(pg_lo_meta, RowExclusiveLock);
 }
 
+/*
+ * LargeObjectAlterOwner
+ *
+ * Implementation of ALTER LARGE OBJECT statement
+ */
 void
-AlterLargeObjectOwner(Oid loid, Oid newOwnerId)
+LargeObjectAlterOwner(Oid loid, Oid newOwnerId)
 {
 	Form_pg_largeobject_metadata	form_lo_meta;
 	Relation	pg_lo_meta;
@@ -176,8 +187,24 @@ AlterLargeObjectOwner(Oid loid, Oid newOwnerId)
 		Datum		aclDatum;
 		bool		isnull;
 
-		/* Permission checks */
-		ac_largeobject_alter(loid, newOwnerId);
+		/* Superusers can always do it */
+		if (!superuser())
+		{
+			/*
+			 * large_object_privilege_checks is not refered here,
+			 * because it is a compatibility option, but we don't
+			 * have ALTER LARGE OBJECT prior to the v8.5.0.
+			 */
+
+			/* Otherwise, must be owner of the existing object */
+			if (!pg_largeobject_ownercheck(loid, GetUserId()))
+				ereport(ERROR,
+						(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+						 errmsg("must be owner of large object %u", loid)));
+
+			/* Must be able to become new owner */
+			check_is_member_of_role(GetUserId(), newOwnerId);
+		}
 
 		memset(values, 0, sizeof(values));
 		memset(nulls, false, sizeof(nulls));
@@ -212,7 +239,7 @@ AlterLargeObjectOwner(Oid loid, Oid newOwnerId)
 		heap_freetuple(newtup);
 
 		/* Update owner dependency reference */
-		changeDependencyOnOwner(LargeObjectMetadataRelationId,
+		changeDependencyOnOwner(LargeObjectRelationId,
 								loid, newOwnerId);
 	}
 	systable_endscan(scan);
@@ -222,8 +249,8 @@ AlterLargeObjectOwner(Oid loid, Oid newOwnerId)
 
 /*
  * In currently, we don't use system cache to keep metadata of
- * the largeobject, because it may consume massive process local
- * memory when a user tries to massive number of largeobjects
+ * the large object, because it may consume massive process local
+ * memory when a user tries to massive number of large objects
  * concurrently.
  * Use the LargeObjectExists() instead of SearchSysCacheExists().
  */
@@ -257,189 +284,4 @@ LargeObjectExists(Oid loid)
 	heap_close(pg_lo_meta, AccessShareLock);
 
 	return retval;
-}
-
-/*
- * security check functions (to be moved to
- * the backend/security/access_control.c)
- */
-
-/*
- * ac_largeobject_check_acl
- *
- * It enables to turn on/off ACL checks on largeobjects to keep
- * backward compatibility. The pgsql-8.4.x or prior didn't have
- * any access controls on largeobjects (except for supruser checks
- * on the server side import/export), so turning it off allows us
- * to use the largeobject stuff as if older version doing.
- */
-bool ac_largeobject_check_acl;
-
-/*
- * ac_largeobject_create
- *
- * It checks permission to create a new largeobject.
- *
- * [Params]
- * loid : InvalidOid or OID of the new largeobject if given
- */
-void ac_largeobject_create(Oid loid)
-{
-	/*
-	 * MEMO: In this revision, PostgreSQL implicitly allows everyone
-	 * to create new largeobject. It is backward compatible behavior,
-	 * but may be changed at the future version.
-	 */
-}
-
-/*
- * ac_largeobject_alter
- *
- * It checks permission to alter a certain largeobject.
- * (Now the only caller is ALTER LARGE OBJECT loid OWNER TO newowner)
- *
- * [Params]
- * loid     : OID of the largeobject to be altered
- * newOwner : OID of the new largeobject owner
- */
-void
-ac_largeobject_alter(Oid loid, Oid newOwner)
-{
-	/*
-	 * MEMO: ac_largeobject_check_acl is not refered in this check,
-	 * because we don't have ALTER LARGE OBJECT at the v8.4.x or
-	 * prior release.
-	 */
-
-	/* must be owner of largeobject */
-	if (!pg_largeobject_ownercheck(loid, GetUserId()))
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("must be owner of largeobject %u", loid)));
-
-	/* Superusers can always do it */
-	if (OidIsValid(newOwner) && !superuser())
-	{
-		/* Must be able to become new owner */
-		check_is_member_of_role(GetUserId(), newOwner);
-
-		/*
-		 * MEMO: The new owner must have privilege to create
-		 * a new largeobject, and to be checked here.
-		 * But it is implicitly allowed to everyone, so we
-		 * don't put any checks in this revision.
-		 */
-	}
-}
-
-/*
- * ac_largeobject_drop
- *
- * It checks permission to drop a certain largeobejct
- *
- * [Params]
- * loid    : OID of the largeobject to be altered
- * cascade : True, if dac permission checks should be bypassed
- */
-void ac_largeobject_drop(Oid loid, bool cascade)
-{
-	/* Must be owner of the largeobject */
-	if (!cascade && ac_largeobject_check_acl &&
-		!pg_largeobject_ownercheck(loid, GetUserId()))
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("must be owner of largeobject %u", loid)));
-}
-
-/*
- * ac_largeobject_comment
- *
- * It checks permission to comment on a certain largeobject
- *
- * [Params]
- * loid : OID of the largeobject to be commented on
- */
-void ac_largeobject_comment(Oid loid)
-{
-	if (ac_largeobject_check_acl &&
-		!pg_largeobject_ownercheck(loid, GetUserId()))
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("must be owner of largeobject %u", loid)));
-}
-
-/*
- * ac_largeobject_read
- *
- * It checks permission to read data chunks from a certain largeobject
- *
- * [Params]
- * loid : OID of the largeobject to be read from
- */
-void ac_largeobject_read(Oid loid)
-{
-	if (ac_largeobject_check_acl &&
-		pg_largeobject_aclcheck(loid, GetUserId(),
-								ACL_SELECT) != ACLCHECK_OK)
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("permission denied for largeobject %u", loid)));
-}
-
-/*
- * ac_largeobject_write
- *
- * It checks permission to write data chunkd to a certain largeobject
- *
- * [Params]
- * loid : OID of the largeobject to be written to
- */
-void ac_largeobject_write(Oid loid)
-{
-	if (ac_largeobject_check_acl &&
-		pg_largeobject_aclcheck(loid, GetUserId(),
-								ACL_UPDATE) != ACLCHECK_OK)
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("permission denied for largeobject %u", loid)));
-}
-
-/*
- * ac_largeobject_export
- *
- * It checks permission to export a certain largeobject to a server-side file.
- *
- * [Params]
- * loid     : OID of the largeobject to be exported
- * filename : The target filename to be exported to
- */
-void ac_largeobject_export(Oid loid, const char *filename)
-{
-#ifndef ALLOW_DANGEROUS_LO_FUNCTIONS
-	if (!superuser())
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("must be superuser to use server-side lo_export()"),
-				 errhint("Anyone can use the client-side lo_export() provided by libpq.")));
-#endif
-}
-
-/*
- * ac_largeobject_import
- *
- * It checks permission to import contents from a server-side file.
- *
- * [Params]
- * loid     : InvalidOid or OID of the largeobject, if given
- * filename : The target filename to be imported from
- */
-void ac_largeobject_import(Oid loid, const char *filename)
-{
-#ifndef ALLOW_DANGEROUS_LO_FUNCTIONS
-	if (!superuser())
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("must be superuser to use server-side lo_import()"),
-				 errhint("Anyone can use the client-side lo_import() provided by libpq.")));
-#endif
 }

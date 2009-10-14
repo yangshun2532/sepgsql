@@ -165,12 +165,19 @@ inv_create(Oid lobjId)
 	/*
 	 * Create a new largeobject with empty data pages
 	 */
-	lobjId_new = CreateLargeObject(lobjId);
+	lobjId_new = LargeObjectCreate(lobjId);
 
 	/*
 	 * dependency on the owner of largeobject
+	 *
+	 * The reason why we use LargeObjectRelationId instead of
+	 * LargeObjectMetadataRelationId here is to provide backward
+	 * compatibility to the applications which utilize a knowledge
+	 * about internal layout of system catalogs.
+	 * OID of pg_largeobject_metadata and loid of pg_largeobject
+	 * are same value, so there are no actual differences here.
 	 */
-	recordDependencyOnOwner(LargeObjectMetadataRelationId,
+	recordDependencyOnOwner(LargeObjectRelationId,
 							lobjId_new, GetUserId());
 	/*
 	 * Advance command counter to make new tuple visible to later operations.
@@ -256,7 +263,7 @@ inv_drop(Oid lobjId)
 	/*
 	 * Delete any comments and dependencies on the large object
 	 */
-	object.classId = LargeObjectMetadataRelationId;
+	object.classId = LargeObjectRelationId;
 	object.objectId = lobjId;
 	object.objectSubId = 0;
 	performDeletion(&object, DROP_CASCADE);

@@ -489,7 +489,7 @@
 #backslash_quote = safe_encoding	# on, off, or safe_encoding
 #default_with_oids = off
 #escape_string_warning = on
-#largeobject_check_acl = on
+#large_object_privilege_checks = on
 #regex_flavor = advanced		# advanced, extended, or basic
 #sql_inheritance = on
 #standard_conforming_strings = off

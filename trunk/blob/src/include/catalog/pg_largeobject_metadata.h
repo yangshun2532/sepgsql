@@ -49,20 +49,4 @@ typedef FormData_pg_largeobject_metadata *Form_pg_largeobject_metadata;
 #define Anum_pg_largeobject_metadata_lomowner	1
 #define Anum_pg_largeobject_metadata_lomacl		2
 
-extern Oid  CreateLargeObject(Oid loid);
-extern void DropLargeObject(Oid loid);
-extern void AlterLargeObjectOwner(Oid loid, Oid newOwnerId);
-extern bool LargeObjectExists(Oid loid);
-
-/* to be moved to backend/security/access_control.c */
-extern bool ac_largeobject_check_acl;
-extern void ac_largeobject_create(Oid loid);
-extern void ac_largeobject_alter(Oid loid, Oid newOwner);
-extern void ac_largeobject_drop(Oid loid, bool dacSkip);
-extern void ac_largeobject_comment(Oid loid);
-extern void ac_largeobject_read(Oid loid);
-extern void ac_largeobject_write(Oid loid);
-extern void ac_largeobject_export(Oid loid, const char *filename);
-extern void ac_largeobject_import(Oid loid, const char *filename);
-
 #endif   /* PG_LARGEOBJECT_METADATA_H */

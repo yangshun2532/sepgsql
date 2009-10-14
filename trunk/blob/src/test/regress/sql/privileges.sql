@@ -545,7 +545,7 @@ SELECT lo_truncate(lo_open(2001, x'20000'::int), 10);
 
 -- compatibility mode in largeobject permission
 \c -
-SET largeobject_check_acl = true;	-- default setting
+SET large_object_privilege_checks = true;	-- default setting
 SET SESSION AUTHORIZATION regressuser4;
 
 SELECT loread(lo_open(1002, x'40000'::int), 32);	-- to be denied
@@ -555,7 +555,7 @@ SELECT lo_unlink(1002);					-- to be denied
 SELECT lo_export(1001, '/dev/null');			-- to be denied
 
 \c -
-SET largeobject_check_acl = false;	-- compatibility mode
+SET large_object_privilege_checks = false;	-- compatibility mode
 SET SESSION AUTHORIZATION regressuser4;
 
 SELECT loread(lo_open(1002, x'40000'::int), 32);
