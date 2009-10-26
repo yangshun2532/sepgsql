@@ -272,6 +272,9 @@ DECLARE_UNIQUE_INDEX(pg_default_acl_role_nsp_obj_index, 827, on pg_default_acl u
 DECLARE_UNIQUE_INDEX(pg_default_acl_oid_index, 828, on pg_default_acl using btree(oid oid_ops));
 #define DefaultAclOidIndexId	828
 
+DECLARE_UNIQUE_INDEX(pg_selinux_object_index, 3401, on pg_selinux using btree(seldatid oid_ops, selrelid oid_ops, selobjid oid_ops, selsubid int4_ops));
+#define SELinuxObjectIndexId	3401
+
 DECLARE_UNIQUE_INDEX(pg_db_role_setting_databaseid_rol_index, 2965, on pg_db_role_setting using btree(setdatabase oid_ops, setrole oid_ops));
 #define DbRoleSettingDatidRolidIndexId	2965
 
