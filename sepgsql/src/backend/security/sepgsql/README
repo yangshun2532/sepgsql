@@ -1,0 +1,244 @@
+
+SE-PostgreSQL developer documentation
+=====================================
+
+TABLE OF CONTENTS
+=================
+
+1. Overview
+2. Internal architecture
+3. Object classes and permissions
+4. Specification of SE-PgSQL hooks
+5. Code examples
+
+1. Overview
+============================================================
+
+1-1. Brief overview of SE-PostgreSQL
+------------------------------------
+SE-PostgreSQL (hereafter SE-PgSQL) is a feature of PostgreSQL which applies
+MAC policy on the given SQL queries. Its most significant feature is any access
+control decisions are provided by SELinux, and SE-PgSQL correctly performs
+according to the decisions.
+
+SELinux is a subsystem in the Linux kernel. It also provides its access control
+decision for various kind of kernel subsystems. For example, when we tries to
+write on a certain file, VFS mechanism ask SELinux whether the given system-call
+can be executable, or not. SELinux returns its access control decision based on
+the security policy, then the caller (VFS) controls accesses according to the
+decision.
+
+We can consider SELinux as something like a function which returns a binary
+state ("allowed" or "denied") for the given arguments. It requires the security
+context of subject and object, and required permissions.
+For example, when we write something on a certain file using shell commands,
+VFS layer hooks write(2) calls to invoke SELinux, and it gives a pair of
+security contexts of the shell process and the file to be written, and codes
+corresponding to "file:{write}" permission.
+
+In the system with SELinux, we can confirm security context of the current
+process with "id -Z" command.
+
+  [kaigai@saba ~]$ id -Z
+  unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c1023
+
+We can confirm security context of the files with "ls -Z" command.
+
+  [kaigai@saba ~]$ ls -Z /etc/passwd /etc/shadow
+  -rw-r--r--. root root system_u:object_r:etc_t:s0       /etc/passwd
+  -r--------. root root system_u:object_r:shadow_t:s0    /etc/shadow
+
+SELinux lookups an entry matched with the given pair of security context from
+the security policy which is a massive set of rules, and every rule has allowed
+set of actions. If it contains all the required actions, "allowed" should be
+returned, otherwise "denied".
+
+We can apply this design on accesses to database objects, not only kernel, as
+long as RDBMS correctly manages the security context of them.
+SE-PgSQL assigns an individual security context on database objects, and asks
+SELinux whether the given accesses should be allowed, or not.
+
+
+1-2. Mandatory access control
+-----------------------------
+
+SELinux provides MAC based policy, so here are several differences from
+the default PG model (known as a kind of DAC). The characteristics of MAC
+are a centralized security policy and unbypassable access controls.
+
+The default PG model allows owners to grant/revoke discretionary access rights
+on the owned objects. On the other hand, only a centralized security policy
+controls all the accesses in MAC model. So, it does not allow users to set up
+discretionary access rights without allowance by the policy, even if they are
+owner of the database objects.
+
+In addition, its access control is unbypassable, even if the client has
+database superuser privileges. It checks all the needed permissions on
+the database objects without any exception.
+If we implicitly allows to bypass any permission checks on certain users, it
+makes impossible to analyze data-flows from the viewpoint of security policy.
+
+So, the point is no omission for MAC checks, even if it already checks 
+
+For example, the default PG model does not apply access controls for database
+superusers. It simply skips routines to check database acls. It is correct
+manner in DAC, but undesirable manner in MAC.
+If DAC checks are enclosed by something like "if (superuser())" block, SE-PgSQL
+checks have to be invoked outside of the block.
+
+
+1-3. Security context
+---------------------
+
+SELinux identifies any entities (such as processes, files, tables, ...) using
+its security context. The security context is a short formatted text as:
+
+  system_u:object_r:sepgsql_table_t:s0
+
+It is the only identifier in SELinux model, instead of user-id or permission
+bits. When the default PG model makes its access control decision, it checks
+whats are allowed/disallowed on a certain pair of user-id and ACLs of the object
+to be accessed. Note that user-id is a property of the client, and the ACLs is
+also a property of the object to be accessed.
+In similar way, SELinux makes its access control decision. It checks what is
+allowed/disallowed on a certain pair of the security contexts of client and
+object to be accessed.
+
+A security context is separated into four fields, as follows:
+
+  <selinux user>:<role>:<domain/type>:<range>
+
+SELinux has a few kind of access control strategies (aka, RBAC, TE, MLS),
+every fields are corresponding to a certain strategy. But it is encapsulated
+within kernel code, all SE-PgSQL has to do is to follow the decision of SELinux.
+
+When user create a new database object, a default security context shall be
+assigned on the new object. It is provided by the security policy in kernel,
+and SE-PgSQL assigns the offered one in the default.
+The default security context is decided for a pair of security contexts of
+the client and its parent object. See the later chapter for more details.
+
+
+1-4. Misc features
+------------------
+
+o Enforcing/Permissive mode
+
+These are a working mode in SELinux. In enforcing mode, it actually applies
+its access controls, and raises an error if violated. On the other hand, it
+also checks the security policy but does not prevent anything in permissive
+mode, except for access violation logs.
+The purpose of permissive mode is to debug the security policy itself.
+
+o Security audit
+
+The security policy also has rules to control generation of security audit.
+It suggests SE-PgSQL to generate security audit logs on access violations
+or access allowed. It is called 'auditdeny' and 'auditallow' rules.
+In the default, it generates audit logs on access violations, but do nothing
+when accesses are allowed.
+
+o MCS translation
+
+
+
+
+
+
+
+
+2. Internal architecture
+============================================================
+
+2-1. communication with SELinux
+-------------------------------
+
+SELinux provides a set of interfaces to communicate between kernelspace and
+userspace. It is encapsulated in libselinux.
+
+* security_compute_av()
+
+
+
+* security_compute_create()
+
+
+
+
+
+
+
+
+
+2-2. management of security context
+-----------------------------------
+
+This design should be 
+
+
+
+
+
+
+
+3. Object classes and permissions
+============================================================
+
+Object class is a terminology that means a certain type of object, such as
+files, processes, tables in database and so on. Every object classes have
+its own set of permissions which reflect characteristics of the object class,
+but some of permissions are commonly defined for various kind of object classes
+to handle common object behavior; creation, deletion, setting and getting
+attributes, and relabeling its own security context.
+
+
+
+
+
+
+3-1. common permissions of database object
+------------------------------------------
+
+
+create, drop, getattr, setattr, relabelfrom, relabelto
+
+3-2. db_database object class
+-----------------------------
+
+access, load_module, superuser
+
+
+3-2. db_schema object class
+---------------------------
+
+search, add_name, remove_name
+
+3-3. db_table object class
+--------------------------
+
+select, update, insert, delete, lock, reference
+
+3-4. db_column object class
+---------------------------
+
+select, update, delete
+
+
+
+
+4. Specification of SE-PgSQL hooks
+============================================================
+
+
+
+
+
+5. Code examples
+============================================================
+
+
+
+
+
+
+
