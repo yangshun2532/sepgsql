@@ -6,10 +6,24 @@ TABLE OF CONTENTS
 =================
 
 1. Overview
+1-1. Brief overview of SE-PostgreSQL
+1-2. Mandatory access control
+1-3. Security context
+1-4. Misc features
 2. Internal architecture
+2-1. communication with SELinux
+2-2. management of security context
+2-3. privilege of the client
+2-4. security hooks
 3. Object classes and permissions
-4. Specification of SE-PgSQL hooks
-5. Code examples
+3-1. common permissions of database object
+3-2. db_database object class
+3-3. db_schema object class
+3-4. db_table object class
+3-5. db_column object class
+4. Code examples
+4-1. Example of SE-PgSQL hooks
+4-2. Example of third party module
 
 1. Overview
 ============================================================
@@ -130,6 +144,16 @@ also checks the security policy but does not prevent anything in permissive
 mode, except for access violation logs.
 The purpose of permissive mode is to debug the security policy itself.
 
+A GUC option: sepostgresql controls this behavior.
+
+  sepostgresql = [default | enforcing | permissive | disabled ]
+
+    default    : It follows system setting.
+    enforcing  : Always enforcing, if SELinux is enabled on the system
+    permissive : Always permissive, if SELinux is enabled on the system
+    disabled   : Always disabled (default setting)
+
+
 o Security audit
 
 The security policy also has rules to control generation of security audit.
@@ -138,13 +162,33 @@ or access allowed. It is called 'auditdeny' and 'auditallow' rules.
 In the default, it generates audit logs on access violations, but do nothing
 when accesses are allowed.
 
+Below is an example when SE-PgSQL prevent violated accesses on a column.
+
+  LOG:  SELinux: denied { select }  \
+      scontext=staff_u:staff_r:staff_t:Unclassified  \
+      tcontext=system_u:object_r:sepgsql_secret_table_t:Unclassified  \
+      tclass=db_column name=customer.ccredit
+
+
 o MCS translation
 
+The forth field of security context means its range in MLS (Multi Level
+Security) rules. It is represented with a combination of symbols, so it is not
+well human-readable. MCS translation enables to associate them with a human
+readable alias.
 
+For example, if "s0:c0" means an unclassified document in finance division
+labeled as "Unclassified-Finance", the raw range is replaced by the human
+readable form as follows:
 
+    Raw-format  : system_u:object_r:sepgsql_table_t:s0:c0
+  Human readable: system_u:object_r:sepgsql_table_t:Unclassified-Finance
+                                                    ^^^^^^^^^^^^^^^^^^^^
+SELinux provides an API to translate them. All the security contexts are stored
+in raw-format, and it is translated on printing time.
 
-
-
+A GUC option: sepostgresql_mcstrans = [on | off] controls this behavior.
+If it is turned off, it print out security context in raw-format.
 
 
 2. Internal architecture
@@ -153,31 +197,162 @@ o MCS translation
 2-1. communication with SELinux
 -------------------------------
 
-SELinux provides a set of interfaces to communicate between kernelspace and
-userspace. It is encapsulated in libselinux.
+SELinux provides a set of APIs to communicate between kernel and applications,
+encapsulated in libselinux. It allows applications to ask SELinux whether the
+given user's request should be executed, or not.
+The following two APIs are especially important ones for SE-PgSQL.
 
-* security_compute_av()
+o security_compute_av()
+
+It returns a set of allowed permissions for a pair of security contexts and
+a certain object class, so the caller can know what permissions are allowed.
+
+This example shows a case when we ask SELinux what is the allowed set of
+permissions on a pair of a client with "system_u:system_r:httpd_t:s0" and
+a table with "system_u:object_r:sepgsql_table_t:s0" for the "db_table" object
+class.
+This API set up the av_decision structure correctly, then we can check returned
+bitmask which contains allowed permissions later. If a bit corresponding to
+the db_table:{select} permission is set, it should be allowed.
+
+  Example)
+    struct av_decision avd;
+    char   *scontext = "system_u:system_r:httpd_t:s0";
+    char   *tcontext = "system_u:object_r:sepgsql_table_t:s0";
+    int16   tclass;
+    uint32  permission;
+              :
+    tclass = string_to_security_class("db_table");
+    if (security_compute_av(scontext, tcontext, 0, tclass, &avd) < 0)
+        elog(ERROR, "SELinux internal error");
+              :
+    permission = string_to_av_perm(tclass, "select");
+    if (avd.allowed & permission)
+        elog(NOTICE, "%s is allowed to select %s", scontext, tcontext);
+    else
+        elog(NOTICE, "%s is disallowed to select %s", scontext, tcontext)
 
 
+o security_compute_create()
 
-* security_compute_create()
+It returns a default security context of a newly created object for a pair
+of security contexts and a certain object class, so the caller can know what
+security context should be assigned on the new one.
 
+This example shows a case when we ask SELinux what security context should be
+assigned on the new table created by a client with "system_u:system_r:httpd_t:s0"
+in the schema with "system_u:object_r:sepgsql_schema_t:s0".
+This API set up a default security context correctly, then we can assign it on
+the new object later.
 
-
-
-
-
-
+  Example)
+    char   *scontext = "system_u:system_r:httpd_t:s0";
+    char   *tcontext = "system_u:object_r:sepgsql_schema_t:s0";
+    char   *ncontext;
+    int16   tclass;
+              :
+    tclass = string_to_security_class("db_table");
+    if (security_compute_create(scontext, tcontext, tclass, &ncontext) < 0)
+        elog(ERROR, "SELinux internal error");
+              :
+    elog(NOTICE, "New security context is %s", ncontext);
+              :
+    freecon(ncontext);      /* must be free */
 
 
 2-2. management of security context
 -----------------------------------
 
-This design should be 
+The current design is time-limited. It is simple enough, so enables to reduce
+burden of reviewing, but it needs all the database objects with a security
+context to have its object id. So, it has to be replaced when row-level access
+control will be available.
+
+The new pg_selinux system catalog is declared as follows:
+
+  CATALOG(pg_selinux,3400) BKI_SHARED_RELATION BKI_WITHOUT_OIDS
+  {
+      /* OID of database containing object, or 0 if shared relation */
+      Oid     seldatid;
+
+      /* OID of table containing object */
+      Oid     selrelid;
+
+      /* OID of object itself */
+      Oid     selobjid;
+
+      /* column number, or 0 if not used */
+      int4    selsubid;
+
+      /* text representation of security context */
+      text    selcontext;
+  } FormData_pg_selinux;
+
+It is similar to the idea of pg_shdepend system catalog. It stores a security
+context in text representation for a certain database object identified by the
+combination of a few OIDs.
+
+Currently, only four type of database objects (databases, schemas, tables and
+columns) have its own security context.
+When we create these objects, its security context is also registered on the
+pg_selinux system catalog.
 
 
+2-3. privilege of the client
+----------------------------
+
+SELinux also provides an interesting API: getpeercon(3). It enables to obtain
+the security context of the peer process for the given file-descriptor of the
+network socket.
+
+If the given connection is unix domain socket, we don't need any special
+configurations. If remote connection, it is necessary to set up labeled ipsec
+connection between server and clients to deliver the security context of the
+peer process when key exchange negotiations.
+(we can set up static-fallback'ed security context based on the ip address of
+clients for a case when SELinux is not unavailable on the client side.)
+
+This example shows a case when we obtain a security context of the peer.
+
+  Example)
+
+    char   *scontext;
+              :
+    if (getpeercon(MyProcPort->sock, &scontext) < 0)
+        elog(ERROR, "SELinux internal error");
+              :
+    elog(NOTICE, "security context of the client: %s", scontext);
+              :
+    freecon(scontext);
 
 
+2-4. security hooks
+-------------------
+
+SE-PgSQL needs to deploy its security hooks on the strategic points.
+These hooks are designed not to affect anything for code paths, if SE-PgSQL
+is disabled on either compile-time or run-time.
+
+Its specifications and purposes are described as source code comments, so we
+can find detailed information at src/backend/security/sepgsql/*.c files.
+The caller has to provide needed information for the hooks.
+
+For example, sepgsql_relation_permission() which checks access permissions
+for the given relation and selected/modified columns, like ExecCheckRTEPerms().
+It requires the OID of relation, Bitmapset of selected/modified columns and
+required permissions. The caller has to provide enough information to make
+its access control decision.
+The sepgsql_relation_permission() makes access control decision based on the
+MAC perspectives. If allowed, it does nothing. Otherwise, it raises an error
+to abort current transaction.
+
+In this example, MAC and DAC checks similar permissions, expect for column's
+permissions are overridden by table's permission in DAC model, so they are
+invoked from neighboring points.
+The order of MAC and DAC is not significant matter, because both of them have
+to be allowed to execute given query. Basically, we follow the manner in the
+operating system which deploys MAC hooks after DAC checks when they have
+similar checks.
 
 
 
@@ -187,43 +362,139 @@ This design should be
 Object class is a terminology that means a certain type of object, such as
 files, processes, tables in database and so on. Every object classes have
 its own set of permissions which reflect characteristics of the object class,
-but some of permissions are commonly defined for various kind of object classes
-to handle common object behavior; creation, deletion, setting and getting
+but some of permissions are commonly defined for various kind of database object
+classes to handle common object behavior; creation, deletion, setting and getting
 attributes, and relabeling its own security context.
 
+Unless an explicit explanation, these permission is checked on a pair of the
+client and the object to be accessed. In other word, security_compute_av()
+will take the following arguments:
 
+ subject context = security context of the client
+ target context  = security context of the object to be accessed
 
-
+For example, when a client with "user_u:user_r:user_t:s0" tries to drop
+a table with "system_u:object_r:sepgsql_ro_table_t:s0", SE-PgSQL calls
+security_compute_av() with both of security context and the code for
+db_table object class, then checks whether the allowed set of permissions
+contains a bit for db_table:{drop} permission, or not.
 
 
 3-1. common permissions of database object
 ------------------------------------------
 
+The following six permissions are commonly defined for database object classes.
 
-create, drop, getattr, setattr, relabelfrom, relabelto
+o create
+
+
+
+
+
+
+o drop
+
+o getattr
+
+o setattr
+
+o relabelfrom
+
+o relabelto
+
 
 3-2. db_database object class
 -----------------------------
 
-access, load_module, superuser
+The db_database represents the database object itself which is an entry within
+pg_database system catalog.
+It has three its own permissions and inherits the common permissions.
+
+o default security context
+
+The default security context for db_database is decided based on a pair of
+the client and the data directory (specified by -D option).
+
+
+o access
+
+It is required when the client tries to connect to a certain database.
+
+
+o load_module
+
+It is required when a dynamic link library is loaded to the server process.
+Note that this permission is checked on a pair of the current database and
+the dynamic link library file. In other word, it checks capability to load
+a certain file into a certain database.
+
+In this case, security_compute_av() takes the following arguments:
+ subject context = security context of the current database
+ target context  = security context of the dynamic link library file
+
+Note that shared_preload_libraries is an exception for this check,
+because it is not controllable with any client's request.
+
+
+o superuser
+
+It is required when the client tries to perform as a superuser on the current
+database. If it is not allowed, the client cannot perform as a superuser, but
+SE-PgSQL does not raise an error. He can just perform as a non-privileged
+database user.
+
 
 
 3-2. db_schema object class
 ---------------------------
 
-search, add_name, remove_name
+o default security context
+
+
+o search
+
+o add_name
+
+o remove_name
+
 
 3-3. db_table object class
 --------------------------
 
-select, update, insert, delete, lock, reference
+o default security context
+
+
+o select
+
+o update
+
+o insert
+
+o delete
+
+o lock
+
+o reference
 
 3-4. db_column object class
 ---------------------------
 
-select, update, delete
+o default security context
 
 
+Note that 
+
+
+inherit case
+
+o select
+
+o update
+
+o insert
+
+
+o reference
 
 
 4. Specification of SE-PgSQL hooks
@@ -232,12 +503,8 @@ select, update, delete
 
 
 
-
 5. Code examples
 ============================================================
-
-
-
 
 
 
