@@ -270,7 +270,7 @@ control will be available.
 
 The new pg_selinux system catalog is declared as follows:
 
-  CATALOG(pg_selinux,3400) BKI_SHARED_RELATION BKI_WITHOUT_OIDS
+  CATALOG(pg_selinux,3400) BKI_SHARED_RELATION
   {
       /* OID of database containing object, or 0 if shared relation */
       Oid     seldatid;
@@ -387,20 +387,78 @@ The following six permissions are commonly defined for database object classes.
 
 o create
 
+It is checked when a client tries to create a new database object.
 
+SE-PgSQL assigns a default security context (if no explicit one is not given)
+on the new objects, then "create" permission shall be checked on a pair of the
+client and the new object labeled correctly.
 
+For example, when a client labeled as "staff_u:staff_r:staff_t:s0" tries
+to create a new table, SE-PgSQL computes its default security context with
+communicating SELinux. If "staff_u:object_r:sepgsql_table_t:s0" is given,
+SE-PgSQL assigns it on the new table, and checks "db_table:{create}" permission
+on a pair of the security contexts.
 
+CREATE statement typically invokes a check for "create" permission.
+However, note that no needs to check for objects creation by system internal
+stuff, such as TOAST relations, initdb works and so on.
 
+Some statements have OR REPLACE option. In the case when a client replaces
+an existing database object, "setattr" is applied instead of "create", even
+if CREATE statement is given. Because it does not create any new object, and
+its security context is remained.
 
 o drop
 
+It is checked when a client tries to drop an existing database object.
+This check is also applied on cascaded deletions, not only original one.
+
+For example, when a client labeled as "staff_u:staff_r:staff_t:s0" tries
+to drop a schema with "system_u:object_r:sepgsql_schema_t:s0" that contains
+a table with "system_u:object_r:sepgsql_table_t:s0".
+In this case, SE-PgSQL checks "db_schema:{drop}" permission on a pair of
+the client and the schema, and "db_table:{drop}" permission on a pair of
+the client and the table. Both of them should be allowed.
+
+Note that no needs to check for objects deletion by system internal
+stuff, such as cleanups of temporary objects.
+
 o getattr
+
+It is checked when a client tries to read any metadata of database objects.
+This check is implemented using row-level access controls on the system
+catalog (such as, SELECT * FROM pg_class), so the current version does not
+provide "getattr" checks.
+
+Note that no need to check this permission, as long as the fetched metadata
+is consumed internally, without returning to the client. For example, catcache
+stuff provide an easy way to access system catalog, the fetched data is not
+returned to clients in normal way, so we don't check this permission here.
+
 
 o setattr
 
+It is checked when a client tries to modify any metadata of database objects.
+
+ALTER statement typically invokes a check for "setattr" permission.
+However, no need to check when system internal stuff updates system catalogs
+to keep data integrity, such as dependency mechanism or increment/decrement
+of attinhcount in pg_attribute system catalog.
+
+
 o relabelfrom
 
+It is checked when a client tries to change security context of a certain
+database object, on a pair of the client's security context and the older
+security context.
+
+
 o relabelto
+
+It is checked when a client tries to change security context of a certain
+database object, on a pair of the client's security context and the newer
+security context.
+
 
 
 3-2. db_database object class
@@ -418,12 +476,12 @@ the client and the data directory (specified by -D option).
 
 o access
 
-It is required when the client tries to connect to a certain database.
+It is checked when the client tries to connect to a certain database.
 
 
 o load_module
 
-It is required when a dynamic link library is loaded to the server process.
+It is checked when a dynamic link library is loaded to the server process.
 Note that this permission is checked on a pair of the current database and
 the dynamic link library file. In other word, it checks capability to load
 a certain file into a certain database.
@@ -438,7 +496,7 @@ because it is not controllable with any client's request.
 
 o superuser
 
-It is required when the client tries to perform as a superuser on the current
+It is checked when the client tries to perform as a superuser on the current
 database. If it is not allowed, the client cannot perform as a superuser, but
 SE-PgSQL does not raise an error. He can just perform as a non-privileged
 database user.
@@ -479,17 +537,29 @@ o reference
 3-4. db_column object class
 ---------------------------
 
+The db_column represents the column object which is an entry within
+pg_attribute system catalog, and its attrelid refers a db_table object
+(relkind = RELKIND_RELATION).
+It has four its own permissions and inherits the commoen permissions.
+
+The db_column object has a hardwired rule. SE-PgSQL does not allow inherited
+column to have different security context from the parent's one.
+
 o default security context
 
+The default security context for db_column is decided based on a pair of
+the client and table owning the new column.
 
-Note that 
-
-
-inherit case
+When a new column is inherited from other table's definition, SE-PgSQL
+also copied the security context of the original one, independent from
+the default security context. If a column has multiple parents, all the
+security contexts have to be matched.
 
 o select
 
+
 o update
+
 
 o insert
 
@@ -497,13 +567,8 @@ o insert
 o reference
 
 
-4. Specification of SE-PgSQL hooks
-============================================================
 
-
-
-
-5. Code examples
+4. Code examples
 ============================================================
 
 
