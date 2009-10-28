@@ -205,6 +205,11 @@ DECLARE_INDEX(pg_shdepend_depender_index, 1232, on pg_shdepend using btree(dbid 
 DECLARE_INDEX(pg_shdepend_reference_index, 1233, on pg_shdepend using btree(refclassid oid_ops, refobjid oid_ops));
 #define SharedDependReferenceIndexId	1233
 
+DECLARE_UNIQUE_INDEX(pg_selinux_dat_rel_obj_index, 3401, on pg_selinux using btree(seldatid oid_ops, selrelid oid_ops, selobjid oid_ops, selsubid int4_ops));
+#define SELinuxDatRelObjIndexId		3401
+DECLARE_UNIQUE_INDEX(pg_selinux_oid_index, 3402, on pg_selinux using btree(oid oid_ops));
+#define SELinuxOidIndexId			3402
+
 DECLARE_UNIQUE_INDEX(pg_statistic_relid_att_index, 2696, on pg_statistic using btree(starelid oid_ops, staattnum int2_ops));
 #define StatisticRelidAttnumIndexId  2696
 
@@ -271,9 +276,6 @@ DECLARE_UNIQUE_INDEX(pg_default_acl_role_nsp_obj_index, 827, on pg_default_acl u
 #define DefaultAclRoleNspObjIndexId	827
 DECLARE_UNIQUE_INDEX(pg_default_acl_oid_index, 828, on pg_default_acl using btree(oid oid_ops));
 #define DefaultAclOidIndexId	828
-
-DECLARE_UNIQUE_INDEX(pg_selinux_object_index, 3401, on pg_selinux using btree(seldatid oid_ops, selrelid oid_ops, selobjid oid_ops, selsubid int4_ops));
-#define SELinuxObjectIndexId	3401
 
 DECLARE_UNIQUE_INDEX(pg_db_role_setting_databaseid_rol_index, 2965, on pg_db_role_setting using btree(setdatabase oid_ops, setrole oid_ops));
 #define DbRoleSettingDatidRolidIndexId	2965

@@ -56,6 +56,7 @@
 #include "postmaster/syslogger.h"
 #include "postmaster/walwriter.h"
 #include "regex/regex.h"
+#include "security/sepgsql.h"
 #include "storage/bufmgr.h"
 #include "storage/fd.h"
 #include "tcop/tcopprot.h"
@@ -337,6 +338,16 @@ static const struct config_enum_entry constraint_exclusion_options[] = {
 	{"0", CONSTRAINT_EXCLUSION_OFF, true},
 	{NULL, 0, false}
 };
+
+#ifdef HAVE_SELINUX
+static const struct config_enum_entry sepostgresql_mode_options[] = {
+	{"default", SEPGSQL_MODE_DEFAULT, false},
+	{"enforcing", SEPGSQL_MODE_ENFORCING, false},
+	{"permissive", SEPGSQL_MODE_PERMISSIVE, false},
+	{"disabled", SEPGSQL_MODE_DISABLED, false},
+	{NULL, 0, false}
+};
+#endif
 
 /*
  * Options for enum values stored in other modules
@@ -2674,7 +2685,16 @@ static struct config_enum ConfigureNamesEnum[] =
 		&regex_flavor,
 		REG_ADVANCED, regex_flavor_options, NULL, NULL
 	},
-
+#ifdef HAVE_SELINUX
+	{
+		{"sepostgresql", PGC_POSTMASTER, CONN_AUTH_SECURITY,
+		 gettext_noop(),
+		 NULL,
+		},
+		&sepostgresql_mode,
+		SEPGSQL_MODE_DISABLED, sepostgresql_mode_options, NULL, NULL
+	},
+#endif
 	{
 		{"session_replication_role", PGC_SUSET, CLIENT_CONN_STATEMENT,
 			gettext_noop("Sets the session's behavior for triggers and rewrite rules."),

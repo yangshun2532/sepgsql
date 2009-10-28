@@ -22,7 +22,7 @@
 
 #define SELinuxRelationId	3400
 
-CATALOG(pg_selinux,3400) BKI_SHARED_RELATION BKI_WITHOUT_OIDS
+CATALOG(pg_selinux,3400) BKI_SHARED_RELATION
 {
 	/* OID of database containing object, or 0 if shared relation */
 	Oid		seldatid;
@@ -40,4 +40,23 @@ CATALOG(pg_selinux,3400) BKI_SHARED_RELATION BKI_WITHOUT_OIDS
 	text	selcontext;
 } FormData_pg_selinux;
 
+/* ----------------
+ *		Form_pg_selinux corresponds to a pointer to a tuple with
+ *		the format of pg_class relation.
+ * ----------------
+ */
+typedef FormData_pg_selinux *Form_pg_selinux;
+
+/* ----------------
+ *		compiler constants for pg_selinux
+ * ----------------
+ */
+#define Natts_pg_selinux				5
+#define Anum_pg_selinux_seldatid		1
+#define Anum_pg_selinux_selrelid		2
+#define Anum_pg_selinux_selobjid		3
+#define Anum_pg_selinux_selsubid		4
+#define Anum_pg_selinux_selcontext		5
+
 #endif	/* PG_SELINUX_H */
+
