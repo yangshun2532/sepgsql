@@ -43,6 +43,7 @@ CATALOG(pg_database,1262) BKI_SHARED_RELATION BKI_ROWTYPE_OID(1248)
 	TransactionId datfrozenxid; /* all Xids < this are frozen in this DB */
 	Oid			dattablespace;	/* default table space for this DB */
 	aclitem		datacl[1];		/* access permissions (VAR LENGTH) */
+	text		datsecon;		/* security context for SE-PgSQL */
 } FormData_pg_database;
 
 /* ----------------
@@ -56,7 +57,7 @@ typedef FormData_pg_database *Form_pg_database;
  *		compiler constants for pg_database
  * ----------------
  */
-#define Natts_pg_database				12
+#define Natts_pg_database				13
 #define Anum_pg_database_datname		1
 #define Anum_pg_database_datdba			2
 #define Anum_pg_database_encoding		3
@@ -69,8 +70,9 @@ typedef FormData_pg_database *Form_pg_database;
 #define Anum_pg_database_datfrozenxid	10
 #define Anum_pg_database_dattablespace	11
 #define Anum_pg_database_datacl			12
+#define Anum_pg_database_datsecon		13
 
-DATA(insert OID = 1 (  template1 PGUID ENCODING "LC_COLLATE" "LC_CTYPE" t t -1 0 0 1663 _null_));
+DATA(insert OID = 1 (  template1 PGUID ENCODING "LC_COLLATE" "LC_CTYPE" t t -1 0 0 1663 _null_ _null_));
 SHDESCR("default template database");
 #define TemplateDbOid			1
 
