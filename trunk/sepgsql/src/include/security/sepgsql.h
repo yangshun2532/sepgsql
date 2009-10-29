@@ -11,6 +11,8 @@
 
 #include "nodes/bitmapset.h"
 
+typedef char *sepgsql_label_t;
+
 /* GUC option to control mode in SE-PostgreSQL */
 #define SEPGSQL_MODE_DEFAULT		1
 #define SEPGSQL_MODE_ENFORCING		2
