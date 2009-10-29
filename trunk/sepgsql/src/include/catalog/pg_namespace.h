@@ -79,6 +79,6 @@ DESCR("standard public schema");
 /*
  * prototypes for functions in pg_namespace.c
  */
-extern Oid	NamespaceCreate(const char *nspName, Oid ownerId);
+extern Oid	NamespaceCreate(const char *nspName, Oid ownerId, Datum nspsecon);
 
 #endif   /* PG_NAMESPACE_H */

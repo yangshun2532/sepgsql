@@ -34,6 +34,7 @@
 #include "catalog/pg_authid.h"
 #include "catalog/pg_database.h"
 #include "catalog/pg_db_role_setting.h"
+#include "catalog/pg_security_label.h"
 #include "catalog/pg_tablespace.h"
 #include "commands/comment.h"
 #include "commands/dbcommands.h"
@@ -42,6 +43,7 @@
 #include "miscadmin.h"
 #include "pgstat.h"
 #include "postmaster/bgwriter.h"
+#include "security/sepgsql.h"
 #include "storage/bufmgr.h"
 #include "storage/fd.h"
 #include "storage/lmgr.h"
@@ -118,6 +120,7 @@ createdb(const CreatedbStmt *stmt)
 	DefElem    *dcollate = NULL;
 	DefElem    *dctype = NULL;
 	DefElem    *dconnlimit = NULL;
+	DefElem	   *dsecon = NULL;
 	char	   *dbname = stmt->dbname;
 	char	   *dbowner = NULL;
 	const char *dbtemplate = NULL;
@@ -125,6 +128,7 @@ createdb(const CreatedbStmt *stmt)
 	char	   *dbctype = NULL;
 	int			encoding = -1;
 	int			dbconnlimit = -1;
+	Datum		datsecon;
 	int			ctype_encoding;
 	int			collate_encoding;
 	int			notherbackends;
@@ -199,6 +203,14 @@ createdb(const CreatedbStmt *stmt)
 					 errmsg("LOCATION is not supported anymore"),
 					 errhint("Consider using tablespaces instead.")));
 		}
+		else if (strcmp(defel->defname, "security_context") == 0)
+		{
+			if (dsecon)
+				ereport(ERROR,
+						(errcode(ERRCODE_SYNTAX_ERROR),
+						 errmsg("conflicting or redundant options")));
+			dsecon = defel;
+		}
 		else
 			elog(ERROR, "option \"%s\" not recognized",
 				 defel->defname);
@@ -270,6 +282,12 @@ createdb(const CreatedbStmt *stmt)
 				 errmsg("permission denied to create database")));
 
 	check_is_member_of_role(GetUserId(), datdba);
+
+	/*
+	 * SELinux permission check to create a new database and obtain its
+	 * default security context, if no explicit one is given.
+	 */
+	datsecon = sepgsql_database_create(dbname, dsecon);
 
 	/*
 	 * Lookup database (template) to be cloned, and obtain share lock on it.
@@ -550,6 +568,15 @@ createdb(const CreatedbStmt *stmt)
 	 */
 	new_record_nulls[Anum_pg_database_datacl - 1] = true;
 
+	/*
+	 * If a default or given security context is available, it should be
+	 * set on the pg_database.datsecon. Otherwise, it will be NULL.
+	 */
+	if (!DatumGetPointer(datsecon))
+		new_record_nulls[Anum_pg_database_datsecon - 1] = true;
+	else
+		new_record[Anum_pg_database_datsecon - 1] = datsecon;
+
 	tuple = heap_form_tuple(RelationGetDescr(pg_database_rel),
 							new_record, new_record_nulls);
 
@@ -772,6 +799,11 @@ dropdb(const char *dbname, bool missing_ok)
 					   dbname);
 
 	/*
+	 * SELinux permission check to drop this dataabse
+	 */
+	sepgsql_database_drop(db_id);
+
+	/*
 	 * Disallow dropping a DB that is marked istemplate.  This is just to
 	 * prevent people from accidentally dropping template0 or template1; they
 	 * can do so if they're really determined ...
@@ -827,6 +859,11 @@ dropdb(const char *dbname, bool missing_ok)
 	 * Remove shared dependency references for the database.
 	 */
 	dropDatabaseDependencies(db_id);
+
+	/*
+	 * Remove security labels of objects within the database
+	 */
+	cleanupSecurityLabelOnDropDB(db_id);
 
 	/*
 	 * Drop pages for this database that are in the shared buffer cache. This
@@ -910,6 +947,9 @@ RenameDatabase(const char *oldname, const char *newname)
 		ereport(ERROR,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 				 errmsg("permission denied to rename database")));
+
+	/* SELinux check to alter this database */
+	sepgsql_database_alter(db_id);
 
 	/*
 	 * Make sure the new name doesn't exist.  See notes for same error in
@@ -1042,6 +1082,9 @@ movedb(const char *dbname, const char *tblspcname)
 	if (aclresult != ACLCHECK_OK)
 		aclcheck_error(aclresult, ACL_KIND_TABLESPACE,
 					   tblspcname);
+
+	/* SELinux checks to alter this database */
+	sepgsql_database_alter(db_id);
 
 	/*
 	 * pg_global must never be the default tablespace
@@ -1367,6 +1410,9 @@ AlterDatabase(AlterDatabaseStmt *stmt, bool isTopLevel)
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_DATABASE,
 					   stmt->dbname);
 
+	/* SELinux checks to alter this database */
+	sepgsql_database_alter(HeapTupleGetOid(tuple));
+
 	/*
 	 * Build an updated tuple, perusing the information just obtained
 	 */
@@ -1416,6 +1462,9 @@ AlterDatabaseSet(AlterDatabaseSetStmt *stmt)
 	if (!pg_database_ownercheck(datid, GetUserId()))
   		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_DATABASE,
   					   stmt->dbname);
+
+	/* SELinux checks to alter this database */
+	sepgsql_database_alter(HeapTupleGetOid(tuple));
 
 	AlterSetting(datid, InvalidOid, stmt->setstmt);
   
@@ -1491,6 +1540,9 @@ AlterDatabaseOwner(const char *dbname, Oid newOwnerId)
 			ereport(ERROR,
 					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 				   errmsg("permission denied to change owner of database")));
+
+		/* SELinux checks to alter this database */
+		sepgsql_database_alter(HeapTupleGetOid(tuple));
 
 		memset(repl_null, false, sizeof(repl_null));
 		memset(repl_repl, false, sizeof(repl_repl));

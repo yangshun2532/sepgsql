@@ -40,6 +40,7 @@
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
 #include "parser/parse_func.h"
+#include "security/sepgsql.h"
 #include "storage/backendid.h"
 #include "storage/ipc.h"
 #include "utils/acl.h"
@@ -3038,6 +3039,12 @@ InitTempTableNamespace(void)
 						get_database_name(MyDatabaseId))));
 
 	snprintf(namespaceName, sizeof(namespaceName), "pg_temp_%d", MyBackendId);
+
+	/*
+	 * SELinux permission check to create a new schema and obtain its
+     * default security context.
+	 */
+	nspsecon = sepgsql_schema_create(namespaceName, true, NULL);
 
 	namespaceId = GetSysCacheOid(NAMESPACENAME,
 								 CStringGetDatum(namespaceName),

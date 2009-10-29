@@ -32,7 +32,6 @@
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_pltemplate.h"
 #include "catalog/pg_db_role_setting.h"
-#include "catalog/pg_selinux.h"
 #include "catalog/pg_shdepend.h"
 #include "catalog/pg_shdescription.h"
 #include "catalog/pg_tablespace.h"
@@ -306,7 +305,6 @@ IsSharedRelation(Oid relationId)
 		relationId == AuthMemRelationId ||
 		relationId == DatabaseRelationId ||
 		relationId == PLTemplateRelationId ||
-		relationId == SELinuxRelationId ||
 		relationId == SharedDescriptionRelationId ||
 		relationId == SharedDependRelationId ||
 		relationId == TableSpaceRelationId ||
@@ -320,7 +318,6 @@ IsSharedRelation(Oid relationId)
 		relationId == DatabaseNameIndexId ||
 		relationId == DatabaseOidIndexId ||
 		relationId == PLTemplateNameIndexId ||
-		relationId == SELinuxObjectIndexId ||
 		relationId == SharedDescriptionObjIndexId ||
 		relationId == SharedDependDependerIndexId ||
 		relationId == SharedDependReferenceIndexId ||

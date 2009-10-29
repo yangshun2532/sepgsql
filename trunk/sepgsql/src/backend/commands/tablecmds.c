@@ -1356,7 +1356,17 @@ MergeAttributes(List *schema, List *supers, bool istemp,
 							   attributeName),
 							   errdetail("%s versus %s", storage_name(def->storage),
 										 storage_name(attribute->attstorage))));
-
+#ifdef HAVE_SELINUX
+				/* Copy security context */
+				if (!def->secontext)
+					def->secontext = makeDefElem("security_context", )
+				else if (strcmp(strVal(((DefElem *)def->secontext)->arg),
+								TextDatumGetCString(attribute->attsecon)) != 0)
+					ereport(ERROR,
+							(errcode(ERRCODE_DATATYPE_MISMATCH),
+							 errmsg("inherited column \"%s\" has a conflict security context",
+									attributeName)));
+#endif
 				def->inhcount++;
 				/* Merge of NOT NULL constraints = OR 'em together */
 				def->is_not_null |= attribute->attnotnull;
@@ -1379,6 +1389,7 @@ MergeAttributes(List *schema, List *supers, bool istemp,
 				def->cooked_default = NULL;
 				def->constraints = NIL;
 				def->storage = attribute->attstorage;
+				def->secontext = (Node *) makeDefElem("security_context", (Node *)makeString());
 				inhSchema = lappend(inhSchema, def);
 				newattno[parent_attno - 1] = ++child_attno;
 			}

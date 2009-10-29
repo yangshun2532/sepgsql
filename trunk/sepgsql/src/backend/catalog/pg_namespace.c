@@ -28,7 +28,7 @@
  * ---------------
  */
 Oid
-NamespaceCreate(const char *nspName, Oid ownerId)
+NamespaceCreate(const char *nspName, Oid ownerId, Datum nspsecon)
 {
 	Relation	nspdesc;
 	HeapTuple	tup;
@@ -61,6 +61,10 @@ NamespaceCreate(const char *nspName, Oid ownerId)
 	values[Anum_pg_namespace_nspname - 1] = NameGetDatum(&nname);
 	values[Anum_pg_namespace_nspowner - 1] = ObjectIdGetDatum(ownerId);
 	nulls[Anum_pg_namespace_nspacl - 1] = true;
+	if (!DatumGetPointer(nspsecon))
+		nulls[Anum_pg_namespace_nspsecon - 1] = true;
+	else
+		values[Anum_pg_namespace_nspsecon - 1] = nspsecon;
 
 	nspdesc = heap_open(NamespaceRelationId, RowExclusiveLock);
 	tupDesc = nspdesc->rd_att;

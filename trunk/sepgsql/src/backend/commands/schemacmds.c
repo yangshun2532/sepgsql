@@ -50,6 +50,7 @@ CreateSchemaCommand(CreateSchemaStmt *stmt, const char *queryString)
 	Oid			saved_uid;
 	bool		saved_secdefcxt;
 	AclResult	aclresult;
+	Datum		nspsecon;
 
 	GetUserIdAndContext(&saved_uid, &saved_secdefcxt);
 
@@ -74,6 +75,13 @@ CreateSchemaCommand(CreateSchemaStmt *stmt, const char *queryString)
 					   get_database_name(MyDatabaseId));
 
 	check_is_member_of_role(saved_uid, owner_uid);
+
+	/*
+     * SELinux permission check to create a new schema and obtain its
+     * default security context, if no explicit one was given
+     */
+	nspsecon = sepgsql_schema_create(schemaName, false,
+									 (DefElem *) stmt->secontext);
 
 	/* Additional check to protect reserved schema names */
 	if (!allowSystemTableMods && IsReservedName(schemaName))
