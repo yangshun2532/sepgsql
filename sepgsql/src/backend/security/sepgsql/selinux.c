@@ -219,6 +219,39 @@ sepgsql_get_unlabeled_context(void)
 }
 
 /*
+ *
+ *
+ *
+ *
+ *
+ */
+char *
+sepgsql_get_file_context(const char *filename)
+{
+	char   *file_context;
+	char   *result;
+
+	if (getfilecon(filename, &file_context) < 0)
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 errmsg("could not get security context of \"%s\": %m",
+						filename)));
+	PG_TRY();
+	{
+		result = pstrdup(file_context);
+	}
+	PG_CATCH();
+	{
+		freecon(file_context);
+		PG_RE_THROW();
+	}
+	PG_END_TRY();
+	freecon(file_context);
+
+	return result;
+}
+
+/*
  * sepgsql_audit_log
  *
  *
@@ -481,66 +514,4 @@ sepgsql_compute_create(char *scontext, char *tcontext, uint16 tclass)
 		tcontext = sepgsql_get_unlabeled_context();
 
 	return compute_create_internal(scontext, tcontext, tclass);
-}
-
-/*
- * sepgsql_mcstrans_in
- *
- *
- */
-char *
-sepgsql_mcstrans_in(char *trans_context)
-{
-	char	   *raw_context;
-	char	   *result;
-
-	if (selinux_trans_to_raw_context(trans_context, &raw_context) < 0)
-		ereport(ERROR,
-				(errcode(ERRCODE_INTERNAL_ERROR),
-				 errmsg("SELinux: failed to translate \"%s\"", trans_context)));
-	PG_TRY();
-	{
-		result = pstrdup(raw_context);
-	}
-	PG_CATCH();
-	{
-		freecon(raw_context);
-		PG_RE_THROW();
-	}
-	PG_END_TRY();
-	freecon(raw_context);
-
-	return result;
-}
-
-/*
- * sepgsql_mcstrans_out
- *
- *
- *
- *
- */
-char *
-sepgsql_mcstrans_out(char *raw_context)
-{
-	char	   *trans_context;
-	char	   *result;
-
-	if (selinux_raw_to_trans_context(raw_context, &trans_context) < 0)
-		ereport(ERROR,
-				(errcode(ERRCODE_INTERNAL_ERROR),
-				 errmsg("SELinux: failed to translate \"%s\"", raw_context)));
-	PG_TRY();
-	{
-		result = pstrdup(trans_context);
-	}
-	PG_CATCH();
-	{
-		freecon(trans_context);
-		PG_RE_THROW();
-	}
-	PG_END_TRY();
-	freecon(trans_context);
-
-	return result;
 }

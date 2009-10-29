@@ -15,52 +15,14 @@ sepgsql_is_enabled(void)
 	return false;
 }
 
-char *
-sepgsql_get_client_context(void)
+Datum
+sepgsql_database_relabel(Oid datOid, DefElem *datLabel)
 {
-	elog(ERROR, "SE-PgSQL is disabled in this build");
+	ereport(ERROR,
+			(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+			 errmsg("SE-PostgreSQL is disabled")));
 
-	return NULL;
+	return PointerGetDatum(NULL);
 }
 
-char *
-sepgsql_get_unlabeled_context(void)
-{
-	elog(ERROR, "SE-PgSQL is disabled in this build");
 
-	return NULL;
-}
-
-extern bool
-sepgsql_compute_perms(char *scontext, char *tcontext,
-                      uint16 tclass, uint32 required,
-                      const char *audit_name, bool abort)
-{
-	elog(ERROR, "SE-PgSQL is disabled in this build");
-
-	return false;
-}
-
-char *
-sepgsql_compute_create(char *scontext, char *tcontext, uint16 tclass)
-{
-	elog(ERROR, "SE-PgSQL is disabled in this build");
-
-	return NULL;
-}
-
-char *
-sepgsql_mcstrans_in(char *trans_context)
-{
-	elog(ERROR, "SE-PgSQL is disabled in this build");
-
-	return NULL;
-}
-
-char *
-sepgsql_mcstrans_out(char *raw_context)
-{
-	elog(ERROR, "SE-PgSQL is disabled in this build");
-
-	return NULL;
-}

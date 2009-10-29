@@ -44,6 +44,7 @@
 #include "foreign/foreign.h"
 #include "miscadmin.h"
 #include "parser/parse_func.h"
+#include "security/sepgsql.h"
 #include "utils/acl.h"
 #include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
@@ -1501,6 +1502,10 @@ ExecGrant_Attribute(InternalGrant *istmt, Oid relOid, const char *relname,
 								 relOid, grantorId, ACL_KIND_COLUMN,
 								 relname, attnum,
 								 NameStr(pg_attribute_tuple->attname));
+	/*
+	 * SELinux checks permission to grant/revoke on the attribute
+	 */
+	sepgsql_attribute_grant(relOid, attnum);
 
 	/*
 	 * Generate new ACL.
@@ -1756,6 +1761,10 @@ ExecGrant_Relation(InternalGrant *istmt)
 										 ? ACL_KIND_SEQUENCE : ACL_KIND_CLASS,
 										 NameStr(pg_class_tuple->relname),
 										 0, NULL);
+			/*
+			 * SELinux checks permission to grant/revoke on the relation
+			 */
+			sepgsql_relation_grant(relOid);
 
 			/*
 			 * Generate new ACL.
@@ -1944,6 +1953,10 @@ ExecGrant_Database(InternalGrant *istmt)
 									 datId, grantorId, ACL_KIND_DATABASE,
 									 NameStr(pg_database_tuple->datname),
 									 0, NULL);
+		/*
+		 * SELinux checks permission to grant/revoke on the database 
+		 */
+		sepgsql_database_grant(datId);
 
 		/*
 		 * Generate new ACL.
@@ -2541,6 +2554,10 @@ ExecGrant_Namespace(InternalGrant *istmt)
 									 nspid, grantorId, ACL_KIND_NAMESPACE,
 									 NameStr(pg_namespace_tuple->nspname),
 									 0, NULL);
+		/*
+		 * SELinux checks permission to grant/revoke ths namespace
+		 */
+		sepgsql_schema_grant(nspid);
 
 		/*
 		 * Generate new ACL.
