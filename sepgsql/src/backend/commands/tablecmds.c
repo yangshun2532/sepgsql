@@ -7375,6 +7375,12 @@ MergeAttributesIntoExisting(Relation child_rel, Relation parent_rel)
 				errmsg("column \"%s\" in child table must be marked NOT NULL",
 					   attributeName)));
 
+#ifdef HAVE_SELINUX
+			/*
+			 * Here we need to check security context is identical, or not
+			 */
+#endif
+
 			/*
 			 * OK, bump the child column's inheritance count.  (If we fail
 			 * later on, this change will just roll back.)
