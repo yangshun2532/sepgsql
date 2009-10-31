@@ -97,15 +97,18 @@ sepgsql_compute_perms(char *scontext, char *tcontext,
 extern char *
 sepgsql_compute_create(char *scontext, char *tcontext, uint16 tclass);
 
-extern char *sepgsql_mcstrans_out(char *context);
-extern char *sepgsql_mcstrans_in(char *context);
 
 /*
  * label.c : management of security context
  */
-
-
-
+extern char *sepgsql_get_client_context(void);
+extern char *sepgsql_get_unlabeled_context(void);
+extern char *sepgsql_get_database_context(Oid datOid);
+extern char *sepgsql_get_namespace_context(Oid nspOid);
+extern char *sepgsql_get_relation_context(Oid relOid);
+extern char *sepgsql_get_attribute_context(Oid relOid, AttrNumber attnum);
+extern char *sepgsql_mcstrans_out(char *context);
+extern char *sepgsql_mcstrans_in(char *context);
 
 /*
  * hooks.c : entrypoints of mandatory access controls

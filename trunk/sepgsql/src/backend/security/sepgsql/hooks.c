@@ -37,6 +37,7 @@ sepgsql_database_common(Oid datOid, uint32 required, bool abort)
 	HeapTuple	tuple;
 	Datum		datsecon;
 	bool		rc, isnull;
+	char	   *audit_name;
 	char	   *context = NULL;
 
 	tuple = SearchSysCache(DATABASEOID,
@@ -57,11 +58,12 @@ sepgsql_database_common(Oid datOid, uint32 required, bool abort)
 	if (!context || security_check_context_raw(context) < 0)
 		context = sepgsql_get_unlabeled_context();
 
+	audit_name = NameStr(((Form_pg_database) GETSTRUCT(tuple))->datname);
 	rc = sepgsql_compute_perms(sepgsql_get_client_context(),
 							   context,
 							   SEPG_CLASS_DB_DATABASE,
 							   required,
-							   get_database_name(datOid), abort);
+							   audit_name, abort);
 	ReleaseSysCache(tuple);
 
 	return rc;
@@ -362,6 +364,7 @@ sepgsql_schema_common(Oid nspOid, uint32 required, bool abort)
 	HeapTuple	tuple;
 	Datum		nspsecon;
 	bool		rc, isnull;
+	char	   *audit_name;
 	char	   *context = NULL;
 
 	tuple = SearchSysCache(NAMESPACEOID,
@@ -382,11 +385,12 @@ sepgsql_schema_common(Oid nspOid, uint32 required, bool abort)
 	if (!context || security_check_context_raw(context) < 0)
 		context = sepgsql_get_unlabeled_context();
 
+	audit_name = NameStr(((Form_pg_namespace) GETSTRUCT(tuple))->nspname);
 	rc = sepgsql_compute_perms(sepgsql_get_client_context(),
 							   context,
 							   SEPG_CLASS_DB_SCHEMA,
 							   required,
-							   get_namespace_name(nspOid), abort);
+							   audit_name, abort);
 	ReleaseSysCache(tuple);
 
 	return rc;
@@ -522,9 +526,9 @@ sepgsql_schema_relabel(Oid nspOid, DefElem *nspLabel)
 	context = sepgsql_mcstrans_in(strVal(datLabel->arg));
 
 	/* check db_schema:{setattr relabelfrom} on the older context */
-	sepgsql_database_common(nspOid,
-							SEPG_DB_SCHEMA__SETATTR |
-							SEPG_DB_SCHEMA__RELABELFROM, true);
+	sepgsql_schema_common(nspOid,
+						  SEPG_DB_SCHEMA__SETATTR |
+						  SEPG_DB_SCHEMA__RELABELFROM, true);
 
 	/* check db_schema:{relabelto} on the newer context */
 	sepgsql_compute_perms(sepgsql_get_client_context(),
@@ -537,16 +541,16 @@ sepgsql_schema_relabel(Oid nspOid, DefElem *nspLabel)
 }
 
 /*
- * sepgsql_database_grant
+ * sepgsql_schema_grant
  *
  * It checks client's privilege to grant/revoke permissions on a certain
- * database. If violated, it raises an error.
+ * schema. If violated, it raises an error.
  *
  * This hook should be called on the routine to handle GRANT/REVOKE statement
- * on databases. It also modifies metadata of the database, so we need to
- * check db_database:{setattr} permission on a pair of client and the database.
+ * on schema. It also modifies metadata of the schema, so we need to check
+ * db_schema:{setattr} permission on a pair of client and the schema.
  *
- * datOid : OID of the database to be altered
+ * nspOid : OID of the schema to be altered
  */
 void
 sepgsql_schema_grant(Oid nspOid)
@@ -593,10 +597,61 @@ sepgsql_schema_search(Oid nspOid, bool abort)
  * Pg_class related security hooks
  *
  ************************************************************/
+
+/*
+ * sepgsql_relation_common
+ *
+ * A helper function to check required permissions on a pair of the client
+ * and the given relation
+ */
 static bool
 sepgsql_relation_common(Oid relOid, uint32 required, bool abort)
-{}
+{
+	HeapTuple	tuple;
+	Datum		datum;
+	bool		rc, isnull;
+	char		relkind;
+	char	   *audit_name;
+	char	   *context = NULL;
 
+	tuple = SearchSysCache(RELOID,
+						   ObjectIdGetDatum(relOid),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "cache lookup failed for relation %u", relOid);
+
+	relkind = ((Form_pg_class) GETSTRUCT(tuple))->relkind;
+
+	if (relkind != RELKIND_RELATION)
+	{
+		ReleaseSysCache(tuple);
+		return true;
+	}
+
+	context = SysCacheGetAttr(RELOID, tuple,
+							  Anum_pg_class_relsecon, &isnull);
+	if (!isnull || security_check_context_raw(context) < 0)
+		context = sepgsql_get_unlabeled_context();
+
+	audit_name = NameStr(((Form_pg_class) GETSTRUCT(tuple))->relname);
+	rc = sepgsql_compute_perms(sepgsql_get_client_context(),
+							   context,
+							   SEPG_CLASS_DB_TABLE,
+							   required, 
+							   audit_name, abort);
+	ReleaseSysCache(tuple);
+
+	return rc;
+}
+
+/*
+ *
+ *
+ *
+ *
+ *
+ *
+ */
 Datum *
 sepgsql_relation_create(const char *relName,
 						char relkind,
@@ -607,21 +662,138 @@ sepgsql_relation_create(const char *relName,
 						bool createAs)
 {}
 
+/*
+ * sepgsql_relation_alter
+ *
+ * It checks client's privilege to alter a certain relation.
+ * If violated, it raises an error.
+ *
+ * This hook should be called on the routine to handle ALTER TABLE
+ * statement. It modifies metadata of the table, so we need to check
+ * db_table:{setattr} permission on a pair of client and the relation.
+ * In addition, a few ALTER TABLE options enables to affect to the
+ * namespace, so we also need to check db_schema:{add_name} and
+ * db_schema:{remove_name} permission on corresponding schemas.
+ *
+ * relOid : OID of the relation to be altered
+ * newName : New name of the relation, if exist
+ * newNsp : Name schema of the relation, if exist
+ */
 void
 sepgsql_relation_alter(Oid relOid, const char *newName, Oid newNsp)
-{}
+{
+	char   *context;
 
+	if (!sepgsql_is_enabled())
+		return;
+
+	sepgsql_relation_common(relOid, SEPG_DB_TABLE__SETATTR, true);
+
+	if (newName)
+		sepgsql_schema_common(get_rel_namespace(relOid),
+							  SEPG_DB_SCHEMA__ADD_NAME |
+							  SEPG_DB_SCHEMA__REMOVE_NAME, true);
+	if (newNsp)
+	{
+		sepgsql_schema_common(get_rel_namespace(relOid),
+							  SEPG_DB_SCHEMA__REMOVE_NAME, true);
+		sepgsql_schema_common(newNsp, SEPG_DB_SCHEMA__ADD_NAME, true);
+	}
+}
+
+/*
+ * sepgsql_relation_drop
+ *
+ * It checks client's privilege to drop a certain relation.
+ * If violated, it raises an error.
+ *
+ * This hook should be called when user's query tries to drop a cerain
+ * table, including cascaded deletions, not only DROP TABLE statement.
+ *
+ * It checks db_table:{drop} permission, if the given relation is a
+ * regular table (RELKIND_RELATION). Otherwise, it does not apply
+ * any checks.
+ *
+ * relOid : OID of the relation to be dropped
+ */
 void
 sepgsql_relation_drop(Oid relOid)
-{}
+{
+	if (!sepgsql_is_enabled())
+		return;
 
+	sepgsql_relation_common(relOid, SEPG_DB_TABLE__DROP, true);
+}
+
+/*
+ * sepgsql_relation_grant
+ *
+ * It checks client's privilege to grant/revoke permissions on a certain
+ * relation. If violated, it raises an error.
+ *
+ * This hook should be called on the routine to handle GRANT/REVOKE statement
+ * on relations. It also modifies metadata of the relation, so we need to
+ * check db_table:{setattr} permission on a pair of client and the table.
+ *
+ * relOid : OID of the relation to be altered
+ */
 void
 sepgsql_relation_grant(Oid relOid)
-{}
+{
+	if (!sepgsql_is_enabled())
+		return;
 
+	sepgsql_relation_common(relOid, SEPG_DB_TABLE__SETATTR, true);
+}
+
+/*
+ * sepgsql_relation_relabel
+ *
+ * It checks client's privilege to change security context of a certain
+ * relation. If violated, it raises an error.
+ *
+ * This hook should be called on the routine to handle ALTER TABLE
+ * statement with SECURITY_CONTEXT option. It modifies a special metadata,
+ * so it requires two more permissions, not only db_table:{setattr}.
+ * It also checks db_table:{relabelfrom} permission on the older security
+ * context of the table, and db_table:{relabelto} on the newer one
+ * to be assigned on.
+ *
+ * This hook also applies validation check on the given security context
+ * and translates it into raw-format. The caller has to assign the returned
+ * security context on the target table correctly.
+ *
+ * relOid : OID of the target schema
+ * relLabel : An explicit security context to be assigned on
+ */
 Datum
 sepgsql_relation_relabel(Oid relOid, DefElem *relLabel)
-{}
+{
+	char   *context;
+
+	if (!sepgsql_is_enabled())
+	{
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("SE-PostgreSQL is disabled")));
+	}
+
+	context = sepgsql_mcstrans_in(strVal(datLabel->arg));
+
+	/* check db_table:{setattr relabelfrom} on the older context */
+	sepgsql_relation_common(relOid,
+							SEPG_DB_TABLE__SETATTR |
+							SEPG_DB_TABLE__RELABELFROM, true);
+
+	/* check db_table:{relabelto} on the newer context */
+	sepgsql_compute_perms(sepgsql_get_client_context(),
+						  context,
+						  SEPG_CLASS_DB_TABLE,
+						  SEPG_DB_TABLE__RELABELTO,
+						  get_namespace_name(nspOid), true);
+
+	return CStringGetTextDatum(context);
+}
 
 /*
  * sepgsql_relation_truncate
@@ -636,20 +808,112 @@ sepgsql_relation_relabel(Oid relOid, DefElem *relLabel)
  */
 void
 sepgsql_relation_truncate(Relation rel)
-{}
+{
+	if (!sepgsql_is_enabled())
+		return;
 
+	
+}
+
+/*
+ * sepgsql_relation_references
+ * 
+ * It checks 
+ * 
+ * 
+ * 
+ */
 void
 sepgsql_relation_references(Relation pkRel, int16 *pkAttrs,
-							Relation fkRel, int16 *fkAttrs, int natts)
-{}
+							Relation fkRel, int16 *fkAttrs, int nkeys)
+{
+	char		audit_name[NAMEDATALEN * 2 + 3];
+	char	   *scontext;
+	char	   *tcontext;
+	int			i;
 
+	if (!sepgsql_is_enabled())
+		return;
+
+	/* check db_table:{reference} */
+	scontext = sepgsql_get_relation_context(RelationGetRelid(fkRel));
+	if (!scontext || security_check_context_raw(scontext) < 0)
+		scontext = sepgsql_get_unlabeled_context();
+
+	tcontext = sepgsql_get_relation_context(RelationGetRelid(pkRel));
+	if (!tcontext || security_check_context_raw(tcontext) < 0)
+		tcontext = sepgsql_get_unlabeled_context();
+
+	sepgsql_compute_perms(scontext, tcontext,
+						  SEPG_CLASS_DB_TABLE,
+						  SEPG_DB_TABLE__REFERENCE,
+						  RelationGetRelationName(fkRel), true);
+
+	/* check db_column:{reference} */
+	for (i=0; i < nkeys; i++)
+	{
+		scontext = sepgsql_get_attribute_context(RelationGetRelid(fkRel),
+												 fkAttrs[i]);
+		if (!scontext || security_check_context_raw(scontext) < 0)
+			scontext = sepgsql_get_unlabeled_context();
+
+		tcontext = sepgsql_get_attribute_context(RelationGetRelid(pkRel),
+												 pkAttrs[i]);
+		if (!tcontext || security_check_context_raw(tcontext) < 0)
+			tcontext = sepgsql_get_unlabeled_context();
+
+		sprintf(audit_name, "%s.%s", RelationGetRelationName(fkRel),
+				get_attname(RelationGetRelid(fkRel), fkAttrs[i]));
+		sepgsql_compute_perms(scontext, tcontext,
+							  SEPG_CLASS_DB_COLUMN,
+							  SEPG_DB_COLUMN__REFERENCE,
+							  audit_name, true);
+	}
+}
+
+/*
+ * sepgsql_relation_lock
+ *
+ * It checks client's privilege to lock a certain table explicitly.
+ * If violated, it raises an error.
+ *
+ * Note that db_table:{lock} parmission is not checked on implicit
+ * locks due to the regular operations. This hook should be called
+ * from the routine to handle LOCK statement.
+ *
+ * relOid : OID of the relation to be locked explicitly
+ */
 void
 sepgsql_relation_lock(Oid relOid)
-{}
+{
+	if (!sepgsql_is_enabled())
+		return;
 
+	sepgsql_relation_common(relOid, SEPG_DB_TABLE__LOCK, true);
+}
+
+/*
+ * sepgsql_index_create
+ *
+ * It checks client's privilege to create an index on a certain table.
+ * If violated, it raises an error.
+ *
+ * We consider an index a part of properties of table, so we checks
+ * db_table:{setattr} permission on the table to be indexed here.
+ * In addition, it also add a name into the namespace, so db_schema:{add_name}
+ * is also checked here.
+ *
+ * relOid : OID of the relation to be indexed
+ * nspOid : OID of the schema to be assigned
+ */
 void
 sepgsql_index_create(Oid relOid, Oid nspOid)
 {
+	if (!sepgsql_is_enabled())
+		return;
+
+	sepgsql_relation_common(relOid, SEPG_DB_TABLE__SETATTR, true);
+	sepgsql_schema_common(nspOid, SEPG_DB_SCHEMA__ADD_NAME, true);
 }
 
 /************************************************************
@@ -666,6 +930,26 @@ sepgsql_index_create(Oid relOid, Oid nspOid)
  * Misc objects related security hooks
  *
  ************************************************************/
+
+/*
+ * sepgsql_object_comment
+ *
+ * It checks client's privilege to comment on a certain database object.
+ * If violated, it raises an error.
+ * Every entries within pg_description/pg_shdepend are considered as
+ * a part of properties of the database object commented.
+ * So, we checks db_xxx:{setattr} permission (it controls modification
+ * of the metadata) on a pair of the client and the database object to
+ * be commented on.
+ *
+ * This hook should be called from CreateComments() or CreateSharedComments().
+ * If client tries to comment on the managed object, it checks appropriate
+ * permission.
+ *
+ * relOid : OID of the catalog which owns the target object
+ * objId : OID of the database object to be commented on
+ * subId : If a column, attribute number to be commented on
+ */
 void
 sepgsql_object_comment(Oid relOid, Oid objId, int32 subId)
 {
