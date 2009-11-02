@@ -14,6 +14,102 @@
 bool	sepostgresql_mcstrans;
 
 /*
+ *
+ *
+ *
+ *
+ */
+char *
+sepgsql_default_database_context(void)
+{
+	return sepgsql_compute_create(sepgsql_get_client_context(),
+								  sepgsql_get_file_context(DataDir),
+								  SEPG_CLASS_DB_DATABASE);
+}
+
+char *
+sepgsql_default_schema_context(Oid datOid)
+{
+	HeapTuple	tuple;
+	Datum		datum;
+	bool		isnull;
+	char	   *context = NULL;
+
+	tuple = SearchSysCache(DATABASEOID,
+						   ObjectIdGetDatum(datOid),
+						   0, 0, 0);
+	if (HeapTupleIsValid(tuple))
+	{
+		datum = SysCacheGetAttr(DATABASEOID, tuple,
+								Anum_pg_database_datsecon, &isnull);
+		if (!isnull)
+			context = TextDatumGetCString(datum);
+
+		ReleaseSysCache(tuple);
+	}
+
+	if (!context || security_check_context_raw(context) < 0)
+		context = sepgsql_get_unlabeled_context();
+
+	return sepgsql_compute_create(sepgsql_get_client_context(),
+								  context,
+								  SEPG_CLASS_DB_SCHEMA);
+}
+
+char *
+sepgsql_default_table_context(Oid nspOid)
+{
+	HeapTuple	tuple;
+	Datum		datum;
+	bool		isnull;
+	char	   *context = NULL;
+
+	if (IsBootstrapProcessingMode())
+	{
+		static char *cached = NULL;
+
+		if (!cached)
+		{
+			char   *temp
+				= sepgsql_compute_create(sepgsql_get_client_context(),
+										 sepgsql_default_schema_context(),
+										 SEPG_CLASS_DB_TABLE);
+			cached = MemoryContextStrdup(TopMemoryContext, temp);
+		}
+		return cached;
+	}
+
+	tuple = SearchSysCache(NAMESPACEOID,
+						   ObjectIdGetDatum(nspOid),
+						   0, 0, 0);
+	if (HeapTupleIsValid(tuple))
+	{
+		datum = SysCacheGetAttr(NAMESPACEOID, tuple,
+								Anum_pg_namespace_nspsecon, &isnull);
+		if (!isnull)
+			context = TextDatumGetCString(datum);
+
+		ReleaseSysCache(tuple);
+	}
+
+	if (!context || security_check_context_raw(context) < 0)
+		context = sepgsql_get_unlabeled_context();
+
+	return sepgsql_compute_create(sepgsql_get_client_context(),
+								  context,
+								  SEPG_CLASS_DB_TABLE);
+}
+
+char *
+sepgsql_default_column_context(Oid relOid)
+{}
+
+
+
+
+
+
+/*
  * sepgsql_bootstrap_labeling
  *
  * It replaces the given _null_ in the postgres.bki by the default security
