@@ -645,12 +645,26 @@ sepgsql_relation_common(Oid relOid, uint32 required, bool abort)
 }
 
 /*
+ * sepgsql_relation_create
+ *
+ * It checks client's privilege to create a new table and columns owned
+ * by the table, and returns an array of security contexts to be assigned
+ * on the table/columns.
+ * If violated, it raises an error.
+ *
+ * This hook should be called on the routine to create a new regular
+ * table, but no need to 
  *
  *
  *
  *
- *
- *
+ * relName : name of the new relation
+ * relkind : relkind to be assigned on
+ * tupDesc : TupleDesc of the new relation.
+ * nspOid : OID of the namespace which owns the new relation
+ * relLabel : 
+ * colList : 
+ * createAs : True, if the new table created by 
  */
 Datum *
 sepgsql_relation_create(const char *relName,
@@ -660,7 +674,100 @@ sepgsql_relation_create(const char *relName,
 						DefElem *relLabel,
 						List *colList,
 						bool createAs)
-{}
+{
+	ListCell   *l;
+	Datum	   *result;
+	char	   *context;
+	uint16		tclass;
+	uint32		required;
+
+
+	/*
+	 * We don't allow SECURITY_CONTEXT option without SE-PgSQL enabled
+	 */
+	if (!sepgsql_is_enabled())
+	{
+		if (datLabel)
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("SE-PostgreSQL is disabled")));
+
+		foreach (l, colList)
+		{
+			ColumnDef  *cdef = (ColumnDef *) lfirst(l);
+
+			if (cdef->inhcount == 0 && cdef->secontext)
+				ereport(ERROR,
+						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+						 errmsg("SE-PostgreSQL is disabled")));
+		}
+		return NULL;
+	}
+
+
+
+	/*
+	 * No need to check anything on 
+	 *
+	 */
+	if (relkind != RELKIND_RELATION)
+		return NULL;
+
+	if (!relLabel)
+		context = sepgsql_default_table_context(nspOid);
+	else
+	{
+		
+		
+	}
+	{
+		
+		
+	}
+	else
+	{
+		
+		
+	}
+	tclass = SEPG_CLASS_DB_TABLE;
+	required = SEPG_DB_TABLE__CREATE;
+	if (createAs)
+		required |= SEPG_DB_TABLE__INSERT;
+	sepgsql_compute_perms(sepgsql_get_client_context(),
+						  context, tclass, required, relName, true);
+
+
+extern bool
+	sepgsql_compute_perms(char *scontext, char *tcontext,
+						  uint16 tclass, uint32 required,
+						  const char *audit_name, bool abort)
+	/*
+	 * The result array contains security contexts to be assigned on
+	 * the new table and columns. The result[0] stores the security
+	 * context of the table.
+	 * And, result[attnum - FirstLowInvalidHeapAttributeNumber] stores
+	 * the security context of the column with this attribute number.
+	 */
+	result = palloc0(sizeof(Datum) * (tupDesc->natts
+					 - FirstLowInvalidHeapAttributeNumber));
+	
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+}
 
 /*
  * sepgsql_relation_alter
