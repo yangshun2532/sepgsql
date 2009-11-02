@@ -835,6 +835,40 @@ get_attnum(Oid relid, const char *attname)
 }
 
 /*
+ * get_attsecontext
+ *
+ *		Given the relation OID and the attribute number with the relation,
+ *		return the security context in the plaing cstring.
+ *		Note that the purpose of this routine is to fetch just a text value
+ *		from pg_attribute.attsecontext. 
+ *
+ *
+ */
+char *
+get_attsecontext(Oid relid, AttrNumber attnum)
+{
+	HeapTuple	tp;
+	Datum		datum;
+	bool		isnull;
+	char	   *result = NULL;
+
+	tp = SearchSysCache(ATTNUM,
+						ObjectIdGetDatum(relid),
+						Int16GetDatum(attnum),
+						0, 0);
+	if (HeapTupleIsValid(tp))
+	{
+		datum = SysCacheGetAttr(ATTNUM, tp,
+								Anum_pg_attribute_attsecontext, &isnull);
+		if (!isnull)
+			result = TextDatumGetCString(datum);
+
+		ReleaseSysCache(tp);
+	}
+	return result;
+}
+
+/*
  * get_atttype
  *
  *		Given the relation OID and the attribute number with the relation,
