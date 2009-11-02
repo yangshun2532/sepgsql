@@ -1249,6 +1249,19 @@ static struct config_bool ConfigureNamesBool[] =
 		&IgnoreSystemIndexes,
 		false, NULL, NULL
 	},
+#ifdef HAVE_SELINUX
+	{
+		{"sepostgresql_mcstrans", PGC_USERSET, CONN_AUTH_SECURITY,
+			gettext_noop("turn on/off mcstrans feature"),
+			gettext_noop("It is a feature to translate a security context between "
+						 "a human-readable and raw format. "
+						 "If disabled, we import/export them with only raw-format"),
+			GUC_NOT_IN_SAMPLE
+		},
+		&sepostgresql_mcstrans,
+		true, NULL, NULL
+	},
+#endif
 
 	/* End-of-list marker */
 	{
@@ -2688,8 +2701,8 @@ static struct config_enum ConfigureNamesEnum[] =
 #ifdef HAVE_SELINUX
 	{
 		{"sepostgresql", PGC_POSTMASTER, CONN_AUTH_SECURITY,
-		 gettext_noop(),
-		 NULL,
+			gettext_noop("Set the SE-PostgreSQL performing mode"),
+			NULL,
 		},
 		&sepostgresql_mode,
 		SEPGSQL_MODE_DISABLED, sepostgresql_mode_options, NULL, NULL

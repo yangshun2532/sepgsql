@@ -1326,6 +1326,7 @@ MergeAttributes(List *schema, List *supers, bool istemp,
 			{
 				Oid			defTypeId;
 				int32		deftypmod;
+				char	   *defsecon;
 
 				/*
 				 * Yes, try to merge the two column definitions. They must
@@ -1356,17 +1357,42 @@ MergeAttributes(List *schema, List *supers, bool istemp,
 							   attributeName),
 							   errdetail("%s versus %s", storage_name(def->storage),
 										 storage_name(attribute->attstorage))));
-#ifdef HAVE_SELINUX
-				/* Copy security context */
-				if (!def->secontext)
-					def->secontext = makeDefElem("security_context", )
-				else if (strcmp(strVal(((DefElem *)def->secontext)->arg),
-								TextDatumGetCString(attribute->attsecon)) != 0)
+
+				/*
+				 * Copy security context
+				 *
+				 * SE-PgSQL's hardwired rule: any inherited column must have
+				 * same security context with its parent's one.
+				 * If no explicit security context is given and the child has
+				 * only one parent, the security context of the parent column
+				 * will be copied instead of the default security context.
+				 * (It performs as if user provides an explicit security
+				 * context which has identical value with the parent's column
+				 * in creation.)
+				 *
+				 * If the new inherited column has multiple parents, or an
+				 * explicit security context is given by user, these contexts
+				 * have to be matched. If either of columns are unlabeled, or
+				 * both of the are labeled but unmatched, it raises an error.
+				 *
+				 * We don't enclose this block by sepgsql_is_enabled(), because
+				 * it is just a simple string comparison, and we have no reasonable
+				 * way to restore security context of the inherited columns created
+				 * when SE-PgSQL is disabled in run-time.
+				 * (If SE-PgSQL is disabled in compile time, any security contexts
+				 * are always disabled. So, this check never raise an error.)
+				 */
+				defsecon = get_attsecontext(RelationGetRelid(relation), exist_attno);
+				if (def->secontext)
+					def->scontext = (Node *) makeString(secontext);
+				else if (!((!defsecon && !strVal(def->scontext)) ||
+						   (defsecon && strVal(def->scontext) &&
+							strcmp(defsecon, strVal(def->scontext)) == 0)))
 					ereport(ERROR,
 							(errcode(ERRCODE_DATATYPE_MISMATCH),
-							 errmsg("inherited column \"%s\" has a conflict security context",
+							 errmsg("inherited column \"%s\" has a security context conflict",
 									attributeName)));
-#endif
+
 				def->inhcount++;
 				/* Merge of NOT NULL constraints = OR 'em together */
 				def->is_not_null |= attribute->attnotnull;
@@ -1389,7 +1415,9 @@ MergeAttributes(List *schema, List *supers, bool istemp,
 				def->cooked_default = NULL;
 				def->constraints = NIL;
 				def->storage = attribute->attstorage;
-				def->secontext = (Node *) makeDefElem("security_context", (Node *)makeString());
+				def->secontext =
+					(Node *) makeString(get_attsecontext(RelationGetRelid(relation),
+														 attribute->attnum));
 				inhSchema = lappend(inhSchema, def);
 				newattno[parent_attno - 1] = ++child_attno;
 			}
@@ -7360,6 +7388,8 @@ MergeAttributesIntoExisting(Relation child_rel, Relation parent_rel)
 		{
 			/* Check they are same type and typmod */
 			Form_pg_attribute childatt = (Form_pg_attribute) GETSTRUCT(tuple);
+			char	   *context_p;
+			char	   *context_c;
 
 			if (attribute->atttypid != childatt->atttypid ||
 				attribute->atttypmod != childatt->atttypmod)
@@ -7375,11 +7405,21 @@ MergeAttributesIntoExisting(Relation child_rel, Relation parent_rel)
 				errmsg("column \"%s\" in child table must be marked NOT NULL",
 					   attributeName)));
 
-#ifdef HAVE_SELINUX
 			/*
-			 * Here we need to check security context is identical, or not
+			 * SE-PgSQL's hardwired rule: any inherited column must have same
+			 * security context with its parent's one.
+			 * If either of columns is not labeled, or both of them are labeled
+			 * but unmatched, it raised an error.
 			 */
-#endif
+			context_p = get_attsecontext(RelationGetRelid(parent_rel), parent_attno);
+			context_c = get_attsecontext(RelationGetRelid(child_rel), childatt->attno);
+			if ((context_p && !context_c) || (!context_p && context_c) ||
+				(context_p && context_c && strcmp(context_p, context_c) != 0)
+				ereport(ERROR,
+						(errcode(ERRCODE_DATATYPE_MISMATCH),
+						 errmsg("child table \"%s\" has different security context for column \"%s\"",
+								RelationGetRelationName(child_rel),
+								attributeName)));
 
 			/*
 			 * OK, bump the child column's inheritance count.  (If we fail

@@ -816,62 +816,6 @@ sepgsql_relation_truncate(Relation rel)
 }
 
 /*
- * sepgsql_relation_references
- * 
- * It checks 
- * 
- * 
- * 
- */
-void
-sepgsql_relation_references(Relation pkRel, int16 *pkAttrs,
-							Relation fkRel, int16 *fkAttrs, int nkeys)
-{
-	char		audit_name[NAMEDATALEN * 2 + 3];
-	char	   *scontext;
-	char	   *tcontext;
-	int			i;
-
-	if (!sepgsql_is_enabled())
-		return;
-
-	/* check db_table:{reference} */
-	scontext = sepgsql_get_relation_context(RelationGetRelid(fkRel));
-	if (!scontext || security_check_context_raw(scontext) < 0)
-		scontext = sepgsql_get_unlabeled_context();
-
-	tcontext = sepgsql_get_relation_context(RelationGetRelid(pkRel));
-	if (!tcontext || security_check_context_raw(tcontext) < 0)
-		tcontext = sepgsql_get_unlabeled_context();
-
-	sepgsql_compute_perms(scontext, tcontext,
-						  SEPG_CLASS_DB_TABLE,
-						  SEPG_DB_TABLE__REFERENCE,
-						  RelationGetRelationName(fkRel), true);
-
-	/* check db_column:{reference} */
-	for (i=0; i < nkeys; i++)
-	{
-		scontext = sepgsql_get_attribute_context(RelationGetRelid(fkRel),
-												 fkAttrs[i]);
-		if (!scontext || security_check_context_raw(scontext) < 0)
-			scontext = sepgsql_get_unlabeled_context();
-
-		tcontext = sepgsql_get_attribute_context(RelationGetRelid(pkRel),
-												 pkAttrs[i]);
-		if (!tcontext || security_check_context_raw(tcontext) < 0)
-			tcontext = sepgsql_get_unlabeled_context();
-
-		sprintf(audit_name, "%s.%s", RelationGetRelationName(fkRel),
-				get_attname(RelationGetRelid(fkRel), fkAttrs[i]));
-		sepgsql_compute_perms(scontext, tcontext,
-							  SEPG_CLASS_DB_COLUMN,
-							  SEPG_DB_COLUMN__REFERENCE,
-							  audit_name, true);
-	}
-}
-
-/*
  * sepgsql_relation_lock
  *
  * It checks client's privilege to lock a certain table explicitly.

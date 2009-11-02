@@ -16,9 +16,17 @@ bool	sepostgresql_mcstrans;
 /*
  * sepgsql_bootstrap_labeling
  *
+ * It replaces the given _null_ in the postgres.bki by the default security
+ * context of databases, schemas, tables and columns.
+ * This hook has to be called on InsertOneTuple() in bootstrap.c, because
+ * we cannot update variable length field in the initdb phase. So, it is
+ * necessary to replace values/nulls array prior to the heap_form_tuple().
  *
- *
- *
+ * This function replaces the _null_ on the following fields:
+ *  - pg_database.datsecon
+ *  - pg_namespace.nspsecon
+ *  - pg_class.relsecon
+ *  - pg_attribute.attsecon
  */
 void
 sepgsql_bootstrap_labeling(Relation rel, Datum *values, bool *nulls)
@@ -33,10 +41,11 @@ sepgsql_bootstrap_labeling(Relation rel, Datum *values, bool *nulls)
 		return;
 
 	/*
-	 *
-	 *
-	 *
-	 *
+	 * We assume all the database objects created in the initdb phase,
+	 * so it compute the default security context at onece.
+	 * When a default security context is required, it copies a pre-
+	 * computed default one to the correct field depending on system
+	 * catalog.
 	 */
 	if (!defcon_database)
 	{
@@ -107,14 +116,15 @@ sepgsql_bootstrap_labeling(Relation rel, Datum *values, bool *nulls)
 		/*
 		 * No need to set default security context
 		 */
+		break;
 	}
 }
 
 /*
  * sepgsql_get_client_context
  *
- *
- *
+ * It returns the security context of the client process.
+ * In most cases, its result will be used as a privilege set of the client.
  */
 static char *client_context = NULL;
 
@@ -126,8 +136,8 @@ sepgsql_get_client_context(void)
 		/*
 		 * When this server provess was launched with single-user mode,
 		 * it does not have any client socket, and the server process also
-		 * performs as a client. So, we apply server's security context as
-		 * a client's one.
+		 * performs as a client in same time.
+		 * So, we apply server's security context as a client's one.
 		 * The getcon_raw(3) is an API of SELinux to obtain the security
 		 * context of the current process in raw format.
 		 */
@@ -146,9 +156,21 @@ sepgsql_get_client_context(void)
 		 * process using getpeercon(3). It is an API of SELinux to obtain
 		 * the security context of the peer process for the given file
 		 * descriptor of the client socket.
+		 * For example, a process labeled as "system_u:system_r:httpd_t:s0"
+		 * (which is typically apache/httpd) connect to the PgSQL server,
+		 * getpeercon_raw() in server side returns the security context
+		 * in client side.
 		 * If MyProcPort->sock came from unix domain socket, we don't need
-		 * any special configuration. If it is tcp/ip socket, either labeled
-		 * ipsec or static fallback context should be configured.
+		 * any special configuration. OS handles them correctly.
+		 * If it is tcp/ip socket, either labeled ipsec or static fallback
+		 * context should be configured.
+		 * The labeled ipsec is a feature to deliver the security context
+		 * of remote peer processes with an enhancement of key exchange
+		 * server (racoon). If SELinux is also available in the client host
+		 * also, it is the most preferable option.
+		 * The static fallback context is a feature to assign an alternative
+		 * security context based on the source address and network device
+		 * in usage. It can be applied, even if Windows is run on the client.
 		 */
 		if (getpeercon_raw(MyProcPort->sock, &client_context) < 0)
 			ereport(ERROR,
@@ -161,145 +183,45 @@ sepgsql_get_client_context(void)
 /*
  * sepgsql_get_unlabeled_context
  *
- *
- *
- *
+ * It returns the "unlabeled" security context.
+ * This context is applied when the target object is unlabeled or valid
+ * security context as an alternative.
+ * The security policy gives the unlabeled context, and it is typically
+ * "system_u:object_r:unlabeled_t:s0" in the default.
  */
-static char *unlabeled_context = NULL;
-
 char *
 sepgsql_get_unlabeled_context(void)
 {
-	if (!unlabeled_context)
+	char   *unlabeled_con;
+	char   *result;
+
+	if (security_get_initial_context_raw("unlabeled", &unlabeled_con) < 0)
+		ereport(ERROR,
+				(errcode(ERRCODE_INTERNAL_ERROR),
+				 errmsg("SELinux: could not get \"unlabeled\" context")));
+	/*
+	 * libselinux returns a malloc()'ed regison, so we need to duplicate
+	 * it on the palloc()'ed region.
+	 */
+	PG_TRY();
 	{
-		if (security_get_initial_context_raw("unlabeled",
-											 &unlabeledcon) < 0)
-			ereport(ERROR,
-					(errcode(ERRCODE_INTERNAL_ERROR),
-					 errmsg("SELinux: could not get 'unlabeled' context")));
+		result = pstrdup(unlabeled_con);
 	}
-	return unlabeled_context;
-}
-
-/*
- * sepgsql_get_database_context 
- *
- * It returns the pg_database.datsecon as a cstring, or NULL.
- */
-char *
-sepgsql_get_database_context(Oid datOid)
-{
-	HeapTuple	tuple;
-	Datum		datum;
-	bool		isnull;
-	char	   *result = NULL;
-
-	tuple = SearchSysCache(DATABASEOID,
-						   ObjectIdGetDatum(datOid),
-						   0, 0, 0);
-	if (HeapTupleIsValid(tuple))
+	PG_CATCH();
 	{
-		datum = SysCacheGetAttr(DATABASEOID, tuple,
-								Anum_pg_database_datsecon, &isnull);
-		if (!isnull)
-			result = TextDatumGetCString(datum);
-
-		ReleaseSysCache(tuple);
+		freecon(unlabeled_con);
+		PG_RE_THROW();
 	}
+	PG_END_TRY();
+	freecon(unlabeled_con);
+
 	return result;
 }
 
 /*
- * sepgsql_get_namespace_context
+ * sepgsql_get_file_context
  *
- * It returns pg_namespace.nspsecon as a plain cstring, or NULL.
- */
-char *
-sepgsql_get_namespace_context(Oid nspOid)
-{
-	HeapTuple	tuple;
-	Datum		datum;
-	bool		isnull;
-	char	   *result = NULL;
-
-	tuple = SearchSysCache(NAMESPACEOID,
-						   ObjectIdGetDatum(nspOid),
-						   0, 0, 0);
-	if (HeapTupleIsValid(tuple))
-	{
-		datum = SysCacheGetAttr(NAMESPACEOID,
-								Anum_pg_namespace_nspsecon, &isnull);
-		if (!isnull)
-			result = TextDatumGetCString(datum);
-
-		ReleaseSysCache(tuple);
-	}
-	return result;
-}
-
-/*
- * sepgsql_get_relation_context
- *
- * It returns pg_class.relsecon as a plain cstring, or NULL.
- */
-char *
-sepgsql_get_relation_context(Oid relOid)
-{
-	HeapTuple	tuple;
-	Datum		datum;
-	bool		isnull;
-	char	   *result = NULL;
-
-	tuple = SearchSysCache(RELOID,
-						   ObjectIdGetDatum(relOid),
-						   0, 0, 0);
-	if (HeapTupleIsValid(tuple))
-	{
-		datum = SysCacheGetAttr(RELOID,
-								Anum_pg_class_relsecon, &isnull);
-		if (!isnull)
-			result = TextDatumGetCString(datum);
-
-		ReleaseSysCache(tuple);
-	}
-	return result;
-}
-
-/*
- * sepgsql_get_attribute_context
- *
- * It returns pg_attribute.attsecon as a plain cstring, or NULL.
- */
-char *
-sepgsql_get_attribute_context(Oid relOid, AttrNumber attnum)
-{
-	HeapTuple	tuple;
-	Datum		datum;
-	bool		isnull;
-	char	   *result = NULL;
-
-	tuple = SearchSysCache(ATTNUM,
-						   ObjectIdGetDatum(relOid),
-						   Int16GetDatum(attnum),
-						   0, 0);
-	if (HeapTupleIsValid(tuple))
-	{
-		datum = SysCacheGetAttr(ATTNUM,
-								Anum_pg_attribute_attsecon, &isnull);
-		if (!isnull)
-			result = TextDatumGetCString(datum);
-
-		ReleaseSysCache(tuple);
-	}
-	return result;
-}
-
-/*
- *
- *
- *
- *
- *
+ * It returns the security context of the given filename.
  */
 char *
 sepgsql_get_file_context(const char *filename)
@@ -312,6 +234,10 @@ sepgsql_get_file_context(const char *filename)
 				(errcode_for_file_access(),
 				 errmsg("could not get security context of \"%s\": %m",
 						filename)));
+	/*
+	 * libselinux returns a malloc()'ed regison, so we need to duplicate
+	 * it on the palloc()'ed region.
+	 */
 	PG_TRY();
 	{
 		result = pstrdup(file_context);
@@ -330,7 +256,14 @@ sepgsql_get_file_context(const char *filename)
 /*
  * sepgsql_mcstrans_in
  *
+ * It translates the given security context in human readable format into
+ * its raw format, if sepostgresql_mcstrans is turned on.
+ * If turned off, it returned the given string as is.
  *
+ * Example)
+ *   system_u:object_r:sepgsql_table_t:Unclassified (human readable)
+ *
+ *    --> system_u:object_r:sepgsql_table_t:s0 (raw format)
  */
 char *
 sepgsql_mcstrans_in(char *trans_context)
@@ -363,9 +296,14 @@ sepgsql_mcstrans_in(char *trans_context)
 /*
  * sepgsql_mcstrans_out
  *
+ * It translate the given security context in raw format into its human
+ * readable format, if sepostgresql_mcstrans is turned on.
+ * If turned off, it returns the given string as is.
  *
+ * Example)
+ *   system_u:object_r:sepgsql_table_t:s0:c0 (raw format)
  *
- *
+ *    --> system_u:object_r:sepgsql_table_t:Classified (human readable)
  */
 char *
 sepgsql_mcstrans_out(char *raw_context)
