@@ -87,6 +87,7 @@ static bool debug = false;
 static bool noclean = false;
 static bool show_setting = false;
 static char *xlog_dir = "";
+static bool enable_selinux = false;
 
 
 /* internal vars */
@@ -174,6 +175,7 @@ static void setup_description(void);
 static void setup_conversion(void);
 static void setup_dictionary(void);
 static void setup_privileges(void);
+static void setup_selinux(void);
 static void set_info_version(void);
 static void setup_schema(void);
 static void vacuum_db(void);
@@ -1199,6 +1201,12 @@ setup_config(void)
 						 "#default_text_search_config = 'pg_catalog.simple'",
 							  repltok);
 
+	if (enable_selinux)
+	{
+		strcpy(repltok, "sepostgresql = on");
+		conflines = replace_token(conflines, "#sepostgresql = off", repltok);
+	}
+
 	snprintf(path, sizeof(path), "%s/postgresql.conf", pg_data);
 
 	writefile(path, conflines);
@@ -1800,6 +1808,67 @@ setup_privileges(void)
 							   "$POSTGRES_SUPERUSERNAME", username);
 	for (line = priv_lines; *line != NULL; line++)
 		PG_CMD_PUTS(*line);
+
+	PG_CMD_CLOSE;
+
+	check_ok();
+}
+
+/*
+ * Set up initial security context of SELinux
+ *
+ * SE-PgSQL requires any managed object to be labeled correctly on the
+ * creation time. But it is a bit hard to implement without reasonable
+ * complexity for built-in objects created on bootstraping phase.
+ * So, we have to assign their initial security context on them later.
+ *
+ * SE-PgSQL provides a few functions to compute default security context
+ * for each object classes. This function simply updates the security
+ * context of the managed objects using the given defaults.
+ */
+static void
+setup_selinux(void)
+{
+	PG_CMD_DECL;
+	int			index;
+	static char *selinux_setup[] = {
+		/*
+		 * Pg_database initial labeling
+		 */
+		"UPDATE pg_database"
+		"  SET datsecon = sepgsql_database_defcon();\n",
+		/*
+		 * Pg_namespace initial labeling
+		 */
+		"UPDATE pg_namespace"
+		"  SET nspsecon = sepgsql_namespace_defcon();\n",
+		/*
+		 * Pg_class initial labeling
+		 */
+		"UPDATE pg_class"
+		"  SET relsecon = sepgsql_table_defcon(relnamespace)"
+		"  WHERE relkind = 'r';\n"
+		/*
+		 * Pg_attribute initial labeling
+		 */
+		"UPDATE pg_attribute"
+		"  SET attsecon = sepgsql_column_defcon(attrelid)"
+		"  WHERE attrelid in (SELECT oid FROM pg_class WHERE relkind = 'r');\n",
+		NULL
+	};
+
+	fputs(_("SELinux initial labeling on built-in objects ... "), stdout);
+	fflush(stdout);
+
+	snprintf(cmd, sizeof(cmd),
+			 "\"%s\" %s template1 >%s",
+			 backend_exec, backend_options,
+			 DEVNULL);
+
+	PG_CMD_OPEN;
+
+	for (index = 0; selinux_setup[index]; index++)
+		PG_CMD_PUTS(selinux_setup[index]);
 
 	PG_CMD_CLOSE;
 
@@ -2411,6 +2480,7 @@ usage(const char *progname)
 	printf(_("  -U, --username=NAME       database superuser name\n"));
 	printf(_("  -W, --pwprompt            prompt for a password for the new superuser\n"));
 	printf(_("  -X, --xlogdir=XLOGDIR     location for the transaction log directory\n"));
+	printf(_("      --enable-selinux      enables SELinux support, if compiled\n"));
 	printf(_("\nLess commonly used options:\n"));
 	printf(_("  -d, --debug               generate lots of debugging output\n"));
 	printf(_("  -L DIRECTORY              where to find the input files\n"));
@@ -2446,6 +2516,7 @@ main(int argc, char *argv[])
 		{"auth", required_argument, NULL, 'A'},
 		{"pwprompt", no_argument, NULL, 'W'},
 		{"pwfile", required_argument, NULL, 9},
+		{"enable-selinux", no_argument, NULL, 10},
 		{"username", required_argument, NULL, 'U'},
 		{"help", no_argument, NULL, '?'},
 		{"version", no_argument, NULL, 'V'},
@@ -2561,6 +2632,9 @@ main(int argc, char *argv[])
 				break;
 			case 9:
 				pwfilename = xstrdup(optarg);
+				break;
+			case 10:
+				enable_selinux = true;
 				break;
 			case 's':
 				show_setting = true;
@@ -3131,6 +3205,9 @@ main(int argc, char *argv[])
 	setup_dictionary();
 
 	setup_privileges();
+
+	if (enable_selinux)
+		setup_selinux();
 
 	setup_schema();
 
