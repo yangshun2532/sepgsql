@@ -2003,6 +2003,7 @@ OpenIntoRel(QueryDesc *queryDesc)
 	Oid			namespaceId;
 	Oid			tablespaceId;
 	Datum		reloptions;
+	Datum	   *secontexts;
 	AclResult	aclresult;
 	Oid			intoRelationId;
 	TupleDesc	tupdesc;
@@ -2063,6 +2064,18 @@ OpenIntoRel(QueryDesc *queryDesc)
 						   get_tablespace_name(tablespaceId));
 	}
 
+	/*
+	 * SE-PgSQL permission checks to create a new table and columns,
+	 * and to insert new values into the table's contents.
+	 */
+	secontexts = sepgsql_relation_create(intoName,
+										 RELKIND_RELATION,
+										 queryDesc->tupDesc,
+										 namespaceId,
+										 NULL,
+										 NIL,
+										 true);
+
 	/* Parse and validate any reloptions */
 	reloptions = transformRelOptions((Datum) 0,
 									 into->options,
@@ -2090,7 +2103,7 @@ OpenIntoRel(QueryDesc *queryDesc)
 											  0,
 											  into->onCommit,
 											  reloptions,
-											  NULL,
+											  secontexts,
 											  true,
 											  allowSystemTableMods);
 
