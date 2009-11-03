@@ -62,6 +62,7 @@
 #include "parser/parser.h"
 #include "rewrite/rewriteDefine.h"
 #include "rewrite/rewriteHandler.h"
+#include "security/sepgsql.h"
 #include "storage/bufmgr.h"
 #include "storage/lmgr.h"
 #include "storage/smgr.h"
@@ -360,6 +361,7 @@ DefineRelation(CreateStmt *stmt, char relkind)
 	List	   *rawDefaults;
 	List	   *cookedDefaults;
 	Datum		reloptions;
+	Datum	   *secontexts;
 	ListCell   *listptr;
 	AttrNumber	attnum;
 	static char *validnsps[] = HEAP_RELOPT_NAMESPACES;
@@ -454,6 +456,18 @@ DefineRelation(CreateStmt *stmt, char relkind)
 	descriptor->tdhasoid = (localHasOids || parentOidCount > 0);
 
 	/*
+	 * SE-PgSQL permission checks to create a new table and columns.
+	 * It returns an array of security context to be assigned on.
+	 */
+	secontexts = sepgsql_relation_create(relname,
+										 relkind,
+										 descriptor,
+										 namespaceId,
+										 stmt->secontext,
+										 schema,
+										 false);
+
+	/*
 	 * Find columns with default values and prepare for insertion of the
 	 * defaults.  Pre-cooked (that is, inherited) defaults go into a list of
 	 * CookedConstraint structs that we'll pass to heap_create_with_catalog,
@@ -523,7 +537,7 @@ DefineRelation(CreateStmt *stmt, char relkind)
 										  parentOidCount,
 										  stmt->oncommit,
 										  reloptions,
-										  NULL,
+										  secontexts,
 										  true,
 										  allowSystemTableMods);
 
