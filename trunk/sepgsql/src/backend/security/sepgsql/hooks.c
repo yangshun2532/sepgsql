@@ -20,14 +20,10 @@
 #include "security/sepgsql.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
+#include "utils/rel.h"
 #include "utils/syscache.h"
 
 #include <selinux/selinux.h>
-
-/* ---- static declarations ---- */
-static bool sepgsql_database_common(Oid datOid, uint32 required, bool abort);
-static bool sepgsql_schema_common(Oid nspOid, uint32 required, bool abort);
-static bool sepgsql_relation_common(Oid relOid, uint32 required, bool abort);
 
 /************************************************************
  *
@@ -41,7 +37,7 @@ static bool sepgsql_relation_common(Oid relOid, uint32 required, bool abort);
  * A helper function to check required permissions on a pair of the client
  * and the given database.
  */
-static bool
+bool
 sepgsql_database_common(Oid datOid, uint32 required, bool abort)
 {
 	HeapTuple	tuple;
@@ -365,7 +361,7 @@ sepgsql_database_load_module(const char *filename)
  * A helper function to check required permissions on a pair of the client
  * and the given schema
  */
-static bool
+bool
 sepgsql_schema_common(Oid nspOid, uint32 required, bool abort)
 {
 	HeapTuple	tuple;
@@ -612,7 +608,7 @@ sepgsql_schema_search(Oid nspOid, bool abort)
  * A helper function to check required permissions on a pair of the client
  * and the given relation
  */
-static bool
+bool
 sepgsql_relation_common(Oid relOid, uint32 required, bool abort)
 {
 	HeapTuple	tuple;
@@ -807,7 +803,7 @@ sepgsql_relation_create(const char *relName,
 											  SEPG_CLASS_DB_COLUMN);
 		/* check permission */
 		permissions = SEPG_DB_COLUMN__CREATE;
-		if (createAs)
+		if (createAs && index >= 0)
 			permissions |= SEPG_DB_COLUMN__INSERT;
 
 		snprintf(audit_name, sizeof(audit_name), "%s.%s",
@@ -973,7 +969,8 @@ sepgsql_relation_truncate(Relation rel)
 	if (!sepgsql_is_enabled())
 		return;
 
-	
+	sepgsql_relation_common(RelationGetRelid(rel),
+							SEPG_DB_TABLE__DELETE, true);
 }
 
 /*
@@ -1033,7 +1030,7 @@ sepgsql_index_create(Oid relOid, Oid nspOid)
  * A helper function to check required permissions on a pair of the client
  * and the given column.
  */
-static bool
+bool
 sepgsql_attribute_common(Oid relOid, AttrNumber attnum,
 						 uint32 required, bool abort)
 {
