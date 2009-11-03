@@ -2118,6 +2118,7 @@ _copyColumnDef(ColumnDef *from)
 	COPY_NODE_FIELD(raw_default);
 	COPY_NODE_FIELD(cooked_default);
 	COPY_NODE_FIELD(constraints);
+	COPY_NODE_FIELD(secontext);
 
 	return newnode;
 }
@@ -3298,6 +3299,7 @@ _copyCreateSchemaStmt(CreateSchemaStmt *from)
 
 	COPY_STRING_FIELD(schemaname);
 	COPY_STRING_FIELD(authid);
+	COPY_NODE_FIELD(secontext);
 	COPY_NODE_FIELD(schemaElts);
 
 	return newnode;

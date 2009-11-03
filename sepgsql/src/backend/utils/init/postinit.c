@@ -36,6 +36,7 @@
 #include "pgstat.h"
 #include "postmaster/autovacuum.h"
 #include "postmaster/postmaster.h"
+#include "security/sepgsql.h"
 #include "storage/bufmgr.h"
 #include "storage/fd.h"
 #include "storage/ipc.h"
@@ -717,6 +718,9 @@ InitPostgres(const char *in_dbname, Oid dboid, const char *username,
 
 	/* set up ACL framework (so CheckMyDatabase can check permissions) */
 	initialize_acl();
+
+	/* initialize SE-PostgreSQL feature */
+	sepgsql_initialize();
 
 	/* Process pg_db_role_setting options */
 	process_settings(MyDatabaseId, GetSessionUserId());

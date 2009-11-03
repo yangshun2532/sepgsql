@@ -76,7 +76,8 @@ static void AddNewRelationTuple(Relation pg_class_desc,
 					Oid relowner,
 					char relkind,
 					Datum relacl,
-					Datum reloptions);
+					Datum reloptions,
+					Datum *secontexts);
 static Oid AddNewRelationType(const char *typeName,
 				   Oid typeNamespace,
 				   Oid new_rel_oid,
@@ -116,37 +117,37 @@ static List *insert_ordered_unique_oid(List *list, Oid datum);
 static FormData_pg_attribute a1 = {
 	0, {"ctid"}, TIDOID, 0, 0, sizeof(ItemPointerData),
 	SelfItemPointerAttributeNumber, 0, -1, -1,
-	false, 'p', 's', true, false, false, true, 0, {0}
+	false, 'p', 's', true, false, false, true, 0, {0}, {{0}}
 };
 
 static FormData_pg_attribute a2 = {
 	0, {"oid"}, OIDOID, 0, 0, sizeof(Oid),
 	ObjectIdAttributeNumber, 0, -1, -1,
-	true, 'p', 'i', true, false, false, true, 0, {0}
+	true, 'p', 'i', true, false, false, true, 0, {0}, {{0}}
 };
 
 static FormData_pg_attribute a3 = {
 	0, {"xmin"}, XIDOID, 0, 0, sizeof(TransactionId),
 	MinTransactionIdAttributeNumber, 0, -1, -1,
-	true, 'p', 'i', true, false, false, true, 0, {0}
+	true, 'p', 'i', true, false, false, true, 0, {0}, {{0}}
 };
 
 static FormData_pg_attribute a4 = {
 	0, {"cmin"}, CIDOID, 0, 0, sizeof(CommandId),
 	MinCommandIdAttributeNumber, 0, -1, -1,
-	true, 'p', 'i', true, false, false, true, 0, {0}
+	true, 'p', 'i', true, false, false, true, 0, {0}, {{0}}
 };
 
 static FormData_pg_attribute a5 = {
 	0, {"xmax"}, XIDOID, 0, 0, sizeof(TransactionId),
 	MaxTransactionIdAttributeNumber, 0, -1, -1,
-	true, 'p', 'i', true, false, false, true, 0, {0}
+	true, 'p', 'i', true, false, false, true, 0, {0}, {{0}}
 };
 
 static FormData_pg_attribute a6 = {
 	0, {"cmax"}, CIDOID, 0, 0, sizeof(CommandId),
 	MaxCommandIdAttributeNumber, 0, -1, -1,
-	true, 'p', 'i', true, false, false, true, 0, {0}
+	true, 'p', 'i', true, false, false, true, 0, {0}, {{0}}
 };
 
 /*
@@ -158,7 +159,7 @@ static FormData_pg_attribute a6 = {
 static FormData_pg_attribute a7 = {
 	0, {"tableoid"}, OIDOID, 0, 0, sizeof(Oid),
 	TableOidAttributeNumber, 0, -1, -1,
-	true, 'p', 'i', true, false, false, true, 0, {0}
+	true, 'p', 'i', true, false, false, true, 0, {0}, {{0}}
 };
 
 static const Form_pg_attribute SysAtt[] = {&a1, &a2, &a3, &a4, &a5, &a6, &a7};
@@ -490,7 +491,8 @@ CheckAttributeType(const char *attname, Oid atttypid)
 void
 InsertPgAttributeTuple(Relation pg_attribute_rel,
 					   Form_pg_attribute new_attribute,
-					   CatalogIndexState indstate)
+					   CatalogIndexState indstate,
+					   Datum attsecon)
 {
 	Datum		values[Natts_pg_attribute];
 	bool		nulls[Natts_pg_attribute];
@@ -522,6 +524,12 @@ InsertPgAttributeTuple(Relation pg_attribute_rel,
 	/* start out with empty permissions */
 	nulls[Anum_pg_attribute_attacl - 1] = true;
 
+	/* Set a security context if given */
+	if (!DatumGetPointer(attsecon))
+		nulls[Anum_pg_attribute_attsecon - 1] = true;
+	else
+		values[Anum_pg_attribute_attsecon - 1] = attsecon;
+
 	tup = heap_form_tuple(RelationGetDescr(pg_attribute_rel), values, nulls);
 
 	/* finally insert the new tuple, update the indexes, and clean up */
@@ -547,13 +555,15 @@ AddNewAttributeTuples(Oid new_rel_oid,
 					  TupleDesc tupdesc,
 					  char relkind,
 					  bool oidislocal,
-					  int oidinhcount)
+					  int oidinhcount,
+					  Datum *secontexts)
 {
 	Form_pg_attribute attr;
 	int			i;
 	Relation	rel;
 	CatalogIndexState indstate;
 	int			natts = tupdesc->natts;
+	Datum		attsecon;
 	ObjectAddress myself,
 				referenced;
 
@@ -577,8 +587,14 @@ AddNewAttributeTuples(Oid new_rel_oid,
 		attr->attstattarget = -1;
 		attr->attdistinct = 0;
 		attr->attcacheoff = -1;
+		/*
+		 * If SE-PgSQL is available, assign given security context on the
+		 * new column. Otherwise, pg_attribute.attsecon should be NULL.
+		 */
+		attsecon = (!secontexts ? PointerGetDatum(NULL)
+					: secontexts[i - FirstLowInvalidHeapAttributeNumber]);
 
-		InsertPgAttributeTuple(rel, attr, indstate);
+		InsertPgAttributeTuple(rel, attr, indstate, attsecon);
 
 		/* Add dependency info */
 		myself.classId = RelationRelationId;
@@ -618,7 +634,10 @@ AddNewAttributeTuples(Oid new_rel_oid,
 				attStruct.attinhcount = oidinhcount;
 			}
 
-			InsertPgAttributeTuple(rel, &attStruct, indstate);
+			/* Security context of the system columns */
+			attsecon = (!secontexts ? PointerGetDatum(NULL)
+						: secontexts[SysAtt[i]->attnum - FirstLowInvalidHeapAttributeNumber]);
+			InsertPgAttributeTuple(rel, &attStruct, indstate, attsecon);
 		}
 	}
 
@@ -648,7 +667,8 @@ InsertPgClassTuple(Relation pg_class_desc,
 				   Relation new_rel_desc,
 				   Oid new_rel_oid,
 				   Datum relacl,
-				   Datum reloptions)
+				   Datum reloptions,
+				   Datum relsecon)
 {
 	Form_pg_class rd_rel = new_rel_desc->rd_rel;
 	Datum		values[Natts_pg_class];
@@ -691,6 +711,12 @@ InsertPgClassTuple(Relation pg_class_desc,
 	else
 		nulls[Anum_pg_class_reloptions - 1] = true;
 
+	/* Set a security context, if given */
+	if (!DatumGetPointer(relsecon))
+		nulls[Anum_pg_class_relsecon - 1] = true;
+	else
+		values[Anum_pg_class_relsecon - 1] = relsecon;
+
 	tup = heap_form_tuple(RelationGetDescr(pg_class_desc), values, nulls);
 
 	/*
@@ -722,9 +748,11 @@ AddNewRelationTuple(Relation pg_class_desc,
 					Oid relowner,
 					char relkind,
 					Datum relacl,
-					Datum reloptions)
+					Datum reloptions,
+					Datum *secontexts)
 {
 	Form_pg_class new_rel_reltup;
+	Datum		  relsecon = PointerGetDatum(NULL);
 
 	/*
 	 * first we update some of the information in our uncataloged relation's
@@ -781,9 +809,16 @@ AddNewRelationTuple(Relation pg_class_desc,
 
 	new_rel_desc->rd_att->tdtypeid = new_type_oid;
 
+	/*
+	 * If SE-PgSQL is available, assign a security context on the new table.
+	 * Otherwise, pg_class.relsecon should be NULL
+	 */
+	if (secontexts)
+		relsecon = secontexts[0];
+
 	/* Now build and insert the tuple */
 	InsertPgClassTuple(pg_class_desc, new_rel_desc, new_rel_oid,
-					   relacl, reloptions);
+					   relacl, reloptions, relsecon);
 }
 
 
@@ -877,6 +912,7 @@ heap_create_with_catalog(const char *relname,
 						 int oidinhcount,
 						 OnCommitAction oncommit,
 						 Datum reloptions,
+						 Datum *secontexts,
 						 bool use_user_acl,
 						 bool allow_system_table_mods)
 {
@@ -1083,13 +1119,14 @@ heap_create_with_catalog(const char *relname,
 						ownerid,
 						relkind,
 						PointerGetDatum(relacl),
-						reloptions);
+						reloptions,
+						secontexts);
 
 	/*
 	 * now add tuples to pg_attribute for the attributes in our new relation.
 	 */
 	AddNewAttributeTuples(relid, new_rel_desc->rd_att, relkind,
-						  oidislocal, oidinhcount);
+						  oidislocal, oidinhcount, secontexts);
 
 	/*
 	 * Make a dependency link to force the relation to be deleted if its

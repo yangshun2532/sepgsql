@@ -8,11 +8,21 @@
  */
 #include "postgres.h"
 
+#include "access/sysattr.h"
+#include "catalog/heap.h"
+#include "catalog/namespace.h"
 #include "catalog/pg_attribute.h"
 #include "catalog/pg_database.h"
 #include "catalog/pg_class.h"
 #include "catalog/pg_namespace.h"
+#include "commands/dbcommands.h"
+#include "miscadmin.h"
+#include "security/sepgsql.h"
+#include "utils/builtins.h"
+#include "utils/lsyscache.h"
 #include "utils/syscache.h"
+
+#include <selinux/selinux.h>
 
 /* ---- static declarations ---- */
 static bool sepgsql_database_common(Oid datOid, uint32 required, bool abort);
@@ -50,7 +60,6 @@ sepgsql_database_common(Oid datOid, uint32 required, bool abort)
 							   Anum_pg_database_datsecon, &isnull);
 	if (!isnull)
 		context = TextDatumGetCString(datsecon);
-
 	/*
 	 * If the database does not have any valid security context,
 	 * we uses system's "unlabeled" context as a fallback.
@@ -90,8 +99,10 @@ sepgsql_database_common(Oid datOid, uint32 required, bool abort)
  * datLabel : an explicit security context, or NULL
  */
 Datum
-sepgsql_database_create(const char *datName, DefElem *datLabel)
+sepgsql_database_create(const char *datName, Node *datLabel)
 {
+	char   *context;
+
 	if (!sepgsql_is_enabled())
 	{
 		/*
@@ -113,13 +124,9 @@ sepgsql_database_create(const char *datName, DefElem *datLabel)
 	 * database.
 	 */
 	if (datLabel)
-		context = sepgsql_mcstrans_in(strVal(datLabel->arg));
+		context = sepgsql_mcstrans_in(strVal(datLabel));
 	else
-	{
-		context = sepgsql_compute_create(sepgsql_get_client_context(),
-										 sepgsql_get_file_context(DataDir),
-										 SEPG_CLASS_DB_DATABASE);
-	}
+		context = sepgsql_default_database_context();
 
 	sepgsql_compute_perms(sepgsql_get_client_context(),
 						  context,
@@ -197,7 +204,7 @@ sepgsql_database_drop(Oid datOid)
  * datLabel : An explicit security context to be assigned on
  */
 Datum
-sepgsql_database_relabel(Oid datOid, DefElem *datLabel)
+sepgsql_database_relabel(Oid datOid, Node *datLabel)
 {
 	char   *context;
 
@@ -208,7 +215,7 @@ sepgsql_database_relabel(Oid datOid, DefElem *datLabel)
 				 errmsg("SE-PostgreSQL is disabled")));
 	}
 
-	context = sepgsql_mcstrans_in(strVal(datLabel->arg));
+	context = sepgsql_mcstrans_in(strVal(datLabel));
 
 	/* check db_database:{setattr relabelfrom} on the older context */
 	sepgsql_database_common(datOid,
@@ -296,7 +303,7 @@ sepgsql_database_superuser(Oid datOid)
  *
  */
 void
-sepgsql_database_load_module(Oid datOid, const char *filename)
+sepgsql_database_load_module(const char *filename)
 {
 	HeapTuple	tuple;
 	Datum		datsecon;
@@ -318,17 +325,17 @@ sepgsql_database_load_module(Oid datOid, const char *filename)
 	 * Fetch security context of the database
 	 */
 	tuple = SearchSysCache(DATABASEOID,
-						   ObjectIdGetDatum(datOid),
+						   ObjectIdGetDatum(MyDatabaseId),
 						   0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
-		elog(ERROR, "cache lookup failed for database %u", datOid);
+		elog(ERROR, "cache lookup failed for database %u", MyDatabaseId);
 
 	datsecon = SysCacheGetAttr(DATABASEOID, tuple,
 							   Anum_pg_database_datsecon, &isnull);
 	if (!isnull)
-		context = TextDatumGetCString(datsecon);
-	if (!context || security_check_context_raw(context) < 0)
-		context = sepgsql_get_unlabeled_context();
+		dcontext = TextDatumGetCString(datsecon);
+	if (!dcontext || security_check_context_raw(dcontext) < 0)
+		dcontext = sepgsql_get_unlabeled_context();
 
 	ReleaseSysCache(tuple);
 
@@ -343,7 +350,7 @@ sepgsql_database_load_module(Oid datOid, const char *filename)
 	sepgsql_compute_perms(dcontext, fcontext,
 						  SEPG_CLASS_DB_DATABASE,
 						  SEPG_DB_DATABASE__LOAD_MODULE,
-						  get_database_name(datOid), true);
+						  get_database_name(MyDatabaseId), true);
 }
 
 /************************************************************
@@ -377,9 +384,8 @@ sepgsql_schema_common(Oid nspOid, uint32 required, bool abort)
 							   Anum_pg_namespace_nspsecon, &isnull);
 	if (!isnull)
 		context = TextDatumGetCString(nspsecon);
-
 	/*
-	 * If the database does not have any valid security context,
+	 * If the schema does not have any valid security context,
 	 * we uses system's "unlabeled" context as a fallback.
 	 */
 	if (!context || security_check_context_raw(context) < 0)
@@ -418,8 +424,10 @@ sepgsql_schema_common(Oid nspOid, uint32 required, bool abort)
  * nspLabel : an explicit security context, or NULL
  */
 Datum
-sepgsql_schema_create(const char *nspName, bool isTemp, DefElem *nspLabel)
+sepgsql_schema_create(const char *nspName, bool isTemp, Node *nspLabel)
 {
+	char   *context;
+
 	if (!sepgsql_is_enabled())
 	{
 		/* we don't allow SECURITY_CONTEXT option with SE-PgSQL disabled */
@@ -432,7 +440,7 @@ sepgsql_schema_create(const char *nspName, bool isTemp, DefElem *nspLabel)
 	}
 
 	if (nspLabel)
-		context = sepgsql_mcstrans_in(strVal(nspLabel->arg));
+		context = sepgsql_mcstrans_in(strVal(nspLabel));
 	else
 		context = sepgsql_default_schema_context(MyDatabaseId);
 
@@ -512,7 +520,7 @@ sepgsql_schema_drop(Oid nspOid)
  * nspLabel : An explicit security context to be assigned on
  */
 Datum
-sepgsql_schema_relabel(Oid nspOid, DefElem *nspLabel)
+sepgsql_schema_relabel(Oid nspOid, Node *nspLabel)
 {
 	char   *context;
 
@@ -523,7 +531,7 @@ sepgsql_schema_relabel(Oid nspOid, DefElem *nspLabel)
 				 errmsg("SE-PostgreSQL is disabled")));
 	}
 
-	context = sepgsql_mcstrans_in(strVal(datLabel->arg));
+	context = sepgsql_mcstrans_in(strVal(nspLabel));
 
 	/* check db_schema:{setattr relabelfrom} on the older context */
 	sepgsql_schema_common(nspOid,
@@ -628,9 +636,15 @@ sepgsql_relation_common(Oid relOid, uint32 required, bool abort)
 		return true;
 	}
 
-	context = SysCacheGetAttr(RELOID, tuple,
-							  Anum_pg_class_relsecon, &isnull);
-	if (!isnull || security_check_context_raw(context) < 0)
+	datum = SysCacheGetAttr(RELOID, tuple,
+							Anum_pg_class_relsecon, &isnull);
+	if (!isnull)
+		context = TextDatumGetCString(datum);
+	/*
+	 * If the table does not have any valid security context,
+	 * we uses system's "unlabeled" context as a fallback.
+	 */
+	if (!context || security_check_context_raw(context) < 0)
 		context = sepgsql_get_unlabeled_context();
 
 	audit_name = NameStr(((Form_pg_class) GETSTRUCT(tuple))->relname);
@@ -671,23 +685,23 @@ sepgsql_relation_create(const char *relName,
 						char relkind,
 						TupleDesc tupDesc,
 						Oid nspOid,
-						DefElem *relLabel,
+						Node *relLabel,
 						List *colList,
 						bool createAs)
 {
 	ListCell   *l;
 	Datum	   *result;
-	char	   *context;
-	uint16		tclass;
-	uint32		required;
-
+	char	   *tcontext;
+	char	   *ccontext;
+	uint32		permissions;
+	int			index;
 
 	/*
 	 * We don't allow SECURITY_CONTEXT option without SE-PgSQL enabled
 	 */
 	if (!sepgsql_is_enabled())
 	{
-		if (datLabel)
+		if (relLabel)
 			ereport(ERROR,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 					 errmsg("SE-PostgreSQL is disabled")));
@@ -704,43 +718,36 @@ sepgsql_relation_create(const char *relName,
 		return NULL;
 	}
 
-
+	/*
+	 * check db_schema:{add_name} permission, because it add a new entry
+	 * into the given schema. Creation of toast table is purely internal
+	 * stuff, so it can skip permission checks.
+	 */
+	if (relkind != RELKIND_TOASTVALUE)
+		sepgsql_schema_common(nspOid, SEPG_DB_SCHEMA__ADD_NAME, true);
 
 	/*
-	 * No need to check anything on 
-	 *
+	 * No need to check anything on expect for regular tables
 	 */
 	if (relkind != RELKIND_RELATION)
 		return NULL;
 
-	if (!relLabel)
-		context = sepgsql_default_table_context(nspOid);
+	/*
+	 * check db_table:{create (insert)} permission on the new table
+	 */
+	if (relLabel)
+		tcontext = sepgsql_mcstrans_in(strVal(relLabel));
 	else
-	{
-		
-		
-	}
-	{
-		
-		
-	}
-	else
-	{
-		
-		
-	}
-	tclass = SEPG_CLASS_DB_TABLE;
-	required = SEPG_DB_TABLE__CREATE;
+		tcontext = sepgsql_default_table_context(nspOid);
+
+	permissions = SEPG_DB_TABLE__CREATE;
 	if (createAs)
-		required |= SEPG_DB_TABLE__INSERT;
+		permissions |= SEPG_DB_TABLE__INSERT;
+
 	sepgsql_compute_perms(sepgsql_get_client_context(),
-						  context, tclass, required, relName, true);
-
-
-extern bool
-	sepgsql_compute_perms(char *scontext, char *tcontext,
-						  uint16 tclass, uint32 required,
-						  const char *audit_name, bool abort)
+						  tcontext,
+						  SEPG_CLASS_DB_TABLE, permissions,
+						  relName, true);
 	/*
 	 * The result array contains security contexts to be assigned on
 	 * the new table and columns. The result[0] stores the security
@@ -750,23 +757,72 @@ extern bool
 	 */
 	result = palloc0(sizeof(Datum) * (tupDesc->natts
 					 - FirstLowInvalidHeapAttributeNumber));
-	
 
+	result[0] = CStringGetTextDatum(tcontext);
 
+	/*
+	 * check db_column:{create (insert)} permission on the new columns
+	 */
+	for (index = FirstLowInvalidHeapAttributeNumber + 1;
+		 index < tupDesc->natts;
+		 index++)
+	{
+		Form_pg_attribute	attr;
+		char		audit_name[NAMEDATALEN * 2 + 3];
 
+		/* skip unnecessary attribute */
+		if (index == ObjectIdAttributeNumber && !tupDesc->tdhasoid)
+			continue;
 
+		if (index < 0)
+			attr = SystemAttributeDefinition(index, tupDesc->tdhasoid);
+		else
+			attr = tupDesc->attrs[index];
 
+		/*
+		 * Is there any explicit given security context or copied one
+		 * on the inherited column from the parent relation?
+		 * If exist, SE-PgSQL applies it instead of the default context.
+		 * Otherwise, it compute a default security context to be assigned
+		 * on the new column.
+		 * Note that we cannot use sepgsql_default_column_context() here,
+		 * because the table owning the column is not still constructed.
+		 */
+		ccontext = NULL;
 
+		foreach (l, colList)
+		{
+			ColumnDef  *cdef = lfirst(l);
 
+			if (cdef->secontext &&
+				strcmp(cdef->colname, NameStr(attr->attname)) == 0)
+			{
+				ccontext = strVal(cdef->secontext);
+				break;
+			}
+		}
+		if (!ccontext)
+			ccontext = sepgsql_compute_create(sepgsql_get_client_context(),
+											  tcontext,
+											  SEPG_CLASS_DB_COLUMN);
+		/* check permission */
+		permissions = SEPG_DB_COLUMN__CREATE;
+		if (createAs)
+			permissions |= SEPG_DB_COLUMN__INSERT;
 
+		snprintf(audit_name, sizeof(audit_name), "%s.%s",
+				 relName, NameStr(attr->attname));
+		sepgsql_compute_perms(sepgsql_get_client_context(),
+							  ccontext,
+							  SEPG_CLASS_DB_COLUMN, permissions,
+							  audit_name, true);
 
+		/* column's security context to be assigned */
+		result[index - FirstLowInvalidHeapAttributeNumber]
+			= CStringGetTextDatum(ccontext);
+	}
 
-
-
-
-
-
-
+	return result;
 }
 
 /*
@@ -789,8 +845,6 @@ extern bool
 void
 sepgsql_relation_alter(Oid relOid, const char *newName, Oid newNsp)
 {
-	char   *context;
-
 	if (!sepgsql_is_enabled())
 		return;
 
@@ -874,7 +928,7 @@ sepgsql_relation_grant(Oid relOid)
  * relLabel : An explicit security context to be assigned on
  */
 Datum
-sepgsql_relation_relabel(Oid relOid, DefElem *relLabel)
+sepgsql_relation_relabel(Oid relOid, Node *relLabel)
 {
 	char   *context;
 
@@ -885,7 +939,7 @@ sepgsql_relation_relabel(Oid relOid, DefElem *relLabel)
 				 errmsg("SE-PostgreSQL is disabled")));
 	}
 
-	context = sepgsql_mcstrans_in(strVal(datLabel->arg));
+	context = sepgsql_mcstrans_in(strVal(relLabel));
 
 	/* check db_table:{setattr relabelfrom} on the older context */
 	sepgsql_relation_common(relOid,
@@ -897,7 +951,7 @@ sepgsql_relation_relabel(Oid relOid, DefElem *relLabel)
 						  context,
 						  SEPG_CLASS_DB_TABLE,
 						  SEPG_DB_TABLE__RELABELTO,
-						  get_namespace_name(nspOid), true);
+						  get_rel_name(relOid), true);
 
 	return CStringGetTextDatum(context);
 }
@@ -973,8 +1027,202 @@ sepgsql_index_create(Oid relOid, Oid nspOid)
  *
  ************************************************************/
 
+/*
+ * sepgsql_attribute_common
+ *
+ * A helper function to check required permissions on a pair of the client
+ * and the given column.
+ */
+static bool
+sepgsql_attribute_common(Oid relOid, AttrNumber attnum,
+						 uint32 required, bool abort)
+{
+	Form_pg_attribute	attForm;
+	HeapTuple	tuple;
+	Datum		datum;
+	bool		rc, isnull;
+	char		audit_name[NAMEDATALEN * 2 + 3];
+	char	   *context = NULL;
 
+	/*
+	 * No need to check any more, if given attribute is not
+	 * owned by regular relation
+	 */
+	if (get_rel_relkind(relOid) != RELKIND_RELATION)
+		return true;
 
+	tuple = SearchSysCache(ATTNUM,
+						   ObjectIdGetDatum(relOid),
+						   Int16GetDatum(attnum),
+						   0, 0);
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "cache lookup failed for attribute %d of relation %u",
+			 attnum, relOid);
+
+	datum = SysCacheGetAttr(ATTNUM, tuple,
+							Anum_pg_attribute_attsecon, &isnull);
+	if (!isnull)
+		context = TextDatumGetCString(datum);
+	/*
+	 * If the attribute does not have any valid security context,
+	 * we uses system's "unlabeled" context as a fallback.
+	 */
+	if (!context || security_check_context_raw(context) < 0)
+		context = sepgsql_get_unlabeled_context();
+
+	attForm = (Form_pg_attribute) GETSTRUCT(tuple);
+	snprintf(audit_name, sizeof(audit_name), "%s.%s",
+			 get_rel_name(relOid), NameStr(attForm->attname));
+
+	rc = sepgsql_compute_perms(sepgsql_get_client_context(),
+							   context,
+							   SEPG_CLASS_DB_TABLE,
+							   required, 
+							   audit_name, abort);
+	ReleaseSysCache(tuple);
+
+	return rc;
+}
+
+Datum
+sepgsql_attribute_create(Oid relOid, ColumnDef *cdef)
+{
+	char	audit_name[NAMEDATALEN * 2 + 3];
+	char   *context;
+	char	relkind;
+
+	if (!sepgsql_is_enabled())
+	{
+		/*
+         * We don't allow SECURITY_CONTEXT option without SE-PgSQL enabled
+		 */
+		if (cdef->secontext)
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("SE-PostgreSQL is disabled")));
+
+		return PointerGetDatum(NULL);
+	}
+
+	relkind = get_rel_relkind(relOid);
+	if (relkind == RELKIND_RELATION)
+	{
+		if (cdef->secontext)
+			context = sepgsql_mcstrans_in(strVal(cdef->secontext));
+		else
+			context = sepgsql_default_column_context(relOid);
+
+		snprintf(audit_name, sizeof(audit_name), "%s.%s",
+				 get_rel_name(relOid), cdef->colname);
+		sepgsql_compute_perms(sepgsql_get_client_context(),
+							  context,
+							  SEPG_CLASS_DB_COLUMN,
+							  SEPG_DB_COLUMN__CREATE,
+							  audit_name, true);
+	}
+	else
+	{
+		if (cdef->secontext)
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("Only regular columns can have its own security context")));
+
+		if (relkind != RELKIND_TOASTVALUE)
+			sepgsql_relation_common(relOid, SEPG_DB_TABLE__SETATTR, true);
+		return PointerGetDatum(NULL);
+	}
+
+	/*
+     * The checked security context should be returned to caller.
+     * Caller has to assign it on the new column.
+     */
+	return CStringGetTextDatum(context);
+}
+
+void
+sepgsql_attribute_alter(Oid relOid, const char *attname)
+{
+	char	relkind;
+
+	if (!sepgsql_is_enabled())
+		return;
+
+	relkind = get_rel_relkind(relOid);
+	if (relkind == RELKIND_RELATION)
+		sepgsql_attribute_common(relOid, get_attnum(relOid, attname),
+								 SEPG_DB_COLUMN__SETATTR, true);
+	else if (relkind != RELKIND_TOASTVALUE)
+		sepgsql_relation_common(relOid, SEPG_DB_TABLE__SETATTR, true);
+}
+
+void
+sepgsql_attribute_drop(Oid relOid, AttrNumber attno)
+{
+	char	relkind;
+
+	if (!sepgsql_is_enabled())
+		return;
+
+	/*
+	 * We only need to check db_column:{drop} when relkind equals
+	 * RELKIND_RELATION, because db_xxx:{drop} permission is already
+	 * checked in other path. (e.g DROP SEQUENCE, ...)
+	 */
+	relkind = get_rel_relkind(relOid);
+    if (relkind == RELKIND_RELATION)
+		sepgsql_attribute_common(relOid, attno, SEPG_DB_COLUMN__DROP, true);
+}
+
+void
+sepgsql_attribute_grant(Oid relOid, AttrNumber attnum)
+{
+	char	relkind;
+
+	if (!sepgsql_is_enabled())
+		return;
+
+	relkind = get_rel_relkind(relOid);
+	if (relkind == RELKIND_RELATION)
+		sepgsql_attribute_common(relOid, attnum,
+								 SEPG_DB_COLUMN__SETATTR, true);
+	else if (relkind != RELKIND_TOASTVALUE)
+		sepgsql_relation_common(relOid, SEPG_DB_TABLE__SETATTR, true);
+}
+
+Datum
+sepgsql_attribute_relabel(Oid relOid, AttrNumber attnum, Node *attLabel)
+{
+	char	audit_name[NAMEDATALEN * 2 + 3];
+	char   *context;
+
+	if (!sepgsql_is_enabled())
+	{
+		if (attLabel)
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("SE-PostgreSQL is disabled")));
+
+		return PointerGetDatum(NULL);
+	}
+
+	context = sepgsql_mcstrans_in(strVal(attLabel));
+
+	/* check db_column:{setattr relabelfrom} on the older context */
+	sepgsql_attribute_common(relOid, attnum,
+							 SEPG_DB_COLUMN__SETATTR |
+							 SEPG_DB_COLUMN__RELABELFROM, true);
+
+	/* check db_column:{relabelto} on the newer context */
+	snprintf(audit_name, sizeof(audit_name), "%s.%s",
+			 get_rel_name(relOid), get_attname(relOid, attnum));
+	sepgsql_compute_perms(sepgsql_get_client_context(),
+                          context,
+						  SEPG_CLASS_DB_COLUMN,
+						  SEPG_DB_COLUMN__RELABELTO,
+						  audit_name, true);
+
+	return CStringGetTextDatum(context);
+}
 
 /************************************************************
  *
@@ -1018,7 +1266,7 @@ sepgsql_object_comment(Oid relOid, Oid objId, int32 subId)
 		if (subId == 0)
 			sepgsql_relation_common(objId, SEPG_DB_TABLE__SETATTR, true);
 		else
-			sepgsql_attribute_common();
+			sepgsql_attribute_common(objId, subId, SEPG_DB_TABLE__SETATTR, true);
 		break;
 
 	default:

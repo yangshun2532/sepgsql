@@ -3018,6 +3018,7 @@ InitTempTableNamespace(void)
 	char		namespaceName[NAMEDATALEN];
 	Oid			namespaceId;
 	Oid			toastspaceId;
+	Datum		nspsecon;
 
 	Assert(!OidIsValid(myTempNamespace));
 
@@ -3059,7 +3060,9 @@ InitTempTableNamespace(void)
 		 * temp tables.  This works because the places that access the temp
 		 * namespace for my own backend skip permissions checks on it.
 		 */
-		namespaceId = NamespaceCreate(namespaceName, BOOTSTRAP_SUPERUSERID);
+		namespaceId = NamespaceCreate(namespaceName,
+									  BOOTSTRAP_SUPERUSERID,
+									  nspsecon);
 		/* Advance command counter to make namespace visible */
 		CommandCounterIncrement();
 	}
@@ -3085,7 +3088,9 @@ InitTempTableNamespace(void)
 								  0, 0, 0);
 	if (!OidIsValid(toastspaceId))
 	{
-		toastspaceId = NamespaceCreate(namespaceName, BOOTSTRAP_SUPERUSERID);
+		toastspaceId = NamespaceCreate(namespaceName,
+									   BOOTSTRAP_SUPERUSERID,
+									   nspsecon);
 		/* Advance command counter to make namespace visible */
 		CommandCounterIncrement();
 	}

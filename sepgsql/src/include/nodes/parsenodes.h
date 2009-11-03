@@ -1074,6 +1074,7 @@ typedef struct CreateSchemaStmt
 	NodeTag		type;
 	char	   *schemaname;		/* the name of the schema to create */
 	char	   *authid;			/* the owner of the created schema */
+	Node	   *secontext;		/* the security context of the created schema */
 	List	   *schemaElts;		/* schema components (list of parsenodes) */
 } CreateSchemaStmt;
 

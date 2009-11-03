@@ -523,6 +523,7 @@ DefineRelation(CreateStmt *stmt, char relkind)
 										  parentOidCount,
 										  stmt->oncommit,
 										  reloptions,
+										  NULL,
 										  true,
 										  allowSystemTableMods);
 
@@ -1357,7 +1358,6 @@ MergeAttributes(List *schema, List *supers, bool istemp,
 							   attributeName),
 							   errdetail("%s versus %s", storage_name(def->storage),
 										 storage_name(attribute->attstorage))));
-
 				/*
 				 * Copy security context
 				 *
@@ -1383,11 +1383,11 @@ MergeAttributes(List *schema, List *supers, bool istemp,
 				 * are always disabled. So, this check never raise an error.)
 				 */
 				defsecon = get_attsecontext(RelationGetRelid(relation), exist_attno);
-				if (def->secontext)
-					def->scontext = (Node *) makeString(secontext);
-				else if (!((!defsecon && !strVal(def->scontext)) ||
-						   (defsecon && strVal(def->scontext) &&
-							strcmp(defsecon, strVal(def->scontext)) == 0)))
+				if (!def->secontext)
+					def->secontext = (Node *) makeString(defsecon);
+				else if (!((!defsecon && !strVal(def->secontext)) ||
+						   (defsecon && strVal(def->secontext) &&
+							strcmp(defsecon, strVal(def->secontext)) == 0)))
 					ereport(ERROR,
 							(errcode(ERRCODE_DATATYPE_MISMATCH),
 							 errmsg("inherited column \"%s\" has a security context conflict",
@@ -3654,6 +3654,7 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 	FormData_pg_attribute attribute;
 	int			newattnum;
 	char		relkind;
+	Datum		attsecon;
 	HeapTuple	typeTuple;
 	Oid			typeOid;
 	int32		typmod;
@@ -3733,6 +3734,9 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 				 errmsg("column \"%s\" of relation \"%s\" already exists",
 						colDef->colname, RelationGetRelationName(rel))));
 
+	/* SE-PgSQL check permission to create a new column */
+	attsecon = sepgsql_attribute_create(myrelid, colDef);
+
 	/* Determine the new attribute's number */
 	if (isOid)
 		newattnum = ObjectIdAttributeNumber;
@@ -3776,7 +3780,7 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 
 	ReleaseSysCache(typeTuple);
 
-	InsertPgAttributeTuple(attrdesc, &attribute, NULL);
+	InsertPgAttributeTuple(attrdesc, &attribute, NULL, attsecon);
 
 	heap_close(attrdesc, RowExclusiveLock);
 
@@ -7412,9 +7416,9 @@ MergeAttributesIntoExisting(Relation child_rel, Relation parent_rel)
 			 * but unmatched, it raised an error.
 			 */
 			context_p = get_attsecontext(RelationGetRelid(parent_rel), parent_attno);
-			context_c = get_attsecontext(RelationGetRelid(child_rel), childatt->attno);
+			context_c = get_attsecontext(RelationGetRelid(child_rel), childatt->attnum);
 			if ((context_p && !context_c) || (!context_p && context_c) ||
-				(context_p && context_c && strcmp(context_p, context_c) != 0)
+				(context_p && context_c && strcmp(context_p, context_c) != 0))
 				ereport(ERROR,
 						(errcode(ERRCODE_DATATYPE_MISMATCH),
 						 errmsg("child table \"%s\" has different security context for column \"%s\"",

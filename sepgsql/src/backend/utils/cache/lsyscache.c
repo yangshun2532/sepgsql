@@ -841,8 +841,6 @@ get_attnum(Oid relid, const char *attname)
  *		return the security context in the plaing cstring.
  *		Note that the purpose of this routine is to fetch just a text value
  *		from pg_attribute.attsecontext. 
- *
- *
  */
 char *
 get_attsecontext(Oid relid, AttrNumber attnum)
@@ -859,7 +857,7 @@ get_attsecontext(Oid relid, AttrNumber attnum)
 	if (HeapTupleIsValid(tp))
 	{
 		datum = SysCacheGetAttr(ATTNUM, tp,
-								Anum_pg_attribute_attsecontext, &isnull);
+								Anum_pg_attribute_attsecon, &isnull);
 		if (!isnull)
 			result = TextDatumGetCString(datum);
 

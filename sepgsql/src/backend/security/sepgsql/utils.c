@@ -8,14 +8,23 @@
  */
 #include "postgres.h"
 
+#include "catalog/pg_attribute.h"
+#include "catalog/pg_class.h"
+#include "catalog/pg_database.h"
+#include "catalog/pg_namespace.h"
+#include "security/sepgsql.h"
+#include "utils/builtins.h"
+#include "utils/syscache.h"
+
+#include <selinux/selinux.h>
 
 /*
- * sepgsql_getcon
+ * sepgsql_fn_getcon
  *
  * It returns client's security context
  */
 Datum
-sepgsql_getcon(PG_FUNCTION_ARGS)
+sepgsql_fn_getcon(PG_FUNCTION_ARGS)
 {
 	char   *context;
 
@@ -29,13 +38,8 @@ sepgsql_getcon(PG_FUNCTION_ARGS)
 	return CStringGetTextDatum(context);
 }
 
-/*
- * sepgsql_database_getcon
- *
- * It returns security context of the given database
- */
 Datum
-sepgsql_database_getcon(PG_FUNCTION_ARGS)
+sepgsql_fn_database_getcon(PG_FUNCTION_ARGS)
 {
 	Oid			datOid = PG_GETARG_OID(0);
 	HeapTuple	tuple;
@@ -60,37 +64,18 @@ sepgsql_database_getcon(PG_FUNCTION_ARGS)
 							Anum_pg_database_datsecon, &isnull);
 	if (!isnull)
 		context = TextDatumGetCString(datum);
-	if (!context || security_check_context_raw(context) < 0)
+    if (!context || security_check_context_raw(context) < 0)
 		context = sepgsql_get_unlabeled_context();
 
 	ReleaseSysCache(tuple);
 
-	PG_RETURN_TEXT_P(CStringGetTextDatum(context));
-}
-
-/*
- * sepgsql_database_defcon
- *
- * It returns a default security context of a new database
- */
-Datum
-sepgsql_database_defcon(PG_FUNCTION_ARGS)
-{
-	char   *context;
-
-	if (!sepgsql_is_enabled())
-		ereport(ERROR,
-				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("SE-PostgreSQL is disabled now")));
-
-	context = sepgsql_default_database_context();
 	context = sepgsql_mcstrans_out(context);
 
 	return CStringGetTextDatum(context);
 }
 
 Datum
-sepgsql_schema_getcon(PG_FUNCTION_ARGS)
+sepgsql_fn_schema_getcon(PG_FUNCTION_ARGS)
 {
 	Oid			nspOid = PG_GETARG_OID(0);
 	HeapTuple	tuple;
@@ -108,8 +93,8 @@ sepgsql_schema_getcon(PG_FUNCTION_ARGS)
 						   0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
 		ereport(ERROR,
-				(errcode(ERRCODE_UNDEFINED_DATABASE),
-				 errmsg("cache lookup failed for database %u", datOid)));
+				(errcode(ERRCODE_UNDEFINED_SCHEMA),
+				 errmsg("schema with OID %u does not exist", nspOid)));
 
 	datum = SysCacheGetAttr(NAMESPACEOID, tuple,
 							Anum_pg_namespace_nspsecon, &isnull);
@@ -120,28 +105,13 @@ sepgsql_schema_getcon(PG_FUNCTION_ARGS)
 
 	ReleaseSysCache(tuple);
 
-	PG_RETURN_TEXT_P(CStringGetTextDatum(context));
-}
-
-Datum
-sepgsql_schema_defcon(PG_FUNCTION_ARGS)
-{
-	Oid		datOid = PG_GETARG_OID(0);
-	char   *context;
-
-	if (!sepgsql_is_enabled())
-		ereport(ERROR,
-				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("SE-PostgreSQL is disabled now")));
-
-	context = sepgsql_default_schema_context(datOid);
 	context = sepgsql_mcstrans_out(context);
 
 	return CStringGetTextDatum(context);
 }
 
 Datum
-sepgsql_table_getcon(PG_FUNCTION_ARGS)
+sepgsql_fn_table_getcon(PG_FUNCTION_ARGS)
 {
 	Oid			relOid = PG_GETARG_OID(0);
 	HeapTuple	tuple;
@@ -155,12 +125,12 @@ sepgsql_table_getcon(PG_FUNCTION_ARGS)
 				 errmsg("SE-PostgreSQL is disabled now")));
 
 	tuple = SearchSysCache(RELOID,
-						   ObjectIdGetDatum(nspOid),
+						   ObjectIdGetDatum(relOid),
 						   0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
 		ereport(ERROR,
-				(errcode(ERRCODE_UNDEFINED_DATABASE),
-				 errmsg("cache lookup failed for table %u", relOid)));
+				(errcode(ERRCODE_UNDEFINED_TABLE),
+				 errmsg("relation with OID %u does not exist", relOid)));
 
 	datum = SysCacheGetAttr(RELOID, tuple,
 							Anum_pg_class_relsecon, &isnull);
@@ -171,28 +141,13 @@ sepgsql_table_getcon(PG_FUNCTION_ARGS)
 
 	ReleaseSysCache(tuple);
 
-	PG_RETURN_TEXT_P(CStringGetTextDatum(context));
-}
-
-Datum
-sepgsql_table_defcon(PG_FUNCTION_ARGS)
-{
-	Oid		nspOid = PG_GETARG_OID(0);
-	char   *context;
-
-	if (!sepgsql_is_enabled())
-		ereport(ERROR,
-				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("SE-PostgreSQL is disabled now")));
-
-	context = sepgsql_default_table_context(nspOid);
 	context = sepgsql_mcstrans_out(context);
 
 	return CStringGetTextDatum(context);
 }
 
 Datum
-sepgsql_column_getcon(PG_FUNCTION_ARGS)
+sepgsql_fn_column_getcon(PG_FUNCTION_ARGS)
 {
 	Oid			relOid = PG_GETARG_OID(0);
 	AttrNumber	attnum = PG_GETARG_INT16(1);
@@ -206,16 +161,17 @@ sepgsql_column_getcon(PG_FUNCTION_ARGS)
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("SE-PostgreSQL is disabled now")));
 
-	tuple = SearchSysCache(ATTNAME,
+	tuple = SearchSysCache(ATTNUM,
 						   ObjectIdGetDatum(relOid),
 						   Int16GetDatum(attnum),
 						   0, 0);
 	if (!HeapTupleIsValid(tuple))
 		ereport(ERROR,
-				(errcode(ERRCODE_UNDEFINED_DATABASE),
-				 errmsg("cache lookup failed for database %u", datOid)));
+				(errcode(ERRCODE_UNDEFINED_COLUMN),
+				 errmsg("attribute %d of relation with OID %u does not exist",
+						relOid, attnum)));
 
-	datum = SysCacheGetAttr(NAMESPACEOID, tuple,
+	datum = SysCacheGetAttr(ATTNUM, tuple,
 							Anum_pg_attribute_attsecon, &isnull);
 	if (!isnull)
 		context = TextDatumGetCString(datum);
@@ -224,22 +180,42 @@ sepgsql_column_getcon(PG_FUNCTION_ARGS)
 
 	ReleaseSysCache(tuple);
 
-	PG_RETURN_TEXT_P(CStringGetTextDatum(context));
+	context = sepgsql_mcstrans_out(context);
+
+	return CStringGetTextDatum(context);
 }
 
+/*
+ * sepgsql_fn_compute_create
+ *
+ */
 Datum
-sepgsql_column_defcon(PG_FUNCTION_ARGS)
+sepgsql_fn_compute_create(PG_FUNCTION_ARGS)
 {
-	Oid		relOid = PG_GETARG_OID(0);
-	char   *context;
+	char   *scontext = TextDatumGetCString(PG_GETARG_TEXT_P(0));
+	char   *tcontext = TextDatumGetCString(PG_GETARG_TEXT_P(1));
+	char   *tclass_name = TextDatumGetCString(PG_GETARG_TEXT_P(2));
+	char   *ncontext;
 
 	if (!sepgsql_is_enabled())
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("SE-PostgreSQL is disabled now")));
 
-	context = sepgsql_default_attribute_context(relOid);
-	context = sepgsql_mcstrans_out(context);
+	scontext = sepgsql_mcstrans_in(scontext);
+	if (security_check_context_raw(scontext) < 0)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_SECURITY_CONTEXT),
+				 errmsg("Invalid security context \"%s\"", scontext)));
 
-	return CStringGetTextDatum(context);
+	tcontext = sepgsql_mcstrans_in(tcontext);
+	if (security_check_context_raw(tcontext) < 0)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_SECURITY_CONTEXT),
+				 errmsg("Invalid security context \"%s\"", scontext)));
+
+	ncontext = sepgsql_compute_create_name(scontext, tcontext, tclass_name);
+	ncontext = sepgsql_mcstrans_out(ncontext);
+
+	return CStringGetTextDatum(ncontext);
 }
