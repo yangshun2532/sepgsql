@@ -92,6 +92,8 @@ extern void sepgsql_initialize(void);
 
 extern bool sepgsql_is_enabled(void);
 
+extern bool sepgsql_get_enforce(void);
+
 typedef void (*sepgsql_audit_hook_t) (bool denied,
 									  const char *scontext,
 									  const char *tcontext,
@@ -122,11 +124,22 @@ extern char *sepgsql_mcstrans_out(char *context);
 extern char *sepgsql_mcstrans_in(char *context);
 
 /*
+ * checker.c : routines to check DML permissions
+ * ---------------------------------------------
+ */
+extern void
+sepgsql_check_rte_perms(RangeTblEntry *rte);
+extern void
+sepgsql_check_copy_perms(Relation rel, List *attnumlist, bool is_from);
+
+/*
  * hooks.c : entrypoints of SE-PgSQL checks
  * ----------------------------------------
  */
 
 /* Pg_database related hooks */
+extern bool
+sepgsql_database_common(Oid datOid, uint32 required, bool abort);
 extern Datum
 sepgsql_database_create(const char *datName, Node *datLabel);
 extern void
@@ -145,6 +158,8 @@ extern void
 sepgsql_database_load_module(const char *filename);
 
 /* Pg_namespace related hooks */
+extern bool
+sepgsql_schema_common(Oid nspOid, uint32 required, bool abort);
 extern Datum
 sepgsql_schema_create(const char *nspName, bool isTemp, Node *nspLabel);
 extern void
@@ -159,6 +174,8 @@ extern bool
 sepgsql_schema_search(Oid nspOid, bool abort);
 
 /* Pg_class related hooks */
+extern bool
+sepgsql_relation_common(Oid relOid, uint32 required, bool abort);
 extern Datum *
 sepgsql_relation_create(const char *relName,
                         char relkind,
@@ -183,6 +200,9 @@ extern void
 sepgsql_index_create(Oid relOid, Oid nspOid);
 
 /* Pg_attribute related hooks */
+extern bool
+sepgsql_attribute_common(Oid relOid, AttrNumber attnum,
+						 uint32 required, bool abort);
 extern Datum
 sepgsql_attribute_create(Oid relOid, ColumnDef *cdef);
 extern void

@@ -215,7 +215,7 @@ sepgsql_is_enabled(void)
  *
  *
  */
-static bool
+bool
 sepgsql_get_enforce(void)
 {
 	if (sepostgresql_mode == SEPGSQL_MODE_DEFAULT)
