@@ -560,17 +560,6 @@ BuildDescForRelation(List *schema)
 		desc->attrs[attnum - 1]->attinhcount = entry->inhcount;
 		if (entry->storage)
 			desc->attrs[attnum - 1]->attstorage = entry->storage;
-#ifdef HAVE_SELINUX
-		/*
-		 * When user gives an explicit security context or the column is
-		 * inherited from the parent table, it is copied to pg_attribute.
-		 * If an explicit one is given with SE-PgSQL disabled, it shall
-		 * raise an error later.
-		 */
-		if (entry->secontext)
-			desc->attrs[attnum - 1]->attsecon
-				= CStringGetTextDatum(strVal(((DefElem *) entry->secontext)->arg));
-#endif
 	}
 
 	if (has_not_null)

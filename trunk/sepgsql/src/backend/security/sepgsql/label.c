@@ -8,13 +8,23 @@
  */
 #include "postgres.h"
 
-#include "catalog/pg_security_label.h"
+#include "catalog/pg_attribute.h"
+#include "catalog/pg_class.h"
+#include "catalog/pg_database.h"
+#include "catalog/pg_namespace.h"
+#include "miscadmin.h"
+#include "security/sepgsql.h"
+#include "utils/builtins.h"
+#include "utils/memutils.h"
+#include "utils/syscache.h"
+
+#include <selinux/selinux.h>
 
 /* GUC option to turn on/off mcstrans feature */
 bool	sepostgresql_mcstrans;
 
 /*
- *
+ * sepgsql_default_database_context
  *
  *
  *
@@ -23,10 +33,17 @@ char *
 sepgsql_default_database_context(void)
 {
 	return sepgsql_compute_create(sepgsql_get_client_context(),
-								  sepgsql_get_file_context(DataDir),
+								  sepgsql_get_client_context(),
+								  //sepgsql_get_file_context(DataDir),
 								  SEPG_CLASS_DB_DATABASE);
 }
 
+/*
+ * sepgsql_default_schema_context
+ *
+ *
+ *
+ */
 char *
 sepgsql_default_schema_context(Oid datOid)
 {
@@ -56,6 +73,12 @@ sepgsql_default_schema_context(Oid datOid)
 								  SEPG_CLASS_DB_SCHEMA);
 }
 
+/*
+ * sepgsql_default_table_context
+ *
+ *
+ *
+ */
 char *
 sepgsql_default_table_context(Oid nspOid)
 {
@@ -63,21 +86,6 @@ sepgsql_default_table_context(Oid nspOid)
 	Datum		datum;
 	bool		isnull;
 	char	   *context = NULL;
-
-	if (IsBootstrapProcessingMode())
-	{
-		static char *cached = NULL;
-
-		if (!cached)
-		{
-			char   *temp
-				= sepgsql_compute_create(sepgsql_get_client_context(),
-										 sepgsql_default_schema_context(),
-										 SEPG_CLASS_DB_TABLE);
-			cached = MemoryContextStrdup(TopMemoryContext, temp);
-		}
-		return cached;
-	}
 
 	tuple = SearchSysCache(NAMESPACEOID,
 						   ObjectIdGetDatum(nspOid),
@@ -100,180 +108,72 @@ sepgsql_default_table_context(Oid nspOid)
 								  SEPG_CLASS_DB_TABLE);
 }
 
+/*
+ * sepgsql_default_column_context
+ *
+ *
+ *
+ *
+ */
 char *
 sepgsql_default_column_context(Oid relOid)
-{}
-
-
-
-
-
-
-/*
- * sepgsql_bootstrap_labeling
- *
- * It replaces the given _null_ in the postgres.bki by the default security
- * context of databases, schemas, tables and columns.
- * This hook has to be called on InsertOneTuple() in bootstrap.c, because
- * we cannot update variable length field in the initdb phase. So, it is
- * necessary to replace values/nulls array prior to the heap_form_tuple().
- *
- * This function replaces the _null_ on the following fields:
- *  - pg_database.datsecon
- *  - pg_namespace.nspsecon
- *  - pg_class.relsecon
- *  - pg_attribute.attsecon
- */
-void
-sepgsql_bootstrap_labeling(Relation rel, Datum *values, bool *nulls)
 {
-	static char	   *defcon_database = NULL;
-	static char	   *defcon_schema = NULL;
-	static char	   *defcon_table = NULL;
-	static char	   *defcon_column = NULL;
-	Oid				attrelid;
+	HeapTuple	tuple;
+	Datum		datum;
+	bool		isnull;
+	char	   *context = NULL;
 
-	if (!sepgsql_is_enabled())
-		return;
-
-	/*
-	 * We assume all the database objects created in the initdb phase,
-	 * so it compute the default security context at onece.
-	 * When a default security context is required, it copies a pre-
-	 * computed default one to the correct field depending on system
-	 * catalog.
-	 */
-	if (!defcon_database)
+	tuple = SearchSysCache(RELOID,
+						   ObjectIdGetDatum(relOid),
+						   0, 0, 0);
+	if (HeapTupleIsValid(tuple))
 	{
-		MemoryContext	oldctx;
-		char		   *dir_context;
+		datum = SysCacheGetAttr(RELOID, tuple,
+								Anum_pg_class_relsecon, &isnull);
+		if (!isnull)
+			context = TextDatumGetCString(datum);
 
-		if (getfilecon_raw(DataDir, &dir_context) < 0)
-			ereport(ERROR,
-					(errcode_for_file_access(),
-					 errmsg("could not get security context: %m")));
-
-		oldctx = MemoryContextSwitchTo(TopMemoryContext);
-
-		defcon_database = sepgsql_compute_create(sepgsql_get_client_context(),
-												 dir_context,
-												 SEPG_CLASS_DB_DATABASE);
-		defcon_schema = sepgsql_compute_create(sepgsql_get_client_context(),
-											   defcon_database,
-											   SEPG_CLASS_DB_SCHEMA);
-		defcon_table = sepgsql_compute_create(sepgsql_get_client_context(),
-											  defcon_schema,
-											  SEPG_CLASS_DB_TABLE);
-		defcon_column = sepgsql_compute_create(sepgsql_get_client_context(),
-											   defcon_table,
-											   SEPG_CLASS_DB_COLUMN);
-		MemoryContextSwitchTo(oldctx);
-
-		freecon(dir_context);
+		ReleaseSysCache(tuple);
 	}
 
-	switch (RelationGetRelid(rel))
-	{
-	case DatabaseRelationId:
-		values[Anum_pg_database_datsecon - 1]
-			= CStringGetTextDatum(defcon_database);
-		nulls[Anum_pg_database_datsecon - 1] = false;
-		break;
+	if (!context || security_check_context_raw(context) < 0)
+		context = sepgsql_get_unlabeled_context();
 
-	case NamespaceRelationId:
-		values[Anum_pg_namespace_nspsecon - 1]
-			= CStringGetTextDatum(defcon_schema);
-		nulls[Anum_pg_namespace_nspsecon - 1] = false;
-		break;
-
-	case RelationRelationId:
-		/*
-		 * db_table class should be only applied when relkind equals to
-		 * RELKIND_RELATION. We assume only regular tables are inserted
-		 * to pg_class catalog using InsertOneTuple(), so here is no
-		 * checks for relkind.
-		 */
-		values[Anum_pg_class_relsecon - 1]
-			= CStringGetTextDatum(defcon_table);
-		nulls[Anum_pg_class_relsecon - 1] = false;
-		break;
-
-	case AttributeRelationId:
-		/*
-		 * In same reason, we don't check relkind of the relation
-		 * referenced by attrelid.
-		 */
-		values[Anum_pg_attribute_attsecon - 1]
-			= CStringGetTextDatum(defcon_column);
-		nulls[Anum_pg_attribute_attsecon - 1] = false;
-		break;
-
-	default:
-		/*
-		 * No need to set default security context
-		 */
-		break;
-	}
+	return sepgsql_compute_create(sepgsql_get_client_context(),
+								  context,
+								  SEPG_CLASS_DB_COLUMN);
 }
 
 /*
  * sepgsql_get_client_context
  *
- * It returns the security context of the client process.
- * In most cases, its result will be used as a privilege set of the client.
+ * It returns the security context of the client which was set up
+ * in the initialization steps.
  */
 static char *client_context = NULL;
 
 char *
 sepgsql_get_client_context(void)
 {
-	if (!client_context)
-	{
-		/*
-		 * When this server provess was launched with single-user mode,
-		 * it does not have any client socket, and the server process also
-		 * performs as a client in same time.
-		 * So, we apply server's security context as a client's one.
-		 * The getcon_raw(3) is an API of SELinux to obtain the security
-		 * context of the current process in raw format.
-		 */
-		if (!MyProcPort)
-		{
-			if (getcon_raw(&client_context) < 0)
-				ereport(ERROR,
-						(errcode(ERRCODE_INTERNAL_ERROR),
-						 errmsg("SELinux: could not get server context")));
-
-			return client_context;
-		}
-
-		/*
-		 * Otherwise, SE-PgSQL obtains the security context of the client
-		 * process using getpeercon(3). It is an API of SELinux to obtain
-		 * the security context of the peer process for the given file
-		 * descriptor of the client socket.
-		 * For example, a process labeled as "system_u:system_r:httpd_t:s0"
-		 * (which is typically apache/httpd) connect to the PgSQL server,
-		 * getpeercon_raw() in server side returns the security context
-		 * in client side.
-		 * If MyProcPort->sock came from unix domain socket, we don't need
-		 * any special configuration. OS handles them correctly.
-		 * If it is tcp/ip socket, either labeled ipsec or static fallback
-		 * context should be configured.
-		 * The labeled ipsec is a feature to deliver the security context
-		 * of remote peer processes with an enhancement of key exchange
-		 * server (racoon). If SELinux is also available in the client host
-		 * also, it is the most preferable option.
-		 * The static fallback context is a feature to assign an alternative
-		 * security context based on the source address and network device
-		 * in usage. It can be applied, even if Windows is run on the client.
-		 */
-		if (getpeercon_raw(MyProcPort->sock, &client_context) < 0)
-			ereport(ERROR,
-					(errcode(ERRCODE_INTERNAL_ERROR),
-					 errmsg("SELinux: could not get client context")));
-	}
 	return client_context;
+}
+
+/*
+ * sepgsql_set_client_context
+ *
+ * It set the given security context as a client's one, and returns
+ * the original one. The given context has to alive in the duration
+ * to be applied. In other word, the caller need to pay attention
+ * about MemoryContext of the given context allocated.
+ */
+char *
+sepgsql_set_client_context(char *new_context)
+{
+	char   *old_context = client_context;
+
+	client_context = new_context;
+
+	return old_context;
 }
 
 /*

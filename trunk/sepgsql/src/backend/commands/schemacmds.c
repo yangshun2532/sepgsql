@@ -25,6 +25,7 @@
 #include "commands/schemacmds.h"
 #include "miscadmin.h"
 #include "parser/parse_utilcmd.h"
+#include "security/sepgsql.h"
 #include "tcop/utility.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
@@ -102,7 +103,7 @@ CreateSchemaCommand(CreateSchemaStmt *stmt, const char *queryString)
 		SetUserIdAndContext(owner_uid, true);
 
 	/* Create the schema's namespace */
-	namespaceId = NamespaceCreate(schemaName, owner_uid);
+	namespaceId = NamespaceCreate(schemaName, owner_uid, nspsecon);
 
 	/* Advance cmd counter to make the namespace visible */
 	CommandCounterIncrement();

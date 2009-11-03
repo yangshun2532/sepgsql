@@ -7,13 +7,12 @@
  */
 #include "postgres.h"
 
+#include "lib/stringinfo.h"
+#include "libpq/libpq-be.h"
+#include "miscadmin.h"
 #include "security/sepgsql.h"
 
-
-
-
-
-
+#include <selinux/selinux.h>
 
 /*
  * selinux_catalog
@@ -105,6 +104,83 @@ static struct
 };
 
 /*
+ * GUC option: sepostgresql = [default|enforcing|permissive|disabled]
+ *
+ * SEPGSQL_MODE_DEFAULT		: It follows system setting (enforcing/permissive/disabled).
+ * SEPGSQL_MODE_ENFORCING	: Use enforcing mode, even if system works in permissive.
+ * SEPGSQL_MODE_PERMISSIVE	: Use permissive mode, even if system works in enforcing.
+ * SEPGSQL_MODE_INTERNAL	: Internally used mode. Same as permissive mode
+ *							  except for silence in audit logs
+ * SEPGSQL_MODE_DISABLED	: It always disables SE-PgSQL configuration
+ */
+int sepostgresql_mode;
+
+/*
+ * sepgsql_initialize
+ *
+ *
+ *
+ */
+void
+sepgsql_initialize(void)
+{
+	char   *context;
+
+	if (!sepgsql_is_enabled())
+		return;
+
+	if (!MyProcPort)
+	{
+		/*
+		 * SE-PgSQL does not prevent anything in single-user mode.
+		 */
+		sepostgresql_mode = SEPGSQL_MODE_INTERNAL;
+
+		/*
+		 * When this server process was launched in single-user mode,
+		 * it does not have any client socket, and the server process also
+		 * performs as a client in same time. So, we apply a security context
+		 * of the current process as a client's one.
+		 * The getcon_raw(3) is an libselinux API to obtain security context
+		 * of the current process in raw format.
+		 */
+		if (getcon_raw(&context) < 0)
+			ereport(ERROR,
+					(errcode(ERRCODE_SELINUX_INTERNAL_ERROR),
+					 errmsg("SELinux: could not get server context")));
+	}
+	else
+	{
+		/*
+		 * Otherwise, SE-PgSQL obtains the security context of the client
+		 * process using getpeercon(3). It is an API of SELinux to obtain
+		 * the security context of the peer process for the given file
+		 * descriptor of the client socket.
+		 * For example, a process labeled as "system_u:system_r:httpd_t:s0"
+		 * (which is typically apache/httpd) connect to the PgSQL server,
+		 * getpeercon_raw() in server side returns the security context
+		 * in client side.
+		 * If MyProcPort->sock came from unix domain socket, we don't need
+		 * any special configuration. OS handles them correctly.
+		 * If it is tcp/ip socket, either labeled ipsec or static fallback
+		 * context should be configured.
+		 * The labeled ipsec is a feature to deliver the security context
+		 * of remote peer processes with an enhancement of key exchange
+		 * server (racoon). If SELinux is also available in the client host
+		 * also, it is the most preferable option.
+		 * The static fallback context is a feature to assign an alternative
+		 * security context based on the source address and network device
+		 * in usage. It can be applied, even if Windows is run on the client.
+		 */
+		if (getpeercon_raw(MyProcPort->sock, &context) < 0)
+			ereport(ERROR,
+					(errcode(ERRCODE_SELINUX_INTERNAL_ERROR),
+					 errmsg("SELinux: could not get client context")));
+	}
+	sepgsql_set_client_context(context);
+}
+
+/*
  * sepgsql_is_enabled
  *
  *
@@ -113,6 +189,12 @@ bool
 sepgsql_is_enabled(void)
 {
 	static int	enabled = -1;
+
+	/*
+	 * Not ready to apply SE-PgSQL feature in bootstraping mode
+	 */
+	if (IsBootstrapProcessingMode())
+		return false;
 
 	/*
 	 * If sepostgresql = disabled, it always returns FALSE
@@ -133,7 +215,7 @@ sepgsql_is_enabled(void)
  *
  *
  */
-bool
+static bool
 sepgsql_get_enforce(void)
 {
 	if (sepostgresql_mode == SEPGSQL_MODE_DEFAULT)
@@ -184,7 +266,7 @@ sepgsql_audit_log(bool denied, char *scontext, char *tcontext,
 	{
 		if (audited & mask)
 		{
-			perm_name = selinux_catalog[tclass].av[mask].perm_name;
+			perm_name = selinux_catalog[tclass].perms[mask].perm_name;
 			appendStringInfo(&buf, " %s", perm_name);
 		}
 
@@ -206,8 +288,9 @@ sepgsql_audit_log(bool denied, char *scontext, char *tcontext,
 			appendStringInfo(&buf, " name=%s", audit_name);
 
 		ereport(LOG,
-				(errmsg("SELinux: %s %s",
-						denied ? "denied" ? "allowed", buf.data)));
+				(errcode(ERRCODE_SELINUX_AUDIT_LOG),
+				 errmsg("SELinux: %s %s",
+						(denied ? "denied" : "allowed"), buf.data)));
 	}
 }
 
@@ -258,18 +341,18 @@ compute_perms_internal(char *scontext, char *tcontext,
 	if (security_compute_av_flags_raw(scontext, tcontext,
 									  tclass_ex, 0, &avd_ex) < 0)
 		ereport(ERROR,
-				(errcode(ERRCODE_INTERNAL_ERROR),
+				(errcode(ERRCODE_SELINUX_INTERNAL_ERROR),
 				 errmsg("SELinux could not compute av_decision: "
 						"scontext=%s tcontext=%s tclass=%s",
 						scontext, tcontext, tclass_name)));
 
 	memset(avd, 0, sizeof(struct av_decision));
 
-	for (i=0; selinux_catalog[tclass].av[i].perm_name; i++)
+	for (i=0; selinux_catalog[tclass].perms[i].perm_name; i++)
 	{
 		access_vector_t		perm_code_ex;
-		const char *perm_name = selinux_catalog[tclass].av[i].perm_name;
-		uint32		perm_code = selinux_catalog[tclass].av[i].perm_code;
+		const char *perm_name = selinux_catalog[tclass].perms[i].perm_name;
+		uint32		perm_code = selinux_catalog[tclass].perms[i].perm_code;
 
 		perm_code_ex = string_to_av_perm(tclass_ex, perm_name);
 		if (perm_code_ex == 0)
@@ -306,6 +389,7 @@ compute_create_internal(char *scontext, char *tcontext, uint16 tclass)
 	security_context_t	ncontext;
 	security_class_t	tclass_ex;
 	const char		   *tclass_name;
+	char			   *result;
 
 	/* Get external code of the object class*/
 	Assert(tclass < SEPG_CLASS_MAX);
@@ -320,7 +404,7 @@ compute_create_internal(char *scontext, char *tcontext, uint16 tclass)
 	if (security_compute_create_raw(scontext, tcontext,
 									tclass_ex, &ncontext))
 		ereport(ERROR,
-				(errcode(ERRCODE_INTERNAL_ERROR),
+				(errcode(ERRCODE_SELINUX_INTERNAL_ERROR),
 				 errmsg("SELinux could not compute a new context: "
 						"scontext=%s tcontext=%s tclass=%s",
 						scontext, tcontext, tclass_name)));
@@ -391,7 +475,7 @@ sepgsql_compute_perms(char *scontext, char *tcontext,
 
 /*
  * sepgsql_compute_create
- *
+ * sepgsql_compute_create_name
  *
  *
  *
@@ -410,4 +494,22 @@ sepgsql_compute_create(char *scontext, char *tcontext, uint16 tclass)
 		tcontext = sepgsql_get_unlabeled_context();
 
 	return compute_create_internal(scontext, tcontext, tclass);
+}
+
+char *
+sepgsql_compute_create_name(char *scontext, char *tcontext, char *tclass_name)
+{
+	int		index;
+
+	for (index = 0; index < SEPG_CLASS_MAX; index++)
+	{
+		if (strcmp(tclass_name, selinux_catalog[index].class_name) == 0)
+		{
+			return sepgsql_compute_create(scontext, tcontext,
+										  selinux_catalog[index].class_code);
+		}
+	}
+	ereport(ERROR,
+			(errcode(ERRCODE_SELINUX_INTERNAL_ERROR),
+			 errmsg("unknown object class \"%s\"", tclass_name)));
 }

@@ -32,7 +32,6 @@
 #include "nodes/makefuncs.h"
 #include "postmaster/bgwriter.h"
 #include "postmaster/walwriter.h"
-#include "security/sepgsql.h"
 #include "storage/bufmgr.h"
 #include "storage/ipc.h"
 #include "storage/proc.h"
@@ -777,18 +776,6 @@ InsertOneTuple(Oid objectid)
 	int			i;
 
 	elog(DEBUG4, "inserting row oid %u, %d columns", objectid, numattr);
-
-	/*
-	 * If enabled, SE-PgSQL replaces the given _null_ on the security
-	 * context field by its default security context.
-	 * In this version, pg_database, pg_namespace, pg_class and pg_attribute
-	 * can have its security context. If values array to be inserted them
-	 * are given, sepgsql_bootstrap_labeling() put an appropriate default
-	 * context on the array.
-	 * We have to assign a default security context here, because it is
-	 * impossible to update variable-length field in the bootstraping mode.
-	 */
-	sepgsql_bootstrap_labeling(boot_reldesc, values, Nulls);
 
 	tupDesc = CreateTupleDesc(numattr,
 							  RelationGetForm(boot_reldesc)->relhasoids,

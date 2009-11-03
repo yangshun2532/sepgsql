@@ -437,7 +437,8 @@ DATA(insert ( 1249 tableoid			26 0 0  4  -7 0 -1 -1 t p i t f f t 0 _null_ _null
 { 1259, {"relhassubclass"},16, -1, 0,	1, 22, 0, -1, -1, true, 'p', 'c', true, false, false, true, 0, { 0 }, { 0 } }, \
 { 1259, {"relfrozenxid"},  28, -1, 0,	4, 23, 0, -1, -1, true, 'p', 'i', true, false, false, true, 0, { 0 }, { 0 } }, \
 { 1259, {"relacl"},		 1034, -1, 0, -1, 24, 1, -1, -1, false, 'x', 'i', false, false, false, true, 0, { 0 }, { 0 } }, \
-{ 1259, {"reloptions"},  1009, -1, 0, -1, 25, 1, -1, -1, false, 'x', 'i', false, false, false, true, 0, { 0 }, { 0 } }
+{ 1259, {"reloptions"},  1009, -1, 0, -1, 25, 1, -1, -1, false, 'x', 'i', false, false, false, true, 0, { 0 }, { 0 } }, \
+{ 1259, {"relsecon"},	   25, -1, 0,  -1, 26, 0, -1, -1, false, 'x', 'i', false, false, false, true, 0, { 0 }, { 0 } }
 
 DATA(insert ( 1259 relname			19 -1 0 NAMEDATALEN	1 0 -1 -1 f p c t f f t 0 _null_ _null_));
 DATA(insert ( 1259 relnamespace		26 -1 0 4   2 0 -1 -1 t p i t f f t 0 _null_ _null_));
@@ -464,6 +465,7 @@ DATA(insert ( 1259 relhassubclass	16 -1 0 1  22 0 -1 -1 t p c t f f t 0 _null_ _
 DATA(insert ( 1259 relfrozenxid		28 -1 0 4  23 0 -1 -1 t p i t f f t 0 _null_ _null_));
 DATA(insert ( 1259 relacl		  1034 -1 0 -1 24 1 -1 -1 f x i f f f t 0 _null_ _null_));
 DATA(insert ( 1259 reloptions	  1009 -1 0 -1 25 1 -1 -1 f x i f f f t 0 _null_ _null_));
+DATA(insert ( 1259 relsecon			25 -1 0 -1 26 0 -1 -1 f x i f f f t 0 _null_ _null_));
 DATA(insert ( 1259 ctid				27 0 0  6  -1 0 -1 -1 f p s t f f t 0 _null_ _null_));
 DATA(insert ( 1259 oid				26 0 0  4  -2 0 -1 -1 t p i t f f t 0 _null_ _null_));
 DATA(insert ( 1259 xmin				28 0 0  4  -3 0 -1 -1 t p i t f f t 0 _null_ _null_));
@@ -492,7 +494,9 @@ DATA(insert ( 1259 tableoid			26 0 0  4  -7 0 -1 -1 t p i t f f t 0 _null_ _null
 { 1262, {"datlastsysoid"},	  26, -1, 0,	4, 9, 0, -1, -1, true, 'p', 'i', true, false, false, true, 0, { 0 }, { 0 } }, \
 { 1262, {"datfrozenxid"},	  28, -1, 0,	4, 10, 0, -1, -1, true, 'p', 'i', true, false, false, true, 0, { 0 }, { 0 } }, \
 { 1262, {"dattablespace"},	  26, -1, 0,	4, 11, 0, -1, -1, true, 'p', 'i', true, false, false, true, 0, { 0 }, { 0 } }, \
-{ 1262, {"datacl"},			1034, -1, 0,   -1, 12, 1, -1, -1, false, 'x', 'i', false, false, false, true, 0, { 0 }, { 0 } }
+{ 1262, {"datacl"},			1034, -1, 0,   -1, 12, 1, -1, -1, false, 'x', 'i', false, false, false, true, 0, { 0 }, { 0 } }, \
+{ 1262, {"datsecon"},		  25, -1, 0,   -1, 13, 0, -1, -1, false, 'x', 'i', false, false, false, true, 0, { 0 }, { 0 } }
+
 
 /* ----------------
  *		pg_index

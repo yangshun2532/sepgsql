@@ -9,7 +9,12 @@
 #ifndef SEPGSQL_H
 #define SEPGSQL_H
 
+#include "access/tupdesc.h"
+#include "catalog/dependency.h"
+#include "fmgr.h"
 #include "nodes/bitmapset.h"
+#include "nodes/parsenodes.h"
+#include "utils/relcache.h"
 
 typedef char *sepgsql_label_t;
 
@@ -80,8 +85,11 @@ enum {
 #define SEPG_DB_COLUMN__REFERENCE			(1<<9)
 
 /*
- * selinux.c : communication routines with in-kernel SELinux
+ * selinux.c : communication routines with SELinux
+ * -----------------------------------------------
  */
+extern void sepgsql_initialize(void);
+
 extern bool sepgsql_is_enabled(void);
 
 typedef void (*sepgsql_audit_hook_t) (bool denied,
@@ -96,27 +104,113 @@ sepgsql_compute_perms(char *scontext, char *tcontext,
 					  const char *audit_name, bool abort);
 extern char *
 sepgsql_compute_create(char *scontext, char *tcontext, uint16 tclass);
-
+extern char *
+sepgsql_compute_create_name(char *scontext, char *tcontext, char *tclass_name);
 
 /*
  * label.c : management of security context
  */
 extern char *sepgsql_get_client_context(void);
+extern char *sepgsql_set_client_context(char *new_context);
 extern char *sepgsql_get_unlabeled_context(void);
-extern char *sepgsql_get_database_context(Oid datOid);
-extern char *sepgsql_get_namespace_context(Oid nspOid);
-extern char *sepgsql_get_relation_context(Oid relOid);
-extern char *sepgsql_get_attribute_context(Oid relOid, AttrNumber attnum);
+extern char *sepgsql_get_file_context(const char *filename);
+extern char *sepgsql_default_database_context(void);
+extern char *sepgsql_default_schema_context(Oid datOid);
+extern char *sepgsql_default_table_context(Oid nspOid);
+extern char *sepgsql_default_column_context(Oid relOid);
 extern char *sepgsql_mcstrans_out(char *context);
 extern char *sepgsql_mcstrans_in(char *context);
 
 /*
- * hooks.c : entrypoints of mandatory access controls
+ * hooks.c : entrypoints of SE-PgSQL checks
+ * ----------------------------------------
  */
 
+/* Pg_database related hooks */
+extern Datum
+sepgsql_database_create(const char *datName, Node *datLabel);
+extern void
+sepgsql_database_alter(Oid datOid);
+extern void
+sepgsql_database_drop(Oid datOid);
+extern Datum
+sepgsql_database_relabel(Oid datOid, Node *datLabel);
+extern void
+sepgsql_database_grant(Oid datOid);
+extern void
+sepgsql_database_access(Oid datOid);
+extern bool
+sepgsql_database_superuser(Oid datOid);
+extern void
+sepgsql_database_load_module(const char *filename);
+
+/* Pg_namespace related hooks */
+extern Datum
+sepgsql_schema_create(const char *nspName, bool isTemp, Node *nspLabel);
+extern void
+sepgsql_schema_alter(Oid nspOid);
+extern void
+sepgsql_schema_drop(Oid nspOid);
+extern Datum
+sepgsql_schema_relabel(Oid nspOid, Node *nspLabel);
+extern void
+sepgsql_schema_grant(Oid nspOid);
+extern bool
+sepgsql_schema_search(Oid nspOid, bool abort);
+
+/* Pg_class related hooks */
+extern Datum *
+sepgsql_relation_create(const char *relName,
+                        char relkind,
+                        TupleDesc tupDesc,
+                        Oid nspOid,
+                        Node *relLabel,
+                        List *colList,
+                        bool createAs);
+extern void
+sepgsql_relation_alter(Oid relOid, const char *newName, Oid newNsp);
+extern void
+sepgsql_relation_drop(Oid relOid);
+extern void
+sepgsql_relation_grant(Oid relOid);
+extern Datum
+sepgsql_relation_relabel(Oid relOid, Node *relLabel);
+extern void
+sepgsql_relation_truncate(Relation rel);
+extern void
+sepgsql_relation_lock(Oid relOid);
+extern void
+sepgsql_index_create(Oid relOid, Oid nspOid);
+
+/* Pg_attribute related hooks */
+extern Datum
+sepgsql_attribute_create(Oid relOid, ColumnDef *cdef);
+extern void
+sepgsql_attribute_alter(Oid relOid, const char *attname);
+extern void
+sepgsql_attribute_drop(Oid relOid, AttrNumber attno);
+extern void
+sepgsql_attribute_grant(Oid relOid, AttrNumber attnum);
+extern Datum
+sepgsql_attribute_relabel(Oid relOid, AttrNumber attnum, Node *attLabel);
+
+/* Misc database objects related hooks */
+extern void
+sepgsql_object_comment(Oid relOid, Oid objId, int32 subId);
+extern void
+sepgsql_object_drop(ObjectAddress *object);
 
 
+/*
+ * utils.c : SE-PgSQL related SQL functions
+ * ----------------------------------------
+ */
 
-
+extern Datum sepgsql_fn_compute_create(PG_FUNCTION_ARGS);
+extern Datum sepgsql_fn_getcon(PG_FUNCTION_ARGS);
+extern Datum sepgsql_fn_database_getcon(PG_FUNCTION_ARGS);
+extern Datum sepgsql_fn_schema_getcon(PG_FUNCTION_ARGS);
+extern Datum sepgsql_fn_table_getcon(PG_FUNCTION_ARGS);
+extern Datum sepgsql_fn_column_getcon(PG_FUNCTION_ARGS);
 
 #endif	/* SEPGSQL_H */

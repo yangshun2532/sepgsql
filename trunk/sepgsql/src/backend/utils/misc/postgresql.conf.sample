@@ -51,7 +51,7 @@
 
 
 #------------------------------------------------------------------------------
-# CONNECTIONS AND AUTHENTICATION
+# CONNECTIONS, SECURITY AND AUTHENTICATION
 #------------------------------------------------------------------------------
 
 # - Connection Settings -
@@ -87,6 +87,8 @@
 #krb_server_keyfile = ''
 #krb_srvname = 'postgres'		# (Kerberos only)
 #krb_caseins_users = off
+
+#sepostgresql = disabled		# [default|enforcing|permissive|disabled]
 
 # - TCP Keepalives -
 # see "man 7 tcp" for details

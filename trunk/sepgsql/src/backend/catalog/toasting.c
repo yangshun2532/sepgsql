@@ -213,6 +213,7 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 										   0,
 										   ONCOMMIT_NOOP,
 										   reloptions,
+										   NULL,
 										   false,
 										   true);
 

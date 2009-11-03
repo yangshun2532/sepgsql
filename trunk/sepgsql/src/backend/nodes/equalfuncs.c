@@ -1788,6 +1788,7 @@ _equalCreateSchemaStmt(CreateSchemaStmt *a, CreateSchemaStmt *b)
 {
 	COMPARE_STRING_FIELD(schemaname);
 	COMPARE_STRING_FIELD(authid);
+	COMPARE_NODE_FIELD(secontext);
 	COMPARE_NODE_FIELD(schemaElts);
 
 	return true;
@@ -2087,6 +2088,7 @@ _equalColumnDef(ColumnDef *a, ColumnDef *b)
 	COMPARE_NODE_FIELD(raw_default);
 	COMPARE_NODE_FIELD(cooked_default);
 	COMPARE_NODE_FIELD(constraints);
+	COMPARE_NODE_FIELD(secontext);
 
 	return true;
 }

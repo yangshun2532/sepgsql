@@ -34,7 +34,6 @@
 #include "catalog/pg_authid.h"
 #include "catalog/pg_database.h"
 #include "catalog/pg_db_role_setting.h"
-#include "catalog/pg_security_label.h"
 #include "catalog/pg_tablespace.h"
 #include "commands/comment.h"
 #include "commands/dbcommands.h"
@@ -861,11 +860,6 @@ dropdb(const char *dbname, bool missing_ok)
 	dropDatabaseDependencies(db_id);
 
 	/*
-	 * Remove security labels of objects within the database
-	 */
-	cleanupSecurityLabelOnDropDB(db_id);
-
-	/*
 	 * Drop pages for this database that are in the shared buffer cache. This
 	 * is important to ensure that no remaining backend tries to write out a
 	 * dirty buffer to the dead database later...
@@ -1464,7 +1458,7 @@ AlterDatabaseSet(AlterDatabaseSetStmt *stmt)
   					   stmt->dbname);
 
 	/* SELinux checks to alter this database */
-	sepgsql_database_alter(HeapTupleGetOid(tuple));
+	sepgsql_database_alter(datid);
 
 	AlterSetting(datid, InvalidOid, stmt->setstmt);
   

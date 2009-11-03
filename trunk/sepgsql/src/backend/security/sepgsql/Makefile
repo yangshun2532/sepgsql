@@ -7,9 +7,9 @@ top_builddir = ../../../..
 include $(top_builddir)/src/Makefile.global
 
 ifeq ($(enable_selinux), yes)
-OBJS = hooks.o label.o selinux.o
+OBJS = hooks.o label.o utils.o selinux.o
 else
-OBJS = hooks.o label.o dummy.o
+OBJS = dummy.o
 endif
 
 include $(top_srcdir)/src/backend/common.mk
