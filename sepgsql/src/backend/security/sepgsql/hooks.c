@@ -100,18 +100,7 @@ sepgsql_database_create(const char *datName, Node *datLabel)
 	char   *context;
 
 	if (!sepgsql_is_enabled())
-	{
-		/*
-		 * We don't allow SECURITY_CONTEXT option without
-		 * SE-PgSQL enaled.
-		 */
-		if (datLabel)
-			ereport(ERROR,
-					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-					 errmsg("SE-PostgreSQL is disabled")));
-
 		return PointerGetDatum(NULL);
-	}
 
 	/*
 	 * If an explicit security context is given, we apply it with
@@ -119,10 +108,16 @@ sepgsql_database_create(const char *datName, Node *datLabel)
 	 * Otherwise, we compute a default security context of the new
 	 * database.
 	 */
-	if (datLabel)
-		context = sepgsql_mcstrans_in(strVal(datLabel));
-	else
+	if (!datLabel)
 		context = sepgsql_default_database_context();
+	else
+	{
+		context = sepgsql_mcstrans_in(strVal(datLabel));
+		if (security_check_context_raw(context) < 0)
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_SECURITY_CONTEXT),
+					 errmsg("invalid security context \"%s\"", context)));
+	}
 
 	sepgsql_compute_perms(sepgsql_get_client_context(),
 						  context,
@@ -205,13 +200,15 @@ sepgsql_database_relabel(Oid datOid, Node *datLabel)
 	char   *context;
 
 	if (!sepgsql_is_enabled())
-	{
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("SE-PostgreSQL is disabled")));
-	}
 
 	context = sepgsql_mcstrans_in(strVal(datLabel));
+	if (security_check_context_raw(context) < 0)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_SECURITY_CONTEXT),
+				 errmsg("invalid security context \"%s\"", context)));
 
 	/* check db_database:{setattr relabelfrom} on the older context */
 	sepgsql_database_common(datOid,
@@ -425,20 +422,18 @@ sepgsql_schema_create(const char *nspName, bool isTemp, Node *nspLabel)
 	char   *context;
 
 	if (!sepgsql_is_enabled())
-	{
-		/* we don't allow SECURITY_CONTEXT option with SE-PgSQL disabled */
-		if (nspLabel)
-			ereport(ERROR,
-					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-					 errmsg("SE-PostgreSQL is disabled")));
-
 		return PointerGetDatum(NULL);
-	}
 
-	if (nspLabel)
-		context = sepgsql_mcstrans_in(strVal(nspLabel));
-	else
+	if (!nspLabel)
 		context = sepgsql_default_schema_context(MyDatabaseId);
+	else
+	{
+		context = sepgsql_mcstrans_in(strVal(nspLabel));
+		if (security_check_context_raw(context) < 0)
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_SECURITY_CONTEXT),
+					 errmsg("invalid security context \"%s\"", context)));
+	}
 
 	sepgsql_compute_perms(sepgsql_get_client_context(),
 						  context,
@@ -521,13 +516,15 @@ sepgsql_schema_relabel(Oid nspOid, Node *nspLabel)
 	char   *context;
 
 	if (!sepgsql_is_enabled())
-	{
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("SE-PostgreSQL is disabled")));
-	}
 
 	context = sepgsql_mcstrans_in(strVal(nspLabel));
+	if (security_check_context_raw(context) < 0)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_SECURITY_CONTEXT),
+				 errmsg("invalid security context \"%s\"", context)));
 
 	/* check db_schema:{setattr relabelfrom} on the older context */
 	sepgsql_schema_common(nspOid,
@@ -659,8 +656,7 @@ sepgsql_relation_common(Oid relOid, uint32 required, bool abort)
  *
  * It checks client's privilege to create a new table and columns owned
  * by the table, and returns an array of security contexts to be assigned
- * on the table/columns.
- * If violated, it raises an error.
+ * on the table/columns. If violated, it raises an error.
  *
  * This hook should be called on the routine to create a new regular
  * table, but no need to 
@@ -692,27 +688,8 @@ sepgsql_relation_create(const char *relName,
 	uint32		permissions;
 	int			index;
 
-	/*
-	 * We don't allow SECURITY_CONTEXT option without SE-PgSQL enabled
-	 */
 	if (!sepgsql_is_enabled())
-	{
-		if (relLabel)
-			ereport(ERROR,
-					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-					 errmsg("SE-PostgreSQL is disabled")));
-
-		foreach (l, colList)
-		{
-			ColumnDef  *cdef = (ColumnDef *) lfirst(l);
-
-			if (cdef->inhcount == 0 && cdef->secontext)
-				ereport(ERROR,
-						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-						 errmsg("SE-PostgreSQL is disabled")));
-		}
 		return NULL;
-	}
 
 	/*
 	 * check db_schema:{add_name} permission, because it add a new entry
@@ -731,10 +708,16 @@ sepgsql_relation_create(const char *relName,
 	/*
 	 * check db_table:{create (insert)} permission on the new table
 	 */
-	if (relLabel)
-		tcontext = sepgsql_mcstrans_in(strVal(relLabel));
-	else
+	if (!relLabel)
 		tcontext = sepgsql_default_table_context(nspOid);
+	else
+	{
+		tcontext = sepgsql_mcstrans_in(strVal(relLabel));
+		if (security_check_context_raw(tcontext) < 0)
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_SECURITY_CONTEXT),
+					 errmsg("invalid security context \"%s\"", tcontext)));
+	}
 
 	permissions = SEPG_DB_TABLE__CREATE;
 	if (createAs)
@@ -793,7 +776,12 @@ sepgsql_relation_create(const char *relName,
 			if (cdef->secontext &&
 				strcmp(cdef->colname, NameStr(attr->attname)) == 0)
 			{
-				ccontext = strVal(cdef->secontext);
+				ccontext = sepgsql_mcstrans_in(strVal(cdef->secontext));
+				if (security_check_context_raw(ccontext) < 0)
+					ereport(ERROR,
+							(errcode(ERRCODE_INVALID_SECURITY_CONTEXT),
+							 errmsg("invalid security context \"%s\"",
+									ccontext)));
 				break;
 			}
 		}
@@ -929,13 +917,15 @@ sepgsql_relation_relabel(Oid relOid, Node *relLabel)
 	char   *context;
 
 	if (!sepgsql_is_enabled())
-	{
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("SE-PostgreSQL is disabled")));
-	}
 
 	context = sepgsql_mcstrans_in(strVal(relLabel));
+	if (security_check_context_raw(context) < 0)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_SECURITY_CONTEXT),
+				 errmsg("invalid security context \"%s\"", context)));
 
 	/* check db_table:{setattr relabelfrom} on the older context */
 	sepgsql_relation_common(relOid,
@@ -1089,26 +1079,21 @@ sepgsql_attribute_create(Oid relOid, ColumnDef *cdef)
 	char	relkind;
 
 	if (!sepgsql_is_enabled())
-	{
-		/*
-         * We don't allow SECURITY_CONTEXT option without SE-PgSQL enabled
-		 */
-		if (cdef->secontext)
-			ereport(ERROR,
-					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-					 errmsg("SE-PostgreSQL is disabled")));
-
 		return PointerGetDatum(NULL);
-	}
 
 	relkind = get_rel_relkind(relOid);
 	if (relkind == RELKIND_RELATION)
 	{
-		if (cdef->secontext)
-			context = sepgsql_mcstrans_in(strVal(cdef->secontext));
-		else
+		if (!cdef->secontext)
 			context = sepgsql_default_column_context(relOid);
-
+		else
+		{
+			context = sepgsql_mcstrans_in(strVal(cdef->secontext));
+			if (security_check_context_raw(context) < 0)
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_SECURITY_CONTEXT),
+						 errmsg("invalid security context \"%s\"", context)));
+		}
 		snprintf(audit_name, sizeof(audit_name), "%s.%s",
 				 get_rel_name(relOid), cdef->colname);
 		sepgsql_compute_perms(sepgsql_get_client_context(),
@@ -1193,16 +1178,15 @@ sepgsql_attribute_relabel(Oid relOid, AttrNumber attnum, Node *attLabel)
 	char   *context;
 
 	if (!sepgsql_is_enabled())
-	{
-		if (attLabel)
-			ereport(ERROR,
-					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-					 errmsg("SE-PostgreSQL is disabled")));
-
-		return PointerGetDatum(NULL);
-	}
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("SE-PostgreSQL is disabled")));
 
 	context = sepgsql_mcstrans_in(strVal(attLabel));
+	if (security_check_context_raw(context) < 0)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_SECURITY_CONTEXT),
+				 errmsg("invalid security context \"%s\"", context)));
 
 	/* check db_column:{setattr relabelfrom} on the older context */
 	sepgsql_attribute_common(relOid, attnum,

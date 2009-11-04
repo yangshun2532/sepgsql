@@ -59,6 +59,7 @@
 #include "nodes/nodeFuncs.h"
 #include "parser/gramparse.h"
 #include "parser/parser.h"
+#include "security/sepgsql.h"
 #include "storage/lmgr.h"
 #include "utils/date.h"
 #include "utils/datetime.h"
@@ -5885,6 +5886,8 @@ OptColumnSecLabel:	AS SecLabelItem			{ $$ = $2; }
 
 SecLabelItem:	SECURITY_CONTEXT '=' Sconst
 			{
+				if (!sepgsql_is_enabled())
+					parser_yyerror("SE-PgSQL is disabled");
 				$$ = (Node *)makeString($3);
 			}
 		;
