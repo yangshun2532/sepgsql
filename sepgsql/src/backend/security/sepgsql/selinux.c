@@ -243,9 +243,9 @@ sepgsql_audit_log(bool denied, char *scontext, char *tcontext,
 				  uint16 tclass, uint32 audited, const char *audit_name)
 {
 	StringInfoData	buf;
-	uint32			mask;
 	const char	   *tclass_name;
 	const char	   *perm_name;
+	int				i;
 
 	/*
 	 * translation of security contexts to human readable format
@@ -262,15 +262,14 @@ sepgsql_audit_log(bool denied, char *scontext, char *tcontext,
 	/* lookup name of the permissions */
 	initStringInfo(&buf);
 	appendStringInfo(&buf, "{");
-	for (mask = 1; audited != 0; mask <<= 1)
+
+	for (i=0; selinux_catalog[tclass].perms[i].perm_name; i++)
 	{
-		if (audited & mask)
+		if (audited & (1UL << i))
 		{
-			perm_name = selinux_catalog[tclass].perms[mask].perm_name;
+			perm_name = selinux_catalog[tclass].perms[i].perm_name;
 			appendStringInfo(&buf, " %s", perm_name);
 		}
-
-		audited &= ~mask;
 	}
 	appendStringInfo(&buf, " }");
 
