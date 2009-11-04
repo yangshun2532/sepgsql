@@ -420,6 +420,8 @@ static TypeName *TableFuncTypeName(List *columns);
 %type <str>		OptTableSpace OptConsTableSpace OptTableSpaceOwner
 %type <list>	opt_check_option
 
+%type <node>	SecLabelItem OptSecLabel OptColumnSecLabel
+
 %type <target>	xml_attribute_el
 %type <list>	xml_attribute_list xml_attributes
 %type <node>	xml_root_version opt_xml_root_standalone
@@ -519,8 +521,8 @@ static TypeName *TableFuncTypeName(List *columns);
 	RELATIVE_P RELEASE RENAME REPEATABLE REPLACE REPLICA RESET RESTART
 	RESTRICT RETURNING RETURNS REVOKE RIGHT ROLE ROLLBACK ROW ROWS RULE
 
-	SAVEPOINT SCHEMA SCROLL SEARCH SECOND_P SECURITY SELECT SEQUENCE SEQUENCES
-	SERIALIZABLE SERVER SESSION SESSION_USER SET SETOF SHARE
+	SAVEPOINT SCHEMA SCROLL SEARCH SECOND_P SECURITY SECURITY_CONTEXT SELECT
+	SEQUENCE SEQUENCES SERIALIZABLE SERVER SESSION SESSION_USER SET SETOF SHARE
 	SHOW SIMILAR SIMPLE SMALLINT SOME STABLE STANDALONE_P START STATEMENT
 	STATISTICS STDIN STDOUT STORAGE STRICT_P STRIP_P SUBSTRING SUPERUSER_P
 	SYMMETRIC SYSID SYSTEM_P
@@ -1092,7 +1094,8 @@ DropGroupStmt:
  *****************************************************************************/
 
 CreateSchemaStmt:
-			CREATE SCHEMA OptSchemaName AUTHORIZATION RoleId OptSchemaEltList
+			CREATE SCHEMA OptSchemaName AUTHORIZATION RoleId
+				OptSecLabel OptSchemaEltList
 				{
 					CreateSchemaStmt *n = makeNode(CreateSchemaStmt);
 					/* One can omit the schema name or the authorization id. */
@@ -1101,16 +1104,18 @@ CreateSchemaStmt:
 					else
 						n->schemaname = $5;
 					n->authid = $5;
-					n->schemaElts = $6;
+					n->secontext = $6;
+					n->schemaElts = $7;
 					$$ = (Node *)n;
 				}
-			| CREATE SCHEMA ColId OptSchemaEltList
+			| CREATE SCHEMA ColId OptSecLabel OptSchemaEltList
 				{
 					CreateSchemaStmt *n = makeNode(CreateSchemaStmt);
 					/* ...but not both */
 					n->schemaname = $3;
 					n->authid = NULL;
-					n->schemaElts = $4;
+					n->secontext = $4;
+					n->schemaElts = $5;
 					$$ = (Node *)n;
 				}
 		;
@@ -2171,7 +2176,7 @@ copy_generic_opt_arg_list_item:
  *****************************************************************************/
 
 CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
-			OptInherit OptWith OnCommitOption OptTableSpace
+			OptInherit OptWith OnCommitOption OptTableSpace OptSecLabel
 				{
 					CreateStmt *n = makeNode(CreateStmt);
 					$4->istemp = $2;
@@ -2182,10 +2187,12 @@ CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
 					n->options = $9;
 					n->oncommit = $10;
 					n->tablespacename = $11;
+					n->secontext = $12;
 					$$ = (Node *)n;
 				}
 		| CREATE OptTemp TABLE qualified_name OF qualified_name
-			'(' OptTableElementList ')' OptWith OnCommitOption OptTableSpace
+			'(' OptTableElementList ')' OptWith OnCommitOption
+			OptTableSpace OptSecLabel
 				{
 					/* SQL99 CREATE TABLE OF <UDT> (cols) seems to be satisfied
 					 * by our inheritance capabilities. Let's try it...
@@ -2199,6 +2206,7 @@ CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
 					n->options = $10;
 					n->oncommit = $11;
 					n->tablespacename = $12;
+					n->secontext = $13;
 					$$ = (Node *)n;
 				}
 		;
@@ -2241,13 +2249,14 @@ TableElement:
 			| TableConstraint					{ $$ = $1; }
 		;
 
-columnDef:	ColId Typename ColQualList
+columnDef:	ColId Typename ColQualList OptColumnSecLabel
 				{
 					ColumnDef *n = makeNode(ColumnDef);
 					n->colname = $1;
 					n->typeName = $2;
 					n->constraints = $3;
 					n->is_local = true;
+					n->secontext = $4;
 					$$ = (Node *)n;
 				}
 		;
@@ -2637,7 +2646,8 @@ CreateAsStmt:
 		;
 
 create_as_target:
-			qualified_name OptCreateAs OptWith OnCommitOption OptTableSpace
+			qualified_name OptCreateAs OptWith OnCommitOption
+				OptTableSpace OptSecLabel
 				{
 					$$ = makeNode(IntoClause);
 					$$->rel = $1;
@@ -2645,6 +2655,7 @@ create_as_target:
 					$$->options = $3;
 					$$->onCommit = $4;
 					$$->tableSpaceName = $5;
+					$$->secontext = $6;
 				}
 		;
 
@@ -2670,6 +2681,7 @@ CreateAsElement:
 					n->raw_default = NULL;
 					n->cooked_default = NULL;
 					n->constraints = NIL;
+					n->secontext = NULL;
 					$$ = (Node *)n;
 				}
 		;
@@ -5857,6 +5869,25 @@ AlterOwnerStmt: ALTER AGGREGATE func_name aggr_args OWNER TO RoleId
 				}
 		;
 
+/*****************************************************************************
+ *
+ * ALTER THING name SECURITY CONTEXT ( <new security context> )
+ *
+ *****************************************************************************/
+
+OptSecLabel:	SecLabelItem				{ $$ = $1; }
+			| /* EMPTY */					{ $$ = NULL; }
+		;
+
+OptColumnSecLabel:	AS SecLabelItem			{ $$ = $2; }
+			| /* EMPTY */					{ $$ = NULL; }
+		;
+
+SecLabelItem:	SECURITY_CONTEXT '=' Sconst
+			{
+				$$ = (Node *)makeString($3);
+			}
+		;
 
 /*****************************************************************************
  *
@@ -6298,6 +6329,10 @@ createdb_opt_item:
 			| OWNER opt_equal DEFAULT
 				{
 					$$ = makeDefElem("owner", NULL);
+				}
+			| SecLabelItem
+				{
+					$$ = makeDefElem("security_context", $1);
 				}
 		;
 
@@ -10685,6 +10720,7 @@ unreserved_keyword:
 			| SEARCH
 			| SECOND_P
 			| SECURITY
+			| SECURITY_CONTEXT
 			| SEQUENCE
 			| SEQUENCES
 			| SERIALIZABLE
