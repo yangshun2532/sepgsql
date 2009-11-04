@@ -17,15 +17,35 @@
 /*
  * selinux_catalog
  *
- * It is a static table to associate internal codes with its name of object
- * classes and permissions.
- * SELinux requires applications to use 
+ * This static translation lookup table enables to associate a certain
+ * object class/permission name with its internal code, such as
+ * SEPG_CLASS_DB_SCHEMA.
  *
+ * SELinux requires applications to represent object class and a set of
+ * permissions in code, instead of its name, when we ask SELinux's decision.
  *
+ * See the definition of security_compute_av(3) API in libselinux.
+ * We need to gives a code of object class, and interpret what permissions
+ * are allowed on the object class from av_decision structure.
+ * Actual values of the code depend on the security policy. In other words,
+ * we cannot know what number is assigned on a certain object class and
+ * permissions.
+ * The string_to_security_class(3) and string_to_av_perm(3) APIs takes
+ * arguments with the name of object class/permission, and returns the
+ * code for the given object class/permissions.
+ * For example, we can know what code is assigned on the "db_table" class
+ * using these functions as follows:
  *
+ *   uint16 tclass_ex = string_to_security_class("db_table");
  *
+ * On the other hand, we use an alternative code internally to simplify
+ * the implementation, such as SEPG_CLASS_* for object class.
+ * The following selinux_catalog is used to translate the 'internal'
+ * code and the 'external' code.
  *
- *
+ * It allows to lookup name of the object class or permission corresponding
+ * to a certain 'internal' code. Then, we can give the name to SELinux's
+ * API to obtain 'external' code which can be used to ask in-kernel SELinux.
  */
 static struct
 {
@@ -106,9 +126,9 @@ static struct
 /*
  * GUC option: sepostgresql = [default|enforcing|permissive|disabled]
  *
- * SEPGSQL_MODE_DEFAULT		: It follows system setting (enforcing/permissive/disabled).
- * SEPGSQL_MODE_ENFORCING	: Use enforcing mode, even if system works in permissive.
- * SEPGSQL_MODE_PERMISSIVE	: Use permissive mode, even if system works in enforcing.
+ * SEPGSQL_MODE_DEFAULT		: It follows system setting
+ * SEPGSQL_MODE_ENFORCING	: Use enforcing mode always
+ * SEPGSQL_MODE_PERMISSIVE	: Use permissive mode always
  * SEPGSQL_MODE_INTERNAL	: Internally used mode. Same as permissive mode
  *							  except for silence in audit logs
  * SEPGSQL_MODE_DISABLED	: It always disables SE-PgSQL configuration
@@ -118,8 +138,8 @@ int sepostgresql_mode;
 /*
  * sepgsql_initialize
  *
- *
- *
+ * It sets up the privilege (security context) of the client and initializes
+ * a few internal stuff.
  */
 void
 sepgsql_initialize(void)
@@ -183,7 +203,7 @@ sepgsql_initialize(void)
 /*
  * sepgsql_is_enabled
  *
- *
+ * If it returns true, SE-PgSQL is enabled. Otherwise, it is disabled.
  */
 bool
 sepgsql_is_enabled(void)
@@ -203,6 +223,11 @@ sepgsql_is_enabled(void)
 	if (sepostgresql_mode == SEPGSQL_MODE_DISABLED)
 		return false;
 
+	/*
+	 * SE-PgSQL needs SELinux is enabled on the operating system.
+	 * If it is disabled, SE-PgSQL has to be also disabled, even if
+	 * 'enforcing' or 'permissive' are specified.
+	 */
 	if (enabled < 0)
 		enabled = is_selinux_enabled();
 
@@ -212,8 +237,13 @@ sepgsql_is_enabled(void)
 /*
  * sepgsql_get_enforce
  *
+ * It returns true, if SE-PgSQL performs in enforcing mode.
  *
- *
+ * In enforcing mode, SE-PgSQL performs as expected. It checks permissions
+ * on the required action, and it prevents them if violated.
+ * In permissive mode, SE-PgSQL also checks permissions, but it does not
+ * prevent anything, even if violated. It generates audit logs for access
+ * violations, so we can use this mode to debug security policy itself.
  */
 bool
 sepgsql_get_enforce(void)
