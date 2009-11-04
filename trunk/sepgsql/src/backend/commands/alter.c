@@ -294,6 +294,7 @@ void
 ExecAlterSecLabelStmt(AlterSecLabelStmt *stmt)
 {
 	char   *name;
+	Oid		relOid;
 
 	switch (stmt->objectType)
 	{
@@ -308,7 +309,14 @@ ExecAlterSecLabelStmt(AlterSecLabelStmt *stmt)
 			break;
 
 		case OBJECT_TABLE:
+			relOid = RangeVarGetRelid(stmt->relation, false);
+			AlterRelationSecLabel(relOid, stmt->secontext);
+			break;
+
 		case OBJECT_COLUMN:
+			relOid = RangeVarGetRelid(stmt->relation, false);
+			AlterAttributeSecLabel(relOid, stmt->subname,
+								   stmt->secontext, false);
 			break;
 
 		default:

@@ -1624,7 +1624,7 @@ AlterDatabaseSecLabel(const char *dbname, Node *datLabel)
 
 	/*
 	 * SE-PgSQL permission check to relabel this database, and
-	 * obtain the security context (raw format) to be addigned on.
+	 * obtain the security context (raw format) to be assigned on.
 	 */
 	datsecon = sepgsql_database_relabel(datOid, datLabel);
 
