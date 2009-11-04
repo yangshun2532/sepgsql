@@ -189,7 +189,8 @@ static TypeName *TableFuncTypeName(List *columns);
 %type <node>	stmt schema_stmt
 		AlterDatabaseStmt AlterDatabaseSetStmt AlterDomainStmt AlterFdwStmt
 		AlterForeignServerStmt AlterGroupStmt
-		AlterObjectSchemaStmt AlterOwnerStmt AlterSeqStmt AlterTableStmt
+		AlterObjectSchemaStmt AlterOwnerStmt AlterSecLabelStmt
+		AlterSeqStmt AlterTableStmt
 		AlterUserStmt AlterUserMappingStmt AlterUserSetStmt
 		AlterRoleStmt AlterRoleSetStmt
 		AlterDefaultPrivilegesStmt DefACLAction
@@ -644,6 +645,7 @@ stmt :
 			| AlterGroupStmt
 			| AlterObjectSchemaStmt
 			| AlterOwnerStmt
+			| AlterSecLabelStmt
 			| AlterSeqStmt
 			| AlterTableStmt
 			| AlterRoleSetStmt
@@ -5875,6 +5877,41 @@ AlterOwnerStmt: ALTER AGGREGATE func_name aggr_args OWNER TO RoleId
  * ALTER THING name SECURITY CONTEXT ( <new security context> )
  *
  *****************************************************************************/
+
+AlterSecLabelStmt:	ALTER DATABASE database_name SecLabelItem
+				{
+					AlterSecLabelStmt *n = makeNode(AlterSecLabelStmt);
+					n->objectType = OBJECT_DATABASE;
+					n->object = list_make1(makeString($3));
+					n->secontext = (Node *)$4;
+					$$ = (Node *)n;
+				}
+			| ALTER SCHEMA name SecLabelItem
+				{
+					AlterSecLabelStmt *n = makeNode(AlterSecLabelStmt);
+					n->objectType = OBJECT_SCHEMA;
+					n->object = list_make1(makeString($3));
+					n->secontext = (Node *)$4;
+					$$ = (Node *) n;
+				}
+			| ALTER TABLE relation_expr SecLabelItem
+				{
+					AlterSecLabelStmt *n = makeNode(AlterSecLabelStmt);
+					n->objectType = OBJECT_TABLE;
+					n->relation = $3;
+					n->secontext = (Node *)$4;
+					$$ = (Node *) n;
+				}
+			| ALTER TABLE relation_expr ALTER opt_column ColId SecLabelItem
+				{
+					AlterSecLabelStmt *n = makeNode(AlterSecLabelStmt);
+					n->objectType = OBJECT_COLUMN;
+					n->relation = $3;
+					n->subname = $6;
+					n->secontext = (Node *)$7;
+					$$ = (Node *) n;
+				}
+		;
 
 OptSecLabel:	SecLabelItem				{ $$ = $1; }
 			| /* EMPTY */					{ $$ = NULL; }

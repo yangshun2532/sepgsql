@@ -284,3 +284,36 @@ ExecAlterOwnerStmt(AlterOwnerStmt *stmt)
 				 (int) stmt->objectType);
 	}
 }
+
+/*
+ * ExecAlterSecLabelStmt
+ *
+ * Executes an ALTER OBJECT / SECURITY_CONTEXT = '...' statement. 
+ */
+void
+ExecAlterSecLabelStmt(AlterSecLabelStmt *stmt)
+{
+	char   *name;
+
+	switch (stmt->objectType)
+	{
+		case OBJECT_DATABASE:
+			name = strVal(linitial(stmt->object));
+			AlterDatabaseSecLabel(name, stmt->secontext);
+			break;
+
+		case OBJECT_SCHEMA:
+			name = strVal(linitial(stmt->object));
+			AlterSchemaSecLabel(name, stmt->secontext);
+			break;
+
+		case OBJECT_TABLE:
+		case OBJECT_COLUMN:
+			break;
+
+		default:
+			elog(ERROR, "unrecognized AlterSecLabelStmt type: %d",
+				 (int) stmt->objectType);
+			break;
+	}
+}
