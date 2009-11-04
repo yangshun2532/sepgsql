@@ -286,7 +286,7 @@ createdb(const CreatedbStmt *stmt)
 	 * SELinux permission check to create a new database and obtain its
 	 * default security context, if no explicit one is given.
 	 */
-	datsecon = sepgsql_database_create(dbname, dsecon);
+	datsecon = sepgsql_database_create(dbname, (dsecon ? dsecon->arg : NULL));
 
 	/*
 	 * Lookup database (template) to be cloned, and obtain share lock on it.

@@ -2072,8 +2072,8 @@ OpenIntoRel(QueryDesc *queryDesc)
 										 RELKIND_RELATION,
 										 queryDesc->tupDesc,
 										 namespaceId,
-										 NULL,
-										 NIL,
+										 into->secontext,
+										 into->colNames,
 										 true);
 
 	/* Parse and validate any reloptions */

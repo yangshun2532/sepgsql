@@ -81,8 +81,7 @@ CreateSchemaCommand(CreateSchemaStmt *stmt, const char *queryString)
      * SELinux permission check to create a new schema and obtain its
      * default security context, if no explicit one was given
      */
-	nspsecon = sepgsql_schema_create(schemaName, false,
-									 (DefElem *) stmt->secontext);
+	nspsecon = sepgsql_schema_create(schemaName, false, stmt->secontext);
 
 	/* Additional check to protect reserved schema names */
 	if (!allowSystemTableMods && IsReservedName(schemaName))
