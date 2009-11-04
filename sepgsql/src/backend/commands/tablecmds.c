@@ -1389,14 +1389,16 @@ MergeAttributes(List *schema, List *supers, bool istemp,
 				 * have to be matched. If either of columns are unlabeled, or
 				 * both of the are labeled but unmatched, it raises an error.
 				 *
-				 * We don't enclose this block by sepgsql_is_enabled(), because
-				 * it is just a simple string comparison, and we have no reasonable
-				 * way to restore security context of the inherited columns created
-				 * when SE-PgSQL is disabled in run-time.
-				 * (If SE-PgSQL is disabled in compile time, any security contexts
-				 * are always disabled. So, this check never raise an error.)
+				 * We don't enclose this block by sepgsql_is_enabled(),
+				 * because it is just a simple string comparison, and we have
+				 * no reasonable way to restore security context of the
+				 * inherited columns create when SE-PgSQL is disabled in
+				 * run-time. (If SE-PgSQL is disabled in compile time, any
+				 * security contexts are always disabled. So, this check never
+				 * raise an error.)
 				 */
-				defsecon = get_attsecontext(RelationGetRelid(relation), exist_attno);
+				defsecon = get_attsecontext(RelationGetRelid(relation),
+											attribute->attnum);
 				if (!def->secontext)
 					def->secontext = (Node *) makeString(defsecon);
 				else if (!((!defsecon && !strVal(def->secontext)) ||
@@ -1404,8 +1406,9 @@ MergeAttributes(List *schema, List *supers, bool istemp,
 							strcmp(defsecon, strVal(def->secontext)) == 0)))
 					ereport(ERROR,
 							(errcode(ERRCODE_DATATYPE_MISMATCH),
-							 errmsg("inherited column \"%s\" has a security context conflict",
-									attributeName)));
+							 errmsg("inherited column \"%s\" has "
+									"a security context conflict %s %s",
+									attributeName, defsecon, strVal(def->secontext))));
 
 				def->inhcount++;
 				/* Merge of NOT NULL constraints = OR 'em together */
@@ -1415,6 +1418,7 @@ MergeAttributes(List *schema, List *supers, bool istemp,
 			}
 			else
 			{
+				char   *defsecon;
 				/*
 				 * No, create a new inherited column
 				 */
@@ -1429,9 +1433,10 @@ MergeAttributes(List *schema, List *supers, bool istemp,
 				def->cooked_default = NULL;
 				def->constraints = NIL;
 				def->storage = attribute->attstorage;
-				def->secontext =
-					(Node *) makeString(get_attsecontext(RelationGetRelid(relation),
-														 attribute->attnum));
+				defsecon = get_attsecontext(RelationGetRelid(relation),
+											attribute->attnum);
+				def->secontext = (Node *) makeString(defsecon);
+
 				inhSchema = lappend(inhSchema, def);
 				newattno[parent_attno - 1] = ++child_attno;
 			}
@@ -7429,13 +7434,16 @@ MergeAttributesIntoExisting(Relation child_rel, Relation parent_rel)
 			 * If either of columns is not labeled, or both of them are labeled
 			 * but unmatched, it raised an error.
 			 */
-			context_p = get_attsecontext(RelationGetRelid(parent_rel), parent_attno);
-			context_c = get_attsecontext(RelationGetRelid(child_rel), childatt->attnum);
+			context_p = get_attsecontext(RelationGetRelid(parent_rel),
+										 parent_attno);
+			context_c = get_attsecontext(RelationGetRelid(child_rel),
+										 childatt->attnum);
 			if ((context_p && !context_c) || (!context_p && context_c) ||
 				(context_p && context_c && strcmp(context_p, context_c) != 0))
 				ereport(ERROR,
 						(errcode(ERRCODE_DATATYPE_MISMATCH),
-						 errmsg("child table \"%s\" has different security context for column \"%s\"",
+						 errmsg("child table \"%s\" has different "
+								"security context for column \"%s\"",
 								RelationGetRelationName(child_rel),
 								attributeName)));
 
@@ -8089,6 +8097,219 @@ AlterSeqNamespaces(Relation classRel, Relation rel,
 	relation_close(depRel, AccessShareLock);
 }
 
+/*
+ * Routines to handle ALTER TABLE ... SECYRUTY_CONTEXT = 'xxx' statement.
+ *
+ *
+ *
+ *
+ *
+ *
+ */
+void
+AlterRelationSecLabel(Oid relOid, Node *newLabel)
+{
+	Relation	classRel;
+	HeapTuple	oldtup;
+	HeapTuple	newtup;
+	Datum		relsecon;
+	Datum		values[Natts_pg_class];
+	bool		nulls[Natts_pg_class];
+	bool		replaces[Natts_pg_class];
+
+	if (get_rel_relkind(relOid) != RELKIND_RELATION)
+		ereport(ERROR,
+				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+				 errmsg("\"%s\" is not a regular table",
+						get_rel_name(relOid))));
+
+	classRel = heap_open(RelationRelationId, RowExclusiveLock);
+
+	oldtup = SearchSysCache(RELOID,
+							ObjectIdGetDatum(relOid),
+							0, 0, 0);
+	if (!HeapTupleIsValid(oldtup))
+		elog(ERROR, "cache lookup failed for relation %u", relOid);
+
+	/*
+	 * The default PG model requires ownership of the table which
+	 * owns the target attribute.
+	 * And, we don't allow to relabel columns in system catalogs.
+	 */
+	if (!pg_class_ownercheck(relOid, GetUserId()))
+		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
+					   get_rel_name(relOid));
+
+	if (!allowSystemTableMods &&
+		IsSystemClass((Form_pg_class) GETSTRUCT(oldtup)))
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+                 errmsg("permission denied: \"%s\" is a system catalog",
+						get_rel_name(relOid))));
+	/*
+	 * SE-PgSQL permission check to relabel this table, and
+	 * obtain the security context to be assigned on in raw format.
+	 */
+	relsecon = sepgsql_relation_relabel(relOid, newLabel);
+
+	/*
+	 * Update security context
+	 */
+	memset(values, 0, sizeof(values));
+	memset(nulls, false, sizeof(nulls));
+	memset(replaces, false, sizeof(replaces));
+
+	values[Anum_pg_class_relsecon - 1] = relsecon;
+	replaces[Anum_pg_class_relsecon - 1] = true;
+
+	newtup = heap_modify_tuple(oldtup, RelationGetDescr(classRel),
+							   values, nulls, replaces);
+
+	simple_heap_update(classRel, &newtup->t_self, newtup);
+
+	CatalogUpdateIndexes(classRel, newtup);
+
+	heap_freetuple(newtup);
+
+	heap_close(classRel, RowExclusiveLock);
+}
+
+/*
+ * AlterAttributeSecLabel
+ *
+ *
+ *
+ *
+ */
+void
+AlterAttributeSecLabel(Oid relOid, const char *attname,
+					   Node *newLabel, bool recursing)
+{
+	Form_pg_attribute	attForm;
+	Relation	targetRel;
+	Relation	attrRel;
+	HeapTuple	oldtup;
+	HeapTuple	newtup;
+	Datum		attsecon;
+	Datum		values[Natts_pg_attribute];
+	bool		nulls[Natts_pg_attribute];
+	bool		replaces[Natts_pg_attribute];
+
+	/*
+	 * Grab an exclusive lock on the target table, which we will NOT
+	 * release until end of transaction.
+	 */
+	targetRel = heap_open(relOid, AccessExclusiveLock);
+
+	if (RelationGetForm(targetRel)->relkind != RELKIND_RELATION)
+		ereport(ERROR,
+				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+				 errmsg("\"%s\" is not a regular table",
+						get_rel_name(relOid))));
+	/*
+	 * The default PG model requires ownership of the table which
+	 * owns the target attribute.
+	 * And, we don't allow to relabel columns in system catalogs.
+	 */
+	if (!pg_class_ownercheck(relOid, GetUserId()))
+		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
+					   RelationGetRelationName(targetRel));
+
+	if (!allowSystemTableMods && IsSystemRelation(targetRel))
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+                 errmsg("permission denied: \"%s\" is a system catalog",
+						get_rel_name(relOid))));
+
+	if (!recursing)
+	{
+		ListCell   *child;
+		List	   *children;
+
+		children = find_all_inheritors(relOid, NoLock);
+
+		/*
+		 * find_all_inheritors does the recursive search of the inheritance
+		 * hierarchy, so all we have to do is process all of the relids in
+		 * the list that it returns.
+		 */
+		foreach(child, children)
+		{
+			Oid		child_relOid = lfirst_oid(child);
+
+			if (relOid == child_relOid)
+				continue;
+			/* note we need not recurse again */
+			AlterAttributeSecLabel(child_relOid, attname, newLabel, true);
+        }
+	}
+
+	attrRel = heap_open(AttributeRelationId, RowExclusiveLock);
+
+	oldtup = SearchSysCacheAttName(relOid, attname);
+	if (!HeapTupleIsValid(oldtup))
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_COLUMN),
+				 errmsg("column \"%s\" does not exist", attname)));
+
+	attForm = (Form_pg_attribute) GETSTRUCT(oldtup);
+
+	/*
+	 * SE-PgSQL checks permission to relabel the column, and obtains
+	 * the security context to be assigned in raw format.
+	 */
+	attsecon = sepgsql_attribute_relabel(relOid, attForm->attnum, newLabel);
+
+	/* we don't allow to relabel system columns */
+	if (attForm->attnum <= 0)
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("cannot relabel system column \"%s\"",
+						NameStr(attForm->attname))));
+
+	/*
+	 * we don't allow to relabel inherited columns, except for
+	 * the case when ALTER TABLE is applied on the top level.
+	 */
+	if (attForm->attinhcount > 0 && !recursing)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
+				 errmsg("cannot relabel inherited column \"%s\"",
+						NameStr(attForm->attname))));
+	/*
+	 * we don't allow to relabel multiple inherited columns, to keep
+	 * integrity that inherited columns have same security context.
+	 */
+	if (attForm->attinhcount > 1)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
+				 errmsg("cannot relabel multiple inherited column \"%s\"",
+						NameStr(attForm->attname))));
+	/*
+	 * Update pg_attribute entry
+	 */
+	memset(values, 0, sizeof(values));
+	memset(nulls, false, sizeof(nulls));
+	memset(replaces, false, sizeof(replaces));
+
+	values[Anum_pg_attribute_attsecon - 1] = attsecon;
+	replaces[Anum_pg_attribute_attsecon - 1] = true;
+
+	newtup = heap_modify_tuple(oldtup, RelationGetDescr(attrRel),
+							   values, nulls, replaces);
+
+	simple_heap_update(attrRel, &newtup->t_self, newtup);
+
+	CatalogUpdateIndexes(attrRel, newtup);
+
+	heap_freetuple(newtup);
+
+	ReleaseSysCache(oldtup);
+
+	heap_close(attrRel, RowExclusiveLock);
+
+	heap_close(targetRel, NoLock);
+}
 
 /*
  * This code supports
