@@ -2040,6 +2040,20 @@ typedef struct AlterOwnerStmt
 	char	   *newowner;		/* the new owner */
 } AlterOwnerStmt;
 
+/* ----------------------
+ *		Alter Object Security Context Statement
+ * ----------------------
+ */
+typedef struct AlterSecLabelStmt
+{
+	NodeTag		type;
+	ObjectType	objectType;		/* OBJECT_TABLE, OBJECT_COLUMN, etc */
+	RangeVar   *relation;		/* in case it's a table */
+	List	   *object;			/* in case it's some other object */
+	List	   *objarg;			/* argument types, if applicable */
+	char	   *subname;		/* column name, if needed */
+	Node	   *secontext;		/* security context of the object */
+} AlterSecLabelStmt;
 
 /* ----------------------
  *		Create Rule Statement

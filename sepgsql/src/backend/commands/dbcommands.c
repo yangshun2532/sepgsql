@@ -1577,6 +1577,77 @@ AlterDatabaseOwner(const char *dbname, Oid newOwnerId)
 	heap_close(rel, NoLock);
 }
 
+/*
+ * AlterDatabaseSecLabel
+ *
+ * ALTER DATABASE name SECURITY_LABEL [=] new_context
+ */
+void
+AlterDatabaseSecLabel(const char *dbname, Node *datLabel)
+{
+	Relation	rel;
+	HeapTuple	oldtup;
+	HeapTuple	newtup;
+	ScanKeyData	keys[1];
+	SysScanDesc	scan;
+	Oid			datOid;
+	Datum		datsecon;
+	Datum		values[Natts_pg_database];
+	bool		nulls[Natts_pg_database];
+	bool		replaces[Natts_pg_database];
+
+	/*
+	 * Get the old tuple.  We cannot use system cache, because it is
+	 * identified by the name, not its Oid, so we need to lookup the
+	 * pg_database with the given database name,
+	 */
+	rel = heap_open(DatabaseRelationId, RowExclusiveLock);
+	ScanKeyInit(&keys[0],
+				Anum_pg_database_datname,
+				BTEqualStrategyNumber, F_NAMEEQ,
+				NameGetDatum(dbname));
+
+	scan = systable_beginscan(rel, DatabaseNameIndexId, true,
+							  SnapshotNow, 1, &keys[0]);
+
+	oldtup = systable_getnext(scan);
+	if (!HeapTupleIsValid(oldtup))
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_DATABASE),
+				 errmsg("database \"%s\" does not exist", dbname)));
+
+	datOid = HeapTupleGetOid(oldtup);
+
+	/* The default PG permission check */
+	if (!pg_database_ownercheck(datOid, GetUserId()))
+		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_DATABASE, dbname);
+
+	/*
+	 * SE-PgSQL permission check to relabel this database, and
+	 * obtain the security context (raw format) to be addigned on.
+	 */
+	datsecon = sepgsql_database_relabel(datOid, datLabel);
+
+	memset(values, 0, sizeof(values));
+	memset(nulls, false, sizeof(nulls));
+	memset(replaces, false, sizeof(replaces));
+
+	values[Anum_pg_database_datsecon - 1] = datsecon;
+	replaces[Anum_pg_database_datsecon - 1] = true;
+
+	newtup = heap_modify_tuple(oldtup, RelationGetDescr(rel),
+							   values, nulls, replaces);
+
+	simple_heap_update(rel, &newtup->t_self, newtup);
+
+	CatalogUpdateIndexes(rel, newtup);
+
+	systable_endscan(scan);
+
+	heap_freetuple(newtup);
+
+	heap_close(rel, RowExclusiveLock);
+}
 
 /*
  * Helper functions

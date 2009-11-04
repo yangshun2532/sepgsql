@@ -439,3 +439,63 @@ AlterSchemaOwner_internal(HeapTuple tup, Relation rel, Oid newOwnerId)
 	}
 
 }
+
+/*
+ * AlterSchemaSecLabel
+ *
+ * ALTER SCHEMA name SECURITY_LABEL [=] newsecon
+ */
+void
+AlterSchemaSecLabel(const char *name, Node *nspLabel)
+{
+	Relation	rel;
+	HeapTuple	oldtup;
+	HeapTuple	newtup;
+	Oid			nspOid;
+	Datum		nspsecon;
+	Datum		values[Natts_pg_namespace];
+	bool		nulls[Natts_pg_namespace];
+	bool		replaces[Natts_pg_namespace];
+
+	rel = heap_open(NamespaceRelationId, RowExclusiveLock);
+
+	oldtup = SearchSysCache(NAMESPACENAME,
+							CStringGetDatum(name),
+							0, 0, 0);
+	if (!HeapTupleIsValid(oldtup))
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_SCHEMA),
+				 errmsg("schema \"%s\" does not exist", name)));
+
+	nspOid = HeapTupleGetOid(oldtup);
+
+	/* The default PG permission check */
+	if (!pg_namespace_ownercheck(nspOid, GetUserId()))
+		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_NAMESPACE, name);
+
+	/*
+	 * SE-PgSQL permission check to relabel this schema, and
+	 * obtain the security context (raw format) to be addigned on.
+	 */
+	nspsecon = sepgsql_schema_relabel(nspOid, nspLabel);
+
+	memset(values, 0, sizeof(values));
+	memset(nulls, false, sizeof(nulls));
+	memset(replaces, false, sizeof(replaces));
+
+	values[Anum_pg_namespace_nspsecon - 1] = nspsecon;
+	replaces[Anum_pg_namespace_nspsecon - 1] = true;
+
+	newtup = heap_modify_tuple(oldtup, RelationGetDescr(rel),
+							   values, nulls, replaces);
+
+	simple_heap_update(rel, &newtup->t_self, newtup);
+
+	CatalogUpdateIndexes(rel, newtup);
+
+	heap_freetuple(newtup);
+
+	ReleaseSysCache(oldtup);
+
+	heap_close(rel, RowExclusiveLock);
+}
