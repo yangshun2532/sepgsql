@@ -15,6 +15,24 @@
 #include "utils/rel.h"
 #include "utils/syscache.h"
 
+/*
+ * fixup_whole_row_reference
+ *
+ * PgSQL allows users to access whole of the row as follows:
+ *
+ *   postgres=# SELECT t, a, c FROM t;
+ *       t    | a | c
+ *   ---------+---+---
+ *    (1,2,3) | 1 | 3
+ *   (1 row)
+ *
+ * In the rte->selectedCols, it is marked as a reference to the column
+ * with attnum=0. But it is equivalent to access all the regular columns
+ * from the perspective of access controls.
+ *
+ * If necessary, this function modifies the given Bitmapset to set
+ * corresponding bits to regular columns (expect for dropped ones).
+ */
 static Bitmapset *
 fixup_whole_row_reference(Oid relOid, Bitmapset *columns)
 {
@@ -69,14 +87,33 @@ fixup_whole_row_reference(Oid relOid, Bitmapset *columns)
 	return result;
 }
 
+/*
+ * sepgsql_check_relation_perms
+ *
+ * It checks client's permissions to access contents of a certain table
+ * and columns. If violated, it raised an error.
+ * 
+ * 
+ * The caller has to provide OID of the table, a set of columns to be
+ * selected/modified and required permissions correctly.
+ * The set of columns are represented as Bitmapset in same manner with
+ * RangeTblEntry structure.
+ *
+ * SE-PgSQL has a few hardwired rules to keep consistenct in access
+ * controls. It prevents to modify system catalogs and to access toast
+ * tables using regular DML statement in enforcing mode. User has to
+ * manage database objects using DDL statement, and fetch large values
+ * using regular detoast mechanism.
+ */
 static void
-sepgsql_check_relation_perms(Oid relOid, uint32 required,
+sepgsql_check_relation_perms(uint32 required,
+							 Oid relOid, 
 							 Bitmapset *selected,
 							 Bitmapset *modified)
 {
 	Bitmapset	   *columns;
-    Bitmapset	   *selected_ex;
-    Bitmapset	   *modified_ex;
+	Bitmapset	   *selected_ex;
+	Bitmapset	   *modified_ex;
 	AttrNumber		attno;
 
 	/*
@@ -100,7 +137,6 @@ sepgsql_check_relation_perms(Oid relOid, uint32 required,
 		 * SE-PgSQL prevents to access toast table by hand.
 		 * It should be accesses using regular toast mechanism.
 		 */
-
 		if (get_rel_relkind(relOid) == RELKIND_TOASTVALUE)
 			ereport(ERROR,
 					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
@@ -155,6 +191,17 @@ sepgsql_check_relation_perms(Oid relOid, uint32 required,
 	bms_free(columns);
 }
 
+/*
+ * sepgsql_check_rte_perms
+ *
+ * It is an entrypoint of sepgsql_check_relation_perms() when user accesses
+ * a certain table using regular DML statements.
+ * It can raise an error, if violated.
+ * We assume this hook should be invoked just after ExecCheckRTEPerms()
+ * which also checks permissions on RangeTblEntry
+ *
+ * rte : RangeTblEntry to be checked
+ */
 void
 sepgsql_check_rte_perms(RangeTblEntry *rte)
 {
@@ -163,6 +210,12 @@ sepgsql_check_rte_perms(RangeTblEntry *rte)
 	if (!sepgsql_is_enabled())
 		return;
 
+	/*
+	 * Only plain-relation RTEs need to be checked here.  Function RTEs
+	 * should be checked by init_fcache when the function is prepared for
+	 * execution.
+	 * Join, subquery, and special RTEs need no checks.
+	 */
 	if (rte->rtekind != RTE_RELATION)
 		return;
 
@@ -176,7 +229,7 @@ sepgsql_check_rte_perms(RangeTblEntry *rte)
 		 * ACL_SELECT_FOR_UPDATE is defined as an aliase of ACL_UPDATE,
 		 * so we cannot determine whether the given relation is accessed
 		 * with UPDATE statement or SELECT FOR SHARE/UPDATE immediately.
-		 * UPDATE statements set a bit on rte->modifiedCols at least,
+		 * UPDATE statements needs a bit on rte->modifiedCols at least,
 		 * so we use it as a watermark.
 		 */
 		if (!bms_is_empty(rte->modifiedCols))
@@ -187,20 +240,32 @@ sepgsql_check_rte_perms(RangeTblEntry *rte)
 	if (rte->requiredPerms & ACL_DELETE)
 		required |= SEPG_DB_TABLE__DELETE;
 
+	/* no need to check anything? */
 	if (required == 0)
 		return;
 
-	sepgsql_check_relation_perms(rte->relid,
-								 required,
+	sepgsql_check_relation_perms(required,
+								 rte->relid,
 								 rte->selectedCols,
 								 rte->modifiedCols);
 }
 
+/*
+ * sepgsql_check_copy_perms
+ *
+ * It is an entrypoint of sepgsql_check_relation_perms() when user accesses
+ * a certain table using COPY TO/FROM statement.
+ * It can raise an error, if violated.
+ *
+ * rel : the target relation to be copied
+ * attnumlist : 
+ * is_from : True, if COPY FROM. Otherwise, COPY TO.
+ */
 void
 sepgsql_check_copy_perms(Relation rel, List *attnumlist, bool is_from)
 {
 	Oid			relOid = RelationGetRelid(rel);
-	Bitmapset   *columns = NULL;
+	Bitmapset  *columns = NULL;
 	ListCell   *l;
 
 	if (!sepgsql_is_enabled())
@@ -215,9 +280,9 @@ sepgsql_check_copy_perms(Relation rel, List *attnumlist, bool is_from)
 	}
 
 	if (is_from)
-		sepgsql_check_relation_perms(relOid, SEPG_DB_TABLE__INSERT,
-									 NULL, columns);
+		sepgsql_check_relation_perms(SEPG_DB_TABLE__INSERT,
+									 relOid, NULL, columns);
 	else
-		sepgsql_check_relation_perms(relOid, SEPG_DB_TABLE__SELECT,
-									 columns, NULL);
+		sepgsql_check_relation_perms(SEPG_DB_TABLE__SELECT,
+									 relOid, columns, NULL);
 }

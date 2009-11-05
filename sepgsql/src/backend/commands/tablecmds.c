@@ -3632,6 +3632,19 @@ ATPrepAddColumn(List **wqueue, Relation rel, bool recurse,
 				AlterTableCmd *cmd)
 {
 	/*
+	 * SE-PgSQL checks permission to create a new column.
+	 *
+	 *
+	 *
+	 */
+	if (((ColumnDef *)cmd->def)->inhcount == 0)
+	{
+		((ColumnDef *)cmd->def)->secontext =
+			(Node *) sepgsql_attribute_create(RelationGetRelid(rel),
+											  (ColumnDef *)cmd->def);
+	}
+
+	/*
 	 * Recurse to add the column to child classes, if requested.
 	 *
 	 * We must recurse one level at a time, so that multiply-inheriting
@@ -3673,7 +3686,7 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 	FormData_pg_attribute attribute;
 	int			newattnum;
 	char		relkind;
-	Datum		attsecon;
+	Datum		attsecon = PointerGetDatum(NULL);
 	HeapTuple	typeTuple;
 	Oid			typeOid;
 	int32		typmod;
@@ -3697,6 +3710,8 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 			Form_pg_attribute childatt = (Form_pg_attribute) GETSTRUCT(tuple);
 			Oid			ctypeId;
 			int32		ctypmod;
+			char	   *csecon;
+			char	   *psecon = NULL;
 
 			/* Child column must match by type */
 			ctypeId = typenameTypeId(NULL, colDef->typeName, &ctypmod);
@@ -3706,6 +3721,17 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 						(errcode(ERRCODE_DATATYPE_MISMATCH),
 						 errmsg("child table \"%s\" has different type for column \"%s\"",
 							RelationGetRelationName(rel), colDef->colname)));
+
+			/* Child column must have same security context */
+			csecon = get_attsecontext(myrelid, childatt->attnum);
+			if (DatumGetPointer(colDef->secontext))
+				psecon = strVal(colDef->secontext);
+			if ((!csecon && psecon) || (csecon && !psecon) ||
+				(csecon && psecon && strcmp(csecon, psecon) != 0))
+				ereport(ERROR,
+						(errcode(ERRCODE_DATATYPE_MISMATCH),
+						 errmsg("inherited column \"%s\" has a conflict "
+								"security context", colDef->colname)));
 
 			/* If it's OID, child column must actually be OID */
 			if (isOid && childatt->attnum != ObjectIdAttributeNumber)
@@ -3753,9 +3779,6 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 				 errmsg("column \"%s\" of relation \"%s\" already exists",
 						colDef->colname, RelationGetRelationName(rel))));
 
-	/* SE-PgSQL check permission to create a new column */
-	attsecon = sepgsql_attribute_create(myrelid, colDef);
-
 	/* Determine the new attribute's number */
 	if (isOid)
 		newattnum = ObjectIdAttributeNumber;
@@ -3796,6 +3819,10 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 	attribute.attislocal = colDef->is_local;
 	attribute.attinhcount = colDef->inhcount;
 	/* attribute.attacl is handled by InsertPgAttributeTuple */
+
+	/* attribute.attsecon, if SE-PgSQL is available */
+	if (DatumGetPointer(colDef->secontext))
+		attsecon = CStringGetTextDatum(strVal(colDef->secontext));
 
 	ReleaseSysCache(typeTuple);
 
@@ -8225,6 +8252,13 @@ AlterAttributeSecLabel(Oid relOid, const char *attname,
 	{
 		ListCell   *child;
 		List	   *children;
+		AttrNumber	attnum = get_attnum(relOid, attname);
+
+		/*
+		 * SE-PgSQL checks permission to relabel the column, and obtains
+		 * the security context to be assigned in raw format.
+		 */
+		attsecon = sepgsql_attribute_relabel(relOid, attnum, newLabel);
 
 		children = find_all_inheritors(relOid, NoLock);
 
@@ -8240,9 +8274,20 @@ AlterAttributeSecLabel(Oid relOid, const char *attname,
 			if (relOid == child_relOid)
 				continue;
 			/* note we need not recurse again */
-			AlterAttributeSecLabel(child_relOid, attname, newLabel, true);
-        }
+			AlterAttributeSecLabel(child_relOid, attname,
+								   DatumGetPointer(attsecon), true);
+		}
 	}
+	else
+	{
+		/*
+		 * SE-PgSQL already checks permission to relabel column on the
+		 * root of the inheritance relationship. So, we don't need to
+		 * check same thing twice or more.
+		 */
+		attsecon = PointerGetDatum(newLabel);
+	}
+
 
 	attrRel = heap_open(AttributeRelationId, RowExclusiveLock);
 
@@ -8253,12 +8298,6 @@ AlterAttributeSecLabel(Oid relOid, const char *attname,
 				 errmsg("column \"%s\" does not exist", attname)));
 
 	attForm = (Form_pg_attribute) GETSTRUCT(oldtup);
-
-	/*
-	 * SE-PgSQL checks permission to relabel the column, and obtains
-	 * the security context to be assigned in raw format.
-	 */
-	attsecon = sepgsql_attribute_relabel(relOid, attForm->attnum, newLabel);
 
 	/* we don't allow to relabel system columns */
 	if (attForm->attnum <= 0)
@@ -8292,8 +8331,12 @@ AlterAttributeSecLabel(Oid relOid, const char *attname,
 	memset(nulls, false, sizeof(nulls));
 	memset(replaces, false, sizeof(replaces));
 
-	values[Anum_pg_attribute_attsecon - 1] = attsecon;
 	replaces[Anum_pg_attribute_attsecon - 1] = true;
+	if (!DatumGetPointer(attsecon))
+		nulls[Anum_pg_attribute_attsecon - 1] = true;
+	else
+		values[Anum_pg_attribute_attsecon - 1]
+			= CStringGetTextDatum(strVal(attsecon));
 
 	newtup = heap_modify_tuple(oldtup, RelationGetDescr(attrRel),
 							   values, nulls, replaces);

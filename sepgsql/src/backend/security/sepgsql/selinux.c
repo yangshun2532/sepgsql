@@ -11,6 +11,7 @@
 #include "libpq/libpq-be.h"
 #include "miscadmin.h"
 #include "security/sepgsql.h"
+#include "utils/builtins.h"
 
 #include <selinux/selinux.h>
 
@@ -101,7 +102,6 @@ static struct
 			{ "insert",         SEPG_DB_TABLE__INSERT },
 			{ "delete",         SEPG_DB_TABLE__DELETE },
 			{ "lock",           SEPG_DB_TABLE__LOCK },
-			{ "reference",      SEPG_DB_TABLE__REFERENCE },
 			{ NULL, 0UL },
 		}
 	},
@@ -117,7 +117,6 @@ static struct
 			{ "select",			SEPG_DB_COLUMN__SELECT },
 			{ "update",			SEPG_DB_COLUMN__UPDATE },
 			{ "insert",			SEPG_DB_COLUMN__INSERT },
-			{ "reference",		SEPG_DB_COLUMN__REFERENCE },
 			{ NULL, 0UL },
 		}
 	},
@@ -262,9 +261,21 @@ sepgsql_get_enforce(void)
 /*
  * sepgsql_audit_log
  *
+ * It generates a security audit record. In the default, it writes out
+ * audit records into standard PG's logfile. It also allows to set up
+ * external audit log receiver, such as auditd in Linux, using the
+ * sepgsql_audit_hook.
  *
+ * SELinux can control what should be audited and should not using
+ * "auditdeny" and "auditallow" rules in the security policy. In the
+ * default, all the access violations are audited, and all the access
+ * allowed are not audited. But we can set up the security policy, so
+ * we can have exceptions. So, it is necessary to follow the suggestion
+ * come from the security policy. (av_decision.auditallow and auditdeny)
  *
- *
+ * Security audit is an important feature, because it enables us to check
+ * what was happen if we have a security incident. In fact, ISO/IEC15408
+ * defines several security functionalities for audit features.
  */
 PGDLLIMPORT sepgsql_audit_hook_t sepgsql_audit_hook = NULL;
 
@@ -326,10 +337,15 @@ sepgsql_audit_log(bool denied, char *scontext, char *tcontext,
 /*
  * compute_perms_internal
  *
+ * It actually asks SELinux what permissions are allowed on a pair of
+ * the security contexts and object class. It also returns what permissions
+ * should be audited on access violation or allowed.
+ * In most cases, subject's security context (scontext) is a client, and
+ * target security context (tcontext) is a database object.
  *
- *
- *
- *
+ * The access control decision shall be set on the given av_decision.
+ * The av_decision.allowed has a bitmask of SEPG_<class>__<perms>
+ * to suggest a set of allowed actions in this object class.
  */
 static void
 compute_perms_internal(char *scontext, char *tcontext,
@@ -375,6 +391,12 @@ compute_perms_internal(char *scontext, char *tcontext,
 						"scontext=%s tcontext=%s tclass=%s",
 						scontext, tcontext, tclass_name)));
 
+	/*
+	 * SELinux returns its access control decision as a set of permissions
+	 * represented in external code which depends on run-time environment.
+	 * So, we need to translate it to the internal representation before
+	 * returning results for the caller.
+	 */
 	memset(avd, 0, sizeof(struct av_decision));
 
 	for (i=0; selinux_catalog[tclass].perms[i].perm_name; i++)
@@ -408,9 +430,9 @@ compute_perms_internal(char *scontext, char *tcontext,
 /*
  * compute_create_internal
  *
- *
- *
- *
+ * It actually asks SELinux what default security context to be assigned on
+ * a pair of given security contexts and object class.
+ * It shall return the default security context palloc()'ed.
  */
 static char *
 compute_create_internal(char *scontext, char *tcontext, uint16 tclass)
@@ -459,10 +481,18 @@ compute_create_internal(char *scontext, char *tcontext, uint16 tclass)
 /*
  * sepgsql_compute_perms
  *
+ * It makes access control decision communicating with SELinux.
+ * If SELinux does not allow required permissions on a pair of the security
+ * contexts, it raises an error or returns false.
  *
- *
- *
- *
+ * scontext : The security context of subject. In most cases, it is client.
+ * tcontext : The security context of target database object.
+ * tclass   : One of the object class code (SEPG_CLASS_*) declared in the
+ *            header file.
+ * required : A bitmap of the required permissions (SEPG_<class>__<perm>)
+ *            declared in the header file.
+ * audit_name : A human readable name of the database object for auditing.
+ * abort    : True, if caller want to raise an error on access violation.
  */
 extern bool
 sepgsql_compute_perms(char *scontext, char *tcontext,
@@ -489,11 +519,20 @@ sepgsql_compute_perms(char *scontext, char *tcontext,
 						  tclass, audited, audit_name);
 	}
 
-	if (!denied ||						/* no policy violation */
-		!sepgsql_get_enforce() ||		/* permissive mode */
-		(avd.flags & SELINUX_AVD_FLAGS_PERMISSIVE) != 0)	/* permissive domain*/
+	/*
+	 * If here is no policy violations, or SE-PgSQL performs in permissive
+	 * mode, or the client process peforms in permissive domain, it returns
+	 * normally with 'true'.
+	 */
+	if (!denied ||
+		!sepgsql_get_enforce() ||
+		(avd.flags & SELINUX_AVD_FLAGS_PERMISSIVE) != 0)
 		return true;
 
+	/*
+	 * Otherwise, it raises an error or returns 'false', depending on the
+	 * caller's indication by 'abort'.
+	 */
 	if (abort)
 		ereport(ERROR,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
@@ -504,41 +543,69 @@ sepgsql_compute_perms(char *scontext, char *tcontext,
 
 /*
  * sepgsql_compute_create
- * sepgsql_compute_create_name
  *
+ * It returns a default security context to be assigned on a new database
+ * object. SELinux compute it based on a combination of client, upper object
+ * which owns the new object and object class.
  *
+ * For example, when a client (staff_u:staff_r:staff_t:s0) tries to create
+ * a new table within a schema (system_u:object_r:sepgsql_schema_t:s0),
+ * SELinux looks-up its security policy. If it has a special rule on the
+ * combination of these security contexts and object class (db_table),
+ * it returns the security context suggested by the special rule.
+ * Otherwise, it returns the security context of schema, as is.
  *
- *
+ * We expect the caller already applies sanity/validation checks on the
+ * given security context.
  */
 char *
 sepgsql_compute_create(char *scontext, char *tcontext, uint16 tclass)
 {
-	/*
-	 * sanity check for the given security contexts
-	 */
-	if (security_check_context_raw(scontext) < 0)
-		scontext = sepgsql_get_unlabeled_context();
-
-	if (security_check_context_raw(tcontext) < 0)
-		tcontext = sepgsql_get_unlabeled_context();
-
 	return compute_create_internal(scontext, tcontext, tclass);
 }
 
-char *
-sepgsql_compute_create_name(char *scontext, char *tcontext, char *tclass_name)
+/*
+ * sepgsql_fn_compute_create
+ */
+Datum
+sepgsql_fn_compute_create(PG_FUNCTION_ARGS)
 {
+	char   *scontext = TextDatumGetCString(PG_GETARG_TEXT_P(0));
+	char   *tcontext = TextDatumGetCString(PG_GETARG_TEXT_P(1));
+	char   *tclass_name = TextDatumGetCString(PG_GETARG_TEXT_P(2));
+	char   *ncontext;
 	int		index;
+
+	if (!sepgsql_is_enabled())
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("SE-PostgreSQL is disabled now")));
+
+	scontext = sepgsql_mcstrans_in(scontext);
+	if (security_check_context_raw(scontext) < 0)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_SECURITY_CONTEXT),
+				 errmsg("Invalid security context \"%s\"", scontext)));
+
+	tcontext = sepgsql_mcstrans_in(tcontext);
+	if (security_check_context_raw(tcontext) < 0)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_SECURITY_CONTEXT),
+				 errmsg("Invalid security context \"%s\"", scontext)));
 
 	for (index = 0; index < SEPG_CLASS_MAX; index++)
 	{
 		if (strcmp(tclass_name, selinux_catalog[index].class_name) == 0)
 		{
-			return sepgsql_compute_create(scontext, tcontext,
-										  selinux_catalog[index].class_code);
+			uint16	tclass = selinux_catalog[index].class_code;
+
+			ncontext = sepgsql_compute_create(scontext, tcontext, tclass);
+
+			PG_RETURN_TEXT_P(cstring_to_text(ncontext));
 		}
 	}
 	ereport(ERROR,
 			(errcode(ERRCODE_SELINUX_INTERNAL_ERROR),
 			 errmsg("unknown object class \"%s\"", tclass_name)));
+	PG_RETURN_VOID();	/* be compiler quiet */
 }

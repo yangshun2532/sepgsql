@@ -71,7 +71,6 @@ enum {
 #define SEPG_DB_TABLE__INSERT				(1<<8)
 #define SEPG_DB_TABLE__DELETE				(1<<9)
 #define SEPG_DB_TABLE__LOCK					(1<<10)
-#define SEPG_DB_TABLE__REFERENCE			(1<<11)
 
 #define SEPG_DB_COLUMN__CREATE				(SEPG_DB_DATABASE__CREATE)
 #define SEPG_DB_COLUMN__DROP				(SEPG_DB_DATABASE__DROP)
@@ -82,7 +81,6 @@ enum {
 #define SEPG_DB_COLUMN__SELECT				(1<<6)
 #define SEPG_DB_COLUMN__UPDATE				(1<<7)
 #define SEPG_DB_COLUMN__INSERT				(1<<8)
-#define SEPG_DB_COLUMN__REFERENCE			(1<<9)
 
 /*
  * selinux.c : communication routines with SELinux
@@ -106,8 +104,6 @@ sepgsql_compute_perms(char *scontext, char *tcontext,
 					  const char *audit_name, bool abort);
 extern char *
 sepgsql_compute_create(char *scontext, char *tcontext, uint16 tclass);
-extern char *
-sepgsql_compute_create_name(char *scontext, char *tcontext, char *tclass_name);
 
 /*
  * label.c : management of security context
