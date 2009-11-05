@@ -9,20 +9,94 @@
 
 #include "security/sepgsql.h"
 
-bool
-sepgsql_is_enabled(void)
+/*
+ * Dummy functions for selinux.c
+ * -----------------------------
+ */
+void sepgsql_initialize(void)
 {
-	return false;
+	/* do nothing */
 }
 
+bool sepgsql_is_enabled(void)
+{
+	return false;	/* always disabled */
+}
+
+
+
+
+/*
+ * Dummy functions for checker.c
+ * -----------------------------
+ */
+
+
+
+
+
+/*
+ * Dummy functions for hooks.c
+ * ---------------------------
+ */
+
+
+
+
+
+
+
+
+
+
+/*
+ * Dummy functions for utils.c
+ * ---------------------------
+ */
 Datum
-sepgsql_database_relabel(Oid datOid, DefElem *datLabel)
+sepgsql_fn_getcon(PG_FUNCTION_ARGS)
 {
 	ereport(ERROR,
 			(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-			 errmsg("SE-PostgreSQL is disabled")));
-
-	return PointerGetDatum(NULL);
+			 errmsg("SE-PostgreSQL is disabled in this build")));
 }
 
+Datum
+sepgsql_fn_database_getcon(PG_FUNCTION_ARGS)
+{
+	ereport(ERROR,
+			(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+			 errmsg("SE-PostgreSQL is disabled in this build")));
+}
 
+Datum
+sepgsql_fn_schema_getcon(PG_FUNCTION_ARGS)
+{
+	ereport(ERROR,
+			(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+			 errmsg("SE-PostgreSQL is disabled in this build")));
+}
+
+Datum
+sepgsql_fn_table_getcon(PG_FUNCTION_ARGS)
+{
+	ereport(ERROR,
+			(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+			 errmsg("SE-PostgreSQL is disabled in this build")));
+}
+
+Datum
+sepgsql_fn_column_getcon(PG_FUNCTION_ARGS)
+{
+	ereport(ERROR,
+			(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+			 errmsg("SE-PostgreSQL is disabled in this build")));
+}
+
+Datum
+sepgsql_fn_compute_create(PG_FUNCTION_ARGS)
+{
+	ereport(ERROR,
+			(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+			 errmsg("SE-PostgreSQL is disabled in this build")));
+}

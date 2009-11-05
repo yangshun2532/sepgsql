@@ -26,8 +26,9 @@ bool	sepostgresql_mcstrans;
 /*
  * sepgsql_default_database_context
  *
- *
- *
+ * It returns a default security context to be assigned on the database.
+ * SELinux computes it on a pair of the client and the DataDir directory
+ * as a root of the database object.
  */
 char *
 sepgsql_default_database_context(void)
@@ -41,8 +42,9 @@ sepgsql_default_database_context(void)
 /*
  * sepgsql_default_schema_context
  *
- *
- *
+ * It returns a default security context to be assigned on the new schema.
+ * SELinux computes it on a pair of the client and the database which owns
+ * the new schema.
  */
 char *
 sepgsql_default_schema_context(Oid datOid)
@@ -76,8 +78,9 @@ sepgsql_default_schema_context(Oid datOid)
 /*
  * sepgsql_default_table_context
  *
- *
- *
+ * It returns a default security context to be assigned on the new table.
+ * SELinux computes it on a pair of the client and the schema which owns
+ * the new table.
  */
 char *
 sepgsql_default_table_context(Oid nspOid)
@@ -111,9 +114,15 @@ sepgsql_default_table_context(Oid nspOid)
 /*
  * sepgsql_default_column_context
  *
+ * It returns a default security context to be assigned on the new column.
+ * SELinux computes it on a pair of the client and the table which owns
+ * the new column.
  *
- *
- *
+ * Note that the table is still invisible when we create new columns on
+ * CREATE TABLE and others. So, we have to call sepgsql_compute_create()
+ * with a security context to be assigned on the table in this case.
+ * On the other hand, the table is visible on ALTER TABLE ADD COLUMN,
+ * so we can use this function to get a default context.
  */
 char *
 sepgsql_default_column_context(Oid relOid)

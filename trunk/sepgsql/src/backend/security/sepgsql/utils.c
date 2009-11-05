@@ -184,38 +184,3 @@ sepgsql_fn_column_getcon(PG_FUNCTION_ARGS)
 
 	return CStringGetTextDatum(context);
 }
-
-/*
- * sepgsql_fn_compute_create
- *
- */
-Datum
-sepgsql_fn_compute_create(PG_FUNCTION_ARGS)
-{
-	char   *scontext = TextDatumGetCString(PG_GETARG_TEXT_P(0));
-	char   *tcontext = TextDatumGetCString(PG_GETARG_TEXT_P(1));
-	char   *tclass_name = TextDatumGetCString(PG_GETARG_TEXT_P(2));
-	char   *ncontext;
-
-	if (!sepgsql_is_enabled())
-		ereport(ERROR,
-				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("SE-PostgreSQL is disabled now")));
-
-	scontext = sepgsql_mcstrans_in(scontext);
-	if (security_check_context_raw(scontext) < 0)
-		ereport(ERROR,
-				(errcode(ERRCODE_INVALID_SECURITY_CONTEXT),
-				 errmsg("Invalid security context \"%s\"", scontext)));
-
-	tcontext = sepgsql_mcstrans_in(tcontext);
-	if (security_check_context_raw(tcontext) < 0)
-		ereport(ERROR,
-				(errcode(ERRCODE_INVALID_SECURITY_CONTEXT),
-				 errmsg("Invalid security context \"%s\"", scontext)));
-
-	ncontext = sepgsql_compute_create_name(scontext, tcontext, tclass_name);
-	ncontext = sepgsql_mcstrans_out(ncontext);
-
-	return CStringGetTextDatum(ncontext);
-}

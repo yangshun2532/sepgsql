@@ -1060,10 +1060,9 @@ sepgsql_attribute_common(Oid relOid, AttrNumber attnum,
 	attForm = (Form_pg_attribute) GETSTRUCT(tuple);
 	snprintf(audit_name, sizeof(audit_name), "%s.%s",
 			 get_rel_name(relOid), NameStr(attForm->attname));
-
 	rc = sepgsql_compute_perms(sepgsql_get_client_context(),
 							   context,
-							   SEPG_CLASS_DB_TABLE,
+							   SEPG_CLASS_DB_COLUMN,
 							   required, 
 							   audit_name, abort);
 	ReleaseSysCache(tuple);
@@ -1071,6 +1070,15 @@ sepgsql_attribute_common(Oid relOid, AttrNumber attnum,
 	return rc;
 }
 
+/*
+ * sepgsql_attribute_create
+ *
+ *
+ *
+ *
+ *
+ * It has to return String type.
+ */
 Datum
 sepgsql_attribute_create(Oid relOid, ColumnDef *cdef)
 {
@@ -1082,43 +1090,40 @@ sepgsql_attribute_create(Oid relOid, ColumnDef *cdef)
 		return PointerGetDatum(NULL);
 
 	relkind = get_rel_relkind(relOid);
-	if (relkind == RELKIND_RELATION)
-	{
-		if (!cdef->secontext)
-			context = sepgsql_default_column_context(relOid);
-		else
-		{
-			context = sepgsql_mcstrans_in(strVal(cdef->secontext));
-			if (security_check_context_raw(context) < 0)
-				ereport(ERROR,
-						(errcode(ERRCODE_INVALID_SECURITY_CONTEXT),
-						 errmsg("invalid security context \"%s\"", context)));
-		}
-		snprintf(audit_name, sizeof(audit_name), "%s.%s",
-				 get_rel_name(relOid), cdef->colname);
-		sepgsql_compute_perms(sepgsql_get_client_context(),
-							  context,
-							  SEPG_CLASS_DB_COLUMN,
-							  SEPG_DB_COLUMN__CREATE,
-							  audit_name, true);
-	}
-	else
+	if (relkind != RELKIND_RELATION)
 	{
 		if (cdef->secontext)
 			ereport(ERROR,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-					 errmsg("Only regular columns can have its own security context")));
-
+					 errmsg("Only regular column can have its own "
+							"security context")));
 		if (relkind != RELKIND_TOASTVALUE)
 			sepgsql_relation_common(relOid, SEPG_DB_TABLE__SETATTR, true);
 		return PointerGetDatum(NULL);
 	}
 
+	if (!cdef->secontext)
+		context = sepgsql_default_column_context(relOid);
+	else
+	{
+		context = sepgsql_mcstrans_in(strVal(cdef->secontext));
+		if (security_check_context_raw(context) < 0)
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_SECURITY_CONTEXT),
+					 errmsg("invalid security context \"%s\"", context)));
+	}
+	snprintf(audit_name, sizeof(audit_name), "%s.%s",
+			 get_rel_name(relOid), cdef->colname);
+	sepgsql_compute_perms(sepgsql_get_client_context(),
+						  context,
+						  SEPG_CLASS_DB_COLUMN,
+						  SEPG_DB_COLUMN__CREATE,
+						  audit_name, true);
 	/*
-     * The checked security context should be returned to caller.
-     * Caller has to assign it on the new column.
-     */
-	return CStringGetTextDatum(context);
+	 * The checked security context should be returned to caller.
+	 * Caller has to assign it on the new column.
+	 */
+	return PointerGetDatum(makeString(context));
 }
 
 void
@@ -1202,7 +1207,7 @@ sepgsql_attribute_relabel(Oid relOid, AttrNumber attnum, Node *attLabel)
 						  SEPG_DB_COLUMN__RELABELTO,
 						  audit_name, true);
 
-	return CStringGetTextDatum(context);
+	return PointerGetDatum(makeString(context));
 }
 
 /************************************************************
@@ -1225,10 +1230,6 @@ sepgsql_attribute_relabel(Oid relOid, AttrNumber attnum, Node *attLabel)
  * This hook should be called from CreateComments() or CreateSharedComments().
  * If client tries to comment on the managed object, it checks appropriate
  * permission.
- *
- * relOid : OID of the catalog which owns the target object
- * objId : OID of the database object to be commented on
- * subId : If a column, attribute number to be commented on
  */
 void
 sepgsql_object_comment(Oid relOid, Oid objId, int32 subId)
@@ -1247,7 +1248,8 @@ sepgsql_object_comment(Oid relOid, Oid objId, int32 subId)
 		if (subId == 0)
 			sepgsql_relation_common(objId, SEPG_DB_TABLE__SETATTR, true);
 		else
-			sepgsql_attribute_common(objId, subId, SEPG_DB_TABLE__SETATTR, true);
+			sepgsql_attribute_common(objId, subId,
+									 SEPG_DB_TABLE__SETATTR, true);
 		break;
 
 	default:
@@ -1256,6 +1258,17 @@ sepgsql_object_comment(Oid relOid, Oid objId, int32 subId)
 	}
 }
 
+/*
+ * sepgsql_object_drop
+ *
+ * It checks client's privilege to drop a certain database objects which
+ * also includes objects to be dropped due to the cascaded deletion.
+ *
+ * This hook should be invoked from routines in catalog/dependency.c.
+ * But it does not need to check anything when the given database objects
+ * are dropped due to purely internal processing, such as cleaning up
+ * temporary database objects.
+ */
 void
 sepgsql_object_drop(ObjectAddress *object)
 {
@@ -1272,8 +1285,11 @@ sepgsql_object_drop(ObjectAddress *object)
 								   object->objectSubId);
 		break;
 
+	case OCLASS_SCHEMA:
+		sepgsql_schema_drop(object->objectId);
+		break;
+
 	case OCLASS_DATABASE:	/* should not be happen */
-	case OCLASS_SCHEMA:		/* should not be happen */
 	default:
 		/* do nothing */
 		break;
