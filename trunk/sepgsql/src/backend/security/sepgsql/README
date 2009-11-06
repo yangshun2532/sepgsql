@@ -15,6 +15,7 @@ TABLE OF CONTENTS
 2-2. management of security context
 2-3. privilege of the client
 2-4. security hooks
+2-5. initialization
 3. Object classes and permissions
 3-1. common permissions of database object
 3-2. db_database object class
@@ -69,8 +70,8 @@ returned, otherwise "denied".
 
 We can apply this design on accesses to database objects, not only kernel, as
 long as RDBMS correctly manages the security context of them.
-SE-PgSQL assigns an individual security context on database objects, and asks
-SELinux whether the given accesses should be allowed, or not.
+SE-PgSQL assigns an individual security context on the managed database objects,
+and asks SELinux whether the given accesses should be allowed, or not.
 
 
 1-2. Mandatory access control
@@ -263,39 +264,44 @@ the new object later.
 2-2. management of security context
 -----------------------------------
 
-The current design is time-limited. It is simple enough, so enables to reduce
-burden of reviewing, but it needs all the database objects with a security
-context to have its object id. So, it has to be replaced when row-level access
-control will be available.
+A limited number of database object classes have its own security context in
+this version, so we decided to store them as a text field of the following
+system catalogs:
 
-The new pg_selinux system catalog is declared as follows:
+ - pg_database.datsecon   = security context of the database
+ - pg_namespace.nspsecon  = security context of the schema
+ - pg_class.relsecon      = security context of the table
+                         (if relkind = RELKIND_RELATION, otherwise no label)
+ - pg_attribute.attsecon  = security context of the column
+                         (if it owned by the regular table, otherwise no label)
 
-  CATALOG(pg_selinux,3400) BKI_SHARED_RELATION
-  {
-      /* OID of database containing object, or 0 if shared relation */
-      Oid     seldatid;
+We have a plan to provide a facility to manage security context of various
+kind of database objects, including individual tuples within user defined
+tables. But it is postponed to keep the change-set more simple and small.
 
-      /* OID of table containing object */
-      Oid     selrelid;
+These fields means security context of the (managed) database objects.
+In this version, only four object classes (database, schema, table and column)
+are managed, so SE-PgSQL makes its access control decisions on them only.
 
-      /* OID of object itself */
-      Oid     selobjid;
+When we create a new object, a default security context shall be assigned on
+the fields, then it is used for its security identifier for SE-PgSQL.
+If SE-PgSQL is disabled, NULL shall be set on.
 
-      /* column number, or 0 if not used */
-      int4    selsubid;
+From the viewpoint of implementation, SE-PgSQL provides a few hooks to check
+permission to create a new object. It also returns the security context to be
+assigned on the new object.
 
-      /* text representation of security context */
-      text    selcontext;
-  } FormData_pg_selinux;
+For example, it is a hook to check db_schema:{create} permission.
 
-It is similar to the idea of pg_shdepend system catalog. It stores a security
-context in text representation for a certain database object identified by the
-combination of a few OIDs.
+  extern Value *
+  sepgsql_schema_create(const char *nspName, bool isTemp, Node *nspLabel);
 
-Currently, only four type of database objects (databases, schemas, tables and
-columns) have its own security context.
-When we create these objects, its security context is also registered on the
-pg_selinux system catalog.
+The caller has to give required informations as arguments. This hook checks
+permission, and returns the security context to be assigned.
+We also modified the caller side a bit. It copies the returned security context
+on the pg_namespace.nspsecon as a TEXT value before simple_heap_insert().
+If hook returned NULL, the caller also set NULL on the pg_namespace.nspsecon.
+(Note that the hook always returns NULL when SE-PgSQL is disabled.)
 
 
 2-3. privilege of the client
@@ -337,23 +343,38 @@ Its specifications and purposes are described as source code comments, so we
 can find detailed information at src/backend/security/sepgsql/*.c files.
 The caller has to provide needed information for the hooks.
 
-For example, sepgsql_relation_permission() which checks access permissions
-for the given relation and selected/modified columns, like ExecCheckRTEPerms().
-It requires the OID of relation, Bitmapset of selected/modified columns and
-required permissions. The caller has to provide enough information to make
-its access control decision.
-The sepgsql_relation_permission() makes access control decision based on the
-MAC perspectives. If allowed, it does nothing. Otherwise, it raises an error
-to abort current transaction.
+For example, sepgsql_check_rte_perms() which checks access permissions for
+the given RangeTblEntry (which contains OID of the target relation and
+Bitmapset of selected/modified columns). The caller has to give enough
+information SE-PgSQL to make its access control decision correctly.
 
-In this example, MAC and DAC checks similar permissions, expect for column's
-permissions are overridden by table's permission in DAC model, so they are
-invoked from neighboring points.
-The order of MAC and DAC is not significant matter, because both of them have
-to be allowed to execute given query. Basically, we follow the manner in the
-operating system which deploys MAC hooks after DAC checks when they have
-similar checks.
+The sepgsql_check_rte_perms() makes its access control decision based on
+the given information (RangeTblEntry object to be checked) and MAC policy
+in the kernel. If allowed, it simply returns to the called. Otherwise, it
+raises an error to abort current transaction.
+The specification and behavior of individual security hooks are described
+in the source code comments.
 
+
+2-5. Initialization
+-------------------
+
+The initdb command set up a initial database on an empty directory.
+At first, it launches PgSQL in bootstraping mode (--boot) to insert initial
+contents of system catalogs from the postgres.bki, then it launches PgSQL in
+single-user mode (--single) to apply rest of initialization.
+
+In the bootstraping mode, SE-PgSQL is automatically disabled, because it does
+not have enough data integrity to apply its security policy correctly.
+For example, it computes a default security context of the table based on the
+pair of client and schema which owns the new table, but pg_namespace catalog
+is declared after the pg_catalog catalog.
+
+So, SE-PgSQL initializes security contexts of the managed database objects
+in the "template1" database on the second phase in initdb.
+If initdb is launched with "--enable-selinux" option, it invokes a special
+purpose function to assign initial security contexts on them. This function 
+is available only when single-user mode for the security reason.
 
 
 3. Object classes and permissions
@@ -423,7 +444,7 @@ the client and the table. Both of them should be allowed.
 Note that no needs to check for objects deletion by system internal
 stuff, such as cleanups of temporary objects.
 
-o getattr
+o getattr (not implemented yet)
 
 It is checked when a client tries to read any metadata of database objects.
 This check is implemented using row-level access controls on the system
@@ -479,7 +500,7 @@ o access
 It is checked when the client tries to connect to a certain database.
 
 
-o load_module
+o load_module (not implemented yet)
 
 It is checked when a dynamic link library is loaded to the server process.
 Note that this permission is checked on a pair of the current database and
@@ -492,6 +513,8 @@ In this case, security_compute_av() takes the following arguments:
 
 Note that shared_preload_libraries is an exception for this check,
 because it is not controllable with any client's request.
+
+o install_module (not implemented yet)
 
 
 o superuser
@@ -521,7 +544,6 @@ o remove_name
 
 o default security context
 
-
 o select
 
 o update
@@ -532,7 +554,7 @@ o delete
 
 o lock
 
-o reference
+o inherit (not implemented yet)
 
 3-4. db_column object class
 ---------------------------
@@ -542,8 +564,16 @@ pg_attribute system catalog, and its attrelid refers a db_table object
 (relkind = RELKIND_RELATION).
 It has four its own permissions and inherits the commoen permissions.
 
-The db_column object has a hardwired rule. SE-PgSQL does not allow inherited
-column to have different security context from the parent's one.
+The db_column object class has a hardwired constraint corresponding to table
+inheritance. A inherited column cannot have different security context from
+the source column in the inheritance tree.
+If table "t2" is a inheritance of "t1" which has a column: "t1.x", the "t2"
+also have a column "t2.x". (Its attinhcount will be 1). In this case, "t2.x"
+always has same security context inherited from the "t1.x".
+
+We don't allow users to change the security context of "t2.x". When "t1.x" is
+relabeled, it implicitly relabels "t2.x" also, using ALTER TABLE.
+
 
 o default security context
 
@@ -562,9 +592,6 @@ o update
 
 
 o insert
-
-
-o reference
 
 
 
