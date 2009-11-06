@@ -38,6 +38,12 @@ ifdef NO_LOCALE
 NOLOCALE += --no-locale
 endif
 
+# SELinux support
+ENABLE_SELINUX =
+ifdef SELINUX
+ENABLE_SELINUX += --enable-selinux
+endif
+
 # stuff to pass into build of pg_regress
 EXTRADEFS = '-DHOST_TUPLE="$(host_tuple)"' \
 	'-DMAKEPROG="$(MAKE)"' \
@@ -138,7 +144,7 @@ tablespace-setup:
 ## Run tests
 ##
 
-pg_regress_call = ./pg_regress --inputdir=$(srcdir) --dlpath=. --multibyte=$(MULTIBYTE) --load-language=plpgsql $(NOLOCALE)
+pg_regress_call = ./pg_regress --inputdir=$(srcdir) --dlpath=. --multibyte=$(MULTIBYTE) --load-language=plpgsql $(NOLOCALE) $(ENABLE_SELINUX)
 
 check: all
 	$(pg_regress_call) --temp-install=./tmp_check --top-builddir=$(top_builddir) --schedule=$(srcdir)/parallel_schedule $(MAXCONNOPT) $(TEMP_CONF)

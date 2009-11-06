@@ -51,7 +51,7 @@ CreateSchemaCommand(CreateSchemaStmt *stmt, const char *queryString)
 	Oid			saved_uid;
 	bool		saved_secdefcxt;
 	AclResult	aclresult;
-	Datum		nspsecon;
+	Value	   *nspsecon;
 
 	GetUserIdAndContext(&saved_uid, &saved_secdefcxt);
 
@@ -452,7 +452,7 @@ AlterSchemaSecLabel(const char *name, Node *nspLabel)
 	HeapTuple	oldtup;
 	HeapTuple	newtup;
 	Oid			nspOid;
-	Datum		nspsecon;
+	Value	   *nspsecon;
 	Datum		values[Natts_pg_namespace];
 	bool		nulls[Natts_pg_namespace];
 	bool		replaces[Natts_pg_namespace];
@@ -483,8 +483,12 @@ AlterSchemaSecLabel(const char *name, Node *nspLabel)
 	memset(nulls, false, sizeof(nulls));
 	memset(replaces, false, sizeof(replaces));
 
-	values[Anum_pg_namespace_nspsecon - 1] = nspsecon;
 	replaces[Anum_pg_namespace_nspsecon - 1] = true;
+	if (!nspsecon)
+		nulls[Anum_pg_namespace_nspsecon - 1] = true;
+	else
+		values[Anum_pg_namespace_nspsecon - 1]
+			= CStringGetTextDatum(strVal(nspsecon));
 
 	newtup = heap_modify_tuple(oldtup, RelationGetDescr(rel),
 							   values, nulls, replaces);

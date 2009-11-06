@@ -20,6 +20,7 @@
 #define PG_NAMESPACE_H
 
 #include "catalog/genbki.h"
+#include "nodes/value.h"
 
 /* ----------------------------------------------------------------
  *		pg_namespace definition.
@@ -79,6 +80,6 @@ DESCR("standard public schema");
 /*
  * prototypes for functions in pg_namespace.c
  */
-extern Oid	NamespaceCreate(const char *nspName, Oid ownerId, Datum nspsecon);
+extern Oid	NamespaceCreate(const char *nspName, Oid ownerId, Value *nspsecon);
 
 #endif   /* PG_NAMESPACE_H */

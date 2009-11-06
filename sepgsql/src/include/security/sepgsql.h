@@ -136,13 +136,13 @@ sepgsql_check_copy_perms(Relation rel, List *attnumlist, bool is_from);
 /* Pg_database related hooks */
 extern bool
 sepgsql_database_common(Oid datOid, uint32 required, bool abort);
-extern Datum
+extern Value *
 sepgsql_database_create(const char *datName, Node *datLabel);
 extern void
 sepgsql_database_alter(Oid datOid);
 extern void
 sepgsql_database_drop(Oid datOid);
-extern Datum
+extern Value *
 sepgsql_database_relabel(Oid datOid, Node *datLabel);
 extern void
 sepgsql_database_grant(Oid datOid);
@@ -156,13 +156,13 @@ sepgsql_database_load_module(const char *filename);
 /* Pg_namespace related hooks */
 extern bool
 sepgsql_schema_common(Oid nspOid, uint32 required, bool abort);
-extern Datum
+extern Value *
 sepgsql_schema_create(const char *nspName, bool isTemp, Node *nspLabel);
 extern void
 sepgsql_schema_alter(Oid nspOid);
 extern void
 sepgsql_schema_drop(Oid nspOid);
-extern Datum
+extern Value *
 sepgsql_schema_relabel(Oid nspOid, Node *nspLabel);
 extern void
 sepgsql_schema_grant(Oid nspOid);
@@ -172,7 +172,7 @@ sepgsql_schema_search(Oid nspOid, bool abort);
 /* Pg_class related hooks */
 extern bool
 sepgsql_relation_common(Oid relOid, uint32 required, bool abort);
-extern Datum *
+extern DatumPtr
 sepgsql_relation_create(const char *relName,
                         char relkind,
                         TupleDesc tupDesc,
@@ -186,7 +186,7 @@ extern void
 sepgsql_relation_drop(Oid relOid);
 extern void
 sepgsql_relation_grant(Oid relOid);
-extern Datum
+extern Value *
 sepgsql_relation_relabel(Oid relOid, Node *relLabel);
 extern void
 sepgsql_relation_truncate(Relation rel);
@@ -199,16 +199,16 @@ sepgsql_index_create(Oid relOid, Oid nspOid);
 extern bool
 sepgsql_attribute_common(Oid relOid, AttrNumber attnum,
 						 uint32 required, bool abort);
-extern Datum
+extern Value *
 sepgsql_attribute_create(Oid relOid, ColumnDef *cdef);
 extern void
 sepgsql_attribute_alter(Oid relOid, const char *attname);
 extern void
-sepgsql_attribute_drop(Oid relOid, AttrNumber attno);
+sepgsql_attribute_drop(Oid relOid, const char *attname);
 extern void
 sepgsql_attribute_grant(Oid relOid, AttrNumber attnum);
-extern Datum
-sepgsql_attribute_relabel(Oid relOid, AttrNumber attnum, Node *attLabel);
+extern Value *
+sepgsql_attribute_relabel(Oid relOid, const char *attname, Node *attLabel);
 
 /* Misc database objects related hooks */
 extern void
@@ -228,5 +228,8 @@ extern Datum sepgsql_fn_database_getcon(PG_FUNCTION_ARGS);
 extern Datum sepgsql_fn_schema_getcon(PG_FUNCTION_ARGS);
 extern Datum sepgsql_fn_table_getcon(PG_FUNCTION_ARGS);
 extern Datum sepgsql_fn_column_getcon(PG_FUNCTION_ARGS);
+
+#define secontext_cmp(a,b)						\
+	((!(a) && !(b)) || ((a) && (b) && strcmp((a), (b)) == 0))
 
 #endif	/* SEPGSQL_H */

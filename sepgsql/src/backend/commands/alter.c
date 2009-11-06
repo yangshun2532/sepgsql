@@ -28,6 +28,7 @@
 #include "commands/user.h"
 #include "miscadmin.h"
 #include "parser/parse_clause.h"
+#include "security/sepgsql.h"
 #include "tcop/utility.h"
 #include "utils/acl.h"
 #include "utils/lsyscache.h"
@@ -116,6 +117,13 @@ ExecRenameStmt(RenameStmt *stmt)
 							if (aclresult != ACLCHECK_OK)
 								aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
 											get_namespace_name(namespaceId));
+
+							/*
+							 * SE-PgSQL checks permission to alter properties
+							 * of table, and to add/remove an entity in the
+							 * current namespace owning the table.
+							 */
+							sepgsql_relation_alter(relid, stmt->newname, InvalidOid);
 
 							RenameRelation(relid, stmt->newname, stmt->renameType);
 							break;
@@ -309,11 +317,13 @@ ExecAlterSecLabelStmt(AlterSecLabelStmt *stmt)
 			break;
 
 		case OBJECT_TABLE:
+			CheckRelationOwnership(stmt->relation, true);
 			relOid = RangeVarGetRelid(stmt->relation, false);
 			AlterRelationSecLabel(relOid, stmt->secontext);
 			break;
 
 		case OBJECT_COLUMN:
+			CheckRelationOwnership(stmt->relation, true);
 			relOid = RangeVarGetRelid(stmt->relation, false);
 			AlterAttributeSecLabel(relOid, stmt->subname,
 								   stmt->secontext, false);

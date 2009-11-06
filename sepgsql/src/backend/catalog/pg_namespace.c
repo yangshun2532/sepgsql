@@ -28,7 +28,7 @@
  * ---------------
  */
 Oid
-NamespaceCreate(const char *nspName, Oid ownerId, Datum nspsecon)
+NamespaceCreate(const char *nspName, Oid ownerId, Value *nspsecon)
 {
 	Relation	nspdesc;
 	HeapTuple	tup;
@@ -61,10 +61,11 @@ NamespaceCreate(const char *nspName, Oid ownerId, Datum nspsecon)
 	values[Anum_pg_namespace_nspname - 1] = NameGetDatum(&nname);
 	values[Anum_pg_namespace_nspowner - 1] = ObjectIdGetDatum(ownerId);
 	nulls[Anum_pg_namespace_nspacl - 1] = true;
-	if (!DatumGetPointer(nspsecon))
+	if (!nspsecon)
 		nulls[Anum_pg_namespace_nspsecon - 1] = true;
 	else
-		values[Anum_pg_namespace_nspsecon - 1] = nspsecon;
+		values[Anum_pg_namespace_nspsecon - 1]
+			= CStringGetTextDatum(strVal(nspsecon));
 
 	nspdesc = heap_open(NamespaceRelationId, RowExclusiveLock);
 	tupDesc = nspdesc->rd_att;

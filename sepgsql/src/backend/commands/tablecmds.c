@@ -263,7 +263,7 @@ static void ATExecCmd(List **wqueue, AlteredTableInfo *tab, Relation rel,
 static void ATRewriteTables(List **wqueue);
 static void ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap);
 static AlteredTableInfo *ATGetQueueEntry(List **wqueue, Relation rel);
-static void ATSimplePermissions(Relation rel, bool allowView);
+static void ATSimplePermissions(Relation rel, const char *colName, bool allowView);
 static void ATSimplePermissionsRelationOrIndex(Relation rel);
 static void ATSimpleRecursion(List **wqueue, Relation rel,
 				  AlterTableCmd *cmd, bool recurse);
@@ -457,7 +457,7 @@ DefineRelation(CreateStmt *stmt, char relkind)
 
 	/*
 	 * SE-PgSQL permission checks to create a new table and columns.
-	 * It returns an array of security context to be assigned on.
+	 * It returns an array of security context to be assigned on them.
 	 */
 	secontexts = sepgsql_relation_create(relname,
 										 relkind,
@@ -1401,14 +1401,11 @@ MergeAttributes(List *schema, List *supers, bool istemp,
 											attribute->attnum);
 				if (!def->secontext)
 					def->secontext = (Node *) makeString(defsecon);
-				else if (!((!defsecon && !strVal(def->secontext)) ||
-						   (defsecon && strVal(def->secontext) &&
-							strcmp(defsecon, strVal(def->secontext)) == 0)))
+				else if (!secontext_cmp(defsecon, strVal(def->secontext)))
 					ereport(ERROR,
 							(errcode(ERRCODE_DATATYPE_MISMATCH),
-							 errmsg("inherited column \"%s\" has "
-									"a security context conflict %s %s",
-									attributeName, defsecon, strVal(def->secontext))));
+							 errmsg("inherited column \"%s\" has a conflict "
+									"security context", attributeName)));
 
 				def->inhcount++;
 				/* Merge of NOT NULL constraints = OR 'em together */
@@ -1433,6 +1430,8 @@ MergeAttributes(List *schema, List *supers, bool istemp,
 				def->cooked_default = NULL;
 				def->constraints = NIL;
 				def->storage = attribute->attstorage;
+
+				/* copy the security context of parent */
 				defsecon = get_attsecontext(RelationGetRelid(relation),
 											attribute->attnum);
 				def->secontext = (Node *) makeString(defsecon);
@@ -2510,14 +2509,14 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 	switch (cmd->subtype)
 	{
 		case AT_AddColumn:		/* ADD COLUMN */
-			ATSimplePermissions(rel, false);
+			ATSimplePermissions(rel, NULL, false);
 			/* Performs own recursion */
 			ATPrepAddColumn(wqueue, rel, recurse, cmd);
 			pass = AT_PASS_ADD_COL;
 			break;
 		case AT_AddColumnToView:		/* add column via CREATE OR REPLACE
 										 * VIEW */
-			ATSimplePermissions(rel, true);
+			ATSimplePermissions(rel, NULL, true);
 			/* Performs own recursion */
 			ATPrepAddColumn(wqueue, rel, recurse, cmd);
 			pass = AT_PASS_ADD_COL;
@@ -2530,19 +2529,19 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 			 * substitutes default values into INSERTs before it expands
 			 * rules.
 			 */
-			ATSimplePermissions(rel, true);
+			ATSimplePermissions(rel, cmd->name, true);
 			ATSimpleRecursion(wqueue, rel, cmd, recurse);
 			/* No command-specific prep needed */
 			pass = cmd->def ? AT_PASS_ADD_CONSTR : AT_PASS_DROP;
 			break;
 		case AT_DropNotNull:	/* ALTER COLUMN DROP NOT NULL */
-			ATSimplePermissions(rel, false);
+			ATSimplePermissions(rel, cmd->name, false);
 			ATSimpleRecursion(wqueue, rel, cmd, recurse);
 			/* No command-specific prep needed */
 			pass = AT_PASS_DROP;
 			break;
 		case AT_SetNotNull:		/* ALTER COLUMN SET NOT NULL */
-			ATSimplePermissions(rel, false);
+			ATSimplePermissions(rel, cmd->name, false);
 			ATSimpleRecursion(wqueue, rel, cmd, recurse);
 			/* No command-specific prep needed */
 			pass = AT_PASS_ADD_CONSTR;
@@ -2560,13 +2559,13 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 			pass = AT_PASS_COL_ATTRS;
 			break;
 		case AT_SetStorage:		/* ALTER COLUMN SET STORAGE */
-			ATSimplePermissions(rel, false);
+			ATSimplePermissions(rel, cmd->name, false);
 			ATSimpleRecursion(wqueue, rel, cmd, recurse);
 			/* No command-specific prep needed */
 			pass = AT_PASS_COL_ATTRS;
 			break;
 		case AT_DropColumn:		/* DROP COLUMN */
-			ATSimplePermissions(rel, false);
+			ATSimplePermissions(rel, NULL, false);
 			/* Recursion occurs during execution phase */
 			/* No command-specific prep needed except saving recurse flag */
 			if (recurse)
@@ -2574,13 +2573,13 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 			pass = AT_PASS_DROP;
 			break;
 		case AT_AddIndex:		/* ADD INDEX */
-			ATSimplePermissions(rel, false);
+			ATSimplePermissions(rel, NULL, false);
 			/* This command never recurses */
 			/* No command-specific prep needed */
 			pass = AT_PASS_ADD_INDEX;
 			break;
 		case AT_AddConstraint:	/* ADD CONSTRAINT */
-			ATSimplePermissions(rel, false);
+			ATSimplePermissions(rel, NULL, false);
 			/* Recursion occurs during execution phase */
 			/* No command-specific prep needed except saving recurse flag */
 			if (recurse)
@@ -2588,7 +2587,7 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 			pass = AT_PASS_ADD_CONSTR;
 			break;
 		case AT_DropConstraint:	/* DROP CONSTRAINT */
-			ATSimplePermissions(rel, false);
+			ATSimplePermissions(rel, NULL, false);
 			/* Recursion occurs during execution phase */
 			/* No command-specific prep needed except saving recurse flag */
 			if (recurse)
@@ -2596,7 +2595,7 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 			pass = AT_PASS_DROP;
 			break;
 		case AT_AlterColumnType:		/* ALTER COLUMN TYPE */
-			ATSimplePermissions(rel, false);
+			ATSimplePermissions(rel, cmd->name, false);
 			/* Performs own recursion */
 			ATPrepAlterColumnType(wqueue, tab, rel, recurse, recursing, cmd);
 			pass = AT_PASS_ALTER_TYPE;
@@ -2608,20 +2607,20 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 			break;
 		case AT_ClusterOn:		/* CLUSTER ON */
 		case AT_DropCluster:	/* SET WITHOUT CLUSTER */
-			ATSimplePermissions(rel, false);
+			ATSimplePermissions(rel, NULL, false);
 			/* These commands never recurse */
 			/* No command-specific prep needed */
 			pass = AT_PASS_MISC;
 			break;
 		case AT_AddOids:		/* SET WITH OIDS */
-			ATSimplePermissions(rel, false);
+			ATSimplePermissions(rel, NULL, false);
 			/* Performs own recursion */
 			if (!rel->rd_rel->relhasoids || recursing)
 				ATPrepAddOids(wqueue, rel, recurse, cmd);
 			pass = AT_PASS_ADD_COL;
 			break;
 		case AT_DropOids:		/* SET WITHOUT OIDS */
-			ATSimplePermissions(rel, false);
+			ATSimplePermissions(rel, NULL, false);
 			/* Performs own recursion */
 			if (rel->rd_rel->relhasoids)
 			{
@@ -2661,7 +2660,7 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 		case AT_DisableRule:
 		case AT_AddInherit:		/* INHERIT / NO INHERIT */
 		case AT_DropInherit:
-			ATSimplePermissions(rel, false);
+			ATSimplePermissions(rel, NULL, false);
 			/* These commands never recurse */
 			/* No command-specific prep needed */
 			pass = AT_PASS_MISC;
@@ -3378,9 +3377,11 @@ ATGetQueueEntry(List **wqueue, Relation rel)
  * - Ensure that it is a relation (or possibly a view)
  * - Ensure this user is the owner
  * - Ensure that it is not a system table
+ * - Ensure SE-PgSQL allows to alter properties of tables or columns,
+ *   if enabled.
  */
 static void
-ATSimplePermissions(Relation rel, bool allowView)
+ATSimplePermissions(Relation rel, const char *colName, bool allowView)
 {
 	if (rel->rd_rel->relkind != RELKIND_RELATION)
 	{
@@ -3409,6 +3410,24 @@ ATSimplePermissions(Relation rel, bool allowView)
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 				 errmsg("permission denied: \"%s\" is a system catalog",
 						RelationGetRelationName(rel))));
+
+	/*
+	 * SE-PgSQL checks permission to alter properties of the relation
+	 * or columns. If 'colName' is not NULL, the caller gives a hint
+	 * which means this ALTER TABLE affects on a certain column, not
+	 * a relation.
+	 * Fortunately, all the caller of ATSimplePermissions() does not
+	 * need any more permissions than db_table:{setattr} or db_column:
+	 * {setattr}, so we can put sepgsql_*() hooks here.
+	 *
+	 * Please note that ALTER TABLE with RENAME TO/SET SCHEMA options
+	 * requires to take valid argument in the second and third arguments.
+	 * But these options are implemented in separated routines.
+	 */
+	if (!colName)
+		sepgsql_relation_alter(RelationGetRelid(rel), NULL, InvalidOid);
+	else
+		sepgsql_attribute_alter(RelationGetRelid(rel), colName);
 }
 
 /*
@@ -3417,6 +3436,8 @@ ATSimplePermissions(Relation rel, bool allowView)
  * - Ensure that it is a relation or an index
  * - Ensure this user is the owner
  * - Ensure that it is not a system table
+ * - Ensure SE-PgSQL allows to alter properties of tables or columns,
+ *   if enabled.
  */
 static void
 ATSimplePermissionsRelationOrIndex(Relation rel)
@@ -3438,6 +3459,11 @@ ATSimplePermissionsRelationOrIndex(Relation rel)
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 				 errmsg("permission denied: \"%s\" is a system catalog",
 						RelationGetRelationName(rel))));
+
+	/*
+	 * SE-PgSQL checks permissions (optional)
+	 */
+	sepgsql_relation_alter(RelationGetRelid(rel), NULL, InvalidOid);
 }
 
 /*
@@ -3632,12 +3658,17 @@ ATPrepAddColumn(List **wqueue, Relation rel, bool recurse,
 				AlterTableCmd *cmd)
 {
 	/*
-	 * SE-PgSQL checks permission to create a new column.
-	 *
-	 *
-	 *
+	 * SE-PgSQL checks permission to create a new column, and returns
+	 * a security context to be assigned on. If the table has inherited
+	 * tables, this routine is recursively called to create a new column
+	 * on the child tables also.
+	 * The inherited column must have a same security context, so we just
+	 * copy the security context to be assigned on the parent column.
+	 * If child table already has a column with same name, it shall be
+	 * merged at ATExecAddColumn(). In this case, the security contexts
+	 * has to be matched.
 	 */
-	if (((ColumnDef *)cmd->def)->inhcount == 0)
+	if (((ColumnDef *)cmd->def)->is_local)
 	{
 		((ColumnDef *)cmd->def)->secontext =
 			(Node *) sepgsql_attribute_create(RelationGetRelid(rel),
@@ -3686,7 +3717,7 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 	FormData_pg_attribute attribute;
 	int			newattnum;
 	char		relkind;
-	Datum		attsecon = PointerGetDatum(NULL);
+	Value	   *attsecon;
 	HeapTuple	typeTuple;
 	Oid			typeOid;
 	int32		typmod;
@@ -3710,8 +3741,8 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 			Form_pg_attribute childatt = (Form_pg_attribute) GETSTRUCT(tuple);
 			Oid			ctypeId;
 			int32		ctypmod;
-			char	   *csecon;
-			char	   *psecon = NULL;
+			char	   *context_c;
+			char	   *context_p = NULL;
 
 			/* Child column must match by type */
 			ctypeId = typenameTypeId(NULL, colDef->typeName, &ctypmod);
@@ -3723,15 +3754,14 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 							RelationGetRelationName(rel), colDef->colname)));
 
 			/* Child column must have same security context */
-			csecon = get_attsecontext(myrelid, childatt->attnum);
+			context_c = get_attsecontext(myrelid, childatt->attnum);
 			if (DatumGetPointer(colDef->secontext))
-				psecon = strVal(colDef->secontext);
-			if ((!csecon && psecon) || (csecon && !psecon) ||
-				(csecon && psecon && strcmp(csecon, psecon) != 0))
+				context_p = strVal(colDef->secontext);
+			if (!secontext_cmp(context_c, context_p))
 				ereport(ERROR,
 						(errcode(ERRCODE_DATATYPE_MISMATCH),
 						 errmsg("inherited column \"%s\" has a conflict "
-								"security context", colDef->colname)));
+								"security context %s %s", colDef->colname, context_c, context_p)));
 
 			/* If it's OID, child column must actually be OID */
 			if (isOid && childatt->attnum != ObjectIdAttributeNumber)
@@ -3821,8 +3851,8 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 	/* attribute.attacl is handled by InsertPgAttributeTuple */
 
 	/* attribute.attsecon, if SE-PgSQL is available */
-	if (DatumGetPointer(colDef->secontext))
-		attsecon = CStringGetTextDatum(strVal(colDef->secontext));
+	attsecon = ((colDef->secontext && strVal(colDef->secontext)) ?
+				colDef->secontext : NULL);
 
 	ReleaseSysCache(typeTuple);
 
@@ -4215,6 +4245,11 @@ ATPrepSetStatistics(Relation rel, const char *colName, Node *newValue)
 	if (!pg_class_ownercheck(RelationGetRelid(rel), GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
 					   RelationGetRelationName(rel));
+
+	/*
+	 * SE-PgSQL checks permission to alter property of the column
+	 */
+	sepgsql_attribute_alter(RelationGetRelid(rel), colName);
 }
 
 static void
@@ -4299,6 +4334,11 @@ ATPrepSetDistinct(Relation rel, const char *colName, Node *newValue)
 	if (!pg_class_ownercheck(RelationGetRelid(rel), GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
 					   RelationGetRelationName(rel));
+
+	/*
+	 * SE-PgSQL checks permission to alter properties of the column
+	 */
+	sepgsql_attribute_alter(RelationGetRelid(rel), colName);
 }
 
 static void
@@ -4459,7 +4499,7 @@ ATExecDropColumn(List **wqueue, Relation rel, const char *colName,
 
 	/* At top level, permission check was done in ATPrepCmd, else do it */
 	if (recursing)
-		ATSimplePermissions(rel, false);
+		ATSimplePermissions(rel, NULL, false);
 
 	/*
 	 * get the number of the attribute
@@ -4760,7 +4800,7 @@ ATAddCheckConstraint(List **wqueue, AlteredTableInfo *tab, Relation rel,
 
 	/* At top level, permission check was done in ATPrepCmd, else do it */
 	if (recursing)
-		ATSimplePermissions(rel, false);
+		ATSimplePermissions(rel, NULL, false);
 
 	/*
 	 * Call AddRelationNewConstraints to do the work, making sure it works on
@@ -5704,7 +5744,7 @@ ATExecDropConstraint(Relation rel, const char *constrName,
 
 	/* At top level, permission check was done in ATPrepCmd, else do it */
 	if (recursing)
-		ATSimplePermissions(rel, false);
+		ATSimplePermissions(rel, NULL, false);
 
 	conrel = heap_open(ConstraintRelationId, RowExclusiveLock);
 
@@ -6649,6 +6689,8 @@ ATExecChangeOwner(Oid relationOid, Oid newOwnerId, bool recursing)
 					aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
 								   get_namespace_name(namespaceOid));
 			}
+			/* SE-PgSQL checks permission to alter property of tables */
+			sepgsql_relation_alter(relationOid, NULL, InvalidOid);
 		}
 
 		memset(repl_null, false, sizeof(repl_null));
@@ -7253,7 +7295,7 @@ ATExecAddInherit(Relation child_rel, RangeVar *parent)
 	 * Must be owner of both parent and child -- child was checked by
 	 * ATSimplePermissions call in ATPrepCmd
 	 */
-	ATSimplePermissions(parent_rel, false);
+	ATSimplePermissions(parent_rel, NULL, false);
 
 	/* Permanent rels cannot inherit from temporary ones */
 	if (parent_rel->rd_istemp && !child_rel->rd_istemp)
@@ -7465,8 +7507,7 @@ MergeAttributesIntoExisting(Relation child_rel, Relation parent_rel)
 										 parent_attno);
 			context_c = get_attsecontext(RelationGetRelid(child_rel),
 										 childatt->attnum);
-			if ((context_p && !context_c) || (!context_p && context_c) ||
-				(context_p && context_c && strcmp(context_p, context_c) != 0))
+			if (!secontext_cmp(context_p, context_c))
 				ereport(ERROR,
 						(errcode(ERRCODE_DATATYPE_MISMATCH),
 						 errmsg("child table \"%s\" has different "
@@ -7932,6 +7973,15 @@ AlterTableNamespace(RangeVar *relation, const char *newschema,
 						RelationGetRelationName(rel),
 						newschema)));
 
+	/*
+	 * SE-PgSQL checks permission to alter property of the relation,
+	 * to add an entry to the new schema and to remove an entry from
+	 * the old schema.
+	 * We need to put the security hook here, not the caller side,
+	 * because OID of the new schema has to be given.
+	 */
+	sepgsql_relation_alter(relid, NULL, nspOid);
+
 	/* disallow renaming into or out of temp schemas */
 	if (isAnyTempNamespace(nspOid) || isAnyTempNamespace(oldNspOid))
 		ereport(ERROR,
@@ -8125,32 +8175,29 @@ AlterSeqNamespaces(Relation classRel, Relation rel,
 }
 
 /*
- * Routines to handle ALTER TABLE ... SECYRUTY_CONTEXT = 'xxx' statement.
+ * AlterRelationSecLabel
  *
- *
- *
- *
- *
- *
+ * It relabels security context of the table.
  */
 void
 AlterRelationSecLabel(Oid relOid, Node *newLabel)
 {
-	Relation	classRel;
+	Relation	rel;
 	HeapTuple	oldtup;
 	HeapTuple	newtup;
-	Datum		relsecon;
+	Value	   *relsecon;
 	Datum		values[Natts_pg_class];
 	bool		nulls[Natts_pg_class];
 	bool		replaces[Natts_pg_class];
 
+	/* Sanity check */
 	if (get_rel_relkind(relOid) != RELKIND_RELATION)
 		ereport(ERROR,
 				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
 				 errmsg("\"%s\" is not a regular table",
 						get_rel_name(relOid))));
 
-	classRel = heap_open(RelationRelationId, RowExclusiveLock);
+	rel = heap_open(RelationRelationId, RowExclusiveLock);
 
 	oldtup = SearchSysCache(RELOID,
 							ObjectIdGetDatum(relOid),
@@ -8158,21 +8205,6 @@ AlterRelationSecLabel(Oid relOid, Node *newLabel)
 	if (!HeapTupleIsValid(oldtup))
 		elog(ERROR, "cache lookup failed for relation %u", relOid);
 
-	/*
-	 * The default PG model requires ownership of the table which
-	 * owns the target attribute.
-	 * And, we don't allow to relabel columns in system catalogs.
-	 */
-	if (!pg_class_ownercheck(relOid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
-					   get_rel_name(relOid));
-
-	if (!allowSystemTableMods &&
-		IsSystemClass((Form_pg_class) GETSTRUCT(oldtup)))
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-                 errmsg("permission denied: \"%s\" is a system catalog",
-						get_rel_name(relOid))));
 	/*
 	 * SE-PgSQL permission check to relabel this table, and
 	 * obtain the security context to be assigned on in raw format.
@@ -8186,79 +8218,74 @@ AlterRelationSecLabel(Oid relOid, Node *newLabel)
 	memset(nulls, false, sizeof(nulls));
 	memset(replaces, false, sizeof(replaces));
 
-	values[Anum_pg_class_relsecon - 1] = relsecon;
 	replaces[Anum_pg_class_relsecon - 1] = true;
+	if (!relsecon)
+		nulls[Anum_pg_class_relsecon - 1] = true;
+	else
+		values[Anum_pg_class_relsecon - 1]
+			= CStringGetTextDatum(strVal(relsecon));
 
-	newtup = heap_modify_tuple(oldtup, RelationGetDescr(classRel),
+	newtup = heap_modify_tuple(oldtup, RelationGetDescr(rel),
 							   values, nulls, replaces);
 
-	simple_heap_update(classRel, &newtup->t_self, newtup);
+	simple_heap_update(rel, &newtup->t_self, newtup);
 
-	CatalogUpdateIndexes(classRel, newtup);
+	CatalogUpdateIndexes(rel, newtup);
 
 	heap_freetuple(newtup);
 
-	heap_close(classRel, RowExclusiveLock);
+	heap_close(rel, RowExclusiveLock);
 }
 
 /*
  * AlterAttributeSecLabel
  *
- *
- *
- *
+ * It relabels security context of the column.
+ * If table owns the column has inheritances, the columns in child tables
+ * are also relabeled recursively.
  */
 void
 AlterAttributeSecLabel(Oid relOid, const char *attname,
 					   Node *newLabel, bool recursing)
 {
 	Form_pg_attribute	attForm;
-	Relation	targetRel;
-	Relation	attrRel;
+	Relation	rel;
 	HeapTuple	oldtup;
 	HeapTuple	newtup;
-	Datum		attsecon;
+	Value	   *attsecon;
 	Datum		values[Natts_pg_attribute];
 	bool		nulls[Natts_pg_attribute];
 	bool		replaces[Natts_pg_attribute];
 
-	/*
-	 * Grab an exclusive lock on the target table, which we will NOT
-	 * release until end of transaction.
-	 */
-	targetRel = heap_open(relOid, AccessExclusiveLock);
-
-	if (RelationGetForm(targetRel)->relkind != RELKIND_RELATION)
+	/* Sanity checks */
+	if (get_rel_relkind(relOid) != RELKIND_RELATION)
 		ereport(ERROR,
 				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
 				 errmsg("\"%s\" is not a regular table",
 						get_rel_name(relOid))));
-	/*
-	 * The default PG model requires ownership of the table which
-	 * owns the target attribute.
-	 * And, we don't allow to relabel columns in system catalogs.
-	 */
-	if (!pg_class_ownercheck(relOid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
-					   RelationGetRelationName(targetRel));
 
-	if (!allowSystemTableMods && IsSystemRelation(targetRel))
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-                 errmsg("permission denied: \"%s\" is a system catalog",
-						get_rel_name(relOid))));
+	/*
+	 * The default PG model requires ownership on all the tables which
+	 * owns the attributes to be relabeled.
+	 * The caller (ExecAlterSecLabelStmt) already checked it on the top
+	 * of inheritance tree, and confirmed it is not a system catalog.
+	 * We assume any system cataloga are not an inheritance of others.
+	 */
+	if (!recursing &&
+		!pg_class_ownercheck(relOid, GetUserId()))
+		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
+					   get_rel_name(relOid));
 
 	if (!recursing)
 	{
 		ListCell   *child;
 		List	   *children;
-		AttrNumber	attnum = get_attnum(relOid, attname);
 
 		/*
-		 * SE-PgSQL checks permission to relabel the column, and obtains
-		 * the security context to be assigned in raw format.
+		 * SE-PgSQL checks permission to relabel the column, and returns
+		 * the security context to be assigned on in raw-format.
 		 */
-		attsecon = sepgsql_attribute_relabel(relOid, attnum, newLabel);
+		attsecon = sepgsql_attribute_relabel(relOid, attname, newLabel);
 
 		children = find_all_inheritors(relOid, NoLock);
 
@@ -8275,7 +8302,7 @@ AlterAttributeSecLabel(Oid relOid, const char *attname,
 				continue;
 			/* note we need not recurse again */
 			AlterAttributeSecLabel(child_relOid, attname,
-								   DatumGetPointer(attsecon), true);
+								   (Node *) attsecon, true);
 		}
 	}
 	else
@@ -8285,11 +8312,10 @@ AlterAttributeSecLabel(Oid relOid, const char *attname,
 		 * root of the inheritance relationship. So, we don't need to
 		 * check same thing twice or more.
 		 */
-		attsecon = PointerGetDatum(newLabel);
+		attsecon = (Value *)newLabel;
 	}
 
-
-	attrRel = heap_open(AttributeRelationId, RowExclusiveLock);
+	rel = heap_open(AttributeRelationId, RowExclusiveLock);
 
 	oldtup = SearchSysCacheAttName(relOid, attname);
 	if (!HeapTupleIsValid(oldtup))
@@ -8332,26 +8358,24 @@ AlterAttributeSecLabel(Oid relOid, const char *attname,
 	memset(replaces, false, sizeof(replaces));
 
 	replaces[Anum_pg_attribute_attsecon - 1] = true;
-	if (!DatumGetPointer(attsecon))
+	if (!attsecon)
 		nulls[Anum_pg_attribute_attsecon - 1] = true;
 	else
 		values[Anum_pg_attribute_attsecon - 1]
 			= CStringGetTextDatum(strVal(attsecon));
 
-	newtup = heap_modify_tuple(oldtup, RelationGetDescr(attrRel),
+	newtup = heap_modify_tuple(oldtup, RelationGetDescr(rel),
 							   values, nulls, replaces);
 
-	simple_heap_update(attrRel, &newtup->t_self, newtup);
+	simple_heap_update(rel, &newtup->t_self, newtup);
 
-	CatalogUpdateIndexes(attrRel, newtup);
+	CatalogUpdateIndexes(rel, newtup);
 
 	heap_freetuple(newtup);
 
 	ReleaseSysCache(oldtup);
 
-	heap_close(attrRel, RowExclusiveLock);
-
-	heap_close(targetRel, NoLock);
+	heap_close(rel, RowExclusiveLock);
 }
 
 /*

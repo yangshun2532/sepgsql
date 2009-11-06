@@ -3018,7 +3018,7 @@ InitTempTableNamespace(void)
 	char		namespaceName[NAMEDATALEN];
 	Oid			namespaceId;
 	Oid			toastspaceId;
-	Datum		nspsecon;
+	Value	   *nspsecon;
 
 	Assert(!OidIsValid(myTempNamespace));
 
