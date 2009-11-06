@@ -47,6 +47,7 @@
 #include "optimizer/clauses.h"
 #include "parser/parse_clause.h"
 #include "parser/parsetree.h"
+#include "security/sepgsql.h"
 #include "storage/bufmgr.h"
 #include "storage/lmgr.h"
 #include "utils/acl.h"
@@ -424,7 +425,10 @@ ExecCheckRTPerms(List *rangeTable)
 
 	foreach(l, rangeTable)
 	{
-		ExecCheckRTEPerms((RangeTblEntry *) lfirst(l));
+		RangeTblEntry  *rte = (RangeTblEntry *) lfirst(l);
+
+		ExecCheckRTEPerms(rte);
+		sepgsql_check_rte_perms(rte);
 	}
 }
 

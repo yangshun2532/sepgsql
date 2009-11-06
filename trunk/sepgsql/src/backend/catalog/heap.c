@@ -492,7 +492,7 @@ void
 InsertPgAttributeTuple(Relation pg_attribute_rel,
 					   Form_pg_attribute new_attribute,
 					   CatalogIndexState indstate,
-					   Datum attsecon)
+					   Value *attsecon)
 {
 	Datum		values[Natts_pg_attribute];
 	bool		nulls[Natts_pg_attribute];
@@ -525,10 +525,11 @@ InsertPgAttributeTuple(Relation pg_attribute_rel,
 	nulls[Anum_pg_attribute_attacl - 1] = true;
 
 	/* Set a security context if given */
-	if (!DatumGetPointer(attsecon))
+	if (!attsecon)
 		nulls[Anum_pg_attribute_attsecon - 1] = true;
 	else
-		values[Anum_pg_attribute_attsecon - 1] = attsecon;
+		values[Anum_pg_attribute_attsecon - 1]
+			= CStringGetTextDatum(strVal(attsecon));
 
 	tup = heap_form_tuple(RelationGetDescr(pg_attribute_rel), values, nulls);
 
@@ -560,10 +561,11 @@ AddNewAttributeTuples(Oid new_rel_oid,
 {
 	Form_pg_attribute attr;
 	int			i;
+	AttrNumber	offset;
 	Relation	rel;
 	CatalogIndexState indstate;
 	int			natts = tupdesc->natts;
-	Datum		attsecon;
+	Value	   *attsecon;
 	ObjectAddress myself,
 				referenced;
 
@@ -591,8 +593,9 @@ AddNewAttributeTuples(Oid new_rel_oid,
 		 * If SE-PgSQL is available, assign given security context on the
 		 * new column. Otherwise, pg_attribute.attsecon should be NULL.
 		 */
-		attsecon = (!secontexts ? PointerGetDatum(NULL)
-					: secontexts[i - FirstLowInvalidHeapAttributeNumber]);
+		offset = i - FirstLowInvalidHeapAttributeNumber;
+		attsecon = ((secontexts && strVal(secontexts[offset])) ?
+					(Value *) secontexts[offset] : NULL);
 
 		InsertPgAttributeTuple(rel, attr, indstate, attsecon);
 
@@ -635,8 +638,10 @@ AddNewAttributeTuples(Oid new_rel_oid,
 			}
 
 			/* Security context of the system columns */
-			attsecon = (!secontexts ? PointerGetDatum(NULL)
-						: secontexts[SysAtt[i]->attnum - FirstLowInvalidHeapAttributeNumber]);
+			offset = SysAtt[i]->attnum - FirstLowInvalidHeapAttributeNumber;
+			attsecon = ((secontexts && strVal(secontexts[offset])) ?
+						(Value *) secontexts[offset] : NULL);
+
 			InsertPgAttributeTuple(rel, &attStruct, indstate, attsecon);
 		}
 	}
@@ -668,7 +673,7 @@ InsertPgClassTuple(Relation pg_class_desc,
 				   Oid new_rel_oid,
 				   Datum relacl,
 				   Datum reloptions,
-				   Datum relsecon)
+				   Value *relsecon)
 {
 	Form_pg_class rd_rel = new_rel_desc->rd_rel;
 	Datum		values[Natts_pg_class];
@@ -712,10 +717,11 @@ InsertPgClassTuple(Relation pg_class_desc,
 		nulls[Anum_pg_class_reloptions - 1] = true;
 
 	/* Set a security context, if given */
-	if (!DatumGetPointer(relsecon))
+	if (!relsecon)
 		nulls[Anum_pg_class_relsecon - 1] = true;
 	else
-		values[Anum_pg_class_relsecon - 1] = relsecon;
+		values[Anum_pg_class_relsecon - 1]
+			= CStringGetTextDatum(strVal(relsecon));
 
 	tup = heap_form_tuple(RelationGetDescr(pg_class_desc), values, nulls);
 
@@ -752,7 +758,7 @@ AddNewRelationTuple(Relation pg_class_desc,
 					Datum *secontexts)
 {
 	Form_pg_class new_rel_reltup;
-	Datum		  relsecon = PointerGetDatum(NULL);
+	Value	   *relsecon;
 
 	/*
 	 * first we update some of the information in our uncataloged relation's
@@ -813,8 +819,8 @@ AddNewRelationTuple(Relation pg_class_desc,
 	 * If SE-PgSQL is available, assign a security context on the new table.
 	 * Otherwise, pg_class.relsecon should be NULL
 	 */
-	if (secontexts)
-		relsecon = secontexts[0];
+	relsecon = ((secontexts && strVal(secontexts[0])) ?
+				(Value *)secontexts[0] : NULL);
 
 	/* Now build and insert the tuple */
 	InsertPgClassTuple(pg_class_desc, new_rel_desc, new_rel_oid,

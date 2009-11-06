@@ -327,7 +327,7 @@ sepgsql_audit_log(bool denied, char *scontext, char *tcontext,
 		if (audit_name)
 			appendStringInfo(&buf, " name=%s", audit_name);
 
-		ereport(LOG,
+		ereport(NOTICE,
 				(errcode(ERRCODE_SELINUX_AUDIT_LOG),
 				 errmsg("SELinux: %s %s",
 						(denied ? "denied" : "allowed"), buf.data)));

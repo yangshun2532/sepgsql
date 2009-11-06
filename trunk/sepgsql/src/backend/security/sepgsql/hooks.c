@@ -8,6 +8,8 @@
  */
 #include "postgres.h"
 
+#include "access/genam.h"
+#include "access/heapam.h"
 #include "access/sysattr.h"
 #include "catalog/heap.h"
 #include "catalog/namespace.h"
@@ -19,9 +21,11 @@
 #include "miscadmin.h"
 #include "security/sepgsql.h"
 #include "utils/builtins.h"
+#include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
 #include "utils/syscache.h"
+#include "utils/tqual.h"
 
 #include <selinux/selinux.h>
 
@@ -94,13 +98,13 @@ sepgsql_database_common(Oid datOid, uint32 required, bool abort)
  * datName : name of the new database
  * datLabel : an explicit security context, or NULL
  */
-Datum
+Value *
 sepgsql_database_create(const char *datName, Node *datLabel)
 {
 	char   *context;
 
 	if (!sepgsql_is_enabled())
-		return PointerGetDatum(NULL);
+		return NULL;
 
 	/*
 	 * If an explicit security context is given, we apply it with
@@ -112,6 +116,8 @@ sepgsql_database_create(const char *datName, Node *datLabel)
 		context = sepgsql_default_database_context();
 	else
 	{
+		Assert(IsA(datLabel, String));
+
 		context = sepgsql_mcstrans_in(strVal(datLabel));
 		if (security_check_context_raw(context) < 0)
 			ereport(ERROR,
@@ -129,7 +135,7 @@ sepgsql_database_create(const char *datName, Node *datLabel)
 	 * The checked security context should be returned to caller.
 	 * Caller has to assign it on the new database.
 	 */
-	return CStringGetTextDatum(context);
+	return makeString(context);
 }
 
 /*
@@ -194,7 +200,7 @@ sepgsql_database_drop(Oid datOid)
  * datOid : OID of the target database
  * datLabel : An explicit security context to be assigned on
  */
-Datum
+Value *
 sepgsql_database_relabel(Oid datOid, Node *datLabel)
 {
 	char   *context;
@@ -203,6 +209,8 @@ sepgsql_database_relabel(Oid datOid, Node *datLabel)
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("SE-PostgreSQL is disabled")));
+
+	Assert(IsA(datLabel, String));
 
 	context = sepgsql_mcstrans_in(strVal(datLabel));
 	if (security_check_context_raw(context) < 0)
@@ -222,7 +230,7 @@ sepgsql_database_relabel(Oid datOid, Node *datLabel)
 						  SEPG_DB_DATABASE__RELABELTO,
 						  get_database_name(datOid), true);
 
-	return CStringGetTextDatum(context);
+	return makeString(context);
 }
 
 /*
@@ -416,18 +424,20 @@ sepgsql_schema_common(Oid nspOid, uint32 required, bool abort)
  * isTemp : true, if creation of the temporary schema
  * nspLabel : an explicit security context, or NULL
  */
-Datum
+Value *
 sepgsql_schema_create(const char *nspName, bool isTemp, Node *nspLabel)
 {
 	char   *context;
 
 	if (!sepgsql_is_enabled())
-		return PointerGetDatum(NULL);
+		return NULL;
 
 	if (!nspLabel)
 		context = sepgsql_default_schema_context(MyDatabaseId);
 	else
 	{
+		Assert(IsA(nspLabel, String));
+
 		context = sepgsql_mcstrans_in(strVal(nspLabel));
 		if (security_check_context_raw(context) < 0)
 			ereport(ERROR,
@@ -441,7 +451,7 @@ sepgsql_schema_create(const char *nspName, bool isTemp, Node *nspLabel)
 						  SEPG_DB_SCHEMA__CREATE,
 						  nspName, true);
 
-	return CStringGetTextDatum(context);
+	return makeString(context);
 }
 
 /*
@@ -510,7 +520,7 @@ sepgsql_schema_drop(Oid nspOid)
  * nspOid : OID of the target schema
  * nspLabel : An explicit security context to be assigned on
  */
-Datum
+Value *
 sepgsql_schema_relabel(Oid nspOid, Node *nspLabel)
 {
 	char   *context;
@@ -519,6 +529,8 @@ sepgsql_schema_relabel(Oid nspOid, Node *nspLabel)
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("SE-PostgreSQL is disabled")));
+
+	Assert(IsA(nspLabel, String));
 
 	context = sepgsql_mcstrans_in(strVal(nspLabel));
 	if (security_check_context_raw(context) < 0)
@@ -538,7 +550,7 @@ sepgsql_schema_relabel(Oid nspOid, Node *nspLabel)
 						  SEPG_DB_SCHEMA__RELABELTO,
 						  get_namespace_name(nspOid), true);
 
-	return CStringGetTextDatum(context);
+	return makeString(context);
 }
 
 /*
@@ -672,7 +684,7 @@ sepgsql_relation_common(Oid relOid, uint32 required, bool abort)
  * colList : 
  * createAs : True, if the new table created by 
  */
-Datum *
+DatumPtr
 sepgsql_relation_create(const char *relName,
 						char relkind,
 						TupleDesc tupDesc,
@@ -700,7 +712,7 @@ sepgsql_relation_create(const char *relName,
 		sepgsql_schema_common(nspOid, SEPG_DB_SCHEMA__ADD_NAME, true);
 
 	/*
-	 * No need to check anything on expect for regular tables
+	 * No need to check anything expect for regular tables
 	 */
 	if (relkind != RELKIND_RELATION)
 		return NULL;
@@ -712,6 +724,8 @@ sepgsql_relation_create(const char *relName,
 		tcontext = sepgsql_default_table_context(nspOid);
 	else
 	{
+		Assert(IsA(relLabel, String));
+
 		tcontext = sepgsql_mcstrans_in(strVal(relLabel));
 		if (security_check_context_raw(tcontext) < 0)
 			ereport(ERROR,
@@ -720,6 +734,11 @@ sepgsql_relation_create(const char *relName,
 	}
 
 	permissions = SEPG_DB_TABLE__CREATE;
+	/*
+	 * SELECT INTO also appends new entries to contents of the new table,
+	 * not only creation of the metadata, so we need to check permission
+	 * db_table:{insert} which controls to append any data into contents.
+	 */
 	if (createAs)
 		permissions |= SEPG_DB_TABLE__INSERT;
 
@@ -737,7 +756,7 @@ sepgsql_relation_create(const char *relName,
 	result = palloc0(sizeof(Datum) * (tupDesc->natts
 					 - FirstLowInvalidHeapAttributeNumber));
 
-	result[0] = CStringGetTextDatum(tcontext);
+	result[0] = PointerGetDatum(makeString(tcontext));
 
 	/*
 	 * check db_column:{create (insert)} permission on the new columns
@@ -762,7 +781,7 @@ sepgsql_relation_create(const char *relName,
 		 * Is there any explicit given security context or copied one
 		 * on the inherited column from the parent relation?
 		 * If exist, SE-PgSQL applies it instead of the default context.
-		 * Otherwise, it compute a default security context to be assigned
+		 * Otherwise, it computes a default security context to be assigned
 		 * on the new column.
 		 * Note that we cannot use sepgsql_default_column_context() here,
 		 * because the table owning the column is not still constructed.
@@ -776,6 +795,8 @@ sepgsql_relation_create(const char *relName,
 			if (cdef->secontext &&
 				strcmp(cdef->colname, NameStr(attr->attname)) == 0)
 			{
+				Assert(IsA(cdef->secontext, String));
+
 				ccontext = sepgsql_mcstrans_in(strVal(cdef->secontext));
 				if (security_check_context_raw(ccontext) < 0)
 					ereport(ERROR,
@@ -789,7 +810,10 @@ sepgsql_relation_create(const char *relName,
 			ccontext = sepgsql_compute_create(sepgsql_get_client_context(),
 											  tcontext,
 											  SEPG_CLASS_DB_COLUMN);
-		/* check permission */
+		/*
+		 * Check permission to create a new column, and to append any
+		 * value on the column, if necessary.
+		 */
 		permissions = SEPG_DB_COLUMN__CREATE;
 		if (createAs && index >= 0)
 			permissions |= SEPG_DB_COLUMN__INSERT;
@@ -803,7 +827,7 @@ sepgsql_relation_create(const char *relName,
 
 		/* column's security context to be assigned */
 		result[index - FirstLowInvalidHeapAttributeNumber]
-			= CStringGetTextDatum(ccontext);
+			= PointerGetDatum(makeString(ccontext));
 	}
 
 	return result;
@@ -849,8 +873,8 @@ sepgsql_relation_alter(Oid relOid, const char *newName, Oid newNsp)
 /*
  * sepgsql_relation_drop
  *
- * It checks client's privilege to drop a certain relation.
- * If violated, it raises an error.
+ * It checks client's privilege to drop a certain relation and columns
+ * owned by the relation. If violated, it raises an error.
  *
  * This hook should be called when user's query tries to drop a cerain
  * table, including cascaded deletions, not only DROP TABLE statement.
@@ -864,10 +888,45 @@ sepgsql_relation_alter(Oid relOid, const char *newName, Oid newNsp)
 void
 sepgsql_relation_drop(Oid relOid)
 {
+	Relation	rel;
+	SysScanDesc	scan;
+	ScanKeyData	key[1];
+	HeapTuple	tuple;
+
 	if (!sepgsql_is_enabled())
 		return;
 
 	sepgsql_relation_common(relOid, SEPG_DB_TABLE__DROP, true);
+
+	if (get_rel_relkind(relOid) != RELKIND_RELATION)
+		return;
+
+	/*
+	 * Scan the pg_attribute to fetch corresponding columns, and
+	 * also check permission to drop columns owned by the table.
+	 */
+	rel = heap_open(AttributeRelationId, AccessShareLock);
+
+	ScanKeyInit(&key[0],
+				Anum_pg_attribute_attrelid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(relOid));
+
+	scan = systable_beginscan(rel, AttributeRelidNumIndexId, true,
+							  SnapshotNow, 1, key);
+
+	while (HeapTupleIsValid(tuple = systable_getnext(scan)))
+	{
+		Form_pg_attribute	attForm = (Form_pg_attribute) GETSTRUCT(tuple);
+
+		/* column is already dropped? */
+		if (attForm->attisdropped)
+			continue;
+
+		sepgsql_attribute_drop(relOid, NameStr(attForm->attname));
+	}
+	systable_endscan(scan);
+	heap_close(rel, AccessShareLock);
 }
 
 /*
@@ -911,7 +970,7 @@ sepgsql_relation_grant(Oid relOid)
  * relOid : OID of the target schema
  * relLabel : An explicit security context to be assigned on
  */
-Datum
+Value *
 sepgsql_relation_relabel(Oid relOid, Node *relLabel)
 {
 	char   *context;
@@ -920,6 +979,8 @@ sepgsql_relation_relabel(Oid relOid, Node *relLabel)
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("SE-PostgreSQL is disabled")));
+
+	Assert(IsA(relLabel, String));
 
 	context = sepgsql_mcstrans_in(strVal(relLabel));
 	if (security_check_context_raw(context) < 0)
@@ -939,7 +1000,7 @@ sepgsql_relation_relabel(Oid relOid, Node *relLabel)
 						  SEPG_DB_TABLE__RELABELTO,
 						  get_rel_name(relOid), true);
 
-	return CStringGetTextDatum(context);
+	return makeString(context);
 }
 
 /*
@@ -1073,13 +1134,22 @@ sepgsql_attribute_common(Oid relOid, AttrNumber attnum,
 /*
  * sepgsql_attribute_create
  *
+ * It checks permission to create a new column, and returns a security
+ * context to be assigned on. If violated, it raises an error.
  *
+ * Note that we don't expect to invoke this hook on CREATE TABLE,
+ * because default security context of columns are decided based on
+ * a pair of client and parent table, but the parent table is not
+ * visible when we create a new table.
+ * (These checks are done in sepgsql_relation_create().)
+ * It intends to be invoked on ALTER TABLE with ADD COLUMN option.
  *
- *
- *
- * It has to return String type.
+ * If the table has inherited children, ALTER TABLE tries to create
+ * a new column on the child tables also. In this case, the caller
+ * has to copy the security context on the root column to inherited
+ * columns, but no need to invoke this hook on the children.
  */
-Datum
+Value *
 sepgsql_attribute_create(Oid relOid, ColumnDef *cdef)
 {
 	char	audit_name[NAMEDATALEN * 2 + 3];
@@ -1087,7 +1157,7 @@ sepgsql_attribute_create(Oid relOid, ColumnDef *cdef)
 	char	relkind;
 
 	if (!sepgsql_is_enabled())
-		return PointerGetDatum(NULL);
+		return NULL;
 
 	relkind = get_rel_relkind(relOid);
 	if (relkind != RELKIND_RELATION)
@@ -1097,15 +1167,16 @@ sepgsql_attribute_create(Oid relOid, ColumnDef *cdef)
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 					 errmsg("Only regular column can have its own "
 							"security context")));
-		if (relkind != RELKIND_TOASTVALUE)
-			sepgsql_relation_common(relOid, SEPG_DB_TABLE__SETATTR, true);
-		return PointerGetDatum(NULL);
+
+		return NULL;
 	}
 
 	if (!cdef->secontext)
 		context = sepgsql_default_column_context(relOid);
 	else
 	{
+		Assert(IsA(cdef->secontext, String));
+
 		context = sepgsql_mcstrans_in(strVal(cdef->secontext));
 		if (security_check_context_raw(context) < 0)
 			ereport(ERROR,
@@ -1123,43 +1194,84 @@ sepgsql_attribute_create(Oid relOid, ColumnDef *cdef)
 	 * The checked security context should be returned to caller.
 	 * Caller has to assign it on the new column.
 	 */
-	return PointerGetDatum(makeString(context));
+	return makeString(context);
 }
 
+/*
+ * sepgsql_attribute_alter
+ *
+ * It checks permission to alter properties of the given column.
+ * If violated, it raises an error.
+ */
 void
 sepgsql_attribute_alter(Oid relOid, const char *attname)
 {
-	char	relkind;
-
-	if (!sepgsql_is_enabled())
-		return;
-
-	relkind = get_rel_relkind(relOid);
-	if (relkind == RELKIND_RELATION)
-		sepgsql_attribute_common(relOid, get_attnum(relOid, attname),
-								 SEPG_DB_COLUMN__SETATTR, true);
-	else if (relkind != RELKIND_TOASTVALUE)
-		sepgsql_relation_common(relOid, SEPG_DB_TABLE__SETATTR, true);
-}
-
-void
-sepgsql_attribute_drop(Oid relOid, AttrNumber attno)
-{
-	char	relkind;
+	char		relkind;
+	AttrNumber	attnum;
 
 	if (!sepgsql_is_enabled())
 		return;
 
 	/*
-	 * We only need to check db_column:{drop} when relkind equals
-	 * RELKIND_RELATION, because db_xxx:{drop} permission is already
-	 * checked in other path. (e.g DROP SEQUENCE, ...)
+	 * If user specified non-exist attribute to be dropped,
+	 * the caller raises error later, so we don't need to do here.
+	 */
+	attnum = get_attnum(relOid, attname);
+	if (attnum == InvalidAttrNumber)
+		return;
+
+	/*
+	 * SE-PgSQL only checks permission to drop individual columns
+	 * only when it is owned by regular table (=RELKIND_RELATION).
 	 */
 	relkind = get_rel_relkind(relOid);
-    if (relkind == RELKIND_RELATION)
-		sepgsql_attribute_common(relOid, attno, SEPG_DB_COLUMN__DROP, true);
+	if (relkind == RELKIND_RELATION)
+		sepgsql_attribute_common(relOid, attnum,
+								 SEPG_DB_COLUMN__SETATTR, true);
 }
 
+/*
+ * sepgsql_attribute_drop
+ *
+ * It checks permission to drop the given column. 
+ * If violated, it raises an error.
+ */
+void
+sepgsql_attribute_drop(Oid relOid, const char *attname)
+{
+	char		relkind;
+	AttrNumber	attnum;
+
+	if (!sepgsql_is_enabled())
+		return;
+
+	/*
+	 * If user specified non-exist attribute to be dropped,
+	 * the caller raises error later, so we don't need to do here.
+	 */
+	attnum = get_attnum(relOid, attname);
+	if (attnum == InvalidAttrNumber)
+		return;
+
+	/*
+	 * SE-PgSQL only checks permission to drop individual columns
+	 * only when it is owned by regular table (=RELKIND_RELATION).
+	 */
+	relkind = get_rel_relkind(relOid);
+	if (relkind == RELKIND_RELATION)
+		sepgsql_attribute_common(relOid, attnum,
+								 SEPG_DB_COLUMN__DROP, true);
+}
+
+/*
+ * sepgsql_attribute_grant
+ *
+ * It checks permission to grant/revoke permission on a certain column.
+ * If violated, it raises an error.
+ *
+ * From the perspective of SE-PgSQL, ACLs are one of the properties in
+ * columns. So, we need to check db_column:{setattr} permission here.
+ */
 void
 sepgsql_attribute_grant(Oid relOid, AttrNumber attnum)
 {
@@ -1172,12 +1284,25 @@ sepgsql_attribute_grant(Oid relOid, AttrNumber attnum)
 	if (relkind == RELKIND_RELATION)
 		sepgsql_attribute_common(relOid, attnum,
 								 SEPG_DB_COLUMN__SETATTR, true);
-	else if (relkind != RELKIND_TOASTVALUE)
-		sepgsql_relation_common(relOid, SEPG_DB_TABLE__SETATTR, true);
 }
 
-Datum
-sepgsql_attribute_relabel(Oid relOid, AttrNumber attnum, Node *attLabel)
+/*
+ * sepgsql_attribute_relabel
+ *
+ * It checks permission to relabel a certain column.
+ * If violated, it raises an error.
+ *
+ * Security context is a special property from the perspective of SE-PgSQL.
+ * So, it needs to check two more permissions for this, not only
+ * db_column:{setattr} which is a permission to alter property of columns.
+ *
+ * If the table has inherited children, it needs to relabel inherited
+ * columns also with same security context. In this case, the caller
+ * has to copy the security context on the root column to inherited
+ * columns, but no need to invoke this hook on the children.
+ */
+Value *
+sepgsql_attribute_relabel(Oid relOid, const char *attname, Node *attLabel)
 {
 	char	audit_name[NAMEDATALEN * 2 + 3];
 	char   *context;
@@ -1187,6 +1312,8 @@ sepgsql_attribute_relabel(Oid relOid, AttrNumber attnum, Node *attLabel)
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("SE-PostgreSQL is disabled")));
 
+	Assert(IsA(attLabel, String));
+
 	context = sepgsql_mcstrans_in(strVal(attLabel));
 	if (security_check_context_raw(context) < 0)
 		ereport(ERROR,
@@ -1194,20 +1321,20 @@ sepgsql_attribute_relabel(Oid relOid, AttrNumber attnum, Node *attLabel)
 				 errmsg("invalid security context \"%s\"", context)));
 
 	/* check db_column:{setattr relabelfrom} on the older context */
-	sepgsql_attribute_common(relOid, attnum,
+	sepgsql_attribute_common(relOid, get_attnum(relOid, attname),
 							 SEPG_DB_COLUMN__SETATTR |
 							 SEPG_DB_COLUMN__RELABELFROM, true);
 
 	/* check db_column:{relabelto} on the newer context */
 	snprintf(audit_name, sizeof(audit_name), "%s.%s",
-			 get_rel_name(relOid), get_attname(relOid, attnum));
+			 get_rel_name(relOid), attname);
 	sepgsql_compute_perms(sepgsql_get_client_context(),
                           context,
 						  SEPG_CLASS_DB_COLUMN,
 						  SEPG_DB_COLUMN__RELABELTO,
 						  audit_name, true);
 
-	return PointerGetDatum(makeString(context));
+	return makeString(context);
 }
 
 /************************************************************
@@ -1278,11 +1405,19 @@ sepgsql_object_drop(ObjectAddress *object)
 	switch (getObjectClass(object))
 	{
 	case OCLASS_CLASS:
+		/*
+		 * SE-PgSQL already checks permission to drop a column due to
+		 * the ALTER TABLE with DROP COLUMN option, so it doesn't need
+		 * to apply same checks twice. The reason why it is applied on
+		 * the earlier phase is to avoid duplicated checks on inherited
+		 * columns which have identical security contexts.
+		 *
+		 * In the case when a table is dropped, it also drops all the
+		 * columns in the table, so sepgsql_relation_drop() checks
+		 * permissions on columns also.
+		 */
 		if (object->objectSubId == 0)
 			sepgsql_relation_drop(object->objectId);
-		else
-			sepgsql_attribute_drop(object->objectId,
-								   object->objectSubId);
 		break;
 
 	case OCLASS_SCHEMA:

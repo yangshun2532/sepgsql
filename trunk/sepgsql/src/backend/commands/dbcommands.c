@@ -119,7 +119,6 @@ createdb(const CreatedbStmt *stmt)
 	DefElem    *dcollate = NULL;
 	DefElem    *dctype = NULL;
 	DefElem    *dconnlimit = NULL;
-	DefElem	   *dsecon = NULL;
 	char	   *dbname = stmt->dbname;
 	char	   *dbowner = NULL;
 	const char *dbtemplate = NULL;
@@ -127,7 +126,7 @@ createdb(const CreatedbStmt *stmt)
 	char	   *dbctype = NULL;
 	int			encoding = -1;
 	int			dbconnlimit = -1;
-	Datum		datsecon;
+	Value	   *datsecon = NULL;
 	int			ctype_encoding;
 	int			collate_encoding;
 	int			notherbackends;
@@ -204,11 +203,11 @@ createdb(const CreatedbStmt *stmt)
 		}
 		else if (strcmp(defel->defname, "security_context") == 0)
 		{
-			if (dsecon)
+			if (datsecon)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
 						 errmsg("conflicting or redundant options")));
-			dsecon = defel;
+			datsecon = (Value *)defel->arg;
 		}
 		else
 			elog(ERROR, "option \"%s\" not recognized",
@@ -283,10 +282,10 @@ createdb(const CreatedbStmt *stmt)
 	check_is_member_of_role(GetUserId(), datdba);
 
 	/*
-	 * SELinux permission check to create a new database and obtain its
-	 * default security context, if no explicit one is given.
+	 * SELinux permission check to create a new database, then returns
+	 * a default security context, if no explicit one is given.
 	 */
-	datsecon = sepgsql_database_create(dbname, (dsecon ? dsecon->arg : NULL));
+	datsecon = sepgsql_database_create(dbname, (Node *)datsecon);
 
 	/*
 	 * Lookup database (template) to be cloned, and obtain share lock on it.
@@ -571,10 +570,11 @@ createdb(const CreatedbStmt *stmt)
 	 * If a default or given security context is available, it should be
 	 * set on the pg_database.datsecon. Otherwise, it will be NULL.
 	 */
-	if (!DatumGetPointer(datsecon))
+	if (!datsecon)
 		new_record_nulls[Anum_pg_database_datsecon - 1] = true;
 	else
-		new_record[Anum_pg_database_datsecon - 1] = datsecon;
+		new_record[Anum_pg_database_datsecon - 1]
+			= CStringGetTextDatum(strVal(datsecon));
 
 	tuple = heap_form_tuple(RelationGetDescr(pg_database_rel),
 							new_record, new_record_nulls);
@@ -1591,7 +1591,7 @@ AlterDatabaseSecLabel(const char *dbname, Node *datLabel)
 	ScanKeyData	keys[1];
 	SysScanDesc	scan;
 	Oid			datOid;
-	Datum		datsecon;
+	Value	   *datsecon;
 	Datum		values[Natts_pg_database];
 	bool		nulls[Natts_pg_database];
 	bool		replaces[Natts_pg_database];
@@ -1632,8 +1632,12 @@ AlterDatabaseSecLabel(const char *dbname, Node *datLabel)
 	memset(nulls, false, sizeof(nulls));
 	memset(replaces, false, sizeof(replaces));
 
-	values[Anum_pg_database_datsecon - 1] = datsecon;
 	replaces[Anum_pg_database_datsecon - 1] = true;
+	if (!datsecon)
+		nulls[Anum_pg_database_datsecon - 1] = true;
+	else
+		values[Anum_pg_database_datsecon - 1]
+			= CStringGetTextDatum(strVal(datsecon));
 
 	newtup = heap_modify_tuple(oldtup, RelationGetDescr(rel),
 							   values, nulls, replaces);
