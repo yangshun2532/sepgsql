@@ -1056,6 +1056,15 @@
       </entry>
      </row>
 
+     <row>
+      <entry><structfield>attsecon</structfield></entry>
+      <entry><type>text</type></entry>
+      <entry></entry>
+      <entry>
+       Security context of SE-PostgreSQL; see
+       <xref linkend="security-enhanced-postgresql"> for details
+      </entry>
+     </row>
     </tbody>
    </tgroup>
   </table>
@@ -1677,6 +1686,16 @@
        Access-method-specific options, as <quote>keyword=value</> strings
       </entry>
      </row>
+
+     <row>
+      <entry><structfield>relsecon</structfield></entry>
+      <entry><type>text</type></entry>
+      <entry></entry>
+      <entry>
+       Security context of SE-PostgreSQL; see
+       <xref linkend="security-enhanced-postgresql"> for details
+      </entry>
+     </row>
     </tbody>
    </tgroup>
   </table>
@@ -2150,6 +2169,16 @@
        <xref linkend="sql-grant" endterm="sql-grant-title"> and
        <xref linkend="sql-revoke" endterm="sql-revoke-title">
        for details
+      </entry>
+     </row>
+
+     <row>
+      <entry><structfield>datsecon</structfield></entry>
+      <entry><type>text</type></entry>
+      <entry></entry>
+      <entry>
+       Security context of SE-PostgreSQL; see
+       <xref linkend="security-enhanced-postgresql"> for details
       </entry>
      </row>
     </tbody>
@@ -3252,6 +3281,16 @@
        <xref linkend="sql-grant" endterm="sql-grant-title"> and
        <xref linkend="sql-revoke" endterm="sql-revoke-title">
        for details
+      </entry>
+     </row>
+
+     <row>
+      <entry><structfield>nspsecon</structfield></entry>
+      <entry><type>text</type></entry>
+      <entry></entry>
+      <entry>
+       Security context of SE-PostgreSQL; see
+       <xref linkend="security-enhanced-postgresql"> for details
       </entry>
      </row>
     </tbody>

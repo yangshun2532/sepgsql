@@ -422,7 +422,7 @@ static TypeName *TableFuncTypeName(List *columns);
 %type <str>		OptTableSpace OptConsTableSpace OptTableSpaceOwner
 %type <list>	opt_check_option
 
-%type <node>	SecLabelItem OptSecLabel OptColumnSecLabel
+%type <node>	OptSchemaSecLabel OptTableSecLabel OptColumnSecLabel SecLabelToItem
 
 %type <target>	xml_attribute_el
 %type <list>	xml_attribute_list xml_attributes
@@ -1098,7 +1098,7 @@ DropGroupStmt:
 
 CreateSchemaStmt:
 			CREATE SCHEMA OptSchemaName AUTHORIZATION RoleId
-				OptSecLabel OptSchemaEltList
+				OptSchemaSecLabel OptSchemaEltList
 				{
 					CreateSchemaStmt *n = makeNode(CreateSchemaStmt);
 					/* One can omit the schema name or the authorization id. */
@@ -1111,7 +1111,7 @@ CreateSchemaStmt:
 					n->schemaElts = $7;
 					$$ = (Node *)n;
 				}
-			| CREATE SCHEMA ColId OptSecLabel OptSchemaEltList
+			| CREATE SCHEMA ColId OptSchemaSecLabel OptSchemaEltList
 				{
 					CreateSchemaStmt *n = makeNode(CreateSchemaStmt);
 					/* ...but not both */
@@ -2179,7 +2179,7 @@ copy_generic_opt_arg_list_item:
  *****************************************************************************/
 
 CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
-			OptInherit OptWith OnCommitOption OptTableSpace OptSecLabel
+			OptInherit OptWith OnCommitOption OptTableSpace OptTableSecLabel
 				{
 					CreateStmt *n = makeNode(CreateStmt);
 					$4->istemp = $2;
@@ -2195,7 +2195,7 @@ CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
 				}
 		| CREATE OptTemp TABLE qualified_name OF qualified_name
 			'(' OptTableElementList ')' OptWith OnCommitOption
-			OptTableSpace OptSecLabel
+			OptTableSpace OptTableSecLabel
 				{
 					/* SQL99 CREATE TABLE OF <UDT> (cols) seems to be satisfied
 					 * by our inheritance capabilities. Let's try it...
@@ -2650,7 +2650,7 @@ CreateAsStmt:
 
 create_as_target:
 			qualified_name OptCreateAs OptWith OnCommitOption
-				OptTableSpace OptSecLabel
+				OptTableSpace OptTableSecLabel
 				{
 					$$ = makeNode(IntoClause);
 					$$->rel = $1;
@@ -5878,7 +5878,7 @@ AlterOwnerStmt: ALTER AGGREGATE func_name aggr_args OWNER TO RoleId
  *
  *****************************************************************************/
 
-AlterSecLabelStmt:	ALTER DATABASE database_name SecLabelItem
+AlterSecLabelStmt:	ALTER DATABASE database_name SecLabelToItem
 				{
 					AlterSecLabelStmt *n = makeNode(AlterSecLabelStmt);
 					n->objectType = OBJECT_DATABASE;
@@ -5886,7 +5886,7 @@ AlterSecLabelStmt:	ALTER DATABASE database_name SecLabelItem
 					n->secontext = (Node *)$4;
 					$$ = (Node *)n;
 				}
-			| ALTER SCHEMA name SecLabelItem
+			| ALTER SCHEMA name SecLabelToItem
 				{
 					AlterSecLabelStmt *n = makeNode(AlterSecLabelStmt);
 					n->objectType = OBJECT_SCHEMA;
@@ -5894,7 +5894,7 @@ AlterSecLabelStmt:	ALTER DATABASE database_name SecLabelItem
 					n->secontext = (Node *)$4;
 					$$ = (Node *) n;
 				}
-			| ALTER TABLE relation_expr SecLabelItem
+			| ALTER TABLE relation_expr SecLabelToItem
 				{
 					AlterSecLabelStmt *n = makeNode(AlterSecLabelStmt);
 					n->objectType = OBJECT_TABLE;
@@ -5902,7 +5902,7 @@ AlterSecLabelStmt:	ALTER DATABASE database_name SecLabelItem
 					n->secontext = (Node *)$4;
 					$$ = (Node *) n;
 				}
-			| ALTER TABLE relation_expr ALTER opt_column ColId SecLabelItem
+			| ALTER TABLE relation_expr ALTER opt_column ColId SecLabelToItem
 				{
 					AlterSecLabelStmt *n = makeNode(AlterSecLabelStmt);
 					n->objectType = OBJECT_COLUMN;
@@ -5913,20 +5913,39 @@ AlterSecLabelStmt:	ALTER DATABASE database_name SecLabelItem
 				}
 		;
 
-OptSecLabel:	SecLabelItem				{ $$ = $1; }
+OptSchemaSecLabel:	SECURITY_CONTEXT opt_equal Sconst
+				{
+					if (!sepgsql_is_enabled())
+						parser_yyerror("unavailable option");
+					$$ = (Node *) makeString($3);
+				}
 			| /* EMPTY */					{ $$ = NULL; }
 		;
 
-OptColumnSecLabel:	AS SecLabelItem			{ $$ = $2; }
+OptTableSecLabel:	SECURITY_CONTEXT opt_equal Sconst
+				{
+					if (!sepgsql_is_enabled())
+						parser_yyerror("unavailable option");
+					$$ = (Node *) makeString($3);
+				}
 			| /* EMPTY */					{ $$ = NULL; }
 		;
 
-SecLabelItem:	SECURITY_CONTEXT '=' Sconst
-			{
-				if (!sepgsql_is_enabled())
-					parser_yyerror("SE-PgSQL is disabled");
-				$$ = (Node *)makeString($3);
-			}
+OptColumnSecLabel:	AS SECURITY_CONTEXT opt_equal Sconst
+				{
+					if (!sepgsql_is_enabled())
+						parser_yyerror("unavailable option");
+					$$ = (Node *) makeString($4);
+				}
+			| /* EMPTY */					{ $$ = NULL; }
+		;
+
+SecLabelToItem:		SECURITY_CONTEXT TO Sconst
+				{
+					if (!sepgsql_is_enabled())
+						parser_yyerror("unavailable option");
+					$$ = (Node *) makeString($3);
+				}
 		;
 
 /*****************************************************************************
@@ -6370,9 +6389,11 @@ createdb_opt_item:
 				{
 					$$ = makeDefElem("owner", NULL);
 				}
-			| SecLabelItem
+			| SECURITY_CONTEXT opt_equal Sconst
 				{
-					$$ = makeDefElem("security_context", $1);
+					if (!sepgsql_is_enabled())
+						parser_yyerror("unavailable option");
+					$$ = makeDefElem("security_context", (Node *) makeString($3));
 				}
 		;
 

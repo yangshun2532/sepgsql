@@ -1,0 +1,16 @@
+<chapter id="security-enhanced-postgresql">
+ <title>Security-Enhanced PostgreSQL</title>
+ <para>
+
+
+  hoge
+
+
+ </para>
+ <sect1 id="sepostgresql-overview">
+  <title>SE-PostgreSQL overview</title>
+  <para>
+   hoge
+  </para>
+ </sect1>
+</chapter>

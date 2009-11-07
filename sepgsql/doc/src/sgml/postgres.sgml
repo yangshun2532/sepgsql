@@ -150,6 +150,7 @@
   &config;
   &client-auth;
   &user-manag;
+  &sepgsql;
   &manage-ag;
   &charset;
   &maintenance;

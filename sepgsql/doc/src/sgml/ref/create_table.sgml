@@ -22,7 +22,7 @@ PostgreSQL documentation
  <refsynopsisdiv>
 <synopsis>
 CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } ] TABLE <replaceable class="PARAMETER">table_name</replaceable> ( [
-  { <replaceable class="PARAMETER">column_name</replaceable> <replaceable class="PARAMETER">data_type</replaceable> [ DEFAULT <replaceable>default_expr</replaceable> ] [ <replaceable class="PARAMETER">column_constraint</replaceable> [ ... ] ]
+  { <replaceable class="PARAMETER">column_name</replaceable> <replaceable class="PARAMETER">data_type</replaceable> [ DEFAULT <replaceable>default_expr</replaceable> ] [ <replaceable class="PARAMETER">column_constraint</replaceable> [ ... ] ] [ AS SECURITY_CONTEXT [=] <replaceable class="PARAMETER">security_context</replaceable>]
     | <replaceable>table_constraint</replaceable>
     | LIKE <replaceable>parent_table</replaceable> [ { INCLUDING | EXCLUDING } { DEFAULTS | CONSTRAINTS | INDEXES | STORAGE | COMMENTS | ALL } ] ... }
     [, ... ]
@@ -31,6 +31,7 @@ CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } ] TABLE <replaceable class="PAR
 [ WITH ( <replaceable class="PARAMETER">storage_parameter</replaceable> [= <replaceable class="PARAMETER">value</replaceable>] [, ... ] ) | WITH OIDS | WITHOUT OIDS ]
 [ ON COMMIT { PRESERVE ROWS | DELETE ROWS | DROP } ]
 [ TABLESPACE <replaceable class="PARAMETER">tablespace</replaceable> ]
+[ SECURITY_CONTEXT [=] <replaceable class="PARAMETER">security_context</replaceable> ]
 
 <phrase>where <replaceable class="PARAMETER">column_constraint</replaceable> is:</phrase>
 
@@ -702,6 +703,17 @@ CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } ] TABLE <replaceable class="PAR
     </listitem>
    </varlistentry>
 
+   <varlistentry>
+    <term><replaceable class="parameter">security_context</replaceable></term>
+    <listitem>
+     <para>
+      An explicit security context to be assigned on the new table,
+      instead of the default one.
+      This options is unavailable, unless SE-PostgreSQL is enabled.
+      See <xref linkend="security-enhanced-postgresql"> for more details.
+     </para>
+    </listitem>
+   </varlistentry>
   </variablelist>
 
   <refsect2 id="SQL-CREATETABLE-storage-parameters">
