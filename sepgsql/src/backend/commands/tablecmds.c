@@ -3852,7 +3852,7 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 
 	/* attribute.attsecon, if SE-PgSQL is available */
 	attsecon = ((colDef->secontext && strVal(colDef->secontext)) ?
-				colDef->secontext : NULL);
+				(Value *)colDef->secontext : NULL);
 
 	ReleaseSysCache(typeTuple);
 

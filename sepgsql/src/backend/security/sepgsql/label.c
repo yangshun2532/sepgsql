@@ -27,15 +27,33 @@ bool	sepostgresql_mcstrans;
  * sepgsql_default_database_context
  *
  * It returns a default security context to be assigned on the database.
- * SELinux computes it on a pair of the client and the DataDir directory
- * as a root of the database object.
+ * SELinux computes it on a pair of the client and the template database.
  */
 char *
-sepgsql_default_database_context(void)
+sepgsql_default_database_context(Oid srcDatOid)
 {
+	HeapTuple	tuple;
+	Datum		datum;
+	bool		isnull;
+	char	   *context = NULL;
+
+	tuple = SearchSysCache(DATABASEOID,
+						   ObjectIdGetDatum(srcDatOid),
+						   0, 0, 0);
+	if (HeapTupleIsValid(tuple))
+	{
+		datum = SysCacheGetAttr(DATABASEOID, tuple,
+								Anum_pg_database_datsecon, &isnull);
+		if (!isnull)
+			context = TextDatumGetCString(datum);
+
+		ReleaseSysCache(tuple);
+	}
+
+	if (!context || security_check_context_raw(context) < 0)
+		context = sepgsql_get_unlabeled_context();
 	return sepgsql_compute_create(sepgsql_get_client_context(),
-								  sepgsql_get_client_context(),
-								  //sepgsql_get_file_context(DataDir),
+								  context,
 								  SEPG_CLASS_DB_DATABASE);
 }
 
@@ -223,6 +241,7 @@ sepgsql_get_unlabeled_context(void)
 	return result;
 }
 
+#if 0
 /*
  * sepgsql_get_file_context
  *
@@ -257,6 +276,7 @@ sepgsql_get_file_context(const char *filename)
 
 	return result;
 }
+#endif
 
 /*
  * sepgsql_mcstrans_in

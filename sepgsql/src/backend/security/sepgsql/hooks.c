@@ -96,10 +96,11 @@ sepgsql_database_common(Oid datOid, uint32 required, bool abort)
  * default one after the sanity and validation checks.
  * 
  * datName : name of the new database
+ * srcDatOid : OID of the template database
  * datLabel : an explicit security context, or NULL
  */
 Value *
-sepgsql_database_create(const char *datName, Node *datLabel)
+sepgsql_database_create(const char *datName, Oid srcDatOid, Node *datLabel)
 {
 	char   *context;
 
@@ -113,7 +114,7 @@ sepgsql_database_create(const char *datName, Node *datLabel)
 	 * database.
 	 */
 	if (!datLabel)
-		context = sepgsql_default_database_context();
+		context = sepgsql_default_database_context(srcDatOid);
 	else
 	{
 		Assert(IsA(datLabel, String));
@@ -130,7 +131,6 @@ sepgsql_database_create(const char *datName, Node *datLabel)
 						  SEPG_CLASS_DB_DATABASE,
 						  SEPG_DB_DATABASE__CREATE,
 						  datName, true);
-
 	/*
 	 * The checked security context should be returned to caller.
 	 * Caller has to assign it on the new database.
@@ -292,66 +292,6 @@ sepgsql_database_superuser(Oid datOid)
 		return true;
 
 	return sepgsql_database_common(datOid, SEPG_DB_DATABASE__SUPERUSER, false);
-}
-
-/*
- * sepgsql_database_load_module
- *
- * It checks database's capability to load a binary module into the
- *
- *
- *
- *
- */
-void
-sepgsql_database_load_module(const char *filename)
-{
-	HeapTuple	tuple;
-	Datum		datsecon;
-	bool		isnull;
-	char	   *dcontext, *fcontext;
-
-	if (!sepgsql_is_enabled())
-		return;
-
-	/*
-	 * we don't check to load modules due to the shared_preload_libraries
-	 * setting, because it is not a request from client.
-	 * Correctness of postgresql.conf is out of the scope in SE-PgSQL.
-	 */
-	if (GetProcessingMode() == InitProcessing)
-		return;
-
-	/*
-	 * Fetch security context of the database
-	 */
-	tuple = SearchSysCache(DATABASEOID,
-						   ObjectIdGetDatum(MyDatabaseId),
-						   0, 0, 0);
-	if (!HeapTupleIsValid(tuple))
-		elog(ERROR, "cache lookup failed for database %u", MyDatabaseId);
-
-	datsecon = SysCacheGetAttr(DATABASEOID, tuple,
-							   Anum_pg_database_datsecon, &isnull);
-	if (!isnull)
-		dcontext = TextDatumGetCString(datsecon);
-	if (!dcontext || security_check_context_raw(dcontext) < 0)
-		dcontext = sepgsql_get_unlabeled_context();
-
-	ReleaseSysCache(tuple);
-
-	/*
-	 * Fetch security context of the module
-	 */
-	fcontext = sepgsql_get_file_context(filename);
-
-	/*
-	 * Check db_database:{load_module} on a pair of database and module
-	 */
-	sepgsql_compute_perms(dcontext, fcontext,
-						  SEPG_CLASS_DB_DATABASE,
-						  SEPG_DB_DATABASE__LOAD_MODULE,
-						  get_database_name(MyDatabaseId), true);
 }
 
 /************************************************************
