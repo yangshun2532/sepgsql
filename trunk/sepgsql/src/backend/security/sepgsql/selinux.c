@@ -11,6 +11,7 @@
 #include "libpq/libpq-be.h"
 #include "miscadmin.h"
 #include "security/sepgsql.h"
+#include "storage/fd.h"
 #include "utils/builtins.h"
 
 #include <selinux/selinux.h>
@@ -102,6 +103,7 @@ static struct
 			{ "insert",         SEPG_DB_TABLE__INSERT },
 			{ "delete",         SEPG_DB_TABLE__DELETE },
 			{ "lock",           SEPG_DB_TABLE__LOCK },
+			{ "inherit",		SEPG_DB_TABLE__INHERIT },
 			{ NULL, 0UL },
 		}
 	},
@@ -327,7 +329,7 @@ sepgsql_audit_log(bool denied, char *scontext, char *tcontext,
 		if (audit_name)
 			appendStringInfo(&buf, " name=%s", audit_name);
 
-		ereport(NOTICE,
+		ereport(LOG,
 				(errcode(ERRCODE_SELINUX_AUDIT_LOG),
 				 errmsg("SELinux: %s %s",
 						(denied ? "denied" : "allowed"), buf.data)));
@@ -565,6 +567,82 @@ sepgsql_compute_create(char *scontext, char *tcontext, uint16 tclass)
 }
 
 /*
+ * sepgsql_template1_context
+ *
+ * It returns a security context to be assigned on the template1 database
+ * on the initdb phase.
+ */
+Datum
+sepgsql_fn_template1_context(PG_FUNCTION_ARGS)
+{
+	char   *policy_type;
+	char   *context = NULL;
+
+	if (!sepgsql_is_enabled())
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("SE-PostgreSQL is disabled now")));
+
+	/*
+	 * At the initdb phase, all the database objects are unlabeled, so we
+	 * cannot compute a default security context based on the unlabeled
+	 * objects.
+	 * SELinux has a configuration file to suggest an appropriate security
+	 * context to be assigned on root of the default security context.
+	 * We picks up it from:
+	 *   /etc/selinux/${POLICY_TYPE}/contexts/sepgsql_contexts
+	 *
+	 * A legacy version of security policy does not have this configuration.
+	 * In this case, we apply an fallbacked behavior.
+	 */
+	if (selinux_getpolicytype(&policy_type) == 0)
+	{
+		char	lineBuf[1024], classBuf[1024], nameBuf[1024], seconBuf[1024];
+		char	filename[MAXPGPATH];
+		char   *temp;
+		FILE   *filp;
+
+		snprintf(filename, sizeof(filename),
+				 "%s%s/contexts/sepgsql_contexts",
+				 selinux_path(), policy_type);
+
+		filp = AllocateFile(filename, PG_BINARY_R);
+		if (filp)
+		{
+			while (fgets(lineBuf, sizeof(lineBuf), filp) != NULL)
+			{
+				temp = strchr(lineBuf, '#');
+				if (temp)
+					*temp = '\0';
+
+				if (sscanf("%s %s %s", classBuf, nameBuf, seconBuf) == 3
+					&& strcmp(classBuf, "db_database") == 0
+					&& strcmp(nameBuf, "template1") == 0)
+				{
+					context = pstrdup(seconBuf);
+					break;
+				}
+			}
+			FreeFile(filp);
+		}
+	}
+
+	/*
+	 * If configuration file is not found, or no valid security context
+	 * was found, we compute a security context to be applied on the
+	 * "template1" database with a fallback way.
+	 */
+	if (!context || security_check_context(context) < 0)
+		context = sepgsql_compute_create(sepgsql_get_client_context(),
+										 sepgsql_get_client_context(),
+										 SEPG_CLASS_DB_DATABASE);
+
+	context = sepgsql_mcstrans_out(context);
+
+	PG_RETURN_TEXT_P(cstring_to_text(context));
+}
+
+/*
  * sepgsql_fn_compute_create
  */
 Datum
@@ -600,6 +678,8 @@ sepgsql_fn_compute_create(PG_FUNCTION_ARGS)
 			uint16	tclass = selinux_catalog[index].class_code;
 
 			ncontext = sepgsql_compute_create(scontext, tcontext, tclass);
+
+			ncontext = sepgsql_mcstrans_out(ncontext);
 
 			PG_RETURN_TEXT_P(cstring_to_text(ncontext));
 		}

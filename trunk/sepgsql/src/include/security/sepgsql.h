@@ -71,6 +71,7 @@ enum {
 #define SEPG_DB_TABLE__INSERT				(1<<8)
 #define SEPG_DB_TABLE__DELETE				(1<<9)
 #define SEPG_DB_TABLE__LOCK					(1<<10)
+#define SEPG_DB_TABLE__INHERIT				(1<<11)
 
 #define SEPG_DB_COLUMN__CREATE				(SEPG_DB_DATABASE__CREATE)
 #define SEPG_DB_COLUMN__DROP				(SEPG_DB_DATABASE__DROP)
@@ -111,8 +112,7 @@ sepgsql_compute_create(char *scontext, char *tcontext, uint16 tclass);
 extern char *sepgsql_get_client_context(void);
 extern char *sepgsql_set_client_context(char *new_context);
 extern char *sepgsql_get_unlabeled_context(void);
-extern char *sepgsql_get_file_context(const char *filename);
-extern char *sepgsql_default_database_context(void);
+extern char *sepgsql_default_database_context(Oid srcDatOid);
 extern char *sepgsql_default_schema_context(Oid datOid);
 extern char *sepgsql_default_table_context(Oid nspOid);
 extern char *sepgsql_default_column_context(Oid relOid);
@@ -137,7 +137,7 @@ sepgsql_check_copy_perms(Relation rel, List *attnumlist, bool is_from);
 extern bool
 sepgsql_database_common(Oid datOid, uint32 required, bool abort);
 extern Value *
-sepgsql_database_create(const char *datName, Node *datLabel);
+sepgsql_database_create(const char *datName, Oid srcDatOid, Node *datLabel);
 extern void
 sepgsql_database_alter(Oid datOid);
 extern void
@@ -221,7 +221,7 @@ sepgsql_object_drop(ObjectAddress *object);
  * utils.c : SE-PgSQL related SQL functions
  * ----------------------------------------
  */
-
+extern Datum sepgsql_fn_template1_context(PG_FUNCTION_ARGS);
 extern Datum sepgsql_fn_compute_create(PG_FUNCTION_ARGS);
 extern Datum sepgsql_fn_getcon(PG_FUNCTION_ARGS);
 extern Datum sepgsql_fn_database_getcon(PG_FUNCTION_ARGS);

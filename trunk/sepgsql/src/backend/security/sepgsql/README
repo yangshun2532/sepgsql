@@ -38,16 +38,16 @@ according to the decisions.
 
 SELinux is a subsystem in the Linux kernel. It also provides its access control
 decision for various kind of kernel subsystems. For example, when we tries to
-write on a certain file, VFS mechanism ask SELinux whether the given system-call
-can be executable, or not. SELinux returns its access control decision based on
-the security policy, then the caller (VFS) controls accesses according to the
-decision.
+write on a certain file, VFS mechanism ask SELinux whether the given system
+call can be executable, or not. SELinux returns its access control decision
+based on the security policy, then the caller (VFS) controls accesses according
+to the decision.
 
 We can consider SELinux as something like a function which returns a binary
-state ("allowed" or "denied") for the given arguments. It requires the security
-context of subject and object, and required permissions.
+state ("allowed" or "denied") for the given arguments. It requires a set of
+required permissions and a pair of the security contexts of subject and object.
 For example, when we write something on a certain file using shell commands,
-VFS layer hooks write(2) calls to invoke SELinux, and it gives a pair of
+VFS layer hooks write(2) calls to invoke SELinux, and it also gives a pair of
 security contexts of the shell process and the file to be written, and codes
 corresponding to "file:{write}" permission.
 
@@ -205,7 +205,7 @@ The following two APIs are especially important ones for SE-PgSQL.
 
 o security_compute_av()
 
-It returns a set of allowed permissions for a pair of security contexts and
+It returns a set of allowed permissions on a pair of security contexts and
 a certain object class, so the caller can know what permissions are allowed.
 
 This example shows a case when we ask SELinux what is the allowed set of
@@ -236,7 +236,7 @@ the db_table:{select} permission is set, it should be allowed.
 
 o security_compute_create()
 
-It returns a default security context of a newly created object for a pair
+It returns a default security context of a newly created object on a pair
 of security contexts and a certain object class, so the caller can know what
 security context should be assigned on the new one.
 
@@ -383,9 +383,9 @@ is available only when single-user mode for the security reason.
 Object class is a terminology that means a certain type of object, such as
 files, processes, tables in database and so on. Every object classes have
 its own set of permissions which reflect characteristics of the object class,
-but some of permissions are commonly defined for various kind of database object
-classes to handle common object behavior; creation, deletion, setting and getting
-attributes, and relabeling its own security context.
+but some of permissions are commonly defined for various kind of database
+object classes to handle common object behavior; creation, deletion, setting
+and getting its attributes, and relabeling its own security context.
 
 Unless an explicit explanation, these permission is checked on a pair of the
 client and the object to be accessed. In other word, security_compute_av()
@@ -397,7 +397,7 @@ will take the following arguments:
 For example, when a client with "user_u:user_r:user_t:s0" tries to drop
 a table with "system_u:object_r:sepgsql_ro_table_t:s0", SE-PgSQL calls
 security_compute_av() with both of security context and the code for
-db_table object class, then checks whether the allowed set of permissions
+db_table object class. Then, it checks whether the allowed set of permissions
 contains a bit for db_table:{drop} permission, or not.
 
 
@@ -408,195 +408,298 @@ The following six permissions are commonly defined for database object classes.
 
 o create
 
-It is checked when a client tries to create a new database object.
+It is checked when a client creates a new database object on the new object
+labeled with a default or an explicit security context.
 
-SE-PgSQL assigns a default security context (if no explicit one is not given)
-on the new objects, then "create" permission shall be checked on a pair of the
-client and the new object labeled correctly.
+Prior to access control decision, a new object has to be labeled correctly.
+There are two ways to label the new object. If user gives an explicit security
+context on its creation, it shall be assigned with validation checks.
+Othrwise, SE-PgSQL compute a default security context and it shall be assigned.
+In either cases, a security context shall be assigned on the new object, then
+SE-PgSQL checks db_xxx:{create} permission on the new object with the security
+context.
 
-For example, when a client labeled as "staff_u:staff_r:staff_t:s0" tries
-to create a new table, SE-PgSQL computes its default security context with
-communicating SELinux. If "staff_u:object_r:sepgsql_table_t:s0" is given,
-SE-PgSQL assigns it on the new table, and checks "db_table:{create}" permission
-on a pair of the security contexts.
-
-CREATE statement typically invokes a check for "create" permission.
-However, note that no needs to check for objects creation by system internal
-stuff, such as TOAST relations, initdb works and so on.
+For example, when a client labeled as "staff_u:staff_r:staff_t:s0" create a new
+table, SE-PgSQL computes its default security context with communication to
+SELinux. If "staff_u:object_r:sepgsql_table_t:s0" is returned, SE-PgSQL assigns
+it on the new table, then checks db_table:{create} permission on a pair of
+security contexts.
 
 Some statements have OR REPLACE option. In the case when a client replaces
-an existing database object, "setattr" is applied instead of "create", even
-if CREATE statement is given. Because it does not create any new object, and
-its security context is remained.
+an existing database object, "setattr" should be applied instead of "create",
+even if CREATE statement is used, because it can be considered as modification
+of the object's properties, not creation.
+
 
 o drop
 
-It is checked when a client tries to drop an existing database object.
-This check is also applied on cascaded deletions, not only original one.
+It is checked when a client drop an existing database object.
+This check is also applied on cascaded deletions, not only original one,
+triggered by user's operation.
 
-For example, when a client labeled as "staff_u:staff_r:staff_t:s0" tries
-to drop a schema with "system_u:object_r:sepgsql_schema_t:s0" that contains
-a table with "system_u:object_r:sepgsql_table_t:s0".
-In this case, SE-PgSQL checks "db_schema:{drop}" permission on a pair of
-the client and the schema, and "db_table:{drop}" permission on a pair of
-the client and the table. Both of them should be allowed.
+Note that "drop" always doesn't mean deletion from system catalog.
+For example, ALTER TABLE ... DROP COLUMN just marks an pg_attribute entry as
+already dropped, using simple_heap_update(). In fact, it is modification of
+property of the column, but we consider it as a deletion.
 
 Note that no needs to check for objects deletion by system internal
 stuff, such as cleanups of temporary objects.
 
+
 o getattr (not implemented yet)
 
-It is checked when a client tries to read any metadata of database objects.
-This check is implemented using row-level access controls on the system
-catalog (such as, SELECT * FROM pg_class), so the current version does not
-provide "getattr" checks.
+It is checked when a client read properties of database object.
 
-Note that no need to check this permission, as long as the fetched metadata
-is consumed internally, without returning to the client. For example, catcache
-stuff provide an easy way to access system catalog, the fetched data is not
-returned to clients in normal way, so we don't check this permission here.
+Typically, it is required on scanning database objects within system catalogs,
+such as "SELECT * FROM pg_class". Because this check requires row-level access
+control facilities, it is not implemented yet in this version.
+
+Note that no need to check this permission, unless fetched properties are
+consumed internally without returning to clients. For example, catcache stuff
+provides system internal stuff an easy way to refer system catalog. It is used
+to implement backend routines, and fetched properties are not returned to the
+client in normal way, so we don't check this permission here.
 
 
 o setattr
 
-It is checked when a client tries to modify any metadata of database objects.
+It is checked when a client modifies properties of database object.
 
-ALTER statement typically invokes a check for "setattr" permission.
-However, no need to check when system internal stuff updates system catalogs
-to keep data integrity, such as dependency mechanism or increment/decrement
-of attinhcount in pg_attribute system catalog.
+Typically, ALTER statement is used to modify properties of database object.
+
+Note that an entry of a certain system catalog is all the properties of the
+database objects. For example, an entry of pg_class indeed represents the
+properties of a certain relation. But it is not all. An entry corresponding
+to a certain relation in pg_description catalog is also a property of the
+table, so we also need to check db_table:{setattr} permission to create,
+replace or remove the comment.
+It depends on characteristics of individual database objects. In basically,
+SE-PgSQL follows the way to handle this in the default PG model.
 
 
 o relabelfrom
 
-It is checked when a client tries to change security context of a certain
-database object, on a pair of the client's security context and the older
-security context.
+It is checked when a client relabel security context of a certain database
+object on the older security context, in addition to {setattr} permission.
+Security context is a part of the properties, so we need to check {setattr}
+here. 
 
 
 o relabelto
 
-It is checked when a client tries to change security context of a certain
-database object, on a pair of the client's security context and the newer
-security context.
-
+It is checked when a client relabel security context of a certain database
+object on the newer security context.
+Briefly, SE-PgSQL requires three permissions (setattr, relabelfrom and
+relabelto) to relabel security context of a certain database object.
 
 
 3-2. db_database object class
 -----------------------------
 
-The db_database represents the database object itself which is an entry within
-pg_database system catalog.
-It has three its own permissions and inherits the common permissions.
+The db_database class represents the database itself. An individual tuple
+in the pg_database system catalog corresponds them.
+It has three its own permissions and inherits the common sixes.
 
 o default security context
 
-The default security context for db_database is decided based on a pair of
-the client and the data directory (specified by -D option).
+The default security context for db_database class shall be computed based on
+a pair of the client and its template database.
+
+For example, when a client ("staff_u:staff_r:staff_t:s0") creates a new
+database with "template0" labeled as "system_u:object_r:sepgsql_db_t:s0",
+SE-PgSQL gives the two contexts for security_compute_create(3) which
+returns a default security context from SELinux in the kernel.
+
+Note that we label the first database ("template1") with an explicit
+security context, not a default security context. SE-PgSQL is disabled
+in the bootstraping mode, so all the database objects are created without
+any security context. Then, initdb kicks queries to assign initial security
+context on all the managed database objects, if --enable-selinux is given.
+In this time, we gives an explicit security context provided by configuration
+of SELinux.
 
 
 o access
 
-It is checked when the client tries to connect to a certain database.
+It is checked when the client open a connection to the database.
+If violated, the connection shall be closed soon. So, all the clients must
+be allowed to access any database objects owned by the database at least.
 
 
 o load_module (not implemented yet)
 
-It is checked when a dynamic link library is loaded to the server process.
-Note that this permission is checked on a pair of the current database and
-the dynamic link library file. In other word, it checks capability to load
-a certain file into a certain database.
+It is checked when a dynamic link library is loaded to the server process
+due to client's requests.
 
-In this case, security_compute_av() takes the following arguments:
- subject context = security context of the current database
- target context  = security context of the dynamic link library file
+Note this permission shall be checked on a pair of the current database and
+the dynamic link library file. In other word, it checks capability of database
+to load a certain shared library.
 
-Note that shared_preload_libraries is an exception for this check,
-because it is not controllable with any client's request.
+The security_compute_av() takes security context of the current database
+as subject and the dynamic link library file as object in the arguments,
+then it returns access control decision.
 
-o install_module (not implemented yet)
+Also note that we don't check anything on libraries listed on the
+"shared_preload_libraries" option, because it is not a request from client.
 
 
 o superuser
 
 It is checked when the client tries to perform as a superuser on the current
-database. If it is not allowed, the client cannot perform as a superuser, but
-SE-PgSQL does not raise an error. He can just perform as a non-privileged
-database user.
+database. If violated, client performs as a non-privileged database user,
+even if the default PG model allows them to perform as a database superuser.
 
+Note that this permission only controls whether the client can performs as
+a database superuser in the default PG access control, or not. If a given
+query needs more permissions, these are independently checked based on the
+security policy.
 
 
 3-2. db_schema object class
 ---------------------------
 
+The db_schema class represents the schema object. An individual tuple in
+the pg_namespace system catalog corresponds them.
+It has three its own permissions and inherits the common sixes.
+
 o default security context
 
+The default security context for db_schema class shall be computed based on
+a pair of the client and database owning the new schema in creation.
 
 o search
 
+It is checked when the client resolves name of the database objects owned by
+a certain schema object.
+The client cannot resolve any named database objects anyway, unless this
+permission is allowed. Its behavior is similar to ACL_USAGE permission on
+the namespace objects in the default PG model. If it is checked on
+constructing the schema search path and violated, the unallowed schema shall
+be dropped from the path. Otherwise, it raises an error.
+
 o add_name
 
+It is checked when the client adds a new name into a certain schema.
+
+Typically, it is checked on creation of a new object, renaming an object and
+moving an object to other schema.
+
 o remove_name
+
+It is checked when the client removes an existing name from a certain schema.
+
+Typically, it is checked on deletion of a new object, renaming an object and
+moving an object to other schema.
+
+Note that "ALTER xxx RENAME TO" is considered as a pair of operations.
+So, it requires add_name and remove_name permissions on the same schame.
+Needless to say, it is an atomic operation, so both of permissions must
+be allowed on the pair of client and schema.
 
 
 3-3. db_table object class
 --------------------------
 
+The db_table class represents the table object. An individual tuple in the
+pg_class system catalog with relkind = RELKIND_RELATION corresponds them.
+It has five its own permissions and inherits the common sixes.
+
 o default security context
+
+The default security context for db_table class shall be computed based on
+a pair of the client and database owning the new schema in creation.
 
 o select
 
-o update
+It is checked when the client refers tuples in the table contents.
 
 o insert
 
+It is checked when the client add tuples into the table contents.
+
+o update
+
+It is checked when the client modify tuples in the table contents.
+
 o delete
+
+It is checked when the client remove tuples from the table contens.
+
+These four permissions are a key to control data-flows between clients and
+table contents. Note that it is one of the most significant feature in MAC
+system.
+The db_table:{select} permission controls data-flows from the table contents
+to the client. Rest of the three permissions also control data-flows from the
+client to the table contents.
+
+For example, if a client X can write data to the table T, and a client Y can
+read data from the table T, we can observe an communication channel between X
+and Y via T.
+
 
 o lock
 
+It is checked when the client acquires explicit table locks.
+Note that it shall be applied on only explicit locks, not implicit one.
+
+
 o inherit (not implemented yet)
+
+It is checked when we set up an inheritance relationship between two tables
+on a pair of the tables.
+
+Note this permission shall be checked on a pair of the parent table and the
+child table. In other word, it checks capability of two tables to set up an
+inheritance relationship.
+
+Also note that this permission shall be checked when relabeling the tables,
+not only CREATE or ALTER TABLE with INHERIT option.
+
 
 3-4. db_column object class
 ---------------------------
 
-The db_column represents the column object which is an entry within
-pg_attribute system catalog, and its attrelid refers a db_table object
-(relkind = RELKIND_RELATION).
-It has four its own permissions and inherits the commoen permissions.
+The db_column class represents the column object. An individual tuple in
+the pg_attribute system catalog owned by regular tables (its relkind is
+RELKIND_RELATION) corresponds them.
+It has three its own permissions and inherits the common sixes.
 
-The db_column object class has a hardwired constraint corresponding to table
-inheritance. A inherited column cannot have different security context from
-the source column in the inheritance tree.
-If table "t2" is a inheritance of "t1" which has a column: "t1.x", the "t2"
-also have a column "t2.x". (Its attinhcount will be 1). In this case, "t2.x"
-always has same security context inherited from the "t1.x".
-
-We don't allow users to change the security context of "t2.x". When "t1.x" is
-relabeled, it implicitly relabels "t2.x" also, using ALTER TABLE.
-
+Here is a hardwired constraint that columns inherited from the parent tables
+must have identical security context with its source. When we create a table
+inherited from others, the table inherits column's definition including its
+security context. In this case, the client must have permission to create
+a new column with inherited security context.
 
 o default security context
 
-The default security context for db_column is decided based on a pair of
-the client and table owning the new column.
-
-When a new column is inherited from other table's definition, SE-PgSQL
-also copied the security context of the original one, independent from
-the default security context. If a column has multiple parents, all the
-security contexts have to be matched.
+The default security context for db_column class shall be computed based on
+a pair of the client and the table owning the new columns in creation.
 
 o select
 
+It is checked when the client refers a value via the column.
+It also includes the case when UPDATE or DELETE statement contains WHERE
+clause with references to certain columns.
 
 o update
 
+It is checked when the client modifies a value on the column.
 
 o insert
 
+It is checked when the client inserts a new value on the column.
+Note that it is not checked when a value is given due to DEFAULT setting,
+not provided by clients.
 
 
 4. Code examples
 ============================================================
+
+
+
+
+
+
 
 
 

@@ -1833,12 +1833,14 @@ setup_selinux(void)
 	int			index;
 	static char *selinux_setup[] = {
 		/*
+		 * Disable mcstrans feature
+		 */
+		"SET sepostgresql_mcstrans = off;\n",
+		/*
 		 * Pg_database initial labeling
 		 */
 		"UPDATE pg_database"
-		"  SET datsecon = sepgsql_compute_create(sepgsql_getcon(),"
-		"                                        sepgsql_getcon(),"
-		"                                        'db_database');\n",
+		"  SET datsecon = sepgsql_template1_context();\n",
 		/*
 		 * Pg_namespace initial labeling
 		 */

@@ -282,12 +282,6 @@ createdb(const CreatedbStmt *stmt)
 	check_is_member_of_role(GetUserId(), datdba);
 
 	/*
-	 * SELinux permission check to create a new database, then returns
-	 * a default security context, if no explicit one is given.
-	 */
-	datsecon = sepgsql_database_create(dbname, (Node *)datsecon);
-
-	/*
 	 * Lookup database (template) to be cloned, and obtain share lock on it.
 	 * ShareLock allows two CREATE DATABASEs to work from the same template
 	 * concurrently, while ensuring no one is busy dropping it in parallel
@@ -321,6 +315,12 @@ createdb(const CreatedbStmt *stmt)
 					 errmsg("permission denied to copy database \"%s\"",
 							dbtemplate)));
 	}
+
+	/*
+	 * SELinux permission check to create a new database, then returns
+	 * a default security context, if no explicit one is given.
+	 */
+	datsecon = sepgsql_database_create(dbname, src_dboid, (Node *)datsecon);
 
 	/* If encoding or locales are defaulted, use source's setting */
 	if (encoding < 0)
