@@ -29,6 +29,8 @@ ALTER TABLE <replaceable class="PARAMETER">name</replaceable>
     RENAME TO <replaceable class="PARAMETER">new_name</replaceable>
 ALTER TABLE <replaceable class="PARAMETER">name</replaceable>
     SET SCHEMA <replaceable class="PARAMETER">new_schema</replaceable>
+ALTER TABLE <replaceable class="PARAMETER">name</replaceable>
+    SECURITY_CONTEXT TO <replaceable class="PARAMETER">new_security_context</replaceable>
 
 <phrase>where <replaceable class="PARAMETER">action</replaceable> is one of:</phrase>
 
@@ -444,12 +446,23 @@ ALTER TABLE <replaceable class="PARAMETER">name</replaceable>
     </listitem>
    </varlistentry>
 
+   <varlistentry>
+    <term><literal>SECURITY_CONTEXT</literal></term>
+    <listitem>
+     <para>
+      The <literal>SECURITY_CONTEXT</literal> form relabels the security
+      context of a table or an individual column in a table.
+      This form is unavailable, unless SE-PostgreSQL is enabled.
+     </para>
+    </listitem>
+   </varlistentry>
+
   </variablelist>
   </para>
 
   <para>
-   All the actions except <literal>RENAME</literal> and <literal>SET SCHEMA</>
-   can be combined into
+   All the actions except <literal>RENAME</literal>, <literal>SET SCHEMA</>
+   and <literal>SECURITY_CONTEXT</literal> can be combined into
    a list of multiple alterations to apply in parallel.  For example, it
    is possible to add several columns and/or alter the type of several
    columns in a single command.  This is particularly useful with large
@@ -652,6 +665,15 @@ ALTER TABLE <replaceable class="PARAMETER">name</replaceable>
       <listitem>
        <para>
         The name of the schema to which the table will be moved.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="PARAMETER">new_security_context</replaceable></term>
+      <listitem>
+       <para>
+	The security context of the table newly assigned on a table or a column.
        </para>
       </listitem>
      </varlistentry>

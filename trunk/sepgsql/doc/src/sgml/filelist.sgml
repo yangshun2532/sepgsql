@@ -46,6 +46,7 @@
 <!entity config        SYSTEM "config.sgml">
 <!entity user-manag    SYSTEM "user-manag.sgml">
 <!entity wal           SYSTEM "wal.sgml">
+<!entity sepgsql       SYSTEM "sepgsql.sgml">
 
 <!-- programmer's guide -->
 <!entity dfunc      SYSTEM "dfunc.sgml">

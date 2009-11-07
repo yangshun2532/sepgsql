@@ -23,6 +23,7 @@ PostgreSQL documentation
 <synopsis>
 ALTER SCHEMA <replaceable>name</replaceable> RENAME TO <replaceable>new_name</replaceable>
 ALTER SCHEMA <replaceable>name</replaceable> OWNER TO <replaceable>new_owner</replaceable>
+ALTER SCHEMA <replaceable>name</replaceable> SECURITY_CONTEXT TO <replaceable>new_security_context</replaceable>
 </synopsis>
  </refsynopsisdiv>
 
@@ -73,6 +74,18 @@ ALTER SCHEMA <replaceable>name</replaceable> OWNER TO <replaceable>new_owner</re
     <listitem>
      <para>
       The new owner of the schema.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">new_security_context</replaceable></term>
+    <listitem>
+     <para>
+      Relabel this schema's security context by the given
+      <replaceable>new_security_context</replaceable>.
+      This option is unavailable, unless SE-PostgreSQL is enabled.
+      See <xref linkend="security-enhanced-postgresql"> for more details.
      </para>
     </listitem>
    </varlistentry>
