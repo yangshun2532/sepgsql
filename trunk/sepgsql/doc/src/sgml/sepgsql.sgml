@@ -294,18 +294,161 @@ CREATE TABLE
     </para>
    </sect3>
   </sect2>
-
-  <sect2 id="sepostgresql-overview-mac">
-   <title>Mandatory Access Controls</title>
-   <para>hoge</para>
-  </sect2>
  </sect1>
 
- <sect1>
+ <sect1 id="sepostgresql-features">
   <title>Features</title>
-  <para>
-   
-  </para>
+  <sect2 id="sepostgresql-features-mac">
+   <title>Mandatory Access Control</title>
+   <para>
+    SELinux provides MAC (Mandatory Access Control) based security policy.
+    It has a few differences from the default database privilege mechanism.
+    The most characteristic ones are a centralized security policy and
+    unbypassable access control.
+   </para>
+   <para>
+    The default database privilege allows owner of resources to grant or
+    revoke access rights on the owned objects others.
+    On the other hand, MAC model allows only a centralized security policy
+    (so, only the security administrator) to control all the accesses on
+    the managed objects including assignment of security context.
+    Note that the security context is the only identifier to make access
+    control decision in SELinux model. It also means owner of resources
+    cannot allow everyone anything, unless the security policy allows it.
+   </para>
+   <para>
+    In addition, its access control is unbypassable, even if user has database
+    superuser privilege. It checks all the needed permissions to access a certain
+    database objects.
+    Note that the default database privilege and SE-PostgreSQL works mutually
+    orthogonally. SE-PostgreSQL makes its access control decision based on
+    the security contexts, independently from database role or resource ownership,
+    in the same way the default database privilege also makes its access control
+    decision independently from the security context.
+   </para>
+  </sect2>
+  <sect2 id="sepostgresql-features-mac-tables">
+   <title>Access Controls on Tables/Columns</title>
+   <para>
+    We introduce an example of mandatory access control in this section.
+   </para>
+   <para>
+    When user gives a regula dml queries, SE-PostgreSQL applies its acess
+    control on the tables and columns to be accessed just after checks
+    by the default database privilege mechanism.
+
+    If the security policy does not allow to access one of the required
+    tables or columns at least, it raises an error to abort current
+    transaction.
+   </para>
+   <para>
+    In this example, the <literal>customer</literal> table was declared
+    with an explicit security context
+    <literal>system_u:object_r:sepgsql_ro_table_t:s0</literal> which means
+    read-only table from the weak privileged clients such as
+    <literal>staff</literal> domain.
+    The <literal>ccredit</literal> column is individualy labeled as 
+    <literal>system_u:object_r:sepgsql_secret_table_t:s0</literal> which
+    means unaccessable from the weak privileged clients.
+   </para>
+   <para>
+    Note that a default security context shall be assigned on the rest of
+    columns. In the standard policy, it inherits the security context of
+    the table, so rest of columns are also read-only.
+
+    If we didn't give any explicit security context in creation, a default
+    security context shall be assigned. In the standard policy, it allows
+    any operations on the table in MAC checks.
+   </para>
+<screen>
+CREATE TABLE customer (
+    cid     integer primary key,
+    cname   varchar(32),
+    credit  varchar(32)
+        AS SECURITY_CONTEXT = 'system_u:object_r:sepgsql_secret_table_t:s0'
+) SECURITY_CONTEXT = 'system_u:object_r:sepgsql_ro_table_t:s0';
+
+GRANT ALL ON customer TO PUBLIC;
+
+INSERT INTO customer (cid, cname, credit)
+    VALUES ( 10, 'jack', '1111-2222-3333-4444'),
+           ( 13, 'adam', '5555-6666-7777-8888'),
+           ( 14, 'liza', '9876-5432-1098-7654');
+</screen>
+   <para>
+    Then, it shows a series of operations from the weak privileged clients
+    labeled as <literal>staff_u:staff_r:staff_t:s0</literal>.
+   </para>
+<screen>
+<prompt>postgres=> </prompt><userinput>SELECT sepgsql_getcon();</userinput>
+       sepgsql_getcon
+----------------------------
+ staff_u:staff_r:staff_t:s0
+(1 row)
+
+<prompt>postgres=> </prompt><userinput>SELECT * FROM customer;</userinput>
+ERROR:  SELinux: security policy violation
+
+<prompt>postgres=> </prompt><userinput>SELECT cid, cname FROM customer;</userinput>
+ cid | cname
+-----+-------
+  10 | jack
+  13 | adam
+  14 | liza
+(3 rows)
+
+<prompt>postgres=> </prompt><userinput>INSERT INTO customer (cid, cname) VALUES (20, 'taro');</userinput>
+ERROR:  SELinux: security policy violation
+</screen>
+   <para>
+    The first query confirms the security context of the client.
+    It is almost equivalent to a set of privileges in SE-PostgreSQL.
+   </para>
+   <para>
+    The second query tries to select all the columns of
+    <literal>customer</literal> table, but the <literal>credit</literal>
+    column is invisible from the weak privileged client as we configured
+    at first, so SE-PostgreSQL raises an error.
+   </para>
+   <para>
+    The third query also tries to select columns except for invisible one.
+    It shall be allowed. In fact, SE-PostgreSQL does not prevent anything.
+   </para>
+   <para>
+    But the table is configured to read-only. The last query tries to insert
+    a new tuple, but SE-PostgreSQL prevents it.
+   </para>
+  </sect2>
+  <sect2 id="sepostgresql-features-audit">
+   <title>Security Audit</title>
+   <para>
+    SE-PostgreSQL allows to generate its audit logs according to
+    <literal>auditdeny</literal> and <literal>auditallow</literal> rules in
+    the security policy.
+
+    The <literal>auditdeny</literal> rules require to generate audit log record
+    on access violation events. In contrast, the <literal>auditallow</literal>
+    rules require to generate it on access allowed events.
+   </para>
+   <para>
+    The standard security policy requires all the access violations to be audited,
+    but does not require to record any access allowed events.
+    It is controlable using the security policy, but the default settings are
+    preferable in most cases.
+    default
+   </para>
+<screen>
+LOG:  SELinux: denied { select } scontext=staff_u:staff_r:staff_t:s0  \
+    tcontext=system_u:object_r:sepgsql_secret_table_t:s0              \
+    tclass=db_column name=customer.credit
+STATEMENT:  SELECT * FROM customer;
+</screen>
+   <para>
+    This example shows a case when a weak privileged client tries to select
+    a column labeled as
+    <literal>system_u:object_r:sepgsql_secret_table_t:s0</literal>, but failed.
+   </para>
+  </sect2>
  </sect1>
  <sect1 id="sepostgresql-admin">
   <title>Administration</title>
@@ -318,6 +461,11 @@ CREATE TABLE
    <para>
     
     
+   </para>
+  </sect2>
+  <sect2>
+   <title>Backup</title>
+   <para>
    </para>
   </sect2>
  </sect1>
