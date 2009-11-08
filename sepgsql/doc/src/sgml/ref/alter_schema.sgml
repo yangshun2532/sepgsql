@@ -85,7 +85,7 @@ ALTER SCHEMA <replaceable>name</replaceable> SECURITY_CONTEXT TO <replaceable>ne
       Relabel this schema's security context by the given
       <replaceable>new_security_context</replaceable>.
       This option is unavailable, unless SE-PostgreSQL is enabled.
-      See <xref linkend="security-enhanced-postgresql"> for more details.
+      See <xref linkend="sepostgresql"> for more details.
      </para>
     </listitem>
    </varlistentry>

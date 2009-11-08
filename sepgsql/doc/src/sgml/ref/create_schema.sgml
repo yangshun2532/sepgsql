@@ -91,7 +91,7 @@ CREATE SCHEMA AUTHORIZATION <replaceable class="parameter">user_name</replaceabl
 	An explicit security context to be assigned on the new schema,
 	instead of the default one.
 	This options is unavailable, unless SE-PostgreSQL is enabled.
-	See <xref linkend="security-enhanced-postgresql"> for more details.
+	See <xref linkend="sepostgresql"> for more details.
        </para>
       </listitem>
      </varlistentry>

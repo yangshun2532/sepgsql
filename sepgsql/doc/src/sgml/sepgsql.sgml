@@ -1,16 +1,324 @@
-<chapter id="security-enhanced-postgresql">
+<chapter id="sepostgresql">
  <title>Security-Enhanced PostgreSQL</title>
  <para>
-
-
-  hoge
-
-
+  PostgreSQL v8.5.x or later version optionally supports mandatory access
+  control policy collaborating with SELinux.
+  We call this feature Security-Enhanced PostgreSQL (SE-PostgreSQL or SE-PgSQL;
+  whereafter).
  </para>
+ <para>
+  It enables to make access control decision based on the centralized security
+  policy managed by operating system. It also means we can ensure system-wide
+  consistency in access controls.
+ </para>
+ <para>
+  For example, when a user stores his information asset labeled as
+  <literal>Classified</literal> on either filesystem or database, both of
+  them has its own access controls, but the basis to make their access
+  control decisions is not identical.
+  SE-PgSQL controls accesses on database objects with refering the centralized
+  security policy in operating system, so its access control decisions shall
+  be consistent.
+ </para>
+ <para>
+  Note that it orthogonally performs from the default security modesl based
+  on ownerships and database acls (see <xref linkend="user-manag"> for more
+  details). In other word, it allows us to apply double security checks from
+  the different perspective.
+ </para>
+ <para>
+  It was designed based on the security model of SELinux.
+  However, detailed descriptions about SELinux over the coverage of this
+  documentation, so we recommend to refer the following external resources.
+ </para>
+ <variablelist>
+  <varlistentry>
+   <term>
+    <ulink url="http://docs.fedoraproject.org/selinux-user-guide/">
+     Fedora SELinux User Guide
+    </ulink>
+   </term>
+   <listitem>
+    <para>
+     The Fedora Project provides a comprehensive quality documentation from
+     the perspective of end-users.
+    </para>
+   </listitem>
+  </varlistentry>
+
+  <varlistentry>
+   <term>
+    <ulink url="http://wiki.postgresql.org/wiki/SEPostgreSQL">
+     SE-PostgreSQL wikipage
+    </ulink>
+   </term>
+   <listitem>
+    <para>
+     This wikipage provides a comprehensive and detailed documentation
+     about SE-PostgreSQL features.
+    </para>
+   </listitem>
+  </varlistentry>
+
+  <varlistentry>
+   <term>
+    <ulink url="http://code.google.com/p/sepgsql/">
+     SE-PostgreSQL at Google Code
+    </ulink>
+   </term>
+   <listitem>
+    <para>
+     It is the portal when the development of original SE-PostgreSQL was
+     launched at 2006. It provides previous presentation slides.
+    </para>
+   </listitem>
+  </varlistentry>
+
+  <varlistentry>
+   <term>
+    <ulink url="http://www.selinuxbyexample.com/">
+     SELinux By Example
+    </ulink>
+   </term>
+   <listitem>
+    <para>
+     It is a book which introduces details of the current security policy
+     using examples. In most cases, admin does not need to modify the default
+     security policy provided by the community. If you're interested in
+     details of the security policy, we can recommend this book.
+    </para>
+   </listitem>
+  </varlistentry>
+ </variablelist>
+
  <sect1 id="sepostgresql-overview">
-  <title>SE-PostgreSQL overview</title>
+  <title>Overview</title>
   <para>
-   hoge
+   This section introduces overview of the SE-PostgreSQL.
   </para>
+  <para>
+   SE-PostgreSQL enables to apply mandatory access controls on accesses to
+   database objects according to the access control decision of SELinux in
+   the Linux kernel.
+  </para>
+  <para>
+   Access control is to decide what action is allowed (or disallowed) between
+   a certain client and a certain object. Any access control mechanism makes
+   its access control decision based on properties of them.
+   For example, the default database privilege makes its access control
+   decision based on a pair of the database role identifier (a property of
+   the client) and access control list (also, a property of the database
+   object to be accessed).
+   SELinux makes its access control decision based on a pair of its own
+   security property called security conetxt, instead of user identifiers
+   or ownership.
+  </para>
+  <para>
+   Please note that the current version of SE-PostgreSQL applies a limited
+   number of object classes.
+   It now controls accesses on databases, schemas, tables and columns.
+   Rest of fetures will be upcoming in the future versions.
+  </para>
+
+  <sect2 id="sepostgresql-overview-selinux">
+   <title>SELinux</title>
+   <para>
+    SELinux is a feature in the Linux kernel. It performs something like
+    a function which provides other subsystems its access control decisions.
+   </para>
+   <para>
+    For example, a user process calls write(2) system call to update a certain
+    file. Then, filesystem in the kernel asks SELinux whether we should allow
+    to execute the required system call, or not. In this time, the filesystem
+    provides SELinux a pair of security contexts of the user process and the
+    file to be modified. Next, SELinux lookups its security policy which
+    contains massive number of rules defined a pair of the security contexts,
+    and returns a set of allowed actions. If it does not contain the permission
+    to write on the file, filesystem returns an error. Otherwise, filesystem
+    handles rest of works.
+   </para>
+   <para>
+    We can also apply this design on accesses to database objects using
+    queries as is. When a client sends a query to select data from a certain
+    table, the SE-PgSQL subsystem hooks it and asks SELinux whether we should
+    allow to execute the required query, or not. In this time, the SE-PgSQL
+    provides SELinux a pair of security contexts of the client and the table
+    to be referenced. Next, SELinux lookups its security policy and returns
+    a set of allowed actions. If is does not contain the permission to
+    select on the table, SE-PgSQL raises an error. Otherwise, it does not
+    prevent anything.
+   </para>
+   <para>
+    Here are two key characteristics.
+    The one is a centralized decision making. The other is common security
+    identifier as a basis of access controls.
+   </para>
+  </sect2>
+
+  <sect2 id="sepostgresql-overview-security-context">
+   <title>Security context</title>
+   <para>
+    A security context is the only identifier used to make access control
+    decision in SELinux model. It is represented as a formatted short string,
+    such as <literal>system_u:object_r:postgresql_db_t:SystemHigh</literal>.
+   </para>
+   <para>
+    A security context has four fields separated by comma character.
+    Every field has its meaning. But detailed introduction will over the
+    coverage of this documentation, see the SELinux documentations.
+    The key point is that a security context is the only property used to
+    make access control decision in SELinux.
+
+    Anyway, SELinux returns a set of allowed permissions on a pair of
+    security contexts of client and database object to be accessed.
+   </para>
+   <para>
+    In other word, it represents all the security properties in this
+    model, instead of user identifier or resource ownership.
+
+    If different two tables commonly have identical security context,
+    SELinux always makes same decision on accesses to these tables.
+    We can also considers a security context groups a set of access
+    permissions, such as database roles to be assigned on database users.
+   </para>
+
+   <sect3>
+    <title>security context of the client</title>
+    <para>
+     SE-PostgreSQL applies the security context of the peer process which
+     connected to as the security context of the client.
+    </para>
+    <para>
+     SELinux provides an interface for the purpose.
+     If client connects to the server via unix domain socket, we don't need
+     any special setups here. Otherwise. if client connects to the server
+     via tcp/ip socket, we need to set up labeled ipsec between the server
+     and clients in the operating system.
+     In the case when SELinux is not enabled on the client, SELinux also
+     allows to apply an alternative security context based on the source
+     ip address as a fallback.
+     Please see the SELinux's documentations for more details.
+    </para>
+    <para>
+     We can confirm security context of the client using the
+     <literal>sepgsql_getcon()</literal> function, as follows:
+<screen>
+<prompt>$ </prompt><userinput>id -Z</userinput>
+unconfined_u:unconfined_r:unconfined_t:Classified
+<prompt>$ </prompt><userinput>psql -q</userinput>
+<prompt>postgres=# </prompt><userinput>SELECT sepgsql_getcon();</userinput>
+                  sepgsql_getcon
+---------------------------------------------------
+ unconfined_u:unconfined_r:unconfined_t:Classified
+(1 row)
+</screen>
+    </para>
+    <para>
+     The <command>id -Z</command> command shows security context of the
+     user process.
+     Pay attention that the result of <literal>sepgsql_getcon()</literal>
+     matches to the result of <command>id -Z</command>, although the one
+     is executed on the operating system, the other is executed on the
+     database server.
+    </para>
+    <para>
+     Note that the security context of subjects (processes in OS, or
+     clients in RDBMS) also perform something like user's privileges.
+     It means a consist privileges set shall be applied on both OS and
+     RDBMS.
+    </para>
+   </sect3>
+
+   <sect3>
+    <title>security context of database objects</title>
+    <para>
+     SE-PostgreSQL also assigns a security context on the managed database
+     objects.
+     In the current version, a limited number of database object classes
+     are managed: databases, schemas, tables and columns.
+    </para>
+    <para>
+     System catalogs corresponding these database objects to store its
+     own security context. See the definitions of system catalogs:
+     <link linkend="catalog-pg-database"><structname>pg_database</structname></link>,
+     <link linkend="catalog-pg-namespace"><structname>pg_namespace</structname></link>,
+     <link linkend="catalog-pg-class"><structname>pg_class</structname></link> and
+     <link linkend="catalog-pg-attribute"><structname>pg_attribute</structname></link>.
+    </para>
+    <para>
+     When a user creates a new database object, SE-PostgreSQL assigns a
+     default security context provided by the security policy, and checks
+     permission to create this database object with the security context.
+<screen>
+<prompt>postgres=# </prompt><userinput>CREATE TABLE tbl (a int, b text);</userinput>
+CREATE TABLE
+<prompt>postgres=# </prompt><userinput>SELECT relname, relsecon FROM pg_class WHERE oid = 'tbl'::regclass;</userinput>
+ relname |                 relsecon
+---------+------------------------------------------
+ tbl     | unconfined_u:object_r:sepgsql_table_t:s0
+(1 row)
+</screen>
+     In this example, <literal>unconfined_u:object_r:sepgsql_table_t:s0</literal>
+     was assigned on the new table, and SE-PostgreSQL also checked permission
+     to create it based on a pair of security contexts of the client and the
+     new table.
+    </para>
+    <para>
+     We have another option to specify a security context to be assigned on.
+     Some of statements have <literal>SECURITY_CONTEXT</literal> option.
+     It allows users to give an explicit security context in the creation
+     time or later.
+     See also
+     <xref linkend="SQL-CREATEDATABASE" endterm="sql-createdatabase-title">,
+     <xref linkend="SQL-ALTERDATABASE" endterm="sql-alterdatabase-title">,
+     <xref linkend="SQL-CREATESCHEMA" endterm="sql-createschema-title">,
+     <xref linkend="SQL-ALTERSCHEMA" endterm="sql-alterdatabase-title">,
+     <xref linkend="SQL-CREATETABLE" endterm="sql-createtable-title">,
+     <xref linkend="SQL-CREATETABLEAS" endterm="sql-createtableas-title"> and
+     <xref linkend="SQL-ALTERTABLE" endterm="sql-altertable-title">.
+    </para>
+    <para>
+     Even if user gives an explicit security context in the creation time,
+     SE-PostgreSQL also checks permission to create a new object with the given
+     security context, instead of the default security context.
+
+     Please note that SE-PostgreSQL assigns a security context of a managed
+     database object in either cases.
+    </para>
+    <para>
+     Here is a corner case. If we disable SE-PostgreSQL at once, and enabled later,
+     any database objects created while it is disabled are unlabeled.
+     In this case, SE-PostgreSQL obtains a special security context for unlabeled
+     objects from the system, and it is applied as a fallback.
+     Typically, it is <literal>system_u:object_r:unlabeled_t:s0</literal>.
+    </para>
+   </sect3>
+  </sect2>
+
+  <sect2 id="sepostgresql-overview-mac">
+   <title>Mandatory Access Controls</title>
+   <para>hoge</para>
+  </sect2>
+ </sect1>
+
+ <sect1>
+  <title>Features</title>
+  <para>
+   
+  </para>
+ </sect1>
+ <sect1 id="sepostgresql-admin">
+  <title>Administration</title>
+  <para>
+   configure --enable-selinux
+  no policy, only assign security context
+  </para>
+  <sect2 id="sepostgresql-admin-installation">
+   <title>Installation</title>
+   <para>
+    
+    
+   </para>
+  </sect2>
  </sect1>
 </chapter>
