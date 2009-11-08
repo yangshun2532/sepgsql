@@ -710,7 +710,7 @@ CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } ] TABLE <replaceable class="PAR
       An explicit security context to be assigned on the new table,
       instead of the default one.
       This options is unavailable, unless SE-PostgreSQL is enabled.
-      See <xref linkend="security-enhanced-postgresql"> for more details.
+      See <xref linkend="sepostgresql"> for more details.
      </para>
     </listitem>
    </varlistentry>

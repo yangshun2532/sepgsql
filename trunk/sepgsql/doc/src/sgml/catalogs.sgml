@@ -1062,7 +1062,7 @@
       <entry></entry>
       <entry>
        Security context of SE-PostgreSQL; see
-       <xref linkend="security-enhanced-postgresql"> for details
+       <xref linkend="sepostgresql"> for details
       </entry>
      </row>
     </tbody>
@@ -1693,7 +1693,7 @@
       <entry></entry>
       <entry>
        Security context of SE-PostgreSQL; see
-       <xref linkend="security-enhanced-postgresql"> for details
+       <xref linkend="sepostgresql"> for details
       </entry>
      </row>
     </tbody>
@@ -2178,7 +2178,7 @@
       <entry></entry>
       <entry>
        Security context of SE-PostgreSQL; see
-       <xref linkend="security-enhanced-postgresql"> for details
+       <xref linkend="sepostgresql"> for details
       </entry>
      </row>
     </tbody>
@@ -3290,7 +3290,7 @@
       <entry></entry>
       <entry>
        Security context of SE-PostgreSQL; see
-       <xref linkend="security-enhanced-postgresql"> for details
+       <xref linkend="sepostgresql"> for details
       </entry>
      </row>
     </tbody>
