@@ -1,7 +1,7 @@
 /**********************************************************************
  * plpython.c - python as a procedural language for PostgreSQL
  *
- *	$PostgreSQL: pgsql/src/pl/plpython/plpython.c,v 1.130 2009/09/13 22:07:06 petere Exp $
+ *	$PostgreSQL: pgsql/src/pl/plpython/plpython.c,v 1.132 2009/11/03 11:05:02 petere Exp $
  *
  *********************************************************************
  */
@@ -3076,11 +3076,20 @@ PLy_fatal(PyObject *self, PyObject *args)
 static PyObject *
 PLy_output(volatile int level, PyObject *self, PyObject *args)
 {
-	PyObject   *so;
+	PyObject   *volatile so;
 	char	   *volatile sv;
-	MemoryContext oldcontext;
+	volatile MemoryContext oldcontext;
 
-	so = PyObject_Str(args);
+	if (PyTuple_Size(args) == 1)
+	{
+		/* Treat single argument specially to avoid undesirable
+		 * ('tuple',) decoration. */
+		PyObject *o;
+		PyArg_UnpackTuple(args, "plpy.elog", 1, 1, &o);
+		so = PyObject_Str(o);
+	}
+	else
+		so = PyObject_Str(args);
 	if (so == NULL || ((sv = PyString_AsString(so)) == NULL))
 	{
 		level = ERROR;
@@ -3097,6 +3106,10 @@ PLy_output(volatile int level, PyObject *self, PyObject *args)
 		MemoryContextSwitchTo(oldcontext);
 		PLy_error_in_progress = CopyErrorData();
 		FlushErrorState();
+
+		PyErr_SetString(PLy_exc_error, sv);
+		/* Note: If sv came from PyString_AsString(), it points into
+		 * storage owned by so.  So free so after using sv. */
 		Py_XDECREF(so);
 
 		/*
@@ -3104,7 +3117,6 @@ PLy_output(volatile int level, PyObject *self, PyObject *args)
 		 * control passes back to PLy_procedure_call, we check for PG
 		 * exceptions and re-throw the error.
 		 */
-		PyErr_SetString(PLy_exc_error, sv);
 		return NULL;
 	}
 	PG_END_TRY();

@@ -12,7 +12,7 @@
  *	by PostgreSQL
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/bin/pg_dump/pg_dump.c,v 1.550 2009/10/09 21:02:56 petere Exp $
+ *	  $PostgreSQL: pgsql/src/bin/pg_dump/pg_dump.c,v 1.552 2009/10/14 22:14:23 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -4419,6 +4419,18 @@ getTriggers(TableInfo tblinfo[], int numTables)
 			if (i_tgdef >= 0)
 			{
 				tginfo[j].tgdef = strdup(PQgetvalue(res, j, i_tgdef));
+
+				/* remaining fields are not valid if we have tgdef */
+				tginfo[j].tgfname = NULL;
+				tginfo[j].tgtype = 0;
+				tginfo[j].tgnargs = 0;
+				tginfo[j].tgargs = NULL;
+				tginfo[j].tgisconstraint = false;
+				tginfo[j].tgdeferrable = false;
+				tginfo[j].tginitdeferred = false;
+				tginfo[j].tgconstrname = NULL;
+				tginfo[j].tgconstrrelid = InvalidOid;
+				tginfo[j].tgconstrrelname = NULL;
 			}
 			else
 			{
@@ -9944,13 +9956,13 @@ dumpDefaultACL(Archive *fout, DefaultACLInfo *daclinfo)
 	switch (daclinfo->defaclobjtype)
 	{
 		case DEFACLOBJ_RELATION:
-			type = "TABLE";
+			type = "TABLES";
 			break;
 		case DEFACLOBJ_SEQUENCE:
-			type = "SEQUENCE";
+			type = "SEQUENCES";
 			break;
 		case DEFACLOBJ_FUNCTION:
-			type = "FUNCTION";
+			type = "FUNCTIONS";
 			break;
 		default:
 			/* shouldn't get here */
@@ -9960,7 +9972,7 @@ dumpDefaultACL(Archive *fout, DefaultACLInfo *daclinfo)
 			type = "";			/* keep compiler quiet */
 	}
 
-	appendPQExpBuffer(tag, "DEFAULT %s PRIVILEGES", type);
+	appendPQExpBuffer(tag, "DEFAULT PRIVILEGES FOR %s", type);
 
 	/* build the actual command(s) for this tuple */
 	if (!buildDefaultACLCommands(type,

@@ -13,7 +13,7 @@
  * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/nodes/parsenodes.h,v 1.408 2009/10/12 20:39:42 tgl Exp $
+ * $PostgreSQL: pgsql/src/include/nodes/parsenodes.h,v 1.413 2009/11/06 21:57:57 adunstan Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -118,6 +118,7 @@ typedef struct Query
 	bool		hasSubLinks;	/* has subquery SubLink */
 	bool		hasDistinctOn;	/* distinctClause is from DISTINCT ON */
 	bool		hasRecursive;	/* WITH RECURSIVE was specified */
+	bool		hasForUpdate;	/* FOR UPDATE or FOR SHARE was specified */
 
 	List	   *cteList;		/* WITH list (of CommonTableExpr's) */
 
@@ -460,20 +461,20 @@ typedef struct ColumnDef
 	int			inhcount;		/* number of times column is inherited */
 	bool		is_local;		/* column has local (non-inherited) def'n */
 	bool		is_not_null;	/* NOT NULL constraint specified? */
-	char		storage;		/* storage parameter of column */
+	char		storage;		/* attstorage setting, or 0 for default */
 	Node	   *raw_default;	/* default value (untransformed parse tree) */
 	Node	   *cooked_default; /* default value (transformed expr tree) */
 	List	   *constraints;	/* other constraints on column */
 } ColumnDef;
 
 /*
- * inhRelation - Relations a CREATE TABLE is to inherit attributes of
+ * inhRelation - Relation a CREATE TABLE is to inherit attributes of
  */
 typedef struct InhRelation
 {
 	NodeTag		type;
 	RangeVar   *relation;
-	bits32		options;		/* bitmap of CreateStmtLikeOption */
+	bits32		options;		/* OR of CreateStmtLikeOption flags */
 } InhRelation;
 
 typedef enum CreateStmtLikeOption
@@ -800,28 +801,23 @@ typedef struct WindowClause
 
 /*
  * RowMarkClause -
- *	   representation of FOR UPDATE/SHARE clauses
+ *	   parser output representation of FOR UPDATE/SHARE clauses
  *
- * We create a separate RowMarkClause node for each target relation.  In the
- * output of the parser and rewriter, all RowMarkClauses have rti == prti and
- * isParent == false.  When the planner discovers that a target relation
- * is the root of an inheritance tree, it sets isParent true, and adds an
- * additional RowMarkClause to the list for each child relation (including
- * the target rel itself in its role as a child).  The child entries have
- * rti == child rel's RT index, prti == parent's RT index, and can therefore
- * be recognized as children by the fact that prti != rti.
- * rowmarkId is a unique ID for the RowMarkClause across an entire query,
- * and is assigned during planning; it's always zero upstream of the planner.
+ * Query.rowMarks contains a separate RowMarkClause node for each relation
+ * identified as a FOR UPDATE/SHARE target.  If FOR UPDATE/SHARE is applied
+ * to a subquery, we generate RowMarkClauses for all normal and subquery rels
+ * in the subquery, but they are marked pushedDown = true to distinguish them
+ * from clauses that were explicitly written at this query level.  Also,
+ * Query.hasForUpdate tells whether there were explicit FOR UPDATE/SHARE
+ * clauses in the current query level.
  */
 typedef struct RowMarkClause
 {
 	NodeTag		type;
 	Index		rti;			/* range table index of target relation */
-	Index		prti;			/* range table index of parent relation */
-	Index		rowmarkId;		/* unique identifier assigned by planner */
 	bool		forUpdate;		/* true = FOR UPDATE, false = FOR SHARE */
 	bool		noWait;			/* NOWAIT option */
-	bool		isParent;		/* set by planner when expanding inheritance */
+	bool		pushedDown;		/* pushed down from higher query level? */
 } RowMarkClause;
 
 /*
@@ -1560,10 +1556,9 @@ typedef struct DropUserMappingStmt
 } DropUserMappingStmt;
 
 /* ----------------------
- *		Create/Drop TRIGGER Statements
+ *		Create TRIGGER Statement
  * ----------------------
  */
-
 typedef struct CreateTrigStmt
 {
 	NodeTag		type;
@@ -1575,6 +1570,7 @@ typedef struct CreateTrigStmt
 	bool		row;			/* ROW/STATEMENT */
 	/* events uses the TRIGGER_TYPE bits defined in catalog/pg_trigger.h */
 	int16		events;			/* INSERT/UPDATE/DELETE/TRUNCATE */
+	List	   *columns;		/* column names, or NIL for all columns */
 
 	/* The following are used for constraint triggers (RI and unique checks) */
 	bool		isconstraint;	/* This is a constraint trigger */
@@ -1584,7 +1580,7 @@ typedef struct CreateTrigStmt
 } CreateTrigStmt;
 
 /* ----------------------
- *		Create/Drop PROCEDURAL LANGUAGE Statement
+ *		Create/Drop PROCEDURAL LANGUAGE Statements
  * ----------------------
  */
 typedef struct CreatePLangStmt
@@ -1963,6 +1959,7 @@ typedef struct InlineCodeBlock
 	NodeTag		type;
 	char	   *source_text;	/* source text of anonymous code block */
 	Oid			langOid;		/* OID of selected language */
+	bool        langIsTrusted;  /* trusted property of the language */
 } InlineCodeBlock;
 
 /* ----------------------
