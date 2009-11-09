@@ -137,6 +137,7 @@ typedef struct _namespaceInfo
 	DumpableObject dobj;
 	char	   *rolname;		/* name of owner, or empty string */
 	char	   *nspacl;
+	char	   *nspsecon;
 } NamespaceInfo;
 
 typedef struct _typeInfo
@@ -223,6 +224,7 @@ typedef struct _tableInfo
 	char	   *reltablespace;	/* relation tablespace */
 	char	   *reloptions;		/* options specified by WITH (...) */
 	char	   *toast_reloptions;		/* ditto, for the TOAST table */
+	char	   *relsecon;		/* security context of the relation */
 	bool		hasindex;		/* does it have any indexes? */
 	bool		hasrules;		/* does it have any rules? */
 	bool		hastriggers;	/* does it have any triggers? */
@@ -251,6 +253,7 @@ typedef struct _tableInfo
 	int		   *attlen;			/* attribute length, used by binary_upgrade */
 	char	   *attalign;		/* attribute align, used by binary_upgrade */
 	bool	   *attislocal;		/* true if attr has local definition */
+	char	  **attsecons;		/* security context of the attribute */
 
 	/*
 	 * Note: we need to store per-attribute notnull, default, and constraint

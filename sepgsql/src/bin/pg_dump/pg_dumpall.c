@@ -69,6 +69,7 @@ static int	disable_triggers = 0;
 static int	inserts = 0;
 static int	no_tablespaces = 0;
 static int	use_setsessauth = 0;
+static int	security_context = 0;
 static int	server_version;
 
 static FILE *OPF;
@@ -132,6 +133,7 @@ main(int argc, char *argv[])
 		{"no-tablespaces", no_argument, &no_tablespaces, 1},
 		{"role", required_argument, NULL, 3},
 		{"use-set-session-authorization", no_argument, &use_setsessauth, 1},
+		{"security-context", no_argument, &security_context, 1},
 
 		{NULL, 0, NULL, 0}
 	};
@@ -285,6 +287,8 @@ main(int argc, char *argv[])
 					no_tablespaces = 1;
 				else if (strcmp(optarg, "use-set-session-authorization") == 0)
 					use_setsessauth = 1;
+				else if (strcmp(optarg, "security-context") == 0)
+					security_context = 1;
 				else
 				{
 					fprintf(stderr,
@@ -330,6 +334,8 @@ main(int argc, char *argv[])
 		appendPQExpBuffer(pgdumpopts, " --no-tablespaces");
 	if (use_setsessauth)
 		appendPQExpBuffer(pgdumpopts, " --use-set-session-authorization");
+	if (security_context)
+		appendPQExpBuffer(pgdumpopts, " --security-context");
 
 	if (optind < argc)
 	{
@@ -401,6 +407,20 @@ main(int argc, char *argv[])
 					progname);
 			fprintf(stderr, _("Try \"%s --help\" for more information.\n"),
 					progname);
+			exit(1);
+		}
+	}
+
+	if (security_context > 0)
+	{
+		PGresult *res;
+
+		res = PQexec(conn, "SHOW sepostgresql");
+		if (PQresultStatus(res) != PGRES_TUPLES_OK ||
+			PQntuples(res) != 1 ||
+			strcmp(PQgetvalue(res, 0, 0), "disabled") == 0)
+		{
+			fprintf(stderr, "SE-PostgreSQL is disabled.");
 			exit(1);
 		}
 	}
@@ -561,6 +581,7 @@ help(void)
 	printf(_("  --use-set-session-authorization\n"
 			 "                              use SET SESSION AUTHORIZATION commands instead of\n"
 	"                              ALTER OWNER commands to set ownership\n"));
+	printf(_("  --security-context          dump security context\n"));
 
 	printf(_("\nConnection options:\n"));
 	printf(_("  -h, --host=HOSTNAME      database server host or socket directory\n"));
@@ -1139,47 +1160,53 @@ dumpCreateDB(PGconn *conn)
 
 	/* Now collect all the information about databases to dump */
 	if (server_version >= 80400)
-		res = executeQuery(conn,
+		appendPQExpBuffer(buf,
 						   "SELECT datname, "
 						   "coalesce(rolname, (select rolname from pg_authid where oid=(select datdba from pg_database where datname='template0'))), "
 						   "pg_encoding_to_char(d.encoding), "
 						   "datcollate, datctype, datfrozenxid, "
 						   "datistemplate, datacl, datconnlimit, "
-						   "(SELECT spcname FROM pg_tablespace t WHERE t.oid = d.dattablespace) AS dattablespace "
+						   "(SELECT spcname FROM pg_tablespace t WHERE t.oid = d.dattablespace) AS dattablespace, "
+						   "%s AS security_context "
 			  "FROM pg_database d LEFT JOIN pg_authid u ON (datdba = u.oid) "
-						   "WHERE datallowconn ORDER BY 1");
+						   "WHERE datallowconn ORDER BY 1",
+						  (security_context > 0 ?
+						   "sepgsql_database_getcon(d.oid)" : "NULL"));
 	else if (server_version >= 80100)
-		res = executeQuery(conn,
+		appendPQExpBuffer(buf,
 						   "SELECT datname, "
 						   "coalesce(rolname, (select rolname from pg_authid where oid=(select datdba from pg_database where datname='template0'))), "
 						   "pg_encoding_to_char(d.encoding), "
 		   "null::text AS datcollate, null::text AS datctype, datfrozenxid, "
 						   "datistemplate, datacl, datconnlimit, "
-						   "(SELECT spcname FROM pg_tablespace t WHERE t.oid = d.dattablespace) AS dattablespace "
+						   "(SELECT spcname FROM pg_tablespace t WHERE t.oid = d.dattablespace) AS dattablespace, "
+						   "NULL AS security_context "
 			  "FROM pg_database d LEFT JOIN pg_authid u ON (datdba = u.oid) "
 						   "WHERE datallowconn ORDER BY 1");
 	else if (server_version >= 80000)
-		res = executeQuery(conn,
+		appendPQExpBuffer(buf,
 						   "SELECT datname, "
 						   "coalesce(usename, (select usename from pg_shadow where usesysid=(select datdba from pg_database where datname='template0'))), "
 						   "pg_encoding_to_char(d.encoding), "
 		   "null::text AS datcollate, null::text AS datctype, datfrozenxid, "
 						   "datistemplate, datacl, -1 as datconnlimit, "
-						   "(SELECT spcname FROM pg_tablespace t WHERE t.oid = d.dattablespace) AS dattablespace "
+						   "(SELECT spcname FROM pg_tablespace t WHERE t.oid = d.dattablespace) AS dattablespace, "
+						   "NULL AS security_context "
 		   "FROM pg_database d LEFT JOIN pg_shadow u ON (datdba = usesysid) "
 						   "WHERE datallowconn ORDER BY 1");
 	else if (server_version >= 70300)
-		res = executeQuery(conn,
+		appendPQExpBuffer(buf,
 						   "SELECT datname, "
 						   "coalesce(usename, (select usename from pg_shadow where usesysid=(select datdba from pg_database where datname='template0'))), "
 						   "pg_encoding_to_char(d.encoding), "
 		   "null::text AS datcollate, null::text AS datctype, datfrozenxid, "
 						   "datistemplate, datacl, -1 as datconnlimit, "
-						   "'pg_default' AS dattablespace "
+						   "'pg_default' AS dattablespace, "
+						   "NULL AS security_context "
 		   "FROM pg_database d LEFT JOIN pg_shadow u ON (datdba = usesysid) "
 						   "WHERE datallowconn ORDER BY 1");
 	else if (server_version >= 70100)
-		res = executeQuery(conn,
+		appendPQExpBuffer(buf,
 						   "SELECT datname, "
 						   "coalesce("
 					"(select usename from pg_shadow where usesysid=datdba), "
@@ -1187,7 +1214,8 @@ dumpCreateDB(PGconn *conn)
 						   "pg_encoding_to_char(d.encoding), "
 						   "null::text AS datcollate, null::text AS datctype, 0 AS datfrozenxid, "
 						   "datistemplate, '' as datacl, -1 as datconnlimit, "
-						   "'pg_default' AS dattablespace "
+						   "'pg_default' AS dattablespace, "
+						   "NULL AS security_context "
 						   "FROM pg_database d "
 						   "WHERE datallowconn ORDER BY 1");
 	else
@@ -1196,17 +1224,20 @@ dumpCreateDB(PGconn *conn)
 		 * Note: 7.0 fails to cope with sub-select in COALESCE, so just deal
 		 * with getting a NULL by not printing any OWNER clause.
 		 */
-		res = executeQuery(conn,
+		appendPQExpBuffer(buf,
 						   "SELECT datname, "
 					"(select usename from pg_shadow where usesysid=datdba), "
 						   "pg_encoding_to_char(d.encoding), "
 						   "null::text AS datcollate, null::text AS datctype, 0 AS datfrozenxid, "
 						   "'f' as datistemplate, "
 						   "'' as datacl, -1 as datconnlimit, "
-						   "'pg_default' AS dattablespace "
+						   "'pg_default' AS dattablespace, "
+						   "NULL AS security_context "
 						   "FROM pg_database d "
 						   "ORDER BY 1");
 	}
+
+	res = executeQuery(conn, buf->data);
 
 	for (i = 0; i < PQntuples(res); i++)
 	{
@@ -1220,6 +1251,7 @@ dumpCreateDB(PGconn *conn)
 		char	   *dbacl = PQgetvalue(res, i, 7);
 		char	   *dbconnlimit = PQgetvalue(res, i, 8);
 		char	   *dbtablespace = PQgetvalue(res, i, 9);
+		char	   *dbsecon = PQgetvalue(res, i, 10);
 		char	   *fdbname;
 
 		fdbname = strdup(fmtId(dbname));
@@ -1274,6 +1306,9 @@ dumpCreateDB(PGconn *conn)
 			if (strcmp(dbconnlimit, "-1") != 0)
 				appendPQExpBuffer(buf, " CONNECTION LIMIT = %s",
 								  dbconnlimit);
+
+			if (strcmp(dbsecon, "") != 0)
+				appendPQExpBuffer(buf, " SECURITY_CONTEXT = '%s'", dbsecon);
 
 			appendPQExpBuffer(buf, ";\n");
 

@@ -261,6 +261,24 @@ sepgsql_get_enforce(void)
 }
 
 /*
+ * sepgsql_show_sepostgresql
+ *
+ * It returns the current performing mode ('sepostgresql' GUC)
+ * in human readable form.
+ */
+char *
+sepgsql_show_sepostgresql(void)
+{
+	if (!sepgsql_is_enabled())
+		return "disabled";
+
+	if (!sepgsql_get_enforce())
+		return "permissive";
+
+	return "enforcing";
+}
+
+/*
  * sepgsql_audit_log
  *
  * It generates a security audit record. In the default, it writes out
@@ -573,7 +591,7 @@ sepgsql_compute_create(char *scontext, char *tcontext, uint16 tclass)
  * on the initdb phase.
  */
 Datum
-sepgsql_fn_template1_context(PG_FUNCTION_ARGS)
+sepgsql_template1_context(PG_FUNCTION_ARGS)
 {
 	char   *policy_type;
 	char   *context = NULL;
@@ -643,10 +661,13 @@ sepgsql_fn_template1_context(PG_FUNCTION_ARGS)
 }
 
 /*
- * sepgsql_fn_compute_create
+ * sepgsql_default_getcon
+ *
+ * It returns a default security context on a pair of security contexts
+ * and object class.
  */
 Datum
-sepgsql_fn_compute_create(PG_FUNCTION_ARGS)
+sepgsql_default_context(PG_FUNCTION_ARGS)
 {
 	char   *scontext = TextDatumGetCString(PG_GETARG_TEXT_P(0));
 	char   *tcontext = TextDatumGetCString(PG_GETARG_TEXT_P(1));

@@ -2705,7 +2705,8 @@ static struct config_enum ConfigureNamesEnum[] =
 			NULL,
 		},
 		&sepostgresql_mode,
-		SEPGSQL_MODE_DISABLED, sepostgresql_mode_options, NULL, NULL
+		SEPGSQL_MODE_DISABLED, sepostgresql_mode_options,
+		NULL, sepgsql_show_sepostgresql
 	},
 #endif
 	{

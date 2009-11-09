@@ -93,6 +93,8 @@ extern bool sepgsql_is_enabled(void);
 
 extern bool sepgsql_get_enforce(void);
 
+extern char *sepgsql_show_sepostgresql(void);
+
 typedef void (*sepgsql_audit_hook_t) (bool denied,
 									  const char *scontext,
 									  const char *tcontext,
@@ -108,6 +110,7 @@ sepgsql_compute_create(char *scontext, char *tcontext, uint16 tclass);
 
 /*
  * label.c : management of security context
+ * ----------------------------------------
  */
 extern char *sepgsql_get_client_context(void);
 extern char *sepgsql_set_client_context(char *new_context);
@@ -216,19 +219,22 @@ sepgsql_object_comment(Oid relOid, Oid objId, int32 subId);
 extern void
 sepgsql_object_drop(ObjectAddress *object);
 
-
 /*
- * utils.c : SE-PgSQL related SQL functions
+ * SE-PgSQL related SQL functions
  * ----------------------------------------
  */
-extern Datum sepgsql_fn_template1_context(PG_FUNCTION_ARGS);
-extern Datum sepgsql_fn_compute_create(PG_FUNCTION_ARGS);
-extern Datum sepgsql_fn_getcon(PG_FUNCTION_ARGS);
-extern Datum sepgsql_fn_database_getcon(PG_FUNCTION_ARGS);
-extern Datum sepgsql_fn_schema_getcon(PG_FUNCTION_ARGS);
-extern Datum sepgsql_fn_table_getcon(PG_FUNCTION_ARGS);
-extern Datum sepgsql_fn_column_getcon(PG_FUNCTION_ARGS);
+extern Datum sepgsql_template1_context(PG_FUNCTION_ARGS);
+extern Datum sepgsql_default_context(PG_FUNCTION_ARGS);
+extern Datum sepgsql_getcon(PG_FUNCTION_ARGS);
+extern Datum sepgsql_database_getcon(PG_FUNCTION_ARGS);
+extern Datum sepgsql_schema_getcon(PG_FUNCTION_ARGS);
+extern Datum sepgsql_relation_getcon(PG_FUNCTION_ARGS);
+extern Datum sepgsql_attribute_getcon(PG_FUNCTION_ARGS);
 
+/*
+ * Utility macros
+ * --------------
+ */
 #define secontext_cmp(a,b)						\
 	((!(a) && !(b)) || ((a) && (b) && strcmp((a), (b)) == 0))
 
