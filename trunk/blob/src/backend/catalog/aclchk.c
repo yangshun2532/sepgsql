@@ -3521,10 +3521,21 @@ pg_language_aclmask(Oid lang_oid, Oid roleid,
 
 /*
  * Exported routine for examining a user's privileges for a largeobject
+ *
+ * The reason why this interface has an argument of snapshot is that
+ * we apply a snapshot available on lo_open(), not SnapshotNow, when
+ * it is opened as read-only mode.
+ * If we could see the metadata and data from inconsistent viewpoint,
+ * it will give us much confusion. So, we need to provide an interface
+ * which takes an argument of snapshot.
+ *
+ * If the caller refers a large object with a certain snapshot except
+ * for SnapshotNow, its permission checks should be also applied in
+ * the same snapshot.
  */
 AclMode
-pg_largeobject_aclmask(Oid lobj_oid, Oid roleid,
-					   AclMode mask, AclMaskHow how)
+pg_largeobject_aclmask_snapshot(Oid lobj_oid, Oid roleid,
+								AclMode mask, AclMaskHow how, Snapshot snapshot)
 {
 	AclMode		result;
 	Relation	pg_lo_meta;
@@ -3553,7 +3564,7 @@ pg_largeobject_aclmask(Oid lobj_oid, Oid roleid,
 
 	scan = systable_beginscan(pg_lo_meta,
 							  LargeObjectMetadataOidIndexId, true,
-							  SnapshotNow, 1, entry);
+							  snapshot, 1, entry);
 
 	tuple = systable_getnext(scan);
 	if (!HeapTupleIsValid(tuple))
@@ -3589,6 +3600,19 @@ pg_largeobject_aclmask(Oid lobj_oid, Oid roleid,
 	heap_close(pg_lo_meta, AccessShareLock);
 
 	return result;
+}
+
+/*
+ * See the comment in pg_largeobject_aclmask_snapshot().
+ * It is a different version of the routine which implicitly assumes
+ * SnapshotNow to reference the metadata.
+ */
+AclMode
+pg_largeobject_aclmask(Oid lobj_oid, Oid roleid,
+					   AclMode mask, AclMaskHow how)
+{
+	return pg_largeobject_aclmask_snapshot(lobj_oid, roleid,
+										   mask, how, SnapshotNow);
 }
 
 /*
@@ -4045,12 +4069,21 @@ pg_language_aclcheck(Oid lang_oid, Oid roleid, AclMode mode)
  * Exported routine for checking a user's access privileges to a largeobject
  */
 AclResult
-pg_largeobject_aclcheck(Oid lobj_oid, Oid roleid, AclMode mode)
+pg_largeobject_aclcheck_snapshot(Oid lobj_oid, Oid roleid, AclMode mode,
+								 Snapshot snapshot)
 {
-	if (pg_largeobject_aclmask(lobj_oid, roleid, mode, ACLMASK_ANY) != 0)
+	if (pg_largeobject_aclmask_snapshot(lobj_oid, roleid, mode,
+										ACLMASK_ANY, snapshot) != 0)
 		return ACLCHECK_OK;
 	else
 		return ACLCHECK_NO_PRIV;
+}
+
+AclResult
+pg_largeobject_aclcheck(Oid lobj_oid, Oid roleid, AclMode mode)
+{
+	return pg_largeobject_aclcheck_snapshot(lobj_oid, roleid, mode,
+											SnapshotNow);
 }
 
 /*
@@ -4245,6 +4278,10 @@ pg_language_ownercheck(Oid lan_oid, Oid roleid)
 
 /*
  * Ownership check for a largeobject (specified by OID)
+ *
+ * Note that we have no candidate to call this routine with a certain
+ * snapshot except for SnapshotNow, so we don't provide an interface
+ * with _snapshot() version now.
  */
 bool
 pg_largeobject_ownercheck(Oid lobj_oid, Oid roleid)

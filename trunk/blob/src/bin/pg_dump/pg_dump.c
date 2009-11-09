@@ -2067,24 +2067,19 @@ dumpBlobComments(Archive *AH, void *arg)
 	selectSourceSchema("pg_catalog");
 
 	/* Cursor to get all BLOB comments */
-	if (AH->removeVersion >= 80500)
+	if (AH->remoteVersion >= 70300)
 		blobQry = "DECLARE blobcmt CURSOR FOR SELECT loid, "
-			"obj_description(loid, 'pg_largeobject'), "
-			"lomowner, lomacl "
-			"FROM pg_largeobject_metadata";
-	else if (AH->remoteVersion >= 70300)
-		blobQry = "DECLARE blobcmt CURSOR FOR SELECT loid, "
-			"obj_description(loid, 'pg_largeobject'), NULL, NULL "
+			"obj_description(loid, 'pg_largeobject') "
 			"FROM (SELECT DISTINCT loid FROM "
 			"pg_description d JOIN pg_largeobject l ON (objoid = loid) "
 			"WHERE classoid = 'pg_largeobject'::regclass) ss";
 	else if (AH->remoteVersion >= 70200)
 		blobQry = "DECLARE blobcmt CURSOR FOR SELECT loid, "
-			"obj_description(loid, 'pg_largeobject'), NULL, NULL "
+			"obj_description(loid, 'pg_largeobject') "
 			"FROM (SELECT DISTINCT loid FROM pg_largeobject) ss";
 	else if (AH->remoteVersion >= 70100)
 		blobQry = "DECLARE blobcmt CURSOR FOR SELECT loid, "
-			"obj_description(loid), NULL, NULL "
+			"obj_description(loid) "
 			"FROM (SELECT DISTINCT loid FROM pg_largeobject) ss";
 	else
 		blobQry = "DECLARE blobcmt CURSOR FOR SELECT oid, "
@@ -2092,8 +2087,7 @@ dumpBlobComments(Archive *AH, void *arg)
 			"		SELECT description "
 			"		FROM pg_description pd "
 			"		WHERE pd.objoid=pc.oid "
-			"	),"
-			"   NULL, NULL "
+			"	) "
 			"FROM pg_class pc WHERE relkind = 'l'";
 
 	res = PQexec(g_conn, blobQry);
@@ -2113,24 +2107,14 @@ dumpBlobComments(Archive *AH, void *arg)
 		/* Process the tuples, if any */
 		for (i = 0; i < PQntuples(res); i++)
 		{
-			Oid			blobOid = atooid(PQgetvalue(res, i, 0));
+			Oid			blobOid;
 			char	   *comment;
-
-			/*
-			 * A large object has its metadata after the v8.5
-			 */
-			if (AH->removeVersion >= 80500)
-			{
-				
-				
-				
-				
-			}
 
 			/* ignore blobs without comments */
 			if (PQgetisnull(res, i, 1))
 				continue;
 
+			blobOid = atooid(PQgetvalue(res, i, 0));
 			comment = PQgetvalue(res, i, 1);
 
 			printfPQExpBuffer(commentcmd, "COMMENT ON LARGE OBJECT %u IS ",
