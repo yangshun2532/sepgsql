@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/commands/tablecmds.c,v 1.302 2009/10/12 19:49:24 adunstan Exp $
+ *	  $PostgreSQL: pgsql/src/backend/commands/tablecmds.c,v 1.305 2009/11/04 12:24:23 heikki Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -333,7 +333,7 @@ static void ATExecAddInherit(Relation rel, RangeVar *parent);
 static void ATExecDropInherit(Relation rel, RangeVar *parent);
 static void copy_relation_data(SMgrRelation rel, SMgrRelation dst,
 				   ForkNumber forkNum, bool istemp);
-static const char * storage_name(char c);
+static const char *storage_name(char c);
 
 
 /* ----------------------------------------------------------------
@@ -1102,22 +1102,25 @@ truncate_check_rel(Relation rel)
 	CheckTableNotInUse(rel, "TRUNCATE");
 }
 
-
-/*----------------
+/*
  * storage_name
- *    returns a name corresponding to a storage enum value
- * For use in error messages
+ *    returns the name corresponding to a typstorage/attstorage enum value
  */
 static const char *
 storage_name(char c)
 {
 	switch (c)
 	{
-		case 'p': return "PLAIN";
-		case 'm': return "MAIN";
-		case 'x': return "EXTENDED";
-		case 'e': return "EXTERNAL";
-		default: return "???";
+		case 'p':
+			return "PLAIN";
+		case 'm':
+			return "MAIN";
+		case 'x':
+			return "EXTENDED";
+		case 'e':
+			return "EXTERNAL";
+		default:
+			return "???";
 	}
 }
 
@@ -1189,7 +1192,6 @@ MergeAttributes(List *schema, List *supers, bool istemp,
 	List	   *constraints = NIL;
 	int			parentsWithOids = 0;
 	bool		have_bogus_defaults = false;
-	bool            have_bogus_comments = false;
 	int			child_attno;
 	static Node	bogus_marker = { 0 };		/* marks conflicting defaults */
 
@@ -1354,7 +1356,8 @@ MergeAttributes(List *schema, List *supers, bool istemp,
 							(errcode(ERRCODE_DATATYPE_MISMATCH),
 						errmsg("inherited column \"%s\" has a storage parameter conflict",
 							   attributeName),
-							   errdetail("%s versus %s", storage_name(def->storage),
+							   errdetail("%s versus %s",
+										 storage_name(def->storage),
 										 storage_name(attribute->attstorage))));
 
 				def->inhcount++;
@@ -1375,10 +1378,10 @@ MergeAttributes(List *schema, List *supers, bool istemp,
 				def->inhcount = 1;
 				def->is_local = false;
 				def->is_not_null = attribute->attnotnull;
+				def->storage = attribute->attstorage;
 				def->raw_default = NULL;
 				def->cooked_default = NULL;
 				def->constraints = NIL;
-				def->storage = attribute->attstorage;
 				inhSchema = lappend(inhSchema, def);
 				newattno[parent_attno - 1] = ++child_attno;
 			}
@@ -1525,7 +1528,8 @@ MergeAttributes(List *schema, List *supers, bool istemp,
 							(errcode(ERRCODE_DATATYPE_MISMATCH),
 						errmsg("column \"%s\" has a storage parameter conflict",
 							   attributeName),
-							   errdetail("%s versus %s", storage_name(def->storage),
+							   errdetail("%s versus %s",
+										 storage_name(def->storage),
 										 storage_name(newdef->storage))));
 
 				/* Mark the column as locally defined */
@@ -1577,20 +1581,6 @@ MergeAttributes(List *schema, List *supers, bool istemp,
 				  errmsg("column \"%s\" inherits conflicting default values",
 						 def->colname),
 						 errhint("To resolve the conflict, specify a default explicitly.")));
-		}
-	}
-
-	/* Raise an error if we found conflicting comments. */
-	if (have_bogus_comments)
-	{
-		foreach(entry, schema)
-		{
-			ColumnDef  *def = lfirst(entry);
-
-			if (def->cooked_default == &bogus_marker)
-				ereport(ERROR,
-						(errcode(ERRCODE_INVALID_COLUMN_DEFINITION),
-				  errmsg("column \"%s\" inherits conflicting comments", def->colname)));
 		}
 	}
 
@@ -3047,6 +3037,9 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap)
 	int			i;
 	ListCell   *l;
 	EState	   *estate;
+	CommandId	mycid;
+	BulkInsertState bistate;
+	int			hi_options;
 
 	/*
 	 * Open the relation(s).  We have surely already locked the existing
@@ -3060,6 +3053,29 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap)
 		newrel = heap_open(OIDNewHeap, AccessExclusiveLock);
 	else
 		newrel = NULL;
+
+	/*
+	 * Prepare a BulkInsertState and options for heap_insert. Because
+	 * we're building a new heap, we can skip WAL-logging and fsync it
+	 * to disk at the end instead (unless WAL-logging is required for
+	 * archiving). The FSM is empty too, so don't bother using it.
+	 */
+	if (newrel)
+	{
+		mycid = GetCurrentCommandId(true);
+		bistate = GetBulkInsertState();
+
+		hi_options = HEAP_INSERT_SKIP_FSM;
+		if (!XLogArchivingActive())
+			hi_options |= HEAP_INSERT_SKIP_WAL;
+	}
+	else
+	{
+		/* keep compiler quiet about using these uninitialized */
+		mycid = 0;
+		bistate = NULL;
+		hi_options = 0;
+	}
 
 	/*
 	 * If we need to rewrite the table, the operation has to be propagated to
@@ -3262,7 +3278,7 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap)
 
 			/* Write the tuple out to the new relation */
 			if (newrel)
-				simple_heap_insert(newrel, tuple);
+				heap_insert(newrel, tuple, mycid, hi_options, bistate);
 
 			ResetExprContext(econtext);
 
@@ -3280,7 +3296,15 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap)
 
 	heap_close(oldrel, NoLock);
 	if (newrel)
+	{
+		FreeBulkInsertState(bistate);
+
+		/* If we skipped writing WAL, then we need to sync the heap. */
+		if (hi_options & HEAP_INSERT_SKIP_WAL)
+			heap_sync(newrel);
+
 		heap_close(newrel, NoLock);
+	}
 }
 
 /*
@@ -3903,6 +3927,7 @@ ATPrepAddOids(List **wqueue, Relation rel, bool recurse, AlterTableCmd *cmd)
 		cdef->inhcount = 0;
 		cdef->is_local = true;
 		cdef->is_not_null = true;
+		cdef->storage = 0;
 		cmd->def = (Node *) cdef;
 	}
 	ATPrepAddColumn(wqueue, rel, recurse, cmd);
@@ -5450,6 +5475,7 @@ CreateFKCheckTrigger(RangeVar *myRel, Constraint *fkconstraint,
 		fk_trigger->events = TRIGGER_TYPE_UPDATE;
 	}
 
+	fk_trigger->columns = NIL;
 	fk_trigger->isconstraint = true;
 	fk_trigger->deferrable = fkconstraint->deferrable;
 	fk_trigger->initdeferred = fkconstraint->initdeferred;
@@ -5500,6 +5526,7 @@ createForeignKeyTriggers(Relation rel, Constraint *fkconstraint,
 	fk_trigger->before = false;
 	fk_trigger->row = true;
 	fk_trigger->events = TRIGGER_TYPE_DELETE;
+	fk_trigger->columns = NIL;
 	fk_trigger->isconstraint = true;
 	fk_trigger->constrrel = myRel;
 	switch (fkconstraint->fk_del_action)
@@ -5552,6 +5579,7 @@ createForeignKeyTriggers(Relation rel, Constraint *fkconstraint,
 	fk_trigger->before = false;
 	fk_trigger->row = true;
 	fk_trigger->events = TRIGGER_TYPE_UPDATE;
+	fk_trigger->columns = NIL;
 	fk_trigger->isconstraint = true;
 	fk_trigger->constrrel = myRel;
 	switch (fkconstraint->fk_upd_action)

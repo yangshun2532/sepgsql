@@ -1,7 +1,7 @@
 #
 # PostgreSQL top level makefile
 #
-# $PostgreSQL: pgsql/GNUmakefile.in,v 1.53 2009/08/14 21:37:18 alvherre Exp $
+# $PostgreSQL: pgsql/GNUmakefile.in,v 1.55 2009/11/03 21:28:10 petere Exp $
 #
 
 subdir =
@@ -70,34 +70,13 @@ distdir	= postgresql-$(VERSION)
 dummy	= =install=
 garbage = =*  "#"*  ."#"*  *~*  *.orig  *.rej  core  postgresql-*
 
-dist: $(distdir).tar.gz 
-ifeq ($(split-dist), yes)
-dist: postgresql-base-$(VERSION).tar.gz postgresql-docs-$(VERSION).tar.gz postgresql-opt-$(VERSION).tar.gz postgresql-test-$(VERSION).tar.gz 
-endif
-dist:
+dist: $(distdir).tar.gz $(distdir).tar.bz2
 	rm -rf $(distdir)
 
 $(distdir).tar: distdir
 	$(TAR) chf $@ $(distdir)
 
-opt_files = \
-	src/tools src/tutorial \
-	$(addprefix src/pl/, plperl plpython tcl)
-
-docs_files = doc/postgres.tar.gz doc/src doc/TODO.detail
-
-postgresql-base-$(VERSION).tar: distdir
-	$(TAR) -c $(addprefix --exclude $(distdir)/, $(docs_files) $(opt_files) src/test) \
-	  -f $@ $(distdir)
-
-postgresql-docs-$(VERSION).tar: distdir
-	$(TAR) cf $@ $(addprefix $(distdir)/, $(docs_files))
-
-postgresql-opt-$(VERSION).tar: distdir
-	$(TAR) cf $@ $(addprefix $(distdir)/, $(opt_files))
-
-postgresql-test-$(VERSION).tar: distdir
-	$(TAR) cf $@ $(distdir)/src/test
+.INTERMEDIATE: $(distdir).tar
 
 distdir-location:
 	@echo $(distdir)
@@ -121,10 +100,10 @@ distdir:
 	$(MAKE) -C $(distdir) distclean
 	rm -f $(distdir)/README.CVS
 
-distcheck: $(distdir).tar.gz
+distcheck: dist
 	rm -rf $(dummy)
 	mkdir $(dummy)
-	$(GZIP) -d -c $< | $(TAR) xf -
+	$(GZIP) -d -c $(distdir).tar.gz | $(TAR) xf -
 	install_prefix=`cd $(dummy) && pwd`; \
 	cd $(distdir) \
 	&& ./configure --prefix="$$install_prefix"
