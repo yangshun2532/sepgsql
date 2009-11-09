@@ -452,20 +452,174 @@ STATEMENT:  SELECT * FROM customer;
  </sect1>
  <sect1 id="sepostgresql-admin">
   <title>Administration</title>
-  <para>
-   configure --enable-selinux
-  no policy, only assign security context
-  </para>
-  <sect2 id="sepostgresql-admin-installation">
-   <title>Installation</title>
+  <sect2 id="sepostgresql-admin-build">
+   <title>Build and Installation</title>
    <para>
-    
-    
+    SE-PostgreSQL requires the following packages for its installation.
+   </para>
+   <variablelist>
+    <varlistentry>
+     <term><literal>Linux kernel</literal></term>
+     <listitem>
+      <para>
+       Linux kernel must support SELinux, at least.
+       In addition, it needs a set of interfaces to communicate between
+       kernel space and applications. It is available at the Linux
+       kernel 2.6.24 or later.
+      </para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>Security policy</literal></term>
+      <listitem>
+       <para>
+	The upstreamed security policy (<literal>20080702</literal> or
+	later) already contains access control rules on database objects
+	as a part of policy module for PostgreSQL.
+       </para>
+      </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>libselinux</literal></term>
+     <listitem>
+      <para>
+       <literal>libselinux</literal> is a set of APIs of SELinux.
+       The <literal>2.0.80</literal> or later contains all the needed
+       interfaces to compile and execute SE-PostgreSQL.
+      </para>
+     </listitem>
+    </varlistentry>
+   </variablelist>
+
+   <para>
+    In addition, <literal>policycoreutils</literal> package contains
+    some useful commands to administrate SELinux. We recommend you to
+    install this package also.
+
+    If you try to write your own security policy module, it also needs
+    <literal>checkpolicy</literal> package which contains the security
+    policy compiler.
+
+    All the needed packages can be obtained from:
+    <ulink url="http://userspace.selinuxproject.org/">
+     The SELinux Project: Userspace Development
+    </ulink>, except for the linux kernel itself.
+   </para>
+
+   <para>
+    The SE-PostgreSQL feature is disabled in the default build, so
+    you need to add <option>--enable-selinux</option> option on the
+    <command>configure</command> script, and also add
+    <option>--enable-selinux</option> option on the
+    <command>initdb</command> command at least.
+<screen>
+<prompt>$ </prompt><userinput>./configure --enable-selinux</userinput>
+<prompt>$ </prompt><userinput>make</userinput>
+<prompt>$ </prompt><userinput>su</userinput>
+<prompt># </prompt><userinput>make install</userinput>
+<prompt>$ </prompt><userinput>initdb --enable-selinux</userinput>
+<prompt>$ </prompt><userinput>pg_ctl start</userinput>
+</screen>
+   </para>
+   <para>
+    It is a minimum configuration to install SE-PostgreSQL.
+
+    If you don't want the server process to perform with the
+    security context of the user's shell process (typically,
+    <literal>unconfined_u:unconfined_r:unconfined_t:s0</literal>;
+    very strong privileges), also apply the following configuration
+    just after <command>initdb</command>.
+<screen>
+<prompt>$ </prompt><userinput>su</userinput>
+<prompt># </prompt><userinput>export PREFIX=/usr/local/pgsql</userinput>
+<prompt># </prompt><userinput>export PGDATA=/opt/sepgsql</userinput>
+<prompt># </prompt><userinput>semanage fcontext -a -t usr_t "$PREFIX(/.*)?"</userinput>
+<prompt># </prompt><userinput>semanage fcontext -a -t bin_t "$PREFIX/bin(/.*)?"</userinput>
+<prompt># </prompt><userinput>semanage fcontext -a -t lib_t "$PREFIX/lib(/.*)?"</userinput>
+<prompt># </prompt><userinput>semanage fcontext -a -t postgresql_exec_t "$PREFIX/bin/postgres"</userinput>
+<prompt># </prompt><userinput>semanage fcontext -a -t initrc_exec_t "$PREFIX/bin/pg_ctl"</userinput>
+<prompt># </prompt><userinput>semanage fcontext -a -t postgresql_db_t "$PGDATA(/.*)?"</userinput>
+<prompt># </prompt><userinput>restorecon -R $PREFIX $PGDATA</userinput>
+</screen>
+   </para>
+   <para>
+    This configuration add default security contexts to be assigned on
+    certain files identified by pathnames in regular expressions.
+   </para>
+   <para>
+    The <literal>bin_t</literal> means general executables,
+    the <literal>lib_t</literal> means general shared libraries,
+    the <literal>postgresql_exec_t</literal> means executable of PostgreSQL
+    server program to be assigned on <command>postgres</command>,
+    and the <literal>initrc_exec_t</literal> means a program launcher
+    such as system init scripts.
+   </para>
+   <para>
+    The <literal>postgresql_db_t</literal> means database files, so
+    the server process can access without any limitations, but it is
+    unaccessable from other server program, such as httpd.
+   </para>
+   <para>
+    The <command>restorecon</command> command restores the security context
+    of files based on the pathnames in regular expressions.
+    For example, the <literal>postgresql_db_t</literal> shall be assigned on
+    the <filename>$PGDATA/global/pg_control</filename>.
+   </para>
+   <para>
+    If you can see the PostgreSQL server process performs with
+    <literal>postgresql_t</literal> domain, it is succeeded.
+    Otherwise, you may miss something.
+<screen>
+<prompt>$ </prompt><userinput>ps -AZ | grep postgres</userinput>
+unconfined_u:system_r:postgresql_t:s0 1695 ?   00:00:00 postgres
+unconfined_u:system_r:postgresql_t:s0 1697 ?   00:00:00 postgres
+unconfined_u:system_r:postgresql_t:s0 1698 ?   00:00:00 postgres
+unconfined_u:system_r:postgresql_t:s0 1699 ?   00:00:00 postgres
+unconfined_u:system_r:postgresql_t:s0 1700 ?   00:00:00 postgres
+</screen>
    </para>
   </sect2>
-  <sect2>
+  <sect2 id="sepostgresql-admin-backup">
    <title>Backup</title>
    <para>
+    The <command>pg_dump</command> and <command>pg_dumpall</command>
+    command supports <option>--enable-selinux</option> option which
+    enables to dump database objects with its security context.
+   </para>
+   <para>
+    It shall be restored using <option>SECURITY_CONTEXT</option> option
+    in <command>CREATE</command> statement, as follows.
+<screen>
+<prompt>$ </prompt><userinput>pg_dump --security-label postgres</userinput>
+        :
+      (snip)
+        :
+--
+-- Name: drink; Type: TABLE; Schema: public; Owner: kaigai; Tablespace:
+--
+
+CREATE TABLE drink (
+    id integer NOT NULL,
+    name character varying(48),
+    price integer
+) SECURITY_CONTEXT = 'system_u:object_r:sepgsql_table_t';
+        :
+      (snip)
+        :
+</screen>
+   </para>
+   <para>
+    Needless to say, when we make a dump of a certain database, we must
+    have enough privilege to reference whole of the database.
+    In similar way, when we restore the backup, we must have enough
+    permission to create the dumped database object with the dumped
+    explicit security context.
+   </para>
+   <para>
+    See <xref linkend="APP-PGDUMP"> and <xref linkend="APP-PG-DUMPALL">
+    for more details.
    </para>
   </sect2>
  </sect1>
