@@ -17,7 +17,7 @@
  * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- *	$PostgreSQL: pgsql/src/backend/parser/analyze.c,v 1.392 2009/10/12 18:10:48 tgl Exp $
+ *	$PostgreSQL: pgsql/src/backend/parser/analyze.c,v 1.396 2009/10/31 01:41:31 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -35,6 +35,7 @@
 #include "parser/parse_coerce.h"
 #include "parser/parse_cte.h"
 #include "parser/parse_oper.h"
+#include "parser/parse_param.h"
 #include "parser/parse_relation.h"
 #include "parser/parse_target.h"
 #include "parser/parsetree.h"
@@ -60,9 +61,8 @@ static Query *transformDeclareCursorStmt(ParseState *pstate,
 						   DeclareCursorStmt *stmt);
 static Query *transformExplainStmt(ParseState *pstate,
 					 ExplainStmt *stmt);
-static void transformLockingClause(ParseState *pstate,
-					   Query *qry, LockingClause *lc);
-static bool check_parameter_resolution_walker(Node *node, ParseState *pstate);
+static void transformLockingClause(ParseState *pstate, Query *qry,
+								   LockingClause *lc, bool pushedDown);
 
 
 /*
@@ -86,9 +86,9 @@ parse_analyze(Node *parseTree, const char *sourceText,
 	Assert(sourceText != NULL); /* required as of 8.4 */
 
 	pstate->p_sourcetext = sourceText;
-	pstate->p_paramtypes = paramTypes;
-	pstate->p_numparams = numParams;
-	pstate->p_variableparams = false;
+
+	if (numParams > 0)
+		parse_fixed_parameters(pstate, paramTypes, numParams);
 
 	query = transformStmt(pstate, parseTree);
 
@@ -114,18 +114,13 @@ parse_analyze_varparams(Node *parseTree, const char *sourceText,
 	Assert(sourceText != NULL); /* required as of 8.4 */
 
 	pstate->p_sourcetext = sourceText;
-	pstate->p_paramtypes = *paramTypes;
-	pstate->p_numparams = *numParams;
-	pstate->p_variableparams = true;
+
+	parse_variable_parameters(pstate, paramTypes, numParams);
 
 	query = transformStmt(pstate, parseTree);
 
 	/* make sure all is well with parameter types */
-	if (pstate->p_numparams > 0)
-		check_parameter_resolution_walker((Node *) query, pstate);
-
-	*paramTypes = pstate->p_paramtypes;
-	*numParams = pstate->p_numparams;
+	check_variable_parameters(pstate, query);
 
 	free_parsestate(pstate);
 
@@ -138,12 +133,14 @@ parse_analyze_varparams(Node *parseTree, const char *sourceText,
  */
 Query *
 parse_sub_analyze(Node *parseTree, ParseState *parentParseState,
-				  CommonTableExpr *parentCTE)
+				  CommonTableExpr *parentCTE,
+				  bool locked_from_parent)
 {
 	ParseState *pstate = make_parsestate(parentParseState);
 	Query	   *query;
 
 	pstate->p_parent_cte = parentCTE;
+	pstate->p_locked_from_parent = locked_from_parent;
 
 	query = transformStmt(pstate, parseTree);
 
@@ -894,7 +891,8 @@ transformSelectStmt(ParseState *pstate, SelectStmt *stmt)
 
 	foreach(l, stmt->lockingClause)
 	{
-		transformLockingClause(pstate, qry, (LockingClause *) lfirst(l));
+		transformLockingClause(pstate, qry,
+							   (LockingClause *) lfirst(l), false);
 	}
 
 	return qry;
@@ -1346,7 +1344,8 @@ transformSetOperationStmt(ParseState *pstate, SelectStmt *stmt)
 
 	foreach(l, lockingClause)
 	{
-		transformLockingClause(pstate, qry, (LockingClause *) lfirst(l));
+		transformLockingClause(pstate, qry,
+							   (LockingClause *) lfirst(l), false);
 	}
 
 	return qry;
@@ -1424,7 +1423,7 @@ transformSetOperationTree(ParseState *pstate, SelectStmt *stmt,
 		 * of this sub-query, because they are not in the toplevel pstate's
 		 * namespace list.
 		 */
-		selectQuery = parse_sub_analyze((Node *) stmt, pstate, NULL);
+		selectQuery = parse_sub_analyze((Node *) stmt, pstate, NULL, false);
 
 		/*
 		 * Check for bogus references to Vars on the current query level (but
@@ -1978,7 +1977,7 @@ transformDeclareCursorStmt(ParseState *pstate, DeclareCursorStmt *stmt)
  *
  * EXPLAIN is just like other utility statements in that we emit it as a
  * CMD_UTILITY Query node with no transformation of the raw parse tree.
- * However, if p_variableparams is set, it could be that the client is
+ * However, if p_coerce_param_hook is set, it could be that the client is
  * expecting us to resolve parameter types in something like
  *		EXPLAIN SELECT * FROM tab WHERE col = $1
  * To deal with such cases, we run parse analysis and throw away the result;
@@ -1992,7 +1991,7 @@ transformExplainStmt(ParseState *pstate, ExplainStmt *stmt)
 {
 	Query	   *result;
 
-	if (pstate->p_variableparams)
+	if (pstate->p_coerce_param_hook != NULL)
 	{
 		/* Since parse analysis scribbles on its input, copy the tree first! */
 		(void) transformStmt(pstate, copyObject(stmt->query));
@@ -2007,7 +2006,11 @@ transformExplainStmt(ParseState *pstate, ExplainStmt *stmt)
 }
 
 
-/* exported so planner can check again after rewriting, query pullup, etc */
+/*
+ * Check for features that are not supported together with FOR UPDATE/SHARE.
+ *
+ * exported so planner can check again after rewriting, query pullup, etc
+ */
 void
 CheckSelectLocking(Query *qry)
 {
@@ -2035,6 +2038,10 @@ CheckSelectLocking(Query *qry)
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("SELECT FOR UPDATE/SHARE is not allowed with window functions")));
+	if (expression_returns_set((Node *) qry->targetList))
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("SELECT FOR UPDATE/SHARE is not allowed with set-returning functions in the target list")));
 }
 
 /*
@@ -2043,10 +2050,11 @@ CheckSelectLocking(Query *qry)
  * This basically involves replacing names by integer relids.
  *
  * NB: if you need to change this, see also markQueryForLocking()
- * in rewriteHandler.c, and isLockedRel() in parse_relation.c.
+ * in rewriteHandler.c, and isLockedRefname() in parse_relation.c.
  */
 static void
-transformLockingClause(ParseState *pstate, Query *qry, LockingClause *lc)
+transformLockingClause(ParseState *pstate, Query *qry, LockingClause *lc,
+					   bool pushedDown)
 {
 	List	   *lockedRels = lc->lockedRels;
 	ListCell   *l;
@@ -2074,43 +2082,25 @@ transformLockingClause(ParseState *pstate, Query *qry, LockingClause *lc)
 			switch (rte->rtekind)
 			{
 				case RTE_RELATION:
-					applyLockingClause(qry, i, lc->forUpdate, lc->noWait);
+					applyLockingClause(qry, i,
+									   lc->forUpdate, lc->noWait, pushedDown);
 					rte->requiredPerms |= ACL_SELECT_FOR_UPDATE;
 					break;
 				case RTE_SUBQUERY:
-
+					applyLockingClause(qry, i,
+									   lc->forUpdate, lc->noWait, pushedDown);
 					/*
 					 * FOR UPDATE/SHARE of subquery is propagated to all of
-					 * subquery's rels
+					 * subquery's rels, too.  We could do this later (based
+					 * on the marking of the subquery RTE) but it is convenient
+					 * to have local knowledge in each query level about
+					 * which rels need to be opened with RowShareLock.
 					 */
-					transformLockingClause(pstate, rte->subquery, allrels);
-					break;
-				case RTE_CTE:
-					{
-						/*
-						 * We allow FOR UPDATE/SHARE of a WITH query to be
-						 * propagated into the WITH, but it doesn't seem very
-						 * sane to allow this for a reference to an
-						 * outer-level WITH.  And it definitely wouldn't work
-						 * for a self-reference, since we're not done
-						 * analyzing the CTE anyway.
-						 */
-						CommonTableExpr *cte;
-
-						if (rte->ctelevelsup > 0 || rte->self_reference)
-							ereport(ERROR,
-									(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-									 errmsg("SELECT FOR UPDATE/SHARE cannot be applied to an outer-level WITH query")));
-						cte = GetCTEForRTE(pstate, rte, -1);
-						/* should be analyzed by now */
-						Assert(IsA(cte->ctequery, Query));
-						transformLockingClause(pstate,
-											   (Query *) cte->ctequery,
-											   allrels);
-					}
+					transformLockingClause(pstate, rte->subquery,
+										   allrels, true);
 					break;
 				default:
-					/* ignore JOIN, SPECIAL, FUNCTION RTEs */
+					/* ignore JOIN, SPECIAL, FUNCTION, VALUES, CTE RTEs */
 					break;
 			}
 		}
@@ -2141,16 +2131,17 @@ transformLockingClause(ParseState *pstate, Query *qry, LockingClause *lc)
 					{
 						case RTE_RELATION:
 							applyLockingClause(qry, i,
-											   lc->forUpdate, lc->noWait);
+											   lc->forUpdate, lc->noWait,
+											   pushedDown);
 							rte->requiredPerms |= ACL_SELECT_FOR_UPDATE;
 							break;
 						case RTE_SUBQUERY:
-
-							/*
-							 * FOR UPDATE/SHARE of subquery is propagated to
-							 * all of subquery's rels
-							 */
-							transformLockingClause(pstate, rte->subquery, allrels);
+							applyLockingClause(qry, i,
+											   lc->forUpdate, lc->noWait,
+											   pushedDown);
+							/* see comment above */
+							transformLockingClause(pstate, rte->subquery,
+												   allrels, true);
 							break;
 						case RTE_JOIN:
 							ereport(ERROR,
@@ -2177,30 +2168,10 @@ transformLockingClause(ParseState *pstate, Query *qry, LockingClause *lc)
 							 parser_errposition(pstate, thisrel->location)));
 							break;
 						case RTE_CTE:
-							{
-								/*
-								 * We allow FOR UPDATE/SHARE of a WITH query
-								 * to be propagated into the WITH, but it
-								 * doesn't seem very sane to allow this for a
-								 * reference to an outer-level WITH.  And it
-								 * definitely wouldn't work for a
-								 * self-reference, since we're not done
-								 * analyzing the CTE anyway.
-								 */
-								CommonTableExpr *cte;
-
-								if (rte->ctelevelsup > 0 || rte->self_reference)
-									ereport(ERROR,
-									 (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-									  errmsg("SELECT FOR UPDATE/SHARE cannot be applied to an outer-level WITH query"),
-									  parser_errposition(pstate, thisrel->location)));
-								cte = GetCTEForRTE(pstate, rte, -1);
-								/* should be analyzed by now */
-								Assert(IsA(cte->ctequery, Query));
-								transformLockingClause(pstate,
-													 (Query *) cte->ctequery,
-													   allrels);
-							}
+							ereport(ERROR,
+									(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+									 errmsg("SELECT FOR UPDATE/SHARE cannot be applied to a WITH query"),
+							 parser_errposition(pstate, thisrel->location)));
 							break;
 						default:
 							elog(ERROR, "unrecognized RTE type: %d",
@@ -2224,12 +2195,17 @@ transformLockingClause(ParseState *pstate, Query *qry, LockingClause *lc)
  * Record locking info for a single rangetable item
  */
 void
-applyLockingClause(Query *qry, Index rtindex, bool forUpdate, bool noWait)
+applyLockingClause(Query *qry, Index rtindex,
+				   bool forUpdate, bool noWait, bool pushedDown)
 {
 	RowMarkClause *rc;
 
+	/* If it's an explicit clause, make sure hasForUpdate gets set */
+	if (!pushedDown)
+		qry->hasForUpdate = true;
+
 	/* Check for pre-existing entry for same rtindex */
-	if ((rc = get_rowmark(qry, rtindex)) != NULL)
+	if ((rc = get_parse_rowmark(qry, rtindex)) != NULL)
 	{
 		/*
 		 * If the same RTE is specified both FOR UPDATE and FOR SHARE, treat
@@ -2241,66 +2217,20 @@ applyLockingClause(Query *qry, Index rtindex, bool forUpdate, bool noWait)
 		 * is a bit more debatable but raising an error doesn't seem helpful.
 		 * (Consider for instance SELECT FOR UPDATE NOWAIT from a view that
 		 * internally contains a plain FOR UPDATE spec.)
+		 *
+		 * And of course pushedDown becomes false if any clause is explicit.
 		 */
 		rc->forUpdate |= forUpdate;
 		rc->noWait |= noWait;
+		rc->pushedDown &= pushedDown;
 		return;
 	}
 
 	/* Make a new RowMarkClause */
 	rc = makeNode(RowMarkClause);
 	rc->rti = rtindex;
-	rc->prti = rtindex;
-	rc->rowmarkId = 0;			/* not used until plan time */
 	rc->forUpdate = forUpdate;
 	rc->noWait = noWait;
-	rc->isParent = false;
+	rc->pushedDown = pushedDown;
 	qry->rowMarks = lappend(qry->rowMarks, rc);
-}
-
-
-/*
- * Traverse a fully-analyzed tree to verify that parameter symbols
- * match their types.  We need this because some Params might still
- * be UNKNOWN, if there wasn't anything to force their coercion,
- * and yet other instances seen later might have gotten coerced.
- */
-static bool
-check_parameter_resolution_walker(Node *node, ParseState *pstate)
-{
-	if (node == NULL)
-		return false;
-	if (IsA(node, Param))
-	{
-		Param	   *param = (Param *) node;
-
-		if (param->paramkind == PARAM_EXTERN)
-		{
-			int			paramno = param->paramid;
-
-			if (paramno <= 0 || /* shouldn't happen, but... */
-				paramno > pstate->p_numparams)
-				ereport(ERROR,
-						(errcode(ERRCODE_UNDEFINED_PARAMETER),
-						 errmsg("there is no parameter $%d", paramno),
-						 parser_errposition(pstate, param->location)));
-
-			if (param->paramtype != pstate->p_paramtypes[paramno - 1])
-				ereport(ERROR,
-						(errcode(ERRCODE_AMBIGUOUS_PARAMETER),
-					 errmsg("could not determine data type of parameter $%d",
-							paramno),
-						 parser_errposition(pstate, param->location)));
-		}
-		return false;
-	}
-	if (IsA(node, Query))
-	{
-		/* Recurse into RTE subquery or not-yet-planned sublink subquery */
-		return query_tree_walker((Query *) node,
-								 check_parameter_resolution_walker,
-								 (void *) pstate, 0);
-	}
-	return expression_tree_walker(node, check_parameter_resolution_walker,
-								  (void *) pstate);
 }
