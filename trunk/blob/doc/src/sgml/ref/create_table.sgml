@@ -1,5 +1,5 @@
 <!--
-$PostgreSQL: pgsql/doc/src/sgml/ref/create_table.sgml,v 1.117 2009/10/12 19:49:24 adunstan Exp $
+$PostgreSQL: pgsql/doc/src/sgml/ref/create_table.sgml,v 1.119 2009/10/27 13:58:28 alvherre Exp $
 PostgreSQL documentation
 -->
 
@@ -231,7 +231,7 @@ CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } ] TABLE <replaceable class="PAR
      </para>
 
      <para>
-      Column storage parameters are also copied from parent tables.
+      Column <literal>STORAGE</> settings are also copied from parent tables.
      </para>
 
 <!--
@@ -285,25 +285,27 @@ CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } ] TABLE <replaceable class="PAR
       specified.
      </para>
      <para>
-      Storage parameters for the copied column definitions will only be copied
-      if <literal>INCLUDING STORAGE</literal> is specified.  The default
-      behavior is to exclude storage parameters, resulting in the copied
-      columns in the new table having type-specific default parameters.  For
-      more on storage parameters, see <xref linkend="storage-toast">.
+      <literal>STORAGE</> settings for the copied column definitions will only
+      be copied if <literal>INCLUDING STORAGE</literal> is specified.  The
+      default behavior is to exclude <literal>STORAGE</> settings, resulting
+      in the copied columns in the new table having type-specific default
+      settings.  For more on <literal>STORAGE</> settings, see
+      <xref linkend="storage-toast">.
      </para>
      <para>
-      Comments for the copied column, constraint, index and columns of index
-	  definitions will only be copied if <literal>INCLUDING COMMENTS</literal>
-	  is specified. The default behavior is to exclude comments, resulting in
-	  the copied columns and constraints in the new table having no comments.
+      Comments for the copied columns, constraints, and indexes
+      will only be copied if <literal>INCLUDING COMMENTS</literal>
+      is specified. The default behavior is to exclude comments, resulting in
+      the copied columns and constraints in the new table having no comments.
      </para>
      <para>
       <literal>INCLUDING ALL</literal> is an abbreviated form of
       <literal>INCLUDING DEFAULTS INCLUDING CONSTRAINTS INCLUDING INDEXES INCLUDING STORAGE INCLUDING COMMENTS</literal>.
      </para>
      <para>
-      Note also that unlike <literal>INHERITS</literal>, copied columns and
-      constraints are not merged with similarly named columns and constraints.
+      Note also that unlike <literal>INHERITS</literal>, columns and
+      constraints copied by <literal>LIKE</> are not merged with similarly
+      named columns and constraints.
       If the same name is specified explicitly or in another
       <literal>LIKE</literal> clause, an error is signalled.
      </para>
@@ -717,8 +719,8 @@ CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } ] TABLE <replaceable class="PAR
     <literal>PRIMARY KEY</literal> constraint.  Storage parameters for
     indexes are documented in <xref linkend="SQL-CREATEINDEX"
     endterm="sql-createindex-title">.  The storage parameters currently
-    available for tables are listed below.  For each parameter, there is an
-    additional, identically named parameter, prefixed with
+    available for tables are listed below.  For each parameter, unless noted,
+    there is an additional, identically named parameter, prefixed with
     <literal>toast.</literal> which can be used to control the behavior of the
     supplementary storage table, if any; see <xref linkend="storage-toast">.
     Note that the supplementary storage table inherits the
@@ -729,7 +731,7 @@ CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } ] TABLE <replaceable class="PAR
    <variablelist>
 
    <varlistentry>
-    <term><literal>fillfactor</>, <literal>toast.fillfactor</literal> (<type>integer</>)</term>
+    <term><literal>fillfactor</> (<type>integer</>)</term>
     <listitem>
      <para>
       The fillfactor for a table is a percentage between 10 and 100.
@@ -741,7 +743,8 @@ CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } ] TABLE <replaceable class="PAR
       original, which is more efficient than placing it on a different page.
       For a table whose entries are never updated, complete packing is the
       best choice, but in heavily updated tables smaller fillfactors are
-      appropriate.
+      appropriate.  This parameter cannot be set for the supplementary
+      storage table.
      </para>
     </listitem>
    </varlistentry>
@@ -752,14 +755,14 @@ CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } ] TABLE <replaceable class="PAR
      <para>
      Enables or disables the autovacuum daemon on a particular table.
      If true, the autovacuum daemon will initiate a <command>VACUUM</> operation
-     on a particular table when the number of updated or deleted tuples exceeds 
-     <literal>autovacuum_vacuum_threshold</> plus 
-     <literal>autovacuum_vacuum_scale_factor</> times the number of live tuples 
+     on a particular table when the number of updated or deleted tuples exceeds
+     <literal>autovacuum_vacuum_threshold</> plus
+     <literal>autovacuum_vacuum_scale_factor</> times the number of live tuples
      currently estimated to be in the relation.
      Similarly, it will initiate an <command>ANALYZE</> operation when the
      number of inserted, updated or deleted tuples exceeds
-     <literal>autovacuum_analyze_threshold</> plus 
-     <literal>autovacuum_analyze_scale_factor</> times the number of live tuples 
+     <literal>autovacuum_analyze_threshold</> plus
+     <literal>autovacuum_analyze_scale_factor</> times the number of live tuples
      currently estimated to be in the relation.
      If false, this table will not be autovacuumed, except to prevent
      transaction Id wraparound. See <xref linkend="vacuum-for-wraparound"> for
@@ -775,7 +778,7 @@ CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } ] TABLE <replaceable class="PAR
     <listitem>
      <para>
      Minimum number of updated or deleted tuples before initiate a
-     <command>VACUUM</> operation on a particular table. 
+     <command>VACUUM</> operation on a particular table.
      </para>
     </listitem>
    </varlistentry>
@@ -834,7 +837,7 @@ CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } ] TABLE <replaceable class="PAR
      <para>
      Custom <xref linkend="guc-vacuum-freeze-min-age"> parameter. Note that
      autovacuum will ignore attempts to set a per-table
-     <literal>autovacuum_freeze_min_age</> larger than the half system-wide 
+     <literal>autovacuum_freeze_min_age</> larger than the half system-wide
      <xref linkend="guc-autovacuum-freeze-max-age"> setting.
      </para>
     </listitem>
@@ -855,7 +858,7 @@ CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } ] TABLE <replaceable class="PAR
    </varlistentry>
 
    <varlistentry>
-    <term><literal>autovacuum_freeze_table_age</literal> (<type>integer</type>)</term>
+    <term><literal>autovacuum_freeze_table_age</literal>, <literal>toast.autovacuum_freeze_table_age</literal> (<type>integer</type>)</term>
     <listitem>
      <para>
       Custom <xref linkend="guc-vacuum-freeze-table-age"> parameter.

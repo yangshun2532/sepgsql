@@ -9,7 +9,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/adt/ruleutils.c,v 1.309 2009/10/10 01:43:49 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/utils/adt/ruleutils.c,v 1.314 2009/11/05 23:24:25 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -543,6 +543,23 @@ pg_get_triggerdef_worker(Oid trigid, bool pretty)
 			appendStringInfo(&buf, " OR UPDATE");
 		else
 			appendStringInfo(&buf, " UPDATE");
+		/* tgattr is first var-width field, so OK to access directly */
+		if (trigrec->tgattr.dim1 > 0)
+		{
+			int		i;
+
+			appendStringInfoString(&buf, " OF ");
+			for (i = 0; i < trigrec->tgattr.dim1; i++)
+			{
+				char   *attname;
+
+				if (i > 0)
+					appendStringInfoString(&buf, ", ");
+				attname = get_relid_attribute_name(trigrec->tgrelid,
+												   trigrec->tgattr.values[i]);
+				appendStringInfoString(&buf, quote_identifier(attname));
+			}
+		}
 	}
 	if (TRIGGER_FOR_TRUNCATE(trigrec->tgtype))
 	{
@@ -2158,7 +2175,7 @@ make_ruledef(StringInfo buf, HeapTuple ruletup, TupleDesc rulettc,
 		query = getInsertSelectQuery(query, NULL);
 
 		/* Must acquire locks right away; see notes in get_query_def() */
-		AcquireRewriteLocks(query);
+		AcquireRewriteLocks(query, false);
 
 		context.buf = buf;
 		context.namespaces = list_make1(&dpns);
@@ -2303,7 +2320,7 @@ get_query_def(Query *query, StringInfo buf, List *parentnamespace,
 	 * consistent results.	Note we assume it's OK to scribble on the passed
 	 * querytree!
 	 */
-	AcquireRewriteLocks(query);
+	AcquireRewriteLocks(query, false);
 
 	context.buf = buf;
 	context.namespaces = lcons(&dpns, list_copy(parentnamespace));
@@ -2532,21 +2549,28 @@ get_select_query_def(Query *query, deparse_context *context,
 	}
 
 	/* Add FOR UPDATE/SHARE clauses if present */
-	foreach(l, query->rowMarks)
+	if (query->hasForUpdate)
 	{
-		RowMarkClause *rc = (RowMarkClause *) lfirst(l);
-		RangeTblEntry *rte = rt_fetch(rc->rti, query->rtable);
+		foreach(l, query->rowMarks)
+		{
+			RowMarkClause *rc = (RowMarkClause *) lfirst(l);
+			RangeTblEntry *rte = rt_fetch(rc->rti, query->rtable);
 
-		if (rc->forUpdate)
-			appendContextKeyword(context, " FOR UPDATE",
-								 -PRETTYINDENT_STD, PRETTYINDENT_STD, 0);
-		else
-			appendContextKeyword(context, " FOR SHARE",
-								 -PRETTYINDENT_STD, PRETTYINDENT_STD, 0);
-		appendStringInfo(buf, " OF %s",
-						 quote_identifier(rte->eref->aliasname));
-		if (rc->noWait)
-			appendStringInfo(buf, " NOWAIT");
+			/* don't print implicit clauses */
+			if (rc->pushedDown)
+				continue;
+
+			if (rc->forUpdate)
+				appendContextKeyword(context, " FOR UPDATE",
+									 -PRETTYINDENT_STD, PRETTYINDENT_STD, 0);
+			else
+				appendContextKeyword(context, " FOR SHARE",
+									 -PRETTYINDENT_STD, PRETTYINDENT_STD, 0);
+			appendStringInfo(buf, " OF %s",
+							 quote_identifier(rte->eref->aliasname));
+			if (rc->noWait)
+				appendStringInfo(buf, " NOWAIT");
+		}
 	}
 
 	context->windowClause = save_windowclause;
@@ -3346,11 +3370,16 @@ static void
 push_plan(deparse_namespace *dpns, Plan *subplan)
 {
 	/*
-	 * We special-case ModifyTable to pretend that the first child plan is the
-	 * OUTER referent; otherwise normal.  This is to support RETURNING lists
-	 * containing references to non-target relations.
+	 * We special-case Append to pretend that the first child plan is the
+	 * OUTER referent; we have to interpret OUTER Vars in the Append's tlist
+	 * according to one of the children, and the first one is the most
+	 * natural choice.  Likewise special-case ModifyTable to pretend that the
+	 * first child plan is the OUTER referent; this is to support RETURNING
+	 * lists containing references to non-target relations.
 	 */
-	if (IsA(subplan, ModifyTable))
+	if (IsA(subplan, Append))
+		dpns->outer_plan = (Plan *) linitial(((Append *) subplan)->appendplans);
+	else if (IsA(subplan, ModifyTable))
 		dpns->outer_plan = (Plan *) linitial(((ModifyTable *) subplan)->plans);
 	else
 		dpns->outer_plan = outerPlan(subplan);
@@ -3543,14 +3572,7 @@ get_variable(Var *var, int levelsup, bool showstar, deparse_context *context)
 		if (schemaname)
 			appendStringInfo(buf, "%s.",
 							 quote_identifier(schemaname));
-
-		if (strcmp(refname, "*NEW*") == 0)
-			appendStringInfoString(buf, "new");
-		else if (strcmp(refname, "*OLD*") == 0)
-			appendStringInfoString(buf, "old");
-		else
-			appendStringInfoString(buf, quote_identifier(refname));
-
+		appendStringInfoString(buf, quote_identifier(refname));
 		if (attname || showstar)
 			appendStringInfoChar(buf, '.');
 	}

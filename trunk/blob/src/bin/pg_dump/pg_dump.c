@@ -12,7 +12,7 @@
  *	by PostgreSQL
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/bin/pg_dump/pg_dump.c,v 1.550 2009/10/09 21:02:56 petere Exp $
+ *	  $PostgreSQL: pgsql/src/bin/pg_dump/pg_dump.c,v 1.552 2009/10/14 22:14:23 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -2067,19 +2067,24 @@ dumpBlobComments(Archive *AH, void *arg)
 	selectSourceSchema("pg_catalog");
 
 	/* Cursor to get all BLOB comments */
-	if (AH->remoteVersion >= 70300)
+	if (AH->removeVersion >= 80500)
 		blobQry = "DECLARE blobcmt CURSOR FOR SELECT loid, "
-			"obj_description(loid, 'pg_largeobject') "
+			"obj_description(loid, 'pg_largeobject'), "
+			"lomowner, lomacl "
+			"FROM pg_largeobject_metadata";
+	else if (AH->remoteVersion >= 70300)
+		blobQry = "DECLARE blobcmt CURSOR FOR SELECT loid, "
+			"obj_description(loid, 'pg_largeobject'), NULL, NULL "
 			"FROM (SELECT DISTINCT loid FROM "
 			"pg_description d JOIN pg_largeobject l ON (objoid = loid) "
 			"WHERE classoid = 'pg_largeobject'::regclass) ss";
 	else if (AH->remoteVersion >= 70200)
 		blobQry = "DECLARE blobcmt CURSOR FOR SELECT loid, "
-			"obj_description(loid, 'pg_largeobject') "
+			"obj_description(loid, 'pg_largeobject'), NULL, NULL "
 			"FROM (SELECT DISTINCT loid FROM pg_largeobject) ss";
 	else if (AH->remoteVersion >= 70100)
 		blobQry = "DECLARE blobcmt CURSOR FOR SELECT loid, "
-			"obj_description(loid) "
+			"obj_description(loid), NULL, NULL "
 			"FROM (SELECT DISTINCT loid FROM pg_largeobject) ss";
 	else
 		blobQry = "DECLARE blobcmt CURSOR FOR SELECT oid, "
@@ -2087,7 +2092,8 @@ dumpBlobComments(Archive *AH, void *arg)
 			"		SELECT description "
 			"		FROM pg_description pd "
 			"		WHERE pd.objoid=pc.oid "
-			"	) "
+			"	),"
+			"   NULL, NULL "
 			"FROM pg_class pc WHERE relkind = 'l'";
 
 	res = PQexec(g_conn, blobQry);
@@ -2107,14 +2113,24 @@ dumpBlobComments(Archive *AH, void *arg)
 		/* Process the tuples, if any */
 		for (i = 0; i < PQntuples(res); i++)
 		{
-			Oid			blobOid;
+			Oid			blobOid = atooid(PQgetvalue(res, i, 0));
 			char	   *comment;
+
+			/*
+			 * A large object has its metadata after the v8.5
+			 */
+			if (AH->removeVersion >= 80500)
+			{
+				
+				
+				
+				
+			}
 
 			/* ignore blobs without comments */
 			if (PQgetisnull(res, i, 1))
 				continue;
 
-			blobOid = atooid(PQgetvalue(res, i, 0));
 			comment = PQgetvalue(res, i, 1);
 
 			printfPQExpBuffer(commentcmd, "COMMENT ON LARGE OBJECT %u IS ",
@@ -4419,6 +4435,18 @@ getTriggers(TableInfo tblinfo[], int numTables)
 			if (i_tgdef >= 0)
 			{
 				tginfo[j].tgdef = strdup(PQgetvalue(res, j, i_tgdef));
+
+				/* remaining fields are not valid if we have tgdef */
+				tginfo[j].tgfname = NULL;
+				tginfo[j].tgtype = 0;
+				tginfo[j].tgnargs = 0;
+				tginfo[j].tgargs = NULL;
+				tginfo[j].tgisconstraint = false;
+				tginfo[j].tgdeferrable = false;
+				tginfo[j].tginitdeferred = false;
+				tginfo[j].tgconstrname = NULL;
+				tginfo[j].tgconstrrelid = InvalidOid;
+				tginfo[j].tgconstrrelname = NULL;
 			}
 			else
 			{
@@ -9944,13 +9972,13 @@ dumpDefaultACL(Archive *fout, DefaultACLInfo *daclinfo)
 	switch (daclinfo->defaclobjtype)
 	{
 		case DEFACLOBJ_RELATION:
-			type = "TABLE";
+			type = "TABLES";
 			break;
 		case DEFACLOBJ_SEQUENCE:
-			type = "SEQUENCE";
+			type = "SEQUENCES";
 			break;
 		case DEFACLOBJ_FUNCTION:
-			type = "FUNCTION";
+			type = "FUNCTIONS";
 			break;
 		default:
 			/* shouldn't get here */
@@ -9960,7 +9988,7 @@ dumpDefaultACL(Archive *fout, DefaultACLInfo *daclinfo)
 			type = "";			/* keep compiler quiet */
 	}
 
-	appendPQExpBuffer(tag, "DEFAULT %s PRIVILEGES", type);
+	appendPQExpBuffer(tag, "DEFAULT PRIVILEGES FOR %s", type);
 
 	/* build the actual command(s) for this tuple */
 	if (!buildDefaultACLCommands(type,

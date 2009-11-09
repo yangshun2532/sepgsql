@@ -279,9 +279,10 @@ GRANT SELECT(fx) ON atestc TO regressuser2;
 
 SET SESSION AUTHORIZATION regressuser2;
 SELECT fx FROM atestp2; -- ok
-SELECT fy FROM atestp2; -- fail, no privilege on atestc.fy
-SELECT atestp2 FROM atestp2; -- fail, no privilege on atestc.fy
-SELECT oid FROM atestp2; -- fail, no privilege on atestc.oid
+SELECT fy FROM atestp2; -- ok
+SELECT atestp2 FROM atestp2; -- ok
+SELECT oid FROM atestp2; -- ok
+SELECT fy FROM atestc; -- fail
 
 SET SESSION AUTHORIZATION regressuser1;
 GRANT SELECT(fy,oid) ON atestc TO regressuser2;
@@ -574,7 +575,7 @@ CREATE TABLE testns.acltest1 (x int);
 SELECT has_table_privilege('regressuser1', 'testns.acltest1', 'SELECT'); -- no
 SELECT has_table_privilege('regressuser1', 'testns.acltest1', 'INSERT'); -- no
 
-ALTER DEFAULT PRIVILEGES IN SCHEMA testns GRANT SELECT ON TABLE TO public;
+ALTER DEFAULT PRIVILEGES IN SCHEMA testns GRANT SELECT ON TABLES TO public;
 
 SELECT has_table_privilege('regressuser1', 'testns.acltest1', 'SELECT'); -- no
 SELECT has_table_privilege('regressuser1', 'testns.acltest1', 'INSERT'); -- no
@@ -585,7 +586,7 @@ CREATE TABLE testns.acltest1 (x int);
 SELECT has_table_privilege('regressuser1', 'testns.acltest1', 'SELECT'); -- yes
 SELECT has_table_privilege('regressuser1', 'testns.acltest1', 'INSERT'); -- no
 
-ALTER DEFAULT PRIVILEGES IN SCHEMA testns GRANT INSERT ON TABLE TO regressuser1;
+ALTER DEFAULT PRIVILEGES IN SCHEMA testns GRANT INSERT ON TABLES TO regressuser1;
 
 DROP TABLE testns.acltest1;
 CREATE TABLE testns.acltest1 (x int);
@@ -593,7 +594,7 @@ CREATE TABLE testns.acltest1 (x int);
 SELECT has_table_privilege('regressuser1', 'testns.acltest1', 'SELECT'); -- yes
 SELECT has_table_privilege('regressuser1', 'testns.acltest1', 'INSERT'); -- yes
 
-ALTER DEFAULT PRIVILEGES IN SCHEMA testns REVOKE INSERT ON TABLE FROM regressuser1;
+ALTER DEFAULT PRIVILEGES IN SCHEMA testns REVOKE INSERT ON TABLES FROM regressuser1;
 
 DROP TABLE testns.acltest1;
 CREATE TABLE testns.acltest1 (x int);
@@ -601,7 +602,7 @@ CREATE TABLE testns.acltest1 (x int);
 SELECT has_table_privilege('regressuser1', 'testns.acltest1', 'SELECT'); -- yes
 SELECT has_table_privilege('regressuser1', 'testns.acltest1', 'INSERT'); -- no
 
-ALTER DEFAULT PRIVILEGES FOR ROLE regressuser1 REVOKE EXECUTE ON FUNCTION FROM public;
+ALTER DEFAULT PRIVILEGES FOR ROLE regressuser1 REVOKE EXECUTE ON FUNCTIONS FROM public;
 
 SET ROLE regressuser1;
 
@@ -609,7 +610,7 @@ CREATE FUNCTION testns.foo() RETURNS int AS 'select 1' LANGUAGE sql;
 
 SELECT has_function_privilege('regressuser2', 'testns.foo()', 'EXECUTE'); -- no
 
-ALTER DEFAULT PRIVILEGES IN SCHEMA testns GRANT EXECUTE ON FUNCTION to public;
+ALTER DEFAULT PRIVILEGES IN SCHEMA testns GRANT EXECUTE ON FUNCTIONS to public;
 
 DROP FUNCTION testns.foo();
 CREATE FUNCTION testns.foo() RETURNS int AS 'select 1' LANGUAGE sql;
