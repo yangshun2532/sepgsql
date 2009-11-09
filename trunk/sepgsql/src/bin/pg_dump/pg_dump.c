@@ -112,6 +112,7 @@ static int	binary_upgrade = 0;
 static int	disable_dollar_quoting = 0;
 static int	dump_inserts = 0;
 static int	column_inserts = 0;
+static int	security_context = 0;
 
 
 static void help(const char *progname);
@@ -280,6 +281,7 @@ main(int argc, char **argv)
 		{"no-tablespaces", no_argument, &outputNoTablespaces, 1},
 		{"role", required_argument, NULL, 3},
 		{"use-set-session-authorization", no_argument, &use_setsessauth, 1},
+		{"security-context", no_argument, &security_context, 1},
 
 		{NULL, 0, NULL, 0}
 	};
@@ -428,6 +430,8 @@ main(int argc, char **argv)
 					outputNoTablespaces = 1;
 				else if (strcmp(optarg, "use-set-session-authorization") == 0)
 					use_setsessauth = 1;
+				else if (strcmp(optarg, "security-context") == 0)
+					security_context = 1;
 				else
 				{
 					fprintf(stderr,
@@ -614,6 +618,23 @@ main(int argc, char **argv)
 	 */
 	if (g_fout->remoteVersion >= 70300)
 		do_sql_command(g_conn, "SET statement_timeout = 0");
+
+	/*
+	 * Check availability of SE-PostgreSQL
+	 */
+	if (security_context > 0)
+	{
+		PGresult *res;
+
+		res = PQexec(g_conn, "SHOW sepostgresql");
+		if (PQresultStatus(res) != PGRES_TUPLES_OK ||
+			PQntuples(res) != 1 ||
+			strcmp(PQgetvalue(res, 0, 0), "disabled") == 0)
+		{
+			write_msg(NULL, "SE-PostgreSQL is disabled");
+			exit_nicely();
+		}
+	}
 
 	/*
 	 * Start serializable transaction to dump consistent data.
@@ -831,6 +852,7 @@ help(const char *progname)
 	printf(_("  --use-set-session-authorization\n"
 			 "                              use SET SESSION AUTHORIZATION commands instead of\n"
 	"                              ALTER OWNER commands to set ownership\n"));
+	printf(_("  --security-context          dump security context\n"));
 
 	printf(_("\nConnection options:\n"));
 	printf(_("  -h, --host=HOSTNAME      database server host or socket directory\n"));
@@ -1605,7 +1627,8 @@ dumpDatabase(Archive *AH)
 				i_collate,
 				i_ctype,
 				i_frozenxid,
-				i_tablespace;
+				i_tablespace,
+				i_secontext;
 	CatalogId	dbCatId;
 	DumpId		dbDumpId;
 	const char *datname,
@@ -1613,7 +1636,8 @@ dumpDatabase(Archive *AH)
 			   *encoding,
 			   *collate,
 			   *ctype,
-			   *tablespace;
+			   *tablespace,
+			   *secontext;
 	uint32		frozenxid;
 
 	datname = PQdb(g_conn);
@@ -1632,11 +1656,13 @@ dumpDatabase(Archive *AH)
 						  "pg_encoding_to_char(encoding) AS encoding, "
 						  "datcollate, datctype, datfrozenxid, "
 						  "(SELECT spcname FROM pg_tablespace t WHERE t.oid = dattablespace) AS tablespace, "
-					  "shobj_description(oid, 'pg_database') AS description "
-
+					  "shobj_description(oid, 'pg_database') AS description, "
+						  "%s AS security_context "
 						  "FROM pg_database "
 						  "WHERE datname = ",
-						  username_subquery);
+						  username_subquery,
+						  (security_context > 0 ?
+						   "sepgsql_database_getcon(oid)" : "NULL"));
 		appendStringLiteralAH(dbQry, datname, AH);
 	}
 	else if (g_fout->remoteVersion >= 80200)
@@ -1646,8 +1672,8 @@ dumpDatabase(Archive *AH)
 						  "pg_encoding_to_char(encoding) AS encoding, "
 					   "NULL AS datcollate, NULL AS datctype, datfrozenxid, "
 						  "(SELECT spcname FROM pg_tablespace t WHERE t.oid = dattablespace) AS tablespace, "
-					  "shobj_description(oid, 'pg_database') AS description "
-
+					  "shobj_description(oid, 'pg_database') AS description, "
+						  "NULL AS security_context "
 						  "FROM pg_database "
 						  "WHERE datname = ",
 						  username_subquery);
@@ -1659,7 +1685,8 @@ dumpDatabase(Archive *AH)
 						  "(%s datdba) AS dba, "
 						  "pg_encoding_to_char(encoding) AS encoding, "
 					   "NULL AS datcollate, NULL AS datctype, datfrozenxid, "
-						  "(SELECT spcname FROM pg_tablespace t WHERE t.oid = dattablespace) AS tablespace "
+						  "(SELECT spcname FROM pg_tablespace t WHERE t.oid = dattablespace) AS tablespace, "
+						  "NULL AS security_context "
 						  "FROM pg_database "
 						  "WHERE datname = ",
 						  username_subquery);
@@ -1672,7 +1699,8 @@ dumpDatabase(Archive *AH)
 						  "pg_encoding_to_char(encoding) AS encoding, "
 						  "NULL AS datcollate, NULL AS datctype, "
 						  "0 AS datfrozenxid, "
-						  "NULL AS tablespace "
+						  "NULL AS tablespace, "
+						  "NULL AS security_context "
 						  "FROM pg_database "
 						  "WHERE datname = ",
 						  username_subquery);
@@ -1687,7 +1715,8 @@ dumpDatabase(Archive *AH)
 						  "pg_encoding_to_char(encoding) AS encoding, "
 						  "NULL AS datcollate, NULL AS datctype, "
 						  "0 AS datfrozenxid, "
-						  "NULL AS tablespace "
+						  "NULL AS tablespace, "
+						  "NULL AS security_context "
 						  "FROM pg_database "
 						  "WHERE datname = ",
 						  username_subquery);
@@ -1721,6 +1750,7 @@ dumpDatabase(Archive *AH)
 	i_ctype = PQfnumber(res, "datctype");
 	i_frozenxid = PQfnumber(res, "datfrozenxid");
 	i_tablespace = PQfnumber(res, "tablespace");
+	i_secontext = PQfnumber(res, "security_context");
 
 	dbCatId.tableoid = atooid(PQgetvalue(res, 0, i_tableoid));
 	dbCatId.oid = atooid(PQgetvalue(res, 0, i_oid));
@@ -1730,6 +1760,7 @@ dumpDatabase(Archive *AH)
 	ctype = PQgetvalue(res, 0, i_ctype);
 	frozenxid = atooid(PQgetvalue(res, 0, i_frozenxid));
 	tablespace = PQgetvalue(res, 0, i_tablespace);
+	secontext = PQgetvalue(res, 0, i_secontext);
 
 	appendPQExpBuffer(creaQry, "CREATE DATABASE %s WITH TEMPLATE = template0",
 					  fmtId(datname));
@@ -1751,6 +1782,11 @@ dumpDatabase(Archive *AH)
 	if (strlen(tablespace) > 0 && strcmp(tablespace, "pg_default") != 0)
 		appendPQExpBuffer(creaQry, " TABLESPACE = %s",
 						  fmtId(tablespace));
+	if (strlen(secontext) > 0)
+	{
+		appendPQExpBuffer(creaQry, " SECURITY_CONTEXT = ");
+		appendStringLiteralAH(creaQry, secontext, AH);
+	}
 	appendPQExpBuffer(creaQry, ";\n");
 
 	if (binary_upgrade)
@@ -2155,6 +2191,7 @@ getNamespaces(int *numNamespaces)
 	int			i_nspname;
 	int			i_rolname;
 	int			i_nspacl;
+	int			i_nspsecon;
 
 	/*
 	 * Before 7.3, there are no real namespaces; create two dummy entries, one
@@ -2171,6 +2208,7 @@ getNamespaces(int *numNamespaces)
 		nsinfo[0].dobj.name = strdup("public");
 		nsinfo[0].rolname = strdup("");
 		nsinfo[0].nspacl = strdup("");
+		nsinfo[0].nspsecon = strdup("");
 
 		selectDumpableNamespace(&nsinfo[0]);
 
@@ -2181,6 +2219,7 @@ getNamespaces(int *numNamespaces)
 		nsinfo[1].dobj.name = strdup("pg_catalog");
 		nsinfo[1].rolname = strdup("");
 		nsinfo[1].nspacl = strdup("");
+		nsinfo[1].nspsecon = strdup("");
 
 		selectDumpableNamespace(&nsinfo[1]);
 
@@ -2201,8 +2240,11 @@ getNamespaces(int *numNamespaces)
 	 */
 	appendPQExpBuffer(query, "SELECT tableoid, oid, nspname, "
 					  "(%s nspowner) AS rolname, "
-					  "nspacl FROM pg_namespace",
-					  username_subquery);
+					  "nspacl, %s AS security_context "
+					  "FROM pg_namespace",
+					  username_subquery,
+					  (security_context > 0 ?
+					   "sepgsql_schema_getcon(oid)" : "NULL"));
 
 	res = PQexec(g_conn, query->data);
 	check_sql_result(res, g_conn, query->data, PGRES_TUPLES_OK);
@@ -2216,6 +2258,7 @@ getNamespaces(int *numNamespaces)
 	i_nspname = PQfnumber(res, "nspname");
 	i_rolname = PQfnumber(res, "rolname");
 	i_nspacl = PQfnumber(res, "nspacl");
+	i_nspsecon = PQfnumber(res, "security_context");
 
 	for (i = 0; i < ntups; i++)
 	{
@@ -2226,6 +2269,7 @@ getNamespaces(int *numNamespaces)
 		nsinfo[i].dobj.name = strdup(PQgetvalue(res, i, i_nspname));
 		nsinfo[i].rolname = strdup(PQgetvalue(res, i, i_rolname));
 		nsinfo[i].nspacl = strdup(PQgetvalue(res, i, i_nspacl));
+		nsinfo[i].nspsecon = strdup(PQgetvalue(res, i, i_nspsecon));
 
 		/* Decide whether to dump this namespace */
 		selectDumpableNamespace(&nsinfo[i]);
@@ -3212,6 +3256,7 @@ getTables(int *numTables)
 	int			i_reltablespace;
 	int			i_reloptions;
 	int			i_toastreloptions;
+	int			i_relsecon;
 
 	/* Make sure we are in proper schema */
 	selectSourceSchema("pg_catalog");
@@ -3253,7 +3298,8 @@ getTables(int *numTables)
 						  "d.refobjsubid AS owning_col, "
 						  "(SELECT spcname FROM pg_tablespace t WHERE t.oid = c.reltablespace) AS reltablespace, "
 						"array_to_string(c.reloptions, ', ') AS reloptions, "
-						  "array_to_string(array(SELECT 'toast.' || x FROM unnest(tc.reloptions) x), ', ') AS toast_reloptions "
+						  "array_to_string(array(SELECT 'toast.' || x FROM unnest(tc.reloptions) x), ', ') AS toast_reloptions, "
+						  " %s AS security_context "
 						  "FROM pg_class c "
 						  "LEFT JOIN pg_depend d ON "
 						  "(c.relkind = '%c' AND "
@@ -3264,6 +3310,8 @@ getTables(int *numTables)
 						  "WHERE c.relkind in ('%c', '%c', '%c', '%c') "
 						  "ORDER BY c.oid",
 						  username_subquery,
+						  (security_context > 0 ?
+						   "sepgsql_relation_getcon(c.oid)" : "NULL"),
 						  RELKIND_SEQUENCE,
 						  RELKIND_RELATION, RELKIND_SEQUENCE,
 						  RELKIND_VIEW, RELKIND_COMPOSITE_TYPE);
@@ -3285,7 +3333,8 @@ getTables(int *numTables)
 						  "d.refobjsubid AS owning_col, "
 						  "(SELECT spcname FROM pg_tablespace t WHERE t.oid = c.reltablespace) AS reltablespace, "
 						"array_to_string(c.reloptions, ', ') AS reloptions, "
-						  "NULL AS toast_reloptions "
+						  "NULL AS toast_reloptions, "
+						  "NULL AS security_context "
 						  "FROM pg_class c "
 						  "LEFT JOIN pg_depend d ON "
 						  "(c.relkind = '%c' AND "
@@ -3316,7 +3365,8 @@ getTables(int *numTables)
 						  "d.refobjsubid AS owning_col, "
 						  "(SELECT spcname FROM pg_tablespace t WHERE t.oid = c.reltablespace) AS reltablespace, "
 						  "NULL AS reloptions, "
-						  "NULL AS toast_reloptions "
+						  "NULL AS toast_reloptions, "
+						  "NULL AS security_context "
 						  "FROM pg_class c "
 						  "LEFT JOIN pg_depend d ON "
 						  "(c.relkind = '%c' AND "
@@ -3347,7 +3397,8 @@ getTables(int *numTables)
 						  "d.refobjsubid AS owning_col, "
 						  "NULL AS reltablespace, "
 						  "NULL AS reloptions, "
-						  "NULL AS toast_reloptions "
+						  "NULL AS toast_reloptions, "
+						  "NULL AS security_context "
 						  "FROM pg_class c "
 						  "LEFT JOIN pg_depend d ON "
 						  "(c.relkind = '%c' AND "
@@ -3374,7 +3425,8 @@ getTables(int *numTables)
 						  "NULL::int4 AS owning_col, "
 						  "NULL AS reltablespace, "
 						  "NULL AS reloptions, "
-						  "NULL AS toast_reloptions "
+						  "NULL AS toast_reloptions, "
+						  "NULL AS security_context "
 						  "FROM pg_class "
 						  "WHERE relkind IN ('%c', '%c', '%c') "
 						  "ORDER BY oid",
@@ -3396,7 +3448,8 @@ getTables(int *numTables)
 						  "NULL::int4 AS owning_col, "
 						  "NULL AS reltablespace, "
 						  "NULL AS reloptions, "
-						  "NULL AS toast_reloptions "
+						  "NULL AS toast_reloptions, "
+						  "NULL AS security_context "
 						  "FROM pg_class "
 						  "WHERE relkind IN ('%c', '%c', '%c') "
 						  "ORDER BY oid",
@@ -3428,7 +3481,8 @@ getTables(int *numTables)
 						  "NULL::int4 AS owning_col, "
 						  "NULL AS reltablespace, "
 						  "NULL AS reloptions, "
-						  "NULL AS toast_reloptions "
+						  "NULL AS toast_reloptions, "
+						  "NULL AS security_context "
 						  "FROM pg_class c "
 						  "WHERE relkind IN ('%c', '%c') "
 						  "ORDER BY oid",
@@ -3473,6 +3527,7 @@ getTables(int *numTables)
 	i_reltablespace = PQfnumber(res, "reltablespace");
 	i_reloptions = PQfnumber(res, "reloptions");
 	i_toastreloptions = PQfnumber(res, "toast_reloptions");
+	i_relsecon = PQfnumber(res, "security_context");
 
 	if (lockWaitTimeout && g_fout->remoteVersion >= 70300)
 	{
@@ -3520,6 +3575,7 @@ getTables(int *numTables)
 		tblinfo[i].reltablespace = strdup(PQgetvalue(res, i, i_reltablespace));
 		tblinfo[i].reloptions = strdup(PQgetvalue(res, i, i_reloptions));
 		tblinfo[i].toast_reloptions = strdup(PQgetvalue(res, i, i_toastreloptions));
+		tblinfo[i].relsecon = strdup(PQgetvalue(res, i, i_relsecon));
 
 		/* other fields were zeroed above */
 
@@ -4778,6 +4834,7 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 	int			i_attlen;
 	int			i_attalign;
 	int			i_attislocal;
+	int			i_attsecon;
 	PGresult   *res;
 	int			ntups;
 	bool		hasdefaults;
@@ -4823,12 +4880,15 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 							  "a.attstorage, t.typstorage, "
 							  "a.attnotnull, a.atthasdef, a.attisdropped, "
 							  "a.attlen, a.attalign, a.attislocal, "
-				   "pg_catalog.format_type(t.oid,a.atttypmod) AS atttypname "
+				   "pg_catalog.format_type(t.oid,a.atttypmod) AS atttypname, "
+							  "%s AS security_context "
 			 "FROM pg_catalog.pg_attribute a LEFT JOIN pg_catalog.pg_type t "
 							  "ON a.atttypid = t.oid "
 							  "WHERE a.attrelid = '%u'::pg_catalog.oid "
 							  "AND a.attnum > 0::pg_catalog.int2 "
 							  "ORDER BY a.attrelid, a.attnum",
+							  (security_context > 0
+							   ? "sepgsql_attribute_getcon(a.attrelid, a.attnum)" : "NULL"),
 							  tbinfo->dobj.catId.oid);
 		}
 		else if (g_fout->remoteVersion >= 70300)
@@ -4839,7 +4899,8 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 							  "a.attstorage, t.typstorage, "
 							  "a.attnotnull, a.atthasdef, a.attisdropped, "
 							  "a.attlen, a.attalign, a.attislocal, "
-				   "pg_catalog.format_type(t.oid,a.atttypmod) AS atttypname "
+				   "pg_catalog.format_type(t.oid,a.atttypmod) AS atttypname, "
+							  "NULL as security_context "
 			 "FROM pg_catalog.pg_attribute a LEFT JOIN pg_catalog.pg_type t "
 							  "ON a.atttypid = t.oid "
 							  "WHERE a.attrelid = '%u'::pg_catalog.oid "
@@ -4860,7 +4921,8 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 							  "t.typstorage, a.attnotnull, a.atthasdef, "
 							  "false AS attisdropped, a.attlen, "
 							  "a.attalign, false AS attislocal, "
-							  "format_type(t.oid,a.atttypmod) AS atttypname "
+							  "format_type(t.oid,a.atttypmod) AS atttypname, "
+							  "NULL AS security_context "
 							  "FROM pg_attribute a LEFT JOIN pg_type t "
 							  "ON a.atttypid = t.oid "
 							  "WHERE a.attrelid = '%u'::oid "
@@ -4877,7 +4939,8 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 							  "attnotnull, atthasdef, false AS attisdropped, "
 							  "attlen, attalign, "
 							  "false AS attislocal, "
-							  "(SELECT typname FROM pg_type WHERE oid = atttypid) AS atttypname "
+							  "(SELECT typname FROM pg_type WHERE oid = atttypid) AS atttypname, "
+							  "NULL AS security_context "
 							  "FROM pg_attribute a "
 							  "WHERE attrelid = '%u'::oid "
 							  "AND attnum > 0::int2 "
@@ -4904,6 +4967,7 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 		i_attlen = PQfnumber(res, "attlen");
 		i_attalign = PQfnumber(res, "attalign");
 		i_attislocal = PQfnumber(res, "attislocal");
+		i_attsecon = PQfnumber(res, "security_context");
 
 		tbinfo->numatts = ntups;
 		tbinfo->attnames = (char **) malloc(ntups * sizeof(char *));
@@ -4919,6 +4983,7 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 		tbinfo->attislocal = (bool *) malloc(ntups * sizeof(bool));
 		tbinfo->notnull = (bool *) malloc(ntups * sizeof(bool));
 		tbinfo->attrdefs = (AttrDefInfo **) malloc(ntups * sizeof(AttrDefInfo *));
+		tbinfo->attsecons = (char **) malloc(ntups * sizeof(char *));
 		tbinfo->inhAttrs = (bool *) malloc(ntups * sizeof(bool));
 		tbinfo->inhAttrDef = (bool *) malloc(ntups * sizeof(bool));
 		tbinfo->inhNotNull = (bool *) malloc(ntups * sizeof(bool));
@@ -4948,6 +5013,7 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 			tbinfo->attrdefs[j] = NULL; /* fix below */
 			if (PQgetvalue(res, j, i_atthasdef)[0] == 't')
 				hasdefaults = true;
+			tbinfo->attsecons[j] = strdup(PQgetvalue(res, j, i_attsecon));
 			/* these flags will be set in flagInhAttrs() */
 			tbinfo->inhAttrs[j] = false;
 			tbinfo->inhAttrDef[j] = false;
@@ -6236,7 +6302,16 @@ dumpNamespace(Archive *fout, NamespaceInfo *nspinfo)
 
 	appendPQExpBuffer(delq, "DROP SCHEMA %s;\n", qnspname);
 
-	appendPQExpBuffer(q, "CREATE SCHEMA %s;\n", qnspname);
+	appendPQExpBuffer(q, "CREATE SCHEMA %s", qnspname);
+
+	/*
+	 * Security context support -- if SE-PostgreSQL is enabled
+	 */
+	if (security_context > 0 && strlen(nspinfo->nspsecon) > 0)
+		appendPQExpBuffer(q, " SECURITY_CONTEXT = '%s'",
+						  nspinfo->nspsecon);
+
+	appendPQExpBuffer(q, ";\n");
 
 	ArchiveEntry(fout, nspinfo->dobj.catId, nspinfo->dobj.dumpId,
 				 nspinfo->dobj.name,
@@ -10272,6 +10347,12 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 				if (tbinfo->notnull[j] &&
 					(!tbinfo->inhNotNull[j] || binary_upgrade))
 					appendPQExpBuffer(q, " NOT NULL");
+				/*
+				 * Security context -- if SE-PostgreSQL is enabled
+				 */
+				if (security_context > 0 && strlen(tbinfo->attsecons[j]) > 0)
+					appendPQExpBuffer(q, " AS SECURITY_CONTEXT = '%s'",
+									  tbinfo->attsecons[j]);
 			}
 		}
 
@@ -10333,6 +10414,12 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 			}
 			appendPQExpBuffer(q, ")");
 		}
+
+		/*
+		 * Security context of tables
+		 */
+		if (security_context > 0 && strlen(tbinfo->relsecon) > 0)
+			appendPQExpBuffer(q, " SECURITY_CONTEXT = '%s'", tbinfo->relsecon);
 
 		appendPQExpBuffer(q, ";\n");
 

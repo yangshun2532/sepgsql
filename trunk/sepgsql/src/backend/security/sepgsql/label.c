@@ -16,6 +16,7 @@
 #include "security/sepgsql.h"
 #include "utils/builtins.h"
 #include "utils/memutils.h"
+#include "utils/lsyscache.h"
 #include "utils/syscache.h"
 
 #include <selinux/selinux.h>
@@ -241,43 +242,6 @@ sepgsql_get_unlabeled_context(void)
 	return result;
 }
 
-#if 0
-/*
- * sepgsql_get_file_context
- *
- * It returns the security context of the given filename.
- */
-char *
-sepgsql_get_file_context(const char *filename)
-{
-	char   *file_context;
-	char   *result;
-
-	if (getfilecon(filename, &file_context) < 0)
-		ereport(ERROR,
-				(errcode_for_file_access(),
-				 errmsg("could not get security context of \"%s\": %m",
-						filename)));
-	/*
-	 * libselinux returns a malloc()'ed regison, so we need to duplicate
-	 * it on the palloc()'ed region.
-	 */
-	PG_TRY();
-	{
-		result = pstrdup(file_context);
-	}
-	PG_CATCH();
-	{
-		freecon(file_context);
-		PG_RE_THROW();
-	}
-	PG_END_TRY();
-	freecon(file_context);
-
-	return result;
-}
-#endif
-
 /*
  * sepgsql_mcstrans_in
  *
@@ -302,7 +266,8 @@ sepgsql_mcstrans_in(char *trans_context)
 	if (selinux_trans_to_raw_context(trans_context, &raw_context) < 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_INTERNAL_ERROR),
-				 errmsg("SELinux: failed to translate \"%s\"", trans_context)));
+				 errmsg("SELinux: failed to translate \"%s\"",
+						trans_context)));
 	PG_TRY();
 	{
 		result = pstrdup(raw_context);
@@ -342,7 +307,8 @@ sepgsql_mcstrans_out(char *raw_context)
 	if (selinux_raw_to_trans_context(raw_context, &trans_context) < 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_INTERNAL_ERROR),
-				 errmsg("SELinux: failed to translate \"%s\"", raw_context)));
+				 errmsg("SELinux: failed to translate \"%s\"",
+						raw_context)));
 	PG_TRY();
 	{
 		result = pstrdup(trans_context);
@@ -356,4 +322,197 @@ sepgsql_mcstrans_out(char *raw_context)
 	freecon(trans_context);
 
 	return result;
+}
+
+/*
+ * sepgsql_getcon
+ *
+ * A built-in SQL function to return the security context of client
+ */
+Datum
+sepgsql_getcon(PG_FUNCTION_ARGS)
+{
+	char   *context;
+
+	if (!sepgsql_is_enabled())
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("SE-PostgreSQL is disabled now")));
+
+	context = sepgsql_get_client_context();
+	context = sepgsql_mcstrans_out(context);
+	return CStringGetTextDatum(context);
+}
+
+/*
+ * sepgsql_database_getcon
+ *
+ * A built-in SQL function to return a security context of the database
+ */
+Datum
+sepgsql_database_getcon(PG_FUNCTION_ARGS)
+{
+	Oid			datOid = PG_GETARG_OID(0);
+	HeapTuple	tuple;
+	Datum		datum;
+	bool		isnull;
+	char	   *context = NULL;
+
+	if (!sepgsql_is_enabled())
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("SE-PostgreSQL is disabled now")));
+
+	tuple = SearchSysCache(DATABASEOID,
+						   ObjectIdGetDatum(datOid),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_DATABASE),
+				 errmsg("cache lookup failed for database %u", datOid)));
+
+	datum = SysCacheGetAttr(DATABASEOID, tuple,
+							Anum_pg_database_datsecon, &isnull);
+	if (!isnull)
+		context = TextDatumGetCString(datum);
+    if (!context || security_check_context_raw(context) < 0)
+		context = sepgsql_get_unlabeled_context();
+
+	ReleaseSysCache(tuple);
+
+	context = sepgsql_mcstrans_out(context);
+
+	PG_RETURN_TEXT_P(cstring_to_text(context));
+}
+
+/*
+ * sepgsql_schema_getcon
+ *
+ * A built-in SQL function to return a security context of the schema.
+ */
+Datum
+sepgsql_schema_getcon(PG_FUNCTION_ARGS)
+{
+	Oid			nspOid = PG_GETARG_OID(0);
+	HeapTuple	tuple;
+	Datum		datum;
+	bool		isnull;
+	char	   *context = NULL;
+
+	if (!sepgsql_is_enabled())
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("SE-PostgreSQL is disabled now")));
+
+	tuple = SearchSysCache(NAMESPACEOID,
+						   ObjectIdGetDatum(nspOid),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_SCHEMA),
+				 errmsg("schema with OID %u does not exist", nspOid)));
+
+	datum = SysCacheGetAttr(NAMESPACEOID, tuple,
+							Anum_pg_namespace_nspsecon, &isnull);
+	if (!isnull)
+		context = TextDatumGetCString(datum);
+	if (!context || security_check_context_raw(context) < 0)
+		context = sepgsql_get_unlabeled_context();
+
+	ReleaseSysCache(tuple);
+
+	context = sepgsql_mcstrans_out(context);
+
+	PG_RETURN_TEXT_P(cstring_to_text(context));
+}
+
+/*
+ * sepgsql_relation_getcon
+ *
+ * A built-in SQL function to return a security context of the relation
+ */
+Datum
+sepgsql_relation_getcon(PG_FUNCTION_ARGS)
+{
+	Oid			relOid = PG_GETARG_OID(0);
+	HeapTuple	tuple;
+	Datum		datum;
+	bool		isnull;
+	char	   *context = NULL;
+
+	if (!sepgsql_is_enabled())
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("SE-PostgreSQL is disabled now")));
+
+	if (get_rel_relkind(relOid) != RELKIND_RELATION)
+		PG_RETURN_NULL();
+
+	tuple = SearchSysCache(RELOID,
+						   ObjectIdGetDatum(relOid),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_TABLE),
+				 errmsg("relation with OID %u does not exist", relOid)));
+
+	datum = SysCacheGetAttr(RELOID, tuple,
+							Anum_pg_class_relsecon, &isnull);
+	if (!isnull)
+		context = TextDatumGetCString(datum);
+	if (!context || security_check_context_raw(context) < 0)
+		context = sepgsql_get_unlabeled_context();
+
+	ReleaseSysCache(tuple);
+
+	context = sepgsql_mcstrans_out(context);
+
+	PG_RETURN_TEXT_P(cstring_to_text(context));
+}
+
+/*
+ * sepgsql_attribute_getcon
+ *
+ * A built-in SQL function to return a security context of the attribute
+ */
+Datum
+sepgsql_attribute_getcon(PG_FUNCTION_ARGS)
+{
+	Oid			relOid = PG_GETARG_OID(0);
+	AttrNumber	attnum = PG_GETARG_INT16(1);
+	HeapTuple	tuple;
+	Datum		datum;
+	bool		isnull;
+	char	   *context = NULL;
+
+	if (!sepgsql_is_enabled())
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("SE-PostgreSQL is disabled now")));
+
+	if (get_rel_relkind(relOid) != RELKIND_RELATION)
+		PG_RETURN_NULL();
+
+	tuple = SearchSysCache(ATTNUM,
+						   ObjectIdGetDatum(relOid),
+						   Int16GetDatum(attnum),
+						   0, 0);
+	if (!HeapTupleIsValid(tuple))
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_COLUMN),
+				 errmsg("attribute %d of relation with OID %u does not exist",
+						relOid, attnum)));
+
+	datum = SysCacheGetAttr(ATTNUM, tuple,
+							Anum_pg_attribute_attsecon, &isnull);
+	if (!isnull)
+		context = TextDatumGetCString(datum);
+	if (!context || security_check_context_raw(context) < 0)
+		context = sepgsql_get_unlabeled_context();
+
+	ReleaseSysCache(tuple);
+
+	context = sepgsql_mcstrans_out(context);
+
+	PG_RETURN_TEXT_P(cstring_to_text(context));
 }
