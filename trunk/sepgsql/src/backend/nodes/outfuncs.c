@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/nodes/outfuncs.c,v 1.368 2009/10/12 18:10:45 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/nodes/outfuncs.c,v 1.371 2009/10/28 14:55:38 tgl Exp $
  *
  * NOTES
  *	  Every node type that can appear in stored rules' parsetrees *must*
@@ -329,6 +329,8 @@ _outModifyTable(StringInfo str, ModifyTable *node)
 	WRITE_NODE_FIELD(resultRelations);
 	WRITE_NODE_FIELD(plans);
 	WRITE_NODE_FIELD(returningLists);
+	WRITE_NODE_FIELD(rowMarks);
+	WRITE_INT_FIELD(epqParam);
 }
 
 static void
@@ -729,6 +731,7 @@ _outLockRows(StringInfo str, LockRows *node)
 	_outPlanInfo(str, (Plan *) node);
 
 	WRITE_NODE_FIELD(rowMarks);
+	WRITE_INT_FIELD(epqParam);
 }
 
 static void
@@ -740,6 +743,21 @@ _outLimit(StringInfo str, Limit *node)
 
 	WRITE_NODE_FIELD(limitOffset);
 	WRITE_NODE_FIELD(limitCount);
+}
+
+static void
+_outPlanRowMark(StringInfo str, PlanRowMark *node)
+{
+	WRITE_NODE_TYPE("PLANROWMARK");
+
+	WRITE_UINT_FIELD(rti);
+	WRITE_UINT_FIELD(prti);
+	WRITE_ENUM_FIELD(markType, RowMarkType);
+	WRITE_BOOL_FIELD(noWait);
+	WRITE_BOOL_FIELD(isParent);
+	WRITE_INT_FIELD(ctidAttNo);
+	WRITE_INT_FIELD(toidAttNo);
+	WRITE_INT_FIELD(wholeAttNo);
 }
 
 static void
@@ -1512,7 +1530,6 @@ _outPlannerGlobal(StringInfo str, PlannerGlobal *node)
 	WRITE_NODE_FIELD(relationOids);
 	WRITE_NODE_FIELD(invalItems);
 	WRITE_UINT_FIELD(lastPHId);
-	WRITE_UINT_FIELD(lastRowmarkId);
 	WRITE_BOOL_FIELD(transientPlan);
 }
 
@@ -1536,6 +1553,7 @@ _outPlannerInfo(StringInfo str, PlannerInfo *node)
 	WRITE_NODE_FIELD(full_join_clauses);
 	WRITE_NODE_FIELD(join_info_list);
 	WRITE_NODE_FIELD(append_rel_list);
+	WRITE_NODE_FIELD(rowMarks);
 	WRITE_NODE_FIELD(placeholder_list);
 	WRITE_NODE_FIELD(query_pathkeys);
 	WRITE_NODE_FIELD(group_pathkeys);
@@ -1886,6 +1904,7 @@ _outColumnDef(StringInfo str, ColumnDef *node)
 	WRITE_INT_FIELD(inhcount);
 	WRITE_BOOL_FIELD(is_local);
 	WRITE_BOOL_FIELD(is_not_null);
+	WRITE_INT_FIELD(storage);
 	WRITE_NODE_FIELD(raw_default);
 	WRITE_NODE_FIELD(cooked_default);
 	WRITE_NODE_FIELD(constraints);
@@ -1970,6 +1989,7 @@ _outQuery(StringInfo str, Query *node)
 	WRITE_BOOL_FIELD(hasSubLinks);
 	WRITE_BOOL_FIELD(hasDistinctOn);
 	WRITE_BOOL_FIELD(hasRecursive);
+	WRITE_BOOL_FIELD(hasForUpdate);
 	WRITE_NODE_FIELD(cteList);
 	WRITE_NODE_FIELD(rtable);
 	WRITE_NODE_FIELD(jointree);
@@ -2017,11 +2037,9 @@ _outRowMarkClause(StringInfo str, RowMarkClause *node)
 	WRITE_NODE_TYPE("ROWMARKCLAUSE");
 
 	WRITE_UINT_FIELD(rti);
-	WRITE_UINT_FIELD(prti);
-	WRITE_UINT_FIELD(rowmarkId);
 	WRITE_BOOL_FIELD(forUpdate);
 	WRITE_BOOL_FIELD(noWait);
-	WRITE_BOOL_FIELD(isParent);
+	WRITE_BOOL_FIELD(pushedDown);
 }
 
 static void
@@ -2526,6 +2544,9 @@ _outNode(StringInfo str, void *obj)
 				break;
 			case T_Limit:
 				_outLimit(str, obj);
+				break;
+			case T_PlanRowMark:
+				_outPlanRowMark(str, obj);
 				break;
 			case T_PlanInvalItem:
 				_outPlanInvalItem(str, obj);

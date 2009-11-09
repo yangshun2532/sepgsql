@@ -11,7 +11,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/parser/gram.y,v 2.684 2009/10/12 20:39:41 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/parser/gram.y,v 2.689 2009/11/09 02:36:56 tgl Exp $
  *
  * HISTORY
  *	  AUTHOR			DATE			MAJOR EVENT
@@ -253,10 +253,10 @@ static TypeName *TableFuncTypeName(List *columns);
 
 %type <boolean> TriggerActionTime TriggerForSpec opt_trusted opt_restart_seqs
 
-%type <ival>	TriggerEvents TriggerOneEvent
+%type <list>	TriggerEvents TriggerOneEvent
 %type <value>	TriggerFuncArg
 
-%type <str>		relation_name copy_file_name
+%type <str>		copy_file_name
 				database_name access_method_clause access_method attr_name
 				index_name name file_name cluster_index_specification
 
@@ -265,7 +265,7 @@ static TypeName *TableFuncTypeName(List *columns);
 
 %type <range>	qualified_name OptConstrFromTable
 
-%type <str>		all_Op MathOp SpecialRuleRelation
+%type <str>		all_Op MathOp
 
 %type <str>		iso_level opt_encoding
 %type <node>	grantee
@@ -506,11 +506,11 @@ static TypeName *TableFuncTypeName(List *columns);
 
 	MAPPING MATCH MAXVALUE MINUTE_P MINVALUE MODE MONTH_P MOVE
 
-	NAME_P NAMES NATIONAL NATURAL NCHAR NEW NEXT NO NOCREATEDB
+	NAME_P NAMES NATIONAL NATURAL NCHAR NEXT NO NOCREATEDB
 	NOCREATEROLE NOCREATEUSER NOINHERIT NOLOGIN_P NONE NOSUPERUSER
 	NOT NOTHING NOTIFY NOTNULL NOWAIT NULL_P NULLIF NULLS_P NUMERIC
 
-	OBJECT_P OF OFF OFFSET OIDS OLD ON ONLY OPERATOR OPTION OPTIONS OR
+	OBJECT_P OF OFF OFFSET OIDS ON ONLY OPERATOR OPTION OPTIONS OR
 	ORDER OUT_P OUTER_P OVER OVERLAPS OVERLAY OWNED OWNER
 
 	PARSER PARTIAL PARTITION PASSWORD PLACING PLANS POSITION
@@ -3255,7 +3255,8 @@ CreateTrigStmt:
 					n->args = $13;
 					n->before = $4;
 					n->row = $8;
-					n->events = $5;
+					n->events = intVal(linitial($5));
+					n->columns = (List *) lsecond($5);
 					n->isconstraint  = FALSE;
 					n->deferrable	 = FALSE;
 					n->initdeferred  = FALSE;
@@ -3275,7 +3276,8 @@ CreateTrigStmt:
 					n->args = $18;
 					n->before = FALSE;
 					n->row = TRUE;
-					n->events = $6;
+					n->events = intVal(linitial($6));
+					n->columns = (List *) lsecond($6);
 					n->isconstraint  = TRUE;
 					n->deferrable = ($10 & 1) != 0;
 					n->initdeferred = ($10 & 2) != 0;
@@ -3294,17 +3296,36 @@ TriggerEvents:
 				{ $$ = $1; }
 			| TriggerEvents OR TriggerOneEvent
 				{
-					if ($1 & $3)
+					int		events1 = intVal(linitial($1));
+					int		events2 = intVal(linitial($3));
+					List   *columns1 = (List *) lsecond($1);
+					List   *columns2 = (List *) lsecond($3);
+
+					if (events1 & events2)
 						parser_yyerror("duplicate trigger events specified");
-					$$ = $1 | $3;
+					/*
+					 * concat'ing the columns lists loses information about
+					 * which columns went with which event, but so long as
+					 * only UPDATE carries columns and we disallow multiple
+					 * UPDATE items, it doesn't matter.  Command execution
+					 * should just ignore the columns for non-UPDATE events.
+					 */
+					$$ = list_make2(makeInteger(events1 | events2),
+									list_concat(columns1, columns2));
 				}
 		;
 
 TriggerOneEvent:
-			INSERT								{ $$ = TRIGGER_TYPE_INSERT; }
-			| DELETE_P							{ $$ = TRIGGER_TYPE_DELETE; }
-			| UPDATE							{ $$ = TRIGGER_TYPE_UPDATE; }
-			| TRUNCATE							{ $$ = TRIGGER_TYPE_TRUNCATE; }
+			INSERT
+				{ $$ = list_make2(makeInteger(TRIGGER_TYPE_INSERT), NIL); }
+			| DELETE_P
+				{ $$ = list_make2(makeInteger(TRIGGER_TYPE_DELETE), NIL); }
+			| UPDATE
+				{ $$ = list_make2(makeInteger(TRIGGER_TYPE_UPDATE), NIL); }
+			| UPDATE OF columnList
+				{ $$ = list_make2(makeInteger(TRIGGER_TYPE_UPDATE), $3); }
+			| TRUNCATE
+				{ $$ = list_make2(makeInteger(TRIGGER_TYPE_TRUNCATE), NIL); }
 		;
 
 TriggerForSpec:
@@ -4691,8 +4712,8 @@ DefACLOption:
 		;
 
 /*
- * This should match GRANT/REVOKE, except that target objects are missing
- * and we only allow a subset of object types.
+ * This should match GRANT/REVOKE, except that individual target objects
+ * are not mentioned and we only allow a subset of object types.
  */
 DefACLAction:
 			GRANT privileges ON defacl_privilege_target TO grantee_list
@@ -4739,9 +4760,9 @@ DefACLAction:
 		;
 
 defacl_privilege_target:
-			TABLE			{ $$ = ACL_OBJECT_RELATION; }
-			| FUNCTION		{ $$ = ACL_OBJECT_FUNCTION; }
-			| SEQUENCE		{ $$ = ACL_OBJECT_SEQUENCE; }
+			TABLES			{ $$ = ACL_OBJECT_RELATION; }
+			| FUNCTIONS		{ $$ = ACL_OBJECT_FUNCTION; }
+			| SEQUENCES		{ $$ = ACL_OBJECT_SEQUENCE; }
 		;
 
 
@@ -5955,20 +5976,18 @@ SecLabelToItem:		SECURITY_CONTEXT TO Sconst
  *****************************************************************************/
 
 RuleStmt:	CREATE opt_or_replace RULE name AS
-			{ pg_yyget_extra(yyscanner)->QueryIsRule = TRUE; }
 			ON event TO qualified_name where_clause
 			DO opt_instead RuleActionList
 				{
 					RuleStmt *n = makeNode(RuleStmt);
 					n->replace = $2;
-					n->relation = $10;
+					n->relation = $9;
 					n->rulename = $4;
-					n->whereClause = $11;
-					n->event = $8;
-					n->instead = $13;
-					n->actions = $14;
+					n->whereClause = $10;
+					n->event = $7;
+					n->instead = $12;
+					n->actions = $13;
 					$$ = (Node *)n;
-					pg_yyget_extra(yyscanner)->QueryIsRule = FALSE;
 				}
 		;
 
@@ -8056,14 +8075,6 @@ where_or_current_clause:
 					n->cursor_param = 0;
 					$$ = (Node *) n;
 				}
-			| WHERE CURRENT_P OF PARAM
-				{
-					CurrentOfExpr *n = makeNode(CurrentOfExpr);
-					/* cvarno is filled in by parse analysis */
-					n->cursor_name = NULL;
-					n->cursor_param = $4;
-					$$ = (Node *) n;
-				}
 			| /*EMPTY*/								{ $$ = NULL; }
 		;
 
@@ -8682,7 +8693,7 @@ a_expr:		c_expr									{ $$ = $1; }
 					n->agg_distinct = FALSE;
 					n->func_variadic = FALSE;
 					n->over = NULL;
-					n->location = @4;
+					n->location = @2;
 					$$ = (Node *) makeSimpleA_Expr(AEXPR_OP, "~~", $1, (Node *) n, @2);
 				}
 			| a_expr NOT LIKE a_expr
@@ -8696,7 +8707,7 @@ a_expr:		c_expr									{ $$ = $1; }
 					n->agg_distinct = FALSE;
 					n->func_variadic = FALSE;
 					n->over = NULL;
-					n->location = @5;
+					n->location = @2;
 					$$ = (Node *) makeSimpleA_Expr(AEXPR_OP, "!~~", $1, (Node *) n, @2);
 				}
 			| a_expr ILIKE a_expr
@@ -8710,7 +8721,7 @@ a_expr:		c_expr									{ $$ = $1; }
 					n->agg_distinct = FALSE;
 					n->func_variadic = FALSE;
 					n->over = NULL;
-					n->location = @4;
+					n->location = @2;
 					$$ = (Node *) makeSimpleA_Expr(AEXPR_OP, "~~*", $1, (Node *) n, @2);
 				}
 			| a_expr NOT ILIKE a_expr
@@ -8724,7 +8735,7 @@ a_expr:		c_expr									{ $$ = $1; }
 					n->agg_distinct = FALSE;
 					n->func_variadic = FALSE;
 					n->over = NULL;
-					n->location = @5;
+					n->location = @2;
 					$$ = (Node *) makeSimpleA_Expr(AEXPR_OP, "!~~*", $1, (Node *) n, @2);
 				}
 
@@ -8749,7 +8760,7 @@ a_expr:		c_expr									{ $$ = $1; }
 					n->agg_distinct = FALSE;
 					n->func_variadic = FALSE;
 					n->over = NULL;
-					n->location = @5;
+					n->location = @2;
 					$$ = (Node *) makeSimpleA_Expr(AEXPR_OP, "~", $1, (Node *) n, @2);
 				}
 			| a_expr NOT SIMILAR TO a_expr			%prec SIMILAR
@@ -8761,7 +8772,7 @@ a_expr:		c_expr									{ $$ = $1; }
 					n->agg_distinct = FALSE;
 					n->func_variadic = FALSE;
 					n->over = NULL;
-					n->location = @5;
+					n->location = @2;
 					$$ = (Node *) makeSimpleA_Expr(AEXPR_OP, "!~", $1, (Node *) n, @2);
 				}
 			| a_expr NOT SIMILAR TO a_expr ESCAPE a_expr
@@ -8773,7 +8784,7 @@ a_expr:		c_expr									{ $$ = $1; }
 					n->agg_distinct = FALSE;
 					n->func_variadic = FALSE;
 					n->over = NULL;
-					n->location = @6;
+					n->location = @2;
 					$$ = (Node *) makeSimpleA_Expr(AEXPR_OP, "!~", $1, (Node *) n, @2);
 				}
 
@@ -10184,16 +10195,11 @@ case_arg:	a_expr									{ $$ = $1; }
 			| /*EMPTY*/								{ $$ = NULL; }
 		;
 
-/*
- * columnref starts with relation_name not ColId, so that OLD and NEW
- * references can be accepted.	Note that when there are more than two
- * dotted names, the first name is not actually a relation name...
- */
-columnref:	relation_name
+columnref:	ColId
 				{
 					$$ = makeColumnRef($1, NIL, @1, yyscanner);
 				}
-			| relation_name indirection
+			| ColId indirection
 				{
 					$$ = makeColumnRef($1, $2, @1, yyscanner);
 				}
@@ -10333,11 +10339,6 @@ target_el:	a_expr AS ColLabel
  *
  *****************************************************************************/
 
-relation_name:
-			SpecialRuleRelation						{ $$ = $1; }
-			| ColId									{ $$ = $1; }
-		;
-
 qualified_name_list:
 			qualified_name							{ $$ = list_make1($1); }
 			| qualified_name_list ',' qualified_name { $$ = lappend($1, $3); }
@@ -10351,7 +10352,7 @@ qualified_name_list:
  * which may contain subscripts, and reject that case in the C code.
  */
 qualified_name:
-			relation_name
+			ColId
 				{
 					$$ = makeNode(RangeVar);
 					$$->catalogname = NULL;
@@ -10359,7 +10360,7 @@ qualified_name:
 					$$->relname = $1;
 					$$->location = @1;
 				}
-			| relation_name indirection
+			| ColId indirection
 				{
 					check_qualified_name($2, yyscanner);
 					$$ = makeNode(RangeVar);
@@ -10418,7 +10419,7 @@ file_name:	Sconst									{ $$ = $1; };
  */
 func_name:	type_function_name
 					{ $$ = list_make1(makeString($1)); }
-			| relation_name indirection
+			| ColId indirection
 					{
 						$$ = check_func_name(lcons(makeString($1), $2),
 											 yyscanner);
@@ -10988,12 +10989,10 @@ reserved_keyword:
 			| LIMIT
 			| LOCALTIME
 			| LOCALTIMESTAMP
-			| NEW
 			| NOT
 			| NULL_P
 			| OFF
 			| OFFSET
-			| OLD
 			| ON
 			| ONLY
 			| OR
@@ -11020,30 +11019,6 @@ reserved_keyword:
 			| WHERE
 			| WINDOW
 			| WITH
-		;
-
-
-SpecialRuleRelation:
-			OLD
-				{
-					if (pg_yyget_extra(yyscanner)->QueryIsRule)
-						$$ = "*OLD*";
-					else
-						ereport(ERROR,
-								(errcode(ERRCODE_SYNTAX_ERROR),
-								 errmsg("OLD used in query that is not in a rule"),
-								 parser_errposition(@1)));
-				}
-			| NEW
-				{
-					if (pg_yyget_extra(yyscanner)->QueryIsRule)
-						$$ = "*NEW*";
-					else
-						ereport(ERROR,
-								(errcode(ERRCODE_SYNTAX_ERROR),
-								 errmsg("NEW used in query that is not in a rule"),
-								 parser_errposition(@1)));
-				}
 		;
 
 %%
@@ -11537,7 +11512,6 @@ void
 parser_init(base_yy_extra_type *yyext)
 {
 	yyext->parsetree = NIL;		/* in case grammar forgets to set it */
-	yyext->QueryIsRule = FALSE;
 }
 
 /*
