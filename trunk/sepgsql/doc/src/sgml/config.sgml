@@ -726,6 +726,117 @@ SET ENABLE_SEQSCAN TO OFF;
       </listitem>
      </varlistentry>
 
+     <varlistentry id="guc-sepostgresql" xreflabel="sepostgresql">
+      <term><varname>sepostgresql</varname> (<type>enum</type>)</term>
+      <indexterm>
+       <primary><varname>sepostgresql</> configuration parameter</primary>
+      </indexterm>
+      <listitem>
+       <para>
+	This parameter is available only when SELinux support was enabled
+	at the compile time. We can choose one of the options from
+	<literal>default</literal>, <literal>enforcing</literal>,
+	<literal>permissive</literal> or <literal>disabled</literal>.
+	It is <literal>disabled</literal> by default, but
+	<command>initdb</command> set it to <literal>default</literal>
+	if <literal>--enable-selinux</literal> option was given.
+	We can never change this parameter after starting up the postmaster
+	process due to the security reason.
+       </para>
+       <para>
+	We can turn off SE-PostgreSQL feature at all, even if we enabled
+	it at the compile time. If we set <literal>disabled</literal> on
+	the parameter, it performs as if SE-PostgreSQL does not exist here.
+	It does not apply any mandatory access controls, and does not assign
+	any security context, while it is disabled.
+       </para>
+       <para>
+	If we set a possible value expect for <literal>disabled</literal>
+	on the parameter, SE-PostgreSQL shall be enabled.
+	When it is enabled, it has two performing mode;
+	<literal>enforcing</literal> and <literal>permissive</literal>.
+       </para>
+       <para>
+	In the <literal>enforcing</literal> mode, SE-PostgreSQL checks
+	given queries from users based on the mandatory access control
+	policy, and prevents the accesses if it is violated.
+	It will be an expected bahavior for you.
+       </para>
+       <para>
+	On the other hand, SE-PostgreSQL also checks given queries from
+	users based on the mandatory access control policy in the
+	<literal>permissive</literal> mode, but it does not prevent the
+	accesses, even if it is violated.
+	All the works in <literal>permissive</literal> mode is to generate
+	audit logs on access violation. It can be used to debug the
+	security policy itself.
+       </para>
+       <para>
+	If we set the <literal>default</literal> on the parameter,
+	SE-PostgreSQL performs according to the system setting.
+	If SELinux performs in <literal>enforcing</literal> mode,
+	SE-PostgreSQL also performs in <literal>enforcing</literal> mode.
+       </para>
+       <para>
+	If we set the <literal>enforcing</literal> or
+	<literal>permissive</literal> on the parameter, SE-PostgreSQL
+	performs with the given mode, independent from the system setting.
+	(For example, we can work SE-PostgreSQL in permissive mode, even
+	if the operating system works in enforcing mode.)
+	But, note that SELinux needs to be enabled on the system to work
+	SE-PostgreSQL in the three modes expect for
+	<literal>disabled</literal>.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-sepostgresql-mcstrans" xreflabel="sepostgresql_mcstrans">
+      <term><varname>sepostgresql_mcstrans</varname> (<type>bool</type>)</term>
+      <indexterm>
+       <primary><varname>sepostgresql_mcstrans</> configuration parameter</primary>
+      </indexterm>
+      <listitem>
+       <para>
+	This parameter is available only when SELinux support was enabled
+	at the compile time. It enables to turn on/off mcstrans feature in
+	SE-PostgreSQL. It is on by default.
+	Every users can set this parameter in their session without any
+	limitation.
+       </para>
+       <para>
+	A security context has two formats; raw and human-readable.
+	The raw format is used to communicate with SELinux in kernel, and
+	to store it in the system catalogs. The human-readable format is
+	used to import and export security context itself.
+       </para>
+       <para>
+	A security context has four fields separated by a comma character.
+<synopsis>
+        system_u:object_r:sepgsql_db_t:s0
+</synopsis>
+	It is an example of a security context in raw-format.
+	SELinux provides a feature to translate the last field to a meaningful
+	term. For example, if we configured <literal>s0</literal> as
+	<literal>Unclassified</literal> in human-readable form, the above
+	security context shall be translated as follows:
+<synopsis>
+	system_u:object_r:sepgsql_db_t:Unclassified
+</synopsis>
+	We call such kind of translation as mcstrans.
+       </para>
+       <para>
+	When <varname>sepostgresql_mcstrans</varname> is turned on, it
+	we can give a security context in human-readable format as an
+	argument of <literal>SECURITY_CONTEXT</literal> option in
+	<xref linkend="SQL-CREATETABLE" endterm="sql-createtable-title">,
+	<xref linkend="SQL-ALTERTABLE" endterm="sql-altertable-title">
+	and other statements.
+	In addition, <literal>sepgsql_table_getcon()</literal> and similar
+	functions returns a security context of the required object in
+	human readable forms.
+       </para>
+      </listitem>
+     </varlistentry>
     </variablelist>
     </sect2>
    </sect1>
