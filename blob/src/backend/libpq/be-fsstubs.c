@@ -164,8 +164,10 @@ lo_read(int fd, char *buf, int len)
 
 	/* Permission checks */
 	if (large_object_privilege_checks &&
-		pg_largeobject_aclcheck(cookies[fd]->id, GetUserId(),
-								ACL_SELECT) != ACLCHECK_OK)
+		pg_largeobject_aclcheck_snapshot(cookies[fd]->id,
+										 GetUserId(),
+										 ACL_SELECT,
+										 cookies[fd]->snapshot) != ACLCHECK_OK)
 		ereport(ERROR,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 				 errmsg("permission denied for largeobject %u",
@@ -194,8 +196,10 @@ lo_write(int fd, const char *buf, int len)
 
 	/* Permission checks */
 	if (large_object_privilege_checks &&
-		pg_largeobject_aclcheck(cookies[fd]->id, GetUserId(),
-								ACL_UPDATE) != ACLCHECK_OK)
+		pg_largeobject_aclcheck_snapshot(cookies[fd]->id,
+										 GetUserId(),
+										 ACL_UPDATE,
+										 cookies[fd]->snapshot) != ACLCHECK_OK)
 		ereport(ERROR,
                 (errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 				 errmsg("permission denied for largeobject %u",
@@ -513,10 +517,12 @@ lo_truncate(PG_FUNCTION_ARGS)
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("invalid large-object descriptor: %d", fd)));
 
-	/* Permission check */
+	/* Permission checks */
 	if (large_object_privilege_checks &&
-		pg_largeobject_aclcheck(cookies[fd]->id, GetUserId(),
-								ACL_UPDATE) != ACLCHECK_OK)
+		pg_largeobject_aclcheck_snapshot(cookies[fd]->id,
+										 GetUserId(),
+										 ACL_UPDATE,
+										 cookies[fd]->snapshot) != ACLCHECK_OK)
 		ereport(ERROR,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 				 errmsg("permission denied for largeobject %u",
