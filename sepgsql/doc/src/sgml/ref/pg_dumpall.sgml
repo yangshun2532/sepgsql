@@ -345,6 +345,25 @@ PostgreSQL documentation
       </listitem>
      </varlistentry>
 
+     <varlistentry>
+      <term><option>--security-context</option></term>
+      <listitem>
+       <para>
+	It enables to dump security context of database objects.
+	The dumped security contexts will be restored using
+	<option>SECURITY_CONTEXT</option> option in <command>CREATE</command>
+	statements.
+	Needless to say, the client who tries to restore the backup
+	must have enough privileges to create these database objects
+	with given security context.
+       </para>
+       <para>
+	This option is available only when SE-PostgreSQL is enabled on
+	the server side.
+       </para>
+      </listitem>
+      </varlistentry>
+
     </variablelist>
    </para>
 
