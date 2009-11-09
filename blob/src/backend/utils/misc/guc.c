@@ -10,7 +10,7 @@
  * Written by Peter Eisentraut <peter_e@gmx.net>.
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/misc/guc.c,v 1.520 2009/10/03 18:04:57 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/utils/misc/guc.c,v 1.523 2009/10/21 20:38:58 tgl Exp $
  *
  *--------------------------------------------------------------------
  */
@@ -46,7 +46,6 @@
 #include "optimizer/paths.h"
 #include "optimizer/planmain.h"
 #include "parser/parse_expr.h"
-#include "parser/parse_relation.h"
 #include "parser/parse_type.h"
 #include "parser/parser.h"
 #include "parser/scansup.h"
@@ -56,7 +55,6 @@
 #include "postmaster/postmaster.h"
 #include "postmaster/syslogger.h"
 #include "postmaster/walwriter.h"
-#include "regex/regex.h"
 #include "storage/bufmgr.h"
 #include "storage/fd.h"
 #include "tcop/tcopprot.h"
@@ -247,13 +245,6 @@ static const struct config_enum_entry log_statement_options[] = {
 	{"ddl", LOGSTMT_DDL, false},
 	{"mod", LOGSTMT_MOD, false},
 	{"all", LOGSTMT_ALL, false},
-	{NULL, 0, false}
-};
-
-static const struct config_enum_entry regex_flavor_options[] = {
-	{"advanced", REG_ADVANCED, false},
-	{"extended", REG_EXTENDED, false},
-	{"basic", REG_BASIC, false},
 	{NULL, 0, false}
 };
 
@@ -461,6 +452,7 @@ const char *const GucSource_Names[] =
 	 /* PGC_S_ARGV */ "command line",
 	 /* PGC_S_DATABASE */ "database",
 	 /* PGC_S_USER */ "user",
+	 /* PGC_S_DATABASE_USER */ "database user",
 	 /* PGC_S_CLIENT */ "client",
 	 /* PGC_S_OVERRIDE */ "override",
 	 /* PGC_S_INTERACTIVE */ "interactive",
@@ -1056,14 +1048,6 @@ static struct config_bool ConfigureNamesBool[] =
 		},
 		&XactReadOnly,
 		false, assign_transaction_read_only, NULL
-	},
-	{
-		{"add_missing_from", PGC_USERSET, COMPAT_OPTIONS_PREVIOUS,
-			gettext_noop("Automatically adds missing table references to FROM clauses."),
-			NULL
-		},
-		&add_missing_from,
-		false, NULL, NULL
 	},
 	{
 		{"check_function_bodies", PGC_USERSET, CLIENT_CONN_STATEMENT,
@@ -2675,15 +2659,6 @@ static struct config_enum ConfigureNamesEnum[] =
 		LOG_LOCAL0, syslog_facility_options, assign_syslog_facility, NULL
 	},
 #endif
-
-	{
-		{"regex_flavor", PGC_USERSET, COMPAT_OPTIONS_PREVIOUS,
-			gettext_noop("Sets the regular expression \"flavor\"."),
-			NULL
-		},
-		&regex_flavor,
-		REG_ADVANCED, regex_flavor_options, NULL, NULL
-	},
 
 	{
 		{"session_replication_role", PGC_SUSET, CLIENT_CONN_STATEMENT,
@@ -4566,7 +4541,8 @@ set_config_option(const char *name, const char *value,
 		 */
 		elevel = IsUnderPostmaster ? DEBUG3 : LOG;
 	}
-	else if (source == PGC_S_DATABASE || source == PGC_S_USER)
+	else if (source == PGC_S_DATABASE || source == PGC_S_USER ||
+			 source == PGC_S_DATABASE_USER)
 		elevel = WARNING;
 	else
 		elevel = ERROR;
@@ -5772,6 +5748,7 @@ define_custom_variable(struct config_generic * variable)
 			break;
 		case PGC_S_DATABASE:
 		case PGC_S_USER:
+		case PGC_S_DATABASE_USER:
 		case PGC_S_CLIENT:
 		case PGC_S_SESSION:
 		default:

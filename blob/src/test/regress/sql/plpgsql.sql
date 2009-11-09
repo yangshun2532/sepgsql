@@ -211,7 +211,7 @@ create trigger tg_pfield_ad after delete
 create function tg_pslot_biu() returns trigger as $proc$
 declare
     pfrec	record;
-    rename new to ps;
+    ps          alias for new;
 begin
     select into pfrec * from PField where name = ps.pfname;
     if not found then
@@ -347,11 +347,9 @@ begin
     if new.slotno < 1 or new.slotno > hubrec.nslots then
         raise exception ''no manual manipulation of HSlot'';
     end if;
-    if tg_op = ''UPDATE'' then
-	if new.hubname != old.hubname then
-	    if count(*) > 0 from Hub where name = old.hubname then
-		raise exception ''no manual manipulation of HSlot'';
-	    end if;
+    if tg_op = ''UPDATE'' and new.hubname != old.hubname then
+	if count(*) > 0 from Hub where name = old.hubname then
+	    raise exception ''no manual manipulation of HSlot'';
 	end if;
     end if;
     sname := ''HS.'' || trim(new.hubname);
@@ -1028,7 +1026,7 @@ begin
         declare
 	    rec		record;
 	begin
-	    select into rec * from PLine where slotname = outer.rec.backlink;
+	    select into rec * from PLine where slotname = "outer".rec.backlink;
 	    retval := ''Phone line '' || trim(rec.phonenumber);
 	    if rec.comment != '''' then
 	        retval := retval || '' ('';
@@ -2691,6 +2689,26 @@ select forc01();
 
 select * from forc_test;
 
+-- same, with a cursor whose portal name doesn't match variable name
+create or replace function forc01() returns void as $$
+declare
+  c refcursor := 'fooled_ya';
+  r record;
+begin
+  open c for select * from forc_test;
+  loop
+    fetch c into r;
+    exit when not found;
+    raise notice '%, %', r.i, r.j;
+    update forc_test set i = i * 100, j = r.j * 2 where current of c;
+  end loop;
+end;
+$$ language plpgsql;
+
+select forc01();
+
+select * from forc_test;
+
 drop function forc01();
 
 -- fail because cursor has no query bound to it
@@ -3137,3 +3155,37 @@ BEGIN
         RAISE NOTICE '%, %', r.roomno, r.comment;
     END LOOP;
 END$$;
+
+-- Check variable scoping -- a var is not available in its own or prior
+-- default expressions.
+
+create function scope_test() returns int as $$
+declare x int := 42;
+begin
+  declare y int := x + 1;
+          x int := x + 2;
+  begin
+    return x * 100 + y;
+  end;
+end;
+$$ language plpgsql;
+
+select scope_test();
+
+drop function scope_test();
+
+-- Check handling of conflicts between plpgsql vars and table columns.
+
+create function conflict_test() returns setof int8_tbl as $$
+declare r record;
+  q1 bigint := 42;
+begin
+  for r in select q1,q2 from int8_tbl loop
+    return next r;
+  end loop;
+end;
+$$ language plpgsql;
+
+select * from conflict_test();
+
+drop function conflict_test();

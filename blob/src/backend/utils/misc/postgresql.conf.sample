@@ -484,13 +484,11 @@
 
 # - Previous PostgreSQL Versions -
 
-#add_missing_from = off
 #array_nulls = on
 #backslash_quote = safe_encoding	# on, off, or safe_encoding
 #default_with_oids = off
 #escape_string_warning = on
 #large_object_privilege_checks = on
-#regex_flavor = advanced		# advanced, extended, or basic
 #sql_inheritance = on
 #standard_conforming_strings = off
 #synchronize_seqscans = on
