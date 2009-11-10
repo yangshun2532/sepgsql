@@ -153,8 +153,6 @@ extern void
 sepgsql_database_access(Oid datOid);
 extern bool
 sepgsql_database_superuser(Oid datOid);
-extern void
-sepgsql_database_load_module(const char *filename);
 
 /* Pg_namespace related hooks */
 extern bool

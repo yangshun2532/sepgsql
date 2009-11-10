@@ -5895,7 +5895,7 @@ AlterOwnerStmt: ALTER AGGREGATE func_name aggr_args OWNER TO RoleId
 
 /*****************************************************************************
  *
- * ALTER THING name SECURITY CONTEXT ( <new security context> )
+ * ALTER THING name SECURITY CONTEXT TO <new security context>
  *
  *****************************************************************************/
 

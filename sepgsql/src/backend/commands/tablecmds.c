@@ -1381,27 +1381,29 @@ MergeAttributes(List *schema, List *supers, bool istemp,
 				/*
 				 * Copy security context
 				 *
-				 * SE-PgSQL's hardwired rule: any inherited column must have
-				 * same security context with its parent's one.
-				 * If no explicit security context is given and the child has
-				 * only one parent, the security context of the parent column
-				 * will be copied instead of the default security context.
-				 * (It performs as if user provides an explicit security
-				 * context which has identical value with the parent's column
-				 * in creation.)
+				 * SE-PgSQL requires any inherited columns must have identical
+				 * security context with its parent's one.
+				 * If no explicit security context is given, we copy its
+				 * security context to be assigned on from the parent column,
+				 * instead of the default security context.
+				 * Otherwise, if user gives an explicit security context on
+				 * the merged column, or if the new table has multiple parents,
+				 * these security contexts must be matched.
 				 *
-				 * If the new inherited column has multiple parents, or an
-				 * explicit security context is given by user, these contexts
-				 * have to be matched. If either of columns are unlabeled, or
-				 * both of the are labeled but unmatched, it raises an error.
+				 * Note that it performs as if user gives an explicit security
+				 * context on the new column. In other word, SE-PgSQL checks
+				 * permission to create a new column with the copied security
+				 * context, instead of the default one.
 				 *
-				 * We don't enclose this block by sepgsql_is_enabled(),
-				 * because it is just a simple string comparison, and we have
-				 * no reasonable way to restore security context of the
-				 * inherited columns create when SE-PgSQL is disabled in
-				 * run-time. (If SE-PgSQL is disabled in compile time, any
-				 * security contexts are always disabled. So, this check never
-				 * raise an error.)
+				 * This check should be applied even if SE-PgSQL is disabled,
+				 * because it is just a simple string comparison without any
+				 * dependencies to SE-PgSQL code. In addition, we have no
+				 * reasonable way to restore security context's of columns
+				 * once created with inconsistent state.
+				 *
+				 * Note that all the columns are unlabeled, if SE-PgSQL is
+				 * disabled, so it never prevent anything except for a case
+				 * when user disabled SE-PgSQL temporary.
 				 */
 				defsecon = get_attsecontext(RelationGetRelid(relation),
 											attribute->attnum);
@@ -3440,16 +3442,19 @@ ATSimplePermissions(Relation rel, const char *colName, bool allowView)
 
 	/*
 	 * SE-PgSQL checks permission to alter properties of the relation
-	 * or columns. If 'colName' is not NULL, the caller gives a hint
-	 * which means this ALTER TABLE affects on a certain column, not
-	 * a relation.
+	 * or columns. If 'colName' is not NULL, it means the caller gives
+	 * a hint; this ALTER TABLE affects on a certain column, not a relation.
+	 * Otherwise, it means this ALTER TABLE affects on a certain relation.
+	 *
 	 * Fortunately, all the caller of ATSimplePermissions() does not
-	 * need any more permissions than db_table:{setattr} or db_column:
-	 * {setattr}, so we can put sepgsql_*() hooks here.
+	 * need any more permission checks than db_table:{setattr} or
+	 * db_column:{setattr} in SELinux model, so we can put sepgsql_*() hooks
+	 * here.
 	 *
 	 * Please note that ALTER TABLE with RENAME TO/SET SCHEMA options
-	 * requires to take valid argument in the second and third arguments.
-	 * But these options are implemented in separated routines.
+	 * require to take valid argument in the second and third arguments.
+	 * But these options are implemented in separated routines without
+	 * any calls of ATSimplePermissions().
 	 */
 	if (!colName)
 		sepgsql_relation_alter(RelationGetRelid(rel), NULL, InvalidOid);
@@ -3488,7 +3493,8 @@ ATSimplePermissionsRelationOrIndex(Relation rel)
 						RelationGetRelationName(rel))));
 
 	/*
-	 * SE-PgSQL checks permissions (optional)
+	 * SE-PgSQL checks permissions to alter property of the relation.
+	 * See the comment in the ATSimplePermissions() also.
 	 */
 	sepgsql_relation_alter(RelationGetRelid(rel), NULL, InvalidOid);
 }
@@ -7529,10 +7535,10 @@ MergeAttributesIntoExisting(Relation child_rel, Relation parent_rel)
 					   attributeName)));
 
 			/*
-			 * SE-PgSQL's hardwired rule: any inherited column must have same
-			 * security context with its parent's one.
-			 * If either of columns is not labeled, or both of them are labeled
-			 * but unmatched, it raised an error.
+			 * A hardwired rule in SE-PgSQL; any inherited columns must have
+			 * identical security context with its parent column.
+			 * If either of columns are not labeled, or both of them are
+			 * labeled but not matched, it raises an error to keep integrity.
 			 */
 			context_p = get_attsecontext(RelationGetRelid(parent_rel),
 										 parent_attno);
@@ -8274,8 +8280,8 @@ AlterRelationSecLabel(Oid relOid, Node *newLabel)
  * AlterAttributeSecLabel
  *
  * It relabels security context of the column.
- * If table owns the column has inheritances, the columns in child tables
- * are also relabeled recursively.
+ * If table owns the column inherited by others, the inherited columns in
+ * the child tables are also relabeled recursively.
  */
 void
 AlterAttributeSecLabel(Oid relOid, const char *attname,
@@ -8376,7 +8382,7 @@ AlterAttributeSecLabel(Oid relOid, const char *attname,
 						NameStr(attForm->attname))));
 	/*
 	 * we don't allow to relabel multiple inherited columns, to keep
-	 * integrity that inherited columns have same security context.
+	 * integrity that inherited columns have identical security context.
 	 */
 	if (attForm->attinhcount > 1)
 		ereport(ERROR,
