@@ -1289,17 +1289,17 @@ sepgsql_attribute_relabel(Oid relOid, const char *attname, Node *attLabel)
  * It checks client's privilege to comment on a certain database object.
  * If violated, it raises an error.
  * Every entries within pg_description/pg_shdepend are considered as
- * a part of properties of the database object commented.
+ * a part of properties of the database object being commented.
  * So, we checks db_xxx:{setattr} permission (it controls modification
  * of the metadata) on a pair of the client and the database object to
  * be commented on.
  *
  * This hook should be called from CreateComments() or CreateSharedComments().
- * If client tries to comment on the managed object, it checks appropriate
+ * When client tries to comment on the managed object, it checks appropriate
  * permission.
  */
 void
-sepgsql_object_comment(Oid relOid, Oid objId, int32 subId)
+sepgsql_object_comment(Oid objId, Oid relOid, int32 subId)
 {
 	switch (relOid)
 	{

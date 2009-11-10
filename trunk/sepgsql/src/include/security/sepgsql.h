@@ -213,7 +213,7 @@ sepgsql_attribute_relabel(Oid relOid, const char *attname, Node *attLabel);
 
 /* Misc database objects related hooks */
 extern void
-sepgsql_object_comment(Oid relOid, Oid objId, int32 subId);
+sepgsql_object_comment(Oid objId, Oid relOid, int32 subId);
 extern void
 sepgsql_object_drop(ObjectAddress *object);
 
