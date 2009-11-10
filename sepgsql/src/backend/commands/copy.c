@@ -35,6 +35,7 @@
 #include "optimizer/planner.h"
 #include "parser/parse_relation.h"
 #include "rewrite/rewriteHandler.h"
+#include "security/sepgsql.h"
 #include "storage/fd.h"
 #include "tcop/tcopprot.h"
 #include "utils/acl.h"
@@ -997,6 +998,9 @@ DoCopy(const CopyStmt *stmt, const char *queryString)
 
 		tupDesc = RelationGetDescr(cstate->rel);
 
+		/* Generate or convert list of attributes to process */
+		cstate->attnumlist = CopyGetAttnums(tupDesc, cstate->rel, attnamelist);
+
 		/* Check relation permissions. */
 		relPerms = pg_class_aclmask(RelationGetRelid(cstate->rel), GetUserId(),
 									required_access, ACLMASK_ALL);
@@ -1004,11 +1008,9 @@ DoCopy(const CopyStmt *stmt, const char *queryString)
 		if (remainingPerms != 0)
 		{
 			/* We don't have table permissions, check per-column permissions */
-			List	   *attnums;
 			ListCell   *cur;
 
-			attnums = CopyGetAttnums(tupDesc, cstate->rel, attnamelist);
-			foreach(cur, attnums)
+			foreach(cur, cstate->attnumlist)
 			{
 				int			attnum = lfirst_int(cur);
 
@@ -1020,6 +1022,8 @@ DoCopy(const CopyStmt *stmt, const char *queryString)
 								   RelationGetRelationName(cstate->rel));
 			}
 		}
+		/* Check SE-PgSQL's permissions to copy to/from the table */
+		sepgsql_check_copy_perms(cstate->rel, cstate->attnumlist, is_from);
 
 		/* check read-only transaction */
 		if (XactReadOnly && is_from && !cstate->rel->rd_islocaltemp)
@@ -1104,11 +1108,11 @@ DoCopy(const CopyStmt *stmt, const char *queryString)
 		ExecutorStart(cstate->queryDesc, 0);
 
 		tupDesc = cstate->queryDesc->tupDesc;
+
+		/* Generate or convert list of attributes to process */
+		cstate->attnumlist = CopyGetAttnums(tupDesc, cstate->rel, attnamelist);
 	}
-
-	/* Generate or convert list of attributes to process */
-	cstate->attnumlist = CopyGetAttnums(tupDesc, cstate->rel, attnamelist);
-
+	/* Number of physical attributes */
 	num_phys_attrs = tupDesc->natts;
 
 	/* Convert FORCE QUOTE name list to per-column flags, check validity */
