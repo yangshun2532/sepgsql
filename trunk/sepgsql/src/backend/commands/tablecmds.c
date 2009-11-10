@@ -1091,6 +1091,9 @@ truncate_check_rel(Relation rel)
 				 errmsg("permission denied: \"%s\" is a system catalog",
 						RelationGetRelationName(rel))));
 
+	/* SE-PgSQL checks permission to truncate this table */
+	sepgsql_relation_truncate(rel);
+
 	/*
 	 * We can never allow truncation of shared or nailed-in-cache relations,
 	 * because we can't support changing their relfilenode values.
