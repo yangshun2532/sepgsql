@@ -37,6 +37,7 @@
 #include "parser/parse_coerce.h"
 #include "parser/parse_func.h"
 #include "parser/parsetree.h"
+#include "security/sepgsql.h"
 #include "storage/lmgr.h"
 #include "storage/proc.h"
 #include "storage/procarray.h"
@@ -201,6 +202,9 @@ DefineIndex(RangeVar *heapRelation,
 		if (aclresult != ACLCHECK_OK)
 			aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
 						   get_namespace_name(namespaceId));
+
+		/* SE-PgSQL checks permission to create a new index */
+		sepgsql_index_create(relationId, namespaceId);
 	}
 
 	/*
