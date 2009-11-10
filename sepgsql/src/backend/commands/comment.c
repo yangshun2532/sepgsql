@@ -47,6 +47,7 @@
 #include "parser/parse_func.h"
 #include "parser/parse_oper.h"
 #include "parser/parse_type.h"
+#include "security/sepgsql.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
@@ -201,6 +202,15 @@ CreateComments(Oid oid, Oid classoid, int32 subid, char *comment)
 	bool		replaces[Natts_pg_description];
 	int			i;
 
+	/*
+	 * We consider an entry within pg_description is a property
+	 * of the database object being commented on, although it is
+	 * stored in the different system catalog.
+	 * So, SE-PgSQL needs to check permission to alter properties
+	 * of the managed database object.
+	 */
+	sepgsql_object_comment(oid, classoid, subid);
+
 	/* Reduce empty-string to NULL case */
 	if (comment != NULL && strlen(comment) == 0)
 		comment = NULL;
@@ -300,6 +310,12 @@ CreateSharedComments(Oid oid, Oid classoid, char *comment)
 	bool		nulls[Natts_pg_shdescription];
 	bool		replaces[Natts_pg_shdescription];
 	int			i;
+
+	/*
+	 * See the comment in CreateComments().
+	 * SE-PgSQL checks permission to comment on the managed object.
+	 */
+	sepgsql_object_comment(oid, classoid, subid);
 
 	/* Reduce empty-string to NULL case */
 	if (comment != NULL && strlen(comment) == 0)
