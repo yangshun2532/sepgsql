@@ -8262,6 +8262,8 @@ AlterRelationSecLabel(Oid relOid, Node *newLabel)
 
 	heap_freetuple(newtup);
 
+	ReleaseSysCache(oldtup);
+
 	heap_close(rel, RowExclusiveLock);
 }
 

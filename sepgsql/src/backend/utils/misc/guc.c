@@ -2673,15 +2673,6 @@ static struct config_enum ConfigureNamesEnum[] =
 		LOG_LOCAL0, syslog_facility_options, assign_syslog_facility, NULL
 	},
 #endif
-
-	{
-		{"regex_flavor", PGC_USERSET, COMPAT_OPTIONS_PREVIOUS,
-			gettext_noop("Sets the regular expression \"flavor\"."),
-			NULL
-		},
-		&regex_flavor,
-		REG_ADVANCED, regex_flavor_options, NULL, NULL
-	},
 #ifdef HAVE_SELINUX
 	{
 		{"sepostgresql", PGC_POSTMASTER, CONN_AUTH_SECURITY,
