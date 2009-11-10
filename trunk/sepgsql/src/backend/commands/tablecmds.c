@@ -3010,8 +3010,11 @@ ATRewriteTables(List **wqueue)
 			/*
 			 * The new relation is local to our transaction and we know
 			 * nothing depends on it, so DROP_RESTRICT should be OK.
+			 *
+			 * In the fact, it create a new table and drops it. But it
+			 * is a purely internal steps, so no need any permission checks.
 			 */
-			performDeletion(&object, DROP_RESTRICT);
+			performDeletionNoPerms(&object, DROP_RESTRICT);
 			/* performDeletion does CommandCounterIncrement at end */
 
 			/*
@@ -8512,7 +8515,7 @@ PreCommit_on_commit_actions(void)
 					object.classId = RelationRelationId;
 					object.objectId = oc->relid;
 					object.objectSubId = 0;
-					performDeletion(&object, DROP_CASCADE);
+					performDeletionNoPerms(&object, DROP_CASCADE);
 
 					/*
 					 * Note that table deletion will call

@@ -64,6 +64,7 @@
 #include "nodes/nodeFuncs.h"
 #include "parser/parsetree.h"
 #include "rewrite/rewriteRemove.h"
+#include "security/sepgsql.h"
 #include "storage/lmgr.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
@@ -190,14 +191,20 @@ static void getOpFamilyDescription(StringInfo buffer, Oid opfid);
  * objects, except for those that should be implicitly dropped anyway
  * according to the dependency type.
  *
+ * performDeletionNoPerms: it is another version of performDeletion.
+ * The only difference is that it does not apply MAC permission check
+ * to drop given database objects. It needs to be invoked due to the
+ * deletion purely internal processes, such as cleaning up a temporary
+ * table used for rebuilding.
+ *
  * This is the outer control routine for all forms of DROP that drop objects
  * that can participate in dependencies.  Note that the next two routines
  * are variants on the same theme; if you change anything here you'll likely
  * need to fix them too.
  */
-void
-performDeletion(const ObjectAddress *object,
-				DropBehavior behavior)
+static void
+performDeletionInternal(const ObjectAddress *object,
+						DropBehavior behavior, bool permission)
 {
 	Relation	depRel;
 	ObjectAddresses *targetObjects;
@@ -243,6 +250,19 @@ performDeletion(const ObjectAddress *object,
 	{
 		ObjectAddress *thisobj = targetObjects->refs + i;
 
+		/*
+		 * SE-PgSQL checks permission to drop managed database objects
+		 * including cascaded deletion. Because we cannot know what
+		 * objects to be dropped prior to dependency.c phase, we need
+		 * to put security hook here.
+		 *
+		 * Note that "permission != true" means this routine was invoked
+		 * as a result of purely internal stuff on which the caller does
+		 * not want any security checks even if MAC.
+		 */
+		if (permission)
+			sepgsql_object_drop(thisobj);
+
 		deleteOneObject(thisobj, depRel);
 	}
 
@@ -250,6 +270,18 @@ performDeletion(const ObjectAddress *object,
 	free_object_addresses(targetObjects);
 
 	heap_close(depRel, RowExclusiveLock);
+}
+
+void
+performDeletion(const ObjectAddress *object, DropBehavior behavior)
+{
+	performDeletionInternal(object, behavior, true);
+}
+
+void
+performDeletionNoPerms(const ObjectAddress *object, DropBehavior behavior)
+{
+	performDeletionInternal(object, behavior, false);
 }
 
 /*
@@ -325,6 +357,17 @@ performMultipleDeletions(const ObjectAddresses *objects,
 	{
 		ObjectAddress *thisobj = targetObjects->refs + i;
 
+		/*
+		 * SE-PgSQL checks permission to drop managed database objects
+		 * including cascaded deletion. Because we cannot know what
+		 * objects to be dropped prior to dependency.c phase, we need
+		 * to put security hook here.
+		 *
+		 * All the caller of this function does not need to bypass MAC
+		 * permission checks, so we don't have case handling here.
+		 */
+		sepgsql_object_drop(thisobj);
+
 		deleteOneObject(thisobj, depRel);
 	}
 
@@ -392,6 +435,14 @@ deleteWhatDependsOn(const ObjectAddress *object,
 	{
 		ObjectAddress *thisobj = targetObjects->refs + i;
 		ObjectAddressExtra *thisextra = targetObjects->extras + i;
+
+		/*
+		 * The reason why we don't need to put SE-PgSQL's hook here is
+		 * that the only caller of this function is RemoveTempRelations()
+		 * which cleans up temporary database objects after the session
+		 * closed. It is purely internal steps, so we don't need to check
+		 * anything here.
+		 */
 
 		if (thisextra->flags & DEPFLAG_ORIGINAL)
 			continue;
