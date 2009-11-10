@@ -1,17 +1,19 @@
 --@SECURITY_CONTEXT=unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c15
+SET sepostgresql_mcstrans TO off;
+SELECT sepgsql_getcon();
+                   sepgsql_getcon                    
+-----------------------------------------------------
+ unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c15
+(1 row)
 
 -- cleanup previous tests
 SET client_min_messages TO 'error';
-
 DROP TABLE IF EXISTS t1 CASCADE;
 DROP TABLE IF EXISTS t2 CASCADE;
 DROP TABLE IF EXISTS t3 CASCADE;
 DROP TABLE IF EXISTS t4 CASCADE;
-
 RESET client_min_messages;
-
 -- CREATE TABLE for COPY TO/FROM test
-
 CREATE TABLE t1
 (
 	a	int,
@@ -19,7 +21,6 @@ CREATE TABLE t1
 	c	text
 );
 INSERT INTO t1 VALUES (1, 'xxx', 'aaa'), (2, 'yyy', 'bbb'), (3, 'zzz', 'ccc');
-
 CREATE TABLE t2
 (
 	x	int,
@@ -28,7 +29,6 @@ CREATE TABLE t2
 		AS SECURITY_CONTEXT = 'system_u:object_r:sepgsql_ro_table_t:s0'
 );
 INSERT INTO t2 VALUES (1, 'XXX', 'AAA'), (2, 'YYY', 'BBB'), (3, 'ZZZ', 'CCC');
-
 CREATE TABLE t3
 (
 	s	int,
@@ -38,38 +38,49 @@ CREATE TABLE t3
 		AS SECURITY_CONTEXT = 'system_u:object_r:sepgsql_secret_table_t:s0'
 );
 INSERT INTO t4 VALUES (1, 'AAA', 'BBB'), (2, 'CCC', 'DDD'), (3, 'EEE', 'FFF');
-
+ERROR:  relation "t4" does not exist
+LINE 1: INSERT INTO t4 VALUES (1, 'AAA', 'BBB'), (2, 'CCC', 'DDD'), ...
+                    ^
 --@SECURITY_CONTEXT=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0
+SET sepostgresql_mcstrans TO off;
+SELECT sepgsql_getcon();
+                  sepgsql_getcon                   
+---------------------------------------------------
+ unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0
+(1 row)
 
 COPY t1 TO stdout;
+1	xxx	aaa
+2	yyy	bbb
+3	zzz	ccc
 COPY t1 FROM stdin;
-4	xyz	ddd
-\.
-
 COPY t2 TO stdout;
+1	XXX	AAA
+2	YYY	BBB
+3	ZZZ	CCC
 COPY t2 FROM stdin;	-- to be denied
+ERROR:  SELinux: security policy violation
 \.
-
+invalid command \.
 COPY t2 (x, y) FROM stdin;
-4	XYZ
-\.
-
 COPY t3 TO stdout;	-- to be denied
+ERROR:  SELinux: security policy violation
 COPY t3 (s, t) TO stdout;
 COPY t3 FROM stdin;	-- to be denied
+ERROR:  SELinux: security policy violation
 COPY t3 (s, t) FROM stdin;
-4	GGG
-\.
-
 COPY (SELECT * FROM t2) TO stdout;
+1	XXX	AAA
+2	YYY	BBB
+3	ZZZ	CCC
+4	XYZ	\N
 COPY (SELECT * FROM t3) TO stdout;	-- to be denied
+ERROR:  SELinux: security policy violation
 COPY (SELECT s, t FROM t3) TO stdout;
-
+4	GGG
 -- cleanups
 SET client_min_messages TO 'error';
-
 DROP TABLE IF EXISTS t1 CASCADE;
 DROP TABLE IF EXISTS t2 CASCADE;
 DROP TABLE IF EXISTS t3 CASCADE;
-
 RESET client_min_messages;
