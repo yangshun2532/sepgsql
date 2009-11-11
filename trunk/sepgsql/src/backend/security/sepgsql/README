@@ -740,15 +740,252 @@ not provided by clients.
 4. Code examples
 ============================================================
 
+In this section, we introduce how SE-PgSQL works using a few examples.
+
 4-1. Example of SE-PgSQL hooks
 
+We pick up the sepgsql_relation_alter() hook as an example.
+
+It is declared as follows:
+
+  /*
+   * relOid  : OID of the relation to be altered
+   * newName : new name of the relation, if renamed. Otherwise, NULL.
+   * newNsp  : new namespace of the relation, if schema is changed.
+   *           Otherwise, InvalidOid.
+   */
+  extern void
+  sepgsql_relation_alter(Oid relOid, const char *newName, Oid newNsp);
+
+We deployed this hook on several strategic points to check permission to
+alter a certain relation, such as ATSimplePermissions(), ExecRenameStmt()
+and so on.
+
+When user gives ALTER TABLE with RENAME TO option, the ExecRenameStmt() calls
+this hook with OID of the relation to be renamed (relOid) and given new
+name (newName), but InvalidOid shall be given for the 3rd argument (newNsp),
+because it does not have SCHEMA TO option.
+
+If this hook is called from ATSimplePermissions(), only first argument will
+be valid, because this code path does not change both of name and schema.
+
+The sepgsql_relation_alter() is implemented as follows:
+
+  void
+  sepgsql_relation_alter(Oid relOid, const char *newName, Oid newNsp)
+  {
+      /* (1) SE-PgSQL is enabled? */
+      if (!sepgsql_is_enabled())
+          return;
+
+      /* (2) Permission check on the relation */
+      sepgsql_relation_common(relOid, SEPG_DB_TABLE__SETATTR, true);
+
+      /* (3) Permission check on the schema, if RENAME TO */
+      if (newName)
+          sepgsql_schema_common(get_rel_namespace(relOid),
+                                SEPG_DB_SCHEMA__ADD_NAME |
+                                SEPG_DB_SCHEMA__REMOVE_NAME, true);
+
+      /* (4) Permission check on the schema, if SCHEMA TO */
+      if (OidIsValid(newNsp))
+      {
+          sepgsql_schema_common(get_rel_namespace(relOid),
+                                SEPG_DB_SCHEMA__REMOVE_NAME, true);
+          sepgsql_schema_common(newNsp, SEPG_DB_SCHEMA__ADD_NAME, true);
+      }
+  }
+
+On the (1), it checks whether SE-PgSQL is enabled, or not. Even if we build
+the binary with SE-PgSQL, it can be turned of by the 'sepostgresql' GUC
+option or system state. If SE-PgSQL is disabled, it returns soon without any
+side-effect.
+
+On the (2), it checks permission to execute ALTER TABLE statement. It modifies
+properties of the table, so we needs to check db_table:{setattr} permission on
+the pair of client and table.
+We introduce details of sepgsql_relation_common() later.
+
+On the (3) and (4), it checks permission to add/remove an entry to/from
+a certain schema, if the ALTER TABLE has options to act a certain schema.
+The newName is a valid pointer, if RENAME TO. The newNsp is also a valid
+OID, if SCHEMA TO. In these cases, we checks db_schema:{add_name} and
+db_schema:{remove_name} permission on appropriate schemas.
+
+
+Next, we introduce the details of sepgsql_relation_common().
+
+  /*
+   * relOid   : OID of the relation to be checked
+   * required : Bitmask of SEPG_DB_TABLE__*; all the required permissions
+   * abort    : True, if caller want to raise an error on violatation.
+   *            Otherwise, it returns false on access violation.
+   */
+  bool
+  sepgsql_relation_common(Oid relOid, uint32 required, bool abort)
+  {
+      HeapTuple   tuple;
+      Datum       datum;
+      bool        rc, isnull;
+      char        relkind;
+      char       *audit_name;
+      char       *context = NULL;
+
+      /* (1) Fetch HeapTuple for the OID of relation */  
+      tuple = SearchSysCache(RELOID,
+                             ObjectIdGetDatum(relOid),
+                             0, 0, 0);
+      if (!HeapTupleIsValid(tuple))
+          elog(ERROR, "cache lookup failed for relation %u", relOid);
+
+      relkind = ((Form_pg_class) GETSTRUCT(tuple))->relkind;
+
+      /* (2) No need to check anything except for regular tables */
+      if (relkind != RELKIND_RELATION)
+      {
+          ReleaseSysCache(tuple);
+          return true;
+      }
+
+      /* (3) fetch security context of the table */
+      datum = SysCacheGetAttr(RELOID, tuple,
+                              Anum_pg_class_relsecon, &isnull);
+      if (!isnull)
+          context = TextDatumGetCString(datum);
+
+      /* (4) validation check for the security context */
+      if (!context || security_check_context_raw(context) < 0)
+          context = sepgsql_get_unlabeled_context();
+
+      /* (5) call the decision making routine  */
+      audit_name = NameStr(((Form_pg_class) GETSTRUCT(tuple))->relname);
+      rc = sepgsql_compute_perms(sepgsql_get_client_context(),
+                                 context,
+                                 SEPG_CLASS_DB_TABLE,
+                                 required,
+                                 audit_name, abort);
+      ReleaseSysCache(tuple);
+  
+      return rc;
+  }
+
+On the (1) and (2), it fetches an entry for the OID of relation, and returns
+without any checks if the relation is not a regular table such as a view.
+Note that we don't support checks on the database objects except for
+databases, schemas, tables and columns in this version.
+
+On the (3), it fetches security context of the relation from pg_class.relsecon
+field. It stores the security context in text form.
+
+On the (4), it applies validation checks on the fetched context.
+If it is NULL (unlabeled) or labeled with invalid security context, SE-PgSQL
+assumes it has an "unlabeled" security context instead of actual one.
+The "unlabeled" security context is provided by the operating system.
+The sepgsql_get_unlabeled_context() obtains it using libselinux API, and
+returns it as a palloc()'ed cstring.
+
+The (5) is core of the decision making in SE-PgSQL.
+
+The sepgsql_compute_perms() asks SELinux whether the required permissions
+should be allowed, or not, on a pair of security contexts of the client and
+the table to be accessed.
+
+The sepgsql_get_client_context() returns a security context of the client.
+The sepgsql_compute_perms() takes two security contexts as identifiers of
+the client and table. Note that it does not look at any other properties
+such as database role or ownership of resource.
+
+Its 3rd/4th arguments are object class and permissions. These are defined
+in the security/sepgsql.h.
+
+If we gives db_table:{ select update }, these constants are used.
+            ^^^^|^^^   ^^^^^^|^^^^^^
+                |            +------------> ( SEPG_DB_TABLE__SELECT
+                |                             | SEPG_DB_TABLE__UPDATE )
+                +---->  SEPG_CLASS_DB_TABLE
+
+The 5th argument is used as a name of the database object to record audit
+logs on access violation. In this example, it passes the table's name.
+An the 6th argument is a flag to control the behavior on violations.
+
+Back to the section 2-1. The sepgsql_compute_perms() translate the internal
+representation of object class (SEPG_CLASS_*) and permissions (SEPG_*__*) 
+into external representation to communicate SELinux in the kernel.
+Then, it calls security_compute_av() API which returns a set of allowed
+permissions on a pair of the security contexts.
+If all the required permissions are contained within the allowed set,
+it shall be allowed. Otherwise, it is access violation.
+
+If violated, it records an audit log record (according to the security
+policy setting), and raises an error or returns false depending on the
+last argument (abort).
+
+It is a typical flow when SE-PgSQL checks its permissions.
+
+
+4-2. Example of SE-PgSQL hooks with returning a security context
+
+It is another variation of security hook. It also checks permissions and
+returns a security context to the caller.
+The CreateSchemaCommand() is a caller of the hook. It stores the returned
+security context to the pg_namespace.nspsecon field in the creation.
+(Note that it may be NULL, if SE-PgSQL is disabled.)
+
+  /*
+   * nspName  : Name of the new schema
+   * isTemp   : True, if temporary schema (not in used now)
+   * nspLabel : An explicit security context to be assigned, or NULL
+   *            if user didn't use SECURITY_CONTEXT option.
+   */
+  Value *
+  sepgsql_schema_create(const char *nspName, bool isTemp, Node *nspLabel)
+  {
+      char   *context;
+
+      if (!sepgsql_is_enabled())
+          return NULL;
+  
+      if (!nspLabel)
+          context = sepgsql_default_schema_context(MyDatabaseId);
+      else
+      {
+          Assert(IsA(nspLabel, String));
+
+          context = sepgsql_mcstrans_in(strVal(nspLabel));
+          if (security_check_context_raw(context) < 0)
+              ereport(ERROR,
+                      (errcode(ERRCODE_INVALID_SECURITY_CONTEXT),
+                       errmsg("invalid security context \"%s\"", context)));
+      }
+  
+      sepgsql_compute_perms(sepgsql_get_client_context(),
+                            context,
+                            SEPG_CLASS_DB_SCHEMA,
+                            SEPG_DB_SCHEMA__CREATE,
+                            nspName, true);
+  
+      return makeString(context);
+  }
 
 
 
 
 
+  Oid
+  NamespaceCreate(const char *nspName, Oid ownerId, Value *nspsecon)
+  {
+          :
+      if (!nspsecon)
+          nulls[Anum_pg_namespace_nspsecon - 1] = true;
+      else
+          values[Anum_pg_namespace_nspsecon - 1]
+              = CStringGetTextDatum(strVal(nspsecon));
+          :
+      nspoid = simple_heap_insert(nspdesc, tup);
+          :
+  }
 
-4-2. Example of third party module
+4-3. Example of third party module
 
 
 
