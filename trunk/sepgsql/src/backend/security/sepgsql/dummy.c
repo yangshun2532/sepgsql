@@ -118,12 +118,6 @@ sepgsql_database_access(Oid datOid)
 	/* do nothing */
 }
 
-bool
-sepgsql_database_superuser(Oid datOid)
-{
-	return true;	/* only decided by DAC decision */
-}
-
 /* ================ Pg_namespace ================ */
 bool
 sepgsql_schema_common(Oid nspOid, uint32 required, bool abort)

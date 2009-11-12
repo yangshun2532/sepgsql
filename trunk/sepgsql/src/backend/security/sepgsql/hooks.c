@@ -276,29 +276,6 @@ sepgsql_database_access(Oid datOid)
 				 errmsg("SELinux: security policy violation")));
 }
 
-/*
- * sepgsql_database_superuser
- *
- * It checks client's privilege to perform as a database superuser on
- * a certain database. If violated, it returns false. In this case,
- * the caller has to prevent caller performs as a database superuser.
- * Otherwise, it follows the configuration in the default PG model.
- *
- * This hook should be called on the test whether user has database
- * superuser privilege, or not. It checks db_database:{superuser}
- * permission on the pair of client and database.
- *
- * datOid : OID of the database (maybe equal to MyDatabaseId)
- */
-bool
-sepgsql_database_superuser(Oid datOid)
-{
-	if (!sepgsql_is_enabled())
-		return true;
-
-	return sepgsql_database_common(datOid, SEPG_DB_DATABASE__SUPERUSER, false);
-}
-
 /************************************************************
  *
  * Pg_namespace related security hooks
