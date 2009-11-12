@@ -1396,6 +1396,9 @@ sepgsql_attribute_relabel(Oid relOid, const char *attname, Node *attLabel)
 void
 sepgsql_object_comment(Oid relOid, Oid objId, int32 subId)
 {
+	if (!sepgsql_is_enabled())
+		return;
+
 	switch (relOid)
 	{
 	case DatabaseRelationId:
