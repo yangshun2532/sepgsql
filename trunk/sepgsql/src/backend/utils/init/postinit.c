@@ -290,6 +290,11 @@ CheckMyDatabase(const char *name, bool am_superuser)
 					 errdetail("User does not have CONNECT privilege.")));
 
 		/*
+		 * SE-PgSQL check permission to access to the database
+		 */
+		sepgsql_database_access(MyDatabaseId);
+
+		/*
 		 * Check connection limit for this database.
 		 *
 		 * There is a race condition here --- we create our PGPROC before

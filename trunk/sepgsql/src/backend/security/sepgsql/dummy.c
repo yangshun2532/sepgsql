@@ -115,7 +115,7 @@ sepgsql_database_grant(Oid datOid)
 void
 sepgsql_database_access(Oid datOid)
 {
-	return true;
+	/* do nothing */
 }
 
 bool
@@ -259,7 +259,7 @@ sepgsql_attribute_alter(Oid relOid, const char *attname)
 }
 
 void
-sepgsql_attribute_drop(Oid relOid, const char *attname)
+sepgsql_attribute_drop(Oid relOid, AttrNumber attnum)
 {
 	/* do nothing */
 }

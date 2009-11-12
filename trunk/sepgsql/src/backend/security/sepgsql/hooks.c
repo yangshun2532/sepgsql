@@ -259,7 +259,8 @@ sepgsql_database_grant(Oid datOid)
  * sepgsql_database_access
  *
  * It checks client's privilege to access to the selected database just
- * after ACL_CONNECT checks in the default PG model.
+ * after ACL_CONNECT checks in the default PG privileges.
+ * In this check, we must raise a fatal error on violation. 
  *
  * datOid : OID of the database to be accessed
  */
@@ -269,7 +270,10 @@ sepgsql_database_access(Oid datOid)
 	if (!sepgsql_is_enabled())
 		return;
 
-	sepgsql_database_common(datOid, SEPG_DB_DATABASE__ACCESS, true);
+	if (!sepgsql_database_common(datOid, SEPG_DB_DATABASE__ACCESS, false))
+		ereport(FATAL,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("SELinux: security policy violation")));
 }
 
 /*
