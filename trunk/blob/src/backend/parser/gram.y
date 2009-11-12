@@ -11,7 +11,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/parser/gram.y,v 2.689 2009/11/09 02:36:56 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/parser/gram.y,v 2.692 2009/11/11 20:31:26 alvherre Exp $
  *
  * HISTORY
  *	  AUTHOR			DATE			MAJOR EVENT
@@ -76,12 +76,6 @@
 	} while (0)
 
 /*
- * The %name-prefix option below will make bison call base_yylex, but we
- * really want it to call filtered_base_yylex (see parser.c).
- */
-#define base_yylex filtered_base_yylex
-
-/*
  * Bison doesn't allocate anything that needs to live across parser calls,
  * so we can easily have it use palloc instead of malloc.  This prevents
  * memory leaks if we error out during parsing.  Note this only works with
@@ -104,10 +98,10 @@ typedef struct PrivTarget
 #define parser_yyerror(msg)  scanner_yyerror(msg, yyscanner)
 #define parser_errposition(pos)  scanner_errposition(pos, yyscanner)
 
-static void base_yyerror(YYLTYPE *yylloc, base_yyscan_t yyscanner,
+static void base_yyerror(YYLTYPE *yylloc, core_yyscan_t yyscanner,
 						 const char *msg);
 static Node *makeColumnRef(char *colname, List *indirection,
-						   int location, base_yyscan_t yyscanner);
+						   int location, core_yyscan_t yyscanner);
 static Node *makeTypeCast(Node *arg, TypeName *typename, int location);
 static Node *makeStringConst(char *str, int location);
 static Node *makeStringConstCast(char *str, int location, TypeName *typename);
@@ -118,17 +112,17 @@ static Node *makeNullAConst(int location);
 static Node *makeAConst(Value *v, int location);
 static Node *makeBoolAConst(bool state, int location);
 static FuncCall *makeOverlaps(List *largs, List *rargs,
-							  int location, base_yyscan_t yyscanner);
-static void check_qualified_name(List *names, base_yyscan_t yyscanner);
-static List *check_func_name(List *names, base_yyscan_t yyscanner);
-static List *check_indirection(List *indirection, base_yyscan_t yyscanner);
+							  int location, core_yyscan_t yyscanner);
+static void check_qualified_name(List *names, core_yyscan_t yyscanner);
+static List *check_func_name(List *names, core_yyscan_t yyscanner);
+static List *check_indirection(List *indirection, core_yyscan_t yyscanner);
 static List *extractArgTypes(List *parameters);
 static SelectStmt *findLeftmostSelect(SelectStmt *node);
 static void insertSelectOptions(SelectStmt *stmt,
 								List *sortClause, List *lockingClause,
 								Node *limitOffset, Node *limitCount,
 								WithClause *withClause,
-								base_yyscan_t yyscanner);
+								core_yyscan_t yyscanner);
 static Node *makeSetOp(SetOperation op, bool all, Node *larg, Node *rarg);
 static Node *doNegate(Node *n, int location);
 static void doNegateFloat(Value *v);
@@ -145,15 +139,18 @@ static TypeName *TableFuncTypeName(List *columns);
 %name-prefix="base_yy"
 %locations
 
-%parse-param {base_yyscan_t yyscanner}
-%lex-param   {base_yyscan_t yyscanner}
+%parse-param {core_yyscan_t yyscanner}
+%lex-param   {core_yyscan_t yyscanner}
 
 %union
 {
+	core_YYSTYPE		core_yystype;
+	/* these fields must match core_YYSTYPE: */
 	int					ival;
-	char				chr;
 	char				*str;
 	const char			*keyword;
+
+	char				chr;
 	bool				boolean;
 	JoinType			jtype;
 	DropBehavior		dbehavior;
@@ -162,7 +159,6 @@ static TypeName *TableFuncTypeName(List *columns);
 	Node				*node;
 	Value				*value;
 	ObjectType			objtype;
-
 	TypeName			*typnam;
 	FunctionParameter   *fun_param;
 	FunctionParameterMode fun_param_mode;
@@ -180,7 +176,6 @@ static TypeName *TableFuncTypeName(List *columns);
 	ResTarget			*target;
 	struct PrivTarget	*privtarget;
 	AccessPriv			*accesspriv;
-
 	InsertStmt			*istmt;
 	VariableSetStmt		*vsetstmt;
 }
@@ -256,7 +251,7 @@ static TypeName *TableFuncTypeName(List *columns);
 
 %type <str>		copy_file_name
 				database_name access_method_clause access_method attr_name
-				index_name name file_name cluster_index_specification
+				index_name name cursor_name file_name cluster_index_specification
 
 %type <list>	func_name handler_name qual_Op qual_all_Op subquery_Op
 				opt_class opt_inline_handler opt_validator validator_clause
@@ -337,7 +332,7 @@ static TypeName *TableFuncTypeName(List *columns);
 %type <ival>	opt_column event cursor_options opt_hold opt_set_data
 %type <objtype>	reindex_type drop_type comment_type
 
-%type <node>	fetch_direction limit_clause select_limit_value
+%type <node>	fetch_args limit_clause select_limit_value
 				offset_clause select_offset_value
 				select_offset_value2 opt_select_fetch_first_value
 %type <ival>	row_or_rows first_or_next
@@ -603,6 +598,7 @@ static TypeName *TableFuncTypeName(List *columns);
 %left		JOIN CROSS LEFT FULL RIGHT INNER_P NATURAL
 /* kluge to keep xml_whitespace_option from causing shift/reduce conflicts */
 %right		PRESERVE STRIP_P
+
 %%
 
 /*
@@ -1946,7 +1942,7 @@ reloption_elem:
  *****************************************************************************/
 
 ClosePortalStmt:
-			CLOSE name
+			CLOSE cursor_name
 				{
 					ClosePortalStmt *n = makeNode(ClosePortalStmt);
 					n->portalname = $2;
@@ -4185,142 +4181,144 @@ comment_text:
  *
  *****************************************************************************/
 
-FetchStmt:	FETCH fetch_direction from_in name
+FetchStmt:	FETCH fetch_args
 				{
 					FetchStmt *n = (FetchStmt *) $2;
-					n->portalname = $4;
 					n->ismove = FALSE;
 					$$ = (Node *)n;
 				}
-			| FETCH name
-				{
-					FetchStmt *n = makeNode(FetchStmt);
-					n->direction = FETCH_FORWARD;
-					n->howMany = 1;
-					n->portalname = $2;
-					n->ismove = FALSE;
-					$$ = (Node *)n;
-				}
-			| MOVE fetch_direction from_in name
+			| MOVE fetch_args
 				{
 					FetchStmt *n = (FetchStmt *) $2;
-					n->portalname = $4;
-					n->ismove = TRUE;
-					$$ = (Node *)n;
-				}
-			| MOVE name
-				{
-					FetchStmt *n = makeNode(FetchStmt);
-					n->direction = FETCH_FORWARD;
-					n->howMany = 1;
-					n->portalname = $2;
 					n->ismove = TRUE;
 					$$ = (Node *)n;
 				}
 		;
 
-fetch_direction:
-			/*EMPTY*/
+fetch_args:	cursor_name
 				{
 					FetchStmt *n = makeNode(FetchStmt);
+					n->portalname = $1;
 					n->direction = FETCH_FORWARD;
 					n->howMany = 1;
 					$$ = (Node *)n;
 				}
-			| NEXT
+			| from_in cursor_name
 				{
 					FetchStmt *n = makeNode(FetchStmt);
+					n->portalname = $2;
 					n->direction = FETCH_FORWARD;
 					n->howMany = 1;
 					$$ = (Node *)n;
 				}
-			| PRIOR
+			| NEXT opt_from_in cursor_name
 				{
 					FetchStmt *n = makeNode(FetchStmt);
+					n->portalname = $3;
+					n->direction = FETCH_FORWARD;
+					n->howMany = 1;
+					$$ = (Node *)n;
+				}
+			| PRIOR opt_from_in cursor_name
+				{
+					FetchStmt *n = makeNode(FetchStmt);
+					n->portalname = $3;
 					n->direction = FETCH_BACKWARD;
 					n->howMany = 1;
 					$$ = (Node *)n;
 				}
-			| FIRST_P
+			| FIRST_P opt_from_in cursor_name
 				{
 					FetchStmt *n = makeNode(FetchStmt);
+					n->portalname = $3;
 					n->direction = FETCH_ABSOLUTE;
 					n->howMany = 1;
 					$$ = (Node *)n;
 				}
-			| LAST_P
+			| LAST_P opt_from_in cursor_name
 				{
 					FetchStmt *n = makeNode(FetchStmt);
+					n->portalname = $3;
 					n->direction = FETCH_ABSOLUTE;
 					n->howMany = -1;
 					$$ = (Node *)n;
 				}
-			| ABSOLUTE_P SignedIconst
+			| ABSOLUTE_P SignedIconst opt_from_in cursor_name
 				{
 					FetchStmt *n = makeNode(FetchStmt);
+					n->portalname = $4;
 					n->direction = FETCH_ABSOLUTE;
 					n->howMany = $2;
 					$$ = (Node *)n;
 				}
-			| RELATIVE_P SignedIconst
+			| RELATIVE_P SignedIconst opt_from_in cursor_name
 				{
 					FetchStmt *n = makeNode(FetchStmt);
+					n->portalname = $4;
 					n->direction = FETCH_RELATIVE;
 					n->howMany = $2;
 					$$ = (Node *)n;
 				}
-			| SignedIconst
+			| SignedIconst opt_from_in cursor_name
 				{
 					FetchStmt *n = makeNode(FetchStmt);
+					n->portalname = $3;
 					n->direction = FETCH_FORWARD;
 					n->howMany = $1;
 					$$ = (Node *)n;
 				}
-			| ALL
+			| ALL opt_from_in cursor_name
 				{
 					FetchStmt *n = makeNode(FetchStmt);
+					n->portalname = $3;
 					n->direction = FETCH_FORWARD;
 					n->howMany = FETCH_ALL;
 					$$ = (Node *)n;
 				}
-			| FORWARD
+			| FORWARD opt_from_in cursor_name
 				{
 					FetchStmt *n = makeNode(FetchStmt);
+					n->portalname = $3;
 					n->direction = FETCH_FORWARD;
 					n->howMany = 1;
 					$$ = (Node *)n;
 				}
-			| FORWARD SignedIconst
+			| FORWARD SignedIconst opt_from_in cursor_name
 				{
 					FetchStmt *n = makeNode(FetchStmt);
+					n->portalname = $4;
 					n->direction = FETCH_FORWARD;
 					n->howMany = $2;
 					$$ = (Node *)n;
 				}
-			| FORWARD ALL
+			| FORWARD ALL opt_from_in cursor_name
 				{
 					FetchStmt *n = makeNode(FetchStmt);
+					n->portalname = $4;
 					n->direction = FETCH_FORWARD;
 					n->howMany = FETCH_ALL;
 					$$ = (Node *)n;
 				}
-			| BACKWARD
+			| BACKWARD opt_from_in cursor_name
 				{
 					FetchStmt *n = makeNode(FetchStmt);
+					n->portalname = $3;
 					n->direction = FETCH_BACKWARD;
 					n->howMany = 1;
 					$$ = (Node *)n;
 				}
-			| BACKWARD SignedIconst
+			| BACKWARD SignedIconst opt_from_in cursor_name
 				{
 					FetchStmt *n = makeNode(FetchStmt);
+					n->portalname = $4;
 					n->direction = FETCH_BACKWARD;
 					n->howMany = $2;
 					$$ = (Node *)n;
 				}
-			| BACKWARD ALL
+			| BACKWARD ALL opt_from_in cursor_name
 				{
 					FetchStmt *n = makeNode(FetchStmt);
+					n->portalname = $4;
 					n->direction = FETCH_BACKWARD;
 					n->howMany = FETCH_ALL;
 					$$ = (Node *)n;
@@ -4329,6 +4327,10 @@ fetch_direction:
 
 from_in:	FROM									{}
 			| IN_P									{}
+		;
+
+opt_from_in:	from_in								{}
+			| /* EMPTY */							{}
 		;
 
 
@@ -7123,7 +7125,7 @@ set_target_list:
  *				CURSOR STATEMENTS
  *
  *****************************************************************************/
-DeclareCursorStmt: DECLARE name cursor_options CURSOR opt_hold FOR SelectStmt
+DeclareCursorStmt: DECLARE cursor_name cursor_options CURSOR opt_hold FOR SelectStmt
 				{
 					DeclareCursorStmt *n = makeNode(DeclareCursorStmt);
 					n->portalname = $2;
@@ -7132,6 +7134,9 @@ DeclareCursorStmt: DECLARE name cursor_options CURSOR opt_hold FOR SelectStmt
 					n->query = $7;
 					$$ = (Node *)n;
 				}
+		;
+
+cursor_name:	name						{ $$ = $1; }
 		;
 
 cursor_options: /*EMPTY*/					{ $$ = 0; }
@@ -10953,14 +10958,14 @@ reserved_keyword:
  * available from the scanner.
  */
 static void
-base_yyerror(YYLTYPE *yylloc, base_yyscan_t yyscanner, const char *msg)
+base_yyerror(YYLTYPE *yylloc, core_yyscan_t yyscanner, const char *msg)
 {
 	parser_yyerror(msg);
 }
 
 static Node *
 makeColumnRef(char *colname, List *indirection,
-			  int location, base_yyscan_t yyscanner)
+			  int location, core_yyscan_t yyscanner)
 {
 	/*
 	 * Generate a ColumnRef node, with an A_Indirection node added if there
@@ -11130,7 +11135,7 @@ makeBoolAConst(bool state, int location)
  * Create and populate a FuncCall node to support the OVERLAPS operator.
  */
 static FuncCall *
-makeOverlaps(List *largs, List *rargs, int location, base_yyscan_t yyscanner)
+makeOverlaps(List *largs, List *rargs, int location, core_yyscan_t yyscanner)
 {
 	FuncCall *n = makeNode(FuncCall);
 
@@ -11164,7 +11169,7 @@ makeOverlaps(List *largs, List *rargs, int location, base_yyscan_t yyscanner)
  * subscripts and '*', which we then must reject here.
  */
 static void
-check_qualified_name(List *names, base_yyscan_t yyscanner)
+check_qualified_name(List *names, core_yyscan_t yyscanner)
 {
 	ListCell   *i;
 
@@ -11181,7 +11186,7 @@ check_qualified_name(List *names, base_yyscan_t yyscanner)
  * and '*', which we then must reject here.
  */
 static List *
-check_func_name(List *names, base_yyscan_t yyscanner)
+check_func_name(List *names, core_yyscan_t yyscanner)
 {
 	ListCell   *i;
 
@@ -11199,7 +11204,7 @@ check_func_name(List *names, base_yyscan_t yyscanner)
  * in the grammar, so do it here.
  */
 static List *
-check_indirection(List *indirection, base_yyscan_t yyscanner)
+check_indirection(List *indirection, core_yyscan_t yyscanner)
 {
 	ListCell *l;
 
@@ -11258,7 +11263,7 @@ insertSelectOptions(SelectStmt *stmt,
 					List *sortClause, List *lockingClause,
 					Node *limitOffset, Node *limitCount,
 					WithClause *withClause,
-					base_yyscan_t yyscanner)
+					core_yyscan_t yyscanner)
 {
 	Assert(IsA(stmt, SelectStmt));
 
@@ -11484,12 +11489,9 @@ TableFuncTypeName(List *columns)
 }
 
 /*
- * Must undefine base_yylex before including scan.c, since we want it
- * to create the function base_yylex not filtered_base_yylex.
+ * Must undefine this stuff before including scan.c, since it has different
+ * definitions for these macros.
  */
-#undef base_yylex
-
-/* Undefine some other stuff that would conflict in scan.c, too */
 #undef yyerror
 #undef yylval
 #undef yylloc
