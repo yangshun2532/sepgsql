@@ -590,9 +590,9 @@ Also note that we don't check anything on libraries listed on the
 "shared_preload_libraries" option, because it is not a request from client.
 
 
-o superuser
+o superuser (not implemented yet)
 
-It is checked when the client tries to perform as a superuser on the current
+It is checked when the client performs as a database supruser on the current
 database. If violated, client performs as a non-privileged database user,
 even if the default PG model allows them to perform as a database superuser.
 

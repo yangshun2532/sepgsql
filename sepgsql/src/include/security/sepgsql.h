@@ -153,8 +153,6 @@ extern void
 sepgsql_database_grant(Oid datOid);
 extern void
 sepgsql_database_access(Oid datOid);
-extern bool
-sepgsql_database_superuser(Oid datOid);
 
 /* Pg_namespace related hooks */
 extern bool
