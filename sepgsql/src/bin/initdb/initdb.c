@@ -1840,29 +1840,29 @@ setup_selinux(void)
 		 * Pg_database initial labeling
 		 */
 		"UPDATE pg_database"
-		"  SET datsecon = sepgsql_template1_context();\n",
+		"  SET datsecon = sepgsql_template1_getcon();\n",
 		/*
 		 * Pg_namespace initial labeling
 		 */
 		"UPDATE pg_namespace"
-		"  SET nspsecon = sepgsql_default_context(sepgsql_getcon(),"
-		"                               sepgsql_database_getcon(1),"
-		"                                              'db_schema');\n",
+		"  SET nspsecon = sepgsql_default_getcon(sepgsql_getcon(),"
+		"                              sepgsql_database_getcon(1),"
+		"                                             'db_schema');\n",
 		/*
 		 * Pg_class initial labeling
 		 */
 		"UPDATE pg_class"
-		"  SET relsecon = sepgsql_default_context(sepgsql_getcon(),"
-		"                      sepgsql_schema_getcon(relnamespace),"
-		"                                               'db_table')"
+		"  SET relsecon = sepgsql_default_getcon(sepgsql_getcon(),"
+		"                     sepgsql_schema_getcon(relnamespace),"
+		"                                              'db_table')"
 		"  WHERE relkind = 'r';\n",
 		/*
 		 * Pg_attribute initial labeling
 		 */
 		"UPDATE pg_attribute"
-		"  SET attsecon = sepgsql_default_context(sepgsql_getcon(),"
-		"                        sepgsql_relation_getcon(attrelid),"
-		"                                              'db_column')"
+		"  SET attsecon = sepgsql_default_getcon(sepgsql_getcon(),"
+		"                       sepgsql_relation_getcon(attrelid),"
+		"                                             'db_column')"
 		"  WHERE attrelid in (SELECT oid FROM pg_class WHERE relkind = 'r');\n",
 		NULL
 	};

@@ -209,7 +209,7 @@ CreateComments(Oid oid, Oid classoid, int32 subid, char *comment)
 	 * So, SE-PgSQL needs to check permission to alter properties
 	 * of the managed database object.
 	 */
-	sepgsql_object_comment(oid, classoid, subid);
+	sepgsql_object_comment(classoid, oid, subid);
 
 	/* Reduce empty-string to NULL case */
 	if (comment != NULL && strlen(comment) == 0)
@@ -315,7 +315,7 @@ CreateSharedComments(Oid oid, Oid classoid, char *comment)
 	 * See the comment in CreateComments().
 	 * SE-PgSQL checks permission to comment on the managed object.
 	 */
-	sepgsql_object_comment(oid, classoid, 0);
+	sepgsql_object_comment(classoid, oid, 0);
 
 	/* Reduce empty-string to NULL case */
 	if (comment != NULL && strlen(comment) == 0)
