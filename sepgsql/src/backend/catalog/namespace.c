@@ -2362,6 +2362,8 @@ LookupExplicitNamespace(const char *nspname)
 		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
 					   nspname);
 
+	sepgsql_schema_search(namespaceId, true);
+
 	return namespaceId;
 }
 
@@ -2956,7 +2958,8 @@ recomputeNamespacePath(void)
 				if (OidIsValid(namespaceId) &&
 					!list_member_oid(oidlist, namespaceId) &&
 					pg_namespace_aclcheck(namespaceId, roleid,
-										  ACL_USAGE) == ACLCHECK_OK)
+										  ACL_USAGE) == ACLCHECK_OK &&
+					sepgsql_schema_search(namespaceId, false))
 					oidlist = lappend_oid(oidlist, namespaceId);
 			}
 		}
@@ -2984,7 +2987,8 @@ recomputeNamespacePath(void)
 			if (OidIsValid(namespaceId) &&
 				!list_member_oid(oidlist, namespaceId) &&
 				pg_namespace_aclcheck(namespaceId, roleid,
-									  ACL_USAGE) == ACLCHECK_OK)
+									  ACL_USAGE) == ACLCHECK_OK &&
+				sepgsql_schema_search(namespaceId, false))
 				oidlist = lappend_oid(oidlist, namespaceId);
 		}
 	}
