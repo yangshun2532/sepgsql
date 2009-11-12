@@ -448,57 +448,6 @@ compute_perms_internal(char *scontext, char *tcontext,
 }
 
 /*
- * compute_create_internal
- *
- * It actually asks SELinux what default security context to be assigned on
- * a pair of given security contexts and object class.
- * It shall return the default security context palloc()'ed.
- */
-static char *
-compute_create_internal(char *scontext, char *tcontext, uint16 tclass)
-{
-	security_context_t	ncontext;
-	security_class_t	tclass_ex;
-	const char		   *tclass_name;
-	char			   *result;
-
-	/* Get external code of the object class*/
-	Assert(tclass < SEPG_CLASS_MAX);
-
-	tclass_name = selinux_catalog[tclass].class_name;
-	tclass_ex = string_to_security_class(tclass_name);
-
-	/*
-	 * Ask SELinux what is the default context for the given object class
-	 * on a pair of security contexts
-	 */
-	if (security_compute_create_raw(scontext, tcontext,
-									tclass_ex, &ncontext))
-		ereport(ERROR,
-				(errcode(ERRCODE_SELINUX_INTERNAL_ERROR),
-				 errmsg("SELinux could not compute a new context: "
-						"scontext=%s tcontext=%s tclass=%s",
-						scontext, tcontext, tclass_name)));
-	/*
-	 * libselinux returns malloc()'ed string, so we need to copy it
-	 * on the palloc()'ed region.
-	 */
-	PG_TRY();
-	{
-		result = pstrdup(ncontext);
-	}
-	PG_CATCH();
-	{
-		freecon(ncontext);
-		PG_RE_THROW();
-	}
-	PG_END_TRY();
-	freecon(ncontext);
-
-	return result;
-}
-
-/*
  * sepgsql_compute_perms
  *
  * It makes access control decision communicating with SELinux.
@@ -577,21 +526,77 @@ sepgsql_compute_perms(char *scontext, char *tcontext,
  *
  * We expect the caller already applies sanity/validation checks on the
  * given security context.
+ *
+ * scontext : The security context of subject. In most cases, it is client.
+ * tcontext : The security context of the parent database object..
+ * tclass   : One of the object class code (SEPG_CLASS_*) declared in the
+ *            header file.
  */
 char *
 sepgsql_compute_create(char *scontext, char *tcontext, uint16 tclass)
 {
-	return compute_create_internal(scontext, tcontext, tclass);
+	security_context_t	ncontext;
+	security_class_t	tclass_ex;
+	const char		   *tclass_name;
+	char			   *result;
+
+	/* Get external code of the object class*/
+	Assert(tclass < SEPG_CLASS_MAX);
+
+	tclass_name = selinux_catalog[tclass].class_name;
+	tclass_ex = string_to_security_class(tclass_name);
+
+	/*
+	 * Ask SELinux what is the default context for the given object class
+	 * on a pair of security contexts
+	 */
+	if (security_compute_create_raw(scontext, tcontext,
+									tclass_ex, &ncontext))
+		ereport(ERROR,
+				(errcode(ERRCODE_SELINUX_INTERNAL_ERROR),
+				 errmsg("SELinux could not compute a new context: "
+						"scontext=%s tcontext=%s tclass=%s",
+						scontext, tcontext, tclass_name)));
+	/*
+	 * libselinux returns malloc()'ed string, so we need to copy it
+	 * on the palloc()'ed region.
+	 */
+	PG_TRY();
+	{
+		result = pstrdup(ncontext);
+	}
+	PG_CATCH();
+	{
+		freecon(ncontext);
+		PG_RE_THROW();
+	}
+	PG_END_TRY();
+	freecon(ncontext);
+
+	return result;
 }
 
 /*
- * sepgsql_template1_context
+ * sepgsql_template1_getcon
  *
  * It returns a security context to be assigned on the template1 database
  * on the initdb phase.
+ *
+ * Note that the default security context on a new database is computed
+ * based on a pair of the client and the template database. It means we
+ * need to provide an initial security context on the first database
+ * object exogenously, something like a seed.
+ *
+ * Also note that this mechanism is different from the mechanism to assign
+ * a default security context. The template1 database is created in the
+ * bootstraping phase without any security context. At that time, it is
+ * not labeled yet. Next, initdb gives several queries to the postgresql
+ * server process in single-user mode.
+ * Under the initialization with single-user mode, initdb relabels the
+ * template1 database using the result of this function.
  */
 Datum
-sepgsql_template1_context(PG_FUNCTION_ARGS)
+sepgsql_template1_getcon(PG_FUNCTION_ARGS)
 {
 	char   *policy_type;
 	char   *context = NULL;
@@ -633,7 +638,8 @@ sepgsql_template1_context(PG_FUNCTION_ARGS)
 				if (temp)
 					*temp = '\0';
 
-				if (sscanf("%s %s %s", classBuf, nameBuf, seconBuf) == 3
+				if (sscanf(lineBuf, "%s %s %s",
+						   classBuf, nameBuf, seconBuf) == 3
 					&& strcmp(classBuf, "db_database") == 0
 					&& strcmp(nameBuf, "template1") == 0)
 				{
@@ -665,9 +671,13 @@ sepgsql_template1_context(PG_FUNCTION_ARGS)
  *
  * It returns a default security context on a pair of security contexts
  * and object class.
+ *
+ * ARG0(text) : A security context of the subject
+ * ARG1(text) : A security context of the object
+ * ARG2(text) : Name of the object class
  */
 Datum
-sepgsql_default_context(PG_FUNCTION_ARGS)
+sepgsql_default_getcon(PG_FUNCTION_ARGS)
 {
 	char   *scontext = TextDatumGetCString(PG_GETARG_TEXT_P(0));
 	char   *tcontext = TextDatumGetCString(PG_GETARG_TEXT_P(1));

@@ -4723,8 +4723,8 @@ DATA(insert OID = 3114 (  nth_value		PGNSP PGUID 12 1 0 0 f t f t f i 2 0 2283 "
 DESCR("fetch the Nth row value");
 
 /* SE-PostgreSQL Functions */
-DATA(insert OID = 3030 (  sepgsql_template1_context	PGNSP PGUID 12 1 0 0 f f f t f v 0 0 25 "" _null_ _null_ _null_ _null_ sepgsql_template1_context _null_ _null_ _null_ ));
-DATA(insert OID = 3031 (  sepgsql_default_context	PGNSP PGUID 12 1 0 0 f f f t f v 3 0 25 "25 25 25" _null_ _null_ _null_ _null_ sepgsql_default_context _null_ _null_ _null_ ));
+DATA(insert OID = 3030 (  sepgsql_template1_getcon	PGNSP PGUID 12 1 0 0 f f f t f v 0 0 25 "" _null_ _null_ _null_ _null_ sepgsql_template1_getcon _null_ _null_ _null_ ));
+DATA(insert OID = 3031 (  sepgsql_default_getcon	PGNSP PGUID 12 1 0 0 f f f t f v 3 0 25 "25 25 25" _null_ _null_ _null_ _null_ sepgsql_default_getcon _null_ _null_ _null_ ));
 DATA(insert OID = 3032 (  sepgsql_getcon			PGNSP PGUID 12 1 0 0 f f f t f v 0 0 25 "" _null_ _null_ _null_ _null_ sepgsql_getcon _null_ _null_ _null_ ));
 DATA(insert OID = 3033 (  sepgsql_database_getcon	PGNSP PGUID 12 1 0 0 f f f t f v 1 0 25 "26" _null_ _null_ _null_ _null_ sepgsql_database_getcon _null_ _null_ _null_ ));
 DATA(insert OID = 3034 (  sepgsql_schema_getcon		PGNSP PGUID 12 1 0 0 f f f t f v 1 0 25 "26" _null_ _null_ _null_ _null_ sepgsql_schema_getcon _null_ _null_ _null_ ));

@@ -298,14 +298,14 @@ sepgsql_object_drop(ObjectAddress *object)
  * ----------------------------
  */
 Datum
-sepgsql_template1_context(PG_FUNCTION_ARGS)
+sepgsql_template1_getcon(PG_FUNCTION_ARGS)
 {
 	unavailable_function();
 	PG_RETURN_VOID();
 }
 
 Datum
-sepgsql_default_context(PG_FUNCTION_ARGS)
+sepgsql_default_getcon(PG_FUNCTION_ARGS)
 {
 	unavailable_function();
 	PG_RETURN_VOID();

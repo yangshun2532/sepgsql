@@ -239,11 +239,12 @@ sepgsql_database_relabel(Oid datOid, Node *datLabel)
  * It checks client's privilege to grant/revoke permissions on a certain
  * database. If violated, it raises an error.
  *
- * This hook should be called on the routine to handle GRANT/REVOKE statement
- * on databases. It also modifies metadata of the database, so we need to
- * check db_database:{setattr} permission on a pair of client and the database.
+ * This hook should be called on the routine to handle GRANT/REVOKE
+ * on databases. It modifies metadata of the database, so we need to
+ * check db_database:{setattr} permission on a pair of client and
+ * the database.
  *
- * datOid : OID of the database to be altered
+ * datOid : OID of the database to be granted/revoked
  */
 void
 sepgsql_database_grant(Oid datOid)
@@ -257,8 +258,8 @@ sepgsql_database_grant(Oid datOid)
 /*
  * sepgsql_database_access
  *
- * It checks client's privilege to access to the selected database just after
- * ACL_CONNECT checks in the default PG model.
+ * It checks client's privilege to access to the selected database just
+ * after ACL_CONNECT checks in the default PG model.
  *
  * datOid : OID of the database to be accessed
  */
@@ -351,8 +352,8 @@ sepgsql_schema_common(Oid nspOid, uint32 required, bool abort)
  * If violated, it raises an error.
  *
  * This hook should be called on the routine to handle CREATE SCHEMA or
- * to create a temporary schema, then the caller has to assign the returned
- * context on the new schema.
+ * to create a temporary schema, then the caller must assign the returned
+ * security context on the new schema.
  *
  * If no explicit security context is given, it compute a default security
  * context of the new schema. Then, it checks db_schema:{create} permission
@@ -499,11 +500,11 @@ sepgsql_schema_relabel(Oid nspOid, Node *nspLabel)
  * It checks client's privilege to grant/revoke permissions on a certain
  * schema. If violated, it raises an error.
  *
- * This hook should be called on the routine to handle GRANT/REVOKE statement
+ * This hook should be called on the routine to handle GRANT/REVOKE
  * on schema. It also modifies metadata of the schema, so we need to check
  * db_schema:{setattr} permission on a pair of client and the schema.
  *
- * nspOid : OID of the schema to be altered
+ * nspOid : OID of the schema to be granted/revoked
  */
 void
 sepgsql_schema_grant(Oid nspOid)
@@ -527,7 +528,7 @@ sepgsql_schema_grant(Oid nspOid)
  * looking up a database object with an explicit namespace.
  *
  * nspOid : OID of the schema to be searched
- * abort : True, if caller want to raise an error on access violation.
+ * abort  : True, if caller want to raise an error on access violation.
  */
 bool
 sepgsql_schema_search(Oid nspOid, bool abort)
@@ -537,7 +538,7 @@ sepgsql_schema_search(Oid nspOid, bool abort)
 
 	/*
 	 * We always allow to search on temporary schemas, because it is
-	 * actually 
+	 * actually a schema, but it is an implementation details.
 	 */
 	if (isTempNamespace(nspOid))
 		return true;
@@ -607,22 +608,53 @@ sepgsql_relation_common(Oid relOid, uint32 required, bool abort)
  * sepgsql_relation_create
  *
  * It checks client's privilege to create a new table and columns owned
- * by the table, and returns an array of security contexts to be assigned
- * on the table/columns. If violated, it raises an error.
+ * nu the table, and returns an array of security contexts to be assigned
+ * on the table and columns. If violated, it raised an error.
  *
- * This hook should be called on the routine to create a new regular
- * table, but no need to 
+ * This hook should be called on the routine to create a new relation,
+ * but not necessary to call from the following code path.
+ *  - Boot_CreateStmt handler in bootparse.y.
+ *    In the BootstrapProcessing mode, SE-PgSQL is disabled.
+ *    It assigns a security context on tables later.
+ *  - Creation of TOAST relation
+ *    It is a quite internal process, and we don't assign a security
+ *    context on the TOAST relation.
+ *  - Creation of temporary relation to rebuild a certain relation
+ *    It is a quite internal process, and it shall be dropped soon.
+ *    We don't need apply any checks on its creation and deletion.
  *
+ * At top-half of the function, it computes a default security context
+ * or applies validation checks on the given context for the new table.
+ * Then, it checks permissions to create a new table with the security
+ * context. If this table is in creation due to SELECT INTO, we also
+ * need to check db_table:{insert}, because it can also add new data
+ * into the table contents.
+ * 
+ * At bottom-half of the function, it also computes a default security
+ * context or applies validation checks on the given context for each
+ * columns owned by the table (An explicit security context shall be
+ * given via ColumnDef->secontext).
+ * Note that we cannot use sepgsql_attribute_create() because the table
+ * is not still under construction, so it is unavailable to obtain the
+ * security context of the table owning new columns.
  *
+ * It returns an array of the security contexts to be assigned on the
+ * new table and columns, represented as Value objects.
+ * 
+ *   results[0] = Security context of the table
+ *   results[attnum - FirstLowInvalidHeapAttributeNumber]
+ *       = Security context of the column with this attribute number
  *
+ * The caller must assign these security contexts correctly.
  *
  * relName : name of the new relation
- * relkind : relkind to be assigned on
+ * relkind : relkind of the new relation.
  * tupDesc : TupleDesc of the new relation.
- * nspOid : OID of the namespace which owns the new relation
- * relLabel : 
- * colList : 
- * createAs : True, if the new table created by 
+ * nspOid : OID of the schema which shall own the new relation
+ * relLabel : an explicitly given table's security context, or NULL
+ * colList : List of ColumnDef; It contains explicitly given column's
+ *           security context.
+ * createAs : True, if SELECT INTO creates this new table.
  */
 DatumPtr
 sepgsql_relation_create(const char *relName,
@@ -644,15 +676,16 @@ sepgsql_relation_create(const char *relName,
 		return NULL;
 
 	/*
-	 * check db_schema:{add_name} permission, because it add a new entry
-	 * into the given schema. Creation of toast table is purely internal
-	 * stuff, so it can skip permission checks.
+	 * check db_schema:{add_name} permission.
+	 * It adds a new name entry to the given schema, independent from
+	 * relkind of the relation.
+	 * Note that we don't need to check this permission on creation of
+	 * TOAST table, but no code path given RELKIND_TOASTVALUE now.
 	 */
-	if (relkind != RELKIND_TOASTVALUE)
-		sepgsql_schema_common(nspOid, SEPG_DB_SCHEMA__ADD_NAME, true);
+	sepgsql_schema_common(nspOid, SEPG_DB_SCHEMA__ADD_NAME, true);
 
 	/*
-	 * No need to check anything expect for regular tables
+	 * No need to check anymore expect for regular tables
 	 */
 	if (relkind != RELKIND_RELATION)
 		return NULL;
@@ -798,11 +831,23 @@ sepgsql_relation_alter(Oid relOid, const char *newName, Oid newNsp)
 
 	sepgsql_relation_common(relOid, SEPG_DB_TABLE__SETATTR, true);
 
+	/*
+	 * If ALTER TABLE with RENAME TO, we consider it as adding/removing
+	 * an entry to/from the current schema concurrently.
+	 */
 	if (newName)
+	{
 		sepgsql_schema_common(get_rel_namespace(relOid),
 							  SEPG_DB_SCHEMA__ADD_NAME |
 							  SEPG_DB_SCHEMA__REMOVE_NAME, true);
-	if (newNsp)
+	}
+
+	/*
+	 * If ALTER TABLE with SET SCHEMA, we considers it as removing
+	 * an entry from the current schema and adding an entry to the
+	 * new schema concurrently.
+	 */
+	if (OidIsValid(newNsp))
 	{
 		sepgsql_schema_common(get_rel_namespace(relOid),
 							  SEPG_DB_SCHEMA__REMOVE_NAME, true);
@@ -875,9 +920,10 @@ sepgsql_relation_drop(Oid relOid)
  * It checks client's privilege to grant/revoke permissions on a certain
  * relation. If violated, it raises an error.
  *
- * This hook should be called on the routine to handle GRANT/REVOKE statement
- * on relations. It also modifies metadata of the relation, so we need to
- * check db_table:{setattr} permission on a pair of client and the table.
+ * This hook should be called on the routine to handle GRANT/REVOKE
+ * on the relations. It also modifies metadata of the relation, so we
+ * need to check db_table:{setattr} permission on a pair of the client
+ * and the table.
  *
  * relOid : OID of the relation to be altered
  */
@@ -950,7 +996,9 @@ sepgsql_relation_relabel(Oid relOid, Node *relLabel)
  * If violated, it raises an error.
  *
  * This hook should be called on truncate_check_rel() which also checks
- * permission in the default PG model.
+ * permission in the default PG model. Since this operation dropps all
+ * the contents in the table, so we need to check db_table:{delete}
+ * permission.
  *
  * rel : Relation object to be truncated
  */
@@ -1006,6 +1054,7 @@ sepgsql_index_create(Oid relOid, Oid nspOid)
 		return;
 
 	sepgsql_relation_common(relOid, SEPG_DB_TABLE__SETATTR, true);
+
 	sepgsql_schema_common(nspOid, SEPG_DB_SCHEMA__ADD_NAME, true);
 }
 
@@ -1078,7 +1127,7 @@ sepgsql_attribute_common(Oid relOid, AttrNumber attnum,
  * context to be assigned on. If violated, it raises an error.
  *
  * Note that we don't expect to invoke this hook on CREATE TABLE,
- * because default security context of columns are decided based on
+ * because default security context of columns are computed based on
  * a pair of client and parent table, but the parent table is not
  * visible when we create a new table.
  * (These checks are done in sepgsql_relation_create().)
@@ -1088,6 +1137,9 @@ sepgsql_attribute_common(Oid relOid, AttrNumber attnum,
  * a new column on the child tables also. In this case, the caller
  * has to copy the security context on the root column to inherited
  * columns, but no need to invoke this hook on the children.
+ *
+ * relOid : OID of the relation which shall own the new column
+ * cdef   : ColumnDef object of the new column
  */
 Value *
 sepgsql_attribute_create(Oid relOid, ColumnDef *cdef)
@@ -1099,6 +1151,11 @@ sepgsql_attribute_create(Oid relOid, ColumnDef *cdef)
 	if (!sepgsql_is_enabled())
 		return NULL;
 
+	/*
+	 * If the relation is not a regular table, no need to check
+	 * anything, and no need to assign an individual security
+	 * context on the new attribute.
+	 */
 	relkind = get_rel_relkind(relOid);
 	if (relkind != RELKIND_RELATION)
 	{
@@ -1111,6 +1168,10 @@ sepgsql_attribute_create(Oid relOid, ColumnDef *cdef)
 		return NULL;
 	}
 
+	/*
+	 * Either a default or an explicit security context shall be
+	 * assigned on the new column.
+	 */
 	if (!cdef->secontext)
 		context = sepgsql_default_column_context(relOid);
 	else
@@ -1142,6 +1203,9 @@ sepgsql_attribute_create(Oid relOid, ColumnDef *cdef)
  *
  * It checks permission to alter properties of the given column.
  * If violated, it raises an error.
+ *
+ * relOid  : OID of the relation owning the column
+ * attname : Name of the column to be altered
  */
 void
 sepgsql_attribute_alter(Oid relOid, const char *attname)
@@ -1175,6 +1239,15 @@ sepgsql_attribute_alter(Oid relOid, const char *attname)
  *
  * It checks permission to drop the given column. 
  * If violated, it raises an error.
+ *
+ * In fact, ALTER TABLE with DROP COLUMN does not delete a certain
+ * entry of pg_attribute. (It just set pg_attribute.attisdropped.)
+ * But it seems to a deletion from user's perspective, so we checks
+ * permission to drop a certain column, and do nothing when the table
+ * will be dropped.
+ *
+ * relOid  : OID of the relation owning the column
+ * attname : Name of the column to be altered
  */
 void
 sepgsql_attribute_drop(Oid relOid, const char *attname)
@@ -1211,6 +1284,9 @@ sepgsql_attribute_drop(Oid relOid, const char *attname)
  *
  * From the perspective of SE-PgSQL, ACLs are one of the properties in
  * columns. So, we need to check db_column:{setattr} permission here.
+ *
+ * relOid : OID of the relation owning the column
+ * attnum : Attribute number of the column to be granted/revoked
  */
 void
 sepgsql_attribute_grant(Oid relOid, AttrNumber attnum)
@@ -1240,6 +1316,10 @@ sepgsql_attribute_grant(Oid relOid, AttrNumber attnum)
  * columns also with same security context. In this case, the caller
  * has to copy the security context on the root column to inherited
  * columns, but no need to invoke this hook on the children.
+ *
+ * relOid   : OID of the relation owning the column
+ * attname  : Name of the column to be relabeled
+ * attLabel : An explicit security context to be assigned on
  */
 Value *
 sepgsql_attribute_relabel(Oid relOid, const char *attname, Node *attLabel)
@@ -1297,9 +1377,13 @@ sepgsql_attribute_relabel(Oid relOid, const char *attname, Node *attLabel)
  * This hook should be called from CreateComments() or CreateSharedComments().
  * When client tries to comment on the managed object, it checks appropriate
  * permission.
+ *
+ * relOid : OID of the system catalog which stores the database object
+ * objId  : OID of the database object itself, to be commented on.
+ * subId  : attribute number of the column, if relOid is AttributeRelationId.
  */
 void
-sepgsql_object_comment(Oid objId, Oid relOid, int32 subId)
+sepgsql_object_comment(Oid relOid, Oid objId, int32 subId)
 {
 	switch (relOid)
 	{
@@ -1328,13 +1412,27 @@ sepgsql_object_comment(Oid objId, Oid relOid, int32 subId)
 /*
  * sepgsql_object_drop
  *
- * It checks client's privilege to drop a certain database objects which
- * also includes objects to be dropped due to the cascaded deletion.
+ * It checks client's privilege to drop a certain database objects
+ * also including ones to be dropped due to cascaded deletion.
+ * We assume this hook is invoked from routines in catalog/dependency.c.
  *
- * This hook should be invoked from routines in catalog/dependency.c.
- * But it does not need to check anything when the given database objects
- * are dropped due to purely internal processing, such as cleaning up
- * temporary database objects.
+ * However, here is some exception cases.
+ * If a certain quite internal stuff tries to clean up database objects,
+ * we don't apply any checks on the operations, because it is not requests
+ * from the client.
+ * In the current version, we don't check db_xxx:{drop} permission in the
+ * following cases:
+ *
+ * - cleaning up temporary objects on connection closed.
+ *   (RemoveTempRelations)
+ * - cleaning up temporary table on relation rebuild.
+ *   (rebuild_relation and ATRewriteTables)
+ * - cleaning up temporary table due to the ON COMMIT DROP
+ *   (PreCommit_on_commit_actions)
+ * - cleaning up an orphan temporary table by autovacuum
+ *   (do_autovacuum)
+ *
+ * object : A reference to the database object to be dropped
  */
 void
 sepgsql_object_drop(ObjectAddress *object)

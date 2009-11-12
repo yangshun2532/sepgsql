@@ -101,6 +101,8 @@ typedef void (*sepgsql_audit_hook_t) (bool denied,
 									  const char *tclass,
 									  const char *permissions,
 									  const char *audit_name);
+extern sepgsql_audit_hook_t sepgsql_audit_hook;
+
 extern bool
 sepgsql_compute_perms(char *scontext, char *tcontext,
 					  uint16 tclass, uint32 required,
@@ -213,7 +215,7 @@ sepgsql_attribute_relabel(Oid relOid, const char *attname, Node *attLabel);
 
 /* Misc database objects related hooks */
 extern void
-sepgsql_object_comment(Oid objId, Oid relOid, int32 subId);
+sepgsql_object_comment(Oid relOid, Oid objId, int32 subId);
 extern void
 sepgsql_object_drop(ObjectAddress *object);
 
@@ -221,8 +223,8 @@ sepgsql_object_drop(ObjectAddress *object);
  * SE-PgSQL related SQL functions
  * ----------------------------------------
  */
-extern Datum sepgsql_template1_context(PG_FUNCTION_ARGS);
-extern Datum sepgsql_default_context(PG_FUNCTION_ARGS);
+extern Datum sepgsql_template1_getcon(PG_FUNCTION_ARGS);
+extern Datum sepgsql_default_getcon(PG_FUNCTION_ARGS);
 extern Datum sepgsql_getcon(PG_FUNCTION_ARGS);
 extern Datum sepgsql_database_getcon(PG_FUNCTION_ARGS);
 extern Datum sepgsql_schema_getcon(PG_FUNCTION_ARGS);

@@ -93,7 +93,6 @@ fixup_whole_row_reference(Oid relOid, Bitmapset *columns)
  * It checks client's permissions to access contents of a certain table
  * and columns. If violated, it raised an error.
  * 
- * 
  * The caller has to provide OID of the table, a set of columns to be
  * selected/modified and required permissions correctly.
  * The set of columns are represented as Bitmapset in same manner with
@@ -258,7 +257,7 @@ sepgsql_check_rte_perms(RangeTblEntry *rte)
  * It can raise an error, if violated.
  *
  * rel : the target relation to be copied
- * attnumlist : 
+ * attnumlist : a list of attribute number to be accessed.
  * is_from : True, if COPY FROM. Otherwise, COPY TO.
  */
 void
