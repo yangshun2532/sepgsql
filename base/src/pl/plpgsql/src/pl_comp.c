@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/pl/plpgsql/src/pl_comp.c,v 1.143 2009/11/09 00:26:55 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/pl/plpgsql/src/pl_comp.c,v 1.145 2009/11/12 00:13:00 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -16,8 +16,6 @@
 #include "plpgsql.h"
 
 #include <ctype.h>
-
-#include "pl_gram.h"
 
 #include "catalog/namespace.h"
 #include "catalog/pg_attrdef.h"
@@ -41,6 +39,8 @@
  * Our own local and global variables
  * ----------
  */
+PLpgSQL_stmt_block *plpgsql_parse_result;
+
 static int	datums_alloc;
 int			plpgsql_nDatums;
 PLpgSQL_datum **plpgsql_Datums;
@@ -672,7 +672,7 @@ do_compile(FunctionCallInfo fcinfo,
 	parse_rc = plpgsql_yyparse();
 	if (parse_rc != 0)
 		elog(ERROR, "plpgsql parser returned %d", parse_rc);
-	function->action = plpgsql_yylval.program;
+	function->action = plpgsql_parse_result;
 
 	plpgsql_scanner_finish();
 	pfree(proc_source);
@@ -823,7 +823,7 @@ plpgsql_compile_inline(char *proc_source)
 	parse_rc = plpgsql_yyparse();
 	if (parse_rc != 0)
 		elog(ERROR, "plpgsql parser returned %d", parse_rc);
-	function->action = plpgsql_yylval.program;
+	function->action = plpgsql_parse_result;
 
 	plpgsql_scanner_finish();
 
@@ -1237,39 +1237,53 @@ make_datum_param(PLpgSQL_expr *expr, int dno, int location)
 
 /* ----------
  * plpgsql_parse_word		The scanner calls this to postparse
- *				any single word not found by a
- *				keyword rule.
+ *				any single word that is not a reserved keyword.
+ *
+ * word1 is the downcased/dequoted identifier; it must be palloc'd in the
+ * function's long-term memory context.
+ *
+ * yytxt is the original token text; we need this to check for quoting,
+ * so that later checks for unreserved keywords work properly.
+ *
+ * If recognized as a variable, fill in *wdatum and return TRUE;
+ * if not recognized, fill in *word and return FALSE.
+ * (Note: those two pointers actually point to members of the same union,
+ * but for notational reasons we pass them separately.)
  * ----------
  */
-int
-plpgsql_parse_word(const char *word)
+bool
+plpgsql_parse_word(char *word1, const char *yytxt,
+				   PLwdatum *wdatum, PLword *word)
 {
-	PLpgSQL_nsitem *nse;
-	char	   *cp[1];
+	PLpgSQL_nsitem *ns;
 
-	/* Do case conversion and word separation */
-	plpgsql_convert_ident(word, cp, 1);
-
-	/*
-	 * Do a lookup in the current namespace stack
-	 */
-	nse = plpgsql_ns_lookup(plpgsql_ns_top(), false,
-							cp[0], NULL, NULL,
-							NULL);
-	pfree(cp[0]);
-
-	if (nse != NULL)
+	/* No lookup if disabled */
+	if (plpgsql_LookupIdentifiers)
 	{
-		switch (nse->itemtype)
-		{
-			case PLPGSQL_NSTYPE_VAR:
-			case PLPGSQL_NSTYPE_ROW:
-			case PLPGSQL_NSTYPE_REC:
-				plpgsql_yylval.datum = plpgsql_Datums[nse->itemno];
-				return T_DATUM;
+		/*
+		 * Do a lookup in the current namespace stack
+		 */
+		ns = plpgsql_ns_lookup(plpgsql_ns_top(), false,
+							   word1, NULL, NULL,
+							   NULL);
 
-			default:
-				elog(ERROR, "unrecognized plpgsql itemtype: %d", nse->itemtype);
+		if (ns != NULL)
+		{
+			switch (ns->itemtype)
+			{
+				case PLPGSQL_NSTYPE_VAR:
+				case PLPGSQL_NSTYPE_ROW:
+				case PLPGSQL_NSTYPE_REC:
+					wdatum->datum = plpgsql_Datums[ns->itemno];
+					wdatum->ident = word1;
+					wdatum->quoted = (yytxt[0] == '"');
+					wdatum->idents = NIL;
+					return true;
+
+				default:
+					elog(ERROR, "unrecognized plpgsql itemtype: %d",
+						 ns->itemtype);
+			}
 		}
 	}
 
@@ -1277,7 +1291,9 @@ plpgsql_parse_word(const char *word)
 	 * Nothing found - up to now it's a word without any special meaning for
 	 * us.
 	 */
-	return T_WORD;
+	word->ident = word1;
+	word->quoted = (yytxt[0] == '"');
+	return false;
 }
 
 
@@ -1286,112 +1302,113 @@ plpgsql_parse_word(const char *word)
  *					separated by a dot.
  * ----------
  */
-int
-plpgsql_parse_dblword(const char *word)
+bool
+plpgsql_parse_dblword(char *word1, char *word2,
+					  PLwdatum *wdatum, PLcword *cword)
 {
 	PLpgSQL_nsitem *ns;
-	char	   *cp[2];
+	List	   *idents;
 	int			nnames;
 
-	/* Do case conversion and word separation */
-	plpgsql_convert_ident(word, cp, 2);
+	idents = list_make2(makeString(word1),
+						makeString(word2));
 
-	/*
-	 * Do a lookup in the current namespace stack
-	 */
-	ns = plpgsql_ns_lookup(plpgsql_ns_top(), false,
-						   cp[0], cp[1], NULL,
-						   &nnames);
-	if (ns == NULL)
+	/* No lookup if disabled */
+	if (plpgsql_LookupIdentifiers)
 	{
-		pfree(cp[0]);
-		pfree(cp[1]);
-		return T_DBLWORD;
-	}
-
-	switch (ns->itemtype)
-	{
-		case PLPGSQL_NSTYPE_VAR:
-			/* Block-qualified reference to scalar variable. */
-			plpgsql_yylval.datum = plpgsql_Datums[ns->itemno];
-			pfree(cp[0]);
-			pfree(cp[1]);
-			return T_DATUM;
-
-		case PLPGSQL_NSTYPE_REC:
-			if (nnames == 1)
+		/*
+		 * Do a lookup in the current namespace stack
+		 */
+		ns = plpgsql_ns_lookup(plpgsql_ns_top(), false,
+							   word1, word2, NULL,
+							   &nnames);
+		if (ns != NULL)
+		{
+			switch (ns->itemtype)
 			{
-				/*
-				 * First word is a record name, so second word must be a field
-				 * in this record.
-				 */
-				PLpgSQL_recfield *new;
+				case PLPGSQL_NSTYPE_VAR:
+					/* Block-qualified reference to scalar variable. */
+					wdatum->datum = plpgsql_Datums[ns->itemno];
+					wdatum->ident = NULL;
+					wdatum->quoted = false; /* not used */
+					wdatum->idents = idents;
+					return true;
 
-				new = palloc(sizeof(PLpgSQL_recfield));
-				new->dtype = PLPGSQL_DTYPE_RECFIELD;
-				new->fieldname = pstrdup(cp[1]);
-				new->recparentno = ns->itemno;
-
-				plpgsql_adddatum((PLpgSQL_datum *) new);
-
-				plpgsql_yylval.datum = (PLpgSQL_datum *) new;
-
-				pfree(cp[0]);
-				pfree(cp[1]);
-				return T_DATUM;
-			}
-			else
-			{
-				/* Block-qualified reference to record variable. */
-				plpgsql_yylval.datum = plpgsql_Datums[ns->itemno];
-				pfree(cp[0]);
-				pfree(cp[1]);
-				return T_DATUM;
-			}
-
-		case PLPGSQL_NSTYPE_ROW:
-			if (nnames == 1)
-			{
-				/*
-				 * First word is a row name, so second word must be a field in
-				 * this row.
-				 */
-				PLpgSQL_row *row;
-				int			i;
-
-				row = (PLpgSQL_row *) (plpgsql_Datums[ns->itemno]);
-				for (i = 0; i < row->nfields; i++)
-				{
-					if (row->fieldnames[i] &&
-						strcmp(row->fieldnames[i], cp[1]) == 0)
+				case PLPGSQL_NSTYPE_REC:
+					if (nnames == 1)
 					{
-						plpgsql_yylval.datum = plpgsql_Datums[row->varnos[i]];
-						pfree(cp[0]);
-						pfree(cp[1]);
-						return T_DATUM;
-					}
-				}
-				ereport(ERROR,
-						(errcode(ERRCODE_UNDEFINED_COLUMN),
-						 errmsg("row \"%s\" has no field \"%s\"",
-								cp[0], cp[1])));
-			}
-			else
-			{
-				/* Block-qualified reference to row variable. */
-				plpgsql_yylval.datum = plpgsql_Datums[ns->itemno];
-				pfree(cp[0]);
-				pfree(cp[1]);
-				return T_DATUM;
-			}
+						/*
+						 * First word is a record name, so second word must be
+						 * a field in this record.
+						 */
+						PLpgSQL_recfield *new;
 
-		default:
-			break;
+						new = palloc(sizeof(PLpgSQL_recfield));
+						new->dtype = PLPGSQL_DTYPE_RECFIELD;
+						new->fieldname = pstrdup(word2);
+						new->recparentno = ns->itemno;
+
+						plpgsql_adddatum((PLpgSQL_datum *) new);
+
+						wdatum->datum = (PLpgSQL_datum *) new;
+					}
+					else
+					{
+						/* Block-qualified reference to record variable. */
+						wdatum->datum = plpgsql_Datums[ns->itemno];
+					}
+					wdatum->ident = NULL;
+					wdatum->quoted = false; /* not used */
+					wdatum->idents = idents;
+					return true;
+
+				case PLPGSQL_NSTYPE_ROW:
+					if (nnames == 1)
+					{
+						/*
+						 * First word is a row name, so second word must be a
+						 * field in this row.
+						 */
+						PLpgSQL_row *row;
+						int			i;
+
+						row = (PLpgSQL_row *) (plpgsql_Datums[ns->itemno]);
+						for (i = 0; i < row->nfields; i++)
+						{
+							if (row->fieldnames[i] &&
+								strcmp(row->fieldnames[i], word2) == 0)
+							{
+								wdatum->datum = plpgsql_Datums[row->varnos[i]];
+								wdatum->ident = NULL;
+								wdatum->quoted = false; /* not used */
+								wdatum->idents = idents;
+								return true;
+							}
+						}
+						ereport(ERROR,
+								(errcode(ERRCODE_UNDEFINED_COLUMN),
+								 errmsg("row \"%s\" has no field \"%s\"",
+										word1, word2)));
+					}
+					else
+					{
+						/* Block-qualified reference to row variable. */
+						wdatum->datum = plpgsql_Datums[ns->itemno];
+						wdatum->ident = NULL;
+						wdatum->quoted = false; /* not used */
+						wdatum->idents = idents;
+						return true;
+					}
+
+				default:
+					break;
+			}
+		}
 	}
 
-	pfree(cp[0]);
-	pfree(cp[1]);
-	return T_DBLWORD;
+	/* Nothing found */
+	cword->idents = idents;
+	return false;
 }
 
 
@@ -1400,95 +1417,91 @@ plpgsql_parse_dblword(const char *word)
  *					separated by dots.
  * ----------
  */
-int
-plpgsql_parse_tripword(const char *word)
+bool
+plpgsql_parse_tripword(char *word1, char *word2, char *word3,
+					   PLwdatum *wdatum, PLcword *cword)
 {
 	PLpgSQL_nsitem *ns;
-	char	   *cp[3];
+	List	   *idents;
 	int			nnames;
 
-	/* Do case conversion and word separation */
-	plpgsql_convert_ident(word, cp, 3);
+	idents = list_make3(makeString(word1),
+						makeString(word2),
+						makeString(word3));
 
-	/*
-	 * Do a lookup in the current namespace stack. Must find a qualified
-	 * reference.
-	 */
-	ns = plpgsql_ns_lookup(plpgsql_ns_top(), false,
-						   cp[0], cp[1], cp[2],
-						   &nnames);
-	if (ns == NULL || nnames != 2)
+	/* No lookup if disabled */
+	if (plpgsql_LookupIdentifiers)
 	{
-		pfree(cp[0]);
-		pfree(cp[1]);
-		pfree(cp[2]);
-		return T_TRIPWORD;
-	}
-
-	switch (ns->itemtype)
-	{
-		case PLPGSQL_NSTYPE_REC:
+		/*
+		 * Do a lookup in the current namespace stack. Must find a qualified
+		 * reference, else ignore.
+		 */
+		ns = plpgsql_ns_lookup(plpgsql_ns_top(), false,
+							   word1, word2, word3,
+							   &nnames);
+		if (ns != NULL && nnames == 2)
+		{
+			switch (ns->itemtype)
 			{
-				/*
-				 * words 1/2 are a record name, so third word must be a field
-				 * in this record.
-				 */
-				PLpgSQL_recfield *new;
-
-				new = palloc(sizeof(PLpgSQL_recfield));
-				new->dtype = PLPGSQL_DTYPE_RECFIELD;
-				new->fieldname = pstrdup(cp[2]);
-				new->recparentno = ns->itemno;
-
-				plpgsql_adddatum((PLpgSQL_datum *) new);
-
-				plpgsql_yylval.datum = (PLpgSQL_datum *) new;
-
-				pfree(cp[0]);
-				pfree(cp[1]);
-				pfree(cp[2]);
-
-				return T_DATUM;
-			}
-
-		case PLPGSQL_NSTYPE_ROW:
-			{
-				/*
-				 * words 1/2 are a row name, so third word must be a field in
-				 * this row.
-				 */
-				PLpgSQL_row *row;
-				int			i;
-
-				row = (PLpgSQL_row *) (plpgsql_Datums[ns->itemno]);
-				for (i = 0; i < row->nfields; i++)
+				case PLPGSQL_NSTYPE_REC:
 				{
-					if (row->fieldnames[i] &&
-						strcmp(row->fieldnames[i], cp[2]) == 0)
-					{
-						plpgsql_yylval.datum = plpgsql_Datums[row->varnos[i]];
+					/*
+					 * words 1/2 are a record name, so third word must be a
+					 * field in this record.
+					 */
+					PLpgSQL_recfield *new;
 
-						pfree(cp[0]);
-						pfree(cp[1]);
-						pfree(cp[2]);
+					new = palloc(sizeof(PLpgSQL_recfield));
+					new->dtype = PLPGSQL_DTYPE_RECFIELD;
+					new->fieldname = pstrdup(word3);
+					new->recparentno = ns->itemno;
 
-						return T_DATUM;
-					}
+					plpgsql_adddatum((PLpgSQL_datum *) new);
+
+					wdatum->datum = (PLpgSQL_datum *) new;
+					wdatum->ident = NULL;
+					wdatum->quoted = false; /* not used */
+					wdatum->idents = idents;
+					return true;
 				}
-				ereport(ERROR,
-						(errcode(ERRCODE_UNDEFINED_COLUMN),
-						 errmsg("row \"%s.%s\" has no field \"%s\"",
-								cp[0], cp[1], cp[2])));
-			}
 
-		default:
-			break;
+				case PLPGSQL_NSTYPE_ROW:
+				{
+					/*
+					 * words 1/2 are a row name, so third word must be a field
+					 * in this row.
+					 */
+					PLpgSQL_row *row;
+					int			i;
+
+					row = (PLpgSQL_row *) (plpgsql_Datums[ns->itemno]);
+					for (i = 0; i < row->nfields; i++)
+					{
+						if (row->fieldnames[i] &&
+							strcmp(row->fieldnames[i], word3) == 0)
+						{
+							wdatum->datum = plpgsql_Datums[row->varnos[i]];
+							wdatum->ident = NULL;
+							wdatum->quoted = false; /* not used */
+							wdatum->idents = idents;
+							return true;
+						}
+					}
+					ereport(ERROR,
+							(errcode(ERRCODE_UNDEFINED_COLUMN),
+							 errmsg("row \"%s.%s\" has no field \"%s\"",
+									word1, word2, word3)));
+				}
+
+				default:
+					break;
+			}
+		}
 	}
 
-	pfree(cp[0]);
-	pfree(cp[1]);
-	pfree(cp[2]);
-	return T_TRIPWORD;
+	/* Nothing found */
+	cword->idents = idents;
+	return false;
 }
 
 
@@ -1500,26 +1513,21 @@ plpgsql_parse_tripword(const char *word)
  * ----------
  */
 PLpgSQL_type *
-plpgsql_parse_wordtype(const char *word)
+plpgsql_parse_wordtype(char *ident)
 {
 	PLpgSQL_type *dtype;
 	PLpgSQL_nsitem *nse;
 	HeapTuple	typeTup;
-	char	   *cp[1];
-
-	/* Do case conversion and word separation */
-	plpgsql_convert_ident(word, cp, 1);
 
 	/*
 	 * Do a lookup in the current namespace stack
 	 */
 	nse = plpgsql_ns_lookup(plpgsql_ns_top(), false,
-							cp[0], NULL, NULL,
+							ident, NULL, NULL,
 							NULL);
 
 	if (nse != NULL)
 	{
-		pfree(cp[0]);
 		switch (nse->itemtype)
 		{
 			case PLPGSQL_NSTYPE_VAR:
@@ -1536,7 +1544,7 @@ plpgsql_parse_wordtype(const char *word)
 	 * Word wasn't found in the namespace stack. Try to find a data type
 	 * with that name, but ignore shell types and complex types.
 	 */
-	typeTup = LookupTypeName(NULL, makeTypeName(cp[0]), NULL);
+	typeTup = LookupTypeName(NULL, makeTypeName(ident), NULL);
 	if (typeTup)
 	{
 		Form_pg_type typeStruct = (Form_pg_type) GETSTRUCT(typeTup);
@@ -1545,14 +1553,12 @@ plpgsql_parse_wordtype(const char *word)
 			typeStruct->typrelid != InvalidOid)
 		{
 			ReleaseSysCache(typeTup);
-			pfree(cp[0]);
 			return NULL;
 		}
 
 		dtype = build_datatype(typeTup, -1);
 
 		ReleaseSysCache(typeTup);
-		pfree(cp[0]);
 		return dtype;
 	}
 
@@ -1560,55 +1566,71 @@ plpgsql_parse_wordtype(const char *word)
 	 * Nothing found - up to now it's a word without any special meaning for
 	 * us.
 	 */
-	pfree(cp[0]);
 	return NULL;
 }
 
 
 /* ----------
- * plpgsql_parse_dblwordtype		Same lookup for word.word%TYPE
+ * plpgsql_parse_cwordtype		Same lookup for compositeword%TYPE
  * ----------
  */
 PLpgSQL_type *
-plpgsql_parse_dblwordtype(const char *word)
+plpgsql_parse_cwordtype(List *idents)
 {
 	PLpgSQL_type *dtype = NULL;
 	PLpgSQL_nsitem *nse;
+	const char *fldname;
 	Oid			classOid;
 	HeapTuple	classtup = NULL;
 	HeapTuple	attrtup = NULL;
 	HeapTuple	typetup = NULL;
 	Form_pg_class classStruct;
 	Form_pg_attribute attrStruct;
-	char	   *cp[2];
 	MemoryContext oldCxt;
 
 	/* Avoid memory leaks in the long-term function context */
 	oldCxt = MemoryContextSwitchTo(compile_tmp_cxt);
 
-	/* Do case conversion and word separation */
-	plpgsql_convert_ident(word, cp, 2);
-
-	/*
-	 * Do a lookup in the current namespace stack.
-	 * We don't need to check number of names matched, because we will only
-	 * consider scalar variables.
-	 */
-	nse = plpgsql_ns_lookup(plpgsql_ns_top(), false,
-							cp[0], cp[1], NULL,
-							NULL);
-
-	if (nse != NULL && nse->itemtype == PLPGSQL_NSTYPE_VAR)
+	if (list_length(idents) == 2)
 	{
-		dtype = ((PLpgSQL_var *) (plpgsql_Datums[nse->itemno]))->datatype;
-		goto done;
+		/*
+		 * Do a lookup in the current namespace stack.
+		 * We don't need to check number of names matched, because we will
+		 * only consider scalar variables.
+		 */
+		nse = plpgsql_ns_lookup(plpgsql_ns_top(), false,
+								strVal(linitial(idents)),
+								strVal(lsecond(idents)),
+								NULL,
+								NULL);
+
+		if (nse != NULL && nse->itemtype == PLPGSQL_NSTYPE_VAR)
+		{
+			dtype = ((PLpgSQL_var *) (plpgsql_Datums[nse->itemno]))->datatype;
+			goto done;
+		}
+
+		/*
+		 * First word could also be a table name
+		 */
+		classOid = RelnameGetRelid(strVal(linitial(idents)));
+		if (!OidIsValid(classOid))
+			goto done;
+		fldname = strVal(lsecond(idents));
 	}
+	else if (list_length(idents) == 3)
+	{
+		RangeVar   *relvar;
 
-	/*
-	 * First word could also be a table name
-	 */
-	classOid = RelnameGetRelid(cp[0]);
-	if (!OidIsValid(classOid))
+		relvar = makeRangeVar(strVal(linitial(idents)),
+							  strVal(lsecond(idents)),
+							  -1);
+		classOid = RangeVarGetRelid(relvar, true);
+		if (!OidIsValid(classOid))
+			goto done;
+		fldname = strVal(lthird(idents));
+	}
+	else
 		goto done;
 
 	classtup = SearchSysCache(RELOID,
@@ -1630,86 +1652,7 @@ plpgsql_parse_dblwordtype(const char *word)
 	/*
 	 * Fetch the named table field and its type
 	 */
-	attrtup = SearchSysCacheAttName(classOid, cp[1]);
-	if (!HeapTupleIsValid(attrtup))
-		goto done;
-	attrStruct = (Form_pg_attribute) GETSTRUCT(attrtup);
-
-	typetup = SearchSysCache(TYPEOID,
-							 ObjectIdGetDatum(attrStruct->atttypid),
-							 0, 0, 0);
-	if (!HeapTupleIsValid(typetup))
-		elog(ERROR, "cache lookup failed for type %u", attrStruct->atttypid);
-
-	/*
-	 * Found that - build a compiler type struct in the caller's cxt and
-	 * return it
-	 */
-	MemoryContextSwitchTo(oldCxt);
-	dtype = build_datatype(typetup, attrStruct->atttypmod);
-	MemoryContextSwitchTo(compile_tmp_cxt);
-
-done:
-	if (HeapTupleIsValid(classtup))
-		ReleaseSysCache(classtup);
-	if (HeapTupleIsValid(attrtup))
-		ReleaseSysCache(attrtup);
-	if (HeapTupleIsValid(typetup))
-		ReleaseSysCache(typetup);
-
-	MemoryContextSwitchTo(oldCxt);
-	return dtype;
-}
-
-/* ----------
- * plpgsql_parse_tripwordtype		Same lookup for word.word.word%TYPE
- * ----------
- */
-PLpgSQL_type *
-plpgsql_parse_tripwordtype(const char *word)
-{
-	PLpgSQL_type *dtype = NULL;
-	Oid			classOid;
-	HeapTuple	classtup = NULL;
-	HeapTuple	attrtup = NULL;
-	HeapTuple	typetup = NULL;
-	Form_pg_class classStruct;
-	Form_pg_attribute attrStruct;
-	char	   *cp[3];
-	RangeVar   *relvar;
-	MemoryContext oldCxt;
-
-	/* Avoid memory leaks in the long-term function context */
-	oldCxt = MemoryContextSwitchTo(compile_tmp_cxt);
-
-	/* Do case conversion and word separation */
-	plpgsql_convert_ident(word, cp, 3);
-
-	relvar = makeRangeVar(cp[0], cp[1], -1);
-	classOid = RangeVarGetRelid(relvar, true);
-	if (!OidIsValid(classOid))
-		goto done;
-
-	classtup = SearchSysCache(RELOID,
-							  ObjectIdGetDatum(classOid),
-							  0, 0, 0);
-	if (!HeapTupleIsValid(classtup))
-		goto done;
-	classStruct = (Form_pg_class) GETSTRUCT(classtup);
-
-	/*
-	 * It must be a relation, sequence, view, or type
-	 */
-	if (classStruct->relkind != RELKIND_RELATION &&
-		classStruct->relkind != RELKIND_SEQUENCE &&
-		classStruct->relkind != RELKIND_VIEW &&
-		classStruct->relkind != RELKIND_COMPOSITE_TYPE)
-		goto done;
-
-	/*
-	 * Fetch the named table field and its type
-	 */
-	attrtup = SearchSysCacheAttName(classOid, cp[2]);
+	attrtup = SearchSysCacheAttName(classOid, fldname);
 	if (!HeapTupleIsValid(attrtup))
 		goto done;
 	attrStruct = (Form_pg_attribute) GETSTRUCT(attrtup);
@@ -1746,64 +1689,54 @@ done:
  * ----------
  */
 PLpgSQL_type *
-plpgsql_parse_wordrowtype(const char *word)
+plpgsql_parse_wordrowtype(char *ident)
 {
-	PLpgSQL_type *dtype;
 	Oid			classOid;
-	char	   *cp[1];
-
-	/* Do case conversion and word separation */
-	plpgsql_convert_ident(word, cp, 1);
 
 	/* Lookup the relation */
-	classOid = RelnameGetRelid(cp[0]);
+	classOid = RelnameGetRelid(ident);
 	if (!OidIsValid(classOid))
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_TABLE),
-				 errmsg("relation \"%s\" does not exist", cp[0])));
+				 errmsg("relation \"%s\" does not exist", ident)));
 
 	/* Build and return the row type struct */
-	dtype = plpgsql_build_datatype(get_rel_type_id(classOid), -1);
-
-	pfree(cp[0]);
-
-	return dtype;
+	return plpgsql_build_datatype(get_rel_type_id(classOid), -1);
 }
 
 /* ----------
- * plpgsql_parse_dblwordrowtype		Scanner found word.word%ROWTYPE.
+ * plpgsql_parse_cwordrowtype		Scanner found compositeword%ROWTYPE.
  *			So word must be a namespace qualified table name.
  * ----------
  */
 PLpgSQL_type *
-plpgsql_parse_dblwordrowtype(const char *word)
+plpgsql_parse_cwordrowtype(List *idents)
 {
-	PLpgSQL_type *dtype;
 	Oid			classOid;
-	char	   *cp[2];
 	RangeVar   *relvar;
 	MemoryContext oldCxt;
+
+	if (list_length(idents) != 2)
+		return NULL;
 
 	/* Avoid memory leaks in long-term function context */
 	oldCxt = MemoryContextSwitchTo(compile_tmp_cxt);
 
-	/* Do case conversion and word separation */
-	plpgsql_convert_ident(word, cp, 2);
-
 	/* Lookup the relation */
-	relvar = makeRangeVar(cp[0], cp[1], -1);
+	relvar = makeRangeVar(strVal(linitial(idents)),
+						  strVal(lsecond(idents)),
+						  -1);
 	classOid = RangeVarGetRelid(relvar, true);
 	if (!OidIsValid(classOid))
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_TABLE),
-				 errmsg("relation \"%s.%s\" does not exist", cp[0], cp[1])));
+				 errmsg("relation \"%s.%s\" does not exist",
+						strVal(linitial(idents)), strVal(lsecond(idents)))));
 
 	MemoryContextSwitchTo(oldCxt);
 
 	/* Build and return the row type struct */
-	dtype = plpgsql_build_datatype(get_rel_type_id(classOid), -1);
-
-	return dtype;
+	return plpgsql_build_datatype(get_rel_type_id(classOid), -1);
 }
 
 /*
