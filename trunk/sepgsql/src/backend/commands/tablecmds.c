@@ -3694,22 +3694,19 @@ ATPrepAddColumn(List **wqueue, Relation rel, bool recurse,
 				AlterTableCmd *cmd)
 {
 	/*
-	 * SE-PgSQL checks permission to create a new column, and returns
-	 * a security context to be assigned on. If the table has inherited
-	 * tables, this routine is recursively called to create a new column
-	 * on the child tables also.
-	 * The inherited column must have a same security context, so we just
-	 * copy the security context to be assigned on the parent column.
-	 * If child table already has a column with same name, it shall be
-	 * merged at ATExecAddColumn(). In this case, the security contexts
-	 * has to be matched.
+	 * SE-PgSQL computes a security context to be assigned on the
+	 * new column (if nothing was given), and check permissions to
+	 * create a new column with the security context.
+	 *
+	 * The inherited columns must have an identical security context
+	 * with its parent column. The ColumnDef->secontext is already
+	 * set up correctly at the invocation for root of the column,
+	 * so sepgsql_attribute_create() handles it as if an explicit
+	 * security context is given.
 	 */
-	if (((ColumnDef *)cmd->def)->is_local)
-	{
-		((ColumnDef *)cmd->def)->secontext =
-			(Node *) sepgsql_attribute_create(RelationGetRelid(rel),
-											  (ColumnDef *)cmd->def);
-	}
+	((ColumnDef *)cmd->def)->secontext =
+		(Node *) sepgsql_attribute_create(RelationGetRelid(rel),
+										  (ColumnDef *)cmd->def);
 
 	/*
 	 * Recurse to add the column to child classes, if requested.
@@ -8318,16 +8315,18 @@ AlterAttributeSecLabel(Oid relOid, const char *attname,
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
 					   get_rel_name(relOid));
 
+	/*
+	 * SE-PgSQL checks permission to relabel the column, and returns
+	 * the security context to be assigned on.
+	 * If the table has any inheritance, the new security context is
+	 * also applied recursively.
+	 */
+	attsecon = sepgsql_attribute_relabel(relOid, attname, newLabel);
+
 	if (!recursing)
 	{
 		ListCell   *child;
 		List	   *children;
-
-		/*
-		 * SE-PgSQL checks permission to relabel the column, and returns
-		 * the security context to be assigned on in raw-format.
-		 */
-		attsecon = sepgsql_attribute_relabel(relOid, attname, newLabel);
 
 		children = find_all_inheritors(relOid, NoLock);
 
@@ -8347,16 +8346,8 @@ AlterAttributeSecLabel(Oid relOid, const char *attname,
 								   (Node *) attsecon, true);
 		}
 	}
-	else
-	{
-		/*
-		 * SE-PgSQL already checks permission to relabel column on the
-		 * root of the inheritance relationship. So, we don't need to
-		 * check same thing twice or more.
-		 */
-		attsecon = (Value *)newLabel;
-	}
 
+	/* Update pg_attribute.attsecon */
 	rel = heap_open(AttributeRelationId, RowExclusiveLock);
 
 	oldtup = SearchSysCacheAttName(relOid, attname);
@@ -8373,7 +8364,6 @@ AlterAttributeSecLabel(Oid relOid, const char *attname,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot relabel system column \"%s\"",
 						NameStr(attForm->attname))));
-
 	/*
 	 * we don't allow to relabel inherited columns, except for
 	 * the case when ALTER TABLE is applied on the top level.

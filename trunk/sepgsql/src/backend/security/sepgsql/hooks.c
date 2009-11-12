@@ -865,53 +865,58 @@ sepgsql_relation_alter(Oid relOid, const char *newName, Oid newNsp)
  * table, including cascaded deletions, not only DROP TABLE statement.
  *
  * It checks db_table:{drop} permission, if the given relation is a
- * regular table (RELKIND_RELATION). Otherwise, it does not apply
- * any checks.
+ * regular table (RELKIND_RELATION). Otherwise, it does not apply any
+ * checks.
  *
  * relOid : OID of the relation to be dropped
  */
 void
 sepgsql_relation_drop(Oid relOid)
 {
-	Relation	rel;
-	SysScanDesc	scan;
-	ScanKeyData	key[1];
-	HeapTuple	tuple;
-
 	if (!sepgsql_is_enabled())
 		return;
 
-	sepgsql_relation_common(relOid, SEPG_DB_TABLE__DROP, true);
+	/*
+	 * If the relation is a regular table, we scan pg_attribute to
+	 * pick up corresponding columns, and check db_column:{ drop }
+	 * permission.
+	 */
+	if (get_rel_relkind(relOid) == RELKIND_RELATION)
+	{
+		Relation	rel;
+		SysScanDesc	scan;
+		ScanKeyData	key[1];
+		HeapTuple	tuple;
 
-	if (get_rel_relkind(relOid) != RELKIND_RELATION)
-		return;
+		rel = heap_open(AttributeRelationId, AccessShareLock);
+
+		ScanKeyInit(&key[0],
+					Anum_pg_attribute_attrelid,
+					BTEqualStrategyNumber, F_OIDEQ,
+					ObjectIdGetDatum(relOid));
+
+		scan = systable_beginscan(rel, AttributeRelidNumIndexId, true,
+								  SnapshotNow, 1, key);
+
+		while (HeapTupleIsValid(tuple = systable_getnext(scan)))
+		{
+			Form_pg_attribute	attForm
+				= (Form_pg_attribute) GETSTRUCT(tuple);
+
+			/* column is already dropped? */
+			if (attForm->attisdropped)
+				continue;
+
+			sepgsql_attribute_drop(relOid, attForm->attnum);
+		}
+		systable_endscan(scan);
+		heap_close(rel, AccessShareLock);
+	}
 
 	/*
-	 * Scan the pg_attribute to fetch corresponding columns, and
-	 * also check permission to drop columns owned by the table.
+	 * Also, check db_table:{drop} permission needless to say
 	 */
-	rel = heap_open(AttributeRelationId, AccessShareLock);
-
-	ScanKeyInit(&key[0],
-				Anum_pg_attribute_attrelid,
-				BTEqualStrategyNumber, F_OIDEQ,
-				ObjectIdGetDatum(relOid));
-
-	scan = systable_beginscan(rel, AttributeRelidNumIndexId, true,
-							  SnapshotNow, 1, key);
-
-	while (HeapTupleIsValid(tuple = systable_getnext(scan)))
-	{
-		Form_pg_attribute	attForm = (Form_pg_attribute) GETSTRUCT(tuple);
-
-		/* column is already dropped? */
-		if (attForm->attisdropped)
-			continue;
-
-		sepgsql_attribute_drop(relOid, NameStr(attForm->attname));
-	}
-	systable_endscan(scan);
-	heap_close(rel, AccessShareLock);
+	sepgsql_relation_common(relOid, SEPG_DB_TABLE__DROP, true);
 }
 
 /*
@@ -1135,8 +1140,8 @@ sepgsql_attribute_common(Oid relOid, AttrNumber attnum,
  *
  * If the table has inherited children, ALTER TABLE tries to create
  * a new column on the child tables also. In this case, the caller
- * has to copy the security context on the root column to inherited
- * columns, but no need to invoke this hook on the children.
+ * must copy the security context on the root column to inherited
+ * columns, so we never compute a default context twice or more.
  *
  * relOid : OID of the relation which shall own the new column
  * cdef   : ColumnDef object of the new column
@@ -1169,11 +1174,21 @@ sepgsql_attribute_create(Oid relOid, ColumnDef *cdef)
 	}
 
 	/*
-	 * Either a default or an explicit security context shall be
-	 * assigned on the new column.
+	 * Either a default security context or an explicit security
+	 * context shall be assigned on the new column.
+	 *
+	 * If the new column is an inherited one from the parent,
+	 * it must have an identical security context. In this case,
+	 * cdef->secontext is already set up on the invocation for
+	 * the creation of parent's column. So, we don't need to
+	 * compute a default security context again.
 	 */
 	if (!cdef->secontext)
+	{
+		Assert(cdef->is_local);
+
 		context = sepgsql_default_column_context(relOid);
+	}
 	else
 	{
 		Assert(IsA(cdef->secontext, String));
@@ -1184,6 +1199,7 @@ sepgsql_attribute_create(Oid relOid, ColumnDef *cdef)
 					(errcode(ERRCODE_INVALID_SECURITY_CONTEXT),
 					 errmsg("invalid security context \"%s\"", context)));
 	}
+
 	snprintf(audit_name, sizeof(audit_name), "%s.%s",
 			 get_rel_name(relOid), cdef->colname);
 	sepgsql_compute_perms(sepgsql_get_client_context(),
@@ -1247,23 +1263,14 @@ sepgsql_attribute_alter(Oid relOid, const char *attname)
  * will be dropped.
  *
  * relOid  : OID of the relation owning the column
- * attname : Name of the column to be altered
+ * attnum  : Attribute number of the column to be dropped
  */
 void
-sepgsql_attribute_drop(Oid relOid, const char *attname)
+sepgsql_attribute_drop(Oid relOid, AttrNumber attnum)
 {
 	char		relkind;
-	AttrNumber	attnum;
 
 	if (!sepgsql_is_enabled())
-		return;
-
-	/*
-	 * If user specified non-exist attribute to be dropped,
-	 * the caller raises error later, so we don't need to do here.
-	 */
-	attnum = get_attnum(relOid, attname);
-	if (attnum == InvalidAttrNumber)
 		return;
 
 	/*
@@ -1271,9 +1278,11 @@ sepgsql_attribute_drop(Oid relOid, const char *attname)
 	 * only when it is owned by regular table (=RELKIND_RELATION).
 	 */
 	relkind = get_rel_relkind(relOid);
-	if (relkind == RELKIND_RELATION)
-		sepgsql_attribute_common(relOid, attnum,
-								 SEPG_DB_COLUMN__DROP, true);
+	if (relkind != RELKIND_RELATION)
+		return;
+
+	sepgsql_attribute_common(relOid, attnum,
+							 SEPG_DB_COLUMN__DROP, true);
 }
 
 /*
@@ -1297,9 +1306,11 @@ sepgsql_attribute_grant(Oid relOid, AttrNumber attnum)
 		return;
 
 	relkind = get_rel_relkind(relOid);
-	if (relkind == RELKIND_RELATION)
-		sepgsql_attribute_common(relOid, attnum,
-								 SEPG_DB_COLUMN__SETATTR, true);
+	if (relkind != RELKIND_RELATION)
+		return;
+
+	sepgsql_attribute_common(relOid, attnum,
+							 SEPG_DB_COLUMN__SETATTR, true);
 }
 
 /*
@@ -1443,19 +1454,10 @@ sepgsql_object_drop(ObjectAddress *object)
 	switch (getObjectClass(object))
 	{
 	case OCLASS_CLASS:
-		/*
-		 * SE-PgSQL already checks permission to drop a column due to
-		 * the ALTER TABLE with DROP COLUMN option, so it doesn't need
-		 * to apply same checks twice. The reason why it is applied on
-		 * the earlier phase is to avoid duplicated checks on inherited
-		 * columns which have identical security contexts.
-		 *
-		 * In the case when a table is dropped, it also drops all the
-		 * columns in the table, so sepgsql_relation_drop() checks
-		 * permissions on columns also.
-		 */
 		if (object->objectSubId == 0)
 			sepgsql_relation_drop(object->objectId);
+		else
+			sepgsql_attribute_drop(object->objectId, object->objectSubId);
 		break;
 
 	case OCLASS_SCHEMA:
