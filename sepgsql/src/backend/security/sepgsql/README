@@ -24,7 +24,8 @@ TABLE OF CONTENTS
 3-5. db_column object class
 4. Code examples
 4-1. Example of SE-PgSQL hooks
-4-2. Example of third party module
+4-2. Example of SE-PgSQL hooks (another variation)
+4-3. Example of third party module
 
 1. Overview
 ============================================================
@@ -743,7 +744,7 @@ not provided by clients.
 In this section, we introduce how SE-PgSQL works using a few examples.
 
 4-1. Example of SE-PgSQL hooks
-
+------------------------------
 We pick up the sepgsql_relation_alter() hook as an example.
 
 It is declared as follows:
@@ -923,12 +924,13 @@ last argument (abort).
 It is a typical flow when SE-PgSQL checks its permissions.
 
 
-4-2. Example of SE-PgSQL hooks with returning a security context
+4-2. Example of SE-PgSQL hooks which returns a security context
+---------------------------------------------------------------
 
-It is another variation of security hook. It also checks permissions and
+It is another variation of security hooks. It also checks permissions and
 returns a security context to the caller.
 The CreateSchemaCommand() is a caller of the hook. It stores the returned
-security context to the pg_namespace.nspsecon field in the creation.
+security context to the pg_namespace.nspsecon field in the creation time.
 (Note that it may be NULL, if SE-PgSQL is disabled.)
 
   /*
@@ -942,9 +944,11 @@ security context to the pg_namespace.nspsecon field in the creation.
   {
       char   *context;
 
+      /* (1) SE-PgSQL is enabled? */
       if (!sepgsql_is_enabled())
           return NULL;
   
+      /* (2) Compute a security context to be assigned */  
       if (!nspLabel)
           context = sepgsql_default_schema_context(MyDatabaseId);
       else
@@ -958,18 +962,57 @@ security context to the pg_namespace.nspsecon field in the creation.
                        errmsg("invalid security context \"%s\"", context)));
       }
   
+      /* (3) Check permission to create this object with the context */
       sepgsql_compute_perms(sepgsql_get_client_context(),
                             context,
                             SEPG_CLASS_DB_SCHEMA,
                             SEPG_DB_SCHEMA__CREATE,
                             nspName, true);
   
+      /* (4) Returns the security context to be assigned */
       return makeString(context);
   }
 
+On the (1), it checks whether SE-PgSQL is enabled, or not.
+If disabled, it immediately returns with NULL, and the caller also set NULL
+on the pg_namespace.nspsecon field. (It means "unlabeled".)
+
+On the (2), it checks whether an explicit security context is given, or not.
+User can provide a security context to be assigned using CREATE SCHEMA with
+SECURITY_CONTEXT option.
+If no explicit security context is given, the nspLabel shall be NULL.
+In this case, this hook obtains a default security context to be assigned on
+the new schema using sepgsql_default_schema_context(). Otherwise, it checks
+whether the given security context has valid format, or not, prior to
+permission checks.
+
+The sepgsql_mcstrans_in() translate a human-readable form to raw format.
+For example, when "Classified" is a human-readable form of "s0:c0" and
+user gives "system_u:object_r:sepgsql_schema_t:Classified", it returns
+"system_u:object_r:sepgsql_schema_t:s0:c0" as its raw format.
+
+Then, it applies validation checks of the security context.
+The security_check_context_raw() is an API of libselinux which returns
+a negative value if the given context is invalid.
+
+Anyway, we have to fix a security context to be assigned on the new schema
+in either of ways.
+
+On the (3), it checks db_schema:{create} permission on the security context.
+See the section 4-1, we already introduced what sepgsql_compute_perms() does.
+If client does not have the permission to create a new schema object with
+the security context, it shall raise an error.
+
+On the (4), it returns the security context to be assigned on the new schema.
+Note that this security context is already checked, so all the caller needs
+to do is to store it on the new pg_namespace entry.
 
 
-
+Then, the CreateSchemaCommand() calls NamespaceCreate() to handle all the
+works to insert a new entry into pg_namespace catalog.
+It takes the third argument to suggest a security context to be assigned on,
+or NULL if unlabeled. It does not apply any more permission checks in this
+stage, because the given nspsecon is already checked in the prior phase.
 
   Oid
   NamespaceCreate(const char *nspName, Oid ownerId, Value *nspsecon)
@@ -985,8 +1028,145 @@ security context to the pg_namespace.nspsecon field in the creation.
           :
   }
 
+
+Back to the (2) in sepgsql_schame_create().
+It calls sepgsql_default_schema_context() to compute a default security
+context, if user gives no explicit security context.
+
+  /*
+   * datOid : OID of the database owning the new schema.
+   *          (currently, it is always MyDatabaseId.)
+   */
+  char *
+  sepgsql_default_schema_context(Oid datOid)
+  {
+      HeapTuple   tuple;
+      Datum       datum;
+      bool        isnull;
+      char       *context = NULL;
+
+      /* (1) Fetch a security context of database */  
+      tuple = SearchSysCache(DATABASEOID,
+                             ObjectIdGetDatum(datOid),
+                             0, 0, 0);
+      if (HeapTupleIsValid(tuple))
+      {
+          datum = SysCacheGetAttr(DATABASEOID, tuple,
+                                  Anum_pg_database_datsecon, &isnull);
+          if (!isnull)
+              context = TextDatumGetCString(datum);
+  
+          ReleaseSysCache(tuple);
+      }
+  
+      /* (2) validation checks on the security context */
+      if (!context || security_check_context_raw(context) < 0)
+          context = sepgsql_get_unlabeled_context();
+  
+      /* (3) compute a default security context on db_schema class */
+      return sepgsql_compute_create(sepgsql_get_client_context(),
+                                    context,
+                                    SEPG_CLASS_DB_SCHEMA);
+  }
+
+SELinux also performs as a function which returns a default security context
+for the given object class and a pair of security contexts of the client and
+the upper object owning the new object.
+In the db_schema class, we can compute its default security context based on
+a pair of the client and the database which shall own the new schema.
+Every object class has its upper class as follows.
+
+  db_database ... a template database object which is the source
+  db_schema   ... a database object which shall own the new schema
+  db_table    ... a schema object which shall own the new table
+  db_column   ... a table object which shall own the new column
+
+On the (1), it fetches security context of the database which shall own
+the new schema. On the (2), it applies validation checks on the fetched
+security context. If invalid, the "unlabeled" security context shall be
+applied instead.
+
+On the (3), sepgsql_compute_create() asks SELinux what is the default
+security context to be assigned on a new schema object which is created
+by the client under the database.
+It returns a security context as a palloc()'ed cstring.
+
+It can be applied, if user gives no explicit security context on CREATE
+SCHEMA statement, unless the user does not have permission to create a
+new schema labeled with the default security context.
+
+
 4-3. Example of third party module
+----------------------------------
 
+At the last of this developer documentation, we like to introduce the way
+to add SE-PgSQL support in your third party modules.
 
+Don't misunderstand that SE-PgSQL can prevent violated accesses from
+malicious binary modules. It shares same address space, so it can access
+any resources without any limitation. We have no way to prevent accesses
+by malicious modules already loaded, except for blocking on its loading
+or installation time.
 
+What we like to introduce in this section is the way to ask SE-PgSQL its
+access control decision. If your third party module is invoked due to the
+user's request, it may need to apply its access controls.
 
+The permission to be checked depends on what your module tries to do, no
+need to say. All the permissions are listed on chapter 3. See it for more
+details.
+
+If your module provides a user defined function which modifies properties
+of a certain table, it should check db_table:{setattr} permission also, in
+addition to pg_class_ownercheck().
+
+  #include "security/sepgsql.h"
+          :
+  Datum
+  example_your_func(PG_FUNCTION_ARGS)
+  {
+      Oid         relOid = PG_GETARG_OID(0);
+      Relation    pg_class;
+      HeapTuple   tuple;
+          :
+      /*
+       * Check permission in the default PG model
+       */
+      if (pg_class_ownercheck(relOid, GetUserId()))
+          aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
+                         get_rel_name(relOid));
+          :
+      /*
+       * Check permission in the SELinux model
+       */
+      if (sepgsql_is_enabled())
+      {
+          sepgsql_relation_common(relOid, SEPG_DB_TABLE__SETATTR, true);
+      }
+          :
+          :
+      /*
+       * All the checks are done, so we can modify properties of
+       * a certain table.
+       */
+          :
+      simple_heap_update(pg_class, &tuple->t_self, tuple);
+          :
+      PG_RETURN_VOID();
+  }
+
+Key point is the if-block of sepgsql_is_enabled().
+It calls sepgsql_relation_common() with OID of the relation and constant of
+SEPG_DB_TABLE__SETATTR to be checked, if sepgsql_is_enabled() returns true.
+It means SE-PgSQL does not check anything when it is disabled.
+
+The behavior of sepgsql_relation_common() is same as we already introduced
+at the section 4-1. It fetches security context of the relation, and asks
+SELinux whether the given permission can be allowed, or not, on a pair of
+the client and table to be altered.
+
+If SE-PgSQL is disabled on the compile time of the server program, all the
+sepgsql_*() functions are replaced by dummy functions in sepgsql/dummy.c.
+For example, a dummy of sepgsql_is_enabled() always returns false.
+So, you don't need to provide two different versions of the third party
+module for PostgreSQL with/without SE-PgSQL.
