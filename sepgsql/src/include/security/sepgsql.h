@@ -207,7 +207,7 @@ sepgsql_attribute_create(Oid relOid, ColumnDef *cdef);
 extern void
 sepgsql_attribute_alter(Oid relOid, const char *attname);
 extern void
-sepgsql_attribute_drop(Oid relOid, const char *attname);
+sepgsql_attribute_drop(Oid relOid, AttrNumber attnum);
 extern void
 sepgsql_attribute_grant(Oid relOid, AttrNumber attnum);
 extern Value *
