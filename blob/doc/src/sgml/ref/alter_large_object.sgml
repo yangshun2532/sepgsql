@@ -7,7 +7,7 @@
 
  <refnamediv>
   <refname>ALTER LARGE OBJECT</refname>
-  <refpurpose>change the definition of a largeobject</refpurpose>
+  <refpurpose>change the definition of a large object</refpurpose>
  </refnamediv>
 
  <indexterm zone="sql-alterlargeobject">
@@ -25,8 +25,8 @@ ALTER LARGE OBJECT <replaceable class="PARAMETER">large_object_oid</replaceable>
 
   <para>
    <command>ALTER LARGE OBJECT</command> changes the definition of a
-   largeobject. The only functionality is to assign a new owner.
-   You must be superuser or owner of the largeobject to use
+   large object. The only functionality is to assign a new owner.
+   You must be superuser or owner of the large object to use
    <command>ALTER LARGE OBJECT</command>.
   </para>
  </refsect1>
@@ -39,7 +39,7 @@ ALTER LARGE OBJECT <replaceable class="PARAMETER">large_object_oid</replaceable>
     <term><replaceable>large_object_oid</replaceable></term>
     <listitem>
      <para>
-      OID of the largeobject to be altered
+      OID of the large object to be altered
      </para>
     </listitem>
    </varlistentry>
@@ -48,7 +48,7 @@ ALTER LARGE OBJECT <replaceable class="PARAMETER">large_object_oid</replaceable>
     <term><replaceable>new_owner</replaceable></term>
     <listitem>
      <para>
-      The new owner of the largeobject
+      The new owner of the large object
      </para>
     </listitem>
    </varlistentry>

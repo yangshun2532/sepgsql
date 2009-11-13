@@ -418,7 +418,7 @@ ExecuteGrantStmt(GrantStmt *stmt)
 			break;
 		case ACL_OBJECT_LARGEOBJECT:
 			all_privileges = ACL_ALL_RIGHTS_LARGEOBJECT;
-			errormsg = gettext_noop("invalid privilege type %s for largeobject");
+			errormsg = gettext_noop("invalid privilege type %s for large object");
 			break;
 		case ACL_OBJECT_NAMESPACE:
 			all_privileges = ACL_ALL_RIGHTS_NAMESPACE;
@@ -618,7 +618,7 @@ objectNamesToOids(GrantObjectType objtype, List *objnames)
 				if (!LargeObjectExists(lobjOid))
 					ereport(ERROR,
 							(errcode(ERRCODE_UNDEFINED_OBJECT),
-							 errmsg("largeobject %u does not exist",
+							 errmsg("large object %u does not exist",
 									lobjOid)));
 
 				objects = lappend_oid(objects, lobjOid);
@@ -2551,7 +2551,7 @@ ExecGrant_Largeobject(InternalGrant *istmt)
 
 		tuple = systable_getnext(scan);
 		if (!HeapTupleIsValid(tuple))
-			elog(ERROR, "cache lookup failed for largeobject %u", loid);
+			elog(ERROR, "cache lookup failed for large object %u", loid);
 
 		form_lo_meta = (Form_pg_largeobject_metadata) GETSTRUCT(tuple);
 
@@ -2577,7 +2577,7 @@ ExecGrant_Largeobject(InternalGrant *istmt)
 		 * Restrict the privileges to what we can actually grant, and emit the
 		 * standards-mandated warning and error messages.
 		 */
-		snprintf(loname, sizeof(loname), "largeobject %u", loid);
+		snprintf(loname, sizeof(loname), "large object %u", loid);
 		this_privileges =
 			restrict_and_check_grant(istmt->is_grant, avail_goptions,
 									 istmt->all_privs, istmt->privileges,
