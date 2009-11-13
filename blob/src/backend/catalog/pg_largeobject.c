@@ -248,14 +248,23 @@ LargeObjectAlterOwner(Oid loid, Oid newOwnerId)
 }
 
 /*
- * In currently, we don't use system cache to keep metadata of
- * the large object, because it may consume massive process local
- * memory when a user tries to massive number of large objects
- * concurrently.
- * Use the LargeObjectExists() instead of SearchSysCacheExists().
+ * LargeObjectExistsSnapshot
+ * LargeObjectExists
+ *
+ * Currently, we don't use system cache to contain metadata of
+ * large objects, because massive number of large objects can
+ * consume not a small amount of process local memory.
+ *
+ * The LargeObjectExistsSnapshot() should be used when the caller
+ * wants to scan pg_largeobject_metadata with a snapshot except
+ * for SnapshotNow.
+ * In the read-only accesses mode, it looks at the opened large
+ * objects with query's snapshot, not SnapshotNow. In this case,
+ * we also want to refer the large object metadata with the given
+ * (consistent) snapshot, so we also need this interface.
  */
 bool
-LargeObjectExists(Oid loid)
+LargeObjectExistsSnapshot(Oid loid, Snapshot snapshot)
 {
 	Relation	pg_lo_meta;
 	ScanKeyData	skey[1];
@@ -284,4 +293,10 @@ LargeObjectExists(Oid loid)
 	heap_close(pg_lo_meta, AccessShareLock);
 
 	return retval;
+}
+
+bool
+LargeObjectExists(Oid loid)
+{
+	return LargeObjectExistsSnapshot(SnapshotNow);
 }

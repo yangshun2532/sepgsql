@@ -200,11 +200,6 @@ inv_open(Oid lobjId, int flags, MemoryContext mcxt)
 {
 	LargeObjectDesc *retval;
 
-	if (!LargeObjectExists(lobjId))
-		ereport(ERROR,
-				(errcode(ERRCODE_UNDEFINED_OBJECT),
-				 errmsg("large object %u does not exist", lobjId)));
-
 	retval = (LargeObjectDesc *) MemoryContextAlloc(mcxt,
 													sizeof(LargeObjectDesc));
 
@@ -230,6 +225,12 @@ inv_open(Oid lobjId, int flags, MemoryContext mcxt)
 	}
 	else
 		elog(ERROR, "invalid flags: %d", flags);
+
+	/* Can't use LargeObjectExists here because it always uses SnapshotNow */
+	if (!LargeObjectExistsSnapshot(lobjId, retval->snapshot))
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_OBJECT),
+				 errmsg("large object %u does not exist", lobjId)));
 
 	return retval;
 }

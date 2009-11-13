@@ -381,11 +381,9 @@ lo_import_internal(text *filename, Oid lobjOid)
 	int			nbytes,
 				tmp;
 	char		buf[BUFSIZE];
-	char	   *fnamebuf = text_to_cstring(filename);
+	char		fnamebuf[MAXPGPATH];
 	LargeObjectDesc *lobj;
 	Oid			oid;
-
-	CreateFSContext();
 
 #ifndef ALLOW_DANGEROUS_LO_FUNCTIONS
 	if (!superuser())
@@ -395,9 +393,12 @@ lo_import_internal(text *filename, Oid lobjOid)
 				 errhint("Anyone can use the client-side lo_import() provided by libpq.")));
 #endif
 
+	CreateFSContext();
+
 	/*
 	 * open the file to be read in
 	 */
+	text_to_cstring_buffer(filename, fnamebuf, sizeof(fnamebuf));
 	fd = PathNameOpenFile(fnamebuf, O_RDONLY | PG_BINARY, 0666);
 	if (fd < 0)
 		ereport(ERROR,
@@ -429,7 +430,6 @@ lo_import_internal(text *filename, Oid lobjOid)
 
 	inv_close(lobj);
 	FileClose(fd);
-	pfree(fnamebuf);
 
 	return oid;
 }
@@ -447,7 +447,7 @@ lo_export(PG_FUNCTION_ARGS)
 	int			nbytes,
 				tmp;
 	char		buf[BUFSIZE];
-	char	   *fnamebuf = text_to_cstring(filename);
+	char		fnamebuf[MAXPGPATH];
 	LargeObjectDesc *lobj;
 	mode_t		oumask;
 
@@ -473,6 +473,7 @@ lo_export(PG_FUNCTION_ARGS)
 	 * 022. This code used to drop it all the way to 0, but creating
 	 * world-writable export files doesn't seem wise.
 	 */
+	text_to_cstring_buffer(filename, fnamebuf, sizeof(fnamebuf));
 	oumask = umask((mode_t) 0022);
 	fd = PathNameOpenFile(fnamebuf, O_CREAT | O_WRONLY | O_TRUNC | PG_BINARY, 0666);
 	umask(oumask);
@@ -497,7 +498,6 @@ lo_export(PG_FUNCTION_ARGS)
 
 	FileClose(fd);
 	inv_close(lobj);
-	pfree(fnamebuf);
 
 	PG_RETURN_INT32(1);
 }
