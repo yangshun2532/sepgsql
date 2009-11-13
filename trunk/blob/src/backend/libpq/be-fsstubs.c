@@ -170,7 +170,7 @@ lo_read(int fd, char *buf, int len)
 										 cookies[fd]->snapshot) != ACLCHECK_OK)
 		ereport(ERROR,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("permission denied for largeobject %u",
+				 errmsg("permission denied for large object %u",
 						cookies[fd]->id)));
 
 	status = inv_read(cookies[fd], buf, len);
@@ -202,7 +202,7 @@ lo_write(int fd, const char *buf, int len)
 										 cookies[fd]->snapshot) != ACLCHECK_OK)
 		ereport(ERROR,
                 (errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("permission denied for largeobject %u",
+				 errmsg("permission denied for large object %u",
 						cookies[fd]->id)));
 
 	status = inv_write(cookies[fd], buf, len);
@@ -525,7 +525,7 @@ lo_truncate(PG_FUNCTION_ARGS)
 										 cookies[fd]->snapshot) != ACLCHECK_OK)
 		ereport(ERROR,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("permission denied for largeobject %u",
+				 errmsg("permission denied for large object %u",
 						cookies[fd]->id)));
 
 	inv_truncate(cookies[fd], len);

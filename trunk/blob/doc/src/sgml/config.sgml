@@ -4781,15 +4781,15 @@ dynamic_library_path = 'C:\tools\postgresql;H:\my_project\lib;$libdir'
       </indexterm>
       <listitem>
        <para>
-        This allows us to turn on/off database ACL checks on largeobjects.
-        The <productname>PostgreSQL</productname> 8.4.x or prior releases
-        don't have any ACL checks on largeobjects.
-        So, turning the <varname>large_object_privilege_checks</varname> off
-        means the largeobject feature performs in compatible mode.
+        This allows us to turn on/off database privilege checks on large objects.
+        Prior to the version 8.5.x release does not have any privilege checks on
+	large objects.
+	So, turning the <varname>large_object_privilege_checks</varname> off
+	means the large object feature performs in compatible mode.
        </para>
        <para>
         Please note that it is not equivalent to disable all the security
-        checks corresponding to largeobjects.
+        checks corresponding to large objects.
         For example, the <literal>lo_import()</literal> and
         <literal>lo_export</literal> need superuser privileges independent
         from this setting as prior versions were doing.
