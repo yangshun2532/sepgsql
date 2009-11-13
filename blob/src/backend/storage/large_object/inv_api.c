@@ -32,6 +32,7 @@
 
 #include "access/genam.h"
 #include "access/heapam.h"
+#include "access/sysattr.h"
 #include "access/tuptoaster.h"
 #include "access/xact.h"
 #include "catalog/catalog.h"
@@ -135,6 +136,43 @@ close_lo_relation(bool isCommit)
 	}
 }
 
+/*
+ * Same as pg_largeobject.c's LargeObjectExists(), except snapshot to
+ * read with can be specified.
+ */
+static bool
+myLargeObjectExists(Oid loid, Snapshot snapshot)
+{
+	Relation	pg_lo_meta;
+	ScanKeyData	skey[1];
+	SysScanDesc	sd;
+	HeapTuple	tuple;
+	bool		retval = false;
+
+	ScanKeyInit(&skey[0],
+				ObjectIdAttributeNumber,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(loid));
+
+	pg_lo_meta = heap_open(LargeObjectMetadataRelationId,
+						   AccessShareLock);
+
+	sd = systable_beginscan(pg_lo_meta,
+							LargeObjectMetadataOidIndexId, true,
+							snapshot, 1, skey);
+
+	tuple = systable_getnext(sd);
+	if (HeapTupleIsValid(tuple))
+		retval = true;
+
+	systable_endscan(sd);
+
+	heap_close(pg_lo_meta, AccessShareLock);
+
+	return retval;
+}
+
+
 static int32
 getbytealen(bytea *data)
 {
@@ -227,7 +265,7 @@ inv_open(Oid lobjId, int flags, MemoryContext mcxt)
 		elog(ERROR, "invalid flags: %d", flags);
 
 	/* Can't use LargeObjectExists here because it always uses SnapshotNow */
-	if (!LargeObjectExistsSnapshot(lobjId, retval->snapshot))
+	if (!myLargeObjectExists(lobjId, retval->snapshot))
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("large object %u does not exist", lobjId)));
