@@ -9,7 +9,8 @@ TABLE OF CONTENTS
 1-1. Brief overview of SE-PostgreSQL
 1-2. Mandatory access control
 1-3. Security context
-1-4. Misc features
+1-4. Security policy
+1-5. Misc features
 2. Internal architecture
 2-1. communication with SELinux
 2-2. management of security context
@@ -172,8 +173,50 @@ and SE-PgSQL assigns the offered one in the default.
 The default security context is decided for a pair of security contexts of
 the client and its parent object. See the later chapter for more details.
 
+1-4. Security policy
+--------------------
 
-1-4. Misc features
+Security policy is a massive set of access control rules. An individual rule
+has a set of allowed permissions on a pair of security contexts (subject and
+object).
+
+It is an example of TE rule which uses the third field of security context.
+
+  allow httpd_t sepgsql_ro_table_t : db_table { getattr select lock };
+
+This rule allows httpd_t domain (typically, web server processes) to access
+any tables labeled as sepgsql_ro_table_t type with reader operations.
+
+SELinux contains such kind of rules, and makes its access control decision
+based on the rules which are suitable for the required action.
+
+You might feel it is too fine-grained, however, if you guess SELinux requires
+end-users (such as individual DBAs) to set up these rules, it is incorrect.
+The SELinux community provides its standard security policy maintained by
+the community, distributor and supporting organization and companies.
+
+Nowadays, the standard security policy already contains a set of rules
+corresponding to database accesses. In most cases, what end-users should do
+is to assign an appropriate pre-defined security context on the database
+objects, not writing their own security policy.
+
+For example, the standard security policy provides the following pre-defined
+security context for table objects.
+
+ * sepgsql_table_t         ... regular readable/writable tables
+ * sepgsql_fixed_table_t   ... only SELECT/INSERT are available
+ * sepgsql_ro_table_t      ... read-only tables
+ * sepgsql_secret_table_t  ... unaccessable except for "unconfined_t" domain
+ * user_sepgsql_table_t    ... only available for shell logined users
+
+A database administrator can assign these security contexts on the tables.
+It is a similar idea to database roles to be assigned on a certain database
+user to allow a set of privileges.
+Here are a set of privileges behind of the security context, and it enables
+to abstract individual privileges (might be too fine-grained) to be checked.
+
+
+1-5. Misc features
 ------------------
 
 o Enforcing/Permissive mode
