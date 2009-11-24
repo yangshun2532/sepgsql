@@ -14,6 +14,7 @@
 #include "storage/fd.h"
 #include "utils/builtins.h"
 
+#include <fnmatch.h>
 #include <selinux/selinux.h>
 
 /*
@@ -641,7 +642,7 @@ sepgsql_template1_getcon(PG_FUNCTION_ARGS)
 				if (sscanf(lineBuf, "%s %s %s",
 						   classBuf, nameBuf, seconBuf) == 3
 					&& strcmp(classBuf, "db_database") == 0
-					&& strcmp(nameBuf, "template1") == 0)
+					&& fnmatch(nameBuf, "template1", 0) == 0)
 				{
 					context = pstrdup(seconBuf);
 					break;
