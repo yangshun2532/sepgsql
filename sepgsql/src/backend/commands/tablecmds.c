@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/commands/tablecmds.c,v 1.305 2009/11/04 12:24:23 heikki Exp $
+ *	  $PostgreSQL: pgsql/src/backend/commands/tablecmds.c,v 1.306 2009/11/20 20:38:10 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -5541,7 +5541,7 @@ validateForeignKeyConstraint(Constraint *fkconstraint,
 	trig.tgconstraint = constraintOid;
 	trig.tgdeferrable = FALSE;
 	trig.tginitdeferred = FALSE;
-	/* we needn't fill in tgargs */
+	/* we needn't fill in tgargs or tgqual */
 
 	/*
 	 * See if we can do it with a single LEFT JOIN query.  A FALSE result
@@ -5614,13 +5614,14 @@ CreateFKCheckTrigger(RangeVar *myRel, Constraint *fkconstraint,
 	}
 
 	fk_trigger->columns = NIL;
+	fk_trigger->whenClause = NULL;
 	fk_trigger->isconstraint = true;
 	fk_trigger->deferrable = fkconstraint->deferrable;
 	fk_trigger->initdeferred = fkconstraint->initdeferred;
 	fk_trigger->constrrel = fkconstraint->pktable;
 	fk_trigger->args = NIL;
 
-	(void) CreateTrigger(fk_trigger, constraintOid, indexOid,
+	(void) CreateTrigger(fk_trigger, NULL, constraintOid, indexOid,
 						 "RI_ConstraintTrigger", false);
 
 	/* Make changes-so-far visible */
@@ -5665,6 +5666,7 @@ createForeignKeyTriggers(Relation rel, Constraint *fkconstraint,
 	fk_trigger->row = true;
 	fk_trigger->events = TRIGGER_TYPE_DELETE;
 	fk_trigger->columns = NIL;
+	fk_trigger->whenClause = NULL;
 	fk_trigger->isconstraint = true;
 	fk_trigger->constrrel = myRel;
 	switch (fkconstraint->fk_del_action)
@@ -5701,7 +5703,7 @@ createForeignKeyTriggers(Relation rel, Constraint *fkconstraint,
 	}
 	fk_trigger->args = NIL;
 
-	(void) CreateTrigger(fk_trigger, constraintOid, indexOid,
+	(void) CreateTrigger(fk_trigger, NULL, constraintOid, indexOid,
 						 "RI_ConstraintTrigger", false);
 
 	/* Make changes-so-far visible */
@@ -5718,6 +5720,7 @@ createForeignKeyTriggers(Relation rel, Constraint *fkconstraint,
 	fk_trigger->row = true;
 	fk_trigger->events = TRIGGER_TYPE_UPDATE;
 	fk_trigger->columns = NIL;
+	fk_trigger->whenClause = NULL;
 	fk_trigger->isconstraint = true;
 	fk_trigger->constrrel = myRel;
 	switch (fkconstraint->fk_upd_action)
@@ -5754,7 +5757,7 @@ createForeignKeyTriggers(Relation rel, Constraint *fkconstraint,
 	}
 	fk_trigger->args = NIL;
 
-	(void) CreateTrigger(fk_trigger, constraintOid, indexOid,
+	(void) CreateTrigger(fk_trigger, NULL, constraintOid, indexOid,
 						 "RI_ConstraintTrigger", false);
 }
 
