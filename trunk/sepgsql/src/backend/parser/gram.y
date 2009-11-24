@@ -469,7 +469,7 @@ static TypeName *TableFuncTypeName(List *columns);
 	CHARACTER CHARACTERISTICS CHECK CHECKPOINT CLASS CLOSE
 	CLUSTER COALESCE COLLATE COLUMN COMMENT COMMENTS COMMIT
 	COMMITTED CONCURRENTLY CONFIGURATION CONNECTION CONSTRAINT CONSTRAINTS
-	CONTENT_P CONTINUE_P CONVERSION_P COPY COST CREATE CREATEDB
+	CONTENT_P CONTEXT_P CONTINUE_P CONVERSION_P COPY COST CREATE CREATEDB
 	CREATEROLE CREATEUSER CROSS CSV CURRENT_P
 	CURRENT_CATALOG CURRENT_DATE CURRENT_ROLE CURRENT_SCHEMA
 	CURRENT_TIME CURRENT_TIMESTAMP CURRENT_USER CURSOR CYCLE
@@ -520,8 +520,8 @@ static TypeName *TableFuncTypeName(List *columns);
 	RELATIVE_P RELEASE RENAME REPEATABLE REPLACE REPLICA RESET RESTART
 	RESTRICT RETURNING RETURNS REVOKE RIGHT ROLE ROLLBACK ROW ROWS RULE
 
-	SAVEPOINT SCHEMA SCROLL SEARCH SECOND_P SECURITY SECURITY_CONTEXT SELECT
-	SEQUENCE SEQUENCES SERIALIZABLE SERVER SESSION SESSION_USER SET SETOF SHARE
+	SAVEPOINT SCHEMA SCROLL SEARCH SECOND_P SECURITY SELECT SEQUENCE SEQUENCES
+	SERIALIZABLE SERVER SESSION SESSION_USER SET SETOF SHARE
 	SHOW SIMILAR SIMPLE SMALLINT SOME STABLE STANDALONE_P START STATEMENT
 	STATISTICS STDIN STDOUT STORAGE STRICT_P STRIP_P SUBSTRING SUPERUSER_P
 	SYMMETRIC SYSID SYSTEM_P
@@ -5944,7 +5944,7 @@ AlterSecLabelStmt:	ALTER DATABASE database_name SecLabelToItem
 				}
 		;
 
-OptSchemaSecLabel:	SECURITY_CONTEXT opt_equal Sconst
+OptSchemaSecLabel:	SECURITY CONTEXT_P Sconst
 				{
 					if (!sepgsql_is_enabled())
 						parser_yyerror("unavailable option");
@@ -5953,7 +5953,7 @@ OptSchemaSecLabel:	SECURITY_CONTEXT opt_equal Sconst
 			| /* EMPTY */					{ $$ = NULL; }
 		;
 
-OptTableSecLabel:	SECURITY_CONTEXT opt_equal Sconst
+OptTableSecLabel:	SECURITY CONTEXT_P Sconst
 				{
 					if (!sepgsql_is_enabled())
 						parser_yyerror("unavailable option");
@@ -5962,7 +5962,7 @@ OptTableSecLabel:	SECURITY_CONTEXT opt_equal Sconst
 			| /* EMPTY */					{ $$ = NULL; }
 		;
 
-OptColumnSecLabel:	AS SECURITY_CONTEXT opt_equal Sconst
+OptColumnSecLabel:	AS SECURITY CONTEXT_P Sconst
 				{
 					if (!sepgsql_is_enabled())
 						parser_yyerror("unavailable option");
@@ -5971,11 +5971,11 @@ OptColumnSecLabel:	AS SECURITY_CONTEXT opt_equal Sconst
 			| /* EMPTY */					{ $$ = NULL; }
 		;
 
-SecLabelToItem:		SECURITY_CONTEXT TO Sconst
+SecLabelToItem:		SECURITY CONTEXT_P TO Sconst
 				{
 					if (!sepgsql_is_enabled())
 						parser_yyerror("unavailable option");
-					$$ = (Node *) makeString($3);
+					$$ = (Node *) makeString($4);
 				}
 		;
 
@@ -6418,11 +6418,11 @@ createdb_opt_item:
 				{
 					$$ = makeDefElem("owner", NULL);
 				}
-			| SECURITY_CONTEXT opt_equal Sconst
+			| SECURITY CONTEXT_P opt_equal Sconst
 				{
 					if (!sepgsql_is_enabled())
 						parser_yyerror("unavailable option");
-					$$ = makeDefElem("security_context", (Node *) makeString($3));
+					$$ = makeDefElem("security_context", (Node *) makeString($4));
 				}
 		;
 
@@ -10680,6 +10680,7 @@ unreserved_keyword:
 			| CONNECTION
 			| CONSTRAINTS
 			| CONTENT_P
+			| CONTEXT_P
 			| CONTINUE_P
 			| CONVERSION_P
 			| COPY
@@ -10835,7 +10836,6 @@ unreserved_keyword:
 			| SEARCH
 			| SECOND_P
 			| SECURITY
-			| SECURITY_CONTEXT
 			| SEQUENCE
 			| SEQUENCES
 			| SERIALIZABLE

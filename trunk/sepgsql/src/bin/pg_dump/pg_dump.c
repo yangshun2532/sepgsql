@@ -1784,7 +1784,7 @@ dumpDatabase(Archive *AH)
 						  fmtId(tablespace));
 	if (strlen(secontext) > 0)
 	{
-		appendPQExpBuffer(creaQry, " SECURITY_CONTEXT = ");
+		appendPQExpBuffer(creaQry, " SECURITY CONTEXT = ");
 		appendStringLiteralAH(creaQry, secontext, AH);
 	}
 	appendPQExpBuffer(creaQry, ";\n");
@@ -6325,7 +6325,7 @@ dumpNamespace(Archive *fout, NamespaceInfo *nspinfo)
 	 * Security context support -- if SE-PostgreSQL is enabled
 	 */
 	if (security_context > 0 && strlen(nspinfo->nspsecon) > 0)
-		appendPQExpBuffer(q, " SECURITY_CONTEXT = '%s'",
+		appendPQExpBuffer(q, " SECURITY CONTEXT '%s'",
 						  nspinfo->nspsecon);
 
 	appendPQExpBuffer(q, ";\n");
@@ -10368,7 +10368,7 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 				 * Security context -- if SE-PostgreSQL is enabled
 				 */
 				if (security_context > 0 && strlen(tbinfo->attsecons[j]) > 0)
-					appendPQExpBuffer(q, " AS SECURITY_CONTEXT = '%s'",
+					appendPQExpBuffer(q, " AS SECURITY CONTEXT '%s'",
 									  tbinfo->attsecons[j]);
 			}
 		}
@@ -10436,7 +10436,7 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 		 * Security context of tables
 		 */
 		if (security_context > 0 && strlen(tbinfo->relsecon) > 0)
-			appendPQExpBuffer(q, " SECURITY_CONTEXT = '%s'", tbinfo->relsecon);
+			appendPQExpBuffer(q, " SECURITY CONTEXT '%s'", tbinfo->relsecon);
 
 		appendPQExpBuffer(q, ";\n");
 
